@@ -1,0 +1,459 @@
+import { createHash, randomBytes, timingSafeEqual } from "node:crypto";
+import {
+  BadRequestException,
+  ConflictException,
+  ForbiddenException,
+  Injectable,
+  NotFoundException,
+} from "@nestjs/common";
+import { ConfigService } from "@nestjs/config";
+import type { Role, StaffDepartment } from "@prisma/client";
+import { PrismaService } from "../prisma/prisma.service";
+import { can, type RequestContext } from "../common/permissions";
+
+/**
+ * Convites de staff.
+ *
+ * ## O que um convite decide, e o que não decide
+ *
+ * Decide **tudo**: quem, com que papel, com que equipas, até quando. Quem resgata
+ * o link só prova que é a pessoa (escolhendo uma password) — não escolhe nada
+ * sobre o próprio acesso.
+ *
+ * Isso é deliberado e é a decisão central deste ficheiro. O âmbito de um treinador
+ * é derivado de `TeamStaff` a cada pedido (`AuthService.scopeFor`), portanto as
+ * equipas *são* o acesso aos dados dos atletas — boletim clínico incluído. Se a
+ * escolha das equipas estivesse do lado de quem resgata, quem apanhasse o link
+ * decidia o que podia ver. E estes links viajam por WhatsApp: são reencaminhados e
+ * fotografados.
+ *
+ * ## O token
+ *
+ * 32 bytes de `randomBytes` em base64url. Na base fica só o SHA-256 — o token em
+ * claro existe uma vez, no link. Se a tabela vazar, os convites pendentes não são
+ * resgatáveis por quem a leu.
+ */
+
+/** Papéis que se convidam por aqui. */
+const STAFF_ROLES: Role[] = ["OWNER", "DIRECTOR", "COORDINATOR", "COACH", "STAFF", "MEDICAL"];
+
+/**
+ * Quem pode convidar quem.
+ *
+ * Um número por papel, e a regra é uma só: **não se convida acima do próprio
+ * nível**. Sem isto, um coordenador convidava-se a si próprio um OWNER e a
+ * hierarquia não valia nada — a escalada de privilégios mais aborrecida que há, e
+ * a mais fácil de esquecer.
+ *
+ * Igual ao próprio nível é permitido: um diretor convida outro diretor, que é
+ * exactamente como uma academia com dois sócios-gerentes funciona.
+ */
+const RANK: Record<Role, number> = {
+  OWNER: 100,
+  DIRECTOR: 80,
+  COORDINATOR: 60,
+  MEDICAL: 40,
+  COACH: 40,
+  STAFF: 20,
+  GUARDIAN: 0,
+  ATHLETE: 0,
+};
+
+/** Quanto tempo um convite vale. Uma semana chega para alguém abrir um WhatsApp. */
+const VALID_DAYS = 7;
+
+export type CreateInvite = {
+  name: string;
+  email: string;
+  role: Role;
+  title?: string | null;
+  department?: StaffDepartment | null;
+  teamIds?: string[];
+};
+
+export type InviteSummary = {
+  id: string;
+  name: string;
+  email: string;
+  role: Role;
+  title: string | null;
+  department: StaffDepartment | null;
+  teamIds: string[];
+  expiresAt: Date;
+  createdAt: Date;
+  invitedBy: string | null;
+};
+
+/** O que a página de resgate mostra. Nada disto revela quem mais existe na academia. */
+export type InvitePreview = {
+  academy: { slug: string; name: string; shortName: string; mark: string; signalColor: string };
+  name: string;
+  email: string;
+  role: Role;
+  title: string | null;
+  teams: { id: string; name: string }[];
+  /** Já tem conta noutra academia (ou como encarregado nesta): não se pede password nova. */
+  hasAccount: boolean;
+};
+
+@Injectable()
+export class InvitesService {
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly config: ConfigService,
+  ) {}
+
+  /* ------------------------------------------------------------------------ */
+  /* Do lado de quem convida                                                   */
+  /* ------------------------------------------------------------------------ */
+
+  /**
+   * Cria o convite e devolve o link — uma única vez.
+   *
+   * O token em claro não volta a existir depois desta chamada. Se quem convida
+   * perder o link, revoga e emite outro; não há "mostrar outra vez", porque isso
+   * obrigaria a guardar o token e é precisamente o que se está a evitar.
+   */
+  async create(ctx: RequestContext, dto: CreateInvite): Promise<{ id: string; link: string; expiresAt: Date }> {
+    if (!can(ctx, "staff:write")) throw new ForbiddenException("Sem permissão para convidar");
+
+    if (!STAFF_ROLES.includes(dto.role)) {
+      // Encarregados entram pelo atleta, não por aqui: um GUARDIAN sem
+      // `GuardianLink` seria uma conta que existe e não vê nada.
+      throw new BadRequestException("Este papel não se convida por aqui");
+    }
+
+    if (RANK[dto.role] > RANK[ctx.role]) {
+      throw new ForbiddenException("Não podes convidar alguém com mais acesso do que tu");
+    }
+
+    const email = normalizeEmail(dto.email);
+    if (!isEmail(email)) throw new BadRequestException("Email inválido");
+
+    const name = dto.name.trim();
+    if (name.length < 2) throw new BadRequestException("Falta o nome");
+
+    return this.prisma.runAs(ctx.academyId, async (db) => {
+      // As equipas têm de ser desta academia. A RLS já o garante; verificar aqui é
+      // o que transforma um silêncio (equipa ignorada) num erro visível.
+      const teamIds = [...new Set(dto.teamIds ?? [])];
+      if (teamIds.length) {
+        const found = await db.team.findMany({ where: { id: { in: teamIds } }, select: { id: true } });
+        if (found.length !== teamIds.length) throw new BadRequestException("Equipa desconhecida");
+      }
+
+      const existing = await db.membership.findFirst({
+        where: { role: dto.role, user: { email }, isActive: true },
+        select: { id: true },
+      });
+      if (existing) throw new ConflictException("Esta pessoa já tem este papel na academia");
+
+      const token = randomBytes(32).toString("base64url");
+      const expiresAt = new Date(Date.now() + VALID_DAYS * 24 * 60 * 60 * 1000);
+
+      try {
+        const invite = await db.staffInvite.create({
+          data: {
+            tokenHash: hash(token),
+            email,
+            name,
+            role: dto.role,
+            title: dto.title?.trim() || null,
+            department: dto.department ?? null,
+            teamIds,
+            invitedById: ctx.membershipId,
+            expiresAt,
+          },
+          select: { id: true },
+        });
+
+        return { id: invite.id, link: await this.linkFor(ctx.academyId, token), expiresAt };
+      } catch (error) {
+        // O índice parcial `StaffInvite_pending_unique`: já há um convite vivo para
+        // esta pessoa com este papel. Reemitir sem revogar deixaria dois links a
+        // funcionar, e o primeiro seria um órfão que ninguém se lembra de fechar.
+        if (isUniqueViolation(error)) {
+          throw new ConflictException("Já existe um convite por aceitar para esta pessoa");
+        }
+        throw error;
+      }
+    });
+  }
+
+  /** Convites por aceitar. Um convite emitido e esquecido é uma porta aberta que ninguém vê. */
+  async listPending(ctx: RequestContext): Promise<InviteSummary[]> {
+    if (!can(ctx, "staff:read")) throw new ForbiddenException("Sem permissão");
+
+    return this.prisma.runAs(ctx.academyId, async (db) => {
+      const rows = await db.staffInvite.findMany({
+        where: { acceptedAt: null, revokedAt: null, expiresAt: { gt: new Date() } },
+        orderBy: { createdAt: "desc" },
+        select: {
+          id: true, name: true, email: true, role: true, title: true, department: true,
+          teamIds: true, expiresAt: true, createdAt: true,
+          invitedBy: { select: { user: { select: { name: true } } } },
+        },
+      });
+
+      return rows.map((r) => ({
+        ...r,
+        invitedBy: r.invitedBy?.user.name ?? null,
+      }));
+    });
+  }
+
+  /** Fecha um convite. O link deixa de resolver — `app.resolve_invite` já o exclui. */
+  async revoke(ctx: RequestContext, id: string): Promise<void> {
+    if (!can(ctx, "staff:write")) throw new ForbiddenException("Sem permissão");
+
+    await this.prisma.runAs(ctx.academyId, async (db) => {
+      const done = await db.staffInvite.updateMany({
+        where: { id, acceptedAt: null, revokedAt: null },
+        data: { revokedAt: new Date() },
+      });
+      if (done.count === 0) throw new NotFoundException("Convite não encontrado ou já fechado");
+    });
+  }
+
+  /* ------------------------------------------------------------------------ */
+  /* Do lado de quem resgata — sem autenticação                                */
+  /* ------------------------------------------------------------------------ */
+
+  /**
+   * O que a página de resgate mostra.
+   *
+   * `app.resolve_invite` é a escotilha: dado o hash, devolve só o id da academia, e
+   * só de convites que ainda valem. Um convite gasto, revogado ou expirado não
+   * abre contexto de tenant nenhum — falha fechado, sem caminho alternativo.
+   */
+  async preview(token: string): Promise<InvitePreview> {
+    const academyId = await this.academyOf(token);
+
+    return this.prisma.runAs(academyId, async (db) => {
+      const invite = await db.staffInvite.findFirst({
+        where: { tokenHash: hash(token), acceptedAt: null, revokedAt: null, expiresAt: { gt: new Date() } },
+        select: { name: true, email: true, role: true, title: true, teamIds: true },
+      });
+      if (!invite) throw new NotFoundException("Convite inválido");
+
+      const academy = await db.academy.findFirst({
+        where: { id: academyId },
+        select: { slug: true, name: true, shortName: true, signalColor: true },
+      });
+      if (!academy) throw new NotFoundException("Academia não encontrada");
+
+      const teams = invite.teamIds.length
+        ? await db.team.findMany({ where: { id: { in: invite.teamIds } }, select: { id: true, name: true } })
+        : [];
+
+      return {
+        academy: { ...academy, mark: monogram(academy.shortName) },
+        name: invite.name,
+        email: invite.email,
+        role: invite.role,
+        title: invite.title,
+        teams,
+        hasAccount: await this.hasAccount(invite.email),
+      };
+    });
+  }
+
+  /**
+   * Resgatar.
+   *
+   * Dois caminhos, porque há dois casos reais:
+   *
+   *  - **Conta nova** — a pessoa escolhe password, e cria-se a conta no Supabase.
+   *  - **Conta que já existe** — a mãe que já é encarregada de educação e passa a
+   *    treinadora, ou quem treina em duas academias. Aqui não se pede password
+   *    nova: pede-se a que ela já tem, e é ao verificá-la contra o Supabase que se
+   *    prova que é mesmo ela. Sem essa prova, quem apanhasse o link ganhava uma
+   *    membership numa conta que não controla.
+   */
+  async accept(token: string, password: string, phone?: string): Promise<{ slug: string }> {
+    if (!password || password.length < 8) {
+      throw new BadRequestException("A palavra-passe tem de ter pelo menos 8 caracteres");
+    }
+
+    const academyId = await this.academyOf(token);
+    const tokenHash = hash(token);
+
+    const invite = await this.prisma.runAs(academyId, async (db) =>
+      db.staffInvite.findFirst({
+        where: { tokenHash, acceptedAt: null, revokedAt: null, expiresAt: { gt: new Date() } },
+        select: { id: true, email: true, name: true, role: true, title: true, department: true, teamIds: true },
+      }),
+    );
+    if (!invite) throw new NotFoundException("Convite inválido");
+
+    // A conta no Supabase, fora de qualquer transação: é um sistema externo e não
+    // participa no rollback. Falhar aqui deixa o convite intacto para nova tentativa.
+    const authId = (await this.findAuthUser(invite.email))
+      ? await this.signInExisting(invite.email, password)
+      : await this.createAuthUser(invite.email, password, invite.name);
+
+    return this.prisma.runAs(academyId, async (db) => {
+      // Uso único, e a corrida resolve-se aqui: quem chegar em segundo encontra
+      // `count === 0` porque o `where` já não bate certo.
+      const claimed = await db.staffInvite.updateMany({
+        where: { id: invite.id, acceptedAt: null, revokedAt: null },
+        data: { acceptedAt: new Date() },
+      });
+      if (claimed.count === 0) throw new ConflictException("Este convite já foi usado");
+
+      const user = await db.user.upsert({
+        where: { authId },
+        update: { email: invite.email, name: invite.name, ...(phone ? { phone } : {}) },
+        create: { authId, email: invite.email, name: invite.name, phone: phone ?? null },
+        select: { id: true },
+      });
+
+      const membership = await db.membership.upsert({
+        where: { academyId_userId_role: { academyId, userId: user.id, role: invite.role } },
+        update: { isActive: true, title: invite.title, department: invite.department },
+        create: {
+          academyId,
+          userId: user.id,
+          role: invite.role,
+          title: invite.title,
+          department: invite.department,
+        },
+        select: { id: true },
+      });
+
+      // As equipas do convite — decididas por quem convidou, nunca aqui.
+      for (const teamId of invite.teamIds) {
+        await db.teamStaff.upsert({
+          where: { teamId_membershipId: { teamId, membershipId: membership.id } },
+          update: {},
+          create: { teamId, membershipId: membership.id, title: invite.title ?? "Treinador" },
+        });
+      }
+
+      const academy = await db.academy.findFirst({ where: { id: academyId }, select: { slug: true } });
+      return { slug: academy?.slug ?? "" };
+    });
+  }
+
+  /* ------------------------------------------------------------------------ */
+  /* Peças internas                                                            */
+  /* ------------------------------------------------------------------------ */
+
+  private async academyOf(token: string): Promise<string> {
+    if (!token || token.length < 20) throw new NotFoundException("Convite inválido");
+
+    const rows = await this.prisma.$queryRaw<{ academy: string | null }[]>`
+      SELECT app.resolve_invite(${hash(token)}) AS academy
+    `;
+    const academyId = rows[0]?.academy;
+    // A mesma resposta para "não existe", "expirou", "já foi usado" e "foi
+    // revogado". Distingui-las só ajudaria quem estivesse a sondar tokens.
+    if (!academyId) throw new NotFoundException("Convite inválido ou expirado");
+    return academyId;
+  }
+
+  private async linkFor(academyId: string, token: string): Promise<string> {
+    const slug = await this.prisma.runAs(academyId, async (db) => {
+      const a = await db.academy.findFirst({ where: { id: academyId }, select: { slug: true } });
+      return a?.slug ?? "";
+    });
+
+    // Em produção o convite vive no domínio do próprio clube — quem o recebe vê o
+    // nome da academia no link, e não um endereço genérico que parece phishing.
+    const base = this.config.get<string>("PUBLIC_BASE_URL");
+    if (base) return `${base.replace(/\/$/, "").replace("{slug}", slug)}/convite/${token}`;
+    return `http://localhost:3000/l/${slug}/convite/${token}`;
+  }
+
+  /** Já existe conta com este email? O `User` é global de propósito — não tem tenant. */
+  private async hasAccount(email: string): Promise<boolean> {
+    const user = await this.prisma.user.findFirst({ where: { email }, select: { id: true } });
+    return Boolean(user);
+  }
+
+  private async findAuthUser(email: string): Promise<string | null> {
+    const user = await this.prisma.user.findFirst({ where: { email }, select: { authId: true } });
+    return user?.authId ?? null;
+  }
+
+  /**
+   * Verifica a password de quem já tem conta, trocando-a por um token no Supabase.
+   *
+   * É o Supabase que valida — nós nunca vemos a password guardada, nem a
+   * comparamos. Falhar aqui é 403 e não 404: o convite é válido, quem o está a
+   * resgatar é que não provou ser a pessoa.
+   */
+  private async signInExisting(email: string, password: string): Promise<string> {
+    const url = this.config.getOrThrow<string>("SUPABASE_URL").replace(/\/$/, "");
+    const anon = this.config.getOrThrow<string>("SUPABASE_ANON_KEY");
+
+    const res = await fetch(`${url}/auth/v1/token?grant_type=password`, {
+      method: "POST",
+      headers: { apikey: anon, "Content-Type": "application/json" },
+      body: JSON.stringify({ email, password }),
+    });
+    if (!res.ok) throw new ForbiddenException("Palavra-passe incorrecta");
+
+    const body = (await res.json()) as { user?: { id?: string } };
+    const id = body.user?.id;
+    if (!id) throw new ForbiddenException("Não foi possível confirmar a conta");
+    return id;
+  }
+
+  /** Cria a conta. A password vai directa para o Supabase e nunca é guardada por nós. */
+  private async createAuthUser(email: string, password: string, name: string): Promise<string> {
+    const url = this.config.getOrThrow<string>("SUPABASE_URL").replace(/\/$/, "");
+    const key = this.config.getOrThrow<string>("SUPABASE_SERVICE_ROLE_KEY");
+
+    const res = await fetch(`${url}/auth/v1/admin/users`, {
+      method: "POST",
+      headers: { apikey: key, Authorization: `Bearer ${key}`, "Content-Type": "application/json" },
+      body: JSON.stringify({
+        email,
+        password,
+        // Quem chegou aqui provou o email ao abrir um link que só lhe foi enviado a
+        // ele. Um segundo email de confirmação seria cerimónia sem ganho.
+        email_confirm: true,
+        user_metadata: { name },
+      }),
+    });
+
+    if (!res.ok) throw new BadRequestException("Não foi possível criar a conta");
+    const body = (await res.json()) as { id?: string };
+    if (!body.id) throw new BadRequestException("O Supabase não devolveu a conta criada");
+    return body.id;
+  }
+}
+
+/* ---------------------------------------------------------------------------- */
+
+function hash(token: string): string {
+  return createHash("sha256").update(token).digest("hex");
+}
+
+function normalizeEmail(email: string): string {
+  return email.trim().toLowerCase();
+}
+
+function isEmail(value: string): boolean {
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value);
+}
+
+/** As duas letras do badge — as mesmas que a consola e a landing usam. */
+function monogram(name: string): string {
+  const parts = name.trim().split(/\s+/).filter(Boolean);
+  if (parts.length === 0) return "??";
+  if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase();
+  return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
+}
+
+function isUniqueViolation(error: unknown): boolean {
+  return typeof error === "object" && error !== null && (error as { code?: string }).code === "P2002";
+}
+
+/** Comparação de tokens em tempo constante, para quem precisar dela fora daqui. */
+export function tokensMatch(a: string, b: string): boolean {
+  const ba = Buffer.from(a);
+  const bb = Buffer.from(b);
+  return ba.length === bb.length && timingSafeEqual(ba, bb);
+}

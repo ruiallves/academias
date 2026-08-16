@@ -1,0 +1,43 @@
+@import "tailwindcss";
+@import "@academia/ui/theme.css";
+
+@layer components {
+  /* Um controlo, uma altura. Botões, selects e campos partilham a mesma métrica
+     para que qualquer barra de ferramentas alinhe sem ajustes pontuais. */
+  .ctl,
+  .ctl-ghost,
+  .ctl-outline,
+  .ctl-primary {
+    @apply inline-flex h-8 items-center gap-1.5 rounded-[var(--radius-control)] px-2.5 text-meta font-medium transition-colors duration-[120ms];
+  }
+
+  .ctl-ghost {
+    @apply text-ink-2 hover:bg-sunken hover:text-ink;
+  }
+
+  .ctl-outline {
+    @apply border border-line bg-surface text-ink-2 hover:border-line-strong hover:text-ink;
+  }
+
+  .ctl-outline:disabled {
+    @apply cursor-not-allowed text-ink-4 hover:border-line hover:text-ink-4;
+  }
+
+  .ctl-primary {
+    @apply bg-ink px-3 text-surface hover:bg-ink-2;
+  }
+
+  .ctl-primary:disabled {
+    @apply cursor-not-allowed bg-ink-4 hover:bg-ink-4;
+  }
+
+  .panel {
+    @apply rounded-[var(--radius-panel)] border border-line bg-surface;
+  }
+
+  /* Cabeçalho de painel: título à esquerda, controlos à direita, hairline por
+     baixo. Repetido em todos os painéis — é o que dá ritmo à página. */
+  .panel-head {
+    @apply flex items-center justify-between gap-3 border-b border-line px-5 py-3.5;
+  }
+}

@@ -1,0 +1,41 @@
+@import "tailwindcss";
+@import "@academia/ui/theme.css";
+
+/* ---------------------------------------------------------------------------
+   A app da família parte dos mesmos tokens da consola, mas não da mesma métrica.
+   Isto não é o dashboard encolhido: alvos maiores, tipografia maior, mais ar, e
+   uma barra de separadores fixa em baixo com o safe area do iPhone respeitado.
+   --------------------------------------------------------------------------- */
+
+@theme {
+  /* Um degrau acima da consola — a app é lida de pé, com uma mão, ao sol. */
+  --text-body: 0.9375rem;
+  --text-meta: 0.8125rem;
+}
+
+@layer base {
+  body {
+    /* Impede o "bounce" do iOS por baixo da barra de separadores. */
+    overscroll-behavior-y: none;
+  }
+}
+
+@layer components {
+  .card {
+    @apply rounded-[14px] border border-line bg-surface;
+  }
+
+  .tap,
+  .tap-primary,
+  .tap-quiet {
+    @apply inline-flex h-11 items-center justify-center gap-2 rounded-[11px] px-4 text-body font-semibold transition-[background-color,transform] duration-[120ms] active:scale-[0.98];
+  }
+
+  .tap-primary {
+    @apply bg-ink text-surface;
+  }
+
+  .tap-quiet {
+    @apply border border-line bg-surface text-ink;
+  }
+}

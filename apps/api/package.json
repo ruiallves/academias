@@ -1,0 +1,39 @@
+{
+  "name": "@academia/api",
+  "private": true,
+  "version": "0.1.0",
+  "scripts": {
+    "start:dev": "nest start --watch",
+    "build": "nest build",
+    "typecheck": "tsc --noEmit",
+    "prisma:generate": "prisma generate",
+    "prisma:migrate": "prisma migrate dev",
+    "test:rls": "node scripts/test-rls.mjs",
+    "migrate:deploy": "prisma migrate deploy",
+    "verify:supabase": "node scripts/verify-supabase.mjs",
+    "test:auth": "node scripts/test-auth.mjs",
+    "seed": "node prisma/seed.mjs"
+  },
+  "dependencies": {
+    "@nestjs/common": "^11.0.0",
+    "@nestjs/config": "^4.0.0",
+    "@nestjs/core": "^11.0.0",
+    "@nestjs/platform-express": "^11.0.0",
+    "@prisma/client": "^6.2.0",
+    "class-transformer": "^0.5.1",
+    "class-validator": "^0.14.1",
+    "jose": "^5.9.6",
+    "pg": "^8.23.0",
+    "reflect-metadata": "^0.2.2",
+    "rxjs": "^7.8.1",
+    "web-push": "^3.6.7"
+  },
+  "devDependencies": {
+    "@electric-sql/pglite": "^0.5.5",
+    "@nestjs/cli": "^11.0.0",
+    "@types/express": "^5.0.0",
+    "@types/node": "^22.10.0",
+    "prisma": "^6.2.0",
+    "typescript": "^5.7.2"
+  }
+}

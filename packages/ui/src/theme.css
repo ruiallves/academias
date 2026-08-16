@@ -1,0 +1,146 @@
+/* ---------------------------------------------------------------------------
+   Academia — tokens
+   Um sítio só. Consumido por apps/console e apps/family.
+   Regra: `signal` identifica (tenant, selecção). `ok/warn/risk` avisam (estado).
+   Nunca se cruzam.
+   --------------------------------------------------------------------------- */
+
+@theme {
+  /* --- Neutros quentes ---------------------------------------------------- */
+  --color-canvas: #f6f5f2;
+  --color-surface: #ffffff;
+  --color-sunken: #efede8;
+  --color-line: #e5e2dc;
+  --color-line-strong: #d3cfc6;
+
+  --color-ink: #1a1917;
+  --color-ink-2: #524f48;
+  --color-ink-3: #8a867c;
+  --color-ink-4: #ada89d;
+
+  /* --- Sinal do tenant (sobreposto em runtime) ---------------------------- */
+  --color-signal: #0f6b62;
+  --color-signal-ink: #0a4c45;
+  --color-signal-soft: #e7f0ee;
+
+  /* --- Semânticas — fixas, nunca white-label ------------------------------ */
+  --color-ok: #1f7a45;
+  --color-ok-soft: #e6f2e9;
+  --color-warn: #9a5b08;
+  --color-warn-soft: #faefdd;
+  --color-risk: #a82a20;
+  --color-risk-soft: #fae9e7;
+
+  /* --- Tipografia --------------------------------------------------------- */
+  --font-sans: "Instrument Sans", ui-sans-serif, system-ui, -apple-system,
+    "Segoe UI", sans-serif;
+  --font-mono: "Geist Mono", ui-monospace, "SF Mono", "Cascadia Mono", monospace;
+
+  --text-metric: 1.875rem;
+  --text-metric--line-height: 1.1;
+  --text-metric--letter-spacing: -0.02em;
+  --text-metric--font-weight: 600;
+
+  --text-page: 1.375rem;
+  --text-page--line-height: 1.2;
+  --text-page--letter-spacing: -0.015em;
+  --text-page--font-weight: 600;
+
+  --text-panel: 0.875rem;
+  --text-panel--line-height: 1.3;
+  --text-panel--letter-spacing: -0.005em;
+  --text-panel--font-weight: 600;
+
+  --text-body: 0.8438rem;
+  --text-body--line-height: 1.45;
+
+  --text-meta: 0.75rem;
+  --text-meta--line-height: 1.4;
+
+  --text-group: 0.6875rem;
+  --text-group--line-height: 1;
+  --text-group--letter-spacing: 0.08em;
+  --text-group--font-weight: 600;
+
+  /* --- Forma -------------------------------------------------------------- */
+  --radius-control: 8px;
+  --radius-panel: 10px;
+
+  /* --- Elevação — só para o que flutua ------------------------------------ */
+  --shadow-pop: 0 1px 2px rgb(26 25 23 / 0.06), 0 8px 24px -6px rgb(26 25 23 / 0.14);
+
+  /* --- Movimento ---------------------------------------------------------- */
+  --ease-out: cubic-bezier(0.2, 0, 0, 1);
+}
+
+/* ---------------------------------------------------------------------------
+   Base
+   --------------------------------------------------------------------------- */
+
+@layer base {
+  html {
+    -webkit-text-size-adjust: 100%;
+  }
+
+  body {
+    background-color: var(--color-canvas);
+    color: var(--color-ink-2);
+    font-family: var(--font-sans);
+    font-size: var(--text-body);
+    line-height: var(--text-body--line-height);
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
+  }
+
+  /* Dados nunca dançam: colunas de números com largura fixa por glifo. */
+  table,
+  [data-numeric],
+  .tabular {
+    font-variant-numeric: tabular-nums;
+  }
+
+  h1,
+  h2,
+  h3,
+  h4 {
+    color: var(--color-ink);
+    font-weight: 600;
+  }
+
+  /* Desde a v4, o Tailwind segue o cursor nativo do browser em vez de aplicar
+     `pointer` a todos os botões — correcto para um `<button>` de formulário, errado
+     para um botão que serve de filtro, separador ou linha clicável, que é a maior
+     parte dos nossos. Repor aqui, uma vez, evita `cursor-pointer` espalhado por
+     cada componente e apanha os que ainda vierem a existir. */
+  button:not(:disabled),
+  [role="button"]:not([aria-disabled="true"]),
+  summary {
+    cursor: pointer;
+  }
+
+  :focus-visible {
+    outline: 2px solid var(--color-signal);
+    outline-offset: 2px;
+    border-radius: 4px;
+  }
+
+  ::selection {
+    background: var(--color-signal-soft);
+    color: var(--color-signal-ink);
+  }
+
+  /* Scrollbar discreta — a sidebar e as tabelas não precisam de moldura. */
+  * {
+    scrollbar-width: thin;
+    scrollbar-color: var(--color-line-strong) transparent;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+  }
+}

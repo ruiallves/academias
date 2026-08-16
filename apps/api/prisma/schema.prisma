@@ -1,0 +1,848 @@
+// Academia — esquema de dados
+//
+// Três princípios atravessam este ficheiro:
+//
+//  1. **Multi-tenant a sério.** Tudo o que é de domínio tem `academyId`, e o
+//     isolamento é duplo: filtro injectado no cliente Prisma + RLS no Postgres.
+//  2. **Multi-desporto.** Não há uma única palavra de futebol aqui. Posições e
+//     competências são configuração (`Sport.positions`, `Sport.skills`), não enums.
+//  3. **O pagamento é do servidor.** `Payment` só muda de estado a partir de um
+//     `WebhookEvent` verificado. Nada no frontend consegue marcar algo como pago.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+/* -------------------------------------------------------------------------- */
+/* Tenant                                                                      */
+/* -------------------------------------------------------------------------- */
+
+model Academy {
+  id        String   @id @default(cuid())
+  /// Subdomínio da PWA: {slug}.academia.pt
+  slug      String   @unique
+  name      String
+  shortName String
+  city      String?
+
+  // White-label. `signalColor` é a única cor que o tenant controla — as cores
+  // semânticas (pago/vencido) são fixas em todo o produto.
+  logoUrl     String?
+  appIconUrl  String?
+  signalColor String  @default("#0f6b62")
+
+  /// Dia do mês em que as mensalidades vencem.
+  billingDueDay Int @default(8)
+
+  sports        Sport[]
+  seasons       Season[]
+  memberships   Membership[]
+  athletes      Athlete[]
+  teams         Team[]
+  sessions      TrainingSession[]
+  plans         SubscriptionPlan[]
+  charges       Charge[]
+  announcements Announcement[]
+  notifications Notification[]
+  evaluations   Evaluation[]
+  clinical      ClinicalEntry[]
+  matches       Match[]
+  invites       StaffInvite[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+/// Uma modalidade da academia. Natação tem `positions` vazio — e a UI adapta-se
+/// por ausência, sem casos especiais no código.
+model Sport {
+  id        String   @id @default(cuid())
+  academyId String
+  academy   Academy  @relation(fields: [academyId], references: [id], onDelete: Cascade)
+  name      String
+  positions String[] @default([])
+  /// Competências avaliadas nesta modalidade, na ordem em que aparecem.
+  skills    String[] @default([])
+  /// "Pé dominante" no futebol, "Mão dominante" no basquetebol, nulo na natação.
+  dominantSideLabel String?
+  /// Duração normal de um jogo, em minutos. Nulo em desportos individuais.
+  matchMinutes      Int?
+
+  teams Team[]
+
+  @@unique([academyId, name])
+  @@index([academyId])
+}
+
+model Season {
+  id        String   @id @default(cuid())
+  academyId String
+  academy   Academy  @relation(fields: [academyId], references: [id], onDelete: Cascade)
+  /// "2026/27"
+  label     String
+  startsOn  DateTime @db.Date
+  endsOn    DateTime @db.Date
+  isCurrent Boolean  @default(false)
+
+  teams Team[]
+
+  @@unique([academyId, label])
+  @@index([academyId])
+}
+
+/* -------------------------------------------------------------------------- */
+/* Pessoas e permissões                                                        */
+/* -------------------------------------------------------------------------- */
+
+/// Espelho local do utilizador do Supabase Auth. A password nunca passa por aqui.
+model User {
+  id       String  @id @default(cuid())
+  /// `auth.users.id` do Supabase.
+  authId   String  @unique
+  email    String  @unique
+  name     String
+  phone    String?
+  locale   String  @default("pt-PT")
+
+  memberships   Membership[]
+  notifications Notification[]
+  pushSubs      PushSubscription[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+enum Role {
+  OWNER
+  DIRECTOR
+  COORDINATOR
+  COACH
+  STAFF
+  /// Departamento clínico: médico, fisioterapeuta, nutricionista, psicólogo.
+  MEDICAL
+  GUARDIAN
+  ATHLETE
+}
+
+/// Áreas da academia. Agrupa o staff; não decide permissões — isso é o `Role`.
+enum StaffDepartment {
+  DIRECTION
+  TECHNICAL
+  CLINICAL
+  OPERATIONS
+}
+
+/// A ligação entre uma pessoa e uma academia. Um pai com filhos em duas academias
+/// tem duas Memberships, e nunca vê uma a partir da outra.
+model Membership {
+  id        String  @id @default(cuid())
+  academyId String
+  academy   Academy @relation(fields: [academyId], references: [id], onDelete: Cascade)
+  userId    String
+  user      User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  role      Role
+
+  /// O **cargo** — "Nutricionista", "Diretor desportivo", "Roupeiro". Texto livre
+  /// de propósito: `role` decide o que a pessoa pode fazer, `title` diz o que ela
+  /// faz. Um enum aqui obrigaria a uma migração por cada profissão nova.
+  title      String?
+  department StaffDepartment?
+
+  /// Concessões pontuais por cima do papel — p. ex. dar `billing:read` a um
+  /// treinador sem o promover a coordenador.
+  grants String[] @default([])
+
+  /// Âmbito. É o que distingue um treinador de um diretor com os mesmos verbos:
+  /// { "teamIds": [...] } para COACH, { "athleteIds": [...] } para GUARDIAN.
+  /// Preenchido pelo serviço a partir de TeamStaff / GuardianLink.
+  scope Json?
+
+  isActive Boolean @default(true)
+
+  coachOf        TeamStaff[]
+  guardianOf     GuardianLink[]
+  ledSessions    TrainingSession[] @relation("SessionCoach")
+  ledMatches     Match[]           @relation("MatchCoach")
+  clinicalWrites ClinicalEntry[]   @relation("ClinicalAuthor")
+  evaluations    Evaluation[]
+  announcements  Announcement[]
+  invitesSent    StaffInvite[]     @relation("InviteAuthor")
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([academyId, userId, role])
+  @@index([academyId])
+  @@index([userId])
+}
+
+/// Um convite para alguém passar a fazer parte da academia.
+///
+/// ## Porque é que as equipas estão aqui
+///
+/// O âmbito de um treinador é derivado de `TeamStaff` a cada pedido
+/// (`AuthService.scopeFor`) — ou seja, as equipas *são* o acesso aos dados dos
+/// atletas, incluindo o boletim clínico. Por isso quem convida é que as escolhe, e
+/// ficam gravadas no convite. Deixar quem resgata escolher seria deixar quem
+/// apanhasse o link decidir o que pode ver, e estes links viajam por WhatsApp.
+///
+/// ## Porque é que o token não está aqui
+///
+/// Guarda-se o SHA-256, nunca o token. O token em claro existe uma só vez, no
+/// link que quem convida copia; se a base de dados vazar, nenhum convite é
+/// resgatável. É o mesmo raciocínio de nunca guardar passwords.
+model StaffInvite {
+  id        String  @id @default(cuid())
+  academyId String
+  academy   Academy @relation(fields: [academyId], references: [id], onDelete: Cascade)
+
+  /// SHA-256 do token que vai no link, em hexadecimal.
+  tokenHash String @unique
+
+  /// O convite está preso a este email — é o que o torna um convite e não uma
+  /// porta aberta. Quem o resgata não o pode trocar.
+  email String
+  name  String
+
+  role       Role
+  title      String?
+  department StaffDepartment?
+
+  /// Equipas a atribuir no resgate. Vazio significa vazio: a pessoa entra sem
+  /// âmbito e não vê atletas nenhuns até a direção lhe atribuir equipas.
+  teamIds String[] @default([])
+
+  /// Quem convidou. Um convite sem autor é uma porta que ninguém assume.
+  invitedById String?
+  invitedBy   Membership? @relation("InviteAuthor", fields: [invitedById], references: [id], onDelete: SetNull)
+
+  expiresAt  DateTime
+  /// Uso único: preenchido no resgate, e a partir daí o link não vale mais nada.
+  acceptedAt DateTime?
+  revokedAt  DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([academyId])
+  @@index([academyId, email])
+}
+
+/* -------------------------------------------------------------------------- */
+/* Atletas e equipas                                                           */
+/* -------------------------------------------------------------------------- */
+
+enum DominantSide {
+  RIGHT
+  LEFT
+  BOTH
+}
+
+enum AthleteStatus {
+  ACTIVE
+  PAUSED
+  LEFT
+}
+
+model Athlete {
+  id        String   @id @default(cuid())
+  academyId String
+  academy   Academy  @relation(fields: [academyId], references: [id], onDelete: Cascade)
+
+  name      String
+  birthdate DateTime @db.Date
+  photoUrl  String?
+  status    AthleteStatus @default(ACTIVE)
+  joinedAt  DateTime      @default(now())
+
+  heightCm Int?
+  weightKg Decimal? @db.Decimal(4, 1)
+  /// Neutro de propósito: serve o pé no futebol e a mão no basquetebol. O rótulo
+  /// vem de `Sport.dominantSideLabel`.
+  dominantSide DominantSide?
+  squadNumber  Int?
+
+  /// Ficha médica. Um atleta com a validade expirada não pode competir — é uma
+  /// das origens da lista "Precisa de atenção".
+  medicalValidUntil DateTime? @db.Date
+
+  guardians   GuardianLink[]
+  teams       TeamMembership[]
+  attendance  AttendanceRecord[]
+  enrollments Enrollment[]
+  charges     Charge[]
+  evaluations Evaluation[]
+  clinical    ClinicalEntry[]
+  callUps     MatchCallUp[]
+  appearances MatchAppearance[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([academyId])
+  @@index([academyId, status])
+}
+
+model GuardianLink {
+  id           String     @id @default(cuid())
+  athleteId    String
+  athlete      Athlete    @relation(fields: [athleteId], references: [id], onDelete: Cascade)
+  membershipId String
+  membership   Membership @relation(fields: [membershipId], references: [id], onDelete: Cascade)
+  /// "Mãe", "Pai", "Encarregado" — texto livre porque as famílias não cabem num enum.
+  relation     String
+  /// Quem recebe as cobranças. Numa família só um paga.
+  isPayer      Boolean    @default(true)
+
+  @@unique([athleteId, membershipId])
+  @@index([membershipId])
+}
+
+model Team {
+  id        String  @id @default(cuid())
+  academyId String
+  academy   Academy @relation(fields: [academyId], references: [id], onDelete: Cascade)
+  sportId   String
+  sport     Sport   @relation(fields: [sportId], references: [id])
+  seasonId  String
+  season    Season  @relation(fields: [seasonId], references: [id])
+
+  name     String
+  /// "Sub-11", "10–14 anos" — texto, porque cada desporto agrupa à sua maneira.
+  ageGroup String
+
+  /// Horário regular: [{ weekday: 2, start: "17:30", end: "19:00", venue: "Campo 1" }].
+  /// As sessões são geradas a partir daqui, mas cada uma vive por si depois de criada.
+  schedule Json @default("[]")
+
+  athletes TeamMembership[]
+  staff    TeamStaff[]
+  sessions TrainingSession[]
+  matches  Match[]
+  plans    SubscriptionPlan[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([academyId])
+  @@index([academyId, seasonId])
+}
+
+model TeamMembership {
+  id        String   @id @default(cuid())
+  teamId    String
+  team      Team     @relation(fields: [teamId], references: [id], onDelete: Cascade)
+  athleteId String
+  athlete   Athlete  @relation(fields: [athleteId], references: [id], onDelete: Cascade)
+  /// Valor de `Sport.positions`. Nulo em desportos sem posições.
+  position  String?
+  joinedAt  DateTime @default(now())
+  leftAt    DateTime?
+
+  @@unique([teamId, athleteId])
+  @@index([athleteId])
+}
+
+model TeamStaff {
+  id           String     @id @default(cuid())
+  teamId       String
+  team         Team       @relation(fields: [teamId], references: [id], onDelete: Cascade)
+  membershipId String
+  membership   Membership @relation(fields: [membershipId], references: [id], onDelete: Cascade)
+  /// "Treinador principal", "Treinador adjunto", "Coordenador".
+  title        String
+
+  @@unique([teamId, membershipId])
+  @@index([membershipId])
+}
+
+/* -------------------------------------------------------------------------- */
+/* Treinos e presenças                                                         */
+/* -------------------------------------------------------------------------- */
+
+enum SessionStatus {
+  SCHEDULED
+  DONE
+  CANCELLED
+}
+
+model TrainingSession {
+  id        String  @id @default(cuid())
+  academyId String
+  academy   Academy @relation(fields: [academyId], references: [id], onDelete: Cascade)
+  teamId    String
+  team      Team    @relation(fields: [teamId], references: [id], onDelete: Cascade)
+
+  startsAt DateTime
+  endsAt   DateTime
+  venue    String
+
+  /// Nulo é um problema visível, não um campo em branco: um treino agendado sem
+  /// treinador aparece em "Precisa de atenção".
+  coachId String?
+  coach   Membership? @relation("SessionCoach", fields: [coachId], references: [id])
+
+  status SessionStatus @default(SCHEDULED)
+  notes  String?
+
+  /// Quando as presenças foram fechadas. Nulo = por registar.
+  attendanceClosedAt DateTime?
+  attendance         AttendanceRecord[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([academyId, startsAt])
+  @@index([teamId, startsAt])
+}
+
+enum AttendanceStatus {
+  PRESENT
+  ABSENT
+  JUSTIFIED
+  LATE
+}
+
+model AttendanceRecord {
+  id        String           @id @default(cuid())
+  sessionId String
+  session   TrainingSession  @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  athleteId String
+  athlete   Athlete          @relation(fields: [athleteId], references: [id], onDelete: Cascade)
+  status    AttendanceStatus
+  note      String?
+
+  recordedAt DateTime @default(now())
+
+  @@unique([sessionId, athleteId])
+  @@index([athleteId])
+}
+
+/* -------------------------------------------------------------------------- */
+/* Mensalidades e pagamentos                                                   */
+/* -------------------------------------------------------------------------- */
+
+model SubscriptionPlan {
+  id        String  @id @default(cuid())
+  academyId String
+  academy   Academy @relation(fields: [academyId], references: [id], onDelete: Cascade)
+  /// Nulo = plano da academia inteira; preenchido = plano de um escalão.
+  teamId    String?
+  team      Team?   @relation(fields: [teamId], references: [id])
+
+  name        String
+  amountCents Int
+  /// Meses em que é cobrado (1–12). Muitas academias não cobram agosto.
+  months      Int[]  @default([1, 2, 3, 4, 5, 6, 7, 9, 10, 11, 12])
+  isActive    Boolean @default(true)
+
+  enrollments Enrollment[]
+
+  @@index([academyId])
+}
+
+model Enrollment {
+  id        String           @id @default(cuid())
+  athleteId String
+  athlete   Athlete          @relation(fields: [athleteId], references: [id], onDelete: Cascade)
+  planId    String
+  plan      SubscriptionPlan @relation(fields: [planId], references: [id])
+  /// Desconto de irmão, bolsa, acordo pontual — em cêntimos, subtraído ao plano.
+  discountCents Int      @default(0)
+  startsOn      DateTime @db.Date
+  endsOn        DateTime? @db.Date
+
+  charges Charge[]
+
+  @@index([athleteId])
+}
+
+enum ChargeStatus {
+  OPEN
+  SETTLED
+  VOID
+}
+
+/// Uma mensalidade devida. É criada pelo servidor no início do período, e o seu
+/// estado deriva dos Payments — nunca é escrito directamente por um pedido do cliente.
+model Charge {
+  id        String  @id @default(cuid())
+  academyId String
+  academy   Academy @relation(fields: [academyId], references: [id], onDelete: Cascade)
+  athleteId String
+  athlete   Athlete @relation(fields: [athleteId], references: [id], onDelete: Cascade)
+  enrollmentId String?
+  enrollment   Enrollment? @relation(fields: [enrollmentId], references: [id])
+
+  /// "2026-08"
+  period      String
+  amountCents Int
+  dueDate     DateTime     @db.Date
+  status      ChargeStatus @default(OPEN)
+  settledAt   DateTime?
+
+  payments Payment[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([athleteId, period])
+  @@index([academyId, period])
+  @@index([academyId, status])
+}
+
+enum PaymentStatus {
+  /// Criado na euPago, à espera do pai.
+  PENDING
+  /// O pai pagou; à espera da confirmação do webhook. É este o estado que a app
+  /// mostra como "a confirmar" — honesto sobre o que ainda não se sabe.
+  PROCESSING
+  PAID
+  FAILED
+  EXPIRED
+  REFUNDED
+}
+
+enum PaymentMethod {
+  MBWAY
+  MULTIBANCO
+  CARD
+  TRANSFER
+  CASH
+}
+
+model Payment {
+  id       String  @id @default(cuid())
+  chargeId String
+  charge   Charge  @relation(fields: [chargeId], references: [id], onDelete: Cascade)
+
+  amountCents Int
+  method      PaymentMethod
+  status      PaymentStatus @default(PENDING)
+
+  provider String @default("eupago")
+  /// Identificador da euPago. Chave da idempotência do webhook.
+  providerRef String?
+  /// Entidade + referência Multibanco, quando aplicável.
+  entity    String?
+  reference String?
+
+  paidAt    DateTime?
+  expiresAt DateTime?
+  /// Resposta em bruto do provedor, para auditoria e para reconciliar disputas.
+  rawPayload Json?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([provider, providerRef])
+  @@index([chargeId])
+  @@index([status])
+}
+
+/// Todos os eventos do provedor entram aqui em bruto **antes** de serem
+/// processados. Reprocessar um evento não pode cobrar nem notificar duas vezes:
+/// a unicidade de (provider, eventId) é a garantia.
+model WebhookEvent {
+  id         String   @id @default(cuid())
+  provider   String
+  eventId    String
+  signature  String?
+  payload    Json
+  receivedAt DateTime @default(now())
+
+  processedAt DateTime?
+  error       String?
+
+  @@unique([provider, eventId])
+  @@index([processedAt])
+}
+
+/* -------------------------------------------------------------------------- */
+/* Comunicação e notificações                                                  */
+/* -------------------------------------------------------------------------- */
+
+model Announcement {
+  id        String     @id @default(cuid())
+  academyId String
+  academy   Academy    @relation(fields: [academyId], references: [id], onDelete: Cascade)
+  authorId  String
+  author    Membership @relation(fields: [authorId], references: [id])
+
+  title String
+  body  String
+  /// { "teamIds": [...] } ou { "all": true }.
+  audience Json
+
+  publishedAt DateTime?
+  createdAt   DateTime  @default(now())
+
+  @@index([academyId, publishedAt])
+}
+
+enum NotificationType {
+  PAYMENT_RECEIVED
+  PAYMENT_PENDING
+  PAYMENT_FAILED
+  PAYMENT_DUE
+  SESSION_CHANGED
+  SESSION_CANCELLED
+  ANNOUNCEMENT_PUBLISHED
+  EVALUATION_PUBLISHED
+}
+
+/// Uma notificação é uma linha na base de dados; os canais são adaptadores por
+/// cima dela. Acrescentar SMS mais tarde não toca no código de domínio.
+model Notification {
+  id        String  @id @default(cuid())
+  academyId String
+  academy   Academy @relation(fields: [academyId], references: [id], onDelete: Cascade)
+  userId    String
+  user      User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  type    NotificationType
+  title   String
+  body    String
+  /// Para onde leva o toque na notificação: { "route": "/pagamentos" }.
+  payload Json?
+
+  /// ["inapp", "push", "email"] — o que se tentou entregar.
+  channels String[] @default(["inapp"])
+
+  readAt      DateTime?
+  deliveredAt DateTime?
+  createdAt   DateTime  @default(now())
+
+  @@index([userId, readAt])
+  @@index([academyId, createdAt])
+}
+
+/* -------------------------------------------------------------------------- */
+/* Departamento clínico                                                        */
+/* -------------------------------------------------------------------------- */
+
+enum ClinicalKind {
+  INJURY
+  EXAM
+  PHYSIO
+  NUTRITION
+  PSYCHOLOGY
+  NOTE
+}
+
+/// O que a entrada faz à disponibilidade do atleta.
+enum ClinicalImpact {
+  /// Acompanhamento que não afasta ninguém — a maioria das consultas de nutrição.
+  NONE
+  /// Trabalho condicionado: treina, não compete.
+  LIMITED
+  /// Baixa: não treina nem joga.
+  OUT
+}
+
+/// `DONE` regista o que aconteceu; `SCHEDULED` marca o que vai acontecer. A mesma
+/// entidade em dois momentos — o agendamento de hoje é o registo de amanhã, e
+/// separá-los em duas tabelas obrigaria a copiar linhas de uma para a outra.
+enum ClinicalStatus {
+  DONE
+  SCHEDULED
+  CANCELLED
+}
+
+/// Boletim clínico: lesões, exames, fisioterapia, nutrição e psicologia.
+///
+/// A **disponibilidade do atleta não é um campo** — é derivada daqui. Enquanto
+/// existir uma entrada com `impact != NONE` e `clearedOn` nulo, o atleta está
+/// afectado, e todo o produto lê isso do mesmo sítio. Um `status: injured`
+/// guardado à parte dessincroniza-se na primeira alta esquecida.
+model ClinicalEntry {
+  id        String  @id @default(cuid())
+  academyId String
+  academy   Academy @relation(fields: [academyId], references: [id], onDelete: Cascade)
+  athleteId String
+  athlete   Athlete @relation(fields: [athleteId], references: [id], onDelete: Cascade)
+
+  /// Quem registou. O boletim tem de ser rastreável a quem o pode escrever.
+  authorId String?
+  author   Membership? @relation("ClinicalAuthor", fields: [authorId], references: [id])
+
+  kind   ClinicalKind
+  status ClinicalStatus @default(DONE)
+  /// Quando aconteceu, ou quando vai acontecer.
+  date   DateTime       @db.Date
+  /// Hora e local: só em agendamentos.
+  time     String?
+  location String?
+
+  title  String
+  /// Notas de consulta. Dados de saúde — ver as políticas RLS.
+  detail String?
+
+  impact         ClinicalImpact @default(NONE)
+  /// Retoma prevista. É o que o treinador precisa para planear.
+  expectedReturn DateTime?      @db.Date
+  outDays        Int?
+  /// Alta clínica. Nulo + impact != NONE = atleta afectado agora.
+  clearedOn      DateTime?      @db.Date
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([academyId, status])
+  @@index([athleteId, date])
+  /// Suporta "quem está parado?" sem varrer o histórico todo.
+  @@index([academyId, impact, clearedOn])
+}
+
+/* -------------------------------------------------------------------------- */
+/* Jogos                                                                       */
+/* -------------------------------------------------------------------------- */
+
+enum MatchStatus {
+  SCHEDULED
+  PLAYED
+  CANCELLED
+}
+
+/// Um jogo. Vive à parte de `TrainingSession` porque tem o que um treino nunca
+/// terá — adversário, resultado, convocatória — e juntá-los daria uma tabela com
+/// metade das colunas sempre nulas.
+model Match {
+  id        String  @id @default(cuid())
+  academyId String
+  academy   Academy @relation(fields: [academyId], references: [id], onDelete: Cascade)
+  teamId    String
+  team      Team    @relation(fields: [teamId], references: [id], onDelete: Cascade)
+
+  startsAt DateTime
+  endsAt   DateTime
+  venue    String
+  opponent String
+  isHome   Boolean  @default(true)
+  status   MatchStatus @default(SCHEDULED)
+
+  coachId String?
+  coach   Membership? @relation("MatchCoach", fields: [coachId], references: [id])
+
+  /// Preenchidos só depois de jogado — é a ausência do resultado que decide se a
+  /// UI mostra a convocatória ou a estatística.
+  ourScore   Int?
+  theirScore Int?
+
+  /// Proveniência, quando importado de uma fonte externa (ZeroZero).
+  sourceProvider String?
+  sourceUrl      String?
+  importedAt     DateTime?
+
+  callUps     MatchCallUp[]
+  appearances MatchAppearance[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  /// Idempotência da importação: o mesmo jogo importado duas vezes actualiza.
+  @@unique([teamId, startsAt])
+  @@index([academyId, startsAt])
+}
+
+enum CallUpStatus {
+  CALLED
+  CONFIRMED
+  DECLINED
+}
+
+model MatchCallUp {
+  id        String       @id @default(cuid())
+  matchId   String
+  match     Match        @relation(fields: [matchId], references: [id], onDelete: Cascade)
+  athleteId String
+  athlete   Athlete      @relation(fields: [athleteId], references: [id], onDelete: Cascade)
+  status    CallUpStatus @default(CALLED)
+
+  @@unique([matchId, athleteId])
+  @@index([athleteId])
+}
+
+/// Quem jogou e quanto tempo. Alimenta o registo de jogos na ficha do atleta.
+model MatchAppearance {
+  id        String  @id @default(cuid())
+  matchId   String
+  match     Match   @relation(fields: [matchId], references: [id], onDelete: Cascade)
+  athleteId String
+  athlete   Athlete @relation(fields: [athleteId], references: [id], onDelete: Cascade)
+
+  minutes Int
+  /// Golos no futebol, pontos nos restantes — o substantivo vem da modalidade.
+  tally   Int      @default(0)
+  /// Nota do jogo, 0–10. **A fórmula está por decidir** — o campo existe e é
+  /// mostrado, mas nada no sistema a calcula ainda.
+  rating  Decimal? @db.Decimal(3, 1)
+
+  @@unique([matchId, athleteId])
+  @@index([athleteId])
+}
+
+/* -------------------------------------------------------------------------- */
+/* Notificações push                                                           */
+/* -------------------------------------------------------------------------- */
+
+/// Uma subscrição Web Push de um dispositivo.
+///
+/// Uma pessoa tem tantas quantas os dispositivos onde instalou a app. Quando o
+/// serviço de push responde 404/410, a subscrição morreu (app desinstalada ou
+/// permissão revogada) e apaga-se — senão a tabela enche-se de endpoints mortos.
+model PushSubscription {
+  id       String @id @default(cuid())
+  userId   String
+  user     User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  endpoint String @unique
+  p256dh   String
+  auth     String
+  /// Para saber que dispositivo é, quando o utilizador quiser desligar um.
+  userAgent String?
+
+  createdAt DateTime  @default(now())
+  lastUsedAt DateTime?
+
+  @@index([userId])
+}
+
+/* -------------------------------------------------------------------------- */
+/* Desenvolvimento do atleta                                                   */
+/* -------------------------------------------------------------------------- */
+
+enum EvaluationStatus {
+  DRAFT
+  PUBLISHED
+}
+
+model Evaluation {
+  id        String     @id @default(cuid())
+  academyId String
+  academy   Academy    @relation(fields: [academyId], references: [id], onDelete: Cascade)
+  athleteId String
+  athlete   Athlete    @relation(fields: [athleteId], references: [id], onDelete: Cascade)
+  coachId   String
+  coach     Membership @relation(fields: [coachId], references: [id])
+
+  /// "2026/27 · 1.º período"
+  period String
+  status EvaluationStatus @default(DRAFT)
+
+  /// { "Técnica": 4, "Atitude": 5 } — as chaves vêm de `Sport.skills`.
+  scores Json
+  /// A leitura do treinador. É o que os pais lêem primeiro.
+  note   String?
+
+  publishedAt DateTime?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  @@unique([athleteId, period])
+  @@index([academyId, status])
+}
