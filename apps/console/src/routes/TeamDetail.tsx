@@ -3,6 +3,7 @@ import { Link, useParams } from "react-router-dom";
 import { PageHeader } from "@/components/Shell";
 import { Attention } from "@/components/Attention";
 import { EventDetail } from "@/components/EventDetail";
+import { PersonLink } from "@/components/PersonLink";
 import {
   AvailabilityTag,
   cx,
@@ -385,8 +386,8 @@ function RosterTab({
       render: (a) => {
         const fee = feeByAthlete.get(a.id);
         if (!fee) return <span className="text-ink-4">—</span>;
-        const tone = { paid: "ok", processing: "signal", pending: "warn", overdue: "risk" } as const;
-        const label = { paid: "Pago", processing: "A confirmar", pending: "Pendente", overdue: "Vencido" };
+        const tone = { paid: "ok", processing: "signal", pending: "warn", overdue: "risk", void: "neutral" } as const;
+        const label = { paid: "Pago", processing: "A confirmar", pending: "Pendente", overdue: "Vencido", void: "Anulada" };
         return <Pill tone={tone[fee.status]}>{label[fee.status]}</Pill>;
       },
     },
@@ -601,7 +602,7 @@ function StaffTab({ coaches }: { coaches: NonNullable<ReturnType<typeof coachByI
             <li key={c.id} className="flex items-center gap-3 border-b border-line px-5 py-3.5 last:border-0">
               <Monogram name={c.name} />
               <div className="min-w-0 flex-1">
-                <div className="truncate text-body font-medium text-ink">{c.name}</div>
+                <PersonLink id={c.id} name={c.name} className="truncate text-body font-medium text-ink" />
                 <div className="text-meta text-ink-3">
                   {c.email} · {c.phone}
                 </div>

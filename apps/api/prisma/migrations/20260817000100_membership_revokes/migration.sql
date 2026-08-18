@@ -1,0 +1,23 @@
+-- Retiradas de acesso, por pessoa
+--
+-- A `Membership` já tinha `grants` — concessões por cima do papel. Faltava o par:
+-- `revokes`, retiradas por baixo dele.
+--
+-- ## Porque é que as duas são precisas
+--
+-- Sem retiradas, o produto só sabe **dar**. Uma academia que queira um treinador
+-- com acesso a inscrever atletas — o padrão — mas tirar isso a **um** treinador em
+-- concreto não tinha como o exprimir: teria de inventar um papel novo por cada
+-- excepção, e é assim que uma lista de oito papéis passa a quarenta.
+--
+-- O painel "Acesso" na ficha de staff escrevia estas excepções só na memória do
+-- browser — não tinham efeito nenhum no servidor. Esta coluna é o que as torna
+-- reais: o `AuthService` passa a lê-las, e `can()` subtrai-as.
+--
+-- ## A regra em caso de conflito
+--
+-- Se algo aparecer em `grants` e `revokes` ao mesmo tempo — engano de quem
+-- configurou — a leitura segura é a que **dá menos acesso**: a retirada ganha.
+-- Isso decide-se no código (`can`), não aqui.
+
+ALTER TABLE "Membership" ADD COLUMN "revokes" TEXT[] NOT NULL DEFAULT ARRAY[]::TEXT[];

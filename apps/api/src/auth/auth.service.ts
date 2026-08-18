@@ -53,33 +53,59 @@ export class AuthService {
    * não lido de `Membership.scope`. É mais caro e é deliberado: uma cópia
    * guardada desactualiza-se quando um treinador muda de equipa, e a partir daí o
    * âmbito protege as equipas erradas — em silêncio.
+   *
+   * ## Porque é que isto corre aos pares, e não em fila
+   *
+   * São quatro idas à base de dados, e este método corre em **todos** os pedidos
+   * autenticados da aplicação — é o preço de entrada antes de qualquer serviço
+   * fazer seja o que for. Uma medição directa mostrou-o a custar cerca de 1,2s em
+   * fila, contra ~300ms por ida ao pooler do Supabase; era o maior peso a
+   * arrastar a lentidão notada em "Convidar de outro escalão" e em qualquer outro
+   * ecrã, não uma coisa específica das convocatórias.
+   *
+   * `academyIdBySlug` e `membershipsOf` não dependem uma da outra — a primeira só
+   * precisa do slug, a segunda só do `authId`. `scopeFor` e `grantsFor`, depois de
+   * se saber a academia e a membership, também não dependem uma da outra. Correr
+   * cada par com `Promise.all` sobrepõe a latência de rede em vez de a somar, e
+   * corta o tempo de fila a meio sem mudar nada do que cada função devolve.
    */
   async contextFor(authId: string, slug: string): Promise<RequestContext> {
-    const academyId = await this.academyIdBySlug(slug);
+    const [academyId, memberships] = await Promise.all([this.academyIdBySlug(slug), this.membershipsOf(authId)]);
     if (!academyId) throw new NotFoundException(`Academia "${slug}" não encontrada`);
 
-    const membership = (await this.membershipsOf(authId)).find((m) => m.academy_id === academyId);
+    const membership = memberships.find((m) => m.academy_id === academyId);
     if (!membership) throw new ForbiddenException("Sem acesso a esta academia");
 
-    const scope = await this.scopeFor(academyId, membership.membership_id, membership.role);
+    const [scope, exceptions] = await Promise.all([
+      this.scopeFor(academyId, membership.membership_id, membership.role),
+      this.exceptionsFor(academyId, membership.membership_id),
+    ]);
 
     return {
       userId: membership.user_id,
       academyId,
       membershipId: membership.membership_id,
       role: membership.role,
-      grants: await this.grantsFor(academyId, membership.membership_id),
+      grants: exceptions.grants,
+      revokes: exceptions.revokes,
       scope,
     };
   }
 
-  private async grantsFor(academyId: string, membershipId: string): Promise<Permission[]> {
+  /** As excepções de acesso desta pessoa — concessões e retiradas por cima do papel. */
+  private async exceptionsFor(
+    academyId: string,
+    membershipId: string,
+  ): Promise<{ grants: Permission[]; revokes: Permission[] }> {
     return this.prisma.runAs(academyId, async (db) => {
       const m = await db.membership.findFirst({
         where: { id: membershipId },
-        select: { grants: true },
+        select: { grants: true, revokes: true },
       });
-      return (m?.grants ?? []) as Permission[];
+      return {
+        grants: (m?.grants ?? []) as Permission[],
+        revokes: (m?.revokes ?? []) as Permission[],
+      };
     });
   }
 

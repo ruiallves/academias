@@ -8,6 +8,7 @@ import CoachOverview from "@/routes/coach/Overview";
 import Athletes from "@/routes/director/Athletes";
 import Families from "@/routes/director/Families";
 import Staff from "@/routes/director/Staff";
+import StaffDetail from "@/routes/StaffDetail";
 import Calendar from "@/routes/director/Calendar";
 import Fees from "@/routes/director/Fees";
 import Comms from "@/routes/director/Comms";
@@ -19,9 +20,9 @@ import MedicalOverview from "@/routes/medical/Overview";
 import MedicalClinical from "@/routes/medical/Clinical";
 import MedicalConsultations from "@/routes/medical/Consultations";
 import Sessions from "@/routes/Sessions";
+import CallUps from "@/routes/CallUps";
 import Evaluations from "@/routes/Evaluations";
 import Reports from "@/routes/Reports";
-import Soon from "@/routes/Soon";
 
 /**
  * A mesma árvore de rotas serve os dois perfis.
@@ -44,7 +45,7 @@ export default function App() {
         <Route path="equipas/:id" element={<Allow p="team:read"><TeamDetail /></Allow>} />
 
         <Route path="staff" element={<Allow p="staff:read"><Staff /></Allow>} />
-        <Route path="staff/:id" element={<Allow p="staff:read"><Soon title="Ficha de staff" phase="Fase 2 — operações desportivas" /></Allow>} />
+        <Route path="staff/:id" element={<Allow p="staff:read"><StaffDetail /></Allow>} />
         {/* O menu chamava-se "Treinadores" até a academia passar a ter também
             departamento clínico e direção. Links antigos continuam a funcionar. */}
         <Route path="treinadores" element={<Navigate to="/staff" replace />} />
@@ -53,7 +54,10 @@ export default function App() {
 
         {/* Presenças (direção) e Treinos (equipa técnica) são o mesmo ecrã. */}
         <Route path="presencas" element={<Allow p="attendance:read"><Sessions /></Allow>} />
-        <Route path="treinos" element={<Allow p="calendar:read"><Sessions /></Allow>} />
+        {/* "Treinos" foi renomeado para "Presenças" — o menu diz o que lá se faz.
+            O caminho antigo reencaminha: links guardados não devem partir. */}
+        <Route path="treinos" element={<Navigate to="/presencas" replace />} />
+        <Route path="convocatorias" element={<Allow p="calendar:read"><CallUps /></Allow>} />
 
         <Route path="mensalidades" element={<Allow p="billing:read"><Fees /></Allow>} />
         <Route path="comunicacao" element={<Allow p="comms:read"><Comms /></Allow>} />

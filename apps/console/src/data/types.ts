@@ -21,6 +21,11 @@ export type Sport = {
   dominantSideLabel?: string;
   /** Duração normal de um jogo, em minutos. Serve para ler "62 de 90" na ficha. */
   matchMinutes?: number;
+  /**
+   * Competências avaliadas nesta modalidade. Configuração e não uma lista fixa no
+   * código: a natação avalia técnica e resistência, o futebol avalia táctica.
+   */
+  skills?: string[];
 };
 
 export type Academy = {
@@ -86,6 +91,9 @@ export type StaffMember = {
   teamIds: string[];
   since: string;
   isActive: boolean;
+  /** Excepções de acesso guardadas no servidor — a diferença para o papel. */
+  grants?: string[];
+  revokes?: string[];
 };
 
 export type Guardian = {
@@ -174,7 +182,8 @@ export type ClinicalEntry = {
   authorId?: string;
 };
 
-export type FeeStatus = "paid" | "pending" | "overdue" | "processing";
+/** `void` = mensalidade anulada pela direção (bolsa, atleta que saiu) — nem devida nem paga. */
+export type FeeStatus = "paid" | "pending" | "overdue" | "processing" | "void";
 
 export type Fee = {
   id: string;
@@ -202,7 +211,8 @@ export type AbsenceKind = "absent" | "justified" | "late";
  * O ecrã continua a chamar-se "Registar presenças", que é como se diz.
  */
 export type SessionAttendance = {
-  absences: { athleteId: string; kind: AbsenceKind }[];
+  /** `note` guarda o motivo de uma falta **justificada** — vazio nas outras. */
+  absences: { athleteId: string; kind: AbsenceKind; note?: string }[];
   recordedAt: string;
 };
 
@@ -214,6 +224,14 @@ export type TrainingSession = {
   end: string;
   venue: string;
   coachId?: string;
+  /**
+   * O nome de quem dá o treino, tal como o servidor o devolve.
+   *
+   * Vem com a sessão e não se procura na lista de staff, porque um treinador não
+   * tem `staff:read` — essa lista chega-lhe vazia, e procurar lá dava sempre
+   * "sem treinador" para os treinos dele próprio.
+   */
+  coachName?: string;
   status: "scheduled" | "done" | "cancelled";
   /** Nulo enquanto o treinador não registar presenças. */
   attendance?: SessionAttendance;
@@ -234,9 +252,13 @@ export type Announcement = {
   id: string;
   title: string;
   body: string;
+  /** Rótulo do público: "Geral", "Pais" ou "Treinadores". */
   audience: string;
   publishedAt: string;
   authorId: string;
+  /** O nome de quem publicou, tal como o servidor o devolve. */
+  authorName?: string;
+  /** Quantas notificações saíram e quantas foram lidas. */
   reach: number;
   read: number;
 };

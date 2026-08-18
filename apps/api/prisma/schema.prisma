@@ -39,6 +39,11 @@ model Academy {
   /// Dia do mês em que as mensalidades vencem.
   billingDueDay Int @default(8)
 
+  /// Estado do cliente na plataforma. Ver `docs/04-plataforma.md`.
+  status      AcademyStatus @default(SETUP)
+  trialEndsAt DateTime?
+  subscription Subscription?
+
   sports        Sport[]
   seasons       Season[]
   memberships   Membership[]
@@ -52,10 +57,25 @@ model Academy {
   evaluations   Evaluation[]
   clinical      ClinicalEntry[]
   matches       Match[]
+  events        CalendarEvent[]
   invites       StaffInvite[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+}
+
+/// O ciclo de vida de um cliente. Derivado do onboarding e da subscrição — o
+/// serviço mantém-no, e nenhuma academia lhe toca.
+enum AcademyStatus {
+  /// Convite aceite, onboarding por completar.
+  SETUP
+  /// A usar, dentro do período de avaliação.
+  TRIAL
+  /// Subscrição a pagar.
+  ACTIVE
+  /// Pagamento falhado — ainda com acesso, e a precisar de um telefonema.
+  PAST_DUE
+  CANCELLED
 }
 
 /// Uma modalidade da academia. Natação tem `positions` vazio — e a UI adapta-se
@@ -157,6 +177,11 @@ model Membership {
   /// treinador sem o promover a coordenador.
   grants String[] @default([])
 
+  /// Retiradas pontuais por baixo do papel — o par de `grants`. Tirar
+  /// `athlete:write` a um treinador que, por omissão, o tem. Em conflito com
+  /// `grants`, a retirada ganha (ver `can` em common/permissions.ts).
+  revokes String[] @default([])
+
   /// Âmbito. É o que distingue um treinador de um diretor com os mesmos verbos:
   /// { "teamIds": [...] } para COACH, { "athleteIds": [...] } para GUARDIAN.
   /// Preenchido pelo serviço a partir de TeamStaff / GuardianLink.
@@ -168,6 +193,7 @@ model Membership {
   guardianOf     GuardianLink[]
   ledSessions    TrainingSession[] @relation("SessionCoach")
   ledMatches     Match[]           @relation("MatchCoach")
+  ledEvents      CalendarEvent[]   @relation("EventCoach")
   clinicalWrites ClinicalEntry[]   @relation("ClinicalAuthor")
   evaluations    Evaluation[]
   announcements  Announcement[]
@@ -320,10 +346,18 @@ model Team {
   /// As sessões são geradas a partir daqui, mas cada uma vive por si depois de criada.
   schedule Json @default("[]")
 
+  /// Quantos atletas cabem numa convocatória deste escalão.
+  ///
+  /// Por equipa e não por academia: um Sub-11 de futebol convoca 14, um Sub-15
+  /// convoca 18, e a natação não convoca ninguém. O valor por omissão é o do
+  /// futebol de formação, que é o caso mais comum — e muda-se na ficha da equipa.
+  maxCallUps Int @default(14)
+
   athletes TeamMembership[]
   staff    TeamStaff[]
   sessions TrainingSession[]
   matches  Match[]
+  events   CalendarEvent[]
   plans    SubscriptionPlan[]
 
   createdAt DateTime @default(now())
@@ -594,6 +628,9 @@ enum NotificationType {
   SESSION_CANCELLED
   ANNOUNCEMENT_PUBLISHED
   EVALUATION_PUBLISHED
+  /// Convocado para um jogo. Tipo próprio: tem hora, sítio e uma decisão a tomar —
+  /// não é um aviso que se lê quando calhar.
+  MATCH_CALLED_UP
 }
 
 /// Uma notificação é uma linha na base de dados; os canais são adaptadores por
@@ -734,6 +771,14 @@ model Match {
   ourScore   Int?
   theirScore Int?
 
+  /// Quando a convocatória foi submetida. Nulo = ainda se está a montar.
+  ///
+  /// Montar uma convocatória é um processo com hesitação: tira-se um, põe-se
+  /// outro, espera-se pelo departamento clínico. Sem esta distinção, cada clique
+  /// avisava as famílias — e um pai que recebe cinco avisos contraditórios numa
+  /// tarde desliga as notificações para sempre.
+  callUpsClosedAt DateTime?
+
   /// Proveniência, quando importado de uma fonte externa (ZeroZero).
   sourceProvider String?
   sourceUrl      String?
@@ -764,6 +809,12 @@ model MatchCallUp {
   athlete   Athlete      @relation(fields: [athleteId], references: [id], onDelete: Cascade)
   status    CallUpStatus @default(CALLED)
 
+  /// Verdadeiro quando o atleta não é do plantel desta equipa e subiu de um
+  /// escalão inferior para este jogo. É o que distingue, na convocatória, quem
+  /// pertence à equipa de quem foi emprestado — e o que a ficha do atleta usa
+  /// para dizer "emprestado ao Sub-13" em vez de parecer que mudou de equipa.
+  isGuest   Boolean      @default(false)
+
   @@unique([matchId, athleteId])
   @@index([athleteId])
 }
@@ -785,6 +836,56 @@ model MatchAppearance {
 
   @@unique([matchId, athleteId])
   @@index([athleteId])
+}
+
+/* -------------------------------------------------------------------------- */
+/* Eventos do calendário                                                       */
+/* -------------------------------------------------------------------------- */
+
+enum CalendarEventKind {
+  TRAINING
+  MATCH
+  TOURNAMENT
+  OTHER
+}
+
+/// Um evento pontual do calendário — o que "Novo evento" cria.
+///
+/// Vive à parte de `TrainingSession` e `Match` de propósito, e é a razão de existir
+/// deste modelo: os treinos recorrentes derivam do horário da equipa
+/// (`Team.schedule`) e um jogo com convocatória e resultado é a peça rica que
+/// `Match` guarda. O que sobra — um treino extra, um torneio, uma reunião de pais,
+/// um amigável sem convocatória montada — não tinha casa, e era isso que obrigava o
+/// calendário a manter uma cópia local. Aqui um evento é só o essencial: o quê,
+/// quando, onde, de que equipa (ou de nenhuma, quando é da academia toda).
+model CalendarEvent {
+  id        String  @id @default(cuid())
+  academyId String
+  academy   Academy @relation(fields: [academyId], references: [id], onDelete: Cascade)
+
+  /// Nulo é "toda a academia" — uma reunião de pais não tem escalão. É a ausência
+  /// que o calendário lê como evento sem cor.
+  teamId String?
+  team   Team?   @relation(fields: [teamId], references: [id], onDelete: Cascade)
+
+  kind     CalendarEventKind
+  title    String
+  startsAt DateTime
+  endsAt   DateTime
+  venue    String
+
+  coachId String?
+  coach   Membership? @relation("EventCoach", fields: [coachId], references: [id])
+
+  /// Cancelado mas não apagado: o evento continua a aparecer riscado, porque um
+  /// treino que se desmarca é informação — as famílias precisam de a ver.
+  cancelled Boolean @default(false)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([academyId, startsAt])
+  @@index([teamId, startsAt])
 }
 
 /* -------------------------------------------------------------------------- */
@@ -845,4 +946,150 @@ model Evaluation {
 
   @@unique([athleteId, period])
   @@index([academyId, status])
+}
+
+/* -------------------------------------------------------------------------- */
+/* Plataforma                                                                  */
+/* -------------------------------------------------------------------------- */
+//
+// Tudo o que está abaixo é **nosso**, não de nenhuma academia. Não leva
+// `academyId`, não entra na RLS por tenant, e é lido por um guard diferente.
+// Ver `docs/04-plataforma.md` para o porquê da separação.
+
+/// Quem administra o SaaS.
+///
+/// Tabela à parte e não um valor no enum `Role`, de propósito. `Role` vive em
+/// `Membership`, que é a ligação de uma pessoa a **uma** academia — todo o sistema
+/// parte desse princípio. Um papel que significasse "todas as academias" seria um
+/// caso especial que a RLS, o `contextFor` e cada filtro de âmbito teriam de tratar
+/// à parte, e bastava um esquecer-se para a separação entre clientes desaparecer em
+/// silêncio.
+///
+/// Consequência: um administrador da plataforma não tem `Membership` nenhuma, e
+/// nenhuma concessão dentro de uma academia consegue chegar aqui.
+model PlatformAdmin {
+  id     String @id @default(cuid())
+  /// `auth.users.id` do Supabase — a mesma conta, outra autorização.
+  authId String @unique
+  email  String @unique
+  name   String
+
+  role     PlatformRole @default(ADMIN)
+  isActive Boolean      @default(true)
+
+  /// Quando o segundo factor foi inscrito. Sem isto não há impersonation.
+  mfaEnrolledAt DateTime?
+
+  audits     AuditLog[]
+  supportFor SupportSession[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+enum PlatformRole {
+  /// Tudo, incluindo gerir administradores e planos.
+  OWNER
+  /// Academias, subscrições, convites, analítica.
+  ADMIN
+  /// Leitura e apoio ao cliente. Não mexe em faturação.
+  SUPPORT
+}
+
+/// Um plano que **nós** vendemos às academias.
+///
+/// Não confundir com `SubscriptionPlan`, que é a mensalidade que a academia cobra
+/// às famílias. São dois negócios distintos e não se tocam.
+model Plan {
+  id          String  @id @default(cuid())
+  name        String
+  /// Preço base mensal, em cêntimos.
+  amountCents Int
+  /// Preço por atleta acima do incluído — zero em planos de preço fixo.
+  perAthleteCents Int @default(0)
+  includedAthletes Int @default(0)
+  trialDays   Int     @default(30)
+  isActive    Boolean @default(true)
+
+  subscriptions Subscription[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model Subscription {
+  id        String  @id @default(cuid())
+  academyId String  @unique
+  academy   Academy @relation(fields: [academyId], references: [id], onDelete: Cascade)
+  planId    String
+  plan      Plan    @relation(fields: [planId], references: [id])
+
+  status           SubscriptionStatus @default(TRIALING)
+  currentPeriodEnd DateTime?
+  cancelledAt      DateTime?
+
+  /// Última tentativa de cobrança falhada — a origem do alerta no Overview.
+  lastFailureAt   DateTime?
+  lastFailureNote String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([status])
+}
+
+enum SubscriptionStatus {
+  TRIALING
+  ACTIVE
+  PAST_DUE
+  CANCELLED
+}
+
+/// Registo do que os administradores da plataforma fazem.
+///
+/// **Append-only**: não existe endpoint que apague uma entrada, e não deve existir.
+/// Um registo que se pode limpar não é um registo — é uma sugestão.
+model AuditLog {
+  id      String @id @default(cuid())
+  adminId String?
+  admin   PlatformAdmin? @relation(fields: [adminId], references: [id], onDelete: SetNull)
+
+  /// "academy.create", "invite.send", "support.start", "subscription.change".
+  action String
+  /// Sobre o quê — academia, subscrição, convite.
+  targetType String?
+  targetId   String?
+
+  /// O que mudou, e porquê. Em impersonation, o motivo escrito é obrigatório.
+  detail Json?
+  ip     String?
+
+  createdAt DateTime @default(now())
+
+  @@index([createdAt])
+  @@index([adminId, createdAt])
+  @@index([targetType, targetId])
+}
+
+/// Uma sessão de "ver como academia".
+///
+/// De leitura, para uma academia só, com prazo curto e motivo escrito. Existe como
+/// linha na base — e não só como um campo no token — para poder ser listada,
+/// auditada e terminada à força.
+model SupportSession {
+  id        String        @id @default(cuid())
+  adminId   String
+  admin     PlatformAdmin @relation(fields: [adminId], references: [id], onDelete: Cascade)
+  academyId String
+
+  /// Porque é que foi preciso. Sem isto não se abre.
+  reason   String
+  ticketId String?
+
+  startedAt DateTime  @default(now())
+  expiresAt DateTime
+  endedAt   DateTime?
+
+  @@index([academyId, startedAt])
+  @@index([adminId, startedAt])
 }

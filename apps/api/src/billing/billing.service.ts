@@ -32,6 +32,65 @@ export class BillingService {
   }
 
   /* ------------------------------------------------------------------------ */
+  /* Ajuste manual                                                             */
+  /* ------------------------------------------------------------------------ */
+
+  /**
+   * Ajuste manual do estado de uma mensalidade, pela direção.
+   *
+   * Marca como **paga** (recebido em dinheiro ou por transferência à parte), volta a
+   * **por pagar**, ou **anula** (bolsa, atleta que saiu a meio do mês).
+   *
+   * ## Isto contradiz "o pagamento só muda pelo webhook"?
+   *
+   * Não. Aquela regra protege o fluxo euPago: o navegador de um pai nunca pode
+   * declarar-se pago, senão pagava 40 € com um clique. Isto é o oposto — uma ação de
+   * **gestão**, atrás de `billing:write` (direção), não um pagamento online. E fica
+   * registada: marcar como paga cria uma `Payment` de método `CASH` e provedor
+   * `manual`, para o histórico dizer *como* se soube que foi pago, em vez de um
+   * estado que muda sem rasto.
+   */
+  async setChargeStatus(ctx: RequestContext, chargeId: string, status: ChargeStatus) {
+    if (!can(ctx, "billing:write")) throw new ForbiddenException("Sem permissão para alterar mensalidades");
+
+    return this.prisma.runAs(ctx.academyId, async (db) => {
+      const charge = await db.charge.findFirst({
+        where: { id: chargeId, athleteId: athleteScopeFilter(ctx) },
+        select: { id: true, status: true, amountCents: true },
+      });
+      if (!charge) throw new NotFoundException("Mensalidade não encontrada");
+
+      if (status === ChargeStatus.SETTLED) {
+        // Regista *como* foi paga — só se ainda não estava, para cliques repetidos
+        // não empilharem pagamentos manuais.
+        if (charge.status !== ChargeStatus.SETTLED) {
+          await db.payment.create({
+            data: {
+              chargeId: charge.id,
+              amountCents: charge.amountCents,
+              method: PaymentMethod.CASH,
+              status: PaymentStatus.PAID,
+              provider: "manual",
+              paidAt: new Date(),
+            },
+          });
+        }
+        await db.charge.update({ where: { id: charge.id }, data: { status, settledAt: new Date() } });
+      } else {
+        // Voltar a "por pagar" ou anular: um pagamento manual anterior passa a
+        // reembolsado, para o registo não continuar a dizer que foi pago.
+        await db.payment.updateMany({
+          where: { chargeId: charge.id, provider: "manual", status: PaymentStatus.PAID },
+          data: { status: PaymentStatus.REFUNDED },
+        });
+        await db.charge.update({ where: { id: charge.id }, data: { status, settledAt: null } });
+      }
+
+      return { id: charge.id, status };
+    });
+  }
+
+  /* ------------------------------------------------------------------------ */
   /* Pagamento                                                                 */
   /* ------------------------------------------------------------------------ */
 
@@ -125,7 +184,7 @@ export class BillingService {
    * ser verificada e de o evento ficar gravado em bruto. É idempotente: reprocessar
    * o mesmo evento não liquida a cobrança duas vezes nem envia duas notificações.
    */
-  async confirmPayment(providerRef: string, paidAt: Date, rawPayload: unknown) {
+  async confirmPayment(providerRef: string, paidAt: Date, rawPayload: unknown, paidCents?: number) {
     // O webhook chega sem tenant — é o pagamento que o identifica. Resolve-se
     // primeiro, por uma função que só sabe devolver um id, e só depois se abre o
     // contexto. Sem este passo a RLS bloquearia a leitura e os pagamentos
@@ -147,6 +206,26 @@ export class BillingService {
       if (payment.status === PaymentStatus.PAID) {
         // Já processado. A euPago reenvia eventos quando não recebe 200 depressa.
         return { handled: true as const, duplicate: true };
+      }
+
+      /*
+       * O valor pago tem de bater com o esperado.
+       *
+       * O montante nunca vem do cliente — é lido da base ao criar o pagamento. Mas
+       * um webhook (mesmo assinado) com um valor diferente do devido não deve
+       * liquidar a mensalidade: seria pagar 40 € com um evento de 1 €. Uma
+       * divergência marca o pagamento como falhado e deixa a cobrança em aberto,
+       * para revisão humana.
+       */
+      if (paidCents !== undefined && paidCents !== payment.amountCents) {
+        this.log.warn(
+          `Valor divergente no webhook de ${providerRef}: pago ${paidCents}, esperado ${payment.amountCents}`,
+        );
+        await db.payment.update({
+          where: { id: payment.id },
+          data: { status: PaymentStatus.FAILED, rawPayload: rawPayload as object },
+        });
+        return { handled: true as const, amountMismatch: true };
       }
 
       const charge = payment.charge;
@@ -171,7 +250,7 @@ export class BillingService {
           title: "Pagamento confirmado",
           body: `Recebemos ${(payment.amountCents / 100).toFixed(2)} € da mensalidade de ${charge.period}.`,
           payload: { route: "/pagamentos", chargeId: charge.id },
-        });
+        }, db);
       }
 
       return { handled: true as const, duplicate: false };
@@ -202,7 +281,7 @@ export class BillingService {
           title: "O pagamento não foi concluído",
           body: reason,
           payload: { route: "/pagamentos", chargeId: payment.chargeId },
-        });
+        }, db);
       }
 
       return { handled: true as const };

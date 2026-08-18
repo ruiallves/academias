@@ -1,54 +1,63 @@
-import { createContext, useContext, useMemo, useState, type ReactNode } from "react";
+import { createContext, useContext, useMemo, type ReactNode } from "react";
 import type { Session } from "@/lib/permissions";
-import { teams } from "@/data/demo";
+import { useStore } from "@/lib/store";
 
 /**
- * Sessão do utilizador.
+ * Quem está a usar a consola.
  *
- * Em produção vem do Supabase Auth + membership. Aqui é estado local, e o selector
- * de papel na sidebar existe para que se possa ver, lado a lado, como a mesma
- * aplicação muda de forma consoante as permissões — a navegação, os ecrãs e os
- * números são todos derivados daqui.
+ * Vem do servidor — papel, âmbito e concessões saem de `/api/bootstrap`, que os
+ * deriva da `Membership` e do `TeamStaff`. Não há aqui nenhuma decisão sobre
+ * permissões: isto só transporta o que o servidor já decidiu.
+ *
+ * Antes havia três perfis fixos e um selector na barra lateral para se poder ver a
+ * consola pelos olhos de cada papel. Saíram com os dados de demonstração: com
+ * autenticação a sério, trocar de papel sem trocar de conta era uma mentira — e
+ * das perigosas, porque dava a sensação de estar a testar permissões quando o
+ * servidor continuava a responder como a mesma pessoa. Para ver a consola como um
+ * treinador, entra-se como o treinador.
  */
 
-const DIRECTOR: Session = {
-  userId: "u_dir",
-  name: "Helena Sá Pereira",
-  role: "DIRECTOR",
-};
-
-const COACH: Session = {
-  userId: "u_coach",
-  name: "Rui Machado",
-  role: "COACH",
-  // O âmbito é o que o distingue de um diretor com os mesmos verbos.
-  scope: { teamIds: teams.filter((t) => t.coachIds.includes("c1")).map((t) => t.id) },
-};
-
-/**
- * Departamento clínico. Sem `scope`: vê a academia toda, porque uma lesão não
- * conhece escalões (ver `isAcademyWide`).
- */
-const MEDICAL: Session = {
-  userId: "u_med",
-  name: "Inês Carvalho Dias",
-  role: "MEDICAL",
-};
-
-export const PROFILES = { DIRECTOR, COACH, MEDICAL } as const;
-export type ProfileKey = keyof typeof PROFILES;
-
-type Ctx = {
-  session: Session;
-  profile: ProfileKey;
-  setProfile: (p: ProfileKey) => void;
-};
+type Ctx = { session: Session };
 
 const SessionContext = createContext<Ctx | null>(null);
 
 export function SessionProvider({ children }: { children: ReactNode }) {
-  const [profile, setProfile] = useState<ProfileKey>("DIRECTOR");
-  const value = useMemo(() => ({ session: PROFILES[profile], profile, setProfile }), [profile]);
+  const store = useStore();
+
+  const value = useMemo(() => {
+    const me = store.me;
+
+    /*
+     * Sem identidade não há sessão.
+     *
+     * Antes havia aqui um `?? "STAFF"` como valor por omissão, e era um erro sério:
+     * uma falha a carregar o perfil passava a consola a funcionar com um papel que
+     * ninguém atribuiu — sem aviso, e parecendo normal. Um papel por omissão numa
+     * camada de permissões é sempre a decisão errada; se não se sabe quem é a
+     * pessoa, tem de rebentar aqui e não seguir em frente.
+     */
+    if (!me) throw new Error("Sessão sem perfil — a academia não chegou a carregar.");
+
+    const base: Session = {
+      userId: me.userId,
+      name: me.name,
+      role: me.role,
+      // A ficha desta pessoa no quadro de staff — é o que liga a sessão às
+      // excepções de acesso definidas na ficha dela.
+      staffId: me.membershipId,
+      grants: me.grants as Session["grants"],
+      // As retiradas vêm do servidor, no `me` do bootstrap — é a fonte da verdade
+      // do que o próprio utilizador pode. As excepções locais (o painel "Acesso")
+      // são para configurar **outra** pessoa; a minha própria sessão não depende
+      // delas.
+      revokes: me.revokes as Session["revokes"],
+      // Sem âmbito para quem vê a academia toda; com equipas para quem não vê.
+      scope: me.scope,
+    };
+
+    return { session: base };
+  }, [store.me]);
+
   return <SessionContext.Provider value={value}>{children}</SessionContext.Provider>;
 }
 

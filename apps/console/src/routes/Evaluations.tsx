@@ -6,7 +6,7 @@ import { Gauge, Plus } from "@/lib/icons";
 import { athleteById, coachById, listAthletes, listEvaluations, teamById, today } from "@/lib/api";
 import { relativeDays, shortName } from "@/lib/format";
 import { can } from "@/lib/permissions";
-import { SKILLS } from "@/data/demo";
+import { SKILLS } from "@/lib/store";
 import type { Evaluation } from "@/data/types";
 import { useSession } from "@/session";
 

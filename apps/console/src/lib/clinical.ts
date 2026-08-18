@@ -43,7 +43,7 @@ export const IMPACT_LABEL: Record<ClinicalImpact, string> = {
 /* -------------------------------------------------------------------------- */
 
 /**
- * Mesmo padrão de `lib/roster.ts` e `lib/attendance.ts`: `data/demo.ts` é
+ * Mesmo padrão de `lib/roster.ts` e `lib/attendance.ts`: o que vem da base de dados é
  * estático, por isso o que o departamento clínico regista vive aqui e é fundido
  * na leitura. Quando a API existir, isto passa a `POST /athletes/:id/clinical`.
  */

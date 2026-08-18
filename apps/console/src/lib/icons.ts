@@ -8,6 +8,7 @@
  * Traço: 1.5px em toda a app (ver <Icon>), para casar com as hairlines de 1px.
  */
 export {
+  SquarePen as Pencil,
   LayoutGrid,
   Users,
   Home,
@@ -24,6 +25,7 @@ export {
   Bell,
   Plus,
   Check,
+  Copy,
   X,
   ChevronDown,
   ChevronRight,
@@ -41,6 +43,8 @@ export {
   CreditCard,
   Wallet,
   Download,
+  Upload,
+  FileSpreadsheet,
   SlidersHorizontal,
   LogOut,
   PanelLeft,

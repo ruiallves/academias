@@ -32,16 +32,29 @@ export type Permission =
   | "report:write"
   | "settings:write"
   /**
+   * Mudar o que os outros vêem.
+   *
+   * Separada de `staff:write` de propósito. Editar a ficha de alguém — corrigir um
+   * telemóvel, mudar um cargo — é trabalho de secretaria. Mudar o **acesso** dessa
+   * pessoa é outra coisa: quem o pode fazer pode dar-se a si próprio, através de um
+   * terceiro, tudo o que quiser. Juntar as duas faria de cada pessoa com acesso à
+   * ficha um administrador do sistema sem que ninguém tivesse decidido isso.
+   */
+  | "access:write"
+  /**
    * Dados de saúde são categoria especial no RGPD, por isso continuam a ser duas
    * permissões — mas quem lê o boletim é decisão do produto, não minha:
    *
    * - `clinical:status` — se o atleta está disponível e até quando.
    * - `clinical:read` — o boletim: diagnóstico, notas, exames, consultas.
-   * - `clinical:write` — registar e dar alta. **Só o departamento clínico**, para
-   *   que a origem de um diagnóstico seja sempre rastreável a quem o pode fazer.
+   * - `clinical:write` — registar e dar alta.
    *
-   * O treinador precisa de saber que tipo de fractura é para adaptar o trabalho, e
-   * o diretor responde pelo atleta perante a família. Ambos lêem; nenhum escreve.
+   * A rastreabilidade vem de `ClinicalEntry.authorId`, que guarda sempre quem
+   * registou — e não de restringir quem escreve. A direção escreve no boletim
+   * como escreve em tudo o resto.
+   *
+   * O treinador precisa de saber que tipo de fractura é para adaptar o trabalho —
+   * lê, e não escreve. A direção responde pelo atleta perante a família, e escreve.
    */
   | "clinical:status"
   | "clinical:read"
@@ -87,6 +100,9 @@ const WRITE_ALL: Permission[] = [
   "evaluation:write",
   "report:write",
   "settings:write",
+  "access:write",
+  // A direção pode tudo — incluindo registar no boletim clínico.
+  "clinical:write",
 ];
 
 export const ROLE_PERMISSIONS: Record<Role, Permission[]> = {
@@ -125,6 +141,19 @@ export const ROLE_PERMISSIONS: Record<Role, Permission[]> = {
     // escreve: o registo clínico é do departamento clínico.
     "clinical:status",
     "clinical:read",
+    // Cria treinos, jogos e outros eventos — mas só para as suas equipas. O
+    // âmbito (`teamScopeFilter`, no servidor) impede-o de criar em nome de um
+    // escalão que não é dele, e a interface nem lhe oferece "toda a academia"
+    // (ver `isAcademyWide` em `NewEventDialog`).
+    "calendar:write",
+    // Inscreve e importa atletas por omissão, só nas suas equipas. A direção pode
+    // retirar-lho a um treinador em concreto, na ficha de staff (revokes). Gémeo
+    // do servidor.
+    "athlete:write",
+    // Comunica com os pais das suas equipas (só "Pais" — o servidor limita o
+    // público e o âmbito). Gémeo do servidor.
+    "comms:read",
+    "comms:write",
   ],
 
   STAFF: ["academy:read", "athlete:read", "family:read", "team:read", "calendar:read", "attendance:read"],
@@ -162,13 +191,33 @@ export type Session = {
   userId: string;
   name: string;
   role: Role;
+  /** A pessoa no quadro de staff. É o que liga a sessão às excepções de acesso. */
+  staffId?: string;
   /** Concessões pontuais por cima do papel — o diretor pode dar `billing:read` a um treinador. */
   grants?: Permission[];
+  /**
+   * Retiradas pontuais por baixo do papel.
+   *
+   * O par de `grants`, e sem ele o produto só sabia dar. Uma academia que queira um
+   * treinador sem acesso ao boletim clínico não tem como o exprimir com concessões
+   * — teria de inventar um papel novo por cada excepção, e é assim que uma lista de
+   * papéis passa de oito para quarenta.
+   */
+  revokes?: Permission[];
   scope?: Scope;
 };
 
+/**
+ * O que esta pessoa pode, mesmo.
+ *
+ * Papel primeiro, excepções depois — e as retiradas ganham às concessões. Se
+ * alguma coisa aparecer nas duas listas é engano de quem configurou, e nesse caso
+ * a leitura segura é a que dá menos acesso.
+ */
 export function permissionsOf(session: Session): Set<Permission> {
-  return new Set([...ROLE_PERMISSIONS[session.role], ...(session.grants ?? [])]);
+  const allowed = new Set<Permission>([...ROLE_PERMISSIONS[session.role], ...(session.grants ?? [])]);
+  for (const p of session.revokes ?? []) allowed.delete(p);
+  return allowed;
 }
 
 export function can(session: Session, permission: Permission): boolean {

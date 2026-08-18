@@ -22,12 +22,26 @@ export type Permission =
   | "report:read" | "report:write"
   | "settings:write"
   /**
+   * Mudar o que os outros vêem — o par do painel "Acesso" na ficha de staff.
+   *
+   * Separada de `staff:write` de propósito: corrigir um telemóvel é trabalho de
+   * secretaria, mudar o **acesso** de alguém é outra coisa — quem o pode fazer pode
+   * dar-se a si próprio, através de um terceiro, tudo o que quiser. É gémea da do
+   * cliente (`apps/console/src/lib/permissions.ts`); estava só lá, e uma
+   * verificação server-side dela era sempre falsa.
+   */
+  | "access:write"
+  /**
    * Dados de saúde são categoria especial no RGPD, por isso são três permissões:
    *
    * - `clinical:status` — se o atleta está disponível e até quando.
    * - `clinical:read` — o boletim: diagnóstico, notas, exames, consultas.
-   * - `clinical:write` — registar e dar alta. **Só o departamento clínico**, para
-   *   a origem de um diagnóstico ser sempre rastreável a quem o pode fazer.
+   * - `clinical:write` — registar e dar alta.
+   *
+   * A rastreabilidade de um diagnóstico não vem de restringir quem escreve — vem
+   * de `ClinicalEntry.authorId`, que guarda sempre quem o registou. A direção
+   * escreve no boletim como escreve em tudo o resto: numa academia pequena é a
+   * diretora que lança a baixa que o fisioterapeuta ditou ao telefone.
    */
   | "clinical:status" | "clinical:read" | "clinical:write";
 
@@ -40,7 +54,9 @@ const READ_ALL: Permission[] = [
 const WRITE_ALL: Permission[] = [
   "academy:write", "athlete:write", "family:write", "team:write", "staff:write",
   "calendar:write", "attendance:write", "billing:write", "comms:write",
-  "evaluation:write", "report:write", "settings:write",
+  "evaluation:write", "report:write", "settings:write", "access:write",
+  // A direção pode tudo — incluindo registar no boletim clínico.
+  "clinical:write",
 ];
 
 export const ROLE_PERMISSIONS: Record<Role, Permission[]> = {
@@ -62,6 +78,19 @@ export const ROLE_PERMISSIONS: Record<Role, Permission[]> = {
     // Lê o boletim — precisa de saber que lesão é para adaptar o treino. Não
     // escreve: o registo clínico é do departamento clínico.
     "clinical:status", "clinical:read",
+    // Cria treinos, jogos e outros eventos — mas só para as suas equipas: o
+    // âmbito (`teamScopeFilter`) impede-o de criar algo em nome de um escalão
+    // que não é dele, e a interface nem lhe oferece "toda a academia" (isAcademyWide).
+    "calendar:write",
+    // Inscreve e importa atletas — por omissão, e só nas suas equipas. É o
+    // treinador que conhece o plantel dele; obrigar tudo a passar pela direção
+    // era um estrangulamento no arranque de uma época. A direção pode retirar-lho
+    // a um treinador em concreto (`Membership.revokes`), na ficha de staff.
+    "athlete:write",
+    // Comunica com os pais das suas equipas — um treino que muda de hora, um aviso
+    // de equipamento. Só os pais: o público "Geral"/"Treinadores" é da direção, e o
+    // âmbito (`teamScopeFilter`) limita-o aos encarregados dos seus atletas.
+    "comms:read", "comms:write",
   ],
 
   STAFF: ["academy:read", "athlete:read", "family:read", "team:read", "calendar:read", "attendance:read"],
@@ -92,10 +121,20 @@ export type RequestContext = {
   membershipId: string;
   role: Role;
   grants: Permission[];
+  /** Retiradas por baixo do papel. Ganham às concessões — ver `can`. */
+  revokes: Permission[];
   scope: Scope;
 };
 
+/**
+ * O que esta pessoa pode, mesmo.
+ *
+ * Papel mais concessões, menos retiradas — e as retiradas ganham. Se algo estiver
+ * nas duas listas (engano de quem configurou), a leitura segura é a que dá menos
+ * acesso: nega-se. É a gémea de `permissionsOf` no cliente.
+ */
 export function can(ctx: RequestContext, permission: Permission): boolean {
+  if (ctx.revokes.includes(permission)) return false;
   return ROLE_PERMISSIONS[ctx.role].includes(permission) || ctx.grants.includes(permission);
 }
 

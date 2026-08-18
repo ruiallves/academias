@@ -1,9 +1,10 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { useSearchParams } from "react-router-dom";
 import { PageHeader } from "@/components/Shell";
-import { DataTable, Empty, Metric, MetricRow, Monogram, Panel, Pill, type Column } from "@/components/primitives";
+import { DataTable, Empty, Metric, MetricRow, Monogram, Panel, Pill, cx, type Column } from "@/components/primitives";
 import { ResultCount, SearchInput, Segmented, Select, Toolbar } from "@/components/filters";
-import { CircleCheck, Download, Send, TriangleAlert, Wallet } from "@/lib/icons";
+import { Check, ChevronDown, CircleCheck, Download, Send, TriangleAlert, Wallet } from "@/lib/icons";
 import {
   arrears,
   athleteById,
@@ -15,7 +16,10 @@ import {
   teamById,
   today,
 } from "@/lib/api";
+import { apiPatch } from "@/lib/http";
+import { reloadAcademy } from "@/lib/store";
 import { money, percent, periodLabel, relativeDays, shortName } from "@/lib/format";
+import { can } from "@/lib/permissions";
 import type { Fee, FeeStatus } from "@/data/types";
 import { useSession } from "@/session";
 
@@ -24,9 +28,28 @@ const STATUS_LABEL: Record<FeeStatus, string> = {
   processing: "A confirmar",
   pending: "Pendente",
   overdue: "Vencido",
+  void: "Anulada",
 };
 
-const STATUS_TONE = { paid: "ok", processing: "signal", pending: "warn", overdue: "risk" } as const;
+const STATUS_TONE = { paid: "ok", processing: "signal", pending: "warn", overdue: "risk", void: "neutral" } as const;
+
+/**
+ * As três decisões que a direção pode tomar à mão sobre uma mensalidade, e o estado
+ * (`ChargeStatus`) que cada uma grava. "A confirmar" e "Vencido" não são opções —
+ * são derivados (do pagamento em curso, da data), não escolhas.
+ */
+const MANUAL_OPTIONS = [
+  { value: "SETTLED", label: "Marcar como paga", tone: "ok" as const },
+  { value: "OPEN", label: "Marcar por pagar", tone: "warn" as const },
+  { value: "VOID", label: "Anular", tone: "neutral" as const },
+];
+
+/** Qual das opções manuais corresponde ao estado atual — para a assinalar no menu. */
+function currentTarget(status: FeeStatus): string {
+  if (status === "paid") return "SETTLED";
+  if (status === "void") return "VOID";
+  return "OPEN";
+}
 
 const ALL = "all" as const;
 
@@ -54,7 +77,7 @@ export default function Fees() {
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
-    const order: Record<FeeStatus, number> = { overdue: 0, pending: 1, processing: 2, paid: 3 };
+    const order: Record<FeeStatus, number> = { overdue: 0, pending: 1, processing: 2, paid: 3, void: 4 };
     return rows
       .filter((f) => (estado === "todos" ? true : f.status === estado))
       .filter((f) => (q ? (athleteById(f.athleteId)?.name ?? "").toLowerCase().includes(q) : true))
@@ -68,6 +91,9 @@ export default function Fees() {
 
   const scopedSummary = period === ALL ? summariseAll(rows) : feeSummary(session, period);
   const label = period === ALL ? "todos os períodos" : periodLabel(period);
+
+  // A direção acerta o estado à mão — dinheiro em mão, uma bolsa, uma correção.
+  const mayEditFees = can(session, "billing:write");
 
   const allColumns: Column<Fee>[] = [
     {
@@ -120,7 +146,12 @@ export default function Fees() {
     {
       key: "status",
       header: "Estado",
-      render: (f) => <Pill tone={STATUS_TONE[f.status]}>{STATUS_LABEL[f.status]}</Pill>,
+      render: (f) =>
+        mayEditFees ? (
+          <FeeStatusControl fee={f} />
+        ) : (
+          <Pill tone={STATUS_TONE[f.status]}>{STATUS_LABEL[f.status]}</Pill>
+        ),
     },
     {
       key: "amount",
@@ -232,6 +263,102 @@ export default function Fees() {
           />
         </Panel>
       </div>
+    </>
+  );
+}
+
+/**
+ * O estado de uma mensalidade, editável pela direção.
+ *
+ * O Pill continua a dizer tudo — "Vencido", "A confirmar", "Anulada" —, mas passa a
+ * ser um gatilho: um clique abre as três decisões manuais. O menu vive num **portal**
+ * (em `document.body`) porque a tabela recorta o que transborda; sem isso, um menu
+ * aberto na última linha ficava cortado por baixo.
+ */
+function FeeStatusControl({ fee }: { fee: Fee }) {
+  const [open, setOpen] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [pos, setPos] = useState<{ top: number; left: number } | null>(null);
+  const btnRef = useRef<HTMLButtonElement>(null);
+  const target = currentTarget(fee.status);
+
+  useEffect(() => {
+    if (!open) return;
+    // Scroll ou redimensionar fecha o menu — não vale a pena persegui-lo pela página.
+    const close = () => setOpen(false);
+    window.addEventListener("scroll", close, true);
+    window.addEventListener("resize", close);
+    return () => {
+      window.removeEventListener("scroll", close, true);
+      window.removeEventListener("resize", close);
+    };
+  }, [open]);
+
+  const toggle = () => {
+    const r = btnRef.current?.getBoundingClientRect();
+    if (r) setPos({ top: r.bottom + 4, left: Math.max(8, r.right - 180) });
+    setOpen((v) => !v);
+  };
+
+  async function choose(value: string) {
+    setOpen(false);
+    if (value === target || busy) return;
+    setBusy(true);
+    try {
+      await apiPatch(`/api/charges/${fee.id}/status`, { status: value });
+      await reloadAcademy();
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <>
+      <button
+        ref={btnRef}
+        type="button"
+        onClick={toggle}
+        disabled={busy}
+        aria-haspopup="menu"
+        aria-expanded={open}
+        title="Alterar estado"
+        className="inline-flex items-center gap-1 rounded-full transition-opacity duration-[120ms] hover:opacity-75 disabled:opacity-50"
+      >
+        <Pill tone={STATUS_TONE[fee.status]}>{STATUS_LABEL[fee.status]}</Pill>
+        <ChevronDown className="size-3 text-ink-4" strokeWidth={2} />
+      </button>
+
+      {open &&
+        pos &&
+        createPortal(
+          <>
+            <div className="fixed inset-0 z-40" onClick={() => setOpen(false)} aria-hidden />
+            <div
+              role="menu"
+              style={{ top: pos.top, left: pos.left }}
+              className="fixed z-50 w-[180px] rounded-[var(--radius-panel)] border border-line bg-surface p-1 shadow-[var(--shadow-pop)]"
+            >
+              {MANUAL_OPTIONS.map((o) => (
+                <button
+                  key={o.value}
+                  type="button"
+                  role="menuitem"
+                  onClick={() => void choose(o.value)}
+                  className={cx(
+                    "flex w-full items-center gap-2 rounded-[6px] px-2.5 py-1.5 text-left text-body transition-colors duration-[120ms] hover:bg-sunken",
+                    o.value === target ? "text-ink" : "text-ink-2",
+                  )}
+                >
+                  <span className="flex size-4 shrink-0 items-center justify-center text-signal">
+                    {o.value === target && <Check className="size-3.5" strokeWidth={2.5} />}
+                  </span>
+                  <span className="flex-1">{o.label}</span>
+                </button>
+              ))}
+            </div>
+          </>,
+          document.body,
+        )}
     </>
   );
 }

@@ -7,14 +7,16 @@
     "dev": "vite",
     "build": "tsc -b && vite build",
     "preview": "vite preview",
-    "typecheck": "tsc -b --noEmit"
+    "typecheck": "tsc -b --noEmit",
+    "test:staff": "esbuild scripts/test-staff.ts --bundle --platform=node --format=esm --outfile=node_modules/.cache/test-staff.mjs --alias:@=./src --external:react --define:import.meta.env={} --log-level=warning && node node_modules/.cache/test-staff.mjs"
   },
   "dependencies": {
     "@academia/ui": "*",
     "lucide-react": "^0.469.0",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
-    "react-router-dom": "^7.1.1"
+    "react-router-dom": "^7.1.1",
+    "xlsx": "^0.18.5"
   },
   "devDependencies": {
     "@tailwindcss/vite": "^4.0.0",

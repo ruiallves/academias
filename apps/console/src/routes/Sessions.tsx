@@ -1,9 +1,9 @@
 import { useMemo, useState } from "react";
 import { PageHeader } from "@/components/Shell";
-import { Bar, DataTable, Empty, Metric, MetricRow, Monogram, Panel, Pill, type Column } from "@/components/primitives";
-import { ResultCount, Segmented, Toolbar } from "@/components/filters";
+import { PersonLink } from "@/components/PersonLink";
+import { Bar, Empty, Metric, MetricRow, Monogram, Panel, PanelHead, Pill, cx } from "@/components/primitives";
 import { AttendanceDialog } from "@/components/AttendanceDialog";
-import { CircleCheck, ClipboardCheck } from "@/lib/icons";
+import { CircleCheck, ClipboardCheck, Clock } from "@/lib/icons";
 import { attendanceRate, coachById, listSessions, teamById, today, unrecordedSessions } from "@/lib/api";
 import { useAttendanceRecords } from "@/lib/attendance";
 import { dayShort, percent, relativeDays, time } from "@/lib/format";
@@ -11,190 +11,332 @@ import { can, isAcademyWide } from "@/lib/permissions";
 import type { TrainingSession } from "@/data/types";
 import { useSession } from "@/session";
 
-type Range = "semana" | "por-registar" | "proximos";
-
 /**
- * Presenças (diretor) e Treinos (treinador) são o mesmo ecrã.
+ * Presenças.
  *
- * O que muda é a pergunta: o diretor quer saber *se está a ser registado*, o
- * treinador quer *registar*. Por isso a diferença está no título, na ordenação por
- * omissão e na acção da linha — não em dois ecrãs paralelos que divergem com o tempo.
+ * ## Porque é que isto deixou de ser uma tabela
+ *
+ * Era uma tabela com um filtro, e a tabela é a forma errada. Uma tabela serve para
+ * **comparar linhas** — qual o mais caro, qual o mais atrasado. Aqui não se compara
+ * nada: um treinador abre isto para fazer uma coisa, registar quem faltou, e o
+ * botão que fazia isso era o elemento mais pequeno da linha mais larga do ecrã.
+ *
+ * Agora são três blocos, por ordem de urgência, e a separação é visual em vez de
+ * ser um filtro que é preciso descobrir:
+ *
+ *   1. **Por registar** — o trabalho. Linhas altas, clicáveis inteiras, com o
+ *      atraso à vista. É o que fecha primeiro.
+ *   2. **Registados** — o histórico, compacto, com a barra de assiduidade. Serve
+ *      para conferir, não para agir.
+ *   3. **A seguir** — os próximos treinos, leves. Não há nada a fazer com eles
+ *      hoje.
+ *
+ * Quem não tem nada por registar vê o primeiro bloco dizer isso e sair da frente —
+ * em vez de uma tabela vazia com um filtro por mudar.
+ *
+ * ## Um treino sem registo não é um treino sem faltas
+ *
+ * A distinção atravessa o produto: uma lista de faltas vazia significa "estiveram
+ * todos", `attendance` ausente significa "ninguém verificou". A primeira conta para
+ * a assiduidade; a segunda aparece aqui como trabalho por fazer.
  */
 export default function Sessions() {
   const { session } = useSession();
   const oversight = isAcademyWide(session);
-  const [range, setRange] = useState<Range>(oversight ? "semana" : "por-registar");
   const [recording, setRecording] = useState<TrainingSession | null>(null);
 
-  // Subscrever o armazém faz a tabela redesenhar-se assim que um registo é
-  // guardado — sem isto, a linha continuava a dizer "por registar".
+  // Subscrever o armazém faz a lista redesenhar-se assim que um registo é guardado.
   useAttendanceRecords();
 
-  const from = new Date(today.getTime() - 21 * 86_400_000);
+  const from = new Date(today.getTime() - 30 * 86_400_000);
   const to = new Date(today.getTime() + 14 * 86_400_000);
   const all = listSessions(session, from, to);
   const pending = unrecordedSessions(session);
   const rate = attendanceRate(session, 30);
+  const mayRecord = can(session, "attendance:write");
 
-  const rows = useMemo(() => {
-    if (range === "por-registar") return [...pending].sort((a, b) => a.start.localeCompare(b.start));
-    if (range === "proximos") return all.filter((s) => new Date(s.start) >= today && s.status !== "cancelled");
-    const weekAgo = new Date(today.getTime() - 7 * 86_400_000);
-    return all.filter((s) => new Date(s.start) >= weekAgo).sort((a, b) => b.start.localeCompare(a.start));
-  }, [range, all, pending]);
+  const { registados, proximos } = useMemo(() => {
+    const done = all
+      .filter((s) => s.attendance && s.status !== "cancelled")
+      .sort((a, b) => b.start.localeCompare(a.start));
+    const next = all
+      .filter((s) => new Date(s.start) >= today && s.status !== "cancelled")
+      .sort((a, b) => a.start.localeCompare(b.start));
+    return { registados: done, proximos: next };
+  }, [all]);
 
-  const thisWeek = all.filter((s) => {
+  const semana = all.filter((s) => {
     const d = new Date(s.start);
     return d >= new Date(today.getTime() - 7 * 86_400_000) && d <= today;
   });
 
-  const columns: Column<TrainingSession>[] = [
-    {
-      key: "when",
-      header: "Treino",
-      render: (s) => {
-        const d = new Date(s.start);
-        return (
-          <div className="flex items-center gap-3">
-            <div className="w-11 shrink-0 rounded-[6px] border border-line bg-sunken/50 py-1 text-center">
-              <div className="text-[10px] font-semibold text-ink-3 uppercase">{dayShort(d)}</div>
-              <div className="text-body font-semibold text-ink tabular">{d.getDate()}</div>
-            </div>
-            <div className="min-w-0">
-              <div className="truncate font-medium text-ink">{teamById(s.teamId)?.name}</div>
-              <div className="text-meta text-ink-3">
-                <span className="font-mono tabular">{time(d)}</span> · {s.venue}
-              </div>
-            </div>
-          </div>
-        );
-      },
-    },
-    {
-      key: "coach",
-      header: "Treinador",
-      hideBelow: "md",
-      render: (s) => {
-        const c = s.coachId ? coachById(s.coachId) : undefined;
-        // Um treino agendado sem treinador é um problema, não um campo vazio.
-        if (!c) return <Pill tone="risk">Por atribuir</Pill>;
-        return (
-          <div className="flex items-center gap-2">
-            <Monogram name={c.name} size="sm" />
-            <span className="truncate text-ink-2">{c.name.split(" ")[0]}</span>
-          </div>
-        );
-      },
-    },
-    {
-      key: "attendance",
-      header: "Presenças",
-      hideBelow: "sm",
-      width: "220px",
-      render: (s) => {
-        if (s.status === "cancelled") return <span className="text-meta text-ink-4">—</span>;
-        if (!s.attendance) {
-          return new Date(s.start) < today ? (
-            <span className="text-meta text-ink-4">por registar</span>
-          ) : (
-            <span className="text-meta text-ink-4">agendado</span>
-          );
-        }
-        // O total vem do plantel, não do registo: guardamos faltas, e os
-        // presentes são tudo o resto.
-        const total = teamById(s.teamId)?.athleteIds.length ?? 0;
-        const missed = s.attendance.absences.filter((x) => x.kind !== "late").length;
-        const present = Math.max(0, total - missed);
-        const r = total ? present / total : 0;
-        return (
-          <div className="flex items-center gap-2.5">
-            <Bar value={r} tone={r >= 0.85 ? "ok" : r >= 0.7 ? "signal" : "warn"} />
-            <span className="w-16 shrink-0 text-right text-meta text-ink-2 tabular">
-              {present}/{total}
-            </span>
-          </div>
-        );
-      },
-    },
-    {
-      key: "status",
-      header: "",
-      align: "right",
-      width: "140px",
-      render: (s) => {
-        if (s.status === "cancelled") return <Pill>Cancelado</Pill>;
-        if (s.attendance) return <span className="text-meta text-ink-3">{relativeDays(new Date(s.start), today)}</span>;
-        if (new Date(s.start) < today && can(session, "attendance:write")) {
-          return (
-            <button type="button" onClick={() => setRecording(s)} className="ctl-outline">
-              <ClipboardCheck className="size-3.5" strokeWidth={1.75} />
-              Registar
-            </button>
-          );
-        }
-        return <span className="text-meta text-ink-3">{relativeDays(new Date(s.start), today)}</span>;
-      },
-    },
-  ];
-
   return (
     <>
       <PageHeader
-        title={oversight ? "Presenças" : "Treinos"}
+        title="Presenças"
         subtitle={
           oversight
             ? "Cada treino sem registo é um buraco no relatório do atleta."
-            : "Regista as presenças no fim do treino — os pais vêem no mesmo dia."
+            : "Regista no fim do treino — os pais vêem no mesmo dia."
         }
       />
 
       <div className="space-y-3">
         <MetricRow>
           <Metric label="Presença média" value={rate !== null ? percent(rate) : "—"} note="últimos 30 dias" />
-          <Metric label="Treinos na semana" value={String(thisWeek.length)} note="realizados" />
-          <Metric label="Por registar" value={String(pending.length)} note={pending.length ? "últimos 21 dias" : "tudo registado"} />
+          <Metric label="Treinos na semana" value={String(semana.length)} note="realizados" />
           <Metric
-            label="Próximos 7 dias"
-            value={String(all.filter((s) => {
-              const d = new Date(s.start);
-              return d >= today && d <= new Date(today.getTime() + 7 * 86_400_000) && s.status !== "cancelled";
-            }).length)}
-            note="agendados"
+            label="Por registar"
+            value={String(pending.length)}
+            note={pending.length ? "e a envelhecer" : "está tudo em dia"}
           />
+          <Metric label="A seguir" value={String(proximos.length)} note="próximos 14 dias" />
         </MetricRow>
 
-        <Panel>
-          <Toolbar>
-            <Segmented
-              value={range}
-              onChange={setRange}
-              options={[
-                { value: "por-registar", label: "Por registar", count: pending.length },
-                { value: "semana", label: "Últimos 7 dias" },
-                { value: "proximos", label: "Próximos" },
-              ]}
-            />
-            <ResultCount n={rows.length} noun={["treino", "treinos"]} />
-          </Toolbar>
+        <Pending sessions={pending} mayRecord={mayRecord} onRecord={setRecording} />
 
-          <DataTable
-            columns={columns}
-            rows={rows}
-            keyOf={(s) => s.id}
-            empty={
-              range === "por-registar" ? (
-                <Empty icon={CircleCheck} tone="ok" title="Nada por registar" detail="Todos os treinos das últimas três semanas têm presenças." />
-              ) : (
-                <Empty title="Sem treinos neste período" />
-              )
-            }
-          />
-        </Panel>
+        <div className="grid gap-3 xl:grid-cols-2">
+          <Recorded sessions={registados} onOpen={mayRecord ? setRecording : undefined} />
+          <Upcoming sessions={proximos} />
+        </div>
       </div>
 
-      {recording && (
-        <AttendanceDialog training={recording} session={session} onClose={() => setRecording(null)} />
-      )}
+      {recording && <AttendanceDialog training={recording} session={session} onClose={() => setRecording(null)} />}
     </>
+  );
+}
+
+/* -------------------------------------------------------------------------- */
+/* Por registar — o trabalho                                                   */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * A lista de tarefas.
+ *
+ * A linha inteira é o alvo de clique, e não um botão de 80px no fim. E o atraso
+ * está escrito por extenso — "há 6 dias" — porque é isso que decide por onde
+ * começar: um treino de ontem lembra-se, um de há duas semanas já não.
+ */
+function Pending({
+  sessions,
+  mayRecord,
+  onRecord,
+}: {
+  sessions: TrainingSession[];
+  mayRecord: boolean;
+  onRecord: (s: TrainingSession) => void;
+}) {
+  if (sessions.length === 0) {
+    return (
+      <Panel className="flex items-center gap-3 px-5 py-3.5">
+        <CircleCheck className="size-5 shrink-0 text-ok" strokeWidth={1.75} />
+        <div className="min-w-0">
+          <div className="text-body font-medium text-ink">Não há treinos por registar</div>
+          <div className="text-meta text-ink-3">Tudo o que já aconteceu tem presenças lançadas.</div>
+        </div>
+      </Panel>
+    );
+  }
+
+  const ordered = [...sessions].sort((a, b) => a.start.localeCompare(b.start));
+
+  return (
+    <Panel>
+      <PanelHead title="Por registar" hint={`${sessions.length} ${sessions.length === 1 ? "treino" : "treinos"}`}>
+        <Pill tone="warn">a envelhecer</Pill>
+      </PanelHead>
+
+      <ul>
+        {ordered.map((s) => {
+          const d = new Date(s.start);
+          const dias = Math.floor((today.getTime() - d.getTime()) / 86_400_000);
+          const team = teamById(s.teamId);
+          const coachName = s.coachName ?? (s.coachId ? coachById(s.coachId)?.name : undefined);
+
+          const row = (
+            <>
+              <div className="w-12 shrink-0 rounded-[7px] border border-line bg-surface py-1.5 text-center">
+                <div className="text-[10px] font-semibold text-ink-3 uppercase">{dayShort(d)}</div>
+                <div className="text-panel font-semibold text-ink tabular">{d.getDate()}</div>
+              </div>
+
+              <div className="min-w-0 flex-1">
+                <div className="truncate text-body font-medium text-ink">{team?.name}</div>
+                <div className="truncate text-meta text-ink-3">
+                  <span className="font-mono tabular">{time(d)}</span> · {s.venue}
+                  {coachName && ` · ${coachName.split(" ")[0]}`}
+                </div>
+              </div>
+
+              {/* O atraso é o que ordena o trabalho. Vermelho a partir de uma
+                  semana: a partir daí o treinador já não se lembra de quem faltou. */}
+              <span className={cx("shrink-0 text-meta font-medium", dias >= 7 ? "text-risk" : "text-ink-3")}>
+                {dias <= 0 ? "hoje" : dias === 1 ? "ontem" : `há ${dias} dias`}
+              </span>
+
+              {mayRecord && (
+                <span className="ctl-outline pointer-events-none shrink-0">
+                  <ClipboardCheck className="size-3.5" strokeWidth={1.75} />
+                  Registar
+                </span>
+              )}
+            </>
+          );
+
+          return (
+            <li key={s.id}>
+              {mayRecord ? (
+                <button
+                  type="button"
+                  onClick={() => onRecord(s)}
+                  className="flex w-full items-center gap-3.5 border-b border-line px-5 py-3 text-left transition-colors duration-[120ms] last:border-b-0 hover:bg-sunken"
+                >
+                  {row}
+                </button>
+              ) : (
+                <div className="flex items-center gap-3.5 border-b border-line px-5 py-3 last:border-b-0">{row}</div>
+              )}
+            </li>
+          );
+        })}
+      </ul>
+    </Panel>
+  );
+}
+
+/* -------------------------------------------------------------------------- */
+/* Registados — o histórico                                                    */
+/* -------------------------------------------------------------------------- */
+
+function Recorded({ sessions, onOpen }: { sessions: TrainingSession[]; onOpen?: (s: TrainingSession) => void }) {
+  return (
+    <Panel>
+      <PanelHead title="Registados" hint="últimos 30 dias" />
+
+      {sessions.length === 0 ? (
+        <div className="px-5 py-12">
+          <Empty icon={ClipboardCheck} title="Ainda sem registos" />
+        </div>
+      ) : (
+        <ul className="max-h-[420px] overflow-y-auto">
+          {sessions.map((s) => {
+            const d = new Date(s.start);
+            const team = teamById(s.teamId);
+
+            // O total vem do plantel, não do registo: guardamos faltas, e os
+            // presentes são tudo o resto.
+            const total = team?.athleteIds.length ?? 0;
+            const faltas = s.attendance?.absences.filter((x) => x.kind !== "late").length ?? 0;
+            const presentes = Math.max(0, total - faltas);
+            const r = total ? presentes / total : 0;
+
+            const content = (
+              <>
+                <div className="min-w-0 flex-1">
+                  <div className="truncate text-body text-ink">{team?.name}</div>
+                  <div className="text-meta text-ink-4">
+                    {relativeDays(d, today)} · <span className="font-mono tabular">{time(d)}</span>
+                  </div>
+                </div>
+
+                <div className="flex w-[140px] shrink-0 items-center gap-2.5">
+                  <Bar value={r} tone={r >= 0.85 ? "ok" : r >= 0.7 ? "signal" : "warn"} />
+                  <span className="w-12 shrink-0 text-right text-meta text-ink-2 tabular">
+                    {presentes}/{total}
+                  </span>
+                </div>
+              </>
+            );
+
+            return (
+              <li key={s.id}>
+                {onOpen ? (
+                  <button
+                    type="button"
+                    onClick={() => onOpen(s)}
+                    title="Corrigir o registo"
+                    className="flex w-full items-center gap-3 border-b border-line px-5 py-2.5 text-left transition-colors duration-[120ms] last:border-b-0 hover:bg-sunken"
+                  >
+                    {content}
+                  </button>
+                ) : (
+                  <div className="flex items-center gap-3 border-b border-line px-5 py-2.5 last:border-b-0">{content}</div>
+                )}
+              </li>
+            );
+          })}
+        </ul>
+      )}
+    </Panel>
+  );
+}
+
+/* -------------------------------------------------------------------------- */
+/* A seguir                                                                    */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * Os próximos treinos.
+ *
+ * Sem acção nenhuma — não há nada a registar num treino que ainda não aconteceu.
+ * Está aqui para responder a "o que vem aí", e por isso é o bloco mais leve dos
+ * três. Um treino sem treinador atribuído aparece marcado: é um problema que se
+ * resolve antes do dia, não depois.
+ */
+function Upcoming({ sessions }: { sessions: TrainingSession[] }) {
+  return (
+    <Panel>
+      <PanelHead title="A seguir" hint="próximos 14 dias" />
+
+      {sessions.length === 0 ? (
+        <div className="px-5 py-12">
+          <Empty icon={Clock} title="Sem treinos agendados" />
+        </div>
+      ) : (
+        <ul className="max-h-[420px] overflow-y-auto">
+          {sessions.map((s) => {
+            const d = new Date(s.start);
+            const team = teamById(s.teamId);
+            /*
+             * O nome vem com a sessão, e só se recorre à lista de staff para obter
+             * o link para a ficha.
+             *
+             * Um treinador não tem `staff:read` — essa lista chega-lhe vazia. Ao
+             * procurar lá primeiro, o produto dizia "sem treinador" nos treinos do
+             * próprio treinador que os estava a ver. Um alarme inventado por não se
+             * conseguir resolver um nome é pior do que não mostrar nome nenhum.
+             */
+            const coach = s.coachId ? coachById(s.coachId) : undefined;
+            const coachName = s.coachName ?? coach?.name;
+
+            return (
+              <li key={s.id} className="flex items-center gap-3 border-b border-line px-5 py-2.5 last:border-b-0">
+                <span className="w-16 shrink-0 text-meta text-ink-3">
+                  {dayShort(d)} {d.getDate()}
+                </span>
+
+                <div className="min-w-0 flex-1">
+                  <div className="truncate text-body text-ink">{team?.name}</div>
+                  <div className="truncate text-meta text-ink-4">
+                    <span className="font-mono tabular">{time(d)}</span> · {s.venue}
+                  </div>
+                </div>
+
+                {coachName ? (
+                  <span className="flex shrink-0 items-center gap-1.5">
+                    <Monogram name={coachName} size="sm" />
+                    <PersonLink id={coach?.id} name={coachName} short className="text-meta text-ink-3" />
+                  </span>
+                ) : (
+                  // Sem treinador atribuído é um problema a sério — resolve-se antes
+                  // do dia, não depois.
+                  <Pill tone="risk">sem treinador</Pill>
+                )}
+              </li>
+            );
+          })}
+        </ul>
+      )}
+    </Panel>
   );
 }

@@ -1,9 +1,9 @@
 /**
  * Fronteira de dados.
  *
- * Tudo o que a UI sabe sobre dados passa por aqui. Hoje lê de `src/data/demo.ts`;
- * amanhã faz `fetch` à API NestJS. Nenhum componente importa `demo.ts` directamente
- * — é essa disciplina que torna a troca um único ficheiro.
+ * Tudo o que a UI sabe sobre dados passa por aqui. Lê de `lib/store.ts`, que traz a
+ * academia da base de dados através da API. Nenhum componente vai buscar dados por
+ * fora — foi essa disciplina que permitiu trocar a origem sem tocar nos ecrãs.
  */
 
 import {
@@ -19,31 +19,32 @@ import {
   staff,
   teams,
   today,
-} from "@/data/demo";
+} from "@/lib/store";
 import type { AbsenceKind, AttentionItem, Athlete, Fee, TrainingSession } from "@/data/types";
 import type { Session } from "@/lib/permissions";
 import { isAcademyWide } from "@/lib/permissions";
+import { getStaffEdits } from "@/lib/staff-edits";
+import { matches } from "@/lib/store";
 import { relativeDays } from "@/lib/format";
-import { getRosterAdditions } from "@/lib/roster";
 import { getAttendanceRecords } from "@/lib/attendance";
 import { isUnavailable } from "@/lib/clinical";
 
 export { academy, today, currentPeriod };
 
 /**
- * Fusão dos dados de demonstração com o que foi criado a partir da UI ("Nova
- * equipa", "Novo atleta"). Um sítio só para isto — todas as funções abaixo lêem
- * daqui, nunca directamente de `teams`/`athletes`/`guardians`. Quando a API estiver
- * ligada, estas três funções passam a `fetch`; nada mais neste ficheiro muda.
+ * Equipas, atletas e encarregados — já vindos da base de dados através de
+ * `lib/store.ts` (bootstrap). "Nova equipa" e "Novo atleta" escrevem na API e
+ * recarregam o store; deixou de haver uma cópia local a fundir. Estas três funções
+ * continuam a ser o único ponto de leitura — todas as de baixo passam por aqui.
  */
 function allTeams() {
-  return [...teams, ...getRosterAdditions().teams];
+  return teams;
 }
 function allAthletes() {
-  return [...athletes, ...getRosterAdditions().athletes];
+  return athletes;
 }
 function allGuardians() {
-  return [...guardians, ...getRosterAdditions().guardians];
+  return guardians;
 }
 
 /* -------------------------------------------------------------------------- */
@@ -70,9 +71,16 @@ export function listAthletes(session: Session): Athlete[] {
   return allAthletes().filter((a) => ids.has(a.teamId));
 }
 
-/** Toda a gente que trabalha na academia — direção, técnica, clínico, operações. */
+/**
+ * Toda a gente que trabalha na academia — direção, técnica, clínico, operações.
+ *
+ * Funde as edições feitas na ficha, como `listAthletes` funde o que se cria em
+ * `lib/roster.ts`. Quem sai da academia é desactivado e não apagado: continua a
+ * aparecer no histórico das equipas que treinou, e só desaparece das listas.
+ */
 export function listStaff() {
-  return staff.filter((m) => m.isActive);
+  const edits = getStaffEdits();
+  return staff.map((m) => ({ ...m, ...edits[m.id] })).filter((m) => m.isActive);
 }
 
 /** Só quem está atribuído a equipas. É o subconjunto que interessa a um horário. */
@@ -138,7 +146,10 @@ export const teamById = (id: string) => allTeams().find((t) => t.id === id);
 export const athleteById = (id: string) => allAthletes().find((a) => a.id === id);
 // Procura em todo o staff, não só nos treinadores: um treino pode ser conduzido
 // por um preparador físico, e a ficha de uma equipa lista quem lá trabalha.
-export const staffById = (id: string) => staff.find((m) => m.id === id);
+export const staffById = (id: string) => {
+  const base = staff.find((m) => m.id === id);
+  return base ? { ...base, ...getStaffEdits()[id] } : undefined;
+};
 export const coachById = staffById;
 export const guardianById = (id: string) => allGuardians().find((g) => g.id === id);
 export const sportById = (id: string) => academy.sports.find((s) => s.id === id);
@@ -246,6 +257,8 @@ export type AthleteSessionRecord = {
   session: TrainingSession;
   /** `null` quando o treino ainda não foi registado — diferente de ter estado presente. */
   status: AbsenceKind | "present" | null;
+  /** O motivo, só numa falta justificada. */
+  note?: string;
 };
 
 /**
@@ -272,7 +285,7 @@ export function athleteSessions(athleteId: string, limitDays = 180): AthleteSess
       const attendance = overrides[s.id] ?? s.attendance;
       if (!attendance) return { session: s, status: null };
       const hit = attendance.absences.find((x) => x.athleteId === athleteId);
-      return { session: s, status: hit ? hit.kind : ("present" as const) };
+      return { session: s, status: hit ? hit.kind : ("present" as const), note: hit?.note };
     })
     .sort((a, b) => b.session.start.localeCompare(a.session.start));
 }
@@ -467,6 +480,15 @@ export function navCounts(session: Session) {
     unreadThreads: 0,
     pendingEvaluations: listEvaluations(session).filter((e) => e.status === "draft").length,
     sessionsToRecord: unrecordedSessions(session).length,
+    // Jogos que se aproximam com a convocatória por submeter. Só conta os
+    // próximos dez dias: um jogo daqui a dois meses não é uma pendência.
+    callUpsToSubmit: matches.filter(
+      (m) =>
+        !m.submitted &&
+        m.status === "SCHEDULED" &&
+        new Date(m.startsAt) >= today &&
+        new Date(m.startsAt).getTime() - today.getTime() <= 10 * 86_400_000,
+    ).length,
     athletesOut: listAthletes(session).filter((a) => isUnavailable(a.id)).length,
   };
 }

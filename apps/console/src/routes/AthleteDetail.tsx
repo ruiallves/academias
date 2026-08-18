@@ -47,6 +47,8 @@ import {
 import { dominantSideLabel, summariseSeason, useAthleteMatches, type AthleteMatch } from "@/lib/athlete";
 import { activeRestriction, availabilityOf, useClinicalRecords } from "@/lib/clinical";
 import { tallyNoun } from "@/lib/calendar";
+import { calledUpFor, matchLabel } from "@/lib/callups";
+import { useStore } from "@/lib/store";
 import { age, longDate, money, percent, periodLabel, relativeDays, shortDate, time } from "@/lib/format";
 import { can } from "@/lib/permissions";
 import { useSession } from "@/session";
@@ -166,6 +168,7 @@ function AthleteHeader({ athlete }: { athlete: Athlete }) {
           <span className="text-meta text-ink-3">{team?.name}</span>
           {athlete.position && <span className="text-meta text-ink-3">· {athlete.position}</span>}
           {athlete.status === "paused" && <Pill tone="warn">Em pausa</Pill>}
+          <CalledUpTag athleteId={athlete.id} />
         </div>
         <div className="flex flex-wrap items-center gap-2.5">
           <h1 className="text-page text-ink">{athlete.name}</h1>
@@ -184,6 +187,34 @@ function AthleteHeader({ athlete }: { athlete: Athlete }) {
         </div>
       )}
     </div>
+  );
+}
+
+/**
+ * "Convocado para o próximo jogo".
+ *
+ * Só aparece quando a convocatória foi **submetida**: uma lista ainda em rascunho
+ * pode mudar, e uma etiqueta que promete um jogo e desaparece no dia seguinte é
+ * pior do que não existir. É a mesma regra que decide quando a família é avisada.
+ *
+ * Traz o adversário e o dia porque "Convocado" sozinho manda perguntar para quê —
+ * e a resposta está a dois campos de distância.
+ */
+function CalledUpTag({ athleteId }: { athleteId: string }) {
+  // Redesenha quando uma convocatória for submetida noutro separador.
+  useStore();
+  const match = calledUpFor(athleteId);
+  if (!match) return null;
+
+  // Convidado de outro escalão: dito por extenso, porque "Convocado" sozinho não
+  // explica porque é que um atleta dos Sub-11 vai jogar com os Sub-13.
+  const entry = match.calledUp.find((c) => c.athleteId === athleteId);
+  const d = new Date(match.startsAt);
+
+  return (
+    <Pill tone="signal">
+      {entry?.isGuest ? `Emprestado ao ${match.teamName}` : "Convocado"} · {matchLabel(match)} · {shortDate(d)}
+    </Pill>
   );
 }
 
@@ -531,7 +562,18 @@ function Attendance({ athleteId }: { athleteId: string }) {
         // mostrá-la como tal impede que a assiduidade minta.
         if (r.status === null) return <span className="text-meta text-ink-4">por registar</span>;
         const meta = STATUS_META[r.status];
-        return <Pill tone={meta.tone}>{meta.label}</Pill>;
+        return (
+          <span className="inline-flex flex-col items-end gap-0.5">
+            <Pill tone={meta.tone}>{meta.label}</Pill>
+            {/* O motivo da justificação à vista de quem lê a ficha — é o que
+                distingue uma falta com aviso de uma falta seca. */}
+            {r.status === "justified" && r.note && (
+              <span className="max-w-[220px] truncate text-meta text-ink-3" title={r.note}>
+                {r.note}
+              </span>
+            )}
+          </span>
+        );
       },
     },
   ];
@@ -624,8 +666,8 @@ function Family({ athlete }: { athlete: Athlete }) {
           <PanelHead title="Mensalidades" hint={periodLabel(currentPeriod)} />
           <ul className="px-5 py-1.5">
             {fees.slice(0, 8).map((f) => {
-              const tone = { paid: "ok", processing: "signal", pending: "warn", overdue: "risk" } as const;
-              const label = { paid: "Pago", processing: "A confirmar", pending: "Pendente", overdue: "Vencido" };
+              const tone = { paid: "ok", processing: "signal", pending: "warn", overdue: "risk", void: "neutral" } as const;
+              const label = { paid: "Pago", processing: "A confirmar", pending: "Pendente", overdue: "Vencido", void: "Anulada" };
               return (
                 <li key={f.id} className="flex items-center gap-3 border-b border-line py-2.5 last:border-0">
                   <span className="min-w-0 flex-1 truncate text-body text-ink-2">{periodLabel(f.period)}</span>

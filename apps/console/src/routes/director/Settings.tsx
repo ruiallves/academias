@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { useSearchParams } from "react-router-dom";
+import { Link, useSearchParams } from "react-router-dom";
 import { PageHeader } from "@/components/Shell";
 import { CatalogPanel } from "@/components/CatalogPanel";
 import { ZeroZeroPanel } from "@/components/ZeroZeroPanel";
@@ -132,8 +132,17 @@ export default function Settings() {
           </Panel>
 
           <Panel>
-            <PanelHead title="Papéis e permissões" hint="quem vê o quê" />
+            <PanelHead title="Papéis e permissões" hint="quem vê o quê, por omissão" />
             <PermissionMatrix />
+            <p className="border-t border-line px-5 py-3 text-meta leading-relaxed text-ink-3">
+              Isto é o que cada papel dá a toda a gente que o tem. Para abrir ou fechar acesso a{" "}
+              <strong className="font-medium text-ink-2">uma pessoa em concreto</strong> — dar mensalidades a
+              um treinador, tirar o boletim clínico a outro — abre a ficha dela em{" "}
+              <Link to="/staff" className="font-medium text-ink hover:underline">
+                Staff
+              </Link>
+              , separador Acesso.
+            </p>
           </Panel>
         </div>
 
@@ -208,6 +217,11 @@ function Row({ label, value, muted }: { label: string; value: string; muted?: bo
  * A matriz de permissões existe para tornar visível o que costuma ficar escondido
  * em código. Um diretor consegue ver, sem perguntar a ninguém, que o treinador não
  * tem acesso financeiro.
+ *
+ * É o retrato dos **papéis** — o que vale por omissão para toda a gente que os
+ * tem. As excepções são de cada pessoa e vivem na ficha dela, porque é lá que a
+ * pergunta aparece ("porque é que este treinador vê as mensalidades?"). Uma tabela
+ * que misturasse as duas coisas deixava de responder a qualquer uma.
  */
 function PermissionMatrix() {
   const roles: Role[] = ["DIRECTOR", "COORDINATOR", "COACH", "STAFF"];

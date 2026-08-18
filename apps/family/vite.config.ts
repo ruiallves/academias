@@ -42,6 +42,11 @@ export default defineConfig({
           { src: "/icon-512.png", sizes: "512x512", type: "image/png", purpose: "maskable" },
         ],
       },
+      // Sem isto, o service worker só existe no build de produção — e as
+      // notificações push só funcionam com um service worker activo. Ligá-lo em
+      // `vite dev` deixa testar o push em `localhost:5174` (num browser de
+      // secretária que suporte Web Push), sem ter de fazer build e instalar.
+      devOptions: { enabled: true, type: "module", navigateFallback: "index.html" },
     }),
   ],
   resolve: {
@@ -50,7 +55,10 @@ export default defineConfig({
       "@academia/ui": fileURLToPath(new URL("../../packages/ui/src", import.meta.url)),
     },
   },
-  server: { port: 5174 },
+  // `host: true` liga o Vite a todas as interfaces (0.0.0.0), não só a
+  // `localhost` — sem isto, um telemóvel na mesma rede não encontra o servidor
+  // nenhuma. Para abrir no telemóvel: `http://<IP da máquina>:5174`.
+  server: { port: 5174, host: true },
   // `true` só serve para testar num telemóvel a sério através de um túnel
   // (loca.lt, ngrok) durante o desenvolvimento — o Vite bloqueia por omissão
   // qualquer Host desconhecido para evitar DNS rebinding. Em produção isto não

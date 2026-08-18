@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { Dialog } from "./Dialog";
-import { AvailabilityTag, cx, Monogram } from "./primitives";
+import { AvailabilityTag, cx, Monogram, SelectField } from "./primitives";
 import { listAthletes, teamById } from "@/lib/api";
 import { recordAttendance } from "@/lib/attendance";
 import { availabilityOf, isUnavailable, useClinicalRecords } from "@/lib/clinical";
@@ -21,11 +21,24 @@ import type { Session } from "@/lib/permissions";
  * assiduidade (ver `attendanceRate`).
  */
 
-const KINDS: { value: AbsenceKind; label: string; tone: string }[] = [
-  { value: "absent", label: "Faltou", tone: "bg-risk-soft text-risk" },
-  { value: "justified", label: "Justificada", tone: "bg-warn-soft text-warn" },
-  { value: "late", label: "Atrasado", tone: "bg-sunken text-ink-2" },
+/**
+ * Os quatro estados, na ordem em que um treinador pensa neles: primeiro o normal,
+ * depois as excepções por gravidade. "Presente" é o valor por omissão — escolhê-lo
+ * apaga a marca, porque a presença é a ausência de falta.
+ */
+const STATUS_OPTIONS: { value: "present" | AbsenceKind; label: string }[] = [
+  { value: "present", label: "Presente" },
+  { value: "absent", label: "Faltou" },
+  { value: "justified", label: "Justificada" },
+  { value: "late", label: "Atrasado" },
 ];
+
+/** Cor do ponto ao lado do nome — um sinal rápido sem depender de ler o dropdown. */
+const DOT_TONE: Record<AbsenceKind, string> = {
+  absent: "bg-risk",
+  justified: "bg-warn",
+  late: "bg-ink-3",
+};
 
 export function AttendanceDialog({
   training,
@@ -46,19 +59,37 @@ export function AttendanceDialog({
   const [absences, setAbsences] = useState<Record<string, AbsenceKind>>(() =>
     Object.fromEntries((training.attendance?.absences ?? []).map((x) => [x.athleteId, x.kind])),
   );
+  // O motivo de cada falta justificada, à parte do estado. Restaurado ao reabrir.
+  const [notes, setNotes] = useState<Record<string, string>>(() =>
+    Object.fromEntries(
+      (training.attendance?.absences ?? [])
+        .filter((x) => x.kind === "justified" && x.note)
+        .map((x) => [x.athleteId, x.note as string]),
+    ),
+  );
 
-  const cycle = (athleteId: string) => {
+  const setStatus = (athleteId: string, value: "present" | AbsenceKind) => {
     setAbsences((current) => {
       const next = { ...current };
-      const now = next[athleteId];
-      // presente → faltou → justificada → atrasado → presente
-      if (!now) next[athleteId] = "absent";
-      else if (now === "absent") next[athleteId] = "justified";
-      else if (now === "justified") next[athleteId] = "late";
-      else delete next[athleteId];
+      // "Presente" não é um estado guardado — é a ausência de marca.
+      if (value === "present") delete next[athleteId];
+      else next[athleteId] = value;
       return next;
     });
+    // Deixar de ser justificada apaga o motivo — não fica um motivo órfão preso a
+    // uma falta que já não é justificada.
+    if (value !== "justified") {
+      setNotes((current) => {
+        if (!current[athleteId]) return current;
+        const next = { ...current };
+        delete next[athleteId];
+        return next;
+      });
+    }
   };
+
+  const setNote = (athleteId: string, note: string) =>
+    setNotes((current) => ({ ...current, [athleteId]: note }));
 
   // Quem está de baixa não entra na conta: não faltou ao treino, está impedido de
   // o fazer. Contá-lo como falta puniria o atleta pela lesão no seu próprio
@@ -71,7 +102,12 @@ export function AttendanceDialog({
   const save = () => {
     recordAttendance(
       training.id,
-      Object.entries(absences).map(([athleteId, kind]) => ({ athleteId, kind })),
+      Object.entries(absences).map(([athleteId, kind]) => ({
+        athleteId,
+        kind,
+        // O motivo só faz sentido numa falta justificada; nas outras vai vazio.
+        ...(kind === "justified" && notes[athleteId]?.trim() ? { note: notes[athleteId].trim() } : {}),
+      })),
     );
     onClose();
   };
@@ -99,14 +135,13 @@ export function AttendanceDialog({
       }
     >
       <p className="border-b border-line bg-sunken/40 px-5 py-2.5 text-meta text-ink-3">
-        Toca num atleta para marcar que <strong className="font-medium text-ink">faltou</strong>. Os
-        restantes ficam presentes.
+        Escolhe o estado de cada atleta. Por omissão estão todos{" "}
+        <strong className="font-medium text-ink">presentes</strong>.
       </p>
 
       <ul className="p-2">
         {roster.map((a) => {
           const kind = absences[a.id];
-          const meta = KINDS.find((k) => k.value === kind);
           const injured = isUnavailable(a.id);
 
           if (injured) {
@@ -123,32 +158,50 @@ export function AttendanceDialog({
 
           return (
             <li key={a.id}>
-              <button
-                type="button"
-                onClick={() => cycle(a.id)}
-                className={cx(
-                  "flex w-full items-center gap-2.5 rounded-[var(--radius-control)] px-3 py-2 text-left transition-colors duration-[120ms]",
-                  kind ? "bg-sunken/60" : "hover:bg-sunken/50",
-                )}
-              >
-                <Monogram name={a.name} size="sm" />
-                <span
-                  className={cx(
-                    "min-w-0 flex-1 truncate text-body",
-                    kind && kind !== "late" ? "text-ink-3 line-through" : "text-ink",
-                  )}
-                >
-                  {shortName(a.name)}
-                </span>
+              <div className="rounded-[var(--radius-control)] px-3 py-1.5">
+                <div className="flex w-full items-center gap-2.5">
+                  <Monogram name={a.name} size="sm" />
 
-                {meta ? (
-                  <span className={cx("shrink-0 rounded-full px-2 py-0.5 text-[11px] font-semibold", meta.tone)}>
-                    {meta.label}
+                  {/* Ponto de cor: o estado lê-se de relance, sem abrir o dropdown. */}
+                  <span
+                    className={cx("size-1.5 shrink-0 rounded-full", kind ? DOT_TONE[kind] : "bg-ok")}
+                    aria-hidden
+                  />
+
+                  <span
+                    className={cx(
+                      "min-w-0 flex-1 truncate text-body",
+                      kind && kind !== "late" ? "text-ink-3 line-through" : "text-ink",
+                    )}
+                  >
+                    {shortName(a.name)}
                   </span>
-                ) : (
-                  <span className="shrink-0 text-[11px] font-medium text-ok">Presente</span>
+
+                  <SelectField
+                    size="sm"
+                    className="w-[134px] shrink-0"
+                    aria-label={`Estado de ${a.name}`}
+                    value={kind ?? "present"}
+                    onChange={(v) => setStatus(a.id, v)}
+                    options={STATUS_OPTIONS}
+                  />
+                </div>
+
+                {/* Só a falta justificada pede um motivo — é o que a distingue de uma
+                    falta seca. Alinhado com o nome, recuado pelo tamanho do monograma. */}
+                {kind === "justified" && (
+                  <div className="mt-1.5 pl-[34px]">
+                    <input
+                      type="text"
+                      value={notes[a.id] ?? ""}
+                      onChange={(e) => setNote(a.id, e.target.value)}
+                      placeholder="Motivo da justificação (ex.: consulta médica)"
+                      maxLength={200}
+                      className="h-8 w-full rounded-[var(--radius-control)] border border-line bg-surface px-2.5 text-meta text-ink placeholder:text-ink-4 focus:border-line-strong focus:outline-none"
+                    />
+                  </div>
                 )}
-              </button>
+              </div>
             </li>
           );
         })}

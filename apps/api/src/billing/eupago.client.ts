@@ -1,4 +1,4 @@
-import { Injectable, Logger } from "@nestjs/common";
+import { Injectable, Logger, type OnModuleInit } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
 import { createHmac, timingSafeEqual } from "node:crypto";
 
@@ -30,10 +30,37 @@ export type ChargeResult = {
  * `Payment`, nunca de euPago.
  */
 @Injectable()
-export class EupagoClient {
+export class EupagoClient implements OnModuleInit {
   private readonly log = new Logger(EupagoClient.name);
 
   constructor(private readonly config: ConfigService) {}
+
+  /**
+   * O servidor recusa arrancar sem um segredo de webhook forte.
+   *
+   * Antes de existir esta guarda, o servidor subia com `EUPAGO_WEBHOOK_SECRET=""`
+   * e o estado inseguro era invisível — a assinatura "verificava" contra um HMAC
+   * de segredo vazio, que qualquer pessoa calcula. Recusar arrancar torna a má
+   * configuração impossível de ignorar: ou está bem configurado, ou o processo
+   * nem sobe.
+   *
+   * Em produção. Em desenvolvimento com euPago desligado (`EUPAGO_API_KEY` vazio)
+   * apenas avisa, para não travar quem está a trabalhar noutra parte do produto.
+   */
+  onModuleInit() {
+    const secret = this.config.get<string>("EUPAGO_WEBHOOK_SECRET") ?? "";
+    const eupagoEnabled = (this.config.get<string>("EUPAGO_API_KEY") ?? "") !== "";
+
+    if (secret.length < 16) {
+      const msg =
+        "EUPAGO_WEBHOOK_SECRET ausente ou com menos de 16 caracteres. " +
+        "O webhook de pagamentos aceitaria eventos forjados.";
+      if (eupagoEnabled || process.env.NODE_ENV === "production") {
+        throw new Error(msg);
+      }
+      this.log.warn(`${msg} (tolerado porque a euPago está desligada em desenvolvimento)`);
+    }
+  }
 
   private get apiKey() {
     return this.config.getOrThrow<string>("EUPAGO_API_KEY");
@@ -81,7 +108,17 @@ export class EupagoClient {
   verifySignature(rawBody: string, signature: string | undefined): boolean {
     if (!signature) return false;
 
+    // Falha fechado se o segredo não estiver configurado. Um segredo vazio faz o
+    // HMAC ser `HMAC("", body)` — que qualquer atacante calcula, porque o vazio é
+    // público. Sem esta guarda, o webhook aceitaria eventos forjados e marcaria
+    // mensalidades como pagas sem dinheiro. O arranque também recusa (ver o
+    // `onModuleInit` abaixo); esta é a segunda linha de defesa.
     const secret = this.config.getOrThrow<string>("EUPAGO_WEBHOOK_SECRET");
+    if (secret.length < 16) {
+      this.log.error("EUPAGO_WEBHOOK_SECRET ausente ou fraco — webhook recusado por segurança");
+      return false;
+    }
+
     const expected = createHmac("sha256", secret).update(rawBody, "utf8").digest("hex");
 
     const a = Buffer.from(expected, "utf8");

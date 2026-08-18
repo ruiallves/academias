@@ -150,8 +150,13 @@ async function main() {
     paiRows.rows[0].membership_id,
   ]);
   await db.query("COMMIT");
-  check("o encarregado tem educandos ligados", kids.rows.length === 1,
+  // A seed dá-lhe duas filhas de propósito: uma família com mais do que um
+  // educando é o caso em que a app das famílias tem de escolher, e é onde as
+  // coisas partem. Exigir exactamente um punha o teste a defender o caso fácil.
+  check("o encarregado tem educandos ligados", kids.rows.length >= 1,
     `${kids.rows.length} educandos`);
+  check("e o caso de vários educandos existe na seed", kids.rows.length >= 2,
+    `só ${kids.rows.length}`);
 
   console.log("\n=== Utilizador sem membership nesta academia ===");
   const orphan = await db.query("SELECT * FROM app.resolve_memberships($1)", [

@@ -1,8 +1,9 @@
 import { Link } from "react-router-dom";
 import { useState, type FormEvent } from "react";
 import { academy, listCoaches, listTeams } from "@/lib/api";
+import { apiPost } from "@/lib/http";
+import { reloadAcademy } from "@/lib/store";
 import { useActiveCatalog } from "@/lib/catalogs";
-import { createTeam } from "@/lib/roster";
 import { Plus, Settings, Trash2 } from "@/lib/icons";
 import type { Session } from "@/lib/permissions";
 import type { Team } from "@/data/types";
@@ -34,23 +35,36 @@ export function NewTeamDialog({ session, onClose }: { session: Session; onClose:
   const [season, setSeason] = useState(guessSeason(existingTeams));
   const [slots, setSlots] = useState<Slot[]>([{ weekday: 1, start: "18:00", end: "19:30", venue: venues[0]?.label ?? "" }]);
 
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
   const sport = academy.sports.find((s) => s.id === sportId);
   const suggested = ageGroup && sport ? `${ageGroup} ${sport.name}` : "";
 
   const updateSlot = (i: number, patch: Partial<Slot>) =>
     setSlots((xs) => xs.map((s, idx) => (idx === i ? { ...s, ...patch } : s)));
 
-  function submit(e: FormEvent) {
+  async function submit(e: FormEvent) {
     e.preventDefault();
-    createTeam({
-      name: name.trim() || suggested,
-      sportId,
-      ageGroup,
-      season: season.trim(),
-      coachId: coachId || undefined,
-      schedule: slots.filter((s) => s.venue),
-    });
-    onClose();
+    if (busy) return;
+    setBusy(true);
+    setError(null);
+    try {
+      await apiPost("/api/teams", {
+        name: name.trim() || suggested,
+        sportId,
+        ageGroup,
+        season: season.trim(),
+        ...(coachId ? { coachId } : {}),
+        schedule: slots.filter((s) => s.venue),
+      });
+      await reloadAcademy();
+      onClose();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Não foi possível criar a equipa.");
+    } finally {
+      setBusy(false);
+    }
   }
 
   return (
@@ -64,8 +78,8 @@ export function NewTeamDialog({ session, onClose }: { session: Session; onClose:
           <button type="button" onClick={onClose} className="ctl-ghost">
             Cancelar
           </button>
-          <button type="submit" form="form-nova-equipa" className="ctl-primary" disabled={!ageGroup}>
-            Criar equipa
+          <button type="submit" form="form-nova-equipa" className="ctl-primary" disabled={!ageGroup || busy}>
+            {busy ? "A criar…" : "Criar equipa"}
           </button>
         </>
       }
@@ -179,6 +193,10 @@ export function NewTeamDialog({ session, onClose }: { session: Session; onClose:
             </div>
           )}
         </fieldset>
+
+        {error && (
+          <p className="rounded-[var(--radius-control)] bg-risk-soft px-3 py-2 text-meta text-risk">{error}</p>
+        )}
       </form>
     </Dialog>
   );

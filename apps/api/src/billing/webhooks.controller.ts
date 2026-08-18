@@ -70,7 +70,11 @@ export class EupagoWebhookController {
 
       if (status === "paga" || status === "pago" || payload.sucesso === true) {
         const paidAt = payload.data ? new Date(String(payload.data)) : new Date();
-        await this.billing.confirmPayment(providerRef, paidAt, payload);
+        // O valor pago, quando o provedor o envia — em euros decimais. O serviço
+        // compara-o com o esperado: defesa em profundidade contra um evento
+        // (legítimo mas) com valor divergente.
+        const paidCents = payload.valor != null ? Math.round(Number(payload.valor) * 100) : undefined;
+        await this.billing.confirmPayment(providerRef, paidAt, payload, paidCents);
       } else {
         await this.billing.failPayment(providerRef, "O pagamento foi recusado ou expirou.", payload);
       }
@@ -85,9 +89,14 @@ export class EupagoWebhookController {
       // Guardamos o erro e respondemos 200 na mesma: o evento está gravado e é
       // reprocessável por nós. Devolver 500 só faria a euPago repetir contra um
       // bug que a repetição não resolve.
+      //
+      // Só a mensagem, não o stack: um stack completo na base de dados é ruído que
+      // pode arrastar caminhos de ficheiros e estrutura interna. O stack fica no
+      // log do servidor, que é o sítio certo para ele.
+      const message = error instanceof Error ? error.message : String(error);
       await this.prisma.webhookEvent.update({
         where: { id: event.id },
-        data: { error: String(error) },
+        data: { error: message.slice(0, 500) },
       });
       this.log.error(`Falha a processar o evento ${eventId}: ${error}`);
       return { ok: true, deferred: true };

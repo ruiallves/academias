@@ -68,7 +68,7 @@ const SUPABASE_ANON_KEY = envValue("SUPABASE_ANON_KEY");
  * pré-visualização, onde o Nest não sobe.
  */
 async function handleAuth(req, res, pathname) {
-  if (pathname !== "/api/auth/memberships" || req.method !== "GET") return false;
+  if ((pathname !== "/api/auth/memberships" && pathname !== "/auth/memberships") || req.method !== "GET") return false;
 
   const header = req.headers.authorization || "";
   if (!header.startsWith("Bearer ")) return json(res, 401, { error: "falta o token" });
@@ -230,7 +230,7 @@ const server = http.createServer(async (req, res) => {
   const url = new URL(req.url ?? "/", `http://${req.headers.host ?? "localhost"}`);
   const pathname = decodeURIComponent(url.pathname);
 
-  if (pathname.startsWith("/api/auth/")) {
+  if (pathname.startsWith("/api/auth/") || pathname.startsWith("/auth/")) {
     const handled = await handleAuth(req, res, pathname);
     if (handled !== false) return;
   }

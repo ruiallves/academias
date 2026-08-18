@@ -136,6 +136,7 @@ const TENANT_SCOPED = new Set<string>([
   "Team",
   "TrainingSession",
   "Match",
+  "CalendarEvent",
   "SubscriptionPlan",
   "Charge",
   "Announcement",

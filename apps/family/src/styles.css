@@ -2,40 +2,163 @@
 @import "@academia/ui/theme.css";
 
 /* ---------------------------------------------------------------------------
-   A app da família parte dos mesmos tokens da consola, mas não da mesma métrica.
-   Isto não é o dashboard encolhido: alvos maiores, tipografia maior, mais ar, e
-   uma barra de separadores fixa em baixo com o safe area do iPhone respeitado.
+   A app da família — linguagem visual própria.
+
+   Não é o dashboard encolhido, e também já não é "cartão branco atrás de cartão
+   branco". A composição parte de três ideias:
+
+     1. UMA coisa em foco de cada vez. O que importa mais — o pagamento em falta,
+        o próximo treino — vive num painel "iluminado" pela cor da academia. Tudo
+        o resto respira em segundo plano, sem caixa à volta.
+     2. NÚMEROS COM PRESENÇA. €40,00 e 92% são grandes, tabulares, o herói da linha.
+     3. RITMO por whitespace, não por bordas. Listas são linhas soltas; só o que é
+        accionável ganha elevação.
+
+   Tudo o que é "marca" deriva de --color-signal (a cor da academia). Trocar de
+   academia troca a cor e o painel inteiro re-ilumina-se — sem uma única cor
+   escrita à mão. É o white-label a sério.
    --------------------------------------------------------------------------- */
 
 @theme {
-  /* Um degrau acima da consola — a app é lida de pé, com uma mão, ao sol. */
+  /* Lida de pé, com uma mão, ao sol — um degrau acima da consola. */
   --text-body: 0.9375rem;
   --text-meta: 0.8125rem;
+
+  --ease-out: cubic-bezier(0.22, 1, 0.36, 1);
+  --ease-spring: cubic-bezier(0.34, 1.56, 0.64, 1);
+
+  --radius-xl: 26px;
+  --radius-lg: 20px;
+  --radius-md: 15px;
+  --radius-sm: 11px;
+
+  /* Elevação em dois níveis: a superfície que se pega e o que flutua por cima
+     de tudo (a nav). Sombras baixas e largas — presença sem drama. */
+  --shadow-soft: 0 1px 2px rgb(20 18 15 / 0.04), 0 10px 30px -16px rgb(20 18 15 / 0.14);
+  --shadow-float: 0 2px 8px rgb(20 18 15 / 0.08), 0 18px 40px -18px rgb(20 18 15 / 0.30);
 }
 
 @layer base {
+  html {
+    /* O herói pinta para lá do topo; que o "over-scroll" no iOS mostre a marca,
+       não uma barra branca. */
+    background: var(--color-canvas);
+  }
+
   body {
-    /* Impede o "bounce" do iOS por baixo da barra de separadores. */
     overscroll-behavior-y: none;
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  /* Números com carácter: tabulares e um pouco apertados, para grandes valores
+     não dançarem nem ocuparem uma linha inteira. */
+  .num {
+    font-variant-numeric: tabular-nums;
+    letter-spacing: -0.02em;
   }
 }
 
 @layer components {
-  .card {
-    @apply rounded-[14px] border border-line bg-surface;
+  /* ---- Superfícies ------------------------------------------------------- */
+
+  /* O que se pega: fundo claro, cantos generosos, elevação subtil. Sem borda —
+     a sombra chega. */
+  .surface {
+    @apply rounded-[var(--radius-lg)] bg-surface;
+    box-shadow: var(--shadow-soft);
   }
 
-  .tap,
-  .tap-primary,
-  .tap-quiet {
-    @apply inline-flex h-11 items-center justify-center gap-2 rounded-[11px] px-4 text-body font-semibold transition-[background-color,transform] duration-[120ms] active:scale-[0.98];
+  /* O herói iluminado pela marca. O gradiente é derivado de --color-signal com
+     color-mix: mesma família de cor, dois tons, sempre coerente com a academia.
+     O texto por cima é branco; as variáveis --on* dão-lhe graus de ênfase. */
+  .brandlit {
+    position: relative;
+    isolation: isolate;
+    color: #fff;
+    background:
+      radial-gradient(120% 140% at 85% -10%, color-mix(in oklab, var(--color-signal) 62%, white) 0%, transparent 55%),
+      linear-gradient(158deg,
+        color-mix(in oklab, var(--color-signal) 90%, white 10%) 0%,
+        var(--color-signal) 42%,
+        color-mix(in oklab, var(--color-signal) 72%, black 28%) 100%);
+  }
+  .brandlit .on-1 { color: rgb(255 255 255 / 0.95); }
+  .brandlit .on-2 { color: rgb(255 255 255 / 0.72); }
+  .brandlit .on-3 { color: rgb(255 255 255 / 0.55); }
+
+  /* ---- Chips e etiquetas ------------------------------------------------- */
+
+  .chip {
+    @apply inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[12px] font-semibold;
   }
 
-  .tap-primary {
+  /* Etiqueta translúcida para viver por cima do herói, sem caixa opaca. */
+  .chip-glass {
+    background: rgb(255 255 255 / 0.16);
+    color: #fff;
+    backdrop-filter: blur(4px);
+  }
+
+  /* ---- Acções ------------------------------------------------------------ */
+
+  .cta,
+  .cta-quiet,
+  .cta-brand {
+    @apply inline-flex h-[52px] items-center justify-center gap-2 rounded-[var(--radius-md)] px-5 text-[15px] font-semibold;
+    transition: transform 140ms var(--ease-out), background-color 140ms var(--ease-out), opacity 140ms;
+  }
+  .cta:active,
+  .cta-quiet:active,
+  .cta-brand:active {
+    transform: scale(0.975);
+  }
+
+  /* O CTA principal é preto tinta, não a cor da marca — como nas melhores apps:
+     a marca ilumina o contexto, a acção é firme e neutra. */
+  .cta {
     @apply bg-ink text-surface;
   }
+  .cta:disabled {
+    @apply opacity-40;
+  }
+  .cta-quiet {
+    @apply bg-sunken text-ink;
+  }
+  /* Para viver por cima do herói: superfície clara sobre a cor da marca. */
+  .cta-brand {
+    background: #fff;
+    color: var(--color-ink);
+  }
 
-  .tap-quiet {
-    @apply border border-line bg-surface text-ink;
+  /* Botão-ícone redondo, para cabeçalhos. */
+  .icon-btn {
+    @apply relative flex size-11 items-center justify-center rounded-full text-ink-2;
+    transition: background-color 140ms var(--ease-out);
+  }
+  .icon-btn:active {
+    @apply bg-sunken;
+  }
+}
+
+@layer utilities {
+  /* Entrada suave, escalonável por --i, para as secções aparecerem em cascata. */
+  @keyframes rise {
+    from { opacity: 0; transform: translateY(10px); }
+    to { opacity: 1; transform: none; }
+  }
+  .rise {
+    animation: rise 520ms var(--ease-out) both;
+    animation-delay: calc(var(--i, 0) * 60ms);
+  }
+
+  @keyframes pop {
+    0% { transform: scale(0.6); opacity: 0; }
+    60% { transform: scale(1.08); }
+    100% { transform: scale(1); opacity: 1; }
+  }
+  .pop { animation: pop 460ms var(--ease-spring) both; }
+
+  @media (prefers-reduced-motion: reduce) {
+    .rise, .pop { animation: none; }
   }
 }

@@ -1,0 +1,32 @@
+@import "tailwindcss";
+@import "@academia/ui/theme.css";
+
+/*
+ * A cor da plataforma.
+ *
+ * Fixa, e deliberadamente distinta de qualquer academia. Quem trabalha nos dois
+ * produtos ao mesmo tempo tem de saber onde está pelo canto do olho, sem ler o
+ * cabeçalho — e a cor de uma academia é escolhida por ela, portanto não serve de
+ * sinal. Um índigo profundo: nada no lado das academias lhe chega perto.
+ */
+:root {
+  --color-signal: #4338ca;
+  --color-signal-soft: #eef0fd;
+  --color-signal-ink: #312e9c;
+}
+
+@layer components {
+  .ctl,
+  .ctl-ghost,
+  .ctl-outline,
+  .ctl-primary {
+    @apply inline-flex h-8 items-center gap-1.5 rounded-[var(--radius-control)] px-2.5 text-meta font-medium transition-colors duration-[120ms];
+  }
+  .ctl-ghost { @apply text-ink-2 hover:bg-sunken hover:text-ink; }
+  .ctl-outline { @apply border border-line bg-surface text-ink-2 hover:border-line-strong hover:text-ink; }
+  .ctl-primary { @apply bg-ink px-3 text-surface hover:bg-ink-2; }
+  .ctl-primary:disabled { @apply cursor-not-allowed bg-ink-4 hover:bg-ink-4; }
+
+  .panel { @apply rounded-[var(--radius-panel)] border border-line bg-surface; }
+  .panel-head { @apply flex items-center justify-between gap-3 border-b border-line px-5 py-3.5; }
+}

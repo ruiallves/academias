@@ -38,6 +38,8 @@ export type NavCounts = {
   unreadThreads: number;
   pendingEvaluations: number;
   sessionsToRecord: number;
+  /** Jogos a chegar com a convocatória por submeter. */
+  callUpsToSubmit: number;
   /** Atletas de baixa neste momento — o contador do departamento clínico. */
   athletesOut: number;
 };
@@ -99,6 +101,13 @@ const DIRECTOR_NAV: NavGroup[] = [
         requires: "attendance:read",
         badge: (c) => c.sessionsToRecord || undefined,
       },
+      {
+        label: "Convocatórias",
+        to: "/convocatorias",
+        icon: Megaphone,
+        requires: "calendar:read",
+        badge: (c) => c.callUpsToSubmit || undefined,
+      },
     ],
   },
   {
@@ -149,11 +158,21 @@ const COACH_NAV: NavGroup[] = [
       // treinador; não há filtro extra a fazer aqui.
       { label: "Calendário", to: "/calendario", icon: CalendarDays, requires: "calendar:read" },
       {
-        label: "Treinos",
-        to: "/treinos",
+        // "Presenças" e não "Treinos": o menu diz o que se lá faz, não o que se lá
+        // vê. O treinador entra aqui para registar quem faltou — o calendário é
+        // que responde a "quando é o próximo treino".
+        label: "Presenças",
+        to: "/presencas",
         icon: ClipboardCheck,
-        requires: "calendar:read",
+        requires: "attendance:read",
         badge: (c) => c.sessionsToRecord || undefined,
+      },
+      {
+        label: "Convocatórias",
+        to: "/convocatorias",
+        icon: Megaphone,
+        requires: "calendar:read",
+        badge: (c) => c.callUpsToSubmit || undefined,
       },
     ],
   },
@@ -169,6 +188,14 @@ const COACH_NAV: NavGroup[] = [
         badge: (c) => c.pendingEvaluations || undefined,
       },
       { label: "Relatórios", to: "/relatorios", icon: FileText, requires: "report:read" },
+    ],
+  },
+  {
+    label: "Famílias",
+    items: [
+      // O treinador comunica com os pais das suas equipas — o servidor limita o
+      // público a "Pais" e o âmbito aos encarregados dos seus atletas.
+      { label: "Comunicação", to: "/comunicacao", icon: Megaphone, requires: "comms:read" },
     ],
   },
 ];

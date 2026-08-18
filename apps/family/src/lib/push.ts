@@ -17,6 +17,26 @@
  * se recusar a correr fora do modo instalado — ver `StandaloneGate`.
  */
 
+import { getAccessToken } from "@/lib/session";
+
+// Em produção a app e a API vivem na mesma origem, e a base fica vazia. Em
+// desenvolvimento a API está noutra porta — `VITE_API_URL` diz onde.
+const API = (import.meta.env.VITE_API_URL as string | undefined) ?? "";
+
+/** Um `fetch` para a API com a sessão do pai — é o que liga a subscrição a uma pessoa. */
+async function authed(path: string, body: unknown): Promise<Response> {
+  const token = await getAccessToken();
+  return fetch(`${API}${path}`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      "x-academy-slug": "life-club",
+    },
+    body: JSON.stringify(body),
+  });
+}
+
 export type PushState = "unsupported" | "denied" | "granted" | "default";
 
 export function pushSupported(): boolean {
@@ -44,7 +64,7 @@ export async function enablePush(): Promise<{ ok: boolean; reason?: string }> {
     return { ok: false, reason: "As notificações ficaram bloqueadas nas definições do telemóvel." };
   }
 
-  const keyResponse = await fetch("/api/push/key");
+  const keyResponse = await fetch(`${API}/api/push/key`);
   if (!keyResponse.ok) return { ok: false, reason: "O servidor não devolveu a chave de notificações." };
   const { publicKey } = (await keyResponse.json()) as { publicKey: string };
 
@@ -59,12 +79,8 @@ export async function enablePush(): Promise<{ ok: boolean; reason?: string }> {
       applicationServerKey: urlBase64ToUint8Array(publicKey),
     }));
 
-  const res = await fetch("/api/push/subscribe", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(subscription),
-  });
-
+  const res = await authed("/api/push/subscribe", subscription);
+  if (res.status === 401) return { ok: false, reason: "Sem sessão — entra na app da academia primeiro." };
   if (!res.ok) return { ok: false, reason: "Não foi possível registar no servidor." };
   return { ok: true };
 }
@@ -72,11 +88,7 @@ export async function enablePush(): Promise<{ ok: boolean; reason?: string }> {
 export async function disablePush(): Promise<void> {
   const sub = await currentSubscription();
   if (!sub) return;
-  await fetch("/api/push/unsubscribe", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ endpoint: sub.endpoint }),
-  }).catch(() => {});
+  await authed("/api/push/unsubscribe", { endpoint: sub.endpoint }).catch(() => {});
   await sub.unsubscribe();
 }
 
@@ -85,12 +97,7 @@ export async function sendTestPush(kind: string): Promise<{ ok: boolean; reason?
   const sub = await currentSubscription();
   if (!sub) return { ok: false, reason: "Ainda não há subscrição activa." };
 
-  const res = await fetch("/api/push/test", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ endpoint: sub.endpoint, kind }),
-  });
-
+  const res = await authed("/api/push/test", { endpoint: sub.endpoint, kind });
   if (!res.ok) return { ok: false, reason: `O servidor respondeu ${res.status}.` };
   return { ok: true };
 }

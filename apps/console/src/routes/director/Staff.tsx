@@ -1,12 +1,15 @@
 import { useMemo, useState } from "react";
 import { PageHeader } from "@/components/Shell";
-import { DataTable, Empty, Metric, MetricRow, Monogram, Panel, Pill, type Column } from "@/components/primitives";
+import { DataTable, Empty, Metric, MetricRow, Monogram, Panel, PanelHead, Pill, type Column } from "@/components/primitives";
 import { ResultCount, SearchInput, Segmented, Toolbar } from "@/components/filters";
-import { HeartPulse, Plus, Shield, Users, Whistle } from "@/lib/icons";
+import { Clock, HeartPulse, Plus, Shield, Users, Whistle } from "@/lib/icons";
 import { listStaff, teamById, unrecordedSessions } from "@/lib/api";
+import { revokeInvite, usePendingInvites } from "@/lib/invites";
+import { useStaffEdits } from "@/lib/staff-edits";
 import { shortDate } from "@/lib/format";
 import { can } from "@/lib/permissions";
 import { ROLE_LABEL, useSession } from "@/session";
+import { InviteDialog } from "@/components/InviteDialog";
 import { DEPARTMENT_LABEL, type StaffDepartment, type StaffMember } from "@/data/types";
 
 type Filter = "todos" | StaffDepartment;
@@ -28,8 +31,13 @@ export default function Staff() {
   const { session } = useSession();
   const [filter, setFilter] = useState<Filter>("todos");
   const [query, setQuery] = useState("");
+  const [inviting, setInviting] = useState(false);
+
+  // Redesenha quando uma ficha for editada — o nome ou o cargo mudam aqui também.
+  useStaffEdits();
 
   const all = listStaff();
+  const invites = usePendingInvites();
 
   // Registos de presenças em atraso, por pessoa. É a única métrica de staff que
   // interessa a um diretor — e é sobre processo, não sobre desempenho.
@@ -146,12 +154,14 @@ export default function Staff() {
     <>
       <PageHeader title="Staff" subtitle={`${all.length} pessoas · época 2026/27`}>
         {can(session, "staff:write") && (
-          <button type="button" className="ctl-primary">
+          <button type="button" className="ctl-primary" onClick={() => setInviting(true)}>
             <Plus className="size-3.5" strokeWidth={2} />
             Convidar
           </button>
         )}
       </PageHeader>
+
+      {inviting && <InviteDialog session={session} onClose={() => setInviting(false)} />}
 
       <div className="space-y-3">
         <MetricRow>
@@ -160,6 +170,47 @@ export default function Staff() {
           <Metric label="Departamento clínico" value={String(counts.clinical)} icon={HeartPulse} note="médico, físio, nutrição" />
           <Metric label="Operações" value={String(counts.operations)} icon={Users} note="secretaria e logística" />
         </MetricRow>
+
+        {/*
+          Convites por aceitar.
+
+          Fica acima da tabela e não escondido num separador: um convite emitido e
+          esquecido é um link válido que dá acesso à academia e que ninguém está a
+          ver. Enquanto existir, tem de estar à frente de quem o pode fechar.
+        */}
+        {invites.length > 0 && can(session, "staff:write") && (
+          <Panel>
+            <PanelHead title="Convites por aceitar" hint={`${invites.length} · válidos 7 dias`} />
+            <ul>
+              {invites.map((inv) => (
+                <li
+                  key={inv.id}
+                  className="flex items-center gap-3 border-b border-line px-5 py-2.5 last:border-b-0"
+                >
+                  <Clock className="size-3.5 shrink-0 text-ink-4" strokeWidth={1.75} />
+                  <div className="min-w-0 flex-1">
+                    <div className="truncate text-body font-medium text-ink">{inv.name}</div>
+                    <div className="truncate text-meta text-ink-3">{inv.email}</div>
+                  </div>
+                  <Pill>{ROLE_LABEL[inv.role]}</Pill>
+                  <span className="hidden text-meta text-ink-4 sm:inline">
+                    {inv.teamIds.length === 0
+                      ? "sem equipas"
+                      : `${inv.teamIds.length} ${inv.teamIds.length === 1 ? "equipa" : "equipas"}`}
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => revokeInvite(inv.id)}
+                    className="ctl-ghost shrink-0"
+                    title="Fecha o link — deixa de funcionar"
+                  >
+                    Revogar
+                  </button>
+                </li>
+              ))}
+            </ul>
+          </Panel>
+        )}
 
         <Panel>
           <Toolbar>
@@ -182,6 +233,7 @@ export default function Staff() {
             columns={columns}
             rows={rows}
             keyOf={(m) => m.id}
+            to={(m) => `/staff/${m.id}`}
             empty={<Empty icon={Users} title="Ninguém neste filtro" />}
           />
         </Panel>

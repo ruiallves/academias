@@ -1,6 +1,6 @@
 import { useSyncExternalStore } from "react";
 import { categoryColor, type CategoricalColor } from "@academia/ui/tokens";
-import { teams } from "@/data/demo";
+import { teams, useStore, type ApiEvent } from "@/lib/store";
 import { listSessions, listTeams, sportById, teamById, today } from "@/lib/api";
 import type { Session } from "@/lib/permissions";
 
@@ -83,6 +83,8 @@ export type CalendarEvent = {
   end: Date;
   venue: string;
   coachId?: string;
+  /** O nome de quem o dá, tal como veio do servidor. Ver `TrainingSession.coachName`. */
+  coachName?: string;
   cancelled?: boolean;
   /**
    * Estado que exige atenção. Vive separado da categoria de propósito: a cor do
@@ -125,15 +127,14 @@ export function useTeamColors(session: Session): Map<string, CategoricalColor> {
 /* -------------------------------------------------------------------------- */
 
 /**
- * Repositório dos eventos que não são gerados a partir do horário semanal das
- * equipas — jogos, torneios, reuniões. Ao contrário dos treinos (recorrentes,
- * derivados de `Team.schedule`), um jogo é sempre pontual, e por isso vive aqui
- * desde que nasce, criado à mão ou já semeado como demonstração.
+ * Repositório **só dos jogos ricos** — os que têm convocatória e resultado.
  *
- * Existe para que "Novo evento", a convocatória e o registo de resultado
- * funcionem a sério enquanto a API não está ligada. É a única peça de estado
- * mutável do frontend — quando o `POST /calendar/events` existir, este ficheiro
- * passa a um `useQuery` e o resto do calendário não muda.
+ * Os eventos genéricos (treino avulso, torneio, reunião) deixaram de viver aqui:
+ * "Novo evento" grava-os na base (`POST /api/events`) e o calendário lê-os do
+ * store. O que sobra neste ficheiro é a semente de jogos de demonstração, que
+ * alimenta o balanço na ficha do atleta e do treinador — a convocatória e o
+ * registo de resultado ainda são locais, à espera de um endpoint de resultado
+ * (`Match` já guarda as convocatórias submetidas, pelo ecrã de Convocatórias).
  */
 // Declarado antes de `seedMatches()` correr, e não junto dela lá em baixo: a
 // semente executa-se na inicialização do módulo, e um `const` mais abaixo estaria
@@ -152,9 +153,26 @@ function emit() {
   listeners.forEach((l) => l());
 }
 
-export function addEvent(event: Omit<CalendarEvent, "id">) {
-  custom.push({ ...event, id: `ev_${Date.now().toString(36)}` });
-  emit();
+/**
+ * Traduz um evento da API para o modelo do calendário.
+ *
+ * Um evento genérico não é um jogo rico: não traz `match` (convocatória e
+ * resultado vivem em `Match`, no ecrã de Convocatórias). O `kind` chega em
+ * maiúsculas do enum da base e desce aqui para as etiquetas da consola.
+ */
+export function fromApiEvent(e: ApiEvent): CalendarEvent {
+  return {
+    id: e.id,
+    kind: e.kind.toLowerCase() as EventKind,
+    teamId: e.teamId ?? undefined,
+    title: e.title,
+    start: new Date(e.startsAt),
+    end: new Date(e.endsAt),
+    venue: e.venue,
+    coachId: e.coachId ?? undefined,
+    coachName: e.coachName ?? undefined,
+    cancelled: e.cancelled,
+  };
 }
 
 export function removeEvent(id: string) {
@@ -196,6 +214,24 @@ function subscribe(listener: () => void) {
 
 const getSnapshot = () => custom;
 
+/**
+ * Os eventos pontuais — jogos, torneios, reuniões — sem os treinos derivados dos
+ * horários das equipas.
+ *
+ * Existe para quem precisa de jogos fora do calendário: a ficha de staff conta o
+ * balanço de um treinador a partir daqui. Devolve tudo e sem âmbito de propósito —
+ * quem chama é que sabe por que equipas filtrar, e aplicar âmbito aqui esconderia
+ * jogos de quem tem todo o direito de os ver.
+ */
+export function customEvents(): CalendarEvent[] {
+  return custom;
+}
+
+/** O mesmo, a redesenhar quando um resultado for registado. */
+export function useCustomEvents(): CalendarEvent[] {
+  return useSyncExternalStore(subscribe, getSnapshot, getSnapshot);
+}
+
 /* -------------------------------------------------------------------------- */
 /* Consulta                                                                    */
 /* -------------------------------------------------------------------------- */
@@ -205,7 +241,11 @@ const getSnapshot = () => custom;
  * equipas mais os que foram criados à mão, já ordenados.
  */
 export function useEvents(session: Session, from: Date, to: Date): CalendarEvent[] {
-  const created = useSyncExternalStore(subscribe, getSnapshot, getSnapshot);
+  // `useStore` subscreve o estado: quando "Novo evento" grava e a academia é
+  // recarregada, o calendário redesenha. `custom` continua a servir os jogos ricos
+  // (convocatória e resultado), que não passaram para a API nesta camada.
+  const store = useStore();
+  const seededMatches = useSyncExternalStore(subscribe, getSnapshot, getSnapshot);
 
   const trainings: CalendarEvent[] = listSessions(session, from, to).map((s) => ({
     id: s.id,
@@ -216,19 +256,25 @@ export function useEvents(session: Session, from: Date, to: Date): CalendarEvent
     end: new Date(s.end),
     venue: s.venue,
     coachId: s.coachId,
+    coachName: s.coachName,
     cancelled: s.status === "cancelled",
     // Um treino agendado sem treinador é a única coisa no calendário que precisa
     // de saltar à vista por cima da cor do escalão.
     alert: s.status === "scheduled" && !s.coachId ? "unassigned" : undefined,
   }));
 
+  // Eventos genéricos, agora vindos da base (`GET /api/events`). O servidor já
+  // aplicou o âmbito; o filtro de âmbito abaixo é a segunda camada, como no resto.
+  const apiEvents: CalendarEvent[] = store.events.map(fromApiEvent);
+
   const scoped = new Set(listTeams(session).map((t) => t.id));
-  const mine = created.filter((e) => {
+  const inScopeAndRange = (e: CalendarEvent) => {
     if (e.teamId && !scoped.has(e.teamId)) return false;
     return e.start >= from && e.start <= to;
-  });
+  };
+  const pontuais = [...apiEvents, ...seededMatches].filter(inScopeAndRange);
 
-  return [...trainings, ...mine].sort((a, b) => a.start.getTime() - b.start.getTime());
+  return [...trainings, ...pontuais].sort((a, b) => a.start.getTime() - b.start.getTime());
 }
 
 /* -------------------------------------------------------------------------- */

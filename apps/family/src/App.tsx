@@ -1,12 +1,13 @@
 import { createContext, useContext, useMemo, useState } from "react";
-import { NavLink, Navigate, Route, Routes } from "react-router-dom";
+import { NavLink, Navigate, Route, Routes, useNavigate } from "react-router-dom";
 import { Bell, CalendarDays, Home, User, Wallet } from "lucide-react";
-import { academy, children, guardian, payments, type Child } from "@/data";
+import { academy, children, guardian, payments, notices, type Child } from "@/data";
 import { Avatar, cx } from "@/ui";
 import Today from "@/screens/Today";
 import Agenda from "@/screens/Agenda";
 import Payments from "@/screens/Payments";
 import Athlete from "@/screens/Athlete";
+import Notifications from "@/screens/Notifications";
 
 /* -------------------------------------------------------------------------- */
 /* Educando activo                                                             */
@@ -34,15 +35,16 @@ export default function App() {
 
   return (
     <ChildContext.Provider value={value}>
-      <div className="mx-auto flex min-h-dvh max-w-[480px] flex-col bg-canvas">
+      <div className="mx-auto flex min-h-dvh max-w-[480px] flex-col">
         <Header />
 
-        <main className="flex-1 px-4 pt-1 pb-[calc(76px+env(safe-area-inset-bottom))]">
+        <main className="flex-1 px-4 pb-[calc(104px+env(safe-area-inset-bottom))]">
           <Routes>
             <Route path="/" element={<Today />} />
             <Route path="/agenda" element={<Agenda />} />
             <Route path="/pagamentos" element={<Payments />} />
             <Route path="/atleta" element={<Athlete />} />
+            <Route path="/notificacoes" element={<Notifications />} />
             <Route path="*" element={<Navigate to="/" replace />} />
           </Routes>
         </main>
@@ -57,31 +59,36 @@ export default function App() {
 
 function Header() {
   const { child, setChild } = useChild();
-  const unpaid = payments.filter((p) => p.status === "overdue" || p.status === "pending").length;
+  const navigate = useNavigate();
+  const unread = notices.length + payments.filter((p) => p.status === "overdue" || p.status === "pending").length;
 
   return (
-    <header className="sticky top-0 z-10 bg-canvas/90 px-4 pt-[calc(12px+env(safe-area-inset-top))] pb-2 backdrop-blur-md">
-      <div className="mb-3 flex items-center gap-2.5">
+    <header className="sticky top-0 z-30 bg-canvas/85 px-4 pt-[calc(10px+env(safe-area-inset-top))] pb-2 backdrop-blur-xl">
+      <div className="flex items-center gap-3">
         <span
-          className="flex size-8 items-center justify-center rounded-[9px] text-[12px] font-bold text-white"
+          className="flex size-9 items-center justify-center rounded-[11px] text-[13px] font-bold text-white shadow-[var(--shadow-soft)]"
           style={{ background: "var(--color-signal)" }}
           aria-hidden
         >
           {academy.mark}
         </span>
-        <span className="min-w-0 flex-1">
+        <span className="min-w-0 flex-1 leading-tight">
           <span className="block truncate text-[15px] font-semibold text-ink">{academy.shortName}</span>
-          <span className="block truncate text-meta text-ink-3">{guardian.name}</span>
+          <span className="block truncate text-[12px] text-ink-3">{guardian.name}</span>
         </span>
-        <button type="button" className="relative flex size-10 items-center justify-center rounded-full text-ink-2 active:bg-sunken" aria-label="Notificações">
-          <Bell className="size-5" strokeWidth={1.75} />
-          {unpaid > 0 && <span className="absolute top-2 right-2.5 size-2 rounded-full bg-risk ring-2 ring-canvas" />}
+        <button type="button" onClick={() => navigate("/notificacoes")} className="icon-btn" aria-label="Notificações">
+          <Bell className="size-[22px]" strokeWidth={1.75} />
+          {unread > 0 && (
+            <span className="absolute top-2 right-2.5 flex min-w-[16px] items-center justify-center rounded-full bg-risk px-1 text-[10px] font-bold text-white ring-2 ring-canvas">
+              {unread}
+            </span>
+          )}
         </button>
       </div>
 
-      {/* Seletor de educando. Dois filhos cabem em dois botões — sem menus. */}
+      {/* Seletor de educando — avatares, não texto. Dois filhos cabem sem menus. */}
       {children.length > 1 && (
-        <div className="flex gap-2 overflow-x-auto pb-0.5">
+        <div className="mt-3 flex gap-2 overflow-x-auto pb-0.5">
           {children.map((c) => {
             const active = c.id === child.id;
             return (
@@ -91,12 +98,12 @@ function Header() {
                 onClick={() => setChild(c.id)}
                 aria-pressed={active}
                 className={cx(
-                  "inline-flex shrink-0 items-center gap-2 rounded-full border py-1.5 pr-3.5 pl-1.5 transition-colors duration-[120ms]",
-                  active ? "border-transparent bg-ink text-surface" : "border-line bg-surface text-ink-2",
+                  "inline-flex shrink-0 items-center gap-2 rounded-full py-1 pr-4 pl-1 transition-all duration-200",
+                  active ? "bg-ink text-white" : "bg-surface text-ink-2 shadow-[var(--shadow-soft)]",
                 )}
               >
-                <Avatar name={c.name} size={26} />
-                <span className="text-meta font-semibold">{c.firstName}</span>
+                <Avatar name={c.name} size={28} />
+                <span className="text-[13px] font-semibold">{c.firstName}</span>
               </button>
             );
           })}
@@ -116,35 +123,45 @@ const TABS = [
 ];
 
 /**
- * Barra de separadores fixa. Quatro destinos, sempre os mesmos, sempre no mesmo
- * sítio — é o contrato de uma app de consumo. O ponto vermelho em "Pagar" só
- * aparece quando há mesmo algo por pagar.
+ * Nav flutuante em pílula.
+ *
+ * Escura, arredondada, a pairar acima do conteúdo — não uma barra colada ao vidro.
+ * O separador activo abre-se num comprimido claro com o nome ao lado; os outros
+ * ficam só ícone. É a gramática das melhores apps de consumo: sabes onde estás
+ * sem ler, e o toque tem um alvo confortável.
  */
 function TabBar() {
   const owing = payments.some((p) => p.status === "overdue" || p.status === "pending");
 
   return (
-    <nav className="fixed inset-x-0 bottom-0 z-20 mx-auto max-w-[480px] border-t border-line bg-surface/95 pb-[env(safe-area-inset-bottom)] backdrop-blur-md">
-      <ul className="flex">
+    <nav className="pointer-events-none fixed inset-x-0 bottom-0 z-30 flex justify-center pb-[calc(14px+env(safe-area-inset-bottom))]">
+      <ul
+        className="pointer-events-auto flex items-center gap-1 rounded-full bg-ink/95 p-1.5 backdrop-blur-xl"
+        style={{ boxShadow: "var(--shadow-float)" }}
+      >
         {TABS.map(({ to, label, icon: Icon }) => (
-          <li key={to} className="flex-1">
+          <li key={to}>
             <NavLink
               to={to}
               end={to === "/"}
               className={({ isActive }) =>
                 cx(
-                  "relative flex h-[62px] flex-col items-center justify-center gap-1 transition-colors duration-[120ms]",
-                  isActive ? "text-signal" : "text-ink-3",
+                  "relative flex h-11 items-center rounded-full transition-all duration-300 ease-[cubic-bezier(0.34,1.56,0.64,1)]",
+                  isActive ? "gap-2 bg-white px-4 text-ink" : "px-3 text-white/55 active:text-white",
                 )
               }
             >
-              <span className="relative">
-                <Icon className="size-[22px]" strokeWidth={1.75} />
-                {to === "/pagamentos" && owing && (
-                  <span className="absolute -top-0.5 -right-1 size-2 rounded-full bg-risk ring-2 ring-surface" />
-                )}
-              </span>
-              <span className="text-[11px] font-semibold">{label}</span>
+              {({ isActive }) => (
+                <>
+                  <span className="relative">
+                    <Icon className="size-[22px]" strokeWidth={isActive ? 2 : 1.75} />
+                    {to === "/pagamentos" && owing && !isActive && (
+                      <span className="absolute -top-1 -right-1.5 size-2.5 rounded-full bg-risk ring-2 ring-ink" />
+                    )}
+                  </span>
+                  {isActive && <span className="text-[14px] font-semibold whitespace-nowrap">{label}</span>}
+                </>
+              )}
             </NavLink>
           </li>
         ))}

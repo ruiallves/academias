@@ -11,6 +11,8 @@ import {
   type CallUpStatus,
   type CalendarEvent,
 } from "@/lib/calendar";
+import { apiPatch } from "@/lib/http";
+import { events as storeEvents, reloadAcademy } from "@/lib/store";
 import { athleteById, coachById, listAthletes, teamById } from "@/lib/api";
 import { availabilityOf, isUnavailable, useClinicalRecords } from "@/lib/clinical";
 import { longDate, shortName, time } from "@/lib/format";
@@ -46,9 +48,33 @@ export function EventDetail({
   }, [onClose]);
 
   const coach = event.coachId ? coachById(event.coachId) : undefined;
+  // O nome vem com o evento: a lista de staff chega vazia a um treinador, e
+  // procurar lá dizia "Sem treinador atribuído" nos treinos dele próprio.
+  const coachName = event.coachName ?? coach?.name;
   const team = event.teamId ? teamById(event.teamId) : undefined;
   const editable = can(session, "calendar:write") || can(session, "attendance:write");
   const past = event.end < new Date();
+
+  // Um evento genérico vive na base (`store.events`); um jogo semeado ainda é
+  // local. O cancelar segue o caminho certo consoante a origem.
+  const isApiEvent = storeEvents.some((e) => e.id === event.id);
+  const [cancelling, setCancelling] = useState(false);
+
+  async function toggleCancel() {
+    if (cancelling) return;
+    if (!isApiEvent) {
+      // Jogo semeado (ou treino recorrente): comportamento local, como antes.
+      toggleCancelled(event.id);
+      return;
+    }
+    setCancelling(true);
+    try {
+      await apiPatch(`/api/events/${event.id}`, { cancelled: !event.cancelled });
+      await reloadAcademy();
+    } finally {
+      setCancelling(false);
+    }
+  }
 
   return (
     <div className="fixed inset-0 z-50 flex justify-end">
@@ -95,7 +121,7 @@ export function EventDetail({
             <Fact icon={MapPin} label={event.venue} />
             <Fact
               icon={Whistle}
-              label={coach ? coach.name : "Sem treinador atribuído"}
+              label={coachName ?? "Sem treinador atribuído"}
               tone={coach ? undefined : "risk"}
             />
           </dl>
@@ -127,10 +153,11 @@ export function EventDetail({
           <footer className="border-t border-line px-5 py-3">
             <button
               type="button"
-              onClick={() => toggleCancelled(event.id)}
+              onClick={toggleCancel}
+              disabled={cancelling}
               className={cx("ctl-ghost w-full justify-center", event.cancelled ? "text-ok" : "text-risk")}
             >
-              {event.cancelled ? "Reativar evento" : "Cancelar evento"}
+              {cancelling ? "A guardar…" : event.cancelled ? "Reativar evento" : "Cancelar evento"}
             </button>
           </footer>
         )}

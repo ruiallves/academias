@@ -1,15 +1,16 @@
 import { Link } from "react-router-dom";
-import { ArrowRight, Clock, MapPin, TriangleAlert, UserRound } from "lucide-react";
+import { ArrowUpRight, Clock, MapPin, Sparkles, TriangleAlert, UserRound } from "lucide-react";
 import { useChild } from "@/App";
 import { appointments, guardian, notices, payments, today, trainings } from "@/data";
-import { Card, SectionTitle, Tag, cx, dayShort, greeting, money, time, whenLabel } from "@/ui";
+import { Avatar, Money, cx, dayShort, greeting, money, monthShort, time, whenLabel } from "@/ui";
 
 /**
- * "O que acontece hoje?"
+ * "O que preciso de saber hoje sobre o meu filho?"
  *
- * É a única pergunta que este ecrã responde, e responde-a de cima para baixo por
- * urgência: o que tem de ser pago, o que é o próximo treino, o que mudou. Nada de
- * métricas — um pai não quer um dashboard do filho.
+ * De cima para baixo por urgência, mas sem transformar cada item num cartão. A
+ * página lê-se como uma linha do tempo pessoal: primeiro o dinheiro em falta (se
+ * houver, é impossível de ignorar), depois o próximo treino em destaque, e o resto
+ * do dia a escorrer por baixo, cada vez mais discreto.
  */
 export default function Today() {
   const { child } = useChild();
@@ -23,92 +24,90 @@ export default function Today() {
     .sort((a, b) => a.date.getTime() - b.date.getTime())[0];
   const changed = mine.filter((t) => t.note && t.end >= today);
 
+  let i = 0;
+
   return (
-    <div className="space-y-5 pt-2">
-      <h1 className="px-1 text-[26px] leading-tight font-semibold tracking-[-0.02em] text-ink">
-        {greeting(today)}, {guardian.firstName}
-      </h1>
+    <div className="space-y-6 pt-3">
+      <header className="rise px-1" style={{ ["--i" as string]: i++ }}>
+        <p className="text-[13px] font-semibold tracking-[0.04em] text-ink-3 uppercase">
+          {dayShort(today)} · {today.getDate()} {monthShort(today)}
+        </p>
+        <h1 className="mt-1 text-[30px] leading-[1.1] font-semibold tracking-[-0.03em] text-ink">
+          {greeting(today)},<br />
+          {guardian.firstName}.
+        </h1>
+      </header>
 
-      {/* Se há dinheiro em falta, é a primeira coisa. Nada é mais urgente. */}
-      {owed && <PaymentDue amount={owed.amountCents} childName={child.firstName} overdue={owed.status === "overdue"} />}
-
-      <section>
-        <SectionTitle>Próximo treino</SectionTitle>
-        {next ? <NextTraining training={next} /> : <NoTraining />}
-      </section>
-
-      {changed.length > 0 && (
-        <section>
-          <SectionTitle>Alterações</SectionTitle>
-          <div className="space-y-2">
-            {changed.map((t) => (
-              <Card key={t.id} className="flex items-start gap-3 border-warn/25 bg-warn-soft/50 p-3.5">
-                <TriangleAlert className="mt-0.5 size-[18px] shrink-0 text-warn" strokeWidth={1.75} />
-                <div className="min-w-0">
-                  <p className="text-body font-semibold text-ink">
-                    {whenLabel(t.start, today)} · {child.team}
-                  </p>
-                  <p className="text-meta text-ink-2">{t.note!.text}</p>
-                </div>
-              </Card>
-            ))}
-          </div>
-        </section>
+      {owed && (
+        <div className="rise" style={{ ["--i" as string]: i++ }}>
+          <PaymentDue amount={owed.amountCents} childName={child.firstName} overdue={owed.status === "overdue"} />
+        </div>
       )}
 
-      <section>
-        <SectionTitle
-          action={
-            <Link to="/agenda" className="inline-flex items-center gap-1 text-meta font-semibold text-ink-3">
-              Agenda <ArrowRight className="size-3.5" strokeWidth={2} />
-            </Link>
-          }
-        >
-          Próximos dias
-        </SectionTitle>
+      {next ? (
+        <div className="rise" style={{ ["--i" as string]: i++ }}>
+          <NextTraining training={next} />
+        </div>
+      ) : (
+        <div className="rise surface p-6 text-center" style={{ ["--i" as string]: i++ }}>
+          <p className="text-body font-semibold text-ink">Sem treinos marcados</p>
+          <p className="mt-1 text-meta text-ink-3">Avisamos-te assim que a academia agendar o próximo.</p>
+        </div>
+      )}
+
+      {/* Régua da semana — o resto do calendário num gesto de polegar. */}
+      <section className="rise" style={{ ["--i" as string]: i++ }}>
+        <div className="mb-3 flex items-center justify-between px-1">
+          <h2 className="text-[13px] font-semibold tracking-[0.04em] text-ink-3 uppercase">Esta semana</h2>
+          <Link to="/agenda" className="inline-flex items-center gap-1 text-[13px] font-semibold text-signal-ink">
+            Agenda <ArrowUpRight className="size-3.5" strokeWidth={2.25} />
+          </Link>
+        </div>
         <WeekRail />
       </section>
 
-      {nextAppointment && (
-        <section>
-          <SectionTitle>Marcado pela academia</SectionTitle>
-          <Card className="flex items-start gap-3 p-4">
-            <span className="flex size-10 shrink-0 flex-col items-center justify-center rounded-[10px] bg-signal-soft">
-              <span className="text-[9px] font-semibold text-signal-ink uppercase">
-                {nextAppointment.date.toLocaleDateString("pt-PT", { month: "short" }).replace(".", "")}
-              </span>
-              <span className="text-meta font-semibold text-signal-ink tabular">{nextAppointment.date.getDate()}</span>
-            </span>
-            <div className="min-w-0 flex-1">
-              <div className="mb-1 flex items-center gap-2">
-                <Tag tone="signal">{nextAppointment.kind}</Tag>
-                <span className="text-meta text-ink-3">{whenLabel(nextAppointment.date, today)}</span>
-              </div>
-              <p className="text-body font-semibold text-ink">{nextAppointment.title}</p>
-              <p className="mt-0.5 text-meta text-ink-2">
-                <span className="font-mono tabular">{nextAppointment.time}</span> · {nextAppointment.location}
-              </p>
-              {nextAppointment.note && <p className="mt-1.5 text-meta text-warn">{nextAppointment.note}</p>}
-            </div>
-          </Card>
-        </section>
-      )}
+      {/* O que vem a seguir no dia, como uma linha do tempo discreta. */}
+      {(changed.length > 0 || nextAppointment || childNotices.length > 0) && (
+        <section className="rise space-y-1 px-1" style={{ ["--i" as string]: i++ }}>
+          {changed.map((t) => (
+            <TimelineRow
+              key={t.id}
+              accent="warn"
+              icon={<TriangleAlert className="size-[18px]" strokeWidth={1.9} />}
+              eyebrow={`${whenLabel(t.start, today)} · treino alterado`}
+              title={child.team}
+              detail={t.note!.text}
+            />
+          ))}
 
-      {childNotices.length > 0 && (
-        <section>
-          <SectionTitle>Da academia</SectionTitle>
-          <div className="space-y-2">
-            {childNotices.map((n) => (
-              <Card key={n.id} className="p-4">
-                <div className="mb-1 flex items-center gap-2">
-                  <Tag tone="signal">{n.from.split(" ")[0]}</Tag>
-                  <span className="text-meta text-ink-3">{whenLabel(n.at, today)}</span>
-                </div>
-                <h3 className="mb-1 text-body font-semibold text-ink">{n.title}</h3>
-                <p className="text-meta leading-relaxed text-ink-2">{n.body}</p>
-              </Card>
-            ))}
-          </div>
+          {nextAppointment && (
+            <TimelineRow
+              accent="signal"
+              icon={
+                <span className="flex flex-col items-center leading-none">
+                  <span className="text-[8px] font-bold uppercase">{monthShort(nextAppointment.date)}</span>
+                  <span className="num text-[15px] font-bold">{nextAppointment.date.getDate()}</span>
+                </span>
+              }
+              eyebrow={`${nextAppointment.kind} · ${whenLabel(nextAppointment.date, today)}`}
+              title={nextAppointment.title}
+              detail={`${nextAppointment.time} · ${nextAppointment.location}`}
+              note={nextAppointment.note}
+            />
+          )}
+
+          {childNotices.map((n) => (
+            <Link key={n.id} to="/notificacoes" className="block">
+              <TimelineRow
+                accent="neutral"
+                icon={<Sparkles className="size-[18px]" strokeWidth={1.9} />}
+                eyebrow={`${n.from.split(" ")[0]} · ${whenLabel(n.at, today)}`}
+                title={n.title}
+                detail={n.body}
+                clamp
+              />
+            </Link>
+          ))}
         </section>
       )}
     </div>
@@ -116,90 +115,117 @@ export default function Today() {
 }
 
 /* -------------------------------------------------------------------------- */
+/* Pagamento em falta — o elemento mais importante da app inteira               */
+/* -------------------------------------------------------------------------- */
 
 /**
- * O cartão de pagamento é a peça mais importante da app inteira.
- *
- * O valor é grande e o botão é uma frase completa — "Pagar €40,00" —, não um
- * "Pagar" genérico. É a diferença entre uma referência multibanco perdida num
- * grupo de WhatsApp e um gesto de dois toques.
+ * Tinta escura, não vermelho a gritar: destaca-se da página clara sem parecer um
+ * alarme de incêndio. O valor é enorme, e a acção é uma frase inteira — "Pagar
+ * €40,00" —, não um "Pagar" que obriga a adivinhar quanto.
  */
 function PaymentDue({ amount, childName, overdue }: { amount: number; childName: string; overdue: boolean }) {
   return (
-    <Card className={cx("overflow-hidden", overdue ? "border-risk/30" : "border-warn/30")}>
-      <div className={cx("px-4 py-3", overdue ? "bg-risk-soft" : "bg-warn-soft")}>
-        <div className="flex items-center gap-2">
-          <span className={cx("size-2 rounded-full", overdue ? "bg-risk" : "bg-warn")} />
-          <span className={cx("text-meta font-semibold", overdue ? "text-risk" : "text-warn")}>
-            {overdue ? "Mensalidade vencida" : "Mensalidade por pagar"}
-          </span>
-        </div>
+    <div className="relative overflow-hidden rounded-[var(--radius-xl)] bg-ink p-5 text-white" style={{ boxShadow: "var(--shadow-float)" }}>
+      <div className="mb-4 flex items-center gap-2">
+        <span className={cx("size-2 rounded-full", overdue ? "bg-risk" : "bg-warn")} />
+        <span className="text-[13px] font-semibold text-white/70">
+          {overdue ? "Mensalidade vencida" : "Mensalidade por pagar"} · {childName}
+        </span>
       </div>
 
-      <div className="flex items-center gap-4 p-4">
-        <div className="min-w-0 flex-1">
-          <div className="text-[30px] leading-none font-semibold tracking-[-0.02em] text-ink tabular">
-            {money(amount)}
-          </div>
-          <p className="mt-1.5 text-meta text-ink-3">Agosto · {childName}</p>
-        </div>
-        <Link to="/pagamentos" className="tap-primary shrink-0">
-          Pagar {money(amount)}
-        </Link>
-      </div>
-    </Card>
+      <Money cents={amount} size="xl" on />
+      <p className="mt-1.5 text-[13px] text-white/55">Agosto · Academia Life Club</p>
+
+      <Link to="/pagamentos" className="cta-brand mt-5 w-full">
+        Pagar {money(amount)}
+      </Link>
+    </div>
   );
 }
+
+/* -------------------------------------------------------------------------- */
+/* Próximo treino — o herói iluminado pela marca                                */
+/* -------------------------------------------------------------------------- */
 
 function NextTraining({ training }: { training: (typeof trainings)[number] }) {
   const { child } = useChild();
 
   return (
-    <Card className="overflow-hidden">
-      <div className="flex items-stretch">
-        {/* Faixa de sinal: a marca da academia, sem gradientes. */}
-        <div className="w-1 shrink-0" style={{ background: "var(--color-signal)" }} aria-hidden />
-
-        <div className="min-w-0 flex-1 p-4">
-          <div className="mb-2 flex items-center gap-2">
-            <Tag tone="signal">{whenLabel(training.start, today)}</Tag>
-            <span className="text-meta text-ink-3">{child.sport}</span>
-          </div>
-
-          <h3 className="text-[20px] leading-tight font-semibold tracking-[-0.015em] text-ink">{child.team}</h3>
-
-          <dl className="mt-3 space-y-2">
-            <Fact icon={Clock} label={`${time(training.start)} – ${time(training.end)}`} />
-            <Fact icon={MapPin} label={training.venue} />
-            <Fact icon={UserRound} label={child.coach} />
-          </dl>
-        </div>
+    <div className="brandlit relative overflow-hidden rounded-[var(--radius-xl)] p-5" style={{ boxShadow: "var(--shadow-float)" }}>
+      <div className="mb-5 flex items-center justify-between">
+        <span className="chip chip-glass uppercase">{whenLabel(training.start, today)}</span>
+        <Avatar name={child.name} size={40} />
       </div>
-    </Card>
+
+      <p className="on-2 text-[13px] font-semibold tracking-[0.04em] uppercase">Próximo treino · {child.sport}</p>
+
+      <div className="mt-1 flex items-end gap-3">
+        <span className="num text-[52px] leading-[0.9] font-semibold">{time(training.start)}</span>
+        <span className="on-2 mb-1.5 text-[17px] font-semibold">– {time(training.end)}</span>
+      </div>
+
+      <h3 className="mt-2 text-[19px] font-semibold tracking-[-0.01em]">{child.team}</h3>
+
+      <div className="mt-4 flex flex-wrap gap-x-5 gap-y-2 border-t border-white/15 pt-4">
+        <Fact icon={MapPin} label={training.venue} />
+        <Fact icon={UserRound} label={child.coach} />
+      </div>
+    </div>
   );
 }
 
 function Fact({ icon: Icon, label }: { icon: typeof Clock; label: string }) {
   return (
-    <div className="flex items-center gap-2.5 text-body text-ink-2">
-      <Icon className="size-[18px] shrink-0 text-ink-4" strokeWidth={1.75} />
-      <span className="truncate">{label}</span>
+    <span className="on-1 inline-flex items-center gap-2 text-[14px] font-medium">
+      <Icon className="on-3 size-[17px] shrink-0" strokeWidth={2} />
+      {label}
+    </span>
+  );
+}
+
+/* -------------------------------------------------------------------------- */
+/* Linha do tempo — informação secundária sem caixa                             */
+/* -------------------------------------------------------------------------- */
+
+function TimelineRow({
+  accent,
+  icon,
+  eyebrow,
+  title,
+  detail,
+  note,
+  clamp,
+}: {
+  accent: "warn" | "signal" | "neutral";
+  icon: React.ReactNode;
+  eyebrow: string;
+  title: string;
+  detail: string;
+  note?: string;
+  clamp?: boolean;
+}) {
+  const badge = {
+    warn: "bg-warn-soft text-warn",
+    signal: "bg-signal-soft text-signal-ink",
+    neutral: "bg-sunken text-ink-3",
+  }[accent];
+
+  return (
+    <div className="flex items-start gap-3.5 rounded-[var(--radius-md)] px-2 py-3 active:bg-sunken/60">
+      <span className={cx("mt-0.5 flex size-10 shrink-0 items-center justify-center rounded-[13px]", badge)}>{icon}</span>
+      <div className="min-w-0 flex-1">
+        <p className="text-[12px] font-semibold tracking-[0.02em] text-ink-3 uppercase">{eyebrow}</p>
+        <p className="mt-0.5 text-body font-semibold text-ink">{title}</p>
+        <p className={cx("mt-0.5 text-meta text-ink-2", clamp && "line-clamp-2")}>{detail}</p>
+        {note && <p className="mt-1 text-meta font-medium text-warn">{note}</p>}
+      </div>
     </div>
   );
 }
 
-function NoTraining() {
-  return (
-    <Card className="p-6 text-center">
-      <p className="text-body font-semibold text-ink">Sem treinos marcados</p>
-      <p className="mt-1 text-meta text-ink-3">Avisamos-te assim que a academia agendar o próximo.</p>
-    </Card>
-  );
-}
-
 /**
- * Carril horizontal de sete dias. Um calendário completo num ecrã de telemóvel é
- * ilegível; sete cartões que se arrastam com o polegar não são.
+ * Sete dias que se arrastam com o polegar. O dia com treino ganha um ponto da cor
+ * da marca; hoje fica em tinta cheia. Um calendário mensal apertado seria ilegível.
  */
 function WeekRail() {
   const { child } = useChild();
@@ -208,35 +234,31 @@ function WeekRail() {
   return (
     <div className="-mx-4 flex gap-2 overflow-x-auto px-4 pb-1">
       {days.map((day) => {
-        const items = trainings.filter(
-          (t) => t.childId === child.id && t.start.toDateString() === day.toDateString(),
-        );
+        const items = trainings.filter((t) => t.childId === child.id && t.start.toDateString() === day.toDateString());
         const isToday = day.toDateString() === today.toDateString();
+        const has = items.length > 0;
 
         return (
           <div
             key={day.toISOString()}
             className={cx(
-              "flex w-[86px] shrink-0 flex-col rounded-[12px] border p-2.5",
-              isToday ? "border-signal/30 bg-signal-soft" : "border-line bg-surface",
+              "flex h-[92px] w-[58px] shrink-0 flex-col items-center rounded-[var(--radius-md)] px-1 py-2.5 transition-colors",
+              isToday ? "bg-ink text-white" : "bg-surface text-ink shadow-[var(--shadow-soft)]",
             )}
           >
-            <span className={cx("text-[11px] font-semibold uppercase", isToday ? "text-signal-ink" : "text-ink-3")}>
+            <span className={cx("text-[11px] font-semibold uppercase", isToday ? "text-white/60" : "text-ink-3")}>
               {dayShort(day)}
             </span>
-            <span className={cx("mb-2 text-[18px] leading-tight font-semibold tabular", isToday ? "text-signal-ink" : "text-ink")}>
-              {day.getDate()}
-            </span>
-
-            {items.length === 0 ? (
-              <span className="mt-auto text-[11px] text-ink-4">livre</span>
-            ) : (
-              items.map((t) => (
-                <span key={t.id} className="mt-auto font-mono text-[12px] font-medium text-ink tabular">
-                  {time(t.start)}
+            <span className="num mt-0.5 text-[19px] font-semibold">{day.getDate()}</span>
+            <span className="mt-auto">
+              {has ? (
+                <span className="num text-[11px] font-bold" style={{ color: isToday ? "#fff" : "var(--color-signal)" }}>
+                  {time(items[0].start)}
                 </span>
-              ))
-            )}
+              ) : (
+                <span className={cx("block size-1 rounded-full", isToday ? "bg-white/30" : "bg-ink-4/30")} />
+              )}
+            </span>
           </div>
         );
       })}

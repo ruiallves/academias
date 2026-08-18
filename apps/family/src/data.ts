@@ -84,8 +84,14 @@ export type Payment = {
 };
 
 export const payments: Payment[] = [
+  // Em dívida — na família há mais do que uma, de propósito: um pai pode pagar
+  // quantas quiser de uma vez (Agosto vencida, Agosto por pagar, e Setembro a
+  // vencer, que se pode adiantar).
   { id: "p1", childId: "at_martim", period: "2026-08", label: "Agosto", amountCents: 4000, dueDate: new Date(2026, 7, 8), status: "overdue", reference: "912 447 305" },
-  { id: "p2", childId: "at_alice", period: "2026-08", label: "Agosto", amountCents: 4500, dueDate: new Date(2026, 7, 8), status: "paid", paidAt: new Date(2026, 7, 6), method: "MB Way" },
+  { id: "p2", childId: "at_alice", period: "2026-08", label: "Agosto", amountCents: 4500, dueDate: new Date(2026, 7, 8), status: "pending", reference: "634 118 902" },
+  { id: "p7", childId: "at_martim", period: "2026-09", label: "Setembro", amountCents: 4000, dueDate: new Date(2026, 8, 8), status: "pending", reference: "771 305 640" },
+  { id: "p8", childId: "at_alice", period: "2026-09", label: "Setembro", amountCents: 4500, dueDate: new Date(2026, 8, 8), status: "pending", reference: "882 447 013" },
+  // Histórico
   { id: "p3", childId: "at_martim", period: "2026-07", label: "Julho", amountCents: 4000, dueDate: new Date(2026, 6, 8), status: "paid", paidAt: new Date(2026, 6, 7), method: "MB Way" },
   { id: "p4", childId: "at_alice", period: "2026-07", label: "Julho", amountCents: 4500, dueDate: new Date(2026, 6, 8), status: "paid", paidAt: new Date(2026, 6, 7), method: "MB Way" },
   { id: "p5", childId: "at_martim", period: "2026-06", label: "Junho", amountCents: 4000, dueDate: new Date(2026, 5, 8), status: "paid", paidAt: new Date(2026, 5, 9), method: "Multibanco" },

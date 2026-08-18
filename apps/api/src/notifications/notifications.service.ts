@@ -1,6 +1,6 @@
 import { Injectable, Logger } from "@nestjs/common";
 import { NotificationType } from "@prisma/client";
-import { PrismaService } from "../prisma/prisma.service";
+import { PrismaService, type ScopedClient } from "../prisma/prisma.service";
 
 export type NotificationInput = {
   academyId: string;
@@ -40,8 +40,27 @@ export class NotificationsService {
     this.channels.push(channel);
   }
 
-  async enqueue(input: NotificationInput) {
-    const notification = await this.prisma.notification.create({
+  /**
+   * Grava a notificação e entrega-a.
+   *
+   * ## Porque é que isto recebe um cliente
+   *
+   * `Notification` tem RLS por academia. Escrever pelo cliente base — sem
+   * `SET LOCAL app.academy_id` na ligação — é recusado pelo Postgres, e a
+   * mensagem que sai é "new row violates row-level security policy", que não
+   * ajuda ninguém a perceber o que se passou.
+   *
+   * Quem já está dentro de uma transação de tenant passa o seu `db`; quem não
+   * está deixa em branco e esta função abre a sua. As duas coisas são precisas:
+   * aninhar `$transaction` no Prisma esgota a ligação à espera de si própria, e
+   * escrever sem contexto é recusado.
+   */
+  async enqueue(input: NotificationInput, db?: ScopedClient): Promise<{ id: string }> {
+    if (!db) {
+      return this.prisma.runAs(input.academyId, (scoped) => this.enqueue(input, scoped));
+    }
+
+    const notification = await db.notification.create({
       data: {
         academyId: input.academyId,
         userId: input.userId,
@@ -69,7 +88,7 @@ export class NotificationsService {
       }
     }
 
-    await this.prisma.notification.update({
+    await db.notification.update({
       where: { id: notification.id },
       data: { deliveredAt: new Date() },
     });

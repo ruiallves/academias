@@ -1,4 +1,4 @@
-import { createHash, randomBytes, timingSafeEqual } from "node:crypto";
+import { createHash, randomBytes } from "node:crypto";
 import {
   BadRequestException,
   ConflictException,
@@ -154,6 +154,7 @@ export class InvitesService {
       try {
         const invite = await db.staffInvite.create({
           data: {
+            academyId: ctx.academyId,
             tokenHash: hash(token),
             email,
             name,
@@ -167,7 +168,14 @@ export class InvitesService {
           select: { id: true },
         });
 
-        return { id: invite.id, link: await this.linkFor(ctx.academyId, token), expiresAt };
+        // O slug lê-se com o cliente **desta** transação. Abrir outra aqui dentro
+        // esgotava a ligação à espera de si própria — o Prisma não aninha `$transaction`.
+        const academy = await db.academy.findFirst({
+          where: { id: ctx.academyId },
+          select: { slug: true },
+        });
+
+        return { id: invite.id, link: this.linkFor(academy?.slug ?? "", token), expiresAt };
       } catch (error) {
         // O índice parcial `StaffInvite_pending_unique`: já há um convite vivo para
         // esta pessoa com este papel. Reemitir sem revogar deixaria dois links a
@@ -228,6 +236,9 @@ export class InvitesService {
    */
   async preview(token: string): Promise<InvitePreview> {
     const academyId = await this.academyOf(token);
+    // Antes de abrir a transação: pedir uma segunda ligação ao pool enquanto se
+    // segura a primeira é como se esgota um pool pequeno.
+    const account = await this.invitedAccount(token);
 
     return this.prisma.runAs(academyId, async (db) => {
       const invite = await db.staffInvite.findFirst({
@@ -253,7 +264,7 @@ export class InvitesService {
         role: invite.role,
         title: invite.title,
         teams,
-        hasAccount: await this.hasAccount(invite.email),
+        hasAccount: Boolean(account),
       };
     });
   }
@@ -288,7 +299,8 @@ export class InvitesService {
 
     // A conta no Supabase, fora de qualquer transação: é um sistema externo e não
     // participa no rollback. Falhar aqui deixa o convite intacto para nova tentativa.
-    const authId = (await this.findAuthUser(invite.email))
+    const existing = await this.invitedAccount(token);
+    const authId = existing
       ? await this.signInExisting(invite.email, password)
       : await this.createAuthUser(invite.email, password, invite.name);
 
@@ -301,12 +313,24 @@ export class InvitesService {
       });
       if (claimed.count === 0) throw new ConflictException("Este convite já foi usado");
 
-      const user = await db.user.upsert({
-        where: { authId },
-        update: { email: invite.email, name: invite.name, ...(phone ? { phone } : {}) },
-        create: { authId, email: invite.email, name: invite.name, phone: phone ?? null },
-        select: { id: true },
-      });
+      /*
+       * O `User` não se cria com o Prisma aqui, e a razão é boa.
+       *
+       * A política de `User` é "vejo-te se partilharmos academia", e a partilha
+       * ainda não existe — é a Membership abaixo que a cria. Como o Prisma faz
+       * sempre `INSERT ... RETURNING`, a leitura de volta cai na política e o
+       * Postgres recusa. Um `INSERT` sem `RETURNING` passaria; com ele, não.
+       *
+       * `app.upsert_invited_user` é a escotilha estreita para esse único passo —
+       * ver a migração `20260816000400_invited_user_bootstrap`.
+       */
+      const userId = `usr_${randomBytes(12).toString("hex")}`;
+      const created = await db.$queryRaw<{ id: string }[]>`
+        SELECT app.upsert_invited_user(
+          ${userId}, ${authId}, ${invite.email}, ${invite.name}, ${phone ?? null}
+        ) AS id
+      `;
+      const user = { id: created[0].id };
 
       const membership = await db.membership.upsert({
         where: { academyId_userId_role: { academyId, userId: user.id, role: invite.role } },
@@ -352,28 +376,35 @@ export class InvitesService {
     return academyId;
   }
 
-  private async linkFor(academyId: string, token: string): Promise<string> {
-    const slug = await this.prisma.runAs(academyId, async (db) => {
-      const a = await db.academy.findFirst({ where: { id: academyId }, select: { slug: true } });
-      return a?.slug ?? "";
-    });
-
-    // Em produção o convite vive no domínio do próprio clube — quem o recebe vê o
-    // nome da academia no link, e não um endereço genérico que parece phishing.
+  /**
+   * O link, montado a partir do slug.
+   *
+   * Puro de propósito — sem base de dados — porque é chamado de dentro da
+   * transação que criou o convite. Em produção o convite vive no domínio do
+   * próprio clube: quem o recebe vê o nome da academia no link, e não um endereço
+   * genérico que parece phishing.
+   */
+  private linkFor(slug: string, token: string): string {
     const base = this.config.get<string>("PUBLIC_BASE_URL");
     if (base) return `${base.replace(/\/$/, "").replace("{slug}", slug)}/convite/${token}`;
     return `http://localhost:3000/l/${slug}/convite/${token}`;
   }
 
-  /** Já existe conta com este email? O `User` é global de propósito — não tem tenant. */
-  private async hasAccount(email: string): Promise<boolean> {
-    const user = await this.prisma.user.findFirst({ where: { email }, select: { id: true } });
-    return Boolean(user);
-  }
-
-  private async findAuthUser(email: string): Promise<string | null> {
-    const user = await this.prisma.user.findFirst({ where: { email }, select: { authId: true } });
-    return user?.authId ?? null;
+  /**
+   * O `authId` de quem foi convidado, se já tiver conta.
+   *
+   * Não se pergunta pelo email directamente: a política de `User` é "vejo-te se
+   * partilharmos academia", e ao resgatar não partilhamos nenhuma ainda — quem já
+   * tem conta apareceria como não tendo, e o servidor tentaria criá-la outra vez.
+   *
+   * `app.invited_account` responde só a quem traga um token de convite válido, e
+   * devolve um `authId` opaco. Ver a migração `20260816000500_invited_account`.
+   */
+  private async invitedAccount(token: string): Promise<string | null> {
+    const rows = await this.prisma.$queryRaw<{ auth: string | null }[]>`
+      SELECT app.invited_account(${hash(token)}) AS auth
+    `;
+    return rows[0]?.auth ?? null;
   }
 
   /**
@@ -435,8 +466,17 @@ function normalizeEmail(email: string): string {
   return email.trim().toLowerCase();
 }
 
+/**
+ * Um email de verdade — e não um vetor de injeção.
+ *
+ * O padrão antigo `[^\s@]+` aceitava `<`, `>`, `/`, o que deixava passar
+ * `x</script><script>alert(1)</script>@e.pt` para a página de convite, onde o
+ * email é interpolado num bloco `<script>`. Este conjunto de caracteres é o dos
+ * emails reais — letras, dígitos, e a pontuação que a RFC permite na prática
+ * (`. _ % + -`), mais nada. Um email não precisa de `<` nem de `/`.
+ */
 function isEmail(value: string): boolean {
-  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value);
+  return /^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}$/.test(value) && value.length <= 254;
 }
 
 /** As duas letras do badge — as mesmas que a consola e a landing usam. */
@@ -449,11 +489,4 @@ function monogram(name: string): string {
 
 function isUniqueViolation(error: unknown): boolean {
   return typeof error === "object" && error !== null && (error as { code?: string }).code === "P2002";
-}
-
-/** Comparação de tokens em tempo constante, para quem precisar dela fora daqui. */
-export function tokensMatch(a: string, b: string): boolean {
-  const ba = Buffer.from(a);
-  const bb = Buffer.from(b);
-  return ba.length === bb.length && timingSafeEqual(ba, bb);
 }

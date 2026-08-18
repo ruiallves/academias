@@ -131,9 +131,25 @@ const TONE: Record<Tone, string> = {
   signal: "bg-signal-soft text-signal-ink",
 };
 
+/**
+ * Etiqueta de estado ou categoria.
+ *
+ * `text-center` e `justify-center` não são decoração: numa coluna estreita —
+ * "Departamento clínico", "Secretaria e operações" — o texto passa a duas linhas,
+ * e sem eles a segunda linha encostava à esquerda dentro de uma forma arredondada.
+ * Lia-se como um erro de layout, não como uma etiqueta.
+ *
+ * `leading-tight` fecha o espaço entre as duas linhas, senão a etiqueta cresce até
+ * desalinhar a altura da linha da tabela.
+ */
 export function Pill({ tone = "neutral", children }: { tone?: Tone; children: ReactNode }) {
   return (
-    <span className={cx("inline-flex items-center rounded-full px-2 py-0.5 text-[11px] font-semibold", TONE[tone])}>
+    <span
+      className={cx(
+        "inline-flex items-center justify-center rounded-full px-2 py-0.5 text-center text-[11px] leading-tight font-semibold",
+        TONE[tone],
+      )}
+    >
       {children}
     </span>
   );

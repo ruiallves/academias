@@ -1,11 +1,11 @@
-import { useEffect, useRef, useState } from "react";
-import { NavLink } from "react-router-dom";
-import { Bell, ChevronsUpDown, LogOut, PanelLeft, Search, Check } from "@/lib/icons";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { NavLink, useNavigate } from "react-router-dom";
+import { Bell, Check, ChevronsUpDown, LogOut, PanelLeft, Search, Shield, Users } from "@/lib/icons";
 import { navFor, SETTINGS_ITEM, type NavItem } from "@/lib/nav";
 import { permissionsOf } from "@/lib/permissions";
-import { academy, navCounts } from "@/lib/api";
-import { signOut } from "@/lib/session";
-import { PROFILES, ROLE_LABEL, useSession, type ProfileKey } from "@/session";
+import { academy, listAthletes, listTeams, navCounts, teamById } from "@/lib/api";
+import { DEV_PROFILES, devSignInAs, signOut } from "@/lib/session";
+import { ROLE_LABEL, useSession } from "@/session";
 import { cx, Monogram } from "./primitives";
 
 export function Sidebar({
@@ -38,11 +38,23 @@ export function Sidebar({
 
       {!collapsed && <SearchField />}
 
-      <nav className="flex-1 overflow-y-auto px-2 pb-3">
+      {/* `overflow-y-auto` fica como rede de segurança para janelas absurdamente
+          baixas. Com a densidade de `styles.css` não deve chegar a disparar.
+          `pt-2`: sem ele o primeiro item ("Visão geral") ficava colado à pesquisa
+          (aberto) ou à borda do cabeçalho (fechado), enquanto os grupos seguintes
+          respiram com 18px entre si — a folga no topo repõe esse ritmo. */}
+      <nav className="flex-1 overflow-y-auto p-2">
+        {/* A classe `nav-group` vai em todos: o espaçamento é
+            `.nav-group + .nav-group`, que só separa irmãos e por isso não põe
+            margem antes do primeiro. */}
         {groups.map((group, i) => (
-          <div key={group.label ?? `g${i}`} className={i === 0 ? "" : "mt-5"}>
+          <div key={group.label ?? `g${i}`} className="nav-group">
             {group.label && !collapsed && (
-              <div className="px-2.5 pb-1.5 text-group text-ink-4 uppercase">{group.label}</div>
+              <>
+                <div className="nav-label px-2.5 pb-1.5 text-group text-ink-4 uppercase">{group.label}</div>
+                {/* Em ecrãs baixos o rótulo sai e este toma-lhe o lugar. */}
+                <div className="nav-sep mx-2.5 mt-1 mb-1.5 border-t border-line" />
+              </>
             )}
             {group.label && collapsed && <div className="mx-2.5 mb-2 border-t border-line" />}
             <ul className="space-y-px">
@@ -74,7 +86,7 @@ function AcademyHeader({ collapsed, onToggle }: { collapsed: boolean; onToggle: 
   // empilhados numa coluna de 60px.
   if (collapsed) {
     return (
-      <div className="flex h-14 items-center justify-center border-b border-line">
+      <div className="nav-header flex items-center justify-center border-b border-line">
         <button
           type="button"
           onClick={onToggle}
@@ -93,7 +105,7 @@ function AcademyHeader({ collapsed, onToggle }: { collapsed: boolean; onToggle: 
   }
 
   return (
-    <div className="flex h-14 items-center gap-2 border-b border-line pr-2 pl-3">
+    <div className="nav-header flex items-center gap-2 border-b border-line pr-2 pl-3">
       {/* A marca é da academia, não nossa. Somos a tecnologia por trás. */}
       <span
         className="flex size-7 shrink-0 items-center justify-center rounded-[7px] text-[11px] font-bold text-white"
@@ -125,10 +137,25 @@ function AcademyHeader({ collapsed, onToggle }: { collapsed: boolean; onToggle: 
   );
 }
 
-function SearchField() {
-  const ref = useRef<HTMLInputElement>(null);
+type SearchResult = { kind: "athlete" | "team"; id: string; name: string; sub: string };
 
-  // ⌘K / Ctrl+K. Numa academia com 120 atletas, procurar é mais rápido que navegar.
+/**
+ * Pesquisa de atletas e equipas.
+ *
+ * Numa academia com 120 atletas, procurar é mais rápido do que navegar — por isso o
+ * campo faz mesmo alguma coisa: a escrever, mostra atletas e equipas cujo nome
+ * bate, e ao escolher salta para a ficha. A lista já vem no âmbito de quem procura
+ * (`listAthletes`/`listTeams`), portanto um treinador só encontra os seus.
+ */
+function SearchField() {
+  const { session } = useSession();
+  const navigate = useNavigate();
+  const ref = useRef<HTMLInputElement>(null);
+  const boxRef = useRef<HTMLDivElement>(null);
+  const [query, setQuery] = useState("");
+  const [open, setOpen] = useState(false);
+
+  // ⌘K / Ctrl+K foca a pesquisa de qualquer sítio.
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.key.toLowerCase() === "k" && (e.metaKey || e.ctrlKey)) {
@@ -140,18 +167,102 @@ function SearchField() {
     return () => window.removeEventListener("keydown", onKey);
   }, []);
 
+  // Fecha ao clicar fora.
+  useEffect(() => {
+    if (!open) return;
+    const onDown = (e: MouseEvent) => {
+      if (!boxRef.current?.contains(e.target as Node)) setOpen(false);
+    };
+    document.addEventListener("mousedown", onDown);
+    return () => document.removeEventListener("mousedown", onDown);
+  }, [open]);
+
+  const results = useMemo<SearchResult[]>(() => {
+    const q = query.trim().toLowerCase();
+    if (!q) return [];
+    const athletes: SearchResult[] = listAthletes(session)
+      .filter((a) => a.name.toLowerCase().includes(q))
+      .slice(0, 6)
+      .map((a) => ({ kind: "athlete", id: a.id, name: a.name, sub: teamById(a.teamId)?.name ?? "Sem equipa" }));
+    const teams: SearchResult[] = listTeams(session)
+      .filter((t) => t.name.toLowerCase().includes(q))
+      .slice(0, 4)
+      .map((t) => ({ kind: "team", id: t.id, name: t.name, sub: t.ageGroup }));
+    return [...teams, ...athletes];
+  }, [query, session]);
+
+  const go = (r: SearchResult) => {
+    navigate(r.kind === "athlete" ? `/atletas/${r.id}` : `/equipas/${r.id}`);
+    setQuery("");
+    setOpen(false);
+    ref.current?.blur();
+  };
+
+  const show = open && query.trim().length > 0;
+
   return (
-    <div className="px-2 py-2.5">
+    <div ref={boxRef} className="nav-search relative px-2">
       <div className="group relative">
         <Search className="pointer-events-none absolute top-1/2 left-2.5 size-3.5 -translate-y-1/2 text-ink-4" strokeWidth={1.75} />
         <input
           ref={ref}
           type="search"
+          value={query}
+          onChange={(e) => {
+            setQuery(e.target.value);
+            setOpen(true);
+          }}
+          onFocus={() => setOpen(true)}
+          onKeyDown={(e) => {
+            if (e.key === "Enter" && results[0]) go(results[0]);
+            if (e.key === "Escape") {
+              setQuery("");
+              setOpen(false);
+            }
+          }}
           placeholder="Procurar atleta, equipa…"
-          className="h-8 w-full rounded-[var(--radius-control)] bg-sunken pr-11 pl-8 text-meta text-ink placeholder:text-ink-4 focus:bg-surface focus:ring-1 focus:ring-line-strong focus:outline-none"
+          className="w-full rounded-[var(--radius-control)] bg-sunken pr-11 pl-8 text-meta text-ink placeholder:text-ink-4 focus:bg-surface focus:ring-1 focus:ring-line-strong focus:outline-none"
         />
         <kbd className="pointer-events-none absolute top-1/2 right-2 -translate-y-1/2 font-mono text-[10px] text-ink-4">⌘K</kbd>
       </div>
+
+      {show && (
+        <div className="absolute top-[calc(100%+2px)] right-2 left-2 z-30 overflow-hidden rounded-[var(--radius-panel)] border border-line bg-surface py-1 shadow-[var(--shadow-pop)]">
+          {results.length === 0 ? (
+            <p className="px-3 py-2 text-meta text-ink-4">Nada com “{query.trim()}”.</p>
+          ) : (
+            <ul className="max-h-[320px] overflow-y-auto">
+              {results.map((r) => (
+                <li key={`${r.kind}-${r.id}`}>
+                  <button
+                    type="button"
+                    onMouseDown={(e) => {
+                      // `onMouseDown` e não `onClick`: o blur do input dispararia
+                      // antes do clique e fechava a lista primeiro.
+                      e.preventDefault();
+                      go(r);
+                    }}
+                    className="flex w-full items-center gap-2.5 px-2.5 py-1.5 text-left transition-colors duration-[120ms] hover:bg-sunken"
+                  >
+                    {r.kind === "athlete" ? (
+                      <Monogram name={r.name} size="sm" />
+                    ) : (
+                      <span className="flex size-6 shrink-0 items-center justify-center rounded-full bg-sunken text-ink-3">
+                        <Shield className="size-3.5" strokeWidth={1.75} />
+                      </span>
+                    )}
+                    <span className="min-w-0 flex-1">
+                      <span className="block truncate text-body text-ink">{r.name}</span>
+                      <span className="block truncate text-[11px] text-ink-3">{r.sub}</span>
+                    </span>
+                    {r.kind === "team" && <Users className="size-3.5 shrink-0 text-ink-4" strokeWidth={1.75} />}
+                  </button>
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+      )}
     </div>
   );
 }
@@ -178,7 +289,7 @@ function Item({
       title={collapsed ? item.label : undefined}
       className={({ isActive }) =>
         cx(
-          "group relative flex h-[34px] items-center rounded-[var(--radius-control)] text-body font-medium transition-colors duration-[120ms]",
+          "nav-item group relative flex items-center rounded-[var(--radius-control)] text-body font-medium transition-colors duration-[120ms]",
           collapsed ? "justify-center px-0" : "gap-2.5 px-2.5",
           isActive ? "bg-signal-soft text-signal-ink" : "text-ink-2 hover:bg-sunken hover:text-ink",
         )
@@ -219,7 +330,7 @@ function Item({
  * Em produção este menu é conta / academia / terminar sessão.
  */
 function UserCard({ collapsed }: { collapsed: boolean }) {
-  const { session, profile, setProfile } = useSession();
+  const { session } = useSession();
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
 
@@ -244,30 +355,43 @@ function UserCard({ collapsed }: { collapsed: boolean }) {
           className="absolute bottom-[calc(100%-4px)] left-2 z-20 w-[228px] rounded-[var(--radius-panel)] border border-line bg-surface p-1 shadow-[var(--shadow-pop)]"
           role="menu"
         >
-          <div className="px-2.5 py-1.5 text-group text-ink-4 uppercase">Ver a consola como</div>
-          {(Object.keys(PROFILES) as ProfileKey[]).map((key) => {
-            const p = PROFILES[key];
-            return (
-              <button
-                key={key}
-                type="button"
-                role="menuitemradio"
-                aria-checked={profile === key}
-                onClick={() => {
-                  setProfile(key);
-                  setOpen(false);
-                }}
-                className="flex w-full items-center gap-2.5 rounded-[6px] px-2.5 py-2 text-left transition-colors duration-[120ms] hover:bg-sunken"
-              >
-                <Monogram name={p.name} size="sm" />
-                <span className="min-w-0 flex-1">
-                  <span className="block truncate text-body font-medium text-ink">{p.name}</span>
-                  <span className="block truncate text-[11px] text-ink-3">{ROLE_LABEL[p.role]}</span>
-                </span>
-                {profile === key && <Check className="size-3.5 shrink-0 text-signal" strokeWidth={2} />}
-              </button>
-            );
-          })}
+          <div className="px-2.5 py-2">
+            <div className="truncate text-body font-medium text-ink">{session.name}</div>
+            <div className="truncate text-[11px] text-ink-3">{ROLE_LABEL[session.role]}</div>
+          </div>
+
+          {/* Troca de perfil — só em desenvolvimento. Cada opção é um re-login a
+              sério na conta daquele papel (ver `devSignInAs`), não uma máscara. */}
+          {import.meta.env.DEV && (
+            <div className="mt-1 border-t border-line pt-1">
+              <div className="px-2.5 pt-0.5 pb-1 text-[10px] font-semibold tracking-wide text-ink-4 uppercase">
+                Ver como · teste
+              </div>
+              {DEV_PROFILES.map((p) => {
+                const current = session.role === p.role;
+                return (
+                  <button
+                    key={p.role}
+                    type="button"
+                    role="menuitem"
+                    disabled={current}
+                    onClick={() => void devSignInAs(p.email)}
+                    className={cx(
+                      "flex w-full items-center gap-2.5 rounded-[6px] px-2.5 py-1.5 text-left transition-colors duration-[120ms]",
+                      current ? "cursor-default" : "hover:bg-sunken",
+                    )}
+                  >
+                    <span className="flex size-5 shrink-0 items-center justify-center text-signal">
+                      {current && <Check className="size-3.5" strokeWidth={2.25} />}
+                    </span>
+                    <span className={cx("min-w-0 flex-1 truncate text-body", current ? "font-medium text-ink" : "text-ink-2")}>
+                      {p.label}
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
+          )}
 
           {/* Sair leva de volta à página do clube — não a um ecrã de login
               genérico. Cada academia tem o seu endereço, e é lá que se volta a

@@ -399,11 +399,11 @@ ${desktop ? renderDesktop(academy, shortName, name) : renderMobile(academy, shor
 
 <script>
 (function () {
-  var appUrl = ${JSON.stringify(familyUrl)};
-  var consoleUrl = ${JSON.stringify(consoleUrl)};
-  var supabaseUrl = ${JSON.stringify(supabaseUrl)};
-  var anonKey = ${JSON.stringify(supabaseAnonKey)};
-  var slug = ${JSON.stringify(academy.slug)};
+  var appUrl = ${jsonForScript(familyUrl)};
+  var consoleUrl = ${jsonForScript(consoleUrl)};
+  var supabaseUrl = ${jsonForScript(supabaseUrl)};
+  var anonKey = ${jsonForScript(supabaseAnonKey)};
+  var slug = ${jsonForScript(academy.slug)};
 
   // Se esta página já está a correr como app instalada (aconteceu se o telemóvel
   // guardou a landing em vez da app — iOS antigo faz isso), não faz sentido pedir
@@ -511,6 +511,10 @@ ${desktop ? renderDesktop(academy, shortName, name) : renderMobile(academy, shor
     installModal.addEventListener('click', function (e) { if (e.target === installModal) installModal.hidden = true; });
   }
 
+  function trimSlash(url) {
+    return url.charAt(url.length - 1) === '/' ? url.slice(0, -1) : url;
+  }
+
   function fail(message) {
     errorBox.textContent = message;
     errorBox.hidden = false;
@@ -544,7 +548,7 @@ ${desktop ? renderDesktop(academy, shortName, name) : renderMobile(academy, shor
 
           // Ter sessão não chega: é preciso pertencer a **esta** academia. Quem
           // trabalha noutra não entra aqui só por ter conta válida.
-          return fetch('/api/auth/memberships', {
+          return fetch('/auth/memberships', {
             headers: { Authorization: 'Bearer ' + res.body.access_token },
           })
             .then(function (r) { return r.json(); })
@@ -559,16 +563,33 @@ ${desktop ? renderDesktop(academy, shortName, name) : renderMobile(academy, shor
                 return;
               }
 
+              var session = {
+                accessToken: res.body.access_token,
+                refreshToken: res.body.refresh_token,
+                academySlug: slug,
+              };
+
               // A consola lê a sessão daqui e não volta a pedir credenciais.
               try {
-                sessionStorage.setItem('academia.session', JSON.stringify({
-                  accessToken: res.body.access_token,
-                  refreshToken: res.body.refresh_token,
-                  academySlug: slug,
-                }));
-              } catch (err) { /* modo privado: a consola pede login outra vez */ }
+                sessionStorage.setItem('academia.session', JSON.stringify(session));
+              } catch (err) { /* modo privado: segue no fragmento na mesma */ }
 
-              location.href = consoleUrl;
+              /*
+               * Entregar a sessão à consola.
+               *
+               * O sessionStorage é por origem. Em produção a consola vive neste
+               * mesmo domínio e herda-a sozinha — a linha acima chega. Em
+               * desenvolvimento está noutra porta, que é outra origem, e sem esta
+               * entrega quem acabou de entrar era recebido por um segundo login.
+               *
+               * Vai no **fragmento**: não é enviado ao servidor, não aparece em
+               * logs de acesso nem em cabeçalhos Referer. A consola apaga-o do URL
+               * assim que o lê.
+               */
+              var sameOrigin = consoleUrl.indexOf(location.origin) === 0;
+              location.href = sameOrigin
+                ? consoleUrl
+                : trimSlash(consoleUrl) + '/#s=' + encodeURIComponent(btoa(JSON.stringify(session)));
             });
         })
         .catch(function () { fail('Não foi possível contactar o servidor. Tenta outra vez.'); });
@@ -730,4 +751,16 @@ function esc(s: string): string {
     .replace(/>/g, "&gt;")
     .replace(/"/g, "&quot;")
     .replace(/'/g, "&#39;");
+}
+
+/**
+ * `JSON.stringify` seguro para dentro de um `<script>` — escapa `</script>` e os
+ * separadores de linha Unicode. Ver a versão gémea em `invite.template.ts` para o
+ * porquê. Duplicado de propósito: os dois templates não devem depender um do outro.
+ */
+function jsonForScript(value: unknown): string {
+  return JSON.stringify(value)
+    .replace(/</g, "\\u003c")
+    .replace(/>/g, "\\u003e")
+    .replace(/&/g, "\\u0026");
 }

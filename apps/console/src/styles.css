@@ -41,3 +41,110 @@
     @apply flex items-center justify-between gap-3 border-b border-line px-5 py-3.5;
   }
 }
+
+/* ---------------------------------------------------------------------------
+ * Densidade da navegação
+ * ---------------------------------------------------------------------------
+ *
+ * O menu tem de caber no ecrã inteiro, sem barra de scroll. Não é preciosismo:
+ * um menu que rola esconde itens abaixo da dobra, e um item que não se vê é um
+ * item que não existe para quem está a usar o produto.
+ *
+ * O problema é de aritmética. A direção tem 13 itens e 5 rótulos de grupo, o que
+ * dá cerca de 860px com o espaçamento confortável — mas um portátil de 1366×768
+ * deixa uns 640px de viewport depois da barra do browser e da barra de tarefas.
+ *
+ * Em vez de encolher tudo para o pior caso — o que estragaria os ecrãs grandes,
+ * que são a maioria em secretária — a densidade acompanha a altura disponível, em
+ * quatro degraus. Do terceiro para baixo os rótulos de grupo dão lugar a
+ * separadores: valem 100px e o menu continua legível sem eles, que é exactamente o
+ * que a navegação recolhida já fazia.
+ *
+ * O espaçamento entre grupos é o que sobra depois de os itens caberem, e não o
+ * contrário: um rótulo colado ao item de cima lê-se como pertencendo ao grupo
+ * errado. Por isso a margem encolhe com o ecrã mas nunca desaparece — a folga de
+ * cada degrau foi calculada para dar ar aos grupos sem trazer a barra de scroll de
+ * volta.
+ *
+ * Feito com variáveis e media queries de **altura**, e não em JavaScript a medir o
+ * ecrã: assim acerta no primeiro pixel pintado, sem o salto de um menu que se
+ * reorganiza depois de aparecer.
+ */
+:root {
+  --nav-header-h: 56px;
+  --nav-item-h: 34px;
+  --nav-group-gap: 18px;
+  --nav-search-h: 32px;
+  --nav-search-pad: 8px;
+  --nav-label-display: block;
+  --nav-sep-display: none;
+}
+
+/* Portáteis grandes e janelas encostadas: aperta, mantém os rótulos. */
+@media (max-height: 900px) {
+  :root {
+    --nav-header-h: 50px;
+    --nav-item-h: 30px;
+    --nav-group-gap: 14px;
+    --nav-search-h: 30px;
+    --nav-search-pad: 7px;
+  }
+}
+
+/* Os rótulos dão lugar a separadores — valem 100px e o menu lê-se sem eles. */
+@media (max-height: 800px) {
+  :root {
+    --nav-header-h: 46px;
+    --nav-item-h: 28px;
+    --nav-group-gap: 12px;
+    --nav-search-h: 28px;
+    --nav-search-pad: 6px;
+    --nav-label-display: none;
+    --nav-sep-display: block;
+  }
+}
+
+/*
+ * Um 1366×768 com barra de tarefas e barra do browser deixa uns 635px. É o caso
+ * mais comum e é o que este degrau serve — com a procura ainda lá. Esconder a
+ * procura ganhava 36px e tirava a forma mais rápida de chegar a um atleta numa
+ * academia com 120; entre encolher e esconder, encolhe-se.
+ */
+@media (max-height: 680px) {
+  :root {
+    --nav-header-h: 44px;
+    --nav-item-h: 26px;
+    --nav-group-gap: 10px;
+    --nav-search-h: 26px;
+    --nav-search-pad: 5px;
+  }
+}
+
+.nav-header {
+  height: var(--nav-header-h);
+}
+
+.nav-item {
+  height: var(--nav-item-h);
+}
+
+.nav-group + .nav-group {
+  margin-top: var(--nav-group-gap);
+}
+
+.nav-search {
+  padding-block: var(--nav-search-pad);
+}
+
+.nav-search input {
+  height: var(--nav-search-h);
+}
+
+.nav-label {
+  display: var(--nav-label-display);
+}
+
+/* O separador é o rótulo por outros meios: aparece só quando o rótulo sai. */
+.nav-sep {
+  display: var(--nav-sep-display);
+}

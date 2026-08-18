@@ -1,5 +1,6 @@
 import { useMemo, useState } from "react";
 import { PageHeader } from "@/components/Shell";
+import { PersonLink } from "@/components/PersonLink";
 import { cx, Empty, Monogram, Panel, Pill } from "@/components/primitives";
 import { Segmented } from "@/components/filters";
 import { MonthGrid } from "@/components/MonthGrid";
@@ -227,6 +228,7 @@ function AgendaList({
             <div className="min-w-0 flex-1 space-y-1.5">
               {items.map((e) => {
                 const coach = e.coachId ? coachById(e.coachId) : undefined;
+                const coachName = e.coachName ?? coach?.name;
                 const c = e.teamId ? colors.get(e.teamId) : undefined;
 
                 return (
@@ -258,8 +260,8 @@ function AgendaList({
                       <Pill>Cancelado</Pill>
                     ) : coach ? (
                       <span className="flex shrink-0 items-center gap-1.5">
-                        <Monogram name={coach.name} size="sm" />
-                        <span className="text-meta text-ink-3">{coach.name.split(" ")[0]}</span>
+                        <Monogram name={coachName!} size="sm" />
+                        <PersonLink id={coach?.id} name={coachName} short className="text-meta text-ink-3" />
                       </span>
                     ) : e.alert === "unassigned" ? (
                       <Pill tone="risk">Sem treinador</Pill>

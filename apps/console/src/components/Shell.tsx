@@ -1,6 +1,7 @@
 import { useState, type ReactNode } from "react";
 import { Outlet } from "react-router-dom";
 import { Sidebar } from "./Sidebar";
+import { Onboarding } from "./Onboarding";
 
 export function Shell() {
   const [collapsed, setCollapsed] = useState(false);
@@ -16,6 +17,10 @@ export function Shell() {
           <Outlet />
         </div>
       </main>
+
+      {/* Ao canto e em todas as páginas: acompanha quem está a montar a academia
+          sem lhe tomar o ecrã. Desaparece sozinho quando não houver passos a dar. */}
+      <Onboarding />
     </div>
   );
 }

@@ -2,9 +2,10 @@ import { useMemo, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import { PageHeader } from "@/components/Shell";
 import { NewAthleteDialog } from "@/components/NewAthleteDialog";
+import { ImportAthletesDialog } from "@/components/ImportAthletesDialog";
 import { AvailabilityTag, DataTable, Empty, Monogram, Panel, Pill, type Column } from "@/components/primitives";
 import { ResultCount, SearchInput, Segmented, Select, Toolbar } from "@/components/filters";
-import { Download, Plus, Users } from "@/lib/icons";
+import { Plus, Upload, Users } from "@/lib/icons";
 import { academy, currentPeriod, guardiansOf, listAthletes, listFees, listTeams, today } from "@/lib/api";
 import { age, shortDate, shortName } from "@/lib/format";
 import type { Athlete } from "@/data/types";
@@ -20,6 +21,7 @@ export default function Athletes() {
   const [query, setQuery] = useState("");
   const [team, setTeam] = useState("all");
   const [creating, setCreating] = useState(false);
+  const [importing, setImporting] = useState(false);
 
   // Redesenha quando o departamento clínico mexe numa baixa.
   useClinicalRecords();
@@ -115,8 +117,8 @@ export default function Athletes() {
       render: (a) => {
         const fee = feeByAthlete.get(a.id);
         if (!fee) return <span className="text-ink-4">—</span>;
-        const tone = { paid: "ok", processing: "signal", pending: "warn", overdue: "risk" } as const;
-        const label = { paid: "Pago", processing: "A confirmar", pending: "Pendente", overdue: "Vencido" };
+        const tone = { paid: "ok", processing: "signal", pending: "warn", overdue: "risk", void: "neutral" } as const;
+        const label = { paid: "Pago", processing: "A confirmar", pending: "Pendente", overdue: "Vencido", void: "Anulada" };
         return <Pill tone={tone[fee.status]}>{label[fee.status]}</Pill>;
       },
     },
@@ -140,9 +142,9 @@ export default function Athletes() {
       >
         {can(session, "athlete:write") && (
           <>
-            <button type="button" className="ctl-outline">
-              <Download className="size-3.5" strokeWidth={1.75} />
-              Exportar
+            <button type="button" onClick={() => setImporting(true)} className="ctl-outline">
+              <Upload className="size-3.5" strokeWidth={1.75} />
+              Importar Excel
             </button>
             <button type="button" onClick={() => setCreating(true)} className="ctl-primary">
               <Plus className="size-3.5" strokeWidth={2} />
@@ -197,6 +199,7 @@ export default function Athletes() {
       </Panel>
 
       {creating && <NewAthleteDialog session={session} onClose={() => setCreating(false)} />}
+      {importing && <ImportAthletesDialog onClose={() => setImporting(false)} />}
     </>
   );
 }

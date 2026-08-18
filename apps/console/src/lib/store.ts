@@ -1,0 +1,496 @@
+import { useSyncExternalStore } from "react";
+import { apiGet } from "@/lib/http";
+import type {
+  Academy,
+  Announcement,
+  Athlete,
+  Evaluation,
+  Fee,
+  FeeStatus,
+  Guardian,
+  StaffMember,
+  Team,
+  TrainingSession,
+} from "@/data/types";
+import type { Role } from "@/lib/permissions";
+
+/**
+ * Os dados da academia, vindos da base de dados.
+ *
+ * Substitui `src/data/demo.ts`. Exporta os mesmos nomes e as mesmas formas de
+ * propósito — foi o que permitiu trocar a origem sem reescrever dezanove ecrãs.
+ *
+ * ## Porquê carregar tudo de uma vez
+ *
+ * Uma academia inteira são umas centenas de linhas: nove atletas, duas equipas,
+ * meia dúzia de pessoas, os treinos de um mês. Cabe todo numa mão-cheia de pedidos
+ * feitos ao entrar, e a partir daí a consola navega sem esperas — que é o que se
+ * quer de uma ferramenta que alguém tem aberta o dia todo.
+ *
+ * A alternativa — cada ecrã a pedir o que precisa — dava dezanove estados de
+ * carregamento a coordenar, e a mesma equipa pedida em quatro sítios diferentes.
+ * Quando uma academia crescer ao ponto de isto doer, os pedidos por ecrã entram
+ * aqui, atrás das mesmas funções, e nenhum ecrã muda.
+ *
+ * ## O que ainda não vem da base
+ *
+ * Avaliações, comunicados e histórico de equipas ficam vazios: não há tabelas
+ * semeadas nem endpoints para eles. Ficam **vazios e não inventados** — um ecrã
+ * que diz "ainda não há avaliações" é honesto; um que mostra avaliações a fingir
+ * ensina a não confiar no produto.
+ */
+
+/* -------------------------------------------------------------------------- */
+/* O que a API devolve                                                         */
+/* -------------------------------------------------------------------------- */
+
+type ApiBootstrap = {
+  academy: { id: string; slug: string; name: string; shortName: string; city: string | null; signalColor: string };
+  sports: { id: string; name: string; positions: string[]; skills: string[]; dominantSideLabel: string | null; matchMinutes: number | null }[];
+  season: { id: string; label: string } | null;
+  me: {
+    membershipId: string;
+    userId: string;
+    name: string;
+    email: string;
+    role: Role;
+    title: string | null;
+    department: string | null;
+    grants: string[];
+    revokes: string[];
+    scope: { teamIds?: string[]; athleteIds?: string[] };
+  };
+};
+
+type ApiTeam = {
+  id: string; name: string; ageGroup: string; sportId: string; season: string;
+  schedule: unknown; athleteCount: number;
+  coaches: { id: string; name: string; title: string }[];
+};
+
+type ApiAthlete = {
+  id: string; name: string; birthdate: string; photoUrl: string | null; status: string; joinedAt: string;
+  heightCm: number | null; weightKg: number | null; dominantSide: string | null; squadNumber: number | null;
+  medicalValidUntil: string | null; teamId: string | null; position: string | null;
+  guardians: { membershipId: string; name: string; email: string; phone: string | null; relation: string; isPayer: boolean }[];
+  availability: "available" | "limited" | "out";
+  // `title` (o diagnóstico) vem `null` para quem não tem `clinical:read` — o
+  // servidor retém o dado sensível, mas mantém a disponibilidade. Ver a auditoria
+  // de segurança, VULN-002.
+  restriction: { id: string; title: string | null; since: string; expectedReturn: string | null } | null;
+};
+
+type ApiStaff = {
+  id: string; name: string; email: string; phone: string | null; role: Role;
+  title: string | null; department: string | null; isActive: boolean; grants: string[]; revokes: string[];
+  since: string; teamIds: string[];
+};
+
+type ApiSession = {
+  id: string; teamId: string; startsAt: string; endsAt: string; venue: string; status: string;
+  coachId: string | null; coachName: string | null; recorded: boolean;
+  absences: { athleteId: string; status: string }[];
+};
+
+/** Um evento pontual do calendário — o que "Novo evento" cria. Ver `GET /api/events`. */
+export type ApiEvent = {
+  id: string; teamId: string | null; kind: "TRAINING" | "MATCH" | "TOURNAMENT" | "OTHER";
+  title: string; startsAt: string; endsAt: string; venue: string; cancelled: boolean;
+  coachId: string | null; coachName: string | null;
+};
+
+export type ApiMatch = {
+  id: string; teamId: string; teamName: string; maxCallUps: number;
+  startsAt: string; endsAt: string; venue: string; opponent: string; isHome: boolean;
+  status: string; ourScore: number | null; theirScore: number | null;
+  submitted: boolean; submittedAt: string | null;
+  calledUp: { athleteId: string; status: string; isGuest: boolean; guestFromTeam?: string }[];
+};
+
+/** Um atleta de outro escalão, elegível para subir a este jogo. Ver `MatchesService.guestPool`. */
+export type GuestCandidate = {
+  id: string;
+  name: string;
+  squadNumber: number | null;
+  position: string | null;
+  teamId: string;
+  teamName: string;
+  blocked: boolean;
+};
+
+type ApiCharge = {
+  id: string; athleteId: string; athleteName: string; teamId: string | null; period: string;
+  amountCents: number; dueDate: string; status: string; overdue: boolean;
+};
+
+/** Uma comunicação publicada, com a taxa de leitura. Ver `GET /api/announcements`. */
+type ApiAnnouncement = {
+  id: string; title: string; body: string; audience: string;
+  authorId: string; authorName: string; publishedAt: string | null; reach: number; read: number;
+};
+
+/* -------------------------------------------------------------------------- */
+/* O estado                                                                    */
+/* -------------------------------------------------------------------------- */
+
+export type Me = ApiBootstrap["me"];
+
+type State = {
+  ready: boolean;
+  error: string | null;
+  academy: Academy;
+  season: string;
+  me: Me | null;
+  teams: Team[];
+  staff: StaffMember[];
+  athletes: Athlete[];
+  guardians: Guardian[];
+  sessions: TrainingSession[];
+  fees: Fee[];
+  matches: ApiMatch[];
+  events: ApiEvent[];
+  announcements: Announcement[];
+};
+
+/**
+ * A academia antes de carregar.
+ *
+ * Não é uma academia a fingir: é o mínimo para o React desenhar a casca sem
+ * rebentar enquanto o pedido não volta. `ready: false` é o que mantém os ecrãs à
+ * espera — nenhum deles chega a ver isto.
+ */
+const EMPTY: State = {
+  ready: false,
+  error: null,
+  academy: { id: "", slug: "", name: "", shortName: "", signalColor: "#0f6b62", city: "", sports: [] },
+  season: "",
+  me: null,
+  teams: [],
+  staff: [],
+  athletes: [],
+  guardians: [],
+  sessions: [],
+  fees: [],
+  matches: [],
+  events: [],
+  announcements: [],
+};
+
+let state: State = EMPTY;
+const listeners = new Set<() => void>();
+
+const emit = () => listeners.forEach((l) => l());
+const subscribe = (l: () => void) => {
+  listeners.add(l);
+  return () => listeners.delete(l);
+};
+const snapshot = () => state;
+
+export function useStore(): State {
+  return useSyncExternalStore(subscribe, snapshot, snapshot);
+}
+
+/* -------------------------------------------------------------------------- */
+/* Carregamento                                                                */
+/* -------------------------------------------------------------------------- */
+
+let loading: Promise<void> | null = null;
+
+/** Carrega a academia. Chamadas concorrentes partilham o mesmo pedido. */
+export function loadAcademy(): Promise<void> {
+  if (loading) return loading;
+
+  loading = (async () => {
+    try {
+      const boot = await apiGet<ApiBootstrap>("/api/bootstrap");
+
+      // Em paralelo: são independentes, e em série somavam quatro idas ao servidor.
+      // As que a pessoa não pode ver falham com 403 e ficam vazias — um treinador
+      // não vê mensalidades, e isso não pode impedir a consola de arrancar.
+      const [teams, athletes, staff, sessions, fees, matches, events, announcements] = await Promise.all([
+        soft<ApiTeam>("/api/teams"),
+        soft<ApiAthlete>("/api/athletes"),
+        soft<ApiStaff>("/api/staff"),
+        soft<ApiSession>("/api/sessions"),
+        soft<ApiCharge>("/api/charges"),
+        soft<ApiMatch>("/api/matches"),
+        soft<ApiEvent>("/api/events"),
+        soft<ApiAnnouncement>("/api/announcements"),
+      ]);
+
+      apply(build(boot, teams, athletes, staff, sessions, fees, matches, events, announcements));
+    } catch (error) {
+      apply({ ...EMPTY, ready: true, error: error instanceof Error ? error.message : "Não foi possível carregar." });
+    }
+  })();
+
+  return loading;
+}
+
+/** Volta a carregar do zero — depois de criar um atleta, importar um ficheiro, etc. */
+export function reloadAcademy(): Promise<void> {
+  loading = null;
+  return loadAcademy();
+}
+
+/**
+ * Um pedido que pode ser recusado sem ser um erro.
+ *
+ * Um 403 aqui não é uma avaria: é o âmbito a funcionar. O treinador que não vê
+ * mensalidades recebe uma lista vazia, e a navegação já não lhe mostra o ecrã.
+ */
+async function soft<T>(path: string): Promise<T[]> {
+  try {
+    return (await apiGet<T[]>(path)) ?? [];
+  } catch {
+    return [];
+  }
+}
+
+/* -------------------------------------------------------------------------- */
+/* Tradução                                                                    */
+/* -------------------------------------------------------------------------- */
+
+function build(
+  boot: ApiBootstrap,
+  apiTeams: ApiTeam[],
+  apiAthletes: ApiAthlete[],
+  apiStaff: ApiStaff[],
+  apiSessions: ApiSession[],
+  apiFees: ApiCharge[],
+  apiMatches: ApiMatch[],
+  apiEvents: ApiEvent[],
+  apiAnnouncements: ApiAnnouncement[],
+): State {
+  const teams: Team[] = apiTeams.map((t) => ({
+    id: t.id,
+    name: t.name,
+    sportId: t.sportId,
+    ageGroup: t.ageGroup,
+    season: t.season,
+    coachIds: t.coaches.map((c) => c.id),
+    athleteIds: apiAthletes.filter((a) => a.teamId === t.id).map((a) => a.id),
+    schedule: Array.isArray(t.schedule) ? (t.schedule as Team["schedule"]) : [],
+  }));
+
+  const athletes: Athlete[] = apiAthletes.map((a) => ({
+    id: a.id,
+    name: a.name,
+    birthdate: a.birthdate,
+    teamId: a.teamId ?? "",
+    position: a.position ?? undefined,
+    guardianIds: a.guardians.map((g) => g.membershipId),
+    joinedAt: a.joinedAt,
+    status: a.status === "PAUSED" ? "paused" : a.status === "LEFT" ? "left" : "active",
+    medicalValidUntil: a.medicalValidUntil ?? "",
+    photoUrl: a.photoUrl ?? undefined,
+    heightCm: a.heightCm ?? undefined,
+    weightKg: a.weightKg ?? undefined,
+    dominantSide: (a.dominantSide?.toLowerCase() as Athlete["dominantSide"]) ?? undefined,
+    squadNumber: a.squadNumber ?? undefined,
+  }));
+
+  /*
+   * Encarregados.
+   *
+   * A API devolve-os dentro de cada atleta — é assim que se lêem, a partir da
+   * ficha. Aqui invertem-se para uma lista de pessoas com os educandos agregados,
+   * que é como a página Famílias os mostra. A mesma mãe com dois filhos aparece
+   * uma vez, com dois educandos, e não duas vezes.
+   */
+  const byGuardian = new Map<string, Guardian>();
+  for (const a of apiAthletes) {
+    for (const g of a.guardians) {
+      const existing = byGuardian.get(g.membershipId);
+      if (existing) {
+        existing.athleteIds.push(a.id);
+        continue;
+      }
+      byGuardian.set(g.membershipId, {
+        id: g.membershipId,
+        name: g.name,
+        email: g.email,
+        phone: g.phone ?? "",
+        relation: (g.relation as Guardian["relation"]) ?? "Encarregado",
+        athleteIds: [a.id],
+        // Por saber: depende de haver subscrição push registada para esta pessoa,
+        // e esse endpoint ainda não existe. Falso é o que menos engana.
+        appInstalled: false,
+      });
+    }
+  }
+
+  const staff: StaffMember[] = apiStaff.map((s) => ({
+    id: s.id,
+    name: s.name,
+    email: s.email,
+    phone: s.phone ?? "",
+    role: s.role,
+    title: s.title ?? "",
+    department: departmentOf(s.department),
+    teamIds: s.teamIds,
+    since: s.since,
+    isActive: s.isActive,
+    grants: s.grants,
+    revokes: s.revokes,
+  }));
+
+  const sessions: TrainingSession[] = apiSessions.map((s) => ({
+    id: s.id,
+    teamId: s.teamId,
+    start: s.startsAt,
+    end: s.endsAt,
+    venue: s.venue,
+    coachId: s.coachId ?? undefined,
+    coachName: s.coachName ?? undefined,
+    status: s.status === "DONE" ? "done" : s.status === "CANCELLED" ? "cancelled" : "scheduled",
+    // `recorded` a falso é "ninguém verificou" e tem de continuar indistinguível de
+    // uma lista de faltas vazia — que significa "estiveram todos".
+    attendance: s.recorded
+      ? {
+          absences: s.absences.map((x) => ({
+            athleteId: x.athleteId,
+            kind: x.status === "JUSTIFIED" ? "justified" : x.status === "LATE" ? "late" : "absent",
+          })),
+          recordedAt: s.endsAt,
+        }
+      : undefined,
+  }));
+
+  const fees: Fee[] = apiFees.map((c) => ({
+    id: c.id,
+    athleteId: c.athleteId,
+    period: c.period,
+    amountCents: c.amountCents,
+    dueDate: c.dueDate,
+    // "Vencida" não é estado guardado: é derivado da data, e o servidor já o disse.
+    // "Anulada" (VOID) é decisão da direção; o resto em aberto é "Pendente".
+    status: (
+      c.status === "SETTLED" ? "paid" : c.status === "VOID" ? "void" : c.overdue ? "overdue" : "pending"
+    ) as FeeStatus,
+  }));
+
+  return {
+    ready: true,
+    error: null,
+    academy: {
+      id: boot.academy.id,
+      slug: boot.academy.slug,
+      name: boot.academy.name,
+      shortName: boot.academy.shortName,
+      signalColor: boot.academy.signalColor,
+      city: boot.academy.city ?? "",
+      sports: boot.sports.map((s) => ({
+        id: s.id,
+        name: s.name,
+        positions: s.positions,
+        skills: s.skills,
+        dominantSideLabel: s.dominantSideLabel ?? undefined,
+        matchMinutes: s.matchMinutes ?? undefined,
+      })),
+    },
+    season: boot.season?.label ?? "",
+    me: boot.me,
+    teams,
+    staff,
+    athletes,
+    guardians: [...byGuardian.values()],
+    sessions,
+    fees,
+    matches: apiMatches,
+    events: apiEvents,
+    announcements: apiAnnouncements.map((a) => ({
+      id: a.id,
+      title: a.title,
+      body: a.body,
+      audience: a.audience,
+      publishedAt: a.publishedAt ?? "",
+      authorId: a.authorId,
+      authorName: a.authorName,
+      reach: a.reach,
+      read: a.read,
+    })),
+  };
+}
+
+function departmentOf(value: string | null): StaffMember["department"] {
+  switch (value) {
+    case "DIRECTION":
+      return "direction";
+    case "CLINICAL":
+      return "clinical";
+    case "OPERATIONS":
+      return "operations";
+    default:
+      return "technical";
+  }
+}
+
+/* -------------------------------------------------------------------------- */
+/* Os nomes que o resto da consola importa                                     */
+/* -------------------------------------------------------------------------- */
+/*
+ * `let` e não `const`, e reatribuído em `apply()`.
+ *
+ * São **live bindings** de ES modules: quem importa `teams` vê sempre o valor
+ * actual, sem ter de chamar nada. É o que permitiu trocar a origem dos dados de um
+ * ficheiro estático para a base de dados sem tocar em dezanove ecrãs — continuam a
+ * escrever `teams.filter(...)` como sempre escreveram.
+ *
+ * A única regra é não copiar estes valores na inicialização de outro módulo
+ * (`const meus = teams`), porque isso captura o array vazio de antes do
+ * carregamento. Usados dentro de funções — que é como toda a consola os usa — lêem
+ * o valor actual a cada chamada.
+ */
+
+export let academy: Academy = EMPTY.academy;
+export let teams: Team[] = [];
+export let staff: StaffMember[] = [];
+export let coaches: StaffMember[] = [];
+export let athletes: Athlete[] = [];
+export let guardians: Guardian[] = [];
+export let sessions: TrainingSession[] = [];
+export let fees: Fee[] = [];
+export let matches: ApiMatch[] = [];
+export let events: ApiEvent[] = [];
+export let announcements: Announcement[] = [];
+export let me: Me | null = null;
+export let currentSeason = "";
+
+/** Competências avaliadas — configuração da modalidade, não uma lista fixa no código. */
+export let SKILLS: string[] = [];
+
+function apply(next: State) {
+  state = next;
+  academy = next.academy;
+  teams = next.teams;
+  staff = next.staff;
+  coaches = next.staff.filter((s) => s.teamIds.length > 0);
+  athletes = next.athletes;
+  guardians = next.guardians;
+  sessions = next.sessions;
+  fees = next.fees;
+  matches = next.matches;
+  events = next.events;
+  announcements = next.announcements;
+  me = next.me;
+  currentSeason = next.season;
+  SKILLS = next.academy.sports[0]?.skills ?? [];
+  emit();
+}
+
+/** Hoje. Vive aqui porque metade da consola o importava de `demo.ts`. */
+export const today = new Date();
+
+export const currentPeriod = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, "0")}`;
+
+/**
+ * Sem endpoint ainda — e por isso vazios, não inventados.
+ *
+ * Um ecrã que diz "ainda não há avaliações" é honesto. Um que mostra avaliações a
+ * fingir ensina quem o usa a não confiar em nenhum número do produto. (Comunicações
+ * já saíram desta lista — vêm de `GET /api/announcements`, acima.)
+ */
+export const evaluations: Evaluation[] = [];
+export const staffStints: { staffId: string; season: string; teamName: string; sportId: string; title: string }[] = [];
+export type StaffStint = (typeof staffStints)[number];
