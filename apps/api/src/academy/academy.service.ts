@@ -1,8 +1,8 @@
 import { BadRequestException, ForbiddenException, Injectable, NotFoundException } from "@nestjs/common";
 import { Prisma, type CalendarEventKind } from "@prisma/client";
 import { PrismaService, type ScopedClient } from "../prisma/prisma.service";
-import { can, ROLE_PERMISSIONS, type Permission, type RequestContext } from "../common/permissions";
-import { teamScopeFilter } from "../common/permissions";
+import { basePermissions, can, ROLE_PERMISSIONS, type Permission, type RequestContext } from "../common/permissions";
+import { athleteScopeFilter, teamScopeFilter } from "../common/permissions";
 
 /**
  * As colunas de um evento que a consola lê — partilhadas pela leitura, criação e
@@ -16,6 +16,7 @@ const EVENT_SELECT = {
   startsAt: true,
   endsAt: true,
   venue: true,
+  dressingRoom: true,
   cancelled: true,
   coach: { select: { id: true, user: { select: { name: true } } } },
 } satisfies Prisma.CalendarEventSelect;
@@ -32,6 +33,7 @@ function serializeEvent(e: EventRow) {
     startsAt: e.startsAt,
     endsAt: e.endsAt,
     venue: e.venue,
+    dressingRoom: e.dressingRoom,
     cancelled: e.cancelled,
     coachId: e.coach?.id ?? null,
     coachName: e.coach?.user.name ?? null,
@@ -58,6 +60,17 @@ const DELEGATABLE: ReadonlySet<Permission> = new Set<Permission>([
   "report:read", "report:write",
   "staff:read", "staff:write",
   "clinical:status", "clinical:read", "clinical:write",
+  "scouting:read", "scouting:write", "scouting:video:read", "scouting:video:write",
+  "scouting:request",
+  "member:read", "member:write",
+  /*
+   * Delegar a criação de papéis é o ponto da funcionalidade: a presidência pode
+   * passá-la à direção, ou a uma pessoa em concreto, sem lhe dar mais nada. Não
+   * abre escalada nova — `filterDelegatable` continua a exigir que quem concede já
+   * tenha o que concede, e `RolesService` aplica a mesma regra outra vez a cada
+   * papel que se grava.
+   */
+  "role:write", "role:menu",
 ]);
 
 /**
@@ -103,7 +116,10 @@ export class AcademyService {
         db.season.findFirst({ where: { isCurrent: true }, select: { id: true, label: true, startsOn: true, endsOn: true } }),
         db.membership.findFirst({
           where: { id: ctx.membershipId },
-          select: { id: true, role: true, title: true, department: true, grants: true, user: { select: { name: true, email: true } } },
+          select: {
+            id: true, role: true, title: true, department: true, grants: true,
+            user: { select: { name: true, email: true } },
+          },
         }),
       ]);
 
@@ -119,6 +135,19 @@ export class AcademyService {
           role: ctx.role,
           title: me?.title ?? null,
           department: me?.department ?? null,
+          /*
+           * O papel da academia — e as permissões dele.
+           *
+           * `permissions` é a lista efectiva do papel, já resolvida pelo servidor:
+           * ou a do papel configurado, ou a do papel-base. Sem isto, o cliente
+           * teria de manter uma cópia do mapa que a academia acabou de editar, e
+           * a navegação passava a mentir no dia seguinte a uma mudança.
+           */
+          roleId: ctx.roleId,
+          roleName: ctx.roleName,
+          permissions: basePermissions(ctx),
+          /** Menus que o papel mostra. Vazio = todos os que a permissão deixar. */
+          navKeys: ctx.navKeys,
           grants: ctx.grants,
           // As retiradas seguem também: sem elas, o cliente calcularia as
           // permissões do próprio utilizador sem descontar o que a direção lhe tirou.
@@ -148,6 +177,22 @@ export class AcademyService {
         },
       });
 
+      // O preço por omissão de cada equipa — só para quem tem `billing:read`. Um
+      // treinador vê a equipa toda sem lhe sair o preço, como o diagnóstico
+      // clínico só sai para quem tem `clinical:read`: a mesma leitura, mascarada.
+      const feeByTeam = new Map<string, number>();
+      if (can(ctx, "billing:read")) {
+        const plans = await db.subscriptionPlan.findMany({
+          where: { teamId: { in: teams.map((t) => t.id) }, isActive: true },
+          select: { teamId: true, amountCents: true },
+          orderBy: { id: "desc" },
+        });
+        // Uma equipa não devia ter mais de um plano activo, mas se tiver (dados
+        // antigos, um erro manual) fica o mais recente — a ordenação acima garante
+        // que o primeiro que se vê por equipa é sempre esse.
+        for (const p of plans) if (p.teamId && !feeByTeam.has(p.teamId)) feeByTeam.set(p.teamId, p.amountCents);
+      }
+
       return teams.map((t) => ({
         id: t.id,
         name: t.name,
@@ -157,6 +202,7 @@ export class AcademyService {
         schedule: t.schedule,
         athleteCount: t._count.athletes,
         coaches: t.staff.map((s) => ({ id: s.membership.id, name: s.membership.user.name, title: s.title })),
+        feeCents: can(ctx, "billing:read") ? (feeByTeam.get(t.id) ?? null) : null,
       }));
     });
   }
@@ -227,6 +273,8 @@ export class AcademyService {
         schedule: team.schedule,
         athleteCount: team._count.athletes,
         coaches: team.staff.map((s) => ({ id: s.membership.id, name: s.membership.user.name, title: s.title })),
+        // Sem preço à nascença — configura-se depois, em `PATCH /api/teams/:id/fee`.
+        feeCents: null as number | null,
       };
     });
   }
@@ -269,6 +317,7 @@ export class AcademyService {
   async athletes(ctx: RequestContext) {
     if (!can(ctx, "athlete:read")) throw new ForbiddenException("Sem acesso a atletas");
     const scope = teamScopeFilter(ctx);
+    const athleteScope = athleteScopeFilter(ctx);
 
     /*
      * O diagnóstico é dado de saúde — categoria especial no RGPD (Art. 9). A
@@ -282,12 +331,33 @@ export class AcademyService {
      */
     const mayReadDiagnosis = can(ctx, "clinical:read");
 
+    /*
+     * O NIF do atleta só para quem trata de famílias — direção e secretaria.
+     *
+     * Um treinador tem `athlete:read` e não tem `family:read`, e não precisa do
+     * número de contribuinte de uma criança para escalar uma equipa. A app do pai
+     * também não o recebe: ele já o sabe, e mandá-lo para o telemóvel é espalhá-lo
+     * por mais um sítio sem nada em troca.
+     */
+    const mayReadTaxId = can(ctx, "family:read");
+
     return this.prisma.runAs(ctx.academyId, async (db) => {
       const athletes = await db.athlete.findMany({
-        where: scope ? { teams: { some: { teamId: scope } } } : {},
+        /*
+         * Os dois âmbitos cruzam-se aqui.
+         *
+         * O de equipa serve o treinador (os atletas das equipas dele); o de
+         * atleta serve a família (só os próprios filhos). Um encarregado tem os
+         * dois preenchidos — as equipas dos filhos e os filhos — e é o segundo
+         * que impede a app do pai de listar os colegas do filho.
+         */
+        where: {
+          ...(scope ? { teams: { some: { teamId: scope } } } : {}),
+          ...(athleteScope ? { id: athleteScope } : {}),
+        },
         orderBy: { name: "asc" },
         select: {
-          id: true, name: true, birthdate: true, photoUrl: true, status: true, joinedAt: true,
+          id: true, name: true, birthdate: true, photoUrl: true, status: true, joinedAt: true, taxId: true,
           heightCm: true, weightKg: true, dominantSide: true, squadNumber: true, medicalValidUntil: true,
           teams: { select: { teamId: true, position: true }, take: 1 },
           guardians: {
@@ -310,6 +380,7 @@ export class AcademyService {
           id: a.id,
           name: a.name,
           birthdate: a.birthdate,
+          taxId: mayReadTaxId ? a.taxId : null,
           photoUrl: a.photoUrl,
           status: a.status,
           joinedAt: a.joinedAt,
@@ -362,6 +433,8 @@ export class AcademyService {
         orderBy: [{ department: "asc" }, { createdAt: "asc" }],
         select: {
           id: true, role: true, title: true, department: true, isActive: true, grants: true, revokes: true, createdAt: true,
+          customRoleId: true,
+          customRole: { select: { name: true } },
           user: { select: { name: true, email: true, phone: true } },
           coachOf: { select: { teamId: true, title: true } },
         },
@@ -373,6 +446,8 @@ export class AcademyService {
         email: m.user.email,
         phone: m.user.phone,
         role: m.role,
+        roleId: m.customRoleId,
+        roleName: m.customRole?.name ?? null,
         title: m.title,
         department: m.department,
         isActive: m.isActive,
@@ -403,7 +478,7 @@ export class AcademyService {
         where: { startsAt: { gte: from, lte: to }, ...(scope ? { teamId: scope } : {}) },
         orderBy: { startsAt: "asc" },
         select: {
-          id: true, teamId: true, startsAt: true, endsAt: true, venue: true, status: true,
+          id: true, teamId: true, startsAt: true, endsAt: true, venue: true, dressingRoom: true, status: true,
           attendanceClosedAt: true,
           coach: { select: { id: true, user: { select: { name: true } } } },
           attendance: { select: { athleteId: true, status: true } },
@@ -416,6 +491,7 @@ export class AcademyService {
         startsAt: s.startsAt,
         endsAt: s.endsAt,
         venue: s.venue,
+        dressingRoom: s.dressingRoom,
         status: s.status,
         coachId: s.coach?.id ?? null,
         coachName: s.coach?.user.name ?? null,
@@ -464,7 +540,17 @@ export class AcademyService {
    */
   async createEvent(
     ctx: RequestContext,
-    dto: { kind: string; teamId?: string; title: string; startsAt: string; endsAt: string; venue: string },
+    dto: {
+      kind: string;
+      teamId?: string;
+      title: string;
+      startsAt: string;
+      endsAt: string;
+      venue: string;
+      dressingRoom?: string;
+      opponent?: string;
+      isHome?: boolean;
+    },
   ) {
     if (!can(ctx, "calendar:write")) throw new ForbiddenException("Sem permissão para criar eventos");
     const scope = teamScopeFilter(ctx);
@@ -485,6 +571,127 @@ export class AcademyService {
       }
       if (endsAt <= startsAt) throw new BadRequestException("O fim tem de ser depois do início");
 
+      /*
+       * Um jogo não é um evento genérico — é um `Match`.
+       *
+       * Marcar um jogo no calendário e não o encontrar depois em Convocatórias era
+       * o sintoma de os dois ecrãs lerem tabelas diferentes: o calendário escrevia
+       * `CalendarEvent`, as convocatórias liam `Match`. Um jogo tem adversário,
+       * convocatória e resultado, e essa é a tabela que os guarda — por isso é lá
+       * que passa a ser gravado, e o calendário lê as duas fontes.
+       */
+      if (dto.kind === "MATCH") {
+        if (!dto.teamId) throw new BadRequestException("Um jogo é sempre de uma equipa");
+        if (!dto.opponent?.trim()) throw new BadRequestException("Um jogo precisa de adversário");
+
+        // A mesma equipa não joga duas vezes à mesma hora — mas um jogo cancelado
+        // não ocupa o horário (ver a migração `cancelled_match_frees_slot`). Sem
+        // esta verificação o Prisma rebentava com um P2002 opaco.
+        const clash = await db.match.findFirst({
+          where: { teamId: dto.teamId, startsAt, status: { not: "CANCELLED" } },
+          select: { id: true },
+        });
+        if (clash) throw new BadRequestException("Esta equipa já tem um jogo marcado a esta hora");
+
+        const match = await db.match.create({
+          data: {
+            academyId: ctx.academyId,
+            teamId: dto.teamId,
+            startsAt,
+            endsAt,
+            venue: dto.venue.trim(),
+            opponent: dto.opponent.trim(),
+            isHome: dto.isHome ?? true,
+          },
+          select: {
+            id: true, teamId: true, startsAt: true, endsAt: true, venue: true,
+            opponent: true, isHome: true, status: true,
+            coach: { select: { id: true, user: { select: { name: true } } } },
+          },
+        });
+
+        // Devolvido na forma de evento: quem chamou pediu um evento do calendário
+        // e não tem de saber que por baixo isto é outra tabela.
+        return {
+          id: match.id,
+          teamId: match.teamId,
+          kind: "MATCH" as const,
+          title: `${match.isHome ? "vs" : "@"} ${match.opponent}`,
+          startsAt: match.startsAt,
+          endsAt: match.endsAt,
+          venue: match.venue,
+          dressingRoom: null,
+          cancelled: match.status === "CANCELLED",
+          coachId: match.coach?.id ?? null,
+          coachName: match.coach?.user.name ?? null,
+        };
+      }
+
+      /*
+       * Um treino também não é um evento genérico — é uma `TrainingSession`.
+       *
+       * ## O que estava partido
+       *
+       * Marcar um treino no calendário escrevia `CalendarEvent`. Mas quem lê
+       * treinos lê `TrainingSession`: as Presenças, para abrir a folha de faltas,
+       * e **a app da família**, que nem sequer pede `/api/events`. O resultado era
+       * um treino que o treinador via no calendário, que não abria folha de
+       * presenças nenhuma, e que nenhum pai chegava a ver. Os treinos que as
+       * famílias viam eram só os que vinham do horário da equipa.
+       *
+       * É exactamente o mesmo sintoma que os jogos já tinham tido, e a correcção é
+       * a mesma: escrever na tabela rica. `CalendarEvent` fica para o que é mesmo
+       * genérico — um estágio, uma reunião de pais, um torneio.
+       *
+       * ## Porque é que exige equipa
+       *
+       * Porque `TrainingSession.teamId` não é opcional, e com razão: um treino sem
+       * plantel não tem quem faltar. "Toda a academia" continua a existir para os
+       * outros tipos de evento, onde faz sentido.
+       */
+      if (dto.kind === "TRAINING") {
+        if (!dto.teamId) throw new BadRequestException("Um treino é sempre de uma equipa");
+
+        const clash = await db.trainingSession.findFirst({
+          where: { teamId: dto.teamId, startsAt, status: { not: "CANCELLED" } },
+          select: { id: true },
+        });
+        if (clash) throw new BadRequestException("Esta equipa já tem um treino marcado a esta hora");
+
+        const session = await db.trainingSession.create({
+          data: {
+            academyId: ctx.academyId,
+            teamId: dto.teamId,
+            startsAt,
+            endsAt,
+            venue: dto.venue.trim(),
+            dressingRoom: dto.dressingRoom?.trim() || null,
+          },
+          select: {
+            id: true, teamId: true, startsAt: true, endsAt: true, venue: true,
+            dressingRoom: true, status: true,
+            coach: { select: { id: true, user: { select: { name: true } } } },
+          },
+        });
+
+        // Devolvido na forma de evento: quem chamou pediu um evento do calendário
+        // e não tem de saber que por baixo isto é outra tabela. Mesma cortesia
+        // que os jogos.
+        return {
+          id: session.id,
+          teamId: session.teamId,
+          kind: "TRAINING" as const,
+          title: dto.title.trim(),
+          startsAt: session.startsAt,
+          endsAt: session.endsAt,
+          venue: session.venue,
+          dressingRoom: session.dressingRoom,
+          cancelled: session.status === "CANCELLED",
+          coachId: session.coach?.id ?? null,
+          coachName: session.coach?.user.name ?? null,
+        };
+      }
+
       const created = await db.calendarEvent.create({
         data: {
           academyId: ctx.academyId,
@@ -493,6 +700,7 @@ export class AcademyService {
           startsAt,
           endsAt,
           venue: dto.venue.trim(),
+          dressingRoom: dto.dressingRoom?.trim() || null,
           ...(dto.teamId ? { teamId: dto.teamId } : {}),
         },
         select: EVENT_SELECT,
@@ -513,7 +721,122 @@ export class AcademyService {
 
     return this.prisma.runAs(ctx.academyId, async (db) => {
       const ev = await db.calendarEvent.findFirst({ where: { id }, select: { id: true, teamId: true } });
-      if (!ev) throw new NotFoundException("Evento não encontrado");
+
+      /*
+       * Um jogo vive em `Match`, e o calendário mostra os dois lado a lado — por
+       * isso o mesmo botão de cancelar tem de saber alcançar ambos. Sem este
+       * ramo, cancelar um jogo no calendário respondia "evento não encontrado":
+       * o id existia, mas na outra tabela.
+       *
+       * Cancelar não apaga: `MatchStatus.CANCELLED` mantém o jogo (e a
+       * convocatória que já tivesse) visível e reactivável, como no evento
+       * genérico. Um jogo já disputado não se cancela — o resultado aconteceu.
+       */
+      if (!ev) {
+        /*
+         * Um treino vive em `TrainingSession` desde que deixou de ser gravado
+         * como evento genérico. O mesmo botão de cancelar tem de o alcançar —
+         * senão cancelar um treino no calendário responderia "evento não
+         * encontrado", que foi exactamente o que aconteceu com os jogos.
+         *
+         * Cancelar não apaga: o treino continua visível e riscado, e as presenças
+         * já registadas ficam. Um treino que aconteceu e foi registado não se
+         * desmarca — apagá-lo reescreveria a assiduidade de quem lá esteve.
+         */
+        const training = await db.trainingSession.findFirst({
+          where: { id },
+          select: { id: true, teamId: true, status: true, attendanceClosedAt: true },
+        });
+        if (training) {
+          if (scope && !scope.in.includes(training.teamId)) {
+            throw new ForbiddenException("Evento fora do teu âmbito");
+          }
+          if (training.attendanceClosedAt) {
+            throw new BadRequestException("Um treino com presenças registadas não se desmarca");
+          }
+
+          const updated = await db.trainingSession.update({
+            where: { id },
+            data: { status: cancelled ? "CANCELLED" : "SCHEDULED" },
+            select: {
+              id: true, teamId: true, startsAt: true, endsAt: true, venue: true,
+              dressingRoom: true, status: true,
+              coach: { select: { id: true, user: { select: { name: true } } } },
+            },
+          });
+
+          return {
+            id: updated.id,
+            teamId: updated.teamId,
+            kind: "TRAINING" as const,
+            title: "Treino",
+            startsAt: updated.startsAt,
+            endsAt: updated.endsAt,
+            venue: updated.venue,
+            dressingRoom: updated.dressingRoom,
+            cancelled: updated.status === "CANCELLED",
+            coachId: updated.coach?.id ?? null,
+            coachName: updated.coach?.user.name ?? null,
+          };
+        }
+
+        const match = await db.match.findFirst({
+          where: { id },
+          select: { id: true, teamId: true, status: true, startsAt: true },
+        });
+        if (!match) throw new NotFoundException("Evento não encontrado");
+        if (scope && !scope.in.includes(match.teamId)) {
+          throw new ForbiddenException("Evento fora do teu âmbito");
+        }
+        if (match.status === "PLAYED") {
+          throw new BadRequestException("Um jogo já disputado não se cancela");
+        }
+
+        // Reactivar devolve o jogo ao horário — que pode ter sido ocupado por
+        // outro entretanto, precisamente por o cancelamento o ter libertado.
+        // Sem isto, o índice único parcial rebentava com um P2002 opaco.
+        if (!cancelled) {
+          const taken = await db.match.findFirst({
+            where: {
+              teamId: match.teamId,
+              startsAt: match.startsAt,
+              status: { not: "CANCELLED" },
+              id: { not: id },
+            },
+            select: { opponent: true },
+          });
+          if (taken) {
+            throw new BadRequestException(
+              `Não dá para reactivar: a equipa já tem um jogo com ${taken.opponent} a esta hora.`,
+            );
+          }
+        }
+
+        const updated = await db.match.update({
+          where: { id },
+          data: { status: cancelled ? "CANCELLED" : "SCHEDULED" },
+          select: {
+            id: true, teamId: true, startsAt: true, endsAt: true, venue: true,
+            opponent: true, isHome: true, status: true,
+            coach: { select: { id: true, user: { select: { name: true } } } },
+          },
+        });
+
+        return {
+          id: updated.id,
+          teamId: updated.teamId,
+          kind: "MATCH" as const,
+          title: `${updated.isHome ? "vs" : "@"} ${updated.opponent}`,
+          startsAt: updated.startsAt,
+          endsAt: updated.endsAt,
+          venue: updated.venue,
+          dressingRoom: null,
+          cancelled: updated.status === "CANCELLED",
+          coachId: updated.coach?.id ?? null,
+          coachName: updated.coach?.user.name ?? null,
+        };
+      }
+
       // Um treinador não mexe em eventos de toda a academia nem de equipas alheias.
       if (scope && (ev.teamId === null || !scope.in.includes(ev.teamId))) {
         throw new ForbiddenException("Evento fora do teu âmbito");
@@ -528,12 +851,16 @@ export class AcademyService {
   async charges(ctx: RequestContext, period?: string) {
     if (!can(ctx, "billing:read")) throw new ForbiddenException("Sem acesso a mensalidades");
     const scope = teamScopeFilter(ctx);
+    // Dinheiro é o mais pessoal que aqui há: um encarregado vê as mensalidades
+    // dos filhos e de mais ninguém, mesmo tendo âmbito nas equipas deles.
+    const athleteScope = athleteScopeFilter(ctx);
 
     return this.prisma.runAs(ctx.academyId, async (db) => {
       const rows = await db.charge.findMany({
         where: {
           ...(period ? { period } : {}),
           ...(scope ? { athlete: { teams: { some: { teamId: scope } } } } : {}),
+          ...(athleteScope ? { athleteId: athleteScope } : {}),
         },
         orderBy: [{ period: "desc" }, { dueDate: "asc" }],
         select: {

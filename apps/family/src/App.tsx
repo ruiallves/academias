@@ -1,13 +1,18 @@
-import { createContext, useContext, useMemo, useState } from "react";
+import { createContext, useContext, useEffect, useMemo, useState } from "react";
 import { NavLink, Navigate, Route, Routes, useNavigate } from "react-router-dom";
-import { Bell, CalendarDays, Home, User, Wallet } from "lucide-react";
-import { academy, children, guardian, payments, notices, type Child } from "@/data";
+import { Bell, CalendarDays, Home, RefreshCw, User, Wallet } from "lucide-react";
+import { load, reload, useStore, type Child } from "@/lib/store";
+import { hasOnboarded } from "@/lib/onboarding";
+import { readToken, useSession } from "@/lib/session";
+import Entrar from "@/screens/Entrar";
 import { Avatar, cx } from "@/ui";
 import Today from "@/screens/Today";
 import Agenda from "@/screens/Agenda";
 import Payments from "@/screens/Payments";
 import Athlete from "@/screens/Athlete";
 import Notifications from "@/screens/Notifications";
+import Onboarding from "@/screens/Onboarding";
+import Profile from "@/screens/Profile";
 
 /* -------------------------------------------------------------------------- */
 /* Educando activo                                                             */
@@ -27,11 +32,42 @@ export function useChild() {
 }
 
 export default function App() {
-  const [childId, setChild] = useState(children[0].id);
-  const value = useMemo(
-    () => ({ child: children.find((c) => c.id === childId)!, setChild }),
-    [childId],
-  );
+  const store = useStore();
+  const session = useSession();
+  const [childId, setChild] = useState<string | null>(null);
+  const [onboarded, setOnboarded] = useState(hasOnboarded);
+
+  // Só se carrega o que há para carregar quando há quem o possa ler. Sem sessão,
+  // cada pedido voltaria 401 e a app abria num ecrã de erro — quando o que se
+  // passa não é uma avaria, é ainda não ter entrado.
+  useEffect(() => {
+    if (readToken()) void load();
+  }, []);
+
+  // O primeiro filho, até alguém escolher outro. Segue os dados: antes de a
+  // academia chegar não há filho nenhum para escolher.
+  const child = store.children.find((c) => c.id === childId) ?? store.children[0];
+  const value = useMemo(() => (child ? { child, setChild } : null), [child]);
+
+  /*
+   * A porta, antes de tudo o resto.
+   *
+   * Antes desta linha a app entrava sozinha com uma conta de teste — um atalho de
+   * desenvolvimento que já não faz sentido agora que as famílias se registam a
+   * sério pelo link do clube. Ver `screens/Entrar.tsx`.
+   */
+  if (!session) return <Entrar onEntered={() => void reload()} />;
+
+  if (!store.ready) return <Splash />;
+  if (store.error) return <Failed message={store.error} />;
+  if (!value) return <NoChildren />;
+
+  /*
+   * A apresentação corre **depois** do bootstrap, não antes: fala pelo nome da
+   * academia e do pai, e cumprimentar "Bem-vindo à" seguido de um espaço vazio
+   * seria pior do que meio segundo de splash.
+   */
+  if (!onboarded) return <Onboarding onDone={() => setOnboarded(true)} />;
 
   return (
     <ChildContext.Provider value={value}>
@@ -45,6 +81,7 @@ export default function App() {
             <Route path="/pagamentos" element={<Payments />} />
             <Route path="/atleta" element={<Athlete />} />
             <Route path="/notificacoes" element={<Notifications />} />
+            <Route path="/perfil" element={<Profile />} />
             <Route path="*" element={<Navigate to="/" replace />} />
           </Routes>
         </main>
@@ -56,11 +93,59 @@ export default function App() {
 }
 
 /* -------------------------------------------------------------------------- */
+/* Estados de arranque                                                         */
+/* -------------------------------------------------------------------------- */
+
+/** Enquanto a academia não chega. Um pulsar discreto, não um spinner ansioso. */
+function Splash() {
+  return (
+    <div className="flex min-h-dvh flex-col items-center justify-center gap-4 px-8">
+      <span
+        className="size-12 animate-pulse rounded-[16px]"
+        style={{ background: "var(--color-signal)" }}
+        aria-hidden
+      />
+      <p className="text-meta text-ink-3">A carregar…</p>
+    </div>
+  );
+}
+
+function Failed({ message }: { message: string }) {
+  return (
+    <div className="flex min-h-dvh flex-col items-center justify-center gap-4 px-8 text-center">
+      <p className="text-[19px] font-semibold text-ink">Não foi possível carregar</p>
+      <p className="max-w-[32ch] text-meta leading-relaxed text-ink-3">{message}</p>
+      <button type="button" onClick={() => window.location.reload()} className="cta mt-2">
+        <RefreshCw className="size-[18px]" strokeWidth={1.9} />
+        Tentar outra vez
+      </button>
+    </div>
+  );
+}
+
+/**
+ * Uma conta sem educandos associados.
+ *
+ * Acontece a sério: um pai convidado antes de o atleta estar inscrito. Dizer isto
+ * é melhor do que uma app vazia que parece avariada.
+ */
+function NoChildren() {
+  return (
+    <div className="flex min-h-dvh flex-col items-center justify-center gap-3 px-8 text-center">
+      <p className="text-[19px] font-semibold text-ink">Ainda não há atletas associados</p>
+      <p className="max-w-[34ch] text-meta leading-relaxed text-ink-3">
+        A academia ainda não ligou nenhum educando a esta conta. Assim que o fizer, aparece aqui.
+      </p>
+    </div>
+  );
+}
+
+/* -------------------------------------------------------------------------- */
 
 function Header() {
-  const { child, setChild } = useChild();
+  const store = useStore();
   const navigate = useNavigate();
-  const unread = notices.length + payments.filter((p) => p.status === "overdue" || p.status === "pending").length;
+  const unread = store.notifications.filter((n) => !n.readAt).length;
 
   return (
     <header className="sticky top-0 z-30 bg-canvas/85 px-4 pt-[calc(10px+env(safe-area-inset-top))] pb-2 backdrop-blur-xl">
@@ -70,11 +155,11 @@ function Header() {
           style={{ background: "var(--color-signal)" }}
           aria-hidden
         >
-          {academy.mark}
+          {store.academy.mark}
         </span>
         <span className="min-w-0 flex-1 leading-tight">
-          <span className="block truncate text-[15px] font-semibold text-ink">{academy.shortName}</span>
-          <span className="block truncate text-[12px] text-ink-3">{guardian.name}</span>
+          <span className="block truncate text-[15px] font-semibold text-ink">{store.academy.shortName}</span>
+          <span className="block truncate text-[12px] text-ink-3">{store.guardian.name}</span>
         </span>
         <button type="button" onClick={() => navigate("/notificacoes")} className="icon-btn" aria-label="Notificações">
           <Bell className="size-[22px]" strokeWidth={1.75} />
@@ -84,32 +169,91 @@ function Header() {
             </span>
           )}
         </button>
+        {/* O perfil vive no canto onde toda a gente já o procura, e não como um
+            quinto separador: visita-se uma vez por mês, não a cada abertura. */}
+        <button
+          type="button"
+          onClick={() => navigate("/perfil")}
+          className="shrink-0 rounded-full active:scale-95"
+          aria-label="O meu perfil"
+        >
+          <Avatar name={store.guardian.name} size={34} />
+        </button>
       </div>
 
-      {/* Seletor de educando — avatares, não texto. Dois filhos cabem sem menus. */}
-      {children.length > 1 && (
-        <div className="mt-3 flex gap-2 overflow-x-auto pb-0.5">
-          {children.map((c) => {
-            const active = c.id === child.id;
-            return (
-              <button
-                key={c.id}
-                type="button"
-                onClick={() => setChild(c.id)}
-                aria-pressed={active}
+      <ChildSwitcher />
+    </header>
+  );
+}
+
+/**
+ * Trocar de educando.
+ *
+ * Era uma fila de pastilhas soltas, cada uma com a sua sombra — muito ruído para
+ * uma escolha entre duas pessoas, e o filho activo lia-se como um botão premido,
+ * não como um estado. Agora é um controlo só: uma calha afundada onde uma
+ * pastilha clara **desliza** para quem está seleccionado. O fundo diz "estes são
+ * os teus filhos", a pastilha diz "estás a ver este", e a app inteira por baixo
+ * responde à mesma peça.
+ *
+ * O ponto vermelho no avatar é a razão de ser do seletor: sem ele, uma
+ * mensalidade em atraso do outro filho só se descobria trocando às cegas.
+ */
+function ChildSwitcher() {
+  const store = useStore();
+  const { child, setChild } = useChild();
+
+  if (store.children.length < 2) return null;
+
+  return (
+    <div className="mt-3 overflow-x-auto pb-0.5 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+      <div
+        role="tablist"
+        aria-label="Educando"
+        className="flex w-full min-w-max gap-1 rounded-full bg-sunken/80 p-1"
+      >
+        {store.children.map((c) => {
+          const active = c.id === child.id;
+          const owing = store.payments.some(
+            (p) => p.childId === c.id && (p.status === "overdue" || p.status === "pending"),
+          );
+          return (
+            <button
+              key={c.id}
+              type="button"
+              role="tab"
+              aria-selected={active}
+              onClick={() => setChild(c.id)}
+              className={cx(
+                "flex min-w-0 flex-1 items-center justify-center gap-2 rounded-full py-1 pr-4 pl-1 transition-all duration-300 ease-[var(--ease-spring)]",
+                active ? "bg-surface shadow-[var(--shadow-soft)]" : "active:bg-surface/50",
+              )}
+            >
+              <span className={cx("relative transition-opacity duration-300", active ? "opacity-100" : "opacity-55")}>
+                <Avatar name={c.name} photoUrl={c.photoUrl} size={26} />
+                {owing && (
+                  <span
+                    className={cx(
+                      "absolute -top-px -right-px size-2.5 rounded-full bg-risk ring-2",
+                      active ? "ring-surface" : "ring-sunken",
+                    )}
+                    aria-label="Tem pagamento em falta"
+                  />
+                )}
+              </span>
+              <span
                 className={cx(
-                  "inline-flex shrink-0 items-center gap-2 rounded-full py-1 pr-4 pl-1 transition-all duration-200",
-                  active ? "bg-ink text-white" : "bg-surface text-ink-2 shadow-[var(--shadow-soft)]",
+                  "truncate text-[13px] font-semibold transition-colors duration-300",
+                  active ? "text-ink" : "text-ink-3",
                 )}
               >
-                <Avatar name={c.name} size={28} />
-                <span className="text-[13px] font-semibold">{c.firstName}</span>
-              </button>
-            );
-          })}
-        </div>
-      )}
-    </header>
+                {c.firstName}
+              </span>
+            </button>
+          );
+        })}
+      </div>
+    </div>
   );
 }
 
@@ -131,7 +275,8 @@ const TABS = [
  * sem ler, e o toque tem um alvo confortável.
  */
 function TabBar() {
-  const owing = payments.some((p) => p.status === "overdue" || p.status === "pending");
+  const store = useStore();
+  const owing = store.payments.some((p) => p.status === "overdue" || p.status === "pending");
 
   return (
     <nav className="pointer-events-none fixed inset-x-0 bottom-0 z-30 flex justify-center pb-[calc(14px+env(safe-area-inset-bottom))]">

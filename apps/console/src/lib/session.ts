@@ -5,12 +5,46 @@ import { academy } from "@/lib/api";
  *
  * A landing autentica-se contra o Supabase e guarda aqui o token antes de
  * encaminhar para a consola. Em produção as duas vivem na mesma origem
- * (`{slug}.academias.pt`), que é o que faz o `sessionStorage` atravessar — em
- * desenvolvimento estão em portas diferentes e a consola arranca sem sessão,
- * com o selector de perfil de demonstração.
+ * (`{slug}.academias.pt`), o que a faz atravessar; em desenvolvimento estão em
+ * portas diferentes e há uma entrega explícita — ver `adoptSessionFromUrl`.
+ *
+ * ## Porquê `localStorage` e não `sessionStorage`
+ *
+ * Porque `sessionStorage` é **por separador**, e isso partia todos os links da
+ * consola. Abrir a ficha de um sócio num separador novo — ou colar o endereço a
+ * um colega, que é para isso que uma ficha tem endereço — dava uma sessão vazia e
+ * um reencaminhamento para a página de entrada. Um produto onde os links só
+ * funcionam no separador onde se entrou não tem links, tem ecrãs.
+ *
+ * ## O que isto custa
+ *
+ * `localStorage` sobrevive a fechar o browser; `sessionStorage` morria com o
+ * separador. Alarga a janela em que um token roubado por XSS continua útil — e é
+ * por isso que `VULN-004` (o XSS armazenado na página de convite) teve de ser
+ * fechado primeiro. A correcção definitiva continua a ser a mesma que a auditoria
+ * já aponta em `VULN-007`: cookie `httpOnly`, que exige repensar a entrega
+ * landing→consola e é trabalho à parte.
+ *
+ * Quem quiser a sessão presa ao separador tem "Terminar sessão" — que agora limpa
+ * mesmo, em vez de a deixar viva nos outros.
  */
 
 const KEY = "academia.session";
+
+/**
+ * Onde a sessão vive.
+ *
+ * Uma função e não uma constante para o modo privado não rebentar à importação:
+ * em alguns browsers o simples acesso a `localStorage` atira, e isso mataria a
+ * consola antes do primeiro pixel.
+ */
+function store(): Storage | null {
+  try {
+    return window.localStorage;
+  } catch {
+    return null;
+  }
+}
 
 export type StoredSession = {
   accessToken: string;
@@ -20,7 +54,10 @@ export type StoredSession = {
 
 export function readSession(): StoredSession | null {
   try {
-    const raw = sessionStorage.getItem(KEY);
+    // `sessionStorage` fica como leitura de recurso: quem já tinha a consola
+    // aberta quando isto mudou continua com a sessão onde ela estava, em vez de
+    // ser posto na rua a meio do dia de trabalho.
+    const raw = store()?.getItem(KEY) ?? sessionStorage.getItem(KEY);
     return raw ? (JSON.parse(raw) as StoredSession) : null;
   } catch {
     return null;
@@ -29,6 +66,9 @@ export function readSession(): StoredSession | null {
 
 export function clearSession(): void {
   try {
+    // Os dois: sair tem de sair mesmo, incluindo de uma sessão antiga deixada no
+    // armazenamento do separador.
+    store()?.removeItem(KEY);
     sessionStorage.removeItem(KEY);
   } catch {
     /* modo privado: não havia nada para limpar */
@@ -85,6 +125,7 @@ export const DEV_PROFILES = [
   { role: "DIRECTOR", email: "direcao@lifeclub.pt", label: "Direção" },
   { role: "COACH", email: "treinador@lifeclub.pt", label: "Equipa técnica" },
   { role: "MEDICAL", email: "clinico@lifeclub.pt", label: "Departamento clínico" },
+  { role: "SCOUT", email: "scouting@lifeclub.pt", label: "Departamento de scouting" },
 ] as const;
 
 /** Re-autentica contra o Supabase com a conta semeada de um papel e recarrega. */
@@ -105,7 +146,7 @@ export async function devSignInAs(email: string): Promise<void> {
   const data = (await res.json()) as { access_token: string; refresh_token: string };
 
   const slug = readSession()?.academySlug ?? ((import.meta.env.VITE_ACADEMY_SLUG as string | undefined) ?? "life-club");
-  sessionStorage.setItem(
+  store()?.setItem(
     KEY,
     JSON.stringify({ accessToken: data.access_token, refreshToken: data.refresh_token, academySlug: slug }),
   );
@@ -146,7 +187,7 @@ export function adoptSessionFromUrl(): StoredSession | null {
     const parsed = JSON.parse(atob(raw)) as StoredSession;
     if (!parsed.accessToken || !parsed.academySlug) return null;
 
-    sessionStorage.setItem(KEY, JSON.stringify(parsed));
+    store()?.setItem(KEY, JSON.stringify(parsed));
     return parsed;
   } catch {
     return null;

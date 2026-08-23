@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import {
   AvailabilityTag,
@@ -25,17 +25,18 @@ import {
   HeartPulse,
   Home,
   LayoutGrid,
+  Pencil,
   Ruler,
   Star,
   Timer,
   Trophy,
+  Wallet,
   Weight,
 } from "@/lib/icons";
 import {
   athleteAttendanceSummary,
   athleteById,
   athleteSessions,
-  currentPeriod,
   feeHistory,
   guardiansOf,
   listTeams,
@@ -44,17 +45,19 @@ import {
   today,
   type AthleteSessionRecord,
 } from "@/lib/api";
+import { apiDelete, apiGet, apiPatch, apiPut } from "@/lib/http";
 import { dominantSideLabel, summariseSeason, useAthleteMatches, type AthleteMatch } from "@/lib/athlete";
 import { activeRestriction, availabilityOf, useClinicalRecords } from "@/lib/clinical";
 import { tallyNoun } from "@/lib/calendar";
 import { calledUpFor, matchLabel } from "@/lib/callups";
-import { useStore } from "@/lib/store";
+import { reloadAcademy, useStore } from "@/lib/store";
 import { age, longDate, money, percent, periodLabel, relativeDays, shortDate, time } from "@/lib/format";
 import { can } from "@/lib/permissions";
+import { AthleteEditPanel } from "@/components/AthleteEditPanel";
 import { useSession } from "@/session";
 import type { Athlete } from "@/data/types";
 
-type Tab = "overview" | "matches" | "attendance" | "clinical" | "family";
+type Tab = "overview" | "matches" | "attendance" | "clinical" | "fees" | "family";
 
 /**
  * A ficha do atleta.
@@ -72,6 +75,7 @@ export default function AthleteDetail() {
   const { id = "" } = useParams();
   const { session } = useSession();
   const [tab, setTab] = useState<Tab>("overview");
+  const [editing, setEditing] = useState(false);
 
   const athlete = athleteById(id);
   const inScope = athlete ? listTeams(session).some((t) => t.id === athlete.teamId) : false;
@@ -104,6 +108,7 @@ export default function AthleteDetail() {
     ...(hasMatches ? [{ value: "matches" as const, label: "Jogos", icon: Trophy }] : []),
     { value: "attendance", label: "Assiduidade", icon: ClipboardCheck },
     { value: "clinical", label: "Clínico", icon: HeartPulse },
+    ...(can(session, "billing:read") ? [{ value: "fees" as const, label: "Mensalidades", icon: Wallet }] : []),
     ...(can(session, "family:read") ? [{ value: "family" as const, label: "Encarregado", icon: Home }] : []),
   ];
 
@@ -113,17 +118,46 @@ export default function AthleteDetail() {
 
       <AthleteHeader athlete={athlete} />
 
-      <div className="mb-3">
+      {/*
+        Editar vive ao lado dos separadores, e não no cabeçalho.
+        É onde estão as outras acções de navegação da ficha, e é a linha para onde
+        o olho vai a seguir ao nome — no cabeçalho competia com a identidade do
+        atleta e parecia pertencer à fotografia.
+      */}
+      <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
         <Segmented value={tab} onChange={setTab} options={tabs} />
+        {!editing && can(session, "athlete:write") && (
+          <button type="button" className="ctl-ghost shrink-0" onClick={() => setEditing(true)}>
+            <Pencil className="size-3.5" strokeWidth={1.75} />
+            Editar
+          </button>
+        )}
       </div>
 
+      {/*
+        A página troca de modo em vez de abrir uma janela por cima. Uma ficha de
+        atleta não cabe num diálogo: obrigaria a escolher meia dúzia de campos e a
+        deixar os outros sem sítio nenhum para serem corrigidos.
+      */}
+      {editing ? (
+        <AthleteEditPanel
+          athlete={athlete}
+          session={session}
+          onDone={() => setEditing(false)}
+          onCancel={() => setEditing(false)}
+        />
+      ) : (
+      <>
       {tab === "overview" && (
         <Overview athlete={athlete} season={season} attendance={attendance} matches={matches} hasMatches={hasMatches} />
       )}
       {tab === "matches" && <Matches athleteId={id} matches={matches} />}
       {tab === "attendance" && <Attendance athleteId={id} />}
       {tab === "clinical" && <Clinical athlete={athlete} />}
+      {tab === "fees" && <FeesTab athlete={athlete} />}
       {tab === "family" && <Family athlete={athlete} />}
+      </>
+      )}
     </>
   );
 }
@@ -186,6 +220,7 @@ function AthleteHeader({ athlete }: { athlete: Athlete }) {
           <div className="text-[11px] text-ink-3">camisola</div>
         </div>
       )}
+
     </div>
   );
 }
@@ -621,63 +656,335 @@ function Clinical({ athlete }: { athlete: Athlete }) {
 /* -------------------------------------------------------------------------- */
 
 function Family({ athlete }: { athlete: Athlete }) {
-  const { session } = useSession();
   const guardians = guardiansOf(athlete.id);
-  const fees = can(session, "billing:read") ? feeHistory(athlete.id) : [];
 
   return (
-    <div className="grid gap-3 lg:grid-cols-2">
-      <Panel>
-        <PanelHead title="Encarregado de educação" hint={`${guardians.length}`} />
-        {guardians.length === 0 ? (
-          <div className="px-5 py-12">
-            <Empty icon={Home} title="Sem encarregado associado" detail="Um atleta devia ter sempre alguém a quem a academia possa telefonar." />
+    <div className="space-y-3">
+      <TaxIdPanel athlete={athlete} />
+
+    <Panel>
+      <PanelHead title="Encarregado de educação" hint={`${guardians.length}`} />
+      {guardians.length === 0 ? (
+        <div className="px-5 py-12">
+          <Empty icon={Home} title="Sem encarregado associado" detail="Um atleta devia ter sempre alguém a quem a academia possa telefonar." />
+        </div>
+      ) : (
+        <ul>
+          {guardians.map((g) => (
+            <li key={g.id} className="border-b border-line px-5 py-4 last:border-0">
+              <div className="mb-2 flex items-center gap-2.5">
+                <Monogram name={g.name} />
+                <div className="min-w-0 flex-1">
+                  <div className="truncate text-body font-medium text-ink">{g.name}</div>
+                  <div className="text-meta text-ink-3">{g.relation}</div>
+                </div>
+                {g.appInstalled ? <Pill tone="ok">App instalada</Pill> : <Pill tone="warn">Sem a app</Pill>}
+              </div>
+              <dl className="space-y-1 pl-[38px] text-meta">
+                <div className="flex justify-between gap-3">
+                  <dt className="text-ink-3">Telemóvel</dt>
+                  <dd className="text-ink-2 tabular">{g.phone}</dd>
+                </div>
+                <div className="flex justify-between gap-3">
+                  <dt className="text-ink-3">E-mail</dt>
+                  <dd className="truncate text-ink-2">{g.email}</dd>
+                </div>
+              </dl>
+            </li>
+          ))}
+        </ul>
+      )}
+    </Panel>
+    </div>
+  );
+}
+
+/**
+ * O NIF do atleta.
+ *
+ * ## Porque é que vive no separador da família
+ *
+ * Porque é aqui que ele serve para alguma coisa. O NIF mais a data de nascimento
+ * são a chave com que um pai se liga a este atleta ao instalar a app — sem o
+ * campo preenchido, o link que a academia manda não consegue ligar ninguém a esta
+ * criança, e a secretaria fica com um telefonema para atender sem saber porquê.
+ *
+ * Por isso o vazio aqui não é um traço discreto: é um aviso, com a consequência
+ * escrita.
+ */
+function TaxIdPanel({ athlete }: { athlete: Athlete }) {
+  const { session } = useSession();
+  const mayEdit = can(session, "athlete:write");
+
+  const [editing, setEditing] = useState(false);
+  const [value, setValue] = useState(athlete.taxId ?? "");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  // Já não se aceita vazio: o NIF passou a ser obrigatório, e apagá-lo para o
+  // corrigir a seguir deixava, entre as duas coisas, um atleta que nenhuma família
+  // consegue reclamar. Corrige-se escrevendo o certo por cima.
+  const valid = /^\d{9}$/.test(value.replace(/\s/g, ""));
+
+  async function save() {
+    if (!valid || busy) return;
+    setBusy(true);
+    setError(null);
+    try {
+      await apiPatch(`/api/athletes/${athlete.id}/nif`, { taxId: value.replace(/\s/g, "") });
+      await reloadAcademy();
+      setEditing(false);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Não foi possível guardar.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <Panel>
+      <PanelHead title="NIF" hint="liga a família à app" />
+      <div className="px-5 py-4">
+        {editing ? (
+          <div className="flex flex-wrap items-center gap-2">
+            <input
+              value={value}
+              onChange={(e) => setValue(e.target.value)}
+              inputMode="numeric"
+              maxLength={11}
+              placeholder="123456789"
+              autoFocus
+              className="h-9 w-[160px] rounded-[var(--radius-control)] border border-line bg-surface px-2.5 text-body tabular text-ink focus:border-line-strong focus:outline-none"
+            />
+            <button type="button" onClick={save} disabled={!valid || busy} className="ctl-primary">
+              {busy ? "A guardar…" : "Guardar"}
+            </button>
+            <button type="button" onClick={() => { setEditing(false); setValue(athlete.taxId ?? ""); }} className="ctl-ghost">
+              Cancelar
+            </button>
+            {!valid && <span className="text-meta text-[#a82a20]">São nove dígitos.</span>}
+            {error && <span className="text-meta text-[#a82a20]">{error}</span>}
           </div>
         ) : (
-          <ul>
-            {guardians.map((g) => (
-              <li key={g.id} className="border-b border-line px-5 py-4 last:border-0">
-                <div className="mb-2 flex items-center gap-2.5">
-                  <Monogram name={g.name} />
-                  <div className="min-w-0 flex-1">
-                    <div className="truncate text-body font-medium text-ink">{g.name}</div>
-                    <div className="text-meta text-ink-3">{g.relation}</div>
-                  </div>
-                  {g.appInstalled ? <Pill tone="ok">App instalada</Pill> : <Pill tone="warn">Sem a app</Pill>}
-                </div>
-                <dl className="space-y-1 pl-[38px] text-meta">
-                  <div className="flex justify-between gap-3">
-                    <dt className="text-ink-3">Telemóvel</dt>
-                    <dd className="text-ink-2 tabular">{g.phone}</dd>
-                  </div>
-                  <div className="flex justify-between gap-3">
-                    <dt className="text-ink-3">E-mail</dt>
-                    <dd className="truncate text-ink-2">{g.email}</dd>
-                  </div>
-                </dl>
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            {athlete.taxId ? (
+              <span className="text-body tabular text-ink">{athlete.taxId}</span>
+            ) : (
+              <span className="text-meta leading-relaxed text-[#8a5a12]">
+                Por preencher — enquanto estiver assim, nenhum encarregado consegue reclamar este atleta na app.
+              </span>
+            )}
+            {mayEdit && (
+              <button type="button" onClick={() => setEditing(true)} className="ctl-outline">
+                {athlete.taxId ? "Alterar" : "Preencher"}
+              </button>
+            )}
+          </div>
+        )}
+      </div>
+    </Panel>
+  );
+}
+
+/* -------------------------------------------------------------------------- */
+/* Mensalidades                                                                */
+/* -------------------------------------------------------------------------- */
+
+type AthleteFee = {
+  source: "individual" | "team" | "none";
+  effectiveAmountCents: number | null;
+  individualAmountCents: number | null;
+  teamAmountCents: number | null;
+  teamName: string | null;
+};
+
+const FEE_STATUS_TONE = { paid: "ok", processing: "signal", pending: "warn", overdue: "risk", void: "neutral" } as const;
+const FEE_STATUS_LABEL = { paid: "Pago", processing: "A confirmar", pending: "Pendente", overdue: "Vencido", void: "Anulada" };
+
+/**
+ * O que este atleta paga, e o histórico de cobranças.
+ *
+ * O valor efectivo é sempre um só: individual se houver ajuste, senão o da
+ * equipa, senão nenhum — nunca os dois lado a lado a competir pela atenção.
+ */
+function FeesTab({ athlete }: { athlete: Athlete }) {
+  const { session } = useSession();
+  const mayConfigure = can(session, "billing:write");
+  const history = feeHistory(athlete.id);
+
+  const [fee, setFee] = useState<AthleteFee | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      setFee(await apiGet<AthleteFee>(`/api/athletes/${athlete.id}/fee`));
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Não foi possível carregar.");
+    } finally {
+      setLoading(false);
+    }
+  }, [athlete.id]);
+
+  useEffect(() => {
+    void load();
+  }, [load]);
+
+  return (
+    <div className="space-y-3">
+      <Panel>
+        <PanelHead title="Mensalidade" />
+        <div className="px-5 py-5">
+          {loading ? (
+            <p className="text-meta text-ink-3">A carregar…</p>
+          ) : error ? (
+            <p className="text-meta text-risk">{error}</p>
+          ) : (
+            fee && <FeeEditor athleteId={athlete.id} fee={fee} mayConfigure={mayConfigure} onSaved={load} />
+          )}
+        </div>
+      </Panel>
+
+      <Panel>
+        <PanelHead title="Histórico" hint={`${history.length}`} />
+        {history.length === 0 ? (
+          <div className="px-5 py-12">
+            <Empty icon={Wallet} title="Sem mensalidades ainda" />
+          </div>
+        ) : (
+          <ul className="px-5 py-1.5">
+            {history.map((f) => (
+              <li key={f.id} className="flex items-center gap-3 border-b border-line py-2.5 last:border-0">
+                <span className="min-w-0 flex-1 truncate text-body text-ink-2">{periodLabel(f.period)}</span>
+                <span className="shrink-0 text-meta text-ink tabular">{money(f.amountCents)}</span>
+                <Pill tone={FEE_STATUS_TONE[f.status]}>{FEE_STATUS_LABEL[f.status]}</Pill>
               </li>
             ))}
           </ul>
         )}
       </Panel>
+    </div>
+  );
+}
 
-      {can(session, "billing:read") && (
-        <Panel>
-          <PanelHead title="Mensalidades" hint={periodLabel(currentPeriod)} />
-          <ul className="px-5 py-1.5">
-            {fees.slice(0, 8).map((f) => {
-              const tone = { paid: "ok", processing: "signal", pending: "warn", overdue: "risk", void: "neutral" } as const;
-              const label = { paid: "Pago", processing: "A confirmar", pending: "Pendente", overdue: "Vencido", void: "Anulada" };
-              return (
-                <li key={f.id} className="flex items-center gap-3 border-b border-line py-2.5 last:border-0">
-                  <span className="min-w-0 flex-1 truncate text-body text-ink-2">{periodLabel(f.period)}</span>
-                  <span className="shrink-0 text-meta text-ink tabular">{money(f.amountCents)}</span>
-                  <Pill tone={tone[f.status]}>{label[f.status]}</Pill>
-                </li>
-              );
-            })}
-          </ul>
-        </Panel>
+/**
+ * O valor efectivo em destaque, com a origem por baixo, e a acção certa consoante
+ * o estado: ajustar (quando ainda não há ajuste), mudar ou reverter (quando já há).
+ */
+function FeeEditor({
+  athleteId,
+  fee,
+  mayConfigure,
+  onSaved,
+}: {
+  athleteId: string;
+  fee: AthleteFee;
+  mayConfigure: boolean;
+  onSaved: () => void;
+}) {
+  const [editing, setEditing] = useState(false);
+  const [value, setValue] = useState(fee.individualAmountCents !== null ? (fee.individualAmountCents / 100).toFixed(2) : "");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  async function save() {
+    const cents = Math.round(Number(value.trim().replace(",", ".")) * 100);
+    if (!Number.isFinite(cents) || cents < 100) {
+      setError("Indica um valor válido, de pelo menos 1 €.");
+      return;
+    }
+    setBusy(true);
+    setError(null);
+    try {
+      await apiPut(`/api/athletes/${athleteId}/fee`, { amountCents: cents });
+      await reloadAcademy();
+      setEditing(false);
+      onSaved();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Não foi possível guardar.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function clear() {
+    setBusy(true);
+    setError(null);
+    try {
+      await apiDelete(`/api/athletes/${athleteId}/fee`);
+      await reloadAcademy();
+      onSaved();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Não foi possível reverter.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  if (editing) {
+    return (
+      <div className="max-w-[280px]">
+        <label className="mb-1.5 block text-meta font-medium text-ink-3">Valor individual, por mês</label>
+        <div className="flex items-center gap-2">
+          <span className="text-body text-ink-3">€</span>
+          <input
+            type="text"
+            inputMode="decimal"
+            autoFocus
+            value={value}
+            onChange={(e) => setValue(e.target.value)}
+            onKeyDown={(e) => e.key === "Enter" && void save()}
+            className="h-9 flex-1 rounded-[var(--radius-control)] border border-line bg-surface px-2.5 text-body tabular focus:border-line-strong focus:outline-none"
+          />
+        </div>
+        {error && <p className="mt-1.5 text-meta text-risk">{error}</p>}
+        <div className="mt-3 flex gap-2">
+          <button type="button" onClick={() => setEditing(false)} disabled={busy} className="ctl-ghost">
+            Cancelar
+          </button>
+          <button type="button" onClick={() => void save()} disabled={busy} className="ctl-primary">
+            {busy ? "A guardar…" : "Guardar"}
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div>
+      {fee.effectiveAmountCents === null ? (
+        <p className="text-body text-ink-3">Ainda não há preço configurado para este atleta.</p>
+      ) : (
+        <>
+          <div className="text-[36px] leading-none font-semibold text-ink tabular">{money(fee.effectiveAmountCents)}</div>
+          <p className="mt-2 text-meta text-ink-3">
+            {fee.source === "individual" ? (
+              <>
+                Ajuste individual — a equipa paga{" "}
+                <span className="font-medium text-ink-2">{fee.teamAmountCents !== null ? money(fee.teamAmountCents) : "—"}</span>.
+              </>
+            ) : (
+              <>Preço da equipa{fee.teamName ? ` — ${fee.teamName}` : ""}.</>
+            )}
+          </p>
+        </>
+      )}
+
+      {error && <p className="mt-2 text-meta text-risk">{error}</p>}
+
+      {mayConfigure && (
+        <div className="mt-4 flex gap-2">
+          <button type="button" onClick={() => setEditing(true)} className="ctl-outline">
+            {fee.source === "individual" ? "Alterar valor individual" : "Ajustar individualmente"}
+          </button>
+          {fee.source === "individual" && (
+            <button type="button" onClick={() => void clear()} disabled={busy} className="ctl-ghost">
+              {busy ? "A reverter…" : "Reverter para o preço da equipa"}
+            </button>
+          )}
+        </div>
       )}
     </div>
   );

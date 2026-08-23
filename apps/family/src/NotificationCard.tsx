@@ -1,7 +1,9 @@
 import { useEffect, useState } from "react";
-import { Bell, BellOff, Check, Loader } from "lucide-react";
+import { Bell, BellOff, Check, Loader, TriangleAlert } from "lucide-react";
 import { cx } from "@/ui";
 import { currentSubscription, disablePush, enablePush, pushState, sendTestPush } from "@/lib/push";
+
+type Message = { text: string; kind: "ok" | "error" };
 
 /**
  * Ligar as notificações no telemóvel.
@@ -17,7 +19,10 @@ export function NotificationCard() {
   const [state, setState] = useState(pushState());
   const [subscribed, setSubscribed] = useState<boolean | null>(null);
   const [busy, setBusy] = useState(false);
-  const [message, setMessage] = useState<string | null>(null);
+  const [message, setMessage] = useState<Message | null>(null);
+  // Passado um instante sem resposta, sugere olhar para a barra de endereço —
+  // ver o comentário em `toggle()` sobre o "quiet UI" do Chrome no Android.
+  const [showAddressBarHint, setShowAddressBarHint] = useState(false);
 
   useEffect(() => {
     void currentSubscription().then((s) => setSubscribed(Boolean(s)));
@@ -26,6 +31,16 @@ export function NotificationCard() {
   async function toggle() {
     setBusy(true);
     setMessage(null);
+    /*
+     * O Chrome no Android, para sítios que "desconhece" (como um domínio de
+     * túnel), por vezes não mostra o pedido de permissão como um popup — só
+     * acende um ícone discreto junto à barra de endereço, e a promessa de
+     * `Notification.requestPermission()` fica à espera de alguém tocar lá. Do
+     * lado da app isto é indistinguível de "ainda a pensar", por isso não se
+     * pode tratar como erro (seria prematuro) — mas passados 1,5s sem resposta,
+     * vale a pena apontar para onde a pergunta pode estar escondida.
+     */
+    const hintTimer = setTimeout(() => setShowAddressBarHint(true), 1500);
     try {
       if (subscribed) {
         await disablePush();
@@ -34,9 +49,17 @@ export function NotificationCard() {
         const result = await enablePush();
         setState(pushState());
         if (result.ok) setSubscribed(true);
-        else setMessage(result.reason ?? "Não foi possível activar.");
+        else setMessage({ text: result.reason ?? "Não foi possível activar.", kind: "error" });
       }
+    } catch (error) {
+      // Rede de segurança: `enablePush`/`disablePush` já apanham o que sabem
+      // apanhar, mas isto garante que nenhuma falha fica muda — sem isto, um
+      // erro por apanhar fazia o botão voltar ao normal como se nada tivesse
+      // acontecido, e era exactamente essa a queixa a resolver.
+      setMessage({ text: error instanceof Error ? error.message : "Falhou por um motivo desconhecido.", kind: "error" });
     } finally {
+      clearTimeout(hintTimer);
+      setShowAddressBarHint(false);
       setBusy(false);
     }
   }
@@ -44,10 +67,15 @@ export function NotificationCard() {
   async function test(kind: string) {
     setBusy(true);
     setMessage(null);
-    const result = await sendTestPush(kind);
-    if (!result.ok) setMessage(result.reason ?? "Falhou.");
-    else setMessage("Enviada. Deve chegar em poucos segundos.");
-    setBusy(false);
+    try {
+      const result = await sendTestPush(kind);
+      if (!result.ok) setMessage({ text: result.reason ?? "Falhou.", kind: "error" });
+      else setMessage({ text: "Enviada. Deve chegar em poucos segundos.", kind: "ok" });
+    } catch (error) {
+      setMessage({ text: error instanceof Error ? error.message : "Falhou por um motivo desconhecido.", kind: "error" });
+    } finally {
+      setBusy(false);
+    }
   }
 
   if (state === "unsupported") {
@@ -112,6 +140,13 @@ export function NotificationCard() {
         )}
       </button>
 
+      {showAddressBarHint && (
+        <p className={cx("mt-3 text-meta leading-relaxed", subscribed ? "text-ink-3" : "on-2")}>
+          Não vês nenhum pedido? No Android, o Chrome às vezes esconde-o num
+          pequeno ícone junto à barra de endereço, em vez de um popup — toca lá.
+        </p>
+      )}
+
       {subscribed && (
         <div className="mt-4 border-t border-line pt-4">
           <p className="mb-2.5 text-[12px] font-semibold tracking-[0.03em] text-ink-3 uppercase">Testar</p>
@@ -127,9 +162,22 @@ export function NotificationCard() {
       )}
 
       {message && (
-        <p className={cx("mt-3 flex items-center gap-1.5 text-meta", subscribed ? "text-ink-3" : "on-1")}>
-          <Check className="size-3.5 shrink-0" strokeWidth={2} />
-          {message}
+        <p
+          className={cx(
+            "mt-3 flex items-start gap-1.5 rounded-[var(--radius-sm)] px-3 py-2 text-meta leading-relaxed",
+            message.kind === "error"
+              ? "bg-risk-soft text-risk"
+              : subscribed
+                ? "text-ink-3"
+                : "on-1",
+          )}
+        >
+          {message.kind === "error" ? (
+            <TriangleAlert className="mt-0.5 size-3.5 shrink-0" strokeWidth={2} />
+          ) : (
+            <Check className="mt-0.5 size-3.5 shrink-0" strokeWidth={2} />
+          )}
+          {message.text}
         </p>
       )}
     </section>

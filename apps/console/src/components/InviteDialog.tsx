@@ -32,7 +32,7 @@ import { SelectField } from "./primitives";
  */
 
 /** Os papéis que se convidam por aqui, do mais restrito ao mais amplo. */
-const INVITABLE: Role[] = ["COACH", "MEDICAL", "STAFF", "COORDINATOR", "DIRECTOR"];
+const INVITABLE: Role[] = ["COACH", "MEDICAL", "SCOUT", "STAFF", "COORDINATOR", "DIRECTOR"];
 
 /** Gémeo de `RANK` em `apps/api/src/invites/invites.service.ts`. Não se convida acima do próprio nível. */
 const RANK: Record<Role, number> = {
@@ -40,6 +40,7 @@ const RANK: Record<Role, number> = {
   DIRECTOR: 80,
   COORDINATOR: 60,
   MEDICAL: 40,
+  SCOUT: 40,
   COACH: 40,
   STAFF: 20,
   GUARDIAN: 0,
@@ -50,6 +51,7 @@ const RANK: Record<Role, number> = {
 const DEFAULT_DEPARTMENT: Partial<Record<Role, StaffDepartment>> = {
   COACH: "technical",
   MEDICAL: "clinical",
+  SCOUT: "scouting",
   STAFF: "operations",
   COORDINATOR: "technical",
   DIRECTOR: "direction",

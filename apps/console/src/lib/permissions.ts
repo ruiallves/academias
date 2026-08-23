@@ -42,6 +42,40 @@ export type Permission =
    */
   | "access:write"
   /**
+   * Criar papéis e escolher-lhes as permissões.
+   *
+   * Delegável — é a razão de existir: a presidência passa isto à direção, ou a uma
+   * pessoa em concreto, sem lhe dar mais nada. Gémea do servidor.
+   */
+  | "role:write"
+  /**
+   * Escolher que menus um papel mostra.
+   *
+   * À parte de `role:write`: reorganizar menus é organização do trabalho, mexer em
+   * permissões é segurança. **E nunca é uma fronteira** — esconder "Mensalidades"
+   * não tira `billing:read`, e o servidor responde na mesma a quem souber o URL.
+   */
+  | "role:menu"
+  /** Scouting. O vídeo é separado: é imagem de menores que não são da academia. */
+  | "scouting:read"
+  | "scouting:write"
+  | "scouting:video:read"
+  | "scouting:video:write"
+  /**
+   * Pedir jogadores ao scouting, e acompanhar os próprios pedidos.
+   *
+   * A porta do treinador para a área, sem lhe abrir os dossiês. Gémea do servidor.
+   */
+  | "scouting:request"
+  /**
+   * Sócios — o livro do clube.
+   *
+   * À parte de `athlete:*`: são vínculos diferentes. Um atleta treina, um sócio
+   * paga quota e vota. Gémea do servidor.
+   */
+  | "member:read"
+  | "member:write"
+  /**
    * Dados de saúde são categoria especial no RGPD, por isso continuam a ser duas
    * permissões — mas quem lê o boletim é decisão do produto, não minha:
    *
@@ -68,6 +102,8 @@ export type Role =
   | "STAFF"
   /** Departamento clínico: médico, fisioterapeuta, nutricionista, psicólogo. */
   | "MEDICAL"
+  /** Departamento de scouting. Vê a academia toda, mas só o dossiê de scouting. */
+  | "SCOUT"
   | "GUARDIAN"
   | "ATHLETE";
 
@@ -85,6 +121,9 @@ const READ_ALL: Permission[] = [
   "report:read",
   "clinical:status",
   "clinical:read",
+  "scouting:read",
+  "scouting:request",
+  "member:read",
 ];
 
 const WRITE_ALL: Permission[] = [
@@ -103,11 +142,15 @@ const WRITE_ALL: Permission[] = [
   "access:write",
   // A direção pode tudo — incluindo registar no boletim clínico.
   "clinical:write",
+  "scouting:write",
+  "member:write",
 ];
 
 export const ROLE_PERMISSIONS: Record<Role, Permission[]> = {
-  OWNER: [...READ_ALL, ...WRITE_ALL],
-  DIRECTOR: [...READ_ALL, ...WRITE_ALL],
+  // Só a presidência cria papéis por omissão. A direção recebe-o se lho derem —
+  // que é precisamente a delegação que a funcionalidade existe para permitir.
+  OWNER: [...READ_ALL, ...WRITE_ALL, "role:write", "role:menu", "scouting:video:read", "scouting:video:write"],
+  DIRECTOR: [...READ_ALL, ...WRITE_ALL, "scouting:video:read", "scouting:video:write"],
 
   COORDINATOR: [
     ...READ_ALL.filter((p) => p !== "billing:read"),
@@ -154,9 +197,22 @@ export const ROLE_PERMISSIONS: Record<Role, Permission[]> = {
     // público e o âmbito). Gémeo do servidor.
     "comms:read",
     "comms:write",
+    // Pede jogadores ao scouting e acompanha os nomes que aparecerem no seu
+    // pedido. Sem `scouting:read`: os dossiês continuam a ser do departamento.
+    "scouting:request",
   ],
 
-  STAFF: ["academy:read", "athlete:read", "family:read", "team:read", "calendar:read", "attendance:read"],
+  // A secretaria é quem está ao balcão quando alguém chega para se fazer sócio.
+  STAFF: [
+    "academy:read",
+    "athlete:read",
+    "family:read",
+    "team:read",
+    "calendar:read",
+    "attendance:read",
+    "member:read",
+    "member:write",
+  ],
 
   /**
    * Departamento clínico.
@@ -176,9 +232,30 @@ export const ROLE_PERMISSIONS: Record<Role, Permission[]> = {
     "report:read",
   ],
 
+  /**
+   * Departamento de scouting.
+   *
+   * Vê a academia toda — um prospecto não pertence a escalão nenhum — mas só o
+   * dossiê: sem boletim clínico, sem mensalidades, sem famílias. Gémeo do servidor.
+   */
+  SCOUT: [
+    "academy:read",
+    "athlete:read",
+    "team:read",
+    "calendar:read",
+    "report:read",
+    "scouting:read",
+    "scouting:write",
+    "scouting:video:read",
+    "scouting:video:write",
+    "scouting:request",
+  ],
+
   // O pai lê o boletim do próprio filho — o âmbito é que o limita a isso.
-  GUARDIAN: ["athlete:read", "calendar:read", "billing:read", "comms:read", "report:read", "clinical:status", "clinical:read"],
-  ATHLETE: ["calendar:read", "report:read", "clinical:status", "clinical:read"],
+  // `team:read` para a família saber a equipa, o treinador e o horário do filho —
+  // o âmbito limita-a às equipas dos filhos. Gémeo do servidor.
+  GUARDIAN: ["athlete:read", "team:read", "calendar:read", "billing:read", "comms:read", "report:read", "clinical:status", "clinical:read"],
+  ATHLETE: ["team:read", "calendar:read", "report:read", "clinical:status", "clinical:read"],
 };
 
 /**
@@ -204,6 +281,20 @@ export type Session = {
    * papéis passa de oito para quarenta.
    */
   revokes?: Permission[];
+  /**
+   * As permissões do **papel da academia**, resolvidas pelo servidor.
+   *
+   * Substituem — não se somam a — o mapa em código. Vêm no `me` do bootstrap
+   * porque a academia pode tê-lo editado há um minuto; uma cópia local do mapa
+   * passava a mentir no dia seguinte a qualquer mudança. Ausentes significa "os
+   * valores por omissão do papel-base", que é o que existia antes dos papéis.
+   */
+  rolePermissions?: Permission[];
+  /** O papel da academia, para o poder mostrar por nome. */
+  roleId?: string | null;
+  roleName?: string | null;
+  /** Menus que o papel mostra. Vazio = todos os que a permissão deixar. */
+  navKeys?: string[];
   scope?: Scope;
 };
 
@@ -215,7 +306,8 @@ export type Session = {
  * a leitura segura é a que dá menos acesso.
  */
 export function permissionsOf(session: Session): Set<Permission> {
-  const allowed = new Set<Permission>([...ROLE_PERMISSIONS[session.role], ...(session.grants ?? [])]);
+  const base = session.rolePermissions ?? ROLE_PERMISSIONS[session.role];
+  const allowed = new Set<Permission>([...base, ...(session.grants ?? [])]);
   for (const p of session.revokes ?? []) allowed.delete(p);
   return allowed;
 }
@@ -232,5 +324,11 @@ export function can(session: Session, permission: Permission): boolean {
  * burocracia a fingir-se de segurança.
  */
 export function isAcademyWide(session: Session): boolean {
-  return session.role === "OWNER" || session.role === "DIRECTOR" || session.role === "MEDICAL";
+  return (
+    session.role === "OWNER" ||
+    session.role === "DIRECTOR" ||
+    session.role === "MEDICAL" ||
+    // O scouting também: um prospecto não pertence a equipa nenhuma.
+    session.role === "SCOUT"
+  );
 }

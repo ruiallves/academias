@@ -74,6 +74,7 @@ const PEOPLE = [
   { key: "coach2",email: "adjunto@lifeclub.pt",   name: "André Peixoto",      role: "COACH",    title: "Treinador adjunto",   dept: "TECHNICAL", phone: "926 771 309" },
   { key: "med",   email: "clinico@lifeclub.pt",   name: "Inês Carvalho Dias", role: "MEDICAL",  title: "Médica desportiva",   dept: "CLINICAL",  phone: "915 772 401" },
   { key: "sec",   email: "secretaria@lifeclub.pt",name: "Cláudia Monteiro",   role: "STAFF",    title: "Secretaria",          dept: "OPERATIONS",phone: "253 210 440" },
+  { key: "scout", email: "scouting@lifeclub.pt",  name: "Bruno Aleixo",       role: "SCOUT",    title: "Coordenador de scouting", dept: "SCOUTING", phone: "911 308 664" },
   // Duas famílias: uma com um filho, outra com dois. É o suficiente para a app
   // das famílias ter de escolher entre educandos, que é onde costuma partir-se.
   { key: "pai1",  email: "familia@lifeclub.pt",   name: "Sandra Bragança",    role: "GUARDIAN", title: null, dept: null, phone: "917 442 003" },

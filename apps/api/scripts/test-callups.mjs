@@ -72,16 +72,18 @@ check("a direção vê jogos", dir.status === 200 && dir.body.length >= 3, `${di
 const adj = await call(adjunto, "GET", "/api/matches");
 check("o adjunto só vê os da equipa dele", adj.body.every((m) => m.teamId === "t_sub11"), `${adj.body.length} jogos`);
 /*
- * Um encarregado tem `calendar:read` — precisa dele para ver a agenda do filho na
- * app das famílias. O que o impede de ver jogos aqui é o **âmbito**: o dele é por
- * atleta, e este filtro é por equipa, portanto fecha e não devolve nada.
+ * Um encarregado vê os jogos das equipas dos filhos — é deles que a app da
+ * família precisa para dizer "o teu filho foi convocado para sábado".
  *
- * Falha fechado, que é a única omissão aceitável. Verifica-se o resultado — lista
- * vazia — e não o código de estado: 200 com nada é tão seguro como 403, e é o que
- * a arquitectura de âmbito produz.
+ * O âmbito dele tem duas metades: as equipas dos filhos (que abrem os jogos e os
+ * treinos) e os próprios filhos (que fecham tudo o que é pessoal). Aqui verifica-se
+ * a primeira, e que a segunda não deixa passar jogos de equipas alheias.
  */
 const doPai = await call(parent, "GET", "/api/matches");
-check("um encarregado não vê jogos por aqui", (doPai.body ?? []).length === 0, `${doPai.status} com ${doPai.body?.length} jogos`);
+const teamsDoPai = new Set((doPai.body ?? []).map((m) => m.teamId));
+check("um encarregado vê os jogos das equipas dos filhos", (doPai.body ?? []).length > 0, `${doPai.status} com ${doPai.body?.length} jogos`);
+check("e nenhum de uma equipa que não seja dos filhos", [...teamsDoPai].every((t) => t === "t_sub11" || t === "t_sub13"), JSON.stringify([...teamsDoPai]));
+check("mas não escreve convocatórias (403)", (await call(parent, "POST", "/api/matches/mt_proximo/convocatoria", { athleteIds: [] })).status === 403);
 
 const proximo = dir.body.find((m) => m.id === "mt_proximo");
 check("o próximo jogo traz o tecto da equipa", proximo?.maxCallUps === 14, `${proximo?.maxCallUps}`);

@@ -143,6 +143,18 @@ const TENANT_SCOPED = new Set<string>([
   "Notification",
   "Evaluation",
   "ClinicalEntry",
+  // Scouting. `ProspectEvent` e `ObservationRating` ficam de fora — herdam o
+  // tenant do pai, e a RLS trata-os por junção.
+  "Prospect",
+  "Observation",
+  "ScoutCriterion",
+  "Shortlist",
+  "ScoutingRequest",
+  "FitDimension",
+  "ProspectVideo",
+  "MemberTier",
+  "Member",
+  "CatalogItem",
 ]);
 
 /**

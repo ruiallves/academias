@@ -51,6 +51,14 @@ export function SessionProvider({ children }: { children: ReactNode }) {
       // são para configurar **outra** pessoa; a minha própria sessão não depende
       // delas.
       revokes: me.revokes as Session["revokes"],
+      /*
+       * O papel da academia. Substitui o mapa em código quando existe — é o que
+       * faz um papel criado ontem valer hoje sem um deploy pelo meio.
+       */
+      roleId: me.roleId,
+      roleName: me.roleName,
+      rolePermissions: me.permissions?.length ? (me.permissions as Session["rolePermissions"]) : undefined,
+      navKeys: me.navKeys ?? [],
       // Sem âmbito para quem vê a academia toda; com equipas para quem não vê.
       scope: me.scope,
     };
@@ -78,6 +86,7 @@ export const ROLE_LABEL: Record<string, string> = {
   COORDINATOR: "Coordenação",
   COACH: "Equipa técnica",
   MEDICAL: "Departamento clínico",
+  SCOUT: "Departamento de scouting",
   STAFF: "Staff",
   GUARDIAN: "Encarregado de educação",
   ATHLETE: "Atleta",

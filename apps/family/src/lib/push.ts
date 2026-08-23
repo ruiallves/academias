@@ -64,25 +64,51 @@ export async function enablePush(): Promise<{ ok: boolean; reason?: string }> {
     return { ok: false, reason: "As notificações ficaram bloqueadas nas definições do telemóvel." };
   }
 
-  const keyResponse = await fetch(`${API}/api/push/key`);
-  if (!keyResponse.ok) return { ok: false, reason: "O servidor não devolveu a chave de notificações." };
-  const { publicKey } = (await keyResponse.json()) as { publicKey: string };
+  /*
+   * Tudo o que se segue pode falhar de formas diferentes consoante o telemóvel —
+   * o service worker que nunca fica pronto, o `subscribe` que o iOS recusa, a
+   * rede do túnel a cair a meio. Sem este `try`, uma falha aqui era uma promessa
+   * rejeitada sem apanhador: o botão voltava ao normal e parecia que "não
+   * aconteceu nada", quando na verdade uma destas linhas rebentou. Devolver o
+   * erro como razão é o que transforma isso numa mensagem visível no ecrã.
+   */
+  try {
+    const keyResponse = await fetch(`${API}/api/push/key`);
+    if (!keyResponse.ok) return { ok: false, reason: "O servidor não devolveu a chave de notificações." };
+    const { publicKey } = (await keyResponse.json()) as { publicKey: string };
 
-  const reg = await navigator.serviceWorker.ready;
-  const existing = await reg.pushManager.getSubscription();
-  const subscription =
-    existing ??
-    (await reg.pushManager.subscribe({
-      // Obrigatório nos browsers actuais: uma subscrição silenciosa, que
-      // recebesse push sem mostrar nada, seria um rastreador.
-      userVisibleOnly: true,
-      applicationServerKey: urlBase64ToUint8Array(publicKey),
-    }));
+    // Um service worker que nunca fica pronto (falha de registo, por exemplo)
+    // deixava isto pendurado para sempre, em silêncio. Oito segundos chegam para
+    // uma rede normal; passado isso, é melhor dizer que falhou do que fingir que
+    // está a trabalhar.
+    const reg = await withTimeout(navigator.serviceWorker.ready, 8000, "O service worker não ficou pronto a tempo.");
+    const existing = await reg.pushManager.getSubscription();
+    const subscription =
+      existing ??
+      (await reg.pushManager.subscribe({
+        // Obrigatório nos browsers actuais: uma subscrição silenciosa, que
+        // recebesse push sem mostrar nada, seria um rastreador.
+        userVisibleOnly: true,
+        applicationServerKey: urlBase64ToUint8Array(publicKey),
+      }));
 
-  const res = await authed("/api/push/subscribe", subscription);
-  if (res.status === 401) return { ok: false, reason: "Sem sessão — entra na app da academia primeiro." };
-  if (!res.ok) return { ok: false, reason: "Não foi possível registar no servidor." };
-  return { ok: true };
+    const res = await authed("/api/push/subscribe", subscription);
+    if (res.status === 401) return { ok: false, reason: "Sem sessão — entra na app da academia primeiro." };
+    if (!res.ok) return { ok: false, reason: "Não foi possível registar no servidor." };
+    return { ok: true };
+  } catch (error) {
+    // eslint-disable-next-line no-console
+    console.error("[push] enablePush falhou:", error);
+    const detail = error instanceof Error ? `${error.name}: ${error.message}` : String(error);
+    return { ok: false, reason: `Falhou a activar: ${detail}` };
+  }
+}
+
+function withTimeout<T>(promise: Promise<T>, ms: number, message: string): Promise<T> {
+  return Promise.race([
+    promise,
+    new Promise<T>((_, reject) => setTimeout(() => reject(new Error(message)), ms)),
+  ]);
 }
 
 export async function disablePush(): Promise<void> {

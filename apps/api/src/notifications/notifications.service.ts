@@ -96,18 +96,33 @@ export class NotificationsService {
     return notification;
   }
 
+  /*
+   * As duas leituras abaixo passam por `runAs`, como o `enqueue`.
+   *
+   * `Notification` tem RLS por academia: sem `SET LOCAL app.academy_id` na
+   * ligação, o Postgres não recusa com erro — devolve **zero linhas**, que é
+   * muito pior. Foi exactamente isso que aconteceu quando estes métodos
+   * ganharam um endpoint pela primeira vez: as notificações existiam na base, o
+   * pai tinha-as por ler, e a app mostrava a caixa vazia.
+   */
+
   async listForUser(userId: string, academyId: string) {
-    return this.prisma.notification.findMany({
-      where: { userId, academyId },
-      orderBy: { createdAt: "desc" },
-      take: 50,
-    });
+    return this.prisma.runAs(academyId, (db) =>
+      db.notification.findMany({
+        where: { userId },
+        orderBy: { createdAt: "desc" },
+        take: 50,
+      }),
+    );
   }
 
-  async markRead(userId: string, ids: string[]) {
-    return this.prisma.notification.updateMany({
-      where: { userId, id: { in: ids }, readAt: null },
-      data: { readAt: new Date() },
-    });
+  /** Idempotente: `readAt: null` no filtro impede que reler mude a data da primeira vez. */
+  async markRead(userId: string, academyId: string, ids: string[]) {
+    return this.prisma.runAs(academyId, (db) =>
+      db.notification.updateMany({
+        where: { userId, id: { in: ids }, readAt: null },
+        data: { readAt: new Date() },
+      }),
+    );
   }
 }

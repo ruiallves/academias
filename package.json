@@ -10,6 +10,7 @@
   "scripts": {
     "dev:console": "npm run dev --workspace=@academia/console",
     "dev:family": "npm run dev --workspace=@academia/family",
+    "dev:platform": "npm run dev --workspace=@academia/platform",
     "dev:api": "npm run start:dev --workspace=@academia/api",
     "build": "npm run build --workspaces --if-present",
     "typecheck": "npm run typecheck --workspaces --if-present"

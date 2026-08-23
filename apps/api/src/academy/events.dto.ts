@@ -34,6 +34,37 @@ export class CreateEventDto {
   @IsString()
   @Length(1, 80)
   venue!: string;
+
+  /**
+   * O balneário.
+   *
+   * Opcional: uma academia que treina num campo sem balneários atribuídos não tem
+   * nada para preencher, e obrigá-la a inventar um seria pior do que o campo
+   * vazio. Quem os gere é que ganha com ele.
+   */
+  @IsOptional()
+  @IsString()
+  @Length(0, 80)
+  dressingRoom?: string;
+
+  /**
+   * Só para `kind: "MATCH"`.
+   *
+   * Um jogo não é um evento genérico: tem adversário, tem convocatória e acaba com
+   * um resultado. Por isso um evento com este `kind` é gravado como `Match` — a
+   * tabela rica — e não como `CalendarEvent`, e é isso que o faz aparecer no ecrã
+   * de Convocatórias. O adversário é o mínimo que distingue um jogo de um treino,
+   * e o serviço exige-o quando o tipo é jogo.
+   */
+  @IsOptional()
+  @IsString()
+  @Length(1, 80)
+  opponent?: string;
+
+  /** Só para `kind: "MATCH"`. Em casa por omissão — é o caso mais frequente. */
+  @IsOptional()
+  @IsBoolean()
+  isHome?: boolean;
 }
 
 /** Por agora só se cancela e reativa — a edição de um evento vem depois. */

@@ -1,112 +1,120 @@
-import { ChevronRight, Download, LogOut, MessageSquare, ShieldCheck } from "lucide-react";
+import { ChevronRight, Download, MessageSquare } from "lucide-react";
 import { useChild } from "@/App";
-import { academy, progress } from "@/data";
+import { useStore } from "@/lib/store";
 import { Avatar, Bar, Money, cx } from "@/ui";
 
 /**
  * "Como está o meu filho?"
  *
- * Um perfil, não uma ficha administrativa. A assiduidade é um número grande, a
- * avaliação lê-se de relance, e a nota do treinador está em destaque e assinada —
- * é a diferença entre um relatório automático e alguém que conhece o miúdo.
+ * Um perfil, não uma ficha administrativa. A assiduidade é um número grande,
+ * derivado dos treinos que a academia já registou.
+ *
+ * **A avaliação do treinador ainda não tem endpoint** — e por isso não aparece
+ * aqui um gráfico a fingir. Um pai que veja competências inventadas deixa de
+ * confiar em todos os outros números da app; dizer "ainda não há" custa menos.
  */
 export default function Athlete() {
   const { child } = useChild();
-  const p = progress[child.id];
-  const rate = p.attended / p.total;
-  const avg = p.skills.reduce((n, s) => n + s.score, 0) / p.skills.length;
+  const store = useStore();
+
+  const att = store.attendance[child.id] ?? { attended: 0, total: 0 };
+  const rate = att.total > 0 ? att.attended / att.total : null;
+
+  const myMatches = store.matches.filter((m) => m.childId === child.id);
+  const played = myMatches.filter((m) => m.calledUp && m.end < new Date()).length;
 
   return (
     <div className="space-y-6 pt-3">
       {/* Cabeçalho de perfil */}
       <header className="flex flex-col items-center pt-2 text-center">
-        <Avatar name={child.name} size={84} ring />
+        <Avatar name={child.name} photoUrl={child.photoUrl} size={84} ring />
         <h1 className="mt-3 text-[24px] leading-tight font-semibold tracking-[-0.02em] text-ink">{child.name}</h1>
         <p className="mt-0.5 text-meta text-ink-3">
           {child.team} · {child.coach}
         </p>
+        {child.availability !== "available" && (
+          <span
+            className={cx(
+              "chip mt-2",
+              child.availability === "out" ? "bg-risk-soft text-risk" : "bg-warn-soft text-warn",
+            )}
+          >
+            {child.availability === "out" ? "De baixa clínica" : "Com limitações"}
+          </span>
+        )}
       </header>
 
-      {/* Dois números lado a lado: presença e avaliação média. */}
+      {/* Dois números lado a lado: presença e convocatórias. */}
       <div className="grid grid-cols-2 gap-3">
         <div className="rounded-[var(--radius-lg)] bg-surface p-4" style={{ boxShadow: "var(--shadow-soft)" }}>
           <p className="text-[12px] font-semibold tracking-[0.03em] text-ink-3 uppercase">Presença</p>
-          <p className="num mt-1.5 text-[34px] font-semibold leading-none text-ink">{Math.round(rate * 100)}%</p>
-          <div className="mt-3">
-            <Bar value={rate} tone={rate >= 0.85 ? "ok" : rate >= 0.7 ? "signal" : "warn"} />
-          </div>
-          <p className="mt-2 text-[12px] text-ink-4">
-            {p.attended} de {p.total} treinos
-          </p>
+          {rate === null ? (
+            <>
+              <p className="num mt-1.5 text-[34px] leading-none font-semibold text-ink-4">—</p>
+              <p className="mt-3 text-[12px] leading-relaxed text-ink-4">
+                Ainda não há treinos com presenças registadas.
+              </p>
+            </>
+          ) : (
+            <>
+              <p className="num mt-1.5 text-[34px] leading-none font-semibold text-ink">{Math.round(rate * 100)}%</p>
+              <div className="mt-3">
+                <Bar value={rate} tone={rate >= 0.85 ? "ok" : rate >= 0.7 ? "signal" : "warn"} />
+              </div>
+              <p className="mt-2 text-[12px] text-ink-4">
+                {att.attended} de {att.total} treinos
+              </p>
+            </>
+          )}
         </div>
 
         <div className="rounded-[var(--radius-lg)] bg-surface p-4" style={{ boxShadow: "var(--shadow-soft)" }}>
-          <p className="text-[12px] font-semibold tracking-[0.03em] text-ink-3 uppercase">Avaliação</p>
-          <p className="num mt-1.5 text-[34px] font-semibold leading-none text-ink">
-            {avg.toFixed(1)}
-            <span className="text-[18px] text-ink-3"> /5</span>
+          <p className="text-[12px] font-semibold tracking-[0.03em] text-ink-3 uppercase">Convocatórias</p>
+          <p className="num mt-1.5 text-[34px] leading-none font-semibold text-ink">{played}</p>
+          <p className="mt-3 text-[12px] leading-relaxed text-ink-4">
+            {played === 0 ? "Ainda nenhuma este período." : played === 1 ? "jogo convocado" : "jogos convocados"}
           </p>
-          <div className="mt-3 flex gap-1" aria-hidden>
-            {[1, 2, 3, 4, 5].map((n) => (
-              <span key={n} className={cx("h-1.5 flex-1 rounded-full", n <= Math.round(avg) ? "bg-signal" : "bg-sunken")} />
-            ))}
-          </div>
-          <p className="mt-2 text-[12px] text-ink-4">média do período</p>
         </div>
       </div>
 
-      {/* Competências — barras finas, o número à direita. */}
-      <section>
-        <h2 className="mb-3 px-1 text-[13px] font-semibold tracking-[0.04em] text-ink-3 uppercase">Por competência</h2>
-        <div className="space-y-3.5 px-1">
-          {p.skills.map((s) => (
-            <div key={s.name} className="flex items-center gap-3">
-              <span className="w-24 shrink-0 text-body text-ink-2">{s.name}</span>
-              <div className="flex-1">
-                <Bar value={s.score / 5} tone="signal" />
-              </div>
-              <span className="num w-8 shrink-0 text-right text-body font-semibold text-ink">{s.score}.0</span>
-            </div>
-          ))}
-        </div>
-      </section>
-
-      {/* A nota do treinador — o elemento com mais presença desta página. */}
-      <section className="brandlit overflow-hidden rounded-[var(--radius-xl)] p-5" style={{ boxShadow: "var(--shadow-float)" }}>
-        <p className="on-2 text-[13px] font-semibold tracking-[0.04em] uppercase">Nota do treinador</p>
-        <p className="mt-3 text-[17px] leading-relaxed font-medium">{p.note}</p>
-        <footer className="on-2 mt-4 flex items-center gap-2 border-t border-white/15 pt-3 text-[13px] font-semibold">
-          <Avatar name={child.coach} size={24} />
-          {child.coach}
-        </footer>
+      {/*
+        A avaliação vive na consola do treinador e ainda não sai para a família.
+        Um espaço reservado honesto vale mais do que um radar de competências
+        inventado — e diz ao pai que isto está a caminho.
+      */}
+      <section className="rounded-[var(--radius-lg)] border border-dashed border-line bg-sunken/40 p-5 text-center">
+        <p className="text-body font-semibold text-ink">Avaliação do treinador</p>
+        <p className="mx-auto mt-1 max-w-[34ch] text-meta leading-relaxed text-ink-3">
+          Ainda não há avaliações publicadas para {child.firstName}. Quando o treinador publicar uma, aparece
+          aqui e recebes uma notificação.
+        </p>
       </section>
 
       {/* Inscrição — linhas soltas, sem caixa. */}
       <section>
         <h2 className="mb-1 px-1 text-[13px] font-semibold tracking-[0.04em] text-ink-3 uppercase">Inscrição</h2>
         <dl className="px-1">
-          <Row label="Modalidade" value={child.sport} />
+          {child.sport && <Row label="Modalidade" value={child.sport} />}
           <Row label="Escalão" value={child.team} />
-          <Row label="Mensalidade" value={<Money cents={child.feeCents} size="md" />} sub="/ mês" />
-          <Row label="Academia" value={academy.name} />
+          <Row label="Treinador" value={child.coach} />
+          <Row
+            label="Mensalidade"
+            value={child.feeCents !== null ? <Money cents={child.feeCents} size="md" /> : <span className="text-ink-4">por configurar</span>}
+            sub={child.feeCents !== null ? "/ mês" : undefined}
+          />
+          <Row label="Academia" value={store.academy.name} />
         </dl>
       </section>
 
-      {/* Acções */}
-      <div className="space-y-2">
+      {/*
+        Acções deste educando. A sessão e as definições da conta mudaram-se para o
+        perfil (o avatar no canto): não são coisas do atleta, e um pai com dois
+        filhos via "Terminar sessão" duas vezes, uma por cada ficha.
+      */}
+      <div className="space-y-2 pb-1">
         <ActionRow icon={MessageSquare} label="Falar com a academia" />
         <ActionRow icon={Download} label="Descarregar relatório do período" />
       </div>
-
-      <button type="button" className="flex w-full items-center justify-center gap-2 py-3 text-body font-semibold text-ink-3 active:text-ink">
-        <LogOut className="size-[18px]" strokeWidth={1.9} />
-        Terminar sessão
-      </button>
-
-      <p className="flex items-center justify-center gap-1.5 pb-1 text-[12px] text-ink-4">
-        <ShieldCheck className="size-3.5" strokeWidth={1.75} />
-        Vês apenas os teus educandos.
-      </p>
     </div>
   );
 }

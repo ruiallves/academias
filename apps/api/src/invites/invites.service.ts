@@ -9,6 +9,7 @@ import {
 import { ConfigService } from "@nestjs/config";
 import type { Role, StaffDepartment } from "@prisma/client";
 import { PrismaService } from "../prisma/prisma.service";
+import { SupabaseAccountsService } from "../auth/supabase-accounts.service";
 import { can, type RequestContext } from "../common/permissions";
 
 /**
@@ -53,6 +54,7 @@ const RANK: Record<Role, number> = {
   DIRECTOR: 80,
   COORDINATOR: 60,
   MEDICAL: 40,
+  SCOUT: 40,
   COACH: 40,
   STAFF: 20,
   GUARDIAN: 0,
@@ -100,6 +102,7 @@ export type InvitePreview = {
 export class InvitesService {
   constructor(
     private readonly prisma: PrismaService,
+    private readonly accounts: SupabaseAccountsService,
     private readonly config: ConfigService,
   ) {}
 
@@ -300,9 +303,12 @@ export class InvitesService {
     // A conta no Supabase, fora de qualquer transação: é um sistema externo e não
     // participa no rollback. Falhar aqui deixa o convite intacto para nova tentativa.
     const existing = await this.invitedAccount(token);
+    // `SupabaseAccountsService` é partilhado com o registo das famílias: a pergunta
+    // "esta conta já existe, e quem está do outro lado é o dono dela?" não pode ter
+    // duas respostas diferentes no mesmo produto.
     const authId = existing
-      ? await this.signInExisting(invite.email, password)
-      : await this.createAuthUser(invite.email, password, invite.name);
+      ? (await this.accounts.signIn(invite.email, password)).authId
+      : (await this.accounts.create(invite.email, password, invite.name)).authId;
 
     return this.prisma.runAs(academyId, async (db) => {
       // Uso único, e a corrida resolve-se aqui: quem chegar em segundo encontra
@@ -405,54 +411,6 @@ export class InvitesService {
       SELECT app.invited_account(${hash(token)}) AS auth
     `;
     return rows[0]?.auth ?? null;
-  }
-
-  /**
-   * Verifica a password de quem já tem conta, trocando-a por um token no Supabase.
-   *
-   * É o Supabase que valida — nós nunca vemos a password guardada, nem a
-   * comparamos. Falhar aqui é 403 e não 404: o convite é válido, quem o está a
-   * resgatar é que não provou ser a pessoa.
-   */
-  private async signInExisting(email: string, password: string): Promise<string> {
-    const url = this.config.getOrThrow<string>("SUPABASE_URL").replace(/\/$/, "");
-    const anon = this.config.getOrThrow<string>("SUPABASE_ANON_KEY");
-
-    const res = await fetch(`${url}/auth/v1/token?grant_type=password`, {
-      method: "POST",
-      headers: { apikey: anon, "Content-Type": "application/json" },
-      body: JSON.stringify({ email, password }),
-    });
-    if (!res.ok) throw new ForbiddenException("Palavra-passe incorrecta");
-
-    const body = (await res.json()) as { user?: { id?: string } };
-    const id = body.user?.id;
-    if (!id) throw new ForbiddenException("Não foi possível confirmar a conta");
-    return id;
-  }
-
-  /** Cria a conta. A password vai directa para o Supabase e nunca é guardada por nós. */
-  private async createAuthUser(email: string, password: string, name: string): Promise<string> {
-    const url = this.config.getOrThrow<string>("SUPABASE_URL").replace(/\/$/, "");
-    const key = this.config.getOrThrow<string>("SUPABASE_SERVICE_ROLE_KEY");
-
-    const res = await fetch(`${url}/auth/v1/admin/users`, {
-      method: "POST",
-      headers: { apikey: key, Authorization: `Bearer ${key}`, "Content-Type": "application/json" },
-      body: JSON.stringify({
-        email,
-        password,
-        // Quem chegou aqui provou o email ao abrir um link que só lhe foi enviado a
-        // ele. Um segundo email de confirmação seria cerimónia sem ganho.
-        email_confirm: true,
-        user_metadata: { name },
-      }),
-    });
-
-    if (!res.ok) throw new BadRequestException("Não foi possível criar a conta");
-    const body = (await res.json()) as { id?: string };
-    if (!body.id) throw new BadRequestException("O Supabase não devolveu a conta criada");
-    return body.id;
   }
 }
 

@@ -172,8 +172,12 @@ async function main() {
   // A consola não é para famílias — elas têm a PWA, com o seu próprio âmbito.
   const parentStaff = await get(parent, "/api/staff");
   check("não chega ao quadro de staff", parentStaff.status === 403, `deu ${parentStaff.status}`);
+  // A app da família mostra a equipa do filho, o treinador e o horário — por isso
+  // `team:read` chega ao encarregado, limitado às equipas dos filhos.
   const parentTeams = await get(parent, "/api/teams");
-  check("nem às equipas", parentTeams.status === 403, `deu ${parentTeams.status}`);
+  const allTeams = await get(director, "/api/teams");
+  check("vê as equipas dos filhos", parentTeams.status === 200 && (parentTeams.body ?? []).length > 0, `deu ${parentTeams.status}`);
+  check("mas não a academia toda", (parentTeams.body ?? []).length <= (allTeams.body ?? []).length, `${parentTeams.body?.length} de ${allTeams.body?.length}`);
 
   console.log("\n=== Academia errada ===");
   const wrong = await fetch(`${API}/api/teams`, {

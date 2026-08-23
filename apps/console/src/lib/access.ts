@@ -185,6 +185,32 @@ export const CLINICAL_AREAS: Area[] = [
   { label: "Registo clínico", hint: "dar baixa e alta — só o departamento clínico", read: "clinical:write" },
 ];
 
+/**
+ * Scouting, à parte das outras áreas.
+ *
+ * Pela mesma razão do clínico: o vídeo é imagem de menores que **não são da
+ * academia**, e há uma diferença real entre ler o dossiê e poder ver as
+ * gravações. Numa linha só, "Scouting: ver/editar", essa distinção desaparecia.
+ */
+export const SCOUTING_AREAS: Area[] = [
+  { label: "Scouting", hint: "prospectos, observações e shortlists", read: "scouting:read", write: "scouting:write" },
+  { label: "Vídeo de scouting", hint: "ver e carregar gravações de prospectos", read: "scouting:video:read", write: "scouting:video:write" },
+];
+
+/**
+ * O que muda o produto para os outros.
+ *
+ * Só aparece no editor de papéis, e não no painel de acesso de uma pessoa: dar
+ * isto a alguém é uma decisão que se toma a olhar para a lista toda de papéis, não
+ * a meio da ficha de um treinador.
+ */
+export const ADMIN_AREAS: Area[] = [
+  { label: "Papéis", hint: "criar papéis e escolher-lhes as permissões", read: "role:write" },
+  { label: "Menus", hint: "escolher o que cada papel vê na navegação", read: "role:menu" },
+  { label: "Acessos", hint: "mudar o acesso de cada pessoa", read: "access:write" },
+  { label: "Definições", hint: "configuração da academia", read: "settings:write" },
+];
+
 /** O nível de uma área para um dado conjunto de permissões. */
 export function levelOf(area: Area, permissions: Set<Permission>): Level {
   if (area.write && permissions.has(area.write)) return "write";

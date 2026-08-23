@@ -213,12 +213,21 @@ export function DataTable<T>({
   rows,
   keyOf,
   to,
+  onRowClick,
   empty,
 }: {
   columns: Column<T>[];
   rows: T[];
   keyOf: (row: T) => string;
+  /** A linha leva a uma página. */
   to?: (row: T) => string;
+  /**
+   * A linha abre alguma coisa aqui mesmo — uma ficha em janela, por exemplo.
+   *
+   * Alternativa a `to`, não acumulável com ela: uma linha que navega **e** abre
+   * um diálogo faz as duas e nenhuma fica visível.
+   */
+  onRowClick?: (row: T) => void;
   empty?: ReactNode;
 }) {
   const navigate = useNavigate();
@@ -250,14 +259,15 @@ export function DataTable<T>({
         <tbody>
           {rows.map((row) => {
             const href = to?.(row);
+            const clickable = Boolean(href || onRowClick);
             return (
               <tr
                 key={keyOf(row)}
                 className={cx(
                   "border-b border-line last:border-0 transition-colors duration-[120ms]",
-                  href && "cursor-pointer hover:bg-sunken/50",
+                  clickable && "cursor-pointer hover:bg-sunken/50",
                 )}
-                onClick={href ? () => navigate(href) : undefined}
+                onClick={href ? () => navigate(href) : onRowClick ? () => onRowClick(row) : undefined}
               >
                 {columns.map((c) => (
                   <td
@@ -276,6 +286,67 @@ export function DataTable<T>({
           })}
         </tbody>
       </table>
+    </div>
+  );
+}
+
+/* -------------------------------------------------------------------------- */
+/* Carregamento                                                                */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * A página está a ir buscar dados.
+ *
+ * ## O que isto resolve
+ *
+ * Sem um estado de carregamento, uma lista vazia e uma lista que ainda não chegou
+ * são o mesmo ecrã — e durante esse segundo a página afirma "sem resultados",
+ * "ainda não há sócios", "nenhum prospecto". É uma mentira curta mas é uma
+ * mentira, e numa ferramenta de gestão um facto errado durante um segundo custa
+ * mais do que um segundo de espera. É a mesma razão pela qual `AcademyBoot` não
+ * deixa a consola desenhar antes de a academia chegar.
+ *
+ * ## Porque é que ocupa a área toda
+ *
+ * Porque é a área toda que ainda não existe. Um indicador pequeno a um canto
+ * deixa a página a parecer pronta com um pormenor a faltar; ocupar o espaço que o
+ * conteúdo vai ocupar diz a verdade — ainda não há nada ali. A navegação fica de
+ * fora: essa não está a carregar, e piscá-la a cada mudança de página seria fazer
+ * a consola inteira parecer instável.
+ *
+ * ## Porquê tão pouco movimento
+ *
+ * Um ponto a pulsar devagar, e mais nada. O sistema de design proíbe animação de
+ * entrada em dados, e um indicador que rodopia depressa transmite esforço — o que
+ * é exactamente ao contrário do que se quer transmitir enquanto se espera.
+ */
+export function Loading({
+  label = "A carregar…",
+  /** Alto quando ocupa a página; baixo quando é só um painel. */
+  size = "page",
+}: {
+  label?: string;
+  size?: "page" | "panel";
+}) {
+  return (
+    <div
+      role="status"
+      aria-live="polite"
+      className={cx(
+        "flex w-full flex-col items-center justify-center gap-3",
+        size === "page" ? "min-h-[58vh]" : "min-h-[220px]",
+      )}
+    >
+      <span className="flex items-center gap-1.5" aria-hidden>
+        {[0, 1, 2].map((i) => (
+          <span
+            key={i}
+            className="size-1.5 rounded-full bg-ink-4"
+            style={{ animation: "pulse-dot 1200ms ease-in-out infinite", animationDelay: `${i * 160}ms` }}
+          />
+        ))}
+      </span>
+      <span className="text-meta text-ink-3">{label}</span>
     </div>
   );
 }

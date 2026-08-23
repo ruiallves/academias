@@ -1,33 +1,37 @@
 import { CalendarOff, MapPin } from "lucide-react";
 import { useChild } from "@/App";
-import { appointments, today, trainings } from "@/data";
+import { useStore } from "@/lib/store";
 import { cx, dayName, dayShort, monthShort, time, whenLabel } from "@/ui";
 
 /**
  * Agenda — uma linha do tempo, não uma grelha.
  *
  * Num telemóvel a grelha mensal obriga a apertar quadrados de 40px; a linha do
- * tempo diz logo. Treinos e consultas vivem na mesma coluna, por ordem, cada um com
- * a sua marca de cor à esquerda — o olho desce e percebe o que vem aí sem ler tudo.
+ * tempo diz logo. Treinos e jogos vivem na mesma coluna, por ordem, cada um com a
+ * sua marca de cor à esquerda — o olho desce e percebe o que vem aí sem ler tudo.
  */
 
 type Item = {
   id: string;
   start: Date;
-  end?: Date;
-  kind: "training" | "appointment";
+  end: Date;
+  kind: "training" | "match";
   title: string;
   place: string;
-  tag?: { text: string; tone: "warn" | "risk" | "signal" };
-  note?: string;
+  /** Balneário. Só os treinos o têm, e só quando a academia o atribui. */
+  room?: string;
+  cancelled: boolean;
+  calledUp?: boolean;
 };
 
 export default function Agenda() {
   const { child } = useChild();
+  const store = useStore();
+  const now = new Date();
 
   const items: Item[] = [
-    ...trainings
-      .filter((t) => t.childId === child.id && t.end >= today)
+    ...store.trainings
+      .filter((t) => t.childId === child.id && t.end >= now)
       .map<Item>((t) => ({
         id: t.id,
         start: t.start,
@@ -35,19 +39,20 @@ export default function Agenda() {
         kind: "training",
         title: child.team,
         place: t.venue,
-        tag: t.note?.kind === "changed" ? { text: "Alterado", tone: "warn" } : t.note?.kind === "cancelled" ? { text: "Cancelado", tone: "risk" } : undefined,
-        note: t.note?.text,
+        room: t.dressingRoom,
+        cancelled: t.cancelled,
       })),
-    ...appointments
-      .filter((a) => a.childId === child.id && a.date >= today)
-      .map<Item>((a) => ({
-        id: a.id,
-        start: new Date(a.date.getFullYear(), a.date.getMonth(), a.date.getDate(), Number(a.time.split(":")[0]), Number(a.time.split(":")[1])),
-        kind: "appointment",
-        title: a.title,
-        place: a.location,
-        tag: { text: a.kind, tone: "signal" },
-        note: a.note,
+    ...store.matches
+      .filter((m) => m.childId === child.id && m.end >= now)
+      .map<Item>((m) => ({
+        id: m.id,
+        start: m.start,
+        end: m.end,
+        kind: "match",
+        title: `${m.isHome ? "vs" : "@"} ${m.opponent}`,
+        place: m.venue,
+        cancelled: m.cancelled,
+        calledUp: m.calledUp,
       })),
   ].sort((a, b) => a.start.getTime() - b.start.getTime());
 
@@ -76,20 +81,22 @@ export default function Agenda() {
         <div className="mt-5 space-y-7">
           {[...byDay.entries()].map(([key, dayItems], di) => {
             const day = new Date(key);
-            const isToday = day.toDateString() === today.toDateString();
+            const isToday = day.toDateString() === now.toDateString();
 
             return (
               <section key={key} className="rise" style={{ ["--i" as string]: di }}>
                 {/* Cabeçalho do dia — a data grande, o resto discreto. */}
                 <div className="mb-3 flex items-center gap-3 px-1">
-                  <span className={cx("num text-[26px] font-semibold leading-none", isToday ? "text-signal-ink" : "text-ink")}>
+                  <span className={cx("num text-[26px] leading-none font-semibold", isToday ? "text-signal-ink" : "text-ink")}>
                     {day.getDate()}
                   </span>
                   <span className="leading-tight">
                     <span className={cx("block text-[13px] font-semibold uppercase", isToday ? "text-signal" : "text-ink-2")}>
                       {isToday ? "Hoje" : dayName(day)}
                     </span>
-                    <span className="block text-[12px] text-ink-4">{dayShort(day)}, {monthShort(day)}</span>
+                    <span className="block text-[12px] text-ink-4">
+                      {dayShort(day)}, {monthShort(day)}
+                    </span>
                   </span>
                 </div>
 
@@ -104,7 +111,9 @@ export default function Agenda() {
         </div>
       )}
 
-      <p className="mt-8 px-1 pb-1 text-meta text-ink-4">As alterações chegam por notificação, no momento em que acontecem.</p>
+      <p className="mt-8 px-1 pb-1 text-meta text-ink-4">
+        As alterações chegam por notificação, no momento em que acontecem.
+      </p>
     </div>
   );
 }
@@ -112,30 +121,35 @@ export default function Agenda() {
 /* -------------------------------------------------------------------------- */
 
 function EventRow({ item }: { item: Item }) {
-  const cancelled = item.tag?.tone === "risk";
-  const accent = item.kind === "training" ? "var(--color-signal)" : "var(--color-ink)";
-  const tagCls = { warn: "bg-warn-soft text-warn", risk: "bg-risk-soft text-risk", signal: "bg-signal-soft text-signal-ink" };
+  const accent = item.kind === "match" ? "var(--color-ink)" : "var(--color-signal)";
 
   return (
-    <li className={cx("flex gap-3", cancelled && "opacity-55")}>
+    <li className={cx("flex gap-3", item.cancelled && "opacity-55")}>
       {/* Coluna da hora, com a marca de cor do tipo de evento. */}
       <div className="flex w-14 shrink-0 flex-col items-end pt-3.5">
         <span className="num text-[15px] font-semibold text-ink">{time(item.start)}</span>
-        {item.end && <span className="num text-[12px] text-ink-4">{time(item.end)}</span>}
+        <span className="num text-[12px] text-ink-4">{time(item.end)}</span>
       </div>
 
       <div className="relative flex-1 overflow-hidden rounded-[var(--radius-lg)] bg-surface p-4 shadow-[var(--shadow-soft)]">
         <span className="absolute inset-y-0 left-0 w-1" style={{ background: accent }} aria-hidden />
         <div className="mb-1 flex flex-wrap items-center gap-2">
-          {item.tag && <span className={cx("chip", tagCls[item.tag.tone])}>{item.tag.text}</span>}
-          <span className="ml-auto text-[12px] font-medium text-ink-4">{whenLabel(item.start, today)}</span>
+          {item.cancelled && <span className="chip bg-risk-soft text-risk">Cancelado</span>}
+          {item.kind === "match" && !item.cancelled && (
+            <span className={cx("chip", item.calledUp ? "bg-ok-soft text-ok" : "bg-sunken text-ink-3")}>
+              {item.calledUp ? "Convocado" : "Jogo"}
+            </span>
+          )}
+          <span className="ml-auto text-[12px] font-medium text-ink-4">{whenLabel(item.start, new Date())}</span>
         </div>
         <p className="text-body font-semibold text-ink">{item.title}</p>
         <p className="mt-1 inline-flex items-center gap-1.5 text-meta text-ink-2">
           <MapPin className="size-3.5 shrink-0 text-ink-4" strokeWidth={1.9} />
           {item.place}
+          {/* O balneário a seguir ao local, na mesma linha e mais apagado: é o
+              detalhe que só interessa depois de se saber onde é. */}
+          {item.room && <span className="text-ink-4">· {item.room}</span>}
         </p>
-        {item.note && <p className="mt-2 text-meta font-medium text-warn">{item.note}</p>}
       </div>
     </li>
   );

@@ -2,7 +2,7 @@ import { BadRequestException, ForbiddenException, Injectable } from "@nestjs/com
 import type { AthleteStatus, DominantSide, Prisma } from "@prisma/client";
 import { PrismaService, type ScopedClient } from "../prisma/prisma.service";
 import { can, teamScopeFilter, type RequestContext } from "../common/permissions";
-import type { AthleteInputDto } from "./athletes.dto";
+import type { AthleteInputDto, AthleteUpdateDto } from "./athletes.dto";
 
 /**
  * Criação de atletas — um a um ou em lote a partir de um ficheiro.
@@ -37,6 +37,160 @@ export class AthletesService {
       const result = await this.insertOne(db, ctx.academyId, dto, teams);
       if ("error" in result) throw new BadRequestException(result.error);
       return result.athlete;
+    });
+  }
+
+  /**
+   * Editar um atleta.
+   *
+   * ## Porque é que este endpoint passou a existir
+   *
+   * Havia aqui escrito que um `PATCH` genérico era perigoso porque "alguns dos
+   * campos de um atleta são clínicos". O receio é bom; a conclusão é que era
+   * demasiado larga. O resultado prático era uma ficha **impossível de corrigir**:
+   * um nome mal escrito, uma data trocada, um miúdo que subiu de escalão — nada
+   * disso tinha caminho, e a única saída era apagar e voltar a inscrever, o que
+   * leva atrás presenças, convocatórias e mensalidades.
+   *
+   * O que resolve não é recusar a edição, é **fechar a lista**: `AthleteUpdateDto`
+   * enumera os campos, e o que é clínico continua a viver em `ClinicalEntry` com
+   * autor e permissão próprios. Um campo novo no modelo não entra aqui por
+   * acidente — tem de ser escrito no DTO por alguém.
+   */
+  async update(ctx: RequestContext, id: string, dto: AthleteUpdateDto) {
+    if (!can(ctx, "athlete:write")) throw new ForbiddenException("Sem permissão para editar atletas");
+
+    return this.prisma.runAs(ctx.academyId, async (db) => {
+      const teams = await this.teamsInScope(ctx, db);
+
+      const athlete = await db.athlete.findFirst({
+        where: { id },
+        select: { id: true, teams: { select: { id: true, teamId: true } } },
+      });
+      if (!athlete) throw new BadRequestException("Atleta não encontrado");
+
+      // O âmbito passa pelas equipas, como em todo o resto: um treinador só mexe
+      // nos atletas das equipas dele. A RLS garante a academia; isto o resto.
+      if (!athlete.teams.some((t) => teams.has(t.teamId))) {
+        throw new ForbiddenException("Esse atleta está fora do teu âmbito");
+      }
+
+      const data: Prisma.AthleteUpdateInput = {};
+
+      if (dto.name !== undefined) data.name = dto.name.trim();
+
+      if (dto.birthdate !== undefined) {
+        const birth = new Date(dto.birthdate);
+        const year = birth.getUTCFullYear();
+        // A mesma janela da inscrição. Uma data fora disto é quase de certeza um
+        // erro de digitação (2105 em vez de 2015).
+        if (Number.isNaN(birth.getTime()) || year < new Date().getUTCFullYear() - 60 || year > new Date().getUTCFullYear() - 3) {
+          throw new BadRequestException("Data de nascimento improvável");
+        }
+        data.birthdate = birth;
+      }
+
+      if (dto.taxId !== undefined) data.taxId = dto.taxId.replace(/[\s.]/g, "");
+      if (dto.medicalValidUntil !== undefined) data.medicalValidUntil = new Date(dto.medicalValidUntil);
+      if (dto.heightCm !== undefined) data.heightCm = dto.heightCm;
+      if (dto.weightDg !== undefined) data.weightKg = dto.weightDg / 10;
+      if (dto.dominantSide !== undefined) data.dominantSide = dto.dominantSide as DominantSide;
+
+      if (dto.squadNumber !== undefined) {
+        const teamId = dto.teamId ?? athlete.teams[0]?.teamId;
+        const clash = await db.athlete.findFirst({
+          where: {
+            id: { not: id },
+            squadNumber: dto.squadNumber,
+            teams: { some: { teamId } },
+          },
+          select: { name: true },
+        });
+        if (clash) throw new BadRequestException(`O número ${dto.squadNumber} já é do ${clash.name}`);
+        data.squadNumber = dto.squadNumber;
+      }
+
+      /*
+       * Mudar de escalão é actualizar a ligação, não criar outra.
+       *
+       * Criar uma segunda `TeamMembership` deixava o atleta em dois plantéis ao
+       * mesmo tempo — e é assim que um miúdo aparece convocado por duas equipas
+       * para o mesmo sábado. O histórico de escalões, quando existir, faz-se com
+       * `leftAt`; até lá, uma ligação por atleta é a leitura honesta do modelo.
+       */
+      if (dto.teamId !== undefined || dto.position !== undefined) {
+        const current = athlete.teams[0];
+        const teamId = dto.teamId ?? current?.teamId;
+        if (!teamId) throw new BadRequestException("Falta a equipa");
+        if (!teams.has(teamId)) throw new ForbiddenException("Essa equipa está fora do teu âmbito");
+
+        const position = dto.position === undefined ? undefined : dto.position.trim() || null;
+
+        if (current) {
+          await db.teamMembership.update({
+            where: { id: current.id },
+            data: { teamId, ...(position !== undefined ? { position } : {}) },
+          });
+        } else {
+          await db.teamMembership.create({
+            data: { teamId, athleteId: id, ...(position ? { position } : {}) },
+          });
+        }
+      }
+
+      try {
+        return await db.athlete.update({ where: { id }, data, select: { id: true, name: true } });
+      } catch (error) {
+        // Único por academia: repetir um NIF é sempre engano, e é um engano que
+        // faria um pai cair no educando errado ao registar-se na app.
+        if (isUniqueViolation(error, "taxId")) {
+          throw new BadRequestException("Já existe um atleta com este NIF nesta academia");
+        }
+        throw error;
+      }
+    });
+  }
+
+  /**
+   * Escreve o NIF de um atleta que já existe.
+   *
+   * ## Porque é que isto é um endpoint só para isto
+   *
+   * Porque uma academia que já importou duzentos atletas não vai reimportá-los para
+   * preencher uma coluna — e sem o NIF preenchido nenhuma família consegue reclamar
+   * o educando na app. Faltava um caminho para o campo mais importante do fluxo.
+   *
+   * Continua a existir depois de `update` — não é redundante. Este é o caminho
+   * de um campo só, usado na ficha para preencher NIFs em falta sem abrir o
+   * formulário inteiro; `update` é o formulário.
+   */
+  async setTaxId(ctx: RequestContext, id: string, taxId: string) {
+    if (!can(ctx, "athlete:write")) throw new ForbiddenException("Sem permissão");
+
+    const nif = taxId.replace(/[\s.]/g, "");
+    if (!/^\d{9}$/.test(nif)) throw new BadRequestException("O NIF tem nove dígitos");
+
+    return this.prisma.runAs(ctx.academyId, async (db) => {
+      // O âmbito passa pelas equipas, como em todo o resto: um treinador só mexe
+      // nos atletas das equipas dele. A RLS garante a academia; isto garante o resto.
+      const teams = await this.teamsInScope(ctx, db);
+      const athlete = await db.athlete.findFirst({
+        where: { id },
+        select: { id: true, teams: { select: { teamId: true } } },
+      });
+      if (!athlete) throw new BadRequestException("Atleta não encontrado");
+      if (!athlete.teams.some((t) => teams.has(t.teamId))) {
+        throw new ForbiddenException("Esse atleta está fora do teu âmbito");
+      }
+
+      try {
+        return await db.athlete.update({ where: { id }, data: { taxId: nif }, select: { id: true, taxId: true } });
+      } catch (error) {
+        if (isUniqueViolation(error, "taxId")) {
+          throw new BadRequestException("Já existe um atleta com este NIF nesta academia");
+        }
+        throw error;
+      }
     });
   }
 
@@ -145,6 +299,8 @@ export class AthletesService {
       name: dto.name.trim(),
       birthdate: birth,
       status: "ACTIVE" as AthleteStatus,
+      // Sempre presente: o DTO recusa a inscrição sem ele.
+      taxId: dto.taxId.replace(/[\s.]/g, ""),
       ...(dto.medicalValidUntil ? { medicalValidUntil: new Date(dto.medicalValidUntil) } : {}),
       ...(dto.heightCm != null ? { heightCm: dto.heightCm } : {}),
       ...(dto.weightDg != null ? { weightKg: dto.weightDg / 10 } : {}),
@@ -156,10 +312,36 @@ export class AthletesService {
     try {
       const athlete = await db.athlete.create({ data, select: { id: true, name: true } });
       return { athlete };
-    } catch {
+    } catch (error) {
       // Um choque de número de camisola já na base, ou outra restrição — devolvido
       // como erro de linha, não como 500.
+      //
+      // O NIF é único por academia: repeti-lo é sempre engano, e é um engano que
+      // faria um pai cair no educando errado ao registar-se. Vale a pena nomeá-lo.
+      if (isUniqueViolation(error, "taxId")) {
+        return { error: "Já existe um atleta com este NIF nesta academia" };
+      }
       return { error: "Não foi possível inscrever (número de camisola em uso, ou dado inválido)" };
     }
   }
+}
+
+/* ---------------------------------------------------------------------------- */
+
+/**
+ * Uma violação de unicidade **naquela** coluna.
+ *
+ * O `P2002` do Prisma traz em `meta.target` as colunas do índice que estourou.
+ * Olhar para elas é o que distingue "já existe um atleta com este NIF" de "esse
+ * número de camisola está ocupado" — duas frases que mandam a secretaria fazer
+ * coisas diferentes, e que sem isto sairiam ambas como a segunda.
+ */
+function isUniqueViolation(error: unknown, column: string): boolean {
+  if (typeof error !== "object" || error === null) return false;
+  const e = error as { code?: string; meta?: { target?: unknown } };
+  if (e.code !== "P2002") return false;
+
+  const target = e.meta?.target;
+  if (Array.isArray(target)) return target.includes(column);
+  return typeof target === "string" && target.includes(column);
 }

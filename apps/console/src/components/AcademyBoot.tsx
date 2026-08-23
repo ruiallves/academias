@@ -1,6 +1,7 @@
 import { useEffect, type ReactNode } from "react";
 import { signalVars } from "@academia/ui/tokens";
 import { loadAcademy, useStore } from "@/lib/store";
+import { loadCatalogs } from "@/lib/catalogs";
 import { clearSession } from "@/lib/session";
 
 /**
@@ -28,6 +29,18 @@ export function AcademyBoot({ children }: { children: ReactNode }) {
    */
   useEffect(() => {
     if (!store.ready) void loadAcademy();
+  }, [store.ready]);
+
+  /*
+   * Os catálogos vêm com a academia.
+   *
+   * São locais, balneários e escalões — o que enche os menus suspensos de metade
+   * dos diálogos. Pedi-los em cada diálogo daria cinco pedidos iguais e um
+   * instante de lista vazia em cada um; trazê-los à entrada custa uma leitura de
+   * umas dezenas de linhas.
+   */
+  useEffect(() => {
+    if (store.ready) void loadCatalogs();
   }, [store.ready]);
 
   useEffect(() => {

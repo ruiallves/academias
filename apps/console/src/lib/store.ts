@@ -54,6 +54,18 @@ type ApiBootstrap = {
     name: string;
     email: string;
     role: Role;
+    /** O papel da academia, quando esta pessoa tem um configurado. */
+    roleId: string | null;
+    roleName: string | null;
+    /**
+     * As permissões do papel, resolvidas pelo servidor.
+     *
+     * Vêm de lá e não do mapa local de propósito: a academia pode ter editado o
+     * papel há um minuto, e uma cópia em código passaria a mentir a partir daí.
+     */
+    permissions: string[];
+    /** Menus que o papel mostra. Vazio = todos os que a permissão deixar. */
+    navKeys: string[];
     title: string | null;
     department: string | null;
     grants: string[];
@@ -66,10 +78,14 @@ type ApiTeam = {
   id: string; name: string; ageGroup: string; sportId: string; season: string;
   schedule: unknown; athleteCount: number;
   coaches: { id: string; name: string; title: string }[];
+  /** O preço por omissão da equipa, em cêntimos. `null` sem `billing:read` ou por configurar. */
+  feeCents: number | null;
 };
 
 type ApiAthlete = {
   id: string; name: string; birthdate: string; photoUrl: string | null; status: string; joinedAt: string;
+  /** `null` para quem não tem `family:read` — um treinador não recebe o NIF. */
+  taxId: string | null;
   heightCm: number | null; weightKg: number | null; dominantSide: string | null; squadNumber: number | null;
   medicalValidUntil: string | null; teamId: string | null; position: string | null;
   guardians: { membershipId: string; name: string; email: string; phone: string | null; relation: string; isPayer: boolean }[];
@@ -83,11 +99,13 @@ type ApiAthlete = {
 type ApiStaff = {
   id: string; name: string; email: string; phone: string | null; role: Role;
   title: string | null; department: string | null; isActive: boolean; grants: string[]; revokes: string[];
+  /** O papel da academia atribuído a esta pessoa, quando tem um. */
+  roleId: string | null; roleName: string | null;
   since: string; teamIds: string[];
 };
 
 type ApiSession = {
-  id: string; teamId: string; startsAt: string; endsAt: string; venue: string; status: string;
+  id: string; teamId: string; startsAt: string; endsAt: string; venue: string; dressingRoom: string | null; status: string;
   coachId: string | null; coachName: string | null; recorded: boolean;
   absences: { athleteId: string; status: string }[];
 };
@@ -95,7 +113,7 @@ type ApiSession = {
 /** Um evento pontual do calendário — o que "Novo evento" cria. Ver `GET /api/events`. */
 export type ApiEvent = {
   id: string; teamId: string | null; kind: "TRAINING" | "MATCH" | "TOURNAMENT" | "OTHER";
-  title: string; startsAt: string; endsAt: string; venue: string; cancelled: boolean;
+  title: string; startsAt: string; endsAt: string; venue: string; dressingRoom: string | null; cancelled: boolean;
   coachId: string | null; coachName: string | null;
 };
 
@@ -271,12 +289,14 @@ function build(
     coachIds: t.coaches.map((c) => c.id),
     athleteIds: apiAthletes.filter((a) => a.teamId === t.id).map((a) => a.id),
     schedule: Array.isArray(t.schedule) ? (t.schedule as Team["schedule"]) : [],
+    feeCents: t.feeCents,
   }));
 
   const athletes: Athlete[] = apiAthletes.map((a) => ({
     id: a.id,
     name: a.name,
     birthdate: a.birthdate,
+    taxId: a.taxId ?? undefined,
     teamId: a.teamId ?? "",
     position: a.position ?? undefined,
     guardianIds: a.guardians.map((g) => g.membershipId),
@@ -333,6 +353,8 @@ function build(
     isActive: s.isActive,
     grants: s.grants,
     revokes: s.revokes,
+    roleId: s.roleId,
+    roleName: s.roleName,
   }));
 
   const sessions: TrainingSession[] = apiSessions.map((s) => ({
@@ -341,6 +363,7 @@ function build(
     start: s.startsAt,
     end: s.endsAt,
     venue: s.venue,
+    dressingRoom: s.dressingRoom ?? undefined,
     coachId: s.coachId ?? undefined,
     coachName: s.coachName ?? undefined,
     status: s.status === "DONE" ? "done" : s.status === "CANCELLED" ? "cancelled" : "scheduled",
@@ -419,6 +442,8 @@ function departmentOf(value: string | null): StaffMember["department"] {
       return "direction";
     case "CLINICAL":
       return "clinical";
+    case "SCOUTING":
+      return "scouting";
     case "OPERATIONS":
       return "operations";
     default:

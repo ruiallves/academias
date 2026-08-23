@@ -88,23 +88,58 @@ export class AuthService {
       role: membership.role,
       grants: exceptions.grants,
       revokes: exceptions.revokes,
+      rolePermissions: exceptions.rolePermissions,
+      roleId: exceptions.roleId,
+      roleName: exceptions.roleName,
+      navKeys: exceptions.navKeys,
       scope,
     };
   }
 
-  /** As excepções de acesso desta pessoa — concessões e retiradas por cima do papel. */
+  /**
+   * O papel desta pessoa e as excepções por cima dele.
+   *
+   * Lê-se a cada pedido, na mesma ida à base que já se fazia pelas excepções — um
+   * papel editado às 10h vale às 10h01 para toda a gente que o veste, sem esperar
+   * por nova sessão. Uma cópia guardada no token seria mais barata e teria o
+   * problema clássico: acesso retirado que continua a valer até ao logout.
+   *
+   * Um papel arquivado não conta: cai-se nos valores por omissão do papel-base, e
+   * não numa lista vazia. Ficar sem permissão nenhuma por alguém ter arquivado um
+   * papel seria uma pessoa trancada fora do produto sem ninguém perceber porquê.
+   */
   private async exceptionsFor(
     academyId: string,
     membershipId: string,
-  ): Promise<{ grants: Permission[]; revokes: Permission[] }> {
+  ): Promise<{
+    grants: Permission[];
+    revokes: Permission[];
+    rolePermissions: Permission[] | null;
+    roleId: string | null;
+    roleName: string | null;
+    navKeys: string[];
+  }> {
     return this.prisma.runAs(academyId, async (db) => {
       const m = await db.membership.findFirst({
         where: { id: membershipId },
-        select: { grants: true, revokes: true },
+        select: {
+          grants: true,
+          revokes: true,
+          customRole: {
+            select: { id: true, name: true, permissions: true, navKeys: true, archivedAt: true },
+          },
+        },
       });
+
+      const role = m?.customRole && !m.customRole.archivedAt ? m.customRole : null;
+
       return {
         grants: (m?.grants ?? []) as Permission[],
         revokes: (m?.revokes ?? []) as Permission[],
+        rolePermissions: role ? (role.permissions as Permission[]) : null,
+        roleId: role?.id ?? null,
+        roleName: role?.name ?? null,
+        navKeys: role?.navKeys ?? [],
       };
     });
   }
@@ -124,7 +159,29 @@ export class AuthService {
           where: { membershipId },
           select: { athleteId: true },
         });
-        return { athleteIds: links.map((l) => l.athleteId) };
+        const athleteIds = links.map((l) => l.athleteId);
+
+        /*
+         * Uma família tem **dois** âmbitos, e são coisas diferentes.
+         *
+         * `athleteIds` são os filhos: é por aqui que se filtra tudo o que é
+         * pessoal — a ficha, as mensalidades, as avaliações. `teamIds` são as
+         * equipas onde eles jogam, e servem para o que é **do grupo**: o horário
+         * dos treinos, os jogos, o calendário. Sem os segundos, a agenda da app
+         * do pai vinha vazia; sem os primeiros a filtrar por cima, o pai via a
+         * lista completa dos colegas do filho.
+         *
+         * Quem lê dados pessoais cruza sempre os dois — ver `athletes()` e
+         * `charges()`, que aplicam o filtro de atleta por cima do de equipa.
+         */
+        const memberships = athleteIds.length
+          ? await db.teamMembership.findMany({
+              where: { athleteId: { in: athleteIds } },
+              select: { teamId: true },
+            })
+          : [];
+
+        return { athleteIds, teamIds: [...new Set(memberships.map((m) => m.teamId))] };
       }
 
       // Direção e departamento clínico vêem a academia toda — sem âmbito.

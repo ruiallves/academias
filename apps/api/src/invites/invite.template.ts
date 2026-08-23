@@ -27,6 +27,7 @@ const ROLE_LABEL: Record<Role, string> = {
   COACH: "Equipa técnica",
   STAFF: "Operações",
   MEDICAL: "Departamento clínico",
+  SCOUT: "Departamento de scouting",
   GUARDIAN: "Encarregado de educação",
   ATHLETE: "Atleta",
 };
@@ -38,6 +39,7 @@ const ROLE_BLURB: Record<Role, string> = {
   COORDINATOR: "Atletas, equipas, calendário e avaliações da academia.",
   COACH: "Treinos, presenças e avaliações — das tuas equipas.",
   STAFF: "Consulta de atletas, equipas e calendário.",
+  SCOUT: "Prospectos, observações e vídeo de scouting.",
   MEDICAL: "Boletins clínicos e consultas de toda a academia.",
   GUARDIAN: "A área do teu educando.",
   ATHLETE: "A tua área.",

@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import { PageHeader } from "@/components/Shell";
 import { CatalogPanel } from "@/components/CatalogPanel";
@@ -6,9 +6,12 @@ import { ZeroZeroPanel } from "@/components/ZeroZeroPanel";
 import { cx, Panel, PanelHead, Pill } from "@/components/primitives";
 import { Check, CircleCheck, Wallet } from "@/lib/icons";
 import { academy } from "@/lib/api";
-import type { CatalogKey } from "@/lib/catalogs";
-import { ROLE_PERMISSIONS, type Permission, type Role } from "@/lib/permissions";
-import { ROLE_LABEL, useSession } from "@/session";
+import { CATALOG_KEYS, type CatalogKey } from "@/lib/catalogs";
+import { can, type Permission } from "@/lib/permissions";
+import { AREAS, CLINICAL_AREAS, SCOUTING_AREAS, levelOf, type Area } from "@/lib/access";
+import { archiveRole, loadRoles, useRoles, type AcademyRole } from "@/lib/roles";
+import { RoleDialog } from "@/components/RoleDialog";
+import { useSession } from "@/session";
 import { signalVars } from "@academia/ui/tokens";
 
 /**
@@ -31,8 +34,6 @@ const PRESETS = [
   { name: "Violeta", hex: "#5a4b9c" },
   { name: "Grafite", hex: "#3d3d3d" },
 ];
-
-const CATALOG_KEYS: CatalogKey[] = ["venues", "ageGroups", "staffTitles", "eventTypes"];
 
 export default function Settings() {
   const { session } = useSession();
@@ -131,19 +132,7 @@ export default function Settings() {
             ))}
           </Panel>
 
-          <Panel>
-            <PanelHead title="Papéis e permissões" hint="quem vê o quê, por omissão" />
-            <PermissionMatrix />
-            <p className="border-t border-line px-5 py-3 text-meta leading-relaxed text-ink-3">
-              Isto é o que cada papel dá a toda a gente que o tem. Para abrir ou fechar acesso a{" "}
-              <strong className="font-medium text-ink-2">uma pessoa em concreto</strong> — dar mensalidades a
-              um treinador, tirar o boletim clínico a outro — abre a ficha dela em{" "}
-              <Link to="/staff" className="font-medium text-ink hover:underline">
-                Staff
-              </Link>
-              , separador Acesso.
-            </p>
-          </Panel>
+          <RolesPanel />
         </div>
 
         <div className="space-y-3">
@@ -214,26 +203,129 @@ function Row({ label, value, muted }: { label: string; value: string; muted?: bo
 }
 
 /**
- * A matriz de permissões existe para tornar visível o que costuma ficar escondido
- * em código. Um diretor consegue ver, sem perguntar a ninguém, que o treinador não
- * tem acesso financeiro.
+ * Papéis e permissões.
  *
- * É o retrato dos **papéis** — o que vale por omissão para toda a gente que os
- * tem. As excepções são de cada pessoa e vivem na ficha dela, porque é lá que a
- * pergunta aparece ("porque é que este treinador vê as mensalidades?"). Uma tabela
- * que misturasse as duas coisas deixava de responder a qualquer uma.
+ * Era uma matriz só de leitura, desenhada a partir do mapa em código: mostrava o
+ * que estava decidido e não deixava decidir nada. Agora os papéis são linhas da
+ * academia — cria-se, edita-se, escolhe-se o que cada um vê — e a matriz continua
+ * lá porque a pergunta que ela responde ("porque é que o treinador não vê as
+ * mensalidades?") não desapareceu; passou a ter resposta editável.
  */
-function PermissionMatrix() {
-  const roles: Role[] = ["DIRECTOR", "COORDINATOR", "COACH", "STAFF"];
-  const areas: { label: string; read: Permission; write?: Permission }[] = [
-    { label: "Atletas", read: "athlete:read", write: "athlete:write" },
-    { label: "Famílias", read: "family:read", write: "family:write" },
-    { label: "Equipas", read: "team:read", write: "team:write" },
-    { label: "Presenças", read: "attendance:read", write: "attendance:write" },
-    { label: "Mensalidades", read: "billing:read", write: "billing:write" },
-    { label: "Comunicação", read: "comms:read", write: "comms:write" },
-    { label: "Avaliações", read: "evaluation:read", write: "evaluation:write" },
-  ];
+function RolesPanel() {
+  const { session } = useSession();
+  const { roles, loaded, error } = useRoles();
+  const [editing, setEditing] = useState<AcademyRole | null>(null);
+  const [creating, setCreating] = useState(false);
+
+  useEffect(() => {
+    void loadRoles();
+  }, []);
+
+  const mayCreate = can(session, "role:write");
+
+  return (
+    <>
+      <Panel>
+        <PanelHead title="Papéis e permissões" hint={loaded ? `${roles.length} papéis` : "a carregar…"}>
+          {mayCreate && (
+            <button type="button" className="ctl-primary" onClick={() => setCreating(true)}>
+              Novo papel
+            </button>
+          )}
+        </PanelHead>
+
+        {error && <p className="px-5 py-3 text-meta text-risk">{error}</p>}
+
+        <ul>
+          {roles.map((role) => (
+            <li
+              key={role.id}
+              className="flex flex-wrap items-center gap-3 border-b border-line px-5 py-3 last:border-b-0"
+            >
+              <div className="min-w-0 flex-1">
+                <div className="flex items-center gap-2">
+                  <span className="text-body font-medium text-ink">{role.name}</span>
+                  {role.isSystem && <Pill>de origem</Pill>}
+                  {role.navKeys.length > 0 && <Pill tone="signal">menu próprio</Pill>}
+                </div>
+                <div className="text-meta text-ink-3">
+                  {role.description}
+                  <span className="text-ink-4">
+                    {" · "}
+                    {role.people} {role.people === 1 ? "pessoa" : "pessoas"}
+                  </span>
+                </div>
+              </div>
+
+              {role.editable ? (
+                <div className="flex shrink-0 gap-1.5">
+                  <button type="button" className="ctl-ghost" onClick={() => setEditing(role)}>
+                    Editar
+                  </button>
+                  {!role.isSystem && role.people === 0 && (
+                    <button type="button" className="ctl-ghost" onClick={() => void archiveRole(role.id)}>
+                      Arquivar
+                    </button>
+                  )}
+                </div>
+              ) : (
+                /*
+                 * Sem botão, em vez de botão desactivado. Um botão que não faz nada
+                 * ensina que existe ali alguma coisa escondida — e a razão de não se
+                 * poder editar (é o teu próprio papel, ou está acima de ti) não cabe
+                 * num tooltip.
+                 */
+                <span className="shrink-0 text-meta text-ink-4">
+                  {role.key === "presidente" ? "imutável" : "—"}
+                </span>
+              )}
+            </li>
+          ))}
+        </ul>
+
+        <p className="border-t border-line px-5 py-3 text-meta leading-relaxed text-ink-3">
+          Um papel vale para toda a gente que o tem. Para abrir ou fechar acesso a{" "}
+          <strong className="font-medium text-ink-2">uma pessoa em concreto</strong> — dar mensalidades a um
+          treinador, tirar-lhe o boletim clínico — abre a ficha dela em{" "}
+          <Link to="/staff" className="font-medium text-ink hover:underline">
+            Staff
+          </Link>
+          , separador Acesso.
+        </p>
+      </Panel>
+
+      {roles.length > 0 && (
+        <Panel>
+          <PanelHead title="Quem vê o quê" hint="uma coluna por papel" />
+          <PermissionMatrix roles={roles} />
+        </Panel>
+      )}
+
+      {(creating || editing) && (
+        <RoleDialog
+          role={editing ?? undefined}
+          session={session}
+          onClose={() => {
+            setCreating(false);
+            setEditing(null);
+          }}
+        />
+      )}
+    </>
+  );
+}
+
+/**
+ * A matriz existe para tornar visível o que costuma ficar escondido em código — e
+ * agora em base de dados. Um diretor consegue ver, sem perguntar a ninguém, que o
+ * treinador não tem acesso financeiro.
+ *
+ * É o retrato dos **papéis**. As excepções são de cada pessoa e vivem na ficha
+ * dela, porque é lá que a pergunta aparece. Uma tabela que misturasse as duas
+ * deixava de responder a qualquer uma.
+ */
+function PermissionMatrix({ roles }: { roles: AcademyRole[] }) {
+  const areas: Area[] = [...AREAS, ...CLINICAL_AREAS, ...SCOUTING_AREAS];
 
   return (
     <div className="overflow-x-auto">
@@ -242,8 +334,8 @@ function PermissionMatrix() {
           <tr className="border-b border-line bg-sunken/60">
             <th className="px-5 py-2 text-left text-meta font-medium text-ink-3">Área</th>
             {roles.map((r) => (
-              <th key={r} className="px-3 py-2 text-center text-meta font-medium text-ink-3 whitespace-nowrap">
-                {ROLE_LABEL[r]}
+              <th key={r.id} className="px-3 py-2 text-center text-meta font-medium text-ink-3 whitespace-nowrap">
+                {r.name}
               </th>
             ))}
           </tr>
@@ -253,10 +345,9 @@ function PermissionMatrix() {
             <tr key={area.label} className="border-b border-line last:border-0">
               <td className="px-5 py-2.5 text-ink-2">{area.label}</td>
               {roles.map((role) => {
-                const perms = ROLE_PERMISSIONS[role];
-                const level = perms.includes(area.write!) ? "write" : perms.includes(area.read) ? "read" : "none";
+                const level = levelOf(area, new Set(role.permissions as Permission[]));
                 return (
-                  <td key={role} className="px-3 py-2.5 text-center">
+                  <td key={role.id} className="px-3 py-2.5 text-center">
                     {level === "write" ? (
                       <Pill tone="signal">editar</Pill>
                     ) : level === "read" ? (

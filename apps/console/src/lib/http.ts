@@ -19,6 +19,20 @@ import { readSession } from "@/lib/session";
 
 const BASE = (import.meta.env.VITE_API_URL as string | undefined) ?? "http://localhost:3000";
 
+/**
+ * A origem da API, para links que o browser abre directamente.
+ *
+ * Páginas servidas pelo servidor — a página do clube, a inscrição de sócio — não
+ * passam por `fetch`: são endereços que se abrem num separador. Em produção a API
+ * e a consola partilham origem e um caminho relativo bastava; em desenvolvimento
+ * estão em portas diferentes, e um `/l/clube/sersocio` relativo aterrava no Vite,
+ * que devolve a própria consola. Era esse o motivo de a página de inscrição não
+ * abrir.
+ */
+export function apiOrigin(): string {
+  return BASE.replace(/\/$/, "");
+}
+
 /** Erro com o estado HTTP à vista, para a UI poder distinguir 403 de 500. */
 export class ApiError extends Error {
   constructor(
@@ -92,6 +106,28 @@ export async function apiPatch<T>(path: string, body: unknown): Promise<T> {
   const token = readSession()?.accessToken;
   const res = await fetch(`${BASE}${path}`, {
     method: "PATCH",
+    headers: {
+      "Content-Type": "application/json",
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      "x-academy-slug": academySlug(),
+    },
+    body: JSON.stringify(body),
+  });
+
+  if (!res.ok) {
+    const parsed = await res.json().catch(() => null);
+    const msg = Array.isArray(parsed?.message) ? parsed.message.join("; ") : parsed?.message;
+    throw new ApiError(res.status, msg ?? mensagem(res.status));
+  }
+
+  return res.json() as Promise<T>;
+}
+
+/** Substituição do estado de um recurso. Mesma forma que `apiPost`, verbo diferente. */
+export async function apiPut<T>(path: string, body: unknown): Promise<T> {
+  const token = readSession()?.accessToken;
+  const res = await fetch(`${BASE}${path}`, {
+    method: "PUT",
     headers: {
       "Content-Type": "application/json",
       ...(token ? { Authorization: `Bearer ${token}` } : {}),

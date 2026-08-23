@@ -4,12 +4,16 @@ import {
   Home,
   Shield,
   Whistle,
+  Binoculars,
+  Eye,
   CalendarDays,
   ClipboardCheck,
   Receipt,
   Megaphone,
   Gauge,
   FileText,
+  IdCard,
+  Send,
   Settings,
   HeartPulse,
   Stethoscope,
@@ -18,7 +22,32 @@ import {
 import type { Permission, Session } from "@/lib/permissions";
 import { permissionsOf } from "@/lib/permissions";
 
+/**
+ * A navegação, como catálogo.
+ *
+ * Eram três listas — direção, equipa técnica, departamento clínico — escolhidas
+ * por `session.role`. Enquanto os papéis estavam em código isso funcionava; a
+ * partir do momento em que uma academia cria papéis, deixa de funcionar: um papel
+ * novo não teria lista nenhuma, e acrescentar um quarto array por cada papel
+ * criado é a definição de não configurável.
+ *
+ * Passa a haver **uma** lista, com uma chave estável por destino, e duas
+ * passagens de filtro:
+ *
+ *   1. **Permissão** — o que a pessoa pode. É segurança (a sério no servidor;
+ *      aqui é só não mostrar o que não abriria).
+ *   2. **Menus do papel** (`navKeys`) — o que a academia decidiu mostrar a quem
+ *      veste este papel. É **preferência**, nunca segurança: esconder
+ *      "Mensalidades" não tira `billing:read`, e quem souber o URL chega lá na
+ *      mesma. Quem quiser fechar mesmo, tira a permissão.
+ *
+ * Sem `navKeys` definidos mostra-se tudo o que a permissão deixa — o
+ * comportamento de sempre, e o valor por omissão dos papéis semeados.
+ */
+
 export type NavItem = {
+  /** Estável. É o que a academia guarda em `AcademyRole.navKeys`; o rótulo pode mudar. */
+  key: string;
   label: string;
   to: string;
   icon: LucideIcon;
@@ -45,56 +74,76 @@ export type NavCounts = {
 };
 
 /**
- * O grupo clínico, partilhado pela direção e pela equipa técnica.
+ * Uma ordem para toda a gente.
  *
- * É literalmente o mesmo destino nos dois menus: o que muda é o que lá se
- * encontra, porque `listAthletes` já limita ao âmbito de quem entra. Duplicar o
- * ecrã por papel daria duas cópias a divergirem — e uma delas a esquecer-se do
- * filtro mais cedo ou mais tarde.
- *
- * Declarado antes dos menus que o usam: um `const` mais abaixo estaria na
- * temporal dead zone quando os arrays fossem construídos.
+ * A direção via "Atletas" antes de "Equipas" e o treinador o contrário — uma
+ * diferença que ninguém pediu e que só existia porque eram listas separadas. Com
+ * uma lista só, a ordem é a da academia: primeiro as pessoas, depois o que se faz
+ * com elas, depois o dinheiro, depois o desenvolvimento. Quem quiser outra coisa
+ * esconde itens; reordenar por papel seria configuração a mais para o que resolve.
  */
-const CLINICAL_GROUP: NavGroup = {
-  label: "Clínico",
-  items: [
-    {
-      label: "Boletins",
-      to: "/clinico",
-      icon: HeartPulse,
-      requires: "clinical:read",
-      badge: (c) => c.athletesOut || undefined,
-    },
-    { label: "Consultas", to: "/clinico/consultas", icon: Stethoscope, requires: "clinical:read" },
-  ],
-};
-
-/**
- * A ordem é a que o fundador definiu. Os rótulos de grupo servem só para dar ar
- * às secções — não reordenam nada.
- */
-const DIRECTOR_NAV: NavGroup[] = [
+export const NAV_CATALOG: NavGroup[] = [
   {
-    items: [{ label: "Visão geral", to: "/", icon: LayoutGrid, requires: "academy:read" }],
+    items: [{ key: "overview", label: "Visão geral", to: "/", icon: LayoutGrid, requires: "academy:read" }],
   },
   {
     label: "Pessoas",
     items: [
-      { label: "Atletas", to: "/atletas", icon: Users, requires: "athlete:read" },
-      { label: "Famílias", to: "/familias", icon: Home, requires: "family:read" },
-      { label: "Equipas", to: "/equipas", icon: Shield, requires: "team:read" },
-      { label: "Staff", to: "/staff", icon: Whistle, requires: "staff:read" },
+      { key: "athletes", label: "Atletas", to: "/atletas", icon: Users, requires: "athlete:read" },
+      { key: "families", label: "Famílias", to: "/familias", icon: Home, requires: "family:read" },
+      { key: "teams", label: "Equipas", to: "/equipas", icon: Shield, requires: "team:read" },
+      { key: "staff", label: "Staff", to: "/staff", icon: Whistle, requires: "staff:read" },
+      // Logo a seguir ao staff: um sócio é o terceiro vínculo com o clube, e o
+      // único que não passa por treinar ninguém.
+      { key: "members", label: "Sócios", to: "/socios", icon: IdCard, requires: "member:read" },
     ],
   },
-  // A direção responde pelo atleta perante a família e vê o historial clínico de
-  // toda a academia. `listAthletes` é que limita o âmbito — o mesmo ecrã serve o
-  // treinador, que só vê os seus.
-  CLINICAL_GROUP,
+  {
+    label: "Clínico",
+    items: [
+      {
+        key: "clinical",
+        label: "Boletins",
+        to: "/clinico",
+        icon: HeartPulse,
+        requires: "clinical:read",
+        badge: (c) => c.athletesOut || undefined,
+      },
+      { key: "consultations", label: "Consultas", to: "/clinico/consultas", icon: Stethoscope, requires: "clinical:read" },
+    ],
+  },
+  /*
+    Scouting.
+
+    Grupo próprio e não uma entrada em "Pessoas": um prospecto **não é** uma
+    pessoa da academia, e arrumá-lo ao lado de Atletas e Famílias era a primeira
+    forma de os confundir.
+
+    Sem "Visão geral": para quem trabalha em scouting ela **é** a página inicial
+    (ver `Overview` em `App.tsx`), e um item de menu que repete o logótipo é um
+    item a mais. As shortlists também saíram — continuam a existir e abrem-se a
+    partir da ficha de cada prospecto, mas não são um destino por onde se comece.
+
+    "Pedidos" é a única entrada que um treinador vê: exige `scouting:request`, não
+    `scouting:read`. É a porta para ele dizer o que lhe falta sem lhe abrir os
+    dossiês de miúdos de outros clubes.
+  */
+  {
+    label: "Scouting",
+    items: [
+      { key: "scouting-prospects", label: "Prospects", to: "/scouting/prospects", icon: Eye, requires: "scouting:read" },
+      { key: "scouting-observations", label: "Observações", to: "/scouting/observacoes", icon: Binoculars, requires: "scouting:read" },
+      { key: "scouting-requests", label: "Pedidos", to: "/scouting/pedidos", icon: Send, requires: "scouting:request" },
+    ],
+  },
   {
     label: "Operação",
     items: [
-      { label: "Calendário", to: "/calendario", icon: CalendarDays, requires: "calendar:read" },
+      { key: "calendar", label: "Calendário", to: "/calendario", icon: CalendarDays, requires: "calendar:read" },
       {
+        // "Presenças" e não "Treinos": o menu diz o que lá se faz, não o que se lá
+        // vê. O calendário é que responde a "quando é o próximo treino".
+        key: "attendance",
         label: "Presenças",
         to: "/presencas",
         icon: ClipboardCheck,
@@ -102,10 +151,20 @@ const DIRECTOR_NAV: NavGroup[] = [
         badge: (c) => c.sessionsToRecord || undefined,
       },
       {
+        /*
+          Convocar exige `attendance:read` e não `calendar:read`.
+
+          Parece um detalhe e não é: o departamento clínico e o de scouting têm
+          calendário — precisam de saber quando é o treino de quem recupera, e
+          quando joga o miúdo que estão a seguir — mas convocar não é trabalho de
+          nenhum dos dois. Decidir quem joga é da mesma família que registar quem
+          esteve, e é essa a permissão que separa as duas coisas.
+        */
+        key: "callups",
         label: "Convocatórias",
         to: "/convocatorias",
         icon: Megaphone,
-        requires: "calendar:read",
+        requires: "attendance:read",
         badge: (c) => c.callUpsToSubmit || undefined,
       },
     ],
@@ -114,6 +173,7 @@ const DIRECTOR_NAV: NavGroup[] = [
     label: "Gestão",
     items: [
       {
+        key: "fees",
         label: "Mensalidades",
         to: "/mensalidades",
         icon: Receipt,
@@ -121,6 +181,7 @@ const DIRECTOR_NAV: NavGroup[] = [
         badge: (c) => c.overdueFees || undefined,
       },
       {
+        key: "comms",
         label: "Comunicação",
         to: "/comunicacao",
         icon: Megaphone,
@@ -132,117 +193,43 @@ const DIRECTOR_NAV: NavGroup[] = [
   {
     label: "Desenvolvimento",
     items: [
-      { label: "Avaliações", to: "/avaliacoes", icon: Gauge, requires: "evaluation:read" },
-      { label: "Relatórios", to: "/relatorios", icon: FileText, requires: "report:read" },
-    ],
-  },
-];
-
-const COACH_NAV: NavGroup[] = [
-  {
-    items: [{ label: "Visão geral", to: "/", icon: LayoutGrid, requires: "academy:read" }],
-  },
-  {
-    label: "Equipa",
-    items: [
-      { label: "Equipas", to: "/equipas", icon: Shield, requires: "team:read" },
-      { label: "Atletas", to: "/atletas", icon: Users, requires: "athlete:read" },
-    ],
-  },
-  {
-    label: "Operação",
-    items: [
-      // Mesma dualidade que a direção tem: Calendário é a vista de planeamento
-      // (mês, jogos, convocatórias); Treinos é a lista de trabalho — o que falta
-      // registar. `useEvents`/`listTeams` já limitam tudo às equipas do
-      // treinador; não há filtro extra a fazer aqui.
-      { label: "Calendário", to: "/calendario", icon: CalendarDays, requires: "calendar:read" },
       {
-        // "Presenças" e não "Treinos": o menu diz o que se lá faz, não o que se lá
-        // vê. O treinador entra aqui para registar quem faltou — o calendário é
-        // que responde a "quando é o próximo treino".
-        label: "Presenças",
-        to: "/presencas",
-        icon: ClipboardCheck,
-        requires: "attendance:read",
-        badge: (c) => c.sessionsToRecord || undefined,
-      },
-      {
-        label: "Convocatórias",
-        to: "/convocatorias",
-        icon: Megaphone,
-        requires: "calendar:read",
-        badge: (c) => c.callUpsToSubmit || undefined,
-      },
-    ],
-  },
-  CLINICAL_GROUP,
-  {
-    label: "Desenvolvimento",
-    items: [
-      {
+        key: "evaluations",
         label: "Avaliações",
         to: "/avaliacoes",
         icon: Gauge,
         requires: "evaluation:read",
         badge: (c) => c.pendingEvaluations || undefined,
       },
-      { label: "Relatórios", to: "/relatorios", icon: FileText, requires: "report:read" },
-    ],
-  },
-  {
-    label: "Famílias",
-    items: [
-      // O treinador comunica com os pais das suas equipas — o servidor limita o
-      // público a "Pais" e o âmbito aos encarregados dos seus atletas.
-      { label: "Comunicação", to: "/comunicacao", icon: Megaphone, requires: "comms:read" },
-    ],
-  },
-];
-
-/**
- * Departamento clínico.
- *
- * Vê a academia toda (`isAcademyWide`), mas só o que lhe diz respeito: atletas,
- * equipas e calendário — sem mensalidades, sem avaliações desportivas. O boletim
- * é o ecrã dele, e é o único sítio da aplicação com `clinical:read`.
- */
-const MEDICAL_NAV: NavGroup[] = [
-  {
-    items: [{ label: "Visão geral", to: "/", icon: LayoutGrid, requires: "academy:read" }],
-  },
-  CLINICAL_GROUP,
-  {
-    label: "Academia",
-    items: [
-      { label: "Atletas", to: "/atletas", icon: Users, requires: "athlete:read" },
-      { label: "Equipas", to: "/equipas", icon: Shield, requires: "team:read" },
-      { label: "Calendário", to: "/calendario", icon: CalendarDays, requires: "calendar:read" },
+      { key: "reports", label: "Relatórios", to: "/relatorios", icon: FileText, requires: "report:read" },
     ],
   },
 ];
 
 export const SETTINGS_ITEM: NavItem = {
+  key: "settings",
   label: "Definições",
   to: "/definicoes",
   icon: Settings,
   requires: "settings:write",
 };
 
+/** Todos os destinos configuráveis, achatados — é o que o editor de papéis mostra. */
+export const NAV_ITEMS: NavItem[] = NAV_CATALOG.flatMap((g) => g.items);
+
 /**
- * A navegação é derivada das permissões, não do papel. Um treinador a quem o
- * diretor conceda `billing:read` passa a ver Mensalidades sem alterações de código.
+ * A navegação desta pessoa.
+ *
+ * Derivada das permissões e depois estreitada pelos menus do papel. Um treinador
+ * a quem a direção conceda `billing:read` passa a ver Mensalidades sem alterações
+ * de código — e continua a passar, agora também sem alterações de configuração.
  */
 export function navFor(session: Session): NavGroup[] {
   const perms = permissionsOf(session);
-  const source =
-    session.role === "MEDICAL"
-      ? MEDICAL_NAV
-      : session.role === "COACH" || session.role === "STAFF"
-        ? COACH_NAV
-        : DIRECTOR_NAV;
+  const chosen = session.navKeys?.length ? new Set(session.navKeys) : null;
 
-  return source
-    .map((group) => ({ ...group, items: group.items.filter((i) => perms.has(i.requires)) }))
-    .filter((group) => group.items.length > 0);
+  return NAV_CATALOG.map((group) => ({
+    ...group,
+    items: group.items.filter((i) => perms.has(i.requires) && (!chosen || chosen.has(i.key))),
+  })).filter((group) => group.items.length > 0);
 }

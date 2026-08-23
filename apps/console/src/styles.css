@@ -72,7 +72,11 @@
  */
 :root {
   --nav-header-h: 56px;
-  --nav-item-h: 34px;
+  /* A letra do menu, um degrau abaixo do corpo de texto. As alturas acompanham-na:
+     uma linha mais baixa com a mesma letra ficaria apertada, e é isso que dá ao
+     menu o ar de coisa comprimida. */
+  --nav-font: 0.78125rem;
+  --nav-item-h: 32px;
   --nav-group-gap: 18px;
   --nav-search-h: 32px;
   --nav-search-pad: 8px;
@@ -84,7 +88,8 @@
 @media (max-height: 900px) {
   :root {
     --nav-header-h: 50px;
-    --nav-item-h: 30px;
+    --nav-font: 0.765625rem;
+    --nav-item-h: 28px;
     --nav-group-gap: 14px;
     --nav-search-h: 30px;
     --nav-search-pad: 7px;
@@ -95,7 +100,8 @@
 @media (max-height: 800px) {
   :root {
     --nav-header-h: 46px;
-    --nav-item-h: 28px;
+    --nav-font: 0.75rem;
+    --nav-item-h: 26px;
     --nav-group-gap: 12px;
     --nav-search-h: 28px;
     --nav-search-pad: 6px;
@@ -113,7 +119,8 @@
 @media (max-height: 680px) {
   :root {
     --nav-header-h: 44px;
-    --nav-item-h: 26px;
+    --nav-font: 0.75rem;
+    --nav-item-h: 24px;
     --nav-group-gap: 10px;
     --nav-search-h: 26px;
     --nav-search-pad: 5px;
@@ -126,6 +133,7 @@
 
 .nav-item {
   height: var(--nav-item-h);
+  font-size: var(--nav-font);
 }
 
 .nav-group + .nav-group {
@@ -147,4 +155,112 @@
 /* O separador é o rótulo por outros meios: aparece só quando o rótulo sai. */
 .nav-sep {
   display: var(--nav-sep-display);
+}
+
+/* ---------------------------------------------------------------------------
+ * Densidade da página
+ * ---------------------------------------------------------------------------
+ *
+ * A mesma ideia da navegação, agora para o conteúdo: num portátil de 1366×768
+ * sobram cerca de 635px de viewport, e a Visão geral da direção — cabeçalho,
+ * "Precisa de atenção", quatro métricas, a faixa da semana e dois painéis —
+ * pedia perto de 780px. Rolava.
+ *
+ * ## Porquê a raiz e não cada componente
+ *
+ * Porque o sistema de design é feito em `rem`: os tamanhos de texto
+ * (`--text-body`, `--text-metric`) e o espaçamento do Tailwind (`p-4`, `gap-3`)
+ * são todos relativos à raiz. Mexer num sítio encolhe texto e ar **na mesma
+ * proporção**, que é o que mantém a composição intacta. Encolher só o
+ * espaçamento daria uma página apertada com letra grande; encolher só a letra
+ * daria uma página vazia com texto pequeno.
+ *
+ * Os degraus são poucos e largos de propósito. Uma escala contínua (`clamp` com
+ * `vh`) faria a página respirar de forma diferente em cada janela, e ninguém
+ * consegue rever um desenho que nunca é duas vezes o mesmo.
+ *
+ * ## O que isto não faz
+ *
+ * Não promete que **tudo** cabe. Uma lista de 200 atletas não cabe em ecrã
+ * nenhum, e forçá-la a caber seria esconder atletas — pior do que uma barra de
+ * scroll. O que isto garante é que a moldura (menu, cabeçalho, painéis de
+ * resumo) fica sempre no ecrã, e que só rola aquilo que é genuinamente uma
+ * lista longa.
+ */
+
+/* 1440×900 e janelas encostadas em ecrãs grandes. */
+@media (max-height: 900px) {
+  html { font-size: 15.5px; }
+  :root { --pg-pad: 1.15rem; }
+}
+
+@media (max-height: 820px) {
+  html { font-size: 15px; }
+  :root { --pg-pad: 1rem; }
+}
+
+/* O caso comum: 1366×768 com barra do browser e barra de tarefas. */
+@media (max-height: 740px) {
+  html { font-size: 14.25px; }
+  :root { --pg-pad: 0.9rem; }
+}
+
+@media (max-height: 660px) {
+  html { font-size: 13.5px; }
+  :root { --pg-pad: 0.8rem; }
+}
+
+:root {
+  --pg-pad: 1.5rem;
+}
+
+/* O padding da página vem daqui e não de utilitários fixos — é o que permite ao
+   degrau de densidade mexer nele sem tocar em nenhuma rota. */
+.page-pad {
+  padding: var(--pg-pad) var(--pg-pad);
+}
+
+@media (min-width: 1280px) {
+  .page-pad { padding-inline: calc(var(--pg-pad) * 1.35); }
+}
+
+@media (min-width: 1536px) {
+  .page-pad { padding-inline: calc(var(--pg-pad) * 1.7); }
+}
+
+/* ---------------------------------------------------------------------------
+ * O menu cresceu
+ * ---------------------------------------------------------------------------
+ *
+ * A direção tinha 13 itens em 5 grupos quando a escala acima foi calculada. Com
+ * o Scouting e os Sócios são 19 em 7 — mais 6 linhas e 2 separadores, cerca de
+ * 180px. Os degraus baixos precisam de os absorver, e o sítio onde há folga a
+ * ganhar sem perder legibilidade é o espaço **entre grupos**, não a altura de
+ * cada linha: um item de 22px lê-se mal, e 8px entre grupos ainda separa.
+ */
+@media (max-height: 800px) {
+  :root {
+    --nav-item-h: 25px;
+    --nav-group-gap: 9px;
+  }
+}
+
+@media (max-height: 680px) {
+  :root {
+    --nav-item-h: 23px;
+    --nav-group-gap: 7px;
+    --nav-search-h: 25px;
+    --nav-search-pad: 4px;
+  }
+}
+
+/* O ponto do indicador de carregamento. Lento e discreto de propósito — ver
+   `Loading` em `components/primitives.tsx`. */
+@keyframes pulse-dot {
+  0%, 100% { opacity: 0.25; transform: scale(0.85); }
+  50%      { opacity: 1;    transform: scale(1); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  [role="status"] span[style*="pulse-dot"] { animation: none !important; opacity: 0.6; }
 }

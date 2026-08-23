@@ -7,6 +7,7 @@ import { PrismaService } from "./prisma/prisma.service";
 import { NotificationsService } from "./notifications/notifications.service";
 import { PushService } from "./notifications/push.service";
 import { PushController } from "./notifications/push.controller";
+import { NotificationsController } from "./notifications/notifications.controller";
 import { EupagoClient } from "./billing/eupago.client";
 import { BillingService } from "./billing/billing.service";
 import { BillingController } from "./billing/billing.controller";
@@ -15,8 +16,18 @@ import { LandingController } from "./landing/landing.controller";
 import { LandingService } from "./landing/landing.service";
 import { InvitesController, InvitePageController } from "./invites/invites.controller";
 import { InvitesService } from "./invites/invites.service";
+import { MembersController, PublicMembersController } from "./members/members.controller";
+import { MembersService } from "./members/members.service";
+import { ScoutingController, ScoutingVideoController, ScoutingWorkflowController } from "./scouting/scouting.controller";
+import { ScoutingService } from "./scouting/scouting.service";
+import { ScoutingVideoService } from "./scouting/scouting-video.service";
+import { ScoutingWorkflowService } from "./scouting/scouting-workflow.service";
+import { RolesController } from "./roles/roles.controller";
+import { RolesService } from "./roles/roles.service";
 import { AcademyController } from "./academy/academy.controller";
 import { AcademyService } from "./academy/academy.service";
+import { CatalogsController } from "./academy/catalogs.controller";
+import { CatalogsService } from "./academy/catalogs.service";
 import { AthletesService } from "./academy/athletes.service";
 import { MatchesController } from "./academy/matches.controller";
 import { MatchesService } from "./academy/matches.service";
@@ -26,6 +37,11 @@ import { PlatformController } from "./platform/platform.controller";
 import { PlatformService } from "./platform/platform.service";
 import { PlatformGuard } from "./platform/platform.guard";
 import { PlatformPrisma } from "./platform/platform.prisma";
+import { ContactsController, ContactsCalendarController } from "./platform/contacts.controller";
+import { ContactsService } from "./platform/contacts.service";
+import { FamilyInviteController, FamilySignupController } from "./family/family-invites.controller";
+import { FamilyInvitesService } from "./family/family-invites.service";
+import { SupabaseAccountsService } from "./auth/supabase-accounts.service";
 
 /**
  * Monólito modular.
@@ -58,10 +74,24 @@ import { PlatformPrisma } from "./platform/platform.prisma";
     InvitesController,
     InvitePageController,
     AcademyController,
+    CatalogsController,
+    RolesController,
+    ScoutingController,
+    MembersController,
+    // Público: a inscrição de sócio a partir da página do clube.
+    PublicMembersController,
+    ScoutingVideoController,
+    ScoutingWorkflowController,
     MatchesController,
     AnnouncementsController,
     PushController,
+    NotificationsController,
     PlatformController,
+    ContactsController,
+    FamilyInviteController,
+    FamilySignupController,
+    // Público por construção — o token no URL é que autentica. Ver o ficheiro.
+    ContactsCalendarController,
   ],
   providers: [
     // O throttler como guard global — aplica-se a todas as rotas, incluindo as
@@ -75,12 +105,21 @@ import { PlatformPrisma } from "./platform/platform.prisma";
     LandingService,
     InvitesService,
     AcademyService,
+    CatalogsService,
+    RolesService,
+    ScoutingService,
+    MembersService,
+    ScoutingVideoService,
+    ScoutingWorkflowService,
     AthletesService,
     MatchesService,
     AnnouncementsService,
     PlatformService,
     PlatformGuard,
     PlatformPrisma,
+    ContactsService,
+    FamilyInvitesService,
+    SupabaseAccountsService,
   ],
   exports: [PrismaService, NotificationsService],
 })

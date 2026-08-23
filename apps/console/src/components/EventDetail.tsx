@@ -12,7 +12,7 @@ import {
   type CalendarEvent,
 } from "@/lib/calendar";
 import { apiPatch } from "@/lib/http";
-import { events as storeEvents, reloadAcademy } from "@/lib/store";
+import { events as storeEvents, matches as storeMatches, reloadAcademy } from "@/lib/store";
 import { athleteById, coachById, listAthletes, teamById } from "@/lib/api";
 import { availabilityOf, isUnavailable, useClinicalRecords } from "@/lib/clinical";
 import { longDate, shortName, time } from "@/lib/format";
@@ -55,9 +55,17 @@ export function EventDetail({
   const editable = can(session, "calendar:write") || can(session, "attendance:write");
   const past = event.end < new Date();
 
-  // Um evento genérico vive na base (`store.events`); um jogo semeado ainda é
-  // local. O cancelar segue o caminho certo consoante a origem.
-  const isApiEvent = storeEvents.some((e) => e.id === event.id);
+  /*
+   * O que está na base e o que ainda é local.
+   *
+   * Um evento genérico vive em `store.events`, um jogo a sério em `store.matches`
+   * — tabelas diferentes, mas o mesmo `PATCH /api/events/:id` alcança as duas. O
+   * que sobra (jogos de demonstração semeados no browser) continua a cancelar-se
+   * localmente. Sem contar os jogos aqui, cancelar um jogo real caía no caminho
+   * local e não fazia nada de visível.
+   */
+  const isApiEvent =
+    storeEvents.some((e) => e.id === event.id) || storeMatches.some((m) => m.id === event.id);
   const [cancelling, setCancelling] = useState(false);
 
   async function toggleCancel() {
@@ -118,7 +126,7 @@ export function EventDetail({
           {/* Factos básicos — sempre presentes, sejam quais forem o tipo e o estado. */}
           <dl className="space-y-2.5 border-b border-line px-5 py-4">
             <Fact label={capitalize(longDate(event.start))} sub={`${time(event.start)} – ${time(event.end)}`} />
-            <Fact icon={MapPin} label={event.venue} />
+            <Fact icon={MapPin} label={event.venue} sub={event.dressingRoom ?? undefined} />
             <Fact
               icon={Whistle}
               label={coachName ?? "Sem treinador atribuído"}

@@ -14,7 +14,9 @@
     "outDir": "./dist",
     "rootDir": "./src",
     "baseUrl": "./",
-    "incremental": true,
+    // Sem "incremental": nest-cli.json tem deleteOutDir:true, e o tsc incremental
+    // não sabe que o dist foi apagado por fora — pensa que já emitiu tudo e salta
+    // a escrita, deixando dist/main.js em falta logo no primeiro "0 errors".
     "skipLibCheck": true,
     "strict": true,
     "strictNullChecks": true,

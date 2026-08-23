@@ -70,7 +70,29 @@ export class EupagoClient implements OnModuleInit {
     return this.config.getOrThrow<string>("EUPAGO_BASE_URL");
   }
 
+  /**
+   * A euPago está ligada?
+   *
+   * Sem `EUPAGO_API_KEY` o cliente entra em **modo de desenvolvimento**: devolve
+   * uma referência de teste em vez de chamar o provedor, para o fluxo da app da
+   * família se poder percorrer sem credenciais reais.
+   *
+   * O que isto **não** faz é fingir um pagamento. A cobrança fica exactamente
+   * onde ficaria na vida real depois de gerar uma referência — por liquidar, à
+   * espera do webhook — e nenhum `Charge` passa a pago por este caminho. A regra
+   * de que só o webhook liquida continua inteira; o que se simula é o passo de
+   * pedir a referência, não o de a pagar.
+   */
+  private get devMode(): boolean {
+    return (this.config.get<string>("EUPAGO_API_KEY") ?? "") === "";
+  }
+
   async createMbWayCharge(req: ChargeRequest & { payerPhone: string }): Promise<ChargeResult> {
+    if (this.devMode) {
+      this.log.warn(`euPago desligada — MB Way simulado para ${req.reference}. Nada fica pago.`);
+      return { providerRef: `dev-mbway-${req.reference}` };
+    }
+
     const body = await this.post("/v1.02/mbway/create", {
       chave: this.apiKey,
       valor: cents(req.amountCents),
@@ -83,6 +105,18 @@ export class EupagoClient implements OnModuleInit {
   }
 
   async createMultibancoCharge(req: ChargeRequest): Promise<ChargeResult> {
+    if (this.devMode) {
+      this.log.warn(`euPago desligada — Multibanco simulado para ${req.reference}. Nada fica pago.`);
+      return {
+        providerRef: `dev-mb-${req.reference}`,
+        entity: "12345",
+        // Nove dígitos derivados do id, para a referência ser estável entre
+        // pedidos do mesmo pagamento — como a real seria.
+        reference: String(hash9(req.reference)),
+        expiresAt: new Date(Date.now() + 3 * 86_400_000),
+      };
+    }
+
     const body = await this.post("/v1.02/multibanco/create", {
       chave: this.apiKey,
       valor: cents(req.amountCents),
@@ -146,3 +180,14 @@ export class EupagoClient implements OnModuleInit {
 
 /** A euPago fala em euros decimais; nós guardamos cêntimos inteiros. */
 const cents = (n: number) => (n / 100).toFixed(2);
+
+/**
+ * Nove dígitos estáveis a partir de um id — a forma de uma referência Multibanco.
+ * Só para o modo de desenvolvimento: uma referência que muda a cada pedido dava a
+ * ideia errada de que se pode pagar duas vezes a mesma coisa.
+ */
+function hash9(seed: string): number {
+  let h = 0;
+  for (const ch of seed) h = (h * 31 + ch.charCodeAt(0)) % 1_000_000_000;
+  return 100_000_000 + (h % 900_000_000);
+}

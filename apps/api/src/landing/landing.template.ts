@@ -569,9 +569,20 @@ ${desktop ? renderDesktop(academy, shortName, name) : renderMobile(academy, shor
                 academySlug: slug,
               };
 
-              // A consola lê a sessão daqui e não volta a pedir credenciais.
+              /*
+               * A consola lê a sessão daqui e não volta a pedir credenciais.
+               *
+               * localStorage e nao sessionStorage: o segundo e por separador, e com
+               * ele um link para a ficha de um socio aberto em separador novo nascia
+               * sem sessao e era mandado de volta para esta pagina. O custo esta
+               * escrito no cabecalho de apps/console/src/lib/session.ts, e a
+               * correccao definitiva e o cookie httpOnly de VULN-007.
+               *
+               * (Sem acentos nem crases: isto vive dentro de um template literal, e
+               * uma crase aqui fecha a string a meio do ficheiro.)
+               */
               try {
-                sessionStorage.setItem('academia.session', JSON.stringify(session));
+                localStorage.setItem('academia.session', JSON.stringify(session));
               } catch (err) { /* modo privado: segue no fragmento na mesma */ }
 
               /*

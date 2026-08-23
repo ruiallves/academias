@@ -1,10 +1,10 @@
-import { Body, Controller, Get, Param, Patch, Post, Query, Req } from "@nestjs/common";
-import { ArrayMaxSize, IsArray, IsIn, IsString } from "class-validator";
+import { Body, Controller, Delete, Get, Param, Patch, Post, Put, Query, Req } from "@nestjs/common";
+import { ArrayMaxSize, IsArray, IsIn, IsInt, IsString, Max, Min } from "class-validator";
 import { ChargeStatus } from "@prisma/client";
 import type { AuthedRequest } from "../auth/auth.guard";
 import { AcademyService } from "./academy.service";
 import { AthletesService } from "./athletes.service";
-import { AthleteInputDto, ImportAthletesDto } from "./athletes.dto";
+import { AthleteInputDto, AthleteTaxIdDto, AthleteUpdateDto, ImportAthletesDto } from "./athletes.dto";
 import { CreateTeamDto } from "./teams.dto";
 import { CreateEventDto, UpdateEventDto } from "./events.dto";
 import { BillingService } from "../billing/billing.service";
@@ -13,6 +13,27 @@ import { BillingService } from "../billing/billing.service";
 class SetChargeStatusDto {
   @IsIn(["OPEN", "SETTLED", "VOID"])
   status!: "OPEN" | "SETTLED" | "VOID";
+}
+
+/** O preço, em cêntimos — entre 1 € e 1000 €, validado outra vez no serviço. */
+class SetFeeDto {
+  @IsInt()
+  @Min(100)
+  @Max(100_000)
+  amountCents!: number;
+}
+
+/** O mesmo preço para vários atletas de uma vez — até 200, o mesmo tecto da importação. */
+class SetAthleteFeeBulkDto {
+  @IsArray()
+  @ArrayMaxSize(200)
+  @IsString({ each: true })
+  athleteIds!: string[];
+
+  @IsInt()
+  @Min(100)
+  @Max(100_000)
+  amountCents!: number;
 }
 
 /** As excepções de acesso a gravar para uma pessoa. Validadas — ver `invites.dto.ts`. */
@@ -64,6 +85,15 @@ export class AcademyController {
     return this.academy.createTeam(req.ctx, body);
   }
 
+  /**
+   * O preço por omissão da equipa — todos os atletas sem ajuste individual pagam
+   * isto. Ver `BillingService.setTeamFee`.
+   */
+  @Patch("teams/:id/fee")
+  setTeamFee(@Req() req: AuthedRequest, @Param("id") id: string, @Body() body: SetFeeDto) {
+    return this.billing.setTeamFee(req.ctx, id, body.amountCents);
+  }
+
   @Get("athletes")
   listAthletes(@Req() req: AuthedRequest) {
     return this.academy.athletes(req.ctx);
@@ -73,6 +103,29 @@ export class AcademyController {
   @Post("athletes")
   createAthlete(@Req() req: AuthedRequest, @Body() body: AthleteInputDto) {
     return this.athletes.create(req.ctx, body);
+  }
+
+  /**
+   * O NIF de um atleta que já existe.
+   *
+   * Endpoint estreito e não um `PATCH` genérico de atleta — ver `setTaxId`. É o que
+   * permite a uma academia que já importou o plantel preencher a coluna que liga as
+   * famílias à app.
+   */
+  /**
+   * Editar a ficha de um atleta.
+   *
+   * A lista de campos é fechada em `AthleteUpdateDto`, e o que é clínico não está
+   * lá — vive em `ClinicalEntry`, com autor e permissão próprios.
+   */
+  @Patch("athletes/:id")
+  updateAthlete(@Req() req: AuthedRequest, @Param("id") id: string, @Body() body: AthleteUpdateDto) {
+    return this.athletes.update(req.ctx, id, body);
+  }
+
+  @Patch("athletes/:id/nif")
+  setAthleteTaxId(@Req() req: AuthedRequest, @Param("id") id: string, @Body() body: AthleteTaxIdDto) {
+    return this.athletes.setTaxId(req.ctx, id, body.taxId);
   }
 
   /** Importação em lote a partir de um ficheiro. Devolve o resultado linha a linha. */
@@ -149,5 +202,39 @@ export class AcademyController {
   @Patch("charges/:id/status")
   setChargeStatus(@Req() req: AuthedRequest, @Param("id") id: string, @Body() body: SetChargeStatusDto) {
     return this.billing.setChargeStatus(req.ctx, id, body.status as ChargeStatus);
+  }
+
+  /**
+   * Lembrete a quem tem uma mensalidade vencida — sem escolha de destinatários:
+   * é sempre "toda a gente vencida agora", nunca uma lista vinda do cliente. Ver
+   * `BillingService.sendOverdueReminders`.
+   */
+  @Post("charges/reminders")
+  sendOverdueReminders(@Req() req: AuthedRequest) {
+    return this.billing.sendOverdueReminders(req.ctx);
+  }
+
+  /** O que este atleta paga hoje — individual, da equipa, ou nenhum dos dois. */
+  @Get("athletes/:id/fee")
+  getAthleteFee(@Req() req: AuthedRequest, @Param("id") id: string) {
+    return this.billing.getAthleteFee(req.ctx, id);
+  }
+
+  /** Ajuste individual — sobrepõe-se ao preço da equipa para este atleta. */
+  @Put("athletes/:id/fee")
+  setAthleteFee(@Req() req: AuthedRequest, @Param("id") id: string, @Body() body: SetFeeDto) {
+    return this.billing.setAthleteFee(req.ctx, id, body.amountCents);
+  }
+
+  /** O mesmo ajuste individual, para vários atletas escolhidos de uma vez. */
+  @Put("athletes/fee")
+  setAthleteFeeBulk(@Req() req: AuthedRequest, @Body() body: SetAthleteFeeBulkDto) {
+    return this.billing.setAthleteFeeBulk(req.ctx, body.athleteIds, body.amountCents);
+  }
+
+  /** Remove o ajuste individual — volta a pagar o preço da equipa. */
+  @Delete("athletes/:id/fee")
+  clearAthleteFee(@Req() req: AuthedRequest, @Param("id") id: string) {
+    return this.billing.clearAthleteFee(req.ctx, id);
   }
 }

@@ -22,6 +22,7 @@ export function NewAthleteDialog({ session, onClose }: { session: Session; onClo
 
   const [name, setName] = useState("");
   const [birthdate, setBirthdate] = useState("");
+  const [taxId, setTaxId] = useState("");
   const [teamId, setTeamId] = useState(teams[0]?.id ?? "");
   const [position, setPosition] = useState("");
   const [squadNumber, setSquadNumber] = useState("");
@@ -32,7 +33,11 @@ export function NewAthleteDialog({ session, onClose }: { session: Session; onClo
 
   const team = teams.find((t) => t.id === teamId);
   const positions = team ? sportById(team.sportId)?.positions ?? [] : [];
-  const valid = name.trim().length >= 2 && birthdate !== "" && teamId !== "";
+  // O NIF é obrigatório: sem ele, nenhuma família consegue reclamar este atleta na
+  // app, e a academia só dá por isso quando o pai telefona. Nove dígitos, e meio
+  // escritos não servem — ficam na base e nunca batem certo com o que ele escreve.
+  const nifOk = /^\d{9}$/.test(taxId.replace(/\s/g, ""));
+  const valid = name.trim().length >= 2 && birthdate !== "" && teamId !== "" && nifOk;
 
   async function submit(e: FormEvent) {
     e.preventDefault();
@@ -44,6 +49,7 @@ export function NewAthleteDialog({ session, onClose }: { session: Session; onClo
         name: name.trim(),
         birthdate,
         teamId,
+        taxId: taxId.replace(/\s/g, ""),
         ...(position ? { position } : {}),
         ...(squadNumber ? { squadNumber: Number(squadNumber) } : {}),
         ...(medicalValidUntil ? { medicalValidUntil } : {}),
@@ -92,6 +98,24 @@ export function NewAthleteDialog({ session, onClose }: { session: Session; onClo
               <input type="date" value={medicalValidUntil} onChange={(e) => setMedicalValidUntil(e.target.value)} className={dialogInputClass} />
             </DialogField>
           </div>
+
+          {/*
+            O NIF não é burocracia: é a chave com que a família se liga a este
+            atleta ao instalar a app — NIF mais data de nascimento, os dois. Sem
+            ele, este atleta existe mas nenhum pai o consegue reclamar.
+          */}
+          <DialogField label="NIF" hint="obrigatório — é o que liga a família à app">
+            <input
+              value={taxId}
+              onChange={(e) => setTaxId(e.target.value)}
+              inputMode="numeric"
+              maxLength={11}
+              placeholder="123456789"
+              className={dialogInputClass}
+              aria-invalid={!nifOk}
+            />
+            {!nifOk && <p className="mt-1 text-[11px] text-[#a82a20]">O NIF tem nove dígitos.</p>}
+          </DialogField>
 
           <div className="grid grid-cols-[1fr_auto] gap-3">
             <DialogField label="Equipa">

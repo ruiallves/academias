@@ -16,6 +16,19 @@ generator client {
 datasource db {
   provider = "postgresql"
   url      = env("DATABASE_URL")
+
+  // As migrações não passam pelo pooler.
+  //
+  // `DATABASE_URL` aponta para o pgbouncer do Supabase (porta 6543, modo
+  // transação) — é o que a aplicação quer, e liga-se como `academia_app`, sem
+  // BYPASSRLS. Mas o *schema engine* do Prisma precisa de sessões longas e de
+  // `pg_advisory_lock`, e o pgbouncer em modo transação não lhos dá: em vez de
+  // falhar, a migração fica pendurada em silêncio, sem uma linha de output.
+  //
+  // `MIGRATE_DATABASE_URL` já existia no `.env` — a ligação de sessão (5432), como
+  // `postgres`, que é quem tem privilégio para `CREATE ROLE` e `ALTER TYPE`. Só
+  // faltava dizer ao Prisma que é essa a que se usa para migrar.
+  directUrl = env("MIGRATE_DATABASE_URL")
 }
 
 /* -------------------------------------------------------------------------- */
@@ -47,6 +60,17 @@ model Academy {
   sports        Sport[]
   seasons       Season[]
   memberships   Membership[]
+  roles         AcademyRole[]
+  prospects     Prospect[]
+  observations  Observation[]
+  scoutCriteria ScoutCriterion[]
+  shortlists    Shortlist[]
+  scoutRequests ScoutingRequest[]
+  fitDimensions FitDimension[]
+  prospectVideos ProspectVideo[]
+  memberTiers   MemberTier[]
+  members       Member[]
+  catalog       CatalogItem[]
   athletes      Athlete[]
   teams         Team[]
   sessions      TrainingSession[]
@@ -59,6 +83,10 @@ model Academy {
   matches       Match[]
   events        CalendarEvent[]
   invites       StaffInvite[]
+  /// O link de auto-registo das famílias. Um vivo de cada vez.
+  familyInvites FamilyInvite[]
+  /// De que contacto nasceu este cliente. Ver `Contact`, do lado da plataforma.
+  contacts      Contact[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -93,7 +121,12 @@ model Sport {
   /// Duração normal de um jogo, em minutos. Nulo em desportos individuais.
   matchMinutes      Int?
 
-  teams Team[]
+  teams       Team[]
+  prospects   Prospect[]
+  criteria    ScoutCriterion[]
+  shortlists  Shortlist[]
+  requests    ScoutingRequest[]
+  fitDims     FitDimension[]
 
   @@unique([academyId, name])
   @@index([academyId])
@@ -145,6 +178,9 @@ enum Role {
   STAFF
   /// Departamento clínico: médico, fisioterapeuta, nutricionista, psicólogo.
   MEDICAL
+  /// Departamento de scouting. Vê a academia toda — um prospecto não pertence a
+  /// escalão nenhum — mas não vê ficha clínica, mensalidades nem famílias.
+  SCOUT
   GUARDIAN
   ATHLETE
 }
@@ -154,6 +190,7 @@ enum StaffDepartment {
   DIRECTION
   TECHNICAL
   CLINICAL
+  SCOUTING
   OPERATIONS
 }
 
@@ -172,6 +209,15 @@ model Membership {
   /// faz. Um enum aqui obrigaria a uma migração por cada profissão nova.
   title      String?
   department StaffDepartment?
+
+  /// O papel da academia, quando existe.
+  ///
+  /// `role` (o enum) continua a decidir **semântica** — âmbito, hierarquia, se é
+  /// pessoal ou família. Isto decide **permissões e menus**. Nulo significa "os
+  /// valores por omissão do enum", que é o comportamento anterior a esta coluna:
+  /// nenhuma membership existente muda de acesso por a coluna ter nascido.
+  customRoleId String?
+  customRole   AcademyRole? @relation(fields: [customRoleId], references: [id], onDelete: SetNull)
 
   /// Concessões pontuais por cima do papel — p. ex. dar `billing:read` a um
   /// treinador sem o promover a coordenador.
@@ -198,6 +244,18 @@ model Membership {
   evaluations    Evaluation[]
   announcements  Announcement[]
   invitesSent    StaffInvite[]     @relation("InviteAuthor")
+  prospectsOwned Prospect[]        @relation("ProspectOwner")
+  prospectEvents ProspectEvent[]   @relation("ProspectEventActor")
+  observations   Observation[]     @relation("ObservationScout")
+  shortlistsMade Shortlist[]       @relation("ShortlistAuthor")
+  shortlistAdds  ShortlistEntry[]  @relation("ShortlistEntryAuthor")
+  requestsMade   ScoutingRequest[] @relation("RequestAuthor")
+  requestsOwned  ScoutingRequest[] @relation("RequestAssignee")
+  candidateAdds  ScoutingRequestCandidate[] @relation("RequestCandidateAuthor")
+  videosUploaded ProspectVideo[]   @relation("VideoUploader")
+  videoMoments   VideoMoment[]     @relation("MomentAuthor")
+  membersApproved Member[]         @relation("MemberApprover")
+  familyLinks    FamilyInvite[]    @relation("FamilyInviteAuthor")
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -205,6 +263,66 @@ model Membership {
   @@unique([academyId, userId, role])
   @@index([academyId])
   @@index([userId])
+}
+
+/// Um papel da academia — o que substitui ter o mapa papel→permissões em código.
+///
+/// ## Porque é que o enum `Role` não desapareceu
+///
+/// Porque decide coisas que uma lista de permissões não sabe decidir: de onde vem
+/// o âmbito (`AuthService.scopeFor` lê `TeamStaff` para COACH e `GuardianLink`
+/// para GUARDIAN), quem é pessoal e quem é família, e a hierarquia que trava os
+/// convites. Substituí-lo por uma tabela obrigaria a reinventar tudo isso — a tal
+/// "segunda arquitectura paralela". Aqui o enum é o **papel-base** e esta tabela
+/// diz o que esse papel pode e vê nesta academia em concreto.
+///
+/// ## Porque é que `navKeys` está ao lado de `permissions`
+///
+/// Porque a pergunta "o que é que este papel vê no menu?" faz-se ao mesmo tempo
+/// que "o que é que ele pode fazer?", e separá-las em dois ecrãs era a queixa que
+/// deu origem a isto. **Mas não são a mesma coisa**: `permissions` é a fronteira
+/// de segurança e o servidor verifica-a sempre; `navKeys` é preferência de
+/// interface e o servidor **nunca** a lê para decidir nada. Esconder um menu não
+/// tira acesso — quem souber o URL continua a chegar ao endpoint, e é a permissão
+/// que o trava.
+model AcademyRole {
+  id        String  @id @default(cuid())
+  academyId String
+  academy   Academy @relation(fields: [academyId], references: [id], onDelete: Cascade)
+
+  /// Estável e legível: "presidente", "scouting", "diretor-desportivo". Renomear
+  /// o papel não parte nada porque as memberships apontam para o id.
+  key         String
+  name        String
+  description String?
+
+  /// De onde herda âmbito e hierarquia.
+  baseRole Role
+
+  /// O que este papel pode. É a verdade — o mapa em código passa a ser só o
+  /// ponto de partida da semeadura.
+  permissions String[] @default([])
+
+  /// Que itens do menu mostra. Vazio significa "todos os que a permissão deixa",
+  /// que é o comportamento por omissão e o que os papéis semeados usam.
+  navKeys String[] @default([])
+
+  /// Os cinco obrigatórios. Não se apagam; o do presidente também não se edita.
+  isSystem Boolean @default(false)
+
+  /// Trava a escalada: ninguém cria nem atribui um papel de patente superior à
+  /// sua. Espelha o RANK dos convites.
+  rank Int @default(20)
+
+  archivedAt DateTime?
+
+  memberships Membership[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([academyId, key])
+  @@index([academyId])
 }
 
 /// Um convite para alguém passar a fazer parte da academia.
@@ -259,6 +377,56 @@ model StaffInvite {
   @@index([academyId, email])
 }
 
+/// O link que a academia manda às famílias para instalarem a app.
+///
+/// ## Porque é que não é um `StaffInvite`
+///
+/// Porque responde a outra pergunta. Um `StaffInvite` é dirigido a **uma pessoa**,
+/// leva o papel e as equipas dentro, e gasta-se ao ser usado — tem de ser assim,
+/// porque é ele que decide o acesso de quem o resgata.
+///
+/// Este é o contrário: um link só por academia, reutilizável, que se manda ao grupo
+/// de WhatsApp dos pais. **Não decide acesso nenhum.** Quem o abre não fica ligado
+/// a atleta nenhum por o ter aberto; fica quando provar, com o NIF e a data de
+/// nascimento, de quem é pai. Reencaminhá-lo não dá acesso a nada — é essa
+/// propriedade que o deixa ser partilhável.
+///
+/// ## Porque é que o token está aqui em claro
+///
+/// Ao contrário do `StaffInvite`, que guarda só o SHA-256. A diferença é o que cada
+/// link vale: um convite de staff dá acesso a fichas clínicas e não se pode voltar
+/// a mostrar; este dá acesso a um formulário, e a secretaria precisa de o poder
+/// copiar outra vez amanhã, para o mandar a outra família. Guardá-lo cifrado e
+/// mostrá-lo à mesma seria teatro.
+model FamilyInvite {
+  id        String  @id @default(cuid())
+  academyId String
+  academy   Academy @relation(fields: [academyId], references: [id], onDelete: Cascade)
+
+  /// O token que vai no link. Ver acima porque é que não é um hash.
+  token String @unique
+
+  /// Nulo é **sem prazo** — uma escolha explícita de quem o criou, não um
+  /// esquecimento. O serviço trata os dois casos no mesmo sítio.
+  expiresAt DateTime?
+
+  /// Quantas famílias entraram por aqui, e a última vez. É como se percebe se o
+  /// link chegou ao grupo certo, e é o número que a consola mostra.
+  usedCount  Int       @default(0)
+  lastUsedAt DateTime?
+
+  createdById String?
+  createdBy   Membership? @relation("FamilyInviteAuthor", fields: [createdById], references: [id], onDelete: SetNull)
+
+  /// Fechado à mão. Criar um link novo fecha o anterior — só há um vivo de cada vez.
+  revokedAt DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([academyId, revokedAt])
+}
+
 /* -------------------------------------------------------------------------- */
 /* Atletas e equipas                                                           */
 /* -------------------------------------------------------------------------- */
@@ -286,6 +454,23 @@ model Athlete {
   status    AthleteStatus @default(ACTIVE)
   joinedAt  DateTime      @default(now())
 
+  /// NIF do atleta.
+  ///
+  /// Serve duas coisas: a faturação, e a **prova de parentesco** no registo da app
+  /// da família. Um pai que chega pelo link do clube identifica o filho por
+  /// `taxId` + `birthdate` — os dois, nunca um só. Ver `family-invites.service.ts`.
+  ///
+  /// **Obrigatório em toda a escrita nova** — inscrição à mão e importação em
+  /// lote. A coluna aceita nulo só por causa de quem foi inscrito antes desta
+  /// regra: apagar esses atletas não é opção, e uma migração que inventasse NIFs
+  /// para os preencher seria pior do que o buraco. A regra vive no DTO
+  /// (`AthleteInputDto`), que é por onde toda a criação passa.
+  ///
+  /// Um atleta sem NIF é um atleta que nenhuma família consegue reclamar na app, e
+  /// a academia só descobre isso quando o pai telefona.
+  ///
+  taxId String?
+
   heightCm Int?
   weightKg Decimal? @db.Decimal(4, 1)
   /// Neutro de propósito: serve o pé no futebol e a mão no basquetebol. O rótulo
@@ -310,6 +495,7 @@ model Athlete {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
+  @@unique([academyId, taxId])
   @@index([academyId])
   @@index([academyId, status])
 }
@@ -415,6 +601,14 @@ model TrainingSession {
   startsAt DateTime
   endsAt   DateTime
   venue    String
+
+  /// O balneário onde a equipa se equipa.
+  ///
+  /// Separado de `venue` porque são duas perguntas: o local diz onde é o treino,
+  /// o balneário diz onde a equipa se muda — e num pavilhão com quatro balneários
+  /// e três equipas a treinar à mesma hora, é a segunda que causa discussões.
+  /// Nulo quando a academia não os gere ou quando não há nenhum atribuído.
+  dressingRoom String?
 
   /// Nulo é um problema visível, não um campo em branco: um treino agendado sem
   /// treinador aparece em "Precisa de atenção".
@@ -791,7 +985,13 @@ model Match {
   updatedAt DateTime @updatedAt
 
   /// Idempotência da importação: o mesmo jogo importado duas vezes actualiza.
-  @@unique([teamId, startsAt])
+  ///
+  /// A unicidade é **parcial** e vive em SQL, na migração
+  /// `20260821000100_cancelled_match_frees_slot`: só vale para jogos que não
+  /// estejam cancelados, porque um jogo desmarcado não ocupa o horário da equipa.
+  /// O Prisma não sabe exprimir um `@@unique` condicional — daí o índice normal
+  /// aqui (para as leituras) e o único parcial lá.
+  @@index([teamId, startsAt])
   @@index([academyId, startsAt])
 }
 
@@ -874,6 +1074,14 @@ model CalendarEvent {
   endsAt   DateTime
   venue    String
 
+  /// O balneário onde a equipa se equipa.
+  ///
+  /// Separado de `venue` porque são duas perguntas: o local diz onde é o treino,
+  /// o balneário diz onde a equipa se muda — e num pavilhão com quatro balneários
+  /// e três equipas a treinar à mesma hora, é a segunda que causa discussões.
+  /// Nulo quando a academia não os gere ou quando não há nenhum atribuído.
+  dressingRoom String?
+
   coachId String?
   coach   Membership? @relation("EventCoach", fields: [coachId], references: [id])
 
@@ -951,6 +1159,745 @@ model Evaluation {
 /* -------------------------------------------------------------------------- */
 /* Plataforma                                                                  */
 /* -------------------------------------------------------------------------- */
+/* Scouting                                                                    */
+/* -------------------------------------------------------------------------- */
+
+/// O funil. A ordem do enum é a ordem do funil, e é usada para o desenhar.
+///
+/// Seis estados, e cada um tem um **facto** por trás — não um grau de entusiasmo.
+/// "Interessante", "Shortlist" e "Decisão" existiam e saíram: ninguém sabia dizer
+/// quando é que um prospecto passava de observado a interessante, e um estado sem
+/// critério claro de entrada é um estado que cada pessoa preenche à sua maneira.
+enum ProspectStage {
+  /// Alguém falou dele. Ainda não foi visto por ninguém do clube.
+  DISCOVERED
+  /// O clube decidiu acompanhar.
+  WATCHING
+  /// Já foi visto por alguém nosso — tem pelo menos uma observação.
+  OBSERVED
+  /// Veio treinar connosco.
+  TRIAL
+  RECRUITED
+  /// Terminal, mas reversível: um miúdo descartado aos 13 volta a interessar aos
+  /// 15, e o histórico tem de o mostrar em vez de fingir que nunca existiu.
+  REJECTED
+}
+
+/// Onde é que o scout o viu.
+enum ObservationContext {
+  MATCH
+  TRAINING
+  TRIAL
+  /// Visto em vídeo, não ao vivo. É uma observação mais fraca, e dizê-lo importa.
+  VIDEO
+  OTHER
+}
+
+/// O que o scout propõe a seguir. É o campo que faz o funil andar.
+enum ScoutRecommendation {
+  DROP
+  KEEP_WATCHING
+  OBSERVE_AGAIN
+  INVITE_TRAINING
+  SHORTLIST
+  RECRUIT
+}
+
+/// Alguém que o clube acompanha e que **ainda não é seu**.
+///
+/// ## Porque é que não é um `Athlete` com uma bandeira
+///
+/// Porque as regras são diferentes em tudo o que importa: não tem mensalidade, não
+/// tem encarregado na plataforma, não tem presenças — e, decisivo, são dados de um
+/// menor que **pertence a outro clube**. Uma tabela à parte é o que permite apagar
+/// tudo isto de uma vez no dia em que o clube desiste de o seguir; uma coluna
+/// `isProspect` no meio dos atletas espalhava esses dados por meia base.
+///
+/// Quando é recrutado, `athleteId` passa a apontar para a ficha nova e o dossiê
+/// fica — o histórico de scouting é metade do valor de um recrutamento.
+model Prospect {
+  id        String  @id @default(cuid())
+  academyId String
+  academy   Academy @relation(fields: [academyId], references: [id], onDelete: Cascade)
+
+  /// A modalidade decide as posições e os critérios de avaliação. Sem futebol
+  /// escrito em lado nenhum.
+  sportId String
+  sport   Sport  @relation(fields: [sportId], references: [id], onDelete: Restrict)
+
+  name      String
+  birthdate DateTime @db.Date
+
+  /// Onde joga agora. Texto livre: não conhecemos o universo de clubes, e um
+  /// catálogo obrigaria a criar "FC Vizela" antes de poder tomar uma nota.
+  currentClub String?
+  /// "Sub-13 B" — o escalão dele lá, que não tem de casar com os nossos.
+  currentTeam String?
+
+  /// Valor de `Sport.positions`.
+  position           String?
+  secondaryPositions String[] @default([])
+  dominantSide       DominantSide?
+
+  stage ProspectStage @default(DISCOVERED)
+
+  /// Quem responde por este dossiê. Um prospecto sem dono é um prospecto que
+  /// ninguém volta a ver.
+  ownerId String?
+  owner   Membership? @relation("ProspectOwner", fields: [ownerId], references: [id], onDelete: SetNull)
+
+  /// "Torneio de Braga", "indicação do treinador dos Sub-11". Como apareceu.
+  discoveredVia String?
+  discoveredAt  DateTime @default(now())
+
+  /// Desnormalizado de propósito: a lista ordena-se e filtra-se por isto ("quem
+  /// está há mais tempo sem ser visto?"), e derivá-lo por agregação a cada
+  /// listagem era o caminho mais curto para uma página lenta.
+  lastObservedAt DateTime?
+
+  notes String?
+
+  /// Preenchido na conversão. É o que liga o dossiê à ficha do atleta.
+  athleteId String?  @unique
+
+  archivedAt DateTime?
+
+  observations Observation[]
+  events       ProspectEvent[]
+  shortlists   ShortlistEntry[]
+  candidacies  ScoutingRequestCandidate[]
+  fit          ProspectFit[]
+  videos       ProspectVideo[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([academyId])
+  @@index([academyId, stage])
+  @@index([academyId, lastObservedAt])
+}
+
+/// O historial do dossiê: mudanças de estado, e mais tarde vídeos e decisões.
+///
+/// Existe porque "porque é que este miúdo foi dispensado?" é a pergunta que se faz
+/// dois anos depois, quando ele marca contra nós. Um `stage` sozinho responde
+/// onde ele está; isto responde como lá chegou.
+model ProspectEvent {
+  id         String   @id @default(cuid())
+  prospectId String
+  prospect   Prospect @relation(fields: [prospectId], references: [id], onDelete: Cascade)
+
+  /// "stage", "created", "note", "video". Texto e não enum: o conjunto vai crescer
+  /// com as fases seguintes, e uma migração por cada tipo novo de evento de
+  /// histórico é atrito sem retorno.
+  kind String
+
+  from String?
+  to   String?
+  note String?
+
+  actorId String?
+  actor   Membership? @relation("ProspectEventActor", fields: [actorId], references: [id], onDelete: SetNull)
+
+  at DateTime @default(now())
+
+  @@index([prospectId, at])
+}
+
+/// Uma ida ao campo.
+///
+/// **Nunca há uma avaliação global no prospecto.** Um scout que viu um miúdo uma
+/// vez à chuva e outro que o viu três vezes não podem escrever no mesmo sítio; a
+/// segunda observação tem de poder contradizer a primeira sem a apagar. É por isso
+/// que isto é uma lista e não um conjunto de colunas em `Prospect`.
+model Observation {
+  id        String  @id @default(cuid())
+  academyId String
+  academy   Academy @relation(fields: [academyId], references: [id], onDelete: Cascade)
+
+  prospectId String
+  prospect   Prospect @relation(fields: [prospectId], references: [id], onDelete: Cascade)
+
+  /// Quem observou. Sem autor, uma observação é um boato.
+  scoutId String?
+  scout   Membership? @relation("ObservationScout", fields: [scoutId], references: [id], onDelete: SetNull)
+
+  observedAt DateTime
+  context    ObservationContext @default(MATCH)
+
+  /// O jogo em concreto: adversário e prova. Texto livre — é o calendário de
+  /// outro clube.
+  opponent    String?
+  competition String?
+  venue       String?
+
+  /// Quantos minutos foi mesmo visto. Vinte minutos de um jogo não valem o mesmo
+  /// que noventa, e sem este número as observações parecem todas iguais.
+  minutesObserved Int?
+  /// A posição em que jogou **nesse dia** — que pode não ser a dele.
+  positionObserved String?
+
+  strengths    String[] @default([])
+  improvements String[] @default([])
+  notes        String?
+
+  recommendation ScoutRecommendation @default(KEEP_WATCHING)
+
+  ratings ObservationRating[]
+  videos  ProspectVideo[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([academyId])
+  @@index([prospectId, observedAt])
+}
+
+/// A nota de um critério nesta observação.
+///
+/// Tabela-filha e não um JSON no pai: é isto que permite comparar três prospectos
+/// por dimensão sem ler e desempacotar todas as observações de cada um.
+model ObservationRating {
+  id            String      @id @default(cuid())
+  observationId String
+  observation   Observation @relation(fields: [observationId], references: [id], onDelete: Cascade)
+
+  criterionId String
+  criterion   ScoutCriterion @relation(fields: [criterionId], references: [id], onDelete: Cascade)
+
+  /// 1 a 5. Não é uma nota de 0 a 100: uma escala fina finge uma precisão que
+  /// ninguém tem a olhar para um miúdo durante meia hora.
+  score Int
+
+  @@unique([observationId, criterionId])
+  @@index([criterionId])
+}
+
+/// O quadro de avaliação — **por modalidade**.
+///
+/// O futebol traz "Técnico / Tático / Físico / Psicossocial"; o andebol traz
+/// outra coisa; a natação traz outra. A academia edita-os em Definições. Não há
+/// uma linha de futebol escrita em código, e é isso que mantém a plataforma
+/// multi-desporto quando o scouting é a área onde é mais tentador esquecê-lo.
+model ScoutCriterion {
+  id        String  @id @default(cuid())
+  academyId String
+  academy   Academy @relation(fields: [academyId], references: [id], onDelete: Cascade)
+
+  sportId String
+  sport   Sport  @relation(fields: [sportId], references: [id], onDelete: Cascade)
+
+  /// "Técnico", "Tático". O agrupamento com que o scout pensa.
+  group String
+  name  String
+  /// Ordem dentro do grupo.
+  order Int @default(0)
+
+  archivedAt DateTime?
+
+  ratings ObservationRating[]
+
+  @@unique([academyId, sportId, group, name])
+  @@index([academyId, sportId])
+}
+
+/* -------------------------------------------------------------------------- */
+/* Scouting — trabalho, vídeo e recrutamento                                   */
+/* -------------------------------------------------------------------------- */
+
+/// Uma lista de trabalho: "Sub-13 · Defesa central", "Guarda-redes 2027".
+///
+/// Um prospecto pode estar em várias — e é essa a razão de isto ser uma tabela de
+/// ligação e não um campo no dossiê. O mesmo miúdo é o lateral que falta ao
+/// Sub-15 e uma aposta a três anos para o plantel principal; obrigá-lo a escolher
+/// uma gaveta perdia uma das duas leituras.
+model Shortlist {
+  id        String  @id @default(cuid())
+  academyId String
+  academy   Academy @relation(fields: [academyId], references: [id], onDelete: Cascade)
+
+  name        String
+  description String?
+
+  /// Filtros que a lista representa. Servem para a descrever, não para a
+  /// preencher: quem entra na lista é escolha de uma pessoa, sempre.
+  sportId  String?
+  sport    Sport?  @relation(fields: [sportId], references: [id], onDelete: SetNull)
+  ageGroup String?
+  profile  String?
+
+  createdById String?
+  createdBy   Membership? @relation("ShortlistAuthor", fields: [createdById], references: [id], onDelete: SetNull)
+
+  archivedAt DateTime?
+
+  entries ShortlistEntry[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([academyId])
+}
+
+model ShortlistEntry {
+  id          String    @id @default(cuid())
+  shortlistId String
+  shortlist   Shortlist @relation(fields: [shortlistId], references: [id], onDelete: Cascade)
+  prospectId  String
+  prospect    Prospect  @relation(fields: [prospectId], references: [id], onDelete: Cascade)
+
+  /// Porque é que este está nesta lista. É a nota que falta quando se abre a
+  /// lista dois meses depois e ninguém se lembra do critério.
+  note String?
+  /// Ordem manual — quem lidera a lista é uma opinião, não uma média.
+  rank Int @default(0)
+
+  addedById String?
+  addedBy   Membership? @relation("ShortlistEntryAuthor", fields: [addedById], references: [id], onDelete: SetNull)
+
+  addedAt DateTime @default(now())
+
+  @@unique([shortlistId, prospectId])
+  @@index([prospectId])
+}
+
+enum RequestUrgency {
+  LOW
+  NORMAL
+  HIGH
+  /// Mercado a fechar, lesão de longa duração — semanas, não meses.
+  CRITICAL
+}
+
+enum RequestStatus {
+  OPEN
+  IN_PROGRESS
+  FULFILLED
+  CANCELLED
+}
+
+/// "Precisamos de um lateral esquerdo Sub-15."
+///
+/// É o que transforma o scouting numa ferramenta de trabalho e não numa base de
+/// dados: um treinador ou um director diz o que falta, e o departamento trabalha a
+/// partir daí — em vez de coleccionar nomes sem saber para que servem.
+model ScoutingRequest {
+  id        String  @id @default(cuid())
+  academyId String
+  academy   Academy @relation(fields: [academyId], references: [id], onDelete: Cascade)
+
+  title   String
+  sportId String?
+  sport   Sport?  @relation(fields: [sportId], references: [id], onDelete: SetNull)
+
+  ageGroup String?
+  position String?
+  /// O que se procura, por palavras. Um perfil não cabe em campos.
+  profile  String?
+  /// Características pretendidas, como etiquetas.
+  traits   String[] @default([])
+
+  urgency RequestUrgency @default(NORMAL)
+  status  RequestStatus  @default(OPEN)
+  dueDate DateTime?      @db.Date
+
+  /// Quem pediu, e quem responde por ele do lado do scouting.
+  requestedById String?
+  requestedBy   Membership? @relation("RequestAuthor", fields: [requestedById], references: [id], onDelete: SetNull)
+  assignedToId  String?
+  assignedTo    Membership? @relation("RequestAssignee", fields: [assignedToId], references: [id], onDelete: SetNull)
+
+  candidates ScoutingRequestCandidate[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([academyId, status])
+}
+
+/// Um nome proposto em resposta a um pedido.
+model ScoutingRequestCandidate {
+  id         String          @id @default(cuid())
+  requestId  String
+  request    ScoutingRequest @relation(fields: [requestId], references: [id], onDelete: Cascade)
+  prospectId String
+  prospect   Prospect        @relation(fields: [prospectId], references: [id], onDelete: Cascade)
+
+  note String?
+
+  addedById String?
+  addedBy   Membership? @relation("RequestCandidateAuthor", fields: [addedById], references: [id], onDelete: SetNull)
+
+  addedAt DateTime @default(now())
+
+  @@unique([requestId, prospectId])
+  @@index([prospectId])
+}
+
+/// Uma dimensão de "fit com o clube" — configurável, e por modalidade quando faz
+/// sentido.
+///
+/// "Modelo de jogo", "perfil técnico", "posição necessária", "idade". A academia
+/// decide quais são: um clube que joga a três atrás e um que joga a quatro não
+/// avaliam encaixe pelas mesmas coisas, e um clube de natação não avalia nenhuma
+/// delas.
+model FitDimension {
+  id        String  @id @default(cuid())
+  academyId String
+  academy   Academy @relation(fields: [academyId], references: [id], onDelete: Cascade)
+
+  sportId String?
+  sport   Sport?  @relation(fields: [sportId], references: [id], onDelete: SetNull)
+
+  name  String
+  order Int @default(0)
+
+  archivedAt DateTime?
+
+  scores ProspectFit[]
+
+  @@unique([academyId, sportId, name])
+  @@index([academyId])
+}
+
+/// O encaixe deste prospecto numa dimensão. 0–100.
+///
+/// **É uma opinião registada, não um cálculo.** Não sai de nenhuma fórmula sobre
+/// as observações: é alguém do clube a dizer "encaixa a 80% no nosso modelo". Uma
+/// percentagem derivada automaticamente daria a este número uma autoridade que ele
+/// não tem — e o produto existe para ajudar a decidir, não para fingir ciência.
+model ProspectFit {
+  id          String       @id @default(cuid())
+  prospectId  String
+  prospect    Prospect     @relation(fields: [prospectId], references: [id], onDelete: Cascade)
+  dimensionId String
+  dimension   FitDimension @relation(fields: [dimensionId], references: [id], onDelete: Cascade)
+
+  value Int
+
+  @@unique([prospectId, dimensionId])
+  @@index([dimensionId])
+}
+
+enum VideoKind {
+  MATCH
+  TRAINING
+  TRIAL
+  OTHER
+}
+
+enum VideoStatus {
+  /// Linha criada, bytes ainda a caminho do Storage.
+  UPLOADING
+  READY
+  FAILED
+}
+
+/// Um vídeo do prospecto.
+///
+/// ## Porque é que não há URL aqui
+///
+/// Porque **nunca há URLs permanentes**. Guarda-se a chave do objecto no bucket
+/// privado; cada reprodução pede ao servidor um link assinado de vida curta, que
+/// caduca sozinho e é inútil se for reencaminhado por WhatsApp no dia seguinte.
+/// Isto é imagem de menores que não pertencem à academia — é o dado mais sensível
+/// desta área inteira, e por isso tem permissões próprias
+/// (`scouting:video:read` / `scouting:video:write`).
+model ProspectVideo {
+  id         String   @id @default(cuid())
+  academyId  String
+  academy    Academy  @relation(fields: [academyId], references: [id], onDelete: Cascade)
+  prospectId String
+  prospect   Prospect @relation(fields: [prospectId], references: [id], onDelete: Cascade)
+
+  title String
+  kind  VideoKind @default(MATCH)
+
+  /// Quando foi gravado — não quando foi carregado. São coisas diferentes, e é a
+  /// primeira que interessa a quem vê.
+  recordedOn  DateTime? @db.Date
+  competition String?
+  opponent    String?
+  durationSec Int?
+  notes       String?
+  tags        String[]  @default([])
+
+  /// Caminho dentro do bucket privado. `{academyId}/{prospectId}/{videoId}.{ext}`
+  storageKey String
+  mimeType   String?
+  sizeBytes  Int?
+  status     VideoStatus @default(UPLOADING)
+
+  /// A observação a que este vídeo pertence, quando pertence a alguma.
+  observationId String?
+  observation   Observation? @relation(fields: [observationId], references: [id], onDelete: SetNull)
+
+  /// Quem o carregou. Um vídeo de um menor sem autor é um vídeo que ninguém assume.
+  uploadedById String?
+  uploadedBy   Membership? @relation("VideoUploader", fields: [uploadedById], references: [id], onDelete: SetNull)
+
+  moments VideoMoment[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([academyId])
+  @@index([prospectId, recordedOn])
+}
+
+enum MomentKind {
+  /// O que se quer mostrar a outra pessoa.
+  HIGHLIGHT
+  /// O que preocupa. Uma ficha que só marca o bom não ajuda a decidir.
+  CONCERN
+  NOTE
+}
+
+/// Um instante marcado no vídeo.
+///
+/// É a funcionalidade que faz um scout preferir isto ao Drive: "00:42 — excelente
+/// passe vertical" é o que ele quer mandar ao director, e não um ficheiro de 90
+/// minutos com "vê aí para o meio".
+model VideoMoment {
+  id      String        @id @default(cuid())
+  videoId String
+  video   ProspectVideo @relation(fields: [videoId], references: [id], onDelete: Cascade)
+
+  /// Segundo do vídeo.
+  atSec Int
+  kind  MomentKind @default(HIGHLIGHT)
+  label String
+
+  createdById String?
+  createdBy   Membership? @relation("MomentAuthor", fields: [createdById], references: [id], onDelete: SetNull)
+
+  createdAt DateTime @default(now())
+
+  @@index([videoId, atSec])
+}
+
+/* -------------------------------------------------------------------------- */
+/* Sócios                                                                      */
+/* -------------------------------------------------------------------------- */
+
+/// Uma categoria de sócio, criada pelo clube.
+///
+/// Não é um enum. Cada clube tem as suas — "Sócio efectivo", "Juvenil", "Sócio
+/// de mérito", "Família" — e a lista muda com uma assembleia geral, não com um
+/// deploy. O que o clube escreve aqui é literalmente o que aparece no formulário
+/// público, por isso `description` e `benefits` valem tanto como o preço: é com
+/// eles que alguém decide qual escolher.
+model MemberTier {
+  id        String  @id @default(cuid())
+  academyId String
+  academy   Academy @relation(fields: [academyId], references: [id], onDelete: Cascade)
+
+  name        String
+  description String?
+  /// O que dá direito. Uma linha por benefício.
+  benefits    String[] @default([])
+
+  /// Quota, em cêntimos. Nulo enquanto o clube não a fixar — um tipo sem preço
+  /// continua a poder existir e a receber inscrições.
+  feeCents Int?
+  /// Com que frequência se paga.
+  period   MemberFeePeriod @default(ANNUAL)
+
+  /// Idade mínima e máxima, quando a categoria as tem ("Juvenil até aos 17").
+  /// Servem para explicar e para validar o formulário — não para esconder.
+  minAge Int?
+  maxAge Int?
+
+  /// Se aparece no formulário público. Um clube pode ter categorias que só
+  /// atribui por decisão da direção ("Sócio honorário") e que ninguém escolhe.
+  isPublic Boolean @default(true)
+
+  order      Int       @default(0)
+  archivedAt DateTime?
+
+  members Member[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([academyId, name])
+  @@index([academyId])
+}
+
+enum MemberFeePeriod {
+  MONTHLY
+  QUARTERLY
+  ANNUAL
+  /// Pago uma vez. "Sócio vitalício".
+  ONCE
+}
+
+enum MemberStatus {
+  /// Inscreveu-se pelo site e espera aprovação da direção.
+  PENDING
+  ACTIVE
+  /// Quota em atraso ou suspensão disciplinar.
+  SUSPENDED
+  CANCELLED
+}
+
+enum MemberSex {
+  FEMALE
+  MALE
+  /// Quem não se revê nas duas anteriores, e quem prefere não dizer. Uma só
+  /// opção para os dois casos seria obrigar quem não quer responder a
+  /// declarar-se — e o clube não precisa da distinção para nada.
+  UNSPECIFIED
+}
+
+enum MemberDocumentKind {
+  /// Cartão de cidadão.
+  CC
+  PASSPORT
+  /// Título de residência.
+  RESIDENCE
+  OTHER
+}
+
+/// Um sócio do clube.
+///
+/// ## Porque é que não é um `User`
+///
+/// Porque não precisa de entrar em lado nenhum. Um sócio é um vínculo ao clube —
+/// paga quota, vota em assembleia, entra no estádio — e a esmagadora maioria
+/// nunca vai abrir uma aplicação. Criar-lhe uma conta no Supabase para o
+/// registar seria fabricar credenciais que ninguém pediu, e passar a ter de as
+/// proteger.
+///
+/// Quem for **também** encarregado de educação tem as duas coisas: uma
+/// `Membership` para a app da família e uma linha aqui. São vínculos diferentes
+/// com o mesmo clube, e juntá-los obrigava a explicar porque é que cancelar a
+/// quota tirava o acesso à ficha do filho.
+///
+/// ## De onde vêm estes campos
+///
+/// Do formulário de inscrição, que é o que o clube publica. São os dados que uma
+/// direção precisa para emitir um cartão e passar um recibo — nem mais um. Não há
+/// aqui profissão, estado civil nem nada que alguém possa achar interessante
+/// perguntar: cada campo a mais é um campo a proteger e uma razão a mais para
+/// alguém abandonar o formulário a meio.
+model Member {
+  id        String  @id @default(cuid())
+  academyId String
+  academy   Academy @relation(fields: [academyId], references: [id], onDelete: Cascade)
+
+  /// O número de sócio. Atribuído pela direção na aprovação, não na inscrição —
+  /// um número dado a quem ainda não foi aceite queima números na sequência.
+  number Int?
+
+  tierId String?
+  tier   MemberTier? @relation(fields: [tierId], references: [id], onDelete: SetNull)
+
+  name      String
+  email     String
+  birthdate DateTime @db.Date
+
+  /// Morada. `country` guarda o código ISO de duas letras.
+  country    String @default("PT")
+  address    String
+  postalCode String
+  city       String
+
+  /// Indicativo e número, separados: o indicativo é uma escolha e o número é
+  /// texto livre. Juntos num campo só, ninguém consegue filtrar por país nem
+  /// validar o formato de nenhum.
+  phoneCountry String @default("+351")
+  phone        String
+
+  sex MemberSex @default(UNSPECIFIED)
+
+  documentKind   MemberDocumentKind @default(CC)
+  documentNumber String
+  /// NIF. É o que liga o sócio ao recibo.
+  taxId          String
+
+  status MemberStatus @default(PENDING)
+
+  /// ## O consentimento é um carimbo, não uma caixa
+  ///
+  /// Guarda-se **quando** foi dado e não apenas que sim. O RGPD pede que o clube
+  /// consiga demonstrar o consentimento, e "true" não demonstra nada — não diz
+  /// quando, nem contra que versão dos termos. Nulo significa que não foi dado.
+  acceptedTermsAt DateTime
+  /// Comunicações comerciais dos parceiros oficiais.
+  partnerCommsAt  DateTime?
+  /// Partilha de dados com os parceiros oficiais. É outra pergunta e outro
+  /// carimbo: consentir receber não é consentir que os dados saiam do clube.
+  partnerDataAt   DateTime?
+
+  /// Como chegou. "site" para quem se inscreveu sozinho pela página do clube.
+  source String @default("site")
+
+  notes String?
+
+  approvedAt   DateTime?
+  approvedById String?
+  approvedBy   Membership? @relation("MemberApprover", fields: [approvedById], references: [id], onDelete: SetNull)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  /// Único por clube e não global: a mesma pessoa pode ser sócia de dois clubes,
+  /// e é o clube que responde pelos seus sócios.
+  @@unique([academyId, taxId])
+  @@unique([academyId, number])
+  @@index([academyId, status])
+  @@index([academyId, name])
+}
+
+/// Um item de catálogo da academia — locais, balneários, escalões, cargos.
+///
+/// ## Porque é que isto é uma tabela e não uma constante
+///
+/// Porque era uma constante, e não funcionava. Os catálogos viviam em memória no
+/// browser: um diretor acrescentava "Campo 3" nas Definições, marcava um treino
+/// lá, e ao recarregar a página o campo tinha desaparecido — e nenhum outro
+/// utilizador da academia chegou sequer a vê-lo. Configuração que não sai do
+/// separador não é configuração.
+///
+/// ## Porquê um `kind` em texto e não uma tabela por tipo
+///
+/// Porque são todos a mesma coisa: uma lista ordenada de rótulos com uma nota. Uma
+/// tabela por tipo daria cinco modelos idênticos e cinco endpoints idênticos, e o
+/// sexto catálogo que alguém quisesse acrescentar exigia uma migração. Assim é uma
+/// linha.
+model CatalogItem {
+  id        String  @id @default(cuid())
+  academyId String
+  academy   Academy @relation(fields: [academyId], references: [id], onDelete: Cascade)
+
+  /// "venues", "dressingRooms", "ageGroups", "staffTitles", "eventTypes".
+  kind  String
+  label String
+  /// Morada, anos de nascimento, o que a academia precise.
+  note  String?
+
+  /// A ordem é dados: "Sub-9, Sub-11, Sub-13" não sai de nenhuma ordenação
+  /// automática — sai da ordem que a direção definiu.
+  order Int @default(0)
+
+  /// Itens de que o domínio depende (os tipos de evento) não se apagam nem
+  /// renomeiam: um treino abre folha de presenças, um jogo tem adversário.
+  isSystem Boolean @default(false)
+
+  /// Arquivado, não apagado. Apagar "Campo 2" reescreveria o local de todos os
+  /// treinos que lá aconteceram; arquivar tira-o dos menus e deixa a história
+  /// intacta.
+  archivedAt DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([academyId, kind, label])
+  @@index([academyId, kind])
+}
+
+/* -------------------------------------------------------------------------- */
 //
 // Tudo o que está abaixo é **nosso**, não de nenhuma academia. Não leva
 // `academyId`, não entra na RLS por tenant, e é lido por um guard diferente.
@@ -980,8 +1927,16 @@ model PlatformAdmin {
   /// Quando o segundo factor foi inscrito. Sem isto não há impersonation.
   mfaEnrolledAt DateTime?
 
+  /// Segredo do feed de agenda (`.ics`) que o Google Calendar subscreve.
+  ///
+  /// Um URL que se sabe é um URL que se abre — o Google busca o feed sem sessão,
+  /// por isso o token **é** a autenticação. Nasce vazio, é gerado a pedido e
+  /// revoga-se gerando outro. Ver `contacts.ics.controller.ts`.
+  calendarToken String? @unique
+
   audits     AuditLog[]
   supportFor SupportSession[]
+  contacts   Contact[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -1092,4 +2047,124 @@ model SupportSession {
 
   @@index([academyId, startedAt])
   @@index([adminId, startedAt])
+}
+
+/* -------------------------------------------------------------------------- */
+/* Contactos — quem já falámos, e em que pé está                               */
+/* -------------------------------------------------------------------------- */
+
+/// Uma pessoa de fora com quem falámos sobre o produto.
+///
+/// **Não é um utilizador de nada.** Não tem `Membership`, não tem conta, não tem
+/// `academyId` — é gente que ainda não é cliente, ou que talvez nunca seja. Vive
+/// deste lado da fronteira, com as tabelas da plataforma, pela mesma razão que
+/// `PlatformAdmin` vive: é nosso, não é de nenhuma academia.
+///
+/// O que não se faz aqui: guardar pessoas **de dentro** de uma academia. Um pai ou
+/// um treinador de um cliente não entra nesta tabela — para isso existe a consola
+/// dele, e o Platform Admin não vê as pessoas lá dentro (`docs/04-plataforma.md`).
+model Contact {
+  id String @id @default(cuid())
+
+  name  String
+  /// O número de telefone, como foi escrito. Sem normalizar de propósito: um
+  /// contacto com um número estrangeiro ou uma extensão continua a ser útil, e um
+  /// validador rígido só faria perder o dado.
+  phone String?
+  email String?
+  /// O clube ou academia da pessoa. Texto livre — ainda não é cliente, logo ainda
+  /// não há `Academy` para apontar.
+  club  String?
+  /// O que a pessoa é lá dentro: "Diretor", "Treinador principal", "Presidente".
+  role  String?
+
+  status ContactStatus @default(NOVO)
+
+  /// Quem, da nossa parte, está a acompanhar. `SetNull` porque o contacto
+  /// sobrevive a quem sair da equipa.
+  ownerId String?
+  owner   PlatformAdmin? @relation(fields: [ownerId], references: [id], onDelete: SetNull)
+
+  /// Se chegou a cliente, a academia que nasceu daqui. É o fecho do ciclo.
+  academyId String?
+  academy   Academy? @relation(fields: [academyId], references: [id], onDelete: SetNull)
+
+  notes String?
+
+  /// Derivado do último `ContactTouch` e guardado à parte só porque é o campo por
+  /// que a lista ordena — a alternativa era um `max()` correlacionado em cada
+  /// leitura de uma tabela que existe para ser lida em lista.
+  lastContactAt DateTime?
+
+  /// O próximo passo combinado. É **isto** que vai ao Google Calendar: cada
+  /// contacto com data futura vira um evento no feed `.ics`.
+  nextActionAt   DateTime?
+  nextActionNote String?
+
+  touches ContactTouch[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([status, lastContactAt])
+  @@index([nextActionAt])
+  @@index([ownerId])
+}
+
+/// O estado da conversa, e só isso.
+///
+/// Sete valores porque cada um muda o que se faz a seguir. Um oitavo que só
+/// descrevesse um matiz do mesmo passo seria uma coluna mais bonita e uma decisão
+/// igual — e o custo aparece no dia em que dois deles significam a mesma coisa
+/// para pessoas diferentes.
+enum ContactStatus {
+  /// Está na lista, ainda ninguém falou com ele.
+  NOVO
+  /// Falámos. A bola está do lado deles.
+  CONTACTADO
+  /// Falámos e não voltaram a responder. É o estado que pede insistência.
+  SEM_RESPOSTA
+  /// Há reunião ou demonstração marcada.
+  REUNIAO
+  /// Proposta entregue, à espera de resposta.
+  PROPOSTA
+  /// Fechou. Costuma ter `academyId` preenchido.
+  CLIENTE
+  /// Disse que não, ou deixou de fazer sentido.
+  PERDIDO
+}
+
+/// Uma interação: a chamada que se fez, o email que se mandou, a reunião que houve.
+///
+/// **Append-only na prática** — não há endpoint que apague uma linha. O histórico é
+/// o que distingue "contactado" de "contactado três vezes sem resposta", e é essa
+/// diferença que decide se se volta a ligar ou se se desiste.
+model ContactTouch {
+  id        String  @id @default(cuid())
+  contactId String
+  contact   Contact @relation(fields: [contactId], references: [id], onDelete: Cascade)
+
+  channel ContactChannel
+  /// O que se disse. Curto, escrito na altura, e é o que se lê antes de voltar a ligar.
+  note    String?
+  /// Para onde o contacto passou por causa desta interação — nulo se não mudou.
+  status  ContactStatus?
+
+  /// Quem fez o contacto. Texto e não uma chave: é o nome de quem ligou no momento
+  /// em que ligou, e não deve mudar se a conta for apagada.
+  byName String?
+
+  happenedAt DateTime @default(now())
+  createdAt  DateTime @default(now())
+
+  @@index([contactId, happenedAt])
+}
+
+enum ContactChannel {
+  CHAMADA
+  EMAIL
+  WHATSAPP
+  REUNIAO
+  MENSAGEM
+  OUTRO
 }

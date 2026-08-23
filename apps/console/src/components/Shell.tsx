@@ -12,8 +12,12 @@ export function Shell() {
       <main className="flex-1 overflow-y-auto">
         {/* Largura total. A sidebar já dá o enquadramento à esquerda; uma segunda
             moldura de margem no meio do ecrã só afastava as colunas de dados umas
-            das outras. O ar vem do padding, não de um limite de largura. */}
-        <div className="w-full px-6 py-6 xl:px-8 2xl:px-10">
+            das outras. O ar vem do padding, não de um limite de largura.
+
+            E o padding vem de `--pg-pad`, que encolhe com a altura do ecrã — ver
+            "Densidade da página" em `styles.css`. Num portátil de 1366×768 é a
+            diferença entre a Visão geral caber e rolar. */}
+        <div className="page-pad w-full">
           <Outlet />
         </div>
       </main>

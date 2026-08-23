@@ -3,6 +3,7 @@ import { useSearchParams } from "react-router-dom";
 import { PageHeader } from "@/components/Shell";
 import { DataTable, Empty, Metric, MetricRow, Monogram, Panel, Pill, type Column } from "@/components/primitives";
 import { ResultCount, SearchInput, Segmented, Toolbar } from "@/components/filters";
+import { FamilyInviteDialog } from "@/components/FamilyInviteDialog";
 import { Home, Send } from "@/lib/icons";
 import { athleteById, currentPeriod, listFees, listGuardians, teamById } from "@/lib/api";
 import { percent, shortName } from "@/lib/format";
@@ -20,6 +21,7 @@ export default function Families() {
   const { session } = useSession();
   const [params, setParams] = useSearchParams();
   const [query, setQuery] = useState("");
+  const [convidar, setConvidar] = useState(false);
 
   const filter = params.get("filtro") ?? "todas";
   const setFilter = (v: string) => setParams(v === "todas" ? {} : { filtro: v });
@@ -111,11 +113,13 @@ export default function Families() {
   return (
     <>
       <PageHeader title="Famílias" subtitle={`${guardians.length} encarregados de educação`}>
-        <button type="button" className="ctl-primary">
+        <button type="button" onClick={() => setConvidar(true)} className="ctl-primary">
           <Send className="size-3.5" strokeWidth={1.75} />
           Convidar para a app
         </button>
       </PageHeader>
+
+      {convidar && <FamilyInviteDialog onClose={() => setConvidar(false)} />}
 
       <div className="space-y-3">
         <MetricRow>

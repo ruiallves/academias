@@ -48,7 +48,7 @@ adapta-se por ausência — sem um `if (desporto === …)` em lado nenhum.
 | **Primeiros passos** | painel ao canto, seis passos derivados dos dados reais (equipas, atletas, convites, treinos, famílias) — desaparece sozinho quando tudo estiver feito |
 | **Atletas** | lista filtrável, criação, filtros por ficha médica e baixa clínica |
 | **Ficha do atleta** | separadores por visão geral, jogos, assiduidade, clínico, encarregado — com etiqueta "Convocado" quando aplicável |
-| **Famílias** | encarregados, contactos, **quem já instalou a app** |
+| **Famílias** | encarregados, contactos, **quem já instalou a app**, e o link de convite para a app |
 | **Equipas** | grelha de cartões + ficha por equipa com vários separadores |
 | **Staff** | direção, equipa técnica, departamento clínico, operações — cargo *e* acesso; convites pendentes à vista |
 | **Ficha de staff** | contactos, histórico de equipas por época, atividade de quem treina, e **acesso configurável pessoa a pessoa** |
@@ -147,6 +147,12 @@ Verificado por `npm run test:callups` (22, o essencial) e
 manda instalar. É uma porta, não um cadeado — o controlo a sério é a autenticação
 no servidor.
 
+**Contas a sério.** A app deixou de entrar sozinha com uma conta de teste: sem
+sessão mostra o ecrã de entrada, e é por lá que uma família se regista pelo link do
+clube (ver *Convite às famílias*). A sessão vive no `localStorage` — isto é uma app
+instalada, não um separador, e um pai que abre o ícone de manhã não escreve a
+palavra-passe outra vez.
+
 **Notificações push** funcionam de ponta a ponta: VAPID, subscrição, service
 worker, e envio a partir do servidor — incluindo a convocatória, que ainda não
 tem ecrã dedicado na PWA (ver Por fazer).
@@ -208,6 +214,67 @@ apanhar o link.
 
 Verificado por `npm run test:invites` (16) e `npm run test:invite-flow` (36).
 
+## Convite às famílias
+
+`Famílias → Convidar para a app` abre um diálogo com **um link só, reutilizável** —
+`{slug}.academias.pt/familia/{token}` — que se manda ao grupo de WhatsApp dos pais.
+Se já houver um vivo, é esse que aparece, com a validade que lhe resta e quantas
+famílias já entraram por ele; gerar outro fecha o anterior, e isso está escrito no
+ecrã.
+
+Durações: **24 h, 7 dias, 30 dias ou sem prazo**. Sem prazo é uma escolha
+explícita, nunca o valor por omissão.
+
+### O desenho, numa frase
+
+O link diz *"esta academia está a aceitar famílias"*; o **NIF mais a data de
+nascimento** do educando dizem *"e tu és pai deste"*. São duas perguntas separadas,
+e é a separação que faz o link poder ser partilhado sem cuidados: quem o
+reencaminhar não dá acesso a nada, porque quem o abrir sem os dados de uma criança
+desta academia não fica ligado a ninguém.
+
+### O caminho do pai
+
+1. Abre o link no telemóvel → **redirecciona para a landing do clube**, que é onde
+   se instala a app. O convite viaja agarrado ao endereço e a app guarda-o (a
+   `start_url` do manifest não leva query — sem isto, instalar perdia o convite).
+2. Dentro da app: **criar conta** ou **entrar**. Quem chega pela primeira vez cria.
+3. **Identifica o filho** pelo NIF e pela data de nascimento. A app confirma
+   mostrando o primeiro nome e a equipa — antes de pedir a palavra-passe, para
+   ninguém escrever tudo e só depois descobrir que o NIF não bate.
+4. **Os seus dados**: nome, relação (Mãe/Pai/Encarregado), telemóvel, email e
+   palavra-passe. A sessão vem com a resposta do registo — não há um segundo ecrã
+   de login a seguir a escolher a password.
+
+Um irmão junta-se depois em `Perfil → Tenho outro filho no clube`, com a mesma
+prova. Ter conta não dá direito a reclamar crianças.
+
+### O que protege isto
+
+| | |
+|---|---|
+| A prova | `taxId` **e** `birthdate`, nunca um só — e a resposta é a mesma para NIF errado, data errada ou atleta que já saiu |
+| Tentativas | 10/min por IP a identificar, 5/min a registar — sem isso, nove dígitos varriam-se e isto era um oráculo que confirma o clube de crianças |
+| Consulta | `app.match_athlete_for_family` devolve **um id ou nada**: não lista, não pesquisa por nome, não confirma um NIF sem a data |
+| O token | em claro na base, ao contrário do de staff — porque não decide acessos e a secretaria tem de o poder copiar outra vez. Revogável a qualquer momento |
+| O NIF na consola | só para quem tem `family:read` (direção, secretaria). Um treinador não o recebe, e a app do pai também não |
+
+### NIF do atleta
+
+Campo novo em `Athlete`, único por academia e **obrigatório em cada escrita nova** —
+no formulário de *novo atleta* e na coluna *NIF* da importação por Excel. A coluna
+na base aceita nulo, porque há atletas inscritos antes desta regra e apagá-los não é
+opção; para esses, a ficha do atleta (separador **Família**) mostra o vazio como
+aviso com a consequência escrita, e preenche-se ali.
+
+A regra é deliberada: um atleta sem NIF é um atleta que **nenhuma família consegue
+reclamar**, e a academia só descobre isso semanas depois, quando o pai liga a dizer
+que a app não encontra o filho. Trinta segundos na inscrição contra um telefonema
+por atleta.
+
+Verificado por `npm run test:family-invite` (35 testes), que percorre o caminho
+inteiro e, sobretudo, as recusas.
+
 ## Landing da academia
 
 `GET /l/:slug` — HTML gerado no servidor (o preview do WhatsApp não corre
@@ -230,7 +297,10 @@ treinadores por omissão, limitados às suas equipas. Três passos:
 3. **Confirmar** — só as linhas válidas seguem, e o servidor **revalida tudo**.
 
 O import é de **atletas**, não de encarregados: um encarregado é uma conta, e
-liga-se pelo fluxo de Famílias com convite. O `SheetJS` é carregado sob procura
+liga-se sozinho pelo link do clube, identificando o educando pelo NIF e pela data
+de nascimento (ver *Convite às famílias*). A coluna **NIF** do modelo é o que torna
+esse caminho possível — é opcional, mas sem ela nenhuma família consegue reclamar
+os atletas importados. O `SheetJS` é carregado sob procura
 (429 KB num chunk à parte) — não pesa no arranque de quem nunca importa. O "Novo
 atleta" individual passou também a escrever na API.
 

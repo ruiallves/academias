@@ -136,7 +136,13 @@ async function main() {
 
   /* -------------------------------------------------------------------- */
   console.log("\n=== 7. Família só vê os seus (âmbito por atleta) ===");
-  check("GUARDIAN não vê a lista de atletas da academia", ((await req(parent, "GET", "/api/athletes")).body ?? []).length === 0);
+  // A app da família precisa dos filhos — o que não pode é ver os colegas deles.
+  // A fronteira mudou de "não vê nada" para "vê os seus": ver test-family-scope.
+  const parentAthletes = (await req(parent, "GET", "/api/athletes")).body ?? [];
+  const allAthletes = (await req(director, "GET", "/api/athletes")).body ?? [];
+  check("GUARDIAN vê os próprios filhos", parentAthletes.length > 0, `${parentAthletes.length}`);
+  check("GUARDIAN não vê a academia toda", parentAthletes.length < allAthletes.length, `${parentAthletes.length} de ${allAthletes.length}`);
+  check("e todos os que vê são mesmo dele", parentAthletes.every((a) => (a.guardians ?? []).some((g) => g.email === "familia@lifeclub.pt")), JSON.stringify(parentAthletes.map((a) => a.name)));
   check("GUARDIAN não chega ao quadro de staff", (await req(parent, "GET", "/api/staff")).status === 403);
 
   /* -------------------------------------------------------------------- */

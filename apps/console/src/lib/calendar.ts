@@ -1,6 +1,6 @@
 import { useSyncExternalStore } from "react";
 import { categoryColor, type CategoricalColor } from "@academia/ui/tokens";
-import { teams, useStore, type ApiEvent } from "@/lib/store";
+import { teams, useStore, type ApiEvent, type ApiMatch } from "@/lib/store";
 import { listSessions, listTeams, sportById, teamById, today } from "@/lib/api";
 import type { Session } from "@/lib/permissions";
 
@@ -82,6 +82,8 @@ export type CalendarEvent = {
   start: Date;
   end: Date;
   venue: string;
+  /** Onde a equipa se equipa. Ausente quando não há nenhum atribuído. */
+  dressingRoom?: string;
   coachId?: string;
   /** O nome de quem o dá, tal como veio do servidor. Ver `TrainingSession.coachName`. */
   coachName?: string;
@@ -169,9 +171,46 @@ export function fromApiEvent(e: ApiEvent): CalendarEvent {
     start: new Date(e.startsAt),
     end: new Date(e.endsAt),
     venue: e.venue,
+    dressingRoom: e.dressingRoom ?? undefined,
     coachId: e.coachId ?? undefined,
     coachName: e.coachName ?? undefined,
     cancelled: e.cancelled,
+  };
+}
+
+/**
+ * Traduz um **jogo** da API para o modelo do calendário.
+ *
+ * Um jogo vive em `Match` e não em `CalendarEvent` — é a tabela que guarda o
+ * adversário, a convocatória e o resultado, e é dela que o ecrã de Convocatórias
+ * lê. Sem esta tradução, um jogo marcado no calendário aparecia nas convocatórias
+ * mas não no próprio calendário, que é meia correcção e portanto nenhuma.
+ */
+export function fromApiMatch(m: ApiMatch): CalendarEvent {
+  const played = m.ourScore !== null && m.theirScore !== null;
+
+  return {
+    id: m.id,
+    kind: "match",
+    teamId: m.teamId,
+    title: `${m.isHome ? "vs" : "@"} ${m.opponent}`,
+    start: new Date(m.startsAt),
+    end: new Date(m.endsAt),
+    venue: m.venue,
+    cancelled: m.status === "CANCELLED",
+    match: {
+      opponent: m.opponent,
+      home: m.isHome,
+      callUps: m.calledUp.map((c) => ({
+        athleteId: c.athleteId,
+        status: c.status.toLowerCase() as CallUpStatus,
+      })),
+      // O resultado só existe depois de registado — é a ausência dele que decide
+      // se o painel mostra a convocatória ou a estatística.
+      ...(played
+        ? { result: { ourScore: m.ourScore as number, theirScore: m.theirScore as number, scorers: [] } }
+        : {}),
+    },
   };
 }
 
@@ -255,6 +294,7 @@ export function useEvents(session: Session, from: Date, to: Date): CalendarEvent
     start: new Date(s.start),
     end: new Date(s.end),
     venue: s.venue,
+    dressingRoom: s.dressingRoom,
     coachId: s.coachId,
     coachName: s.coachName,
     cancelled: s.status === "cancelled",
@@ -267,12 +307,17 @@ export function useEvents(session: Session, from: Date, to: Date): CalendarEvent
   // aplicou o âmbito; o filtro de âmbito abaixo é a segunda camada, como no resto.
   const apiEvents: CalendarEvent[] = store.events.map(fromApiEvent);
 
+  // Jogos a sério, de `Match` (`GET /api/matches`) — os mesmos que o ecrã de
+  // Convocatórias lê. É isto que faz um jogo marcado no calendário aparecer nos
+  // dois sítios, em vez de só num.
+  const apiMatches: CalendarEvent[] = store.matches.map(fromApiMatch);
+
   const scoped = new Set(listTeams(session).map((t) => t.id));
   const inScopeAndRange = (e: CalendarEvent) => {
     if (e.teamId && !scoped.has(e.teamId)) return false;
     return e.start >= from && e.start <= to;
   };
-  const pontuais = [...apiEvents, ...seededMatches].filter(inScopeAndRange);
+  const pontuais = [...apiEvents, ...apiMatches, ...seededMatches].filter(inScopeAndRange);
 
   return [...trainings, ...pontuais].sort((a, b) => a.start.getTime() - b.start.getTime());
 }

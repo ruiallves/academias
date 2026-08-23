@@ -1,6 +1,8 @@
 import { useEffect, useState, type ReactNode } from "react";
 import { academyLandingUrl, adoptSessionFromUrl, readSession } from "@/lib/session";
 
+const WANTED = "academia.wanted";
+
 /**
  * A porta da consola.
  *
@@ -28,7 +30,31 @@ export function LoginGate({ children }: { children: ReactNode }) {
   const [session] = useState(() => adoptSessionFromUrl() ?? readSession());
 
   useEffect(() => {
-    if (session) return;
+    if (session) {
+      /*
+       * Chegou com sessão e havia um destino guardado — é quem clicou num link
+       * de uma ficha, foi mandado entrar, e entrou. Levá-lo à Visão geral seria
+       * fazê-lo procurar outra vez o que já tinha pedido.
+       */
+      try {
+        const wanted = sessionStorage.getItem(WANTED);
+        sessionStorage.removeItem(WANTED);
+        if (wanted && wanted !== window.location.pathname + window.location.search) {
+          window.history.replaceState(null, "", wanted);
+        }
+      } catch {
+        /* modo privado: se não deu para guardar, também não há nada a repor */
+      }
+      return;
+    }
+
+    // Onde a pessoa queria ir, para lá voltar depois de entrar.
+    try {
+      sessionStorage.setItem(WANTED, window.location.pathname + window.location.search);
+    } catch {
+      /* sem armazenamento, entra-se na mesma — só se perde o destino */
+    }
+
     // `replace` e não `assign`: quem foi mandado entrar não deve poder voltar atrás
     // do histórico para uma consola onde não tem sessão.
     window.location.replace(academyLandingUrl());

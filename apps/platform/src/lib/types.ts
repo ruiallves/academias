@@ -61,3 +61,68 @@ export const STATUS_LABEL: Record<AcademyStatus, string> = {
   PAST_DUE: "Pagamento falhado",
   CANCELLED: "Cancelada",
 };
+
+/* -------------------------------------------------------------------------- */
+/* Contactos                                                                   */
+/* -------------------------------------------------------------------------- */
+
+export type ContactStatus = "NOVO" | "CONTACTADO" | "SEM_RESPOSTA" | "REUNIAO" | "PROPOSTA" | "CLIENTE" | "PERDIDO";
+export type ContactChannel = "CHAMADA" | "EMAIL" | "WHATSAPP" | "REUNIAO" | "MENSAGEM" | "OUTRO";
+
+export type ContactTouch = {
+  id: string;
+  channel: ContactChannel;
+  note: string | null;
+  status: ContactStatus | null;
+  byName: string | null;
+  happenedAt: string;
+};
+
+export type Contact = {
+  id: string;
+  name: string;
+  phone: string | null;
+  email: string | null;
+  club: string | null;
+  role: string | null;
+  status: ContactStatus;
+  notes: string | null;
+  owner: { id: string; name: string } | null;
+  academy: { id: string; name: string; slug: string } | null;
+  lastContactAt: string | null;
+  nextActionAt: string | null;
+  nextActionNote: string | null;
+  touchCount: number;
+  lastTouch: { channel: ContactChannel; note: string | null; happenedAt: string } | null;
+  createdAt: string;
+  updatedAt: string;
+  /** Só no detalhe — a lista traz apenas `lastTouch`. */
+  touches?: ContactTouch[];
+};
+
+/**
+ * A ordem importa: é a ordem do funil, e é a ordem por que os filtros aparecem.
+ * `CLIENTE` e `PERDIDO` no fim porque são fim de linha — deixam de gerar trabalho.
+ */
+export const CONTACT_STATUS: ContactStatus[] = ["NOVO", "CONTACTADO", "SEM_RESPOSTA", "REUNIAO", "PROPOSTA", "CLIENTE", "PERDIDO"];
+
+export const CONTACT_STATUS_LABEL: Record<ContactStatus, string> = {
+  NOVO: "Por contactar",
+  CONTACTADO: "Contactado",
+  SEM_RESPOSTA: "Sem resposta",
+  REUNIAO: "Reunião marcada",
+  PROPOSTA: "Proposta enviada",
+  CLIENTE: "Cliente",
+  PERDIDO: "Perdido",
+};
+
+export const CHANNEL_LABEL: Record<ContactChannel, string> = {
+  CHAMADA: "Chamada",
+  EMAIL: "Email",
+  WHATSAPP: "WhatsApp",
+  REUNIAO: "Reunião",
+  MENSAGEM: "Mensagem",
+  OUTRO: "Outro",
+};
+
+export type CalendarFeed = { url: string; reachable: boolean; googleAddUrl: string };

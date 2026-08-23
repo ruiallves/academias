@@ -122,6 +122,7 @@ precise mesmo disso escala para um pedido formal ao cliente.
 ```
 Overview          o que precisa de atenção, depois os números
 Academias         lista, detalhe, criação e convite
+Contactos         quem já falámos, e em que pé está a conversa
 Subscrições       planos, faturação, cobranças falhadas
 Analytics         crescimento, retenção, utilização
 Operações
@@ -217,6 +218,81 @@ O diretor recebe o link, escolhe password, e cai no onboarding.
 guardado — um número guardado à parte diverge no dia em que alguém apagar uma
 equipa.
 
+### Contactos
+
+A lista de quem já falámos e ainda não é cliente. Responde a uma pergunta só — **a
+quem ligo hoje** — e é isso que decide tudo o resto do desenho.
+
+`Nome · Número · Clube · Estado · Seguimento · Último contacto`
+
+Quatro colunas de identidade e duas de tempo. O cargo, o email, as notas e o
+histórico das conversas ficam na ficha, a um clique: uma tabela com dezoito colunas
+obriga a procurar, uma com quatro entrega. As duas colunas de tempo ganham o lugar
+por serem as únicas que geram trabalho — o **seguimento** é o que há para fazer, o
+**último contacto** é quem está a esfriar.
+
+A ordem por omissão não é alfabética nem por data de entrada: **seguimento
+atrasado primeiro**, depois o marcado, depois o resto por ordem de esfriamento. É
+a ordem por que o dia se faz.
+
+**Os sete estados**, e cada um muda o que se faz a seguir:
+
+| Estado | O que significa |
+|---|---|
+| `NOVO` | está na lista, ninguém falou com ele |
+| `CONTACTADO` | falámos; a bola está do lado deles |
+| `SEM_RESPOSTA` | falámos e não voltaram — é o estado que pede insistência |
+| `REUNIAO` | há reunião ou demonstração marcada |
+| `PROPOSTA` | proposta entregue, à espera de resposta |
+| `CLIENTE` | fechou; costuma ter a `Academy` ligada |
+| `PERDIDO` | disse que não, ou deixou de fazer sentido |
+
+**Registar um contacto** é uma operação só, e não três: o que aconteceu (canal e
+nota), em que pé ficou (estado) e quando se volta a falar (data). São a mesma
+pergunta na cabeça de quem acabou de desligar o telefone, e separá-las em ecrãs
+seria garantir que o terceiro nunca se preenche. Cada registo fica em
+`ContactTouch` — é o histórico que distingue "contactado" de "contactado três
+vezes sem resposta", e é essa diferença que decide se se volta a ligar.
+
+#### A fronteira, outra vez
+
+Estas pessoas são **de fora**: um diretor de um clube que ainda não é cliente. É o
+que faz isto ser legítimo deste lado — continua a valer que o Platform Admin não
+vê as pessoas dentro das academias. Um pai ou um treinador de um cliente **não
+entra nesta tabela**, e a razão é essa.
+
+Como as outras tabelas da plataforma, `Contact` e `ContactTouch` são retiradas ao
+papel `academia_app` na migração. Não é decoração: a migração de RLS deixou
+`ALTER DEFAULT PRIVILEGES` a conceder acesso a *qualquer tabela nova*, por isso uma
+tabela da plataforma que não revogue explicitamente nasce legível a partir de um
+pedido de academia — e sem RLS, legível por inteiro.
+
+#### Google Calendar
+
+Os seguimentos aparecem no calendário de quem anda a falar com clubes, por duas
+vias deliberadamente diferentes:
+
+| Via | O que faz | Quando serve |
+|---|---|---|
+| **Feed `.ics` subscrito** | um endereço que o Google vai buscar sozinho; cada contacto com data futura é um evento que se move quando a data muda | o pano de fundo — tudo o que está marcado, sempre actualizado |
+| **"Agendar no Google"** | abre o Google com o evento preenchido; guarda-se com um clique, com convidados e notificações | quando é para amanhã de manhã e não pode esperar pela sincronização |
+
+**Porque não a API do Google.** OAuth traria um projecto na Google Cloud, um ecrã
+de consentimento a rever, tokens de refresh guardados e um escopo de escrita no
+calendário de uma pessoa — muita superfície, e uma dependência de terceiros no
+caminho de uma lista que tem de abrir. Um feed subscrito faz o que é preciso.
+
+**O token é a autenticação.** Uma subscrição de calendário é um `GET` anónimo dos
+servidores do Google: não há onde levar um cabeçalho de sessão. Consequências,
+todas assumidas e ditas no ecrã: o segredo é por administrador, nasce só quando
+alguém o pede, revoga-se gerando outro, e a rotação fica no `AuditLog`. O feed vive
+num controlador à parte — `ContactsCalendarController` — precisamente para que
+ninguém acrescente ali uma rota a pensar que está protegida.
+
+O que o feed **não** mostra: contactos sem data marcada, o histórico das conversas,
+e nada de nenhuma academia. Fechados (`CLIENTE`, `PERDIDO`) também não — não geram
+trabalho, e não têm por que tocar no telemóvel de ninguém.
+
 ### Subscrições
 
 Plano por academia, ciclo, próxima cobrança, histórico, cobranças falhadas com
@@ -268,6 +344,8 @@ anterior, ou nada.
    metadados de academia.
 3. Um `Membership` nunca dá acesso à plataforma; um `PlatformAdmin` nunca dá acesso
    a uma consola sem passar pela sessão de suporte, registada e temporária.
+   Em **Contactos** só entram pessoas de fora — nunca alguém que já pertence a uma
+   academia cliente.
 4. Impersonation é **de leitura**, com MFA, com motivo, com prazo e com registo.
 
 ---
@@ -280,6 +358,8 @@ anterior, ou nada.
 | Funções `SECURITY DEFINER`: overview, academias, séries | **feito** |
 | `PlatformGuard`, módulo `platform`, endpoints | **feito** |
 | App `apps/platform` — Visão geral, Academias, Crescimento, Registo | **feito** |
+| Contactos: lista, ficha, histórico de conversas | **feito** |
+| Contactos: feed `.ics` para o Google Calendar + "Agendar no Google" | **feito** |
 | Criar academia + convite ao diretor | **feito** (reutiliza o mecanismo de convites) |
 | Papel `platform_app` sem BYPASSRLS | **por fazer** — ver `platform.prisma.ts` |
 | Impersonation ("ver como academia") com MFA | por fazer |
@@ -288,7 +368,9 @@ anterior, ou nada.
 | System health e suporte | por fazer |
 
 Verificado por `npm run test:platform` (25 testes, a fronteira ao nível da base de
-dados) e `npm run test:platform-api` (30 testes, os endpoints). Provam as duas
+dados), `npm run test:platform-api` (30 testes, os endpoints) e
+`npm run test:contacts` (os contactos e o feed de calendário, incluindo o token
+rodado a invalidar o anterior). Provam as duas
 direcções: um diretor de academia leva 403 no painel, e um administrador da
 plataforma leva 403 numa consola.
 

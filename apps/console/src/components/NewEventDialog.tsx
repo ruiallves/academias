@@ -7,7 +7,7 @@ import { apiPost } from "@/lib/http";
 import { reloadAcademy } from "@/lib/store";
 import { useActiveCatalog } from "@/lib/catalogs";
 import { longDate } from "@/lib/format";
-import { Settings } from "@/lib/icons";
+import { Settings, TriangleAlert } from "@/lib/icons";
 import type { Session } from "@/lib/permissions";
 import { Dialog, DialogField, dialogInputClass } from "./Dialog";
 import { cx, SelectField } from "./primitives";
@@ -42,6 +42,7 @@ export function NewEventDialog({
 }) {
   const teams = listTeams(session);
   const venues = useActiveCatalog("venues");
+  const dressingRooms = useActiveCatalog("dressingRooms");
   const mayTargetWholeAcademy = session.scope?.teamIds === undefined;
 
   const [kind, setKind] = useState<EventKind>("training");
@@ -51,16 +52,60 @@ export function NewEventDialog({
   const [start, setStart] = useState("18:00");
   const [end, setEnd] = useState("19:30");
   const [venue, setVenue] = useState(venues[0]?.label ?? "");
+  const [dressingRoom, setDressingRoom] = useState("");
+  const [opponent, setOpponent] = useState("");
+  const [isHome, setIsHome] = useState(true);
 
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  /*
+   * Um jogo é sempre de uma equipa e contra alguém.
+   *
+   * Por baixo, um jogo não é gravado como evento genérico mas como `Match` — a
+   * tabela que guarda adversário, convocatória e resultado, e a mesma que o ecrã
+   * de Convocatórias lê. Daí estes dois campos aparecerem só aqui: sem eles, o
+   * servidor não teria como criar o jogo, e "toda a academia" não faz sentido
+   * nenhum para um jogo.
+   */
+  const isMatch = kind === "match";
+
+  /*
+   * Um treino é sempre de uma equipa — como um jogo.
+   *
+   * Por baixo, um treino deixou de ser gravado como evento genérico e passou a ser
+   * uma `TrainingSession`: a tabela que abre folha de presenças e a única que a
+   * app da família lê. Essa tabela exige equipa, e com razão — um treino sem
+   * plantel não tem quem faltar. "Toda a academia" continua a existir para
+   * estágios e reuniões, onde faz sentido.
+   */
+  const needsTeam = isMatch || kind === "training";
+
   const teamName = teams.find((t) => t.id === teamId)?.name;
-  const suggested = teamId ? `${KIND_LABEL[kind]} · ${teamName}` : `${KIND_LABEL[kind]} · toda a academia`;
+  const suggested = isMatch
+    ? opponent.trim()
+      ? `${isHome ? "vs" : "@"} ${opponent.trim()}`
+      : `${KIND_LABEL[kind]} · ${teamName ?? ""}`
+    : teamId
+      ? `${KIND_LABEL[kind]} · ${teamName}`
+      : `${KIND_LABEL[kind]} · toda a academia`;
+
+  const valid = (!needsTeam || teamId !== "") && (!isMatch || opponent.trim() !== "");
+
+  /*
+   * O local de um jogo fora.
+   *
+   * `venue` é obrigatório no servidor, mas ninguém deve ser obrigado a saber como
+   * se chama o recinto do adversário para poder marcar o jogo. Quem escrever,
+   * fica com o que escreveu; quem deixar em branco fica com "Fora · Fafe", que é
+   * o que um pai precisa de ler na agenda.
+   */
+  const awayVenuePlaceholder = opponent.trim() ? `Fora · ${opponent.trim()}` : "Campo do adversário";
+  const effectiveVenue = isMatch && !isHome ? venue.trim() || awayVenuePlaceholder : venue;
 
   async function submit(e: FormEvent) {
     e.preventDefault();
-    if (busy) return;
+    if (busy || !valid) return;
     const [y, m, d] = date.split("-").map(Number);
     const [sh, sm] = start.split(":").map(Number);
     const [eh, em] = end.split(":").map(Number);
@@ -75,7 +120,9 @@ export function NewEventDialog({
         title: title.trim() || suggested,
         startsAt: new Date(y, m - 1, d, sh, sm).toISOString(),
         endsAt: new Date(y, m - 1, d, eh, em).toISOString(),
-        venue,
+        venue: effectiveVenue,
+        ...(dressingRoom ? { dressingRoom } : {}),
+        ...(isMatch ? { opponent: opponent.trim(), isHome } : {}),
       });
       await reloadAcademy();
       onClose();
@@ -97,25 +144,48 @@ export function NewEventDialog({
           <button type="button" onClick={onClose} className="ctl-ghost">
             Cancelar
           </button>
-          <button type="submit" form="form-novo-evento" className="ctl-primary" disabled={venues.length === 0 || busy}>
+          <button
+            type="submit"
+            form="form-novo-evento"
+            className="ctl-primary"
+            // Sem locais no catálogo não se marca nada **em casa** — mas um jogo
+            // fora não usa os nossos campos, e não tem porque ficar refém disso.
+            disabled={(venues.length === 0 && !(isMatch && !isHome)) || busy || !valid}
+            title={!valid ? "Um jogo precisa de escalão e adversário" : undefined}
+          >
             {busy ? "A agendar…" : "Agendar"}
           </button>
         </>
       }
     >
       <form id="form-novo-evento" onSubmit={submit} className="space-y-4 p-5">
+        {/*
+          O tipo decide o que isto **é**, não como se filtra uma lista.
+
+          Um jogo vai para outra tabela, ganha adversário e aparece nas
+          convocatórias; um treino não. Por isso o seleccionado aqui é a tinta
+          cheia e não o branco discreto dos filtros: escolher "Treino" sem dar
+          por isso e só descobrir nas convocatórias é caro de mais para se
+          resolver com um contraste subtil.
+        */}
         <fieldset>
           <legend className="mb-1.5 text-meta font-medium text-ink">Tipo</legend>
-          <div className="inline-flex items-center gap-px rounded-[var(--radius-control)] bg-sunken p-0.5">
+          <div className="inline-flex items-center gap-1 rounded-[var(--radius-control)] bg-sunken p-1">
             {KINDS.map((k) => (
               <button
                 key={k}
                 type="button"
-                onClick={() => setKind(k)}
+                onClick={() => {
+                  setKind(k);
+                  // Vinha de "toda a academia" e passou a jogo ou treino: os dois
+                  // são sempre de uma equipa, por isso escolhe-se a primeira em
+                  // vez de deixar o formulário num estado que o servidor recusa.
+                  if ((k === "match" || k === "training") && !teamId) setTeamId(teams[0]?.id ?? "");
+                }}
                 aria-pressed={kind === k}
                 className={cx(
-                  "h-7 rounded-[6px] px-2.5 text-meta font-medium transition-colors duration-[120ms]",
-                  kind === k ? "bg-surface text-ink shadow-[0_1px_2px_rgb(26_25_23/0.06)]" : "text-ink-3 hover:text-ink-2",
+                  "h-8 rounded-[7px] px-3 text-meta font-semibold transition-colors duration-[120ms]",
+                  kind === k ? "bg-ink text-surface" : "text-ink-3 hover:bg-surface/60 hover:text-ink-2",
                 )}
               >
                 {KIND_LABEL[k]}
@@ -123,6 +193,32 @@ export function NewEventDialog({
             ))}
           </div>
         </fieldset>
+
+        {/*
+          O título diz "jogo", o tipo diz outra coisa.
+
+          Não bloqueia — quem quiser mesmo chamar "Jogo de treino" a um treino
+          tem esse direito. Mas três eventos seguidos criados como treino com
+          "vs" no título são um sinal de que a pergunta vale a pena ser feita,
+          uma vez, com a correcção a um toque de distância.
+        */}
+        {looksLikeMatch(title) && !isMatch && (
+          <button
+            type="button"
+            onClick={() => {
+              setKind("match");
+              if (!teamId) setTeamId(teams[0]?.id ?? "");
+            }}
+            className="flex w-full items-center gap-2.5 rounded-[var(--radius-control)] border border-warn/30 bg-warn-soft px-3 py-2.5 text-left"
+          >
+            <TriangleAlert className="size-4 shrink-0 text-warn" strokeWidth={1.9} />
+            <span className="min-w-0 flex-1 text-meta text-warn">
+              Isto parece um jogo, mas o tipo é <strong className="font-semibold">{KIND_LABEL[kind]}</strong> — só
+              um <strong className="font-semibold">Jogo</strong> aparece nas convocatórias.
+            </span>
+            <span className="shrink-0 text-meta font-semibold text-warn underline">Mudar</span>
+          </button>
+        )}
 
         <DialogField label="Escalão">
           <div className="flex items-center gap-2">
@@ -141,11 +237,58 @@ export function NewEventDialog({
               onChange={setTeamId}
               options={[
                 ...teams.map((t) => ({ value: t.id, label: t.name })),
-                ...(mayTargetWholeAcademy ? [{ value: "", label: "Toda a academia (sem cor)" }] : []),
+                // Nunca para um jogo nem para um treino — quem joga e quem treina
+                // é uma equipa.
+                ...(mayTargetWholeAcademy && !needsTeam ? [{ value: "", label: "Toda a academia (sem cor)" }] : []),
               ]}
             />
           </div>
         </DialogField>
+
+        {/* Só um jogo tem adversário — e é ele que o torna convocável. */}
+        {isMatch && (
+          <div className="grid grid-cols-[1fr_auto] gap-3">
+            <DialogField label="Adversário">
+              <input
+                value={opponent}
+                onChange={(e) => setOpponent(e.target.value)}
+                placeholder="ex.: SC Vilarinho"
+                className={dialogInputClass}
+                required
+              />
+            </DialogField>
+
+            <DialogField label="Onde">
+              <div className="inline-flex h-9 items-center gap-px rounded-[var(--radius-control)] bg-sunken p-0.5">
+                {[
+                  { value: true, label: "Casa" },
+                  { value: false, label: "Fora" },
+                ].map((o) => (
+                  <button
+                    key={o.label}
+                    type="button"
+                    onClick={() => {
+                      setIsHome(o.value);
+                      // O local trocou de natureza: um campo nosso deixa de fazer
+                      // sentido fora, e o texto livre de fora não é um campo
+                      // nosso. Limpar evita levar "Campo 1" para um jogo em Fafe.
+                      setVenue(o.value ? (venues[0]?.label ?? "") : "");
+                    }}
+                    aria-pressed={isHome === o.value}
+                    className={cx(
+                      "h-8 rounded-[6px] px-3 text-meta font-medium transition-colors duration-[120ms]",
+                      isHome === o.value
+                        ? "bg-surface text-ink shadow-[0_1px_2px_rgb(26_25_23/0.06)]"
+                        : "text-ink-3 hover:text-ink-2",
+                    )}
+                  >
+                    {o.label}
+                  </button>
+                ))}
+              </div>
+            </DialogField>
+          </div>
+        )}
 
         <DialogField label="Título" hint="opcional">
           <input value={title} onChange={(e) => setTitle(e.target.value)} placeholder={suggested} className={dialogInputClass} />
@@ -163,31 +306,85 @@ export function NewEventDialog({
           </DialogField>
         </div>
 
-        <DialogField
-          label="Local"
-          hint={
-            <Link to="/definicoes?catalogo=venues" className="inline-flex items-center gap-1 text-ink-3 hover:text-ink">
-              <Settings className="size-3" strokeWidth={1.75} />
-              gerir locais
-            </Link>
-          }
-        >
-          {venues.length > 0 ? (
+        {/*
+          Fora de casa, o campo não é nosso.
+
+          O catálogo de locais são os campos da academia — oferecê-los para um
+          jogo fora convidava a marcar "Campo 1" quando a equipa vai jogar a
+          Fafe. Fora, o local é texto livre e **opcional**: quem souber o nome do
+          recinto escreve-o, quem não souber fica com "Fora · Adversário", que já
+          diz o essencial a um pai a ler a agenda.
+        */}
+        {isMatch && !isHome ? (
+          <DialogField label="Local" hint="opcional">
+            <input
+              value={venue}
+              onChange={(e) => setVenue(e.target.value)}
+              placeholder={awayVenuePlaceholder}
+              className={dialogInputClass}
+            />
+          </DialogField>
+        ) : (
+          <DialogField
+            label="Local"
+            hint={
+              <Link to="/definicoes?catalogo=venues" className="inline-flex items-center gap-1 text-ink-3 hover:text-ink">
+                <Settings className="size-3" strokeWidth={1.75} />
+                gerir locais
+              </Link>
+            }
+          >
+            {venues.length > 0 ? (
+              <SelectField
+                className="w-full"
+                value={venue}
+                onChange={setVenue}
+                options={venues.map((v) => ({ value: v.label, label: v.label }))}
+              />
+            ) : (
+              <p className="rounded-[var(--radius-control)] border border-dashed border-line bg-sunken/50 px-2.5 py-2 text-meta text-ink-3">
+                Ainda não há locais.{" "}
+                <Link to="/definicoes?catalogo=venues" className="font-medium text-ink underline">
+                  Criar o primeiro
+                </Link>
+              </p>
+            )}
+          </DialogField>
+        )}
+
+        {/*
+          O balneário.
+
+          Só para o que acontece em casa: num jogo fora, o balneário é o que o
+          adversário der, e um campo aqui seria uma promessa que o clube não pode
+          cumprir. Opcional sempre — uma academia que treina num campo sem
+          balneários atribuídos não tem nada para escolher, e o campo desaparece
+          em vez de pedir algo que não existe.
+        */}
+        {!(isMatch && !isHome) && dressingRooms.length > 0 && (
+          <DialogField
+            label="Balneário"
+            hint={
+              <Link
+                to="/definicoes?catalogo=dressingRooms"
+                className="inline-flex items-center gap-1 text-ink-3 hover:text-ink"
+              >
+                <Settings className="size-3" strokeWidth={1.75} />
+                gerir balneários
+              </Link>
+            }
+          >
             <SelectField
               className="w-full"
-              value={venue}
-              onChange={setVenue}
-              options={venues.map((v) => ({ value: v.label, label: v.label }))}
+              value={dressingRoom}
+              onChange={setDressingRoom}
+              options={[
+                { value: "", label: "Sem balneário atribuído" },
+                ...dressingRooms.map((b) => ({ value: b.label, label: b.label })),
+              ]}
             />
-          ) : (
-            <p className="rounded-[var(--radius-control)] border border-dashed border-line bg-sunken/50 px-2.5 py-2 text-meta text-ink-3">
-              Ainda não há locais.{" "}
-              <Link to="/definicoes?catalogo=venues" className="font-medium text-ink underline">
-                Criar o primeiro
-              </Link>
-            </p>
-          )}
-        </DialogField>
+          </DialogField>
+        )}
 
         {error && (
           <p className="rounded-[var(--radius-control)] bg-risk-soft px-3 py-2 text-meta text-risk">{error}</p>
@@ -199,6 +396,17 @@ export function NewEventDialog({
 
 function toInputDate(d: Date) {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+}
+
+/**
+ * O título soa a jogo?
+ *
+ * "vs", "v.", "@" e a própria palavra "jogo" — as formas como um diretor escreve
+ * um jogo à pressa. Os limites de palavra (`\b`) evitam apanhar "Revisão" por
+ * causa do "vs" lá dentro.
+ */
+function looksLikeMatch(title: string): boolean {
+  return /(\bvs\.?\b|\bv\.\s|@|\bjogo\b|\bderby\b|\btaça\b)/i.test(title);
 }
 
 const capitalize = (s: string) => s[0].toUpperCase() + s.slice(1);

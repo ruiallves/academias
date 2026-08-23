@@ -1,4 +1,5 @@
 import { useSyncExternalStore } from "react";
+import { apiDelete, apiGet, apiPatch, apiPost } from "@/lib/http";
 
 /**
  * Catálogos da academia.
@@ -15,9 +16,24 @@ import { useSyncExternalStore } from "react";
  *  2. **Um item em uso arquiva-se, não se apaga.** Apagar "Campo 2" reescreveria o
  *     local de todos os treinos que lá aconteceram. Arquivar tira-o dos menus e
  *     deixa a história intacta.
+ *
+ * ## Isto já não vive no browser
+ *
+ * Vivia, e não funcionava: um diretor acrescentava "Campo 3", marcava um treino
+ * lá, recarregava a página e o campo tinha desaparecido — e nenhum outro
+ * utilizador da academia chegou sequer a vê-lo. Configuração que não sai do
+ * separador não é configuração.
+ *
+ * Agora vem de `GET /api/catalogs` e cada alteração escreve no servidor. O estado
+ * local continua a existir porque é ele que faz os menus redesenharem-se no
+ * instante em que algo muda — mas é uma **cópia**, não a verdade: cada escrita
+ * relê, e se o servidor recusar (um duplicado, uma permissão em falta) é a versão
+ * de lá que fica.
  */
 
-export type CatalogKey = "venues" | "ageGroups" | "staffTitles" | "eventTypes";
+export type CatalogKey = "venues" | "dressingRooms" | "ageGroups" | "staffTitles" | "eventTypes";
+
+export const CATALOG_KEYS: CatalogKey[] = ["venues", "dressingRooms", "ageGroups", "staffTitles", "eventTypes"];
 
 export type CatalogItem = {
   id: string;
@@ -35,6 +51,12 @@ export const CATALOG_META: Record<CatalogKey, { title: string; hint: string; pla
     hint: "onde a academia treina e joga",
     placeholder: "Campo 3, Piscina do Sameiro…",
     noteLabel: "Morada ou nota",
+  },
+  dressingRooms: {
+    title: "Balneários",
+    hint: "onde as equipas se equipam",
+    placeholder: "Balneário 3, Balneário visitantes…",
+    noteLabel: "Onde fica",
   },
   ageGroups: {
     title: "Escalões",
@@ -55,101 +77,32 @@ export const CATALOG_META: Record<CatalogKey, { title: string; hint: string; pla
 };
 
 /* -------------------------------------------------------------------------- */
-/* Estado                                                                      */
+/* Estado — cópia local do que o servidor tem                                  */
 /* -------------------------------------------------------------------------- */
 
-/**
- * Os quatro tipos de evento base são `system`: o domínio distingue-os. Um treino
- * abre folha de presenças, um jogo tem adversário e resultado. Uma academia pode
- * acrescentar quantos quiser, mas não pode apagar aqueles de que o produto depende.
- */
-const SEED: Record<CatalogKey, CatalogItem[]> = {
-  venues: [
-    { id: "v1", label: "Campo 1", note: "Relvado sintético · Rua do Carvalhal" },
-    { id: "v2", label: "Campo 2", note: "Relvado sintético · Rua do Carvalhal" },
-    { id: "v3", label: "Pavilhão", note: "Piso interior · Complexo da Rodovia" },
-    { id: "v4", label: "Piscina municipal", note: "25 m · Parque da Ponte" },
-    { id: "v5", label: "Sede", note: "Reuniões e formação" },
-  ],
-  ageGroups: [
-    { id: "g1", label: "Sub-9", note: "2017–2018" },
-    { id: "g2", label: "Sub-11", note: "2015–2016" },
-    { id: "g3", label: "Sub-12", note: "2014–2015" },
-    { id: "g4", label: "Sub-13", note: "2013–2014" },
-    { id: "g5", label: "Sub-14", note: "2012–2013" },
-    { id: "g6", label: "Sub-15", note: "2011–2012" },
-    { id: "g7", label: "6–9 anos" },
-    { id: "g8", label: "10–14 anos" },
-  ],
-  staffTitles: [
-    { id: "s1", label: "Treinador principal" },
-    { id: "s2", label: "Treinador adjunto" },
-    { id: "s3", label: "Coordenador" },
-  ],
-  eventTypes: [
-    { id: "training", label: "Treino", system: true },
-    { id: "match", label: "Jogo", system: true },
-    { id: "tournament", label: "Torneio", system: true },
-    { id: "other", label: "Evento", system: true },
-  ],
+type ApiItem = {
+  id: string;
+  kind: CatalogKey;
+  label: string;
+  note: string | null;
+  order: number;
+  isSystem: boolean;
+  archivedAt: string | null;
 };
 
-let state: Record<CatalogKey, CatalogItem[]> = structuredClone(SEED);
+const EMPTY: Record<CatalogKey, CatalogItem[]> = {
+  venues: [],
+  dressingRooms: [],
+  ageGroups: [],
+  staffTitles: [],
+  eventTypes: [],
+};
+
+let state: Record<CatalogKey, CatalogItem[]> = { ...EMPTY };
+let loaded = false;
 const listeners = new Set<() => void>();
 
-function commit(key: CatalogKey, items: CatalogItem[]) {
-  state = { ...state, [key]: items };
-  listeners.forEach((l) => l());
-}
-
-/* -------------------------------------------------------------------------- */
-/* Operações                                                                   */
-/* -------------------------------------------------------------------------- */
-
-export function addItem(key: CatalogKey, label: string, note?: string) {
-  const clean = label.trim();
-  if (!clean) return;
-  // Duplicados são o problema que este catálogo existe para resolver.
-  if (state[key].some((i) => i.label.toLowerCase() === clean.toLowerCase())) return;
-  commit(key, [...state[key], { id: `${key}_${Date.now().toString(36)}`, label: clean, note: note?.trim() || undefined }]);
-}
-
-export function renameItem(key: CatalogKey, id: string, label: string, note?: string) {
-  commit(
-    key,
-    state[key].map((i) =>
-      i.id === id && !i.system ? { ...i, label: label.trim() || i.label, note: note?.trim() || undefined } : i,
-    ),
-  );
-}
-
-/** Arquivar tira dos menus; restaurar devolve. Nunca se perde história. */
-export function toggleArchived(key: CatalogKey, id: string) {
-  commit(key, state[key].map((i) => (i.id === id ? { ...i, archived: !i.archived } : i)));
-}
-
-/**
- * Só faz sentido em itens nunca usados. A UI da consola não oferece este botão —
- * "nunca usado" só se sabe com a certeza a sério quando há uma base de dados a
- * perguntar; aqui fica pronto para o dia em que `apps/api` responder a essa
- * pergunta. Até lá, arquivar é o único caminho visível.
- */
-export function deleteItem(key: CatalogKey, id: string) {
-  commit(key, state[key].filter((i) => i.id !== id));
-}
-
-export function moveItem(key: CatalogKey, id: string, direction: -1 | 1) {
-  const items = [...state[key]];
-  const from = items.findIndex((i) => i.id === id);
-  const to = from + direction;
-  if (from < 0 || to < 0 || to >= items.length) return;
-  [items[from], items[to]] = [items[to], items[from]];
-  commit(key, items);
-}
-
-/* -------------------------------------------------------------------------- */
-/* Leitura                                                                     */
-/* -------------------------------------------------------------------------- */
+const emit = () => listeners.forEach((l) => l());
 
 function subscribe(listener: () => void) {
   listeners.add(listener);
@@ -157,6 +110,101 @@ function subscribe(listener: () => void) {
 }
 
 const snapshot = () => state;
+
+/**
+ * Traz os catálogos do servidor.
+ *
+ * Chamado uma vez no arranque, com o resto da academia. Partilha o pedido em
+ * curso: dois ecrãs a montar ao mesmo tempo não pedem duas vezes.
+ */
+let pending: Promise<void> | null = null;
+
+export function loadCatalogs(force = false): Promise<void> {
+  if (loaded && !force) return Promise.resolve();
+  pending ??= apiGet<ApiItem[]>("/api/catalogs")
+    .then((rows) => {
+      const next = { ...EMPTY };
+      for (const key of CATALOG_KEYS) next[key] = [];
+      for (const r of rows) {
+        if (!next[r.kind]) continue;
+        next[r.kind].push({
+          id: r.id,
+          label: r.label,
+          note: r.note ?? undefined,
+          archived: r.archivedAt !== null,
+          system: r.isSystem,
+        });
+      }
+      state = next;
+      loaded = true;
+      emit();
+    })
+    .finally(() => {
+      pending = null;
+    });
+  return pending;
+}
+
+export function catalogsReady(): boolean {
+  return loaded;
+}
+
+/* -------------------------------------------------------------------------- */
+/* Operações                                                                   */
+/* -------------------------------------------------------------------------- */
+//
+// Todas escrevem no servidor e relêem. Não há actualização optimista: um catálogo
+// que aparecesse na lista e desaparecesse meio segundo depois — porque o servidor
+// recusou um duplicado — é pior do que meio segundo de espera. E são acções raras:
+// ninguém cria vinte locais seguidos.
+
+export async function addItem(key: CatalogKey, label: string, note?: string): Promise<void> {
+  const clean = label.trim();
+  if (!clean) return;
+  await apiPost("/api/catalogs", { kind: key, label: clean, ...(note?.trim() ? { note: note.trim() } : {}) });
+  await loadCatalogs(true);
+}
+
+export async function renameItem(_key: CatalogKey, id: string, label: string, note?: string): Promise<void> {
+  await apiPatch(`/api/catalogs/${id}`, { label: label.trim(), note: note?.trim() ?? "" });
+  await loadCatalogs(true);
+}
+
+/** Arquivar tira dos menus; restaurar devolve. Nunca se perde história. */
+export async function toggleArchived(key: CatalogKey, id: string): Promise<void> {
+  const item = state[key].find((i) => i.id === id);
+  await apiPatch(`/api/catalogs/${id}`, { archived: !item?.archived });
+  await loadCatalogs(true);
+}
+
+export async function deleteItem(_key: CatalogKey, id: string): Promise<void> {
+  await apiDelete(`/api/catalogs/${id}`);
+  await loadCatalogs(true);
+}
+
+/**
+ * Subir e descer.
+ *
+ * A ordem é dados e é do servidor: trocam-se as duas posições e gravam-se as duas.
+ * Guardar só a que se moveu deixaria duas linhas com o mesmo número e uma lista que
+ * muda de ordem sozinha ao recarregar.
+ */
+export async function moveItem(key: CatalogKey, id: string, direction: -1 | 1): Promise<void> {
+  const items = state[key];
+  const from = items.findIndex((i) => i.id === id);
+  const to = from + direction;
+  if (from < 0 || to < 0 || to >= items.length) return;
+
+  await Promise.all([
+    apiPatch(`/api/catalogs/${items[from].id}`, { order: to }),
+    apiPatch(`/api/catalogs/${items[to].id}`, { order: from }),
+  ]);
+  await loadCatalogs(true);
+}
+
+/* -------------------------------------------------------------------------- */
+/* Leitura                                                                     */
+/* -------------------------------------------------------------------------- */
 
 /** Todos os itens, incluindo arquivados — para o ecrã de definições. */
 export function useCatalog(key: CatalogKey): CatalogItem[] {

@@ -59,10 +59,33 @@ export class AnnouncementsService {
         },
       });
 
+      /*
+       * Uma família só vê o que lhe foi dirigido.
+       *
+       * O ecrã da direção mostra tudo o que a academia comunicou — é o registo
+       * dela. Mas a app do pai lê o mesmo endpoint, e um aviso para a equipa
+       * técnica ("reunião de treinadores na quinta") não é assunto dele. Filtra-se
+       * pela audiência gravada, e não pela permissão: `comms:read` diz que pode
+       * ler comunicações, não que pode ler todas.
+       *
+       * Um aviso de treinador para as suas equipas traz `teamIds`; nesse caso só
+       * chega a quem tem um filho numa delas.
+       */
+      const isFamily = ctx.role === "GUARDIAN" || ctx.role === "ATHLETE";
+      const myTeams = new Set(ctx.scope.teamIds ?? []);
+      const visible = isFamily
+        ? rows.filter((a) => {
+            const aud = a.audience as { kind?: string; teamIds?: string[] } | null;
+            if (aud?.kind === "coaches") return false;
+            if (aud?.teamIds?.length) return aud.teamIds.some((t) => myTeams.has(t));
+            return true;
+          })
+        : rows;
+
       // A taxa de leitura vem das notificações desta comunicação. Poucas por
       // academia, por isso duas contagens por linha é barato e legível.
       const out = [];
-      for (const a of rows) {
+      for (const a of visible) {
         const where: Prisma.NotificationWhereInput = { payload: { path: ["announcementId"], equals: a.id } };
         const reach = await db.notification.count({ where });
         const read = await db.notification.count({ where: { ...where, readAt: { not: null } } });

@@ -55,10 +55,35 @@ export default defineConfig({
       "@academia/ui": fileURLToPath(new URL("../../packages/ui/src", import.meta.url)),
     },
   },
-  // `host: true` liga o Vite a todas as interfaces (0.0.0.0), não só a
-  // `localhost` — sem isto, um telemóvel na mesma rede não encontra o servidor
-  // nenhuma. Para abrir no telemóvel: `http://<IP da máquina>:5174`.
-  server: { port: 5174, host: true },
+  server: {
+    port: 5174,
+    // Liga a todas as interfaces (0.0.0.0), não só a `localhost` — sem isto, um
+    // telemóvel na mesma rede (ou um túnel, que chega pela rede) não encontra o
+    // servidor nenhum.
+    host: true,
+    // O Vite recusa por omissão qualquer `Host` desconhecido (protecção contra
+    // DNS rebinding) — é o que barrava o link do localtunnel ("this host is not
+    // allowed"). `true` só é aceitável em desenvolvimento; em produção não há
+    // `vite dev` a correr, o build estático é servido por um CDN.
+    allowedHosts: true,
+    // `/api/*` passa para a API local, sem o browser lhe falar directamente.
+    //
+    // Isto resolve dois problemas de uma vez, e é a razão de existir deste
+    // proxy em vez de apontar `VITE_API_URL` para o IP da máquina:
+    //
+    //   1. **Mixed content**: a app corre atrás de um túnel HTTPS (obrigatório
+    //      para o service worker e o push), mas a API local só fala HTTP. Um
+    //      pedido directo do browser https→http seria bloqueado. Aqui o pedido
+    //      do browser é para o mesmo domínio do túnel (https); é o Vite, a
+    //      correr neste PC, que fala com a API em HTTP — servidor a servidor,
+    //      onde "mixed content" não se aplica.
+    //   2. **CORS**: o pedido do browser deixa de ser cross-origin (é sempre
+    //      para a própria origem da app), por isso não depende de a API
+    //      reconhecer o domínio do túnel, que muda a cada arranque.
+    proxy: {
+      "/api": { target: "http://localhost:3000", changeOrigin: true },
+    },
+  },
   // `true` só serve para testar num telemóvel a sério através de um túnel
   // (loca.lt, ngrok) durante o desenvolvimento — o Vite bloqueia por omissão
   // qualquer Host desconhecido para evitar DNS rebinding. Em produção isto não

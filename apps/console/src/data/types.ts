@@ -48,18 +48,21 @@ export type Team = {
   athleteIds: string[];
   /** Dias da semana (0 = domingo) e hora do treino regular. */
   schedule: { weekday: number; start: string; end: string; venue: string }[];
+  /** O preço por omissão da equipa, em cêntimos. `null` sem `billing:read` ou por configurar. */
+  feeCents: number | null;
 };
 
 /**
  * As áreas de uma academia. Serve para agrupar o staff e nada mais — quem pode
  * fazer o quê continua a vir do papel de permissões, não daqui.
  */
-export type StaffDepartment = "direction" | "technical" | "clinical" | "operations";
+export type StaffDepartment = "direction" | "technical" | "clinical" | "scouting" | "operations";
 
 export const DEPARTMENT_LABEL: Record<StaffDepartment, string> = {
   direction: "Direção",
   technical: "Equipa técnica",
   clinical: "Departamento clínico",
+  scouting: "Departamento de scouting",
   operations: "Secretaria e operações",
 };
 
@@ -94,6 +97,9 @@ export type StaffMember = {
   /** Excepções de acesso guardadas no servidor — a diferença para o papel. */
   grants?: string[];
   revokes?: string[];
+  /** O papel da academia atribuído a esta pessoa. Nulo = os valores do papel-base. */
+  roleId?: string | null;
+  roleName?: string | null;
 };
 
 export type Guardian = {
@@ -114,6 +120,12 @@ export type Athlete = {
   id: string;
   name: string;
   birthdate: string;
+  /**
+   * NIF. É com ele e a data de nascimento que a família se liga a este atleta ao
+   * instalar a app — ver `FamilyInviteDialog`. Ausente quando ninguém o preencheu,
+   * ou quando quem está a ler não tem `family:read`.
+   */
+  taxId?: string;
   teamId: string;
   position?: string;
   guardianIds: string[];
@@ -223,6 +235,8 @@ export type TrainingSession = {
   start: string;
   end: string;
   venue: string;
+  /** Onde a equipa se equipa. Ausente quando a academia não os gere. */
+  dressingRoom?: string;
   coachId?: string;
   /**
    * O nome de quem dá o treino, tal como o servidor o devolve.

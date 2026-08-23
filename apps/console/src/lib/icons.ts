@@ -22,6 +22,12 @@ export {
   FileText,
   Settings,
   Search,
+  /* Scouting: o binóculo é a área, o olho é a observação. */
+  Binoculars,
+  Eye,
+  /* Sócios: o cartão é o que o clube emite e o sócio guarda. */
+  IdCard,
+  Clapperboard as Film,
   Bell,
   Plus,
   Check,

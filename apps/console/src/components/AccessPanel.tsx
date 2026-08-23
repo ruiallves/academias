@@ -1,4 +1,4 @@
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import {
   AREAS,
   CLINICAL_AREAS,
@@ -13,8 +13,10 @@ import {
   type Level,
 } from "@/lib/access";
 import { ROLE_PERMISSIONS, can, type Permission, type Session } from "@/lib/permissions";
+import { assignRole, loadRoles, useRoles } from "@/lib/roles";
 import { ROLE_LABEL } from "@/session";
 import { Panel, PanelHead, Pill, cx } from "./primitives";
+import { reloadAcademy } from "@/lib/store";
 import type { StaffMember } from "@/data/types";
 
 /**
@@ -50,12 +52,15 @@ export function AccessPanel({ member, session }: { member: StaffMember; session:
   const { grants, revokes } = overridesFor(member.id);
   const changed = grants.length + revokes.length;
 
+  // O nome do papel da academia quando existe; o do papel-base quando não.
+  const roleLabel = member.roleName ?? ROLE_LABEL[member.role];
+
   return (
     <div className="space-y-3">
       <Panel>
         <PanelHead
           title="Acesso"
-          hint={`papel: ${ROLE_LABEL[member.role]}${changed ? ` · ${changed} ${changed === 1 ? "excepção" : "excepções"}` : ""}`}
+          hint={`papel: ${roleLabel}${changed ? ` · ${changed} ${changed === 1 ? "excepção" : "excepções"}` : ""}`}
         >
           {mayEdit && changed > 0 && (
             <button type="button" onClick={() => resetAccess(member.id)} className="ctl-ghost">
@@ -67,7 +72,7 @@ export function AccessPanel({ member, session }: { member: StaffMember; session:
         <p className="border-b border-line px-5 py-3 text-meta leading-relaxed text-ink-3">
           {mayEdit ? (
             <>
-              O papel <strong className="font-medium text-ink-2">{ROLE_LABEL[member.role]}</strong> define o
+              O papel <strong className="font-medium text-ink-2">{roleLabel}</strong> define o
               que esta pessoa vê por omissão. Aqui muda-se para ela em concreto, sem mexer no papel nem em
               mais ninguém.
             </>
@@ -78,6 +83,8 @@ export function AccessPanel({ member, session }: { member: StaffMember; session:
             </>
           )}
         </p>
+
+        {mayEdit && <RolePicker member={member} session={session} />}
 
         <AreaTable areas={AREAS} member={member} permissions={permissions} mayEdit={mayEdit} />
       </Panel>
@@ -92,6 +99,75 @@ export function AccessPanel({ member, session }: { member: StaffMember; session:
         </p>
         <AreaTable areas={CLINICAL_AREAS} member={member} permissions={permissions} mayEdit={mayEdit} />
       </Panel>
+    </div>
+  );
+}
+
+/**
+ * Que papel esta pessoa veste.
+ *
+ * Está aqui, e não na ficha ao lado do telemóvel, pela mesma razão de
+ * `access:write` existir à parte de `staff:write`: mudar o cargo de alguém é
+ * secretaria, mudar o **papel** é mudar o que essa pessoa pode fazer na academia.
+ *
+ * O servidor põe o papel-base a condizer com o papel escolhido — é ele que decide
+ * de onde vem o âmbito, e um papel de scouting com âmbito de treinador seria uma
+ * pessoa presa a equipas que não tem.
+ */
+function RolePicker({ member, session }: { member: StaffMember; session: Session }) {
+  const { roles } = useRoles();
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    void loadRoles();
+  }, []);
+
+  // Ninguém muda o seu próprio papel — o servidor recusa, e oferecê-lo era
+  // prometer o que não se cumpre.
+  const isSelf = session.staffId === member.id;
+  if (roles.length === 0 || isSelf) return null;
+
+  async function choose(roleId: string) {
+    if (roleId === member.roleId) return;
+    setBusy(true);
+    setError(null);
+    try {
+      await assignRole(member.id, roleId);
+      await reloadAcademy();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Não foi possível mudar o papel.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div className="border-b border-line px-5 py-3">
+      <div className="mb-2 flex items-baseline justify-between gap-3">
+        <span className="text-group text-ink-3 uppercase">Papel</span>
+        {error && <span className="text-meta text-risk">{error}</span>}
+      </div>
+      <div className="flex flex-wrap gap-1.5">
+        {roles.map((role) => {
+          const on = role.id === member.roleId;
+          return (
+            <button
+              key={role.id}
+              type="button"
+              disabled={busy}
+              onClick={() => void choose(role.id)}
+              className={cx(
+                "rounded-[var(--radius-control)] border px-2.5 py-1 text-meta font-medium transition-colors",
+                on ? "border-transparent bg-ink text-surface" : "border-line text-ink-2 hover:border-line-strong",
+                busy && "opacity-60",
+              )}
+            >
+              {role.name}
+            </button>
+          );
+        })}
+      </div>
     </div>
   );
 }

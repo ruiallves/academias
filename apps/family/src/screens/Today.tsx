@@ -1,64 +1,111 @@
 import { Link } from "react-router-dom";
-import { ArrowUpRight, Clock, MapPin, Sparkles, TriangleAlert, UserRound } from "lucide-react";
+import { ArrowUpRight, ChevronRight, MapPin, Megaphone, Trophy, UserRound, Wallet } from "lucide-react";
 import { useChild } from "@/App";
-import { appointments, guardian, notices, payments, today, trainings } from "@/data";
-import { Avatar, Money, cx, dayShort, greeting, money, monthShort, time, whenLabel } from "@/ui";
+import { useStore } from "@/lib/store";
+import { cx, dayShort, greeting, money, monthShort, time, whenLabel } from "@/ui";
 
 /**
  * "O que preciso de saber hoje sobre o meu filho?"
  *
  * De cima para baixo por urgência, mas sem transformar cada item num cartão. A
  * página lê-se como uma linha do tempo pessoal: primeiro o dinheiro em falta (se
- * houver, é impossível de ignorar), depois o próximo treino em destaque, e o resto
- * do dia a escorrer por baixo, cada vez mais discreto.
+ * houver), depois o próximo compromisso, e o resto a escorrer por baixo, cada vez
+ * mais discreto.
+ *
+ * **Destaque não é tamanho.** A primeira versão desta página dava meio ecrã ao
+ * pagamento em falta e outro meio ao próximo treino: dois blocos enormes que
+ * empurravam tudo o resto para fora do ecrã e faziam a app parecer um cartaz. O
+ * que destaca uma coisa é o contraste com o que está à volta — o painel escuro
+ * entre superfícies claras, a cor da academia entre neutros — e isso funciona com
+ * 80px de altura tão bem como com 200.
  */
 export default function Today() {
   const { child } = useChild();
+  const store = useStore();
+  const now = new Date();
 
-  const mine = trainings.filter((t) => t.childId === child.id);
-  const next = mine.find((t) => t.end >= today);
-  const owed = payments.find((p) => p.childId === child.id && (p.status === "overdue" || p.status === "pending"));
-  const childNotices = notices.filter((n) => n.forChild === child.id);
-  const nextAppointment = appointments
-    .filter((a) => a.childId === child.id && a.date >= today)
-    .sort((a, b) => a.date.getTime() - b.date.getTime())[0];
-  const changed = mine.filter((t) => t.note && t.end >= today);
+  const myTrainings = store.trainings.filter((t) => t.childId === child.id && !t.cancelled);
+  const myMatches = store.matches.filter((m) => m.childId === child.id && !m.cancelled);
+
+  // O próximo compromisso é o mais próximo dos dois — um jogo no sábado ganha ao
+  // treino de terça, e ao contrário também.
+  const nextTraining = myTrainings.filter((t) => t.end >= now).sort(byStart)[0];
+  const nextMatch = myMatches.filter((m) => m.end >= now).sort(byStart)[0];
+  const next =
+    nextTraining && nextMatch ? (nextTraining.start <= nextMatch.start ? nextTraining : nextMatch) : (nextTraining ?? nextMatch);
+
+  const outstanding = store.payments
+    .filter((p) => p.childId === child.id && (p.status === "overdue" || p.status === "pending"))
+    .sort((a, b) => a.dueDate.getTime() - b.dueDate.getTime());
+
+  const notices = store.notices.slice(0, 3);
+  const calledUp = myMatches.filter((m) => m.calledUp && m.end >= now).sort(byStart)[0];
+
+  // A convocatória já é o próximo compromisso? Então não se diz duas vezes.
+  const showCallUp = calledUp && calledUp.id !== next?.id;
 
   let i = 0;
 
   return (
-    <div className="space-y-6 pt-3">
+    <div className="space-y-5 pt-3">
+      {/*
+        A saudação numa linha só. Partida em duas — "Bom dia," / "Sandra." — era
+        um título de cartaz: ocupava o dobro da altura para dizer o mesmo, e
+        empurrava o que interessa para baixo da dobra.
+      */}
       <header className="rise px-1" style={{ ["--i" as string]: i++ }}>
-        <p className="text-[13px] font-semibold tracking-[0.04em] text-ink-3 uppercase">
-          {dayShort(today)} · {today.getDate()} {monthShort(today)}
+        <p className="text-[12px] font-semibold tracking-[0.06em] text-ink-3 uppercase">
+          {dayShort(now)} · {now.getDate()} {monthShort(now)}
         </p>
-        <h1 className="mt-1 text-[30px] leading-[1.1] font-semibold tracking-[-0.03em] text-ink">
-          {greeting(today)},<br />
-          {guardian.firstName}.
+        <h1 className="mt-1 text-[26px] leading-[1.15] font-semibold tracking-[-0.03em] text-ink">
+          {greeting(now)}, {store.guardian.firstName}
         </h1>
       </header>
 
-      {owed && (
+      {outstanding.length > 0 && (
         <div className="rise" style={{ ["--i" as string]: i++ }}>
-          <PaymentDue amount={owed.amountCents} childName={child.firstName} overdue={owed.status === "overdue"} />
+          <PaymentDue items={outstanding} childName={child.firstName} />
         </div>
       )}
 
       {next ? (
         <div className="rise" style={{ ["--i" as string]: i++ }}>
-          <NextTraining training={next} />
+          <NextUp item={next} team={child.team} coach={child.coach} />
         </div>
       ) : (
-        <div className="rise surface p-6 text-center" style={{ ["--i" as string]: i++ }}>
-          <p className="text-body font-semibold text-ink">Sem treinos marcados</p>
-          <p className="mt-1 text-meta text-ink-3">Avisamos-te assim que a academia agendar o próximo.</p>
+        <div className="rise surface p-5 text-center" style={{ ["--i" as string]: i++ }}>
+          <p className="text-body font-semibold text-ink">Nada agendado</p>
+          <p className="mt-1 text-meta text-ink-3">Avisamos-te assim que a academia marcar o próximo.</p>
         </div>
       )}
 
-      {/* Régua da semana — o resto do calendário num gesto de polegar. */}
+      {/* Convocatória — a única coisa que pede uma resposta do pai. */}
+      {showCallUp && (
+        <div className="rise" style={{ ["--i" as string]: i++ }}>
+          <Link
+            to="/agenda"
+            className="flex items-center gap-3.5 rounded-[var(--radius-lg)] bg-surface p-3.5 shadow-[var(--shadow-soft)] active:scale-[0.99]"
+          >
+            <span className="flex size-10 shrink-0 items-center justify-center rounded-[13px] bg-signal-soft text-signal-ink">
+              <Trophy className="size-[19px]" strokeWidth={1.9} />
+            </span>
+            <span className="min-w-0 flex-1">
+              <span className="block text-[11px] font-semibold tracking-[0.06em] text-ink-3 uppercase">
+                Convocado · {whenLabel(calledUp.start, now)}
+              </span>
+              <span className="block truncate text-body font-semibold text-ink">
+                {calledUp.isHome ? "vs" : "@"} {calledUp.opponent}
+              </span>
+            </span>
+            <ArrowUpRight className="size-4 shrink-0 text-ink-4" strokeWidth={2.25} />
+          </Link>
+        </div>
+      )}
+
+      {/* Régua da semana — sete dias, sete colunas, sem arrastar. */}
       <section className="rise" style={{ ["--i" as string]: i++ }}>
-        <div className="mb-3 flex items-center justify-between px-1">
-          <h2 className="text-[13px] font-semibold tracking-[0.04em] text-ink-3 uppercase">Esta semana</h2>
+        <div className="mb-2.5 flex items-center justify-between px-1">
+          <h2 className="text-[12px] font-semibold tracking-[0.06em] text-ink-3 uppercase">Esta semana</h2>
           <Link to="/agenda" className="inline-flex items-center gap-1 text-[13px] font-semibold text-signal-ink">
             Agenda <ArrowUpRight className="size-3.5" strokeWidth={2.25} />
           </Link>
@@ -66,46 +113,23 @@ export default function Today() {
         <WeekRail />
       </section>
 
-      {/* O que vem a seguir no dia, como uma linha do tempo discreta. */}
-      {(changed.length > 0 || nextAppointment || childNotices.length > 0) && (
-        <section className="rise space-y-1 px-1" style={{ ["--i" as string]: i++ }}>
-          {changed.map((t) => (
-            <TimelineRow
-              key={t.id}
-              accent="warn"
-              icon={<TriangleAlert className="size-[18px]" strokeWidth={1.9} />}
-              eyebrow={`${whenLabel(t.start, today)} · treino alterado`}
-              title={child.team}
-              detail={t.note!.text}
-            />
-          ))}
-
-          {nextAppointment && (
-            <TimelineRow
-              accent="signal"
-              icon={
-                <span className="flex flex-col items-center leading-none">
-                  <span className="text-[8px] font-bold uppercase">{monthShort(nextAppointment.date)}</span>
-                  <span className="num text-[15px] font-bold">{nextAppointment.date.getDate()}</span>
-                </span>
-              }
-              eyebrow={`${nextAppointment.kind} · ${whenLabel(nextAppointment.date, today)}`}
-              title={nextAppointment.title}
-              detail={`${nextAppointment.time} · ${nextAppointment.location}`}
-              note={nextAppointment.note}
-            />
-          )}
-
-          {childNotices.map((n) => (
+      {notices.length > 0 && (
+        <section className="rise px-1" style={{ ["--i" as string]: i++ }}>
+          <h2 className="mb-2 text-[12px] font-semibold tracking-[0.06em] text-ink-3 uppercase">Da academia</h2>
+          {notices.map((n) => (
             <Link key={n.id} to="/notificacoes" className="block">
-              <TimelineRow
-                accent="neutral"
-                icon={<Sparkles className="size-[18px]" strokeWidth={1.9} />}
-                eyebrow={`${n.from.split(" ")[0]} · ${whenLabel(n.at, today)}`}
-                title={n.title}
-                detail={n.body}
-                clamp
-              />
+              <div className="flex items-start gap-3.5 rounded-[var(--radius-md)] px-2 py-3 active:bg-sunken/60">
+                <span className="mt-0.5 flex size-10 shrink-0 items-center justify-center rounded-[13px] bg-sunken text-ink-3">
+                  <Megaphone className="size-[18px]" strokeWidth={1.9} />
+                </span>
+                <div className="min-w-0 flex-1">
+                  <p className="text-[11px] font-semibold tracking-[0.06em] text-ink-3 uppercase">
+                    {n.from.split(" ")[0]} · {whenLabel(n.at, now)}
+                  </p>
+                  <p className="mt-0.5 text-body font-semibold text-ink">{n.title}</p>
+                  <p className="mt-0.5 line-clamp-2 text-meta text-ink-2">{n.body}</p>
+                </div>
+              </div>
             </Link>
           ))}
         </section>
@@ -114,150 +138,155 @@ export default function Today() {
   );
 }
 
+const byStart = (a: { start: Date }, b: { start: Date }) => a.start.getTime() - b.start.getTime();
+
 /* -------------------------------------------------------------------------- */
-/* Pagamento em falta — o elemento mais importante da app inteira               */
+/* Pagamento em falta                                                          */
 /* -------------------------------------------------------------------------- */
 
 /**
- * Tinta escura, não vermelho a gritar: destaca-se da página clara sem parecer um
- * alarme de incêndio. O valor é enorme, e a acção é uma frase inteira — "Pagar
- * €40,00" —, não um "Pagar" que obriga a adivinhar quanto.
+ * Tinta escura, não vermelho a gritar: numa página de superfícies claras, o
+ * painel escuro é a coisa que o olho encontra primeiro — e chega-lhe uma linha
+ * para o ser. O valor vai à direita, onde se lê um preço, e a linha inteira é o
+ * caminho para os pagamentos: nesta altura o pai já sabe o que quer fazer.
+ *
+ * Com mais do que uma em atraso mostra-se o **total**, não a primeira: um pai com
+ * três meses por pagar quer saber quanto deve, não qual é o mês mais antigo.
  */
-function PaymentDue({ amount, childName, overdue }: { amount: number; childName: string; overdue: boolean }) {
+function PaymentDue({ items, childName }: { items: { amountCents: number; label: string; status: string }[]; childName: string }) {
+  const total = items.reduce((n, p) => n + p.amountCents, 0);
+  const overdue = items.some((p) => p.status === "overdue");
+  const many = items.length > 1;
+
   return (
-    <div className="relative overflow-hidden rounded-[var(--radius-xl)] bg-ink p-5 text-white" style={{ boxShadow: "var(--shadow-float)" }}>
-      <div className="mb-4 flex items-center gap-2">
-        <span className={cx("size-2 rounded-full", overdue ? "bg-risk" : "bg-warn")} />
-        <span className="text-[13px] font-semibold text-white/70">
-          {overdue ? "Mensalidade vencida" : "Mensalidade por pagar"} · {childName}
+    <Link
+      to="/pagamentos"
+      className="flex items-center gap-3.5 rounded-[var(--radius-lg)] bg-ink p-4 text-white active:scale-[0.99]"
+      style={{ boxShadow: "var(--shadow-float)" }}
+    >
+      <span className="relative flex size-10 shrink-0 items-center justify-center rounded-full bg-white/12">
+        <Wallet className="size-[19px]" strokeWidth={1.9} />
+        {overdue && <span className="absolute -top-px -right-px size-2.5 rounded-full bg-risk ring-2 ring-ink" />}
+      </span>
+
+      <span className="min-w-0 flex-1">
+        <span className="block text-[11px] font-semibold tracking-[0.06em] text-white/55 uppercase">
+          {overdue ? "Por pagar · vencida" : "Por pagar"} · {childName}
         </span>
-      </div>
+        <span className="block truncate text-[15px] font-semibold">
+          {many ? `${items.length} mensalidades` : `Mensalidade de ${items[0].label.toLowerCase()}`}
+        </span>
+      </span>
 
-      <Money cents={amount} size="xl" on />
-      <p className="mt-1.5 text-[13px] text-white/55">Agosto · Academia Life Club</p>
-
-      <Link to="/pagamentos" className="cta-brand mt-5 w-full">
-        Pagar {money(amount)}
-      </Link>
-    </div>
+      <span className="num shrink-0 text-[19px] font-semibold">{money(total)}</span>
+      <ChevronRight className="size-4 shrink-0 text-white/40" strokeWidth={2.25} />
+    </Link>
   );
 }
 
 /* -------------------------------------------------------------------------- */
-/* Próximo treino — o herói iluminado pela marca                                */
+/* O próximo compromisso                                                       */
 /* -------------------------------------------------------------------------- */
 
-function NextTraining({ training }: { training: (typeof trainings)[number] }) {
-  const { child } = useChild();
-
-  return (
-    <div className="brandlit relative overflow-hidden rounded-[var(--radius-xl)] p-5" style={{ boxShadow: "var(--shadow-float)" }}>
-      <div className="mb-5 flex items-center justify-between">
-        <span className="chip chip-glass uppercase">{whenLabel(training.start, today)}</span>
-        <Avatar name={child.name} size={40} />
-      </div>
-
-      <p className="on-2 text-[13px] font-semibold tracking-[0.04em] uppercase">Próximo treino · {child.sport}</p>
-
-      <div className="mt-1 flex items-end gap-3">
-        <span className="num text-[52px] leading-[0.9] font-semibold">{time(training.start)}</span>
-        <span className="on-2 mb-1.5 text-[17px] font-semibold">– {time(training.end)}</span>
-      </div>
-
-      <h3 className="mt-2 text-[19px] font-semibold tracking-[-0.01em]">{child.team}</h3>
-
-      <div className="mt-4 flex flex-wrap gap-x-5 gap-y-2 border-t border-white/15 pt-4">
-        <Fact icon={MapPin} label={training.venue} />
-        <Fact icon={UserRound} label={child.coach} />
-      </div>
-    </div>
-  );
-}
-
-function Fact({ icon: Icon, label }: { icon: typeof Clock; label: string }) {
-  return (
-    <span className="on-1 inline-flex items-center gap-2 text-[14px] font-medium">
-      <Icon className="on-3 size-[17px] shrink-0" strokeWidth={2} />
-      {label}
-    </span>
-  );
-}
-
-/* -------------------------------------------------------------------------- */
-/* Linha do tempo — informação secundária sem caixa                             */
-/* -------------------------------------------------------------------------- */
-
-function TimelineRow({
-  accent,
-  icon,
-  eyebrow,
-  title,
-  detail,
-  note,
-  clamp,
-}: {
-  accent: "warn" | "signal" | "neutral";
-  icon: React.ReactNode;
-  eyebrow: string;
-  title: string;
-  detail: string;
-  note?: string;
-  clamp?: boolean;
-}) {
-  const badge = {
-    warn: "bg-warn-soft text-warn",
-    signal: "bg-signal-soft text-signal-ink",
-    neutral: "bg-sunken text-ink-3",
-  }[accent];
-
-  return (
-    <div className="flex items-start gap-3.5 rounded-[var(--radius-md)] px-2 py-3 active:bg-sunken/60">
-      <span className={cx("mt-0.5 flex size-10 shrink-0 items-center justify-center rounded-[13px]", badge)}>{icon}</span>
-      <div className="min-w-0 flex-1">
-        <p className="text-[12px] font-semibold tracking-[0.02em] text-ink-3 uppercase">{eyebrow}</p>
-        <p className="mt-0.5 text-body font-semibold text-ink">{title}</p>
-        <p className={cx("mt-0.5 text-meta text-ink-2", clamp && "line-clamp-2")}>{detail}</p>
-        {note && <p className="mt-1 text-meta font-medium text-warn">{note}</p>}
-      </div>
-    </div>
-  );
-}
+type Upcoming = { start: Date; end: Date; venue: string; dressingRoom?: string; opponent?: string; isHome?: boolean };
 
 /**
- * Sete dias que se arrastam com o polegar. O dia com treino ganha um ponto da cor
- * da marca; hoje fica em tinta cheia. Um calendário mensal apertado seria ilegível.
+ * Iluminado pela cor da academia, mas do tamanho de um cartão e não de um poster.
+ *
+ * A hora continua a ser o maior elemento — é a única coisa que um pai a caminho
+ * do carro precisa de ler de relance — só que a 36px em vez de 52, e sem o
+ * retrato do filho a repetir o que o seletor lá em cima já diz.
+ */
+function NextUp({ item, team, coach }: { item: Upcoming; team: string; coach: string }) {
+  const isMatch = item.opponent !== undefined;
+
+  return (
+    <div className="brandlit overflow-hidden rounded-[var(--radius-xl)] p-4" style={{ boxShadow: "var(--shadow-float)" }}>
+      <div className="flex items-center justify-between gap-3">
+        <span className="on-2 text-[11px] font-semibold tracking-[0.06em] uppercase">
+          {isMatch ? "Próximo jogo" : "Próximo treino"}
+        </span>
+        <span className="chip chip-glass py-0.5 text-[11px] uppercase">{whenLabel(item.start, new Date())}</span>
+      </div>
+
+      <div className="mt-2.5 flex items-baseline gap-2.5">
+        <span className="num text-[36px] leading-none font-semibold">{time(item.start)}</span>
+        <span className="on-2 text-[15px] font-semibold">– {time(item.end)}</span>
+      </div>
+
+      <h3 className="mt-1.5 truncate text-[17px] font-semibold tracking-[-0.01em]">
+        {isMatch ? `${item.isHome ? "vs" : "@"} ${item.opponent}` : team}
+      </h3>
+
+      <div className="on-1 mt-3 flex flex-wrap items-center gap-x-4 gap-y-1 text-[13px] font-medium">
+        <span className="inline-flex min-w-0 items-center gap-1.5">
+          <MapPin className="on-3 size-4 shrink-0" strokeWidth={2} />
+          <span className="truncate">
+            {item.venue}
+            {/* Um pai à porta de um pavilhão com quatro portas procura isto. */}
+            {item.dressingRoom && <span className="on-2"> · {item.dressingRoom}</span>}
+          </span>
+        </span>
+        {!isMatch && (
+          <span className="inline-flex min-w-0 items-center gap-1.5">
+            <UserRound className="on-3 size-4 shrink-0" strokeWidth={2} />
+            <span className="truncate">{coach}</span>
+          </span>
+        )}
+      </div>
+    </div>
+  );
+}
+
+/* -------------------------------------------------------------------------- */
+
+/**
+ * Os próximos sete dias, em sete colunas.
+ *
+ * Era uma fila que se arrastava na horizontal — e um scroll lateral dentro de uma
+ * página que já rola na vertical é sempre uma armadilha: metade das pessoas nunca
+ * descobre que há mais para lá da margem, e quem descobre arrasta a página por
+ * engano. Sete dias cabem à largura de qualquer telemóvel; o que não cabia era a
+ * hora escrita em cada dia, e essa é a informação que a Agenda existe para dar.
+ * Fica o ponto: "há alguma coisa neste dia".
  */
 function WeekRail() {
   const { child } = useChild();
+  const store = useStore();
+  const today = new Date();
   const days = Array.from({ length: 7 }, (_, i) => new Date(today.getFullYear(), today.getMonth(), today.getDate() + i));
 
+  const mine = [
+    ...store.trainings.filter((t) => t.childId === child.id && !t.cancelled).map((t) => ({ start: t.start, match: false })),
+    ...store.matches.filter((m) => m.childId === child.id && !m.cancelled).map((m) => ({ start: m.start, match: true })),
+  ];
+
   return (
-    <div className="-mx-4 flex gap-2 overflow-x-auto px-4 pb-1">
-      {days.map((day) => {
-        const items = trainings.filter((t) => t.childId === child.id && t.start.toDateString() === day.toDateString());
-        const isToday = day.toDateString() === today.toDateString();
-        const has = items.length > 0;
+    <div className="grid grid-cols-7 gap-0.5 rounded-[var(--radius-lg)] bg-surface p-2 shadow-[var(--shadow-soft)]">
+      {days.map((day, index) => {
+        const items = mine.filter((x) => x.start.toDateString() === day.toDateString());
+        const isToday = index === 0;
 
         return (
-          <div
-            key={day.toISOString()}
-            className={cx(
-              "flex h-[92px] w-[58px] shrink-0 flex-col items-center rounded-[var(--radius-md)] px-1 py-2.5 transition-colors",
-              isToday ? "bg-ink text-white" : "bg-surface text-ink shadow-[var(--shadow-soft)]",
-            )}
-          >
-            <span className={cx("text-[11px] font-semibold uppercase", isToday ? "text-white/60" : "text-ink-3")}>
-              {dayShort(day)}
-            </span>
-            <span className="num mt-0.5 text-[19px] font-semibold">{day.getDate()}</span>
-            <span className="mt-auto">
-              {has ? (
-                <span className="num text-[11px] font-bold" style={{ color: isToday ? "#fff" : "var(--color-signal)" }}>
-                  {time(items[0].start)}
-                </span>
-              ) : (
-                <span className={cx("block size-1 rounded-full", isToday ? "bg-white/30" : "bg-ink-4/30")} />
+          <div key={day.toISOString()} className="flex flex-col items-center gap-1 py-1">
+            <span className="text-[10px] font-semibold tracking-[0.04em] text-ink-4 uppercase">{dayShort(day)}</span>
+            <span
+              className={cx(
+                "num flex size-8 items-center justify-center rounded-full text-[15px] font-semibold",
+                isToday ? "bg-ink text-white" : "text-ink",
               )}
+            >
+              {day.getDate()}
+            </span>
+            {/* Altura reservada mesmo sem pontos: sem isto, as colunas dançavam. */}
+            <span className="flex h-1.5 items-center gap-0.5">
+              {items.slice(0, 3).map((x, k) => (
+                <span
+                  key={k}
+                  className="size-1.5 rounded-full"
+                  style={{ background: x.match ? "var(--color-signal)" : "var(--color-ink-4)" }}
+                />
+              ))}
             </span>
           </div>
         );

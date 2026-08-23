@@ -1,5 +1,5 @@
 import { useEffect, useState, type ReactNode } from "react";
-import { academy } from "@/data";
+import { academySlug, readBrand } from "@/lib/brand";
 
 /**
  * A app das famílias só corre instalada.
@@ -50,7 +50,11 @@ export function StandaloneGate({ children }: { children: ReactNode }) {
 }
 
 function InstallRequired() {
-  const landingUrl = `/l/${academy.slug}`;
+  // Esta barreira corre antes de haver sessão ou API — a identidade vem da última
+  // vez que a app abriu (ver `lib/brand.ts`), e o slug do ambiente. Quem nunca a
+  // abriu vê o texto genérico, que continua a levar ao sítio certo.
+  const brand = readBrand();
+  const landingUrl = `/l/${academySlug()}`;
 
   return (
     <div className="flex min-h-dvh flex-col items-center justify-center bg-canvas px-6 py-10 text-center">
@@ -59,11 +63,11 @@ function InstallRequired() {
         style={{ background: "var(--color-signal)" }}
         aria-hidden
       >
-        {academy.mark}
+        {brand.mark || "•"}
       </span>
 
       <h1 className="mb-2 text-[22px] leading-tight font-semibold tracking-[-0.02em] text-ink">
-        Instala a app da {academy.shortName}
+        Instala a app{brand.shortName ? ` da ${brand.shortName}` : " da academia"}
       </h1>
 
       <p className="mb-7 max-w-[300px] text-body leading-relaxed text-ink-3">

@@ -27,6 +27,10 @@ export const COLUMNS = [
   { key: "name", header: "Nome", required: true, example: "Martim Bragança" },
   { key: "birthdate", header: "Data de nascimento", required: true, example: "2015-03-14" },
   { key: "team", header: "Equipa", required: true, example: "Sub-11 Futebol" },
+  // Opcional, mas é a coluna que decide se a família consegue instalar a app e
+  // ligar-se a este atleta. Vem logo a seguir às obrigatórias por isso mesmo:
+  // quem preenche o ficheiro tem de a ver antes de decidir saltá-la.
+  { key: "taxId", header: "NIF", required: true, example: "123456789" },
   { key: "position", header: "Posição", required: false, example: "Médio" },
   { key: "squadNumber", header: "Número", required: false, example: "7" },
   { key: "medicalValidUntil", header: "Ficha médica válida até", required: false, example: "2027-01-20" },
@@ -41,6 +45,7 @@ export type ParsedRow = {
   name: string;
   birthdate: string;
   teamId: string;
+  taxId?: string;
   position?: string;
   squadNumber?: number;
   medicalValidUntil?: string;
@@ -139,6 +144,14 @@ export async function parseFile(file: File): Promise<ParseResult> {
     if (!team) return void errors.push({ line, name, error: `Equipa "${get("Equipa")}" não existe nesta academia` });
 
     const row: ParsedRow = { line, name, birthdate, teamId: team.id };
+
+    const taxId = get("NIF").replace(/[\s.]/g, "");
+    // Obrigatório, como na inscrição à mão. Uma folha importada sem NIF dava um
+    // plantel inteiro que nenhuma família consegue reclamar — e a correcção seria
+    // depois, ficha a ficha.
+    if (!taxId) return void errors.push({ line, name, error: "NIF em falta" });
+    if (!/^\d{9}$/.test(taxId)) return void errors.push({ line, name, error: "NIF inválido — são nove dígitos" });
+    row.taxId = taxId;
 
     const position = get("Posição");
     if (position) {

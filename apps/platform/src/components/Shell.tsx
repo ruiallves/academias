@@ -1,5 +1,5 @@
 import { NavLink, Outlet } from "react-router-dom";
-import { Building2, FileClock, LayoutGrid, LogOut, TrendingUp } from "lucide-react";
+import { Building2, FileClock, LayoutGrid, LogOut, TrendingUp, Users } from "lucide-react";
 import { signOut } from "@/lib/session";
 import { cx } from "./primitives";
 import type { Me } from "@/lib/types";
@@ -7,13 +7,18 @@ import type { Me } from "@/lib/types";
 /**
  * A casca do painel.
  *
- * Navegação curta de propósito: quatro destinos. Um painel de dono não é um
+ * Navegação curta de propósito: cinco destinos. Um painel de dono não é um
  * produto de uso diário com dezanove ecrãs — é um sítio onde se entra para saber
  * como vai o negócio e resolver o que está mal.
+ *
+ * "Contactos" fica logo a seguir a "Academias" porque é a mesma lista uma etapa
+ * antes: quem ainda não é cliente. A ordem da barra é a ordem do negócio — quem
+ * já paga, quem talvez venha a pagar, como está a correr, e o que se fez.
  */
 const NAV = [
   { to: "/", label: "Visão geral", icon: LayoutGrid, end: true },
   { to: "/academias", label: "Academias", icon: Building2 },
+  { to: "/contactos", label: "Contactos", icon: Users },
   { to: "/crescimento", label: "Crescimento", icon: TrendingUp },
   { to: "/registo", label: "Registo", icon: FileClock },
 ];
