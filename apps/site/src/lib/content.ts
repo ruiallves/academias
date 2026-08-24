@@ -101,7 +101,7 @@ export const MODULES: Module[] = [
   {
     key: "tecnica",
     name: "Equipa técnica",
-    line: "O treinador trabalha no que é dele — e só no que é dele.",
+    line: "O treinador trabalha no que é dele",
     items: ["Treinos e presenças", "Convocatórias", "Avaliações por competência", "Relatórios de atleta", "Plantel e âmbito por equipa"],
   },
   {
@@ -192,17 +192,17 @@ export type RoadmapItem = { when: string; title: string; body: string };
  */
 export const ROADMAP: RoadmapItem[] = [
   {
-    when: "Novembro 2026",
+    when: "Outubro 2026",
     title: "Integração ZeroZero e FPF",
     body: "Jogos, calendários e resultados oficiais sem ninguém os copiar à mão. Depende de licenciamento — estamos a tratar disso.",
   },
   {
-    when: "Dezembro 2026",
-    title: "Scouting avançado",
-    body: "Comparação entre observados, notas por competência e histórico de quem já foi visto — para a decisão de Janeiro.",
+    when: "Novembro 2027",
+    title: "Gestão de treinos",
+    body: "Gestão da carga e treinos com exercícios, vídeos e planos de treino. O treinador planeia, o atleta executa, o clube acompanha.",
   },
   {
-    when: "Março 2027",
+    when: "Janeiro 2027",
     title: "IA sobre os dados do clube",
     body: "Resumos e sinais a partir do que já lá está — nunca a inventar o que ninguém registou.",
   },

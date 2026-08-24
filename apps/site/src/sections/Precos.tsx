@@ -107,7 +107,7 @@ export function Precos({ compact = false }: { compact?: boolean }) {
                   <p className={cx("mt-2 text-[13.5px] tabular", p.featured ? "text-ink-3" : "text-ink-3")}>
                     {annual
                       ? `${euro(annualTotal(p.monthly))} por ano, facturado à cabeça`
-                      : "Facturado mensalmente. IVA não incluído."}
+                      : "Facturado mensalmente"}
                   </p>
 
                   <ul className="mt-8 space-y-2.5">

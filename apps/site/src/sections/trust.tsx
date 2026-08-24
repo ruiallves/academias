@@ -82,8 +82,7 @@ export function Roteiro({ n = "09" }: { n?: string } = {}) {
           </Reveal>
           <Reveal i={2}>
             <p className="max-w-[42ch] text-[15.5px] leading-relaxed text-ink-2">
-              Nada nesta linha existe hoje, e as datas são intenções — não promessas. Está aqui para o clube saber para
-              onde vamos, e para poder discordar da ordem.
+              Nada nesta linha existe hoje, e as datas são intenções. É com isto que pode contar nos proximos meses, e é com isto que pode decidir se quer começar a usar a plataforma já.
             </p>
           </Reveal>
         </div>

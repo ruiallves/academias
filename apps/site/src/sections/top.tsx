@@ -47,16 +47,15 @@ export function Hero() {
 
         <Reveal i={1}>
           <h1 className="display d1 mt-6 max-w-[16ch]">
-            O clube inteiro.
+            O teu clube
             <br />
-            Finalmente ligado.
+            num só lugar.
           </h1>
         </Reveal>
 
         <Reveal i={2}>
           <p className="lede mt-6">
-            Atletas, treinos, presenças, convocatórias, mensalidades e a app das famílias. Tudo no mesmo sítio, a falar
-            uns com os outros.
+            A plataforma mais atual de gestão desportiva portuguesa. Liga a direção, os treinadores, os teus departamentos e as famílias aqui mesmo.
           </p>
         </Reveal>
 

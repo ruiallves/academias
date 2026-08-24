@@ -26,8 +26,7 @@ export default function Software() {
             <SectionMark n="—">Software</SectionMark>
             <h1 className="display d1 mt-6 max-w-[15ch]">Tudo o que a plataforma faz hoje.</h1>
             <p className="lede mt-6">
-              Sete módulos, uma base de dados, um controlo de acessos. O que está aqui está construído e em uso — o que
-              está a caminho tem uma secção só para si.
+              Sete módulos, uma base de dados, um controlo de acessos. Tudo o que está construido e está por vir.
             </p>
           </Reveal>
         </div>
