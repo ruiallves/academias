@@ -254,13 +254,8 @@
   }
 }
 
-/* O ponto do indicador de carregamento. Lento e discreto de propósito — ver
-   `Loading` em `components/primitives.tsx`. */
-@keyframes pulse-dot {
-  0%, 100% { opacity: 0.25; transform: scale(0.85); }
-  50%      { opacity: 1;    transform: scale(1); }
-}
-
+/* O indicador de carregamento é o círculo do Tailwind (`animate-spin`). Quem
+   pediu menos movimento não vê nenhum — e continua a ler o rótulo ao lado. */
 @media (prefers-reduced-motion: reduce) {
-  [role="status"] span[style*="pulse-dot"] { animation: none !important; opacity: 0.6; }
+  [role="status"] .animate-spin { animation: none; }
 }

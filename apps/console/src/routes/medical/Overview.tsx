@@ -121,7 +121,7 @@ export default function MedicalOverview() {
                   const entry = activeRestriction(a.id);
                   return (
                     <li key={a.id} className="flex items-center gap-2.5 border-b border-line px-5 py-3 last:border-0">
-                      <Monogram name={a.name} size="sm" />
+                      <Monogram name={a.name} photoUrl={a.photoUrl} size="sm" />
                       <Link to={`/atletas/${a.id}`} className="min-w-0 flex-1">
                         <span className="block truncate text-body font-medium text-ink hover:underline">
                           {shortName(a.name)}

@@ -41,6 +41,12 @@ import { ContactsController, ContactsCalendarController } from "./platform/conta
 import { ContactsService } from "./platform/contacts.service";
 import { FamilyInviteController, FamilySignupController } from "./family/family-invites.controller";
 import { FamilyInvitesService } from "./family/family-invites.service";
+import { DevelopmentController } from "./development/development.controller";
+import { EvaluationsService } from "./development/evaluations.service";
+import { PhotosController } from "./storage/photos.controller";
+import { PhotosService } from "./storage/photos.service";
+import { StorageService } from "./storage/storage.service";
+import { ReportsService } from "./development/reports.service";
 import { SupabaseAccountsService } from "./auth/supabase-accounts.service";
 
 /**
@@ -89,6 +95,8 @@ import { SupabaseAccountsService } from "./auth/supabase-accounts.service";
     PlatformController,
     ContactsController,
     FamilyInviteController,
+    DevelopmentController,
+    PhotosController,
     FamilySignupController,
     // Público por construção — o token no URL é que autentica. Ver o ficheiro.
     ContactsCalendarController,
@@ -119,6 +127,10 @@ import { SupabaseAccountsService } from "./auth/supabase-accounts.service";
     PlatformPrisma,
     ContactsService,
     FamilyInvitesService,
+    EvaluationsService,
+    PhotosService,
+    StorageService,
+    ReportsService,
     SupabaseAccountsService,
   ],
   exports: [PrismaService, NotificationsService],

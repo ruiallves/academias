@@ -69,6 +69,10 @@ const dateOnly = (d) => d.toISOString().slice(0, 10);
 
 /** Uma conta por perfil, para se poder ver o produto pelos olhos de cada um. */
 const PEOPLE = [
+  // O presidente existia como papel e não como pessoa: ninguém na academia
+  // semeada tinha `role:write`, e por isso o ecrã de papéis abria sem o botão de
+  // criar. Um produto que tem um papel de presidente precisa de deixar alguém sê-lo.
+  { key: "pres",  email: "presidente@lifeclub.pt", name: "Joaquim Vilas Boas", role: "OWNER",    title: "Presidente",          dept: "DIRECTION", phone: "919 004 112" },
   { key: "dir",   email: "direcao@lifeclub.pt",   name: "Helena Sá Pereira",  role: "DIRECTOR", title: "Diretora-geral",      dept: "DIRECTION", phone: "914 220 517" },
   { key: "coach", email: "treinador@lifeclub.pt", name: "Rui Machado",        role: "COACH",    title: "Treinador principal", dept: "TECHNICAL", phone: "912 445 108" },
   { key: "coach2",email: "adjunto@lifeclub.pt",   name: "André Peixoto",      role: "COACH",    title: "Treinador adjunto",   dept: "TECHNICAL", phone: "926 771 309" },

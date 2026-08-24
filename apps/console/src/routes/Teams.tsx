@@ -101,7 +101,7 @@ function TeamCard({ team, count }: { team: Team; count: number }) {
           <div className="flex -space-x-1.5">
             {coaches.map((c) => (
               <span key={c!.id} className="ring-2 ring-surface rounded-full">
-                <Monogram name={c!.name} size="sm" />
+                <Monogram name={c!.name} photoUrl={c!.photoUrl} size="sm" />
               </span>
             ))}
           </div>

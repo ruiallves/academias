@@ -1,5 +1,5 @@
 import { Body, Controller, Delete, Get, Param, Patch, Post, Put, Query, Req } from "@nestjs/common";
-import { ArrayMaxSize, IsArray, IsIn, IsInt, IsString, Max, Min } from "class-validator";
+import { ArrayMaxSize, IsArray, IsIn, IsInt, IsOptional, IsString, Length, Max, Min } from "class-validator";
 import { ChargeStatus } from "@prisma/client";
 import type { AuthedRequest } from "../auth/auth.guard";
 import { AcademyService } from "./academy.service";
@@ -37,6 +37,18 @@ class SetAthleteFeeBulkDto {
 }
 
 /** As excepções de acesso a gravar para uma pessoa. Validadas — ver `invites.dto.ts`. */
+/**
+ * O que o clube escreve na página de adesão.
+ *
+ * Limites curtos de propósito: uma frase de abertura com 200 caracteres não é uma
+ * frase, é um parágrafo — e desenha mal em qualquer ecrã.
+ */
+class MembershipCopyDto {
+  @IsOptional() @IsString() @Length(0, 90) headline?: string;
+  @IsOptional() @IsString() @Length(0, 240) intro?: string;
+  @IsOptional() @IsArray() @ArrayMaxSize(6) @IsString({ each: true }) points?: string[];
+}
+
 class SetAccessDto {
   @IsArray()
   @ArrayMaxSize(40)
@@ -89,6 +101,18 @@ export class AcademyController {
    * O preço por omissão da equipa — todos os atletas sem ajuste individual pagam
    * isto. Ver `BillingService.setTeamFee`.
    */
+  /**
+   * A página pública de adesão a sócio — a frase, a explicação e os pontos.
+   *
+   * Vive aqui e não em `/api/members` de propósito: é configuração da academia,
+   * como a cor e o nome, e não gestão de sócios. Quem a muda tem `settings:write`,
+   * não `member:write`.
+   */
+  @Patch("membership-page")
+  setMembershipCopy(@Req() req: AuthedRequest, @Body() body: MembershipCopyDto) {
+    return this.academy.setMembershipCopy(req.ctx, body);
+  }
+
   @Patch("teams/:id/fee")
   setTeamFee(@Req() req: AuthedRequest, @Param("id") id: string, @Body() body: SetFeeDto) {
     return this.billing.setTeamFee(req.ctx, id, body.amountCents);

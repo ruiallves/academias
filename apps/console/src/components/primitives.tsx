@@ -173,12 +173,35 @@ export function Monogram({
   name,
   size = "md",
   self,
+  photoUrl,
 }: {
   name: string;
   size?: "sm" | "md" | "lg";
   self?: boolean;
+  /**
+   * A fotografia, quando existe.
+   *
+   * Fica **aqui** e não em cada lista: o monograma é o rosto de uma pessoa em toda a
+   * consola — plantel, presenças, convocatórias, mensalidades — e uma fotografia que
+   * só aparecesse na ficha era uma fotografia que ninguém via. Com a propriedade no
+   * componente, cada sítio que tenha o dado passa-o, e os que não têm continuam a
+   * mostrar as iniciais sem mudar uma linha.
+   */
+  photoUrl?: string | null;
 }) {
   const dim = { sm: "size-6 text-[10px]", md: "size-7 text-[11px]", lg: "size-9 text-body" }[size];
+
+  if (photoUrl) {
+    return (
+      <img
+        src={photoUrl}
+        alt=""
+        aria-hidden
+        className={cx("shrink-0 rounded-full bg-sunken object-cover", dim)}
+      />
+    );
+  }
+
   return (
     <span
       className={cx(
@@ -303,26 +326,19 @@ export function DataTable<T>({
  * são o mesmo ecrã — e durante esse segundo a página afirma "sem resultados",
  * "ainda não há sócios", "nenhum prospecto". É uma mentira curta mas é uma
  * mentira, e numa ferramenta de gestão um facto errado durante um segundo custa
- * mais do que um segundo de espera. É a mesma razão pela qual `AcademyBoot` não
- * deixa a consola desenhar antes de a academia chegar.
+ * mais do que um segundo de espera.
  *
- * ## Porque é que ocupa a área toda
+ * ## Um círculo, não um ecrã em branco
  *
- * Porque é a área toda que ainda não existe. Um indicador pequeno a um canto
- * deixa a página a parecer pronta com um pormenor a faltar; ocupar o espaço que o
- * conteúdo vai ocupar diz a verdade — ainda não há nada ali. A navegação fica de
- * fora: essa não está a carregar, e piscá-la a cada mudança de página seria fazer
- * a consola inteira parecer instável.
- *
- * ## Porquê tão pouco movimento
- *
- * Um ponto a pulsar devagar, e mais nada. O sistema de design proíbe animação de
- * entrada em dados, e um indicador que rodopia depressa transmite esforço — o que
- * é exactamente ao contrário do que se quer transmitir enquanto se espera.
+ * Ocupa a altura de um painel e não a da página. Um bloco vazio do tamanho do
+ * ecrã com uma palavra ao meio parece uma página avariada; um círculo a rodar
+ * dentro do painel que vai receber o conteúdo diz o que se passa sem gritar. É o
+ * mesmo indicador do arranque da consola (`AcademyBoot`), para a espera ter
+ * sempre a mesma cara.
  */
 export function Loading({
   label = "A carregar…",
-  /** Alto quando ocupa a página; baixo quando é só um painel. */
+  /** `page` dá-lhe mais ar; `panel` encaixa dentro de um painel pequeno. */
   size = "page",
 }: {
   label?: string;
@@ -334,18 +350,14 @@ export function Loading({
       aria-live="polite"
       className={cx(
         "flex w-full flex-col items-center justify-center gap-3",
-        size === "page" ? "min-h-[58vh]" : "min-h-[220px]",
+        size === "page" ? "py-20" : "py-12",
       )}
     >
-      <span className="flex items-center gap-1.5" aria-hidden>
-        {[0, 1, 2].map((i) => (
-          <span
-            key={i}
-            className="size-1.5 rounded-full bg-ink-4"
-            style={{ animation: "pulse-dot 1200ms ease-in-out infinite", animationDelay: `${i * 160}ms` }}
-          />
-        ))}
-      </span>
+      <span
+        className="size-7 animate-spin rounded-full border-2 border-line"
+        style={{ borderTopColor: "var(--color-signal)" }}
+        aria-hidden
+      />
       <span className="text-meta text-ink-3">{label}</span>
     </div>
   );

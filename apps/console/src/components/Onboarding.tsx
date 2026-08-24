@@ -47,7 +47,7 @@ export function Onboarding() {
           <p className="mt-0.5 text-meta text-ink-3">
             {complete
               ? "A academia está montada. Podes fechar isto."
-              : "Seis passos para pôr a academia a funcionar."}
+              : `${total} passos para pôr a academia a funcionar.`}
           </p>
         </div>
 

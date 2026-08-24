@@ -5,7 +5,6 @@ import {
   Empty,
   Metric,
   MetricRow,
-  Monogram,
   Panel,
   PanelHead,
   Pill,
@@ -44,6 +43,9 @@ import { shortDate } from "@/lib/format";
 import { can, type Session } from "@/lib/permissions";
 import { ROLE_LABEL, useSession } from "@/session";
 import { DEPARTMENT_LABEL, type StaffMember } from "@/data/types";
+import { PhotoPicker } from "@/components/PhotoPicker";
+import { removeStaffPhoto, uploadStaffPhoto } from "@/lib/photos";
+import { reloadAcademy } from "@/lib/store";
 
 type Tab = "overview" | "teams" | "activity" | "access";
 
@@ -152,7 +154,27 @@ function StaffHeader({
 
   return (
     <div className="mb-5 flex flex-wrap items-center gap-4">
-      <Monogram name={member.name} size="lg" />
+      {/*
+        A fotografia de quem trabalha na academia.
+        
+        Editável por quem tem `staff:write` **ou** pela própria pessoa — pôr a sua
+        própria foto nunca foi um privilégio, e obrigar um treinador a pedir à
+        direção era garantir que ninguém tinha foto nenhuma.
+      */}
+      <PhotoPicker
+        name={member.name}
+        photoUrl={member.photoUrl}
+        size={72}
+        editable={can(session, "staff:write") || session.staffId === member.id}
+        onUpload={async (file) => {
+          await uploadStaffPhoto(member.id, file);
+          await reloadAcademy();
+        }}
+        onRemove={async () => {
+          await removeStaffPhoto(member.id);
+          await reloadAcademy();
+        }}
+      />
 
       <div className="min-w-0 flex-1">
         <div className="mb-1 flex flex-wrap items-center gap-1.5">

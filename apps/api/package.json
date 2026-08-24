@@ -23,6 +23,8 @@
     "test:invites": "node scripts/test-invites.mjs",
     "test:invite-flow": "node scripts/test-invite-flow.mjs",
     "test:family-invite": "node scripts/test-family-invite.mjs",
+    "test:development": "node scripts/test-development.mjs",
+    "test:photos": "node scripts/test-photos.mjs",
     "seed": "node prisma/seed.mjs",
     "test:security": "node scripts/test-security.mjs",
     "test:athletes": "node scripts/test-athletes.mjs",

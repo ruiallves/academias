@@ -177,6 +177,8 @@ export default function Settings() {
 
 /* -------------------------------------------------------------------------- */
 
+/* -------------------------------------------------------------------------- */
+
 function Field({ label, value, mono }: { label: string; value: string; mono?: boolean }) {
   return (
     <label className="block">

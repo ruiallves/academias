@@ -67,7 +67,7 @@ export default function MedicalClinical() {
       header: "Atleta",
       render: (a) => (
         <div className="flex items-center gap-2.5">
-          <Monogram name={a.name} />
+          <Monogram name={a.name} photoUrl={a.photoUrl} />
           <div className="min-w-0">
             <div className="truncate font-medium text-ink">{shortName(a.name)}</div>
             <div className="text-meta text-ink-3">{teamById(a.teamId)?.name}</div>

@@ -1,6 +1,6 @@
 import { useEffect } from "react";
 import { Link } from "react-router-dom";
-import { Bell, CalendarClock, Megaphone, Stethoscope, Trophy, Wallet, type LucideIcon } from "lucide-react";
+import { Bell, CalendarClock, FileText, Gauge, Megaphone, Trophy, Wallet, type LucideIcon } from "lucide-react";
 import { apiPatch } from "@/lib/http";
 import { reload, useStore, type ApiNotification } from "@/lib/store";
 import { cx, whenLabel } from "@/ui";
@@ -30,7 +30,8 @@ const STYLE: Record<string, { icon: LucideIcon; cls: string; urgent?: boolean }>
   MATCH_CALLED_UP: { icon: Trophy, cls: "bg-signal-soft text-signal-ink", urgent: true },
   SESSION_CHANGED: { icon: CalendarClock, cls: "bg-warn-soft text-warn" },
   SESSION_CANCELLED: { icon: CalendarClock, cls: "bg-risk-soft text-risk" },
-  EVALUATION_PUBLISHED: { icon: Stethoscope, cls: "bg-signal-soft text-signal-ink" },
+  EVALUATION_PUBLISHED: { icon: Gauge, cls: "bg-signal-soft text-signal-ink" },
+  REPORT_SHARED: { icon: FileText, cls: "bg-signal-soft text-signal-ink" },
   ANNOUNCEMENT_PUBLISHED: { icon: Megaphone, cls: "bg-sunken text-ink-2" },
 };
 

@@ -98,6 +98,30 @@ type ApiAnnouncement = {
   publishedAt: string | null;
 };
 
+type ApiEvaluation = {
+  id: string;
+  athleteId: string;
+  period: string;
+  status: string;
+  scores: Record<string, number>;
+  note: string | null;
+  strengths: string | null;
+  focus: string | null;
+  coachName: string;
+  publishedAt: string | null;
+};
+
+type ApiReport = {
+  id: string;
+  athleteId: string;
+  title: string;
+  period: string | null;
+  body: string;
+  authorName: string;
+  publishedAt: string | null;
+  snapshot: { attendance?: { attended: number; total: number }; matches?: number } | null;
+};
+
 export type ApiNotification = {
   id: string;
   type: string;
@@ -178,6 +202,37 @@ export type Notice = {
 
 export type Attendance = { attended: number; total: number };
 
+/**
+ * A avaliação do treinador, tal como o servidor a entrega.
+ *
+ * Só chegam aqui as **publicadas** — o filtro é do servidor, a partir do papel de
+ * quem pergunta, e não de nada que esta app decida. Um rascunho meio escrito nunca
+ * sai da consola.
+ */
+export type Evaluation = {
+  id: string;
+  childId: string;
+  period: string;
+  scores: Record<string, number>;
+  note: string | null;
+  strengths: string | null;
+  focus: string | null;
+  coachName: string;
+  publishedAt: Date | null;
+};
+
+/** Um relatório partilhado. Os internos nunca saem da academia — ver `reports.service.ts`. */
+export type Report = {
+  id: string;
+  childId: string;
+  title: string;
+  period: string | null;
+  body: string;
+  authorName: string;
+  publishedAt: Date | null;
+  snapshot: { attendance?: { attended: number; total: number }; matches?: number } | null;
+};
+
 type State = {
   ready: boolean;
   error: string | null;
@@ -189,6 +244,8 @@ type State = {
   payments: Payment[];
   notices: Notice[];
   notifications: ApiNotification[];
+  evaluations: Evaluation[];
+  reports: Report[];
   /** Assiduidade por atleta, derivada dos treinos com registo. */
   attendance: Record<string, Attendance>;
 };
@@ -204,6 +261,8 @@ const EMPTY: State = {
   payments: [],
   notices: [],
   notifications: [],
+  evaluations: [],
+  reports: [],
   attendance: {},
 };
 
@@ -240,15 +299,21 @@ export function load(): Promise<void> {
       const from = new Date(Date.now() - 120 * 86_400_000).toISOString();
       const to = new Date(Date.now() + 60 * 86_400_000).toISOString();
 
-      const [athletes, teams, sessions, matches, charges, announcements, notifications] = await Promise.all([
-        soft<ApiAthlete>("/api/athletes"),
-        soft<ApiTeam>("/api/teams"),
-        soft<ApiSession>(`/api/sessions?from=${from}&to=${to}`),
-        soft<ApiMatch>("/api/matches"),
-        soft<ApiCharge>("/api/charges"),
-        soft<ApiAnnouncement>("/api/announcements"),
-        soft<ApiNotification>("/api/notifications"),
-      ]);
+      const [athletes, teams, sessions, matches, charges, announcements, notifications, evaluations, reports] =
+        await Promise.all([
+          soft<ApiAthlete>("/api/athletes"),
+          soft<ApiTeam>("/api/teams"),
+          soft<ApiSession>(`/api/sessions?from=${from}&to=${to}`),
+          soft<ApiMatch>("/api/matches"),
+          soft<ApiCharge>("/api/charges"),
+          soft<ApiAnnouncement>("/api/announcements"),
+          soft<ApiNotification>("/api/notifications"),
+          // `soft`: uma academia sem avaliações publicadas devolve lista vazia, e a
+          // app abre à mesma. Isto não é o coração da app — é o que se vai lá ver
+          // uma vez por período.
+          soft<ApiEvaluation>("/api/evaluations"),
+          soft<ApiReport>("/api/reports"),
+        ]);
 
       // O preço é por atleta e pode ter ajuste individual — um pedido por filho,
       // que numa família são um ou dois.
@@ -260,7 +325,9 @@ export function load(): Promise<void> {
         ),
       );
 
-      apply(build(boot, athletes, teams, sessions, matches, charges, announcements, notifications, new Map(fees)));
+      apply(
+        build(boot, athletes, teams, sessions, matches, charges, announcements, notifications, new Map(fees), evaluations, reports),
+      );
     } catch (error) {
       apply({
         ...EMPTY,
@@ -293,6 +360,8 @@ function build(
   announcements: ApiAnnouncement[],
   notifications: ApiNotification[],
   fees: Map<string, number | null>,
+  evaluations: ApiEvaluation[],
+  reports: ApiReport[],
 ): State {
   const teamById = new Map(teams.map((t) => [t.id, t]));
   const sportById = new Map(boot.sports.map((s) => [s.id, s.name]));
@@ -392,9 +461,45 @@ function build(
     }
   }
 
+  /*
+   * Avaliações e relatórios, do mais recente para o mais antigo.
+   *
+   * O servidor já filtrou o que é publicado (e, nos relatórios, o que é de
+   * família): aqui só se ordena e se converte datas. Refiltrar seria fingir uma
+   * segunda defesa que não defende nada — a app corre no telemóvel de quem lê.
+   */
+  const evaluationsOut: Evaluation[] = evaluations
+    .map((e) => ({
+      id: e.id,
+      childId: e.athleteId,
+      period: e.period,
+      scores: e.scores ?? {},
+      note: e.note,
+      strengths: e.strengths,
+      focus: e.focus,
+      coachName: e.coachName,
+      publishedAt: e.publishedAt ? new Date(e.publishedAt) : null,
+    }))
+    .sort((a, b) => (b.publishedAt?.getTime() ?? 0) - (a.publishedAt?.getTime() ?? 0));
+
+  const reportsOut: Report[] = reports
+    .map((r) => ({
+      id: r.id,
+      childId: r.athleteId,
+      title: r.title,
+      period: r.period,
+      body: r.body,
+      authorName: r.authorName,
+      publishedAt: r.publishedAt ? new Date(r.publishedAt) : null,
+      snapshot: r.snapshot,
+    }))
+    .sort((a, b) => (b.publishedAt?.getTime() ?? 0) - (a.publishedAt?.getTime() ?? 0));
+
   return {
     ready: true,
     error: null,
+    evaluations: evaluationsOut,
+    reports: reportsOut,
     academy: {
       name: boot.academy.name,
       shortName: boot.academy.shortName,

@@ -78,7 +78,7 @@ export default function Staff() {
       header: "Nome",
       render: (m) => (
         <div className="flex items-center gap-2.5">
-          <Monogram name={m.name} />
+          <Monogram name={m.name} photoUrl={m.photoUrl} />
           <div className="min-w-0">
             <div className="truncate font-medium text-ink">{m.name}</div>
             <div className="truncate text-meta text-ink-3">{m.title}</div>

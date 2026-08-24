@@ -186,7 +186,7 @@ function PendingEvaluations() {
             const avg = Object.values(e.scores).reduce((n, v) => n + v, 0) / Object.values(e.scores).length;
             return (
               <li key={e.id} className="flex items-center gap-2.5 border-b border-line py-3 last:border-0">
-                <Monogram name={a?.name ?? "?"} size="sm" />
+                <Monogram name={a?.name ?? "?"} photoUrl={a?.photoUrl} size="sm" />
                 <div className="min-w-0 flex-1">
                   <div className="truncate text-body font-medium text-ink">{shortName(a?.name ?? "—")}</div>
                   <div className="text-meta text-ink-3">

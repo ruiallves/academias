@@ -254,8 +254,17 @@ export const ROLE_PERMISSIONS: Record<Role, Permission[]> = {
   // O pai lê o boletim do próprio filho — o âmbito é que o limita a isso.
   // `team:read` para a família saber a equipa, o treinador e o horário do filho —
   // o âmbito limita-a às equipas dos filhos. Gémeo do servidor.
-  GUARDIAN: ["athlete:read", "team:read", "calendar:read", "billing:read", "comms:read", "report:read", "clinical:status", "clinical:read"],
-  ATHLETE: ["team:read", "calendar:read", "report:read", "clinical:status", "clinical:read"],
+  /*
+   * O pai passa a ler avaliações.
+   *
+   * Faltava, e era a razão por que a app da família tinha um espaço reservado onde
+   * devia estar o boletim do filho: o servidor recusava-o por permissão, muito
+   * antes de haver endpoint. O que o pai vê continua limitado por duas coisas
+   * independentes desta — o âmbito (só os filhos) e o estado (só o que foi
+   * publicado, nunca um rascunho do treinador).
+   */
+  GUARDIAN: ["athlete:read", "team:read", "calendar:read", "billing:read", "comms:read", "evaluation:read", "report:read", "clinical:status", "clinical:read"],
+  ATHLETE: ["team:read", "calendar:read", "evaluation:read", "report:read", "clinical:status", "clinical:read"],
 };
 
 /**

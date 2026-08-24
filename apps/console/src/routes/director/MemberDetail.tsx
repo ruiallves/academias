@@ -106,10 +106,13 @@ export default function MemberDetail() {
         <div className="min-w-0 flex-1">
           <div className="mb-1 flex flex-wrap items-center gap-1.5">
             <StatusPill status={m.status} />
-            {m.tier && <span className="text-meta text-ink-3">{m.tier.name}</span>}
+            {/* `break-words`: um nome de categoria escrito sem espaços não tem onde
+                quebrar por omissão, e um só item de uma linha flexível não encolhe
+                abaixo do seu conteúdo — fica a espreitar para fora da ficha. */}
+            {m.tier && <span className="max-w-full break-words text-meta text-ink-3">{m.tier.name}</span>}
             {m.source === "site" && <span className="text-meta text-ink-4">· inscrição pelo site</span>}
           </div>
-          <h1 className="text-page text-ink">{m.name}</h1>
+          <h1 className="break-words text-page text-ink">{m.name}</h1>
           <p className="mt-0.5 text-body text-ink-3">
             {m.number ? `Sócio n.º ${m.number}` : "Sem número atribuído"} · {ageOf(m.birthdate)} anos
           </p>

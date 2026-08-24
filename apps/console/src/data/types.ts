@@ -36,6 +36,15 @@ export type Academy = {
   signalColor: string;
   city: string;
   sports: Sport[];
+  /**
+   * A página pública de adesão a sócio, escrita pelo clube.
+   *
+   * Vazios significam "usa o que o produto traz por omissão" — a página nunca
+   * aparece muda a quem ainda não escreveu nada.
+   */
+  membershipHeadline: string;
+  membershipIntro: string;
+  membershipPoints: string[];
 };
 
 export type Team = {
@@ -87,6 +96,8 @@ export type StaffMember = {
   name: string;
   email: string;
   phone: string;
+  /** A fotografia, como link assinado com prazo. Ausente quando não há nenhuma. */
+  photoUrl?: string;
   role: Role;
   title: string;
   department: StaffDepartment;

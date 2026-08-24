@@ -57,8 +57,8 @@ adapta-se por ausência — sem um `if (desporto === …)` em lado nenhum.
 | **Convocatórias** | montar e submeter a lista de um jogo, com tecto configurável por equipa e convite de atletas de escalões inferiores |
 | **Mensalidades** | por período ou todos, dívida real de sempre (não só do mês) |
 | **Comunicação** | avisos com taxa de leitura |
-| **Avaliações** | por competência, rascunho vs publicada |
-| **Relatórios** | cobertura por equipa (Fase 4 por construir) |
+| **Avaliações** | plantel por período, editor contínuo, publicação em lote — ver *Avaliações e relatórios* |
+| **Relatórios** | texto por atleta, **interno ou partilhado com a família**, cobertura das avaliações por equipa |
 | **Definições** | white-label ao vivo, catálogos, matriz de permissões (papéis), importação ZeroZero |
 
 A direção tem **todas** as permissões, incluindo `clinical:write` — regista e dá
@@ -141,7 +141,7 @@ Verificado por `npm run test:callups` (22, o essencial) e
 | **Hoje** | mensalidade em falta primeiro · próximo treino · alterações · próxima consulta |
 | **Agenda** | treinos por dia + consultas e exames agendados |
 | **Pagamentos** | MB Way, Multibanco, cartão · estado "a confirmar" honesto · histórico |
-| **Atleta** | assiduidade, avaliação do treinador, inscrição, notificações |
+| **Atleta** | assiduidade, **avaliação do treinador com evolução**, **relatórios partilhados**, inscrição |
 
 **Só corre instalada.** Fora do modo `standalone` a app recusa-se a renderizar e
 manda instalar. É uma porta, não um cadeado — o controlo a sério é a autenticação
@@ -214,6 +214,133 @@ apanhar o link.
 
 Verificado por `npm run test:invites` (16) e `npm run test:invite-flow` (36).
 
+## Avaliações e relatórios
+
+Duas coisas diferentes com nomes parecidos, e a diferença é o que faz o desenho:
+
+| | Avaliação | Relatório |
+|---|---|---|
+| O que é | o boletim do período: as mesmas competências, escala 1–5 | um texto sobre o percurso, escrito quando há o que dizer |
+| Quantos | um por atleta por período | os que forem precisos |
+| Quem lê | a família, quando publicada | **depende** — interno ou partilhado |
+| Para que serve | comparar Setembro com Junho | dizer o que os números não dizem |
+
+### O ecrã do treinador
+
+`Avaliações` lista o **plantel**, não as avaliações. É a decisão que muda tudo: uma
+lista de avaliações responde a "o que já fiz", um plantel responde a "quem falta" —
+e é essa a pergunta de Dezembro. Quem ainda não tem avaliação aparece primeiro.
+
+O editor abre num atleta e **anda para o seguinte** sem fechar (`Guardar e
+seguinte`), com o contador `3 de 18` sempre à vista: o trabalho real é uma tarde com
+o plantel todo, e um formulário que fecha a cada gravação é o que faz as avaliações
+ficarem a meio. As pontuações são cinco pontos clicáveis — clicar no valor que já lá
+está limpa-o.
+
+Cada avaliação tem, além das competências: **o que está bem**, **a trabalhar no
+próximo período** e uma nota livre. Cinco números dizem onde o atleta está; não
+dizem o que fazer com isso, e é isso que um pai quer ler.
+
+**Publicar é um acto de grupo**: selecciona-se e entrega-se de uma vez, com o botão
+a dizer quantas famílias vão ser avisadas. Ninguém devia publicar sem saber quantos
+telemóveis vão tocar.
+
+### Interno ou partilhado
+
+Metade do que um clube escreve sobre um miúdo não é para os pais lerem — o parecer
+para a direção, a nota de que talvez suba de escalão. A outra metade é precisamente
+para eles.
+
+Por isso `visibility` é obrigatório, aparece como **dois cartões do mesmo tamanho**
+com a consequência escrita por baixo de cada um, e **nasce em interno**. Dos dois
+enganos possíveis, um é barato (a família não viu, partilha-se agora) e o outro não
+tem volta (já leram).
+
+`status` e `visibility` são fronteiras diferentes: publicar diz *está escrito*
+(entra no registo do atleta, a academia lê-o); partilhar diz *para quem*. O que a
+família vê é a intersecção — publicado **e** de família. Tornar interno um relatório
+já lido tira-o da app dali para a frente, e a consola diz isso mesmo em vez de
+prometer que apaga o passado.
+
+Ao publicar, o relatório **congela os números** (assiduidade, jogos, avaliação do
+período). Um documento que lesse dados ao vivo passaria a mentir sozinho: o texto
+"tem faltado" ao lado de 96%, seis meses depois.
+
+### O que a família recebe
+
+Na app, no ecrã do educando: a avaliação publicada — primeiro o que o treinador
+escreveu, depois as competências, cada uma com a **evolução face ao período
+anterior** (`+1`, `=`) — e a lista de relatórios partilhados, que abrem numa folha
+de leitura. Notificação em ambos os casos, com tipos distintos
+(`EVALUATION_PUBLISHED`, `REPORT_SHARED`): um pai que recebe os dois quer saber qual
+chegou.
+
+Não há média. Uma média vira nota, uma nota vira comparação entre miúdos no grupo de
+WhatsApp dos pais — e um 3,4 não diz a ninguém o que fazer a seguir.
+
+### As fronteiras, e onde vivem
+
+| | |
+|---|---|
+| Rascunho | nunca sai da consola — filtro no **servidor**, a partir do papel, não da interface |
+| Interno | nunca sai da academia, mesmo publicado |
+| Âmbito | o treinador avalia os atletas das suas equipas; o pai vê os filhos |
+| Competências | validadas contra `Sport.skills` da modalidade — não são um saco de JSON |
+| Escala | inteiros de 1 a 5, verificados no servidor |
+| Apagar | avaliação publicada não se apaga (corrige-se); relatório publicado só pela direção |
+
+O pai passou a ter `evaluation:read` — faltava, e era por isso que a app tinha um
+espaço reservado onde devia estar o boletim do filho.
+
+Verificado por `npm run test:development` (32 testes), que percorre sobretudo as
+recusas — incluindo a que interessa mais: um relatório interno publicado **não**
+aparece à família.
+
+## Fotografias e vídeo — armazenamento
+
+Supabase Storage, **sempre privado**. O que fica na base é a **chave** do ficheiro;
+o que a API devolve é um link assinado com prazo, gerado a cada leitura. A
+diferença não é de estilo: um URL guardado é um endereço permanente para a
+fotografia de uma criança, e quem o apanhar — num log, num ecrã partilhado, num
+histórico — abre-a para sempre.
+
+| | |
+|---|---|
+| `fotos` | atletas e staff · 8 MB · JPEG/PNG/WebP · link válido 6 h |
+| `scouting` | vídeo de prospectos · limite do projecto · ver `scouting-video.service.ts` |
+
+**Os bytes não passam pela API.** Três passos: a consola pede autorização, o
+browser carrega directamente para o Supabase com um endereço assinado, e a API
+confirma que o ficheiro chegou (`HEAD`) antes de gravar a chave. Atravessar imagens
+— e sobretudo vídeos de centenas de MB — no processo que serve toda a gente é o
+caminho mais curto para o derrubar.
+
+A chave leva o id lá dentro (`atletas/{id}/…`, `staff/{userId}/…`) e o servidor
+**verifica esse prefixo** ao confirmar: uma autorização obtida para um atleta não
+serve para apontar a ficha de outro à mesma fotografia.
+
+Quem pode: `athlete:write` (com âmbito por equipa) nos atletas; `staff:write` **ou
+a própria pessoa** no staff — pôr a sua própria fotografia nunca foi um privilégio,
+e exigir a direção era garantir que ninguém tinha foto nenhuma.
+
+### As duas armadilhas do Supabase que isto custou
+
+Ambas davam a mesma mensagem inútil — *"o armazenamento não está disponível"* — e
+juntas mantiveram os carregamentos avariados sem deixar rasto:
+
+1. **O tecto do projecto.** O bucket de vídeo pedia `file_size_limit` de 2 GB; o
+   projecto permite 50 MB. Um pedido acima do tecto não devolve um aviso: devolve
+   400 e o bucket **não chega a ser criado**. Agora tenta-se o limite desejado e,
+   se for recusado, cria-se sem limite explícito — herdando o do projecto.
+2. **Bucket duplicado devolve HTTP 400**, com um corpo a dizer `409` lá dentro.
+   Olhar só para o estado HTTP faz o caso mais normal de todos — a segunda vez que
+   o servidor arranca — parecer uma avaria. `StorageService` lê sempre o corpo
+   antes de decidir.
+
+Verificado por `npm run test:photos` (24 testes) — que **carrega mesmo o ficheiro**
+para o Supabase e confirma que o link abre e que, sem assinatura, não abre. Um teste
+que só chamasse a API não teria apanhado nada disto.
+
 ## Convite às famílias
 
 `Famílias → Convidar para a app` abre um diálogo com **um link só, reutilizável** —
@@ -274,6 +401,69 @@ por atleta.
 
 Verificado por `npm run test:family-invite` (35 testes), que percorre o caminho
 inteiro e, sobretudo, as recusas.
+
+## Site público (`apps/site`)
+
+O site da marca — o que angaria clubes. App à parte, sem dependência da API: é
+HTML, CSS e um pouco de JavaScript, e uma página de marketing que precisa de um
+servidor a responder para abrir é uma página que fica em baixo quando o servidor
+fica.
+
+`npm run dev:site` (:5190). Rotas: `/`, `/software`, `/planos`, `/contactos`,
+`/termos`, `/privacidade`, `/cookies`, `/dpa`.
+
+### A identidade é própria, e é deliberado
+
+Não herda `packages/ui`. A consola, a app e o painel partilham tokens porque são o
+**mesmo produto** visto de três lados; o site é a montra, e uma montra que herdasse
+os tokens do produto acabaria a parecer uma captura de ecrã dele.
+
+| | |
+|---|---|
+| **Tipografia** | Archivo (títulos, com eixo de largura a apertar em `wdth 88`), Instrument Sans (texto, a mesma do produto), Geist Mono (marcadores e números) |
+| **Cor** | tinta quase preta com verde lá dentro, papel quente, e **uma** cor — o verde de campo do produto. Zero gradientes de duas cores, zero vidro fosco |
+| **Raio** | 2–3px. O cartão arredondado de 16px é a assinatura de metade da internet; recusá-lo é a forma mais barata de não parecer um template |
+| **Estrutura** | secções numeradas (01…11) com filetes de 1px — lê-se como ficha técnica, não como apresentação de vendas |
+| **Contraste** | blocos claros e escuros a alternar. O ritmo faz-se com luz, não com sombras |
+| **Movimento** | uma regra: `data-reveal` + `IntersectionObserver`, entrada de 14px com atraso escalonado. Sem biblioteca de animação, e desligado em `prefers-reduced-motion` |
+
+### As capturas de produto
+
+Três caras do produto — a consola, a app da família e a página pública de adesão a
+sócio — estão **reconstruídas em HTML**, a partir dos ecrãs reais e com os tokens
+reais: os mesmos grupos de navegação, os mesmos alertas com acção à direita, a mesma
+faixa da semana, o mesmo cartão de sócio. Nítidas em qualquer resolução e sempre
+iguais ao produto de hoje.
+
+Largar `consola.png`, `app.png` e `socios.png` em `apps/site/public/shots/` substitui
+as reconstruções automaticamente; se um ficheiro falhar, a reconstrução volta sozinha
+(ver `public/shots/LEIA-ME.md`).
+
+### O roteiro é uma linha do tempo
+
+Com estações, não com datas exactas, e com a ordem à vista — integrações primeiro,
+depois scouting avançado, depois IA sobre os dados. A ordem é a informação: "o que
+vem primeiro" é a pergunta que um clube faz. A página diz que são intenções.
+
+### O que a página promete
+
+Só o que existe. Os módulos listados estão construídos; tudo o resto vive na secção
+**A caminho**, marcado como em desenvolvimento e sem datas. Uma landing que mistura
+o que existe com o que está planeado ganha a primeira reunião e perde o cliente na
+segunda — e num mercado onde os clubes se conhecem todos, perde também os outros.
+
+### Documentos legais
+
+`/termos`, `/privacidade`, `/cookies` e `/dpa` estão escritos em português simples,
+a descrever o que a plataforma faz. **Estrutura e linguagem, não parecer jurídico**:
+falta a revisão de um advogado de RGPD e SaaS antes de publicar. O DPA assume a
+relação certa — o clube é responsável pelo tratamento, nós somos subcontratante — e
+diz explicitamente que temos acesso administrativo restrito e auditado, em vez da
+frase confortável de que não conseguimos aceder.
+
+A identificação legal da entidade está por preencher (`COMPANY` em
+`src/lib/content.ts`): as frases que dependem dela só aparecem quando existir, para
+nenhuma página mostrar um espaço por completar.
 
 ## Landing da academia
 
@@ -386,8 +576,6 @@ de infraestrutura, não de código da aplicação.
 |---|---|
 | Importação por Excel de **staff** | a de atletas está feita; a de staff (que são convites/contas) fica para depois |
 | Convocatória na app das famílias | a notificação já é enviada e fica na base; falta o ecrã na PWA e um endpoint com âmbito por atleta |
-| Landing B2B | a página de marketing para angariar academias |
-| Relatórios (Fase 4) | o que a família recebe no fim do período |
 | Analítica (Fase 5) | receita, retenção, actividade — parcialmente coberto pelo Platform Admin, do lado do negócio |
 | Nota do jogo | o campo existe e é mostrado; **a fórmula está por decidir** |
 | ZeroZero | fluxo completo, mas com dados **simulados** — falta resolver licenciamento |

@@ -230,7 +230,7 @@ function AthletePicker({
     return (
       <DialogField label="Atleta">
         <div className="flex items-center gap-2.5 rounded-[var(--radius-control)] border border-line bg-surface px-2.5 py-2">
-          <Monogram name={picked.name} size="sm" />
+          <Monogram name={picked.name} photoUrl={picked.photoUrl} size="sm" />
           <div className="min-w-0 flex-1">
             <div className="truncate text-body font-medium text-ink">{picked.name}</div>
             <div className="text-meta text-ink-3">{teamById(picked.teamId)?.name}</div>
@@ -273,7 +273,7 @@ function AthletePicker({
                 onClick={() => onPick(a)}
                 className="flex w-full items-center gap-2.5 border-b border-line px-2.5 py-2 text-left last:border-0 hover:bg-sunken/60"
               >
-                <Monogram name={a.name} size="sm" />
+                <Monogram name={a.name} photoUrl={a.photoUrl} size="sm" />
                 <span className="min-w-0 flex-1">
                   <span className="block truncate text-body text-ink">{shortName(a.name)}</span>
                   <span className="block truncate text-meta text-ink-3">{teamById(a.teamId)?.name}</span>

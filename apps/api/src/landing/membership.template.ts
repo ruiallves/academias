@@ -1,26 +1,36 @@
 import type { AcademyBranding } from "./landing.template";
 
 /**
- * "Faz-te sócio" — a página pública de inscrição.
+ * "Faz parte do clube" — a adesão a sócio.
  *
- * HTML gerado no servidor, como a landing e pelas mesmas razões: o link viaja por
- * WhatsApp e por redes sociais, e um preview sem OG tags é um link que ninguém
- * abre. Também não há aqui nada que justifique carregar uma SPA — é um formulário.
+ * ## O que segura a experiência
  *
- * ## O formulário é longo. Não há como o encurtar.
+ * Ninguém acorda com vontade de preencher um formulário. Mas há pessoas que
+ * acordam com vontade de **ter o cartão**. Por isso há um cartão de sócio no ecrã
+ * desde o primeiro segundo, e ele **preenche-se à medida que se escreve**: o nome
+ * aparece nele, a categoria muda-lhe a etiqueta, o número fica em traços à espera
+ * de aprovação. O trabalho é o mesmo; o que muda é para onde se olha.
  *
- * São os dados que uma direção precisa para emitir um cartão e passar um recibo, e
- * é por isso que **todos** os campos são obrigatórios: um formulário com metade
- * opcional produz fichas por preencher, e alguém acaba ao telefone a pedir o NIF
- * que faltava. O que se pode fazer — e está feito — é dividi-lo em três blocos com
- * nome, para quem preenche saber sempre onde está e quanto falta.
+ * ## O clube escreve a página
  *
- * ## A escolha da categoria vem primeiro
+ * A frase de abertura, a que explica e os pontos que dizem o que se ganha vêm de
+ * `Academy.membershipHeadline` / `membershipIntro` / `membershipPoints`, editáveis
+ * em Definições. Uma frase escrita por nós seria a mesma em quinhentos clubes — e
+ * uma frase igual em quinhentos sítios não convence ninguém. O que está em código
+ * é só o que aparece a quem ainda não escreveu nada.
  *
- * Antes de qualquer campo. Escolher o tipo de sócio é a única decisão da página;
- * tudo o resto é transcrição de um cartão de cidadão. Pô-la no fim, depois de
- * quinze campos, seria pedir a decisão a quem já está cansado — e é a decisão que
- * determina quanto a pessoa vai pagar.
+ * ## A linguagem gráfica
+ *
+ * Estilhaços angulares na cor do clube, em vez de fotografia. Duas razões: uma
+ * fotografia teria de existir para cada clube (e não existe), e um fundo liso com
+ * cartões brancos é exactamente a estética anónima que este produto não pode ter.
+ * Derivam da cor configurada — mudam com o clube, sem um único ficheiro de imagem.
+ *
+ * ## Nota técnica
+ *
+ * Isto vive dentro de um template literal de TypeScript: **nenhuma crase pode
+ * aparecer no HTML, CSS ou JS abaixo**. O JS do browser usa concatenação com `+`
+ * por essa razão, e não por gosto.
  */
 
 export type PublicTier = {
@@ -34,12 +44,22 @@ export type PublicTier = {
   maxAge: number | null;
 };
 
-const PERIOD_LABEL: Record<PublicTier["period"], string> = {
+const PERIOD_SHORT: Record<PublicTier["period"], string> = {
   MONTHLY: "/mês",
-  QUARTERLY: "/trimestre",
+  QUARTERLY: "/tri",
   ANNUAL: "/ano",
-  ONCE: "uma vez",
+  ONCE: "único",
 };
+
+/** O que aparece a um clube que ainda não escreveu a sua página. */
+const FALLBACK_HEADLINE = "Faz parte do clube.";
+const FALLBACK_INTRO =
+  "Ser sócio não é uma subscrição. É estar do lado de dentro — e ficar com um lugar que é teu.";
+const FALLBACK_POINTS = [
+  "Cartão de sócio digital, sempre no telemóvel",
+  "Participação na vida do clube",
+  "Comunicações que só os sócios recebem",
+];
 
 export function renderMembershipPage(opts: {
   academy: AcademyBranding;
@@ -48,8 +68,16 @@ export function renderMembershipPage(opts: {
   apiOrigin: string;
 }): string {
   const { academy, tiers, pageUrl, apiOrigin } = opts;
-  const title = `Faz-te sócio do ${academy.shortName}`;
-  const description = `Inscrição de sócio do ${academy.name}. Escolhe a categoria e preenche os teus dados.`;
+
+  const headline = (academy.membershipHeadline ?? "").trim() || FALLBACK_HEADLINE;
+  const intro = (academy.membershipIntro ?? "").trim() || FALLBACK_INTRO;
+  const written = (academy.membershipPoints ?? []).filter((p) => p.trim());
+  const points = written.length ? written : FALLBACK_POINTS;
+
+  const title = headline + " — " + academy.shortName;
+  const description = "Torna-te sócio do " + academy.name + ". " + intro;
+  const from = cheapest(tiers);
+  const hasPlans = tiers.length > 0;
 
   return `<!doctype html>
 <html lang="pt-PT">
@@ -58,275 +86,722 @@ export function renderMembershipPage(opts: {
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
 <title>${esc(title)}</title>
 <meta name="description" content="${esc(description)}" />
-<meta name="theme-color" content="${esc(academy.signalColor)}" />
+<meta name="theme-color" content="#ffffff" />
 
 <meta property="og:type" content="website" />
 <meta property="og:title" content="${esc(title)}" />
 <meta property="og:description" content="${esc(description)}" />
 <meta property="og:url" content="${esc(pageUrl)}" />
 
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@100,600;100,700;112,700&family=Instrument+Sans:wght@400;500;600&display=swap" />
+
 <style>
+  /* ====================================================================
+     Paleta — clara e quente, com a cor do clube a fazer o trabalho de cor.
+     ==================================================================== */
   :root {
-    --signal: ${esc(academy.signalColor)};
-    --canvas: #f6f5f2;
-    --surface: #ffffff;
-    --sunken: #efede8;
-    --line: #e5e2dc;
-    --line-strong: #d3cfc6;
-    --ink: #1a1917;
-    --ink-2: #524f48;
-    --ink-3: #8a867c;
-    --ink-4: #ada89d;
-    --risk: #a82a20;
-    --ok: #1f7a45;
+    --club: ${esc(academy.signalColor)};
+    --club-deep: color-mix(in oklab, ${esc(academy.signalColor)} 72%, black);
+    --paper: #ffffff;
+    --canvas: #fbfaf8;
+    --line: #e7e4dd;
+    --line-2: #d5d1c8;
+    --ink: #14130f;
+    --ink-2: #55524a;
+    --ink-3: #8b877c;
+    --ink-4: #b3aea3;
+    --bad: #b3271b;
   }
-  * { box-sizing: border-box; }
+
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+
   body {
-    margin: 0; background: var(--canvas); color: var(--ink-2);
-    font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
-    font-size: 15px; line-height: 1.5;
+    margin: 0;
+    background: var(--canvas);
+    color: var(--ink-2);
+    font-family: "Instrument Sans", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+    font-size: 16px;
+    line-height: 1.5;
     -webkit-font-smoothing: antialiased;
+    overflow-x: hidden;
   }
-  .wrap { max-width: 720px; margin: 0 auto; padding: 0 20px 80px; }
 
-  header.top { display: flex; align-items: center; gap: 12px; padding: 24px 0 32px; }
-  .mark {
-    width: 38px; height: 38px; border-radius: 11px; background: var(--signal); color: #fff;
-    display: grid; place-items: center; font-weight: 700; font-size: 14px; flex: none;
+  /* O display é um grotesco largo e pesado — voz de marca desportiva, e não a
+     geométrica redonda que qualquer template usa. */
+  .display {
+    font-family: "Archivo", ui-sans-serif, system-ui, sans-serif;
+    font-variation-settings: "wdth" 112;
+    font-weight: 700;
+    letter-spacing: -0.035em;
+    line-height: 1.02;
+    color: var(--ink);
   }
-  .mark img { width: 100%; height: 100%; object-fit: cover; border-radius: 11px; }
-  .top b { display: block; color: var(--ink); font-size: 15px; }
-  .top span { display: block; color: var(--ink-3); font-size: 12.5px; }
 
-  h1 { margin: 0 0 8px; font-size: 34px; line-height: 1.1; letter-spacing: -0.03em; color: var(--ink); font-weight: 600; }
-  .lede { margin: 0 0 28px; color: var(--ink-2); max-width: 46ch; }
+  ::selection { background: var(--club); color: #fff; }
+  a { color: var(--club); }
 
-  fieldset { border: 0; margin: 0 0 24px; padding: 0; }
-  legend { padding: 0; margin-bottom: 4px; font-size: 12px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--ink-3); font-weight: 600; }
-  .req { color: var(--ink-4); font-size: 12.5px; margin: 0 0 14px; }
+  /* ====================================================================
+     Estilhaços — a linguagem gráfica do clube, sem uma imagem
+     ==================================================================== */
 
-  .panel { background: var(--surface); border: 1px solid var(--line); border-radius: 12px; padding: 20px; }
+  .shards { position: fixed; inset: 0; pointer-events: none; z-index: 0; overflow: hidden; }
+  .shards i { position: absolute; display: block; }
 
-  .grid { display: grid; gap: 14px; grid-template-columns: 1fr 1fr; }
-  .grid .full { grid-column: 1 / -1; }
-  @media (max-width: 560px) { .grid { grid-template-columns: 1fr; } .grid .full { grid-column: auto; } }
+  .s1 { width: 190px; height: 130px; left: -46px; bottom: 12%;
+        background: var(--club); clip-path: polygon(0 0, 100% 42%, 30% 100%); opacity: 0.9; }
+  .s2 { width: 150px; height: 190px; left: 46px; bottom: 4%;
+        background: var(--club-deep); clip-path: polygon(0 22%, 100% 0, 62% 100%); opacity: 0.85; }
+  .s3 { width: 92px; height: 62px; left: 132px; bottom: 26%;
+        background: var(--club); clip-path: polygon(0 50%, 100% 0, 78% 100%); opacity: 0.45; }
+  .s4 { width: 210px; height: 150px; right: -60px; top: 16%;
+        background: var(--club); clip-path: polygon(0 0, 100% 50%, 26% 100%); opacity: 0.5; }
+  .s5 { width: 160px; height: 210px; right: 30px; top: 32%;
+        background: var(--club-deep); clip-path: polygon(30% 0, 100% 30%, 0 100%); opacity: 0.65; }
+  .s6 { width: 120px; height: 84px; right: -20px; bottom: 10%;
+        background: var(--club); clip-path: polygon(0 30%, 100% 0, 60% 100%); opacity: 0.35; }
 
-  label { display: block; }
-  label > span { display: block; font-size: 12.5px; font-weight: 600; color: var(--ink); margin-bottom: 5px; }
-  input[type=text], input[type=email], input[type=date], input[type=tel], select {
-    width: 100%; height: 42px; padding: 0 11px; font: inherit; font-size: 15px;
-    color: var(--ink); background: var(--surface);
-    border: 1px solid var(--line-strong); border-radius: 8px; appearance: none;
+  /* Abaixo de 1300px os estilhaços da direita ficariam por cima do cartão. */
+  @media (max-width: 1300px) { .s4, .s5 { display: none; } }
+  @media (max-width: 900px) {
+    .s3 { display: none; }
+    .s1, .s2 { transform: scale(0.5); transform-origin: left bottom; opacity: 0.4; }
+    .s6 { transform: scale(0.5); transform-origin: right bottom; opacity: 0.25; }
   }
-  input:focus, select:focus { outline: 2px solid var(--signal); outline-offset: -1px; border-color: var(--signal); }
-  input[aria-invalid="true"] { border-color: var(--risk); }
 
-  /* O código postal são dois campos porque são dois números com significados
-     diferentes — e porque um separador impresso ensina o formato sem instruções. */
-  .cp { display: flex; align-items: center; gap: 8px; }
-  .cp input { text-align: center; }
-  .cp .dash { color: var(--ink-4); }
-  .cp .four { flex: 1 1 0; }
-  .cp .three { flex: 0 0 78px; }
+  /* ====================================================================
+     Estrutura
+     ==================================================================== */
+
+  .page { position: relative; z-index: 1; min-height: 100svh; display: flex; flex-direction: column; }
+  .wrap { width: 100%; max-width: 1120px; margin: 0 auto; padding: 0 clamp(20px, 4vw, 40px); }
+
+  header.bar { display: flex; align-items: center; gap: 16px; padding: clamp(20px, 3vw, 34px) 0 clamp(24px, 4vw, 44px); }
+  .crest { width: 44px; height: 44px; border-radius: 50%; flex: none; background: var(--club); color: #fff;
+           display: grid; place-items: center; font-weight: 700; font-size: 14px; }
+  .crest img { width: 100%; height: 100%; object-fit: cover; border-radius: 50%; }
+  .bar .nm {
+    font-family: "Archivo", sans-serif; font-variation-settings: "wdth" 100;
+    font-weight: 700; font-size: clamp(17px, 2.4vw, 22px); letter-spacing: 0.01em;
+    text-transform: uppercase; color: var(--ink);
+  }
+  .bar .club { margin-left: auto; font-size: 12.5px; color: var(--ink-3); }
+
+  main { flex: 1; }
+
+  .cols { display: grid; gap: clamp(28px, 5vw, 64px); align-items: start; }
+  @media (min-width: 940px) { .cols { grid-template-columns: minmax(0, 1fr) 320px; } }
+
+  /* ====================================================================
+     Passos — numerais, como uma paginação. Não uma barra de progresso: uma
+     barra convida a calcular quanto falta; um número diz onde se está.
+     ==================================================================== */
+
+  footer.foot { padding: clamp(32px, 5vw, 52px) 0 32px; font-size: 12.5px; color: var(--ink-4); }
+
+  .steps { display: none; gap: 20px; margin-bottom: clamp(20px, 3vw, 30px); }
+  .steps[data-on] { display: flex; }
+  .steps b {
+    font-family: "Archivo", sans-serif; font-weight: 600; font-size: 15px;
+    color: var(--ink-4); padding-bottom: 6px; border-bottom: 2px solid transparent;
+    transition: color 200ms ease, border-color 200ms ease;
+  }
+  .steps b[data-done] { color: var(--ink-3); }
+  .steps b[data-now] { color: var(--ink); border-bottom-color: var(--club); }
+
+  .kicker {
+    font-size: 12.5px; font-weight: 600; letter-spacing: 0.14em; text-transform: uppercase;
+    color: var(--club); margin-bottom: 10px;
+  }
+
+  /* A frase de abertura não parte. Uma frase partida em duas linhas por acaso
+     deixa de ser um slogan e passa a ser texto corrido. */
+  h1.display { margin: 0 0 16px; font-size: clamp(30px, 5.4vw, 60px); white-space: nowrap; }
+  @media (max-width: 460px) {
+    /* Num ecrã estreito, ler ganha a não partir. */
+    h1.display { white-space: normal; font-size: clamp(27px, 8vw, 38px); }
+  }
+
+  h2.display { margin: 0 0 12px; font-size: clamp(28px, 4.4vw, 46px); }
+
+  .lede { margin: 0; max-width: 46ch; font-size: clamp(15.5px, 1.8vw, 18px); color: var(--ink-2); }
+  .req { margin: 0 0 20px; font-size: 13px; color: var(--club); font-weight: 500; }
+
+  /* ====================================================================
+     Ecrãs
+     ==================================================================== */
+
+  .screen { display: none; }
+  .screen[data-active] { display: block; animation: in 380ms cubic-bezier(0.22, 1, 0.36, 1) both; }
+  @keyframes in { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: none; } }
+
+  .head { margin-bottom: clamp(24px, 4vw, 38px); }
+
+  /* ====================================================================
+     Pontos do clube
+     ==================================================================== */
+
+  .points { margin: clamp(24px, 4vw, 36px) 0 0; padding: 0; list-style: none; }
+  .points li {
+    display: flex; gap: 16px; align-items: baseline;
+    padding: 16px 0; border-top: 1px solid var(--line);
+    font-size: 16px; color: var(--ink);
+  }
+  /* Sem risco a fechar a lista: o que a fecha e o da barra de accoes logo abaixo.
+     Um por ponto, e nao mais do que isso. */
+  .points li::before {
+    content: ""; flex: none; width: 13px; height: 10px;
+    background: var(--club); clip-path: polygon(0 0, 100% 50%, 0 100%);
+  }
+
+  /* ====================================================================
+     Campos
+     ==================================================================== */
+
+  .fields { display: grid; gap: 18px 16px; grid-template-columns: 1fr; }
+  @media (min-width: 620px) {
+    .fields { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .fields .full { grid-column: 1 / -1; }
+  }
+
+  /*
+     Codigo postal e cidade andam juntos e nao pedem o mesmo espaco: sete digitos
+     nunca precisam de metade da linha, e o nome de uma localidade precisa. Numa
+     grelha de duas colunas iguais ficavam a disputar a mesma largura.
+  */
+  .pair { display: grid; gap: 18px 16px; grid-template-columns: 1fr; }
+  @media (min-width: 620px) { .pair { grid-template-columns: minmax(0, 210px) minmax(0, 1fr); } }
+
+  .f { min-width: 0; }
+  .f > label {
+    display: block; font-size: 12px; font-weight: 600; letter-spacing: 0.06em;
+    text-transform: uppercase; color: var(--ink-3); margin-bottom: 7px;
+  }
+
+  .f input, .f select {
+    width: 100%; height: 52px; padding: 0 15px;
+    font: inherit; font-size: 16px; color: var(--ink);
+    background: var(--paper);
+    border: 1px solid var(--line-2); border-radius: 2px;
+    appearance: none;
+    transition: border-color 140ms ease, box-shadow 140ms ease;
+  }
+  .f input::placeholder { color: var(--ink-4); }
+  .f input:focus, .f select:focus {
+    outline: none; border-color: var(--club);
+    box-shadow: 0 0 0 3px color-mix(in oklab, var(--club) 15%, transparent);
+  }
+  .f[data-bad] input, .f[data-bad] select { border-color: var(--bad); }
+
+  .f select {
+    background-image:
+      linear-gradient(45deg, transparent 50%, var(--ink-3) 50%),
+      linear-gradient(135deg, var(--ink-3) 50%, transparent 50%);
+    background-position: calc(100% - 19px) 24px, calc(100% - 14px) 24px;
+    background-size: 5px 5px; background-repeat: no-repeat;
+    padding-right: 36px; cursor: pointer;
+  }
+
+  .err { display: none; margin-top: 7px; font-size: 13px; color: var(--bad); }
+  .f[data-bad] .err { display: block; }
+
+  /*
+     Data e codigo postal: campos partidos em segmentos.
+
+     Os segmentos repartem a largura da celula em vez de a fixarem em pixeis. Com
+     larguras fixas, DD/MM/AAAA somava mais do que a coluna dava numa janela media
+     e transbordava por cima do cartao ao lado. Cresce cada um a pensar nos digitos
+     que recebe, e o conjunto nunca passa do limite dos outros campos.
+  */
+  .segs { display: flex; align-items: center; gap: 8px; min-width: 0; }
+  .segs input { flex: 1 1 0; min-width: 0; text-align: center; padding-inline: 4px; }
+  .segs .sep { color: var(--ink-4); flex: none; }
+  .w2 { flex-grow: 2; }
+  .w3 { flex-grow: 3; }
+  .w4 { flex-grow: 4; }
 
   .tel { display: flex; gap: 8px; }
-  .tel select { flex: 0 0 106px; }
-  .tel input { flex: 1 1 0; }
+  .tel select { width: 104px; flex: none; padding-right: 28px;
+                background-position: calc(100% - 15px) 24px, calc(100% - 10px) 24px; }
+  .tel input { flex: 1; min-width: 0; }
 
-  /* --- Categorias ---------------------------------------------------------- */
-
-  .tiers { display: grid; gap: 10px; }
-  .tier { position: relative; }
-  .tier input { position: absolute; inset: 0; opacity: 0; cursor: pointer; margin: 0; }
-  .tier label, .tier .face {
-    display: block; border: 1px solid var(--line-strong); border-radius: 12px;
-    padding: 16px 18px; background: var(--surface); cursor: pointer;
+  /* Sexo em pastilhas: três opções nunca justificam um menu. */
+  .pills { display: flex; flex-wrap: wrap; gap: 7px; }
+  .pills button {
+    font: inherit; font-size: 14.5px; height: 52px; padding: 0 18px;
+    border: 1px solid var(--line-2); border-radius: 2px;
+    background: var(--paper); color: var(--ink-2); cursor: pointer;
+    transition: border-color 140ms ease, background-color 140ms ease, color 140ms ease;
   }
-  .tier input:checked + .face { border-color: var(--signal); box-shadow: inset 0 0 0 1px var(--signal); }
-  .tier input:focus-visible + .face { outline: 2px solid var(--signal); outline-offset: 2px; }
-  .tier .row { display: flex; align-items: baseline; justify-content: space-between; gap: 14px; }
-  .tier .name { font-weight: 600; color: var(--ink); font-size: 16px; }
-  .tier .price { font-weight: 600; color: var(--signal); white-space: nowrap; }
-  .tier .price small { color: var(--ink-3); font-weight: 500; }
-  .tier .desc { margin: 4px 0 0; font-size: 13.5px; color: var(--ink-3); }
-  .tier ul { margin: 10px 0 0; padding-left: 18px; font-size: 13px; color: var(--ink-2); }
-  .tier li { margin-bottom: 2px; }
-  .tier .age { display: inline-block; margin-top: 8px; font-size: 12px; color: var(--ink-3); background: var(--sunken); padding: 2px 8px; border-radius: 999px; }
+  .pills button:hover { border-color: var(--ink-4); }
+  .pills button[aria-pressed="true"] { background: var(--ink); border-color: var(--ink); color: #fff; font-weight: 600; }
 
-  /* --- Consentimentos ------------------------------------------------------ */
+  /* ====================================================================
+     Categorias
+     ==================================================================== */
 
-  .check { display: flex; gap: 11px; align-items: flex-start; padding: 11px 0; border-bottom: 1px solid var(--line); }
-  .check:last-child { border-bottom: 0; }
-  .check input { width: 19px; height: 19px; flex: none; margin: 1px 0 0; accent-color: var(--signal); }
-  .check span { font-size: 13.5px; color: var(--ink-2); }
-  .check a { color: var(--signal); }
-  .check .must { color: var(--ink); font-weight: 500; }
+  .plans { display: grid; gap: 12px; }
+  @media (min-width: 700px) { .plans { grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); } }
 
-  /* --- Acção --------------------------------------------------------------- */
-
-  button[type=submit] {
-    width: 100%; height: 50px; margin-top: 8px; font: inherit; font-size: 16px; font-weight: 600;
-    color: #fff; background: var(--ink); border: 0; border-radius: 10px; cursor: pointer;
+  .plan { position: relative; display: flex; }
+  .plan input { position: absolute; inset: 0; opacity: 0; cursor: pointer; margin: 0; }
+  .plan .face {
+    flex: 1; display: flex; flex-direction: column;
+    background: var(--paper); border: 1px solid var(--line-2);
+    border-radius: 2px; padding: 24px 22px; cursor: pointer;
+    transition: border-color 140ms ease, box-shadow 140ms ease;
   }
-  button[type=submit]:disabled { background: var(--ink-4); cursor: not-allowed; }
+  .plan input:hover + .face { border-color: var(--ink-4); }
+  .plan input:checked + .face { border-color: var(--club); box-shadow: inset 0 0 0 1px var(--club); }
+  .plan input:focus-visible + .face { outline: 2px solid var(--club); outline-offset: 3px; }
 
-  .error { margin-top: 12px; padding: 11px 14px; border-radius: 9px; background: #fae9e7; color: var(--risk); font-size: 13.5px; }
-  .error:empty { display: none; }
+  .plan .nm { font-size: 16px; font-weight: 600; color: var(--ink); }
+  .plan .ag { font-size: 12.5px; color: var(--ink-4); margin-top: 2px; }
+  .plan .pr {
+    font-family: "Archivo", sans-serif; font-variation-settings: "wdth" 100; font-weight: 700;
+    font-size: 34px; letter-spacing: -0.03em; color: var(--ink);
+    margin: 14px 0 0; font-variant-numeric: tabular-nums;
+  }
+  .plan .pr span { font-family: "Instrument Sans", sans-serif; font-weight: 500; font-size: 13px;
+                   color: var(--ink-3); letter-spacing: 0; }
+  .plan .ds { margin: 8px 0 0; font-size: 14px; color: var(--ink-3); }
+  .plan ul { margin: 14px 0 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 6px; }
+  .plan ul li { display: flex; gap: 9px; font-size: 13.5px; color: var(--ink-2); }
+  .plan ul li::before {
+    content: ""; flex: none; width: 9px; height: 7px; margin-top: 6px;
+    background: var(--club); clip-path: polygon(0 0, 100% 50%, 0 100%);
+  }
 
-  /* --- Depois de enviar ---------------------------------------------------- */
+  /* ====================================================================
+     Consentimentos
+     ==================================================================== */
 
-  #done { display: none; text-align: center; padding: 60px 0; }
-  #done .tick { width: 56px; height: 56px; border-radius: 50%; background: #e6f2e9; color: var(--ok);
-    display: grid; place-items: center; margin: 0 auto 18px; font-size: 26px; }
-  #done h2 { margin: 0 0 8px; font-size: 26px; color: var(--ink); letter-spacing: -0.02em; }
-  #done p { margin: 0 auto; max-width: 40ch; color: var(--ink-3); }
+  .consents { display: flex; flex-direction: column; }
+  .cs { display: flex; gap: 14px; align-items: flex-start; padding: 15px 0; cursor: pointer; }
+  .cs + .cs { border-top: 1px solid var(--line); }
+  .cs input { position: absolute; opacity: 0; width: 0; height: 0; }
+  .box {
+    width: 20px; height: 20px; flex: none; margin-top: 1px;
+    border: 1.5px solid var(--line-2); background: var(--paper);
+    display: grid; place-items: center;
+    transition: background-color 130ms ease, border-color 130ms ease;
+  }
+  .box::after {
+    content: ""; width: 9px; height: 5px;
+    border-left: 2px solid #fff; border-bottom: 2px solid #fff;
+    transform: rotate(-45deg) scale(0.5); opacity: 0; margin-top: -2px;
+    transition: opacity 130ms ease, transform 130ms ease;
+  }
+  .cs input:checked + .box { background: var(--club); border-color: var(--club); }
+  .cs input:checked + .box::after { opacity: 1; transform: rotate(-45deg) scale(1); }
+  .cs input:focus-visible + .box { outline: 2px solid var(--club); outline-offset: 3px; }
+  .cs .tx { font-size: 15px; color: var(--ink-2); }
+  .cs .tx b { color: var(--ink); font-weight: 600; }
 
-  footer { margin-top: 36px; text-align: center; color: var(--ink-4); font-size: 12.5px; }
+  /* ====================================================================
+     Acção — voltar à esquerda, avançar à direita.
+     ==================================================================== */
+
+  .actions {
+    display: flex; align-items: center; gap: 16px;
+    margin-top: clamp(28px, 5vw, 44px); padding-top: 22px;
+    border-top: 1px solid var(--line);
+  }
+
+  /* A seguir aos pontos, o risco das accoes e o que fecha a lista — o mesmo
+     risco que separa dois pontos, e por isso fica à mesma distância do último
+     texto que qualquer risco interno fica do texto acima dele: os 16px do
+     padding do <li>, e nem um pixel mais. O padding-top do proprio .actions
+     e' o que sobra por baixo do risco, antes do botao — nao soma por cima. */
+  .points + .actions { margin-top: 0; }
+
+  .back {
+    display: none; align-items: center; gap: 8px;
+    background: none; border: 0; cursor: pointer; font: inherit; font-size: 15px;
+    color: var(--ink-3); padding: 8px 0;
+  }
+  .back:hover { color: var(--ink); }
+  .back[data-on] { display: inline-flex; }
+
+  .go {
+    margin-left: auto; height: 54px; min-width: 190px; padding: 0 34px;
+    display: inline-flex; align-items: center; justify-content: center;
+    font: inherit; font-size: 15px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase;
+    color: #fff; background: var(--club);
+    border: 0; border-radius: 2px; cursor: pointer;
+    transition: background-color 140ms ease;
+  }
+  .go:hover { background: var(--club-deep); }
+  .go[disabled] { background: var(--ink-4); cursor: not-allowed; }
+
+  @media (max-width: 560px) {
+    .actions { flex-direction: column-reverse; align-items: stretch; }
+    .back { justify-content: center; }
+    .go { margin-left: 0; width: 100%; }
+  }
+
+  .fail {
+    margin-top: 16px; padding: 13px 16px;
+    background: color-mix(in oklab, var(--bad) 8%, white);
+    border-left: 3px solid var(--bad);
+    color: var(--bad); font-size: 14px;
+  }
+  .fail:empty { display: none; }
+
+  /* ====================================================================
+     O cartão
+     ==================================================================== */
+
+  .card-col { position: sticky; top: 28px; }
+  @media (max-width: 939px) { .card-col { position: static; margin-bottom: 28px; max-width: 320px; } }
+
+  .card {
+    position: relative; aspect-ratio: 1.586; border-radius: 10px;
+    padding: 24px; color: #fff; display: flex; flex-direction: column; overflow: hidden;
+    background:
+      radial-gradient(130% 130% at 88% -10%, color-mix(in oklab, var(--club) 55%, white) 0%, transparent 58%),
+      linear-gradient(152deg, var(--club) 0%, var(--club-deep) 100%);
+    box-shadow: 0 24px 50px -26px color-mix(in oklab, var(--club) 55%, black);
+  }
+  /* O mesmo estilhaço da página, dentro do cartão: a marca gráfica repete-se. */
+  .card::after {
+    content: ""; position: absolute; right: -30px; bottom: -20px;
+    width: 190px; height: 150px;
+    background: rgb(255 255 255 / 0.08);
+    clip-path: polygon(0 40%, 100% 0, 70% 100%);
+  }
+  .card .ct { position: relative; z-index: 1; display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+  .card .cc { width: 32px; height: 32px; flex: none; border-radius: 50%; background: rgb(255 255 255 / 0.22);
+              display: grid; place-items: center; font-size: 11px; font-weight: 700; }
+  .card .cc img { width: 100%; height: 100%; object-fit: cover; border-radius: 50%; }
+  /*
+     22ch cabe as categorias normais numa linha só; o "13ch" que aqui estava era
+     apertado a mais e partia algo tao curto como "Socio Clube +" a meio, deixando
+     o sinal "+" sozinho na linha de baixo. white-space:nowrap fecha a porta a
+     isso de vez — um nome de categoria maior do que o cartao aguenta corta com
+     reticencias em vez de quebrar linha, e min-width:0 deixa o texto encolher
+     dentro da linha flexivel sem empurrar o logotipo.
+  */
+  .card .tier { font-size: 10px; letter-spacing: 0.16em; text-transform: uppercase;
+                color: rgb(255 255 255 / 0.85); text-align: right; max-width: 22ch; min-width: 0;
+                white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .card .nm {
+    position: relative; z-index: 1; margin-top: auto;
+    font-family: "Archivo", sans-serif; font-variation-settings: "wdth" 100; font-weight: 600;
+    font-size: 19px; letter-spacing: 0.01em; text-transform: uppercase; min-height: 1.2em;
+    /*
+       O tamanho de letra é ajustado por JS a cada tecla (ver fitCardName mais
+       abaixo), para que o nome apareça sempre inteiro em vez de cortado. O
+       white-space nowrap é o que torna essa medição fiável — sem quebra de
+       linha, o scrollWidth diz exactamente se o nome cabe ao tamanho actual. O
+       text-overflow ellipsis fica como rede: só entra em jogo se um nome for
+       tão comprido que nem o tamanho mínimo de letra o encaixe no cartão.
+    */
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  }
+  .card .nm[data-empty] { color: rgb(255 255 255 / 0.4); text-transform: none; font-weight: 400;
+                          font-family: "Instrument Sans", sans-serif; }
+  .card .bt { position: relative; z-index: 1; display: flex; align-items: flex-end; justify-content: space-between; margin-top: 8px; }
+  .card .lb { font-size: 9px; letter-spacing: 0.18em; text-transform: uppercase; color: rgb(255 255 255 / 0.6); }
+  .card .no { font-size: 14px; font-weight: 600; letter-spacing: 0.16em; font-variant-numeric: tabular-nums; }
+  .card .cl { font-size: 10.5px; color: rgb(255 255 255 / 0.72); }
+
+  .card-note { margin: 14px 2px 0; font-size: 12.5px; color: var(--ink-4); }
+
+  /* ====================================================================
+     Fim
+     ==================================================================== */
+
+  .track { margin: clamp(24px, 4vw, 36px) 0 0; padding: 0; list-style: none; }
+  .track li { display: flex; gap: 14px; align-items: center; padding: 15px 0;
+              border-top: 1px solid var(--line); font-size: 15.5px; color: var(--ink); }
+  .track li:last-child { border-bottom: 1px solid var(--line); }
+  .track .ic { width: 20px; height: 20px; flex: none; display: grid; place-items: center; font-size: 10px; font-weight: 700; }
+  .track .ic[data-done] { background: var(--club); color: #fff; }
+  .track .ic[data-wait] { border: 1.5px dashed var(--line-2); color: transparent; }
+  .track li[data-pending] { color: var(--ink-4); }
+
+
+  @media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after { animation: none !important; transition: none !important; }
+  }
 </style>
 </head>
 <body>
-<div class="wrap">
 
-  <header class="top">
-    <div class="mark">${academy.logoUrl ? `<img src="${esc(academy.logoUrl)}" alt="" />` : esc(academy.mark)}</div>
-    <div>
-      <b>${esc(academy.shortName)}</b>
-      <span>Inscrição de sócio</span>
-    </div>
-  </header>
+<div class="shards" aria-hidden="true">
+  <i class="s1"></i><i class="s2"></i><i class="s3"></i>
+  <i class="s4"></i><i class="s5"></i><i class="s6"></i>
+</div>
 
-  <main id="form-wrap">
-    <h1>Faz-te sócio</h1>
-    <p class="lede">
-      Escolhe a categoria, preenche os teus dados e a direção do ${esc(academy.shortName)}
-      trata do resto. Recebes o número de sócio quando a inscrição for aprovada.
-    </p>
-
-    <form id="f" novalidate>
-
-      ${tiers.length > 0 ? renderTiers(tiers) : ""}
-
-      <fieldset>
-        <legend>Os teus dados</legend>
-        <p class="req">Todos os campos são obrigatórios.</p>
-
-        <div class="panel grid">
-          <label class="full"><span>Nome completo</span>
-            <input type="text" name="name" autocomplete="name" required minlength="3" />
-          </label>
-
-          <label><span>E-mail</span>
-            <input type="email" name="email" autocomplete="email" required />
-          </label>
-
-          <label><span>Data de nascimento</span>
-            <input type="date" name="birthdate" autocomplete="bday" required />
-          </label>
-
-          <label class="full"><span>País</span>
-            <select name="country">
-              <option value="PT" selected>Portugal</option>
-              <option value="ES">Espanha</option>
-              <option value="FR">França</option>
-              <option value="GB">Reino Unido</option>
-              <option value="CH">Suíça</option>
-              <option value="LU">Luxemburgo</option>
-              <option value="BR">Brasil</option>
-              <option value="OT">Outro</option>
-            </select>
-          </label>
-
-          <label class="full"><span>Morada</span>
-            <input type="text" name="address" autocomplete="street-address" required minlength="3" />
-          </label>
-
-          <label><span>Código postal</span>
-            <span class="cp">
-              <input class="four" type="text" name="cp4" inputmode="numeric" maxlength="4" placeholder="0000" required />
-              <span class="dash">–</span>
-              <input class="three" type="text" name="cp3" inputmode="numeric" maxlength="3" placeholder="000" required />
-            </span>
-          </label>
-
-          <label><span>Cidade</span>
-            <input type="text" name="city" autocomplete="address-level2" required minlength="2" />
-          </label>
-
-          <label class="full"><span>Telemóvel</span>
-            <span class="tel">
-              <select name="phoneCountry" aria-label="Indicativo">
-                <option value="+351" selected>+351</option>
-                <option value="+34">+34</option>
-                <option value="+33">+33</option>
-                <option value="+44">+44</option>
-                <option value="+41">+41</option>
-                <option value="+352">+352</option>
-                <option value="+55">+55</option>
-              </select>
-              <input type="tel" name="phone" autocomplete="tel-national" inputmode="tel" required />
-            </span>
-          </label>
-
-          <label><span>Sexo</span>
-            <select name="sex">
-              <option value="FEMALE">Feminino</option>
-              <option value="MALE">Masculino</option>
-              <option value="UNSPECIFIED" selected>Prefiro não dizer</option>
-            </select>
-          </label>
-
-          <label><span>Tipo de documento</span>
-            <select name="documentKind">
-              <option value="CC" selected>Cartão de cidadão</option>
-              <option value="PASSPORT">Passaporte</option>
-              <option value="RESIDENCE">Título de residência</option>
-              <option value="OTHER">Outro</option>
-            </select>
-          </label>
-
-          <label><span>N.º de documento</span>
-            <input type="text" name="documentNumber" required minlength="4" />
-          </label>
-
-          <label><span>N.º de contribuinte</span>
-            <input type="text" name="taxId" inputmode="numeric" maxlength="9" placeholder="000000000" required />
-          </label>
-        </div>
-      </fieldset>
-
-      <fieldset>
-        <legend>Autorizações</legend>
-        <div class="panel">
-          <label class="check">
-            <input type="checkbox" name="acceptTerms" required />
-            <span class="must">Concordo com os <a href="#termos">termos e condições</a>.</span>
-          </label>
-          <label class="check">
-            <input type="checkbox" name="partnerComms" />
-            <span>Autorizo que o ${esc(academy.shortName)} me envie comunicações comerciais dos parceiros oficiais.</span>
-          </label>
-          <label class="check">
-            <input type="checkbox" name="partnerData" />
-            <span>Autorizo a partilha dos meus dados com os parceiros oficiais do ${esc(academy.shortName)} para envio de comunicações comerciais.</span>
-          </label>
-        </div>
-      </fieldset>
-
-      <button type="submit" id="submit">Enviar inscrição</button>
-      <div class="error" id="err" role="alert"></div>
-    </form>
-  </main>
-
-  <div id="done">
-    <div class="tick">✓</div>
-    <h2 id="done-title">Inscrição enviada</h2>
-    <p>
-      A direção do ${esc(academy.shortName)} vai analisá-la. Recebes o número de sócio
-      por e-mail assim que for aprovada.
-    </p>
+<div class="page">
+  <div class="wrap">
+    <header class="bar">
+      <div class="crest">${academy.logoUrl ? `<img src="${esc(academy.logoUrl)}" alt="" />` : esc(academy.mark)}</div>
+      <div class="nm">${esc(academy.shortName)}</div>
+      <div class="club">Adesão a sócio</div>
+    </header>
   </div>
 
-  <footer>${esc(academy.name)}</footer>
+  <main class="wrap">
+    <div class="steps" id="steps" aria-hidden="true"><b>1</b><b>2</b><b>3</b><b>4</b></div>
+
+    <div class="cols">
+      <div>
+
+        <!-- ============ Intro ============ -->
+        <section class="screen" data-screen="intro" data-active>
+          <div class="head">
+            <div class="kicker">Faz-te sócio</div>
+            <h1 class="display">${esc(headline)}</h1>
+            <p class="lede">${esc(intro)}</p>
+          </div>
+
+          <ul class="points">${points.map((p) => `<li>${esc(p)}</li>`).join("")}</ul>
+
+          <div class="actions">
+            <button type="button" class="go" data-next>Começar${from !== null ? " · desde " + esc(money(from)) : ""}</button>
+          </div>
+        </section>
+
+        ${hasPlans ? renderPlanScreen(tiers) : ""}
+
+        <!-- ============ 1 · Os teus dados ============ -->
+        <section class="screen" data-screen="s1" data-step="0">
+          <div class="head">
+            <div class="kicker">Faz-te sócio</div>
+            <h2 class="display">Os teus dados</h2>
+          </div>
+          <p class="req">*Todos os campos são obrigatórios</p>
+
+          <div class="fields">
+            <div class="f full" data-f="name">
+              <label for="i-name">Nome completo</label>
+              <input id="i-name" type="text" autocomplete="name" autocapitalize="words" placeholder="Como no documento" maxlength="120" />
+              <div class="err"></div>
+            </div>
+
+            <div class="f" data-f="email">
+              <label for="i-email">E-mail</label>
+              <input id="i-email" type="email" inputmode="email" autocomplete="email" placeholder="nome@exemplo.pt" />
+              <div class="err"></div>
+            </div>
+
+            <div class="f" data-f="birth">
+              <label>Data de nascimento</label>
+              <div class="segs">
+                <input class="w2" id="i-bd" type="text" inputmode="numeric" maxlength="2" placeholder="DD" aria-label="Dia" />
+                <span class="sep">/</span>
+                <input class="w2" id="i-bm" type="text" inputmode="numeric" maxlength="2" placeholder="MM" aria-label="Mês" />
+                <span class="sep">/</span>
+                <input class="w4" id="i-by" type="text" inputmode="numeric" maxlength="4" placeholder="AAAA" aria-label="Ano" />
+              </div>
+              <div class="err"></div>
+            </div>
+          </div>
+
+          <div class="actions">
+            <button type="button" class="back" data-back>
+              <svg width="13" height="13" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M10 3L5 8l5 5" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg>
+              Voltar
+            </button>
+            <button type="button" class="go" data-next>Seguinte</button>
+          </div>
+        </section>
+
+        <!-- ============ 2 · Identificação ============ -->
+        <section class="screen" data-screen="s2" data-step="1">
+          <div class="head">
+            <div class="kicker">Faz-te sócio</div>
+            <h2 class="display">Identificação</h2>
+          </div>
+          <p class="req">*Todos os campos são obrigatórios</p>
+
+          <div class="fields">
+            <div class="f full" data-f="sex">
+              <label>Sexo</label>
+              <div class="pills" role="group" aria-label="Sexo">
+                <button type="button" data-sex="FEMALE" aria-pressed="false">Feminino</button>
+                <button type="button" data-sex="MALE" aria-pressed="false">Masculino</button>
+                <button type="button" data-sex="UNSPECIFIED" aria-pressed="true">Prefiro não dizer</button>
+              </div>
+              <div class="err"></div>
+            </div>
+
+            <div class="f" data-f="taxId">
+              <label for="i-nif">N.º de contribuinte</label>
+              <input id="i-nif" type="text" inputmode="numeric" maxlength="11" placeholder="000 000 000" autocomplete="off" />
+              <div class="err"></div>
+            </div>
+
+            <div class="f" data-f="docKind">
+              <label for="i-dk">Tipo de documento</label>
+              <select id="i-dk">
+                <option value="CC" selected>Cartão de cidadão</option>
+                <option value="PASSPORT">Passaporte</option>
+                <option value="RESIDENCE">Título de residência</option>
+                <option value="OTHER">Outro</option>
+              </select>
+              <div class="err"></div>
+            </div>
+
+            <div class="f full" data-f="docNumber">
+              <label for="i-dn">N.º de documento</label>
+              <input id="i-dn" type="text" autocapitalize="characters" placeholder="00000000 0 AA0" autocomplete="off" />
+              <div class="err"></div>
+            </div>
+          </div>
+
+          <div class="actions">
+            <button type="button" class="back" data-back>
+              <svg width="13" height="13" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M10 3L5 8l5 5" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg>
+              Voltar
+            </button>
+            <button type="button" class="go" data-next>Seguinte</button>
+          </div>
+        </section>
+
+        <!-- ============ 3 · Contacto ============ -->
+        <section class="screen" data-screen="s3" data-step="2">
+          <div class="head">
+            <div class="kicker">Faz-te sócio</div>
+            <h2 class="display">Contacto e morada</h2>
+          </div>
+          <p class="req">*Todos os campos são obrigatórios</p>
+
+          <div class="fields">
+            <div class="f" data-f="phone">
+              <label for="i-tel">Telemóvel</label>
+              <div class="tel">
+                <select id="i-cc" aria-label="Indicativo">
+                  <option value="+351" selected>+351</option>
+                  <option value="+34">+34</option>
+                  <option value="+33">+33</option>
+                  <option value="+44">+44</option>
+                  <option value="+41">+41</option>
+                  <option value="+352">+352</option>
+                  <option value="+49">+49</option>
+                  <option value="+55">+55</option>
+                </select>
+                <input id="i-tel" type="tel" inputmode="tel" autocomplete="tel-national" placeholder="900 000 000" />
+              </div>
+              <div class="err"></div>
+            </div>
+
+            <div class="f" data-f="country">
+              <label for="i-country">País</label>
+              <select id="i-country">
+                <option value="PT" selected>Portugal</option>
+                <option value="ES">Espanha</option>
+                <option value="FR">França</option>
+                <option value="GB">Reino Unido</option>
+                <option value="CH">Suíça</option>
+                <option value="LU">Luxemburgo</option>
+                <option value="DE">Alemanha</option>
+                <option value="BR">Brasil</option>
+              </select>
+              <div class="err"></div>
+            </div>
+
+            <div class="f full" data-f="address">
+              <label for="i-addr">Morada</label>
+              <input id="i-addr" type="text" autocomplete="street-address" placeholder="Rua, número e andar" />
+              <div class="err"></div>
+            </div>
+
+            <div class="pair full">
+              <div class="f" data-f="postal">
+                <label>Código postal</label>
+                <div class="segs">
+                  <input class="w4" id="i-cp4" type="text" inputmode="numeric" maxlength="4" placeholder="0000" aria-label="Código postal" />
+                  <span class="sep">–</span>
+                  <input class="w3" id="i-cp3" type="text" inputmode="numeric" maxlength="3" placeholder="000" aria-label="Extensão" />
+                </div>
+                <div class="err"></div>
+              </div>
+
+              <div class="f" data-f="city">
+                <label for="i-city">Cidade</label>
+                <input id="i-city" type="text" autocomplete="address-level2" placeholder="Braga" />
+                <div class="err"></div>
+              </div>
+            </div>
+          </div>
+
+          <div class="actions">
+            <button type="button" class="back" data-back>
+              <svg width="13" height="13" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M10 3L5 8l5 5" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg>
+              Voltar
+            </button>
+            <button type="button" class="go" data-next>Seguinte</button>
+          </div>
+        </section>
+
+        <!-- ============ 4 · Autorizações ============ -->
+        <section class="screen" data-screen="s4" data-step="3">
+          <div class="head">
+            <div class="kicker">Faz-te sócio</div>
+            <h2 class="display">Antes de finalizar</h2>
+          </div>
+
+          <div class="consents">
+            <label class="cs">
+              <input type="checkbox" id="c-terms" />
+              <span class="box" aria-hidden="true"></span>
+              <span class="tx"><b>Concordo com os termos e condições do ${esc(academy.shortName)}.</b></span>
+            </label>
+
+            <label class="cs">
+              <input type="checkbox" id="c-comms" />
+              <span class="box" aria-hidden="true"></span>
+              <span class="tx">Autorizo que o ${esc(academy.shortName)} envie comunicações comerciais dos Parceiros Oficiais.</span>
+            </label>
+
+            <label class="cs">
+              <input type="checkbox" id="c-data" />
+              <span class="box" aria-hidden="true"></span>
+              <span class="tx">Autorizo a partilha dos meus dados com os Parceiros Oficiais do ${esc(academy.shortName)} para envio de comunicações comerciais.</span>
+            </label>
+          </div>
+
+          <div class="actions">
+            <button type="button" class="back" data-back>
+              <svg width="13" height="13" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M10 3L5 8l5 5" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg>
+              Voltar
+            </button>
+            <button type="button" class="go" id="submit">Concluir</button>
+          </div>
+          <div class="fail" id="fail" role="alert"></div>
+        </section>
+
+        <!-- ============ Fim ============ -->
+        <section class="screen" data-screen="done">
+          <div class="head">
+            <div class="kicker">Está feito</div>
+            <h2 class="display" id="done-title">Bem-vindo.</h2>
+            <p class="lede">Recebemos a tua adesão. A partir daqui é connosco.</p>
+          </div>
+
+          <ul class="track">
+            <li><span class="ic" data-done>✓</span> Inscrição recebida</li>
+            <li><span class="ic" data-done>✓</span> Dados enviados ao clube</li>
+            <li data-pending><span class="ic" data-wait>·</span> Aprovação pela direção</li>
+            <li data-pending><span class="ic" data-wait>·</span> Número de sócio e cartão digital</li>
+          </ul>
+        </section>
+
+      </div>
+
+      <aside class="card-col">
+        ${cardMarkup(academy)}
+        <p class="card-note">O teu cartão fica activo assim que a direção aprovar.</p>
+      </aside>
+    </div>
+  </main>
+
+  <footer class="foot wrap">${esc(academy.name)}</footer>
+
 </div>
 
 <script>
@@ -334,90 +809,299 @@ export function renderMembershipPage(opts: {
   var API = ${jsonForScript(apiOrigin)};
   var SLUG = ${jsonForScript(academy.slug)};
 
-  var form = document.getElementById("f");
-  var btn = document.getElementById("submit");
-  var err = document.getElementById("err");
+  var el = function (s, r) { return (r || document).querySelector(s); };
+  var all = function (s, r) { return [].slice.call((r || document).querySelectorAll(s)); };
 
-  // O código postal avança sozinho para o segundo campo. É o único automatismo
-  // da página: quem escreve "1234" espera que o cursor salte, e não saltar
-  // obriga a tirar a mão do teclado a meio de um número.
-  var cp4 = form.cp4, cp3 = form.cp3;
-  cp4.addEventListener("input", function () {
-    cp4.value = cp4.value.replace(/\\D/g, "");
-    if (cp4.value.length === 4) cp3.focus();
-  });
-  cp3.addEventListener("input", function () { cp3.value = cp3.value.replace(/\\D/g, ""); });
-  form.taxId.addEventListener("input", function () { form.taxId.value = form.taxId.value.replace(/\\D/g, ""); });
+  var screens = all("[data-screen]");
+  var steps = el("#steps");
+  var at = 0;
 
-  function fail(message, field) {
-    err.textContent = message;
-    if (field) { field.setAttribute("aria-invalid", "true"); field.focus(); }
-    btn.disabled = false;
-    btn.textContent = "Enviar inscrição";
+  /* ------------------------------------------------------------------
+     Navegação. Os dados vivem nos campos e nunca se limpam — voltar atrás
+     e avançar outra vez encontra tudo como estava.
+     ------------------------------------------------------------------ */
+  function show(i) {
+    at = Math.max(0, Math.min(screens.length - 1, i));
+
+    screens.forEach(function (s, k) {
+      if (k === at) s.setAttribute("data-active", "");
+      else s.removeAttribute("data-active");
+    });
+
+    var step = screens[at].getAttribute("data-step");
+    if (step === null) {
+      steps.removeAttribute("data-on");
+    } else {
+      steps.setAttribute("data-on", "");
+      var n = parseInt(step, 10);
+      all("b", steps).forEach(function (b, k) {
+        b.removeAttribute("data-done");
+        b.removeAttribute("data-now");
+        if (k < n) b.setAttribute("data-done", "");
+        if (k === n) b.setAttribute("data-now", "");
+      });
+    }
+
+    // "Voltar" só existe onde há para onde voltar.
+    all("[data-back]").forEach(function (b) { b.removeAttribute("data-on"); });
+    if (at > 0 && at < screens.length - 1) {
+      var b = el("[data-back]", screens[at]);
+      if (b) b.setAttribute("data-on", "");
+    }
+
+    window.scrollTo(0, 0);
+
+    // Foco automático só em ecrã grande: no telemóvel abriria o teclado por
+    // cima da pergunta antes de a pessoa a ler.
+    var first = el("input:not([type=checkbox]), select", screens[at]);
+    if (first && window.matchMedia("(min-width: 940px)").matches) {
+      setTimeout(function () { first.focus(); }, 60);
+    }
   }
 
-  form.addEventListener("submit", function (e) {
+  all("[data-next]").forEach(function (b) {
+    b.addEventListener("click", function () { if (validate(at)) show(at + 1); });
+  });
+  all("[data-back]").forEach(function (b) {
+    b.addEventListener("click", function () { show(at - 1); });
+  });
+
+  document.addEventListener("keydown", function (e) {
+    if (e.key !== "Enter") return;
+    var t = e.target;
+    if (t && (t.tagName === "BUTTON" || t.type === "checkbox")) return;
     e.preventDefault();
-    err.textContent = "";
-    [].forEach.call(form.querySelectorAll("[aria-invalid]"), function (el) { el.removeAttribute("aria-invalid"); });
+    var btn = el("[data-next], #submit", screens[at]);
+    if (btn) btn.click();
+  });
 
-    var tier = form.querySelector('input[name=tierId]:checked');
+  /* ------------------------------------------------------------------
+     Máscaras
+     ------------------------------------------------------------------ */
+  function digits(v) { return v.replace(/\\D/g, ""); }
+  function group(v, size) {
+    var out = [];
+    for (var i = 0; i < v.length; i += size) out.push(v.substr(i, size));
+    return out.join(" ");
+  }
 
-    // Validação no cliente para dar a resposta no sítio certo — mas o servidor
-    // valida tudo outra vez. Esta metade é conveniência; a que conta é a de lá.
-    if (!form.name.value.trim() || form.name.value.trim().length < 3) return fail("Escreve o nome completo.", form.name);
-    if (!/^[^@\\s]+@[^@\\s]+\\.[^@\\s]+$/.test(form.email.value)) return fail("O e-mail não parece válido.", form.email);
-    if (!form.birthdate.value) return fail("Falta a data de nascimento.", form.birthdate);
-    if (!form.address.value.trim()) return fail("Falta a morada.", form.address);
-    if (cp4.value.length !== 4 || cp3.value.length !== 3) return fail("O código postal tem o formato 0000-000.", cp4);
-    if (!form.city.value.trim()) return fail("Falta a cidade.", form.city);
-    if (!/^[0-9\\s]{6,15}$/.test(form.phone.value)) return fail("O telemóvel não parece válido.", form.phone);
-    if (!form.documentNumber.value.trim()) return fail("Falta o número do documento.", form.documentNumber);
-    if (!/^[0-9]{9}$/.test(form.taxId.value)) return fail("O contribuinte tem nove dígitos.", form.taxId);
-    if (!form.acceptTerms.checked) return fail("É preciso aceitar os termos e condições.", form.acceptTerms);
+  var nif = el("#i-nif");
+  nif.addEventListener("input", function () { nif.value = group(digits(nif.value).substr(0, 9), 3); });
 
-    btn.disabled = true;
-    btn.textContent = "A enviar…";
+  var tel = el("#i-tel");
+  tel.addEventListener("input", function () { tel.value = group(digits(tel.value).substr(0, 12), 3); });
+
+  // Salto automático entre caixas curtas: quem escreve "24" espera que o
+  // cursor passe ao mês sem tirar a mão do teclado.
+  function chain(from, to, len) {
+    from.addEventListener("input", function () {
+      from.value = digits(from.value).substr(0, len);
+      if (from.value.length === len && to) to.focus();
+    });
+    from.addEventListener("keydown", function (e) {
+      if (e.key === "Backspace" && from.value === "" && from.prev) from.prev.focus();
+    });
+  }
+
+  var bd = el("#i-bd"), bm = el("#i-bm"), by = el("#i-by");
+  bm.prev = bd; by.prev = bm;
+  chain(bd, bm, 2); chain(bm, by, 2); chain(by, null, 4);
+
+  var cp4 = el("#i-cp4"), cp3 = el("#i-cp3");
+  cp3.prev = cp4;
+  chain(cp4, cp3, 4); chain(cp3, null, 3);
+
+  el("#i-dn").addEventListener("input", function (e) { e.target.value = e.target.value.toUpperCase(); });
+
+  /* ------------------------------------------------------------------
+     Sexo
+     ------------------------------------------------------------------ */
+  var sex = "UNSPECIFIED";
+  all("[data-sex]").forEach(function (b) {
+    b.addEventListener("click", function () {
+      sex = b.getAttribute("data-sex");
+      all("[data-sex]").forEach(function (o) { o.setAttribute("aria-pressed", o === b ? "true" : "false"); });
+    });
+  });
+
+  /* ------------------------------------------------------------------
+     O cartão preenche-se enquanto se escreve
+     ------------------------------------------------------------------ */
+  var cardName = el("#card-name");
+  var cardTier = el("#card-tier");
+  var nameInput = el("#i-name");
+
+  /*
+     O nome cabe sempre inteiro numa linha — a letra é que encolhe para ele.
+     Repõe o tamanho máximo e vai descendo meio pixel de cada vez enquanto o
+     texto for mais largo do que o cartão tem para dar. O scrollWidth só é
+     fiável porque o .nm tem white-space nowrap: sem isso o texto quebrava
+     linha antes de o ciclo alguma vez ver overflow.
+  */
+  var NM_MAX = 19, NM_MIN = 10;
+  function fitCardName() {
+    cardName.style.fontSize = NM_MAX + "px";
+    var size = NM_MAX;
+    while (cardName.scrollWidth > cardName.clientWidth && size > NM_MIN) {
+      size -= 0.5;
+      cardName.style.fontSize = size + "px";
+    }
+  }
+
+  nameInput.addEventListener("input", function () {
+    var v = nameInput.value.trim();
+    if (v) { cardName.textContent = v; cardName.removeAttribute("data-empty"); }
+    else { cardName.textContent = "O teu nome"; cardName.setAttribute("data-empty", ""); }
+    fitCardName();
+  });
+
+  // O cartão muda de largura no breakpoint móvel (ver a classe card-col acima)
+  // — o tamanho de letra tem de se recalcular para essa largura nova.
+  window.addEventListener("resize", fitCardName);
+
+  all("input[name=tierId]").forEach(function (r) {
+    r.addEventListener("change", function () { cardTier.textContent = r.getAttribute("data-name") || "Socio"; });
+    if (r.checked) cardTier.textContent = r.getAttribute("data-name") || "Socio";
+  });
+
+  /* ------------------------------------------------------------------
+     Validação — junto ao campo, em português de gente
+     ------------------------------------------------------------------ */
+  function bad(key, message) {
+    var f = el('[data-f="' + key + '"]');
+    if (!f) return false;
+    f.setAttribute("data-bad", "");
+    el(".err", f).textContent = message;
+    var i = el("input, select", f);
+    if (i) i.focus();
+    return false;
+  }
+  function ok(key) {
+    var f = el('[data-f="' + key + '"]');
+    if (f) f.removeAttribute("data-bad");
+    return true;
+  }
+
+  // O erro desaparece assim que a pessoa mexe no campo: manter o vermelho
+  // enquanto alguém está a corrigir é ralhar duas vezes pelo mesmo.
+  all("[data-f]").forEach(function (f) {
+    all("input, select", f).forEach(function (i) {
+      i.addEventListener("input", function () { f.removeAttribute("data-bad"); });
+      i.addEventListener("change", function () { f.removeAttribute("data-bad"); });
+    });
+  });
+
+  function birthDate() {
+    var d = bd.value, m = bm.value, y = by.value;
+    if (d.length !== 2 || m.length !== 2 || y.length !== 4) return null;
+    var dt = new Date(Date.UTC(+y, +m - 1, +d));
+    if (dt.getUTCFullYear() !== +y || dt.getUTCMonth() !== +m - 1 || dt.getUTCDate() !== +d) return null;
+    if (dt.getTime() > Date.now()) return null;
+    if (+y < new Date().getFullYear() - 110) return null;
+    return y + "-" + m + "-" + d;
+  }
+
+  function validate(i) {
+    var step = screens[i].getAttribute("data-step");
+    if (step === null) return true;
+    var n = parseInt(step, 10);
+
+    if (n === 0) {
+      if (nameInput.value.trim().length < 3) return bad("name", "Escreve o nome completo, como está no documento.");
+      if (!/^[^@\\s]+@[^@\\s]+\\.[^@\\s]{2,}$/.test(el("#i-email").value.trim())) return bad("email", "Este e-mail não parece válido. Confere a escrita.");
+      if (!birthDate()) return bad("birth", "Essa data não existe. Escreve dia, mês e ano.");
+      ok("name"); ok("email"); ok("birth");
+      return true;
+    }
+    if (n === 1) {
+      if (digits(nif.value).length !== 9) return bad("taxId", "O contribuinte tem nove dígitos.");
+      if (el("#i-dn").value.trim().length < 4) return bad("docNumber", "Falta o número do documento.");
+      ok("taxId"); ok("docNumber");
+      return true;
+    }
+    if (n === 2) {
+      if (digits(tel.value).length < 9) return bad("phone", "O número de telemóvel parece curto.");
+      if (el("#i-addr").value.trim().length < 3) return bad("address", "Falta a morada.");
+      if (cp4.value.length !== 4 || cp3.value.length !== 3) return bad("postal", "O código postal tem o formato 0000-000.");
+      if (el("#i-city").value.trim().length < 2) return bad("city", "Falta a cidade.");
+      ok("phone"); ok("address"); ok("postal"); ok("city");
+      return true;
+    }
+    return true;
+  }
+
+  /* ------------------------------------------------------------------
+     Envio
+     ------------------------------------------------------------------ */
+  var submit = el("#submit");
+  var fail = el("#fail");
+  var sending = false;
+
+  submit.addEventListener("click", function () {
+    // A bandeira apanha o segundo clique que passa entre o primeiro e o
+    // repintar do botão.
+    if (sending) return;
+    fail.textContent = "";
+
+    if (!el("#c-terms").checked) {
+      fail.textContent = "Para concluir a adesão é preciso aceitar os termos e condições.";
+      el("#c-terms").focus();
+      return;
+    }
+
+    // Uma última passagem: alguém pode ter voltado atrás e apagado um campo.
+    for (var i = 0; i < screens.length; i++) {
+      if (screens[i].getAttribute("data-step") === null) continue;
+      if (!validate(i)) { show(i); return; }
+    }
+
+    sending = true;
+    submit.disabled = true;
+    submit.textContent = "A enviar…";
+
+    var picked = el("input[name=tierId]:checked");
 
     fetch(API + "/api/clubes/" + encodeURIComponent(SLUG) + "/socios", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        tierId: tier ? tier.value : undefined,
-        name: form.name.value.trim(),
-        email: form.email.value.trim(),
-        birthdate: form.birthdate.value,
-        country: form.country.value === "OT" ? "PT" : form.country.value,
-        address: form.address.value.trim(),
+        tierId: picked ? picked.value : undefined,
+        name: nameInput.value.trim(),
+        email: el("#i-email").value.trim(),
+        birthdate: birthDate(),
+        country: el("#i-country").value,
+        address: el("#i-addr").value.trim(),
         postalCode: cp4.value + "-" + cp3.value,
-        city: form.city.value.trim(),
-        phoneCountry: form.phoneCountry.value,
-        phone: form.phone.value.trim(),
-        sex: form.sex.value,
-        documentKind: form.documentKind.value,
-        documentNumber: form.documentNumber.value.trim(),
-        taxId: form.taxId.value,
+        city: el("#i-city").value.trim(),
+        phoneCountry: el("#i-cc").value,
+        phone: digits(tel.value),
+        sex: sex,
+        documentKind: el("#i-dk").value,
+        documentNumber: el("#i-dn").value.trim(),
+        taxId: digits(nif.value),
         acceptTerms: true,
-        partnerComms: form.partnerComms.checked,
-        partnerData: form.partnerData.checked
+        partnerComms: el("#c-comms").checked,
+        partnerData: el("#c-data").checked
       })
     })
       .then(function (r) { return r.json().then(function (b) { return { ok: r.ok, body: b }; }); })
       .then(function (res) {
         if (!res.ok) {
           var m = res.body && res.body.message;
-          return fail(Array.isArray(m) ? m[0] : (m || "Não foi possível enviar a inscrição."));
+          fail.textContent = Array.isArray(m) ? m[0] : (m || "Não foi possível enviar. Tenta outra vez.");
+          sending = false; submit.disabled = false; submit.textContent = "Concluir";
+          return;
         }
-        document.getElementById("form-wrap").style.display = "none";
-        var done = document.getElementById("done");
-        if (res.body && res.body.name) {
-          document.getElementById("done-title").textContent = "Obrigado, " + res.body.name;
-        }
-        done.style.display = "block";
-        window.scrollTo(0, 0);
+        if (res.body && res.body.name) el("#done-title").textContent = "Bem-vindo, " + res.body.name + ".";
+        show(screens.length - 1);
       })
-      .catch(function () { fail("Falhou a ligação. Tenta outra vez."); });
+      .catch(function () {
+        fail.textContent = "Falhou a ligação. Verifica a internet e tenta outra vez.";
+        sending = false; submit.disabled = false; submit.textContent = "Concluir";
+      });
   });
+
+  show(0);
 })();
 </script>
 </body>
@@ -426,45 +1110,75 @@ export function renderMembershipPage(opts: {
 
 /* -------------------------------------------------------------------------- */
 
-function renderTiers(tiers: PublicTier[]): string {
+function renderPlanScreen(tiers: PublicTier[]): string {
   return `
-      <fieldset>
-        <legend>Categoria de sócio</legend>
-        <p class="req">Escolhe a que te serve. Podes mudar mais tarde falando com o clube.</p>
-        <div class="tiers">
-          ${tiers
-            .map(
-              (t, i) => `
-          <div class="tier">
-            <input type="radio" name="tierId" id="t-${esc(t.id)}" value="${esc(t.id)}" ${i === 0 ? "checked" : ""} />
-            <div class="face">
-              <div class="row">
-                <span class="name">${esc(t.name)}</span>
-                <span class="price">${
+        <section class="screen" data-screen="plans">
+          <div class="head">
+            <div class="kicker">Faz-te sócio</div>
+            <h2 class="display">A tua categoria</h2>
+            <p class="lede">Podes mudar mais tarde, falando com o clube.</p>
+          </div>
+
+          <div class="plans">
+            ${tiers
+              .map(
+                (t, i) => `
+            <div class="plan">
+              <input type="radio" name="tierId" id="p-${esc(t.id)}" value="${esc(t.id)}"
+                     data-name="${esc(t.name)}" ${i === 0 ? "checked" : ""} aria-label="${esc(t.name)}" />
+              <div class="face">
+                <div class="nm">${esc(t.name)}</div>
+                ${ageLabel(t) ? `<div class="ag">${esc(ageLabel(t)!)}</div>` : ""}
+                <div class="pr">${
                   t.feeCents === null
-                    ? '<small>a definir</small>'
-                    : `${money(t.feeCents)} <small>${PERIOD_LABEL[t.period]}</small>`
-                }</span>
+                    ? '<span style="font-size:17px">a definir</span>'
+                    : esc(money(t.feeCents)) + `<span>${esc(PERIOD_SHORT[t.period])}</span>`
+                }</div>
+                ${t.description ? `<p class="ds">${esc(t.description)}</p>` : ""}
+                ${t.benefits.length ? `<ul>${t.benefits.map((b) => `<li>${esc(b)}</li>`).join("")}</ul>` : ""}
               </div>
-              ${t.description ? `<p class="desc">${esc(t.description)}</p>` : ""}
-              ${
-                t.benefits.length
-                  ? `<ul>${t.benefits.map((b) => `<li>${esc(b)}</li>`).join("")}</ul>`
-                  : ""
-              }
-              ${ageLabel(t) ? `<span class="age">${esc(ageLabel(t)!)}</span>` : ""}
+            </div>`,
+              )
+              .join("")}
+          </div>
+
+          <div class="actions">
+            <button type="button" class="back" data-back>
+              <svg width="13" height="13" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M10 3L5 8l5 5" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg>
+              Voltar
+            </button>
+            <button type="button" class="go" data-next>Seguinte</button>
+          </div>
+        </section>`;
+}
+
+function cardMarkup(academy: AcademyBranding): string {
+  return `
+        <div class="card">
+          <div class="ct">
+            <div class="cc">${academy.logoUrl ? `<img src="${esc(academy.logoUrl)}" alt="" />` : esc(academy.mark)}</div>
+            <div class="tier" id="card-tier">Sócio</div>
+          </div>
+          <div class="nm" id="card-name" data-empty>O teu nome</div>
+          <div class="bt">
+            <div>
+              <div class="lb">Sócio n.º</div>
+              <div class="no">— — — —</div>
             </div>
-          </div>`,
-            )
-            .join("")}
-        </div>
-      </fieldset>`;
+            <div class="cl">${esc(academy.shortName)}</div>
+          </div>
+        </div>`;
+}
+
+function cheapest(tiers: PublicTier[]): number | null {
+  const prices = tiers.map((t) => t.feeCents).filter((c): c is number => c !== null);
+  return prices.length ? Math.min(...prices) : null;
 }
 
 function ageLabel(t: PublicTier): string | null {
-  if (t.minAge != null && t.maxAge != null) return `dos ${t.minAge} aos ${t.maxAge} anos`;
-  if (t.minAge != null) return `a partir dos ${t.minAge} anos`;
-  if (t.maxAge != null) return `até aos ${t.maxAge} anos`;
+  if (t.minAge != null && t.maxAge != null) return "Dos " + t.minAge + " aos " + t.maxAge + " anos";
+  if (t.minAge != null) return "A partir dos " + t.minAge + " anos";
+  if (t.maxAge != null) return "Até aos " + t.maxAge + " anos";
   return null;
 }
 
@@ -481,12 +1195,7 @@ function esc(s: string): string {
   });
 }
 
-/**
- * Um valor para dentro de um `<script>`.
- *
- * `JSON.stringify` sozinho não chega: uma string com `</script>` fecha o bloco e
- * o resto vira HTML. Escapar `< > &` para `\\uXXXX` fecha isso. Ver VULN-004.
- */
+/** Um valor para dentro de um `<script>`. Ver VULN-004. */
 function jsonForScript(value: unknown): string {
   return JSON.stringify(value).replace(/[<>&]/g, (c) => "\\u" + c.charCodeAt(0).toString(16).padStart(4, "0"));
 }

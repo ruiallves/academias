@@ -1,7 +1,8 @@
-import { useSyncExternalStore } from "react";
+import { useEffect, useState, useSyncExternalStore } from "react";
 import { athletes, guardians, sessions, staff, teams, useStore } from "@/lib/store";
 import { useCatalog } from "@/lib/catalogs";
 import { usePendingInvites } from "@/lib/invites";
+import { listTiers } from "@/lib/members";
 import { can, type Permission, type Session } from "@/lib/permissions";
 
 /**
@@ -110,12 +111,16 @@ export type Onboarding = {
 /** O que os passos precisam de saber. Separado do React para poder ser testado. */
 export type Facts = {
   venues: number;
+  dressingRooms: number;
+  ageGroups: number;
+  staffTitles: number;
   teams: number;
   athletes: number;
   coaches: number;
   invitedCoach: boolean;
   sessions: number;
   guardians: number;
+  memberTiers: number;
 };
 
 /**
@@ -132,6 +137,30 @@ export function deriveSteps(session: Session, facts: Facts): Step[] {
       hint: "É onde os treinos acontecem — sem isto, o horário fica sem sítio.",
       done: facts.venues > 0,
       to: "/definicoes?catalogo=venues",
+      requires: "settings:write",
+    },
+    {
+      id: "dressingRooms",
+      label: "Definir os balneários",
+      hint: "Escolhe-se ao marcar um treino, e aparece na app das famílias.",
+      done: facts.dressingRooms > 0,
+      to: "/definicoes?catalogo=dressingRooms",
+      requires: "settings:write",
+    },
+    {
+      id: "ageGroups",
+      label: "Definir os escalões",
+      hint: "Sub-15, Seniores… é a lista que aparece sempre que se cria uma equipa.",
+      done: facts.ageGroups > 0,
+      to: "/definicoes?catalogo=ageGroups",
+      requires: "settings:write",
+    },
+    {
+      id: "staffTitles",
+      label: "Definir os cargos da equipa técnica",
+      hint: "Treinador principal, treinador de guarda-redes… usados ao convidar staff.",
+      done: facts.staffTitles > 0,
+      to: "/definicoes?catalogo=staffTitles",
       requires: "settings:write",
     },
     {
@@ -177,6 +206,14 @@ export function deriveSteps(session: Session, facts: Facts): Step[] {
       to: "/familias",
       requires: "family:write",
     },
+    {
+      id: "members",
+      label: "Preparar o livro de sócios",
+      hint: "Cria as categorias — é o que aparece na página pública de inscrição.",
+      done: facts.memberTiers > 0,
+      to: "/socios",
+      requires: "member:write",
+    },
   ];
 
   // Um passo que a pessoa não pode dar não lhe aparece — mandá-la a um ecrã onde
@@ -187,17 +224,37 @@ export function deriveSteps(session: Session, facts: Facts): Step[] {
 export function useOnboarding(session: Session): Onboarding {
   const store = useStore();
   const venues = useCatalog("venues");
+  const dressingRooms = useCatalog("dressingRooms");
+  const ageGroups = useCatalog("ageGroups");
+  const staffTitles = useCatalog("staffTitles");
   const invites = usePendingInvites();
   const closed = useDismissed();
 
+  // Sócios fica fora do bootstrap (ver `lib/members.ts`) — como não há dados já
+  // carregados para contar, pergunta-se uma vez, só para saber se o passo está
+  // feito. Sem `member:write` nem vale a pena perguntar: o passo não aparece.
+  const [memberTiers, setMemberTiers] = useState(0);
+  useEffect(() => {
+    if (!can(session, "member:write")) return;
+    listTiers()
+      .then((tiers) => setMemberTiers(tiers.length))
+      .catch(() => {
+        /* sem sócios ainda configurados no servidor: fica 0, o passo continua por fazer */
+      });
+  }, [session]);
+
   const steps = deriveSteps(session, {
     venues: venues.length,
+    dressingRooms: dressingRooms.length,
+    ageGroups: ageGroups.length,
+    staffTitles: staffTitles.length,
     teams: teams.length,
     athletes: athletes.length,
     coaches: staff.filter((s) => s.role === "COACH" && s.isActive).length,
     invitedCoach: invites.some((i) => i.role === "COACH"),
     sessions: sessions.length,
     guardians: guardians.length,
+    memberTiers,
   });
 
   const done = steps.filter((s) => s.done).length;

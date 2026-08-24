@@ -342,7 +342,7 @@ function RosterTab({
       header: "Atleta",
       render: (a) => (
         <div className="flex items-center gap-2.5">
-          <Monogram name={a.name} />
+          <Monogram name={a.name} photoUrl={a.photoUrl} />
           <div className="min-w-0">
             <div className="flex items-center gap-1.5">
               <span className="truncate font-medium text-ink">{shortName(a.name)}</span>
@@ -472,7 +472,7 @@ function StatsTab({
                 return (
                   <li key={s.athleteId} className="flex items-center gap-2.5 border-b border-line py-2.5 last:border-0">
                     <span className="w-4 shrink-0 text-meta font-semibold text-ink-4 tabular">{i + 1}</span>
-                    <Monogram name={a?.name ?? "?"} size="sm" />
+                    <Monogram name={a?.name ?? "?"} photoUrl={a?.photoUrl} size="sm" />
                     <span className="min-w-0 flex-1 truncate text-body text-ink">{shortName(a?.name ?? "—")}</span>
                     <span className="shrink-0 text-meta font-semibold text-ink tabular">
                       {s.tally} {noun}
@@ -600,7 +600,7 @@ function StaffTab({ coaches }: { coaches: NonNullable<ReturnType<typeof coachByI
         <ul>
           {coaches.map((c) => (
             <li key={c.id} className="flex items-center gap-3 border-b border-line px-5 py-3.5 last:border-0">
-              <Monogram name={c.name} />
+              <Monogram name={c.name} photoUrl={c.photoUrl} />
               <div className="min-w-0 flex-1">
                 <PersonLink id={c.id} name={c.name} className="truncate text-body font-medium text-ink" />
                 <div className="text-meta text-ink-3">
@@ -645,7 +645,7 @@ function MedicalTab({ roster }: { roster: Athlete[] }) {
         <ul>
           {sorted.map((a) => (
             <li key={a.id} className="flex items-center gap-3 border-b border-line px-5 py-3 last:border-0">
-              <Monogram name={a.name} />
+              <Monogram name={a.name} photoUrl={a.photoUrl} />
               <span className="min-w-0 flex-1 truncate text-body text-ink">{shortName(a.name)}</span>
               <span className="shrink-0 text-meta text-ink-3 tabular">
                 até {shortDate(new Date(a.medicalValidUntil))}

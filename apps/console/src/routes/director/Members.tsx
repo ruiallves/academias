@@ -3,19 +3,25 @@ import { PageHeader } from "@/components/Shell";
 import { SearchInput } from "@/components/filters";
 import { DataTable, Empty, Loading, Monogram, Panel, Pill, cx, type Column, type Tone } from "@/components/primitives";
 import { Dialog, DialogField, dialogInputClass } from "@/components/Dialog";
-import { ExternalLink, Home, Plus, Trash2 } from "@/lib/icons";
+import { Download, ExternalLink, Home, Plus, Trash2, Upload } from "@/lib/icons";
 import { can } from "@/lib/permissions";
 import { useSession } from "@/session";
 import { academy } from "@/lib/api";
 import { money } from "@/lib/format";
-import { apiOrigin } from "@/lib/http";
+import { apiOrigin, apiPatch } from "@/lib/http";
+import { reloadAcademy } from "@/lib/store";
+import { downloadTemplate, readMemberSheet, OPTIONAL_COLUMNS, REQUIRED_COLUMNS, type ParsedSheet } from "@/lib/member-sheet";
 import {
+  DOC_LABEL,
   PERIOD_LABEL,
   PERIOD_SHORT,
+  SEX_LABEL,
   STATUS_LABEL,
+  createMember,
   ageOf,
   archiveTier,
   createTier,
+  importMembers,
   listMembers,
   listTiers,
   updateTier,
@@ -23,6 +29,8 @@ import {
   type MemberRow,
   type MemberStatus,
   type MemberTier,
+  type DocumentKind,
+  type Sex,
 } from "@/lib/members";
 
 /**
@@ -49,7 +57,9 @@ export default function Members() {
   const [status, setStatus] = useState<MemberStatus | null>(null);
   const [data, setData] = useState<{ members: MemberRow[]; counts: Partial<Record<MemberStatus, number>> } | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [tiersOpen, setTiersOpen] = useState(false);
+  const [pageOpen, setPageOpen] = useState(false);
+  const [importOpen, setImportOpen] = useState(false);
+  const [newOpen, setNewOpen] = useState(false);
 
   const mayWrite = can(session, "member:write");
 
@@ -76,7 +86,14 @@ export default function Members() {
       render: (m) => (
         <div className="flex items-center gap-2.5">
           <Monogram name={m.name} />
-          <div className="min-w-0">
+          {/*
+            `max-w` e não só `min-w-0`: dentro de uma célula de tabela não há
+            flexbox nenhum a forçar a coluna a encolher — sem um limite explícito,
+            a célula cresce para caber o nome inteiro, por mais comprido que seja,
+            e empurra o resto da linha para fora do ecrã. O `truncate` só entra em
+            acção quando o elemento já tem uma largura definida para exceder.
+          */}
+          <div className="min-w-0 max-w-[200px]">
             <div className="truncate text-body font-medium text-ink">{m.name}</div>
             <div className="truncate text-meta text-ink-3">
               {m.number ? `n.º ${m.number} · ` : ""}
@@ -92,7 +109,7 @@ export default function Members() {
       hideBelow: "md",
       render: (m) =>
         m.tier ? (
-          <div className="min-w-0">
+          <div className="min-w-0 max-w-[170px]">
             <div className="truncate text-body text-ink-2">{m.tier.name}</div>
             {m.tier.feeCents !== null && (
               <div className="text-meta text-ink-3 tabular">
@@ -128,6 +145,12 @@ export default function Members() {
         subtitle={data ? `${active} ${active === 1 ? "sócio activo" : "sócios activos"}` : undefined}
       >
         <SearchInput value={q} onChange={setQ} placeholder="Nome, email ou NIF" />
+        {mayWrite && (
+          <button type="button" className="ctl-outline" onClick={() => setImportOpen(true)}>
+            <Upload className="size-3.5" strokeWidth={1.75} />
+            Importar
+          </button>
+        )}
         <a
           href={`${apiOrigin()}/l/${academy.slug}/sersocio`}
           target="_blank"
@@ -136,11 +159,17 @@ export default function Members() {
           title="A página pública de inscrição"
         >
           <ExternalLink className="size-3.5" strokeWidth={1.75} />
-          Página de inscrição
+          Ver a página
         </a>
         {mayWrite && (
-          <button type="button" className="ctl-primary" onClick={() => setTiersOpen(true)}>
-            Categorias
+          <button type="button" className="ctl-outline" onClick={() => setPageOpen(true)}>
+            Página de inscrição
+          </button>
+        )}
+        {mayWrite && (
+          <button type="button" className="ctl-primary" onClick={() => setNewOpen(true)}>
+            <Plus className="size-3.5" strokeWidth={2} />
+            Novo sócio
           </button>
         )}
       </PageHeader>
@@ -190,7 +219,9 @@ export default function Members() {
         </p>
       )}
 
-      {tiersOpen && <TiersDialog mayWrite={mayWrite} onClose={() => setTiersOpen(false)} />}
+      {pageOpen && <PageDialog mayWrite={mayWrite} onClose={() => setPageOpen(false)} />}
+      {importOpen && <ImportDialog onClose={() => setImportOpen(false)} onDone={load} />}
+      {newOpen && <NewMemberDialog onClose={() => setNewOpen(false)} onCreated={load} />}
     </>
   );
 }
@@ -251,13 +282,151 @@ function Chip({
 /* -------------------------------------------------------------------------- */
 
 /**
+ * A página de inscrição, inteira, num sítio só.
+ *
+ * ## Porquê aqui e não nas definições
+ *
+ * Porque quem escreve a frase de abertura é a mesma pessoa que cria as
+ * categorias, e as duas decisões são a mesma decisão: o que é ser sócio deste
+ * clube e quanto custa. Estavam em ecrãs diferentes — a apresentação nas
+ * definições, as categorias aqui — e ninguém que quisesse mudar a página adivinhava
+ * que tinha de ir a dois sítios.
+ */
+function PageDialog({ mayWrite, onClose }: { mayWrite: boolean; onClose: () => void }) {
+  const [tab, setTab] = useState<"copy" | "tiers">("copy");
+
+  return (
+    <Dialog
+      title="Página de inscrição"
+      subtitle="O que quem chega ao clube lê e escolhe"
+      onClose={onClose}
+      width={640}
+      labelledBy="page"
+      footer={
+        <button type="button" className="ctl-ghost" onClick={onClose}>
+          Fechar
+        </button>
+      }
+    >
+      <div className="flex gap-1.5 border-b border-line px-5 py-3">
+        <Chip active={tab === "copy"} onClick={() => setTab("copy")}>
+          Apresentação
+        </Chip>
+        <Chip active={tab === "tiers"} onClick={() => setTab("tiers")}>
+          Categorias
+        </Chip>
+      </div>
+
+      {tab === "copy" ? <CopyForm mayWrite={mayWrite} /> : <TiersList mayWrite={mayWrite} />}
+    </Dialog>
+  );
+}
+
+/*
+ * A frase e os pontos.
+ *
+ * Vazio não apaga nada: o servidor repõe o texto por omissão, que é o que está em
+ * cinzento nos campos. Uma página de clube muda seria pior do que uma página com
+ * palavras que o clube ainda não escolheu.
+ */
+
+const FALLBACK_HEADLINE = "Faz parte do clube.";
+const FALLBACK_INTRO =
+  "Ser sócio não é uma subscrição. É estar do lado de dentro — e ficar com um lugar que é teu.";
+const FALLBACK_POINTS = [
+  "Cartão de sócio digital, sempre no telemóvel",
+  "Participação na vida do clube",
+  "Comunicações que só os sócios recebem",
+];
+
+function CopyForm({ mayWrite }: { mayWrite: boolean }) {
+  const [headline, setHeadline] = useState(academy.membershipHeadline);
+  const [intro, setIntro] = useState(academy.membershipIntro);
+  const [points, setPoints] = useState(academy.membershipPoints.join("\n"));
+  const [state, setState] = useState<"idle" | "saving" | "saved" | "error">("idle");
+  // O que está publicado. A reatribuição do `academy` no store não volta a
+  // desenhar este componente, por isso o marco fica aqui.
+  const [live, setLive] = useState({
+    headline: academy.membershipHeadline,
+    intro: academy.membershipIntro,
+    points: academy.membershipPoints.join("\n"),
+  });
+
+  const dirty = headline !== live.headline || intro !== live.intro || points !== live.points;
+
+  async function save() {
+    setState("saving");
+    try {
+      await apiPatch("/api/membership-page", {
+        headline,
+        intro,
+        points: points.split("\n").map((l) => l.trim()).filter(Boolean),
+      });
+      await reloadAcademy();
+      setLive({ headline, intro, points });
+      setState("saved");
+    } catch {
+      setState("error");
+    }
+  }
+
+  return (
+    <div className="space-y-3 px-5 py-4">
+      <DialogField label="Frase de abertura" hint="uma linha, em letra grande">
+        <input
+          value={headline}
+          onChange={(e) => setHeadline(e.target.value)}
+          maxLength={90}
+          disabled={!mayWrite}
+          placeholder={FALLBACK_HEADLINE}
+          className={dialogInputClass}
+        />
+      </DialogField>
+
+      <DialogField label="Explicação">
+        <textarea
+          value={intro}
+          onChange={(e) => setIntro(e.target.value)}
+          maxLength={240}
+          rows={2}
+          disabled={!mayWrite}
+          placeholder={FALLBACK_INTRO}
+          className={cx(dialogInputClass, "h-auto py-2 leading-relaxed")}
+        />
+      </DialogField>
+
+      <DialogField label="Pontos" hint="um por linha, no máximo seis">
+        <textarea
+          value={points}
+          onChange={(e) => setPoints(e.target.value)}
+          rows={4}
+          disabled={!mayWrite}
+          placeholder={FALLBACK_POINTS.join("\n")}
+          className={cx(dialogInputClass, "h-auto py-2 leading-relaxed")}
+        />
+      </DialogField>
+
+      {mayWrite && (
+        <div className="flex items-center gap-3 pt-1">
+          <button type="button" className="ctl-primary" disabled={!dirty || state === "saving"} onClick={() => void save()}>
+            {state === "saving" ? "A guardar…" : "Publicar"}
+          </button>
+          {state === "saved" && !dirty && <span className="text-meta text-ok">Publicado</span>}
+          {state === "error" && <span className="text-meta text-risk">Não foi possível guardar</span>}
+        </div>
+      )}
+    </div>
+  );
+}
+
+/**
  * As categorias de sócio.
  *
  * O que o clube escreve aqui é literalmente o que aparece no formulário público —
  * por isso a descrição e os benefícios valem tanto como o preço: é com eles que
  * alguém decide qual escolher.
  */
-function TiersDialog({ mayWrite, onClose }: { mayWrite: boolean; onClose: () => void }) {
+function TiersList({ mayWrite }: { mayWrite: boolean }) {
   const [tiers, setTiers] = useState<MemberTier[] | null>(null);
   const [editing, setEditing] = useState<MemberTier | "new" | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -271,27 +440,7 @@ function TiersDialog({ mayWrite, onClose }: { mayWrite: boolean; onClose: () => 
   useEffect(load, [load]);
 
   return (
-    <Dialog
-      title="Categorias de sócio"
-      subtitle="O que aparece na página de inscrição"
-      onClose={onClose}
-      width={620}
-      labelledBy="tiers"
-      footer={
-        <>
-          {error && <span className="mr-auto text-meta text-risk">{error}</span>}
-          {mayWrite && !editing && (
-            <button type="button" className="ctl-primary" onClick={() => setEditing("new")}>
-              <Plus className="size-3.5" strokeWidth={2} />
-              Nova categoria
-            </button>
-          )}
-          <button type="button" className="ctl-ghost" onClick={onClose}>
-            Fechar
-          </button>
-        </>
-      }
-    >
+    <>
       {editing ? (
         <TierForm
           tier={editing === "new" ? null : editing}
@@ -348,6 +497,455 @@ function TiersDialog({ mayWrite, onClose }: { mayWrite: boolean; onClose: () => 
           ))}
         </ul>
       )}
+
+      {error && <p className="px-5 pb-3 text-meta text-risk">{error}</p>}
+
+      {mayWrite && !editing && (
+        <div className="border-t border-line px-5 py-3">
+          <button type="button" className="ctl-primary" onClick={() => setEditing("new")}>
+            <Plus className="size-3.5" strokeWidth={2} />
+            Nova categoria
+          </button>
+        </div>
+      )}
+    </>
+  );
+}
+
+/* -------------------------------------------------------------------------- */
+
+/**
+ * Um sócio inscrito ao balcão.
+ *
+ * ## Os mesmos campos da página pública
+ *
+ * Quem se inscreve na secretaria não fica com meia ficha. Um livro de sócios onde
+ * metade das pessoas tem morada e a outra metade não é um livro que não serve
+ * para passar recibos nem para convocar uma assembleia — e completá-lo mais tarde
+ * é um telefonema por pessoa.
+ *
+ * ## Os termos são uma pergunta
+ *
+ * A caixa começa desligada. Quem preenche tem a pessoa à frente e sabe se ela
+ * assinou; marcá-la por omissão era o produto a decidir sozinho que existe um
+ * consentimento que talvez ninguém tenha dado.
+ */
+function NewMemberDialog({ onClose, onCreated }: { onClose: () => void; onCreated: () => void }) {
+  const [tiers, setTiers] = useState<MemberTier[]>([]);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const [name, setName] = useState("");
+  const [email, setEmail] = useState("");
+  const [birthdate, setBirthdate] = useState("");
+  const [sex, setSex] = useState<Sex>("UNSPECIFIED");
+  const [documentKind, setDocumentKind] = useState<DocumentKind>("CC");
+  const [documentNumber, setDocumentNumber] = useState("");
+  const [taxId, setTaxId] = useState("");
+  const [phoneCountry, setPhoneCountry] = useState("+351");
+  const [phone, setPhone] = useState("");
+  const [address, setAddress] = useState("");
+  const [postalCode, setPostalCode] = useState("");
+  const [city, setCity] = useState("");
+  const [tierId, setTierId] = useState("");
+  const [status, setStatus] = useState<MemberStatus>("ACTIVE");
+  const [acceptedTerms, setAcceptedTerms] = useState(false);
+
+  useEffect(() => {
+    listTiers()
+      .then(setTiers)
+      .catch(() => setTiers([]));
+  }, []);
+
+  const valid =
+    name.trim().length >= 3 &&
+    /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email.trim()) &&
+    /^\d{4}-\d{2}-\d{2}$/.test(birthdate) &&
+    address.trim().length >= 3 &&
+    /^\d{4}-\d{3}$/.test(postalCode) &&
+    city.trim().length >= 2 &&
+    /^\d{6,15}$/.test(phone.replace(/\s/g, "")) &&
+    documentNumber.trim().length >= 4 &&
+    /^\d{9}$/.test(taxId);
+
+  async function save() {
+    if (!valid || busy) return;
+    setBusy(true);
+    setError(null);
+    try {
+      await createMember({
+        name: name.trim(),
+        email: email.trim(),
+        birthdate,
+        sex,
+        documentKind,
+        documentNumber: documentNumber.trim(),
+        taxId,
+        phoneCountry,
+        phone: phone.replace(/\s/g, ""),
+        address: address.trim(),
+        postalCode,
+        city: city.trim(),
+        ...(tierId ? { tierId } : {}),
+        status,
+        acceptedTerms,
+      });
+      onCreated();
+      onClose();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Não foi possível criar o sócio.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <Dialog
+      title="Novo sócio"
+      subtitle="Os mesmos dados que a página pública pede"
+      onClose={onClose}
+      width={640}
+      labelledBy="new-member"
+      footer={
+        <>
+          {error && <span className="mr-auto text-meta text-risk">{error}</span>}
+          <button type="button" className="ctl-ghost" onClick={onClose}>
+            Cancelar
+          </button>
+          <button type="button" className="ctl-primary" disabled={!valid || busy} onClick={() => void save()}>
+            {busy ? "A criar…" : "Criar sócio"}
+          </button>
+        </>
+      }
+    >
+      <div className="space-y-3 px-5 py-4">
+        <DialogField label="Nome completo">
+          <input
+            autoFocus
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            maxLength={120}
+            className={dialogInputClass}
+          />
+        </DialogField>
+
+        <div className="grid gap-3 sm:grid-cols-2">
+          <DialogField label="Email">
+            <input
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              type="email"
+              placeholder="nome@exemplo.pt"
+              className={dialogInputClass}
+            />
+          </DialogField>
+          <DialogField label="Data de nascimento">
+            <input
+              value={birthdate}
+              onChange={(e) => setBirthdate(e.target.value)}
+              type="date"
+              className={dialogInputClass}
+            />
+          </DialogField>
+        </div>
+
+        <div className="grid gap-3 sm:grid-cols-[1fr_2fr]">
+          <DialogField label="Indicativo">
+            <input
+              value={phoneCountry}
+              onChange={(e) => setPhoneCountry(e.target.value.replace(/[^\d+]/g, "").slice(0, 5))}
+              className={dialogInputClass}
+            />
+          </DialogField>
+          <DialogField label="Telemóvel">
+            <input
+              value={phone}
+              onChange={(e) => setPhone(e.target.value.replace(/[^\d\s]/g, ""))}
+              inputMode="tel"
+              placeholder="912 345 678"
+              className={dialogInputClass}
+            />
+          </DialogField>
+        </div>
+
+        <DialogField label="Morada">
+          <input
+            value={address}
+            onChange={(e) => setAddress(e.target.value)}
+            placeholder="Rua, número e andar"
+            className={dialogInputClass}
+          />
+        </DialogField>
+
+        <div className="grid gap-3 sm:grid-cols-[200px_1fr]">
+          <DialogField label="Código postal">
+            <input
+              value={postalCode}
+              onChange={(e) => setPostalCode(maskPostal(e.target.value))}
+              inputMode="numeric"
+              placeholder="0000-000"
+              className={dialogInputClass}
+            />
+          </DialogField>
+          <DialogField label="Localidade">
+            <input value={city} onChange={(e) => setCity(e.target.value)} className={dialogInputClass} />
+          </DialogField>
+        </div>
+
+        <div className="grid gap-3 sm:grid-cols-3">
+          <DialogField label="Documento">
+            <select
+              value={documentKind}
+              onChange={(e) => setDocumentKind(e.target.value as DocumentKind)}
+              className={dialogInputClass}
+            >
+              {(Object.keys(DOC_LABEL) as DocumentKind[]).map((k) => (
+                <option key={k} value={k}>
+                  {DOC_LABEL[k]}
+                </option>
+              ))}
+            </select>
+          </DialogField>
+          <DialogField label="N.º de documento">
+            <input
+              value={documentNumber}
+              onChange={(e) => setDocumentNumber(e.target.value.toUpperCase())}
+              className={dialogInputClass}
+            />
+          </DialogField>
+          <DialogField label="NIF">
+            <input
+              value={taxId}
+              onChange={(e) => setTaxId(e.target.value.replace(/\D/g, "").slice(0, 9))}
+              inputMode="numeric"
+              className={dialogInputClass}
+            />
+          </DialogField>
+        </div>
+
+        <div className="grid gap-3 sm:grid-cols-3">
+          <DialogField label="Sexo">
+            <select value={sex} onChange={(e) => setSex(e.target.value as Sex)} className={dialogInputClass}>
+              {(Object.keys(SEX_LABEL) as Sex[]).map((k) => (
+                <option key={k} value={k}>
+                  {SEX_LABEL[k]}
+                </option>
+              ))}
+            </select>
+          </DialogField>
+          <DialogField label="Categoria" hint={tiers.length === 0 ? "ainda não há" : undefined}>
+            <select value={tierId} onChange={(e) => setTierId(e.target.value)} className={dialogInputClass}>
+              <option value="">Sem categoria</option>
+              {tiers.map((t) => (
+                <option key={t.id} value={t.id}>
+                  {t.name}
+                </option>
+              ))}
+            </select>
+          </DialogField>
+          <DialogField label="Estado" hint="por aprovar não recebe número">
+            <select
+              value={status}
+              onChange={(e) => setStatus(e.target.value as MemberStatus)}
+              className={dialogInputClass}
+            >
+              {(Object.keys(STATUS_LABEL) as MemberStatus[]).map((k) => (
+                <option key={k} value={k}>
+                  {STATUS_LABEL[k]}
+                </option>
+              ))}
+            </select>
+          </DialogField>
+        </div>
+
+        <label className="flex cursor-pointer items-start gap-2.5 border-t border-line pt-3">
+          <input
+            type="checkbox"
+            checked={acceptedTerms}
+            onChange={(e) => setAcceptedTerms(e.target.checked)}
+            className="mt-0.5 size-4 accent-[var(--color-signal)]"
+          />
+          <span className="text-body text-ink-2">
+            O sócio aceitou os termos e condições
+            <span className="block text-meta text-ink-4">
+              Guarda a data de hoje. Deixa por marcar se a assinatura ficou em papel — o clube não fica a dizer
+              que tem um consentimento que não deu.
+            </span>
+          </span>
+        </label>
+      </div>
+    </Dialog>
+  );
+}
+
+/** 0000-000 enquanto se escreve. */
+function maskPostal(value: string): string {
+  const digits = value.replace(/\D/g, "").slice(0, 7);
+  return digits.length > 4 ? `${digits.slice(0, 4)}-${digits.slice(4)}` : digits;
+}
+
+/**
+ * O livro que o clube já tinha, numa folha.
+ *
+ * ## Ver antes de importar
+ *
+ * A folha é lida no browser e o que aparece é o que vai ser criado, com os erros
+ * por linha ao lado. Ninguém carrega centenas de pessoas para dentro do clube às
+ * cegas — e um erro de coluna descoberto depois de importar custa uma limpeza à
+ * mão que este ecrã evita com um passo.
+ *
+ * ## Tudo ou nada
+ *
+ * O servidor recusa a folha inteira se alguma linha estiver errada. Metade dos
+ * sócios importados é o pior sítio onde parar: corrige-se a folha, importa-se
+ * outra vez, e fica meio clube em duplicado.
+ */
+function ImportDialog({ onClose, onDone }: { onClose: () => void; onDone: () => void }) {
+  const [sheet, setSheet] = useState<ParsedSheet | null>(null);
+  const [fileName, setFileName] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [result, setResult] = useState<{ created: number; duplicates: number } | null>(null);
+  const [tierNames, setTierNames] = useState<string[]>([]);
+
+  useEffect(() => {
+    listTiers()
+      .then((ts) => setTierNames(ts.map((t) => t.name)))
+      .catch(() => setTierNames([]));
+  }, []);
+
+  const bad = sheet?.rows.filter((r) => r.errors.length > 0) ?? [];
+  const good = sheet?.rows.filter((r) => r.errors.length === 0) ?? [];
+
+  async function pick(file: File | undefined) {
+    if (!file) return;
+    setError(null);
+    setResult(null);
+    setFileName(file.name);
+    try {
+      setSheet(await readMemberSheet(file));
+    } catch {
+      setSheet(null);
+      setError("Não foi possível ler o ficheiro. É um .xlsx ou .csv?");
+    }
+  }
+
+  async function send() {
+    if (!sheet || bad.length > 0 || good.length === 0 || busy) return;
+    setBusy(true);
+    setError(null);
+    try {
+      const res = await importMembers(good.map((r) => r.row));
+      if (!res.ok) {
+        setError(res.problems.map((p) => `Linha ${p.line}: ${p.reason}`).join(" · "));
+        return;
+      }
+      setResult({ created: res.created, duplicates: res.duplicates.length });
+      setSheet(null);
+      onDone();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Não foi possível importar.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <Dialog
+      title="Importar sócios"
+      subtitle="A folha do clube, tal como está"
+      onClose={onClose}
+      width={640}
+      labelledBy="import"
+      footer={
+        <>
+          <button type="button" className="ctl-ghost mr-auto" onClick={() => downloadTemplate(tierNames)}>
+            <Download className="size-3.5" strokeWidth={1.75} />
+            Descarregar modelo
+          </button>
+          <button type="button" className="ctl-ghost" onClick={onClose}>
+            {result ? "Fechar" : "Cancelar"}
+          </button>
+          {!result && (
+            <button
+              type="button"
+              className="ctl-primary"
+              disabled={busy || !sheet || bad.length > 0 || good.length === 0}
+              onClick={() => void send()}
+            >
+              {busy ? "A importar…" : good.length > 0 ? `Importar ${good.length}` : "Importar"}
+            </button>
+          )}
+        </>
+      }
+    >
+      <div className="space-y-3 px-5 py-4">
+        {result ? (
+          <div className="rounded-[var(--radius-control)] border border-line bg-ok-soft/40 p-4">
+            <p className="text-body font-medium text-ink">
+              {result.created} {result.created === 1 ? "sócio importado" : "sócios importados"}.
+            </p>
+            {result.duplicates > 0 && (
+              <p className="mt-1 text-meta text-ink-3">
+                {result.duplicates} {result.duplicates === 1 ? "já existia" : "já existiam"} no livro e{" "}
+                {result.duplicates === 1 ? "foi ignorado" : "foram ignorados"} — o NIF já cá estava.
+              </p>
+            )}
+          </div>
+        ) : (
+          <>
+            <label className="block cursor-pointer rounded-[var(--radius-control)] border border-dashed border-line-strong px-5 py-8 text-center hover:border-ink-4">
+              <input
+                type="file"
+                accept=".xlsx,.xls,.csv"
+                className="sr-only"
+                onChange={(e) => void pick(e.target.files?.[0])}
+              />
+              <Upload className="mx-auto mb-2 size-5 text-ink-3" strokeWidth={1.75} />
+              <span className="block text-body font-medium text-ink">
+                {fileName || "Escolher a folha de sócios"}
+              </span>
+              <span className="mt-0.5 block text-meta text-ink-3">.xlsx, .xls ou .csv</span>
+            </label>
+
+            <p className="text-meta leading-relaxed text-ink-3">
+              Colunas obrigatórias: {REQUIRED_COLUMNS.join(", ")}. Opcionais: {OPTIONAL_COLUMNS.join(", ")} — a
+              categoria tem de existir com o mesmo nome.
+            </p>
+          </>
+        )}
+
+        {sheet && sheet.missing.length > 0 && (
+          <p className="text-meta text-risk">Faltam colunas na folha: {sheet.missing.join(", ")}.</p>
+        )}
+
+        {sheet && sheet.rows.length > 0 && (
+          <div className="rounded-[var(--radius-control)] border border-line">
+            <div className="flex items-center gap-2 border-b border-line px-3 py-2 text-meta">
+              <span className="font-medium text-ink">{sheet.rows.length} linhas</span>
+              {bad.length > 0 ? (
+                <span className="text-risk">{bad.length} por corrigir</span>
+              ) : (
+                <span className="text-ok">prontas a importar</span>
+              )}
+            </div>
+
+            <ul className="max-h-[280px] overflow-y-auto">
+              {(bad.length > 0 ? bad : sheet.rows).slice(0, 60).map((r) => (
+                <li key={r.row.line} className="flex gap-3 border-b border-line px-3 py-2 last:border-0">
+                  <span className="w-10 shrink-0 text-meta text-ink-4 tabular">{r.row.line}</span>
+                  <span className="min-w-0 flex-1">
+                    <span className="block truncate text-body text-ink">{r.row.name || "—"}</span>
+                    {r.errors.length > 0 && <span className="block text-meta text-risk">{r.errors.join(" · ")}</span>}
+                  </span>
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
+
+        {error && <p className="text-meta text-risk">{error}</p>}
+      </div>
     </Dialog>
   );
 }
@@ -407,6 +1005,7 @@ function TierForm({
           value={name}
           onChange={(e) => setName(e.target.value)}
           placeholder="Sócio efectivo"
+          maxLength={60}
           className={dialogInputClass}
         />
       </DialogField>

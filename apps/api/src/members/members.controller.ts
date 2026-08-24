@@ -3,7 +3,13 @@ import { Throttle } from "@nestjs/throttler";
 import type { AuthedRequest } from "../auth/auth.guard";
 import { Public } from "../auth/auth.guard";
 import { MembersService } from "./members.service";
-import { MemberSignupDto, MemberTierInputDto, MemberUpdateDto } from "./members.dto";
+import {
+  MemberCreateDto,
+  MemberImportDto,
+  MemberSignupDto,
+  MemberTierInputDto,
+  MemberUpdateDto,
+} from "./members.dto";
 
 /**
  * A gestão de sócios — atrás de `member:read` / `member:write`.
@@ -22,6 +28,24 @@ export class MembersController {
     @Query("q") q?: string,
   ) {
     return this.members.list(req.ctx, { status, tierId, q });
+  }
+
+  /** Um sócio inscrito na secretaria, com a pessoa à frente. */
+  @Post()
+  create(@Req() req: AuthedRequest, @Body() dto: MemberCreateDto) {
+    return this.members.create(req.ctx, dto);
+  }
+
+  /**
+   * O livro de sócios que o clube já tinha.
+   *
+   * A folha é lida no browser e chega aqui como linhas — o servidor nunca vê o
+   * ficheiro. Um .xlsx é um formato com macros e zip bombs lá dentro; abri-lo no
+   * servidor era acrescentar essa superfície ao produto para não ganhar nada.
+   */
+  @Post("import")
+  importMembers(@Req() req: AuthedRequest, @Body() dto: MemberImportDto) {
+    return this.members.importMembers(req.ctx, dto.rows);
   }
 
   @Get("tiers")

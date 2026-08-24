@@ -44,6 +44,23 @@ export class ApiError extends Error {
   }
 }
 
+/**
+ * O corpo da resposta, quando há corpo.
+ *
+ * Nem toda a resposta com sucesso traz JSON. Um endpoint que responde `null` — "não
+ * há link de convite vivo", que é uma resposta legítima e não um erro — sai do Nest
+ * como um 200 **sem corpo nenhum**, e o mesmo vale para os 204. `res.json()` nesses
+ * casos rebenta com "Unexpected end of JSON input", que é uma mensagem sobre o
+ * parser e não sobre o que se passou.
+ *
+ * Ler o texto primeiro e só depois interpretar custa nada e faz a ausência de corpo
+ * ser o que é: ausência, não avaria.
+ */
+async function readBody<T>(res: Response): Promise<T> {
+  const text = await res.text();
+  return (text ? JSON.parse(text) : undefined) as T;
+}
+
 function academySlug(): string {
   const stored = readSession()?.academySlug;
   if (stored) return stored;
@@ -74,7 +91,7 @@ export async function apiGet<T>(path: string, params?: Record<string, string | u
     throw new ApiError(res.status, body?.message ?? mensagem(res.status));
   }
 
-  return res.json() as Promise<T>;
+  return readBody<T>(res);
 }
 
 /** Escrita. A academia vem do mesmo sítio que na leitura — do subdomínio ou da sessão. */
@@ -98,7 +115,7 @@ export async function apiPost<T>(path: string, body: unknown): Promise<T> {
     throw new ApiError(res.status, msg ?? mensagem(res.status));
   }
 
-  return res.json() as Promise<T>;
+  return readBody<T>(res);
 }
 
 /** Alteração parcial. Mesma forma que `apiPost`, verbo diferente. */
@@ -120,7 +137,7 @@ export async function apiPatch<T>(path: string, body: unknown): Promise<T> {
     throw new ApiError(res.status, msg ?? mensagem(res.status));
   }
 
-  return res.json() as Promise<T>;
+  return readBody<T>(res);
 }
 
 /** Substituição do estado de um recurso. Mesma forma que `apiPost`, verbo diferente. */
@@ -142,7 +159,7 @@ export async function apiPut<T>(path: string, body: unknown): Promise<T> {
     throw new ApiError(res.status, msg ?? mensagem(res.status));
   }
 
-  return res.json() as Promise<T>;
+  return readBody<T>(res);
 }
 
 /** Eliminação. Sem corpo — o recurso vai no caminho. */
@@ -162,7 +179,7 @@ export async function apiDelete<T>(path: string): Promise<T> {
     throw new ApiError(res.status, msg ?? mensagem(res.status));
   }
 
-  return res.json() as Promise<T>;
+  return readBody<T>(res);
 }
 
 /**

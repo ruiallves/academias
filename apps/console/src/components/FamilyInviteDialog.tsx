@@ -59,7 +59,10 @@ export function FamilyInviteDialog({ onClose }: { onClose: () => void }) {
 
   useEffect(() => {
     apiGet<Invite | null>("/api/family-invite")
-      .then((r) => setInvite(r))
+      // Sem link vivo o servidor responde `null` — e um `null` do Nest chega cá como
+      // resposta sem corpo, ou seja `undefined`. Normaliza-se aqui para o estado ter
+      // um valor só a significar "não há".
+      .then((r) => setInvite(r ?? null))
       .catch((e: unknown) => setError(e instanceof Error ? e.message : "Não foi possível ler o link."))
       .finally(() => setLoading(false));
   }, []);

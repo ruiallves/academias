@@ -87,7 +87,7 @@ export type MemberDetail = MemberRow & {
   taxId: string;
   notes: string | null;
   /** Carimbos de consentimento. Nulo = não foi dado. Ver o modelo. */
-  acceptedTermsAt: string;
+  acceptedTermsAt: string | null;
   partnerCommsAt: string | null;
   partnerDataAt: string | null;
   approvedBy: string | null;
@@ -95,6 +95,9 @@ export type MemberDetail = MemberRow & {
 
 export const listMembers = (filters: { status?: string; tierId?: string; q?: string } = {}) =>
   apiGet<{ members: MemberRow[]; counts: Partial<Record<MemberStatus, number>> }>("/api/members", filters);
+
+export const createMember = (body: Record<string, unknown>) =>
+  apiPost<{ id: string; name: string; number: number | null }>("/api/members", body);
 
 export const getMember = (id: string) => apiGet<MemberDetail>(`/api/members/${id}`);
 
@@ -108,6 +111,38 @@ export const createTier = (body: Record<string, unknown>) =>
 export const updateTier = (id: string, body: Record<string, unknown>) => apiPatch(`/api/members/tiers/${id}`, body);
 
 export const archiveTier = (id: string) => apiDelete<{ ok: boolean; members: number }>(`/api/members/tiers/${id}`);
+
+/* -------------------------------------------------------------------------- */
+/* Importação                                                                  */
+/* -------------------------------------------------------------------------- */
+
+/** Uma linha da folha, já traduzida para os nomes que a API conhece. */
+export type ImportRow = {
+  line: number;
+  name: string;
+  email: string;
+  birthdate: string;
+  address: string;
+  postalCode: string;
+  city: string;
+  country?: string;
+  phoneCountry?: string;
+  phone: string;
+  documentNumber: string;
+  taxId: string;
+  sex?: Sex;
+  tier?: string;
+  number?: number;
+};
+
+export type ImportResult = {
+  ok: boolean;
+  created: number;
+  duplicates: { line: number; name: string }[];
+  problems: { line: number; reason: string }[];
+};
+
+export const importMembers = (rows: ImportRow[]) => apiPost<ImportResult>("/api/members/import", { rows });
 
 /** Idade, que é o que decide se alguém cabe numa categoria. */
 export function ageOf(birthdate: string, now = new Date()): number {

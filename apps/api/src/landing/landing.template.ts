@@ -27,6 +27,12 @@ export type AcademyBranding = {
   mark: string;
   signalColor: string;
   logoUrl?: string;
+
+  /* --- O que o clube escreveu para a página de adesão ---------------------
+     Ausentes significa "usa o que o produto traz por omissão". Ver `Academy`. */
+  membershipHeadline?: string;
+  membershipIntro?: string;
+  membershipPoints?: string[];
 };
 
 export type Platform = "ios" | "android" | "other";

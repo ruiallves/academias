@@ -302,7 +302,7 @@ function Squad({ match }: { match: ApiMatch }) {
                   {athlete.squadNumber ?? "—"}
                 </span>
 
-                <Monogram name={athlete.name} size="sm" />
+                <Monogram name={athlete.name} photoUrl={athlete.photoUrl} size="sm" />
 
                 <span className="min-w-0 flex-1">
                   <span className={cx("block truncate text-body", blockedBy ? "text-ink-4" : "font-medium text-ink")}>

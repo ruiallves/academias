@@ -321,7 +321,7 @@ function CallUps({
 
           return (
             <li key={a.id} className="flex items-center gap-2.5 rounded-[var(--radius-control)] px-1 py-1">
-              <Monogram name={a.name} size="sm" />
+              <Monogram name={a.name} photoUrl={a.photoUrl} size="sm" />
               <span className={cx("min-w-0 flex-1 truncate text-body", blocked ? "text-ink-4" : "text-ink-2")}>
                 {shortName(a.name)}
               </span>
@@ -598,7 +598,7 @@ function Statistics({
               const a = athleteById(s.athleteId);
               return (
                 <li key={s.athleteId} className="flex items-center gap-2.5 px-1 py-1">
-                  <Monogram name={a?.name ?? "?"} size="sm" />
+                  <Monogram name={a?.name ?? "?"} photoUrl={a?.photoUrl} size="sm" />
                   <span className="min-w-0 flex-1 truncate text-body text-ink-2">{shortName(a?.name ?? "—")}</span>
                   <span className="shrink-0 text-meta font-semibold text-ink tabular">
                     {s.tally} {noun}

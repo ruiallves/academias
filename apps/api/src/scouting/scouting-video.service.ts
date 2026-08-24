@@ -3,6 +3,7 @@ import { ConfigService } from "@nestjs/config";
 import type { MomentKind, VideoKind } from "@prisma/client";
 import { PrismaService } from "../prisma/prisma.service";
 import { can, type RequestContext } from "../common/permissions";
+import { StorageService } from "../storage/storage.service";
 import type { AddMomentDto, StartUploadDto, UpdateVideoDto } from "./scouting.dto";
 
 /**
@@ -39,6 +40,7 @@ export class ScoutingVideoService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly config: ConfigService,
+    private readonly storage: StorageService,
   ) {}
 
   /* ---------------------------------------------------------------------- */
@@ -83,7 +85,9 @@ export class ScoutingVideoService {
   async startUpload(ctx: RequestContext, prospectId: string, dto: StartUploadDto) {
     if (!can(ctx, "scouting:video:write")) throw new ForbiddenException("Sem permissão para carregar vídeo");
 
-    return this.prisma.runAs(ctx.academyId, async (db) => {
+    // A linha nasce dentro da transação; o endereço de carregamento assina-se depois
+    // dela fechar — rede dentro de uma transação seca o pool. Ver `playbackUrl`.
+    const created = await this.prisma.runAs(ctx.academyId, async (db) => {
       const prospect = await db.prospect.findFirst({ where: { id: prospectId }, select: { id: true } });
       if (!prospect) throw new NotFoundException("Prospecto não encontrado");
 
@@ -114,10 +118,11 @@ export class ScoutingVideoService {
       const storageKey = `${ctx.academyId}/${prospectId}/${video.id}.${ext}`;
       await db.prospectVideo.update({ where: { id: video.id }, data: { storageKey } });
 
-      const upload = await this.signUpload(storageKey);
-
-      return { id: video.id, storageKey, uploadUrl: upload.url, token: upload.token };
+      return { id: video.id, storageKey };
     });
+
+    const upload = await this.signUpload(created.storageKey);
+    return { id: created.id, storageKey: created.storageKey, uploadUrl: upload.url, token: upload.token };
   }
 
   /** Passo 2 de 2: confirmar que os bytes chegaram. */
@@ -153,18 +158,27 @@ export class ScoutingVideoService {
   async playbackUrl(ctx: RequestContext, videoId: string) {
     if (!can(ctx, "scouting:video:read")) throw new ForbiddenException("Sem acesso ao vídeo de scouting");
 
-    return this.prisma.runAs(ctx.academyId, async (db) => {
-      // `findFirst` com o tenant injectado: um id de outra academia dá 404, e não
-      // 403 — 403 confirmaria que o vídeo existe algures.
-      const video = await db.prospectVideo.findFirst({
+    /*
+     * A consulta dentro da transação; a assinatura **fora**.
+     *
+     * Assinar é uma ida ao Supabase pela rede, e uma transação aberta segura uma das
+     * cinco ligações do pool durante todo esse tempo. Era isto que punha o vídeo
+     * eternamente "a carregar": bastavam alguns pedidos ao mesmo tempo para o pool
+     * secar, e a partir daí **todos** os pedidos falhavam em `P2028 — Unable to
+     * start a transaction in the given time`, porque o `AuthGuard` também precisa de
+     * uma transação para montar o contexto de cada pedido.
+     */
+    // `findFirst` com o tenant injectado: um id de outra academia dá 404, e não
+    // 403 — 403 confirmaria que o vídeo existe algures.
+    const video = await this.prisma.runAs(ctx.academyId, (db) =>
+      db.prospectVideo.findFirst({
         where: { id: videoId, status: "READY" },
         select: { storageKey: true },
-      });
-      if (!video) throw new NotFoundException("Vídeo não encontrado");
+      }),
+    );
+    if (!video) throw new NotFoundException("Vídeo não encontrado");
 
-      const url = await this.signDownload(video.storageKey, 600);
-      return { url, expiresIn: 600 };
-    });
+    return { url: await this.signDownload(video.storageKey, 600), expiresIn: 600 };
   }
 
   async update(ctx: RequestContext, videoId: string, dto: UpdateVideoDto) {
@@ -301,32 +315,33 @@ export class ScoutingVideoService {
    * O bucket, criado à primeira necessidade e **privado**.
    *
    * `public: false` não é um detalhe de configuração: é a diferença entre um link
-   * assinado e um endereço que qualquer pessoa abre. Fica aqui, em código, e não
-   * numa consola onde alguém o possa mudar sem perceber o que muda.
+   * assinado e um endereço que qualquer pessoa abre. Fica em código, e não numa
+   * consola onde alguém o possa mudar sem perceber o que muda.
+   *
+   * ## O que estava avariado aqui, e vale a pena não repetir
+   *
+   * Este bucket pedia 2 GB de `file_size_limit`. O Supabase tem um **tecto global
+   * por projecto** — 50 MB no plano em uso — e um pedido acima dele não devolve um
+   * aviso: devolve 400, o bucket **não chega a ser criado**, e cada carregamento
+   * falhava com "o armazenamento de vídeo não está disponível". Verdade, e
+   * inútil.
+   *
+   * `StorageService.ensureBucket` tenta o limite desejado e, se o projecto o
+   * recusar, cria o bucket **sem limite explícito** — herdando o do projecto — e
+   * regista o que aconteceu. Um bucket que aceita 50 MB serve para alguma coisa;
+   * um bucket que não existe não serve para nada.
    */
   private async ensureBucket(): Promise<void> {
     if (this.ensured) return;
 
-    const res = await fetch(`${this.url}/storage/v1/bucket`, {
-      method: "POST",
-      headers: this.headers(),
-      body: JSON.stringify({
-        id: this.bucket,
-        name: this.bucket,
-        public: false,
-        file_size_limit: 2_147_483_648,
-        allowed_mime_types: ["video/mp4", "video/quicktime", "video/webm", "video/x-matroska"],
-      }),
+    await this.storage.ensureBucket({
+      name: this.bucket,
+      // O que se gostaria de ter. Quem manda é o projecto — ver acima.
+      fileSizeLimit: 2_147_483_648,
+      allowedMimeTypes: ["video/mp4", "video/quicktime", "video/webm", "video/x-matroska"],
     });
 
-    // 409 é "já existe", que é o caso normal a partir da segunda vez.
-    if (res.ok || res.status === 409) {
-      this.ensured = true;
-      return;
-    }
-
-    this.log.error(`Não foi possível garantir o bucket: ${res.status} ${await res.text()}`);
-    throw new BadRequestException("O armazenamento de vídeo não está disponível");
+    this.ensured = true;
   }
 
   private async signUpload(storageKey: string): Promise<{ url: string; token: string }> {

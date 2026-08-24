@@ -52,6 +52,18 @@ model Academy {
   /// Dia do mês em que as mensalidades vencem.
   billingDueDay Int @default(8)
 
+  /// ## A página de adesão a sócio, escrita pelo clube
+  ///
+  /// A frase que abre, a que explica, e os pontos que dizem o que se ganha. São
+  /// do clube e não nossas: cada clube tem uma razão diferente para alguém se
+  /// fazer sócio, e uma frase escrita por nós seria a mesma em quinhentos sítios.
+  /// Nulos significam "usa o que o produto traz por omissão" — nunca uma página
+  /// em branco.
+  membershipHeadline String?
+  membershipIntro    String?
+  /// Um por linha, na ordem em que aparecem.
+  membershipPoints   String[] @default([])
+
   /// Estado do cliente na plataforma. Ver `docs/04-plataforma.md`.
   status      AcademyStatus @default(SETUP)
   trialEndsAt DateTime?
@@ -80,6 +92,7 @@ model Academy {
   notifications Notification[]
   evaluations   Evaluation[]
   clinical      ClinicalEntry[]
+  reports       AthleteReport[]
   matches       Match[]
   events        CalendarEvent[]
   invites       StaffInvite[]
@@ -162,6 +175,10 @@ model User {
   phone    String?
   locale   String  @default("pt-PT")
 
+  /// A fotografia de quem trabalha na academia, no armazenamento privado. Mesma
+  /// regra da do atleta: guarda-se a chave, serve-se um link assinado.
+  photoKey String?
+
   memberships   Membership[]
   notifications Notification[]
   pushSubs      PushSubscription[]
@@ -242,6 +259,7 @@ model Membership {
   ledEvents      CalendarEvent[]   @relation("EventCoach")
   clinicalWrites ClinicalEntry[]   @relation("ClinicalAuthor")
   evaluations    Evaluation[]
+  reportsWritten AthleteReport[]   @relation("ReportAuthor")
   announcements  Announcement[]
   invitesSent    StaffInvite[]     @relation("InviteAuthor")
   prospectsOwned Prospect[]        @relation("ProspectOwner")
@@ -450,7 +468,15 @@ model Athlete {
 
   name      String
   birthdate DateTime @db.Date
+  /// Endereço externo, quando a foto vive fora daqui. Hoje quase sempre nulo — as
+  /// fotos carregadas pela consola vivem em `photoKey`.
   photoUrl  String?
+  /// A chave da fotografia no armazenamento privado.
+  ///
+  /// **Chave e não URL**: o que a API devolve é um link assinado com prazo, gerado a
+  /// cada leitura. Uma fotografia de uma criança não pode ter um endereço permanente
+  /// que qualquer pessoa abra — e um URL guardado na base é exactamente isso.
+  photoKey  String?
   status    AthleteStatus @default(ACTIVE)
   joinedAt  DateTime      @default(now())
 
@@ -488,6 +514,7 @@ model Athlete {
   enrollments Enrollment[]
   charges     Charge[]
   evaluations Evaluation[]
+  reports     AthleteReport[]
   clinical    ClinicalEntry[]
   callUps     MatchCallUp[]
   appearances MatchAppearance[]
@@ -822,6 +849,10 @@ enum NotificationType {
   SESSION_CANCELLED
   ANNOUNCEMENT_PUBLISHED
   EVALUATION_PUBLISHED
+  /// Um relatório partilhado com a família. Tipo próprio e não `EVALUATION_PUBLISHED`:
+  /// a avaliação é o boletim do período, o relatório é um texto sobre o percurso —
+  /// e um pai que recebe os dois quer saber qual deles chegou.
+  REPORT_SHARED
   /// Convocado para um jogo. Tipo próprio: tem hora, sítio e uma decisão a tomar —
   /// não é um aviso que se lê quando calhar.
   MATCH_CALLED_UP
@@ -1148,12 +1179,103 @@ model Evaluation {
   /// A leitura do treinador. É o que os pais lêem primeiro.
   note   String?
 
+  /*
+   * Os dois campos que transformam uma grelha de números numa avaliação.
+   *
+   * Cinco pontuações dizem *onde* o atleta está; não dizem o que fazer com isso.
+   * Um pai que lê "Técnica 3" fica na mesma — e o treinador, que sabe a resposta,
+   * escreve-a uma vez em vez de a repetir ao telefone a vinte famílias.
+   *
+   * Separados da `note` de propósito: são perguntas diferentes, e um campo de texto
+   * livre único acaba sempre com um dos dois lados por escrever.
+   */
+  /// O que já está bem. Nunca vazio numa avaliação que se publica.
+  strengths String?
+  /// O que se vai trabalhar no período seguinte. É a parte accionável.
+  focus     String?
+
   publishedAt DateTime?
   createdAt   DateTime  @default(now())
   updatedAt   DateTime  @updatedAt
 
   @@unique([athleteId, period])
   @@index([academyId, status])
+}
+
+/// Um relatório sobre um atleta.
+///
+/// ## O que distingue isto de uma `Evaluation`
+///
+/// A avaliação é **periódica e estruturada**: as mesmas competências, a mesma
+/// escala, um por atleta por período — é o que permite comparar Setembro com Junho.
+/// O relatório é **livre e ocasional**: um texto escrito porque houve alguma coisa
+/// para dizer, com o comprimento que a coisa merecer.
+///
+/// Tentar servir as duas com uma tabela só dava o pior das duas: ou um campo de
+/// texto perdido numa grelha de números, ou uma grelha de números a atrapalhar quem
+/// só queria escrever três parágrafos.
+///
+/// ## A visibilidade é a decisão central
+///
+/// Metade do que um clube escreve sobre um miúdo **não é para os pais lerem** — a
+/// nota de que talvez suba de escalão, a observação sobre o comportamento no
+/// balneário, o parecer para a direção. A outra metade é precisamente para eles.
+///
+/// Por isso `visibility` é um campo obrigatório e nasce em `INTERNAL`: partilhar é
+/// um acto deliberado, e o engano possível é o barato (um relatório que a família
+/// não viu) e nunca o caro (um parecer interno no telemóvel do pai).
+model AthleteReport {
+  id        String  @id @default(cuid())
+  academyId String
+  academy   Academy @relation(fields: [academyId], references: [id], onDelete: Cascade)
+  athleteId String
+  athlete   Athlete @relation(fields: [athleteId], references: [id], onDelete: Cascade)
+
+  /// Quem escreveu. `Restrict` como na `Evaluation`: um relatório sem autor é um
+  /// texto que ninguém assume, e é sobre uma criança.
+  authorId String
+  author   Membership @relation("ReportAuthor", fields: [authorId], references: [id])
+
+  title String
+  /// "2026/27 · 1.º período", ou nulo num relatório pontual que não pertence a nenhum.
+  period String?
+  /// O texto. Parágrafos separados por linhas em branco — sem HTML, sem editor rico:
+  /// o que faz falta aqui é escrever depressa no fim de um treino.
+  body  String
+
+  visibility ReportVisibility @default(INTERNAL)
+  status     ReportStatus     @default(DRAFT)
+
+  /*
+   * Os números no dia em que foi publicado.
+   *
+   * Um relatório é um documento: quem o abre em Junho tem de ler o que lá estava em
+   * Janeiro. Se a assiduidade fosse lida ao vivo, o texto do treinador ("tem faltado")
+   * acabava ao lado de 96% — e o documento passava a mentir sozinho, sem ninguém lhe
+   * tocar.
+   *
+   * { attendance: { attended, total }, matches: n, evaluation: { period, scores } }
+   */
+  snapshot Json?
+
+  publishedAt DateTime?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  @@index([academyId, athleteId, createdAt])
+  @@index([academyId, status, visibility])
+}
+
+enum ReportVisibility {
+  /// Só para quem trabalha na academia. Nunca sai daqui.
+  INTERNAL
+  /// Partilhado com a família do atleta, quando publicado.
+  FAMILY
+}
+
+enum ReportStatus {
+  DRAFT
+  PUBLISHED
 }
 
 /* -------------------------------------------------------------------------- */
@@ -1823,7 +1945,7 @@ model Member {
   /// Guarda-se **quando** foi dado e não apenas que sim. O RGPD pede que o clube
   /// consiga demonstrar o consentimento, e "true" não demonstra nada — não diz
   /// quando, nem contra que versão dos termos. Nulo significa que não foi dado.
-  acceptedTermsAt DateTime
+  acceptedTermsAt DateTime?
   /// Comunicações comerciais dos parceiros oficiais.
   partnerCommsAt  DateTime?
   /// Partilha de dados com os parceiros oficiais. É outra pergunta e outro

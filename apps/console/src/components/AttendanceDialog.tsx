@@ -148,7 +148,7 @@ export function AttendanceDialog({
             return (
               <li key={a.id}>
                 <div className="flex w-full items-center gap-2.5 rounded-[var(--radius-control)] px-3 py-2 opacity-70">
-                  <Monogram name={a.name} size="sm" />
+                  <Monogram name={a.name} photoUrl={a.photoUrl} size="sm" />
                   <span className="min-w-0 flex-1 truncate text-body text-ink-3">{shortName(a.name)}</span>
                   <AvailabilityTag availability={availabilityOf(a.id)} size="sm" />
                 </div>
@@ -160,7 +160,7 @@ export function AttendanceDialog({
             <li key={a.id}>
               <div className="rounded-[var(--radius-control)] px-3 py-1.5">
                 <div className="flex w-full items-center gap-2.5">
-                  <Monogram name={a.name} size="sm" />
+                  <Monogram name={a.name} photoUrl={a.photoUrl} size="sm" />
 
                   {/* Ponto de cor: o estado lê-se de relance, sem abrir o dropdown. */}
                   <span

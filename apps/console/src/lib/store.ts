@@ -45,7 +45,13 @@ import type { Role } from "@/lib/permissions";
 /* -------------------------------------------------------------------------- */
 
 type ApiBootstrap = {
-  academy: { id: string; slug: string; name: string; shortName: string; city: string | null; signalColor: string };
+  academy: {
+    id: string; slug: string; name: string; shortName: string; city: string | null; signalColor: string;
+    /** O que o clube escreveu na página pública de adesão a sócio. */
+    membershipHeadline: string | null;
+    membershipIntro: string | null;
+    membershipPoints: string[];
+  };
   sports: { id: string; name: string; positions: string[]; skills: string[]; dominantSideLabel: string | null; matchMinutes: number | null }[];
   season: { id: string; label: string } | null;
   me: {
@@ -98,6 +104,8 @@ type ApiAthlete = {
 
 type ApiStaff = {
   id: string; name: string; email: string; phone: string | null; role: Role;
+  /** Link assinado com prazo, ou nulo. A chave nunca sai do servidor. */
+  photoUrl: string | null;
   title: string | null; department: string | null; isActive: boolean; grants: string[]; revokes: string[];
   /** O papel da academia atribuído a esta pessoa, quando tem um. */
   roleId: string | null; roleName: string | null;
@@ -180,7 +188,11 @@ type State = {
 const EMPTY: State = {
   ready: false,
   error: null,
-  academy: { id: "", slug: "", name: "", shortName: "", signalColor: "#0f6b62", city: "", sports: [] },
+  academy: {
+    id: "", slug: "", name: "", shortName: "", signalColor: "#0f6b62", city: "",
+    membershipHeadline: "", membershipIntro: "", membershipPoints: [],
+    sports: [],
+  },
   season: "",
   me: null,
   teams: [],
@@ -345,6 +357,7 @@ function build(
     name: s.name,
     email: s.email,
     phone: s.phone ?? "",
+    photoUrl: s.photoUrl ?? undefined,
     role: s.role,
     title: s.title ?? "",
     department: departmentOf(s.department),
@@ -403,6 +416,9 @@ function build(
       shortName: boot.academy.shortName,
       signalColor: boot.academy.signalColor,
       city: boot.academy.city ?? "",
+      membershipHeadline: boot.academy.membershipHeadline ?? "",
+      membershipIntro: boot.academy.membershipIntro ?? "",
+      membershipPoints: boot.academy.membershipPoints ?? [],
       sports: boot.sports.map((s) => ({
         id: s.id,
         name: s.name,

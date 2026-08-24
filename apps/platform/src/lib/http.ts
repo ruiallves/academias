@@ -38,7 +38,11 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
     const body = await res.json().catch(() => null);
     throw new ApiError(res.status, body?.message ?? mensagem(res.status));
   }
-  return res.json() as Promise<T>;
+  // Nem toda a resposta com sucesso traz corpo: um `null` devolvido por um handler
+  // do Nest sai como 200 vazio, e `res.json()` rebentaria com "Unexpected end of
+  // JSON input" — uma mensagem sobre o parser, não sobre o que se passou.
+  const text = await res.text();
+  return (text ? JSON.parse(text) : undefined) as T;
 }
 
 export const apiGet = <T,>(path: string) => request<T>(path);

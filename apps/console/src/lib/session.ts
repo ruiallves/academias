@@ -122,6 +122,7 @@ export function signOut(): void {
  * como o treinador. Existe só em `import.meta.env.DEV`, e some no build de produção.
  */
 export const DEV_PROFILES = [
+  { role: "OWNER", email: "presidente@lifeclub.pt", label: "Presidência" },
   { role: "DIRECTOR", email: "direcao@lifeclub.pt", label: "Direção" },
   { role: "COACH", email: "treinador@lifeclub.pt", label: "Equipa técnica" },
   { role: "MEDICAL", email: "clinico@lifeclub.pt", label: "Departamento clínico" },

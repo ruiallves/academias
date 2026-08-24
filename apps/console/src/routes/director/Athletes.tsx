@@ -59,7 +59,7 @@ export default function Athletes() {
       header: "Atleta",
       render: (a) => (
         <div className="flex items-center gap-2.5">
-          <Monogram name={a.name} />
+          <Monogram name={a.name} photoUrl={a.photoUrl} />
           <div className="min-w-0">
             <div className="flex items-center gap-1.5">
               <span className="truncate font-medium text-ink">{shortName(a.name)}</span>

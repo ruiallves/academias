@@ -1,9 +1,15 @@
 import { BadRequestException, ForbiddenException, Injectable, NotFoundException } from "@nestjs/common";
-import type { MemberDocumentKind, MemberFeePeriod, MemberSex, MemberStatus } from "@prisma/client";
+import type { MemberDocumentKind, MemberFeePeriod, MemberSex, MemberStatus, Prisma } from "@prisma/client";
 import { PrismaService, type ScopedClient } from "../prisma/prisma.service";
 import { AuthService } from "../auth/auth.service";
 import { can, type RequestContext } from "../common/permissions";
-import type { MemberSignupDto, MemberTierInputDto, MemberUpdateDto } from "./members.dto";
+import type {
+  MemberCreateDto,
+  MemberImportRowDto,
+  MemberSignupDto,
+  MemberTierInputDto,
+  MemberUpdateDto,
+} from "./members.dto";
 
 /**
  * Sócios.
@@ -98,6 +104,18 @@ export class MembersService {
       }
 
       const taxId = dto.taxId.replace(/[\s.]/g, "");
+
+      /*
+       * Já existe alguém com este NIF: responde-se como se tivesse corrido bem.
+       *
+       * A verificação é feita **antes** do `create` porque o conflito da base de
+       * dados chega sem identificar a restrição (`meta.target` nulo) e deixa a
+       * transacção abortada — a apanhá-lo depois, o pedido acabava num 500, e um
+       * 500 aqui é o oráculo que este método existe para não ser: com uma lista
+       * de NIFs, qualquer pessoa descobria quem é sócio do clube.
+       */
+      const already = await db.member.findFirst({ where: { taxId }, select: { id: true } });
+      if (already) return { ok: true as const, name: dto.name.trim().split(" ")[0] };
 
       try {
         const member = await db.member.create({
@@ -266,6 +284,246 @@ export class MembersService {
     });
   }
 
+  /**
+   * Um sócio inscrito na secretaria.
+   *
+   * ## Porquê não reaproveitar a inscrição pública
+   *
+   * Porque quem preenche isto tem a pessoa à frente e tem `member:write`. Pode
+   * escolher a categoria sem passar pelos limites de idade da página pública,
+   * pode dar já o número, e pode dizer que o sócio está activo — decisões que a
+   * inscrição pública nunca deve conseguir tomar sozinha. Partilhar o método era
+   * abrir todas essas portas ao formulário anónimo.
+   *
+   * E ao contrário da inscrição pública, um NIF repetido é dito em voz alta: quem
+   * está a criar já vê o livro todo, e o silêncio só o faria escrever a ficha
+   * outra vez.
+   */
+  async create(ctx: RequestContext, dto: MemberCreateDto) {
+    this.mustWrite(ctx);
+
+    const now = new Date();
+    const birthdate = this.plausibleBirthdate(dto.birthdate);
+    const taxId = dto.taxId.replace(/[\s.]/g, "");
+
+    return this.prisma.runAs(ctx.academyId, async (db) => {
+      let tierId: string | null = null;
+      if (dto.tierId) {
+        const tier = await db.memberTier.findFirst({
+          where: { id: dto.tierId, archivedAt: null },
+          select: { id: true },
+        });
+        if (!tier) throw new BadRequestException("Categoria de sócio inválida");
+        tierId = tier.id;
+      }
+
+      /*
+       * O NIF antes de escrever, e não só a apanhar o erro depois.
+       *
+       * O Postgres devolve este conflito sem dizer que restrição falhou (o
+       * `meta.target` vem nulo), e depois dele a transacção fica abortada — não
+       * há como perguntar à base de dados o que correu mal. Perguntar primeiro é
+       * o que permite dizer "já existe um sócio com este NIF" em vez de um 500.
+       * A restrição única continua lá por baixo, como rede.
+       */
+      const sameTaxId = await db.member.findFirst({ where: { taxId }, select: { id: true } });
+      if (sameTaxId) throw new BadRequestException("Já existe um sócio com este NIF");
+
+      if (dto.number != null) {
+        const taken = await db.member.findFirst({ where: { number: dto.number }, select: { id: true } });
+        if (taken) throw new BadRequestException(`O número ${dto.number} já está atribuído`);
+      }
+
+      const status = (dto.status as MemberStatus) ?? "ACTIVE";
+      // Sem número para quem fica por aprovar: um número dado a quem ainda não
+      // foi aceite queima um lugar na sequência do livro.
+      const number = dto.number ?? (status === "PENDING" ? null : await this.nextNumber(db));
+
+      try {
+        const member = await db.member.create({
+          data: {
+            academyId: ctx.academyId,
+            tierId,
+            number,
+            name: dto.name.trim(),
+            email: dto.email.trim().toLowerCase(),
+            birthdate,
+            country: (dto.country ?? "PT").toUpperCase().slice(0, 2),
+            address: dto.address.trim(),
+            postalCode: dto.postalCode.trim(),
+            city: dto.city.trim(),
+            phoneCountry: dto.phoneCountry ?? "+351",
+            phone: dto.phone.replace(/\s/g, ""),
+            sex: (dto.sex as MemberSex) ?? "UNSPECIFIED",
+            documentKind: (dto.documentKind as MemberDocumentKind) ?? "CC",
+            documentNumber: dto.documentNumber.trim(),
+            taxId,
+            status,
+            acceptedTermsAt: dto.acceptedTerms ? now : null,
+            approvedAt: status === "PENDING" ? null : now,
+            approvedById: status === "PENDING" ? null : ctx.membershipId,
+            source: "secretaria",
+            notes: dto.notes?.trim() || null,
+            updatedAt: now,
+          },
+          select: { id: true, name: true, number: true },
+        });
+
+        return member;
+      } catch (error) {
+        if (isUniqueViolation(error, "taxId")) {
+          throw new BadRequestException("Já existe um sócio com este NIF");
+        }
+        throw error;
+      }
+    });
+  }
+
+  /* ---------------------------------------------------------------------- */
+  /* Importação                                                             */
+  /* ---------------------------------------------------------------------- */
+
+  /**
+   * O livro de sócios que o clube já tinha, numa folha de cálculo.
+   *
+   * ## Nada é criado se alguma linha estiver errada
+   *
+   * Tudo corre dentro de uma transacção. Uma importação parcial é a pior das
+   * respostas possíveis: metade dos sócios entra, a pessoa corrige a folha,
+   * importa outra vez e fica com metade do clube duplicado. Ou entra o livro
+   * todo, ou não entra nada e devolve-se a lista de linhas a corrigir.
+   *
+   * ## Os duplicados não são erro de quem importa
+   *
+   * O NIF é único por clube. Uma linha que já existe é ignorada e contada — é o
+   * caso normal de quem reimporta a folha depois de lhe acrescentar pessoas, e
+   * fazer disso um erro obrigava a editar a folha só para tirar quem já entrou.
+   *
+   * Ao contrário da inscrição pública, aqui **dizer** que já existe não abre
+   * oráculo nenhum: quem chama isto já tem `member:write` e já vê o livro todo.
+   *
+   * ## Sem consentimento carimbado
+   *
+   * `acceptedTermsAt` fica nulo. O sócio deu os termos ao clube muito antes
+   * desta plataforma existir, numa data que a folha não traz — e carimbar o
+   * momento da importação seria fabricar a prova que o RGPD pede ao clube.
+   */
+  async importMembers(ctx: RequestContext, rows: MemberImportRowDto[]) {
+    this.mustWrite(ctx);
+    if (rows.length === 0) throw new BadRequestException("A folha não tem linhas");
+
+    const now = new Date();
+
+    return this.prisma.runAs(ctx.academyId, async (db) => {
+      const tiers = await db.memberTier.findMany({
+        where: { archivedAt: null },
+        select: { id: true, name: true, minAge: true, maxAge: true },
+      });
+      const tierByName = new Map(tiers.map((t) => [fold(t.name), t]));
+
+      const existing = await db.member.findMany({ select: { taxId: true, number: true } });
+      const takenTaxIds = new Set(existing.map((m) => m.taxId));
+      const takenNumbers = new Set(existing.map((m) => m.number).filter((n): n is number => n !== null));
+
+      const problems: { line: number; reason: string }[] = [];
+      const duplicates: { line: number; name: string }[] = [];
+      const create: Prisma.MemberCreateManyInput[] = [];
+
+      // O maior número já em uso. Quem vier sem número na folha segue a partir
+      // daqui, para não colidir com os que a folha traz escritos.
+      let nextNumber = Math.max(0, ...takenNumbers) + 1;
+
+      rows.forEach((row, i) => {
+        const line = row.line ?? i + 2;
+        const taxId = row.taxId.replace(/[\s.]/g, "");
+
+        if (takenTaxIds.has(taxId)) {
+          duplicates.push({ line, name: row.name.trim() });
+          return;
+        }
+        takenTaxIds.add(taxId);
+
+        let birthdate: Date;
+        try {
+          birthdate = this.plausibleBirthdate(row.birthdate);
+        } catch {
+          problems.push({ line, reason: "Data de nascimento inválida" });
+          return;
+        }
+
+        let tierId: string | null = null;
+        if (row.tier?.trim()) {
+          const tier = tierByName.get(fold(row.tier));
+          if (!tier) {
+            problems.push({ line, reason: `Não existe a categoria "${row.tier.trim()}"` });
+            return;
+          }
+          const age = ageAt(birthdate, now);
+          if (tier.minAge != null && age < tier.minAge) {
+            problems.push({ line, reason: `"${row.tier.trim()}" é a partir dos ${tier.minAge} anos` });
+            return;
+          }
+          if (tier.maxAge != null && age > tier.maxAge) {
+            problems.push({ line, reason: `"${row.tier.trim()}" é até aos ${tier.maxAge} anos` });
+            return;
+          }
+          tierId = tier.id;
+        }
+
+        // O número que a folha traz manda, se estiver livre. É o número que o
+        // sócio conhece, está no cartão dele e é por ele que a secretaria o
+        // procura — renumerar toda a gente numa importação seria trocar o livro
+        // do clube pelo nosso.
+        let number: number;
+        if (row.number != null && !takenNumbers.has(row.number)) {
+          number = row.number;
+        } else {
+          while (takenNumbers.has(nextNumber)) nextNumber++;
+          number = nextNumber;
+        }
+        takenNumbers.add(number);
+
+        create.push({
+          academyId: ctx.academyId,
+          tierId,
+          number,
+          name: row.name.trim(),
+          email: row.email.trim().toLowerCase(),
+          birthdate,
+          country: (row.country ?? "PT").toUpperCase().slice(0, 2),
+          address: row.address.trim(),
+          postalCode: row.postalCode.trim(),
+          city: row.city.trim(),
+          phoneCountry: row.phoneCountry ?? "+351",
+          phone: row.phone.replace(/\s/g, ""),
+          sex: (row.sex as MemberSex) ?? "UNSPECIFIED",
+          documentKind: (row.documentKind as MemberDocumentKind) ?? "CC",
+          documentNumber: row.documentNumber.trim(),
+          taxId,
+          // Quem vem da folha do clube já é sócio. Pô-los todos por aprovar
+          // dava à direção uma fila de centenas de aprovações que não são
+          // decisões nenhumas.
+          status: (row.status as MemberStatus) ?? "ACTIVE",
+          acceptedTermsAt: null,
+          approvedAt: now,
+          approvedById: ctx.membershipId,
+          source: "importacao",
+          updatedAt: now,
+        });
+      });
+
+      if (problems.length > 0) {
+        return { ok: false as const, created: 0, duplicates: [], problems: problems.slice(0, 50) };
+      }
+
+      // Ou entra o livro todo, ou não entra nada: o `runAs` já corre tudo isto
+      // dentro de uma transacção, e um `createMany` é uma instrução só.
+      if (create.length > 0) await db.member.createMany({ data: create });
+
+      return { ok: true as const, created: create.length, duplicates, problems: [] };
+    });
+  }
+
   /* ---------------------------------------------------------------------- */
   /* Categorias                                                             */
   /* ---------------------------------------------------------------------- */
@@ -421,6 +679,17 @@ export class MembersService {
   }
 }
 
+/**
+ * Um nome de categoria como uma pessoa o leria.
+ *
+ * "Sócio Efectivo", "socio efectivo" e "SÓCIO  EFECTIVO" são a mesma categoria
+ * para quem escreveu a folha, e recusar a importação por causa de um acento
+ * seria fazer a pessoa adivinhar como é que o clube a escreveu aqui dentro.
+ */
+function fold(value: string): string {
+  return value.normalize("NFD").replace(/\p{Diacritic}/gu, "").trim().replace(/\s+/g, " ").toLowerCase();
+}
+
 function ageAt(birthdate: Date, now: Date): number {
   let age = now.getUTCFullYear() - birthdate.getUTCFullYear();
   const m = now.getUTCMonth() - birthdate.getUTCMonth();
@@ -428,9 +697,19 @@ function ageAt(birthdate: Date, now: Date): number {
   return age;
 }
 
+/**
+ * Um conflito de unicidade — e, quando possível, em que campo.
+ *
+ * O `meta.target` do Prisma vem nulo nesta base de dados, por isso um alvo
+ * desconhecido conta como conflito: é sempre melhor do que devolver 500 a quem
+ * escreveu um NIF repetido. Quem chama isto verifica o campo antes de escrever;
+ * este ramo é a rede por baixo, para a corrida entre duas inscrições no mesmo
+ * instante.
+ */
 function isUniqueViolation(error: unknown, field: string): boolean {
-  const e = error as { code?: string; meta?: { target?: string[] | string } };
+  const e = error as { code?: string; meta?: { target?: string[] | string | null } };
   if (e?.code !== "P2002") return false;
   const target = e.meta?.target;
-  return Array.isArray(target) ? target.includes(field) : String(target ?? "").includes(field);
+  if (target === null || target === undefined) return true;
+  return Array.isArray(target) ? target.includes(field) : String(target).includes(field);
 }

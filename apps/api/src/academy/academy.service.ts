@@ -1,6 +1,8 @@
 import { BadRequestException, ForbiddenException, Injectable, NotFoundException } from "@nestjs/common";
 import { Prisma, type CalendarEventKind } from "@prisma/client";
 import { PrismaService, type ScopedClient } from "../prisma/prisma.service";
+import { StorageService } from "../storage/storage.service";
+import { PHOTO_BUCKET, PHOTO_TTL } from "../storage/photos.service";
 import { basePermissions, can, ROLE_PERMISSIONS, type Permission, type RequestContext } from "../common/permissions";
 import { athleteScopeFilter, teamScopeFilter } from "../common/permissions";
 
@@ -92,7 +94,10 @@ const DELEGATABLE: ReadonlySet<Permission> = new Set<Permission>([
  */
 @Injectable()
 export class AcademyService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly storage: StorageService,
+  ) {}
 
   /**
    * O arranque da consola: quem sou, onde estou, e o que existe nesta academia.
@@ -105,7 +110,12 @@ export class AcademyService {
     return this.prisma.runAs(ctx.academyId, async (db) => {
       const academy = await db.academy.findFirst({
         where: { id: ctx.academyId },
-        select: { id: true, slug: true, name: true, shortName: true, city: true, signalColor: true, logoUrl: true, billingDueDay: true },
+        select: {
+          id: true, slug: true, name: true, shortName: true, city: true,
+          signalColor: true, logoUrl: true, billingDueDay: true,
+          // A página pública de adesão, escrita pelo clube.
+          membershipHeadline: true, membershipIntro: true, membershipPoints: true,
+        },
       });
 
       const [sports, season, me] = await Promise.all([
@@ -157,6 +167,35 @@ export class AcademyService {
           scope: ctx.scope,
         },
       };
+    });
+  }
+
+  /**
+   * O que o clube escreve na sua página de adesão a sócio.
+   *
+   * Exige `settings:write` — é a montra pública do clube, e uma frase mal escrita
+   * ali é vista por toda a gente que abre o link. Nulo ou vazio repõe o que o
+   * produto traz por omissão, em vez de deixar a página muda.
+   */
+  async setMembershipCopy(
+    ctx: RequestContext,
+    dto: { headline?: string; intro?: string; points?: string[] },
+  ) {
+    if (!can(ctx, "settings:write")) throw new ForbiddenException("Sem permissão para mudar as definições");
+
+    return this.prisma.runAs(ctx.academyId, async (db) => {
+      await db.academy.update({
+        where: { id: ctx.academyId },
+        data: {
+          ...(dto.headline !== undefined ? { membershipHeadline: dto.headline.trim() || null } : {}),
+          ...(dto.intro !== undefined ? { membershipIntro: dto.intro.trim() || null } : {}),
+          ...(dto.points !== undefined
+            ? { membershipPoints: dto.points.map((p) => p.trim()).filter(Boolean).slice(0, 6) }
+            : {}),
+        },
+      });
+
+      return { ok: true };
     });
   }
 
@@ -341,7 +380,7 @@ export class AcademyService {
      */
     const mayReadTaxId = can(ctx, "family:read");
 
-    return this.prisma.runAs(ctx.academyId, async (db) => {
+    const rows = await this.prisma.runAs(ctx.academyId, async (db) => {
       const athletes = await db.athlete.findMany({
         /*
          * Os dois âmbitos cruzam-se aqui.
@@ -357,7 +396,7 @@ export class AcademyService {
         },
         orderBy: { name: "asc" },
         select: {
-          id: true, name: true, birthdate: true, photoUrl: true, status: true, joinedAt: true, taxId: true,
+          id: true, name: true, birthdate: true, photoUrl: true, photoKey: true, status: true, joinedAt: true, taxId: true,
           heightCm: true, weightKg: true, dominantSide: true, squadNumber: true, medicalValidUntil: true,
           teams: { select: { teamId: true, position: true }, take: 1 },
           guardians: {
@@ -381,6 +420,7 @@ export class AcademyService {
           name: a.name,
           birthdate: a.birthdate,
           taxId: mayReadTaxId ? a.taxId : null,
+          photoKey: a.photoKey,
           photoUrl: a.photoUrl,
           status: a.status,
           joinedAt: a.joinedAt,
@@ -415,6 +455,42 @@ export class AcademyService {
         };
       });
     });
+
+    return this.withPhotos(rows);
+  }
+
+  /**
+   * Troca as chaves de armazenamento por links assinados.
+   *
+   * ## Porque é que isto corre **fora** da transação
+   *
+   * Porque assinar é uma ida ao Supabase pela rede, e uma transação aberta segura
+   * uma ligação do pool. O pool tem cinco (`connection_limit=5`): trinta atletas a
+   * assinar dentro da transação seguravam essa ligação durante todo o tempo dos
+   * pedidos HTTP, e bastavam cinco listas ao mesmo tempo para o sexto pedido morrer
+   * em `P2028 — Unable to start a transaction in the given time`.
+   *
+   * Era exactamente isso que estava a acontecer, e o sintoma não era esta lista: era
+   * tudo o resto a ficar pendurado, porque o `AuthGuard` também precisa de uma
+   * transação para montar o contexto de cada pedido.
+   *
+   * A regra que fica: **dentro de `runAs` só há base de dados**. Rede é sempre
+   * depois de a transação fechar.
+   */
+  private async withPhotos<T extends { photoKey: string | null; photoUrl?: string | null }>(
+    rows: T[],
+  ): Promise<(Omit<T, "photoKey"> & { photoUrl: string | null })[]> {
+    const signed = await this.storage.signMany(
+      PHOTO_BUCKET,
+      rows.map((r) => r.photoKey).filter((k): k is string => Boolean(k)),
+      PHOTO_TTL,
+    );
+
+    return rows.map(({ photoKey, ...rest }) => ({
+      ...(rest as Omit<T, "photoKey">),
+      // A chave ganha ao URL externo: é a que passou pela nossa validação.
+      photoUrl: (photoKey ? signed.get(photoKey) : null) ?? (rest as { photoUrl?: string | null }).photoUrl ?? null,
+    }));
   }
 
   /**
@@ -427,7 +503,7 @@ export class AcademyService {
   async staff(ctx: RequestContext) {
     if (!can(ctx, "staff:read")) throw new ForbiddenException("Sem acesso ao staff");
 
-    return this.prisma.runAs(ctx.academyId, async (db) => {
+    const rows = await this.prisma.runAs(ctx.academyId, async (db) => {
       const rows = await db.membership.findMany({
         where: { role: { notIn: ["GUARDIAN", "ATHLETE"] } },
         orderBy: [{ department: "asc" }, { createdAt: "asc" }],
@@ -435,7 +511,7 @@ export class AcademyService {
           id: true, role: true, title: true, department: true, isActive: true, grants: true, revokes: true, createdAt: true,
           customRoleId: true,
           customRole: { select: { name: true } },
-          user: { select: { name: true, email: true, phone: true } },
+          user: { select: { name: true, email: true, phone: true, photoKey: true } },
           coachOf: { select: { teamId: true, title: true } },
         },
       });
@@ -445,6 +521,7 @@ export class AcademyService {
         name: m.user.name,
         email: m.user.email,
         phone: m.user.phone,
+        photoKey: m.user.photoKey,
         role: m.role,
         roleId: m.customRoleId,
         roleName: m.customRole?.name ?? null,
@@ -457,6 +534,8 @@ export class AcademyService {
         teamIds: m.coachOf.map((t) => t.teamId),
       }));
     });
+
+    return this.withPhotos(rows);
   }
 
   /**
