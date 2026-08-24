@@ -52,7 +52,7 @@ export const PLANS: Plan[] = [
   },
   {
     id: "ligado",
-    name: "Clube Ligado",
+    name: "Connect",
     tagline: "O clube, as famílias e o dinheiro. A plataforma inteira.",
     monthly: 19.99,
     featured: true,
@@ -87,7 +87,7 @@ export type Module = {
   name: string;
   line: string;
   items: string[];
-  /** Só o Clube Ligado. */
+  /** Só o Connect. */
   paidTier?: boolean;
 };
 

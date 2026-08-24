@@ -215,7 +215,7 @@ export function Familias() {
               ))}
             </ul>
             <p className="mt-8 text-[13.5px] text-ink-3">
-              Incluída no plano <span className="font-semibold text-ink">Clube Ligado</span>.
+              Incluída no plano <span className="font-semibold text-ink">Connect</span>.
             </p>
           </Reveal>
         </div>
@@ -408,7 +408,7 @@ export function Socios({ n = "07" }: { n?: string } = {}) {
               <MembershipShot className="min-h-[300px]" />
             </ProductFrame>
             <p className="mt-4 text-[13.5px] text-ink-3">
-              Incluída no plano <span className="font-semibold text-ink">Clube Ligado</span>.
+              Incluída no plano <span className="font-semibold text-ink">Connect</span>.
             </p>
           </Reveal>
         </div>

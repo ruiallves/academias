@@ -71,7 +71,7 @@ export default function Software() {
               <Reveal key={m.key} as="li" i={i % 3}>
                 <div className="flex items-baseline gap-3">
                   <h2 className="text-[19px] font-semibold tracking-[-0.025em]">{m.name}</h2>
-                  {m.paidTier && <span className="tag tag-live">Clube Ligado</span>}
+                  {m.paidTier && <span className="tag tag-live">Connect</span>}
                 </div>
                 <p className="mt-1.5 text-[15px] leading-relaxed text-ink-2">{m.line}</p>
                 <ul className="mt-4 space-y-1.5 border-t border-line pt-4">

@@ -35,7 +35,7 @@ export default function Planos() {
                       Consola
                     </th>
                     <th className="w-[140px] py-3 text-center text-[13px] font-semibold tracking-[0.06em] uppercase">
-                      Clube Ligado
+                      Connect
                     </th>
                   </tr>
                 </thead>
@@ -74,7 +74,7 @@ export default function Planos() {
           <Reveal i={2}>
             <p className="mt-6 max-w-[60ch] text-[14.5px] leading-relaxed text-ink-2">
               Na prática: a <span className="font-semibold text-ink">Consola</span> resolve o clube por dentro. O{" "}
-              <span className="font-semibold text-ink">Clube Ligado</span> acrescenta as duas coisas que as famílias
+              <span className="font-semibold text-ink">Connect</span> acrescenta as duas coisas que as famílias
               vêem — a app e as mensalidades. Quase todos os clubes acabam no segundo; começa no que fizer sentido e
               muda quando quiseres.
             </p>
