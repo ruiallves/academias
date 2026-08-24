@@ -649,8 +649,7 @@ function renderDesktop(academy: AcademyBranding, shortName: string, name: string
         </p>
         <h2 class="academy-name">${shortName}</h2>
         <p class="claim">
-          Treinos, presenças, mensalidades e o percurso de cada atleta — num sítio só,
-          em vez de espalhados por grupos de WhatsApp e folhas de Excel.
+          Treinos, presenças, mensalidades e o percurso de cada atleta tudo num sítio só. A aplicação oficial da ${name}.
         </p>
       </div>
 

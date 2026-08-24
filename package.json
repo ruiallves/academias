@@ -13,6 +13,8 @@
     "dev:platform": "npm run dev --workspace=@academia/platform",
     "dev:site": "npm run dev --workspace=@academia/site",
     "dev:api": "npm run start:dev --workspace=@academia/api",
+    "build:api": "npm run build --workspace=@academia/api",
+    "start:api": "npm run start --workspace=@academia/api",
     "build": "npm run build --workspaces --if-present",
     "typecheck": "npm run typecheck --workspaces --if-present"
   },

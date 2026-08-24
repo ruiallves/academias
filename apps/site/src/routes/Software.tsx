@@ -97,14 +97,14 @@ export default function Software() {
             <SectionMark n="—">Por baixo</SectionMark>
             <h2 className="display d2 mt-7 max-w-[13ch]">As decisões que não se vêem.</h2>
             <p className="lede mt-5 text-ink-2">
-              São estas que decidem se a plataforma aguenta um clube a sério no terceiro ano.
+              São estas que decidem se a plataforma aguenta um clube a sério.
             </p>
           </Reveal>
 
           <Reveal i={1}>
             <dl className="grid gap-x-10 gap-y-7 sm:grid-cols-2">
               {[
-                ["Isolamento na base de dados", "Cada clube é uma ilha, garantida pelo Postgres e não por um filtro na aplicação."],
+                ["Isolamento na base de dados", "Cada clube é uma ilha, garantida pela base de dados e não por um filtro na aplicação."],
                 ["Permissões como dados", "Papéis e verbos configuráveis pelo clube, não condições espalhadas pelo código."],
                 ["Âmbito por equipa e por atleta", "Derivado do servidor a cada pedido. A interface não é a fronteira."],
                 ["O pagamento é do servidor", "Só a confirmação do banco muda um estado para pago."],
