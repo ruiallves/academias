@@ -68,12 +68,12 @@ export function Seguranca() {
  * o que está planeado ganha a primeira reunião e perde o cliente na segunda — e num
  * mercado onde os clubes se conhecem todos, perde também os outros.
  */
-export function Roteiro() {
+export function Roteiro({ n = "09" }: { n?: string } = {}) {
   return (
     <section id="roteiro" className="band border-t border-line bg-paper-2">
       <div className="wrap">
         <Reveal>
-          <SectionMark n="09">A caminho</SectionMark>
+          <SectionMark n={n}>A caminho</SectionMark>
         </Reveal>
 
         <div className="mt-8 flex flex-wrap items-end justify-between gap-6">
@@ -97,19 +97,27 @@ export function Roteiro() {
         */}
         <Reveal i={3}>
           <ol className="relative mt-14">
-            <span aria-hidden className="absolute top-2 bottom-2 left-[6px] w-px bg-line-2 md:left-[110px]" />
+            <span aria-hidden className="absolute top-2 bottom-2 left-[6px] w-px bg-line-2 md:left-[150px]" />
 
             {ROADMAP.map((r, i) => (
               <li
                 key={r.title}
-                className="relative grid gap-x-8 gap-y-2 pb-10 pl-8 last:pb-0 md:grid-cols-[110px_minmax(0,1fr)] md:pl-0"
+                /*
+                 * `md:pr-10` na coluna da data: sem ele, uma estação com duas
+                 * palavras ("Inverno 2026/27") encostava ao ponto da linha e
+                 * chegava a passar-lhe por baixo. A folga é entre o fim do texto e
+                 * a linha, não à volta do bloco inteiro.
+                 */
+                className="relative grid gap-x-8 gap-y-2 pb-10 pl-8 last:pb-0 md:grid-cols-[150px_minmax(0,1fr)] md:pl-0"
               >
                 <span
                   aria-hidden
-                  className="absolute top-[7px] left-0 size-[13px] rounded-full border-2 border-field bg-paper-2 md:left-[104px]"
+                  className="absolute top-[7px] left-0 size-[13px] rounded-full border-2 border-field bg-paper-2 md:left-[144px]"
                   style={{ opacity: 1 - i * 0.12 }}
                 />
-                <p className="font-mono text-[12px] tracking-[0.06em] text-field uppercase md:text-right">{r.when}</p>
+                <p className="font-mono text-[12px] leading-[1.35] tracking-[0.06em] text-field uppercase md:pr-10 md:text-right">
+                  {r.when}
+                </p>
                 <div className="md:pl-8">
                   <p className="text-[18px] font-semibold tracking-[-0.02em]">{r.title}</p>
                   <p className="mt-1.5 max-w-[52ch] text-[14.5px] leading-relaxed text-ink-2">{r.body}</p>

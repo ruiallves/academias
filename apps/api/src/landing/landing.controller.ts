@@ -100,6 +100,13 @@ export class LandingController {
       familyUrl:
         `${familyOrigin}/?academia=${encodeURIComponent(slug)}` +
         (convite ? `&convite=${encodeURIComponent(convite)}` : ""),
+      // Só a presença do token importa aqui, não o valor: é o que diz à página que
+      // quem chegou é um pai com um convite, e não alguém que encontrou o link do
+      // clube por outra via. Sem isto, abrir o link num computador — o pai a testar
+      // no portátil antes de o mandar ao telemóvel, o link colado num email — caía
+      // no ecrã de login de staff, que é exactamente o beco sem saída que esta
+      // página existe para evitar.
+      hasFamilyInvite: Boolean(convite),
       consoleUrl: consoleOrigin,
       // A anon key é pública por desenho — é a que o browser usa para autenticar.
       // A service-role nunca sai do servidor.

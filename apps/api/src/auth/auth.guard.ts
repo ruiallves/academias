@@ -68,21 +68,48 @@ function bearer(req: Request): string | null {
 }
 
 /**
+ * Subdomínios que **nunca** são uma academia.
+ *
+ * A mesma lista que `PlatformService` recusa ao criar um clube — se um slug não
+ * pode ser registado com este nome, um host com este nome também não pode ser lido
+ * como tenant. Duplicada de propósito: são as duas pontas da mesma regra, e uma a
+ * importar a outra criaria uma dependência do `auth` no módulo `platform`.
+ */
+const RESERVED_HOSTS = new Set(["www", "api", "admin", "app", "platform", "static", "assets", "cdn", "mail"]);
+
+/**
  * De que academia é este pedido.
  *
- * Em produção vem do subdomínio — `clubea.academias.pt` → `clubea`. Em
- * desenvolvimento o host é `localhost`, e aí aceita-se um cabeçalho explícito.
+ * Em produção vem do subdomínio — `fafe.academias.pt` → `fafe`. Em desenvolvimento
+ * o host é `localhost`, e aí aceita-se um cabeçalho explícito.
  *
  * O cabeçalho **não é uma forma de escolher academia**: quem o enviar continua a
  * precisar de uma membership lá dentro, e é isso que o `AuthService` verifica.
  * Sem essa verificação, este cabeçalho seria uma porta aberta.
+ *
+ * ## Porque é que o domínio tem de ser dito, e não adivinhado
+ *
+ * A versão anterior tratava **qualquer** host com três ou mais rótulos como um
+ * tenant: `api.academias.pt` resolvia para a academia "api", e
+ * `academias-api.up.railway.app` para "academias-api". Todos os pedidos morriam em
+ * `Academia "api" não encontrada` no momento em que a API ganhou um subdomínio
+ * próprio — que é exactamente o que acontece ao pôr isto no Railway.
+ *
+ * `TENANT_DOMAIN` (`academias.pt`) resolve-o: só um subdomínio **desse** domínio é
+ * um clube. Qualquer outro host — o da API, o do Railway, um túnel de
+ * desenvolvimento — cai no cabeçalho, como o `localhost` sempre caiu. Sem a
+ * variável definida, nenhum host é tratado como tenant: falha para o lado seguro,
+ * porque adivinhar aqui é adivinhar de quem são os dados.
  */
 function tenantSlug(req: Request): string | null {
   const host = (req.headers.host ?? "").split(":")[0].toLowerCase();
-  const parts = host.split(".");
+  const domain = (process.env.TENANT_DOMAIN ?? "").trim().toLowerCase();
 
-  // Um subdomínio a sério: pelo menos `slug.dominio.tld`, e não `www`.
-  if (parts.length >= 3 && parts[0] !== "www") return parts[0];
+  if (domain && host.endsWith(`.${domain}`)) {
+    const sub = host.slice(0, -(domain.length + 1));
+    // Só o primeiro nível: `fafe.academias.pt` é um clube, `x.y.academias.pt` não.
+    if (sub && !sub.includes(".") && !RESERVED_HOSTS.has(sub)) return sub;
+  }
 
   const header = req.headers["x-academy-slug"];
   if (typeof header === "string" && header.trim()) return header.trim().toLowerCase();

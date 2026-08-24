@@ -12,25 +12,61 @@ import { CONTACT_EMAIL } from "@/lib/content";
  * assunto" pede só a pergunta, para quem só quer saber alguma coisa sem estar a
  * decidir comprar.
  *
- * ## Porque é que abre o email
+ * ## Porque é que já não abre o email
  *
- * Porque não há ainda endpoint público para receber isto, e um formulário que
- * finge enviar — mostra "obrigado!" e deita os dados fora — é a pior coisa que uma
- * página destas pode fazer. Este compõe a mensagem e entrega-a ao cliente de email:
- * a pessoa vê o que vai mandar, fica com cópia, e chega cá de certeza.
+ * Abria, e era o problema. Um botão que só faz `mailto:` não garante nada: não há
+ * cliente de email configurado, o browser bloqueia o separador, a pessoa fecha a
+ * janela antes de carregar em enviar — e nesse caso o contacto nunca chega a lado
+ * nenhum, apesar de a página ter dito "aberto o teu email".
+ *
+ * Agora o formulário fala com `POST /api/site/contacto`, que grava o contacto
+ * directamente na mesma tabela que a nossa plataforma de gestão lista em
+ * "Contactos" — cai lá **antes** de a página dizer que está feito, por isso
+ * "enviado" passa a ser verdade e não uma promessa que depende do computador de
+ * quem está a escrever. O contacto do email directo continua ali para quem
+ * preferir esse caminho, mas deixou de ser o único.
  */
+
+const API = (import.meta.env.VITE_API_URL as string | undefined) ?? "http://localhost:3000";
 
 type Subject = {
   id: string;
   label: string;
   /** Pede o contexto do clube — quem vem por negócio. */
   clube: boolean;
+  /**
+   * O que acontece depois de enviar, escrito para **este** assunto.
+   *
+   * Quem pede para experimentar recebe um link e entra sozinho; quem quer uma
+   * reunião marca uma hora e fala com uma pessoa. São caminhos diferentes, e
+   * descrever os dois com os mesmos três passos era prometer a marcação de uma
+   * reunião a quem só queria a chave da porta.
+   */
+  steps: [string, string][];
 };
 
 const SUBJECTS: Subject[] = [
-  { id: "experimentar", label: "Experimentar a plataforma", clube: true },
-  { id: "reuniao", label: "Marcar reunião", clube: true },
-  { id: "outro", label: "Outro assunto", clube: false },
+  {
+    id: "experimentar",
+    label: "Experimentar a plataforma",
+    clube: true,
+    steps: [
+      ["Recebes o link de acesso", "Assim que lermos o teu pedido, enviamos por email o acesso à plataforma com o teu clube já criado."],
+      ["Entras e experimentas", "Trinta dias com tudo, sem cartão. Podes convidar a equipa técnica e as famílias desde o primeiro dia."],
+      ["Ajudamos a montar, se quiseres", "Equipas, escalões, plantel por Excel e mensalidades. Dizes tu se preferes fazer sozinho ou connosco."],
+    ],
+  },
+  {
+    id: "reuniao",
+    label: "Marcar reunião",
+    clube: true,
+    steps: [
+      ["Combinamos uma hora", "Respondemos com duas ou três hipóteses. Vinte minutos chegam para a primeira conversa."],
+      ["Falamos do clube", "Não do software. Queremos perceber onde é que o trabalho está a doer antes de mostrar seja o que for."],
+      ["Mostramos com o teu caso à frente", "E, se fizer sentido, deixamos-te a experimentar no fim."],
+    ],
+  },
+  { id: "outro", label: "Outro assunto", clube: false, steps: [] },
 ];
 
 export default function Contactos() {
@@ -41,6 +77,7 @@ export default function Contactos() {
   const [phone, setPhone] = useState("");
   const [athletes, setAthletes] = useState("");
   const [message, setMessage] = useState("");
+  const [status, setStatus] = useState<"idle" | "sending" | "done" | "error">("idle");
 
   const emailOk = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim());
   const valid =
@@ -48,26 +85,46 @@ export default function Contactos() {
     emailOk &&
     (subject.clube ? club.trim().length >= 2 : message.trim().length >= 5);
 
-  function submit(e: FormEvent) {
+  async function submit(e: FormEvent) {
     e.preventDefault();
-    if (!valid) return;
+    if (!valid || status === "sending") return;
 
-    const body = [
-      `Assunto: ${subject.label}`,
-      `Nome: ${name.trim()}`,
-      subject.clube && club.trim() && `Clube: ${club.trim()}`,
-      `Email: ${email.trim()}`,
-      phone.trim() && `Telefone: ${phone.trim()}`,
-      subject.clube && athletes.trim() && `Atletas: ${athletes.trim()}`,
-      "",
-      message.trim(),
-    ]
-      .filter(Boolean)
-      .join("\n");
-
-    const assunto = subject.clube && club.trim() ? `${subject.label} — ${club.trim()}` : subject.label;
-
-    window.location.href = `mailto:${CONTACT_EMAIL}?subject=${encodeURIComponent(assunto)}&body=${encodeURIComponent(body)}`;
+    setStatus("sending");
+    try {
+      const res = await fetch(`${API}/api/site/contacto`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          name: name.trim(),
+          email: email.trim(),
+          phone: phone.trim() || undefined,
+          club: subject.clube ? club.trim() || undefined : undefined,
+          subject: subject.label,
+          athletes: subject.clube ? athletes.trim() || undefined : undefined,
+          message: message.trim() || undefined,
+        }),
+      });
+      if (!res.ok) throw new Error(String(res.status));
+      setStatus("done");
+    } catch {
+      // Sem rede, ou a API em baixo: o contacto não é perdido — cai no email
+      // directo, que é o único caminho que resta a funcionar sem o servidor.
+      setStatus("error");
+      const body = [
+        `Assunto: ${subject.label}`,
+        `Nome: ${name.trim()}`,
+        subject.clube && club.trim() && `Clube: ${club.trim()}`,
+        `Email: ${email.trim()}`,
+        phone.trim() && `Telefone: ${phone.trim()}`,
+        subject.clube && athletes.trim() && `Atletas: ${athletes.trim()}`,
+        "",
+        message.trim(),
+      ]
+        .filter(Boolean)
+        .join("\n");
+      const assunto = subject.clube && club.trim() ? `${subject.label} — ${club.trim()}` : subject.label;
+      window.location.href = `mailto:${CONTACT_EMAIL}?subject=${encodeURIComponent(assunto)}&body=${encodeURIComponent(body)}`;
+    }
   }
 
   return (
@@ -86,6 +143,43 @@ export default function Contactos() {
       </header>
 
       <div className="wrap band-tight grid gap-14 lg:grid-cols-[minmax(0,1.15fr)_minmax(0,0.85fr)] lg:gap-20">
+        {status === "done" ? (
+          <Reveal>
+            <div className="rounded-[3px] border border-line-2 bg-chalk p-7 sm:p-9">
+              <p className="eyebrow">Recebido</p>
+              <h2 className="display d3 mt-3 max-w-[16ch]">Chegou-nos. Obrigado.</h2>
+              <p className="mt-4 max-w-[46ch] text-[15px] leading-relaxed text-ink-2">
+                {subject.id === "experimentar" ? (
+                  <>
+                    Enviamos o link de acesso à plataforma para{" "}
+                    <span className="font-semibold text-ink">{email.trim()}</span> em dias úteis, com o teu clube já
+                    criado.
+                  </>
+                ) : (
+                  <>
+                    A tua mensagem já está na nossa lista de contactos — não depende de teres um email aberto neste
+                    computador. Respondemos a <span className="font-semibold text-ink">{email.trim()}</span> em dias
+                    úteis.
+                  </>
+                )}
+              </p>
+              <button
+                type="button"
+                onClick={() => {
+                  setStatus("idle");
+                  setName("");
+                  setClub("");
+                  setPhone("");
+                  setAthletes("");
+                  setMessage("");
+                }}
+                className="btn btn-outline mt-7"
+              >
+                Enviar outra mensagem
+              </button>
+            </div>
+          </Reveal>
+        ) : (
         <Reveal>
           <form onSubmit={submit}>
             {/* O assunto primeiro: é ele que decide o resto do formulário. */}
@@ -193,16 +287,23 @@ export default function Contactos() {
               </Field>
 
               <div className="sm:col-span-2">
-                <button type="submit" disabled={!valid} className="btn btn-ink w-full sm:w-auto disabled:opacity-40">
-                  Enviar
+                <button
+                  type="submit"
+                  disabled={!valid || status === "sending"}
+                  className="btn btn-ink w-full sm:w-auto disabled:opacity-40"
+                >
+                  {status === "sending" ? "A enviar…" : "Enviar"}
                 </button>
                 <p className="mt-3 text-[13px] text-ink-3">
-                  Abre o teu email com a mensagem escrita — ficas com cópia do que enviaste.
+                  {status === "error"
+                    ? "Não conseguimos entregar por aqui — a abrir o teu email como alternativa."
+                    : "Cai directamente na nossa lista de contactos, sem depender de teres email configurado."}
                 </p>
               </div>
             </div>
           </form>
         </Reveal>
+        )}
 
         <Reveal i={1}>
           <div className="border-t border-line pt-6">
@@ -216,11 +317,7 @@ export default function Contactos() {
             <div className="mt-10 border-t border-line pt-6">
               <p className="eyebrow">O que acontece a seguir</p>
               <ol className="mt-4 space-y-4">
-                {[
-                  ["Falamos 20 minutos", "Sobre o clube, não sobre o software. Queremos perceber o que te está a custar tempo."],
-                  ["Montamos o clube contigo", "Equipas, escalões, plantel por Excel, mensalidades. Fica pronto a usar."],
-                  ["Trinta dias", "Com a plataforma toda, sem cartão. No fim decides — e se não for para ti, dizes."],
-                ].map(([t, d], i) => (
+                {subject.steps.map(([t, d], i) => (
                   <li key={t} className="flex gap-4">
                     <span className="mt-0.5 font-mono text-[12px] text-ink-4 tabular">0{i + 1}</span>
                     <span>

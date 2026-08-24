@@ -360,6 +360,7 @@ anterior, ou nada.
 | App `apps/platform` — Visão geral, Academias, Crescimento, Registo | **feito** |
 | Contactos: lista, ficha, histórico de conversas | **feito** |
 | Contactos: feed `.ics` para o Google Calendar + "Agendar no Google" | **feito** |
+| Contactos: entrada pública pelo site (`POST /api/site/contacto`) | **feito** — ver `docs/03-estado.md` |
 | Criar academia + convite ao diretor | **feito** (reutiliza o mecanismo de convites) |
 | Papel `platform_app` sem BYPASSRLS | **por fazer** — ver `platform.prisma.ts` |
 | Impersonation ("ver como academia") com MFA | por fazer |

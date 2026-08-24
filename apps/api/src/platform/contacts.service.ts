@@ -52,6 +52,17 @@ export type ContactInput = {
   nextActionNote?: string | null;
 };
 
+/** O que o formulário público do site entrega. Ver `site-contact.controller.ts`. */
+export type SiteContactInput = {
+  name: string;
+  email: string;
+  phone?: string;
+  club?: string;
+  subject: string;
+  athletes?: string;
+  message?: string;
+};
+
 export type TouchInput = {
   channel: ContactChannel;
   note?: string | null;
@@ -144,6 +155,60 @@ export class ContactsService {
 
     await this.platform.audit(admin, "contact.create", "contact", contact.id, { name, club: dto.club ?? null }, ip);
     return this.get(contact.id);
+  }
+
+  /**
+   * Um clube escreveu-nos pelo site — sem sessão, sem administrador identificado.
+   *
+   * ## Porque é que isto existe a par de `create`
+   *
+   * `create` pressupõe alguém do outro lado da mesa: um administrador que abriu o
+   * painel e está a registar um contacto que já fez. Aqui não há ninguém do nosso
+   * lado ainda — é o formulário público do site a entregar o primeiro contacto, e
+   * é exactamente por isso que tem de cair nesta tabela e não ficar preso num
+   * `mailto:` que depende do visitante ter um cliente de email configurado.
+   *
+   * `ownerId` fica por preencher de propósito: não há administrador nenhum
+   * envolvido ainda, e "por atribuir" é um estado visível na lista — não um
+   * contacto escondido dentro da caixa de entrada de uma pessoa.
+   */
+  async createFromSite(dto: SiteContactInput, ip?: string) {
+    const name = dto.name.trim();
+    if (name.length < 2) throw new BadRequestException("O nome é preciso");
+
+    const notes = [
+      `Assunto: ${dto.subject.trim()}`,
+      dto.athletes?.trim() && `Atletas: ${dto.athletes.trim()}`,
+      dto.message?.trim(),
+    ]
+      .filter(Boolean)
+      .join("\n\n");
+
+    const contact = await this.prisma.contact.create({
+      data: {
+        name,
+        email: dto.email.trim().toLowerCase(),
+        phone: dto.phone?.trim() || null,
+        club: dto.club?.trim() || null,
+        notes: notes || null,
+        status: "NOVO",
+      },
+      select: { id: true },
+    });
+
+    // `admin: null` — é o mesmo `AuditLog` que regista impersonation e criação de
+    // clientes, e um contacto do site não tem administrador a assumi-lo. O registo
+    // fica na mesma: diz que existiu, quando, e a partir de que IP.
+    await this.platform.audit(
+      null,
+      "contact.create.site",
+      "contact",
+      contact.id,
+      { name, email: dto.email, club: dto.club ?? null, subject: dto.subject },
+      ip,
+    );
+
+    return { ok: true as const };
   }
 
   async update(admin: PlatformAdminContext, id: string, dto: ContactInput) {

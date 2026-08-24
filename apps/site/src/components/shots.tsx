@@ -338,11 +338,80 @@ export function MembershipShot({ className }: { className?: string }) {
 /* A app da família                                                            */
 /* -------------------------------------------------------------------------- */
 
+const SEMANA_APP = [
+  { d: "SEG", n: 24, hoje: true },
+  { d: "TER", n: 25 },
+  { d: "QUA", n: 26 },
+  { d: "QUI", n: 27, marcado: true },
+  { d: "SEX", n: 28 },
+  { d: "SÁB", n: 29 },
+  { d: "DOM", n: 30 },
+];
+
+/**
+ * Os ícones da barra de navegação da app.
+ *
+ * Traço de 1.6px, 24×24 — a mesma linguagem do `lucide-react` que a app usa a
+ * sério, redesenhada aqui em vez de trazer a biblioteca inteira para o site só por
+ * causa de quatro glifos.
+ */
+function AppTabIcon({ id, className }: { id: string; className?: string }) {
+  const s = { stroke: "currentColor", strokeWidth: 1.7, strokeLinecap: "round" as const, strokeLinejoin: "round" as const, fill: "none" };
+  const p = { viewBox: "0 0 24 24", "aria-hidden": true, className };
+
+  switch (id) {
+    case "hoje": // casa
+      return (
+        <svg {...p}>
+          <path d="M3.5 10.5 12 4l8.5 6.5V20a1 1 0 0 1-1 1h-15a1 1 0 0 1-1-1v-9.5Z" {...s} />
+        </svg>
+      );
+    case "agenda": // calendário
+      return (
+        <svg {...p}>
+          <rect x="3.5" y="5" width="17" height="16" rx="2" {...s} />
+          <path d="M3.5 9.5h17M8 3v4M16 3v4" {...s} />
+        </svg>
+      );
+    case "pagar": // carteira
+      return (
+        <svg {...p}>
+          <rect x="3" y="6" width="18" height="13" rx="2.4" {...s} />
+          <path d="M3 10.5h18" {...s} />
+          <circle cx="16.5" cy="14.5" r="1.1" fill="currentColor" stroke="none" />
+        </svg>
+      );
+    case "perfil": // pessoa
+      return (
+        <svg {...p}>
+          <circle cx="12" cy="8.5" r="3.5" {...s} />
+          <path d="M5 20a7 7 0 0 1 14 0" {...s} />
+        </svg>
+      );
+    default:
+      return null;
+  }
+}
+
+/**
+ * O primeiro ecrã da app da família — "Hoje".
+ *
+ * Reconstruído ao pormenor a partir do ecrã real: o cabeçalho branco (não o herói
+ * de cor que uma app genérica poria aqui), o selector de educando em pastilhas, a
+ * barra escura de "por pagar" antes de qualquer outra coisa — porque é o que mais
+ * precisa de acção — o cartão do próximo treino iluminado pela cor do clube, a
+ * semana em miniatura, e a barra de navegação flutuante em pastilha escura.
+ *
+ * **A largura é a de um telemóvel a sério.** 288px de conteúdo dão a proporção de
+ * um iPhone moderno (perto de 1:2); os 248px que aqui estavam faziam um aparelho
+ * estreito de mais, e um telemóvel com proporções erradas lê-se como maqueta —
+ * exactamente o oposto do que esta peça existe para fazer.
+ */
 export function AppShot({ className, shot = "/shots/app.png" }: { className?: string; shot?: string }) {
   return (
     <div
       className={cx(
-        "relative w-[248px] shrink-0 overflow-hidden rounded-[30px] border-[6px] border-[#0c100f] bg-[#f6f5f2] shadow-[0_24px_60px_-28px_rgb(12_16_15/0.55)]",
+        "relative w-[288px] shrink-0 overflow-hidden rounded-[38px] border-[7px] border-[#0c100f] bg-[#f6f5f2] shadow-[0_24px_60px_-28px_rgb(12_16_15/0.55)]",
         className,
       )}
       aria-hidden
@@ -358,77 +427,197 @@ export function AppShot({ className, shot = "/shots/app.png" }: { className?: st
         />
       )}
 
-      <div className="flex items-center justify-between px-5 pt-2.5 pb-1 text-[9px] font-semibold text-[#1a1917]">
+      <div className="flex items-center justify-between px-4 pt-2.5 pb-1 text-[9px] font-semibold text-[#1a1917]">
         <span>9:41</span>
         <span className="h-[7px] w-[16px] rounded-[2px] border border-[#1a1917]" />
       </div>
 
-      <div
-        className="px-4 pt-3 pb-4 text-white"
-        style={{
-          background:
-            "radial-gradient(120% 140% at 85% -10%, #2c8a7f 0%, transparent 55%), linear-gradient(158deg, #14776d 0%, #0f6b62 42%, #0a4c45 100%)",
-        }}
-      >
-        <div className="flex items-center gap-2">
-          <span className="flex size-6 items-center justify-center rounded-full bg-white/20 text-[9px] font-bold">LC</span>
-          <span className="text-[11px] font-semibold">Life Club</span>
-          <span className="ml-auto text-[9px] text-white/70">Sandra</span>
+      {/* Cabeçalho — branco. O herói de cor entrou só no cartão de mensalidade. */}
+      <div className="flex items-center gap-2 px-4 pt-1.5 pb-3">
+        <span className="flex size-8 shrink-0 items-center justify-center rounded-full bg-[#0f6b62] text-[10px] font-bold text-white">
+          LC
+        </span>
+        <div className="min-w-0">
+          <div className="truncate text-[13px] leading-tight font-semibold text-[#1a1917]">Life Club</div>
+          <div className="truncate text-[9.5px] text-[#8a867c]">Sandra Bragança</div>
         </div>
-
-        <div className="mt-3.5 text-[10px] tracking-[0.06em] text-white/70 uppercase">Mensalidade de agosto</div>
-        <div className="mt-1 flex items-end gap-2">
-          <span className="text-[30px] leading-none font-semibold tracking-[-0.03em] tabular">40,00 €</span>
-          <span className="mb-1 rounded-full bg-white/16 px-2 py-0.5 text-[9px] font-semibold">Vence dia 8</span>
-        </div>
-
-        <div className="mt-3.5 flex h-8 items-center justify-center rounded-[11px] bg-white text-[11px] font-semibold text-[#0a4c45]">
-          Pagar com MB WAY
+        <div className="ml-auto flex items-center gap-2.5">
+          {/* O sino, com o ponto de não lido — o mesmo par que a app mostra. */}
+          <span className="relative flex size-6 items-center justify-center text-[#524f48]">
+            <svg viewBox="0 0 24 24" aria-hidden className="size-[17px]">
+              <path
+                d="M6.5 10a5.5 5.5 0 0 1 11 0c0 3 1 4.5 1.5 5.2H5c.5-.7 1.5-2.2 1.5-5.2Z"
+                stroke="currentColor"
+                strokeWidth="1.7"
+                strokeLinejoin="round"
+                fill="none"
+              />
+              <path d="M10 18.5a2 2 0 0 0 4 0" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" fill="none" />
+            </svg>
+            <span className="absolute top-0.5 right-0.5 size-1.5 rounded-full bg-[#a82a20] ring-2 ring-[#f6f5f2]" />
+          </span>
+          <span className="flex size-7 items-center justify-center rounded-full bg-[#e7f0ee] text-[9px] font-bold text-[#0a4c45]">
+            SB
+          </span>
         </div>
       </div>
 
-      <div className="space-y-2.5 p-3.5">
-        <div className="rounded-[15px] bg-white p-3 shadow-[0_1px_2px_rgb(20_18_15/0.04),0_10px_30px_-16px_rgb(20_18_15/0.14)]">
-          <div className="flex items-center justify-between">
-            <span className="text-[10px] font-semibold tracking-[0.04em] text-[#8a867c] uppercase">Próximo treino</span>
-            <span className="text-[9.5px] text-[#8a867c]">Amanhã</span>
-          </div>
-          <div className="mt-1 text-[13px] font-semibold">18:30 · Campo n.º 2</div>
-          <div className="text-[10.5px] text-[#524f48]">Sub-11 Futebol · Rui Machado</div>
+      {/* Selector de educando — duas pastilhas, a activa em branco com sombra. */}
+      <div className="mx-4 mb-3 flex gap-1 rounded-full bg-[#efede8] p-1">
+        <span className="flex flex-1 items-center justify-center gap-1.5 rounded-full py-1.5 text-[10.5px] font-medium text-[#8a867c]">
+          <span className="flex size-4 items-center justify-center rounded-full bg-[#d3cfc6] text-[6px] font-bold text-white">
+            LB
+          </span>
+          Leonor
+        </span>
+        <span className="relative flex flex-1 items-center justify-center gap-1.5 rounded-full bg-white py-1.5 text-[10.5px] font-semibold text-[#1a1917] shadow-[0_1px_2px_rgb(20_18_15/0.08)]">
+          <span className="flex size-4 items-center justify-center rounded-full bg-[#0f6b62] text-[6px] font-bold text-white">
+            MB
+          </span>
+          Martim
+          <span className="absolute top-0.5 right-2.5 size-1.5 rounded-full bg-[#a82a20]" />
+        </span>
+      </div>
+
+      <div className="px-4">
+        <div className="text-[9px] font-semibold tracking-[0.1em] text-[#8a867c] uppercase">Seg · 24 ago</div>
+        <div className="mt-0.5 text-[19px] leading-tight font-semibold tracking-[-0.02em] text-[#1a1917]">
+          Boa tarde, Sandra
         </div>
 
-        <div className="rounded-[15px] bg-white p-3 shadow-[0_1px_2px_rgb(20_18_15/0.04),0_10px_30px_-16px_rgb(20_18_15/0.14)]">
-          <div className="flex items-center gap-2">
-            <span className="flex size-7 items-center justify-center rounded-full bg-[#e7f0ee] text-[10px] font-bold text-[#0a4c45]">
-              MB
-            </span>
-            <div className="min-w-0 flex-1">
-              <div className="truncate text-[11.5px] font-semibold">Convocado para sábado</div>
-              <div className="truncate text-[10px] text-[#8a867c]">Life Club vs Fão · 10:00</div>
+        {/* Por pagar — vem antes do treino: é o que mais precisa de acção. */}
+        <div className="mt-3 flex items-center gap-2.5 rounded-[15px] bg-[#1a1917] px-3 py-2.5">
+          <span className="flex size-8 shrink-0 items-center justify-center rounded-full bg-white/10 text-white/85">
+            <AppTabIcon id="pagar" className="size-[16px]" />
+          </span>
+          <div className="min-w-0 flex-1">
+            <div className="truncate text-[8.5px] font-semibold tracking-[0.06em] text-[#e79a8f] uppercase">
+              Por pagar · vencida · Martim
             </div>
-            <span className="size-1.5 rounded-full bg-[#0f6b62]" />
+            <div className="truncate text-[12.5px] font-semibold text-white">Mensalidade de agosto</div>
+          </div>
+          <span className="flex shrink-0 items-center gap-1.5 text-[14px] font-semibold text-white tabular">
+            40,00 €
+            <svg viewBox="0 0 24 24" aria-hidden className="size-3 text-white/50">
+              <path d="M9 5l7 7-7 7" stroke="currentColor" strokeWidth="2" fill="none" strokeLinecap="round" strokeLinejoin="round" />
+            </svg>
+          </span>
+        </div>
+
+        {/* O próximo treino, iluminado pela cor do clube. */}
+        <div
+          className="relative mt-2.5 overflow-hidden rounded-[15px] p-3.5 text-white"
+          style={{
+            background:
+              "radial-gradient(120% 140% at 85% -10%, #2c8a7f 0%, transparent 55%), linear-gradient(158deg, #14776d 0%, #0f6b62 42%, #0a4c45 100%)",
+          }}
+        >
+          <div className="flex items-center justify-between">
+            <span className="text-[9px] font-semibold tracking-[0.1em] text-white/75 uppercase">Próximo treino</span>
+            <span className="rounded-full bg-white/18 px-2 py-0.5 text-[8px] font-semibold">HOJE</span>
+          </div>
+          <div className="mt-1.5 flex items-baseline gap-1.5">
+            <span className="text-[26px] leading-none font-semibold tracking-[-0.03em] tabular">18:00</span>
+            <span className="text-[13px] text-white/70 tabular">– 19:30</span>
+          </div>
+          <div className="mt-1 text-[12px] font-semibold">Sub-11 Futebol</div>
+          {/* Sítio e treinador, cada um com o seu sinal — como na app. */}
+          <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-0.5 text-[9.5px] text-white/85">
+            <span className="flex items-center gap-1">
+              <svg viewBox="0 0 24 24" aria-hidden className="size-[11px]">
+                <path
+                  d="M12 21s7-5.5 7-11a7 7 0 1 0-14 0c0 5.5 7 11 7 11Z"
+                  stroke="currentColor"
+                  strokeWidth="1.8"
+                  fill="none"
+                  strokeLinejoin="round"
+                />
+                <circle cx="12" cy="10" r="2.4" stroke="currentColor" strokeWidth="1.8" fill="none" />
+              </svg>
+              Campo 1 · Balneário 3
+            </span>
+            <span className="flex items-center gap-1">
+              <AppTabIcon id="perfil" className="size-[11px]" />
+              Rui Machado
+            </span>
           </div>
         </div>
 
-        <div className="flex gap-2.5">
-          {[
-            ["Presença", "94%"],
-            ["Jogos", "7"],
-          ].map(([l, v]) => (
-            <div key={l} className="flex-1 rounded-[15px] bg-white p-3 shadow-[0_1px_2px_rgb(20_18_15/0.04)]">
-              <div className="text-[9.5px] tracking-[0.04em] text-[#8a867c] uppercase">{l}</div>
-              <div className="mt-0.5 text-[19px] leading-none font-semibold tabular">{v}</div>
+        {/* A semana */}
+        <div className="mt-3.5 flex items-baseline justify-between">
+          <span className="text-[9px] font-semibold tracking-[0.1em] text-[#8a867c] uppercase">Esta semana</span>
+          <span className="text-[9px] font-medium text-[#0f6b62]">Agenda ↗</span>
+        </div>
+        <div className="mt-1.5 flex justify-between">
+          {SEMANA_APP.map((d) => (
+            <div key={d.d} className="flex flex-col items-center gap-1">
+              <span className="text-[7.5px] font-medium text-[#ada89d]">{d.d}</span>
+              <span
+                className={cx(
+                  "flex size-5 items-center justify-center rounded-full text-[9.5px] tabular",
+                  d.hoje ? "bg-[#1a1917] font-semibold text-white" : "text-[#524f48]",
+                )}
+              >
+                {d.n}
+              </span>
+              <span className={cx("size-1 rounded-full", d.marcado ? "bg-[#0f6b62]" : "bg-[#d3cfc6]")} />
             </div>
           ))}
         </div>
+
+        {/* Da academia */}
+        <div className="mt-3.5 text-[9px] font-semibold tracking-[0.1em] text-[#8a867c] uppercase">Da academia</div>
+        <div className="mt-1.5 flex gap-2 rounded-[15px] bg-white p-3 shadow-[0_1px_2px_rgb(20_18_15/0.04),0_10px_30px_-16px_rgb(20_18_15/0.14)]">
+          {/* Megafone: é um aviso da academia, não uma mensagem de alguém. */}
+          <span className="flex size-7 shrink-0 items-center justify-center rounded-full bg-[#e7f0ee] text-[#0a4c45]">
+            <svg viewBox="0 0 24 24" aria-hidden className="size-[14px]">
+              <path
+                d="M4 10v4a1 1 0 0 0 1 1h3l6 4V5l-6 4H5a1 1 0 0 0-1 1Z"
+                stroke="currentColor"
+                strokeWidth="1.7"
+                fill="none"
+                strokeLinejoin="round"
+              />
+              <path d="M17.5 9.5a3.5 3.5 0 0 1 0 5" stroke="currentColor" strokeWidth="1.7" fill="none" strokeLinecap="round" />
+            </svg>
+          </span>
+          <div className="min-w-0">
+            <div className="truncate text-[8.5px] font-medium text-[#8a867c] uppercase">Helena · há 2 dias</div>
+            <div className="text-[11.5px] font-semibold text-[#1a1917]">Torneio de abertura</div>
+            <div className="mt-0.5 text-[9.5px] leading-snug text-[#524f48]">
+              Sub-11 no Complexo da Rodovia, sábado às 9h. Transporte assegurado pela academia.
+            </div>
+          </div>
+        </div>
       </div>
 
-      <div className="flex items-center justify-around border-t border-[#e5e2dc] bg-white/90 px-4 py-2.5">
-        {["Hoje", "Agenda", "Pagar", "Atleta"].map((t, i) => (
-          <span key={t} className={cx("text-[9px] font-medium", i === 0 ? "text-[#0f6b62]" : "text-[#ada89d]")}>
-            {t}
-          </span>
-        ))}
+      {/* Barra de navegação — pastilha escura flutuante, não uma barra a direito. */}
+      <div className="flex justify-center px-5 pt-5 pb-4">
+        <div className="flex items-center gap-1 rounded-full bg-[#1a1917] px-2 py-1.5">
+          {[
+            { id: "hoje", label: "Hoje", on: true },
+            { id: "agenda", label: "Agenda" },
+            { id: "pagar", label: "Pagar", dot: true },
+            { id: "perfil", label: "Perfil" },
+          ].map((it) => (
+            <span
+              key={it.id}
+              aria-label={it.label}
+              className={cx(
+                "flex items-center gap-1.5 rounded-full px-2.5 py-1.5 text-[11px] font-semibold",
+                it.on ? "bg-white text-[#1a1917]" : "text-white/60",
+              )}
+            >
+              <span className="relative flex">
+                <AppTabIcon id={it.id} className="size-[15px]" />
+                {it.dot && (
+                  <span className="absolute -top-0.5 -right-0.5 size-1.5 rounded-full bg-[#a82a20] ring-2 ring-[#1a1917]" />
+                )}
+              </span>
+              {it.on && it.label}
+            </span>
+          ))}
+        </div>
       </div>
     </div>
   );

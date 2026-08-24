@@ -38,6 +38,7 @@ import { PlatformService } from "./platform/platform.service";
 import { PlatformGuard } from "./platform/platform.guard";
 import { PlatformPrisma } from "./platform/platform.prisma";
 import { ContactsController, ContactsCalendarController } from "./platform/contacts.controller";
+import { SiteContactController } from "./platform/site-contact.controller";
 import { ContactsService } from "./platform/contacts.service";
 import { FamilyInviteController, FamilySignupController } from "./family/family-invites.controller";
 import { FamilyInvitesService } from "./family/family-invites.service";
@@ -100,6 +101,8 @@ import { SupabaseAccountsService } from "./auth/supabase-accounts.service";
     FamilySignupController,
     // Público por construção — o token no URL é que autentica. Ver o ficheiro.
     ContactsCalendarController,
+    // Público por construção — é o formulário de contacto do site de marketing.
+    SiteContactController,
   ],
   providers: [
     // O throttler como guard global — aplica-se a todas as rotas, incluindo as

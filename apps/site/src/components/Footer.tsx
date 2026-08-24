@@ -1,5 +1,6 @@
 import { Link } from "react-router-dom";
 import { CONTACT_EMAIL } from "@/lib/content";
+import { PAYMENT_METHODS, PaymentIcon } from "./PaymentIcons";
 import { Wordmark } from "./primitives";
 
 const COLUMNS: { title: string; links: { to: string; label: string; external?: boolean }[] }[] = [
@@ -44,6 +45,15 @@ export function Footer() {
             <a href={`mailto:${CONTACT_EMAIL}`} className="link mt-4 inline-block text-[14.5px] text-white">
               {CONTACT_EMAIL}
             </a>
+
+            {/* Os meios de pagamento, discretos — o rodapé é onde se confirma, não onde se vende. */}
+            <ul className="mt-7 flex flex-wrap gap-2.5" aria-label="Meios de pagamento aceites">
+              {PAYMENT_METHODS.map((m) => (
+                <li key={m.id} title={m.label}>
+                  <PaymentIcon id={m.id} className="size-[18px] text-ink-4" />
+                </li>
+              ))}
+            </ul>
           </div>
 
           {COLUMNS.map((col) => (

@@ -139,7 +139,28 @@ try {
 await db.query("ROLLBACK");
 check("e recusa `ContactTouch` também", recusadoTouch);
 
+console.log("\n=== O formulário do site — sem sessão nenhuma ===");
+const siteBody = {
+  name: `Clube de Teste ${stamp}`,
+  email: `clube-${stamp}@exemplo.pt`,
+  club: "Clube de Teste FC",
+  subject: "Experimentar a plataforma",
+  athletes: "60",
+  message: "Viemos de Excel e WhatsApp. Queríamos ver a plataforma com o nosso plantel.",
+};
+const fromSite = await call(null, "POST", "/api/site/contacto", siteBody);
+check("aceita sem token nenhum", fromSite.status === 201 || fromSite.status === 200, JSON.stringify(fromSite).slice(0, 120));
+
+const painel = (await call(admin, "GET", "/api/platform/contactos")).body;
+const viaSite = painel.find((c) => c.email === siteBody.email);
+check("cai na lista do painel", Boolean(viaSite));
+check("sem administrador atribuído — fica por pegar", viaSite?.owner === null);
+check("guarda o assunto e a mensagem nas notas", viaSite?.notes?.includes("Experimentar a plataforma") && viaSite?.notes?.includes("Excel"));
+
+check("um campo obrigatório em falta é recusado", (await call(null, "POST", "/api/site/contacto", { name: "Sem email", subject: "Outro assunto" })).status === 400);
+
 console.log("\n=== Limpeza ===");
+if (viaSite) await call(admin, "DELETE", `/api/platform/contactos/${viaSite.id}`);
 check("apagar devolve ok", (await call(admin, "DELETE", `/api/platform/contactos/${id}`)).status === 200);
 check("e o histórico vai com ele", (await db.query('SELECT count(*)::int AS n FROM "ContactTouch" WHERE "contactId" = $1', [id])).rows[0].n === 0);
 await db.end();

@@ -1,6 +1,8 @@
 import { Link } from "react-router-dom";
 import { ProductFrame, Reveal, SectionMark, cx } from "@/components/primitives";
 import { AppShot, ConsoleShot } from "@/components/shots";
+import { Socios } from "@/sections/product";
+import { Roteiro } from "@/sections/trust";
 import { MODULES } from "@/lib/content";
 
 /**
@@ -90,6 +92,9 @@ export default function Software() {
         </div>
       </section>
 
+      {/* Sócios — fecha a lista de módulos com a única peça que é pública. */}
+      <Socios n="—" />
+
       {/* Fundações — a parte técnica, para quem pergunta */}
       <section className="dark band">
         <div className="wrap grid gap-12 lg:grid-cols-[minmax(0,0.8fr)_minmax(0,1.2fr)] lg:gap-20">
@@ -120,6 +125,9 @@ export default function Software() {
           </Reveal>
         </div>
       </section>
+
+      {/* O roteiro — o que ainda não existe, dito com clareza antes do fecho. */}
+      <Roteiro n="—" />
 
       <section className="band-tight border-t border-line">
         <div className="wrap flex flex-wrap items-center justify-between gap-6">

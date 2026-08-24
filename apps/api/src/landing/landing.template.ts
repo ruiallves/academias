@@ -83,10 +83,21 @@ export function renderLanding(opts: {
   /** Onde autenticar. A `anonKey` é pública por desenho — é o que o browser usa. */
   supabaseUrl: string;
   supabaseAnonKey: string;
+  /**
+   * Chegou por um link de convite de família (`/familia/:token`).
+   *
+   * Isto decide a composição de computador com mais força do que o dispositivo:
+   * um convite de família **é sempre** sobre um pai a instalar a app, mesmo que o
+   * link tenha sido aberto num portátil — a caminho do telemóvel, colado num
+   * email, ou só a testar. Sem esta distinção, esse pai caía no ecrã de login de
+   * staff, que é o beco sem saída que esta página inteira existe para evitar.
+   */
+  hasFamilyInvite?: boolean;
 }): string {
   const { academy, platform, pageUrl, familyUrl, consoleUrl, supabaseUrl, supabaseAnonKey } = opts;
   const inAppBrowser = opensInAppBrowser(opts.userAgent);
   const desktop = isDesktop(opts.userAgent);
+  const familyInviteOnDesktop = desktop && Boolean(opts.hasFamilyInvite);
   const name = esc(academy.name);
   const shortName = esc(academy.shortName);
   const signal = /^#[0-9a-f]{6}$/i.test(academy.signalColor) ? academy.signalColor : "#0f6b62";
@@ -401,7 +412,13 @@ ${academy.logoUrl ? `<meta property="og:image" content="${esc(academy.logoUrl)}"
 </style>
 </head>
 <body class="${desktop ? "desktop" : ""}">
-${desktop ? renderDesktop(academy, shortName, name) : renderMobile(academy, shortName, platform, inAppBrowser, familyUrl)}
+${
+  familyInviteOnDesktop
+    ? renderDesktopFamilyInvite(academy, shortName, name, pageUrl)
+    : desktop
+      ? renderDesktop(academy, shortName, name)
+      : renderMobile(academy, shortName, platform, inAppBrowser, familyUrl)
+}
 
 <script>
 (function () {
@@ -503,6 +520,30 @@ ${desktop ? renderDesktop(academy, shortName, name) : renderMobile(academy, shor
         ? '← Afinal quero instalar a app'
         : 'És treinador, diretor ou do departamento clínico? Entrar →';
       if (opening) document.getElementById('email').focus();
+    });
+  }
+
+  // Copiar o link do convite — só existe na composição de computador com convite
+  // de família; nas outras, os elementos não existem e este bloco não faz nada.
+  var linkInput = document.getElementById('family-link');
+  var linkCopy = document.getElementById('family-link-copy');
+  var linkNote = document.getElementById('family-link-note');
+  if (linkInput && linkCopy) {
+    linkCopy.addEventListener('click', function () {
+      var done = function () {
+        linkCopy.textContent = 'Copiado';
+        if (linkNote) linkNote.hidden = false;
+        setTimeout(function () { linkCopy.textContent = 'Copiar link'; }, 2000);
+      };
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(linkInput.value).then(done).catch(function () {
+          linkInput.select();
+        });
+      } else {
+        // Sem navigator.clipboard (contexto não seguro, navegador antigo):
+        // seleccionar o texto é o que resta — a pessoa copia com Ctrl+C.
+        linkInput.select();
+      }
     });
   }
 
@@ -668,6 +709,86 @@ function renderDesktop(academy: AcademyBranding, shortName: string, name: string
       </p>
       <button class="btn-quiet" type="button" id="close-install">Fechar</button>
     </div>
+  </div>`;
+}
+
+/**
+ * Computador, mas com um convite de família na mão.
+ *
+ * ## Porque é que isto não é `renderDesktop`
+ *
+ * `renderDesktop` parte do princípio de que quem abriu o link é staff — é a
+ * aposta certa para `clube.academias.pt` sozinho. Mas um convite de família
+ * (`?convite=...`) já respondeu a essa pergunta: só um pai o recebe. Mostrar-lhe
+ * um formulário de login sobre isso era ignorar a única coisa que já se sabe
+ * sobre quem está a olhar para o ecrã.
+ *
+ * A acção aqui não é instalar — não se instala uma PWA de telemóvel num
+ * computador — é **levar o link para o telemóvel**: copiar e colar numa
+ * mensagem, ou abrir directamente se, afinal, isto está a correr num telemóvel
+ * que o `User-Agent` não apanhou (acontece com alguns navegadores em modo
+ * ambiente de trabalho).
+ *
+ * O login de staff continua acessível — reaproveita os mesmos `id`s
+ * (`show-login`, `install-panel`, `login-panel`) que a versão de telemóvel usa,
+ * por isso o alternar entre os dois já funciona sem JavaScript novo.
+ */
+function renderDesktopFamilyInvite(academy: AcademyBranding, shortName: string, name: string, pageUrl: string): string {
+  return `  <div class="split">
+    <section class="split-form">
+      <div class="inner">
+        <div class="mark" style="margin:0 0 26px">${esc(academy.mark)}</div>
+
+        <div id="install-panel">
+          <p class="eyebrow" style="text-align:left">Convite da família</p>
+          <h1>Abre isto no teu telemóvel</h1>
+          <p class="subtitle" style="text-align:left">
+            A aplicação da ${name} é feita para o telemóvel. Copia o link e abre-o lá — numa mensagem a ti
+            próprio, no WhatsApp, ou no email.
+          </p>
+
+          <div class="panel">
+            <label class="field" style="margin-bottom:10px">
+              <span>O teu link</span>
+              <input type="text" id="family-link" value="${esc(pageUrl)}" readonly />
+            </label>
+            <button class="btn" type="button" id="family-link-copy">Copiar link</button>
+            <div class="notice" id="family-link-note" hidden>Copiado. Já podes colá-lo no telemóvel.</div>
+          </div>
+
+          <ol class="steps" style="margin-top:22px">
+            <li>Abre o link no teu telemóvel</li>
+            <li>Instala a app da <strong>${shortName}</strong> a partir daí</li>
+            <li>Dentro da app, cria conta e identifica o teu filho pelo NIF e data de nascimento</li>
+          </ol>
+        </div>
+
+        <div class="panel" id="login-panel" hidden>
+          ${loginForm()}
+        </div>
+
+        <p class="install-aside">
+          <button type="button" class="staff-link" id="show-login" style="text-align:left;padding:0">
+            És treinador, diretor ou do departamento clínico? Entrar →
+          </button>
+        </p>
+      </div>
+    </section>
+
+    <aside class="split-brand">
+      <div>
+        <p class="eyebrow" style="text-align:left;color:rgba(255,255,255,0.7);margin-bottom:14px">
+          ${esc(academy.slug)}.academias.pt
+        </p>
+        <h2 class="academy-name">${shortName}</h2>
+        <p class="claim">
+          Treinos, convocatórias, presenças e mensalidades — tudo o que precisas de saber sobre o teu filho, na
+          app oficial da ${name}.
+        </p>
+      </div>
+
+      <p class="foot">Uma academia, um endereço. Cada clube tem o seu.</p>
+    </aside>
   </div>`;
 }
 

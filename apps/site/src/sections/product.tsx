@@ -1,5 +1,6 @@
 import { Link } from "react-router-dom";
 import { ProductFrame, Reveal, SectionMark, cx } from "@/components/primitives";
+import { PAYMENT_METHODS, PaymentIcon } from "@/components/PaymentIcons";
 import { AppShot, ConsoleShot, MembershipShot } from "@/components/shots";
 
 /* ========================================================================== */
@@ -238,15 +239,14 @@ const PASSOS = [
 /**
  * Os meios de pagamento.
  *
- * Emblemas tipográficos e não logótipos: as marcas MB WAY, Multibanco e Apple Pay
- * têm regras de utilização próprias, e pôr um PNG apanhado da internet numa página
- * comercial é o tipo de coisa que dá uma carta de advogado.
+ * Pictogramas e não logótipos — ver `components/PaymentIcons.tsx`. As marcas MB
+ * WAY, Multibanco e Apple Pay têm regras de utilização próprias, e pôr uma versão
+ * "parecida" numa página comercial é o tipo de coisa que dá uma carta de advogado.
  *
  * Para usar os oficiais, largar os ficheiros em `public/logos/` (a euPago fornece o
- * kit de marca aos clientes) e trocar o texto pela imagem — a moldura já está feita.
+ * kit de marca aos clientes) e trocar o `<PaymentIcon>` pela imagem — a moldura já
+ * está feita.
  */
-const MEIOS = ["MB WAY", "Multibanco", "Cartão", "Apple Pay", "Google Pay"];
-
 export function Pagamentos() {
   return (
     <section id="pagamentos" className="band border-t border-line bg-paper-2">
@@ -299,12 +299,13 @@ export function Pagamentos() {
               </div>
 
               <ul className="flex flex-wrap gap-2">
-                {MEIOS.map((m) => (
+                {PAYMENT_METHODS.map((m) => (
                   <li
-                    key={m}
-                    className="flex h-[46px] min-w-[104px] items-center justify-center rounded-[3px] border border-line-2 px-4 text-[13.5px] font-semibold tracking-[-0.01em]"
+                    key={m.id}
+                    className="flex h-[52px] min-w-[108px] items-center gap-2 rounded-[3px] border border-line-2 px-3.5"
                   >
-                    {m}
+                    <PaymentIcon id={m.id} className="size-[18px] shrink-0 text-ink-3" />
+                    <span className="text-[13px] font-semibold tracking-[-0.01em]">{m.label}</span>
                   </li>
                 ))}
               </ul>
@@ -372,12 +373,12 @@ export function Scouting() {
  * de atletas — recebe sócios, de qualquer pessoa da terra, por um link. E o cartão
  * preenche-se enquanto a pessoa escreve o nome.
  */
-export function Socios() {
+export function Socios({ n = "07" }: { n?: string } = {}) {
   return (
     <section id="socios" className="band border-t border-line bg-paper-2">
       <div className="wrap">
         <Reveal>
-          <SectionMark n="07">Sócios</SectionMark>
+          <SectionMark n={n}>Sócios</SectionMark>
         </Reveal>
 
         <div className="mt-8 grid gap-12 lg:grid-cols-[minmax(0,0.85fr)_minmax(0,1.15fr)] lg:items-center lg:gap-16">

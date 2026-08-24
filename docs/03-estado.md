@@ -439,6 +439,40 @@ Largar `consola.png`, `app.png` e `socios.png` em `apps/site/public/shots/` subs
 as reconstruções automaticamente; se um ficheiro falhar, a reconstrução volta sozinha
 (ver `public/shots/LEIA-ME.md`).
 
+### O formulário de contacto cai na nossa CRM
+
+`POST /api/site/contacto` — público, sem sessão, apertado a 5 pedidos por minuto
+por IP (`site-contact.controller.ts`). Grava directamente na tabela `Contact` que o
+Platform Admin lista em **Contactos** (ver `docs/04-plataforma.md`), sem
+administrador atribuído — fica "por pegar" até alguém do lado de cá o assumir.
+
+Substituiu um `mailto:` que era a única via. Um botão que só abre o cliente de
+email não garante nada: sem cliente configurado, ou com o separador fechado antes
+de carregar em enviar, o contacto nunca chegava a lado nenhum — e a página dizia
+"aberto o teu email" na mesma. Agora a mensagem cai na base de dados antes de o
+formulário dizer que está feito; o email directo continua disponível para quem o
+preferir, mas deixou de ser o único caminho, e serve de recurso automático se o
+pedido à API falhar.
+
+Verificado por `npm run test:contacts` (33 testes), que cobre também esta rota:
+aceita sem token, aparece na lista sem dono, guarda o assunto e a mensagem, e
+recusa um pedido sem email.
+
+### O convite de família não cai no login de staff
+
+A landing (`apps/api/src/landing/landing.template.ts`) decide a composição pelo
+dispositivo — telemóvel instala, computador entra — mas um link de convite de
+família (`?convite=...`) já respondeu a essa pergunta sozinho: só um pai o recebe,
+mesmo que o abra num computador a caminho do telemóvel. Sem isso, esse pai caía no
+formulário de login da consola.
+
+Agora `hasFamilyInvite` sobrepõe-se ao dispositivo: com o convite presente, o
+computador mostra uma vista dedicada — "abre isto no teu telemóvel", com o link
+para copiar e os três passos a seguir — em vez do ecrã de "Entrar". O login de
+staff continua acessível por um botão discreto, reaproveitando os mesmos `id`s da
+composição de telemóvel (`show-login`, `install-panel`, `login-panel`), por isso o
+alternar entre os dois não precisou de JavaScript novo.
+
 ### O roteiro é uma linha do tempo
 
 Com estações, não com datas exactas, e com a ordem à vista — integrações primeiro,
