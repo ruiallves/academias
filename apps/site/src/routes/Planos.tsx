@@ -1,5 +1,5 @@
 import { Link } from "react-router-dom";
-import { Reveal, SectionMark, cx } from "@/components/primitives";
+import { Reveal, cx } from "@/components/primitives";
 import { Precos } from "@/sections/Precos";
 import { FAQ, MODULES } from "@/lib/content";
 
