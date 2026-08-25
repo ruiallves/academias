@@ -4,6 +4,16 @@ import tailwindcss from "@tailwindcss/vite";
 import { fileURLToPath, URL } from "node:url";
 
 export default defineConfig(({ command }) => ({
+  /**
+   * Em produção a consola é servida pela API, na origem do clube:
+   * `fafe.academias.pt/consola`. O `base` faz o Vite escrever os caminhos dos
+   * bundles com esse prefixo — sem ele, o `index.html` pediria `/assets/…` e
+   * apanhava a landing do clube em vez do JavaScript.
+   *
+   * Em `vite dev` fica na raiz: a consola continua em `localhost:5173/`, sem
+   * prefixo nenhum, como sempre esteve.
+   */
+  base: command === "build" ? "/consola/" : "/",
   plugins: [react(), tailwindcss()],
   resolve: {
     alias: {

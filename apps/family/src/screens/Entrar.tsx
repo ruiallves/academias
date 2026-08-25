@@ -14,6 +14,12 @@ import { cx } from "@/ui";
  * telemóvel e da app reinstalada — existe, mas não é o que está a acontecer agora.
  * Por isso criar conta é o botão cheio, e entrar é o discreto por baixo.
  *
+ * **Sem convite os papéis trocam.** Quem abre a app pelo ícone, sem link nenhum, já
+ * a instalou antes: é alguém a voltar, e o que quer é entrar. Pedir-lhe primeiro "o
+ * link do clube" era responder à pergunta errada — ninguém vai buscar um link para
+ * abrir uma app que já tem. Colar o link fica como o que é, uma saída de recurso
+ * para quem o perdeu entre instalar e abrir, e vive numa linha de texto.
+ *
  * ## Porque é que o educando se identifica pelo NIF e pela data de nascimento
  *
  * Porque o link é partilhado. Vai para o grupo de WhatsApp dos pais e reencaminha-se
@@ -95,7 +101,7 @@ export default function Entrar({ onEntered }: { onEntered: () => void }) {
             ? "Entra com a conta que já tens."
             : clube
               ? "Treinos, pagamentos e o progresso do teu filho, num sítio só."
-              : "Abre o link que o clube te mandou para criares conta."}
+              : "Entra com a conta que tens. Para criares uma, abre o link que o clube te enviou."}
         </p>
       </header>
 
@@ -144,22 +150,37 @@ function Escolha({
   const [colar, setColar] = useState(false);
   const [valor, setValor] = useState("");
 
-  return (
-    <div className="space-y-3">
-      {temConvite ? (
+  // Chegou por convite: criar conta é o que está a acontecer agora.
+  if (temConvite) {
+    return (
+      <div className="space-y-3">
         <button type="button" onClick={onCriar} className="cta w-full">
           Criar conta
         </button>
-      ) : colar ? (
+        <button type="button" onClick={onEntrar} className="cta-quiet w-full">
+          Já tenho conta — entrar
+        </button>
+      </div>
+    );
+  }
+
+  // Abriu a app pelo ícone: é alguém a voltar.
+  return (
+    <div className="space-y-3">
+      <button type="button" onClick={onEntrar} className="cta w-full">
+        Entrar
+      </button>
+
+      {colar ? (
         <form
           onSubmit={(e) => {
             e.preventDefault();
             if (valor.trim()) onColar(valor);
           }}
-          className="space-y-2"
+          className="space-y-2 pt-1"
         >
           {/*
-            O caminho de recurso: quem instalou a app e perdeu o link pelo caminho
+            A saída de recurso: quem instalou a app e perdeu o link pelo caminho
             — abriu-a pelo ícone em vez do botão — cola-o aqui. Aceita o link
             inteiro, que é o que a pessoa tem no WhatsApp.
           */}
@@ -170,19 +191,22 @@ function Escolha({
             autoFocus
             className={INPUT}
           />
-          <button type="submit" className="cta w-full">
+          <button type="submit" className="cta-quiet w-full">
             Continuar
           </button>
         </form>
       ) : (
-        <button type="button" onClick={() => setColar(true)} className="cta w-full">
-          Tenho o link do clube
-        </button>
+        <p className="pt-1 text-center text-[13px] leading-relaxed text-ink-3">
+          Ainda não tens conta? Abre o link que o clube te enviou.{" "}
+          <button
+            type="button"
+            onClick={() => setColar(true)}
+            className="font-medium text-ink underline underline-offset-2"
+          >
+            Tenho-o aqui
+          </button>
+        </p>
       )}
-
-      <button type="button" onClick={onEntrar} className="cta-quiet w-full">
-        Já tenho conta — entrar
-      </button>
     </div>
   );
 }

@@ -110,18 +110,62 @@ Tipos do MVP: `payment.received` `payment.pending` `payment.failed` `payment.due
 
 `Academy { slug, name, logoUrl, signalColor, appIcon }`.
 
-A PWA dos pais serve-se em `{slug}.dominio.pt`. O `manifest.json` é gerado por
-tenant a partir do slug — nome, ícone e `theme_color` da academia. Em runtime a app
-escreve `--color-signal` no `:root`. Mais nada muda.
+### Uma origem por clube
+
+`fafe.academias.pt` é o Fafe. `cdloureiro.academias.pt` é o CD Loureiro. As duas
+são o **mesmo processo** — o domínio não escolhe a aplicação, só diz ao DNS para
+onde mandar o pedido; quem escolhe o que responde é o caminho.
+
+| Caminho | O que serve |
+| --- | --- |
+| `/` | a landing do clube (instalar a app, ou entrar) |
+| `/ser-socio` | a adesão a sócio |
+| `/convite/:token` · `/familia/:token` | os convites |
+| `/consola/*` | a consola (estáticos do build do Vite) |
+| `/app/*` | a PWA das famílias |
+| `/manifest.webmanifest` | gerado, com a marca do clube |
+| `/api/*` | a API |
+
+Duas coisas decidem esta forma, e não são de arrumação:
+
+1. **A instalação de uma PWA é same-origin.** O manifest, o service worker, os
+   ícones e a `start_url` têm de estar na mesma origem da página que oferece a
+   instalação — e essa página é a landing do clube. Uma app noutro domínio não se
+   instala a partir do link que o diretor manda ao pai, que é o único caminho que
+   ela tem.
+2. **O manifest tem de ser por clube** — nome, cor e ícone da academia. Só o
+   servidor os sabe. É o que faz o pai instalar "Academia Fafe" e não o nosso nome.
+
+De lambuja: a consola e a app deixam de ser cross-origin (sem CORS, sem preflight),
+e a entrega da sessão da landing para a consola volta a atravessar pelo
+armazenamento do browser em vez de ir no fragmento do URL.
+
+Fora desta forma ficam os dois clientes que não pertencem a clube nenhum, ambos no
+Vercel: o site (`academias.pt`) e o painel da plataforma (`admin.academias.pt`).
+São eles a razão de `api.academias.pt` continuar a existir.
+
+Peças: `tenant/tenant.ts` (o `Host` → slug, com `TENANT_DOMAIN` e a lista de
+subdomínios reservados), `tenant/tenant.middleware.ts` (a reescrita da raiz para
+`/l/:slug/…`), `tenant/tenant-assets.controller.ts` (o manifest) e `serveApps` em
+`main.ts` (os estáticos). O build é `npm run build:server`.
+
+> O middleware está registado com `app.use()` no `main.ts` e **não** em
+> `AppModule.configure`: no Express 5 o `forRoutes("*")` do Nest deixou de ser um
+> apanha-tudo, e só a raiz era reescrita — em silêncio.
+
+Em runtime a app escreve `--color-signal` no `:root`. Mais nada muda.
 
 A landing page da academia tem de ser renderizada no servidor: os pais recebem o link
 por WhatsApp e uma SPA não devolve OG tags. É a única peça de SSR do sistema — um
 endpoint no NestJS que devolve HTML, não uma app Next. Implementado em
 `apps/api/src/landing/` (`GET /l/:slug`): `landing.template.ts` é uma função pura
 (academia + plataforma detectada do User-Agent → HTML), `landing.service.ts` é a
-única coisa que sabe de onde vêm os dados da academia — hoje uma constante, amanhã
-`prisma.academy.findFirst`. Em produção o `:slug` vem do subdomínio, não do
-caminho; falta só a reescrita de `Host` → parâmetro num middleware.
+única coisa que sabe de onde vêm os dados da academia.
+
+Em produção o `:slug` vem do subdomínio e não do caminho: `TenantMiddleware`
+reescreve `fafe.academias.pt/ser-socio` para `/l/fafe/sersocio` antes de o router
+lhe tocar, e nenhum controlador precisou de mudar. Em desenvolvimento o host é
+`localhost`, nada é reescrito, e `/l/:slug/…` continua a ser o caminho de sempre.
 
 ## Estado actual
 

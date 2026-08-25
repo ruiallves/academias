@@ -36,7 +36,7 @@ const GESTAO = [
   },
   {
     t: "O dinheiro do clube num sítio",
-    d: "Mensalidades por escalão ou por atleta, quotas de sócio, e a dívida real de sempre — não só a do mês. Sem folha paralela para saber quem está em falta.",
+    d: "Mensalidades por escalão ou por atleta, quotas de sócio, e a dívida real de sempre.",
   },
 ];
 
@@ -177,7 +177,7 @@ export function Familias() {
         <Reveal i={1}>
           <h2 className="display d2 mt-7 max-w-[17ch]">A parte do produto que os pais vêem todos os dias.</h2>
           <p className="lede mt-5">
-            É aqui que um clube deixa de parecer amador. A família instala a app do clube e passa a saber tudo o que
+            A família instala a app do clube e passa a saber tudo o que
             precisa sem perguntar a ninguém.
           </p>
         </Reveal>

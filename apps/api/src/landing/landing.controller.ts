@@ -6,6 +6,7 @@ import { LandingService } from "./landing.service";
 import { detectPlatform, renderLanding } from "./landing.template";
 import { renderMembershipPage } from "./membership.template";
 import { MembersService } from "../members/members.service";
+import type { TenantRequest } from "../tenant/tenant";
 
 /**
  * A porta de entrada da academia.
@@ -87,8 +88,21 @@ export class LandingController {
     }
 
     const userAgent = req.headers["user-agent"] ?? "";
-    const familyOrigin = this.config.get<string>("FAMILY_ORIGIN") ?? "http://localhost:5174";
-    const consoleOrigin = this.config.get<string>("CONSOLE_ORIGIN") ?? "http://localhost:5173";
+
+    /*
+     * Onde vivem a app e a consola, vistas desta página.
+     *
+     * Quando o pedido chega por um domínio de clube (`fafe.academias.pt`), as duas
+     * são servidas por este mesmo servidor, e os endereços são caminhos: mesma
+     * origem, sem CORS, e a sessão passa para a consola pelo armazenamento do
+     * browser em vez de ir no fragmento do URL.
+     *
+     * Em desenvolvimento cada app tem o seu `vite dev` numa porta própria, e aí
+     * são endereços absolutos — o que as variáveis de ambiente sempre disseram.
+     */
+    const tenant = (req as Request & TenantRequest).tenantSlug ?? null;
+    const familyBase = tenant ? "/app" : (this.config.get<string>("FAMILY_ORIGIN") ?? "http://localhost:5174");
+    const consoleUrl = tenant ? "/consola" : (this.config.get<string>("CONSOLE_ORIGIN") ?? "http://localhost:5173");
 
     return renderLanding({
       academy,
@@ -98,7 +112,7 @@ export class LandingController {
       // O slug segue para a PWA como pista de tenant em desenvolvimento — em
       // produção o subdomínio já a carrega sozinha, isto não substitui isso.
       familyUrl:
-        `${familyOrigin}/?academia=${encodeURIComponent(slug)}` +
+        `${familyBase}/?academia=${encodeURIComponent(slug)}` +
         (convite ? `&convite=${encodeURIComponent(convite)}` : ""),
       // Só a presença do token importa aqui, não o valor: é o que diz à página que
       // quem chegou é um pai com um convite, e não alguém que encontrou o link do
@@ -107,7 +121,7 @@ export class LandingController {
       // no ecrã de login de staff, que é exactamente o beco sem saída que esta
       // página existe para evitar.
       hasFamilyInvite: Boolean(convite),
-      consoleUrl: consoleOrigin,
+      consoleUrl,
       // A anon key é pública por desenho — é a que o browser usa para autenticar.
       // A service-role nunca sai do servidor.
       supabaseUrl: this.config.getOrThrow<string>("SUPABASE_URL").replace(/\/$/, ""),

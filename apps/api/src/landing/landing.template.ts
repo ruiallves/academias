@@ -440,10 +440,19 @@ ${
     if (first) first.focus();
   }
 
-  // O service worker é metade do critério de instalabilidade — sem ele o Chrome
-  // não dispara 'beforeinstallprompt' e só oferece um atalho de browser.
+  /*
+    O service worker é metade do critério de instalabilidade — sem ele o Chrome
+    não dispara 'beforeinstallprompt' e só oferece um atalho de browser.
+
+    O ficheiro vive em /app/sw.js (é o build da app da familia) mas o ambito
+    pedido e a raiz: tem de controlar a start_url da app **e** esta pagina, que
+    e a que oferece a instalacao. O que torna isso legal e o cabecalho
+    'Service-Worker-Allowed: /' que a API envia com o ficheiro — ver
+    'serveApps' em main.ts. Sem esse cabecalho o registo e recusado, e por isso
+    o catch e silencioso: em desenvolvimento a app nao esta montada aqui.
+  */
   if ('serviceWorker' in navigator) {
-    navigator.serviceWorker.register('/sw.js').catch(function () {});
+    navigator.serviceWorker.register('/app/sw.js', { scope: '/' }).catch(function () {});
   }
 
   var desktop = document.body.classList.contains('desktop');
@@ -644,7 +653,13 @@ ${
                * logs de acesso nem em cabeçalhos Referer. A consola apaga-o do URL
                * assim que o lê.
                */
-              var sameOrigin = consoleUrl.indexOf(location.origin) === 0;
+              /*
+                Um caminho ('/consola') e sempre a mesma origem — e e essa a
+                forma normal em producao, onde a consola e servida por este
+                mesmo servidor. So um endereco absoluto para outro sitio e que
+                precisa da entrega pelo fragmento.
+              */
+              var sameOrigin = consoleUrl.charAt(0) === '/' || consoleUrl.indexOf(location.origin) === 0;
               location.href = sameOrigin
                 ? consoleUrl
                 : trimSlash(consoleUrl) + '/#s=' + encodeURIComponent(btoa(JSON.stringify(session)));

@@ -4,9 +4,17 @@ build/
 .env
 .env.*
 !.env.example
+# Os `.env.production` são versionados: não têm segredos — só dizem "mesma
+# origem" e a chave `anon` do Supabase, que é pública por desenho. Sem eles um
+# build feito localmente herdava o `.env.local` e cozia `localhost` no bundle.
+!.env.production
 *.log
 .DS_Store
 .vite/
 coverage/
 apps/api/prisma/*.db
 .verify/
+
+# Gerado por `npm run build:web`: os builds da consola e da app da família,
+# copiados para dentro da API para esta os servir. Nunca se edita nada aqui.
+apps/api/public/

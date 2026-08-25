@@ -27,10 +27,20 @@ captureFromUrl();
 
 applyBrand();
 
+/**
+ * O prefixo onde a app vive: `/app/` em produção, `/` em desenvolvimento.
+ *
+ * Vem do `base` do Vite para não haver dois sítios a dizer a mesma coisa. Sem
+ * `basename`, o react-router lia `/app/pagamentos` como uma rota chamada "app" e
+ * caía no `Navigate to="/"` — a app abria sempre no ecrã de hoje, viesse de onde
+ * viesse.
+ */
+const BASE = import.meta.env.BASE_URL.replace(/\/$/, "");
+
 createRoot(document.getElementById("root")!).render(
   <StrictMode>
     <StandaloneGate>
-      <BrowserRouter>
+      <BrowserRouter basename={BASE || undefined}>
         <App />
       </BrowserRouter>
     </StandaloneGate>

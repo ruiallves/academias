@@ -16,7 +16,8 @@ import type { Athlete } from "@/data/types";
  * pensar e o pai recebe um aviso que muda daí a dez minutos.
  */
 
-const BASE = (import.meta.env.VITE_API_URL as string | undefined) ?? "http://localhost:3000";
+// Mesma origem em produção, `localhost` só em dev — ver `lib/http.ts`.
+const BASE = (import.meta.env.VITE_API_URL as string | undefined) ?? (import.meta.env.DEV ? "http://localhost:3000" : "");
 
 async function send(path: string, method = "POST", body?: unknown): Promise<void> {
   const raw = sessionStorage.getItem("academia.session");

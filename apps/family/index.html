@@ -9,6 +9,13 @@
     <meta name="apple-mobile-web-app-title" content="Life Club" />
     <link rel="apple-touch-icon" href="/icon-192.png" />
     <link rel="icon" href="/icon-192.png" />
+    <!--
+      O manifest vem da API, com a marca do clube. O Vite prefixa o `base` a
+      caminhos absolutos daqui, por isso em produção isto pede
+      `/app/manifest.webmanifest` — que a API também serve, com o mesmo conteúdo
+      do da raiz. Ver `tenant-assets.controller.ts`.
+    -->
+    <link rel="manifest" href="/manifest.webmanifest" />
     <title>Academia Life Club</title>
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />

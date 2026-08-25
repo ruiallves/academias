@@ -17,7 +17,20 @@ import { readSession } from "@/lib/session";
  * verifica isso. Sem essa verificação seria uma porta aberta.
  */
 
-const BASE = (import.meta.env.VITE_API_URL as string | undefined) ?? "http://localhost:3000";
+/**
+ * Onde está a API.
+ *
+ * Vazio em produção — **a mesma origem**. A consola é servida pela própria API,
+ * em `{clube}.academias.pt/consola`, e os pedidos vão para `{clube}.academias.pt/api`:
+ * sem CORS, sem preflight, e sem uma variável de ambiente por clube.
+ *
+ * O fallback para `localhost:3000` é só de desenvolvimento, e está atrás do
+ * `import.meta.env.DEV` de propósito: antes era o valor por omissão em qualquer
+ * build, e um deploy sem `VITE_API_URL` saía com a consola a falar para o
+ * `localhost` de quem a abrisse. Falhava em produção, em silêncio, no browser
+ * do cliente.
+ */
+const BASE = (import.meta.env.VITE_API_URL as string | undefined) ?? (import.meta.env.DEV ? "http://localhost:3000" : "");
 
 /**
  * A origem da API, para links que o browser abre directamente.

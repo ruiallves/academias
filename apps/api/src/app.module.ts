@@ -49,6 +49,7 @@ import { PhotosService } from "./storage/photos.service";
 import { StorageService } from "./storage/storage.service";
 import { ReportsService } from "./development/reports.service";
 import { SupabaseAccountsService } from "./auth/supabase-accounts.service";
+import { TenantAssetsController } from "./tenant/tenant-assets.controller";
 
 /**
  * Monólito modular.
@@ -103,6 +104,8 @@ import { SupabaseAccountsService } from "./auth/supabase-accounts.service";
     ContactsCalendarController,
     // Público por construção — é o formulário de contacto do site de marketing.
     SiteContactController,
+    // O manifest da PWA com a marca do clube, na raiz da origem do clube.
+    TenantAssetsController,
   ],
   providers: [
     // O throttler como guard global — aplica-se a todas as rotas, incluindo as
