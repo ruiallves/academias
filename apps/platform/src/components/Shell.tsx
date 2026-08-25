@@ -1,5 +1,5 @@
 import { NavLink, Outlet } from "react-router-dom";
-import { Building2, FileClock, LayoutGrid, LogOut, TrendingUp, Users } from "lucide-react";
+import { Building2, FileClock, LayoutGrid, LogOut, ShieldCheck, TrendingUp, Users } from "lucide-react";
 import { signOut } from "@/lib/session";
 import { cx } from "./primitives";
 import type { Me } from "@/lib/types";
@@ -15,7 +15,9 @@ import type { Me } from "@/lib/types";
  * antes: quem ainda não é cliente. A ordem da barra é a ordem do negócio — quem
  * já paga, quem talvez venha a pagar, como está a correr, e o que se fez.
  */
-const NAV = [
+type NavItem = { to: string; label: string; icon: typeof LayoutGrid; end?: boolean };
+
+const NAV: NavItem[] = [
   { to: "/", label: "Visão geral", icon: LayoutGrid, end: true },
   { to: "/academias", label: "Academias", icon: Building2 },
   { to: "/contactos", label: "Contactos", icon: Users },
@@ -23,7 +25,19 @@ const NAV = [
   { to: "/registo", label: "Registo", icon: FileClock },
 ];
 
+/**
+ * "Administradores" só aparece a quem pode lá fazer alguma coisa.
+ *
+ * O servidor já recusa um `ADMIN` ou `SUPPORT` que tente entrar por esta porta
+ * (`@PlatformRoles("OWNER")`) — escondê-la também no menu não é a fronteira de
+ * segurança, é só poupar a quem não é dono um destino que abre para lhe dizer
+ * que não pode estar lá.
+ */
+const OWNER_NAV: NavItem = { to: "/administradores", label: "Administradores", icon: ShieldCheck };
+
 export function Shell({ me }: { me: Me }) {
+  const nav = me.role === "OWNER" ? [...NAV, OWNER_NAV] : NAV;
+
   return (
     <div className="flex h-dvh overflow-hidden bg-canvas">
       <aside className="flex w-[212px] shrink-0 flex-col border-r border-line bg-surface">
@@ -45,7 +59,7 @@ export function Shell({ me }: { me: Me }) {
 
         <nav className="flex-1 px-2 py-2.5">
           <ul className="space-y-px">
-            {NAV.map((item) => (
+            {nav.map((item) => (
               <li key={item.to}>
                 <NavLink
                   to={item.to}

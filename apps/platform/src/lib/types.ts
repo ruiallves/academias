@@ -1,6 +1,28 @@
 /** O que a API do painel devolve. Espelha `apps/api/src/platform`. */
 
-export type Me = { id: string; name: string; email: string; role: "OWNER" | "ADMIN" | "SUPPORT"; mfaEnabled: boolean };
+export type PlatformRole = "OWNER" | "ADMIN" | "SUPPORT";
+
+export type Me = { id: string; name: string; email: string; role: PlatformRole; mfaEnabled: boolean };
+
+/* -------------------------------------------------------------------------- */
+/* Administradores                                                             */
+/* -------------------------------------------------------------------------- */
+
+export type Admin = {
+  id: string;
+  name: string;
+  email: string;
+  role: PlatformRole;
+  isActive: boolean;
+  mfaEnabled: boolean;
+  createdAt: string;
+};
+
+export const ADMIN_ROLE_LABEL: Record<PlatformRole, string> = {
+  OWNER: "Dono",
+  ADMIN: "Administrador",
+  SUPPORT: "Apoio",
+};
 
 export type Alert = {
   id: string;

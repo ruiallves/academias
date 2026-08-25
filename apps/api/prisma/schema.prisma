@@ -2056,12 +2056,40 @@ model PlatformAdmin {
   /// revoga-se gerando outro. Ver `contacts.ics.controller.ts`.
   calendarToken String? @unique
 
-  audits     AuditLog[]
-  supportFor SupportSession[]
-  contacts   Contact[]
+  audits       AuditLog[]
+  supportFor   SupportSession[]
+  contacts     Contact[]
+  invitesSent  PlatformAdminInvite[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+}
+
+/// Convite para entrar na plataforma como administrador.
+///
+/// O único caminho para um `PlatformAdmin` novo existir — ninguém cria uma
+/// dessas linhas directamente. Mesmo desenho dos convites de staff
+/// (`StaffInvite`): o token em claro existe uma vez, no link; na base fica só o
+/// SHA-256 dele. Se esta tabela vazar, os convites pendentes não são resgatáveis
+/// por quem a leu.
+model PlatformAdminInvite {
+  id        String @id @default(cuid())
+  tokenHash String @unique
+
+  /// Preso a este email — quem resgata não o pode trocar.
+  email String
+  name  String
+  role  PlatformRole
+
+  /// Quem convidou. Um convite sem autor é uma porta que ninguém assume.
+  invitedById String
+  invitedBy   PlatformAdmin @relation(fields: [invitedById], references: [id], onDelete: Cascade)
+
+  expiresAt DateTime
+  /// Uso único: preenchido no resgate, e a partir daí o link não vale mais nada.
+  redeemedAt DateTime?
+
+  createdAt DateTime @default(now())
 }
 
 enum PlatformRole {

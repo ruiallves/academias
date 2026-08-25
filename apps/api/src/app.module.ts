@@ -40,6 +40,8 @@ import { PlatformPrisma } from "./platform/platform.prisma";
 import { ContactsController, ContactsCalendarController } from "./platform/contacts.controller";
 import { SiteContactController } from "./platform/site-contact.controller";
 import { ContactsService } from "./platform/contacts.service";
+import { AdminsController, AdminInvitePageController } from "./platform/admin-invites.controller";
+import { AdminInvitesService } from "./platform/admin-invites.service";
 import { FamilyInviteController, FamilySignupController } from "./family/family-invites.controller";
 import { FamilyInvitesService } from "./family/family-invites.service";
 import { DevelopmentController } from "./development/development.controller";
@@ -96,6 +98,8 @@ import { TenantAssetsController } from "./tenant/tenant-assets.controller";
     NotificationsController,
     PlatformController,
     ContactsController,
+    AdminsController,
+    AdminInvitePageController,
     FamilyInviteController,
     DevelopmentController,
     PhotosController,
@@ -132,6 +136,7 @@ import { TenantAssetsController } from "./tenant/tenant-assets.controller";
     PlatformGuard,
     PlatformPrisma,
     ContactsService,
+    AdminInvitesService,
     FamilyInvitesService,
     EvaluationsService,
     PhotosService,

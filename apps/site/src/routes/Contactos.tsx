@@ -78,6 +78,14 @@ export default function Contactos() {
   const [athletes, setAthletes] = useState("");
   const [message, setMessage] = useState("");
   const [status, setStatus] = useState<"idle" | "sending" | "done" | "error">("idle");
+  /**
+   * O `mailto:` de recurso, pronto mas nunca disparado sozinho.
+   *
+   * Só existe para dar um botão a quem quer mesmo escrever depois de a API
+   * falhar — nunca corre `window.location.href` sozinho. Ver o porquê no `catch`
+   * de `submit`.
+   */
+  const [fallbackMailto, setFallbackMailto] = useState<string | null>(null);
 
   const emailOk = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim());
   const valid =
@@ -107,8 +115,21 @@ export default function Contactos() {
       if (!res.ok) throw new Error(String(res.status));
       setStatus("done");
     } catch {
-      // Sem rede, ou a API em baixo: o contacto não é perdido — cai no email
-      // directo, que é o único caminho que resta a funcionar sem o servidor.
+      /*
+       * A API falhou — sem rede, ou o servidor em baixo. Isto **não** abre o
+       * cliente de email sozinho.
+       *
+       * Abria, e era exactamente o problema que este formulário resolveu: um
+       * `mailto:` automático dá a mesma cara de "falhou" a duas coisas
+       * diferentes — não há cliente de email configurado (a maioria dos
+       * computadores), ou há, mas a pessoa fecha o separador que se abriu sem
+       * perceber porquê e sem carregar em enviar. Em nenhum dos dois casos o
+       * contacto chega a nós, e a pessoa nunca sabe que falhou.
+       *
+       * Em vez disso: dizemos que falhou, a sério, e deixamos um botão para
+       * quem quiser mesmo escrever à mão — uma escolha da pessoa, não um efeito
+       * secundário do erro.
+       */
       setStatus("error");
       const body = [
         `Assunto: ${subject.label}`,
@@ -123,7 +144,7 @@ export default function Contactos() {
         .filter(Boolean)
         .join("\n");
       const assunto = subject.clube && club.trim() ? `${subject.label} — ${club.trim()}` : subject.label;
-      window.location.href = `mailto:${CONTACT_EMAIL}?subject=${encodeURIComponent(assunto)}&body=${encodeURIComponent(body)}`;
+      setFallbackMailto(`mailto:${CONTACT_EMAIL}?subject=${encodeURIComponent(assunto)}&body=${encodeURIComponent(body)}`);
     }
   }
 
@@ -294,11 +315,24 @@ export default function Contactos() {
                 >
                   {status === "sending" ? "A enviar…" : "Enviar"}
                 </button>
-                <p className="mt-3 text-[13px] text-ink-3">
-                  {status === "error"
-                    ? "Não conseguimos entregar por aqui — a abrir o teu email como alternativa."
-                    : "Cai directamente na nossa lista de contactos, sem depender de teres email configurado."}
-                </p>
+
+                {status === "error" ? (
+                  <div className="mt-3 rounded-[2px] border border-[#f0c9c2] bg-[#fdf3f1] px-3.5 py-3">
+                    <p className="text-[13px] leading-relaxed text-[#a82a20]">
+                      Não conseguimos entregar a tua mensagem agora — tenta outra vez daqui a um bocado, ou
+                      escreve-nos directamente.
+                    </p>
+                    {fallbackMailto && (
+                      <a href={fallbackMailto} className="link mt-2 inline-block text-[13px] font-semibold">
+                        Escrever email agora →
+                      </a>
+                    )}
+                  </div>
+                ) : (
+                  <p className="mt-3 text-[13px] text-ink-3">
+                    Cai directamente na nossa lista de contactos, sem depender de teres email configurado.
+                  </p>
+                )}
               </div>
             </div>
           </form>

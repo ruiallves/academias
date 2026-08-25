@@ -5,6 +5,7 @@ import Academies from "@/routes/Academies";
 import Contacts from "@/routes/Contacts";
 import Growth from "@/routes/Growth";
 import Audit from "@/routes/Audit";
+import Admins from "@/routes/Admins";
 import type { Me } from "@/lib/types";
 
 export default function App({ me }: { me: Me }) {
@@ -16,6 +17,7 @@ export default function App({ me }: { me: Me }) {
         <Route path="contactos" element={<Contacts me={me} />} />
         <Route path="crescimento" element={<Growth />} />
         <Route path="registo" element={<Audit />} />
+        <Route path="administradores" element={<Admins me={me} />} />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Route>
     </Routes>
