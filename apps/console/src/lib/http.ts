@@ -86,7 +86,21 @@ function academySlug(): string {
 }
 
 export async function apiGet<T>(path: string, params?: Record<string, string | undefined>): Promise<T> {
-  const url = new URL(`${BASE}${path}`);
+  /*
+   * O segundo argumento é o que falta para isto sobreviver a `BASE` vazio.
+   *
+   * Em produção `BASE` é `""` (mesma origem — ver o cabeçalho acima), e
+   * `${BASE}${path}` sai como `/api/bootstrap`: um caminho relativo. O
+   * construtor de `URL` recusa um caminho relativo sem uma base — "Failed to
+   * construct 'URL': Invalid URL" — e essa é exactamente a única linha desta
+   * classe que usa `new URL` em vez de `fetch` directo, porque é a única que
+   * precisa de `.searchParams`.
+   *
+   * `window.location.origin` resolve-o sem mudar nada quando `BASE` já é
+   * absoluto (em desenvolvimento): um primeiro argumento absoluto ignora a
+   * base por completo, é assim que o construtor sempre funcionou.
+   */
+  const url = new URL(`${BASE}${path}`, window.location.origin);
   for (const [k, v] of Object.entries(params ?? {})) {
     if (v !== undefined) url.searchParams.set(k, v);
   }

@@ -73,20 +73,8 @@ export class AdminInvitesService {
   /* ------------------------------------------------------------------------ */
 
   async list(): Promise<AdminSummary[]> {
-    const rows = await this.prisma.platformAdmin.findMany({
-      orderBy: { createdAt: "asc" },
-      select: { id: true, name: true, email: true, role: true, isActive: true, mfaEnrolledAt: true, createdAt: true },
-    });
-
-    return rows.map((r) => ({
-      id: r.id,
-      name: r.name,
-      email: r.email,
-      role: r.role,
-      isActive: r.isActive,
-      mfaEnabled: r.mfaEnrolledAt !== null,
-      createdAt: r.createdAt,
-    }));
+    const rows = await this.prisma.platformAdmin.findMany({ orderBy: { createdAt: "asc" }, select: ADMIN_SELECT });
+    return rows.map(shape);
   }
 
   /** Cria o convite e devolve o link — uma única vez, como os de staff. */
@@ -129,28 +117,22 @@ export class AdminInvitesService {
   /**
    * Activar ou desactivar.
    *
-   * Nunca apagar. `isActive` é exactamente o que o `PlatformGuard` verifica —
-   * desligar aqui já tira o acesso por completo — e ao contrário de um `DELETE`,
-   * mantém `AuditLog.adminId` e `Contact.ownerId` a apontar para alguém real: o
-   * histórico de quem fez o quê continua legível depois de a pessoa sair. Se um
-   * dia for preciso mesmo apagar a linha, é uma operação directa na base, feita
-   * de propósito e não um botão à distância de um clique errado.
+   * `isActive` é exactamente o que o `PlatformGuard` verifica — desligar aqui já
+   * tira o acesso por completo, sem apagar a linha. É a via reversível: um "foi
+   * engano" restaura-se com um clique, sem repetir o convite.
    */
   async setActive(admin: PlatformAdminContext, targetId: string, active: boolean, ip?: string): Promise<AdminSummary> {
     if (targetId === admin.id) {
-      throw new ForbiddenException("Não te podes desactivar a ti próprio");
+      throw new ForbiddenException("Não te podes desactivar a ti próprio — entra com outra conta de administrador.");
     }
 
-    const target = await this.prisma.platformAdmin.findUnique({
-      where: { id: targetId },
-      select: { id: true, name: true, email: true, role: true, isActive: true, mfaEnrolledAt: true, createdAt: true },
-    });
+    const target = await this.prisma.platformAdmin.findUnique({ where: { id: targetId }, select: ADMIN_SELECT });
     if (!target) throw new NotFoundException("Administrador não encontrado");
 
     const updated = await this.prisma.platformAdmin.update({
       where: { id: targetId },
       data: { isActive: active },
-      select: { id: true, name: true, email: true, role: true, isActive: true, mfaEnrolledAt: true, createdAt: true },
+      select: ADMIN_SELECT,
     });
 
     await this.platform.audit(
@@ -162,15 +144,71 @@ export class AdminInvitesService {
       ip,
     );
 
-    return {
-      id: updated.id,
-      name: updated.name,
-      email: updated.email,
-      role: updated.role,
-      isActive: updated.isActive,
-      mfaEnabled: updated.mfaEnrolledAt !== null,
-      createdAt: updated.createdAt,
-    };
+    return shape(updated);
+  }
+
+  /**
+   * Mudar de papel — incluindo promover a `OWNER`.
+   *
+   * ## Porque é que se pode mudar o próprio papel, mas não desactivar-se
+   *
+   * Desactivar-se corta o acesso na hora, a meio da própria sessão — é o
+   * lockout que `setActive` recusa sempre. Mudar de papel não: continuas
+   * dentro, só deixas de poder entrar em rotas de `OWNER` a partir daí. É uma
+   * despromoção deliberada de alguém que decidiu ter menos poder, não um
+   * acidente a meio de uma tarefa.
+   *
+   * ## A única coisa que isto recusa
+   *
+   * Ficar sem nenhum `OWNER` activo. Sem pelo menos um, ninguém mais consegue
+   * convidar, promover ou gerir administradores — a plataforma trancar-se-ia a
+   * si própria, e a única saída seria mexer directamente na base de dados.
+   */
+  async setRole(admin: PlatformAdminContext, targetId: string, role: PlatformRole, ip?: string): Promise<AdminSummary> {
+    const target = await this.prisma.platformAdmin.findUnique({ where: { id: targetId }, select: ADMIN_SELECT });
+    if (!target) throw new NotFoundException("Administrador não encontrado");
+
+    if (target.role === "OWNER" && role !== "OWNER") {
+      const otherOwners = await this.prisma.platformAdmin.count({
+        where: { role: "OWNER", isActive: true, id: { not: targetId } },
+      });
+      if (otherOwners === 0) {
+        throw new ForbiddenException("Tem de ficar sempre pelo menos um dono activo — promove outra pessoa primeiro.");
+      }
+    }
+
+    const updated = await this.prisma.platformAdmin.update({ where: { id: targetId }, data: { role }, select: ADMIN_SELECT });
+    await this.platform.audit(admin, "platformAdmin.role", "admin", targetId, { email: target.email, from: target.role, to: role }, ip);
+
+    return shape(updated);
+  }
+
+  /**
+   * Apagar de vez.
+   *
+   * Ao contrário de desactivar, isto tira a linha da tabela. `AuditLog.adminId`
+   * e `Contact.ownerId` ficam a `null` (é o que `onDelete: SetNull` faz) — o
+   * histórico de que a acção aconteceu não desaparece, só deixa de apontar para
+   * ninguém. Não apaga a conta no Supabase: são identidades diferentes, e uma
+   * pessoa pode ter outros papéis no produto (director de um clube, por
+   * exemplo) que não têm nada a ver com ter sido administrador da plataforma.
+   *
+   * Nunca a si próprio — pelo mesmo motivo de `setActive`: apagar a própria
+   * linha corta o próprio acesso a meio da sessão. Entra com outra conta e
+   * apaga esta a partir dela.
+   */
+  async remove(admin: PlatformAdminContext, targetId: string, ip?: string): Promise<{ ok: true }> {
+    if (targetId === admin.id) {
+      throw new ForbiddenException("Não te podes apagar a ti próprio — entra com outra conta de administrador.");
+    }
+
+    const target = await this.prisma.platformAdmin.findUnique({ where: { id: targetId }, select: { email: true, role: true } });
+    if (!target) throw new NotFoundException("Administrador não encontrado");
+
+    await this.prisma.platformAdmin.delete({ where: { id: targetId } });
+    await this.platform.audit(admin, "platformAdmin.delete", "admin", targetId, { email: target.email, role: target.role }, ip);
+
+    return { ok: true };
   }
 
   /* ------------------------------------------------------------------------ */
@@ -274,4 +312,37 @@ export class AdminInvitesService {
     const base = (this.config.get<string>("PLATFORM_ORIGIN") ?? "http://localhost:5180").replace(/\/$/, "");
     return `${base}/convite-admin/${token}`;
   }
+}
+
+/** A projecção usada em toda a parte — uma só, para `list`, `setActive` e `setRole` nunca divergirem. */
+const ADMIN_SELECT = {
+  id: true,
+  name: true,
+  email: true,
+  role: true,
+  isActive: true,
+  mfaEnrolledAt: true,
+  createdAt: true,
+} as const;
+
+type AdminRow = {
+  id: string;
+  name: string;
+  email: string;
+  role: PlatformRole;
+  isActive: boolean;
+  mfaEnrolledAt: Date | null;
+  createdAt: Date;
+};
+
+function shape(r: AdminRow): AdminSummary {
+  return {
+    id: r.id,
+    name: r.name,
+    email: r.email,
+    role: r.role,
+    isActive: r.isActive,
+    mfaEnabled: r.mfaEnrolledAt !== null,
+    createdAt: r.createdAt,
+  };
 }

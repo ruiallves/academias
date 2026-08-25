@@ -1,9 +1,9 @@
-import { Body, Controller, Get, Ip, Param, Patch, Post, Req, UseGuards } from "@nestjs/common";
+import { Body, Controller, Delete, Get, Ip, Param, Patch, Post, Req, UseGuards } from "@nestjs/common";
 import { Throttle } from "@nestjs/throttler";
 import { Public } from "../auth/auth.guard";
 import { PlatformGuard, PlatformRoles, type PlatformRequest } from "./platform.guard";
 import { AdminInvitesService } from "./admin-invites.service";
-import { InviteAdminDto, RedeemAdminInviteDto, SetAdminActiveDto } from "./admin-invites.dto";
+import { InviteAdminDto, RedeemAdminInviteDto, SetAdminActiveDto, SetAdminRoleDto } from "./admin-invites.dto";
 
 /**
  * Administradores da plataforma — do lado de quem já é dono disto.
@@ -35,6 +35,18 @@ export class AdminsController {
   @PlatformRoles("OWNER")
   setActive(@Req() req: PlatformRequest, @Ip() ip: string, @Param("id") id: string, @Body() body: SetAdminActiveDto) {
     return this.invites.setActive(req.admin, id, body.active, ip);
+  }
+
+  @Patch(":id/papel")
+  @PlatformRoles("OWNER")
+  setRole(@Req() req: PlatformRequest, @Ip() ip: string, @Param("id") id: string, @Body() body: SetAdminRoleDto) {
+    return this.invites.setRole(req.admin, id, body.role, ip);
+  }
+
+  @Delete(":id")
+  @PlatformRoles("OWNER")
+  remove(@Req() req: PlatformRequest, @Ip() ip: string, @Param("id") id: string) {
+    return this.invites.remove(req.admin, id, ip);
   }
 }
 

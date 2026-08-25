@@ -1,11 +1,12 @@
 import { Body, Controller, Delete, Get, Header, Param, Post, Req, Res } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
 import { Throttle } from "@nestjs/throttler";
-import type { Response } from "express";
+import type { Request, Response } from "express";
 import { Public, type AuthedRequest } from "../auth/auth.guard";
 import { InvitesService } from "./invites.service";
 import { AcceptInviteDto, CreateInviteDto } from "./invites.dto";
 import { renderInvite, renderInviteError } from "./invite.template";
+import type { TenantRequest } from "../tenant/tenant";
 
 /**
  * Convites — do lado de quem convida.
@@ -68,13 +69,34 @@ export class InvitePageController {
   @Get("l/:slug/convite/:token")
   @Header("Content-Type", "text/html; charset=utf-8")
   @Header("Cache-Control", "no-store")
-  async page(@Param("token") token: string, @Res({ passthrough: true }) res: Response) {
+  async page(
+    @Param("token") token: string,
+    @Req() req: Request & TenantRequest,
+    @Res({ passthrough: true }) res: Response,
+  ) {
     try {
       const preview = await this.invites.preview(token);
+
+      /*
+       * A consola, vista desta página.
+       *
+       * Quando o pedido chega por um domínio de clube, a consola é servida por
+       * este mesmo servidor — o caminho `/consola` chega, e é mesma origem: sem
+       * CORS, e o `sessionStorage` que o resgate escreve atravessa sozinho para
+       * lá. `CONSOLE_ORIGIN` só é preciso em desenvolvimento, onde a consola tem
+       * o seu próprio `vite dev` numa porta à parte.
+       *
+       * Faltou aqui na primeira versão: a landing (`landing.controller.ts`) já
+       * tinha esta conta feita, mas a página de convite ficou com o valor antigo
+       * — e sem ele, resgatar um convite em produção mandava sempre para
+       * `localhost:5173`, o único sítio onde `CONSOLE_ORIGIN` nunca está definido.
+       */
+      const consoleUrl = req.tenantSlug ? "/consola" : (this.config.get<string>("CONSOLE_ORIGIN") ?? "http://localhost:5173");
+
       return renderInvite({
         preview,
         token,
-        consoleUrl: this.config.get<string>("CONSOLE_ORIGIN") ?? "http://localhost:5173",
+        consoleUrl,
         supabaseUrl: this.config.getOrThrow<string>("SUPABASE_URL").replace(/\/$/, ""),
         supabaseAnonKey: this.config.getOrThrow<string>("SUPABASE_ANON_KEY"),
       });

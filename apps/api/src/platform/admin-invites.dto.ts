@@ -30,3 +30,8 @@ export class SetAdminActiveDto {
   @IsBoolean()
   active!: boolean;
 }
+
+export class SetAdminRoleDto {
+  @IsEnum(PlatformRole)
+  role!: PlatformRole;
+}
