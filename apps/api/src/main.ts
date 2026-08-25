@@ -105,13 +105,19 @@ async function bootstrap() {
    * telemóvel a sério, o browser desse telemóvel envia `Origin: http://<IP da
    * máquina>:5174` — nunca `localhost`, que para ele é o próprio telemóvel. Só
    * entra quando definido no `.env`, e nunca em produção.
+   *
+   * `SITE_ORIGIN` aceita uma lista separada por vírgulas, pelo mesmo motivo do
+   * `DEV_LAN_ORIGINS`: o site responde tanto em `academias.pt` como em
+   * `www.academias.pt`, e o `Origin` que o browser envia é sempre o exacto — um
+   * visitante que caiu no `www.` nunca vai bater com uma variável que só tem o
+   * domínio nu.
    */
   const allowed = new Set(
     [
       process.env.CONSOLE_ORIGIN ?? "http://localhost:5173",
       process.env.FAMILY_ORIGIN ?? "http://localhost:5174",
       process.env.PLATFORM_ORIGIN ?? "http://localhost:5180",
-      process.env.SITE_ORIGIN,
+      ...(process.env.SITE_ORIGIN ?? "").split(","),
       ...(process.env.DEV_LAN_ORIGINS ?? "").split(","),
     ]
       .map((o) => o?.trim())
