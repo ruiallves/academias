@@ -53,6 +53,20 @@ export class MatchesService {
               athlete: { select: { name: true, teams: { select: { team: { select: { name: true } } }, take: 1 } } },
             },
           },
+          /*
+           * A minha linha na ficha técnica, e só a minha.
+           *
+           * Filtrado pelo `membershipId` de quem pergunta em vez de trazer a
+           * equipa de trabalho toda: quem lê a lista de jogos quer saber onde
+           * **é preciso**, e a lista completa de cada jogo é da página do jogo.
+           * Trazê-la aqui eram trinta objectos a mais por leitura para mostrar um
+           * rótulo.
+           */
+          staff: {
+            where: { membershipId: ctx.membershipId },
+            select: { role: true },
+            take: 1,
+          },
         },
       });
 
@@ -71,6 +85,8 @@ export class MatchesService {
         theirScore: m.theirScore,
         submitted: m.callUpsClosedAt !== null,
         submittedAt: m.callUpsClosedAt,
+        /** A função com que **eu** estou escalado neste jogo. `null` se não estou. */
+        myStaffRole: m.staff[0]?.role ?? null,
         calledUp: m.callUps.map((c) => ({
           athleteId: c.athleteId,
           status: c.status,
@@ -82,6 +98,597 @@ export class MatchesService {
         })),
       }));
     });
+  }
+
+  /**
+   * Um jogo, inteiro — a página do jogo.
+   *
+   * ## O que esta página responde, e porque é que é uma página
+   *
+   * O calendário abria um painel lateral com o essencial, e para um treino chega.
+   * Para um jogo não: antes dele há a convocatória por montar, depois dele há a
+   * ficha por preencher, e ao lado há a equipa de trabalho por atribuir. Isso não
+   * cabe numa gaveta ao lado do calendário — e obrigava a sair para três sítios
+   * diferentes para tratar de um jogo só.
+   *
+   * ## Uma leitura, e não três
+   *
+   * Convocados, ficha e staff vêm de uma vez. São três tabelas penduradas no
+   * mesmo jogo, e três pedidos separados dariam três estados de carregamento
+   * numa página que se lê como um documento.
+   *
+   * ## O que aqui **não** se decide
+   *
+   * O âmbito. `teamScopeFilter` trata disso, como em todo o lado: um treinador
+   * que peça o id de um jogo de outro escalão leva 404, e não uma página vazia.
+   */
+  async get(ctx: RequestContext, matchId: string) {
+    if (!can(ctx, "calendar:read")) throw new ForbiddenException("Sem acesso ao calendário");
+
+    /*
+     * As famílias não entram aqui, e `calendar:read` não chega para as travar.
+     *
+     * Um encarregado **tem** `calendar:read` — precisa dele para ver quando é o
+     * jogo do filho — e o âmbito dele inclui a equipa do filho. Sem esta linha, um
+     * pai que trocasse um id no endereço lia a ficha inteira: os minutos, os
+     * cartões e os golos de todos os miúdos da equipa, mais quem da equipa técnica
+     * lá esteve.
+     *
+     * A app da família tem os endpoints dela, com o âmbito no atleta e não na
+     * equipa. Esta página é de quem trabalha no clube.
+     */
+    if (ctx.role === "GUARDIAN" || ctx.role === "ATHLETE") {
+      throw new ForbiddenException("Sem acesso à ficha de jogo");
+    }
+
+    const scope = teamScopeFilter(ctx);
+
+    return this.prisma.runAs(ctx.academyId, async (db) => {
+      const m = await db.match.findFirst({
+        where: { id: matchId, ...(scope ? { teamId: scope } : {}) },
+        select: {
+          id: true, teamId: true, startsAt: true, endsAt: true, venue: true,
+          opponent: true, isHome: true, status: true, ourScore: true, theirScore: true,
+          callUpsClosedAt: true, statsEnteredAt: true,
+          sourceProvider: true, sourceUrl: true, importedAt: true,
+          team: { select: { name: true, ageGroup: true, sportId: true, maxCallUps: true } },
+          coach: { select: { id: true, user: { select: { name: true } } } },
+          callUps: {
+            orderBy: { athlete: { name: "asc" } },
+            select: {
+              athleteId: true, status: true, isGuest: true,
+              athlete: {
+                select: {
+                  name: true,
+                  /*
+                   * A posição vive no plantel e não no atleta.
+                   *
+                   * O mesmo miúdo pode ser lateral no Sub-13 e médio no Sub-15 —
+                   * a posição é da relação com a equipa (`TeamMembership`), e é
+                   * por isso que se procura a linha da equipa deste jogo. Um
+                   * atleta emprestado de outro escalão não tem linha aqui e fica
+                   * sem posição, que é a resposta honesta.
+                   */
+                  teams: { select: { position: true, team: { select: { name: true } } } },
+                },
+              },
+            },
+          },
+          appearances: {
+            select: {
+              athleteId: true, minutes: true, started: true, tally: true,
+              assists: true, yellowCards: true, redCard: true,
+            },
+          },
+          staff: {
+            orderBy: { createdAt: "asc" },
+            select: {
+              id: true, membershipId: true, role: true,
+              membership: { select: { user: { select: { name: true } } } },
+            },
+          },
+        },
+      });
+
+      if (!m) throw new NotFoundException("Jogo não encontrado ou fora do teu âmbito");
+
+      const ficha = new Map(m.appearances.map((a) => [a.athleteId, a]));
+
+      return {
+        id: m.id,
+        teamId: m.teamId,
+        teamName: m.team.name,
+        ageGroup: m.team.ageGroup,
+        sportId: m.team.sportId,
+        maxCallUps: m.team.maxCallUps,
+        startsAt: m.startsAt,
+        endsAt: m.endsAt,
+        venue: m.venue,
+        opponent: m.opponent,
+        isHome: m.isHome,
+        status: m.status,
+        ourScore: m.ourScore,
+        theirScore: m.theirScore,
+        coachName: m.coach?.user.name ?? null,
+        submitted: m.callUpsClosedAt !== null,
+        submittedAt: m.callUpsClosedAt,
+        statsEnteredAt: m.statsEnteredAt,
+        /*
+         * De onde veio o jogo. Vazio quando foi marcado à mão.
+         *
+         * Vai para o ecrã porque quem lá chegar tem de perceber, sem perguntar a
+         * ninguém, se aquele resultado foi escrito por um colega ou veio de fora.
+         * Ver `statsEnteredAt` no schema.
+         */
+        source: m.sourceProvider ? { provider: m.sourceProvider, url: m.sourceUrl, at: m.importedAt } : null,
+        /** Os convocados, já com a linha da ficha de cada um quando existe. */
+        squad: m.callUps.map((c) => {
+          const a = ficha.get(c.athleteId);
+          return {
+            athleteId: c.athleteId,
+            name: c.athlete.name,
+            position: c.athlete.teams.find((t) => t.team.name === m.team.name)?.position ?? null,
+            callUpStatus: c.status,
+            isGuest: c.isGuest,
+            guestFromTeam: c.isGuest ? c.athlete.teams[0]?.team.name : undefined,
+            played: Boolean(a),
+            minutes: a?.minutes ?? 0,
+            started: a?.started ?? false,
+            tally: a?.tally ?? 0,
+            assists: a?.assists ?? 0,
+            yellowCards: a?.yellowCards ?? 0,
+            redCard: a?.redCard ?? false,
+          };
+        }),
+        staff: m.staff.map((x) => ({
+          id: x.id,
+          membershipId: x.membershipId,
+          name: x.membership.user.name,
+          role: x.role,
+        })),
+      };
+    });
+  }
+
+  /**
+   * O resultado.
+   *
+   * Gravar um resultado passa o jogo a `PLAYED`, e limpá-lo devolve-o a
+   * `SCHEDULED`. É a mesma ausência que já decidia o que a interface mostra —
+   * convocatória antes, estatística depois — e ter dois interruptores para a
+   * mesma coisa era garantir que um dia diriam coisas diferentes.
+   */
+  async saveResult(
+    ctx: RequestContext,
+    matchId: string,
+    input: { ourScore: number | null; theirScore: number | null },
+  ) {
+    this.assertCanRecord(ctx);
+
+    const { ourScore, theirScore } = input;
+    const limpar = ourScore === null || theirScore === null;
+    if (!limpar && (ourScore < 0 || theirScore < 0 || ourScore > 99 || theirScore > 99)) {
+      throw new BadRequestException("Resultado fora do razoável");
+    }
+
+    return this.prisma.runAs(ctx.academyId, async (db) => {
+      const alvo = await this.mustReach(db, ctx, matchId);
+
+      /*
+       * Um resultado antes do apito não é um resultado — é um palpite.
+       *
+       * Sem esta regra, um dedo trocado na lista gravava "3–1" num jogo de
+       * sábado à quarta-feira, o jogo passava a PLAYED, e a convocatória
+       * desaparecia do ecrã de quem ainda a ia montar. Limpar continua a poder
+       * ser feito a qualquer hora: desfazer um engano não tem horário.
+       */
+      if (!limpar && alvo.startsAt.getTime() > Date.now()) {
+        throw new BadRequestException("O jogo ainda não começou — o resultado regista-se depois do apito");
+      }
+      await db.match.update({
+        where: { id: matchId },
+        data: {
+          ourScore: limpar ? null : ourScore,
+          theirScore: limpar ? null : theirScore,
+          status: limpar ? "SCHEDULED" : "PLAYED",
+          statsEnteredAt: limpar ? undefined : new Date(),
+        },
+      });
+      return { ok: true as const };
+    });
+  }
+
+  /**
+   * A ficha: quem jogou, quanto tempo, quem marcou, quem viu cartão.
+   *
+   * ## Só quem jogou tem linha
+   *
+   * Quem foi convocado e ficou no banco não tem `MatchAppearance` nenhuma. A
+   * ausência é a resposta — uma linha com zero minutos diria "jogou zero
+   * minutos", que é a mesma coisa no papel e outra coisa na cabeça de quem
+   * depois soma jogos por atleta.
+   *
+   * ## Substituição inteira, e não campo a campo
+   *
+   * O ecrã manda a ficha toda de cada vez. Um jogo tem vinte linhas, não duas
+   * mil, e a alternativa — um pedido por cada carregar num +1 — dava vinte
+   * pedidos por minuto de um treinador a acertar minutos no telemóvel, e uma
+   * ficha meio gravada quando a rede falhasse a meio.
+   */
+  async saveAppearances(
+    ctx: RequestContext,
+    matchId: string,
+    rows: {
+      athleteId: string;
+      minutes: number;
+      started?: boolean;
+      tally?: number;
+      assists?: number;
+      yellowCards?: number;
+      redCard?: boolean;
+    }[],
+  ) {
+    this.assertCanRecord(ctx);
+
+    return this.prisma.runAs(ctx.academyId, async (db) => {
+      const match = await this.mustReach(db, ctx, matchId);
+
+      /*
+       * Só se escreve sobre quem foi convocado.
+       *
+       * Sem isto, um id de atleta no corpo do pedido punha um miúdo de outro
+       * escalão — ou de outra academia — na ficha de um jogo em que nunca esteve.
+       * A convocatória é a lista fechada de quem podia lá estar, e é ela que
+       * manda.
+       */
+      const convocados = new Set(
+        (await db.matchCallUp.findMany({ where: { matchId }, select: { athleteId: true } })).map(
+          (c) => c.athleteId,
+        ),
+      );
+
+      const limpas = rows
+        .filter((r) => convocados.has(r.athleteId))
+        .map((r) => ({
+          athleteId: r.athleteId,
+          minutes: clamp(r.minutes, 0, 300),
+          started: r.started ?? false,
+          tally: clamp(r.tally ?? 0, 0, 99),
+          assists: clamp(r.assists ?? 0, 0, 99),
+          // Dois amarelos são o máximo que existe: o segundo é a expulsão.
+          yellowCards: clamp(r.yellowCards ?? 0, 0, 2),
+          redCard: Boolean(r.redCard),
+        }));
+
+      await db.matchAppearance.deleteMany({ where: { matchId } });
+      if (limpas.length > 0) {
+        await db.matchAppearance.createMany({
+          data: limpas.map((r) => ({ matchId, ...r })),
+        });
+      }
+
+      await db.match.update({ where: { id: matchId }, data: { statsEnteredAt: new Date() } });
+
+      return { ok: true as const, saved: limpas.length, ignored: rows.length - limpas.length, teamId: match.teamId };
+    });
+  }
+
+  /**
+   * A equipa de trabalho do jogo: massagista, delegado, adjunto.
+   *
+   * Só gente da academia, e só quem não é família. Um encarregado de educação na
+   * ficha técnica não é um erro de digitação — é o começo de alguém a aparecer em
+   * relatórios de staff sem nunca ter sido staff.
+   */
+  async saveStaff(ctx: RequestContext, matchId: string, rows: { membershipId: string; role: string }[]) {
+    this.assertCanRecord(ctx);
+
+    const { jogo, avisar, ...resultado } = await this.gravarStaff(ctx, matchId, rows);
+
+    /*
+     * As notificações saem **fora** do `runAs`.
+     *
+     * É a regra da casa e custou uma avaria a aprender: dentro de `runAs` só
+     * trabalho de base de dados. Um canal de entrega pode fazer um pedido HTTP
+     * (push), e uma chamada de rede dentro de uma transação segura uma ligação do
+     * pool à espera dela — com `connection_limit=5`, cinco escalações ao mesmo
+     * tempo bloqueavam o servidor. O `enqueue` abre a sua própria transação de
+     * tenant, curta. Mesmo padrão de `submitCallUps`.
+     */
+    for (const alvo of avisar) {
+      await this.notifications.enqueue({
+        academyId: ctx.academyId,
+        userId: alvo.userId,
+        type: "MATCH_STAFF_ASSIGNED",
+        title: `Escalado: ${jogo?.team.name ?? "jogo"} — ${jogo?.opponent ?? ""}`.trim(),
+        body: jogo
+          ? `${alvo.funcao} · ${jogo.startsAt.toLocaleDateString("pt-PT", { weekday: "long", day: "numeric", month: "long" })} às ${jogo.startsAt.toLocaleTimeString("pt-PT", { hour: "2-digit", minute: "2-digit" })} · ${jogo.venue} (${jogo.isHome ? "casa" : "fora"})`
+          : alvo.funcao,
+        payload: { matchId, link: `/jogos/${matchId}` },
+      });
+    }
+
+    return resultado;
+  }
+
+  /** O trabalho de base de dados da escalação. Ver `saveStaff` para o porquê. */
+  private async gravarStaff(
+    ctx: RequestContext,
+    matchId: string,
+    rows: { membershipId: string; role: string }[],
+  ) {
+    return this.prisma.runAs(ctx.academyId, async (db) => {
+      await this.mustReach(db, ctx, matchId);
+
+      const validos = new Set(
+        (
+          await db.membership.findMany({
+            where: { role: { notIn: ["GUARDIAN", "ATHLETE"] }, isActive: true },
+            select: { id: true },
+          })
+        ).map((m) => m.id),
+      );
+
+      const limpas = rows
+        .filter((r) => validos.has(r.membershipId) && r.role.trim().length > 0)
+        .map((r) => ({ membershipId: r.membershipId, role: r.role.trim().slice(0, 60) }));
+
+      /*
+       * Quem é **novo** nesta ficha, e não quem lá está.
+       *
+       * A gravação substitui a lista toda, por isso sem esta comparação uma
+       * mudança de função do delegado voltava a avisar o massagista, que não
+       * mudou de nada. Um aviso repetido é a maneira mais rápida de ensinar
+       * alguém a ignorar os avisos.
+       */
+      const antes = new Set(
+        (await db.matchStaff.findMany({ where: { matchId }, select: { membershipId: true } })).map(
+          (x) => x.membershipId,
+        ),
+      );
+      const novos = limpas.filter((r) => !antes.has(r.membershipId));
+
+      await db.matchStaff.deleteMany({ where: { matchId } });
+      if (limpas.length > 0) {
+        await db.matchStaff.createMany({ data: limpas.map((r) => ({ matchId, ...r })) });
+      }
+
+      const jogo = await db.match.findFirst({
+        where: { id: matchId },
+        select: { startsAt: true, opponent: true, isHome: true, venue: true, team: { select: { name: true } } },
+      });
+
+      const avisar = novos.length
+        ? await db.membership.findMany({
+            where: { id: { in: novos.map((n) => n.membershipId) } },
+            select: { id: true, userId: true },
+          })
+        : [];
+
+      return {
+        ok: true as const,
+        saved: limpas.length,
+        ignored: rows.length - limpas.length,
+        jogo,
+        avisar: avisar
+          // Quem escala não se avisa a si próprio: acabou de o fazer, está a
+          // olhar para o ecrã onde o fez.
+          .filter((m) => m.id !== ctx.membershipId)
+          .map((m) => ({
+            userId: m.userId,
+            funcao: novos.find((n) => n.membershipId === m.id)!.role,
+          })),
+      };
+    });
+  }
+
+  /**
+   * Quem pode estar na ficha técnica deste jogo.
+   *
+   * Todo o staff activo da academia, e não só o da equipa: um massagista serve
+   * os escalões todos, e restringi-lo à equipa obrigava a inventar equipas para
+   * as pessoas que trabalham em todas.
+   */
+  async staffPool(ctx: RequestContext) {
+    /*
+     * `attendance:write`, e não `staff:read`.
+     *
+     * Era `staff:read`, e isso trancava um treinador fora de uma funcionalidade
+     * que é dele: quem preenche a ficha do jogo é quem tem de dizer que houve
+     * massagista, e um treinador não tem acesso à lista de pessoal do clube.
+     *
+     * O que se expõe são nomes e cargos de colegas — o mesmo que qualquer um
+     * deles lê no balneário. A lista de staff a sério, com contactos e contratos,
+     * continua atrás de `staff:read`.
+     */
+    this.assertCanRecord(ctx);
+
+    return this.prisma.runAs(ctx.academyId, async (db) => {
+      const rows = await db.membership.findMany({
+        where: { role: { notIn: ["GUARDIAN", "ATHLETE"] }, isActive: true },
+        orderBy: { user: { name: "asc" } },
+        select: {
+          id: true,
+          title: true,
+          user: { select: { name: true } },
+          customRole: { select: { name: true } },
+        },
+      });
+
+      return rows.map((m) => ({
+        membershipId: m.id,
+        name: m.user.name,
+        /** O cargo, para quem escolhe não ter de adivinhar quem é o massagista. */
+        role: m.customRole?.name ?? m.title ?? null,
+      }));
+    });
+  }
+
+  /**
+   * Registar, depois do jogo, quem tinha sido convocado.
+   *
+   * ## Porque é que isto existe à parte de `saveCallUps`
+   *
+   * A convocatória normal é um convite: fecha-se, avisa as famílias, e por isso
+   * está trancada para jogos já disputados — reescrever quem foi convocado depois
+   * do apito seria reescrever o que aconteceu **por cima** de um registo que as
+   * famílias viram.
+   *
+   * Mas há o caso inverso: o jogo passou e nunca houve convocatória no sistema —
+   * o clube ainda geria isso em papel, ou esqueceu-se. Sem plantel não há ficha,
+   * porque a ficha só aceita convocados. Isto é a porta para esse caso: escreve o
+   * plantel de um jogo **já começado**, sem avisar ninguém (não é um convite, é
+   * história), e fecha-o logo.
+   *
+   * Só vive na página do jogo. O ecrã de convocatórias continua a recusar jogos
+   * passados — lá monta-se o futuro; aqui regista-se o passado.
+   *
+   * ## O que não se verifica, de propósito
+   *
+   * Baixas clínicas e pausas. São verdades de **hoje**, e o jogo foi no sábado:
+   * um miúdo que se lesionou ontem jogou na mesma no fim-de-semana, e recusar o
+   * registo por causa do estado presente era misturar dois tempos. A
+   * elegibilidade de escalão mantém-se — essa não muda com o calendário.
+   */
+  async saveRetroSquad(ctx: RequestContext, matchId: string, athleteIds: string[]) {
+    this.assertCanRecord(ctx);
+
+    const ids = [...new Set(athleteIds)];
+    return this.prisma.runAs(ctx.academyId, async (db) => {
+      const scope = teamScopeFilter(ctx);
+      const match = await db.match.findFirst({
+        where: { id: matchId, ...(scope ? { teamId: scope } : {}) },
+        select: { id: true, teamId: true, startsAt: true, callUpsClosedAt: true, team: { select: { ageGroup: true, sportId: true } } },
+      });
+      if (!match) throw new NotFoundException("Jogo não encontrado ou fora do teu âmbito");
+      if (match.startsAt.getTime() > Date.now()) {
+        throw new BadRequestException("O jogo ainda não aconteceu — a convocatória monta-se em Convocatórias");
+      }
+      if (ids.length === 0) throw new BadRequestException("O plantel está vazio");
+      if (ids.length > 60) throw new BadRequestException("Plantel fora do razoável");
+
+      // Mesma elegibilidade da convocatória normal: plantel da equipa, mais
+      // convidados de escalões iguais ou inferiores. Ver `saveCallUps`.
+      const matchRank = ageGroupRank(match.team.ageGroup);
+      const guestTeamIds =
+        matchRank === null
+          ? []
+          : (
+              await db.team.findMany({
+                where: { sportId: match.team.sportId, id: { not: match.teamId } },
+                select: { id: true, ageGroup: true },
+              })
+            )
+              .filter((t) => {
+                const rank = ageGroupRank(t.ageGroup);
+                return rank !== null && rank <= matchRank;
+              })
+              .map((t) => t.id);
+
+      const roster = await db.athlete.findMany({
+        where: {
+          id: { in: ids },
+          teams: { some: { teamId: { in: [match.teamId, ...guestTeamIds] } } },
+        },
+        select: { id: true, teams: { select: { teamId: true } } },
+      });
+      if (roster.length !== ids.length) {
+        throw new BadRequestException("Atleta fora do plantel desta equipa e não elegível como convidado");
+      }
+
+      /*
+       * Substitui, não acrescenta — e apaga a ficha do que sair.
+       *
+       * Se alguém tirar um atleta do plantel retroactivo, a linha da ficha dele
+       * ficava órfã: minutos de um jogo em que oficialmente não esteve. O
+       * `deleteMany` da ficha limita-se a quem saiu.
+       */
+      const actuais = (await db.matchCallUp.findMany({ where: { matchId }, select: { athleteId: true } })).map(
+        (c) => c.athleteId,
+      );
+      const saem = actuais.filter((a) => !ids.includes(a));
+      if (saem.length) {
+        await db.matchAppearance.deleteMany({ where: { matchId, athleteId: { in: saem } } });
+      }
+
+      await db.matchCallUp.deleteMany({ where: { matchId } });
+      await db.matchCallUp.createMany({
+        data: ids.map((athleteId) => ({
+          matchId,
+          athleteId,
+          isGuest: !roster.find((a) => a.id === athleteId)?.teams.some((t) => t.teamId === match.teamId),
+        })),
+      });
+
+      // Fechado à nascença: isto é um registo, não um convite por responder.
+      if (!match.callUpsClosedAt) {
+        await db.match.update({ where: { id: matchId }, data: { callUpsClosedAt: new Date() } });
+      }
+
+      return { ok: true as const, calledUp: ids.length };
+    });
+  }
+
+  /**
+   * Quem pode entrar no plantel retroactivo: a equipa, mais os convidados
+   * elegíveis. Só para jogos já começados — o `guestPool` normal serve o futuro.
+   */
+  async retroPool(ctx: RequestContext, matchId: string) {
+    this.assertCanRecord(ctx);
+
+    return this.prisma.runAs(ctx.academyId, async (db) => {
+      const scope = teamScopeFilter(ctx);
+      const match = await db.match.findFirst({
+        where: { id: matchId, ...(scope ? { teamId: scope } : {}) },
+        select: { id: true, teamId: true, startsAt: true, team: { select: { ageGroup: true, sportId: true } } },
+      });
+      if (!match) throw new NotFoundException("Jogo não encontrado ou fora do teu âmbito");
+      if (match.startsAt.getTime() > Date.now()) {
+        throw new BadRequestException("O jogo ainda não aconteceu");
+      }
+
+      const rows = await db.athlete.findMany({
+        /*
+         * Sem os que já saíram do clube (LEFT) — mas COM os pausados: o jogo é
+         * passado, e quem está em pausa hoje pode ter jogado nessa altura.
+         */
+        where: { teams: { some: { teamId: match.teamId } }, status: { not: "LEFT" } },
+        orderBy: { name: "asc" },
+        select: {
+          id: true,
+          name: true,
+          teams: { where: { teamId: match.teamId }, select: { position: true }, take: 1 },
+        },
+      });
+
+      return rows.map((a) => ({
+        athleteId: a.id,
+        name: a.name,
+        position: a.teams[0]?.position ?? null,
+      }));
+    });
+  }
+
+  /**
+   * Registar o que aconteceu é da mesma família que registar quem esteve.
+   *
+   * `attendance:write`, e não `calendar:write`: marcar um jogo no calendário e
+   * dizer quem marcou os golos são trabalhos diferentes, e há quem faça um sem o
+   * outro. É a mesma linha que já separa convocar de ver o calendário.
+   */
+  private assertCanRecord(ctx: RequestContext) {
+    if (!can(ctx, "attendance:write")) throw new ForbiddenException("Sem permissão para registar o jogo");
+  }
+
+  /** O jogo existe e está no âmbito de quem pergunta. Nada mais. */
+  private async mustReach(db: ScopedClient, ctx: RequestContext, matchId: string) {
+    const scope = teamScopeFilter(ctx);
+    const match = await db.match.findFirst({
+      where: { id: matchId, ...(scope ? { teamId: scope } : {}) },
+      select: { id: true, teamId: true, startsAt: true },
+    });
+    if (!match) throw new NotFoundException("Jogo não encontrado ou fora do teu âmbito");
+    return match;
   }
 
   /**
@@ -391,6 +998,11 @@ export class MatchesService {
  * não há como saber a direção "sobe/desce", e a funcionalidade fica em silêncio em
  * vez de arriscar a direcção errada.
  */
+/** Segura um número dentro do razoável. Um 999 na ficha é um dedo escorregado. */
+function clamp(n: number, lo: number, hi: number): number {
+  return Math.max(lo, Math.min(hi, Math.round(Number(n) || 0)));
+}
+
 function ageGroupRank(label: string): number | null {
   const match = /sub[\s-]?(\d+)/i.exec(label);
   return match ? Number(match[1]) : null;

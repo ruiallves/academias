@@ -95,7 +95,7 @@ export type InviteSummary = {
 
 /** O que a página de resgate mostra. Nada disto revela quem mais existe na academia. */
 export type InvitePreview = {
-  academy: { slug: string; name: string; shortName: string; mark: string; signalColor: string };
+  academy: { slug: string; name: string; shortName: string; mark: string; signalColor: string; logoUrl?: string };
   name: string;
   email: string;
   role: Role;
@@ -185,7 +185,15 @@ export class InvitesService {
             name,
             role: cargo.baseRole,
             title: cargo.name,
-            department: cargo.department,
+            /*
+             * O enum antigo fica por preencher, de propósito.
+             *
+             * `academyRoleId` abaixo é a ligação a sério — o cargo sabe o seu
+             * departamento, e o departamento é agora uma linha, não um de cinco
+             * valores fixos. Repetir aqui uma aproximação do departamento era
+             * guardar a mesma coisa duas vezes, com uma delas a poder mentir.
+             */
+            department: null,
             academyRoleId: cargo.id,
             teamIds,
             invitedById: ctx.membershipId,
@@ -275,7 +283,9 @@ export class InvitesService {
 
       const academy = await db.academy.findFirst({
         where: { id: academyId },
-        select: { slug: true, name: true, shortName: true, signalColor: true },
+        // O emblema segue para a pagina do convite: e o clube que convida, e a
+        // primeira coisa que a pessoa deve reconhecer ao abrir o link.
+        select: { slug: true, name: true, shortName: true, signalColor: true, logoUrl: true },
       });
       if (!academy) throw new NotFoundException("Academia não encontrada");
 
@@ -284,7 +294,8 @@ export class InvitesService {
         : [];
 
       return {
-        academy: { ...academy, mark: monogram(academy.shortName) },
+        // `?? undefined`: o Prisma devolve null, o template quer ausencia.
+        academy: { ...academy, mark: monogram(academy.shortName), logoUrl: academy.logoUrl ?? undefined },
         name: invite.name,
         email: invite.email,
         role: invite.role,

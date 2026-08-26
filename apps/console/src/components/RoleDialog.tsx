@@ -1,24 +1,37 @@
 import { useMemo, useState } from "react";
-import { Check } from "@/lib/icons";
 import { Dialog, DialogField, dialogInputClass } from "./Dialog";
-import { Pill, SelectField, cx } from "./primitives";
-import { DEPARTMENT_LABEL, type StaffDepartment } from "@/data/types";
-import { ADMIN_AREAS, AREAS, CLINICAL_AREAS, SCOUTING_AREAS, levelOf, type Area, type Level } from "@/lib/access";
-import { NAV_CATALOG, SETTINGS_ITEM } from "@/lib/nav";
-import { ROLE_PERMISSIONS, permissionsOf, type Permission, type Role, type Session } from "@/lib/permissions";
-import { BASE_ROLE_HINT, SELECTABLE_BASES, createRole, setRoleNav, updateRole, type AcademyRole } from "@/lib/roles";
+import { Pill, SelectField } from "./primitives";
+import { AreaBlocks, NavPicker, SectionHead, applyLevel, possibleNavKeys } from "./PermissionPicker";
+import type { Area, Level } from "@/lib/access";
+import { SCOPE_HINT, useDepartments, type Department } from "@/lib/departments";
+import { ROLE_PERMISSIONS, permissionsOf, type Permission, type Session } from "@/lib/permissions";
+import { createRole, setRoleNav, updateRole, type AcademyRole } from "@/lib/roles";
 
 /**
- * Criar e editar um papel.
+ * Criar e editar um cargo.
  *
- * ## O problema que isto resolve
+ * ## A pergunta que este ecrã deixou de fazer
  *
- * Criar um papel e **depois** ir a outro sítio dizer o que ele vê era a queixa: a
- * pergunta "o que é que este papel faz?" e a pergunta "o que é que ele vê no
- * menu?" fazem-se ao mesmo tempo, e a segunda depende da primeira. Aqui estão no
- * mesmo painel, por ordem, e o bloco dos menus reage ao das permissões — marcar
- * "Mensalidades: nada" apaga o item *Mensalidades* da lista de menus à frente de
- * quem está a configurar, com a razão escrita ao lado.
+ * Perguntava **Âmbito**: se a pessoa via o clube todo ou só as equipas dela. E
+ * ninguém a percebia — com razão, porque não é uma pergunta sobre o cargo. "A
+ * equipa técnica vê só as equipas dela" é uma decisão sobre a *área do clube*,
+ * tomada uma vez, e não algo a repetir a cada fisioterapeuta que se contrata.
+ *
+ * A pergunta mudou de sítio, para `DepartmentDialog`. O que este ecrã pergunta
+ * agora é a que departamento o cargo pertence — e daí vem tudo: o alcance, e o
+ * ponto de partida das permissões.
+ *
+ * ## Herdar é um gesto, não uma ligação permanente
+ *
+ * Escolher o departamento **copia** as permissões dele para aqui, e a partir daí
+ * este ecrã é o dono delas: tira-se e acrescenta-se à vontade, e as linhas que se
+ * afastarem do que veio ficam marcadas com *alterado*. É o que responde ao caso
+ * real — o fisioterapeuta-chefe é do departamento clínico e tem mais uma coisa
+ * que os outros clínicos não têm.
+ *
+ * Se ficasse a apontar, editar o departamento mudava em silêncio o que dezenas de
+ * pessoas podem fazer. Uma tabela de permissões não deve ter efeitos a essa
+ * distância.
  *
  * ## Porque é que os menus não são um segundo interruptor de segurança
  *
@@ -30,58 +43,56 @@ import { BASE_ROLE_HINT, SELECTABLE_BASES, createRole, setRoleNav, updateRole, t
 export function RoleDialog({
   role,
   session,
+  /** Já escolhido: criar um cargo a partir de dentro de um departamento. */
+  departmentId: inicial,
   onClose,
 }: {
   /** Ausente = criar. */
   role?: AcademyRole;
   session: Session;
+  departmentId?: string;
   onClose: () => void;
 }) {
   const editing = Boolean(role);
+  const { departments } = useDepartments();
 
   const [name, setName] = useState(role?.name ?? "");
   const [description, setDescription] = useState(role?.description ?? "");
-  const [baseRole, setBaseRole] = useState<Role>(role?.baseRole ?? "COACH");
+  const [departmentId, setDepartmentId] = useState<string>(role?.departmentId ?? inicial ?? "");
   const [permissions, setPermissions] = useState<Set<Permission>>(
-    () => new Set(role?.permissions ?? ROLE_PERMISSIONS["COACH"]),
+    () => new Set(role?.permissions ?? ROLE_PERMISSIONS["STAFF"]),
   );
   const [navKeys, setNavKeys] = useState<string[]>(role?.navKeys ?? []);
-  const [department, setDepartment] = useState<StaffDepartment | "">(role?.department ?? "");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   /** O tecto: ninguém dá o que não tem, e o servidor recusa na mesma. */
   const mine = useMemo(() => permissionsOf(session), [session]);
-
   const mayMenus = mine.has("role:menu");
   const valid = name.trim().length >= 2;
 
+  const dep: Department | undefined = departments.find((d) => d.id === departmentId);
+
+  /** O que este cargo herdou, para as linhas alteradas se poderem marcar. */
+  const inherited = useMemo(() => (dep ? new Set<Permission>(dep.permissions) : undefined), [dep]);
+
   /*
-   * Trocar de papel-base repõe as permissões pelo ponto de partida desse base.
-   * Só na criação: num papel que já existe, mudar o base é proibido no servidor
-   * (mudaria o âmbito de toda a gente que o veste, em silêncio).
+   * Escolher o departamento traz as permissões dele.
+   *
+   * Só ao escolher, e não continuamente: a partir daqui quem manda é este ecrã.
+   * Ao editar um cargo que já existe, trocar de departamento também repõe — é a
+   * leitura óbvia do gesto ("passou para o clínico"), e quem quiser guardar os
+   * ajustes que tinha faz-nos outra vez à frente, a ver o que está a fazer.
    */
-  function changeBase(next: Role) {
-    setBaseRole(next);
-    setPermissions(new Set(ROLE_PERMISSIONS[next].filter((p) => mine.has(p))));
+  function changeDepartment(next: string) {
+    setDepartmentId(next);
+    const d = departments.find((x) => x.id === next);
+    if (d) setPermissions(new Set(d.permissions.filter((p) => mine.has(p))));
   }
 
-  function setArea(area: Area, level: Level) {
-    setPermissions((current) => {
-      const next = new Set(current);
-      if (level === "none") {
-        next.delete(area.read);
-        if (area.write) next.delete(area.write);
-      } else {
-        next.add(area.read);
-        if (area.write) {
-          if (level === "write") next.add(area.write);
-          else next.delete(area.write);
-        }
-      }
-      return next;
-    });
-  }
+  const setArea = (area: Area, level: Level) => setPermissions((current) => applyLevel(current, area, level));
+
+  const visibleKeys = useMemo(() => possibleNavKeys(permissions), [permissions]);
 
   async function save() {
     setBusy(true);
@@ -93,7 +104,7 @@ export function RoleDialog({
         await updateRole(role.id, {
           name: name.trim(),
           description: description.trim(),
-          department: department || null,
+          departmentId: departmentId || null,
           permissions: chosen,
         });
         if (mayMenus) await setRoleNav(role.id, navKeys.filter((k) => visibleKeys.has(k)));
@@ -101,8 +112,15 @@ export function RoleDialog({
         await createRole({
           name: name.trim(),
           description: description.trim(),
-          baseRole,
-          department: department || null,
+          departmentId: departmentId || null,
+          /*
+           * Só quando não há departamento.
+           *
+           * Com departamento, o servidor ignora o que aqui viesse e usa o alcance
+           * do departamento — a decisão tem um dono só. Sem departamento não há
+           * de onde herdar, e o cargo fica no mais fechado dos alcances.
+           */
+          baseRole: departmentId ? undefined : "STAFF",
           permissions: chosen,
         });
       }
@@ -114,18 +132,14 @@ export function RoleDialog({
     }
   }
 
-  /** Os menus que estas permissões tornam possíveis. Muda enquanto se configura. */
-  const visibleKeys = useMemo(() => {
-    const keys = new Set<string>();
-    for (const group of NAV_CATALOG) for (const item of group.items) if (permissions.has(item.requires)) keys.add(item.key);
-    if (permissions.has(SETTINGS_ITEM.requires)) keys.add(SETTINGS_ITEM.key);
-    return keys;
-  }, [permissions]);
-
   return (
     <Dialog
-      title={editing ? `Editar ${role!.name}` : "Novo papel"}
-      subtitle={editing ? `${role!.people} ${role!.people === 1 ? "pessoa" : "pessoas"} com este papel` : "O que pode fazer e o que vê"}
+      title={editing ? `Editar ${role!.name}` : "Novo cargo"}
+      subtitle={
+        editing
+          ? `${role!.people} ${role!.people === 1 ? "pessoa" : "pessoas"} com este cargo`
+          : "Uma função dentro de um departamento"
+      }
       onClose={onClose}
       width={620}
       labelledBy="role-dialog"
@@ -136,7 +150,7 @@ export function RoleDialog({
             Cancelar
           </button>
           <button type="button" className="ctl-primary" disabled={!valid || busy} onClick={() => void save()}>
-            {busy ? "A gravar…" : editing ? "Gravar" : "Criar papel"}
+            {busy ? "A gravar…" : editing ? "Gravar" : "Criar cargo"}
           </button>
         </>
       }
@@ -148,7 +162,7 @@ export function RoleDialog({
             autoFocus
             value={name}
             onChange={(e) => setName(e.target.value)}
-            placeholder="Diretor desportivo"
+            placeholder="Fisioterapeuta"
             className={dialogInputClass}
           />
         </DialogField>
@@ -162,250 +176,72 @@ export function RoleDialog({
           />
         </DialogField>
 
-        {editing ? (
-          <p className="text-meta text-ink-3">
-            Âmbito: <span className="text-ink-2">{BASE_ROLE_HINT[role!.baseRole]}</span> Não se muda depois de
-            criado — mudaria o que toda a gente com este papel consegue ver, sem ninguém tocar em pessoa
-            nenhuma.
-          </p>
-        ) : (
-          <DialogField label="Âmbito" hint="não se muda depois">
-            <div className="space-y-1.5">
-              <div className="flex flex-wrap gap-1.5">
-                {SELECTABLE_BASES.map((r) => (
-                  <button
-                    key={r}
-                    type="button"
-                    onClick={() => changeBase(r)}
-                    className={cx(
-                      "rounded-[var(--radius-control)] border px-2.5 py-1 text-meta font-medium transition-colors",
-                      baseRole === r
-                        ? "border-transparent bg-ink text-surface"
-                        : "border-line text-ink-2 hover:border-line-strong",
-                    )}
-                  >
-                    {BASE_LABEL[r]}
-                  </button>
-                ))}
-              </div>
-              <p className="text-meta text-ink-3">{BASE_ROLE_HINT[baseRole]}</p>
-            </div>
-          </DialogField>
-        )}
-
         {/*
-          O departamento a que este cargo pertence.
-          É o que faz o convite conseguir perguntar primeiro o departamento e só
-          depois o cargo — sem isto, o cargo não aparece em menu nenhum e ninguém
-          o consegue atribuir. Um departamento tem vários cargos; um cargo
-          pertence a um só.
+          O departamento, que é de onde vem tudo.
+          Substituiu a pergunta do "âmbito" — ver a nota no topo do ficheiro.
         */}
-        <DialogField label="Departamento" hint="onde este cargo aparece ao convidar">
+        <DialogField label="Departamento" hint="de onde herda o que pode">
           <SelectField
             className="w-full"
-            value={department}
-            onChange={setDepartment}
+            value={departmentId}
+            onChange={changeDepartment}
             options={[
-              { value: "" as const, label: "Sem departamento (presidência)" },
-              ...(Object.keys(DEPARTMENT_LABEL) as StaffDepartment[]).map((d) => ({
-                value: d,
-                label: DEPARTMENT_LABEL[d],
-              })),
+              { value: "", label: "Sem departamento (presidência)" },
+              ...departments.map((d) => ({ value: d.id, label: d.name })),
             ]}
           />
         </DialogField>
+
+        {dep ? (
+          <p className="text-meta leading-relaxed text-ink-3">
+            Herda de <span className="text-ink-2">{dep.name}</span>: {SCOPE_HINT[dep.baseRole]} Podes
+            acrescentar ou tirar em baixo — as linhas que mudares ficam marcadas.
+          </p>
+        ) : (
+          <p className="text-meta leading-relaxed text-ink-3">
+            Sem departamento, este cargo não herda nada e vê apenas as equipas que lhe forem
+            atribuídas. É o caso da presidência, que responde por tudo à parte.
+          </p>
+        )}
       </section>
 
       {/* --- 2. O que pode --------------------------------------------------- */}
       <section className="border-b border-line">
-        <SectionHead title="O que pode" hint="é isto que o servidor verifica" />
-        <AreaList areas={AREAS} permissions={permissions} mine={mine} onChange={setArea} />
-        <SectionHead title="Clínico" hint="categoria especial no RGPD" subtle />
-        <AreaList areas={CLINICAL_AREAS} permissions={permissions} mine={mine} onChange={setArea} />
-        <SectionHead title="Scouting" hint="o vídeo é separado de propósito" subtle />
-        <AreaList areas={SCOUTING_AREAS} permissions={permissions} mine={mine} onChange={setArea} />
-        <SectionHead title="Administração" hint="muda o produto para os outros" subtle />
-        <AreaList areas={ADMIN_AREAS} permissions={permissions} mine={mine} onChange={setArea} />
+        <SectionHead title="O que pode" hint={dep ? `a partir de ${dep.name}` : "é isto que o servidor verifica"} />
+        <AreaBlocks permissions={permissions} mine={mine} onChange={setArea} inherited={inherited} />
       </section>
 
       {/* --- 3. O que vê ----------------------------------------------------- */}
       <section>
-        <SectionHead title="O que vê no menu" hint={navKeys.length === 0 ? "tudo o que a permissão deixar" : `${navKeys.length} escolhidos`} />
+        <SectionHead
+          title="O que vê no menu"
+          hint={navKeys.length === 0 ? "tudo o que a permissão deixar" : `${navKeys.length} escolhidos`}
+        />
 
-        <div className="px-5 pb-4">
-          <p className="mb-3 text-meta leading-relaxed text-ink-3">
-            Isto é arrumação, não segurança: esconder um item não retira a permissão, e quem souber o
-            endereço continua a chegar lá. Para fechar mesmo, tira a permissão em cima.
-          </p>
-
+        <div className="px-5 pb-4 pt-3">
           {!mayMenus && editing && (
             <p className="mb-3 text-meta text-warn">Não tens permissão para configurar menus.</p>
           )}
 
           {!editing ? (
-            <p className="text-meta text-ink-3">
-              Um papel novo começa a mostrar tudo o que as permissões deixam. Os menus configuram-se
-              depois de o criar.
+            <p className="text-meta leading-relaxed text-ink-3">
+              Um cargo novo mostra tudo o que as permissões deixam. Os menus configuram-se depois de o
+              criar.
             </p>
           ) : (
-            <div className="space-y-3">
-              <label className="flex cursor-pointer items-center gap-2">
-                <Toggle on={navKeys.length === 0} disabled={!mayMenus} onClick={() => setNavKeys([])} />
-                <span className="text-body text-ink-2">Mostrar tudo o que as permissões deixarem</span>
-              </label>
-
-              {navKeys.length > 0 && (
-                <ul className="rounded-[var(--radius-control)] border border-line">
-                  {[...NAV_CATALOG, { label: undefined, items: [SETTINGS_ITEM] }].flatMap((g) => g.items).map((item) => {
-                    const possible = visibleKeys.has(item.key);
-                    const on = navKeys.includes(item.key);
-                    return (
-                      <li
-                        key={item.key}
-                        className="flex items-center gap-3 border-b border-line px-3 py-2 last:border-b-0"
-                      >
-                        <Toggle
-                          on={on && possible}
-                          disabled={!mayMenus || !possible}
-                          onClick={() =>
-                            setNavKeys((k) => (on ? k.filter((x) => x !== item.key) : [...k, item.key]))
-                          }
-                        />
-                        <item.icon className={cx("size-4", possible ? "text-ink-3" : "text-ink-4")} strokeWidth={1.75} />
-                        <span className={cx("flex-1 text-body", possible ? "text-ink" : "text-ink-4")}>
-                          {item.label}
-                        </span>
-                        {!possible && <Pill>sem permissão</Pill>}
-                      </li>
-                    );
-                  })}
-                </ul>
-              )}
-
-              {navKeys.length === 0 && (
-                <button
-                  type="button"
-                  disabled={!mayMenus}
-                  onClick={() => setNavKeys([...visibleKeys])}
-                  className="ctl-ghost"
-                >
-                  Escolher item a item
-                </button>
-              )}
-            </div>
+            <NavPicker navKeys={navKeys} setNavKeys={setNavKeys} possible={visibleKeys} disabled={!mayMenus} />
           )}
         </div>
       </section>
+
+      {editing && role!.isSystem && (
+        <div className="border-t border-line bg-sunken/50 px-5 py-3">
+          <Pill>de origem</Pill>{" "}
+          <span className="text-meta text-ink-3">
+            Este cargo veio de origem. O nome e as permissões editam-se; apagar, não.
+          </span>
+        </div>
+      )}
     </Dialog>
-  );
-}
-
-/* -------------------------------------------------------------------------- */
-
-const BASE_LABEL: Record<string, string> = {
-  DIRECTOR: "Academia",
-  COORDINATOR: "Academia",
-  COACH: "Por equipa",
-  STAFF: "Por equipa",
-  MEDICAL: "Academia (clínico)",
-  SCOUT: "Academia (scouting)",
-};
-
-function SectionHead({ title, hint, subtle }: { title: string; hint?: string; subtle?: boolean }) {
-  return (
-    <div
-      className={cx(
-        "flex items-baseline justify-between gap-3 px-5 py-2.5",
-        subtle ? "border-t border-line bg-sunken/40" : "bg-sunken/60",
-      )}
-    >
-      <span className="text-group text-ink-3 uppercase">{title}</span>
-      {hint && <span className="text-meta text-ink-4">{hint}</span>}
-    </div>
-  );
-}
-
-/**
- * Uma linha por área, três estados.
- *
- * "Ver" e "editar" não são independentes — não existe editar sem ver — e dois
- * interruptores deixavam exprimir esse estado impossível. Aqui o estado inválido
- * não é evitado por validação: não cabe na interface. É a mesma escolha do painel
- * de acesso por pessoa, e de propósito: quem já aprendeu um aprendeu o outro.
- */
-function AreaList({
-  areas,
-  permissions,
-  mine,
-  onChange,
-}: {
-  areas: Area[];
-  permissions: Set<Permission>;
-  mine: Set<Permission>;
-  onChange: (area: Area, level: Level) => void;
-}) {
-  return (
-    <ul>
-      {areas.map((area) => {
-        const level = levelOf(area, permissions);
-        // Só se dá o que se tem. Sem isto, a interface deixava escolher algo que o
-        // servidor ia calar — e o papel gravava-se sem aquilo, sem explicação.
-        const allowed = mine.has(area.read);
-
-        const options: { value: Level; label: string }[] = [
-          { value: "none", label: "Nada" },
-          { value: "read", label: area.write ? "Ver" : "Sim" },
-          ...(area.write && mine.has(area.write) ? [{ value: "write" as const, label: "Editar" }] : []),
-        ];
-
-        return (
-          <li key={area.label} className="flex flex-wrap items-center gap-3 border-b border-line px-5 py-2.5 last:border-b-0">
-            <div className="min-w-0 flex-1">
-              <div className="text-body font-medium text-ink">{area.label}</div>
-              <div className="text-meta text-ink-3">{area.hint}</div>
-            </div>
-
-            {allowed ? (
-              <div className="flex shrink-0 rounded-[var(--radius-control)] border border-line p-0.5">
-                {options.map((o) => (
-                  <button
-                    key={o.value}
-                    type="button"
-                    onClick={() => onChange(area, o.value)}
-                    className={cx(
-                      "rounded-[6px] px-2.5 py-1 text-meta font-medium transition-colors",
-                      level === o.value ? "bg-ink text-surface" : "text-ink-3 hover:text-ink",
-                    )}
-                  >
-                    {o.label}
-                  </button>
-                ))}
-              </div>
-            ) : (
-              <Pill>não tens</Pill>
-            )}
-          </li>
-        );
-      })}
-    </ul>
-  );
-}
-
-function Toggle({ on, disabled, onClick }: { on: boolean; disabled?: boolean; onClick: () => void }) {
-  return (
-    <button
-      type="button"
-      role="checkbox"
-      aria-checked={on}
-      disabled={disabled}
-      onClick={onClick}
-      className={cx(
-        "flex size-[18px] shrink-0 items-center justify-center rounded-[5px] border transition-colors",
-        on ? "border-transparent bg-signal text-white" : "border-line-strong bg-surface",
-        disabled && "opacity-40",
-      )}
-    >
-      {on && <Check className="size-3" strokeWidth={3} />}
-    </button>
   );
 }

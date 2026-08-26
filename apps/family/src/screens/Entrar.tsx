@@ -376,6 +376,18 @@ function Dados({ token, onVoltar, onPronto }: { token: string; onVoltar: () => v
   const [phone, setPhone] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  /*
+   * A confirmacao.
+   *
+   * Uma palavra-passe **nova** escreve-se as escuras: se a pessoa se enganar num
+   * caracter, so descobre no proximo arranque da app — e ai ja nao ha como saber
+   * o que escreveu. Escreve-la duas vezes e o que apanha o engano no momento em
+   * que ele acontece.
+   *
+   * O caminho de quem ja tem conta nao repete, e e de proposito: ai a
+   * palavra-passe nao e nova, e o servidor responde "errada" na hora.
+   */
+  const [password2, setPassword2] = useState("");
   const [relation, setRelation] = useState("Mãe");
   const [busy, setBusy] = useState(false);
   const [erro, setErro] = useState<string | null>(null);
@@ -384,6 +396,7 @@ function Dados({ token, onVoltar, onPronto }: { token: string; onVoltar: () => v
     name.trim().length >= 2 &&
     /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim()) &&
     password.length >= 8 &&
+    password === password2 &&
     phone.trim().length >= 9;
 
   async function criar(e: FormEvent) {
@@ -470,6 +483,22 @@ function Dados({ token, onVoltar, onPronto }: { token: string; onVoltar: () => v
           className={INPUT}
         />
       </Campo>
+
+      <Campo label="Repetir palavra-passe">
+        <input
+          type="password"
+          value={password2}
+          onChange={(e) => setPassword2(e.target.value)}
+          autoComplete="new-password"
+          className={INPUT}
+        />
+      </Campo>
+
+      {/* So depois de a pessoa ter escrito alguma coisa: um aviso que aparece
+          antes de haver o que avisar le-se como erro. */}
+      {password2.length > 0 && password !== password2 && (
+        <p className="text-[13px] text-[#a82a20]">As duas palavras-passe não são iguais.</p>
+      )}
 
       {erro && <p className="rounded-[var(--radius-sm)] bg-[#fae9e7] px-3.5 py-2.5 text-[13px] leading-relaxed text-[#a82a20]">{erro}</p>}
 

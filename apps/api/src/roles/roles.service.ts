@@ -1,5 +1,5 @@
 import { BadRequestException, ForbiddenException, Injectable, NotFoundException } from "@nestjs/common";
-import type { Role, StaffDepartment } from "@prisma/client";
+import type { Role } from "@prisma/client";
 import { PrismaService, type ScopedClient } from "../prisma/prisma.service";
 import { NAV_KEYS, isNavKey } from "../common/nav";
 import { ROLE_PERMISSIONS, can, type Permission, type RequestContext } from "../common/permissions";
@@ -107,7 +107,7 @@ export function isPresidente(name: string): boolean {
  */
 export function initialRoles(
   academyId: string,
-  template: { key: string; name: string; department: StaffDepartment | null } | null,
+  template: { key: string; name: string } | null,
 ): { rows: Record<string, unknown>[]; inviteRoleKey: string; baseRole: Role } {
   const now = new Date();
 
@@ -143,7 +143,14 @@ export function initialRoles(
      * estar limitado a equipas que ainda não existem.
      */
     baseRole: "OWNER" as Role,
-    department: template.department,
+    /*
+     * Sem departamento, tal como o presidente.
+     *
+     * Este cargo nasce com tudo porque é o primeiro a entrar e não há mais
+     * ninguém a quem pedir. Arrumá-lo num departamento seria dizer que herdou
+     * dele, e herdou o contrário: tem mais do que qualquer departamento dá.
+     */
+    departmentId: null,
     permissions: ROLE_PERMISSIONS.OWNER,
     navKeys: [] as string[],
     isSystem: false,
@@ -157,9 +164,14 @@ export function initialRoles(
 export type RoleInput = {
   name: string;
   description?: string | null;
-  baseRole: Role;
+  /**
+   * O âmbito. Ignorado quando vem `departmentId`: nesse caso é o do
+   * departamento, porque é lá que essa decisão se toma — ver `DepartmentsService`.
+   * Só é preciso num cargo sem departamento.
+   */
+  baseRole?: Role;
   /** A que departamento pertence. Nulo é "nenhum" — o caso do presidente. */
-  department?: StaffDepartment | null;
+  departmentId?: string | null;
   permissions: string[];
 };
 
@@ -203,7 +215,8 @@ export class RolesService {
         orderBy: [{ rank: "desc" }, { name: "asc" }],
         select: {
           id: true, key: true, name: true, description: true, baseRole: true,
-          department: true, permissions: true, navKeys: true, isSystem: true, rank: true,
+          departmentId: true, permissions: true, navKeys: true, isSystem: true, rank: true,
+          department: { select: { id: true, name: true, baseRole: true } },
           _count: { select: { memberships: true } },
         },
       });
@@ -214,7 +227,8 @@ export class RolesService {
         name: r.name,
         description: r.description,
         baseRole: r.baseRole,
-        department: r.department,
+        departmentId: r.departmentId,
+        department: r.department?.name ?? null,
         permissions: r.permissions,
         navKeys: r.navKeys,
         isSystem: r.isSystem,
@@ -231,32 +245,51 @@ export class RolesService {
 
     const name = input.name.trim();
     if (name.length < 2) throw new BadRequestException("Falta o nome do papel");
-    if (!STAFF_BASES.includes(input.baseRole)) throw new BadRequestException("Papel-base inválido");
-    if (RANK[input.baseRole] > RANK[ctx.role]) {
-      throw new ForbiddenException("Não podes criar um papel com mais acesso do que tu");
-    }
 
     const permissions = this.filterGrantable(ctx, input.permissions);
 
     return this.prisma.runAs(ctx.academyId, async (db) => {
+      /*
+       * O âmbito vem do departamento, quando há um.
+       *
+       * Era uma pergunta no ecrã de criar cargos, com o nome "Âmbito", e ninguém
+       * a entendia. Não admira: não é uma pergunta sobre o cargo. "A equipa
+       * técnica vê só as equipas dela" decide-se ao criar o departamento, uma
+       * vez, e todos os cargos lá dentro herdam-na. O que o cliente mandar em
+       * `baseRole` é ignorado quando há departamento — a decisão tem um dono só.
+       */
+      let baseRole = input.baseRole;
+      if (input.departmentId) {
+        const dep = await db.department.findFirst({
+          where: { id: input.departmentId },
+          select: { baseRole: true },
+        });
+        if (!dep) throw new BadRequestException("Departamento não encontrado");
+        baseRole = dep.baseRole;
+      }
+      if (!baseRole) throw new BadRequestException("Falta o departamento ou o âmbito");
+      if (!STAFF_BASES.includes(baseRole)) throw new BadRequestException("Papel-base inválido");
+      if (RANK[baseRole] > RANK[ctx.role]) {
+        throw new ForbiddenException("Não podes criar um papel com mais acesso do que tu");
+      }
+
       const key = await this.freeKey(db, slugify(name));
-      const role = await db.academyRole.create({
+      return db.academyRole.create({
         data: {
           academyId: ctx.academyId,
           key,
           name,
           description: input.description?.trim() || null,
-          baseRole: input.baseRole,
-          department: input.department ?? null,
+          baseRole,
+          departmentId: input.departmentId ?? null,
           permissions,
           navKeys: [],
           isSystem: false,
-          rank: RANK[input.baseRole],
+          rank: RANK[baseRole],
           updatedAt: new Date(),
         },
         select: { id: true, key: true, name: true },
       });
-      return role;
     });
   }
 
@@ -275,7 +308,23 @@ export class RolesService {
         data.name = name;
       }
       if (input.description !== undefined) data.description = input.description?.trim() || null;
-      if (input.department !== undefined) data.department = input.department;
+      /*
+       * Mudar de departamento muda a arrumação, não o âmbito.
+       *
+       * O `baseRole` fica onde está — mudá-lo em silêncio era a razão de ele ser
+       * imutável (ver a nota mais abaixo). Quem quer outro âmbito cria outro
+       * cargo no departamento certo e move lá as pessoas.
+       */
+      if (input.departmentId !== undefined) {
+        if (input.departmentId) {
+          const dep = await db.department.findFirst({
+            where: { id: input.departmentId },
+            select: { id: true },
+          });
+          if (!dep) throw new BadRequestException("Departamento não encontrado");
+        }
+        data.departmentId = input.departmentId;
+      }
       if (input.permissions !== undefined) data.permissions = this.filterGrantable(ctx, input.permissions);
 
       /*

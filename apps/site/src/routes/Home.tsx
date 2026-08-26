@@ -1,31 +1,32 @@
-import { Hero, Sistema } from "@/sections/top";
-import { Consola, Familias, Pagamentos, Scouting, Socios, Treinador } from "@/sections/product";
-import { Fecho, Perguntas, Roteiro, Seguranca } from "@/sections/trust";
+import { Campo, Hero, Realidade } from "@/sections/top";
+import { Pagamentos, Tour } from "@/sections/product";
+import { Fecho, Seguranca } from "@/sections/trust";
 import { Precos } from "@/sections/Precos";
 
 /**
  * A página.
  *
- * A ordem é um argumento, não uma lista de secções: primeiro o alívio (herói),
- * depois o sistema que o explica. Só então o produto — gestão, equipa técnica,
- * famílias, pagamentos, scouting, sócios — e por fim as três coisas que fecham uma
- * venda a um clube: segurança, honestidade sobre o que falta, e preço.
+ * Sete andamentos, cada um com a sua respiração — não doze secções com a mesma
+ * estrutura. O herói mostra o produto antes de qualquer argumento; a seguir,
+ * quatro linhas com o clube tal como ele é hoje, que é a única coisa que quem
+ * chega já reconhece; o tour condensa o produto num sítio só; pagamentos e
+ * segurança fecham as duas objecções reais; a nota assume que isto é novo — que
+ * é o que uma página sem clientes tem de fazer em vez de fingir escala — e o
+ * preço vem no fim, quando já se sabe o que se está a comprar.
+ *
+ * O que saiu daqui não desapareceu: o inventário completo vive em /software,
+ * as perguntas em /planos. A homepage vende a vista, não o manual.
  */
 export default function Home() {
   return (
     <>
       <Hero />
-      <Sistema />
-      <Consola />
-      <Treinador />
-      <Familias />
+      <Realidade />
+      <Campo />
+      <Tour />
       <Pagamentos />
-      <Scouting />
-      <Socios />
       <Seguranca />
-      <Roteiro />
       <Precos />
-      <Perguntas />
       <Fecho />
     </>
   );

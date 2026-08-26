@@ -2,7 +2,7 @@ import { Body, Controller, Ip, Post } from "@nestjs/common";
 import { Throttle } from "@nestjs/throttler";
 import { IsEmail, IsOptional, IsString, Length } from "class-validator";
 import { Public } from "../auth/auth.guard";
-import { ContactsService } from "./contacts.service";
+import { TicketsService } from "./tickets.service";
 
 class SiteContactDto {
   @IsString() @Length(2, 120)
@@ -19,6 +19,17 @@ class SiteContactDto {
 
   @IsString() @Length(2, 80)
   subject!: string;
+
+  /**
+   * O id do assunto, estável: "experimentar", "reuniao", "outro".
+   *
+   * Opcional porque o site antigo não o mandava, e um pedido de um separador
+   * aberto há uma semana não pode falhar por causa de um campo novo. O rótulo em
+   * `subject` chega sempre; isto é o que deixa filtrar sem depender de texto que
+   * alguém pode reescrever.
+   */
+  @IsOptional() @IsString() @Length(0, 40)
+  subjectId?: string;
 
   @IsOptional() @IsString() @Length(0, 20)
   athletes?: string;
@@ -41,6 +52,18 @@ class SiteContactDto {
  * controlador inteiro que é público por construção não deixa ninguém acrescentar
  * uma rota nova aqui a pensar que está protegida.
  *
+ * ## Porque é que isto cria um `Ticket` e não um `Contact`
+ *
+ * Criava um contacto, e enfiava o assunto, o número de atletas e a mensagem todos
+ * dentro do campo `notes` como texto corrido. Perdia o dado — "Atletas: 120"
+ * dentro de uma string não se filtra nem se conta — e metia uma pergunta de um
+ * curioso na mesma lista de quem a equipa anda a trabalhar, com responsável e
+ * próximo passo no calendário.
+ *
+ * A caixa de entrada e o funil de vendas são coisas diferentes. Quem decidir que
+ * um pedido é mesmo um negócio converte-o, e aí sim nasce um contacto. Ver
+ * `TicketsService`.
+ *
  * ## Porque é que isto substitui o `mailto:`
  *
  * Um botão que abre o cliente de email do visitante não garante nada — não há
@@ -58,11 +81,11 @@ class SiteContactDto {
 @Public()
 @Controller("api/site")
 export class SiteContactController {
-  constructor(private readonly contacts: ContactsService) {}
+  constructor(private readonly tickets: TicketsService) {}
 
   @Throttle({ default: { ttl: 60_000, limit: 5 } })
   @Post("contacto")
   create(@Body() body: SiteContactDto, @Ip() ip: string) {
-    return this.contacts.createFromSite(body, ip);
+    return this.tickets.createFromSite(body, ip);
   }
 }

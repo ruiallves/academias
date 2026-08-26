@@ -2,6 +2,7 @@ import type { ReactNode } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { ArrowRight, ChevronDown, TrendingDown, TrendingUp, type LucideIcon } from "@/lib/icons";
 import { initials } from "@/lib/format";
+import { Spinner, useBusy } from "@/components/Busy";
 
 export const cx = (...xs: (string | false | null | undefined)[]) => xs.filter(Boolean).join(" ");
 
@@ -337,30 +338,33 @@ export function DataTable<T>({
  * sempre a mesma cara.
  */
 export function Loading({
-  label = "A carregar…",
-  /** `page` dá-lhe mais ar; `panel` encaixa dentro de um painel pequeno. */
+  /** `page` desfoca a página toda; `panel` é um disco pequeno, no sítio. */
   size = "page",
 }: {
+  /**
+   * Ignorado. Ficou na assinatura para não obrigar a tocar em vinte chamadas
+   * que o passavam — e porque a resposta certa a "o que está a carregar?" passou
+   * a ser o desfoque da página, não uma legenda por baixo de um disco.
+   */
   label?: string;
   size?: "page" | "panel";
 }) {
-  return (
-    <div
-      role="status"
-      aria-live="polite"
-      className={cx(
-        "flex w-full flex-col items-center justify-center gap-3",
-        size === "page" ? "py-20" : "py-12",
-      )}
-    >
-      <span
-        className="size-7 animate-spin rounded-full border-2 border-line"
-        style={{ borderTopColor: "var(--color-signal)" }}
-        aria-hidden
-      />
-      <span className="text-meta text-ink-3">{label}</span>
-    </div>
-  );
+  /*
+   * Um `<Loading />` de página já não desenha nada: **declara**.
+   *
+   * Declara à casca que esta página está à espera, e a casca desfoca tudo menos o
+   * menu e põe um disco por cima. Ver `components/Busy.tsx` para o porquê de o
+   * carregamento ter passado a ser um só, e não a maneira de cada página.
+   *
+   * O espaço fica reservado: sem ele, o painel colapsava a zero e voltava a
+   * crescer quando os dados chegassem — o salto de layout que a régua do UX
+   * manda evitar, e que aqui aconteceria em todas as páginas ao mesmo tempo.
+   */
+  useBusy(size === "page");
+
+  if (size === "panel") return <Spinner />;
+
+  return <div className="w-full py-20" aria-hidden />;
 }
 
 /* -------------------------------------------------------------------------- */

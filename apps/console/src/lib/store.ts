@@ -133,6 +133,8 @@ export type ApiMatch = {
   startsAt: string; endsAt: string; venue: string; opponent: string; isHome: boolean;
   status: string; ourScore: number | null; theirScore: number | null;
   submitted: boolean; submittedAt: string | null;
+  /** A função com que quem pergunta está escalado neste jogo. Ver `MatchesService.list`. */
+  myStaffRole: string | null;
   calledUp: { athleteId: string; status: string; isGuest: boolean; guestFromTeam?: string }[];
 };
 

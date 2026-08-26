@@ -76,11 +76,7 @@ export default function Software() {
                 <ul className="mt-4 space-y-1.5 border-t border-line pt-4">
                   {m.items.map((it) => (
                     <li key={it} className="flex gap-2.5 text-[14.5px] text-ink-2">
-                      <span
-                        aria-hidden
-                        className="mt-[9px] size-1.5 shrink-0 bg-field"
-                        style={{ clipPath: "polygon(0 0, 100% 50%, 0 100%)" }}
-                      />
+                      <span aria-hidden className="mt-[9px] size-1.5 shrink-0 rounded-full bg-field" />
                       {it}
                     </li>
                   ))}

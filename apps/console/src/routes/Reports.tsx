@@ -1,6 +1,6 @@
 import { useMemo, useState } from "react";
 import { PageHeader } from "@/components/Shell";
-import { Empty, Monogram, Panel, PanelHead, Pill, cx } from "@/components/primitives";
+import { Empty, Loading, Monogram, Panel, PanelHead, Pill, cx } from "@/components/primitives";
 import { ResultCount, SearchInput, Segmented, Toolbar } from "@/components/filters";
 import { ReportDialog, VisibilityPill } from "@/components/ReportDialog";
 import { FileText, Plus } from "@/lib/icons";
@@ -112,7 +112,7 @@ export default function Reports() {
           </Toolbar>
 
           {loading && reports.length === 0 ? (
-            <div className="px-5 py-16 text-center text-meta text-ink-3">A carregar…</div>
+            <Loading />
           ) : rows.length === 0 ? (
             <div className="px-5 py-16">
               <Empty

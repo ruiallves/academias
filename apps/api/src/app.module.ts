@@ -22,6 +22,8 @@ import { ScoutingController, ScoutingVideoController, ScoutingWorkflowController
 import { ScoutingService } from "./scouting/scouting.service";
 import { ScoutingVideoService } from "./scouting/scouting-video.service";
 import { ScoutingWorkflowService } from "./scouting/scouting-workflow.service";
+import { DepartmentsController } from "./departments/departments.controller";
+import { DepartmentsService } from "./departments/departments.service";
 import { RolesController } from "./roles/roles.controller";
 import { RolesService } from "./roles/roles.service";
 import { AcademyController } from "./academy/academy.controller";
@@ -38,6 +40,8 @@ import { PlatformService } from "./platform/platform.service";
 import { PlatformGuard } from "./platform/platform.guard";
 import { PlatformPrisma } from "./platform/platform.prisma";
 import { ContactsController, ContactsCalendarController } from "./platform/contacts.controller";
+import { TicketsController } from "./platform/tickets.controller";
+import { TicketsService } from "./platform/tickets.service";
 import { SiteContactController } from "./platform/site-contact.controller";
 import { ContactsService } from "./platform/contacts.service";
 import { AdminsController, AdminInvitePageController } from "./platform/admin-invites.controller";
@@ -87,6 +91,7 @@ import { TenantAssetsController } from "./tenant/tenant-assets.controller";
     InvitePageController,
     AcademyController,
     CatalogsController,
+    DepartmentsController,
     RolesController,
     ScoutingController,
     MembersController,
@@ -110,6 +115,7 @@ import { TenantAssetsController } from "./tenant/tenant-assets.controller";
     // Público por construção — o token no URL é que autentica. Ver o ficheiro.
     ContactsCalendarController,
     // Público por construção — é o formulário de contacto do site de marketing.
+    TicketsController,
     SiteContactController,
     // O manifest da PWA com a marca do clube, na raiz da origem do clube.
     TenantAssetsController,
@@ -127,6 +133,7 @@ import { TenantAssetsController } from "./tenant/tenant-assets.controller";
     InvitesService,
     AcademyService,
     CatalogsService,
+    DepartmentsService,
     RolesService,
     ScoutingService,
     MembersService,
@@ -138,6 +145,7 @@ import { TenantAssetsController } from "./tenant/tenant-assets.controller";
     PlatformService,
     PlatformGuard,
     PlatformPrisma,
+    TicketsService,
     ContactsService,
     AdminInvitesService,
     FamilyInvitesService,

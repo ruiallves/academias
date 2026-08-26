@@ -65,6 +65,8 @@ export {
   ExternalLink,
   Loader2,
   Trophy,
+  /* Ficha de jogo: o menos fecha o par com o Plus nos contadores. */
+  Minus,
   HeartPulse,
   ArrowLeft,
   Ruler,

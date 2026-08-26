@@ -3,6 +3,7 @@ import { useNavigate } from "react-router-dom";
 import { Bell } from "@/lib/icons";
 import { loadNotifications, markRead, useNotifications } from "@/lib/notifications";
 import { cx } from "./primitives";
+import { Spinner } from "@/components/Busy";
 
 /**
  * O painel do sino.
@@ -51,14 +52,26 @@ export function NotificationsPanel({ onClose }: { onClose: () => void }) {
       ref={ref}
       role="dialog"
       aria-label="Notificações"
-      className="absolute top-full right-0 z-50 mt-1.5 w-[320px] overflow-hidden rounded-[var(--radius-panel)] border border-line bg-surface shadow-[var(--shadow-pop)]"
+      /*
+        Abre para a **direita**, e não para a esquerda.
+
+        Era `right-0`, e isso alinhava o lado direito do painel com o lado direito
+        do sino: 320px de painel a crescer para a esquerda, a partir de um sino que
+        está a ~200px da borda do ecrã. O painel saía pela esquerda fora e ficava
+        meio invisível.
+
+        `left-0` faz o painel crescer para dentro do conteúdo, que é onde há
+        espaço. Vale nos dois estados do menu — encolhido, o sino está ainda mais
+        à esquerda, e continua a haver ecrã à direita.
+      */
+      className="absolute top-full left-0 z-50 mt-1.5 w-[320px] overflow-hidden rounded-[var(--radius-panel)] border border-line bg-surface shadow-[var(--shadow-pop)]"
     >
       <div className="border-b border-line px-4 py-2.5">
         <span className="text-body font-medium text-ink">Notificações</span>
       </div>
 
       {!loaded ? (
-        <div className="px-4 py-6 text-center text-meta text-ink-3">A carregar…</div>
+        <Spinner className="py-6" />
       ) : items.length === 0 ? (
         <div className="flex flex-col items-center gap-2 px-4 py-8 text-center">
           <Bell className="size-5 text-ink-4" strokeWidth={1.5} />
@@ -68,7 +81,8 @@ export function NotificationsPanel({ onClose }: { onClose: () => void }) {
           </span>
         </div>
       ) : (
-        <ul className="max-h-[380px] overflow-y-auto">
+        /* `60vh` para a lista não passar do fundo num portátil de 768px. */
+        <ul className="max-h-[min(60vh,380px)] overflow-y-auto">
           {items.slice(0, 30).map((n) => (
             <li key={n.id}>
               <button

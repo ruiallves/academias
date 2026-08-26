@@ -1,25 +1,46 @@
-import { useState, type ReactNode } from "react";
+import { useState, type CSSProperties, type ReactNode } from "react";
 import { Outlet } from "react-router-dom";
 import { Sidebar } from "./Sidebar";
 import { Onboarding } from "./Onboarding";
+import { BusyProvider, BusyScreen } from "./Busy";
 
 export function Shell() {
   const [collapsed, setCollapsed] = useState(false);
 
   return (
-    <div className="flex h-dvh overflow-hidden bg-canvas">
+    /*
+     * `--nav-w` é a largura do menu, publicada para quem precise de a medir.
+     *
+     * Quem precisa é a camada de carregamento: o disco tem de ficar no meio do
+     * **conteúdo**, e não no meio da janela — com o menu a ocupar 236px à
+     * esquerda, um disco centrado na janela aparece visivelmente descaído para a
+     * direita do sítio onde o olho o procura. Como a largura muda quando o menu
+     * encolhe, uma constante em CSS não servia.
+     */
+    <div
+      className="flex h-dvh overflow-hidden bg-canvas"
+      style={{ "--nav-w": collapsed ? "60px" : "236px" } as CSSProperties}
+    >
       <Sidebar collapsed={collapsed} onToggle={() => setCollapsed((v) => !v)} />
-      <main className="flex-1 overflow-y-auto">
+      {/* `relative`: é contra este `<main>` que o disco de carregamento se
+          centra. Ver `BusyScreen`. */}
+      <main className="relative flex-1 overflow-y-auto">
         {/* Largura total. A sidebar já dá o enquadramento à esquerda; uma segunda
             moldura de margem no meio do ecrã só afastava as colunas de dados umas
             das outras. O ar vem do padding, não de um limite de largura.
 
             E o padding vem de `--pg-pad`, que encolhe com a altura do ecrã — ver
             "Densidade da página" em `styles.css`. Num portátil de 1366×768 é a
-            diferença entre a Visão geral caber e rolar. */}
-        <div className="page-pad w-full">
-          <Outlet />
-        </div>
+            diferença entre a Visão geral caber e rolar.
+
+            O `page-pad` mudou-se para dentro do `BusyScreen`: é o mesmo elemento
+            que leva o desfoque, e uma camada a mais só para o padding era uma
+            caixa a mais entre o `<main>` e a página. */}
+        <BusyProvider>
+          <BusyScreen>
+            <Outlet />
+          </BusyScreen>
+        </BusyProvider>
       </main>
 
       {/* Ao canto e em todas as páginas: acompanha quem está a montar a academia

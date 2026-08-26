@@ -106,14 +106,46 @@ export class NotificationsService {
    * pai tinha-as por ler, e a app mostrava a caixa vazia.
    */
 
+  /**
+   * As notificações de uma pessoa, na forma que o cliente lê.
+   *
+   * ## Isto devolvia a linha em bruto
+   *
+   * E o painel da consola não conseguia fazer nada com ela: espera `kind` e a
+   * coluna chama-se `type`; espera `link` e não há coluna nenhuma — o destino vive
+   * dentro do `payload`. O resultado era um painel onde **nenhuma** notificação
+   * era clicável, sem erro nenhum a dizer porquê.
+   *
+   * ## Só `payload.link`
+   *
+   * Há três nomes no código para a mesma ideia — `link`, `route` e `url` — porque
+   * foram escritos em alturas diferentes. Os dois últimos apontam para rotas da
+   * **app da família** (`/agenda`, `/avisos`), que não existem na consola;
+   * aceitá-los aqui seria mandar um director para um endereço que não abre.
+   * `link` é a chave da consola, e é a que se usa daqui para a frente.
+   */
   async listForUser(userId: string, academyId: string) {
-    return this.prisma.runAs(academyId, (db) =>
+    const rows = await this.prisma.runAs(academyId, (db) =>
       db.notification.findMany({
         where: { userId },
         orderBy: { createdAt: "desc" },
         take: 50,
       }),
     );
+
+    return rows.map((n) => {
+      const payload = (n.payload ?? {}) as Record<string, unknown>;
+      const link = typeof payload.link === "string" ? payload.link : null;
+      return {
+        id: n.id,
+        kind: n.type,
+        title: n.title,
+        body: n.body,
+        link,
+        readAt: n.readAt,
+        createdAt: n.createdAt,
+      };
+    });
   }
 
   /** Idempotente: `readAt: null` no filtro impede que reler mude a data da primeira vez. */

@@ -23,6 +23,8 @@ import MedicalClinical from "@/routes/medical/Clinical";
 import MedicalConsultations from "@/routes/medical/Consultations";
 import Sessions from "@/routes/Sessions";
 import CallUps from "@/routes/CallUps";
+import Matches from "@/routes/Matches";
+import MatchDetail from "@/routes/MatchDetail";
 import Evaluations from "@/routes/Evaluations";
 import Reports from "@/routes/Reports";
 import ScoutingOverview from "@/routes/scouting/Overview";
@@ -71,6 +73,8 @@ export default function App() {
             O caminho antigo reencaminha: links guardados não devem partir. */}
         <Route path="treinos" element={<Navigate to="/presencas" replace />} />
         <Route path="convocatorias" element={<Allow p="attendance:read"><CallUps /></Allow>} />
+        <Route path="jogos" element={<Allow p="calendar:read"><Matches /></Allow>} />
+        <Route path="jogos/:id" element={<Allow p="calendar:read"><MatchDetail /></Allow>} />
 
         <Route path="mensalidades" element={<Allow p="billing:read"><Fees /></Allow>} />
         <Route path="comunicacao" element={<Allow p="comms:read"><Comms /></Allow>} />

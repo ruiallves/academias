@@ -78,8 +78,16 @@ ${styles(signal)}
 </head>
 <body>
 <main>
+  <!--
+    Os estilhacos. Decorativos, e por isso fora da arvore de acessibilidade —
+    quem usa leitor de ecra ouve o convite e o formulario, nao seis divs vazias.
+  -->
+  <div class="shards" aria-hidden="true">
+    <i class="s1"></i><i class="s2"></i><i class="s3"></i>
+    <i class="s4"></i><i class="s5"></i><i class="s6"></i>
+  </div>
   <div class="card">
-    <div class="mark">${esc(academy.mark)}</div>
+    <div class="mark${academy.logoUrl ? " logo" : ""}">${academy.logoUrl ? `<img src="${esc(academy.logoUrl)}" alt="" />` : esc(academy.mark)}</div>
     <p class="eyebrow">Convite</p>
     <h1>${esc(academy.shortName)}</h1>
     <p class="subtitle">
@@ -346,6 +354,15 @@ function styles(signal: string): string {
     --ink-2: #524f48;
     --ink-3: #8a867c;
     --signal: ${signal};
+    /*
+     * A cor do clube, escurecida.
+     *
+     * Da profundidade aos estilhacos e serve onde tem de haver branco por cima:
+     * um clube amarelo com texto branco e ilegivel, e este mix poe qualquer tom
+     * abaixo desse limiar. Gemea de --club-deep na pagina de socios e de
+     * --signal-deep na pagina do clube.
+     */
+    --signal-deep: color-mix(in oklab, ${signal} 72%, black);
   }
   * { box-sizing: border-box; }
   body {
@@ -354,13 +371,69 @@ function styles(signal: string): string {
     font-family: "Instrument Sans", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
     -webkit-font-smoothing: antialiased;
   }
-  main { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 32px 20px 24px; }
-  .card { width: 100%; max-width: 420px; }
+  main {
+    flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center;
+    padding: 40px 20px 24px;
+    position: relative; overflow: hidden;
+  }
+
+  /* ====================================================================
+     Estilhacos — a mesma linguagem grafica da pagina de socios
+     ====================================================================
+
+     Esta pagina era branca e sem cor nenhuma: quem abre o convite para montar um
+     clube encontrava um formulario cinzento, e a primeira impressao do produto
+     era essa. Os estilhacos poem a cor do clube em volta **sem nunca a por por
+     baixo de texto** — o conteudo vive sempre sobre branco, e por isso funciona
+     igual com um amarelo e com um azul-marinho. */
+
+  .shards { position: absolute; inset: 0; pointer-events: none; overflow: hidden; }
+  .shards i { position: absolute; display: block; }
+
+  .s1 { width: 190px; height: 130px; left: -46px; bottom: 14%;
+        background: var(--signal); clip-path: polygon(0 0, 100% 42%, 30% 100%); opacity: .9; }
+  .s2 { width: 150px; height: 190px; left: 44px; bottom: 4%;
+        background: var(--signal-deep); clip-path: polygon(0 22%, 100% 0, 62% 100%); opacity: .85; }
+  .s3 { width: 92px; height: 62px; left: 132px; bottom: 30%;
+        background: var(--signal); clip-path: polygon(0 50%, 100% 0, 78% 100%); opacity: .45; }
+  .s4 { width: 210px; height: 150px; right: -60px; top: 15%;
+        background: var(--signal); clip-path: polygon(0 0, 100% 50%, 26% 100%); opacity: .5; }
+  .s5 { width: 160px; height: 210px; right: 30px; top: 32%;
+        background: var(--signal-deep); clip-path: polygon(30% 0, 100% 30%, 0 100%); opacity: .65; }
+  .s6 { width: 120px; height: 84px; right: -20px; bottom: 12%;
+        background: var(--signal); clip-path: polygon(0 30%, 100% 0, 60% 100%); opacity: .35; }
+
+  /* Abaixo destas larguras os estilhacos passariam por cima do cartao. */
+  @media (max-width: 1240px) { .s4, .s5 { display: none; } }
+  @media (max-width: 980px) {
+    .s3 { display: none; }
+    .s1, .s2 { transform: scale(.5); transform-origin: left bottom; opacity: .35; }
+    .s6 { transform: scale(.5); transform-origin: right bottom; opacity: .22; }
+  }
+
+  .card {
+    position: relative; z-index: 1;
+    width: 100%; max-width: 440px;
+    background: var(--surface);
+    border: 1px solid var(--line);
+    border-radius: 22px;
+    padding: 38px 34px 30px;
+    box-shadow: 0 1px 2px rgba(26,25,23,.04), 0 24px 56px -26px rgba(26,25,23,.24);
+  }
+  /* Os paineis interiores perdem a moldura: ja estao dentro de uma. */
+  .card .panel { border: 0; padding: 0; background: none; }
+
   .mark {
-    width: 56px; height: 56px; border-radius: 16px; background: var(--signal); color: #fff;
+    /* Escurecida, para as iniciais brancas lerem com qualquer cor de clube. */
+    width: 64px; height: 64px; border-radius: 20px; background: var(--signal-deep); color: #fff;
+    overflow: hidden;
     display: flex; align-items: center; justify-content: center;
     font-weight: 700; font-size: 20px; margin: 0 auto 20px; letter-spacing: -0.01em;
   }
+  /* Com emblema nao ha caixa: a forma e a do emblema. */
+  .mark.logo { background: none; border-radius: 0; }
+  .mark.logo img { width: 100%; height: 100%; object-fit: contain; }
+
   .eyebrow {
     text-align: center; font-size: 11px; font-weight: 600; letter-spacing: 0.08em;
     text-transform: uppercase; color: var(--ink-3); margin: 0 0 6px;

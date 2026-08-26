@@ -7,7 +7,8 @@
   .ctl,
   .ctl-ghost,
   .ctl-outline,
-  .ctl-primary {
+  .ctl-primary,
+  .ctl-risk {
     @apply inline-flex h-8 items-center gap-1.5 rounded-[var(--radius-control)] px-2.5 text-meta font-medium transition-colors duration-[120ms];
   }
 
@@ -29,6 +30,18 @@
 
   .ctl-primary:disabled {
     @apply cursor-not-allowed bg-ink-4 hover:bg-ink-4;
+  }
+
+  /* Destrutivo: apagar, expulsar, cancelar de vez. Cheio e vermelho, porque a
+     acção não se desfaz e o botão não deve poder confundir-se com um "Gravar".
+     Nunca é o botão por omissão de um diálogo — vive sempre a seguir a uma
+     pergunta explícita. */
+  .ctl-risk {
+    @apply bg-risk px-3 text-white hover:brightness-110;
+  }
+
+  .ctl-risk:disabled {
+    @apply cursor-not-allowed opacity-50 hover:brightness-100;
   }
 
   .panel {

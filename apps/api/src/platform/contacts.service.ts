@@ -53,15 +53,6 @@ export type ContactInput = {
 };
 
 /** O que o formulário público do site entrega. Ver `site-contact.controller.ts`. */
-export type SiteContactInput = {
-  name: string;
-  email: string;
-  phone?: string;
-  club?: string;
-  subject: string;
-  athletes?: string;
-  message?: string;
-};
 
 export type TouchInput = {
   channel: ContactChannel;
@@ -172,44 +163,17 @@ export class ContactsService {
    * envolvido ainda, e "por atribuir" é um estado visível na lista — não um
    * contacto escondido dentro da caixa de entrada de uma pessoa.
    */
-  async createFromSite(dto: SiteContactInput, ip?: string) {
-    const name = dto.name.trim();
-    if (name.length < 2) throw new BadRequestException("O nome é preciso");
-
-    const notes = [
-      `Assunto: ${dto.subject.trim()}`,
-      dto.athletes?.trim() && `Atletas: ${dto.athletes.trim()}`,
-      dto.message?.trim(),
-    ]
-      .filter(Boolean)
-      .join("\n\n");
-
-    const contact = await this.prisma.contact.create({
-      data: {
-        name,
-        email: dto.email.trim().toLowerCase(),
-        phone: dto.phone?.trim() || null,
-        club: dto.club?.trim() || null,
-        notes: notes || null,
-        status: "NOVO",
-      },
-      select: { id: true },
-    });
-
-    // `admin: null` — é o mesmo `AuditLog` que regista impersonation e criação de
-    // clientes, e um contacto do site não tem administrador a assumi-lo. O registo
-    // fica na mesma: diz que existiu, quando, e a partir de que IP.
-    await this.platform.audit(
-      null,
-      "contact.create.site",
-      "contact",
-      contact.id,
-      { name, email: dto.email, club: dto.club ?? null, subject: dto.subject },
-      ip,
-    );
-
-    return { ok: true as const };
-  }
+  /*
+   * `createFromSite` saiu daqui.
+   *
+   * Vive em `TicketsService`, porque um pedido do site não é um contacto: é uma
+   * mensagem por triar. Enquanto esteve aqui, criava um `Contact` com o assunto e
+   * o número de atletas enfiados dentro de `notes` como texto corrido — perdia o
+   * dado, e enchia a lista de trabalho de quem nunca vai ser cliente.
+   *
+   * Um ticket que seja mesmo um negócio continua a chegar aqui, por
+   * `TicketsService.converter`, mas por decisão de alguém e não por chegar.
+   */
 
   async update(admin: PlatformAdminContext, id: string, dto: ContactInput) {
     await this.exists(id);

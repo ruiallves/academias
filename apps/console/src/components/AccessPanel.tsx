@@ -231,8 +231,8 @@ function AreaTable({
  */
 function LevelPicker({ area, member, level }: { area: Area; member: StaffMember; level: Level }) {
   const options: { value: Level; label: string }[] = [
-    { value: "none", label: "Nada" },
-    { value: "read", label: "Ver" },
+    { value: "none", label: "Não vê" },
+    { value: "read", label: "Vê" },
     ...(area.write ? [{ value: "write" as const, label: "Editar" }] : []),
   ];
 

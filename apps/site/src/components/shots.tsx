@@ -44,7 +44,7 @@ const SEMANA = [
 
 export function ConsoleShot({ className }: { className?: string }) {
   return (
-    <div className={cx("flex bg-[#f6f5f2] text-[11px] text-[#1a1917]", className)} aria-hidden>
+    <div className={cx("shot flex bg-[#f6f5f2] text-[11px] text-[#1a1917]", className)} aria-hidden>
       {/* Barra lateral */}
       <div className="hidden w-[150px] shrink-0 flex-col border-r border-[#e5e2dc] bg-white lg:flex">
         <div className="flex items-center gap-2 border-b border-[#e5e2dc] px-2.5 py-2">
@@ -228,7 +228,7 @@ const TIERS = [
  */
 export function MembershipShot({ className }: { className?: string }) {
   return (
-    <div className={cx("relative overflow-hidden bg-[#f6f5f2] p-4 text-[#1a1917] sm:p-6", className)} aria-hidden>
+    <div className={cx("shot relative overflow-hidden bg-[#f6f5f2] p-4 text-[#1a1917] sm:p-6", className)} aria-hidden>
       {/* Os estilhaços geométricos do fundo */}
       <div aria-hidden className="pointer-events-none absolute inset-0">
         <span
@@ -411,7 +411,7 @@ export function AppShot({ className, shot = "/shots/app.png" }: { className?: st
   return (
     <div
       className={cx(
-        "relative w-[288px] shrink-0 overflow-hidden rounded-[38px] border-[7px] border-[#0c100f] bg-[#f6f5f2] shadow-[0_24px_60px_-28px_rgb(12_16_15/0.55)]",
+        "shot relative w-[288px] shrink-0 overflow-hidden rounded-[38px] border-[7px] border-[#0c100f] bg-[#f6f5f2] shadow-[0_24px_60px_-28px_rgb(12_16_15/0.55)]",
         className,
       )}
       aria-hidden

@@ -1,7 +1,9 @@
+import type { CSSProperties } from "react";
 import { NavLink, Outlet } from "react-router-dom";
-import { Building2, FileClock, LayoutGrid, LogOut, ShieldCheck, TrendingUp, Users } from "lucide-react";
+import { Building2, FileClock, Inbox, LayoutGrid, LogOut, ShieldCheck, TrendingUp, Users } from "lucide-react";
 import { signOut } from "@/lib/session";
 import { cx } from "./primitives";
+import { BusyProvider, BusyScreen } from "./Busy";
 import type { Me } from "@/lib/types";
 
 /**
@@ -11,15 +13,22 @@ import type { Me } from "@/lib/types";
  * produto de uso diário com dezanove ecrãs — é um sítio onde se entra para saber
  * como vai o negócio e resolver o que está mal.
  *
- * "Contactos" fica logo a seguir a "Academias" porque é a mesma lista uma etapa
- * antes: quem ainda não é cliente. A ordem da barra é a ordem do negócio — quem
- * já paga, quem talvez venha a pagar, como está a correr, e o que se fez.
+ * A ordem da barra é a ordem do negócio, e lê-se da esquerda para a direita:
+ * quem já paga, quem escreveu a perguntar, quem talvez venha a pagar, como está
+ * a correr, e o que se fez.
+ *
+ * "Tickets" fica antes de "Contactos" porque é a etapa anterior — o que chega
+ * pelo formulário do site, ainda por triar. Só o que alguém decidir que é mesmo
+ * um negócio passa a contacto, e é por isso que são duas listas e não uma: a
+ * maior parte de quem escreve nunca vai ser cliente, e a lista de trabalho não
+ * pode encher-se de curiosos. Ver `TicketsService`, do lado do servidor.
  */
 type NavItem = { to: string; label: string; icon: typeof LayoutGrid; end?: boolean };
 
 const NAV: NavItem[] = [
   { to: "/", label: "Visão geral", icon: LayoutGrid, end: true },
   { to: "/academias", label: "Academias", icon: Building2 },
+  { to: "/tickets", label: "Tickets", icon: Inbox },
   { to: "/contactos", label: "Contactos", icon: Users },
   { to: "/crescimento", label: "Crescimento", icon: TrendingUp },
   { to: "/registo", label: "Registo", icon: FileClock },
@@ -39,7 +48,13 @@ export function Shell({ me }: { me: Me }) {
   const nav = me.role === "OWNER" ? [...NAV, OWNER_NAV] : NAV;
 
   return (
-    <div className="flex h-dvh overflow-hidden bg-canvas">
+    /*
+     * `--nav-w` é a largura do menu, publicada para a camada de carregamento a
+     * poder medir: o disco centra-se no conteúdo, e não na janela. Aqui é fixa
+     * (o menu do painel não encolhe), mas fica na mesma como variável para o
+     * ficheiro `Busy.tsx` ser o mesmo nas duas aplicações.
+     */
+    <div className="flex h-dvh overflow-hidden bg-canvas" style={{ "--nav-w": "212px" } as CSSProperties}>
       <aside className="flex w-[212px] shrink-0 flex-col border-r border-line bg-surface">
         <div className="flex h-14 items-center gap-2.5 border-b border-line px-3">
           <span
@@ -109,10 +124,13 @@ export function Shell({ me }: { me: Me }) {
         </div>
       </aside>
 
-      <main className="flex-1 overflow-y-auto">
-        <div className="w-full px-7 py-6 2xl:px-10">
-          <Outlet />
-        </div>
+      {/* `relative` para a camada de carregamento. Ver `BusyScreen`. */}
+      <main className="relative flex-1 overflow-y-auto">
+        <BusyProvider>
+          <BusyScreen>
+            <Outlet />
+          </BusyScreen>
+        </BusyProvider>
       </main>
     </div>
   );

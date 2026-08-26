@@ -73,6 +73,7 @@ model Academy {
   seasons       Season[]
   memberships   Membership[]
   roles         AcademyRole[]
+  departments   Department[]
   prospects     Prospect[]
   observations  Observation[]
   scoutCriteria ScoutCriterion[]
@@ -257,6 +258,7 @@ model Membership {
   guardianOf     GuardianLink[]
   ledSessions    TrainingSession[] @relation("SessionCoach")
   ledMatches     Match[]           @relation("MatchCoach")
+  matchStaff     MatchStaff[]      @relation("MatchStaff")
   ledEvents      CalendarEvent[]   @relation("EventCoach")
   clinicalWrites ClinicalEntry[]   @relation("ClinicalAuthor")
   evaluations    Evaluation[]
@@ -304,6 +306,70 @@ model Membership {
 /// interface e o servidor **nunca** a lê para decidir nada. Esconder um menu não
 /// tira acesso — quem souber o URL continua a chegar ao endpoint, e é a permissão
 /// que o trava.
+/// Um departamento da academia: Direção, Equipa Técnica, Departamento Clínico,
+/// Departamento Scouting — e os que o clube inventar.
+///
+/// ## Porque é que isto deixou de ser um enum
+///
+/// Era `enum StaffDepartment`, com cinco valores fixos em código. O que se pedia
+/// era criar departamentos, e um enum não se cria a partir da consola. Mais
+/// importante: um enum não tem onde guardar **permissões**, e era exactamente
+/// isso que faltava — a queixa foi que "as permissões gerais são geridas pelo
+/// departamento". Sem uma linha por departamento não há onde as pôr.
+///
+/// ## O que vive aqui e o que vive no cargo
+///
+/// Aqui: o âmbito (`baseRole`), as permissões de base e os menus. É a resposta a
+/// "o que é que o departamento clínico vê?".
+///
+/// No cargo (`AcademyRole`): o que **aquele** cargo acrescenta ou tira ao que
+/// herdou. É a resposta a "e o fisioterapeuta, em relação aos outros clínicos?".
+///
+/// O cargo guarda as permissões já resolvidas, e não um delta. Resolver na
+/// leitura obrigava a ir buscar o departamento em todo o lado onde se verifica
+/// uma permissão — o caminho mais quente do servidor — e um departamento editado
+/// mudava calado o que toda a gente podia. Herdar é um gesto no ecrã de criar,
+/// não uma indirecção permanente.
+model Department {
+  id        String  @id @default(cuid())
+  academyId String
+  academy   Academy @relation(fields: [academyId], references: [id], onDelete: Cascade)
+
+  /// Estável e legível: "direcao", "clinico". Renomear não parte nada.
+  key         String
+  name        String
+  description String?
+
+  /// O âmbito de quem trabalha aqui.
+  ///
+  /// É a pergunta que estava no ecrã de criar cargos com o nome "Âmbito" e que
+  /// ninguém entendia — porque estava no sítio errado. "A equipa técnica vê só
+  /// as equipas dela" é uma decisão sobre o departamento, tomada uma vez; não
+  /// uma pergunta a repetir a cada cargo que se cria dentro dele.
+  baseRole Role @default(STAFF)
+
+  /// O ponto de partida dos cargos deste departamento.
+  permissions String[] @default([])
+
+  /// Os menus que o departamento abre. Vazio = todos os que a permissão deixa.
+  navKeys String[] @default([])
+
+  /// Os quatro de origem. Podem ser apagados — só não podem ficar sem cargos
+  /// órfãos, e por isso apagar move os cargos para "sem departamento".
+  isSystem Boolean @default(false)
+
+  /// Ordem no ecrã. Os de origem vêm primeiro.
+  order Int @default(0)
+
+  roles AcademyRole[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([academyId, key])
+  @@index([academyId])
+}
+
 model AcademyRole {
   id        String  @id @default(cuid())
   academyId String
@@ -326,7 +392,10 @@ model AcademyRole {
   /// "Treinador principal".
   ///
   /// Nulo em `presidente`: quem responde por tudo não pertence a um departamento.
-  department StaffDepartment?
+  /// Nulo também num cargo cujo departamento foi apagado — apagar um departamento
+  /// não apaga quem lá trabalhava (`onDelete: SetNull`).
+  departmentId String?
+  department   Department? @relation(fields: [departmentId], references: [id], onDelete: SetNull)
 
   /// O que este papel pode. É a verdade — o mapa em código passa a ser só o
   /// ponto de partida da semeadura.
@@ -881,6 +950,12 @@ enum NotificationType {
   /// Convocado para um jogo. Tipo próprio: tem hora, sítio e uma decisão a tomar —
   /// não é um aviso que se lê quando calhar.
   MATCH_CALLED_UP
+  /// Escalado para trabalhar num jogo — massagista, delegado, médico.
+  ///
+  /// Não é `MATCH_CALLED_UP`: essa é para o atleta e a família e diz "vais jogar".
+  /// Esta é para quem trabalha lá e diz "és preciso". Quem recebe e o que faz a
+  /// seguir são diferentes.
+  MATCH_STAFF_ASSIGNED
 }
 
 /// Uma notificação é uma linha na base de dados; os canais são adaptadores por
@@ -1034,8 +1109,20 @@ model Match {
   sourceUrl      String?
   importedAt     DateTime?
 
+  /// Quando alguém preencheu a ficha do jogo à mão.
+  ///
+  /// Existe para a integração que há-de vir (ZeroZero, FPF). Um importador que
+  /// sincronize resultados tem de saber distinguir um jogo que ninguém tocou — e
+  /// que pode escrever à vontade — de um que o treinador já preencheu ao minuto.
+  /// Sem isto, a primeira sincronização apagava o trabalho de toda a gente e
+  /// ninguém percebia porquê.
+  ///
+  /// Ver também `sourceProvider` acima: juntos dizem de onde veio cada metade.
+  statsEnteredAt DateTime?
+
   callUps     MatchCallUp[]
   appearances MatchAppearance[]
+  staff       MatchStaff[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -1084,14 +1171,58 @@ model MatchAppearance {
   athlete   Athlete @relation(fields: [athleteId], references: [id], onDelete: Cascade)
 
   minutes Int
+  /// Se começou o jogo. Titular ou suplente utilizado — a primeira pergunta que
+  /// qualquer treinador faz, e que não se deduz dos minutos.
+  started Boolean @default(true)
   /// Golos no futebol, pontos nos restantes — o substantivo vem da modalidade.
   tally   Int      @default(0)
+  /// Assistências. Zero na maior parte das modalidades, e por isso o ecrã só as
+  /// mostra a quem as quiser — mas quem as quer, quer mesmo.
+  assists Int      @default(0)
+
+  /// Amarelos: zero, um, ou dois. Dois amarelos são uma expulsão, e é por isso
+  /// que isto é um número e não um sim/não.
+  yellowCards Int     @default(0)
+  /// Vermelho directo. Separado dos amarelos de propósito: para a federação e
+  /// para o castigo que se segue, não é a mesma coisa.
+  redCard     Boolean @default(false)
+
   /// Nota do jogo, 0–10. **A fórmula está por decidir** — o campo existe e é
   /// mostrado, mas nada no sistema a calcula ainda.
   rating  Decimal? @db.Decimal(3, 1)
 
   @@unique([matchId, athleteId])
   @@index([athleteId])
+}
+
+/// Quem, da equipa técnica e de apoio, esteve neste jogo.
+///
+/// ## Porque é que isto não é o `coachId` do jogo
+///
+/// Porque um jogo não tem um responsável — tem uma equipa de trabalho. O
+/// treinador principal, o adjunto, o massagista, o delegado ao jogo. O
+/// `Match.coachId` responde a "de quem é este jogo"; isto responde a "quem lá
+/// esteve", que é outra pergunta, e é a que interessa a quem quer saber se houve
+/// massagista em todos os jogos fora.
+///
+/// O papel é **texto livre** e não um enum. Cada clube chama-lhes o que quer, e
+/// um enum obrigava a uma migração por cada função nova que um cliente
+/// inventasse — o mesmo raciocínio dos cargos da equipa técnica.
+model MatchStaff {
+  id      String @id @default(cuid())
+  matchId String
+  match   Match  @relation(fields: [matchId], references: [id], onDelete: Cascade)
+
+  membershipId String
+  membership   Membership @relation("MatchStaff", fields: [membershipId], references: [id], onDelete: Cascade)
+
+  /// "Treinador principal", "Massagista", "Delegado ao jogo".
+  role String
+
+  createdAt DateTime @default(now())
+
+  @@unique([matchId, membershipId])
+  @@index([membershipId])
 }
 
 /* -------------------------------------------------------------------------- */
@@ -2101,6 +2232,8 @@ model PlatformAdmin {
   supportFor   SupportSession[]
   contacts     Contact[]
   invitesSent  PlatformAdminInvite[]
+  ticketsOwned Ticket[]     @relation("TicketAssignee")
+  ticketNotes  TicketNote[] @relation("TicketNoteAuthor")
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -2272,6 +2405,111 @@ model SupportSession {
 /// O que não se faz aqui: guardar pessoas **de dentro** de uma academia. Um pai ou
 /// um treinador de um cliente não entra nesta tabela — para isso existe a consola
 /// dele, e o Platform Admin não vê as pessoas lá dentro (`docs/04-plataforma.md`).
+/// Em que pé está um pedido que chegou pelo site.
+///
+/// Curto de propósito, e diferente do `ContactStatus`: um ticket não é um negócio
+/// a andar por um funil, é uma mensagem que ou já foi respondida ou ainda não.
+enum TicketStatus {
+  /// Chegou. Ninguém lhe tocou.
+  NOVO
+  /// Alguém pegou nele e está a tratar.
+  ABERTO
+  /// Respondido. A bola está do lado de quem escreveu.
+  RESPONDIDO
+  /// Acabado — respondido e sem nada por fazer, ou lixo.
+  FECHADO
+}
+
+/// Uma mensagem que chegou pelo formulário do site.
+///
+/// ## Porque é que isto não é um `Contact`
+///
+/// Era. O formulário do site criava um `Contact` com estado `NOVO` e enfiava o
+/// assunto, o número de atletas e a mensagem todos dentro do campo `notes`, como
+/// um bloco de texto. Duas coisas más de uma vez:
+///
+///  1. **Perdia o dado.** "Atletas: 120" dentro de uma string não se filtra, não
+///     se ordena e não se conta. Nasceu estruturado e chegava desfeito.
+///  2. **Misturava duas listas com donos diferentes.** `Contact` é a lista de
+///     quem andamos a trabalhar: tem responsável, próximo passo agendado, e vai
+///     ao calendário. Uma pergunta de um curioso que nunca vai ser cliente não
+///     tem nada disso — e a entrar ali, ou enche a lista de linhas mortas, ou
+///     obriga a apagá-la, que é perder o registo de que alguém escreveu.
+///
+/// A caixa de entrada e o funil de vendas são coisas diferentes. O que as liga é
+/// `contactId`: um ticket que **é** um negócio converte-se num contacto, com um
+/// gesto, e fica a apontar para ele.
+model Ticket {
+  id String @id @default(cuid())
+
+  /// O assunto escolhido no formulário, por palavras: "Experimentar a
+  /// plataforma", "Marcar reunião", "Outro assunto".
+  subject String
+  /// O id do assunto, estável: "experimentar", "reuniao", "outro". É por aqui que
+  /// se filtra — o rótulo pode ser reescrito no site sem partir nada.
+  subjectId String?
+
+  name    String
+  email   String
+  phone   String?
+  club    String?
+  /// Quantos atletas o clube tem, como foi escrito. Texto livre porque a pergunta
+  /// no site é livre — "cerca de 200" é uma resposta útil e não é um número.
+  athletes String?
+  message  String?
+
+  status TicketStatus @default(NOVO)
+
+  /// Quem, da nossa parte, está a tratar disto. `SetNull` porque o ticket
+  /// sobrevive a quem sair da equipa.
+  assigneeId String?
+  assignee   PlatformAdmin? @relation("TicketAssignee", fields: [assigneeId], references: [id], onDelete: SetNull)
+
+  /// O contacto que nasceu daqui, quando este pedido virou um negócio a sério.
+  /// É o que liga a caixa de entrada ao funil sem os misturar.
+  contactId String?
+  contact   Contact? @relation(fields: [contactId], references: [id], onDelete: SetNull)
+
+  /// De onde veio. Guardado pelo mesmo motivo que no `AuditLog`: um endpoint
+  /// público que escreve na base é uma superfície de spam, e sem o IP não há como
+  /// perceber que vinte tickets vieram todos do mesmo sítio.
+  ip String?
+
+  notes TicketNote[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([status, createdAt])
+  @@index([assigneeId])
+  @@index([email])
+}
+
+/// Uma nota interna num ticket: quem olhou, e o que decidiu.
+///
+/// Mesma ideia do `ContactTouch`, e pela mesma razão: sem um registo de quem
+/// pegou no assunto, um ticket que passa por três pessoas parece nunca ter sido
+/// visto por ninguém — e é assim que se responde duas vezes ou nenhuma.
+///
+/// Não guarda a resposta enviada, porque não há envio de email neste servidor: a
+/// resposta sai do cliente de email de quem responde. O que fica aqui é o que a
+/// equipa escreveu para a equipa.
+model TicketNote {
+  id       String @id @default(cuid())
+  ticketId String
+  ticket   Ticket @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+
+  /// Quem escreveu. `SetNull` — a nota é história e não se apaga com a pessoa.
+  adminId String?
+  admin   PlatformAdmin? @relation("TicketNoteAuthor", fields: [adminId], references: [id], onDelete: SetNull)
+
+  body String
+
+  createdAt DateTime @default(now())
+
+  @@index([ticketId, createdAt])
+}
+
 model Contact {
   id String @id @default(cuid())
 
@@ -2311,6 +2549,8 @@ model Contact {
   nextActionNote String?
 
   touches ContactTouch[]
+
+  tickets Ticket[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt

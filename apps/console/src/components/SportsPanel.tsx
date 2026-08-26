@@ -4,6 +4,10 @@ import { Plus, Trash2 } from "@/lib/icons";
 import { apiDelete, apiPatch, apiPost } from "@/lib/http";
 import { reloadAcademy, useStore } from "@/lib/store";
 import { Dialog, DialogField, dialogInputClass } from "./Dialog";
+import { CatalogPanel } from "./CatalogPanel";
+import { CATALOG_KEYS, type CatalogKey } from "@/lib/catalogs";
+import { ChevronDown } from "@/lib/icons";
+import { cx } from "@/components/primitives";
 import type { Sport } from "@/data/types";
 
 /**
@@ -16,14 +20,29 @@ import type { Sport } from "@/data/types";
  * juntar futsal não tinha por onde — e um clube novo, que abre sem desportos
  * nenhuns, ficava com um painel vazio e sem saída.
  *
- * ## Porque é que isto está acima dos catálogos
+ * ## Os catálogos vivem aqui dentro
  *
- * Porque é a raiz deles. Os escalões, os balneários, os locais e os tipos de
- * evento podem pertencer a uma modalidade — o "Sub-13" do futebol não é o
- * "Sub-13" da natação, e a piscina não é um campo. Escolher o desporto primeiro
- * e configurar o resto por baixo é a ordem em que a coisa se pensa.
+ * Eram um painel à parte, com quatro acordeões — locais, balneários, escalões,
+ * tipos de evento — que não diziam de que modalidade eram. Um menu inteiro para
+ * uma coisa que nunca se procura por si: ninguém quer "ver os escalões", quer
+ * ver *os escalões do futebol*.
+ *
+ * Agora saem da modalidade a que pertencem. O "Sub-13" do futebol não é o
+ * "Sub-13" da natação, e a piscina não é um campo — a arrumação passou a dizer
+ * isso sozinha, e as Definições ficaram com um painel a menos.
+ *
+ * Abrem por omissão, porque é para lá que se vem depois de criar a modalidade.
+ * Fecham-se com o mesmo gesto, porque um clube com cinco modalidades não quer
+ * vinte listas abertas.
  */
-export function SportsPanel({ mayWrite }: { mayWrite: boolean }) {
+export function SportsPanel({
+  mayWrite,
+  /** Deep-link de um "gerir locais": abre esse catálogo em todas as modalidades. */
+  deepLinked,
+}: {
+  mayWrite: boolean;
+  deepLinked?: CatalogKey | null;
+}) {
   const { academy } = useStore();
   const [editing, setEditing] = useState<Sport | null>(null);
   const [creating, setCreating] = useState(false);
@@ -58,35 +77,17 @@ export function SportsPanel({ mayWrite }: { mayWrite: boolean }) {
             Cria a primeira — é ela que organiza os escalões, os balneários e as equipas.
           </p>
         ) : (
-          <ul className="px-5 py-1.5">
-            {academy.sports.map((s) => (
-              <li key={s.id} className="flex items-center gap-3 border-b border-line py-3 last:border-0">
-                <span className="w-32 shrink-0 text-body font-medium text-ink">{s.name}</span>
-                <span className="flex min-w-0 flex-1 flex-wrap gap-1">
-                  {s.positions.length ? (
-                    s.positions.map((p) => <Pill key={p}>{p}</Pill>)
-                  ) : (
-                    // Natação não tem posições — e isso é configuração, não um caso
-                    // especial no código.
-                    <span className="text-meta text-ink-4">sem posições</span>
-                  )}
-                </span>
-                {mayWrite && (
-                  <span className="flex shrink-0 gap-1.5">
-                    <button type="button" className="ctl-ghost" onClick={() => setEditing(s)}>
-                      Editar
-                    </button>
-                    <button
-                      type="button"
-                      className="ctl-ghost text-ink-3 hover:text-risk"
-                      onClick={() => void remove(s)}
-                      aria-label={`Apagar ${s.name}`}
-                    >
-                      <Trash2 className="size-3.5" strokeWidth={1.75} />
-                    </button>
-                  </span>
-                )}
-              </li>
+          <ul>
+            {academy.sports.map((sport) => (
+              <SportRow
+                key={sport.id}
+                deepLinked={deepLinked}
+                expandido={academy.sports.length === 1}
+                sport={sport}
+                mayWrite={mayWrite}
+                onEdit={() => setEditing(sport)}
+                onRemove={() => void remove(sport)}
+              />
             ))}
           </ul>
         )}
@@ -104,6 +105,101 @@ export function SportsPanel({ mayWrite }: { mayWrite: boolean }) {
         />
       )}
     </>
+  );
+}
+
+/* -------------------------------------------------------------------------- */
+
+/**
+ * Uma modalidade, e o que se configura dentro dela.
+ *
+ * Os quatro catálogos abrem por omissão — é para aqui que se vem a seguir a criar
+ * a modalidade, e uma lista fechada por omissão fazia parecer que não havia nada
+ * para configurar. Fecham-se com o mesmo botão para um clube com cinco
+ * modalidades não ficar com vinte listas abertas.
+ */
+function SportRow({
+  sport,
+  mayWrite,
+  onEdit,
+  onRemove,
+  deepLinked,
+  /**
+   * Abrir os catálogos já expandidos.
+   *
+   * Verdadeiro quando o clube só tem uma modalidade — que é o caso de quem
+   * acabou de a criar e vem configurar os escalões. Com cinco modalidades, vinte
+   * listas abertas de uma vez são pior do que quatro títulos com a contagem à
+   * frente, que é o que fica.
+   */
+  expandido,
+}: {
+  sport: Sport;
+  mayWrite: boolean;
+  deepLinked?: CatalogKey | null;
+  expandido: boolean;
+  onEdit: () => void;
+  onRemove: () => void;
+}) {
+  const [open, setOpen] = useState(true);
+
+  return (
+    <li className="border-b border-line last:border-0">
+      <div className="flex items-center gap-3 px-5 py-3">
+        <button
+          type="button"
+          onClick={() => setOpen((v) => !v)}
+          aria-expanded={open}
+          aria-label={open ? `Ocultar configuração de ${sport.name}` : `Mostrar configuração de ${sport.name}`}
+          className="flex min-w-0 flex-1 items-center gap-3 text-left"
+        >
+          <ChevronDown
+            className={cx("size-4 shrink-0 text-ink-3 transition-transform duration-[120ms]", !open && "-rotate-90")}
+            strokeWidth={1.75}
+          />
+          <span className="w-28 shrink-0 truncate text-body font-medium text-ink">{sport.name}</span>
+          <span className="flex min-w-0 flex-1 flex-wrap gap-1">
+            {sport.positions.length ? (
+              sport.positions.map((p) => <Pill key={p}>{p}</Pill>)
+            ) : (
+              // Natação não tem posições — e isso é configuração, não um caso
+              // especial no código.
+              <span className="text-meta text-ink-4">sem posições</span>
+            )}
+          </span>
+        </button>
+
+        {mayWrite && (
+          <span className="flex shrink-0 gap-1.5">
+            <button type="button" className="ctl-ghost" onClick={onEdit}>
+              Editar
+            </button>
+            <button
+              type="button"
+              className="ctl-ghost text-ink-3 hover:text-risk"
+              onClick={onRemove}
+              aria-label={`Apagar ${sport.name}`}
+            >
+              <Trash2 className="size-3.5" strokeWidth={1.75} />
+            </button>
+          </span>
+        )}
+      </div>
+
+      {open && (
+        <div className="border-t border-line bg-sunken/30 pl-4">
+          {CATALOG_KEYS.map((key) => (
+            <CatalogPanel
+              key={key}
+              catalogKey={key}
+              sportId={sport.id}
+              defaultOpen={deepLinked === key || expandido}
+              bare
+            />
+          ))}
+        </div>
+      )}
+    </li>
   );
 }
 

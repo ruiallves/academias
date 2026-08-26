@@ -76,15 +76,25 @@ export function AcademyBoot({ children }: { children: ReactNode }) {
 
 function BootLoading() {
   return (
-    <div className="flex min-h-dvh items-center justify-center bg-canvas">
-      <div className="text-center">
-        <div
-          className="mx-auto mb-3 size-8 animate-spin rounded-full border-2 border-line"
-          style={{ borderTopColor: "var(--color-signal)" }}
-          aria-hidden
-        />
-        <p className="text-meta text-ink-3">A carregar a academia…</p>
-      </div>
+    /*
+     * O arranque, antes de haver casca.
+     *
+     * O disco sozinho, sem legenda: é o mesmo tratamento do resto da aplicação,
+     * onde o carregamento passou a ser movimento e não texto. Aqui não há página
+     * para desfocar — ainda não há página nenhuma — por isso o disco fica no meio
+     * do ecrã. O nome do que está a carregar vai no `aria-label`, para quem não o
+     * vê.
+     */
+    <div
+      role="status"
+      aria-label="A carregar a academia"
+      className="flex min-h-dvh items-center justify-center bg-canvas"
+    >
+      <span
+        className="size-9 animate-spin rounded-full border-[3px] border-line"
+        style={{ borderTopColor: "var(--color-signal)" }}
+        aria-hidden
+      />
     </div>
   );
 }

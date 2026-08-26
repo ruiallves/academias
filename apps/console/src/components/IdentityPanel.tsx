@@ -1,4 +1,4 @@
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Panel, PanelHead, cx } from "@/components/primitives";
 import { Check, Trash2, Upload } from "@/lib/icons";
 import { apiDelete, apiPatch, apiPost } from "@/lib/http";
@@ -48,17 +48,102 @@ export function IdentityPanel({ mayWrite }: { mayWrite: boolean }) {
   const [erro, setErro] = useState<string | null>(null);
   const [saved, setSaved] = useState(false);
 
-  // A pré-visualização local enquanto se arrasta o selector de cor. O `signal`
-  // guardado é o que se grava; isto é só o que se vê enquanto se decide.
-  const preview = (hex: string) => {
+  /*
+   * O selector nativo é dono do seu próprio estado, e o React não lhe toca.
+   *
+   * Estas duas linhas são a razão de o selector não fechar sozinho. Enquanto ele
+   * está aberto, tudo o que vem de lá aterra em `rascunho` — um ref, que não
+   * causa render nenhum. Um `setState` a meio de uma escolha remonta o input, e
+   * um input remontado leva a janela do selector com ele.
+   */
+  const rascunho = useRef(academy.signalColor);
+  /**
+   * A cor que já está assumida.
+   *
+   * Um ref e não o `signal` do estado porque quem lê isto é o temporizador, que
+   * corre trezentos milissegundos depois de ter sido agendado — e nessa altura o
+   * `signal` que a função capturou pode já ser outro. Comparar contra um valor
+   * velho gravava a mesma cor duas vezes.
+   */
+  const assumida = useRef(academy.signalColor);
+  const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const picker = useRef<HTMLInputElement>(null);
+
+  /** Escreve a cor no `:root`. Só é chamado quando a escolha está feita. */
+  const aplicar = (hex: string) => {
     setSignal(hex);
+    rascunho.current = hex;
+    assumida.current = hex;
     for (const [k, v] of Object.entries(signalVars(hex))) {
       document.documentElement.style.setProperty(k, v);
     }
   };
 
+  /**
+   * Assumir a cor quando a escolha assenta.
+   *
+   * ## Porque é que isto é um temporizador e não um evento
+   *
+   * Porque não há um evento fiável para "o utilizador fechou o selector". O
+   * Chrome dispara `change` logo ao primeiro clique dentro do selector, e continua
+   * a dispará-lo a cada movimento — para ele, `change` e `input` são quase a mesma
+   * coisa. O Firefox e o Safari só o disparam ao fechar. Escrever código para um
+   * partia o outro, e foi o que aconteceu duas vezes:
+   *
+   *  - a gravar em cada `change`: a página mudava de cor a cada movimento do rato;
+   *  - a remontar o input com uma `key` para o repor: o primeiro clique destruía
+   *    a janela aberta e nem dava para arrastar.
+   *
+   * O que **é** fiável é o silêncio. Enquanto se arrasta, os eventos chegam aos
+   * magotes; quando a escolha assenta, param. Trezentos milissegundos sem nada é
+   * "acabou de escolher", em qualquer browser, sem depender de nenhum deles.
+   *
+   * O `blur` continua a comprometer de imediato, para quem fecha o selector e
+   * clica noutro sítio não esperar por temporizador nenhum.
+   */
+  function agendar(hex: string) {
+    rascunho.current = hex;
+    if (timer.current) clearTimeout(timer.current);
+    timer.current = setTimeout(() => {
+      timer.current = null;
+      if (hex.toLowerCase() !== assumida.current.toLowerCase()) void saveColor(hex);
+    }, 300);
+  }
+
+  function comprometer() {
+    if (timer.current) {
+      clearTimeout(timer.current);
+      timer.current = null;
+    }
+    const hex = rascunho.current;
+    if (hex.toLowerCase() !== assumida.current.toLowerCase()) void saveColor(hex);
+  }
+
+  // Um temporizador pendente quando o painel desaparece nunca chega a gravar, e
+  // deixava um `setState` a apontar para um componente que já não existe.
+  useEffect(() => () => {
+    if (timer.current) clearTimeout(timer.current);
+  }, []);
+
+  /*
+   * Quando a cor muda por outra via — um dos atalhos acima, ou uma gravação
+   * falhada que reverteu — o selector tem de a acompanhar.
+   *
+   * Escrever no DOM à mão, e não com uma `key`: remontar o input fecharia o
+   * selector se ele estivesse aberto. Isto corre só quando o valor gravado
+   * mudou, e nessa altura o selector está fechado — quem carrega num atalho não
+   * tem o selector aberto.
+   */
+  useEffect(() => {
+    if (picker.current && picker.current.value.toLowerCase() !== signal.toLowerCase()) {
+      picker.current.value = signal;
+    }
+    rascunho.current = signal;
+    assumida.current = signal;
+  }, [signal]);
+
   async function saveColor(hex: string) {
-    preview(hex);
+    aplicar(hex);
     if (!mayWrite) return;
     setSaving(true);
     setErro(null);
@@ -71,7 +156,7 @@ export function IdentityPanel({ mayWrite }: { mayWrite: boolean }) {
       setErro(e instanceof Error ? e.message : "Não foi possível gravar a cor.");
       // Repor o que o servidor tem: uma cor que ficou no ecrã mas não gravou é
       // pior do que nenhuma — quem a vê acredita que está aplicada.
-      preview(academy.signalColor);
+      aplicar(academy.signalColor);
     } finally {
       setSaving(false);
     }
@@ -127,15 +212,24 @@ export function IdentityPanel({ mayWrite }: { mayWrite: boolean }) {
 
           {/*
             O selector livre, a seguir aos atalhos.
-            Um clube tem a sua cor e ela raramente é uma das seis — as seis
-            existem para quem não faz questão. `onInput` pré-visualiza a cada
-            movimento; só o `onChange` (quando o selector fecha) é que grava, para
-            não escrever cem vezes no servidor enquanto se arrasta.
+
+            ## Porque é que este input não é controlado, nem tem `key`
+
+            Foi controlado, com `value={signal}` e um `setState` por cada movimento
+            do rato — e a página mudava de cor enquanto se escolhia, que era a
+            queixa. Depois passou a `defaultValue` com `key={signal}` para o
+            repor, e ficou pior: o Chrome dispara `change` logo ao primeiro clique
+            dentro do selector, a `key` mudava, o React remontava o input, e a
+            janela aberta ia atrás — nem dava para arrastar.
+
+            Agora o React não lhe toca de todo enquanto está aberto. O que vem do
+            selector vai para um ref e reinicia um temporizador; a cor só é
+            assumida quando os eventos param de chegar. Ver `agendar`.
           */}
           <label
             className={cx(
               "inline-flex cursor-pointer items-center gap-2 rounded-[var(--radius-control)] border border-line px-2.5 py-1.5 text-meta font-medium text-ink-2 transition-colors duration-[120ms] hover:border-line-strong",
-              (!mayWrite || saving) && "pointer-events-none opacity-50",
+              !mayWrite && "pointer-events-none opacity-50",
             )}
           >
             <span
@@ -144,12 +238,21 @@ export function IdentityPanel({ mayWrite }: { mayWrite: boolean }) {
               aria-hidden
             />
             Outra cor
+            {/*
+              `disabled` só por permissão, e nunca por `saving`.
+              O Chrome dispara `change` com o selector ainda aberto; se a gravação
+              que isso desencadeia desactivasse o input, o browser fechava-lhe a
+              janela nas mãos de quem ainda estava a escolher. Os atalhos acima
+              continuam a desactivar-se — são botões, não têm janela aberta.
+            */}
             <input
+              ref={picker}
               type="color"
-              value={signal}
-              disabled={!mayWrite || saving}
-              onInput={(e) => preview((e.target as HTMLInputElement).value)}
-              onChange={(e) => void saveColor(e.target.value)}
+              defaultValue={signal}
+              disabled={!mayWrite}
+              onInput={(e) => agendar((e.target as HTMLInputElement).value)}
+              onChange={(e) => agendar(e.target.value)}
+              onBlur={comprometer}
               className="sr-only"
               aria-label="Escolher outra cor"
             />

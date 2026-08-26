@@ -1,11 +1,11 @@
-import { useEffect, useMemo, useState, type FormEvent } from "react";
+import { useCallback, useEffect, useMemo, useState, type FormEvent } from "react";
 import { Link } from "react-router-dom";
 import { academy, listTeams } from "@/lib/api";
 import { createInvite, type Invite } from "@/lib/invites";
+import { useDepartments, loadDepartments } from "@/lib/departments";
 import { loadRoles, useRoles, type AcademyRole } from "@/lib/roles";
 import { Check, Copy, Users } from "@/lib/icons";
 import type { Role, Session } from "@/lib/permissions";
-import { DEPARTMENT_LABEL, type StaffDepartment } from "@/data/types";
 import { Dialog, DialogField, dialogInputClass } from "./Dialog";
 import { SelectField } from "./primitives";
 
@@ -57,15 +57,13 @@ const RANK: Record<Role, number> = {
 /**
  * Um grupo no menu de departamentos.
  *
- * Os cinco departamentos a sério, mais "presidencia" — que não é um
- * departamento, é onde vive o cargo que não pertence a nenhum. Ver `departamentos`.
+ * O id de um departamento a sério, ou `"presidencia"` — que não é um
+ * departamento: é onde vive o cargo que não pertence a nenhum. Ver `departamentos`.
  */
-type Grupo = StaffDepartment | "presidencia";
+type Grupo = string;
 
-const GRUPO_LABEL: Record<Grupo, string> = {
-  presidencia: "Presidência",
-  ...DEPARTMENT_LABEL,
-};
+/** O grupo dos cargos sem departamento. Um id nunca colide com isto. */
+const PRESIDENCIA = "presidencia";
 
 /** Só quem trabalha com equipas tem âmbito por equipa. */
 function usesTeams(base: Role): boolean {
@@ -75,10 +73,11 @@ function usesTeams(base: Role): boolean {
 export function InviteDialog({ session, onClose }: { session: Session; onClose: () => void }) {
   const teams = listTeams(session);
   const { roles, loaded } = useRoles();
+  const { departments } = useDepartments();
 
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
-  const [department, setDepartment] = useState<Grupo>("technical");
+  const [department, setDepartment] = useState<Grupo>("");
   const [roleId, setRoleId] = useState("");
   const [teamIds, setTeamIds] = useState<string[]>([]);
   const [created, setCreated] = useState<Invite | null>(null);
@@ -87,6 +86,7 @@ export function InviteDialog({ session, onClose }: { session: Session; onClose: 
 
   useEffect(() => {
     void loadRoles();
+    void loadDepartments();
   }, []);
 
   /*
@@ -124,16 +124,22 @@ export function InviteDialog({ session, onClose }: { session: Session; onClose: 
    * departamento não tinha onde aparecer no menu.
    */
   const departamentos = useMemo(() => {
-    const usados = new Set(convidaveis.map((r) => r.department).filter(Boolean) as StaffDepartment[]);
-    const reais = (Object.keys(DEPARTMENT_LABEL) as StaffDepartment[]).filter((d) => usados.has(d));
-    const semDepartamento = convidaveis.some((r) => r.department === null);
-    return [...(semDepartamento ? (["presidencia"] as const) : []), ...reais] as Grupo[];
-  }, [convidaveis]);
+    const usados = new Set(convidaveis.map((r) => r.departmentId).filter(Boolean));
+    const reais = departments.filter((d) => usados.has(d.id)).map((d) => d.id);
+    const semDepartamento = convidaveis.some((r) => r.departmentId === null);
+    return [...(semDepartamento ? [PRESIDENCIA] : []), ...reais];
+  }, [convidaveis, departments]);
+
+  /** O nome a mostrar para um grupo. Os ids não se mostram a ninguém. */
+  const nomeDoGrupo = useCallback(
+    (g: Grupo) => (g === PRESIDENCIA ? "Presidência" : (departments.find((d) => d.id === g)?.name ?? "Departamento")),
+    [departments],
+  );
 
   const cargosDoDepartamento = useMemo(
     () =>
       convidaveis.filter((r) =>
-        department === "presidencia" ? r.department === null : r.department === department,
+        department === PRESIDENCIA ? r.departmentId === null : r.departmentId === department,
       ),
     [convidaveis, department],
   );
@@ -246,7 +252,7 @@ export function InviteDialog({ session, onClose }: { session: Session; onClose: 
                   className="w-full"
                   value={department}
                   onChange={setDepartment}
-                  options={departamentos.map((d) => ({ value: d, label: GRUPO_LABEL[d] }))}
+                  options={departamentos.map((d) => ({ value: d, label: nomeDoGrupo(d) }))}
                 />
               </DialogField>
 

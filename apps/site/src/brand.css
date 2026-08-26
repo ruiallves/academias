@@ -5,64 +5,69 @@
    ---------------------------------------------------------------------------
 
    Este ficheiro é a identidade. Não é o tema do produto (esse vive em
-   `packages/ui`) e não deve convergir para ele: a consola é uma ferramenta de
-   trabalho, densa e neutra; isto é uma montra, e tem de ter opinião.
+   `packages/ui`): a consola é uma ferramenta de trabalho, densa e neutra; isto
+   é a casa da marca, e tem de ter opinião.
 
-   ## As cinco decisões
+   ## A direção: a instituição
 
-   1. **O documento, não o folheto.** A página está numerada — 01, 02, 03 — com
-      marcadores em monoespaçada e filetes de 1px a separar. Lê-se como uma ficha
-      técnica de um produto sério, não como uma apresentação de vendas. É a
-      diferença entre "confia em nós" e "vê tu mesmo".
+   Um clube não é uma startup. Tem sede, tem história, tem gerações. O site tem
+   de parecer isso — uma casa com anos — e não uma landing page a tentar
+   converter tráfego. Quatro decisões fazem esse trabalho:
 
-   2. **Cantos direitos.** Raio de 2px, e 999px só onde é mesmo uma pastilha. O
-      cartão arredondado de 16px é a assinatura visual de metade da internet;
-      recusá-lo é a forma mais barata de não parecer um template.
+   1. **A serifa.** Fraunces nos títulos, com o itálico como sublinhado. Uma
+      serifa grande, apertada e com opinião é a coisa mais distante que existe
+      da tipografia geométrica de todas as landing pages — e a mais próxima de
+      uma instituição.
 
-   3. **Uma cor.** Verde de campo (#0f6b62), o mesmo do produto — continuidade de
-      marca — sobre tinta quase preta e papel quente. Zero gradientes roxos, zero
-      vidro fosco. A cor não decora: aponta.
+   2. **O verde é o chão, não o enfeite.** As secções escuras são verde-pinheiro
+      profundo, não preto. É a cor da casa: o campo à noite. O verde de campo
+      (#0f6b62) continua a apontar as acções; o pinheiro dá o ambiente.
 
-   4. **Contraste por blocos.** Secções claras e escuras alternam em vez de tudo
-      flutuar sobre um degradé. O ritmo faz-se com luz, não com sombras.
+   3. **O canto.** O logótipo é o arco do pontapé de canto. As superfícies
+      principais repetem-no: um único canto generosamente arredondado — o
+      superior esquerdo — e os outros três discretos. É um motivo que mais
+      ninguém tem, e reconhece-se sem o logótipo à vista.
 
-   5. **A linha.** Um clube desenha-se com linhas de cal; um sistema desenha-se
-      com ligações. O filete de 1px é o motivo que atravessa a página inteira —
-      separadores, diagramas, molduras de produto.
+   4. **Composição editorial, não módulos.** Secções que respiram de maneiras
+      diferentes: uma declaração de página inteira, um produto encostado à
+      página, listas com filetes em vez de grelhas de cartões. O ritmo faz-se
+      com luz e escala, não com sombras.
 
    ## O que não há aqui
 
-   Sombras grandes, `backdrop-filter`, gradientes de duas cores em texto,
-   ilustrações 3D, ícones a flutuar. Nada disso é proibido por gosto: é que cada
-   um deles é hoje um sinal de "página gerada", e o produto que está por trás
-   desta página é real.
+   Gradientes de duas cores, vidro fosco, blobs, ícones a decorar conceitos,
+   grelhas de seis cartões iguais. Cada um desses é hoje a assinatura de uma
+   página gerada — e o produto por trás desta página é real.
    --------------------------------------------------------------------------- */
 
 @theme {
   /* --- Tinta e papel ------------------------------------------------------ */
-  /* O preto tem verde lá dentro. Um #000 puro ao lado de um verde de campo lê-se
-     como duas marcas diferentes; este pertence à mesma família. */
-  --color-ink: #0c100f;
-  --color-ink-2: #2a3230;
-  --color-ink-3: #5d6764;
-  --color-ink-4: #8e9793;
+  /* O preto tem verde lá dentro; o papel é marfim quente. A mesma família da
+     cor da casa, vista à luz do dia. */
+  --color-ink: #14201c;
+  --color-ink-2: #3c4642;
+  --color-ink-3: #6a746f;
+  --color-ink-4: #9aa39d;
 
-  --color-paper: #f4f2ed;
-  --color-paper-2: #ebe8e1;
-  --color-chalk: #ffffff;
+  --color-paper: #f6f3ec;
+  --color-paper-2: #edeade;
+  --color-chalk: #fffefb;
 
-  --color-line: #ded9d0;
-  --color-line-2: #cbc4b8;
+  --color-line: #ded8ca;
+  --color-line-2: #c9c2b1;
 
-  /* --- Campo -------------------------------------------------------------- */
+  /* --- O campo ------------------------------------------------------------ */
   --color-field: #0f6b62;
-  --color-field-deep: #073f3a;
-  --color-field-soft: #e2ece9;
-  /* Só sobre fundo escuro: filetes e detalhes que precisam de brilhar sem gritar. */
-  --color-mint: #7fd9c8;
+  --color-field-deep: #0a4c45;
+  --color-field-soft: #e4ece7;
+
+  /* --- A casa: o campo à noite ------------------------------------------- */
+  --color-pine: #0e332d;
+  --color-pine-2: #14403a;
+  --color-mint: #8fdcca;
 
   /* --- Tipografia --------------------------------------------------------- */
-  --font-display: "Archivo", ui-sans-serif, system-ui, sans-serif;
+  --font-display: "Fraunces", Georgia, "Times New Roman", serif;
   --font-sans: "Instrument Sans", ui-sans-serif, system-ui, -apple-system, sans-serif;
   --font-mono: "Geist Mono", ui-monospace, "SF Mono", monospace;
 
@@ -90,15 +95,33 @@
     text-rendering: optimizeLegibility;
   }
 
+  /* O grão.
+     -------------------------------------------------------------------------
+     Uma folha de ruído por cima de tudo, a 4% de opacidade. É a diferença
+     entre uma superfície impressa e um rectângulo de cor — e a cor chapada,
+     perfeitamente lisa, é hoje o material de que são feitas as páginas
+     geradas. O ruído é gerado por `feTurbulence` dentro de um `data:` URI:
+     não há ficheiro para carregar, e o padrão nunca se repete à vista.
+
+     `overlay` faz o trabalho nos dois ambientes: aclara o papel e escurece o
+     pinheiro, com a mesma folha. */
+  body::after {
+    content: "";
+    position: fixed;
+    inset: 0;
+    z-index: 9999;
+    pointer-events: none;
+    opacity: 0.4;
+    mix-blend-mode: overlay;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.82' numOctaves='4' stitchTiles='stitch'/%3E%3CfeColorMatrix type='saturate' values='0'/%3E%3C/filter%3E%3Crect width='160' height='160' filter='url(%23n)'/%3E%3C/svg%3E");
+  }
+
   ::selection { background: var(--color-field); color: #fff; }
 
   /* O foco é visível em toda a parte. Um site que se navega com o teclado é um
      site que uma pessoa com leitor de ecrã consegue comprar. */
-  :focus-visible { outline: 2px solid var(--color-field); outline-offset: 3px; border-radius: 2px; }
+  :focus-visible { outline: 2px solid var(--color-field); outline-offset: 3px; border-radius: 3px; }
 
-  /* Tudo o que é clicável diz que é clicável. O `cursor: default` de um `<button>`
-     é uma herança do formulário de 1995 e não tem lugar numa página onde metade das
-     acções são botões — o interruptor de preços, as perguntas, o menu. */
   button:not(:disabled),
   summary,
   [role="button"] { cursor: pointer; }
@@ -110,41 +133,48 @@
   /* =========================================================================
      Tipografia de exibição
 
-     O eixo de largura do Archivo faz o trabalho que noutro sítio se faria com
-     uma segunda fonte: os títulos grandes apertam (wdth 88) e ganham tensão; os
-     pequenos abrem. Uma família, duas personalidades.
+     Fraunces com os eixos calados (SOFT 0, WONK 0): institucional, não
+     caprichosa. O itálico é o único ornamento permitido — uma palavra por
+     título, como um sublinhado de caneta.
      ========================================================================= */
 
   .display {
     font-family: var(--font-display);
-    font-variation-settings: "wdth" 88;
-    font-weight: 700;
-    letter-spacing: -0.035em;
-    line-height: 0.98;
+    font-weight: 540;
+    font-variation-settings: "SOFT" 0, "WONK" 0;
+    letter-spacing: -0.022em;
+    line-height: 1.04;
     text-wrap: balance;
   }
 
-  .d1 { font-size: clamp(2.75rem, 7.4vw, 5.75rem); }
-  .d2 { font-size: clamp(2.1rem, 4.6vw, 3.5rem); }
-  .d3 { font-size: clamp(1.5rem, 2.6vw, 2.1rem); letter-spacing: -0.025em; line-height: 1.05; }
-
-  /* A entrada de cada secção: número, um travessão e o nome. Em monoespaçada
-     porque é uma referência, não um título. */
-  .eyebrow {
-    font-family: var(--font-mono);
-    font-size: 11.5px;
+  .display em,
+  .display i {
+    font-style: italic;
     font-weight: 500;
-    letter-spacing: 0.14em;
-    text-transform: uppercase;
-    color: var(--color-ink-3);
+    letter-spacing: -0.012em;
   }
 
+  .d1 { font-size: clamp(2.8rem, 6.8vw, 5.4rem); line-height: 1.0; }
+  .d2 { font-size: clamp(2.05rem, 4.3vw, 3.3rem); line-height: 1.06; }
+  .d3 { font-size: clamp(1.55rem, 2.5vw, 2.1rem); line-height: 1.15; }
+
+  /* A entrada de cada secção: versaletes de sans, espaçados, na cor do campo.
+     Curto — é um sinal de orientação, não um título. */
+  .eyebrow {
+    font-size: 12px;
+    font-weight: 650;
+    letter-spacing: 0.16em;
+    text-transform: uppercase;
+    color: var(--color-field);
+  }
+  .dark .eyebrow { color: var(--color-mint); }
+
   .lede {
-    font-size: clamp(1.0625rem, 1.5vw, 1.25rem);
-    line-height: 1.5;
+    font-size: clamp(1.0625rem, 1.5vw, 1.1875rem);
+    line-height: 1.55;
     color: var(--color-ink-2);
     text-wrap: pretty;
-    max-width: 54ch;
+    max-width: 56ch;
   }
 
   /* =========================================================================
@@ -158,59 +188,70 @@
     padding-inline: clamp(20px, 5vw, 48px);
   }
 
-  /* O ar entre secções é grande de propósito: é o que separa um produto de um
-     panfleto. Encolhe no telemóvel, onde o ecrã já é a moldura. */
-  .band { padding-block: clamp(72px, 11vw, 148px); }
+  .band { padding-block: clamp(76px, 11vw, 150px); }
   .band-tight { padding-block: clamp(52px, 7vw, 96px); }
 
+  /* O campo à noite. Chama-se `.dark` por herança — é pinheiro, não preto. */
   .dark {
-    background: var(--color-ink);
-    color: #fff;
-    --color-line: #23302d;
-    --color-line-2: #33413e;
-    --color-ink-2: #b9c4c0;
-    --color-ink-3: #8b9a95;
-    --color-ink-4: #6b7a76;
+    background: var(--color-pine);
+    color: #f2f6f1;
+    --color-line: #23483f;
+    --color-line-2: #2f5a4f;
+    --color-ink: #f2f6f1;
+    --color-ink-2: #b9cbc2;
+    --color-ink-3: #86a094;
+    --color-ink-4: #648073;
+    --color-chalk: #12403a;
   }
 
   .rule { border-top: 1px solid var(--color-line); }
 
+  /* O canto — o arco do pontapé de canto, feito superfície. Um canto grande,
+     três discretos. É a assinatura geométrica da marca. */
+  .canto { border-radius: clamp(20px, 3vw, 36px) 8px 8px 8px; }
+  .canto-sm { border-radius: 18px 6px 6px 6px; }
+
   /* =========================================================================
      Acções
 
-     Rectângulos. Um botão com 12px de raio e uma sombra suave é o botão de toda
-     a gente; este é firme, com uma transição curta e um deslocamento mínimo ao
-     carregar — a única animação que um botão precisa.
+     Um botão firme, com a seta a fazer o trabalho do hover: desloca-se dois
+     pixéis e mais nada. A acção secundária é uma ligação com seta — não um
+     segundo botão a competir.
      ========================================================================= */
 
   .btn {
-    display: inline-flex; align-items: center; justify-content: center; gap: 9px;
+    display: inline-flex; align-items: center; justify-content: center; gap: 10px;
     cursor: pointer;
     height: 50px; padding-inline: 26px;
-    border-radius: 2px;
+    border-radius: 8px;
     font-size: 15px; font-weight: 600; letter-spacing: -0.01em;
     white-space: nowrap;
-    transition: background-color 150ms var(--ease-out), color 150ms var(--ease-out),
-                border-color 150ms var(--ease-out), transform 90ms var(--ease-out);
+    transition: background-color 160ms var(--ease-out), color 160ms var(--ease-out),
+                border-color 160ms var(--ease-out), transform 90ms var(--ease-out);
   }
   .btn:active { transform: translateY(1px); }
+  .btn .arr { transition: transform 200ms var(--ease-out); }
+  .btn:hover .arr { transform: translateX(3px); }
 
-  .btn-primary { background: var(--color-field); color: #fff; }
-  .btn-primary:hover { background: var(--color-field-deep); }
+  .btn-primary { background: var(--color-pine); color: #fff; }
+  .btn-primary:hover { background: var(--color-field); }
+  .dark .btn-primary { background: #fff; color: var(--color-pine); }
+  .dark .btn-primary:hover { background: var(--color-mint); }
 
-  .btn-ink { background: var(--color-ink); color: #fff; }
-  .btn-ink:hover { background: var(--color-field-deep); }
+  /* Herança: alguns sítios ainda pedem `.btn-ink`. É o primário. */
+  .btn-ink { background: var(--color-pine); color: #fff; }
+  .btn-ink:hover { background: var(--color-field); }
+  .dark .btn-ink { background: #fff; color: var(--color-pine); }
+  .dark .btn-ink:hover { background: var(--color-mint); }
 
-  .btn-outline { border: 1px solid var(--color-line-2); color: var(--color-ink); }
-  .btn-outline:hover { border-color: var(--color-ink); background: rgb(12 16 15 / 0.03); }
-
-  .dark .btn-outline { border-color: #35443f; color: #fff; }
+  .btn-outline { border: 1px solid var(--color-line-2); color: var(--color-ink); background: transparent; }
+  .btn-outline:hover { border-color: var(--color-ink); background: rgb(20 32 28 / 0.03); }
+  .dark .btn-outline { border-color: #35604f; color: #fff; }
   .dark .btn-outline:hover { border-color: var(--color-mint); background: rgb(255 255 255 / 0.05); }
 
-  .btn-sm { height: 40px; padding-inline: 18px; font-size: 14px; }
+  .btn-sm { height: 40px; padding-inline: 18px; font-size: 14px; border-radius: 7px; }
 
-  /* Ligação com sublinhado que cresce — a microinteração mais discreta que há, e
-     a única que uma página de texto precisa. */
+  /* Ligação com sublinhado que cresce — a microinteração mais discreta que há. */
   .link {
     position: relative; font-weight: 500; color: var(--color-ink);
     text-decoration: none;
@@ -221,53 +262,100 @@
   }
   .link:hover::after { right: 0; }
 
+  /* A ligação com seta — a acção secundária desta casa. */
+  .link-arrow {
+    display: inline-flex; align-items: center; gap: 8px;
+    font-size: 15px; font-weight: 600; letter-spacing: -0.01em;
+    color: var(--color-field);
+  }
+  .dark .link-arrow { color: var(--color-mint); }
+  .link-arrow .arr { transition: transform 200ms var(--ease-out); }
+  .link-arrow:hover .arr { transform: translateX(3px); }
+
   /* =========================================================================
      Etiquetas
      ========================================================================= */
 
   .tag {
     display: inline-flex; align-items: center; gap: 6px;
-    font-family: var(--font-mono); font-size: 11px; font-weight: 500;
-    letter-spacing: 0.08em; text-transform: uppercase;
-    padding: 4px 9px; border-radius: 2px;
+    font-size: 11.5px; font-weight: 650;
+    letter-spacing: 0.1em; text-transform: uppercase;
+    padding: 4px 10px; border-radius: 4px;
     border: 1px solid var(--color-line-2); color: var(--color-ink-3);
   }
   .tag-live { border-color: color-mix(in oklab, var(--color-field) 40%, transparent); color: var(--color-field); }
-  .dark .tag-live { color: var(--color-mint); border-color: #2c443f; }
+  .dark .tag-live { color: var(--color-mint); border-color: #2f5a4f; }
   .tag-soon { border-style: dashed; }
 
   /* =========================================================================
      Superfícies de produto
 
-     Uma moldura fina com uma barra de janela por cima. Não é um "mockup" com
-     perspectiva nem uma sombra a flutuar: é o produto, encostado à página, como
-     quem mostra o ecrã a alguém que está ao lado.
+     A moldura leva o canto da marca e uma barra mínima: um ponto verde e o
+     endereço. Sem os três círculos de janela — são o cliché de todos os
+     mockups — e sem perspectiva. O produto encosta-se à página, direito.
      ========================================================================= */
 
   .frame {
     border: 1px solid var(--color-line-2);
-    border-radius: 3px;
+    border-radius: 18px 8px 8px 8px;
     background: var(--color-chalk);
     overflow: hidden;
   }
-  .dark .frame { border-color: #2b3936; background: #0f1514; }
+  .dark .frame { border-color: #2b544a; background: #0f2e29; }
 
   .frame-bar {
-    display: flex; align-items: center; gap: 7px;
-    height: 34px; padding-inline: 12px;
+    display: flex; align-items: center; gap: 8px;
+    height: 36px; padding-inline: 16px;
     border-bottom: 1px solid var(--color-line);
     background: var(--color-paper-2);
     font-family: var(--font-mono); font-size: 11px; color: var(--color-ink-4);
   }
-  .dark .frame-bar { background: #141c1a; border-color: #23302d; }
-  .frame-dot { width: 8px; height: 8px; border-radius: 999px; background: var(--color-line-2); }
+  .dark .frame-bar { background: #123832; border-color: #1d453e; }
+  .frame-dot { width: 7px; height: 7px; border-radius: 999px; background: var(--color-field); opacity: 0.8; }
+
+  /* O interior das molduras é uma imagem, não uma página: nada se seleciona,
+     nada se clica. É o que separa "screenshot do produto" de "HTML por cima". */
+  .shot {
+    user-select: none;
+    -webkit-user-select: none;
+    pointer-events: none;
+  }
+
+  /* =========================================================================
+     Formulário
+
+     Campos de linha: só o filete de baixo, que escurece ao focar. Um formulário
+     de produto premium não é um cartão branco com oito caixas — é papel com
+     linhas para escrever.
+     ========================================================================= */
+
+  .field-label {
+    display: block;
+    font-size: 11.5px; font-weight: 650;
+    letter-spacing: 0.12em; text-transform: uppercase;
+    color: var(--color-ink-3);
+  }
+
+  .input-line {
+    width: 100%;
+    height: 46px;
+    background: transparent;
+    border: 0;
+    border-bottom: 1px solid var(--color-line-2);
+    border-radius: 0;
+    font-size: 16.5px;
+    color: var(--color-ink);
+    transition: border-color 180ms var(--ease-out);
+  }
+  .input-line::placeholder { color: var(--color-ink-4); }
+  .input-line:focus { outline: none; border-bottom-color: var(--color-ink); }
+  textarea.input-line { height: auto; padding-block: 10px; resize: vertical; line-height: 1.5; }
 
   /* =========================================================================
      Movimento
 
-     Uma regra só, aplicada com `data-reveal`. Entrada de 14px e opacidade, com
-     atraso escalonado por `--i`. Nada de parallax, nada a flutuar em ciclo: o
-     movimento serve para dizer "isto acabou de chegar", e mais nada.
+     Uma regra só, aplicada com `data-reveal`: 14px de entrada e opacidade, com
+     atraso escalonado por `--i`. Nada de parallax, nada a flutuar em ciclo.
      ========================================================================= */
 
   [data-reveal] {

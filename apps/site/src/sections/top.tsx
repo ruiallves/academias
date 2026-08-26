@@ -1,5 +1,6 @@
+import { useState } from "react";
 import { Link } from "react-router-dom";
-import { ProductFrame, Reveal, SectionMark } from "@/components/primitives";
+import { ProductFrame, Reveal, cx } from "@/components/primitives";
 import { AppShot, ConsoleShot } from "@/components/shots";
 
 /* ========================================================================== */
@@ -9,78 +10,144 @@ import { AppShot, ConsoleShot } from "@/components/shots";
 /**
  * O herói.
  *
- * ## A frase
+ * ## A composição
  *
- * "O clube inteiro. Finalmente ligado." — e não "plataforma all-in-one de gestão
- * desportiva". A segunda descreve a categoria; a primeira descreve o alívio. Um
- * diretor não acorda a querer uma plataforma: acorda a querer parar de perguntar
- * ao treinador quem faltou.
+ * Texto centrado, curto, em serifa — e logo a seguir o produto: a consola e o
+ * telemóvel lado a lado, a atravessar a fronteira entre o papel e o
+ * verde-pinheiro. A mudança de chão a meio da imagem é o gesto da página
+ * inteira: o produto é a ponte entre o clube (em cima, à luz do dia) e a
+ * plataforma (em baixo, a casa).
  *
- * ## O visual
+ * ## O arco
  *
- * Duas interfaces, não uma. Um painel gigante de dashboard é o cliché da categoria
- * e não diz nada; a consola e o telemóvel lado a lado dizem a tese inteira antes de
- * se ler uma linha — isto é uma coisa só, vista de dois sítios.
+ * Atrás do título, um arco de 1px — o pontapé de canto do logótipo, em grande.
+ * É decoração, mas é a **nossa** decoração: reconhece-se sem o logótipo à vista.
+ *
+ * As duas interfaces são tratadas como imagem: não-selecionáveis, sem eventos
+ * (ver `.shot`). Capturas verdadeiras em `public/shots/` ganham sempre.
  */
 export function Hero() {
   return (
     <section className="relative overflow-hidden">
-      <div
+      {/* O arco de canto, em grande — 1px, a cor do filete. */}
+      <svg
         aria-hidden
-        className="pointer-events-none absolute inset-0 opacity-[0.5]"
-        style={{
-          backgroundImage:
-            "linear-gradient(to right, var(--color-line) 1px, transparent 1px), linear-gradient(to bottom, var(--color-line) 1px, transparent 1px)",
-          backgroundSize: "72px 72px",
-          maskImage: "linear-gradient(to bottom, black, transparent 78%)",
-          WebkitMaskImage: "linear-gradient(to bottom, black, transparent 78%)",
-        }}
-      />
+        className="pointer-events-none absolute -top-[220px] -left-[220px] size-[640px] text-line"
+        viewBox="0 0 640 640"
+        fill="none"
+      >
+        <path d="M0 640A640 640 0 0 0 640 0" stroke="currentColor" strokeWidth="1" />
+        <path d="M0 520A520 520 0 0 0 520 0" stroke="currentColor" strokeWidth="1" opacity="0.6" />
+      </svg>
 
-      <div className="wrap relative pt-16 pb-14 sm:pt-24 sm:pb-20">
+      <div className="wrap relative pt-16 text-center sm:pt-24">
+        <Reveal>
+          <p className="eyebrow">Gestão desportiva para clubes portugueses</p>
+        </Reveal>
 
         <Reveal i={1}>
-          <h1 className="display d1 mt-6 max-w-[16ch]">
-            O teu clube
-            <br />
-            num só lugar.
+          <h1 className="display d1 mx-auto mt-6 max-w-[15ch]">
+            O teu clube, <em>num só lugar.</em>
           </h1>
         </Reveal>
 
         <Reveal i={2}>
-          <p className="lede mt-6">
-            A plataforma mais atual de gestão desportiva portuguesa. Liga a direção, os treinadores, os teus departamentos e as famílias aqui mesmo.
+          <p className="lede mx-auto mt-6">
+            A plataforma mais atual de gestão desportiva portuguesa. Liga a direção, os treinadores, os departamentos e
+            as famílias.
           </p>
         </Reveal>
 
         <Reveal i={3}>
-          <div className="mt-9 flex flex-col gap-3 sm:flex-row sm:items-center">
-            <Link to="/contactos" className="btn btn-ink">
+          <div className="mt-9 flex flex-col items-center justify-center gap-5 sm:flex-row">
+            <Link to="/contactos" className="btn btn-primary">
               Experimentar 30 dias
+              <span aria-hidden className="arr">→</span>
             </Link>
-            <a href="#sistema" className="btn btn-outline">
-              Ver como funciona
-            </a>
+            <Link to="/planos" className="link-arrow">
+              Ver os planos
+              <span aria-hidden className="arr">→</span>
+            </Link>
           </div>
         </Reveal>
       </div>
 
-      <div className="wrap relative pb-16 sm:pb-24">
-        <Reveal i={4}>
-          <div className="relative">
-            <ProductFrame
-              label="app.academias.pt — Life Club"
-              shot="/shots/consola.png"
-              alt="A consola do clube: precisa de atenção, métricas e a semana"
-              className="shadow-[0_40px_80px_-56px_rgb(12_16_15/0.45)]"
-            >
-              <ConsoleShot className="min-h-[340px]" />
-            </ProductFrame>
+      {/* O produto, a atravessar do papel para o pinheiro. */}
+      <div className="relative mt-14 sm:mt-20">
+        <div aria-hidden className="absolute inset-x-0 top-[38%] bottom-0 bg-pine" />
+        <div className="wrap relative pb-16 sm:pb-24">
+          <Reveal i={4}>
+            <div className="relative">
+              <ProductFrame
+                label="app.academias.pt — Life Club"
+                shot="/shots/consola.png"
+                alt="A consola do clube: precisa de atenção, métricas e a semana"
+                className="shadow-[0_48px_90px_-52px_rgb(6_24_20/0.6)]"
+              >
+                <ConsoleShot className="min-h-[340px]" />
+              </ProductFrame>
 
-            <div className="mt-6 flex justify-center lg:absolute lg:-right-2 lg:-bottom-16 lg:mt-0 xl:-right-8">
-              <AppShot />
+              <div className="mt-6 flex justify-center lg:absolute lg:-right-2 lg:-bottom-14 lg:mt-0 xl:-right-8">
+                <AppShot />
+              </div>
             </div>
-          </div>
+          </Reveal>
+        </div>
+      </div>
+    </section>
+  );
+}
+
+/* ========================================================================== */
+/* A tese                                                                     */
+/* ========================================================================== */
+
+const HOJE = [
+  { o: "O plantel", onde: "vive num Excel." },
+  { o: "As presenças", onde: "ficam num caderno." },
+  { o: "Os avisos", onde: "perdem-se no WhatsApp." },
+  { o: "As mensalidades", onde: "cobram-se uma a uma." },
+];
+
+/**
+ * O clube, hoje.
+ *
+ * ## Porque é que esta é a primeira coisa a seguir ao herói
+ *
+ * Porque é a única que quem chega já conhece. Aqui estava a arquitectura de
+ * permissões — quem vê o quê — e isso é uma resposta a uma pergunta que ninguém
+ * fez ainda: é engenharia, dita antes de a pessoa saber ao que isto serve. (O
+ * assunto não se perdeu: vive na secção de segurança, que é onde a pergunta
+ * nasce a sério.)
+ *
+ * O que fica é o reconhecimento. Quatro linhas que um diretor lê e pensa "é
+ * exactamente isto" — e o parágrafo a seguir não acusa as ferramentas, acusa a
+ * distância entre elas, que é o que a plataforma vem fechar.
+ */
+export function Realidade() {
+  return (
+    <section id="sistema" className="dark">
+      <div className="wrap band">
+        <Reveal>
+          <p className="eyebrow">O clube, hoje</p>
+        </Reveal>
+
+        <div className="mt-10">
+          {HOJE.map((h, i) => (
+            <Reveal key={h.o} i={i + 1}>
+              <p className="display d2 border-t border-line py-6 last:border-b sm:py-7">
+                {h.o} <em className="text-mint">{h.onde}</em>
+              </p>
+            </Reveal>
+          ))}
+        </div>
+
+        <Reveal i={5}>
+          <p className="mt-10 max-w-[56ch] text-[15.5px] leading-relaxed text-ink-2">
+            Nenhuma destas ferramentas está errada — o problema é que não falam umas com as outras. Alguém no clube
+            passa a semana a copiar informação de um sítio para o outro, e saber quem falta no sábado ainda custa três
+            mensagens. É esse trabalho que desaparece.
+          </p>
         </Reveal>
       </div>
     </section>
@@ -88,92 +155,67 @@ export function Hero() {
 }
 
 /* ========================================================================== */
-/* 01 — O sistema                                                             */
+/* O campo                                                                    */
 /* ========================================================================== */
 
-const FLUXOS = [
-  {
-    from: "O treinador convoca",
-    to: "A família recebe",
-    body: "A convocatória fecha na consola e chega ao telemóvel do pai com hora, sítio e o que levar. Ninguém reencaminha nada.",
-  },
-  {
-    from: "O clube lança a mensalidade",
-    to: "O pai paga no telemóvel",
-    body: "Uma mensalidade por escalão, ou um valor só para aquele atleta. Aparece na app da família com o prazo à vista.",
-  },
-  {
-    from: "O banco confirma",
-    to: "O clube vê o estado mudar",
-    body: "A confirmação chega do banco ao servidor e o estado muda sozinho, na consola e na app.",
-  },
-];
+/**
+ * A fotografia.
+ *
+ * ## Porque é que a página precisa de uma
+ *
+ * Até aqui o site era feito só de duas matérias: tipografia e interface. Ambas
+ * são desenhadas, e uma página inteiramente desenhada — sem nada que tenha sido
+ * *apanhado* com uma máquina — é exactamente o que se lê como gerada. Uma
+ * fotografia é a única coisa numa página que não pode ter sido inventada por
+ * quem a compôs: alguém esteve lá.
+ *
+ * ## Onde entra
+ *
+ * A seguir às quatro linhas do clube de hoje e antes do produto. É a dobradiça
+ * do argumento: o Excel e o caderno de um lado, o software do outro, e no meio a
+ * razão por que qualquer das duas coisas existe. Sem esta imagem, a página passa
+ * de uma queixa administrativa directamente para uma consola.
+ *
+ * ## O tratamento
+ *
+ * A fotografia não entra crua. Perde saturação, escurece, e assenta sobre o
+ * verde da casa — fica **da paleta** em vez de ser um rectângulo colado. É o que
+ * separa uma imagem de marca de uma imagem de banco de imagens.
+ *
+ * ## Sem ficheiro
+ *
+ * A faixa **muda de forma** em vez de ficar um buraco verde. Com fotografia é
+ * alta e cinematográfica, com a frase encostada ao fundo; sem ela encolhe para
+ * uma faixa estreita com a frase ao centro, que se lê como uma citação entre
+ * dois capítulos. Nas duas versões é uma peça inteira — nunca um rectângulo
+ * partido, a mesma regra das capturas de produto.
+ */
+export function Campo() {
+  const [foto, setFoto] = useState(true);
 
-const CAMADAS = [
-  { name: "Direção", line: "vê o clube todo" },
-  { name: "Treinadores", line: "vêem as equipas deles" },
-  { name: "Departamento clínico", line: "vê o que é clínico" },
-  { name: "Famílias", line: "vêem os seus filhos" },
-];
-
-export function Sistema() {
   return (
-    <section id="sistema" className="dark band">
-      <div className="wrap">
-        <Reveal>
-          <SectionMark n="01">Como funciona</SectionMark>
-        </Reveal>
-
-        <Reveal i={1}>
-          <h2 className="display d2 mt-7 max-w-[18ch]">
-            Uma plataforma onde cada um vê exactamente o que é dele.
-          </h2>
-        </Reveal>
-
-        <div className="mt-14 grid gap-14 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.25fr)]">
-          <Reveal i={2}>
-            <p className="eyebrow">Um clube, quatro pontos de vista</p>
-            <ul className="mt-6">
-              {CAMADAS.map((c, i) => (
-                <li key={c.name} className="relative border-t border-line py-5 pl-9 last:border-b">
-                  <span
-                    aria-hidden
-                    className="absolute top-[26px] left-0 size-2 rounded-full bg-mint"
-                    style={{ opacity: 1 - i * 0.16 }}
-                  />
-                  {i < CAMADAS.length - 1 && (
-                    <span aria-hidden className="absolute top-[34px] bottom-[-14px] left-[3.5px] w-px bg-line-2" />
-                  )}
-                  <p className="text-[19px] font-semibold tracking-[-0.02em]">{c.name}</p>
-                  <p className="text-[14.5px] text-ink-3">{c.line}</p>
-                </li>
-              ))}
-            </ul>
-            <p className="mt-6 max-w-[38ch] text-[14.5px] leading-relaxed text-ink-3">
-              O âmbito não é uma opção da interface — é o servidor que decide. Um treinador não consegue pedir os
-              atletas de outra equipa, nem que tente.
-            </p>
-          </Reveal>
-
-          <Reveal i={3}>
-            <p className="eyebrow">O que atravessa</p>
-            <ul className="mt-6 space-y-3">
-              {FLUXOS.map((f) => (
-                <li key={f.from} className="rounded-[3px] border border-line p-6">
-                  <p className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[17px] font-semibold tracking-[-0.02em]">
-                    {f.from}
-                    <span aria-hidden className="text-mint">
-                      →
-                    </span>
-                    {f.to}
-                  </p>
-                  <p className="mt-2 max-w-[52ch] text-[14.5px] leading-relaxed text-ink-2">{f.body}</p>
-                </li>
-              ))}
-            </ul>
-          </Reveal>
-        </div>
-      </div>
+    <section className={cx("relative isolate overflow-hidden bg-pine", !foto && "border-t border-line-2/20")}>
+      {foto && (
+        <>
+          <img
+            src="/fotos/campo.jpg"
+            alt="Treino de futebol de formação ao fim da tarde"
+            loading="lazy"
+            draggable={false}
+            className="absolute inset-0 size-full select-none object-cover opacity-[0.55] [filter:saturate(0.55)_contrast(1.05)]"
+            onError={() => setFoto(false)}
+          />
+          {/* O escurecimento por baixo do texto — legibilidade sem uma caixa. */}
+          <div
+            aria-hidden
+            className="absolute inset-0"
+            style={{
+              background:
+                "linear-gradient(to top, rgb(14 51 45 / 0.92) 0%, rgb(14 51 45 / 0.35) 55%, rgb(14 51 45 / 0.15) 100%)",
+            }}
+          />
+        </>
+      )}
     </section>
   );
 }

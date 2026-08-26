@@ -1,7 +1,6 @@
 import { useSyncExternalStore } from "react";
 import { apiDelete, apiGet, apiPatch, apiPost } from "@/lib/http";
 import type { Permission, Role } from "@/lib/permissions";
-import type { StaffDepartment } from "@/data/types";
 
 /**
  * Os papéis da academia.
@@ -26,8 +25,12 @@ export type AcademyRole = {
    * Um departamento tem vários cargos; um cargo pertence a um departamento só.
    * É o que deixa o convite perguntar primeiro o departamento e só depois o
    * cargo. `null` no presidente: quem responde por tudo não é de um departamento.
+   *
+   * O `departmentId` é a ligação; `department` é o nome, já resolvido pelo
+   * servidor, para as listas não terem de cruzar as duas colecções.
    */
-  department: StaffDepartment | null;
+  departmentId: string | null;
+  department: string | null;
   permissions: Permission[];
   /** Vazio significa "todos os menus que a permissão deixar". */
   navKeys: string[];
@@ -68,8 +71,15 @@ export async function loadRoles(): Promise<void> {
 export async function createRole(input: {
   name: string;
   description?: string;
-  baseRole: Role;
-  department?: StaffDepartment | null;
+  /**
+   * De onde herda âmbito e permissões.
+   *
+   * É o caminho normal. `baseRole` só faz falta num cargo sem departamento — o
+   * ecrã deixou de perguntar "Âmbito" precisamente porque essa decisão passou
+   * para o departamento.
+   */
+  departmentId?: string | null;
+  baseRole?: Role;
   permissions: Permission[];
 }): Promise<void> {
   await apiPost("/api/roles", input);
@@ -78,7 +88,7 @@ export async function createRole(input: {
 
 export async function updateRole(
   id: string,
-  input: { name?: string; description?: string; department?: StaffDepartment | null; permissions?: Permission[] },
+  input: { name?: string; description?: string; departmentId?: string | null; permissions?: Permission[] },
 ): Promise<void> {
   await apiPatch(`/api/roles/${id}`, input);
   await loadRoles();

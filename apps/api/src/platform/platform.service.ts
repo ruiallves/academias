@@ -298,7 +298,7 @@ export class PlatformService {
 
     const inviteRole = await this.prisma.academyRole.findFirst({
       where: { academyId: academy.id, key: inviteRoleKey },
-      select: { id: true, name: true, department: true },
+      select: { id: true, name: true },
     });
 
     await this.prisma.staffInvite.create({
@@ -309,7 +309,15 @@ export class PlatformService {
         name: dto.directorName.trim() || inviteRole?.name || "Direção",
         role: baseRole,
         title: inviteRole?.name ?? "Presidente",
-        department: inviteRole?.department ?? null,
+        /*
+         * O enum antigo fica por preencher, de propósito.
+         *
+         * `academyRoleId` abaixo é a ligação a sério — o cargo sabe o seu
+         * departamento, e o departamento é agora uma linha, não um de cinco
+         * valores fixos. Repetir aqui uma aproximação do departamento era
+         * guardar a mesma coisa duas vezes, com uma delas a poder mentir.
+         */
+        department: null,
         academyRoleId: inviteRole?.id ?? null,
         expiresAt: new Date(Date.now() + 7 * DAY),
         updatedAt: new Date(),

@@ -1,0 +1,13 @@
+-- Escalado para um jogo: um tipo de notificação próprio.
+--
+-- Não serve `MATCH_CALLED_UP`: essa é para o atleta e a família, e diz "vais
+-- jogar". Esta é para quem trabalha no jogo — o massagista, o delegado, o médico
+-- — e diz "és preciso lá". Quem recebe, o que decide e o que faz a seguir são
+-- diferentes, e um tipo só obrigava a ler o corpo da mensagem para saber qual
+-- delas era.
+--
+-- Um `ALTER TYPE ... ADD VALUE` não corre dentro de uma transação em Postgres
+-- antigo; o Prisma corre cada migração numa, e a partir do 12 isto é permitido.
+-- Ficamos com o caminho suportado e não com o `CREATE TYPE` novo + troca de
+-- coluna, que reescreveria a tabela inteira por um valor.
+ALTER TYPE "NotificationType" ADD VALUE IF NOT EXISTS 'MATCH_STAFF_ASSIGNED';

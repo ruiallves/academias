@@ -4,7 +4,7 @@ import { PageHeader } from "@/components/Shell";
 import { Empty, Panel, Pill, cx } from "@/components/primitives";
 import { ContactDialog } from "@/components/ContactDialog";
 import { CalendarDialog } from "@/components/CalendarDialog";
-import { Failed } from "./Overview";
+import { Failed, Skeleton } from "./Overview";
 import { since } from "@/lib/format";
 import { googleEventUrl, telHref, whatsappHref } from "@/lib/google";
 import { useApi } from "@/lib/query";
@@ -357,11 +357,3 @@ function cooling(iso: string | null, status: ContactStatus): string {
   return "text-ink-3";
 }
 
-function Skeleton() {
-  return (
-    <>
-      <PageHeader title="Contactos" />
-      <div className="panel h-[400px] animate-pulse bg-sunken/40" />
-    </>
-  );
-}

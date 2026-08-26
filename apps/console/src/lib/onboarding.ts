@@ -111,6 +111,7 @@ export type Onboarding = {
 
 /** O que os passos precisam de saber. Separado do React para poder ser testado. */
 export type Facts = {
+  sports: number;
   venues: number;
   dressingRooms: number;
   ageGroups: number;
@@ -132,6 +133,23 @@ export type Facts = {
  */
 export function deriveSteps(session: Session, facts: Facts): Step[] {
   const all: Step[] = [
+    /*
+     * As modalidades vêm primeiro, e faltavam por completo.
+     *
+     * Faltavam por um descuido com consequências: uma academia nova nasce sem
+     * modalidade nenhuma, e sem modalidade não há equipas nem escalões — todos
+     * os passos seguintes esbarravam num sítio que a lista nunca mencionava.
+     * Quem seguisse a lista de cima a baixo chegava a "Criar as equipas" e
+     * encontrava um formulário que não deixava escolher desporto.
+     */
+    {
+      id: "sports",
+      label: "Escolher as modalidades",
+      hint: "Futebol, futsal, natação… é o que organiza escalões, locais e equipas.",
+      done: facts.sports > 0,
+      to: "/definicoes",
+      requires: "settings:write",
+    },
     {
       id: "venues",
       label: "Definir os campos e pavilhões",
@@ -261,6 +279,7 @@ export function useOnboarding(session: Session): Onboarding {
   }, [session]);
 
   const steps = deriveSteps(session, {
+    sports: store.academy.sports.length,
     venues: venues.length,
     dressingRooms: dressingRooms.length,
     ageGroups: ageGroups.length,

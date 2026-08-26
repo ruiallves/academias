@@ -62,6 +62,7 @@ import { can } from "@/lib/permissions";
 import { AthleteEditPanel } from "@/components/AthleteEditPanel";
 import { useSession } from "@/session";
 import type { Athlete } from "@/data/types";
+import { Spinner } from "@/components/Busy";
 
 type Tab = "overview" | "matches" | "attendance" | "development" | "clinical" | "fees" | "family";
 
@@ -958,7 +959,7 @@ function FeesTab({ athlete }: { athlete: Athlete }) {
         <PanelHead title="Mensalidade" />
         <div className="px-5 py-5">
           {loading ? (
-            <p className="text-meta text-ink-3">A carregar…</p>
+            <Spinner className="py-3" />
           ) : error ? (
             <p className="text-meta text-risk">{error}</p>
           ) : (

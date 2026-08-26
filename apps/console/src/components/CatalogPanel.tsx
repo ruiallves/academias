@@ -22,11 +22,39 @@ import { useStore } from "@/lib/store";
  * Itens de sistema (os quatro tipos de evento base) não têm botão de apagar nem
  * de renomear: o domínio depende deles a existir com aquele nome.
  */
-export function CatalogPanel({ catalogKey, defaultOpen }: { catalogKey: CatalogKey; defaultOpen?: boolean }) {
+export function CatalogPanel({
+  catalogKey,
+  defaultOpen,
+  /**
+   * A modalidade a que este painel pertence.
+   *
+   * Quando vem preenchida, o painel deixa de ser "todos os locais do clube" e
+   * passa a ser "os locais desta modalidade" — mostra os dela e os que servem
+   * todas, e o que se cria aqui já nasce dela. É o que tira o menu *Catálogos*
+   * do caminho: os escalões do futebol vivem dentro do futebol, que é onde
+   * alguém os vai procurar.
+   */
+  sportId,
+  /** Sem a moldura própria: o painel já está dentro de outro. */
+  bare,
+}: {
+  catalogKey: CatalogKey;
+  defaultOpen?: boolean;
+  sportId?: string;
+  bare?: boolean;
+}) {
   const meta = CATALOG_META[catalogKey];
   const items = useCatalog(catalogKey);
-  const active = items.filter((i) => !i.archived);
-  const archived = items.filter((i) => i.archived);
+  /*
+   * Os globais entram sempre.
+   *
+   * Um item sem modalidade (`sportId: null`) serve o clube todo — o pavilhão é o
+   * pavilhão, treine lá o futsal ou o andebol. Escondê-lo dentro de uma
+   * modalidade fazia parecer que faltava, e levava alguém a criá-lo outra vez.
+   */
+  const doDesporto = sportId ? items.filter((i) => i.sportId === null || i.sportId === sportId) : items;
+  const active = doDesporto.filter((i) => !i.archived);
+  const archived = doDesporto.filter((i) => i.archived);
 
   const [open, setOpen] = useState(!!defaultOpen);
   const [adding, setAdding] = useState(false);
@@ -40,7 +68,7 @@ export function CatalogPanel({ catalogKey, defaultOpen }: { catalogKey: CatalogK
   }, [defaultOpen]);
 
   return (
-    <div ref={ref} className="border-b border-line last:border-0">
+    <div ref={ref} className={cx(bare ? "border-b border-line last:border-0" : "border-b border-line last:border-0")}>
       <button
         type="button"
         onClick={() => setOpen((v) => !v)}
@@ -74,7 +102,7 @@ export function CatalogPanel({ catalogKey, defaultOpen }: { catalogKey: CatalogK
           </ul>
 
           {adding ? (
-            <AddForm catalogKey={catalogKey} onDone={() => setAdding(false)} />
+            <AddForm catalogKey={catalogKey} sportId={sportId} onDone={() => setAdding(false)} />
           ) : (
             <button
               type="button"
@@ -236,7 +264,16 @@ function CatalogRow({
 
 /* -------------------------------------------------------------------------- */
 
-function AddForm({ catalogKey, onDone }: { catalogKey: CatalogKey; onDone: () => void }) {
+function AddForm({
+  catalogKey,
+  /** Herdada do painel: dentro de uma modalidade, não se volta a perguntar. */
+  sportId: fixo,
+  onDone,
+}: {
+  catalogKey: CatalogKey;
+  sportId?: string;
+  onDone: () => void;
+}) {
   const meta = CATALOG_META[catalogKey];
   const { academy } = useStore();
   const [label, setLabel] = useState("");
@@ -251,12 +288,12 @@ function AddForm({ catalogKey, onDone }: { catalogKey: CatalogKey; onDone: () =>
    * pergunta passa a ser real: o "Sub-13" do futebol não é o da natação, e a
    * piscina não é um campo.
    */
-  const escolheDesporto = academy.sports.length > 1;
+  const escolheDesporto = !fixo && academy.sports.length > 1;
 
   function submit(e: FormEvent) {
     e.preventDefault();
     if (!label.trim()) return;
-    void addItem(catalogKey, label, note, sportId || null);
+    void addItem(catalogKey, label, note, fixo ?? (sportId || null));
     onDone();
   }
 

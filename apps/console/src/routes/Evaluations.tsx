@@ -1,6 +1,6 @@
 import { useMemo, useState } from "react";
 import { PageHeader } from "@/components/Shell";
-import { Bar, Empty, Monogram, Panel, Pill, SelectField, cx } from "@/components/primitives";
+import { Bar, Empty, Loading, Monogram, Panel, Pill, SelectField, cx } from "@/components/primitives";
 import { ResultCount, SearchInput, Segmented, Toolbar } from "@/components/filters";
 import { EvaluationEditor, type RosterEntry } from "@/components/EvaluationEditor";
 import { Check, Gauge, Send } from "@/lib/icons";
@@ -202,7 +202,7 @@ export default function Evaluations() {
         </Toolbar>
 
         {loading && evaluations.length === 0 ? (
-          <div className="px-5 py-16 text-center text-meta text-ink-3">A carregar…</div>
+          <Loading />
         ) : rows.length === 0 ? (
           <div className="px-5 py-16">
             <Empty

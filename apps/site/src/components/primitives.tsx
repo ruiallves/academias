@@ -3,29 +3,51 @@ import { useEffect, useRef, type ReactNode } from "react";
 export const cx = (...xs: (string | false | null | undefined)[]) => xs.filter(Boolean).join(" ");
 
 /**
- * A marca.
+ * A marca — a bandeirola de canto.
  *
- * Um canto de campo: o arco do pontapé de canto mais as duas linhas que o formam.
- * Geométrico, desenhável a 16px, e inequivocamente desportivo sem ser uma bola —
- * que é o que todas as outras marcas deste mercado usam.
+ * ## Porque é esta e não um ícone
+ *
+ * O símbolo anterior era um arco e duas linhas: abstracto, todo em traço fino, e
+ * indistinguível de qualquer ícone de biblioteca — que é precisamente o que faz
+ * uma marca parecer escolhida de um catálogo em vez de desenhada.
+ *
+ * Uma bandeirola de canto resolve as três coisas ao mesmo tempo. É
+ * **inequivocamente desportiva** sem ser uma bola (que é o que todo este mercado
+ * usa). Tem **massa sólida** — o triângulo é uma forma cheia, e uma forma cheia
+ * lê-se a 20px na barra de navegação, coisa que um traço de 1.6px não faz. E é a
+ * origem do **canto**, o raio assimétrico que atravessa as superfícies do site:
+ * o símbolo e o sistema passam a explicar-se um ao outro.
+ *
+ * O arco é o do pontapé de canto, a meia opacidade — está lá para quem olhar
+ * duas vezes, e não estorva quem só olha uma.
  */
 export function Mark({ size = 26, className }: { size?: number; className?: string }) {
   return (
     <svg width={size} height={size} viewBox="0 0 24 24" fill="none" aria-hidden className={className}>
-      <path d="M3 3v18h18" stroke="currentColor" strokeWidth="1.6" strokeLinecap="square" />
-      <path d="M3 12.5A8.5 8.5 0 0 0 11.5 21" stroke="currentColor" strokeWidth="1.6" opacity="0.55" />
-      <circle cx="3" cy="3" r="2" fill="currentColor" />
+      {/* O pano — cheio, e a única coisa que se vê ao tamanho de um favicon. */}
+      <path d="M6.9 2.6 19.6 7 6.9 11.4Z" fill="currentColor" />
+      {/* O mastro. */}
+      <path d="M6.9 2.6v18.6" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+      {/* O arco do canto. */}
+      <path d="M6.9 15.6a5.6 5.6 0 0 0 5.6 5.6" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" opacity="0.45" />
     </svg>
   );
 }
 
+/**
+ * O nome, em serifa.
+ *
+ * Minúsculas e apertado — como se assina, não como se grita. A serifa faz aqui o
+ * trabalho de identidade que noutras marcas faz um símbolo caro: ninguém mais
+ * neste mercado escreve o nome assim.
+ */
 export function Wordmark({ className }: { className?: string }) {
   return (
     <span className={cx("inline-flex items-center gap-2.5", className)}>
-      <Mark size={22} className="text-field" />
+      <Mark size={21} className="text-field" />
       <span
-        className="text-[17px] font-bold tracking-[-0.03em]"
-        style={{ fontFamily: "var(--font-display)", fontVariationSettings: '"wdth" 90' }}
+        className="text-[19px] leading-none font-[560] tracking-[-0.02em]"
+        style={{ fontFamily: "var(--font-display)", fontVariationSettings: '"SOFT" 0, "WONK" 0' }}
       >
         academias
       </span>
@@ -36,16 +58,17 @@ export function Wordmark({ className }: { className?: string }) {
 /**
  * O marcador de secção.
  *
- * `01 — Gestão do clube`. É o que dá à página o ar de documento numerado, e é
- * também o que deixa uma pessoa dizer ao telefone "olha a secção 7" — coisa que
- * uma landing page normal não permite.
+ * Versaletes na cor do campo, com um traço curto à frente. O número é herança
+ * das páginas antigas — quando vier "—", não se mostra; quando vier um número,
+ * fica discreto, para quem ainda aponta secções ao telefone.
  */
-export function SectionMark({ n, children }: { n: string; children: ReactNode }) {
+export function SectionMark({ n, children }: { n?: string; children: ReactNode }) {
+  const showN = n && /\d/.test(n);
   return (
     <p className="eyebrow flex items-center gap-3">
-      <span className="tabular">{n}</span>
-      <span aria-hidden className="h-px w-6 bg-current opacity-40" />
+      <span aria-hidden className="h-px w-7 bg-current opacity-50" />
       <span>{children}</span>
+      {showN && <span className="tabular opacity-45">{n}</span>}
     </p>
   );
 }
@@ -53,12 +76,9 @@ export function SectionMark({ n, children }: { n: string; children: ReactNode })
 /**
  * Entrada ao entrar no ecrã.
  *
- * `IntersectionObserver` e uma classe — sem biblioteca de animação. Uma página de
- * marketing que carrega 40 KB de JavaScript para deslizar títulos é uma página que
- * demora mais a abrir do que o produto que está a vender.
- *
- * Observa uma vez e desliga: elementos que reanimam ao voltar a subir são um
- * efeito, não uma entrada.
+ * `IntersectionObserver` e uma classe — sem biblioteca de animação. Observa uma
+ * vez e desliga: elementos que reanimam ao voltar a subir são um efeito, não uma
+ * entrada.
  */
 export function Reveal({
   children,
@@ -105,14 +125,12 @@ export function Reveal({
 /**
  * Moldura de produto.
  *
- * `shot` aponta para um ficheiro em `public/` — uma captura verdadeira do produto.
- * Quando ele não existe (ou falha), fica o que está dentro: uma reconstrução da
- * interface em HTML, feita com os mesmos tokens da consola.
+ * O canto da marca, um filete, e uma barra mínima: um ponto verde e o endereço.
+ * Sem os três círculos de janela — são o cliché de todos os mockups.
  *
- * Não é um substituto por preguiça. É a ordem certa: uma captura envelhece com a
- * primeira mudança de interface e fica desfocada em ecrãs Retina; uma reconstrução
- * é nítida em qualquer resolução e mostra-se com o texto certo. Quem tiver a
- * captura, larga-a na pasta e ela ganha.
+ * `shot` aponta para uma captura verdadeira em `public/`. Quando não existe (ou
+ * falha), fica a reconstrução em HTML que vem como `children` — tratada como
+ * imagem: `aria-hidden`, não-selecionável, sem eventos. Ver `.shot` no CSS.
  */
 export function ProductFrame({
   label,
@@ -133,9 +151,7 @@ export function ProductFrame({
     <div className={cx("frame", className)}>
       <div className="frame-bar">
         <span className="frame-dot" />
-        <span className="frame-dot" />
-        <span className="frame-dot" />
-        <span className="ml-2 truncate">{label}</span>
+        <span className="truncate">{label}</span>
       </div>
 
       {shot && (
@@ -144,7 +160,8 @@ export function ProductFrame({
           src={shot}
           alt={alt ?? label}
           loading="lazy"
-          className="block w-full"
+          draggable={false}
+          className="block w-full select-none"
           onError={(e) => {
             // Sem captura, mostra-se a reconstrução. Silenciosamente: um cartaz a
             // dizer "imagem em falta" não interessa a ninguém que esteja a ler.
@@ -154,7 +171,9 @@ export function ProductFrame({
         />
       )}
 
-      <div hidden={Boolean(shot)}>{children}</div>
+      <div hidden={Boolean(shot)} className="shot" aria-hidden>
+        {children}
+      </div>
     </div>
   );
 }

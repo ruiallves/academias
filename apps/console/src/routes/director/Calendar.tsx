@@ -1,4 +1,5 @@
 import { useMemo, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import { PageHeader } from "@/components/Shell";
 import { PersonLink } from "@/components/PersonLink";
 import { cx, Empty, Monogram, Panel, Pill } from "@/components/primitives";
@@ -38,6 +39,29 @@ export default function Calendar() {
   const [hidden, setHidden] = useState<Set<string>>(new Set());
   const [composing, setComposing] = useState<Date | null>(null);
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  const navigate = useNavigate();
+  
+  /**
+   * Clicar num evento.
+   *
+   * Um **jogo** vai para a página dele; tudo o resto abre a gaveta ao lado.
+   *
+   * A gaveta chega para um treino: o essencial cabe lá e fecha-se sem sair do
+   * calendário. Não chega para um jogo — antes dele há a convocatória por montar,
+   * depois há a ficha por preencher, e ao lado há a equipa de trabalho por
+   * atribuir. Espremer isso num painel lateral obrigava a sair para três sítios
+   * diferentes para tratar de um jogo só.
+   *
+   * O id do evento **é** o id do jogo — ver `fromApiMatch` em `lib/calendar.ts`.
+   * Os jogos da academia de demonstração são a excepção: nascem no cliente com
+   * ids `ev_seed_*` e não existem na base, por isso abrir a página deles dava um
+   * 404 a quem está a experimentar o produto. Para esses, a gaveta continua a ser
+   * a resposta certa.
+   */
+  function abrir(e: CalendarEvent) {
+    if (e.kind === "match" && !e.id.startsWith("ev_seed_")) navigate(`/jogos/${e.id}`);
+    else setSelectedId(e.id);
+  }
 
   const teams = listTeams(session);
   const colors = useTeamColors(session);
@@ -161,10 +185,10 @@ export default function Calendar() {
             events={events}
             colors={colors}
             onAdd={(day) => editable && setComposing(day)}
-            onSelect={(e) => setSelectedId(e.id)}
+            onSelect={abrir}
           />
         ) : (
-          <AgendaList events={events} colors={colors} onSelect={(e) => setSelectedId(e.id)} />
+          <AgendaList events={events} colors={colors} onSelect={abrir} />
         )}
       </Panel>
 

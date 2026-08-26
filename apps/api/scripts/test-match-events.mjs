@@ -47,6 +47,24 @@ await db.connect();
 const cleanup = async () => {
   await db.query(`DELETE FROM "Match" WHERE opponent LIKE 'ZZ %'`);
   await db.query(`DELETE FROM "CalendarEvent" WHERE title LIKE 'ZZ %'`);
+  /*
+   * Os treinos mudaram de casa e a limpeza ficou para trás.
+   *
+   * Um treino deixou de ser um `CalendarEvent` e passou a ser uma
+   * `TrainingSession` — a tabela rica, que abre folha de presenças. Sem esta
+   * linha, o treino deste teste ficava lá, e a corrida seguinte falhava com
+   * "esta equipa já tem um treino marcado a esta hora", que é o teste a bater em
+   * si próprio. Mesma correcção que `test-events.mjs` já levou.
+   *
+   * `TrainingSession` não tem título, por isso não há "ZZ" por onde a apanhar: a
+   * limpeza é pela equipa e pela janela de datas que este teste usa.
+   */
+  await db.query(
+    `DELETE FROM "TrainingSession"
+      WHERE "teamId" = 't_sub11'
+        AND "startsAt" BETWEEN NOW() + INTERVAL '7 days' AND NOW() + INTERVAL '9 days'
+        AND id NOT LIKE 'ses\_%'`,
+  );
 };
 await cleanup();
 
@@ -64,7 +82,16 @@ const created = await call(director, "POST", "/api/events", {
   startsAt, endsAt, venue: "Campo 1", opponent: "ZZ Adversário FC", isHome: true,
 });
 check("a direção marca um jogo (201)", created.status === 201 || created.status === 200, JSON.stringify(created.body).slice(0, 160));
-check("devolve o jogo com o tipo certo", created.body?.kind === "MATCH", `${created.body?.kind}`);
+/*
+ * A criação devolve um **resumo**, não um evento.
+ *
+ * Mudou quando os eventos passaram a poder repetir-se: um pedido pode criar
+ * trinta linhas, e devolver só a primeira era esconder o que aconteceu. A forma
+ * é sempre `{ created, skipped, events }`, com ou sem repetição. Este teste lia
+ * `body.kind` e ficou para trás nessa mudança — daí o `undefined`.
+ */
+const primeiro = (r) => r.body?.events?.[0];
+check("devolve o jogo com o tipo certo", primeiro(created)?.kind === "MATCH", `${primeiro(created)?.kind}`);
 
 console.log("\n=== Foi gravado como Match, não como evento genérico ===");
 const asMatch = (await db.query(`SELECT id, "teamId", opponent, "isHome", status FROM "Match" WHERE opponent = 'ZZ Adversário FC'`)).rows;
@@ -106,7 +133,7 @@ const clash = await call(director, "POST", "/api/events", {
 check("choque de horário recusado com mensagem clara (400)", clash.status === 400 && /já tem um jogo/i.test(clash.body?.message ?? ""), JSON.stringify(clash.body?.message));
 
 console.log("\n=== Cancelar e reactivar um jogo pelo calendário ===");
-const matchId = created.body.id;
+const matchId = primeiro(created).id;
 const cancelled = await call(director, "PATCH", `/api/events/${matchId}`, { cancelled: true });
 check("cancela o jogo pelo mesmo endpoint dos eventos (200)", cancelled.status === 200 && cancelled.body?.cancelled === true, JSON.stringify(cancelled.body).slice(0, 120));
 const stillThere = (await db.query(`SELECT status FROM "Match" WHERE id = $1`, [matchId])).rows[0];
@@ -139,9 +166,39 @@ const training = await call(director, "POST", "/api/events", {
   endsAt: new Date(day.getTime() + 86_400_000 + 60 * 60_000).toISOString(),
   venue: "Campo 1",
 });
-check("treino criado (201)", training.status === 201 || training.status === 200, `${training.status}`);
+check("treino criado (201)", training.status === 201 || training.status === 200, JSON.stringify(training.body));
 const trainingRow = (await db.query(`SELECT count(*)::int n FROM "CalendarEvent" WHERE title = 'ZZ Treino Extra'`)).rows[0].n;
-check("gravado em CalendarEvent, como antes", trainingRow === 1, `${trainingRow}`);
+/*
+ * O treino está em `TrainingSession`, e não em `CalendarEvent`.
+ *
+ * Este teste dizia "como antes" e verificava o `CalendarEvent` — e "antes" deixou
+ * de ser verdade quando os treinos passaram a ter folha de presenças. O que
+ * interessa continua a ser o mesmo: um treino não é um jogo, e não vai parar à
+ * tabela dos jogos.
+ */
+/*
+ * Pelo id, e não pela hora.
+ *
+ * A asserção comparava `startsAt` com uma data recalculada no teste, e uma
+ * comparação de instantes entre dois sítios é frágil por natureza. O id vem na
+ * resposta da criação: é exacto, e não depende de aritmética de datas nenhuma.
+ */
+const novoId = training.body?.events?.[0]?.id;
+const naTabelaDosTreinos = (
+  await db.query(`SELECT count(*)::int n FROM "TrainingSession" WHERE id = $1`, [novoId])
+).rows[0].n;
+check("gravado na tabela dos treinos", naTabelaDosTreinos === 1, `${naTabelaDosTreinos}`);
+
+/*
+ * À hora do **treino**, e não "todos os jogos ZZ".
+ *
+ * Os jogos que este teste criou continuam vivos nesta altura, de propósito — a
+ * limpeza é no fim. Contá-los aqui era garantir que a asserção falhava sempre.
+ */
+const naTabelaDosJogos = (
+  await db.query(`SELECT count(*)::int n FROM "Match" WHERE id = $1`, [novoId])
+).rows[0].n;
+check("e não na dos jogos", naTabelaDosJogos === 0, `${naTabelaDosJogos}`);
 
 console.log("\n=== Limpeza ===");
 await cleanup();

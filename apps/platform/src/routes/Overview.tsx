@@ -6,6 +6,7 @@ import { ChurnChart, GrowthChart } from "@/components/Charts";
 import { euros } from "@/lib/format";
 import { useApi } from "@/lib/query";
 import type { Alert, Overview as OverviewData, SeriesPoint } from "@/lib/types";
+import { useBusy } from "@/components/Busy";
 
 /**
  * A página de entrada.
@@ -142,17 +143,23 @@ function Attention({ alerts }: { alerts: Alert[] }) {
 
 /* -------------------------------------------------------------------------- */
 
-function Skeleton() {
-  return (
-    <>
-      <PageHeader title="Visão geral" />
-      <div className="space-y-3">
-        {[64, 92, 220].map((h, i) => (
-          <div key={i} className="panel animate-pulse bg-sunken/40" style={{ height: h }} />
-        ))}
-      </div>
-    </>
-  );
+/**
+ * A espera, em todas as páginas do painel.
+ *
+ * Eram três rectângulos a pulsar — um esqueleto. Prometiam uma forma que a
+ * página nem sempre tinha, e cada ecrã prometia a mesma: a Visão geral, as
+ * Academias e os Contactos desenhavam todos "64, 92, 220" enquanto carregavam,
+ * fosse qual fosse o conteúdo a caminho.
+ *
+ * Agora declaram-se à casca, que desfoca o que já está e põe um disco no meio do
+ * ecrã. O menu não desfoca — é o que continua a servir para alguma coisa enquanto
+ * se espera. Ver `components/Busy.tsx`.
+ */
+export function Skeleton() {
+  useBusy(true);
+  // Espaço reservado: sem ele a página colapsava a zero e voltava a crescer com
+  // os dados, que é o salto de layout que se quer evitar.
+  return <div className="w-full py-20" aria-hidden />;
 }
 
 export function Failed({ message, onRetry }: { message: string; onRetry: () => void }) {

@@ -16,13 +16,24 @@ const BASE_ROLES = ["OWNER", "DIRECTOR", "COORDINATOR", "COACH", "STAFF", "MEDIC
 class CreateRoleDto {
   @IsString() @MinLength(2) @MaxLength(60) name!: string;
   @IsOptional() @IsString() @MaxLength(240) description?: string;
-  @IsIn(BASE_ROLES as unknown as string[]) baseRole!: Role;
+
+  /**
+   * O departamento de onde o cargo herda âmbito e permissões.
+   *
+   * É o caminho normal. `baseRole` só é preciso num cargo sem departamento — ver
+   * a nota em `RolesService.create` sobre porque é que a pergunta do "âmbito"
+   * saiu deste ecrã.
+   */
+  @IsOptional() @IsString() departmentId?: string | null;
+  @IsOptional() @IsIn(BASE_ROLES as unknown as string[]) baseRole?: Role;
+
   @IsArray() @ArrayMaxSize(60) @IsString({ each: true }) permissions!: string[];
 }
 
 class UpdateRoleDto {
   @IsOptional() @IsString() @MinLength(2) @MaxLength(60) name?: string;
   @IsOptional() @IsString() @MaxLength(240) description?: string;
+  @IsOptional() @IsString() departmentId?: string | null;
   @IsOptional() @IsArray() @ArrayMaxSize(60) @IsString({ each: true }) permissions?: string[];
 }
 

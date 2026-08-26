@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import { PageHeader } from "@/components/Shell";
-import { CatalogPanel } from "@/components/CatalogPanel";
+import { DepartmentDialog } from "@/components/DepartmentDialog";
 import { IdentityPanel } from "@/components/IdentityPanel";
 import { SportsPanel } from "@/components/SportsPanel";
 /*
@@ -15,9 +15,10 @@ import { SportsPanel } from "@/components/SportsPanel";
 import { cx, Panel, PanelHead, Pill } from "@/components/primitives";
 import { CircleCheck, Wallet } from "@/lib/icons";
 import { useStore } from "@/lib/store";
-import { CATALOG_KEYS, type CatalogKey } from "@/lib/catalogs";
+import { type CatalogKey } from "@/lib/catalogs";
 import { can, type Permission } from "@/lib/permissions";
 import { AREAS, CLINICAL_AREAS, SCOUTING_AREAS, levelOf, type Area } from "@/lib/access";
+import { SCOPE_LABEL, loadDepartments, useDepartments, type Department } from "@/lib/departments";
 import { archiveRole, loadRoles, useRoles, type AcademyRole } from "@/lib/roles";
 import { RoleDialog } from "@/components/RoleDialog";
 import { useSession } from "@/session";
@@ -59,24 +60,19 @@ export default function Settings() {
         <div className="space-y-3">
           <IdentityPanel mayWrite={maySettings} />
 
-          <SportsPanel mayWrite={maySettings} />
-
           {/*
-            Os cargos vêm a seguir às modalidades e antes dos catálogos.
-            É a ordem do trabalho: primeiro decide-se o que o clube pratica,
-            depois quem lá trabalha, e só então os pormenores de cada modalidade.
+            As modalidades trazem os catálogos consigo.
+            O painel "Catálogos" que existia aqui desapareceu: eram quatro
+            acordeões que não diziam de que modalidade eram, e ninguém procura
+            "os escalões" — procura os escalões do futebol. Ver `SportsPanel`.
+          */}
+          <SportsPanel mayWrite={maySettings} deepLinked={deepLinked} />
+          {/*
+            Os cargos vêm a seguir às modalidades.
+            É a ordem do trabalho: primeiro decide-se o que o clube pratica e
+            como cada modalidade se organiza, depois quem lá trabalha.
           */}
           <RolesPanel open={painel === "cargos"} />
-
-          <Panel>
-            <PanelHead
-              title="Catálogos"
-              hint="locais, escalões e tipos de evento — cada um pode ser de uma modalidade ou de todas"
-            />
-            {CATALOG_KEYS.map((key) => (
-              <CatalogPanel key={key} catalogKey={key} defaultOpen={deepLinked === key} />
-            ))}
-          </Panel>
 
         </div>
 
@@ -142,15 +138,36 @@ function Row({ label, value, muted }: { label: string; value: string; muted?: bo
  * lá porque a pergunta que ela responde ("porque é que o treinador não vê as
  * mensalidades?") não desapareceu; passou a ter resposta editável.
  */
+/**
+ * Departamentos, e os cargos dentro de cada um.
+ *
+ * ## Porque é que isto era duas listas e passou a ser uma
+ *
+ * Era: uma lista de cargos, plana, com o departamento escondido lá dentro num
+ * campo. Quem chegava aqui via doze linhas em fila e não conseguia responder à
+ * pergunta que trazia — *quem vê o quê?*. Nem sequer via que "Fisioterapeuta" e
+ * "Médico" eram a mesma área do clube.
+ *
+ * A árvore responde: o departamento diz o que a área faz e até onde vê, e os
+ * cargos por baixo dizem quem lá trabalha. É a forma que a academia já tem na
+ * cabeça, e por isso não precisa de ser explicada.
+ *
+ * Os cargos sem departamento — a presidência — ficam num grupo à parte no fim,
+ * porque são a excepção e não a regra.
+ */
 function RolesPanel({ open }: { open?: boolean }) {
   const { session } = useSession();
   const { roles, loaded, error } = useRoles();
-  const [editing, setEditing] = useState<AcademyRole | null>(null);
-  const [creating, setCreating] = useState(false);
+  const { departments } = useDepartments();
+  const [editingRole, setEditingRole] = useState<AcademyRole | null>(null);
+  const [creatingRole, setCreatingRole] = useState<string | null>(null);
+  const [editingDep, setEditingDep] = useState<Department | null>(null);
+  const [creatingDep, setCreatingDep] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     void loadRoles();
+    void loadDepartments();
   }, []);
 
   // Chegar aqui de um "gerir cargos" só vale a pena se o painel certo ficar à
@@ -159,67 +176,98 @@ function RolesPanel({ open }: { open?: boolean }) {
     if (open) ref.current?.scrollIntoView({ block: "center", behavior: "smooth" });
   }, [open]);
 
-  const mayCreate = can(session, "role:write");
+  const mayWrite = can(session, "role:write");
+
+  /** Os cargos que não pertencem a departamento nenhum. A presidência, e pouco mais. */
+  const semDepartamento = roles.filter((r) => r.departmentId === null);
 
   return (
     <div ref={ref} className="space-y-3">
       <Panel>
-        <PanelHead title="Cargos" hint={loaded ? `${roles.length} cargos` : "a carregar…"}>
-          {mayCreate && (
-            <button type="button" className="ctl-primary" onClick={() => setCreating(true)}>
-              Novo cargo
+        <PanelHead
+          title="Departamentos e cargos"
+          hint={loaded ? `${departments.length} departamentos · ${roles.length} cargos` : "a carregar…"}
+        >
+          {mayWrite && (
+            <button type="button" className="ctl-primary" onClick={() => setCreatingDep(true)}>
+              Novo departamento
             </button>
           )}
         </PanelHead>
 
+        <p className="border-b border-line px-5 py-3 text-meta leading-relaxed text-ink-3">
+          Um <strong className="font-medium text-ink-2">departamento</strong> é uma área do clube:
+          decide o que ela faz e até onde vê. Um <strong className="font-medium text-ink-2">cargo</strong>{" "}
+          é uma função lá dentro — parte do que o departamento pode e ajusta-se a partir daí.
+        </p>
+
         {error && <p className="px-5 py-3 text-meta text-risk">{error}</p>}
 
         <ul>
-          {roles.map((role) => (
-            <li
-              key={role.id}
-              className="flex flex-wrap items-center gap-3 border-b border-line px-5 py-3 last:border-b-0"
-            >
-              <div className="min-w-0 flex-1">
-                <div className="flex items-center gap-2">
-                  <span className="text-body font-medium text-ink">{role.name}</span>
-                  {role.isSystem && <Pill>de origem</Pill>}
-                  {role.navKeys.length > 0 && <Pill tone="signal">menu próprio</Pill>}
+          {departments.map((dep) => (
+            <li key={dep.id} className="border-b border-line last:border-b-0">
+              <div className="flex flex-wrap items-center gap-3 bg-sunken/40 px-5 py-3">
+                <div className="min-w-0 flex-1">
+                  <div className="flex items-center gap-2">
+                    <span className="text-body font-medium text-ink">{dep.name}</span>
+                    <Pill tone={dep.baseRole === "COACH" || dep.baseRole === "STAFF" ? "neutral" : "signal"}>
+                      {SCOPE_LABEL[dep.baseRole]}
+                    </Pill>
+                    {dep.navKeys.length > 0 && <Pill tone="signal">menu próprio</Pill>}
+                  </div>
+                  <div className="text-meta text-ink-3">
+                    {dep.description}
+                    <span className="text-ink-4">
+                      {" · "}
+                      {dep.people} {dep.people === 1 ? "pessoa" : "pessoas"}
+                    </span>
+                  </div>
                 </div>
-                <div className="text-meta text-ink-3">
-                  {role.description}
-                  <span className="text-ink-4">
-                    {" · "}
-                    {role.people} {role.people === 1 ? "pessoa" : "pessoas"}
-                  </span>
-                </div>
+
+                {dep.editable && (
+                  <div className="flex shrink-0 gap-1.5">
+                    <button type="button" className="ctl-ghost" onClick={() => setCreatingRole(dep.id)}>
+                      Novo cargo
+                    </button>
+                    <button type="button" className="ctl-ghost" onClick={() => setEditingDep(dep)}>
+                      Editar
+                    </button>
+                  </div>
+                )}
               </div>
 
-              {role.editable ? (
-                <div className="flex shrink-0 gap-1.5">
-                  <button type="button" className="ctl-ghost" onClick={() => setEditing(role)}>
-                    Editar
-                  </button>
-                  {!role.isSystem && role.people === 0 && (
-                    <button type="button" className="ctl-ghost" onClick={() => void archiveRole(role.id)}>
-                      Arquivar
-                    </button>
-                  )}
-                </div>
+              {dep.roles.length === 0 ? (
+                <p className="py-2.5 pl-9 pr-5 text-meta text-ink-4">
+                  Sem cargos. Ninguém pode ser convidado para este departamento até haver um.
+                </p>
               ) : (
-                /*
-                 * Sem botão, em vez de botão desactivado. Um botão que não faz nada
-                 * ensina que existe ali alguma coisa escondida — e a razão de não se
-                 * poder editar (é o teu próprio papel, ou está acima de ti) não cabe
-                 * num tooltip.
-                 */
-                <span className="shrink-0 text-meta text-ink-4">
-                  {role.key === "presidente" ? "imutável" : "—"}
-                </span>
+                <ul>
+                  {dep.roles.map((dr) => {
+                    const role = roles.find((r) => r.id === dr.id);
+                    if (!role) return null;
+                    return <RoleRow key={role.id} role={role} onEdit={() => setEditingRole(role)} />;
+                  })}
+                </ul>
               )}
             </li>
           ))}
         </ul>
+
+        {semDepartamento.length > 0 && (
+          <>
+            <div className="border-t border-line bg-sunken/40 px-5 py-3">
+              <div className="text-body font-medium text-ink">Sem departamento</div>
+              <div className="text-meta text-ink-3">
+                A presidência responde por tudo e não pertence a uma área do clube.
+              </div>
+            </div>
+            <ul>
+              {semDepartamento.map((role) => (
+                <RoleRow key={role.id} role={role} onEdit={() => setEditingRole(role)} />
+              ))}
+            </ul>
+          </>
+        )}
 
         <p className="border-t border-line px-5 py-3 text-meta leading-relaxed text-ink-3">
           Um cargo vale para toda a gente que o tem. Para abrir ou fechar permissões a{" "}
@@ -239,17 +287,72 @@ function RolesPanel({ open }: { open?: boolean }) {
         </Panel>
       )}
 
-      {(creating || editing) && (
-        <RoleDialog
-          role={editing ?? undefined}
+      {(creatingDep || editingDep) && (
+        <DepartmentDialog
+          department={editingDep ?? undefined}
           session={session}
           onClose={() => {
-            setCreating(false);
-            setEditing(null);
+            setCreatingDep(false);
+            setEditingDep(null);
+          }}
+        />
+      )}
+
+      {(creatingRole !== null || editingRole) && (
+        <RoleDialog
+          role={editingRole ?? undefined}
+          departmentId={creatingRole ?? undefined}
+          session={session}
+          onClose={() => {
+            setCreatingRole(null);
+            setEditingRole(null);
           }}
         />
       )}
     </div>
+  );
+}
+
+/** Uma linha de cargo, indentada por baixo do departamento a que pertence. */
+function RoleRow({ role, onEdit }: { role: AcademyRole; onEdit: () => void }) {
+  return (
+    <li className="flex flex-wrap items-center gap-3 border-b border-line py-2.5 pl-9 pr-5 last:border-b-0">
+      <div className="min-w-0 flex-1">
+        <div className="flex items-center gap-2">
+          <span className="text-body text-ink">{role.name}</span>
+          {role.isSystem && <Pill>de origem</Pill>}
+          {role.navKeys.length > 0 && <Pill tone="signal">menu próprio</Pill>}
+        </div>
+        <div className="text-meta text-ink-3">
+          {role.description}
+          {role.description && <span className="text-ink-4">{" · "}</span>}
+          <span className="text-ink-4">
+            {role.people} {role.people === 1 ? "pessoa" : "pessoas"}
+          </span>
+        </div>
+      </div>
+
+      {role.editable ? (
+        <div className="flex shrink-0 gap-1.5">
+          <button type="button" className="ctl-ghost" onClick={onEdit}>
+            Editar
+          </button>
+          {!role.isSystem && role.people === 0 && (
+            <button type="button" className="ctl-ghost" onClick={() => void archiveRole(role.id)}>
+              Arquivar
+            </button>
+          )}
+        </div>
+      ) : (
+        /*
+         * Sem botão, em vez de botão desactivado. Um botão que não faz nada
+         * ensina que existe ali alguma coisa escondida — e a razão de não se
+         * poder editar (é o teu próprio cargo, ou está acima de ti) não cabe
+         * num tooltip.
+         */
+        <span className="shrink-0 text-meta text-ink-4">{role.key === "presidente" ? "imutável" : "—"}</span>
+      )}
+    </li>
   );
 }
 

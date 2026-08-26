@@ -3,7 +3,7 @@ import { Trash2, UserPlus } from "lucide-react";
 import { PageHeader } from "@/components/Shell";
 import { Empty, Panel, Pill, cx } from "@/components/primitives";
 import { InviteAdminDialog } from "@/components/InviteAdminDialog";
-import { Failed } from "./Overview";
+import { Failed, Skeleton } from "./Overview";
 import { shortDate } from "@/lib/format";
 import { apiDelete, apiPatch, ApiError } from "@/lib/http";
 import { useApi } from "@/lib/query";
@@ -218,11 +218,3 @@ export default function Admins({ me }: { me: Me }) {
   );
 }
 
-function Skeleton() {
-  return (
-    <>
-      <PageHeader title="Administradores" />
-      <div className="panel h-[300px] animate-pulse bg-sunken/40" />
-    </>
-  );
-}

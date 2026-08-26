@@ -5,7 +5,7 @@ import { PageHeader } from "@/components/Shell";
 import { Empty, Panel, Pill, Progress, cx } from "@/components/primitives";
 import { NewAcademyDialog } from "@/components/NewAcademyDialog";
 import { AcademyActions } from "@/components/AcademyActions";
-import { Failed } from "./Overview";
+import { Failed, Skeleton } from "./Overview";
 import { euros, shortDate, since } from "@/lib/format";
 import { useApi } from "@/lib/query";
 import { STATUS_LABEL, type Academy, type AcademyStatus, type Me } from "@/lib/types";
@@ -228,11 +228,3 @@ function staleness(iso: string | null): string {
   return "text-ink-3";
 }
 
-function Skeleton() {
-  return (
-    <>
-      <PageHeader title="Academias" />
-      <div className="panel h-[400px] animate-pulse bg-sunken/40" />
-    </>
-  );
-}

@@ -22,9 +22,10 @@ import {
 } from "@/lib/store";
 import type { AbsenceKind, AttentionItem, Athlete, Fee, TrainingSession } from "@/data/types";
 import type { Session } from "@/lib/permissions";
-import { isAcademyWide } from "@/lib/permissions";
+import { can, isAcademyWide } from "@/lib/permissions";
 import { getStaffEdits } from "@/lib/staff-edits";
 import { matches } from "@/lib/store";
+import { matchAttention, myMatchDuty, type MatchStatus } from "@/lib/matches";
 import { relativeDays } from "@/lib/format";
 import { getAttendanceRecords } from "@/lib/attendance";
 import { isUnavailable } from "@/lib/clinical";
@@ -468,6 +469,51 @@ export function attentionItems(session: Session): AttentionItem[] {
     });
   }
 
+  /*
+   * Os jogos: convocatórias por enviar, e fichas por preencher.
+   *
+   * `attendance:read` é a mesma linha que já separa quem convoca de quem só vê o
+   * calendário — o departamento clínico e o de scouting têm calendário mas não
+   * têm nada a fazer a uma convocatória, e uma lista de trabalho com linhas que a
+   * pessoa não pode despachar deixa de ser uma lista de trabalho.
+   *
+   * As frases vêm de `matchAttention`, partilhado com a página dos Jogos: duas
+   * cópias divergiam à primeira correcção de texto.
+   */
+  const jogos = matches.map((m) => ({
+    startsAt: m.startsAt,
+    teamName: m.teamName,
+    opponent: m.opponent,
+    status: m.status as MatchStatus,
+    ourScore: m.ourScore,
+    submitted: m.submitted,
+    myStaffRole: m.myStaffRole,
+  }));
+
+  /*
+   * "Estás escalado para…" — para toda a gente, sem permissão nenhuma.
+   *
+   * É o que o departamento clínico tem para ver aqui. Não precisa de
+   * `attendance:read` porque não é trabalho de convocatória: é a agenda da
+   * própria pessoa, e ninguém tem de ter permissão para saber onde é preciso.
+   * O servidor só marca `myStaffRole` nos jogos em que a pessoa está mesmo.
+   */
+  items.push(...myMatchDuty(jogos));
+
+  /*
+   * As convocatórias por enviar e as fichas por preencher, só a quem as pode
+   * despachar.
+   *
+   * `attendance:read` é a mesma linha que já separa quem convoca de quem só vê o
+   * calendário — o departamento clínico e o de scouting têm calendário mas não
+   * têm nada a fazer a uma convocatória. Uma lista de trabalho com linhas que a
+   * pessoa não pode despachar deixa de ser uma lista de trabalho: foi
+   * exactamente o que se viu quando a médica abriu os Jogos e leu "Convocar".
+   */
+  if (can(session, "attendance:read")) {
+    items.push(...matchAttention(jogos));
+  }
+
   const order = { risk: 0, warn: 1, info: 2 } as const;
   return items.sort((a, b) => order[a.severity] - order[b.severity]);
 }
@@ -488,6 +534,17 @@ export function navCounts(session: Session) {
         m.status === "SCHEDULED" &&
         new Date(m.startsAt) >= today &&
         new Date(m.startsAt).getTime() - today.getTime() <= 10 * 86_400_000,
+    ).length,
+    /*
+     * Jogos jogados e ainda sem resultado.
+     *
+     * Ao contrário das convocatórias, isto não tem janela: um jogo de Outubro
+     * por preencher em Janeiro continua a ser trabalho por fazer, e deixar de o
+     * contar era fingir que se resolveu sozinho. Os cancelados ficam de fora —
+     * não têm ficha para preencher.
+     */
+    matchesToFill: matches.filter(
+      (m) => m.status !== "CANCELLED" && new Date(m.startsAt) < today && m.ourScore === null,
     ).length,
     athletesOut: listAthletes(session).filter((a) => isUnavailable(a.id)).length,
   };

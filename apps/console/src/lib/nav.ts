@@ -10,6 +10,7 @@ import {
   ClipboardCheck,
   Receipt,
   Megaphone,
+  Trophy,
   Gauge,
   FileText,
   IdCard,
@@ -69,6 +70,8 @@ export type NavCounts = {
   sessionsToRecord: number;
   /** Jogos a chegar com a convocatória por submeter. */
   callUpsToSubmit: number;
+  /** Jogos já jogados que continuam sem resultado — a ficha por preencher. */
+  matchesToFill: number;
   /** Atletas de baixa neste momento — o contador do departamento clínico. */
   athletesOut: number;
 };
@@ -166,6 +169,23 @@ export const NAV_CATALOG: NavGroup[] = [
         icon: Megaphone,
         requires: "attendance:read",
         badge: (c) => c.callUpsToSubmit || undefined,
+      },
+      {
+        /*
+          Jogos pede `calendar:read` e não `attendance:read`.
+
+          É a diferença entre ver e registar, e são pessoas diferentes: o
+          departamento clínico quer saber quando joga o miúdo que está a
+          recuperar, e o de scouting quer ver o jogo do que anda a seguir —
+          nenhum dos dois preenche fichas. Quem preenche precisa de
+          `attendance:write`, e é o serviço que o exige, não este menu.
+        */
+        key: "matches",
+        label: "Jogos",
+        to: "/jogos",
+        icon: Trophy,
+        requires: "calendar:read",
+        badge: (c) => c.matchesToFill || undefined,
       },
     ],
   },
