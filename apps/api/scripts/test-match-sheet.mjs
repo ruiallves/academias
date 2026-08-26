@@ -110,8 +110,8 @@ if (!outra) {
   outra = "zz_t_alheia";
   const modelo = (await db.query(`SELECT "sportId", "seasonId" FROM "Team" WHERE id = $1`, [doCoach])).rows[0];
   await db.query(
-    `INSERT INTO "Team" (id, "academyId", "sportId", "seasonId", name, "ageGroup", "updatedAt")
-     VALUES ($1, $2, $3, $4, 'ZZ Equipa Alheia', 'Sub-19', NOW())
+    `INSERT INTO "Team" (id, "academyId", "sportId", "seasonId", name, "maxAge", "updatedAt")
+     VALUES ($1, $2, $3, $4, 'ZZ Equipa Alheia', 19, NOW())
      ON CONFLICT (id) DO NOTHING`,
     [outra, academyId, modelo.sportId, modelo.seasonId],
   );

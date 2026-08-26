@@ -67,7 +67,7 @@ competências e escalões são dados por desporto, não enums no código.
 
 ```
 Academy ─ sports[] ─ Sport { name, positions[], skillFramework }
-Team ─ sportId, ageGroup, season
+Team ─ sportId, maxAge, season
 ```
 
 Uma academia de natação cria `Sport { name: "Natação", positions: [] }` e a UI adapta-se

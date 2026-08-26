@@ -1,7 +1,7 @@
-import { useSyncExternalStore } from "react";
+﻿import { useSyncExternalStore } from "react";
 import { categoryColor, type CategoricalColor } from "@academia/ui/tokens";
-import { teams, useStore, type ApiEvent, type ApiMatch } from "@/lib/store";
-import { listSessions, listTeams, sportById, teamById, today } from "@/lib/api";
+import { useStore, type ApiEvent, type ApiMatch } from "@/lib/store";
+import { listSessions, listTeams, sportById, teamById } from "@/lib/api";
 import type { Session } from "@/lib/permissions";
 
 /**
@@ -129,25 +129,33 @@ export function useTeamColors(session: Session): Map<string, CategoricalColor> {
 /* -------------------------------------------------------------------------- */
 
 /**
- * Repositório **só dos jogos ricos** — os que têm convocatória e resultado.
+ * Repositório local dos jogos ricos — os que têm resultado por registar.
  *
  * Os eventos genéricos (treino avulso, torneio, reunião) deixaram de viver aqui:
  * "Novo evento" grava-os na base (`POST /api/events`) e o calendário lê-os do
- * store. O que sobra neste ficheiro é a semente de jogos de demonstração, que
- * alimenta o balanço na ficha do atleta e do treinador — a convocatória e o
- * registo de resultado ainda são locais, à espera de um endpoint de resultado
- * (`Match` já guarda as convocatórias submetidas, pelo ecrã de Convocatórias).
+ * store. O que sobra é o registo de resultado inline, ainda local, à espera de um
+ * endpoint próprio (`Match` já guarda as convocatórias submetidas, pelo ecrã de
+ * Convocatórias).
+ *
+ * ## Nasce vazio, e é isso que interessa
+ *
+ * **Não** uma semente de jogos de demonstração.
+ *
+ * Havia aqui um `seedMatches()` que inventava doze jogos por equipa — com
+ * adversários, resultados, marcadores e notas — gerados no browser a partir de
+ * um número pseudo-aleatório fixo. Serviu enquanto não havia `Match` na base;
+ * passou a ser uma mentira assim que passou a haver.
+ *
+ * Um clube acabado de criar abria as Convocatórias e via jogos contra o "SC
+ * Vilarinho" que nunca marcou, com resultados que nunca aconteceram. É o mesmo
+ * erro que `data/demo.ts` já tinha custado: um ecrã que mostra dados a fingir
+ * ensina quem o usa a não confiar em nenhum número do produto — e este mostrava
+ * *golos marcados por atletas com nome*.
+ *
+ * Os jogos vêm da API (`fromApiMatch`, no `useEvents`). Sem jogos na base, o
+ * calendário fica vazio, que é a verdade.
  */
-// Declarado antes de `seedMatches()` correr, e não junto dela lá em baixo: a
-// semente executa-se na inicialização do módulo, e um `const` mais abaixo estaria
-// na temporal dead zone. O TypeScript não apanha — só rebenta em execução.
-const OPPONENTS = [
-  "SC Vilarinho", "CD Fão", "GD Ronfe", "SC Bairro", "AD Oliveirense",
-  "Vitória de Prado", "SC São Pedro", "CD Ferreiros", "GC Vermoim",
-  "Basket Clube Amares", "AD Merelim", "SC Cerveira",
-];
-
-let custom: CalendarEvent[] = seedMatches();
+let custom: CalendarEvent[] = [];
 const listeners = new Set<() => void>();
 
 function emit() {
@@ -348,116 +356,4 @@ export function groupByDay(events: CalendarEvent[]): Map<string, CalendarEvent[]
     map.set(key, [...(map.get(key) ?? []), e]);
   }
   return map;
-}
-
-/* -------------------------------------------------------------------------- */
-/* Semente de demonstração                                                     */
-/* -------------------------------------------------------------------------- */
-
-/**
- * Uma época de jogos, para as equipas cujo desporto os tem.
- *
- * A natação fica de fora de propósito: não tem plantel a jogar contra um
- * adversário, e a ficha de um nadador mostra correctamente "sem jogos" em vez de
- * dados inventados. É a mesma adaptação por ausência que já se vê nas posições.
- *
- * Cada jogo passado traz resultado, marcadores e **participações** (minutos e
- * nota) — é isso que dá conteúdo ao registo de jogos na ficha do atleta. Um jogo
- * futuro traz só convocatória, para se poder ver o fluxo de confirmação.
- */
-function seedMatches(): CalendarEvent[] {
-  const out: CalendarEvent[] = [];
-  const rand = mulberry32(778899);
-
-  for (const team of teams) {
-    const sport = sportById(team.sportId);
-    // Sem posições = desporto individual, sem jogos por equipa.
-    if (!sport || sport.positions.length === 0) continue;
-
-    const fullTime = sport.matchMinutes ?? 60;
-    const squadSize = Math.min(team.athleteIds.length, sport.name === "Futebol" ? 16 : 10);
-
-    // Sábados quinzenais: dez para trás, dois para a frente.
-    for (let i = -10; i <= 2; i++) {
-      if (i === 0) continue;
-      const { start, end } = saturdayAt(i * 7, 10 + Math.floor(rand() * 4), fullTime + 30);
-      const past = start < today;
-      const opponent = OPPONENTS[Math.floor(rand() * OPPONENTS.length)];
-      const home = rand() > 0.5;
-      const squad = team.athleteIds.slice(0, squadSize);
-
-      const match: MatchInfo = {
-        opponent,
-        home,
-        callUps: squad.map((athleteId) => ({
-          athleteId,
-          status: past ? ("confirmed" as const) : rand() > 0.35 ? ("confirmed" as const) : ("called" as const),
-        })),
-      };
-
-      if (past) {
-        const ourScore = Math.floor(rand() * 5);
-        const theirScore = Math.floor(rand() * 4);
-
-        // Nem todos os convocados jogam, e nem todos jogam o tempo inteiro.
-        const appearances: MatchAppearance[] = squad
-          .filter(() => rand() > 0.2)
-          .map((athleteId) => {
-            const full = rand() > 0.45;
-            return {
-              athleteId,
-              minutes: full ? fullTime : Math.max(5, Math.round((fullTime * (0.2 + rand() * 0.6)) / 5) * 5),
-              // Nota provisória — a fórmula real está por decidir (ver MatchAppearance).
-              rating: Math.round((4.5 + rand() * 4) * 10) / 10,
-            };
-          });
-
-        const scorerPool = appearances.filter((a) => a.minutes > fullTime * 0.3);
-        const scorers: Scorer[] = [];
-        let remaining = ourScore;
-        while (remaining > 0 && scorerPool.length > 0) {
-          const who = scorerPool[Math.floor(rand() * scorerPool.length)];
-          const existing = scorers.find((s) => s.athleteId === who.athleteId);
-          if (existing) existing.tally++;
-          else scorers.push({ athleteId: who.athleteId, tally: 1 });
-          remaining--;
-        }
-
-        match.result = { ourScore, theirScore, scorers, appearances };
-      }
-
-      out.push({
-        id: `ev_seed_${team.id}_${i}`,
-        kind: "match",
-        teamId: team.id,
-        title: `Jogo · ${team.name}`,
-        start,
-        end,
-        venue: home ? (sport.name === "Futebol" ? "Campo 1" : "Pavilhão") : `Campo do ${opponent}`,
-        coachId: team.coachIds[0],
-        match,
-      });
-    }
-  }
-
-  return out;
-}
-
-/** O sábado a `dayOffset` dias de hoje, à hora dada. */
-function saturdayAt(dayOffset: number, hour: number, durationMin: number) {
-  const base = new Date(today.getFullYear(), today.getMonth(), today.getDate() + dayOffset);
-  base.setDate(base.getDate() + ((6 - base.getDay() + 7) % 7));
-  base.setHours(hour, 0, 0, 0);
-  return { start: base, end: new Date(base.getTime() + durationMin * 60_000) };
-}
-
-function mulberry32(seed: number) {
-  let a = seed;
-  return () => {
-    a |= 0;
-    a = (a + 0x6d2b79f5) | 0;
-    let t = Math.imul(a ^ (a >>> 15), 1 | a);
-    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
-    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
-  };
 }

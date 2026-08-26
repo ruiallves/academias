@@ -115,6 +115,11 @@ export class AcademyService {
         select: {
           id: true, slug: true, name: true, shortName: true, city: true,
           signalColor: true, logoUrl: true, billingDueDay: true,
+          // O período experimental. Sem contrato nenhum activo, a consola
+          // mostra quanto falta — ver o cartão no rodapé do menu lateral.
+          // `createdAt` é o proxy do início do período: não há um campo próprio
+          // para isso, e a academia nasce já em período experimental.
+          status: true, trialEndsAt: true, createdAt: true,
           // A página pública de adesão, escrita pelo clube.
           membershipHeadline: true, membershipIntro: true, membershipPoints: true,
         },
@@ -466,7 +471,7 @@ export class AcademyService {
         where: scope ? { id: scope } : {},
         orderBy: { name: "asc" },
         select: {
-          id: true, name: true, ageGroup: true, schedule: true, sportId: true,
+          id: true, name: true, maxAge: true, schedule: true, sportId: true,
           season: { select: { id: true, label: true } },
           staff: { select: { title: true, membership: { select: { id: true, user: { select: { name: true } } } } } },
           _count: { select: { athletes: true } },
@@ -492,7 +497,7 @@ export class AcademyService {
       return teams.map((t) => ({
         id: t.id,
         name: t.name,
-        ageGroup: t.ageGroup,
+        maxAge: t.maxAge,
         sportId: t.sportId,
         season: t.season.label,
         schedule: t.schedule,
@@ -532,7 +537,7 @@ export class AcademyService {
    */
   async importTeams(
     ctx: RequestContext,
-    rows: { name: string; sport: string; ageGroup: string; season?: string }[],
+    rows: { name: string; sport: string; maxAge: number; season?: string }[],
   ) {
     if (!can(ctx, "team:write")) throw new ForbiddenException("Sem permissão para criar equipas");
 
@@ -587,9 +592,9 @@ export class AcademyService {
           continue;
         }
 
-        const ageGroup = (row.ageGroup ?? "").trim();
-        if (!ageGroup) {
-          errors.push({ row: line, name, error: "Falta o escalão" });
+        const maxAge = Math.round(Number(row.maxAge));
+        if (!Number.isFinite(maxAge) || maxAge < 4 || maxAge > 99) {
+          errors.push({ row: line, name, error: "Idade máxima em falta ou fora do razoável (entre 4 e 99)" });
           continue;
         }
 
@@ -600,7 +605,7 @@ export class AcademyService {
               academyId: ctx.academyId,
               name,
               sportId,
-              ageGroup,
+              maxAge,
               seasonId: season.id,
               schedule: [],
             },
@@ -622,7 +627,7 @@ export class AcademyService {
     dto: {
       name: string;
       sportId: string;
-      ageGroup: string;
+      maxAge: number;
       season: string;
       coachId?: string;
       schedule: { weekday: number; start: string; end: string; venue: string }[];
@@ -651,14 +656,14 @@ export class AcademyService {
           sportId: dto.sportId,
           seasonId: season.id,
           name: dto.name.trim(),
-          ageGroup: dto.ageGroup.trim(),
+          maxAge: dto.maxAge,
           schedule: dto.schedule,
           ...(dto.coachId
             ? { staff: { create: { membershipId: dto.coachId, title: "Treinador principal" } } }
             : {}),
         },
         select: {
-          id: true, name: true, ageGroup: true, schedule: true, sportId: true,
+          id: true, name: true, maxAge: true, schedule: true, sportId: true,
           season: { select: { label: true } },
           staff: { select: { title: true, membership: { select: { id: true, user: { select: { name: true } } } } } },
           _count: { select: { athletes: true } },
@@ -668,7 +673,7 @@ export class AcademyService {
       return {
         id: team.id,
         name: team.name,
-        ageGroup: team.ageGroup,
+        maxAge: team.maxAge,
         sportId: team.sportId,
         season: team.season.label,
         schedule: team.schedule,

@@ -142,7 +142,11 @@ export class InvitesService {
        */
       const cargo = await db.academyRole.findFirst({
         where: { id: dto.academyRoleId, archivedAt: null },
-        select: { id: true, name: true, baseRole: true, department: true, rank: true },
+        // Sem `department`: era a coluna do enum antigo em `AcademyRole`, lida
+        // aqui e nunca usada — o convite põe `department: null` de propósito
+        // (ver mais abaixo). A coluna deixou de existir na migração
+        // `20260827180000_alinhar_schema`.
+        select: { id: true, name: true, baseRole: true, rank: true },
       });
       if (!cargo) throw new BadRequestException("Cargo desconhecido");
 

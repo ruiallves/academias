@@ -7,6 +7,7 @@ import { Bar, cx, Monogram, Panel, Pill } from "@/components/primitives";
 import { ArrowRight, Plus, Upload } from "@/lib/icons";
 import { attendanceRate, coachById, listAthletes, listTeams, sportById } from "@/lib/api";
 import { currentSeason } from "@/lib/store";
+import { teamAgeLabel } from "@/lib/team-age";
 import { can } from "@/lib/permissions";
 import { useSession } from "@/session";
 import type { Team } from "@/data/types";
@@ -80,7 +81,7 @@ function TeamCard({ team, count }: { team: Team; count: number }) {
         <div className="min-w-0">
           <div className="mb-1 flex items-center gap-1.5">
             <Pill tone="signal">{sport?.name}</Pill>
-            <span className="text-meta text-ink-3">{team.ageGroup}</span>
+            <span className="text-meta text-ink-3">{teamAgeLabel(team.maxAge)}</span>
           </div>
           <h3 className="truncate text-panel text-ink">{team.name}</h3>
         </div>

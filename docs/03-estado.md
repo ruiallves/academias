@@ -116,13 +116,22 @@ um jogo escolhendo do plantel, e **guardar não avisa ninguém** — só **subme
 fecha a lista e notifica as famílias dos convocados. É a distinção que impede um
 pai de receber cinco avisos contraditórios pela tarde.
 
-**Sobe, nunca desce.** Um treinador pode convidar um atleta de um escalão
-inferior — um Sub-13 pode reforçar-se com um Sub-11 — nunca ao contrário. A regra
-compara o número extraído do texto do escalão (`"Sub-13"` → 13); quando o texto
-não segue esse padrão (natação com `"10–14 anos"`), a resposta é **nenhum
-candidato**, nunca "todos são elegíveis". O que se mostra de uma equipa alheia é
-nome, número, posição e disponibilidade — nunca o diagnóstico, que fica fora do
-âmbito de quem convida.
+**Sobe, nunca desce.** Um treinador pode convidar um atleta mais novo — um
+Sub-13 pode reforçar-se com um miúdo de 11 anos — nunca ao contrário. A regra
+compara a **idade do atleta** com o `Team.maxAge` da equipa do jogo: idade do ano
+da época (`ano da época − ano de nascimento`, agosto a julho), para ninguém ficar
+inelegível a meio da época no dia dos anos. Ver `birthdateFloor` em
+`matches.service.ts`.
+
+Comparava **equipas** — lia um número de dentro do texto do escalão (`"Sub-13"` →
+13) — e isso falhava de duas maneiras: um miúdo de 12 anos inscrito nos Sub-11
+subia aos Sub-13 por causa da equipa onde está e não da idade que tem, e uma
+academia que escrevesse "Iniciados A" ficava sem número e sem convidados
+nenhuns, em silêncio. O escalão em texto deixou de existir (ver *A equipa não tem
+escalão*).
+
+O que se mostra de uma equipa alheia é nome, número, posição e disponibilidade —
+nunca o diagnóstico, que fica fora do âmbito de quem convida.
 
 O tecto de convocados (`Team.maxCallUps`) é configurável por equipa, ali mesmo no
 ecrã. Um convocado emprestado aparece marcado como tal na convocatória e na
@@ -131,6 +140,26 @@ adversário, hora, sítio — não um "tens uma notificação".
 
 Verificado por `npm run test:callups` (22, o essencial) e
 `npm run test:guest-callups` (11, a regra de subida e o que se pode ver de fora).
+
+## A equipa não tem escalão
+
+O escalão e a equipa eram a mesma coisa dita duas vezes: um clube criava o
+escalão "Sub-11" nas Definições → Catálogos para depois criar a equipa "Sub-11
+Futebol" com esse escalão ao lado. Dois passos, dois sítios, uma decisão — e
+nenhum dos dois obrigava o outro a concordar.
+
+`Team.ageGroup` (texto) passou a `Team.maxAge` (inteiro): a idade máxima dos
+atletas da equipa, 99 para uma equipa sem tecto. Em "Nova equipa" o prefixo
+`Sub-` está fixo no campo e escreve-se o número; o nome continua a sugerir-se
+("Sub-11 Futebol") e continua editável. O catálogo `ageGroups` deixou de existir,
+e com ele o passo "Definir os escalões" do painel de arranque.
+
+O **scouting mantém o seu** `ageGroup`, em texto e opcional: um prospecto não
+está em nenhuma equipa, por isso ali não há de onde derivar a idade — é como se
+descreve quem ainda é de fora ("procuro um lateral para os Sub-15").
+
+Migração `20260827160000_equipa_sem_escalao`, que converte o texto existente
+(`"Sub-11"` → 11, `"10–14 anos"` → 14, o resto → 99) antes de largar a coluna.
 
 ---
 

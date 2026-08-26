@@ -40,7 +40,7 @@ export function Hero() {
         <path d="M0 520A520 520 0 0 0 520 0" stroke="currentColor" strokeWidth="1" opacity="0.6" />
       </svg>
 
-      <div className="wrap relative pt-16 text-center sm:pt-24">
+      <div className="wrap hero-top relative text-center">
         <Reveal>
           <p className="eyebrow">Gestão desportiva para clubes portugueses</p>
         </Reveal>
@@ -73,7 +73,7 @@ export function Hero() {
       </div>
 
       {/* O produto, a atravessar do papel para o pinheiro. */}
-      <div className="relative mt-14 sm:mt-20">
+      <div className="hero-gap relative">
         <div aria-hidden className="absolute inset-x-0 top-[38%] bottom-0 bg-pine" />
         <div className="wrap relative pb-16 sm:pb-24">
           <Reveal i={4}>

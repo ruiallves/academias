@@ -284,6 +284,11 @@ model Membership {
   @@unique([academyId, userId, role])
   @@index([academyId])
   @@index([userId])
+  /// Quantas pessoas têm este cargo — é a contagem que a lista de cargos mostra
+  /// e que decide se o cargo de presidente ainda se pode convidar. O índice já
+  /// existia na base (migração `20260822000000_academy_roles`); faltava aqui, e
+  /// era metade do desvio que o `check:schema` apanhou.
+  @@index([customRoleId])
 }
 
 /// Um papel da academia — o que substitui ter o mapa papel→permissões em código.
@@ -422,6 +427,9 @@ model AcademyRole {
 
   @@unique([academyId, key])
   @@index([academyId])
+  /// Os cargos de um departamento — o menu do convite pergunta exactamente isso.
+  /// Criado na migração `20260826230000_departamentos` e nunca declarado aqui.
+  @@index([departmentId])
 }
 
 /// Um convite para alguém passar a fazer parte da academia.
@@ -646,14 +654,28 @@ model Team {
   season    Season  @relation(fields: [seasonId], references: [id])
 
   name     String
-  /// "Sub-11", "10–14 anos" — texto, porque cada desporto agrupa à sua maneira.
-  ageGroup String
+
+  /// A idade máxima da equipa: 11 num "Sub-11".
+  ///
+  /// Substituiu `ageGroup`, que era o texto do escalão. O escalão e a equipa
+  /// eram a mesma coisa dita duas vezes — e o texto, além de duplicado, era uma
+  /// péssima base para decidir quem pode ser convocado: a regra tinha de ler um
+  /// número de dentro de uma cadeia ("Sub-13" → 13) e ficava sem resposta para
+  /// um clube que escrevesse "Iniciados A".
+  ///
+  /// Um inteiro diz a mesma coisa sem ambiguidade e permite a pergunta certa —
+  /// *este atleta tem idade para esta equipa?* — em vez da aproximação antiga,
+  /// que comparava equipas entre si e deixava passar um miúdo de 12 anos
+  /// inscrito nos Sub-11 para uma convocatória de Sub-13.
+  ///
+  /// Ver `athleteAge` em `matches.service.ts` para a convenção de idade.
+  maxAge   Int
 
   /// Horário regular: [{ weekday: 2, start: "17:30", end: "19:00", venue: "Campo 1" }].
   /// As sessões são geradas a partir daqui, mas cada uma vive por si depois de criada.
   schedule Json @default("[]")
 
-  /// Quantos atletas cabem numa convocatória deste escalão.
+  /// Quantos atletas cabem numa convocatória desta equipa.
   ///
   /// Por equipa e não por academia: um Sub-11 de futebol convoca 14, um Sub-15
   /// convoca 18, e a natação não convoca ninguém. O valor por omissão é o do
@@ -2149,7 +2171,7 @@ model CatalogItem {
   academyId String
   academy   Academy @relation(fields: [academyId], references: [id], onDelete: Cascade)
 
-  /// "venues", "dressingRooms", "ageGroups", "eventTypes".
+  /// "venues", "dressingRooms", "eventTypes".
   kind  String
   label String
   /// Morada, anos de nascimento, o que a academia precise.

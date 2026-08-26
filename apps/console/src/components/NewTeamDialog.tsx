@@ -1,13 +1,15 @@
-import { Link } from "react-router-dom";
+﻿import { Link } from "react-router-dom";
 import { useState, type FormEvent } from "react";
 import { academy, listCoachCandidates } from "@/lib/api";
 import { apiPost } from "@/lib/http";
 import { reloadAcademy, seasons as knownSeasons } from "@/lib/store";
 import { useActiveCatalog } from "@/lib/catalogs";
-import { Plus, Settings, Trash2 } from "@/lib/icons";
+import { defaultSeason, seasonOptions } from "@/lib/seasons";
+import { SEM_LIMITE, teamAgeLabel } from "@/lib/team-age";
+import { Plus, Trash2 } from "@/lib/icons";
 import { Dialog, DialogField, dialogInputClass } from "./Dialog";
 import { PersonPicker } from "./PersonPicker";
-import { SelectField } from "./primitives";
+import { cx, SelectField } from "./primitives";
 
 const WEEKDAYS = ["Domingo", "Segunda", "Terça", "Quarta", "Quinta", "Sexta", "Sábado"];
 
@@ -29,36 +31,54 @@ type Slot = { weekday: number; start: string; end: string; venue: string };
  */
 export function NewTeamDialog({ onClose }: { onClose: () => void }) {
   const coaches = listCoachCandidates();
-  const ageGroups = useActiveCatalog("ageGroups");
   const venues = useActiveCatalog("venues");
   const seasonChoices = seasonOptions(knownSeasons);
 
   const [sportId, setSportId] = useState(academy.sports[0]?.id ?? "");
-  const [ageGroup, setAgeGroup] = useState(ageGroups[0]?.label ?? "");
+  /*
+   * A idade em texto, e não em número.
+   *
+   * Um `useState<number>` obrigava a escolher um valor inicial, e qualquer um
+   * seria uma sugestão que ninguém pediu — a equipa nasceria "Sub-11" por
+   * omissão e passaria assim para metade dos clubes. Vazio é a única resposta
+   * honesta antes de alguém escrever, e vazio não é um número.
+   */
+  const [age, setAge] = useState("");
   const [name, setName] = useState("");
   const [coachId, setCoachId] = useState("");
   const [season, setSeason] = useState(defaultSeason(seasonChoices));
-  const [slots, setSlots] = useState<Slot[]>([{ weekday: 1, start: "18:00", end: "19:30", venue: venues[0]?.label ?? "" }]);
+  /*
+   * Sem horário nenhum, de início.
+   *
+   * Nascia com uma linha já preenchida — segunda, 18:00, primeiro campo da lista
+   * — e a linha não se podia apagar. Uma equipa que ainda não tem horário
+   * marcado, que é o caso normal de quem está a montar o clube em Agosto, ficava
+   * com um treino inventado à segunda-feira. O horário é opcional: marca-se aqui
+   * a quem já o sabe, e na ficha da equipa a quem ainda não.
+   */
+  const [slots, setSlots] = useState<Slot[]>([]);
 
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const sport = academy.sports.find((s) => s.id === sportId);
-  const suggested = ageGroup && sport ? `${ageGroup} ${sport.name}` : "";
+  const maxAge = Number(age);
+  const ageOk = /^\d{1,2}$/.test(age) && maxAge >= 4 && maxAge <= SEM_LIMITE;
+  const suggested = ageOk && sport ? `${teamAgeLabel(maxAge)} ${sport.name}` : "";
 
   const updateSlot = (i: number, patch: Partial<Slot>) =>
     setSlots((xs) => xs.map((s, idx) => (idx === i ? { ...s, ...patch } : s)));
 
   async function submit(e: FormEvent) {
     e.preventDefault();
-    if (busy) return;
+    if (busy || !ageOk) return;
     setBusy(true);
     setError(null);
     try {
       await apiPost("/api/teams", {
         name: name.trim() || suggested,
         sportId,
-        ageGroup,
+        maxAge,
         season: season.trim(),
         ...(coachId ? { coachId } : {}),
         schedule: slots.filter((s) => s.venue),
@@ -83,7 +103,7 @@ export function NewTeamDialog({ onClose }: { onClose: () => void }) {
           <button type="button" onClick={onClose} className="ctl-ghost">
             Cancelar
           </button>
-          <button type="submit" form="form-nova-equipa" className="ctl-primary" disabled={!ageGroup || busy}>
+          <button type="submit" form="form-nova-equipa" className="ctl-primary" disabled={!ageOk || busy}>
             {busy ? "A criar…" : "Criar equipa"}
           </button>
         </>
@@ -100,32 +120,48 @@ export function NewTeamDialog({ onClose }: { onClose: () => void }) {
             />
           </DialogField>
 
-          <DialogField
-            label="Escalão"
-            hint={
-              <Link to="/definicoes?catalogo=ageGroups" className="inline-flex items-center gap-1 text-ink-3 hover:text-ink">
-                <Settings className="size-3" strokeWidth={1.75} />
-                gerir
-              </Link>
-            }
-          >
-            {ageGroups.length > 0 ? (
-              <SelectField
-                className="w-full"
-                value={ageGroup}
-                onChange={setAgeGroup}
-                options={ageGroups.map((g) => ({ value: g.label, label: g.label }))}
+          {/*
+            "Sub-" fixo, e o número escrito.
+
+            Substituiu um menu de escalões vindo de um catálogo. O escalão e a
+            equipa eram a mesma coisa: um clube criava "Sub-11" nas Definições
+            para depois criar a equipa "Sub-11 Futebol" — dois passos e dois
+            sítios para uma decisão só.
+
+            O prefixo colado ao campo faz o trabalho que a lista fazia (ninguém
+            escreve "sub 11" nem "Iniciados") sem obrigar a manter um vocabulário
+            à parte. E o que fica gravado é o número, que é o que a convocatória
+            precisa de comparar com a idade do atleta.
+          */}
+          <DialogField label="Idade máxima" hint="dos atletas">
+            <div
+              className={cx(
+                "flex h-9 items-center rounded-[var(--radius-control)] border bg-surface px-2.5",
+                "focus-within:border-signal",
+                age && !ageOk ? "border-risk" : "border-line",
+              )}
+            >
+              <span aria-hidden className="select-none text-body font-medium text-ink-3">
+                Sub-
+              </span>
+              <input
+                value={age}
+                onChange={(e) => setAge(e.target.value.replace(/\D/g, "").slice(0, 2))}
+                inputMode="numeric"
+                aria-label="Idade máxima dos atletas da equipa"
+                placeholder="11"
+                className="w-full min-w-0 bg-transparent text-body text-ink outline-none placeholder:text-ink-4"
               />
-            ) : (
-              <p className="rounded-[var(--radius-control)] border border-dashed border-line bg-sunken/50 px-2.5 py-2 text-meta text-ink-3">
-                Sem escalões.{" "}
-                <Link to="/definicoes?catalogo=ageGroups" className="font-medium text-ink underline">
-                  Criar um
-                </Link>
-              </p>
-            )}
+            </div>
           </DialogField>
         </div>
+
+        {/* Só depois de haver número: antes disso não há nada de útil a dizer. */}
+        {ageOk && (
+          <p className="-mt-1 text-meta text-ink-3">
+            Entram atletas até aos {maxAge} anos. É esta idade que decide quem pode ser convocado de outra equipa.
+          </p>
+        )}
 
         <DialogField label="Nome" hint="opcional">
           <input value={name} onChange={(e) => setName(e.target.value)} placeholder={suggested || "Nome da equipa"} className={dialogInputClass} />
@@ -170,7 +206,10 @@ export function NewTeamDialog({ onClose }: { onClose: () => void }) {
         </div>
 
         <fieldset>
-          <legend className="mb-1.5 text-meta font-medium text-ink">Horário de treinos</legend>
+          <legend className="mb-1.5 flex items-baseline gap-2 text-meta font-medium text-ink">
+            Horário de treinos
+            <span className="font-normal text-ink-4">opcional</span>
+          </legend>
 
           {venues.length === 0 ? (
             <p className="rounded-[var(--radius-control)] border border-dashed border-line bg-sunken/50 px-2.5 py-2 text-meta text-ink-3">
@@ -209,11 +248,12 @@ export function NewTeamDialog({ onClose }: { onClose: () => void }) {
                       onChange={(v) => updateSlot(i, { venue: v })}
                       options={venues.map((v) => ({ value: v.label, label: v.label }))}
                     />
+                    {/* Sempre activo: a última linha também se apaga, e ficar sem
+                        horário nenhum é um estado legítimo. */}
                     <button
                       type="button"
                       onClick={() => setSlots((xs) => xs.filter((_, idx) => idx !== i))}
-                      disabled={slots.length === 1}
-                      className="flex size-9 shrink-0 items-center justify-center rounded-[var(--radius-control)] text-ink-4 hover:bg-risk-soft hover:text-risk disabled:opacity-0"
+                      className="flex size-9 shrink-0 items-center justify-center rounded-[var(--radius-control)] text-ink-4 hover:bg-risk-soft hover:text-risk"
                       aria-label="Remover horário"
                     >
                       <Trash2 className="size-3.5" strokeWidth={1.75} />
@@ -247,8 +287,14 @@ export function NewTeamDialog({ onClose }: { onClose: () => void }) {
                 className="ctl-ghost h-8 gap-1.5 text-meta text-ink-3"
               >
                 <Plus className="size-3.5" strokeWidth={2} />
-                Mais um dia
+                {slots.length === 0 ? "Marcar um treino" : "Mais um dia"}
               </button>
+
+              {slots.length === 0 && (
+                <p className="text-meta text-ink-4">
+                  Sem horário, a equipa fica criada na mesma — marca-se depois, na ficha dela.
+                </p>
+              )}
             </div>
           )}
         </fieldset>
@@ -259,67 +305,4 @@ export function NewTeamDialog({ onClose }: { onClose: () => void }) {
       </form>
     </Dialog>
   );
-}
-
-/* -------------------------------------------------------------------------- */
-/* As épocas                                                                   */
-/* -------------------------------------------------------------------------- */
-
-/**
- * A época a que hoje pertence: `2026/27`.
- *
- * A época desportiva vai de agosto a julho — a mesma convenção que o servidor
- * usa ao criar uma (ver `resolveSeason`). De janeiro a julho ainda se está na
- * que começou no ano anterior.
- */
-function seasonOf(date: Date): string {
-  const year = date.getFullYear() - (date.getMonth() < 7 ? 1 : 0);
-  return `${year}/${String((year + 1) % 100).padStart(2, "0")}`;
-}
-
-/**
- * O que o menu oferece.
- *
- * As épocas que a academia tem (o servidor manda-as da mais recente para trás)
- * mais a **actual e a seguinte**, quando ainda não existirem. As duas
- * calculadas resolvem os dois momentos em que faltaria sempre uma: a academia
- * acabada de criar, que não tem nenhuma, e o clube que em junho começa a montar
- * as equipas do ano que vem.
- *
- * Ordena-se pelo ano de início, da mais recente para trás. Um rótulo que não se
- * consiga ler como ano — um clube com convenção própria — vai para o fim em vez
- * de se perder: continua escolhível, só não se finge saber onde encaixa no
- * tempo.
- */
-export function seasonOptions(existing: string[], today = new Date()): string[] {
-  const now = seasonOf(today);
-  const next = seasonOf(new Date(today.getFullYear() + 1, today.getMonth(), 1));
-
-  const all = [...new Set([...existing, now, next])];
-
-  return all.sort((a, b) => {
-    const ya = startYear(a);
-    const yb = startYear(b);
-    if (ya === null && yb === null) return a.localeCompare(b, "pt");
-    if (ya === null) return 1;
-    if (yb === null) return -1;
-    return yb - ya;
-  });
-}
-
-function startYear(label: string): number | null {
-  const m = label.match(/^(\d{4})/);
-  return m ? Number(m[1]) : null;
-}
-
-/**
- * A que já vem escolhida.
- *
- * A época de hoje, que é a que quem cria uma equipa quer em quase todos os
- * casos. Se por alguma razão não estiver na lista, a primeira serve — nunca se
- * abre o diálogo com o campo vazio.
- */
-function defaultSeason(choices: string[]): string {
-  const now = seasonOf(new Date());
-  return choices.includes(now) ? now : (choices[0] ?? now);
 }

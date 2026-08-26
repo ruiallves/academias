@@ -37,7 +37,9 @@ import { can, type RequestContext } from "../common/permissions";
  * carrega as permissões. Ver a migração `20260826090000_cargos_e_desportos`.
  */
 
-const KINDS = ["venues", "dressingRooms", "ageGroups", "eventTypes"] as const;
+// "ageGroups" saiu: o escalão e a equipa eram a mesma coisa dita duas vezes, e a
+// equipa passou a ter `maxAge`. Ver a migração `20260827160000_equipa_sem_escalao`.
+const KINDS = ["venues", "dressingRooms", "eventTypes"] as const;
 export type CatalogKind = (typeof KINDS)[number];
 
 export function isCatalogKind(value: string): value is CatalogKind {

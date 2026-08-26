@@ -1,6 +1,7 @@
 import * as XLSX from "xlsx";
 import { apiPost } from "@/lib/http";
 import { reloadAcademy } from "@/lib/store";
+import { guessMaxAge, SEM_LIMITE } from "@/lib/team-age";
 
 /**
  * Importar equipas de um ficheiro.
@@ -19,11 +20,18 @@ import { reloadAcademy } from "@/lib/store";
 export const TEAM_COLUMNS = [
   { key: "name", header: "Nome", required: true, example: "Sub-11 Futebol" },
   { key: "sport", header: "Modalidade", required: true, example: "Futebol" },
-  { key: "ageGroup", header: "Escalão", required: true, example: "Sub-11" },
+  /*
+   * A coluna "Escalão" era texto ("Sub-11") e passou a ser um número.
+   *
+   * Deixou de ser obrigatória: quando o nome da equipa já diz a idade — e diz
+   * quase sempre, porque é assim que os clubes lhes chamam — lê-se dali. Só é
+   * preciso escrevê-la para uma equipa com nome que não a revele ("Equipa B").
+   */
+  { key: "maxAge", header: "Idade máxima", required: false, example: "11" },
   { key: "season", header: "Época", required: false, example: "2026/27" },
 ] as const;
 
-export type TeamRow = { name: string; sport: string; ageGroup: string; season?: string };
+export type TeamRow = { name: string; sport: string; maxAge: number; season?: string };
 export type TeamRowError = { line: number; name: string; error: string };
 export type TeamParseResult = { rows: TeamRow[]; errors: TeamRowError[]; missingColumns: string[] };
 
@@ -87,11 +95,29 @@ export async function parseTeamFile(file: File): Promise<TeamParseResult> {
     const sport = get("Modalidade");
     if (!sport) return void errors.push({ line, name, error: "Falta a modalidade" });
 
-    const ageGroup = get("Escalão") || get("Escalao");
-    if (!ageGroup) return void errors.push({ line, name, error: "Falta o escalão" });
+    /*
+     * A idade: da coluna quando lá está, do nome quando não está.
+     *
+     * A ordem é esta de propósito. Quem escreveu a coluna quis dizer aquilo — e
+     * pode ser uma equipa "Sub-11 B" que na verdade recebe até aos 12. O nome é
+     * a conveniência para as outras noventa linhas.
+     */
+    const escrita = get("Idade máxima") || get("Idade maxima");
+    const maxAge = escrita ? Number(escrita.replace(/\D/g, "")) : guessMaxAge(name);
+
+    if (!maxAge || maxAge < 4 || maxAge > SEM_LIMITE) {
+      errors.push({
+        line,
+        name,
+        error: escrita
+          ? "Idade máxima fora do razoável (entre 4 e 99)"
+          : 'Sem idade máxima — escreve-a na coluna, ou põe "Sub-11" no nome',
+      });
+      return;
+    }
 
     vistos.add(name.toLowerCase());
-    rows.push({ name, sport, ageGroup, ...(get("Época") || get("Epoca") ? { season: get("Época") || get("Epoca") } : {}) });
+    rows.push({ name, sport, maxAge, ...(get("Época") || get("Epoca") ? { season: get("Época") || get("Epoca") } : {}) });
   });
 
   return { rows, errors, missingColumns: [] };

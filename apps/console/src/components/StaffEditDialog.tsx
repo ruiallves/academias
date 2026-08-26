@@ -1,5 +1,6 @@
 import { useState, type FormEvent } from "react";
 import { listTeams } from "@/lib/api";
+import { teamAgeLabel } from "@/lib/team-age";
 import { ASSIGNABLE_ROLES, DEPARTMENTS, updateStaff } from "@/lib/staff";
 import { apiPatch } from "@/lib/http";
 import { can, type Role, type Session } from "@/lib/permissions";
@@ -161,10 +162,10 @@ export function StaffEditDialog({
                         type="checkbox"
                         checked={teamIds.includes(t.id)}
                         onChange={() => toggleTeam(t.id)}
-                        className="size-3.5 accent-[var(--signal)]"
+                        className="size-3.5 accent-[var(--color-signal)]"
                       />
                       <span className="min-w-0 flex-1 truncate text-body text-ink">{t.name}</span>
-                      <span className="text-meta text-ink-4">{t.ageGroup}</span>
+                      <span className="text-meta text-ink-4">{teamAgeLabel(t.maxAge)}</span>
                     </label>
                   ))}
                 </div>
@@ -192,7 +193,7 @@ export function StaffEditDialog({
             type="checkbox"
             checked={!isActive}
             onChange={(e) => setIsActive(!e.target.checked)}
-            className="mt-0.5 size-3.5 accent-[var(--signal)]"
+            className="mt-0.5 size-3.5 accent-[var(--color-signal)]"
           />
           <span className="min-w-0">
             <span className="block text-body text-ink">Já não trabalha na academia</span>

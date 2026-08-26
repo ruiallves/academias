@@ -164,11 +164,11 @@ async function main() {
 
   console.log("Equipas…");
   await db.query(
-    `INSERT INTO "Team" (id,"academyId","sportId","seasonId",name,"ageGroup",schedule,"updatedAt")
-     VALUES ('t_sub11',$1,'sp_fut','se_2627','Sub-11 Futebol','Sub-11',
+    `INSERT INTO "Team" (id,"academyId","sportId","seasonId",name,"maxAge",schedule,"updatedAt")
+     VALUES ('t_sub11',$1,'sp_fut','se_2627','Sub-11 Futebol',11,
              '[{"weekday":1,"start":"18:00","end":"19:30","venue":"Campo 1"},
                {"weekday":3,"start":"18:00","end":"19:30","venue":"Campo 2"}]'::jsonb, now()),
-            ('t_sub13',$1,'sp_fut','se_2627','Sub-13 Futebol','Sub-13',
+            ('t_sub13',$1,'sp_fut','se_2627','Sub-13 Futebol',13,
              '[{"weekday":2,"start":"19:30","end":"21:00","venue":"Campo 2"},
                {"weekday":5,"start":"18:30","end":"20:00","venue":"Campo 1"}]'::jsonb, now())
      ON CONFLICT (id) DO UPDATE SET schedule = EXCLUDED.schedule, "updatedAt" = now()`,

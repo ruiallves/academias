@@ -9,6 +9,7 @@
     "typecheck": "tsc --noEmit --incremental false",
     "prisma:generate": "prisma generate",
     "prisma:migrate": "prisma migrate dev",
+    "check:schema": "node scripts/check-schema.mjs",
     "test:rls": "node scripts/test-rls.mjs",
     "migrate:deploy": "prisma migrate deploy",
     "verify:supabase": "node scripts/verify-supabase.mjs",

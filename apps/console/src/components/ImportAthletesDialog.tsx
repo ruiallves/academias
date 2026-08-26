@@ -1,9 +1,22 @@
 import { useRef, useState } from "react";
 import { Check, Download, FileSpreadsheet, TriangleAlert, Upload } from "@/lib/icons";
-import { reloadAcademy } from "@/lib/store";
-import { COLUMNS, downloadTemplate, importAthletes, parseFile, type ParseResult, type RowError } from "@/lib/import";
+import { academy, reloadAcademy, seasons as knownSeasons } from "@/lib/store";
+import { defaultSeason, seasonOptions } from "@/lib/seasons";
+import { can } from "@/lib/permissions";
+import { useSession } from "@/session";
+import {
+  COLUMNS,
+  createTeams,
+  downloadTemplate,
+  importAthletes,
+  parseFile,
+  planTeam,
+  type NewTeamPlan,
+  type ParseResult,
+  type RowError,
+} from "@/lib/import";
 import { Dialog } from "./Dialog";
-import { cx } from "./primitives";
+import { cx, SelectField } from "./primitives";
 
 /**
  * Importar atletas de um Excel.
@@ -20,10 +33,23 @@ import { cx } from "./primitives";
  *
  * A pré-visualização não é cosmética: mostrar 3 erros com o número da linha e o
  * motivo poupa uma tarde de tentativa-e-erro contra o servidor.
+ *
+ * ## As equipas que ainda não existem
+ *
+ * Uma equipa do ficheiro que a academia não tem **não é um erro**: é uma
+ * pergunta. Quem está a montar o clube traz o plantel e as equipas na mesma
+ * folha, e mandá-lo criar seis equipas à mão antes de poder importar era
+ * mandá-lo fazer à mão o trabalho que o import existe para poupar.
+ *
+ * A revisão mostra-as, com a modalidade e o escalão já propostos a partir do
+ * nome, e um interruptor para decidir. Desligado, as linhas dessas equipas
+ * ficam de fora e contam-se como recusadas — nada entra sem alguém dizer que
+ * sim.
  */
 type Phase = "pick" | "review" | "done";
 
 export function ImportAthletesDialog({ onClose }: { onClose: () => void }) {
+  const { session } = useSession();
   const fileInput = useRef<HTMLInputElement>(null);
   const [phase, setPhase] = useState<Phase>("pick");
   const [fileName, setFileName] = useState("");
@@ -33,6 +59,35 @@ export function ImportAthletesDialog({ onClose }: { onClose: () => void }) {
   const [result, setResult] = useState<{ created: number; errors: RowError[] } | null>(null);
   const [error, setError] = useState<string | null>(null);
 
+  /** Criar as equipas em falta, e o que cada uma vai ser. Só existe se houver. */
+  const [createNew, setCreateNew] = useState(true);
+  const [plans, setPlans] = useState<NewTeamPlan[]>([]);
+
+  /*
+   * Porque é que não se pode criar as equipas em falta, quando não se pode.
+   *
+   * Três razões, e nenhuma é adivinhada no momento do erro: um treinador importa
+   * atletas (`athlete:write` por omissão) mas não cria equipas; e uma equipa
+   * precisa de modalidade e de escalão, que vêm dos catálogos. Sem isto o
+   * interruptor prometia uma coisa que o servidor recusava com um 400 seco
+   * depois de a pessoa já ter carregado em Importar.
+   */
+  /*
+   * A época em que as equipas em falta nascem.
+   *
+   * `currentSeason` do store seria o óbvio, mas é vazio numa academia sem
+   * épocas nenhumas — exactamente a academia que está a importar o plantel pela
+   * primeira vez. O servidor recusa uma equipa sem época, e o erro chegaria só
+   * depois de a pessoa carregar em Importar. `defaultSeason` nunca devolve vazio.
+   */
+  const season = defaultSeason(seasonOptions(knownSeasons));
+
+  const blockReason: null | "permissao" | "modalidades" = !can(session, "team:write")
+    ? "permissao"
+    : academy.sports.length === 0
+      ? "modalidades"
+      : null;
+
   async function onFile(file: File) {
     setError(null);
     setParsing(true);
@@ -40,6 +95,8 @@ export function ImportAthletesDialog({ onClose }: { onClose: () => void }) {
     try {
       const p = await parseFile(file);
       setParsed(p);
+      setPlans(p.newTeams.map((name) => planTeam(name)));
+      setCreateNew(blockReason === null);
       setPhase("review");
     } catch {
       setError("Não foi possível ler o ficheiro. É mesmo um Excel (.xlsx)?");
@@ -49,15 +106,49 @@ export function ImportAthletesDialog({ onClose }: { onClose: () => void }) {
   }
 
   async function confirm() {
-    if (!parsed?.valid.length) return;
+    if (!parsed) return;
     setImporting(true);
     setError(null);
     try {
-      const res = await importAthletes(parsed.valid);
+      let rows = parsed.valid;
+      let teamErrors: { name: string; error: string }[] = [];
+
+      /*
+       * As equipas primeiro, os atletas depois.
+       *
+       * Só assim há um `teamId` para pôr nas linhas. Uma equipa que falhe não
+       * derruba a importação: as linhas dela ficam sem id, são contadas como
+       * recusadas no fim, e todos os outros atletas entram na mesma.
+       */
+      if (createNew && plans.length) {
+        const { ids, failed } = await createTeams(plans, season);
+        teamErrors = failed;
+        rows = rows.map((r) => (r.teamId ? r : { ...r, teamId: ids.get(r.teamName.trim().toLowerCase()) }));
+      }
+
+      const semEquipa = rows.filter((r) => !r.teamId);
+      const res = await importAthletes(rows);
+
       // O servidor pode rejeitar linhas que o cliente deixou passar (uma corrida,
       // um duplicado criado entretanto). Junta-se o que ele reportou ao que já se
       // sabia — a verdade é a dele.
-      setResult(res);
+      const porque = new Map(teamErrors.map((t) => [t.name.trim().toLowerCase(), t.error]));
+      setResult({
+        created: res.created,
+        errors: [
+          ...res.errors,
+          ...semEquipa.map((r) => {
+            const motivo = porque.get(r.teamName.trim().toLowerCase());
+            return {
+              line: r.line,
+              name: r.name,
+              error: motivo
+                ? `A equipa "${r.teamName}" não foi criada: ${motivo}`
+                : `A equipa "${r.teamName}" não foi criada`,
+            };
+          }),
+        ],
+      });
       setPhase("done");
       await reloadAcademy();
     } catch (e) {
@@ -67,6 +158,11 @@ export function ImportAthletesDialog({ onClose }: { onClose: () => void }) {
     }
   }
 
+  /** Quantas linhas seguem mesmo: sem criar as equipas em falta, seguem menos. */
+  const importable = parsed
+    ? parsed.valid.filter((r) => r.teamId || (createNew && plans.length > 0)).length
+    : 0;
+
   return (
     <Dialog
       labelledBy="importar-atletas"
@@ -74,11 +170,24 @@ export function ImportAthletesDialog({ onClose }: { onClose: () => void }) {
       subtitle={fileName || "de um ficheiro Excel"}
       onClose={onClose}
       width={620}
-      footer={<Footer phase={phase} parsed={parsed} importing={importing} onClose={onClose} onConfirm={confirm} />}
+      footer={
+        <Footer phase={phase} parsed={parsed} importable={importable} importing={importing} onClose={onClose} onConfirm={confirm} />
+      }
     >
       <div className="p-5">
         {phase === "pick" && <Pick fileInput={fileInput} parsing={parsing} onFile={onFile} />}
-        {phase === "review" && parsed && <Review parsed={parsed} />}
+        {phase === "review" && parsed && (
+          <Review
+            parsed={parsed}
+            plans={plans}
+            setPlans={setPlans}
+            createNew={createNew}
+            setCreateNew={setCreateNew}
+            blockReason={blockReason}
+            season={season}
+            importable={importable}
+          />
+        )}
         {phase === "done" && result && <Done result={result} />}
         {error && (
           <p className="mt-4 rounded-[var(--radius-control)] bg-risk-soft px-3 py-2 text-meta leading-relaxed text-risk">
@@ -178,7 +287,25 @@ function Pick({
 
 /* -------------------------------------------------------------------------- */
 
-function Review({ parsed }: { parsed: ParseResult }) {
+function Review({
+  parsed,
+  plans,
+  setPlans,
+  createNew,
+  setCreateNew,
+  blockReason,
+  season,
+  importable,
+}: {
+  parsed: ParseResult;
+  plans: NewTeamPlan[];
+  setPlans: (p: NewTeamPlan[]) => void;
+  createNew: boolean;
+  setCreateNew: (v: boolean) => void;
+  blockReason: null | "permissao" | "modalidades";
+  season: string;
+  importable: number;
+}) {
   if (parsed.missingColumns.length) {
     return (
       <div className="rounded-[var(--radius-panel)] border border-risk/30 bg-risk-soft/50 p-4">
@@ -195,13 +322,113 @@ function Review({ parsed }: { parsed: ParseResult }) {
   }
 
   const { valid, errors } = parsed;
+  const blocked = valid.length - importable;
 
   return (
     <div className="space-y-3">
       <div className="flex gap-3">
-        <Tally n={valid.length} label={valid.length === 1 ? "atleta pronto" : "atletas prontos"} tone="ok" />
-        {errors.length > 0 && <Tally n={errors.length} label={errors.length === 1 ? "linha com erro" : "linhas com erro"} tone="risk" />}
+        <Tally n={importable} label={importable === 1 ? "atleta pronto" : "atletas prontos"} tone="ok" />
+        {errors.length + blocked > 0 && (
+          <Tally
+            n={errors.length + blocked}
+            label={errors.length + blocked === 1 ? "linha de fora" : "linhas de fora"}
+            tone="risk"
+          />
+        )}
       </div>
+
+      {/*
+        As equipas que ainda não existem.
+
+        Antes disto, cada linha destas era um erro a dizer "Equipa X não existe
+        nesta academia" — uma frase verdadeira que só servia para mandar a
+        pessoa embora fazer trabalho à mão. Agora é uma pergunta, com a resposta
+        já preenchida e editável.
+      */}
+      {plans.length > 0 && (
+        <div
+          className={cx(
+            "overflow-hidden rounded-[var(--radius-panel)] border",
+            createNew ? "border-signal/40 bg-signal-soft/25" : "border-line",
+          )}
+        >
+          <div className="flex items-start gap-3 px-3 py-2.5">
+            {blockReason === null ? (
+              <input
+                id="criar-equipas"
+                type="checkbox"
+                checked={createNew}
+                onChange={(e) => setCreateNew(e.target.checked)}
+                className="mt-0.5 size-4 shrink-0 accent-[var(--color-signal)]"
+              />
+            ) : (
+              <TriangleAlert className="mt-0.5 size-4 shrink-0 text-risk" strokeWidth={1.75} />
+            )}
+            <label htmlFor={blockReason === null ? "criar-equipas" : undefined} className="min-w-0 flex-1">
+              <span className="block text-meta font-medium text-ink">
+                {plans.length === 1
+                  ? `A equipa "${plans[0].name}" ainda não existe`
+                  : `${plans.length} equipas do ficheiro ainda não existem`}
+              </span>
+              <span className="mt-0.5 block text-meta leading-relaxed text-ink-3">
+                {blockReason === null && (
+                  <>
+                    Criamo-las agora na época {season}, com o nome que está no ficheiro. Sem isto, os atletas destas
+                    equipas ficam de fora.
+                  </>
+                )}
+                {blockReason === "permissao" && (
+                  <>
+                    Não tens permissão para criar equipas, por isso os atletas destas ficam de fora. Pede à direção que
+                    as crie — ou corrige os nomes no ficheiro.
+                  </>
+                )}
+                {blockReason === "modalidades" && (
+                  <>
+                    A academia ainda não tem modalidades, e uma equipa precisa de uma. Cria-a nas Definições e volta a
+                    carregar o ficheiro.
+                  </>
+                )}
+              </span>
+            </label>
+          </div>
+
+          {createNew && blockReason === null && (
+            <ul className="border-t border-line/60">
+              {plans.map((plan, i) => (
+                <li key={plan.name} className="flex flex-wrap items-center gap-2 border-b border-line/60 px-3 py-2 last:border-b-0">
+                  <span className="min-w-0 flex-1 truncate text-meta font-medium text-ink">{plan.name}</span>
+
+                  {/* A idade proposta a partir do nome, editável. Sub- fixo,
+                      como no diálogo de nova equipa — a mesma decisão, o mesmo
+                      aspecto. */}
+                  <span className="flex h-8 items-center rounded-[var(--radius-control)] border border-line bg-surface px-2 focus-within:border-signal">
+                    <span aria-hidden className="select-none text-meta text-ink-3">
+                      Sub-
+                    </span>
+                    <input
+                      value={String(plan.maxAge)}
+                      onChange={(e) => {
+                        const n = Number(e.target.value.replace(/\D/g, "").slice(0, 2));
+                        setPlans(plans.map((p, idx) => (idx === i ? { ...p, maxAge: n } : p)));
+                      }}
+                      inputMode="numeric"
+                      aria-label={`Idade máxima de ${plan.name}`}
+                      className="w-8 min-w-0 bg-transparent text-meta text-ink outline-none"
+                    />
+                  </span>
+                  <SelectField
+                    className="w-[124px]"
+                    value={plan.sportId}
+                    onChange={(v) => setPlans(plans.map((p, idx) => (idx === i ? { ...p, sportId: v } : p)))}
+                    options={academy.sports.map((s) => ({ value: s.id, label: s.name }))}
+                  />
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+      )}
 
       {errors.length > 0 && (
         <div className="overflow-hidden rounded-[var(--radius-panel)] border border-line">
@@ -270,12 +497,14 @@ function Done({ result }: { result: { created: number; errors: RowError[] } }) {
 function Footer({
   phase,
   parsed,
+  importable,
   importing,
   onClose,
   onConfirm,
 }: {
   phase: Phase;
   parsed: ParseResult | null;
+  importable: number;
   importing: boolean;
   onClose: () => void;
   onConfirm: () => void;
@@ -288,7 +517,7 @@ function Footer({
     );
   }
 
-  const canImport = phase === "review" && (parsed?.valid.length ?? 0) > 0 && !parsed?.missingColumns.length;
+  const canImport = phase === "review" && importable > 0 && !parsed?.missingColumns.length;
 
   return (
     <>
@@ -297,7 +526,7 @@ function Footer({
       </button>
       {phase === "review" && (
         <button type="button" onClick={onConfirm} disabled={!canImport || importing} className="ctl-primary">
-          {importing ? "A importar…" : `Importar ${parsed?.valid.length ?? 0}`}
+          {importing ? "A importar…" : `Importar ${importable}`}
         </button>
       )}
     </>

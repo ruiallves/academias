@@ -48,6 +48,9 @@ type ApiBootstrap = {
   academy: {
     id: string; slug: string; name: string; shortName: string; city: string | null; signalColor: string;
     logoUrl: string | null;
+    status: string;
+    trialEndsAt: string | null;
+    createdAt: string;
     /** O que o clube escreveu na página pública de adesão a sócio. */
     membershipHeadline: string | null;
     membershipIntro: string | null;
@@ -86,7 +89,7 @@ type ApiBootstrap = {
 };
 
 type ApiTeam = {
-  id: string; name: string; ageGroup: string; sportId: string; season: string;
+  id: string; name: string; maxAge: number; sportId: string; season: string;
   schedule: unknown; athleteCount: number;
   coaches: { id: string; name: string; title: string }[];
   /** O preço por omissão da equipa, em cêntimos. `null` sem `billing:read` ou por configurar. */
@@ -199,6 +202,7 @@ const EMPTY: State = {
   error: null,
   academy: {
     id: "", slug: "", name: "", shortName: "", signalColor: "#0f6b62", logoUrl: "", city: "",
+    status: "ACTIVE", trialEndsAt: null, createdAt: "",
     membershipHeadline: "", membershipIntro: "", membershipPoints: [],
     sports: [],
   },
@@ -306,7 +310,7 @@ function build(
     id: t.id,
     name: t.name,
     sportId: t.sportId,
-    ageGroup: t.ageGroup,
+    maxAge: t.maxAge,
     season: t.season,
     coachIds: t.coaches.map((c) => c.id),
     athleteIds: apiAthletes.filter((a) => a.teamId === t.id).map((a) => a.id),
@@ -428,6 +432,9 @@ function build(
       signalColor: boot.academy.signalColor,
       logoUrl: boot.academy.logoUrl ?? "",
       city: boot.academy.city ?? "",
+      status: boot.academy.status,
+      trialEndsAt: boot.academy.trialEndsAt,
+      createdAt: boot.academy.createdAt,
       membershipHeadline: boot.academy.membershipHeadline ?? "",
       membershipIntro: boot.academy.membershipIntro ?? "",
       membershipPoints: boot.academy.membershipPoints ?? [],

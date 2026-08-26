@@ -42,7 +42,8 @@ type ApiAthlete = {
 type ApiTeam = {
   id: string;
   name: string;
-  ageGroup: string;
+  /** A idade máxima da equipa. Substituiu o escalão em texto. */
+  maxAge: number;
   sportId: string;
   schedule: unknown;
   coaches: { id: string; name: string; title: string }[];

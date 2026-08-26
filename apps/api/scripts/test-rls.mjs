@@ -134,9 +134,9 @@ async function main() {
     VALUES ('se_a','acd_a','2026/27','2026-09-01','2027-06-30'),
            ('se_b','acd_b','2026/27','2026-09-01','2027-06-30');
     INSERT INTO "Sport" (id, "academyId", name) VALUES ('sp_a','acd_a','Futebol'), ('sp_b','acd_b','Futebol');
-    INSERT INTO "Team" (id,"academyId","sportId","seasonId",name,"ageGroup","updatedAt")
-    VALUES ('t_a','acd_a','sp_a','se_a','Sub-11','Sub-11',now()),
-           ('t_b','acd_b','sp_b','se_b','Sub-11','Sub-11',now());
+    INSERT INTO "Team" (id,"academyId","sportId","seasonId",name,"maxAge","updatedAt")
+    VALUES ('t_a','acd_a','sp_a','se_a','Sub-11',11, now()),
+           ('t_b','acd_b','sp_b','se_b','Sub-11',11, now());
     INSERT INTO "TeamMembership" (id,"teamId","athleteId") VALUES ('tm_a','t_a','ath_a'), ('tm_b','t_b','ath_b');
   `);
 

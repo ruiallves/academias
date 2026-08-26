@@ -40,6 +40,16 @@
    página gerada — e o produto por trás desta página é real.
    --------------------------------------------------------------------------- */
 
+/**
+ * `max-h-screen-sm:` — o ecrã baixo, disponível como variante.
+ *
+ * O mesmo limiar do bloco `@media (max-height: 860px)` lá em baixo, para as
+ * medidas que vivem no JSX poderem encolher com as que vivem aqui. Declarado
+ * uma vez: dois números iguais escritos em sítios diferentes acabam por
+ * divergir, e aí a página encolhe metade de si própria.
+ */
+@custom-variant max-h-screen-sm (@media (max-height: 860px));
+
 @theme {
   /* --- Tinta e papel ------------------------------------------------------ */
   /* O preto tem verde lá dentro; o papel é marfim quente. A mesma família da
@@ -190,6 +200,11 @@
 
   .band { padding-block: clamp(76px, 11vw, 150px); }
   .band-tight { padding-block: clamp(52px, 7vw, 96px); }
+
+  /* A abertura do herói. Aqui e não em utilitários porque tem de encolher com a
+     altura da janela, como tudo o resto — ver a nota do ecrã baixo, abaixo. */
+  .hero-top { padding-top: clamp(52px, 7vw, 96px); }
+  .hero-gap { margin-top: clamp(40px, 6vw, 80px); }
 
   /* O campo à noite. Chama-se `.dark` por herança — é pinheiro, não preto. */
   .dark {
@@ -373,4 +388,38 @@
 
   /* Numerais tabulares onde há números a comparar. */
   .tabular { font-variant-numeric: tabular-nums; }
+
+  /* =========================================================================
+     O ecrã baixo
+
+     Um portátil tem largura de secretária e metade da altura: 1280×720 e
+     1366×768 são as duas máquinas mais comuns a abrir isto, e ambas dão menos
+     de 700px de janela útil.
+
+     Todo o dimensionamento desta folha usava `vw` — `clamp(76px, 11vw, 150px)`,
+     `clamp(2.8rem, 6.8vw, 5.4rem)`. `vw` não sabe nada sobre altura, por isso um
+     portátil recebia exactamente a mesma escala de um monitor de 27": o herói
+     empurrava o produto para fora do ecrã, e na página de planos gastava-se
+     metade da janela antes de o preço aparecer. Quem tinha de fazer scroll para
+     ver um preço eram precisamente as pessoas em portátil, que são a maioria.
+
+     Daí este bloco. Não é um "modo compacto" à parte — é a mesma composição com
+     o ar proporcional à janela que existe. O limiar de 860px apanha os
+     portáteis (900 de ecrã ≈ 820 de janela) e deixa 1080p e 1440p em paz.
+     ========================================================================= */
+  @media (max-height: 860px) {
+    .band { padding-block: clamp(48px, 7vh, 88px); }
+    .band-tight { padding-block: clamp(36px, 5vh, 64px); }
+    .hero-top { padding-top: clamp(28px, 4vh, 56px); }
+    .hero-gap { margin-top: clamp(28px, 4vh, 56px); }
+
+    /* Os títulos deixam de crescer com a largura para lá do que a altura
+       aguenta. O herói continua a ser a maior coisa da página — só deixa de ser
+       maior do que o ecrã. */
+    .d1 { font-size: clamp(2.4rem, 5vw, 3.6rem); }
+    .d2 { font-size: clamp(1.8rem, 3.4vw, 2.5rem); }
+    .d3 { font-size: clamp(1.35rem, 2vw, 1.7rem); }
+
+    .lede { font-size: clamp(1rem, 1.2vw, 1.0625rem); }
+  }
 }

@@ -207,7 +207,7 @@ export const ROADMAP: RoadmapItem[] = [
     body: "Todo o sistema financeiro do clube com despesas, receitas, relatórios e exportação para contabilidade.",
   },
   {
-    when: "Novembro 2027",
+    when: "Novembro 2026",
     title: "Gestão de treinos",
     body: "Gestão da carga e treinos com exercícios, vídeos e planos de treino. O treinador planeia, o atleta executa, o clube acompanha.",
   },

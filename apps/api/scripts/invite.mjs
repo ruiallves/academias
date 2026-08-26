@@ -45,7 +45,7 @@ async function teams() {
   });
   await db.connect();
   const rows = await db.query(
-    `SELECT id, name, "ageGroup" FROM "Team" WHERE "academyId" = 'acd_lifeclub' ORDER BY name`,
+    `SELECT id, name, "maxAge" FROM "Team" WHERE "academyId" = 'acd_lifeclub' ORDER BY name`,
   );
   await db.end();
   return rows.rows;

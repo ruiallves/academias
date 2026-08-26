@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState, type FormEvent } from "react";
 import { Link } from "react-router-dom";
 import { academy, listTeams } from "@/lib/api";
+import { teamAgeLabel } from "@/lib/team-age";
 import { createInvite, type Invite } from "@/lib/invites";
 import { useDepartments, loadDepartments } from "@/lib/departments";
 import { loadRoles, useRoles, type AcademyRole } from "@/lib/roles";
@@ -309,10 +310,10 @@ export function InviteDialog({ session, onClose }: { session: Session; onClose: 
                           type="checkbox"
                           checked={teamIds.includes(t.id)}
                           onChange={() => toggleTeam(t.id)}
-                          className="size-3.5 accent-[var(--signal)]"
+                          className="size-3.5 accent-[var(--color-signal)]"
                         />
                         <span className="min-w-0 flex-1 truncate text-body text-ink">{t.name}</span>
-                        <span className="text-meta text-ink-4">{t.ageGroup}</span>
+                        <span className="text-meta text-ink-4">{teamAgeLabel(t.maxAge)}</span>
                       </label>
                     ))}
                   </div>

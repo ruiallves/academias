@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { NavLink, useNavigate } from "react-router-dom";
 import { Bell, Check, ChevronsUpDown, LogOut, PanelLeft, Search, Shield, Users } from "@/lib/icons";
+import { teamAgeLabel } from "@/lib/team-age";
 import { navFor, SETTINGS_ITEM, type NavItem } from "@/lib/nav";
 import { permissionsOf } from "@/lib/permissions";
 import { academy, listAthletes, listTeams, navCounts, teamById } from "@/lib/api";
@@ -10,6 +11,7 @@ import { cx, Monogram } from "./primitives";
 import { ClubMark } from "./ClubMark";
 import { NotificationsPanel } from "./NotificationsPanel";
 import { useUnreadCount } from "@/lib/notifications";
+import { TrialBadge } from "./TrialBadge";
 
 export function Sidebar({
   collapsed,
@@ -78,6 +80,12 @@ export function Sidebar({
       )}
 
       <UserCard collapsed={collapsed} />
+      <TrialBadge
+        status={academy.status}
+        trialEndsAt={academy.trialEndsAt}
+        createdAt={academy.createdAt}
+        collapsed={collapsed}
+      />
     </aside>
   );
 }
@@ -211,7 +219,7 @@ function SearchField() {
     const teams: SearchResult[] = listTeams(session)
       .filter((t) => t.name.toLowerCase().includes(q))
       .slice(0, 4)
-      .map((t) => ({ kind: "team", id: t.id, name: t.name, sub: t.ageGroup }));
+      .map((t) => ({ kind: "team", id: t.id, name: t.name, sub: teamAgeLabel(t.maxAge) }));
     return [...teams, ...athletes];
   }, [query, session]);
 

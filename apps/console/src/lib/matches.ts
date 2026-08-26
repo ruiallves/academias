@@ -49,7 +49,7 @@ export type MatchDetail = {
   id: string;
   teamId: string;
   teamName: string;
-  ageGroup: string;
+  maxAge: number;
   sportId: string;
   maxCallUps: number;
   startsAt: string;

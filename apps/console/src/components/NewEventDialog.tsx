@@ -442,7 +442,7 @@ export function NewEventDialog({
               type="checkbox"
               checked={repetir}
               onChange={(e) => setRepetir(e.target.checked)}
-              className="size-3.5 accent-[var(--signal)]"
+              className="size-3.5 accent-[var(--color-signal)]"
             />
             <span className="text-body text-ink">Repetir</span>
             <span className="text-meta text-ink-3">— marca a época toda de uma vez</span>

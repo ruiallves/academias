@@ -1,6 +1,7 @@
 import { apiPost } from "@/lib/http";
 import { academy, teams } from "@/lib/store";
 import { sportById } from "@/lib/api";
+import { guessMaxAge } from "@/lib/team-age";
 
 /**
  * Importação de atletas a partir de um ficheiro Excel.
@@ -44,7 +45,16 @@ export type ParsedRow = {
   line: number;
   name: string;
   birthdate: string;
-  teamId: string;
+  /** O que veio escrito na coluna "Equipa" — o que a pessoa reconhece. */
+  teamName: string;
+  /**
+   * A equipa, quando já existe.
+   *
+   * Ausente quando o ficheiro traz uma equipa que a academia ainda não tem: aí
+   * o id só existe depois de ela ser criada, e é o diálogo que o preenche antes
+   * de enviar (ver `createTeams`).
+   */
+  teamId?: string;
   taxId?: string;
   position?: string;
   squadNumber?: number;
@@ -61,6 +71,25 @@ export type ParseResult = {
   errors: RowError[];
   /** Colunas em falta no ficheiro — se houver, o ficheiro está errado à cabeça. */
   missingColumns: string[];
+  /**
+   * Equipas do ficheiro que a academia ainda não tem, pela ordem em que aparecem.
+   *
+   * **Não são um erro.** Um clube que está a arrancar traz o plantel todo numa
+   * folha, e as equipas dele vêm nessa mesma folha — obrigá-lo a criá-las uma a
+   * uma antes de poder importar era mandá-lo fazer à mão exactamente o trabalho
+   * que o import existe para poupar. Quem decide se se criam é quem está a
+   * importar, no passo de revisão.
+   */
+  newTeams: string[];
+};
+
+/** O que se vai criar para uma equipa que ainda não existe. */
+export type NewTeamPlan = {
+  /** O nome tal como está escrito no ficheiro. É a chave que liga às linhas. */
+  name: string;
+  sportId: string;
+  /** A idade máxima. Ver `lib/team-age.ts`. */
+  maxAge: number;
 };
 
 /**
@@ -80,8 +109,11 @@ export async function buildTemplate(): Promise<Blob> {
   sheet["!cols"] = COLUMNS.map((c) => ({ wch: Math.max(c.header.length, 16) }));
 
   const teamsSheet = XLSX.utils.aoa_to_sheet([
-    ["Escreve o nome da equipa exactamente como aqui:"],
+    ["As equipas que já existem — escreve o nome exactamente como aqui:"],
     ...teams.map((t) => [t.name]),
+    [""],
+    ["Uma equipa que ainda não exista pode ser escrita à mesma."],
+    ["Ao importar, perguntamos se a queres criar."],
   ]);
 
   const wb = XLSX.utils.book_new();
@@ -121,11 +153,12 @@ export async function parseFile(file: File): Promise<ParseResult> {
   // Colunas presentes? Compara os cabeçalhos do ficheiro com os obrigatórios.
   const present = rows.length ? Object.keys(rows[0]) : XLSX.utils.sheet_to_json<string[]>(sheet, { header: 1 })[0] ?? [];
   const missingColumns = COLUMNS.filter((c) => c.required && !present.includes(c.header)).map((c) => c.header);
-  if (missingColumns.length) return { valid: [], errors: [], missingColumns };
+  if (missingColumns.length) return { valid: [], errors: [], missingColumns, newTeams: [] };
 
   const teamByName = new Map(teams.map((t) => [t.name.trim().toLowerCase(), t]));
   const valid: ParsedRow[] = [];
   const errors: RowError[] = [];
+  const newTeams = new Map<string, string>(); // chave em minúsculas → nome como veio escrito
 
   rows.forEach((raw, i) => {
     const line = i + 2; // +1 base-0, +1 cabeçalho
@@ -140,10 +173,22 @@ export async function parseFile(file: File): Promise<ParseResult> {
     const birthdate = normalizeDate(get("Data de nascimento"));
     if (!birthdate) return void errors.push({ line, name, error: "Data de nascimento em falta ou mal escrita (usa AAAA-MM-DD)" });
 
-    const team = teamByName.get(get("Equipa").toLowerCase());
-    if (!team) return void errors.push({ line, name, error: `Equipa "${get("Equipa")}" não existe nesta academia` });
+    const teamName = get("Equipa");
+    if (!teamName) return void errors.push({ line, name, error: "Falta a equipa" });
 
-    const row: ParsedRow = { line, name, birthdate, teamId: team.id };
+    /*
+     * Uma equipa desconhecida deixou de ser um erro de linha.
+     *
+     * Era: "Equipa X não existe nesta academia" — verdade, e inútil. A pessoa
+     * está a montar o clube a partir da folha, sabe que a equipa não existe, e
+     * a única coisa que aquela mensagem lhe dizia era "vai criá-la à mão e
+     * volta". Agora o nome fica registado e a decisão — criar ou não — é
+     * apresentada no passo de revisão, que é onde ela tem contexto para a tomar.
+     */
+    const team = teamByName.get(teamName.toLowerCase());
+    if (!team) newTeams.set(teamName.toLowerCase(), teamName);
+
+    const row: ParsedRow = { line, name, birthdate, teamName, ...(team ? { teamId: team.id } : {}) };
 
     const taxId = get("NIF").replace(/[\s.]/g, "");
     // Obrigatório, como na inscrição à mão. Uma folha importada sem NIF dava um
@@ -155,11 +200,14 @@ export async function parseFile(file: File): Promise<ParseResult> {
 
     const position = get("Posição");
     if (position) {
-      const positions = sportById(team.sportId)?.positions ?? [];
+      // Só se valida contra a modalidade quando a equipa já existe — de uma
+      // equipa por criar ainda não se sabe a modalidade, e é o servidor que dá
+      // a última palavra de qualquer maneira.
+      const positions = team ? (sportById(team.sportId)?.positions ?? []) : [];
       // Sem posições na modalidade (natação), aceita-se o que vier; com posições,
       // exige-se uma delas — senão a ficha do atleta fica com uma posição que a
       // modalidade não conhece.
-      if (positions.length && !positions.some((p) => p.toLowerCase() === position.toLowerCase())) {
+      if (team && positions.length && !positions.some((p) => p.toLowerCase() === position.toLowerCase())) {
         errors.push({ line, name, error: `Posição "${position}" não existe em ${sportById(team.sportId)?.name}` });
         return;
       }
@@ -197,7 +245,80 @@ export async function parseFile(file: File): Promise<ParseResult> {
     valid.push(row);
   });
 
-  return { valid, errors, missingColumns: [] };
+  return { valid, errors, missingColumns: [], newTeams: [...newTeams.values()] };
+}
+
+/* -------------------------------------------------------------------------- */
+/* Equipas que ainda não existem                                               */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * O que uma equipa nova vai ser, adivinhado a partir do nome.
+ *
+ * O modelo dá o exemplo "Sub-11 Futebol", que é a forma como a consola compõe os
+ * nomes — idade e modalidade. Lê-se cada um de dentro do nome escrito, e o que
+ * não se encontrar fica num valor de partida para quem importa corrigir no ecrã.
+ *
+ * Adivinhar não é decidir: a proposta aparece à vista, editável, e nada é criado
+ * sem alguém carregar em Importar.
+ */
+export function planTeam(name: string): NewTeamPlan {
+  const lower = name.toLowerCase();
+
+  const sport =
+    academy.sports.find((s) => lower.includes(s.name.toLowerCase())) ?? academy.sports[0];
+
+  return {
+    name,
+    sportId: sport?.id ?? "",
+    // Sem número no nome, propõe-se o mais comum na formação. Quem importa vê-o
+    // e muda-o — o que não se pode é deixar vazio, que o servidor recusa.
+    maxAge: guessMaxAge(name) ?? 11,
+  };
+}
+
+/**
+ * Cria as equipas escolhidas. Devolve o nome (em minúsculas) para o id, e as que
+ * falharam.
+ *
+ * ## Porque é que não deixa rebentar
+ *
+ * Uma a uma e sem propagar o erro. Se a quarta falhar, as três primeiras já
+ * estão criadas na base de dados — deixar a excepção subir perdia essa
+ * informação, e a pessoa voltava a carregar o mesmo ficheiro e criava as três
+ * outra vez. `Team` não tem restrição de nome único, por isso ninguém a
+ * impediria: ficaria com duas "Sub-11 Futebol" e sem perceber de onde vieram.
+ *
+ * Assim, o que correu bem fica registado no mapa, o que correu mal fica em
+ * `failed`, e o diálogo conta os atletas dessas equipas como recusados — a
+ * importação continua para todos os outros.
+ *
+ * O horário fica vazio e marca-se depois, na ficha da equipa: um ficheiro de
+ * atletas não sabe a que horas a equipa treina.
+ */
+export async function createTeams(
+  plans: NewTeamPlan[],
+  season: string,
+): Promise<{ ids: Map<string, string>; failed: { name: string; error: string }[] }> {
+  const ids = new Map<string, string>();
+  const failed: { name: string; error: string }[] = [];
+
+  for (const plan of plans) {
+    try {
+      const team = await apiPost<{ id: string }>("/api/teams", {
+        name: plan.name,
+        sportId: plan.sportId,
+        maxAge: plan.maxAge,
+        season,
+        schedule: [],
+      });
+      ids.set(plan.name.trim().toLowerCase(), team.id);
+    } catch (e) {
+      failed.push({ name: plan.name, error: e instanceof Error ? e.message : "não foi possível criar" });
+    }
+  }
+
+  return { ids, failed };
 }
 
 /**
@@ -231,9 +352,17 @@ function normalizeDate(value: string): string {
   return "";
 }
 
-/** Envia as linhas válidas para o servidor. O servidor revalida tudo. */
+/**
+ * Envia as linhas para o servidor. O servidor revalida tudo.
+ *
+ * `teamName` não segue: serviu para ligar a linha à equipa e o servidor só
+ * conhece ids. Uma linha sem `teamId` a esta altura é uma linha cuja equipa
+ * ficou por criar, e não é enviada — o diálogo já a contou como recusada.
+ */
 export function importAthletes(rows: ParsedRow[]) {
   return apiPost<{ created: number; errors: RowError[] }>("/api/athletes/import", {
-    rows: rows.map(({ line: _line, ...r }) => r),
+    rows: rows
+      .filter((r) => r.teamId)
+      .map(({ line: _line, teamName: _teamName, ...r }) => r),
   });
 }

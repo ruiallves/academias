@@ -54,9 +54,19 @@ export class CreateTeamDto {
   @Length(1, 40)
   sportId!: string;
 
-  @IsString()
-  @Length(1, 60)
-  ageGroup!: string;
+  /**
+   * A idade máxima da equipa: 11 num "Sub-11".
+   *
+   * Substituiu o escalão em texto. O tecto de 99 não é um número redondo à toa —
+   * é o que uma equipa sem limite de idade (seniores) usa, e mantém a coluna
+   * como um inteiro sempre presente em vez de um nulo a tratar em cada consulta.
+   * O piso de 4 trava o dedo escorregado que transformaria "Sub-2015" — alguém a
+   * escrever o ano de nascimento — num limite de idade real.
+   */
+  @IsInt()
+  @Min(4)
+  @Max(99)
+  maxAge!: number;
 
   @IsString()
   @Length(4, 20)
@@ -86,9 +96,11 @@ export class ImportTeamRowDto {
   @Length(1, 60)
   sport!: string;
 
-  @IsString()
-  @Length(1, 40)
-  ageGroup!: string;
+  /** A idade máxima. Ver `CreateTeamDto.maxAge`. */
+  @IsInt()
+  @Min(4)
+  @Max(99)
+  maxAge!: number;
 
   @IsOptional()
   @IsString()

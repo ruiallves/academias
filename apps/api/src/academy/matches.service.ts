@@ -151,7 +151,7 @@ export class MatchesService {
           opponent: true, isHome: true, status: true, ourScore: true, theirScore: true,
           callUpsClosedAt: true, statsEnteredAt: true,
           sourceProvider: true, sourceUrl: true, importedAt: true,
-          team: { select: { name: true, ageGroup: true, sportId: true, maxCallUps: true } },
+          team: { select: { name: true, maxAge: true, sportId: true, maxCallUps: true } },
           coach: { select: { id: true, user: { select: { name: true } } } },
           callUps: {
             orderBy: { athlete: { name: "asc" } },
@@ -198,7 +198,7 @@ export class MatchesService {
         id: m.id,
         teamId: m.teamId,
         teamName: m.team.name,
-        ageGroup: m.team.ageGroup,
+        maxAge: m.team.maxAge,
         sportId: m.team.sportId,
         maxCallUps: m.team.maxCallUps,
         startsAt: m.startsAt,
@@ -558,7 +558,7 @@ export class MatchesService {
       const scope = teamScopeFilter(ctx);
       const match = await db.match.findFirst({
         where: { id: matchId, ...(scope ? { teamId: scope } : {}) },
-        select: { id: true, teamId: true, startsAt: true, callUpsClosedAt: true, team: { select: { ageGroup: true, sportId: true } } },
+        select: { id: true, teamId: true, startsAt: true, callUpsClosedAt: true, team: { select: { maxAge: true, sportId: true } } },
       });
       if (!match) throw new NotFoundException("Jogo não encontrado ou fora do teu âmbito");
       if (match.startsAt.getTime() > Date.now()) {
@@ -568,27 +568,23 @@ export class MatchesService {
       if (ids.length > 60) throw new BadRequestException("Plantel fora do razoável");
 
       // Mesma elegibilidade da convocatória normal: plantel da equipa, mais
-      // convidados de escalões iguais ou inferiores. Ver `saveCallUps`.
-      const matchRank = ageGroupRank(match.team.ageGroup);
-      const guestTeamIds =
-        matchRank === null
-          ? []
-          : (
-              await db.team.findMany({
-                where: { sportId: match.team.sportId, id: { not: match.teamId } },
-                select: { id: true, ageGroup: true },
-              })
-            )
-              .filter((t) => {
-                const rank = ageGroupRank(t.ageGroup);
-                return rank !== null && rank <= matchRank;
-              })
-              .map((t) => t.id);
+      // convidados de outras equipas com idade para esta. Ver `saveCallUps`.
+      const otherTeamIds = (
+        await db.team.findMany({
+          where: { sportId: match.team.sportId, id: { not: match.teamId } },
+          select: { id: true },
+        })
+      ).map((t) => t.id);
+
+      const floor = birthdateFloor(match.team.maxAge, match.startsAt);
 
       const roster = await db.athlete.findMany({
         where: {
           id: { in: ids },
-          teams: { some: { teamId: { in: [match.teamId, ...guestTeamIds] } } },
+          OR: [
+            { teams: { some: { teamId: match.teamId } } },
+            { teams: { some: { teamId: { in: otherTeamIds } } }, birthdate: { gte: floor } },
+          ],
         },
         select: { id: true, teams: { select: { teamId: true } } },
       });
@@ -630,8 +626,18 @@ export class MatchesService {
   }
 
   /**
-   * Quem pode entrar no plantel retroactivo: a equipa, mais os convidados
-   * elegíveis. Só para jogos já começados — o `guestPool` normal serve o futuro.
+   * Quem pode entrar no plantel retroactivo. Só para jogos já começados — o
+   * `guestPool` normal serve o futuro.
+   *
+   * **Devolve só o plantel da própria equipa.** O comentário aqui dizia "mais os
+   * convidados elegíveis" e a consulta nunca os trouxe: lia o escalão da equipa
+   * e não fazia nada com ele. `saveRetroSquad` aceita convidados, por isso os
+   * dois lados discordam — quem regista um jogo passado não vê no selector o
+   * miúdo que subiu naquele sábado, embora o servidor o aceitasse.
+   *
+   * Fica como está de propósito: alinhar os dois é uma decisão de produto sobre
+   * um ecrã de registo retroactivo, não um efeito secundário de tirar o escalão
+   * da equipa. O que se corrigiu foi o comentário, que prometia o que não havia.
    */
   async retroPool(ctx: RequestContext, matchId: string) {
     this.assertCanRecord(ctx);
@@ -640,7 +646,7 @@ export class MatchesService {
       const scope = teamScopeFilter(ctx);
       const match = await db.match.findFirst({
         where: { id: matchId, ...(scope ? { teamId: scope } : {}) },
-        select: { id: true, teamId: true, startsAt: true, team: { select: { ageGroup: true, sportId: true } } },
+        select: { id: true, teamId: true, startsAt: true },
       });
       if (!match) throw new NotFoundException("Jogo não encontrado ou fora do teu âmbito");
       if (match.startsAt.getTime() > Date.now()) {
@@ -692,28 +698,39 @@ export class MatchesService {
   }
 
   /**
-   * Quem se pode emprestar de outro escalão.
+   * Quem se pode emprestar de outra equipa.
    *
    * ## A regra do desporto, não só do produto
    *
    * Joga-se para cima, nunca para baixo: um Sub-13 pode alinhar um miúdo de 11
-   * anos, o contrário é irregular em qualquer federação. Por isso um atleta só é
-   * elegível como convidado se a **equipa dele** tiver um número de escalão igual
-   * ou inferior ao da equipa do jogo — nunca superior.
+   * anos, o contrário é irregular em qualquer federação.
    *
-   * O número vem do texto do escalão (`"Sub-13"` → 13). Quando não é possível
-   * extrair um número — natação com `"10–14 anos"`, ou uma academia que chama os
-   * escalões de outra forma — a resposta é **nenhum convidado**, e não "todos
-   * são elegíveis". Adivinhar a direção errada punha um atleta a jogar contra a
-   * própria idade; a ausência de sugestões só obriga a convocar à mão, que é o
-   * que já se fazia antes desta funcionalidade existir.
+   * ## O que mudou, e porque é que estava errado
+   *
+   * A regra comparava **equipas**: extraía um número do texto do escalão
+   * (`"Sub-13"` → 13) e aceitava atletas de equipas com número igual ou inferior.
+   * Duas coisas falhavam nisso.
+   *
+   * A primeira é que a pergunta era sobre a equipa e devia ser sobre a pessoa.
+   * Um miúdo de 12 anos inscrito nos Sub-11 — coisa que acontece — passava a
+   * elegível para os Sub-13 por causa da equipa onde está, não da idade que tem.
+   * Era exactamente o atleta que a regra existe para travar.
+   *
+   * A segunda é que dependia de texto. Uma academia que escrevesse "Iniciados A"
+   * ficava sem número, e a resposta segura era **nenhum convidado** — a
+   * funcionalidade desaparecia em silêncio para esse clube.
+   *
+   * Agora a equipa tem `maxAge`, um inteiro, e a elegibilidade é a comparação
+   * directa: **a idade do atleta cabe no tecto desta equipa?**. Não há texto a
+   * interpretar, não há clube sem resposta, e um atleta com idade a mais fica de
+   * fora mesmo que a equipa dele seja de escalão inferior.
    *
    * ## O que se expõe de uma equipa que não é a tua
    *
    * Nome, número, posição e se está disponível — nada mais. Nunca o diagnóstico:
    * um treinador não tem `clinical:read` sobre uma equipa que não é sua, e este
    * atalho existe para logística de convocatória, não para abrir o boletim de
-   * outro escalão. É a mesma disciplina das funções `SECURITY DEFINER` da
+   * outra equipa. É a mesma disciplina das funções `SECURITY DEFINER` da
    * plataforma, aplicada aqui ao nível do serviço: atravessa o âmbito de forma
    * estreita e deliberada, e só para isto.
    */
@@ -725,28 +742,27 @@ export class MatchesService {
     // total — para o que devia ser uma consulta só.
     return this.prisma.runAs(ctx.academyId, async (db) => {
       const match = await this.loadMatch(db, ctx, matchId);
-      const matchRank = ageGroupRank(match.ageGroup);
-      if (matchRank === null) return [];
 
-      const guestTeams = await db.team.findMany({
+      const otherTeams = await db.team.findMany({
         where: { sportId: match.sportId, id: { not: match.teamId } },
-        select: { id: true, name: true, ageGroup: true },
+        select: { id: true, name: true },
       });
-      const eligibleTeamIds = guestTeams
-        .filter((t) => {
-          const rank = ageGroupRank(t.ageGroup);
-          return rank !== null && rank <= matchRank!;
-        })
-        .map((t) => t.id);
-      if (eligibleTeamIds.length === 0) return [];
+      if (otherTeams.length === 0) return [];
 
-      const teamName = new Map(guestTeams.map((t) => [t.id, t.name]));
+      const teamName = new Map(otherTeams.map((t) => [t.id, t.name]));
+      const otherIds = otherTeams.map((t) => t.id);
 
       const athletes = await db.athlete.findMany({
-        where: { status: { not: "LEFT" }, teams: { some: { teamId: { in: eligibleTeamIds } } } },
+        where: {
+          status: { not: "LEFT" },
+          teams: { some: { teamId: { in: otherIds } } },
+          // O filtro de idade é feito na base: quem nasceu antes desta data já
+          // é velho de mais para esta equipa. Ver `birthdateFloor`.
+          birthdate: { gte: birthdateFloor(match.maxAge, match.startsAt) },
+        },
         select: {
-          id: true, name: true, status: true, squadNumber: true,
-          teams: { where: { teamId: { in: eligibleTeamIds } }, select: { teamId: true, position: true }, take: 1 },
+          id: true, name: true, status: true, squadNumber: true, birthdate: true,
+          teams: { where: { teamId: { in: otherIds } }, select: { teamId: true, position: true }, take: 1 },
           clinical: { where: { clearedOn: null, impact: { not: "NONE" } }, select: { impact: true } },
         },
       });
@@ -782,30 +798,38 @@ export class MatchesService {
         throw new BadRequestException(`Esta equipa convoca no máximo ${match.maxCallUps} atletas`);
       }
 
-      // Do plantel da própria equipa, ou de um escalão inferior elegível para
-      // subir — nunca de um superior. A elegibilidade recalcula-se aqui, no
-      // servidor, e não se confia na que o cliente mandou: um id de fora do
-      // plantel e de fora do conjunto elegível é sempre recusado.
-      const matchRank = ageGroupRank(match.ageGroup);
-      const guestTeamIds =
-        matchRank === null
-          ? []
-          : (
-              await db.team.findMany({
-                where: { sportId: match.sportId, id: { not: match.teamId } },
-                select: { id: true, ageGroup: true },
-              })
-            )
-              .filter((t) => {
-                const rank = ageGroupRank(t.ageGroup);
-                return rank !== null && rank <= matchRank;
-              })
-              .map((t) => t.id);
+      /*
+       * Do plantel da própria equipa, ou de outra equipa da modalidade desde que
+       * o atleta tenha idade para esta — nunca acima do tecto.
+       *
+       * A elegibilidade recalcula-se aqui, no servidor, e não se confia na que o
+       * cliente mandou: um id de fora do plantel e de fora do conjunto elegível é
+       * sempre recusado.
+       *
+       * Repare-se que o filtro de idade **não** se aplica ao plantel da própria
+       * equipa. Um atleta com idade a mais inscrito na equipa é um problema da
+       * inscrição, e recusá-lo aqui impedia o treinador de convocar alguém que
+       * treina com ele todas as semanas, sem nada no ecrã que explicasse porquê.
+       */
+      const otherTeamIds = (
+        await db.team.findMany({
+          where: { sportId: match.sportId, id: { not: match.teamId } },
+          select: { id: true },
+        })
+      ).map((t) => t.id);
+
+      const floor = birthdateFloor(match.maxAge, match.startsAt);
 
       const roster = await db.athlete.findMany({
         where: {
           id: { in: ids },
-          teams: { some: { teamId: { in: [match.teamId, ...guestTeamIds] } } },
+          OR: [
+            { teams: { some: { teamId: match.teamId } } },
+            {
+              teams: { some: { teamId: { in: otherTeamIds } } },
+              birthdate: { gte: floor },
+            },
+          ],
         },
         select: {
           id: true, name: true, status: true,
@@ -814,7 +838,9 @@ export class MatchesService {
         },
       });
       if (roster.length !== ids.length) {
-        throw new BadRequestException("Atleta fora do plantel desta equipa e não elegível como convidado de outro escalão");
+        throw new BadRequestException(
+          "Atleta fora do plantel desta equipa e sem idade para ser convocado como convidado",
+        );
       }
 
       const parado = roster.find((a) => a.clinical.some((c) => c.impact === "OUT"));
@@ -976,7 +1002,7 @@ export class MatchesService {
       select: {
         id: true, teamId: true, startsAt: true, opponent: true, isHome: true, venue: true,
         status: true, callUpsClosedAt: true,
-        team: { select: { maxCallUps: true, ageGroup: true, sportId: true } },
+        team: { select: { maxCallUps: true, maxAge: true, sportId: true } },
       },
     });
 
@@ -986,24 +1012,36 @@ export class MatchesService {
       throw new BadRequestException("A convocatória já foi submetida. Reabre-a para alterar.");
     }
 
-    return { ...match, maxCallUps: match.team.maxCallUps, ageGroup: match.team.ageGroup, sportId: match.team.sportId };
+    return { ...match, maxCallUps: match.team.maxCallUps, maxAge: match.team.maxAge, sportId: match.team.sportId };
   }
 }
 
-/**
- * Extrai o número de um escalão do tipo "Sub-13", "sub13", "Sub 9".
- *
- * `null` quando o texto não segue este padrão — natação com "10–14 anos", ou uma
- * academia que nomeia os escalões de outra forma. É a resposta segura: sem número
- * não há como saber a direção "sobe/desce", e a funcionalidade fica em silêncio em
- * vez de arriscar a direcção errada.
- */
 /** Segura um número dentro do razoável. Um 999 na ficha é um dedo escorregado. */
 function clamp(n: number, lo: number, hi: number): number {
   return Math.max(lo, Math.min(hi, Math.round(Number(n) || 0)));
 }
 
-function ageGroupRank(label: string): number | null {
-  const match = /sub[\s-]?(\d+)/i.exec(label);
-  return match ? Number(match[1]) : null;
+/**
+ * A data de nascimento mais antiga que ainda cabe numa equipa de `maxAge`.
+ *
+ * ## Porque é que a idade é a do ano, e não a de hoje
+ *
+ * Porque é assim que o desporto a conta. Um escalão vai por **ano de
+ * nascimento**: quem faz 11 anos durante a época joga nos Sub-11 do princípio ao
+ * fim, tenha feito anos em Janeiro ou em Dezembro. Contar a idade exacta à data
+ * do jogo tornava um miúdo inelegível a meio da época, no dia do aniversário —
+ * um resultado que nenhum treinador reconheceria como certo e que ninguém
+ * conseguiria explicar a um pai.
+ *
+ * Por isso: `idade = ano da época − ano de nascimento`, e a época de um jogo é a
+ * que começou em Agosto (a mesma convenção de `resolveSeason` e de
+ * `lib/seasons.ts`, na consola).
+ *
+ * Devolver uma **data** em vez de um número é o que deixa o filtro correr na
+ * base de dados. Comparar idades obrigaria a trazer todos os atletas da academia
+ * para memória só para os deitar fora a seguir.
+ */
+export function birthdateFloor(maxAge: number, matchDate: Date): Date {
+  const seasonYear = matchDate.getUTCFullYear() - (matchDate.getUTCMonth() < 7 ? 1 : 0);
+  return new Date(Date.UTC(seasonYear - maxAge, 0, 1));
 }

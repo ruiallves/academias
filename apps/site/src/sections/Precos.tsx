@@ -74,10 +74,17 @@ export function Precos({ compact = false }: { compact?: boolean }) {
               const perMonth = annual ? annualTotal(p.monthly) / 12 : p.monthly;
 
               return (
+                /*
+                  As medidas encolhem em ecrã baixo — ver a nota do ecrã baixo em
+                  `brand.css`. Num portátil de 720px de altura, o preço aparecia
+                  abaixo da dobra: 40px de folga em cada lado do cartão, 36px
+                  entre o nome e o preço e 10px por linha da lista somavam mais
+                  do que a janela inteira tinha para dar.
+                */
                 <article
                   key={p.id}
                   className={cx(
-                    "flex flex-col p-7 sm:p-10",
+                    "flex flex-col p-7 max-h-screen-sm:p-6 sm:p-10",
                     p.featured ? "dark" : "bg-chalk max-lg:border-b lg:border-r border-line-2",
                   )}
                 >
@@ -89,24 +96,29 @@ export function Precos({ compact = false }: { compact?: boolean }) {
                     {p.featured && <span className="tag tag-live shrink-0">Recomendado</span>}
                   </div>
 
-                  <div className="mt-9 flex items-end gap-2.5">
-                    <span className="display text-[3rem] leading-none tabular">{euro(perMonth)}</span>
+                  <div className="mt-9 flex items-end gap-2.5 max-h-screen-sm:mt-6">
+                    <span className="display text-[3rem] leading-none tabular max-h-screen-sm:text-[2.4rem]">
+                      {euro(perMonth)}
+                    </span>
                     <span className="mb-1 text-[14px] text-ink-3">/ mês</span>
                   </div>
                   <p className="mt-2.5 text-[13.5px] text-ink-3 tabular">
                     {annual ? `${euro(annualTotal(p.monthly))} por ano, facturado à cabeça` : "Facturado mensalmente"}
                   </p>
 
-                  <ul className="mt-9 border-t border-line">
+                  <ul className="mt-9 border-t border-line max-h-screen-sm:mt-6">
                     {p.includes.map((f) => (
-                      <li key={f} className="border-b border-line py-2.5 text-[14.5px] leading-relaxed">
+                      <li
+                        key={f}
+                        className="border-b border-line py-2.5 text-[14.5px] leading-relaxed max-h-screen-sm:py-2 max-h-screen-sm:text-[13.5px]"
+                      >
                         {f}
                       </li>
                     ))}
                   </ul>
 
                   {p.excludes && (
-                    <div className="mt-7">
+                    <div className="mt-7 max-h-screen-sm:mt-5">
                       <p className="field-label">Não inclui</p>
                       <ul className="mt-3 space-y-1.5">
                         {p.excludes.map((f) => (
@@ -119,7 +131,7 @@ export function Precos({ compact = false }: { compact?: boolean }) {
                     </div>
                   )}
 
-                  <div className="mt-auto pt-10">
+                  <div className="mt-auto pt-10 max-h-screen-sm:pt-6">
                     <Link to="/contactos" className={cx("btn w-full", p.featured ? "btn-primary" : "btn-outline")}>
                       Experimentar 30 dias
                       <span aria-hidden className="arr">→</span>

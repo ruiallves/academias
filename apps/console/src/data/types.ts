@@ -43,6 +43,18 @@ export type Academy = {
    */
   logoUrl: string;
   city: string;
+  /**
+   * Em que fase o clube está com o produto.
+   *
+   * `TRIAL` é a única que a consola lê para alguma coisa — o resto (SETUP,
+   * ACTIVE, CANCELLED…) já decide o que se pode fazer no servidor; aqui só
+   * interessa saber se há um período experimental a correr, para o mostrar.
+   */
+  status: string;
+  /** Quando o período experimental acaba. `null` fora de período experimental. */
+  trialEndsAt: string | null;
+  /** Quando a academia nasceu — o proxy do início do período experimental. */
+  createdAt: string;
   sports: Sport[];
   /**
    * A página pública de adesão a sócio, escrita pelo clube.
@@ -59,7 +71,15 @@ export type Team = {
   id: string;
   name: string;
   sportId: string;
-  ageGroup: string;
+  /**
+   * A idade máxima da equipa: 11 num "Sub-11". 99 é "sem limite".
+   *
+   * Substituiu `ageGroup`, o escalão em texto. Eram a mesma coisa dita duas
+   * vezes — toda a equipa se chamava "Sub-11 Futebol" e tinha "Sub-11" ao lado —
+   * e o texto era uma má base para decidir convocatórias. Ver `teamAgeLabel`
+   * para o que se mostra, e `birthdateFloor` no servidor para o que decide.
+   */
+  maxAge: number;
   season: string;
   coachIds: string[];
   athleteIds: string[];

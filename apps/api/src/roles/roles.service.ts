@@ -117,7 +117,20 @@ export function initialRoles(
     name: SYSTEM_ROLES[0].name,
     description: SYSTEM_ROLES[0].description,
     baseRole: "OWNER" as Role,
-    department: null,
+    /*
+     * `departmentId` e não `department`.
+     *
+     * Era `department: null` — a coluna do enum antigo, que a migração
+     * `20260826230000_departamentos` substituiu e nunca largou. Ficou aqui um
+     * mês sem dar erro por duas razões: a coluna ainda existia na base, e estas
+     * linhas entram por `createMany({ data: rows as never })` no
+     * `platform.service`, que desliga a verificação de tipos.
+     *
+     * Assim que a coluna caísse, **criar uma academia nova** rebentava com um
+     * "Unknown argument" — no meio da criação, com a academia já gravada e sem
+     * cargos nem convite.
+     */
+    departmentId: null,
     permissions: ROLE_PERMISSIONS.OWNER,
     navKeys: [] as string[],
     isSystem: true,

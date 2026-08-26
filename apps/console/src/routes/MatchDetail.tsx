@@ -183,7 +183,7 @@ function Scoreboard({
   return (
     <Panel className="overflow-hidden">
       {/* A faixa do clube. 3px — identidade, não decoração. */}
-      <div aria-hidden className="h-[3px] w-full" style={{ background: "var(--signal)" }} />
+      <div aria-hidden className="h-[3px] w-full" style={{ background: "var(--color-signal)" }} />
 
       <div className="px-5 pt-5 pb-4 sm:px-8">
         {/* A linha de contexto por cima do marcador. */}
@@ -471,7 +471,7 @@ function ScoreField({
         placeholder="0"
         disabled={disabled}
         onChange={(e) => onChange(e.target.value.replace(/\D/g, ""))}
-        className="h-14 w-20 rounded-[10px] border border-line bg-surface text-center text-[28px] font-semibold tabular text-ink outline-none transition-colors placeholder:text-ink-4/50 focus:border-line-strong focus:ring-2 focus:ring-[color-mix(in_oklab,var(--signal)_35%,transparent)]"
+        className="h-14 w-20 rounded-[10px] border border-line bg-surface text-center text-[28px] font-semibold tabular text-ink outline-none transition-colors placeholder:text-ink-4/50 focus:border-line-strong focus:ring-2 focus:ring-[color-mix(in_oklab,var(--color-signal)_35%,transparent)]"
       />
     </label>
   );
@@ -1287,7 +1287,7 @@ function Monograma({ nome }: { nome: string }) {
     <span
       aria-hidden
       className="flex size-8 shrink-0 items-center justify-center rounded-full text-[11px] font-semibold text-white"
-      style={{ background: "var(--signal)" }}
+      style={{ background: "var(--color-signal)" }}
     >
       {iniciais || "?"}
     </span>

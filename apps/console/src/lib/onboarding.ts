@@ -114,7 +114,6 @@ export type Facts = {
   sports: number;
   venues: number;
   dressingRooms: number;
-  ageGroups: number;
   staffTitles: number;
   teams: number;
   athletes: number;
@@ -145,7 +144,7 @@ export function deriveSteps(session: Session, facts: Facts): Step[] {
     {
       id: "sports",
       label: "Escolher as modalidades",
-      hint: "Futebol, futsal, natação… é o que organiza escalões, locais e equipas.",
+      hint: "Futebol, futsal, natação… é o que organiza equipas, locais e material.",
       done: facts.sports > 0,
       to: "/definicoes",
       requires: "settings:write",
@@ -166,14 +165,13 @@ export function deriveSteps(session: Session, facts: Facts): Step[] {
       to: "/definicoes?catalogo=dressingRooms",
       requires: "settings:write",
     },
-    {
-      id: "ageGroups",
-      label: "Definir os escalões",
-      hint: "Sub-15, Seniores… é a lista que aparece sempre que se cria uma equipa.",
-      done: facts.ageGroups > 0,
-      to: "/definicoes?catalogo=ageGroups",
-      requires: "settings:write",
-    },
+    /*
+     * "Definir os escalões" saiu daqui.
+     *
+     * Era um passo para preencher uma lista que só servia para criar equipas — e
+     * a equipa já diz a sua idade. Quem monta um clube passa agora directamente
+     * de balneários para cargos, e cria "Sub-11" uma vez, ao criar a equipa.
+     */
     {
       id: "staffTitles",
       label: "Criar os cargos",
@@ -249,7 +247,6 @@ export function useOnboarding(session: Session): Onboarding {
   const store = useStore();
   const venues = useCatalog("venues");
   const dressingRooms = useCatalog("dressingRooms");
-  const ageGroups = useCatalog("ageGroups");
   const cargos = useRoles();
   const invites = usePendingInvites();
   const closed = useDismissed();
@@ -282,7 +279,6 @@ export function useOnboarding(session: Session): Onboarding {
     sports: store.academy.sports.length,
     venues: venues.length,
     dressingRooms: dressingRooms.length,
-    ageGroups: ageGroups.length,
     staffTitles: cargos.roles.length,
     teams: teams.length,
     athletes: athletes.length,

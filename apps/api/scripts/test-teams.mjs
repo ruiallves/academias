@@ -55,31 +55,31 @@ const slot = [{ weekday: 2, start: "18:00", end: "19:30", venue: "Campo 1" }];
 
 console.log("=== Criar uma equipa ===");
 const created = await call(director, "POST", "/api/teams", {
-  name: "ZZ Equipa Um", sportId: "sp_fut", ageGroup: "Sub-11", season: "2026/27", schedule: slot,
+  name: "ZZ Equipa Um", sportId: "sp_fut", maxAge: 11, season: "2026/27", schedule: slot,
 });
 check("a direção cria uma equipa", created.status === 201 || created.status === 200, JSON.stringify(created.body).slice(0, 140));
 check("com o nome certo", created.body?.name === "ZZ Equipa Um");
 check("e a época reutilizada pelo rótulo", created.body?.season === "2026/27");
 
 console.log("\n=== Permissão ===");
-const byCoach = await call(coach, "POST", "/api/teams", { name: "ZZ Equipa Coach", sportId: "sp_fut", ageGroup: "Sub-11", season: "2026/27", schedule: slot });
+const byCoach = await call(coach, "POST", "/api/teams", { name: "ZZ Equipa Coach", sportId: "sp_fut", maxAge: 11, season: "2026/27", schedule: slot });
 check("um treinador não cria equipas (403)", byCoach.status === 403, `${byCoach.status}`);
-const byParent = await call(parent, "POST", "/api/teams", { name: "ZZ Equipa Pai", sportId: "sp_fut", ageGroup: "Sub-11", season: "2026/27", schedule: slot });
+const byParent = await call(parent, "POST", "/api/teams", { name: "ZZ Equipa Pai", sportId: "sp_fut", maxAge: 11, season: "2026/27", schedule: slot });
 check("um encarregado não cria equipas (403)", byParent.status === 403, `${byParent.status}`);
 
 console.log("\n=== Regras ===");
-const badSport = await call(director, "POST", "/api/teams", { name: "ZZ Equipa Sp", sportId: "sp_nao_existe", ageGroup: "Sub-11", season: "2026/27", schedule: slot });
+const badSport = await call(director, "POST", "/api/teams", { name: "ZZ Equipa Sp", sportId: "sp_nao_existe", maxAge: 11, season: "2026/27", schedule: slot });
 check("modalidade desconhecida recusada (400)", badSport.status === 400, `${badSport.status}`);
-const badCoach = await call(director, "POST", "/api/teams", { name: "ZZ Equipa Tr", sportId: "sp_fut", ageGroup: "Sub-11", season: "2026/27", coachId: "mem_nao_existe", schedule: slot });
+const badCoach = await call(director, "POST", "/api/teams", { name: "ZZ Equipa Tr", sportId: "sp_fut", maxAge: 11, season: "2026/27", coachId: "mem_nao_existe", schedule: slot });
 check("treinador desconhecido recusado (400)", badCoach.status === 400, `${badCoach.status}`);
 
 console.log("\n=== Treinador principal ===");
-const withCoach = await call(director, "POST", "/api/teams", { name: "ZZ Equipa Com Treinador", sportId: "sp_fut", ageGroup: "Sub-13", season: "2026/27", coachId: "mem_coach", schedule: slot });
+const withCoach = await call(director, "POST", "/api/teams", { name: "ZZ Equipa Com Treinador", sportId: "sp_fut", maxAge: 13, season: "2026/27", coachId: "mem_coach", schedule: slot });
 check("cria com treinador principal (201)", withCoach.status === 201 || withCoach.status === 200, `${withCoach.status}`);
 check("o treinador aparece nos coaches", withCoach.body?.coaches?.some((c) => c.id === "mem_coach"), JSON.stringify(withCoach.body?.coaches));
 
 console.log("\n=== Época nova ===");
-const newSeason = await call(director, "POST", "/api/teams", { name: "ZZ Equipa Futuro", sportId: "sp_fut", ageGroup: "Sub-11", season: "2098/99", schedule: slot });
+const newSeason = await call(director, "POST", "/api/teams", { name: "ZZ Equipa Futuro", sportId: "sp_fut", maxAge: 11, season: "2098/99", schedule: slot });
 check("cria equipa numa época nova (201)", newSeason.status === 201 || newSeason.status === 200, `${newSeason.status}`);
 const seasonRow = (await db.query(`SELECT "startsOn","endsOn" FROM "Season" WHERE label = '2098/99'`)).rows[0];
 check("a época nova foi criada na base", !!seasonRow);
@@ -96,7 +96,7 @@ check("com datas inferidas do rótulo (agosto→julho)", seasonRow && new Date(s
  */
 console.log("\n=== A mesma época, escrita de outra maneira ===");
 const variant = await call(director, "POST", "/api/teams", {
-  name: "ZZ Equipa Variante", sportId: "sp_fut", ageGroup: "Sub-13", season: "2098/2099", schedule: slot,
+  name: "ZZ Equipa Variante", sportId: "sp_fut", maxAge: 13, season: "2098/2099", schedule: slot,
 });
 check("aceita a variante (201)", variant.status === 201 || variant.status === 200, `${variant.status}`);
 check("e devolve o rótulo canónico", variant.body?.season === "2098/99", `${variant.body?.season}`);
@@ -104,9 +104,9 @@ const seasonCount = (await db.query(`SELECT count(*)::int n FROM "Season" WHERE 
 check("continua a haver uma só época de 2098", seasonCount === 1, `${seasonCount}`);
 
 console.log("\n=== Validação de forma (DTO) ===");
-const badTime = await call(director, "POST", "/api/teams", { name: "ZZ Equipa Hora", sportId: "sp_fut", ageGroup: "Sub-11", season: "2026/27", schedule: [{ weekday: 2, start: "25:99", end: "19:30", venue: "Campo 1" }] });
+const badTime = await call(director, "POST", "/api/teams", { name: "ZZ Equipa Hora", sportId: "sp_fut", maxAge: 11, season: "2026/27", schedule: [{ weekday: 2, start: "25:99", end: "19:30", venue: "Campo 1" }] });
 check("hora de horário inválida rejeitada (400)", badTime.status === 400, `${badTime.status}`);
-const massAssign = await call(director, "POST", "/api/teams", { name: "ZZ Equipa Extra", sportId: "sp_fut", ageGroup: "Sub-11", season: "2026/27", schedule: slot, academyId: "acd_outra", maxCallUps: 99 });
+const massAssign = await call(director, "POST", "/api/teams", { name: "ZZ Equipa Extra", sportId: "sp_fut", maxAge: 11, season: "2026/27", schedule: slot, academyId: "acd_outra", maxCallUps: 99 });
 check("campos extra (academyId/maxCallUps) rejeitados", massAssign.status === 400, `${massAssign.status}`);
 
 console.log("\n=== Ficou mesmo na base ===");

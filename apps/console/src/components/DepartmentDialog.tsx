@@ -263,7 +263,7 @@ export function DepartmentDialog({
               type="checkbox"
               checked={applyToRoles}
               onChange={(e) => setApplyToRoles(e.target.checked)}
-              className="mt-0.5 size-4 accent-[var(--signal)]"
+              className="mt-0.5 size-4 accent-[var(--color-signal)]"
             />
             <span className="text-body text-ink-2">
               Aplicar estas permissões aos {herdeiros} {herdeiros === 1 ? "cargo" : "cargos"} deste

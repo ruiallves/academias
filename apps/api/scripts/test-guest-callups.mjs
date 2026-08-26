@@ -112,7 +112,44 @@ if (matilde) {
   check("e continua recusada ao convocar", tenta.status === 400, `${tenta.status}`);
 }
 
+/*
+ * A idade do atleta, e não a da equipa dele.
+ *
+ * É o caso que a regra antiga deixava passar. Comparava **equipas**: quem
+ * estivesse nos Sub-11 era elegível para os Sub-13, fosse qual fosse a idade
+ * que tivesse. Um miúdo repetente ou mal inscrito — e acontece — entrava numa
+ * convocatória contra gente três anos mais nova do que ele.
+ *
+ * Agora compara-se a idade. Este atleta está no plantel dos Sub-11, logo passava
+ * o teste antigo; tem 15 anos na época da seed, logo não passa o novo.
+ */
+console.log("\n=== Idade a mais, mesmo vindo de uma equipa de baixo ===");
+await db.query(
+  `INSERT INTO "Athlete" (id,"academyId",name,birthdate,status,"joinedAt","updatedAt")
+   VALUES ('ath_zz_velho','acd_lifeclub','ZZ Atleta Crescido','2011-04-02','ACTIVE',now(),now())
+   ON CONFLICT (id) DO UPDATE SET birthdate = EXCLUDED.birthdate`,
+);
+await db.query(
+  `INSERT INTO "TeamMembership" (id,"teamId","athleteId")
+   VALUES ('tm_zz_velho','t_sub11','ath_zz_velho')
+   ON CONFLICT ("teamId","athleteId") DO NOTHING`,
+);
+
+const pool13Outra = await call(coach13Login, "GET", "/api/matches/mt_seguinte/convidados-elegiveis");
+check(
+  "um atleta com idade a mais não aparece como candidato",
+  pool13Outra.status === 200 && !pool13Outra.body.some((a) => a.id === "ath_zz_velho"),
+  JSON.stringify(pool13Outra.body?.map((a) => a.name)),
+);
+
+const velho = await call(coach13Login, "POST", "/api/matches/mt_seguinte/convocatoria", {
+  athleteIds: ["ath_zz_velho"],
+});
+check("e o servidor recusa-o na convocatória (400)", velho.status === 400, `${velho.status}`);
+
 console.log("\n=== Limpeza ===");
+await db.query(`DELETE FROM "TeamMembership" WHERE "athleteId" = 'ath_zz_velho'`);
+await db.query(`DELETE FROM "Athlete" WHERE id = 'ath_zz_velho'`);
 await db.query(`UPDATE "Match" SET "callUpsClosedAt" = NULL WHERE id IN ('mt_proximo','mt_seguinte')`);
 await db.query(`DELETE FROM "MatchCallUp" WHERE "matchId" IN ('mt_proximo','mt_seguinte')`);
 await db.end();

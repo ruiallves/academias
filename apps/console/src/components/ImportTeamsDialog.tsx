@@ -2,6 +2,7 @@ import { useRef, useState } from "react";
 import { Dialog } from "./Dialog";
 import { Check, Upload } from "@/lib/icons";
 import { useStore } from "@/lib/store";
+import { teamAgeLabel } from "@/lib/team-age";
 import {
   TEAM_COLUMNS,
   downloadTeamTemplate,
@@ -176,7 +177,7 @@ export function ImportTeamsDialog({ onClose }: { onClose: () => void }) {
                       >
                         <span className="text-body text-ink">{r.name}</span>
                         <span className="text-meta text-ink-4">
-                          {r.sport} · {r.ageGroup}
+                          {r.sport} · {teamAgeLabel(r.maxAge)}
                         </span>
                       </li>
                     ))}

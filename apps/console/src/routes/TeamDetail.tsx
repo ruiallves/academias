@@ -44,6 +44,7 @@ import {
   unrecordedSessions,
 } from "@/lib/api";
 import { age, longDate, percent, relativeDays, shortDate, shortName, time } from "@/lib/format";
+import { teamAgeLabel } from "@/lib/team-age";
 import { availabilityOf, useClinicalRecords } from "@/lib/clinical";
 import { can, type Session } from "@/lib/permissions";
 import { useSession } from "@/session";
@@ -140,7 +141,7 @@ export default function TeamDetail() {
       <BackLink />
 
       <PageHeader
-        eyebrow={`${sport?.name ?? ""} · ${team.ageGroup} · ${team.season}`}
+        eyebrow={`${sport?.name ?? ""} · ${teamAgeLabel(team.maxAge)} · ${team.season}`}
         title={team.name}
         subtitle={coaches.map((c) => c.name).join(", ") || "Sem treinador atribuído"}
       >

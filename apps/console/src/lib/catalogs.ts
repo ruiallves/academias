@@ -38,9 +38,16 @@ import { apiDelete, apiGet, apiPatch, apiPost } from "@/lib/http";
  * criava-se "Treinador principal" nos dois sítios sendo que só um deles decidia
  * alguma coisa. O cargo passou a ser o `AcademyRole` — ver `lib/roles.ts`.
  */
-export type CatalogKey = "venues" | "dressingRooms" | "ageGroups" | "eventTypes";
+/*
+ * "ageGroups" saiu daqui pela mesma razão que os cargos: era um vocabulário à
+ * parte para uma coisa que já existia noutro sítio. Um clube criava o escalão
+ * "Sub-11" nas Definições para depois criar a equipa "Sub-11 Futebol" — dois
+ * passos e dois sítios para a mesma decisão, e nenhum deles obrigava o outro a
+ * concordar. A equipa passou a ter `maxAge`, um inteiro; ver `lib/team-age.ts`.
+ */
+export type CatalogKey = "venues" | "dressingRooms" | "eventTypes";
 
-export const CATALOG_KEYS: CatalogKey[] = ["venues", "dressingRooms", "ageGroups", "eventTypes"];
+export const CATALOG_KEYS: CatalogKey[] = ["venues", "dressingRooms", "eventTypes"];
 
 export type CatalogItem = {
   id: string;
@@ -73,12 +80,6 @@ export const CATALOG_META: Record<CatalogKey, { title: string; hint: string; pla
     placeholder: "Balneário 3, Balneário visitantes…",
     noteLabel: "Onde fica",
   },
-  ageGroups: {
-    title: "Escalões",
-    hint: "pela ordem em que devem aparecer",
-    placeholder: "Sub-17, Seniores…",
-    noteLabel: "Anos de nascimento",
-  },
   eventTypes: {
     title: "Tipos de evento",
     hint: "no calendário",
@@ -104,7 +105,6 @@ type ApiItem = {
 const EMPTY: Record<CatalogKey, CatalogItem[]> = {
   venues: [],
   dressingRooms: [],
-  ageGroups: [],
   eventTypes: [],
 };
 
