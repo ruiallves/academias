@@ -1,5 +1,5 @@
 import { BadRequestException, ForbiddenException, Injectable, NotFoundException } from "@nestjs/common";
-import type { Role } from "@prisma/client";
+import type { Role, StaffDepartment } from "@prisma/client";
 import { PrismaService, type ScopedClient } from "../prisma/prisma.service";
 import { NAV_KEYS, isNavKey } from "../common/nav";
 import { ROLE_PERMISSIONS, can, type Permission, type RequestContext } from "../common/permissions";
@@ -61,49 +61,105 @@ const SYSTEM_ROLES: { key: string; name: string; description: string; baseRole: 
   {
     key: "presidente",
     name: "Presidente",
-    description: "Responde por tudo. É o único papel que não se pode editar nem apagar.",
+    description: "Responde por tudo. É o único cargo que não se pode editar nem apagar.",
     baseRole: "OWNER",
   },
-  {
-    key: "direcao",
-    name: "Direção",
-    description: "Gestão corrente da academia: atletas, equipas, mensalidades e comunicação.",
-    baseRole: "DIRECTOR",
-  },
-  {
-    key: "treinador",
-    name: "Treinador",
-    description: "As suas equipas: treinos, presenças, convocatórias e avaliações.",
-    baseRole: "COACH",
-  },
-  {
-    key: "dep-medico",
-    name: "Dep. Médico",
-    description: "Boletim clínico de toda a academia. Sem mensalidades nem avaliações desportivas.",
-    baseRole: "MEDICAL",
-    /*
-     * O único papel semeado com menus escolhidos à mão.
-     *
-     * O departamento clínico tem `calendar:read` — precisa de saber quando é o
-     * treino de quem está a recuperar — e isso, sozinho, faria aparecer-lhe
-     * "Convocatórias", que não é trabalho dele. Antes isto resolvia-se por o
-     * menu clínico ser um array separado; agora resolve-se com a funcionalidade
-     * nova, que é o que ela existe para fazer.
-     */
-    navKeys: ["overview", "clinical", "consultations", "athletes", "teams", "calendar"],
-  },
-  {
-    key: "dep-scouting",
-    name: "Dep. Scouting",
-    description: "Prospectos, observações e vídeo. Sem ficha clínica, mensalidades ou famílias.",
-    baseRole: "SCOUT",
-  },
 ];
+
+/**
+ * É este cargo o do presidente?
+ *
+ * O nome é escrito à mão por quem abre o clube, por isso chega em todas as
+ * formas: "Presidente", "presidente", "PRESIDENTE", " Presidente ". Normalizar
+ * aqui — sem acentos, sem espaços, em minúsculas — é o que faz as quatro serem a
+ * mesma coisa, e o clube não abrir com dois cargos a dizer o mesmo.
+ */
+export function isPresidente(name: string): boolean {
+  const limpo = name
+    .normalize("NFD")
+    .replace(/[̀-ͯ]/g, "")
+    .trim()
+    .toLowerCase();
+  return limpo === "presidente" || limpo === "presidencia" || limpo === "president";
+}
+
+/**
+ * Os cargos com que uma academia nasce.
+ *
+ * Chamado pela plataforma ao abrir um clube — ver `PlatformService.createAcademy`.
+ * Vive aqui e não lá porque as regras de quem pode o quê são deste ficheiro, e
+ * tê-las em dois sítios era garantir que divergiam.
+ *
+ * ## Sempre um presidente, e às vezes dois cargos
+ *
+ * O `presidente` nasce sempre, com tudo, e é imutável. É o fecho da porta por
+ * dentro: se alguém lhe pudesse tirar permissões, uma academia podia trancar-se
+ * fora do próprio produto sem ninguém com poder para a reabrir.
+ *
+ * Se quem vai receber o convite **não** for o presidente — é o coordenador
+ * desportivo que está a montar o clube, e o presidente ainda não entrou —, nasce
+ * também o cargo dele. Com todas as permissões, e a razão é prática: é a primeira
+ * pessoa a entrar, tem de conseguir montar tudo, e não há mais ninguém a quem
+ * pedir. O que **não** consegue é mexer no cargo do presidente, que continua
+ * fechado a toda a gente.
+ *
+ * @returns as linhas a criar, e a `key` do cargo que o convite deve apontar.
+ */
+export function initialRoles(
+  academyId: string,
+  template: { key: string; name: string; department: StaffDepartment | null } | null,
+): { rows: Record<string, unknown>[]; inviteRoleKey: string; baseRole: Role } {
+  const now = new Date();
+
+  const presidente = {
+    academyId,
+    key: "presidente",
+    name: SYSTEM_ROLES[0].name,
+    description: SYSTEM_ROLES[0].description,
+    baseRole: "OWNER" as Role,
+    department: null,
+    permissions: ROLE_PERMISSIONS.OWNER,
+    navKeys: [] as string[],
+    isSystem: true,
+    rank: RANK.OWNER,
+    updatedAt: now,
+  };
+
+  // O convite é para o presidente: um cargo só, e é esse que a pessoa veste.
+  if (!template || template.key === "presidente") {
+    return { rows: [presidente], inviteRoleKey: "presidente", baseRole: "OWNER" };
+  }
+
+  const dele = {
+    academyId,
+    key: template.key,
+    name: template.name,
+    description: "Criado ao abrir o clube. Tem tudo por ser o primeiro cargo a entrar.",
+    /*
+     * Base OWNER e não a do modelo, de propósito.
+     *
+     * A base decide o **âmbito** — um COACH só vê as equipas dele, por muitas
+     * permissões que lhe demos. Quem está a montar o clube sozinho não pode
+     * estar limitado a equipas que ainda não existem.
+     */
+    baseRole: "OWNER" as Role,
+    department: template.department,
+    permissions: ROLE_PERMISSIONS.OWNER,
+    navKeys: [] as string[],
+    isSystem: false,
+    rank: RANK.OWNER,
+    updatedAt: now,
+  };
+
+  return { rows: [presidente, dele], inviteRoleKey: template.key, baseRole: "OWNER" };
+}
 
 export type RoleInput = {
   name: string;
   description?: string | null;
   baseRole: Role;
+  /** A que departamento pertence. Nulo é "nenhum" — o caso do presidente. */
+  department?: StaffDepartment | null;
   permissions: string[];
 };
 
@@ -147,7 +203,7 @@ export class RolesService {
         orderBy: [{ rank: "desc" }, { name: "asc" }],
         select: {
           id: true, key: true, name: true, description: true, baseRole: true,
-          permissions: true, navKeys: true, isSystem: true, rank: true,
+          department: true, permissions: true, navKeys: true, isSystem: true, rank: true,
           _count: { select: { memberships: true } },
         },
       });
@@ -158,6 +214,7 @@ export class RolesService {
         name: r.name,
         description: r.description,
         baseRole: r.baseRole,
+        department: r.department,
         permissions: r.permissions,
         navKeys: r.navKeys,
         isSystem: r.isSystem,
@@ -190,6 +247,7 @@ export class RolesService {
           name,
           description: input.description?.trim() || null,
           baseRole: input.baseRole,
+          department: input.department ?? null,
           permissions,
           navKeys: [],
           isSystem: false,
@@ -217,6 +275,7 @@ export class RolesService {
         data.name = name;
       }
       if (input.description !== undefined) data.description = input.description?.trim() || null;
+      if (input.department !== undefined) data.department = input.department;
       if (input.permissions !== undefined) data.permissions = this.filterGrantable(ctx, input.permissions);
 
       /*

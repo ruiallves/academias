@@ -50,7 +50,16 @@ export const apiPost = <T,>(path: string, body: unknown) =>
   request<T>(path, { method: "POST", body: JSON.stringify(body) });
 export const apiPatch = <T,>(path: string, body: unknown) =>
   request<T>(path, { method: "PATCH", body: JSON.stringify(body) });
-export const apiDelete = <T,>(path: string) => request<T>(path, { method: "DELETE" });
+/**
+ * Apagar.
+ *
+ * Aceita corpo, ao contrário do que é habitual num `DELETE`: apagar um clube
+ * exige o endereço dele escrito à mão, e essa confirmação vai no corpo. Pô-la na
+ * query deixava o nome do clube a apagar em todos os logs de acesso pelo
+ * caminho.
+ */
+export const apiDelete = <T,>(path: string, body?: unknown) =>
+  request<T>(path, { method: "DELETE", ...(body ? { body: JSON.stringify(body) } : {}) });
 
 function mensagem(status: number): string {
   if (status === 403) return "O teu papel não permite esta operação.";

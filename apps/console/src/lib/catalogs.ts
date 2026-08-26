@@ -31,9 +31,16 @@ import { apiDelete, apiGet, apiPatch, apiPost } from "@/lib/http";
  * de lá que fica.
  */
 
-export type CatalogKey = "venues" | "dressingRooms" | "ageGroups" | "staffTitles" | "eventTypes";
+/**
+ * Os catálogos.
+ *
+ * "Cargos da equipa técnica" saiu daqui: era texto livre a par dos papéis, e
+ * criava-se "Treinador principal" nos dois sítios sendo que só um deles decidia
+ * alguma coisa. O cargo passou a ser o `AcademyRole` — ver `lib/roles.ts`.
+ */
+export type CatalogKey = "venues" | "dressingRooms" | "ageGroups" | "eventTypes";
 
-export const CATALOG_KEYS: CatalogKey[] = ["venues", "dressingRooms", "ageGroups", "staffTitles", "eventTypes"];
+export const CATALOG_KEYS: CatalogKey[] = ["venues", "dressingRooms", "ageGroups", "eventTypes"];
 
 export type CatalogItem = {
   id: string;
@@ -43,6 +50,14 @@ export type CatalogItem = {
   archived?: boolean;
   /** Itens do sistema não se apagam nem renomeiam: o domínio depende deles. */
   system?: boolean;
+  /**
+   * De que modalidade é.
+   *
+   * `null` é **todos os desportos** — o que um clube de uma modalidade só usa
+   * sem nunca ter de escolher nada. Um clube com futebol e natação não tem os
+   * mesmos escalões nem os mesmos balneários nas duas.
+   */
+  sportId: string | null;
 };
 
 export const CATALOG_META: Record<CatalogKey, { title: string; hint: string; placeholder: string; noteLabel?: string }> = {
@@ -64,11 +79,6 @@ export const CATALOG_META: Record<CatalogKey, { title: string; hint: string; pla
     placeholder: "Sub-17, Seniores…",
     noteLabel: "Anos de nascimento",
   },
-  staffTitles: {
-    title: "Cargos da equipa técnica",
-    hint: "usados nas equipas",
-    placeholder: "Treinador de guarda-redes…",
-  },
   eventTypes: {
     title: "Tipos de evento",
     hint: "no calendário",
@@ -88,13 +98,13 @@ type ApiItem = {
   order: number;
   isSystem: boolean;
   archivedAt: string | null;
+  sportId: string | null;
 };
 
 const EMPTY: Record<CatalogKey, CatalogItem[]> = {
   venues: [],
   dressingRooms: [],
   ageGroups: [],
-  staffTitles: [],
   eventTypes: [],
 };
 
@@ -133,6 +143,7 @@ export function loadCatalogs(force = false): Promise<void> {
           note: r.note ?? undefined,
           archived: r.archivedAt !== null,
           system: r.isSystem,
+          sportId: r.sportId,
         });
       }
       state = next;
@@ -158,10 +169,20 @@ export function catalogsReady(): boolean {
 // recusou um duplicado — é pior do que meio segundo de espera. E são acções raras:
 // ninguém cria vinte locais seguidos.
 
-export async function addItem(key: CatalogKey, label: string, note?: string): Promise<void> {
+export async function addItem(
+  key: CatalogKey,
+  label: string,
+  note?: string,
+  sportId?: string | null,
+): Promise<void> {
   const clean = label.trim();
   if (!clean) return;
-  await apiPost("/api/catalogs", { kind: key, label: clean, ...(note?.trim() ? { note: note.trim() } : {}) });
+  await apiPost("/api/catalogs", {
+    kind: key,
+    label: clean,
+    ...(note?.trim() ? { note: note.trim() } : {}),
+    ...(sportId ? { sportId } : {}),
+  });
   await loadCatalogs(true);
 }
 
@@ -214,4 +235,15 @@ export function useCatalog(key: CatalogKey): CatalogItem[] {
 /** Só os activos — para os menus suspensos de quem está a trabalhar. */
 export function useActiveCatalog(key: CatalogKey): CatalogItem[] {
   return useCatalog(key).filter((i) => !i.archived);
+}
+
+/**
+ * Os activos que servem uma modalidade.
+ *
+ * Os globais (`sportId: null`) entram sempre — é o que faz um clube que nunca
+ * separou nada por desporto continuar a ver tudo, e o que faz "Sede" aparecer no
+ * futebol e na natação sem ter de ser escrita duas vezes.
+ */
+export function useCatalogForSport(key: CatalogKey, sportId?: string | null): CatalogItem[] {
+  return useActiveCatalog(key).filter((i) => i.sportId === null || i.sportId === sportId);
 }

@@ -1,6 +1,7 @@
 import { useEffect, useState, useSyncExternalStore } from "react";
 import { athletes, guardians, sessions, staff, teams, useStore } from "@/lib/store";
 import { useCatalog } from "@/lib/catalogs";
+import { loadRoles, useRoles } from "@/lib/roles";
 import { usePendingInvites } from "@/lib/invites";
 import { listTiers } from "@/lib/members";
 import { can, type Permission, type Session } from "@/lib/permissions";
@@ -157,11 +158,16 @@ export function deriveSteps(session: Session, facts: Facts): Step[] {
     },
     {
       id: "staffTitles",
-      label: "Definir os cargos da equipa técnica",
-      hint: "Treinador principal, treinador de guarda-redes… usados ao convidar staff.",
-      done: facts.staffTitles > 0,
-      to: "/definicoes?catalogo=staffTitles",
-      requires: "settings:write",
+      label: "Criar os cargos",
+      /*
+       * "Além do de presidente" não é um detalhe da frase: um clube novo abre
+       * com esse cargo já criado — é o que a primeira pessoa veste — e sem esta
+       * ressalva o passo aparecia por fazer com uma lista que não estava vazia.
+       */
+      hint: "Direção, treinador, secretaria… além do de presidente, que já existe.",
+      done: facts.staffTitles > 1,
+      to: "/definicoes?painel=cargos",
+      requires: "role:write",
     },
     {
       id: "teams",
@@ -226,13 +232,24 @@ export function useOnboarding(session: Session): Onboarding {
   const venues = useCatalog("venues");
   const dressingRooms = useCatalog("dressingRooms");
   const ageGroups = useCatalog("ageGroups");
-  const staffTitles = useCatalog("staffTitles");
+  const cargos = useRoles();
   const invites = usePendingInvites();
   const closed = useDismissed();
 
   // Sócios fica fora do bootstrap (ver `lib/members.ts`) — como não há dados já
   // carregados para contar, pergunta-se uma vez, só para saber se o passo está
   // feito. Sem `member:write` nem vale a pena perguntar: o passo não aparece.
+  /*
+   * Os cargos também ficam fora do bootstrap — vêm de `/api/roles`, que só as
+   * Definições costumavam pedir. O passo "Criar os cargos" precisa de os contar,
+   * por isso pergunta-se aqui, uma vez. Sem `role:write` o passo não aparece e
+   * nem vale a pena perguntar.
+   */
+  useEffect(() => {
+    if (!can(session, "role:write")) return;
+    void loadRoles();
+  }, [session]);
+
   const [memberTiers, setMemberTiers] = useState(0);
   useEffect(() => {
     if (!can(session, "member:write")) return;
@@ -247,7 +264,7 @@ export function useOnboarding(session: Session): Onboarding {
     venues: venues.length,
     dressingRooms: dressingRooms.length,
     ageGroups: ageGroups.length,
-    staffTitles: staffTitles.length,
+    staffTitles: cargos.roles.length,
     teams: teams.length,
     athletes: athletes.length,
     coaches: staff.filter((s) => s.role === "COACH" && s.isActive).length,
@@ -266,9 +283,21 @@ export function useOnboarding(session: Session): Onboarding {
     done,
     total: steps.length,
     complete,
-    // Some quando não há passos que a pessoa possa dar, quando foi fechado, e —
-    // depois de tudo feito — deixa de ter razão de existir.
-    visible: steps.length > 0 && !closed.has(slug) && !(complete && closed.has(slug)),
+    /*
+     * Some quando não há passos que a pessoa possa dar, quando foi fechado, e —
+     * depois de tudo feito — deixa de ter razão de existir.
+     *
+     * E só aparece a quem o arranque pertence: quem entrou primeiro no clube e o
+     * presidente. O **progresso** é o mesmo para os dois — cada passo é derivado
+     * dos dados, não de uma caixa que alguém marcou —, por isso vêem sempre o
+     * mesmo estado sem nada a sincronizar entre eles.
+     *
+     * Antes aparecia a toda a gente com `settings:write`, incluindo a quem entrou
+     * meses depois para tratar de outra coisa e encontrava uma lista de tarefas
+     * que não era dele. Ver `setupOwner` em `academy.service.ts`.
+     */
+    visible:
+      (store.me?.setupOwner ?? true) && steps.length > 0 && !closed.has(slug) && !(complete && closed.has(slug)),
     academySlug: slug,
   };
 }

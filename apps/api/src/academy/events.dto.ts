@@ -1,4 +1,32 @@
-import { IsBoolean, IsIn, IsISO8601, IsOptional, IsString, Length } from "class-validator";
+import { ArrayMaxSize, IsArray, IsBoolean, IsIn, IsInt, IsISO8601, IsOptional, IsString, Length, Max, Min, ValidateNested } from "class-validator";
+import { Type } from "class-transformer";
+
+/**
+ * Repetir um evento.
+ *
+ * `weekdays` só se aplica a `WEEKLY`: 0 é domingo, como `Date.getDay()`. Vazio
+ * ou ausente repete no mesmo dia da semana do primeiro evento.
+ *
+ * Não há "de duas em duas semanas" nem "última sexta do mês": são as duas regras
+ * que quase ninguém usa e que dobram a complexidade de um gerador de datas. Ver
+ * `occurrences` em `academy.service.ts`.
+ */
+export class RepeatDto {
+  @IsIn(["DAILY", "WEEKLY", "MONTHLY"])
+  freq!: "DAILY" | "WEEKLY" | "MONTHLY";
+
+  /** O último dia da série, inclusive. */
+  @IsISO8601()
+  until!: string;
+
+  @IsOptional()
+  @IsArray()
+  @ArrayMaxSize(7)
+  @IsInt({ each: true })
+  @Min(0, { each: true })
+  @Max(6, { each: true })
+  weekdays?: number[];
+}
 
 /**
  * Os corpos de criação e alteração de um evento do calendário.
@@ -46,6 +74,18 @@ export class CreateEventDto {
   @IsString()
   @Length(0, 80)
   dressingRoom?: string;
+
+  /**
+   * Repetir. Ausente é um evento só.
+   *
+   * Cada ocorrência é criada como uma linha própria — ver `createEvent`. Um
+   * treino repetido abre uma folha de presenças por dia, e desmarcar um dia não
+   * mexe nos outros.
+   */
+  @IsOptional()
+  @ValidateNested()
+  @Type(() => RepeatDto)
+  repeat?: RepeatDto;
 
   /**
    * Só para `kind: "MATCH"`.

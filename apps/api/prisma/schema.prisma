@@ -140,6 +140,7 @@ model Sport {
   shortlists  Shortlist[]
   requests    ScoutingRequest[]
   fitDims     FitDimension[]
+  catalog     CatalogItem[]
 
   @@unique([academyId, name])
   @@index([academyId])
@@ -317,6 +318,16 @@ model AcademyRole {
   /// De onde herda âmbito e hierarquia.
   baseRole Role
 
+  /// A que departamento pertence este cargo.
+  ///
+  /// Um departamento tem vários cargos; um cargo pertence a um departamento só.
+  /// É o que permite ao convite perguntar primeiro o departamento e só depois o
+  /// cargo — em vez de uma lista única onde "Fisioterapeuta" aparece a par de
+  /// "Treinador principal".
+  ///
+  /// Nulo em `presidente`: quem responde por tudo não pertence a um departamento.
+  department StaffDepartment?
+
   /// O que este papel pode. É a verdade — o mapa em código passa a ser só o
   /// ponto de partida da semeadura.
   permissions String[] @default([])
@@ -335,6 +346,7 @@ model AcademyRole {
   archivedAt DateTime?
 
   memberships Membership[]
+  invites     StaffInvite[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -374,6 +386,19 @@ model StaffInvite {
   role       Role
   title      String?
   department StaffDepartment?
+
+  /// O cargo que a pessoa vai vestir.
+  ///
+  /// Substitui a escolha solta de "acesso" que existia no convite: era um enum
+  /// de permissões a par de um cargo em texto livre, e as duas coisas diziam
+  /// quase o mesmo por palavras diferentes — "acesso Direção" e "departamento
+  /// Direção" davam a mesma pergunta duas vezes. Agora quem convida escolhe o
+  /// departamento e, dentro dele, o cargo; as permissões vêm do cargo.
+  ///
+  /// Nulo nos convites feitos antes desta coluna: o `role` acima continua a
+  /// decidir, como sempre decidiu.
+  academyRoleId String?
+  academyRole   AcademyRole? @relation(fields: [academyRoleId], references: [id], onDelete: SetNull)
 
   /// Equipas a atribuir no resgate. Vazio significa vazio: a pessoa entra sem
   /// âmbito e não vê atletas nenhuns até a direção lhe atribuir equipas.
@@ -1993,11 +2018,23 @@ model CatalogItem {
   academyId String
   academy   Academy @relation(fields: [academyId], references: [id], onDelete: Cascade)
 
-  /// "venues", "dressingRooms", "ageGroups", "staffTitles", "eventTypes".
+  /// "venues", "dressingRooms", "ageGroups", "eventTypes".
   kind  String
   label String
   /// Morada, anos de nascimento, o que a academia precise.
   note  String?
+
+  /// De que modalidade é este item.
+  ///
+  /// Um clube com futebol e natação não tem os mesmos escalões, nem os mesmos
+  /// balneários, nem os mesmos tipos de evento nas duas — "Sub-13" do futebol
+  /// não é o "Sub-13" da natação, e a piscina não é um campo.
+  ///
+  /// Nulo significa **todos os desportos**: é o que os itens criados antes desta
+  /// coluna são, e o que um clube de uma modalidade só continua a usar sem nunca
+  /// ter de escolher nada.
+  sportId String?
+  sport   Sport?  @relation(fields: [sportId], references: [id], onDelete: Cascade)
 
   /// A ordem é dados: "Sub-9, Sub-11, Sub-13" não sai de nenhuma ordenação
   /// automática — sai da ordem que a direção definiu.
@@ -2015,8 +2052,12 @@ model CatalogItem {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  @@unique([academyId, kind, label])
+  /// O desporto entra na chave: "Sub-13" pode existir no futebol **e** na
+  /// natação, e são dois itens diferentes. Sem ele, criar o segundo dava erro de
+  /// duplicado.
+  @@unique([academyId, kind, sportId, label])
   @@index([academyId, kind])
+  @@index([sportId])
 }
 
 /* -------------------------------------------------------------------------- */
@@ -2108,6 +2149,8 @@ enum PlatformRole {
 model Plan {
   id          String  @id @default(cuid())
   name        String
+  /// A frase que explica o plano numa linha. "O clube por dentro."
+  tagline     String?
   /// Preço base mensal, em cêntimos.
   amountCents Int
   /// Preço por atleta acima do incluído — zero em planos de preço fixo.
@@ -2115,6 +2158,22 @@ model Plan {
   includedAthletes Int @default(0)
   trialDays   Int     @default(30)
   isActive    Boolean @default(true)
+
+  /// O que o plano traz, pela ordem em que se lê no cartão.
+  features String[] @default([])
+
+  /// O que **não** traz.
+  ///
+  /// Dito em voz alta e não omitido: um plano que só lista o que inclui obriga
+  /// quem compara a descobrir a ausência depois de assinar. É a diferença entre
+  /// escolher e ser surpreendido.
+  excludes String[] @default([])
+
+  /// O que aparece com "Recomendado". Um só, e é uma decisão de negócio.
+  isRecommended Boolean @default(false)
+
+  /// A ordem no ecrã. O mais barato primeiro é o que se lê melhor.
+  order Int @default(0)
 
   subscriptions Subscription[]
 

@@ -1,11 +1,11 @@
 import { Body, Controller, Delete, Get, Param, Patch, Post, Put, Query, Req } from "@nestjs/common";
-import { ArrayMaxSize, IsArray, IsIn, IsInt, IsOptional, IsString, Length, Max, Min } from "class-validator";
+import { ArrayMaxSize, IsArray, IsBoolean, IsIn, IsInt, IsOptional, IsString, Length, Max, Min } from "class-validator";
 import { ChargeStatus } from "@prisma/client";
 import type { AuthedRequest } from "../auth/auth.guard";
 import { AcademyService } from "./academy.service";
 import { AthletesService } from "./athletes.service";
 import { AthleteInputDto, AthleteTaxIdDto, AthleteUpdateDto, ImportAthletesDto } from "./athletes.dto";
-import { CreateTeamDto } from "./teams.dto";
+import { CreateTeamDto, ImportTeamsDto } from "./teams.dto";
 import { CreateEventDto, UpdateEventDto } from "./events.dto";
 import { BillingService } from "../billing/billing.service";
 
@@ -47,6 +47,32 @@ class MembershipCopyDto {
   @IsOptional() @IsString() @Length(0, 90) headline?: string;
   @IsOptional() @IsString() @Length(0, 240) intro?: string;
   @IsOptional() @IsArray() @ArrayMaxSize(6) @IsString({ each: true }) points?: string[];
+}
+
+/** A cor e o símbolo do clube — o white-label, gravado. Ver `setIdentity`. */
+class IdentityDto {
+  @IsOptional() @IsString() @Length(7, 7) signalColor?: string;
+  @IsOptional() @IsString() @Length(0, 500) logoUrl?: string;
+}
+
+/** Desactivar ou reactivar uma conta — de staff ou de encarregado. */
+class SetActiveDto {
+  @IsBoolean() active!: boolean;
+}
+
+/**
+ * Uma modalidade.
+ *
+ * As posições e as competências são listas escritas pelo clube: "Guarda-redes"
+ * no futebol, "Bruços" na natação. Um enum aqui obrigaria a uma migração por
+ * cada desporto novo que um cliente tivesse.
+ */
+class SportDto {
+  @IsOptional() @IsString() @Length(2, 60) name?: string;
+  @IsOptional() @IsArray() @ArrayMaxSize(40) @IsString({ each: true }) positions?: string[];
+  @IsOptional() @IsArray() @ArrayMaxSize(40) @IsString({ each: true }) skills?: string[];
+  @IsOptional() @IsString() @Length(0, 40) dominantSideLabel?: string;
+  @IsOptional() @IsInt() @Min(1) @Max(300) matchMinutes?: number;
 }
 
 class SetAccessDto {
@@ -98,6 +124,17 @@ export class AcademyController {
   }
 
   /**
+   * Importar equipas de um ficheiro. Devolve o resultado linha a linha.
+   *
+   * Mesma forma que a importação de atletas: o que falha volta com o número da
+   * linha e o motivo, e o resto entra na mesma.
+   */
+  @Post("teams/import")
+  importTeams(@Req() req: AuthedRequest, @Body() body: ImportTeamsDto) {
+    return this.academy.importTeams(req.ctx, body.rows);
+  }
+
+  /**
    * O preço por omissão da equipa — todos os atletas sem ajuste individual pagam
    * isto. Ver `BillingService.setTeamFee`.
    */
@@ -111,6 +148,36 @@ export class AcademyController {
   @Patch("membership-page")
   setMembershipCopy(@Req() req: AuthedRequest, @Body() body: MembershipCopyDto) {
     return this.academy.setMembershipCopy(req.ctx, body);
+  }
+
+  /**
+   * A cor e o símbolo do clube.
+   *
+   * `settings:write`, verificado no serviço. Atravessa o produto inteiro — o
+   * manifest da app, a landing, a página de sócios — e é por isso que é da
+   * academia e não uma preferência de quem a escolhe.
+   */
+  @Patch("identity")
+  setIdentity(@Req() req: AuthedRequest, @Body() body: IdentityDto) {
+    return this.academy.setIdentity(req.ctx, body);
+  }
+
+  /* --- Desportos ---------------------------------------------------------- */
+
+  @Post("sports")
+  createSport(@Req() req: AuthedRequest, @Body() body: SportDto) {
+    return this.academy.createSport(req.ctx, body);
+  }
+
+  @Patch("sports/:id")
+  updateSport(@Req() req: AuthedRequest, @Param("id") id: string, @Body() body: SportDto) {
+    return this.academy.updateSport(req.ctx, id, body);
+  }
+
+  /** Só quando não há nada agarrado — ver o serviço. */
+  @Delete("sports/:id")
+  removeSport(@Req() req: AuthedRequest, @Param("id") id: string) {
+    return this.academy.removeSport(req.ctx, id);
   }
 
   @Patch("teams/:id/fee")
@@ -172,6 +239,18 @@ export class AcademyController {
   @Patch("staff/:id/access")
   setAccess(@Req() req: AuthedRequest, @Param("id") id: string, @Body() body: SetAccessDto) {
     return this.academy.setAccess(req.ctx, id, body.grants, body.revokes);
+  }
+
+  /**
+   * Desactivar ou reactivar uma conta.
+   *
+   * Serve staff e encarregados — é a mesma `Membership` nos dois casos, e a
+   * pergunta ("esta pessoa ainda entra?") é a mesma. As guardas contra escalada
+   * e contra o auto-lockout estão no serviço.
+   */
+  @Patch("memberships/:id/active")
+  setMembershipActive(@Req() req: AuthedRequest, @Param("id") id: string, @Body() body: SetActiveDto) {
+    return this.academy.setMembershipActive(req.ctx, id, body.active);
   }
 
   /**

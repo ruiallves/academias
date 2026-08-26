@@ -31,6 +31,20 @@ export type BucketSpec = {
   /** O limite que se **gostaria** de ter. O projecto tem a última palavra. */
   fileSizeLimit?: number;
   allowedMimeTypes?: string[];
+  /**
+   * A excepção, e é uma só.
+   *
+   * Tudo o que este ficheiro guarda é privado — são fotografias de crianças e
+   * vídeo de scouting, e o cabeçalho acima explica porquê. O símbolo do clube é
+   * a única coisa que **tem** de ser pública, e não por conveniência: vai no
+   * `manifest.webmanifest` que o telemóvel de um pai lê **antes** de haver
+   * sessão nenhuma, e na página de adesão a sócio, que é aberta ao mundo. Um
+   * endereço assinado com validade de seis horas dava um ícone partido no ecrã
+   * inicial ao fim da tarde.
+   *
+   * Tem de ser pedido explicitamente, e o nome do bucket que o usa di-lo.
+   */
+  public?: boolean;
 };
 
 @Injectable()
@@ -110,8 +124,9 @@ export class StorageService {
         body: JSON.stringify({
           id: spec.name,
           name: spec.name,
-          // Nunca público. Ver o cabeçalho deste ficheiro.
-          public: false,
+          // Privado por omissão. A única excepção é o símbolo do clube, que tem
+          // de ser lido sem sessão — ver `BucketSpec.public`.
+          public: spec.public === true,
           ...(withLimit && spec.fileSizeLimit ? { file_size_limit: spec.fileSizeLimit } : {}),
           ...(spec.allowedMimeTypes ? { allowed_mime_types: spec.allowedMimeTypes } : {}),
         }),

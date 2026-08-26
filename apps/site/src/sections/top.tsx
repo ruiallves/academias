@@ -38,12 +38,6 @@ export function Hero() {
       />
 
       <div className="wrap relative pt-16 pb-14 sm:pt-24 sm:pb-20">
-        <Reveal>
-          <p className="tag tag-live">
-            <span className="size-1.5 rounded-full bg-current" />
-            Em uso em clubes portugueses
-          </p>
-        </Reveal>
 
         <Reveal i={1}>
           <h1 className="display d1 mt-6 max-w-[16ch]">

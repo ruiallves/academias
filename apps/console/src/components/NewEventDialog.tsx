@@ -103,6 +103,32 @@ export function NewEventDialog({
   const awayVenuePlaceholder = opponent.trim() ? `Fora · ${opponent.trim()}` : "Campo do adversário";
   const effectiveVenue = isMatch && !isHome ? venue.trim() || awayVenuePlaceholder : venue;
 
+  /*
+   * A repetição.
+   *
+   * Fechada por omissão: a maioria dos eventos é um só, e um formulário que abre
+   * com a repetição à vista faz toda a gente decidir uma coisa que não queria
+   * decidir. Quem precisa carrega uma vez.
+   *
+   * `weekdays` arranca com o dia da data escolhida — marcar "todas as terças"
+   * quando já se escolheu uma terça é a repetição que noventa por cento das
+   * pessoas quer, e assim não é preciso escolher nada.
+   */
+  const [repetir, setRepetir] = useState(false);
+  const [freq, setFreq] = useState<"DAILY" | "WEEKLY" | "MONTHLY">("WEEKLY");
+  const [weekdays, setWeekdays] = useState<number[]>([]);
+  const [until, setUntil] = useState("");
+
+  const diaDaData = new Date(`${date}T00:00:00`).getDay();
+  const diasEscolhidos = weekdays.length > 0 ? weekdays : [diaDaData];
+
+  function toggleDia(d: number) {
+    setWeekdays((xs) => {
+      const base = xs.length > 0 ? xs : [diaDaData];
+      return base.includes(d) ? base.filter((x) => x !== d) : [...base, d].sort();
+    });
+  }
+
   async function submit(e: FormEvent) {
     e.preventDefault();
     if (busy || !valid) return;
@@ -123,6 +149,15 @@ export function NewEventDialog({
         venue: effectiveVenue,
         ...(dressingRoom ? { dressingRoom } : {}),
         ...(isMatch ? { opponent: opponent.trim(), isHome } : {}),
+        ...(repetir && until
+          ? {
+              repeat: {
+                freq,
+                until,
+                ...(freq === "WEEKLY" ? { weekdays: diasEscolhidos } : {}),
+              },
+            }
+          : {}),
       });
       await reloadAcademy();
       onClose();
@@ -389,6 +424,95 @@ export function NewEventDialog({
         {error && (
           <p className="rounded-[var(--radius-control)] bg-risk-soft px-3 py-2 text-meta text-risk">{error}</p>
         )}
+
+        {/*
+          Repetir.
+
+          Fechado por omissão — a maioria dos eventos é um só, e abrir o
+          formulário com isto à vista faz toda a gente decidir uma coisa que não
+          queria decidir.
+
+          Cada ocorrência fica um evento a sério: um treino repetido abre uma
+          folha de presenças por dia, e desmarcar a quinta-feira em que choveu não
+          mexe nas outras. Ver `createEvent` no servidor.
+        */}
+        <div className="rounded-[var(--radius-control)] border border-line">
+          <label className="flex cursor-pointer items-center gap-2.5 px-3 py-2.5">
+            <input
+              type="checkbox"
+              checked={repetir}
+              onChange={(e) => setRepetir(e.target.checked)}
+              className="size-3.5 accent-[var(--signal)]"
+            />
+            <span className="text-body text-ink">Repetir</span>
+            <span className="text-meta text-ink-3">— marca a época toda de uma vez</span>
+          </label>
+
+          {repetir && (
+            <div className="space-y-3 border-t border-line p-3">
+              <div className="flex gap-1.5">
+                {([["DAILY", "Todos os dias"], ["WEEKLY", "Semanal"], ["MONTHLY", "Mensal"]] as const).map(
+                  ([v, label]) => (
+                    <button
+                      key={v}
+                      type="button"
+                      onClick={() => setFreq(v)}
+                      aria-pressed={freq === v}
+                      className={cx(
+                        "rounded-[var(--radius-control)] border px-2.5 py-1 text-meta font-medium transition-colors",
+                        freq === v
+                          ? "border-transparent bg-ink text-surface"
+                          : "border-line text-ink-2 hover:border-line-strong",
+                      )}
+                    >
+                      {label}
+                    </button>
+                  ),
+                )}
+              </div>
+
+              {freq === "WEEKLY" && (
+                <div>
+                  <span className="mb-1.5 block text-meta font-medium text-ink">Em que dias</span>
+                  <div className="flex gap-1">
+                    {["D", "S", "T", "Q", "Q", "S", "S"].map((letra, d) => (
+                      <button
+                        key={d}
+                        type="button"
+                        onClick={() => toggleDia(d)}
+                        aria-pressed={diasEscolhidos.includes(d)}
+                        aria-label={["Domingo", "Segunda", "Terça", "Quarta", "Quinta", "Sexta", "Sábado"][d]}
+                        className={cx(
+                          "size-7 rounded-full text-meta font-semibold transition-colors",
+                          diasEscolhidos.includes(d)
+                            ? "bg-ink text-surface"
+                            : "bg-sunken text-ink-3 hover:text-ink",
+                        )}
+                      >
+                        {letra}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              <DialogField label="Até" hint="o último dia, incluído">
+                <input
+                  type="date"
+                  value={until}
+                  min={date}
+                  onChange={(e) => setUntil(e.target.value)}
+                  className={dialogInputClass}
+                />
+              </DialogField>
+
+              {!until && (
+                <p className="text-[11px] text-ink-4">Escolhe uma data de fim para a repetição valer.</p>
+              )}
+            </div>
+          )}
+        </div>
+
       </form>
     </Dialog>
   );

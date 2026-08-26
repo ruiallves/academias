@@ -7,6 +7,10 @@ import { FamilyInviteDialog } from "@/components/FamilyInviteDialog";
 import { Home, Send } from "@/lib/icons";
 import { athleteById, currentPeriod, listFees, listGuardians, teamById } from "@/lib/api";
 import { percent, shortName } from "@/lib/format";
+import { apiPatch } from "@/lib/http";
+import { reloadAcademy } from "@/lib/store";
+import { can } from "@/lib/permissions";
+import { cx } from "@/components/primitives";
 import type { Guardian } from "@/data/types";
 import { useSession } from "@/session";
 
@@ -29,6 +33,9 @@ export default function Families() {
   const guardians = listGuardians();
   const fees = listFees(session, currentPeriod);
   const feeByAthlete = useMemo(() => new Map(fees.map((f) => [f.athleteId, f])), [fees]);
+  const [busy, setBusy] = useState<string | null>(null);
+  const [erro, setErro] = useState<string | null>(null);
+  const mayWrite = can(session, "family:write");
   const withApp = guardians.filter((g) => g.appInstalled).length;
 
   const rows = useMemo(() => {
@@ -39,6 +46,25 @@ export default function Families() {
       .sort((a, b) => a.name.localeCompare(b.name, "pt"));
   }, [guardians, filter, query]);
 
+  /*
+   * Desactivar a conta de um encarregado.
+   *
+   * A ligação ao educando fica: quem foi encarregado continua no histórico do
+   * atleta. O que sai é o **acesso** — a app deixa de abrir, e os avisos deixam
+   * de lhe chegar. É a mesma `Membership.isActive` que fecha a porta ao staff.
+   */
+  async function toggleAcesso(g: Guardian) {
+    setBusy(g.id);
+    try {
+      await apiPatch(`/api/memberships/${g.id}/active`, { active: !g.isActive });
+      await reloadAcademy();
+    } catch (e) {
+      setErro(e instanceof Error ? e.message : "Não foi possível mudar o acesso.");
+    } finally {
+      setBusy(null);
+    }
+  }
+
   const columns: Column<Guardian>[] = [
     {
       key: "name",
@@ -47,7 +73,10 @@ export default function Families() {
         <div className="flex items-center gap-2.5">
           <Monogram name={g.name} />
           <div className="min-w-0">
-            <div className="truncate font-medium text-ink">{g.name}</div>
+            <div className="flex items-center gap-1.5">
+              <span className="truncate font-medium text-ink">{g.name}</span>
+              {!g.isActive && <Pill tone="neutral">sem acesso</Pill>}
+            </div>
             <div className="text-meta text-ink-3">{g.relation}</div>
           </div>
         </div>
@@ -108,10 +137,30 @@ export default function Families() {
         return <Pill tone={tone[worst]}>{label[worst]}</Pill>;
       },
     },
+    {
+      key: "acesso",
+      header: "",
+      align: "right",
+      render: (g) =>
+        mayWrite ? (
+          <button
+            type="button"
+            onClick={() => void toggleAcesso(g)}
+            disabled={busy === g.id}
+            className={cx("ctl-ghost", g.isActive ? "text-ink-3 hover:text-risk" : "text-ok")}
+          >
+            {busy === g.id ? "…" : g.isActive ? "Desactivar" : "Reactivar"}
+          </button>
+        ) : null,
+    },
   ];
 
   return (
     <>
+      {erro && (
+        <p className="mb-3 rounded-[var(--radius-control)] bg-risk-soft px-3.5 py-2.5 text-meta text-risk">{erro}</p>
+      )}
+
       <PageHeader title="Famílias" subtitle={`${guardians.length} encarregados de educação`}>
         <button type="button" onClick={() => setConvidar(true)} className="ctl-primary">
           <Send className="size-3.5" strokeWidth={1.75} />

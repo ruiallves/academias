@@ -103,7 +103,24 @@ async function main() {
 
   /* -------------------------------------------------------------------- */
   console.log("\n=== 3. RBAC — coach não faz operações de director ===");
-  check("coach não convida staff (sem staff:write)", (await req(coach, "POST", "/api/invites", { name: "Alguem Valido", email: `csw-${Date.now()}@e.pt`, role: "COACH" })).status === 403);
+  /*
+   * O convite passou a levar um **cargo** (`academyRoleId`) em vez do enum de
+   * permissões — ver `invites.dto.ts`. Os cargos reais lêem-se aqui para o teste
+   * exercer a permissão a sério: com um id inventado, a `ValidationPipe` ou o
+   * "cargo desconhecido" respondiam 400 e o 403 nunca chegava a ser testado.
+   */
+  const cargos = (await req(director, "GET", "/api/roles")).body ?? [];
+  const cargoTreinador = cargos.find((r) => r.baseRole === "COACH") ?? cargos.find((r) => !r.isSystem);
+  const cargoPresidente = cargos.find((r) => r.key === "presidente");
+
+  check(
+    "coach não convida staff (sem staff:write)",
+    (await req(coach, "POST", "/api/invites", {
+      name: "Alguem Valido",
+      email: `csw-${Date.now()}@e.pt`,
+      academyRoleId: cargoTreinador?.id ?? "sem-cargos",
+    })).status === 403,
+  );
   check("coach não vê mensalidades (sem billing:read)", (await req(coach, "GET", "/api/charges")).status === 403);
   // O treinador pode mudar o tecto da SUA equipa (monta a convocatória, sabe quantos
   // precisa) — mas o âmbito impede-o de mexer numa equipa que não é dele.
@@ -111,8 +128,17 @@ async function main() {
 
   /* -------------------------------------------------------------------- */
   console.log("\n=== 4. Escalada de privilégios via convite ===");
-  const owner = await req(director, "POST", "/api/invites", { name: "Dono", email: `owner-${Date.now()}@e.pt`, role: "OWNER" });
-  check("director não convida um OWNER (acima do seu nível)", owner.status === 403, `${owner.status}`);
+  /*
+   * A escalada continua fechada, agora pelo cargo: o presidente tem rank 100 e
+   * um diretor tem 80, por isso o servidor recusa. É a mesma regra de sempre,
+   * lida do `AcademyRole` em vez do enum solto.
+   */
+  const owner = await req(director, "POST", "/api/invites", {
+    name: "Dono",
+    email: `owner-${Date.now()}@e.pt`,
+    academyRoleId: cargoPresidente?.id ?? "sem-presidente",
+  });
+  check("director não convida para o cargo de presidente (acima do seu nível)", owner.status === 403, `${owner.status}`);
 
   /* -------------------------------------------------------------------- */
   console.log("\n=== 5. Mass assignment (VULN-005) ===");
@@ -201,8 +227,27 @@ async function main() {
 
   /* -------------------------------------------------------------------- */
   console.log("\n=== 13. Slug reservado não pode ser registado ===");
-  const reserved = await req(admin, "POST", "/api/platform/academies", { name: "Painel Falso", slug: "admin", directorName: "X", directorEmail: `res-${Date.now()}@e.pt` });
-  check("slug 'admin' recusado", reserved.status === 400, `${reserved.status}`);
+  /*
+   * Precisa de um administrador da plataforma para correr.
+   *
+   * A conta semeada (`admin@academias.pt`) deixou de ser garantida: a plataforma
+   * passou a poder apagar administradores, e apagar o de origem é exactamente o
+   * que se faz depois de criar o próprio. Sem ele, isto não é uma falha de
+   * segurança — é um teste que não tem por onde entrar, e dizê-lo é mais honesto
+   * do que uma linha vermelha permanente.
+   */
+  //
+  // Ter sessão não chega: a conta pode existir no Supabase e já não ser
+  // administrador (foi apagada do painel). É o `/me` que responde a isso, e é o
+  // mesmo 403 que o teste de isolamento acima confirma estar a funcionar.
+  const adminAtivo = admin && (await req(admin, "GET", "/api/platform/me")).status === 200;
+
+  if (!adminAtivo) {
+    console.log("  SALTA slug reservado — a conta de plataforma semeada já não é administradora");
+  } else {
+    const reserved = await req(admin, "POST", "/api/platform/academies", { name: "Painel Falso", slug: "admin", directorName: "X", directorEmail: `res-${Date.now()}@e.pt` });
+    check("slug 'admin' recusado", reserved.status === 400, `${reserved.status}`);
+  }
 
   /* -------------------------------------------------------------------- */
   console.log("\n=== Limpeza ===");

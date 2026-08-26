@@ -7,6 +7,8 @@ class CreateCatalogItemDto {
   @IsString() @Length(1, 40) kind!: string;
   @IsString() @Length(1, 80) label!: string;
   @IsOptional() @IsString() @Length(0, 160) note?: string;
+  /** Nulo ou ausente é "todos os desportos" — ver o serviço. */
+  @IsOptional() @IsString() @Length(1, 40) sportId?: string;
 }
 
 class UpdateCatalogItemDto {
@@ -34,7 +36,7 @@ export class CatalogsController {
 
   @Post()
   create(@Req() req: AuthedRequest, @Body() dto: CreateCatalogItemDto) {
-    return this.catalogs.create(req.ctx, dto.kind, dto.label, dto.note);
+    return this.catalogs.create(req.ctx, dto.kind, dto.label, dto.note, dto.sportId ?? null);
   }
 
   @Patch(":id")

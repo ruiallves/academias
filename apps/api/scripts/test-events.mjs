@@ -43,7 +43,21 @@ const call = async (token, method, pathname, body) => {
 
 const db = new pg.Client({ connectionString: env("MIGRATE_DATABASE_URL"), ssl: { rejectUnauthorized: false } });
 await db.connect();
+/*
+ * A limpeza tem de apanhar as tres tabelas.
+ *
+ * Um evento do calendario nao vive so em `CalendarEvent`: um treino e uma
+ * `TrainingSession` e um jogo e um `Match` — sao as tabelas ricas, que abrem
+ * folha de presencas e convocatoria. Ver `createEvent`.
+ *
+ * `TrainingSession` nao tem titulo, por isso nao ha "ZZ" por onde a apanhar: a
+ * limpeza e pela hora fixa que este teste usa. Sem ela, uma corrida que rebentasse
+ * a meio deixava o treino la, e a corrida seguinte falhava com "esta equipa ja tem
+ * um treino marcado a esta hora" — que e o teste a bater em si proprio.
+ */
 await db.query(`DELETE FROM "CalendarEvent" WHERE title LIKE 'ZZ Evento%'`);
+await db.query(`DELETE FROM "TrainingSession" WHERE "startsAt" IN ('2026-09-01T18:00:00.000Z', '2026-09-01T20:00:00.000Z')`);
+await db.query(`DELETE FROM "Match" WHERE "startsAt" = '2026-09-01T18:00:00.000Z'`);
 
 const director = await login("direcao@lifeclub.pt");
 const coach = await login("treinador@lifeclub.pt");
@@ -55,14 +69,34 @@ const base = (title, extra = {}) => ({ kind: "TRAINING", title, startsAt: S1, en
 
 console.log("=== Criar ===");
 const teamEv = await call(director, "POST", "/api/events", base("ZZ Evento Equipa", { teamId: "t_sub11" }));
+/*
+ * A criação devolve um **resumo**, não um evento.
+ *
+ * Mudou quando os eventos passaram a poder repetir-se: um pedido pode criar
+ * trinta linhas, e devolver só a primeira era esconder o que aconteceu. A forma
+ * é sempre a mesma — `{ created, skipped, events }` — com ou sem repetição, para
+ * quem lê não ter de adivinhar qual das duas veio.
+ */
+const primeiro = (r) => r.body?.events?.[0];
+
 check("a direção cria um evento de equipa", teamEv.status === 201 || teamEv.status === 200, JSON.stringify(teamEv.body).slice(0, 140));
-check("nasce por cancelar", teamEv.body?.cancelled === false);
-check("com a equipa certa", teamEv.body?.teamId === "t_sub11");
+check("nasce por cancelar", primeiro(teamEv)?.cancelled === false);
+check("com a equipa certa", primeiro(teamEv)?.teamId === "t_sub11");
 const wideEv = await call(director, "POST", "/api/events", base("ZZ Evento Academia", { kind: "OTHER" }));
-check("a direção cria um evento de toda a academia (sem equipa)", wideEv.status === 201 && wideEv.body?.teamId === null, `${wideEv.status}`);
+check("a direção cria um evento de toda a academia (sem equipa)", wideEv.status === 201 && primeiro(wideEv)?.teamId === null, `${wideEv.status}`);
 
 console.log("\n=== Permissão e âmbito ===");
-const coachOwn = await call(coach, "POST", "/api/events", base("ZZ Evento Treinador", { teamId: "t_sub11" }));
+/*
+ * Outra hora, de propósito.
+ *
+ * A direcao ja marcou um treino do t_sub11 as 18h, e a mesma equipa nao treina
+ * duas vezes a mesma hora — o servidor recusa, e bem. O que este bloco verifica e
+ * o **ambito** (o treinador cria para a equipa dele), nao a colisao de horarios,
+ * que tem o seu proprio teste.
+ */
+const S2 = "2026-09-01T20:00:00.000Z";
+const E2 = "2026-09-01T21:30:00.000Z";
+const coachOwn = await call(coach, "POST", "/api/events", base("ZZ Evento Treinador", { teamId: "t_sub11", startsAt: S2, endsAt: E2 }));
 check("um treinador cria para a sua equipa", coachOwn.status === 201 || coachOwn.status === 200, `${coachOwn.status}`);
 const coachWide = await call(coach, "POST", "/api/events", base("ZZ Evento TreinadorAcademia"));
 check("um treinador não cria 'toda a academia' (403)", coachWide.status === 403, `${coachWide.status}`);
@@ -81,20 +115,48 @@ check("equipa desconhecida recusada (400)", badTeam.status === 400, `${badTeam.s
 
 console.log("\n=== Ler no intervalo ===");
 const list = await call(director, "GET", "/api/events?from=2026-08-01&to=2026-10-01");
-check("a leitura devolve os eventos criados", Array.isArray(list.body) && list.body.filter((e) => e.title.startsWith("ZZ Evento")).length === 3, `${list.body?.length}`);
+/*
+ * `/api/events` devolve **um**, e nao tres.
+ *
+ * Um treino nao e um `CalendarEvent` — e uma `TrainingSession`, porque abre folha
+ * de presencas e a app da familia le-a de la. Ver o comentario em `createEvent`.
+ * Dos tres eventos criados acima, dois sao treinos e vivem na outra tabela; so o
+ * de "toda a academia" (kind OTHER) esta aqui.
+ *
+ * Este teste dizia 3 e passou a dizer 1 quando os treinos mudaram de casa. A
+ * verificacao que interessa e a de baixo: os treinos existem, e existem no sitio
+ * certo.
+ */
+check(
+  "a leitura de eventos devolve o evento generico",
+  Array.isArray(list.body) && list.body.filter((e) => e.title.startsWith("ZZ Evento")).length === 1,
+  `${list.body?.length}`,
+);
+
+const sessoes = await call(director, "GET", "/api/sessions?from=2026-08-01&to=2026-10-01");
+// Pelas horas exactas, e nao pelo dia: a academia de demonstracao ja tem
+// treinos a 1 de Setembro, e o dia inteiro apanhava-os tambem.
+const dosTestes = Array.isArray(sessoes.body)
+  ? sessoes.body.filter((x) => [S1, S2].includes(new Date(x.startsAt).toISOString()))
+  : [];
+check("e os dois treinos estao em /api/sessions", dosTestes.length === 2, `${dosTestes.length}`);
 
 console.log("\n=== Cancelar e reativar ===");
-const id = teamEv.body.id;
+const id = primeiro(teamEv).id;
 const cancelled = await call(director, "PATCH", `/api/events/${id}`, { cancelled: true });
 check("cancela o evento (cancelled=true)", cancelled.status === 200 && cancelled.body?.cancelled === true, `${cancelled.status}`);
 const reactivated = await call(director, "PATCH", `/api/events/${id}`, { cancelled: false });
 check("reativa o evento (cancelled=false)", reactivated.status === 200 && reactivated.body?.cancelled === false, `${reactivated.status}`);
-const coachCancelWide = await call(coach, "PATCH", `/api/events/${wideEv.body.id}`, { cancelled: true });
+const coachCancelWide = await call(coach, "PATCH", `/api/events/${primeiro(wideEv).id}`, { cancelled: true });
 check("um treinador não cancela evento de toda a academia (403)", coachCancelWide.status === 403, `${coachCancelWide.status}`);
 
 console.log("\n=== Ficou na base ===");
 const total = (await db.query(`SELECT count(*)::int n FROM "CalendarEvent" WHERE title LIKE 'ZZ Evento%'`)).rows[0].n;
-check("3 eventos de teste na base", total === 3, `${total}`);
+check("1 evento generico na base", total === 1, `${total}`);
+const treinos = (await db.query(
+  `SELECT count(*)::int n FROM "TrainingSession" WHERE "startsAt" IN ('2026-09-01T18:00:00.000Z','2026-09-01T20:00:00.000Z')`,
+)).rows[0].n;
+check("2 treinos na tabela de treinos", treinos === 2, `${treinos}`);
 
 console.log("\n=== Limpeza ===");
 await db.query(`DELETE FROM "CalendarEvent" WHERE title LIKE 'ZZ Evento%'`);

@@ -192,9 +192,19 @@ export type RoadmapItem = { when: string; title: string; body: string };
  */
 export const ROADMAP: RoadmapItem[] = [
   {
-    when: "Outubro 2026",
+    when: "Setembro 2026",
     title: "Integração ZeroZero e FPF",
     body: "Jogos, calendários e resultados oficiais sem ninguém os copiar à mão. Depende de licenciamento — estamos a tratar disso.",
+  },
+  {
+    when: "Outubro 2026",
+    title: "Aplicação para os atletas",
+    body: "O atleta instala a app do clube, vê o que é dele e recebe notificações. Treinos, convocatórias, presenças e avaliações.",
+  },
+  {
+    when: "Outubro 2026",
+    title: "Sistema Financeiro Avançado",
+    body: "Todo o sistema financeiro do clube com despesas, receitas, relatórios e exportação para contabilidade.",
   },
   {
     when: "Novembro 2027",
@@ -205,6 +215,11 @@ export const ROADMAP: RoadmapItem[] = [
     when: "Janeiro 2027",
     title: "IA sobre os dados do clube",
     body: "Resumos e sinais a partir do que já lá está — nunca a inventar o que ninguém registou.",
+  },
+    {
+    when: "Março 2027",
+    title: "IA sobre os videos do clube",
+    body: "Análise de vídeo com visão computacional, para extrair métricas e insights a partir do que o clube já grava para analisar adversarios, treinos e jogos.",
   },
 ];
 

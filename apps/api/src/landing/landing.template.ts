@@ -145,6 +145,15 @@ ${academy.logoUrl ? `<meta property="og:image" content="${esc(academy.logoUrl)}"
     --ink-2: #524f48;
     --ink-3: #8a867c;
     --signal: ${signal};
+    /*
+     * A cor do clube, escurecida.
+     *
+     * Da profundidade aos estilhacos sem trazer uma segunda cor, e serve de fundo
+     * onde tem de haver texto branco por cima — um clube amarelo com branco por
+     * cima e ilegivel, e este mix poe qualquer tom abaixo desse limiar. Gemea de
+     * --club-deep na pagina de socios.
+     */
+    --signal-deep: color-mix(in oklab, ${signal} 72%, black);
   }
   * { box-sizing: border-box; }
   body {
@@ -163,26 +172,63 @@ ${academy.logoUrl ? `<meta property="og:image" content="${esc(academy.logoUrl)}"
     flex-direction: column;
     align-items: center;
     justify-content: center;
-    padding: 32px 20px 24px;
+    padding: 40px 20px 24px;
+    position: relative;
+  }
+
+  /*
+    O halo da cor do clube.
+
+    A pagina era branca com um quadrado colorido ao meio — correcta e sem
+    presenca nenhuma. Isto da-lhe a cor do clube sem a pintar por cima: um brilho
+    largo no topo, que e o que um pai reconhece antes de ler o nome.
+
+    Um so gradiente, da cor que o clube escolheu. Nao ha segunda cor nem vidro
+    fosco: a marca aqui e do clube, e o que nos poe no ecra tem de a servir.
+  */
+  main::before {
+    content: "";
+    position: absolute;
+    inset: 0 0 auto 0;
+    height: 62vh;
+    background: radial-gradient(120% 76% at 50% 0%,
+      color-mix(in oklab, var(--signal) 17%, transparent) 0%, transparent 70%);
+    pointer-events: none;
   }
   .card {
     width: 100%;
     max-width: 400px;
+    position: relative;
   }
   .mark {
-    width: 56px;
-    height: 56px;
-    border-radius: 16px;
-    background: var(--signal);
+    width: 76px;
+    height: 76px;
+    border-radius: 24px;
+    /*
+     * A cor do clube, escurecida o suficiente para as iniciais brancas lerem.
+     *
+     * Era a cor pura, e com um clube amarelo dava branco sobre amarelo — o mesmo
+     * problema do painel que este ecra deixou de ter. Misturar 22% de preto poe
+     * qualquer tom abaixo do limiar em que o branco deixa de se ver, sem lhe
+     * tirar a identidade: um amarelo fica ouro escuro, um azul-marinho fica
+     * praticamente o mesmo azul.
+     *
+     * So se aplica quando NAO ha emblema — com emblema nao ha caixa nenhuma.
+     */
+    background: color-mix(in oklab, var(--signal) 78%, black);
     color: #fff;
     display: flex;
     align-items: center;
     justify-content: center;
     font-weight: 700;
-    font-size: 20px;
-    margin: 0 auto 20px;
+    font-size: 26px;
+    margin: 0 auto 22px;
     letter-spacing: -0.01em;
+    overflow: hidden;
   }
+  /* Com emblema nao ha caixa — a forma e a do emblema. Ver a pagina de socios. */
+  .mark.logo { background: none; border-radius: 0; }
+  .mark.logo img { width: 100%; height: 100%; object-fit: contain; }
   .eyebrow {
     text-align: center;
     font-size: 11px;
@@ -194,9 +240,11 @@ ${academy.logoUrl ? `<meta property="og:image" content="${esc(academy.logoUrl)}"
   }
   h1 {
     text-align: center;
-    font-size: 26px;
+    font-size: 31px;
     font-weight: 600;
-    letter-spacing: -0.02em;
+    letter-spacing: -0.025em;
+    line-height: 1.08;
+    text-wrap: balance;
     color: var(--ink);
     margin: 0 0 8px;
   }
@@ -276,64 +324,90 @@ ${academy.logoUrl ? `<meta property="og:image" content="${esc(academy.logoUrl)}"
     padding: 20px;
     text-align: center;
   }
-  /* ---- Composição de computador: ecrã dividido ---------------------------- */
-  body.desktop { display: block; }
-  .split {
-    display: grid;
-    grid-template-columns: minmax(420px, 1fr) 1.15fr;
-    min-height: 100dvh;
-  }
-  .split-form {
-    display: flex;
-    flex-direction: column;
-    justify-content: center;
-    padding: 48px 64px;
-    background: var(--surface);
-  }
-  .split-form .inner { width: 100%; max-width: 360px; margin: 0 auto; }
-  .split-form h1 { text-align: left; font-size: 28px; margin-bottom: 6px; }
-  .split-form .subtitle { text-align: left; margin-bottom: 30px; }
-
+  /* ---- Composicao de computador: cartao centrado -------------------------- */
   /*
-   * O painel de marca. A cor é a do tenant — é o que torna esta página única por
-   * clube sem precisar de nenhum ficheiro por academia. Cor sólida e não
-   * gradiente: o gradiente é a escolha por omissão de toda a gente, e um campo
-   * de cor chapada com tipografia grande tem mais presença e envelhece melhor.
+   * A mesma linguagem da pagina de socios: estilhacos da cor do clube em volta,
+   * e o conteudo centrado numa caixa branca.
+   *
+   * Isto era um painel gigante pintado com a cor do tenant e texto branco por
+   * cima. Funcionava com um azul-escuro e partia-se com metade das cores
+   * possiveis — um clube amarelo dava branco sobre amarelo, ilegivel. E o clube
+   * nao escolhe a cor a pensar em contraste de interface; escolhe-a a pensar no
+   * emblema.
+   *
+   * Com estilhacos, a cor **nunca** fica por baixo de texto: aparece em formas
+   * nos cantos, e o texto vive sempre sobre branco. Funciona igual com um amarelo
+   * e com um azul-marinho, e e a mesma pagina que o clube ja mostra aos socios.
    */
-  .split-brand {
+  body.desktop { display: block; }
+
+  .stage {
     position: relative;
-    background: var(--signal);
-    color: #fff;
-    padding: 56px;
+    min-height: 100dvh;
     display: flex;
-    flex-direction: column;
-    justify-content: space-between;
+    align-items: center;
+    justify-content: center;
+    padding: 40px 24px;
+    background: var(--canvas);
     overflow: hidden;
   }
-  .split-brand .academy-name {
-    font-size: clamp(34px, 3.6vw, 52px);
-    line-height: 1.05;
-    font-weight: 600;
-    letter-spacing: -0.03em;
-    margin: 0;
-    max-width: 11ch;
+
+  /* --- Estilhacos ---------------------------------------------------------- */
+  .shards { position: absolute; inset: 0; pointer-events: none; overflow: hidden; }
+  .shards i { position: absolute; display: block; }
+
+  .s1 { width: 200px; height: 138px; left: -50px; bottom: 14%;
+        background: var(--signal); clip-path: polygon(0 0, 100% 42%, 30% 100%); opacity: .9; }
+  .s2 { width: 158px; height: 200px; left: 48px; bottom: 4%;
+        background: var(--signal-deep); clip-path: polygon(0 22%, 100% 0, 62% 100%); opacity: .85; }
+  .s3 { width: 96px; height: 64px; left: 140px; bottom: 30%;
+        background: var(--signal); clip-path: polygon(0 50%, 100% 0, 78% 100%); opacity: .45; }
+  .s4 { width: 220px; height: 156px; right: -62px; top: 15%;
+        background: var(--signal); clip-path: polygon(0 0, 100% 50%, 26% 100%); opacity: .5; }
+  .s5 { width: 168px; height: 220px; right: 32px; top: 32%;
+        background: var(--signal-deep); clip-path: polygon(30% 0, 100% 30%, 0 100%); opacity: .65; }
+  .s6 { width: 126px; height: 88px; right: -22px; bottom: 12%;
+        background: var(--signal); clip-path: polygon(0 30%, 100% 0, 60% 100%); opacity: .35; }
+
+  /* Abaixo destas larguras os estilhacos passariam por cima do cartao. */
+  @media (max-width: 1240px) { .s4, .s5 { display: none; } }
+  @media (max-width: 980px) {
+    .s3 { display: none; }
+    .s1, .s2 { transform: scale(.5); transform-origin: left bottom; opacity: .35; }
+    .s6 { transform: scale(.5); transform-origin: right bottom; opacity: .22; }
   }
-  .split-brand .claim {
-    margin: 18px 0 0;
-    font-size: 16px;
-    line-height: 1.5;
-    opacity: 0.82;
-    max-width: 34ch;
+
+  /* --- O cartao ------------------------------------------------------------ */
+  .card-login {
+    position: relative;
+    z-index: 1;
+    width: 100%;
+    max-width: 420px;
+    background: var(--surface);
+    border: 1px solid var(--line);
+    border-radius: 22px;
+    padding: 40px 38px 34px;
+    box-shadow: 0 1px 2px rgba(26,25,23,.04), 0 24px 56px -26px rgba(26,25,23,.24);
+    text-align: center;
   }
-  .split-brand .foot { font-size: 12.5px; opacity: 0.6; }
-  /* Uma marca de água discreta, para o campo de cor não ficar chapado. */
-  .split-brand::after {
-    content: "";
+  .card-login h1 { font-size: 27px; margin-bottom: 4px; }
+  .card-login .subtitle { margin-bottom: 28px; font-size: 14.5px; }
+  /* O formulario volta a alinhar a esquerda — etiquetas centradas leem-se mal. */
+  .card-login .field { text-align: left; }
+  .card-login .install-aside { text-align: center; }
+  .card-login .steps { text-align: left; }
+  .card-login .eyebrow { text-align: center; }
+
+  /* O endereco do clube, por baixo do cartao. Situa sem ocupar o cartao. */
+  .stage-foot {
     position: absolute;
-    right: -110px; bottom: -140px;
-    width: 460px; height: 460px;
-    border-radius: 50%;
-    background: rgba(255,255,255,0.07);
+    bottom: 26px; left: 0; right: 0;
+    text-align: center;
+    font-size: 12px;
+    letter-spacing: .06em;
+    text-transform: uppercase;
+    color: var(--ink-3);
+    z-index: 1;
   }
 
   .install-aside {
@@ -348,8 +422,7 @@ ${academy.logoUrl ? `<meta property="og:image" content="${esc(academy.logoUrl)}"
 
   @media (max-width: 900px) {
     .split { grid-template-columns: 1fr; }
-    .split-brand { display: none; }
-    .split-form { padding: 36px 24px; }
+    .stage { padding: 36px 24px; }
   }
 
   .divider {
@@ -403,12 +476,34 @@ ${academy.logoUrl ? `<meta property="og:image" content="${esc(academy.logoUrl)}"
     font-size: 12.5px;
     line-height: 1.45;
   }
+  /*
+    O reset do botao, e nao e cosmetica.
+
+    Isto e um <button> com estilo escrito para um <a>: so tinha font-size, color
+    e text-decoration. Um botao sem background nem border herda o do browser —
+    fundo cinzento, moldura, cantos — e aparecia no fundo da pagina do clube com
+    ar de coisa por acabar.
+
+    (Sem crases: isto vive dentro de um template literal, e uma crase aqui fecha
+    a string a meio do ficheiro.)
+  */
   .staff-link {
+    appearance: none;
+    background: none;
+    border: 0;
+    padding: 8px 12px;
+    margin: 0 auto;
+    display: inline-block;
+    font: inherit;
     font-size: 12.5px;
     color: var(--ink-3);
     text-decoration: none;
+    cursor: pointer;
+    border-radius: 8px;
+    transition: color .15s ease, background .15s ease;
   }
-  .staff-link:hover { color: var(--ink-2); }
+  .staff-link:hover { color: var(--ink); background: var(--sunken); }
+  .staff-link:focus-visible { outline: 2px solid var(--signal); outline-offset: 2px; }
 </style>
 </head>
 <body class="${desktop ? "desktop" : ""}">
@@ -417,7 +512,7 @@ ${
     ? renderDesktopFamilyInvite(academy, shortName, name, pageUrl)
     : desktop
       ? renderDesktop(academy, shortName, name)
-      : renderMobile(academy, shortName, platform, inAppBrowser, familyUrl)
+      : renderMobile(academy, shortName, platform, inAppBrowser, familyUrl, Boolean(opts.hasFamilyInvite))
 }
 
 <script>
@@ -682,35 +777,31 @@ ${
  * em destaque aqui seria mandar alguém para um beco.
  */
 function renderDesktop(academy: AcademyBranding, shortName: string, name: string): string {
-  return `  <div class="split">
-    <section class="split-form">
-      <div class="inner">
-        <div class="mark" style="margin:0 0 26px">${esc(academy.mark)}</div>
-        <h1>Entrar</h1>
-        <p class="subtitle">Consola da ${name}</p>
+  return `  <div class="stage">
+    <!--
+      Os estilhacos. Decorativos, e por isso fora da arvore de acessibilidade —
+      quem usa leitor de ecra ouve o clube e o formulario, nao seis divs vazias.
+      Mesma linguagem grafica da pagina de socios.
+    -->
+    <div class="shards" aria-hidden="true">
+      <i class="s1"></i><i class="s2"></i><i class="s3"></i>
+      <i class="s4"></i><i class="s5"></i><i class="s6"></i>
+    </div>
 
-        ${loginForm()}
+    <section class="card-login">
+      <div class="mark${academy.logoUrl ? " logo" : ""}" style="margin:0 auto 22px">${academy.logoUrl ? `<img src="${esc(academy.logoUrl)}" alt="" />` : esc(academy.mark)}</div>
+      <h1>Entrar</h1>
+      <p class="subtitle">Consola da ${name}</p>
 
-        <p class="install-aside">
-          És encarregado de educação? A tua área é a aplicação no telemóvel —
-          <a href="#" id="show-install">como instalar</a>.
-        </p>
-      </div>
+      ${loginForm()}
+
+      <p class="install-aside">
+        És encarregado de educação? A tua área é a aplicação no telemóvel —
+        <a href="#" id="show-install">como instalar</a>.
+      </p>
     </section>
 
-    <aside class="split-brand">
-      <div>
-        <p class="eyebrow" style="text-align:left;color:rgba(255,255,255,0.7);margin-bottom:14px">
-          ${esc(academy.slug)}.academias.pt
-        </p>
-        <h2 class="academy-name">${shortName}</h2>
-        <p class="claim">
-          Treinos, presenças, mensalidades e o percurso de cada atleta tudo num sítio só. A aplicação oficial da ${name}.
-        </p>
-      </div>
-
-      <p class="foot">Uma academia, um endereço. Cada clube tem o seu.</p>
-    </aside>
+    <p class="stage-foot">${esc(academy.slug)}.academias.pt</p>
   </div>
 
   <!-- Instruções de instalação, escondidas até alguém as pedir no desktop. -->
@@ -749,12 +840,21 @@ function renderDesktop(academy: AcademyBranding, shortName: string, name: string
  * por isso o alternar entre os dois já funciona sem JavaScript novo.
  */
 function renderDesktopFamilyInvite(academy: AcademyBranding, shortName: string, name: string, pageUrl: string): string {
-  return `  <div class="split">
-    <section class="split-form">
-      <div class="inner">
-        <div class="mark" style="margin:0 0 26px">${esc(academy.mark)}</div>
+  return `  <div class="stage">
+    <!--
+      Os estilhacos. Decorativos, e por isso fora da arvore de acessibilidade —
+      quem usa leitor de ecra ouve o clube e o formulario, nao seis divs vazias.
+      Mesma linguagem grafica da pagina de socios.
+    -->
+    <div class="shards" aria-hidden="true">
+      <i class="s1"></i><i class="s2"></i><i class="s3"></i>
+      <i class="s4"></i><i class="s5"></i><i class="s6"></i>
+    </div>
 
-        <div id="install-panel">
+    <section class="card-login">
+      <div class="mark${academy.logoUrl ? " logo" : ""}" style="margin:0 auto 22px">${academy.logoUrl ? `<img src="${esc(academy.logoUrl)}" alt="" />` : esc(academy.mark)}</div>
+
+      <div id="install-panel">
           <p class="eyebrow" style="text-align:left">Convite da família</p>
           <h1>Abre isto no teu telemóvel</h1>
           <p class="subtitle" style="text-align:left">
@@ -778,32 +878,13 @@ function renderDesktopFamilyInvite(academy: AcademyBranding, shortName: string, 
           </ol>
         </div>
 
-        <div class="panel" id="login-panel" hidden>
-          ${loginForm()}
-        </div>
-
-        <p class="install-aside">
-          <button type="button" class="staff-link" id="show-login" style="text-align:left;padding:0">
-            És treinador, diretor ou do departamento clínico? Entrar →
-          </button>
-        </p>
-      </div>
+      <p class="install-aside">
+        Ainda não recebeste o link? Fala com a ${shortName} — o convite é pessoal e só serve para o teu
+        educando.
+      </p>
     </section>
 
-    <aside class="split-brand">
-      <div>
-        <p class="eyebrow" style="text-align:left;color:rgba(255,255,255,0.7);margin-bottom:14px">
-          ${esc(academy.slug)}.academias.pt
-        </p>
-        <h2 class="academy-name">${shortName}</h2>
-        <p class="claim">
-          Treinos, convocatórias, presenças e mensalidades — tudo o que precisas de saber sobre o teu filho, na
-          app oficial da ${name}.
-        </p>
-      </div>
-
-      <p class="foot">Uma academia, um endereço. Cada clube tem o seu.</p>
-    </aside>
+    <p class="stage-foot">${esc(academy.slug)}.academias.pt</p>
   </div>`;
 }
 
@@ -819,10 +900,23 @@ function renderMobile(
   platform: Platform,
   inAppBrowser: boolean,
   familyUrl: string,
+  /**
+   * Chegou por um link de convite de família.
+   *
+   * Quando é o caso, **não há login de staff nesta página** — nem escondido no
+   * fundo. O token no endereço já respondeu à pergunta "quem está a olhar para
+   * isto": só um pai o recebe. Oferecer-lhe um formulário de entrada é dar-lhe
+   * uma porta que não é dele e que só o pode confundir a meio de uma tarefa que
+   * tem um caminho só.
+   *
+   * O staff continua a entrar pela página do clube sem convite (`/`), que é para
+   * onde a consola o manda quando não tem sessão.
+   */
+  familyInvite: boolean,
 ): string {
   return `  <main>
     <div class="card">
-      <div class="mark" aria-hidden="true">${esc(academy.mark)}</div>
+      <div class="mark${academy.logoUrl ? " logo" : ""}" aria-hidden="true">${academy.logoUrl ? `<img src="${esc(academy.logoUrl)}" alt="" />` : esc(academy.mark)}</div>
       <p class="eyebrow">Instalar aplicação</p>
       <h1>${shortName}</h1>
       <p class="subtitle">Treinos, pagamentos e o progresso do teu atleta — tudo num sítio só.</p>
@@ -830,18 +924,22 @@ function renderMobile(
       <div class="panel" id="install-panel">
         ${renderInstall(platform, inAppBrowser, familyUrl)}
       </div>
-
+${familyInvite ? "" : `
       <div class="panel" id="login-panel" hidden>
         ${loginForm()}
-      </div>
+      </div>`}
     </div>
   </main>
-
+${
+  familyInvite
+    ? ""
+    : `
   <footer>
     <button type="button" class="staff-link" id="show-login">
       És treinador, diretor ou do departamento clínico? Entrar →
     </button>
-  </footer>`;
+  </footer>`
+}`;
 }
 
 /** O mesmo formulário nas duas composições — uma só implementação a manter. */

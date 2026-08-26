@@ -6,6 +6,7 @@ import { hasOnboarded } from "@/lib/onboarding";
 import { readToken, useSession } from "@/lib/session";
 import Entrar from "@/screens/Entrar";
 import { Avatar, cx } from "@/ui";
+import { ClubMark } from "@/ClubMark";
 import Today from "@/screens/Today";
 import Agenda from "@/screens/Agenda";
 import Payments from "@/screens/Payments";
@@ -150,13 +151,13 @@ function Header() {
   return (
     <header className="sticky top-0 z-30 bg-canvas/85 px-4 pt-[calc(10px+env(safe-area-inset-top))] pb-2 backdrop-blur-xl">
       <div className="flex items-center gap-3">
-        <span
-          className="flex size-9 items-center justify-center rounded-[11px] text-[13px] font-bold text-white shadow-[var(--shadow-soft)]"
-          style={{ background: "var(--color-signal)" }}
-          aria-hidden
-        >
-          {store.academy.mark}
-        </span>
+        <ClubMark
+          logoUrl={store.academy.logoUrl}
+          mark={store.academy.mark}
+          size={36}
+          radius={11}
+          className="shadow-[var(--shadow-soft)]"
+        />
         <span className="min-w-0 flex-1 leading-tight">
           <span className="block truncate text-[15px] font-semibold text-ink">{store.academy.shortName}</span>
           <span className="block truncate text-[12px] text-ink-3">{store.guardian.name}</span>

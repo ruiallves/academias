@@ -1,142 +1,87 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import { PageHeader } from "@/components/Shell";
 import { CatalogPanel } from "@/components/CatalogPanel";
-import { ZeroZeroPanel } from "@/components/ZeroZeroPanel";
+import { IdentityPanel } from "@/components/IdentityPanel";
+import { SportsPanel } from "@/components/SportsPanel";
+/*
+ * A importação de jogos (zerozero) saiu daqui por agora.
+ *
+ * O componente fica no repositório — `components/ZeroZeroPanel.tsx` — porque o
+ * trabalho está feito e volta a entrar quando a funcionalidade for para a frente.
+ * Tirá-lo do ecrã é só não oferecer uma caixa que ainda não se quer que ninguém
+ * use.
+ */
 import { cx, Panel, PanelHead, Pill } from "@/components/primitives";
-import { Check, CircleCheck, Wallet } from "@/lib/icons";
-import { academy } from "@/lib/api";
+import { CircleCheck, Wallet } from "@/lib/icons";
+import { useStore } from "@/lib/store";
 import { CATALOG_KEYS, type CatalogKey } from "@/lib/catalogs";
 import { can, type Permission } from "@/lib/permissions";
 import { AREAS, CLINICAL_AREAS, SCOUTING_AREAS, levelOf, type Area } from "@/lib/access";
 import { archiveRole, loadRoles, useRoles, type AcademyRole } from "@/lib/roles";
 import { RoleDialog } from "@/components/RoleDialog";
 import { useSession } from "@/session";
-import { signalVars } from "@academia/ui/tokens";
 
 /**
- * Definições — na prática, o ecrã de white-label.
+ * Definições.
  *
- * Mudar a cor aqui reescreve `--color-signal` no `:root` e a consola inteira segue,
- * ao vivo. Isso não é um truque de demonstração: é a prova de que o white-label é
- * um token, não um tema paralelo que alguém tem de manter.
+ * ## A ordem dos painéis é a ordem do trabalho
  *
- * Repara no que **não** muda: verde de pago, vermelho de vencido. As cores
- * semânticas nunca são white-label — se fossem, cada academia teria um vocabulário
- * de estado diferente e o produto deixaria de se poder explicar.
+ * Identidade, modalidades, cargos, catálogos. Antes as modalidades estavam
+ * soltas no meio, os cargos no fim e os catálogos por baixo de tudo — e não se
+ * percebia que uma coisa depende da outra. Depende: os escalões e os balneários
+ * são de uma modalidade, e um clube sem modalidades não tem o que configurar.
+ *
+ * O white-label vive no primeiro painel e agora **grava mesmo** — ver
+ * `IdentityPanel`, que explica porque é que antes não gravava.
  */
-
-const PRESETS = [
-  { name: "Verde-azulado", hex: "#0f6b62" },
-  { name: "Azul-noite", hex: "#1f4d80" },
-  { name: "Bordô", hex: "#8c2f39" },
-  { name: "Terra", hex: "#a2542a" },
-  { name: "Violeta", hex: "#5a4b9c" },
-  { name: "Grafite", hex: "#3d3d3d" },
-];
 
 export default function Settings() {
   const { session } = useSession();
-  const [signal, setSignal] = useState(academy.signalColor);
+  const store = useStore();
   const [params] = useSearchParams();
   // Deep-link a partir de qualquer diálogo que ofereça "gerir X" — p. ex. o local
   // no Novo evento. Chega aqui já com o catálogo certo aberto.
   const deepLinked = params.get("catalogo") as CatalogKey | null;
+  const painel = params.get("painel");
 
-  const apply = (hex: string) => {
-    setSignal(hex);
-    for (const [key, value] of Object.entries(signalVars(hex))) {
-      document.documentElement.style.setProperty(key, value);
-    }
-  };
+  const maySettings = can(session, "settings:write");
 
   return (
     <>
       <PageHeader
-        eyebrow="Academia Life Club"
+        eyebrow={store.academy.name}
         title="Definições"
-        subtitle="Identidade, desportos, papéis e pagamentos."
+        subtitle="Identidade, modalidades, cargos e pagamentos."
       />
 
       <div className="grid gap-3 lg:grid-cols-[1fr_340px]">
         <div className="space-y-3">
-          <Panel>
-            <PanelHead title="Identidade" hint="o que as famílias vêem" />
+          <IdentityPanel mayWrite={maySettings} />
 
-            <div className="grid gap-4 p-5 sm:grid-cols-2">
-              <Field label="Nome da academia" value={academy.name} />
-              <Field label="Endereço da app" value={`${academy.slug}.academia.pt`} mono />
-            </div>
+          <SportsPanel mayWrite={maySettings} />
 
-            <div className="border-t border-line p-5">
-              <div className="mb-1 text-meta font-medium text-ink">Cor de sinal</div>
-              <p className="mb-3 max-w-[62ch] text-meta text-ink-3">
-                Usada em identidade e selecção — navegação activa, foco, marca. Nunca em
-                estado: pago é verde e vencido é vermelho em todas as academias.
-              </p>
-
-              <div className="flex flex-wrap gap-2">
-                {PRESETS.map((p) => (
-                  <button
-                    key={p.hex}
-                    type="button"
-                    onClick={() => apply(p.hex)}
-                    aria-pressed={signal === p.hex}
-                    className={cx(
-                      "inline-flex items-center gap-2 rounded-[var(--radius-control)] border px-2.5 py-1.5 text-meta font-medium transition-colors duration-[120ms]",
-                      signal === p.hex ? "border-line-strong text-ink" : "border-line text-ink-2 hover:border-line-strong",
-                    )}
-                  >
-                    <span className="flex size-4 items-center justify-center rounded-full" style={{ background: p.hex }}>
-                      {signal === p.hex && <Check className="size-2.5 text-white" strokeWidth={3} />}
-                    </span>
-                    {p.name}
-                  </button>
-                ))}
-              </div>
-            </div>
-          </Panel>
-
-          <Panel>
-            <PanelHead title="Desportos" hint="modalidades activas" />
-            <ul className="px-5 py-1.5">
-              {academy.sports.map((s) => (
-                <li key={s.id} className="flex items-center gap-3 border-b border-line py-3 last:border-0">
-                  <span className="w-32 shrink-0 text-body font-medium text-ink">{s.name}</span>
-                  <span className="flex min-w-0 flex-1 flex-wrap gap-1">
-                    {s.positions.length ? (
-                      s.positions.map((p) => <Pill key={p}>{p}</Pill>)
-                    ) : (
-                      // Natação não tem posições — e isso é configuração, não um caso
-                      // especial no código.
-                      <span className="text-meta text-ink-4">sem posições</span>
-                    )}
-                  </span>
-                  <button type="button" className="ctl-ghost shrink-0">
-                    Editar
-                  </button>
-                </li>
-              ))}
-            </ul>
-          </Panel>
-
-          <ZeroZeroPanel session={session} />
+          {/*
+            Os cargos vêm a seguir às modalidades e antes dos catálogos.
+            É a ordem do trabalho: primeiro decide-se o que o clube pratica,
+            depois quem lá trabalha, e só então os pormenores de cada modalidade.
+          */}
+          <RolesPanel open={painel === "cargos"} />
 
           <Panel>
             <PanelHead
               title="Catálogos"
-              hint="locais, escalões, cargos e tipos de evento — usados em toda a consola"
+              hint="locais, escalões e tipos de evento — cada um pode ser de uma modalidade ou de todas"
             />
             {CATALOG_KEYS.map((key) => (
               <CatalogPanel key={key} catalogKey={key} defaultOpen={deepLinked === key} />
             ))}
           </Panel>
 
-          <RolesPanel />
         </div>
 
         <div className="space-y-3">
-          <PwaPreview signal={signal} />
+          <PwaPreview />
 
           <Panel>
             <PanelHead title="Pagamentos" />
@@ -179,22 +124,6 @@ export default function Settings() {
 
 /* -------------------------------------------------------------------------- */
 
-function Field({ label, value, mono }: { label: string; value: string; mono?: boolean }) {
-  return (
-    <label className="block">
-      <span className="mb-1 block text-meta font-medium text-ink">{label}</span>
-      <input
-        readOnly
-        value={value}
-        className={cx(
-          "h-9 w-full rounded-[var(--radius-control)] border border-line bg-surface px-2.5 text-body text-ink-2",
-          mono && "font-mono text-meta",
-        )}
-      />
-    </label>
-  );
-}
-
 function Row({ label, value, muted }: { label: string; value: string; muted?: boolean }) {
   return (
     <div className="flex items-baseline justify-between gap-3 border-b border-line pb-2 last:border-0">
@@ -213,25 +142,32 @@ function Row({ label, value, muted }: { label: string; value: string; muted?: bo
  * lá porque a pergunta que ela responde ("porque é que o treinador não vê as
  * mensalidades?") não desapareceu; passou a ter resposta editável.
  */
-function RolesPanel() {
+function RolesPanel({ open }: { open?: boolean }) {
   const { session } = useSession();
   const { roles, loaded, error } = useRoles();
   const [editing, setEditing] = useState<AcademyRole | null>(null);
   const [creating, setCreating] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     void loadRoles();
   }, []);
 
+  // Chegar aqui de um "gerir cargos" só vale a pena se o painel certo ficar à
+  // vista sem se ter de procurar entre os cinco.
+  useEffect(() => {
+    if (open) ref.current?.scrollIntoView({ block: "center", behavior: "smooth" });
+  }, [open]);
+
   const mayCreate = can(session, "role:write");
 
   return (
-    <>
+    <div ref={ref} className="space-y-3">
       <Panel>
-        <PanelHead title="Papéis e permissões" hint={loaded ? `${roles.length} papéis` : "a carregar…"}>
+        <PanelHead title="Cargos" hint={loaded ? `${roles.length} cargos` : "a carregar…"}>
           {mayCreate && (
             <button type="button" className="ctl-primary" onClick={() => setCreating(true)}>
-              Novo papel
+              Novo cargo
             </button>
           )}
         </PanelHead>
@@ -286,19 +222,19 @@ function RolesPanel() {
         </ul>
 
         <p className="border-t border-line px-5 py-3 text-meta leading-relaxed text-ink-3">
-          Um papel vale para toda a gente que o tem. Para abrir ou fechar acesso a{" "}
+          Um cargo vale para toda a gente que o tem. Para abrir ou fechar permissões a{" "}
           <strong className="font-medium text-ink-2">uma pessoa em concreto</strong> — dar mensalidades a um
           treinador, tirar-lhe o boletim clínico — abre a ficha dela em{" "}
           <Link to="/staff" className="font-medium text-ink hover:underline">
             Staff
           </Link>
-          , separador Acesso.
+          .
         </p>
       </Panel>
 
       {roles.length > 0 && (
         <Panel>
-          <PanelHead title="Quem vê o quê" hint="uma coluna por papel" />
+          <PanelHead title="Quem vê o quê" hint="uma coluna por cargo" />
           <PermissionMatrix roles={roles} />
         </Panel>
       )}
@@ -313,7 +249,7 @@ function RolesPanel() {
           }}
         />
       )}
-    </>
+    </div>
   );
 }
 
@@ -374,17 +310,24 @@ function PermissionMatrix({ roles }: { roles: AcademyRole[] }) {
  * Não é decoração: é a resposta à pergunta "como é que isto fica no telemóvel do
  * pai?", e muda ao vivo com a cor escolhida acima.
  */
-function PwaPreview({ signal }: { signal: string }) {
+function PwaPreview() {
+  const { academy } = useStore();
+  const mark = academy.shortName.slice(0, 2).toUpperCase();
+
   return (
     <Panel>
       <PanelHead title="App das famílias" hint="pré-visualização" />
       <div className="flex flex-col items-center gap-4 p-5">
         <div className="flex w-full items-center gap-3 rounded-[var(--radius-control)] border border-line bg-sunken/40 p-3">
           <span
-            className="flex size-12 shrink-0 items-center justify-center rounded-[12px] text-[15px] font-bold text-white"
-            style={{ background: signal }}
+            className="flex size-12 shrink-0 items-center justify-center overflow-hidden rounded-[12px] text-[15px] font-bold text-white"
+            style={{ background: academy.logoUrl ? "var(--color-sunken)" : "var(--color-signal)" }}
           >
-            LC
+            {academy.logoUrl ? (
+              <img src={academy.logoUrl} alt="" className="size-full object-contain" />
+            ) : (
+              mark
+            )}
           </span>
           <div className="min-w-0">
             <div className="truncate text-body font-semibold text-ink">{academy.shortName}</div>

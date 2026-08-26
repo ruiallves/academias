@@ -34,6 +34,14 @@ export type Academy = {
   name: string;
   shortName: string;
   signalColor: string;
+  /**
+   * O símbolo do clube.
+   *
+   * Vazio significa "usa o monograma" — as duas letras do nome curto, que é o
+   * que a consola, a app e a landing desenham quando não há emblema. Atravessa o
+   * produto todo: o ícone que o pai instala no telemóvel sai daqui.
+   */
+  logoUrl: string;
   city: string;
   sports: Sport[];
   /**
@@ -119,6 +127,8 @@ export type Guardian = {
   email: string;
   phone: string;
   relation: "Mãe" | "Pai" | "Encarregado";
+  /** `id` é o `membershipId` — é ele que se desactiva. */
+  isActive: boolean;
   athleteIds: string[];
   /** Se a PWA está instalada. É a métrica de adopção que nos distingue. */
   appInstalled: boolean;

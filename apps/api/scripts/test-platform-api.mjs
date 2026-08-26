@@ -32,6 +32,23 @@ const get = async (t, p) => { const r = await fetch(API + p, { headers: t ? { Au
 const admin = await login("admin@academias.pt", "plataforma2026");
 const director = await login("direcao@lifeclub.pt", "academia2026");
 
+/*
+ * A conta semeada da plataforma pode já não existir.
+ *
+ * O painel passou a poder apagar administradores, e apagar o de origem é
+ * exactamente o que se faz depois de criar o próprio. Quando isso acontece, esta
+ * suite inteira não tem por onde entrar — e dizê-lo é mais honesto do que
+ * quinze linhas vermelhas que parecem uma regressão.
+ *
+ * A conta no Supabase costuma sobreviver à linha na base de dados, por isso não
+ * chega verificar o token: pergunta-se ao `/me`, que é quem sabe.
+ */
+if ((await get(admin, "/api/platform/me")).status !== 200) {
+  console.log("\n  SALTA tudo — a conta de plataforma semeada (admin@academias.pt) já não é administradora.");
+  console.log("  Cria uma em Administradores e corre outra vez, ou usa `npm run seed:platform`.\n");
+  process.exit(0);
+}
+
 console.log("=== A porta da plataforma ===");
 check("sem sessão é 401", (await get(null, "/api/platform/overview")).status === 401);
 for (const rota of ["/api/platform/overview", "/api/platform/academies", "/api/platform/audit", "/api/platform/me"]) {

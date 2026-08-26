@@ -12,14 +12,32 @@ import { can, type RequestContext } from "../common/permissions";
  * seria dar-lhe as definições inteiras. **Escreve** só quem tem `settings:write`:
  * mudar o catálogo muda os menus de toda a academia.
  *
- * ## Semeados à primeira leitura
+ * ## Uma academia nova abre vazia
  *
- * Uma academia nova abriria com todos os menus vazios e com "Ainda não há locais"
- * em cada diálogo. Os valores por omissão dão-lhe um sítio por onde começar, e são
- * editáveis desde o primeiro segundo — como os papéis e os critérios de scouting.
+ * E é de propósito. Isto semeava quatro campos, quatro balneários e quatro
+ * escalões inventados — "Campo 1", "Sub-9" — e o efeito era pior do que a lista
+ * vazia que evitava: um diretor entrava pela primeira vez e encontrava metade do
+ * arranque já marcada como feita, com dados que não eram do clube dele. Tinha de
+ * apagar quatro coisas antes de escrever a primeira que era mesmo sua.
+ *
+ * A lista vazia diz a verdade, e o painel de arranque diz o que falta.
+ *
+ * ## A excepção, e porque é que é uma só
+ *
+ * Os tipos de evento continuam semeados porque **o domínio depende deles**: um
+ * treino abre folha de presenças, um jogo tem adversário e resultado. Não são
+ * uma sugestão de arrumação, são a diferença que o produto sabe fazer — daí
+ * `isSystem`, que os impede de serem apagados ou renomeados.
+ *
+ * ## Cargos saíram daqui
+ *
+ * `staffTitles` era um catálogo de texto livre a par dos papéis, e a duplicação
+ * era o problema: criava-se "Treinador principal" nos dois sítios e só um deles
+ * decidia alguma coisa. O cargo passou a ser o `AcademyRole`, que é o que já
+ * carrega as permissões. Ver a migração `20260826090000_cargos_e_desportos`.
  */
 
-const KINDS = ["venues", "dressingRooms", "ageGroups", "staffTitles", "eventTypes"] as const;
+const KINDS = ["venues", "dressingRooms", "ageGroups", "eventTypes"] as const;
 export type CatalogKind = (typeof KINDS)[number];
 
 export function isCatalogKind(value: string): value is CatalogKind {
@@ -27,32 +45,12 @@ export function isCatalogKind(value: string): value is CatalogKind {
 }
 
 /**
- * O ponto de partida.
+ * Os que existem à partida.
  *
- * Os tipos de evento são `isSystem`: o domínio distingue-os. Um treino abre folha
- * de presenças, um jogo tem adversário e resultado. Uma academia acrescenta os que
- * quiser, mas não pode apagar aqueles de que o produto depende.
+ * Só os tipos de evento, e só porque o domínio os distingue — ver o cabeçalho.
+ * Tudo o resto nasce vazio e é o clube que o escreve.
  */
-const SEED: Record<CatalogKind, { label: string; note?: string; isSystem?: boolean }[]> = {
-  venues: [
-    { label: "Campo 1", note: "Relvado sintético" },
-    { label: "Campo 2", note: "Relvado sintético" },
-    { label: "Pavilhão", note: "Piso interior" },
-    { label: "Sede", note: "Reuniões e formação" },
-  ],
-  dressingRooms: [
-    { label: "Balneário 1", note: "Campo 1 · lado nascente" },
-    { label: "Balneário 2", note: "Campo 1 · lado poente" },
-    { label: "Balneário 3", note: "Pavilhão · piso 0" },
-    { label: "Balneário visitantes", note: "Pavilhão · junto à entrada" },
-  ],
-  ageGroups: [
-    { label: "Sub-9", note: "2017–2018" },
-    { label: "Sub-11", note: "2015–2016" },
-    { label: "Sub-13", note: "2013–2014" },
-    { label: "Sub-15", note: "2011–2012" },
-  ],
-  staffTitles: [{ label: "Treinador principal" }, { label: "Treinador adjunto" }, { label: "Coordenador" }],
+const SEED: Partial<Record<CatalogKind, { label: string; note?: string; isSystem?: boolean }[]>> = {
   eventTypes: [
     { label: "Treino", isSystem: true },
     { label: "Jogo", isSystem: true },
@@ -70,32 +68,41 @@ export class CatalogsService {
     if (!can(ctx, "academy:read")) throw new ForbiddenException("Sem acesso à academia");
 
     return this.prisma.runAs(ctx.academyId, async (db) => {
-      const count = await db.catalogItem.count();
-      if (count === 0) {
+      // Só os tipos de evento é que se semeiam, e só uma vez — ver o cabeçalho.
+      const seeded = await db.catalogItem.count({ where: { kind: "eventTypes" } });
+      if (seeded === 0) {
         await db.catalogItem.createMany({
-          data: KINDS.flatMap((kind) =>
-            SEED[kind].map((item, i) => ({
-              academyId: ctx.academyId,
-              kind,
-              label: item.label,
-              note: item.note ?? null,
-              isSystem: item.isSystem ?? false,
-              order: i,
-              updatedAt: new Date(),
-            })),
-          ),
+          data: (SEED.eventTypes ?? []).map((item, i) => ({
+            academyId: ctx.academyId,
+            kind: "eventTypes",
+            label: item.label,
+            note: item.note ?? null,
+            isSystem: item.isSystem ?? false,
+            order: i,
+            updatedAt: new Date(),
+          })),
           skipDuplicates: true,
         });
       }
 
       return db.catalogItem.findMany({
         orderBy: [{ kind: "asc" }, { order: "asc" }, { label: "asc" }],
-        select: { id: true, kind: true, label: true, note: true, order: true, isSystem: true, archivedAt: true },
+        select: {
+          id: true, kind: true, label: true, note: true, order: true,
+          isSystem: true, archivedAt: true, sportId: true,
+        },
       });
     });
   }
 
-  async create(ctx: RequestContext, kind: string, label: string, note?: string) {
+  /**
+   * Criar um item, num desporto ou em todos.
+   *
+   * `sportId` nulo é "todos os desportos" — o que um clube de uma modalidade só
+   * usa sem nunca ter de escolher nada, e o que todos os itens criados antes
+   * desta coluna são.
+   */
+  async create(ctx: RequestContext, kind: string, label: string, note?: string, sportId?: string | null) {
     this.mustWrite(ctx);
     if (!isCatalogKind(kind)) throw new BadRequestException("Catálogo desconhecido");
 
@@ -103,8 +110,28 @@ export class CatalogsService {
     if (clean.length < 1) throw new BadRequestException("Falta o nome");
 
     return this.prisma.runAs(ctx.academyId, async (db) => {
+      // O desporto tem de ser desta academia. A RLS já o garantiria, mas dizer
+      // "esse desporto não existe" é melhor do que uma violação de chave externa.
+      if (sportId) {
+        const sport = await db.sport.findFirst({ where: { id: sportId }, select: { id: true } });
+        if (!sport) throw new BadRequestException("Desporto desconhecido");
+      }
+
+      /*
+       * O duplicado, verificado aqui e não só pela chave única.
+       *
+       * A chave é `(academyId, kind, sportId, label)`, e no Postgres cada NULL é
+       * distinto — dois itens globais com o mesmo nome passariam por ela sem
+       * darem erro. Ver a nota na migração `20260826090000_cargos_e_desportos`.
+       */
+      const existing = await db.catalogItem.findFirst({
+        where: { kind, label: clean, sportId: sportId ?? null },
+        select: { id: true },
+      });
+      if (existing) throw new BadRequestException(`"${clean}" já existe neste catálogo`);
+
       const last = await db.catalogItem.findFirst({
-        where: { kind },
+        where: { kind, sportId: sportId ?? null },
         orderBy: { order: "desc" },
         select: { order: true },
       });
@@ -116,13 +143,16 @@ export class CatalogsService {
             kind,
             label: clean,
             note: note?.trim() || null,
+            sportId: sportId ?? null,
             order: (last?.order ?? 0) + 1,
             updatedAt: new Date(),
           },
-          select: { id: true, kind: true, label: true, note: true, order: true, isSystem: true, archivedAt: true },
+          select: {
+            id: true, kind: true, label: true, note: true, order: true,
+            isSystem: true, archivedAt: true, sportId: true,
+          },
         });
       } catch (error) {
-        // Duplicados são o problema que este catálogo existe para resolver.
         if ((error as { code?: string }).code === "P2002") {
           throw new BadRequestException(`"${clean}" já existe neste catálogo`);
         }

@@ -48,6 +48,8 @@ import { DevelopmentController } from "./development/development.controller";
 import { EvaluationsService } from "./development/evaluations.service";
 import { PhotosController } from "./storage/photos.controller";
 import { PhotosService } from "./storage/photos.service";
+import { ClubLogoController } from "./storage/club-logo.controller";
+import { ClubLogoService } from "./storage/club-logo.service";
 import { StorageService } from "./storage/storage.service";
 import { ReportsService } from "./development/reports.service";
 import { SupabaseAccountsService } from "./auth/supabase-accounts.service";
@@ -103,6 +105,7 @@ import { TenantAssetsController } from "./tenant/tenant-assets.controller";
     FamilyInviteController,
     DevelopmentController,
     PhotosController,
+    ClubLogoController,
     FamilySignupController,
     // Público por construção — o token no URL é que autentica. Ver o ficheiro.
     ContactsCalendarController,
@@ -140,6 +143,7 @@ import { TenantAssetsController } from "./tenant/tenant-assets.controller";
     FamilyInvitesService,
     EvaluationsService,
     PhotosService,
+    ClubLogoService,
     StorageService,
     ReportsService,
     SupabaseAccountsService,

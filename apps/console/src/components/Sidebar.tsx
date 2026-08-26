@@ -7,6 +7,9 @@ import { academy, listAthletes, listTeams, navCounts, teamById } from "@/lib/api
 import { DEV_PROFILES, devSignInAs, signOut } from "@/lib/session";
 import { ROLE_LABEL, useSession } from "@/session";
 import { cx, Monogram } from "./primitives";
+import { ClubMark } from "./ClubMark";
+import { NotificationsPanel } from "./NotificationsPanel";
+import { useUnreadCount } from "@/lib/notifications";
 
 export function Sidebar({
   collapsed,
@@ -82,21 +85,26 @@ export function Sidebar({
 /* -------------------------------------------------------------------------- */
 
 function AcademyHeader({ collapsed, onToggle }: { collapsed: boolean; onToggle: () => void }) {
+  const [notifOpen, setNotifOpen] = useState(false);
+  const unread = useUnreadCount();
+
   // Recolhida, a própria marca é o botão de expandir — evita dois alvos de 32px
   // empilhados numa coluna de 60px.
   if (collapsed) {
     return (
       <div className="nav-header flex items-center justify-center border-b border-line">
+        {/* O mesmo "LC" em código que estava no cabeçalho expandido. Ver `ClubMark`. */}
         <button
           type="button"
           onClick={onToggle}
           aria-label="Expandir navegação"
-          className="group relative flex size-7 items-center justify-center overflow-hidden rounded-[7px] text-[11px] font-bold text-white"
-          style={{ background: "var(--color-signal)" }}
+          className="group relative flex size-7 items-center justify-center"
         >
-          <span className="transition-opacity duration-[120ms] group-hover:opacity-0">LC</span>
+          <span className="transition-opacity duration-[120ms] group-hover:opacity-0">
+            <ClubMark size={28} radius={7} />
+          </span>
           <PanelLeft
-            className="absolute size-4 opacity-0 transition-opacity duration-[120ms] group-hover:opacity-100"
+            className="absolute size-4 text-ink-2 opacity-0 transition-opacity duration-[120ms] group-hover:opacity-100"
             strokeWidth={1.75}
           />
         </button>
@@ -107,23 +115,39 @@ function AcademyHeader({ collapsed, onToggle }: { collapsed: boolean; onToggle: 
   return (
     <div className="nav-header flex items-center gap-2 border-b border-line pr-2 pl-3">
       {/* A marca é da academia, não nossa. Somos a tecnologia por trás. */}
-      <span
-        className="flex size-7 shrink-0 items-center justify-center rounded-[7px] text-[11px] font-bold text-white"
-        style={{ background: "var(--color-signal)" }}
-        aria-hidden
-      >
-        LC
-      </span>
+      {/*
+        O símbolo do clube — era "LC" escrito à mão, o monograma do clube de
+        demonstração. Um clube chamado Fafe abria a consola e via as iniciais de
+        outro. Ver `ClubMark`.
+      */}
+      <ClubMark size={28} radius={7} />
 
       <div className="min-w-0 flex-1">
         <div className="truncate text-body font-semibold text-ink">{academy.shortName}</div>
         <div className="truncate text-[11px] text-ink-3">Época 2026/27</div>
       </div>
 
-      <button type="button" className="ctl-ghost relative size-8 justify-center px-0" aria-label="Notificações">
-        <Bell className="size-4" strokeWidth={1.75} />
-        <span className="absolute top-1.5 right-1.5 size-1.5 rounded-full bg-risk ring-2 ring-surface" />
-      </button>
+      {/*
+        O sino, agora ligado.
+        Era um botão sem `onClick` com um ponto vermelho permanente — decoração
+        que não vinha de haver mesmo alguma coisa por ler. O ponto passa a
+        aparecer só quando há, e carregar abre a lista. Ver `NotificationsPanel`.
+      */}
+      <div className="relative">
+        <button
+          type="button"
+          onClick={() => setNotifOpen((v) => !v)}
+          aria-label="Notificações"
+          aria-expanded={notifOpen}
+          className="ctl-ghost relative size-8 justify-center px-0"
+        >
+          <Bell className="size-4" strokeWidth={1.75} />
+          {unread > 0 && (
+            <span className="absolute top-1.5 right-1.5 size-1.5 rounded-full bg-risk ring-2 ring-surface" />
+          )}
+        </button>
+        {notifOpen && <NotificationsPanel onClose={() => setNotifOpen(false)} />}
+      </div>
 
       <button
         type="button"
@@ -291,14 +315,14 @@ function Item({
         cx(
           "nav-item group relative flex items-center rounded-[var(--radius-control)] text-body font-medium transition-colors duration-[120ms]",
           collapsed ? "justify-center px-0" : "gap-2.5 px-2.5",
-          isActive ? "bg-signal-soft text-signal-ink" : "text-ink-2 hover:bg-sunken hover:text-ink",
+          isActive ? "nav-active" : "text-ink-2 hover:bg-sunken hover:text-ink",
         )
       }
     >
       {({ isActive }) => (
         <>
           <Icon
-            className={cx("size-4 shrink-0", isActive ? "text-signal" : "text-ink-3 group-hover:text-ink-2")}
+            className={cx("size-4 shrink-0", isActive ? "nav-active-icon" : "text-ink-3 group-hover:text-ink-2")}
             strokeWidth={1.75}
           />
           {!collapsed && <span className="flex-1 truncate">{item.label}</span>}
@@ -381,7 +405,7 @@ function UserCard({ collapsed }: { collapsed: boolean }) {
                       current ? "cursor-default" : "hover:bg-sunken",
                     )}
                   >
-                    <span className="flex size-5 shrink-0 items-center justify-center text-signal">
+                    <span className="flex size-5 shrink-0 items-center justify-center nav-active-icon">
                       {current && <Check className="size-3.5" strokeWidth={2.25} />}
                     </span>
                     <span className={cx("min-w-0 flex-1 truncate text-body", current ? "font-medium text-ink" : "text-ink-2")}>

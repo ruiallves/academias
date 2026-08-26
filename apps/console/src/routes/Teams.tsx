@@ -2,8 +2,9 @@ import { Link } from "react-router-dom";
 import { useState } from "react";
 import { PageHeader } from "@/components/Shell";
 import { NewTeamDialog } from "@/components/NewTeamDialog";
+import { ImportTeamsDialog } from "@/components/ImportTeamsDialog";
 import { Bar, cx, Monogram, Panel, Pill } from "@/components/primitives";
-import { ArrowRight, Plus } from "@/lib/icons";
+import { ArrowRight, Plus, Upload } from "@/lib/icons";
 import { attendanceRate, coachById, listAthletes, listTeams, sportById } from "@/lib/api";
 import { can } from "@/lib/permissions";
 import { useSession } from "@/session";
@@ -24,6 +25,7 @@ export default function Teams() {
   const athletes = listAthletes(session);
   const mine = !can(session, "team:write");
   const [creating, setCreating] = useState(false);
+  const [importing, setImporting] = useState(false);
 
   return (
     <>
@@ -32,10 +34,18 @@ export default function Teams() {
         subtitle={mine ? "As equipas de que és responsável" : `${teams.length} equipas activas na época 2026/27`}
       >
         {can(session, "team:write") && (
-          <button type="button" onClick={() => setCreating(true)} className="ctl-primary">
-            <Plus className="size-3.5" strokeWidth={2} />
-            Nova equipa
-          </button>
+          <>
+            {/* Importar antes de criar: um clube que está a arrancar traz as
+                equipas de uma folha, e criar uma a uma é o caminho lento. */}
+            <button type="button" onClick={() => setImporting(true)} className="ctl-outline">
+              <Upload className="size-3.5" strokeWidth={1.75} />
+              Importar
+            </button>
+            <button type="button" onClick={() => setCreating(true)} className="ctl-primary">
+              <Plus className="size-3.5" strokeWidth={2} />
+              Nova equipa
+            </button>
+          </>
         )}
       </PageHeader>
 
@@ -46,6 +56,7 @@ export default function Teams() {
       </div>
 
       {creating && <NewTeamDialog session={session} onClose={() => setCreating(false)} />}
+      {importing && <ImportTeamsDialog onClose={() => setImporting(false)} />}
     </>
   );
 }

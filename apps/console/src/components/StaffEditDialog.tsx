@@ -1,6 +1,7 @@
 import { useState, type FormEvent } from "react";
 import { listTeams } from "@/lib/api";
 import { ASSIGNABLE_ROLES, DEPARTMENTS, updateStaff } from "@/lib/staff";
+import { apiPatch } from "@/lib/http";
 import { can, type Role, type Session } from "@/lib/permissions";
 import { ROLE_LABEL } from "@/session";
 import { DEPARTMENT_LABEL, type StaffDepartment, type StaffMember } from "@/data/types";
@@ -40,6 +41,7 @@ export function StaffEditDialog({
   const [role, setRole] = useState<Role>(member.role);
   const [teamIds, setTeamIds] = useState<string[]>(member.teamIds);
   const [isActive, setIsActive] = useState(member.isActive);
+  const [erro, setErro] = useState<string | null>(null);
 
   const usesTeams = role === "COACH" || role === "STAFF" || role === "COORDINATOR";
   const valid = name.trim().length >= 2 && title.trim().length >= 2;
@@ -48,9 +50,26 @@ export function StaffEditDialog({
     setTeamIds((xs) => (xs.includes(id) ? xs.filter((x) => x !== id) : [...xs, id]));
   }
 
-  function submit(e: FormEvent) {
+  async function submit(e: FormEvent) {
     e.preventDefault();
     if (!valid) return;
+
+    /*
+     * Desactivar tem de chegar ao servidor.
+     *
+     * Esta caixa vivia só em memória: tirava a pessoa das listas neste
+     * separador e mais nada — ela continuava a entrar na consola, e recarregar
+     * a página desfazia tudo. `isActive` na `Membership` é o que o
+     * `AuthService` verifica, e é isso que fecha mesmo a porta.
+     */
+    if (isActive !== member.isActive) {
+      try {
+        await apiPatch(`/api/memberships/${member.id}/active`, { active: isActive });
+      } catch (err) {
+        setErro(err instanceof Error ? err.message : "Não foi possível mudar o estado da conta.");
+        return;
+      }
+    }
 
     updateStaff(member.id, {
       name: name.trim(),
@@ -159,6 +178,12 @@ export function StaffEditDialog({
         ) : (
           <p className="rounded-[var(--radius-control)] bg-sunken px-3 py-2.5 text-meta leading-relaxed text-ink-2">
             O acesso e as equipas são geridos por quem trata de permissões na academia.
+          </p>
+        )}
+
+        {erro && (
+          <p className="rounded-[var(--radius-control)] bg-risk-soft px-3 py-2.5 text-meta leading-relaxed text-risk">
+            {erro}
           </p>
         )}
 

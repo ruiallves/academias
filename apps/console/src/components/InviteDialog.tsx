@@ -1,15 +1,29 @@
-import { useMemo, useState, type FormEvent } from "react";
+import { useEffect, useMemo, useState, type FormEvent } from "react";
+import { Link } from "react-router-dom";
 import { academy, listTeams } from "@/lib/api";
 import { createInvite, type Invite } from "@/lib/invites";
+import { loadRoles, useRoles, type AcademyRole } from "@/lib/roles";
 import { Check, Copy, Users } from "@/lib/icons";
 import type { Role, Session } from "@/lib/permissions";
-import { ROLE_LABEL } from "@/session";
 import { DEPARTMENT_LABEL, type StaffDepartment } from "@/data/types";
 import { Dialog, DialogField, dialogInputClass } from "./Dialog";
 import { SelectField } from "./primitives";
 
 /**
  * Convidar alguém para a academia.
+ *
+ * ## Duas perguntas, e não três
+ *
+ * Isto pedia **acesso**, **departamento** e **cargo**. As duas primeiras eram a
+ * mesma pergunta por palavras diferentes — "acesso: Direção" a par de
+ * "departamento: Direção" — e a terceira era texto livre que não decidia nada.
+ * Quem convidava tinha de perceber que a primeira dava permissões e a terceira
+ * era decoração, e nada no ecrã o dizia.
+ *
+ * Agora pergunta-se o **departamento** e, dentro dele, o **cargo**. O cargo é um
+ * `AcademyRole` — a coisa que já carregava as permissões — e é dele que o
+ * servidor lê o papel-base, o departamento e o que a pessoa vai poder fazer. Um
+ * departamento tem vários cargos; um cargo pertence a um departamento só.
  *
  * ## Porque é que as equipas se escolhem aqui, e não do outro lado
  *
@@ -20,10 +34,6 @@ import { SelectField } from "./primitives";
  * lado de quem resgata, quem apanhasse o link — e estes links viajam por WhatsApp
  * — escolhia o que podia ver, e podia marcar a academia toda.
  *
- * Por isso quem convida é que decide, e quem resgata só confirma. É também como se
- * pensa naturalmente: não se convida "um treinador", convida-se "o Rui, treinador
- * principal dos Sub-11".
- *
  * ## Porque é que não se envia o email daqui
  *
  * Devolve-se um link para copiar. A academia sabe melhor do que nós por onde
@@ -31,10 +41,7 @@ import { SelectField } from "./primitives";
  * numa caixa que ninguém abre é um convite que nunca chega.
  */
 
-/** Os papéis que se convidam por aqui, do mais restrito ao mais amplo. */
-const INVITABLE: Role[] = ["COACH", "MEDICAL", "SCOUT", "STAFF", "COORDINATOR", "DIRECTOR"];
-
-/** Gémeo de `RANK` em `apps/api/src/invites/invites.service.ts`. Não se convida acima do próprio nível. */
+/** Gémeo de `RANK` em `apps/api/src/invites/invites.service.ts`. */
 const RANK: Record<Role, number> = {
   OWNER: 100,
   DIRECTOR: 80,
@@ -47,63 +54,132 @@ const RANK: Record<Role, number> = {
   ATHLETE: 0,
 };
 
-/** O departamento que costuma acompanhar cada papel — sugestão, não regra. */
-const DEFAULT_DEPARTMENT: Partial<Record<Role, StaffDepartment>> = {
-  COACH: "technical",
-  MEDICAL: "clinical",
-  SCOUT: "scouting",
-  STAFF: "operations",
-  COORDINATOR: "technical",
-  DIRECTOR: "direction",
+/**
+ * Um grupo no menu de departamentos.
+ *
+ * Os cinco departamentos a sério, mais "presidencia" — que não é um
+ * departamento, é onde vive o cargo que não pertence a nenhum. Ver `departamentos`.
+ */
+type Grupo = StaffDepartment | "presidencia";
+
+const GRUPO_LABEL: Record<Grupo, string> = {
+  presidencia: "Presidência",
+  ...DEPARTMENT_LABEL,
 };
 
 /** Só quem trabalha com equipas tem âmbito por equipa. */
-function usesTeams(role: Role): boolean {
-  return role === "COACH" || role === "STAFF";
+function usesTeams(base: Role): boolean {
+  return base === "COACH" || base === "STAFF";
 }
 
 export function InviteDialog({ session, onClose }: { session: Session; onClose: () => void }) {
   const teams = listTeams(session);
+  const { roles, loaded } = useRoles();
 
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
-  const [role, setRole] = useState<Role>("COACH");
-  const [title, setTitle] = useState("");
-  const [department, setDepartment] = useState<StaffDepartment>("technical");
+  const [department, setDepartment] = useState<Grupo>("technical");
+  const [roleId, setRoleId] = useState("");
   const [teamIds, setTeamIds] = useState<string[]>([]);
   const [created, setCreated] = useState<Invite | null>(null);
+  const [erro, setErro] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
 
-  const allowed = useMemo(() => INVITABLE.filter((r) => RANK[r] <= RANK[session.role]), [session.role]);
+  useEffect(() => {
+    void loadRoles();
+  }, []);
 
-  const valid = name.trim().length >= 2 && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim());
+  /*
+   * Os cargos que **este** utilizador pode dar.
+   *
+   * ## O presidente, e porque é que às vezes aparece
+   *
+   * Um clube pode abrir com quem não é o presidente — o coordenador desportivo
+   * que monta tudo enquanto o presidente ainda não entrou. Nesse caso o cargo de
+   * Presidente existe e está **vazio**, e alguém tem de o poder convidar; sem
+   * isto, o clube ficava para sempre sem presidente e sem forma de lá chegar.
+   *
+   * Assim que essa cadeira estiver ocupada (`people > 0`), o cargo desaparece
+   * daqui: um clube tem um presidente, e convidar um segundo é o tipo de coisa
+   * que se faz por engano e depois ninguém percebe.
+   *
+   * Os que estão acima do próprio nível saem sempre — a mesma regra que o
+   * servidor volta a aplicar, aqui só para não oferecer o que vai ser recusado.
+   */
+  const convidaveis = useMemo(
+    () =>
+      roles.filter((r) => {
+        if (r.key === "presidente" && r.people > 0) return false;
+        return RANK[r.baseRole] <= RANK[session.role];
+      }),
+    [roles, session.role],
+  );
 
-  function changeRole(next: Role) {
-    setRole(next);
-    const dept = DEFAULT_DEPARTMENT[next];
-    if (dept) setDepartment(dept);
-    // Um médico não tem equipas — vê a academia toda. Guardar a selecção anterior
-    // ao mudar de papel seria emitir um convite com âmbito que não se aplica.
-    if (!usesTeams(next)) setTeamIds([]);
-  }
+  /**
+   * Os departamentos que têm mesmo cargos — não vale a pena oferecer os vazios.
+   *
+   * `"presidencia"` é um grupo à parte e não um departamento a sério: o
+   * presidente responde por tudo e não pertence a nenhuma área, por isso tem
+   * `department: null` na base de dados. Sem este grupo, um cargo sem
+   * departamento não tinha onde aparecer no menu.
+   */
+  const departamentos = useMemo(() => {
+    const usados = new Set(convidaveis.map((r) => r.department).filter(Boolean) as StaffDepartment[]);
+    const reais = (Object.keys(DEPARTMENT_LABEL) as StaffDepartment[]).filter((d) => usados.has(d));
+    const semDepartamento = convidaveis.some((r) => r.department === null);
+    return [...(semDepartamento ? (["presidencia"] as const) : []), ...reais] as Grupo[];
+  }, [convidaveis]);
+
+  const cargosDoDepartamento = useMemo(
+    () =>
+      convidaveis.filter((r) =>
+        department === "presidencia" ? r.department === null : r.department === department,
+      ),
+    [convidaveis, department],
+  );
+
+  // O primeiro departamento que tenha cargos, e o primeiro cargo dele. Sem isto,
+  // o formulário abria num departamento vazio e parecia não ter cargos nenhuns.
+  useEffect(() => {
+    if (departamentos.length > 0 && !departamentos.includes(department)) {
+      setDepartment(departamentos[0]);
+    }
+  }, [departamentos, department]);
+
+  useEffect(() => {
+    if (!cargosDoDepartamento.some((r) => r.id === roleId)) {
+      setRoleId(cargosDoDepartamento[0]?.id ?? "");
+    }
+  }, [cargosDoDepartamento, roleId]);
+
+  const cargo: AcademyRole | undefined = convidaveis.find((r) => r.id === roleId);
+  const comEquipas = cargo ? usesTeams(cargo.baseRole) : false;
+
+  const valid = name.trim().length >= 2 && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim()) && Boolean(roleId);
 
   function toggleTeam(id: string) {
     setTeamIds((xs) => (xs.includes(id) ? xs.filter((x) => x !== id) : [...xs, id]));
   }
 
-  function submit(e: FormEvent) {
+  async function submit(e: FormEvent) {
     e.preventDefault();
-    if (!valid) return;
-    setCreated(
-      createInvite({
-        name,
-        email,
-        role,
-        title,
-        department,
-        teamIds: usesTeams(role) ? teamIds : [],
-        invitedBy: session.name,
-      }),
-    );
+    if (!valid || busy) return;
+    setBusy(true);
+    setErro(null);
+    try {
+      setCreated(
+        await createInvite({
+          name: name.trim(),
+          email: email.trim(),
+          academyRoleId: roleId,
+          teamIds: comEquipas ? teamIds : [],
+        }),
+      );
+    } catch (err) {
+      setErro(err instanceof Error ? err.message : "Não foi possível criar o convite.");
+    } finally {
+      setBusy(false);
+    }
   }
 
   // Emitido: a partir daqui o assunto é só o link.
@@ -121,8 +197,8 @@ export function InviteDialog({ session, onClose }: { session: Session; onClose: 
           <button type="button" onClick={onClose} className="ctl-ghost">
             Cancelar
           </button>
-          <button type="submit" form="form-convite" className="ctl-primary" disabled={!valid}>
-            Gerar convite
+          <button type="submit" form="form-convite" className="ctl-primary" disabled={!valid || busy}>
+            {busy ? "A criar…" : "Gerar convite"}
           </button>
         </>
       }
@@ -149,79 +225,120 @@ export function InviteDialog({ session, onClose }: { session: Session; onClose: 
           </DialogField>
         </div>
 
-        <div className="grid grid-cols-2 gap-3">
-          <DialogField label="Acesso" hint="o que pode fazer">
-            <SelectField
-              className="w-full"
-              value={role}
-              onChange={changeRole}
-              options={allowed.map((r) => ({ value: r, label: ROLE_LABEL[r] }))}
-            />
-          </DialogField>
-          <DialogField label="Departamento">
-            <SelectField
-              className="w-full"
-              value={department}
-              onChange={setDepartment}
-              options={(Object.keys(DEPARTMENT_LABEL) as StaffDepartment[]).map((d) => ({
-                value: d,
-                label: DEPARTMENT_LABEL[d],
-              }))}
-            />
-          </DialogField>
-        </div>
-
-        <DialogField label="Cargo" hint="opcional">
-          <input
-            className={dialogInputClass}
-            value={title}
-            onChange={(e) => setTitle(e.target.value)}
-            placeholder="Treinador principal"
-          />
-        </DialogField>
-
-        {usesTeams(role) ? (
-          <div>
-            <div className="mb-1.5 flex items-baseline justify-between gap-2">
-              <span className="text-meta font-medium text-ink">Equipas</span>
-              <span className="text-[11px] text-ink-4">
-                {teamIds.length === 0 ? "nenhuma" : `${teamIds.length} de ${teams.length}`}
-              </span>
-            </div>
-
-            <div className="max-h-48 overflow-y-auto rounded-[var(--radius-control)] border border-line">
-              {teams.map((t) => (
-                <label
-                  key={t.id}
-                  className="flex cursor-pointer items-center gap-2.5 border-b border-line px-3 py-2 last:border-b-0 hover:bg-sunken"
-                >
-                  <input
-                    type="checkbox"
-                    checked={teamIds.includes(t.id)}
-                    onChange={() => toggleTeam(t.id)}
-                    className="size-3.5 accent-[var(--signal)]"
-                  />
-                  <span className="min-w-0 flex-1 truncate text-body text-ink">{t.name}</span>
-                  <span className="text-meta text-ink-4">{t.ageGroup}</span>
-                </label>
-              ))}
-            </div>
-
-            {/*
-              A frase importa mais do que parece: é aqui que se explica que a
-              escolha não é administrativa, é de acesso a dados.
-            */}
-            <p className="mt-2 text-[11px] leading-relaxed text-ink-3">
-              {teamIds.length === 0
-                ? "Sem equipas, entra e não vê atletas nenhuns. Podes atribuir depois."
-                : "Vê os atletas, presenças, avaliações e boletim clínico destas equipas — e de mais nenhuma."}
-            </p>
-          </div>
-        ) : (
+        {loaded && convidaveis.length === 0 ? (
+          /*
+           * Um clube acabado de abrir só tem o cargo de presidente, e esse não se
+           * convida. Dizer o que falta — e levar lá — é melhor do que dois menus
+           * vazios que parecem avariados.
+           */
           <p className="rounded-[var(--radius-control)] bg-sunken px-3 py-2.5 text-meta leading-relaxed text-ink-2">
-            {role === "MEDICAL"
-              ? "O departamento clínico vê a academia toda — uma lesão não conhece escalões."
-              : "Este acesso não é limitado por equipas."}
+            Ainda não há cargos para convidar.{" "}
+            <Link to="/definicoes?painel=cargos" className="font-medium text-ink hover:underline">
+              Cria o primeiro nas definições
+            </Link>{" "}
+            — por exemplo "Treinador", no departamento da equipa técnica.
+          </p>
+        ) : (
+          <>
+            <div className="grid grid-cols-2 gap-3">
+              <DialogField label="Departamento">
+                <SelectField
+                  className="w-full"
+                  value={department}
+                  onChange={setDepartment}
+                  options={departamentos.map((d) => ({ value: d, label: GRUPO_LABEL[d] }))}
+                />
+              </DialogField>
+
+              <div>
+                {/*
+                  O atalho vive por cima do campo, à direita: é onde se olha
+                  quando o menu não tem o que se procura, e evita fechar o
+                  diálogo às cegas para ir procurar as definições.
+                */}
+                <div className="mb-1.5 flex items-baseline justify-between gap-2">
+                  <span className="text-meta font-medium text-ink">Cargo</span>
+                  <Link to="/definicoes?painel=cargos" className="text-[11px] text-ink-3 hover:text-ink hover:underline">
+                    gerir cargos
+                  </Link>
+                </div>
+                <SelectField
+                  className="w-full"
+                  value={roleId}
+                  onChange={setRoleId}
+                  options={cargosDoDepartamento.map((r) => ({ value: r.id, label: r.name }))}
+                />
+              </div>
+            </div>
+
+            {cargo?.description && <p className="text-[11px] leading-relaxed text-ink-3">{cargo.description}</p>}
+
+            {comEquipas ? (
+              <div>
+                <div className="mb-1.5 flex items-baseline justify-between gap-2">
+                  <span className="text-meta font-medium text-ink">Equipas</span>
+                  <span className="flex items-center gap-2.5">
+                    <span className="text-[11px] text-ink-4">
+                      {teamIds.length === 0 ? "nenhuma" : `${teamIds.length} de ${teams.length}`}
+                    </span>
+                    <Link to="/equipas" className="text-[11px] text-ink-3 hover:text-ink hover:underline">
+                      gerir equipas
+                    </Link>
+                  </span>
+                </div>
+
+                {teams.length === 0 ? (
+                  <p className="rounded-[var(--radius-control)] bg-sunken px-3 py-2.5 text-meta leading-relaxed text-ink-2">
+                    Ainda não há equipas. Podes convidar na mesma — a pessoa entra sem ver atletas, e atribuis-lhe
+                    equipas quando existirem.
+                  </p>
+                ) : (
+                  <div className="max-h-48 overflow-y-auto rounded-[var(--radius-control)] border border-line">
+                    {teams.map((t) => (
+                      <label
+                        key={t.id}
+                        className="flex cursor-pointer items-center gap-2.5 border-b border-line px-3 py-2 last:border-b-0 hover:bg-sunken"
+                      >
+                        <input
+                          type="checkbox"
+                          checked={teamIds.includes(t.id)}
+                          onChange={() => toggleTeam(t.id)}
+                          className="size-3.5 accent-[var(--signal)]"
+                        />
+                        <span className="min-w-0 flex-1 truncate text-body text-ink">{t.name}</span>
+                        <span className="text-meta text-ink-4">{t.ageGroup}</span>
+                      </label>
+                    ))}
+                  </div>
+                )}
+
+                {/*
+                  A frase importa mais do que parece: é aqui que se explica que a
+                  escolha não é administrativa, é de acesso a dados.
+                */}
+                {teams.length > 0 && (
+                  <p className="mt-2 text-[11px] leading-relaxed text-ink-3">
+                    {teamIds.length === 0
+                      ? "Sem equipas, entra e não vê atletas nenhuns. Podes atribuir depois."
+                      : "Vê os atletas, presenças, avaliações e boletim clínico destas equipas — e de mais nenhuma."}
+                  </p>
+                )}
+              </div>
+            ) : (
+              cargo && (
+                <p className="rounded-[var(--radius-control)] bg-sunken px-3 py-2.5 text-meta leading-relaxed text-ink-2">
+                  {cargo.baseRole === "MEDICAL"
+                    ? "O departamento clínico vê a academia toda — uma lesão não conhece escalões."
+                    : "Este cargo vê a academia toda, não é limitado por equipas."}
+                </p>
+              )
+            )}
+          </>
+        )}
+
+        {erro && (
+          <p className="rounded-[var(--radius-control)] bg-risk-soft px-3 py-2.5 text-meta leading-relaxed text-risk">
+            {erro}
           </p>
         )}
       </form>
@@ -253,7 +370,7 @@ function InviteCreated({ invite, onClose }: { invite: Invite; onClose: () => voi
     <Dialog
       labelledBy="convite-criado"
       title="Convite criado"
-      subtitle={`${invite.name} · ${ROLE_LABEL[invite.role]}`}
+      subtitle={`${invite.name} · ${invite.title ?? ""}`}
       onClose={onClose}
       width={520}
       footer={
@@ -266,19 +383,6 @@ function InviteCreated({ invite, onClose }: { invite: Invite; onClose: () => voi
         <p className="text-body leading-relaxed text-ink-2">
           Envia este link ao <strong className="font-medium text-ink">{invite.name}</strong>. Ao abri-lo,
           escolhe uma palavra-passe e a conta fica criada.
-        </p>
-
-        {/*
-          Enquanto a consola correr com dados de demonstração, este link é o
-          endereço que a academia terá em produção — mas o convite não chegou à
-          base de dados, por isso não abre. Dizê-lo aqui é o mínimo: um link com
-          ar de verdadeiro que dá 404 faz perder muito mais tempo do que este aviso.
-        */}
-        <p className="rounded-[var(--radius-control)] bg-sunken px-3 py-2.5 text-meta leading-relaxed text-ink-2">
-          <strong className="font-medium text-ink">Demonstração:</strong> este link mostra o endereço
-          que a academia terá, mas ainda não abre — a consola corre com dados de exemplo. Para um
-          convite que funcione mesmo, corre <code className="font-mono text-[11px]">npm run invite</code> em{" "}
-          <code className="font-mono text-[11px]">apps/api</code>.
         </p>
 
         <div className="rounded-[var(--radius-control)] border border-line bg-sunken p-3">

@@ -1,7 +1,8 @@
 import { useMemo, useState } from "react";
 import { Check } from "@/lib/icons";
 import { Dialog, DialogField, dialogInputClass } from "./Dialog";
-import { Pill, cx } from "./primitives";
+import { Pill, SelectField, cx } from "./primitives";
+import { DEPARTMENT_LABEL, type StaffDepartment } from "@/data/types";
 import { ADMIN_AREAS, AREAS, CLINICAL_AREAS, SCOUTING_AREAS, levelOf, type Area, type Level } from "@/lib/access";
 import { NAV_CATALOG, SETTINGS_ITEM } from "@/lib/nav";
 import { ROLE_PERMISSIONS, permissionsOf, type Permission, type Role, type Session } from "@/lib/permissions";
@@ -45,6 +46,7 @@ export function RoleDialog({
     () => new Set(role?.permissions ?? ROLE_PERMISSIONS["COACH"]),
   );
   const [navKeys, setNavKeys] = useState<string[]>(role?.navKeys ?? []);
+  const [department, setDepartment] = useState<StaffDepartment | "">(role?.department ?? "");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -88,10 +90,21 @@ export function RoleDialog({
       const chosen = [...permissions].filter((p) => mine.has(p));
 
       if (editing && role) {
-        await updateRole(role.id, { name: name.trim(), description: description.trim(), permissions: chosen });
+        await updateRole(role.id, {
+          name: name.trim(),
+          description: description.trim(),
+          department: department || null,
+          permissions: chosen,
+        });
         if (mayMenus) await setRoleNav(role.id, navKeys.filter((k) => visibleKeys.has(k)));
       } else {
-        await createRole({ name: name.trim(), description: description.trim(), baseRole, permissions: chosen });
+        await createRole({
+          name: name.trim(),
+          description: description.trim(),
+          baseRole,
+          department: department || null,
+          permissions: chosen,
+        });
       }
       onClose();
     } catch (e) {
@@ -179,6 +192,28 @@ export function RoleDialog({
             </div>
           </DialogField>
         )}
+
+        {/*
+          O departamento a que este cargo pertence.
+          É o que faz o convite conseguir perguntar primeiro o departamento e só
+          depois o cargo — sem isto, o cargo não aparece em menu nenhum e ninguém
+          o consegue atribuir. Um departamento tem vários cargos; um cargo
+          pertence a um só.
+        */}
+        <DialogField label="Departamento" hint="onde este cargo aparece ao convidar">
+          <SelectField
+            className="w-full"
+            value={department}
+            onChange={setDepartment}
+            options={[
+              { value: "" as const, label: "Sem departamento (presidência)" },
+              ...(Object.keys(DEPARTMENT_LABEL) as StaffDepartment[]).map((d) => ({
+                value: d,
+                label: DEPARTMENT_LABEL[d],
+              })),
+            ]}
+          />
+        </DialogField>
       </section>
 
       {/* --- 2. O que pode --------------------------------------------------- */}

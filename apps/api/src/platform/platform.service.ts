@@ -2,6 +2,8 @@ import { randomBytes, createHash } from "node:crypto";
 import { BadRequestException, ConflictException, Injectable } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
 import { PlatformPrisma } from "./platform.prisma";
+import { initialRoles, isPresidente } from "../roles/roles.service";
+import type { StaffDepartment } from "@prisma/client";
 import type { PlatformAdminContext } from "./platform.guard";
 
 /**
@@ -200,7 +202,26 @@ export class PlatformService {
    */
   async createAcademy(
     admin: PlatformAdminContext,
-    dto: { name: string; slug?: string; directorName: string; directorEmail: string; planId?: string; trialDays?: number },
+    dto: {
+      name: string;
+      slug?: string;
+      directorName: string;
+      directorEmail: string;
+      /**
+       * O nome do cargo de quem vai receber o convite, escrito à mão.
+       *
+       * "Presidente" é o normal e é o que vem por omissão. Qualquer outra coisa
+       * — "Coordenador Desportivo", "Diretor-Geral", o que o clube usar — cria
+       * esse cargo **e** o de presidente, que fica por preencher. Uma lista
+       * fechada aqui obrigava-nos a adivinhar os nomes que os clubes usam, e
+       * eles não são adivinháveis. Ver `initialRoles`.
+       */
+      roleName?: string;
+      /** O departamento desse cargo. Nulo é "nenhum" — o caso do presidente. */
+      roleDepartment?: StaffDepartment | null;
+      planId?: string;
+      trialDays?: number;
+    },
     ip?: string,
   ) {
     const name = dto.name.trim();
@@ -230,6 +251,28 @@ export class PlatformService {
     const trialDays = dto.trialDays ?? plan?.trialDays ?? 30;
     const token = randomBytes(32).toString("base64url");
 
+    /*
+     * O cargo de quem recebe o convite.
+     *
+     * Desconhecido cai em presidente, e não num erro: a plataforma manda uma
+     * chave de uma lista fechada, e se um dia essa lista mudar, um clube novo
+     * abrir com o presidente é uma degradação aceitável — recusar a criação por
+     * causa de um nome de cargo não é.
+     */
+    const nomeCargo = (dto.roleName ?? "").trim() || "Presidente";
+    if (nomeCargo.length > 60) throw new BadRequestException("Nome de cargo demasiado longo");
+
+    /*
+     * "Presidente" em qualquer grafia é o presidente.
+     *
+     * Sem isto, escrever "presidente" em minúsculas criava um segundo cargo ao
+     * lado do de origem, os dois com todas as permissões e nomes que se lêem
+     * igual — o clube abria com duas presidências e ninguém percebia porquê.
+     */
+    const template = isPresidente(nomeCargo)
+      ? null
+      : { key: slugify(nomeCargo), name: nomeCargo, department: dto.roleDepartment ?? null };
+
     const academy = await this.prisma.academy.create({
       data: {
         slug,
@@ -238,28 +281,141 @@ export class PlatformService {
         status: "SETUP",
         trialEndsAt: new Date(Date.now() + trialDays * DAY),
         ...(plan ? { subscription: { create: { planId: plan.id, status: "TRIALING" } } } : {}),
-        invites: {
-          create: {
-            tokenHash: createHash("sha256").update(token).digest("hex"),
-            email,
-            name: dto.directorName.trim() || "Direção",
-            role: "DIRECTOR",
-            title: "Diretor",
-            department: "DIRECTION",
-            expiresAt: new Date(Date.now() + 7 * DAY),
-          },
-        },
       },
       select: { id: true, slug: true, name: true },
     });
 
-    await this.audit(admin, "academy.create", "academy", academy.id, { slug, directorEmail: email, plan: plan?.name }, ip);
+    /*
+     * Os cargos, antes do convite.
+     *
+     * Por esta ordem porque o convite aponta para o cargo: criá-lo primeiro
+     * deixaria um convite a apontar para nada, e quem o resgatasse entrava sem
+     * cargo nenhum — a academia ficava aberta e sem ninguém com poder para a
+     * configurar.
+     */
+    const { rows, inviteRoleKey, baseRole } = initialRoles(academy.id, template);
+    await this.prisma.academyRole.createMany({ data: rows as never, skipDuplicates: true });
 
-    return { academy, inviteLink: this.inviteLink(slug, token), trialEndsAt: new Date(Date.now() + trialDays * DAY) };
+    const inviteRole = await this.prisma.academyRole.findFirst({
+      where: { academyId: academy.id, key: inviteRoleKey },
+      select: { id: true, name: true, department: true },
+    });
+
+    await this.prisma.staffInvite.create({
+      data: {
+        academyId: academy.id,
+        tokenHash: createHash("sha256").update(token).digest("hex"),
+        email,
+        name: dto.directorName.trim() || inviteRole?.name || "Direção",
+        role: baseRole,
+        title: inviteRole?.name ?? "Presidente",
+        department: inviteRole?.department ?? null,
+        academyRoleId: inviteRole?.id ?? null,
+        expiresAt: new Date(Date.now() + 7 * DAY),
+        updatedAt: new Date(),
+      },
+    });
+
+    await this.audit(
+      admin,
+      "academy.create",
+      "academy",
+      academy.id,
+      { slug, directorEmail: email, plan: plan?.name, cargo: inviteRole?.name ?? "Presidente" },
+      ip,
+    );
+
+    return {
+      academy,
+      inviteLink: this.inviteLink(slug, token),
+      trialEndsAt: new Date(Date.now() + trialDays * DAY),
+      roleName: inviteRole?.name ?? "Presidente",
+    };
   }
 
+  /**
+   * Desactivar ou reactivar um clube.
+   *
+   * ## O que "desactivar" faz mesmo
+   *
+   * Põe o estado em `CANCELLED`, e é isso que fecha a porta: o resolvedor de
+   * slug — o funil por onde a consola, a landing, a página de sócios e os
+   * convites passam — deixa de devolver a academia. Ninguém entra, e nenhum
+   * endereço do clube responde. Ver a migração `20260826200000`.
+   *
+   * Os dados ficam todos. Reactivar devolve o clube exactamente onde estava, e é
+   * por isso que esta é a via normal — apagar é a excepção, e está a seguir.
+   */
+  async setAcademyActive(admin: PlatformAdminContext, id: string, active: boolean, ip?: string) {
+    const academy = await this.prisma.academy.findUnique({
+      where: { id },
+      select: { id: true, name: true, slug: true, status: true, trialEndsAt: true },
+    });
+    if (!academy) throw new BadRequestException("Academia não encontrada");
+
+    /*
+     * Reactivar devolve-a a `TRIAL` ou a `ACTIVE`, conforme o trial ainda contar.
+     * Voltar sempre a `ACTIVE` dava um clube a pagar sem ninguém ter decidido
+     * isso; voltar sempre a `TRIAL` dava avaliação de graça a quem já paga.
+     */
+    const status = active
+      ? academy.trialEndsAt && academy.trialEndsAt > new Date()
+        ? "TRIAL"
+        : "ACTIVE"
+      : "CANCELLED";
+
+    await this.prisma.academy.update({ where: { id }, data: { status } });
+    await this.audit(
+      admin,
+      active ? "academy.activate" : "academy.deactivate",
+      "academy",
+      id,
+      { slug: academy.slug, de: academy.status, para: status },
+      ip,
+    );
+
+    return { ok: true, status };
+  }
+
+  /**
+   * Apagar um clube — de vez.
+   *
+   * ## Porque é que isto pede o endereço escrito
+   *
+   * Porque leva tudo atrás. `onDelete: Cascade` desce por atletas, equipas,
+   * presenças, avaliações, boletins clínicos, mensalidades e famílias — anos de
+   * trabalho de um clube, num pedido. Um botão com confirmação de "tens a
+   * certeza?" não é proporcional a isso: quem está a apagar o clube errado
+   * responde "sim" com a mesma facilidade.
+   *
+   * Escrever o endereço obriga a olhar para **qual** clube se está a apagar, que
+   * é exactamente a pergunta que um clique apressado não faz.
+   */
+  async deleteAcademy(admin: PlatformAdminContext, id: string, confirmSlug: string, ip?: string) {
+    const academy = await this.prisma.academy.findUnique({
+      where: { id },
+      select: { id: true, name: true, slug: true },
+    });
+    if (!academy) throw new BadRequestException("Academia não encontrada");
+
+    if (confirmSlug.trim().toLowerCase() !== academy.slug.toLowerCase()) {
+      throw new BadRequestException(`Escreve "${academy.slug}" para confirmar que é este o clube a apagar`);
+    }
+
+    // O registo **antes** de apagar: depois já não há id que aponte para nada, e
+    // esta é precisamente a acção que mais interessa ter no histórico.
+    await this.audit(admin, "academy.delete", "academy", id, { slug: academy.slug, name: academy.name }, ip);
+    await this.prisma.academy.delete({ where: { id } });
+
+    return { ok: true };
+  }
+
+  /** Os planos activos, pela ordem em que se lêem no ecrã. */
   async plans() {
-    return this.prisma.plan.findMany({ where: { isActive: true }, orderBy: { amountCents: "asc" } });
+    return this.prisma.plan.findMany({
+      where: { isActive: true },
+      orderBy: [{ order: "asc" }, { amountCents: "asc" }],
+    });
   }
 
   async auditLog(limit = 100) {

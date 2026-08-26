@@ -1,5 +1,6 @@
 import { BadRequestException, ForbiddenException, Injectable, NotFoundException } from "@nestjs/common";
-import { Prisma, type CalendarEventKind } from "@prisma/client";
+import { ConfigService } from "@nestjs/config";
+import { Prisma, type CalendarEventKind, type Role } from "@prisma/client";
 import { PrismaService, type ScopedClient } from "../prisma/prisma.service";
 import { StorageService } from "../storage/storage.service";
 import { PHOTO_BUCKET, PHOTO_TTL } from "../storage/photos.service";
@@ -97,6 +98,7 @@ export class AcademyService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly storage: StorageService,
+    private readonly config: ConfigService,
   ) {}
 
   /**
@@ -118,7 +120,7 @@ export class AcademyService {
         },
       });
 
-      const [sports, season, me] = await Promise.all([
+      const [sports, season, me, fundador] = await Promise.all([
         db.sport.findMany({
           orderBy: { name: "asc" },
           select: { id: true, name: true, positions: true, skills: true, dominantSideLabel: true, matchMinutes: true },
@@ -128,10 +130,39 @@ export class AcademyService {
           where: { id: ctx.membershipId },
           select: {
             id: true, role: true, title: true, department: true, grants: true,
+            customRole: { select: { key: true } },
             user: { select: { name: true, email: true } },
           },
         }),
+        /*
+         * Quem abriu o clube.
+         *
+         * A membership de staff mais antiga: é a que nasceu do convite que a
+         * plataforma emitiu. Serve para o painel de arranque saber a quem
+         * pertence — ver `setupOwner` abaixo.
+         */
+        db.membership.findFirst({
+          where: { role: { notIn: ["GUARDIAN", "ATHLETE"] } },
+          orderBy: { createdAt: "asc" },
+          select: { id: true },
+        }),
       ]);
+
+      /*
+       * A quem pertence o arranque do clube.
+       *
+       * Duas pessoas, e às vezes uma só: quem entrou primeiro — o coordenador que
+       * está a montar tudo — e o presidente, que pode entrar depois e precisa de
+       * ver o que já foi feito. Se foi o presidente a entrar primeiro, são a mesma
+       * pessoa e só ele o vê.
+       *
+       * O **progresso** já era partilhado: cada passo é derivado dos dados, por
+       * isso os dois vêem sempre o mesmo estado sem nada a sincronizar. O que
+       * faltava era isto — a lista aparecia a toda a gente com `settings:write`,
+       * incluindo a quem entrou seis meses depois para tratar de outra coisa.
+       */
+      const setupOwner =
+        me?.customRole?.key === "presidente" || (fundador !== null && fundador.id === ctx.membershipId);
 
       return {
         academy,
@@ -165,6 +196,8 @@ export class AcademyService {
           // O âmbito segue para o cliente para ele saber o que **não** tem — e
           // poder dizê-lo em vez de mostrar uma lista vazia sem explicação.
           scope: ctx.scope,
+          /** Se o painel de arranque é desta pessoa. Ver `setupOwner` acima. */
+          setupOwner,
         },
       };
     });
@@ -196,6 +229,209 @@ export class AcademyService {
       });
 
       return { ok: true };
+    });
+  }
+
+  /**
+   * A identidade do clube: a cor e o símbolo.
+   *
+   * ## Porque é que isto tinha de existir
+   *
+   * As Definições já mostravam uma paleta de cores, mas escolher uma só escrevia
+   * uma variável CSS no browser de quem escolheu — nada era gravado. Fechar o
+   * separador desfazia a escolha, e nenhum pai chegava a ver cor nenhuma.
+   *
+   * ## Onde é que isto vai parar
+   *
+   * A cor e o símbolo atravessam o produto inteiro: o `manifest.webmanifest` que
+   * o pai instala no telemóvel, a landing do clube, a página pública de adesão a
+   * sócio, a consola e a app. É o white-label, e é por isso que vive na academia
+   * e não numa preferência de utilizador.
+   */
+  async setIdentity(ctx: RequestContext, dto: { signalColor?: string; logoUrl?: string | null }) {
+    if (!can(ctx, "settings:write")) throw new ForbiddenException("Sem permissão para mudar as definições");
+
+    if (dto.signalColor !== undefined && !/^#[0-9a-fA-F]{6}$/.test(dto.signalColor)) {
+      throw new BadRequestException("Cor inválida — usa o formato #RRGGBB");
+    }
+
+    /*
+     * O logótipo só pode ser um endereço nosso.
+     *
+     * Sem esta verificação, quem tivesse `settings:write` apontava o símbolo do
+     * clube para um servidor à escolha — e esse endereço é depois carregado no
+     * telemóvel de todas as famílias, a partir do manifest da app. É um vector
+     * de rasto (quem carrega vê o IP de cada família) e de troca silenciosa da
+     * imagem depois de aprovada.
+     */
+    if (dto.logoUrl) {
+      const supabase = (this.config.get<string>("SUPABASE_URL") ?? "").replace(/\/$/, "");
+      const ok = supabase && dto.logoUrl.startsWith(`${supabase}/storage/v1/`);
+      if (!ok) throw new BadRequestException("O símbolo tem de ser um ficheiro carregado aqui");
+    }
+
+    return this.prisma.runAs(ctx.academyId, async (db) => {
+      await db.academy.update({
+        where: { id: ctx.academyId },
+        data: {
+          ...(dto.signalColor !== undefined ? { signalColor: dto.signalColor.toLowerCase() } : {}),
+          ...(dto.logoUrl !== undefined ? { logoUrl: dto.logoUrl || null } : {}),
+        },
+      });
+
+      return { ok: true };
+    });
+  }
+
+  /* ------------------------------------------------------------------------ */
+  /* Desportos                                                                 */
+  /* ------------------------------------------------------------------------ */
+
+  /**
+   * As modalidades do clube.
+   *
+   * Eram só de leitura — a consola listava-as e o botão "Editar" não fazia nada,
+   * e não havia forma nenhuma de acrescentar uma. Um clube que abrisse com
+   * futebol e quisesse juntar futsal não tinha por onde.
+   *
+   * O desporto é a raiz de mais coisas do que parece: as equipas são de um
+   * desporto, os prospectos também, e — desde a migração
+   * `20260826090000_cargos_e_desportos` — os escalões, balneários, locais e
+   * tipos de evento podem ser de um desporto só. Daí `settings:write` e não
+   * `team:write`.
+   */
+  async createSport(ctx: RequestContext, dto: { name?: string; positions?: string[]; skills?: string[]; dominantSideLabel?: string; matchMinutes?: number }) {
+    if (!can(ctx, "settings:write")) throw new ForbiddenException("Sem permissão para mudar as definições");
+
+    const name = (dto.name ?? "").trim();
+    if (name.length < 2) throw new BadRequestException("Falta o nome da modalidade");
+
+    return this.prisma.runAs(ctx.academyId, async (db) => {
+      const taken = await db.sport.findFirst({ where: { name }, select: { id: true } });
+      if (taken) throw new BadRequestException(`"${name}" já existe`);
+
+      return db.sport.create({
+        data: {
+          academyId: ctx.academyId,
+          name,
+          positions: clean(dto.positions),
+          skills: clean(dto.skills),
+          dominantSideLabel: dto.dominantSideLabel?.trim() || null,
+          matchMinutes: dto.matchMinutes ?? null,
+        },
+        select: { id: true, name: true, positions: true, skills: true, dominantSideLabel: true, matchMinutes: true },
+      });
+    });
+  }
+
+  async updateSport(ctx: RequestContext, id: string, dto: { name?: string; positions?: string[]; skills?: string[]; dominantSideLabel?: string; matchMinutes?: number }) {
+    if (!can(ctx, "settings:write")) throw new ForbiddenException("Sem permissão para mudar as definições");
+
+    return this.prisma.runAs(ctx.academyId, async (db) => {
+      const sport = await db.sport.findFirst({ where: { id }, select: { id: true } });
+      if (!sport) throw new NotFoundException("Modalidade não encontrada");
+
+      const name = dto.name?.trim();
+      if (name !== undefined && name.length < 2) throw new BadRequestException("Falta o nome da modalidade");
+
+      if (name) {
+        const taken = await db.sport.findFirst({ where: { name, id: { not: id } }, select: { id: true } });
+        if (taken) throw new BadRequestException(`"${name}" já existe`);
+      }
+
+      return db.sport.update({
+        where: { id },
+        data: {
+          ...(name ? { name } : {}),
+          ...(dto.positions !== undefined ? { positions: clean(dto.positions) } : {}),
+          ...(dto.skills !== undefined ? { skills: clean(dto.skills) } : {}),
+          ...(dto.dominantSideLabel !== undefined ? { dominantSideLabel: dto.dominantSideLabel.trim() || null } : {}),
+          ...(dto.matchMinutes !== undefined ? { matchMinutes: dto.matchMinutes } : {}),
+        },
+        select: { id: true, name: true, positions: true, skills: true, dominantSideLabel: true, matchMinutes: true },
+      });
+    });
+  }
+
+  /**
+   * Apagar uma modalidade — só enquanto não tiver nada agarrado.
+   *
+   * Ao contrário dos catálogos, isto apaga mesmo. Mas recusa-se se houver
+   * equipas ou prospectos: `onDelete: Cascade` levaria as equipas atrás, e com
+   * elas os planteis, as presenças e o histórico — em silêncio, a partir de um
+   * botão nas definições. Quem quer mesmo fechar uma modalidade move primeiro as
+   * equipas, e isso é trabalho visível.
+   */
+  async removeSport(ctx: RequestContext, id: string) {
+    if (!can(ctx, "settings:write")) throw new ForbiddenException("Sem permissão para mudar as definições");
+
+    return this.prisma.runAs(ctx.academyId, async (db) => {
+      const sport = await db.sport.findFirst({
+        where: { id },
+        select: { id: true, name: true, _count: { select: { teams: true, prospects: true } } },
+      });
+      if (!sport) throw new NotFoundException("Modalidade não encontrada");
+
+      if (sport._count.teams > 0) {
+        throw new BadRequestException(`"${sport.name}" tem ${sport._count.teams} equipa(s). Move-as ou apaga-as primeiro.`);
+      }
+      if (sport._count.prospects > 0) {
+        throw new BadRequestException(`"${sport.name}" tem prospectos de scouting. Trata deles primeiro.`);
+      }
+
+      await db.sport.delete({ where: { id } });
+      return { ok: true };
+    });
+  }
+
+  /* ------------------------------------------------------------------------ */
+
+  /**
+   * Desactivar ou reactivar uma conta — de staff ou de encarregado.
+   *
+   * ## Desactivar e não apagar
+   *
+   * `isActive: false` fecha a porta por completo: o `AuthService` não monta
+   * contexto nenhum para uma membership inactiva, e a pessoa deixa de entrar.
+   * Mas as presenças que registou, as avaliações que escreveu e as mensalidades
+   * que lançou continuam a apontar para alguém com nome — apagar a linha
+   * reescrevia o histórico do clube para tapar a saída de um treinador.
+   *
+   * ## Nunca a si próprio
+   *
+   * Pela mesma razão que o painel da plataforma o recusa: desactivar-se corta o
+   * acesso a meio da sessão, e a única saída seria outra pessoa com poder para
+   * reabrir. Um clube com um diretor só ficava trancado fora do próprio produto.
+   */
+  async setMembershipActive(ctx: RequestContext, membershipId: string, active: boolean) {
+    if (!can(ctx, "staff:write")) throw new ForbiddenException("Sem permissão para desactivar contas");
+
+    if (membershipId === ctx.membershipId) {
+      throw new ForbiddenException("Não te podes desactivar a ti próprio");
+    }
+
+    return this.prisma.runAs(ctx.academyId, async (db) => {
+      const target = await db.membership.findFirst({
+        where: { id: membershipId },
+        select: { id: true, role: true, customRole: { select: { rank: true, key: true } } },
+      });
+      if (!target) throw new NotFoundException("Pessoa não encontrada");
+
+      /*
+       * Não se desactiva acima do próprio nível.
+       *
+       * A mesma regra dos convites e dos papéis: sem ela, quem tivesse
+       * `staff:write` desligava o presidente e ficava dono do clube. O rank vem
+       * do cargo quando existe, e do enum quando não — que é o que as
+       * memberships antigas ainda usam.
+       */
+      const targetRank = target.customRole?.rank ?? ROLE_RANK[target.role];
+      if (targetRank > ROLE_RANK[ctx.role]) {
+        throw new ForbiddenException("Essa pessoa tem um cargo acima do teu");
+      }
+
+      await db.membership.update({ where: { id: membershipId }, data: { isActive: active } });
+      return { ok: true, isActive: active };
     });
   }
 
@@ -255,6 +491,111 @@ export class AcademyService {
    * equipa na mesma forma que `teams()` — para a consola a poder juntar à lista sem
    * um segundo pedido.
    */
+  /**
+   * Importar equipas de um ficheiro.
+   *
+   * ## Porque é que isto engana os erros linha a linha
+   *
+   * Mesmo padrão da importação de atletas, e pela mesma razão: um ficheiro de
+   * trinta equipas em que a linha 12 tem um escalão mal escrito não deve recusar
+   * as outras vinte e nove. Cada linha é tentada, e o que falha volta com o
+   * número da linha e o motivo — que é o que se cola numa mensagem ao colega que
+   * mandou a folha.
+   *
+   * ## O que se resolve por nome, e porquê
+   *
+   * A modalidade chega escrita ("Futebol"), não como id: quem exporta um ficheiro
+   * de equipas não tem os nossos ids, e obrigá-lo a procurá-los tornava a
+   * importação mais lenta do que escrever à mão. O mesmo para a época. Um nome
+   * desconhecido é um erro dessa linha, não um id inventado.
+   */
+  async importTeams(
+    ctx: RequestContext,
+    rows: { name: string; sport: string; ageGroup: string; season?: string }[],
+  ) {
+    if (!can(ctx, "team:write")) throw new ForbiddenException("Sem permissão para criar equipas");
+
+    return this.prisma.runAs(ctx.academyId, async (db) => {
+      const sports = await db.sport.findMany({ select: { id: true, name: true } });
+      const porNome = new Map(sports.map((sp) => [sp.name.trim().toLowerCase(), sp.id]));
+
+      // Nomes já usados, para não recriar uma equipa que já lá está. Uma academia
+      // não tem dois "Sub-15 A".
+      const existentes = new Set(
+        (await db.team.findMany({ select: { name: true } })).map((t) => t.name.trim().toLowerCase()),
+      );
+
+      /*
+       * A época por omissão, quando o ficheiro não a traz.
+       *
+       * A actual, se houver; senão a que o calendário desportivo diz que é hoje —
+       * Agosto abre época, por isso antes de Agosto ainda se está na anterior.
+       * Sem isto, uma coluna vazia criava uma época chamada "" e todas as equipas
+       * do ficheiro ficavam lá dentro.
+       */
+      const atual = await db.season.findFirst({ where: { isCurrent: true }, select: { label: true } });
+      const hoje = new Date();
+      const anoBase = hoje.getMonth() >= 7 ? hoje.getFullYear() : hoje.getFullYear() - 1;
+      const epocaOmissao = atual?.label ?? `${anoBase}/${String((anoBase + 1) % 100).padStart(2, "0")}`;
+
+      const created: { id: string; name: string }[] = [];
+      const errors: { row: number; name: string; error: string }[] = [];
+
+      for (const [i, row] of rows.entries()) {
+        const line = i + 2; // +1 pela base-0, +1 pelo cabeçalho do ficheiro
+        const name = (row.name ?? "").trim();
+
+        if (name.length < 2) {
+          errors.push({ row: line, name, error: "Falta o nome da equipa" });
+          continue;
+        }
+        if (existentes.has(name.toLowerCase())) {
+          errors.push({ row: line, name, error: "Já existe uma equipa com este nome" });
+          continue;
+        }
+
+        const sportId = porNome.get((row.sport ?? "").trim().toLowerCase());
+        if (!sportId) {
+          errors.push({
+            row: line,
+            name,
+            error: sports.length === 0
+              ? "A academia ainda não tem modalidades — cria uma nas Definições"
+              : `Modalidade "${row.sport}" não existe. Há: ${sports.map((sp) => sp.name).join(", ")}`,
+          });
+          continue;
+        }
+
+        const ageGroup = (row.ageGroup ?? "").trim();
+        if (!ageGroup) {
+          errors.push({ row: line, name, error: "Falta o escalão" });
+          continue;
+        }
+
+        try {
+          const season = await this.resolveSeason(db, ctx.academyId, (row.season ?? "").trim() || epocaOmissao);
+          const team = await db.team.create({
+            data: {
+              academyId: ctx.academyId,
+              name,
+              sportId,
+              ageGroup,
+              seasonId: season.id,
+              schedule: [],
+            },
+            select: { id: true, name: true },
+          });
+          created.push(team);
+          existentes.add(name.toLowerCase());
+        } catch (e) {
+          errors.push({ row: line, name, error: e instanceof Error ? e.message : "Não foi possível criar" });
+        }
+      }
+
+      return { created: created.length, errors, teams: created };
+    });
+  }
+
   async createTeam(
     ctx: RequestContext,
     dto: {
@@ -402,7 +743,7 @@ export class AcademyService {
           guardians: {
             select: {
               relation: true, isPayer: true,
-              membership: { select: { id: true, user: { select: { name: true, email: true, phone: true } } } },
+              membership: { select: { id: true, isActive: true, user: { select: { name: true, email: true, phone: true } } } },
             },
           },
           clinical: {
@@ -433,6 +774,7 @@ export class AcademyService {
           position: a.teams[0]?.position ?? null,
           guardians: a.guardians.map((g) => ({
             membershipId: g.membership.id,
+            isActive: g.membership.isActive,
             name: g.membership.user.name,
             email: g.membership.user.email,
             phone: g.membership.user.phone,
@@ -617,7 +959,83 @@ export class AcademyService {
    * academia — essa opção nem lhe aparece no diálogo, e o servidor recusa-a na
    * mesma, porque a UI não é a fronteira.
    */
+  /**
+   * Marcar um evento — uma vez, ou repetido.
+   *
+   * ## Porque é que a repetição cria ocorrências a sério
+   *
+   * Um treino às terças e quintas até ao fim da época podia ser uma linha com uma
+   * regra, expandida à leitura. Não é: cada ocorrência é uma linha própria.
+   *
+   * A razão é o que acontece a seguir. Um treino abre folha de presenças, um jogo
+   * tem convocatória — e essas pertencem a **um dia**, não a uma regra. Com uma
+   * regra, marcar faltas obrigaria a materializar a ocorrência na primeira vez que
+   * alguém lhe tocasse, e metade do calendário passava a existir em dois estados.
+   *
+   * De lambuja, resolve o caso normal: chove na quinta, o treinador desmarca
+   * **aquele** treino, e os outros não sabem disso. Com uma regra, cancelar um dia
+   * é uma excepção a guardar à parte — a parte mais confusa de qualquer calendário.
+   *
+   * O preço é não haver "editar todos os futuros". Para um clube que marca a época
+   * de uma vez e depois ajusta pontualmente, é o negócio certo.
+   */
   async createEvent(
+    ctx: RequestContext,
+    dto: {
+      kind: string;
+      teamId?: string;
+      title: string;
+      startsAt: string;
+      endsAt: string;
+      venue: string;
+      dressingRoom?: string;
+      opponent?: string;
+      isHome?: boolean;
+      repeat?: { freq: "DAILY" | "WEEKLY" | "MONTHLY"; until: string; weekdays?: number[] };
+    },
+  ) {
+    if (!can(ctx, "calendar:write")) throw new ForbiddenException("Sem permissão para criar eventos");
+
+    if (!dto.repeat) {
+      const one = await this.createSingleEvent(ctx, dto);
+      return { created: 1, skipped: 0, events: [one] };
+    }
+
+    const datas = occurrences(dto.startsAt, dto.endsAt, dto.repeat);
+
+    /*
+     * Os conflitos não param a série.
+     *
+     * Marcar terças e quintas até Junho vai bater num dia em que já há treino —
+     * e recusar tudo por causa desse obrigava a descobrir qual, apagá-lo, e
+     * começar de novo. Salta-se o dia ocupado, contam-se os saltos, e diz-se
+     * quantos foram. O treinador vê "criei 22, saltei 2" e sabe exactamente o que
+     * aconteceu.
+     */
+    const events: unknown[] = [];
+    let skipped = 0;
+
+    for (const [startsAt, endsAt] of datas) {
+      try {
+        events.push(await this.createSingleEvent(ctx, { ...dto, startsAt, endsAt }));
+      } catch (e) {
+        if (e instanceof BadRequestException) {
+          skipped++;
+          continue;
+        }
+        throw e;
+      }
+    }
+
+    if (events.length === 0) {
+      throw new BadRequestException("Nenhuma data ficou livre — já há eventos marcados em todas elas.");
+    }
+
+    return { created: events.length, skipped, events };
+  }
+
+  /** Um evento, numa data. É aqui que vive tudo o que decide em que tabela grava. */
+  private async createSingleEvent(
     ctx: RequestContext,
     dto: {
       kind: string;
@@ -631,7 +1049,6 @@ export class AcademyService {
       isHome?: boolean;
     },
   ) {
-    if (!can(ctx, "calendar:write")) throw new ForbiddenException("Sem permissão para criar eventos");
     const scope = teamScopeFilter(ctx);
 
     return this.prisma.runAs(ctx.academyId, async (db) => {
@@ -1022,4 +1439,130 @@ export class AcademyService {
       .filter((p): p is Permission => DELEGATABLE.has(p as Permission))
       .filter((p) => can(ctx, p));
   }
+}
+
+/* ---------------------------------------------------------------------------- */
+
+/**
+ * A hierarquia, outra vez.
+ *
+ * Gémeo do `RANK` de `invites.service.ts` e de `roles.service.ts`. Duplicado de
+ * propósito e não importado: são três módulos com fronteiras próprias, e uma
+ * dependência entre eles só para partilhar nove números seria pior do que os
+ * nove números. Se um dia divergirem, o teste `test:security` apanha-o.
+ */
+const ROLE_RANK: Record<Role, number> = {
+  OWNER: 100,
+  DIRECTOR: 80,
+  COORDINATOR: 60,
+  MEDICAL: 40,
+  SCOUT: 40,
+  COACH: 40,
+  STAFF: 20,
+  GUARDIAN: 0,
+  ATHLETE: 0,
+};
+
+/**
+ * Quantas ocorrências uma série pode ter.
+ *
+ * Uma época inteira de treinos três vezes por semana dá umas 130. Duzentos é
+ * folgado para isso e trava o pedido que pede diariamente durante cinco anos —
+ * que seriam 1800 linhas escritas por engano num formulário.
+ */
+const MAX_OCCURRENCES = 200;
+
+/**
+ * As datas de uma série.
+ *
+ * Devolve pares `[início, fim]` em ISO, preservando a duração e a hora do
+ * primeiro evento. A aritmética é feita em data local e não em UTC de propósito:
+ * um treino às 19h continua às 19h depois da mudança da hora, que é o que um
+ * clube espera — em UTC passaria a 18h ou 20h a meio da época.
+ */
+function occurrences(
+  startsAt: string,
+  endsAt: string,
+  repeat: { freq: "DAILY" | "WEEKLY" | "MONTHLY"; until: string; weekdays?: number[] },
+): [string, string][] {
+  const inicio = new Date(startsAt);
+  const fim = new Date(endsAt);
+  const ate = new Date(repeat.until);
+
+  if ([inicio, fim, ate].some((d) => Number.isNaN(d.getTime()))) {
+    throw new BadRequestException("Datas inválidas");
+  }
+  if (fim <= inicio) throw new BadRequestException("O fim tem de ser depois do início");
+  if (ate < inicio) throw new BadRequestException("A repetição tem de acabar depois do primeiro evento");
+
+  // A duração viaja com a série: um treino de 90 minutos continua com 90 minutos
+  // em todas as ocorrências, mesmo as que caem noutro mês.
+  const duracao = fim.getTime() - inicio.getTime();
+
+  // Até ao fim do dia escolhido: quem escreve "até 30 de Junho" quer o dia 30
+  // incluído, não a meia-noite que o abre.
+  const limite = new Date(ate);
+  limite.setHours(23, 59, 59, 999);
+
+  const dias = repeat.freq === "WEEKLY" && repeat.weekdays?.length ? new Set(repeat.weekdays) : null;
+
+  const out: [string, string][] = [];
+  const cursor = new Date(inicio);
+
+  while (cursor <= limite && out.length < MAX_OCCURRENCES) {
+    /*
+     * O mensal verifica o dia, e não é redundante.
+     *
+     * Quando um mês não tem o dia pretendido — 31 de Fevereiro — o cursor é
+     * empurrado para o dia 1 do mês seguinte para continuar a contar. Sem esta
+     * verificação, esse dia 1 era emitido como se fosse uma ocorrência: uma série
+     * a começar a 31 de Janeiro dava 31/01, **01/02**, 31/03, **01/04**.
+     */
+    const serve =
+      repeat.freq === "WEEKLY" && dias
+        ? dias.has(cursor.getDay())
+        : repeat.freq === "MONTHLY"
+          ? cursor.getDate() === inicio.getDate()
+          : true;
+    if (serve) {
+      out.push([new Date(cursor).toISOString(), new Date(cursor.getTime() + duracao).toISOString()]);
+    }
+
+    if (repeat.freq === "MONTHLY") {
+      /*
+       * Mês a mês, e o dia 31 é o caso que estraga isto.
+       *
+       * `setMonth` sobre 31 de Janeiro dá 3 de Março — o JavaScript transborda em
+       * silêncio. Guardar o dia pretendido e reconstruir a data de raiz mantém a
+       * série no dia certo e salta os meses que não o têm, que é o que um humano
+       * faria com um calendário à frente.
+       */
+      const diaPretendido = inicio.getDate();
+      const proximo = new Date(cursor);
+      proximo.setDate(1);
+      proximo.setMonth(proximo.getMonth() + 1);
+      const ultimoDia = new Date(proximo.getFullYear(), proximo.getMonth() + 1, 0).getDate();
+      if (diaPretendido > ultimoDia) {
+        // Fevereiro não tem 31: salta-se o mês em vez de o empurrar para Março.
+        cursor.setTime(proximo.getTime());
+        continue;
+      }
+      proximo.setDate(diaPretendido);
+      proximo.setHours(inicio.getHours(), inicio.getMinutes(), 0, 0);
+      cursor.setTime(proximo.getTime());
+    } else {
+      // Diário e semanal andam de um dia: o semanal filtra pelos dias escolhidos
+      // acima, o que também cobre "de duas em duas semanas" quando vier a ser
+      // preciso — passa a ser um filtro, não outro ramo.
+      cursor.setDate(cursor.getDate() + 1);
+    }
+  }
+
+  if (out.length === 0) throw new BadRequestException("A repetição não gerou nenhuma data");
+  return out;
+}
+
+/** Lista de texto do cliente: sem vazios, sem repetidos, sem espaços à volta. */
+function clean(values?: string[]): string[] {
+  return [...new Set((values ?? []).map((v) => v.trim()).filter(Boolean))].slice(0, 40);
 }

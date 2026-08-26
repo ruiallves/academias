@@ -67,9 +67,16 @@ const VALID_DAYS = 7;
 export type CreateInvite = {
   name: string;
   email: string;
-  role: Role;
-  title?: string | null;
-  department?: StaffDepartment | null;
+  /**
+   * O cargo que a pessoa vai vestir — um `AcademyRole` desta academia.
+   *
+   * Substitui a escolha solta de `role` que existia aqui. Eram duas perguntas
+   * para a mesma coisa: quem convidava escolhia um "acesso" (o enum) **e** um
+   * departamento, e "acesso Direção" com "departamento Direção" dizia o mesmo
+   * duas vezes. Agora escolhe-se o departamento e, dentro dele, o cargo — e é o
+   * cargo que carrega as permissões, que é onde elas sempre estiveram.
+   */
+  academyRoleId: string;
   teamIds?: string[];
 };
 
@@ -120,16 +127,6 @@ export class InvitesService {
   async create(ctx: RequestContext, dto: CreateInvite): Promise<{ id: string; link: string; expiresAt: Date }> {
     if (!can(ctx, "staff:write")) throw new ForbiddenException("Sem permissão para convidar");
 
-    if (!STAFF_ROLES.includes(dto.role)) {
-      // Encarregados entram pelo atleta, não por aqui: um GUARDIAN sem
-      // `GuardianLink` seria uma conta que existe e não vê nada.
-      throw new BadRequestException("Este papel não se convida por aqui");
-    }
-
-    if (RANK[dto.role] > RANK[ctx.role]) {
-      throw new ForbiddenException("Não podes convidar alguém com mais acesso do que tu");
-    }
-
     const email = normalizeEmail(dto.email);
     if (!isEmail(email)) throw new BadRequestException("Email inválido");
 
@@ -137,6 +134,31 @@ export class InvitesService {
     if (name.length < 2) throw new BadRequestException("Falta o nome");
 
     return this.prisma.runAs(ctx.academyId, async (db) => {
+      /*
+       * O cargo decide tudo o resto: o papel-base (e com ele o âmbito e a
+       * hierarquia), as permissões e o departamento. Ler daqui, e não do corpo
+       * do pedido, é o que impede alguém de mandar um cargo e um papel que não
+       * combinam.
+       */
+      const cargo = await db.academyRole.findFirst({
+        where: { id: dto.academyRoleId, archivedAt: null },
+        select: { id: true, name: true, baseRole: true, department: true, rank: true },
+      });
+      if (!cargo) throw new BadRequestException("Cargo desconhecido");
+
+      if (!STAFF_ROLES.includes(cargo.baseRole)) {
+        // Encarregados entram pelo atleta, não por aqui: um GUARDIAN sem
+        // `GuardianLink` seria uma conta que existe e não vê nada.
+        throw new BadRequestException("Este cargo não se convida por aqui");
+      }
+
+      // A mesma regra de sempre, agora lida do cargo: não se convida acima do
+      // próprio nível. Sem isto, quem tivesse `staff:write` convidava um
+      // presidente e contornava a hierarquia inteira num convite.
+      if (RANK[cargo.baseRole] > RANK[ctx.role]) {
+        throw new ForbiddenException("Não podes convidar alguém para um cargo acima do teu");
+      }
+
       // As equipas têm de ser desta academia. A RLS já o garante; verificar aqui é
       // o que transforma um silêncio (equipa ignorada) num erro visível.
       const teamIds = [...new Set(dto.teamIds ?? [])];
@@ -146,10 +168,10 @@ export class InvitesService {
       }
 
       const existing = await db.membership.findFirst({
-        where: { role: dto.role, user: { email }, isActive: true },
+        where: { role: cargo.baseRole, user: { email }, isActive: true },
         select: { id: true },
       });
-      if (existing) throw new ConflictException("Esta pessoa já tem este papel na academia");
+      if (existing) throw new ConflictException("Esta pessoa já tem este cargo na academia");
 
       const token = randomBytes(32).toString("base64url");
       const expiresAt = new Date(Date.now() + VALID_DAYS * 24 * 60 * 60 * 1000);
@@ -161,9 +183,10 @@ export class InvitesService {
             tokenHash: hash(token),
             email,
             name,
-            role: dto.role,
-            title: dto.title?.trim() || null,
-            department: dto.department ?? null,
+            role: cargo.baseRole,
+            title: cargo.name,
+            department: cargo.department,
+            academyRoleId: cargo.id,
             teamIds,
             invitedById: ctx.membershipId,
             expiresAt,
@@ -295,7 +318,10 @@ export class InvitesService {
     const invite = await this.prisma.runAs(academyId, async (db) =>
       db.staffInvite.findFirst({
         where: { tokenHash, acceptedAt: null, revokedAt: null, expiresAt: { gt: new Date() } },
-        select: { id: true, email: true, name: true, role: true, title: true, department: true, teamIds: true },
+        select: {
+          id: true, email: true, name: true, role: true, title: true,
+          department: true, teamIds: true, academyRoleId: true,
+        },
       }),
     );
     if (!invite) throw new NotFoundException("Convite inválido");
@@ -338,15 +364,30 @@ export class InvitesService {
       `;
       const user = { id: created[0].id };
 
+      /*
+       * O cargo segue para a membership.
+       *
+       * Sem esta linha, quem resgatava um convite entrava com o enum `role` e
+       * mais nada: as permissões e os menus vinham dos valores por omissão do
+       * enum, e o cargo que quem convidou escolheu — com as permissões que lhe
+       * pertencem — ficava por aplicar. Era o que fazia a primeira pessoa a
+       * abrir um clube entrar sem conseguir configurar nada.
+       */
       const membership = await db.membership.upsert({
         where: { academyId_userId_role: { academyId, userId: user.id, role: invite.role } },
-        update: { isActive: true, title: invite.title, department: invite.department },
+        update: {
+          isActive: true,
+          title: invite.title,
+          department: invite.department,
+          ...(invite.academyRoleId ? { customRoleId: invite.academyRoleId } : {}),
+        },
         create: {
           academyId,
           userId: user.id,
           role: invite.role,
           title: invite.title,
           department: invite.department,
+          customRoleId: invite.academyRoleId,
         },
         select: { id: true },
       });

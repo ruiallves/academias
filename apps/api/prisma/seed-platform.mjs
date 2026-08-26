@@ -47,19 +47,71 @@ await db.connect();
 console.log("Planos…");
 // Preço base + por atleta acima do incluído. É como uma academia pensa no custo:
 // cresce com o clube, e não com o número de funcionalidades.
-for (const [id, name, base, perAthlete, included, trial] of [
-  ["plan_arranque", "Arranque", 2900, 0, 40, 30],
-  ["plan_clube", "Clube", 6900, 60, 120, 30],
-  ["plan_academia", "Academia", 14900, 45, 300, 30],
-]) {
+/*
+ * Dois planos, e a diferença entre eles é a conversa toda da venda: a Consola é
+ * o clube por dentro; o Connect acrescenta as famílias e o dinheiro. Ver a
+ * migração `20260826170000_planos_e_cargo_livre`, que é quem os põe assim nas
+ * bases que já existem.
+ */
+const PLANOS = [
+  {
+    id: "plan_clube",
+    name: "Consola",
+    tagline: "O clube por dentro. Tudo o que a direção e os treinadores precisam.",
+    cents: 1499,
+    order: 1,
+    recommended: false,
+    features: [
+      "Atletas, equipas, escalões e staff",
+      "Papéis e permissões à medida do clube",
+      "Calendário, treinos, presenças e convocatórias",
+      "Avaliações e relatórios de atleta",
+      "Departamento clínico: lesões, consultas e disponibilidade",
+      "Scouting: prospectos, observações, vídeo e shortlists",
+      "Comunicação segmentada e notificações",
+      "Importação de atletas por Excel",
+    ],
+    excludes: ["App das famílias", "Mensalidades e pagamentos", "Página pública de adesão a sócio"],
+  },
+  {
+    id: "plan_academia",
+    name: "Connect",
+    tagline: "O clube, as famílias e o dinheiro. A plataforma inteira.",
+    cents: 1999,
+    order: 2,
+    recommended: true,
+    features: [
+      "Tudo o que está na Consola",
+      "App das famílias com a marca do clube (PWA)",
+      "Convocatórias, presenças e avaliações no telemóvel dos pais",
+      "Mensalidades: MB WAY, Multibanco e cartão",
+      "Confirmação automática e estado sempre actualizado",
+      "Página pública de adesão a sócio",
+      "Gestão de sócios e quotas",
+      "Notificações push para as famílias",
+    ],
+    excludes: [],
+  },
+];
+
+for (const { id, name, tagline, cents, order, recommended, features, excludes } of PLANOS) {
   await db.query(
-    `INSERT INTO "Plan" (id,name,"amountCents","perAthleteCents","includedAthletes","trialDays","isActive","updatedAt")
-     VALUES ($1,$2,$3,$4,$5,$6,true,now())
-     ON CONFLICT (id) DO UPDATE SET name=EXCLUDED.name, "amountCents"=EXCLUDED."amountCents"`,
-    [id, name, base, perAthlete, included, trial],
+    `INSERT INTO "Plan" (id,name,tagline,"amountCents","perAthleteCents","includedAthletes","trialDays",
+                         features,excludes,"isRecommended","order","isActive","updatedAt")
+     VALUES ($1,$2,$3,$4,0,0,30,$5,$6,$7,$8,true,now())
+     ON CONFLICT (id) DO UPDATE SET
+       name=EXCLUDED.name, tagline=EXCLUDED.tagline, "amountCents"=EXCLUDED."amountCents",
+       "perAthleteCents"=0, "includedAthletes"=0,
+       features=EXCLUDED.features, excludes=EXCLUDED.excludes,
+       "isRecommended"=EXCLUDED."isRecommended", "order"=EXCLUDED."order", "isActive"=true`,
+    [id, name, tagline, cents, features, excludes, recommended, order],
   );
-  console.log(`  ${name.padEnd(10)} ${(base / 100).toFixed(2)} €/mês + ${(perAthlete / 100).toFixed(2)} €/atleta acima de ${included}`);
+  console.log(`  ${name.padEnd(10)} ${(cents / 100).toFixed(2)} €/mês${recommended ? "  (recomendado)" : ""}`);
 }
+
+// O plano antigo sai de circulação sem desaparecer: quem estiver nele continua a
+// apontar para uma linha que existe, e ninguém novo o pode escolher.
+await db.query(`UPDATE "Plan" SET "isActive"=false, "order"=99, "updatedAt"=now() WHERE id='plan_arranque'`);
 
 console.log("\nAdministração…");
 const { id: authId, created } = await ensureAuthUser(EMAIL, "Rui");

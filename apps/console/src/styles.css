@@ -71,6 +71,24 @@
  * reorganiza depois de aparecer.
  */
 :root {
+  /*
+    A cor do menu é nossa, não do clube.
+
+    A navegação usava `--color-signal` — a cor que o clube escolhe nas
+    Definições — e isso partia-se com metade das cores possíveis: um clube
+    amarelo dava texto amarelo sobre branco no item activo, ilegível. Um clube
+    não escolhe a sua cor a pensar em contraste de interface; escolhe-a a pensar
+    no emblema.
+
+    Este ardósia escuro tem contraste garantido sobre o fundo claro da consola,
+    é sóbrio ao lado de qualquer emblema, e não compete com as cores semânticas
+    (verde de pago, vermelho de vencido). A cor do clube continua a aparecer onde
+    é identidade — o símbolo, a app das famílias, a página de sócios.
+  */
+  --nav-accent: #334155;
+  --nav-accent-soft: #eef1f5;
+  --nav-accent-ink: #1e293b;
+
   --nav-header-h: 56px;
   /* A letra do menu, um degrau abaixo do corpo de texto. As alturas acompanham-na:
      uma linha mais baixa com a mesma letra ficaria apertada, e é isso que dá ao
@@ -258,4 +276,19 @@
    pediu menos movimento não vê nenhum — e continua a ler o rótulo ao lado. */
 @media (prefers-reduced-motion: reduce) {
   [role="status"] .animate-spin { animation: none; }
+}
+
+/*
+  O item activo do menu.
+
+  Classe em vez de utilitários porque as três peças — fundo, texto e ícone —
+  têm de mudar juntas, e escritas soltas ficavam com a cor do clube outra vez na
+  próxima vez que alguém lhes tocasse. Ver `--nav-accent`.
+*/
+.nav-active {
+  background: var(--nav-accent-soft);
+  color: var(--nav-accent-ink);
+}
+.nav-active-icon {
+  color: var(--nav-accent);
 }

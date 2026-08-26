@@ -47,6 +47,7 @@ import type { Role } from "@/lib/permissions";
 type ApiBootstrap = {
   academy: {
     id: string; slug: string; name: string; shortName: string; city: string | null; signalColor: string;
+    logoUrl: string | null;
     /** O que o clube escreveu na página pública de adesão a sócio. */
     membershipHeadline: string | null;
     membershipIntro: string | null;
@@ -57,6 +58,8 @@ type ApiBootstrap = {
   me: {
     membershipId: string;
     userId: string;
+    /** Se o painel de arranque é desta pessoa. Ver `setupOwner` no servidor. */
+    setupOwner?: boolean;
     name: string;
     email: string;
     role: Role;
@@ -94,7 +97,7 @@ type ApiAthlete = {
   taxId: string | null;
   heightCm: number | null; weightKg: number | null; dominantSide: string | null; squadNumber: number | null;
   medicalValidUntil: string | null; teamId: string | null; position: string | null;
-  guardians: { membershipId: string; name: string; email: string; phone: string | null; relation: string; isPayer: boolean }[];
+  guardians: { membershipId: string; name: string; email: string; phone: string | null; relation: string; isPayer: boolean; isActive: boolean }[];
   availability: "available" | "limited" | "out";
   // `title` (o diagnóstico) vem `null` para quem não tem `clinical:read` — o
   // servidor retém o dado sensível, mas mantém a disponibilidade. Ver a auditoria
@@ -189,7 +192,7 @@ const EMPTY: State = {
   ready: false,
   error: null,
   academy: {
-    id: "", slug: "", name: "", shortName: "", signalColor: "#0f6b62", city: "",
+    id: "", slug: "", name: "", shortName: "", signalColor: "#0f6b62", logoUrl: "", city: "",
     membershipHeadline: "", membershipIntro: "", membershipPoints: [],
     sports: [],
   },
@@ -344,6 +347,7 @@ function build(
         email: g.email,
         phone: g.phone ?? "",
         relation: (g.relation as Guardian["relation"]) ?? "Encarregado",
+        isActive: g.isActive ?? true,
         athleteIds: [a.id],
         // Por saber: depende de haver subscrição push registada para esta pessoa,
         // e esse endpoint ainda não existe. Falso é o que menos engana.
@@ -415,6 +419,7 @@ function build(
       name: boot.academy.name,
       shortName: boot.academy.shortName,
       signalColor: boot.academy.signalColor,
+      logoUrl: boot.academy.logoUrl ?? "",
       city: boot.academy.city ?? "",
       membershipHeadline: boot.academy.membershipHeadline ?? "",
       membershipIntro: boot.academy.membershipIntro ?? "",

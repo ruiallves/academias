@@ -4,6 +4,7 @@ import { Plus, Search } from "lucide-react";
 import { PageHeader } from "@/components/Shell";
 import { Empty, Panel, Pill, Progress, cx } from "@/components/primitives";
 import { NewAcademyDialog } from "@/components/NewAcademyDialog";
+import { AcademyActions } from "@/components/AcademyActions";
 import { Failed } from "./Overview";
 import { euros, shortDate, since } from "@/lib/format";
 import { useApi } from "@/lib/query";
@@ -35,6 +36,7 @@ export default function Academies({ me }: { me: Me }) {
   const [filter, setFilter] = useState<Filter>("todas");
   const [query, setQuery] = useState("");
   const [creating, setCreating] = useState(false);
+  const [gerir, setGerir] = useState<Academy | null>(null);
 
   // Vem do alerta clicado na Visão geral — a linha fica destacada.
   const highlight = params.get("destaque");
@@ -69,6 +71,18 @@ export default function Academies({ me }: { me: Me }) {
           onClose={() => setCreating(false)}
           onCreated={() => {
             setCreating(false);
+            reload();
+          }}
+        />
+      )}
+
+      {gerir && (
+        <AcademyActions
+          academy={gerir}
+          me={me}
+          onClose={() => setGerir(null)}
+          onDone={() => {
+            setGerir(null);
             reload();
           }}
         />
@@ -119,12 +133,13 @@ export default function Academies({ me }: { me: Me }) {
                   <th className="px-5 py-2 text-left">Academia</th>
                   <th className="px-3 py-2 text-left whitespace-nowrap">Estado</th>
                   <th className="px-3 py-2 text-left whitespace-nowrap">Plano</th>
-                  <th className="px-3 py-2 text-right whitespace-nowrap">MRR</th>
+                  <th className="px-3 py-2 text-right whitespace-nowrap">MRR / avaliação</th>
                   <th className="px-3 py-2 text-right whitespace-nowrap">Atletas</th>
                   <th className="px-3 py-2 text-right whitespace-nowrap">Staff</th>
                   <th className="px-3 py-2 text-left whitespace-nowrap">Onboarding</th>
                   <th className="px-3 py-2 text-left whitespace-nowrap">Atividade</th>
                   <th className="px-5 py-2 text-right whitespace-nowrap">Entrou</th>
+                  <th className="px-3 py-2 text-right whitespace-nowrap"></th>
                 </tr>
               </thead>
               <tbody>
@@ -145,8 +160,23 @@ export default function Academies({ me }: { me: Me }) {
                       <Pill tone={TONE[a.status]}>{STATUS_LABEL[a.status]}</Pill>
                     </td>
                     <td className="px-3 py-2.5 text-ink-2">{a.plan ?? "—"}</td>
+                    {/*
+                      Uma academia em avaliação **não gera receita**, e mostrar
+                      o valor do plano na coluna do MRR fazia-a parecer que sim.
+                      O número continua a existir — é o que ela vai pagar — mas
+                      até a subscrição ficar activa o que interessa saber é
+                      quando é que o período experimental acaba.
+                    */}
                     <td className="px-3 py-2.5 text-right font-medium text-ink tabular">
-                      {a.mrrCents > 0 ? euros(a.mrrCents) : <span className="text-ink-4">—</span>}
+                      {a.status === "TRIAL" || a.status === "SETUP" ? (
+                        <span className="text-meta font-normal text-[#8a5a12]">
+                          {a.trialEndsAt ? `até ${shortDate(a.trialEndsAt)}` : "experimental"}
+                        </span>
+                      ) : a.mrrCents > 0 ? (
+                        euros(a.mrrCents)
+                      ) : (
+                        <span className="text-ink-4">—</span>
+                      )}
                     </td>
                     <td className="px-3 py-2.5 text-right text-ink-2 tabular">{a.athletes}</td>
                     <td className="px-3 py-2.5 text-right text-ink-2 tabular">{a.staff}</td>
@@ -172,6 +202,13 @@ export default function Academies({ me }: { me: Me }) {
                       <span className={cx("text-meta", staleness(a.lastActivity))}>{since(a.lastActivity)}</span>
                     </td>
                     <td className="px-5 py-2.5 text-right text-meta text-ink-3 whitespace-nowrap">{shortDate(a.createdAt)}</td>
+                    <td className="px-3 py-2.5 text-right whitespace-nowrap">
+                      {mayCreate && (
+                        <button type="button" onClick={() => setGerir(a)} className="ctl-ghost">
+                          Gerir
+                        </button>
+                      )}
+                    </td>
                   </tr>
                 ))}
               </tbody>

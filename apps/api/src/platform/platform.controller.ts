@@ -1,5 +1,6 @@
-import { Body, Controller, Get, Ip, Post, Query, Req, UseGuards } from "@nestjs/common";
-import { IsEmail, IsInt, IsOptional, IsString, Length, Matches, Max, Min } from "class-validator";
+import { Body, Controller, Delete, Get, Ip, Param, Patch, Post, Query, Req, UseGuards } from "@nestjs/common";
+import { IsBoolean, IsEmail, IsEnum, IsInt, IsOptional, IsString, Length, Matches, Max, Min } from "class-validator";
+import { StaffDepartment } from "@prisma/client";
 import { Public } from "../auth/auth.guard";
 import { PlatformGuard, PlatformRoles, type PlatformRequest } from "./platform.guard";
 import { PlatformService } from "./platform.service";
@@ -28,6 +29,21 @@ class CreateAcademyDto {
   @Length(3, 254)
   directorEmail!: string;
 
+  /**
+   * O nome do cargo de quem recebe o convite, escrito à mão.
+   *
+   * "Presidente" por omissão. Sem lista fechada: os nomes que os clubes usam não
+   * são adivinháveis, e obrigá-los a escolher de seis obrigava-nos a acertar.
+   */
+  @IsOptional()
+  @IsString()
+  @Length(2, 60)
+  roleName?: string;
+
+  @IsOptional()
+  @IsEnum(StaffDepartment)
+  roleDepartment?: StaffDepartment;
+
   @IsOptional()
   @IsString()
   planId?: string;
@@ -37,6 +53,21 @@ class CreateAcademyDto {
   @Min(1)
   @Max(365)
   trialDays?: number;
+}
+
+/** Fechar ou reabrir um clube. Ver `setAcademyActive`. */
+class SetAcademyActiveDto {
+  @IsBoolean() active!: boolean;
+}
+
+/**
+ * Apagar um clube.
+ *
+ * O endereço vem no corpo e tem de bater certo com o do clube — é o que obriga
+ * quem apaga a olhar para **qual** clube está a apagar. Ver `deleteAcademy`.
+ */
+class DeleteAcademyDto {
+  @IsString() @Length(3, 40) slug!: string;
 }
 
 /**
@@ -81,6 +112,38 @@ export class PlatformController {
   @Get("plans")
   plans() {
     return this.platform.plans();
+  }
+
+  /**
+   * Desactivar ou reactivar um clube. Fechado a `SUPPORT` — quem dá apoio
+   * acompanha, não fecha clientes.
+   */
+  @Patch("academies/:id/estado")
+  @PlatformRoles("OWNER", "ADMIN")
+  setAcademyActive(
+    @Req() req: PlatformRequest,
+    @Ip() ip: string,
+    @Param("id") id: string,
+    @Body() body: SetAcademyActiveDto,
+  ) {
+    return this.platform.setAcademyActive(req.admin, id, body.active, ip);
+  }
+
+  /**
+   * Apagar um clube. Só `OWNER`, e só com o endereço escrito à mão.
+   *
+   * Leva tudo atrás — atletas, presenças, boletins clínicos, mensalidades. É a
+   * operação mais destrutiva do produto, e é a única que exige o `OWNER`.
+   */
+  @Delete("academies/:id")
+  @PlatformRoles("OWNER")
+  deleteAcademy(
+    @Req() req: PlatformRequest,
+    @Ip() ip: string,
+    @Param("id") id: string,
+    @Body() body: DeleteAcademyDto,
+  ) {
+    return this.platform.deleteAcademy(req.admin, id, body.slug, ip);
   }
 
   @Get("audit")

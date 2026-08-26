@@ -17,9 +17,22 @@ import { signalVars } from "@academia/ui/tokens";
  */
 
 const KEY = "academia.brand";
-const FALLBACK: Brand = { color: "#0f6b62", shortName: "", mark: "" };
+const FALLBACK: Brand = { color: "#0f6b62", shortName: "", mark: "", logoUrl: null };
 
-export type Brand = { color: string; shortName: string; mark: string };
+export type Brand = {
+  color: string;
+  shortName: string;
+  /** Duas letras, quando não há emblema. */
+  mark: string;
+  /**
+   * O emblema do clube.
+   *
+   * Guardado com o resto da marca pela mesma razão que a cor: a app tem de abrir
+   * já com ele. Sem isto, o pai via as iniciais a piscar e a virar emblema
+   * quando o bootstrap chegasse — e um ícone de app não muda ao abrir.
+   */
+  logoUrl: string | null;
+};
 
 export function readBrand(): Brand {
   try {

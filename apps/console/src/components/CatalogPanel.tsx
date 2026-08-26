@@ -10,6 +10,7 @@ import {
 } from "@/lib/catalogs";
 import { Check, ChevronDown, Plus, X } from "@/lib/icons";
 import { cx, Pill } from "./primitives";
+import { useStore } from "@/lib/store";
 
 /**
  * Um catálogo, editável.
@@ -237,13 +238,25 @@ function CatalogRow({
 
 function AddForm({ catalogKey, onDone }: { catalogKey: CatalogKey; onDone: () => void }) {
   const meta = CATALOG_META[catalogKey];
+  const { academy } = useStore();
   const [label, setLabel] = useState("");
   const [note, setNote] = useState("");
+  const [sportId, setSportId] = useState("");
+
+  /*
+   * O selector de modalidade só aparece quando há mais do que uma.
+   *
+   * Um clube só de futebol nunca precisa de escolher — tudo o que cria serve o
+   * futebol, e uma caixa com uma opção só é ruído. Com duas modalidades a
+   * pergunta passa a ser real: o "Sub-13" do futebol não é o da natação, e a
+   * piscina não é um campo.
+   */
+  const escolheDesporto = academy.sports.length > 1;
 
   function submit(e: FormEvent) {
     e.preventDefault();
     if (!label.trim()) return;
-    addItem(catalogKey, label, note);
+    void addItem(catalogKey, label, note, sportId || null);
     onDone();
   }
 
@@ -263,6 +276,21 @@ function AddForm({ catalogKey, onDone }: { catalogKey: CatalogKey; onDone: () =>
           placeholder={meta.noteLabel}
           className="h-7 min-w-0 flex-1 rounded-[6px] border border-line bg-surface px-2 text-meta text-ink-2 placeholder:text-ink-4 focus:border-line-strong focus:outline-none"
         />
+      )}
+      {escolheDesporto && (
+        <select
+          value={sportId}
+          onChange={(e) => setSportId(e.target.value)}
+          aria-label="Modalidade"
+          className="h-7 shrink-0 rounded-[6px] border border-line bg-surface px-1.5 text-meta text-ink-2 focus:border-line-strong focus:outline-none"
+        >
+          <option value="">Todas</option>
+          {academy.sports.map((sp) => (
+            <option key={sp.id} value={sp.id}>
+              {sp.name}
+            </option>
+          ))}
+        </select>
       )}
       <button type="submit" className="flex size-7 shrink-0 items-center justify-center rounded-[6px] text-ok hover:bg-ok-soft" aria-label="Adicionar">
         <Check className="size-3.5" strokeWidth={2} />

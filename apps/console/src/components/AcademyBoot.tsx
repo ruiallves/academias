@@ -2,6 +2,8 @@ import { useEffect, type ReactNode } from "react";
 import { signalVars } from "@academia/ui/tokens";
 import { loadAcademy, useStore } from "@/lib/store";
 import { loadCatalogs } from "@/lib/catalogs";
+import { loadInvites } from "@/lib/invites";
+import { loadNotifications } from "@/lib/notifications";
 import { clearSession } from "@/lib/session";
 
 /**
@@ -40,7 +42,19 @@ export function AcademyBoot({ children }: { children: ReactNode }) {
    * umas dezenas de linhas.
    */
   useEffect(() => {
-    if (store.ready) void loadCatalogs();
+    if (!store.ready) return;
+    void loadCatalogs();
+    /*
+     * Os convites por aceitar entram no mesmo arranque.
+     *
+     * O painel de arranque conta-os — "Convidar os treinadores" está feito assim
+     * que houver um convite emitido, mesmo antes de a pessoa o abrir — e a lista
+     * de staff mostra-os. Falhar aqui é silencioso: quem não tem `staff:read`
+     * fica com a lista vazia, que é o que deve ver.
+     */
+    void loadInvites();
+    // O sino da barra lateral vive desta lista — ver `lib/notifications.ts`.
+    void loadNotifications();
   }, [store.ready]);
 
   useEffect(() => {

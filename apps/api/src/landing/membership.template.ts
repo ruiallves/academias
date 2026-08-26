@@ -178,9 +178,20 @@ export function renderMembershipPage(opts: {
   .wrap { width: 100%; max-width: 1120px; margin: 0 auto; padding: 0 clamp(20px, 4vw, 40px); }
 
   header.bar { display: flex; align-items: center; gap: 16px; padding: clamp(20px, 3vw, 34px) 0 clamp(24px, 4vw, 44px); }
+  /*
+     O circulo e o recurso, nao a moldura.
+
+     Um emblema de clube tem forma propria e fundo transparente. Metido num
+     circulo com object-fit: cover, ficava cortado nos lados e assente num disco
+     da cor do clube que ninguem desenhou. Com emblema nao ha caixa: a forma e a
+     do emblema. Sem emblema, o disco com as iniciais fica.
+
+     (Sem crases: isto vive dentro de um template literal.)
+  */
   .crest { width: 44px; height: 44px; border-radius: 50%; flex: none; background: var(--club); color: #fff;
            display: grid; place-items: center; font-weight: 700; font-size: 14px; }
-  .crest img { width: 100%; height: 100%; object-fit: cover; border-radius: 50%; }
+  .crest.logo { background: none; border-radius: 0; }
+  .crest.logo img { width: 100%; height: 100%; object-fit: contain; border-radius: 0; }
   .bar .nm {
     font-family: "Archivo", sans-serif; font-variation-settings: "wdth" 100;
     font-weight: 700; font-size: clamp(17px, 2.4vw, 22px); letter-spacing: 0.01em;
@@ -474,7 +485,8 @@ export function renderMembershipPage(opts: {
   .card .ct { position: relative; z-index: 1; display: flex; align-items: center; justify-content: space-between; gap: 10px; }
   .card .cc { width: 32px; height: 32px; flex: none; border-radius: 50%; background: rgb(255 255 255 / 0.22);
               display: grid; place-items: center; font-size: 11px; font-weight: 700; }
-  .card .cc img { width: 100%; height: 100%; object-fit: cover; border-radius: 50%; }
+  .card .cc.logo { background: none; border-radius: 0; }
+  .card .cc.logo img { width: 100%; height: 100%; object-fit: contain; border-radius: 0; }
   /*
      22ch cabe as categorias normais numa linha só; o "13ch" que aqui estava era
      apertado a mais e partia algo tao curto como "Socio Clube +" a meio, deixando
@@ -538,7 +550,7 @@ export function renderMembershipPage(opts: {
 <div class="page">
   <div class="wrap">
     <header class="bar">
-      <div class="crest">${academy.logoUrl ? `<img src="${esc(academy.logoUrl)}" alt="" />` : esc(academy.mark)}</div>
+      <div class="crest${academy.logoUrl ? " logo" : ""}">${academy.logoUrl ? `<img src="${esc(academy.logoUrl)}" alt="" />` : esc(academy.mark)}</div>
       <div class="nm">${esc(academy.shortName)}</div>
       <div class="club">Adesão a sócio</div>
     </header>
@@ -1156,7 +1168,7 @@ function cardMarkup(academy: AcademyBranding): string {
   return `
         <div class="card">
           <div class="ct">
-            <div class="cc">${academy.logoUrl ? `<img src="${esc(academy.logoUrl)}" alt="" />` : esc(academy.mark)}</div>
+            <div class="cc${academy.logoUrl ? " logo" : ""}">${academy.logoUrl ? `<img src="${esc(academy.logoUrl)}" alt="" />` : esc(academy.mark)}</div>
             <div class="tier" id="card-tier">Sócio</div>
           </div>
           <div class="nm" id="card-name" data-empty>O teu nome</div>

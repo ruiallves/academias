@@ -74,3 +74,38 @@ export class CreateTeamDto {
   @Type(() => ScheduleSlotDto)
   schedule!: ScheduleSlotDto[];
 }
+
+
+/** Uma linha do ficheiro de equipas. A modalidade e a época chegam escritas. */
+export class ImportTeamRowDto {
+  @IsString()
+  @Length(2, 80)
+  name!: string;
+
+  @IsString()
+  @Length(1, 60)
+  sport!: string;
+
+  @IsString()
+  @Length(1, 40)
+  ageGroup!: string;
+
+  @IsOptional()
+  @IsString()
+  @Length(0, 20)
+  season?: string;
+}
+
+/**
+ * O ficheiro inteiro.
+ *
+ * Duzentas linhas é o mesmo tecto da importação de atletas — um clube não tem
+ * duzentas equipas, e o limite existe para travar o ficheiro colado por engano.
+ */
+export class ImportTeamsDto {
+  @IsArray()
+  @ArrayMaxSize(200)
+  @ValidateNested({ each: true })
+  @Type(() => ImportTeamRowDto)
+  rows!: ImportTeamRowDto[];
+}

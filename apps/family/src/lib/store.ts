@@ -20,7 +20,7 @@ import { applyBrand } from "@/lib/brand";
 /* -------------------------------------------------------------------------- */
 
 type ApiBootstrap = {
-  academy: { id: string; slug: string; name: string; shortName: string; signalColor: string; city: string | null };
+  academy: { id: string; slug: string; name: string; shortName: string; signalColor: string; city: string | null; logoUrl: string | null };
   sports: { id: string; name: string }[];
   season: { label: string } | null;
   me: { userId: string; name: string; email: string; role: string };
@@ -236,7 +236,7 @@ export type Report = {
 type State = {
   ready: boolean;
   error: string | null;
-  academy: { name: string; shortName: string; mark: string; signalColor: string };
+  academy: { name: string; shortName: string; mark: string; signalColor: string; logoUrl: string | null };
   guardian: { name: string; firstName: string };
   children: Child[];
   trainings: Training[];
@@ -253,7 +253,7 @@ type State = {
 const EMPTY: State = {
   ready: false,
   error: null,
-  academy: { name: "", shortName: "", mark: "", signalColor: "#0f6b62" },
+  academy: { name: "", shortName: "", mark: "", signalColor: "#0f6b62", logoUrl: null },
   guardian: { name: "", firstName: "" },
   children: [],
   trainings: [],
@@ -294,6 +294,7 @@ export function load(): Promise<void> {
         color: boot.academy.signalColor,
         shortName: boot.academy.shortName,
         mark: initials(boot.academy.shortName),
+        logoUrl: boot.academy.logoUrl ?? null,
       });
 
       const from = new Date(Date.now() - 120 * 86_400_000).toISOString();
@@ -504,6 +505,7 @@ function build(
       name: boot.academy.name,
       shortName: boot.academy.shortName,
       mark: initials(boot.academy.shortName),
+      logoUrl: boot.academy.logoUrl ?? null,
       signalColor: boot.academy.signalColor,
     },
     guardian: { name: boot.me.name, firstName: boot.me.name.split(/\s+/)[0] },

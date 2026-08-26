@@ -1,6 +1,7 @@
 import { useSyncExternalStore } from "react";
 import { apiDelete, apiGet, apiPatch, apiPost } from "@/lib/http";
 import type { Permission, Role } from "@/lib/permissions";
+import type { StaffDepartment } from "@/data/types";
 
 /**
  * Os papéis da academia.
@@ -19,6 +20,14 @@ export type AcademyRole = {
   name: string;
   description: string | null;
   baseRole: Role;
+  /**
+   * A que departamento pertence este cargo.
+   *
+   * Um departamento tem vários cargos; um cargo pertence a um departamento só.
+   * É o que deixa o convite perguntar primeiro o departamento e só depois o
+   * cargo. `null` no presidente: quem responde por tudo não é de um departamento.
+   */
+  department: StaffDepartment | null;
   permissions: Permission[];
   /** Vazio significa "todos os menus que a permissão deixar". */
   navKeys: string[];
@@ -60,6 +69,7 @@ export async function createRole(input: {
   name: string;
   description?: string;
   baseRole: Role;
+  department?: StaffDepartment | null;
   permissions: Permission[];
 }): Promise<void> {
   await apiPost("/api/roles", input);
@@ -68,7 +78,7 @@ export async function createRole(input: {
 
 export async function updateRole(
   id: string,
-  input: { name?: string; description?: string; permissions?: Permission[] },
+  input: { name?: string; description?: string; department?: StaffDepartment | null; permissions?: Permission[] },
 ): Promise<void> {
   await apiPatch(`/api/roles/${id}`, input);
   await loadRoles();

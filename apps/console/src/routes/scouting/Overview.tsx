@@ -252,8 +252,16 @@ function Corridor({ stages, total }: { stages: { stage: Stage; count: number }[]
             </Link>
           </li>
         ))}
+        {/*
+          Descartados à direita, na mesma linha — não por baixo.
+
+          `ml-auto` empurra-o para o fim da linha do funil em vez de o deixar
+          cair para o fundo da caixa. A separação é intencional: descartado não é
+          uma etapa do funil, é a saída dele, e ler-se afastado dos outros diz
+          isso sem precisar de uma legenda.
+        */}
         {rejected && rejected.count > 0 && (
-          <li className="flex items-center gap-1.5">
+          <li className="flex items-center gap-1.5 sm:ml-auto">
             <span className="size-2.5 shrink-0 rounded-[3px] border border-line-strong" />
             <Link to="/scouting/prospects?estado=REJECTED" className="text-meta text-ink-4 hover:underline">
               Descartados <span className="tabular">{rejected.count}</span>

@@ -1,5 +1,4 @@
-import { ArrayMaxSize, IsArray, IsEmail, IsEnum, IsOptional, IsString, Length, MaxLength } from "class-validator";
-import { Role, StaffDepartment } from "@prisma/client";
+import { ArrayMaxSize, IsArray, IsEmail, IsOptional, IsString, Length, MaxLength } from "class-validator";
 
 /**
  * Os corpos dos pedidos de convite, como **classes** e não interfaces.
@@ -24,17 +23,14 @@ export class CreateInviteDto {
   @MaxLength(254)
   email!: string;
 
-  @IsEnum(Role)
-  role!: Role;
-
-  @IsOptional()
+  /**
+   * O cargo. Substitui o par `role` + `title` + `department` que existia aqui:
+   * o cargo já os carrega os três, e o servidor lê-os dele. Ver `CreateInvite`
+   * em `invites.service.ts`.
+   */
   @IsString()
-  @MaxLength(80)
-  title?: string;
-
-  @IsOptional()
-  @IsEnum(StaffDepartment)
-  department?: StaffDepartment;
+  @Length(1, 40)
+  academyRoleId!: string;
 
   @IsOptional()
   @IsArray()

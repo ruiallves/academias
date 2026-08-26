@@ -3,6 +3,7 @@ import { applyBrand } from "@/lib/brand";
 import { clearInvite, readInvite, saveInvite, saveSlug, type InvitePreview } from "@/lib/invite";
 import { saveSession, signIn } from "@/lib/session";
 import { cx } from "@/ui";
+import { ClubMark } from "@/ClubMark";
 
 /**
  * A porta da app da família.
@@ -67,6 +68,7 @@ export default function Entrar({ onEntered }: { onEntered: () => void }) {
           color: preview.academy.signalColor,
           shortName: preview.academy.shortName,
           mark: preview.academy.mark,
+          logoUrl: preview.academy.logoUrl,
         });
       })
       .catch(() => {
@@ -83,27 +85,75 @@ export default function Entrar({ onEntered }: { onEntered: () => void }) {
     };
   }, [token]);
 
+  /*
+   * Os passos, para quem está a criar conta.
+   *
+   * Três pontos e não uma barra de progresso: são três, contam-se de relance, e
+   * uma barra a 33% num ecrã de registo parece mais trabalho do que é. Some no
+   * caminho de quem só quer entrar — esse não tem passos nenhuns.
+   */
+  const passos: Step[] = ["escolha", "filho", "dados"];
+  const indice = passos.indexOf(step);
+
   return (
-    <div className="mx-auto flex min-h-dvh max-w-[480px] flex-col justify-center px-6 py-10">
-      <header className="mb-7">
-        <div
-          className="mb-4 flex size-12 items-center justify-center rounded-[var(--radius-sm)] text-[15px] font-bold text-white"
-          style={{ background: "var(--color-signal)" }}
-          aria-hidden
-        >
-          {clube?.academy.mark ?? "··"}
-        </div>
-        <h1 className="text-[26px] leading-tight font-semibold text-ink">
-          {clube ? clube.academy.name : "A app da tua academia"}
-        </h1>
-        <p className="mt-1.5 text-[15px] leading-relaxed text-ink-2">
-          {step === "login"
-            ? "Entra com a conta que já tens."
-            : clube
-              ? "Treinos, pagamentos e o progresso do teu filho, num sítio só."
-              : "Entra com a conta que tens. Para criares uma, abre o link que o clube te enviou."}
-        </p>
-      </header>
+    <div className="relative flex min-h-dvh flex-col overflow-hidden">
+      {/*
+        O ambiente.
+
+        Um halo da cor do clube no topo, sobre o fundo normal da app. É a única
+        coisa que separa este ecrã dos outros — e é de propósito: a cor é a do
+        clube do filho, não a nossa, e é a primeira coisa que um pai reconhece.
+        Sem gradientes de duas cores nem vidro fosco; o clube é que é a marca.
+      */}
+      <div
+        aria-hidden
+        className="pointer-events-none absolute inset-x-0 top-0 h-[52dvh]"
+        style={{
+          background:
+            "radial-gradient(120% 78% at 50% 0%, color-mix(in oklab, var(--color-signal) 16%, transparent) 0%, transparent 72%)",
+        }}
+      />
+
+      <div className="relative mx-auto flex w-full max-w-[480px] flex-1 flex-col justify-center px-6 pt-16 pb-10">
+        <header className="mb-8 flex flex-col items-center text-center">
+          <ClubMark
+            logoUrl={clube?.academy.logoUrl ?? null}
+            mark={clube?.academy.mark ?? "··"}
+            size={72}
+            radius={22}
+            className="mb-5"
+          />
+
+          <h1 className="text-[30px] leading-[1.1] font-semibold tracking-[-0.02em] text-balance text-ink">
+            {clube ? clube.academy.name : "A app da tua academia"}
+          </h1>
+
+          <p className="mt-2.5 max-w-[30ch] text-[15px] leading-relaxed text-ink-2">
+            {step === "login"
+              ? "Entra com a conta que já tens."
+              : step === "filho"
+                ? "Vamos confirmar de quem és encarregado."
+                : step === "dados"
+                  ? "Falta só a tua conta."
+                  : clube
+                    ? "Treinos, pagamentos e o progresso do teu filho, num sítio só."
+                    : "Entra com a conta que tens. Para criares uma, abre o link que o clube te enviou."}
+          </p>
+
+          {indice >= 0 && token && (
+            <div className="mt-6 flex items-center gap-1.5" aria-hidden>
+              {passos.map((p, i) => (
+                <span
+                  key={p}
+                  className={cx(
+                    "h-1 rounded-full transition-all duration-300",
+                    i === indice ? "w-6 bg-[var(--color-signal)]" : i < indice ? "w-1.5 bg-[var(--color-signal)]" : "w-1.5 bg-line",
+                  )}
+                />
+              ))}
+            </div>
+          )}
+        </header>
 
       {erro && step === "escolha" && (
         <p className="mb-4 rounded-[var(--radius-sm)] bg-[#fae9e7] px-3.5 py-2.5 text-[13px] leading-relaxed text-[#a82a20]">{erro}</p>
@@ -129,7 +179,8 @@ export default function Entrar({ onEntered }: { onEntered: () => void }) {
         <Dados token={token} onVoltar={() => setStep("filho")} onPronto={onEntered} />
       )}
 
-      {step === "login" && <Login onVoltar={() => setStep("escolha")} onPronto={onEntered} />}
+        {step === "login" && <Login onVoltar={() => setStep("escolha")} onPronto={onEntered} />}
+      </div>
     </div>
   );
 }
@@ -153,12 +204,25 @@ function Escolha({
   // Chegou por convite: criar conta é o que está a acontecer agora.
   if (temConvite) {
     return (
-      <div className="space-y-3">
+      <div className="space-y-2.5">
         <button type="button" onClick={onCriar} className="cta w-full">
           Criar conta
         </button>
-        <button type="button" onClick={onEntrar} className="cta-quiet w-full">
-          Já tenho conta — entrar
+
+        {/*
+          "Já tenho conta" como texto e não como segundo botão.
+
+          Dois botões cheios lado a lado fazem a pessoa escolher entre duas
+          coisas que parecem igualmente prováveis — e não são: quem acabou de
+          abrir o link do clube não tem conta nenhuma. O caminho de quem volta
+          continua a um toque, sem competir com o que está mesmo a acontecer.
+        */}
+        <button
+          type="button"
+          onClick={onEntrar}
+          className="w-full py-2.5 text-center text-[14px] text-ink-2 transition-colors active:text-ink"
+        >
+          Já tenho conta — <span className="font-semibold text-ink">entrar</span>
         </button>
       </div>
     );
@@ -196,16 +260,24 @@ function Escolha({
           </button>
         </form>
       ) : (
-        <p className="pt-1 text-center text-[13px] leading-relaxed text-ink-3">
-          Ainda não tens conta? Abre o link que o clube te enviou.{" "}
-          <button
-            type="button"
-            onClick={() => setColar(true)}
-            className="font-medium text-ink underline underline-offset-2"
-          >
-            Tenho-o aqui
-          </button>
-        </p>
+        <div className="pt-4">
+          {/* Uma linha a separar o caminho normal da saída de recurso. */}
+          <div className="mb-4 flex items-center gap-3">
+            <span className="h-px flex-1 bg-line" />
+            <span className="text-[11px] tracking-[0.08em] text-ink-4 uppercase">ou</span>
+            <span className="h-px flex-1 bg-line" />
+          </div>
+          <p className="text-center text-[13.5px] leading-relaxed text-ink-3">
+            Ainda não tens conta? Abre o link que o clube te enviou.{" "}
+            <button
+              type="button"
+              onClick={() => setColar(true)}
+              className="font-semibold text-ink underline underline-offset-[3px]"
+            >
+              Tenho-o aqui
+            </button>
+          </p>
+        </div>
       )}
     </div>
   );

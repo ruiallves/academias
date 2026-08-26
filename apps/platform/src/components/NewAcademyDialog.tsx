@@ -16,7 +16,29 @@ import { cx } from "./primitives";
  * O endereço é derivado do nome enquanto ninguém lhe tocar. É o que faz o campo
  * desaparecer para quem não se importa e continuar lá para quem se importa.
  */
-type Created = { academy: { id: string; slug: string; name: string }; inviteLink: string; trialEndsAt: string };
+type Created = {
+  academy: { id: string; slug: string; name: string };
+  inviteLink: string;
+  trialEndsAt: string;
+  /** O cargo com que a pessoa vai entrar. Vem do servidor — ver `initialRoles`. */
+  roleName: string;
+};
+
+/** Os departamentos, para o cargo que não é o de presidente. */
+const DEPARTAMENTOS = [
+  { value: "", label: "Sem departamento" },
+  { value: "DIRECTION", label: "Direção" },
+  { value: "TECHNICAL", label: "Equipa técnica" },
+  { value: "CLINICAL", label: "Departamento clínico" },
+  { value: "SCOUTING", label: "Departamento de scouting" },
+  { value: "OPERATIONS", label: "Secretaria e operações" },
+] as const;
+
+/** "Presidente" em qualquer grafia. Gémeo de `isPresidente` no servidor. */
+function ehPresidente(nome: string): boolean {
+  const limpo = nome.normalize("NFD").replace(/[̀-ͯ]/g, "").trim().toLowerCase();
+  return limpo === "presidente" || limpo === "presidencia" || limpo === "president";
+}
 
 export function NewAcademyDialog({ onClose, onCreated }: { onClose: () => void; onCreated: () => void }) {
   const [plans, setPlans] = useState<Plan[]>([]);
@@ -26,6 +48,8 @@ export function NewAcademyDialog({ onClose, onCreated }: { onClose: () => void; 
   const [directorName, setDirectorName] = useState("");
   const [directorEmail, setDirectorEmail] = useState("");
   const [planId, setPlanId] = useState("");
+  const [roleName, setRoleName] = useState("Presidente");
+  const [roleDepartment, setRoleDepartment] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [created, setCreated] = useState<Created | null>(null);
@@ -37,6 +61,7 @@ export function NewAcademyDialog({ onClose, onCreated }: { onClose: () => void; 
         setPlanId((current) => current || p[0]?.id || "");
       })
       .catch(() => setPlans([]));
+
   }, []);
 
   useEffect(() => {
@@ -60,6 +85,8 @@ export function NewAcademyDialog({ onClose, onCreated }: { onClose: () => void; 
         slug: effectiveSlug,
         directorName: directorName.trim(),
         directorEmail: directorEmail.trim(),
+        roleName: roleName.trim() || "Presidente",
+        ...(roleDepartment ? { roleDepartment } : {}),
         planId: planId || undefined,
       });
       setCreated(result);
@@ -113,28 +140,136 @@ export function NewAcademyDialog({ onClose, onCreated }: { onClose: () => void; 
               </Field>
             </div>
 
+            {/*
+              O cargo de quem recebe o convite — escrito, não escolhido.
+
+              Era uma lista de seis opções, e a lista estava errada por
+              construção: os nomes que os clubes usam para os seus cargos não são
+              adivinháveis ("Diretor-Geral", "Presidente da Direção", "Vogal").
+              Escrever é o único que os cobre todos.
+
+              "Presidente" vem preenchido porque é o caso normal, e é reconhecido
+              em qualquer grafia — Presidente, presidente, PRESIDENTE são o mesmo
+              cargo, e o clube não abre com dois a dizer o mesmo.
+            */}
+            <div>
+              <Field label="Cargo de quem recebe o convite" hint="escreve o que o clube usa">
+                <input
+                  className={INPUT}
+                  value={roleName}
+                  onChange={(e) => setRoleName(e.target.value)}
+                  placeholder="Presidente"
+                />
+              </Field>
+
+              {ehPresidente(roleName) ? (
+                <p className="mt-1.5 text-[11px] leading-relaxed text-ink-4">
+                  O clube abre só com o cargo de <strong className="font-medium text-ink-3">Presidente</strong>,
+                  com todas as permissões.
+                </p>
+              ) : (
+                <>
+                  <div className="mt-2">
+                    <Field label="Departamento" hint="onde este cargo vive">
+                      <select
+                        className={INPUT}
+                        value={roleDepartment}
+                        onChange={(e) => setRoleDepartment(e.target.value)}
+                      >
+                        {DEPARTAMENTOS.map((d) => (
+                          <option key={d.value} value={d.value}>
+                            {d.label}
+                          </option>
+                        ))}
+                      </select>
+                    </Field>
+                  </div>
+                  <p className="mt-1.5 text-[11px] leading-relaxed text-ink-4">
+                    O clube abre com <strong className="font-medium text-ink-3">{roleName.trim() || "este cargo"}</strong>{" "}
+                    e com o de <strong className="font-medium text-ink-3">Presidente</strong>, por preencher. Esta
+                    primeira pessoa entra com todas as permissões — é ela que monta o clube.
+                  </p>
+                </>
+              )}
+            </div>
+
             <div>
               <span className="mb-1.5 block text-meta font-medium text-ink">Plano</span>
               <div className="space-y-1.5">
-                {plans.map((p) => (
-                  <label
-                    key={p.id}
-                    className={cx(
-                      "flex cursor-pointer items-center gap-3 rounded-[var(--radius-control)] border px-3 py-2.5 transition-colors duration-[120ms]",
-                      planId === p.id ? "border-signal bg-signal-soft/40" : "border-line hover:bg-sunken",
-                    )}
-                  >
-                    <input type="radio" name="plano" checked={planId === p.id} onChange={() => setPlanId(p.id)} className="size-3.5 accent-[var(--color-signal)]" />
-                    <span className="min-w-0 flex-1">
-                      <span className="block text-body font-medium text-ink">{p.name}</span>
-                      <span className="block text-meta text-ink-3">
-                        {euros(p.amountCents)}/mês · até {p.includedAthletes} atletas
-                        {p.perAthleteCents > 0 && `, depois ${(p.perAthleteCents / 100).toFixed(2).replace(".", ",")} € cada`}
+                {/*
+                  O plano por inteiro, e não só o preço.
+
+                  Mostrava o nome e um número. Quem abre um clube tinha de saber
+                  de cor o que cada plano traz — e a diferença entre os dois é
+                  precisamente a app das famílias e os pagamentos, que é a
+                  conversa toda da venda. A lista do que **não** inclui está cá
+                  pela mesma razão: uma ausência descoberta depois de assinar é
+                  uma chamada de reclamação.
+                */}
+                {plans.map((p) => {
+                  const escolhido = planId === p.id;
+                  return (
+                    <label
+                      key={p.id}
+                      className={cx(
+                        "block cursor-pointer rounded-[var(--radius-control)] border px-3 py-3 transition-colors duration-[120ms]",
+                        escolhido ? "border-signal bg-signal-soft/40" : "border-line hover:bg-sunken",
+                      )}
+                    >
+                      <span className="flex items-start gap-3">
+                        <input
+                          type="radio"
+                          name="plano"
+                          checked={escolhido}
+                          onChange={() => setPlanId(p.id)}
+                          className="mt-1 size-3.5 shrink-0 accent-[var(--color-signal)]"
+                        />
+                        <span className="min-w-0 flex-1">
+                          <span className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5">
+                            <span className="text-body font-medium text-ink">{p.name}</span>
+                            <span className="text-body font-semibold text-ink tabular">{euros(p.amountCents)}</span>
+                            <span className="text-meta text-ink-3">/mês</span>
+                            {p.isRecommended && (
+                              <span className="rounded-full bg-signal px-1.5 py-0.5 text-[10px] font-semibold text-white">
+                                Recomendado
+                              </span>
+                            )}
+                          </span>
+                          {p.tagline && <span className="mt-0.5 block text-meta text-ink-3">{p.tagline}</span>}
+                          <span className="mt-0.5 block text-[11px] text-ink-4">{p.trialDays} dias grátis</span>
+                        </span>
                       </span>
-                    </span>
-                    <span className="shrink-0 text-meta text-ink-4">{p.trialDays}d grátis</span>
-                  </label>
-                ))}
+
+                      {/* As listas só no plano escolhido: os dois abertos ao
+                          mesmo tempo davam trinta linhas num diálogo. */}
+                      {escolhido && (p.features.length > 0 || p.excludes.length > 0) && (
+                        <span className="mt-2.5 block border-t border-line pt-2.5 pl-6">
+                          <ul className="space-y-1">
+                            {p.features.map((f) => (
+                              <li key={f} className="flex items-start gap-1.5 text-meta text-ink-2">
+                                <Check className="mt-0.5 size-3 shrink-0 text-signal" strokeWidth={2.5} />
+                                {f}
+                              </li>
+                            ))}
+                          </ul>
+                          {p.excludes.length > 0 && (
+                            <>
+                              <span className="mt-2 block text-[11px] font-medium text-ink-4">Não inclui</span>
+                              <ul className="mt-1 space-y-1">
+                                {p.excludes.map((f) => (
+                                  <li key={f} className="flex items-start gap-1.5 text-meta text-ink-4">
+                                    <X className="mt-0.5 size-3 shrink-0" strokeWidth={2.5} />
+                                    {f}
+                                  </li>
+                                ))}
+                              </ul>
+                            </>
+                          )}
+                        </span>
+                      )}
+                    </label>
+                  );
+                })}
               </div>
             </div>
 
@@ -177,7 +312,8 @@ function Result({ created, onDone }: { created: Created; onDone: () => void }) {
     <div className="space-y-4 p-5">
       <p className="text-body leading-relaxed text-ink-2">
         <strong className="font-medium text-ink">{created.academy.name}</strong> está criada em{" "}
-        <span className="font-mono text-[13px]">{created.academy.slug}.academias.pt</span>. Envia este link ao diretor —
+        <span className="font-mono text-[13px]">{created.academy.slug}.academias.pt</span>, com o cargo de{" "}
+        <strong className="font-medium text-ink">{created.roleName}</strong>. Envia este link —
         ao abri-lo escolhe a palavra-passe e começa a montar a academia.
       </p>
 

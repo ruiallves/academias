@@ -23,12 +23,17 @@ import type { TenantRequest } from "./tenant";
  *
  * ## Os ícones
  *
- * Ainda são os genéricos. Ícones por clube obrigam a redimensionar o logótipo
- * para 192 e 512 e a servi-lo em PNG — o `logoUrl` que temos é o que o clube
- * carregou, em tamanho e formato desconhecidos, e declarar `sizes` errados faz o
- * Android recusar a instalação em silêncio. Fica para quando houver um passo de
- * processamento de imagem; o nome e a cor, que é o que se lê primeiro, já são do
- * clube.
+ * O símbolo do clube entra **a acrescentar** aos genéricos, nunca a substituí-los.
+ *
+ * A razão é a instalação: o Android recusa-a em silêncio se nenhum ícone
+ * declarado bater certo com o ficheiro real, e o `logoUrl` é o que o clube
+ * carregou — em tamanho e formato que não controlamos. Declará-lo como `512x512`
+ * quando é 300×180 partia a instalação para toda a gente daquele clube.
+ *
+ * `sizes: "any"` diz ao browser "usa isto onde couber, sem prometer medida", e os
+ * dois PNG genéricos ficam como a garantia de que existe sempre um ícone com
+ * medida declarada e verdadeira. O clube vê o seu emblema; a instalação nunca
+ * depende dele.
  */
 @Public()
 @Controller()
@@ -84,6 +89,8 @@ export class TenantAssetsController {
       dir: "ltr",
       categories: ["sports", "education"],
       icons: [
+        // O emblema do clube primeiro: o browser escolhe o primeiro que sirva.
+        ...(academy.logoUrl ? [{ src: academy.logoUrl, sizes: "any", type: "image/png" }] : []),
         { src: "/icon-192.png", sizes: "192x192", type: "image/png" },
         { src: "/icon-512.png", sizes: "512x512", type: "image/png" },
         { src: "/icon-512.png", sizes: "512x512", type: "image/png", purpose: "maskable" },

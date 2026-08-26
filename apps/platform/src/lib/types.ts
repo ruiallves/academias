@@ -63,7 +63,26 @@ export type Academy = {
 
 export type SeriesPoint = { month: string; new_academies: number; cancelled: number; active_end: number };
 
-export type Plan = { id: string; name: string; amountCents: number; perAthleteCents: number; includedAthletes: number; trialDays: number };
+export type Plan = {
+  id: string;
+  name: string;
+  /** A frase que explica o plano numa linha. */
+  tagline: string | null;
+  amountCents: number;
+  perAthleteCents: number;
+  includedAthletes: number;
+  trialDays: number;
+  /** O que traz, pela ordem em que se lê. */
+  features: string[];
+  /**
+   * O que **não** traz.
+   *
+   * Dito em voz alta: um plano que só lista o que inclui obriga quem compara a
+   * descobrir a ausência depois de assinar.
+   */
+  excludes: string[];
+  isRecommended: boolean;
+};
 
 export type AuditEntry = {
   id: string;

@@ -40,12 +40,14 @@ export default function Onboarding({ onDone }: { onDone: () => void }) {
   const slides = [
     {
       art: (
-        <span
-          className="flex size-[76px] items-center justify-center rounded-[24px] bg-white text-[28px] font-bold"
-          style={{ color: "var(--color-signal)" }}
-          aria-hidden
-        >
-          {store.academy.mark}
+        <span className="flex size-[76px] items-center justify-center overflow-hidden rounded-[24px] bg-white">
+          {store.academy.logoUrl ? (
+            <img src={store.academy.logoUrl} alt="" className="size-full object-contain p-2" />
+          ) : (
+            <span className="text-[28px] font-bold" style={{ color: "var(--color-signal)" }} aria-hidden>
+              {store.academy.mark}
+            </span>
+          )}
         </span>
       ),
       title: `Bem-vindo à ${store.academy.shortName}`,
