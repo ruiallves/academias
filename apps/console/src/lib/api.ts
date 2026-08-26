@@ -29,6 +29,7 @@ import { matchAttention, myMatchDuty, type MatchStatus } from "@/lib/matches";
 import { relativeDays } from "@/lib/format";
 import { getAttendanceRecords } from "@/lib/attendance";
 import { isUnavailable } from "@/lib/clinical";
+import { medicalNeedsAttention, medicalState } from "@/lib/medical";
 
 export { academy, today, currentPeriod };
 
@@ -436,17 +437,24 @@ export function attentionItems(session: Session): AttentionItem[] {
   }
 
   if (wide) {
-    const expiring = listAthletes(session).filter((a) => {
-      const d = new Date(a.medicalValidUntil);
-      return d.getTime() < today.getTime() + 30 * 86_400_000;
-    });
+    // Sem ficha, expirada ou a expirar — as três precisam da mesma atenção, e
+    // a que faltava era a primeira: um atleta sem exame nenhum não aparecia
+    // aqui, porque `new Date("")` não é menor do que data nenhuma.
+    const expiring = listAthletes(session).filter((a) => medicalNeedsAttention(a));
     if (expiring.length > 0) {
-      const expired = expiring.filter((a) => new Date(a.medicalValidUntil) < today).length;
+      const expired = expiring.filter((a) => medicalState(a) === "expired").length;
+      const sem = expiring.filter((a) => medicalState(a) === "missing").length;
       items.push({
         id: "medical",
-        severity: expired > 0 ? "warn" : "info",
-        title: `${expiring.length} fichas médicas a expirar`,
-        detail: expired > 0 ? `${expired} já expiraram — o atleta não pode competir` : "Todas dentro dos próximos 30 dias",
+        severity: expired > 0 || sem > 0 ? "warn" : "info",
+        title: `${expiring.length} ${expiring.length === 1 ? "ficha médica" : "fichas médicas"} por tratar`,
+        detail:
+          [
+            expired > 0 && `${expired} ${expired === 1 ? "expirada" : "expiradas"}`,
+            sem > 0 && `${sem} sem exame`,
+          ]
+            .filter(Boolean)
+            .join(" · ") || "Todas dentro dos próximos 30 dias",
         to: "/atletas?filtro=medico",
         action: "Ver",
       });

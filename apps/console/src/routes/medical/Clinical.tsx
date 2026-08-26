@@ -4,6 +4,7 @@ import { PageHeader } from "@/components/Shell";
 import { AvailabilityTag, DataTable, Empty, Monogram, Panel, Pill, type Column } from "@/components/primitives";
 import { ResultCount, SearchInput, Segmented, Toolbar } from "@/components/filters";
 import { CalendarDays, HeartPulse, Plus } from "@/lib/icons";
+import { medicalExpiry, medicalState } from "@/lib/medical";
 import { ClinicalEntryDialog } from "@/components/ClinicalEntryDialog";
 import { listAthletes, teamById, today } from "@/lib/api";
 import { activeRestriction, availabilityOf, clinicalOf, useClinicalRecords } from "@/lib/clinical";
@@ -39,7 +40,7 @@ export default function MedicalClinical() {
       todos: athletes.length,
       baixa: athletes.filter((a) => availabilityOf(a.id) === "out").length,
       condicionado: athletes.filter((a) => availabilityOf(a.id) === "limited").length,
-      exames: athletes.filter((a) => new Date(a.medicalValidUntil) < today).length,
+      exames: athletes.filter((a) => ["expired", "missing"].includes(medicalState(a))).length,
     }),
     [athletes],
   );
@@ -50,7 +51,7 @@ export default function MedicalClinical() {
       .filter((a) => {
         if (filter === "baixa") return availabilityOf(a.id) === "out";
         if (filter === "condicionado") return availabilityOf(a.id) === "limited";
-        if (filter === "exames") return new Date(a.medicalValidUntil) < today;
+        if (filter === "exames") return ["expired", "missing"].includes(medicalState(a));
         return true;
       })
       .filter((a) => (q ? a.name.toLowerCase().includes(q) : true))
@@ -114,9 +115,12 @@ export default function MedicalClinical() {
       header: "Exame",
       hideBelow: "lg",
       render: (a) => {
-        const d = new Date(a.medicalValidUntil);
-        if (d < today) return <Pill tone="risk">Expirado</Pill>;
-        if (d.getTime() < today.getTime() + 30 * 86_400_000) return <Pill tone="warn">Até {shortDate(d)}</Pill>;
+        const state = medicalState(a);
+        if (state === "missing") return <Pill tone="neutral">Sem exame</Pill>;
+
+        const d = medicalExpiry(a)!;
+        if (state === "expired") return <Pill tone="risk">Expirado</Pill>;
+        if (state === "soon") return <Pill tone="warn">Até {shortDate(d)}</Pill>;
         return <span className="text-meta text-ink-3 tabular">Até {shortDate(d)}</span>;
       },
     },

@@ -745,7 +745,7 @@ function NewMemberDialog({ onClose, onCreated }: { onClose: () => void; onCreate
               ))}
             </select>
           </DialogField>
-          <DialogField label="Estado" hint="por aprovar não recebe número">
+          <DialogField label="Estado">
             <select
               value={status}
               onChange={(e) => setStatus(e.target.value as MemberStatus)}

@@ -26,7 +26,6 @@ export function NewAthleteDialog({ session, onClose }: { session: Session; onClo
   const [teamId, setTeamId] = useState(teams[0]?.id ?? "");
   const [position, setPosition] = useState("");
   const [squadNumber, setSquadNumber] = useState("");
-  const [medicalValidUntil, setMedicalValidUntil] = useState("");
 
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -52,7 +51,6 @@ export function NewAthleteDialog({ session, onClose }: { session: Session; onClo
         taxId: taxId.replace(/\s/g, ""),
         ...(position ? { position } : {}),
         ...(squadNumber ? { squadNumber: Number(squadNumber) } : {}),
-        ...(medicalValidUntil ? { medicalValidUntil } : {}),
       });
       await reloadAcademy();
       onClose();
@@ -90,14 +88,18 @@ export function NewAthleteDialog({ session, onClose }: { session: Session; onClo
             <input value={name} onChange={(e) => setName(e.target.value)} className={dialogInputClass} required autoFocus />
           </DialogField>
 
-          <div className="grid grid-cols-2 gap-3">
-            <DialogField label="Data de nascimento">
-              <input type="date" value={birthdate} onChange={(e) => setBirthdate(e.target.value)} className={dialogInputClass} required />
-            </DialogField>
-            <DialogField label="Ficha médica válida até" hint="opcional">
-              <input type="date" value={medicalValidUntil} onChange={(e) => setMedicalValidUntil(e.target.value)} className={dialogInputClass} />
-            </DialogField>
-          </div>
+          {/*
+            A ficha médica saiu daqui.
+            Inscrever um atleta e ter o exame dele são dois momentos diferentes,
+            e o segundo vem quase sempre depois — o miúdo aparece ao treino, faz
+            a inscrição, e o exame chega semanas mais tarde. Pedi-la aqui punha
+            no ecrã de inscrição um campo que ninguém tem para preencher.
+            Preenche-se na ficha do atleta, no separador Clínico, que é onde o
+            departamento trabalha. Ver `AthleteEditPanel`.
+          */}
+          <DialogField label="Data de nascimento">
+            <input type="date" value={birthdate} onChange={(e) => setBirthdate(e.target.value)} className={dialogInputClass} required />
+          </DialogField>
 
           {/*
             O NIF não é burocracia: é a chave com que a família se liga a este

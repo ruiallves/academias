@@ -13,6 +13,7 @@ import {
   Pill,
 } from "@/components/primitives";
 import { Apple, Brain, CircleCheck, HeartPulse, Stethoscope } from "@/lib/icons";
+import { medicalState } from "@/lib/medical";
 import { listAthletes, teamById, today } from "@/lib/api";
 import { activeRestriction, availabilityOf, clinicalOf, KIND_LABEL, useClinicalRecords } from "@/lib/clinical";
 import { greeting, relativeDays, shortDate, shortName } from "@/lib/format";
@@ -35,11 +36,16 @@ export default function MedicalOverview() {
   const out = athletes.filter((a) => availabilityOf(a.id) === "out");
   const limited = athletes.filter((a) => availabilityOf(a.id) === "limited");
 
-  const expiredExams = athletes.filter((a) => new Date(a.medicalValidUntil) < today);
-  const expiringExams = athletes.filter((a) => {
-    const d = new Date(a.medicalValidUntil).getTime();
-    return d >= today.getTime() && d < today.getTime() + 30 * 86_400_000;
-  });
+  /*
+   * "Sem exame" conta como expirado para o departamento clínico.
+   *
+   * Não é a mesma coisa, mas exige o mesmo trabalho — e a lista existe para
+   * mostrar o trabalho. Antes, um atleta sem exame nenhum não aparecia em lado
+   * nenhum destes ecrãs: `new Date("")` não é menor do que hoje, por isso
+   * escapava ao filtro e ficava invisível para quem tem de o mandar fazer.
+   */
+  const expiredExams = athletes.filter((a) => ["expired", "missing"].includes(medicalState(a)));
+  const expiringExams = athletes.filter((a) => medicalState(a) === "soon");
 
   // Quem retoma nos próximos sete dias — é o que o departamento tem de reavaliar.
   const returning = [...out, ...limited]

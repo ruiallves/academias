@@ -10,10 +10,9 @@ import { academy, currentPeriod, guardiansOf, listAthletes, listFees, listTeams,
 import { age, shortDate, shortName } from "@/lib/format";
 import type { Athlete } from "@/data/types";
 import { availabilityOf, useClinicalRecords } from "@/lib/clinical";
+import { medicalExpiry, medicalState } from "@/lib/medical";
 import { can } from "@/lib/permissions";
 import { useSession } from "@/session";
-
-type MedicalState = "ok" | "soon" | "expired";
 
 export default function Athletes() {
   const { session } = useSession();
@@ -104,7 +103,11 @@ export default function Athletes() {
       hideBelow: "sm",
       render: (a) => {
         const state = medicalState(a);
-        const d = new Date(a.medicalValidUntil);
+        // Sem exame é um estado, não um vazio: é o que separa "válido até
+        // Março" de "nunca fez" na leitura de quem passa os olhos pela lista.
+        if (state === "missing") return <Pill tone="neutral">Sem ficha</Pill>;
+
+        const d = medicalExpiry(a)!;
         if (state === "expired") return <Pill tone="risk">Expirada</Pill>;
         if (state === "soon") return <Pill tone="warn">Até {shortDate(d)}</Pill>;
         return <span className="text-meta text-ink-3 tabular">Até {shortDate(d)}</span>;
@@ -204,10 +207,3 @@ export default function Athletes() {
   );
 }
 
-/** Expirada, a expirar nos próximos 30 dias, ou em ordem. */
-function medicalState(a: Athlete): MedicalState {
-  const d = new Date(a.medicalValidUntil).getTime();
-  if (d < today.getTime()) return "expired";
-  if (d < today.getTime() + 30 * 86_400_000) return "soon";
-  return "ok";
-}

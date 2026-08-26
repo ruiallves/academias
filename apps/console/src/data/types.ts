@@ -172,8 +172,19 @@ export type Athlete = {
   guardianIds: string[];
   joinedAt: string;
   status: "active" | "paused" | "left";
-  /** Ficha médica — a validade é uma das coisas que geram alertas. */
-  medicalValidUntil: string;
+  /**
+   * Até quando o exame médico é válido. **`null` quando não há nenhum.**
+   *
+   * Era `string`, e o store mapeava a ausência para `""` — uma data vazia que
+   * `new Date("")` transforma em `Invalid Date` e que atravessava o produto
+   * inteiro a fingir que era uma data. Um atleta inscrito sem exame (o caso
+   * normal: inscreve-se primeiro, o exame vem depois) fazia a lista de atletas
+   * rebentar no `render` de uma coluna.
+   *
+   * `null` obriga cada ecrã a decidir o que dizer — "sem ficha médica" é uma
+   * informação, e uma data inventada não é.
+   */
+  medicalValidUntil: string | null;
 
   /** Ausente na maioria — as academias não têm fotografia de toda a gente. */
   photoUrl?: string;

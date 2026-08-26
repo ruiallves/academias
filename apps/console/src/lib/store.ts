@@ -328,7 +328,8 @@ function build(
     guardianIds: a.guardians.map((g) => g.membershipId),
     joinedAt: a.joinedAt,
     status: a.status === "PAUSED" ? "paused" : a.status === "LEFT" ? "left" : "active",
-    medicalValidUntil: a.medicalValidUntil ?? "",
+    // Sem `?? ""`: a ausência passa intacta. Ver `medicalValidUntil` em `types.ts`.
+    medicalValidUntil: a.medicalValidUntil,
     photoUrl: a.photoUrl ?? undefined,
     heightCm: a.heightCm ?? undefined,
     weightKg: a.weightKg ?? undefined,

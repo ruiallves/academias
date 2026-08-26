@@ -68,6 +68,39 @@ const created = await call(director, "POST", "/api/athletes", {
 check("a direção inscreve um atleta", created.status === 201 || created.status === 200, JSON.stringify(created.body).slice(0, 120));
 check("com o nome certo", created.body?.name === "ZZ Teste Um");
 
+/*
+ * Sem ficha médica, e a ausência chega como `null`.
+ *
+ * É o caso normal — inscreve-se o atleta, o exame vem depois — e foi o que
+ * partiu a consola: a lista de atletas rebentava no `render` de uma coluna
+ * porque a ausência chegava como data vazia e `new Date("")` é `Invalid Date`.
+ *
+ * O que se tranca aqui é o **contrato**: `null` e não `""`. A consola trata
+ * `null` como um estado próprio ("sem ficha"); uma cadeia vazia voltaria a
+ * atravessar o produto disfarçada de data. Ver `lib/medical.ts`.
+ */
+console.log("\n=== Inscrever sem ficha médica ===");
+const semExame = await call(director, "POST", "/api/athletes", {
+  name: "ZZ Teste Sem Exame", taxId: nif(), birthdate: "2015-04-04", teamId: "t_sub11",
+});
+check("inscreve sem ficha médica (201)", semExame.status === 201 || semExame.status === 200, `${semExame.status}`);
+
+/*
+ * A verificação é sobre a **lista**, e não sobre a resposta do POST.
+ *
+ * O POST devolve `{ id, name }` — um aviso mínimo, por desenho — e a consola
+ * recarrega a academia a seguir. É de `GET /api/athletes` que ela lê o atleta,
+ * e é esse o contrato de que depende.
+ */
+const naLista = await call(director, "GET", "/api/athletes");
+const oSemExame = naLista.body?.find?.((a) => a.name === "ZZ Teste Sem Exame");
+check("aparece na lista", Boolean(oSemExame), `${naLista.status}`);
+check(
+  "e a validade vem null, não vazia",
+  oSemExame?.medicalValidUntil === null,
+  JSON.stringify(oSemExame?.medicalValidUntil),
+);
+
 console.log("\n=== Permissão e âmbito ===");
 const byParent = await call(parent, "POST", "/api/athletes", { name: "ZZ Teste X", taxId: nif(), birthdate: "2015-01-01", teamId: "t_sub11" });
 check("um encarregado não inscreve atletas (403)", byParent.status === 403, `${byParent.status}`);
@@ -120,7 +153,7 @@ check("número repetido no ficheiro é apanhado", imp.body?.errors?.some((e) => 
 
 console.log("\n=== Tudo isto ficou mesmo na base ===");
 const total = (await db.query(`SELECT count(*)::int n FROM "Athlete" WHERE name LIKE 'ZZ Teste%'`)).rows[0].n;
-check("5 atletas de teste na base (1 direção + 1 treinador + 3 importados)", total === 5, `${total}`);
+check("6 atletas de teste na base (1 direção + 1 sem exame + 1 treinador + 3 importados)", total === 6, `${total}`);
 
 console.log("\n=== Limpeza ===");
 await db.query(`DELETE FROM "Athlete" WHERE name LIKE 'ZZ Teste%'`);

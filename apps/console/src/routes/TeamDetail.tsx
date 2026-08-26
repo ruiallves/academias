@@ -45,6 +45,7 @@ import {
 } from "@/lib/api";
 import { age, longDate, percent, relativeDays, shortDate, shortName, time } from "@/lib/format";
 import { teamAgeLabel } from "@/lib/team-age";
+import { medicalExpiry, medicalNeedsAttention, medicalState, type MedicalState } from "@/lib/medical";
 import { availabilityOf, useClinicalRecords } from "@/lib/clinical";
 import { can, type Session } from "@/lib/permissions";
 import { useSession } from "@/session";
@@ -623,15 +624,27 @@ function StaffTab({ coaches }: { coaches: NonNullable<ReturnType<typeof coachByI
 /* -------------------------------------------------------------------------- */
 
 function MedicalTab({ roster }: { roster: Athlete[] }) {
-  const sorted = [...roster].sort(
-    (a, b) => new Date(a.medicalValidUntil).getTime() - new Date(b.medicalValidUntil).getTime(),
-  );
-  const expired = roster.filter((a) => new Date(a.medicalValidUntil) < today).length;
-  const soon = roster.filter((a) => {
-    const d = new Date(a.medicalValidUntil).getTime();
-    return d >= today.getTime() && d < today.getTime() + 30 * 86_400_000;
-  }).length;
-  const ok = roster.length - expired - soon;
+  /*
+   * Quem não tem exame vem primeiro.
+   *
+   * A ordenação era por data e um atleta sem ficha tinha `NaN` — que numa
+   * comparação numérica não é maior nem menor do que nada, e por isso caía onde
+   * calhasse. É o atleta que mais precisa de aparecer no topo desta lista.
+   */
+  const sorted = [...roster].sort((a, b) => {
+    const da = medicalExpiry(a);
+    const dbb = medicalExpiry(b);
+    if (!da && !dbb) return a.name.localeCompare(b.name, "pt");
+    if (!da) return -1;
+    if (!dbb) return 1;
+    return da.getTime() - dbb.getTime();
+  });
+
+  const conta = (s: MedicalState) => roster.filter((a) => medicalState(a) === s).length;
+  const sem = conta("missing");
+  const expired = conta("expired");
+  const soon = conta("soon");
+  const ok = conta("ok");
 
   return (
     <div className="space-y-3">
@@ -639,21 +652,22 @@ function MedicalTab({ roster }: { roster: Athlete[] }) {
         <Metric label="Em dia" value={String(ok)} icon={CircleCheck} note="mais de 30 dias de validade" />
         <Metric label="A expirar" value={String(soon)} note="nos próximos 30 dias" />
         <Metric label="Expiradas" value={String(expired)} note={expired > 0 ? "não podem competir" : "nenhuma"} />
-        <Metric label="Plantel" value={String(roster.length)} note="total de fichas" />
+        <Metric label="Sem ficha" value={String(sem)} note={sem > 0 ? "exame por fazer" : "nenhum"} />
       </MetricRow>
 
       <Panel>
         <ul>
-          {sorted.map((a) => (
-            <li key={a.id} className="flex items-center gap-3 border-b border-line px-5 py-3 last:border-0">
-              <Monogram name={a.name} photoUrl={a.photoUrl} />
-              <span className="min-w-0 flex-1 truncate text-body text-ink">{shortName(a.name)}</span>
-              <span className="shrink-0 text-meta text-ink-3 tabular">
-                até {shortDate(new Date(a.medicalValidUntil))}
-              </span>
-              <MedicalPill athlete={a} />
-            </li>
-          ))}
+          {sorted.map((a) => {
+            const d = medicalExpiry(a);
+            return (
+              <li key={a.id} className="flex items-center gap-3 border-b border-line px-5 py-3 last:border-0">
+                <Monogram name={a.name} photoUrl={a.photoUrl} />
+                <span className="min-w-0 flex-1 truncate text-body text-ink">{shortName(a.name)}</span>
+                <span className="shrink-0 text-meta text-ink-3 tabular">{d ? `até ${shortDate(d)}` : "—"}</span>
+                <MedicalPill athlete={a} />
+              </li>
+            );
+          })}
         </ul>
       </Panel>
     </div>
@@ -661,9 +675,10 @@ function MedicalTab({ roster }: { roster: Athlete[] }) {
 }
 
 function MedicalPill({ athlete }: { athlete: Athlete }) {
-  const d = new Date(athlete.medicalValidUntil).getTime();
-  if (d < today.getTime()) return <Pill tone="risk">Expirada</Pill>;
-  if (d < today.getTime() + 30 * 86_400_000) return <Pill tone="warn">A expirar</Pill>;
+  const state = medicalState(athlete);
+  if (state === "missing") return <Pill tone="neutral">Sem ficha</Pill>;
+  if (state === "expired") return <Pill tone="risk">Expirada</Pill>;
+  if (state === "soon") return <Pill tone="warn">A expirar</Pill>;
   return <Pill tone="ok">Em dia</Pill>;
 }
 
@@ -718,14 +733,21 @@ function teamAttention(session: Session, teamId: string, roster: Athlete[]): Att
     });
   }
 
-  const expiring = roster.filter((a) => new Date(a.medicalValidUntil).getTime() < today.getTime() + 30 * 86_400_000);
-  if (expiring.length > 0) {
-    const expired = expiring.filter((a) => new Date(a.medicalValidUntil) < today).length;
+  const porTratar = roster.filter((a) => medicalNeedsAttention(a));
+  if (porTratar.length > 0) {
+    const expired = porTratar.filter((a) => medicalState(a) === "expired").length;
+    const sem = porTratar.filter((a) => medicalState(a) === "missing").length;
     items.push({
       id: "team-medical",
       severity: expired > 0 ? "risk" : "warn",
-      title: `${expiring.length} fichas médicas a expirar`,
-      detail: expired > 0 ? `${expired} já expiraram — o atleta não pode competir` : "Dentro dos próximos 30 dias",
+      title: `${porTratar.length} ${porTratar.length === 1 ? "ficha médica" : "fichas médicas"} por tratar`,
+      detail:
+        [
+          expired > 0 && `${expired} ${expired === 1 ? "expirada" : "expiradas"} — não pode competir`,
+          sem > 0 && `${sem} sem exame`,
+        ]
+          .filter(Boolean)
+          .join(" · ") || "Dentro dos próximos 30 dias",
       to: "/atletas?filtro=medico",
       action: "Ver",
     });

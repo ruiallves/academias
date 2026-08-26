@@ -193,6 +193,11 @@ export type RoadmapItem = { when: string; title: string; body: string };
 export const ROADMAP: RoadmapItem[] = [
   {
     when: "Setembro 2026",
+    title: "Pagamentos de mensalidade",
+    body: "MB WAY, Multibanco e cartão. O clube define a mensalidade, a família paga, o estado actualiza-se sozinha.",
+  },
+  {
+    when: "Setembro 2026",
     title: "Integração ZeroZero e FPF",
     body: "Jogos, calendários e resultados oficiais sem ninguém os copiar à mão. Depende de licenciamento — estamos a tratar disso.",
   },

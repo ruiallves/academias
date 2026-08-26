@@ -43,11 +43,26 @@ export const monthName = (d: Date) => MONTH[d.getMonth()];
 
 /** `12 out` — a forma curta que cabe numa célula de tabela. */
 export function shortDate(d: Date): string {
+  /*
+   * Uma data inválida devolve um travessão, não uma excepção.
+   *
+   * `new Date("")` é `Invalid Date`, e daí `getMonth()` é `NaN`, `MONTH[NaN]` é
+   * `undefined` e o `.slice` rebentava com "Cannot read properties of
+   * undefined". Não rebentava sozinho: levava o ecrã inteiro, porque isto corre
+   * dentro do `render` de uma coluna de tabela — bastou um atleta criado sem
+   * ficha médica para a lista de atletas deixar de abrir.
+   *
+   * Um formatador é a última coisa que deve ter opinião sobre dados em falta.
+   * Formata o que consegue e diz "—" ao resto; quem sabe se a ausência é um
+   * problema é o ecrã, não isto.
+   */
+  if (Number.isNaN(d.getTime())) return "—";
   return `${d.getDate()} ${MONTH[d.getMonth()].slice(0, 3)}`;
 }
 
-/** `12 de outubro` — para títulos, onde há espaço. */
+/** `12 de outubro` — para títulos, onde há espaço. Gémeo de `shortDate`. */
 export function longDate(d: Date): string {
+  if (Number.isNaN(d.getTime())) return "—";
   return `${d.getDate()} de ${MONTH[d.getMonth()]}`;
 }
 

@@ -2,6 +2,7 @@ import { useState } from "react";
 import { AvailabilityTag, cx, Empty, Metric, MetricRow, Panel, PanelHead, Pill } from "./primitives";
 import { ClinicalEntryDialog } from "./ClinicalEntryDialog";
 import { CalendarDays, Check, HeartPulse, Lock, Plus } from "@/lib/icons";
+import { medicalExpiry, medicalState } from "@/lib/medical";
 import { today } from "@/lib/api";
 import {
   activeRestriction,
@@ -44,9 +45,10 @@ export function ClinicalPanel({ athlete, session }: { athlete: Athlete; session:
   const mayRead = can(session, "clinical:read");
   const mayWrite = can(session, "clinical:write");
 
-  const medicalDate = new Date(athlete.medicalValidUntil);
-  const expired = medicalDate < today;
-  const soon = !expired && medicalDate.getTime() < today.getTime() + 30 * 86_400_000;
+  const medicalDate = medicalExpiry(athlete);
+  const medical = medicalState(athlete);
+  const expired = medical === "expired";
+  const soon = medical === "soon";
 
   return (
     <div className="space-y-3">
@@ -77,11 +79,13 @@ export function ClinicalPanel({ athlete, session }: { athlete: Athlete; session:
       )}
 
       <MetricRow>
+        {/* Sem exame diz-se "Por fazer", e não "Válido" com uma data inventada
+            por baixo — que era o que acontecia com a data vazia. */}
         <Metric
           label="Exame médico"
-          value={expired ? "Expirado" : soon ? "A expirar" : "Válido"}
+          value={medical === "missing" ? "Por fazer" : expired ? "Expirado" : soon ? "A expirar" : "Válido"}
           icon={HeartPulse}
-          note={`até ${shortDate(medicalDate)} de ${medicalDate.getFullYear()}`}
+          note={medicalDate ? `até ${shortDate(medicalDate)} de ${medicalDate.getFullYear()}` : "nunca registado"}
         />
         <Metric label="Estado" value={availability === "out" ? "De baixa" : availability === "limited" ? "Condicionado" : "Apto"} note={restriction ? "restrição activa" : "sem limitações"} />
         <Metric label="Ocorrências" value={String(entries.filter((e) => e.kind === "injury").length)} note="lesões no historial" />
