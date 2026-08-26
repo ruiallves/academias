@@ -3,7 +3,7 @@ import { PageHeader } from "@/components/Shell";
 import { SearchInput } from "@/components/filters";
 import { DataTable, Empty, Loading, Monogram, Panel, Pill, cx, type Column, type Tone } from "@/components/primitives";
 import { Dialog, DialogField, dialogInputClass } from "@/components/Dialog";
-import { Download, ExternalLink, Home, Plus, Trash2, Upload } from "@/lib/icons";
+import { Download, ExternalLink, Home, Plus, Settings, Trash2, Upload } from "@/lib/icons";
 import { can } from "@/lib/permissions";
 import { useSession } from "@/session";
 import { academy } from "@/lib/api";
@@ -163,7 +163,8 @@ export default function Members() {
         </a>
         {mayWrite && (
           <button type="button" className="ctl-outline" onClick={() => setPageOpen(true)}>
-            Página de inscrição
+            <Settings className="size-3.5" strokeWidth={1.75} />
+            Gerir página de inscrição
           </button>
         )}
         {mayWrite && (
@@ -297,8 +298,9 @@ function PageDialog({ mayWrite, onClose }: { mayWrite: boolean; onClose: () => v
 
   return (
     <Dialog
-      title="Página de inscrição"
+      title="Gerir página de inscrição"
       subtitle="O que quem chega ao clube lê e escolhe"
+      icon={<Settings className="size-4" strokeWidth={1.75} />}
       onClose={onClose}
       width={640}
       labelledBy="page"

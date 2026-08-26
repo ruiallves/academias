@@ -294,6 +294,18 @@ function RolesPanel({ open }: { open?: boolean }) {
           onClose={() => {
             setCreatingDep(false);
             setEditingDep(null);
+            /*
+             * Apagar um departamento mexe nos **cargos**, e o store deles não sabe.
+             *
+             * Os cargos lá dentro ficam sem departamento (`onDelete: SetNull`) e
+             * passam para o grupo "Sem departamento" desta árvore — que é montado
+             * a partir do store dos cargos, onde eles ainda têm o `departmentId`
+             * antigo. Sem esta linha, desapareciam do ecrã até um F5.
+             *
+             * Vive aqui e não em `lib/departments.ts` para não fazer os dois
+             * módulos importarem-se um ao outro: este ecrã já conhece os dois.
+             */
+            void loadRoles();
           }}
         />
       )}

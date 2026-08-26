@@ -12,6 +12,8 @@ import { cx } from "./primitives";
 export function Dialog({
   title,
   subtitle,
+  /** Um ícone pequeno à esquerda do título — para diálogos que ganham com uma pista visual do que gerem. Opcional: a maioria não precisa. */
+  icon,
   onClose,
   children,
   footer,
@@ -20,6 +22,7 @@ export function Dialog({
 }: {
   title: string;
   subtitle?: ReactNode;
+  icon?: ReactNode;
   onClose: () => void;
   children: ReactNode;
   footer?: ReactNode;
@@ -46,7 +49,8 @@ export function Dialog({
       >
         <header className="sticky top-0 z-10 flex items-center justify-between gap-3 border-b border-line bg-surface px-5 py-3.5">
           <div className="min-w-0">
-            <h2 id={labelledBy} className="text-panel text-ink">
+            <h2 id={labelledBy} className="flex items-center gap-2 text-panel text-ink">
+              {icon && <span className="shrink-0 text-ink-3">{icon}</span>}
               {title}
             </h2>
             {subtitle && <p className="truncate text-meta text-ink-3">{subtitle}</p>}

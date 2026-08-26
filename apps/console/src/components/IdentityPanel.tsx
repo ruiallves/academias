@@ -333,6 +333,13 @@ function ClubSymbol({ mayWrite, onError }: { mayWrite: boolean; onError: (m: str
         Aparece no ícone que as famílias instalam no telemóvel, na página do clube e na página de sócios. Quadrado e
         com pelo menos 512 px de lado dá o melhor resultado. PNG, WebP ou JPEG até 2 MB.
       </p>
+      {/* O iPhone cola o ícone como um autocolante quadrado: não corrige proporção
+          e assenta a transparência sobre preto. Vale a pena dizê-lo aqui, que é
+          onde a escolha se faz — ver `landing.template.ts`. */}
+      <p className="mb-3 max-w-[62ch] text-[11px] text-ink-4">
+        No iPhone o símbolo é usado tal e qual: um ficheiro com fundo transparente fica sobre preto no ecrã inicial, e
+        um muito largo fica esticado. Com fundo próprio e quadrado, fica igual ao que carregares.
+      </p>
 
       <div className="flex items-center gap-4">
         <span

@@ -5,9 +5,8 @@ import { AreaBlocks, NavPicker, SectionHead, applyLevel, possibleNavKeys } from 
 import type { Area, Level } from "@/lib/access";
 import { ROLE_PERMISSIONS, permissionsOf, type Permission, type Role, type Session } from "@/lib/permissions";
 import {
-  SCOPES,
+  SCOPE_CHOICES,
   SCOPE_HINT,
-  SCOPE_LABEL,
   createDepartment,
   removeDepartment,
   updateDepartment,
@@ -49,9 +48,17 @@ export function DepartmentDialog({
 
   const [name, setName] = useState(department?.name ?? "");
   const [description, setDescription] = useState(department?.description ?? "");
-  const [baseRole, setBaseRole] = useState<Role>(department?.baseRole ?? "STAFF");
+  /*
+   * `COACH` por omissão: o mais fechado dos dois alcances.
+   *
+   * Era `STAFF`, que deixou de ser uma das opções quando a escolha passou a ser
+   * binária — e um ecrã que abre sem nenhum botão marcado faz parecer que a
+   * pergunta ainda não foi respondida quando na verdade já tem valor. Entre os
+   * dois, o que vê menos é o que se pode alargar depois sem surpresas.
+   */
+  const [baseRole, setBaseRole] = useState<Role>(department?.baseRole ?? "COACH");
   const [permissions, setPermissions] = useState<Set<Permission>>(
-    () => new Set(department?.permissions ?? ROLE_PERMISSIONS["STAFF"]),
+    () => new Set(department?.permissions ?? ROLE_PERMISSIONS["COACH"]),
   );
   const [navKeys, setNavKeys] = useState<string[]>(department?.navKeys ?? []);
   const [applyToRoles, setApplyToRoles] = useState(false);
@@ -191,26 +198,40 @@ export function DepartmentDialog({
           </p>
         ) : (
           <DialogField label="Alcance" hint="não se muda depois">
-            <div className="space-y-1.5">
-              <div className="flex flex-wrap gap-1.5">
-                {SCOPES.map((r) => (
-                  <button
-                    key={r}
-                    type="button"
-                    onClick={() => changeScope(r)}
+            {/*
+              Duas opções, cada uma com a sua frase — e não seis botões com
+              quatro nomes repetidos, que era o que estava aqui. Ver a nota longa
+              em `SCOPE_CHOICES`.
+
+              A frase vive **dentro** de cada opção e não numa linha por baixo
+              que muda com a selecção: para escolher, é preciso comparar as duas,
+              e não se compara o que não está no ecrã ao mesmo tempo.
+            */}
+            <div className="grid gap-1.5">
+              {SCOPE_CHOICES.map((o) => (
+                <button
+                  key={o.value}
+                  type="button"
+                  onClick={() => changeScope(o.value)}
+                  aria-pressed={baseRole === o.value}
+                  className={cx(
+                    "rounded-[var(--radius-control)] border px-3 py-2 text-left transition-colors",
+                    baseRole === o.value
+                      ? "border-transparent bg-ink text-surface"
+                      : "border-line hover:border-line-strong",
+                  )}
+                >
+                  <span className="block text-body font-medium">{o.label}</span>
+                  <span
                     className={cx(
-                      "rounded-[var(--radius-control)] border px-2.5 py-1 text-meta font-medium transition-colors",
-                      baseRole === r
-                        ? "border-transparent bg-ink text-surface"
-                        : "border-line text-ink-2 hover:border-line-strong",
+                      "mt-0.5 block text-meta",
+                      baseRole === o.value ? "text-surface/70" : "text-ink-3",
                     )}
                   >
-                    {SCOPE_LABEL[r]}
-                    {(r === "MEDICAL" || r === "SCOUT") && " (especial)"}
-                  </button>
-                ))}
-              </div>
-              <p className="text-meta text-ink-3">{SCOPE_HINT[baseRole]}</p>
+                    {o.hint}
+                  </span>
+                </button>
+              ))}
             </div>
           </DialogField>
         )}

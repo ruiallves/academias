@@ -152,8 +152,15 @@ export const ROLE_PERMISSIONS: Record<Role, Permission[]> = {
   OWNER: [...READ_ALL, ...WRITE_ALL, "role:write", "role:menu", "scouting:video:read", "scouting:video:write"],
   DIRECTOR: [...READ_ALL, ...WRITE_ALL, "scouting:video:read", "scouting:video:write"],
 
+  /*
+   * Sem `billing:read` e sem `member:read`. Gémeo do servidor.
+   *
+   * Os sócios são da direcção, por omissão: um coordenador trata de equipas e
+   * atletas, e a lista de sócios com quotas e contactos é outra coisa. Quem
+   * precisar dela recebe-a num cargo.
+   */
   COORDINATOR: [
-    ...READ_ALL.filter((p) => p !== "billing:read"),
+    ...READ_ALL.filter((p) => p !== "billing:read" && p !== "member:read"),
     "athlete:write",
     "team:write",
     "calendar:write",
@@ -197,12 +204,30 @@ export const ROLE_PERMISSIONS: Record<Role, Permission[]> = {
     // público e o âmbito). Gémeo do servidor.
     "comms:read",
     "comms:write",
+    /*
+     * Vê as famílias — as dos atletas dele, e mais nenhumas.
+     *
+     * O âmbito não vem daqui nem da interface: a lista de famílias é **derivada**
+     * dos atletas (ver `lib/store.ts`), e essa lista já chega filtrada pelo
+     * servidor. Um treinador recebe as famílias dos seus atletas porque são as
+     * únicas que existem para ele — não porque este ecrã as esconde.
+     *
+     * O NIF do atleta continua de fora: exige `family:write`, do lado do servidor.
+     */
+    "family:read",
     // Pede jogadores ao scouting e acompanha os nomes que aparecerem no seu
     // pedido. Sem `scouting:read`: os dossiês continuam a ser do departamento.
     "scouting:request",
   ],
 
-  // A secretaria é quem está ao balcão quando alguém chega para se fazer sócio.
+  /**
+   * O âmbito mais fechado. Serve os departamentos que o clube inventar.
+   *
+   * Trazia `member:read` e `member:write` — a ideia era a secretaria ao balcão.
+   * Mas `STAFF` não é "a secretaria": é o que qualquer departamento novo recebe
+   * por omissão, e um departamento de equipamentos passava a ver a lista de
+   * sócios do clube sem ninguém ter decidido isso. Gémeo do servidor.
+   */
   STAFF: [
     "academy:read",
     "athlete:read",
@@ -210,8 +235,6 @@ export const ROLE_PERMISSIONS: Record<Role, Permission[]> = {
     "team:read",
     "calendar:read",
     "attendance:read",
-    "member:read",
-    "member:write",
   ],
 
   /**

@@ -163,6 +163,21 @@ check(
 );
 check("e ficou ligado ao departamento", guardado.rows[0]?.departmentId === depId, "");
 
+/*
+ * E o departamento passa a trazê-lo aninhado, na leitura seguinte.
+ *
+ * É isto que a árvore das Definições desenha — não a lista de cargos. Um cargo
+ * criado que não aparecesse aqui ficava invisível no ecrã até um F5, mesmo
+ * existindo na base; foi exactamente o que aconteceu.
+ */
+const relido = await call(director, "GET", "/api/departments");
+const meuDep = (relido.body ?? []).find((d) => d.id === depId);
+check(
+  "e o departamento passa a trazer o cargo aninhado",
+  (meuDep?.roles ?? []).some((r) => r.name === "ZZ Roupeiro"),
+  JSON.stringify(meuDep?.roles),
+);
+
 console.log("\n=== Editar não muda ninguém sem se pedir ===");
 await call(director, "PATCH", `/api/departments/${depId}`, {
   permissions: ["team:read", "calendar:read", "calendar:write", "athlete:read"],

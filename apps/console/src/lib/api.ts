@@ -89,6 +89,28 @@ export function listCoaches() {
   return coaches;
 }
 
+/**
+ * Quem **pode** ficar responsável por uma equipa.
+ *
+ * ## O problema que isto resolve
+ *
+ * O ecrã de criar uma equipa oferecia `listCoaches()`, que é "quem já está
+ * atribuído a alguma equipa" (`teamIds.length > 0`). Numa academia nova ninguém
+ * está — logo a caixa só tinha "Por atribuir", e não havia maneira de atribuir a
+ * primeira equipa a ninguém. Um ovo à espera da galinha.
+ *
+ * A pergunta certa não é "quem já treina" — é "quem trabalha cá e não é família".
+ * Um director que também treina o Sub-19 é uma situação normal num clube pequeno,
+ * e a lista antiga excluía-o até alguém o pôr numa equipa por outra via.
+ *
+ * As famílias e os atletas ficam de fora: pôr um encarregado como responsável de
+ * uma equipa não é um erro de digitação, é o princípio de alguém a aparecer em
+ * relatórios de staff sem nunca ter sido staff.
+ */
+export function listCoachCandidates() {
+  return listStaff().filter((m) => m.role !== "GUARDIAN" && m.role !== "ATHLETE");
+}
+
 export function listGuardians() {
   return allGuardians();
 }

@@ -1,5 +1,6 @@
 import { useSyncExternalStore } from "react";
 import { apiDelete, apiGet, apiPatch, apiPost } from "@/lib/http";
+import { loadDepartments } from "@/lib/departments";
 import type { Permission, Role } from "@/lib/permissions";
 
 /**
@@ -57,6 +58,29 @@ export function useRoles(): State {
   return useSyncExternalStore(subscribe, snapshot, snapshot);
 }
 
+/**
+ * Recarrega os cargos **e** os departamentos.
+ *
+ * ## Porquê os dois
+ *
+ * Porque o ecrã das Definições não desenha a lista a partir daqui: desenha a
+ * árvore a partir de `GET /api/departments`, que traz os cargos aninhados dentro
+ * de cada departamento — é o que lhe dá a forma de árvore sem cruzar duas
+ * colecções à mão.
+ *
+ * Um cargo criado recarregava só este ficheiro, e a árvore continuava a mostrar a
+ * lista antiga: o cargo existia mesmo, mas só aparecia depois de um F5. O mesmo
+ * valia para arquivar, e para atribuir um cargo a alguém — a contagem de pessoas
+ * por departamento também vem de lá.
+ *
+ * A alternativa era o ecrã ir buscar os dois a cada mudança, e nesse caso todos
+ * os ecrãs que mexem em cargos teriam de se lembrar disso. Vive aqui porque é
+ * aqui que se sabe que um cargo mudou.
+ */
+async function recarregar(): Promise<void> {
+  await Promise.all([loadRoles(), loadDepartments()]);
+}
+
 /** Lê do servidor. A primeira leitura semeia os papéis de origem, lá do lado. */
 export async function loadRoles(): Promise<void> {
   try {
@@ -83,7 +107,7 @@ export async function createRole(input: {
   permissions: Permission[];
 }): Promise<void> {
   await apiPost("/api/roles", input);
-  await loadRoles();
+  await recarregar();
 }
 
 export async function updateRole(
@@ -91,23 +115,23 @@ export async function updateRole(
   input: { name?: string; description?: string; departmentId?: string | null; permissions?: Permission[] },
 ): Promise<void> {
   await apiPatch(`/api/roles/${id}`, input);
-  await loadRoles();
+  await recarregar();
 }
 
 export async function setRoleNav(id: string, navKeys: string[]): Promise<void> {
   await apiPatch(`/api/roles/${id}/nav`, { navKeys });
-  await loadRoles();
+  await recarregar();
 }
 
 export async function archiveRole(id: string): Promise<void> {
   await apiDelete(`/api/roles/${id}`);
-  await loadRoles();
+  await recarregar();
 }
 
 /** Dar um papel a uma pessoa. O servidor põe o papel-base a condizer. */
 export async function assignRole(membershipId: string, roleId: string | null): Promise<void> {
   await apiPatch(`/api/roles/assign/${membershipId}`, { roleId });
-  await loadRoles();
+  await recarregar();
 }
 
 /**

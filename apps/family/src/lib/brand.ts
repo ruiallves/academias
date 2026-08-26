@@ -65,6 +65,27 @@ export function applyBrand(brand?: Partial<Brand>): void {
   }
   document.querySelector('meta[name="theme-color"]')?.setAttribute("content", next.color);
 
+  /*
+   * O ícone e o nome do ecrã inicial, para quem instala a partir daqui.
+   *
+   * O caminho normal de instalação é a landing do clube, que é HTML gerado no
+   * servidor e já sai com o emblema lá dentro. Mas a app também se pode
+   * adicionar ao ecrã inicial estando aberta em `/app/` — e esse `index.html` é
+   * estático, igual para todos os clubes: trazia o nosso ícone e, pior, o nome
+   * "Life Club" escrito à mão para toda a gente.
+   *
+   * O iOS lê estas duas coisas do DOM no momento em que se adiciona, por isso
+   * corrigi-las aqui chega — e este é o sítio onde a marca já se aplica.
+   */
+  if (next.logoUrl) {
+    for (const sel of ['link[rel="apple-touch-icon"]', 'link[rel="icon"]']) {
+      document.querySelector(sel)?.setAttribute("href", next.logoUrl);
+    }
+  }
+  if (next.shortName) {
+    document.querySelector('meta[name="apple-mobile-web-app-title"]')?.setAttribute("content", next.shortName);
+  }
+
   if (brand) {
     try {
       localStorage.setItem(KEY, JSON.stringify(next));

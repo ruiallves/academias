@@ -6,8 +6,14 @@
     <meta name="theme-color" content="#0f6b62" />
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-status-bar-style" content="default" />
-    <meta name="apple-mobile-web-app-title" content="Life Club" />
-    <link rel="apple-touch-icon" href="/icon-192.png" />
+    <!--
+      Valores de recurso: este ficheiro é estático e igual para todos os clubes.
+      `applyBrand()` reescreve os três com a marca da academia mal a app arranca,
+      antes do primeiro render — ver `src/lib/brand.ts`. O caminho normal de
+      instalação é a landing do clube, que já sai do servidor com o emblema.
+    -->
+    <meta name="apple-mobile-web-app-title" content="Academias" />
+    <link rel="apple-touch-icon" href="/icon-180.png" />
     <link rel="icon" href="/icon-192.png" />
     <!--
       O manifest vem da API, com a marca do clube. O Vite prefixa o `base` a

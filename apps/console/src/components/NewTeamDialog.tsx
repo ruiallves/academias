@@ -1,6 +1,6 @@
 import { Link } from "react-router-dom";
 import { useState, type FormEvent } from "react";
-import { academy, listCoaches, listTeams } from "@/lib/api";
+import { academy, listCoachCandidates, listTeams } from "@/lib/api";
 import { apiPost } from "@/lib/http";
 import { reloadAcademy } from "@/lib/store";
 import { useActiveCatalog } from "@/lib/catalogs";
@@ -8,6 +8,7 @@ import { Plus, Settings, Trash2 } from "@/lib/icons";
 import type { Session } from "@/lib/permissions";
 import type { Team } from "@/data/types";
 import { Dialog, DialogField, dialogInputClass } from "./Dialog";
+import { PersonPicker } from "./PersonPicker";
 import { SelectField } from "./primitives";
 
 const WEEKDAYS = ["Domingo", "Segunda", "Terça", "Quarta", "Quinta", "Sexta", "Sábado"];
@@ -23,7 +24,7 @@ type Slot = { weekday: number; start: string; end: string; venue: string };
  * "Sub 9" de coexistirem na mesma academia.
  */
 export function NewTeamDialog({ session, onClose }: { session: Session; onClose: () => void }) {
-  const coaches = listCoaches();
+  const coaches = listCoachCandidates();
   const ageGroups = useActiveCatalog("ageGroups");
   const venues = useActiveCatalog("venues");
   const existingTeams = listTeams(session);
@@ -127,12 +128,20 @@ export function NewTeamDialog({ session, onClose }: { session: Session; onClose:
         </DialogField>
 
         <div className="grid grid-cols-2 gap-3">
+          {/*
+            Escrever o nome, em vez de o procurar numa lista.
+
+            E a lista deixou de ser "quem já treina alguma equipa" — que numa
+            academia nova é ninguém, e por isso não havia forma de atribuir a
+            primeira equipa. Ver `listCoachCandidates`.
+          */}
           <DialogField label="Treinador principal" hint="opcional">
-            <SelectField
-              className="w-full"
+            <PersonPicker
+              pessoas={coaches.map((c) => ({ id: c.id, name: c.name, sub: c.title }))}
               value={coachId}
               onChange={setCoachId}
-              options={[{ value: "", label: "Por atribuir" }, ...coaches.map((c) => ({ value: c.id, label: c.name }))]}
+              emptyLabel="Por atribuir"
+              placeholder="Escrever um nome…"
             />
           </DialogField>
 
@@ -154,31 +163,62 @@ export function NewTeamDialog({ session, onClose }: { session: Session; onClose:
             </p>
           ) : (
             <div className="space-y-2">
+              {/*
+                Duas linhas por treino, e não cinco colunas.
+
+                Eram cinco campos lado a lado — dia, início, fim, local, apagar —
+                dentro de um diálogo de 460px. Os dois campos de hora ficavam com
+                menos de 60px cada e o relógio do browser saía cortado.
+
+                Agora o **dia e o local** ficam em cima (é assim que se diz um
+                treino: "terça, no Campo 1") e as **horas** por baixo, com "das" e
+                "às" a ligá-las. As horas ganham a largura que precisam, e a linha
+                lê-se como uma frase.
+              */}
               {slots.map((slot, i) => (
-                <div key={i} className="grid grid-cols-[1.2fr_0.85fr_0.85fr_1.1fr_auto] items-end gap-1.5">
-                  <SelectField
-                    className="w-full"
-                    value={String(slot.weekday)}
-                    onChange={(v) => updateSlot(i, { weekday: Number(v) })}
-                    options={WEEKDAYS.map((w, wi) => ({ value: String(wi), label: w }))}
-                  />
-                  <input type="time" value={slot.start} onChange={(e) => updateSlot(i, { start: e.target.value })} className={dialogInputClass} />
-                  <input type="time" value={slot.end} onChange={(e) => updateSlot(i, { end: e.target.value })} className={dialogInputClass} />
-                  <SelectField
-                    className="w-full"
-                    value={slot.venue}
-                    onChange={(v) => updateSlot(i, { venue: v })}
-                    options={venues.map((v) => ({ value: v.label, label: v.label }))}
-                  />
-                  <button
-                    type="button"
-                    onClick={() => setSlots((xs) => xs.filter((_, idx) => idx !== i))}
-                    disabled={slots.length === 1}
-                    className="flex h-9 w-9 items-center justify-center rounded-[var(--radius-control)] text-ink-4 hover:bg-risk-soft hover:text-risk disabled:opacity-0"
-                    aria-label="Remover horário"
-                  >
-                    <Trash2 className="size-3.5" strokeWidth={1.75} />
-                  </button>
+                <div key={i} className="rounded-[var(--radius-control)] border border-line bg-sunken/30 p-2">
+                  <div className="flex items-center gap-1.5">
+                    <SelectField
+                      className="min-w-0 flex-1"
+                      value={String(slot.weekday)}
+                      onChange={(v) => updateSlot(i, { weekday: Number(v) })}
+                      options={WEEKDAYS.map((w, wi) => ({ value: String(wi), label: w }))}
+                    />
+                    <SelectField
+                      className="min-w-0 flex-1"
+                      value={slot.venue}
+                      onChange={(v) => updateSlot(i, { venue: v })}
+                      options={venues.map((v) => ({ value: v.label, label: v.label }))}
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setSlots((xs) => xs.filter((_, idx) => idx !== i))}
+                      disabled={slots.length === 1}
+                      className="flex size-9 shrink-0 items-center justify-center rounded-[var(--radius-control)] text-ink-4 hover:bg-risk-soft hover:text-risk disabled:opacity-0"
+                      aria-label="Remover horário"
+                    >
+                      <Trash2 className="size-3.5" strokeWidth={1.75} />
+                    </button>
+                  </div>
+
+                  <div className="mt-1.5 flex items-center gap-2 pr-9">
+                    <span className="shrink-0 text-meta text-ink-3">das</span>
+                    <input
+                      type="time"
+                      value={slot.start}
+                      onChange={(e) => updateSlot(i, { start: e.target.value })}
+                      aria-label="Hora de início"
+                      className={`${dialogInputClass} min-w-0 flex-1`}
+                    />
+                    <span className="shrink-0 text-meta text-ink-3">às</span>
+                    <input
+                      type="time"
+                      value={slot.end}
+                      onChange={(e) => updateSlot(i, { end: e.target.value })}
+                      aria-label="Hora de fim"
+                      className={`${dialogInputClass} min-w-0 flex-1`}
+                    />
+                  </div>
                 </div>
               ))}
 

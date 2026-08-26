@@ -34,6 +34,21 @@ import type { TenantRequest } from "./tenant";
  * dois PNG genéricos ficam como a garantia de que existe sempre um ícone com
  * medida declarada e verdadeira. O clube vê o seu emblema; a instalação nunca
  * depende dele.
+ *
+ * ## O `maskable`, e porque é que ele desaparece quando há emblema
+ *
+ * Um ícone marcado `purpose: "maskable"` não é uma alternativa entre iguais: no
+ * Android é a **primeira escolha** do Chrome para o ecrã inicial, porque é o
+ * único que ele sabe recortar na forma do fabricante. Declarar o nosso genérico
+ * como maskable enquanto o emblema do clube ia sem `purpose` fazia com que o
+ * telemóvel de todos os pais instalasse o nosso ícone — o clube carregava o
+ * símbolo na consola e não via diferença nenhuma no telemóvel.
+ *
+ * Por isso, havendo emblema, o genérico deixa de se declarar maskable e o
+ * emblema ganha. Continua a haver ícones de medida declarada (192 e 512), que é
+ * o que a instalação exige; o Android põe o emblema sobre o fundo dele em vez de
+ * o recortar, e é o que queremos — um emblema recortado por uma máscara circular
+ * perde o que está nas bordas, que num emblema de clube costuma ser o nome.
  */
 @Public()
 @Controller()
@@ -90,11 +105,34 @@ export class TenantAssetsController {
       categories: ["sports", "education"],
       icons: [
         // O emblema do clube primeiro: o browser escolhe o primeiro que sirva.
-        ...(academy.logoUrl ? [{ src: academy.logoUrl, sizes: "any", type: "image/png" }] : []),
+        ...(academy.logoUrl
+          ? [{ src: academy.logoUrl, sizes: "any", type: mimeOf(academy.logoUrl) }]
+          : []),
         { src: "/icon-192.png", sizes: "192x192", type: "image/png" },
         { src: "/icon-512.png", sizes: "512x512", type: "image/png" },
-        { src: "/icon-512.png", sizes: "512x512", type: "image/png", purpose: "maskable" },
+        // Só sem emblema — ver a nota sobre o `maskable` no topo do ficheiro.
+        ...(academy.logoUrl
+          ? []
+          : [{ src: "/icon-512.png", sizes: "512x512", type: "image/png", purpose: "maskable" }]),
       ],
     };
   }
+}
+
+/**
+ * O tipo do emblema, pela extensão do ficheiro.
+ *
+ * Estava fixo em `image/png` e o carregamento aceita três formatos (ver
+ * `club-logo.service.ts`): um clube que carregasse WebP ou JPEG declarava um
+ * ficheiro que não era o que estava lá, e um `type` que não bate com o conteúdo
+ * é motivo para o Chrome descartar o ícone em silêncio.
+ *
+ * O `logoUrl` é construído por nós a partir da chave que nós escolhemos, por
+ * isso a extensão é de confiança. Na dúvida, PNG — é o que sempre se assumiu.
+ */
+function mimeOf(url: string): string {
+  const ext = url.split("?")[0].split(".").pop()?.toLowerCase();
+  if (ext === "webp") return "image/webp";
+  if (ext === "jpg" || ext === "jpeg") return "image/jpeg";
+  return "image/png";
 }

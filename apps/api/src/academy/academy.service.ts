@@ -712,14 +712,21 @@ export class AcademyService {
     const mayReadDiagnosis = can(ctx, "clinical:read");
 
     /*
-     * O NIF do atleta só para quem trata de famílias — direção e secretaria.
+     * O NIF do atleta só para quem **trata** de famílias, e não para quem as vê.
      *
-     * Um treinador tem `athlete:read` e não tem `family:read`, e não precisa do
-     * número de contribuinte de uma criança para escalar uma equipa. A app do pai
-     * também não o recebe: ele já o sabe, e mandá-lo para o telemóvel é espalhá-lo
-     * por mais um sítio sem nada em troca.
+     * Era `family:read`, e isso funcionava enquanto o treinador não tinha essa
+     * permissão. Passou a ter — precisa da lista de encarregados das equipas dele —
+     * e sem esta mudança o número de contribuinte de uma criança começava a viajar
+     * para o telemóvel de toda a gente que treina, sem ninguém ter decidido isso.
+     *
+     * `family:write` é quem edita a ficha da família: direcção, e a secretaria a
+     * quem o clube der o cargo. Esses precisam do NIF porque é com ele que emitem
+     * recibos. Um treinador não precisa dele para escalar uma equipa.
+     *
+     * A app do pai também não o recebe: ele já o sabe, e mandá-lo para o telemóvel
+     * é espalhá-lo por mais um sítio sem nada em troca.
      */
-    const mayReadTaxId = can(ctx, "family:read");
+    const mayReadTaxId = can(ctx, "family:write");
 
     const rows = await this.prisma.runAs(ctx.academyId, async (db) => {
       const athletes = await db.athlete.findMany({

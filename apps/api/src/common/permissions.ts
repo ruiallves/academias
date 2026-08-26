@@ -116,8 +116,16 @@ export const ROLE_PERMISSIONS: Record<Role, Permission[]> = {
   OWNER: [...READ_ALL, ...WRITE_ALL, "role:write", "role:menu", "scouting:video:read", "scouting:video:write"],
   DIRECTOR: [...READ_ALL, ...WRITE_ALL, "scouting:video:read", "scouting:video:write"],
 
+  /*
+   * Sem `billing:read` e sem `member:read`.
+   *
+   * Os sócios são da **direcção**, por omissão. Um coordenador desportivo trata
+   * de equipas e atletas; a lista de sócios do clube, com quotas e contactos, é
+   * outra coisa — e quem precisar dela recebe-a num cargo, que é precisamente
+   * para isso que os cargos existem.
+   */
   COORDINATOR: [
-    ...READ_ALL.filter((p) => p !== "billing:read"),
+    ...READ_ALL.filter((p) => p !== "billing:read" && p !== "member:read"),
     "athlete:write", "team:write", "calendar:write", "attendance:write",
     "comms:write", "evaluation:write", "report:write",
   ],
@@ -144,16 +152,46 @@ export const ROLE_PERMISSIONS: Record<Role, Permission[]> = {
     // de equipamento. Só os pais: o público "Geral"/"Treinadores" é da direção, e o
     // âmbito (`teamScopeFilter`) limita-o aos encarregados dos seus atletas.
     "comms:read", "comms:write",
+    /*
+     * Vê as famílias — as dos atletas dele, e mais nenhumas.
+     *
+     * Faltava, e a falta era estranha: o treinador já recebia o nome, o email e o
+     * telefone dos encarregados dentro da ficha de cada atleta seu (é assim que a
+     * API os devolve), mas não tinha o menu *Famílias* onde os ler numa lista. A
+     * permissão que faltava era só a da porta.
+     *
+     * O âmbito não vem daqui: a lista de famílias é derivada dos atletas, e essa
+     * consulta já é filtrada por `teamScopeFilter`. Um treinador que peça as
+     * famílias recebe as dos seus atletas porque são as únicas que existem para
+     * ele — não porque a interface as esconde.
+     *
+     * O NIF do atleta continua de fora: passou a exigir `family:write`. Ver a
+     * nota em `bootstrap`.
+     */
+    "family:read",
     // Pede jogadores ao scouting. É o treinador que sabe que lhe falta um lateral
     // esquerdo — e é ele que acompanha os nomes que aparecerem no pedido dele. Não
     // leva `scouting:read` atrás: os dossiês continuam a ser do departamento.
     "scouting:request",
   ],
 
-  // A secretaria é quem está ao balcão quando alguém chega para se fazer sócio.
+  /**
+   * O âmbito mais fechado. Serve os departamentos que o clube inventar.
+   *
+   * ## Porque é que já não traz sócios
+   *
+   * Trazia `member:read` e `member:write` — a ideia era a secretaria ao balcão,
+   * quem inscreve alguém que chega para se fazer sócio. Mas `STAFF` não é "a
+   * secretaria": é o âmbito por omissão de qualquer departamento novo, e um
+   * departamento de equipamentos ou de marketing passava a ver a lista de sócios
+   * do clube com contactos e quotas, sem ninguém ter decidido isso.
+   *
+   * Os sócios são da direcção. Um clube que queira a secretaria a tratar deles
+   * cria-lhe um cargo com `member:read` e `member:write` — que é exactamente a
+   * delegação que os cargos existem para fazer, e fica escrita onde se vê.
+   */
   STAFF: [
     "academy:read", "athlete:read", "family:read", "team:read", "calendar:read", "attendance:read",
-    "member:read", "member:write",
   ],
 
   /**

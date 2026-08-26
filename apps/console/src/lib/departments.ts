@@ -145,5 +145,45 @@ export const SCOPE_LABEL: Record<string, string> = {
   SCOUT: "Todo o clube",
 };
 
-/** Os âmbitos que se podem escolher. `OWNER` fica de fora de propósito. */
-export const SCOPES: Role[] = ["DIRECTOR", "COORDINATOR", "COACH", "MEDICAL", "SCOUT", "STAFF"];
+/**
+ * As duas escolhas de alcance. **Duas**, e não seis.
+ *
+ * ## O que estava errado
+ *
+ * O ecrã oferecia os seis `Role` que servem de âmbito — DIRECTOR, COORDINATOR,
+ * COACH, MEDICAL, SCOUT, STAFF — como seis botões. Mas o alcance deles só tem
+ * dois valores possíveis, por isso saíam **seis botões com quatro nomes**, e
+ * "Todo o clube" aparecia quatro vezes seguidas. Não é uma escolha: é um enigma.
+ * Ninguém consegue dizer qual dos quatro "Todo o clube" quer, porque do lado de
+ * fora não há diferença nenhuma entre eles.
+ *
+ * ## O que a diferença realmente era
+ *
+ * Hierarquia, não alcance. Os seis valores têm `rank` diferente — é o que decide
+ * quem pode editar o cargo de quem. Isso é uma consequência de se criar um
+ * departamento, e não uma pergunta a fazer a quem o cria: ninguém abre este ecrã
+ * a pensar "quero rank 60".
+ *
+ * Por isso a pergunta ficou com as duas respostas que existem, e a hierarquia é
+ * escolhida por baixo: um departamento que vê tudo nasce em `COORDINATOR` — vê o
+ * clube inteiro, mas fica **abaixo** da Direção. É o que se quer: um presidente a
+ * criar "Departamento de Marketing" não devia estar a criar algo que ranqueia com
+ * a direcção sem saber que o fez.
+ *
+ * Os quatro departamentos de origem continuam com os seus (`MEDICAL`, `SCOUT`) —
+ * são semeados em código, não por este ecrã. `SCOPE_LABEL` e `SCOPE_HINT` acima
+ * continuam a saber ler os seis, porque é isso que mostra um departamento que já
+ * existe.
+ */
+export const SCOPE_CHOICES: { value: Role; label: string; hint: string }[] = [
+  {
+    value: "COORDINATOR",
+    label: "Todo o clube",
+    hint: "Vê e trabalha com todas as equipas, atletas e escalões.",
+  },
+  {
+    value: "COACH",
+    label: "Só as equipas atribuídas",
+    hint: "Vê apenas as equipas de que for responsável — e mais nenhuma.",
+  },
+];

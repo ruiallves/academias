@@ -126,8 +126,24 @@ ${academy.logoUrl ? `<meta property="og:image" content="${esc(academy.logoUrl)}"
   A PWA e a landing partilham origem de propósito, por isso partilham o manifest.
 -->
 <link rel="manifest" href="/manifest.webmanifest" />
-<link rel="apple-touch-icon" href="/icon-192.png" />
-<link rel="icon" href="/icon-192.png" />
+<!--
+  O ícone do iPhone, e a razão de ele ser uma linha à parte.
+
+  O iOS não lê o manifest para o ecrã inicial: ao "Adicionar ao ecrã
+  principal" vai buscar exclusivamente o apple-touch-icon desta página. Isto
+  esteve fixo no nosso genérico, e o efeito era o pior possível — o clube
+  carregava o emblema na consola, via-o na consola e na página de sócios, e no
+  telemóvel de todos os pais continuava a aparecer o nosso quadrado. O Android
+  obedecia ao manifest; o iPhone nunca chegou a saber que o emblema existia.
+
+  Vai o emblema do clube quando existe. É uma imagem que não controlamos, e o
+  iOS trata-a como quem cola um autocolante quadrado: não redimensiona com
+  proporção e assenta a transparência sobre preto. Um emblema quadrado e opaco
+  fica perfeito; um muito largo fica esticado — daí o aviso na consola a pedir
+  um símbolo quadrado (ver IdentityPanel.tsx).
+-->
+<link rel="apple-touch-icon" href="${academy.logoUrl ? esc(academy.logoUrl) : "/icon-180.png"}" />
+<link rel="icon" href="${academy.logoUrl ? esc(academy.logoUrl) : "/icon-192.png"}" />
 <meta name="apple-mobile-web-app-capable" content="yes" />
 <meta name="apple-mobile-web-app-title" content="${shortName}" />
 

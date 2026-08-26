@@ -182,14 +182,20 @@ function serveApps(app: INestApplication): void {
   /*
    * Os ícones na raiz da origem.
    *
-   * A landing referencia `/icon-192.png`, e o manifest gerado aponta para o mesmo
-   * sítio. São os ficheiros da app da família, servidos também um nível acima —
-   * duplicar dois PNG é mais barato do que ter dois sítios a discordar sobre onde
-   * eles vivem.
+   * A landing referencia `/icon-180.png`, e o manifest gerado aponta para os
+   * outros dois. São os ficheiros da app da família, servidos também um nível
+   * acima — duplicar três PNG é mais barato do que ter dois sítios a discordar
+   * sobre onde eles vivem.
+   *
+   * O 180 é o do iPhone, e é o único que a landing usa directamente: o iOS não
+   * lê o manifest para o ecrã inicial, só o `apple-touch-icon` da página (ver
+   * `landing.template.ts`). Esta lista é escrita à mão, por isso um ícone novo
+   * em `apps/family/public/` que não seja acrescentado aqui devolve 404 na raiz
+   * — foi o que aconteceu quando o 180 apareceu.
    */
   const familyPublic = join(root, "app");
   if (existsSync(familyPublic)) {
-    for (const icon of ["icon-192.png", "icon-512.png"]) {
+    for (const icon of ["icon-180.png", "icon-192.png", "icon-512.png"]) {
       app.use(`/${icon}`, (_req: Request, res: Response, next: NextFunction) => {
         res.sendFile(join(familyPublic, icon), (err) => {
           if (err) next();

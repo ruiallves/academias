@@ -82,7 +82,6 @@ export function SportsPanel({
               <SportRow
                 key={sport.id}
                 deepLinked={deepLinked}
-                expandido={academy.sports.length === 1}
                 sport={sport}
                 mayWrite={mayWrite}
                 onEdit={() => setEditing(sport)}
@@ -124,20 +123,10 @@ function SportRow({
   onEdit,
   onRemove,
   deepLinked,
-  /**
-   * Abrir os catálogos já expandidos.
-   *
-   * Verdadeiro quando o clube só tem uma modalidade — que é o caso de quem
-   * acabou de a criar e vem configurar os escalões. Com cinco modalidades, vinte
-   * listas abertas de uma vez são pior do que quatro títulos com a contagem à
-   * frente, que é o que fica.
-   */
-  expandido,
 }: {
   sport: Sport;
   mayWrite: boolean;
   deepLinked?: CatalogKey | null;
-  expandido: boolean;
   onEdit: () => void;
   onRemove: () => void;
 }) {
@@ -193,7 +182,20 @@ function SportRow({
               key={key}
               catalogKey={key}
               sportId={sport.id}
-              defaultOpen={deepLinked === key || expandido}
+              /*
+                Fechados por omissão, sempre.
+
+                Já estiveram abertos quando o clube só tinha uma modalidade, com a
+                ideia de servir quem acabou de a criar. Mas o que se abre ao entrar
+                nas Definições é a **modalidade** — e ela abre, com os quatro
+                títulos e a contagem de cada um à frente. Quatro listas abertas por
+                baixo enterram tudo o que vem a seguir no ecrã, e quem entra aqui
+                quase nunca vem por causa dos balneários.
+
+                A excepção é o `deepLinked`: quem chegou de um "gerir locais" veio
+                mesmo por causa daquele, e só aquele abre.
+              */
+              defaultOpen={deepLinked === key}
               bare
             />
           ))}
