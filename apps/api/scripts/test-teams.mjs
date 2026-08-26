@@ -43,9 +43,9 @@ const call = async (token, method, pathname, body) => {
 
 const db = new pg.Client({ connectionString: env("MIGRATE_DATABASE_URL"), ssl: { rejectUnauthorized: false } });
 await db.connect();
-// Estado limpo — remove equipas e a época de teste de corridas anteriores.
+// Estado limpo — remove equipas e as épocas de teste de corridas anteriores.
 await db.query(`DELETE FROM "Team" WHERE name LIKE 'ZZ Equipa%'`);
-await db.query(`DELETE FROM "Season" WHERE label = '2098/99'`);
+await db.query(`DELETE FROM "Season" WHERE label LIKE '2098%'`);
 
 const director = await login("direcao@lifeclub.pt");
 const coach = await login("treinador@lifeclub.pt");
@@ -85,6 +85,24 @@ const seasonRow = (await db.query(`SELECT "startsOn","endsOn" FROM "Season" WHER
 check("a época nova foi criada na base", !!seasonRow);
 check("com datas inferidas do rótulo (agosto→julho)", seasonRow && new Date(seasonRow.startsOn).getUTCFullYear() === 2098);
 
+/*
+ * A mesma época, escrita de outra maneira.
+ *
+ * Era o bug: "encontra ou cria" por igualdade de texto não encontrava
+ * "2098/2099" quando já existia "2098/99", e criava uma segunda época — com as
+ * equipas do mesmo ano repartidas por duas, sem ninguém perceber porquê. A
+ * consola já não deixa escrever a época (é um menu), mas o import por Excel
+ * entra pelo mesmo caminho com o que vier na célula.
+ */
+console.log("\n=== A mesma época, escrita de outra maneira ===");
+const variant = await call(director, "POST", "/api/teams", {
+  name: "ZZ Equipa Variante", sportId: "sp_fut", ageGroup: "Sub-13", season: "2098/2099", schedule: slot,
+});
+check("aceita a variante (201)", variant.status === 201 || variant.status === 200, `${variant.status}`);
+check("e devolve o rótulo canónico", variant.body?.season === "2098/99", `${variant.body?.season}`);
+const seasonCount = (await db.query(`SELECT count(*)::int n FROM "Season" WHERE label LIKE '2098%'`)).rows[0].n;
+check("continua a haver uma só época de 2098", seasonCount === 1, `${seasonCount}`);
+
 console.log("\n=== Validação de forma (DTO) ===");
 const badTime = await call(director, "POST", "/api/teams", { name: "ZZ Equipa Hora", sportId: "sp_fut", ageGroup: "Sub-11", season: "2026/27", schedule: [{ weekday: 2, start: "25:99", end: "19:30", venue: "Campo 1" }] });
 check("hora de horário inválida rejeitada (400)", badTime.status === 400, `${badTime.status}`);
@@ -93,11 +111,13 @@ check("campos extra (academyId/maxCallUps) rejeitados", massAssign.status === 40
 
 console.log("\n=== Ficou mesmo na base ===");
 const total = (await db.query(`SELECT count(*)::int n FROM "Team" WHERE name LIKE 'ZZ Equipa%'`)).rows[0].n;
-check("3 equipas de teste na base (Um, Com Treinador, Futuro)", total === 3, `${total}`);
+check("4 equipas de teste na base (Um, Com Treinador, Futuro, Variante)", total === 4, `${total}`);
 
 console.log("\n=== Limpeza ===");
 await db.query(`DELETE FROM "Team" WHERE name LIKE 'ZZ Equipa%'`);
-await db.query(`DELETE FROM "Season" WHERE label = '2098/99'`);
+// `LIKE` e não igualdade: se a normalização regredir, fica lá uma "2098/2099"
+// à espera de estragar a corrida seguinte.
+await db.query(`DELETE FROM "Season" WHERE label LIKE '2098%'`);
 await db.end();
 console.log("  feito");
 

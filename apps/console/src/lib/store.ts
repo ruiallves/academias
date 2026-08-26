@@ -55,6 +55,8 @@ type ApiBootstrap = {
   };
   sports: { id: string; name: string; positions: string[]; skills: string[]; dominantSideLabel: string | null; matchMinutes: number | null }[];
   season: { id: string; label: string } | null;
+  /** Todas as épocas da academia, da mais recente para trás. */
+  seasons?: { id: string; label: string; isCurrent: boolean }[];
   me: {
     membershipId: string;
     userId: string;
@@ -171,6 +173,8 @@ type State = {
   error: string | null;
   academy: Academy;
   season: string;
+  /** Os rótulos das épocas que existem, da mais recente para trás. */
+  seasons: string[];
   me: Me | null;
   teams: Team[];
   staff: StaffMember[];
@@ -199,6 +203,7 @@ const EMPTY: State = {
     sports: [],
   },
   season: "",
+  seasons: [],
   me: null,
   teams: [],
   staff: [],
@@ -436,6 +441,7 @@ function build(
       })),
     },
     season: boot.season?.label ?? "",
+    seasons: (boot.seasons ?? []).map((s) => s.label),
     me: boot.me,
     teams,
     staff,
@@ -504,6 +510,8 @@ export let events: ApiEvent[] = [];
 export let announcements: Announcement[] = [];
 export let me: Me | null = null;
 export let currentSeason = "";
+/** As épocas que a academia tem, da mais recente para trás. Ver `NewTeamDialog`. */
+export let seasons: string[] = [];
 
 /** Competências avaliadas — configuração da modalidade, não uma lista fixa no código. */
 export let SKILLS: string[] = [];
@@ -523,6 +531,7 @@ function apply(next: State) {
   announcements = next.announcements;
   me = next.me;
   currentSeason = next.season;
+  seasons = next.seasons;
   SKILLS = next.academy.sports[0]?.skills ?? [];
   emit();
 }

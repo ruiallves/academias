@@ -6,6 +6,7 @@ import { ImportTeamsDialog } from "@/components/ImportTeamsDialog";
 import { Bar, cx, Monogram, Panel, Pill } from "@/components/primitives";
 import { ArrowRight, Plus, Upload } from "@/lib/icons";
 import { attendanceRate, coachById, listAthletes, listTeams, sportById } from "@/lib/api";
+import { currentSeason } from "@/lib/store";
 import { can } from "@/lib/permissions";
 import { useSession } from "@/session";
 import type { Team } from "@/data/types";
@@ -31,7 +32,13 @@ export default function Teams() {
     <>
       <PageHeader
         title="Equipas"
-        subtitle={mine ? "As equipas de que és responsável" : `${teams.length} equipas activas na época 2026/27`}
+        /* A época vem do servidor. Estava escrita à mão — "2026/27" — e ia
+           continuar a dizê-lo em 2029. */
+        subtitle={
+          mine
+            ? "As equipas de que és responsável"
+            : `${teams.length} ${teams.length === 1 ? "equipa activa" : "equipas activas"}${currentSeason ? ` na época ${currentSeason}` : ""}`
+        }
       >
         {can(session, "team:write") && (
           <>
@@ -55,7 +62,7 @@ export default function Teams() {
         ))}
       </div>
 
-      {creating && <NewTeamDialog session={session} onClose={() => setCreating(false)} />}
+      {creating && <NewTeamDialog onClose={() => setCreating(false)} />}
       {importing && <ImportTeamsDialog onClose={() => setImporting(false)} />}
     </>
   );

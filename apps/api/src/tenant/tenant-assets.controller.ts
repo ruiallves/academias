@@ -103,18 +103,37 @@ export class TenantAssetsController {
       lang: "pt-PT",
       dir: "ltr",
       categories: ["sports", "education"],
-      icons: [
-        // O emblema do clube primeiro: o browser escolhe o primeiro que sirva.
-        ...(academy.logoUrl
-          ? [{ src: academy.logoUrl, sizes: "any", type: mimeOf(academy.logoUrl) }]
-          : []),
-        { src: "/icon-192.png", sizes: "192x192", type: "image/png" },
-        { src: "/icon-512.png", sizes: "512x512", type: "image/png" },
-        // Só sem emblema — ver a nota sobre o `maskable` no topo do ficheiro.
-        ...(academy.logoUrl
-          ? []
-          : [{ src: "/icon-512.png", sizes: "512x512", type: "image/png", purpose: "maskable" }]),
-      ],
+      /*
+        Havendo emblema, os genéricos não entram — nenhum.
+
+        Entravam sempre, emblema ou não, e era esse o bug: o Android estava a
+        instalar a app com o ícone genérico da "Academia" mesmo em clubes com
+        emblema configurado. A causa não era o emblema estar ausente — era ele
+        estar a **competir** e a perder.
+
+        O emblema é declarado `sizes: "any"` porque não sabemos as dimensões
+        reais do que o clube carregou (ver a nota sobre "512x512 quando é
+        300×180" mais acima). Os genéricos, ao lado, declaram `192x192` e
+        `512x512` — medidas exactas e verificáveis. Um selector de ícone que
+        prefira "o maior candidato com medida exacta que bata certo" escolhe os
+        nossos antes do emblema, porque "any" não é uma medida que se compare.
+
+        Não há como declarar o emblema com uma medida exacta sem a saber — e
+        inventá-la é o que já tinha partido a instalação antes. A única forma de
+        garantir que o emblema ganha é tirar-lhe a concorrência: com emblema,
+        ele é o **único** ícone da lista. O ficheiro existe — `confirm()` já
+        verificou isso antes de gravar `logoUrl` — por isso não há risco de
+        instalação sem ícone nenhum.
+      */
+      icons: academy.logoUrl
+        ? [{ src: academy.logoUrl, sizes: "any", type: mimeOf(academy.logoUrl) }]
+        : [
+            { src: "/icon-192.png", sizes: "192x192", type: "image/png" },
+            { src: "/icon-512.png", sizes: "512x512", type: "image/png" },
+            // O maskable só serve enquanto o ícone é o nosso — ver a nota no
+            // topo do ficheiro sobre porque é que o emblema nunca o leva.
+            { src: "/icon-512.png", sizes: "512x512", type: "image/png", purpose: "maskable" },
+          ],
     };
   }
 }

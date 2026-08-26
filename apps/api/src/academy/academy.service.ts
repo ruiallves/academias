@@ -120,12 +120,26 @@ export class AcademyService {
         },
       });
 
-      const [sports, season, me, fundador] = await Promise.all([
+      const [sports, seasons, me, fundador] = await Promise.all([
         db.sport.findMany({
           orderBy: { name: "asc" },
           select: { id: true, name: true, positions: true, skills: true, dominantSideLabel: true, matchMinutes: true },
         }),
-        db.season.findFirst({ where: { isCurrent: true }, select: { id: true, label: true, startsOn: true, endsOn: true } }),
+        /*
+         * Todas as épocas, não só a corrente.
+         *
+         * Era `findFirst({ isCurrent: true })`, e a consola ficava sem saber que
+         * épocas existem — daí o campo da época em "Nova equipa" ser texto livre,
+         * onde cada pessoa escrevia a sua variante ("2026/27", "2026/2027",
+         * "26/27") e o servidor criava uma época nova para cada uma.
+         *
+         * São meia dúzia de linhas por academia e já vinham na mesma ida à base
+         * de dados; devolvê-las todas é mais barato do que um endpoint à parte.
+         */
+        db.season.findMany({
+          orderBy: { startsOn: "desc" },
+          select: { id: true, label: true, startsOn: true, endsOn: true, isCurrent: true },
+        }),
         db.membership.findFirst({
           where: { id: ctx.membershipId },
           select: {
@@ -167,7 +181,14 @@ export class AcademyService {
       return {
         academy,
         sports,
-        season,
+        /*
+         * `season` continua a ser a corrente — é o que meia consola lê para
+         * escrever "esta época" — mas deixa de depender de alguém ter marcado
+         * `isCurrent`: sem marca nenhuma, a mais recente é a resposta certa e é
+         * melhor do que um espaço em branco.
+         */
+        season: seasons.find((s) => s.isCurrent) ?? seasons[0] ?? null,
+        seasons,
         me: {
           membershipId: ctx.membershipId,
           userId: ctx.userId,
@@ -667,18 +688,36 @@ export class AcademyService {
    * agosto a julho): é melhor do que obrigar a direção a criar épocas à parte antes
    * de poder criar a primeira equipa do ano. `isCurrent` fica a cargo de quem gere
    * épocas — uma equipa nova não decide qual é a época em curso.
+   *
+   * ## Porque é que o rótulo é normalizado antes de nada
+   *
+   * Porque "encontra ou cria" sobre texto que alguém escreveu não encontra quase
+   * nunca. `2026/2027`, `2026-27` e `2026/27` são a mesma época para toda a gente
+   * menos para um `findFirst` por igualdade — e cada variante criava uma linha
+   * nova, com equipas espalhadas por épocas que deviam ser uma. A consola já não
+   * deixa escrever isto (é um menu), mas a interface nunca é a fronteira: o
+   * import por Excel entra por aqui com o que vier na célula.
+   *
+   * Procura-se pelo rótulo tal como veio **e** pelo normalizado: uma academia que
+   * já tenha `2026/2027` gravado continua a encontrá-la em vez de ganhar uma
+   * segunda. O que se cria de novo é sempre na forma canónica.
    */
   private async resolveSeason(db: ScopedClient, academyId: string, label: string) {
     const trimmed = label.trim();
-    const existing = await db.season.findFirst({ where: { label: trimmed }, select: { id: true } });
+    const canonical = canonicalSeasonLabel(trimmed);
+
+    const existing = await db.season.findFirst({
+      where: { OR: [{ label: trimmed }, { label: canonical }] },
+      select: { id: true },
+    });
     if (existing) return existing;
 
-    const startYear = Number(trimmed.slice(0, 4));
+    const startYear = Number(canonical.slice(0, 4));
     const base = Number.isFinite(startYear) && startYear > 2000 ? startYear : new Date().getUTCFullYear();
     return db.season.create({
       data: {
         academyId,
-        label: trimmed,
+        label: canonical,
         startsOn: new Date(Date.UTC(base, 7, 1)), // 1 de agosto
         endsOn: new Date(Date.UTC(base + 1, 6, 31)), // 31 de julho
       },
@@ -1572,4 +1611,42 @@ function occurrences(
 /** Lista de texto do cliente: sem vazios, sem repetidos, sem espaços à volta. */
 function clean(values?: string[]): string[] {
   return [...new Set((values ?? []).map((v) => v.trim()).filter(Boolean))].slice(0, 40);
+}
+
+/**
+ * O rótulo de uma época, na forma da casa: `2026/27`.
+ *
+ * Uma época desportiva atravessa dois anos civis, e toda a gente a escreve de
+ * maneira diferente — `2026/2027`, `2026-27`, `26/27`, às vezes só `2026`. São a
+ * mesma coisa, e sem as reduzir a uma forma só a base de dados acaba com quatro
+ * épocas onde devia ter uma.
+ *
+ * O que não se reconhece **passa intacto**: uma academia pode ter uma convenção
+ * que não prevemos ("Época 12", um ano civil de natação), e inventar-lhe um
+ * rótulo é pior do que aceitar o dela. A normalização corrige o que é claramente
+ * a mesma época escrita de outra maneira; não impõe um formato a quem tem outro.
+ */
+export function canonicalSeasonLabel(label: string): string {
+  const raw = label.trim();
+
+  // 2026/27, 2026/2027, 2026-27, 2026 — com ou sem espaços à volta do separador.
+  const pair = raw.match(/^(\d{2}|\d{4})\s*[/\-–]\s*(\d{2}|\d{4})$/);
+  if (pair) {
+    const start = toFullYear(pair[1]);
+    return `${start}/${String((start + 1) % 100).padStart(2, "0")}`;
+  }
+
+  const single = raw.match(/^(\d{4})$/);
+  if (single) {
+    const start = Number(single[1]);
+    return `${start}/${String((start + 1) % 100).padStart(2, "0")}`;
+  }
+
+  return raw;
+}
+
+/** `26` → 2026. Dois dígitos são sempre deste século: um clube não inscreve equipas em 1926. */
+function toFullYear(value: string): number {
+  const n = Number(value);
+  return value.length === 4 ? n : 2000 + n;
 }

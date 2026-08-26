@@ -539,6 +539,35 @@ ${
   var anonKey = ${jsonForScript(supabaseAnonKey)};
   var slug = ${jsonForScript(academy.slug)};
 
+  /*
+    O convite persiste já aqui — na página que oferece a instalação — e não à
+    espera de a app abrir.
+
+    O bug que isto resolve: um pai chegava a esta página com "?convite=xxx" no
+    endereço, instalava a app, e ao abri-la pelo ícone caía num ecrã a pedir
+    para colar o link do clube. A causa: a start_url do manifest é fixa
+    ("/app/", sem query nenhuma — tem de ser, ou cada instalação criava um
+    atalho diferente) e o único código que lê "?convite=" do endereço e o
+    guarda é o captureFromUrl() da app da família, em lib/invite.ts — que
+    nunca corre nesta página, porque esta página não é a app, é este template
+    gerado no servidor.
+
+    A instalação é same-origin de propósito (ver serveApps em main.ts): esta
+    página e a app partilham localStorage, mesmo vivendo em caminhos
+    diferentes (raiz e /app/). Por isso chega escrever aqui, com as mesmas
+    chaves que a app lê — antes de o pai sequer tocar em "Instalar".
+
+    Em desenvolvimento, onde a app corre noutra porta (outra origem), isto não
+    tem efeito nenhum — e está certo que não tenha: sem origem partilhada não
+    há localStorage partilhado, e o convite continua a viajar pelo appUrl
+    absoluto, como já viajava.
+  */
+  try {
+    var convite = new URLSearchParams(location.search).get(convite);
+    if (convite) localStorage.setItem(academia.family.convite, convite);
+    localStorage.setItem(academia.family.slug, slug);
+  } catch (e) {}
+
   // Se esta página já está a correr como app instalada (aconteceu se o telemóvel
   // guardou a landing em vez da app — iOS antigo faz isso), não faz sentido pedir
   // para instalar outra vez: salta já para a aplicação, em ecrã inteiro.

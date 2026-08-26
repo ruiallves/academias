@@ -96,33 +96,76 @@ export default function Entrar({ onEntered }: { onEntered: () => void }) {
   const indice = passos.indexOf(step);
 
   return (
-    <div className="relative flex min-h-dvh flex-col overflow-hidden">
+    <div className="relative flex min-h-dvh flex-col items-center justify-center overflow-hidden bg-canvas px-5 py-10">
       {/*
-        O ambiente.
+        Os estilhaços — a mesma linguagem gráfica do login no browser e da
+        página de sócios.
 
-        Um halo da cor do clube no topo, sobre o fundo normal da app. É a única
-        coisa que separa este ecrã dos outros — e é de propósito: a cor é a do
-        clube do filho, não a nossa, e é a primeira coisa que um pai reconhece.
-        Sem gradientes de duas cores nem vidro fosco; o clube é que é a marca.
+        Era um halo simples: um gradiente radial da cor do clube, meio-perdido
+        atrás de conteúdo a flutuar directamente sobre o fundo. Funcional, mas
+        genérico — não tinha a identidade que o resto do produto já ganhou.
+
+        Aqui são cinco estilhaços — triângulos recortados com clip-path,
+        alternando `--color-signal` e `--color-signal-ink` (a variante escura já
+        calculada por `signalVars`, sem precisar de um token novo) — presos aos
+        cantos do ecrã. Um ecrã de telemóvel não tem a largura da versão de
+        computador para seis peças grandes; cinco, mais pequenas e mais discretas
+        (opacidade baixa), bastam para o fundo deixar de ser um gradiente cinzento
+        com uma cor lá dentro e passar a ser a cor do clube, de propósito.
+
+        Ficam sempre **atrás** do cartão branco — nunca por baixo de texto. É a
+        mesma regra de sempre: a cor identifica, não se lê por cima dela.
       */}
-      <div
-        aria-hidden
-        className="pointer-events-none absolute inset-x-0 top-0 h-[52dvh]"
-        style={{
-          background:
-            "radial-gradient(120% 78% at 50% 0%, color-mix(in oklab, var(--color-signal) 16%, transparent) 0%, transparent 72%)",
-        }}
-      />
+      <div aria-hidden className="pointer-events-none absolute inset-0 overflow-hidden">
+        <i
+          className="absolute -left-16 bottom-[8%] h-[150px] w-[210px] opacity-80"
+          style={{ background: "var(--color-signal)", clipPath: "polygon(0 0, 100% 42%, 30% 100%)" }}
+        />
+        <i
+          className="absolute left-6 -bottom-4 h-[170px] w-[130px] opacity-70"
+          style={{ background: "var(--color-signal-ink)", clipPath: "polygon(0 22%, 100% 0, 62% 100%)" }}
+        />
+        <i
+          className="absolute -right-14 top-[6%] h-[130px] w-[170px] opacity-55"
+          style={{ background: "var(--color-signal)", clipPath: "polygon(0 0, 100% 50%, 26% 100%)" }}
+        />
+        <i
+          className="absolute right-4 top-[26%] h-[160px] w-[110px] opacity-45"
+          style={{ background: "var(--color-signal-ink)", clipPath: "polygon(30% 0, 100% 30%, 0 100%)" }}
+        />
+        <i
+          className="absolute -right-8 bottom-[10%] h-[90px] w-[130px] opacity-30"
+          style={{ background: "var(--color-signal)", clipPath: "polygon(0 30%, 100% 0, 60% 100%)" }}
+        />
+      </div>
 
-      <div className="relative mx-auto flex w-full max-w-[480px] flex-1 flex-col justify-center px-6 pt-16 pb-10">
-        <header className="mb-8 flex flex-col items-center text-center">
-          <ClubMark
-            logoUrl={clube?.academy.logoUrl ?? null}
-            mark={clube?.academy.mark ?? "··"}
-            size={72}
-            radius={22}
-            className="mb-5"
-          />
+      {/*
+        O cartão.
+
+        Antes o conteúdo flutuava directamente sobre o fundo da app — o mesmo
+        fundo dos outros ecrãs, só com um halo por trás. Isolar tudo num cartão
+        branco, elevado, é o que faz este ecrã ler-se como uma porta e não como
+        mais uma página: o mesmo tratamento que o convite de staff e o login no
+        browser já têm.
+      */}
+      <div className="relative z-10 w-full max-w-[440px] overflow-hidden rounded-[28px] border border-line bg-surface px-6 pt-9 pb-8 shadow-[var(--shadow-float)]">
+        <header className="mb-7 flex flex-col items-center text-center">
+          {/*
+            Escurecida quando é o monograma — as iniciais brancas têm de se ler
+            com qualquer cor de clube, incluindo um amarelo claro. Com emblema não
+            há caixa: a forma é a do emblema, e o `ClubMark` já trata disso.
+          */}
+          <span
+            className="mb-5 flex size-[72px] items-center justify-center overflow-hidden rounded-[22px]"
+            style={{ background: clube?.academy.logoUrl ? "transparent" : "var(--color-signal-ink)" }}
+          >
+            <ClubMark
+              logoUrl={clube?.academy.logoUrl ?? null}
+              mark={clube?.academy.mark ?? "··"}
+              size={72}
+              radius={22}
+            />
+          </span>
 
           <h1 className="text-[30px] leading-[1.1] font-semibold tracking-[-0.02em] text-balance text-ink">
             {clube ? clube.academy.name : "A app da tua academia"}
