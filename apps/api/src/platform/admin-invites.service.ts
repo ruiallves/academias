@@ -5,6 +5,8 @@ import type { PlatformRole } from "@prisma/client";
 import { PlatformPrisma } from "./platform.prisma";
 import { PlatformService } from "./platform.service";
 import { SupabaseAccountsService } from "../auth/supabase-accounts.service";
+import { MailClient } from "../mail/mail.client";
+import { adminInviteEmail } from "../mail/mail.templates";
 import type { PlatformAdminContext } from "./platform.guard";
 
 /**
@@ -66,6 +68,7 @@ export class AdminInvitesService {
     private readonly platform: PlatformService,
     private readonly accounts: SupabaseAccountsService,
     private readonly config: ConfigService,
+    private readonly mail: MailClient,
   ) {}
 
   /* ------------------------------------------------------------------------ */
@@ -82,7 +85,7 @@ export class AdminInvitesService {
     admin: PlatformAdminContext,
     dto: { name: string; email: string; role: PlatformRole },
     ip?: string,
-  ): Promise<{ link: string; expiresAt: Date }> {
+  ): Promise<{ link: string; expiresAt: Date; emailed: boolean; emailError?: string }> {
     const email = dto.email.trim().toLowerCase();
     const name = dto.name.trim();
     if (name.length < 2) throw new BadRequestException("O nome é preciso");
@@ -111,7 +114,25 @@ export class AdminInvitesService {
 
     await this.platform.audit(admin, "platformAdmin.invite", "platformAdminInvite", invite.id, { email, role: dto.role }, ip);
 
-    return { link: this.linkFor(token), expiresAt: invite.expiresAt };
+    const link = this.linkFor(token);
+
+    // O email é uma tentativa por cima de um convite que já existe: se a SendGrid
+    // falhar, o link continua no ecrã de quem convidou.
+    const mensagem = adminInviteEmail({ name, role: dto.role, link, expiresAt: invite.expiresAt });
+    const enviado = await this.mail.send({
+      to: email,
+      toName: name,
+      subject: mensagem.subject,
+      html: mensagem.html,
+      text: mensagem.text,
+    });
+
+    return {
+      link,
+      expiresAt: invite.expiresAt,
+      emailed: enviado.sent,
+      ...(enviado.reason ? { emailError: enviado.reason } : {}),
+    };
   }
 
   /**

@@ -5,6 +5,14 @@ import { NotificationsService } from "../notifications/notifications.service";
 import { EupagoClient } from "./eupago.client";
 import { athleteScopeFilter, can, teamScopeFilter, type RequestContext } from "../common/permissions";
 
+/**
+ * Quando é que um preço acabado de definir começa a ser cobrado.
+ *
+ * "atual" emite já a mensalidade deste mês; "proximo" só regista o preço. Ver
+ * `BillingService.geraAgora`, que explica porque é que isto passou a perguntar-se.
+ */
+export type AplicarEm = "atual" | "proximo";
+
 @Injectable()
 export class BillingService {
   private readonly log = new Logger(BillingService.name);
@@ -341,8 +349,26 @@ export class BillingService {
    * apaga — histórico, não amnésia.
    */
 
+  /**
+   * A partir de quando é que um preço novo passa a ser cobrado.
+   *
+   * Definir um preço fazia sempre nascer a mensalidade do mês corrente. Está
+   * certo para quem chega a meio da época e quer cobrar já, e está errado para
+   * quem configura o clube em Agosto para começar a cobrar em Setembro — esse
+   * ficava com um mês de mensalidades que nunca quis emitir, e tinha de as anular
+   * uma a uma.
+   *
+   * Por isso passou a ser uma pergunta. "proximo" não gera nada agora: o preço
+   * fica registado, os atletas aparecem no painel de mensalidades em falta como
+   * **por emitir**, e emitem-se quando for altura — pelo mesmo botão de sempre.
+   * Nada fica escondido por se ter escolhido esperar.
+   */
+  private geraAgora(aplicarEm: AplicarEm | undefined): boolean {
+    return aplicarEm !== "proximo";
+  }
+
   /** O preço da equipa — por omissão, para todos os atletas sem ajuste individual. */
-  async setTeamFee(ctx: RequestContext, teamId: string, amountCents: number) {
+  async setTeamFee(ctx: RequestContext, teamId: string, amountCents: number, aplicarEm?: AplicarEm) {
     if (!can(ctx, "billing:write")) throw new ForbiddenException("Sem permissão para configurar mensalidades");
     assertValidAmount(amountCents);
 
@@ -375,7 +401,13 @@ export class BillingService {
        * Só cria o que falta (ver `gerarCobrancas`), por isso baixar ou subir o
        * preço não reescreve mensalidades já emitidas — para essas há o ajuste
        * manual, que é uma decisão consciente e fica registada.
+       *
+       * A menos que se peça o contrário: ver `geraAgora`.
        */
+      if (!this.geraAgora(aplicarEm)) {
+        return { teamId, amountCents: plan.amountCents, cobrancas: null };
+      }
+
       const atletas = await db.athlete.findMany({
         where: { status: "ACTIVE", teams: { some: { teamId } } },
         select: { id: true },
@@ -426,7 +458,7 @@ export class BillingService {
   }
 
   /** Ajuste individual — sobrepõe-se ao preço da equipa para este atleta em concreto. */
-  async setAthleteFee(ctx: RequestContext, athleteId: string, amountCents: number) {
+  async setAthleteFee(ctx: RequestContext, athleteId: string, amountCents: number, aplicarEm?: AplicarEm) {
     if (!can(ctx, "billing:write")) throw new ForbiddenException("Sem permissão para configurar mensalidades");
     assertValidAmount(amountCents);
 
@@ -438,7 +470,9 @@ export class BillingService {
 
       // Mesma razão de `setTeamFee`: um atleta que não tinha preço nenhum passa
       // a ter, e a mensalidade do mês corrente nasce aqui em vez de ficar à
-      // espera de alguém se lembrar de a gerar.
+      // espera de alguém se lembrar de a gerar. E a mesma escolha — ver `geraAgora`.
+      if (!this.geraAgora(aplicarEm)) return { athleteId, amountCents, cobrancas: null };
+
       const cobrancas = await gerarCobrancas(db, ctx.academyId, periodoActual(), [athlete.id]);
 
       return { athleteId, amountCents, cobrancas };
@@ -451,7 +485,7 @@ export class BillingService {
    * toda. Uma pessoa que fica sem ajuste (id errado, já não está na academia)
    * não impede as restantes — o pedido diz quantos ficaram e quais faltaram.
    */
-  async setAthleteFeeBulk(ctx: RequestContext, athleteIds: string[], amountCents: number) {
+  async setAthleteFeeBulk(ctx: RequestContext, athleteIds: string[], amountCents: number, aplicarEm?: AplicarEm) {
     if (!can(ctx, "billing:write")) throw new ForbiddenException("Sem permissão para configurar mensalidades");
     assertValidAmount(amountCents);
     if (athleteIds.length === 0) throw new BadRequestException("Escolhe pelo menos um atleta");
@@ -467,11 +501,26 @@ export class BillingService {
         await applyIndividualFee(db, ctx.academyId, athlete, amountCents);
       }
 
+      /*
+       * Gera, como os outros dois.
+       *
+       * Aqui não gerava nada — e era um buraco a sério, não uma omissão inócua:
+       * quem definisse preços por este caminho ficava com os atletas a dizer
+       * "por emitir" no painel de mensalidades em falta, indefinidamente, sem
+       * perceber porque é que o mesmo gesto feito pelo preço da equipa produzia
+       * mensalidades e este não. Três formas de definir um preço têm de acabar
+       * todas no mesmo sítio.
+       */
       const foundIds = new Set(athletes.map((a) => a.id));
+      const cobrancas = this.geraAgora(aplicarEm)
+        ? await gerarCobrancas(db, ctx.academyId, periodoActual(), [...foundIds])
+        : null;
+
       return {
         amountCents,
         updated: athletes.map((a) => a.id),
         missing: athleteIds.filter((id) => !foundIds.has(id)),
+        cobrancas,
       };
     });
   }

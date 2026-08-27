@@ -46,6 +46,10 @@ export type Invite = {
   title: string | null;
   link: string;
   expiresAt: string;
+  /** O servidor tentou mandar o convite por email. Saiu? */
+  emailed: boolean;
+  /** Porque é que não saiu, quando não saiu. */
+  emailError?: string;
 };
 
 type State = { invites: PendingInvite[]; loaded: boolean };
@@ -91,7 +95,13 @@ export async function createInvite(input: {
   academyRoleId: string;
   teamIds: string[];
 }): Promise<Invite> {
-  const created = await apiPost<{ id: string; link: string; expiresAt: string }>("/api/invites", input);
+  const created = await apiPost<{
+    id: string;
+    link: string;
+    expiresAt: string;
+    emailed: boolean;
+    emailError?: string;
+  }>("/api/invites", input);
   await loadInvites();
   return {
     id: created.id,
@@ -100,6 +110,8 @@ export async function createInvite(input: {
     title: state.invites.find((i) => i.id === created.id)?.title ?? null,
     link: created.link,
     expiresAt: created.expiresAt,
+    emailed: created.emailed,
+    ...(created.emailError ? { emailError: created.emailError } : {}),
   };
 }
 

@@ -3,6 +3,8 @@ import { BadRequestException, ForbiddenException, Injectable, NotFoundException 
 import { ConfigService } from "@nestjs/config";
 import { PrismaService } from "../prisma/prisma.service";
 import { SupabaseAccountsService } from "../auth/supabase-accounts.service";
+import { MailClient } from "../mail/mail.client";
+import { familyInviteEmail } from "../mail/mail.templates";
 import { can, type RequestContext } from "../common/permissions";
 
 /**
@@ -68,6 +70,7 @@ export class FamilyInvitesService {
     private readonly prisma: PrismaService,
     private readonly accounts: SupabaseAccountsService,
     private readonly config: ConfigService,
+    private readonly mail: MailClient,
   ) {}
 
   /* ------------------------------------------------------------------------ */
@@ -132,6 +135,80 @@ export class FamilyInvitesService {
       const academy = await db.academy.findFirst({ where: { id: ctx.academyId }, select: { slug: true } });
       return this.view(invite, academy?.slug ?? "");
     });
+  }
+
+  /**
+   * Mandar o link vivo por email, a quem a secretaria disser.
+   *
+   * ## Porque é que isto não gera um link por família
+   *
+   * Porque continua a ser **o mesmo** link partilhado — o desenho descrito no topo
+   * deste ficheiro não muda. O que muda é o carteiro: além do grupo de WhatsApp,
+   * a secretaria pode agora escrever meia dúzia de endereços e o servidor entrega.
+   * Um link por família traria de volta exactamente o problema que aquela decisão
+   * evitou: duzentos links a perder-se.
+   *
+   * ## Um endereço que falha não estraga os outros
+   *
+   * Envia-se um a um e devolve-se a lista do que correu mal. Uma família com o
+   * email mal escrito não pode impedir as outras dezanove de receber — e a
+   * secretaria precisa de saber qual foi, para o corrigir.
+   */
+  async sendToFamilies(
+    ctx: RequestContext,
+    recipients: { email: string; name?: string | null }[],
+  ): Promise<{ sent: number; failed: { email: string; reason: string }[] }> {
+    if (!can(ctx, "family:write")) throw new ForbiddenException("Sem permissão para convidar famílias");
+    if (recipients.length === 0) throw new BadRequestException("Não há para quem enviar");
+
+    if (!this.mail.ready) {
+      throw new BadRequestException("O envio de emails ainda não está configurado no servidor.");
+    }
+
+    // O link e a identidade do clube, numa leitura só — e antes de qualquer envio:
+    // sem link vivo não há nada para mandar, e é melhor dizê-lo já.
+    const invite = await this.prisma.runAs(ctx.academyId, async (db) => {
+      const row = await db.familyInvite.findFirst({
+        where: { revokedAt: null, OR: [{ expiresAt: null }, { expiresAt: { gt: new Date() } }] },
+        orderBy: { createdAt: "desc" },
+        select: { token: true, expiresAt: true },
+      });
+      if (!row) return null;
+
+      const academy = await db.academy.findFirst({
+        where: { id: ctx.academyId },
+        select: { slug: true, name: true, shortName: true, signalColor: true },
+      });
+      return { ...row, academy };
+    });
+
+    if (!invite) throw new BadRequestException("Não há nenhum link de convite aberto.");
+
+    const link = this.linkFor(invite.academy?.slug ?? "", invite.token);
+    const brand = {
+      shortName: invite.academy?.shortName ?? "Academia",
+      name: invite.academy?.name ?? "a academia",
+      signalColor: invite.academy?.signalColor,
+    };
+
+    const failed: { email: string; reason: string }[] = [];
+    let sent = 0;
+
+    for (const person of recipients) {
+      const mail = familyInviteEmail({ brand, name: person.name, link, expiresAt: invite.expiresAt });
+      const result = await this.mail.send({
+        to: person.email,
+        toName: person.name ?? undefined,
+        subject: mail.subject,
+        html: mail.html,
+        text: mail.text,
+      });
+
+      if (result.sent) sent += 1;
+      else failed.push({ email: person.email, reason: result.reason ?? "Não foi possível enviar." });
+    }
+
+    return { sent, failed };
   }
 
   /** Fechar a porta. O link deixa de resolver — `app.resolve_family_invite` já o exclui. */

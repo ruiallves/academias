@@ -739,6 +739,16 @@ de infraestrutura, não de código da aplicação.
   cada caso. Antes eram três coisas diferentes debaixo da mesma frase, "Sem
   mensalidades neste filtro". O botão que emite chama `POST /api/charges/gerar`,
   que já existia e que nada na consola chegava a chamar.
+- **Mensalidades exportam-se para Excel.** O botão existia e não fazia nada.
+  Agora abre um diálogo com o intervalo em **meses** (uma mensalidade não tem
+  dia: tem um período), atalhos para "Este mês", "Últimos 3 meses", "Época"
+  (Agosto a Julho, como a idade dos atletas) e "Tudo", mais um filtro de estado
+  para o caso mais pedido — a lista de quem está por cobrar. O ficheiro sai como
+  `{clube}_mensalidades_{de}_a_{ate}.xlsx`, com uma folha de linhas (valor em
+  número, vencimento em data, filtro do Excel já ligado) e uma de **Resumo**
+  (totais por estado e por equipa, e a data em que foi gerado). Feito no browser
+  com `xlsx` em `import()` dinâmico: os dados já estão em memória, e um endpoint
+  de exportação seria a mesma pergunta com um segundo âmbito para divergir.
 - **Falta justificada leva motivo.** No registo de presenças, escolher "Justificada"
   abre um campo para o motivo (ex.: consulta médica); o motivo aparece também na
   ficha do atleta, ao lado da falta. Vive com as presenças, que ainda são locais.

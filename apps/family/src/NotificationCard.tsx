@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { Bell, BellOff, Check, Loader, TriangleAlert } from "lucide-react";
 import { cx } from "@/ui";
-import { currentSubscription, disablePush, enablePush, pushState, sendTestPush } from "@/lib/push";
+import { currentSubscription, disablePush, enablePush, pushState } from "@/lib/push";
 
 type Message = { text: string; kind: "ok" | "error" };
 
@@ -12,8 +12,13 @@ type Message = { text: string; kind: "ok" | "error" };
  * browsers ignoram pedidos de permissão sem gesto do utilizador, e um pedido à
  * queima-roupa é a forma mais rápida de alguém carregar em "Bloquear" para sempre.
  *
- * O botão de teste dispara uma notificação **a partir do servidor** — a única forma
- * de provar que o caminho todo funciona: subscrição, VAPID, service worker, telemóvel.
+ * Havia aqui dois botões — "Mensalidade" e "Treino alterado" — que disparavam
+ * notificações de teste a partir do servidor. Serviram para provar o caminho todo
+ * (subscrição, VAPID, service worker, telemóvel) enquanto o push se construía, e
+ * saíram quando ficou construído: um pai não tem nada que mandar avisos a si
+ * próprio, e um botão que só faz sentido para quem escreveu o código não pertence
+ * ao ecrã de quem o usa. O `sendTestPush` continua em `lib/push.ts`, que é onde
+ * quem estiver a diagnosticar o vai buscar.
  */
 export function NotificationCard() {
   const [state, setState] = useState(pushState());
@@ -60,20 +65,6 @@ export function NotificationCard() {
     } finally {
       clearTimeout(hintTimer);
       setShowAddressBarHint(false);
-      setBusy(false);
-    }
-  }
-
-  async function test(kind: string) {
-    setBusy(true);
-    setMessage(null);
-    try {
-      const result = await sendTestPush(kind);
-      if (!result.ok) setMessage({ text: result.reason ?? "Falhou.", kind: "error" });
-      else setMessage({ text: "Enviada. Deve chegar em poucos segundos.", kind: "ok" });
-    } catch (error) {
-      setMessage({ text: error instanceof Error ? error.message : "Falhou por um motivo desconhecido.", kind: "error" });
-    } finally {
       setBusy(false);
     }
   }
@@ -145,20 +136,6 @@ export function NotificationCard() {
           Não vês nenhum pedido? No Android, o Chrome às vezes esconde-o num
           pequeno ícone junto à barra de endereço, em vez de um popup — toca lá.
         </p>
-      )}
-
-      {subscribed && (
-        <div className="mt-4 border-t border-line pt-4">
-          <p className="mb-2.5 text-[12px] font-semibold tracking-[0.03em] text-ink-3 uppercase">Testar</p>
-          <div className="grid grid-cols-2 gap-2">
-            <button type="button" onClick={() => test("payment-overdue")} disabled={busy} className="cta-quiet h-11 text-[13px]">
-              Mensalidade
-            </button>
-            <button type="button" onClick={() => test("training-changed")} disabled={busy} className="cta-quiet h-11 text-[13px]">
-              Treino alterado
-            </button>
-          </div>
-        </div>
       )}
 
       {message && (

@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { apiDelete, apiGet, apiPost } from "@/lib/http";
-import { Check, Clock, Copy, Link2, RefreshCw, Trash2 } from "@/lib/icons";
+import { Check, Clock, Copy, Link2, Mail, RefreshCw, Send, Trash2, TriangleAlert } from "@/lib/icons";
 import { Dialog } from "./Dialog";
 import { cx } from "./primitives";
 
@@ -165,6 +165,8 @@ export function FamilyInviteDialog({ onClose }: { onClose: () => void }) {
               </div>
             </dl>
 
+            <EnviarPorEmail />
+
             <button type="button" onClick={() => setTrocar(true)} className="ctl-ghost w-full justify-center">
               <RefreshCw className="size-3.5" strokeWidth={1.75} />
               Gerar link novo com outra duração
@@ -242,6 +244,124 @@ export function FamilyInviteDialog({ onClose }: { onClose: () => void }) {
       </div>
     </Dialog>
   );
+}
+
+/* -------------------------------------------------------------------------- */
+
+/**
+ * Mandar o link por email a algumas famílias.
+ *
+ * ## Porque é que isto convive com o "copiar link"
+ *
+ * Porque o link continua a ser **um só**, partilhado — o que muda é o carteiro.
+ * O grupo de WhatsApp resolve a maioria dos clubes; isto é para as famílias que
+ * ficaram de fora do grupo, ou para quem chega a meio da época.
+ *
+ * ## Um endereço por linha
+ *
+ * Sem etiquetas nem campos a multiplicar-se. Quem tem os emails tem-nos numa
+ * coluna do Excel, e colar uma coluna aqui dentro tem de funcionar — por isso
+ * aceita-se também vírgula e ponto e vírgula como separadores.
+ */
+function EnviarPorEmail() {
+  const [aberto, setAberto] = useState(false);
+  const [texto, setTexto] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [resultado, setResultado] = useState<{ sent: number; failed: { email: string; reason: string }[] } | null>(null);
+  const [erro, setErro] = useState<string | null>(null);
+
+  const enderecos = separar(texto);
+
+  async function enviar() {
+    if (enderecos.length === 0 || busy) return;
+    setBusy(true);
+    setErro(null);
+    setResultado(null);
+    try {
+      setResultado(
+        await apiPost<{ sent: number; failed: { email: string; reason: string }[] }>("/api/family-invite/enviar", {
+          recipients: enderecos.map((email) => ({ email })),
+        }),
+      );
+      setTexto("");
+    } catch (e) {
+      setErro(e instanceof Error ? e.message : "Não foi possível enviar.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  if (!aberto) {
+    return (
+      <button type="button" onClick={() => setAberto(true)} className="ctl-ghost w-full justify-center">
+        <Mail className="size-3.5" strokeWidth={1.75} />
+        Enviar por email
+      </button>
+    );
+  }
+
+  return (
+    <div className="space-y-2.5 rounded-[var(--radius-control)] border border-line p-3">
+      <div>
+        <span className="block text-meta font-medium text-ink">Enviar por email</span>
+        <span className="text-meta text-ink-3">Um endereço por linha.</span>
+      </div>
+
+      <textarea
+        value={texto}
+        onChange={(e) => setTexto(e.target.value)}
+        rows={4}
+        autoFocus
+        placeholder={"ana.silva@exemplo.pt\njoao.costa@exemplo.pt"}
+        className="w-full resize-y rounded-[var(--radius-control)] border border-line bg-surface px-2.5 py-2 font-mono text-[12px] leading-relaxed text-ink outline-none focus:border-ink-4"
+      />
+
+      {resultado && (
+        <div className="space-y-1.5">
+          {resultado.sent > 0 && (
+            <p className="flex items-center gap-1.5 text-meta text-ok">
+              <Check className="size-3.5 shrink-0" strokeWidth={2} />
+              {resultado.sent === 1 ? "Enviado a 1 família." : `Enviado a ${resultado.sent} famílias.`}
+            </p>
+          )}
+          {resultado.failed.map((f) => (
+            <p key={f.email} className="flex items-start gap-1.5 text-meta text-warn">
+              <TriangleAlert className="mt-0.5 size-3.5 shrink-0" strokeWidth={1.9} />
+              <span>
+                <strong className="font-medium">{f.email}</strong> — {f.reason}
+              </span>
+            </p>
+          ))}
+        </div>
+      )}
+
+      {erro && <p className="text-meta text-[#a82a20]">{erro}</p>}
+
+      <div className="flex items-center justify-between gap-2">
+        <span className="text-meta text-ink-4">
+          {enderecos.length === 0
+            ? "Sem endereços"
+            : enderecos.length === 1
+              ? "1 endereço"
+              : `${enderecos.length} endereços`}
+        </span>
+        <div className="flex items-center gap-1.5">
+          <button type="button" onClick={() => setAberto(false)} className="ctl-ghost">
+            Fechar
+          </button>
+          <button type="button" onClick={() => void enviar()} disabled={busy || enderecos.length === 0} className="ctl-primary">
+            <Send className="size-3.5" strokeWidth={1.75} />
+            {busy ? "A enviar…" : "Enviar"}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/** Linhas, vírgulas ou pontos e vírgulas — quem cola uma coluna do Excel cola o que calhar. */
+function separar(texto: string): string[] {
+  return [...new Set(texto.split(/[\s,;]+/).map((v) => v.trim()).filter(Boolean))];
 }
 
 /* -------------------------------------------------------------------------- */

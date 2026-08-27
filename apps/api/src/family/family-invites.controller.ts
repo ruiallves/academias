@@ -1,12 +1,18 @@
 import { Body, Controller, Delete, Get, Param, Post, Req, Res } from "@nestjs/common";
 import { Throttle } from "@nestjs/throttler";
+import { Type } from "class-transformer";
 import {
+  ArrayMaxSize,
+  ArrayMinSize,
+  IsArray,
+  IsEmail,
   IsIn,
   IsISO8601,
   IsOptional,
   IsString,
   Length,
   Matches,
+  ValidateNested,
 } from "class-validator";
 import type { Response } from "express";
 import { Public, type AuthedRequest } from "../auth/auth.guard";
@@ -24,6 +30,33 @@ class CreateFamilyInviteDto {
   @IsOptional()
   @IsIn([1, 7, 30, null])
   days?: number | null;
+}
+
+/** Uma família na lista de envio. O nome é opcional: nem sempre a secretaria o tem. */
+class FamilyRecipientDto {
+  @IsEmail({}, { message: "Endereço de email inválido" })
+  email!: string;
+
+  @IsOptional()
+  @IsString()
+  @Length(0, 120)
+  name?: string;
+}
+
+/**
+ * Para quem vai o link.
+ *
+ * Tecto de 50 por pedido. Não é o limite da SendGrid — é o limite do que faz
+ * sentido escrever à mão de uma vez, e um pedido que envia mil emails em série é
+ * um pedido que fica minutos aberto.
+ */
+class SendFamilyInviteDto {
+  @IsArray()
+  @ArrayMinSize(1, { message: "Indica pelo menos um endereço" })
+  @ArrayMaxSize(50, { message: "No máximo 50 endereços de cada vez" })
+  @ValidateNested({ each: true })
+  @Type(() => FamilyRecipientDto)
+  recipients!: FamilyRecipientDto[];
 }
 
 /** As duas provas. Nunca uma só — ver `FamilyInvitesService`. */
@@ -79,6 +112,18 @@ export class FamilyInviteController {
   @Post()
   create(@Req() req: AuthedRequest, @Body() body: CreateFamilyInviteDto) {
     return this.invites.create(req.ctx, body.days === undefined ? 7 : body.days);
+  }
+
+  /**
+   * Mandar o link vivo por email.
+   *
+   * Apertado a 10 pedidos por minuto: cada um pode levar 50 endereços, e sem
+   * tecto isto era uma máquina de mandar correio em nome do clube.
+   */
+  @Throttle({ default: { ttl: 60_000, limit: 10 } })
+  @Post("enviar")
+  send(@Req() req: AuthedRequest, @Body() body: SendFamilyInviteDto) {
+    return this.invites.sendToFamilies(req.ctx, body.recipients);
   }
 
   @Delete()

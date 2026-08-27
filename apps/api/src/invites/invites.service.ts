@@ -10,6 +10,8 @@ import { ConfigService } from "@nestjs/config";
 import type { Role, StaffDepartment } from "@prisma/client";
 import { PrismaService } from "../prisma/prisma.service";
 import { SupabaseAccountsService } from "../auth/supabase-accounts.service";
+import { MailClient } from "../mail/mail.client";
+import { staffInviteEmail } from "../mail/mail.templates";
 import { can, type RequestContext } from "../common/permissions";
 
 /**
@@ -111,6 +113,7 @@ export class InvitesService {
     private readonly prisma: PrismaService,
     private readonly accounts: SupabaseAccountsService,
     private readonly config: ConfigService,
+    private readonly mail: MailClient,
   ) {}
 
   /* ------------------------------------------------------------------------ */
@@ -123,8 +126,18 @@ export class InvitesService {
    * O token em claro não volta a existir depois desta chamada. Se quem convida
    * perder o link, revoga e emite outro; não há "mostrar outra vez", porque isso
    * obrigaria a guardar o token e é precisamente o que se está a evitar.
+   *
+   * ## O email sai a seguir, não aqui dentro
+   *
+   * O convite existe assim que a transação fecha. O email é uma tentativa depois
+   * disso — ver `create` no fim do método — e o `emailed` que volta diz se saiu.
+   * A consola continua a mostrar o link para copiar: o email é uma comodidade,
+   * não o único caminho.
    */
-  async create(ctx: RequestContext, dto: CreateInvite): Promise<{ id: string; link: string; expiresAt: Date }> {
+  async create(
+    ctx: RequestContext,
+    dto: CreateInvite,
+  ): Promise<{ id: string; link: string; expiresAt: Date; emailed: boolean; emailError?: string }> {
     if (!can(ctx, "staff:write")) throw new ForbiddenException("Sem permissão para convidar");
 
     const email = normalizeEmail(dto.email);
@@ -133,7 +146,7 @@ export class InvitesService {
     const name = dto.name.trim();
     if (name.length < 2) throw new BadRequestException("Falta o nome");
 
-    return this.prisma.runAs(ctx.academyId, async (db) => {
+    const created = await this.prisma.runAs(ctx.academyId, async (db) => {
       /*
        * O cargo decide tudo o resto: o papel-base (e com ele o âmbito e a
        * hierarquia), as permissões e o departamento. Ler daqui, e não do corpo
@@ -208,12 +221,20 @@ export class InvitesService {
 
         // O slug lê-se com o cliente **desta** transação. Abrir outra aqui dentro
         // esgotava a ligação à espera de si própria — o Prisma não aninha `$transaction`.
+        // O nome e a cor vêm ao mesmo tempo: é o clube que assina o email, e uma
+        // segunda leitura só para isso era outra ida à base de dados.
         const academy = await db.academy.findFirst({
           where: { id: ctx.academyId },
-          select: { slug: true },
+          select: { slug: true, name: true, shortName: true, signalColor: true },
         });
 
-        return { id: invite.id, link: this.linkFor(academy?.slug ?? "", token), expiresAt };
+        return {
+          id: invite.id,
+          link: this.linkFor(academy?.slug ?? "", token),
+          expiresAt,
+          academy,
+          title: cargo.name,
+        };
       } catch (error) {
         // O índice parcial `StaffInvite_pending_unique`: já há um convite vivo para
         // esta pessoa com este papel. Reemitir sem revogar deixaria dois links a
@@ -224,6 +245,37 @@ export class InvitesService {
         throw error;
       }
     });
+
+    /*
+     * O email, já fora da transação.
+     *
+     * Fora de propósito, e pela mesma razão que as fotografias assinadas se
+     * resolvem fora dela: uma chamada de rede lá dentro segura uma ligação à base
+     * de dados durante o tempo que a SendGrid demorar a responder — e com o
+     * `connection_limit` a 5, bastam cinco convites ao mesmo tempo para o servidor
+     * inteiro ficar à espera.
+     */
+    const mail = staffInviteEmail({
+      brand: {
+        shortName: created.academy?.shortName ?? "Academia",
+        name: created.academy?.name ?? "a academia",
+        signalColor: created.academy?.signalColor,
+      },
+      name,
+      title: created.title,
+      link: created.link,
+      expiresAt: created.expiresAt,
+    });
+
+    const result = await this.mail.send({ to: email, toName: name, subject: mail.subject, html: mail.html, text: mail.text });
+
+    return {
+      id: created.id,
+      link: created.link,
+      expiresAt: created.expiresAt,
+      emailed: result.sent,
+      ...(result.reason ? { emailError: result.reason } : {}),
+    };
   }
 
   /** Convites por aceitar. Um convite emitido e esquecido é uma porta aberta que ninguém vê. */

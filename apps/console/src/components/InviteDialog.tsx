@@ -5,7 +5,7 @@ import { teamAgeLabel } from "@/lib/team-age";
 import { createInvite, type Invite } from "@/lib/invites";
 import { useDepartments, loadDepartments } from "@/lib/departments";
 import { loadRoles, useRoles, type AcademyRole } from "@/lib/roles";
-import { Check, Copy, Users } from "@/lib/icons";
+import { Check, Copy, TriangleAlert, Users } from "@/lib/icons";
 import type { Role, Session } from "@/lib/permissions";
 import { Dialog, DialogField, dialogInputClass } from "./Dialog";
 import { SelectField } from "./primitives";
@@ -35,11 +35,13 @@ import { SelectField } from "./primitives";
  * lado de quem resgata, quem apanhasse o link — e estes links viajam por WhatsApp
  * — escolhia o que podia ver, e podia marcar a academia toda.
  *
- * ## Porque é que não se envia o email daqui
+ * ## O email sai, e o link fica na mesma
  *
- * Devolve-se um link para copiar. A academia sabe melhor do que nós por onde
- * falar com cada pessoa — muitas tratam tudo por WhatsApp, e um email automático
- * numa caixa que ninguém abre é um convite que nunca chega.
+ * O servidor manda o convite para o endereço indicado (ver `mail.client.ts`) e
+ * diz aqui se saiu. Mas o link continua à vista para copiar, e isso não é
+ * redundância: muitos clubes tratam tudo por WhatsApp, e um email numa caixa que
+ * ninguém abre é um convite que nunca chega. Quem convida escolhe o caminho —
+ * o que não pode é ficar sem saber se o automático funcionou.
  */
 
 /** Gémeo de `RANK` em `apps/api/src/invites/invites.service.ts`. */
@@ -387,9 +389,35 @@ function InviteCreated({ invite, onClose }: { invite: Invite; onClose: () => voi
       }
     >
       <div className="space-y-4 p-5">
+        {/*
+          O que aconteceu ao email, primeiro.
+          É a pergunta que quem convida tem na cabeça neste momento — "já foi?" — e
+          a resposta muda o que ela faz a seguir: fechar a janela, ou copiar o link
+          e mandá-lo por outro caminho.
+        */}
+        {invite.emailed ? (
+          <div className="flex items-start gap-2.5 rounded-[var(--radius-control)] border border-ok/25 bg-ok-soft p-3">
+            <Check className="mt-0.5 size-4 shrink-0 text-ok" strokeWidth={2} />
+            <p className="text-body leading-relaxed text-ink-2">
+              Convite enviado para <strong className="font-medium text-ink">{invite.email}</strong>. O link
+              abaixo é o mesmo, para o caso de preferires mandá-lo por outro caminho.
+            </p>
+          </div>
+        ) : (
+          <div className="flex items-start gap-2.5 rounded-[var(--radius-control)] border border-warn/25 bg-warn-soft p-3">
+            <TriangleAlert className="mt-0.5 size-4 shrink-0 text-warn" strokeWidth={1.9} />
+            <div className="space-y-0.5">
+              <p className="text-body leading-relaxed text-ink-2">
+                O convite foi criado, mas o email não saiu. Manda-lhe o link tu.
+              </p>
+              {invite.emailError && <p className="text-meta text-ink-3">{invite.emailError}</p>}
+            </div>
+          </div>
+        )}
+
         <p className="text-body leading-relaxed text-ink-2">
-          Envia este link ao <strong className="font-medium text-ink">{invite.name}</strong>. Ao abri-lo,
-          escolhe uma palavra-passe e a conta fica criada.
+          Ao abrir o link, <strong className="font-medium text-ink">{invite.name}</strong> escolhe uma
+          palavra-passe e a conta fica criada.
         </p>
 
         <div className="rounded-[var(--radius-control)] border border-line bg-sunken p-3">

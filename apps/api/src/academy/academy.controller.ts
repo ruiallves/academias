@@ -7,7 +7,7 @@ import { AthletesService } from "./athletes.service";
 import { AthleteInputDto, AthleteTaxIdDto, AthleteUpdateDto, ImportAthletesDto } from "./athletes.dto";
 import { CreateTeamDto, ImportTeamsDto } from "./teams.dto";
 import { CreateEventDto, UpdateEventDto } from "./events.dto";
-import { BillingService, periodoActual } from "../billing/billing.service";
+import { BillingService, periodoActual, type AplicarEm } from "../billing/billing.service";
 
 /** O estado a atribuir manualmente a uma mensalidade. Validado — só os três reais. */
 class SetChargeStatusDto {
@@ -21,6 +21,14 @@ class SetFeeDto {
   @Min(100)
   @Max(100_000)
   amountCents!: number;
+
+  /**
+   * A partir de quando se cobra. Omitido é "atual", que era o que sempre fez —
+   * quem já chamava isto antes desta opção existir não muda de comportamento.
+   */
+  @IsOptional()
+  @IsIn(["atual", "proximo"])
+  aplicarEm?: AplicarEm;
 }
 
 /** O mesmo preço para vários atletas de uma vez — até 200, o mesmo tecto da importação. */
@@ -34,6 +42,10 @@ class SetAthleteFeeBulkDto {
   @Min(100)
   @Max(100_000)
   amountCents!: number;
+
+  @IsOptional()
+  @IsIn(["atual", "proximo"])
+  aplicarEm?: AplicarEm;
 }
 
 /** As excepções de acesso a gravar para uma pessoa. Validadas — ver `invites.dto.ts`. */
@@ -216,7 +228,7 @@ export class AcademyController {
 
   @Patch("teams/:id/fee")
   setTeamFee(@Req() req: AuthedRequest, @Param("id") id: string, @Body() body: SetFeeDto) {
-    return this.billing.setTeamFee(req.ctx, id, body.amountCents);
+    return this.billing.setTeamFee(req.ctx, id, body.amountCents, body.aplicarEm);
   }
 
   @Get("athletes")
@@ -408,13 +420,13 @@ export class AcademyController {
   /** Ajuste individual — sobrepõe-se ao preço da equipa para este atleta. */
   @Put("athletes/:id/fee")
   setAthleteFee(@Req() req: AuthedRequest, @Param("id") id: string, @Body() body: SetFeeDto) {
-    return this.billing.setAthleteFee(req.ctx, id, body.amountCents);
+    return this.billing.setAthleteFee(req.ctx, id, body.amountCents, body.aplicarEm);
   }
 
   /** O mesmo ajuste individual, para vários atletas escolhidos de uma vez. */
   @Put("athletes/fee")
   setAthleteFeeBulk(@Req() req: AuthedRequest, @Body() body: SetAthleteFeeBulkDto) {
-    return this.billing.setAthleteFeeBulk(req.ctx, body.athleteIds, body.amountCents);
+    return this.billing.setAthleteFeeBulk(req.ctx, body.athleteIds, body.amountCents, body.aplicarEm);
   }
 
   /** Remove o ajuste individual — volta a pagar o preço da equipa. */

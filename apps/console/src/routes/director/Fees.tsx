@@ -3,13 +3,14 @@ import { createPortal } from "react-dom";
 import { Link, useSearchParams } from "react-router-dom";
 import { PageHeader } from "@/components/Shell";
 import { Dialog } from "@/components/Dialog";
-import { DataTable, Empty, Metric, MetricRow, Monogram, Panel, PanelHead, Pill, cx, type Column } from "@/components/primitives";
+import { DataTable, Empty, Metric, MetricRow, Monogram, Panel, PanelHead, Pill, SelectField, cx, type Column } from "@/components/primitives";
 import { ResultCount, SearchInput, Segmented, Select, Toolbar } from "@/components/filters";
 import { CalendarDays, Check, ChevronDown, CircleCheck, Download, Loader2, Search, Send, Settings, TriangleAlert, Users, Wallet } from "@/lib/icons";
 import {
   arrears,
   athleteById,
   availablePeriods,
+  guardiansOf,
   currentPeriod,
   feeSummary,
   listAllFees,
@@ -22,6 +23,7 @@ import {
 import { apiGet, apiPatch, apiPost, apiPut } from "@/lib/http";
 import { reloadAcademy } from "@/lib/store";
 import { money, percent, periodLabel, relativeDays, shortName } from "@/lib/format";
+import { exportFees, nomeDoFicheiro } from "@/lib/fees-export";
 import { can } from "@/lib/permissions";
 import type { Fee, FeeStatus } from "@/data/types";
 import { useSession } from "@/session";
@@ -109,6 +111,19 @@ export default function Fees() {
   const mayEditFees = can(session, "billing:write");
   const [pricesOpen, setPricesOpen] = useState(false);
   const [athletePricesOpen, setAthletePricesOpen] = useState(false);
+  const [exportOpen, setExportOpen] = useState(false);
+  /*
+   * Sobe de um a cada preço gravado.
+   *
+   * A tabela em cima vem do `store` e o `reloadAcademy()` já a punha certa. O
+   * painel de baixo — `MissingCharges` — é que tem leitura própria
+   * (`/api/charges/em-falta`) e só a fazia ao montar: definia-se o preço, o
+   * servidor emitia as mensalidades, e a lista continuava a dizer que aqueles
+   * atletas não tinham nenhuma. Só um F5 a arrumava, e um F5 para ver o efeito
+   * do que se acabou de fazer é a interface a admitir que não está a olhar.
+   */
+  const [feesVersion, setFeesVersion] = useState(0);
+  const onFeeSaved = useCallback(() => setFeesVersion((v) => v + 1), []);
   const [sendingReminders, setSendingReminders] = useState(false);
   const [reminderResult, setReminderResult] = useState<string | null>(null);
 
@@ -209,7 +224,17 @@ export default function Fees() {
         title="Mensalidades"
         subtitle="O estado de cada mensalidade é confirmado pelo webhook da euPago, nunca pelo navegador."
       >
-        <button type="button" className="ctl-outline">
+        {/*
+          Exportar. Desactivado enquanto não houver mensalidade nenhuma — um
+          ficheiro vazio não é uma exportação, é uma pergunta sem resposta.
+        */}
+        <button
+          type="button"
+          className="ctl-outline"
+          onClick={() => setExportOpen(true)}
+          disabled={periods.length === 0}
+          title={periods.length === 0 ? "Ainda não há mensalidades para exportar" : undefined}
+        >
           <Download className="size-3.5" strokeWidth={1.75} />
           Exportar
         </button>
@@ -335,11 +360,23 @@ export default function Fees() {
           mensalidade, e uma tabela de mensalidades não os pode conter. Ver
           `MissingCharges`.
         */}
-        <MissingCharges period={period} mayWrite={mayEditFees} onOpenPrices={() => setPricesOpen(true)} />
+        <MissingCharges
+          period={period}
+          mayWrite={mayEditFees}
+          onOpenPrices={() => setPricesOpen(true)}
+          version={feesVersion}
+        />
       </div>
 
-      {pricesOpen && <TeamFeesDialog session={session} onClose={() => setPricesOpen(false)} />}
-      {athletePricesOpen && <AthleteFeesDialog session={session} onClose={() => setAthletePricesOpen(false)} />}
+      {exportOpen && (
+        <ExportFeesDialog session={session} periods={periods} onClose={() => setExportOpen(false)} />
+      )}
+      {pricesOpen && (
+        <TeamFeesDialog session={session} onSaved={onFeeSaved} onClose={() => setPricesOpen(false)} />
+      )}
+      {athletePricesOpen && (
+        <AthleteFeesDialog session={session} onSaved={onFeeSaved} onClose={() => setAthletePricesOpen(false)} />
+      )}
     </>
   );
 }
@@ -375,11 +412,20 @@ function MissingCharges({
   period,
   mayWrite,
   onOpenPrices,
+  version,
 }: {
   /** O período em causa. Em "Todos os períodos" a pergunta é sobre o mês corrente. */
   period: string;
   mayWrite: boolean;
   onOpenPrices: () => void;
+  /**
+   * Sobe sempre que um preço é gravado noutro sítio da página.
+   *
+   * Este painel não lê do `store` — pergunta ao servidor quem ficou de fora — e
+   * por isso nada o obrigava a voltar a perguntar. Definir um preço emite
+   * mensalidades, e sem isto a lista ficava a mentir até alguém recarregar.
+   */
+  version: number;
 }) {
   const alvo = period === ALL ? currentPeriod : period;
   const [data, setData] = useState<MissingCharges | null>(null);
@@ -396,7 +442,10 @@ function MissingCharges({
       setData(null);
       setErro(e instanceof Error ? e.message : null);
     }
-  }, [alvo]);
+    // `version` não se usa aqui dentro: entra nas dependências de propósito, para
+    // que gravar um preço volte a correr esta leitura.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [alvo, version]);
 
   useEffect(() => {
     void carregar();
@@ -511,6 +560,328 @@ function MissingCharges({
   );
 }
 
+/* -------------------------------------------------------------------------- */
+
+/** A partir de quando o preço acabado de definir passa a ser cobrado. */
+type AplicarEm = "atual" | "proximo";
+
+/**
+ * A pergunta que faltava: cobrar já este mês, ou só a partir do próximo?
+ *
+ * ## Porque é que não pode ser uma decisão nossa
+ *
+ * Definir um preço emite, no mesmo gesto, a mensalidade do mês corrente. Para
+ * quem inscreve um atleta a meio da época é exactamente o que se quer. Para quem
+ * está a montar o clube em Agosto e só começa a cobrar em Setembro é o contrário:
+ * fica com um mês inteiro de mensalidades emitidas sem querer, e o desfazer é
+ * anulá-las uma a uma.
+ *
+ * Nós não temos como saber qual dos dois é — é o calendário do clube, não um
+ * detalhe técnico. Por isso pergunta-se.
+ *
+ * ## Porque é que está em cima e não num aviso ao gravar
+ *
+ * Porque os preços gravam-se ao sair do campo. Uma confirmação por cada campo
+ * seriam sete janelas seguidas para quem está a preencher sete equipas. Em cima e
+ * antes da lista, lê-se uma vez e vale para tudo o que se escrever a seguir.
+ */
+function ApplyFromChoice({
+  value,
+  onChange,
+}: {
+  value: AplicarEm;
+  onChange: (v: AplicarEm) => void;
+}) {
+  const opcoes: { value: AplicarEm; label: string; hint: string }[] = [
+    { value: "atual", label: `Já em ${periodLabel(currentPeriod)}`, hint: "emite as mensalidades deste mês" },
+    { value: "proximo", label: `Só a partir de ${periodLabel(nextPeriod(currentPeriod))}`, hint: "este mês não é cobrado" },
+  ];
+
+  return (
+    <div className="border-b border-line bg-sunken/40 px-5 py-3.5">
+      <span className="mb-2 block text-meta font-medium text-ink">A partir de quando se cobra</span>
+      <div className="grid gap-1.5 sm:grid-cols-2">
+        {opcoes.map((o) => (
+          <label
+            key={o.value}
+            className={cx(
+              "flex cursor-pointer items-start gap-2 rounded-[var(--radius-control)] border px-3 py-2 transition-colors duration-[120ms]",
+              value === o.value ? "border-signal bg-signal-soft/40" : "border-line bg-surface hover:bg-sunken",
+            )}
+          >
+            <input
+              type="radio"
+              name="aplicar-em"
+              checked={value === o.value}
+              onChange={() => onChange(o.value)}
+              className="mt-0.5 accent-[var(--color-signal)]"
+            />
+            <span className="min-w-0">
+              <span className="block text-body text-ink">{o.label}</span>
+              <span className="block text-meta text-ink-3">{o.hint}</span>
+            </span>
+          </label>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+/** O mês a seguir a este. Dezembro passa a Janeiro — gémeo de `periodoSeguinte` no servidor. */
+function nextPeriod(period: string): string {
+  const ano = Number(period.slice(0, 4));
+  const mes = Number(period.slice(5, 7));
+  return mes === 12 ? `${ano + 1}-01` : `${ano}-${String(mes + 1).padStart(2, "0")}`;
+}
+
+/* -------------------------------------------------------------------------- */
+
+/** Os estados que se podem exportar de uma vez — o que a tesouraria pede. */
+const EXPORT_FILTROS = [
+  { value: "todas", label: "Todas", inclui: () => true },
+  {
+    value: "por-cobrar",
+    label: "Por cobrar",
+    inclui: (s: FeeStatus) => s === "pending" || s === "processing" || s === "overdue",
+  },
+  { value: "overdue", label: "Só vencidas", inclui: (s: FeeStatus) => s === "overdue" },
+  { value: "paid", label: "Só pagas", inclui: (s: FeeStatus) => s === "paid" },
+] as const;
+
+type ExportFiltro = (typeof EXPORT_FILTROS)[number]["value"];
+
+/**
+ * Exportar mensalidades para Excel.
+ *
+ * ## Porque é que o intervalo é em meses e não em dias
+ *
+ * Uma mensalidade não tem dia: tem um **período**, `2026-08`. Um selector ao dia
+ * obrigava a traduzir "de 14 de Março a 2 de Junho" para meses, e ninguém pensa
+ * assim sobre mensalidades — pensa "de Janeiro a Agosto", ou "esta época". Por
+ * isso o intervalo é de mês a mês, com atalhos para os pedidos que se repetem.
+ *
+ * A **época** vai de Agosto a Julho, a mesma janela que o resto do produto usa
+ * para a idade dos atletas. Quem pede "as mensalidades desta época" quer isto, e
+ * não o ano civil.
+ *
+ * Os meses oferecidos são os que **têm** mensalidades: oferecer um mês vazio era
+ * oferecer um ficheiro vazio.
+ */
+function ExportFeesDialog({
+  session,
+  periods,
+  onClose,
+}: {
+  session: ReturnType<typeof useSession>["session"];
+  /** Os períodos com mensalidades, do mais recente para trás. */
+  periods: string[];
+  onClose: () => void;
+}) {
+  // Do mais antigo para o mais recente — é a ordem de um intervalo.
+  const ordenados = useMemo(() => [...periods].sort(), [periods]);
+  const ultimo = ordenados[ordenados.length - 1];
+  const inicial = ordenados.includes(currentPeriod) ? currentPeriod : ultimo;
+
+  const [from, setFrom] = useState(inicial);
+  const [to, setTo] = useState(inicial);
+  const [filtro, setFiltro] = useState<ExportFiltro>("todas");
+  const [busy, setBusy] = useState(false);
+  const [erro, setErro] = useState<string | null>(null);
+
+  // Escolhido ao contrário, vale à mesma: trocar em silêncio é melhor do que uma
+  // mensagem de erro sobre uma coisa que se percebe na mesma.
+  const de = from <= to ? from : to;
+  const ate = from <= to ? to : from;
+
+  /** A época que contém hoje — de Agosto a Julho. */
+  const epoca = useMemo(() => {
+    const ano = today.getMonth() + 1 >= 8 ? today.getFullYear() : today.getFullYear() - 1;
+    return { de: `${ano}-08`, ate: `${ano + 1}-07`, label: `Época ${ano}/${String(ano + 1).slice(2)}` };
+  }, []);
+
+  const atalhos = [
+    { label: "Este mês", de: currentPeriod, ate: currentPeriod },
+    { label: "Últimos 3 meses", de: recuar(currentPeriod, 2), ate: currentPeriod },
+    { label: epoca.label, de: epoca.de, ate: epoca.ate },
+    { label: "Tudo", de: ordenados[0], ate: ultimo },
+  ];
+
+  const incluiEstado = EXPORT_FILTROS.find((f) => f.value === filtro) ?? EXPORT_FILTROS[0];
+  const linhas = useMemo(
+    () =>
+      listAllFees(session)
+        .filter((f) => f.period >= de && f.period <= ate)
+        .filter((f) => incluiEstado.inclui(f.status))
+        .sort(
+          (a, b) =>
+            a.period.localeCompare(b.period) ||
+            (athleteById(a.athleteId)?.name ?? "").localeCompare(athleteById(b.athleteId)?.name ?? ""),
+        ),
+    [session, de, ate, incluiEstado],
+  );
+
+  const totalCents = linhas.reduce((n, f) => n + f.amountCents, 0);
+  const nome = nomeDoFicheiro({ from: de, to: ate, statusLabel: incluiEstado.label });
+
+  async function exportar() {
+    setBusy(true);
+    setErro(null);
+    try {
+      await exportFees(
+        linhas.map((fee) => {
+          const atleta = athleteById(fee.athleteId);
+          const encarregados = guardiansOf(fee.athleteId);
+          return {
+            fee,
+            athlete: atleta?.name ?? "—",
+            team: teamById(atleta?.teamId ?? "")?.name ?? "Sem equipa",
+            guardians: encarregados.map((g) => g.name).join(", "),
+            // Um contacto por linha, não três: quem vai ligar precisa de um
+            // número, e o do encarregado é o que costuma atender.
+            contact: encarregados.map((g) => g.phone || g.email).find(Boolean) ?? "",
+          };
+        }),
+        { from: de, to: ate, statusLabel: incluiEstado.label },
+      );
+      onClose();
+    } catch (e) {
+      setErro(e instanceof Error ? e.message : "Não foi possível gerar o ficheiro.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  const opcoesDeMes = [...ordenados].reverse().map((p) => ({ value: p, label: periodLabel(p) }));
+
+  return (
+    <Dialog
+      labelledBy="exportar-mensalidades"
+      title="Exportar mensalidades"
+      subtitle="Um ficheiro Excel com uma linha por mensalidade, mais uma folha de resumo."
+      onClose={onClose}
+      width={520}
+      footer={
+        <>
+          <button type="button" className="ctl-ghost" onClick={onClose}>
+            Cancelar
+          </button>
+          <button
+            type="button"
+            className="ctl-primary"
+            disabled={busy || linhas.length === 0}
+            onClick={() => void exportar()}
+          >
+            {busy ? (
+              <>
+                <Loader2 className="size-3.5 animate-spin" strokeWidth={1.75} />
+                A gerar…
+              </>
+            ) : (
+              <>
+                <Download className="size-3.5" strokeWidth={1.75} />
+                Exportar {linhas.length > 0 ? linhas.length : ""}
+              </>
+            )}
+          </button>
+        </>
+      }
+    >
+      <div className="space-y-4 p-5">
+        <div>
+          <div className="mb-1.5 text-meta font-medium text-ink">Intervalo</div>
+          <div className="mb-2.5 flex flex-wrap gap-1.5">
+            {atalhos.map((a) => {
+              const alvoDe = clamp(a.de, ordenados);
+              const alvoAte = clamp(a.ate, ordenados);
+              const on = de === alvoDe && ate === alvoAte;
+              return (
+                <button
+                  key={a.label}
+                  type="button"
+                  aria-pressed={on}
+                  onClick={() => {
+                    setFrom(alvoDe);
+                    setTo(alvoAte);
+                  }}
+                  className={cx(
+                    "rounded-full border px-3 py-1.5 text-meta font-medium transition-colors duration-[120ms]",
+                    on
+                      ? "border-signal bg-signal-soft text-signal-ink"
+                      : "border-line text-ink-2 hover:border-line-strong hover:bg-sunken",
+                  )}
+                >
+                  {a.label}
+                </button>
+              );
+            })}
+          </div>
+
+          <div className="grid grid-cols-2 gap-3">
+            <label className="flex items-center gap-2">
+              <span className="shrink-0 text-meta text-ink-3">De</span>
+              <SelectField className="w-full" aria-label="Mês inicial" value={from} onChange={setFrom} options={opcoesDeMes} />
+            </label>
+            <label className="flex items-center gap-2">
+              <span className="shrink-0 text-meta text-ink-3">Até</span>
+              <SelectField className="w-full" aria-label="Mês final" value={to} onChange={setTo} options={opcoesDeMes} />
+            </label>
+          </div>
+        </div>
+
+        <div>
+          <div className="mb-1.5 text-meta font-medium text-ink">Estado</div>
+          <SelectField
+            className="w-full"
+            aria-label="Estado das mensalidades a exportar"
+            value={filtro}
+            onChange={setFiltro}
+            options={EXPORT_FILTROS.map((f) => ({ value: f.value, label: f.label }))}
+          />
+        </div>
+
+        {/*
+          O que vai sair, antes de sair. Um ficheiro que se abre e vem vazio — ou
+          com o dobro do esperado — é uma viagem ao Excel para descobrir o que já
+          se podia saber aqui.
+        */}
+        <div className="rounded-[var(--radius-control)] border border-line bg-sunken/40 px-3 py-2.5">
+          <div className="text-body font-medium text-ink">
+            {linhas.length} {linhas.length === 1 ? "mensalidade" : "mensalidades"} · {money(totalCents)}
+          </div>
+          <div className="mt-0.5 truncate font-mono text-[11px] text-ink-3" title={nome}>
+            {nome}
+          </div>
+        </div>
+
+        {erro && <p className="text-meta text-risk">{erro}</p>}
+      </div>
+    </Dialog>
+  );
+}
+
+/** `2026-08` menos `n` meses. */
+function recuar(period: string, n: number): string {
+  const ano = Number(period.slice(0, 4));
+  const mes = Number(period.slice(5, 7)) - n;
+  const d = new Date(Date.UTC(ano, mes - 1, 1));
+  return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, "0")}`;
+}
+
+/**
+ * Encosta um mês ao intervalo que existe — um atalho nunca aponta para o vazio.
+ *
+ * "Últimos 3 meses" num clube que só tem dois meses de mensalidades tem de dar
+ * os dois, e não um selector preso num mês que não está na lista.
+ */
+function clamp(period: string, ordenados: string[]): string {
+  if (ordenados.length === 0) return period;
+  const primeiro = ordenados[0];
+  const ultimo = ordenados[ordenados.length - 1];
+  if (period <= primeiro) return primeiro;
+  if (period >= ultimo) return ultimo;
+  return ordenados.includes(period) ? period : (ordenados.find((p) => p >= period) ?? ultimo);
+}
+
 /**
  * Preços por equipa — o valor por omissão que cada atleta paga.
  *
@@ -521,12 +892,16 @@ function MissingCharges({
  */
 function TeamFeesDialog({
   session,
+  onSaved,
   onClose,
 }: {
   session: ReturnType<typeof useSession>["session"];
+  /** Um preço ficou gravado — a página lá fora tem de reler o que mudou. */
+  onSaved: () => void;
   onClose: () => void;
 }) {
   const teams = listTeams(session);
+  const [aplicarEm, setAplicarEm] = useState<AplicarEm>("atual");
 
   /*
    * O "Concluído" espera pelo que ficou a meio.
@@ -607,19 +982,28 @@ function TeamFeesDialog({
           <Empty title="Sem equipas ainda" />
         </div>
       ) : (
-        <ul>
-          {teams.map((t) => (
-            <li key={t.id} className="flex items-center gap-3 border-b border-line px-5 py-3 last:border-0">
-              <div className="min-w-0 flex-1">
-                <div className="truncate text-body font-medium text-ink">{t.name}</div>
-                <div className="text-meta text-ink-3">
-                  {t.athleteIds.length} {t.athleteIds.length === 1 ? "atleta" : "atletas"}
+        <>
+          <ApplyFromChoice value={aplicarEm} onChange={setAplicarEm} />
+          <ul>
+            {teams.map((t) => (
+              <li key={t.id} className="flex items-center gap-3 border-b border-line px-5 py-3 last:border-0">
+                <div className="min-w-0 flex-1">
+                  <div className="truncate text-body font-medium text-ink">{t.name}</div>
+                  <div className="text-meta text-ink-3">
+                    {t.athleteIds.length} {t.athleteIds.length === 1 ? "atleta" : "atletas"}
+                  </div>
                 </div>
-              </div>
-              <TeamFeeInput teamId={t.id} amountCents={t.feeCents} onBusy={marcar} />
-            </li>
-          ))}
-        </ul>
+                <TeamFeeInput
+                  teamId={t.id}
+                  amountCents={t.feeCents}
+                  aplicarEm={aplicarEm}
+                  onBusy={marcar}
+                  onSaved={onSaved}
+                />
+              </li>
+            ))}
+          </ul>
+        </>
       )}
     </Dialog>
   );
@@ -633,12 +1017,18 @@ function TeamFeesDialog({
 function TeamFeeInput({
   teamId,
   amountCents,
+  aplicarEm,
   onBusy,
+  onSaved,
 }: {
   teamId: string;
   amountCents: number | null;
+  /** A escolha feita no topo do diálogo — vai com cada gravação. */
+  aplicarEm: AplicarEm;
   /** Diz ao diálogo que este campo está a gravar — é o que segura o "Concluído". */
   onBusy?: (teamId: string, activo: boolean, falhou?: boolean) => void;
+  /** Gravou: a página lá fora relê as mensalidades em falta. */
+  onSaved?: () => void;
 }) {
   const [value, setValue] = useState(amountCents !== null ? (amountCents / 100).toFixed(2) : "");
   const [busy, setBusy] = useState(false);
@@ -661,8 +1051,9 @@ function TeamFeeInput({
     setError(false);
     let erro = false;
     try {
-      await apiPatch(`/api/teams/${teamId}/fee`, { amountCents: cents });
+      await apiPatch(`/api/teams/${teamId}/fee`, { amountCents: cents, aplicarEm });
       await reloadAcademy();
+      onSaved?.();
     } catch {
       erro = true;
       setError(true);
@@ -705,12 +1096,16 @@ function TeamFeeInput({
  */
 function AthleteFeesDialog({
   session,
+  onSaved,
   onClose,
 }: {
   session: ReturnType<typeof useSession>["session"];
+  /** Gravou: a página lá fora relê as mensalidades em falta. */
+  onSaved: () => void;
   onClose: () => void;
 }) {
   const athletes = listAthletes(session);
+  const [aplicarEm, setAplicarEm] = useState<AplicarEm>("atual");
   const [query, setQuery] = useState("");
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [amount, setAmount] = useState("");
@@ -743,9 +1138,15 @@ function AthleteFeesDialog({
     setError(null);
     setResult(null);
     try {
-      await apiPut("/api/athletes/fee", { athleteIds: [...selected], amountCents: cents });
+      await apiPut("/api/athletes/fee", { athleteIds: [...selected], amountCents: cents, aplicarEm });
       await reloadAcademy();
-      setResult(`Ajustados ${selected.size} ${selected.size === 1 ? "atleta" : "atletas"}.`);
+      onSaved();
+      setResult(
+        `Ajustados ${selected.size} ${selected.size === 1 ? "atleta" : "atletas"}` +
+          (aplicarEm === "atual"
+            ? `, com a mensalidade de ${periodLabel(currentPeriod)} emitida.`
+            : `. A cobrança começa em ${periodLabel(nextPeriod(currentPeriod))}.`),
+      );
       setSelected(new Set());
     } catch (err) {
       setError(err instanceof Error ? err.message : "Não foi possível guardar.");
@@ -772,6 +1173,8 @@ function AthleteFeesDialog({
         </>
       }
     >
+      <ApplyFromChoice value={aplicarEm} onChange={setAplicarEm} />
+
       <div className="border-b border-line p-4">
         <div className="relative">
           <Search className="pointer-events-none absolute top-1/2 left-2.5 size-3.5 -translate-y-1/2 text-ink-4" strokeWidth={1.75} />
