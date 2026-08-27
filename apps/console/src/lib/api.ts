@@ -455,7 +455,10 @@ export function attentionItems(session: Session): AttentionItem[] {
           ]
             .filter(Boolean)
             .join(" · ") || "Todas dentro dos próximos 30 dias",
-        to: "/atletas?filtro=medico",
+        // `filtro=todos` explícito: a lista abre em "Activos", e este número
+        // conta o clube inteiro. Sem isto, clicar num aviso de 5 fichas podia
+        // dar uma lista de 4 — a que faltava é de quem já saiu.
+        to: "/atletas?filtro=todos&sinal=medico",
         action: "Ver",
       });
     }
@@ -482,7 +485,7 @@ export function attentionItems(session: Session): AttentionItem[] {
       severity: "warn",
       title: `${out.length} ${out.length === 1 ? "atleta de baixa" : "atletas de baixa"}`,
       detail: "Indisponíveis para treinar e para convocatória",
-      to: wide ? "/atletas?filtro=baixa" : "/atletas",
+      to: wide ? "/atletas?filtro=todos&sinal=baixa" : "/atletas",
       action: "Ver",
     });
   }

@@ -3,7 +3,7 @@ import { useSearchParams } from "react-router-dom";
 import { PageHeader } from "@/components/Shell";
 import { NewAthleteDialog } from "@/components/NewAthleteDialog";
 import { ImportAthletesDialog } from "@/components/ImportAthletesDialog";
-import { AvailabilityTag, DataTable, Empty, Monogram, Panel, Pill, type Column } from "@/components/primitives";
+import { AvailabilityTag, cx, DataTable, Empty, Monogram, Panel, Pill, type Column } from "@/components/primitives";
 import { ResultCount, SearchInput, Segmented, Select, Toolbar } from "@/components/filters";
 import { Plus, Upload, Users } from "@/lib/icons";
 import { academy, currentPeriod, guardiansOf, listAthletes, listFees, listTeams, today } from "@/lib/api";
@@ -25,8 +25,37 @@ export default function Athletes() {
   // Redesenha quando o departamento clínico mexe numa baixa.
   useClinicalRecords();
 
-  const filter = params.get("filtro") ?? "todos";
-  const setFilter = (v: string) => setParams(v === "todos" ? {} : { filtro: v });
+  /*
+   * Dois filtros, e não um.
+   *
+   * Isto era um controlo só, com "Todos · Ficha médica · De baixa · Em pausa ·
+   * Saíram" na mesma fila. Mistura duas perguntas que não se excluem: **quem é
+   * que ainda está no clube** e **o que é que precisa de atenção**. Como
+   * partilhavam o mesmo botão, escolher "Ficha médica" descartava o estado — e
+   * não havia como fazer a pergunta que a direção faz de facto: *dos atletas
+   * activos, quais têm a ficha médica por regularizar?* Um atleta que saiu em
+   * Setembro aparecia na conta e mandava tratar de um exame de quem já não treina.
+   *
+   * Separadas, cruzam-se: o estado manda na lista, o sinal afina-a por cima.
+   */
+  const estado = params.get("filtro") ?? "activos";
+  const sinal = params.get("sinal") ?? "todos";
+
+  /*
+   * "Activos" por omissão.
+   *
+   * Abrir na lista completa punha à frente pessoas que já não treinam — e num
+   * clube com alguns anos essas são a maioria das linhas. Quem abre "Atletas"
+   * quer o plantel de hoje; o resto continua a um clique e continua a ter
+   * endereço próprio, porque é o estado por omissão que sai do URL, não o
+   * escolhido.
+   */
+  const setParam = (chave: "filtro" | "sinal", v: string, omissao: string) => {
+    const next = new URLSearchParams(params);
+    if (v === omissao) next.delete(chave);
+    else next.set(chave, v);
+    setParams(next);
+  };
 
   const athletes = listAthletes(session);
   const teams = listTeams(session);
@@ -38,14 +67,37 @@ export default function Athletes() {
     return athletes
       .filter((a) => (team === "all" ? true : a.teamId === team))
       .filter((a) => {
-        if (filter === "medico") return medicalState(a) !== "ok";
-        if (filter === "baixa") return availabilityOf(a.id) !== "available";
-        if (filter === "pausa") return a.status === "paused";
+        if (estado === "activos") return a.status === "active";
+        if (estado === "pausa") return a.status === "paused";
+        if (estado === "saiu") return a.status === "left";
+        return true;
+      })
+      .filter((a) => {
+        if (sinal === "medico") return medicalState(a) !== "ok";
+        if (sinal === "baixa") return availabilityOf(a.id) !== "available";
         return true;
       })
       .filter((a) => (q ? a.name.toLowerCase().includes(q) : true))
       .sort((a, b) => a.name.localeCompare(b.name, "pt"));
-  }, [athletes, team, filter, query]);
+  }, [athletes, team, estado, sinal, query]);
+
+  /*
+   * As contagens do estado respeitam o sinal escolhido, e não o contrário.
+   *
+   * Com "Ficha médica" ligado, "Activos 12" quer dizer doze activos com a ficha
+   * por tratar — que é o número que interessa nesse momento. O contrário
+   * — contar sempre tudo — punha na etiqueta um número que a lista por baixo não
+   * mostrava.
+   */
+  const noSinal = useMemo(
+    () =>
+      athletes.filter((a) => {
+        if (sinal === "medico") return medicalState(a) !== "ok";
+        if (sinal === "baixa") return availabilityOf(a.id) !== "available";
+        return true;
+      }),
+    [athletes, sinal],
+  );
 
   // O mesmo ecrã serve o diretor e o treinador — o que muda é o âmbito dos dados
   // (aplicado em listAthletes) e as colunas que as permissões deixam ver.
@@ -56,18 +108,33 @@ export default function Athletes() {
     {
       key: "name",
       header: "Atleta",
-      render: (a) => (
-        <div className="flex items-center gap-2.5">
-          <Monogram name={a.name} photoUrl={a.photoUrl} />
-          <div className="min-w-0">
-            <div className="flex items-center gap-1.5">
-              <span className="truncate font-medium text-ink">{shortName(a.name)}</span>
-              <AvailabilityTag availability={availabilityOf(a.id)} size="sm" />
+      render: (a) => {
+        /*
+         * Quem saiu não pode ler-se como quem ficou.
+         *
+         * A lista mistura os dois — "Todos" mostra tudo — e sem marca nenhuma um
+         * atleta que já não treina aqui aparece igual aos outros, com a mesma
+         * disponibilidade clínica ao lado. É a mesma correcção que a ficha levou:
+         * o estado tem de ser visível onde o nome é visível.
+         */
+        const saiu = a.status === "left";
+        return (
+          <div className="flex items-center gap-2.5">
+            <div className={saiu ? "opacity-55 grayscale" : undefined}>
+              <Monogram name={a.name} photoUrl={a.photoUrl} />
             </div>
-            <div className="text-meta text-ink-3 tabular">{age(new Date(a.birthdate), today)} anos</div>
+            <div className="min-w-0">
+              <div className="flex items-center gap-1.5">
+                <span className={cx("truncate font-medium", saiu ? "text-ink-3" : "text-ink")}>
+                  {shortName(a.name)}
+                </span>
+                {saiu ? <Pill tone="risk">Saiu</Pill> : <AvailabilityTag availability={availabilityOf(a.id)} size="sm" />}
+              </div>
+              <div className="text-meta text-ink-3 tabular">{age(new Date(a.birthdate), today)} anos</div>
+            </div>
           </div>
-        </div>
-      ),
+        );
+      },
     },
     {
       key: "team",
@@ -121,7 +188,7 @@ export default function Athletes() {
         const fee = feeByAthlete.get(a.id);
         if (!fee) return <span className="text-ink-4">—</span>;
         const tone = { paid: "ok", processing: "signal", pending: "warn", overdue: "risk", void: "neutral" } as const;
-        const label = { paid: "Pago", processing: "A confirmar", pending: "Pendente", overdue: "Vencido", void: "Anulada" };
+        const label = { paid: "Pago", processing: "A confirmar", pending: "Não pago", overdue: "Vencido", void: "Anulada" };
         return <Pill tone={tone[fee.status]}>{label[fee.status]}</Pill>;
       },
     },
@@ -160,13 +227,32 @@ export default function Athletes() {
       <Panel>
         <Toolbar>
           <Segmented
-            value={filter}
-            onChange={setFilter}
+            value={estado}
+            onChange={(v) => setParam("filtro", v, "activos")}
             options={[
-              { value: "todos", label: "Todos", count: athletes.length },
-              { value: "medico", label: "Ficha médica", count: athletes.filter((a) => medicalState(a) !== "ok").length },
-              { value: "baixa", label: "De baixa", count: athletes.filter((a) => availabilityOf(a.id) !== "available").length },
-              { value: "pausa", label: "Em pausa", count: athletes.filter((a) => a.status === "paused").length },
+              { value: "todos", label: "Todos", count: noSinal.length },
+              { value: "activos", label: "Activos", count: noSinal.filter((a) => a.status === "active").length },
+              { value: "pausa", label: "Em pausa", count: noSinal.filter((a) => a.status === "paused").length },
+              { value: "saiu", label: "Saíram", count: noSinal.filter((a) => a.status === "left").length },
+            ]}
+          />
+
+          {/*
+            O sinal, separado do estado.
+
+            Fica num `Select` e não numa segunda fila de botões porque não é a
+            pergunta principal: quase sempre está em "Todos", e ocupar mais uma
+            linha do cabeçalho com duas opções que raramente se tocam era pagar
+            espaço permanente por um gesto ocasional.
+          */}
+          <Select
+            label="Sinalizados"
+            value={sinal}
+            onChange={(v) => setParam("sinal", v, "todos")}
+            options={[
+              { value: "todos", label: "Sem filtro" },
+              { value: "medico", label: "Ficha médica por tratar" },
+              { value: "baixa", label: "De baixa" },
             ]}
           />
 

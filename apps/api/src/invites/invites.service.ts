@@ -225,7 +225,7 @@ export class InvitesService {
         // segunda leitura só para isso era outra ida à base de dados.
         const academy = await db.academy.findFirst({
           where: { id: ctx.academyId },
-          select: { slug: true, name: true, shortName: true, signalColor: true },
+          select: { slug: true, name: true, shortName: true, signalColor: true, logoUrl: true },
         });
 
         return {
@@ -251,7 +251,7 @@ export class InvitesService {
      *
      * Fora de propósito, e pela mesma razão que as fotografias assinadas se
      * resolvem fora dela: uma chamada de rede lá dentro segura uma ligação à base
-     * de dados durante o tempo que a SendGrid demorar a responder — e com o
+     * de dados durante o tempo que o serviço de email demorar a responder — e com o
      * `connection_limit` a 5, bastam cinco convites ao mesmo tempo para o servidor
      * inteiro ficar à espera.
      */
@@ -260,6 +260,7 @@ export class InvitesService {
         shortName: created.academy?.shortName ?? "Academia",
         name: created.academy?.name ?? "a academia",
         signalColor: created.academy?.signalColor,
+        logoUrl: created.academy?.logoUrl,
       },
       name,
       title: created.title,
@@ -267,7 +268,14 @@ export class InvitesService {
       expiresAt: created.expiresAt,
     });
 
-    const result = await this.mail.send({ to: email, toName: name, subject: mail.subject, html: mail.html, text: mail.text });
+    const result = await this.mail.send({
+      to: email,
+      toName: name,
+      subject: mail.subject,
+      html: mail.html,
+      text: mail.text,
+      kind: "staff-invite",
+    });
 
     return {
       id: created.id,

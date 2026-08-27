@@ -30,6 +30,9 @@ type Created = {
   trialEndsAt: string;
   /** O cargo com que a pessoa vai entrar. Vem do servidor — ver `initialRoles`. */
   roleName: string;
+  /** Se o convite já saiu por email. Ver `sendOwnerInvite` no servidor. */
+  emailed: boolean;
+  emailError?: string;
 };
 
 /** Os departamentos, para o cargo que não é o de presidente. */
@@ -143,28 +146,56 @@ export function NewAcademyDialog({ onClose, onCreated }: { onClose: () => void; 
         roleName: roleName.trim() || "Presidente",
         ...(roleDepartment ? { roleDepartment } : {}),
         ...(corTocada ? { signalColor: cor } : {}),
+        /*
+         * Com símbolo, o convite espera por ele.
+         *
+         * O email leva o emblema do clube no cabeçalho, e o emblema só se carrega
+         * depois de a academia ter id — é a pasta dele no armazenamento. Enviar
+         * o convite já fazia sair sempre um email com as iniciais em vez do
+         * símbolo que a pessoa acabou de escolher. Sem símbolo não há nada por
+         * que esperar, e o convite sai no mesmo pedido da criação — que é a
+         * garantia mais forte de que sai de todo.
+         */
+        ...(logo ? { deferInvite: true } : {}),
         planId: planId || undefined,
       });
 
       /*
        * O símbolo depois do clube, e nunca a bloqueá-lo.
        *
-       * Carrega-se para o Supabase directamente, em duas fases, e só existe
-       * pasta onde o pôr depois de a academia ter id — daí a ordem. Se falhar,
-       * o clube fica aberto e o convite gerado: dizer "não foi possível criar" a
+       * Carrega-se para o Supabase directamente, em duas fases. Se falhar, o
+       * clube fica aberto e o convite gerado: dizer "não foi possível criar" a
        * quem já tem um clube criado seria mentira, e mandá-lo tentar outra vez
-       * criava um segundo clube. Diz-se o que faltou e segue-se — o presidente
-       * carrega o emblema nas Definições, que é onde isto vive de verdade.
+       * criava um segundo clube. Diz-se o que faltou e segue-se.
        */
+      let comSimbolo = result;
       if (logo) {
+        let subiu = true;
         try {
           await enviarSimbolo(result.academy.id, logo);
         } catch {
-          setError("A academia foi criada, mas o símbolo não subiu. Carrega-o depois nas Definições do clube.");
+          subiu = false;
+          setError("O símbolo não subiu — o convite segue sem ele. Carrega-o depois nas Definições do clube.");
+        }
+
+        /*
+         * O convite adiado, agora. Sai mesmo que o símbolo tenha falhado: um
+         * clube sem emblema abre na mesma, um presidente sem convite não.
+         */
+        try {
+          const convite = await apiPost<{ inviteLink: string; emailed: boolean; emailError?: string }>(
+            `/academies/${result.academy.id}/convite`,
+            {},
+          );
+          comSimbolo = { ...result, ...convite };
+          if (subiu && convite.emailError) setError(`O convite não saiu por email: ${convite.emailError}`);
+        } catch (err) {
+          comSimbolo = { ...result, emailed: false };
+          setError(err instanceof Error ? err.message : "O convite não saiu por email. Envia o link à mão.");
         }
       }
 
-      setCreated(result);
+      setCreated(comSimbolo);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Não foi possível criar.");
     } finally {
@@ -515,7 +546,7 @@ export function NewAcademyDialog({ onClose, onCreated }: { onClose: () => void; 
             <div className="flex justify-end gap-2 pt-1">
               <button type="button" onClick={onClose} className="ctl-ghost">Cancelar</button>
               <button type="submit" className="ctl-primary" disabled={!valid || busy}>
-                {busy ? "A criar…" : "Criar e gerar convite"}
+                {busy ? "A criar…" : "Criar e enviar convite"}
               </button>
             </div>
           </form>
@@ -580,8 +611,18 @@ function Result({ created, aviso, onDone }: { created: Created; aviso: string | 
       <p className="text-body leading-relaxed text-ink-2">
         <strong className="font-medium text-ink">{created.academy.name}</strong> está criada em{" "}
         <span className="font-mono text-[13px]">{created.academy.slug}.academias.pt</span>, com o cargo de{" "}
-        <strong className="font-medium text-ink">{created.roleName}</strong>. Envia este link —
-        ao abri-lo escolhe a palavra-passe e começa a montar a academia.
+        <strong className="font-medium text-ink">{created.roleName}</strong>.{" "}
+        {/*
+          O que a página diz depende de o email ter saído.
+
+          Dizia sempre "envia este link", porque não havia email nenhum. Agora
+          que há, insistir nisso levava alguém a mandar uma segunda mensagem com
+          um link que a pessoa já tinha recebido — ou, pior, a ficar descansado
+          quando o envio falhou.
+        */}
+        {created.emailed
+          ? "O convite já seguiu por email. O link fica aqui para o caso de precisares de o mandar por outra via."
+          : "O convite não saiu por email — envia este link, que é a única porta que essa pessoa tem."}
       </p>
 
       <div className="rounded-[var(--radius-control)] border border-line bg-sunken p-3">

@@ -34,10 +34,17 @@ const KINDS: EventKind[] = ["training", "match", "tournament", "other"];
 export function NewEventDialog({
   session,
   day,
+  kind: kindInicial,
   onClose,
 }: {
   session: Session;
   day: Date;
+  /**
+   * O tipo com que o diálogo abre. Ausente é "treino", que é o que se marca mais
+   * vezes — mas quem chega da página de Jogos já disse o que vem cá fazer, e
+   * obrigá-lo a escolher "Jogo" outra vez seria perguntar duas vezes o mesmo.
+   */
+  kind?: EventKind;
   onClose: () => void;
 }) {
   const teams = listTeams(session);
@@ -45,7 +52,7 @@ export function NewEventDialog({
   const dressingRooms = useActiveCatalog("dressingRooms");
   const mayTargetWholeAcademy = session.scope?.teamIds === undefined;
 
-  const [kind, setKind] = useState<EventKind>("training");
+  const [kind, setKind] = useState<EventKind>(kindInicial ?? "training");
   const [teamId, setTeamId] = useState(teams[0]?.id ?? "");
   const [title, setTitle] = useState("");
   const [date, setDate] = useState(toInputDate(day));

@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { Link, useSearchParams } from "react-router-dom";
 import { PageHeader } from "@/components/Shell";
-import { Dialog } from "@/components/Dialog";
+import { Dialog, DialogField } from "@/components/Dialog";
 import { DataTable, Empty, Metric, MetricRow, Monogram, Panel, PanelHead, Pill, SelectField, cx, type Column } from "@/components/primitives";
 import { ResultCount, SearchInput, Segmented, Select, Toolbar } from "@/components/filters";
 import { CalendarDays, Check, ChevronDown, CircleCheck, Download, Loader2, Search, Send, Settings, TriangleAlert, Users, Wallet } from "@/lib/icons";
@@ -12,7 +12,6 @@ import {
   availablePeriods,
   guardiansOf,
   currentPeriod,
-  feeSummary,
   listAllFees,
   listAthletes,
   listFees,
@@ -28,10 +27,23 @@ import { can } from "@/lib/permissions";
 import type { Fee, FeeStatus } from "@/data/types";
 import { useSession } from "@/session";
 
+/**
+ * O estado de uma mensalidade, dito como quem o lê.
+ *
+ * "Pendente" era o rótulo de `pending` e dizia a coisa errada: em português,
+ * um pagamento pendente é um pagamento **a decorrer** — e essa é exactamente a
+ * descrição de `processing`, o estado que existe enquanto a euPago não confirma.
+ * Dois estados diferentes com o mesmo nome, e o mais comum dos dois a usar o
+ * nome do outro.
+ *
+ * "Não pago" não tem essa ambiguidade: ninguém pagou, e o prazo ainda não
+ * passou. Passado o prazo, "Vencido". São três palavras que a direcção já usa
+ * ao telefone com as famílias.
+ */
 const STATUS_LABEL: Record<FeeStatus, string> = {
   paid: "Pago",
   processing: "A confirmar",
-  pending: "Pendente",
+  pending: "Não pago",
   overdue: "Vencido",
   void: "Anulada",
 };
@@ -80,6 +92,20 @@ export default function Fees() {
     setParams(next, { replace: true });
   };
 
+  /*
+   * A equipa vive no endereço, como o estado.
+   *
+   * "Manda-me as mensalidades do Sub-19" passa a ser um link que se cola numa
+   * mensagem, e o botão de voltar desfaz o filtro. Guardar isto em estado local
+   * dava a mesma vista com um endereço que não a sabia descrever.
+   */
+  const equipa = params.get("equipa") ?? ALL;
+  const setEquipa = (v: string) => {
+    const next = new URLSearchParams(params);
+    v === ALL ? next.delete("equipa") : next.set("equipa", v);
+    setParams(next, { replace: true });
+  };
+
   // A dívida vencida vem de "?estado=overdue" a partir de "Precisa de atenção" —
   // e uma dívida antiga pode estar num mês que já não é o corrente. Por isso, se
   // se chega aqui a filtrar vencidas, o período abre em "Todos" para não escondê-la.
@@ -89,11 +115,25 @@ export default function Fees() {
   const debt = arrears(session);
 
   const rows: Fee[] = period === ALL ? listAllFees(session) : listFees(session, period);
+  const teams = listTeams(session);
+
+  /*
+   * As linhas do período, já no escalão escolhido.
+   *
+   * É daqui que sai tudo o que a página mostra — a tabela, as contagens dos
+   * separadores e as métricas de cima. Sem este passo comum, filtrar por equipa
+   * dava uma tabela do Sub-19 com o total facturado da academia inteira por
+   * cima, e o número grande é o que se lê primeiro.
+   */
+  const noEscopo = useMemo(
+    () => (equipa === ALL ? rows : rows.filter((f) => (athleteById(f.athleteId)?.teamId ?? "") === equipa)),
+    [rows, equipa],
+  );
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
     const order: Record<FeeStatus, number> = { overdue: 0, pending: 1, processing: 2, paid: 3, void: 4 };
-    return rows
+    return noEscopo
       .filter((f) => (estado === "todos" ? true : f.status === estado))
       .filter((f) => (q ? (athleteById(f.athleteId)?.name ?? "").toLowerCase().includes(q) : true))
       .sort(
@@ -102,9 +142,17 @@ export default function Fees() {
           b.period.localeCompare(a.period) ||
           a.dueDate.localeCompare(b.dueDate),
       );
-  }, [rows, estado, query]);
+  }, [noEscopo, estado, query]);
 
-  const scopedSummary = period === ALL ? summariseAll(rows) : feeSummary(session, period);
+  /*
+   * As métricas contam o que está em vista.
+   *
+   * Era `feeSummary(session, period)` — a academia inteira daquele mês — e
+   * `summariseAll` só no caso de "todos os períodos". São a mesma conta sobre
+   * listas diferentes; com o filtro de equipa a existir, a lista certa é sempre
+   * a que está no ecrã, e por isso passa a haver um caminho só.
+   */
+  const scopedSummary = summariseAll(noEscopo);
   const label = period === ALL ? "todos os períodos" : periodLabel(period);
 
   // A direção acerta o estado à mão — dinheiro em mão, uma bolsa, uma correção.
@@ -324,15 +372,30 @@ export default function Fees() {
                 ...periods.map((p) => ({ value: p, label: periodLabel(p) })),
               ]}
             />
+            {/*
+              Só com mais do que uma equipa. Num clube com um escalão só, este
+              selector tem uma opção a fingir que é uma escolha.
+            */}
+            {teams.length > 1 && (
+              <Select
+                label="Equipa"
+                value={equipa}
+                onChange={setEquipa}
+                options={[
+                  { value: ALL, label: "Todas as equipas" },
+                  ...teams.map((t) => ({ value: t.id, label: t.name })),
+                ]}
+              />
+            )}
             <Segmented
               value={estado}
               onChange={setEstado}
               options={[
-                { value: "todos", label: "Todas", count: rows.length },
-                { value: "overdue", label: "Vencidas", count: rows.filter((f) => f.status === "overdue").length },
-                { value: "pending", label: "Pendentes", count: rows.filter((f) => f.status === "pending").length },
-                { value: "processing", label: "A confirmar", count: rows.filter((f) => f.status === "processing").length },
-                { value: "paid", label: "Pagas", count: rows.filter((f) => f.status === "paid").length },
+                { value: "todos", label: "Todas", count: noEscopo.length },
+                { value: "overdue", label: "Vencidas", count: noEscopo.filter((f) => f.status === "overdue").length },
+                { value: "pending", label: "Não pagas", count: noEscopo.filter((f) => f.status === "pending").length },
+                { value: "processing", label: "A confirmar", count: noEscopo.filter((f) => f.status === "processing").length },
+                { value: "paid", label: "Pagas", count: noEscopo.filter((f) => f.status === "paid").length },
               ]}
             />
             <SearchInput value={query} onChange={setQuery} placeholder="Procurar atleta…" />
@@ -657,12 +720,8 @@ type ExportFiltro = (typeof EXPORT_FILTROS)[number]["value"];
  *
  * Uma mensalidade não tem dia: tem um **período**, `2026-08`. Um selector ao dia
  * obrigava a traduzir "de 14 de Março a 2 de Junho" para meses, e ninguém pensa
- * assim sobre mensalidades — pensa "de Janeiro a Agosto", ou "esta época". Por
- * isso o intervalo é de mês a mês, com atalhos para os pedidos que se repetem.
- *
- * A **época** vai de Agosto a Julho, a mesma janela que o resto do produto usa
- * para a idade dos atletas. Quem pede "as mensalidades desta época" quer isto, e
- * não o ano civil.
+ * assim sobre mensalidades — pensa "de Janeiro a Agosto". Por isso o intervalo é
+ * de mês a mês: dois campos, e mais nada.
  *
  * Os meses oferecidos são os que **têm** mensalidades: oferecer um mês vazio era
  * oferecer um ficheiro vazio.
@@ -693,19 +752,6 @@ function ExportFeesDialog({
   const de = from <= to ? from : to;
   const ate = from <= to ? to : from;
 
-  /** A época que contém hoje — de Agosto a Julho. */
-  const epoca = useMemo(() => {
-    const ano = today.getMonth() + 1 >= 8 ? today.getFullYear() : today.getFullYear() - 1;
-    return { de: `${ano}-08`, ate: `${ano + 1}-07`, label: `Época ${ano}/${String(ano + 1).slice(2)}` };
-  }, []);
-
-  const atalhos = [
-    { label: "Este mês", de: currentPeriod, ate: currentPeriod },
-    { label: "Últimos 3 meses", de: recuar(currentPeriod, 2), ate: currentPeriod },
-    { label: epoca.label, de: epoca.de, ate: epoca.ate },
-    { label: "Tudo", de: ordenados[0], ate: ultimo },
-  ];
-
   const incluiEstado = EXPORT_FILTROS.find((f) => f.value === filtro) ?? EXPORT_FILTROS[0];
   const linhas = useMemo(
     () =>
@@ -721,6 +767,7 @@ function ExportFeesDialog({
   );
 
   const totalCents = linhas.reduce((n, f) => n + f.amountCents, 0);
+  const meses = ordenados.filter((p) => p >= de && p <= ate).length;
   const nome = nomeDoFicheiro({ from: de, to: ate, statusLabel: incluiEstado.label });
 
   async function exportar() {
@@ -787,49 +834,25 @@ function ExportFeesDialog({
       }
     >
       <div className="space-y-4 p-5">
-        <div>
-          <div className="mb-1.5 text-meta font-medium text-ink">Intervalo</div>
-          <div className="mb-2.5 flex flex-wrap gap-1.5">
-            {atalhos.map((a) => {
-              const alvoDe = clamp(a.de, ordenados);
-              const alvoAte = clamp(a.ate, ordenados);
-              const on = de === alvoDe && ate === alvoAte;
-              return (
-                <button
-                  key={a.label}
-                  type="button"
-                  aria-pressed={on}
-                  onClick={() => {
-                    setFrom(alvoDe);
-                    setTo(alvoAte);
-                  }}
-                  className={cx(
-                    "rounded-full border px-3 py-1.5 text-meta font-medium transition-colors duration-[120ms]",
-                    on
-                      ? "border-signal bg-signal-soft text-signal-ink"
-                      : "border-line text-ink-2 hover:border-line-strong hover:bg-sunken",
-                  )}
-                >
-                  {a.label}
-                </button>
-              );
-            })}
-          </div>
+        {/*
+          Dois campos, e mais nada.
 
-          <div className="grid grid-cols-2 gap-3">
-            <label className="flex items-center gap-2">
-              <span className="shrink-0 text-meta text-ink-3">De</span>
-              <SelectField className="w-full" aria-label="Mês inicial" value={from} onChange={setFrom} options={opcoesDeMes} />
-            </label>
-            <label className="flex items-center gap-2">
-              <span className="shrink-0 text-meta text-ink-3">Até</span>
-              <SelectField className="w-full" aria-label="Mês final" value={to} onChange={setTo} options={opcoesDeMes} />
-            </label>
-          </div>
+          Havia por cima uma fila de atalhos — "Este mês", "Época", "Tudo" — e
+          num clube com poucos meses de histórico caíam todos no mesmo intervalo:
+          três botões acesos ao mesmo tempo, a dizerem que estavam escolhidos
+          três intervalos diferentes. Um estado impossível é pior do que um
+          atalho a menos, e escolher dois meses numa lista já é um gesto curto.
+        */}
+        <div className="grid grid-cols-2 gap-3">
+          <DialogField label="De">
+            <SelectField className="w-full" aria-label="Mês inicial" value={from} onChange={setFrom} options={opcoesDeMes} />
+          </DialogField>
+          <DialogField label="Até" hint={meses > 1 ? `${meses} meses` : undefined}>
+            <SelectField className="w-full" aria-label="Mês final" value={to} onChange={setTo} options={opcoesDeMes} />
+          </DialogField>
         </div>
 
-        <div>
-          <div className="mb-1.5 text-meta font-medium text-ink">Estado</div>
+        <DialogField label="Estado">
           <SelectField
             className="w-full"
             aria-label="Estado das mensalidades a exportar"
@@ -837,7 +860,7 @@ function ExportFeesDialog({
             onChange={setFiltro}
             options={EXPORT_FILTROS.map((f) => ({ value: f.value, label: f.label }))}
           />
-        </div>
+        </DialogField>
 
         {/*
           O que vai sair, antes de sair. Um ficheiro que se abre e vem vazio — ou
@@ -848,7 +871,10 @@ function ExportFeesDialog({
           <div className="text-body font-medium text-ink">
             {linhas.length} {linhas.length === 1 ? "mensalidade" : "mensalidades"} · {money(totalCents)}
           </div>
-          <div className="mt-0.5 truncate font-mono text-[11px] text-ink-3" title={nome}>
+          <div className="mt-0.5 text-meta text-ink-3">
+            {de === ate ? periodLabel(de) : `${periodLabel(de)} a ${periodLabel(ate)}`}
+          </div>
+          <div className="mt-1 truncate font-mono text-[11px] text-ink-4" title={nome}>
             {nome}
           </div>
         </div>
@@ -857,29 +883,6 @@ function ExportFeesDialog({
       </div>
     </Dialog>
   );
-}
-
-/** `2026-08` menos `n` meses. */
-function recuar(period: string, n: number): string {
-  const ano = Number(period.slice(0, 4));
-  const mes = Number(period.slice(5, 7)) - n;
-  const d = new Date(Date.UTC(ano, mes - 1, 1));
-  return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, "0")}`;
-}
-
-/**
- * Encosta um mês ao intervalo que existe — um atalho nunca aponta para o vazio.
- *
- * "Últimos 3 meses" num clube que só tem dois meses de mensalidades tem de dar
- * os dois, e não um selector preso num mês que não está na lista.
- */
-function clamp(period: string, ordenados: string[]): string {
-  if (ordenados.length === 0) return period;
-  const primeiro = ordenados[0];
-  const ultimo = ordenados[ordenados.length - 1];
-  if (period <= primeiro) return primeiro;
-  if (period >= ultimo) return ultimo;
-  return ordenados.includes(period) ? period : (ordenados.find((p) => p >= period) ?? ultimo);
 }
 
 /**

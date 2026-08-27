@@ -29,6 +29,15 @@ export type MailBrand = {
   name: string;
   /** A cor do clube. Cai para o verde da plataforma quando o clube não escolheu. */
   signalColor?: string | null;
+  /**
+   * O emblema, quando o clube já o carregou.
+   *
+   * Fica sempre **atrás** das iniciais, nunca em vez delas: metade dos clientes
+   * de email não carrega imagens remotas sem a pessoa pedir, e um cabeçalho que
+   * dependesse da imagem chegaria vazio. Com o `alt` nas iniciais, quem bloqueia
+   * imagens vê exactamente o que via antes.
+   */
+  logoUrl?: string | null;
 };
 
 const FALLBACK = "#0f6b62";
@@ -117,6 +126,8 @@ function initials(name: string): string {
 
 type Layout = {
   brand: MailBrand;
+  /** "Olá Rui," — a linha por cima do título. Omitir quando não se sabe o nome. */
+  greeting?: string;
   /** A primeira linha a seguir ao cabeçalho, em grande. */
   heading: string;
   /** Os parágrafos do corpo, já em texto simples. */
@@ -132,11 +143,33 @@ type Layout = {
  * Uma função só, porque três emails com três moldes divergem ao terceiro retoque
  * e passam a parecer de produtos diferentes.
  */
-function layout({ brand, heading, paragraphs, cta, notes }: Layout): string {
+function layout({ brand, greeting, heading, paragraphs, cta, notes }: Layout): string {
   const color = safeColor(brand.signalColor);
   // O texto por cima da cor do clube — preto num clube de amarelo, branco num de azul.
   const ink = inkOn(color);
   const mark = esc(initials(brand.shortName));
+
+  /*
+   * O emblema por cima das iniciais, e não em vez delas.
+   *
+   * A imagem vive dentro da mesma célula redonda: quando carrega, tapa as
+   * iniciais; quando o cliente de email bloqueia imagens remotas — o que é o
+   * comportamento por omissão em boa parte deles — fica o `alt`, que são as
+   * iniciais, e o cabeçalho continua a ler-se igual ao de sempre.
+   *
+   * `width`/`height` em atributos e não só em CSS porque o Outlook ignora o
+   * estilo e desenharia a imagem no tamanho original.
+   */
+  const emblema = brand.logoUrl
+    ? '<img src="' + esc(brand.logoUrl) + '" alt="' + mark + '" width="34" height="34" ' +
+      'style="display:block;width:34px;height:34px;border:0;border-radius:50%;object-fit:contain;' +
+      'background:' + ink.veil + ';font-family:Helvetica,Arial,sans-serif;font-size:12px;' +
+      'font-weight:700;color:' + ink.fg + ';text-align:center;line-height:34px;" />'
+    : mark;
+
+  const ola = greeting
+    ? '<p style="margin:0 0 10px;font-size:15px;line-height:1.6;color:#6b6862;">' + esc(greeting) + "</p>"
+    : "";
   const corpo = paragraphs
     .map(
       (p) =>
@@ -175,7 +208,7 @@ function layout({ brand, heading, paragraphs, cta, notes }: Layout): string {
         <tr>
           <td style="width:34px;height:34px;background:${ink.veil};border-radius:50%;
                      text-align:center;vertical-align:middle;font-family:Helvetica,Arial,sans-serif;
-                     font-size:12px;font-weight:700;color:${ink.fg};">${mark}</td>
+                     font-size:12px;font-weight:700;color:${ink.fg};">${emblema}</td>
           <td style="padding-left:11px;font-family:Helvetica,Arial,sans-serif;font-size:15px;
                      font-weight:600;color:${ink.fg};letter-spacing:0.01em;">${esc(brand.shortName)}</td>
         </tr>
@@ -185,6 +218,7 @@ function layout({ brand, heading, paragraphs, cta, notes }: Layout): string {
 
   <tr>
     <td style="padding:30px 28px 26px;font-family:Helvetica,Arial,sans-serif;">
+      ${ola}
       <h1 style="margin:0 0 16px;font-size:21px;line-height:1.3;font-weight:600;color:#1c1a18;">
         ${esc(heading)}
       </h1>
@@ -258,7 +292,14 @@ export function staffInviteEmail(input: {
 
   return {
     subject: input.brand.shortName + " · convite para " + input.title,
-    html: layout({ brand: input.brand, heading, paragraphs, cta: { label: "Aceitar o convite", url: input.link }, notes }),
+    html: layout({
+      brand: input.brand,
+      greeting: "Olá " + primeiro + ",",
+      heading,
+      paragraphs,
+      cta: { label: "Aceitar o convite", url: input.link },
+      notes,
+    }),
     text: plain(
       "Olá " + primeiro + ",",
       [
@@ -304,6 +345,87 @@ export function familyInviteEmail(input: {
         "Para entrares vais precisar do número de contribuinte e da data de nascimento do teu educando — é assim que o clube confirma que és tu.",
       ],
       { label: "Abrir a app", url: input.link },
+      notes.map(semTags),
+    ),
+  };
+}
+
+/* -------------------------------------------------------------------------- */
+/* Clube acabado de abrir — o primeiro convite, o de quem o vai montar         */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * O convite de quem recebe um clube vazio.
+ *
+ * ## Porque é que não é o `staffInviteEmail`
+ *
+ * Aquele diz "X convidou-te para Y" — um clube que já existe a chamar mais uma
+ * pessoa para dentro. Aqui não há clube nenhum a convidar: a plataforma abriu-o
+ * agora, não tem lá ninguém, e quem recebe isto é a primeira pessoa e a que vai
+ * montar tudo. A frase certa é outra, e a expectativa que ela cria também: não é
+ * "tens acesso", é "isto ainda está por fazer e és tu que o fazes".
+ *
+ * ## De quem vem
+ *
+ * O assunto diz **Academias** porque é a plataforma que envia e quem recebe pode
+ * não reconhecer mais nada — pode nem saber que o clube já foi criado. O corpo
+ * leva as cores e o nome do clube, que é sobre o que isto é.
+ */
+export function academyOwnerInviteEmail(input: {
+  brand: MailBrand;
+  name: string;
+  /** O cargo com que entra: "Presidente", ou o que o clube usar. */
+  title: string;
+  link: string;
+  expiresAt: Date;
+  /**
+   * Já tem conta nesta plataforma, com este email.
+   *
+   * Muda a frase, porque muda o que a página lhe vai pedir: quem tem conta
+   * confirma a palavra-passe que já usa — não escolhe uma nova. Prometer aqui
+   * "escolhes a tua palavra-passe" e depois mostrar um campo a dizer "a tua
+   * palavra-passe atual" é o género de contradição que faz uma pessoa achar que
+   * abriu o link errado. Ver `invited_account` e `existingAccountFields`.
+   */
+  hasAccount?: boolean;
+}): { subject: string; html: string; text: string } {
+  const primeiro = input.name.trim().split(/\s+/)[0] || input.name;
+
+  const entrada = input.hasAccount
+    ? "Já tens conta na plataforma com este email — confirmas a palavra-passe que já usas e este clube passa a estar lá dentro."
+    : "Ao abrir o convite escolhes a tua palavra-passe.";
+
+  const heading = esc(input.brand.name) + " está pronta";
+  const paragraphs = [
+    // Sem artigo antes do nome do clube, pela mesma razão do `staffInviteEmail`:
+    // o nome vem da base de dados e não há artigo que sirva a todos.
+    "Criámos " + esc(input.brand.name) + " na plataforma Academias e o acesso é teu, como <strong>" +
+      esc(input.title) + "</strong>.",
+    entrada + " A partir daí montas as equipas, o staff e os atletas — e as famílias passam a ter a app do clube.",
+  ];
+  const notes = [
+    "Este convite é válido até " + dia(input.expiresAt) + ".",
+    "Só funciona para o endereço a que foi enviado, e só pode ser usado uma vez.",
+    "Se não estavas à espera disto, ignora este email — sem abrir o link, nada acontece.",
+  ];
+
+  return {
+    subject: "Academias · convite para gerir o teu clube",
+    html: layout({
+      brand: input.brand,
+      greeting: "Olá " + primeiro + ",",
+      heading,
+      paragraphs,
+      cta: { label: "Começar a montar o clube", url: input.link },
+      notes,
+    }),
+    text: plain(
+      "Olá " + primeiro + ",",
+      [
+        "Criámos " + input.brand.name + " na plataforma Academias e o acesso é teu, como " + input.title + ".",
+        semTags(entrada) + " A partir daí montas as equipas, o staff e os atletas — e as famílias passam a ter a app do clube.",
+      ],
+      { label: "Começar a montar o clube", url: input.link },
       notes.map(semTags),
     ),
   };

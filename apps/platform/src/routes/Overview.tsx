@@ -80,12 +80,78 @@ export default function Overview() {
           <Metric label="Staff" value={String(people.staff)} note="treinadores, direção, clínico" />
           <Metric label="Academias" value={String(a.total)} note={`${a.cancelled} canceladas`} />
         </MetricRow>
+
+        {/* Guardado: durante um deploy a API pode ainda ser a antiga, e um painel
+            que rebenta na página de entrada é pior do que um painel a menos. */}
+        {d.email && <Email data={d.email} />}
       </div>
     </>
   );
 }
 
 /* -------------------------------------------------------------------------- */
+
+/** Os tipos de email, ditos como quem os manda. */
+const KIND_LABEL: Record<string, string> = {
+  "staff-invite": "convites a staff",
+  "family-invite": "convites a famílias",
+  "platform-invite": "convites à plataforma",
+  outro: "outros",
+};
+
+/**
+ * O correio que saiu hoje.
+ *
+ * ## Porque é que isto está aqui e não escondido nas definições
+ *
+ * É a única peça do produto com um **tecto diário**: o plano de envio é gratuito
+ * e acaba a meio do dia sem avisar ninguém. Um convite que não sai não dá erro a
+ * quem o mandou — a academia fica à espera, e a primeira notícia costuma ser um
+ * telefonema a dizer que o treinador nunca recebeu nada.
+ *
+ * Três números e uma frase. **Hoje** é o que se veio ver; **falhados** é o único
+ * que exige uma acção, e por isso é o único que ganha cor; **ontem** existe só
+ * para dar escala — "31" pode ser um dia normal ou o triplo do costume, e sem o
+ * lado a lado não há como saber.
+ */
+function Email({ data }: { data: OverviewData["email"] }) {
+  const nada = data.today === 0 && data.yesterday === 0;
+
+  return (
+    <Panel>
+      <PanelHead title="Email" hint="convites e avisos enviados pelo servidor" />
+      <div className="flex flex-wrap">
+        <Metric
+          label="Enviados hoje"
+          value={String(data.today)}
+          note={
+            nada
+              ? "ainda nenhum — e nenhum ontem"
+              : data.byKind.length > 0
+                ? data.byKind.map((k) => `${k.count} ${KIND_LABEL[k.kind] ?? k.kind}`).join(" · ")
+                : "nenhum hoje"
+          }
+        />
+        <Metric
+          label="Falharam hoje"
+          value={String(data.failedToday)}
+          note={data.failedToday === 0 ? "todos entregues ao serviço" : "o motivo fica no registo do servidor"}
+        />
+        <Metric label="Ontem" value={String(data.yesterday)} note="para dar escala" />
+      </div>
+      {data.failedToday > 0 && (
+        /*
+          A cor só aparece quando há mesmo alguma coisa. Um painel que está sempre
+          vermelho deixa de ser lido — a mesma regra dos alertas aqui em cima.
+        */
+        <p className="border-t border-line px-5 py-2.5 text-meta text-[#a82a20]">
+          {data.failedToday === 1 ? "Um email não saiu" : `${data.failedToday} emails não saíram`} — quase sempre é
+          o domínio por verificar ou o tecto diário do plano.
+        </p>
+      )}
+    </Panel>
+  );
+}
 
 /**
  * O que precisa de atenção.

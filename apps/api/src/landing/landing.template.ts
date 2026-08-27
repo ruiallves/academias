@@ -363,12 +363,27 @@ ${academy.logoUrl ? `<meta property="og:image" content="${esc(academy.logoUrl)}"
    */
   body.desktop { display: block; }
 
+  /*
+    Coluna, e nao so uma caixa a centrar.
+
+    O rodape com o endereco do clube esta a seguir ao cartao e faz parte da
+    coluna. Estava absoluto e colado a 26px do fundo do palco, alheio ao cartao,
+    e isso aguentava-se enquanto o cartao fosse o do login, baixo. O do convite
+    da familia e bem mais alto: o cartao descia ate onde o rodape ja estava e
+    ficavam um por cima do outro, sem margem nenhuma.
+
+    min-height, e nao height, e o que faz isto continuar a funcionar quando o
+    conteudo passa a altura do ecra: o palco cresce, nada e cortado pelo
+    overflow hidden, e o rodape acompanha o cartao em vez de ficar preso.
+  */
   .stage {
     position: relative;
     min-height: 100dvh;
     display: flex;
+    flex-direction: column;
     align-items: center;
     justify-content: center;
+    gap: 26px;
     padding: 40px 24px;
     background: var(--canvas);
     overflow: hidden;
@@ -422,8 +437,8 @@ ${academy.logoUrl ? `<meta property="og:image" content="${esc(academy.logoUrl)}"
 
   /* O endereco do clube, por baixo do cartao. Situa sem ocupar o cartao. */
   .stage-foot {
-    position: absolute;
-    bottom: 26px; left: 0; right: 0;
+    position: relative;
+    margin: 0;
     text-align: center;
     font-size: 12px;
     letter-spacing: .06em;
@@ -909,8 +924,7 @@ function renderDesktopFamilyInvite(academy: AcademyBranding, shortName: string, 
           <p class="eyebrow" style="text-align:left">Convite da família</p>
           <h1>Abre isto no teu telemóvel</h1>
           <p class="subtitle" style="text-align:left">
-            A aplicação da ${name} é feita para o telemóvel. Copia o link e abre-o lá — numa mensagem a ti
-            próprio, no WhatsApp, ou no email.
+            A aplicação da ${name} é feita para o telemóvel. Copia o link e abre-o lá.
           </p>
 
           <div class="panel">

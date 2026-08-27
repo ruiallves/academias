@@ -1359,6 +1359,36 @@ model CalendarEvent {
 /// Uma pessoa tem tantas quantas os dispositivos onde instalou a app. Quando o
 /// serviço de push responde 404/410, a subscrição morreu (app desinstalada ou
 /// permissão revogada) e apaga-se — senão a tabela enche-se de endpoints mortos.
+/// Um email que o servidor tentou enviar.
+///
+/// Existe para uma pergunta que não tinha resposta: **quantos emails saíram
+/// hoje?**. O painel da plataforma mostra-a, e num plano gratuito com tecto
+/// diário essa é a diferença entre saber e descobrir pelo convite que não chegou.
+///
+/// Guarda-se a tentativa, não o envio: uma linha com `ok = false` e o motivo vale
+/// mais do que a ausência de linha nenhuma — é ela que explica o convite que a
+/// pessoa jura que nunca recebeu.
+model MailLog {
+  id String @id @default(cuid())
+
+  /// O que era: `staff-invite`, `family-invite`, `platform-invite`.
+  kind String
+  /// Para quem. Já está na base noutro sítio; aqui é o que torna a linha útil
+  /// quando alguém pergunta "o convite ao João saiu?".
+  to   String
+
+  ok     Boolean
+  /// A razão, quando falhou. Curta — a mensagem que a consola mostraria.
+  reason String?
+  /// Quem entregou: Resend, Brevo, SendGrid. Sobrevive a uma troca de serviço.
+  provider String
+
+  createdAt DateTime @default(now())
+
+  /// Por dia é como isto é lido, sempre.
+  @@index([createdAt])
+}
+
 model PushSubscription {
   id       String @id @default(cuid())
   userId   String

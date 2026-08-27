@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import { Link, useParams } from "react-router-dom";
+import { Link, useNavigate, useParams } from "react-router-dom";
 import { PageHeader } from "@/components/Shell";
 import { Attention } from "@/components/Attention";
 import { EventDetail } from "@/components/EventDetail";
@@ -54,6 +54,7 @@ import { useSession } from "@/session";
 import {
   groupByDay,
   KIND_LABEL,
+  matchPagePath,
   resultOutcome,
   tallyNoun,
   useEvents,
@@ -91,6 +92,7 @@ export default function TeamDetail() {
   const { session } = useSession();
   const [tab, setTab] = useState<Tab>("overview");
   const [selectedEventId, setSelectedEventId] = useState<string | null>(null);
+  const navigate = useNavigate();
 
   useClinicalRecords();
 
@@ -104,6 +106,26 @@ export default function TeamDetail() {
   const to = useMemo(() => new Date(today.getFullYear() + 1, 11, 31), []);
   const events = useEvents(session, from, to).filter((e) => e.teamId === id);
   const selectedEvent = events.find((e) => e.id === selectedEventId) ?? null;
+
+  /**
+   * Clicar num evento: um **jogo** vai para a página dele, tudo o resto abre a
+   * gaveta ao lado.
+   *
+   * Aqui abria sempre a gaveta. O calendário do clube já levava à página do jogo,
+   * o da equipa não — a mesma coisa comportava-se de duas maneiras conforme o
+   * sítio de onde se lá chegava, e a gaveta não tem onde pôr a convocatória, a
+   * ficha nem o staff. A regra vive em `matchPagePath`, para não voltarem a
+   * divergir.
+   *
+   * Vale para os três sítios que chamam isto: o "A seguir", as bolinhas da forma
+   * recente e o separador do calendário. Todos tiram os ids do mesmo `events`.
+   */
+  function abrir(eventId: string) {
+    const evento = events.find((e) => e.id === eventId);
+    const pagina = evento ? matchPagePath(evento) : null;
+    if (pagina) navigate(pagina);
+    else setSelectedEventId(eventId);
+  }
 
   if (!team || !inScope) {
     return (
@@ -171,7 +193,7 @@ export default function TeamDetail() {
           played={played}
           attendance30={attendance30}
           nextEvent={nextEvent}
-          onSelectEvent={setSelectedEventId}
+          onSelectEvent={abrir}
         />
       )}
 
@@ -184,7 +206,7 @@ export default function TeamDetail() {
       )}
 
       {tab === "calendar" && (
-        <CalendarTab events={events} onSelect={setSelectedEventId} />
+        <CalendarTab events={events} onSelect={abrir} />
       )}
 
       {tab === "staff" && <StaffTab coaches={coaches} />}
@@ -391,7 +413,7 @@ function RosterTab({
         const fee = feeByAthlete.get(a.id);
         if (!fee) return <span className="text-ink-4">—</span>;
         const tone = { paid: "ok", processing: "signal", pending: "warn", overdue: "risk", void: "neutral" } as const;
-        const label = { paid: "Pago", processing: "A confirmar", pending: "Pendente", overdue: "Vencido", void: "Anulada" };
+        const label = { paid: "Pago", processing: "A confirmar", pending: "Não pago", overdue: "Vencido", void: "Anulada" };
         return <Pill tone={tone[fee.status]}>{label[fee.status]}</Pill>;
       },
     },
@@ -1012,7 +1034,7 @@ function teamAttention(session: Session, teamId: string, roster: Athlete[]): Att
         ]
           .filter(Boolean)
           .join(" · ") || "Dentro dos próximos 30 dias",
-      to: "/atletas?filtro=medico",
+      to: "/atletas?filtro=todos&sinal=medico",
       action: "Ver",
     });
   }

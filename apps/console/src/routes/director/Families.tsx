@@ -4,10 +4,10 @@ import { PageHeader } from "@/components/Shell";
 import { DataTable, Empty, Metric, MetricRow, Monogram, Panel, Pill, type Column } from "@/components/primitives";
 import { ResultCount, SearchInput, Segmented, Toolbar } from "@/components/filters";
 import { FamilyInviteDialog } from "@/components/FamilyInviteDialog";
-import { Check, Copy, Home, Link2, Send } from "@/lib/icons";
-import { athleteById, currentPeriod, listFees, listGuardians, teamById } from "@/lib/api";
+import { Check, Copy, Home, Link2, Send, Trash2 } from "@/lib/icons";
+import { athleteById, listGuardians, teamById } from "@/lib/api";
 import { percent, shortName } from "@/lib/format";
-import { apiGet, apiPatch } from "@/lib/http";
+import { apiDelete, apiGet, apiPatch } from "@/lib/http";
 import { reloadAcademy } from "@/lib/store";
 import { can } from "@/lib/permissions";
 import { cx } from "@/components/primitives";
@@ -31,8 +31,6 @@ export default function Families() {
   const setFilter = (v: string) => setParams(v === "todas" ? {} : { filtro: v });
 
   const guardians = listGuardians();
-  const fees = listFees(session, currentPeriod);
-  const feeByAthlete = useMemo(() => new Map(fees.map((f) => [f.athleteId, f])), [fees]);
   const [busy, setBusy] = useState<string | null>(null);
   const [erro, setErro] = useState<string | null>(null);
   const mayWrite = can(session, "family:write");
@@ -82,6 +80,29 @@ export default function Families() {
       await reloadAcademy();
     } catch (e) {
       setErro(e instanceof Error ? e.message : "Não foi possível mudar o acesso.");
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  /*
+   * Apagar a conta de um encarregado.
+   *
+   * Ao lado de "Desactivar" e não em vez dele, porque respondem a coisas
+   * diferentes: desactivar é para o pai que saiu do clube — a ligação ao educando
+   * fica, e o histórico do atleta continua a fazer sentido. Apagar é para a conta
+   * que não devia existir: um email trocado, um registo duplicado pelo link da
+   * app. O servidor recusa assim que houver alguma coisa escrita em nome dela.
+   */
+  async function apagar(g: Guardian) {
+    if (!confirm(`Apagar a conta de ${g.name}? Perde o acesso e deixa de estar ligada aos educandos.`)) return;
+    setBusy(g.id);
+    setErro(null);
+    try {
+      await apiDelete(`/api/memberships/${g.id}`);
+      await reloadAcademy();
+    } catch (e) {
+      setErro(e instanceof Error ? e.message : "Não foi possível apagar a conta.");
     } finally {
       setBusy(null);
     }
@@ -140,39 +161,31 @@ export default function Families() {
         g.appInstalled ? <Pill tone="ok">Instalada</Pill> : <Pill tone="warn">Por instalar</Pill>,
     },
     {
-      key: "fee",
-      header: "Agosto",
-      align: "right",
-      render: (g) => {
-        const statuses = g.athleteIds.map((id) => feeByAthlete.get(id)?.status).filter(Boolean);
-        if (statuses.length === 0) return <span className="text-ink-4">—</span>;
-        // A família tem o pior estado dos seus educandos — é assim que a secretaria pensa.
-        const worst = statuses.includes("overdue")
-          ? "overdue"
-          : statuses.includes("pending")
-            ? "pending"
-            : statuses.includes("processing")
-              ? "processing"
-              : "paid";
-        const tone = { paid: "ok", processing: "signal", pending: "warn", overdue: "risk" } as const;
-        const label = { paid: "Em dia", processing: "A confirmar", pending: "Pendente", overdue: "Vencido" };
-        return <Pill tone={tone[worst]}>{label[worst]}</Pill>;
-      },
-    },
-    {
       key: "acesso",
       header: "",
       align: "right",
       render: (g) =>
         mayWrite ? (
-          <button
-            type="button"
-            onClick={() => void toggleAcesso(g)}
-            disabled={busy === g.id}
-            className={cx("ctl-ghost", g.isActive ? "text-ink-3 hover:text-risk" : "text-ok")}
-          >
-            {busy === g.id ? "…" : g.isActive ? "Desactivar" : "Reactivar"}
-          </button>
+          <div className="flex items-center justify-end gap-0.5">
+            <button
+              type="button"
+              onClick={() => void toggleAcesso(g)}
+              disabled={busy === g.id}
+              className={cx("ctl-ghost", g.isActive ? "text-ink-3 hover:text-risk" : "text-ok")}
+            >
+              {busy === g.id ? "…" : g.isActive ? "Desactivar" : "Reactivar"}
+            </button>
+            <button
+              type="button"
+              onClick={() => void apagar(g)}
+              disabled={busy === g.id}
+              title="Apagar conta"
+              aria-label={`Apagar a conta de ${g.name}`}
+              className="flex size-7 shrink-0 items-center justify-center rounded-[6px] text-ink-4 transition-colors duration-[120ms] hover:bg-risk-soft hover:text-risk"
+            >
+              <Trash2 className="size-3.5" strokeWidth={1.75} />
+            </button>
+          </div>
         ) : null,
     },
   ];

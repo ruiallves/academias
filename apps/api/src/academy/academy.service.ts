@@ -1,4 +1,4 @@
-import { BadRequestException, ForbiddenException, Injectable, NotFoundException } from "@nestjs/common";
+import { BadRequestException, ConflictException, ForbiddenException, Injectable, NotFoundException } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
 import { Prisma, type CalendarEventKind, type Role } from "@prisma/client";
 import { PrismaService, type ScopedClient } from "../prisma/prisma.service";
@@ -543,6 +543,114 @@ export class AcademyService {
 
       await db.membership.update({ where: { id: membershipId }, data: { isActive: active } });
       return { ok: true, isActive: active };
+    });
+  }
+
+  /**
+   * Apagar uma conta — e só quando não há nada para perder.
+   *
+   * ## A mesma regra dos atletas, pela mesma razão
+   *
+   * Desactivar é o caminho normal e está mesmo ao lado (`setMembershipActive`):
+   * a pessoa sai das listas e perde o acesso, mas continua no histórico das
+   * equipas que treinou, das avaliações que escreveu e dos avisos que publicou.
+   *
+   * Apagar é para o que nunca chegou a existir: um convite aceite com o nome
+   * errado, uma conta duplicada, um teste. Assim que houver trabalho agarrado —
+   * um treino que ela deu, uma entrada clínica que assinou — apagá-la deixaria
+   * esse trabalho sem autor, e um relatório clínico sem autor vale menos do que
+   * um relatório clínico.
+   *
+   * ## O encarregado é um caso à parte, e não é
+   *
+   * Um pai só tem, tipicamente, a ligação ao educando — e essa não é histórico, é
+   * uma ligação. Por isso um encarregado que se apague por engano apaga-se mesmo,
+   * sem drama. O que o protege é o mesmo que protege toda a gente: se tiver
+   * escrito ou liderado alguma coisa, deixa de se poder apagar.
+   */
+  async removeMembership(ctx: RequestContext, membershipId: string) {
+    if (!can(ctx, "staff:write")) throw new ForbiddenException("Sem permissão para apagar contas");
+
+    if (membershipId === ctx.membershipId) {
+      throw new ForbiddenException("Não te podes apagar a ti próprio");
+    }
+
+    return this.prisma.runAs(ctx.academyId, async (db) => {
+      const target = await db.membership.findFirst({
+        where: { id: membershipId },
+        select: {
+          id: true,
+          role: true,
+          customRole: { select: { rank: true } },
+          user: { select: { name: true } },
+        },
+      });
+      if (!target) throw new NotFoundException("Pessoa não encontrada");
+
+      // A mesma hierarquia de `setMembershipActive`: sem isto, quem tivesse
+      // `staff:write` apagava o presidente — pior do que o desligar, porque não
+      // há como voltar atrás.
+      const targetRank = target.customRole?.rank ?? ROLE_RANK[target.role];
+      if (targetRank > ROLE_RANK[ctx.role]) {
+        throw new ForbiddenException("Essa pessoa tem um cargo acima do teu");
+      }
+
+      /*
+       * Nunca o último presidente.
+       *
+       * Um presidente pode apagar outro presidente (dois sócios-gerentes, um
+       * sai). O que não pode acontecer é a academia ficar sem ninguém que possa
+       * gerir cargos — e isso não se desfaz de dentro do produto.
+       */
+      if (target.role === "OWNER") {
+        const outros = await db.membership.count({
+          where: { role: "OWNER", isActive: true, id: { not: membershipId } },
+        });
+        if (outros === 0) throw new ConflictException("É o único presidente da academia — não pode ser apagado.");
+      }
+
+      const [sessions, matches, events, clinical, evaluations, reports, announcements, invites, approvals] =
+        await Promise.all([
+          db.trainingSession.count({ where: { coachId: membershipId } }),
+          db.match.count({ where: { coachId: membershipId } }),
+          db.calendarEvent.count({ where: { coachId: membershipId } }),
+          db.clinicalEntry.count({ where: { authorId: membershipId } }),
+          db.evaluation.count({ where: { coachId: membershipId } }),
+          db.athleteReport.count({ where: { authorId: membershipId } }),
+          db.announcement.count({ where: { authorId: membershipId } }),
+          db.staffInvite.count({ where: { invitedById: membershipId } }),
+          db.member.count({ where: { approvedById: membershipId } }),
+        ]);
+
+      const historia = [
+        { n: sessions, um: "treino marcado", muitos: "treinos marcados" },
+        { n: matches, um: "jogo", muitos: "jogos" },
+        { n: events, um: "evento", muitos: "eventos" },
+        { n: clinical, um: "entrada clínica", muitos: "entradas clínicas" },
+        { n: evaluations, um: "avaliação", muitos: "avaliações" },
+        { n: reports, um: "relatório", muitos: "relatórios" },
+        { n: announcements, um: "aviso publicado", muitos: "avisos publicados" },
+        { n: invites, um: "convite enviado", muitos: "convites enviados" },
+        { n: approvals, um: "sócio aprovado", muitos: "sócios aprovados" },
+      ].filter((h) => h.n > 0);
+
+      if (historia.length > 0) {
+        throw new ConflictException(
+          `Esta pessoa tem ${listarHistoria(historia)} em seu nome. Apagá-la deixaria isso sem autor — desactiva a conta em vez disso, que lhe tira o acesso e mantém o histórico.`,
+        );
+      }
+
+      /*
+       * O que resta são ligações, e vão em cascata pelo schema: `TeamStaff` (as
+       * equipas que lhe estavam atribuídas) e `GuardianLink` (os educandos).
+       *
+       * O `User` não se apaga: é a conta no Supabase e pode pertencer a mais do
+       * que uma academia. Apagar a `Membership` tira-lhe esta academia; se for a
+       * única que tinha, fica com uma conta que não abre nada — que é o correcto,
+       * porque a conta é dela e não nossa.
+       */
+      await db.membership.delete({ where: { id: membershipId } });
+      return { ok: true as const, id: membershipId, name: target.user.name };
     });
   }
 
@@ -1915,4 +2023,17 @@ export function canonicalSeasonLabel(label: string): string {
 function toFullYear(value: string): number {
   const n = Number(value);
   return value.length === 4 ? n : 2000 + n;
+}
+
+/**
+ * "2 treinos marcados e 1 avaliação" — o que trava um apagar, dito por extenso.
+ *
+ * Gémeo do `listar` em `athletes.service.ts`. Vivem separados de propósito: as
+ * duas listas contam coisas diferentes e a tentação de as unificar acabaria numa
+ * função com um parâmetro a dizer de que tipo de gente se está a falar.
+ */
+function listarHistoria(itens: { n: number; um: string; muitos: string }[]): string {
+  const partes = itens.map((i) => `${i.n} ${i.n === 1 ? i.um : i.muitos}`);
+  if (partes.length === 1) return partes[0];
+  return partes.slice(0, -1).join(", ") + " e " + partes[partes.length - 1];
 }

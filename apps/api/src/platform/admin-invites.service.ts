@@ -125,6 +125,7 @@ export class AdminInvitesService {
       subject: mensagem.subject,
       html: mensagem.html,
       text: mensagem.text,
+      kind: "platform-invite",
     });
 
     return {

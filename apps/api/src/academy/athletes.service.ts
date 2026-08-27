@@ -1,6 +1,8 @@
-import { BadRequestException, ForbiddenException, Injectable } from "@nestjs/common";
+import { BadRequestException, ConflictException, ForbiddenException, Injectable, Logger, NotFoundException } from "@nestjs/common";
 import type { AthleteStatus, DominantSide, Prisma } from "@prisma/client";
 import { PrismaService, type ScopedClient } from "../prisma/prisma.service";
+import { StorageService } from "../storage/storage.service";
+import { PHOTO_BUCKET } from "../storage/photos.service";
 import { can, teamScopeFilter, type RequestContext } from "../common/permissions";
 import { gerarCobrancas, periodoActual } from "../billing/billing.service";
 import type { AthleteInputDto, AthleteUpdateDto } from "./athletes.dto";
@@ -27,7 +29,12 @@ import type { AthleteInputDto, AthleteUpdateDto } from "./athletes.dto";
  */
 @Injectable()
 export class AthletesService {
-  constructor(private readonly prisma: PrismaService) {}
+  private readonly log = new Logger(AthletesService.name);
+
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly storage: StorageService,
+  ) {}
 
   /** Cria um atleta. Devolve o registo criado. */
   async create(ctx: RequestContext, dto: AthleteInputDto) {
@@ -212,6 +219,149 @@ export class AthletesService {
   }
 
   /**
+   * Dar baixa, pôr em pausa, ou trazer de volta.
+   *
+   * ## A acção que faltava
+   *
+   * O `status` está de fora do `AthleteUpdateDto` de propósito, com uma nota a
+   * dizer que "é outra acção, com outra conversa". A conversa é esta, e até aqui
+   * não existia: a base tinha os três estados, a consola já desenhava "Em pausa",
+   * e não havia caminho nenhum para lá chegar. Um atleta que saísse do clube ou
+   * ficava activo para sempre, ou era apagado — e apagar leva o histórico atrás.
+   *
+   * ## O que cada estado significa
+   *
+   * `PAUSED` é uma ausência temporária (uma lesão longa, um semestre fora) — o
+   * atleta sai das convocatórias mas continua no plantel. `LEFT` é a saída: deixa
+   * de contar em tudo o que olha para atletas activos, mensalidades incluídas
+   * (ver `gerarCobrancas`, que só gera para `ACTIVE`).
+   *
+   * Nos dois casos **nada se apaga**: presenças, avaliações, mensalidades pagas e
+   * boletim clínico continuam lá. Voltar é pôr `ACTIVE` outra vez.
+   */
+  async setStatus(ctx: RequestContext, id: string, status: AthleteStatus) {
+    if (!can(ctx, "athlete:write")) throw new ForbiddenException("Sem permissão para dar baixa a atletas");
+
+    return this.prisma.runAs(ctx.academyId, async (db) => {
+      const athlete = await this.inScope(ctx, db, id);
+
+      return db.athlete.update({
+        where: { id: athlete.id },
+        data: { status },
+        select: { id: true, name: true, status: true },
+      });
+    });
+  }
+
+  /**
+   * Apagar — e só quando não há nada para perder.
+   *
+   * ## Porque é que isto não apaga sempre
+   *
+   * Porque um atleta com meio ano de presenças, mensalidades pagas e uma entrada
+   * clínica não é uma linha numa tabela: é o registo do que aconteceu. Apagá-lo
+   * reescreve o passado de toda a gente à volta — as presenças de um treino
+   * passam a não bater certo, uma mensalidade paga desaparece da contabilidade, e
+   * a academia perde prova de coisas que pode precisar de mostrar.
+   *
+   * Por isso a regra é: **apagar é para o que nunca chegou a existir a sério** —
+   * um duplicado, um nome mal escrito, uma inscrição de teste. Assim que houver
+   * história agarrada, o caminho é dar baixa (`setStatus`), que é reversível e
+   * não mente sobre o passado.
+   *
+   * Quando se recusa, diz-se **o que** está agarrado. "Não é possível apagar" sem
+   * mais nada põe quem lá está a tentar adivinhar, ou a carregar outra vez.
+   */
+  async remove(ctx: RequestContext, id: string) {
+    if (!can(ctx, "athlete:write")) throw new ForbiddenException("Sem permissão para apagar atletas");
+
+    return this.prisma.runAs(ctx.academyId, async (db) => {
+      const athlete = await this.inScope(ctx, db, id);
+
+      const [charges, attendance, clinical, evaluations, reports, callUps, appearances] = await Promise.all([
+        db.charge.count({ where: { athleteId: id } }),
+        db.attendanceRecord.count({ where: { athleteId: id } }),
+        db.clinicalEntry.count({ where: { athleteId: id } }),
+        db.evaluation.count({ where: { athleteId: id } }),
+        db.athleteReport.count({ where: { athleteId: id } }),
+        db.matchCallUp.count({ where: { athleteId: id } }),
+        db.matchAppearance.count({ where: { athleteId: id } }),
+      ]);
+
+      const historia = [
+        { n: charges, um: "mensalidade", muitos: "mensalidades" },
+        { n: attendance, um: "registo de presença", muitos: "registos de presença" },
+        { n: clinical, um: "entrada clínica", muitos: "entradas clínicas" },
+        { n: evaluations, um: "avaliação", muitos: "avaliações" },
+        { n: reports, um: "relatório", muitos: "relatórios" },
+        { n: callUps, um: "convocatória", muitos: "convocatórias" },
+        { n: appearances, um: "participação em jogo", muitos: "participações em jogo" },
+      ].filter((h) => h.n > 0);
+
+      if (historia.length > 0) {
+        throw new ConflictException(
+          `Este atleta já tem ${listar(historia)}. Apagá-lo levaria isso tudo atrás — dá-lhe baixa em vez disso, que o tira das listas sem perder o histórico.`,
+        );
+      }
+
+      /*
+       * Sem história: o que resta são as ligações, e essas vão em cascata pelo
+       * próprio schema — `TeamMembership`, `GuardianLink` e `Enrollment` têm
+       * `onDelete: Cascade` no atleta. A conta do encarregado não: essa é uma
+       * pessoa, e continua a existir depois de o educando sair.
+       *
+       * As sete contagens acima cobrem, uma a uma, todas as tabelas que cascatam
+       * daqui e que **guardam história** — é essa a lista que interessa manter
+       * alinhada com o schema, e não a das cascatas: uma tabela nova que apenas
+       * ligue coisas pode cascatar à vontade, uma que registe o que aconteceu tem
+       * de ser contada.
+       */
+      await db.athlete.delete({ where: { id } });
+
+      /*
+       * A fotografia sai com ele.
+       *
+       * A cascata do Postgres não chega ao armazenamento: sem esta linha ficava
+       * no bucket a fotografia de uma criança sem nenhum registo que lhe
+       * correspondesse — precisamente o que este produto não pode deixar
+       * acontecer. Depois do `delete` e não antes: se o apagar falhar, a
+       * fotografia continua a pertencer a um atleta que continua a existir.
+       *
+       * Não trava o apagar se falhar. O atleta já não existe, e devolver erro
+       * aqui era dizer que a operação falhou quando ela foi feita.
+       */
+      if (athlete.photoKey) {
+        await this.storage.remove(PHOTO_BUCKET, athlete.photoKey).catch(() => {
+          this.log.warn(`Fotografia ${athlete.photoKey} ficou por apagar depois de remover o atleta ${id}.`);
+        });
+      }
+
+      return { ok: true as const, id, name: athlete.name };
+    });
+  }
+
+  /**
+   * O atleta, se estiver ao alcance de quem pergunta.
+   *
+   * O âmbito passa pelas equipas, como em todo o resto: um treinador só mexe nos
+   * atletas das equipas dele. A RLS garante a academia; isto garante o resto.
+   * Extraído de `setTaxId`, que fazia isto à mão — e agora são quatro sítios a
+   * precisar da mesma verificação, que é uma a mais para se repetir.
+   */
+  private async inScope(ctx: RequestContext, db: ScopedClient, id: string) {
+    const teams = await this.teamsInScope(ctx, db);
+    const athlete = await db.athlete.findFirst({
+      where: { id },
+      select: { id: true, name: true, photoKey: true, teams: { select: { teamId: true } } },
+    });
+    if (!athlete) throw new NotFoundException("Atleta não encontrado");
+    if (!athlete.teams.some((t) => teams.has(t.teamId))) {
+      throw new ForbiddenException("Esse atleta está fora do teu âmbito");
+    }
+    return athlete;
+  }
+
+  /**
    * Importa um lote. Devolve o resultado linha a linha.
    *
    * `created` conta as que entraram; `errors` traz `{ row, name, error }` para as
@@ -378,4 +528,17 @@ function isUniqueViolation(error: unknown, column: string): boolean {
   const target = e.meta?.target;
   if (Array.isArray(target)) return target.includes(column);
   return typeof target === "string" && target.includes(column);
+}
+
+/**
+ * "3 mensalidades e 12 registos de presença" — a partir do que se contou.
+ *
+ * Escrito por extenso e com o "e" no fim de propósito: quem lê a recusa precisa
+ * de perceber logo o que está agarrado, e uma lista separada por vírgulas até ao
+ * último item lê-se como um erro de sistema.
+ */
+function listar(itens: { n: number; um: string; muitos: string }[]): string {
+  const partes = itens.map((i) => `${i.n} ${i.n === 1 ? i.um : i.muitos}`);
+  if (partes.length === 1) return partes[0];
+  return partes.slice(0, -1).join(", ") + " e " + partes[partes.length - 1];
 }

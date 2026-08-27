@@ -32,7 +32,7 @@ import type { Fee, FeeStatus } from "@/data/types";
 const ESTADO: Record<FeeStatus, string> = {
   paid: "Pago",
   processing: "A confirmar",
-  pending: "Pendente",
+  pending: "Não pago",
   overdue: "Vencido",
   void: "Anulada",
 };

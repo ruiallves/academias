@@ -99,6 +99,21 @@ check("com endereço gerado do nome", nova.academy?.slug?.startsWith("clube-de-t
 check("devolve o link do convite", typeof nova.inviteLink === "string" && nova.inviteLink.includes("/convite/"));
 check("e o trial a contar", Boolean(nova.trialEndsAt));
 
+/*
+ * O convite sai por email, e não só num link para copiar.
+ *
+ * Era um passo manual entre "vendemos" e "o cliente entrou", e o link não volta
+ * a ser mostrado — quem se esquecesse de o mandar deixava um clube pago sem
+ * ninguém lá dentro. `emailed` diz se saiu; o `MailLog` diz que saiu mesmo.
+ */
+check("o convite saiu por email", nova.emailed === true, JSON.stringify({ emailed: nova.emailed, erro: nova.emailError }));
+const dbMail = new pg.Client({ connectionString: env("MIGRATE_DATABASE_URL"), ssl: { rejectUnauthorized: false } });
+await dbMail.connect();
+const registo = (await dbMail.query(
+  `SELECT kind, ok FROM "MailLog" WHERE kind = 'academy-owner-invite' ORDER BY "createdAt" DESC LIMIT 1`,
+)).rows[0];
+check("e ficou no registo de correio", registo?.kind === "academy-owner-invite", JSON.stringify(registo));
+
 // O convite tem de funcionar mesmo — é o mecanismo que já existia, reutilizado.
 const page = await fetch(nova.inviteLink);
 const html = await page.text();
@@ -161,6 +176,37 @@ const semFicheiro = await fetch(`${API}/api/platform/academies/${novaCor.academy
   body: JSON.stringify({ key: auth.key }),
 });
 check("confirmar sem ter carregado é recusado (400)", semFicheiro.status === 400, `${semFicheiro.status}`);
+
+/*
+ * O convite adiado, para o emblema ir no email.
+ *
+ * O símbolo só se carrega depois de a academia ter id, por isso um convite
+ * enviado na criação sai sempre com as iniciais. Com `deferInvite`, quem cria
+ * sobe o emblema e só depois manda — e o reenvio emite um token novo, porque o
+ * antigo não é recuperável: da base guarda-se só o hash.
+ */
+const adiado = await fetch(`${API}/api/platform/academies`, {
+  method: "POST", headers: { Authorization: `Bearer ${admin}`, "Content-Type": "application/json" },
+  body: JSON.stringify({ name: `Clube Adiado ${stamp}`, directorName: "D", directorEmail: `adiado-${stamp}@exemplo.pt`, deferInvite: true }),
+});
+const novaAdiada = await adiado.json();
+check("com deferInvite, o clube nasce sem email enviado", adiado.status < 300 && novaAdiada.emailed === false, `${adiado.status} ${novaAdiada.emailed}`);
+
+const enviar = await fetch(`${API}/api/platform/academies/${novaAdiada.academy.id}/convite`, {
+  method: "POST", headers: { Authorization: `Bearer ${admin}`, "Content-Type": "application/json" }, body: "{}",
+});
+const enviado = await enviar.json();
+check("e o envio a seguir manda-o", enviar.status < 300 && enviado.emailed === true, `${enviar.status} ${JSON.stringify(enviado).slice(0, 120)}`);
+check("com um link novo, diferente do da criação", enviado.inviteLink !== novaAdiada.inviteLink, "link");
+
+// O token antigo morre no reenvio — senão ficavam duas portas abertas.
+const antigo = await fetch(novaAdiada.inviteLink);
+check("e o link da criação deixa de resolver", (await antigo.text()).includes("convite") === false || antigo.status !== 200, `${antigo.status}`);
+
+const semConvite = await fetch(`${API}/api/platform/academies/aca_nao_existe/convite`, {
+  method: "POST", headers: { Authorization: `Bearer ${admin}`, "Content-Type": "application/json" }, body: "{}",
+});
+check("um clube inventado não gera convite (404)", semConvite.status === 404, `${semConvite.status}`);
 
 // E a chave de outro clube não passa, mesmo com a porta certa.
 const chaveAlheia = await fetch(`${API}/api/platform/academies/${novaCor.academy.id}/simbolo`, {

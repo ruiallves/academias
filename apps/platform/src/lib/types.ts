@@ -38,6 +38,8 @@ export type Overview = {
   people: { athletes: number; guardians: number; staff: number };
   revenue: { mrrCents: number; arrCents: number };
   usage: number | null;
+  /** Os emails que saíram do servidor hoje. Ver `emailToday` na API. */
+  email: { today: number; failedToday: number; yesterday: number; byKind: { kind: string; count: number }[] };
   alerts: Alert[];
 };
 

@@ -103,6 +103,14 @@ export const getMember = (id: string) => apiGet<MemberDetail>(`/api/members/${id
 
 export const updateMember = (id: string, body: Record<string, unknown>) => apiPatch(`/api/members/${id}`, body);
 
+/**
+ * Apagar de vez — só serve para o que nunca chegou a ser sócio.
+ *
+ * O servidor recusa assim que houver um número atribuído e diz porquê; ver
+ * `MembersService.remove`. Quem tem número cancela-se, não se apaga.
+ */
+export const removeMember = (id: string) => apiDelete<{ ok: boolean }>(`/api/members/${id}`);
+
 export const listTiers = () => apiGet<MemberTier[]>("/api/members/tiers");
 
 export const createTier = (body: Record<string, unknown>) =>

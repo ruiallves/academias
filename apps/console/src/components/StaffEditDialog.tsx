@@ -2,13 +2,14 @@ import { useState, type FormEvent } from "react";
 import { listTeams } from "@/lib/api";
 import { teamAgeLabel } from "@/lib/team-age";
 import { ASSIGNABLE_ROLES, DEPARTMENTS, updateStaff } from "@/lib/staff";
-import { apiPatch } from "@/lib/http";
+import { apiDelete, apiPatch } from "@/lib/http";
 import { reloadAcademy } from "@/lib/store";
 import { can, type Role, type Session } from "@/lib/permissions";
 import { ROLE_LABEL } from "@/session";
 import { DEPARTMENT_LABEL, type StaffDepartment, type StaffMember } from "@/data/types";
 import { Dialog, DialogField, dialogInputClass } from "./Dialog";
 import { SelectField } from "./primitives";
+import { Trash2 } from "@/lib/icons";
 
 /**
  * Editar a ficha de uma pessoa.
@@ -44,12 +45,38 @@ export function StaffEditDialog({
   const [teamIds, setTeamIds] = useState<string[]>(member.teamIds);
   const [isActive, setIsActive] = useState(member.isActive);
   const [erro, setErro] = useState<string | null>(null);
+  const [aApagar, setAApagar] = useState(false);
 
   const usesTeams = role === "COACH" || role === "STAFF" || role === "COORDINATOR";
   const valid = name.trim().length >= 2 && title.trim().length >= 2;
 
   function toggleTeam(id: string) {
     setTeamIds((xs) => (xs.includes(id) ? xs.filter((x) => x !== id) : [...xs, id]));
+  }
+
+  /**
+   * Apagar a conta — o irmão do "já não trabalha na academia" logo abaixo.
+   *
+   * Existe para o convite aceite com o nome errado e para a conta criada duas
+   * vezes: casos em que desactivar deixa na lista uma pessoa que nunca existiu.
+   * Assim que houver trabalho em nome dela, o servidor recusa e diz o quê — ver
+   * `removeMembership`. Não se tenta adivinhar isso aqui: a consola não sabe
+   * quantos treinos alguém marcou, e um botão escondido por engano deixa quem lá
+   * está sem perceber porquê.
+   */
+  async function apagar() {
+    if (aApagar) return;
+    if (!confirm(`Apagar a conta de ${member.name}? Se já tiver trabalho em nome dela, o servidor recusa e explica.`)) return;
+    setAApagar(true);
+    setErro(null);
+    try {
+      await apiDelete(`/api/memberships/${member.id}`);
+      await reloadAcademy();
+      onClose();
+    } catch (err) {
+      setErro(err instanceof Error ? err.message : "Não foi possível apagar a conta.");
+      setAApagar(false);
+    }
   }
 
   async function submit(e: FormEvent) {
@@ -118,14 +145,25 @@ export function StaffEditDialog({
       onClose={onClose}
       width={520}
       footer={
-        <>
-          <button type="button" onClick={onClose} className="ctl-ghost">
-            Cancelar
-          </button>
-          <button type="submit" form="form-staff" className="ctl-primary" disabled={!valid}>
-            Guardar
-          </button>
-        </>
+        <div className="flex w-full items-center justify-between gap-2">
+          {/* À esquerda e afastado do "Guardar": é destrutivo, não é o gesto normal. */}
+          {mayChangeAccess ? (
+            <button type="button" onClick={() => void apagar()} disabled={aApagar} className="ctl-ghost text-risk">
+              <Trash2 className="size-3.5" strokeWidth={1.75} />
+              {aApagar ? "A apagar…" : "Apagar conta"}
+            </button>
+          ) : (
+            <span />
+          )}
+          <div className="flex items-center gap-2">
+            <button type="button" onClick={onClose} className="ctl-ghost">
+              Cancelar
+            </button>
+            <button type="submit" form="form-staff" className="ctl-primary" disabled={!valid}>
+              Guardar
+            </button>
+          </div>
+        </div>
       }
     >
       <form id="form-staff" onSubmit={submit} className="space-y-4 p-5">

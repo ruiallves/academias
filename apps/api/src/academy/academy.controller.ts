@@ -1,6 +1,6 @@
 import { Body, Controller, Delete, Get, Param, Patch, Post, Put, Query, Req } from "@nestjs/common";
 import { ArrayMaxSize, IsArray, IsBoolean, IsIn, IsInt, IsOptional, IsString, Length, Max, Min } from "class-validator";
-import { ChargeStatus } from "@prisma/client";
+import { ChargeStatus, type AthleteStatus } from "@prisma/client";
 import type { AuthedRequest } from "../auth/auth.guard";
 import { AcademyService } from "./academy.service";
 import { AthletesService } from "./athletes.service";
@@ -70,6 +70,17 @@ class IdentityDto {
 /** Desactivar ou reactivar uma conta — de staff ou de encarregado. */
 class SetActiveDto {
   @IsBoolean() active!: boolean;
+}
+
+/**
+ * O estado de um atleta.
+ *
+ * Os três do enum e mais nenhum: `ACTIVE` no plantel, `PAUSED` fora das
+ * convocatórias mas ainda inscrito, `LEFT` saiu do clube.
+ */
+class SetAthleteStatusDto {
+  @IsIn(["ACTIVE", "PAUSED", "LEFT"])
+  status!: AthleteStatus;
 }
 
 /**
@@ -271,6 +282,29 @@ export class AcademyController {
     return this.athletes.importMany(req.ctx, body.rows);
   }
 
+  /**
+   * Dar baixa, pôr em pausa, ou trazer de volta.
+   *
+   * Rota própria e não um campo do `PATCH` de edição: a lista de campos
+   * editáveis é fechada por decisão, e dar baixa a um atleta mexe em
+   * mensalidades e plantéis. Ver `AthletesService.setStatus`.
+   */
+  @Patch("athletes/:id/status")
+  setAthleteStatus(@Req() req: AuthedRequest, @Param("id") id: string, @Body() body: SetAthleteStatusDto) {
+    return this.athletes.setStatus(req.ctx, id, body.status);
+  }
+
+  /**
+   * Apagar um atleta.
+   *
+   * Recusa com 409 assim que houver histórico agarrado — aí o caminho é dar
+   * baixa. Ver `AthletesService.remove`.
+   */
+  @Delete("athletes/:id")
+  removeAthlete(@Req() req: AuthedRequest, @Param("id") id: string) {
+    return this.athletes.remove(req.ctx, id);
+  }
+
   @Get("staff")
   staff(@Req() req: AuthedRequest) {
     return this.academy.staff(req.ctx);
@@ -308,6 +342,17 @@ export class AcademyController {
   @Patch("memberships/:id/active")
   setMembershipActive(@Req() req: AuthedRequest, @Param("id") id: string, @Body() body: SetActiveDto) {
     return this.academy.setMembershipActive(req.ctx, id, body.active);
+  }
+
+  /**
+   * Apagar uma conta de staff ou de encarregado.
+   *
+   * Recusa com 409 quando a pessoa já tem trabalho em seu nome — nesse caso o
+   * caminho é desactivar, mesmo ao lado. Ver `removeMembership`.
+   */
+  @Delete("memberships/:id")
+  removeMembership(@Req() req: AuthedRequest, @Param("id") id: string) {
+    return this.academy.removeMembership(req.ctx, id);
   }
 
   /**

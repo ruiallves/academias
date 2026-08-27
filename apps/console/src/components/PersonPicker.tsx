@@ -1,8 +1,18 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { Check, ChevronDown, Search, X } from "@/lib/icons";
 import { cx } from "./primitives";
 
 export type Pessoa = { id: string; name: string; sub?: string };
+
+/**
+ * Altura a contar para decidir se a lista abre para baixo ou para cima.
+ *
+ * Não é medida — é uma estimativa generosa do caso cheio (campo de procura mais
+ * a lista no seu máximo). Medir exigia desenhar primeiro para saber onde pôr, e
+ * o salto via-se.
+ */
+const ALTURA = 288;
 
 /**
  * Escolher uma pessoa de uma lista, escrevendo o nome.
@@ -20,6 +30,23 @@ export type Pessoa = { id: string; name: string; sub?: string };
  * quem escreve "fisio" encontra o Fisioterapeuta, e quem escreve "joao" encontra
  * o João. Não cria pessoas — se o nome não está na lista, não está na academia, e
  * inventá-lo aqui era criar uma pessoa a meio de outro formulário.
+ *
+ * ## Porque é que a lista vive fora da árvore
+ *
+ * Porque estava a ser cortada. A lista era `position: absolute` dentro do campo,
+ * e o `Dialog` que a hospeda é `max-h-[85vh] overflow-y-auto` — qualquer coisa
+ * posicionada lá dentro é recortada pela caixa que faz scroll. Ao criar uma
+ * equipa, escolher o treinador principal dava meia lista.
+ *
+ * A saída é a mesma que o menu de estado das mensalidades já usa: um portal para
+ * o `document.body`, `position: fixed`, e a posição medida a partir do botão. Sai
+ * do recorte porque deixa de ter um antepassado que recorte, e continua colada ao
+ * campo porque a posição vem do rectângulo dele.
+ *
+ * O preço é que a posição deixa de se actualizar sozinha: se a página ou o
+ * diálogo rolarem por baixo, a lista fica onde estava. Por isso fecha-se ao rolar
+ * — mas só quando o scroll vem de **fora** dela, senão descer a própria lista
+ * fechava-a.
  */
 export function PersonPicker({
   pessoas,
@@ -40,21 +67,54 @@ export function PersonPicker({
 }) {
   const [aberto, setAberto] = useState(false);
   const [q, setQ] = useState("");
-  const caixa = useRef<HTMLDivElement>(null);
+  const [pos, setPos] = useState<{ top?: number; bottom?: number; left: number; width: number } | null>(null);
+  const gatilho = useRef<HTMLButtonElement>(null);
+  const painel = useRef<HTMLDivElement>(null);
 
   const escolhida = pessoas.find((p) => p.id === value);
 
+  function alternar() {
+    if (aberto) {
+      fechar();
+      return;
+    }
+    const r = gatilho.current?.getBoundingClientRect();
+    if (!r) return;
+    const espacoAbaixo = window.innerHeight - r.bottom;
+    // Cabe por baixo? Abre por baixo. Senão abre por cima — a não ser que por
+    // cima haja ainda menos espaço, e aí é por baixo à mesma.
+    setPos(
+      espacoAbaixo >= ALTURA + 8 || r.top < ALTURA + 8
+        ? { top: r.bottom + 4, left: r.left, width: r.width }
+        : { bottom: window.innerHeight - r.top + 4, left: r.left, width: r.width },
+    );
+    setAberto(true);
+  }
+
+  function fechar() {
+    setAberto(false);
+    setQ("");
+  }
+
   useEffect(() => {
     if (!aberto) return;
-    const fora = (e: MouseEvent) => {
-      if (caixa.current && !caixa.current.contains(e.target as Node)) setAberto(false);
+
+    const escape = (e: KeyboardEvent) => e.key === "Escape" && fechar();
+    // Captura, para apanhar o scroll de qualquer contentor — incluindo o do
+    // diálogo. O que não conta é o scroll da própria lista: sem esta condição,
+    // descer entre vinte nomes fechava-a à primeira roda do rato.
+    const aoRolar = (e: Event) => {
+      if (painel.current?.contains(e.target as Node)) return;
+      fechar();
     };
-    const escape = (e: KeyboardEvent) => e.key === "Escape" && setAberto(false);
-    document.addEventListener("mousedown", fora);
+
     document.addEventListener("keydown", escape);
+    window.addEventListener("scroll", aoRolar, true);
+    window.addEventListener("resize", fechar);
     return () => {
-      document.removeEventListener("mousedown", fora);
       document.removeEventListener("keydown", escape);
+      window.removeEventListener("scroll", aoRolar, true);
+      window.removeEventListener("resize", fechar);
     };
   }, [aberto]);
 
@@ -66,16 +126,16 @@ export function PersonPicker({
 
   function escolher(id: string) {
     onChange(id);
-    setAberto(false);
-    setQ("");
+    fechar();
   }
 
   return (
-    <div ref={caixa} className="relative">
+    <div className="relative">
       <button
+        ref={gatilho}
         type="button"
         disabled={disabled}
-        onClick={() => setAberto((v) => !v)}
+        onClick={alternar}
         aria-haspopup="listbox"
         aria-expanded={aberto}
         className={cx(
@@ -115,36 +175,59 @@ export function PersonPicker({
         <ChevronDown className={cx("size-4 shrink-0 text-ink-3 transition-transform", aberto && "rotate-180")} strokeWidth={1.75} />
       </button>
 
-      {aberto && (
-        <div className="absolute top-[calc(100%+4px)] right-0 left-0 z-50 overflow-hidden rounded-[var(--radius-panel)] border border-line bg-surface shadow-[var(--shadow-pop)]">
-          <div className="flex items-center gap-1.5 border-b border-line px-2.5">
-            <Search className="size-3.5 shrink-0 text-ink-3" strokeWidth={1.75} />
-            <input
-              autoFocus
-              value={q}
-              onChange={(e) => setQ(e.target.value)}
-              placeholder={placeholder}
-              className="h-9 min-w-0 flex-1 bg-transparent text-body text-ink outline-none placeholder:text-ink-4"
-            />
-          </div>
+      {aberto &&
+        pos &&
+        createPortal(
+          <>
+            {/*
+              O fecho ao clicar fora.
 
-          <ul role="listbox" className="max-h-[min(50vh,240px)] overflow-y-auto">
-            <li>
-              <Opcao label={emptyLabel} escolhida={value === ""} onClick={() => escolher("")} suave />
-            </li>
-            {filtradas.map((p) => (
-              <li key={p.id}>
-                <Opcao label={p.name} sub={p.sub} escolhida={p.id === value} onClick={() => escolher(p.id)} />
-              </li>
-            ))}
-            {filtradas.length === 0 && (
-              <li className="px-3 py-4 text-center text-meta text-ink-3">
-                Ninguém com esse nome.
-              </li>
-            )}
-          </ul>
-        </div>
-      )}
+              Um pano por cima de tudo em vez de um ouvinte de `mousedown` no
+              documento: com a lista num portal, ela deixou de estar dentro do
+              campo na árvore do DOM, e o teste de "clicou fora" passava a ter de
+              conhecer dois sítios. O pano tem o problema de comer o primeiro
+              clique noutro sítio qualquer — o mesmo compromisso que o menu de
+              estado das mensalidades já faz, e o mesmo comportamento.
+
+              Acima do `z-50` do diálogo, senão ficava por baixo dele.
+            */}
+            <div className="fixed inset-0 z-[60]" onMouseDown={fechar} aria-hidden />
+
+            <div
+              ref={painel}
+              style={{ top: pos.top, bottom: pos.bottom, left: pos.left, width: pos.width }}
+              className="fixed z-[70] overflow-hidden rounded-[var(--radius-panel)] border border-line bg-surface shadow-[var(--shadow-pop)]"
+            >
+              <div className="flex items-center gap-1.5 border-b border-line px-2.5">
+                <Search className="size-3.5 shrink-0 text-ink-3" strokeWidth={1.75} />
+                <input
+                  autoFocus
+                  value={q}
+                  onChange={(e) => setQ(e.target.value)}
+                  placeholder={placeholder}
+                  className="h-9 min-w-0 flex-1 bg-transparent text-body text-ink outline-none placeholder:text-ink-4"
+                />
+              </div>
+
+              <ul role="listbox" className="max-h-[min(50vh,240px)] overflow-y-auto">
+                <li>
+                  <Opcao label={emptyLabel} escolhida={value === ""} onClick={() => escolher("")} suave />
+                </li>
+                {filtradas.map((p) => (
+                  <li key={p.id}>
+                    <Opcao label={p.name} sub={p.sub} escolhida={p.id === value} onClick={() => escolher(p.id)} />
+                  </li>
+                ))}
+                {filtradas.length === 0 && (
+                  <li className="px-3 py-4 text-center text-meta text-ink-3">
+                    Ninguém com esse nome.
+                  </li>
+                )}
+              </ul>
+            </div>
+          </>,
+          document.body,
+        )}
     </div>
   );
 }

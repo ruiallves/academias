@@ -177,7 +177,7 @@ export class FamilyInvitesService {
 
       const academy = await db.academy.findFirst({
         where: { id: ctx.academyId },
-        select: { slug: true, name: true, shortName: true, signalColor: true },
+        select: { slug: true, name: true, shortName: true, signalColor: true, logoUrl: true },
       });
       return { ...row, academy };
     });
@@ -189,6 +189,7 @@ export class FamilyInvitesService {
       shortName: invite.academy?.shortName ?? "Academia",
       name: invite.academy?.name ?? "a academia",
       signalColor: invite.academy?.signalColor,
+      logoUrl: invite.academy?.logoUrl,
     };
 
     const failed: { email: string; reason: string }[] = [];
@@ -202,6 +203,7 @@ export class FamilyInvitesService {
         subject: mail.subject,
         html: mail.html,
         text: mail.text,
+        kind: "family-invite",
       });
 
       if (result.sent) sent += 1;

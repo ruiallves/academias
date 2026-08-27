@@ -77,6 +77,12 @@ export class MembersController {
   update(@Req() req: AuthedRequest, @Param("id") id: string, @Body() dto: MemberUpdateDto) {
     return this.members.update(req.ctx, id, dto);
   }
+
+  /** Ver `MembersService.remove`: só sai quem nunca chegou a ter número. */
+  @Delete(":id")
+  remove(@Req() req: AuthedRequest, @Param("id") id: string) {
+    return this.members.remove(req.ctx, id);
+  }
 }
 
 /**

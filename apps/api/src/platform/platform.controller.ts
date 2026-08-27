@@ -56,6 +56,11 @@ class CreateAcademyDto {
   @Matches(/^#[0-9a-fA-F]{6}$/, { message: "Cor inválida — usa o formato #RRGGBB" })
   signalColor?: string;
 
+  /** Adiar o convite para depois do emblema subir. Ver `sendOwnerInvite`. */
+  @IsOptional()
+  @IsBoolean()
+  deferInvite?: boolean;
+
   @IsOptional()
   @IsString()
   planId?: string;
@@ -200,6 +205,20 @@ export class PlatformController {
    * símbolo. Se isto falhar, o clube fica aberto sem emblema e o presidente
    * carrega-o nas Definições, que é onde isto vive de verdade.
    */
+  /**
+   * Emitir e enviar o convite do primeiro responsável.
+   *
+   * Serve dois casos: o do diálogo, que adia o envio para o emblema já ir no
+   * email, e o banal de o convite se ter perdido — expirou, foi para o spam,
+   * ninguém o abriu. Emite sempre um token novo, e o anterior morre nesse
+   * instante: ver `sendOwnerInvite`.
+   */
+  @Post("academies/:id/convite")
+  @PlatformRoles("OWNER", "ADMIN")
+  sendOwnerInvite(@Req() req: PlatformRequest, @Ip() ip: string, @Param("id") id: string) {
+    return this.platform.sendOwnerInvite(req.admin, id, ip);
+  }
+
   @Post("academies/:id/simbolo/upload")
   @PlatformRoles("OWNER", "ADMIN")
   async signLogoUpload(@Param("id") id: string, @Body() body: UploadLogoDto) {

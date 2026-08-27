@@ -3,6 +3,8 @@ import { BadRequestException, ConflictException, Injectable, NotFoundException }
 import { ConfigService } from "@nestjs/config";
 import { PlatformPrisma } from "./platform.prisma";
 import { initialRoles, isPresidente } from "../roles/roles.service";
+import { MailClient } from "../mail/mail.client";
+import { academyOwnerInviteEmail } from "../mail/mail.templates";
 import type { StaffDepartment } from "@prisma/client";
 import type { PlatformAdminContext } from "./platform.guard";
 
@@ -57,6 +59,7 @@ export class PlatformService {
   constructor(
     private readonly prisma: PlatformPrisma,
     private readonly config: ConfigService,
+    private readonly mail: MailClient,
   ) {}
 
   /* ------------------------------------------------------------------------ */
@@ -66,6 +69,7 @@ export class PlatformService {
   async overview() {
     const [totals] = await this.prisma.$queryRaw<OverviewRow[]>`SELECT * FROM app.platform_overview()`;
     const academies = await this.academies();
+    const email = await this.emailToday();
 
     const mrr = Number(totals.mrr_cents);
     return {
@@ -89,7 +93,53 @@ export class PlatformService {
        * o dizer.
        */
       usage: usageRate(academies),
+      email,
       alerts: this.alertsFrom(academies),
+    };
+  }
+
+  /**
+   * Os emails de hoje, e os de ontem para dar escala.
+   *
+   * ## Porque é que isto está na visão geral
+   *
+   * Porque é a única coisa deste produto que tem um **tecto diário** — o plano de
+   * envio é gratuito e acaba a meio do dia sem avisar. Um convite que não sai não
+   * dá erro a ninguém: a academia fica à espera, e a primeira notícia é um
+   * telefonema a dizer que o treinador nunca recebeu nada.
+   *
+   * ## Porquê "ontem" ao lado
+   *
+   * Um número sozinho não diz nada. "31" pode ser um dia normal ou o triplo do
+   * costume, e é a diferença que faz olhar duas vezes.
+   *
+   * As falhas contam-se à parte de propósito: são o número que exige uma acção, e
+   * somá-las ao total escondia-as dentro de um número que parece bom.
+   */
+  private async emailToday() {
+    const hoje = new Date();
+    hoje.setHours(0, 0, 0, 0);
+    const ontem = new Date(hoje.getTime() - DAY);
+
+    const [deHoje, deOntem] = await Promise.all([
+      this.prisma.mailLog.findMany({
+        where: { createdAt: { gte: hoje } },
+        select: { kind: true, ok: true },
+      }),
+      this.prisma.mailLog.count({ where: { createdAt: { gte: ontem, lt: hoje } } }),
+    ]);
+
+    const porTipo: Record<string, number> = {};
+    for (const linha of deHoje) porTipo[linha.kind] = (porTipo[linha.kind] ?? 0) + 1;
+
+    return {
+      today: deHoje.length,
+      failedToday: deHoje.filter((l) => !l.ok).length,
+      yesterday: deOntem,
+      /** Quantos de cada tipo, hoje — do mais frequente para o menos. */
+      byKind: Object.entries(porTipo)
+        .map(([kind, count]) => ({ kind, count }))
+        .sort((a, b) => b.count - a.count),
     };
   }
 
@@ -221,6 +271,12 @@ export class PlatformService {
       roleDepartment?: StaffDepartment | null;
       /** A cor do clube, quando já se sabe. Omitir deixa a de omissão do schema. */
       signalColor?: string;
+      /**
+       * Não enviar o convite agora — quem chama envia-o a seguir.
+       *
+       * Só há uma razão para isto, e é o emblema: ver `sendOwnerInvite`.
+       */
+      deferInvite?: boolean;
       planId?: string;
       trialDays?: number;
     },
@@ -362,21 +418,157 @@ export class PlatformService {
       },
     });
 
+    const inviteLink = this.inviteLink(slug, token);
+    const expiresAt = new Date(Date.now() + 7 * DAY);
+    const cargo = inviteRole?.name ?? "Presidente";
+
+    /*
+     * O convite sai por email — mas nem sempre já.
+     *
+     * Isto não existia de todo: o clube nascia, o link aparecia no diálogo, e
+     * alguém tinha de se lembrar de o copiar para uma mensagem. Um passo manual
+     * entre "vendemos" e "o cliente entrou" é onde os clientes se perdem, ainda
+     * por cima quando o link não volta a ser mostrado.
+     *
+     * `deferInvite` existe por causa do emblema. O símbolo do clube só se
+     * carrega **depois** de a academia ter id — é a pasta dele no bucket — e um
+     * email enviado aqui sairia sempre com as iniciais em vez do emblema. Quem
+     * escolheu um símbolo pede para adiar, sobe-o, e chama `sendOwnerInvite`.
+     */
+    const enviado = dto.deferInvite
+      ? null
+      : await this.mailOwnerInvite(
+          { name, shortName: shortNameOf(name), signalColor: dto.signalColor ?? null, logoUrl: null },
+          { email, name: dto.directorName.trim(), title: cargo },
+          inviteLink,
+          expiresAt,
+        );
+
     await this.audit(
       admin,
       "academy.create",
       "academy",
       academy.id,
-      { slug, directorEmail: email, plan: plan?.name, cargo: inviteRole?.name ?? "Presidente" },
+      { slug, directorEmail: email, plan: plan?.name, cargo, emailed: enviado?.sent ?? false },
       ip,
     );
 
     return {
       academy,
-      inviteLink: this.inviteLink(slug, token),
+      inviteLink,
       trialEndsAt: new Date(Date.now() + trialDays * DAY),
-      roleName: inviteRole?.name ?? "Presidente",
+      roleName: cargo,
+      /** Se o email já saiu. Com `deferInvite`, sai no passo seguinte. */
+      emailed: enviado?.sent ?? false,
+      ...(enviado?.reason ? { emailError: enviado.reason } : {}),
     };
+  }
+
+  /**
+   * (Re)emitir o convite do primeiro responsável e enviá-lo.
+   *
+   * ## Porque é que isto emite um token novo
+   *
+   * Porque o antigo não se consegue recuperar: da criação guarda-se só o
+   * `tokenHash`, e é isso que faz um link roubado da base de dados não servir
+   * para nada. Reenviar é, por construção, emitir outro — e o anterior deixa de
+   * funcionar no mesmo instante, que é o que se quer de um reenvio.
+   *
+   * ## Para que serve, além do emblema
+   *
+   * Para o caso banal de o convite se perder: expirou, foi para o spam, o email
+   * estava certo mas ninguém o abriu. Sem isto, a única saída era apagar o clube
+   * e criá-lo outra vez.
+   */
+  async sendOwnerInvite(admin: PlatformAdminContext, academyId: string, ip?: string) {
+    const academy = await this.prisma.academy.findUnique({
+      where: { id: academyId },
+      select: { id: true, slug: true, name: true, shortName: true, signalColor: true, logoUrl: true },
+    });
+    if (!academy) throw new NotFoundException("Academia não encontrada");
+
+    const invite = await this.prisma.staffInvite.findFirst({
+      where: { academyId, acceptedAt: null, revokedAt: null },
+      orderBy: { createdAt: "desc" },
+      select: { id: true, email: true, name: true, title: true },
+    });
+    if (!invite) {
+      // Aceite significa que a pessoa já lá está dentro; nesse caso o caminho é
+      // a própria consola do clube, não outro convite pela porta da plataforma.
+      throw new BadRequestException("Este clube não tem convite por aceitar");
+    }
+
+    const token = randomBytes(32).toString("base64url");
+    const expiresAt = new Date(Date.now() + 7 * DAY);
+    await this.prisma.staffInvite.update({
+      where: { id: invite.id },
+      data: { tokenHash: createHash("sha256").update(token).digest("hex"), expiresAt },
+    });
+
+    const inviteLink = this.inviteLink(academy.slug, token);
+    const enviado = await this.mailOwnerInvite(
+      academy,
+      { email: invite.email, name: invite.name, title: invite.title ?? "Presidente" },
+      inviteLink,
+      expiresAt,
+    );
+
+    await this.audit(admin, "academy.invite.send", "academy", academyId, { emailed: enviado.sent }, ip);
+
+    return {
+      inviteLink,
+      expiresAt,
+      emailed: enviado.sent,
+      ...(enviado.reason ? { emailError: enviado.reason } : {}),
+    };
+  }
+
+  /**
+   * A carta em si, num sítio só.
+   *
+   * Falhar a enviar **nunca** desfaz nada. Na criação, o clube existe e o
+   * convite existe; rebentar aqui transformava um email por enviar num clube por
+   * criar, e a segunda tentativa batia contra o endereço já ocupado. Quem chamou
+   * fica a saber que não saiu e tem o link no retorno para o mandar à mão.
+   */
+  private async mailOwnerInvite(
+    academy: { name: string; shortName: string; signalColor?: string | null; logoUrl?: string | null },
+    pessoa: { email: string; name: string; title: string },
+    link: string,
+    expiresAt: Date,
+  ) {
+    /*
+     * A mesma pergunta que a página de resgate faz.
+     *
+     * Quem já tem conta não escolhe palavra-passe nenhuma: confirma a que já usa
+     * — ver `invited_account` e `existingAccountFields`. Sem isto, o email dizia
+     * "escolhes a tua palavra-passe" e a página pedia "a tua palavra-passe
+     * atual", que é a maneira mais rápida de alguém achar que abriu o link
+     * errado. Acontece mais do que parece: o presidente de um clube pode já ser
+     * encarregado de educação noutro, ou ter aberto um clube antes.
+     */
+    const conta = await this.prisma.user.findFirst({
+      where: { email: { equals: pessoa.email, mode: "insensitive" } },
+      select: { id: true },
+    });
+
+    const carta = academyOwnerInviteEmail({
+      brand: { shortName: academy.shortName, name: academy.name, signalColor: academy.signalColor, logoUrl: academy.logoUrl },
+      name: pessoa.name || pessoa.title,
+      title: pessoa.title,
+      link,
+      expiresAt,
+      hasAccount: conta !== null,
+    });
+
+    return this.mail.send({
+      to: pessoa.email,
+      toName: pessoa.name || undefined,
+      subject: carta.subject,
+      html: carta.html,
+      text: carta.text,
+      kind: "academy-owner-invite",
+    });
   }
 
   /**

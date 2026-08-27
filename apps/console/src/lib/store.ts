@@ -443,7 +443,7 @@ function build(
     amountCents: c.amountCents,
     dueDate: c.dueDate,
     // "Vencida" não é estado guardado: é derivado da data, e o servidor já o disse.
-    // "Anulada" (VOID) é decisão da direção; o resto em aberto é "Pendente".
+    // "Anulada" (VOID) é decisão da direção; o resto em aberto é "Não pago".
     status: (
       c.status === "SETTLED" ? "paid" : c.status === "VOID" ? "void" : c.overdue ? "overdue" : "pending"
     ) as FeeStatus,

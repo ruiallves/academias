@@ -165,6 +165,15 @@ Só depois: MRR, ARR, academias por estado, atletas, famílias, adesão à PWA.
 Não há gráficos de pizza, não há velocímetros, não há "atividade recente" em
 gráfico. Contagens simples ficam em texto grande, que se lê mais depressa.
 
+**Email — enviados hoje, falhados hoje, ontem.** É a única peça do produto com um
+**tecto diário**: o plano de envio é gratuito e acaba a meio do dia sem avisar
+ninguém. Um convite que não sai não dá erro a quem o mandou — a academia fica à
+espera, e a primeira notícia costuma ser um telefonema. "Ontem" está lá só para
+dar escala; as falhas contam-se à parte, porque são o único número que exige uma
+acção. Os dados vêm de `MailLog`, uma linha por tentativa de envio — ver
+`mail/mail.client.ts`, que a escreve **depois** de responder a quem chamou e falha
+em silêncio se não conseguir: não se perde um convite porque o registo não gravou.
+
 ### Academias
 
 Tabela densa, ordenável, uma linha por academia:

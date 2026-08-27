@@ -1,5 +1,5 @@
-import { useMemo, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useEffect, useMemo, useState } from "react";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import { PageHeader } from "@/components/Shell";
 import { PersonLink } from "@/components/PersonLink";
 import { cx, Empty, Monogram, Panel, Pill } from "@/components/primitives";
@@ -10,12 +10,23 @@ import { EventDetail } from "@/components/EventDetail";
 import { CalendarDays, ChevronLeft, ChevronRight, Plus } from "@/lib/icons";
 import type { CategoricalColor } from "@academia/ui/tokens";
 import { coachById, listTeams, today } from "@/lib/api";
-import { KIND_LABEL, groupByDay, useEvents, useTeamColors, type CalendarEvent } from "@/lib/calendar";
+import { KIND_LABEL, groupByDay, matchPagePath, useEvents, useTeamColors, type CalendarEvent, type EventKind } from "@/lib/calendar";
 import { dayShort, longDate, monthName, time } from "@/lib/format";
 import { can, isAcademyWide } from "@/lib/permissions";
 import { useSession } from "@/session";
 
 type View = "agenda" | "mes";
+
+/**
+ * Os tipos que se podem pedir por endereço, em português — como o resto dos
+ * atalhos da consola (`?painel=cargos`, `?falta=convocar`).
+ */
+const NOVO_POR_ENDERECO: Record<string, EventKind | undefined> = {
+  jogo: "match",
+  treino: "training",
+  torneio: "tournament",
+  outro: "other",
+};
 
 /**
  * Calendário, duas vistas.
@@ -38,34 +49,51 @@ export default function Calendar() {
   const [cursor, setCursor] = useState(today);
   const [hidden, setHidden] = useState<Set<string>>(new Set());
   const [composing, setComposing] = useState<Date | null>(null);
+  /** O tipo com que "Novo evento" abre — só quando se chega por `?novo=`. */
+  const [composingKind, setComposingKind] = useState<EventKind | undefined>(undefined);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const navigate = useNavigate();
+
   
   /**
-   * Clicar num evento.
-   *
-   * Um **jogo** vai para a página dele; tudo o resto abre a gaveta ao lado.
-   *
-   * A gaveta chega para um treino: o essencial cabe lá e fecha-se sem sair do
-   * calendário. Não chega para um jogo — antes dele há a convocatória por montar,
-   * depois há a ficha por preencher, e ao lado há a equipa de trabalho por
-   * atribuir. Espremer isso num painel lateral obrigava a sair para três sítios
-   * diferentes para tratar de um jogo só.
-   *
-   * O id do evento **é** o id do jogo — ver `fromApiMatch` em `lib/calendar.ts`.
-   * Os jogos da academia de demonstração são a excepção: nascem no cliente com
-   * ids `ev_seed_*` e não existem na base, por isso abrir a página deles dava um
-   * 404 a quem está a experimentar o produto. Para esses, a gaveta continua a ser
-   * a resposta certa.
+   * Clicar num evento: um **jogo** vai para a página dele, tudo o resto abre a
+   * gaveta ao lado. A regra e o porquê vivem em `matchPagePath` — o calendário
+   * da equipa faz exactamente o mesmo, e a decisão tem de ter um dono só.
    */
   function abrir(e: CalendarEvent) {
-    if (e.kind === "match" && !e.id.startsWith("ev_seed_")) navigate(`/jogos/${e.id}`);
+    const pagina = matchPagePath(e);
+    if (pagina) navigate(pagina);
     else setSelectedId(e.id);
   }
 
   const teams = listTeams(session);
   const colors = useTeamColors(session);
   const editable = can(session, "calendar:write");
+
+  /*
+   * `/calendario?novo=jogo` abre já o diálogo, no tipo pedido.
+   *
+   * É a porta por onde a página de Jogos manda quem quer marcar um jogo: marcar
+   * é do calendário — é lá que se vê o que já está ocupado — e ter um segundo
+   * formulário na página de Jogos seria manter duas versões da mesma coisa.
+   *
+   * O parâmetro é limpo assim que abre. Sem isso, fechar o diálogo deixava o
+   * endereço a dizer que ele estava aberto: recarregar a página ou voltar atrás
+   * reabria-o, e ninguém percebia porquê.
+   */
+  const [params, setParams] = useSearchParams();
+  const novo = params.get("novo");
+  useEffect(() => {
+    if (!novo) return;
+    setParams((atuais) => {
+      const proximos = new URLSearchParams(atuais);
+      proximos.delete("novo");
+      return proximos;
+    }, { replace: true });
+    if (!editable) return;
+    setComposingKind(NOVO_POR_ENDERECO[novo]);
+    setComposing(today);
+  }, [novo, editable, setParams]);
 
   const [from, to] = useMemo<[Date, Date]>(() => {
     if (view === "mes") {
@@ -111,7 +139,14 @@ export default function Calendar() {
         subtitle={isAcademyWide(session) ? "Treinos, jogos e eventos da academia" : "Treinos e jogos das tuas equipas"}
       >
         {editable && (
-          <button type="button" onClick={() => setComposing(today)} className="ctl-primary">
+          <button
+            type="button"
+            onClick={() => {
+              setComposingKind(undefined);
+              setComposing(today);
+            }}
+            className="ctl-primary"
+          >
             <Plus className="size-3.5" strokeWidth={2} />
             Novo evento
           </button>
@@ -192,7 +227,17 @@ export default function Calendar() {
         )}
       </Panel>
 
-      {composing && <NewEventDialog session={session} day={composing} onClose={() => setComposing(null)} />}
+      {composing && (
+        <NewEventDialog
+          session={session}
+          day={composing}
+          kind={composingKind}
+          onClose={() => {
+            setComposing(null);
+            setComposingKind(undefined);
+          }}
+        />
+      )}
 
       {selected && (
         <EventDetail

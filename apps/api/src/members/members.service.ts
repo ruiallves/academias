@@ -1,4 +1,4 @@
-import { BadRequestException, ForbiddenException, Injectable, NotFoundException } from "@nestjs/common";
+import { BadRequestException, ConflictException, ForbiddenException, Injectable, NotFoundException } from "@nestjs/common";
 import type { MemberDocumentKind, MemberFeePeriod, MemberSex, MemberStatus, Prisma } from "@prisma/client";
 import { PrismaService, type ScopedClient } from "../prisma/prisma.service";
 import { AuthService } from "../auth/auth.service";
@@ -280,6 +280,57 @@ export class MembersService {
         throw error;
       }
 
+      return { ok: true };
+    });
+  }
+
+  /**
+   * Apagar um sócio — e porque é que quase nunca é isso que se quer.
+   *
+   * ## Cancelar e apagar não são a mesma pergunta
+   *
+   * **Cancelar** é o caminho normal e é reversível: o sócio sai das listas activas
+   * e deixa de contar para quóruns e quotas, mas continua no livro com o número
+   * que lhe foi dado. Quem foi sócio do clube durante doze anos não deixa de o ter
+   * sido por ter saído — isso é o registo do que aconteceu.
+   *
+   * **Apagar** é para o que nunca chegou a existir: a mesma pessoa inscrita duas
+   * vezes pela página do clube, um formulário preenchido a brincar, uma data
+   * trocada que criou a pessoa errada.
+   *
+   * ## O travão é o número, não o estado
+   *
+   * Ao contrário de um atleta — cujo histórico vive em sete tabelas — um sócio não
+   * tem nada pendurado: nada em todo o schema aponta para `Member`. Contar linhas
+   * noutras tabelas, como faz `AthletesService.remove`, não daria aqui resposta
+   * nenhuma.
+   *
+   * O que faz de alguém sócio é o **número**. Atribuí-lo é o acto de admissão, e é
+   * único por clube: apagar a linha abre um buraco na numeração e liberta um
+   * número que já foi de uma pessoa, para ser dado a outra. Um livro de sócios com
+   * o número 34 a pertencer a duas pessoas diferentes ao longo do tempo é um livro
+   * que deixou de servir para o que existe.
+   *
+   * Por isso: com número atribuído, não se apaga — cancela-se. Sem número, nunca
+   * chegou a ser sócio, e sai sem deixar rasto nenhum por perder.
+   */
+  async remove(ctx: RequestContext, id: string) {
+    this.mustWrite(ctx);
+
+    return this.prisma.runAs(ctx.academyId, async (db) => {
+      const member = await db.member.findFirst({
+        where: { id },
+        select: { id: true, name: true, number: true },
+      });
+      if (!member) throw new NotFoundException("Sócio não encontrado");
+
+      if (member.number !== null) {
+        throw new ConflictException(
+          `${member.name} tem o número de sócio ${member.number} atribuído. Apagá-lo abria um buraco no livro e libertava um número que já foi de alguém — cancela-o em vez disso, que o tira das listas activas sem perder o registo.`,
+        );
+      }
+
+      await db.member.delete({ where: { id } });
       return { ok: true };
     });
   }

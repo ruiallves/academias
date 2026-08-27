@@ -4,7 +4,7 @@ import { PageHeader } from "@/components/Shell";
 import { Attention } from "@/components/Attention";
 import { Empty, Loading, Panel, Pill, cx } from "@/components/primitives";
 import { Segmented } from "@/components/filters";
-import { ChevronRight, CircleCheck, MapPin, Trophy } from "@/lib/icons";
+import { ChevronRight, CircleCheck, MapPin, Plus, Trophy } from "@/lib/icons";
 import { useStore } from "@/lib/store";
 import { listMatches, matchAttention, myMatchDuty, outcome, type MatchListRow } from "@/lib/matches";
 import { useSession } from "@/session";
@@ -156,6 +156,8 @@ export default function Matches() {
    * contagens podem não bater ao dígito — mas as frases, os destinos e a regra do
    * "urgente a três dias" são os mesmos, que é o que interessa não divergir.
    */
+  const podeMarcar = can(session, "calendar:write");
+
   const atencao = [
     ...myMatchDuty(rows, agora),
     ...(podeDespachar ? matchAttention(rows, agora) : []),
@@ -163,7 +165,23 @@ export default function Matches() {
 
   return (
     <>
-      <PageHeader eyebrow={store.academy.name} title="Jogos" />
+      <PageHeader eyebrow={store.academy.name} title="Jogos">
+        {/*
+          Marcar um jogo é do calendário, e é para lá que este botão leva — com
+          o "Novo evento" já aberto no tipo certo (`?novo=jogo`).
+
+          Um formulário próprio aqui seria a mesma coisa em dois sítios, com dois
+          conjuntos de regras a divergirem. E marcar às cegas, sem ver o mês, é
+          como nascem dois jogos à mesma hora no mesmo campo — no calendário, o
+          que já está ocupado está à vista antes de se escolher a data.
+        */}
+        {podeMarcar && (
+          <Link to="/calendario?novo=jogo" className="ctl-primary">
+            <Plus className="size-3.5" strokeWidth={2} />
+            Adicionar jogo
+          </Link>
+        )}
+      </PageHeader>
 
       {/*
         O mesmo painel da Visão geral, e não um aviso próprio.

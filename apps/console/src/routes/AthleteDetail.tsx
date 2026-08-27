@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
-import { Link, useParams } from "react-router-dom";
+import { Link, useNavigate, useParams } from "react-router-dom";
 import {
   AvailabilityTag,
   Bar,
@@ -19,6 +19,8 @@ import { ClinicalPanel } from "@/components/ClinicalPanel";
 import {
   ArrowLeft,
   Cake,
+  ChevronDown,
+  CircleCheck,
   ClipboardCheck,
   FileText,
   Footprints,
@@ -26,10 +28,12 @@ import {
   HeartPulse,
   Home,
   LayoutGrid,
+  LogOut,
   Pencil,
   Ruler,
   Star,
   Timer,
+  Trash2,
   Trophy,
   Wallet,
   Weight,
@@ -139,10 +143,13 @@ export default function AthleteDetail() {
       <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
         <Segmented value={tab} onChange={setTab} options={tabs} />
         {!editing && can(session, "athlete:write") && (
-          <button type="button" className="ctl-ghost shrink-0" onClick={() => setEditing(true)}>
-            <Pencil className="size-3.5" strokeWidth={1.75} />
-            Editar
-          </button>
+          <div className="flex shrink-0 items-center gap-1.5">
+            <button type="button" className="ctl-ghost" onClick={() => setEditing(true)}>
+              <Pencil className="size-3.5" strokeWidth={1.75} />
+              Editar
+            </button>
+            <AthleteStatusMenu athlete={athlete} />
+          </div>
         )}
       </div>
 
@@ -205,35 +212,210 @@ function AthleteHeader({ athlete }: { athlete: Athlete }) {
       ? `até ${shortDate(new Date(restriction.expectedReturn))}`
       : undefined;
 
+  const saiu = athlete.status === "left";
+
   return (
-    <div className="mb-5 flex flex-wrap items-center gap-4">
-      <AthletePhoto athlete={athlete} />
-
-      <div className="min-w-0 flex-1">
-        <div className="mb-1 flex flex-wrap items-center gap-1.5">
-          {sport && <Pill tone="signal">{sport.name}</Pill>}
-          <span className="text-meta text-ink-3">{team?.name}</span>
-          {athlete.position && <span className="text-meta text-ink-3">· {athlete.position}</span>}
-          {athlete.status === "paused" && <Pill tone="warn">Em pausa</Pill>}
-          <CalledUpTag athleteId={athlete.id} />
-        </div>
-        <div className="flex flex-wrap items-center gap-2.5">
-          <h1 className="text-page text-ink">{athlete.name}</h1>
-          <AvailabilityTag availability={availability} detail={detail} />
-        </div>
-        <p className="mt-0.5 text-body text-ink-3">
-          {age(new Date(athlete.birthdate), today)} anos · na academia desde{" "}
-          {new Date(athlete.joinedAt).getFullYear()}
-        </p>
-      </div>
-
-      {athlete.squadNumber !== undefined && (
-        <div className="shrink-0 text-right">
-          <div className="text-[36px] leading-none font-semibold text-ink tabular">{athlete.squadNumber}</div>
-          <div className="text-[11px] text-ink-3">camisola</div>
+    <>
+      {/*
+        Quem saiu do clube tem de o dizer antes de tudo o resto.
+        Uma etiqueta ao lado da modalidade não chegava: a ficha continua a mostrar
+        assiduidade, jogos e mensalidades, e sem este aviso lêem-se todos como se
+        fossem de agora. O que mudou não foi um campo — foi o tempo verbal da
+        página inteira, e é isso que a faixa diz.
+      */}
+      {saiu && (
+        <div className="mb-3 flex flex-wrap items-center gap-2.5 rounded-[var(--radius-panel)] border border-risk/25 bg-risk-soft px-4 py-3">
+          <LogOut className="size-4 shrink-0 text-risk" strokeWidth={1.9} />
+          <span className="min-w-0 flex-1 text-body text-risk">
+            <strong className="font-semibold">Saiu do clube.</strong> Não entra em convocatórias nem em
+            mensalidades novas — o que está abaixo é o registo do tempo em que cá esteve.
+          </span>
         </div>
       )}
 
+      <div className="mb-5 flex flex-wrap items-center gap-4">
+        {/*
+          A fotografia esbatida acompanha a faixa.
+          É o sinal que se apanha sem ler nada — quem abre a ficha percebe pela
+          cor, antes de chegar às palavras, que não está a olhar para alguém do
+          plantel.
+        */}
+        <div className={saiu ? "opacity-55 grayscale" : undefined}>
+          <AthletePhoto athlete={athlete} />
+        </div>
+
+        <div className="min-w-0 flex-1">
+          <div className="mb-1 flex flex-wrap items-center gap-1.5">
+            {sport && <Pill tone="signal">{sport.name}</Pill>}
+            <span className="text-meta text-ink-3">{team?.name}</span>
+            {athlete.position && <span className="text-meta text-ink-3">· {athlete.position}</span>}
+            {athlete.status === "paused" && <Pill tone="warn">Em pausa</Pill>}
+            {saiu && <Pill tone="risk">Saiu do clube</Pill>}
+            <CalledUpTag athleteId={athlete.id} />
+          </div>
+          <div className="flex flex-wrap items-center gap-2.5">
+            <h1 className={cx("text-page", saiu ? "text-ink-3" : "text-ink")}>{athlete.name}</h1>
+            {/*
+              A disponibilidade clínica cala-se quando o atleta saiu: "disponível"
+              ao lado de "saiu do clube" são duas frases a discordar uma da outra,
+              e a que interessa é a segunda.
+            */}
+            {!saiu && <AvailabilityTag availability={availability} detail={detail} />}
+          </div>
+          <p className="mt-0.5 text-body text-ink-3">
+            {age(new Date(athlete.birthdate), today)} anos · na academia desde{" "}
+            {new Date(athlete.joinedAt).getFullYear()}
+          </p>
+        </div>
+
+        {athlete.squadNumber !== undefined && (
+          <div className="shrink-0 text-right">
+            <div className={cx("text-[36px] leading-none font-semibold tabular", saiu ? "text-ink-4" : "text-ink")}>
+              {athlete.squadNumber}
+            </div>
+            <div className="text-[11px] text-ink-3">camisola</div>
+          </div>
+        )}
+      </div>
+    </>
+  );
+}
+
+/**
+ * O que se faz a um atleta que já não está a treinar.
+ *
+ * ## Dar baixa e apagar não são a mesma pergunta
+ *
+ * **Dar baixa** é o caminho normal e é reversível: o atleta sai das listas, das
+ * convocatórias e das mensalidades do mês seguinte, e tudo o que fez continua
+ * onde estava. Um miúdo que muda de clube em Janeiro deixou presenças, avaliações
+ * e mensalidades pagas — isso é o registo do que aconteceu, e não deixa de ser
+ * verdade por ele ter saído.
+ *
+ * **Apagar** é para o que nunca chegou a existir: um nome inscrito duas vezes,
+ * uma data trocada que criou a pessoa errada. O servidor recusa assim que houver
+ * histórico agarrado e diz **o quê** — ver `AthletesService.remove`. Aqui só se
+ * mostra essa recusa, sem a tentar adivinhar antes: a consola não sabe quantas
+ * presenças um atleta tem, e um botão escondido por engano é pior do que um
+ * botão que explica porque não pode.
+ *
+ * ## Porque é que "Em pausa" está aqui e não só "Saiu"
+ *
+ * Porque a base sempre teve os três estados e a consola já desenhava a etiqueta
+ * "Em pausa" — faltava o caminho para lá chegar. Uma lesão de seis meses não é
+ * uma saída do clube, e obrigar a escolher entre "activo" e "saiu" fazia com que
+ * um dos dois fosse mentira.
+ */
+function AthleteStatusMenu({ athlete }: { athlete: Athlete }) {
+  const [open, setOpen] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [erro, setErro] = useState<string | null>(null);
+  const navigate = useNavigate();
+
+  const estados: { value: "ACTIVE" | "PAUSED" | "LEFT"; label: string; hint: string; actual: boolean }[] = [
+    { value: "ACTIVE", label: "Activo", hint: "no plantel e nas convocatórias", actual: athlete.status === "active" },
+    { value: "PAUSED", label: "Em pausa", hint: "inscrito, fora das convocatórias", actual: athlete.status === "paused" },
+    { value: "LEFT", label: "Saiu do clube", hint: "sai das listas e das mensalidades", actual: athlete.status === "left" },
+  ];
+
+  async function mudar(status: string) {
+    setOpen(false);
+    if (busy) return;
+    setBusy(true);
+    setErro(null);
+    try {
+      await apiPatch(`/api/athletes/${athlete.id}/status`, { status });
+      await reloadAcademy();
+    } catch (e) {
+      setErro(e instanceof Error ? e.message : "Não foi possível mudar o estado.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function apagar() {
+    setOpen(false);
+    if (busy) return;
+    if (!confirm(`Apagar ${athlete.name} definitivamente? Se já tiver histórico, o servidor recusa e diz o que está agarrado.`)) return;
+    setBusy(true);
+    setErro(null);
+    try {
+      await apiDelete(`/api/athletes/${athlete.id}`);
+      await reloadAcademy();
+      navigate("/atletas");
+    } catch (e) {
+      setErro(e instanceof Error ? e.message : "Não foi possível apagar.");
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div className="relative">
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        disabled={busy}
+        aria-haspopup="menu"
+        aria-expanded={open}
+        className="ctl-ghost"
+      >
+        {busy ? "A guardar…" : "Estado"}
+        <ChevronDown className="size-3.5" strokeWidth={2} />
+      </button>
+
+      {open && (
+        <>
+          <div className="fixed inset-0 z-40" onClick={() => setOpen(false)} aria-hidden />
+          <div
+            role="menu"
+            className="absolute top-full right-0 z-50 mt-1 w-[248px] rounded-[var(--radius-panel)] border border-line bg-surface p-1 shadow-[var(--shadow-pop)]"
+          >
+            {estados.map((e) => (
+              <button
+                key={e.value}
+                type="button"
+                role="menuitem"
+                onClick={() => void mudar(e.value)}
+                className="flex w-full items-start gap-2 rounded-[6px] px-2.5 py-1.5 text-left transition-colors duration-[120ms] hover:bg-sunken"
+              >
+                <span className="mt-0.5 flex size-4 shrink-0 items-center justify-center text-signal-ink">
+                  {e.actual && <CircleCheck className="size-3.5" strokeWidth={2.25} />}
+                </span>
+                <span className="min-w-0 flex-1">
+                  <span className="block text-body text-ink">{e.label}</span>
+                  <span className="block text-meta text-ink-3">{e.hint}</span>
+                </span>
+              </button>
+            ))}
+
+            <div className="my-1 border-t border-line" />
+
+            <button
+              type="button"
+              role="menuitem"
+              onClick={() => void apagar()}
+              className="flex w-full items-start gap-2 rounded-[6px] px-2.5 py-1.5 text-left transition-colors duration-[120ms] hover:bg-risk-soft"
+            >
+              <span className="mt-0.5 flex size-4 shrink-0 items-center justify-center text-risk">
+                <Trash2 className="size-3.5" strokeWidth={1.9} />
+              </span>
+              <span className="min-w-0 flex-1">
+                <span className="block text-body text-risk">Apagar atleta</span>
+                <span className="block text-meta text-ink-3">só se não tiver histórico</span>
+              </span>
+            </button>
+          </div>
+        </>
+      )}
+
+      {erro && (
+        <p className="absolute top-full right-0 z-30 mt-1 w-[300px] rounded-[var(--radius-control)] border border-risk/25 bg-risk-soft px-3 py-2 text-meta leading-relaxed text-risk">
+          {erro}
+          <button type="button" onClick={() => setErro(null)} className="mt-1 block font-medium underline">
+            Fechar
+          </button>
+        </p>
+      )}
     </div>
   );
 }
@@ -920,7 +1102,8 @@ type AthleteFee = {
 };
 
 const FEE_STATUS_TONE = { paid: "ok", processing: "signal", pending: "warn", overdue: "risk", void: "neutral" } as const;
-const FEE_STATUS_LABEL = { paid: "Pago", processing: "A confirmar", pending: "Pendente", overdue: "Vencido", void: "Anulada" };
+/** Os mesmos rótulos de Mensalidades — ver `STATUS_LABEL` lá, e o porquê de "Não pago". */
+const FEE_STATUS_LABEL = { paid: "Pago", processing: "A confirmar", pending: "Não pago", overdue: "Vencido", void: "Anulada" };
 
 /**
  * O que este atleta paga, e o histórico de cobranças.

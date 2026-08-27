@@ -390,3 +390,39 @@ export function groupByDay(events: CalendarEvent[]): Map<string, CalendarEvent[]
   }
   return map;
 }
+
+/**
+ * Para onde um evento do calendário leva quando se clica nele.
+ *
+ * Devolve o caminho da página do jogo, ou `null` para o que se resolve na gaveta
+ * lateral.
+ *
+ * ## Porque é que um jogo não cabe numa gaveta
+ *
+ * A gaveta chega para um treino: o essencial cabe lá e fecha-se sem sair do
+ * calendário. Não chega para um jogo — antes dele há a convocatória por montar,
+ * depois há a ficha por preencher, e ao lado há a equipa de trabalho por
+ * atribuir. Espremer isso num painel lateral obrigava a sair para três sítios
+ * diferentes para tratar de um jogo só.
+ *
+ * O id do evento **é** o id do jogo — ver `fromApiMatch` acima.
+ *
+ * ## A excepção
+ *
+ * Os jogos da academia de demonstração nascem no cliente com ids `ev_seed_*` e
+ * não existem na base, por isso abrir a página deles dava um 404 a quem está a
+ * experimentar o produto. Para esses, a gaveta continua a ser a resposta certa.
+ *
+ * ## Porque é que isto vive aqui
+ *
+ * Porque tem dois donos. O calendário do clube já levava à página do jogo; o
+ * calendário **de uma equipa** não — clicar num jogo lá abria a gaveta, e a
+ * mesma coisa no mesmo produto comportava-se de duas maneiras conforme o sítio
+ * de onde se lá chegava. Uma regra escrita duas vezes diverge à primeira
+ * distracção; escrita aqui, muda nos dois de uma vez.
+ */
+export function matchPagePath(e: CalendarEvent): string | null {
+  if (e.kind !== "match") return null;
+  if (e.id.startsWith("ev_seed_")) return null;
+  return `/jogos/${e.id}`;
+}

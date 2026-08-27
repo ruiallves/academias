@@ -13,6 +13,21 @@
   --color-signal: #4338ca;
   --color-signal-soft: #eef0fd;
   --color-signal-ink: #312e9c;
+
+  /*
+   * Os derivados, escritos à mão porque aqui a cor é fixa.
+   *
+   * Nas academias é o `signalVars` que os calcula em runtime a partir da cor do
+   * clube (ver `packages/ui/src/tokens.ts`); aqui a cor não muda, e por isso os
+   * valores estão escritos. São exactamente os que a mesma função devolve para
+   * este índigo — sem eles, uma utilitária `bg-signal-strong` neste painel
+   * pintava do verde-azulado por omissão do tema, e ninguém ia perceber porquê.
+   */
+  --color-signal-strong: #4338ca;
+  --color-signal-on: #ffffff;
+  --signal-on-rgb: 255 255 255;
+  --signal-lift: #5a50d0;
+  --signal-deep: #302891;
 }
 
 @layer components {

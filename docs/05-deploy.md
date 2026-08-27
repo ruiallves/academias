@@ -46,7 +46,28 @@ PUBLIC_BASE_URL=https://{slug}.academias.pt
 PUBLIC_API_URL=https://api.academias.pt
 PLATFORM_ORIGIN=https://admin.academias.pt
 SITE_ORIGIN=https://academias.pt
+
+MAIL_API_KEY=re_...
+MAIL_FROM=noreply@academias.pt
+MAIL_FROM_NAME=Academias
 ```
+
+### Email
+
+O serviço é o **Resend**, e quem o escolhe é o **prefixo da chave**: `re_` é
+Resend, `xkeysib-` é Brevo, o resto é SendGrid. Não há `MAIL_PROVIDER` — trocar de
+serviço é trocar `MAIL_API_KEY` e reiniciar. Ver `mail/mail.client.ts`.
+
+`MAIL_FROM` tem de ser um endereço **do domínio verificado no Resend**. Não é uma
+caixa de correio: ninguém lê o que for enviado para lá. Quem responde a um convite
+cai no `replyTo`, que é o endereço do clube.
+
+`MAIL_API_URL` existe só para desenvolvimento — aponta os envios a um recolector
+local em vez do serviço. **Vazia em produção.**
+
+Sem `MAIL_API_KEY` ou sem `MAIL_FROM` o servidor arranca na mesma e avisa no
+arranque: os convites continuam a ser criados e o link aparece na consola para ser
+enviado à mão. É o push a fazer o mesmo sem chaves VAPID.
 
 `TENANT_DOMAIN` é a que liga tudo. **Sem ela nenhum host é tratado como clube** —
 `fafe.academias.pt/` dá 404 e a consola não encontra academia nenhuma. Falha para

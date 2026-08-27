@@ -204,7 +204,19 @@ check("o treinador não recebe NIF nenhum", comNif.length === 0, `${comNif.lengt
 check("o treinador não tem family:write", !pCoach.has("family:write"), "");
 
 const nifDirecao = (atletasDirecao.body ?? []).some((a) => a.taxId !== null);
-const haNifNaBase = (await db.query(`SELECT count(*)::int n FROM "Athlete" WHERE "taxId" IS NOT NULL`)).rows[0].n;
+/*
+ * A contraprova só se faz se houver NIF **nesta** academia.
+ *
+ * A contagem era em toda a base e a leitura é de uma academia só — esta ligação
+ * é a de migração, que passa por cima da RLS. Bastava outro clube ter atletas com
+ * NIF para o teste exigir da direção do `life-club` uma coisa que os dados dela
+ * não têm, e falhar por causa de dados de outro clube. Que é exactamente o oposto
+ * do que este ficheiro anda a medir.
+ */
+const haNifNaBase = (await db.query(
+  `SELECT count(*)::int n FROM "Athlete" a JOIN "Academy" ac ON ac.id = a."academyId"
+    WHERE a."taxId" IS NOT NULL AND ac.slug = 'life-club'`,
+)).rows[0].n;
 if (haNifNaBase > 0) {
   check("mas a direção recebe", nifDirecao, "");
 } else {

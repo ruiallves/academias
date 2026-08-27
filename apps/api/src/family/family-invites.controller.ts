@@ -46,7 +46,7 @@ class FamilyRecipientDto {
 /**
  * Para quem vai o link.
  *
- * Tecto de 50 por pedido. Não é o limite da SendGrid — é o limite do que faz
+ * Tecto de 50 por pedido. Não é o limite do serviço de email — é o limite do que faz
  * sentido escrever à mão de uma vez, e um pedido que envia mil emails em série é
  * um pedido que fica minutos aberto.
  */

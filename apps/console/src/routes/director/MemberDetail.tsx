@@ -1,8 +1,8 @@
 import { useCallback, useEffect, useState, type ReactNode } from "react";
-import { Link, useParams } from "react-router-dom";
+import { Link, useNavigate, useParams } from "react-router-dom";
 import { DialogField, dialogInputClass } from "@/components/Dialog";
 import { Empty, Loading, Monogram, Panel, PanelHead, Pill, cx, type Tone } from "@/components/primitives";
-import { ArrowLeft, Check, Mail, MapPin, Pencil, Phone, Wallet } from "@/lib/icons";
+import { ArrowLeft, Check, ChevronDown, CircleCheck, Mail, MapPin, Pencil, Phone, Trash2, Wallet } from "@/lib/icons";
 import { can } from "@/lib/permissions";
 import { useSession } from "@/session";
 import { money } from "@/lib/format";
@@ -14,6 +14,7 @@ import {
   ageOf,
   getMember,
   listTiers,
+  removeMember,
   updateMember,
   type MemberDetail as Data,
   type MemberStatus,
@@ -127,17 +128,21 @@ export default function MemberDetail() {
                 Editar
               </button>
             )}
-            {m.status !== "ACTIVE" && (
+            {/*
+              Uma inscrição por aprovar mantém o botão à vista.
+
+              É a única decisão desta página que tem pressa — alguém está à espera
+              do lado de lá — e escondê-la dentro de um menu de estados fazia dela
+              mais uma opção entre três. Depois de aprovado deixa de aparecer, e o
+              menu passa a ser o único sítio onde o estado se mexe.
+            */}
+            {m.status === "PENDING" && (
               <button type="button" className="ctl-primary" disabled={busy} onClick={() => void set({ status: "ACTIVE" })}>
                 <Check className="size-3.5" strokeWidth={2.25} />
-                {m.number ? "Reactivar" : "Aprovar sócio"}
+                Aprovar sócio
               </button>
             )}
-            {m.status === "ACTIVE" && (
-              <button type="button" className="ctl-outline" disabled={busy} onClick={() => void set({ status: "SUSPENDED" })}>
-                Suspender
-              </button>
-            )}
+            <MemberStatusMenu member={m} onChanged={load} />
           </div>
         )}
       </header>
@@ -371,6 +376,155 @@ const STATUS_TONE: Record<MemberStatus, Tone> = {
 
 function StatusPill({ status }: { status: MemberStatus }) {
   return <Pill tone={STATUS_TONE[status]}>{STATUS_LABEL[status]}</Pill>;
+}
+
+/**
+ * O que se faz a um sócio — o mesmo menu que a ficha do atleta já tinha.
+ *
+ * ## Porque é que substituiu os botões soltos
+ *
+ * Aqui havia dois botões que trocavam de lugar conforme o estado: "Suspender"
+ * quando activo, "Reactivar" quando não. Três problemas de uma vez. Não havia
+ * como **cancelar** um sócio — o estado existia na base e na etiqueta, mas não
+ * havia caminho para lá chegar pela consola. Não havia como apagar uma inscrição
+ * repetida vinda do site, e essas chegam sozinhas. E os botões mudavam de sítio
+ * entre visitas, o que obriga a reler a barra em vez de a reconhecer.
+ *
+ * Um botão fixo que abre os estados todos resolve os três: o que muda é o que
+ * está assinalado lá dentro, não o que aparece cá fora.
+ *
+ * ## Suspender e cancelar não são o mesmo
+ *
+ * **Suspenso** é temporário e costuma ser por quotas em atraso: o sócio continua
+ * no livro e volta a activo quando regularizar. **Cancelado** é a saída — por
+ * vontade dele ou por decisão da direção. Ambos guardam o número: quem foi sócio
+ * não deixa de o ter sido.
+ *
+ * ## Apagar quase nunca é o que se quer
+ *
+ * Está aqui à mesma, separado por uma linha e em vermelho, porque a inscrição
+ * pública produz lixo — a mesma pessoa duas vezes, um formulário preenchido a
+ * brincar — e sem isto a única saída era deixá-lo no livro para sempre.
+ *
+ * O servidor recusa assim que houver número atribuído e diz porquê (ver
+ * `MembersService.remove`). Não se esconde a opção antes de perguntar: um botão
+ * que desaparece obriga a adivinhar, um botão que explica ensina a regra.
+ */
+function MemberStatusMenu({ member, onChanged }: { member: Data; onChanged: () => void }) {
+  const [open, setOpen] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [erro, setErro] = useState<string | null>(null);
+  const navigate = useNavigate();
+
+  const estados: { value: MemberStatus; label: string; hint: string }[] = [
+    {
+      value: "ACTIVE",
+      label: "Activo",
+      hint: member.number ? "no livro e nas listas" : "aprova e atribui o próximo número",
+    },
+    { value: "SUSPENDED", label: "Suspenso", hint: "sai das listas, mantém o número" },
+    { value: "CANCELLED", label: "Cancelado", hint: "deixou de ser sócio" },
+  ];
+
+  async function mudar(status: MemberStatus) {
+    setOpen(false);
+    if (busy || status === member.status) return;
+    setBusy(true);
+    setErro(null);
+    try {
+      await updateMember(member.id, { status });
+      onChanged();
+    } catch (e) {
+      setErro(e instanceof Error ? e.message : "Não foi possível mudar o estado.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function apagar() {
+    setOpen(false);
+    if (busy) return;
+    if (!confirm(`Apagar ${member.name} definitivamente? Se já tiver número de sócio, o servidor recusa e explica porquê.`)) return;
+    setBusy(true);
+    setErro(null);
+    try {
+      await removeMember(member.id);
+      navigate("/socios");
+    } catch (e) {
+      setErro(e instanceof Error ? e.message : "Não foi possível apagar.");
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div className="relative">
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        disabled={busy}
+        aria-haspopup="menu"
+        aria-expanded={open}
+        className="ctl-ghost"
+      >
+        {busy ? "A guardar…" : "Estado do sócio"}
+        <ChevronDown className="size-3.5" strokeWidth={2} />
+      </button>
+
+      {open && (
+        <>
+          <div className="fixed inset-0 z-40" onClick={() => setOpen(false)} aria-hidden />
+          <div
+            role="menu"
+            className="absolute top-full right-0 z-50 mt-1 w-[264px] rounded-[var(--radius-panel)] border border-line bg-surface p-1 shadow-[var(--shadow-pop)]"
+          >
+            {estados.map((e) => (
+              <button
+                key={e.value}
+                type="button"
+                role="menuitem"
+                onClick={() => void mudar(e.value)}
+                className="flex w-full items-start gap-2 rounded-[6px] px-2.5 py-1.5 text-left transition-colors duration-[120ms] hover:bg-sunken"
+              >
+                <span className="mt-0.5 flex size-4 shrink-0 items-center justify-center text-signal-ink">
+                  {e.value === member.status && <CircleCheck className="size-3.5" strokeWidth={2.25} />}
+                </span>
+                <span className="min-w-0 flex-1">
+                  <span className="block text-body text-ink">{e.label}</span>
+                  <span className="block text-meta text-ink-3">{e.hint}</span>
+                </span>
+              </button>
+            ))}
+
+            <div className="my-1 border-t border-line" />
+
+            <button
+              type="button"
+              role="menuitem"
+              onClick={() => void apagar()}
+              className="flex w-full items-start gap-2 rounded-[6px] px-2.5 py-1.5 text-left transition-colors duration-[120ms] hover:bg-risk-soft"
+            >
+              <span className="mt-0.5 flex size-4 shrink-0 items-center justify-center text-risk">
+                <Trash2 className="size-3.5" strokeWidth={1.9} />
+              </span>
+              <span className="min-w-0 flex-1">
+                <span className="block text-body text-risk">Apagar sócio</span>
+                <span className="block text-meta text-ink-3">só se nunca tiver tido número</span>
+              </span>
+            </button>
+          </div>
+        </>
+      )}
+
+      {erro && (
+        <p className="absolute top-full right-0 z-30 mt-1 w-[320px] rounded-[var(--radius-control)] border border-risk/25 bg-risk-soft px-3 py-2 text-meta leading-relaxed text-risk">
+          {erro}
+          <button type="button" onClick={() => setErro(null)} className="mt-1 block font-medium underline">
+            Fechar
+          </button>
+        </p>
+      )}
+    </div>
+  );
 }
 
 function Fact({
