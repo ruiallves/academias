@@ -141,18 +141,23 @@ function Row({ label, value, muted }: { label: string; value: string; muted?: bo
 /**
  * Departamentos, e os cargos dentro de cada um.
  *
- * ## Porque é que isto era duas listas e passou a ser uma
+ * ## Um painel por departamento
  *
- * Era: uma lista de cargos, plana, com o departamento escondido lá dentro num
- * campo. Quem chegava aqui via doze linhas em fila e não conseguia responder à
- * pergunta que trazia — *quem vê o quê?*. Nem sequer via que "Fisioterapeuta" e
- * "Médico" eram a mesma área do clube.
+ * Isto já foi uma lista plana de cargos (com o departamento escondido num campo)
+ * e depois uma árvore — o departamento numa linha com fundo cinzento, os cargos
+ * em linhas indentadas por baixo. A árvore respondia à pergunta certa, mas
+ * continuava a **desenhar as duas coisas da mesma maneira**: mesma tipografia,
+ * as mesmas etiquetas, o mesmo botão "Editar" a dezasseis pixéis de distância.
+ * Quem chegava não sabia se estava a olhar para uma área do clube ou para uma
+ * função lá dentro.
  *
- * A árvore responde: o departamento diz o que a área faz e até onde vê, e os
- * cargos por baixo dizem quem lá trabalha. É a forma que a academia já tem na
- * cabeça, e por isso não precisa de ser explicada.
+ * A hierarquia passou a ser a moldura, que é o vocabulário que o resto do
+ * produto já usa: **um painel é um departamento, as linhas dentro dele são os
+ * cargos**. Não é preciso explicar o que é cada um — é a forma que o diz. O
+ * cabeçalho leva o nome e o que a área alcança; as linhas levam o cargo, quantas
+ * pessoas o têm e o que se lhe pode fazer.
  *
- * Os cargos sem departamento — a presidência — ficam num grupo à parte no fim,
+ * Os cargos sem departamento — a presidência — ficam num painel à parte no fim,
  * porque são a excepção e não a regra.
  */
 function RolesPanel({ open }: { open?: boolean }) {
@@ -183,102 +188,127 @@ function RolesPanel({ open }: { open?: boolean }) {
 
   return (
     <div ref={ref} className="space-y-3">
-      <Panel>
-        <PanelHead
-          title="Departamentos e cargos"
-          hint={loaded ? `${departments.length} departamentos · ${roles.length} cargos` : "a carregar…"}
-        >
-          {mayWrite && (
-            <button type="button" className="ctl-primary" onClick={() => setCreatingDep(true)}>
-              Novo departamento
-            </button>
-          )}
-        </PanelHead>
+      {/*
+        O cabeçalho da secção vive fora de um painel de propósito.
 
-        <p className="border-b border-line px-5 py-3 text-meta leading-relaxed text-ink-3">
-          Um <strong className="font-medium text-ink-2">departamento</strong> é uma área do clube:
-          decide o que ela faz e até onde vê. Um <strong className="font-medium text-ink-2">cargo</strong>{" "}
-          é uma função lá dentro — parte do que o departamento pode e ajusta-se a partir daí.
-        </p>
-
-        {error && <p className="px-5 py-3 text-meta text-risk">{error}</p>}
-
-        <ul>
-          {departments.map((dep) => (
-            <li key={dep.id} className="border-b border-line last:border-b-0">
-              <div className="flex flex-wrap items-center gap-3 bg-sunken/40 px-5 py-3">
-                <div className="min-w-0 flex-1">
-                  <div className="flex items-center gap-2">
-                    <span className="text-body font-medium text-ink">{dep.name}</span>
-                    <Pill tone={dep.baseRole === "COACH" || dep.baseRole === "STAFF" ? "neutral" : "signal"}>
-                      {SCOPE_LABEL[dep.baseRole]}
-                    </Pill>
-                    {dep.navKeys.length > 0 && <Pill tone="signal">menu próprio</Pill>}
-                  </div>
-                  <div className="text-meta text-ink-3">
-                    {dep.description}
-                    <span className="text-ink-4">
-                      {" · "}
-                      {dep.people} {dep.people === 1 ? "pessoa" : "pessoas"}
-                    </span>
-                  </div>
-                </div>
-
-                {dep.editable && (
-                  <div className="flex shrink-0 gap-1.5">
-                    <button type="button" className="ctl-ghost" onClick={() => setCreatingRole(dep.id)}>
-                      Novo cargo
-                    </button>
-                    <button type="button" className="ctl-ghost" onClick={() => setEditingDep(dep)}>
-                      Editar
-                    </button>
-                  </div>
-                )}
-              </div>
-
-              {dep.roles.length === 0 ? (
-                <p className="py-2.5 pl-9 pr-5 text-meta text-ink-4">
-                  Sem cargos. Ninguém pode ser convidado para este departamento até haver um.
-                </p>
-              ) : (
-                <ul>
-                  {dep.roles.map((dr) => {
-                    const role = roles.find((r) => r.id === dr.id);
-                    if (!role) return null;
-                    return <RoleRow key={role.id} role={role} onEdit={() => setEditingRole(role)} />;
-                  })}
-                </ul>
-              )}
-            </li>
-          ))}
-        </ul>
-
-        {semDepartamento.length > 0 && (
-          <>
-            <div className="border-t border-line bg-sunken/40 px-5 py-3">
-              <div className="text-body font-medium text-ink">Sem departamento</div>
-              <div className="text-meta text-ink-3">
-                A presidência responde por tudo e não pertence a uma área do clube.
-              </div>
-            </div>
-            <ul>
-              {semDepartamento.map((role) => (
-                <RoleRow key={role.id} role={role} onEdit={() => setEditingRole(role)} />
-              ))}
-            </ul>
-          </>
+        Cada departamento passou a ser um painel — ver abaixo —, e um painel a
+        embrulhar painéis dava duas molduras à volta da mesma coisa.
+      */}
+      <div className="flex flex-wrap items-baseline justify-between gap-2">
+        <div className="flex min-w-0 items-baseline gap-2.5">
+          <h2 className="text-panel text-ink">Departamentos e cargos</h2>
+          <span className="truncate text-meta text-ink-3">
+            {loaded ? `${departments.length} departamentos · ${roles.length} cargos` : "a carregar…"}
+          </span>
+        </div>
+        {mayWrite && (
+          <button type="button" className="ctl-primary" onClick={() => setCreatingDep(true)}>
+            Novo departamento
+          </button>
         )}
+      </div>
 
-        <p className="border-t border-line px-5 py-3 text-meta leading-relaxed text-ink-3">
-          Um cargo vale para toda a gente que o tem. Para abrir ou fechar permissões a{" "}
-          <strong className="font-medium text-ink-2">uma pessoa em concreto</strong> — dar mensalidades a um
-          treinador, tirar-lhe o boletim clínico — abre a ficha dela em{" "}
-          <Link to="/staff" className="font-medium text-ink hover:underline">
-            Staff
-          </Link>
-          .
-        </p>
-      </Panel>
+      <p className="max-w-[70ch] text-meta leading-relaxed text-ink-3">
+        Cada painel é um <strong className="font-medium text-ink-2">departamento</strong> — uma área do clube,
+        com o que ela faz e até onde vê. As linhas lá dentro são os{" "}
+        <strong className="font-medium text-ink-2">cargos</strong> dessa área: partem do que o departamento
+        pode e ajustam-se a partir daí.
+      </p>
+
+      {error && (
+        <Panel>
+          <p className="px-5 py-3 text-meta text-risk">{error}</p>
+        </Panel>
+      )}
+
+      {departments.map((dep) => (
+        <Panel key={dep.id}>
+          {/*
+            `panel-head` à mão, e não o componente `PanelHead`: o cabeçalho leva
+            etiquetas a seguir ao nome, e o componente só aceita texto. A classe é
+            a mesma, por isso a métrica também é.
+          */}
+          <header className="panel-head">
+            <div className="flex min-w-0 flex-wrap items-baseline gap-x-2.5 gap-y-1">
+              <h3 className="text-panel text-ink">{dep.name}</h3>
+              <span className="text-meta text-ink-3">
+                {dep.people} {dep.people === 1 ? "pessoa" : "pessoas"} ·{" "}
+                {dep.roles.length} {dep.roles.length === 1 ? "cargo" : "cargos"}
+              </span>
+            </div>
+
+            {dep.editable && (
+              <div className="flex shrink-0 gap-1.5">
+                <button type="button" className="ctl-outline" onClick={() => setCreatingRole(dep.id)}>
+                  Novo cargo
+                </button>
+                {/*
+                  "Editar departamento" e não "Editar": as linhas de baixo têm o
+                  seu próprio "Editar", e dois botões com o mesmo nome no mesmo
+                  painel são a origem da confusão que isto veio resolver.
+                */}
+                <button type="button" className="ctl-ghost" onClick={() => setEditingDep(dep)}>
+                  Editar departamento
+                </button>
+              </div>
+            )}
+          </header>
+
+          {/* O que a área é: o alcance primeiro, que é o que decide o resto. */}
+          <div className="flex flex-wrap items-center gap-2 border-b border-line bg-sunken/40 px-5 py-2.5">
+            <Pill tone={dep.baseRole === "COACH" || dep.baseRole === "STAFF" ? "neutral" : "signal"}>
+              {SCOPE_LABEL[dep.baseRole]}
+            </Pill>
+            {dep.navKeys.length > 0 && <Pill tone="signal">menu próprio</Pill>}
+            {dep.description && <span className="min-w-0 text-meta text-ink-3">{dep.description}</span>}
+          </div>
+
+          {dep.roles.length === 0 ? (
+            <p className="px-5 py-4 text-meta text-ink-4">
+              Sem cargos. Ninguém pode ser convidado para este departamento até haver um.
+            </p>
+          ) : (
+            <ul>
+              {dep.roles.map((dr) => {
+                const role = roles.find((r) => r.id === dr.id);
+                if (!role) return null;
+                return <RoleRow key={role.id} role={role} onEdit={() => setEditingRole(role)} />;
+              })}
+            </ul>
+          )}
+        </Panel>
+      ))}
+
+      {semDepartamento.length > 0 && (
+        <Panel>
+          <header className="panel-head">
+            <div className="flex min-w-0 items-baseline gap-2.5">
+              <h3 className="text-panel text-ink">Sem departamento</h3>
+              <span className="truncate text-meta text-ink-3">
+                {semDepartamento.length} {semDepartamento.length === 1 ? "cargo" : "cargos"}
+              </span>
+            </div>
+          </header>
+          <div className="border-b border-line bg-sunken/40 px-5 py-2.5 text-meta text-ink-3">
+            A presidência responde por tudo e não pertence a uma área do clube.
+          </div>
+          <ul>
+            {semDepartamento.map((role) => (
+              <RoleRow key={role.id} role={role} onEdit={() => setEditingRole(role)} />
+            ))}
+          </ul>
+        </Panel>
+      )}
+
+      <p className="max-w-[70ch] text-meta leading-relaxed text-ink-3">
+        Um cargo vale para toda a gente que o tem. Para abrir ou fechar permissões a{" "}
+        <strong className="font-medium text-ink-2">uma pessoa em concreto</strong> — dar mensalidades a um
+        treinador, tirar-lhe o boletim clínico — abre a ficha dela em{" "}
+        <Link to="/staff" className="font-medium text-ink hover:underline">
+          Staff
+        </Link>
+        .
+      </p>
 
       {roles.length > 0 && (
         <Panel>
@@ -325,10 +355,18 @@ function RolesPanel({ open }: { open?: boolean }) {
   );
 }
 
-/** Uma linha de cargo, indentada por baixo do departamento a que pertence. */
+/**
+ * Uma linha de cargo, dentro do painel do departamento a que pertence.
+ *
+ * Já não leva indentação: era ela que tinha de carregar sozinha a hierarquia,
+ * e dezasseis pixéis não chegam para distinguir um departamento de um cargo
+ * quando as duas linhas têm a mesma tipografia e o mesmo botão "Editar". Agora
+ * a hierarquia é a moldura — o painel é o departamento, as linhas são os cargos
+ * — e a linha volta a ser uma linha normal de painel, como em todo o produto.
+ */
 function RoleRow({ role, onEdit }: { role: AcademyRole; onEdit: () => void }) {
   return (
-    <li className="flex flex-wrap items-center gap-3 border-b border-line py-2.5 pl-9 pr-5 last:border-b-0">
+    <li className="flex flex-wrap items-center gap-3 border-b border-line px-5 py-2.5 last:border-b-0">
       <div className="min-w-0 flex-1">
         <div className="flex items-center gap-2">
           <span className="text-body text-ink">{role.name}</span>

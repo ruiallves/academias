@@ -20,7 +20,7 @@ import { useSession } from "@/session";
 import { can } from "@/lib/permissions";
 import { sportById, teamById } from "@/lib/api";
 import { tallyNoun } from "@/lib/calendar";
-import { Spinner } from "@/components/Busy";
+import { SaveVeil, Spinner, useSaving } from "@/components/Busy";
 import {
   OUTCOME_LABEL,
   STAFF_ROLES,
@@ -882,9 +882,8 @@ function SheetPanel({ match, mayRecord, onSaved }: { match: Match; mayRecord: bo
   const duracao = sportById(teamById(match.teamId)?.sportId ?? "")?.matchMinutes ?? 90;
 
   const [linhas, setLinhas] = useState<Record<string, Linha>>(() => daFicha(match));
-  const [busy, setBusy] = useState(false);
   const [erro, setErro] = useState<string | null>(null);
-  const [gravado, setGravado] = useState(false);
+  const { estado, gravar: correr, aGravar: busy } = useSaving();
 
   useEffect(() => {
     setLinhas(daFicha(match));
@@ -937,8 +936,26 @@ function SheetPanel({ match, mayRecord, onSaved }: { match: Match; mayRecord: bo
         const l = linhas[s.athleteId];
         if (!l) return true;
         const papelAntes: Papel = !s.played ? "nao" : s.started ? "titular" : "entrou";
+        if (l.papel !== papelAntes) return true;
+
+        /*
+         * Quem não jogou não tem ficha para comparar.
+         *
+         * Sem esta linha, uma ficha por abrir dizia "Há alterações por gravar"
+         * mal se entrava na página. `minutosDerivados` devolve `null` para quem
+         * não entrou em campo — não há minuto de entrada de onde partir — e o
+         * que está gravado é `0`. `null !== 0` dava alteração em **todas** as
+         * linhas de uma convocatória ainda por preencher, que é precisamente o
+         * caso em que ninguém mexeu em nada.
+         *
+         * Os restantes campos de uma linha destas não se comparam por serem
+         * inalcançáveis: com "não jogou" escolhido, a linha não mostra golos nem
+         * minutos, e a gravação só envia `emCampo`. Compará-los era inventar
+         * diferenças em números que ninguém pode ter mudado.
+         */
+        if (l.papel === "nao") return false;
+
         return (
-          l.papel !== papelAntes ||
           // Os minutos já não se escrevem, comparam-se calculados: assim uma
           // ficha antiga com um número à mão que discorda da entrada e da saída
           // acende o Gravar, em vez de ficar por corrigir para sempre.
@@ -961,118 +978,118 @@ function SheetPanel({ match, mayRecord, onSaved }: { match: Match; mayRecord: bo
   );
 
   async function gravar() {
-    setBusy(true);
     setErro(null);
     try {
-      await saveAppearances(
-        match.id,
-        emCampo.map((l) => ({
-          athleteId: l.athleteId,
-          // Os minutos vêm sempre da conta. O `?? 0` nunca chega a acontecer —
-          // `porCorrigir` trava o botão enquanto houver um suplente sem minuto
-          // de entrada — mas é o valor certo se alguma vez chegar: zero e não um
-          // palpite.
-          minutes: minutosDerivados(l, duracao) ?? 0,
-          started: l.papel === "titular",
-          tally: l.tally,
-          assists: l.assists,
-          yellowCards: l.yellowCards,
-          redCard: l.redCard,
-          ...(l.onMinute != null && l.papel === "entrou" ? { onMinute: l.onMinute } : {}),
-          ...(l.offMinute != null ? { offMinute: l.offMinute } : {}),
-          ...(l.yellowAt.length > 0 ? { yellowAt: l.yellowAt } : {}),
-          ...(l.redAt != null ? { redAt: l.redAt } : {}),
-          ...(l.tallyAt.length > 0 ? { tallyAt: l.tallyAt } : {}),
-          ...(l.assistsAt.length > 0 ? { assistsAt: l.assistsAt } : {}),
-        })),
-      );
-      setGravado(true);
-      setTimeout(() => setGravado(false), 2000);
-      onSaved();
+      await correr(async () => {
+        await saveAppearances(
+          match.id,
+          emCampo.map((l) => ({
+            athleteId: l.athleteId,
+            // Os minutos vêm sempre da conta. O `?? 0` nunca chega a acontecer —
+            // `porCorrigir` trava o botão enquanto houver um suplente sem minuto
+            // de entrada — mas é o valor certo se alguma vez chegar: zero e não um
+            // palpite.
+            minutes: minutosDerivados(l, duracao) ?? 0,
+            started: l.papel === "titular",
+            tally: l.tally,
+            assists: l.assists,
+            yellowCards: l.yellowCards,
+            redCard: l.redCard,
+            ...(l.onMinute != null && l.papel === "entrou" ? { onMinute: l.onMinute } : {}),
+            ...(l.offMinute != null ? { offMinute: l.offMinute } : {}),
+            ...(l.yellowAt.length > 0 ? { yellowAt: l.yellowAt } : {}),
+            ...(l.redAt != null ? { redAt: l.redAt } : {}),
+            ...(l.tallyAt.length > 0 ? { tallyAt: l.tallyAt } : {}),
+            ...(l.assistsAt.length > 0 ? { assistsAt: l.assistsAt } : {}),
+          })),
+        );
+        onSaved();
+      });
     } catch (e) {
       setErro(e instanceof Error ? e.message : "Não foi possível gravar a ficha.");
-    } finally {
-      setBusy(false);
     }
   }
 
   return (
     <Panel>
-      <PanelHead
-        title="Ficha de jogo"
-        hint={
-          emCampo.length === 0
-            ? "por preencher"
-            : `${titulares} ${titulares === 1 ? "titular" : "titulares"} · ${emCampo.length - titulares} ${
-                emCampo.length - titulares === 1 ? "suplente" : "suplentes"
-              } · ${golos} ${golos === 1 ? golo : `${golo}s`}`
-        }
-      >
-        {gravado && (
-          <span className="flex items-center gap-1 text-meta text-ok">
-            <Check className="size-3.5" strokeWidth={2} />
-            gravado
-          </span>
+      {/*
+        O véu cobre o painel inteiro, cabeçalho incluído.
+
+        Enquanto grava, nada aqui dentro é verdade: o resumo do cabeçalho conta
+        os titulares do que está no ecrã, e o que está no ecrã ainda não é o que
+        ficou gravado. Desfocar as linhas e deixar o cabeçalho nítido dava a
+        impressão de que aquela contagem já era o resultado.
+      */}
+      <SaveVeil estado={estado}>
+        <PanelHead
+          title="Ficha de jogo"
+          hint={
+            emCampo.length === 0
+              ? "por preencher"
+              : `${titulares} ${titulares === 1 ? "titular" : "titulares"} · ${emCampo.length - titulares} ${
+                  emCampo.length - titulares === 1 ? "suplente" : "suplentes"
+                } · ${golos} ${golos === 1 ? golo : `${golo}s`}`
+          }
+        />
+
+        {mayRecord && (
+          <p className="border-b border-line px-5 py-2.5 text-meta leading-relaxed text-ink-3">
+            Diz de cada um se foi <span className="font-medium text-ink-2">titular</span>, se{" "}
+            <span className="font-medium text-ink-2">entrou</span> do banco, ou se{" "}
+            <span className="font-medium text-ink-2">não jogou</span>. Só isso já fecha a ficha — os minutos de
+            substituição e de cartões ficam em "Substituição e cartões", para quem os quiser registar.
+          </p>
         )}
-      </PanelHead>
 
-      {mayRecord && (
-        <p className="border-b border-line px-5 py-2.5 text-meta leading-relaxed text-ink-3">
-          Diz de cada um se foi <span className="font-medium text-ink-2">titular</span>, se{" "}
-          <span className="font-medium text-ink-2">entrou</span> do banco, ou se{" "}
-          <span className="font-medium text-ink-2">não jogou</span>. Só isso já fecha a ficha — os minutos de
-          substituição e de cartões ficam em "Substituição e cartões", para quem os quiser registar.
-        </p>
-      )}
+        <ul>
+          {match.squad.map((s) => (
+            <SheetRow
+              key={s.athleteId}
+              atleta={s}
+              linha={linhas[s.athleteId]}
+              golo={golo}
+              duracao={duracao}
+              mayRecord={mayRecord}
+              onChange={(patch) => set(s.athleteId, patch)}
+            />
+          ))}
+        </ul>
 
-      <ul>
-        {match.squad.map((s) => (
-          <SheetRow
-            key={s.athleteId}
-            atleta={s}
-            linha={linhas[s.athleteId]}
-            golo={golo}
-            duracao={duracao}
-            mayRecord={mayRecord}
-            onChange={(patch) => set(s.athleteId, patch)}
-          />
-        ))}
-      </ul>
-
-      {mayRecord && (
-        <div className="flex flex-wrap items-center gap-3 border-t border-line px-5 py-3">
-          <button
-            type="button"
-            className="ctl-primary h-11"
-            disabled={busy || !mudou || porCorrigir > 0 || excedeMarcador !== null}
-            onClick={() => void gravar()}
-          >
-            {busy ? "A gravar…" : "Gravar ficha"}
-          </button>
-          {excedeMarcador ? (
-            <span className="text-meta font-medium text-risk">{excedeMarcador}</span>
-          ) : contraditorias > 0 ? (
-            <span className="text-meta font-medium text-risk">
-              {contraditorias === 1
-                ? "Há uma linha com minutos impossíveis — corrige-a para gravar."
-                : `Há ${contraditorias} linhas com minutos impossíveis — corrige-as para gravar.`}
-            </span>
-          ) : semEntrada > 0 ? (
-            <span className="text-meta font-medium text-risk">
-              {semEntrada === 1
-                ? "Falta o minuto de entrada de um suplente — sem ele não há minutos para gravar."
-                : `Faltam os minutos de entrada de ${semEntrada} suplentes — sem eles não há minutos para gravar.`}
-            </span>
-          ) : (
-            mudou && !busy && <span className="text-meta font-medium text-warn">Há alterações por gravar.</span>
-          )}
-          {erro && (
-            <span role="alert" className="text-meta text-risk">
-              {erro}
-            </span>
-          )}
-        </div>
-      )}
+        {mayRecord && (
+          <div className="flex flex-wrap items-center gap-3 border-t border-line px-5 py-3">
+            <button
+              type="button"
+              className="ctl-primary h-11"
+              disabled={busy || !mudou || porCorrigir > 0 || excedeMarcador !== null}
+              onClick={() => void gravar()}
+            >
+              Gravar ficha
+            </button>
+            {excedeMarcador ? (
+              <span className="text-meta font-medium text-risk">{excedeMarcador}</span>
+            ) : contraditorias > 0 ? (
+              <span className="text-meta font-medium text-risk">
+                {contraditorias === 1
+                  ? "Há uma linha com minutos impossíveis — corrige-a para gravar."
+                  : `Há ${contraditorias} linhas com minutos impossíveis — corrige-as para gravar.`}
+              </span>
+            ) : semEntrada > 0 ? (
+              <span className="text-meta font-medium text-risk">
+                {semEntrada === 1
+                  ? "Falta o minuto de entrada de um suplente — sem ele não há minutos para gravar."
+                  : `Faltam os minutos de entrada de ${semEntrada} suplentes — sem eles não há minutos para gravar.`}
+              </span>
+            ) : (
+              mudou && !busy && <span className="text-meta font-medium text-warn">Há alterações por gravar.</span>
+            )}
+            {erro && (
+              <span role="alert" className="text-meta text-risk">
+                {erro}
+              </span>
+            )}
+          </div>
+        )}
+      </SaveVeil>
     </Panel>
   );
 }

@@ -1,4 +1,4 @@
-import { createContext, useContext, useEffect, useRef, useState, type ReactNode } from "react";
+import { createContext, useCallback, useContext, useEffect, useRef, useState, type ReactNode } from "react";
 
 /**
  * O carregamento da página, num sítio só.
@@ -195,6 +195,153 @@ export function Spinner({ className }: { className?: string }) {
         style={{ borderTopColor: "var(--color-signal)" }}
         aria-hidden
       />
+    </div>
+  );
+}
+
+/* ========================================================================== */
+
+/**
+ * O tempo mínimo que o desfoque de gravação fica no ecrã.
+ *
+ * Mais curto do que o das leituras: aqui houve um clique, e um clique que não
+ * produz nada visível lê-se como um clique que não passou. Ao contrário de uma
+ * leitura — que muitas vezes é instantânea e não deve piscar — uma gravação
+ * beneficia sempre de se ver.
+ */
+const MINIMO_GRAVAR = 340;
+
+/** Quanto tempo fica a confirmação depois de gravar. */
+const CONFIRMACAO = 1800;
+
+export type EstadoGravacao = "parado" | "a-gravar" | "gravado";
+
+/**
+ * O estado de uma gravação, com a confirmação incluída.
+ *
+ * Isto existe porque o par `setBusy(true)` / `setTimeout(() => setGravado(false), 2000)`
+ * estava escrito à mão em cada painel que grava, cada um com o seu tempo e o seu
+ * nome, e nenhum deles tratava do caso em que o painel desaparece a meio — uma
+ * gravação que termina depois de a pessoa mudar de página tentava mexer em
+ * estado que já não existe.
+ *
+ * A gravação **relança** o erro: quem chama é que sabe que frase mostrar. O que
+ * o hook garante é que um erro volta a `parado` e nunca deixa o ecrã preso.
+ */
+export function useSaving(confirmacao = CONFIRMACAO) {
+  const [estado, setEstado] = useState<EstadoGravacao>("parado");
+  const relogio = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const vivo = useRef(true);
+
+  useEffect(() => {
+    vivo.current = true;
+    return () => {
+      vivo.current = false;
+      if (relogio.current) clearTimeout(relogio.current);
+    };
+  }, []);
+
+  const gravar = useCallback(
+    async (trabalho: () => Promise<void>) => {
+      if (relogio.current) clearTimeout(relogio.current);
+      setEstado("a-gravar");
+      const inicio = Date.now();
+
+      try {
+        await trabalho();
+      } catch (e) {
+        if (vivo.current) setEstado("parado");
+        throw e;
+      }
+
+      // O resto do mínimo, para o desfoque não piscar numa rede rápida.
+      const falta = Math.max(0, MINIMO_GRAVAR - (Date.now() - inicio));
+      if (falta > 0) await new Promise((r) => setTimeout(r, falta));
+      if (!vivo.current) return;
+
+      setEstado("gravado");
+      relogio.current = setTimeout(() => {
+        if (vivo.current) setEstado("parado");
+      }, confirmacao);
+    },
+    [confirmacao],
+  );
+
+  return { estado, gravar, aGravar: estado === "a-gravar" };
+}
+
+/**
+ * O mesmo desfoque da página, mas à volta de **um** painel que está a gravar.
+ *
+ * ## Porque é que não é o desfoque da página
+ *
+ * Porque não se está à espera da página, está-se à espera de uma coisa que se
+ * acabou de fazer. Desfocar tudo enquanto se grava a ficha de jogo tirava do
+ * ecrã o marcador e a convocatória, que não estão a mudar — e a pessoa perdia o
+ * sítio onde estava. O desfoque acompanha o alcance da acção.
+ *
+ * ## E a confirmação por cima
+ *
+ * A confirmação vive na mesma camada, porque é a resposta ao mesmo clique: o
+ * disco roda onde ela vai aparecer, e o certo verde ocupa o lugar dele. Um
+ * "gravado" pequeno a um canto do cabeçalho — que foi o que isto substituiu —
+ * aparece longe de onde o olho está e desaparece antes de ser encontrado.
+ *
+ * O cartão é `sticky`: uma ficha de vinte e cinco atletas é mais alta do que o
+ * ecrã, e um cartão centrado no painel podia ficar centrado fora da vista.
+ */
+export function SaveVeil({ estado, children }: { estado: EstadoGravacao; children: ReactNode }) {
+  const aGravar = estado === "a-gravar";
+
+  return (
+    <div className="relative">
+      <div
+        aria-busy={aGravar}
+        className={cxBusy(
+          "transition-[filter,opacity] duration-200 motion-reduce:transition-none",
+          aGravar && "pointer-events-none select-none blur-[3px] opacity-60",
+        )}
+      >
+        {children}
+      </div>
+
+      {estado !== "parado" && (
+        <div className="pointer-events-none absolute inset-0 z-10 flex items-center justify-center px-4">
+          <div
+            role="status"
+            aria-live="polite"
+            className={cxBusy(
+              "sticky top-1/2 flex items-center gap-2.5 rounded-[var(--radius-panel)] border px-4 py-3",
+              "bg-surface shadow-[var(--shadow-pop)]",
+              aGravar ? "border-line" : "border-[var(--color-ok)]",
+            )}
+          >
+            {aGravar ? (
+              <>
+                <span
+                  className="size-5 shrink-0 animate-spin rounded-full border-2 border-line"
+                  style={{ borderTopColor: "var(--color-signal)" }}
+                  aria-hidden
+                />
+                <span className="text-body font-medium text-ink-2">A gravar…</span>
+              </>
+            ) : (
+              <>
+                <span
+                  className="flex size-5 shrink-0 items-center justify-center rounded-full"
+                  style={{ background: "var(--color-ok)" }}
+                  aria-hidden
+                >
+                  <svg viewBox="0 0 24 24" className="size-3.5" fill="none" stroke="#fff" strokeWidth={3.5} strokeLinecap="round" strokeLinejoin="round">
+                    <path d="M20 6 9 17l-5-5" />
+                  </svg>
+                </span>
+                <span className="text-body font-medium text-ink">Gravado com sucesso</span>
+              </>
+            )}
+          </div>
+        </div>
+      )}
     </div>
   );
 }

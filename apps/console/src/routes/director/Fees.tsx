@@ -5,7 +5,7 @@ import { PageHeader } from "@/components/Shell";
 import { Dialog } from "@/components/Dialog";
 import { DataTable, Empty, Metric, MetricRow, Monogram, Panel, Pill, cx, type Column } from "@/components/primitives";
 import { ResultCount, SearchInput, Segmented, Select, Toolbar } from "@/components/filters";
-import { Check, ChevronDown, CircleCheck, Download, Search, Send, Settings, TriangleAlert, Users, Wallet } from "@/lib/icons";
+import { Check, ChevronDown, CircleCheck, Download, Loader2, Search, Send, Settings, TriangleAlert, Users, Wallet } from "@/lib/icons";
 import {
   arrears,
   athleteById,
@@ -353,16 +353,77 @@ function TeamFeesDialog({
 }) {
   const teams = listTeams(session);
 
+  /*
+   * O "Concluído" espera pelo que ficou a meio.
+   *
+   * Os preços gravam-se ao sair do campo, e carregar no Concluído é exactamente
+   * o gesto que faz o campo perder o foco. Ou seja: o clique disparava a
+   * gravação **e** fechava o diálogo, no mesmo instante. O pedido seguia para o
+   * servidor, mas o diálogo já tinha desaparecido — quem lá estava não via nada
+   * e ficava sem saber se o preço tinha ficado registado. Se falhasse, ninguém
+   * ficava a saber.
+   *
+   * Agora conta-se o que está em voo. Com o contador a zero fecha na hora, que é
+   * o caso de quem só veio ver. Com alguma coisa a caminho, o botão mostra que
+   * está à espera e o diálogo só sai quando o servidor responder.
+   *
+   * O contador é um `ref` e não estado: o `blur` e o `click` acontecem no mesmo
+   * gesto, e ler estado do React a meio de um lote de actualizações dava zero
+   * quando já havia uma gravação a começar. O estado ao lado existe só para
+   * redesenhar o botão.
+   */
+  const emVoo = useRef(new Set<string>());
+  const falhados = useRef(new Set<string>());
+  const [aGravar, setAGravar] = useState(0);
+  const [aFechar, setAFechar] = useState(false);
+
+  function marcar(teamId: string, activo: boolean, falhou?: boolean) {
+    if (activo) {
+      emVoo.current.add(teamId);
+      falhados.current.delete(teamId);
+    } else {
+      emVoo.current.delete(teamId);
+      if (falhou) falhados.current.add(teamId);
+    }
+    setAGravar(emVoo.current.size);
+  }
+
+  /*
+   * Fecha quando o último pedido aterrar — mas só se todos tiverem corrido bem.
+   *
+   * Fechar com um preço por gravar era pior do que o problema original: o
+   * diálogo desaparecia, a borda vermelha ia com ele, e o clube ficava a pensar
+   * que tinha mudado um preço que não mudou. Falhando algum, o botão volta a
+   * "Concluído" e o campo em falta fica à vista, com a sua borda.
+   */
+  useEffect(() => {
+    if (!aFechar || aGravar > 0) return;
+    if (falhados.current.size > 0) setAFechar(false);
+    else onClose();
+  }, [aFechar, aGravar, onClose]);
+
+  function concluir() {
+    if (emVoo.current.size === 0) onClose();
+    else setAFechar(true);
+  }
+
   return (
     <Dialog
       labelledBy="precos-por-equipa"
       title="Preços por equipa"
       subtitle="O preço por omissão de cada atleta — o ajuste individual, na ficha do atleta, sobrepõe-se."
-      onClose={onClose}
+      onClose={concluir}
       width={480}
       footer={
-        <button type="button" onClick={onClose} className="ctl-primary">
-          Concluído
+        <button type="button" onClick={concluir} disabled={aFechar} className="ctl-primary">
+          {aFechar ? (
+            <>
+              <Loader2 className="size-3.5 animate-spin" strokeWidth={1.75} />
+              A guardar…
+            </>
+          ) : (
+            "Concluído"
+          )}
         </button>
       }
     >
@@ -380,7 +441,7 @@ function TeamFeesDialog({
                   {t.athleteIds.length} {t.athleteIds.length === 1 ? "atleta" : "atletas"}
                 </div>
               </div>
-              <TeamFeeInput teamId={t.id} amountCents={t.feeCents} />
+              <TeamFeeInput teamId={t.id} amountCents={t.feeCents} onBusy={marcar} />
             </li>
           ))}
         </ul>
@@ -394,7 +455,16 @@ function TeamFeesDialog({
  * pensa no preço. Sem preço ainda, mostra-se vazio com uma indicação, nunca "0,00 €"
  * a fingir que alguém já decidiu que é grátis.
  */
-function TeamFeeInput({ teamId, amountCents }: { teamId: string; amountCents: number | null }) {
+function TeamFeeInput({
+  teamId,
+  amountCents,
+  onBusy,
+}: {
+  teamId: string;
+  amountCents: number | null;
+  /** Diz ao diálogo que este campo está a gravar — é o que segura o "Concluído". */
+  onBusy?: (teamId: string, activo: boolean, falhou?: boolean) => void;
+}) {
   const [value, setValue] = useState(amountCents !== null ? (amountCents / 100).toFixed(2) : "");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState(false);
@@ -412,14 +482,18 @@ function TeamFeeInput({ teamId, amountCents }: { teamId: string; amountCents: nu
     if (!trimmed || !Number.isFinite(cents) || cents === amountCents) return;
 
     setBusy(true);
+    onBusy?.(teamId, true);
     setError(false);
+    let erro = false;
     try {
       await apiPatch(`/api/teams/${teamId}/fee`, { amountCents: cents });
       await reloadAcademy();
     } catch {
+      erro = true;
       setError(true);
     } finally {
       setBusy(false);
+      onBusy?.(teamId, false, erro);
     }
   }
 
