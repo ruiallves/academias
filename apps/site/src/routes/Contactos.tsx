@@ -344,7 +344,7 @@ export default function Contactos() {
                     </div>
                   ) : (
                     <p className="mt-4 text-[13px] text-ink-3">
-                      Cai directamente na nossa lista de contactos, sem depender de teres email configurado.
+                      Respondemos em até dois dias úteis.
                     </p>
                   )}
                 </div>

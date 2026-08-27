@@ -104,6 +104,24 @@ class SetTeamsDto {
 }
 
 /**
+ * O calendário de cobrança do clube.
+ *
+ * Os dois campos são opcionais e independentes: o ecrã grava o que a pessoa
+ * acabou de mexer, e não o formulário todo de cada vez.
+ */
+class BillingSettingsDto {
+  @IsOptional() @IsInt() @Min(1) @Max(28) dueDay?: number;
+
+  @IsOptional()
+  @IsArray()
+  @ArrayMaxSize(12)
+  @IsInt({ each: true })
+  @Min(1, { each: true })
+  @Max(12, { each: true })
+  months?: number[];
+}
+
+/**
  * As leituras da consola.
  *
  * Controlador fino: nem uma decisão de permissão aqui dentro. Quem decide é o
@@ -344,6 +362,28 @@ export class AcademyController {
    *
    * Sem `?periodo=`, o mês corrente — que é o caso de quase todas as vezes.
    */
+  /**
+   * O calendário de cobrança — dia de vencimento e meses em que se cobra.
+   *
+   * Gera o mês corrente a seguir a gravar: ligar Agosto e continuar sem
+   * mensalidades era o buraco que isto veio tapar. Ver `setBillingSettings`.
+   */
+  @Patch("pagamentos")
+  setBillingSettings(@Req() req: AuthedRequest, @Body() body: BillingSettingsDto) {
+    return this.academy.setBillingSettings(req.ctx, body);
+  }
+
+  /**
+   * Quem não tem mensalidade num período, e porquê.
+   *
+   * Só leitura — é o relatório que o ecrã de Mensalidades mostra por baixo da
+   * tabela para a ausência deixar de ser um mistério. Ver `missingCharges`.
+   */
+  @Get("charges/em-falta")
+  missingCharges(@Req() req: AuthedRequest, @Query("periodo") periodo?: string) {
+    return this.billing.missingCharges(req.ctx, periodo ?? periodoActual());
+  }
+
   @Post("charges/gerar")
   ensureCharges(@Req() req: AuthedRequest, @Query("periodo") periodo?: string) {
     return this.billing.ensureCharges(req.ctx, periodo ?? periodoActual());

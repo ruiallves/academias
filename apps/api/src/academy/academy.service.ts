@@ -6,6 +6,7 @@ import { StorageService } from "../storage/storage.service";
 import { PHOTO_BUCKET, PHOTO_TTL } from "../storage/photos.service";
 import { basePermissions, can, ROLE_PERMISSIONS, type Permission, type RequestContext } from "../common/permissions";
 import { athleteScopeFilter, teamScopeFilter } from "../common/permissions";
+import { gerarCobrancas, periodoActual } from "../billing/billing.service";
 
 /**
  * As colunas de um evento que a consola lê — partilhadas pela leitura, criação e
@@ -120,7 +121,9 @@ export class AcademyService {
         where: { id: ctx.academyId },
         select: {
           id: true, slug: true, name: true, shortName: true, city: true,
-          signalColor: true, logoUrl: true, billingDueDay: true,
+          signalColor: true, logoUrl: true,
+          // O calendário de cobrança: a consola mostra-o e edita-o em Definições.
+          billingDueDay: true, billingMonths: true,
           // O período experimental. Sem contrato nenhum activo, a consola
           // mostra quanto falta — ver o cartão no rodapé do menu lateral.
           // `createdAt` é o proxy do início do período: não há um campo próprio
@@ -330,6 +333,65 @@ export class AcademyService {
 
       return { ok: true };
     });
+  }
+
+  /**
+   * O calendário de cobrança do clube: em que dia vence, e em que meses se cobra.
+   *
+   * ## Porque é que isto passou a ter um ecrã
+   *
+   * Os dois valores já existiam na academia; nenhum tinha por onde ser mudado. O
+   * dia de vencimento aparecia escrito à mão no ecrã de Definições ("8 de cada
+   * mês") e os meses viviam escondidos em cada plano, com um valor por omissão
+   * que exclui Agosto e que ninguém tinha escolhido.
+   *
+   * O resultado era o pior tipo de bug: o produto a cumprir uma regra que o
+   * clube não deu, sem nada no ecrã que a mostrasse. Um clube que abriu em Agosto
+   * inscrevia atletas e via Mensalidades vazia.
+   *
+   * ## Mudar o calendário gera o mês
+   *
+   * Ligar Agosto e continuar sem mensalidades seria o mesmo buraco outra vez.
+   * Por isso, a seguir a gravar, gera-se o período corrente — só o que falta,
+   * como sempre. Desligar um mês **não apaga** o que já foi emitido: uma
+   * mensalidade emitida é um facto, e anular uma é uma decisão à parte, que fica
+   * registada.
+   */
+  async setBillingSettings(ctx: RequestContext, dto: { dueDay?: number; months?: number[] }) {
+    if (!can(ctx, "settings:write")) throw new ForbiddenException("Sem permissão para mudar as definições");
+
+    if (dto.dueDay !== undefined && (!Number.isInteger(dto.dueDay) || dto.dueDay < 1 || dto.dueDay > 28)) {
+      // Até 28: é o último dia que existe em todos os meses. Um vencimento a 31
+      // seria uma data diferente conforme o mês, e ninguém escolhe isso de
+      // propósito. Ver `diaDeVencimento`, que trata os meses curtos na mesma.
+      throw new BadRequestException("O dia de vencimento tem de estar entre 1 e 28");
+    }
+
+    const meses = dto.months === undefined ? undefined : [...new Set(dto.months)].sort((a, b) => a - b);
+    if (meses !== undefined) {
+      if (meses.some((m) => !Number.isInteger(m) || m < 1 || m > 12)) {
+        throw new BadRequestException("Meses inválidos");
+      }
+      if (meses.length === 0) throw new BadRequestException("Escolhe pelo menos um mês de cobrança");
+    }
+
+    await this.prisma.runAs(ctx.academyId, async (db) => {
+      await db.academy.update({
+        where: { id: ctx.academyId },
+        data: {
+          ...(dto.dueDay !== undefined ? { billingDueDay: dto.dueDay } : {}),
+          ...(meses !== undefined ? { billingMonths: meses } : {}),
+        },
+      });
+    });
+
+    // Fora da transação de cima de propósito: `gerarCobrancas` abre a sua, e o
+    // que interessa é que a gravação do calendário não dependa da geração.
+    const cobrancas = await this.prisma.runAs(ctx.academyId, (db) =>
+      gerarCobrancas(db, ctx.academyId, periodoActual()),
+    );
+
+    return { ok: true, cobrancas };
   }
 
   /* ------------------------------------------------------------------------ */

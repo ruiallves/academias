@@ -51,6 +51,9 @@ type ApiBootstrap = {
     status: string;
     trialEndsAt: string | null;
     createdAt: string;
+    /** O calendário de cobrança do clube. Ver `setBillingSettings` na API. */
+    billingDueDay: number;
+    billingMonths: number[];
     /** O que o clube escreveu na página pública de adesão a sócio. */
     membershipHeadline: string | null;
     membershipIntro: string | null;
@@ -223,6 +226,7 @@ const EMPTY: State = {
   academy: {
     id: "", slug: "", name: "", shortName: "", signalColor: "#0f6b62", logoUrl: "", city: "",
     status: "ACTIVE", trialEndsAt: null, createdAt: "",
+    billingDueDay: 8, billingMonths: [],
     membershipHeadline: "", membershipIntro: "", membershipPoints: [],
     sports: [],
   },
@@ -458,6 +462,8 @@ function build(
       city: boot.academy.city ?? "",
       status: boot.academy.status,
       trialEndsAt: boot.academy.trialEndsAt,
+      billingDueDay: boot.academy.billingDueDay ?? 8,
+      billingMonths: boot.academy.billingMonths ?? [],
       createdAt: boot.academy.createdAt,
       membershipHeadline: boot.academy.membershipHeadline ?? "",
       membershipIntro: boot.academy.membershipIntro ?? "",

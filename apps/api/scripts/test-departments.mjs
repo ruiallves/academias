@@ -94,6 +94,40 @@ check("o clínico pode ler o boletim", clinico?.permissions.includes("clinical:r
 check("a equipa técnica NÃO escreve no registo clínico", !tecnica?.permissions.includes("clinical:write"), "");
 check("o clínico escreve", clinico?.permissions.includes("clinical:write"), "");
 
+console.log("\n=== Cada departamento vale o que o seu papel-base promete ===");
+/*
+ * O que isto apanha, e porque é que está escrito à mão.
+ *
+ * Os quatro departamentos de origem estiveram definidos em **dois** sítios: em
+ * SQL, na migração que os criou, e em `SEED_DEPARTMENTS`, que os semeia a partir
+ * de `ROLE_PERMISSIONS`. As duas listas divergiram sem ninguém dar por isso — o
+ * Departamento Scouting ficou sem `scouting:video:*` (olheiros que não podiam
+ * ver vídeo) e o Clínico e o Scouting ficaram com `baseRole = STAFF` em vez de
+ * MEDICAL e SCOUT, o que os prendia às equipas onde estavam atribuídos: nenhuma.
+ *
+ * A expectativa está escrita aqui em vez de importada de `ROLE_PERMISSIONS` de
+ * propósito. Um teste que a importasse continuaria a passar depois de alguém
+ * apagar `scouting:video:write` do mapa — estaria a comparar o código consigo
+ * próprio. Isto é a promessa do produto, escrita à parte: se mudar, é para se
+ * mudar aqui também, e conscientemente.
+ */
+const PROMESSA = [
+  // Ver o clube inteiro não é privilégio, é a natureza do trabalho: um
+  // prospecto não pertence a escalão nenhum e um lesionado não espera pela
+  // atribuição a uma equipa. Ver `teamScopeFilter`.
+  ["scouting", "SCOUT", ["scouting:read", "scouting:write", "scouting:video:read", "scouting:video:write"]],
+  ["clinico", "MEDICAL", ["clinical:read", "clinical:write", "clinical:status"]],
+  ["tecnica", "COACH", ["attendance:write", "calendar:write"]],
+  ["direcao", "DIRECTOR", ["billing:write", "staff:write", "member:write"]],
+];
+
+for (const [key, base, exigidas] of PROMESSA) {
+  const dep = (lista.body ?? []).find((d) => d.key === key);
+  check(`"${key}" tem papel-base ${base}`, dep?.baseRole === base, `${dep?.baseRole}`);
+  const faltam = exigidas.filter((x) => !dep?.permissions.includes(x));
+  check(`"${key}" pode o que o cargo dele promete`, faltam.length === 0, `faltam ${faltam.join(", ")}`);
+}
+
 console.log("\n=== Quem pode escrever ===");
 const porPai = await call(parent, "POST", "/api/departments", {
   name: "ZZ Pai", baseRole: "DIRECTOR", permissions: [],

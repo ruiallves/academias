@@ -14,7 +14,7 @@
  *  - definir o preço depois apanha quem ficou para trás;
  *  - gerar duas vezes não duplica nem reescreve (é idempotente);
  *  - o ajuste individual sobrepõe-se ao preço da equipa;
- *  - um mês fora dos `months` do plano não gera nada.
+ *  - um mês fora do calendário do clube (`Academy.billingMonths`) não gera nada.
  *
  * Uso: node scripts/test-charge-generation.mjs
  */
@@ -67,16 +67,17 @@ const PERIODO = `${hoje.getFullYear()}-${String(hoje.getMonth() + 1).padStart(2,
 const MES = hoje.getMonth() + 1;
 
 /*
- * O plano de teste cobra o mês corrente, seja ele qual for.
+ * O calendário de teste cobra o mês corrente, seja ele qual for.
  *
  * A primeira versão deste teste assumiu que o mês de hoje é cobrado — e falhou
- * em Agosto, porque o `months` por omissão do `SubscriptionPlan` exclui Agosto
- * de propósito ("muitas academias não cobram agosto"). O teste estava errado, não
- * o código: a geração recusou-se a cobrar um mês em que o plano não cobra, que é
- * exactamente o que tem de fazer.
+ * em Agosto, porque o calendário por omissão exclui Agosto de propósito ("muitas
+ * academias não cobram agosto"). O teste estava errado, não o código: a geração
+ * recusou-se a cobrar um mês em que o clube não cobra, que é exactamente o que
+ * tem de fazer.
  *
- * Cobrir os dois: o plano deste teste inclui o mês corrente e o seguinte, e há um
- * bloco no fim que verifica o comportamento fora dos meses do plano.
+ * O calendário é do **clube** (`Academy.billingMonths`) e já não de cada plano —
+ * ver a migração `meses_de_cobranca`. Este teste põe lá o mês corrente e o
+ * seguinte, e repõe o original no fim.
  */
 const proximoMes = new Date(hoje.getFullYear(), hoje.getMonth() + 1, 1);
 const MESES_DO_TESTE = [MES, proximoMes.getMonth() + 1];
@@ -94,6 +95,21 @@ const direcao = await login("direcao@lifeclub.pt");
 
 const academyId = (await db.query(`SELECT id FROM "Academy" WHERE slug = 'life-club'`)).rows[0].id;
 const modelo = (await db.query(`SELECT "sportId", "seasonId" FROM "Team" WHERE "academyId" = $1 LIMIT 1`, [academyId])).rows[0];
+
+/*
+ * O calendário de cobrança da academia, guardado para ser reposto no fim.
+ *
+ * Isto mexe numa definição real do clube de demonstração, por isso a reposição
+ * não é opcional — está no `fim()`, que corre em qualquer saída.
+ */
+const calendarioOriginal = (await db.query(
+  `SELECT "billingMonths" FROM "Academy" WHERE id = $1`, [academyId],
+)).rows[0].billingMonths;
+const porCalendario = (meses) =>
+  db.query(`UPDATE "Academy" SET "billingMonths" = $1 WHERE id = $2`, [meses, academyId]);
+const reporCalendario = () => porCalendario(calendarioOriginal);
+
+await porCalendario(MESES_DO_TESTE);
 
 /* -------------------------------------------------------------------------- */
 
@@ -135,12 +151,8 @@ console.log("\n=== Definir o preço apanha quem ficou para trás ===");
 const preco = await call(direcao, "PATCH", "/api/teams/zz_t_sem_preco/fee", { amountCents: 3500 });
 check("a direção define o preço da equipa", preco.status === 200, `${preco.status}`);
 
-/*
- * O plano nasce com os meses por omissão, que excluem Agosto. Para a suite dar o
- * mesmo resultado em qualquer mês do ano, fixa-se aqui os meses que interessam —
- * e gera-se outra vez, agora que o mês corrente é cobrado.
- */
-await db.query(`UPDATE "SubscriptionPlan" SET months = $1 WHERE "teamId" = $2`, [MESES_DO_TESTE, "zz_t_sem_preco"]);
+// O calendário do clube já inclui o mês corrente (ver o topo), por isso basta
+// gerar outra vez agora que existe preço.
 await call(direcao, "POST", `/api/charges/gerar?periodo=${PERIODO}`);
 
 const agoraTem = (await db.query(
@@ -176,6 +188,15 @@ const cobrancaImediata = (await db.query(
 check("e a mensalidade aparece logo", cobrancaImediata?.amountCents === 3500, JSON.stringify(cobrancaImediata));
 
 const diaAcademia = (await db.query(`SELECT "billingDueDay" FROM "Academy" WHERE id = $1`, [academyId])).rows[0].billingDueDay;
+/*
+ * O dia é o da academia — o **mês** é que depende de quando se entrou.
+ *
+ * Este atleta acabou de ser inscrito. Se hoje já passou do dia de vencimento, a
+ * mensalidade deste mês vence no prazo seguinte, para não nascer vencida (ver o
+ * bloco "Quem entra num mês fechado"). O dia mantém-se em qualquer dos casos, e
+ * é isso que este teste verifica — o mês é consequência da data de hoje, e um
+ * teste preso a ele falhava metade do calendário.
+ */
 check(
   "com o dia de vencimento da academia",
   Number(cobrancaImediata.due.slice(8, 10)) === diaAcademia,
@@ -245,23 +266,16 @@ check("e o outro continua no preço da equipa", doOutro?.amountCents === 3500, J
 
 console.log("\n=== Um mês em que não se cobra ===");
 /*
- * `SubscriptionPlan.months` existe porque muitas academias não cobram Agosto.
- * Um período fora dos meses do plano não é uma dívida por pagar — é um mês em
+ * `Academy.billingMonths` existe porque muitas academias não cobram Agosto. Um
+ * período fora do calendário do clube não é uma dívida por pagar — é um mês em
  * que não se cobra, e não deve gerar linha nenhuma.
- */
-/*
- * **Todos** os planos destes atletas, e não só o da equipa.
  *
- * A primeira versão restringia só o plano da equipa — mas um dos atletas tem
- * ajuste individual, que é um plano próprio (`teamId: null`) com os meses por
- * omissão. Ele continuava a ser cobrado em Julho, e com razão: o plano dele
- * cobra Julho. O teste é que não estava a montar o cenário que dizia montar.
+ * Fecha-se no **clube** e já não em cada plano: era essa a correcção da migração
+ * `meses_de_cobranca`. Antes, um atleta com ajuste individual escapava ao
+ * calendário da equipa — tinha um plano próprio, com os meses por omissão — e
+ * continuava a ser cobrado num mês que o clube tinha fechado.
  */
-await db.query(
-  `UPDATE "SubscriptionPlan" SET months = ARRAY[1,2,3]
-    WHERE "teamId" = $1 OR name LIKE $2`,
-  ["zz_t_sem_preco", "Individual — ZZ %"],
-);
+await porCalendario([1, 2, 3]);
 const foraDoMes = `${hoje.getFullYear()}-07`;
 const gFora = await call(direcao, "POST", `/api/charges/gerar?periodo=${foraDoMes}`);
 const nadaEmJulho = (await db.query(
@@ -269,8 +283,62 @@ const nadaEmJulho = (await db.query(
     WHERE a.name LIKE 'ZZ %' AND c.period = $1`,
   [foraDoMes],
 )).rows[0].n;
-check("um mês fora do plano não gera nada", nadaEmJulho === 0, `${nadaEmJulho}`);
+check("um mês fora do calendário do clube não gera nada", nadaEmJulho === 0, `${nadaEmJulho}`);
 check("e diz quantos ficaram de fora por isso", (gFora.body?.foraDoMes ?? 0) >= 1, JSON.stringify(gFora.body));
+
+console.log("\n=== Quem entra num mês fechado é cobrado à mesma ===");
+/*
+ * A excepção que a direcção pediu, e a razão dela.
+ *
+ * O calendário responde a "que meses é que o clube cobra a quem já cá está".
+ * Não responde à inscrição: um miúdo que entra a 27 de Agosto treina em Agosto,
+ * e a mensalidade tem de aparecer — mesmo num clube que não cobra Agosto ao
+ * resto do plantel. Se não for para cobrar, anula-se; uma anulação registada
+ * vale mais do que uma cobrança que nunca existiu.
+ */
+await porCalendario([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12].filter((m) => m !== MES));
+
+const tardio = await call(direcao, "POST", "/api/athletes", {
+  name: "ZZ Atleta Fora do Calendário",
+  birthdate: "2012-09-09",
+  taxId: "913333333",
+  teamId: "zz_t_sem_preco",
+});
+check("inscreve num mês que o clube não cobra", tardio.status === 201 || tardio.status === 200, `${tardio.status}`);
+
+const cobrancaTardia = (await db.query(
+  `SELECT "amountCents", status, "dueDate"::date::text AS due FROM "Charge"
+    WHERE "athleteId" = $1 AND period = $2`,
+  [tardio.body?.id, PERIODO],
+)).rows[0];
+check(
+  "e a mensalidade do mês nasce à mesma, por pagar",
+  cobrancaTardia?.amountCents === 3500 && cobrancaTardia?.status === "OPEN",
+  JSON.stringify(cobrancaTardia),
+);
+
+/*
+ * E não nasce vencida.
+ *
+ * Inscrever alguém depois do dia de vencimento e emitir-lhe uma mensalidade já
+ * fora do prazo era pô-la a vermelho no segundo em que nasce — e a caminho de
+ * um lembrete automático à família nessa mesma noite. Quem chega tarde paga no
+ * vencimento seguinte, sem deixar de ser a mensalidade deste mês.
+ */
+const venceHoje = new Date(cobrancaTardia?.due ?? 0) >= new Date(new Date().toISOString().slice(0, 10));
+check("e não nasce vencida", venceHoje, `vence a ${cobrancaTardia?.due}`);
+
+// Que o calendário continua a valer para quem **não** entrou neste mês está
+// provado no bloco de Julho, acima: lá ninguém se inscreveu, e não nasceu nada.
+
+/*
+ * Reabrir o calendário antes de seguir.
+ *
+ * O bloco seguinte verifica que um atleta **em pausa** não gera mensalidade — e
+ * com o calendário fechado ninguém geraria nada, por isso o teste passaria sem
+ * provar coisa nenhuma. Um verde falso é pior do que um vermelho.
+ */
+await porCalendario(MESES_DO_TESTE);
 
 console.log("\n=== Permissões ===");
 const coach = await login("treinador@lifeclub.pt");
@@ -296,6 +364,9 @@ check("um atleta em pausa não gera mensalidade", pausado === 0, `${pausado}`);
 
 console.log("\n=== Limpeza ===");
 await limpar();
+// O calendário do clube de demonstração volta ao que era — isto mexeu numa
+// definição real, e deixá-la alterada estragava a academia para o próximo.
+await reporCalendario();
 await db.end();
 console.log("  feito");
 

@@ -1,5 +1,5 @@
 import { randomBytes, createHash } from "node:crypto";
-import { BadRequestException, ConflictException, Injectable } from "@nestjs/common";
+import { BadRequestException, ConflictException, Injectable, NotFoundException } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
 import { PlatformPrisma } from "./platform.prisma";
 import { initialRoles, isPresidente } from "../roles/roles.service";
@@ -219,6 +219,8 @@ export class PlatformService {
       roleName?: string;
       /** O departamento desse cargo. Nulo é "nenhum" — o caso do presidente. */
       roleDepartment?: StaffDepartment | null;
+      /** A cor do clube, quando já se sabe. Omitir deixa a de omissão do schema. */
+      signalColor?: string;
       planId?: string;
       trialDays?: number;
     },
@@ -294,6 +296,18 @@ export class PlatformService {
       ? null
       : { key: slugify(nomeCargo), name: nomeCargo, department: dto.roleDepartment ?? null };
 
+    /*
+     * A cor é validada aqui outra vez, e não só no DTO.
+     *
+     * O DTO protege o pedido HTTP; isto protege o método, que também é chamado
+     * de outros sítios e que escreve numa coluna que vai parar ao CSS de todas
+     * as páginas públicas do clube. Uma cor não é um texto qualquer quando é
+     * interpolada num `style`.
+     */
+    if (dto.signalColor !== undefined && !/^#[0-9a-fA-F]{6}$/.test(dto.signalColor)) {
+      throw new BadRequestException("Cor inválida — usa o formato #RRGGBB");
+    }
+
     const academy = await this.prisma.academy.create({
       data: {
         slug,
@@ -301,6 +315,9 @@ export class PlatformService {
         shortName: shortNameOf(name),
         status: "SETUP",
         trialEndsAt: new Date(Date.now() + trialDays * DAY),
+        // Sem cor escolhida não se escreve nada: fica a de omissão do schema, e
+        // um `undefined` aqui é diferente de gravar o verde à mão.
+        ...(dto.signalColor ? { signalColor: dto.signalColor.toLowerCase() } : {}),
         ...(plan ? { subscription: { create: { planId: plan.id, status: "TRIALING" } } } : {}),
       },
       select: { id: true, slug: true, name: true },
@@ -465,6 +482,18 @@ export class PlatformService {
    * registada — mas é gritado no log do servidor, porque um registo de auditoria
    * que falha em silêncio é pior do que não o ter.
    */
+  /**
+   * O clube existe? — a pergunta antes de lhe escrever o símbolo.
+   *
+   * Sem isto, um id inventado no endereço criava uma pasta no bucket público com
+   * o nome que quem pede escolhesse, e ficava lá um ficheiro sem dono a ocupar
+   * espaço para sempre.
+   */
+  async mustExist(academyId: string): Promise<void> {
+    const existe = await this.prisma.academy.findUnique({ where: { id: academyId }, select: { id: true } });
+    if (!existe) throw new NotFoundException("Academia não encontrada");
+  }
+
   async audit(
     admin: PlatformAdminContext | null,
     action: string,

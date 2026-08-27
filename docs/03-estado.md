@@ -711,6 +711,34 @@ de infraestrutura, não de código da aplicação.
   `bootstrap`, no máximo de hora a hora) **ou** uma `PushSubscription` viva. As
   duas metades são precisas: quem instala e salta as notificações não tem
   subscrição, e quem já usava a app é anterior à coluna.
+- **O calendário de cobrança é do clube, e vê-se.** Os meses em que se cobra
+  viviam em `SubscriptionPlan.months`, com um valor por omissão que exclui Agosto:
+  ninguém o escolheu, nenhum ecrã o mostrava, e um clube que arrancou em Agosto
+  inscrevia atletas e via Mensalidades vazia — sem erro nenhum. Subiu para
+  `Academy.billingMonths` (migração `meses_de_cobranca`, mesmo valor por omissão,
+  nenhum clube muda de comportamento), e Definições → Pagamentos passa a mostrar e
+  a editar o dia de vencimento e os doze meses. Ligar um mês gera já as
+  mensalidades em falta; desligar não apaga as emitidas. A coluna do plano fica
+  como histórico e **deixou de ser lida** — o dia em que um plano precisar de
+  calendário próprio, é aí que volta.
+- **Quem se inscreve num mês é cobrado nesse mês**, esteja ele no calendário ou
+  não. O calendário responde a "que meses é que o clube cobra a quem já cá está";
+  não responde à inscrição — um atleta que entra a 27 de Agosto treinou em
+  Agosto, e a mensalidade tem de aparecer. Nasce por pagar, como todas; se a
+  direcção não a quiser cobrar, anula-a, e uma anulação registada vale mais do
+  que uma cobrança que nunca existiu. A excepção é derivada de `Athlete.joinedAt`
+  e não de uma opção, por isso vale em todos os caminhos que geram — a inscrição,
+  a importação, e o "definir o preço" que apanha quem ficou para trás. Quem entra
+  **depois** do dia de vencimento não nasce em dívida: a mensalidade continua a
+  ser a desse mês e vence no prazo seguinte, senão nascia vermelha e com um
+  lembrete automático a caminho da família na mesma noite.
+- **A ausência em Mensalidades passou a ter explicação.** `GET /api/charges/em-falta`
+  diz quem não tem mensalidade no período e porquê — `fora-do-mes` (o clube não
+  cobra este mês), `sem-preco` (falta configurar) ou `por-gerar` (tem preço e
+  falta emitir) — e o ecrã mostra-o por baixo da tabela, com a acção certa para
+  cada caso. Antes eram três coisas diferentes debaixo da mesma frase, "Sem
+  mensalidades neste filtro". O botão que emite chama `POST /api/charges/gerar`,
+  que já existia e que nada na consola chegava a chamar.
 - **Falta justificada leva motivo.** No registo de presenças, escolher "Justificada"
   abre um campo para o motivo (ex.: consulta médica); o motivo aparece também na
   ficha do atleta, ao lado da falta. Vive com as presenças, que ainda são locais.

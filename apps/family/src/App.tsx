@@ -1,7 +1,7 @@
 import { createContext, useContext, useEffect, useMemo, useState } from "react";
 import { NavLink, Navigate, Route, Routes, useNavigate } from "react-router-dom";
 import { Bell, CalendarDays, Home, RefreshCw, User, Wallet } from "lucide-react";
-import { load, reload, useStore, type Child } from "@/lib/store";
+import { load, resetAndLoad, useStore, type Child } from "@/lib/store";
 import { hasOnboarded } from "@/lib/onboarding";
 import { readToken, useSession } from "@/lib/session";
 import Entrar from "@/screens/Entrar";
@@ -57,7 +57,7 @@ export default function App() {
    * desenvolvimento que já não faz sentido agora que as famílias se registam a
    * sério pelo link do clube. Ver `screens/Entrar.tsx`.
    */
-  if (!session) return <Entrar onEntered={() => void reload()} />;
+  if (!session) return <Entrar onEntered={() => void resetAndLoad()} />;
 
   if (!store.ready) return <Splash />;
   if (store.error) return <Failed message={store.error} />;

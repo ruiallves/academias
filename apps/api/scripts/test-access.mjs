@@ -50,11 +50,24 @@ await db.query(`DELETE FROM "Athlete" WHERE name LIKE 'ZZ Acc%'`);
 const director = await login("direcao@lifeclub.pt");
 const coach = await login("treinador@lifeclub.pt");
 
+let tentativa = 0;
+
 console.log("=== Por omissão, o treinador importa/inscreve ===");
 const boot = await call(coach, "GET", "/api/bootstrap");
 check("o treinador tem athlete:write por omissão", boot.body?.me?.grants !== undefined && await coachCanCreate(coach), "");
 async function coachCanCreate(tok) {
-  const r = await call(tok, "POST", "/api/athletes", { name: "ZZ Acc Um", birthdate: "2015-05-05", teamId: "t_sub11" });
+  /*
+   * NIF obrigatório, e diferente a cada tentativa.
+   *
+   * Obrigatório desde que a app da família passou a identificar o filho por NIF
+   * mais data de nascimento (ver `athletes.dto.ts`); sem ele isto dava 400.
+   * Diferente a cada vez porque o NIF é único por academia, e repeti-lo fazia a
+   * segunda chamada bater no duplicado antes de chegar à verificação de
+   * permissões. Nos dois casos vinha um 400 que este teste lia como "não pode" —
+   * e passava, ou falhava, pela razão errada. O que aqui se mede são permissões.
+   */
+  const n = ++tentativa;
+  const r = await call(tok, "POST", "/api/athletes", { name: `ZZ Acc ${n}`, birthdate: "2015-05-05", teamId: "t_sub11", taxId: `19900011${n}` });
   return r.status < 300;
 }
 check("o me traz revokes (vazio)", Array.isArray(boot.body?.me?.revokes) && boot.body.me.revokes.length === 0);
@@ -70,7 +83,7 @@ check("a retirada ficou na base de dados", stored.includes("athlete:write"), JSO
 
 console.log("\n=== E agora o treinador já NÃO importa — em sessão nova ===");
 const coach2 = await login("treinador@lifeclub.pt"); // sessão nova = contexto relido do servidor
-const blocked = await call(coach2, "POST", "/api/athletes", { name: "ZZ Acc Dois", birthdate: "2015-06-06", teamId: "t_sub11" });
+const blocked = await call(coach2, "POST", "/api/athletes", { name: "ZZ Acc Dois", birthdate: "2015-06-06", teamId: "t_sub11", taxId: "199000222" });
 check("inscrever é agora recusado (403)", blocked.status === 403, `${blocked.status}`);
 const boot2 = await call(coach2, "GET", "/api/bootstrap");
 check("e o me reflecte a retirada", boot2.body?.me?.revokes?.includes("athlete:write"));
@@ -78,7 +91,7 @@ check("e o me reflecte a retirada", boot2.body?.me?.revokes?.includes("athlete:w
 console.log("\n=== Devolver o acesso ===");
 await call(director, "PATCH", "/api/staff/mem_coach/access", { grants: [], revokes: [] });
 const coach3 = await login("treinador@lifeclub.pt");
-const restored = await call(coach3, "POST", "/api/athletes", { name: "ZZ Acc Tres", birthdate: "2015-07-07", teamId: "t_sub11" });
+const restored = await call(coach3, "POST", "/api/athletes", { name: "ZZ Acc Tres", birthdate: "2015-07-07", teamId: "t_sub11", taxId: "199000333" });
 check("volta a poder inscrever", restored.status < 300, `${restored.status}`);
 
 console.log("\n=== Guardas contra escalada ===");

@@ -1,11 +1,11 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { useSearchParams } from "react-router-dom";
+import { Link, useSearchParams } from "react-router-dom";
 import { PageHeader } from "@/components/Shell";
 import { Dialog } from "@/components/Dialog";
-import { DataTable, Empty, Metric, MetricRow, Monogram, Panel, Pill, cx, type Column } from "@/components/primitives";
+import { DataTable, Empty, Metric, MetricRow, Monogram, Panel, PanelHead, Pill, cx, type Column } from "@/components/primitives";
 import { ResultCount, SearchInput, Segmented, Select, Toolbar } from "@/components/filters";
-import { Check, ChevronDown, CircleCheck, Download, Loader2, Search, Send, Settings, TriangleAlert, Users, Wallet } from "@/lib/icons";
+import { CalendarDays, Check, ChevronDown, CircleCheck, Download, Loader2, Search, Send, Settings, TriangleAlert, Users, Wallet } from "@/lib/icons";
 import {
   arrears,
   athleteById,
@@ -19,7 +19,7 @@ import {
   teamById,
   today,
 } from "@/lib/api";
-import { apiPatch, apiPost, apiPut } from "@/lib/http";
+import { apiGet, apiPatch, apiPost, apiPut } from "@/lib/http";
 import { reloadAcademy } from "@/lib/store";
 import { money, percent, periodLabel, relativeDays, shortName } from "@/lib/format";
 import { can } from "@/lib/permissions";
@@ -328,11 +328,186 @@ export default function Fees() {
             }
           />
         </Panel>
+
+        {/*
+          Porque é que falta alguém.
+          Vive por baixo da tabela e não dentro dela: são atletas **sem**
+          mensalidade, e uma tabela de mensalidades não os pode conter. Ver
+          `MissingCharges`.
+        */}
+        <MissingCharges period={period} mayWrite={mayEditFees} onOpenPrices={() => setPricesOpen(true)} />
       </div>
 
       {pricesOpen && <TeamFeesDialog session={session} onClose={() => setPricesOpen(false)} />}
       {athletePricesOpen && <AthleteFeesDialog session={session} onClose={() => setAthletePricesOpen(false)} />}
     </>
+  );
+}
+
+/* -------------------------------------------------------------------------- */
+
+type MissingReason = "fora-do-mes" | "sem-preco" | "por-gerar";
+
+type MissingCharges = {
+  period: string;
+  cobraEsteMes: boolean;
+  atletas: { athleteId: string; name: string; teamId: string | null; reason: MissingReason }[];
+};
+
+/**
+ * Quem não tem mensalidade neste mês — e porquê.
+ *
+ * ## A ausência que ninguém conseguia explicar
+ *
+ * Esta página lê `Charge`. Um atleta sem cobrança simplesmente não aparece, e o
+ * ecrã dizia "Sem mensalidades neste filtro" — a mesma frase para três coisas
+ * completamente diferentes: o mês não se cobra, falta o preço, ou falta emitir.
+ *
+ * Foi exactamente assim que se perdeu uma tarde: atleta inscrito, preço da equipa
+ * definido, e nada em Mensalidades. Não havia bug — o calendário de cobrança do
+ * clube não incluía Agosto, e nenhum ecrã o dizia.
+ *
+ * Cada motivo tem uma acção diferente, e é isso que este painel mostra: o mês
+ * fechado manda-te às Definições, o preço em falta ao diálogo de preços, e a
+ * cobrança por emitir resolve-se aqui mesmo.
+ */
+function MissingCharges({
+  period,
+  mayWrite,
+  onOpenPrices,
+}: {
+  /** O período em causa. Em "Todos os períodos" a pergunta é sobre o mês corrente. */
+  period: string;
+  mayWrite: boolean;
+  onOpenPrices: () => void;
+}) {
+  const alvo = period === ALL ? currentPeriod : period;
+  const [data, setData] = useState<MissingCharges | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [erro, setErro] = useState<string | null>(null);
+
+  const carregar = useCallback(async () => {
+    try {
+      setData(await apiGet<MissingCharges>("/api/charges/em-falta", { periodo: alvo }));
+      setErro(null);
+    } catch (e) {
+      // Um treinador sem `billing:read` nunca chega aqui; qualquer outra falha
+      // não pode partir a página — o painel simplesmente não aparece.
+      setData(null);
+      setErro(e instanceof Error ? e.message : null);
+    }
+  }, [alvo]);
+
+  useEffect(() => {
+    void carregar();
+  }, [carregar]);
+
+  async function gerar() {
+    setBusy(true);
+    try {
+      await apiPost(`/api/charges/gerar?periodo=${alvo}`, {});
+      await reloadAcademy();
+      await carregar();
+    } catch (e) {
+      setErro(e instanceof Error ? e.message : "Não foi possível gerar as mensalidades.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  if (!data || data.atletas.length === 0) return null;
+
+  const label = periodLabel(alvo);
+  const porGerar = data.atletas.filter((a) => a.reason === "por-gerar");
+  const semPreco = data.atletas.filter((a) => a.reason === "sem-preco");
+  /*
+   * Os que têm alguma coisa a fazer.
+   *
+   * `fora-do-mes` não é um problema de ninguém: é o calendário do clube. Quem
+   * se inscreveu **neste** mês não entra aqui — esses são cobrados à mesma, por
+   * isso chegam como `por-gerar`. Ver `gerarCobrancas` na API.
+   */
+  const accionaveis = data.atletas.filter((a) => a.reason !== "fora-do-mes");
+  const foraDoMes = data.atletas.length - accionaveis.length;
+
+  /*
+   * O mês fechado é uma resposta só, não uma lista.
+   *
+   * Quando não há nada a fazer — o clube não cobra este mês e ninguém se
+   * inscreveu nele — listar trinta nomes com o mesmo motivo é ruído. Uma frase
+   * e o caminho para a mudar.
+   */
+  if (accionaveis.length === 0) {
+    return (
+      <Panel>
+        <div className="flex flex-wrap items-center gap-3 px-5 py-4">
+          <span className="flex size-8 shrink-0 items-center justify-center rounded-full bg-sunken text-ink-3">
+            <CalendarDays className="size-4" strokeWidth={1.75} />
+          </span>
+          <div className="min-w-0 flex-1">
+            <div className="text-body font-medium text-ink">O clube não cobra {label}</div>
+            <div className="text-meta text-ink-3">
+              Por isso não há mensalidades neste mês — nem para os {data.atletas.length} atletas activos. Não é
+              dívida por pagar: é um mês fora do calendário de cobrança.
+            </div>
+          </div>
+          <Link to="/definicoes" className="ctl-outline shrink-0">
+            <Settings className="size-3.5" strokeWidth={1.75} />
+            Ver calendário
+          </Link>
+        </div>
+      </Panel>
+    );
+  }
+
+  return (
+    <Panel>
+      <PanelHead
+        title={`Sem mensalidade em ${label}`}
+        hint={`${accionaveis.length} ${accionaveis.length === 1 ? "atleta" : "atletas"}`}
+      >
+        {mayWrite && porGerar.length > 0 && (
+          <button type="button" className="ctl-primary" disabled={busy} onClick={() => void gerar()}>
+            {busy ? "A gerar…" : `Emitir ${porGerar.length}`}
+          </button>
+        )}
+        {mayWrite && semPreco.length > 0 && porGerar.length === 0 && (
+          <button type="button" className="ctl-outline" onClick={onOpenPrices}>
+            Definir preços
+          </button>
+        )}
+      </PanelHead>
+
+      <ul>
+        {accionaveis.map((a) => (
+          <li key={a.athleteId} className="flex items-center gap-3 border-b border-line px-5 py-2.5 last:border-b-0">
+            <Monogram name={a.name} size="sm" />
+            <Link to={`/atletas/${a.athleteId}`} className="min-w-0 flex-1 truncate text-body text-ink hover:underline">
+              {a.name}
+            </Link>
+            <span className="shrink-0 text-meta text-ink-4">{teamById(a.teamId ?? "")?.name ?? "sem equipa"}</span>
+            {a.reason === "sem-preco" ? (
+              <Pill tone="warn">preço por configurar</Pill>
+            ) : (
+              <Pill tone="neutral">por emitir</Pill>
+            )}
+          </li>
+        ))}
+      </ul>
+
+      {foraDoMes > 0 && (
+        // O resto do plantel não tem mensalidade porque o mês não se cobra —
+        // dito uma vez, em rodapé, para não repetir o mesmo motivo trinta vezes.
+        <p className="border-t border-line px-5 py-2.5 text-meta text-ink-3">
+          Os outros {foraDoMes} atletas activos não têm mensalidade porque o clube não cobra {label}.{" "}
+          <Link to="/definicoes" className="font-medium text-ink hover:underline">
+            Ver calendário
+          </Link>
+        </p>
+      )}
+
+      {erro && <p className="border-t border-line px-5 py-3 text-meta text-risk">{erro}</p>}
+    </Panel>
   );
 }
 

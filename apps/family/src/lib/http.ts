@@ -1,4 +1,4 @@
-import { getAccessToken, signOut } from "@/lib/session";
+import { getAccessToken, refreshSession, signOut } from "@/lib/session";
 import { academySlug } from "@/lib/invite";
 
 /**
@@ -23,10 +23,8 @@ export class ApiError extends Error {
   }
 }
 
-async function request<T>(method: string, path: string, body?: unknown): Promise<T> {
-  const token = await getAccessToken();
-
-  const res = await fetch(`${API}${path}`, {
+function send(path: string, method: string, token: string | null, body?: unknown): Promise<Response> {
+  return fetch(`${API}${path}`, {
     method,
     headers: {
       ...(token ? { Authorization: `Bearer ${token}` } : {}),
@@ -39,10 +37,34 @@ async function request<T>(method: string, path: string, body?: unknown): Promise
     },
     body: body !== undefined ? JSON.stringify(body) : undefined,
   });
+}
+
+async function request<T>(method: string, path: string, body?: unknown): Promise<T> {
+  const token = await getAccessToken();
+  let res = await send(path, method, token, body);
+
+  /*
+   * Um 401 merece uma segunda tentativa antes de mandar o pai para o ecrã de
+   * entrada.
+   *
+   * O `getAccessToken()` já renova o que está a expirar, mas há um caso que a
+   * validade não apanha: o relógio do telemóvel adiantado, um token revogado do
+   * outro lado, uma sessão trocada noutro dispositivo. Nesses, o token parece bom
+   * daqui e o servidor recusa-o na mesma. Renovar e repetir **uma** vez resolve-os
+   * todos sem que ninguém dê por nada.
+   *
+   * Uma vez só, de propósito: se o pedido repetido também levar 401, o problema
+   * não é o token estar velho, e insistir era um ciclo.
+   */
+  if (res.status === 401 && token) {
+    const renewed = await refreshSession();
+    if (renewed && renewed !== token) res = await send(path, method, renewed, body);
+  }
 
   if (!res.ok) {
     const parsed = await res.json().catch(() => null);
     const msg = Array.isArray(parsed?.message) ? parsed.message.join("; ") : parsed?.message;
+    // Depois da renovação ter falhado, aí sim: a sessão acabou mesmo.
     if (res.status === 401) signOut();
     throw new ApiError(res.status, msg ?? mensagem(res.status));
   }

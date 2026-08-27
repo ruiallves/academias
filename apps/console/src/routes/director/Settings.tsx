@@ -13,8 +13,9 @@ import { SportsPanel } from "@/components/SportsPanel";
  * use.
  */
 import { cx, Panel, PanelHead, Pill } from "@/components/primitives";
+import { apiPatch } from "@/lib/http";
 import { CircleCheck, Wallet } from "@/lib/icons";
-import { useStore } from "@/lib/store";
+import { reloadAcademy, useStore } from "@/lib/store";
 import { type CatalogKey } from "@/lib/catalogs";
 import { can, type Permission } from "@/lib/permissions";
 import { AREAS, CLINICAL_AREAS, SCOUTING_AREAS, levelOf, type Area } from "@/lib/access";
@@ -103,8 +104,9 @@ export default function Settings() {
                 </p>
               </div>
 
+              <BillingCalendar mayWrite={maySettings} />
+
               <dl className="space-y-2 text-meta">
-                <Row label="Dia de vencimento" value="8 de cada mês" />
                 <Row label="Lembretes automáticos" value="3 dias antes e no dia" />
                 <Row label="Débito directo SEPA" value="por activar" muted />
               </dl>
@@ -117,6 +119,127 @@ export default function Settings() {
 }
 
 /* -------------------------------------------------------------------------- */
+
+/* -------------------------------------------------------------------------- */
+
+const MESES = ["Jan", "Fev", "Mar", "Abr", "Mai", "Jun", "Jul", "Ago", "Set", "Out", "Nov", "Dez"];
+
+/**
+ * O calendário de cobrança: em que dia vence, e em que meses se cobra.
+ *
+ * ## Porque é que isto passou a existir
+ *
+ * Os dois valores já estavam na academia e nenhum tinha por onde ser mudado. O
+ * dia de vencimento estava escrito à mão neste ecrã ("8 de cada mês") e os meses
+ * viviam escondidos dentro de cada plano de preço, com um valor por omissão que
+ * exclui Agosto — que ninguém escolheu e ninguém via.
+ *
+ * O sintoma era este: um clube que começa a usar o produto em Agosto inscreve um
+ * atleta, define o preço da equipa, e Mensalidades fica **vazia**. Sem erro. A
+ * regra existia, estava a ser cumprida, e não havia ecrã nenhum onde a ler.
+ *
+ * ## Grava a cada toque
+ *
+ * Sem botão de "Guardar": ligar Agosto é uma decisão de um clique e esperar por
+ * uma confirmação não acrescenta nada. O servidor gera o mês corrente a seguir a
+ * gravar — ligar um mês e continuar sem mensalidades era o mesmo buraco outra vez.
+ */
+function BillingCalendar({ mayWrite }: { mayWrite: boolean }) {
+  const { academy } = useStore();
+  const [busy, setBusy] = useState(false);
+  const [erro, setErro] = useState<string | null>(null);
+
+  const meses = academy.billingMonths;
+
+  async function gravar(patch: { dueDay?: number; months?: number[] }) {
+    if (!mayWrite) return;
+    setBusy(true);
+    setErro(null);
+    try {
+      await apiPatch("/api/pagamentos", patch);
+      await reloadAcademy();
+    } catch (e) {
+      setErro(e instanceof Error ? e.message : "Não foi possível gravar.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  function alternar(mes: number) {
+    // Nunca zero meses: um clube que não cobra em mês nenhum não é uma
+    // configuração, é um engano — e o servidor recusa-o na mesma.
+    const proximo = meses.includes(mes) ? meses.filter((m) => m !== mes) : [...meses, mes].sort((a, b) => a - b);
+    if (proximo.length === 0) return;
+    void gravar({ months: proximo });
+  }
+
+  return (
+    <div className="space-y-2.5">
+      <div className="flex items-baseline justify-between gap-3">
+        <span className="text-meta text-ink-3">Dia de vencimento</span>
+        <label className="flex items-baseline gap-1.5">
+          <input
+            type="number"
+            min={1}
+            max={28}
+            defaultValue={academy.billingDueDay}
+            disabled={!mayWrite || busy}
+            onBlur={(e) => {
+              const dia = Number(e.target.value);
+              if (Number.isInteger(dia) && dia >= 1 && dia <= 28 && dia !== academy.billingDueDay) {
+                void gravar({ dueDay: dia });
+              } else {
+                e.target.value = String(academy.billingDueDay);
+              }
+            }}
+            className="h-7 w-14 rounded-[var(--radius-control)] border border-line bg-surface px-2 text-right text-meta tabular focus:border-line-strong focus:outline-none"
+          />
+          <span className="text-meta text-ink-3">de cada mês</span>
+        </label>
+      </div>
+
+      <div>
+        <div className="mb-1.5 flex items-baseline justify-between gap-3">
+          <span className="text-meta text-ink-3">Meses cobrados</span>
+          <span className="text-[11px] text-ink-4">
+            {meses.length} {meses.length === 1 ? "mês" : "meses"}
+          </span>
+        </div>
+
+        <div className="grid grid-cols-6 gap-1">
+          {MESES.map((nome, i) => {
+            const mes = i + 1;
+            const on = meses.includes(mes);
+            return (
+              <button
+                key={nome}
+                type="button"
+                disabled={!mayWrite || busy}
+                aria-pressed={on}
+                onClick={() => alternar(mes)}
+                className={cx(
+                  "h-7 rounded-[var(--radius-control)] border text-[11px] font-medium transition-colors duration-[120ms] disabled:opacity-50",
+                  on
+                    ? "border-signal bg-signal-soft text-signal-ink"
+                    : "border-line text-ink-4 hover:border-line-strong hover:text-ink-3",
+                )}
+              >
+                {nome}
+              </button>
+            );
+          })}
+        </div>
+
+        <p className="mt-1.5 text-[11px] leading-relaxed text-ink-3">
+          Um mês desligado não gera mensalidades — não é dívida por pagar, é um mês em que o clube não cobra.
+          Ligar um mês emite já as mensalidades em falta desse mês; desligar não apaga as que já foram emitidas.
+        </p>
+      </div>
+
+      {erro && <p className="text-meta text-risk">{erro}</p>}
+    </div>
+  );
+}
 
 /* -------------------------------------------------------------------------- */
 

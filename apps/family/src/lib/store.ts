@@ -348,6 +348,28 @@ export function reload(): Promise<void> {
   return load();
 }
 
+/**
+ * Esquece o que estava carregado e volta a carregar de raiz.
+ *
+ * ## O bug que isto fecha
+ *
+ * Quem chegava com a sessão expirada via a app tentar carregar, apanhar 401 e
+ * guardar `error: "A sessão expirou"`. A seguir entrava com a password certa — e
+ * continuava a ver o mesmo erro, porque o estado da tentativa falhada ficava lá:
+ * `ready` já era `true` e `error` ainda estava preenchido, por isso a app pintava
+ * o ecrã de avaria em vez do splash enquanto o novo arranque corria. Só um
+ * recarregamento da página (o botão "Tentar outra vez") limpava aquilo.
+ *
+ * O `reload()` normal não serve aqui: esse é para quando já há dados no ecrã e se
+ * quer actualizá-los sem piscar. Trocar de sessão é outra coisa — o que estava
+ * carregado era de outra pessoa e não deve sobreviver um instante que seja.
+ */
+export function resetAndLoad(): Promise<void> {
+  loading = null;
+  apply(EMPTY);
+  return load();
+}
+
 /* -------------------------------------------------------------------------- */
 /* Tradução                                                                    */
 /* -------------------------------------------------------------------------- */

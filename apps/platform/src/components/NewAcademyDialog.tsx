@@ -1,5 +1,5 @@
-import { useEffect, useState, type FormEvent } from "react";
-import { Check, Copy, X } from "lucide-react";
+import { useEffect, useRef, useState, type FormEvent } from "react";
+import { Check, Copy, ImagePlus, X } from "lucide-react";
 import { apiGet, apiPost } from "@/lib/http";
 import { euros } from "@/lib/format";
 import type { Plan } from "@/lib/types";
@@ -8,10 +8,18 @@ import { cx } from "./primitives";
 /**
  * Criar academia e convidar o diretor.
  *
- * Um formulário só, quatro campos. Um assistente de vários passos para isto seria
- * cerimónia: o que a academia precisa de saber sobre si própria — cor, modalidades,
- * equipas — é o diretor que preenche no onboarding dele, com conhecimento de causa.
- * Nós só precisamos de saber quem é o cliente e a quem mandar o link.
+ * Um formulário só. Um assistente de vários passos para isto seria cerimónia: o
+ * que a academia precisa de saber sobre si própria — modalidades, equipas — é o
+ * diretor que preenche no onboarding dele, com conhecimento de causa.
+ *
+ * ## Porque é que a cor e o símbolo estão aqui, se são do clube
+ *
+ * Continuam a ser do clube e continuam editáveis nas Definições — isto não os
+ * tira de lá. Mas quem abre um clube tem quase sempre o emblema à frente na
+ * altura em que o abre, e o presidente recebe um convite que já mostra o símbolo
+ * dele. A alternativa era o clube nascer verde-genérico e alguém ter de se
+ * lembrar de o arranjar depois. Ficam os dois opcionais, e escondidos atrás de
+ * um resumo, para não engordarem o caminho de quem não os tem.
  *
  * O endereço é derivado do nome enquanto ninguém lhe tocar. É o que faz o campo
  * desaparecer para quem não se importa e continuar lá para quem se importa.
@@ -34,6 +42,13 @@ const DEPARTAMENTOS = [
   { value: "OPERATIONS", label: "Secretaria e operações" },
 ] as const;
 
+/** 2 MB — o mesmo tecto do servidor. Ver `club-logo.service.ts`. */
+const MAX_LOGO_BYTES = 2 * 1024 * 1024;
+const LOGO_TYPES = ["image/png", "image/webp", "image/jpeg"];
+
+/** O verde por omissão do `schema.prisma`. Aqui só para o campo abrir nele. */
+const COR_OMISSAO = "#0f6b62";
+
 /** "Presidente" em qualquer grafia. Gémeo de `isPresidente` no servidor. */
 function ehPresidente(nome: string): boolean {
   const limpo = nome.normalize("NFD").replace(/[̀-ͯ]/g, "").trim().toLowerCase();
@@ -53,6 +68,32 @@ export function NewAcademyDialog({ onClose, onCreated }: { onClose: () => void; 
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [created, setCreated] = useState<Created | null>(null);
+
+  /*
+   * A identidade, opcional e fechada por omissão.
+   *
+   * `corTocada` distingue "escolheu o verde" de "não escolheu nada" — sem isso,
+   * o campo de cor abre num valor e o formulário não tem como saber se aquilo é
+   * uma escolha ou o estado inicial, e acabava a gravar à mão a cor que o schema
+   * já punha sozinho.
+   */
+  const [identidadeAberta, setIdentidadeAberta] = useState(false);
+  const [cor, setCor] = useState(COR_OMISSAO);
+  const [corTocada, setCorTocada] = useState(false);
+  const [logo, setLogo] = useState<File | null>(null);
+  const [logoPreview, setLogoPreview] = useState<string | null>(null);
+  const fileInput = useRef<HTMLInputElement>(null);
+
+  // Um `blob:` que ninguém liberta é memória presa enquanto o separador viver.
+  useEffect(() => {
+    if (!logo) {
+      setLogoPreview(null);
+      return;
+    }
+    const url = URL.createObjectURL(logo);
+    setLogoPreview(url);
+    return () => URL.revokeObjectURL(url);
+  }, [logo]);
 
   useEffect(() => {
     /*
@@ -77,7 +118,15 @@ export function NewAcademyDialog({ onClose, onCreated }: { onClose: () => void; 
   }, [onClose, onCreated, created]);
 
   const effectiveSlug = slugTouched ? slug : slugify(name);
-  const valid = name.trim().length >= 3 && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(directorEmail.trim()) && effectiveSlug.length >= 3;
+  // O campo de texto da cor deixa escrever "#0f6" a caminho de "#0f6b62". Enquanto
+  // não estiver completo, o botão espera — em vez de o servidor devolver 400 com o
+  // clube por criar.
+  const corValida = !corTocada || /^#[0-9a-f]{6}$/i.test(cor);
+  const valid =
+    name.trim().length >= 3 &&
+    /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(directorEmail.trim()) &&
+    effectiveSlug.length >= 3 &&
+    corValida;
 
   async function submit(e: FormEvent) {
     e.preventDefault();
@@ -93,14 +142,47 @@ export function NewAcademyDialog({ onClose, onCreated }: { onClose: () => void; 
         directorEmail: directorEmail.trim(),
         roleName: roleName.trim() || "Presidente",
         ...(roleDepartment ? { roleDepartment } : {}),
+        ...(corTocada ? { signalColor: cor } : {}),
         planId: planId || undefined,
       });
+
+      /*
+       * O símbolo depois do clube, e nunca a bloqueá-lo.
+       *
+       * Carrega-se para o Supabase directamente, em duas fases, e só existe
+       * pasta onde o pôr depois de a academia ter id — daí a ordem. Se falhar,
+       * o clube fica aberto e o convite gerado: dizer "não foi possível criar" a
+       * quem já tem um clube criado seria mentira, e mandá-lo tentar outra vez
+       * criava um segundo clube. Diz-se o que faltou e segue-se — o presidente
+       * carrega o emblema nas Definições, que é onde isto vive de verdade.
+       */
+      if (logo) {
+        try {
+          await enviarSimbolo(result.academy.id, logo);
+        } catch {
+          setError("A academia foi criada, mas o símbolo não subiu. Carrega-o depois nas Definições do clube.");
+        }
+      }
+
       setCreated(result);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Não foi possível criar.");
     } finally {
       setBusy(false);
     }
+  }
+
+  function escolherFicheiro(file: File) {
+    setError(null);
+    if (!LOGO_TYPES.includes(file.type)) {
+      setError("O símbolo tem de ser PNG, WebP ou JPEG.");
+      return;
+    }
+    if (file.size > MAX_LOGO_BYTES) {
+      setError("O símbolo tem de ter menos de 2 MB.");
+      return;
+    }
+    setLogo(file);
   }
 
   return (
@@ -116,7 +198,7 @@ export function NewAcademyDialog({ onClose, onCreated }: { onClose: () => void; 
           </button>
         </header>
 
-        {created ? <Result created={created} onDone={onCreated} /> : (
+        {created ? <Result created={created} aviso={error} onDone={onCreated} /> : (
           <form onSubmit={submit} className="space-y-4 p-5">
             <Field label="Nome da academia">
               <input className={INPUT} value={name} onChange={(e) => setName(e.target.value)} placeholder="Academia Life Club" autoFocus />
@@ -196,6 +278,119 @@ export function NewAcademyDialog({ onClose, onCreated }: { onClose: () => void; 
                     primeira pessoa entra com todas as permissões — é ela que monta o clube.
                   </p>
                 </>
+              )}
+            </div>
+
+            {/*
+              A identidade do clube, atrás de um resumo.
+
+              Fechada por omissão porque a maior parte dos clubes abre sem o
+              emblema à mão, e dois campos abertos que ficam vazios são dois
+              campos que fazem o formulário parecer maior do que é. O resumo na
+              linha diz o que já está escolhido, para não ser preciso abrir para
+              saber.
+            */}
+            <div className="rounded-[var(--radius-control)] border border-line">
+              <button
+                type="button"
+                onClick={() => setIdentidadeAberta((v) => !v)}
+                aria-expanded={identidadeAberta}
+                className="flex w-full items-center gap-2.5 px-3 py-2.5 text-left"
+              >
+                <span
+                  aria-hidden
+                  className="size-6 shrink-0 overflow-hidden rounded-[5px] border border-line"
+                  style={{ background: logoPreview ? "var(--color-sunken)" : corTocada ? cor : COR_OMISSAO }}
+                >
+                  {logoPreview && <img src={logoPreview} alt="" className="size-full object-contain" />}
+                </span>
+                <span className="min-w-0 flex-1">
+                  <span className="block text-meta font-medium text-ink">Cor e símbolo do clube</span>
+                  <span className="block text-[11px] text-ink-4">
+                    {logo || corTocada
+                      ? [logo ? "símbolo escolhido" : null, corTocada ? cor : null].filter(Boolean).join(" · ")
+                      : "opcional — o clube também os define nas Definições"}
+                  </span>
+                </span>
+                <span className="shrink-0 text-[11px] text-ink-4">{identidadeAberta ? "Fechar" : "Definir"}</span>
+              </button>
+
+              {identidadeAberta && (
+                <div className="space-y-3 border-t border-line px-3 py-3">
+                  <div>
+                    <span className="mb-1.5 block text-meta font-medium text-ink">Cor</span>
+                    <div className="flex items-center gap-2">
+                      <input
+                        type="color"
+                        value={cor}
+                        onChange={(e) => {
+                          setCor(e.target.value);
+                          setCorTocada(true);
+                        }}
+                        className="h-9 w-12 shrink-0 cursor-pointer rounded-[var(--radius-control)] border border-line bg-surface p-1"
+                        aria-label="Cor do clube"
+                      />
+                      <input
+                        className={cx(INPUT, "font-mono text-[13px]")}
+                        value={cor}
+                        onChange={(e) => {
+                          const v = e.target.value.trim().toLowerCase();
+                          setCor(v.startsWith("#") ? v : `#${v}`);
+                          setCorTocada(true);
+                        }}
+                        placeholder={COR_OMISSAO}
+                      />
+                      {corTocada && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setCor(COR_OMISSAO);
+                            setCorTocada(false);
+                          }}
+                          className="ctl-ghost shrink-0"
+                        >
+                          Repor
+                        </button>
+                      )}
+                    </div>
+                    <p className="mt-1.5 text-[11px] leading-relaxed text-ink-4">
+                      Sem escolha, o clube abre no verde da plataforma.
+                    </p>
+                  </div>
+
+                  <div>
+                    <span className="mb-1.5 block text-meta font-medium text-ink">Símbolo</span>
+                    <input
+                      ref={fileInput}
+                      type="file"
+                      accept={LOGO_TYPES.join(",")}
+                      className="hidden"
+                      onChange={(e) => {
+                        const f = e.target.files?.[0];
+                        if (f) escolherFicheiro(f);
+                        e.target.value = "";
+                      }}
+                    />
+                    <div className="flex items-center gap-2">
+                      <button type="button" onClick={() => fileInput.current?.click()} className="ctl-outline">
+                        <ImagePlus className="size-3.5" strokeWidth={1.75} />
+                        {logo ? "Trocar" : "Escolher ficheiro"}
+                      </button>
+                      {logo && (
+                        <>
+                          <span className="min-w-0 flex-1 truncate text-[11px] text-ink-3">{logo.name}</span>
+                          <button type="button" onClick={() => setLogo(null)} className="ctl-ghost shrink-0">
+                            Tirar
+                          </button>
+                        </>
+                      )}
+                    </div>
+                    <p className="mt-1.5 text-[11px] leading-relaxed text-ink-4">
+                      Quadrado e com pelo menos 512 px de lado dá o melhor resultado. PNG, WebP ou JPEG até 2 MB.
+                      Sobe depois de a academia estar criada.
+                    </p>
+                  </div>
+                </div>
               )}
             </div>
 
@@ -331,13 +526,37 @@ export function NewAcademyDialog({ onClose, onCreated }: { onClose: () => void; 
 }
 
 /**
+ * O símbolo, em duas fases.
+ *
+ * Igual ao da consola: pedir autorização, carregar directamente para o Supabase,
+ * confirmar que chegou. O ficheiro não passa pela nossa API — ver
+ * `club-logo.service.ts`. A porta é que é outra: aqui é a da plataforma, porque
+ * o clube ainda não tem ninguém lá dentro para o fazer.
+ */
+async function enviarSimbolo(academyId: string, file: File) {
+  const { url, token, key } = await apiPost<{ url: string; token: string; key: string }>(
+    `/academies/${academyId}/simbolo/upload`,
+    { contentType: file.type },
+  );
+
+  const res = await fetch(url, {
+    method: "PUT",
+    headers: { "Content-Type": file.type, Authorization: `Bearer ${token}` },
+    body: file,
+  });
+  if (!res.ok) throw new Error("O carregamento falhou.");
+
+  await apiPost(`/academies/${academyId}/simbolo`, { key });
+}
+
+/**
  * O link, uma vez.
  *
  * Na base guarda-se só o hash do token — ninguém, nem nós, o consegue reconstruir.
  * Quem perder o link revoga e emite outro, e é dito aqui para não parecer falha da
  * interface.
  */
-function Result({ created, onDone }: { created: Created; onDone: () => void }) {
+function Result({ created, aviso, onDone }: { created: Created; aviso: string | null; onDone: () => void }) {
   const [copied, setCopied] = useState(false);
 
   async function copy() {
@@ -352,6 +571,12 @@ function Result({ created, onDone }: { created: Created; onDone: () => void }) {
 
   return (
     <div className="space-y-4 p-5">
+      {/* O símbolo pode ter falhado sem que o clube tenha falhado. Dizê-lo aqui,
+          e não em vez do resultado, é a diferença entre um aviso e uma mentira. */}
+      {aviso && (
+        <p className="rounded-[var(--radius-control)] bg-[#fdf3e3] px-3 py-2 text-meta text-[#8a5a10]">{aviso}</p>
+      )}
+
       <p className="text-body leading-relaxed text-ink-2">
         <strong className="font-medium text-ink">{created.academy.name}</strong> está criada em{" "}
         <span className="font-mono text-[13px]">{created.academy.slug}.academias.pt</span>, com o cargo de{" "}

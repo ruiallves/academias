@@ -1,9 +1,10 @@
 import { Body, Controller, Delete, Get, Ip, Param, Patch, Post, Query, Req, UseGuards } from "@nestjs/common";
-import { IsBoolean, IsEmail, IsEnum, IsInt, IsOptional, IsString, Length, Matches, Max, Min } from "class-validator";
+import { IsBoolean, IsEmail, IsEnum, IsIn, IsInt, IsOptional, IsString, Length, Matches, Max, Min } from "class-validator";
 import { StaffDepartment } from "@prisma/client";
 import { Public } from "../auth/auth.guard";
 import { PlatformGuard, PlatformRoles, type PlatformRequest } from "./platform.guard";
 import { PlatformService } from "./platform.service";
+import { ClubLogoService } from "../storage/club-logo.service";
 
 /**
  * O corpo de "criar academia", validado. Classe e não interface — ver
@@ -44,6 +45,17 @@ class CreateAcademyDto {
   @IsEnum(StaffDepartment)
   roleDepartment?: StaffDepartment;
 
+  /**
+   * A cor do clube, se já se souber ao abrir.
+   *
+   * Continua a ser do clube e continua editável nas Definições — isto é só
+   * poupar-lhe o primeiro passo quando quem abre já tem o emblema à frente.
+   * Omitir deixa o verde por omissão do `schema.prisma`.
+   */
+  @IsOptional()
+  @Matches(/^#[0-9a-fA-F]{6}$/, { message: "Cor inválida — usa o formato #RRGGBB" })
+  signalColor?: string;
+
   @IsOptional()
   @IsString()
   planId?: string;
@@ -53,6 +65,16 @@ class CreateAcademyDto {
   @Min(1)
   @Max(365)
   trialDays?: number;
+}
+
+/** Gémeos dos de `club-logo.controller.ts` — a mesma forma, outra porta. */
+class UploadLogoDto {
+  @IsIn(["image/png", "image/webp", "image/jpeg"])
+  contentType!: "image/png" | "image/webp" | "image/jpeg";
+}
+
+class ConfirmLogoDto {
+  @IsString() @Length(8, 300) key!: string;
 }
 
 /** Fechar ou reabrir um clube. Ver `setAcademyActive`. */
@@ -85,7 +107,10 @@ class DeleteAcademyDto {
 @UseGuards(PlatformGuard)
 @Controller("api/platform")
 export class PlatformController {
-  constructor(private readonly platform: PlatformService) {}
+  constructor(
+    private readonly platform: PlatformService,
+    private readonly logo: ClubLogoService,
+  ) {}
 
   /** Quem sou eu, do lado da plataforma. A app usa-o para arrancar. */
   @Get("me")
@@ -161,5 +186,33 @@ export class PlatformController {
   @PlatformRoles("OWNER", "ADMIN")
   createAcademy(@Req() req: PlatformRequest, @Ip() ip: string, @Body() body: CreateAcademyDto) {
     return this.platform.createAcademy(req.admin, body, ip);
+  }
+
+  /**
+   * O símbolo de um clube acabado de abrir.
+   *
+   * Duas fases, iguais às da consola — pedir autorização, confirmar que chegou;
+   * o ficheiro não passa pela API. A diferença é a porta: aqui não há sessão de
+   * academia nenhuma (o presidente ainda nem resgatou o convite), e quem autoriza
+   * é o `PlatformGuard` com os mesmos papéis que abrem o clube.
+   *
+   * O clube tem de existir antes — daí a ordem no diálogo: criar, depois o
+   * símbolo. Se isto falhar, o clube fica aberto sem emblema e o presidente
+   * carrega-o nas Definições, que é onde isto vive de verdade.
+   */
+  @Post("academies/:id/simbolo/upload")
+  @PlatformRoles("OWNER", "ADMIN")
+  async signLogoUpload(@Param("id") id: string, @Body() body: UploadLogoDto) {
+    await this.platform.mustExist(id);
+    return this.logo.signUploadFor(id, body.contentType);
+  }
+
+  @Post("academies/:id/simbolo")
+  @PlatformRoles("OWNER", "ADMIN")
+  async confirmLogo(@Req() req: PlatformRequest, @Ip() ip: string, @Param("id") id: string, @Body() body: ConfirmLogoDto) {
+    await this.platform.mustExist(id);
+    const out = await this.logo.confirmFor(id, body.key);
+    await this.platform.audit(req.admin, "academy.logo", "academy", id, {}, ip);
+    return out;
   }
 }

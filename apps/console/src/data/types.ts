@@ -53,6 +53,10 @@ export type Academy = {
   status: string;
   /** Quando o período experimental acaba. `null` fora de período experimental. */
   trialEndsAt: string | null;
+  /** O dia do mês em que as mensalidades vencem. */
+  billingDueDay: number;
+  /** Os meses (1–12) em que o clube cobra. Vazio antes de carregar. */
+  billingMonths: number[];
   /** Quando a academia nasceu — o proxy do início do período experimental. */
   createdAt: string;
   sports: Sport[];

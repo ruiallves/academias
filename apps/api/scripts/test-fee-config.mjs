@@ -45,10 +45,26 @@ const call = async (token, method, pathname, body) => {
 const db = new pg.Client({ connectionString: env("MIGRATE_DATABASE_URL"), ssl: { rejectUnauthorized: false } });
 await db.connect();
 
-// Estado limpo: sem inscrições nem planos de teste anteriores.
+/*
+ * Estado limpo — e só o que é deste teste.
+ *
+ * A segunda linha apagava `name LIKE 'Individual — %'` sem mais nenhuma
+ * condição: **todos** os planos individuais da base, incluindo os que a academia
+ * criou a sério pela aplicação. Só não chegou a acontecer porque a chave
+ * estrangeira da inscrição o travou — e o que este teste dava era um
+ * rebentamento na limpeza, não um aviso de que estava prestes a apagar dados de
+ * alguém.
+ *
+ * Agora só desaparece o que fica sem dono depois de apagadas as inscrições dos
+ * dois atletas de teste: um plano individual sem inscrição nenhuma é lixo desta
+ * corrida; um plano com inscrição é de uma pessoa.
+ */
 const cleanup = async () => {
   await db.query(`DELETE FROM "Enrollment" WHERE "athleteId" IN ('ath_martim', 'ath_gustavo')`);
-  await db.query(`DELETE FROM "SubscriptionPlan" WHERE name LIKE 'Individual — %' OR "teamId" = 't_sub11'`);
+  await db.query(`
+    DELETE FROM "SubscriptionPlan" sp
+     WHERE (sp.name LIKE 'Individual — %' OR sp."teamId" = 't_sub11')
+       AND NOT EXISTS (SELECT 1 FROM "Enrollment" e WHERE e."planId" = sp.id)`);
 };
 await cleanup();
 

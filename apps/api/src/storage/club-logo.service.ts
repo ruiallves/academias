@@ -53,6 +53,19 @@ export class ClubLogoService {
   /** Passo 1: autorização para carregar. A chave é escolhida aqui, nunca pelo cliente. */
   async signUpload(ctx: RequestContext, contentType: string) {
     this.mustWrite(ctx);
+    return this.signUploadFor(ctx.academyId, contentType);
+  }
+
+  /**
+   * O mesmo trabalho, sem a pergunta de quem pode.
+   *
+   * Existe porque há dois caminhos legítimos até aqui com autorizações
+   * diferentes: a consola do clube, onde manda `settings:write`, e o painel da
+   * plataforma a abrir um clube novo, onde manda o `PlatformGuard` e ainda não
+   * existe sessão de academia nenhuma. Quem chama decide se pode; isto só sabe
+   * escrever no sítio certo.
+   */
+  async signUploadFor(academyId: string, contentType: string) {
     if (!TYPES.includes(contentType)) {
       throw new BadRequestException("O símbolo tem de ser PNG, WebP ou JPEG");
     }
@@ -63,7 +76,7 @@ export class ClubLogoService {
     // o símbolo antigo: sem ele, um clube que trocasse de emblema continuava a
     // ver o anterior no ecrã inicial durante dias.
     const ext = contentType === "image/png" ? "png" : contentType === "image/webp" ? "webp" : "jpg";
-    const key = `${ctx.academyId}/simbolo-${randomBytes(6).toString("hex")}.${ext}`;
+    const key = `${academyId}/simbolo-${randomBytes(6).toString("hex")}.${ext}`;
 
     const { url, token } = await this.storage.signUpload(LOGO_BUCKET, key);
     return { url, token, key };
@@ -78,10 +91,14 @@ export class ClubLogoService {
    */
   async confirm(ctx: RequestContext, key: string) {
     this.mustWrite(ctx);
+    return this.confirmFor(ctx.academyId, key);
+  }
 
+  /** Gémeo de `signUploadFor`: o trabalho sem a pergunta de quem pode. */
+  async confirmFor(academyId: string, key: string) {
     // A chave tem de ser desta academia. Sem isto, quem tivesse `settings:write`
     // apontava o símbolo do seu clube para o ficheiro de outro.
-    if (!key.startsWith(`${ctx.academyId}/`)) throw new ForbiddenException("Chave inválida");
+    if (!key.startsWith(`${academyId}/`)) throw new ForbiddenException("Chave inválida");
 
     const exists = await this.storage.exists(LOGO_BUCKET, key);
     if (!exists) throw new BadRequestException("O ficheiro não chegou. Tenta outra vez.");
@@ -89,8 +106,8 @@ export class ClubLogoService {
     const base = this.config.getOrThrow<string>("SUPABASE_URL").replace(/\/$/, "");
     const logoUrl = `${base}/storage/v1/object/public/${LOGO_BUCKET}/${key}`;
 
-    await this.prisma.runAs(ctx.academyId, async (db) => {
-      await db.academy.update({ where: { id: ctx.academyId }, data: { logoUrl } });
+    await this.prisma.runAs(academyId, async (db) => {
+      await db.academy.update({ where: { id: academyId }, data: { logoUrl } });
     });
 
     return { logoUrl };

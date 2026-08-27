@@ -52,6 +52,15 @@ model Academy {
   /// Dia do mês em que as mensalidades vencem.
   billingDueDay Int @default(8)
 
+  /// Os meses em que o clube cobra (1–12).
+  ///
+  /// O calendário de cobrança é do **clube**, não de cada plano: um clube que
+  /// não cobra Agosto não o cobra a ninguém, e a pergunta faz-se uma vez. Estava
+  /// em `SubscriptionPlan.months`, invisível, e o efeito era este — um atleta
+  /// inscrito em Agosto não aparecia em lado nenhum e nada explicava porquê.
+  /// Ver `gerarCobrancas` e `docs/03-estado.md`.
+  billingMonths Int[] @default([1, 2, 3, 4, 5, 6, 7, 9, 10, 11, 12])
+
   /// ## A página de adesão a sócio, escrita pelo clube
   ///
   /// A frase que abre, a que explica, e os pontos que dizem o que se ganha. São

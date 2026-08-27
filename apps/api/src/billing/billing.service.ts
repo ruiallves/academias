@@ -192,17 +192,124 @@ export class BillingService {
    * `semPreco`, para quem chama poder dizer que faltam preços por configurar em
    * vez de inventar um valor.
    *
-   * ## Os meses do plano
+   * ## Os meses do clube, e a excepção de quem entra
    *
-   * `SubscriptionPlan.months` existe porque muitas academias não cobram Agosto.
-   * Um período fora dos meses do plano não gera cobrança nenhuma — não é uma
-   * dívida por pagar, é um mês em que não se cobra.
+   * `Academy.billingMonths` diz em que meses o clube cobra — muitos não cobram
+   * Agosto. Um período fora desses meses não gera cobrança para quem já cá
+   * estava: não é uma dívida por pagar, é um mês em que não se cobra.
+   *
+   * **Quem se inscreve nesse mês é a excepção**, e é cobrado à mesma: entrou,
+   * treinou, e a direcção quer a mensalidade emitida. Nasce por pagar, como
+   * todas; anulá-la é uma decisão da direcção, e uma anulação registada vale
+   * mais do que uma cobrança que nunca existiu.
+   *
+   * Quem precisa de saber **porquê** é que um atleta não tem mensalidade
+   * pergunta a `missingCharges`.
    */
   async ensureCharges(ctx: RequestContext, period: string) {
     if (!can(ctx, "billing:write")) throw new ForbiddenException("Sem permissão para gerar mensalidades");
     if (!/^\d{4}-\d{2}$/.test(period)) throw new BadRequestException("Período inválido (esperado AAAA-MM)");
 
     return this.prisma.runAs(ctx.academyId, (db) => gerarCobrancas(db, ctx.academyId, period));
+  }
+
+  /**
+   * Quem **não** tem mensalidade neste período, e porquê.
+   *
+   * ## A pergunta que não tinha resposta
+   *
+   * Mensalidades lê `Charge`. Um atleta sem cobrança não aparece — e o ecrã não
+   * distinguia "este mês não se cobra" de "falta configurar o preço" de "ninguém
+   * gerou o mês". Era sempre a mesma coisa: uma linha que não está lá.
+   *
+   * O relatório que isto produz é o que o ecrã mostra por baixo da tabela. Três
+   * motivos, e cada um tem uma acção diferente do outro lado:
+   *
+   *   `fora-do-mes`  o clube não cobra este mês. Não é um problema — é uma
+   *                  decisão, e o sítio para a mudar são as Definições.
+   *   `sem-preco`    ninguém disse quanto é que este atleta paga. Configura-se.
+   *   `por-gerar`    tem preço, o mês cobra-se, e a cobrança não existe. Chega
+   *                  carregar em "Gerar".
+   *
+   * Só leitura: não cria nada. Quem cria é `ensureCharges`, e é uma decisão de
+   * quem está a olhar para o ecrã.
+   */
+  async missingCharges(ctx: RequestContext, period: string) {
+    if (!can(ctx, "billing:read")) throw new ForbiddenException("Sem acesso a mensalidades");
+    if (!/^\d{4}-\d{2}$/.test(period)) throw new BadRequestException("Período inválido (esperado AAAA-MM)");
+
+    const scope = teamScopeFilter(ctx);
+    const athleteScope = athleteScopeFilter(ctx);
+    const mes = Number(period.slice(5, 7));
+
+    return this.prisma.runAs(ctx.academyId, async (db) => {
+      const atletas = await db.athlete.findMany({
+        where: {
+          status: "ACTIVE",
+          ...(scope ? { teams: { some: { teamId: scope } } } : {}),
+          ...(athleteScope ? { id: athleteScope } : {}),
+        },
+        orderBy: { name: "asc" },
+        select: { id: true, name: true, joinedAt: true, teams: { select: { teamId: true }, take: 1 } },
+      });
+      if (atletas.length === 0) return { period, cobraEsteMes: true, atletas: [] };
+
+      const ids = atletas.map((a) => a.id);
+      const comCobranca = new Set(
+        (await db.charge.findMany({ where: { period, athleteId: { in: ids } }, select: { athleteId: true } }))
+          .map((c) => c.athleteId),
+      );
+
+      const academia = await db.academy.findFirst({
+        where: { id: ctx.academyId },
+        select: { billingMonths: true },
+      });
+      const cobraEsteMes = (academia?.billingMonths ?? MESES_POR_OMISSAO).includes(mes);
+
+      // A mesma excepção de `gerarCobrancas`: quem entrou neste mês é cobrado
+      // neste mês, calendário ou não. Se o relatório não a soubesse, dizia "o
+      // clube não cobra agosto" a um atleta que tem mesmo mensalidade de agosto.
+      const inicioDoPeriodo = new Date(Date.UTC(Number(period.slice(0, 4)), mes - 1, 1));
+      const fimDoPeriodo = new Date(Date.UTC(Number(period.slice(0, 4)), mes, 1));
+      const entrouNesteMes = (joinedAt: Date) => joinedAt >= inicioDoPeriodo && joinedAt < fimDoPeriodo;
+
+      // Quem tem preço — individual ou da equipa. A mesma resolução de
+      // `gerarCobrancas`, aqui só para saber se existe, não quanto é.
+      const hoje = new Date();
+      const comIndividual = new Set<string>();
+      for (const e of await db.enrollment.findMany({
+        where: { athleteId: { in: ids }, plan: { teamId: null, isActive: true } },
+        select: { athleteId: true, endsOn: true },
+      })) {
+        if (e.endsOn === null || e.endsOn >= hoje) comIndividual.add(e.athleteId);
+      }
+      const equipasComPreco = new Set(
+        (
+          await db.subscriptionPlan.findMany({
+            where: { teamId: { not: null }, isActive: true },
+            select: { teamId: true },
+          })
+        ).map((p) => p.teamId as string),
+      );
+
+      const semCobranca = atletas.filter((a) => !comCobranca.has(a.id));
+
+      return {
+        period,
+        cobraEsteMes,
+        atletas: semCobranca.map((a) => {
+          const teamId = a.teams[0]?.teamId ?? null;
+          const temPreco = comIndividual.has(a.id) || (teamId !== null && equipasComPreco.has(teamId));
+          const cobra = cobraEsteMes || entrouNesteMes(a.joinedAt);
+          return {
+            athleteId: a.id,
+            name: a.name,
+            teamId,
+            reason: !cobra ? ("fora-do-mes" as const) : !temPreco ? ("sem-preco" as const) : ("por-gerar" as const),
+          };
+        }),
+      };
+    });
   }
 
   /* ------------------------------------------------------------------------ */
@@ -586,6 +693,15 @@ function requirePhone(phone: string | undefined): string {
   return phone;
 }
 
+/**
+ * O calendário de cobrança por omissão — onze meses, sem Agosto.
+ *
+ * Espelha o valor por omissão de `Academy.billingMonths` e serve só de rede para
+ * uma academia lida antes da migração ter corrido. A resposta verdadeira está
+ * sempre na academia.
+ */
+export const MESES_POR_OMISSAO = [1, 2, 3, 4, 5, 6, 7, 9, 10, 11, 12];
+
 const MONTHS_PT = [
   "janeiro", "fevereiro", "março", "abril", "maio", "junho",
   "julho", "agosto", "setembro", "outubro", "novembro", "dezembro",
@@ -698,7 +814,7 @@ export async function gerarCobrancas(
       status: "ACTIVE",
       ...(apenasAtletas ? { id: { in: apenasAtletas } } : {}),
     },
-    select: { id: true, teams: { select: { teamId: true }, take: 1 } },
+    select: { id: true, joinedAt: true, teams: { select: { teamId: true }, take: 1 } },
   });
   if (atletas.length === 0) {
     return { period, criadas: 0, jaExistiam: 0, semPreco: 0, foraDoMes: 0 };
@@ -722,7 +838,7 @@ export async function gerarCobrancas(
    * leitura para todos, em vez de uma por atleta.
    */
   const hoje = new Date();
-  const individuais = new Map<string, { amountCents: number; discountCents: number; months: number[]; enrollmentId: string }>();
+  const individuais = new Map<string, { amountCents: number; discountCents: number; enrollmentId: string }>();
   for (const e of await db.enrollment.findMany({
     where: { athleteId: { in: ids }, plan: { teamId: null, isActive: true } },
     include: { plan: true },
@@ -733,28 +849,71 @@ export async function gerarCobrancas(
     individuais.set(e.athleteId, {
       amountCents: e.plan.amountCents,
       discountCents: e.discountCents,
-      months: e.plan.months,
       enrollmentId: e.id,
     });
   }
 
   // Os planos de equipa, um por equipa.
-  const planosPorEquipa = new Map<string, { amountCents: number; months: number[] }>();
+  const planosPorEquipa = new Map<string, { amountCents: number }>();
   for (const plan of await db.subscriptionPlan.findMany({
     where: { teamId: { not: null }, isActive: true },
-    select: { teamId: true, amountCents: true, months: true },
+    select: { teamId: true, amountCents: true },
     orderBy: { id: "desc" },
   })) {
     if (plan.teamId && !planosPorEquipa.has(plan.teamId)) {
-      planosPorEquipa.set(plan.teamId, { amountCents: plan.amountCents, months: plan.months });
+      planosPorEquipa.set(plan.teamId, { amountCents: plan.amountCents });
     }
   }
 
   const academia = await db.academy.findFirst({
     where: { id: academyId },
-    select: { billingDueDay: true },
+    select: { billingDueDay: true, billingMonths: true },
   });
-  const dueDate = diaDeVencimento(period, academia?.billingDueDay ?? 8);
+  const diaDoClube = academia?.billingDueDay ?? 8;
+  const dueDate = diaDeVencimento(period, diaDoClube);
+
+  /*
+   * Quem entra depois do dia de vencimento não nasce em dívida.
+   *
+   * A mensalidade de Agosto vence a 8 de Agosto. Emiti-la a 27 para quem se
+   * inscreveu a 26 punha-a **vencida no segundo em que nasce** — a vermelho no
+   * ecrã, e a caminho de um lembrete automático à família nessa mesma noite. É
+   * uma cobrança legítima com uma data impossível de cumprir.
+   *
+   * Fica para o vencimento seguinte: continua a ser a mensalidade de Agosto (o
+   * `period` não muda, e é ele que diz a que mês pertence), com o prazo do mês a
+   * seguir. É o que qualquer clube faz com quem chega a meio do mês.
+   */
+  const proximoVencimento = diaDeVencimento(periodoSeguinte(period), diaDoClube);
+
+  /*
+   * O calendário é do clube, não do plano.
+   *
+   * `SubscriptionPlan.months` fazia isto, e fazia-o em silêncio: nascia sem
+   * Agosto por omissão, ninguém o via, ninguém o podia mudar — e um atleta
+   * inscrito em Agosto não aparecia em Mensalidades sem nada que o explicasse.
+   * Subiu para `Academy.billingMonths`, onde é uma pergunta que se faz uma vez e
+   * se responde num ecrã. A coluna do plano fica para o dia em que um plano
+   * precisar mesmo de calendário próprio; hoje não é lida.
+   */
+  const mesesDoClube = academia?.billingMonths ?? MESES_POR_OMISSAO;
+  const cobraEsteMes = mesesDoClube.includes(mes);
+
+  /*
+   * Quem se inscreve num mês paga esse mês, esteja ele no calendário ou não.
+   *
+   * O calendário responde a "que meses é que este clube cobra a quem já cá
+   * está". Não responde à inscrição: um miúdo que entra a 27 de Agosto treina
+   * em Agosto, e a direcção quer a linha lá — mesmo num clube que não cobra
+   * Agosto ao resto do plantel. Sem esta excepção, inscrevê-lo era uma
+   * mensalidade que nunca chegava a existir e ninguém dava por ela.
+   *
+   * Nasce por pagar, como todas. Se o presidente decidir não a cobrar, anula-a
+   * — e isso fica registado, que é o oposto de nunca ter sido emitida.
+   */
+  const inicioDoPeriodo = new Date(Date.UTC(Number(period.slice(0, 4)), mes - 1, 1));
+  const fimDoPeriodo = new Date(Date.UTC(Number(period.slice(0, 4)), mes, 1));
+  const entrouNesteMes = (joinedAt: Date) => joinedAt >= inicioDoPeriodo && joinedAt < fimDoPeriodo;
 
   const novas: { academyId: string; athleteId: string; enrollmentId?: string; period: string; amountCents: number; dueDate: Date }[] = [];
   let jaExistiam = 0;
@@ -775,7 +934,7 @@ export async function gerarCobrancas(
       semPreco++;
       continue;
     }
-    if (!fonte.months.includes(mes)) {
+    if (!cobraEsteMes && !entrouNesteMes(a.joinedAt)) {
       foraDoMes++;
       continue;
     }
@@ -791,7 +950,9 @@ export async function gerarCobrancas(
       ...(individual ? { enrollmentId: individual.enrollmentId } : {}),
       period,
       amountCents: valor,
-      dueDate,
+      // Quem chegou depois do prazo deste mês paga no prazo seguinte, sem
+      // deixar de ser a mensalidade deste mês. Ver `proximoVencimento`.
+      dueDate: a.joinedAt > dueDate ? proximoVencimento : dueDate,
     });
   }
 
@@ -812,6 +973,13 @@ export async function gerarCobrancas(
 /** O período de hoje, no formato `AAAA-MM` que o `Charge` usa. */
 export function periodoActual(hoje = new Date()): string {
   return `${hoje.getFullYear()}-${String(hoje.getMonth() + 1).padStart(2, "0")}`;
+}
+
+/** O período a seguir a este. Dezembro passa a Janeiro do ano seguinte. */
+export function periodoSeguinte(period: string): string {
+  const ano = Number(period.slice(0, 4));
+  const mes = Number(period.slice(5, 7));
+  return mes === 12 ? `${ano + 1}-01` : `${ano}-${String(mes + 1).padStart(2, "0")}`;
 }
 
 /**
