@@ -20,9 +20,10 @@ import {
   getProspect,
   setStage,
   sinceLabel,
+  stageColor,
   type Criterion,
-  type ProspectDetail as Data,
   type Observation,
+  type ProspectDetail as Data,
   type Stage,
 } from "@/lib/scouting";
 
@@ -71,7 +72,7 @@ export default function ProspectDetail() {
       <>
         <BackLink />
         <Panel>
-          <div className="px-5 py-16">
+          <div>
             <Empty title="Prospecto não encontrado" detail="Ou não pertence a esta academia." />
           </div>
         </Panel>
@@ -284,9 +285,17 @@ function StageRail({
                 !active && !done && "text-ink-4",
                 mayWrite && !active && "hover:bg-sunken",
               )}
+              /*
+                Uma fase já cumprida acende com a **cor dessa fase**, muito
+                diluída — e não com um tom da cor do clube. É a mesma tabela que
+                o funil usa (`stageColor`), por isso o que aqui se vê a violeta é
+                a mesma fatia violeta lá. Antes eram dois sistemas de cor a falar
+                do mesmo, e num clube amarelo o "cumprido" era amarelo aqui e a
+                fase era amarela lá também — indistinguíveis.
+              */
               style={
                 !active && done
-                  ? { background: "color-mix(in oklab, var(--color-signal) 12%, white)" }
+                  ? { background: `color-mix(in oklab, ${stageColor(s)} 12%, white)` }
                   : undefined
               }
             >
@@ -404,7 +413,7 @@ function ObservationsTab({ data, criteria }: { data: Data; criteria: Criterion[]
   if (data.observations.length === 0) {
     return (
       <Panel>
-        <div className="px-5 py-16">
+        <div>
           <Empty
             icon={Eye}
             title="Ainda sem observações"
@@ -492,7 +501,7 @@ function AssessmentTab({ data, criteria }: { data: Data; criteria: Criterion[] }
   if (criteria.length === 0) {
     return (
       <Panel>
-        <div className="px-5 py-16">
+        <div>
           <Empty
             title="Esta modalidade ainda não tem critérios"
             detail="O quadro de avaliação é configurável por modalidade — sem ele, as observações ficam só em texto."
@@ -554,7 +563,7 @@ function HistoryTab({ data }: { data: Data }) {
   if (data.events.length === 0) {
     return (
       <Panel>
-        <div className="px-5 py-16">
+        <div>
           <Empty title="Sem histórico" detail="Cada mudança de estado fica registada aqui." />
         </div>
       </Panel>

@@ -204,7 +204,7 @@ export default function Evaluations() {
         {loading && evaluations.length === 0 ? (
           <Loading />
         ) : rows.length === 0 ? (
-          <div className="px-5 py-16">
+          <div>
             <Empty
               icon={Gauge}
               title={roster.length === 0 ? "Esta equipa não tem atletas" : "Nada neste filtro"}

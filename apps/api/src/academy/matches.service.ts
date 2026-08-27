@@ -67,6 +67,26 @@ export class MatchesService {
             select: { role: true },
             take: 1,
           },
+          /*
+           * A ficha, e não só o resultado.
+           *
+           * Faltava, e o buraco só apareceu quando a semente de jogos falsos do
+           * cliente foi apagada: o registo de jogos na ficha do atleta lê as
+           * participações destes eventos, nunca as recebia da API, e vivia
+           * inteiramente de dados inventados no browser. Gravar uma ficha não
+           * mudava nada em lado nenhum.
+           *
+           * São meia dúzia de linhas por jogo — menos do que os convocados, que
+           * já vinham — e é o que faz o trabalho de preencher a ficha chegar a
+           * algum sítio.
+           */
+          appearances: {
+            select: {
+              athleteId: true, minutes: true, started: true, tally: true, assists: true,
+              yellowCards: true, redCard: true, onMinute: true, offMinute: true,
+              yellowAt: true, redAt: true, tallyAt: true, assistsAt: true, rating: true,
+            },
+          },
         },
       });
 
@@ -87,6 +107,12 @@ export class MatchesService {
         submittedAt: m.callUpsClosedAt,
         /** A função com que **eu** estou escalado neste jogo. `null` se não estou. */
         myStaffRole: m.staff[0]?.role ?? null,
+        /** Quem jogou e o que fez. Vazio enquanto a ficha estiver por preencher. */
+        appearances: m.appearances.map((a) => ({
+          ...a,
+          // `Decimal` do Prisma não atravessa JSON como número.
+          rating: a.rating === null ? null : Number(a.rating),
+        })),
         calledUp: m.callUps.map((c) => ({
           athleteId: c.athleteId,
           status: c.status,
@@ -178,6 +204,8 @@ export class MatchesService {
             select: {
               athleteId: true, minutes: true, started: true, tally: true,
               assists: true, yellowCards: true, redCard: true,
+              onMinute: true, offMinute: true, yellowAt: true, redAt: true,
+              tallyAt: true, assistsAt: true,
             },
           },
           staff: {
@@ -238,6 +266,12 @@ export class MatchesService {
             assists: a?.assists ?? 0,
             yellowCards: a?.yellowCards ?? 0,
             redCard: a?.redCard ?? false,
+            onMinute: a?.onMinute ?? null,
+            offMinute: a?.offMinute ?? null,
+            yellowAt: a?.yellowAt ?? [],
+            redAt: a?.redAt ?? null,
+            tallyAt: a?.tallyAt ?? [],
+            assistsAt: a?.assistsAt ?? [],
           };
         }),
         staff: m.staff.map((x) => ({
@@ -285,6 +319,30 @@ export class MatchesService {
       if (!limpar && alvo.startsAt.getTime() > Date.now()) {
         throw new BadRequestException("O jogo ainda não começou — o resultado regista-se depois do apito");
       }
+
+      /*
+       * O mesmo tecto, visto do outro lado.
+       *
+       * `saveAppearances` impede uma ficha maior que o marcador; sem isto,
+       * bastava corrigir o marcador **depois** para lá chegar na mesma — gravar
+       * quatro golos num 4-2 e emendar o resultado para 3-2. Diz-se o que está
+       * gravado para a pessoa saber o que tem de acertar, em vez de a deixar a
+       * adivinhar porque é que o resultado não entra.
+       */
+      if (!limpar) {
+        const soma = await db.matchAppearance.aggregate({
+          where: { matchId },
+          _sum: { tally: true, assists: true },
+        });
+        const golos = soma._sum.tally ?? 0;
+        const assistencias = soma._sum.assists ?? 0;
+        if (golos > ourScore || assistencias > ourScore) {
+          throw new BadRequestException(
+            `A ficha já atribui ${golos} ${golos === 1 ? "golo" : "golos"} e ${assistencias} ${assistencias === 1 ? "assistência" : "assistências"} — corrige-a antes de gravar ${ourScore}-${theirScore}.`,
+          );
+        }
+      }
+
       await db.match.update({
         where: { id: matchId },
         data: {
@@ -320,12 +378,19 @@ export class MatchesService {
     matchId: string,
     rows: {
       athleteId: string;
-      minutes: number;
+      /** Ignorado: os minutos calculam-se aqui. Ver `minutosEmCampo`. */
+      minutes?: number;
       started?: boolean;
       tally?: number;
       assists?: number;
       yellowCards?: number;
       redCard?: boolean;
+      onMinute?: number;
+      offMinute?: number;
+      yellowAt?: number[];
+      redAt?: number;
+      tallyAt?: number[];
+      assistsAt?: number[];
     }[],
   ) {
     this.assertCanRecord(ctx);
@@ -347,18 +412,83 @@ export class MatchesService {
         ),
       );
 
+      const duracao = match.team.sport.matchMinutes ?? 0;
+
       const limpas = rows
         .filter((r) => convocados.has(r.athleteId))
         .map((r) => ({
           athleteId: r.athleteId,
-          minutes: clamp(r.minutes, 0, 300),
+          minutes: minutosEmCampo(r, duracao),
           started: r.started ?? false,
           tally: clamp(r.tally ?? 0, 0, 99),
           assists: clamp(r.assists ?? 0, 0, 99),
           // Dois amarelos são o máximo que existe: o segundo é a expulsão.
           yellowCards: clamp(r.yellowCards ?? 0, 0, 2),
           redCard: Boolean(r.redCard),
+
+          /*
+           * O detalhe dos minutos, quando existe.
+           *
+           * `?? null` e não `clamp(… , 0)`: zero é um minuto legítimo (entrou ao
+           * intervalo conta-se como 45, mas um titular entra aos 0) e "não
+           * registado" tem de continuar a distinguir-se de "ao minuto zero".
+           * Passar por `clamp` transformava todos os ausentes em zeros e a
+           * ficha passava a afirmar substituições que ninguém registou.
+           */
+          onMinute: r.onMinute == null ? null : clamp(r.onMinute, 0, 130),
+          offMinute: r.offMinute == null ? null : clamp(r.offMinute, 0, 130),
+          // Só tantos minutos quantos os amarelos declarados: uma lista com dois
+          // minutos e `yellowCards: 1` são duas afirmações que se contradizem.
+          yellowAt: emCampo(r, (r.yellowAt ?? []).slice(0, clamp(r.yellowCards ?? 0, 0, 2))),
+          redAt: r.redAt == null ? null : clamp(r.redAt, 0, 130),
+          tallyAt: emCampo(r, (r.tallyAt ?? []).slice(0, clamp(r.tally ?? 0, 0, 99))),
+          assistsAt: emCampo(r, (r.assistsAt ?? []).slice(0, clamp(r.assists ?? 0, 0, 99))),
         }));
+
+      /*
+       * Um minuto fora do tempo em que o atleta esteve em campo é uma
+       * contradição, não um dado.
+       *
+       * Recusa-se em vez de se cortar em silêncio: cortar transformava um erro
+       * de escrita — 60 onde se queria 6 — numa ficha que fica gravada errada e
+       * ninguém repara. Ver `janelaEmCampo`.
+       */
+      for (const r of limpas) {
+        const erro = foraDeCampo(r);
+        if (erro) throw new BadRequestException(erro);
+      }
+
+      /*
+       * A ficha não pode marcar mais golos do que o marcador.
+       *
+       * O resultado é a verdade pública do jogo — está na acta, no site da
+       * associação, na cabeça de toda a gente que lá esteve. Uma ficha que
+       * distribua quatro golos num 3-2 não é uma opinião diferente: é um erro
+       * de escrita que depois vive para sempre no perfil de um atleta e nos
+       * totais da época.
+       *
+       * O mesmo teto vale para as assistências, porque cada golo tem no máximo
+       * uma — e há golos sem nenhuma. É um limite generoso de propósito: aperta
+       * o impossível sem discutir com o treinador sobre quem assistiu o quê.
+       *
+       * Enquanto o resultado não estiver registado não há com que confrontar, e
+       * aí só valem os limites por linha lá em cima. Marcar a ficha primeiro e o
+       * resultado depois é uma ordem legítima de trabalho.
+       */
+      if (match.ourScore !== null) {
+        const golos = limpas.reduce((n, r) => n + r.tally, 0);
+        if (golos > match.ourScore) {
+          throw new BadRequestException(
+            `A ficha atribui ${golos} golos, mas o jogo ficou ${match.ourScore}-${match.theirScore}.`,
+          );
+        }
+        const assistencias = limpas.reduce((n, r) => n + r.assists, 0);
+        if (assistencias > match.ourScore) {
+          throw new BadRequestException(
+            `A ficha atribui ${assistencias} assistências para ${match.ourScore} ${match.ourScore === 1 ? "golo" : "golos"} marcados.`,
+          );
+        }
+      }
 
       await db.matchAppearance.deleteMany({ where: { matchId } });
       if (limpas.length > 0) {
@@ -691,7 +821,16 @@ export class MatchesService {
     const scope = teamScopeFilter(ctx);
     const match = await db.match.findFirst({
       where: { id: matchId, ...(scope ? { teamId: scope } : {}) },
-      select: { id: true, teamId: true, startsAt: true },
+      select: {
+        id: true,
+        teamId: true,
+        startsAt: true,
+        ourScore: true,
+        theirScore: true,
+        // A duração da modalidade: é o que fecha a conta dos minutos de quem
+        // jogou até ao fim. Ver `minutosEmCampo`.
+        team: { select: { sport: { select: { matchMinutes: true } } } },
+      },
     });
     if (!match) throw new NotFoundException("Jogo não encontrado ou fora do teu âmbito");
     return match;
@@ -1019,6 +1158,101 @@ export class MatchesService {
 /** Segura um número dentro do razoável. Um 999 na ficha é um dedo escorregado. */
 function clamp(n: number, lo: number, hi: number): number {
   return Math.max(lo, Math.min(hi, Math.round(Number(n) || 0)));
+}
+
+/** Minutos de uma lista, presos ao intervalo de um jogo e por ordem. */
+function emCampo(_r: unknown, minutos: number[]): number[] {
+  return minutos.map((m) => clamp(m, 0, 130)).sort((a, b) => a - b);
+}
+
+/**
+ * Os minutos jogados, calculados aqui e não aceites do cliente.
+ *
+ * O corpo do pedido traz um `minutes`, e durante muito tempo era esse que ficava
+ * gravado. Isso punha a verdade dos totais da época na mão de quem faz o pedido:
+ * bastava um ecrã desactualizado — ou um pedido à mão — para um atleta ficar com
+ * noventa minutos num jogo em que entrou ao 80. Os factos são a titularidade, a
+ * entrada e a saída; o tempo é uma consequência deles, e uma consequência
+ * calcula-se sempre do mesmo lado.
+ *
+ * Um titular sem minuto de saída jogou o jogo todo. Um suplente sem minuto de
+ * entrada não tem minutos que se saibam — devolve-se zero em vez de um palpite,
+ * e é o ecrã que impede que se chegue aqui com essa linha por preencher.
+ *
+ * `duracao` a zero é uma modalidade sem duração declarada nas Definições; aí o
+ * que se souber por diferença é tudo o que há.
+ */
+function minutosEmCampo(
+  r: { started?: boolean; onMinute?: number; offMinute?: number },
+  duracao: number,
+): number {
+  const entrada = r.started ? 0 : r.onMinute;
+  if (entrada == null) return 0;
+  const saida = r.offMinute ?? duracao;
+  return clamp(saida - entrada, 0, 300);
+}
+
+type ComMinutos = {
+  started: boolean;
+  onMinute: number | null;
+  offMinute: number | null;
+  yellowAt: number[];
+  redAt: number | null;
+  tallyAt: number[];
+  assistsAt: number[];
+};
+
+/**
+ * A janela em que o atleta esteve em campo.
+ *
+ * Um titular entra aos 0; um suplente, ao minuto que ficou registado. A saída é
+ * `offMinute` ou o fim — e como o fim depende da modalidade e do prolongamento,
+ * usa-se o tecto de 130 em vez de o adivinhar. O que interessa a esta
+ * verificação é o **limite que foi declarado**, não o comprimento do jogo.
+ */
+function janelaEmCampo(r: ComMinutos): { de: number; ate: number } {
+  return {
+    de: r.started ? 0 : (r.onMinute ?? 0),
+    ate: r.offMinute ?? 130,
+  };
+}
+
+/**
+ * O que, nesta linha, aconteceu fora do tempo em que o atleta esteve em campo.
+ *
+ * Devolve a frase a mostrar, ou `null` se está tudo coerente. Um golo aos 60 de
+ * quem saiu aos 50 não é um dado com que se possa fazer alguma coisa: é um erro
+ * de escrita, e o sítio para o apanhar é aqui — a interface avisa, mas a
+ * interface nunca é a fronteira.
+ */
+function foraDeCampo(r: ComMinutos): string | null {
+  const { de, ate } = janelaEmCampo(r);
+
+  if (r.onMinute != null && r.offMinute != null && r.offMinute < r.onMinute) {
+    return `Saiu ao minuto ${r.offMinute}, antes de ter entrado (${r.onMinute}).`;
+  }
+
+  const grupos: [string, number[]][] = [
+    ["golo", r.tallyAt],
+    ["assistência", r.assistsAt],
+    ["amarelo", r.yellowAt],
+    ["vermelho", r.redAt == null ? [] : [r.redAt]],
+  ];
+
+  for (const [nome, minutos] of grupos) {
+    /*
+     * O vermelho é o único que pode acontecer **ao** minuto da saída — é
+     * frequentemente a razão dela. Um golo ao minuto exacto em que saiu também
+     * conta: estava em campo até esse apito.
+     */
+    const fora = minutos.find((m) => m < de || m > ate);
+    if (fora !== undefined) {
+      const limite = fora < de ? `entrou ao ${de}` : `saiu ao ${ate}`;
+      return `Há um ${nome} ao minuto ${fora}, mas o atleta ${limite}.`;
+    }
+  }
+
+  return null;
 }
 
 /**

@@ -1,6 +1,8 @@
-import { useState, type FormEvent } from "react";
+import { useMemo, useState, type FormEvent } from "react";
 import { apiPatch, apiPost } from "@/lib/http";
 import { reloadAcademy } from "@/lib/store";
+import { listAthletes, listGuardians, listTeams } from "@/lib/api";
+import { guessMaxAge, teamAgeLabel } from "@/lib/team-age";
 import type { Session } from "@/lib/permissions";
 import type { Announcement } from "@/data/types";
 import { Dialog, DialogField, dialogInputClass } from "./Dialog";
@@ -17,6 +19,18 @@ import { cx } from "./primitives";
  * quem não tem `scope.teamIds` vê a academia toda; quem tem, vê só o seu âmbito.
  * A interface não é a fronteira — o servidor recusa qualquer público a mais —, mas
  * também não oferece o que depois vai ser negado.
+ *
+ * ## O escalão
+ *
+ * "Pais" abre a escolha dos escalões. Sem escolha nenhuma vai a todos — que é o
+ * que "Geral" já era para as famílias; com escolha, só aos pais dessas equipas.
+ * O treinador tem a mesma escolha, sobre as equipas dele: quem treina três
+ * escalões não quer avisar os três porque um deles muda de campo.
+ *
+ * A escolha vive **dentro** do público e não como um quarto botão ao lado de
+ * "Geral": o público diz *que tipo de gente*, o escalão diz *quais*. Misturá-los
+ * numa lista só dava um selector onde "Treinadores" e "Sub-19" pareciam a mesma
+ * pergunta.
  */
 
 type Audience = "all" | "guardians" | "coaches";
@@ -45,12 +59,36 @@ export function NewAnnouncementDialog({
   const mayChooseAudience = !isEditing && session.scope?.teamIds === undefined;
 
   const [audience, setAudience] = useState<Audience>(mayChooseAudience ? "all" : "guardians");
+  /** Vazio = todos os escalões de quem envia. Ver o cabeçalho. */
+  const [teamIds, setTeamIds] = useState<string[]>([]);
   const [title, setTitle] = useState(editing?.title ?? "");
   const [body, setBody] = useState(editing?.body ?? "");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  const teams = listTeams(session);
+  const mayPickTeams = !isEditing && audience === "guardians" && teams.length > 0;
+
+  /*
+   * Quantas famílias isto vai acordar.
+   *
+   * Escrever "só para o Sub-19" e não saber se são oito famílias ou oitenta é
+   * escrever às escuras. A conta é a mesma do servidor — os encarregados dos
+   * atletas destes escalões —, feita sobre o plantel que já está carregado.
+   */
+  const guardians = listGuardians();
+  const athletes = listAthletes(session);
+  const reach = useMemo(() => {
+    const recorte = teamIds.length > 0 ? new Set(teamIds) : null;
+    const alvo = new Set(athletes.filter((a) => !recorte || recorte.has(a.teamId)).map((a) => a.id));
+    return guardians.filter((g) => g.athleteIds.some((id) => alvo.has(id))).length;
+  }, [athletes, guardians, teamIds]);
+
   const valid = title.trim().length >= 2 && body.trim().length >= 1;
+
+  function toggleTeam(id: string) {
+    setTeamIds((xs) => (xs.includes(id) ? xs.filter((x) => x !== id) : [...xs, id]));
+  }
 
   async function submit(e: FormEvent) {
     e.preventDefault();
@@ -61,7 +99,14 @@ export function NewAnnouncementDialog({
       if (isEditing) {
         await apiPatch(`/api/announcements/${editing.id}`, { title: title.trim(), body: body.trim() });
       } else {
-        await apiPost("/api/announcements", { title: title.trim(), body: body.trim(), audience });
+        await apiPost("/api/announcements", {
+          title: title.trim(),
+          body: body.trim(),
+          audience,
+          // Só quando há recorte, e só quando o recorte se aplica: mandar
+          // `teamIds` com "Treinadores" é um pedido que o servidor recusa.
+          ...(audience === "guardians" && teamIds.length > 0 ? { teamIds } : {}),
+        });
       }
       await reloadAcademy();
       onClose();
@@ -131,6 +176,35 @@ export function NewAnnouncementDialog({
           )}
         </DialogField>
 
+        {/*
+          O recorte por escalão. Só aparece com "Pais": um escalão não estreita um
+          aviso à equipa técnica, e o servidor recusa a combinação.
+        */}
+        {mayPickTeams && (
+          <DialogField label="Escalões">
+            <div className="flex flex-wrap gap-1.5">
+              <TeamChip label="Todos" selected={teamIds.length === 0} onClick={() => setTeamIds([])} />
+              {teams.map((t) => (
+                <TeamChip
+                  key={t.id}
+                  // O nome da equipa já costuma trazer o escalão ("Sub-19
+                  // Futebol"); repeti-lo ao lado dava "Sub-19 Futebol Sub-19".
+                  // Só as equipas que não o dizem ganham a etiqueta.
+                  label={t.name}
+                  hint={guessMaxAge(t.name) === null ? teamAgeLabel(t.maxAge) : undefined}
+                  selected={teamIds.includes(t.id)}
+                  onClick={() => toggleTeam(t.id)}
+                />
+              ))}
+            </div>
+            <p className="mt-2 text-[11px] leading-relaxed text-ink-3">
+              {teamIds.length === 0
+                ? `Vai para os pais de todos os escalões — ${reach} ${reach === 1 ? "família" : "famílias"}.`
+                : `Só os pais ${teamIds.length === 1 ? "deste escalão" : "destes escalões"} — ${reach} ${reach === 1 ? "família" : "famílias"}.`}
+            </p>
+          </DialogField>
+        )}
+
         <DialogField label="Título">
           <input
             value={title}
@@ -160,5 +234,41 @@ export function NewAnnouncementDialog({
         )}
       </form>
     </Dialog>
+  );
+}
+
+/**
+ * Um escalão, ligado ou desligado.
+ *
+ * Botões e não caixas de selecção: são poucos, cabem numa linha ou duas, e
+ * escolher "só o Sub-19" tem de custar um toque. A lista com scroll do convite
+ * existe porque lá se atribuem equipas uma a uma; aqui recorta-se um envio.
+ */
+function TeamChip({
+  label,
+  hint,
+  selected,
+  onClick,
+}: {
+  label: string;
+  hint?: string;
+  selected: boolean;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      aria-pressed={selected}
+      className={cx(
+        "flex items-baseline gap-1.5 rounded-full border px-3 py-1.5 text-meta transition-colors duration-[120ms]",
+        selected
+          ? "border-signal bg-signal-soft text-signal-ink"
+          : "border-line text-ink-2 hover:border-line-strong hover:bg-sunken",
+      )}
+    >
+      <span className="font-medium">{label}</span>
+      {hint && <span className={cx("text-[11px]", selected ? "text-signal-ink/70" : "text-ink-4")}>{hint}</span>}
+    </button>
   );
 }

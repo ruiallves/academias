@@ -114,7 +114,7 @@ export default function Reports() {
           {loading && reports.length === 0 ? (
             <Loading />
           ) : rows.length === 0 ? (
-            <div className="px-5 py-16">
+            <div>
               <Empty
                 icon={FileText}
                 title={reports.length === 0 ? "Ainda não há relatórios" : "Nada neste filtro"}

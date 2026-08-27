@@ -26,8 +26,14 @@ const EVENT_SELECT = {
 
 type EventRow = Prisma.CalendarEventGetPayload<{ select: typeof EVENT_SELECT }>;
 
-/** Achata a relação do treinador em `coachId`/`coachName`, como as sessões fazem. */
-function serializeEvent(e: EventRow) {
+/**
+ * Achata a relação do treinador em `coachId`/`coachName`, como as sessões fazem.
+ *
+ * `porEquipa` é o treinador da equipa, para os eventos que não têm um próprio —
+ * a mesma queda das sessões. Ver `headCoaches`.
+ */
+function serializeEvent(e: EventRow, porEquipa?: Map<string, { id: string; name: string }>) {
+  const daEquipa = e.teamId ? porEquipa?.get(e.teamId) : undefined;
   return {
     id: e.id,
     teamId: e.teamId,
@@ -38,8 +44,8 @@ function serializeEvent(e: EventRow) {
     venue: e.venue,
     dressingRoom: e.dressingRoom,
     cancelled: e.cancelled,
-    coachId: e.coach?.id ?? null,
-    coachName: e.coach?.user.name ?? null,
+    coachId: e.coach?.id ?? daEquipa?.id ?? null,
+    coachName: e.coach?.user.name ?? daEquipa?.name ?? null,
   };
 }
 
@@ -148,7 +154,7 @@ export class AcademyService {
         db.membership.findFirst({
           where: { id: ctx.membershipId },
           select: {
-            id: true, role: true, title: true, department: true, grants: true,
+            id: true, role: true, title: true, department: true, grants: true, lastSeenAt: true,
             customRole: { select: { key: true } },
             user: { select: { name: true, email: true } },
           },
@@ -182,6 +188,23 @@ export class AcademyService {
        */
       const setupOwner =
         me?.customRole?.key === "presidente" || (fundador !== null && fundador.id === ctx.membershipId);
+
+      /*
+       * A marca de presença.
+       *
+       * O arranque é o sítio certo: corre uma vez por abertura da app, e a app da
+       * família só abre instalada (ver `StandaloneGate`). É isto que deixa a
+       * consola responder "esta família já usa a app" a quem instalou e saltou o
+       * passo das notificações — a subscrição push responde pelos outros.
+       *
+       * De hora a hora, no máximo: a pergunta é "já cá entrou", e não "quantas
+       * vezes". Um `update` por abertura de app era uma escrita por cada pai que
+       * puxa a agenda ao pequeno-almoço, para uma resposta que não muda.
+       */
+      const HORA = 3_600_000;
+      if (me && (!me.lastSeenAt || Date.now() - me.lastSeenAt.getTime() > HORA)) {
+        await db.membership.update({ where: { id: ctx.membershipId }, data: { lastSeenAt: new Date() } });
+      }
 
       return {
         academy,
@@ -794,7 +817,12 @@ export class AcademyService {
           guardians: {
             select: {
               relation: true, isPayer: true,
-              membership: { select: { id: true, isActive: true, user: { select: { name: true, email: true, phone: true } } } },
+              membership: {
+                select: {
+                  id: true, isActive: true, userId: true, lastSeenAt: true,
+                  user: { select: { name: true, email: true, phone: true } },
+                },
+              },
             },
           },
           clinical: {
@@ -804,6 +832,42 @@ export class AcademyService {
           },
         },
       });
+
+      /*
+       * Que famílias já têm a app a funcionar.
+       *
+       * A consola mostrava "Por instalar" a toda a gente porque ninguém lho
+       * dizia — o campo era um `false` escrito à mão no frontend. O servidor tem
+       * a resposta, em duas metades, e são precisas as duas:
+       *
+       *   1. `Membership.lastSeenAt` — a app abriu com a sessão desta pessoa, e
+       *      a app da família só abre instalada (ver `StandaloneGate`);
+       *   2. `PushSubscription` — há um dispositivo registado.
+       *
+       * Só a segunda deixava de fora quem instala e salta o passo das
+       * notificações, que tem botão para isso. Só a primeira ficava a mentir para
+       * trás, a quem já usa a app desde antes desta coluna existir — e são
+       * precisamente as famílias que a direcção conhece melhor. Juntas, a
+       * resposta é honesta nos dois sentidos: quando a subscrição morre (app
+       * desinstalada, permissão retirada) o push apaga a linha em
+       * `PushService.send`, mas a visita continua a ser um facto.
+       *
+       * `PushSubscription` não tem `academyId`: o mesmo pai pode ter filhos em
+       * duas academias com um telemóvel só. Por isso pergunta-se **pelos
+       * `userId` desta academia** e nunca pela tabela toda.
+       */
+      const guardianUserIds = [...new Set(athletes.flatMap((a) => a.guardians.map((g) => g.membership.userId)))];
+      const comApp = new Set(
+        guardianUserIds.length === 0
+          ? []
+          : (
+              await db.pushSubscription.findMany({
+                where: { userId: { in: guardianUserIds } },
+                select: { userId: true },
+                distinct: ["userId"],
+              })
+            ).map((s) => s.userId),
+      );
 
       return athletes.map((a) => {
         const active = a.clinical[0];
@@ -831,6 +895,7 @@ export class AcademyService {
             phone: g.membership.user.phone,
             relation: g.relation,
             isPayer: g.isPayer,
+            appInstalled: g.membership.lastSeenAt !== null || comApp.has(g.membership.userId),
           })),
           // "available" | "limited" | "out" — `clinical:status`, chega a todos.
           availability: !active ? "available" : active.impact === "OUT" ? "out" : "limited",
@@ -932,6 +997,54 @@ export class AcademyService {
   }
 
   /**
+   * O treinador responsável por cada equipa.
+   *
+   * ## O que estava partido
+   *
+   * `TrainingSession.coachId` nasceu para dizer "hoje quem dá o treino é outro" —
+   * uma excepção. Mas nada no produto o preenche: não há campo em "Novo evento"
+   * nem ecrã para o editar. Resultado: **todos** os treinos diziam "Sem treinador
+   * atribuído", mesmo os de uma equipa com treinador principal na ficha. O alarme
+   * disparava sempre, e um alarme que dispara sempre deixa de ser lido.
+   *
+   * A regra que faltava é a que qualquer clube assume: os treinos de uma equipa
+   * são do treinador dessa equipa até alguém dizer o contrário. Por isso a coluna
+   * fica a nulo (é mesmo uma excepção) e a resposta cai para `TeamStaff`.
+   *
+   * ## Porquê aqui e não na escrita
+   *
+   * Copiar o treinador para cada treino ao criá-lo congelava-o: mudar o treinador
+   * da equipa em Outubro deixava os treinos de Novembro com o nome de quem já
+   * saiu, e sem nenhum ecrã para os corrigir um a um. Resolvido na leitura, a
+   * mudança na ficha da equipa chega ao calendário no pedido seguinte.
+   *
+   * Desactivados ficam de fora — quem saiu do clube não é o responsável de nada.
+   * Entre vários, ganha o principal; depois qualquer treinador; e só depois o
+   * resto do staff da equipa (um delegado é melhor do que ninguém).
+   */
+  private async headCoaches(db: ScopedClient, teamIds: string[]) {
+    const ids = [...new Set(teamIds)];
+    const found = new Map<string, { id: string; name: string }>();
+    if (ids.length === 0) return found;
+
+    const rows = await db.teamStaff.findMany({
+      where: { teamId: { in: ids }, membership: { isActive: true } },
+      orderBy: { title: "asc" },
+      select: { teamId: true, title: true, membership: { select: { id: true, user: { select: { name: true } } } } },
+    });
+
+    const rank = (title: string) => (/principal/i.test(title) ? 2 : /treinad/i.test(title) ? 1 : 0);
+    const best = new Map<string, number>();
+    for (const r of rows) {
+      const k = rank(r.title);
+      if (found.has(r.teamId) && k <= (best.get(r.teamId) ?? -1)) continue;
+      best.set(r.teamId, k);
+      found.set(r.teamId, { id: r.membership.id, name: r.membership.user.name });
+    }
+    return found;
+  }
+
+  /**
    * Treinos num intervalo.
    *
    * `attendanceClosedAt` a nulo é o que distingue "ninguém verificou" de
@@ -957,6 +1070,9 @@ export class AcademyService {
         },
       });
 
+      // Quem não tem treinador próprio herda o da equipa. Ver `headCoaches`.
+      const porEquipa = await this.headCoaches(db, rows.map((s) => s.teamId));
+
       return rows.map((s) => ({
         id: s.id,
         teamId: s.teamId,
@@ -965,8 +1081,8 @@ export class AcademyService {
         venue: s.venue,
         dressingRoom: s.dressingRoom,
         status: s.status,
-        coachId: s.coach?.id ?? null,
-        coachName: s.coach?.user.name ?? null,
+        coachId: s.coach?.id ?? porEquipa.get(s.teamId)?.id ?? null,
+        coachName: s.coach?.user.name ?? porEquipa.get(s.teamId)?.name ?? null,
         recorded: s.attendanceClosedAt !== null,
         absences: s.attendance
           .filter((a) => a.status !== "PRESENT")
@@ -999,7 +1115,11 @@ export class AcademyService {
         orderBy: { startsAt: "asc" },
         select: EVENT_SELECT,
       });
-      return rows.map(serializeEvent);
+      const porEquipa = await this.headCoaches(
+        db,
+        rows.map((r) => r.teamId).filter((id): id is string => id !== null),
+      );
+      return rows.map((r) => serializeEvent(r, porEquipa));
     });
   }
 
@@ -1118,6 +1238,11 @@ export class AcademyService {
       }
       if (endsAt <= startsAt) throw new BadRequestException("O fim tem de ser depois do início");
 
+      // O treinador da equipa, para o evento acabado de criar sair daqui já com
+      // ele — a leitura seguinte faria o mesmo, e sem isto a consola mostrava
+      // "sem treinador" até recarregar. Ver `headCoaches`.
+      const daEquipa = dto.teamId ? (await this.headCoaches(db, [dto.teamId])).get(dto.teamId) : undefined;
+
       /*
        * Um jogo não é um evento genérico — é um `Match`.
        *
@@ -1169,8 +1294,8 @@ export class AcademyService {
           venue: match.venue,
           dressingRoom: null,
           cancelled: match.status === "CANCELLED",
-          coachId: match.coach?.id ?? null,
-          coachName: match.coach?.user.name ?? null,
+          coachId: match.coach?.id ?? daEquipa?.id ?? null,
+          coachName: match.coach?.user.name ?? daEquipa?.name ?? null,
         };
       }
 
@@ -1234,8 +1359,8 @@ export class AcademyService {
           venue: session.venue,
           dressingRoom: session.dressingRoom,
           cancelled: session.status === "CANCELLED",
-          coachId: session.coach?.id ?? null,
-          coachName: session.coach?.user.name ?? null,
+          coachId: session.coach?.id ?? daEquipa?.id ?? null,
+          coachName: session.coach?.user.name ?? daEquipa?.name ?? null,
         };
       }
 
@@ -1252,7 +1377,7 @@ export class AcademyService {
         },
         select: EVENT_SELECT,
       });
-      return serializeEvent(created);
+      return serializeEvent(created, daEquipa && dto.teamId ? new Map([[dto.teamId, daEquipa]]) : undefined);
     });
   }
 
@@ -1312,6 +1437,8 @@ export class AcademyService {
             },
           });
 
+          const daEquipa = (await this.headCoaches(db, [updated.teamId])).get(updated.teamId);
+
           return {
             id: updated.id,
             teamId: updated.teamId,
@@ -1322,8 +1449,8 @@ export class AcademyService {
             venue: updated.venue,
             dressingRoom: updated.dressingRoom,
             cancelled: updated.status === "CANCELLED",
-            coachId: updated.coach?.id ?? null,
-            coachName: updated.coach?.user.name ?? null,
+            coachId: updated.coach?.id ?? daEquipa?.id ?? null,
+            coachName: updated.coach?.user.name ?? daEquipa?.name ?? null,
           };
         }
 
@@ -1369,6 +1496,8 @@ export class AcademyService {
           },
         });
 
+        const daEquipa = (await this.headCoaches(db, [updated.teamId])).get(updated.teamId);
+
         return {
           id: updated.id,
           teamId: updated.teamId,
@@ -1379,8 +1508,8 @@ export class AcademyService {
           venue: updated.venue,
           dressingRoom: null,
           cancelled: updated.status === "CANCELLED",
-          coachId: updated.coach?.id ?? null,
-          coachName: updated.coach?.user.name ?? null,
+          coachId: updated.coach?.id ?? daEquipa?.id ?? null,
+          coachName: updated.coach?.user.name ?? daEquipa?.name ?? null,
         };
       }
 
@@ -1390,7 +1519,7 @@ export class AcademyService {
       }
 
       const updated = await db.calendarEvent.update({ where: { id }, data: { cancelled }, select: EVENT_SELECT });
-      return serializeEvent(updated);
+      return serializeEvent(updated, await this.headCoaches(db, updated.teamId ? [updated.teamId] : []));
     });
   }
 
@@ -1481,6 +1610,76 @@ export class AcademyService {
       });
 
       return { grants: finalGrants, revokes: finalRevokes };
+    });
+  }
+
+  /**
+   * As equipas de uma pessoa — o `TeamStaff` dela.
+   *
+   * ## O que estava partido
+   *
+   * O diálogo "Editar ficha" tinha a lista de equipas e guardava-a **em memória**:
+   * recarregar a consola desfazia tudo. Quem atribuísse ali um treinador via-o na
+   * ficha, e mais nada — nem no calendário, nem nas presenças, nem no âmbito do
+   * próprio treinador, que continuava sem ver a equipa. Só o convite e a criação
+   * da equipa escreviam `TeamStaff`; a ficha não tinha por onde.
+   *
+   * ## Porquê `access:write` e não `staff:write`
+   *
+   * Porque as equipas de um treinador **são o âmbito dos dados dele**:
+   * `AuthService.scopeFor` deriva daqui o que ele vê. Acrescentar uma equipa é
+   * dar acesso a um plantel, a fichas e a presenças — é uma decisão de acesso, e
+   * não a mesma coisa que corrigir um telemóvel. Mesma regra do convite.
+   *
+   * O cargo de cada linha é o texto que aparece na equipa ("Treinador
+   * principal"). Uma equipa que já tenha esta pessoa mantém o que lá está — não
+   * se despromove ninguém a "Treinador" por se ter marcado outra equipa na lista.
+   */
+  async setTeams(ctx: RequestContext, membershipId: string, teamIds: string[]) {
+    if (!can(ctx, "access:write")) throw new ForbiddenException("Sem permissão para gerir acessos");
+
+    const scope = teamScopeFilter(ctx);
+    const wanted = [...new Set(teamIds)];
+
+    return this.prisma.runAs(ctx.academyId, async (db) => {
+      const target = await db.membership.findFirst({
+        where: { id: membershipId, role: { notIn: ["GUARDIAN", "ATHLETE"] } },
+        select: { id: true, role: true, title: true },
+      });
+      if (!target) throw new NotFoundException("Pessoa não encontrada");
+
+      // As equipas têm de ser desta academia — e, para quem tem âmbito, das suas.
+      // Sem a segunda parte um coordenador de escalão punha alguém a ver a
+      // academia toda a partir do seu próprio âmbito.
+      const teams = await db.team.findMany({
+        where: { id: { in: wanted }, ...(scope ? { id: scope } : {}) },
+        select: { id: true },
+      });
+      if (teams.length !== wanted.length) throw new BadRequestException("Equipa desconhecida ou fora do teu âmbito");
+
+      const current = await db.teamStaff.findMany({ where: { membershipId }, select: { id: true, teamId: true } });
+      const has = new Set(current.map((r) => r.teamId));
+
+      const toRemove = current
+        // Fora do âmbito de quem edita, não se mexe: um coordenador não desfaz o
+        // que a direcção montou noutro escalão só por guardar esta ficha.
+        .filter((r) => !wanted.includes(r.teamId) && (!scope || scope.in.includes(r.teamId)))
+        .map((r) => r.id);
+      const toAdd = wanted.filter((id) => !has.has(id));
+
+      if (toRemove.length) await db.teamStaff.deleteMany({ where: { id: { in: toRemove } } });
+      if (toAdd.length) {
+        await db.teamStaff.createMany({
+          data: toAdd.map((teamId) => ({
+            teamId,
+            membershipId,
+            title: target.title?.trim() || (target.role === "COACH" ? "Treinador" : "Staff"),
+          })),
+        });
+      }
+
+      const final = await db.teamStaff.findMany({ where: { membershipId }, select: { teamId: true } });
+      return { teamIds: final.map((r) => r.teamId) };
     });
   }
 

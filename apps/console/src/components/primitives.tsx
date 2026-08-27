@@ -374,35 +374,59 @@ export function Loading({
 /**
  * Um vazio é uma mensagem, não um buraco. Quando o vazio é boa notícia — nada por
  * cobrar, nada por registar — diz-se isso com `tone="ok"`.
+ *
+ * ## O espaçamento é dele, e não de quem o usa
+ *
+ * Era: o componente não tinha margem nenhuma e cada ecrã embrulhava-o à mão num
+ * `<div>`. Vinte e nove sítios lembravam-se; **vinte e
+ * oito esqueciam-se** — e nesses o vazio saía como duas linhas de texto
+ * encolhidas contra o topo de um painel grande, que foi como a página de Jogos
+ * apareceu.
+ *
+ * Espaçamento que metade dos sítios esquece não é decisão de quem chama: é
+ * omissão do componente. Passou para cá, e os embrulhos ficaram sem razão de
+ * existir (podem desaparecer quando alguém lhes passar ao lado).
+ *
+ * `compact` existe para o punhado de sítios onde este ar seria demais — uma
+ * caixa pequena dentro de um diálogo, não uma página.
  */
 export function Empty({
   title,
   detail,
   icon: Icon,
   tone = "neutral",
+  compact = false,
   children,
 }: {
   title: string;
   detail?: string;
   icon?: LucideIcon;
   tone?: "neutral" | "ok";
+  compact?: boolean;
   children?: ReactNode;
 }) {
   return (
-    <div className="flex flex-col items-center justify-center gap-1 text-center">
+    <div
+      className={cx(
+        "flex flex-col items-center justify-center px-5 text-center",
+        compact ? "py-8" : "py-16",
+      )}
+    >
       {Icon && (
         <span
           className={cx(
-            "mb-2 inline-flex size-9 items-center justify-center rounded-full",
+            "mb-3 inline-flex size-11 items-center justify-center rounded-full",
             tone === "ok" ? "bg-ok-soft text-ok" : "bg-sunken text-ink-3",
           )}
         >
-          <Icon className="size-4.5" strokeWidth={1.75} />
+          <Icon className="size-5" strokeWidth={1.5} />
         </span>
       )}
-      <p className="text-body font-medium text-ink">{title}</p>
-      {detail && <p className="max-w-xs text-meta text-ink-3">{detail}</p>}
-      {children && <div className="mt-3">{children}</div>}
+      <p className="text-[15px] leading-tight font-semibold tracking-[-0.01em] text-ink">{title}</p>
+      {/* `max-w-xs` cortava a linha cedo de mais e partia frases a meio de uma
+          expressão. 26rem dá-lhe duas linhas inteiras na maioria dos casos. */}
+      {detail && <p className="mt-1.5 max-w-[26rem] text-meta leading-relaxed text-ink-3">{detail}</p>}
+      {children && <div className="mt-4">{children}</div>}
     </div>
   );
 }

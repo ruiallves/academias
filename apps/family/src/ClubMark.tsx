@@ -42,13 +42,15 @@ export function ClubMark({
 
   return (
     <span
-      className={cx("flex shrink-0 items-center justify-center font-bold text-white", className)}
+      className={cx("flex shrink-0 items-center justify-center font-bold text-signal-on", className)}
       style={{
         width: size,
         height: size,
         borderRadius: radius,
         fontSize: Math.round(size * 0.38),
-        background: "var(--color-signal)",
+        // As iniciais têm de se ler: a cor com texto por cima é a `strong`, e a
+        // tinta é a que `signalVars` escolheu para ela. Ver tokens.ts.
+        background: "var(--color-signal-strong)",
       }}
       aria-hidden
     >

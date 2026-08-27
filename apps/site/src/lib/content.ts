@@ -217,6 +217,11 @@ export const ROADMAP: RoadmapItem[] = [
     body: "Gestão da carga e treinos com exercícios, vídeos e planos de treino. O treinador planeia, o atleta executa, o clube acompanha.",
   },
   {
+    when: "Novembro 2026",
+    title: "Sistema de bilheteira",
+    body: "Gestão da venda de bilhetes para os jogos do clube.",
+  },
+  {
     when: "Janeiro 2027",
     title: "IA sobre os dados do clube",
     body: "Resumos e sinais a partir do que já lá está — nunca a inventar o que ninguém registou.",

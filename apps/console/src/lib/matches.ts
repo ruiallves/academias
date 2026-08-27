@@ -41,6 +41,19 @@ export type SquadRow = {
   assists: number;
   yellowCards: number;
   redCard: boolean;
+
+  /* --- O detalhe dos minutos ------------------------------------------------
+     Tudo opcional, e `null` significa "ninguém registou" — que é diferente de
+     zero. Um titular tem `onMinute` nulo (entrou aos 0, sabe-se por `started`);
+     quem jogou até ao fim tem `offMinute` nulo. Ver `MatchAppearance`. */
+  onMinute: number | null;
+  offMinute: number | null;
+  /** Os minutos dos amarelos, por ordem. Vazio quando não foram registados. */
+  yellowAt: number[];
+  redAt: number | null;
+  /** Os minutos dos golos e das assistências. Vazios quando não registados. */
+  tallyAt: number[];
+  assistsAt: number[];
 };
 
 export type MatchStaffRow = { id: string; membershipId: string; name: string; role: string };
@@ -128,6 +141,14 @@ export const saveAppearances = (
     assists: number;
     yellowCards: number;
     redCard: boolean;
+    /* Omitidos quando não há detalhe — o servidor guarda `null` e a ficha do
+       atleta continua a somar por `minutes`. */
+    onMinute?: number;
+    offMinute?: number;
+    yellowAt?: number[];
+    redAt?: number;
+    tallyAt?: number[];
+    assistsAt?: number[];
   }[],
 ) => apiPost<{ ok: true; saved: number }>(`/api/matches/${id}/ficha`, { rows });
 

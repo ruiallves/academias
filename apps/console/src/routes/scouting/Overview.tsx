@@ -9,6 +9,7 @@ import {
   STAGE_LABEL,
   getOverview,
   sinceLabel,
+  stageColor,
   type Overview as Data,
   type Stage,
 } from "@/lib/scouting";
@@ -218,18 +219,21 @@ function Corridor({ stages, total }: { stages: { stage: Stage; count: number }[]
   return (
     <div className="space-y-3 px-5 py-4">
       <div className="flex h-9 w-full overflow-hidden rounded-[var(--radius-control)] border border-line">
-        {active.map((s, i) => {
+        {active.map((s) => {
           if (s.count === 0) return null;
           return (
             <Link
               key={s.stage}
               to={`/scouting/prospects?estado=${s.stage}`}
               title={`${STAGE_LABEL[s.stage]} · ${s.count}`}
-              style={{
-                width: `${(s.count / Math.max(1, sum)) * 100}%`,
-                background: `color-mix(in oklab, var(--color-signal) ${25 + i * 14}%, white)`,
-              }}
-              className="flex items-center justify-center border-r border-white/70 text-[11px] font-semibold text-ink transition-opacity duration-[120ms] last:border-r-0 hover:opacity-80"
+              style={{ width: `${(s.count / Math.max(1, sum)) * 100}%`, background: stageColor(s.stage) }}
+              /*
+                Texto branco sobre a cor cheia, e não tinta escura sobre um tom
+                claro. As cores da paleta são todas escuras o suficiente para
+                sustentar branco — foi assim que foram escolhidas — e usar a cor
+                cheia é o que faz cinco fases distinguirem-se de relance.
+              */
+              className="flex items-center justify-center border-r border-white/70 text-[11px] font-semibold text-white transition-opacity duration-[120ms] last:border-r-0 hover:opacity-80"
             >
               {s.count}
             </Link>
@@ -238,12 +242,9 @@ function Corridor({ stages, total }: { stages: { stage: Stage; count: number }[]
       </div>
 
       <ul className="flex flex-wrap gap-x-4 gap-y-1.5">
-        {active.map((s, i) => (
+        {active.map((s) => (
           <li key={s.stage} className="flex items-center gap-1.5">
-            <span
-              className="size-2.5 shrink-0 rounded-[3px]"
-              style={{ background: `color-mix(in oklab, var(--color-signal) ${25 + i * 14}%, white)` }}
-            />
+            <span className="size-2.5 shrink-0 rounded-[3px]" style={{ background: stageColor(s.stage) }} />
             <Link
               to={`/scouting/prospects?estado=${s.stage}`}
               className={cx("text-meta hover:underline", s.count ? "text-ink-2" : "text-ink-4")}
@@ -273,15 +274,14 @@ function Corridor({ stages, total }: { stages: { stage: Stage; count: number }[]
   );
 }
 
-/** Um ponto que diz onde no funil, sem escrever o nome do estado outra vez. */
+/**
+ * Um ponto que diz onde no funil, sem escrever o nome do estado outra vez.
+ *
+ * Usa a mesma tabela da barra (`stageColor`) — antes tinha a sua própria escala
+ * derivada da cor do clube, o que significava que o ponto de uma linha e a fatia
+ * da barra da mesma fase podiam não ser da mesma cor. Uma legenda que não bate
+ * certo com o gráfico é pior do que não ter legenda.
+ */
 function StageDot({ stage }: { stage: Stage }) {
-  const path: Stage[] = ["DISCOVERED", "WATCHING", "OBSERVED", "TRIAL", "RECRUITED"];
-  const i = Math.max(0, path.indexOf(stage));
-  return (
-    <span
-      aria-hidden
-      className="size-2.5 shrink-0 rounded-full"
-      style={{ background: `color-mix(in oklab, var(--color-signal) ${25 + i * 14}%, white)` }}
-    />
-  );
+  return <span aria-hidden className="size-2.5 shrink-0 rounded-full" style={{ background: stageColor(stage) }} />;
 }

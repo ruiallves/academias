@@ -53,6 +53,16 @@ export type MatchSource = { provider: "zerozero"; url: string; importedAt: Date 
 export type MatchAppearance = {
   athleteId: string;
   minutes: number;
+  /** Se começou o jogo — o que separa titular de suplente utilizado. */
+  started?: boolean;
+  /**
+   * Assistências.
+   *
+   * Vinha da API desde que a ficha de jogo passou a registá-las, e este
+   * mapeamento é que as deitava fora — a página de estatísticas da equipa não
+   * tinha por onde as somar. Ver `fromApiMatch`.
+   */
+  assists?: number;
   /** 0–10, uma casa decimal. Ausente enquanto ninguém a atribuir. */
   rating?: number;
 };
@@ -213,10 +223,33 @@ export function fromApiMatch(m: ApiMatch): CalendarEvent {
         athleteId: c.athleteId,
         status: c.status.toLowerCase() as CallUpStatus,
       })),
-      // O resultado só existe depois de registado — é a ausência dele que decide
-      // se o painel mostra a convocatória ou a estatística.
+      /*
+       * O resultado só existe depois de registado — é a ausência dele que decide
+       * se o painel mostra a convocatória ou a estatística.
+       *
+       * As participações e os marcadores vêm agora da ficha gravada. Vinham
+       * vazios (`scorers: []`, sem `appearances`), e o registo de jogos na ficha
+       * do atleta — que os lê daqui — nunca via nada de real: vivia da semente
+       * de jogos falsos do browser, e no dia em que ela foi apagada ficou vazio.
+       * Preencher a ficha deixou de não ter consequência nenhuma.
+       */
       ...(played
-        ? { result: { ourScore: m.ourScore as number, theirScore: m.theirScore as number, scorers: [] } }
+        ? {
+            result: {
+              ourScore: m.ourScore as number,
+              theirScore: m.theirScore as number,
+              scorers: (m.appearances ?? [])
+                .filter((a) => a.tally > 0)
+                .map((a) => ({ athleteId: a.athleteId, tally: a.tally })),
+              appearances: (m.appearances ?? []).map((a) => ({
+                athleteId: a.athleteId,
+                minutes: a.minutes,
+                started: a.started,
+                assists: a.assists,
+                ...(a.rating === null ? {} : { rating: a.rating }),
+              })),
+            },
+          }
         : {}),
     },
   };

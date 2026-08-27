@@ -1,8 +1,8 @@
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { BellRing, CalendarDays, Check, Loader, Wallet } from "lucide-react";
 import { useStore } from "@/lib/store";
 import { markOnboarded } from "@/lib/onboarding";
-import { enablePush, pushState } from "@/lib/push";
+import { currentSubscription, enablePush, pushState } from "@/lib/push";
 import { cx } from "@/ui";
 
 /**
@@ -35,16 +35,45 @@ export default function Onboarding({ onDone }: { onDone: () => void }) {
   // Bloqueado ou sem suporte, não se oferece um botão que não pode funcionar —
   // o perfil explica-o com espaço, aqui só atrapalharia a saída.
   const state = pushState();
-  const canAskForPush = state === "default" || state === "granted";
+
+  /*
+   * Já subscrito? Então não se pede outra vez.
+   *
+   * A condição era só `state === "granted" || "default"` — a **permissão**. Mas
+   * ter permissão não é o mesmo que ter subscrição: a permissão é do domínio e
+   * sobrevive a tudo, a subscrição é do registo do service worker. O caso que
+   * isto tapa é o inverso: quem já ligou as notificações e vê a app pedir-lhas
+   * outra vez, que é dizer-lhe que o que fez não funcionou.
+   *
+   * `null` enquanto não se sabe — a leitura é assíncrona, e nesse intervalo
+   * mostra-se o caminho de saída em vez de piscar um botão que vai desaparecer.
+   */
+  const [jaSubscrito, setJaSubscrito] = useState<boolean | null>(null);
+
+  useEffect(() => {
+    let vivo = true;
+    void currentSubscription()
+      .then((sub) => {
+        if (vivo) setJaSubscrito(Boolean(sub));
+      })
+      .catch(() => {
+        if (vivo) setJaSubscrito(false);
+      });
+    return () => {
+      vivo = false;
+    };
+  }, []);
+
+  const canAskForPush = (state === "default" || state === "granted") && jaSubscrito === false;
 
   const slides = [
     {
       art: (
-        <span className="flex size-[76px] items-center justify-center overflow-hidden rounded-[24px] bg-white">
+        <span className="flex size-[76px] items-center justify-center overflow-hidden rounded-[24px] bg-signal-on">
           {store.academy.logoUrl ? (
             <img src={store.academy.logoUrl} alt="" className="size-full object-contain p-2" />
           ) : (
-            <span className="text-[28px] font-bold" style={{ color: "var(--color-signal)" }} aria-hidden>
+            <span className="text-[28px] font-bold" style={{ color: "var(--color-signal-strong)" }} aria-hidden>
               {store.academy.mark}
             </span>
           )}
@@ -105,13 +134,13 @@ export default function Onboarding({ onDone }: { onDone: () => void }) {
     <div className="brandlit fixed inset-0 z-50 flex flex-col overflow-hidden">
       {/* Anéis decorativos: dão profundidade ao fundo sem uma ilustração que
           tivesse de ser redesenhada para cada academia. */}
-      <span aria-hidden className="pointer-events-none absolute -top-32 -right-24 size-[420px] rounded-full border border-white/10" />
-      <span aria-hidden className="pointer-events-none absolute -top-10 -right-44 size-[420px] rounded-full border border-white/10" />
+      <span aria-hidden className="pointer-events-none absolute -top-32 -right-24 size-[420px] rounded-full border border-signal-on/10" />
+      <span aria-hidden className="pointer-events-none absolute -top-10 -right-44 size-[420px] rounded-full border border-signal-on/10" />
 
       <div className="mx-auto flex w-full max-w-[480px] flex-1 flex-col pt-[calc(14px+env(safe-area-inset-top))]">
         <div className="flex h-11 shrink-0 items-center justify-end px-4">
           {!last && (
-            <button type="button" onClick={finish} className="on-2 px-2 py-1 text-[14px] font-semibold active:text-white">
+            <button type="button" onClick={finish} className="on-2 px-2 py-1 text-[14px] font-semibold active:text-signal-on">
               Saltar
             </button>
           )}
@@ -135,7 +164,7 @@ export default function Onboarding({ onDone }: { onDone: () => void }) {
               className="flex w-full shrink-0 snap-center flex-col items-center justify-center px-8 text-center"
             >
               <span className="pop">{s.art}</span>
-              <h2 className="mt-8 text-[27px] leading-[1.15] font-semibold tracking-[-0.03em] text-white">{s.title}</h2>
+              <h2 className="mt-8 text-[27px] leading-[1.15] font-semibold tracking-[-0.03em] text-signal-on">{s.title}</h2>
               <p className="on-2 mt-3 max-w-[32ch] text-[15px] leading-relaxed">{s.body}</p>
             </section>
           ))}
@@ -147,7 +176,7 @@ export default function Onboarding({ onDone }: { onDone: () => void }) {
               <span
                 key={i}
                 className={cx(
-                  "h-1.5 rounded-full bg-white transition-all duration-300 ease-[var(--ease-out)]",
+                  "h-1.5 rounded-full bg-signal-on transition-all duration-300 ease-[var(--ease-out)]",
                   i === index ? "w-6 opacity-100" : "w-1.5 opacity-40",
                 )}
               />
@@ -155,7 +184,7 @@ export default function Onboarding({ onDone }: { onDone: () => void }) {
           </div>
 
           {error && (
-            <p className="mb-3 rounded-[var(--radius-sm)] bg-white/15 px-3 py-2 text-center text-meta leading-relaxed text-white">
+            <p className="mb-3 rounded-[var(--radius-sm)] bg-signal-on/15 px-3 py-2 text-center text-meta leading-relaxed text-signal-on">
               {error}
             </p>
           )}
@@ -176,7 +205,7 @@ export default function Onboarding({ onDone }: { onDone: () => void }) {
               <button
                 type="button"
                 onClick={finish}
-                className="on-2 mt-1 h-12 w-full text-[14px] font-semibold active:text-white"
+                className="on-2 mt-1 h-12 w-full text-[14px] font-semibold active:text-signal-on"
               >
                 Agora não
               </button>
@@ -192,7 +221,7 @@ export default function Onboarding({ onDone }: { onDone: () => void }) {
 
 function Glyph({ icon: Icon }: { icon: typeof BellRing }) {
   return (
-    <span className="flex size-[76px] items-center justify-center rounded-[26px] bg-white/18 text-white backdrop-blur-sm">
+    <span className="flex size-[76px] items-center justify-center rounded-[26px] bg-signal-on/18 text-signal-on backdrop-blur-sm">
       <Icon className="size-9" strokeWidth={1.6} />
     </span>
   );

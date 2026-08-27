@@ -1,3 +1,4 @@
+import { clubPalette } from "../common/contrast";
 /**
  * A landing page da academia.
  *
@@ -100,7 +101,10 @@ export function renderLanding(opts: {
   const familyInviteOnDesktop = desktop && Boolean(opts.hasFamilyInvite);
   const name = esc(academy.name);
   const shortName = esc(academy.shortName);
-  const signal = /^#[0-9a-f]{6}$/i.test(academy.signalColor) ? academy.signalColor : "#0f6b62";
+  // A cor do clube e as que dela se derivam — ver common/contrast.ts. `clubPalette`
+  // já valida o hex, e é a mesma conta que a consola e a app da família fazem.
+  const paleta = clubPalette(academy.signalColor);
+  const signal = paleta.club;
 
   return `<!doctype html>
 <html lang="pt-PT">
@@ -169,7 +173,10 @@ ${academy.logoUrl ? `<meta property="og:image" content="${esc(academy.logoUrl)}"
      * cima e ilegivel, e este mix poe qualquer tom abaixo desse limiar. Gemea de
      * --club-deep na pagina de socios.
      */
-    --signal-deep: color-mix(in oklab, ${signal} 72%, black);
+    --signal-deep: ${paleta.deep};
+    --signal-strong: ${paleta.strong};
+    --signal-on: ${paleta.on};
+    --signal-ink: ${paleta.ink};
   }
   * { box-sizing: border-box; }
   body {
@@ -221,18 +228,17 @@ ${academy.logoUrl ? `<meta property="og:image" content="${esc(academy.logoUrl)}"
     height: 76px;
     border-radius: 24px;
     /*
-     * A cor do clube, escurecida o suficiente para as iniciais brancas lerem.
+     * A cor do clube, com a tinta que se le nela.
      *
-     * Era a cor pura, e com um clube amarelo dava branco sobre amarelo — o mesmo
-     * problema do painel que este ecra deixou de ter. Misturar 22% de preto poe
-     * qualquer tom abaixo do limiar em que o branco deixa de se ver, sem lhe
-     * tirar a identidade: um amarelo fica ouro escuro, um azul-marinho fica
-     * praticamente o mesmo azul.
+     * Escurecer 22% era a regra antiga, e nao chegava: um amarelo claro a 78%
+     * continua claro, e as iniciais brancas continuavam a desaparecer. Agora a
+     * conta e a mesma da app — se o branco nao passar, a tinta e escura e a cor
+     * fica intacta. Ver common/contrast.ts.
      *
      * So se aplica quando NAO ha emblema — com emblema nao ha caixa nenhuma.
      */
-    background: color-mix(in oklab, var(--signal) 78%, black);
-    color: #fff;
+    background: var(--signal-strong);
+    color: var(--signal-on);
     display: flex;
     align-items: center;
     justify-content: center;

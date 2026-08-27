@@ -1,9 +1,10 @@
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { Bell, CalendarClock, FileText, Gauge, Megaphone, Trophy, Wallet, type LucideIcon } from "lucide-react";
 import { apiPatch } from "@/lib/http";
 import { reload, useStore, type ApiNotification } from "@/lib/store";
 import { cx, whenLabel } from "@/ui";
+import { currentSubscription, pushState, pushSupported } from "@/lib/push";
 
 /**
  * Notificações — as que o servidor guardou, não uma lista montada no browser.
@@ -42,6 +43,35 @@ export default function Notifications() {
   const notifications = store.notifications;
 
   /*
+   * O convite para ligar o push só faz sentido a quem não o tem ligado.
+   *
+   * Aparecia sempre que a lista estivesse vazia — mesmo a quem já tinha as
+   * notificações activas no telemóvel. Dizer "Ligar notificações" a quem já as
+   * ligou é dizer-lhe que o que ele fez não funcionou.
+   *
+   * `null` é "ainda não se sabe": a subscrição lê-se do `PushManager`, que é
+   * assíncrono. Enquanto não se sabe, não se mostra nada — piscar o convite e
+   * escondê-lo um instante depois é pior do que esperar por ele.
+   */
+  const [pushLigado, setPushLigado] = useState<boolean | null>(null);
+
+  useEffect(() => {
+    let vivo = true;
+    void currentSubscription()
+      .then((sub) => {
+        if (vivo) setPushLigado(pushState() === "granted" && Boolean(sub));
+      })
+      .catch(() => {
+        // Sem `PushManager` (um browser que não suporta), trata-se como "não
+        // ligado" — mas o convite só aparece se o push for de todo possível.
+        if (vivo) setPushLigado(false);
+      });
+    return () => {
+      vivo = false;
+    };
+  }, []);
+
+  /*
    * Abrir o ecrã é ler.
    *
    * Marca-se do lado do servidor para o contador do sino bater certo entre
@@ -77,11 +107,18 @@ export default function Notifications() {
           <p className="mx-auto mt-1 max-w-[32ch] text-meta text-ink-3">
             Mensalidades, convocatórias e avisos da academia aparecem aqui.
           </p>
-          {/* Com a lista vazia há espaço para dizer onde ficou o interruptor —
-              é o único momento em que ninguém está a ler outra coisa. */}
-          <Link to="/perfil" className="mt-3 inline-block text-meta font-semibold text-signal-ink underline underline-offset-2">
-            Ligar notificações no telemóvel
-          </Link>
+          {/*
+            Com a lista vazia há espaço para dizer onde ficou o interruptor — é o
+            único momento em que ninguém está a ler outra coisa. Mas só a quem
+            ainda não o ligou, e só onde ligar seja possível: num browser sem
+            `PushManager` o convite manda a pessoa a um sítio onde não há nada
+            para carregar.
+          */}
+          {pushLigado === false && pushSupported() && (
+            <Link to="/perfil" className="mt-3 inline-block text-meta font-semibold text-signal-ink underline underline-offset-2">
+              Ligar notificações no telemóvel
+            </Link>
+          )}
         </div>
       ) : (
         <ul className="space-y-2">

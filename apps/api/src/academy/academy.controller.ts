@@ -7,7 +7,7 @@ import { AthletesService } from "./athletes.service";
 import { AthleteInputDto, AthleteTaxIdDto, AthleteUpdateDto, ImportAthletesDto } from "./athletes.dto";
 import { CreateTeamDto, ImportTeamsDto } from "./teams.dto";
 import { CreateEventDto, UpdateEventDto } from "./events.dto";
-import { BillingService } from "../billing/billing.service";
+import { BillingService, periodoActual } from "../billing/billing.service";
 
 /** O estado a atribuir manualmente a uma mensalidade. Validado — só os três reais. */
 class SetChargeStatusDto {
@@ -85,6 +85,22 @@ class SetAccessDto {
   @ArrayMaxSize(40)
   @IsString({ each: true })
   revokes!: string[];
+}
+
+/**
+ * As equipas de uma pessoa do staff.
+ *
+ * Lista completa e não um "juntar"/"tirar": é o estado final da lista de
+ * selecção do diálogo, e mandá-la inteira é o que torna o pedido idempotente.
+ * Vinte equipas é folgado para um treinador — quem trabalha com mais do que isso
+ * é coordenador, e esses vêem a academia toda por papel.
+ */
+class SetTeamsDto {
+  @IsArray()
+  @ArrayMaxSize(20)
+  @IsString({ each: true })
+  @Length(1, 40, { each: true })
+  teamIds!: string[];
 }
 
 /**
@@ -242,6 +258,17 @@ export class AcademyController {
   }
 
   /**
+   * As equipas de uma pessoa — o `TeamStaff` dela.
+   *
+   * Também exige `access:write`: as equipas de um treinador são o âmbito dos
+   * dados dele, não uma etiqueta na ficha. A regra e as guardas estão no serviço.
+   */
+  @Patch("staff/:id/teams")
+  setTeams(@Req() req: AuthedRequest, @Param("id") id: string, @Body() body: SetTeamsDto) {
+    return this.academy.setTeams(req.ctx, id, body.teamIds);
+  }
+
+  /**
    * Desactivar ou reactivar uma conta.
    *
    * Serve staff e encarregados — é a mesma `Membership` nos dois casos, e a
@@ -305,6 +332,21 @@ export class AcademyController {
   @Patch("charges/:id/status")
   setChargeStatus(@Req() req: AuthedRequest, @Param("id") id: string, @Body() body: SetChargeStatusDto) {
     return this.billing.setChargeStatus(req.ctx, id, body.status as ChargeStatus);
+  }
+
+  /**
+   * Gerar as mensalidades em falta de um período.
+   *
+   * Cria só o que **falta** — nunca reescreve uma mensalidade já emitida, nem
+   * uma que alguém tenha marcado como paga. Por isso pode ser chamado à vontade:
+   * ao abrir o mês, ou para apanhar atletas que ficaram sem preço à inscrição e
+   * cujo preço foi definido depois. Ver `BillingService.ensureCharges`.
+   *
+   * Sem `?periodo=`, o mês corrente — que é o caso de quase todas as vezes.
+   */
+  @Post("charges/gerar")
+  ensureCharges(@Req() req: AuthedRequest, @Query("periodo") periodo?: string) {
+    return this.billing.ensureCharges(req.ctx, periodo ?? periodoActual());
   }
 
   /**

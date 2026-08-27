@@ -163,15 +163,63 @@ export class BillingService {
   }
 
   /* ------------------------------------------------------------------------ */
+  /* Geração de cobranças                                                      */
+  /* ------------------------------------------------------------------------ */
+
+  /**
+   * Garante que existe uma cobrança por atleta activo, num período.
+   *
+   * ## O buraco que isto tapa
+   *
+   * A página de Mensalidades lê `Charge`. O preço vivia em `SubscriptionPlan` e
+   * `Enrollment` — e **nada no produto criava um `Charge`**. O resultado era o
+   * que se via: inscrever um atleta e ele nunca aparecer nas mensalidades, sem
+   * erro nenhum, porque não havia erro — havia uma peça que faltava.
+   *
+   * ## Idempotente por construção
+   *
+   * `Charge` tem `@@unique([athleteId, period])`, e este método só **cria o que
+   * falta**: nunca actualiza nem apaga uma cobrança que já exista. É o que
+   * permite chamá-lo à vontade — ao inscrever um atleta, ao abrir o mês, ou duas
+   * vezes seguidas — sem risco de mexer numa mensalidade que alguém já marcou
+   * como paga ou ajustou à mão.
+   *
+   * ## Quem entra
+   *
+   * Só atletas `ACTIVE`: quem está em pausa ou saiu não gera mensalidade, e é
+   * essa a diferença entre pausar e apagar. E só quem tem preço resolvível — sem
+   * plano de equipa nem ajuste individual, o atleta fica de fora e é contado em
+   * `semPreco`, para quem chama poder dizer que faltam preços por configurar em
+   * vez de inventar um valor.
+   *
+   * ## Os meses do plano
+   *
+   * `SubscriptionPlan.months` existe porque muitas academias não cobram Agosto.
+   * Um período fora dos meses do plano não gera cobrança nenhuma — não é uma
+   * dívida por pagar, é um mês em que não se cobra.
+   */
+  async ensureCharges(ctx: RequestContext, period: string) {
+    if (!can(ctx, "billing:write")) throw new ForbiddenException("Sem permissão para gerar mensalidades");
+    if (!/^\d{4}-\d{2}$/.test(period)) throw new BadRequestException("Período inválido (esperado AAAA-MM)");
+
+    return this.prisma.runAs(ctx.academyId, (db) => gerarCobrancas(db, ctx.academyId, period));
+  }
+
+  /* ------------------------------------------------------------------------ */
   /* Configuração da mensalidade                                              */
   /* ------------------------------------------------------------------------ */
   /*
-   * "Configurar a mensalidade" não gera cobranças — isso continua a não existir
-   * neste produto (os `Charge` de hoje são dados de demonstração). O que estes
-   * métodos fazem é dizer **quanto** um atleta deve pagar, para o dia em que a
-   * geração de cobranças existir. Reutilizam o que já estava no modelo e nunca
-   * tinha endpoint nenhum: `SubscriptionPlan` (o preço — de uma equipa, ou de um
-   * atleta em concreto) e `Enrollment` (quem está nesse preço).
+   * "Configurar a mensalidade" diz **quanto** — quem gera as cobranças é
+   * `ensureCharges`, mais abaixo neste ficheiro.
+   *
+   * Durante muito tempo a geração não existiu de todo, e esta nota dizia-o: os
+   * `Charge` eram dados de demonstração. A consequência é que um atleta inscrito
+   * hoje nunca aparecia em Mensalidades — a página lê `Charge`, e nada no
+   * produto criava um. Ver `ensureCharges`.
+   *
+   * Estes métodos continuam a ser só sobre o preço, e reutilizam o que já estava
+   * no modelo: `SubscriptionPlan` (o preço — de uma equipa, ou de um atleta em
+   * concreto) e `Enrollment` (quem está nesse preço).
    *
    * ## Como se resolve o valor de um atleta
    *
@@ -209,7 +257,30 @@ export class BillingService {
             data: { academyId: ctx.academyId, teamId, name: team.name, amountCents },
           });
 
-      return { teamId, amountCents: plan.amountCents };
+      /*
+       * Definir o preço fecha o ciclo: gera já as mensalidades do mês corrente.
+       *
+       * Sem isto, o passo seguinte era sempre o mesmo relatório: "configurei o
+       * preço da equipa e continua a não aparecer nas mensalidades". E é
+       * verdade — o atleta foi inscrito antes de haver preço, ficou contado em
+       * `semPreco`, e nada voltava a tentar.
+       *
+       * Só cria o que falta (ver `gerarCobrancas`), por isso baixar ou subir o
+       * preço não reescreve mensalidades já emitidas — para essas há o ajuste
+       * manual, que é uma decisão consciente e fica registada.
+       */
+      const atletas = await db.athlete.findMany({
+        where: { status: "ACTIVE", teams: { some: { teamId } } },
+        select: { id: true },
+      });
+      const cobrancas = await gerarCobrancas(
+        db,
+        ctx.academyId,
+        periodoActual(),
+        atletas.map((a) => a.id),
+      );
+
+      return { teamId, amountCents: plan.amountCents, cobrancas };
     });
   }
 
@@ -257,7 +328,13 @@ export class BillingService {
       if (!athlete) throw new NotFoundException("Atleta não encontrado");
 
       await applyIndividualFee(db, ctx.academyId, athlete, amountCents);
-      return { athleteId, amountCents };
+
+      // Mesma razão de `setTeamFee`: um atleta que não tinha preço nenhum passa
+      // a ter, e a mensalidade do mês corrente nasce aqui em vez de ficar à
+      // espera de alguém se lembrar de a gerar.
+      const cobrancas = await gerarCobrancas(db, ctx.academyId, periodoActual(), [athlete.id]);
+
+      return { athleteId, amountCents, cobrancas };
     });
   }
 
@@ -594,4 +671,159 @@ async function applyIndividualFee(
     });
     await db.enrollment.create({ data: { athleteId: athlete.id, planId: plan.id, startsOn: new Date() } });
   }
+}
+
+/* ---------------------------------------------------------------------------- */
+/* A geração, em funções puras de serviço                                        */
+/* ---------------------------------------------------------------------------- */
+
+/**
+ * O trabalho de base de dados da geração.
+ *
+ * Fora da classe porque é chamado de dois sítios — deste serviço, e da inscrição
+ * de um atleta (`AthletesService`), que já está dentro da sua própria transação
+ * de tenant e não pode abrir outra. Recebe o `db` de quem chama; nunca abre um.
+ */
+export async function gerarCobrancas(
+  db: ScopedClient,
+  academyId: string,
+  period: string,
+  /** Limita a geração a estes atletas. Sem isto, gera para a academia toda. */
+  apenasAtletas?: string[],
+): Promise<{ period: string; criadas: number; jaExistiam: number; semPreco: number; foraDoMes: number }> {
+  const mes = Number(period.slice(5, 7));
+
+  const atletas = await db.athlete.findMany({
+    where: {
+      status: "ACTIVE",
+      ...(apenasAtletas ? { id: { in: apenasAtletas } } : {}),
+    },
+    select: { id: true, teams: { select: { teamId: true }, take: 1 } },
+  });
+  if (atletas.length === 0) {
+    return { period, criadas: 0, jaExistiam: 0, semPreco: 0, foraDoMes: 0 };
+  }
+
+  const ids = atletas.map((a) => a.id);
+
+  // Quem já tem cobrança neste período. Uma leitura só, em vez de uma por atleta.
+  const existentes = new Set(
+    (
+      await db.charge.findMany({
+        where: { period, athleteId: { in: ids } },
+        select: { athleteId: true },
+      })
+    ).map((c) => c.athleteId),
+  );
+
+  /*
+   * As inscrições individuais activas — o ajuste que se sobrepõe ao preço da
+   * equipa. Mesma regra de `activeIndividualEnrollment`, mas em bloco: uma
+   * leitura para todos, em vez de uma por atleta.
+   */
+  const hoje = new Date();
+  const individuais = new Map<string, { amountCents: number; discountCents: number; months: number[]; enrollmentId: string }>();
+  for (const e of await db.enrollment.findMany({
+    where: { athleteId: { in: ids }, plan: { teamId: null, isActive: true } },
+    include: { plan: true },
+    orderBy: { startsOn: "desc" },
+  })) {
+    if (individuais.has(e.athleteId)) continue; // a mais recente ganha
+    if (!(e.endsOn === null || e.endsOn >= hoje)) continue;
+    individuais.set(e.athleteId, {
+      amountCents: e.plan.amountCents,
+      discountCents: e.discountCents,
+      months: e.plan.months,
+      enrollmentId: e.id,
+    });
+  }
+
+  // Os planos de equipa, um por equipa.
+  const planosPorEquipa = new Map<string, { amountCents: number; months: number[] }>();
+  for (const plan of await db.subscriptionPlan.findMany({
+    where: { teamId: { not: null }, isActive: true },
+    select: { teamId: true, amountCents: true, months: true },
+    orderBy: { id: "desc" },
+  })) {
+    if (plan.teamId && !planosPorEquipa.has(plan.teamId)) {
+      planosPorEquipa.set(plan.teamId, { amountCents: plan.amountCents, months: plan.months });
+    }
+  }
+
+  const academia = await db.academy.findFirst({
+    where: { id: academyId },
+    select: { billingDueDay: true },
+  });
+  const dueDate = diaDeVencimento(period, academia?.billingDueDay ?? 8);
+
+  const novas: { academyId: string; athleteId: string; enrollmentId?: string; period: string; amountCents: number; dueDate: Date }[] = [];
+  let jaExistiam = 0;
+  let semPreco = 0;
+  let foraDoMes = 0;
+
+  for (const a of atletas) {
+    if (existentes.has(a.id)) {
+      jaExistiam++;
+      continue;
+    }
+
+    const individual = individuais.get(a.id);
+    const daEquipa = a.teams[0] ? planosPorEquipa.get(a.teams[0].teamId) : undefined;
+    const fonte = individual ?? daEquipa;
+
+    if (!fonte) {
+      semPreco++;
+      continue;
+    }
+    if (!fonte.months.includes(mes)) {
+      foraDoMes++;
+      continue;
+    }
+
+    // O desconto só existe na inscrição individual; o preço da equipa não o tem.
+    const valor = individual ? Math.max(0, individual.amountCents - individual.discountCents) : fonte.amountCents;
+
+    novas.push({
+      academyId,
+      athleteId: a.id,
+      // Liga a cobrança à inscrição que a originou, quando houve uma — é o que
+      // deixa perceber, meses depois, de que preço é que aquele valor veio.
+      ...(individual ? { enrollmentId: individual.enrollmentId } : {}),
+      period,
+      amountCents: valor,
+      dueDate,
+    });
+  }
+
+  if (novas.length > 0) {
+    /*
+     * `skipDuplicates` é a rede por baixo da leitura de `existentes`.
+     *
+     * Entre ler quem já tem e escrever, outra pessoa pode ter gerado o mesmo
+     * período — duas secretarias, dois separadores. O índice único trava-o na
+     * base; isto faz com que o segundo a chegar não rebente, apenas não crie.
+     */
+    await db.charge.createMany({ data: novas, skipDuplicates: true });
+  }
+
+  return { period, criadas: novas.length, jaExistiam, semPreco, foraDoMes };
+}
+
+/** O período de hoje, no formato `AAAA-MM` que o `Charge` usa. */
+export function periodoActual(hoje = new Date()): string {
+  return `${hoje.getFullYear()}-${String(hoje.getMonth() + 1).padStart(2, "0")}`;
+}
+
+/**
+ * O dia de vencimento dentro do período.
+ *
+ * `billingDueDay` pode ser 31 e o mês ter 30 dias — nesse caso vence no último
+ * dia do mês, e não no dia 1 do mês seguinte, que é o que um `new Date(ano, mes,
+ * 31)` faria em silêncio.
+ */
+function diaDeVencimento(period: string, dia: number): Date {
+  const ano = Number(period.slice(0, 4));
+  const mes = Number(period.slice(5, 7));
+  const ultimoDia = new Date(Date.UTC(ano, mes, 0)).getUTCDate();
+  return new Date(Date.UTC(ano, mes - 1, Math.min(Math.max(1, dia), ultimoDia)));
 }

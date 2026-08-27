@@ -82,7 +82,7 @@ export default function StaffDetail() {
       <>
         <BackLink />
         <Panel>
-          <div className="px-5 py-16">
+          <div>
             <Empty icon={Users} title="Pessoa não encontrada" detail="Pode ter saído da academia." />
           </div>
         </Panel>
@@ -346,7 +346,7 @@ function Teams({ history }: { history: Stint[] }) {
   if (history.length === 0) {
     return (
       <Panel>
-        <div className="px-5 py-16">
+        <div>
           <Empty icon={Users} title="Sem equipas" detail="Esta pessoa nunca esteve atribuída a um escalão." />
         </div>
       </Panel>

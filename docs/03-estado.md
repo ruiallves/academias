@@ -77,7 +77,9 @@ para as suas equipas, mas a opção "toda a academia" não lhe aparece no diálo
 essa fica só para quem não tem `scope.teamIds` (direção e coordenação), a mesma
 condição que o servidor usa para decidir "sem limite". O mesmo âmbito rege a
 **Comunicação**: o treinador manda avisos, mas só para os pais das suas equipas — o
-público "Geral" e "Treinadores" é da direção.
+público "Geral" e "Treinadores" é da direção. Dentro de "Pais", os dois podem
+**recortar por escalão** — a direção sobre a academia, o treinador sobre as
+equipas dele.
 
 ## Consola — Departamento clínico
 
@@ -682,6 +684,33 @@ de infraestrutura, não de código da aplicação.
   /`comms:write`) só fala com os **pais das suas equipas**, e o servidor recusa
   qualquer outro público em vez de confiar na UI. O menu do treinador ganhou
   Comunicação. Verificado por `npm run test:announcements` (16).
+- **"Pais" recorta-se por escalão.** `POST /api/announcements` aceita `teamIds`:
+  o mesmo público, estreitado às equipas escolhidas ("o Sub-19 muda o treino de
+  sábado"). Vazio continua a ser *todos os pais de quem envia*. O recorte fica
+  **gravado** na audiência — é o que o registo mostra ("Pais · Sub-19 Futebol") e
+  o que a app da família já lia para não mostrar a um pai do Sub-11 o aviso do
+  Sub-19. O treinador recorta dentro do âmbito dele e o servidor recusa o resto;
+  o diálogo diz quantas famílias o recorte acorda antes de publicar.
+- **O treino herda o treinador da equipa.** `TrainingSession.coachId` continua a
+  ser a **excepção** ("hoje dá o adjunto") e não tem UI que a preencha — por isso
+  todos os treinos diziam "Sem treinador atribuído", mesmo os de uma equipa com
+  treinador principal. A queda para `TeamStaff` é feita na **leitura**
+  (`headCoaches` em `academy.service.ts`), e não copiada para cada linha ao criar:
+  assim mudar o treinador da equipa chega ao calendário, às presenças e à app da
+  família no pedido seguinte, em vez de deixar treinos futuros com o nome de quem
+  saiu. O alarme "sem treinador" passa a significar o que diz — a equipa não tem
+  treinador nenhum.
+- **A ficha de staff grava as equipas.** "Editar ficha" mandava-as para memória:
+  a atribuição desaparecia ao recarregar, e o treinador entrava sem âmbito
+  (`AuthService.scopeFor` deriva-o de `TeamStaff`). Passa por
+  `PATCH /api/staff/:id/teams`, que exige `access:write` — as equipas de um
+  treinador são o acesso dele aos dados, não uma etiqueta. O resto do diálogo
+  (nome, contactos, cargo, departamento) **continua local**.
+- **"Instalada" na página Famílias deixou de ser um `false` escrito à mão.** A
+  API responde com `Membership.lastSeenAt` (marca de presença escrita no
+  `bootstrap`, no máximo de hora a hora) **ou** uma `PushSubscription` viva. As
+  duas metades são precisas: quem instala e salta as notificações não tem
+  subscrição, e quem já usava a app é anterior à coluna.
 - **Falta justificada leva motivo.** No registo de presenças, escolher "Justificada"
   abre um campo para o motivo (ex.: consulta médica); o motivo aparece também na
   ficha do atleta, ao lado da falta. Vive com as presenças, que ainda são locais.

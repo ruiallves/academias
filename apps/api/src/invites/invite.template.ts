@@ -1,3 +1,4 @@
+import { clubPalette, type ClubPalette } from "../common/contrast";
 import type { Role } from "@prisma/client";
 import type { InvitePreview } from "./invites.service";
 
@@ -55,7 +56,8 @@ export function renderInvite(opts: {
 }): string {
   const { preview, token, consoleUrl, supabaseUrl, supabaseAnonKey } = opts;
   const { academy } = preview;
-  const signal = /^#[0-9a-f]{6}$/i.test(academy.signalColor) ? academy.signalColor : "#0f6b62";
+  const paleta = clubPalette(academy.signalColor);
+  const signal = paleta.club;
 
   return `<!doctype html>
 <html lang="pt-PT">
@@ -73,7 +75,7 @@ export function renderInvite(opts: {
 <link href="https://fonts.googleapis.com/css2?family=Instrument+Sans:wght@400;500;600;700&display=swap" rel="stylesheet" />
 
 <style>
-${styles(signal)}
+${styles(paleta)}
 </style>
 </head>
 <body>
@@ -344,7 +346,8 @@ export function renderInviteError(): string {
 </html>`;
 }
 
-function styles(signal: string): string {
+function styles(paleta: ClubPalette): string {
+  const signal = paleta.club;
   return `  :root {
     --canvas: #f6f5f2;
     --surface: #ffffff;
@@ -362,7 +365,9 @@ function styles(signal: string): string {
      * abaixo desse limiar. Gemea de --club-deep na pagina de socios e de
      * --signal-deep na pagina do clube.
      */
-    --signal-deep: color-mix(in oklab, ${signal} 72%, black);
+    --signal-deep: ${paleta.deep};
+    --signal-strong: ${paleta.strong};
+    --signal-on: ${paleta.on};
   }
   * { box-sizing: border-box; }
   body {
@@ -425,7 +430,8 @@ function styles(signal: string): string {
 
   .mark {
     /* Escurecida, para as iniciais brancas lerem com qualquer cor de clube. */
-    width: 64px; height: 64px; border-radius: 20px; background: var(--signal-deep); color: #fff;
+    /* A caixa das iniciais leva a tinta que se le nela — ver common/contrast.ts. */
+    width: 64px; height: 64px; border-radius: 20px; background: var(--signal-strong); color: var(--signal-on);
     overflow: hidden;
     display: flex; align-items: center; justify-content: center;
     font-weight: 700; font-size: 20px; margin: 0 auto 20px; letter-spacing: -0.01em;

@@ -260,6 +260,31 @@ export function IdentityPanel({ mayWrite }: { mayWrite: boolean }) {
 
           <span className="font-mono text-[11px] text-ink-4">{signal.toUpperCase()}</span>
         </div>
+
+        {/*
+          A prova de que não é preciso escolher a cor do texto.
+
+          É a pergunta que a cor levanta a quem a escolhe — "e se ficar ilegível?"
+          — e a melhor resposta não é uma frase, é ver. Estas três amostras usam
+          os mesmos tokens que a app e a página de sócios usam, e mudam ao vivo
+          com o selector: quem experimentar um amarelo vê a tinta virar preta.
+        */}
+        <div className="mt-4 rounded-[var(--radius-control)] border border-line bg-sunken/40 p-3">
+          <div className="mb-2 flex flex-wrap items-center gap-2">
+            <span className="rounded-[var(--radius-control)] bg-signal-strong px-2.5 py-1 text-meta font-semibold text-signal-on">
+              Botão do clube
+            </span>
+            <span className="rounded-full bg-signal-soft px-2.5 py-1 text-meta font-medium text-signal-ink">
+              Etiqueta
+            </span>
+            <span className="text-meta font-medium text-signal-ink">Texto na cor do clube</span>
+          </div>
+          <p className="max-w-[62ch] text-[11px] leading-relaxed text-ink-3">
+            A cor do texto é calculada a partir da cor escolhida — clara sobre cores escuras, escura sobre cores
+            claras — e não há nada para configurar. Uma cor muito clara continua a ser a cor do clube; o que muda é
+            a tinta por cima.
+          </p>
+        </div>
       </div>
 
       {erro && <p className="border-t border-line px-5 py-3 text-meta text-risk">{erro}</p>}
@@ -343,8 +368,8 @@ function ClubSymbol({ mayWrite, onError }: { mayWrite: boolean; onError: (m: str
 
       <div className="flex items-center gap-4">
         <span
-          className="flex size-16 shrink-0 items-center justify-center overflow-hidden rounded-[16px] text-[18px] font-bold text-white"
-          style={{ background: academy.logoUrl ? "var(--color-sunken)" : "var(--color-signal)" }}
+          className="flex size-16 shrink-0 items-center justify-center overflow-hidden rounded-[16px] text-[18px] font-bold text-signal-on"
+          style={{ background: academy.logoUrl ? "var(--color-sunken)" : "var(--color-signal-strong)" }}
         >
           {academy.logoUrl ? (
             <img src={academy.logoUrl} alt="" className="size-full object-contain" />

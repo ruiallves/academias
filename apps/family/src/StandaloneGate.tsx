@@ -59,8 +59,8 @@ function InstallRequired() {
   return (
     <div className="flex min-h-dvh flex-col items-center justify-center bg-canvas px-6 py-10 text-center">
       <span
-        className="mb-5 flex size-14 items-center justify-center rounded-[16px] text-[20px] font-bold text-white"
-        style={{ background: "var(--color-signal)" }}
+        className="mb-5 flex size-14 items-center justify-center rounded-[16px] text-[20px] font-bold text-signal-on"
+        style={{ background: "var(--color-signal-strong)" }}
         aria-hidden
       >
         {brand.mark || "•"}

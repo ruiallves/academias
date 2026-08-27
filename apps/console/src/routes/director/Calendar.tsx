@@ -226,7 +226,7 @@ function AgendaList({
 
   if (byDay.size === 0) {
     return (
-      <div className="px-5 py-16">
+      <div>
         <Empty icon={CalendarDays} title="Nada agendado" detail="Este período está livre para os escalões seleccionados." />
       </div>
     );
@@ -241,7 +241,7 @@ function AgendaList({
         return (
           <li key={key} className="flex gap-4 border-b border-line px-5 py-3.5 last:border-0">
             <div className="w-14 shrink-0 pt-0.5">
-              <div className={cx("text-meta font-semibold uppercase", isToday ? "text-signal" : "text-ink-3")}>
+              <div className={cx("text-meta font-semibold uppercase", isToday ? "text-signal-ink" : "text-ink-3")}>
                 {dayShort(day)}
               </div>
               <div className={cx("text-[20px] leading-tight font-semibold tabular", isToday ? "text-signal-ink" : "text-ink")}>

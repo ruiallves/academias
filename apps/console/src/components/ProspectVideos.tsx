@@ -68,7 +68,7 @@ export function ProspectVideos({ prospectId, session }: { prospectId: string; se
   if (!mayRead) {
     return (
       <Panel>
-        <div className="px-5 py-16">
+        <div>
           <Empty
             title="Sem acesso ao vídeo"
             detail="As gravações de prospectos têm permissão própria — são imagem de menores que não pertencem à academia."
@@ -95,7 +95,7 @@ export function ProspectVideos({ prospectId, session }: { prospectId: string; se
         {!videos && !error ? (
           <Loading size="panel" />
         ) : videos && videos.length === 0 ? (
-          <div className="px-5 py-16">
+          <div>
             <Empty
               icon={Upload}
               title="Ainda sem vídeos"
@@ -419,7 +419,7 @@ function PlayerDialog({
                   <button
                     type="button"
                     onClick={() => seek(m.atSec)}
-                    className="shrink-0 font-mono text-[12px] font-medium text-signal hover:underline"
+                    className="shrink-0 font-mono text-[12px] font-medium text-signal-ink hover:underline"
                   >
                     {timecode(m.atSec)}
                   </button>

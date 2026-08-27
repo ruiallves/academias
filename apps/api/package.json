@@ -33,6 +33,7 @@
     "test:teams": "node scripts/test-teams.mjs",
     "test:events": "node scripts/test-events.mjs",
     "test:match-events": "node scripts/test-match-events.mjs",
+    "test:match-sheet": "node scripts/test-match-sheet.mjs",
     "test:announcements": "node scripts/test-announcements.mjs",
     "test:fees": "node scripts/test-fees.mjs",
     "test:fee-config": "node scripts/test-fee-config.mjs",

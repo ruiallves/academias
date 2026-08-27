@@ -346,7 +346,7 @@ function VisibilityCard({
       )}
     >
       <span className="flex items-center gap-2 text-body font-medium text-ink">
-        <Icon className={cx("size-3.5", active ? "text-signal" : "text-ink-3")} strokeWidth={1.75} />
+        <Icon className={cx("size-3.5", active ? "text-signal-ink" : "text-ink-3")} strokeWidth={1.75} />
         {label}
       </span>
       <span className="text-[11px] leading-relaxed text-ink-3">{detail}</span>

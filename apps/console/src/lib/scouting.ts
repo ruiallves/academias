@@ -1,4 +1,5 @@
 import { apiDelete, apiGet, apiPatch, apiPost } from "@/lib/http";
+import { categoryColor } from "@academia/ui/tokens";
 
 /**
  * A fronteira de dados do scouting.
@@ -45,6 +46,47 @@ export const STAGE_LABEL: Record<Stage, string> = {
   RECRUITED: "Recrutado",
   REJECTED: "Descartado",
 };
+
+/**
+ * A cor de cada fase do funil.
+ *
+ * ## Porque é que não deriva da cor do clube
+ *
+ * Derivava: cada fase era `color-mix(--color-signal, white, 25% + i*14%)`, cinco
+ * tons da mesma cor. Duas coisas más de uma vez:
+ *
+ *  1. **Num clube amarelo saem cinco amarelos** que ninguém distingue — e o
+ *     mesmo vale para qualquer matiz clara. A escala só funcionava com cores
+ *     escuras, que é meia amostra dos clubes.
+ *  2. **A cor do clube é identidade, não taxonomia.** Aqui não se está a dizer
+ *     "isto é do clube X" — está-se a distinguir cinco etapas umas das outras.
+ *     É a mesma regra que já tirou a cor do clube do menu lateral.
+ *
+ * A paleta categórica de `@academia/ui` existe exactamente para isto: matizes
+ * escolhidas longe do verde-de-pago, do âmbar-de-aviso e do vermelho-de-erro,
+ * com saturação baixa. As cinco andam para a frente na paleta, por isso o funil
+ * lê-se da esquerda para a direita como uma progressão e não como cinco cores ao
+ * acaso.
+ *
+ * Vive aqui, ao pé de `STAGE_LABEL`, porque é vocabulário do domínio e é lido em
+ * dois ecrãs — a Visão geral do scouting e a ficha do prospecto. Duas cópias
+ * divergiam, e uma legenda que não bate certo com o gráfico é pior do que não
+ * ter legenda.
+ *
+ * `REJECTED` não entra: não é uma fase do funil, é a saída dele.
+ */
+const STAGE_COLOR: Record<Exclude<Stage, "REJECTED">, string> = {
+  DISCOVERED: categoryColor(4).base, // slate — ainda é só um nome numa lista
+  WATCHING: categoryColor(5).base, // cyan
+  OBSERVED: categoryColor(1).base, // indigo
+  TRIAL: categoryColor(2).base, // violet
+  RECRUITED: categoryColor(0).base, // teal — o fim do funil, a cor mais viva
+};
+
+/** A cor de uma fase, com saída segura para um estado que ainda não exista. */
+export function stageColor(stage: Stage): string {
+  return STAGE_COLOR[stage as Exclude<Stage, "REJECTED">] ?? "var(--color-ink-4)";
+}
 
 export const STAGE_ORDER: Stage[] = [
   "DISCOVERED",

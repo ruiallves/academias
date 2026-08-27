@@ -77,7 +77,7 @@ export default function MemberDetail() {
       <>
         <Back />
         <Panel>
-          <div className="px-5 py-16">
+          <div>
             <Empty title="Sócio não encontrado" detail={error ?? "Ou não pertence a este clube."} />
           </div>
         </Panel>

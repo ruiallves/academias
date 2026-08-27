@@ -28,7 +28,9 @@ const env = (k) => {
 
 const S = env("SUPABASE_URL").replace(/\/$/, "");
 const A = env("SUPABASE_ANON_KEY");
-const API = "http://localhost:3000";
+// Permite correr contra uma instância própria — `API_URL=http://localhost:3001` —
+// sem disputar a porta 3000 com o servidor de quem está a desenvolver.
+const API = process.env.API_URL ?? "http://localhost:3000";
 
 let ok = 0, bad = 0;
 const check = (l, c, d = "") => {
@@ -222,7 +224,72 @@ const linhas = (await db.query(
    FROM "MatchAppearance" WHERE "matchId" = $1 ORDER BY minutes DESC`,
   [meuJogo],
 )).rows;
-check("o titular ficou com 90 minutos e 2 golos", linhas[0]?.minutes === 90 && linhas[0]?.tally === 2, JSON.stringify(linhas[0]));
+/*
+ * Os minutos são calculados pelo servidor, não aceites do cliente.
+ *
+ * O pedido acima mandou `minutes: 90`. Um titular sem minuto de saída jogou o
+ * jogo todo — e o jogo todo é a duração da modalidade, não o número que veio no
+ * corpo. Aceitar o número do cliente punha a verdade dos totais da época na mão
+ * de quem faz o pedido: bastava um ecrã desactualizado para um atleta ficar com
+ * noventa minutos num jogo em que entrou ao 80.
+ */
+const duracao = (await db.query(
+  `SELECT s."matchMinutes" FROM "Match" m
+     JOIN "Team" t ON t.id = m."teamId"
+     JOIN "Sport" s ON s.id = t."sportId"
+    WHERE m.id = $1`,
+  [meuJogo],
+)).rows[0]?.matchMinutes;
+check("a modalidade tem duração declarada", typeof duracao === "number" && duracao > 0, `${duracao}`);
+check(
+  `o titular ficou com os ${duracao}′ do jogo e 2 golos`,
+  linhas[0]?.minutes === duracao && linhas[0]?.tally === 2,
+  JSON.stringify(linhas[0]),
+);
+check("e os 90 que o cliente mandou foram ignorados", linhas[0]?.minutes !== 90, `${linhas[0]?.minutes}`);
+
+// Um suplente com entrada registada: os minutos saem da diferença.
+const entrouAos = await call(coach, "POST", `/api/matches/${meuJogo}/ficha`, {
+  rows: [{ athleteId: plantel[1], minutes: 300, started: false, onMinute: duracao - 20 }],
+});
+check("um suplente com entrada registada é aceite", entrouAos.status < 300, `${entrouAos.status}`);
+check(
+  "e fica com os minutos que faltavam ao jogo",
+  (await db.query(`SELECT minutes FROM "MatchAppearance" WHERE "matchId"=$1 AND "athleteId"=$2`, [meuJogo, plantel[1]]))
+    .rows[0]?.minutes === 20,
+  "minutes",
+);
+
+// O campo deixou de ser obrigatório: um cliente não tem de inventar o número.
+const semCampoMinutos = await call(coach, "POST", `/api/matches/${meuJogo}/ficha`, {
+  rows: [{ athleteId: plantel[0], started: true, tally: 1 }],
+});
+check("a ficha é aceite sem o campo `minutes`", semCampoMinutos.status < 300, `${semCampoMinutos.status}`);
+check(
+  "e os minutos saem na mesma da duração do jogo",
+  (await db.query(`SELECT minutes FROM "MatchAppearance" WHERE "matchId"=$1 AND "athleteId"=$2`, [meuJogo, plantel[0]]))
+    .rows[0]?.minutes === duracao,
+  "minutes",
+);
+
+// Um suplente sem entrada registada não tem minutos que se saibam: zero, não um palpite.
+await call(coach, "POST", `/api/matches/${meuJogo}/ficha`, {
+  rows: [{ athleteId: plantel[1], minutes: 45, started: false }],
+});
+check(
+  "sem minuto de entrada, um suplente fica a zero em vez de um palpite",
+  (await db.query(`SELECT minutes FROM "MatchAppearance" WHERE "matchId"=$1 AND "athleteId"=$2`, [meuJogo, plantel[1]]))
+    .rows[0]?.minutes === 0,
+  "minutes",
+);
+
+// Reposição do estado que as verificações seguintes esperam.
+await call(coach, "POST", `/api/matches/${meuJogo}/ficha`, {
+  rows: [
+    { athleteId: plantel[0], minutes: 0, started: true, tally: 2, assists: 1, yellowCards: 1, redCard: false },
+    { athleteId: plantel[1], minutes: 0, started: false, onMinute: duracao - 25, redCard: true },
+  ],
+});
 check("com um amarelo", linhas[0]?.yellowCards === 1, `${linhas[0]?.yellowCards}`);
 check("o suplente entrou aos 25 e foi expulso", linhas[1]?.started === false && linhas[1]?.redCard === true, JSON.stringify(linhas[1]));
 
@@ -233,6 +300,162 @@ check("o suplente entrou aos 25 e foi expulso", linhas[1]?.started === false && 
  * papel e outra coisa em qualquer soma de jogos por atleta.
  */
 check("quem não jogou não tem linha nenhuma", linhas.length === 2, `${linhas.length}`);
+
+/*
+ * O detalhe dos minutos — entradas, saídas e cartões.
+ *
+ * Tudo opcional: a ficha acima gravou sem nada disto e passou. O que se prova
+ * aqui é que, quando vem, chega inteiro — e que **ausente continua a ser
+ * ausente**, e não um zero. É a distinção que faz "entrou ao minuto 0" (um
+ * titular) diferente de "ninguém registou quando entrou".
+ */
+console.log("\n=== Ficha com minutos ===");
+const comMinutos = await call(coach, "POST", `/api/matches/${meuJogo}/ficha`, {
+  rows: [
+    { athleteId: plantel[0], minutes: 63, started: true, tally: 1, assists: 0, yellowCards: 2, redCard: true, offMinute: 63, yellowAt: [21, 63], redAt: 63 },
+    { athleteId: plantel[1], minutes: 27, started: false, tally: 0, assists: 1, yellowCards: 0, redCard: false, onMinute: 63 },
+  ],
+});
+check("grava com detalhe de minutos", comMinutos.status === 201 || comMinutos.status === 200, `${comMinutos.status}`);
+
+const det = (await db.query(
+  `SELECT "athleteId", started, "onMinute", "offMinute", "yellowAt", "redAt"
+     FROM "MatchAppearance" WHERE "matchId" = $1 ORDER BY started DESC`,
+  [meuJogo],
+)).rows;
+check("o titular saiu aos 63", det[0]?.offMinute === 63, `${det[0]?.offMinute}`);
+check("com os dois amarelos aos 21 e 63", String(det[0]?.yellowAt) === "21,63", JSON.stringify(det[0]?.yellowAt));
+check("e a expulsão aos 63", det[0]?.redAt === 63, `${det[0]?.redAt}`);
+check("um titular não guarda minuto de entrada", det[0]?.onMinute === null, `${det[0]?.onMinute}`);
+check("o suplente entrou aos 63", det[1]?.onMinute === 63, `${det[1]?.onMinute}`);
+check("e não tem minuto de saída — jogou até ao fim", det[1]?.offMinute === null, `${det[1]?.offMinute}`);
+check("sem cartões, a lista de amarelos fica vazia", Array.isArray(det[1]?.yellowAt) && det[1].yellowAt.length === 0, JSON.stringify(det[1]?.yellowAt));
+
+/*
+ * Mais minutos do que amarelos declarados.
+ *
+ * O cliente não deve mandar isto, mas a interface nunca é a fronteira: dois
+ * minutos com um amarelo declarado são duas afirmações a contradizerem-se, e é
+ * o servidor que corta a que sobra.
+ */
+const aMais = await call(coach, "POST", `/api/matches/${meuJogo}/ficha`, {
+  rows: [{ athleteId: plantel[0], minutes: 90, started: true, yellowCards: 1, yellowAt: [10, 80] }],
+});
+check("aceita o pedido contraditório", aMais.status === 201 || aMais.status === 200, `${aMais.status}`);
+const cortado = (await db.query(
+  `SELECT "yellowAt" FROM "MatchAppearance" WHERE "matchId" = $1 AND "athleteId" = $2`,
+  [meuJogo, plantel[0]],
+)).rows[0];
+check("mas guarda só um minuto de amarelo", String(cortado?.yellowAt) === "10", JSON.stringify(cortado?.yellowAt));
+
+/*
+ * Minutos impossíveis: recusa, não corte.
+ *
+ * Um golo aos 60 de quem saiu aos 50 é um erro de escrita — quase sempre um
+ * dedo no sítio errado — e não um dado. Cortá-lo em silêncio deixava a ficha
+ * gravada errada sem ninguém dar por isso; recusá-la manda a pessoa olhar.
+ */
+console.log("\n=== Minutos impossíveis ===");
+const golo60 = await call(coach, "POST", `/api/matches/${meuJogo}/ficha`, {
+  rows: [{ athleteId: plantel[0], minutes: 50, started: true, tally: 1, offMinute: 50, tallyAt: [60] }],
+});
+check("um golo depois de sair é recusado (400)", golo60.status === 400, `${golo60.status}`);
+check("e a mensagem diz porquê", /golo ao minuto 60/i.test(JSON.stringify(golo60.body)), JSON.stringify(golo60.body).slice(0, 120));
+
+const amarelo60 = await call(coach, "POST", `/api/matches/${meuJogo}/ficha`, {
+  rows: [{ athleteId: plantel[0], minutes: 50, started: true, yellowCards: 1, offMinute: 50, yellowAt: [60] }],
+});
+check("um amarelo depois de sair é recusado (400)", amarelo60.status === 400, `${amarelo60.status}`);
+
+const antesDeEntrar = await call(coach, "POST", `/api/matches/${meuJogo}/ficha`, {
+  rows: [{ athleteId: plantel[1], minutes: 30, started: false, tally: 1, onMinute: 60, tallyAt: [10] }],
+});
+check("um golo antes de entrar é recusado (400)", antesDeEntrar.status === 400, `${antesDeEntrar.status}`);
+
+const aoContrario = await call(coach, "POST", `/api/matches/${meuJogo}/ficha`, {
+  rows: [{ athleteId: plantel[1], minutes: 10, started: false, onMinute: 70, offMinute: 40 }],
+});
+check("sair antes de entrar é recusado (400)", aoContrario.status === 400, `${aoContrario.status}`);
+
+// E o caso legítimo continua a passar: expulso ao minuto exacto em que saiu.
+const expulsoAoSair = await call(coach, "POST", `/api/matches/${meuJogo}/ficha`, {
+  rows: [{ athleteId: plantel[0], minutes: 50, started: true, redCard: true, offMinute: 50, redAt: 50 }],
+});
+check("mas expulso ao minuto em que saiu é aceite", expulsoAoSair.status < 300, `${expulsoAoSair.status}`);
+
+// Nada disto ficou gravado a meio: a recusa é antes de escrever.
+const depoisDasRecusas = (await db.query(
+  `SELECT "tallyAt", "offMinute" FROM "MatchAppearance" WHERE "matchId" = $1 AND "athleteId" = $2`,
+  [meuJogo, plantel[0]],
+)).rows[0];
+check("a ficha ficou no último estado válido", String(depoisDasRecusas?.tallyAt) === "" && depoisDasRecusas?.offMinute === 50, JSON.stringify(depoisDasRecusas));
+
+console.log("\n=== A ficha chega à listagem de jogos ===");
+/*
+ * O que faltava para o registo de jogos na ficha do atleta funcionar.
+ *
+ * `GET /api/matches` trazia o resultado e os convocados, mas não as
+ * participações — e o perfil do atleta lê-as dali. Gravava-se a ficha e não
+ * acontecia nada em lado nenhum.
+ */
+const listagem = await call(coach, "GET", "/api/matches");
+const naListagem = (listagem.body ?? []).find((x) => x.id === meuJogo);
+check("o jogo traz as participações", Array.isArray(naListagem?.appearances) && naListagem.appearances.length > 0, JSON.stringify(naListagem?.appearances)?.slice(0, 100));
+const linhaDoAtleta = naListagem?.appearances?.find((a) => a.athleteId === plantel[0]);
+check("com os minutos do atleta", linhaDoAtleta?.minutes === 50, `${linhaDoAtleta?.minutes}`);
+check("e a titularidade", linhaDoAtleta?.started === true, `${linhaDoAtleta?.started}`);
+
+/*
+ * A ficha contra o marcador.
+ *
+ * O jogo está 2-2. Quatro golos distribuídos por uma ficha de um 2-2 não é uma
+ * opinião diferente — é um erro de escrita que fica a viver no perfil do atleta
+ * e nos totais da época. E o mesmo tecto tem de valer pelos dois lados: sem o
+ * guarda no resultado, bastava gravar a ficha primeiro e emendar o marcador
+ * depois para chegar exactamente ao mesmo sítio.
+ */
+console.log("\n=== A ficha não marca mais do que o marcador ===");
+const marcador = (await db.query(`SELECT "ourScore","theirScore" FROM "Match" WHERE id=$1`, [meuJogo])).rows[0];
+check("o jogo está 2-2 para este teste", marcador.ourScore === 2, `${marcador.ourScore}-${marcador.theirScore}`);
+
+const golosAMais = await call(coach, "POST", `/api/matches/${meuJogo}/ficha`, {
+  rows: [
+    { athleteId: plantel[0], minutes: 60, started: true, tally: 3 },
+    { athleteId: plantel[1], minutes: 60, started: true, tally: 1 },
+  ],
+});
+check("4 golos num 2-2 é recusado (400)", golosAMais.status === 400, `${golosAMais.status}`);
+check("e a mensagem diz o marcador", /2-2/.test(JSON.stringify(golosAMais.body)), JSON.stringify(golosAMais.body).slice(0, 140));
+
+const assistsAMais = await call(coach, "POST", `/api/matches/${meuJogo}/ficha`, {
+  rows: [{ athleteId: plantel[0], minutes: 60, started: true, assists: 6 }],
+});
+check("6 assistências num 2-2 é recusado (400)", assistsAMais.status === 400, `${assistsAMais.status}`);
+
+const cabeCerto = await call(coach, "POST", `/api/matches/${meuJogo}/ficha`, {
+  rows: [
+    { athleteId: plantel[0], minutes: 60, started: true, tally: 2, assists: 0, tallyAt: [12, 40] },
+    { athleteId: plantel[1], minutes: 60, started: true, tally: 0, assists: 2, assistsAt: [12, 40] },
+  ],
+});
+check("mas 2 golos e 2 assistências passam", cabeCerto.status < 300, `${cabeCerto.status}`);
+check("com os minutos de golo gravados", String((await db.query(
+  `SELECT "tallyAt" FROM "MatchAppearance" WHERE "matchId"=$1 AND "athleteId"=$2`, [meuJogo, plantel[0]],
+)).rows[0]?.tallyAt) === "12,40", "tallyAt");
+check("e os de assistência também", String((await db.query(
+  `SELECT "assistsAt" FROM "MatchAppearance" WHERE "matchId"=$1 AND "athleteId"=$2`, [meuJogo, plantel[1]],
+)).rows[0]?.assistsAt) === "12,40", "assistsAt");
+
+// O outro lado: baixar o marcador abaixo do que a ficha já atribui.
+const baixarDemais = await call(coach, "POST", `/api/matches/${meuJogo}/resultado`, { ourScore: 1, theirScore: 0 });
+check("baixar o resultado abaixo da ficha é recusado (400)", baixarDemais.status === 400, `${baixarDemais.status}`);
+check("e diz o que a ficha já tem", /2 golos/.test(JSON.stringify(baixarDemais.body)), JSON.stringify(baixarDemais.body).slice(0, 140));
+const subir = await call(coach, "POST", `/api/matches/${meuJogo}/resultado`, { ourScore: 4, theirScore: 0 });
+check("mas subi-lo passa", subir.status < 300, `${subir.status}`);
+// E limpar continua a poder ser feito: desfazer um engano não tem tecto.
+const limparComFicha = await call(coach, "POST", `/api/matches/${meuJogo}/resultado`, {});
+check("limpar o resultado passa mesmo com ficha gravada", limparComFicha.status < 300, `${limparComFicha.status}`);
+await call(coach, "POST", `/api/matches/${meuJogo}/resultado`, { ourScore: 2, theirScore: 2 });
 
 /*
  * A convocatória é a lista fechada de quem podia lá estar.

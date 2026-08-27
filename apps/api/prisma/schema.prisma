@@ -254,6 +254,16 @@ model Membership {
 
   isActive Boolean @default(true)
 
+  /// A última vez que esta pessoa abriu a app ou a consola.
+  ///
+  /// Escrito no arranque (`bootstrap`), no máximo de hora a hora — é uma marca
+  /// de presença, não um registo de acessos; para auditoria existe `AuditLog`.
+  ///
+  /// Serve a pergunta que a página Famílias faz: *esta família já usa a app?*
+  /// A subscrição push sozinha não respondia — um pai pode instalar e saltar as
+  /// notificações, e ficava eternamente "Por instalar". Nulo é "nunca entrou".
+  lastSeenAt DateTime?
+
   coachOf        TeamStaff[]
   guardianOf     GuardianLink[]
   ledSessions    TrainingSession[] @relation("SessionCoach")
@@ -1192,10 +1202,20 @@ model MatchAppearance {
   athleteId String
   athlete   Athlete @relation(fields: [athleteId], references: [id], onDelete: Cascade)
 
+  /// Minutos jogados. Quando há `onMinute`/`offMinute`, é a diferença entre eles
+  /// — o ecrã calcula-a — mas continua a ser esta coluna a somar na ficha do
+  /// atleta, porque a maioria dos jogos entra sem detalhe de substituição.
   minutes Int
   /// Se começou o jogo. Titular ou suplente utilizado — a primeira pergunta que
   /// qualquer treinador faz, e que não se deduz dos minutos.
   started Boolean @default(true)
+
+  /// Ao minuto de quê entrou. Nulo num titular (entrou aos 0) e em quem jogou
+  /// sem que ninguém tenha registado a substituição.
+  onMinute  Int?
+  /// Ao minuto de quê saiu. Nulo em quem ficou até ao fim — ou em quem jogou sem
+  /// detalhe registado. `minutes` continua a valer nesse caso.
+  offMinute Int?
   /// Golos no futebol, pontos nos restantes — o substantivo vem da modalidade.
   tally   Int      @default(0)
   /// Assistências. Zero na maior parte das modalidades, e por isso o ecrã só as
@@ -1208,6 +1228,22 @@ model MatchAppearance {
   /// Vermelho directo. Separado dos amarelos de propósito: para a federação e
   /// para o castigo que se segue, não é a mesma coisa.
   redCard     Boolean @default(false)
+
+  /// A que minutos foram mostrados os amarelos, por ordem. Vazio quando ninguém
+  /// os registou — `yellowCards` continua a ser a contagem que vale.
+  ///
+  /// Uma lista e não duas colunas: são no máximo dois, mas "o primeiro" e "o
+  /// segundo" não são conceitos diferentes, e duas colunas obrigavam cada leitor
+  /// a saber qual preencher primeiro.
+  yellowAt Int[] @default([])
+  /// Ao minuto de quê foi expulso. Serve o vermelho directo e o segundo amarelo.
+  redAt    Int?
+
+  /// A que minutos marcou, por ordem. Vazio quando ninguém os registou —
+  /// `tally` continua a ser a contagem que vale, e é ela que soma na ficha.
+  tallyAt   Int[] @default([])
+  /// A que minutos assistiu. Mesmo desenho de `tallyAt`.
+  assistsAt Int[] @default([])
 
   /// Nota do jogo, 0–10. **A fórmula está por decidir** — o campo existe e é
   /// mostrado, mas nada no sistema a calcula ainda.

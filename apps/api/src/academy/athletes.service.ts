@@ -2,6 +2,7 @@ import { BadRequestException, ForbiddenException, Injectable } from "@nestjs/com
 import type { AthleteStatus, DominantSide, Prisma } from "@prisma/client";
 import { PrismaService, type ScopedClient } from "../prisma/prisma.service";
 import { can, teamScopeFilter, type RequestContext } from "../common/permissions";
+import { gerarCobrancas, periodoActual } from "../billing/billing.service";
 import type { AthleteInputDto, AthleteUpdateDto } from "./athletes.dto";
 
 /**
@@ -36,6 +37,22 @@ export class AthletesService {
       const teams = await this.teamsInScope(ctx, db);
       const result = await this.insertOne(db, ctx.academyId, dto, teams);
       if ("error" in result) throw new BadRequestException(result.error);
+
+      /*
+       * A mensalidade do mês corrente, à inscrição.
+       *
+       * Sem isto, um atleta inscrito hoje não aparecia em Mensalidades — a página
+       * lê `Charge`, e a inscrição criava o atleta e o plantel mas nunca uma
+       * cobrança. Não dava erro nenhum: dava uma ausência, que é pior de
+       * diagnosticar do que um erro.
+       *
+       * Não falha a inscrição se não houver preço configurado: `gerarCobrancas`
+       * conta-o em `semPreco` e segue. Um clube que ainda não definiu o preço da
+       * equipa tem de conseguir inscrever atletas na mesma — o preço define-se
+       * depois, e a cobrança nasce quando alguém gerar o mês.
+       */
+      await gerarCobrancas(db, ctx.academyId, periodoActual(), [result.athlete.id]);
+
       return result.athlete;
     });
   }
@@ -248,6 +265,23 @@ export class AthletesService {
           created.push({ id: result.athlete.id, name: result.athlete.name });
           existing.add(key);
         }
+      }
+
+      /*
+       * As mensalidades de todos os que entraram, de uma vez.
+       *
+       * No fim e não por linha: cento e vinte atletas dariam cento e vinte
+       * gerações, cada uma com as suas leituras de planos e inscrições. Uma
+       * chamada com a lista toda lê os planos uma vez e escreve as cobranças
+       * todas num `createMany`.
+       */
+      if (created.length > 0) {
+        await gerarCobrancas(
+          db,
+          ctx.academyId,
+          periodoActual(),
+          created.map((a) => a.id),
+        );
       }
 
       return { created: created.length, errors, athletes: created };

@@ -57,11 +57,33 @@ consumidos pelas duas apps. Tailwind v4, configuração em CSS (`@theme`).
 | `ink-3` | `#8A867C` | labels, meta |
 | `ink-4` | `#ADA89D` | placeholder, desactivado |
 | `signal` | `#0F6B62` | tenant — activo, foco, marca |
+| `signal-strong` | derivado | a mesma cor, para superfícies **com** texto |
+| `signal-on` | derivado | a tinta a usar por cima de `signal-strong` |
+| `signal-ink` | derivado | a cor do clube como **texto**, sobre fundo claro |
+| `signal-soft` | derivado | o fundo claro correspondente |
 | `ok` `warn` `risk` | `#1F7A45` `#9A5B08` `#A82A20` | estado, fixo |
 
 Cada semântica tem um par `-soft` para fundos de *pill*.
 
-O tenant sobrepõe `--color-signal` em runtime; mais nada.
+### O contraste é calculado, não configurado
+
+O tenant escolhe **uma** cor. Tudo o resto sai dela em runtime, por `signalVars`
+em [`packages/ui/src/tokens.ts`](../packages/ui/src/tokens.ts) — e o servidor faz a
+mesma conta em `apps/api/src/common/contrast.ts` para as páginas que gera (landing,
+sócios, e-mail de convite), onde não há CSS de tema a que recorrer.
+
+A regra: **nunca se escreve branco por cima da cor do clube.** Escreve-se
+`signal-on`, que é branco ou tinta escura consoante o que se lê melhor (WCAG 2.1,
+alvo 4.5:1). Um clube de amarelo claro recebe tinta preta sem ninguém configurar
+nada, e continua a ser um clube amarelo — a cor não se corrige, corrige-se a tinta.
+
+`signal-strong` existe para a família de cores em que **nem branco nem preto**
+chegam a 4.5:1 (cinzentos médios, vermelhos-tijolo): aí, e só aí, a cor anda um
+passo na direcção que a tinta já pedia. Para as outras é igual a `signal`.
+
+Consequência prática, e a razão de haver dois tokens para o mesmo tom: `signal`
+pinta o que **não** tem texto por cima (o ponto de hoje, a barra de progresso, o
+anel de foco); `signal-strong` pinta o que **tem**.
 
 ## Tipografia
 

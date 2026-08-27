@@ -101,14 +101,14 @@ export function NotificationCard() {
         <span
           className={cx(
             "flex size-11 shrink-0 items-center justify-center rounded-full",
-            subscribed ? "bg-ok-soft text-ok" : "bg-white/20 text-white",
+            subscribed ? "bg-ok-soft text-ok" : "bg-signal-on/20 text-signal-on",
           )}
         >
           {subscribed ? <Bell className="size-5" strokeWidth={1.9} /> : <BellOff className="size-5" strokeWidth={1.9} />}
         </span>
 
         <div className="min-w-0 flex-1">
-          <p className={cx("text-body font-semibold", subscribed ? "text-ink" : "text-white")}>
+          <p className={cx("text-body font-semibold", subscribed ? "text-ink" : "text-signal-on")}>
             {subscribed ? "Notificações ligadas" : "Receber notificações"}
           </p>
           <p className={cx("mt-0.5 text-meta leading-relaxed", subscribed ? "text-ink-3" : "on-2")}>

@@ -3,7 +3,8 @@ import { Link, useSearchParams } from "react-router-dom";
 import { PageHeader } from "@/components/Shell";
 import { Attention } from "@/components/Attention";
 import { Empty, Loading, Panel, Pill, cx } from "@/components/primitives";
-import { ChevronRight, MapPin } from "@/lib/icons";
+import { Segmented } from "@/components/filters";
+import { ChevronRight, CircleCheck, MapPin, Trophy } from "@/lib/icons";
 import { useStore } from "@/lib/store";
 import { listMatches, matchAttention, myMatchDuty, outcome, type MatchListRow } from "@/lib/matches";
 import { useSession } from "@/session";
@@ -184,22 +185,16 @@ export default function Matches() {
 
       <Panel>
         <div className="flex flex-wrap items-center gap-2 border-b border-line px-5 py-3">
-          <div className="flex rounded-[var(--radius-control)] border border-line p-0.5" role="group" aria-label="Período">
-            {(["proximos", "passados"] as Vista[]).map((v) => (
-              <button
-                key={v}
-                type="button"
-                aria-pressed={vista === v}
-                onClick={() => setVista(v)}
-                className={cx(
-                  "min-h-9 rounded-[6px] px-3.5 text-meta font-medium transition-colors",
-                  vista === v ? "bg-ink text-surface" : "text-ink-3 hover:text-ink",
-                )}
-              >
-                {v === "proximos" ? "A chegar" : "Já jogados"}
-              </button>
-            ))}
-          </div>
+          <Segmented
+            size="md"
+            label="Período"
+            value={vista}
+            onChange={setVista}
+            options={[
+              { value: "proximos", label: "A chegar" },
+              { value: "passados", label: "Já jogados" },
+            ]}
+          />
 
           {soPendentes && (
             <button
@@ -260,6 +255,11 @@ export default function Matches() {
           <Empty title="Não foi possível carregar" detail={erro} />
         ) : meses.length === 0 ? (
           <Empty
+            /* Um ícone dá corpo ao vazio — sem ele são duas linhas de texto a
+               boiar num painel grande. `ok` quando o vazio é boa notícia: "nada
+               por fazer" é um estado desejável, não uma falta. */
+            icon={soPendentes ? CircleCheck : Trophy}
+            tone={soPendentes ? "ok" : "neutral"}
             title={
               soMeus
                 ? "Não estás escalado para nenhum jogo"

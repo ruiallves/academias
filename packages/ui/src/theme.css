@@ -18,10 +18,23 @@
   --color-ink-3: #8a867c;
   --color-ink-4: #ada89d;
 
-  /* --- Sinal do tenant (sobreposto em runtime) ---------------------------- */
+  /* --- Sinal do tenant (sobreposto em runtime) ----------------------------
+     Todos derivados da cor do clube por `signalVars` — ver tokens.ts. Os valores
+     aqui são os do teal por omissão, para a app desenhar antes de o tenant
+     carregar.
+
+     `signal`        a identidade. Pinta o que **não** tem texto por cima.
+     `signal-strong` a mesma cor, para superfícies **com** texto. Difere só nas
+                     cores em que nem branco nem preto se leem.
+     `signal-on`     a tinta a usar por cima de `signal-strong`. Calculada, nunca
+                     escrita à mão: com um amarelo claro isto é preto, não branco.
+     `signal-ink`    a cor do clube como texto sobre fundo claro.
+     `signal-soft`   o fundo claro correspondente. */
   --color-signal: #0f6b62;
+  --color-signal-strong: #0f6b62;
   --color-signal-ink: #0a4c45;
   --color-signal-soft: #e7f0ee;
+  --color-signal-on: #ffffff;
 
   /* --- Semânticas — fixas, nunca white-label ------------------------------ */
   --color-ok: #1f7a45;
@@ -71,6 +84,29 @@
 
   /* --- Movimento ---------------------------------------------------------- */
   --ease-out: cubic-bezier(0.2, 0, 0, 1);
+}
+
+/* ---------------------------------------------------------------------------
+   Sinal do tenant — o que não é uma cor
+
+   Estas três ficam **fora** do @theme de propósito. O Tailwind só emite as
+   variáveis do tema que alguma utilitária use, e estas não geram utilitária
+   nenhuma: são lidas à mão dentro de `var()` no CSS da app da família (o herói
+   e as etiquetas de vidro). Dentro do @theme desapareciam do build, e o herói
+   ficava sem gradiente até o tenant carregar.
+
+   `signal-on-rgb`  a tinta em componentes, para as variantes com transparência.
+   `signal-lift`    o realce do gradiente — a cor puxada um pouco para a tinta.
+   `signal-deep`    o fim do gradiente — a cor puxada para longe da tinta.
+
+   Os valores aqui são os do teal por omissão; `signalVars` sobrepõe-nos com os
+   da academia — e inclina os dois últimos para o lado que a tinta exigir.
+   --------------------------------------------------------------------------- */
+
+:root {
+  --signal-on-rgb: 255 255 255;
+  --signal-lift: #277a72;
+  --signal-deep: #0b4d46;
 }
 
 /* ---------------------------------------------------------------------------

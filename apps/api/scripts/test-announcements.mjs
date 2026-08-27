@@ -3,8 +3,9 @@
  * Comunicações via API.
  *
  * O que interessa: o público (a direção manda para Geral/Pais/Treinadores, o
- * treinador só para os pais das suas equipas), a criação de notificações por
- * destinatário, a taxa de leitura, e a validação de forma.
+ * treinador só para os pais das suas equipas), o **recorte por escalão** dentro
+ * de "Pais", a criação de notificações por destinatário, a taxa de leitura, e a
+ * validação de forma.
  *
  * Uso: node scripts/test-announcements.mjs
  */
@@ -77,6 +78,71 @@ check("o treinador não manda 'Geral' (403)", coachGeral.status === 403, `${coac
 const coachTr = await call(coach, "POST", "/api/announcements", { title: "ZZ Aviso NaoDeve2", body: "x", audience: "coaches" });
 check("o treinador não manda 'Treinadores' (403)", coachTr.status === 403, `${coachTr.status}`);
 
+console.log("\n=== O escalão estreita os pais ===");
+/*
+ * A equipa com mais famílias — para o recorte ter a quem chegar. Sai da base e
+ * não de um id escrito à mão: o seed muda, e um teste preso a um id morre com ele.
+ */
+const alvo = (await db.query(`
+  SELECT t.id, t.name, count(DISTINCT gl."membershipId")::int AS n
+  FROM "Team" t
+  JOIN "TeamMembership" tm ON tm."teamId" = t.id
+  JOIN "GuardianLink" gl ON gl."athleteId" = tm."athleteId"
+  JOIN "Membership" m ON m.id = gl."membershipId" AND m."isActive"
+  GROUP BY t.id, t.name
+  ORDER BY n DESC
+  LIMIT 1
+`)).rows[0];
+
+// Quantos avisos esta secção chega a publicar — a contagem da lista, mais abaixo,
+// tem de saber contar com eles.
+let publicadosAqui = 0;
+
+if (!alvo) {
+  console.log("  (sem equipas com famílias no seed — secção saltada)");
+} else {
+  const recorte = await call(director, "POST", "/api/announcements", {
+    title: "ZZ Aviso Escalao", body: "Treino de sábado muda de campo.", audience: "guardians", teamIds: [alvo.id],
+  });
+  check("a direção publica só para um escalão (201)", recorte.status === 201 || recorte.status === 200, `${recorte.status}`);
+  if (recorte.body?.id) publicadosAqui += 1;
+  check("o rótulo nomeia o escalão", recorte.body?.audience === `Pais · ${alvo.name}`, `${recorte.body?.audience}`);
+  check("chega a alguém, mas não a mais do que esse escalão",
+    (recorte.body?.reach ?? 0) > 0 && recorte.body.reach <= alvo.n,
+    `reach=${recorte.body?.reach} de ${alvo.n}`);
+  check("nunca chega a mais gente do que 'Pais' sem recorte",
+    (recorte.body?.reach ?? 0) <= (paisDir.body?.reach ?? 0),
+    `${recorte.body?.reach} vs ${paisDir.body?.reach}`);
+
+  // O recorte fica gravado: é o que o registo mostra e o que a app da família lê.
+  const gravado = (await db.query(`SELECT audience FROM "Announcement" WHERE id = $1`, [recorte.body.id])).rows[0]?.audience;
+  check("o escalão fica gravado na audiência", Array.isArray(gravado?.teamIds) && gravado.teamIds[0] === alvo.id, JSON.stringify(gravado));
+
+  const comTodos = await call(director, "POST", "/api/announcements", {
+    title: "ZZ Aviso Escalao Mau", body: "x", audience: "all", teamIds: [alvo.id],
+  });
+  check("escalão com público 'Geral' recusado (400)", comTodos.status === 400, `${comTodos.status}`);
+
+  const inexistente = await call(director, "POST", "/api/announcements", {
+    title: "ZZ Aviso Escalao Bad", body: "x", audience: "guardians", teamIds: ["tea_nao_existe"],
+  });
+  check("escalão desconhecido recusado (400)", inexistente.status === 400, `${inexistente.status}`);
+
+  // Um escalão que não é do treinador: procura-se um fora do âmbito dele.
+  const doTreinador = await call(coach, "GET", "/api/teams");
+  const dele = new Set((Array.isArray(doTreinador.body) ? doTreinador.body : []).map((t) => t.id));
+  const todas = await call(director, "GET", "/api/teams");
+  const alheia = (Array.isArray(todas.body) ? todas.body : []).find((t) => !dele.has(t.id));
+  if (!alheia) {
+    console.log("  (o treinador tem todas as equipas — sem escalão alheio para testar)");
+  } else {
+    const foraDoAmbito = await call(coach, "POST", "/api/announcements", {
+      title: "ZZ Aviso Escalao Alheio", body: "x", audience: "guardians", teamIds: [alheia.id],
+    });
+    check("o treinador não recorta para um escalão alheio (403)", foraDoAmbito.status === 403, `${foraDoAmbito.status}`);
+  }
+}
+
 console.log("\n=== Quem não pode, não comunica ===");
 const paiPost = await call(parent, "POST", "/api/announcements", { title: "ZZ Aviso Pai", body: "x", audience: "guardians" });
 check("um encarregado não comunica (403)", paiPost.status === 403, `${paiPost.status}`);
@@ -92,7 +158,7 @@ check("campos extra (academyId/reach) rejeitados", massAssign.status === 400, `$
 console.log("\n=== Ler e taxa de leitura ===");
 const list = await call(director, "GET", "/api/announcements");
 const mine = Array.isArray(list.body) ? list.body.filter((a) => a.title.startsWith("ZZ Aviso")) : [];
-check("a leitura devolve os avisos publicados", mine.length === 4, `${mine.length}`);
+check("a leitura devolve os avisos publicados", mine.length === 4 + publicadosAqui, `${mine.length}`);
 check("cada aviso traz autor e reach", mine.every((a) => a.authorName && typeof a.reach === "number"));
 
 // Marca uma notificação como lida na base e confirma que a taxa sobe.

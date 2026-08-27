@@ -45,13 +45,13 @@ export function ClubMark({ size = 28, radius = 7, className }: { size?: number; 
 
   return (
     <span
-      className={cx("flex shrink-0 items-center justify-center font-bold text-white", className)}
+      className={cx("flex shrink-0 items-center justify-center font-bold text-signal-on", className)}
       style={{
         width: size,
         height: size,
         borderRadius: radius,
         fontSize: Math.round(size * 0.4),
-        background: "var(--color-signal)",
+        background: "var(--color-signal-strong)",
       }}
       aria-hidden
     >

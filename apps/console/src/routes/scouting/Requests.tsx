@@ -109,7 +109,7 @@ export default function Requests() {
 
       {rows && rows.length === 0 && (
         <Panel>
-          <div className="px-5 py-16">
+          <div>
             <Empty
               icon={Send}
               title="Sem pedidos"

@@ -557,7 +557,7 @@ function AthleteFeesDialog({
                   <span
                     className={cx(
                       "flex size-5 shrink-0 items-center justify-center rounded-[6px] border transition-colors duration-[120ms]",
-                      on ? "border-transparent bg-signal text-white" : "border-line-strong",
+                      on ? "border-transparent bg-signal-strong text-signal-on" : "border-line-strong",
                     )}
                   >
                     {on && <Check className="size-3.5" strokeWidth={2.5} />}
@@ -709,7 +709,7 @@ function FeeStatusControl({ fee }: { fee: Fee }) {
                     o.value === target ? "text-ink" : "text-ink-2",
                   )}
                 >
-                  <span className="flex size-4 shrink-0 items-center justify-center text-signal">
+                  <span className="flex size-4 shrink-0 items-center justify-center text-signal-ink">
                     {o.value === target && <Check className="size-3.5" strokeWidth={2.5} />}
                   </span>
                   <span className="flex-1">{o.label}</span>

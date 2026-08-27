@@ -78,9 +78,18 @@ export function summariseSeason(athleteId: string, matches: AthleteMatch[]): Ath
     played: matches.length,
     minutes,
     tally: matches.reduce((n, m) => n + m.tally, 0),
-    // "Titular" aqui é ter jogado o tempo inteiro — sem dados de substituição,
-    // é a aproximação honesta possível, e o rótulo na UI diz "jogos completos".
-    starts: fullTime ? matches.filter((m) => m.appearance.minutes >= fullTime).length : 0,
+    /*
+     * Titular é titular, agora que a ficha o diz.
+     *
+     * Era "jogou o tempo inteiro" — a aproximação possível enquanto a ficha não
+     * chegava ao cliente, e que contava como titular quem entrou aos 0 e nunca
+     * saiu, mas também deixava de fora um titular substituído aos 60. Com
+     * `started` a vir da API, a pergunta passa a ter resposta exacta; onde ele
+     * não vier (fichas antigas), mantém-se a aproximação em vez de contar zero.
+     */
+    starts: matches.filter((m) =>
+      m.appearance.started !== undefined ? m.appearance.started : fullTime > 0 && m.appearance.minutes >= fullTime,
+    ).length,
     wins: matches.filter((m) => m.outcome === "win").length,
     draws: matches.filter((m) => m.outcome === "draw").length,
     losses: matches.filter((m) => m.outcome === "loss").length,

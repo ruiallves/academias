@@ -216,7 +216,7 @@ function Pick({
     <div className="space-y-4">
       {/* Passo 1: o modelo. Em destaque porque é o que a maioria não sabe que existe. */}
       <div className="flex items-start gap-3 rounded-[var(--radius-panel)] border border-line bg-sunken/40 p-4">
-        <FileSpreadsheet className="mt-0.5 size-5 shrink-0 text-signal" strokeWidth={1.5} />
+        <FileSpreadsheet className="mt-0.5 size-5 shrink-0 text-signal-ink" strokeWidth={1.5} />
         <div className="min-w-0 flex-1">
           <div className="text-body font-medium text-ink">Começa pelo modelo</div>
           <p className="mt-0.5 text-meta leading-relaxed text-ink-3">

@@ -174,7 +174,7 @@ function Opcao({
         <span className={cx("block truncate text-body", suave ? "text-ink-3" : "text-ink")}>{label}</span>
         {sub && <span className="block truncate text-meta text-ink-4">{sub}</span>}
       </span>
-      {escolhida && <Check className="size-3.5 shrink-0 text-signal" strokeWidth={2.5} />}
+      {escolhida && <Check className="size-3.5 shrink-0 text-signal-ink" strokeWidth={2.5} />}
     </button>
   );
 }

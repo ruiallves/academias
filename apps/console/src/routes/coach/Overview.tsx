@@ -78,7 +78,7 @@ function NextSession({ training: s }: { training: TrainingSession }) {
         <div className="flex items-center gap-4">
           <span className="w-px self-stretch bg-signal" aria-hidden />
           <div>
-            <div className="mb-0.5 text-group text-signal uppercase">Próximo treino · {relativeDays(start, today)}</div>
+            <div className="mb-0.5 text-group text-signal-ink uppercase">Próximo treino · {relativeDays(start, today)}</div>
             <h2 className="text-page text-ink">{team?.name}</h2>
             <p className="mt-0.5 text-body text-ink-3">
               {capitalize(longDate(start))} ·{" "}

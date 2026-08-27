@@ -70,7 +70,7 @@ export default function Comms() {
           <PanelHead title="Avisos publicados" hint={`${announcements.length}`} />
 
           {announcements.length === 0 ? (
-            <div className="px-5 py-16">
+            <div>
               <Empty
                 icon={Megaphone}
                 title="Ainda não há avisos"

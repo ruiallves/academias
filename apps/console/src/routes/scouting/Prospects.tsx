@@ -137,13 +137,13 @@ export default function Prospects() {
 
       <Panel>
         {error ? (
-          <div className="px-5 py-16">
+          <div>
             <Empty title="Não foi possível carregar" detail={error} />
           </div>
         ) : !rows ? (
           <Loading />
         ) : rows.length === 0 ? (
-          <div className="px-5 py-16">
+          <div>
             <Empty
               icon={Binoculars}
               title={stage ? `Ninguém em "${STAGE_LABEL[stage]}"` : "Ainda não há prospectos"}

@@ -102,7 +102,12 @@ type ApiAthlete = {
   taxId: string | null;
   heightCm: number | null; weightKg: number | null; dominantSide: string | null; squadNumber: number | null;
   medicalValidUntil: string | null; teamId: string | null; position: string | null;
-  guardians: { membershipId: string; name: string; email: string; phone: string | null; relation: string; isPayer: boolean; isActive: boolean }[];
+  guardians: {
+    membershipId: string; name: string; email: string; phone: string | null; relation: string;
+    isPayer: boolean; isActive: boolean;
+    /** Se esta família tem a app a funcionar num telemóvel. Ver `athletes()` na API. */
+    appInstalled: boolean;
+  }[];
   availability: "available" | "limited" | "out";
   // `title` (o diagnóstico) vem `null` para quem não tem `clinical:read` — o
   // servidor retém o dado sensível, mas mantém a disponibilidade. Ver a auditoria
@@ -141,6 +146,21 @@ export type ApiMatch = {
   /** A função com que quem pergunta está escalado neste jogo. Ver `MatchesService.list`. */
   myStaffRole: string | null;
   calledUp: { athleteId: string; status: string; isGuest: boolean; guestFromTeam?: string }[];
+  /**
+   * A ficha do jogo, quando já está preenchida.
+   *
+   * Faltava aqui, e era o buraco por onde o registo de jogos da ficha do atleta
+   * caía: lia as participações do calendário, o calendário lia-as da API, e a
+   * API nunca as mandava. Ver `fromApiMatch`.
+   */
+  appearances: {
+    athleteId: string; minutes: number; started: boolean; tally: number; assists: number;
+    yellowCards: number; redCard: boolean;
+    onMinute: number | null; offMinute: number | null;
+    yellowAt: number[]; redAt: number | null;
+    tallyAt: number[]; assistsAt: number[];
+    rating: number | null;
+  }[];
 };
 
 /** Um atleta de outro escalão, elegível para subir a este jogo. Ver `MatchesService.guestPool`. */
@@ -351,6 +371,8 @@ function build(
       const existing = byGuardian.get(g.membershipId);
       if (existing) {
         existing.athleteIds.push(a.id);
+        // A app é da pessoa, não do filho: chega vir marcada num dos educandos.
+        existing.appInstalled ||= g.appInstalled ?? false;
         continue;
       }
       byGuardian.set(g.membershipId, {
@@ -361,9 +383,10 @@ function build(
         relation: (g.relation as Guardian["relation"]) ?? "Encarregado",
         isActive: g.isActive ?? true,
         athleteIds: [a.id],
-        // Por saber: depende de haver subscrição push registada para esta pessoa,
-        // e esse endpoint ainda não existe. Falso é o que menos engana.
-        appInstalled: false,
+        // Vem do servidor: há ou não um dispositivo registado para esta pessoa.
+        // Era um `false` escrito à mão, e por isso a consola dizia "Por instalar"
+        // a famílias que já tinham a app no telemóvel. Ver `athletes()` na API.
+        appInstalled: g.appInstalled ?? false,
       });
     }
   }

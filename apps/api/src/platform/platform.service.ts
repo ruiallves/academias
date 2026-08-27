@@ -244,10 +244,31 @@ export class PlatformService {
     const taken = await this.prisma.academy.findFirst({ where: { slug }, select: { id: true } });
     if (taken) throw new ConflictException("Já existe uma academia com esse endereço");
 
+    /*
+     * Sem plano é uma resposta, não uma omissão a preencher.
+     *
+     * Isto escolhia o plano mais barato quando `planId` não vinha — o que
+     * significava que **não havia forma de criar um clube sem plano**. E há: a
+     * maior parte entra em período experimental sem saber ainda o que quer, e a
+     * conversa do plano faz-se depois, com o clube já a funcionar. Atribuir-lhe
+     * um plano "por omissão" cria uma subscrição que ninguém escolheu, e a
+     * plataforma passa a mostrar um plano que o cliente nunca viu.
+     *
+     * Um `planId` que não exista (ou que já não esteja activo) continua a dar
+     * `plan = null` — o clube abre na mesma, sem subscrição. Recusar a criação
+     * de um clube por causa de um id de plano é pior do que abri-lo sem ele.
+     */
     const plan = dto.planId
       ? await this.prisma.plan.findFirst({ where: { id: dto.planId, isActive: true } })
-      : await this.prisma.plan.findFirst({ where: { isActive: true }, orderBy: { amountCents: "asc" } });
+      : null;
 
+    /*
+     * Os dias de teste, mesmo sem plano de onde os tirar.
+     *
+     * Com plano, é o que o plano disser. Sem plano, os 30 de sempre — o período
+     * experimental existe independentemente de haver subscrição, e é ele que a
+     * academia vê no menu lateral (ver `TrialBadge`).
+     */
     const trialDays = dto.trialDays ?? plan?.trialDays ?? 30;
     const token = randomBytes(32).toString("base64url");
 

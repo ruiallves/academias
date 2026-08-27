@@ -1,3 +1,4 @@
+import { clubPalette } from "../common/contrast";
 import type { AcademyBranding } from "./landing.template";
 
 /**
@@ -69,6 +70,15 @@ export function renderMembershipPage(opts: {
 }): string {
   const { academy, tiers, pageUrl, apiOrigin } = opts;
 
+  /*
+   * As cores desta academia, já com a tinta decidida.
+   *
+   * `clubPalette` valida o hex e devolve o tom certo para cada trabalho — é
+   * também por isso que o `esc()` desapareceu daqui: o que entra no CSS já não é
+   * texto do utilizador, é uma cor calculada. Ver `common/contrast.ts`.
+   */
+  const paleta = clubPalette(academy.signalColor);
+
   const headline = (academy.membershipHeadline ?? "").trim() || FALLBACK_HEADLINE;
   const intro = (academy.membershipIntro ?? "").trim() || FALLBACK_INTRO;
   const written = (academy.membershipPoints ?? []).filter((p) => p.trim());
@@ -102,8 +112,22 @@ export function renderMembershipPage(opts: {
      Paleta — clara e quente, com a cor do clube a fazer o trabalho de cor.
      ==================================================================== */
   :root {
-    --club: ${esc(academy.signalColor)};
-    --club-deep: color-mix(in oklab, ${esc(academy.signalColor)} 72%, black);
+    /*
+       A cor do clube, e as que dela se derivam. (Sem crases: ver a nota técnica
+       no cabeçalho — isto vive dentro de um template literal.)
+
+       --club e --club-deep pintam o que NÃO tem texto por cima: os estilhaços, o
+       contorno de um campo com foco, o traço debaixo do passo actual.
+       --club-strong é a mesma cor para superfícies COM texto, e --club-on é a
+       tinta que se lê nela. Um clube de amarelo claro recebe aqui tinta escura,
+       sem ninguém ter de configurar nada. Ver common/contrast.ts.
+    */
+    --club: ${paleta.club};
+    --club-strong: ${paleta.strong};
+    --club-on: ${paleta.on};
+    --club-ink: ${paleta.ink};
+    --club-deep: ${paleta.deep};
+    --club-lift: ${paleta.lift};
     --paper: #ffffff;
     --canvas: #fbfaf8;
     --line: #e7e4dd;
@@ -139,8 +163,8 @@ export function renderMembershipPage(opts: {
     color: var(--ink);
   }
 
-  ::selection { background: var(--club); color: #fff; }
-  a { color: var(--club); }
+  ::selection { background: var(--club-strong); color: var(--club-on); }
+  a { color: var(--club-ink); }
 
   /* ====================================================================
      Estilhaços — a linguagem gráfica do clube, sem uma imagem
@@ -188,7 +212,7 @@ export function renderMembershipPage(opts: {
 
      (Sem crases: isto vive dentro de um template literal.)
   */
-  .crest { width: 44px; height: 44px; border-radius: 50%; flex: none; background: var(--club); color: #fff;
+  .crest { width: 44px; height: 44px; border-radius: 50%; flex: none; background: var(--club-strong); color: var(--club-on);
            display: grid; place-items: center; font-weight: 700; font-size: 14px; }
   .crest.logo { background: none; border-radius: 0; }
   .crest.logo img { width: 100%; height: 100%; object-fit: contain; border-radius: 0; }
@@ -223,7 +247,7 @@ export function renderMembershipPage(opts: {
 
   .kicker {
     font-size: 12.5px; font-weight: 600; letter-spacing: 0.14em; text-transform: uppercase;
-    color: var(--club); margin-bottom: 10px;
+    color: var(--club-ink); margin-bottom: 10px;
   }
 
   /* A frase de abertura não parte. Uma frase partida em duas linhas por acaso
@@ -237,7 +261,7 @@ export function renderMembershipPage(opts: {
   h2.display { margin: 0 0 12px; font-size: clamp(28px, 4.4vw, 46px); }
 
   .lede { margin: 0; max-width: 46ch; font-size: clamp(15.5px, 1.8vw, 18px); color: var(--ink-2); }
-  .req { margin: 0 0 20px; font-size: 13px; color: var(--club); font-weight: 500; }
+  .req { margin: 0 0 20px; font-size: 13px; color: var(--club-ink); font-weight: 500; }
 
   /* ====================================================================
      Ecrãs
@@ -400,11 +424,11 @@ export function renderMembershipPage(opts: {
   }
   .box::after {
     content: ""; width: 9px; height: 5px;
-    border-left: 2px solid #fff; border-bottom: 2px solid #fff;
+    border-left: 2px solid var(--club-on); border-bottom: 2px solid var(--club-on);
     transform: rotate(-45deg) scale(0.5); opacity: 0; margin-top: -2px;
     transition: opacity 130ms ease, transform 130ms ease;
   }
-  .cs input:checked + .box { background: var(--club); border-color: var(--club); }
+  .cs input:checked + .box { background: var(--club-strong); border-color: var(--club-strong); }
   .cs input:checked + .box::after { opacity: 1; transform: rotate(-45deg) scale(1); }
   .cs input:focus-visible + .box { outline: 2px solid var(--club); outline-offset: 3px; }
   .cs .tx { font-size: 15px; color: var(--ink-2); }
@@ -439,7 +463,7 @@ export function renderMembershipPage(opts: {
     margin-left: auto; height: 54px; min-width: 190px; padding: 0 34px;
     display: inline-flex; align-items: center; justify-content: center;
     font: inherit; font-size: 15px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase;
-    color: #fff; background: var(--club);
+    color: var(--club-on); background: var(--club-strong);
     border: 0; border-radius: 2px; cursor: pointer;
     transition: background-color 140ms ease;
   }
@@ -469,10 +493,10 @@ export function renderMembershipPage(opts: {
 
   .card {
     position: relative; aspect-ratio: 1.586; border-radius: 10px;
-    padding: 24px; color: #fff; display: flex; flex-direction: column; overflow: hidden;
+    padding: 24px; color: var(--club-on); display: flex; flex-direction: column; overflow: hidden;
     background:
-      radial-gradient(130% 130% at 88% -10%, color-mix(in oklab, var(--club) 55%, white) 0%, transparent 58%),
-      linear-gradient(152deg, var(--club) 0%, var(--club-deep) 100%);
+      radial-gradient(130% 130% at 88% -10%, var(--club-lift) 0%, transparent 58%),
+      linear-gradient(152deg, var(--club-strong) 0%, var(--club-deep) 100%);
     box-shadow: 0 24px 50px -26px color-mix(in oklab, var(--club) 55%, black);
   }
   /* O mesmo estilhaço da página, dentro do cartão: a marca gráfica repete-se. */
@@ -530,7 +554,7 @@ export function renderMembershipPage(opts: {
               border-top: 1px solid var(--line); font-size: 15.5px; color: var(--ink); }
   .track li:last-child { border-bottom: 1px solid var(--line); }
   .track .ic { width: 20px; height: 20px; flex: none; display: grid; place-items: center; font-size: 10px; font-weight: 700; }
-  .track .ic[data-done] { background: var(--club); color: #fff; }
+  .track .ic[data-done] { background: var(--club-strong); color: var(--club-on); }
   .track .ic[data-wait] { border: 1.5px dashed var(--line-2); color: transparent; }
   .track li[data-pending] { color: var(--ink-4); }
 

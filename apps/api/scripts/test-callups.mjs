@@ -23,7 +23,9 @@ const env = (k) => {
 
 const S = env("SUPABASE_URL").replace(/\/$/, "");
 const A = env("SUPABASE_ANON_KEY");
-const API = "http://localhost:3000";
+// Permite correr contra uma instância própria — `API_URL=http://localhost:3001` —
+// sem disputar a porta 3000 com o servidor de quem está a desenvolver.
+const API = process.env.API_URL ?? "http://localhost:3000";
 
 let ok = 0;
 let bad = 0;

@@ -71,7 +71,7 @@ export function MonthGrid({
                     className={cx(
                       "text-meta font-semibold tabular",
                       isToday
-                        ? "flex size-5 items-center justify-center rounded-full bg-signal text-white"
+                        ? "flex size-5 items-center justify-center rounded-full bg-signal-strong text-signal-on"
                         : outside
                           ? "text-ink-4"
                           : "text-ink-2",

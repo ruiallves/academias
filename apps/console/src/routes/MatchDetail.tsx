@@ -1,7 +1,8 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { Link, useParams } from "react-router-dom";
 import { PageHeader } from "@/components/Shell";
 import { Empty, Loading, Panel, PanelHead, Pill, cx } from "@/components/primitives";
+import { Segmented } from "@/components/filters";
 import {
   ArrowLeft,
   Check,
@@ -17,6 +18,7 @@ import {
 } from "@/lib/icons";
 import { useSession } from "@/session";
 import { can } from "@/lib/permissions";
+import { sportById, teamById } from "@/lib/api";
 import { tallyNoun } from "@/lib/calendar";
 import { Spinner } from "@/components/Busy";
 import {
@@ -687,7 +689,7 @@ function RetroSquadPanel({
                   <span
                     className={cx(
                       "flex size-6 shrink-0 items-center justify-center rounded-full border transition-colors",
-                      on ? "border-transparent bg-signal text-white" : "border-line-strong",
+                      on ? "border-transparent bg-signal-strong text-signal-on" : "border-line-strong",
                     )}
                     aria-hidden
                   >
@@ -741,20 +743,143 @@ function RetroSquadPanel({
 /* Depois do jogo: a ficha                                                    */
 /* ========================================================================== */
 
-type Linha = Pick<SquadRow, "athleteId" | "minutes" | "started" | "tally" | "assists" | "yellowCards" | "redCard"> & {
-  played: boolean;
+/**
+ * O que um atleta foi neste jogo. É **a** pergunta da ficha.
+ *
+ * Substituiu um par de controlos que a faziam de lado: um visto "jogou" e, lá
+ * dentro, um interruptor "Titular". Duas perguntas para uma resposta só, e
+ * nenhuma delas era a que o treinador tem na cabeça — que é esta, com três
+ * respostas possíveis e nenhuma sobreposta.
+ */
+type Papel = "titular" | "entrou" | "nao";
+
+type Linha = Pick<
+  SquadRow,
+  | "athleteId" | "minutes" | "tally" | "assists" | "yellowCards" | "redCard"
+  | "onMinute" | "offMinute" | "yellowAt" | "redAt" | "tallyAt" | "assistsAt"
+> & {
+  papel: Papel;
 };
 
+/** Titular e suplente utilizado entram na ficha; quem não jogou não tem linha. */
+const jogou = (l: Linha) => l.papel !== "nao";
+
+const FALTA_ENTRADA = "Falta dizer ao minuto que entrou — é daí que saem os minutos jogados.";
+
 /**
- * Quem jogou, quanto tempo, quem marcou, quem viu cartão.
+ * A única pergunta que a ficha passou a fazer a sério.
  *
- * Um toque no nome põe o atleta em campo e abre a linha de registo dele — quem
- * ficou no banco fica por marcar, e é assim que fica registado que não jogou.
- * Os números **escrevem-se** (minutos, golos, assistências); só os amarelos são
- * botões, porque 0/1/2 é uma escolha e não um número que se escreva.
+ * Desde que os minutos são calculados e não escritos, um suplente sem minuto de
+ * entrada é uma linha sem minutos — e gravá-la assim punha um zero no currículo
+ * de um miúdo que jogou. Só se pede a quem foi lançado do banco, e só depois de
+ * o treinador dizer que ele entrou.
+ *
+ * Vive à parte de `incoerencias` porque o campo que a resolve não está no painel
+ * de detalhe, e é isso que decide se vale a pena abri-lo sozinho.
+ */
+function faltaEntrada(l: Linha): boolean {
+  return l.papel === "entrou" && l.onMinute == null;
+}
+
+/**
+ * O que, nesta linha, aconteceu fora do tempo em que o atleta esteve em campo.
+ *
+ * Gémeo de `foraDeCampo` no servidor — a mesma regra escrita dos dois lados, de
+ * propósito: aqui para avisar enquanto se escreve, lá para recusar. Um golo aos
+ * 60 de quem saiu aos 50 não é um dado, é um erro de escrita, e o treinador tem
+ * de o ver **antes** de carregar em Gravar.
+ */
+function incoerencias(l: Linha): string[] {
+  if (!jogou(l)) return [];
+
+  const de = l.papel === "titular" ? 0 : (l.onMinute ?? 0);
+  const ate = l.offMinute ?? Infinity;
+  const fora: string[] = [];
+
+  if (l.onMinute != null && l.offMinute != null && l.offMinute < l.onMinute) {
+    fora.push(`Saiu ao ${l.offMinute}′, antes de ter entrado (${l.onMinute}′).`);
+  }
+
+  if (faltaEntrada(l)) fora.push(FALTA_ENTRADA);
+
+  for (const [nome, minutos] of [
+    ["golo", l.tallyAt],
+    ["assistência", l.assistsAt],
+    ["amarelo", l.yellowAt],
+    ["vermelho", l.redAt == null ? [] : [l.redAt]],
+  ] as [string, number[]][]) {
+    for (const m of minutos) {
+      if (m < de) fora.push(`${nome} ao ${m}′, mas entrou ao ${de}′.`);
+      else if (m > ate) fora.push(`${nome} ao ${m}′, mas saiu ao ${ate}′.`);
+    }
+  }
+
+  return fora;
+}
+
+/**
+ * Os minutos jogados. Sempre calculados, nunca escritos.
+ *
+ * ## Porque é que deixou de haver campo
+ *
+ * Havia dois sítios a afirmar a mesma coisa: um campo "Minutos" que o treinador
+ * escrevia e uma conta a partir da entrada e da saída. Quando discordavam — e
+ * discordavam, porque ninguém volta atrás a acertar o primeiro depois de
+ * preencher os segundos — ficava gravado o número escrito à mão, e era esse que
+ * ia parar aos totais da época. Um número que ninguém consegue justificar é
+ * pior do que nenhum.
+ *
+ * Agora entra-se pelos factos — começou ou entrou, e quando saiu — e o tempo
+ * sai daí. Um titular sem minuto de saída jogou o jogo todo, que é a leitura
+ * certa em quase todos os jogos de formação e a única que não inventa nada.
+ *
+ * ## O caso em que devolve `null`
+ *
+ * Um suplente sem minuto de entrada. Aí o sistema não sabe — pode ter entrado
+ * ao 10 ou ao 80 — e a resposta honesta é dizer que não sabe, em vez de somar
+ * um número plausível. É a única pergunta que a ficha passa a fazer a sério, e
+ * só a quem foi lançado do banco.
+ */
+function minutosDerivados(l: Linha, duracao: number): number | null {
+  const entrada = l.papel === "titular" ? 0 : l.onMinute;
+  if (entrada == null) return null;
+  const saida = l.offMinute ?? duracao;
+  return Math.max(0, saida - entrada);
+}
+
+/**
+ * Quem jogou, quanto tempo, quem marcou, quem viu cartão — e a que minutos.
+ *
+ * ## A forma segue a pergunta
+ *
+ * Cada linha começa por **Titular / Entrou / Não jogou**, que é a primeira coisa
+ * que um treinador sabe e a única que ele é obrigado a dizer. Escolhida a
+ * resposta, a linha mostra o essencial (golos, minutos) e esconde o resto atrás
+ * de "detalhes" — os minutos de entrada e saída, os minutos dos cartões.
+ *
+ * ## Nada disto é obrigatório
+ *
+ * Um treinador que só queira dizer "estes onze jogaram" fecha a ficha em onze
+ * toques. Quem quiser a ficha federada completa tem onde a escrever. O que não
+ * se faz é pedir os dois ao mesmo: os campos de minuto só existem depois de
+ * alguém pedir para os ver.
+ *
+ * ## Os minutos calculam-se sozinhos
+ *
+ * Registada a entrada e a saída, os minutos derivam daí e o campo passa a ser
+ * uma confirmação, não uma conta de cabeça. Sem esse detalhe, escrevem-se à mão
+ * como antes.
  */
 function SheetPanel({ match, mayRecord, onSaved }: { match: Match; mayRecord: boolean; onSaved: () => void }) {
   const golo = tallyNoun(match.teamId);
+  /*
+   * Quanto dura um jogo desta modalidade.
+   *
+   * Vem de `Sport.matchMinutes` — o futebol de formação não joga 90, e o produto
+   * já sabe isso. Serve para calcular os minutos de quem entrou e não saiu, e
+   * para não sugerir "90" a um Sub-11 que joga 60.
+   */
+  const duracao = sportById(teamById(match.teamId)?.sportId ?? "")?.matchMinutes ?? 90;
 
   const [linhas, setLinhas] = useState<Record<string, Linha>>(() => daFicha(match));
   const [busy, setBusy] = useState(false);
@@ -767,22 +892,69 @@ function SheetPanel({ match, mayRecord, onSaved }: { match: Match; mayRecord: bo
 
   const set = (id: string, patch: Partial<Linha>) => setLinhas((x) => ({ ...x, [id]: { ...x[id], ...patch } }));
 
-  const emCampo = Object.values(linhas).filter((l) => l.played);
+  const emCampo = Object.values(linhas).filter(jogou);
   const golos = emCampo.reduce((n, l) => n + l.tally, 0);
+  const titulares = emCampo.filter((l) => l.papel === "titular").length;
+  /*
+   * Quantas linhas não fecham.
+   *
+   * Trava o Gravar. O servidor recusa as contradições de qualquer maneira, mas
+   * descobrir isso depois de carregar no botão — com um erro genérico no fundo
+   * do painel — era mandar o treinador procurar em vinte linhas qual delas
+   * estava errada. Contam-se à parte os suplentes a quem falta o minuto de
+   * entrada, porque a frase que os resolve é outra.
+   */
+  const contraditorias = emCampo.filter((l) => incoerencias(l).some((p) => p !== FALTA_ENTRADA)).length;
+  const semEntrada = emCampo.filter(faltaEntrada).length;
+  const porCorrigir = contraditorias + semEntrada;
+
+  /*
+   * A ficha contra o marcador.
+   *
+   * Quatro golos num 3-2 não é uma discordância de opinião — é um dedo no sítio
+   * errado que fica a viver no perfil do atleta e nos totais da época. O tecto
+   * das assistências é o mesmo número porque cada golo tem no máximo uma, e há
+   * golos sem nenhuma; é generoso de propósito, para apertar o impossível sem
+   * discutir com o treinador sobre quem assistiu o quê.
+   *
+   * Sem resultado registado não há com que confrontar — marcar a ficha primeiro
+   * e o resultado depois é uma ordem legítima de trabalho, e é por isso que isto
+   * não obriga a nada, só recusa o impossível.
+   */
+  const assistencias = emCampo.reduce((n, l) => n + l.assists, 0);
+  const excedeMarcador =
+    match.ourScore === null
+      ? null
+      : golos > match.ourScore
+        ? `A ficha atribui ${golos} ${golos === 1 ? "golo" : "golos"} e o jogo ficou ${match.ourScore}-${match.theirScore}.`
+        : assistencias > match.ourScore
+          ? `A ficha atribui ${assistencias} assistências para ${match.ourScore} ${match.ourScore === 1 ? "golo" : "golos"} marcados.`
+          : null;
 
   const mudou = useMemo(
     () =>
       match.squad.some((s) => {
         const l = linhas[s.athleteId];
+        if (!l) return true;
+        const papelAntes: Papel = !s.played ? "nao" : s.started ? "titular" : "entrou";
         return (
-          !l ||
-          l.played !== s.played ||
-          l.minutes !== s.minutes ||
-          l.started !== s.started ||
+          l.papel !== papelAntes ||
+          // Os minutos já não se escrevem, comparam-se calculados: assim uma
+          // ficha antiga com um número à mão que discorda da entrada e da saída
+          // acende o Gravar, em vez de ficar por corrigir para sempre.
+          minutosDerivados(l, duracao) !== s.minutes ||
           l.tally !== s.tally ||
           l.assists !== s.assists ||
           l.yellowCards !== s.yellowCards ||
-          l.redCard !== s.redCard
+          l.redCard !== s.redCard ||
+          l.onMinute !== s.onMinute ||
+          l.offMinute !== s.offMinute ||
+          l.redAt !== s.redAt ||
+          l.yellowAt.join() !== s.yellowAt.join() ||
+          // Sem estes dois, escrever só o minuto de um golo não acendia o
+          // Gravar e o trabalho perdia-se ao mudar de página.
+          l.tallyAt.join() !== s.tallyAt.join() ||
+          l.assistsAt.join() !== s.assistsAt.join()
         );
       }),
     [linhas, match.squad],
@@ -796,12 +968,22 @@ function SheetPanel({ match, mayRecord, onSaved }: { match: Match; mayRecord: bo
         match.id,
         emCampo.map((l) => ({
           athleteId: l.athleteId,
-          minutes: l.minutes,
-          started: l.started,
+          // Os minutos vêm sempre da conta. O `?? 0` nunca chega a acontecer —
+          // `porCorrigir` trava o botão enquanto houver um suplente sem minuto
+          // de entrada — mas é o valor certo se alguma vez chegar: zero e não um
+          // palpite.
+          minutes: minutosDerivados(l, duracao) ?? 0,
+          started: l.papel === "titular",
           tally: l.tally,
           assists: l.assists,
           yellowCards: l.yellowCards,
           redCard: l.redCard,
+          ...(l.onMinute != null && l.papel === "entrou" ? { onMinute: l.onMinute } : {}),
+          ...(l.offMinute != null ? { offMinute: l.offMinute } : {}),
+          ...(l.yellowAt.length > 0 ? { yellowAt: l.yellowAt } : {}),
+          ...(l.redAt != null ? { redAt: l.redAt } : {}),
+          ...(l.tallyAt.length > 0 ? { tallyAt: l.tallyAt } : {}),
+          ...(l.assistsAt.length > 0 ? { assistsAt: l.assistsAt } : {}),
         })),
       );
       setGravado(true);
@@ -818,7 +1000,13 @@ function SheetPanel({ match, mayRecord, onSaved }: { match: Match; mayRecord: bo
     <Panel>
       <PanelHead
         title="Ficha de jogo"
-        hint={`${emCampo.length} ${emCampo.length === 1 ? "jogou" : "jogaram"} · ${golos} ${golos === 1 ? golo : `${golo}s`}`}
+        hint={
+          emCampo.length === 0
+            ? "por preencher"
+            : `${titulares} ${titulares === 1 ? "titular" : "titulares"} · ${emCampo.length - titulares} ${
+                emCampo.length - titulares === 1 ? "suplente" : "suplentes"
+              } · ${golos} ${golos === 1 ? golo : `${golo}s`}`
+        }
       >
         {gravado && (
           <span className="flex items-center gap-1 text-meta text-ok">
@@ -830,8 +1018,10 @@ function SheetPanel({ match, mayRecord, onSaved }: { match: Match; mayRecord: bo
 
       {mayRecord && (
         <p className="border-b border-line px-5 py-2.5 text-meta leading-relaxed text-ink-3">
-          Toca no nome de quem entrou em campo e escreve os números. Quem ficou no banco fica por
-          marcar — e é assim que fica registado que não jogou.
+          Diz de cada um se foi <span className="font-medium text-ink-2">titular</span>, se{" "}
+          <span className="font-medium text-ink-2">entrou</span> do banco, ou se{" "}
+          <span className="font-medium text-ink-2">não jogou</span>. Só isso já fecha a ficha — os minutos de
+          substituição e de cartões ficam em "Substituição e cartões", para quem os quiser registar.
         </p>
       )}
 
@@ -842,6 +1032,7 @@ function SheetPanel({ match, mayRecord, onSaved }: { match: Match; mayRecord: bo
             atleta={s}
             linha={linhas[s.athleteId]}
             golo={golo}
+            duracao={duracao}
             mayRecord={mayRecord}
             onChange={(patch) => set(s.athleteId, patch)}
           />
@@ -850,10 +1041,31 @@ function SheetPanel({ match, mayRecord, onSaved }: { match: Match; mayRecord: bo
 
       {mayRecord && (
         <div className="flex flex-wrap items-center gap-3 border-t border-line px-5 py-3">
-          <button type="button" className="ctl-primary h-11" disabled={busy || !mudou} onClick={() => void gravar()}>
+          <button
+            type="button"
+            className="ctl-primary h-11"
+            disabled={busy || !mudou || porCorrigir > 0 || excedeMarcador !== null}
+            onClick={() => void gravar()}
+          >
             {busy ? "A gravar…" : "Gravar ficha"}
           </button>
-          {mudou && !busy && <span className="text-meta font-medium text-warn">Há alterações por gravar.</span>}
+          {excedeMarcador ? (
+            <span className="text-meta font-medium text-risk">{excedeMarcador}</span>
+          ) : contraditorias > 0 ? (
+            <span className="text-meta font-medium text-risk">
+              {contraditorias === 1
+                ? "Há uma linha com minutos impossíveis — corrige-a para gravar."
+                : `Há ${contraditorias} linhas com minutos impossíveis — corrige-as para gravar.`}
+            </span>
+          ) : semEntrada > 0 ? (
+            <span className="text-meta font-medium text-risk">
+              {semEntrada === 1
+                ? "Falta o minuto de entrada de um suplente — sem ele não há minutos para gravar."
+                : `Faltam os minutos de entrada de ${semEntrada} suplentes — sem eles não há minutos para gravar.`}
+            </span>
+          ) : (
+            mudou && !busy && <span className="text-meta font-medium text-warn">Há alterações por gravar.</span>
+          )}
           {erro && (
             <span role="alert" className="text-meta text-risk">
               {erro}
@@ -871,122 +1083,437 @@ function daFicha(match: Match): Record<string, Linha> {
       s.athleteId,
       {
         athleteId: s.athleteId,
-        played: s.played,
+        // Os dois campos antigos colapsam num: não jogou / entrou / titular.
+        papel: !s.played ? "nao" : s.started ? "titular" : "entrou",
         minutes: s.minutes,
-        started: s.started,
         tally: s.tally,
         assists: s.assists,
         yellowCards: s.yellowCards,
         redCard: s.redCard,
-      },
+        onMinute: s.onMinute,
+        offMinute: s.offMinute,
+        yellowAt: s.yellowAt,
+        redAt: s.redAt,
+        tallyAt: s.tallyAt,
+        assistsAt: s.assistsAt,
+      } satisfies Linha,
     ]),
   );
 }
+
+const PAPEIS: { value: Papel; label: string; hint: string }[] = [
+  { value: "titular", label: "Titular", hint: "Começou o jogo" },
+  { value: "entrou", label: "Entrou", hint: "Saiu do banco" },
+  { value: "nao", label: "Não jogou", hint: "Ficou no banco" },
+];
 
 function SheetRow({
   atleta,
   linha,
   golo,
+  duracao,
   mayRecord,
   onChange,
 }: {
   atleta: SquadRow;
   linha: Linha;
   golo: string;
+  duracao: number;
   mayRecord: boolean;
   onChange: (p: Partial<Linha>) => void;
 }) {
-  const jogou = linha?.played ?? false;
+  const [detalhe, setDetalhe] = useState(false);
+  const emCampo = jogou(linha);
+  const derivados = minutosDerivados(linha, duracao);
+  const problemas = incoerencias(linha);
+
+  // Uma contradição escondida atrás de um painel fechado é uma contradição que
+  // ninguém corrige: abre-se o detalhe, que é onde estão os campos em causa. O
+  // minuto de entrada em falta não conta — resolve-se na linha de cima, e abrir
+  // o painel a cada suplente marcado só dava ruído.
+  const noDetalhe = problemas.filter((p) => p !== FALTA_ENTRADA).length;
+  useEffect(() => {
+    if (noDetalhe > 0) setDetalhe(true);
+  }, [noDetalhe]);
+
+  /**
+   * Escolher o papel arruma o resto.
+   *
+   * Passar a titular limpa o minuto de entrada (um titular entra aos 0, e um 63
+   * ali seria uma contradição). Deixar de jogar limpa tudo — golos de quem não
+   * entrou em campo é a linha que faz um pai telefonar.
+   */
+  function escolher(papel: Papel) {
+    if (papel === "nao") {
+      onChange({
+        papel,
+        minutes: 0, tally: 0, assists: 0, yellowCards: 0, redCard: false,
+        onMinute: null, offMinute: null, yellowAt: [], redAt: null,
+      });
+      return;
+    }
+    // Um titular entra aos 0, e um 63 no minuto de entrada seria uma contradição.
+    // Os minutos já não se guardam aqui: saem de `minutosDerivados`.
+    onChange({ papel, ...(papel === "titular" ? { onMinute: null } : {}) });
+  }
 
   return (
-    <li className={cx("border-b border-line last:border-b-0", jogou && "bg-sunken/30")}>
-      <div className="flex items-center gap-3 px-5 py-2">
-        <button
-          type="button"
-          disabled={!mayRecord}
-          onClick={() => onChange({ played: !jogou, ...(jogou ? {} : { minutes: linha.minutes || 60, started: true }) })}
-          className="flex min-h-11 min-w-0 flex-1 items-center gap-3 text-left disabled:cursor-default"
-          aria-pressed={jogou}
-        >
-          <span
-            className={cx(
-              "flex size-6 shrink-0 items-center justify-center rounded-full border transition-colors",
-              jogou ? "border-transparent bg-signal text-white" : "border-line-strong",
-            )}
-            aria-hidden
-          >
-            {jogou && <Check className="size-3.5" strokeWidth={3} />}
-          </span>
-          <span className="min-w-0 flex-1">
-            <span className={cx("block truncate text-body", jogou ? "font-medium text-ink" : "text-ink-3")}>
-              {atleta.name}
-            </span>
-            <span className="block text-meta text-ink-4">
-              {atleta.position ?? "sem posição"}
-              {atleta.isGuest && ` · de ${atleta.guestFromTeam}`}
-              {atleta.callUpStatus === "DECLINED" && " · tinha dito que não podia"}
-            </span>
-          </span>
-        </button>
+    <li className="border-b border-line last:border-b-0">
+      {/*
+        A linha da pessoa e o registo do jogo dela são duas coisas, e agora
+        parecem-no.
 
-        {jogou && (
+        Tinham o mesmo fundo, e num jogo com vinte atletas isso dava uma parede
+        onde não se via onde acabava um jogador e começava o seguinte — as
+        estatísticas de um pareciam pertencer ao nome de baixo. O nome fica no
+        fundo levantado, os números no fundo da superfície.
+      */}
+      <div
+        className={cx(
+          "flex flex-wrap items-center gap-x-3 gap-y-2 px-5 py-2.5",
+          emCampo && "bg-sunken/60",
+        )}
+      >
+        <span className="min-w-0 flex-1">
+          <span className={cx("block truncate text-body", emCampo ? "font-medium text-ink" : "text-ink-3")}>
+            {atleta.name}
+          </span>
+          <span className="block text-meta text-ink-4">
+            {atleta.position ?? "sem posição"}
+            {atleta.isGuest && ` · de ${atleta.guestFromTeam}`}
+            {atleta.callUpStatus === "DECLINED" && " · tinha dito que não podia"}
+          </span>
+        </span>
+
+        {/* O resumo do que já está registado, para quem só passa os olhos. */}
+        {emCampo && (
           <div className="flex shrink-0 items-center gap-1.5">
-            {linha.redCard && <Pill tone="risk">vermelho</Pill>}
-            {linha.yellowCards > 0 && !linha.redCard && (
-              <Pill tone="warn">{linha.yellowCards === 2 ? "2 amarelos" : "amarelo"}</Pill>
-            )}
             {linha.tally > 0 && (
               <Pill tone="ok">
                 {linha.tally} {linha.tally === 1 ? golo : `${golo}s`}
               </Pill>
             )}
-            <span className="w-12 text-right text-meta tabular text-ink-2">{linha.minutes}′</span>
+            {linha.yellowCards > 0 && !linha.redCard && (
+              <Pill tone="warn">{linha.yellowCards === 2 ? "2 amarelos" : "amarelo"}</Pill>
+            )}
+            {linha.redCard && <Pill tone="risk">vermelho</Pill>}
+            <span className="w-12 text-right text-meta tabular text-ink-2">
+              {derivados === null ? "—" : `${derivados}′`}
+            </span>
           </div>
+        )}
+
+        {/*
+          A pergunta, em três respostas.
+          Substituiu um visto "jogou" mais um interruptor "Titular" escondido lá
+          dentro — duas perguntas para uma resposta só, e nenhuma delas a que o
+          treinador tem na cabeça.
+        */}
+        {mayRecord ? (
+          // Ao pé do telemóvel o grupo passa a linha própria em vez de encolher:
+          // encolher cortava "Não jogou" a meio, e a resposta mais importante da
+          // linha é precisamente esta.
+          <div className="w-full sm:w-auto sm:shrink-0">
+            <Segmented
+              size="md"
+              label={`Papel de ${atleta.name}`}
+              value={linha.papel}
+              onChange={escolher}
+              options={PAPEIS}
+            />
+          </div>
+        ) : (
+          emCampo && <Pill tone="signal">{linha.papel === "titular" ? "Titular" : "Entrou"}</Pill>
         )}
       </div>
 
-      {jogou && mayRecord && (
-        <div className="flex flex-wrap items-center gap-x-5 gap-y-2.5 border-t border-line/60 px-5 py-3 pl-14">
-          <NumField label="Minutos" value={linha.minutes} max={300} wide onCommit={(n) => onChange({ minutes: n })} />
-          <NumField
-            label={golo === "golo" ? "Golos" : "Pontos"}
-            value={linha.tally}
-            max={99}
-            onCommit={(n) => onChange({ tally: n })}
-          />
-          <NumField label="Assist." value={linha.assists} max={99} onCommit={(n) => onChange({ assists: n })} />
+      {emCampo && mayRecord && (
+        <div className="border-t border-line/60 bg-surface px-5 py-3">
+          {/* O essencial, sempre à vista. */}
+          <div className="flex flex-wrap items-center gap-x-5 gap-y-2.5">
+            <NumField
+              label={golo === "golo" ? "Golos" : "Pontos"}
+              value={linha.tally}
+              max={99}
+              onCommit={(n) => onChange({ tally: n })}
+            />
+            <NumField label="Assist." value={linha.assists} max={99} onCommit={(n) => onChange({ assists: n })} />
 
-          <SmallToggle on={linha.started} onClick={() => onChange({ started: !linha.started })}>
-            Titular
-          </SmallToggle>
+            {/*
+              Quem entrou do banco diz quando, aqui e não escondido no detalhe.
 
-          {/* Amarelos são uma escolha 0/1/2, não um número que se escreva. */}
-          <div className="flex items-center gap-1.5">
-            <span className="text-meta text-ink-3">Amarelos</span>
-            <div className="flex rounded-[var(--radius-control)] border border-line p-0.5" role="group" aria-label="Cartões amarelos">
-              {[0, 1, 2].map((n) => (
-                <button
-                  key={n}
-                  type="button"
-                  aria-pressed={linha.yellowCards === n}
-                  onClick={() => onChange({ yellowCards: n })}
-                  className={cx(
-                    "min-h-9 min-w-9 rounded-[6px] px-2 text-meta font-medium transition-colors",
-                    linha.yellowCards === n ? "bg-warn text-white" : "text-ink-3 hover:text-ink",
-                  )}
-                >
-                  {n}
-                </button>
-              ))}
-            </div>
+              É a única conta que o sistema não consegue fazer sozinho — um
+              suplente tanto pode ter entrado ao 10 como ao 80 — e desde que os
+              minutos deixaram de se escrever à mão, é este número que os
+              determina. Escondê-lo atrás de "Mais detalhes" era esconder a
+              pergunta e deixar a linha por saber.
+            */}
+            {linha.papel === "entrou" && (
+              <MinuteField
+                label="Entrou ao"
+                value={linha.onMinute}
+                max={duracao + 30}
+                onCommit={(n) => onChange({ onMinute: n })}
+              />
+            )}
+
+            {/*
+              Os minutos são resultado, não pergunta.
+
+              Havia aqui um campo que o treinador escrevia e que discordava, mais
+              vezes do que não, da conta que sai da entrada e da saída — e era o
+              escrito à mão que ficava gravado. Ver `minutosDerivados`.
+            */}
+            <span className="flex items-center gap-2 text-meta text-ink-3">
+              Minutos
+              <span
+                className={cx(
+                  "inline-flex h-10 min-w-14 items-center justify-center rounded-[8px] bg-sunken px-2 text-body font-medium tabular",
+                  derivados === null ? "text-ink-4" : "text-ink",
+                )}
+                title={derivados === null ? "Falta o minuto de entrada" : "Calculado a partir da entrada e da saída"}
+              >
+                {derivados === null ? "—" : derivados}
+              </span>
+            </span>
+
+            <button
+              type="button"
+              onClick={() => setDetalhe((v) => !v)}
+              aria-expanded={detalhe}
+              className="ctl-ghost h-9 gap-1.5 text-meta text-ink-3"
+            >
+              {detalhe ? "Menos detalhes" : "Mais detalhes"}
+              <ChevronRight className={cx("size-3.5 transition-transform", detalhe && "rotate-90")} strokeWidth={2} />
+            </button>
           </div>
 
-          <SmallToggle on={linha.redCard} tone="risk" onClick={() => onChange({ redCard: !linha.redCard })}>
-            Vermelho
-          </SmallToggle>
+          {/*
+            O detalhe federado, atrás de um clique.
+
+            Ninguém é obrigado a preenchê-lo — a ficha fecha sem isto — mas quem
+            leva a acta a sério tem onde escrever os minutos exactos. Estava
+            fechado porque a maioria dos jogos de formação nunca os regista, e
+            oito campos vazios por atleta em vinte atletas era o que fazia esta
+            página parecer trabalho em vez de registo.
+          */}
+          {detalhe && (
+            <div className="mt-3 space-y-3 border-t border-line/60 pt-3">
+              {/*
+                Três assuntos, três linhas, cada uma com o seu nome.
+
+                Estavam todos misturados numa só tira que ia dando a volta: "Saiu
+                ao", "Amarelos", "Amarelo ao", "Vermelho", "1.º golo ao" — a
+                mesma fila de caixas iguais, sem nada a dizer onde acabava um
+                assunto e começava o outro, e com o que o treinador mais quer
+                escrever no fim de tudo.
+
+                O que se marcou vem primeiro porque é a pergunta que traz aqui a
+                maioria das pessoas. A substituição vem a seguir porque explica os
+                minutos. A disciplina vem por último porque é a excepção.
+              */}
+              {(linha.tally > 0 || linha.assists > 0) && (
+                <Detalhe titulo={`${golo === "golo" ? "Golos" : "Pontos"} e assistências`}>
+                  {/* Um campo por golo e por assistência declarados — nem mais um.
+                      Pedir o minuto de um golo que ninguém marcou não faz pergunta
+                      nenhuma, e por isso a linha só existe depois de haver contagem. */}
+                  {Array.from({ length: Math.min(linha.tally, 12) }, (_, i) => (
+                    <MinuteField
+                      key={`g${i}`}
+                      label={linha.tally === 1 ? `${golo === "golo" ? "Golo" : "Ponto"} ao` : `${i + 1}.º ${golo} ao`}
+                      value={linha.tallyAt[i] ?? null}
+                      max={duracao + 30}
+                      onCommit={(n) => onChange({ tallyAt: substituirMinuto(linha.tallyAt, i, n, linha.tally) })}
+                    />
+                  ))}
+                  {Array.from({ length: Math.min(linha.assists, 12) }, (_, i) => (
+                    <MinuteField
+                      key={`a${i}`}
+                      label={linha.assists === 1 ? "Assistência ao" : `${i + 1}.ª assist. ao`}
+                      value={linha.assistsAt[i] ?? null}
+                      max={duracao + 30}
+                      onCommit={(n) => onChange({ assistsAt: substituirMinuto(linha.assistsAt, i, n, linha.assists) })}
+                    />
+                  ))}
+                </Detalhe>
+              )}
+
+              {/* "Entrou ao" não está aqui: subiu para a linha de cima, porque é
+                  dele que saem os minutos jogados de um suplente. */}
+              <Detalhe titulo="Em campo">
+                <MinuteField
+                  label="Saiu ao"
+                  value={linha.offMinute}
+                  max={duracao + 30}
+                  hint={linha.offMinute == null ? "jogou até ao fim" : undefined}
+                  onCommit={(n) => onChange({ offMinute: n })}
+                />
+              </Detalhe>
+
+              <Detalhe titulo="Disciplina">
+                <label className="flex items-center gap-2">
+                  <span className="text-meta whitespace-nowrap text-ink-3">Amarelos</span>
+                  <Segmented
+                    size="md"
+                    label="Cartões amarelos"
+                    value={String(linha.yellowCards)}
+                    // Reduzir o número corta os minutos a mais: dois minutos com
+                    // um amarelo declarado são duas afirmações a discordar.
+                    onChange={(v) =>
+                      onChange({ yellowCards: Number(v), yellowAt: linha.yellowAt.slice(0, Number(v)) })
+                    }
+                    options={[
+                      { value: "0", label: "0" },
+                      { value: "1", label: "1" },
+                      { value: "2", label: "2" },
+                    ]}
+                  />
+                </label>
+
+                {/* Um campo de minuto por amarelo declarado, e nem mais um. */}
+                {Array.from({ length: linha.yellowCards }, (_, i) => (
+                  <MinuteField
+                    key={i}
+                    label={linha.yellowCards === 1 ? "Amarelo ao" : `${i + 1}.º amarelo ao`}
+                    value={linha.yellowAt[i] ?? null}
+                    max={duracao + 30}
+                    onCommit={(n) => {
+                      const proximo = [...linha.yellowAt];
+                      // Apagar o minuto do primeiro amarelo não pode deixar um
+                      // buraco que empurre o segundo para o lugar do primeiro.
+                      if (n == null) proximo.splice(i, 1);
+                      else proximo[i] = n;
+                      onChange({ yellowAt: proximo.filter((m) => m != null).slice(0, linha.yellowCards) });
+                    }}
+                  />
+                ))}
+
+                <SmallToggle
+                  on={linha.redCard}
+                  tone="risk"
+                  onClick={() => onChange({ redCard: !linha.redCard, ...(linha.redCard ? { redAt: null } : {}) })}
+                >
+                  Vermelho
+                </SmallToggle>
+                {linha.redCard && (
+                  <MinuteField
+                    label="Expulso ao"
+                    value={linha.redAt}
+                    max={duracao + 30}
+                    onCommit={(n) => onChange({ redAt: n })}
+                  />
+                )}
+              </Detalhe>
+            </div>
+          )}
+
+          {/*
+            O aviso de contradição, na linha de quem a tem.
+            Não trava a escrita — o treinador pode estar a meio de corrigir os
+            dois números — mas trava o Gravar lá em baixo, e diz aqui porquê.
+          */}
+          {problemas.length > 0 && (
+            <ul className="mt-3 space-y-1 rounded-[var(--radius-control)] bg-risk-soft px-3 py-2">
+              {problemas.map((p) => (
+                <li key={p} className="text-meta leading-relaxed text-risk">
+                  {p}
+                </li>
+              ))}
+            </ul>
+          )}
         </div>
       )}
     </li>
+  );
+}
+
+/** Põe (ou tira) um minuto numa lista, sem deixar buracos nem passar do declarado. */
+function substituirMinuto(lista: number[], i: number, n: number | null, tecto: number): number[] {
+  const proximo = [...lista];
+  if (n == null) proximo.splice(i, 1);
+  else proximo[i] = n;
+  return proximo.filter((m) => m != null).slice(0, tecto);
+}
+
+/**
+ * Um minuto do jogo, que pode não estar registado.
+ *
+ * Gémeo de `NumField`, com uma diferença que é a razão de existir: **vazio é um
+ * valor**. Um `NumField` a zero afirma "ao minuto zero"; aqui, vazio afirma
+ * "ninguém registou", que é o estado da esmagadora maioria das fichas. Apagar o
+ * campo volta a esse estado em vez de escrever um zero.
+ */
+/**
+ * Um assunto do painel de detalhe, com o seu nome à esquerda.
+ *
+ * O rótulo fica na coluna e não por cima porque, em vinte atletas, vinte
+ * cabeçalhos empilhados davam uma página de títulos. À largura de telemóvel a
+ * coluna desfaz-se e o nome passa a linha própria — que é o único sítio onde
+ * ainda cabe.
+ */
+function Detalhe({ titulo, children }: { titulo: string; children: ReactNode }) {
+  return (
+    <div className="flex flex-col gap-1.5 sm:flex-row sm:items-baseline sm:gap-4">
+      <span className="text-meta font-medium text-ink-3 sm:w-40 sm:shrink-0 sm:text-right">{titulo}</span>
+      <div className="flex flex-wrap items-center gap-x-4 gap-y-2.5">{children}</div>
+    </div>
+  );
+}
+
+function MinuteField({
+  label,
+  value,
+  max,
+  hint,
+  onCommit,
+}: {
+  label: string;
+  value: number | null;
+  max: number;
+  hint?: string;
+  onCommit: (n: number | null) => void;
+}) {
+  const [texto, setTexto] = useState(value == null ? "" : String(value));
+
+  useEffect(() => {
+    setTexto(value == null ? "" : String(value));
+  }, [value]);
+
+  function commit() {
+    if (texto.trim() === "") {
+      setTexto("");
+      if (value !== null) onCommit(null);
+      return;
+    }
+    const n = Math.max(0, Math.min(max, Number(texto) || 0));
+    setTexto(String(n));
+    if (n !== value) onCommit(n);
+  }
+
+  return (
+    <label className="flex items-center gap-2">
+      <span className="text-meta whitespace-nowrap text-ink-3">{label}</span>
+      <span className="relative inline-flex items-center">
+        <input
+          type="text"
+          inputMode="numeric"
+          pattern="[0-9]*"
+          maxLength={3}
+          value={texto}
+          placeholder="—"
+          onChange={(e) => setTexto(e.target.value.replace(/\D/g, ""))}
+          onBlur={commit}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") (e.target as HTMLInputElement).blur();
+          }}
+          className="h-10 w-16 rounded-[8px] border border-line bg-surface pr-4 text-center text-body font-medium tabular text-ink outline-none transition-colors placeholder:font-normal placeholder:text-ink-4 focus:border-line-strong"
+        />
+        <span aria-hidden className="pointer-events-none absolute right-2 text-meta text-ink-4">
+          ′
+        </span>
+      </span>
+      {hint && <span className="text-meta text-ink-4">{hint}</span>}
+    </label>
   );
 }
 
@@ -1012,13 +1539,26 @@ function NumField({
 }) {
   const [texto, setTexto] = useState(String(value));
 
+  /*
+   * Este número comanda o que existe no ecrã: escrever 1 golo faz nascer o
+   * campo do minuto desse golo. Por isso conta-se a cada tecla e não ao sair
+   * do campo — esperar pelo `blur` fazia o campo aparecer só depois de a pessoa
+   * carregar noutro sítio qualquer, e quem escrevia "1" ficava a olhar para uma
+   * linha onde não acontecia nada.
+   *
+   * O `MinuteField` continua a contar ao sair, e de propósito: um minuto a meio
+   * de ser escrito ("6" a caminho de "60") acendia avisos de contradição a cada
+   * tecla, e o que ele comanda é uma verificação, não a existência de campos.
+   */
   useEffect(() => {
-    setTexto(String(value));
+    setTexto((t) => (Number(t === "" ? "0" : t) === value ? t : String(value)));
   }, [value]);
 
-  function commit() {
-    const n = Math.max(0, Math.min(max, Number(texto) || 0));
-    setTexto(String(n));
+  function escrever(bruto: string) {
+    setTexto(bruto);
+    // Campo esvaziado conta como zero, mas deixa-se ficar vazio para se poder
+    // escrever por cima sem apagar um "0" à frente.
+    const n = bruto === "" ? 0 : Math.max(0, Math.min(max, Number(bruto) || 0));
     if (n !== value) onCommit(n);
   }
 
@@ -1031,8 +1571,8 @@ function NumField({
         pattern="[0-9]*"
         maxLength={3}
         value={texto}
-        onChange={(e) => setTexto(e.target.value.replace(/\D/g, ""))}
-        onBlur={commit}
+        onChange={(e) => escrever(e.target.value.replace(/\D/g, ""))}
+        onBlur={() => setTexto(String(value))}
         onKeyDown={(e) => {
           if (e.key === "Enter") (e.target as HTMLInputElement).blur();
         }}
@@ -1286,8 +1826,8 @@ function Monograma({ nome }: { nome: string }) {
   return (
     <span
       aria-hidden
-      className="flex size-8 shrink-0 items-center justify-center rounded-full text-[11px] font-semibold text-white"
-      style={{ background: "var(--color-signal)" }}
+      className="flex size-8 shrink-0 items-center justify-center rounded-full text-[11px] font-semibold text-signal-on"
+      style={{ background: "var(--color-signal-strong)" }}
     >
       {iniciais || "?"}
     </span>

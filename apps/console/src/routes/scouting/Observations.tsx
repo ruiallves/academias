@@ -79,13 +79,13 @@ export default function ScoutingObservations() {
         <PanelHead title="Idas ao campo" hint={rows ? `${rows.length}` : undefined} />
 
         {error ? (
-          <div className="px-5 py-16">
+          <div>
             <Empty title="Não foi possível carregar" detail={error} />
           </div>
         ) : !rows ? (
           <Loading />
         ) : rows.length === 0 ? (
-          <div className="px-5 py-16">
+          <div>
             <Empty
               icon={Eye}
               title="Sem observações no período"

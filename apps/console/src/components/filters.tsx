@@ -14,18 +14,49 @@ export function Toolbar({ children }: { children: ReactNode }) {
   );
 }
 
-/** Segmentado. Para dimensões com poucos valores mutuamente exclusivos. */
+/**
+ * Segmentado. Para dimensões com poucos valores mutuamente exclusivos.
+ *
+ * ## Porque é que o escolhido não leva a cor do clube
+ *
+ * Escolher não é aprovar. Um segmento aceso a verde-clube lê-se como estado —
+ * "isto está bem", "isto está pago" — quando só quer dizer "é este que estás a
+ * ver". Pela mesma razão que a navegação usa `--nav-accent` e não a cor do
+ * clube: a cor da instituição é identidade, não interface, e um clube amarelo
+ * ou vermelho tornava estes botões ilegíveis ou alarmantes.
+ *
+ * O escolhido levanta-se do carril — fundo de superfície e uma sombra de um
+ * pixel — em vez de mudar de cor. Funciona com qualquer emblema e não compete
+ * com o verde de pago nem com o vermelho de vencido, que aqui ao lado querem
+ * dizer coisas a sério.
+ *
+ * `size="md"` é o mesmo controlo com altura de dedo, para formulários e para a
+ * ficha de jogo; `sm` é o da barra de filtros, colado ao cabeçalho da tabela.
+ */
 export function Segmented<T extends string>({
   value,
   onChange,
   options,
+  size = "sm",
+  label,
 }: {
   value: T;
   onChange: (v: T) => void;
-  options: { value: T; label: string; count?: number; icon?: LucideIcon }[];
+  options: { value: T; label: string; count?: number; icon?: LucideIcon; hint?: string }[];
+  size?: "sm" | "md";
+  /** Rótulo do grupo para quem navega por leitor de ecrã. */
+  label?: string;
 }) {
+  const md = size === "md";
   return (
-    <div className="inline-flex items-center gap-px rounded-[var(--radius-control)] bg-sunken p-0.5">
+    <div
+      role="group"
+      aria-label={label}
+      className={cx(
+        "inline-flex items-center gap-px rounded-[var(--radius-control)] bg-sunken",
+        md ? "p-1" : "p-0.5",
+      )}
+    >
       {options.map((o) => {
         const active = o.value === value;
         const Icon = o.icon;
@@ -33,10 +64,15 @@ export function Segmented<T extends string>({
           <button
             key={o.value}
             type="button"
+            title={o.hint}
             onClick={() => onChange(o.value)}
             aria-pressed={active}
             className={cx(
-              "inline-flex h-7 items-center gap-1.5 rounded-[6px] px-2.5 text-meta font-medium transition-colors duration-[120ms]",
+              "inline-flex items-center gap-1.5 rounded-[6px] font-medium whitespace-nowrap transition-colors duration-[120ms]",
+              // `md` cresce em altura, não em letra: é o alvo do dedo que tem de
+              // ser maior. Com corpo de texto, três opções — "Titular / Entrou /
+              // Não jogou" — não cabiam num telemóvel e a última saía do ecrã.
+              md ? "h-9 min-w-9 justify-center px-3 text-meta" : "h-7 px-2.5 text-meta",
               active ? "bg-surface text-ink shadow-[0_1px_2px_rgb(26_25_23/0.06)]" : "text-ink-3 hover:text-ink-2",
             )}
           >

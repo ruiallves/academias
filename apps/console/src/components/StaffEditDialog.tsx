@@ -3,6 +3,7 @@ import { listTeams } from "@/lib/api";
 import { teamAgeLabel } from "@/lib/team-age";
 import { ASSIGNABLE_ROLES, DEPARTMENTS, updateStaff } from "@/lib/staff";
 import { apiPatch } from "@/lib/http";
+import { reloadAcademy } from "@/lib/store";
 import { can, type Role, type Session } from "@/lib/permissions";
 import { ROLE_LABEL } from "@/session";
 import { DEPARTMENT_LABEL, type StaffDepartment, type StaffMember } from "@/data/types";
@@ -68,6 +69,28 @@ export function StaffEditDialog({
         await apiPatch(`/api/memberships/${member.id}/active`, { active: isActive });
       } catch (err) {
         setErro(err instanceof Error ? err.message : "Não foi possível mudar o estado da conta.");
+        return;
+      }
+    }
+
+    /*
+     * As equipas também têm de chegar ao servidor — e pela mesma razão.
+     *
+     * Ficavam em memória: a ficha mostrava a equipa, o `TeamStaff` continuava
+     * vazio, e nada mais no produto sabia da atribuição. O treino da equipa
+     * continuava a dizer "sem treinador" no calendário e nas presenças, e o
+     * próprio treinador entrava sem âmbito nenhum — `AuthService.scopeFor`
+     * deriva-o daqui. Recarregar a consola desfazia tudo.
+     */
+    const finais = usesTeams ? teamIds : [];
+    const mudou =
+      finais.length !== member.teamIds.length || finais.some((id) => !member.teamIds.includes(id));
+    if (mayChangeAccess && mudou) {
+      try {
+        await apiPatch(`/api/staff/${member.id}/teams`, { teamIds: finais });
+        await reloadAcademy();
+      } catch (err) {
+        setErro(err instanceof Error ? err.message : "Não foi possível guardar as equipas.");
         return;
       }
     }

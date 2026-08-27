@@ -1,4 +1,4 @@
-import { ForbiddenException, Injectable, NotFoundException } from "@nestjs/common";
+import { BadRequestException, ForbiddenException, Injectable, NotFoundException } from "@nestjs/common";
 import { NotificationType, type Prisma } from "@prisma/client";
 import { PrismaService, type ScopedClient } from "../prisma/prisma.service";
 import { NotificationsService } from "../notifications/notifications.service";
@@ -23,6 +23,10 @@ const AUDIENCE_LABEL: Record<AudienceKind, string> = {
  * isso não é uma opção que a interface esconde e o servidor confia: é o servidor que
  * recusa qualquer outra coisa, e que deriva as equipas do âmbito, não do que o
  * cliente disser.
+ *
+ * "Pais" aceita ainda um **recorte por escalão** (`teamIds`): o mesmo público,
+ * estreitado às equipas escolhidas. É o que separa "a época começa dia 1" de "o
+ * Sub-19 muda o treino de sábado" — ver `create`.
  *
  * ## Uma comunicação é um aviso a cada pessoa
  *
@@ -82,6 +86,19 @@ export class AnnouncementsService {
           })
         : rows;
 
+      // Os nomes dos escalões a que os avisos foram dirigidos, numa ida só — o
+      // rótulo diz "Pais · Sub-19 Futebol" e não "Pais". Ver `audienceLabelOf`.
+      const dirigidos = unique(
+        visible.flatMap((a) => (a.audience as { teamIds?: string[] } | null)?.teamIds ?? []),
+      );
+      const teamNames = new Map(
+        dirigidos.length === 0
+          ? []
+          : (await db.team.findMany({ where: { id: { in: dirigidos } }, select: { id: true, name: true } })).map(
+              (t) => [t.id, t.name] as const,
+            ),
+      );
+
       // A taxa de leitura vem das notificações desta comunicação. Poucas por
       // academia, por isso duas contagens por linha é barato e legível.
       const out = [];
@@ -93,7 +110,7 @@ export class AnnouncementsService {
           id: a.id,
           title: a.title,
           body: a.body,
-          audience: audienceLabelOf(a.audience),
+          audience: audienceLabelOf(a.audience, teamNames),
           authorId: a.authorId,
           authorName: a.author.user.name,
           publishedAt: a.publishedAt,
@@ -105,8 +122,28 @@ export class AnnouncementsService {
     });
   }
 
-  /** Publica uma comunicação e notifica os destinatários. */
-  async create(ctx: RequestContext, dto: { title: string; body: string; audience: AudienceKind }) {
+  /**
+   * Publica uma comunicação e notifica os destinatários.
+   *
+   * ## O escalão estreita o público, não o substitui
+   *
+   * "Pais" continua a ser o público. `teamIds` é o **recorte**: sem ele o aviso vai
+   * a todos os pais de quem envia (a academia inteira para a direção, as equipas
+   * do treinador para o treinador); com ele vai só aos pais desses escalões.
+   *
+   * É a diferença entre "a época começa a 1 de Setembro" e "o Sub-19 muda o treino
+   * de sábado". Sem o recorte, a segunda mensagem chegava a trezentas famílias a
+   * quem não dizia respeito — e é assim que se ensina uma família a ignorar os
+   * avisos da academia.
+   *
+   * O recorte fica **gravado** na audiência, e não só usado para escolher a quem
+   * enviar: é o que faz o registo dizer a quem foi, e é o que a app da família lê
+   * para não mostrar a um pai do Sub-11 o aviso do Sub-19 (ver `list`).
+   */
+  async create(
+    ctx: RequestContext,
+    dto: { title: string; body: string; audience: AudienceKind; teamIds?: string[] },
+  ) {
     if (!can(ctx, "comms:write")) throw new ForbiddenException("Sem permissão para comunicar");
 
     const scope = teamScopeFilter(ctx);
@@ -116,17 +153,43 @@ export class AnnouncementsService {
       throw new ForbiddenException("Só podes comunicar com os pais das tuas equipas");
     }
 
+    const escolhidos = unique(dto.teamIds ?? []);
+    if (escolhidos.length > 0 && dto.audience !== "guardians") {
+      throw new BadRequestException("Só se escolhe escalão quando o aviso é para os pais");
+    }
+    // Um treinador não estreita para fora do que já é o âmbito dele. A UI só lhe
+    // mostra as equipas dele; isto é o que recusa um pedido feito por fora.
+    if (scope && escolhidos.some((id) => !scope.in.includes(id))) {
+      throw new ForbiddenException("Escalão fora do teu âmbito");
+    }
+
     const title = dto.title.trim();
     const body = dto.body.trim();
 
-    const { announcement, userIds } = await this.prisma.runAs(ctx.academyId, async (db) => {
-      const userIds = await this.recipientUserIds(db, ctx, dto.audience, scope);
-      // A audiência gravada guarda as equipas quando é o treinador — para o registo
-      // dizer exactamente a quem foi, não só "aos pais".
-      const audience =
-        scope && dto.audience === "guardians"
-          ? { kind: dto.audience, teamIds: scope.in }
-          : { kind: dto.audience };
+    const { announcement, userIds, label } = await this.prisma.runAs(ctx.academyId, async (db) => {
+      if (escolhidos.length > 0) {
+        const existem = await db.team.count({ where: { id: { in: escolhidos } } });
+        if (existem !== escolhidos.length) throw new BadRequestException("Escalão desconhecido");
+      }
+
+      /*
+       * As equipas a que este aviso fica preso.
+       *
+       * O que foi escolhido, se foi escolhido alguma coisa; senão o âmbito de quem
+       * envia — que é `undefined` para a direção, e aí não há recorte nenhum.
+       */
+      const teamIds = escolhidos.length > 0 ? escolhidos : scope?.in;
+      const userIds = await this.recipientUserIds(db, dto.audience, teamIds);
+      const audience = teamIds ? { kind: dto.audience, teamIds } : { kind: dto.audience };
+
+      // Os nomes, para o rótulo devolvido dizer o mesmo que a lista dirá a seguir.
+      const teamNames = new Map(
+        (teamIds?.length ?? 0) === 0
+          ? []
+          : (await db.team.findMany({ where: { id: { in: teamIds } }, select: { id: true, name: true } })).map(
+              (t) => [t.id, t.name] as const,
+            ),
+      );
 
       const announcement = await db.announcement.create({
         data: {
@@ -139,7 +202,7 @@ export class AnnouncementsService {
         },
         select: { id: true, publishedAt: true },
       });
-      return { announcement, userIds };
+      return { announcement, userIds, label: audienceLabelOf(audience, teamNames) };
     });
 
     // Ninguém se notifica a si próprio. As notificações vão fora da transação: cada
@@ -160,7 +223,7 @@ export class AnnouncementsService {
       id: announcement.id,
       title,
       body,
-      audience: AUDIENCE_LABEL[dto.audience],
+      audience: label,
       authorId: ctx.membershipId,
       authorName: undefined as string | undefined,
       publishedAt: announcement.publishedAt,
@@ -232,18 +295,22 @@ export class AnnouncementsService {
     if (!isAuthor && !isAdmin) throw new ForbiddenException("Só o autor ou a direção podem gerir este aviso");
   }
 
-  /** Os utilizadores que recebem esta comunicação, já no âmbito de quem a envia. */
+  /**
+   * Os utilizadores que recebem esta comunicação.
+   *
+   * `teamIds` é o recorte já resolvido por `create`: as equipas escolhidas, ou as
+   * de quem envia, ou nada — e nada significa a academia toda.
+   */
   private async recipientUserIds(
     db: ScopedClient,
-    ctx: RequestContext,
     kind: AudienceKind,
-    scope: { in: string[] } | undefined,
+    teamIds: string[] | undefined,
   ): Promise<string[]> {
     if (kind === "guardians") {
-      if (scope) {
-        // Treinador: os pais dos atletas das suas equipas.
+      if (teamIds) {
+        // Os pais dos atletas destes escalões.
         const memberships = await db.teamMembership.findMany({
-          where: { teamId: { in: scope.in } },
+          where: { teamId: { in: teamIds } },
           select: { athleteId: true },
         });
         const athleteIds = memberships.map((m) => m.athleteId);
@@ -280,9 +347,25 @@ function unique(ids: string[]): string[] {
   return [...new Set(ids)];
 }
 
-/** Lê o rótulo a partir da audiência gravada (`{ kind }`), com recurso seguro. */
-function audienceLabelOf(audience: unknown): string {
-  const kind = (audience as { kind?: string } | null)?.kind;
-  if (kind === "all" || kind === "guardians" || kind === "coaches") return AUDIENCE_LABEL[kind];
-  return "Geral";
+/**
+ * Lê o rótulo a partir da audiência gravada, com recurso seguro.
+ *
+ * Com escalões, o rótulo di-lo: "Pais · Sub-19 Futebol". É o registo a responder
+ * à pergunta que se faz três meses depois — *isto foi para quem?* — sem obrigar
+ * ninguém a abrir a linha da base de dados.
+ *
+ * A partir de três escalões conta-se em vez de listar: um rótulo com seis nomes
+ * não cabe em lado nenhum e deixa de se ler. Uma equipa entretanto apagada não
+ * inventa nome — o rótulo encolhe para "Pais", que continua a ser verdade.
+ */
+function audienceLabelOf(audience: unknown, teamNames?: Map<string, string>): string {
+  const aud = audience as { kind?: string; teamIds?: string[] } | null;
+  const kind = aud?.kind;
+  const base = kind === "all" || kind === "guardians" || kind === "coaches" ? AUDIENCE_LABEL[kind] : "Geral";
+  if (base !== AUDIENCE_LABEL.guardians) return base;
+
+  const nomes = (aud?.teamIds ?? []).map((id) => teamNames?.get(id)).filter((n): n is string => Boolean(n));
+  if (nomes.length === 0) return base;
+  if (nomes.length <= 2) return `${base} · ${nomes.join(", ")}`;
+  return `${base} · ${nomes.length} escalões`;
 }

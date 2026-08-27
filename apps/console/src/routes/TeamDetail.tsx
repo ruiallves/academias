@@ -18,9 +18,11 @@ import {
   type Column,
 } from "@/components/primitives";
 import { Segmented } from "@/components/filters";
+import { Dialog } from "@/components/Dialog";
 import {
   ArrowLeft,
   CalendarDays,
+  ChevronRight,
   CircleCheck,
   Clock,
   HeartPulse,
@@ -108,7 +110,7 @@ export default function TeamDetail() {
       <>
         <BackLink />
         <Panel>
-          <div className="px-5 py-16">
+          <div>
             <Empty title="Equipa não encontrada" detail="Ou não está no teu âmbito de acesso." />
           </div>
         </Panel>
@@ -126,7 +128,7 @@ export default function TeamDetail() {
   );
   const played = matches.filter((e) => e.match.result);
   const record = computeRecord(played);
-  const scorers = computeScorers(played);
+  const totals = computeTotals(played);
 
   const attendance30 = attendanceRate(session, 30, id);
   const nextEvent = events
@@ -178,7 +180,7 @@ export default function TeamDetail() {
       )}
 
       {tab === "stats" && (
-        <StatsTab teamId={id} record={record} played={played} scorers={scorers} attendance30={attendance30} />
+        <StatsTab teamId={id} record={record} played={played} totals={totals} attendance30={attendance30} />
       )}
 
       {tab === "calendar" && (
@@ -422,21 +424,24 @@ function StatsTab({
   teamId,
   record,
   played,
-  scorers,
+  totals,
   attendance30,
 }: {
   teamId: string;
   record: MatchRecord;
   played: (CalendarEvent & { match: MatchInfo })[];
-  scorers: { athleteId: string; tally: number }[];
+  totals: PlayerTotals[];
   attendance30: number | null;
 }) {
   const noun = tallyNoun(teamId);
 
+  /** Qual dos rankings está aberto em diálogo. `null` = nenhum. */
+  const [aberto, setAberto] = useState<Ranking | null>(null);
+
   if (played.length === 0) {
     return (
       <Panel>
-        <div className="px-5 py-16">
+        <div>
           <Empty
             icon={Trophy}
             title="Ainda sem jogos disputados"
@@ -460,33 +465,50 @@ function StatsTab({
         <Metric label="Presença" value={attendance30 !== null ? percent(attendance30) : "—"} note="últimos 30 dias" />
       </MetricRow>
 
-      <div className="grid gap-3 lg:grid-cols-[1fr_1fr]">
-        <Panel>
-          <PanelHead title="Melhores marcadores" />
-          {scorers.length === 0 ? (
-            <div className="px-5 py-8">
-              <Empty title="Sem marcadores registados" />
-            </div>
-          ) : (
-            <ul className="px-5 py-1.5">
-              {scorers.map((s, i) => {
-                const a = athleteById(s.athleteId);
-                return (
-                  <li key={s.athleteId} className="flex items-center gap-2.5 border-b border-line py-2.5 last:border-0">
-                    <span className="w-4 shrink-0 text-meta font-semibold text-ink-4 tabular">{i + 1}</span>
-                    <Monogram name={a?.name ?? "?"} photoUrl={a?.photoUrl} size="sm" />
-                    <span className="min-w-0 flex-1 truncate text-body text-ink">{shortName(a?.name ?? "—")}</span>
-                    <span className="shrink-0 text-meta font-semibold text-ink tabular">
-                      {s.tally} {noun}
-                      {s.tally > 1 ? "s" : ""}
-                    </span>
-                  </li>
-                );
-              })}
-            </ul>
-          )}
-        </Panel>
+      {/*
+        Três rankings, e o mesmo painel três vezes.
 
+        Cada um mostra o **top 5** e abre a equipa toda num diálogo. Cinco linhas
+        é o que responde à pergunta que se faz de passagem ("quem é que anda a
+        marcar?"); a lista completa é outra pergunta ("onde é que eu estou
+        nisto?"), e essa merece um ecrã só para si em vez de trinta linhas a
+        empurrar os Resultados para fora da vista.
+      */}
+      <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+        <RankingPanel
+          titulo={`Melhores marcadores`}
+          vazio={`Sem ${noun}s registados`}
+          linhas={ordenar(totals, "tally")}
+          valor={(t) => `${t.tally} ${noun}${t.tally === 1 ? "" : "s"}`}
+          onVerTodos={() => setAberto("tally")}
+        />
+        <RankingPanel
+          titulo="Mais minutos"
+          vazio="Sem minutos registados"
+          linhas={ordenar(totals, "minutes")}
+          valor={(t) => `${t.minutes}′`}
+          detalhe={(t) => `${t.games} ${t.games === 1 ? "jogo" : "jogos"}`}
+          onVerTodos={() => setAberto("minutes")}
+        />
+        <RankingPanel
+          titulo="Mais assistências"
+          vazio="Sem assistências registadas"
+          linhas={ordenar(totals, "assists")}
+          valor={(t) => `${t.assists}`}
+          onVerTodos={() => setAberto("assists")}
+        />
+      </div>
+
+      {aberto && (
+        <RankingDialog
+          ranking={aberto}
+          noun={noun}
+          totals={totals}
+          onClose={() => setAberto(null)}
+        />
+      )}
+
+      <div className="grid gap-3">
         <Panel>
           <PanelHead title="Resultados" hint={`${played.length} jogos`} />
           <ul className="px-5 py-1.5">
@@ -512,6 +534,205 @@ function StatsTab({
         </Panel>
       </div>
     </div>
+  );
+}
+
+/* -------------------------------------------------------------------------- */
+/* Rankings                                                                    */
+/* -------------------------------------------------------------------------- */
+
+/** As três colunas por que se pode ordenar. */
+type Ranking = "tally" | "minutes" | "assists";
+
+/**
+ * Ordena por uma coluna, com desempate estável.
+ *
+ * O desempate importa mais do que parece: dois atletas com sete golos cada
+ * apareciam em ordem arbitrária, e essa ordem mudava a cada render — uma lista
+ * que se reordena sozinha à frente de quem a lê parece avariada. Desempata-se
+ * pelos minutos (quem fez o mesmo em menos tempo vem primeiro) e, se ainda
+ * empatar, pelo nome, que é estável.
+ *
+ * Quem tem zero na coluna fica de fora: um ranking de marcadores com dez linhas
+ * a zero não é um ranking, é o plantel.
+ */
+function ordenar(totals: PlayerTotals[], por: Ranking): PlayerTotals[] {
+  return totals
+    .filter((t) => t[por] > 0)
+    .sort((a, b) => {
+      if (b[por] !== a[por]) return b[por] - a[por];
+      if (por !== "minutes" && a.minutes !== b.minutes) return a.minutes - b.minutes;
+      return (athleteById(a.athleteId)?.name ?? "").localeCompare(athleteById(b.athleteId)?.name ?? "", "pt");
+    });
+}
+
+/**
+ * Um ranking: as cinco primeiras linhas, e a porta para a lista completa.
+ *
+ * "Mostrar todos" só aparece quando há mais do que cinco — um botão que abre um
+ * diálogo com as mesmas cinco linhas que já estão no ecrã é um botão que ensina
+ * a não carregar em botões.
+ */
+function RankingPanel({
+  titulo,
+  vazio,
+  linhas,
+  valor,
+  detalhe,
+  onVerTodos,
+}: {
+  titulo: string;
+  vazio: string;
+  linhas: PlayerTotals[];
+  valor: (t: PlayerTotals) => string;
+  detalhe?: (t: PlayerTotals) => string;
+  onVerTodos: () => void;
+}) {
+  const top = linhas.slice(0, 5);
+
+  return (
+    <Panel className="flex flex-col">
+      <PanelHead title={titulo} hint={linhas.length > 5 ? `top 5 de ${linhas.length}` : undefined} />
+
+      {top.length === 0 ? (
+        <div className="px-5 py-8">
+          <Empty title={vazio} />
+        </div>
+      ) : (
+        <ul className="px-5 py-1.5">
+          {top.map((t, i) => (
+            <RankingRow key={t.athleteId} posicao={i + 1} total={t} valor={valor} detalhe={detalhe} />
+          ))}
+        </ul>
+      )}
+
+      {linhas.length > 5 && (
+        <button
+          type="button"
+          onClick={onVerTodos}
+          className="mt-auto flex min-h-11 items-center justify-center gap-1 border-t border-line text-meta font-medium text-ink-2 transition-colors duration-[120ms] hover:bg-sunken/50 hover:text-ink"
+        >
+          Mostrar todos
+          <ChevronRight className="size-3.5" strokeWidth={1.75} />
+        </button>
+      )}
+    </Panel>
+  );
+}
+
+/** Uma linha de ranking. Partilhada pelo painel e pelo diálogo, para não divergirem. */
+function RankingRow({
+  posicao,
+  total,
+  valor,
+  detalhe,
+}: {
+  posicao: number;
+  total: PlayerTotals;
+  valor: (t: PlayerTotals) => string;
+  detalhe?: (t: PlayerTotals) => string;
+}) {
+  const a = athleteById(total.athleteId);
+
+  return (
+    <li className="flex items-center gap-2.5 border-b border-line py-2.5 last:border-0">
+      <span className="w-4 shrink-0 text-meta font-semibold text-ink-4 tabular">{posicao}</span>
+      <Monogram name={a?.name ?? "?"} photoUrl={a?.photoUrl} size="sm" />
+      <span className="min-w-0 flex-1">
+        <span className="block truncate text-body text-ink">{shortName(a?.name ?? "—")}</span>
+        {detalhe && <span className="block truncate text-meta text-ink-4">{detalhe(total)}</span>}
+      </span>
+      <span className="shrink-0 text-meta font-semibold text-ink tabular">{valor(total)}</span>
+    </li>
+  );
+}
+
+/**
+ * A equipa toda, num ranking.
+ *
+ * As três colunas estão sempre à vista — quem abre "mais minutos" e repara que o
+ * segundo classificado tem sete golos quer poder trocar de ordenação ali, sem
+ * fechar e abrir outro diálogo. Por isso o cabeçalho é clicável e o diálogo
+ * lembra-se de por onde entrou.
+ */
+function RankingDialog({
+  ranking,
+  noun,
+  totals,
+  onClose,
+}: {
+  ranking: Ranking;
+  noun: string;
+  totals: PlayerTotals[];
+  onClose: () => void;
+}) {
+  const [por, setPor] = useState<Ranking>(ranking);
+  const linhas = ordenar(totals, por);
+
+  const COLUNAS: { id: Ranking; label: string }[] = [
+    { id: "tally", label: `${noun[0].toUpperCase()}${noun.slice(1)}s` },
+    { id: "minutes", label: "Minutos" },
+    { id: "assists", label: "Assistências" },
+  ];
+
+  return (
+    <Dialog
+      title="A equipa toda"
+      subtitle={`${linhas.length} ${linhas.length === 1 ? "atleta" : "atletas"} com registo`}
+      icon={<Trophy className="size-4" strokeWidth={1.75} />}
+      onClose={onClose}
+      width={560}
+      labelledBy="ranking-dialog"
+      footer={
+        <button type="button" className="ctl-ghost" onClick={onClose}>
+          Fechar
+        </button>
+      }
+    >
+      <div className="flex gap-1 border-b border-line px-5 py-3">
+        {COLUNAS.map((c) => (
+          <button
+            key={c.id}
+            type="button"
+            aria-pressed={por === c.id}
+            onClick={() => setPor(c.id)}
+            className={cx(
+              "min-h-9 rounded-[var(--radius-control)] px-3 text-meta font-medium transition-colors",
+              por === c.id ? "bg-ink text-surface" : "text-ink-3 hover:bg-sunken hover:text-ink",
+            )}
+          >
+            {c.label}
+          </button>
+        ))}
+      </div>
+
+      {linhas.length === 0 ? (
+        <div className="px-5 py-10">
+          <Empty title="Ninguém com registo nesta coluna" />
+        </div>
+      ) : (
+        <ul className="max-h-[min(60vh,420px)] overflow-y-auto px-5 py-1.5">
+          {linhas.map((t, i) => (
+            <RankingRow
+              key={t.athleteId}
+              posicao={i + 1}
+              total={t}
+              /*
+                O valor segue a coluna escolhida, e os outros dois vão para o
+                detalhe — assim a lista responde à ordenação sem esconder o resto,
+                que é a razão de alguém abrir este diálogo em vez de ler o top 5.
+              */
+              valor={(x) => (por === "tally" ? `${x.tally} ${noun}${x.tally === 1 ? "" : "s"}` : por === "minutes" ? `${x.minutes}′` : `${x.assists}`)}
+              detalhe={(x) =>
+                por === "minutes"
+                  ? `${x.games} ${x.games === 1 ? "jogo" : "jogos"} · ${x.tally} ${noun}${x.tally === 1 ? "" : "s"} · ${x.assists} ass.`
+                  : `${x.minutes}′ em ${x.games} ${x.games === 1 ? "jogo" : "jogos"}`
+              }
+            />
+          ))}
+        </ul>
+      )}
+    </Dialog>
   );
 }
 
@@ -572,7 +793,7 @@ function CalendarTab({ events, onSelect }: { events: CalendarEvent[]; onSelect: 
   if (upcoming.length === 0 && past.length === 0) {
     return (
       <Panel>
-        <div className="px-5 py-16">
+        <div>
           <Empty icon={CalendarDays} title="Sem eventos" detail="Esta equipa não tem treinos, jogos nem eventos agendados." />
         </div>
       </Panel>
@@ -595,7 +816,7 @@ function StaffTab({ coaches }: { coaches: NonNullable<ReturnType<typeof coachByI
   return (
     <Panel>
       {coaches.length === 0 ? (
-        <div className="px-5 py-16">
+        <div>
           <Empty icon={Whistle} title="Sem treinador atribuído" />
         </div>
       ) : (
@@ -701,15 +922,58 @@ function computeRecord(matches: (CalendarEvent & { match: MatchInfo })[]): Match
   return { w, d, l, gf, ga, played: matches.length };
 }
 
-function computeScorers(matches: (CalendarEvent & { match: MatchInfo })[]) {
-  const totals = new Map<string, number>();
+/**
+ * O que cada atleta fez, somado por todos os jogos disputados.
+ *
+ * ## Uma passagem, três tabelas
+ *
+ * Havia `computeScorers`, que somava golos e cortava no quinto. Marcadores,
+ * minutos e assistências são a mesma soma sobre os mesmos jogos — três funções
+ * quase iguais divergiriam à primeira correcção, e cortar no quinto **dentro** do
+ * cálculo tornava impossível mostrar a equipa toda no diálogo.
+ *
+ * Devolve tudo, ordenado por nada em particular; quem mostra é que ordena e
+ * corta. É a separação que permite o mesmo dado servir o top 5 e a lista
+ * completa sem uma segunda leitura.
+ *
+ * ## Quem entra
+ *
+ * Só quem tem linha de ficha nalgum jogo. Um atleta convocado que nunca entrou
+ * em campo não aparece — a ausência é a resposta, e é a mesma regra que a ficha
+ * de jogo já usa ao gravar.
+ */
+export type PlayerTotals = { athleteId: string; tally: number; minutes: number; assists: number; games: number };
+
+function computeTotals(matches: (CalendarEvent & { match: MatchInfo })[]): PlayerTotals[] {
+  const totals = new Map<string, PlayerTotals>();
+
+  const linha = (athleteId: string) => {
+    const existente = totals.get(athleteId);
+    if (existente) return existente;
+    const nova = { athleteId, tally: 0, minutes: 0, assists: 0, games: 0 };
+    totals.set(athleteId, nova);
+    return nova;
+  };
+
   for (const m of matches) {
-    for (const s of m.match.result!.scorers) totals.set(s.athleteId, (totals.get(s.athleteId) ?? 0) + s.tally);
+    /*
+     * As participações são a fonte — não os marcadores.
+     *
+     * `scorers` é derivado das participações com `tally > 0`, por isso somar as
+     * duas coisas contaria os golos duas vezes. Aqui lê-se a ficha uma vez só.
+     */
+    for (const a of m.match.result!.appearances ?? []) {
+      const l = linha(a.athleteId);
+      l.minutes += a.minutes;
+      l.assists += a.assists ?? 0;
+      l.games += 1;
+    }
+    for (const sc of m.match.result!.scorers) {
+      linha(sc.athleteId).tally += sc.tally;
+    }
   }
-  return [...totals.entries()]
-    .map(([athleteId, tally]) => ({ athleteId, tally }))
-    .sort((a, b) => b.tally - a.tally)
-    .slice(0, 5);
+
+  return [...totals.values()];
 }
 
 /**

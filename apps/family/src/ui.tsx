@@ -59,10 +59,10 @@ export function Money({ cents, size = "lg", on }: { cents: number; size?: "md" |
   const [whole, dec] = money(cents).replace("€", "").trim().split(",");
   const px = size === "xl" ? "text-[44px]" : size === "lg" ? "text-[34px]" : "text-[26px]";
   return (
-    <span className={cx("num inline-flex items-baseline font-semibold leading-none", px, on ? "text-white" : "text-ink")}>
-      <span className={cx("mr-0.5 font-semibold", size === "xl" ? "text-[24px]" : "text-[18px]", on ? "text-white/70" : "text-ink-3")}>€</span>
+    <span className={cx("num inline-flex items-baseline font-semibold leading-none", px, on ? "text-signal-on" : "text-ink")}>
+      <span className={cx("mr-0.5 font-semibold", size === "xl" ? "text-[24px]" : "text-[18px]", on ? "text-signal-on/70" : "text-ink-3")}>€</span>
       {whole}
-      <span className={cx(size === "xl" ? "text-[24px]" : "text-[18px]", on ? "text-white/70" : "text-ink-3")}>,{dec}</span>
+      <span className={cx(size === "xl" ? "text-[24px]" : "text-[18px]", on ? "text-signal-on/70" : "text-ink-3")}>,{dec}</span>
     </span>
   );
 }

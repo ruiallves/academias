@@ -269,7 +269,7 @@ function MonthRow({ payment, selected, onToggle }: { payment: Payment; selected:
         <span
           className={cx(
             "flex size-[22px] shrink-0 items-center justify-center rounded-full border-2 transition-colors duration-200",
-            selected ? "border-transparent bg-signal text-white" : "border-line-strong",
+            selected ? "border-transparent bg-signal-strong text-signal-on" : "border-line-strong",
           )}
         >
           {selected && <Check className="size-3.5" strokeWidth={3} />}

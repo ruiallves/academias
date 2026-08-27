@@ -42,13 +42,36 @@ class SetMaxDto {
  */
 class AppearanceDto {
   @IsString() athleteId!: string;
-  @IsInt() @Min(0) @Max(300) minutes!: number;
+  /**
+   * Aceite por compatibilidade, **ignorado** no cálculo.
+   *
+   * Os minutos jogados saem da titularidade, da entrada e da saída — ver
+   * `minutosEmCampo` no serviço. Deixou de ser obrigatório para um cliente não
+   * ter de inventar um número que não vai a lado nenhum, e continua a ser aceite
+   * para não partir quem ainda o manda.
+   */
+  @IsOptional() @IsInt() @Min(0) @Max(300) minutes?: number;
   @IsOptional() @IsBoolean() started?: boolean;
   @IsOptional() @IsInt() @Min(0) @Max(99) tally?: number;
   @IsOptional() @IsInt() @Min(0) @Max(99) assists?: number;
   /** Dois é o máximo que existe: o segundo amarelo é a expulsão. */
   @IsOptional() @IsInt() @Min(0) @Max(2) yellowCards?: number;
   @IsOptional() @IsBoolean() redCard?: boolean;
+
+  /*
+   * O detalhe dos minutos — tudo opcional.
+   *
+   * O tecto de 130 não é o de `minutes` (300, que acomoda desportos de outra
+   * duração): é um **instante** do jogo, e um jogo de futebol com
+   * prolongamento acaba aos 120 e pouco. Um 250 aqui é um dedo escorregado.
+   */
+  @IsOptional() @IsInt() @Min(0) @Max(130) onMinute?: number;
+  @IsOptional() @IsInt() @Min(0) @Max(130) offMinute?: number;
+  @IsOptional() @IsArray() @ArrayMaxSize(2) @IsInt({ each: true }) yellowAt?: number[];
+  @IsOptional() @IsInt() @Min(0) @Max(130) redAt?: number;
+  /** Os minutos dos golos e das assistências. Opcionais, como o resto. */
+  @IsOptional() @IsArray() @ArrayMaxSize(99) @IsInt({ each: true }) tallyAt?: number[];
+  @IsOptional() @IsArray() @ArrayMaxSize(99) @IsInt({ each: true }) assistsAt?: number[];
 }
 
 class SaveAppearancesDto {

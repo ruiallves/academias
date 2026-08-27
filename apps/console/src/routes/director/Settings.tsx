@@ -435,8 +435,8 @@ function PwaPreview() {
       <div className="flex flex-col items-center gap-4 p-5">
         <div className="flex w-full items-center gap-3 rounded-[var(--radius-control)] border border-line bg-sunken/40 p-3">
           <span
-            className="flex size-12 shrink-0 items-center justify-center overflow-hidden rounded-[12px] text-[15px] font-bold text-white"
-            style={{ background: academy.logoUrl ? "var(--color-sunken)" : "var(--color-signal)" }}
+            className="flex size-12 shrink-0 items-center justify-center overflow-hidden rounded-[12px] text-[15px] font-bold text-signal-on"
+            style={{ background: academy.logoUrl ? "var(--color-sunken)" : "var(--color-signal-strong)" }}
           >
             {academy.logoUrl ? (
               <img src={academy.logoUrl} alt="" className="size-full object-contain" />

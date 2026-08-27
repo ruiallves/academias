@@ -1,0 +1,27 @@
+-- A última vez que cada pessoa abriu a app.
+--
+-- ## A pergunta que faltava responder
+--
+-- A página Famílias mostra "Instalada" ou "Por instalar" para cada encarregado.
+-- Ninguém no servidor sabia dizê-lo: o campo era um `false` escrito à mão no
+-- frontend, e por isso *toda* a gente aparecia por instalar — incluindo as
+-- famílias que já tinham a app no telemóvel a receber notificações.
+--
+-- A subscrição push é a primeira metade da resposta e já estava na base
+-- (`PushSubscription`). Não chega: o passo das notificações no arranque da app
+-- tem um "Saltar", e quem o salta instalou a app na mesma. Sem esta coluna, esse
+-- pai ficava para sempre "Por instalar" e a direcção ligava-lhe a explicar como
+-- se instala uma coisa que ele já tem.
+--
+-- ## Porquê na Membership e não no User
+--
+-- Porque a pergunta é por academia. O mesmo pai pode ter um filho em dois
+-- clubes, entrar num todas as semanas e nunca no outro — e cada direcção tem de
+-- ver a sua resposta, não a soma das duas.
+--
+-- ## O que isto não é
+--
+-- Não é um registo de acessos: escreve-se no máximo de hora a hora e guarda-se
+-- só a última marca. Quem precisa de rasto de quem fez o quê tem `AuditLog`.
+
+ALTER TABLE "Membership" ADD COLUMN "lastSeenAt" TIMESTAMP(3);

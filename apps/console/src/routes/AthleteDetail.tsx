@@ -94,7 +94,7 @@ export default function AthleteDetail() {
       <>
         <BackLink />
         <Panel>
-          <div className="px-5 py-16">
+          <div>
             <Empty title="Atleta não encontrado" detail="Ou não está no teu âmbito de acesso." />
           </div>
         </Panel>

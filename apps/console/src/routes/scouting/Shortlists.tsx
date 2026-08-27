@@ -76,7 +76,7 @@ export default function Shortlists() {
 
       {rows && rows.length === 0 && (
         <Panel>
-          <div className="px-5 py-16">
+          <div>
             <Empty
               icon={Binoculars}
               title="Ainda não há shortlists"
@@ -262,7 +262,7 @@ export function ShortlistDetail() {
       <>
         <Back />
         <Panel>
-          <div className="px-5 py-16">
+          <div>
             <Empty title="Shortlist não encontrada" detail="Ou não pertence a esta academia." />
           </div>
         </Panel>
@@ -314,7 +314,7 @@ export function ShortlistDetail() {
         />
 
         {data.entries.length === 0 ? (
-          <div className="px-5 py-16">
+          <div>
             <Empty
               title="Lista vazia"
               detail="Adiciona prospectos a partir da ficha de cada um, no separador Shortlists."
@@ -340,10 +340,10 @@ export function ShortlistDetail() {
                     onClick={() => toggle(p.id)}
                     className={cx(
                       "flex size-[18px] shrink-0 items-center justify-center rounded-[5px] border transition-colors duration-[120ms]",
-                      on ? "border-transparent bg-signal" : "border-line-strong bg-surface",
+                      on ? "border-transparent bg-signal-strong" : "border-line-strong bg-surface",
                     )}
                   >
-                    {on && <span className="size-1.5 rounded-[1px] bg-white" />}
+                    {on && <span className="size-1.5 rounded-[1px] bg-signal-on" />}
                   </button>
 
                   <Monogram name={p.name} />

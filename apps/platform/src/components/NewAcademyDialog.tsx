@@ -55,11 +55,17 @@ export function NewAcademyDialog({ onClose, onCreated }: { onClose: () => void; 
   const [created, setCreated] = useState<Created | null>(null);
 
   useEffect(() => {
+    /*
+     * Sem plano escolhido à partida.
+     *
+     * Pré-seleccionava o primeiro da lista, e isso fazia com que criar um clube
+     * sem plano fosse impossível sem reparar que havia ali um botão já marcado.
+     * A maior parte dos clubes entra em experimental sem saber o que quer — o
+     * plano associa-se depois. "Sem plano" passou a ser a opção por omissão, e
+     * escolher um é um gesto deliberado.
+     */
     apiGet<Plan[]>("/plans")
-      .then((p) => {
-        setPlans(p);
-        setPlanId((current) => current || p[0]?.id || "");
-      })
+      .then(setPlans)
       .catch(() => setPlans([]));
 
   }, []);
@@ -194,8 +200,44 @@ export function NewAcademyDialog({ onClose, onCreated }: { onClose: () => void; 
             </div>
 
             <div>
-              <span className="mb-1.5 block text-meta font-medium text-ink">Plano</span>
+              <span className="mb-1.5 flex items-baseline justify-between gap-2">
+                <span className="text-meta font-medium text-ink">Plano</span>
+                <span className="text-meta text-ink-3">opcional</span>
+              </span>
               <div className="space-y-1.5">
+                {/*
+                  Sem plano, primeiro — é o caminho mais comum.
+
+                  Um clube que abre hoje entra em período experimental e decide o
+                  plano no fim dele, com a coisa já a funcionar. Obrigar a escolher
+                  agora é pedir uma decisão que ninguém tem para dar — e um plano
+                  marcado por omissão criava uma subscrição que o cliente nunca viu.
+                */}
+                <label
+                  className={cx(
+                    "block cursor-pointer rounded-[var(--radius-control)] border px-3 py-3 transition-colors duration-[120ms]",
+                    planId === ""
+                      ? "border-signal bg-signal-soft/40"
+                      : "border-line hover:bg-sunken",
+                  )}
+                >
+                  <span className="flex items-start gap-3">
+                    <input
+                      type="radio"
+                      name="plano"
+                      checked={planId === ""}
+                      onChange={() => setPlanId("")}
+                      className="mt-1 size-3.5 shrink-0 accent-[var(--color-signal)]"
+                    />
+                    <span className="min-w-0 flex-1">
+                      <span className="block text-body font-medium text-ink">Só período experimental</span>
+                      <span className="mt-0.5 block text-meta text-ink-3">
+                        O clube abre com 30 dias de teste e sem subscrição. O plano associa-se
+                        depois, quando o clube decidir.
+                      </span>
+                    </span>
+                  </span>
+                </label>
                 {/*
                   O plano por inteiro, e não só o preço.
 

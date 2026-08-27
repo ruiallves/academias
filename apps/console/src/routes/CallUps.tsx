@@ -62,7 +62,7 @@ export default function CallUps() {
 
       {upcoming.length === 0 ? (
         <Panel>
-          <div className="px-5 py-16">
+          <div>
             <Empty
               icon={Trophy}
               title="Nenhum jogo agendado"
@@ -252,7 +252,7 @@ function Squad({ match }: { match: ApiMatch }) {
           topo da lista, não perdida num canto. */}
       <div className="flex flex-wrap items-center gap-3 border-b border-line px-5 py-3">
         <div className="flex items-baseline gap-1.5">
-          <span className={cx("text-[22px] leading-none font-semibold tabular", cheio ? "text-signal" : "text-ink")}>
+          <span className={cx("text-[22px] leading-none font-semibold tabular", cheio ? "text-signal-ink" : "text-ink")}>
             {picked.size}
           </span>
           <span className="text-meta text-ink-3">de {match.maxCallUps} convocados</span>
@@ -291,7 +291,7 @@ function Squad({ match }: { match: ApiMatch }) {
                 <span
                   className={cx(
                     "flex size-5 shrink-0 items-center justify-center rounded-[6px] border transition-colors duration-[120ms]",
-                    on ? "border-transparent bg-signal text-white" : "border-line-strong",
+                    on ? "border-transparent bg-signal-strong text-signal-on" : "border-line-strong",
                     blockedBy && "opacity-40",
                   )}
                 >
@@ -488,7 +488,7 @@ function GuestPicker({
                   <span
                     className={cx(
                       "flex size-5 shrink-0 items-center justify-center rounded-[6px] border transition-colors duration-[120ms]",
-                      on ? "border-transparent bg-signal text-white" : "border-line-strong",
+                      on ? "border-transparent bg-signal-strong text-signal-on" : "border-line-strong",
                       g.blocked && "opacity-40",
                     )}
                   >

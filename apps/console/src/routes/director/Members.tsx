@@ -192,13 +192,13 @@ export default function Members() {
 
       <Panel>
         {error ? (
-          <div className="px-5 py-16">
+          <div>
             <Empty title="Não foi possível carregar" detail={error} />
           </div>
         ) : !data ? (
           <Loading />
         ) : data.members.length === 0 ? (
-          <div className="px-5 py-16">
+          <div>
             <Empty
               icon={Home}
               title={q || status ? "Nenhum sócio com esse filtro" : "Ainda não há sócios"}

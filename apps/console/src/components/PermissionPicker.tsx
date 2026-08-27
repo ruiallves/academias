@@ -41,7 +41,7 @@ export function Toggle({ on, disabled, onClick }: { on: boolean; disabled?: bool
       onClick={onClick}
       className={cx(
         "flex size-[18px] shrink-0 items-center justify-center rounded-[5px] border transition-colors",
-        on ? "border-transparent bg-signal text-white" : "border-line-strong bg-surface",
+        on ? "border-transparent bg-signal-strong text-signal-on" : "border-line-strong bg-surface",
         disabled && "opacity-40",
       )}
     >
