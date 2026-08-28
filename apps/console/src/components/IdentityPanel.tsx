@@ -406,8 +406,8 @@ function monogram(shortName: string): string {
   return letters.toUpperCase();
 }
 
-/** O mesmo tecto do servidor. Ver `common/short-name.ts`. */
-const SHORT_NAME_MAX = 32;
+/** O mesmo tecto do servidor — o do nome completo. Ver `common/short-name.ts`. */
+const SHORT_NAME_MAX = 120;
 
 /**
  * O nome curto — como o clube se trata a si próprio.

@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import { Plus, Search } from "lucide-react";
 import { PageHeader } from "@/components/Shell";
-import { Empty, Panel, Pill, Progress, cx } from "@/components/primitives";
+import { ClubMark, Empty, Panel, Pill, Progress, cx } from "@/components/primitives";
 import { NewAcademyDialog } from "@/components/NewAcademyDialog";
 import { AcademyActions } from "@/components/AcademyActions";
 import { Failed, Skeleton } from "./Overview";
@@ -181,9 +181,17 @@ export default function Academies({ me }: { me: Me }) {
                     )}
                     onClick={() => highlight && setParams({})}
                   >
+                    {/* O emblema à esquerda do nome. Numa lista de trinta
+                        clubes, é por ele que se reconhece um — o nome
+                        lê-se, o símbolo vê-se. */}
                     <td className="px-5 py-2.5">
-                      <div className="font-medium text-ink">{a.name}</div>
-                      <div className="font-mono text-[11px] text-ink-4">{a.slug}.academias.pt</div>
+                      <div className="flex items-center gap-2.5">
+                        <ClubMark name={a.name} logoUrl={a.logoUrl} color={a.signalColor} />
+                        <div className="min-w-0">
+                          <div className="truncate font-medium text-ink">{a.name}</div>
+                          <div className="truncate font-mono text-[11px] text-ink-4">{a.slug}.academias.pt</div>
+                        </div>
+                      </div>
                     </td>
                     <td className="px-3 py-2.5">
                       <Pill tone={TONE[a.status]}>{STATUS_LABEL[a.status]}</Pill>

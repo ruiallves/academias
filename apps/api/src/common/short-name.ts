@@ -7,8 +7,20 @@
  * criação produziria nomes que a edição depois recusava.
  */
 
-/** Cabe "Clube Desportivo de Loureiro" inteiro, que era o ponto. */
-export const SHORT_NAME_MAX = 32;
+/**
+ * O mesmo tecto do nome completo — porque é isso que o nome curto é por omissão.
+ *
+ * Era 32, escolhido para caber "Clube Desportivo de Loureiro". Escolher um número
+ * é escolher os clubes que ficam de fora dele, e ficaram: "Associação Desportiva
+ * Oliveirense" tem 33 e perdia "Oliveirense"; "Clube Recreativo e Cultural do
+ * Forte da Casa" tem 44 e parava em "do". Não há número certo — há clubes com
+ * nomes compridos, e o nome deles é o nome deles.
+ *
+ * O limite fica só como sanidade, igual ao do `name`: é o que o clube pode
+ * escrever à mão nas Definições quando quiser mesmo um nome curto ("CD
+ * Loureiro"). Ver `shortNameOf`.
+ */
+export const SHORT_NAME_MAX = 120;
 
 /**
  * O nome curto a partir do nome completo.
@@ -29,21 +41,24 @@ export const SHORT_NAME_MAX = 32;
  * adivinháveis. Por isso o nome curto passa a ser o nome, e o clube pode
  * trocá-lo nas Definições.
  *
- * ## O corte
+ * ## E porque é que também deixou de cortar
  *
- * O que sobra é um limite de comprimento, não uma opinião sobre o nome — e por
- * isso corta em espaço, nunca a meio de uma palavra. O `slice` cego a 24 dava
- * "Futebol Clube Ferreirens" e "Grupo Desportivo de Chav" — nomes que não são de
- * ninguém e que apareciam no email, na página de sócios e no telemóvel dos pais.
+ * Tinha ficado um limite de comprimento — 32 caracteres, cortados num espaço
+ * para não partir palavras. Mais honesto que o `slice` cego a 24, que dava
+ * "Futebol Clube Ferreirens", mas errado pela mesma razão de fundo: escolher um
+ * número é escolher que clubes ficam de fora dele.
+ *
+ *     Associação Desportiva Oliveirense (33)  ->  Associação Desportiva
+ *     Clube Recreativo e Cultural do Forte da Casa (44)
+ *                                             ->  Clube Recreativo e Cultural do
+ *
+ * O segundo nem sequer acaba numa palavra que se leia. E isto aparecia no
+ * assunto dos emails, na página de sócios e no telemóvel dos pais.
+ *
+ * Um clube chama-se pelo nome todo. Onde não couber, é o CSS que trunca — com
+ * reticências, no sítio onde está apertado, sem estragar o dado. Encurtar é uma
+ * decisão do clube, e tem campo próprio nas Definições.
  */
 export function shortNameOf(name: string): string {
-  const limpo = name.replace(/\s+/g, " ").trim();
-  if (limpo.length <= SHORT_NAME_MAX) return limpo;
-
-  // O +1 é para saber se o corte caiu **em** espaço: nesse caso a última palavra
-  // está inteira e não há razão para a deitar fora.
-  const ate = limpo.slice(0, SHORT_NAME_MAX + 1).lastIndexOf(" ");
-  // `ate <= 0` é uma primeira palavra maior que o limite. Aí não há espaço onde
-  // cortar e o corte cego é o menos mau — mas é um nome que nenhum clube tem.
-  return ate > 0 ? limpo.slice(0, ate) : limpo.slice(0, SHORT_NAME_MAX);
+  return name.replace(/\s+/g, " ").trim().slice(0, SHORT_NAME_MAX);
 }

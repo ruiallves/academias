@@ -203,7 +203,22 @@ export function renderMembershipPage(opts: {
   .page { position: relative; z-index: 1; min-height: 100svh; display: flex; flex-direction: column; }
   .wrap { width: 100%; max-width: 1120px; margin: 0 auto; padding: 0 clamp(20px, 4vw, 40px); }
 
-  header.bar { display: flex; align-items: center; gap: 16px; padding: clamp(20px, 3vw, 34px) 0 clamp(24px, 4vw, 44px); }
+  /*
+     A barra do topo: emblema, nome, e ar por baixo.
+
+     O align-items: center sempre lá esteve e mesmo assim o nome lia-se alto ao
+     lado do emblema. A razao nao e o alinhamento — e a caixa que se esta a
+     alinhar. O nome herda line-height 1.5 do body, por isso a caixa dele tem
+     uma vez e meia a altura da letra, e o espaco que sobra distribui-se por
+     cima e por baixo. Em maiusculas nao ha descendentes nenhumas a ocupar o de
+     baixo: as letras assentam na metade de cima da caixa, a caixa fica centrada
+     com o emblema, e as letras ficam acima do meio dele. Ver a regra .bar .nm mais abaixo.
+
+     O respiro por baixo subiu de 24 para 32 no minimo. Com 4vw, um ecra de
+     telemovel dava 24 e pouco — menos de metade da altura do emblema — e o
+     "Faz-te socio" ficava colado ao escudo.
+  */
+  header.bar { display: flex; align-items: center; gap: 16px; padding: clamp(20px, 3vw, 34px) 0 clamp(32px, 4vw, 44px); }
   /*
      O circulo e o recurso, nao a moldura.
 
@@ -214,16 +229,47 @@ export function renderMembershipPage(opts: {
 
      (Sem crases: isto vive dentro de um template literal.)
   */
-  .crest { width: 44px; height: 44px; border-radius: 50%; flex: none; background: var(--club-strong); color: var(--club-on);
+  .crest { --crest: 44px;
+           width: var(--crest); height: var(--crest); border-radius: 50%; flex: none;
+           background: var(--club-strong); color: var(--club-on);
            display: grid; place-items: center; font-weight: 700; font-size: 14px; }
   .crest.logo { background: none; border-radius: 0; }
-  .crest.logo img { width: 100%; height: 100%; object-fit: contain; border-radius: 0; }
+  /*
+     A medida em pixeis, e nao em percentagem.
+
+     Era width/height a 100%, e a altura nao pegava: a imagem e um item de grelha
+     com place-items: center, por isso nao estica, e o height: 100% acabava
+     resolvido como auto. Ficava com 44px de largura e a altura que a proporcao
+     do ficheiro pedisse — um escudo alto e estreito (46x64) dava 61px e
+     transbordava 17px por baixo da caixa.
+
+     O efeito era o alinhamento: a caixa ficava centrada com o nome do clube, o
+     escudo ficava centrado 9px mais abaixo, e lia-se o titulo acima do simbolo.
+     Medido, nao adivinhado: .crest MEIO=51.5, .crest img MEIO=60.1.
+
+     Com a mesma medida explicita nos dois, o object-fit: contain encaixa o
+     emblema dentro do quadrado seja qual for a forma dele.
+  */
+  .crest.logo img { display: block; width: var(--crest); height: var(--crest); object-fit: contain; border-radius: 0; }
   .bar .nm {
     font-family: "Archivo", sans-serif; font-variation-settings: "wdth" 100;
     font-weight: 700; font-size: clamp(17px, 2.4vw, 22px); letter-spacing: 0.01em;
     text-transform: uppercase; color: var(--ink);
+    /* A caixa colada a letra. Ver a nota em header.bar: com o 1.5 herdado, o
+       espaco de baixo ficava vazio (nao ha descendentes em maiusculas) e
+       empurrava as letras para cima do meio do emblema. */
+    line-height: 1;
   }
-  .bar .club { margin-left: auto; font-size: 12.5px; color: var(--ink-3); }
+  .bar .club { margin-left: auto; font-size: 12.5px; color: var(--ink-3); white-space: nowrap; }
+  /*
+     Ao pe do telemovel, o nome do clube fica com a barra toda.
+
+     "Adesao a socio" e uma etiqueta, nao informacao: o titulo da pagina, o
+     "Faz-te socio" logo abaixo e o proprio endereco ja dizem onde a pessoa
+     esta. Num ecra estreito disputava o espaco com o nome do clube e partia-se
+     em duas linhas ("Ade / socio"), que e pior do que nao estar la.
+  */
+  @media (max-width: 620px) { .bar .club { display: none; } }
 
   main { flex: 1; }
 
@@ -517,10 +563,14 @@ export function renderMembershipPage(opts: {
     clip-path: polygon(0 40%, 100% 0, 70% 100%);
   }
   .card .ct { position: relative; z-index: 1; display: flex; align-items: center; justify-content: space-between; gap: 10px; }
-  .card .cc { width: 32px; height: 32px; flex: none; border-radius: 50%; background: rgb(var(--club-on-rgb) / 0.22);
+  .card .cc { --cc: 32px;
+              width: var(--cc); height: var(--cc); flex: none; border-radius: 50%;
+              background: rgb(var(--club-on-rgb) / 0.22);
               display: grid; place-items: center; font-size: 11px; font-weight: 700; }
   .card .cc.logo { background: none; border-radius: 0; }
-  .card .cc.logo img { width: 100%; height: 100%; object-fit: contain; border-radius: 0; }
+  /* Medida explicita, pela mesma razao do .crest la em cima: com place-items:
+     center o height a 100% nao pega, e um emblema alto transborda a caixa. */
+  .card .cc.logo img { display: block; width: var(--cc); height: var(--cc); object-fit: contain; border-radius: 0; }
   /*
      22ch cabe as categorias normais numa linha só; o "13ch" que aqui estava era
      apertado a mais e partia algo tao curto como "Socio Clube +" a meio, deixando

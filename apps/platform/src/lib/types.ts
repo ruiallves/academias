@@ -83,6 +83,13 @@ export type Academy = {
    */
   online: { total: number; staff: number; family: number };
   lastActivity: string | null;
+  /**
+   * O emblema do clube, quando já o carregou. Vive num bucket público — é o
+   * mesmo endereço que vai no manifest da app das famílias.
+   */
+  logoUrl: string | null;
+  /** A cor do clube. Serve de fundo ao monograma de quem ainda não tem emblema. */
+  signalColor: string;
 };
 
 export type SeriesPoint = { month: string; new_academies: number; cancelled: number; active_end: number };

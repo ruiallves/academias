@@ -43,6 +43,8 @@ type AcademyRow = {
   plan_id: string | null; plan_name: string | null; sub_status: string | null; mrr_cents: number;
   athletes: number; staff: number; guardians: number; teams: number;
   onboarding_done: number; last_activity: Date | null;
+  /** Marca, não domínio: é o que põe o emblema do clube ao lado do nome. */
+  logo_url: string | null; signal_color: string;
 };
 
 export type Alert = {
@@ -193,6 +195,8 @@ export class PlatformService {
       onboarding: { done: r.onboarding_done, total: ONBOARDING_STEPS, percent: Math.round((r.onboarding_done / ONBOARDING_STEPS) * 100) },
       online: online.get(r.id) ?? { total: 0, staff: 0, family: 0 },
       lastActivity: r.last_activity,
+      logoUrl: r.logo_url,
+      signalColor: r.signal_color,
     }));
   }
 
