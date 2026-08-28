@@ -412,14 +412,41 @@ export class BillingService {
         where: { status: "ACTIVE", teams: { some: { teamId } } },
         select: { id: true },
       });
-      const cobrancas = await gerarCobrancas(
-        db,
-        ctx.academyId,
-        periodoActual(),
-        atletas.map((a) => a.id),
-      );
+      const ids = atletas.map((a) => a.id);
 
-      return { teamId, amountCents: plan.amountCents, cobrancas };
+      /*
+       * Quem tem preço próprio fica de fora da reprecificação.
+       *
+       * O ajuste individual sobrepõe-se ao da equipa — é a regra do produto — e
+       * baixar o preço da equipa não pode reescrever a bolsa de um miúdo.
+       */
+      const hoje = new Date();
+      const comAjusteIndividual = new Set(
+        (
+          await db.enrollment.findMany({
+            where: { athleteId: { in: ids }, plan: { teamId: null, isActive: true } },
+            select: { athleteId: true, endsOn: true },
+          })
+        )
+          .filter((e) => e.endsOn === null || e.endsOn >= hoje)
+          .map((e) => e.athleteId),
+      );
+      const periodo = periodoActual();
+      const cobrancas = await gerarCobrancas(db, ctx.academyId, periodo, ids);
+
+      /*
+       * E as que já existiam passam a valer o preço novo.
+       *
+       * `gerarCobrancas` só cria o que falta, por isso sozinha deixava a tabela
+       * das mensalidades — e a app do pai — a mostrar o preço antigo para sempre.
+       * Só se aplica a quem paga o preço da equipa: um atleta com ajuste
+       * individual continua a pagar o dele, que é o que "individual sobrepõe-se"
+       * quer dizer. Ver `reprecificarCobrancas`.
+       */
+      const semAjusteIndividual = ids.filter((id) => !comAjusteIndividual.has(id));
+      const reprecadas = await reprecificarCobrancas(db, periodo, semAjusteIndividual, amountCents);
+
+      return { teamId, amountCents: plan.amountCents, cobrancas, reprecadas };
     });
   }
 
@@ -473,9 +500,17 @@ export class BillingService {
       // espera de alguém se lembrar de a gerar. E a mesma escolha — ver `geraAgora`.
       if (!this.geraAgora(aplicarEm)) return { athleteId, amountCents, cobrancas: null };
 
-      const cobrancas = await gerarCobrancas(db, ctx.academyId, periodoActual(), [athlete.id]);
+      const periodo = periodoActual();
+      const cobrancas = await gerarCobrancas(db, ctx.academyId, periodo, [athlete.id]);
 
-      return { athleteId, amountCents, cobrancas };
+      /*
+       * E as já emitidas passam a valer o preço novo — mesma razão de
+       * `setTeamFee`. Aqui não há excepção a fazer: o ajuste individual **é** o
+       * preço deste atleta, não há nada por baixo que se lhe sobreponha.
+       */
+      const reprecadas = await reprecificarCobrancas(db, periodo, [athlete.id], amountCents);
+
+      return { athleteId, amountCents, cobrancas, reprecadas };
     });
   }
 
@@ -512,8 +547,18 @@ export class BillingService {
        * todas no mesmo sítio.
        */
       const foundIds = new Set(athletes.map((a) => a.id));
+      const periodo = periodoActual();
       const cobrancas = this.geraAgora(aplicarEm)
-        ? await gerarCobrancas(db, ctx.academyId, periodoActual(), [...foundIds])
+        ? await gerarCobrancas(db, ctx.academyId, periodo, [...foundIds])
+        : null;
+
+      /*
+       * E as já emitidas passam a valer o preço novo — mesma razão de
+       * `setTeamFee`. Aqui não há excepção a fazer: o ajuste individual **é** o
+       * preço deste atleta, não há nada por baixo que se lhe sobreponha.
+       */
+      const reprecadas = this.geraAgora(aplicarEm)
+        ? await reprecificarCobrancas(db, periodo, [...foundIds], amountCents)
         : null;
 
       return {
@@ -521,6 +566,7 @@ export class BillingService {
         updated: athletes.map((a) => a.id),
         missing: athleteIds.filter((id) => !foundIds.has(id)),
         cobrancas,
+        reprecadas,
       };
     });
   }
@@ -849,6 +895,70 @@ async function applyIndividualFee(
  * de um atleta (`AthletesService`), que já está dentro da sua própria transação
  * de tenant e não pode abrir outra. Recebe o `db` de quem chama; nunca abre um.
  */
+/**
+ * Aplicar um preço novo às mensalidades **já emitidas** deste período.
+ *
+ * ## O que estava a acontecer
+ *
+ * `gerarCobrancas` só cria o que falta — e está certo, é isso que a torna segura
+ * de correr as vezes que forem precisas. Mas o diálogo pergunta "aplicar já em
+ * Agosto?" e, para quem já tinha a mensalidade de Agosto emitida, a resposta era
+ * não fazer nada. O preço da equipa mudava para 35 €, a ficha do atleta passava a
+ * dizer 35 €, e a tabela das mensalidades continuava a dizer 40 € — tal como a
+ * app do pai, que lê a mesma cobrança. Três ecrãs, dois números, nenhum aviso.
+ *
+ * Aplicar em Agosto tem de querer dizer *em Agosto*.
+ *
+ * ## O que não se toca, e porquê
+ *
+ * **Pagas** (`SETTLED`). O dinheiro entrou por aquele valor. Reescrevê-lo era
+ * mudar o passado e deixar a conta do clube a não bater certo com o banco.
+ *
+ * **Anuladas** (`VOID`). Alguém decidiu não cobrar aquele mês àquele atleta.
+ * Repor-lhe um valor ressuscitava uma cobrança que foi deliberadamente morta.
+ *
+ * **Com um pagamento a caminho.** É o caso menos óbvio e o mais importante: uma
+ * referência Multibanco de 40 € já está no telemóvel do pai e no sistema da
+ * euPago. Mudar a cobrança para 35 € por baixo dela deixa-o a pagar um valor que
+ * a plataforma já não reconhece — e o pagamento chega e não fecha nada. A
+ * cobrança fica como está, e é dito quantas ficaram de fora.
+ *
+ * O resto — `OPEN`, sem pagamento vivo — passa a valer o preço novo.
+ */
+export async function reprecificarCobrancas(
+  db: ScopedClient,
+  period: string,
+  athleteIds: string[],
+  amountCents: number,
+): Promise<{ actualizadas: number; intocadas: number }> {
+  if (athleteIds.length === 0) return { actualizadas: 0, intocadas: 0 };
+
+  const candidatas = await db.charge.findMany({
+    where: { period, athleteId: { in: athleteIds }, status: "OPEN" },
+    select: {
+      id: true,
+      amountCents: true,
+      payments: {
+        where: { status: { in: ["PENDING", "PROCESSING", "PAID"] } },
+        select: { id: true },
+        take: 1,
+      },
+    },
+  });
+
+  const paraMudar = candidatas.filter((c) => c.payments.length === 0 && c.amountCents !== amountCents);
+  const travadas = candidatas.filter((c) => c.payments.length > 0 && c.amountCents !== amountCents);
+
+  if (paraMudar.length > 0) {
+    await db.charge.updateMany({
+      where: { id: { in: paraMudar.map((c) => c.id) } },
+      data: { amountCents },
+    });
+  }
+
+  return { actualizadas: paraMudar.length, intocadas: travadas.length };
+}
+
 export async function gerarCobrancas(
   db: ScopedClient,
   academyId: string,

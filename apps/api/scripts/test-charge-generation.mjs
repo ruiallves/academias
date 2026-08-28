@@ -239,14 +239,51 @@ const individual = await call(direcao, "PUT", `/api/athletes/${idSemPreco}/fee`,
 check("a direção ajusta um atleta em concreto", individual.status === 200, `${individual.status}`);
 
 /*
- * A mensalidade deste mês já existia a 35€ e **não** é reescrita — é a mesma
- * regra da idempotência. O ajuste vale para as que ainda não foram emitidas.
+ * A mensalidade deste mês já existia a 35 € e **passa** a valer o ajuste.
+ *
+ * Isto verificava o contrário — que ficava como estava, "pela mesma regra da
+ * idempotência". A regra estava confundida com outra: `gerarCobrancas` é
+ * idempotente porque só *cria* o que falta, e isso continua igual. Mas definir um
+ * preço com "aplicar neste mês" não é gerar: é dizer quanto se cobra. Deixar a
+ * mensalidade a 35 € punha a ficha do atleta a dizer 10 €, a tabela das
+ * mensalidades a dizer 35 € e a app do pai a dizer 35 € — três ecrãs, dois
+ * números, nenhum aviso. Foi assim que um clube em produção deu por isto.
+ *
+ * O que continua intocável é o que já não se pode mudar: pago, anulado, ou com
+ * um pagamento a caminho. Ver `reprecificarCobrancas`.
  */
-const naoReescreveu = (await db.query(
-  `SELECT "amountCents" FROM "Charge" WHERE "athleteId" = $1 AND period = $2`,
+const reprecada = (await db.query(
+  `SELECT "amountCents", status FROM "Charge" WHERE "athleteId" = $1 AND period = $2`,
   [idSemPreco, PERIODO],
 )).rows[0];
-check("a mensalidade já emitida mantém-se", naoReescreveu?.amountCents === 3500, `${naoReescreveu?.amountCents}`);
+check("a mensalidade já emitida passa a valer o ajuste", reprecada?.amountCents === 1000, `${reprecada?.amountCents}`);
+check("e continua por pagar", reprecada?.status === "OPEN", reprecada?.status);
+check("o servidor diz que a actualizou", individual.body?.reprecadas?.actualizadas === 1, JSON.stringify(individual.body?.reprecadas));
+
+/*
+ * E a que já foi paga não se mexe, no mesmo gesto.
+ *
+ * `idComPreco` tem a mensalidade deste mês marcada como paga umas linhas acima.
+ * É a contraprova que dá sentido à verificação anterior: sem ela, "reprecifica"
+ * lia-se como "reescreve tudo".
+ */
+const paga = await call(direcao, "PUT", `/api/athletes/${idComPreco}/fee`, { amountCents: 1200 });
+check("ajustar quem já pagou não falha", paga.status === 200, `${paga.status}`);
+const intacta = (await db.query(
+  `SELECT "amountCents", status FROM "Charge" WHERE "athleteId" = $1 AND period = $2`,
+  [idComPreco, PERIODO],
+)).rows[0];
+check("mas a mensalidade paga fica pelo valor que foi pago", intacta?.amountCents !== 1200, `${intacta?.amountCents}`);
+check("e continua paga", intacta?.status === "SETTLED", intacta?.status);
+
+/*
+ * E desfaz-se o ajuste, para este atleta voltar ao preço da equipa.
+ *
+ * O que vem a seguir mede a diferença entre quem tem ajuste individual e quem
+ * não tem, e este é o "quem não tem". Deixá-lo ajustado aqui fazia a verificação
+ * seguinte falhar por causa desta, e não por causa do que ela mede.
+ */
+await call(direcao, "DELETE", `/api/athletes/${idComPreco}/fee`);
 
 // Mas num mês por emitir, o ajuste é o que vale.
 const proximo = new Date(hoje.getFullYear(), hoje.getMonth() + 1, 1);

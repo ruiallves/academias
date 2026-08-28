@@ -64,6 +64,8 @@ export default function App() {
   if (!session) return <Entrar onEntered={() => void resetAndLoad()} />;
 
   if (!store.ready) return <Splash />;
+  // O servidor recusou esta conta nesta app. Não é avaria — tem saída própria.
+  if (store.denied) return <ContaErrada motivo={store.denied} />;
   if (store.error) return <Failed message={store.error} />;
   /*
    * Esta app é da família, e só da família.
@@ -131,6 +133,21 @@ function Splash() {
   );
 }
 
+/**
+ * Não deu para carregar.
+ *
+ * ## Porque é que há uma segunda saída
+ *
+ * Havia só "Tentar outra vez", e isso recarrega a página — o que resolve uma
+ * rede que caiu e **não resolve mais nada**. Quem estivesse preso por causa da
+ * sessão (a conta errada, um token que o servidor já não aceita) ficava a
+ * carregar no mesmo botão para chegar ao mesmo ecrã, sem forma de voltar ao
+ * login. Um beco sem saída dentro de uma app instalada, sem barra de endereço
+ * para escapar.
+ *
+ * "Entrar com outra conta" é discreto de propósito: na esmagadora maioria das
+ * vezes o problema é mesmo a rede, e sair da sessão seria a resposta errada.
+ */
 function Failed({ message }: { message: string }) {
   return (
     <div className="flex min-h-dvh flex-col items-center justify-center gap-4 px-8 text-center">
@@ -139,6 +156,13 @@ function Failed({ message }: { message: string }) {
       <button type="button" onClick={() => window.location.reload()} className="cta mt-2">
         <RefreshCw className="size-[18px]" strokeWidth={1.9} />
         Tentar outra vez
+      </button>
+      <button
+        type="button"
+        onClick={() => signOut()}
+        className="text-meta font-semibold text-ink-3 underline-offset-2 active:underline"
+      >
+        Entrar com outra conta
       </button>
     </div>
   );
@@ -160,16 +184,16 @@ const ehFamilia = (role: string) => role === "GUARDIAN" || role === "ATHLETE";
  * e acontecia em silêncio, com o plantel todo a aparecer como filhos. Diz-se o
  * que se passa e oferece-se a única saída útil: sair, e entrar com a conta certa.
  */
-function ContaErrada() {
+function ContaErrada({ motivo }: { motivo?: string }) {
   return (
     <div className="flex min-h-dvh flex-col items-center justify-center gap-3 px-8 text-center">
       <p className="text-[19px] font-semibold text-ink">Esta conta não é de encarregado</p>
       <p className="max-w-[34ch] text-meta leading-relaxed text-ink-3">
-        Esta app é das famílias. A tua conta é do staff do clube — para gerires a academia, entra pela consola no
-        computador.
+        {motivo ?? "Esta app é das famílias."} Se és do staff do clube, a academia gere-se pela consola, no
+        computador — aqui entra com a conta de encarregado.
       </p>
-      <button type="button" onClick={() => signOut()} className="cta-quiet mt-2 h-11 px-5">
-        Sair desta conta
+      <button type="button" onClick={() => signOut()} className="cta mt-2 px-6">
+        Entrar com outra conta
       </button>
     </div>
   );

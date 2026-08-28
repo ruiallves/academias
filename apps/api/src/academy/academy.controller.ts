@@ -18,9 +18,21 @@ class SetChargeStatusDto {
 
 /** O preço, em cêntimos — entre 1 € e 1000 €, validado outra vez no serviço. */
 class SetFeeDto {
-  @IsInt()
-  @Min(100)
-  @Max(100_000)
+  /*
+   * A regra dita em euros, e em português.
+   *
+   * As mensagens por omissão do class-validator saíam assim: "amountCents must
+   * not be greater than 100000". Em inglês, com o nome interno do campo e o
+   * valor em cêntimos — para uma direcção de clube que só quis pôr a mensalidade
+   * a 35 €, não diz nada. E era a única pista que chegava ao ecrã.
+   *
+   * O tecto existe para apanhar um dedo escorregado, não para limitar o preço de
+   * ninguém: nenhuma mensalidade de formação chega perto de 1000 €, e um valor
+   * acima disso é quase sempre um número que ficou colado a outro.
+   */
+  @IsInt({ message: "O valor tem de ser em euros e cêntimos, sem outros caracteres" })
+  @Min(100, { message: "A mensalidade mais baixa que se pode registar é 1 €" })
+  @Max(100_000, { message: "A mensalidade mais alta que se pode registar é 1000 € — confirma o valor que escreveste" })
   amountCents!: number;
 
   /**
@@ -39,9 +51,21 @@ class SetAthleteFeeBulkDto {
   @IsString({ each: true })
   athleteIds!: string[];
 
-  @IsInt()
-  @Min(100)
-  @Max(100_000)
+  /*
+   * A regra dita em euros, e em português.
+   *
+   * As mensagens por omissão do class-validator saíam assim: "amountCents must
+   * not be greater than 100000". Em inglês, com o nome interno do campo e o
+   * valor em cêntimos — para uma direcção de clube que só quis pôr a mensalidade
+   * a 35 €, não diz nada. E era a única pista que chegava ao ecrã.
+   *
+   * O tecto existe para apanhar um dedo escorregado, não para limitar o preço de
+   * ninguém: nenhuma mensalidade de formação chega perto de 1000 €, e um valor
+   * acima disso é quase sempre um número que ficou colado a outro.
+   */
+  @IsInt({ message: "O valor tem de ser em euros e cêntimos, sem outros caracteres" })
+  @Min(100, { message: "A mensalidade mais baixa que se pode registar é 1 €" })
+  @Max(100_000, { message: "A mensalidade mais alta que se pode registar é 1000 € — confirma o valor que escreveste" })
   amountCents!: number;
 
   @IsOptional()

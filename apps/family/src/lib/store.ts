@@ -1,5 +1,5 @@
 import { useSyncExternalStore } from "react";
-import { apiGet, soft } from "@/lib/http";
+import { ApiError, apiGet, soft } from "@/lib/http";
 import { applyBrand } from "@/lib/brand";
 
 /**
@@ -237,6 +237,15 @@ export type Report = {
 type State = {
   ready: boolean;
   error: string | null;
+  /**
+   * A conta que entrou não pode usar esta app — e o motivo, dito pelo servidor.
+   *
+   * É diferente de `error`, e a diferença é a saída: um erro de carregamento
+   * resolve-se a tentar outra vez, este só se resolve entrando com outra conta.
+   * Tratá-los como a mesma coisa dava o ecrã que dava — "Não foi possível
+   * carregar" com um botão que recarrega para o mesmo sítio, para sempre.
+   */
+  denied: string | null;
   academy: { name: string; shortName: string; mark: string; signalColor: string; logoUrl: string | null };
   guardian: { name: string; firstName: string };
   /**
@@ -262,6 +271,7 @@ type State = {
 const EMPTY: State = {
   ready: false,
   error: null,
+  denied: null,
   academy: { name: "", shortName: "", mark: "", signalColor: "#0f6b62", logoUrl: null },
   guardian: { name: "", firstName: "" },
   role: "",
@@ -340,6 +350,18 @@ export function load(): Promise<void> {
         build(boot, athletes, teams, sessions, matches, charges, announcements, notifications, new Map(fees), evaluations, reports),
       );
     } catch (error) {
+      /*
+       * Um 403 no arranque não é uma avaria: é esta conta a não ter lugar nesta
+       * app. Acontece a quem entrou com a conta de trabalho — e a quem tem as
+       * duas, se a do clube ficar a última a ser usada neste telemóvel.
+       *
+       * Separá-lo aqui é o que permite ao ecrã oferecer a única saída que
+       * resolve: sair e entrar com a conta certa.
+       */
+      if (error instanceof ApiError && error.status === 403) {
+        apply({ ...EMPTY, ready: true, denied: error.message });
+        return;
+      }
       apply({
         ...EMPTY,
         ready: true,
@@ -531,6 +553,7 @@ function build(
   return {
     ready: true,
     error: null,
+    denied: null,
     evaluations: evaluationsOut,
     reports: reportsOut,
     academy: {

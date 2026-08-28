@@ -59,12 +59,39 @@ await db.connect();
  * dois atletas de teste: um plano individual sem inscrição nenhuma é lixo desta
  * corrida; um plano com inscrição é de uma pessoa.
  */
+/*
+ * O preço da equipa **repõe-se**, não se apaga.
+ *
+ * `sp."teamId" = 't_sub11'` estava na mesma cláusula de apagar, e o Sub-11 é uma
+ * equipa a sério do clube de demonstração: correr este teste deixava-a sem preço
+ * nenhum. Ninguém dava por isso enquanto não corresse outro teste a seguir — e
+ * quando deu, o que se via era o teste seguinte a rebentar, não a causa.
+ *
+ * O que este teste faz ao preço do Sub-11 é mudá-lo várias vezes; o que tem de
+ * deixar para trás é o valor com que o encontrou.
+ */
+const precoOriginalSub11 = (await db.query(
+  `SELECT id, "amountCents" FROM "SubscriptionPlan"
+    WHERE "teamId" = 't_sub11' AND "isActive" ORDER BY id DESC LIMIT 1`,
+)).rows[0] ?? null;
+
 const cleanup = async () => {
   await db.query(`DELETE FROM "Enrollment" WHERE "athleteId" IN ('ath_martim', 'ath_gustavo')`);
+  // Os planos individuais órfãos desta corrida — um plano com inscrição é de
+  // uma pessoa, e fica.
   await db.query(`
     DELETE FROM "SubscriptionPlan" sp
-     WHERE (sp.name LIKE 'Individual — %' OR sp."teamId" = 't_sub11')
+     WHERE sp.name LIKE 'Individual — %'
        AND NOT EXISTS (SELECT 1 FROM "Enrollment" e WHERE e."planId" = sp.id)`);
+
+  if (precoOriginalSub11) {
+    await db.query(`UPDATE "SubscriptionPlan" SET "amountCents" = $1 WHERE id = $2`, [
+      precoOriginalSub11.amountCents, precoOriginalSub11.id,
+    ]);
+  } else {
+    // Não havia preço à entrada: o que este teste criou é que é lixo.
+    await db.query(`DELETE FROM "SubscriptionPlan" WHERE "teamId" = 't_sub11'`);
+  }
 };
 await cleanup();
 

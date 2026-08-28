@@ -1238,6 +1238,12 @@ function FeeEditor({
             inputMode="decimal"
             autoFocus
             value={value}
+            // Seleccionado ao entrar: o campo chega com o preço actual, e um
+            // preço troca-se em vez de se editar. Sem isto, escrever "35" sobre
+            // um "60.00" dava "60.0035" (arredonda para o mesmo valor, e o botão
+            // parecia não fazer nada) ou "3560.00" (recusado pelo servidor). O
+            // mesmo que no campo dos preços por equipa, em `Fees.tsx`.
+            onFocus={(e) => e.currentTarget.select()}
             onChange={(e) => setValue(e.target.value)}
             onKeyDown={(e) => e.key === "Enter" && void save()}
             className="h-9 flex-1 rounded-[var(--radius-control)] border border-line bg-surface px-2.5 text-body tabular focus:border-line-strong focus:outline-none"

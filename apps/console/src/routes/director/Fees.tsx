@@ -1035,7 +1035,7 @@ function TeamFeeInput({
 }) {
   const [value, setValue] = useState(amountCents !== null ? (amountCents / 100).toFixed(2) : "");
   const [busy, setBusy] = useState(false);
-  const [error, setError] = useState(false);
+  const [erro, setErro] = useState<string | null>(null);
 
   // O valor guardado muda de baixo para cima (outra pessoa editou, ou a nossa
   // própria gravação recarregou a academia) — segue-se, a não ser que haja algo
@@ -1047,43 +1047,88 @@ function TeamFeeInput({
   async function commit() {
     const trimmed = value.trim().replace(",", ".");
     const cents = Math.round(Number(trimmed) * 100);
-    if (!trimmed || !Number.isFinite(cents) || cents === amountCents) return;
+
+    /*
+     * O que não é um número volta ao que estava, em vez de ficar no ecrã.
+     *
+     * "35 €", "quarenta", um campo vazio — não são erros de que valha a pena
+     * falar, são gestos a meio. O que era mau era deixá-los escritos: o campo
+     * ficava com texto que nunca foi gravado e parecia que sim.
+     */
+    if (!trimmed || !Number.isFinite(cents)) {
+      setValue(amountCents !== null ? (amountCents / 100).toFixed(2) : "");
+      setErro(null);
+      return;
+    }
+    if (cents === amountCents) {
+      setErro(null);
+      return;
+    }
 
     setBusy(true);
     onBusy?.(teamId, true);
-    setError(false);
-    let erro = false;
+    setErro(null);
+    let falhou = false;
     try {
       await apiPatch(`/api/teams/${teamId}/fee`, { amountCents: cents, aplicarEm });
       await reloadAcademy();
       onSaved?.();
-    } catch {
-      erro = true;
-      setError(true);
+    } catch (e) {
+      falhou = true;
+      /*
+       * A razão, e não só a borda vermelha.
+       *
+       * Isto era um `catch {}` que acendia uma borda e deitava fora o que o
+       * servidor tinha dito. Um clube em produção ficou preso a tentar mudar um
+       * preço sem nenhuma forma de saber porquê — e a razão era simples: o
+       * campo vem preenchido com "60.00", quem escreve sem seleccionar primeiro
+       * fica com "3560.00", e 3560 € passa o tecto de 1000 €. A mensagem existia
+       * desde sempre no servidor; só não chegava a ninguém.
+       */
+      setErro(e instanceof Error ? e.message : "Não foi possível guardar este preço.");
     } finally {
       setBusy(false);
-      onBusy?.(teamId, false, erro);
+      onBusy?.(teamId, false, falhou);
     }
   }
 
   return (
-    <label className="flex items-center gap-1.5">
-      <span className={cx("text-body", value ? "text-ink-3" : "text-ink-4")}>€</span>
-      <input
-        type="text"
-        inputMode="decimal"
-        value={value}
-        placeholder="por configurar"
-        disabled={busy}
-        onChange={(e) => setValue(e.target.value)}
-        onBlur={() => void commit()}
-        onKeyDown={(e) => e.key === "Enter" && (e.currentTarget as HTMLInputElement).blur()}
-        className={cx(
-          "h-8 w-28 rounded-[var(--radius-control)] border bg-surface px-2 text-right text-body tabular focus:outline-none",
-          error ? "border-risk" : "border-line focus:border-line-strong",
-        )}
-      />
-    </label>
+    <div className="flex flex-col items-end gap-1">
+      <label className="flex items-center gap-1.5">
+        <span className={cx("text-body", value ? "text-ink-3" : "text-ink-4")}>€</span>
+        <input
+          type="text"
+          inputMode="decimal"
+          value={value}
+          placeholder="por configurar"
+          disabled={busy}
+          /*
+           * Seleccionar tudo ao entrar no campo.
+           *
+           * É a correcção do bug, e não a mensagem de erro. O campo chega
+           * preenchido com o preço actual, e um preço não se edita — troca-se.
+           * Sem isto, quem clicava e escrevia "35" ficava com "3560.00" (recusado
+           * pelo servidor) ou com "60.0035" (que arredonda para o mesmo valor e
+           * não gravava nada, em silêncio). Seleccionado, escrever substitui, que
+           * é o que a pessoa quis fazer desde o início.
+           */
+          onFocus={(e) => e.currentTarget.select()}
+          onChange={(e) => setValue(e.target.value)}
+          onBlur={() => void commit()}
+          onKeyDown={(e) => e.key === "Enter" && (e.currentTarget as HTMLInputElement).blur()}
+          aria-invalid={erro !== null}
+          className={cx(
+            "h-8 w-28 rounded-[var(--radius-control)] border bg-surface px-2 text-right text-body tabular focus:outline-none",
+            erro ? "border-risk" : "border-line focus:border-line-strong",
+          )}
+        />
+      </label>
+      {erro && (
+        <span role="alert" className="max-w-[220px] text-right text-meta leading-snug text-risk">
+          {erro}
+        </span>
+      )}
+    </div>
   );
 }
 
