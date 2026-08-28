@@ -1,5 +1,5 @@
 import { createContext, useContext, useEffect, useMemo, useState } from "react";
-import { NavLink, Navigate, Route, Routes, useNavigate } from "react-router-dom";
+import { NavLink, Navigate, Route, Routes, useLocation, useNavigate } from "react-router-dom";
 import { Bell, CalendarDays, Home, RefreshCw, User, Wallet } from "lucide-react";
 import { load, resetAndLoad, useStore, type Child } from "@/lib/store";
 import { hasOnboarded } from "@/lib/onboarding";
@@ -33,9 +33,34 @@ export function useChild() {
   return ctx;
 }
 
+/**
+ * Já se esteve neste ecrã desde que a app abriu?
+ *
+ * A resposta decide se a entrada em cascata toca. Módulo e não estado: quer-se
+ * exactamente que sobreviva à navegação e morra quando a app fecha — voltar a
+ * "Hoje" pela quinta vez não é uma estreia, mas abrir a app amanhã é.
+ *
+ * A resposta é lembrada para o caminho actual em vez de recalculada: o React
+ * volta a desenhar este componente sempre que o store muda (e duas vezes por
+ * render em desenvolvimento), e sem isto a segunda passagem já dizia "não é a
+ * primeira" — cortando a animação a meio da primeira vez que ela devia tocar.
+ */
+const visitados = new Set<string>();
+let ultimoCaminho = "";
+let ultimaResposta = false;
+
+function primeiraVisita(pathname: string): boolean {
+  if (pathname === ultimoCaminho) return ultimaResposta;
+  ultimoCaminho = pathname;
+  ultimaResposta = !visitados.has(pathname);
+  visitados.add(pathname);
+  return ultimaResposta;
+}
+
 export default function App() {
   const store = useStore();
   const session = useSession();
+  const { pathname } = useLocation();
   const [childId, setChild] = useState<string | null>(null);
   const [onboarded, setOnboarded] = useState(hasOnboarded);
 
@@ -97,7 +122,14 @@ export default function App() {
       <div className="mx-auto flex min-h-dvh max-w-[480px] flex-col">
         <Header />
 
-        <main className="flex-1 px-4 pb-[calc(104px+env(safe-area-inset-bottom))]">
+        {/*
+          `data-anima` desliga a entrada em cascata nos ecrãs já visitados —
+          ver `primeiraVisita` e a regra em styles.css.
+        */}
+        <main
+          data-anima={primeiraVisita(pathname) ? "on" : "off"}
+          className="flex-1 px-4 pb-[calc(104px+env(safe-area-inset-bottom))]"
+        >
           <Routes>
             <Route path="/" element={<Today />} />
             <Route path="/agenda" element={<Agenda />} />

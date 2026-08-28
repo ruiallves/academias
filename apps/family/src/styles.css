@@ -168,6 +168,22 @@
     animation-delay: calc(var(--i, 0) * 60ms);
   }
 
+  /*
+     A entrada é uma apresentação, não um pedágio.
+
+     Cada ecrã entra em cascata — 520ms por bloco, mais 60ms de atraso por cada
+     um — e isso é bonito **da primeira vez**. Ao terceiro toque no menu passa a
+     ser meio segundo de espera para ver uma coisa que já se viu, e é exactamente
+     isso que se sente como falta de fluidez: o conteúdo já lá está, e o ecrã
+     ainda está a decidir mostrá-lo.
+
+     Quem já cá esteve nesta sessão entra sem animação nenhuma. Ver
+     `primeiraVisita` em App.tsx. */
+  [data-anima="off"] .rise,
+  [data-anima="off"] .pop {
+    animation: none;
+  }
+
   @keyframes pop {
     0% { transform: scale(0.6); opacity: 0; }
     60% { transform: scale(1.08); }

@@ -54,15 +54,27 @@ export function initials(name: string): string {
 /**
  * O grande número, herói da sua linha. `€` e os cêntimos ficam mais discretos
  * do que os inteiros — é assim que o olho lê "quarenta euros" e não "quatro zero".
+ *
+ * ## `on` é sobre tinta, não sobre a marca
+ *
+ * O `on` diz "isto vai por cima do cartão preto" — o painel `bg-ink` dos
+ * pagamentos, que é preto em todas as academias. Por isso o texto é **branco
+ * fixo** e não `--color-signal-on`.
+ *
+ * Já foi `text-signal-on` durante umas horas, e o resultado foi este: numa
+ * academia de cor clara (o AD Fafe é `#c0bb11`) essa variável vale tinta escura,
+ * e a dívida do mês desapareceu — texto preto sobre um cartão preto. A cor
+ * automática resolve o contraste **sobre a cor do clube**; aqui o fundo não é a
+ * cor do clube.
  */
 export function Money({ cents, size = "lg", on }: { cents: number; size?: "md" | "lg" | "xl"; on?: boolean }) {
   const [whole, dec] = money(cents).replace("€", "").trim().split(",");
   const px = size === "xl" ? "text-[44px]" : size === "lg" ? "text-[34px]" : "text-[26px]";
   return (
-    <span className={cx("num inline-flex items-baseline font-semibold leading-none", px, on ? "text-signal-on" : "text-ink")}>
-      <span className={cx("mr-0.5 font-semibold", size === "xl" ? "text-[24px]" : "text-[18px]", on ? "text-signal-on/70" : "text-ink-3")}>€</span>
+    <span className={cx("num inline-flex items-baseline font-semibold leading-none", px, on ? "text-white" : "text-ink")}>
+      <span className={cx("mr-0.5 font-semibold", size === "xl" ? "text-[24px]" : "text-[18px]", on ? "text-white/70" : "text-ink-3")}>€</span>
       {whole}
-      <span className={cx(size === "xl" ? "text-[24px]" : "text-[18px]", on ? "text-signal-on/70" : "text-ink-3")}>,{dec}</span>
+      <span className={cx(size === "xl" ? "text-[24px]" : "text-[18px]", on ? "text-white/70" : "text-ink-3")}>,{dec}</span>
     </span>
   );
 }
