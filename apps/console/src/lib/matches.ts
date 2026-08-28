@@ -105,6 +105,16 @@ export type MatchListRow = {
    * massagista ver, na lista de jogos, quais são os dela.
    */
   myStaffRole: string | null;
+  /**
+   * É de uma equipa minha?
+   *
+   * A lista de jogos passou a trazer o clube todo — ver um jogo do escalão de
+   * cima é a razão de isto existir. O que é **trabalho meu** distingue-se por
+   * aqui: convocar, preencher a ficha, abrir a página do jogo. Ver
+   * `calendarScopeFilter` no servidor.
+   */
+  mine: boolean;
+  /** Vazio quando o jogo não é meu — a convocatória é do escalão dele. */
   calledUp: { athleteId: string; status: CallUpStatus }[];
 };
 
@@ -179,6 +189,7 @@ type Pendencia = {
   ourScore: number | null;
   submitted: boolean;
   myStaffRole: string | null;
+  mine: boolean;
 };
 
 /**
@@ -245,7 +256,15 @@ export function myMatchDuty(rows: Pendencia[], agora = Date.now()): AttentionIte
  */
 export function matchAttention(rows: Pendencia[], agora = Date.now()): AttentionItem[] {
   const items: AttentionItem[] = [];
-  const activo = (r: Pendencia) => r.status !== "CANCELLED";
+  /*
+   * Só conta o que é meu para fazer.
+   *
+   * A lista de jogos passou a incluir os das outras equipas. Sem este `mine`, um
+   * treinador abria os Jogos com "sete convocatórias por enviar" de escalões que
+   * não são dele — e que ele não tem como enviar. Um painel de pendências que
+   * conta trabalho alheio deixa de se acreditar à segunda vez que se olha.
+   */
+  const activo = (r: Pendencia) => r.mine && r.status !== "CANCELLED";
 
   const porConvocar = rows
     .filter((r) => activo(r) && !r.submitted)

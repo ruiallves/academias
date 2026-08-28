@@ -91,7 +91,7 @@ export default function Agenda() {
                     {day.getDate()}
                   </span>
                   <span className="leading-tight">
-                    <span className={cx("block text-[13px] font-semibold uppercase", isToday ? "text-signal" : "text-ink-2")}>
+                    <span className={cx("block text-[13px] font-semibold uppercase", isToday ? "text-signal-ink" : "text-ink-2")}>
                       {isToday ? "Hoje" : dayName(day)}
                     </span>
                     <span className="block text-[12px] text-ink-4">

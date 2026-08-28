@@ -1,7 +1,7 @@
 import { BadRequestException, ForbiddenException, Injectable, NotFoundException } from "@nestjs/common";
 import type { DominantSide, RequestStatus, RequestUrgency } from "@prisma/client";
 import { PrismaService } from "../prisma/prisma.service";
-import { can, type RequestContext } from "../common/permissions";
+import { can, teamScopeFilter, type RequestContext } from "../common/permissions";
 import type {
   AddCandidateDto,
   AddToShortlistDto,
@@ -419,13 +419,37 @@ export class ScoutingWorkflowService {
       throw new ForbiddenException("Sem permissão para pedir jogadores");
     }
 
-    return this.prisma.runAs(ctx.academyId, async (db) =>
-      db.scoutingRequest.create({
+    const scope = teamScopeFilter(ctx);
+    const ageGroup = dto.ageGroup?.trim() || null;
+
+    return this.prisma.runAs(ctx.academyId, async (db) => {
+      /*
+       * Quem tem âmbito pede para uma equipa **dele**, e tem de dizer qual.
+       *
+       * O escalão de um pedido é texto — é o que o scouting lê para saber para
+       * quem procura. Vindo de um treinador, esse texto tem de ser uma das
+       * equipas dele: sem escalão o pedido chega sem destino, e com o escalão de
+       * outro chega com um destino que não lhe pertence.
+       *
+       * A direcção não é obrigada: é ela que pode mesmo procurar um jogador sem
+       * ter ainda decidido para que escalão. É a mesma linha que separa "toda a
+       * academia" no calendário — quem tem âmbito não a atravessa.
+       */
+      if (scope) {
+        if (!ageGroup) throw new BadRequestException("Escolhe o escalão do pedido");
+
+        const equipas = await db.team.findMany({ where: { id: scope }, select: { name: true } });
+        if (!equipas.some((t) => t.name === ageGroup)) {
+          throw new ForbiddenException("Só podes pedir jogadores para as tuas equipas");
+        }
+      }
+
+      return db.scoutingRequest.create({
         data: {
           academyId: ctx.academyId,
           title: dto.title.trim(),
           sportId: dto.sportId || null,
-          ageGroup: dto.ageGroup?.trim() || null,
+          ageGroup,
           position: dto.position?.trim() || null,
           profile: dto.profile?.trim() || null,
           traits: (dto.traits ?? []).map((t) => t.trim()).filter(Boolean).slice(0, 12),
@@ -436,8 +460,8 @@ export class ScoutingWorkflowService {
           updatedAt: new Date(),
         },
         select: { id: true, title: true },
-      }),
-    );
+      });
+    });
   }
 
   async updateRequest(ctx: RequestContext, id: string, dto: Partial<ScoutingRequestInputDto> & { status?: string }) {

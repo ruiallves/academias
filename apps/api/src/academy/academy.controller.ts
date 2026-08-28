@@ -154,6 +154,20 @@ class SetTeamsDto {
 }
 
 /**
+ * O cargo de uma pessoa **dentro de uma equipa** — "Treinador principal".
+ *
+ * Texto livre e não uma lista fechada: os títulos entram por aqui, pelo convite
+ * e pela criação da equipa, e há clubes com "Treinador de guarda-redes" ou
+ * "Delegado". A única regra que o servidor impõe é a do principal único, e essa
+ * está no serviço.
+ */
+class TeamRoleDto {
+  @IsString()
+  @Length(1, 40)
+  title!: string;
+}
+
+/**
  * O calendário de cobrança do clube.
  *
  * Os dois campos são opcionais e independentes: o ecrã grava o que a pessoa
@@ -262,6 +276,22 @@ export class AcademyController {
   @Delete("sports/:id")
   removeSport(@Req() req: AuthedRequest, @Param("id") id: string) {
     return this.academy.removeSport(req.ctx, id);
+  }
+
+  /**
+   * O cargo de uma pessoa nesta equipa — na prática, quem é o principal.
+   *
+   * `team:write` e não `access:write`: quem já está na equipa já tem o acesso,
+   * isto só diz quem a treina. Ver `setTeamRole`.
+   */
+  @Patch("teams/:id/staff/:membershipId")
+  setTeamRole(
+    @Req() req: AuthedRequest,
+    @Param("id") id: string,
+    @Param("membershipId") membershipId: string,
+    @Body() body: TeamRoleDto,
+  ) {
+    return this.academy.setTeamRole(req.ctx, id, membershipId, body.title);
   }
 
   @Patch("teams/:id/fee")

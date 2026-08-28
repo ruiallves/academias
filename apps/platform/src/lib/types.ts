@@ -94,6 +94,16 @@ export type Academy = {
 
 export type SeriesPoint = { month: string; new_academies: number; cancelled: number; active_end: number };
 
+/**
+ * Uma semana de trabalho feito, em toda a plataforma.
+ *
+ * `people` são pessoas distintas que fizeram alguma coisa — fechar presenças,
+ * escrever um comunicado, preencher uma ficha de jogo. Não é quem abriu a app:
+ * um separador aberto não é trabalho. Ver a migração `actividade_da_plataforma`
+ * para a lista exacta do que conta.
+ */
+export type ActivityPoint = { week: string; people: number; academies: number; actions: number };
+
 export type Plan = {
   id: string;
   name: string;
@@ -113,6 +123,58 @@ export type Plan = {
    */
   excludes: string[];
   isRecommended: boolean;
+};
+
+/**
+ * A ficha de um clube — `GET /academies/:id`.
+ *
+ * Contagens e agregados. Nenhuma linha de domínio: nem nomes de atletas, nem
+ * contactos. Os nomes de equipas entram porque não são de ninguém e são o que dá
+ * forma aos números. Ver `academyDetail` na API.
+ */
+export type AcademyDetail = {
+  id: string;
+  slug: string;
+  name: string;
+  status: AcademyStatus;
+  createdAt: string;
+  trialEndsAt: string | null;
+  logoUrl: string | null;
+  signalColor: string | null;
+  plan: string | null;
+  planId: string | null;
+  subscriptionStatus: string | null;
+  people: {
+    staff: number;
+    coaches: number;
+    guardians: number;
+    athletes: number;
+    athletesLeft: number;
+    teams: number;
+  };
+  staffByRole: { role: string; count: number }[];
+  /** Quantas famílias têm mesmo a app: visita registada **ou** push ligado. */
+  app: { installed: number; total: number; percent: number };
+  online: { total: number; staff: number; family: number };
+  lastActivity: string | null;
+  /**
+   * Com quem se falou primeiro: a conta de staff mais antiga do clube — a que
+   * nasceu do convite de criação. `accepted: false` quando ninguém o resgatou
+   * ainda e o nome e o email vêm do próprio convite.
+   */
+  contact: { name: string; email: string; title: string | null; since: string; accepted: boolean } | null;
+  teamsBreakdown: { id: string; name: string; athletes: number; coaches: number }[];
+  /** Oito semanas de folhas de presença fechadas, da mais antiga para a actual. */
+  activity: { week: string; sessions: number }[];
+  /** As mensalidades que o **clube** cobra às famílias — não as nossas. */
+  billing: {
+    period: string;
+    issued: number;
+    paid: number;
+    billedCents: number;
+    collectedCents: number;
+    periods: number;
+  };
 };
 
 export type AuditEntry = {

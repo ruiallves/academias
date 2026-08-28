@@ -58,6 +58,15 @@ export type Alert = {
 
 const DAY = 86_400_000;
 
+/** A segunda-feira da semana de `d`, à meia-noite. As semanas de um clube começam aí. */
+function segundaFeira(d: Date): Date {
+  const out = new Date(d);
+  out.setHours(0, 0, 0, 0);
+  // `getDay()` dá 0 ao domingo: nesse caso recua-se seis dias, não zero.
+  out.setDate(out.getDate() - ((out.getDay() + 6) % 7));
+  return out;
+}
+
 @Injectable()
 export class PlatformService {
   constructor(
@@ -200,9 +209,253 @@ export class PlatformService {
     }));
   }
 
+  /**
+   * A ficha de um clube.
+   *
+   * ## O que responde
+   *
+   * A pergunta que a lista não responde: *este cliente está a usar isto?*. A
+   * tabela dá uma linha por clube para comparar trinta; isto dá o retrato de um,
+   * para decidir se se telefona, se se ajuda, ou se se vende mais.
+   *
+   * ## Onde está a fronteira
+   *
+   * Contagens e agregados — nunca uma linha de domínio. Nem nomes de atletas, nem
+   * contactos, nem nada de clínico. Os nomes de **equipas** entram porque não são
+   * de ninguém: dizem a forma do clube (seis escalões ou dois) e essa forma é o
+   * que explica os números todos ao lado.
+   *
+   * ## Porquê Prisma e não uma função SQL
+   *
+   * As leituras da lista passam por `app.platform_*()` porque correm para todas
+   * as academias e a agregação em SQL vale a pena. Esta corre para **uma**, a
+   * pedido, e são meia dúzia de contagens: uma função `SECURITY DEFINER` nova
+   * para isto era mais superfície para manter do que trabalho poupado.
+   */
+  async academyDetail(id: string) {
+    const academy = await this.prisma.academy.findUnique({
+      where: { id },
+      select: {
+        id: true, slug: true, name: true, status: true, createdAt: true, trialEndsAt: true,
+        logoUrl: true, signalColor: true,
+        subscription: { select: { status: true, plan: { select: { id: true, name: true, amountCents: true } } } },
+      },
+    });
+    if (!academy) throw new NotFoundException("Academia não encontrada");
+
+    const inicioDoMes = new Date();
+    inicioDoMes.setDate(1);
+    inicioDoMes.setHours(0, 0, 0, 0);
+    // Oito semanas cheias, a começar numa segunda-feira.
+    const inicioDasSemanas = new Date(segundaFeira(new Date()).getTime() - 7 * 7 * DAY);
+
+    const [staff, guardians, athletes, teams, sessions, charges] = await Promise.all([
+      this.prisma.membership.findMany({
+        where: { academyId: id, isActive: true, role: { notIn: ["GUARDIAN", "ATHLETE"] } },
+        select: { role: true, lastSeenAt: true },
+      }),
+      this.prisma.membership.findMany({
+        where: { academyId: id, isActive: true, role: "GUARDIAN" },
+        select: { userId: true, lastSeenAt: true },
+      }),
+      this.prisma.athlete.findMany({ where: { academyId: id }, select: { status: true, teams: { select: { teamId: true }, take: 1 } } }),
+      this.prisma.team.findMany({
+        where: { academyId: id },
+        orderBy: { name: "asc" },
+        select: { id: true, name: true, _count: { select: { athletes: true, staff: true } } },
+      }),
+      // Só as folhas **fechadas**: um treino marcado e nunca registado não é uso.
+      this.prisma.trainingSession.findMany({
+        where: { academyId: id, attendanceClosedAt: { gte: inicioDasSemanas } },
+        select: { attendanceClosedAt: true },
+      }),
+      this.prisma.charge.findMany({
+        where: { academyId: id },
+        select: { period: true, amountCents: true, status: true },
+      }),
+    ]);
+
+    /*
+     * Quantas famílias têm mesmo a app.
+     *
+     * A mesma regra da consola (ver `athletes()`): uma visita registada **ou** um
+     * dispositivo com push. Só o push deixava de fora quem instala e salta as
+     * notificações; só a visita deixava de fora quem é anterior à coluna.
+     */
+    const comPush = new Set(
+      guardians.length === 0
+        ? []
+        : (
+            await this.prisma.pushSubscription.findMany({
+              where: { userId: { in: guardians.map((g) => g.userId) } },
+              select: { userId: true },
+              distinct: ["userId"],
+            })
+          ).map((s) => s.userId),
+    );
+    const comApp = guardians.filter((g) => g.lastSeenAt !== null || comPush.has(g.userId)).length;
+
+    /*
+     * Com quem se falou primeiro.
+     *
+     * É a pergunta que se faz antes de pegar no telefone: *quem é o meu contacto
+     * neste clube?*. A resposta é a **primeira conta de staff** — a que nasceu do
+     * convite que a plataforma emitiu ao criar o cliente. É a mesma regra que o
+     * `setupOwner` do bootstrap usa para saber de quem é o painel de arranque.
+     *
+     * Se ninguém resgatou o convite ainda, a conta não existe e a resposta está
+     * no próprio convite, que guarda o nome e o email a quem foi enviado. Aí é
+     * um contacto **por confirmar** — e o ecrã di-lo, porque a diferença entre
+     * "já entrou" e "recebeu um email e nunca abriu" é a diferença entre um
+     * cliente a arrancar e um cliente perdido.
+     */
+    const primeiraConta = await this.prisma.membership.findFirst({
+      where: { academyId: id, role: { notIn: ["GUARDIAN", "ATHLETE"] } },
+      orderBy: { createdAt: "asc" },
+      select: {
+        createdAt: true,
+        title: true,
+        customRole: { select: { name: true } },
+        user: { select: { name: true, email: true } },
+      },
+    });
+
+    const convite = primeiraConta
+      ? null
+      : await this.prisma.staffInvite.findFirst({
+          where: { academyId: id },
+          orderBy: { createdAt: "asc" },
+          select: { name: true, email: true, title: true, createdAt: true },
+        });
+
+    const contact = primeiraConta
+      ? {
+          name: primeiraConta.user.name,
+          email: primeiraConta.user.email,
+          title: primeiraConta.customRole?.name ?? primeiraConta.title ?? null,
+          since: primeiraConta.createdAt,
+          accepted: true,
+        }
+      : convite
+        ? { name: convite.name, email: convite.email, title: convite.title, since: convite.createdAt, accepted: false }
+        : null;
+
+    /*
+     * A última vez que alguém fechou uma folha.
+     *
+     * Fora da janela das oito semanas: um clube parado há três meses tem a lista
+     * de semanas toda a zero, e é aí que a data importa mais — é ela que diz se
+     * parou na semana passada ou no Inverno.
+     */
+    const ultima = await this.prisma.trainingSession.findFirst({
+      where: { academyId: id, attendanceClosedAt: { not: null } },
+      orderBy: { attendanceClosedAt: "desc" },
+      select: { attendanceClosedAt: true },
+    });
+    const ultimaActividade = ultima?.attendanceClosedAt ?? null;
+
+    const porRole = new Map<string, number>();
+    for (const m of staff) porRole.set(m.role, (porRole.get(m.role) ?? 0) + 1);
+
+    const activos = athletes.filter((a) => a.status !== "LEFT");
+    const porEquipa = new Map<string, number>();
+    for (const a of activos) {
+      const t = a.teams[0]?.teamId;
+      if (t) porEquipa.set(t, (porEquipa.get(t) ?? 0) + 1);
+    }
+
+    /* Oito semanas de folhas fechadas — o sinal de vida, semana a semana. */
+    const semanas: { week: string; sessions: number }[] = [];
+    for (let i = 7; i >= 0; i -= 1) {
+      const inicio = new Date(segundaFeira(new Date()).getTime() - i * 7 * DAY);
+      const fim = new Date(inicio.getTime() + 7 * DAY);
+      semanas.push({
+        week: inicio.toISOString().slice(0, 10),
+        sessions: sessions.filter((s) => s.attendanceClosedAt! >= inicio && s.attendanceClosedAt! < fim).length,
+      });
+    }
+
+    /* O dinheiro que o clube move — não o nosso. É a prova de que usa a cobrança. */
+    const periodo = `${inicioDoMes.getFullYear()}-${String(inicioDoMes.getMonth() + 1).padStart(2, "0")}`;
+    const doMes = charges.filter((c) => c.period === periodo);
+    const cents = (rs: typeof charges) => rs.reduce((n, c) => n + c.amountCents, 0);
+
+    return {
+      id: academy.id,
+      slug: academy.slug,
+      name: academy.name,
+      status: academy.status,
+      createdAt: academy.createdAt,
+      trialEndsAt: academy.trialEndsAt,
+      logoUrl: academy.logoUrl,
+      signalColor: academy.signalColor,
+      plan: academy.subscription?.plan.name ?? null,
+      planId: academy.subscription?.plan.id ?? null,
+      subscriptionStatus: academy.subscription?.status ?? null,
+      people: {
+        staff: staff.length,
+        coaches: porRole.get("COACH") ?? 0,
+        guardians: guardians.length,
+        athletes: activos.length,
+        athletesLeft: athletes.length - activos.length,
+        teams: teams.length,
+      },
+      /** O staff por papel, do mais numeroso para o menos. */
+      staffByRole: [...porRole.entries()]
+        .map(([role, count]) => ({ role, count }))
+        .sort((a, b) => b.count - a.count),
+      app: {
+        installed: comApp,
+        total: guardians.length,
+        percent: guardians.length === 0 ? 0 : Math.round((comApp / guardians.length) * 100),
+      },
+      /** Quem lá está agora — da memória, não da base. Ver `presence.service.ts`. */
+      online: this.presence.porAcademia().get(id) ?? { total: 0, staff: 0, family: 0 },
+      /** A última folha de presenças fechada. O sinal de vida, como na lista. */
+      lastActivity: ultimaActividade,
+      /** Com quem se falou primeiro — a conta que nasceu do convite de criação. */
+      contact,
+      teamsBreakdown: teams.map((t) => ({
+        id: t.id,
+        name: t.name,
+        athletes: porEquipa.get(t.id) ?? 0,
+        coaches: t._count.staff,
+      })),
+      activity: semanas,
+      billing: {
+        period: periodo,
+        issued: doMes.length,
+        paid: doMes.filter((c) => c.status === "SETTLED").length,
+        billedCents: cents(doMes),
+        collectedCents: cents(doMes.filter((c) => c.status === "SETTLED")),
+        /** Quantos períodos já emitiram — diz se cobram todos os meses ou nunca. */
+        periods: new Set(charges.map((c) => c.period)).size,
+      },
+    };
+  }
+
+  /**
+   * Trabalho feito por semana, em toda a plataforma.
+   *
+   * Substituiu o gráfico de entradas e saídas — com meia dúzia de clubes e
+   * nenhuma saída, aquilo era uma barra a zero repetida doze vezes. O porquê de
+   * cada escolha (semanas e não meses, trabalho e não sessões abertas) está no
+   * cabeçalho da migração `actividade_da_plataforma`.
+   */
+  async activity(weeks = 12) {
+    return this.prisma.resiliente(
+      // `week` é texto (`2026-08-24`) e não uma data: ver a migração
+      // `datas_dos_graficos_em_texto`. Um rótulo de semana não é um instante.
+      () => this.prisma.$queryRaw<{ week: string; people: number; academies: number; actions: number }[]>`
+        -- O Prisma envia inteiros como bigint; a funcao recebe int.
+        SELECT * FROM app.platform_activity(${weeks}::int)
+      `,
+    );
+  }
+
   async series(months = 12) {
     return this.prisma.resiliente(
-      () => this.prisma.$queryRaw<{ month: Date; new_academies: number; cancelled: number; active_end: number }[]>`
+      () => this.prisma.$queryRaw<{ month: string; new_academies: number; cancelled: number; active_end: number }[]>`
         -- O Prisma envia inteiros como bigint; a funcao recebe int.
         SELECT * FROM app.platform_series(${months}::int)
       `,

@@ -215,6 +215,40 @@ export function strongSignal(hex: string, alvo = 4.5): string {
 }
 
 /**
+ * A cor do clube escurecida até se **ver sobre a página**.
+ *
+ * ## O problema que isto resolve
+ *
+ * `strongSignal` garante que a tinta se lê **em cima** da cor — serve para
+ * superfícies cheias, como um botão. Não diz nada sobre o caso oposto: a cor
+ * desenhada como um traço fino **sobre** o branco da página.
+ *
+ * E é aí que ela desaparece. O realce de foco é `outline: 2px solid` na cor do
+ * clube; num clube de amarelo claro isso dá 1,3:1 contra o branco. O contorno
+ * está lá, ninguém o vê, e quem navega pelo teclado deixa de saber onde está.
+ * Um clube verde-escuro tem 6,4:1 e nunca deu por nada — que é o que faz este
+ * tipo de defeito passar meses sem ser encontrado.
+ *
+ * ## Porquê 3:1
+ *
+ * É o mínimo que a WCAG (1.4.11, "Non-text Contrast") pede para um indicador de
+ * interface — precisamente o caso de um contorno de foco. Não é um número
+ * escolhido a gosto.
+ *
+ * ## Não mexe em quem já estava bem
+ *
+ * Anda 8% de cada vez em direcção ao preto e pára assim que chega aos 3:1. Um
+ * clube com uma cor escolhida com cuidado fica com exactamente o tom que tinha.
+ */
+export function signalOnSurface(hex: string, alvo = 3): string {
+  let cor = hex;
+  for (let i = 0; i < 24 && contrastRatio(cor, "#ffffff") < alvo; i += 1) {
+    cor = towards(cor, 0.08, "#000000");
+  }
+  return cor;
+}
+
+/**
  * Deriva os tons de um sinal de tenant. Recebe hex, devolve as variáveis CSS que a
  * app escreve no :root. `soft` é o sinal a 8% sobre a superfície branca.
  */
@@ -239,6 +273,11 @@ export function signalVars(hex: string): Record<string, string> {
     "--color-signal-ink": readableInk(dark, soft),
     "--color-signal-soft": soft,
     "--color-signal-strong": strong,
+    /*
+     * A cor para o que se desenha **sobre** a página: contornos de foco, o arco
+     * do disco de carregamento, um anel fino. Ver `signalOnSurface`.
+     */
+    "--color-signal-line": signalOnSurface(hex),
     "--color-signal-on": on,
     "--signal-on-rgb": onColorRgb(hex),
     /*

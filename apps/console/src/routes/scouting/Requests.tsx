@@ -3,9 +3,9 @@ import { Link } from "react-router-dom";
 import { PageHeader } from "@/components/Shell";
 import { Empty, Loading, Panel, PanelHead, Pill, cx, type Tone } from "@/components/primitives";
 import { Plus, Send } from "@/lib/icons";
-import { can } from "@/lib/permissions";
+import { can, type Session } from "@/lib/permissions";
 import { useSession } from "@/session";
-import { academy } from "@/lib/api";
+import { academy, listTeams } from "@/lib/api";
 import { Dialog, DialogField, dialogInputClass } from "@/components/Dialog";
 import {
   REQ_STATUS_LABEL,
@@ -215,6 +215,7 @@ export default function Requests() {
 
       {creating && (
         <NewRequestDialog
+          session={session}
           onClose={() => setCreating(false)}
           onCreated={() => {
             setCreating(false);
@@ -258,10 +259,40 @@ function Chip({ active, onClick, children }: { active: boolean; onClick: () => v
   );
 }
 
-function NewRequestDialog({ onClose, onCreated }: { onClose: () => void; onCreated: () => void }) {
+/**
+ * Pedir um jogador ao scouting.
+ *
+ * ## O escalão deixou de ser texto livre
+ *
+ * Era um campo aberto e opcional, e isso era pedir a quem escreve que adivinhe o
+ * que o scouting espera ler: "Sub-15", "sub15", "Iniciados", ou nada. Um pedido
+ * sem escalão é um pedido que fica à espera de um telefonema para saber para
+ * quem é o jogador.
+ *
+ * Passou a ser a lista de equipas de quem pede — que, para um treinador, é
+ * exactamente **as equipas dele**: `listTeams` já vem no âmbito, a mesma
+ * fronteira do calendário e das presenças. E é obrigatório para quem tem âmbito:
+ * um treinador só pede para as equipas dele, e não faz sentido pedir "para o
+ * clube". A direção, que vê tudo, mantém o "qualquer escalão" — é ela que pode
+ * mesmo procurar um jogador sem destino ainda decidido.
+ */
+function NewRequestDialog({
+  session,
+  onClose,
+  onCreated,
+}: {
+  session: Session;
+  onClose: () => void;
+  onCreated: () => void;
+}) {
+  const teams = listTeams(session);
+  /** Quem tem âmbito de equipas é treinador: escolhe uma das dele, e tem de escolher. */
+  const deveEscolher = session.scope?.teamIds !== undefined;
+
   const [title, setTitle] = useState("");
   const [sportId, setSportId] = useState(academy.sports[0]?.id ?? "");
-  const [ageGroup, setAgeGroup] = useState("");
+  // Com uma equipa só não há nada a escolher — fica escolhida.
+  const [ageGroup, setAgeGroup] = useState(deveEscolher && teams.length === 1 ? teams[0].name : "");
   const [position, setPosition] = useState("");
   const [profile, setProfile] = useState("");
   const [traits, setTraits] = useState("");
@@ -270,7 +301,7 @@ function NewRequestDialog({ onClose, onCreated }: { onClose: () => void; onCreat
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const valid = title.trim().length >= 3;
+  const valid = title.trim().length >= 3 && (!deveEscolher || ageGroup.trim().length > 0);
 
   async function submit() {
     if (!valid || busy) return;
@@ -339,13 +370,34 @@ function NewRequestDialog({ onClose, onCreated }: { onClose: () => void; onCreat
               ))}
             </select>
           </DialogField>
-          <DialogField label="Escalão" hint="opcional">
-            <input value={ageGroup} onChange={(e) => setAgeGroup(e.target.value)} className={dialogInputClass} />
+          <DialogField label="Escalão" hint={deveEscolher ? undefined : "opcional"}>
+            <select value={ageGroup} onChange={(e) => setAgeGroup(e.target.value)} className={dialogInputClass}>
+              {/*
+                "Qualquer escalão" só para quem vê o clube todo. Um treinador que
+                o pudesse escolher estaria a pedir um jogador para uma equipa que
+                não é dele — e o pedido chegava ao scouting sem destino.
+              */}
+              {(!deveEscolher || teams.length !== 1) && (
+                <option value="">{deveEscolher ? "Escolhe o escalão" : "Qualquer escalão"}</option>
+              )}
+              {teams.map((t) => (
+                <option key={t.id} value={t.name}>
+                  {t.name}
+                </option>
+              ))}
+            </select>
           </DialogField>
           <DialogField label="Posição" hint="opcional">
             <input value={position} onChange={(e) => setPosition(e.target.value)} className={dialogInputClass} />
           </DialogField>
         </div>
+
+        {deveEscolher && teams.length === 0 && (
+          <p className="rounded-[var(--radius-control)] bg-warn-soft px-3 py-2 text-meta leading-relaxed text-warn">
+            Ainda não tens equipas atribuídas — um pedido de scouting é sempre para uma delas. Fala com a direção
+            para te atribuir o escalão.
+          </p>
+        )}
 
         <DialogField label="Perfil" hint="por palavras tuas">
           <textarea

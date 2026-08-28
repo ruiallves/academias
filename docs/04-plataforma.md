@@ -174,6 +174,25 @@ acção. Os dados vêm de `MailLog`, uma linha por tentativa de envio — ver
 `mail/mail.client.ts`, que a escreve **depois** de responder a quem chamou e falha
 em silêncio se não conseguir: não se perde um convite porque o registo não gravou.
 
+### Ficha de um clube
+
+`GET /academies/:id` e a página `/academias/:id` — aberta pelo **nome** do clube
+na lista. A tabela existe para comparar trinta; esta página existe para decidir
+sobre um: telefonar, ajudar a arrancar, ou propor um plano acima.
+
+Pela ordem da conversa: o **contacto inicial** (nome, email `mailto:` e se o
+convite chegou a ser aceite — é a primeira conta de staff do clube, a que nasceu
+do convite de criação), as contagens de gente, a **adopção da app das famílias**
+(quem já a abriu ou tem push — a métrica que separa quem assinou de quem usa),
+**quem está online agora**, a **actividade semana a semana** das últimas oito
+(folhas de presença *fechadas*, o preditor de renovação), as equipas com o
+plantel de cada uma, o staff por área, e as mensalidades que o clube cobra às
+famílias — que dizem se está agarrado ao produto.
+
+A fronteira é a mesma de sempre: contagens e agregados, mais os nomes das
+equipas, que não são de ninguém. Nem um nome de atleta, nem um contacto de
+família, nem nada de clínico.
+
 ### Academias
 
 Tabela densa, ordenável, uma linha por academia:

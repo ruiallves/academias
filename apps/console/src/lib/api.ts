@@ -6,6 +6,7 @@
  * fora — foi essa disciplina que permitiu trocar a origem sem tocar nos ecrãs.
  */
 
+import { isHeadCoach } from "@/lib/team-role";
 import {
   academy,
   announcements,
@@ -147,12 +148,21 @@ export function feeHistory(athleteId: string) {
   return fees.filter((f) => f.athleteId === athleteId).sort((a, b) => b.period.localeCompare(a.period));
 }
 
-export function listSessions(session: Session, from: Date, to: Date): TrainingSession[] {
-  const ids = new Set(scopedTeamIds(session));
+/*
+ * Os treinos do intervalo — do clube todo, e não só das minhas equipas.
+ *
+ * O filtro de âmbito saiu daqui. Quem o aplica é o servidor, que devolve o clube
+ * inteiro a quem é staff e o escalão do educando a uma família (ver
+ * `calendarScopeFilter`), e marca cada treino com `mine`. Filtrar outra vez aqui
+ * escondia da consola exactamente o que o servidor acabou de decidir mostrar.
+ *
+ * Quem quer só os seus — a lista de presenças por fechar, por exemplo — filtra
+ * por `mine`. Ver `unrecordedSessions`.
+ */
+export function listSessions(_session: Session, from: Date, to: Date): TrainingSession[] {
   const overrides = getAttendanceRecords();
 
   return sessions
-    .filter((s) => ids.has(s.teamId))
     .filter((s) => {
       const d = new Date(s.start);
       return d >= from && d <= to;
@@ -198,7 +208,18 @@ export const coachById = staffById;
  * iniciais, quem pode vê a cara.
  */
 export function teamCoaches(team: Team) {
-  return team.coaches.map((c) => {
+  /*
+   * O principal à frente.
+   *
+   * Esta lista é o subtítulo da página da equipa e a coluna "Treinador" da lista
+   * de equipas — sítios onde só cabe um nome ou dois. O que tem de lá estar é o
+   * responsável, e não quem calhou entrar primeiro na base. Mesma prioridade que
+   * a API usa em `headCoaches`, para que o ecrã e o calendário digam o mesmo.
+   */
+  const ordenados = [...team.coaches].sort(
+    (a, b) => Number(isHeadCoach(b.title)) - Number(isHeadCoach(a.title)) || a.name.localeCompare(b.name, "pt"),
+  );
+  return ordenados.map((c) => {
     // A ficha, quando se lhe pode chegar: traz a fotografia e o nome já com as
     // edições locais aplicadas.
     const ficha = staffById(c.id);
@@ -388,10 +409,18 @@ export function athleteAttendanceSummary(athleteId: string, limitDays = 180): At
 }
 
 /** Sessões passadas que ninguém registou. É trabalho por fazer, não estatística. */
+/**
+ * Treinos já dados e por registar — o trabalho **desta** pessoa.
+ *
+ * `mine` é o que separa isto do calendário. O calendário passou a mostrar o
+ * clube todo; a lista de pendências não pode acompanhar, senão um treinador
+ * abria a consola com "catorze treinos por fechar" de escalões que não são dele
+ * e que não tem como fechar.
+ */
 export function unrecordedSessions(session: Session): TrainingSession[] {
   const from = new Date(today.getTime() - 21 * 86_400_000);
   return listSessions(session, from, today).filter(
-    (s) => s.status === "done" && !s.attendance,
+    (s) => (s.mine ?? true) && s.status === "done" && !s.attendance,
   );
 }
 
@@ -565,6 +594,7 @@ export function attentionItems(session: Session): AttentionItem[] {
     ourScore: m.ourScore,
     submitted: m.submitted,
     myStaffRole: m.myStaffRole,
+    mine: m.mine,
   }));
 
   /*

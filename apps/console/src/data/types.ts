@@ -312,8 +312,20 @@ export type TrainingSession = {
    * "sem treinador" para os treinos dele próprio.
    */
   coachName?: string;
+  /** O nome da equipa, vindo com o treino. Ver `teamName` no evento. */
+  teamName?: string;
+  /**
+   * Este treino é de uma equipa minha?
+   *
+   * O calendário passou a mostrar o clube todo — um treinador precisa de saber
+   * quando o campo está ocupado. O que é dele continua a ser só o dele: as
+   * presenças, o registo, a edição. É o servidor que o decide (ver
+   * `inTeamScope`); isto é o que ele responde, para a interface não ter de
+   * adivinhar a partir do âmbito da sessão.
+   */
+  mine?: boolean;
   status: "scheduled" | "done" | "cancelled";
-  /** Nulo enquanto o treinador não registar presenças. */
+  /** Nulo enquanto o treinador não registar presenças. Nunca vem de equipas que não são minhas. */
   attendance?: SessionAttendance;
 };
 

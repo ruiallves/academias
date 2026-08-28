@@ -781,6 +781,14 @@ de infraestrutura, não de código da aplicação.
   lhe traz a equipa dele. Treino e jogo à parte porque por baixo são tabelas
   diferentes (`TrainingSession` e `Match`) e podiam ter guardas diferentes.
   Verificado por `npm run test:events` (24).
+- **Um pedido ao scouting diz sempre para que escalão é.** O campo era texto
+  livre e opcional — cada pessoa escrevia "Sub-15", "sub15" ou nada, e um pedido
+  sem escalão chega ao scouting sem destino. Passou a ser a lista de equipas de
+  quem pede, que para um treinador é o âmbito dele (`listTeams`), e é
+  **obrigatório** para quem tem âmbito: um treinador pede para as equipas dele e
+  não para o clube. A direcção mantém o "qualquer escalão" — é ela que pode
+  procurar sem destino decidido. O servidor impõe o mesmo (`createRequest`): sem
+  escalão dá 400, com o escalão de outra equipa dá 403.
 - **Do calendário da equipa marca-se um evento.** O separador Calendário da ficha
   de equipa tem "Marcar treino" e "Marcar jogo", que levam ao calendário com o
   "Novo evento" já aberto no tipo **e na equipa certos**

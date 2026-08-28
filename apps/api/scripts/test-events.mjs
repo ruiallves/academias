@@ -57,9 +57,20 @@ await db.connect();
  * a meio deixava o treino la, e a corrida seguinte falhava com "esta equipa ja tem
  * um treino marcado a esta hora" — que e o teste a bater em si proprio.
  */
-await db.query(`DELETE FROM "CalendarEvent" WHERE title LIKE 'ZZ Evento%'`);
-await db.query(`DELETE FROM "TrainingSession" WHERE "startsAt" IN ('2026-09-01T18:00:00.000Z', '2026-09-01T20:00:00.000Z')`);
-await db.query(`DELETE FROM "Match" WHERE "startsAt" = '2026-09-01T18:00:00.000Z'`);
+/*
+ * A limpeza tem de apanhar **todas** as horas que a suite usa.
+ *
+ * Apanhava duas, e o teste do adjunto usa outras: a segunda corrida seguida
+ * batia em "esta equipa ja tem um treino marcado a esta hora" e caia com tres
+ * falhas que nao tinham nada que ver com o que estava a ser testado. Um teste que
+ * so passa a primeira vez e um teste que nao se pode acreditar.
+ */
+await db.query(`DELETE FROM "CalendarEvent" WHERE title LIKE 'ZZ %'`);
+await db.query(
+  `DELETE FROM "TrainingSession" WHERE "startsAt" = ANY($1::timestamp[])`,
+  [["2026-09-01T18:00:00.000Z", "2026-09-01T20:00:00.000Z", "2026-09-02T20:00:00.000Z", "2026-09-04T20:00:00.000Z"]],
+);
+await db.query(`DELETE FROM "Match" WHERE opponent LIKE 'ZZ %' OR "startsAt" = '2026-09-01T18:00:00.000Z'`);
 
 const director = await login("direcao@lifeclub.pt");
 const coach = await login("treinador@lifeclub.pt");
@@ -118,35 +129,116 @@ check("um encarregado não cria eventos (403)", byParent.status === 403, `${byPa
  * a mesma, e é isso que estes dois pares verificam.
  */
 const adjunto = await login("adjunto@lifeclub.pt");
+
+/*
+ * A "equipa de outro" descobre-se, não se escreve à mão.
+ *
+ * Estava fixa em `t_sub13`, com a nota de que o adjunto só tinha o Sub-11. Deixou
+ * de ser verdade no dia em que a direcção lhe atribuiu mais escalões pela
+ * aplicação — que é uso normal do produto. O teste passou a marcar eventos numa
+ * equipa que **é** dele e a dar a fronteira por partida.
+ *
+ * Uma fronteira só se prova com um lado de fora. Se não houver nenhum, não há
+ * nada para provar e diz-se isso, em vez de o inventar.
+ */
+const semAdjunto = (await db.query(`
+  SELECT t.id FROM "Team" t JOIN "Academy" a ON a.id = t."academyId"
+   WHERE a.slug = 'life-club'
+     AND NOT EXISTS (
+       SELECT 1 FROM "TeamStaff" ts
+         JOIN "Membership" m ON m.id = ts."membershipId"
+         JOIN "User" u ON u.id = m."userId"
+        WHERE ts."teamId" = t.id AND u.email = 'adjunto@lifeclub.pt'
+     )
+   ORDER BY t.name LIMIT 1
+`)).rows[0]?.id ?? null;
+
 const S3 = "2026-09-02T20:00:00.000Z";
 const E3 = "2026-09-02T21:30:00.000Z";
 
 const treinoSeu = await call(adjunto, "POST", "/api/events", base("ZZ Treino Adjunto", { kind: "TRAINING", teamId: "t_sub11", startsAt: S3, endsAt: E3 }));
 check("o adjunto marca treino na equipa dele", treinoSeu.status === 201 || treinoSeu.status === 200, `${treinoSeu.status}`);
 
-const treinoAlheio = await call(adjunto, "POST", "/api/events", base("ZZ Treino Alheio", { kind: "TRAINING", teamId: "t_sub13", startsAt: S3, endsAt: E3 }));
-check("e não marca treino na equipa de outro (403)", treinoAlheio.status === 403, `${treinoAlheio.status}`);
+if (semAdjunto) {
+  const treinoAlheio = await call(adjunto, "POST", "/api/events", base("ZZ Treino Alheio", { kind: "TRAINING", teamId: semAdjunto, startsAt: S3, endsAt: E3 }));
+  check("e não marca treino na equipa de outro (403)", treinoAlheio.status === 403, `${treinoAlheio.status}`);
+} else {
+  console.log("  (o adjunto está em todas as equipas — salto a fronteira do treino)");
+}
 
 const jogoSeu = await call(adjunto, "POST", "/api/events", base("ZZ Jogo Adjunto", { kind: "MATCH", teamId: "t_sub11", opponent: "ZZ Adversário", startsAt: "2026-09-03T16:00:00.000Z", endsAt: "2026-09-03T17:30:00.000Z" }));
 check("marca jogo na equipa dele", jogoSeu.status === 201 || jogoSeu.status === 200, `${jogoSeu.status}`);
 
-const jogoAlheio = await call(adjunto, "POST", "/api/events", base("ZZ Jogo Alheio", { kind: "MATCH", teamId: "t_sub13", opponent: "ZZ Adversário", startsAt: "2026-09-03T16:00:00.000Z", endsAt: "2026-09-03T17:30:00.000Z" }));
-check("e não marca jogo na equipa de outro (403)", jogoAlheio.status === 403, `${jogoAlheio.status}`);
+if (semAdjunto) {
+  const jogoAlheio = await call(adjunto, "POST", "/api/events", base("ZZ Jogo Alheio", { kind: "MATCH", teamId: semAdjunto, opponent: "ZZ Adversário", startsAt: "2026-09-03T16:00:00.000Z", endsAt: "2026-09-03T17:30:00.000Z" }));
+  check("e não marca jogo na equipa de outro (403)", jogoAlheio.status === 403, `${jogoAlheio.status}`);
+} else {
+  console.log("  (o adjunto está em todas as equipas — salto a fronteira do jogo)");
+}
 
 /* Nem desmarca o que é de outra equipa — a mesma fronteira, do outro lado. */
-const doOutro = await call(director, "POST", "/api/events", base("ZZ Treino do Sub-13", { kind: "TRAINING", teamId: "t_sub13", startsAt: "2026-09-04T20:00:00.000Z", endsAt: "2026-09-04T21:30:00.000Z" }));
-const idDoOutro = primeiro(doOutro)?.id;
-const cancelarAlheio = await call(adjunto, "PATCH", `/api/events/${idDoOutro}`, { cancelled: true });
-check("e não desmarca o treino de outra equipa (403)", cancelarAlheio.status === 403, `${cancelarAlheio.status}`);
+if (semAdjunto) {
+  const doOutro = await call(director, "POST", "/api/events", base("ZZ Treino de Outra Equipa", { kind: "TRAINING", teamId: semAdjunto, startsAt: "2026-09-04T20:00:00.000Z", endsAt: "2026-09-04T21:30:00.000Z" }));
+  const idDoOutro = primeiro(doOutro)?.id;
+  const cancelarAlheio = await call(adjunto, "PATCH", `/api/events/${idDoOutro}`, { cancelled: true });
+  check("e não desmarca o treino de outra equipa (403)", cancelarAlheio.status === 403, `${cancelarAlheio.status}`);
+} else {
+  console.log("  (o adjunto está em todas as equipas — salto a fronteira do desmarcar)");
+}
 
-/* E o que ele vê é só o dele: a lista não pode trazer a equipa alheia. */
-const listaAdjunto = await call(adjunto, "GET", "/api/events");
-const equipasQueVe = new Set((listaAdjunto.body ?? []).map((e) => e.teamId).filter(Boolean));
-check(
-  "a lista de eventos só traz a equipa dele",
-  [...equipasQueVe].every((t) => t === "t_sub11"),
-  JSON.stringify([...equipasQueVe]),
-);
+/*
+ * O calendario e do clube; o que se pode fazer nele e que e por equipa.
+ *
+ * Isto exigia que a lista trouxesse so a equipa dele — e passava por vazio, sem
+ * ninguem dar por isso: os eventos criados acima para o t_sub13 ou eram treinos
+ * (que vivem noutra tabela) ou tinham sido recusados, por isso nao havia
+ * nenhum para ver. Agora cria-se um a serio e verifica-se as duas metades.
+ */
+/** O evento de uma equipa que não é dele — se houver uma. */
+let idAlheio = null;
+
+if (semAdjunto) {
+  const eventoAlheio = await call(director, "POST", "/api/events", base("ZZ Reuniao de Outra Equipa", {
+    kind: "OTHER", teamId: semAdjunto, startsAt: "2026-09-05T18:00:00.000Z", endsAt: "2026-09-05T19:00:00.000Z",
+  }));
+  check("a direcao marca um evento noutra equipa", eventoAlheio.status < 300, `${eventoAlheio.status}`);
+  idAlheio = primeiro(eventoAlheio)?.id;
+
+  const listaAdjunto = await call(adjunto, "GET", "/api/events");
+  const alheioNaLista = (listaAdjunto.body ?? []).find((e) => e.id === idAlheio);
+  check("o adjunto ve no calendario o evento de outra equipa", Boolean(alheioNaLista), "evento alheio");
+  check("marcado como nao sendo dele", alheioNaLista?.mine === false, `${alheioNaLista?.mine}`);
+
+  // O nome vem da equipa escolhida acima, não de um nome escrito à mão: a equipa
+  // "de fora" é a que houver, e o clube pode ter-lhe mudado o nome.
+  const nomeEsperado = (await db.query(`SELECT name FROM "Team" WHERE id = $1`, [semAdjunto])).rows[0]?.name;
+  check("com o nome da equipa, que ele nao tem por outra via", alheioNaLista?.teamName === nomeEsperado, `${alheioNaLista?.teamName} vs ${nomeEsperado}`);
+} else {
+  console.log("  (o adjunto está em todas as equipas — salto a leitura do que não é dele)");
+}
+
+/*
+ * E um do t_sub11, para a outra metade nao passar por vazio.
+ *
+ * Os eventos que o adjunto criou acima sao um treino e um jogo, e esses vivem em
+ * `TrainingSession` e `Match` — nao em `CalendarEvent`. Sem isto, "os dele
+ * continuam marcados como dele" media uma lista vazia, que e o mesmo erro que
+ * esta suite ja tinha do outro lado.
+ */
+const eventoSeu = await call(adjunto, "POST", "/api/events", base("ZZ Reuniao Sub-11", {
+  kind: "OTHER", teamId: "t_sub11", startsAt: "2026-09-05T20:00:00.000Z", endsAt: "2026-09-05T21:00:00.000Z",
+}));
+check("o adjunto marca um evento na equipa dele", eventoSeu.status < 300, `${eventoSeu.status}`);
+
+const listaDepois = await call(adjunto, "GET", "/api/events");
+const seusNaLista = (listaDepois.body ?? []).filter((e) => e.teamId === "t_sub11");
+check("e os dele continuam marcados como dele", seusNaLista.length > 0 && seusNaLista.every((e) => e.mine === true), `${seusNaLista.length}`);
+
+// Ver nao e poder: desmarcar continua a bater na fronteira.
+if (idAlheio) {
+  const desmarcarAlheio = await call(adjunto, "PATCH", `/api/events/${idAlheio}`, { cancelled: true });
+  check("mas continua a nao poder desmarca-lo (403)", desmarcarAlheio.status === 403, `${desmarcarAlheio.status}`);
+}
 
 console.log("\n=== Regras de forma ===");
 const badRange = await call(director, "POST", "/api/events", base("ZZ Evento Ordem", { teamId: "t_sub11", endsAt: S1, startsAt: E1 }));
@@ -215,7 +307,10 @@ console.log("\n=== Limpeza ===");
  * horas que só este teste usa — 1, 2 e 4 de Setembro de 2026, sempre a horas
  * redondas que ninguém marca à mão.
  */
-await db.query(`DELETE FROM "CalendarEvent" WHERE title LIKE 'ZZ Evento%'`);
+// O mesmo padrão da limpeza de entrada. Estava mais estreito (`ZZ Evento%`) e
+// deixava para trás as reuniões que este teste cria — que a corrida seguinte
+// apanhava, mas só depois de as ter contado como dados do clube.
+await db.query(`DELETE FROM "CalendarEvent" WHERE title LIKE 'ZZ %'`);
 await db.query(`DELETE FROM "Match" WHERE opponent LIKE 'ZZ %'`);
 await db.query(
   `DELETE FROM "TrainingSession" WHERE "startsAt" = ANY($1::timestamp[])`,

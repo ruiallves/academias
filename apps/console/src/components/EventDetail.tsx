@@ -52,7 +52,20 @@ export function EventDetail({
   // procurar lá dizia "Sem treinador atribuído" nos treinos dele próprio.
   const coachName = event.coachName ?? coach?.name;
   const team = event.teamId ? teamById(event.teamId) : undefined;
-  const editable = can(session, "calendar:write") || can(session, "attendance:write");
+  /*
+   * Ver o clube todo, mexer só no que é meu.
+   *
+   * O calendário passou a mostrar os treinos e jogos de todas as equipas — um
+   * treinador precisa de saber quando o campo está ocupado. O que ele pode
+   * **fazer** não mudou: registar presenças, editar, cancelar e abrir a ficha
+   * continuam a ser das equipas dele.
+   *
+   * `mine` vem do servidor (ver `inTeamScope`), que já recusa a escrita de
+   * qualquer maneira. Isto é para a interface não oferecer um botão que vai
+   * levar com um 403 — e não é o que fecha a porta.
+   */
+  const meu = event.mine ?? true;
+  const editable = meu && (can(session, "calendar:write") || can(session, "attendance:write"));
   const past = event.end < new Date();
 
   /*
@@ -103,7 +116,7 @@ export function EventDetail({
                 aria-hidden
               />
               <span className="text-meta font-medium text-ink-3">
-                {team ? team.name : "Toda a academia"} · {KIND_LABEL[event.kind]}
+                {team?.name ?? event.teamName ?? "Toda a academia"} · {KIND_LABEL[event.kind]}
               </span>
             </div>
             <h2 id="detalhe-evento" className={cx("text-page text-ink", event.cancelled && "text-ink-4 line-through")}>
@@ -145,7 +158,9 @@ export function EventDetail({
             />
           )}
 
-          {event.kind === "training" && (
+          {/* As presenças são de quem tem a equipa: sem `meu`, o link levava a
+              uma página onde este treino nem aparece. */}
+          {event.kind === "training" && meu && (
             <div className="px-5 py-4">
               <Link
                 to={session.role === "COACH" || session.role === "STAFF" ? "/treinos" : "/presencas"}
@@ -157,7 +172,18 @@ export function EventDetail({
           )}
         </div>
 
-        {can(session, "calendar:write") && (
+        {/* Um evento de outra equipa lê-se e não se toca. Dizê-lo é melhor do que
+            um painel sem botões, que se lê como uma falta de permissão. */}
+        {!meu && (
+          <footer className="border-t border-line px-5 py-3">
+            <p className="text-meta leading-relaxed text-ink-3">
+              {(team?.name ?? event.teamName) ? `Este evento é do ${team?.name ?? event.teamName}.` : "Este evento é de outra equipa."} Aparece no calendário
+              para saberes o que está marcado; quem o gere é quem tem essa equipa.
+            </p>
+          </footer>
+        )}
+
+        {meu && can(session, "calendar:write") && (
           <footer className="border-t border-line px-5 py-3">
             <button
               type="button"

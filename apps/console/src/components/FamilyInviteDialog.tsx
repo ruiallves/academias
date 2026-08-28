@@ -188,7 +188,7 @@ export function FamilyInviteDialog({ onClose }: { onClose: () => void }) {
                     key={String(o.days)}
                     className={cx(
                       "flex cursor-pointer items-center gap-2.5 rounded-[var(--radius-control)] border px-3 py-2 transition-colors duration-[120ms]",
-                      days === o.days ? "border-signal bg-signal-soft/40" : "border-line hover:bg-sunken",
+                      days === o.days ? "border-signal-line bg-signal-soft/40" : "border-line hover:bg-sunken",
                     )}
                   >
                     <input

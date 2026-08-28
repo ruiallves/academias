@@ -137,7 +137,7 @@ export function NewTeamDialog({ onClose }: { onClose: () => void }) {
             <div
               className={cx(
                 "flex h-9 items-center rounded-[var(--radius-control)] border bg-surface px-2.5",
-                "focus-within:border-signal",
+                "focus-within:border-signal-line",
                 age && !ageOk ? "border-risk" : "border-line",
               )}
             >

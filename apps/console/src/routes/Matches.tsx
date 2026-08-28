@@ -94,6 +94,15 @@ export default function Matches() {
 
   const agora = Date.now();
   const activo = (r: MatchListRow) => r.status !== "CANCELLED";
+  /*
+   * O que é **trabalho meu** — e não o que está na lista.
+   *
+   * A lista passou a trazer os jogos de todas as equipas: um treinador tem de
+   * poder ver quando joga o escalão de cima. Mas convocar e preencher a ficha
+   * continuam a ser das equipas dele, e as duas fichas de trabalho no topo desta
+   * página contam só essas. Ver `calendarScopeFilter` no servidor.
+   */
+  const meu = (r: MatchListRow) => r.mine && activo(r);
   const jaFoi = (r: MatchListRow) => new Date(r.startsAt).getTime() < agora;
 
   /** Em quantos jogos por vir esta pessoa está escalada. Zero esconde o filtro. */
@@ -102,7 +111,7 @@ export default function Matches() {
   ).length;
 
   /** Já jogados e sem resultado — o trabalho por fazer, do lado do passado. */
-  const porPreencher = rows.filter((r) => activo(r) && jaFoi(r) && r.ourScore === null);
+  const porPreencher = rows.filter((r) => meu(r) && jaFoi(r) && r.ourScore === null);
 
   /**
    * A chegar e sem convocatória enviada, dentro de dez dias.
@@ -114,7 +123,7 @@ export default function Matches() {
    */
   const porConvocar = rows.filter(
     (r) =>
-      activo(r) &&
+      meu(r) &&
       !r.submitted &&
       !jaFoi(r) &&
       new Date(r.startsAt).getTime() - agora <= 10 * 86_400_000,
@@ -178,7 +187,7 @@ export default function Matches() {
         {podeMarcar && (
           <Link to="/calendario?novo=jogo" className="ctl-primary">
             <Plus className="size-3.5" strokeWidth={2} />
-            Adicionar jogo
+            Agendar jogo
           </Link>
         )}
       </PageHeader>

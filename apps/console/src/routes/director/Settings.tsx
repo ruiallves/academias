@@ -220,7 +220,7 @@ function BillingCalendar({ mayWrite }: { mayWrite: boolean }) {
                 className={cx(
                   "h-7 rounded-[var(--radius-control)] border text-[11px] font-medium transition-colors duration-[120ms] disabled:opacity-50",
                   on
-                    ? "border-signal bg-signal-soft text-signal-ink"
+                    ? "border-signal-line bg-signal-soft text-signal-ink"
                     : "border-line text-ink-4 hover:border-line-strong hover:text-ink-3",
                 )}
               >

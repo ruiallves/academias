@@ -323,7 +323,7 @@ function Pick({
         }}
         className={cx(
           "flex w-full flex-col items-center gap-2 rounded-[var(--radius-panel)] border border-dashed px-4 py-8 transition-colors duration-[120ms]",
-          dragging ? "border-signal bg-signal-soft/40" : "border-line-strong hover:bg-sunken/40",
+          dragging ? "border-signal-line bg-signal-soft/40" : "border-line-strong hover:bg-sunken/40",
         )}
       >
         <Upload className="size-6 text-ink-3" strokeWidth={1.5} />
@@ -435,7 +435,7 @@ function Review({
         <div
           className={cx(
             "overflow-hidden rounded-[var(--radius-panel)] border",
-            createNew ? "border-signal/40 bg-signal-soft/25" : "border-line",
+            createNew ? "border-signal-line bg-signal-soft/25" : "border-line",
           )}
         >
           <div className="flex items-start gap-3 px-3 py-2.5">
@@ -488,7 +488,7 @@ function Review({
                   {/* A idade proposta a partir do nome, editável. Sub- fixo,
                       como no diálogo de nova equipa — a mesma decisão, o mesmo
                       aspecto. */}
-                  <span className="flex h-8 items-center rounded-[var(--radius-control)] border border-line bg-surface px-2 focus-within:border-signal">
+                  <span className="flex h-8 items-center rounded-[var(--radius-control)] border border-line bg-surface px-2 focus-within:border-signal-line">
                     <span aria-hidden className="select-none text-meta text-ink-3">
                       Sub-
                     </span>
@@ -528,7 +528,7 @@ function Review({
         <div
           className={cx(
             "overflow-hidden rounded-[var(--radius-panel)] border",
-            criarPosicoes && podeCriarPosicoes ? "border-signal/40 bg-signal-soft/25" : "border-line",
+            criarPosicoes && podeCriarPosicoes ? "border-signal-line bg-signal-soft/25" : "border-line",
           )}
         >
           <div className="flex items-start gap-3 px-3 py-2.5">

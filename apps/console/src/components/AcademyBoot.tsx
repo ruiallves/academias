@@ -92,7 +92,7 @@ function BootLoading() {
     >
       <span
         className="size-9 animate-spin rounded-full border-[3px] border-line"
-        style={{ borderTopColor: "var(--color-signal)" }}
+        style={{ borderTopColor: "var(--color-signal-line, var(--color-signal))" }}
         aria-hidden
       />
     </div>

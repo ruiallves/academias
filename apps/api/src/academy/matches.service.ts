@@ -1,7 +1,7 @@
 import { BadRequestException, ForbiddenException, Injectable, NotFoundException } from "@nestjs/common";
 import { PrismaService, type ScopedClient } from "../prisma/prisma.service";
 import { NotificationsService } from "../notifications/notifications.service";
-import { can, teamScopeFilter, type RequestContext } from "../common/permissions";
+import { calendarScopeFilter, can, inTeamScope, teamScopeFilter, type RequestContext } from "../common/permissions";
 
 /**
  * Jogos e convocatórias.
@@ -33,7 +33,7 @@ export class MatchesService {
   /** Jogos do âmbito, com a convocatória e o plantel elegível de cada equipa. */
   async list(ctx: RequestContext, from?: Date, to?: Date) {
     if (!can(ctx, "calendar:read")) throw new ForbiddenException("Sem acesso ao calendário");
-    const scope = teamScopeFilter(ctx);
+    const scope = calendarScopeFilter(ctx);
 
     const start = from ?? new Date(Date.now() - 30 * 86_400_000);
     const end = to ?? new Date(Date.now() + 90 * 86_400_000);
@@ -90,39 +90,58 @@ export class MatchesService {
         },
       });
 
-      return matches.map((m) => ({
-        id: m.id,
-        teamId: m.teamId,
-        teamName: m.team.name,
-        maxCallUps: m.team.maxCallUps,
-        startsAt: m.startsAt,
-        endsAt: m.endsAt,
-        venue: m.venue,
-        opponent: m.opponent,
-        isHome: m.isHome,
-        status: m.status,
-        ourScore: m.ourScore,
-        theirScore: m.theirScore,
-        submitted: m.callUpsClosedAt !== null,
-        submittedAt: m.callUpsClosedAt,
-        /** A função com que **eu** estou escalado neste jogo. `null` se não estou. */
-        myStaffRole: m.staff[0]?.role ?? null,
-        /** Quem jogou e o que fez. Vazio enquanto a ficha estiver por preencher. */
-        appearances: m.appearances.map((a) => ({
-          ...a,
-          // `Decimal` do Prisma não atravessa JSON como número.
-          rating: a.rating === null ? null : Number(a.rating),
-        })),
-        calledUp: m.callUps.map((c) => ({
-          athleteId: c.athleteId,
-          status: c.status,
-          // Só presente quando é convidado — é o que a ficha do atleta e a lista
-          // de convocados usam para dizer "emprestado pelo Sub-11" em vez de
-          // deixar parecer que ele sempre jogou aqui.
-          isGuest: c.isGuest,
-          guestFromTeam: c.isGuest ? c.athlete.teams[0]?.team.name : undefined,
-        })),
-      }));
+      return matches.map((m) => {
+        /*
+         * O jogo aparece a todo o clube; a convocatória e a ficha, não.
+         *
+         * Quem joga contra quem, quando, onde e como acabou é a vida do clube —
+         * um treinador tem de poder ver que o Sub-15 joga fora no sábado. Mas
+         * **quem foi convocado** e **quem jogou quantos minutos** são o trabalho
+         * daquele escalão, com nomes de atletas lá dentro, e ficam de fora
+         * quando o jogo não é meu. Ver `calendarScopeFilter` e `inTeamScope`.
+         */
+        const meu = inTeamScope(ctx, m.teamId);
+
+        return {
+          id: m.id,
+          teamId: m.teamId,
+          teamName: m.team.name,
+          maxCallUps: m.team.maxCallUps,
+          startsAt: m.startsAt,
+          endsAt: m.endsAt,
+          venue: m.venue,
+          opponent: m.opponent,
+          isHome: m.isHome,
+          status: m.status,
+          ourScore: m.ourScore,
+          theirScore: m.theirScore,
+          submitted: m.callUpsClosedAt !== null,
+          submittedAt: m.callUpsClosedAt,
+          /** É de uma equipa minha? Decide o que vem preenchido, e o que a consola deixa abrir. */
+          mine: meu,
+          /** A função com que **eu** estou escalado neste jogo. `null` se não estou. */
+          myStaffRole: m.staff[0]?.role ?? null,
+          /** Quem jogou e o que fez. Vazio enquanto a ficha estiver por preencher — ou se o jogo não é meu. */
+          appearances: meu
+            ? m.appearances.map((a) => ({
+                ...a,
+                // `Decimal` do Prisma não atravessa JSON como número.
+                rating: a.rating === null ? null : Number(a.rating),
+              }))
+            : [],
+          calledUp: meu
+            ? m.callUps.map((c) => ({
+                athleteId: c.athleteId,
+                status: c.status,
+                // Só presente quando é convidado — é o que a ficha do atleta e a lista
+                // de convocados usam para dizer "emprestado pelo Sub-11" em vez de
+                // deixar parecer que ele sempre jogou aqui.
+                isGuest: c.isGuest,
+                guestFromTeam: c.isGuest ? c.athlete.teams[0]?.team.name : undefined,
+              }))
+            : [],
+        };
+      });
     });
   }
 

@@ -161,7 +161,7 @@ function TeamCard({
         O cartão inteiro é o alvo — não um link de doze pixels no canto.
         `group` para a seta responder ao hover do cartão todo, e não só a si.
       */
-      className="group relative block overflow-hidden rounded-[var(--radius-panel)] border border-line bg-surface transition-[border-color,box-shadow] duration-[140ms] hover:border-line-strong hover:shadow-[var(--shadow-pop)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--color-signal)]"
+      className="group relative block overflow-hidden rounded-[var(--radius-panel)] border border-line bg-surface transition-[border-color,box-shadow] duration-[140ms] hover:border-line-strong hover:shadow-[var(--shadow-pop)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--color-signal-line,var(--color-signal))]"
     >
       {/*
         A faixa de identidade.

@@ -116,7 +116,7 @@ export function TeamStaffDialog({
     }
   }
 
-  const titulo = modo.tipo === "equipa" ? "Quem treina esta equipa" : "Equipas";
+  const titulo = modo.tipo === "equipa" ? "Quem pertence a esta equipa" : "Equipas";
   const subtitulo = modo.tipo === "equipa" ? modo.teamName : pessoa?.name;
 
   return (

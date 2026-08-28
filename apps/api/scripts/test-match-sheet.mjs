@@ -77,11 +77,25 @@ console.log("=== Preparar um jogo com convocatória ===");
 const academyId = (await db.query(`SELECT id FROM "Academy" WHERE slug = 'life-club'`)).rows[0].id;
 
 // A equipa do treinador da demonstração, para o teste de âmbito significar algo.
+/*
+ * E uma **com plantel**, nao a primeira que aparecer.
+ *
+ * Era um LIMIT 1 sem ordem nenhuma. Aguentou-se enquanto a demonstracao teve
+ * duas equipas, ambas com atletas; no dia em que apareceu uma terceira vazia
+ * (Sub-19), o Postgres devolveu-a primeiro e a suite inteira caiu — 43 falhas
+ * a partir de "a equipa tem plantel para convocar: 0". A ordem por numero de
+ * atletas escolhe sempre uma equipa que sirva para convocar.
+ */
 const doCoach = (await db.query(
-  `SELECT DISTINCT ts."teamId" FROM "TeamStaff" ts
-   JOIN "Membership" m ON m.id = ts."membershipId"
-   JOIN "User" u ON u.id = m."userId"
-   WHERE u.email = 'treinador@lifeclub.pt' LIMIT 1`,
+  `SELECT ts."teamId",
+          (SELECT count(*) FROM "TeamMembership" tm WHERE tm."teamId" = ts."teamId" AND tm."leftAt" IS NULL) AS n
+     FROM "TeamStaff" ts
+     JOIN "Membership" m ON m.id = ts."membershipId"
+     JOIN "User" u ON u.id = m."userId"
+    WHERE u.email = 'treinador@lifeclub.pt'
+    GROUP BY ts."teamId"
+    ORDER BY n DESC
+    LIMIT 1`,
 )).rows[0]?.teamId;
 /*
  * Uma equipa mesmo **fora do âmbito**, e não só diferente daquela.
@@ -174,6 +188,29 @@ check("o jogo diz que foi marcado à mão", detalhe.body?.source === null, JSON.
 const alheio = await call(coach, "GET", `/api/matches/${jogoAlheio}`);
 check("mas não abre o jogo de outra equipa (404)", alheio.status === 404, `${alheio.status}`);
 
+/*
+ * O calendário do clube: ver tudo, mexer só no que é meu.
+ *
+ * A lista de jogos passou a trazer todas as equipas — um treinador tem de saber
+ * quando joga o escalao de cima e onde. O que **nao** atravessa e o que e privado
+ * daquele escalao: a convocatoria e a ficha tecnica, que levam nomes de atletas
+ * la dentro. Ver `calendarScopeFilter` e `inTeamScope`.
+ */
+const lista = await call(coach, "GET", "/api/matches");
+const alheioNaLista = (lista.body ?? []).find((x) => x.id === jogoAlheio);
+check("o treinador ve na lista o jogo de outra equipa", Boolean(alheioNaLista), "jogoAlheio");
+check("marcado como nao sendo dele", alheioNaLista?.mine === false, `${alheioNaLista?.mine}`);
+check("com o adversario e a equipa", Boolean(alheioNaLista?.opponent && alheioNaLista?.teamName), "opponent/teamName");
+check("mas sem convocatoria", (alheioNaLista?.calledUp ?? []).length === 0, JSON.stringify(alheioNaLista?.calledUp)?.slice(0, 80));
+check("e sem ficha tecnica", (alheioNaLista?.appearances ?? []).length === 0, JSON.stringify(alheioNaLista?.appearances)?.slice(0, 80));
+
+const meuNaLista = (lista.body ?? []).find((x) => x.id === meuJogo);
+check("e o dele continua marcado como dele", meuNaLista?.mine === true, `${meuNaLista?.mine}`);
+// A convocatoria dele ja foi inserida acima — e a prova de que o corte e por
+// equipa e nao um "nunca mandes convocatorias".
+check("com a convocatoria dele visivel", (meuNaLista?.calledUp ?? []).length === plantel.length, `${meuNaLista?.calledUp?.length}`);
+
+// A pagina do jogo continua fechada: ver na lista nao e poder abrir.
 const porPresidente = await call(presidente, "GET", `/api/matches/${jogoAlheio}`);
 check("o presidente abre qualquer jogo do clube", porPresidente.status === 200, `${porPresidente.status}`);
 

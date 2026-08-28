@@ -5,7 +5,7 @@ import { PrismaService, type ScopedClient } from "../prisma/prisma.service";
 import { StorageService } from "../storage/storage.service";
 import { PHOTO_BUCKET, PHOTO_TTL } from "../storage/photos.service";
 import { basePermissions, can, ROLE_PERMISSIONS, type Permission, type RequestContext } from "../common/permissions";
-import { athleteScopeFilter, teamScopeFilter } from "../common/permissions";
+import { athleteScopeFilter, calendarScopeFilter, inTeamScope, teamScopeFilter } from "../common/permissions";
 import { gerarCobrancas, periodoActual } from "../billing/billing.service";
 import { SHORT_NAME_MAX } from "../common/short-name";
 
@@ -24,6 +24,15 @@ const EVENT_SELECT = {
   dressingRoom: true,
   cancelled: true,
   coach: { select: { id: true, user: { select: { name: true } } } },
+  /*
+   * O nome da equipa vem com o evento.
+   *
+   * `GET /api/teams` continua estreito — um treinador só recebe as equipas dele,
+   * com plantel, horário e preço. Mas o calendário passou a mostrar o clube todo
+   * (ver `calendarScopeFilter`), e sem isto um treino do Sub-15 chegava à consola
+   * sem nome nenhum, porque `teamById` não o encontrava.
+   */
+  team: { select: { name: true } },
 } satisfies Prisma.CalendarEventSelect;
 
 type EventRow = Prisma.CalendarEventGetPayload<{ select: typeof EVENT_SELECT }>;
@@ -39,6 +48,8 @@ function serializeEvent(e: EventRow, porEquipa?: Map<string, { id: string; name:
   return {
     id: e.id,
     teamId: e.teamId,
+    /** Nulo num evento de toda a academia — esse não é de equipa nenhuma. */
+    teamName: e.team?.name ?? null,
     kind: e.kind,
     title: e.title,
     startsAt: e.startsAt,
@@ -1246,7 +1257,15 @@ export class AcademyService {
     if (!can(ctx, "calendar:read") && !can(ctx, "attendance:read")) {
       throw new ForbiddenException("Sem acesso a treinos");
     }
-    const scope = teamScopeFilter(ctx);
+    /*
+     * As linhas são as do clube todo; o conteúdo de cada uma é que depende.
+     *
+     * Um treinador vê que o Sub-15 treina às terças às 18h no campo 2 — precisa
+     * disso para saber onde há espaço. O que **não** vê são as faltas desse
+     * treino: quem faltou é do escalão, e o `teamScopeFilter` continua a mandar
+     * nisso, linha a linha, mais abaixo.
+     */
+    const scope = calendarScopeFilter(ctx);
 
     return this.prisma.runAs(ctx.academyId, async (db) => {
       const rows = await db.trainingSession.findMany({
@@ -1256,6 +1275,7 @@ export class AcademyService {
           id: true, teamId: true, startsAt: true, endsAt: true, venue: true, dressingRoom: true, status: true,
           attendanceClosedAt: true,
           coach: { select: { id: true, user: { select: { name: true } } } },
+          team: { select: { name: true } },
           attendance: { select: { athleteId: true, status: true } },
         },
       });
@@ -1266,6 +1286,7 @@ export class AcademyService {
       return rows.map((s) => ({
         id: s.id,
         teamId: s.teamId,
+        teamName: s.team.name,
         startsAt: s.startsAt,
         endsAt: s.endsAt,
         venue: s.venue,
@@ -1274,9 +1295,21 @@ export class AcademyService {
         coachId: s.coach?.id ?? porEquipa.get(s.teamId)?.id ?? null,
         coachName: s.coach?.user.name ?? porEquipa.get(s.teamId)?.name ?? null,
         recorded: s.attendanceClosedAt !== null,
-        absences: s.attendance
-          .filter((a) => a.status !== "PRESENT")
-          .map((a) => ({ athleteId: a.athleteId, status: a.status })),
+        /** Se este treino é de uma equipa minha — decide o que se mostra dele, e o que se pode fazer. */
+        mine: inTeamScope(ctx, s.teamId),
+        /*
+         * As faltas só do meu escalão.
+         *
+         * Quem faltou ao treino é dado do atleta, e a lista existe para o
+         * treinador da equipa fechar a folha — não para o clube inteiro a ler.
+         * Sai vazia para os outros, e é o servidor a decidi-lo: se ficasse à
+         * interface, bastava uma leitura directa da API para a ter toda.
+         */
+        absences: inTeamScope(ctx, s.teamId)
+          ? s.attendance
+              .filter((a) => a.status !== "PRESENT")
+              .map((a) => ({ athleteId: a.athleteId, status: a.status }))
+          : [],
       }));
     });
   }
@@ -1294,7 +1327,15 @@ export class AcademyService {
    */
   async events(ctx: RequestContext, from: Date, to: Date) {
     if (!can(ctx, "calendar:read")) throw new ForbiddenException("Sem acesso ao calendário");
-    const scope = teamScopeFilter(ctx);
+    /*
+     * O calendário do clube lê-se todo. Ver `calendarScopeFilter`.
+     *
+     * Um evento não guarda nada de privado — é o quê, quando, onde, de que
+     * equipa e com que treinador. Alargá-lo não abre porta nenhuma, e fechá-lo
+     * escondia de um treinador a informação de que precisa para trabalhar: se o
+     * campo está ocupado, quando joga o escalão de cima, a reunião de sábado.
+     */
+    const scope = calendarScopeFilter(ctx);
 
     return this.prisma.runAs(ctx.academyId, async (db) => {
       const rows = await db.calendarEvent.findMany({
@@ -1309,7 +1350,13 @@ export class AcademyService {
         db,
         rows.map((r) => r.teamId).filter((id): id is string => id !== null),
       );
-      return rows.map((r) => serializeEvent(r, porEquipa));
+      /*
+       * `mine` decide-se aqui e não na interface.
+       *
+       * Um evento sem equipa é da academia inteira e é de toda a gente; um de
+       * equipa é meu se a equipa for minha. Ver `inTeamScope`.
+       */
+      return rows.map((r) => ({ ...serializeEvent(r, porEquipa), mine: inTeamScope(ctx, r.teamId) }));
     });
   }
 
@@ -1857,19 +1904,135 @@ export class AcademyService {
         .map((r) => r.id);
       const toAdd = wanted.filter((id) => !has.has(id));
 
-      if (toRemove.length) await db.teamStaff.deleteMany({ where: { id: { in: toRemove } } });
+      if (toRemove.length) {
+        const equipasSaiu = current.filter((r) => toRemove.includes(r.id)).map((r) => r.teamId);
+        await db.teamStaff.deleteMany({ where: { id: { in: toRemove } } });
+
+        /*
+         * Sair de uma equipa tira o nome dos treinos que ainda não aconteceram.
+         *
+         * Sem isto, tirar o Rui do Sub-13 deixava-o no calendário como treinador
+         * dos treinos daquela equipa — o `TeamStaff` desaparecia e o
+         * `TrainingSession.coachId` ficava a apontar para ele. Quem o tinha
+         * acabado de remover via o nome dele no ecrã seguinte, sem nada que o
+         * explicasse.
+         *
+         * ## Só o que ainda não aconteceu
+         *
+         * Um treino de 15 de Agosto **foi** dado por ele, e foi ele que lhe
+         * fechou as presenças. Apagar isso era reescrever o passado para arrumar
+         * o presente — a mesma regra de todo o resto deste produto: histórico,
+         * não amnésia. O corte é o instante da remoção; o que vem a seguir passa
+         * a ficar sem treinador atribuído, e a equipa preenche-o como preencheria
+         * um treino novo.
+         *
+         * Os eventos de calendário seguem a mesma regra, pela mesma razão.
+         */
+        const agora = new Date();
+        const porAtribuir = { coachId: null };
+        const alvo = { teamId: { in: equipasSaiu }, coachId: membershipId, startsAt: { gt: agora } };
+
+        await db.trainingSession.updateMany({ where: alvo, data: porAtribuir });
+        await db.calendarEvent.updateMany({ where: alvo, data: porAtribuir });
+      }
       if (toAdd.length) {
+        /*
+         * Um principal por equipa, também por aqui.
+         *
+         * O título da linha nasce do cargo da pessoa **na academia** — e há
+         * clubes onde esse cargo é literalmente "Treinador principal". Sem esta
+         * guarda, atribuir-lhe um escalão que já tem responsável deixava dois
+         * principais na mesma equipa, e o calendário escolhia um à sorte. Quem
+         * chega entra como adjunto; promovê-lo é um gesto explícito, na página
+         * da equipa. Ver `setTeamRole`.
+         */
+        const base = target.title?.trim() || (target.role === "COACH" ? "Treinador" : "Staff");
+        const comPrincipal = new Set(
+          (
+            await db.teamStaff.findMany({
+              where: { teamId: { in: toAdd }, title: { contains: "principal", mode: "insensitive" } },
+              select: { teamId: true },
+            })
+          ).map((r) => r.teamId),
+        );
+
         await db.teamStaff.createMany({
           data: toAdd.map((teamId) => ({
             teamId,
             membershipId,
-            title: target.title?.trim() || (target.role === "COACH" ? "Treinador" : "Staff"),
+            title: /principal/i.test(base) && comPrincipal.has(teamId) ? "Treinador adjunto" : base,
           })),
         });
       }
 
       const final = await db.teamStaff.findMany({ where: { membershipId }, select: { teamId: true } });
       return { teamIds: final.map((r) => r.teamId) };
+    });
+  }
+
+  /**
+   * Quem é o treinador principal de uma equipa — o `title` do `TeamStaff`.
+   *
+   * ## O que faltava
+   *
+   * Dava para pôr pessoas numa equipa e não dava para dizer qual delas a treina.
+   * O título já existia na base — é ele que o calendário e as presenças lêem, em
+   * `headCoaches`, para saber de quem é o treino — mas era escrito **uma única
+   * vez**, ao atribuir a equipa, copiado do cargo da pessoa na academia
+   * ("Treinador"). Com dois treinadores no mesmo escalão ficavam os dois com o
+   * mesmo título, e o responsável saía à sorte da ordenação.
+   *
+   * ## Porquê `team:write` e não `access:write`
+   *
+   * Pôr alguém numa equipa é dar-lhe acesso a um plantel — fichas, presenças,
+   * boletim clínico — e por isso é `access:write`. Dizer qual dos que já lá estão
+   * é o principal não abre porta nenhuma: é uma decisão desportiva, da mesma
+   * família de criar a equipa ou de lhe mudar o escalão. O coordenador, que monta
+   * os escalões e não gere acessos, tem exactamente esta e não a outra.
+   *
+   * ## Um principal de cada vez
+   *
+   * Promover alguém despromove quem lá estava, na mesma transacção. Dois
+   * "principais" na mesma equipa não é um estado que o produto saiba mostrar:
+   * `headCoaches` teria de escolher um, e escolhia pela ordem do título — ou
+   * seja, à sorte. Quem sai fica **adjunto** e não fica sem nada: continua na
+   * equipa, só deixa de ser o responsável. É o que um clube faz quando muda o
+   * treinador de um escalão a meio da época.
+   */
+  async setTeamRole(ctx: RequestContext, teamId: string, membershipId: string, title: string) {
+    if (!can(ctx, "team:write")) throw new ForbiddenException("Sem permissão para gerir equipas");
+
+    const limpo = title.trim();
+    if (!limpo) throw new BadRequestException("Indica o cargo na equipa");
+
+    const scope = teamScopeFilter(ctx);
+
+    return this.prisma.runAs(ctx.academyId, async (db) => {
+      const team = await db.team.findFirst({
+        where: { id: teamId, ...(scope ? { id: scope } : {}) },
+        select: { id: true },
+      });
+      if (!team) throw new NotFoundException("Equipa não encontrada");
+
+      const linha = await db.teamStaff.findFirst({ where: { teamId, membershipId }, select: { id: true } });
+      if (!linha) throw new NotFoundException("Esta pessoa não está atribuída a esta equipa");
+
+      if (/principal/i.test(limpo)) {
+        await db.teamStaff.updateMany({
+          where: { teamId, id: { not: linha.id }, title: { contains: "principal", mode: "insensitive" } },
+          data: { title: "Treinador adjunto" },
+        });
+      }
+
+      await db.teamStaff.update({ where: { id: linha.id }, data: { title: limpo } });
+
+      // A equipa inteira de volta: promover mexeu em mais do que uma linha, e o
+      // ecrã tem de poder redesenhar a lista sem adivinhar quem foi despromovido.
+      const rows = await db.teamStaff.findMany({
+        where: { teamId },
+        select: { title: true, membership: { select: { id: true, user: { select: { name: true } } } } },
+      });
+      return { coaches: rows.map((r) => ({ id: r.membership.id, name: r.membership.user.name, title: r.title })) };
     });
   }
 

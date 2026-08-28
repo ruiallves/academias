@@ -313,6 +313,41 @@ export function teamScopeFilter(ctx: RequestContext): { in: string[] } | undefin
   return { in: ctx.scope.teamIds ?? [] };
 }
 
+/**
+ * O âmbito de quem **lê o calendário** — mais largo do que o de quem escreve.
+ *
+ * ## Porque é que existe um segundo filtro
+ *
+ * Um treinador precisa de ver o clube todo para trabalhar: a que horas está o
+ * campo ocupado, quando joga o escalão de cima, se o autocarro sai no sábado. O
+ * `teamScopeFilter` dava-lhe só as equipas dele, e isso transformava o calendário
+ * do clube num calendário pessoal — sem ninguém conseguir saber se o pavilhão
+ * estava livre.
+ *
+ * Ler não é escrever. `teamScopeFilter` continua a mandar em tudo o que **muda**
+ * o calendário, e continua a mandar no que é privado de uma equipa: as faltas de
+ * um treino, a convocatória de um jogo, a ficha técnica. Este filtro decide só
+ * que **linhas** aparecem; o que cada linha mostra decide-se a seguir, e é por
+ * isso que os dois têm de existir ao lado um do outro.
+ *
+ * ## Quem continua estreito
+ *
+ * As famílias e os atletas. Para eles o calendário é o do educando: alargá-lo
+ * seria mostrar a um pai os treinos de escalões onde não tem filho nenhum, e a
+ * agenda de um clube inteiro não é informação de família.
+ */
+export function calendarScopeFilter(ctx: RequestContext): { in: string[] } | undefined {
+  if (ctx.role === "GUARDIAN" || ctx.role === "ATHLETE") return { in: ctx.scope.teamIds ?? [] };
+  return undefined;
+}
+
+/** Esta equipa é minha? — a pergunta que decide o que se mostra de cada linha. */
+export function inTeamScope(ctx: RequestContext, teamId: string | null): boolean {
+  const scope = teamScopeFilter(ctx);
+  if (!scope) return true;
+  return teamId !== null && scope.in.includes(teamId);
+}
+
 export function athleteScopeFilter(ctx: RequestContext): { in: string[] } | undefined {
   if (ctx.role === "GUARDIAN" || ctx.role === "ATHLETE") return { in: ctx.scope.athleteIds ?? [] };
   return undefined;

@@ -3,10 +3,10 @@ import { Link } from "react-router-dom";
 import { AlertTriangle, ArrowRight } from "lucide-react";
 import { PageHeader } from "@/components/Shell";
 import { Empty, Metric, MetricRow, Panel, PanelHead, Pill, cx } from "@/components/primitives";
-import { ChurnChart, GrowthChart } from "@/components/Charts";
+import { GrowthChart, PlatformActivityChart } from "@/components/Charts";
 import { euros } from "@/lib/format";
 import { useApi } from "@/lib/query";
-import type { Alert, Overview as OverviewData, SeriesPoint } from "@/lib/types";
+import type { ActivityPoint, Alert, Overview as OverviewData, SeriesPoint } from "@/lib/types";
 import { useBusy } from "@/components/Busy";
 
 /**
@@ -24,6 +24,7 @@ import { useBusy } from "@/components/Busy";
 export default function Overview() {
   const overview = useApi<OverviewData>("/overview");
   const series = useApi<SeriesPoint[]>("/series?months=12");
+  const activity = useApi<ActivityPoint[]>("/activity?weeks=12");
 
   /*
    * A página respira por causa do "Agora".
@@ -100,9 +101,19 @@ export default function Overview() {
             <GrowthChart data={series.data ?? []} />
           </Panel>
 
+          {/*
+            Substituiu "Entradas e saídas".
+
+            Aquele gráfico responde a "quantos clubes entraram e saíram por mês".
+            Com meia dúzia de clubes e nenhuma saída, era uma barra a zero
+            repetida doze vezes — metade da página para dizer nada. Continua a
+            existir em "Crescimento", que é a página onde essa pergunta é o
+            assunto; aqui o espaço passou para a pergunta que hoje decide se
+            haverá rotação amanhã.
+          */}
           <Panel>
-            <PanelHead title="Entradas e saídas" hint="por mês" />
-            <ChurnChart data={series.data ?? []} />
+            <PanelHead title="Atividade" hint="pessoas a trabalhar, por semana" />
+            <PlatformActivityChart data={activity.data ?? []} />
           </Panel>
         </div>
 

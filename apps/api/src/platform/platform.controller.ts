@@ -149,6 +149,12 @@ export class PlatformController {
     return this.platform.academies();
   }
 
+  /** Trabalho feito por semana — quem, em quantos clubes. Ver `platform_activity`. */
+  @Get("activity")
+  activity(@Query("weeks") weeks?: string) {
+    return this.platform.activity(Math.min(Number(weeks) || 12, 52));
+  }
+
   @Get("series")
   series(@Query("months") months?: string) {
     return this.platform.series(Math.min(Number(months) || 12, 36));
@@ -172,6 +178,18 @@ export class PlatformController {
     @Body() body: SetAcademyActiveDto,
   ) {
     return this.platform.setAcademyActive(req.admin, id, body.active, ip);
+  }
+
+  /**
+   * A ficha de um clube: pessoas, adopção, actividade e cobrança.
+   *
+   * Aberta a `SUPPORT` — quem dá apoio precisa exactamente disto para saber com
+   * quem está a falar. Continua a não haver aqui uma única linha de domínio: são
+   * contagens, e os nomes de equipas, que não são de ninguém.
+   */
+  @Get("academies/:id")
+  academyDetail(@Param("id") id: string) {
+    return this.platform.academyDetail(id);
   }
 
   /**

@@ -182,6 +182,17 @@ function Scoreboard({
   const golosCasa = match.isHome ? match.ourScore : match.theirScore;
   const golosFora = match.isHome ? match.theirScore : match.ourScore;
 
+  /*
+   * O resultado escreve-se **entre os nomes**, e grava-se por baixo do traco.
+   *
+   * O estado vive aqui e nao no bloco de baixo porque as duas metades sao a
+   * mesma coisa: os campos no meio do marcador e o botao no rodape. Com um
+   * componente por metade, cada uma teria o seu estado e escrever nos campos
+   * nao acendia o botao.
+   */
+  const escrevivel = passou && !cancelado && mayRecord;
+  const r = useResultado(match, onSaved);
+
   return (
     <Panel className="overflow-hidden">
       {/* A faixa do clube. 3px — identidade, não decoração. */}
@@ -215,7 +226,14 @@ function Scoreboard({
           <TeamSide name={casa} ours={match.isHome} align="right" />
 
           <div className="flex flex-col items-center gap-1.5">
-            {temResultado ? (
+            {escrevivel ? (
+              <>
+                <ScoreInputs match={match} r={r} />
+                {/* O selo de vitoria/empate/derrota nao desaparece so por o
+                    resultado estar editavel — e a leitura do jogo, nao do modo. */}
+                {temResultado && res && <OutcomePill res={res} />}
+              </>
+            ) : temResultado ? (
               <>
                 <div className="flex items-baseline gap-2 sm:gap-3">
                   <span className="text-[44px] leading-none font-semibold tabular text-ink sm:text-[60px]">
@@ -226,18 +244,7 @@ function Scoreboard({
                     {golosFora}
                   </span>
                 </div>
-                {res && (
-                  <span
-                    className={cx(
-                      "rounded-full px-2.5 py-0.5 text-meta font-semibold uppercase tracking-wide",
-                      res === "win" && "bg-ok-soft text-ok",
-                      res === "draw" && "bg-sunken text-ink-3",
-                      res === "loss" && "bg-risk-soft text-risk",
-                    )}
-                  >
-                    {OUTCOME_LABEL[res]}
-                  </span>
-                )}
+                {res && <OutcomePill res={res} />}
               </>
             ) : passou && !cancelado ? (
               <span className="text-[44px] leading-none font-light tabular text-ink-4 sm:text-[60px]">–</span>
@@ -254,10 +261,7 @@ function Scoreboard({
           <TeamSide name={fora} ours={!match.isHome} align="left" />
         </div>
 
-        {/* A escrita do resultado, no sítio onde o número vai ficar. */}
-        {passou && !cancelado && mayRecord && (
-          <ResultEntry match={match} onSaved={onSaved} />
-        )}
+        {escrevivel && <ResultActions r={r} />}
 
         {!passou && !cancelado && mayRecord && (
           <p className="mt-4 text-center text-meta text-ink-4">
@@ -334,7 +338,7 @@ function quandoFalta(inicio: Date): string {
  * validação ao sair do campo seguram o disparate. O erro aparece junto aos
  * campos, com `role="alert"` para ser anunciado — nunca só uma borda vermelha.
  */
-function ResultEntry({ match, onSaved }: { match: Match; onSaved: () => void }) {
+function useResultado(match: Match, onSaved: () => void) {
   const [nos, setNos] = useState(match.ourScore === null ? "" : String(match.ourScore));
   const [eles, setEles] = useState(match.theirScore === null ? "" : String(match.theirScore));
   const [busy, setBusy] = useState(false);
@@ -384,60 +388,100 @@ function ResultEntry({ match, onSaved }: { match: Match; onSaved: () => void }) 
     }
   }
 
+  return {
+    nos, setNos, eles, setEles,
+    busy, erro, gravado, valido, mudou, temResultado,
+    confirmarApagar, setConfirmarApagar,
+    gravar, apagar,
+  };
+}
+
+/**
+ * O marcador escrevivel, no lugar do resultado.
+ *
+ * ## Porque e que os campos subiram para o meio
+ *
+ * Estavam numa segunda fila por baixo do traco, com o nome de cada equipa
+ * repetido por cima de cada caixa — os mesmos dois nomes que ja estavam em
+ * grande, dois centimetros acima. Lia-se duas vezes a mesma coisa e o numero
+ * ficava longe das equipas a que pertence.
+ *
+ * ## A ordem, que estava trocada
+ *
+ * A segunda fila era sempre "nos - eles". O cabecalho e sempre "casa - fora".
+ * Num jogo fora, as duas leem-se ao contrario uma da outra: o ecra dizia
+ * "CD Fao — Sub-11" em cima e pedia "Sub-11 [ ] - [ ] CD Fao" em baixo. Aqui os
+ * campos seguem a casa e o fora, que e a unica ordem que um marcador tem.
+ */
+function ScoreInputs({
+  match,
+  r,
+}: {
+  match: Match;
+  r: ReturnType<typeof useResultado>;
+}) {
+  // Esquerda e sempre a casa. Em casa, a casa somos nos; fora, e o adversario.
+  const esquerda = match.isHome
+    ? { value: r.nos, onChange: r.setNos }
+    : { value: r.eles, onChange: r.setEles };
+  const direita = match.isHome
+    ? { value: r.eles, onChange: r.setEles }
+    : { value: r.nos, onChange: r.setNos };
+
+  return (
+    <div className="flex items-center justify-center gap-2 sm:gap-3">
+      <ScoreField {...esquerda} disabled={r.busy} label={match.isHome ? match.teamName : match.opponent} />
+      <span className="text-[28px] leading-none font-light text-ink-4 sm:text-[36px]" aria-hidden>
+        –
+      </span>
+      <ScoreField {...direita} disabled={r.busy} label={match.isHome ? match.opponent : match.teamName} />
+    </div>
+  );
+}
+
+/** O botao e o que o acompanha — por baixo do traco, ao centro. */
+function ResultActions({ r }: { r: ReturnType<typeof useResultado> }) {
   return (
     <div className="mt-5 border-t border-line pt-4">
-      <div className="flex flex-wrap items-end justify-center gap-x-4 gap-y-3">
-        <ScoreField
-          label={match.teamName}
-          value={nos}
-          onChange={setNos}
-          disabled={busy}
-        />
-        <span className="pb-3 text-[22px] font-light text-ink-4" aria-hidden>
-          –
-        </span>
-        <ScoreField label={match.opponent} value={eles} onChange={setEles} disabled={busy} />
-
-        <div className="flex items-center gap-2 pb-0.5 pl-2">
-          <button
-            type="button"
-            className="ctl-primary h-11 px-5"
-            disabled={busy || !mudou || !valido}
-            onClick={() => void gravar()}
-          >
-            {busy ? "A gravar…" : temResultado ? "Gravar" : "Registar resultado"}
-          </button>
-          {gravado && !busy && (
-            <span className="inline-flex items-center gap-1 text-meta text-ok">
-              <Check className="size-3.5" strokeWidth={2} />
-              gravado
-            </span>
-          )}
-        </div>
+      <div className="flex flex-wrap items-center justify-center gap-2">
+        <button
+          type="button"
+          className="ctl-primary h-11 px-5"
+          disabled={r.busy || !r.mudou || !r.valido}
+          onClick={() => void r.gravar()}
+        >
+          {r.busy ? "A gravar…" : r.temResultado ? "Gravar" : "Registar resultado"}
+        </button>
+        {r.gravado && !r.busy && (
+          <span className="inline-flex items-center gap-1 text-meta text-ok">
+            <Check className="size-3.5" strokeWidth={2} />
+            gravado
+          </span>
+        )}
       </div>
 
-      {erro && (
+      {r.erro && (
         <p role="alert" className="mt-2 text-center text-meta text-risk">
-          {erro}
+          {r.erro}
         </p>
       )}
 
-      {temResultado && (
+      {r.temResultado && (
         <div className="mt-3 text-center">
-          {confirmarApagar ? (
+          {r.confirmarApagar ? (
             <span className="inline-flex items-center gap-2 text-meta">
               <span className="text-ink-2">Apagar o resultado e voltar a "por jogar"?</span>
-              <button type="button" className="ctl-ghost h-8" onClick={() => setConfirmarApagar(false)}>
+              <button type="button" className="ctl-ghost h-8" onClick={() => r.setConfirmarApagar(false)}>
                 Não
               </button>
-              <button type="button" className="ctl-risk h-8" disabled={busy} onClick={() => void apagar()}>
+              <button type="button" className="ctl-risk h-8" disabled={r.busy} onClick={() => void r.apagar()}>
                 Apagar
               </button>
             </span>
           ) : (
             <button
               type="button"
-              onClick={() => setConfirmarApagar(true)}
+              onClick={() => r.setConfirmarApagar(true)}
               className="text-meta text-ink-4 underline-offset-2 hover:text-risk hover:underline"
             >
               Apagar resultado
@@ -449,7 +493,31 @@ function ResultEntry({ match, onSaved }: { match: Match; onSaved: () => void }) 
   );
 }
 
-/** Um campo do marcador: grande, com o nome da equipa como rótulo visível. */
+/** Vitoria, empate ou derrota — o mesmo selo, com ou sem o marcador editavel. */
+function OutcomePill({ res }: { res: NonNullable<ReturnType<typeof outcome>> }) {
+  return (
+    <span
+      className={cx(
+        "rounded-full px-2.5 py-0.5 text-meta font-semibold uppercase tracking-wide",
+        res === "win" && "bg-ok-soft text-ok",
+        res === "draw" && "bg-sunken text-ink-3",
+        res === "loss" && "bg-risk-soft text-risk",
+      )}
+    >
+      {OUTCOME_LABEL[res]}
+    </span>
+  );
+}
+
+/**
+ * Um campo do marcador.
+ *
+ * O nome da equipa deixou de se ver e continua a ouvir-se. Os campos passaram
+ * para o meio do marcador, e ali os dois nomes ja estao em grande dos dois lados
+ * — repeti-los por cima das caixas era escrever a mesma coisa duas vezes, a dois
+ * centimetros de distancia. `sr-only` guarda o rotulo para quem usa leitor de
+ * ecra, que nao tem os nomes ao lado.
+ */
 function ScoreField({
   label,
   value,
@@ -463,7 +531,7 @@ function ScoreField({
 }) {
   return (
     <label className="flex flex-col items-center gap-1">
-      <span className="max-w-[120px] truncate text-meta font-medium text-ink-2">{label}</span>
+      <span className="sr-only">{label}</span>
       <input
         type="text"
         inputMode="numeric"
@@ -473,7 +541,7 @@ function ScoreField({
         placeholder="0"
         disabled={disabled}
         onChange={(e) => onChange(e.target.value.replace(/\D/g, ""))}
-        className="h-14 w-20 rounded-[10px] border border-line bg-surface text-center text-[28px] font-semibold tabular text-ink outline-none transition-colors placeholder:text-ink-4/50 focus:border-line-strong focus:ring-2 focus:ring-[color-mix(in_oklab,var(--color-signal)_35%,transparent)]"
+        className="h-14 w-20 rounded-[10px] border border-line bg-surface text-center text-[28px] font-semibold tabular text-ink outline-none transition-colors placeholder:text-ink-4/50 focus:border-line-strong focus:ring-2 focus:ring-[color-mix(in_oklab,var(--color-signal-line,var(--color-signal))_45%,transparent)]"
       />
     </label>
   );

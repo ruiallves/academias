@@ -669,7 +669,7 @@ function ApplyFromChoice({
             key={o.value}
             className={cx(
               "flex cursor-pointer items-start gap-2 rounded-[var(--radius-control)] border px-3 py-2 transition-colors duration-[120ms]",
-              value === o.value ? "border-signal bg-signal-soft/40" : "border-line bg-surface hover:bg-sunken",
+              value === o.value ? "border-signal-line bg-signal-soft/40" : "border-line bg-surface hover:bg-sunken",
             )}
           >
             <input

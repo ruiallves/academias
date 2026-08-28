@@ -129,14 +129,18 @@ type ApiStaff = {
 };
 
 type ApiSession = {
-  id: string; teamId: string; startsAt: string; endsAt: string; venue: string; dressingRoom: string | null; status: string;
+  id: string; teamId: string; teamName: string; startsAt: string; endsAt: string; venue: string; dressingRoom: string | null; status: string;
   coachId: string | null; coachName: string | null; recorded: boolean;
+  /** É de uma equipa minha? Ver `inTeamScope` no servidor. */
+  mine: boolean;
+  /** Vazio quando o treino não é meu — quem faltou é do escalão. */
   absences: { athleteId: string; status: string }[];
 };
 
 /** Um evento pontual do calendário — o que "Novo evento" cria. Ver `GET /api/events`. */
 export type ApiEvent = {
-  id: string; teamId: string | null; kind: "TRAINING" | "MATCH" | "TOURNAMENT" | "OTHER";
+  id: string; teamId: string | null; teamName: string | null; mine: boolean;
+  kind: "TRAINING" | "MATCH" | "TOURNAMENT" | "OTHER";
   title: string; startsAt: string; endsAt: string; venue: string; dressingRoom: string | null; cancelled: boolean;
   coachId: string | null; coachName: string | null;
 };
@@ -146,6 +150,8 @@ export type ApiMatch = {
   startsAt: string; endsAt: string; venue: string; opponent: string; isHome: boolean;
   status: string; ourScore: number | null; theirScore: number | null;
   submitted: boolean; submittedAt: string | null;
+  /** É de uma equipa minha? Decide o que vem preenchido e o que se pode abrir. */
+  mine: boolean;
   /** A função com que quem pergunta está escalado neste jogo. Ver `MatchesService.list`. */
   myStaffRole: string | null;
   calledUp: { athleteId: string; status: string; isGuest: boolean; guestFromTeam?: string }[];
@@ -417,6 +423,8 @@ function build(
   const sessions: TrainingSession[] = apiSessions.map((s) => ({
     id: s.id,
     teamId: s.teamId,
+    teamName: s.teamName,
+    mine: s.mine,
     start: s.startsAt,
     end: s.endsAt,
     venue: s.venue,

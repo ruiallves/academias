@@ -342,7 +342,7 @@ function VisibilityCard({
       aria-pressed={active}
       className={cx(
         "flex flex-col items-start gap-1 rounded-[var(--radius-control)] border px-3 py-2.5 text-left transition-colors duration-[120ms]",
-        active ? "border-signal bg-signal-soft/40" : "border-line hover:bg-sunken",
+        active ? "border-signal-line bg-signal-soft/40" : "border-line hover:bg-sunken",
       )}
     >
       <span className="flex items-center gap-2 text-body font-medium text-ink">

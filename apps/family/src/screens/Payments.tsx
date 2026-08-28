@@ -456,7 +456,7 @@ function ResultSheet({ result, onClose }: { result: PayResult; onClose: () => vo
           </>
         ) : (
           <>
-            <span className="pop mx-auto mb-4 flex size-16 items-center justify-center rounded-full bg-signal-soft text-signal">
+            <span className="pop mx-auto mb-4 flex size-16 items-center justify-center rounded-full bg-signal-soft text-signal-ink">
               <Check className="size-8" strokeWidth={2.5} />
             </span>
             <p className="text-[19px] font-semibold text-ink">Pedido enviado</p>

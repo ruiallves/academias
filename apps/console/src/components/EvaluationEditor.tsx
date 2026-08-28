@@ -286,7 +286,7 @@ function ScoreRow({
               aria-pressed={value === n}
               className={cx(
                 "size-7 rounded-full border transition-colors duration-[120ms]",
-                on ? "border-signal bg-signal" : "border-line bg-surface hover:border-line-strong",
+                on ? "border-signal-line bg-signal" : "border-line bg-surface hover:border-line-strong",
               )}
             />
           );

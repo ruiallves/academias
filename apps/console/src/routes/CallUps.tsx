@@ -419,7 +419,7 @@ function GuestPicker({
       <div className="flex items-center gap-2.5 border-t border-line px-5 py-3 text-meta text-ink-3">
         <span
           className="size-3.5 shrink-0 animate-spin rounded-full border-2 border-line"
-          style={{ borderTopColor: "var(--color-signal)" }}
+          style={{ borderTopColor: "var(--color-signal-line, var(--color-signal))" }}
           aria-hidden
         />
         A verificar escalões inferiores…

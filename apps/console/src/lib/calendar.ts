@@ -103,6 +103,22 @@ export type CalendarEvent = {
    * escalão é o preenchimento, isto é o contorno. Ver `packages/ui/src/tokens.ts`.
    */
   alert?: "unassigned";
+  /**
+   * O nome da equipa, quando o evento é de uma.
+   *
+   * Vem do servidor com o evento em vez de sair de `teamById`: o calendário
+   * mostra o clube todo, mas `GET /api/teams` continua a devolver só as equipas
+   * de quem pergunta — e sem isto um treino do escalão ao lado aparecia sem nome.
+   */
+  teamName?: string;
+  /**
+   * É de uma equipa minha?
+   *
+   * `false` num evento que se vê mas não se toca: aparece no calendário, para se
+   * saber que o campo está ocupado, e não abre presenças, ficha nem edição. Quem
+   * decide é o servidor (`inTeamScope`) — isto é só o que ele respondeu.
+   */
+  mine?: boolean;
   /** Só em `kind === "match"`. */
   match?: MatchInfo;
 };
@@ -185,6 +201,8 @@ export function fromApiEvent(e: ApiEvent): CalendarEvent {
     id: e.id,
     kind: e.kind.toLowerCase() as EventKind,
     teamId: e.teamId ?? undefined,
+    teamName: e.teamName ?? undefined,
+    mine: e.mine,
     title: e.title,
     start: new Date(e.startsAt),
     end: new Date(e.endsAt),
@@ -211,6 +229,8 @@ export function fromApiMatch(m: ApiMatch): CalendarEvent {
     id: m.id,
     kind: "match",
     teamId: m.teamId,
+    teamName: m.teamName,
+    mine: m.mine,
     title: `${m.isHome ? "vs" : "@"} ${m.opponent}`,
     start: new Date(m.startsAt),
     end: new Date(m.endsAt),
@@ -331,7 +351,10 @@ export function useEvents(session: Session, from: Date, to: Date): CalendarEvent
     id: s.id,
     kind: "training",
     teamId: s.teamId,
-    title: teamById(s.teamId)?.name ?? "Treino",
+    teamName: s.teamName,
+    mine: s.mine ?? true,
+    // `teamById` primeiro para os dados de demonstração, que não trazem nome.
+    title: teamById(s.teamId)?.name ?? s.teamName ?? "Treino",
     start: new Date(s.start),
     end: new Date(s.end),
     venue: s.venue,
@@ -353,12 +376,19 @@ export function useEvents(session: Session, from: Date, to: Date): CalendarEvent
   // dois sítios, em vez de só num.
   const apiMatches: CalendarEvent[] = store.matches.map(fromApiMatch);
 
-  const scoped = new Set(listTeams(session).map((t) => t.id));
-  const inScopeAndRange = (e: CalendarEvent) => {
-    if (e.teamId && !scoped.has(e.teamId)) return false;
-    return e.start >= from && e.start <= to;
-  };
-  const pontuais = [...apiEvents, ...apiMatches, ...seededMatches].filter(inScopeAndRange);
+  /*
+   * O calendário mostra o clube todo — já não se filtra por âmbito aqui.
+   *
+   * Filtrava-se em dois sítios (aqui e em `listSessions`), e o servidor filtrava
+   * num terceiro. Agora o servidor decide o que sai — o clube inteiro para quem
+   * é staff, o escalão do educando para uma família (ver `calendarScopeFilter`)
+   * — e manda em cada linha se ela é minha. O que sobra para o cliente é o
+   * intervalo de datas, que é a única coisa que ele pediu.
+   *
+   * O que **não** mudou: o que se pode fazer. Ver `mine`.
+   */
+  const noIntervalo = (e: CalendarEvent) => e.start >= from && e.start <= to;
+  const pontuais = [...apiEvents, ...apiMatches, ...seededMatches].filter(noIntervalo);
 
   return [...trainings, ...pontuais].sort((a, b) => a.start.getTime() - b.start.getTime());
 }
@@ -424,5 +454,15 @@ export function groupByDay(events: CalendarEvent[]): Map<string, CalendarEvent[]
 export function matchPagePath(e: CalendarEvent): string | null {
   if (e.kind !== "match") return null;
   if (e.id.startsWith("ev_seed_")) return null;
+  /*
+   * O jogo de outra equipa não tem página.
+   *
+   * O calendário mostra-o — saber que o Sub-15 joga fora no sábado é a razão de
+   * isto existir — mas a página do jogo é a convocatória, a ficha e a equipa de
+   * trabalho daquele escalão, e o servidor devolve 404 a quem não é de lá (ver
+   * `MatchesService.get`). Mandar lá alguém era prometer uma porta que bate na
+   * cara; abre a gaveta com o que há para ver.
+   */
+  if (e.mine === false) return null;
   return `/jogos/${e.id}`;
 }

@@ -157,7 +157,7 @@ export function NewAnnouncementDialog({
                   className={cx(
                     "flex flex-col items-start rounded-[var(--radius-control)] border px-3 py-2 text-left transition-colors duration-[120ms]",
                     audience === a.value
-                      ? "border-signal bg-signal-soft"
+                      ? "border-signal-line bg-signal-soft"
                       : "border-line hover:border-line-strong hover:bg-sunken",
                   )}
                 >
@@ -263,7 +263,7 @@ function TeamChip({
       className={cx(
         "flex items-baseline gap-1.5 rounded-full border px-3 py-1.5 text-meta transition-colors duration-[120ms]",
         selected
-          ? "border-signal bg-signal-soft text-signal-ink"
+          ? "border-signal-line bg-signal-soft text-signal-ink"
           : "border-line text-ink-2 hover:border-line-strong hover:bg-sunken",
       )}
     >

@@ -2,6 +2,9 @@ import { useMemo, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import { PageHeader } from "@/components/Shell";
 import { TeamStaffDialog } from "@/components/TeamStaffDialog";
+import { isHeadCoach, roleOptions } from "@/lib/team-role";
+import { apiPatch } from "@/lib/http";
+import { reloadAcademy } from "@/lib/store";
 import { Attention } from "@/components/Attention";
 import { EventDetail } from "@/components/EventDetail";
 import { PersonLink } from "@/components/PersonLink";
@@ -238,7 +241,15 @@ export default function TeamDetail() {
       )}
 
       {tab === "staff" && (
-        <StaffTab coaches={coaches} mayAssign={mayAssign} onAssign={() => setAtribuir(true)} />
+        <StaffTab
+          teamId={id}
+          coaches={coaches}
+          mayAssign={mayAssign}
+          /* Quem manda na equipa é decisão desportiva: `team:write`, a mesma de
+             criar a equipa. Ver `setTeamRole` na API. */
+          mayRole={can(session, "team:write")}
+          onAssign={() => setAtribuir(true)}
+        />
       )}
 
       {atribuir && (
@@ -917,14 +928,50 @@ function CalendarTab({
 /* -------------------------------------------------------------------------- */
 
 function StaffTab({
+  teamId,
   coaches,
   mayAssign,
+  mayRole,
   onAssign,
 }: {
+  teamId: string;
   coaches: ReturnType<typeof teamCoaches>;
   mayAssign: boolean;
+  mayRole: boolean;
   onAssign: () => void;
 }) {
+  /*
+   * O cargo na equipa, editável aqui.
+   *
+   * Dava para pôr pessoas na equipa e não dava para dizer qual delas a treina —
+   * a etiqueta com "Treinador principal" existia mas era só de leitura, escrita
+   * uma vez ao atribuir a equipa. Editar o cargo é a segunda coisa que se faz a
+   * seguir a atribuir, e por isso vive na própria linha da pessoa e não atrás de
+   * outro diálogo.
+   *
+   * Grava à mudança e não com um "Guardar": é um campo só, e um botão para um
+   * campo só é um passo a mais para dizer o que já se disse.
+   */
+  const [aGravar, setAGravar] = useState<string | null>(null);
+  const [erro, setErro] = useState<string | null>(null);
+
+  async function definir(membershipId: string, title: string) {
+    setAGravar(membershipId);
+    setErro(null);
+    try {
+      // Promover despromove quem lá estava (ver o serviço), por isso recarrega-se
+      // a equipa toda em vez de mexer só nesta linha.
+      await apiPatch(`/api/teams/${teamId}/staff/${membershipId}`, { title });
+      await reloadAcademy();
+    } catch (e) {
+      setErro(e instanceof Error ? e.message : "Não foi possível guardar o cargo.");
+    } finally {
+      setAGravar(null);
+    }
+  }
+
+  const semPrincipal = coaches.length > 0 && !coaches.some((c) => isHeadCoach(c.title));
+
   return (
     <Panel>
       {/* Com treinadores, o gesto vive no cabeçalho do painel; sem eles, é o
@@ -936,9 +983,24 @@ function StaffTab({
           </span>
           <button type="button" onClick={onAssign} className="ctl-outline">
             <Whistle className="size-3.5" strokeWidth={1.75} />
-            Gerir treinadores
+            Gerir Staff
           </button>
         </div>
+      )}
+
+      {/*
+        Ninguém marcado como principal.
+
+        Não é um erro — o calendário continua a mostrar um nome, o do primeiro
+        treinador da equipa. É uma escolha por fazer, e vale a pena dizê-lo aqui
+        porque é aqui que se faz: quem lê "Treinador" em três linhas iguais não
+        tem como saber que uma delas devia dizer outra coisa.
+      */}
+      {semPrincipal && mayRole && (
+        <p className="border-b border-line bg-sunken px-5 py-2.5 text-meta leading-relaxed text-ink-2">
+          Sem treinador principal definido. Nos treinos e nas presenças aparece o primeiro treinador da lista — escolhe
+          o responsável no cargo de cada pessoa.
+        </p>
       )}
 
       {coaches.length === 0 ? (
@@ -971,7 +1033,31 @@ function StaffTab({
                   </div>
                 )}
               </div>
-              <Pill tone={c.title.startsWith("Treinador principal") ? "signal" : "neutral"}>{c.title}</Pill>
+
+              {mayRole ? (
+                <select
+                  value={c.title}
+                  disabled={aGravar !== null}
+                  onChange={(e) => void definir(c.id, e.target.value)}
+                  aria-label={`Cargo de ${c.name} nesta equipa`}
+                  className={cx(
+                    // Mesma métrica dos outros selects da consola (ver `Matches`),
+                    // com a borda a marcar quem é o responsável — a etiqueta que
+                    // esta linha tinha antes de o campo passar a editável.
+                    "h-8 max-w-[200px] cursor-pointer truncate rounded-[var(--radius-control)] border bg-surface px-2 text-meta outline-none focus:border-line-strong disabled:cursor-wait disabled:opacity-60",
+                    isHeadCoach(c.title) ? "border-signal-line font-medium text-ink" : "border-line text-ink-2",
+                  )}
+                >
+                  {roleOptions(c.title).map((r) => (
+                    <option key={r} value={r}>
+                      {r}
+                    </option>
+                  ))}
+                </select>
+              ) : (
+                <Pill tone={isHeadCoach(c.title) ? "signal" : "neutral"}>{c.title}</Pill>
+              )}
+
               {c.ficha && (
                 <span className="shrink-0 text-meta text-ink-3">
                   na academia desde {new Date(c.ficha.since).getFullYear()}
@@ -980,6 +1066,10 @@ function StaffTab({
             </li>
           ))}
         </ul>
+      )}
+
+      {erro && (
+        <p className="border-t border-line bg-risk-soft px-5 py-2.5 text-meta text-risk">{erro}</p>
       )}
     </Panel>
   );

@@ -71,8 +71,60 @@ console.log("=== Quem vê que jogos ===");
 const dir = await call(director, "GET", "/api/matches");
 check("a direção vê jogos", dir.status === 200 && dir.body.length >= 3, `${dir.body?.length}`);
 
+/*
+ * O adjunto ve o calendario do clube, e trabalha so no dele.
+ *
+ * Isto exigia que a lista trouxesse **so** os jogos do t_sub11 — e essa era a
+ * regra ate o calendario passar a ser do clube: um treinador tem de saber quando
+ * joga o escalao de cima e onde. O que mudou foi o que se ve de cada jogo, nao
+ * quem trabalha nele. Ver `calendarScopeFilter` e `inTeamScope`.
+ */
+/*
+ * As equipas onde o adjunto **não** está — descobertas, não escritas à mão.
+ *
+ * Este teste assumia que ele só treinava o Sub-11. Deixou de ser verdade quando a
+ * direcção lhe atribuiu mais escalões pela aplicação, e as verificações de
+ * fronteira passaram a medir uma equipa que é dele — dando-a por partida. Uma
+ * fronteira só se prova com um lado de fora; sem ele, diz-se que não há.
+ */
+const dele = new Set(
+  (await db.query(`
+    SELECT ts."teamId" FROM "TeamStaff" ts
+      JOIN "Membership" m ON m.id = ts."membershipId"
+      JOIN "User" u ON u.id = m."userId"
+     WHERE u.email = 'adjunto@lifeclub.pt'
+  `)).rows.map((r) => r.teamId),
+);
+
 const adj = await call(adjunto, "GET", "/api/matches");
-check("o adjunto só vê os da equipa dele", adj.body.every((m) => m.teamId === "t_sub11"), `${adj.body.length} jogos`);
+check("o adjunto ve o calendario do clube", adj.body.some((m) => m.teamId !== "t_sub11"), `${adj.body.length} jogos`);
+check("com os dele marcados como dele", adj.body.filter((m) => m.teamId === "t_sub11").every((m) => m.mine === true), "mine");
+const naoDele = adj.body.filter((m) => !dele.has(m.teamId));
+if (naoDele.length > 0) {
+  check("e os das outras equipas marcados como alheios", naoDele.every((m) => m.mine === false), "mine");
+} else {
+  console.log("  (o adjunto está em todas as equipas com jogos — salto a marca de alheio)");
+}
+/*
+ * A parte que interessa a serio: o que atravessa e o que nao atravessa.
+ *
+ * Um jogo de outro escalao chega com adversario, data e resultado — e sem uma
+ * unica linha de convocatoria ou de ficha, que levam nomes de atletas.
+ */
+/*
+ * `dele` e não `t_sub11`: são as equipas que o adjunto tem hoje, e não as que
+ * tinha quando isto foi escrito. E com uma guarda — três `every()` sobre uma
+ * lista vazia passam todos, e este bloco é sobre privacidade: passar por vazio
+ * era dar por provado que nada vaza, sem ter olhado para nada.
+ */
+const alheios = adj.body.filter((m) => !dele.has(m.teamId));
+if (alheios.length > 0) {
+  check("sem convocatoria nos jogos alheios", alheios.every((m) => m.calledUp.length === 0), "calledUp");
+  check("e sem ficha tecnica", alheios.every((m) => m.appearances.length === 0), "appearances");
+  check("mas com adversario e equipa", alheios.every((m) => m.opponent && m.teamName), "opponent/teamName");
+} else {
+  console.log("  (o adjunto está em todas as equipas com jogos — salto o que não é dele)");
+}
 /*
  * Um encarregado vê os jogos das equipas dos filhos — é deles que a app da
  * família precisa para dizer "o teu filho foi convocado para sábado".
@@ -152,9 +204,18 @@ const jogado = await call(coach, "POST", "/api/matches/mt_passado/convocatoria",
 check("não se reescreve a convocatória de um jogo jogado", jogado.status === 400, `${jogado.status}`);
 
 console.log("\n=== Âmbito na escrita ===");
-// O adjunto só treina os Sub-11 — o jogo dos Sub-13 não é dele.
-const fora = await call(adjunto, "POST", "/api/matches/mt_seguinte/convocatoria", { athleteIds: ["ath_leonor"] });
-check("o adjunto não mexe no jogo de outra equipa", fora.status === 404, `${fora.status}`);
+// Um jogo de uma equipa que não é dele — se existir algum.
+const jogoAlheio = (await db.query(`
+  SELECT m.id FROM "Match" m JOIN "Academy" a ON a.id = m."academyId"
+   WHERE a.slug = 'life-club' AND m."teamId" <> ALL($1::text[]) LIMIT 1
+`, [[...dele]])).rows[0]?.id ?? null;
+
+if (jogoAlheio) {
+  const fora = await call(adjunto, "POST", `/api/matches/${jogoAlheio}/convocatoria`, { athleteIds: ["ath_leonor"] });
+  check("o adjunto não mexe no jogo de outra equipa", fora.status === 404, `${fora.status}`);
+} else {
+  console.log("  (o adjunto está em todas as equipas com jogos — salto a fronteira de escrita)");
+}
 
 console.log("\n=== Limpeza ===");
 await db.query(`UPDATE "Match" SET "callUpsClosedAt" = NULL WHERE id = 'mt_proximo'`);

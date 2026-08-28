@@ -27,6 +27,23 @@ export function since(iso: string | null): string {
   return months === 1 ? "há 1 mês" : `há ${months} meses`;
 }
 
-export function monthLabel(iso: string): string {
-  return new Date(iso).toLocaleDateString("pt-PT", { month: "short" }).replace(".", "");
+const MESES = ["jan", "fev", "mar", "abr", "mai", "jun", "jul", "ago", "set", "out", "nov", "dez"];
+
+/**
+ * `2026-08` → `ago`. Sem passar por `Date`.
+ *
+ * Passava: `new Date(iso).toLocaleDateString(...)`. Isso trata a cadeia como um
+ * instante em UTC e volta a formatá-la em hora local — e um rótulo de mês não é
+ * um instante. Em Lisboa acertava por acaso; a partir de um fuso a oeste,
+ * `2026-08` aparecia como Julho. Os eixos destes gráficos são rótulos, e um
+ * rótulo lê-se como veio.
+ */
+export function monthLabel(ym: string): string {
+  const mes = Number(ym.slice(5, 7));
+  return MESES[mes - 1] ?? "";
+}
+
+/** `2026-08-24` → `24/8`. O dia da segunda-feira chega para situar a semana. */
+export function weekLabel(ymd: string): string {
+  return `${Number(ymd.slice(8, 10))}/${Number(ymd.slice(5, 7))}`;
 }

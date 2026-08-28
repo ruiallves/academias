@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { useSearchParams } from "react-router-dom";
+import { Link, useSearchParams } from "react-router-dom";
 import { Plus, Search } from "lucide-react";
 import { PageHeader } from "@/components/Shell";
 import { ClubMark, Empty, Panel, Pill, Progress, cx } from "@/components/primitives";
@@ -162,7 +162,16 @@ export default function Academies({ me }: { me: Me }) {
                   <th className="px-3 py-2 text-left whitespace-nowrap">Estado</th>
                   <th className="px-3 py-2 text-left whitespace-nowrap">Plano</th>
                   <th className="px-3 py-2 text-right whitespace-nowrap">MRR / avaliação</th>
-                  <th className="px-3 py-2 text-right whitespace-nowrap">Atletas</th>
+                  {/*
+                    A coluna de atletas saiu daqui.
+
+                    Numa lista para comparar clientes, o número de atletas não
+                    decide nada: um clube de 40 e outro de 400 pagam pelo mesmo
+                    plano e renovam pelas mesmas razões. Quem quer o plantel abre
+                    a ficha do clube, onde ele vem repartido por equipa e com
+                    contexto. Menos uma coluna é mais espaço para as que mudam
+                    uma decisão.
+                  */}
                   <th className="px-3 py-2 text-right whitespace-nowrap">Staff</th>
                   <th className="px-3 py-2 text-left whitespace-nowrap">Online</th>
                   <th className="px-3 py-2 text-left whitespace-nowrap">Onboarding</th>
@@ -184,14 +193,22 @@ export default function Academies({ me }: { me: Me }) {
                     {/* O emblema à esquerda do nome. Numa lista de trinta
                         clubes, é por ele que se reconhece um — o nome
                         lê-se, o símbolo vê-se. */}
+                    {/*
+                      O nome é a porta para a ficha do clube.
+
+                      Um link e não a linha inteira clicável: a linha tem dentro
+                      dela um "Gerir" e um endereço, e uma linha que navega ao
+                      primeiro clique tira-lhes o sítio. Quem quer o clube carrega
+                      no nome, que é o que se lê primeiro.
+                    */}
                     <td className="px-5 py-2.5">
-                      <div className="flex items-center gap-2.5">
+                      <Link to={`/academias/${a.id}`} className="group flex items-center gap-2.5">
                         <ClubMark name={a.name} logoUrl={a.logoUrl} color={a.signalColor} />
                         <div className="min-w-0">
-                          <div className="truncate font-medium text-ink">{a.name}</div>
+                          <div className="truncate font-medium text-ink group-hover:underline">{a.name}</div>
                           <div className="truncate font-mono text-[11px] text-ink-4">{a.slug}.academias.pt</div>
                         </div>
-                      </div>
+                      </Link>
                     </td>
                     <td className="px-3 py-2.5">
                       <Pill tone={TONE[a.status]}>{STATUS_LABEL[a.status]}</Pill>
@@ -215,7 +232,6 @@ export default function Academies({ me }: { me: Me }) {
                         <span className="text-ink-4">—</span>
                       )}
                     </td>
-                    <td className="px-3 py-2.5 text-right text-ink-2 tabular">{a.athletes}</td>
                     <td className="px-3 py-2.5 text-right text-ink-2 tabular">{a.staff}</td>
                     {/*
                       Quem lá está agora.

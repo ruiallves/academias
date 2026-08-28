@@ -162,7 +162,7 @@ export function BusyScreen({ children }: { children: ReactNode }) {
         >
           <span
             className="size-9 animate-spin rounded-full border-[3px] border-line bg-surface/0"
-            style={{ borderTopColor: "var(--color-signal)" }}
+            style={{ borderTopColor: "var(--color-signal-line, var(--color-signal))" }}
             aria-hidden
           />
         </div>
@@ -192,7 +192,7 @@ export function Spinner({ className }: { className?: string }) {
     <div role="status" aria-label="A carregar" className={cxBusy("flex justify-center py-8", className)}>
       <span
         className="size-6 animate-spin rounded-full border-2 border-line"
-        style={{ borderTopColor: "var(--color-signal)" }}
+        style={{ borderTopColor: "var(--color-signal-line, var(--color-signal))" }}
         aria-hidden
       />
     </div>
@@ -320,7 +320,7 @@ export function SaveVeil({ estado, children }: { estado: EstadoGravacao; childre
               <>
                 <span
                   className="size-5 shrink-0 animate-spin rounded-full border-2 border-line"
-                  style={{ borderTopColor: "var(--color-signal)" }}
+                  style={{ borderTopColor: "var(--color-signal-line, var(--color-signal))" }}
                   aria-hidden
                 />
                 <span className="text-body font-medium text-ink-2">A gravar…</span>

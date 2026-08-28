@@ -31,6 +31,12 @@
      `signal-ink`    a cor do clube como texto sobre fundo claro.
      `signal-soft`   o fundo claro correspondente. */
   --color-signal: #0f6b62;
+  /* `signal-line`  a cor do clube para o que é **traço** sobre a página: bordas,
+     contornos de foco, o arco do disco de carregamento. É a mesma cor escurecida
+     até dar 3:1 contra o branco — o mínimo que a WCAG pede a um elemento de
+     interface. Um clube de amarelo claro dá 1,3:1 em cru, e a linha desaparece.
+     Ver `signalOnSurface` em tokens.ts. */
+  --color-signal-line: #0f6b62;
   --color-signal-strong: #0f6b62;
   --color-signal-ink: #0a4c45;
   --color-signal-soft: #e7f0ee;
@@ -154,8 +160,11 @@
     cursor: pointer;
   }
 
+  /* O contorno de foco usa `--color-signal-line` e não `--color-signal`: a cor
+     crua de um clube amarelo dá 1,3:1 contra o branco da página, e o contorno
+     fica lá sem ninguém o ver. Ver `signalOnSurface` em `tokens.ts`. */
   :focus-visible {
-    outline: 2px solid var(--color-signal);
+    outline: 2px solid var(--color-signal-line, var(--color-signal));
     outline-offset: 2px;
     border-radius: 4px;
   }
