@@ -1,6 +1,4 @@
 import { useState, type FormEvent } from "react";
-import { listTeams } from "@/lib/api";
-import { teamAgeLabel } from "@/lib/team-age";
 import { ASSIGNABLE_ROLES, DEPARTMENTS, updateStaff } from "@/lib/staff";
 import { apiDelete, apiPatch } from "@/lib/http";
 import { reloadAcademy } from "@/lib/store";
@@ -21,8 +19,12 @@ import { Trash2 } from "@/lib/icons";
  * os dois, mas o papel só aparece a quem tem `access:write` — corrigir um
  * telemóvel e promover alguém a diretor não podem ser a mesma autorização.
  *
- * As **equipas** seguem a mesma regra do convite: são âmbito de dados, não uma
- * etiqueta. Por isso só quem pode mexer em acessos as pode mudar.
+ * ## O que já não se edita aqui
+ *
+ * As **equipas**. Estavam neste formulário, entre o telemóvel e o botão de
+ * apagar — e não são um dado da pessoa, são a atribuição da época. Quem quer
+ * pôr um treinador num escalão não abre "editar ficha"; agora tem um painel
+ * próprio na ficha e o mesmo gesto do lado da equipa. Ver `TeamStaffDialog`.
  */
 export function StaffEditDialog({
   member,
@@ -33,7 +35,6 @@ export function StaffEditDialog({
   session: Session;
   onClose: () => void;
 }) {
-  const teams = listTeams(session);
   const mayChangeAccess = can(session, "access:write");
 
   const [name, setName] = useState(member.name);
@@ -42,17 +43,12 @@ export function StaffEditDialog({
   const [title, setTitle] = useState(member.title);
   const [department, setDepartment] = useState<StaffDepartment>(member.department);
   const [role, setRole] = useState<Role>(member.role);
-  const [teamIds, setTeamIds] = useState<string[]>(member.teamIds);
   const [isActive, setIsActive] = useState(member.isActive);
   const [erro, setErro] = useState<string | null>(null);
   const [aApagar, setAApagar] = useState(false);
 
   const usesTeams = role === "COACH" || role === "STAFF" || role === "COORDINATOR";
   const valid = name.trim().length >= 2 && title.trim().length >= 2;
-
-  function toggleTeam(id: string) {
-    setTeamIds((xs) => (xs.includes(id) ? xs.filter((x) => x !== id) : [...xs, id]));
-  }
 
   /**
    * Apagar a conta — o irmão do "já não trabalha na academia" logo abaixo.
@@ -101,23 +97,20 @@ export function StaffEditDialog({
     }
 
     /*
-     * As equipas também têm de chegar ao servidor — e pela mesma razão.
+     * Mudar de papel para um que não usa equipas larga as que a pessoa tinha.
      *
-     * Ficavam em memória: a ficha mostrava a equipa, o `TeamStaff` continuava
-     * vazio, e nada mais no produto sabia da atribuição. O treino da equipa
-     * continuava a dizer "sem treinador" no calendário e nas presenças, e o
-     * próprio treinador entrava sem âmbito nenhum — `AuthService.scopeFor`
-     * deriva-o daqui. Recarregar a consola desfazia tudo.
+     * Este é o único caso em que este formulário ainda toca em equipas, e não é
+     * uma edição de equipas: é a consequência de a pessoa deixar de ser
+     * treinador. Deixá-las lá dava um director com âmbito de dados de dois
+     * escalões e nada no ecrã a dizê-lo. A escolha de *quais* equipas mudou-se
+     * para o painel próprio — ver `TeamStaffDialog`.
      */
-    const finais = usesTeams ? teamIds : [];
-    const mudou =
-      finais.length !== member.teamIds.length || finais.some((id) => !member.teamIds.includes(id));
-    if (mayChangeAccess && mudou) {
+    if (mayChangeAccess && !usesTeams && member.teamIds.length > 0) {
       try {
-        await apiPatch(`/api/staff/${member.id}/teams`, { teamIds: finais });
+        await apiPatch(`/api/staff/${member.id}/teams`, { teamIds: [] });
         await reloadAcademy();
       } catch (err) {
-        setErro(err instanceof Error ? err.message : "Não foi possível guardar as equipas.");
+        setErro(err instanceof Error ? err.message : "Não foi possível largar as equipas.");
         return;
       }
     }
@@ -129,10 +122,10 @@ export function StaffEditDialog({
       title: title.trim(),
       department,
       isActive,
-      // Papel e equipas só mudam se quem está a editar os pode mudar. A interface
-      // já os esconde; isto é o que impede que um estado antigo do formulário os
-      // altere à mesma.
-      ...(mayChangeAccess ? { role, teamIds: usesTeams ? teamIds : [] } : {}),
+      // O papel só muda se quem está a editar o pode mudar. A interface já o
+      // esconde; isto é o que impede que um estado antigo do formulário o altere
+      // à mesma. As equipas só se largam — nunca se escolhem aqui.
+      ...(mayChangeAccess ? { role, ...(usesTeams ? {} : { teamIds: [] }) } : {}),
     });
     onClose();
   }
@@ -205,36 +198,20 @@ export function StaffEditDialog({
               />
             </DialogField>
 
+            {/*
+              As equipas saíram daqui.
+
+              Vivem agora num painel próprio na ficha da pessoa, e na página da
+              equipa do outro lado — ver `TeamStaffDialog`. Isto é "editar
+              ficha": serve para corrigir um nome, um email, um telemóvel. Que
+              escalões alguém treina não é um dado da pessoa, é a atribuição do
+              ano, e ninguém a procurava dentro de um formulário com este nome.
+            */}
             {usesTeams && (
-              <div>
-                <div className="mb-1.5 flex items-baseline justify-between gap-2">
-                  <span className="text-meta font-medium text-ink">Equipas</span>
-                  <span className="text-[11px] text-ink-4">
-                    {teamIds.length === 0 ? "nenhuma" : `${teamIds.length} de ${teams.length}`}
-                  </span>
-                </div>
-                <div className="max-h-44 overflow-y-auto rounded-[var(--radius-control)] border border-line">
-                  {teams.map((t) => (
-                    <label
-                      key={t.id}
-                      className="flex cursor-pointer items-center gap-2.5 border-b border-line px-3 py-2 last:border-b-0 hover:bg-sunken"
-                    >
-                      <input
-                        type="checkbox"
-                        checked={teamIds.includes(t.id)}
-                        onChange={() => toggleTeam(t.id)}
-                        className="size-3.5 accent-[var(--color-signal)]"
-                      />
-                      <span className="min-w-0 flex-1 truncate text-body text-ink">{t.name}</span>
-                      <span className="text-meta text-ink-4">{teamAgeLabel(t.maxAge)}</span>
-                    </label>
-                  ))}
-                </div>
-                <p className="mt-2 text-[11px] leading-relaxed text-ink-3">
-                  As equipas decidem que atletas esta pessoa vê — incluindo presenças, avaliações e
-                  boletim clínico.
-                </p>
-              </div>
+              <p className="rounded-[var(--radius-control)] bg-sunken px-3 py-2.5 text-meta leading-relaxed text-ink-2">
+                As equipas de {member.name.split(" ")[0]} mudam-se no painel <strong className="font-medium text-ink">Equipas</strong>{" "}
+                da ficha, ou a partir da página da própria equipa.
+              </p>
             )}
           </>
         ) : (

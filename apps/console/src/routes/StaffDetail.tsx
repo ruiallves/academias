@@ -13,6 +13,7 @@ import {
 import { Segmented } from "@/components/filters";
 import { AccessPanel } from "@/components/AccessPanel";
 import { StaffEditDialog } from "@/components/StaffEditDialog";
+import { TeamStaffDialog } from "@/components/TeamStaffDialog";
 import {
   ArrowLeft,
   CalendarDays,
@@ -70,6 +71,7 @@ export default function StaffDetail() {
   const { session } = useSession();
   const [tab, setTab] = useState<Tab>("overview");
   const [editing, setEditing] = useState(false);
+  const [atribuir, setAtribuir] = useState(false);
 
   // Redesenha quando a ficha for editada ou quando um acesso mudar.
   useStaffEdits();
@@ -91,9 +93,19 @@ export default function StaffDetail() {
   }
 
   const history = teamHistory(id);
-  // Quem treina agora ou já treinou. Um diretor que nunca pegou numa equipa não
-  // leva separadores de equipas — não é uma lacuna, é o retrato certo.
-  const worksWithTeams = history.length > 0;
+  /*
+   * Quem trabalha com equipas — pelo papel, e não por já ter alguma.
+   *
+   * Era `history.length > 0`, e isso escondia o separador exactamente a quem
+   * mais precisava dele: um treinador acabado de entrar, ainda sem escalão
+   * nenhum. Sem separador, o único sítio onde se lhe podia atribuir uma equipa
+   * era o formulário "Editar ficha" — que é para corrigir o telemóvel.
+   *
+   * O histórico continua a contar para quem já não é treinador: quem passou a
+   * director não perde as épocas que treinou.
+   */
+  const usaEquipas = member.role === "COACH" || member.role === "STAFF" || member.role === "COORDINATOR";
+  const worksWithTeams = usaEquipas || history.length > 0;
 
   const tabs: { value: Tab; label: string; icon: typeof LayoutGrid }[] = [
     { value: "overview", label: "Visão geral", icon: LayoutGrid },
@@ -116,12 +128,27 @@ export default function StaffDetail() {
 
       {editing && <StaffEditDialog member={member} session={session} onClose={() => setEditing(false)} />}
 
+      {atribuir && (
+        <TeamStaffDialog
+          modo={{ tipo: "pessoa", membershipId: member.id }}
+          session={session}
+          onClose={() => setAtribuir(false)}
+        />
+      )}
+
       <div className="mb-3">
         <Segmented value={tab} onChange={setTab} options={tabs} />
       </div>
 
       {tab === "overview" && <Overview member={member} history={history} />}
-      {tab === "teams" && <Teams history={history} />}
+      {tab === "teams" && (
+        <Teams
+          history={history}
+          member={member}
+          mayAssign={can(session, "access:write") && usaEquipas}
+          onAssign={() => setAtribuir(true)}
+        />
+      )}
       {tab === "activity" && <Activity member={member} />}
       {tab === "access" && <AccessPanel member={member} session={session} />}
     </>
@@ -335,7 +362,17 @@ function TeamChip({ stint }: { stint: Stint }) {
  * clicáveis: já não existem nesta época, e um link para uma página vazia seria pior
  * do que nenhum.
  */
-function Teams({ history }: { history: Stint[] }) {
+function Teams({
+  history,
+  member,
+  mayAssign,
+  onAssign,
+}: {
+  history: Stint[];
+  member: StaffMember;
+  mayAssign: boolean;
+  onAssign: () => void;
+}) {
   const bySeason = new Map<string, Stint[]>();
   for (const s of history) {
     const list = bySeason.get(s.season) ?? [];
@@ -347,7 +384,21 @@ function Teams({ history }: { history: Stint[] }) {
     return (
       <Panel>
         <div>
-          <Empty icon={Users} title="Sem equipas" detail="Esta pessoa nunca esteve atribuída a um escalão." />
+          <Empty
+            icon={Users}
+            title="Sem equipas"
+            detail={
+              mayAssign
+                ? "Sem equipa atribuída, esta pessoa entra na consola sem ver atleta nenhum."
+                : "Esta pessoa nunca esteve atribuída a um escalão."
+            }
+          >
+            {mayAssign && (
+              <button type="button" onClick={onAssign} className="ctl-primary">
+                Atribuir equipas
+              </button>
+            )}
+          </Empty>
         </div>
       </Panel>
     );
@@ -355,7 +406,16 @@ function Teams({ history }: { history: Stint[] }) {
 
   return (
     <Panel>
-      <PanelHead title="Histórico de equipas" hint={`${bySeason.size} ${bySeason.size === 1 ? "época" : "épocas"}`} />
+      <PanelHead title="Histórico de equipas" hint={`${bySeason.size} ${bySeason.size === 1 ? "época" : "épocas"}`}>
+        {/* O gesto vive aqui, e não no "Editar ficha" onde estava escondido:
+            é esta a página onde alguém pensa nas equipas desta pessoa. */}
+        {mayAssign && (
+          <button type="button" onClick={onAssign} className="ctl-outline">
+            <Users className="size-3.5" strokeWidth={1.75} />
+            {member.teamIds.length === 0 ? "Atribuir equipas" : "Gerir equipas"}
+          </button>
+        )}
+      </PanelHead>
       <ul>
         {[...bySeason.entries()].map(([season, stints]) => (
           <li key={season} className="flex flex-wrap gap-3 border-b border-line px-5 py-3.5 last:border-b-0">

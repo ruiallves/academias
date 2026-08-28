@@ -3,6 +3,7 @@ import { APP_GUARD } from "@nestjs/core";
 import { ConfigModule } from "@nestjs/config";
 import { ThrottlerGuard, ThrottlerModule } from "@nestjs/throttler";
 import { MailModule } from "./mail/mail.module";
+import { PresenceController } from "./presence/presence.controller";
 import { AuthModule } from "./auth/auth.module";
 import { PrismaService } from "./prisma/prisma.service";
 import { NotificationsService } from "./notifications/notifications.service";
@@ -105,6 +106,8 @@ import { TenantAssetsController } from "./tenant/tenant-assets.controller";
     AnnouncementsController,
     PushController,
     NotificationsController,
+    // O sinal de vida dos separadores abertos. Ver `presence.service.ts`.
+    PresenceController,
     PlatformController,
     ContactsController,
     AdminsController,

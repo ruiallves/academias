@@ -142,7 +142,10 @@ async function main() {
   await db.query(
     `INSERT INTO "Academy" (id, slug, name, "shortName", city, "signalColor", "billingDueDay", "updatedAt")
      VALUES ($1,$2,$3,$4,'Braga','#0f6b62',8,now())
-     ON CONFLICT (id) DO UPDATE SET name = EXCLUDED.name, "updatedAt" = now()`,
+     -- O nome curto vem daqui de propósito: "Life Club" é uma escolha da
+     -- demonstração, não o resultado de uma regra. Sem esta linha, a correcção
+     -- dos nomes curtos deixava a demonstração a chamar-se "Academia Life Club".
+     ON CONFLICT (id) DO UPDATE SET name = EXCLUDED.name, "shortName" = EXCLUDED."shortName", "updatedAt" = now()`,
     [ACADEMY.id, ACADEMY.slug, ACADEMY.name, ACADEMY.short],
   );
 

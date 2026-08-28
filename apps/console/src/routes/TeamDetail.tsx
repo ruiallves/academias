@@ -1,6 +1,7 @@
 import { useMemo, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import { PageHeader } from "@/components/Shell";
+import { TeamStaffDialog } from "@/components/TeamStaffDialog";
 import { Attention } from "@/components/Attention";
 import { EventDetail } from "@/components/EventDetail";
 import { PersonLink } from "@/components/PersonLink";
@@ -27,6 +28,7 @@ import {
   Clock,
   HeartPulse,
   LayoutGrid,
+  TriangleAlert,
   Trophy,
   Users,
   Whistle,
@@ -91,6 +93,7 @@ export default function TeamDetail() {
   const { id = "" } = useParams();
   const { session } = useSession();
   const [tab, setTab] = useState<Tab>("overview");
+  const [atribuir, setAtribuir] = useState(false);
   const [selectedEventId, setSelectedEventId] = useState<string | null>(null);
   const navigate = useNavigate();
 
@@ -160,6 +163,7 @@ export default function TeamDetail() {
   const canBill = can(session, "billing:read");
   const canFamily = can(session, "family:read");
   const fees = canBill ? listFees(session, currentPeriod) : [];
+  const mayAssign = can(session, "access:write");
 
   return (
     <>
@@ -170,6 +174,27 @@ export default function TeamDetail() {
         title={team.name}
         subtitle={coaches.map((c) => c.name).join(", ") || "Sem treinador atribuído"}
       >
+        {/*
+          Uma equipa sem treinador é uma avaria, não uma configuração.
+
+          Ninguém marca o treino, ninguém fecha as presenças, ninguém monta a
+          convocatória — e nada no produto o dizia: a página abria com "Sem
+          treinador atribuído" em letra pequena por baixo do nome, ao lado de
+          onde se lê a época. Fica ao lado da contagem de atletas, que é onde os
+          olhos já vão, e leva o gesto consigo em vez de mandar a pessoa
+          procurá-lo na ficha de cada treinador.
+        */}
+        {coaches.length === 0 && mayAssign && (
+          <button
+            type="button"
+            onClick={() => setAtribuir(true)}
+            className="flex items-center gap-1.5 rounded-full bg-warn-soft px-2.5 py-1 text-meta font-medium text-warn transition-colors hover:bg-warn/15"
+          >
+            <TriangleAlert className="size-3.5" strokeWidth={2} />
+            Sem treinador · atribuir
+          </button>
+        )}
+
         <span
           className="flex items-center gap-1.5 rounded-full px-2.5 py-1 text-meta font-medium"
           style={{ background: colors.get(id)?.soft, color: colors.get(id)?.ink }}
@@ -209,7 +234,17 @@ export default function TeamDetail() {
         <CalendarTab events={events} onSelect={abrir} />
       )}
 
-      {tab === "staff" && <StaffTab coaches={coaches} />}
+      {tab === "staff" && (
+        <StaffTab coaches={coaches} mayAssign={mayAssign} onAssign={() => setAtribuir(true)} />
+      )}
+
+      {atribuir && (
+        <TeamStaffDialog
+          modo={{ tipo: "equipa", teamId: id, teamName: team.name }}
+          session={session}
+          onClose={() => setAtribuir(false)}
+        />
+      )}
 
       {tab === "medical" && <MedicalTab roster={roster} />}
 
@@ -834,12 +869,44 @@ function CalendarTab({ events, onSelect }: { events: CalendarEvent[]; onSelect: 
 /* Staff                                                                       */
 /* -------------------------------------------------------------------------- */
 
-function StaffTab({ coaches }: { coaches: NonNullable<ReturnType<typeof coachById>>[] }) {
+function StaffTab({
+  coaches,
+  mayAssign,
+  onAssign,
+}: {
+  coaches: NonNullable<ReturnType<typeof coachById>>[];
+  mayAssign: boolean;
+  onAssign: () => void;
+}) {
   return (
     <Panel>
+      {/* Com treinadores, o gesto vive no cabeçalho do painel; sem eles, é o
+          vazio que o leva — e aí é a única coisa que há para fazer. */}
+      {coaches.length > 0 && mayAssign && (
+        <div className="flex items-center justify-between gap-3 border-b border-line px-5 py-3">
+          <span className="text-meta text-ink-3">
+            {coaches.length} {coaches.length === 1 ? "pessoa atribuída" : "pessoas atribuídas"}
+          </span>
+          <button type="button" onClick={onAssign} className="ctl-outline">
+            <Whistle className="size-3.5" strokeWidth={1.75} />
+            Gerir treinadores
+          </button>
+        </div>
+      )}
+
       {coaches.length === 0 ? (
         <div>
-          <Empty icon={Whistle} title="Sem treinador atribuído" />
+          <Empty
+            icon={Whistle}
+            title="Sem treinador atribuído"
+            detail="Sem ninguém atribuído, não há quem marque treinos, feche presenças ou monte convocatórias desta equipa."
+          >
+            {mayAssign && (
+              <button type="button" onClick={onAssign} className="ctl-primary">
+                Atribuir treinador
+              </button>
+            )}
+          </Empty>
         </div>
       ) : (
         <ul>

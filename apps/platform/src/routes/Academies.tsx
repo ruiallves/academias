@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import { Plus, Search } from "lucide-react";
 import { PageHeader } from "@/components/Shell";
@@ -38,6 +38,26 @@ export default function Academies({ me }: { me: Me }) {
   const [creating, setCreating] = useState(false);
   const [gerir, setGerir] = useState<Academy | null>(null);
 
+  /*
+   * A coluna "Online" obriga a página a respirar.
+   *
+   * Tudo o resto aqui muda em dias — atletas, plano, onboarding — e uma leitura
+   * à entrada chegava. A presença muda em segundos, e um número congelado no
+   * momento em que a página abriu é pior do que não o mostrar: parece vivo e não
+   * é. Trinta segundos é mais lento do que a janela de presença do servidor (dois
+   * minutos), por isso ninguém aparece e desaparece entre leituras.
+   *
+   * Não recarrega com o separador escondido nem com um diálogo aberto: puxar a
+   * lista por baixo de quem está a gerir uma academia troca-lhe o objecto nas
+   * mãos a meio do gesto.
+   */
+  useEffect(() => {
+    const t = setInterval(() => {
+      if (document.visibilityState === "visible" && !gerir && !creating) reload();
+    }, 30_000);
+    return () => clearInterval(t);
+  }, [reload, gerir, creating]);
+
   // Vem do alerta clicado na Visão geral — a linha fica destacada.
   const highlight = params.get("destaque");
 
@@ -48,8 +68,16 @@ export default function Academies({ me }: { me: Me }) {
       .filter((a) => (q ? a.name.toLowerCase().includes(q) || a.slug.includes(q) : true));
   }, [data, filter, query]);
 
-  if (loading) return <Skeleton />;
-  if (error) return <Failed message={error} onRetry={reload} />;
+  /*
+   * O esqueleto é para a **primeira** leitura, não para as seguintes.
+   *
+   * `useApi` acende `loading` a cada corrida, e a lista passou a recarregar
+   * sozinha de trinta em trinta segundos por causa da coluna "Online". Sem esta
+   * condição, a página inteira piscava para esqueleto a cada meio minuto — e o
+   * mesmo acontecia a quem carregava em "Tentar outra vez".
+   */
+  if (loading && !data) return <Skeleton />;
+  if (error && !data) return <Failed message={error} onRetry={reload} />;
 
   const counts = (s: AcademyStatus) => (data ?? []).filter((a) => a.status === s).length;
   // `SUPPORT` acompanha clientes; não os cria. A diferença entre ajudar e decidir.
@@ -136,6 +164,7 @@ export default function Academies({ me }: { me: Me }) {
                   <th className="px-3 py-2 text-right whitespace-nowrap">MRR / avaliação</th>
                   <th className="px-3 py-2 text-right whitespace-nowrap">Atletas</th>
                   <th className="px-3 py-2 text-right whitespace-nowrap">Staff</th>
+                  <th className="px-3 py-2 text-left whitespace-nowrap">Online</th>
                   <th className="px-3 py-2 text-left whitespace-nowrap">Onboarding</th>
                   <th className="px-3 py-2 text-left whitespace-nowrap">Atividade</th>
                   <th className="px-5 py-2 text-right whitespace-nowrap">Entrou</th>
@@ -180,6 +209,35 @@ export default function Academies({ me }: { me: Me }) {
                     </td>
                     <td className="px-3 py-2.5 text-right text-ink-2 tabular">{a.athletes}</td>
                     <td className="px-3 py-2.5 text-right text-ink-2 tabular">{a.staff}</td>
+                    {/*
+                      Quem lá está agora.
+
+                      Um ponto verde a pulsar e o número, e mais nada quando é
+                      zero — um "0" repetido por vinte linhas é ruído que faz o
+                      olho parar de ler a coluna. A separação staff/famílias fica
+                      no `title` em vez de ocupar largura: a pergunta de relance é
+                      "há alguém?", e o detalhe só interessa a quem para naquela
+                      linha.
+                    */}
+                    <td className="px-3 py-2.5">
+                      {a.online.total === 0 ? (
+                        <span className="text-meta text-ink-4">—</span>
+                      ) : (
+                        <span
+                          className="inline-flex items-center gap-1.5 whitespace-nowrap"
+                          title={`${a.online.staff} na consola · ${a.online.family} na app das famílias`}
+                        >
+                          <span className="relative flex size-2">
+                            <span className="absolute inline-flex size-full animate-ping rounded-full bg-[#1f7a45] opacity-60" />
+                            <span className="relative inline-flex size-2 rounded-full bg-[#1f7a45]" />
+                          </span>
+                          <span className="font-medium text-ink tabular">{a.online.total}</span>
+                          <span className="text-[11px] text-ink-4 tabular">
+                            {a.online.staff}/{a.online.family}
+                          </span>
+                        </span>
+                      )}
+                    </td>
                     <td className="px-3 py-2.5">
                       <div className="w-[110px]">
                         <div className="mb-1 flex items-baseline justify-between gap-2 text-[11px]">

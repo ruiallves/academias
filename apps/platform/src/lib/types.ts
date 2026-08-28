@@ -60,6 +60,14 @@ export type Academy = {
   guardians: number;
   teams: number;
   onboarding: { done: number; total: number; percent: number };
+  /**
+   * Quem está a usar o produto **agora**, separado por lado.
+   *
+   * `staff` é a consola, `family` é a app dos pais. São leituras diferentes: dez
+   * pais ao domingo é adopção, dez dirigentes à terça é uso. Vem da memória do
+   * servidor e não de uma tabela — ver `presence.service.ts`.
+   */
+  online: { total: number; staff: number; family: number };
   lastActivity: string | null;
 };
 

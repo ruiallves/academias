@@ -4,6 +4,7 @@ import { Bell, CalendarDays, Home, RefreshCw, User, Wallet } from "lucide-react"
 import { load, resetAndLoad, useStore, type Child } from "@/lib/store";
 import { hasOnboarded } from "@/lib/onboarding";
 import { readToken, useSession } from "@/lib/session";
+import { usePresence } from "@/lib/presence";
 import Entrar from "@/screens/Entrar";
 import { Avatar, cx } from "@/ui";
 import { ClubMark } from "@/ClubMark";
@@ -37,6 +38,9 @@ export default function App() {
   const session = useSession();
   const [childId, setChild] = useState<string | null>(null);
   const [onboarded, setOnboarded] = useState(hasOnboarded);
+
+  // Com sessão, e não antes: sem token cada batida voltava 401. Ver `presence.ts`.
+  usePresence(Boolean(session));
 
   // Só se carrega o que há para carregar quando há quem o possa ler. Sem sessão,
   // cada pedido voltaria 401 e a app abria num ecrã de erro — quando o que se

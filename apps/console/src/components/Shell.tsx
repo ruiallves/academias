@@ -3,9 +3,14 @@ import { Outlet } from "react-router-dom";
 import { Sidebar } from "./Sidebar";
 import { Onboarding } from "./Onboarding";
 import { BusyProvider, BusyScreen } from "./Busy";
+import { usePresence } from "@/lib/presence";
 
 export function Shell() {
   const [collapsed, setCollapsed] = useState(false);
+
+  // A consola só chega aqui com sessão e academia resolvidas (ver `AcademyBoot`),
+  // por isso é o sítio certo para dizer ao servidor que este separador está vivo.
+  usePresence(true);
 
   return (
     /*

@@ -9,6 +9,7 @@ import { Reflector } from "@nestjs/core";
 import type { Request } from "express";
 import { AuthService } from "./auth.service";
 import { SupabaseJwtService } from "./supabase-jwt.service";
+import { PresenceService } from "../presence/presence.service";
 import { tenantFromHost } from "../tenant/tenant";
 import type { RequestContext } from "../common/permissions";
 
@@ -39,6 +40,7 @@ export class AuthGuard implements CanActivate {
     private readonly reflector: Reflector,
     private readonly jwt: SupabaseJwtService,
     private readonly auth: AuthService,
+    private readonly presence: PresenceService,
   ) {}
 
   async canActivate(context: ExecutionContext): Promise<boolean> {
@@ -58,6 +60,16 @@ export class AuthGuard implements CanActivate {
 
     const user = await this.jwt.verify(token);
     req.ctx = await this.auth.contextFor(user.authId, slug);
+
+    /*
+     * A marca de presença.
+     *
+     * Aqui e não num interceptor: é o único sítio por onde passa **todo** o
+     * pedido autenticado, já com a academia resolvida, e é uma escrita num mapa
+     * em memória — nada de I/O, nada que possa falhar, nada que atrase a
+     * resposta. Ver `presence.service.ts` para o porquê de não ser na base.
+     */
+    this.presence.marcar(req.ctx.membershipId, req.ctx.academyId, req.ctx.role);
     return true;
   }
 }

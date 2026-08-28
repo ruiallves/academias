@@ -1,8 +1,10 @@
 import { randomBytes, createHash } from "node:crypto";
 import { BadRequestException, ConflictException, Injectable, NotFoundException } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
+import { PresenceService } from "../presence/presence.service";
 import { PlatformPrisma } from "./platform.prisma";
 import { initialRoles, isPresidente } from "../roles/roles.service";
+import { shortNameOf } from "../common/short-name";
 import { MailClient } from "../mail/mail.client";
 import { academyOwnerInviteEmail } from "../mail/mail.templates";
 import type { StaffDepartment } from "@prisma/client";
@@ -60,6 +62,7 @@ export class PlatformService {
     private readonly prisma: PlatformPrisma,
     private readonly config: ConfigService,
     private readonly mail: MailClient,
+    private readonly presence: PresenceService,
   ) {}
 
   /* ------------------------------------------------------------------------ */
@@ -145,6 +148,16 @@ export class PlatformService {
 
   async academies() {
     const rows = await this.prisma.$queryRaw<AcademyRow[]>`SELECT * FROM app.platform_academies()`;
+
+    /*
+     * Quem está online agora, vindo da memória e não de uma coluna.
+     *
+     * A leitura junta-se aqui, do lado do TypeScript, em vez de entrar na função
+     * SQL: presença não está na base de dados nenhuma e não deve fingir que está.
+     * Ver `presence.service.ts` — a pergunta é de segundos, a tabela é de meses.
+     */
+    const online = this.presence.porAcademia();
+
     return rows.map((r) => ({
       id: r.id,
       slug: r.slug,
@@ -160,6 +173,7 @@ export class PlatformService {
       guardians: r.guardians,
       teams: r.teams,
       onboarding: { done: r.onboarding_done, total: ONBOARDING_STEPS, percent: Math.round((r.onboarding_done / ONBOARDING_STEPS) * 100) },
+      online: online.get(r.id) ?? { total: 0, staff: 0, family: 0 },
       lastActivity: r.last_activity,
     }));
   }
@@ -731,8 +745,3 @@ function slugify(name: string): string {
     .slice(0, 40);
 }
 
-/** O nome curto que aparece na barra lateral e no telemóvel dos pais. */
-function shortNameOf(name: string): string {
-  const cleaned = name.replace(/^(academia|clube|club|associação|associacao)\s+/i, "").trim();
-  return (cleaned || name).slice(0, 24);
-}

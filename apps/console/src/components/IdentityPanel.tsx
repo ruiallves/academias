@@ -179,6 +179,8 @@ export function IdentityPanel({ mayWrite }: { mayWrite: boolean }) {
         <Field label="Endereço da app" value={`${academy.slug}.academias.pt`} mono />
       </div>
 
+      <ShortNameField mayWrite={mayWrite} onError={setErro} />
+
       <ClubSymbol mayWrite={mayWrite} onError={setErro} />
 
       <div className="border-t border-line p-5">
@@ -402,6 +404,83 @@ function monogram(shortName: string): string {
   const parts = shortName.trim().split(/\s+/);
   const letters = parts.length > 1 ? parts[0][0] + parts[parts.length - 1][0] : shortName.slice(0, 2);
   return letters.toUpperCase();
+}
+
+/** O mesmo tecto do servidor. Ver `common/short-name.ts`. */
+const SHORT_NAME_MAX = 32;
+
+/**
+ * O nome curto — como o clube se trata a si próprio.
+ *
+ * ## Porque é que isto passou a ser um campo
+ *
+ * Era derivado do nome completo quando o clube nascia, por uma regra que cortava
+ * a primeira palavra e truncava a 24 caracteres. Dava "Desportivo de Loureiro"
+ * a um "Clube Desportivo de Loureiro" e "Futebol Clube Ferreirens" a um "Futebol
+ * Clube Ferreirense" — e era esse o nome que saía no assunto dos emails, na
+ * página de sócios e no ecrã inicial do telemóvel dos pais, sem ninguém ter por
+ * onde o corrigir.
+ *
+ * Nenhuma regra acerta com todos os nomes de clube, e quem sabe como o clube se
+ * chama está deste lado do ecrã. Grava ao sair do campo e não com um botão,
+ * como a cor aqui ao lado.
+ */
+function ShortNameField({ mayWrite, onError }: { mayWrite: boolean; onError: (m: string | null) => void }) {
+  const { academy } = useStore();
+  const [texto, setTexto] = useState(academy.shortName);
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    setTexto(academy.shortName);
+  }, [academy.shortName]);
+
+  async function gravar() {
+    const limpo = texto.replace(/\s+/g, " ").trim();
+    if (limpo === academy.shortName) return;
+
+    if (limpo.length < 2) {
+      // Repõe em vez de deixar o campo vazio a discordar do que está gravado.
+      setTexto(academy.shortName);
+      onError("O nome curto tem de ter pelo menos 2 caracteres.");
+      return;
+    }
+
+    setSaving(true);
+    onError(null);
+    try {
+      await apiPatch("/api/identity", { shortName: limpo });
+      await reloadAcademy();
+    } catch (e) {
+      setTexto(academy.shortName);
+      onError(e instanceof Error ? e.message : "Não foi possível gravar o nome curto.");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <div className="border-t border-line p-5">
+      <label className="block">
+        <span className="mb-1 block text-meta font-medium text-ink">Nome curto</span>
+        <input
+          value={texto}
+          maxLength={SHORT_NAME_MAX}
+          disabled={!mayWrite || saving}
+          onChange={(e) => setTexto(e.target.value)}
+          onBlur={() => void gravar()}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") (e.target as HTMLInputElement).blur();
+            if (e.key === "Escape") setTexto(academy.shortName);
+          }}
+          className="h-9 w-full rounded-[var(--radius-control)] border border-line bg-surface px-2.5 text-body text-ink outline-none transition-colors focus:border-line-strong disabled:opacity-60 sm:max-w-[22rem]"
+        />
+      </label>
+      <p className="mt-2 max-w-[62ch] text-meta text-ink-3">
+        Como o clube aparece onde não cabe o nome por extenso: no assunto dos emails, na página de sócios, no
+        separador da consola e no ícone que as famílias instalam no telemóvel.
+      </p>
+    </div>
+  );
 }
 
 function Field({ label, value, mono }: { label: string; value: string; mono?: boolean }) {

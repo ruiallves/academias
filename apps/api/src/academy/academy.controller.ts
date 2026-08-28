@@ -3,6 +3,7 @@ import { ArrayMaxSize, IsArray, IsBoolean, IsIn, IsInt, IsOptional, IsString, Le
 import { ChargeStatus, type AthleteStatus } from "@prisma/client";
 import type { AuthedRequest } from "../auth/auth.guard";
 import { AcademyService } from "./academy.service";
+import { SHORT_NAME_MAX } from "../common/short-name";
 import { AthletesService } from "./athletes.service";
 import { AthleteInputDto, AthleteTaxIdDto, AthleteUpdateDto, ImportAthletesDto } from "./athletes.dto";
 import { CreateTeamDto, ImportTeamsDto } from "./teams.dto";
@@ -65,6 +66,8 @@ class MembershipCopyDto {
 class IdentityDto {
   @IsOptional() @IsString() @Length(7, 7) signalColor?: string;
   @IsOptional() @IsString() @Length(0, 500) logoUrl?: string;
+  /** Como o clube se trata a si próprio. Ver `shortNameOf` para o porquê de ser editável. */
+  @IsOptional() @IsString() @Length(2, SHORT_NAME_MAX) shortName?: string;
 }
 
 /** Desactivar ou reactivar uma conta — de staff ou de encarregado. */

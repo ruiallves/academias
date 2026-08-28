@@ -50,3 +50,10 @@
   .panel { @apply rounded-[var(--radius-panel)] border border-line bg-surface; }
   .panel-head { @apply flex items-center justify-between gap-3 border-b border-line px-5 py-3.5; }
 }
+
+/* O ponto verde da coluna "Online" pulsa para dizer que o número é de agora e
+   não da altura em que a página abriu. Quem pediu menos movimento fica com o
+   ponto parado — a informação está no ponto e no número, não no batimento. */
+@media (prefers-reduced-motion: reduce) {
+  .animate-ping { animation: none; }
+}

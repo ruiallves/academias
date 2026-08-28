@@ -7,6 +7,7 @@ import { PHOTO_BUCKET, PHOTO_TTL } from "../storage/photos.service";
 import { basePermissions, can, ROLE_PERMISSIONS, type Permission, type RequestContext } from "../common/permissions";
 import { athleteScopeFilter, teamScopeFilter } from "../common/permissions";
 import { gerarCobrancas, periodoActual } from "../billing/billing.service";
+import { SHORT_NAME_MAX } from "../common/short-name";
 
 /**
  * As colunas de um evento que a consola lê — partilhadas pela leitura, criação e
@@ -300,8 +301,26 @@ export class AcademyService {
    * sócio, a consola e a app. É o white-label, e é por isso que vive na academia
    * e não numa preferência de utilizador.
    */
-  async setIdentity(ctx: RequestContext, dto: { signalColor?: string; logoUrl?: string | null }) {
+  async setIdentity(ctx: RequestContext, dto: { signalColor?: string; logoUrl?: string | null; shortName?: string }) {
     if (!can(ctx, "settings:write")) throw new ForbiddenException("Sem permissão para mudar as definições");
+
+    /*
+     * O nome curto, escrito pelo clube e não adivinhado por nós.
+     *
+     * Era só derivado do nome completo na criação, e nunca mais mudava — um
+     * clube que se visse tratado por um nome que não é o seu não tinha por onde
+     * o corrigir. Ver `shortNameOf`, que já não tenta adivinhar; isto é a outra
+     * metade, porque nenhuma regra acerta com todos os nomes e a pessoa que sabe
+     * como o clube se chama está do outro lado deste ecrã.
+     */
+    let shortName: string | undefined;
+    if (dto.shortName !== undefined) {
+      shortName = dto.shortName.replace(/\s+/g, " ").trim();
+      if (shortName.length < 2) throw new BadRequestException("O nome curto tem de ter pelo menos 2 caracteres");
+      if (shortName.length > SHORT_NAME_MAX) {
+        throw new BadRequestException(`O nome curto não pode passar de ${SHORT_NAME_MAX} caracteres`);
+      }
+    }
 
     if (dto.signalColor !== undefined && !/^#[0-9a-fA-F]{6}$/.test(dto.signalColor)) {
       throw new BadRequestException("Cor inválida — usa o formato #RRGGBB");
@@ -328,6 +347,7 @@ export class AcademyService {
         data: {
           ...(dto.signalColor !== undefined ? { signalColor: dto.signalColor.toLowerCase() } : {}),
           ...(dto.logoUrl !== undefined ? { logoUrl: dto.logoUrl || null } : {}),
+          ...(shortName !== undefined ? { shortName } : {}),
         },
       });
 
