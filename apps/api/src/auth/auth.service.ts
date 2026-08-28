@@ -28,6 +28,56 @@ type MembershipRow = {
  * pertences" e a "não existe", e isso torna o produto difícil de depurar sem
  * proteger nada — o slug já é público, está no URL.
  */
+/**
+ * De que lado do produto vem o pedido.
+ *
+ * Não é uma permissão — é uma **desambiguação**. Quem envia isto continua a
+ * precisar de uma membership; o cabeçalho só diz qual das que já tem é que se
+ * aplica agora. Ver `escolherMembership`.
+ */
+export type AppKind = "family" | "console";
+
+/**
+ * Qual das memberships desta pessoa nesta academia é que vale para este pedido.
+ *
+ * ## O bug que isto fecha
+ *
+ * Era `memberships.find(m => m.academy_id === academyId)` — **a primeira**. Numa
+ * academia onde a mesma pessoa é treinador *e* pai (o caso mais banal que há num
+ * clube de futebol), qual das duas ganhava dependia da ordem que a base
+ * devolvesse. Se ganhasse a de treinador, a app da família abria com o âmbito de
+ * treinador: `athleteScopeFilter` deixa de filtrar, `/api/athletes` devolve o
+ * plantel inteiro, e a app — que trata essa lista como "os meus filhos" — mostra
+ * o escalão todo como filhos daquele pai.
+ *
+ * ## A regra
+ *
+ * A app da família **exige** um vínculo de família. Não o encontrando, recusa em
+ * vez de servir o outro: é a app que apresenta os dados como sendo dos filhos de
+ * quem está a ver, e servir-lhe o chapéu errado é um problema de privacidade, não
+ * de conveniência.
+ *
+ * A consola **prefere** o vínculo de staff, mas aceita o outro — quem lá chega vê
+ * os ecrãs que as suas permissões deixarem, e não há nada a apresentar como
+ * sendo de outra pessoa.
+ */
+function escolherMembership(memberships: MembershipRow[], app?: AppKind): MembershipRow {
+  const familia = (role: Role) => role === "GUARDIAN" || role === "ATHLETE";
+
+  if (app === "family") {
+    const daFamilia = memberships.find((m) => familia(m.role));
+    if (!daFamilia) {
+      throw new ForbiddenException("Esta conta não é de encarregado nesta academia.");
+    }
+    return daFamilia;
+  }
+
+  if (app === "console") return memberships.find((m) => !familia(m.role)) ?? memberships[0];
+
+  // Sem cabeçalho — uma app antiga ainda em cache. Fica o que já ficava.
+  return memberships[0];
+}
+
 @Injectable()
 export class AuthService {
   constructor(private readonly prisma: PrismaService) {}
@@ -69,12 +119,14 @@ export class AuthService {
    * cada par com `Promise.all` sobrepõe a latência de rede em vez de a somar, e
    * corta o tempo de fila a meio sem mudar nada do que cada função devolve.
    */
-  async contextFor(authId: string, slug: string): Promise<RequestContext> {
+  async contextFor(authId: string, slug: string, app?: AppKind): Promise<RequestContext> {
     const [academyId, memberships] = await Promise.all([this.academyIdBySlug(slug), this.membershipsOf(authId)]);
     if (!academyId) throw new NotFoundException(`Academia "${slug}" não encontrada`);
 
-    const membership = memberships.find((m) => m.academy_id === academyId);
-    if (!membership) throw new ForbiddenException("Sem acesso a esta academia");
+    const daAcademia = memberships.filter((m) => m.academy_id === academyId);
+    if (daAcademia.length === 0) throw new ForbiddenException("Sem acesso a esta academia");
+
+    const membership = escolherMembership(daAcademia, app);
 
     const [scope, exceptions] = await Promise.all([
       this.scopeFor(academyId, membership.membership_id, membership.role),

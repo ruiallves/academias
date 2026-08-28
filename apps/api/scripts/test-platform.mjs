@@ -112,7 +112,38 @@ async function main() {
   const academies = (await db.query("SELECT * FROM app.platform_academies()")).rows;
   check("lista academias", academies.length >= 1, `${academies.length}`);
   const life = academies.find((a) => a.slug === "life-club");
-  check("com contagens certas", life?.athletes === 9 && life?.teams === 2, `${life?.athletes} atletas, ${life?.teams} equipas`);
+  /*
+   * As contagens comparam-se com a base, não com números escritos aqui.
+   *
+   * Estavam fixos em 9 atletas e 2 equipas, e passaram a falhar no dia em que
+   * alguém criou uma terceira equipa pela aplicação — que é uso normal do
+   * produto, não uma regressão. Um teste que obriga a base de dados a ficar
+   * parada para passar acaba ignorado, e leva com ele o que ele realmente mede:
+   * que a função **conta o que lá está**, e que o `status <> 'LEFT'` dos atletas
+   * é respeitado.
+   */
+  const esperadoLife = (await db.query(`
+    SELECT
+      (SELECT count(*)::int FROM "Athlete" a
+        WHERE a."academyId" = ac.id AND a.status <> 'LEFT') AS atletas,
+      (SELECT count(*)::int FROM "Team" t WHERE t."academyId" = ac.id) AS equipas
+    FROM "Academy" ac WHERE ac.slug = 'life-club'
+  `)).rows[0];
+  check(
+    "com contagens certas",
+    life?.athletes === esperadoLife.atletas && life?.teams === esperadoLife.equipas,
+    `${life?.athletes}/${esperadoLife.atletas} atletas, ${life?.teams}/${esperadoLife.equipas} equipas`,
+  );
+  // A contraprova do filtro: quem saiu não entra na conta.
+  const saidos = (await db.query(`
+    SELECT count(*)::int n FROM "Athlete" a JOIN "Academy" ac ON ac.id = a."academyId"
+     WHERE ac.slug = 'life-club' AND a.status = 'LEFT'
+  `)).rows[0].n;
+  if (saidos > 0) {
+    check("e sem contar quem saiu", life?.athletes < esperadoLife.atletas + saidos, `${saidos} saíram`);
+  } else {
+    console.log("  (nenhum atleta saiu no life-club — salto a contraprova do filtro)");
+  }
   check("e com progresso de onboarding", life?.onboarding_done >= 5, `${life?.onboarding_done}/8`);
   check("com sinal de última atividade", life?.last_activity !== null);
 

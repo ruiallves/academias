@@ -7,7 +7,7 @@ import {
 } from "@nestjs/common";
 import { Reflector } from "@nestjs/core";
 import type { Request } from "express";
-import { AuthService } from "./auth.service";
+import { AuthService, type AppKind } from "./auth.service";
 import { SupabaseJwtService } from "./supabase-jwt.service";
 import { PresenceService } from "../presence/presence.service";
 import { tenantFromHost } from "../tenant/tenant";
@@ -59,7 +59,7 @@ export class AuthGuard implements CanActivate {
     if (!slug) throw new UnauthorizedException("Não foi possível determinar a academia");
 
     const user = await this.jwt.verify(token);
-    req.ctx = await this.auth.contextFor(user.authId, slug);
+    req.ctx = await this.auth.contextFor(user.authId, slug, appKind(req));
 
     /*
      * A marca de presença.
@@ -92,6 +92,24 @@ function bearer(req: Request): string | null {
  * academia**: quem o enviar continua a precisar de uma membership lá dentro, e é
  * isso que o `AuthService` verifica. Sem essa verificação, seria uma porta aberta.
  */
+/**
+ * De que app vem o pedido — `x-app: family` ou `x-app: console`.
+ *
+ * Serve para escolher entre as memberships que a pessoa **já tem** nesta
+ * academia, quando tem mais do que uma: o treinador que também é pai precisa de
+ * ser tratado como pai na app da família e como treinador na consola, e o
+ * servidor não tem como adivinhar qual é qual. Ver `escolherMembership`.
+ *
+ * Não é uma credencial: quem enviar `family` sem ser família nenhuma leva um 403,
+ * e quem enviar `console` não ganha permissão nenhuma que não tivesse. É por isso
+ * que pode vir do cliente.
+ */
+function appKind(req: Request): AppKind | undefined {
+  const header = req.headers["x-app"];
+  const valor = typeof header === "string" ? header.trim().toLowerCase() : "";
+  return valor === "family" || valor === "console" ? valor : undefined;
+}
+
 function tenantSlug(req: Request): string | null {
   const fromHost = tenantFromHost(req.headers.host);
   if (fromHost) return fromHost;

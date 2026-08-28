@@ -110,6 +110,9 @@ export async function apiGet<T>(path: string, params?: Record<string, string | u
     headers: {
       ...(token ? { Authorization: `Bearer ${token}` } : {}),
       "x-academy-slug": academySlug(),
+      // O par do `x-app` da app da família: quem é treinador **e** pai entra
+      // aqui como treinador. Ver `escolherMembership` na API.
+      "x-app": "console",
     },
   });
 

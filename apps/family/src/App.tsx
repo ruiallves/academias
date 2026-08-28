@@ -3,7 +3,7 @@ import { NavLink, Navigate, Route, Routes, useNavigate } from "react-router-dom"
 import { Bell, CalendarDays, Home, RefreshCw, User, Wallet } from "lucide-react";
 import { load, resetAndLoad, useStore, type Child } from "@/lib/store";
 import { hasOnboarded } from "@/lib/onboarding";
-import { readToken, useSession } from "@/lib/session";
+import { readToken, signOut, useSession } from "@/lib/session";
 import { usePresence } from "@/lib/presence";
 import Entrar from "@/screens/Entrar";
 import { Avatar, cx } from "@/ui";
@@ -65,6 +65,22 @@ export default function App() {
 
   if (!store.ready) return <Splash />;
   if (store.error) return <Failed message={store.error} />;
+  /*
+   * Esta app é da família, e só da família.
+   *
+   * Tudo o que ela desenha parte de um pressuposto — a lista que vem de
+   * `/api/athletes` são **os filhos de quem está a ver**. Isso é verdade para um
+   * encarregado, cujo âmbito o servidor estreita aos educandos dele; não é
+   * verdade para um treinador, que recebe o plantel das equipas dele. Sem esta
+   * porta, uma conta de staff que abrisse a app via o escalão inteiro
+   * apresentado como filhos seus.
+   *
+   * A defesa a sério é do lado do servidor (ver `escolherMembership`), que
+   * recusa servir esta app a quem não tenha vínculo de família. Isto aqui é a
+   * segunda camada, e é a que consegue explicar: um 403 seco mandaria o pai para
+   * um ecrã de avaria por causa de uma coisa que não é avaria nenhuma.
+   */
+  if (!ehFamilia(store.role)) return <ContaErrada />;
   if (!value) return <NoChildren />;
 
   /*
@@ -134,6 +150,31 @@ function Failed({ message }: { message: string }) {
  * Acontece a sério: um pai convidado antes de o atleta estar inscrito. Dizer isto
  * é melhor do que uma app vazia que parece avariada.
  */
+/** Os papéis que esta app serve. Os outros entram pela consola do clube. */
+const ehFamilia = (role: string) => role === "GUARDIAN" || role === "ATHLETE";
+
+/**
+ * A conta que entrou não é de uma família.
+ *
+ * Acontece a quem trabalha no clube e experimenta a app com a conta de trabalho —
+ * e acontecia em silêncio, com o plantel todo a aparecer como filhos. Diz-se o
+ * que se passa e oferece-se a única saída útil: sair, e entrar com a conta certa.
+ */
+function ContaErrada() {
+  return (
+    <div className="flex min-h-dvh flex-col items-center justify-center gap-3 px-8 text-center">
+      <p className="text-[19px] font-semibold text-ink">Esta conta não é de encarregado</p>
+      <p className="max-w-[34ch] text-meta leading-relaxed text-ink-3">
+        Esta app é das famílias. A tua conta é do staff do clube — para gerires a academia, entra pela consola no
+        computador.
+      </p>
+      <button type="button" onClick={() => signOut()} className="cta-quiet mt-2 h-11 px-5">
+        Sair desta conta
+      </button>
+    </div>
+  );
+}
+
 function NoChildren() {
   return (
     <div className="flex min-h-dvh flex-col items-center justify-center gap-3 px-8 text-center">

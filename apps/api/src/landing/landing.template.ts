@@ -457,6 +457,19 @@ ${academy.logoUrl ? `<meta property="og:image" content="${esc(academy.logoUrl)}"
      tem de vir daqui — nunca de style="" no próprio elemento. */
   #install-modal:not([hidden]) { display: flex; }
 
+  /*
+     O modal por cima de tudo — e a razao de precisar de o dizer.
+
+     Ele e position: fixed, o que parece chegar e nao chega: sem z-index fica em
+     auto, e qualquer elemento posicionado com z-index: 1 pinta por cima. O
+     cartao de login e um deles (ganhou o z-index: 1 para ficar acima dos
+     estilhacos), e o resultado era o popup a abrir **por baixo** do cartao: quem
+     carregava em "como instalar" via a pagina escurecer e mais nada.
+
+     50 e folgado de proposito. Nada nesta pagina passa de 1, e um numero com
+     espaco por cima evita a proxima correcao apressada de +1. */
+  #install-modal { z-index: 50; }
+
   @media (max-width: 900px) {
     .split { grid-template-columns: 1fr; }
     .stage { padding: 36px 24px; }
@@ -722,10 +735,15 @@ ${
   var showInstall = document.getElementById('show-install');
   var installModal = document.getElementById('install-modal');
   var closeInstall = document.getElementById('close-install');
-  if (showInstall && installModal) {
+  if (showInstall && installModal && closeInstall) {
     showInstall.addEventListener('click', function (e) { e.preventDefault(); installModal.hidden = false; });
     closeInstall.addEventListener('click', function () { installModal.hidden = true; });
     installModal.addEventListener('click', function (e) { if (e.target === installModal) installModal.hidden = true; });
+    // Escape fecha, como fecha em todo o lado. Um modal que so sai pelo x pequeno
+    // no canto e um modal que se aprende a evitar.
+    document.addEventListener('keydown', function (e) {
+      if (e.key === 'Escape' && !installModal.hidden) installModal.hidden = true;
+    });
   }
 
   function trimSlash(url) {

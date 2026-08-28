@@ -239,6 +239,14 @@ type State = {
   error: string | null;
   academy: { name: string; shortName: string; mark: string; signalColor: string; logoUrl: string | null };
   guardian: { name: string; firstName: string };
+  /**
+   * O papel de quem entrou nesta academia.
+   *
+   * Existe por uma razão só: esta app trata `children` como **os filhos de quem
+   * está a ver**, e isso só é verdade para uma conta de família. Ver a porta em
+   * `App.tsx`.
+   */
+  role: string;
   children: Child[];
   trainings: Training[];
   matches: Match[];
@@ -256,6 +264,7 @@ const EMPTY: State = {
   error: null,
   academy: { name: "", shortName: "", mark: "", signalColor: "#0f6b62", logoUrl: null },
   guardian: { name: "", firstName: "" },
+  role: "",
   children: [],
   trainings: [],
   matches: [],
@@ -532,6 +541,7 @@ function build(
       signalColor: boot.academy.signalColor,
     },
     guardian: { name: boot.me.name, firstName: boot.me.name.split(/\s+/)[0] },
+    role: boot.me.role,
     children,
     trainings,
     matches: asMatches,

@@ -749,6 +749,21 @@ de infraestrutura, não de código da aplicação.
   (totais por estado e por equipa, e a data em que foi gerado). Feito no browser
   com `xlsx` em `import()` dinâmico: os dados já estão em memória, e um endpoint
   de exportação seria a mesma pergunta com um segundo âmbito para divergir.
+- **A app da família é da família, e o servidor sabe qual é o chapéu.** Um
+  utilizador pode ter duas memberships na mesma academia — o treinador que também
+  é pai é o caso mais banal que há num clube — e o `AuthService` escolhia **a
+  primeira que encontrasse**. Com a de treinador, a app da família recebia o
+  plantel inteiro de `/api/athletes` e mostrava-o como "os meus filhos", porque é
+  assim que ela lê essa lista. Agora cada app declara-se (`x-app: family` /
+  `x-app: console`) e `escolherMembership` decide: a app da família **exige**
+  vínculo de família e recusa com 403 quem não o tiver; a consola **prefere** o de
+  staff e aceita o outro. O cabeçalho não é uma credencial — só escolhe entre o
+  que a pessoa já tem. Do lado da app há a segunda camada, que explica em vez de
+  mostrar um erro. Verificado por `npm run test:family-scope` (24).
+- **O push registava-se sempre contra a `life-club`.** `lib/push.ts` tinha o slug
+  escrito à mão, de quando só havia a academia de demonstração: em qualquer outro
+  clube o servidor recusava o registo e as notificações ficavam por activar sem
+  explicação. Passou a usar o `academySlug()` do resto da app.
 - **Falta justificada leva motivo.** No registo de presenças, escolher "Justificada"
   abre um campo para o motivo (ex.: consulta médica); o motivo aparece também na
   ficha do atleta, ao lado da falta. Vive com as presenças, que ainda são locais.

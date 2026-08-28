@@ -33,6 +33,15 @@ function send(path: string, method: string, token: string | null, body?: unknown
       // subdomínio diz o mesmo, e continua a ser o servidor que verifica se esta
       // pessoa tem alguma coisa lá dentro.
       "x-academy-slug": academySlug(),
+      /*
+       * Qual das memberships desta pessoa é que se aplica.
+       *
+       * Um treinador que também é pai tem duas nesta academia, e sem isto o
+       * servidor escolhia a primeira que encontrasse: com a de treinador, esta
+       * app mostrava o plantel inteiro como sendo os filhos dele. Ver
+       * `escolherMembership` na API.
+       */
+      "x-app": "family",
       ...(body !== undefined ? { "Content-Type": "application/json" } : {}),
     },
     body: body !== undefined ? JSON.stringify(body) : undefined,

@@ -1,3 +1,4 @@
+import { useEffect } from "react";
 import { Link } from "react-router-dom";
 import { AlertTriangle, ArrowRight } from "lucide-react";
 import { PageHeader } from "@/components/Shell";
@@ -24,8 +25,34 @@ export default function Overview() {
   const overview = useApi<OverviewData>("/overview");
   const series = useApi<SeriesPoint[]>("/series?months=12");
 
-  if (overview.loading) return <Skeleton />;
-  if (overview.error) return <Failed message={overview.error} onRetry={overview.reload} />;
+  /*
+   * A página respira por causa do "Agora".
+   *
+   * Todo o resto daqui muda em dias, e uma leitura à entrada chegava. A presença
+   * muda em segundos — um número congelado no instante em que a página abriu é
+   * pior do que não o mostrar, porque parece vivo e não é. Trinta segundos é mais
+   * lento do que a janela de presença do servidor (dois minutos), por isso
+   * ninguém aparece e desaparece entre leituras.
+   *
+   * Só com o separador à vista: um painel esquecido numa segunda janela não
+   * precisa de puxar a API de meio em meio minuto durante a tarde toda. As
+   * séries não recarregam — são doze meses de história e não mudam hoje.
+   */
+  const { reload } = overview;
+  useEffect(() => {
+    const t = setInterval(() => {
+      if (document.visibilityState === "visible") reload();
+    }, 30_000);
+    return () => clearInterval(t);
+  }, [reload]);
+
+  /*
+   * O esqueleto é da **primeira** leitura, não das seguintes: `useApi` acende
+   * `loading` a cada corrida, e sem esta condição a página inteira piscava para
+   * esqueleto de meio em meio minuto.
+   */
+  if (overview.loading && !overview.data) return <Skeleton />;
+  if (overview.error && !overview.data) return <Failed message={overview.error} onRetry={overview.reload} />;
 
   const d = overview.data!;
   const { academies: a, people, revenue } = d;
@@ -36,6 +63,11 @@ export default function Overview() {
 
       <div className="space-y-3">
         <Attention alerts={d.alerts} />
+
+        {/* Guardado como o painel do email: durante um deploy a API pode ainda
+            ser a antiga, e um painel que rebenta na página de entrada é pior do
+            que um painel a menos. */}
+        {d.online && <AgoraOnline online={d.online} />}
 
         <MetricRow>
           <Metric
@@ -98,6 +130,95 @@ const KIND_LABEL: Record<string, string> = {
   "platform-invite": "convites à plataforma",
   outro: "outros",
 };
+
+/**
+ * Quem está a usar o produto neste momento.
+ *
+ * ## Porque é que está no topo e não numa métrica qualquer
+ *
+ * Porque é o único número desta página que se mede em segundos. Tudo o resto —
+ * MRR, academias, atletas, utilização — muda em dias ou em meses, e é por isso
+ * que vive todo na mesma fila de métricas cinzentas. Pôr este lá dentro fazia-o
+ * parecer da mesma natureza, e a graça dele é exactamente a contrária: é a única
+ * coisa aqui que responde "está alguém lá agora?".
+ *
+ * ## Staff e famílias separados
+ *
+ * São leituras diferentes e não se somam bem numa cabeça só. Trinta pais na app
+ * ao domingo de manhã é adopção — a metade deste produto que costuma falhar.
+ * Trinta dirigentes na consola à terça à tarde é uso. Um número só juntava as
+ * duas e não respondia a nenhuma.
+ *
+ * ## Em quantos clubes
+ *
+ * Sem isso, doze pessoas espalhadas por seis academias e doze na mesma sala
+ * leem-se igual — e são coisas opostas: uma é um sábado de jogos, a outra é uma
+ * reunião de direcção.
+ *
+ * ## Zero é uma resposta, não uma avaria
+ *
+ * Às três da manhã não está ninguém, e isso está certo. Por isso o vazio é dito
+ * com calma e sem cor de alerta: o ponto apaga-se e a frase explica-se.
+ */
+function AgoraOnline({ online }: { online: NonNullable<OverviewData["online"]> }) {
+  const ninguem = online.total === 0;
+
+  return (
+    <Panel>
+      <div className="flex flex-wrap items-center gap-x-10 gap-y-5 px-5 py-4">
+        <div className="flex items-center gap-3.5">
+          <span className="relative flex size-2.5 shrink-0" aria-hidden>
+            {!ninguem && (
+              <span className="absolute inline-flex size-full animate-ping rounded-full bg-[#1f7a45] opacity-60" />
+            )}
+            <span
+              className={cx(
+                "relative inline-flex size-2.5 rounded-full",
+                ninguem ? "bg-ink-4/40" : "bg-[#1f7a45]",
+              )}
+            />
+          </span>
+
+          <div>
+            <div className="text-meta font-medium tracking-wide text-ink-3 uppercase">Agora</div>
+            {ninguem ? (
+              <div className="mt-0.5 text-body text-ink-3">Ninguém a usar o produto neste momento.</div>
+            ) : (
+              <div className="flex items-baseline gap-2">
+                <span className="text-[28px] leading-none font-semibold text-ink tabular">{online.total}</span>
+                <span className="text-body text-ink-2">
+                  {online.total === 1 ? "pessoa" : "pessoas"} em {online.academies}{" "}
+                  {online.academies === 1 ? "academia" : "academias"}
+                </span>
+              </div>
+            )}
+          </div>
+        </div>
+
+        {!ninguem && (
+          <div className="flex items-center gap-8">
+            <Lado n={online.staff} label="Staff" nota="na consola" />
+            <Lado n={online.family} label="Famílias" nota="na app" />
+          </div>
+        )}
+      </div>
+    </Panel>
+  );
+}
+
+function Lado({ n, label, nota }: { n: number; label: string; nota: string }) {
+  return (
+    <div>
+      <div className="flex items-baseline gap-1.5">
+        <span className={cx("text-[20px] leading-none font-semibold tabular", n === 0 ? "text-ink-4" : "text-ink")}>
+          {n}
+        </span>
+        <span className="text-body text-ink-2">{label}</span>
+      </div>
+      <div className="mt-1 text-meta text-ink-4">{nota}</div>
+    </div>
+  );
+}
 
 /**
  * O correio que saiu hoje.

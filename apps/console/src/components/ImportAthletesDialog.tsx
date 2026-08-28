@@ -1,4 +1,4 @@
-import { useRef, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import { Check, Download, FileSpreadsheet, TriangleAlert, Upload } from "@/lib/icons";
 import { academy, reloadAcademy, seasons as knownSeasons } from "@/lib/store";
 import { defaultSeason, seasonOptions } from "@/lib/seasons";
@@ -6,11 +6,14 @@ import { can } from "@/lib/permissions";
 import { useSession } from "@/session";
 import {
   COLUMNS,
+  createPositions,
   createTeams,
   downloadTemplate,
   importAthletes,
   parseFile,
   planTeam,
+  posicoesNovas,
+  type NewPositions,
   type NewTeamPlan,
   type ParseResult,
   type RowError,
@@ -45,6 +48,16 @@ import { cx, SelectField } from "./primitives";
  * nome, e um interruptor para decidir. Desligado, as linhas dessas equipas
  * ficam de fora e contam-se como recusadas — nada entra sem alguém dizer que
  * sim.
+ *
+ * ## As posições que ainda não existem
+ *
+ * A mesma pergunta, e pela mesma razão: `Posição "Ala" não existe em Futsal`
+ * era um erro que derrubava a linha e mandava a pessoa às Definições escrever a
+ * posição à mão. Agora aparecem agrupadas por modalidade, com um interruptor.
+ *
+ * **O que muda é a consequência de dizer que não.** Uma equipa é obrigatória,
+ * por isso recusá-la deixa o atleta de fora. Uma posição não é: o atleta entra
+ * na mesma, sem ela, e o ecrã final di-lo em vez de o esconder.
  */
 type Phase = "pick" | "review" | "done";
 
@@ -56,12 +69,34 @@ export function ImportAthletesDialog({ onClose }: { onClose: () => void }) {
   const [parsed, setParsed] = useState<ParseResult | null>(null);
   const [parsing, setParsing] = useState(false);
   const [importing, setImporting] = useState(false);
-  const [result, setResult] = useState<{ created: number; errors: RowError[] } | null>(null);
+  const [result, setResult] = useState<{ created: number; errors: RowError[]; semPosicao: number } | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   /** Criar as equipas em falta, e o que cada uma vai ser. Só existe se houver. */
   const [createNew, setCreateNew] = useState(true);
   const [plans, setPlans] = useState<NewTeamPlan[]>([]);
+
+  /*
+   * O mesmo, para as posições.
+   *
+   * Calculadas a cada render e não guardadas no estado: a modalidade de uma
+   * equipa por criar vem do plano que a pessoa edita neste ecrã, e mudar o plano
+   * de Futebol para Futsal muda quais as posições que faltam. Um valor congelado
+   * na leitura do ficheiro ficava a mentir a partir da primeira correcção.
+   */
+  const novasPosicoes = useMemo(
+    () => (parsed ? posicoesNovas(parsed.valid, plans, createNew) : []),
+    [parsed, plans, createNew],
+  );
+  const [criarPosicoes, setCriarPosicoes] = useState(true);
+
+  /*
+   * As posições são configuração da modalidade, e por isso pedem `settings:write`
+   * — não `team:write`. Um treinador que importe o plantel pode não as poder
+   * criar, e é melhor dizê-lo aqui do que deixá-lo descobrir com um 403 depois
+   * de carregar em Importar.
+   */
+  const podeCriarPosicoes = can(session, "settings:write");
 
   /*
    * Porque é que não se pode criar as equipas em falta, quando não se pode.
@@ -126,6 +161,40 @@ export function ImportAthletesDialog({ onClose }: { onClose: () => void }) {
         rows = rows.map((r) => (r.teamId ? r : { ...r, teamId: ids.get(r.teamName.trim().toLowerCase()) }));
       }
 
+      /*
+       * As posições, antes dos atletas e depois das equipas.
+       *
+       * Depois das equipas porque uma posição pode pertencer à modalidade de uma
+       * equipa acabada de criar; antes dos atletas porque o servidor recusa uma
+       * posição que a modalidade não conhece.
+       *
+       * Recusar criá-las **não** deixa o atleta de fora, ao contrário do que
+       * acontece com a equipa: a equipa é obrigatória, a posição não. A linha
+       * entra sem posição, e fica registado que assim foi.
+       */
+      let semPosicao: typeof rows = [];
+      if (novasPosicoes.length) {
+        const desconhecidas = new Set(
+          novasPosicoes.flatMap((n) => n.names.map((x) => x.toLowerCase())),
+        );
+
+        if (criarPosicoes && podeCriarPosicoes) {
+          const { failed } = await createPositions(novasPosicoes);
+          // O que não foi criado continua desconhecido: essas linhas seguem sem posição.
+          const falharam = new Set(
+            novasPosicoes
+              .filter((n) => failed.some((f) => f.sportName === n.sportName))
+              .flatMap((n) => n.names.map((x) => x.toLowerCase())),
+          );
+          semPosicao = rows.filter((r) => r.position && falharam.has(r.position.toLowerCase()));
+        } else {
+          semPosicao = rows.filter((r) => r.position && desconhecidas.has(r.position.toLowerCase()));
+        }
+
+        const limpar = new Set(semPosicao.map((r) => r.line));
+        rows = rows.map((r) => (limpar.has(r.line) ? { ...r, position: undefined } : r));
+      }
+
       const semEquipa = rows.filter((r) => !r.teamId);
       const res = await importAthletes(rows);
 
@@ -148,6 +217,10 @@ export function ImportAthletesDialog({ onClose }: { onClose: () => void }) {
             };
           }),
         ],
+        // Quem entrou, mas sem a posição que vinha no ficheiro. Não é um erro —
+        // o atleta está lá — mas é uma coisa que a pessoa quer saber, senão
+        // descobre-a atleta a atleta daqui a um mês.
+        semPosicao: semPosicao.length,
       });
       setPhase("done");
       await reloadAcademy();
@@ -186,6 +259,10 @@ export function ImportAthletesDialog({ onClose }: { onClose: () => void }) {
             blockReason={blockReason}
             season={season}
             importable={importable}
+            novasPosicoes={novasPosicoes}
+            criarPosicoes={criarPosicoes}
+            setCriarPosicoes={setCriarPosicoes}
+            podeCriarPosicoes={podeCriarPosicoes}
           />
         )}
         {phase === "done" && result && <Done result={result} />}
@@ -296,6 +373,10 @@ function Review({
   blockReason,
   season,
   importable,
+  novasPosicoes,
+  criarPosicoes,
+  setCriarPosicoes,
+  podeCriarPosicoes,
 }: {
   parsed: ParseResult;
   plans: NewTeamPlan[];
@@ -305,6 +386,10 @@ function Review({
   blockReason: null | "permissao" | "modalidades";
   season: string;
   importable: number;
+  novasPosicoes: NewPositions[];
+  criarPosicoes: boolean;
+  setCriarPosicoes: (v: boolean) => void;
+  podeCriarPosicoes: boolean;
 }) {
   if (parsed.missingColumns.length) {
     return (
@@ -323,6 +408,7 @@ function Review({
 
   const { valid, errors } = parsed;
   const blocked = valid.length - importable;
+  const totalPosicoes = novasPosicoes.reduce((n, x) => n + x.names.length, 0);
 
   return (
     <div className="space-y-3">
@@ -430,6 +516,68 @@ function Review({
         </div>
       )}
 
+      {/*
+        As posições que ainda não existem — a mesma pergunta das equipas.
+
+        Antes disto, cada uma derrubava a linha com `Posição "Ala" não existe em
+        Futsal`. A diferença para as equipas é o que acontece ao dizer que não:
+        uma equipa é obrigatória e a linha fica de fora, uma posição não é — o
+        atleta entra sem ela.
+      */}
+      {novasPosicoes.length > 0 && (
+        <div
+          className={cx(
+            "overflow-hidden rounded-[var(--radius-panel)] border",
+            criarPosicoes && podeCriarPosicoes ? "border-signal/40 bg-signal-soft/25" : "border-line",
+          )}
+        >
+          <div className="flex items-start gap-3 px-3 py-2.5">
+            {podeCriarPosicoes ? (
+              <input
+                id="criar-posicoes"
+                type="checkbox"
+                checked={criarPosicoes}
+                onChange={(e) => setCriarPosicoes(e.target.checked)}
+                className="mt-0.5 size-4 shrink-0 accent-[var(--color-signal)]"
+              />
+            ) : (
+              <TriangleAlert className="mt-0.5 size-4 shrink-0 text-warn" strokeWidth={1.75} />
+            )}
+            <label htmlFor={podeCriarPosicoes ? "criar-posicoes" : undefined} className="min-w-0 flex-1">
+              <span className="block text-meta font-medium text-ink">
+                {totalPosicoes === 1
+                  ? `A posição "${novasPosicoes[0].names[0]}" ainda não existe`
+                  : `${totalPosicoes} posições do ficheiro ainda não existem`}
+              </span>
+              <span className="mt-0.5 block text-meta leading-relaxed text-ink-3">
+                {podeCriarPosicoes ? (
+                  <>
+                    Acrescentamo-las às modalidades, e ficam disponíveis para toda a academia. Sem isto, estes atletas
+                    entram na mesma — mas sem posição.
+                  </>
+                ) : (
+                  <>
+                    Não tens permissão para mexer nas modalidades. Estes atletas entram na mesma, sem posição — pede à
+                    direção que as acrescente nas Definições.
+                  </>
+                )}
+              </span>
+            </label>
+          </div>
+
+          {criarPosicoes && podeCriarPosicoes && (
+            <ul className="border-t border-line/60">
+              {novasPosicoes.map((n) => (
+                <li key={n.sportId} className="flex flex-wrap items-baseline gap-x-2 gap-y-1 border-b border-line/60 px-3 py-2 last:border-b-0">
+                  <span className="w-20 shrink-0 truncate text-meta font-medium text-ink">{n.sportName}</span>
+                  <span className="min-w-0 flex-1 text-meta text-ink-2">{n.names.join(" · ")}</span>
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+      )}
+
       {errors.length > 0 && (
         <div className="overflow-hidden rounded-[var(--radius-panel)] border border-line">
           <div className="border-b border-line bg-sunken/50 px-3 py-2 text-meta font-medium text-ink-2">
@@ -458,7 +606,7 @@ function Review({
 
 /* -------------------------------------------------------------------------- */
 
-function Done({ result }: { result: { created: number; errors: RowError[] } }) {
+function Done({ result }: { result: { created: number; errors: RowError[]; semPosicao: number } }) {
   return (
     <div className="space-y-3">
       <div className="flex items-center gap-3 rounded-[var(--radius-panel)] border border-line bg-[#e6f2e9]/40 p-4">
@@ -472,6 +620,17 @@ function Done({ result }: { result: { created: number; errors: RowError[] } }) {
           <div className="text-meta text-ink-3">Já aparecem na lista e nos plantéis das equipas.</div>
         </div>
       </div>
+
+      {/* Entraram, mas sem a posição do ficheiro. Não é uma recusa — e por isso
+          não vai para a lista de recusadas, onde se leria como tal. */}
+      {result.semPosicao > 0 && (
+        <p className="rounded-[var(--radius-panel)] border border-line bg-warn-soft/50 px-3.5 py-2.5 text-meta leading-relaxed text-ink-2">
+          {result.semPosicao === 1
+            ? "Um atleta entrou sem a posição que vinha no ficheiro"
+            : `${result.semPosicao} atletas entraram sem a posição que vinha no ficheiro`}{" "}
+          — a modalidade não a conhece. Podes acrescentá-la em Definições e depois escolhê-la na ficha de cada um.
+        </p>
+      )}
 
       {result.errors.length > 0 && (
         <div className="overflow-hidden rounded-[var(--radius-panel)] border border-line">

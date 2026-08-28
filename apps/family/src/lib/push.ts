@@ -18,6 +18,7 @@
  */
 
 import { getAccessToken } from "@/lib/session";
+import { academySlug } from "@/lib/invite";
 
 // Em produção a app e a API vivem na mesma origem, e a base fica vazia. Em
 // desenvolvimento a API está noutra porta — `VITE_API_URL` diz onde.
@@ -31,7 +32,17 @@ async function authed(path: string, body: unknown): Promise<Response> {
     headers: {
       "Content-Type": "application/json",
       ...(token ? { Authorization: `Bearer ${token}` } : {}),
-      "x-academy-slug": "life-club",
+      /*
+         A academia de quem está a usar a app — não uma constante.
+
+         Estava aqui `"life-club"` escrito à mão, de quando só havia a academia de
+         demonstração. O efeito num clube a sério: o servidor resolvia o pedido
+         contra uma academia onde este pai não tem nada, recusava-o, e as
+         notificações ficavam por activar sem explicação nenhuma. É o mesmo
+         `academySlug()` que o resto da app usa.
+      */
+      "x-academy-slug": academySlug(),
+      "x-app": "family",
     },
     body: JSON.stringify(body),
   });

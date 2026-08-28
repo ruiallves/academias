@@ -96,6 +96,16 @@ export class PlatformService {
        * o dizer.
        */
       usage: usageRate(academies),
+      /*
+       * Quem está a usar o produto neste preciso momento.
+       *
+       * Sai de graça: `academies()` já trouxe a presença de cada clube, e isto é
+       * a soma. Vive ao lado de `usage` de propósito — são as duas metades da
+       * mesma pergunta, e nenhuma responde sozinha. `usage` diz quantos clubes
+       * continuam a trabalhar (a leitura de retenção, em dias); isto diz quantas
+       * pessoas estão lá agora (a leitura de vida, em segundos).
+       */
+      online: onlineTotals(academies),
       email,
       alerts: this.alertsFrom(academies),
     };
@@ -725,6 +735,27 @@ export class PlatformService {
 }
 
 /* ---------------------------------------------------------------------------- */
+
+/**
+ * A soma da presença, e em quantos clubes.
+ *
+ * O número de clubes é o que dá sentido ao total: doze pessoas espalhadas por
+ * seis academias é um sábado normal, doze na mesma academia é uma reunião de
+ * direcção — e um total sozinho não distingue as duas.
+ */
+function onlineTotals(
+  academies: { online: { total: number; staff: number; family: number } }[],
+): { total: number; staff: number; family: number; academies: number } {
+  return academies.reduce(
+    (acc, a) => ({
+      total: acc.total + a.online.total,
+      staff: acc.staff + a.online.staff,
+      family: acc.family + a.online.family,
+      academies: acc.academies + (a.online.total > 0 ? 1 : 0),
+    }),
+    { total: 0, staff: 0, family: 0, academies: 0 },
+  );
+}
 
 function usageRate(academies: { status: string; lastActivity: Date | null }[]): number | null {
   const live = academies.filter((a) => a.status === "ACTIVE" || a.status === "TRIAL");

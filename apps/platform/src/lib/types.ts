@@ -38,6 +38,18 @@ export type Overview = {
   people: { athletes: number; guardians: number; staff: number };
   revenue: { mrrCents: number; arrCents: number };
   usage: number | null;
+  /**
+   * Quem está a usar o produto **agora**, somado.
+   *
+   * `usage` e isto são as duas metades da mesma pergunta: `usage` conta clubes
+   * que continuam a trabalhar (retenção, em dias), isto conta pessoas que estão
+   * lá neste momento (vida, em segundos). `academies` é em quantos clubes há
+   * alguém — sem esse número, doze espalhados por seis clubes e doze na mesma
+   * sala leem-se igual.
+   *
+   * Pode vir indefinido durante um deploy, com a API ainda a antiga.
+   */
+  online?: { total: number; staff: number; family: number; academies: number };
   /** Os emails que saíram do servidor hoje. Ver `emailToday` na API. */
   email: { today: number; failedToday: number; yesterday: number; byKind: { kind: string; count: number }[] };
   alerts: Alert[];

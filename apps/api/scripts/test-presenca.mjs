@@ -159,6 +159,34 @@ console.log("\n=== A forma do que a plataforma recebe ===");
 const qualquer = (await academias(plataforma))[0];
 check("tem total, staff e family", ["total", "staff", "family"].every((k) => typeof qualquer.online[k] === "number"), JSON.stringify(qualquer.online));
 
+console.log("\n=== A visão geral soma o mesmo ===");
+/*
+ * O painel "Agora" da visão geral não conta nada por si: soma o que a lista das
+ * academias já traz. O que aqui se verifica é que as duas leituras não se
+ * separam — uma a dizer 5 e a outra 3 na mesma página seria pior do que não
+ * mostrar nenhuma.
+ */
+const vista = await (await fetch(`${API}/api/platform/overview`, {
+  headers: { Authorization: `Bearer ${plataforma}` },
+})).json();
+const somaDaLista = (await academias(plataforma)).reduce(
+  (acc, a) => ({
+    total: acc.total + a.online.total,
+    staff: acc.staff + a.online.staff,
+    family: acc.family + a.online.family,
+    academies: acc.academies + (a.online.total > 0 ? 1 : 0),
+  }),
+  { total: 0, staff: 0, family: 0, academies: 0 },
+);
+
+check("a visão geral traz o campo online", vista.online !== undefined, JSON.stringify(vista.online));
+check("com o mesmo total da lista", vista.online.total === somaDaLista.total, `${vista.online.total} vs ${somaDaLista.total}`);
+check("o mesmo staff", vista.online.staff === somaDaLista.staff, `${vista.online.staff} vs ${somaDaLista.staff}`);
+check("as mesmas famílias", vista.online.family === somaDaLista.family, `${vista.online.family} vs ${somaDaLista.family}`);
+check("e o mesmo número de academias com gente", vista.online.academies === somaDaLista.academies, `${vista.online.academies} vs ${somaDaLista.academies}`);
+check("há mesmo alguém para contar — senão isto não provava nada", vista.online.total > 0, `${vista.online.total}`);
+check("com os dois lados representados", vista.online.staff > 0 && vista.online.family > 0, JSON.stringify(vista.online));
+
 console.log("\n=== Limpeza ===");
 await limpar();
 await db.end();

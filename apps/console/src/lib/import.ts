@@ -1,6 +1,6 @@
-import { apiPost } from "@/lib/http";
+import { apiPatch, apiPost } from "@/lib/http";
 import { academy, teams } from "@/lib/store";
-import { sportById } from "@/lib/api";
+import { sportById, teamById } from "@/lib/api";
 import { guessMaxAge } from "@/lib/team-age";
 
 /**
@@ -114,6 +114,9 @@ export async function buildTemplate(): Promise<Blob> {
     [""],
     ["Uma equipa que ainda não exista pode ser escrita à mesma."],
     ["Ao importar, perguntamos se a queres criar."],
+    [""],
+    ["O mesmo vale para a coluna Posição: escreve a que o clube usa."],
+    ["Se a modalidade ainda não a tiver, perguntamos se a queres acrescentar."],
   ]);
 
   const wb = XLSX.utils.book_new();
@@ -198,21 +201,21 @@ export async function parseFile(file: File): Promise<ParseResult> {
     if (!/^\d{9}$/.test(taxId)) return void errors.push({ line, name, error: "NIF inválido — são nove dígitos" });
     row.taxId = taxId;
 
+    /*
+     * Uma posição desconhecida deixou de derrubar a linha.
+     *
+     * Era um erro — `Posição "Ala" não existe em Futsal` — e era a mesma avaria
+     * que a equipa inexistente tinha antes: verdade, e inútil. Quem traz o
+     * plantel numa folha traz as posições que o clube usa nessa mesma folha, e
+     * a mensagem só dizia "vai às Definições escrevê-las uma a uma e volta".
+     *
+     * O nome fica registado tal como veio, e a decisão — criar as posições ou
+     * importar sem elas — é apresentada no passo de revisão. Quem decide qual é
+     * a modalidade de cada uma é o diálogo, porque para as equipas ainda por
+     * criar isso depende do plano que a pessoa lá escolher. Ver `posicoesNovas`.
+     */
     const position = get("Posição");
-    if (position) {
-      // Só se valida contra a modalidade quando a equipa já existe — de uma
-      // equipa por criar ainda não se sabe a modalidade, e é o servidor que dá
-      // a última palavra de qualquer maneira.
-      const positions = team ? (sportById(team.sportId)?.positions ?? []) : [];
-      // Sem posições na modalidade (natação), aceita-se o que vier; com posições,
-      // exige-se uma delas — senão a ficha do atleta fica com uma posição que a
-      // modalidade não conhece.
-      if (team && positions.length && !positions.some((p) => p.toLowerCase() === position.toLowerCase())) {
-        errors.push({ line, name, error: `Posição "${position}" não existe em ${sportById(team.sportId)?.name}` });
-        return;
-      }
-      row.position = position;
-    }
+    if (position) row.position = position;
 
     const num = get("Número");
     if (num) {
@@ -319,6 +322,98 @@ export async function createTeams(
   }
 
   return { ids, failed };
+}
+
+/* -------------------------------------------------------------------------- */
+/* Posições que ainda não existem                                              */
+/* -------------------------------------------------------------------------- */
+
+/** As posições em falta de uma modalidade, e o que ela já tem. */
+export type NewPositions = {
+  sportId: string;
+  sportName: string;
+  /** Os nomes tal como vêm escritos no ficheiro, sem repetições. */
+  names: string[];
+};
+
+/**
+ * Que posições do ficheiro a academia ainda não conhece.
+ *
+ * ## Porque é que isto se calcula aqui e não no parser
+ *
+ * Porque a resposta depende de uma escolha que ainda não foi feita quando o
+ * ficheiro é lido: a modalidade de uma equipa **por criar** vem do plano que a
+ * pessoa edita no ecrã de revisão. Mudar o plano de "Futebol" para "Futsal" muda
+ * quais as posições que faltam, e um valor calculado uma vez na leitura ficaria
+ * a mentir a partir daí.
+ *
+ * ## O que fica de fora
+ *
+ * Modalidades sem posições nenhumas — a natação é o exemplo — aceitam o que
+ * vier, e é assim desde sempre. Propor "criar as posições da natação" a partir
+ * de uma coluna que alguém preencheu por engano seria inventar configuração.
+ *
+ * Linhas cuja equipa não existe **nem** vai ser criada também ficam de fora: não
+ * se sabe a modalidade, e essas linhas não entram de qualquer maneira.
+ */
+export function posicoesNovas(
+  rows: ParsedRow[],
+  plans: NewTeamPlan[],
+  criarEquipas: boolean,
+): NewPositions[] {
+  const porNome = new Map(plans.map((p) => [p.name.trim().toLowerCase(), p]));
+  const out = new Map<string, NewPositions>();
+
+  for (const row of rows) {
+    if (!row.position) continue;
+
+    const sportId = row.teamId
+      ? teamById(row.teamId)?.sportId
+      : criarEquipas
+        ? porNome.get(row.teamName.trim().toLowerCase())?.sportId
+        : undefined;
+    if (!sportId) continue;
+
+    const sport = sportById(sportId);
+    // Sem posições declaradas, a modalidade aceita o que vier — não há falta nenhuma.
+    if (!sport || sport.positions.length === 0) continue;
+
+    const conhecida = sport.positions.some((p) => p.toLowerCase() === row.position!.toLowerCase());
+    if (conhecida) continue;
+
+    const entrada = out.get(sportId) ?? { sportId, sportName: sport.name, names: [] };
+    if (!entrada.names.some((n) => n.toLowerCase() === row.position!.toLowerCase())) {
+      entrada.names.push(row.position);
+    }
+    out.set(sportId, entrada);
+  }
+
+  return [...out.values()];
+}
+
+/**
+ * Acrescenta as posições novas às modalidades. Uma modalidade que falhe não
+ * derruba as outras — nem a importação.
+ *
+ * As posições existentes vão no pedido junto com as novas: `PATCH /api/sports/:id`
+ * recebe a **lista completa**, e mandar só as novas apagava as que o clube já
+ * tinha configurado.
+ */
+export async function createPositions(
+  novas: NewPositions[],
+): Promise<{ failed: { sportName: string; error: string }[] }> {
+  const failed: { sportName: string; error: string }[] = [];
+
+  for (const n of novas) {
+    try {
+      const actuais = sportById(n.sportId)?.positions ?? [];
+      await apiPatch(`/api/sports/${n.sportId}`, { positions: [...actuais, ...n.names] });
+    } catch (e) {
+      failed.push({ sportName: n.sportName, error: e instanceof Error ? e.message : "não foi possível criar" });
+    }
+  }
+
+  return { failed };
 }
 
 /**

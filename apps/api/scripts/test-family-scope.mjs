@@ -33,9 +33,17 @@ const login = async (email) =>
     body: JSON.stringify({ email, password: "academia2026" }),
   })).json()).access_token;
 
-const call = async (token, method, pathname, body) => {
+const call = async (token, method, pathname, body, app) => {
   const r = await fetch(API + pathname, {
-    method, headers: { Authorization: `Bearer ${token}`, "x-academy-slug": "life-club", ...(body ? { "Content-Type": "application/json" } : {}) },
+    method,
+    headers: {
+      Authorization: `Bearer ${token}`,
+      "x-academy-slug": "life-club",
+      // De que app vem o pedido. Sem isto, o servidor escolhe a membership como
+      // sempre escolheu — é o caminho das apps antigas ainda em cache.
+      ...(app ? { "x-app": app } : {}),
+      ...(body ? { "Content-Type": "application/json" } : {}),
+    },
     body: body ? JSON.stringify(body) : undefined,
   });
   return { status: r.status, body: await r.json().catch(() => null) };
@@ -110,6 +118,33 @@ console.log("\n=== O que continua fechado ===");
 check("não escreve atletas (403)", (await call(parent, "POST", "/api/athletes", { name: "ZZ Teste", birthdate: "2015-01-01", teamId: "t_sub11", taxId: "123456789" })).status === 403);
 check("não vê o staff (403)", (await call(parent, "GET", "/api/staff")).status === 403);
 check("não cria eventos (403)", (await call(parent, "POST", "/api/events", { kind: "TRAINING", teamId: "t_sub11", title: "ZZ", startsAt: new Date().toISOString(), endsAt: new Date(Date.now() + 3600000).toISOString(), venue: "x" })).status === 403);
+
+console.log("\n=== A app da família é da família ===");
+/*
+ * O bug que isto fecha.
+ *
+ * Um treinador que também é pai tem duas memberships na mesma academia, e o
+ * servidor escolhia a primeira que encontrasse. Com a de treinador, a app da
+ * família recebia o plantel inteiro de `/api/athletes` — e essa app trata essa
+ * lista como "os meus filhos". O escalão todo aparecia como filhos daquele pai.
+ *
+ * Agora a app diz de que lado vem (`x-app: family`) e o servidor exige um vínculo
+ * de família. Quem não o tiver leva 403 em vez de receber o chapéu errado.
+ */
+const coach = await login("treinador@lifeclub.pt");
+const coachNaApp = await call(coach, "GET", "/api/athletes", undefined, "family");
+check("um treinador não entra na app da família (403)", coachNaApp.status === 403, `${coachNaApp.status}`);
+
+const paiNaApp = await call(parent, "GET", "/api/athletes", undefined, "family");
+check("um encarregado entra (200)", paiNaApp.status === 200, `${paiNaApp.status}`);
+check(
+  "e continua a ver só os filhos dele",
+  Array.isArray(paiNaApp.body) && paiNaApp.body.length === names.length,
+  `${paiNaApp.body?.length} vs ${names.length}`,
+);
+
+const coachNaConsola = await call(coach, "GET", "/api/athletes", undefined, "console");
+check("e continua a ser treinador na consola (200)", coachNaConsola.status === 200, `${coachNaConsola.status}`);
 
 console.log("\n=== Limpeza ===");
 for (const t of ["ZZ Reunião técnica", "ZZ Aviso às famílias"]) {
