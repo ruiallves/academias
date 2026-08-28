@@ -64,6 +64,8 @@ export type Academy = {
   status: AcademyStatus;
   createdAt: string;
   trialEndsAt: string | null;
+  /** O plano em vigor. `null` num clube criado sem plano nenhum. */
+  planId: string | null;
   plan: string | null;
   subscriptionStatus: string | null;
   mrrCents: number;

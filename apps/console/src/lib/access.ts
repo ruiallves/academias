@@ -168,6 +168,22 @@ export const AREAS: Area[] = [
   { label: "Avaliações", hint: "notas por competência", read: "evaluation:read", write: "evaluation:write" },
   { label: "Relatórios", hint: "o que a família recebe", read: "report:read", write: "report:write" },
   { label: "Mensalidades", hint: "valores, dívida e pagamentos", read: "billing:read", write: "billing:write" },
+  /*
+   * Sócios — a linha que faltava, e a falta era do género pior.
+   *
+   * `member:read` existe, comanda o menu *Sócios* e é o que abre a lista de
+   * sócios do clube com quotas e contactos. Mas não estava aqui, e este catálogo
+   * é o que desenha os três sítios onde se mexe em acessos: o editor de cargos,
+   * o de departamentos e o painel de acesso de cada pessoa.
+   *
+   * O efeito não era só "não se pode dar". Era **não se pode tirar**: um cargo
+   * que tivesse ficado com a permissão — por exemplo um "Treinador Principal"
+   * criado sem departamento, no tempo em que a base `STAFF` ainda trazia
+   * `member:read` — mostrava Sócios a um treinador para sempre, sem ninguém
+   * conseguir ver de onde vinha nem desligá-lo. Uma permissão invisível não é
+   * uma permissão por omissão: é uma permissão sem dono.
+   */
+  { label: "Sócios", hint: "lista de sócios, quotas e contactos", read: "member:read", write: "member:write" },
   { label: "Comunicação", hint: "avisos às famílias", read: "comms:read", write: "comms:write" },
   { label: "Staff", hint: "pessoas da academia", read: "staff:read", write: "staff:write" },
 ];

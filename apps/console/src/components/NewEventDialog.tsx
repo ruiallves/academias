@@ -35,6 +35,7 @@ export function NewEventDialog({
   session,
   day,
   kind: kindInicial,
+  teamId: teamInicial,
   onClose,
 }: {
   session: Session;
@@ -45,6 +46,12 @@ export function NewEventDialog({
    * obrigá-lo a escolher "Jogo" outra vez seria perguntar duas vezes o mesmo.
    */
   kind?: EventKind;
+  /**
+   * A equipa com que abre. Quem vem do calendário de uma equipa já a escolheu —
+   * e um treinador de três escalões que tivesse de a escolher outra vez estava a
+   * responder a uma pergunta que já tinha respondido ao abrir aquela página.
+   */
+  teamId?: string;
   onClose: () => void;
 }) {
   const teams = listTeams(session);
@@ -53,7 +60,11 @@ export function NewEventDialog({
   const mayTargetWholeAcademy = session.scope?.teamIds === undefined;
 
   const [kind, setKind] = useState<EventKind>(kindInicial ?? "training");
-  const [teamId, setTeamId] = useState(teams[0]?.id ?? "");
+  // A equipa pedida, se for uma das que esta pessoa pode usar. Um id de fora do
+  // âmbito cai para a primeira — o servidor recusá-lo-ia na mesma.
+  const [teamId, setTeamId] = useState(
+    (teamInicial && teams.some((t) => t.id === teamInicial) ? teamInicial : teams[0]?.id) ?? "",
+  );
   const [title, setTitle] = useState("");
   const [date, setDate] = useState(toInputDate(day));
   const [start, setStart] = useState("18:00");

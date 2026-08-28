@@ -5,7 +5,7 @@ import { NewTeamDialog } from "@/components/NewTeamDialog";
 import { ImportTeamsDialog } from "@/components/ImportTeamsDialog";
 import { Empty, Monogram, Panel } from "@/components/primitives";
 import { ArrowRight, Clock, Plus, Shield, Upload } from "@/lib/icons";
-import { academy, attendanceRate, coachById, listAthletes, listTeams, sportById } from "@/lib/api";
+import { academy, attendanceRate, listAthletes, listTeams, sportById, teamCoaches } from "@/lib/api";
 import { useTeamColors } from "@/lib/calendar";
 import type { CategoricalColor } from "@academia/ui/tokens";
 import { currentSeason } from "@/lib/store";
@@ -149,7 +149,9 @@ function TeamCard({
 }) {
   const { session } = useSession();
   const sport = sportById(team.sportId);
-  const coaches = team.coachIds.map(coachById).filter(Boolean);
+  // Os nomes vêm com a equipa; ver `teamCoaches`. Resolvê-los pela lista de staff
+  // dava "Sem treinador" a quem não tem `staff:read` — ou seja, aos treinadores.
+  const coaches = teamCoaches(team);
   const rate = attendanceRate(session, 30, team.id);
 
   return (
@@ -212,13 +214,13 @@ function TeamCard({
             <>
               <div className="flex -space-x-1.5">
                 {coaches.slice(0, 3).map((c) => (
-                  <span key={c!.id} className="rounded-full ring-2 ring-surface">
-                    <Monogram name={c!.name} photoUrl={c!.photoUrl} size="sm" />
+                  <span key={c.id} className="rounded-full ring-2 ring-surface">
+                    <Monogram name={c.name} photoUrl={c.photoUrl ?? undefined} size="sm" />
                   </span>
                 ))}
               </div>
               <span className="truncate text-meta text-ink-3">
-                {coaches.map((c) => c!.name.split(" ")[0]).join(", ")}
+                {coaches.map((c) => c.name.split(" ")[0]).join(", ")}
               </span>
             </>
           ) : (

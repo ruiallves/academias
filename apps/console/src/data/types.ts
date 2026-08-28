@@ -86,6 +86,16 @@ export type Team = {
   maxAge: number;
   season: string;
   coachIds: string[];
+  /**
+   * Quem treina esta equipa, com o nome à frente.
+   *
+   * Os nomes vêm com a equipa e não se vão buscar à lista de staff, porque essa
+   * exige `staff:read` — e um treinador não a tem. Resolver o nome por
+   * `coachById` dava-lhe uma equipa "sem treinador" na cara dele. Quem treina uma
+   * equipa é parte da equipa, não informação de recursos humanos: a app da
+   * família já o mostra pela mesma razão.
+   */
+  coaches: { id: string; name: string; title: string }[];
   athleteIds: string[];
   /** Dias da semana (0 = domingo) e hora do treino regular. */
   schedule: { weekday: number; start: string; end: string; venue: string }[];

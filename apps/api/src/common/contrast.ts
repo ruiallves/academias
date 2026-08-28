@@ -55,6 +55,12 @@ export function contrastRatio(a: string, b: string): number {
   return (hi + 0.05) / (lo + 0.05);
 }
 
+/** `"#ffffff"` → `"255 255 255"`. */
+function hexToRgbList(hex: string): string {
+  const { r, g, b } = hexToRgb(hex);
+  return `${r} ${g} ${b}`;
+}
+
 function towards(hex: string, t: number, destino: string): string {
   const a = hexToRgb(hex);
   const b = hexToRgb(destino);
@@ -116,6 +122,15 @@ export function clubPalette(signalColor: string) {
     club: hex,
     strong,
     on,
+    /**
+     * A tinta em componentes — `"255 255 255"` ou `"20 19 15"`.
+     *
+     * Um cartão não é uma cor chapada: tem rótulos a 60%, um círculo a 22%, um
+     * estilhaço a 8%. Todas essas transparências precisam da tinta em partes, e
+     * `rgb(var(--club-on-rgb) / .6)` é a única forma de as escrever sem voltar a
+     * fixar o branco.
+     */
+    onRgb: hexToRgbList(on),
     ink: readableInk(hex),
     deep: towards(strong, 0.28, contrario),
     lift: towards(strong, 0.12, on),

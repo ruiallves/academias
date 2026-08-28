@@ -337,6 +337,7 @@ function build(
     maxAge: t.maxAge,
     season: t.season,
     coachIds: t.coaches.map((c) => c.id),
+    coaches: t.coaches,
     athleteIds: apiAthletes.filter((a) => a.teamId === t.id).map((a) => a.id),
     schedule: Array.isArray(t.schedule) ? (t.schedule as Team["schedule"]) : [],
     feeCents: t.feeCents,

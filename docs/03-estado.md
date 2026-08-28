@@ -764,6 +764,28 @@ de infraestrutura, não de código da aplicação.
   escrito à mão, de quando só havia a academia de demonstração: em qualquer outro
   clube o servidor recusava o registo e as notificações ficavam por activar sem
   explicação. Passou a usar o `academySlug()` do resto da app.
+- **Um cargo novo nasce com o que o departamento dá.** O diálogo de criar cargo
+  começava sempre no mínimo (`ROLE_PERMISSIONS.STAFF`) e só copiava o
+  departamento quando alguém **trocava** o selector — mas quem carrega em "Novo
+  cargo" dentro da Equipa Técnica nunca troca selector nenhum: já lá está. O
+  resultado era um "Treinador Principal" sem `calendar:write` nem
+  `attendance:write`, num departamento que dá as duas: o treinador não marcava
+  treinos nem registava presenças, e nada no ecrã dizia porquê. Os cargos criados
+  antes desta correcção arranjam-se num gesto — abrir o departamento, Guardar com
+  "aplicar estas permissões aos N cargos".
+- **Um treinador marca só para as equipas dele**, e isso está agora provado nos
+  dois sentidos. O `test-events` usava o treinador semeado — que tem as **duas**
+  equipas — e por isso só verificava o "toda a academia". Passou a usar o
+  adjunto, que tem uma: marca treino e jogo na dele (200), leva 403 na do colega
+  nos dois casos, não desmarca o treino de outra equipa, e a lista de eventos só
+  lhe traz a equipa dele. Treino e jogo à parte porque por baixo são tabelas
+  diferentes (`TrainingSession` e `Match`) e podiam ter guardas diferentes.
+  Verificado por `npm run test:events` (24).
+- **Do calendário da equipa marca-se um evento.** O separador Calendário da ficha
+  de equipa tem "Marcar treino" e "Marcar jogo", que levam ao calendário com o
+  "Novo evento" já aberto no tipo **e na equipa certos**
+  (`/calendario?novo=treino&equipa=…`). Marcar continua a ser do calendário — é lá
+  que se vê o que já está ocupado —, o que desapareceu foi a viagem às cegas.
 - **Falta justificada leva motivo.** No registo de presenças, escolher "Justificada"
   abre um campo para o motivo (ex.: consulta médica); o motivo aparece também na
   ficha do atleta, ao lado da falta. Vive com as presenças, que ainda são locais.

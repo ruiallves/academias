@@ -217,6 +217,63 @@ check("a chave de outro clube é recusada (403)", chaveAlheia.status === 403, `$
 
 await dbCor.end();
 
+console.log("\n=== Mudar o plano de um clube ===");
+/*
+ * O plano escolhia-se ao criar a academia e nunca mais.
+ *
+ * Não havia endpoint nenhum para o mudar: um clube que acabasse a avaliação e
+ * começasse a pagar ficava preso ao que tinha sido decidido no minuto em que
+ * nasceu — e, com ele, o MRR, que conta subscrições `ACTIVE` e mais nada.
+ */
+const patch = async (t, p, body) => {
+  const r = await fetch(API + p, {
+    method: "PATCH",
+    headers: { Authorization: `Bearer ${t}`, "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  return { status: r.status, body: await r.json().catch(() => null) };
+};
+
+const dbPlano = new pg.Client({ connectionString: env("MIGRATE_DATABASE_URL"), ssl: { rejectUnauthorized: false } });
+await dbPlano.connect();
+
+const planos = (await get(admin, "/api/platform/plans")).body ?? [];
+const outro = planos.find((x) => x.id !== "plan_arranque") ?? planos[0];
+
+const mudou = await patch(admin, `/api/platform/academies/${nova.academy.id}/plano`, {
+  planId: outro.id,
+  status: "ACTIVE",
+});
+check("a direcção da plataforma muda o plano (200)", mudou.status === 200, `${mudou.status}`);
+
+const sub = (await dbPlano.query(
+  `SELECT "planId", status, "cancelledAt" FROM "Subscription" WHERE "academyId" = $1`,
+  [nova.academy.id],
+)).rows[0];
+check("o plano ficou gravado", sub?.planId === outro.id, JSON.stringify(sub));
+check("e a subscrição passou a activa", sub?.status === "ACTIVE", `${sub?.status}`);
+
+/* A lista do painel tem de saber dizer qual é — sem isso o selector escolhe às cegas. */
+const naLista = ((await get(admin, "/api/platform/academies")).body ?? []).find((x) => x.id === nova.academy.id);
+check("e a lista devolve o id do plano", naLista?.planId === outro.id, JSON.stringify({ planId: naLista?.planId }));
+
+/* Cancelar marca a data — é dela que sai o churn do mês. Voltar limpa-a. */
+await patch(admin, `/api/platform/academies/${nova.academy.id}/plano`, { planId: outro.id, status: "CANCELLED" });
+const cancelada2 = (await dbPlano.query(`SELECT "cancelledAt" FROM "Subscription" WHERE "academyId" = $1`, [nova.academy.id])).rows[0];
+check("cancelar marca a data", Boolean(cancelada2?.cancelledAt), JSON.stringify(cancelada2));
+
+await patch(admin, `/api/platform/academies/${nova.academy.id}/plano`, { planId: outro.id, status: "ACTIVE" });
+const voltou = (await dbPlano.query(`SELECT "cancelledAt" FROM "Subscription" WHERE "academyId" = $1`, [nova.academy.id])).rows[0];
+check("e voltar limpa-a — senão contava como churn para sempre", voltou?.cancelledAt === null, JSON.stringify(voltou));
+
+const planoMau = await patch(admin, `/api/platform/academies/${nova.academy.id}/plano`, { planId: "plan_nao_existe" });
+check("um plano inventado é recusado (400)", planoMau.status === 400, `${planoMau.status}`);
+
+const clubeMau = await patch(admin, "/api/platform/academies/aca_nao_existe/plano", { planId: outro.id });
+check("um clube inventado é recusado (400)", clubeMau.status === 400, `${clubeMau.status}`);
+
+await dbPlano.end();
+
 console.log("\n=== Quem pode criar clientes ===");
 // SUPPORT lê e acompanha; não cria clientes nem mexe em faturação.
 const db = new pg.Client({ connectionString: env("MIGRATE_DATABASE_URL"), ssl: { rejectUnauthorized: false } });
@@ -227,6 +284,11 @@ const asSupport = await fetch(`${API}/api/platform/academies`, {
   body: JSON.stringify({ name: "Nao Devia Existir", directorName: "X", directorEmail: "x@exemplo.pt" }),
 });
 check("SUPPORT não cria academias", asSupport.status === 403, `deu ${asSupport.status}`);
+const planoPorSupport = await fetch(`${API}/api/platform/academies/${nova.academy.id}/plano`, {
+  method: "PATCH", headers: { Authorization: `Bearer ${admin}`, "Content-Type": "application/json" },
+  body: JSON.stringify({ planId: "plan_arranque", status: "ACTIVE" }),
+});
+check("nem mexe no plano de um cliente", planoPorSupport.status === 403, `deu ${planoPorSupport.status}`);
 check("mas continua a ler o overview", (await get(admin, "/api/platform/overview")).status === 200);
 await db.query(`UPDATE "PlatformAdmin" SET role='OWNER' WHERE email='admin@academias.pt'`);
 

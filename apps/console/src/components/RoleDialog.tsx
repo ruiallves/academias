@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Dialog, DialogField, dialogInputClass } from "./Dialog";
 import { Pill, SelectField } from "./primitives";
 import { AreaBlocks, NavPicker, SectionHead, applyLevel, possibleNavKeys } from "./PermissionPicker";
@@ -59,9 +59,28 @@ export function RoleDialog({
   const [name, setName] = useState(role?.name ?? "");
   const [description, setDescription] = useState(role?.description ?? "");
   const [departmentId, setDepartmentId] = useState<string>(role?.departmentId ?? inicial ?? "");
-  const [permissions, setPermissions] = useState<Set<Permission>>(
-    () => new Set(role?.permissions ?? ROLE_PERMISSIONS["STAFF"]),
-  );
+
+  /*
+   * Um cargo novo começa no que o departamento dá.
+   *
+   * ## O que estava partido
+   *
+   * Começava sempre em `ROLE_PERMISSIONS.STAFF` — o mínimo — e só copiava o
+   * departamento quando alguém **trocava** o selector. Mas quem carrega em "Novo
+   * cargo" dentro da Equipa Técnica nunca troca selector nenhum: já lá está.
+   *
+   * O resultado era um "Treinador Principal" sem `calendar:write` nem
+   * `attendance:write` — não marcava treinos nem registava presenças — quando o
+   * departamento de onde nasceu dá as duas. Ninguém tirou aquilo a ninguém:
+   * simplesmente nunca lá esteve, e o ecrã mostrava-o como se fosse a norma.
+   *
+   * A partir daqui manda este ecrã: isto é o ponto de partida, não uma amarra.
+   */
+  const [permissions, setPermissions] = useState<Set<Permission>>(() => {
+    if (role) return new Set(role.permissions);
+    const dep = departments.find((d) => d.id === inicial);
+    return new Set((dep?.permissions ?? ROLE_PERMISSIONS["STAFF"]) as Permission[]);
+  });
   const [navKeys, setNavKeys] = useState<string[]>(role?.navKeys ?? []);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -89,6 +108,21 @@ export function RoleDialog({
     const d = departments.find((x) => x.id === next);
     if (d) setPermissions(new Set(d.permissions.filter((p) => mine.has(p))));
   }
+
+  /*
+   * A rede para o caso de os departamentos ainda não terem chegado.
+   *
+   * O estado inicial lê-os no primeiro render, e na prática já lá estão — este
+   * diálogo abre a partir do painel que os carregou. Mas se um dia abrir de
+   * outro sítio, um cargo novo nasceria outra vez no mínimo, e isso é
+   * exactamente o bug que a linha de cima veio fechar. Corre uma vez.
+   */
+  const semeado = useRef(Boolean(role) || permissions.size > 0);
+  useEffect(() => {
+    if (semeado.current || !dep) return;
+    semeado.current = true;
+    setPermissions(new Set(dep.permissions.filter((p) => mine.has(p))));
+  }, [dep, mine]);
 
   const setArea = (area: Area, level: Level) => setPermissions((current) => applyLevel(current, area, level));
 

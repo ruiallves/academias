@@ -20,7 +20,7 @@ import {
   teams,
   today,
 } from "@/lib/store";
-import type { AbsenceKind, AttentionItem, Athlete, Fee, TrainingSession } from "@/data/types";
+import type { AbsenceKind, AttentionItem, Athlete, Fee, Team, TrainingSession } from "@/data/types";
 import type { Session } from "@/lib/permissions";
 import { can, isAcademyWide } from "@/lib/permissions";
 import { getStaffEdits } from "@/lib/staff-edits";
@@ -175,6 +175,50 @@ export const staffById = (id: string) => {
   return base ? { ...base, ...getStaffEdits()[id] } : undefined;
 };
 export const coachById = staffById;
+
+/**
+ * Quem treina esta equipa — visível a quem não pode ver o staff.
+ *
+ * ## O bug que isto corrige
+ *
+ * As duas listas de treinadores da consola faziam `team.coachIds.map(coachById)`,
+ * e `coachById` procura na lista de staff. Essa lista chega de `/api/staff`, que
+ * exige `staff:read` — um treinador não tem. O pedido falhava, o `soft()` do
+ * store engolia o 403 e devolvia `[]`, e a partir daí **nenhum** nome resolvia:
+ * o treinador abria "Equipas" e via a sua própria equipa marcada como *sem
+ * treinador*. Não havia erro nenhum no ecrã, porque não havia erro — havia uma
+ * lista vazia a passar por uma resposta.
+ *
+ * Os nomes já vinham com a equipa, em `/api/teams`. Só se estavam a deitar fora.
+ *
+ * ## A fotografia é o que continua a depender do staff
+ *
+ * E está certo que dependa: a fotografia de alguém é ficha de pessoal. Sem ela, o
+ * `Monogram` desenha as iniciais — quem não pode ver o staff vê o nome e as
+ * iniciais, quem pode vê a cara.
+ */
+export function teamCoaches(team: Team) {
+  return team.coaches.map((c) => {
+    // A ficha, quando se lhe pode chegar: traz a fotografia e o nome já com as
+    // edições locais aplicadas.
+    const ficha = staffById(c.id);
+    return {
+      id: c.id,
+      name: ficha?.name ?? c.name,
+      title: c.title,
+      photoUrl: ficha?.photoUrl ?? null,
+      /*
+       * A ficha completa, quando quem está a ver lhe pode chegar.
+       *
+       * Email, telefone e data de entrada são ficha de pessoal e continuam a
+       * exigir `staff:read` — não é o nome de quem treina a equipa. Quem não a
+       * tem recebe `null` aqui e o ecrã mostra o que sabe, em vez de rebentar ou
+       * de fingir que a equipa não tem treinador.
+       */
+      ficha: ficha ?? null,
+    };
+  });
+}
 export const guardianById = (id: string) => allGuardians().find((g) => g.id === id);
 export const sportById = (id: string) => academy.sports.find((s) => s.id === id);
 

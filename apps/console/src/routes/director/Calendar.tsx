@@ -51,6 +51,8 @@ export default function Calendar() {
   const [composing, setComposing] = useState<Date | null>(null);
   /** O tipo com que "Novo evento" abre — só quando se chega por `?novo=`. */
   const [composingKind, setComposingKind] = useState<EventKind | undefined>(undefined);
+  /** E a equipa, quando quem manda para cá já a tinha escolhido (`?equipa=`). */
+  const [composingTeam, setComposingTeam] = useState<string | undefined>(undefined);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const navigate = useNavigate();
 
@@ -83,17 +85,20 @@ export default function Calendar() {
    */
   const [params, setParams] = useSearchParams();
   const novo = params.get("novo");
+  const equipa = params.get("equipa");
   useEffect(() => {
     if (!novo) return;
     setParams((atuais) => {
       const proximos = new URLSearchParams(atuais);
       proximos.delete("novo");
+      proximos.delete("equipa");
       return proximos;
     }, { replace: true });
     if (!editable) return;
     setComposingKind(NOVO_POR_ENDERECO[novo]);
+    setComposingTeam(equipa ?? undefined);
     setComposing(today);
-  }, [novo, editable, setParams]);
+  }, [novo, equipa, editable, setParams]);
 
   const [from, to] = useMemo<[Date, Date]>(() => {
     if (view === "mes") {
@@ -143,6 +148,7 @@ export default function Calendar() {
             type="button"
             onClick={() => {
               setComposingKind(undefined);
+              setComposingTeam(undefined);
               setComposing(today);
             }}
             className="ctl-primary"
@@ -232,9 +238,11 @@ export default function Calendar() {
           session={session}
           day={composing}
           kind={composingKind}
+          teamId={composingTeam}
           onClose={() => {
             setComposing(null);
             setComposingKind(undefined);
+            setComposingTeam(undefined);
           }}
         />
       )}

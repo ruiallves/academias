@@ -310,6 +310,18 @@ acção directa. Um plano é `Plan` na plataforma — não confundir com
 negócios diferentes e não se tocam:** nós cobramos à academia, a academia cobra aos
 pais.
 
+**O plano muda-se na ficha do clube** (`PATCH /academies/:id/plano`, `OWNER` e
+`ADMIN` — `SUPPORT` não mexe em faturação). Escolhe-se o plano e o estado da
+subscrição na mesma gravação, porque é a mesma decisão: o MRR conta
+`Subscription.status = 'ACTIVE'` e mais nada, e o momento em que se muda o plano é
+quase sempre o momento em que o clube passa a pagar.
+
+Um clube **criado sem plano não tem linha de subscrição nenhuma** — é deliberado
+(ver `createAcademy`: a conversa do plano faz-se depois, com o clube já a
+funcionar), e por isso este endpoint faz `upsert` e não `update`. Era exactamente
+a metade que faltava: dava-se para criar sem plano, e depois não havia por onde
+lho dar.
+
 ### Analytics
 
 Onde os quatro gráficos vivem em detalhe, com corte por plano, por antiguidade e

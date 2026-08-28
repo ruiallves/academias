@@ -28,6 +28,7 @@ import {
   Clock,
   HeartPulse,
   LayoutGrid,
+  Plus,
   TriangleAlert,
   Trophy,
   Users,
@@ -36,7 +37,7 @@ import {
 import {
   athleteById,
   attendanceRate,
-  coachById,
+  teamCoaches,
   currentPeriod,
   guardiansOf,
   listAthletes,
@@ -146,7 +147,9 @@ export default function TeamDetail() {
   const sport = sportById(team.sportId);
   const roster = listAthletes(session).filter((a) => a.teamId === id);
   const activeRoster = roster.filter((a) => a.status === "active");
-  const coaches = team.coachIds.map(coachById).filter((c): c is NonNullable<typeof c> => !!c);
+  // Mesma razão de `Teams.tsx`: os nomes vêm com a equipa, não da lista de staff
+  // — que um treinador não pode ler. Ver `teamCoaches`.
+  const coaches = teamCoaches(team);
 
   const matches = events.filter(
     (e): e is CalendarEvent & { match: MatchInfo } => e.kind === "match" && !!e.match,
@@ -231,7 +234,7 @@ export default function TeamDetail() {
       )}
 
       {tab === "calendar" && (
-        <CalendarTab events={events} onSelect={abrir} />
+        <CalendarTab events={events} onSelect={abrir} mayCreate={can(session, "calendar:write")} teamId={id} />
       )}
 
       {tab === "staff" && (
@@ -797,7 +800,29 @@ function RankingDialog({
 /* Calendário                                                                  */
 /* -------------------------------------------------------------------------- */
 
-function CalendarTab({ events, onSelect }: { events: CalendarEvent[]; onSelect: (id: string) => void }) {
+/**
+ * Os eventos desta equipa, e o caminho para marcar mais um.
+ *
+ * ## Porque é que o botão leva ao calendário em vez de abrir aqui
+ *
+ * Porque marcar é do calendário: é lá que se vê o que já está ocupado, e um
+ * segundo formulário aqui era a mesma coisa em dois sítios com duas regras a
+ * divergirem. O que se evita é a viagem às cegas — o link já vai com o tipo de
+ * evento escolhido (`?novo=treino`), como o botão da página de Jogos.
+ */
+function CalendarTab({
+  events,
+  onSelect,
+  mayCreate,
+  teamId,
+}: {
+  events: CalendarEvent[];
+  onSelect: (id: string) => void;
+  /** `calendar:write`. Sem isso o link levava a um ecrã sem o botão. */
+  mayCreate: boolean;
+  /** A equipa desta ficha — viaja no link para não ser escolhida outra vez. */
+  teamId: string;
+}) {
   const upcoming = events.filter((e) => e.start >= today).sort((a, b) => a.start.getTime() - b.start.getTime());
   const past = events.filter((e) => e.start < today).sort((a, b) => b.start.getTime() - a.start.getTime());
 
@@ -847,11 +872,32 @@ function CalendarTab({ events, onSelect }: { events: CalendarEvent[]; onSelect: 
     );
   };
 
+  /*
+   * O caminho para marcar. Aparece nos dois estados — com eventos e sem eles —
+   * porque a pergunta "e como marco um?" é a mesma nas duas situações.
+   */
+  const marcar = mayCreate && (
+    <div className="flex flex-wrap items-center gap-2">
+      <Link to={`/calendario?novo=treino&equipa=${teamId}`} className="ctl-outline">
+        <Plus className="size-3.5" strokeWidth={2} />
+        Marcar treino
+      </Link>
+      <Link to={`/calendario?novo=jogo&equipa=${teamId}`} className="ctl-outline">
+        <Plus className="size-3.5" strokeWidth={2} />
+        Marcar jogo
+      </Link>
+      <Link to="/calendario" className="text-meta text-ink-3 hover:text-ink hover:underline">
+        ver o calendário
+      </Link>
+    </div>
+  );
+
   if (upcoming.length === 0 && past.length === 0) {
     return (
       <Panel>
-        <div>
+        <div className="px-5 py-14 text-center">
           <Empty icon={CalendarDays} title="Sem eventos" detail="Esta equipa não tem treinos, jogos nem eventos agendados." />
+          {marcar && <div className="mt-4 flex justify-center">{marcar}</div>}
         </div>
       </Panel>
     );
@@ -861,6 +907,7 @@ function CalendarTab({ events, onSelect }: { events: CalendarEvent[]; onSelect: 
     <div className="space-y-3">
       {renderGroup("Próximos", upcoming)}
       {renderGroup("Anteriores", past)}
+      {marcar}
     </div>
   );
 }
@@ -874,7 +921,7 @@ function StaffTab({
   mayAssign,
   onAssign,
 }: {
-  coaches: NonNullable<ReturnType<typeof coachById>>[];
+  coaches: ReturnType<typeof teamCoaches>;
   mayAssign: boolean;
   onAssign: () => void;
 }) {
@@ -915,12 +962,21 @@ function StaffTab({
               <Monogram name={c.name} photoUrl={c.photoUrl} />
               <div className="min-w-0 flex-1">
                 <PersonLink id={c.id} name={c.name} className="truncate text-body font-medium text-ink" />
-                <div className="text-meta text-ink-3">
-                  {c.email} · {c.phone}
-                </div>
+                {/* Contactos só a quem pode ler o staff. Um treinador vê quem
+                    treina a equipa — que é a pergunta desta página — e não a
+                    ficha de pessoal dos colegas. Ver `teamCoaches`. */}
+                {c.ficha && (
+                  <div className="text-meta text-ink-3">
+                    {c.ficha.email} · {c.ficha.phone}
+                  </div>
+                )}
               </div>
               <Pill tone={c.title.startsWith("Treinador principal") ? "signal" : "neutral"}>{c.title}</Pill>
-              <span className="shrink-0 text-meta text-ink-3">na academia desde {new Date(c.since).getFullYear()}</span>
+              {c.ficha && (
+                <span className="shrink-0 text-meta text-ink-3">
+                  na academia desde {new Date(c.ficha.since).getFullYear()}
+                </span>
+              )}
             </li>
           ))}
         </ul>

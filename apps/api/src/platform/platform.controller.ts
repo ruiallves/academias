@@ -88,6 +88,21 @@ class SetAcademyActiveDto {
 }
 
 /**
+ * O plano de um clube, e o estado da subscrição.
+ *
+ * O estado é opcional: mudar de plano sem lhe tocar é o caso de quem sobe de
+ * escalão a meio do ano. Quando vem, é ele que decide se o clube conta para o
+ * MRR — ver `setAcademyPlan`.
+ */
+class SetAcademyPlanDto {
+  @IsString() @Length(1, 40) planId!: string;
+
+  @IsOptional()
+  @IsIn(["TRIALING", "ACTIVE", "PAST_DUE", "CANCELLED"])
+  status?: "TRIALING" | "ACTIVE" | "PAST_DUE" | "CANCELLED";
+}
+
+/**
  * Apagar um clube.
  *
  * O endereço vem no corpo e tem de bater certo com o do clube — é o que obriga
@@ -157,6 +172,23 @@ export class PlatformController {
     @Body() body: SetAcademyActiveDto,
   ) {
     return this.platform.setAcademyActive(req.admin, id, body.active, ip);
+  }
+
+  /**
+   * Mudar o plano de um clube — e, com ele, o estado da subscrição.
+   *
+   * `SUPPORT` fica de fora: quem dá apoio acompanha, não mexe no que o cliente
+   * paga. Mesma regra do botão de desactivar. Ver `setAcademyPlan`.
+   */
+  @Patch("academies/:id/plano")
+  @PlatformRoles("OWNER", "ADMIN")
+  setAcademyPlan(
+    @Req() req: PlatformRequest,
+    @Ip() ip: string,
+    @Param("id") id: string,
+    @Body() body: SetAcademyPlanDto,
+  ) {
+    return this.platform.setAcademyPlan(req.admin, id, body.planId, body.status, ip);
   }
 
   /**

@@ -125,6 +125,8 @@ export function renderMembershipPage(opts: {
     --club: ${paleta.club};
     --club-strong: ${paleta.strong};
     --club-on: ${paleta.on};
+    /* A mesma tinta em partes, para o que e translucido dentro do cartao. */
+    --club-on-rgb: ${paleta.onRgb};
     --club-ink: ${paleta.ink};
     --club-deep: ${paleta.deep};
     --club-lift: ${paleta.lift};
@@ -491,6 +493,14 @@ export function renderMembershipPage(opts: {
   .card-col { position: sticky; top: 28px; }
   @media (max-width: 939px) { .card-col { position: static; margin-bottom: 28px; max-width: 320px; } }
 
+  /*
+     O cartao inteiro na tinta que se le nele.
+
+     A cor de base ja vinha de --club-on, mas tudo o que e translucido la dentro
+     — o rotulo da categoria, as etiquetas, o circulo das iniciais, o estilhaco —
+     estava escrito a branco fixo. Num clube de cor clara sobrava o nome legivel
+     e o resto invisivel: branco sobre amarelo. Agora tudo sai de --club-on-rgb,
+     que e a mesma decisao de contraste, em partes. */
   .card {
     position: relative; aspect-ratio: 1.586; border-radius: 10px;
     padding: 24px; color: var(--club-on); display: flex; flex-direction: column; overflow: hidden;
@@ -503,11 +513,11 @@ export function renderMembershipPage(opts: {
   .card::after {
     content: ""; position: absolute; right: -30px; bottom: -20px;
     width: 190px; height: 150px;
-    background: rgb(255 255 255 / 0.08);
+    background: rgb(var(--club-on-rgb) / 0.08);
     clip-path: polygon(0 40%, 100% 0, 70% 100%);
   }
   .card .ct { position: relative; z-index: 1; display: flex; align-items: center; justify-content: space-between; gap: 10px; }
-  .card .cc { width: 32px; height: 32px; flex: none; border-radius: 50%; background: rgb(255 255 255 / 0.22);
+  .card .cc { width: 32px; height: 32px; flex: none; border-radius: 50%; background: rgb(var(--club-on-rgb) / 0.22);
               display: grid; place-items: center; font-size: 11px; font-weight: 700; }
   .card .cc.logo { background: none; border-radius: 0; }
   .card .cc.logo img { width: 100%; height: 100%; object-fit: contain; border-radius: 0; }
@@ -520,7 +530,7 @@ export function renderMembershipPage(opts: {
      dentro da linha flexivel sem empurrar o logotipo.
   */
   .card .tier { font-size: 10px; letter-spacing: 0.16em; text-transform: uppercase;
-                color: rgb(255 255 255 / 0.85); text-align: right; max-width: 22ch; min-width: 0;
+                color: rgb(var(--club-on-rgb) / 0.85); text-align: right; max-width: 22ch; min-width: 0;
                 white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .card .nm {
     position: relative; z-index: 1; margin-top: auto;
@@ -536,12 +546,12 @@ export function renderMembershipPage(opts: {
     */
     overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
   }
-  .card .nm[data-empty] { color: rgb(255 255 255 / 0.4); text-transform: none; font-weight: 400;
+  .card .nm[data-empty] { color: rgb(var(--club-on-rgb) / 0.4); text-transform: none; font-weight: 400;
                           font-family: "Instrument Sans", sans-serif; }
   .card .bt { position: relative; z-index: 1; display: flex; align-items: flex-end; justify-content: space-between; margin-top: 8px; }
-  .card .lb { font-size: 9px; letter-spacing: 0.18em; text-transform: uppercase; color: rgb(255 255 255 / 0.6); }
+  .card .lb { font-size: 9px; letter-spacing: 0.18em; text-transform: uppercase; color: rgb(var(--club-on-rgb) / 0.6); }
   .card .no { font-size: 14px; font-weight: 600; letter-spacing: 0.16em; font-variant-numeric: tabular-nums; }
-  .card .cl { font-size: 10.5px; color: rgb(255 255 255 / 0.72); }
+  .card .cl { font-size: 10.5px; color: rgb(var(--club-on-rgb) / 0.72); }
 
   .card-note { margin: 14px 2px 0; font-size: 12.5px; color: var(--ink-4); }
 

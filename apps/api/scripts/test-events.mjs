@@ -22,7 +22,9 @@ const env = (k) => {
 
 const S = env("SUPABASE_URL").replace(/\/$/, "");
 const A = env("SUPABASE_ANON_KEY");
-const API = "http://localhost:3000";
+// Permite correr contra uma instância própria — `API_URL=http://localhost:3099` —
+// sem disputar a porta 3000 com o servidor de quem está a desenvolver.
+const API = process.env.API_URL ?? "http://localhost:3000";
 
 let ok = 0, bad = 0;
 const check = (l, c, d = "") => { if (c) { ok++; console.log("  OK    " + l); } else { bad++; console.log("  FALHA " + l + (d ? " — " + d : "")); } };
@@ -103,6 +105,49 @@ check("um treinador não cria 'toda a academia' (403)", coachWide.status === 403
 const byParent = await call(parent, "POST", "/api/events", base("ZZ Evento Pai", { teamId: "t_sub11" }));
 check("um encarregado não cria eventos (403)", byParent.status === 403, `${byParent.status}`);
 
+/*
+ * O âmbito por equipa, e não só o "toda a academia".
+ *
+ * O treinador semeado tem as **duas** equipas, por isso não serve para isto. O
+ * adjunto tem só o Sub-11 — é com ele que se prova a fronteira que interessa: um
+ * treinador marca para a equipa dele e para mais nenhuma, mesmo quando a outra
+ * existe e ele a consegue nomear.
+ *
+ * Treino e jogo à parte de propósito. Por baixo são tabelas diferentes
+ * (`TrainingSession` e `Match`) e podiam ter guardas diferentes; hoje partilham
+ * a mesma, e é isso que estes dois pares verificam.
+ */
+const adjunto = await login("adjunto@lifeclub.pt");
+const S3 = "2026-09-02T20:00:00.000Z";
+const E3 = "2026-09-02T21:30:00.000Z";
+
+const treinoSeu = await call(adjunto, "POST", "/api/events", base("ZZ Treino Adjunto", { kind: "TRAINING", teamId: "t_sub11", startsAt: S3, endsAt: E3 }));
+check("o adjunto marca treino na equipa dele", treinoSeu.status === 201 || treinoSeu.status === 200, `${treinoSeu.status}`);
+
+const treinoAlheio = await call(adjunto, "POST", "/api/events", base("ZZ Treino Alheio", { kind: "TRAINING", teamId: "t_sub13", startsAt: S3, endsAt: E3 }));
+check("e não marca treino na equipa de outro (403)", treinoAlheio.status === 403, `${treinoAlheio.status}`);
+
+const jogoSeu = await call(adjunto, "POST", "/api/events", base("ZZ Jogo Adjunto", { kind: "MATCH", teamId: "t_sub11", opponent: "ZZ Adversário", startsAt: "2026-09-03T16:00:00.000Z", endsAt: "2026-09-03T17:30:00.000Z" }));
+check("marca jogo na equipa dele", jogoSeu.status === 201 || jogoSeu.status === 200, `${jogoSeu.status}`);
+
+const jogoAlheio = await call(adjunto, "POST", "/api/events", base("ZZ Jogo Alheio", { kind: "MATCH", teamId: "t_sub13", opponent: "ZZ Adversário", startsAt: "2026-09-03T16:00:00.000Z", endsAt: "2026-09-03T17:30:00.000Z" }));
+check("e não marca jogo na equipa de outro (403)", jogoAlheio.status === 403, `${jogoAlheio.status}`);
+
+/* Nem desmarca o que é de outra equipa — a mesma fronteira, do outro lado. */
+const doOutro = await call(director, "POST", "/api/events", base("ZZ Treino do Sub-13", { kind: "TRAINING", teamId: "t_sub13", startsAt: "2026-09-04T20:00:00.000Z", endsAt: "2026-09-04T21:30:00.000Z" }));
+const idDoOutro = primeiro(doOutro)?.id;
+const cancelarAlheio = await call(adjunto, "PATCH", `/api/events/${idDoOutro}`, { cancelled: true });
+check("e não desmarca o treino de outra equipa (403)", cancelarAlheio.status === 403, `${cancelarAlheio.status}`);
+
+/* E o que ele vê é só o dele: a lista não pode trazer a equipa alheia. */
+const listaAdjunto = await call(adjunto, "GET", "/api/events");
+const equipasQueVe = new Set((listaAdjunto.body ?? []).map((e) => e.teamId).filter(Boolean));
+check(
+  "a lista de eventos só traz a equipa dele",
+  [...equipasQueVe].every((t) => t === "t_sub11"),
+  JSON.stringify([...equipasQueVe]),
+);
+
 console.log("\n=== Regras de forma ===");
 const badRange = await call(director, "POST", "/api/events", base("ZZ Evento Ordem", { teamId: "t_sub11", endsAt: S1, startsAt: E1 }));
 check("fim antes do início recusado (400)", badRange.status === 400, `${badRange.status}`);
@@ -159,7 +204,23 @@ const treinos = (await db.query(
 check("2 treinos na tabela de treinos", treinos === 2, `${treinos}`);
 
 console.log("\n=== Limpeza ===");
+/*
+ * Os três sítios onde um "evento" aterra.
+ *
+ * Isto apagava só `CalendarEvent` — e um treino já não é um evento genérico, é
+ * uma `TrainingSession`; um jogo é um `Match`. As duas ficavam para trás a cada
+ * corrida, a somar treinos fantasma ao calendário do clube de demonstração.
+ *
+ * A `TrainingSession` não tem título por onde a apanhar, por isso apaga-se pelas
+ * horas que só este teste usa — 1, 2 e 4 de Setembro de 2026, sempre a horas
+ * redondas que ninguém marca à mão.
+ */
 await db.query(`DELETE FROM "CalendarEvent" WHERE title LIKE 'ZZ Evento%'`);
+await db.query(`DELETE FROM "Match" WHERE opponent LIKE 'ZZ %'`);
+await db.query(
+  `DELETE FROM "TrainingSession" WHERE "startsAt" = ANY($1::timestamp[])`,
+  [["2026-09-01 18:00:00", "2026-09-01 20:00:00", "2026-09-02 20:00:00", "2026-09-04 20:00:00"]],
+);
 await db.end();
 console.log("  feito");
 

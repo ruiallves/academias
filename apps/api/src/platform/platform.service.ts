@@ -7,7 +7,7 @@ import { initialRoles, isPresidente } from "../roles/roles.service";
 import { shortNameOf } from "../common/short-name";
 import { MailClient } from "../mail/mail.client";
 import { academyOwnerInviteEmail } from "../mail/mail.templates";
-import type { StaffDepartment } from "@prisma/client";
+import type { StaffDepartment, SubscriptionStatus } from "@prisma/client";
 import type { PlatformAdminContext } from "./platform.guard";
 
 /**
@@ -40,7 +40,7 @@ type OverviewRow = {
 type AcademyRow = {
   id: string; slug: string; name: string; status: string;
   created_at: Date; trial_ends_at: Date | null;
-  plan_name: string | null; sub_status: string | null; mrr_cents: number;
+  plan_id: string | null; plan_name: string | null; sub_status: string | null; mrr_cents: number;
   athletes: number; staff: number; guardians: number; teams: number;
   onboarding_done: number; last_activity: Date | null;
 };
@@ -70,7 +70,12 @@ export class PlatformService {
   /* ------------------------------------------------------------------------ */
 
   async overview() {
-    const [totals] = await this.prisma.$queryRaw<OverviewRow[]>`SELECT * FROM app.platform_overview()`;
+    // As três leituras em bruto passam por `resiliente`: são as únicas que
+    // dependem da forma de uma função SQL, e é essa forma que muda numa migração.
+    // Ver `PlatformPrisma.resiliente`.
+    const [totals] = await this.prisma.resiliente(
+      () => this.prisma.$queryRaw<OverviewRow[]>`SELECT * FROM app.platform_overview()`,
+    );
     const academies = await this.academies();
     const email = await this.emailToday();
 
@@ -157,7 +162,9 @@ export class PlatformService {
   }
 
   async academies() {
-    const rows = await this.prisma.$queryRaw<AcademyRow[]>`SELECT * FROM app.platform_academies()`;
+    const rows = await this.prisma.resiliente(
+      () => this.prisma.$queryRaw<AcademyRow[]>`SELECT * FROM app.platform_academies()`,
+    );
 
     /*
      * Quem está online agora, vindo da memória e não de uma coluna.
@@ -175,6 +182,7 @@ export class PlatformService {
       status: r.status,
       createdAt: r.created_at,
       trialEndsAt: r.trial_ends_at,
+      planId: r.plan_id,
       plan: r.plan_name,
       subscriptionStatus: r.sub_status,
       mrrCents: r.mrr_cents,
@@ -189,10 +197,12 @@ export class PlatformService {
   }
 
   async series(months = 12) {
-    return this.prisma.$queryRaw<{ month: Date; new_academies: number; cancelled: number; active_end: number }[]>`
-      -- O Prisma envia inteiros como bigint; a funcao recebe int.
-      SELECT * FROM app.platform_series(${months}::int)
-    `;
+    return this.prisma.resiliente(
+      () => this.prisma.$queryRaw<{ month: Date; new_academies: number; cancelled: number; active_end: number }[]>`
+        -- O Prisma envia inteiros como bigint; a funcao recebe int.
+        SELECT * FROM app.platform_series(${months}::int)
+      `,
+    );
   }
 
   /**
@@ -608,6 +618,93 @@ export class PlatformService {
    * Os dados ficam todos. Reactivar devolve o clube exactamente onde estava, e é
    * por isso que esta é a via normal — apagar é a excepção, e está a seguir.
    */
+  /**
+   * O plano de um clube — e o estado da subscrição dele.
+   *
+   * ## O buraco que isto tapa
+   *
+   * O plano escolhia-se **uma vez**, ao criar a academia, e nunca mais. Não havia
+   * endpoint nenhum para o mudar: um clube que subisse de escalão, ou que
+   * acabasse a avaliação e começasse a pagar, ficava preso ao que tinha sido
+   * decidido no minuto em que nasceu. E um clube criado sem plano ficava **sem
+   * `Subscription` nenhuma** — sem linha para actualizar, e por isso invisível
+   * no MRR para sempre.
+   *
+   * ## Porque é que o estado vem junto
+   *
+   * Porque é a mesma decisão. O MRR conta `Subscription.status = 'ACTIVE'` e mais
+   * nada — ver `app.platform_overview()`. Escolher o plano e deixar a subscrição
+   * em `TRIALING` era mudar um número que não aparece em lado nenhum; e o momento
+   * em que se muda o plano é quase sempre o momento em que o clube passa a pagar.
+   *
+   * `cancelledAt` acompanha: marca-se ao cancelar (é dele que sai o *churn* do
+   * mês) e limpa-se ao voltar. Um clube que regressa e continua a contar como
+   * cancelado estraga as duas contas ao mesmo tempo.
+   *
+   * ## O que isto **não** faz
+   *
+   * Não mexe no `Academy.status`. São coisas diferentes: um clube pode estar
+   * aberto e a dever (`PAST_DUE`), ou fechado com a subscrição em dia. Quem
+   * fecha o clube é `setAcademyActive`, e ter os dois no mesmo botão era juntar
+   * uma decisão comercial com uma operacional.
+   */
+  async setAcademyPlan(
+    admin: PlatformAdminContext,
+    id: string,
+    planId: string,
+    status: SubscriptionStatus | undefined,
+    ip?: string,
+  ) {
+    const academy = await this.prisma.academy.findUnique({
+      where: { id },
+      select: { id: true, slug: true, subscription: { select: { planId: true, status: true } } },
+    });
+    if (!academy) throw new BadRequestException("Academia não encontrada");
+
+    const plan = await this.prisma.plan.findFirst({ where: { id: planId }, select: { id: true, name: true, isActive: true } });
+    if (!plan) throw new BadRequestException("Plano desconhecido");
+    /*
+     * Um plano arquivado aceita-se se o clube **já** o tinha.
+     *
+     * É o caso do preço antigo que se deixou de vender e que os clubes de 2024
+     * mantêm. Recusá-lo aqui obrigava a tirá-lo a quem o tem para lhe poder
+     * mexer no estado — uma subida de preço não pedida, por um detalhe técnico.
+     */
+    if (!plan.isActive && academy.subscription?.planId !== plan.id) {
+      throw new BadRequestException("Esse plano já não está disponível");
+    }
+
+    const novoEstado = status ?? academy.subscription?.status ?? "TRIALING";
+    const cancelada = novoEstado === "CANCELLED";
+
+    const subscription = await this.prisma.subscription.upsert({
+      where: { academyId: id },
+      // Sem subscrição — o clube foi criado sem plano. É aqui que passa a existir.
+      create: { academyId: id, planId: plan.id, status: novoEstado, ...(cancelada ? { cancelledAt: new Date() } : {}) },
+      update: {
+        planId: plan.id,
+        status: novoEstado,
+        cancelledAt: cancelada ? new Date() : null,
+      },
+      select: { planId: true, status: true },
+    });
+
+    await this.audit(
+      admin,
+      "academy.plan",
+      "academy",
+      id,
+      {
+        slug: academy.slug,
+        de: academy.subscription ? `${academy.subscription.planId}/${academy.subscription.status}` : "sem subscrição",
+        para: `${plan.name}/${subscription.status}`,
+      },
+      ip,
+    );
+
+    return { ok: true, planId: subscription.planId, status: subscription.status };
+  }
+
   async setAcademyActive(admin: PlatformAdminContext, id: string, active: boolean, ip?: string) {
     const academy = await this.prisma.academy.findUnique({
       where: { id },
