@@ -18,6 +18,10 @@ import {
   Settings,
   HeartPulse,
   Stethoscope,
+  Dumbbell,
+  Shapes,
+  Network,
+  Goal,
   type LucideIcon,
 } from "@/lib/icons";
 import type { Permission, Session } from "@/lib/permissions";
@@ -55,6 +59,14 @@ export type NavItem = {
   requires: Permission;
   /** Contagem de coisas que precisam de acção. Ausente ≠ zero: zero não se mostra. */
   badge?: (counts: NavCounts) => number | undefined;
+  /**
+   * Ainda em construção — o menu di-lo antes de se lá entrar.
+   *
+   * A marca vive aqui e não no `Sidebar` porque é uma característica do
+   * destino, não do sítio onde ele é desenhado: tirá-la quando a área estiver
+   * pronta é apagar uma linha, no mesmo sítio onde ela foi posta.
+   */
+  beta?: true;
 };
 
 export type NavGroup = {
@@ -84,6 +96,19 @@ export type NavCounts = {
  * uma lista só, a ordem é a da academia: primeiro as pessoas, depois o que se faz
  * com elas, depois o dinheiro, depois o desenvolvimento. Quem quiser outra coisa
  * esconde itens; reordenar por papel seria configuração a mais para o que resolve.
+ *
+ * ## A ordem, e onde entram os dois departamentos
+ *
+ *   Pessoas · Operação · Gestão · Desenvolvimento · Scouting · Clínico
+ *
+ * As quatro primeiras são o dia de qualquer clube, e seguem-se umas às outras:
+ * quem cá está, o que se faz com eles, quanto custa, como evoluem. **Scouting** e
+ * **Clínico** vêm depois porque são departamentos — não são etapas daquela
+ * sequência, e a maior parte das pessoas nem os vê (as permissões escondem-nos).
+ *
+ * Estavam a meio, entre "Pessoas" e "Operação", e partiam a sequência ao meio
+ * para quem tem acesso a tudo: lia-se atletas, boletins clínicos, prospectos,
+ * calendário. As Definições ficam à parte, no fundo da barra — ver `SETTINGS_ITEM`.
  */
 export const NAV_CATALOG: NavGroup[] = [
   {
@@ -99,44 +124,6 @@ export const NAV_CATALOG: NavGroup[] = [
       // Logo a seguir ao staff: um sócio é o terceiro vínculo com o clube, e o
       // único que não passa por treinar ninguém.
       { key: "members", label: "Sócios", to: "/socios", icon: IdCard, requires: "member:read" },
-    ],
-  },
-  {
-    label: "Clínico",
-    items: [
-      {
-        key: "clinical",
-        label: "Boletins",
-        to: "/clinico",
-        icon: HeartPulse,
-        requires: "clinical:read",
-        badge: (c) => c.athletesOut || undefined,
-      },
-      { key: "consultations", label: "Consultas", to: "/clinico/consultas", icon: Stethoscope, requires: "clinical:read" },
-    ],
-  },
-  /*
-    Scouting.
-
-    Grupo próprio e não uma entrada em "Pessoas": um prospecto **não é** uma
-    pessoa da academia, e arrumá-lo ao lado de Atletas e Famílias era a primeira
-    forma de os confundir.
-
-    Sem "Visão geral": para quem trabalha em scouting ela **é** a página inicial
-    (ver `Overview` em `App.tsx`), e um item de menu que repete o logótipo é um
-    item a mais. As shortlists também saíram — continuam a existir e abrem-se a
-    partir da ficha de cada prospecto, mas não são um destino por onde se comece.
-
-    "Pedidos" é a única entrada que um treinador vê: exige `scouting:request`, não
-    `scouting:read`. É a porta para ele dizer o que lhe falta sem lhe abrir os
-    dossiês de miúdos de outros clubes.
-  */
-  {
-    label: "Scouting",
-    items: [
-      { key: "scouting-prospects", label: "Prospects", to: "/scouting/prospects", icon: Eye, requires: "scouting:read" },
-      { key: "scouting-observations", label: "Observações", to: "/scouting/observacoes", icon: Binoculars, requires: "scouting:read" },
-      { key: "scouting-requests", label: "Pedidos", to: "/scouting/pedidos", icon: Send, requires: "scouting:request" },
     ],
   },
   {
@@ -170,6 +157,23 @@ export const NAV_CATALOG: NavGroup[] = [
         requires: "attendance:read",
         badge: (c) => c.callUpsToSubmit || undefined,
       },
+    ],
+  },
+  /*
+    Área técnica — o produto de futebol dentro da Academias.
+
+    Grupo próprio, a seguir a Operação: a Operação é o dia administrativo do
+    clube (marcar, registar, convocar); isto é o trabalho de conteúdo do
+    treinador — planear o treino, desenhar exercícios, escrever o modelo de
+    jogo. **Jogos** mudou-se para cá: um jogo pertence à semana de treino, não
+    à secretaria — e o `calendar:read` que o guarda faz o grupo aparecer, só
+    com ele lá dentro, ao clínico e ao scouting, que continuam a precisar de
+    saber quando se joga.
+  */
+  {
+    label: "Área técnica",
+    items: [
+      { key: "training", label: "Treinos", to: "/treinos", icon: Dumbbell, requires: "training:read" },
       {
         /*
           Jogos pede `calendar:read` e não `attendance:read`.
@@ -187,6 +191,9 @@ export const NAV_CATALOG: NavGroup[] = [
         requires: "calendar:read",
         badge: (c) => c.matchesToFill || undefined,
       },
+      { key: "exercises", label: "Exercícios", to: "/exercicios", icon: Shapes, requires: "training:read", beta: true },
+      { key: "game-models", label: "Modelos de jogo", to: "/modelos-jogo", icon: Network, requires: "training:read", beta: true },
+      { key: "set-pieces", label: "Bolas paradas", to: "/bolas-paradas", icon: Goal, requires: "training:read", beta: true },
     ],
   },
   {
@@ -222,6 +229,44 @@ export const NAV_CATALOG: NavGroup[] = [
         badge: (c) => c.pendingEvaluations || undefined,
       },
       { key: "reports", label: "Relatórios", to: "/relatorios", icon: FileText, requires: "report:read" },
+    ],
+  },
+  /*
+    Scouting.
+
+    Grupo próprio e não uma entrada em "Pessoas": um prospecto **não é** uma
+    pessoa da academia, e arrumá-lo ao lado de Atletas e Famílias era a primeira
+    forma de os confundir.
+
+    Sem "Visão geral": para quem trabalha em scouting ela **é** a página inicial
+    (ver `Overview` em `App.tsx`), e um item de menu que repete o logótipo é um
+    item a mais. As shortlists também saíram — continuam a existir e abrem-se a
+    partir da ficha de cada prospecto, mas não são um destino por onde se comece.
+
+    "Pedidos" é a única entrada que um treinador vê: exige `scouting:request`, não
+    `scouting:read`. É a porta para ele dizer o que lhe falta sem lhe abrir os
+    dossiês de miúdos de outros clubes.
+  */
+  {
+    label: "Scouting",
+    items: [
+      { key: "scouting-prospects", label: "Prospects", to: "/scouting/prospects", icon: Eye, requires: "scouting:read" },
+      { key: "scouting-observations", label: "Observações", to: "/scouting/observacoes", icon: Binoculars, requires: "scouting:read" },
+      { key: "scouting-requests", label: "Pedidos", to: "/scouting/pedidos", icon: Send, requires: "scouting:request" },
+    ],
+  },
+  {
+    label: "Clínico",
+    items: [
+      {
+        key: "clinical",
+        label: "Boletins",
+        to: "/clinico",
+        icon: HeartPulse,
+        requires: "clinical:read",
+        badge: (c) => c.athletesOut || undefined,
+      },
+      { key: "consultations", label: "Consultas", to: "/clinico/consultas", icon: Stethoscope, requires: "clinical:read" },
     ],
   },
 ];

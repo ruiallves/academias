@@ -633,10 +633,22 @@ export function navCounts(session: Session) {
     unreadThreads: 0,
     pendingEvaluations: listEvaluations(session).filter((e) => e.status === "draft").length,
     sessionsToRecord: unrecordedSessions(session).length,
-    // Jogos que se aproximam com a convocatória por submeter. Só conta os
-    // próximos dez dias: um jogo daqui a dois meses não é uma pendência.
+    /*
+     * Jogos que se aproximam com a convocatória por submeter.
+     *
+     * Só os próximos dez dias — um jogo daqui a dois meses não é uma pendência —
+     * e só das **minhas** equipas. Contavam-se os do clube inteiro: `matches`
+     * traz o calendário todo de propósito (um treinador tem de saber quando joga
+     * o escalão de cima), mas um contador no menu é uma lista de trabalho, e o
+     * trabalho de outro treinador não é meu.
+     *
+     * `m.mine` e não uma conta de equipas feita aqui: é o servidor que decide o
+     * âmbito (`inTeamScope`), e a página dos Jogos já lê a mesma bandeira. Duas
+     * respostas à mesma pergunta acabam sempre a discordar uma vez.
+     */
     callUpsToSubmit: matches.filter(
       (m) =>
+        m.mine &&
         !m.submitted &&
         m.status === "SCHEDULED" &&
         new Date(m.startsAt) >= today &&
@@ -651,7 +663,11 @@ export function navCounts(session: Session) {
      * não têm ficha para preencher.
      */
     matchesToFill: matches.filter(
-      (m) => m.status !== "CANCELLED" && new Date(m.startsAt) < today && m.ourScore === null,
+      (m) =>
+        m.mine &&
+        m.status !== "CANCELLED" &&
+        new Date(m.startsAt) < today &&
+        m.ourScore === null,
     ).length,
     athletesOut: listAthletes(session).filter((a) => isUnavailable(a.id)).length,
   };

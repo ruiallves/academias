@@ -26,6 +26,14 @@ export const NAV_KEYS: Record<string, Permission> = {
   calendar: "calendar:read",
   attendance: "attendance:read",
   callups: "attendance:read",
+  // Faltava — o menu Jogos existe no cliente desde a ficha de jogo, e um papel
+  // que o quisesse recortar levava com "chave desconhecida".
+  matches: "calendar:read",
+  // Área técnica.
+  training: "training:read",
+  exercises: "training:read",
+  "game-models": "training:read",
+  "set-pieces": "training:read",
   fees: "billing:read",
   comms: "comms:read",
   evaluations: "evaluation:read",

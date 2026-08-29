@@ -81,5 +81,19 @@ export {
   Apple,
   Brain,
   Activity,
+  /* Área técnica: o haltere é o treino, as formas são a biblioteca de
+     exercícios, a rede é o modelo de jogo, a baliza são as bolas paradas. */
+  Dumbbell,
+  Shapes,
+  Network,
+  Goal,
+  Play,
+  Pause,
+  /* Editor tático: a mão arrasta a vista, as setas circulares rodam o objeto. */
+  Hand,
+  RotateCw,
+  RotateCcw,
+  /* O manípulo de arrasto de uma lista: três linhas, a convenção de sempre. */
+  Menu as DragHandle,
   type LucideIcon,
 } from "lucide-react";

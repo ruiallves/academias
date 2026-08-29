@@ -78,6 +78,17 @@ export type Permission =
    */
   | "member:read" | "member:write"
   /**
+   * Área técnica — planos de treino, biblioteca de exercícios, modelos de jogo
+   * e bolas paradas.
+   *
+   * À parte de `calendar:*` e `attendance:*` de propósito: marcar um treino no
+   * calendário e desenhar o plano dele são trabalhos diferentes, e há quem tenha
+   * um sem o outro — a secretaria marca, o clínico consulta o calendário, e
+   * nenhum dos dois escreve exercícios. O âmbito continua a mandar: um treinador
+   * planeia os treinos **das suas equipas** (`teamScopeFilter`), como em tudo.
+   */
+  | "training:read" | "training:write"
+  /**
    * Dados de saúde são categoria especial no RGPD, por isso são três permissões:
    *
    * - `clinical:status` — se o atleta está disponível e até quando.
@@ -98,6 +109,7 @@ const READ_ALL: Permission[] = [
   "scouting:read",
   "scouting:request",
   "member:read",
+  "training:read",
 ];
 
 const WRITE_ALL: Permission[] = [
@@ -108,6 +120,7 @@ const WRITE_ALL: Permission[] = [
   "clinical:write",
   "scouting:write",
   "member:write",
+  "training:write",
 ];
 
 export const ROLE_PERMISSIONS: Record<Role, Permission[]> = {
@@ -128,6 +141,9 @@ export const ROLE_PERMISSIONS: Record<Role, Permission[]> = {
     ...READ_ALL.filter((p) => p !== "billing:read" && p !== "member:read"),
     "athlete:write", "team:write", "calendar:write", "attendance:write",
     "comms:write", "evaluation:write", "report:write",
+    // A área técnica é o trabalho dele: modelos de jogo do clube, biblioteca
+    // global, planos de qualquer escalão.
+    "training:write",
   ],
 
   // Sem `billing:read`. A regra do produto é que o financeiro só se vê com
@@ -173,6 +189,10 @@ export const ROLE_PERMISSIONS: Record<Role, Permission[]> = {
     // esquerdo — e é ele que acompanha os nomes que aparecerem no pedido dele. Não
     // leva `scouting:read` atrás: os dossiês continuam a ser do departamento.
     "scouting:request",
+    // A área técnica é dele por definição: planeia os treinos das suas equipas,
+    // cria exercícios e desenha bolas paradas. O que pode **planear** continua
+    // limitado pelo âmbito — o plano é da sessão, e a sessão é de uma equipa.
+    "training:read", "training:write",
   ],
 
   /**

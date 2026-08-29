@@ -143,6 +143,204 @@ adversário, hora, sítio — não um "tens uma notificação".
 Verificado por `npm run test:callups` (22, o essencial) e
 `npm run test:guest-callups` (11, a regra de subida e o que se pode ver de fora).
 
+## Área técnica
+
+O produto de futebol dentro da Academias: grupo próprio no menu, a seguir a
+Operação, com **Treinos**, **Jogos** (mudou-se para cá), **Exercícios**,
+**Modelos de jogo** e **Bolas paradas**. Permissões novas `training:read` /
+`training:write`, gémeas cliente/servidor: o treinador e a coordenação têm as
+duas, a direção tudo como sempre, clínico/scouting/famílias nada — o grupo
+aparece-lhes só com Jogos, que continua a pedir `calendar:read`.
+
+### O plano vive na sessão
+
+Um treino planeado e um treino do calendário são o **mesmo** treino — o plano
+são colunas nulas em `TrainingSession` (objetivo, tipo, intensidade, material,
+notas, pós-treino) mais os blocos (`SessionBlock`: ordem, duração, objetivo,
+exercício). Um bloco tem **seis campos e mais nenhum**: nome, minutos,
+intensidade, objetivo, número de jogadores e observações. Dimensões e material
+saíram — são do **exercício**, e tê-los também no bloco era a mesma informação
+em dois sítios a divergir à primeira correção; quem precisa delas abre a ficha
+do exercício, que está a um clique dali. As colunas ficam na base (não se apagam
+dados por arrumação) mas deixaram de ser escritas. Marcar continua a ser do
+calendário; `/treinos` é o planner — a
+semana de segunda a domingo com carga acumulada, distribuição por objetivo e o
+que está por planear — e `/treinos/:id` é o construtor da sessão. O detalhe de
+um treino no calendário ganhou "Abrir plano de treino".
+
+**Os blocos reordenam-se a arrastar**, pelo manípulo de três linhas à esquerda
+do número — os botões "Subir"/"Descer" saíram. A lista reordena-se **ao vivo**
+(os blocos afastam-se para dar lugar) e só marca o plano por gravar no fim,
+senão um arrasto de três linhas contava como três edições. Ao pegar, **todos os
+blocos fecham** — um bloco aberto ocupa meio ecrã e esconde o alvo — e ao largar
+reabre o que estava, já no lugar novo: seguido pela **referência ao bloco** e
+não pelo índice, senão arrastar um bloco com outro aberto reabria o errado.
+Pointer events e não o `draggable` do HTML, que não funciona em toque — e isto
+é para ser usado no tablet à beira do campo.
+
+**O exercício importa-se para dentro do bloco.** O botão *Importar exercício*
+cria um bloco a partir da biblioteca, e cada bloco aberto tem a sua própria
+importação — que faltava: quem criasse um bloco à mão ficava sem forma de lhe
+anexar um exercício a seguir. O bloco mostra o **desenho** do exercício (é assim
+que um treinador o reconhece, não pelo nome), com atalho para a ficha, troca e
+"soltar" — e importar para um bloco que já existe **só preenche o que estiver
+vazio**, nunca apaga o que lá está escrito. A escolha é uma grelha de cartões
+com os desenhos à vista, pela mesma razão que a biblioteca o é.
+
+**A carga nunca se guarda.** É derivada (duração × intensidade dos blocos,
+ponderada → 0–100, Baixa/Moderada/Alta/Muito alta) e calcula-se na leitura — ver
+`sessionLoad` em `lib/training.ts`. O dia em que houver carga realizada (RPE,
+GPS), esta passa a ser "a planeada" e compara-se; é também o terreno preparado
+para a IA: os alertas da semana ("sem minutos de transição planeados") já são
+derivados dos mesmos dados, nunca inventados.
+
+### Biblioteca de exercícios
+
+`Exercise` com metadados de filtro (categoria, sub-objetivos, tipo, intensidade,
+jogadores, duração, dimensões, material, idades, complexidade) em **texto, não
+enums** — vocabulário do treino, como `Sport.positions`. Regras, progressões,
+regressões, comportamentos esperados e erros frequentes são campos próprios;
+vídeo é link externo (o upload, quando vier, segue o caminho do scouting).
+"Usado 17×, última a 24/08" é **derivado** dos blocos das sessões, nunca um
+contador. Favoritos por pessoa (`ExerciseFavorite`). Apagar um exercício já
+usado **arquiva** — o histórico dos treinos não perde o desenho.
+
+**Visibilidade em duas escolhas com consequência escrita**: *Todo o clube* ou
+*Só eu* (`LibraryVisibility`), filtrada no servidor em todas as leituras — um
+privado alheio não se lê, não se edita, e não entra num plano por id (400). O
+exercício de um colega não se edita: **duplica-se**, e a cópia nasce privada.
+A direção e a coordenação editam por cima do autor; o critério é
+`teamScopeFilter === undefined` cruzado com `training:write`.
+
+### As cinco variantes
+
+Um clube de formação não joga uma modalidade — joga cinco, e cada uma tem outro
+campo, outras marcações e outros sistemas. Um 2-3-1 não existe em campo de onze,
+e um 4-3-3 não cabe num campo de 7:
+
+| | Campo | Círculo | Área | Baliza |
+|---|---|---|---|---|
+| **Futebol 11** | 105×68 | 9,15 | 16,5×40,32 (+ pequena) | 7,32 |
+| **Futebol 9** | 72×50 | 7 | 13×26 (+ pequena) | 6 |
+| **Futebol 7** | 55×37 | 6 | 10×20 | 6 |
+| **Futebol 5** | 42×25 | 4 | 8×16 | 3 |
+| **Futsal** | 40×20 | 3 | arco de 6 m, 2.ª marca aos 10 | 3 |
+
+- **A variante é propriedade do desenho** (`Diagram.field` = variante +
+  extensão). Os nomes antigos `"full"`/`"half"` continuam gravados e lêem-se
+  para sempre (`normalizeField` traduz para `f11`/`f11-half`) — um dado antigo
+  não se migra por estética.
+- **As marcações são derivadas de `FORMAT_PITCH`**, não desenhadas à mão por
+  campo: eram dois componentes e com cinco variantes seriam cinco cópias a
+  divergir. Quem acrescentar uma variante escreve as medidas e não toca no
+  desenho. A geometria está coberta por verificações (a área contém a marca de
+  penálti, o círculo cabe entre as laterais, as áreas não se tocam) — foi assim
+  que se apanhou o futebol 5 com a marca aos 7 m dentro de uma área de 6.
+- **Os símbolos encolhem com o campo** (`itemScale = max(0.45, w/105)`): um
+  círculo de 1,9 m que fica bem no campo de onze tapava meia área num de 42. As
+  posições e as zonas continuam em metros verdadeiros.
+- O pavilhão desenha-se em **madeira**, não em relva — num cartão pequeno da
+  biblioteca percebe-se logo se é campo ou pavilhão.
+- **Sistemas por variante**: 13 de futebol 11, 6 de futebol 9 (3-3-2, 3-2-3,
+  2-3-3, 3-4-1, 2-4-2, 3-1-3-1), 6 de futebol 7 (2-3-1, 3-2-1, 1-3-2, 2-2-2,
+  3-1-2, 2-1-3), 4 de futebol 5 e 5 de futsal (3-1, 4-0, 2-2, 1-2-1, saída a 5).
+  Cada lista está nos metros do seu campo, não em frações: um "DC a 20 metros
+  da linha" lê-se e corrige-se.
+- **A equipa sugere a variante** (`teamFormat`): primeiro o nome do desporto
+  quando o diz ("Futsal", "Futebol 7"), depois a idade — até aos 7 joga-se a 5,
+  aos 9 e 11 a 7, aos 13 a 9, dos 15 para cima a 11, que é a convenção da FPF.
+  É um ponto de partida, nunca uma imposição. Um exercício novo, que não tem
+  equipa, nasce na variante mais jogada do clube (`clubDefaultFormat`).
+- **As bolas paradas nascem com o lance montado na variante certa**: as posições
+  descrevem-se uma vez em frações do campo e escalam-se; o que muda com a
+  variante é **quanta gente entra**, porque um canto de futebol 5 não tem seis
+  atacantes na área.
+
+### Imagens no exercício
+
+Até seis por exercício (montagem no campo, prancheta), pelo mesmo caminho de
+três passos das fotografias — autorizar, o browser carrega direto para o
+Supabase, confirmar — num bucket próprio (`exercicios`), privado, com links
+assinados de 6 h gerados a cada leitura. Editar imagens é editar o exercício:
+mesma porta (`training:write` + autoria). Apagar o exercício a sério limpa as
+imagens do armazenamento; arquivar mantém tudo.
+
+### A biblioteca não nasce vazia
+
+`npm run seed:exercises` semeia os clássicos — 14 de futebol 11 (rondos 5v2/4v2,
+posse 4v4+3, posse 6v4 sob pressão, Y de passe, terceiro homem, cruzamentos em
+ondas, 1v1, transição 3v2, rondo de reação à perda, 4v4 de coberturas, jogo
+posicional em 3 corredores, circuito de velocidade, ativação), 4 de futebol 7
+(posse 4v2, saída do GR, cruzamento e finalização, pressão 3v3), 3 de futebol 9
+(construção de trás, transição 3v2, bloco médio) e 8 de futsal (rotação 4-0,
+paralela e diagonal, jogo com pivô, posse 3v3+1, transição 2v1, 1v1 defensivo,
+saída de pressão a 3, power play 5v4) — cada um **no terreno da sua variante**,
+com ficha completa e desenho animado por frames. Idempotente por nome e academia
+(um arquivado conta como existente — o clube que o tirou decidiu).
+
+Na biblioteca aparecem marcados como **"Base"**, e a ficha diz de onde vêm: é a
+resposta à pergunta óbvia de quem os abre, e explica ao mesmo tempo porque é que
+qualquer treinador os pode afinar e nenhum os apaga. **Sem autor é do clube**: editar
+está aberto a qualquer pessoa com `training:write` — corrigir uma distância,
+adaptar o desenho ao escalão — mas apagar é só de quem responde pelo clube
+inteiro (`mayDelete`), senão um treinador limpava a biblioteca comum num gesto.
+A ficha diz as duas coisas em separado (`editable`/`deletable`). **Correr para
+academias novas** — a criação de academia não o corre sozinha.
+
+### O editor visual
+
+`FieldEditor` (SVG, pointer events — funciona em tablet): os quatro terrenos
+nas medidas reais (coordenadas em metros), paleta de elementos
+(jogador, GR, adversário, bola, cone, estaca, barreira, balizas, escada, boneco,
+zona redimensionável, texto), seis tipos de seta com a convenção dos quadros
+táticos (passe a cheio, deslocamento tracejado, condução ondulada, remate duplo,
+pressão pontilhada, cruzamento curvo), seleção múltipla, duplicar, undo/redo
+(Ctrl+Z/Y), zoom com a roda e pan. Tocar num elemento que já existe seleciona e
+arrasta **mesmo com a paleta armada** — o carimbo só carimba em campo vazio; em
+modo seta, o toque desenha sempre (um passe parte de um jogador). **Frames**:
+cada frame nasce como cópia completa do anterior — posições **e setas** (um
+Delete tira as que não interessam; o contrário obrigava a redesenhar tudo) —
+com duração própria, e o `DiagramPlayer` anima as posições entre frames por
+interpolação, com reproduzir/pausa/anterior/seguinte. O desenho é JSON opaco
+para o servidor (com tecto de 300 KB); as miniaturas dos cartões são o primeiro
+frame, cortado no servidor.
+
+**As miniaturas têm moldura própria** (`THUMB_RATIO`, 4:3) e não a forma do
+terreno: um meio campo é vertical (0,77) e um campo inteiro horizontal (1,5), e
+com cada cartão a tomar a sua forma a linha da grelha esticava-se pelo mais
+alto — os cartões de campo inteiro ficavam com meia caixa branca por baixo do
+texto. O desenho centra-se dentro da moldura e as barras que sobram levam a cor
+do piso (`pitchBackground`), por isso lêem-se como mais relva ou mais madeira à
+volta do lance. A animação da ficha tem o mesmo tecto de altura do editor
+(560px), senão um canto em meio campo ocupava mil pixels de página.
+
+### Modelos de jogo e bolas paradas
+
+`GameModel`: sistema como **desenho e não enum** — 4-3-3/4-4-2/4-2-3-1/3-4-3/
+3-5-2/5-3-2 aplicam posições de partida e cada bolinha arrasta-se; o que se
+grava são coordenadas (`lineup`). Os princípios são secções escritas
+(organização ofensiva/defensiva, transições, bolas paradas, por tópico). Por
+equipa ou do clube; a mesma visibilidade e autoria dos exercícios.
+
+`SetPiece`: cantos/livres/lançamentos/penáltis (`kind` em texto, vocabulário no
+cliente — o futsal entra sem migração), cada um com desenho em meio campo e
+frames. Um esquema novo **nasce com o lance montado** (bola no canto, batedor,
+estrutura na área) — preenche-se, não se desenha do zero.
+
+### Fronteiras
+
+O âmbito manda como em tudo: um treinador **planeia as equipas dele**
+(`teamScopeFilter` no `savePlan`), lê os planos do clube (a mesma razão do
+calendário — a metodologia ganha em ver-se). Os cargos personalizados criados
+antes desta área receberam `training:read`/`training:write` por migração
+(`area_tecnica_nos_cargos`) — permissões que nasceram agora não são escolha de
+ninguém a atropelar; clínico, scouting e staff genérico ficaram de fora, como no
+mapa-base. RLS em todas as tabelas novas; `ExerciseFavorite` isola-se pela
+relação, como `AttendanceRecord`.
+
+Verificado por `npm run test:training` (33) — visibilidade, âmbito, autoria,
+favoritos, plano com blocos, arquivar-em-vez-de-apagar, e as recusas todas.
+
 ## A equipa não tem escalão
 
 O escalão e a equipa eram a mesma coisa dita duas vezes: um clube criava o

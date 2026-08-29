@@ -159,15 +159,20 @@ export function EventDetail({
           )}
 
           {/* As presenças são de quem tem a equipa: sem `meu`, o link levava a
-              uma página onde este treino nem aparece. */}
-          {event.kind === "training" && meu && (
-            <div className="px-5 py-4">
-              <Link
-                to={session.role === "COACH" || session.role === "STAFF" ? "/treinos" : "/presencas"}
-                className="ctl-outline w-full justify-center"
-              >
-                Ver presenças deste treino
-              </Link>
+              uma página onde este treino nem aparece. O plano lê-se por qualquer
+              pessoa da área técnica — a metodologia do clube ganha em ver-se. */}
+          {event.kind === "training" && (
+            <div className="space-y-2 px-5 py-4">
+              {can(session, "training:read") && (
+                <Link to={`/treinos/${event.id}`} className="ctl-primary w-full justify-center">
+                  Abrir plano de treino
+                </Link>
+              )}
+              {meu && (
+                <Link to="/presencas" className="ctl-outline w-full justify-center">
+                  Ver presenças deste treino
+                </Link>
+              )}
             </div>
           )}
         </div>

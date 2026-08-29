@@ -50,6 +50,8 @@ import { AdminsController, AdminInvitePageController } from "./platform/admin-in
 import { AdminInvitesService } from "./platform/admin-invites.service";
 import { FamilyInviteController, FamilySignupController } from "./family/family-invites.controller";
 import { FamilyInvitesService } from "./family/family-invites.service";
+import { TrainingController } from "./training/training.controller";
+import { TrainingService } from "./training/training.service";
 import { DevelopmentController } from "./development/development.controller";
 import { EvaluationsService } from "./development/evaluations.service";
 import { PhotosController } from "./storage/photos.controller";
@@ -104,6 +106,8 @@ import { TenantAssetsController } from "./tenant/tenant-assets.controller";
     ScoutingWorkflowController,
     MatchesController,
     AnnouncementsController,
+    // Área técnica: planos de treino, exercícios, modelos de jogo, bolas paradas.
+    TrainingController,
     PushController,
     NotificationsController,
     // O sinal de vida dos separadores abertos. Ver `presence.service.ts`.
@@ -147,6 +151,7 @@ import { TenantAssetsController } from "./tenant/tenant-assets.controller";
     AthletesService,
     MatchesService,
     AnnouncementsService,
+    TrainingService,
     PlatformService,
     PlatformGuard,
     PlatformPrisma,

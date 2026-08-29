@@ -165,6 +165,12 @@ export const AREAS: Area[] = [
   { label: "Equipas", hint: "escalões, horários e plantéis", read: "team:read", write: "team:write" },
   { label: "Calendário", hint: "treinos, jogos e eventos", read: "calendar:read", write: "calendar:write" },
   { label: "Presenças", hint: "registo de faltas nos treinos", read: "attendance:read", write: "attendance:write" },
+  /*
+   * A área técnica entra aqui no dia em que nasce — a lição dos Sócios: uma
+   * permissão que não está neste catálogo é uma permissão sem dono, que ninguém
+   * consegue dar nem tirar pelos três editores de acesso.
+   */
+  { label: "Área técnica", hint: "planos de treino, exercícios, modelos de jogo", read: "training:read", write: "training:write" },
   { label: "Avaliações", hint: "notas por competência", read: "evaluation:read", write: "evaluation:write" },
   { label: "Relatórios", hint: "o que a família recebe", read: "report:read", write: "report:write" },
   { label: "Mensalidades", hint: "valores, dívida e pagamentos", read: "billing:read", write: "billing:write" },

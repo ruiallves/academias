@@ -34,6 +34,12 @@ import Shortlists, { ShortlistDetail } from "@/routes/scouting/Shortlists";
 import ScoutingRequests from "@/routes/scouting/Requests";
 import ScoutingObservations from "@/routes/scouting/Observations";
 import ScoutingOverviewHome from "@/routes/scouting/Overview";
+import Trainings from "@/routes/training/Trainings";
+import TrainingPlan from "@/routes/training/TrainingPlan";
+import Exercises from "@/routes/training/Exercises";
+import ExerciseDetail from "@/routes/training/ExerciseDetail";
+import GameModels, { GameModelDetail } from "@/routes/training/GameModels";
+import SetPieces, { SetPieceDetail } from "@/routes/training/SetPieces";
 
 /**
  * A mesma árvore de rotas serve os dois perfis.
@@ -69,10 +75,24 @@ export default function App() {
 
         {/* Presenças (direção) e Treinos (equipa técnica) são o mesmo ecrã. */}
         <Route path="presencas" element={<Allow p="attendance:read"><Sessions /></Allow>} />
-        {/* "Treinos" foi renomeado para "Presenças" — o menu diz o que lá se faz.
-            O caminho antigo reencaminha: links guardados não devem partir. */}
-        <Route path="treinos" element={<Navigate to="/presencas" replace />} />
         <Route path="convocatorias" element={<Allow p="attendance:read"><CallUps /></Allow>} />
+
+        {/*
+          Área técnica. `/treinos` deixou de reencaminhar para as Presenças:
+          voltou a haver um ecrã de treinos a sério — o planner — e é ele que o
+          nome sempre prometeu. Quem procurava o registo de faltas continua a
+          tê-lo em `/presencas`, a um clique dentro de cada plano.
+        */}
+        <Route path="treinos" element={<Allow p="training:read"><Trainings /></Allow>} />
+        <Route path="treinos/:id" element={<Allow p="training:read"><TrainingPlan /></Allow>} />
+        <Route path="exercicios" element={<Allow p="training:read"><Exercises /></Allow>} />
+        {/* "novo" antes de ":id", senão o router lia "novo" como um id. */}
+        <Route path="exercicios/novo" element={<Allow p="training:write"><ExerciseDetail /></Allow>} />
+        <Route path="exercicios/:id" element={<Allow p="training:read"><ExerciseDetail /></Allow>} />
+        <Route path="modelos-jogo" element={<Allow p="training:read"><GameModels /></Allow>} />
+        <Route path="modelos-jogo/:id" element={<Allow p="training:read"><GameModelDetail /></Allow>} />
+        <Route path="bolas-paradas" element={<Allow p="training:read"><SetPieces /></Allow>} />
+        <Route path="bolas-paradas/:id" element={<Allow p="training:read"><SetPieceDetail /></Allow>} />
         <Route path="jogos" element={<Allow p="calendar:read"><Matches /></Allow>} />
         <Route path="jogos/:id" element={<Allow p="calendar:read"><MatchDetail /></Allow>} />
 

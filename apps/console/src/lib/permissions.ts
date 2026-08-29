@@ -76,6 +76,15 @@ export type Permission =
   | "member:read"
   | "member:write"
   /**
+   * Área técnica — planos de treino, biblioteca de exercícios, modelos de jogo
+   * e bolas paradas.
+   *
+   * À parte de `calendar:*` e `attendance:*`: marcar um treino e desenhar o
+   * plano dele são trabalhos diferentes. Gémea do servidor.
+   */
+  | "training:read"
+  | "training:write"
+  /**
    * Dados de saúde são categoria especial no RGPD, por isso continuam a ser duas
    * permissões — mas quem lê o boletim é decisão do produto, não minha:
    *
@@ -124,6 +133,7 @@ const READ_ALL: Permission[] = [
   "scouting:read",
   "scouting:request",
   "member:read",
+  "training:read",
 ];
 
 const WRITE_ALL: Permission[] = [
@@ -144,6 +154,7 @@ const WRITE_ALL: Permission[] = [
   "clinical:write",
   "scouting:write",
   "member:write",
+  "training:write",
 ];
 
 export const ROLE_PERMISSIONS: Record<Role, Permission[]> = {
@@ -168,6 +179,8 @@ export const ROLE_PERMISSIONS: Record<Role, Permission[]> = {
     "comms:write",
     "evaluation:write",
     "report:write",
+    // A área técnica é o trabalho dele. Gémeo do servidor.
+    "training:write",
   ],
 
   /**
@@ -218,6 +231,10 @@ export const ROLE_PERMISSIONS: Record<Role, Permission[]> = {
     // Pede jogadores ao scouting e acompanha os nomes que aparecerem no seu
     // pedido. Sem `scouting:read`: os dossiês continuam a ser do departamento.
     "scouting:request",
+    // A área técnica é dele por definição: planeia os treinos das suas equipas,
+    // cria exercícios e desenha bolas paradas. Gémeo do servidor.
+    "training:read",
+    "training:write",
   ],
 
   /**

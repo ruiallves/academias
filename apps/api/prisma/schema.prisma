@@ -96,6 +96,10 @@ model Academy {
   athletes      Athlete[]
   teams         Team[]
   sessions      TrainingSession[]
+  sessionBlocks SessionBlock[]
+  exercises     Exercise[]
+  gameModels    GameModel[]
+  setPieces     SetPiece[]
   plans         SubscriptionPlan[]
   charges       Charge[]
   announcements Announcement[]
@@ -296,6 +300,10 @@ model Membership {
   videoMoments   VideoMoment[]     @relation("MomentAuthor")
   membersApproved Member[]         @relation("MemberApprover")
   familyLinks    FamilyInvite[]    @relation("FamilyInviteAuthor")
+  exercisesMade  Exercise[]        @relation("ExerciseAuthor")
+  exerciseFavs   ExerciseFavorite[] @relation("ExerciseFavorites")
+  gameModelsMade GameModel[]       @relation("GameModelAuthor")
+  setPiecesMade  SetPiece[]        @relation("SetPieceAuthor")
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -707,6 +715,8 @@ model Team {
   matches  Match[]
   events   CalendarEvent[]
   plans    SubscriptionPlan[]
+  gameModels GameModel[]
+  setPieces  SetPiece[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -784,11 +794,246 @@ model TrainingSession {
   attendanceClosedAt DateTime?
   attendance         AttendanceRecord[]
 
+  /* ---- Plano de treino (Área técnica) ----------------------------------- */
+  /*
+   * O plano vive **na sessão**, não numa tabela paralela.
+   *
+   * Um treino planeado e um treino do calendário são o mesmo treino: o que as
+   * Presenças abrem, o que a app da família mostra, o que o plano descreve. Uma
+   * tabela `TrainingPlan` à parte era a mesma linha dita duas vezes — e o dia em
+   * que divergissem, o produto mentia num dos ecrãs. Os campos são nulos para os
+   * treinos sem plano, que é o estado natural de um treino recém-marcado.
+   */
+
+  /// O objetivo principal da sessão ("Transição defensiva").
+  objective String?
+  /// Objetivos secundários, na ordem em que o treinador os escreveu.
+  objectives String[] @default([])
+  /// "Aquisitivo", "Recuperação", "Pré-competitivo", ... — vocabulário do clube.
+  sessionType String?
+  /// Intensidade planeada, 1–10. A carga é derivada — nunca guardada.
+  intensity Int?
+  /// Quantos atletas se esperam. Compara-se com as presenças reais depois.
+  expectedAthletes Int?
+  /// Material a preparar antes do treino.
+  material String?
+  /// Observações do plano — o que o treinador escreve antes.
+  planNotes String?
+  /// Observações pós-treino — o que ficou, escrito depois de apitar.
+  postNotes String?
+
+  /// Os blocos da sessão: ativação → técnica → posse → jogo. Ver `SessionBlock`.
+  blocks SessionBlock[]
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
   @@index([academyId, startsAt])
   @@index([teamId, startsAt])
+}
+
+/// Um bloco de uma sessão de treino — "Posse 6v4, 20 min, intensidade 7".
+///
+/// A ordem é do treinador (`order`), a duração soma para o volume da sessão e a
+/// intensidade pondera a carga estimada. O exercício é opcional e por referência:
+/// um bloco pode ser só "retorno à calma, 5 min" sem exercício da biblioteca, e
+/// apagar um exercício não pode apagar o histórico dos treinos onde foi usado —
+/// o bloco guarda o próprio nome e fica (`onDelete: SetNull`).
+model SessionBlock {
+  id        String  @id @default(cuid())
+  academyId String
+  academy   Academy @relation(fields: [academyId], references: [id], onDelete: Cascade)
+  sessionId String
+  session   TrainingSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+
+  order       Int
+  name        String
+  durationMin Int
+  /// Categoria de objetivo ("Organização ofensiva", "Físico") — é o que alimenta
+  /// o "tempo por objetivo" do plano e a distribuição semanal do dashboard.
+  category  String?
+  objective String?
+  /// 1–10. Nulo herda a intensidade da sessão no cálculo da carga.
+  intensity Int?
+  players   String?
+  space     String?
+  material  String?
+  notes     String?
+
+  exerciseId String?
+  exercise   Exercise? @relation(fields: [exerciseId], references: [id], onDelete: SetNull)
+
+  @@index([sessionId, order])
+  @@index([academyId])
+  @@index([exerciseId])
+}
+
+/// Quem vê o que se cria na área técnica.
+///
+/// `PRIVATE` é do autor — rascunhos, ideias a meio. `CLUB` é da academia: qualquer
+/// pessoa com `training:read` o encontra na biblioteca. Não há um nível "equipa"
+/// por agora — quando for pedido, entra aqui como valor novo sem partir os outros.
+enum LibraryVisibility {
+  PRIVATE
+  CLUB
+}
+
+/// Um exercício da biblioteca do clube.
+///
+/// Os metadados de filtro (categoria, fase, intensidade, jogadores) são texto e
+/// não enums, pela mesma razão de `Sport.positions`: são vocabulário do treino,
+/// não estrutura — e cada clube fala o seu. O desenho tático vive em `diagram`
+/// como JSON (frames com posições e setas); o servidor guarda-o opaco e é o
+/// editor visual da consola que sabe lê-lo.
+model Exercise {
+  id        String  @id @default(cuid())
+  academyId String
+  academy   Academy @relation(fields: [academyId], references: [id], onDelete: Cascade)
+
+  /// Quem o criou — decide quem o pode editar e o que "Os meus" significa.
+  createdById String?
+  createdBy   Membership? @relation("ExerciseAuthor", fields: [createdById], references: [id], onDelete: SetNull)
+
+  visibility LibraryVisibility @default(CLUB)
+
+  name        String
+  description String?
+
+  /// "Organização ofensiva", "Transições", "Físico", ...
+  category   String?
+  /// Sub-objetivos dentro da categoria: "Reação à perda", "Saída de bola".
+  objectives String[] @default([])
+  /// Fase do jogo, quando faz sentido distingui-la da categoria.
+  phase String?
+  /// "Posse", "Vaga", "Jogo condicionado", "Circuito", ...
+  type String?
+
+  /// 1–10.
+  intensity Int?
+  /// Formato: "6v4+GR". Texto porque os formatos não cabem num par de inteiros.
+  players     String?
+  durationMin Int?
+  /// Dimensões do espaço: "30×25 m".
+  space    String?
+  material String?
+  /// Escalões a que se destina, em idade: 8–12. Nulos = qualquer idade.
+  ageMin Int?
+  ageMax Int?
+  /// 1–5.
+  complexity Int?
+
+  rules          String?
+  progressions   String?
+  regressions    String?
+  /// As correções que o treinador deve gritar — comportamentos esperados.
+  coachingPoints String?
+  commonErrors   String?
+
+  /// Link para vídeo externo (YouTube, Veo, ...). O upload fica para depois —
+  /// e quando vier, segue o caminho do scouting: chave privada + link assinado.
+  videoUrl String?
+
+  /// Fotografias do exercício (montagem no campo, quadro branco, prancheta).
+  ///
+  /// Guardam-se as **chaves**, nunca URLs — a mesma regra das fotos de atletas:
+  /// o link assinado gera-se a cada leitura e expira. Ver `photos.service.ts`
+  /// para o porquê.
+  imageKeys String[] @default([])
+
+  /// O desenho: `{ field, frames: [{ items, arrows, durationMs }] }`.
+  diagram Json?
+
+  /// Arquivado sai da biblioteca sem apagar o histórico de utilizações.
+  archivedAt DateTime?
+
+  favorites ExerciseFavorite[]
+  blocks    SessionBlock[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([academyId, visibility])
+  @@index([createdById])
+}
+
+/// O exercício favorito de uma pessoa. Por membership e não por academia: os
+/// favoritos são de quem treina, não do clube.
+model ExerciseFavorite {
+  id           String     @id @default(cuid())
+  exerciseId   String
+  exercise     Exercise   @relation(fields: [exerciseId], references: [id], onDelete: Cascade)
+  membershipId String
+  membership   Membership @relation("ExerciseFavorites", fields: [membershipId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+
+  @@unique([exerciseId, membershipId])
+  @@index([membershipId])
+}
+
+/// O modelo de jogo de uma equipa (ou do clube, com `teamId` nulo).
+///
+/// `lineup` é o sistema desenhado — posições x/y arrastáveis, não um enum de
+/// sistemas: o 4-3-3 é um ponto de partida, o treinador arruma como quiser.
+/// `principles` são as secções escritas (organização ofensiva/defensiva,
+/// transições, bolas paradas), guardadas como JSON estruturado pelo editor.
+model GameModel {
+  id        String  @id @default(cuid())
+  academyId String
+  academy   Academy @relation(fields: [academyId], references: [id], onDelete: Cascade)
+
+  teamId String?
+  team   Team?   @relation(fields: [teamId], references: [id], onDelete: SetNull)
+
+  createdById String?
+  createdBy   Membership? @relation("GameModelAuthor", fields: [createdById], references: [id], onDelete: SetNull)
+
+  visibility LibraryVisibility @default(CLUB)
+
+  name   String
+  /// O rótulo do sistema ("4-3-3") — informativo; a verdade é o `lineup`.
+  system String?
+  /// [{ id, label, x, y }] — posições no campo, arrastáveis.
+  lineup Json?
+  /// { offensive: [...], defensive: [...], transitions: [...], setPieces: [...] }
+  principles Json?
+  notes      String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([academyId])
+  @@index([teamId])
+}
+
+/// Um esquema de bola parada — canto ofensivo, livre defensivo, lançamento.
+///
+/// `kind` é texto com vocabulário fixado na consola ("corner-off", "free-def", ...)
+/// e não um enum: o dia em que o futsal pedir "saída de baliza" entra sem migração.
+model SetPiece {
+  id        String  @id @default(cuid())
+  academyId String
+  academy   Academy @relation(fields: [academyId], references: [id], onDelete: Cascade)
+
+  teamId String?
+  team   Team?   @relation(fields: [teamId], references: [id], onDelete: SetNull)
+
+  createdById String?
+  createdBy   Membership? @relation("SetPieceAuthor", fields: [createdById], references: [id], onDelete: SetNull)
+
+  visibility LibraryVisibility @default(CLUB)
+
+  kind        String
+  name        String
+  description String?
+  /// O mesmo formato do exercício: frames com posições e setas.
+  diagram Json?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([academyId, kind])
+  @@index([teamId])
 }
 
 enum AttendanceStatus {

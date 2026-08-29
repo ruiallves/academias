@@ -1,8 +1,9 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { NavLink, useNavigate } from "react-router-dom";
-import { Bell, Check, ChevronsUpDown, LogOut, PanelLeft, Search, Shield, Users } from "@/lib/icons";
+import { NavLink, useLocation, useNavigate } from "react-router-dom";
+import { Bell, Check, ChevronDown, ChevronsUpDown, LogOut, PanelLeft, Search, Shield, Users } from "@/lib/icons";
 import { teamAgeLabel } from "@/lib/team-age";
 import { navFor, SETTINGS_ITEM, type NavItem } from "@/lib/nav";
+import { useNavGroups } from "@/lib/nav-groups";
 import { permissionsOf } from "@/lib/permissions";
 import { academy, listAthletes, listTeams, navCounts, teamById } from "@/lib/api";
 import { DEV_PROFILES, devSignInAs, signOut } from "@/lib/session";
@@ -23,6 +24,8 @@ export function Sidebar({
   const { session } = useSession();
   const groups = navFor(session);
   const counts = navCounts(session);
+  const { estaAberto, alternar } = useNavGroups();
+  const { pathname } = useLocation();
 
   // Um item precisa de correspondência exacta quando existe outro item do menu
   // aninhado por baixo dele — senão os dois acendem-se ao mesmo tempo. Derivado
@@ -52,25 +55,47 @@ export function Sidebar({
         {/* A classe `nav-group` vai em todos: o espaçamento é
             `.nav-group + .nav-group`, que só separa irmãos e por isso não põe
             margem antes do primeiro. */}
-        {groups.map((group, i) => (
-          <div key={group.label ?? `g${i}`} className="nav-group">
-            {group.label && !collapsed && (
-              <>
-                <div className="nav-label px-2.5 pb-1.5 text-group text-ink-4 uppercase">{group.label}</div>
-                {/* Em ecrãs baixos o rótulo sai e este toma-lhe o lugar. */}
-                <div className="nav-sep mx-2.5 mt-1 mb-1.5 border-t border-line" />
-              </>
-            )}
-            {group.label && collapsed && <div className="mx-2.5 mb-2 border-t border-line" />}
-            <ul className="space-y-px">
-              {group.items.map((item) => (
-                <li key={item.to}>
-                  <Item item={item} collapsed={collapsed} badge={item.badge?.(counts)} exact={nested.has(item.to)} />
-                </li>
-              ))}
-            </ul>
-          </div>
-        ))}
+        {groups.map((group, i) => {
+          /*
+           * Recolhida, a barra mostra tudo.
+           *
+           * Numa coluna de 60px não há cabeçalho onde carregar, e um grupo fechado
+           * ficaria sem forma de se reabrir. O que separa os grupos aí é a linha —
+           * como sempre foi.
+           */
+          const aberto = collapsed || estaAberto(group.label);
+
+          return (
+            <div key={group.label ?? `g${i}`} className="nav-group">
+              {group.label && !collapsed && (
+                <GroupHeader
+                  label={group.label}
+                  open={aberto}
+                  // Fechar um grupo escondia onde a pessoa está: sai o item
+                  // aceso e o menu deixa de responder à pergunta. O ponto do
+                  // cabeçalho fica cheio quando a página actual vive lá dentro.
+                  aqui={group.items.some((it) => pathname === it.to || pathname.startsWith(`${it.to}/`))}
+                  onToggle={() => alternar(group.label!)}
+                />
+              )}
+              {group.label && collapsed && <div className="mx-2.5 mb-2 border-t border-line" />}
+              {/*
+                Os destinos entram um pouco para dentro do título do grupo.
+                Sem isto, o cabeçalho e os seus itens começavam na mesma coluna e
+                a hierarquia lia-se pelo tamanho da letra e mais nada.
+              */}
+              {aberto && (
+                <ul className={cx("space-y-px", !collapsed && group.label && "ml-2")}>
+                  {group.items.map((item) => (
+                    <li key={item.to}>
+                      <Item item={item} collapsed={collapsed} badge={item.badge?.(counts)} exact={nested.has(item.to)} />
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
+          );
+        })}
       </nav>
 
       {showSettings && (
@@ -87,6 +112,81 @@ export function Sidebar({
         collapsed={collapsed}
       />
     </aside>
+  );
+}
+
+/* -------------------------------------------------------------------------- */
+
+/**
+ * O cabeçalho de um grupo — o rótulo, a cor e a seta.
+ *
+ * ## Porque é que é um botão e já não uma legenda
+ *
+ * Era texto. Agora abre e fecha o grupo, e isso muda uma decisão antiga: a
+ * densidade da barra escondia estes rótulos abaixo dos 800px de altura
+ * (`--nav-label-display: none`) para poupar cem pixels, trocando-os por
+ * separadores. Deixou de poder fazê-lo — esconder o cabeçalho escondia a única
+ * forma de reabrir um grupo fechado, e a pessoa ficava sem lá chegar.
+ *
+ * A troca é boa: fechar dois grupos que não se usam ganha mais do que os cem
+ * pixels que os rótulos custam, e ganha-o onde quem usa a consola escolhe.
+ *
+ * ## A cor
+ *
+ * O rótulo e o ponto tomam a cor do grupo (ver `NavGroup.tone`). É o que dá ao
+ * menu pontos de referência — ao fim de dois dias chega-se a "Mensalidades" pelo
+ * bronze, sem ler a palavra. `ink` e não `base`: é texto pequeno sobre branco, e
+ * `ink` é o tom da paleta que foi calculado para se ler aí.
+ */
+function GroupHeader({
+  label,
+  open,
+  aqui,
+  onToggle,
+}: {
+  label: string;
+  open: boolean;
+  /** A página actual está dentro deste grupo. */
+  aqui: boolean;
+  onToggle: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onToggle}
+      aria-expanded={open}
+      className="nav-group-head group flex w-full items-center gap-1.5 rounded-[var(--radius-control)] px-2.5 text-group font-semibold text-ink uppercase transition-colors duration-[120ms] hover:bg-sunken"
+    >
+      <span className="flex-1 truncate text-left">{label}</span>
+
+      {/*
+        O ponto só quando o grupo está fechado **e** a página actual vive lá
+        dentro. Fechá-lo tirava o item aceso e o menu deixava de responder a
+        "onde estou"; isto repõe a resposta sem pôr um ponto em cada cabeçalho.
+        À direita, junto à seta, para não empurrar o título quando aparece.
+      */}
+      {!open && aqui && (
+        <span
+          aria-hidden
+          title="A página onde estás vive aqui dentro"
+          className="size-1.5 shrink-0 rounded-full bg-[var(--color-signal-line)]"
+        />
+      )}
+      {/*
+        Uma seta só, que roda. Duas setas diferentes — uma para baixo e outra
+        para a direita — trocam a forma no momento do clique e o olho lê aquilo
+        como um salto; a mesma a rodar lê-se como o mesmo objecto a mudar de
+        estado, que é o que de facto acontece.
+      */}
+      <ChevronDown
+        className={cx(
+          "size-3.5 shrink-0 text-ink-4 transition-transform duration-[160ms] motion-reduce:transition-none",
+          open ? "" : "-rotate-90",
+        )}
+        strokeWidth={2}
+        aria-hidden
+      />
+    </button>
   );
 }
 
@@ -151,7 +251,7 @@ function AcademyHeader({ collapsed, onToggle }: { collapsed: boolean; onToggle: 
         >
           <Bell className="size-4" strokeWidth={1.75} />
           {unread > 0 && (
-            <span className="absolute top-1.5 right-1.5 size-1.5 rounded-full bg-risk ring-2 ring-surface" />
+            <span className="absolute top-1.5 right-1.5 size-1.5 rounded-full bg-signal-strong ring-2 ring-surface" />
           )}
         </button>
         {notifOpen && <NotificationsPanel onClose={() => setNotifOpen(false)} />}
@@ -318,7 +418,7 @@ function Item({
       // atleta, mas "/clinico" não pode acender-se em "/clinico/consultas", que é
       // um irmão e não um filho. O cálculo está em `nested`.
       end={exact || item.to === "/"}
-      title={collapsed ? item.label : undefined}
+      title={collapsed ? (item.beta ? `${item.label} (beta)` : item.label) : undefined}
       className={({ isActive }) =>
         cx(
           "nav-item group relative flex items-center rounded-[var(--radius-control)] text-body font-medium transition-colors duration-[120ms]",
@@ -329,18 +429,57 @@ function Item({
     >
       {({ isActive }) => (
         <>
+          {/*
+            O ícone leva a cor do clube — mas pelo tom que se vê.
+            `.nav-icon` é `--color-signal-line`, a cor escurecida até aos 3:1
+            contra o branco; a cor crua de um clube amarelo desaparecia aqui.
+            Activo, passa à tinta do fundo suave. Ver `styles.css`.
+          */}
           <Icon
-            className={cx("size-4 shrink-0", isActive ? "nav-active-icon" : "text-ink-3 group-hover:text-ink-2")}
+            className={cx("size-4 shrink-0 transition-colors duration-[120ms]", isActive ? "nav-active-icon" : "nav-icon")}
             strokeWidth={1.75}
           />
-          {!collapsed && <span className="flex-1 truncate">{item.label}</span>}
+          {!collapsed && <span className="min-w-0 flex-1 truncate">{item.label}</span>}
+
+          {/*
+            "Beta" é um aviso, não um alerta.
+
+            Por isso é cinzento e não leva a cor do clube: essa está reservada
+            ao contador, que conta trabalho por fazer. Duas marcas coloridas na
+            mesma linha competiam, e a que interessa a quem trabalha é a outra.
+
+            Recolhida a barra não cabe — vai no `title` do item, junto ao nome.
+          */}
+          {item.beta && !collapsed && (
+            <span className="shrink-0 rounded-[4px] bg-sunken px-1 py-px text-[9px] leading-[14px] font-semibold tracking-wide text-ink-3 uppercase">
+              beta
+            </span>
+          )}
+          {/*
+            O contador, na cor do clube.
+
+            Era vermelho. O vermelho neste produto quer dizer **está errado** —
+            uma mensalidade vencida, um atleta de baixa — e o menu usava-o para
+            dizer outra coisa: "há aqui coisas por fazer". Três presenças por
+            registar não são um erro, e uma barra com quatro pontos vermelhos
+            ensina a ignorá-los, que é o oposto do que um contador serve.
+
+            `signal-strong` + `signal-on`, e não `signal` cru: é o par desenhado
+            para uma superfície **cheia** com texto por cima — `strongSignal`
+            escurece a cor até a sua própria tinta se ler nela. Um clube amarelo
+            recebe tinta escura; nenhum recebe branco sobre amarelo.
+
+            Cheio e não suave, ao contrário do resto do menu: por cima da linha
+            activa o fundo já é `signal-soft`, e um contador suave desaparecia lá
+            precisamente na página onde a pessoa está.
+          */}
           {badge !== undefined && badge > 0 && (
             <span
               className={cx(
                 "tabular",
                 collapsed
-                  ? "absolute top-1 right-1 size-1.5 rounded-full bg-risk"
-                  : "rounded-full bg-risk-soft px-1.5 py-px text-[11px] font-semibold text-risk",
+                  ? "absolute top-1 right-1 size-1.5 rounded-full bg-signal-strong"
+                  : "rounded-full bg-signal-strong px-1.5 py-px text-[11px] font-semibold text-signal-on",
               )}
             >
               {!collapsed && badge}

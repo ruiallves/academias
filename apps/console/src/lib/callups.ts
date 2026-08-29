@@ -63,18 +63,41 @@ export async function refresh(): Promise<void> {
 /* Leituras                                                                    */
 /* -------------------------------------------------------------------------- */
 
-/** Jogos por disputar, do mais próximo para o mais distante. */
+/**
+ * Os jogos que **eu** tenho para convocar, do mais próximo para o mais distante.
+ *
+ * ## Só as minhas equipas
+ *
+ * Não filtrava nada, e trazia o calendário inteiro do clube. Isso está certo no
+ * calendário — um treinador tem de saber quando joga o escalão de cima e onde,
+ * e é por isso que `calendarScopeFilter` deixa passar tudo (ver `permissions.ts`).
+ * Aqui está errado: esta página não é uma agenda, é uma fila de trabalho, e um
+ * jogo dos Sub-13 numa fila de quem não treina os Sub-13 é trabalho de outra
+ * pessoa a ocupar espaço — e a lista de convocáveis daquele jogo nem sequer lhe
+ * abre.
+ *
+ * `m.mine` é a resposta do servidor (`inTeamScope`), a mesma que a página dos
+ * Jogos já lê. Contar equipas aqui seria uma segunda resposta à mesma pergunta,
+ * e duas respostas acabam sempre a discordar uma vez. Para a direcção é sempre
+ * verdadeira, porque as equipas dela são todas.
+ *
+ * ## E só os que ainda não começaram
+ *
+ * Havia seis horas de tolerância depois do apito inicial. A intenção era boa — o
+ * treinador a fechar a lista à beira do campo — mas o efeito era um jogo
+ * disputado de manhã a aparecer por convocar à tarde, num sítio onde tudo o que
+ * lá está é uma coisa por fazer.
+ *
+ * Convocar depois do jogo continua a ser possível, e continua a ser onde deve
+ * ser: **na página do jogo**, onde se está a preencher a ficha e se sabe quem
+ * jogou. Aqui é o que está para vir.
+ */
 export function upcomingMatches(): ApiMatch[] {
-  const now = Date.now();
+  const agora = Date.now();
   return matches
-    .filter((m) => m.status === "SCHEDULED" && new Date(m.startsAt).getTime() >= now - 6 * 3600_000)
+    .filter((m) => m.mine)
+    .filter((m) => m.status === "SCHEDULED" && new Date(m.startsAt).getTime() >= agora)
     .sort((a, b) => a.startsAt.localeCompare(b.startsAt));
-}
-
-export function pastMatches(): ApiMatch[] {
-  return matches
-    .filter((m) => m.status !== "SCHEDULED" || new Date(m.startsAt).getTime() < Date.now())
-    .sort((a, b) => b.startsAt.localeCompare(a.startsAt));
 }
 
 export type Eligible = {

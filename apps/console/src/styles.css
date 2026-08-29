@@ -85,18 +85,34 @@
  */
 :root {
   /*
-    A cor do menu é nossa, não do clube.
+    O menu voltou à cor do clube — agora que ela é segura.
 
-    A navegação usava `--color-signal` — a cor que o clube escolhe nas
-    Definições — e isso partia-se com metade das cores possíveis: um clube
-    amarelo dava texto amarelo sobre branco no item activo, ilegível. Um clube
-    não escolhe a sua cor a pensar em contraste de interface; escolhe-a a pensar
-    no emblema.
+    ## A história, porque ela explica a forma
 
-    Este ardósia escuro tem contraste garantido sobre o fundo claro da consola,
-    é sóbrio ao lado de qualquer emblema, e não compete com as cores semânticas
-    (verde de pago, vermelho de vencido). A cor do clube continua a aparecer onde
-    é identidade — o símbolo, a app das famílias, a página de sócios.
+    A navegação usava `--color-signal` cru, e partia-se com metade das cores
+    possíveis: um clube amarelo dava texto amarelo sobre branco no item activo,
+    ilegível. A resposta na altura foi tirar a cor do clube do menu e pôr este
+    ardósia. Resolveu o problema e levou a identidade atrás — a consola de todos
+    os clubes ficou igual.
+
+    ## O que mudou
+
+    Passou a haver tons derivados com contraste **garantido**, calculados a
+    partir da cor do clube em vez de escolhidos à mão (ver `signalVars` e
+    `signalOnSurface` em tokens.ts):
+
+      `--color-signal-line`  a cor legível como traço sobre a página (≥ 3:1).
+                             É a dos ícones em repouso.
+      `--color-signal-soft`  o fundo claro do item activo.
+      `--color-signal-ink`   a tinta calculada **para esse fundo**.
+
+    O par soft/ink é o ponto: não é a cor do clube sobre branco — é a tinta que
+    aquela cor exige para se ler no seu próprio fundo suave. Um clube amarelo
+    recebe tinta escura, um azul-escuro recebe a sua; nenhum recebe o que
+    escolheu sem passar por aqui.
+
+    Os `--nav-accent*` ficam como estavam para quem os queira: são o ardósia, e
+    a nota de porque existiram.
   */
   --nav-accent: #334155;
   --nav-accent-soft: #eef1f5;
@@ -111,13 +127,14 @@
   --nav-group-gap: 18px;
   --nav-search-h: 32px;
   --nav-search-pad: 8px;
-  --nav-label-display: block;
-  --nav-sep-display: none;
+  /* A altura do cabeçalho de grupo acompanha a densidade, como os itens. */
+  --nav-group-head-h: 24px;
 }
 
 /* Portáteis grandes e janelas encostadas: aperta, mantém os rótulos. */
 @media (max-height: 900px) {
   :root {
+    --nav-group-head-h: 22px;
     --nav-header-h: 50px;
     --nav-font: 0.765625rem;
     --nav-item-h: 28px;
@@ -130,14 +147,13 @@
 /* Os rótulos dão lugar a separadores — valem 100px e o menu lê-se sem eles. */
 @media (max-height: 800px) {
   :root {
+    --nav-group-head-h: 21px;
     --nav-header-h: 46px;
     --nav-font: 0.75rem;
     --nav-item-h: 26px;
     --nav-group-gap: 12px;
     --nav-search-h: 28px;
     --nav-search-pad: 6px;
-    --nav-label-display: none;
-    --nav-sep-display: block;
   }
 }
 
@@ -149,6 +165,7 @@
  */
 @media (max-height: 680px) {
   :root {
+    --nav-group-head-h: 20px;
     --nav-header-h: 44px;
     --nav-font: 0.75rem;
     --nav-item-h: 24px;
@@ -179,13 +196,23 @@
   height: var(--nav-search-h);
 }
 
-.nav-label {
-  display: var(--nav-label-display);
-}
-
-/* O separador é o rótulo por outros meios: aparece só quando o rótulo sai. */
-.nav-sep {
-  display: var(--nav-sep-display);
+/*
+ * O cabeçalho de um grupo.
+ *
+ * Escondia-se abaixo dos 800px de altura (`--nav-label-display: none`), trocado
+ * por um separador, para poupar cem pixels. Deixou de poder: passou a ser o
+ * botão que abre e fecha o grupo, e escondê-lo tirava a única forma de reabrir
+ * um grupo fechado.
+ *
+ * A troca compensa. Fechar dois grupos que não se usam ganha mais espaço do que
+ * os rótulos custavam — e ganha-o onde quem usa a consola escolher, em vez de
+ * onde uma media query decidiu.
+ */
+.nav-group-head {
+  height: var(--nav-group-head-h);
+  font-size: var(--nav-font);
+  /* O respiro que o `pb-1.5` do rótulo antigo dava. */
+  margin-bottom: 2px;
 }
 
 /* ---------------------------------------------------------------------------
@@ -299,9 +326,22 @@
   próxima vez que alguém lhes tocasse. Ver `--nav-accent`.
 */
 .nav-active {
-  background: var(--nav-accent-soft);
-  color: var(--nav-accent-ink);
+  background: var(--color-signal-soft);
+  color: var(--color-signal-ink);
 }
+
+/* A mesma tinta do texto: sobre `soft`, é a que foi calculada para se ler lá. */
 .nav-active-icon {
-  color: var(--nav-accent);
+  color: var(--color-signal-ink);
+}
+
+/*
+ * O ícone em repouso, na cor do clube.
+ *
+ * `signal-line` e não `signal`: a cor crua de um clube amarelo dá 1,3:1 contra o
+ * branco e o ícone desaparece. Esta é a mesma cor escurecida até aos 3:1 que a
+ * WCAG pede a um elemento de interface. Ver `signalOnSurface`.
+ */
+.nav-icon {
+  color: var(--color-signal-line);
 }

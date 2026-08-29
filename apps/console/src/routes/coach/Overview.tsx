@@ -101,9 +101,14 @@ function NextSession({ training: s }: { training: TrainingSession }) {
           <Link to={`/equipas/${team?.id}`} className="ctl-outline">
             Ver plantel
           </Link>
-          <Link to="/treinos" className="ctl-primary">
+          {/* `/treinos` deixou de ser as Presenças — é o planner. O registo de
+              faltas mora em `/presencas`, e o plano do treino é o gesto novo. */}
+          <Link to="/presencas" className="ctl-outline">
             <ClipboardCheck className="size-3.5" strokeWidth={1.75} />
             Registar presenças
+          </Link>
+          <Link to={`/treinos/${s.id}`} className="ctl-primary">
+            Abrir plano
           </Link>
         </div>
       </div>
