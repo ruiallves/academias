@@ -46,6 +46,8 @@ export class MatchesService {
           id: true, teamId: true, startsAt: true, endsAt: true, venue: true,
           opponent: true, isHome: true, status: true, ourScore: true, theirScore: true,
           callUpsClosedAt: true,
+          // A prova, para a convocatória a poder imprimir sem ninguém a escrever.
+          competition: { select: { id: true, label: true } },
           team: { select: { name: true, maxCallUps: true } },
           callUps: {
             select: {
@@ -112,6 +114,7 @@ export class MatchesService {
           venue: m.venue,
           opponent: m.opponent,
           isHome: m.isHome,
+          competition: m.competition ? { id: m.competition.id, label: m.competition.label } : null,
           status: m.status,
           ourScore: m.ourScore,
           theirScore: m.theirScore,
@@ -195,6 +198,7 @@ export class MatchesService {
           id: true, teamId: true, startsAt: true, endsAt: true, venue: true,
           opponent: true, isHome: true, status: true, ourScore: true, theirScore: true,
           callUpsClosedAt: true, statsEnteredAt: true,
+          competition: { select: { id: true, label: true } },
           sourceProvider: true, sourceUrl: true, importedAt: true,
           team: { select: { name: true, maxAge: true, sportId: true, maxCallUps: true } },
           coach: { select: { id: true, user: { select: { name: true } } } },
@@ -253,6 +257,7 @@ export class MatchesService {
         venue: m.venue,
         opponent: m.opponent,
         isHome: m.isHome,
+        competition: m.competition ? { id: m.competition.id, label: m.competition.label } : null,
         status: m.status,
         ourScore: m.ourScore,
         theirScore: m.theirScore,

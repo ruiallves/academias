@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import { PageHeader } from "@/components/Shell";
 import { DepartmentDialog } from "@/components/DepartmentDialog";
+import { DeleteAcademyPanel } from "@/components/DeleteAcademyPanel";
 import { IdentityPanel } from "@/components/IdentityPanel";
 import { SportsPanel } from "@/components/SportsPanel";
 /*
@@ -75,6 +76,11 @@ export default function Settings() {
           */}
           <RolesPanel open={painel === "cargos"} />
 
+          {/*
+            Ao fundo, e só para quem a tem: apagar o clube é a única acção sem
+            volta do produto, e não se põe ao lado das que se usam todos os dias.
+          */}
+          {can(session, "academy:delete") && <DeleteAcademyPanel />}
         </div>
 
         <div className="space-y-3">

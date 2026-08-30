@@ -72,6 +72,21 @@ await db.query(
 );
 await db.query(`DELETE FROM "Match" WHERE opponent LIKE 'ZZ %' OR "startsAt" = '2026-09-01T18:00:00.000Z'`);
 
+/*
+ * A prova de cada jogo.
+ *
+ * A competição passou a ser obrigatória ao marcar um jogo (ver
+ * `createSingleEvent`): "nenhuma prova" chama-se **Amigável**, existe em cada
+ * academia e entra em cada equipa. Estes testes marcam jogos para testar outra
+ * coisa — o âmbito, os choques de horário — e usam-na como qualquer clube usaria.
+ */
+const amigavelId = (
+  await db.query(
+    `SELECT c.id FROM "CatalogItem" c JOIN "Academy" a ON a.id = c."academyId"
+      WHERE a.slug = 'life-club' AND c.kind = 'competitions' AND c.label = 'Amigável'`,
+  )
+).rows[0]?.id;
+
 const director = await login("direcao@lifeclub.pt");
 const coach = await login("treinador@lifeclub.pt");
 const parent = await login("familia@lifeclub.pt");
@@ -166,11 +181,11 @@ if (semAdjunto) {
   console.log("  (o adjunto está em todas as equipas — salto a fronteira do treino)");
 }
 
-const jogoSeu = await call(adjunto, "POST", "/api/events", base("ZZ Jogo Adjunto", { kind: "MATCH", teamId: "t_sub11", opponent: "ZZ Adversário", startsAt: "2026-09-03T16:00:00.000Z", endsAt: "2026-09-03T17:30:00.000Z" }));
+const jogoSeu = await call(adjunto, "POST", "/api/events", base("ZZ Jogo Adjunto", { kind: "MATCH", teamId: "t_sub11", competitionId: amigavelId, opponent: "ZZ Adversário", startsAt: "2026-09-03T16:00:00.000Z", endsAt: "2026-09-03T17:30:00.000Z" }));
 check("marca jogo na equipa dele", jogoSeu.status === 201 || jogoSeu.status === 200, `${jogoSeu.status}`);
 
 if (semAdjunto) {
-  const jogoAlheio = await call(adjunto, "POST", "/api/events", base("ZZ Jogo Alheio", { kind: "MATCH", teamId: semAdjunto, opponent: "ZZ Adversário", startsAt: "2026-09-03T16:00:00.000Z", endsAt: "2026-09-03T17:30:00.000Z" }));
+  const jogoAlheio = await call(adjunto, "POST", "/api/events", base("ZZ Jogo Alheio", { kind: "MATCH", teamId: semAdjunto, competitionId: amigavelId, opponent: "ZZ Adversário", startsAt: "2026-09-03T16:00:00.000Z", endsAt: "2026-09-03T17:30:00.000Z" }));
   check("e não marca jogo na equipa de outro (403)", jogoAlheio.status === 403, `${jogoAlheio.status}`);
 } else {
   console.log("  (o adjunto está em todas as equipas — salto a fronteira do jogo)");

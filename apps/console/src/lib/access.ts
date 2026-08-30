@@ -231,6 +231,14 @@ export const ADMIN_AREAS: Area[] = [
   { label: "Menus", hint: "escolher o que cada papel vê na navegação", read: "role:menu" },
   { label: "Acessos", hint: "mudar o acesso de cada pessoa", read: "access:write" },
   { label: "Definições", hint: "configuração da academia", read: "settings:write" },
+  /*
+   * Apagar o clube fica aqui, entre as administrativas — não no catálogo das
+   * áreas do dia a dia. Quem decide isto está a olhar para a lista de papéis,
+   * não a meio da ficha de um treinador; e sem estar num catálogo, uma
+   * permissão não se consegue dar **nem tirar** (a lição dos Sócios).
+   */
+  { label: "Apagar equipas", hint: "elimina um escalão, com os treinos e jogos dele", read: "team:delete" },
+  { label: "Apagar o clube", hint: "elimina a academia e todos os dados — não tem volta", read: "academy:delete" },
 ];
 
 /** O nível de uma área para um dado conjunto de permissões. */

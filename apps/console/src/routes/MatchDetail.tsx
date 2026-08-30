@@ -11,6 +11,7 @@ import {
   ExternalLink,
   MapPin,
   Plus,
+  Download,
   Trash2,
   Trophy,
   Users,
@@ -18,9 +19,11 @@ import {
 } from "@/lib/icons";
 import { useSession } from "@/session";
 import { can } from "@/lib/permissions";
-import { sportById, teamById } from "@/lib/api";
+import { athleteById, sportById, teamById } from "@/lib/api";
 import { tallyNoun } from "@/lib/calendar";
 import { SaveVeil, Spinner, useSaving } from "@/components/Busy";
+import { CallUpSheetDialog, type SheetMatch } from "@/components/CallUpSheetDialog";
+import type { SheetRow } from "@/lib/callup-sheet";
 import {
   OUTCOME_LABEL,
   STAFF_ROLES,
@@ -557,18 +560,66 @@ function ScoreField({
  * famílias. Aqui responde-se e aponta-se, não se edita.
  */
 function CallUpPanel({ match }: { match: Match }) {
+  const [folha, setFolha] = useState(false);
+
   const confirmados = match.squad.filter((s) => s.callUpStatus === "CONFIRMED").length;
   const recusaram = match.squad.filter((s) => s.callUpStatus === "DECLINED").length;
   const semResposta = match.squad.length - confirmados - recusaram;
 
+  /*
+   * A ficha do jogo traz o plantel com nome e posição, mas não com o número de
+   * camisola — ele vive no atleta, e é o número que a folha imprime na segunda
+   * coluna. Vai buscá-lo aqui em vez de o acrescentar a `SquadRow`: é a única
+   * coisa desta página que precisa dele, e uma coluna a mais na resposta do
+   * servidor para uma folha que se imprime uma vez por semana não se paga.
+   */
+  const sheetRows: SheetRow[] = match.squad.map((s) => ({
+    squadNumber: athleteById(s.athleteId)?.squadNumber ?? null,
+    name: s.name,
+    position: s.position,
+    status: s.callUpStatus,
+    guestFrom: s.isGuest ? (s.guestFromTeam ?? "outro escalão") : null,
+  }));
+
+  const sheetMatch: SheetMatch = {
+    teamId: match.teamId,
+    teamName: match.teamName,
+    opponent: match.opponent,
+    isHome: match.isHome,
+    venue: match.venue,
+    // A prova do jogo — a folha pré-preenche-se com ela em vez de a pedir.
+    competition: match.competition ?? null,
+    startsAt: match.startsAt,
+    submitted: match.submitted,
+    // O treinador principal do jogo assina a folha; sem ficha técnica, quem
+    // consta do jogo.
+    coachName: match.staff.find((m) => m.role === "Treinador principal")?.name ?? match.coachName,
+    staff: match.staff.map((m) => ({ name: m.name, role: m.role })),
+  };
+
   return (
     <Panel>
       <PanelHead title="Convocatória" hint={match.submitted ? "enviada às famílias" : "por enviar"}>
+        {/* Só depois de submetida: a folha é da lista que saiu para as famílias,
+            e um rascunho ainda muda. Ver a nota do mesmo botão em `CallUps`. */}
+        {match.submitted && (
+          <button
+            type="button"
+            onClick={() => setFolha(true)}
+            className="ctl-outline"
+            title="PDF da convocatória, para assinar no ponto de encontro"
+          >
+            <Download className="size-3.5" strokeWidth={1.75} />
+            Exportar PDF
+          </button>
+        )}
         <Link to="/convocatorias" className="ctl-primary">
           {match.submitted ? "Ver nas Convocatórias" : "Montar convocatória"}
           <ChevronRight className="size-3.5" strokeWidth={2} />
         </Link>
       </PanelHead>
+
+      {folha && <CallUpSheetDialog match={sheetMatch} rows={sheetRows} onClose={() => setFolha(false)} />}
 
       {match.squad.length === 0 ? (
         <Empty

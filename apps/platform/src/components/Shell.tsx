@@ -1,3 +1,5 @@
+import { useEffect } from "react";
+import { useApi } from "@/lib/query";
 import type { CSSProperties } from "react";
 import { NavLink, Outlet } from "react-router-dom";
 import { Building2, FileClock, Inbox, LayoutGrid, LogOut, ShieldCheck, TrendingUp, Users } from "lucide-react";
@@ -47,6 +49,33 @@ const OWNER_NAV: NavItem = { to: "/administradores", label: "Administradores", i
 export function Shell({ me }: { me: Me }) {
   const nav = me.role === "OWNER" ? [...NAV, OWNER_NAV] : NAV;
 
+  /*
+   * Os pedidos por tratar, ao lado de "Tickets".
+   *
+   * ## Porque é que o menu tem de o dizer
+   *
+   * Um pedido do site chega sem ninguém estar à espera dele. O email avisa quem
+   * o recebe — mas quem já está dentro da plataforma não tem o email à frente, e
+   * a única forma de saber que chegou alguma coisa era abrir a página e ver.
+   * Um contador no menu responde a isso de relance, de qualquer ecrã.
+   *
+   * ## Volta a perguntar
+   *
+   * De minuto a minuto, e só com o separador à vista: a plataforma fica aberta
+   * o dia todo num monitor ao lado, e um número que só é verdade à hora do
+   * arranque é pior do que não estar lá. Uma leitura por minuto de um `count()`
+   * não custa nada; o que custava era abrir a página para saber.
+   */
+  const tickets = useApi<{ n: number }>("/tickets/por-tratar");
+  const { reload: relerTickets } = tickets;
+  useEffect(() => {
+    const t = setInterval(() => {
+      if (document.visibilityState === "visible") relerTickets();
+    }, 60_000);
+    return () => clearInterval(t);
+  }, [relerTickets]);
+  const porTratar = tickets.data?.n ?? 0;
+
   return (
     /*
      * `--nav-w` é a largura do menu, publicada para a camada de carregamento a
@@ -89,7 +118,20 @@ export function Shell({ me }: { me: Me }) {
                   {({ isActive }) => (
                     <>
                       <item.icon className={cx("size-4 shrink-0", isActive ? "text-signal" : "text-ink-3")} strokeWidth={1.75} />
-                      {item.label}
+                      <span className="min-w-0 flex-1 truncate">{item.label}</span>
+
+                      {/*
+                        Cheio, e não uma pastilha suave: por cima da linha activa
+                        o fundo já é `signal-soft`, e um contador suave
+                        desaparecia lá — precisamente quando se está na página.
+                        Zero não se mostra: um "0" permanente ensina a ignorar a
+                        coluna onde o número aparece.
+                      */}
+                      {item.to === "/tickets" && porTratar > 0 && (
+                        <span className="shrink-0 rounded-full bg-signal-strong px-1.5 py-px text-[11px] font-semibold text-signal-on tabular">
+                          {porTratar}
+                        </span>
+                      )}
                     </>
                   )}
                 </NavLink>

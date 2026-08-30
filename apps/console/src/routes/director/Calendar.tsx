@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { useNavigate, useSearchParams } from "react-router-dom";
+import { useSearchParams } from "react-router-dom";
 import { PageHeader } from "@/components/Shell";
 import { PersonLink } from "@/components/PersonLink";
 import { cx, Empty, Monogram, Panel, Pill } from "@/components/primitives";
@@ -10,7 +10,7 @@ import { EventDetail } from "@/components/EventDetail";
 import { CalendarDays, ChevronLeft, ChevronRight, Plus } from "@/lib/icons";
 import type { CategoricalColor } from "@academia/ui/tokens";
 import { coachById, listTeams, today } from "@/lib/api";
-import { KIND_LABEL, groupByDay, matchPagePath, useEvents, useTeamColors, type CalendarEvent, type EventKind } from "@/lib/calendar";
+import { KIND_LABEL, groupByDay, useEvents, useTeamColors, type CalendarEvent, type EventKind } from "@/lib/calendar";
 import { dayShort, longDate, monthName, time } from "@/lib/format";
 import { can, isAcademyWide } from "@/lib/permissions";
 import { useSession } from "@/session";
@@ -54,18 +54,23 @@ export default function Calendar() {
   /** E a equipa, quando quem manda para cá já a tinha escolhido (`?equipa=`). */
   const [composingTeam, setComposingTeam] = useState<string | undefined>(undefined);
   const [selectedId, setSelectedId] = useState<string | null>(null);
-  const navigate = useNavigate();
 
   
   /**
-   * Clicar num evento: um **jogo** vai para a página dele, tudo o resto abre a
-   * gaveta ao lado. A regra e o porquê vivem em `matchPagePath` — o calendário
-   * da equipa faz exactamente o mesmo, e a decisão tem de ter um dono só.
+   * Clicar num evento abre a gaveta — **em todos os tipos**.
+   *
+   * Um jogo saltava daqui direito para a página dele. Era rápido para quem
+   * queria a convocatória e mau para todos os outros: sair do calendário para
+   * ver a que horas é e onde, e depois voltar. E fazia do jogo o único evento
+   * do produto sem pré-visualização.
+   *
+   * Agora a gaveta é a resposta uniforme, e leva lá dentro o que o jogo tem de
+   * seu — *Abrir jogo* e *Ver convocatória* (ver `EventDetail`). A regra de
+   * **haver** página continua em `matchPagePath`, que é onde tem de estar: um
+   * jogo semeado ou de outra equipa não a tem.
    */
   function abrir(e: CalendarEvent) {
-    const pagina = matchPagePath(e);
-    if (pagina) navigate(pagina);
-    else setSelectedId(e.id);
+    setSelectedId(e.id);
   }
 
   const teams = listTeams(session);

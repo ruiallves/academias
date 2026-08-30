@@ -1,4 +1,7 @@
-import { BadRequestException, Injectable, NotFoundException } from "@nestjs/common";
+import { ConfigService } from "@nestjs/config";
+import { MailClient } from "../mail/mail.client";
+import { ticketAlertEmail } from "../mail/mail.templates";
+import { BadRequestException, Injectable, Logger, NotFoundException } from "@nestjs/common";
 import { TicketStatus } from "@prisma/client";
 import { PlatformPrisma } from "./platform.prisma";
 import { PlatformService } from "./platform.service";
@@ -41,6 +44,8 @@ export class TicketsService {
   constructor(
     private readonly prisma: PlatformPrisma,
     private readonly platform: PlatformService,
+    private readonly mail: MailClient,
+    private readonly config: ConfigService,
   ) {}
 
   /**
@@ -94,8 +99,79 @@ export class TicketsService {
       ip,
     );
 
+    await this.avisar(ticket.id, { ...dto, name });
+
     return { ok: true as const };
   }
+
+  /**
+   * O aviso de que chegou um pedido.
+   *
+   * ## Porque é que não trava o formulário
+   *
+   * `MailClient.send` nunca lança — devolve `{ sent, reason }` e regista o que
+   * tentou. Ainda assim, tudo o que aqui acontece é depois de o ticket estar
+   * gravado: um problema no correio não pode fazer o site dizer a quem escreveu
+   * que a mensagem não passou, quando passou. O pedido está guardado e a
+   * plataforma mostra-o na mesma; o que se perde é o toque no telemóvel.
+   *
+   * ## Para quem
+   *
+   * `PLATFORM_ALERT_EMAIL` quando existir — é o email pessoal de quem atende, e
+   * não tem de ser o mesmo com que se entra na plataforma. Sem ela, os donos
+   * activos: assim funciona no dia em que for instalada sem configuração nenhuma,
+   * e continua a funcionar quando alguém entrar ou sair da equipa, que é mais do
+   * que um endereço escrito à mão faria.
+   */
+  private async avisar(
+    ticketId: string,
+    dto: { name: string; email: string; phone?: string; club?: string; subject: string; athletes?: string; message?: string },
+  ): Promise<void> {
+    try {
+      const destinos = await this.destinatarios();
+      if (destinos.length === 0) return;
+
+      const base = (this.config.get<string>("PLATFORM_BASE_URL") ?? "https://academias.pt").replace(/[/]$/, "");
+      const carta = ticketAlertEmail({
+        name: dto.name,
+        email: dto.email,
+        phone: dto.phone,
+        club: dto.club,
+        subject: dto.subject,
+        athletes: dto.athletes,
+        message: dto.message,
+        link: `${base}/tickets?ticket=${ticketId}`,
+      });
+
+      for (const to of destinos) {
+        await this.mail.send({
+          to,
+          subject: carta.subject,
+          html: carta.html,
+          text: carta.text,
+          // Carregar em "responder" fala com quem escreveu, não com o servidor.
+          replyTo: { email: dto.email, name: dto.name },
+          kind: "ticket-alert",
+        });
+      }
+    } catch (error) {
+      // O ticket já está gravado. Isto é o extra, e o extra não derruba a entrada.
+      this.log.warn(`Não foi possível avisar do ticket ${ticketId}: ${String(error)}`);
+    }
+  }
+
+  private async destinatarios(): Promise<string[]> {
+    const configurado = this.config.get<string>("PLATFORM_ALERT_EMAIL")?.trim();
+    if (configurado) return configurado.split(",").map((x) => x.trim()).filter(Boolean);
+
+    const donos = await this.prisma.platformAdmin.findMany({
+      where: { isActive: true, role: "OWNER" },
+      select: { email: true },
+    });
+    return donos.map((d) => d.email);
+  }
+
+  private readonly log = new Logger(TicketsService.name);
 
   /**
    * A lista, por omissão só o que está por fechar.
@@ -104,6 +180,24 @@ export class TicketsService {
    * tratado há três meses, deixa de responder à única pergunta que se lhe faz:
    * *o que é que falta?*. Os fechados continuam a existir e vêem-se a pedido.
    */
+  /**
+   * Quantos pedidos estão à espera de alguém.
+   *
+   * Os mesmos três estados que o filtro "Abertos" da lista usa — `NOVO`,
+   * `ABERTO`, `RESPONDIDO`. "Respondido" conta de propósito: a bola está do
+   * outro lado, mas o assunto não está fechado, e um contador que o ignorasse
+   * dizia zero com trabalho por terminar em cima da mesa.
+   *
+   * É uma contagem e não a lista: o menu quer um número, e trazer trinta tickets
+   * para desenhar "3" era pagar a página inteira por um algarismo.
+   */
+  async porTratar(): Promise<{ n: number }> {
+    const n = await this.prisma.ticket.count({
+      where: { status: { in: ["NOVO", "ABERTO", "RESPONDIDO"] as TicketStatus[] } },
+    });
+    return { n };
+  }
+
   async list(params: { status?: TicketStatus | "ABERTOS"; q?: string } = {}) {
     const { status, q } = params;
     const termo = q?.trim();

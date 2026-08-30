@@ -16,9 +16,10 @@
     "build:api": "npm run build --workspace=@academia/api",
     "start:api": "npm run start --workspace=@academia/api",
     "build": "npm run build --workspaces --if-present",
-    "typecheck": "npm run typecheck --workspaces --if-present",
+    "typecheck": "npm run check:http && npm run typecheck --workspaces --if-present",
     "build:web": "npm run build --workspace=@academia/console && npm run build --workspace=@academia/family && node scripts/collect-web.mjs",
-    "build:server": "npm run build:web && npm run build:api"
+    "build:server": "npm run build:web && npm run build:api",
+    "check:http": "node scripts/check-http-clients.mjs"
   },
   "engines": {
     "node": ">=20"

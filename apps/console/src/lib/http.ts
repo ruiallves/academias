@@ -1,4 +1,4 @@
-import { readSession } from "@/lib/session";
+import { getAccessToken, readSession, refreshSession, signOut } from "@/lib/session";
 
 /**
  * O cliente HTTP da consola.
@@ -85,132 +85,129 @@ function academySlug(): string {
   return (import.meta.env.VITE_ACADEMY_SLUG as string | undefined) ?? "life-club";
 }
 
-export async function apiGet<T>(path: string, params?: Record<string, string | undefined>): Promise<T> {
-  /*
-   * O segundo argumento é o que falta para isto sobreviver a `BASE` vazio.
-   *
-   * Em produção `BASE` é `""` (mesma origem — ver o cabeçalho acima), e
-   * `${BASE}${path}` sai como `/api/bootstrap`: um caminho relativo. O
-   * construtor de `URL` recusa um caminho relativo sem uma base — "Failed to
-   * construct 'URL': Invalid URL" — e essa é exactamente a única linha desta
-   * classe que usa `new URL` em vez de `fetch` directo, porque é a única que
-   * precisa de `.searchParams`.
-   *
-   * `window.location.origin` resolve-o sem mudar nada quando `BASE` já é
-   * absoluto (em desenvolvimento): um primeiro argumento absoluto ignora a
-   * base por completo, é assim que o construtor sempre funcionou.
-   */
+/* -------------------------------------------------------------------------- */
+/* Um pedido                                                                   */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * O endereço de um pedido.
+ *
+ * `new URL` com o segundo argumento é o que faz isto sobreviver a `BASE` vazio:
+ * em produção `BASE` é `""` (mesma origem — ver o cabeçalho acima) e
+ * `${BASE}${path}` sai como um caminho relativo, que o construtor recusa sem uma
+ * base. Um primeiro argumento absoluto ignora a base por completo, por isso em
+ * desenvolvimento nada muda.
+ */
+function endereco(path: string, params?: Record<string, string | undefined>): URL {
   const url = new URL(`${BASE}${path}`, window.location.origin);
   for (const [k, v] of Object.entries(params ?? {})) {
     if (v !== undefined) url.searchParams.set(k, v);
   }
+  return url;
+}
 
-  const token = readSession()?.accessToken;
-  const res = await fetch(url, {
+function enviar(url: URL, method: string, token: string | null, body?: unknown): Promise<Response> {
+  return fetch(url, {
+    method,
     headers: {
       ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      ...(body !== undefined ? { "Content-Type": "application/json" } : {}),
       "x-academy-slug": academySlug(),
       // O par do `x-app` da app da família: quem é treinador **e** pai entra
       // aqui como treinador. Ver `escolherMembership` na API.
       "x-app": "console",
     },
+    ...(body !== undefined ? { body: JSON.stringify(body) } : {}),
   });
+}
+
+/**
+ * Um pedido à API, com a sessão tratada.
+ *
+ * ## Porque é que as cinco funções passaram a ser uma
+ *
+ * Eram cinco cópias do mesmo bloco — cabeçalhos, tratamento de erro, leitura do
+ * corpo — e a renovação do token teria de entrar nas cinco. Cinco sítios para a
+ * mesma regra é a garantia de que um deles fica para trás; e foi exactamente
+ * isso que aconteceu com o `Content-Type`, que o `apiGet` e o `apiDelete` não
+ * punham e os outros três punham.
+ *
+ * ## O 401, e a segunda tentativa
+ *
+ * O `getAccessToken()` já renova o que está a expirar, mas há um caso que a
+ * validade não apanha: o relógio da máquina adiantado, um token revogado do
+ * outro lado, uma sessão trocada noutro dispositivo. Nesses, o token parece bom
+ * daqui e o servidor recusa-o na mesma. Renovar e repetir **uma** vez resolve-os
+ * todos sem que ninguém dê por nada.
+ *
+ * Uma vez só, de propósito: se o pedido repetido também levar 401, o problema
+ * não é o token estar velho, e insistir era um ciclo.
+ */
+async function pedir<T>(
+  method: string,
+  path: string,
+  opts: { params?: Record<string, string | undefined>; body?: unknown } = {},
+): Promise<T> {
+  const url = endereco(path, opts.params);
+  const token = await getAccessToken();
+  let res = await enviar(url, method, token, opts.body);
+
+  if (res.status === 401 && token) {
+    const renovado = await refreshSession();
+    if (renovado && renovado !== token) res = await enviar(url, method, renovado, opts.body);
+  }
 
   if (!res.ok) {
-    const body = await res.json().catch(() => null);
-    throw new ApiError(res.status, body?.message ?? mensagem(res.status));
+    const parsed = await res.json().catch(() => null);
+    // `message` pode ser um array (validação do class-validator) — a mensagem do
+    // servidor é a que interessa, porque diz o campo em falta ou a regra falhada.
+    const msg = Array.isArray(parsed?.message) ? parsed.message.join("; ") : parsed?.message;
+
+    /*
+     * Depois de a renovação ter falhado, aí sim: a sessão acabou mesmo.
+     *
+     * E diz-se, em vez de deixar a consola às escuras. Era este o buraco: o
+     * arranque engolia os 401 (ver `soft` em `lib/store.ts`), os ecrãs ficavam
+     * vazios sem explicação nenhuma, e a pessoa recarregava a página a tentar
+     * perceber. Agora quem já não tem sessão volta à porta do clube, que é onde
+     * se entra.
+     *
+     * **Só quando havia token.** Nem todos os 401 são de sessão — o guard
+     * também os devolve quando não consegue determinar a academia — e sem
+     * sessão quem manda entrar é o `LoginGate`, à entrada. Sair daqui nesse
+     * caso era um segundo reencaminhamento a competir com o primeiro, e o par
+     * dava voltas.
+     */
+    if (res.status === 401 && token) signOut();
+
+    throw new ApiError(res.status, msg ?? mensagem(res.status));
   }
 
   return readBody<T>(res);
 }
+
+export const apiGet = <T,>(path: string, params?: Record<string, string | undefined>) =>
+  pedir<T>("GET", path, { params });
 
 /** Escrita. A academia vem do mesmo sítio que na leitura — do subdomínio ou da sessão. */
-export async function apiPost<T>(path: string, body: unknown): Promise<T> {
-  const token = readSession()?.accessToken;
-  const res = await fetch(`${BASE}${path}`, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      ...(token ? { Authorization: `Bearer ${token}` } : {}),
-      "x-academy-slug": academySlug(),
-    },
-    body: JSON.stringify(body),
-  });
-
-  if (!res.ok) {
-    const parsed = await res.json().catch(() => null);
-    // A mensagem do servidor é a que interessa — diz o campo em falta ou a regra
-    // que falhou. `message` pode ser um array (validação do class-validator).
-    const msg = Array.isArray(parsed?.message) ? parsed.message.join("; ") : parsed?.message;
-    throw new ApiError(res.status, msg ?? mensagem(res.status));
-  }
-
-  return readBody<T>(res);
-}
+export const apiPost = <T,>(path: string, body: unknown) => pedir<T>("POST", path, { body });
 
 /** Alteração parcial. Mesma forma que `apiPost`, verbo diferente. */
-export async function apiPatch<T>(path: string, body: unknown): Promise<T> {
-  const token = readSession()?.accessToken;
-  const res = await fetch(`${BASE}${path}`, {
-    method: "PATCH",
-    headers: {
-      "Content-Type": "application/json",
-      ...(token ? { Authorization: `Bearer ${token}` } : {}),
-      "x-academy-slug": academySlug(),
-    },
-    body: JSON.stringify(body),
-  });
-
-  if (!res.ok) {
-    const parsed = await res.json().catch(() => null);
-    const msg = Array.isArray(parsed?.message) ? parsed.message.join("; ") : parsed?.message;
-    throw new ApiError(res.status, msg ?? mensagem(res.status));
-  }
-
-  return readBody<T>(res);
-}
+export const apiPatch = <T,>(path: string, body: unknown) => pedir<T>("PATCH", path, { body });
 
 /** Substituição do estado de um recurso. Mesma forma que `apiPost`, verbo diferente. */
-export async function apiPut<T>(path: string, body: unknown): Promise<T> {
-  const token = readSession()?.accessToken;
-  const res = await fetch(`${BASE}${path}`, {
-    method: "PUT",
-    headers: {
-      "Content-Type": "application/json",
-      ...(token ? { Authorization: `Bearer ${token}` } : {}),
-      "x-academy-slug": academySlug(),
-    },
-    body: JSON.stringify(body),
-  });
+export const apiPut = <T,>(path: string, body: unknown) => pedir<T>("PUT", path, { body });
 
-  if (!res.ok) {
-    const parsed = await res.json().catch(() => null);
-    const msg = Array.isArray(parsed?.message) ? parsed.message.join("; ") : parsed?.message;
-    throw new ApiError(res.status, msg ?? mensagem(res.status));
-  }
-
-  return readBody<T>(res);
-}
-
-/** Eliminação. Sem corpo — o recurso vai no caminho. */
-export async function apiDelete<T>(path: string): Promise<T> {
-  const token = readSession()?.accessToken;
-  const res = await fetch(`${BASE}${path}`, {
-    method: "DELETE",
-    headers: {
-      ...(token ? { Authorization: `Bearer ${token}` } : {}),
-      "x-academy-slug": academySlug(),
-    },
-  });
-
-  if (!res.ok) {
-    const parsed = await res.json().catch(() => null);
-    const msg = Array.isArray(parsed?.message) ? parsed.message.join("; ") : parsed?.message;
-    throw new ApiError(res.status, msg ?? mensagem(res.status));
-  }
-
-  return readBody<T>(res);
-}
+/**
+ * Eliminação. O recurso vai no caminho — e, quando é preciso, uma confirmação
+ * no corpo.
+ *
+ * O corpo é a excepção e não a regra: serve o punhado de apagamentos que exigem
+ * prova de intenção (escrever o nome da equipa para a apagar). Um DELETE com
+ * corpo é legal em HTTP e é preferível a pendurar a confirmação na query, onde
+ * ficaria escrita nos registos do servidor.
+ */
+export const apiDelete = <T,>(path: string, body?: unknown) => pedir<T>("DELETE", path, { body });
 
 /**
  * Mensagens por estado.

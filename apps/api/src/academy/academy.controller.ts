@@ -7,7 +7,7 @@ import { SHORT_NAME_MAX } from "../common/short-name";
 import { AthletesService } from "./athletes.service";
 import { AthleteInputDto, AthleteTaxIdDto, AthleteUpdateDto, ImportAthletesDto } from "./athletes.dto";
 import { CreateTeamDto, ImportTeamsDto } from "./teams.dto";
-import { CreateEventDto, UpdateEventDto } from "./events.dto";
+import { CreateEventDto, EditEventDto, UpdateEventDto } from "./events.dto";
 import { BillingService, periodoActual, type AplicarEm } from "../billing/billing.service";
 
 /** O estado a atribuir manualmente a uma mensalidade. Validado — só os três reais. */
@@ -197,6 +197,28 @@ class BillingSettingsDto {
  * isso que estão fechadas: esquecer-se de proteger uma rota deixa-a fechada, não
  * aberta.
  */
+/**
+ * A confirmação de que se quer mesmo apagar o clube.
+ *
+ * O nome vai no corpo e é comparado no servidor com o nome real: quem apaga tem
+ * de o escrever à mão. É a trava que separa uma decisão de um clique distraído,
+ * e vive no servidor porque uma confirmação só no browser não é confirmação
+ * nenhuma — ver `deleteAcademy`.
+ */
+class DeleteAcademyDto {
+  @IsString() @Length(1, 200) confirmName!: string;
+}
+
+/** A mesma prova de intenção, para uma equipa. Ver `deleteTeam`. */
+class DeleteTeamDto {
+  @IsString() @Length(1, 200) confirmName!: string;
+}
+
+/** As provas que uma equipa disputa. Substitui a lista por inteiro. */
+class TeamCompetitionsDto {
+  @IsArray() @ArrayMaxSize(12) @IsString({ each: true }) competitionIds!: string[];
+}
+
 @Controller("api")
 export class AcademyController {
   constructor(
@@ -216,6 +238,31 @@ export class AcademyController {
   }
 
   /** Criar equipa. A permissão (`team:write`) é verificada no serviço. */
+  /**
+   * O que uma equipa leva atrás se for apagada — perguntado **antes** de apagar.
+   *
+   * É o que permite ao diálogo dizer "34 treinos, 12 com presenças registadas"
+   * em vez de um aviso genérico que ninguém lê.
+   */
+  @Get("teams/:id/impacto")
+  teamImpact(@Req() req: AuthedRequest, @Param("id") id: string) {
+    return this.academy.teamDeletionImpact(req.ctx, id);
+  }
+
+  /**
+   * As provas de uma equipa. `team:write` — quem gere a equipa decide onde ela
+   * joga; criar a prova no catálogo é que é das Definições.
+   */
+  @Put("teams/:id/competicoes")
+  setTeamCompetitions(@Req() req: AuthedRequest, @Param("id") id: string, @Body() dto: TeamCompetitionsDto) {
+    return this.academy.setTeamCompetitions(req.ctx, id, dto.competitionIds);
+  }
+
+  @Delete("teams/:id")
+  deleteTeam(@Req() req: AuthedRequest, @Param("id") id: string, @Body() dto: DeleteTeamDto) {
+    return this.academy.deleteTeam(req.ctx, id, dto.confirmName);
+  }
+
   @Post("teams")
   createTeam(@Req() req: AuthedRequest, @Body() body: CreateTeamDto) {
     return this.academy.createTeam(req.ctx, body);
@@ -447,6 +494,28 @@ export class AcademyController {
   @Patch("events/:id")
   updateEvent(@Req() req: AuthedRequest, @Param("id") id: string, @Body() body: UpdateEventDto) {
     return this.academy.setEventCancelled(req.ctx, id, body.cancelled);
+  }
+
+  /**
+   * Editar um evento. `PUT` e não `PATCH` porque o `PATCH` já é o cancelar —
+   * dois verbos para duas acções, em vez de um corpo que significa coisas
+   * diferentes conforme os campos que traz.
+   */
+  @Put("events/:id")
+  editEvent(@Req() req: AuthedRequest, @Param("id") id: string, @Body() body: EditEventDto) {
+    return this.academy.updateEvent(req.ctx, id, body);
+  }
+
+  /**
+   * Apagar o clube. `DELETE /api/academy`.
+   *
+   * Sem `:id` de propósito: apaga-se **a academia do pedido**, a que o `Host`
+   * (ou o `x-academy-slug`) já resolveu e o guard já validou. Um id no caminho
+   * convidava a tentar apagar outra, e a única resposta possível seria 403.
+   */
+  @Delete("academy")
+  deleteAcademy(@Req() req: AuthedRequest, @Body() dto: DeleteAcademyDto) {
+    return this.academy.deleteAcademy(req.ctx, dto.confirmName, req.ip);
   }
 
   @Get("charges")

@@ -1,7 +1,8 @@
-import { apiGet } from "@/lib/http";
+import { apiGet, apiPatch, apiPost } from "@/lib/http";
 import { matches, reloadAcademy, type ApiMatch, type GuestCandidate } from "@/lib/store";
-import { activeRestriction, isUnavailable } from "@/lib/clinical";
+import { activeRestriction, isUnavailable, isoToday } from "@/lib/clinical";
 import { athleteById, listAthletes } from "@/lib/api";
+import { shortDate } from "@/lib/format";
 import type { Session } from "@/lib/permissions";
 import type { Athlete } from "@/data/types";
 
@@ -16,43 +17,40 @@ import type { Athlete } from "@/data/types";
  * pensar e o pai recebe um aviso que muda daí a dez minutos.
  */
 
-// Mesma origem em produção, `localhost` só em dev — ver `lib/http.ts`.
-const BASE = (import.meta.env.VITE_API_URL as string | undefined) ?? (import.meta.env.DEV ? "http://localhost:3000" : "");
-
-async function send(path: string, method = "POST", body?: unknown): Promise<void> {
-  const raw = sessionStorage.getItem("academia.session");
-  const token = raw ? (JSON.parse(raw) as { accessToken: string }).accessToken : undefined;
-
-  const res = await fetch(`${BASE}${path}`, {
-    method,
-    headers: {
-      ...(token ? { Authorization: `Bearer ${token}` } : {}),
-      "x-academy-slug": raw ? (JSON.parse(raw) as { academySlug: string }).academySlug : "life-club",
-      ...(body ? { "Content-Type": "application/json" } : {}),
-    },
-    body: body ? JSON.stringify(body) : undefined,
-  });
-
-  if (!res.ok) {
-    const parsed = await res.json().catch(() => null);
-    // A mensagem do servidor é a que interessa: diz o nome do atleta lesionado ou
-    // o tecto da equipa. Substituí-la por "erro ao guardar" perde a única
-    // informação útil.
-    throw new Error(parsed?.message ?? "Não foi possível guardar a convocatória.");
-  }
-}
+/*
+ * Os pedidos passam pelo `lib/http.ts`, como todos os outros.
+ *
+ * ## O bug que isto corrigiu
+ *
+ * Havia aqui um cliente HTTP próprio — `BASE`, cabeçalhos e tratamento de erro
+ * copiados — que lia a sessão de `sessionStorage`. A sessão mudou-se para
+ * `localStorage` há muito (ver `lib/session.ts`: `sessionStorage` é por
+ * separador, e isso partia todos os links da consola), e esta cópia ficou para
+ * trás a ler um sítio vazio. Resultado: **submeter uma convocatória ia sem
+ * token** e o servidor respondia "Falta o token de sessão".
+ *
+ * Não se corrige trocando o nome do armazenamento. Corrige-se apagando o
+ * segundo cliente: a partir daqui as convocatórias herdam o que o `http.ts`
+ * sabe fazer — a sessão pelo caminho certo, a renovação do token, a repetição
+ * no 401 e o `x-app: console` que decide o chapéu de quem é treinador **e** pai.
+ * Uma regra escrita em dois sítios é uma regra que um dos dois vai esquecer.
+ *
+ * A mensagem do servidor continua a chegar intacta a quem chama — o `apiPost`
+ * também a preserva —, e ela é o que interessa: diz o nome do atleta lesionado
+ * ou o tecto da equipa, não um "erro ao guardar" genérico.
+ */
 
 export const saveCallUps = (matchId: string, athleteIds: string[]) =>
-  send(`/api/matches/${matchId}/convocatoria`, "POST", { athleteIds });
+  apiPost<void>(`/api/matches/${matchId}/convocatoria`, { athleteIds });
 
 export const submitCallUps = (matchId: string) =>
-  send(`/api/matches/${matchId}/convocatoria/submeter`);
+  apiPost<void>(`/api/matches/${matchId}/convocatoria/submeter`, {});
 
 export const reopenCallUps = (matchId: string) =>
-  send(`/api/matches/${matchId}/convocatoria/reabrir`);
+  apiPost<void>(`/api/matches/${matchId}/convocatoria/reabrir`, {});
 
 export const setMaxCallUps = (teamId: string, max: number) =>
-  send(`/api/matches/equipas/${teamId}/max-convocados`, "PATCH", { max });
+  apiPatch<void>(`/api/matches/equipas/${teamId}/max-convocados`, { max });
 
 /** Depois de escrever, relê a academia — os números do menu e da ficha mudam com isto. */
 export async function refresh(): Promise<void> {
@@ -113,17 +111,41 @@ export type Eligible = {
  * deliberado: escondê-lo levava o treinador a pensar que o atleta saiu da equipa,
  * e a lista deixava de bater certo com o plantel que ele tem na cabeça.
  */
+/**
+ * Porque é que este atleta não pode ir — na frase que resolve o problema.
+ *
+ * ## O retorno previsto que já passou
+ *
+ * Uma baixa só termina com **alta** (`clearedOn`), e é assim que tem de ser: o
+ * retorno previsto é uma estimativa do departamento clínico, não uma decisão, e
+ * deixar a data curar o atleta sozinha seria o produto a inventar um acto
+ * médico que ninguém praticou.
+ *
+ * Mas na prática o previsto passa e a alta demora — e do lado do treinador isso
+ * lê-se como uma avaria: "a entorse era até dia 27, já passou, porque é que não
+ * o deixa convocar?". A regra mantém-se e o **texto muda**: em vez de repetir o
+ * diagnóstico, diz o que falta e a quem. É a diferença entre um bloqueio que
+ * parece um erro e um bloqueio que se resolve.
+ */
+function motivoDeBloqueio(a: Athlete): string | null {
+  if (a.status === "paused") return "Em pausa";
+  if (!isUnavailable(a.id)) return null;
+
+  const restricao = activeRestriction(a.id);
+  const previsto = restricao?.expectedReturn;
+  if (previsto && previsto < isoToday()) {
+    return `Falta dar alta · retorno previsto ${shortDate(new Date(previsto))}`;
+  }
+
+  return restricao?.title ?? "De baixa clínica";
+}
+
 export function eligibleFor(session: Session, match: ApiMatch): Eligible[] {
   return listAthletes(session)
     .filter((a) => a.teamId === match.teamId)
     .map((a) => ({
       athlete: a,
-      blockedBy:
-        a.status === "paused"
-          ? "Em pausa"
-          : isUnavailable(a.id)
-            ? (activeRestriction(a.id)?.title ?? "De baixa clínica")
-            : null,
+      blockedBy: motivoDeBloqueio(a),
     }))
     .sort((x, y) => {
       // Disponíveis primeiro; o resto por número de camisola, como um treinador lê

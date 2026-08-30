@@ -13,7 +13,7 @@ import { can, inTeamScope, teamScopeFilter, type RequestContext } from "../commo
  * para o porquê de cada passo. Aqui não há menores — mas a regra de nunca
  * guardar URLs mantém-se, porque é a mesma disciplina em todo o produto.
  */
-const EXERCISE_BUCKET = "exercicios";
+export const EXERCISE_BUCKET = "exercicios";
 const IMAGE_TTL = 6 * 60 * 60;
 const IMAGE_MAX_BYTES = 8 * 1024 * 1024;
 const IMAGE_TYPES = ["image/jpeg", "image/png", "image/webp"];

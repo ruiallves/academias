@@ -32,7 +32,46 @@ let ok = 0, bad = 0;
 const check = (l, c, d = "") => { if (c) { ok++; console.log("  OK    " + l); } else { bad++; console.log("  FALHA " + l + (d ? " — " + d : "")); } };
 const login = async (e, p) => (await (await fetch(`${S}/auth/v1/token?grant_type=password`, { method: "POST", headers: { apikey: A, "Content-Type": "application/json" }, body: JSON.stringify({ email: e, password: p }) })).json()).access_token;
 
-const admin = await login("admin@academias.pt", "plataforma2026");
+/*
+ * Um administrador de plataforma temporário.
+ *
+ * Usava `admin@academias.pt`, a conta semeada — e essa deixou de ser
+ * administradora. A suite passou a falhar inteira com "Sem acesso à plataforma",
+ * o que parece um bug do produto e é só uma conta que já não existe. Cria-se uma,
+ * usa-se, e apaga-se no fim: assim corre em qualquer base, sem depender de quem
+ * lá está.
+ */
+const EMAIL_ADMIN = "zz.admin.contactos@exemplo.pt";
+const SR = env("SUPABASE_SERVICE_ROLE_KEY");
+const dbAdmin = new pg.Client({ connectionString: env("MIGRATE_DATABASE_URL"), ssl: { rejectUnauthorized: false } });
+await dbAdmin.connect();
+
+const adminApi = (caminho, init) =>
+  fetch(`${S}/auth/v1/admin/users${caminho}`, {
+    ...init,
+    headers: { apikey: SR, Authorization: `Bearer ${SR}`, "Content-Type": "application/json", ...(init?.headers ?? {}) },
+  });
+
+async function limparAdmin() {
+  await dbAdmin.query(`DELETE FROM "PlatformAdmin" WHERE email = $1`, [EMAIL_ADMIN]);
+  const lista = await (await adminApi(`?page=1&per_page=200`)).json();
+  const antigo = (lista.users ?? []).find((u) => u.email === EMAIL_ADMIN);
+  if (antigo) await adminApi(`/${antigo.id}`, { method: "DELETE" });
+}
+await limparAdmin();
+
+const conta = await (
+  await adminApi("", { method: "POST", body: JSON.stringify({ email: EMAIL_ADMIN, password: "academia2026", email_confirm: true }) })
+).json();
+if (!conta.id) throw new Error("supabase: " + JSON.stringify(conta));
+await dbAdmin.query(
+  `INSERT INTO "PlatformAdmin" (id, "authId", email, name, role, "isActive", "createdAt", "updatedAt")
+   VALUES ('zz_admin_contactos', $1, $2, 'ZZ Admin Contactos', 'OWNER', true, NOW(), NOW())`,
+  [conta.id, EMAIL_ADMIN],
+);
+
+const admin = await login(EMAIL_ADMIN, "academia2026");
+if (!admin) throw new Error("não foi possível entrar com o administrador temporário");
 const director = await login("direcao@lifeclub.pt", "academia2026");
 
 const call = async (token, method, p, body) => {
@@ -151,19 +190,47 @@ const siteBody = {
 const fromSite = await call(null, "POST", "/api/site/contacto", siteBody);
 check("aceita sem token nenhum", fromSite.status === 201 || fromSite.status === 200, JSON.stringify(fromSite).slice(0, 120));
 
-const painel = (await call(admin, "GET", "/api/platform/contactos")).body;
-const viaSite = painel.find((c) => c.email === siteBody.email);
-check("cai na lista do painel", Boolean(viaSite));
-check("sem administrador atribuído — fica por pegar", viaSite?.owner === null);
-check("guarda o assunto e a mensagem nas notas", viaSite?.notes?.includes("Experimentar a plataforma") && viaSite?.notes?.includes("Excel"));
+/*
+ * O formulário do site cria um **Ticket**, não um Contacto.
+ *
+ * Isto verificava o contrário, e a suite falhava a dizer que o pedido não caía
+ * na lista — quando o que mudou foi o sítio onde ele cai. São duas coisas
+ * diferentes de propósito: um ticket é um pedido que chegou e ainda ninguém
+ * atendeu; um contacto é uma relação que alguém decidiu manter. A conversão de
+ * um no outro é um gesto explícito, no painel.
+ */
+const naLista = (await call(admin, "GET", "/api/platform/contactos")).body;
+check(
+  "não cai em Contactos — isso é uma decisão de quem atende",
+  !naLista.some((c) => c.email === siteBody.email),
+  siteBody.email,
+);
+
+const tickets = (await call(admin, "GET", "/api/platform/tickets?estado=ABERTOS")).body;
+const viaSite = (Array.isArray(tickets) ? tickets : tickets?.tickets ?? []).find((t) => t.email === siteBody.email);
+check("cai na fila de tickets", Boolean(viaSite), JSON.stringify(tickets).slice(0, 120));
+check("por tratar", viaSite?.status === "NOVO", viaSite?.status);
+check("com o assunto e a mensagem tal como vieram",
+  viaSite?.subject === siteBody.subject && String(viaSite?.message ?? "").includes("Excel"),
+  JSON.stringify({ assunto: viaSite?.subject, mensagem: String(viaSite?.message ?? "").slice(0, 40) }));
 
 check("um campo obrigatório em falta é recusado", (await call(null, "POST", "/api/site/contacto", { name: "Sem email", subject: "Outro assunto" })).status === 400);
 
 console.log("\n=== Limpeza ===");
-if (viaSite) await call(admin, "DELETE", `/api/platform/contactos/${viaSite.id}`);
+/*
+ * Apaga por padrão de email, e não só o ticket que se encontrou.
+ *
+ * O formulário do site tem um tecto de cinco por minuto. Quando uma corrida
+ * apanha o tecto, o `POST` falha, `viaSite` fica indefinido e a limpeza não
+ * apagava nada — mas as corridas anteriores tinham deixado tickets lá, a contar
+ * como pedidos por tratar no menu da plataforma. O padrão apanha-os todos.
+ */
+await dbAdmin.query(`DELETE FROM "Ticket" WHERE email LIKE 'clube-%@exemplo.pt'`);
 check("apagar devolve ok", (await call(admin, "DELETE", `/api/platform/contactos/${id}`)).status === 200);
 check("e o histórico vai com ele", (await db.query('SELECT count(*)::int AS n FROM "ContactTouch" WHERE "contactId" = $1', [id])).rows[0].n === 0);
 await db.end();
+await limparAdmin();
+await dbAdmin.end();
 
 console.log(`\n${ok} passaram, ${bad} falharam`);
 process.exit(bad === 0 ? 0 : 1);

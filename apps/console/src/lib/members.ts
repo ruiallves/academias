@@ -61,15 +61,23 @@ export type MemberTier = {
   members: number;
 };
 
+/*
+ * Só o nome é garantido.
+ *
+ * Um sócio inscrito ao balcão traz o nome e um contacto; o resto da ficha
+ * completa-se depois, e até lá é **nulo** — não string vazia. A diferença
+ * importa nos ecrãs: um vazio desenha-se como campo em branco, um nulo
+ * desenha-se como "por preencher", que é uma coisa que se pode ir corrigir.
+ */
 export type MemberRow = {
   id: string;
   number: number | null;
   name: string;
-  email: string;
-  phone: string;
+  email: string | null;
+  phone: string | null;
   phoneCountry: string;
-  birthdate: string;
-  city: string;
+  birthdate: string | null;
+  city: string | null;
   status: MemberStatus;
   createdAt: string;
   approvedAt: string | null;
@@ -79,12 +87,12 @@ export type MemberRow = {
 
 export type MemberDetail = MemberRow & {
   country: string;
-  address: string;
-  postalCode: string;
+  address: string | null;
+  postalCode: string | null;
   sex: Sex;
   documentKind: DocumentKind;
-  documentNumber: string;
-  taxId: string;
+  documentNumber: string | null;
+  taxId: string | null;
   notes: string | null;
   /** Carimbos de consentimento. Nulo = não foi dado. Ver o modelo. */
   acceptedTermsAt: string | null;

@@ -8,6 +8,7 @@ import { basePermissions, can, ROLE_PERMISSIONS, type Permission, type RequestCo
 import { athleteScopeFilter, calendarScopeFilter, inTeamScope, teamScopeFilter } from "../common/permissions";
 import { gerarCobrancas, periodoActual } from "../billing/billing.service";
 import { SHORT_NAME_MAX } from "../common/short-name";
+import { AMIGAVEL } from "./catalogs.service";
 
 /**
  * As colunas de um evento que a consola lê — partilhadas pela leitura, criação e
@@ -699,6 +700,11 @@ export class AcademyService {
           season: { select: { id: true, label: true } },
           staff: { select: { title: true, membership: { select: { id: true, user: { select: { name: true } } } } } },
           _count: { select: { athletes: true } },
+          // As provas que a equipa disputa — é o que o calendário oferece ao
+          // marcar um jogo, e o que a folha de convocatória acaba por imprimir.
+          competitions: {
+            select: { competition: { select: { id: true, label: true, archivedAt: true } } },
+          },
         },
       });
 
@@ -727,6 +733,16 @@ export class AcademyService {
         schedule: t.schedule,
         athleteCount: t._count.athletes,
         coaches: t.staff.map((s) => ({ id: s.membership.id, name: s.membership.user.name, title: s.title })),
+        /*
+         * Sem as arquivadas.
+         *
+         * Uma prova arquivada é uma prova que acabou — continua ligada aos jogos
+         * que se disputaram nela (é história), mas não deve aparecer na lista de
+         * onde se escolhe para marcar um jogo novo.
+         */
+        competitions: t.competitions
+          .filter((c) => c.competition.archivedAt === null)
+          .map((c) => ({ id: c.competition.id, label: c.competition.label })),
         feeCents: can(ctx, "billing:read") ? (feeByTeam.get(t.id) ?? null) : null,
       }));
     });
@@ -855,6 +871,8 @@ export class AcademyService {
       season: string;
       coachId?: string;
       schedule: { weekday: number; start: string; end: string; venue: string }[];
+      /** Provas do catálogo que esta equipa disputa. Ver `setTeamCompetitions`. */
+      competitionIds?: string[];
     },
   ) {
     if (!can(ctx, "team:write")) throw new ForbiddenException("Sem permissão para criar equipas");
@@ -874,6 +892,21 @@ export class AcademyService {
 
       const season = await this.resolveSeason(db, ctx.academyId, dto.season);
 
+      // As provas têm de ser do catálogo desta academia — um id de fora não
+      // entra, e um id de outro catálogo (locais, tipos de evento) também não.
+      const escolhidas = await this.validCompetitionIds(db, dto.competitionIds);
+
+      /*
+       * "Amigável" entra sempre, escolhida ou não.
+       *
+       * É o que torna possível **exigir** a competição ao marcar um jogo: sem
+       * ela, uma equipa acabada de criar não tinha nenhuma prova para escolher e
+       * a pergunta ficava sem resposta possível. Um amigável é um jogo a sério
+       * — tem convocatória, tem folha — e a folha tem de dizer o que é.
+       */
+      const amigavel = await this.ensureAmigavel(db, ctx.academyId);
+      const competitionIds = [...new Set([...escolhidas, amigavel])];
+
       const team = await db.team.create({
         data: {
           academyId: ctx.academyId,
@@ -885,12 +918,16 @@ export class AcademyService {
           ...(dto.coachId
             ? { staff: { create: { membershipId: dto.coachId, title: "Treinador principal" } } }
             : {}),
+          ...(competitionIds.length
+            ? { competitions: { create: competitionIds.map((competitionId) => ({ competitionId })) } }
+            : {}),
         },
         select: {
           id: true, name: true, maxAge: true, schedule: true, sportId: true,
           season: { select: { label: true } },
           staff: { select: { title: true, membership: { select: { id: true, user: { select: { name: true } } } } } },
           _count: { select: { athletes: true } },
+          competitions: { select: { competition: { select: { id: true, label: true } } } },
         },
       });
 
@@ -903,6 +940,7 @@ export class AcademyService {
         schedule: team.schedule,
         athleteCount: team._count.athletes,
         coaches: team.staff.map((s) => ({ id: s.membership.id, name: s.membership.user.name, title: s.title })),
+        competitions: team.competitions.map((c) => ({ id: c.competition.id, label: c.competition.label })),
         // Sem preço à nascença — configura-se depois, em `PATCH /api/teams/:id/fee`.
         feeCents: null as number | null,
       };
@@ -1399,6 +1437,8 @@ export class AcademyService {
       dressingRoom?: string;
       opponent?: string;
       isHome?: boolean;
+      /** A prova, só nos jogos. Ver `Match.competitionId`. */
+      competitionId?: string;
       repeat?: { freq: "DAILY" | "WEEKLY" | "MONTHLY"; until: string; weekdays?: number[] };
     },
   ) {
@@ -1455,6 +1495,7 @@ export class AcademyService {
       dressingRoom?: string;
       opponent?: string;
       isHome?: boolean;
+      competitionId?: string;
     },
   ) {
     const scope = teamScopeFilter(ctx);
@@ -1502,6 +1543,29 @@ export class AcademyService {
         });
         if (clash) throw new BadRequestException("Esta equipa já tem um jogo marcado a esta hora");
 
+        /*
+         * Um jogo tem sempre uma prova — nem que seja "Amigável".
+         *
+         * É obrigatória de propósito: a convocatória herda-a e imprime-a, e um
+         * jogo sem prova obrigava quem exporta a escrevê-la à mão outra vez —
+         * que era exactamente o remendo que isto veio substituir. A pergunta tem
+         * sempre resposta porque cada equipa nasce com "Amigável" (ver
+         * `createTeam`).
+         *
+         * A prova tem ainda de ser uma das que **esta equipa** disputa: marcar um
+         * jogo do Sub-13 no campeonato de seniores é um erro de dedo que ninguém
+         * apanharia depois, e a lista que a interface oferece já é a da equipa.
+         * O servidor confirma o que a interface mostrou.
+         */
+        if (!dto.competitionId) {
+          throw new BadRequestException("Um jogo precisa de competição — usa 'Amigável' se não for de nenhuma prova");
+        }
+        const ligada = await db.teamCompetition.findFirst({
+          where: { teamId: dto.teamId, competitionId: dto.competitionId },
+          select: { id: true },
+        });
+        if (!ligada) throw new BadRequestException("Esta equipa não disputa essa competição");
+
         const match = await db.match.create({
           data: {
             academyId: ctx.academyId,
@@ -1511,6 +1575,7 @@ export class AcademyService {
             venue: dto.venue.trim(),
             opponent: dto.opponent.trim(),
             isHome: dto.isHome ?? true,
+            competitionId: dto.competitionId,
           },
           select: {
             id: true, teamId: true, startsAt: true, endsAt: true, venue: true,
@@ -2042,6 +2107,538 @@ export class AcademyService {
       .filter((p): p is Permission => DELEGATABLE.has(p as Permission))
       .filter((p) => can(ctx, p));
   }
+
+  /* ------------------------------------------------------------------------ */
+
+  /**
+   * Apaga a academia e tudo o que lhe pertence.
+   *
+   * ## As três travas, e porque são três
+   *
+   * 1. **Permissão própria** (`academy:delete`) — presidência e direção por
+   *    omissão. Não é `settings:write`: mudar a cor do clube e apagar a casa não
+   *    são a mesma decisão.
+   * 2. **O nome escrito à mão.** Quem apaga tem de escrever o nome do clube tal
+   *    como ele está. Não é cerimónia: é a diferença entre carregar num botão
+   *    vermelho por distração e ter mesmo tomado a decisão. É a prática que a
+   *    GitHub e a Stripe usam para o mesmo tipo de acção, e pela mesma razão.
+   * 3. **O registo é escrito antes.** A seguir não há a quem perguntar o que
+   *    aconteceu — a academia deixou de existir. Ver a migração `apagar_clube`.
+   *
+   * ## O que desaparece, e o que não
+   *
+   * As linhas todas vão por cascata (`onDelete: Cascade` a partir de `Academy`)
+   * e **os ficheiros vão com elas**: fotografias de atletas e de staff, vídeos
+   * de scouting, imagens de exercícios, o símbolo do clube. Apagar as linhas e
+   * deixar as fotografias de crianças no armazenamento seria apagar o índice e
+   * guardar o livro — exactamente o contrário do que quem pede o apagamento
+   * está a pedir.
+   *
+   * As **contas** (`User`) ficam. Uma pessoa não é da academia: o mesmo email
+   * pode treinar noutro clube desta plataforma, e apagar a conta levaria essa
+   * ligação atrás. O que desaparece é o vínculo (`Membership`), que é o que
+   * pertence a este clube.
+   */
+  async deleteAcademy(ctx: RequestContext, confirmName: string, ip?: string) {
+    if (!can(ctx, "academy:delete")) {
+      throw new ForbiddenException("Sem permissão para apagar o clube");
+    }
+
+    const academy = await this.prisma.runAs(ctx.academyId, (db) =>
+      db.academy.findFirst({ where: { id: ctx.academyId }, select: { id: true, name: true, slug: true } }),
+    );
+    if (!academy) throw new NotFoundException("Academia não encontrada");
+
+    // Comparação tolerante ao que um humano escreve — espaços a mais, maiúsculas
+    // — e intolerante ao que interessa: tem de ser **este** clube.
+    const normalizar = (v: string) => v.trim().replace(/\s+/g, " ").toLocaleLowerCase("pt");
+    if (normalizar(confirmName) !== normalizar(academy.name)) {
+      throw new BadRequestException(`Para confirmar, escreve o nome do clube exactamente: ${academy.name}`);
+    }
+
+    /*
+     * O que se vai perder, contado antes de se perder.
+     *
+     * Vai para o registo da plataforma: é o que permite responder a "o que é que
+     * este clube tinha?" a um telefonema no dia seguinte, e é o número que diz
+     * se foi um clube a sério a sair ou uma conta de teste a ser limpa.
+     */
+    const contagens = await this.prisma.runAs(ctx.academyId, async (db) => ({
+      atletas: await db.athlete.count(),
+      equipas: await db.team.count(),
+      pessoas: await db.membership.count(),
+      socios: await db.member.count(),
+      pagamentos: await db.payment.count(),
+    }));
+
+    // As chaves dos ficheiros, também antes: depois da cascata não há por onde
+    // as descobrir, e ficavam órfãs no armazenamento para sempre.
+    const ficheiros = await this.prisma.runAs(ctx.academyId, async (db) => {
+      const atletas = await db.athlete.findMany({ where: { photoKey: { not: null } }, select: { photoKey: true } });
+      const staff = await db.membership.findMany({
+        where: { user: { photoKey: { not: null } } },
+        select: { user: { select: { photoKey: true } } },
+      });
+      const videos = await db.prospectVideo.findMany({
+        where: { storageKey: { not: "" } },
+        select: { storageKey: true },
+      });
+      const exercicios = await db.exercise.findMany({ select: { imageKeys: true } });
+      return {
+        fotos: [
+          ...atletas.map((a) => a.photoKey!),
+          ...staff.map((m) => m.user.photoKey!).filter(Boolean),
+        ],
+        videos: videos.map((v) => v.storageKey),
+        imagens: exercicios.flatMap((e) => e.imageKeys),
+      };
+    });
+
+    /*
+     * O registo primeiro, e fora do contexto do tenant.
+     *
+     * `AuditLog` é da plataforma e não tem `academyId` — sobrevive à cascata de
+     * propósito. A ligação da aplicação só tem `INSERT` nela (ver a migração):
+     * escreve, não lê nem reescreve.
+     */
+    await this.prisma.$executeRaw`
+      INSERT INTO "AuditLog" ("id", "action", "targetType", "targetId", "detail", "ip", "createdAt")
+      VALUES (
+        ${`del_${Date.now().toString(36)}${Math.random().toString(36).slice(2, 8)}`},
+        'academy.deleted',
+        'academy',
+        ${academy.id},
+        ${JSON.stringify({
+          slug: academy.slug,
+          name: academy.name,
+          porMembershipId: ctx.membershipId,
+          porUserId: ctx.userId,
+          ...contagens,
+        })}::jsonb,
+        ${ip ?? null},
+        now()
+      )`;
+
+    // A cascata leva tudo o resto — ver `onDelete: Cascade` a partir de `Academy`.
+    await this.prisma.runAs(ctx.academyId, (db) => db.academy.delete({ where: { id: ctx.academyId } }));
+
+    /*
+     * Os ficheiros por fim, e sem travar o pedido se falharem.
+     *
+     * O clube já não existe: um erro do armazenamento aqui não pode devolver
+     * "não foi possível apagar" a quem acabou de ver a base ficar limpa. Fica no
+     * log do servidor, e um ficheiro órfão resolve-se por varredura.
+     */
+    const limpar = async (bucket: string, keys: string[]) => {
+      for (const key of keys) {
+        try {
+          await this.storage.remove(bucket, key);
+        } catch {
+          /* já registado abaixo pela contagem — nada a fazer no pedido */
+        }
+      }
+    };
+    await limpar("fotos", ficheiros.fotos);
+    await limpar("scouting", ficheiros.videos);
+    await limpar("exercicios", ficheiros.imagens);
+
+    return { ok: true, name: academy.name, ...contagens };
+  }
+
+
+  /**
+   * Apagar uma equipa.
+   *
+   * ## O que desaparece, e o que fica
+   *
+   * Desaparecem os **treinos** e os **jogos** dessa equipa, por cascata — e com
+   * eles as presenças e as fichas de jogo, que são dados de atletas. Por isso o
+   * diálogo diz quantos são **antes**, com números reais: "esta acção é
+   * irreversível" não informa ninguém; "leva 34 treinos e 12 jogos com ficha
+   * preenchida" informa.
+   *
+   * Ficam:
+   *
+   *  - **Os atletas.** Perdem a ligação (`TeamMembership`) e voltam a estar por
+   *    atribuir. Uma pessoa não pertence a uma linha de organização do clube.
+   *  - **O staff.** Mesma coisa: perde a atribuição, não a conta.
+   *  - **Os modelos de jogo e as bolas paradas** (`SetNull`) — passam a ser do
+   *    clube em vez de morrerem com o escalão que os estreou.
+   *  - **As mensalidades.** O plano de preços é **desligado** da equipa, não
+   *    apagado: dinheiro cobrado não se apaga por arrumação de escalões, e as
+   *    cobranças emitidas continuam a apontar para onde apontavam.
+   *
+   * A confirmação pelo nome é a mesma do resto: escrever à mão o que se vai
+   * apagar é o que separa uma decisão de um clique distraído.
+   */
+  async deleteTeam(ctx: RequestContext, id: string, confirmName: string) {
+    if (!can(ctx, "team:delete")) throw new ForbiddenException("Sem permissão para apagar equipas");
+
+    return this.prisma.runAs(ctx.academyId, async (db) => {
+      const team = await db.team.findFirst({ where: { id }, select: { id: true, name: true } });
+      if (!team) throw new NotFoundException("Equipa não encontrada");
+
+      const normalizar = (v: string) => v.trim().replace(/\s+/g, " ").toLocaleLowerCase("pt");
+      if (normalizar(confirmName) !== normalizar(team.name)) {
+        throw new BadRequestException(`Para confirmar, escreve o nome da equipa exactamente: ${team.name}`);
+      }
+
+      // O que se perde, contado antes de se perder — é o que a resposta devolve
+      // e o que o diálogo mostrou antes de perguntar.
+      const perdas = {
+        atletas: await db.teamMembership.count({ where: { teamId: id } }),
+        treinos: await db.trainingSession.count({ where: { teamId: id } }),
+        jogos: await db.match.count({ where: { teamId: id } }),
+        eventos: await db.calendarEvent.count({ where: { teamId: id } }),
+      };
+
+      /*
+       * O plano de preços desliga-se, não se apaga.
+       *
+       * `SubscriptionPlan.team` não tem `onDelete` — logo é RESTRICT, e apagar
+       * uma equipa com plano rebentava com um erro de chave estrangeira que não
+       * dizia nada a ninguém. Desligar resolve **e** é o comportamento certo: o
+       * plano e as cobranças que dele saíram são história financeira do clube.
+       */
+      await db.subscriptionPlan.updateMany({ where: { teamId: id }, data: { teamId: null } });
+
+      await db.team.delete({ where: { id } });
+
+      return { ok: true, name: team.name, ...perdas };
+    });
+  }
+
+  /**
+   * O que uma equipa leva atrás se for apagada.
+   *
+   * Perguntado **antes** de apagar, para o diálogo poder dizer números em vez de
+   * avisos genéricos. Só leitura: quem tem `team:read` pode ver o peso de uma
+   * equipa sem ter de poder apagá-la.
+   */
+  async teamDeletionImpact(ctx: RequestContext, id: string) {
+    if (!can(ctx, "team:read")) throw new ForbiddenException("Sem acesso a equipas");
+
+    return this.prisma.runAs(ctx.academyId, async (db) => {
+      const team = await db.team.findFirst({ where: { id }, select: { id: true, name: true } });
+      if (!team) throw new NotFoundException("Equipa não encontrada");
+
+      return {
+        name: team.name,
+        atletas: await db.teamMembership.count({ where: { teamId: id } }),
+        treinos: await db.trainingSession.count({ where: { teamId: id } }),
+        // Os que carregam histórico de atletas — é a parte que dói perder.
+        treinosRegistados: await db.trainingSession.count({
+          where: { teamId: id, attendanceClosedAt: { not: null } },
+        }),
+        jogos: await db.match.count({ where: { teamId: id } }),
+        jogosComFicha: await db.match.count({ where: { teamId: id, ourScore: { not: null } } }),
+        eventos: await db.calendarEvent.count({ where: { teamId: id } }),
+        planos: await db.subscriptionPlan.count({ where: { teamId: id } }),
+      };
+    });
+  }
+
+
+  /**
+   * As provas que uma equipa disputa.
+   *
+   * Substitui a lista por inteiro — é como a interface trabalha (marcar e
+   * desmarcar caixas), e reconciliar diferenças de uma lista de meia dúzia era
+   * complexidade a troco de nada.
+   *
+   * `team:write` e não `settings:write`: escolher em que provas o Sub-13 joga é
+   * decisão de quem gere a equipa. **Criar** a prova no catálogo é que é das
+   * definições — e é por isso que aqui só se ligam provas que já existem.
+   */
+  async setTeamCompetitions(ctx: RequestContext, teamId: string, competitionIds: string[]) {
+    if (!can(ctx, "team:write")) throw new ForbiddenException("Sem permissão para editar equipas");
+
+    return this.prisma.runAs(ctx.academyId, async (db) => {
+      const team = await db.team.findFirst({ where: { id: teamId }, select: { id: true } });
+      if (!team) throw new NotFoundException("Equipa não encontrada");
+
+      const validos = await this.validCompetitionIds(db, competitionIds);
+
+      /*
+       * Apagar e recriar, mas só o que muda.
+       *
+       * Um `deleteMany` seguido de `createMany` funcionaria — mas apagaria e
+       * recriaria linhas que ficam iguais, e com elas os ids. Aqui não faz
+       * diferença nenhuma hoje; faria no dia em que algo apontar para esta
+       * ligação. Comparar é barato numa lista desta dimensão.
+       */
+      const atuais = await db.teamCompetition.findMany({ where: { teamId }, select: { competitionId: true } });
+      const antes = new Set(atuais.map((c) => c.competitionId));
+      const depois = new Set(validos);
+
+      const aRemover = [...antes].filter((id) => !depois.has(id));
+      const aJuntar = [...depois].filter((id) => !antes.has(id));
+
+      if (aRemover.length) {
+        await db.teamCompetition.deleteMany({ where: { teamId, competitionId: { in: aRemover } } });
+      }
+      if (aJuntar.length) {
+        await db.teamCompetition.createMany({ data: aJuntar.map((competitionId) => ({ teamId, competitionId })) });
+      }
+
+      const finais = await db.teamCompetition.findMany({
+        where: { teamId },
+        select: { competition: { select: { id: true, label: true } } },
+      });
+      return { competitions: finais.map((c) => ({ id: c.competition.id, label: c.competition.label })) };
+    });
+  }
+
+  /**
+   * A prova "Amigável" desta academia — a existente, ou uma nova.
+   *
+   * Procura-se pelo nome porque é assim que ela é identificada em todo o lado
+   * (semeadura, migração, criação de equipas). Nasce `isSystem`: não se apaga
+   * nem se renomeia, porque é a rede que garante que há sempre uma competição
+   * para escolher, e uma rede que se pode remover não é rede.
+   */
+  private async ensureAmigavel(db: ScopedClient, academyId: string): Promise<string> {
+    const existente = await db.catalogItem.findFirst({
+      where: { kind: "competitions", label: AMIGAVEL },
+      select: { id: true },
+    });
+    if (existente) return existente.id;
+
+    const criada = await db.catalogItem.create({
+      data: {
+        academyId,
+        kind: "competitions",
+        label: AMIGAVEL,
+        isSystem: true,
+        order: 0,
+        updatedAt: new Date(),
+      },
+      select: { id: true },
+    });
+    return criada.id;
+  }
+
+  /**
+   * Os ids que são mesmo provas desta academia.
+   *
+   * O catálogo é uma tabela só, partilhada por locais, balneários, tipos de
+   * evento e provas — por isso não chega verificar que o id existe: tem de ser
+   * do `kind` certo. Sem isto, ligava-se uma equipa a um balneário.
+   */
+  private async validCompetitionIds(db: ScopedClient, ids: string[] | undefined): Promise<string[]> {
+    const pedidos = [...new Set(ids ?? [])];
+    if (pedidos.length === 0) return [];
+
+    const encontrados = await db.catalogItem.findMany({
+      where: { id: { in: pedidos }, kind: "competitions" },
+      select: { id: true },
+    });
+    if (encontrados.length !== pedidos.length) {
+      throw new BadRequestException("Competição desconhecida");
+    }
+    return encontrados.map((c) => c.id);
+  }
+
+
+  /**
+   * Editar um evento — treino, jogo ou evento genérico.
+   *
+   * ## Porque é que isto não é o `createEvent` ao contrário
+   *
+   * Porque um evento **não muda de natureza**. O tipo decide em que tabela vive
+   * (`TrainingSession`, `Match`, `CalendarEvent`) e a equipa decide de quem é;
+   * mudar qualquer um dos dois não é editar, é apagar e criar outro — com outra
+   * folha de presenças, outra convocatória, outro histórico. Aqui muda-se o
+   * **quando**, o **onde** e o que é próprio de cada tipo.
+   *
+   * ## O que se verifica, e porquê
+   *
+   * O mesmo que na criação, porque as regras não são da criação — são do
+   * domínio: o âmbito de quem edita, o fim depois do início, a equipa sem dois
+   * eventos à mesma hora, e a prova a ser uma das que a equipa disputa. Um
+   * caminho de escrita que não as repita é um caminho por onde elas se
+   * contornam.
+   */
+  async updateEvent(
+    ctx: RequestContext,
+    id: string,
+    dto: {
+      title?: string;
+      startsAt?: string;
+      endsAt?: string;
+      venue?: string;
+      dressingRoom?: string | null;
+      opponent?: string;
+      isHome?: boolean;
+      competitionId?: string;
+    },
+  ) {
+    if (!can(ctx, "calendar:write")) throw new ForbiddenException("Sem permissão para alterar eventos");
+    const scope = teamScopeFilter(ctx);
+
+    /** As datas, quando vêm — e as duas juntas, porque uma sem a outra não valida. */
+    const quando = (startsAtActual: Date, endsAtActual: Date) => {
+      const startsAt = dto.startsAt ? new Date(dto.startsAt) : startsAtActual;
+      const endsAt = dto.endsAt ? new Date(dto.endsAt) : endsAtActual;
+      if (Number.isNaN(startsAt.getTime()) || Number.isNaN(endsAt.getTime())) {
+        throw new BadRequestException("Datas inválidas");
+      }
+      if (endsAt <= startsAt) throw new BadRequestException("O fim tem de ser depois do início");
+      return { startsAt, endsAt };
+    };
+
+    return this.prisma.runAs(ctx.academyId, async (db) => {
+      /* ---------------------------------------------------------- treino --- */
+      const training = await db.trainingSession.findFirst({
+        where: { id },
+        select: { id: true, teamId: true, startsAt: true, endsAt: true },
+      });
+      if (training) {
+        if (scope && !scope.in.includes(training.teamId)) {
+          throw new ForbiddenException("Evento fora do teu âmbito");
+        }
+        const { startsAt, endsAt } = quando(training.startsAt, training.endsAt);
+
+        // A mesma equipa não treina duas vezes à mesma hora — a mesma regra da
+        // criação, e o mesmo motivo: o índice por baixo rebentava com um P2002
+        // opaco em vez de uma frase que se percebe.
+        if (dto.startsAt) {
+          const clash = await db.trainingSession.findFirst({
+            where: { teamId: training.teamId, startsAt, status: { not: "CANCELLED" }, id: { not: id } },
+            select: { id: true },
+          });
+          if (clash) throw new BadRequestException("Esta equipa já tem um treino marcado a esta hora");
+        }
+
+        const updated = await db.trainingSession.update({
+          where: { id },
+          data: {
+            startsAt,
+            endsAt,
+            ...(dto.venue !== undefined ? { venue: dto.venue.trim() } : {}),
+            ...(dto.dressingRoom !== undefined ? { dressingRoom: dto.dressingRoom?.trim() || null } : {}),
+          },
+          select: {
+            id: true, teamId: true, startsAt: true, endsAt: true, venue: true,
+            dressingRoom: true, status: true,
+            coach: { select: { id: true, user: { select: { name: true } } } },
+          },
+        });
+        const daEquipa = (await this.headCoaches(db, [updated.teamId])).get(updated.teamId);
+        return {
+          id: updated.id,
+          teamId: updated.teamId,
+          kind: "TRAINING" as const,
+          title: "Treino",
+          startsAt: updated.startsAt,
+          endsAt: updated.endsAt,
+          venue: updated.venue,
+          dressingRoom: updated.dressingRoom,
+          cancelled: updated.status === "CANCELLED",
+          coachId: updated.coach?.id ?? daEquipa?.id ?? null,
+          coachName: updated.coach?.user.name ?? daEquipa?.name ?? null,
+        };
+      }
+
+      /* ------------------------------------------------------------ jogo --- */
+      const match = await db.match.findFirst({
+        where: { id },
+        select: { id: true, teamId: true, startsAt: true, endsAt: true, status: true },
+      });
+      if (match) {
+        if (scope && !scope.in.includes(match.teamId)) {
+          throw new ForbiddenException("Evento fora do teu âmbito");
+        }
+        /*
+         * Um jogo já disputado não se remarca.
+         *
+         * O resultado aconteceu, e mexer-lhe na data reescreveria o histórico da
+         * equipa — os minutos jogados, a ficha, a forma recente. Corrigir um
+         * resultado é outra coisa, e tem o seu caminho.
+         */
+        if (match.status === "PLAYED") {
+          throw new BadRequestException("Um jogo já disputado não se edita — corrige a ficha do jogo");
+        }
+        const { startsAt, endsAt } = quando(match.startsAt, match.endsAt);
+
+        if (dto.startsAt) {
+          const clash = await db.match.findFirst({
+            where: { teamId: match.teamId, startsAt, status: { not: "CANCELLED" }, id: { not: id } },
+            select: { opponent: true },
+          });
+          if (clash) throw new BadRequestException(`Esta equipa já tem um jogo com ${clash.opponent} a esta hora`);
+        }
+
+        // A prova continua a ter de ser uma das da equipa — ver `createSingleEvent`.
+        if (dto.competitionId) {
+          const ligada = await db.teamCompetition.findFirst({
+            where: { teamId: match.teamId, competitionId: dto.competitionId },
+            select: { id: true },
+          });
+          if (!ligada) throw new BadRequestException("Esta equipa não disputa essa competição");
+        }
+
+        if (dto.opponent !== undefined && !dto.opponent.trim()) {
+          throw new BadRequestException("Um jogo precisa de adversário");
+        }
+
+        const updated = await db.match.update({
+          where: { id },
+          data: {
+            startsAt,
+            endsAt,
+            ...(dto.venue !== undefined ? { venue: dto.venue.trim() } : {}),
+            ...(dto.opponent !== undefined ? { opponent: dto.opponent.trim() } : {}),
+            ...(dto.isHome !== undefined ? { isHome: dto.isHome } : {}),
+            ...(dto.competitionId !== undefined ? { competitionId: dto.competitionId } : {}),
+          },
+          select: {
+            id: true, teamId: true, startsAt: true, endsAt: true, venue: true,
+            opponent: true, isHome: true, status: true,
+            coach: { select: { id: true, user: { select: { name: true } } } },
+          },
+        });
+        const daEquipa = (await this.headCoaches(db, [updated.teamId])).get(updated.teamId);
+        return {
+          id: updated.id,
+          teamId: updated.teamId,
+          kind: "MATCH" as const,
+          title: `${updated.isHome ? "vs" : "@"} ${updated.opponent}`,
+          startsAt: updated.startsAt,
+          endsAt: updated.endsAt,
+          venue: updated.venue,
+          dressingRoom: null,
+          cancelled: updated.status === "CANCELLED",
+          coachId: updated.coach?.id ?? daEquipa?.id ?? null,
+          coachName: updated.coach?.user.name ?? daEquipa?.name ?? null,
+        };
+      }
+
+      /* ------------------------------------------------ evento genérico --- */
+      const ev = await db.calendarEvent.findFirst({
+        where: { id },
+        select: { id: true, teamId: true, startsAt: true, endsAt: true },
+      });
+      if (!ev) throw new NotFoundException("Evento não encontrado");
+      if (scope && (ev.teamId === null || !scope.in.includes(ev.teamId))) {
+        throw new ForbiddenException("Evento fora do teu âmbito");
+      }
+      const { startsAt, endsAt } = quando(ev.startsAt, ev.endsAt);
+
+      const updated = await db.calendarEvent.update({
+        where: { id },
+        data: {
+          startsAt,
+          endsAt,
+          ...(dto.title !== undefined && dto.title.trim() ? { title: dto.title.trim() } : {}),
+          ...(dto.venue !== undefined ? { venue: dto.venue.trim() } : {}),
+          ...(dto.dressingRoom !== undefined ? { dressingRoom: dto.dressingRoom?.trim() || null } : {}),
+        },
+        select: EVENT_SELECT,
+      });
+      return serializeEvent(updated, await this.headCoaches(db, updated.teamId ? [updated.teamId] : []));
+    });
+  }
 }
 
 /* ---------------------------------------------------------------------------- */
@@ -2219,4 +2816,8 @@ function listarHistoria(itens: { n: number; um: string; muitos: string }[]): str
   const partes = itens.map((i) => `${i.n} ${i.n === 1 ? i.um : i.muitos}`);
   if (partes.length === 1) return partes[0];
   return partes.slice(0, -1).join(", ") + " e " + partes[partes.length - 1];
+
+  /* ------------------------------------------------------------------------ */
+  /* Apagar o clube                                                            */
+
 }

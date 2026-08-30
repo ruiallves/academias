@@ -13,7 +13,7 @@ Para o painel de quem é dono do SaaS, à parte de tudo o resto deste documento,
 |---|---|
 | Monorepo | npm workspaces: `apps/console`, `apps/family`, `apps/api`, `apps/platform`, `packages/ui` |
 | Sistema de design | tokens partilhados, Tailwind v4 em CSS, Instrument Sans + Geist Mono |
-| Permissões | 26 permissões, 8 papéis, âmbito por equipa/atleta — cliente e servidor, gémeos |
+| Permissões | 31 permissões, 8 papéis, âmbito por equipa/atleta — cliente e servidor, gémeos |
 | Dados reais | `npm run seed`: 1 academia, 2 equipas, 9 atletas, 5 pessoas de staff, 2 famílias, 3 jogos |
 
 **A consola lê a base de dados a sério.** `data/demo.ts` foi apagado — não existe
@@ -22,6 +22,46 @@ leituras em paralelo) e os ecrãs continuam a escrever `teams.filter(...)` como
 sempre escreveram, através de *live bindings* de ES modules. Onde ainda não há
 endpoint — avaliações, histórico de equipas — os dados vêm **vazios**, nunca
 inventados: um ecrã que diz "ainda não há avaliações" é honesto.
+
+**A sessão renova-se sozinha.** O token do Supabase dura **uma hora**, e o
+`refreshToken` era guardado desde sempre sem nunca ser usado — o resultado
+aparecia todos os dias a quem tem a consola aberta ao trabalho: ao fim de uma
+hora cada pedido voltava 401, o arranque engolia-os em silêncio (`soft` em
+`lib/store.ts`), os ecrãs ficavam vazios sem explicação, e a pessoa recarregava
+a página para perceber — para depois ser mandada entrar outra vez.
+
+`getAccessToken()` passa a verificar a validade antes de entregar o token e a
+trocá-lo quando falta menos de um minuto; um 401 que escape (relógio adiantado,
+token revogado noutro sítio) renova e **repete o pedido uma vez**. As renovações
+são coalescidas numa só — o arranque dispara nove pedidos em paralelo e não
+precisa de nove renovações iguais. Uma falha de **rede** não desliga ninguém: só
+uma recusa do Supabase (4xx) termina a sessão, e aí volta-se à porta do clube em
+vez de ficar às escuras. As cinco funções de pedido passaram a uma (`pedir`),
+porque a renovação em cinco cópias era a garantia de uma ficar para trás — como
+já tinha acontecido com o `Content-Type`, que duas delas não punham.
+
+É a mesma solução nas **três** apps — consola, famílias e painel da plataforma —
+de propósito: três apps a resolver o mesmo problema de três maneiras são três
+maneiras de o ter partido. Verificado por `npm run test:refresh` (13), que prova
+as duas pontas: que um token fora de validade é mesmo recusado pela nossa API, e
+que o refresh troca por um par novo que ela aceita.
+
+**Ninguém fala com a API por fora.** `lib/callups.ts` tinha um cliente HTTP
+próprio que lia a sessão de `sessionStorage` — a sessão mudou-se para
+`localStorage` há muito, o `http.ts` acompanhou, e esta cópia ficou a ler um
+sítio vazio: **submeter uma convocatória ia sem token**, e o servidor respondia
+"Falta o token de sessão". O problema não era o nome do armazenamento; era haver
+dois sítios a saber a mesma coisa, e o segundo não acompanhar. Com o `http.ts` a
+ganhar responsabilidades (renovar, repetir no 401, declarar o `x-app`), cada
+cópia paralela é tudo isso a menos, em silêncio.
+
+`npm run check:http` é a rede — corre dentro do `typecheck`, porque um cliente
+paralelo **compila na perfeição** e o compilador nunca o apanharia. Falha se
+alguém voltar a chamar a nossa API fora do `lib/http.ts` de cada app, ou a ler a
+sessão do armazenamento fora do `lib/session.ts`. As excepções legítimas estão
+listadas com o porquê de cada uma: os carregamentos directos para o Supabase
+(desenho de propósito — os bytes não passam pela API) e os endpoints públicos de
+convite, de quem ainda não tem conta.
 
 **Autenticação de ponta a ponta.** Entra-se pela página da academia
 (`GET /l/:slug`), que autentica contra o Supabase e entrega a sessão à consola —
@@ -54,7 +94,7 @@ adapta-se por ausência — sem um `if (desporto === …)` em lado nenhum.
 | **Ficha de staff** | contactos, histórico de equipas por época, atividade de quem treina, e **acesso configurável pessoa a pessoa** |
 | **Calendário** | agenda + grelha de mês, cor por escalão, criar eventos, detalhe de jogo |
 | **Presenças** | três blocos por urgência — por registar, registados, a seguir — em vez de uma tabela única |
-| **Convocatórias** | montar e submeter a lista de um jogo, com tecto configurável por equipa e convite de atletas de escalões inferiores |
+| **Convocatórias** | montar e submeter a lista de um jogo, com tecto configurável por equipa, convite de atletas de escalões inferiores e folha de convocatória para imprimir |
 | **Mensalidades** | por período ou todos, dívida real de sempre (não só do mês) |
 | **Comunicação** | avisos com taxa de leitura |
 | **Avaliações** | plantel por período, editor contínuo, publicação em lote — ver *Avaliações e relatórios* |
@@ -95,6 +135,26 @@ lesão não conhece escalões.
 existir uma baixa sem alta, o atleta aparece marcado na ficha, na lista, no
 plantel e em "Precisa de atenção"; **não pode ser convocado** (o servidor recusa,
 com o nome do atleta no erro) e **não conta como falta** no registo de presenças.
+
+O aviso chega ao cliente porque o `/api/athletes` manda `availability` e
+`restriction` em cada atleta, e o store os converte na entrada de `clinical` que
+`activeRestriction` lê. **O store deitava-os fora**, e o efeito era o pior
+possível: `athlete.clinical` ficava sempre vazio, ninguém aparecia bloqueado no
+plantel, e o treinador montava a convocatória inteira para levar com "a Matilde
+está de baixa" ao guardar — com um nome que ele não fazia ideia de porque estava
+ali. A interface já tinha o bloqueio e a etiqueta com o motivo; só nunca recebia
+os dados.
+
+**O retorno previsto que já passou** deixa de parecer uma avaria. Uma baixa só
+termina com alta — o previsto é uma estimativa do departamento clínico, e deixar
+a data curar o atleta sozinha seria inventar um acto médico. Mas quando essa
+data fica para trás, o motivo do bloqueio passa a dizer *"Falta dar alta ·
+retorno previsto 27/08"* em vez de repetir o diagnóstico: a regra é a mesma, e o
+treinador percebe o que falta e a quem pedir.
+
+Verificado por `npm run test:callup-blocks` (11), que cobre as duas metades — a
+recusa do servidor, e o `/api/athletes` a trazer a disponibilidade a um
+treinador, que é do que a interface precisa para avisar **antes**.
 
 **Quem lê o quê.** `clinical:status` (estado e retoma) chega a toda a gente;
 `clinical:read` (diagnóstico e notas) chega à direção, equipa técnica e família;
@@ -139,6 +199,33 @@ O tecto de convocados (`Team.maxCallUps`) é configurável por equipa, ali mesmo
 ecrã. Um convocado emprestado aparece marcado como tal na convocatória e na
 própria ficha ("Emprestado ao Sub-13"), e o pai recebe uma notificação concreta —
 adversário, hora, sítio — não um "tens uma notificação".
+
+### A folha para levar para o campo
+
+No dia do jogo o telemóvel não serve para nada: o treinador precisa de papel onde
+cada encarregado assina que entregou o miúdo e onde se aponta quem vai no carro de
+quem. **Exportar** — no ecrã de Convocatórias e na página do jogo — gera essa folha
+e abre o diálogo de impressão do navegador, onde "Guardar como PDF" faz o ficheiro.
+
+**Só depois de submetida.** A folha é o documento que as famílias assinam, e a lista
+que elas receberam é a submetida; um rascunho ainda muda — sai o papel, entra um
+lesionado, e no ponto de encontro há assinaturas por um plantel que já não é aquele.
+Os dois ecrãs só mostram o botão com a lista fechada, e a regra em si vive à entrada
+de `printCallUpSheet`, para um terceiro ecrã não a descobrir sozinho.
+Não entrou biblioteca de PDF nenhuma: a folha é HTML num `iframe` escondido, e é o
+motor de impressão que pagina, repete o cabeçalho da tabela na segunda página e usa
+as fontes do produto. Ver `lib/callup-sheet.ts`.
+
+A folha tem o que o papel de sempre tem — número, nome, transporte, assinatura,
+observações, e a linha do treinador — e o que o papel não pode ter: quem já
+confirmou na app (só depois de submetida), a equipa de origem de um convidado, e o
+próximo treino, que sai do calendário em vez de se copiar à mão.
+
+A logística de um dia — prova, jornada, ponto e hora de encontro — pergunta-se no
+diálogo e **não** subiu ao modelo do jogo: seriam campos vazios em novecentos jogos
+por época. O que se repete fica guardado por equipa no navegador de quem imprime, e
+as horas guardam-se em minutos antes do apito, para servirem um jogo às 10:00 e
+outro às 15:00.
 
 Verificado por `npm run test:callups` (22, o essencial) e
 `npm run test:guest-callups` (11, a regra de subida e o que se pode ver de fora).
@@ -340,6 +427,97 @@ relação, como `AttendanceRecord`.
 
 Verificado por `npm run test:training` (33) — visibilidade, âmbito, autoria,
 favoritos, plano com blocos, arquivar-em-vez-de-apagar, e as recusas todas.
+
+## Apagar equipas e clubes
+
+Duas permissões novas, ambas na presidência e na direção por omissão e ambas
+delegáveis: `team:delete` e `academy:delete`. À parte de `team:write` e de
+`settings:write` de propósito — montar um plantel e desmanchar um escalão não
+são a mesma decisão, nem mudar a cor do clube e apagar a casa.
+
+**A confirmação é o nome escrito à mão**, verificado no servidor (uma
+confirmação só no browser não é confirmação nenhuma). A comparação tolera
+espaços e maiúsculas e não tolera o que interessa: tem de ser aquele.
+
+**Números, não avisos.** O diálogo pergunta primeiro ao servidor o que se vai
+perder e di-lo — *34 treinos, 12 com presenças registadas; 8 jogos, 5 com ficha
+preenchida*. "Esta acção é irreversível" lê-se em todo o lado e não pára
+ninguém. E diz, com o mesmo destaque, **o que fica** — sem isso ninguém apaga
+uma equipa de teste com medo de apagar as pessoas.
+
+Ao apagar uma equipa: os **atletas ficam** (perdem a ligação e voltam a estar
+por atribuir), o staff fica, os modelos de jogo e as bolas paradas passam a ser
+do clube (`SetNull`), e o **plano de preços desliga-se em vez de morrer** —
+`SubscriptionPlan.team` não tem `onDelete`, era RESTRICT, e apagar uma equipa
+com plano rebentava com um erro de chave estrangeira; desligar resolve **e** é o
+comportamento certo, porque dinheiro cobrado não se apaga por arrumação de
+escalões.
+
+Ao apagar o clube: cai tudo por cascata **e os ficheiros vão com as linhas** —
+fotografias, vídeos de scouting, imagens de exercícios. Apagar o índice e
+guardar o livro era o contrário do que quem pede o apagamento está a pedir. As
+**contas** (`User`) ficam: a mesma pessoa pode treinar noutro clube da
+plataforma; o que desaparece é o vínculo. O registo vai para o `AuditLog` da
+plataforma **antes** de apagar (a seguir não há a quem perguntar), e a ligação
+da aplicação recebeu só `INSERT` nessa tabela — um log que o auditado pudesse
+reescrever não é um log.
+
+Verificado por `npm run test:delete-team` (14) e `npm run test:delete-academy`
+(19), que cobrem sobretudo as recusas e o que **não** pode desaparecer.
+
+## Competições
+
+O quadro competitivo, da equipa ao papel impresso: a **equipa** diz que provas
+disputa, o **jogo** escolhe uma dessas, e a **convocatória** imprime-a sem
+ninguém escrever nada.
+
+**Vivem no catálogo** (`kind: "competitions"`), ao lado dos locais e dos tipos de
+evento — é exactamente o que os catálogos são: uma lista de nomes que o clube
+gere, por modalidade. Uma tabela própria traria de volta os quatro ecrãs de
+gestão que já existem. Criam-se nas Definições **ou ali mesmo** ao montar a
+equipa: o calendário competitivo aparece em Setembro com a equipa a nascer, e
+mandar alguém a Definições a meio disso é garantir que fecha o diálogo e não
+volta.
+
+**A ligação equipa–prova é uma tabela** (`TeamCompetition`) e não uma lista de
+ids: uma lista de texto não sabe que a prova foi apagada e ficava a apontar para
+nada. `Match.competitionId` é opcional e `SetNull` — um amigável não pertence a
+prova nenhuma, e apagar a prova do catálogo não pode apagar os jogos que se
+disputaram nela.
+
+**Um jogo tem sempre prova, e é obrigatória.** É a convocatória que a exige —
+herda-a do jogo e imprime-a — e um jogo sem prova obrigava quem exporta a
+escrevê-la à mão, que era o remendo que isto veio substituir. A pergunta tem
+sempre resposta porque **toda a equipa nasce com "Amigável"**: um jogo que não é
+de nenhuma prova é um amigável, e isso diz-se em vez de se deixar em branco.
+"Amigável" é `isSystem` — não se apaga nem se renomeia, porque é a rede que
+garante que há sempre uma opção, e uma rede removível não é rede.
+
+**A prova tem de ser da equipa.** A lista que o calendário oferece é a do escalão
+escolhido, e o servidor confirma-a: marcar um jogo do Sub-13 no campeonato de
+seniores é um erro de dedo que ninguém apanharia depois. Trocar de equipa no
+diálogo faz a escolha cair na primeira prova da equipa nova — em vez de a limpar
+para vazio, que travava o botão sem dizer porquê.
+
+A migração `amigavel` criou-a nas academias que já existiam e ligou-a a **todas**
+as equipas: sem isso, tornar a competição obrigatória bloqueava quem já usa o
+produto, e uma funcionalidade nova que trava o trabalho não é uma funcionalidade
+nova. Os jogos já marcados ficam sem prova, e é o correcto — inventar-lhes uma
+seria escrever no registo do clube um facto que ninguém afirmou; a folha continua
+a deixar escrevê-la à mão nesses.
+
+**Arquivar uma prova não apaga a história**: sai da lista de onde se escolhe para
+marcar um jogo novo, e fica nos jogos que já se disputaram nela.
+
+Isto substitui um remendo: a folha de convocatória tinha um campo "competição"
+escrito à mão a cada exportação e lembrado no `localStorage` de quem exportava —
+cada treinador tinha a sua versão do nome da prova, e mudar de computador
+perdia-a. Continua editável na folha, porque um jogo sem prova associada (um
+amigável, ou um marcado antes disto existir) tem de poder dizê-lo na mesma.
+
+Verificado por `npm run test:competitions` (19), sobretudo nas recusas — o item
+do catálogo que não é uma prova, a prova que a equipa não disputa, e o treinador
+que não edita o quadro competitivo.
 
 ## A equipa não tem escalão
 

@@ -27,6 +27,26 @@ import { academy } from "@/lib/api";
  *
  * Quem quiser a sessão presa ao separador tem "Terminar sessão" — que agora limpa
  * mesmo, em vez de a deixar viva nos outros.
+ *
+ * ## A sessão renova-se sozinha
+ *
+ * O token de acesso do Supabase dura **uma hora**. O `refreshToken` era guardado
+ * aqui desde sempre e nunca era usado — e o resultado aparecia todos os dias a
+ * quem tem a consola aberta ao trabalho: ao fim de uma hora, cada pedido voltava
+ * 401, o arranque engolia-os em silêncio (ver `soft` em `lib/store.ts`), os ecrãs
+ * ficavam vazios sem explicação, e a pessoa recarregava a página para perceber o
+ * que se passava — para depois ser mandada entrar outra vez.
+ *
+ * Agora `getAccessToken()` verifica a validade antes de entregar o token e
+ * troca-o por um novo quando está a acabar. O refresh do Supabase dura meses e
+ * renova-se a cada uso, por isso uma consola aberta todos os dias mantém-se
+ * ligada indefinidamente. Só se volta à página de entrada quando o próprio
+ * refresh for recusado: password mudada noutro sítio, conta desactivada, ou
+ * meses sem abrir.
+ *
+ * É a mesma solução que a app das famílias já tinha (`apps/family/src/lib/
+ * session.ts`) — de propósito. Duas apps a resolver o mesmo problema de duas
+ * maneiras são duas maneiras de o ter partido.
  */
 
 const KEY = "academia.session";
@@ -62,6 +82,138 @@ export function readSession(): StoredSession | null {
   } catch {
     return null;
   }
+}
+
+/* -------------------------------------------------------------------------- */
+/* Renovação                                                                   */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * Quando é que o token expira, segundo o próprio token.
+ *
+ * Lê-se o `exp` do JWT em vez de guardar a hora à parte: é o servidor que decide
+ * a duração, e um número guardado por nós ficava errado no dia em que essa
+ * duração mudasse. Isto não é validação nenhuma — a assinatura é verificada no
+ * servidor, sempre; aqui só se quer saber se vale a pena tentar.
+ */
+function expiresAt(token: string): number | null {
+  try {
+    const payload = token.split(".")[1];
+    if (!payload) return null;
+    const json = atob(payload.replace(/-/g, "+").replace(/_/g, "/"));
+    const exp = (JSON.parse(json) as { exp?: number }).exp;
+    return typeof exp === "number" ? exp * 1000 : null;
+  } catch {
+    return null;
+  }
+}
+
+/*
+ * Um minuto de folga.
+ *
+ * Renovar no segundo exacto em que expira é chegar tarde: o pedido ainda demora
+ * a viajar, e o relógio de um portátil raramente está ao segundo com o do
+ * servidor. Um minuto cobre as duas coisas sem andar a renovar à toa.
+ */
+const SKEW_MS = 60_000;
+
+/*
+ * Uma renovação de cada vez.
+ *
+ * O arranque da consola dispara nove pedidos em paralelo (ver `loadAcademy`).
+ * Sem isto, todos veriam o token a expirar e pediriam a sua própria renovação:
+ * nove idas ao Supabase para obter a mesma coisa, e nove escritas a competir
+ * pelo mesmo espaço no armazenamento.
+ *
+ * O Supabase **roda** o refresh a cada uso e tolera a reutilização do anterior
+ * durante uns segundos — é o que hoje impede essa corrida de deitar a sessão
+ * fora. Mas essa janela é configuração do projecto e pode ser zero amanhã;
+ * depender dela seria construir sobre uma definição que ninguém aqui controla.
+ * Todos esperam pela mesma renovação, e a questão não se põe.
+ */
+let refreshing: Promise<string | null> | null = null;
+
+function supabaseConfig(): { url: string; anon: string } | null {
+  const url = import.meta.env.VITE_SUPABASE_URL as string | undefined;
+  const anon = import.meta.env.VITE_SUPABASE_ANON_KEY as string | undefined;
+  return url && anon ? { url: url.replace(/\/$/, ""), anon } : null;
+}
+
+/** Grava o par novo, mantendo a academia — o slug não vem no refresh. */
+function saveTokens(accessToken: string, refreshToken: string): void {
+  const slug = readSession()?.academySlug ?? "";
+  const valor = JSON.stringify({ accessToken, refreshToken, academySlug: slug });
+  try {
+    store()?.setItem(KEY, valor);
+  } catch {
+    /* modo privado: a sessão renovada vale para esta página e mais nada */
+  }
+}
+
+/**
+ * Troca o refresh por um par novo.
+ *
+ * Só termina a sessão quando o Supabase **recusa** o refresh. Uma falha de rede
+ * não desliga ninguém: um clube com internet a oscilar não pode perder a sessão
+ * por isso, e o token velho ainda pode servir mais uns minutos.
+ */
+export async function refreshSession(): Promise<string | null> {
+  if (refreshing) return refreshing;
+
+  const current = readSession();
+  const token = current?.refreshToken;
+  const config = supabaseConfig();
+  if (!current || !token || !config) return current?.accessToken ?? null;
+
+  refreshing = (async () => {
+    try {
+      const res = await fetch(`${config.url}/auth/v1/token?grant_type=refresh_token`, {
+        method: "POST",
+        headers: { apikey: config.anon, "Content-Type": "application/json" },
+        body: JSON.stringify({ refresh_token: token }),
+      });
+
+      if (!res.ok) {
+        // Recusado: o refresh já não vale. Aqui sim, a sessão acabou mesmo — e
+        // quem chamou trata de mandar entrar (ver `request` em `lib/http.ts`).
+        if (res.status >= 400 && res.status < 500) {
+          clearSession();
+          return null;
+        }
+        // 5xx é avaria do lado de lá — o token velho segue enquanto durar.
+        return readSession()?.accessToken ?? null;
+      }
+
+      const data = (await res.json()) as { access_token: string; refresh_token?: string };
+      // O refresh roda a cada uso; guardar o novo é o que mantém a corrente viva.
+      saveTokens(data.access_token, data.refresh_token ?? token);
+      return data.access_token;
+    } catch {
+      /* sem rede: fica como estava e tenta-se no pedido seguinte */
+      return readSession()?.accessToken ?? null;
+    } finally {
+      refreshing = null;
+    }
+  })();
+
+  return refreshing;
+}
+
+/**
+ * O token para os pedidos, já renovado se estava a acabar.
+ *
+ * É por aqui que passa o `lib/http.ts` inteiro, e é por isso que a renovação
+ * vive aqui: nenhuma das cinco funções de pedido precisa de saber que os tokens
+ * expiram.
+ */
+export async function getAccessToken(): Promise<string | null> {
+  const current = readSession();
+  if (!current) return null;
+
+  const exp = expiresAt(current.accessToken);
+  if (exp !== null && exp - SKEW_MS <= Date.now()) return refreshSession();
+
+  return current.accessToken;
 }
 
 export function clearSession(): void {

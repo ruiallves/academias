@@ -22,6 +22,31 @@ export type Permission =
   | "report:read" | "report:write"
   | "settings:write"
   /**
+   * Apagar o clube inteiro.
+   *
+   * A operação mais destrutiva que existe no produto: leva atrás atletas,
+   * famílias, pagamentos, boletins clínicos e o histórico todo, por cascata.
+   * Por isso é **permissão própria** e não `settings:write` — configurar o
+   * white-label e apagar a casa não são o mesmo nível de decisão, e quem trata
+   * das definições não tem de poder fazer as duas.
+   *
+   * Por omissão: presidência e direção. Delegável como qualquer outra, mas
+   * ninguém a recebe sem alguém a ter dado de propósito.
+   */
+  | "academy:delete"
+  /**
+   * Apagar uma equipa.
+   *
+   * À parte de `team:write` (que cria e edita) porque é outra decisão: uma
+   * equipa apagada leva atrás os treinos e os jogos dela. Por omissão fica na
+   * presidência e na direção — quem coordena o desporto monta plantéis, não
+   * desmancha escalões.
+   *
+   * **Os atletas não são apagados.** Perdem a ligação a esta equipa e ficam por
+   * atribuir: uma pessoa não pertence a uma linha de organização do clube.
+   */
+  | "team:delete"
+  /**
    * Mudar o que os outros vêem — o par do painel "Acesso" na ficha de staff.
    *
    * Separada de `staff:write` de propósito: corrigir um telemóvel é trabalho de
@@ -116,6 +141,12 @@ const WRITE_ALL: Permission[] = [
   "academy:write", "athlete:write", "family:write", "team:write", "staff:write",
   "calendar:write", "attendance:write", "billing:write", "comms:write",
   "evaluation:write", "report:write", "settings:write", "access:write",
+  // Apagar o clube. Fica em WRITE_ALL — logo presidência e direção — e mais
+  // ninguém: o coordenador filtra-a abaixo, como filtra o resto.
+  "academy:delete",
+  // Apagar uma equipa. Presidência e direção, como o apagar do clube — e pela
+  // mesma razão: leva treinos e jogos atrás.
+  "team:delete",
   // A direção pode tudo — incluindo registar no boletim clínico.
   "clinical:write",
   "scouting:write",

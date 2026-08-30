@@ -51,6 +51,8 @@ export {
   Download,
   Upload,
   FileSpreadsheet,
+  /* A convocatória em papel — a folha que se leva para o campo. */
+  Printer,
   SlidersHorizontal,
   LogOut,
   PanelLeft,

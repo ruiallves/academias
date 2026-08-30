@@ -71,6 +71,14 @@ export type MatchInfo = {
   opponent: string;
   home: boolean;
   callUps: CallUp[];
+  /**
+   * A prova em que se joga.
+   *
+   * Vem para o calendário por causa da edição: o diálogo tem de abrir com a
+   * prova actual escolhida, e sem isto caía sempre na primeira da equipa —
+   * carregar em "Guardar" sem lhe tocar mudava o jogo de competição.
+   */
+  competition?: { id: string; label: string } | null;
   /** Ausente até o resultado ser registado — é essa ausência que decide se o painel
    *  mostra a convocatória ou a estatística. */
   result?: {
@@ -239,6 +247,7 @@ export function fromApiMatch(m: ApiMatch): CalendarEvent {
     match: {
       opponent: m.opponent,
       home: m.isHome,
+      competition: m.competition,
       callUps: m.calledUp.map((c) => ({
         athleteId: c.athleteId,
         status: c.status.toLowerCase() as CallUpStatus,

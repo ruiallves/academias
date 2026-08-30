@@ -717,6 +717,7 @@ model Team {
   plans    SubscriptionPlan[]
   gameModels GameModel[]
   setPieces  SetPiece[]
+  competitions TeamCompetition[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -1379,6 +1380,18 @@ model Match {
 
   /// Preenchidos só depois de jogado — é a ausência do resultado que decide se a
   /// UI mostra a convocatória ou a estatística.
+  /*
+   * Em que competição se joga isto.
+   *
+   * Aponta para o catálogo (`CatalogItem` de `kind = "competitions"`) e é
+   * **opcional**: um amigável ou um treino-jogo não pertencem a prova nenhuma,
+   * e obrigar a escolher uma faria os clubes inventarem "Amigáveis" como se
+   * fosse um campeonato. `SetNull` porque apagar uma prova do catálogo não pode
+   * apagar os jogos que se disputaram nela.
+   */
+  competitionId String?
+  competition   CatalogItem? @relation("MatchCompetition", fields: [competitionId], references: [id], onDelete: SetNull)
+
   ourScore   Int?
   theirScore Int?
 
@@ -1422,6 +1435,8 @@ model Match {
   /// aqui (para as leituras) e o único parcial lá.
   @@index([teamId, startsAt])
   @@index([academyId, startsAt])
+  /// Os jogos de uma prova — o quadro competitivo de cada equipa.
+  @@index([competitionId])
 }
 
 enum CallUpStatus {
@@ -2401,6 +2416,12 @@ enum MemberDocumentKind {
 /// aqui profissão, estado civil nem nada que alguém possa achar interessante
 /// perguntar: cada campo a mais é um campo a proteger e uma razão a mais para
 /// alguém abandonar o formulário a meio.
+/// Um sócio do clube.
+///
+/// Só o **nome** é obrigatório na base: um sócio inscrito ao balcão traz o nome
+/// e um contacto, e o resto da ficha completa-se depois. A inscrição pública e a
+/// importação continuam a exigir a ficha inteira nos seus DTOs — a diferença é
+/// de caminho, não de tabela. Ver a migração `socio_manual_leve`.
 model Member {
   id        String  @id @default(cuid())
   academyId String
@@ -2414,27 +2435,27 @@ model Member {
   tier   MemberTier? @relation(fields: [tierId], references: [id], onDelete: SetNull)
 
   name      String
-  email     String
-  birthdate DateTime @db.Date
+  email     String?
+  birthdate DateTime? @db.Date
 
   /// Morada. `country` guarda o código ISO de duas letras.
   country    String @default("PT")
-  address    String
-  postalCode String
-  city       String
+  address    String?
+  postalCode String?
+  city       String?
 
   /// Indicativo e número, separados: o indicativo é uma escolha e o número é
   /// texto livre. Juntos num campo só, ninguém consegue filtrar por país nem
   /// validar o formato de nenhum.
   phoneCountry String @default("+351")
-  phone        String
+  phone        String?
 
   sex MemberSex @default(UNSPECIFIED)
 
   documentKind   MemberDocumentKind @default(CC)
-  documentNumber String
+  documentNumber String?
   /// NIF. É o que liga o sócio ao recibo.
-  taxId          String
+  taxId          String?
 
   status MemberStatus @default(PENDING)
 
@@ -2522,6 +2543,10 @@ model CatalogItem {
   /// intacta.
   archivedAt DateTime?
 
+  /// Só para `kind = "competitions"`: as equipas que a disputam e os jogos dela.
+  teams   TeamCompetition[]
+  matches Match[]          @relation("MatchCompetition")
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
@@ -2531,6 +2556,30 @@ model CatalogItem {
   @@unique([academyId, kind, sportId, label])
   @@index([academyId, kind])
   @@index([sportId])
+}
+
+/// Que provas é que uma equipa disputa esta época.
+///
+/// ## Porquê uma tabela e não uma lista de ids na equipa
+///
+/// Porque uma lista de texto não sabe que a prova foi apagada, e ficava a
+/// apontar para nada — o mesmo dado órfão que o produto evita em todo o lado.
+/// Aqui a cascata trata disso nos dois sentidos: apagar a equipa limpa as
+/// ligações, apagar a prova do catálogo também.
+///
+/// É por equipa e não por academia porque é isso que se pergunta ao marcar um
+/// jogo: *em que prova é este jogo do Sub-13?* — e a resposta certa é a lista
+/// curta das que aquele escalão joga, não o catálogo inteiro do clube.
+model TeamCompetition {
+  id     String @id @default(cuid())
+  teamId String
+  team   Team   @relation(fields: [teamId], references: [id], onDelete: Cascade)
+
+  competitionId String
+  competition   CatalogItem @relation(fields: [competitionId], references: [id], onDelete: Cascade)
+
+  @@unique([teamId, competitionId])
+  @@index([competitionId])
 }
 
 /* -------------------------------------------------------------------------- */

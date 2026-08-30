@@ -1,6 +1,8 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import { PageHeader } from "@/components/Shell";
+import { DeleteTeamDialog } from "@/components/DeleteTeamDialog";
+import { TeamCompetitionsPanel } from "@/components/TeamCompetitionsPanel";
 import { TeamStaffDialog } from "@/components/TeamStaffDialog";
 import { isHeadCoach, roleOptions } from "@/lib/team-role";
 import { apiPatch } from "@/lib/http";
@@ -32,6 +34,7 @@ import {
   HeartPulse,
   LayoutGrid,
   Plus,
+  Trash2,
   TriangleAlert,
   Trophy,
   Users,
@@ -60,7 +63,6 @@ import { useSession } from "@/session";
 import {
   groupByDay,
   KIND_LABEL,
-  matchPagePath,
   resultOutcome,
   tallyNoun,
   useEvents,
@@ -98,6 +100,7 @@ export default function TeamDetail() {
   const { session } = useSession();
   const [tab, setTab] = useState<Tab>("overview");
   const [atribuir, setAtribuir] = useState(false);
+  const [apagar, setApagar] = useState(false);
   const [selectedEventId, setSelectedEventId] = useState<string | null>(null);
   const navigate = useNavigate();
 
@@ -107,6 +110,29 @@ export default function TeamDetail() {
   const inScope = listTeams(session).some((t) => t.id === id);
   const colors = useTeamColors(session);
 
+  /*
+   * A equipa que estava aberta desapareceu: volta-se à lista.
+   *
+   * O caminho normal já navega — `onDeleted` no diálogo de apagar — mas isto é a
+   * garantia, e cobre o que esse caminho não cobre: outra pessoa apagou a equipa
+   * enquanto esta estava com a ficha aberta, ou perdeu-se o âmbito de acesso a
+   * ela. Ficar num "não encontrada" a olhar para uma coisa que existia há um
+   * segundo não é uma resposta.
+   *
+   * `jaExistiu` é o que separa os dois casos. Um id que **nunca** foi válido —
+   * URL escrito à mão, ligação velha, equipa de outro âmbito — continua a
+   * merecer o ecrã de não encontrada: mandar essa pessoa para a lista sem lhe
+   * dizer nada esconde-lhe o motivo.
+   */
+  const jaExistiu = useRef(false);
+  useEffect(() => {
+    if (team && inScope) {
+      jaExistiu.current = true;
+      return;
+    }
+    if (jaExistiu.current) navigate("/equipas", { replace: true });
+  }, [team?.id, inScope, navigate]);
+
   // Uma janela generosa — uma época inteira, para trás e para a frente — para que
   // "Estatísticas" tenha todos os jogos já disputados e "Calendário" veja o resto.
   const from = useMemo(() => new Date(today.getFullYear() - 1, 0, 1), []);
@@ -115,23 +141,19 @@ export default function TeamDetail() {
   const selectedEvent = events.find((e) => e.id === selectedEventId) ?? null;
 
   /**
-   * Clicar num evento: um **jogo** vai para a página dele, tudo o resto abre a
-   * gaveta ao lado.
+   * Clicar num evento abre a gaveta — **em todos os tipos**, jogos incluídos.
    *
-   * Aqui abria sempre a gaveta. O calendário do clube já levava à página do jogo,
-   * o da equipa não — a mesma coisa comportava-se de duas maneiras conforme o
-   * sítio de onde se lá chegava, e a gaveta não tem onde pôr a convocatória, a
-   * ficha nem o staff. A regra vive em `matchPagePath`, para não voltarem a
-   * divergir.
+   * Durante um tempo um jogo saltava daqui direito para a página dele. Era
+   * rápido para quem ia à convocatória e mau para todos os outros: sair da ficha
+   * da equipa para ver a que horas é, e depois voltar. A gaveta é agora a
+   * resposta uniforme, e leva lá dentro *Abrir jogo* e *Ver convocatória* — o
+   * atalho ficou, deixou é de ser obrigatório (ver `EventDetail`).
    *
    * Vale para os três sítios que chamam isto: o "A seguir", as bolinhas da forma
    * recente e o separador do calendário. Todos tiram os ids do mesmo `events`.
    */
   function abrir(eventId: string) {
-    const evento = events.find((e) => e.id === eventId);
-    const pagina = evento ? matchPagePath(evento) : null;
-    if (pagina) navigate(pagina);
-    else setSelectedEventId(eventId);
+    setSelectedEventId(eventId);
   }
 
   if (!team || !inScope) {
@@ -208,6 +230,23 @@ export default function TeamDetail() {
           <span className="size-2 rounded-full" style={{ background: colors.get(id)?.base }} aria-hidden />
           {activeRoster.length} atletas
         </span>
+
+        {/*
+          Apagar fica no fim e discreto: é a única acção desta página sem volta,
+          e ninguém deve tropeçar nela a caminho de ver o plantel. Só aparece a
+          quem tem `team:delete` — presidência e direção, por omissão.
+        */}
+        {can(session, "team:delete") && (
+          <button
+            type="button"
+            aria-label="Apagar equipa"
+            title="Apagar equipa"
+            className="ctl-ghost size-8 justify-center px-0 text-ink-4 hover:bg-risk-soft hover:text-risk"
+            onClick={() => setApagar(true)}
+          >
+            <Trash2 className="size-4" strokeWidth={1.75} />
+          </button>
+        )}
       </PageHeader>
 
       <div className="mb-3">
@@ -257,6 +296,15 @@ export default function TeamDetail() {
           modo={{ tipo: "equipa", teamId: id, teamName: team.name }}
           session={session}
           onClose={() => setAtribuir(false)}
+        />
+      )}
+
+      {apagar && (
+        <DeleteTeamDialog
+          teamId={id}
+          onClose={() => setApagar(false)}
+          // Apagada, esta página deixa de ter assunto: volta-se à lista.
+          onDeleted={() => navigate("/equipas", { replace: true })}
         />
       )}
 
@@ -335,6 +383,11 @@ function OverviewTab({
       </MetricRow>
 
       <Attention items={items} />
+
+      {/* As provas ficam no topo da visão geral: é o quadro competitivo da
+          época, e responde a "onde é que esta equipa joga" antes de qualquer
+          número. */}
+      <TeamCompetitionsPanel team={team} editable={can(session, "team:write")} />
 
       <div className="grid gap-3 lg:grid-cols-[1fr_1fr]">
         {nextEvent && (

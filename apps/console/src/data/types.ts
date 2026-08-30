@@ -99,6 +99,15 @@ export type Team = {
   athleteIds: string[];
   /** Dias da semana (0 = domingo) e hora do treino regular. */
   schedule: { weekday: number; start: string; end: string; venue: string }[];
+  /**
+   * As provas que a equipa disputa esta época.
+   *
+   * É o que o calendário oferece ao marcar um jogo, e o que a folha de
+   * convocatória acaba por imprimir. Vem do catálogo do clube, sem as
+   * arquivadas — uma prova que acabou continua ligada aos jogos que teve, mas
+   * não aparece onde se escolhe para marcar um jogo novo.
+   */
+  competitions: { id: string; label: string }[];
   /** O preço por omissão da equipa, em cêntimos. `null` sem `billing:read` ou por configurar. */
   feeCents: number | null;
 };

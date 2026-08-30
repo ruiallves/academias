@@ -132,6 +132,18 @@ type Layout = {
   heading: string;
   /** Os parágrafos do corpo, já em texto simples. */
   paragraphs: string[];
+  /**
+   * Blocos de HTML por baixo dos parágrafos, escritos tal e qual.
+   *
+   * Existe porque `paragraphs` embrulha cada linha num `<p>`, e há corpos que
+   * não são prosa: uma tabela de campos, um bloco com a mensagem que alguém
+   * escreveu. Uma `<table>` dentro de um `<p>` é HTML inválido, e o Outlook —
+   * que é metade do correio de trabalho em Portugal — desenha-a como lhe apetece.
+   *
+   * Quem escreve aqui é responsável por escapar o que vem de fora (`esc`). É a
+   * mesma responsabilidade que `paragraphs` já tem, dita em voz alta.
+   */
+  blocks?: string[];
   cta: { label: string; url: string };
   /** O rodapé por baixo do link — validade, avisos. */
   notes: string[];
@@ -143,7 +155,7 @@ type Layout = {
  * Uma função só, porque três emails com três moldes divergem ao terceiro retoque
  * e passam a parecer de produtos diferentes.
  */
-function layout({ brand, greeting, heading, paragraphs, cta, notes }: Layout): string {
+function layout({ brand, greeting, heading, paragraphs, blocks, cta, notes }: Layout): string {
   const color = safeColor(brand.signalColor);
   // O texto por cima da cor do clube — preto num clube de amarelo, branco num de azul.
   const ink = inkOn(color);
@@ -170,12 +182,14 @@ function layout({ brand, greeting, heading, paragraphs, cta, notes }: Layout): s
   const ola = greeting
     ? '<p style="margin:0 0 10px;font-size:15px;line-height:1.6;color:#6b6862;">' + esc(greeting) + "</p>"
     : "";
-  const corpo = paragraphs
-    .map(
-      (p) =>
-        '<p style="margin:0 0 14px;font-size:15px;line-height:1.6;color:#3c3a37;">' + p + "</p>",
-    )
-    .join("");
+  const corpo =
+    paragraphs
+      .map(
+        (p) =>
+          '<p style="margin:0 0 14px;font-size:15px;line-height:1.6;color:#3c3a37;">' + p + "</p>",
+      )
+      .join("") +
+    (blocks ?? []).map((b) => '<div style="margin:0 0 14px;">' + b + "</div>").join("");
   const rodape = notes
     .map(
       (n) =>
@@ -463,6 +477,109 @@ export function adminInviteEmail(input: {
       ],
       { label: "Aceitar o convite", url: input.link },
       notes.map(semTags),
+    ),
+  };
+}
+
+
+/* -------------------------------------------------------------------------- */
+/* Aviso de ticket novo — para nós, não para o cliente                         */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * Chegou um pedido pelo site.
+ *
+ * ## Porque é que este email é diferente de todos os outros
+ *
+ * Os outros são convites: vão para fora, pedem uma acção a quem os recebe e o
+ * corpo é curto de propósito. Este vai para **dentro** — para quem atende os
+ * pedidos — e a acção dele é ler. Por isso leva o pedido inteiro no corpo: nome,
+ * clube, contactos, assunto e a mensagem tal como foi escrita.
+ *
+ * Se for preciso abrir a plataforma para saber de que se trata, o email falhou o
+ * seu trabalho. Serve para decidir, no telemóvel, se isto espera pela segunda ou
+ * se se responde agora.
+ *
+ * ## O `replyTo`
+ *
+ * É o email de quem escreveu. Carregar em "responder" fala com a pessoa, não com
+ * o servidor — que é o gesto que se faz nove em cada dez vezes.
+ */
+export function ticketAlertEmail(input: {
+  name: string;
+  email: string;
+  phone?: string | null;
+  club?: string | null;
+  subject: string;
+  athletes?: string | null;
+  message?: string | null;
+  link: string;
+}): { subject: string; html: string; text: string } {
+  const brand: MailBrand = { shortName: "Academias", name: "Plataforma Academias", signalColor: FALLBACK };
+
+  const campos: [string, string | null | undefined][] = [
+    ["Nome", input.name],
+    ["Clube", input.club],
+    ["Email", input.email],
+    ["Telefone", input.phone],
+    ["Assunto", input.subject],
+    ["Atletas", input.athletes],
+  ];
+  const preenchidos = campos.filter((c): c is [string, string] => Boolean(c[1]));
+
+  /*
+   * Os campos como linhas de uma tabela, e não como parágrafos.
+   *
+   * Um bloco de "Nome: X. Clube: Y. Telefone: Z." lê-se como prosa e obriga a
+   * procurar. Em duas colunas o olho salta directamente ao que quer — e é assim
+   * que se lê um pedido de contacto, não a começar no princípio.
+   */
+  const tabela =
+    '<table role="presentation" cellpadding="0" cellspacing="0" border="0" style="width:100%;border-collapse:collapse">' +
+    preenchidos
+      .map(
+        ([rotulo, valor]) =>
+          '<tr>' +
+          '<td style="padding:4px 12px 4px 0;font-family:Helvetica,Arial,sans-serif;font-size:13px;' +
+          'color:#8a867c;white-space:nowrap;vertical-align:top">' + esc(rotulo) + "</td>" +
+          '<td style="padding:4px 0;font-family:Helvetica,Arial,sans-serif;font-size:14px;' +
+          'color:#1a1917;vertical-align:top">' + esc(valor) + "</td>" +
+          "</tr>",
+      )
+      .join("") +
+    "</table>";
+
+  /* A mensagem com as quebras de linha que a pessoa escreveu. */
+  const mensagem = input.message?.trim()
+    ? '<div style="margin-top:4px;padding:12px 14px;background:#f7f6f3;border-radius:8px;' +
+      'font-family:Helvetica,Arial,sans-serif;font-size:14px;line-height:1.55;color:#1a1917;' +
+      'white-space:pre-wrap">' + esc(input.message.trim()) + "</div>"
+    : '<p style="margin:0;font-family:Helvetica,Arial,sans-serif;font-size:14px;color:#8a867c">' +
+      "Sem mensagem — só o formulário.</p>";
+
+  return {
+    // O assunto traz o nome e o clube: é o que se lê na lista de correio, e é
+    // onde se decide se vale a pena abrir agora.
+    subject: `Novo pedido no site — ${input.name}${input.club ? ` (${input.club})` : ""}`,
+    html: layout({
+      brand,
+      heading: "Chegou um pedido pelo site",
+      // `blocks` e não `paragraphs`: são uma tabela e um bloco, e um `<p>` à
+      // volta de uma `<table>` é HTML inválido. Ver `Layout.blocks`.
+      paragraphs: [],
+      blocks: [tabela, mensagem],
+      cta: { label: "Abrir na plataforma", url: input.link },
+      notes: ["Responder a este email fala directamente com quem o escreveu."],
+    }),
+    text: plain(
+      "Chegou um pedido pelo site",
+      [
+        ...preenchidos.map(([rotulo, valor]) => `${rotulo}: ${valor}`),
+        "",
+        input.message?.trim() || "Sem mensagem.",
+      ],
+      { label: "Abrir na plataforma", url: input.link },
+      ["Responder a este email fala directamente com quem o escreveu."],
     ),
   };
 }

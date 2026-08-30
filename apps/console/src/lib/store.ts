@@ -95,6 +95,8 @@ type ApiTeam = {
   id: string; name: string; maxAge: number; sportId: string; season: string;
   schedule: unknown; athleteCount: number;
   coaches: { id: string; name: string; title: string }[];
+  /** As provas que a equipa disputa — sem as arquivadas. Ver `teams()` na API. */
+  competitions: { id: string; label: string }[];
   /** O preço por omissão da equipa, em cêntimos. `null` sem `billing:read` ou por configurar. */
   feeCents: number | null;
 };
@@ -149,6 +151,8 @@ export type ApiMatch = {
   id: string; teamId: string; teamName: string; maxCallUps: number;
   startsAt: string; endsAt: string; venue: string; opponent: string; isHome: boolean;
   status: string; ourScore: number | null; theirScore: number | null;
+  /** A prova em que se joga. `null` num amigável. */
+  competition: { id: string; label: string } | null;
   submitted: boolean; submittedAt: string | null;
   /** É de uma equipa minha? Decide o que vem preenchido e o que se pode abrir. */
   mine: boolean;
@@ -346,6 +350,7 @@ function build(
     coaches: t.coaches,
     athleteIds: apiAthletes.filter((a) => a.teamId === t.id).map((a) => a.id),
     schedule: Array.isArray(t.schedule) ? (t.schedule as Team["schedule"]) : [],
+    competitions: t.competitions ?? [],
     feeCents: t.feeCents,
   }));
 
@@ -366,6 +371,44 @@ function build(
     weightKg: a.weightKg ?? undefined,
     dominantSide: (a.dominantSide?.toLowerCase() as Athlete["dominantSide"]) ?? undefined,
     squadNumber: a.squadNumber ?? undefined,
+    /*
+     * A baixa clínica, vinda do servidor.
+     *
+     * ## O bug que isto corrigiu
+     *
+     * O servidor mandava `availability` e `restriction` em cada atleta, e o
+     * store deitava-os fora. Tudo o que decide disponibilidade no cliente —
+     * `activeRestriction`, `isUnavailable`, o `blockedBy` das convocatórias —
+     * lê `athlete.clinical`, que **nunca era preenchido**: a lista estava sempre
+     * vazia, ninguém aparecia de baixa, e a interface deixava convocar um atleta
+     * parado sem uma palavra. O erro só chegava ao guardar, vindo do servidor,
+     * com um nome que o treinador não fazia ideia de porque estava ali.
+     *
+     * A regra continua a ser a do servidor — é ele a fronteira, e é ele que
+     * recusa. Isto é o que faz a interface **saber o mesmo** e avisar antes,
+     * em vez de deixar montar uma convocatória inteira para a recusar no fim.
+     *
+     * Uma entrada só, a que está a afectar hoje: é o que o `/api/athletes`
+     * traz. O boletim completo é outra leitura, do departamento clínico.
+     */
+    clinical: a.restriction
+      ? [
+          {
+            id: a.restriction.id,
+            kind: "injury",
+            // `DONE`: é uma baixa a decorrer, não um agendamento. A leitura de
+            // `activeRestriction` ignora agendados e cancelados.
+            status: "done",
+            date: a.restriction.since.slice(0, 10),
+            // Sem `clinical:read` o servidor retém o diagnóstico e manda `null`
+            // — a disponibilidade chega na mesma, o motivo é que não.
+            title: a.restriction.title ?? "Indisponível",
+            impact: a.availability === "out" ? "out" : "limited",
+            expectedReturn: a.restriction.expectedReturn ?? undefined,
+            clearedOn: undefined,
+          },
+        ]
+      : undefined,
   }));
 
   /*

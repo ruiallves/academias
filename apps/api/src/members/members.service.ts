@@ -354,8 +354,21 @@ export class MembersService {
     this.mustWrite(ctx);
 
     const now = new Date();
-    const birthdate = this.plausibleBirthdate(dto.birthdate);
-    const taxId = dto.taxId.replace(/[\s.]/g, "");
+
+    /*
+     * Um sócio sem contacto nenhum é uma linha que ninguém consegue usar.
+     *
+     * É a única exigência que sobra além do nome: o clube tem de conseguir
+     * chegar à pessoa para cobrar a quota ou convocar a assembleia. Qual dos
+     * dois é indiferente — quem tem email dá email, quem só tem telemóvel dá
+     * telemóvel.
+     */
+    if (!dto.email?.trim() && !dto.phone?.trim()) {
+      throw new BadRequestException("Um sócio precisa de pelo menos um contacto — email ou telemóvel");
+    }
+
+    const birthdate = dto.birthdate ? this.plausibleBirthdate(dto.birthdate) : null;
+    const taxId = dto.taxId?.replace(/[\s.]/g, "") || null;
 
     return this.prisma.runAs(ctx.academyId, async (db) => {
       let tierId: string | null = null;
@@ -377,8 +390,12 @@ export class MembersService {
        * o que permite dizer "já existe um sócio com este NIF" em vez de um 500.
        * A restrição única continua lá por baixo, como rede.
        */
-      const sameTaxId = await db.member.findFirst({ where: { taxId }, select: { id: true } });
-      if (sameTaxId) throw new BadRequestException("Já existe um sócio com este NIF");
+      // Só se há NIF: dois sócios por identificar não são o mesmo sócio, e o
+      // índice único deixa vários nulos conviver (ver a migração).
+      if (taxId) {
+        const sameTaxId = await db.member.findFirst({ where: { taxId }, select: { id: true } });
+        if (sameTaxId) throw new BadRequestException("Já existe um sócio com este NIF");
+      }
 
       if (dto.number != null) {
         const taken = await db.member.findFirst({ where: { number: dto.number }, select: { id: true } });
@@ -397,17 +414,20 @@ export class MembersService {
             tierId,
             number,
             name: dto.name.trim(),
-            email: dto.email.trim().toLowerCase(),
+            // Ausente é **nulo**, nunca string vazia: vazio diz "preenchido com
+            // nada", nulo diz "por preencher" — e é a segunda coisa que a ficha
+            // tem de conseguir mostrar como aviso.
+            email: dto.email?.trim().toLowerCase() || null,
             birthdate,
             country: (dto.country ?? "PT").toUpperCase().slice(0, 2),
-            address: dto.address.trim(),
-            postalCode: dto.postalCode.trim(),
-            city: dto.city.trim(),
+            address: dto.address?.trim() || null,
+            postalCode: dto.postalCode?.trim() || null,
+            city: dto.city?.trim() || null,
             phoneCountry: dto.phoneCountry ?? "+351",
-            phone: dto.phone.replace(/\s/g, ""),
+            phone: dto.phone?.replace(/\s/g, "") || null,
             sex: (dto.sex as MemberSex) ?? "UNSPECIFIED",
             documentKind: (dto.documentKind as MemberDocumentKind) ?? "CC",
-            documentNumber: dto.documentNumber.trim(),
+            documentNumber: dto.documentNumber?.trim() || null,
             taxId,
             status,
             acceptedTermsAt: dto.acceptedTerms ? now : null,

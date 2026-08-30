@@ -2,7 +2,7 @@ import { Link } from "react-router-dom";
 import { useState, type FormEvent } from "react";
 import { categoryColor } from "@academia/ui/tokens";
 import { KIND_LABEL, type EventKind } from "@/lib/calendar";
-import { listTeams } from "@/lib/api";
+import { listTeams, teamById } from "@/lib/api";
 import { apiPost } from "@/lib/http";
 import { reloadAcademy } from "@/lib/store";
 import { useActiveCatalog } from "@/lib/catalogs";
@@ -73,6 +73,7 @@ export function NewEventDialog({
   const [dressingRoom, setDressingRoom] = useState("");
   const [opponent, setOpponent] = useState("");
   const [isHome, setIsHome] = useState(true);
+  const [competitionId, setCompetitionId] = useState("");
 
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -87,6 +88,29 @@ export function NewEventDialog({
    * nenhum para um jogo.
    */
   const isMatch = kind === "match";
+  /*
+   * As provas da equipa escolhida.
+   *
+   * Trocar de equipa limpa a escolha — o campeonato do Sub-13 não é o do Sub-15,
+   * e deixar lá o id anterior era gravar um jogo na prova errada ou levar com um
+   * 400 do servidor sem perceber porquê.
+   */
+  const competicoesDaEquipa = teamId ? (teamById(teamId)?.competitions ?? []) : [];
+  /*
+   * A escolha segue a equipa.
+   *
+   * Trocar de equipa invalida a prova escolhida — o campeonato do Sub-13 não é o
+   * do Sub-15 — e em vez de a limpar para vazio (que travava o botão sem dizer
+   * porquê) cai na primeira prova da equipa nova. Numa equipa que nunca teve
+   * outras, essa é "Amigável": o valor certo para a maioria dos jogos que se
+   * marcam à mão.
+   *
+   * Durante o render, e de propósito: é uma correcção de estado derivado, não um
+   * efeito. O React volta a chamar com o valor certo antes de pintar.
+   */
+  if (competicoesDaEquipa.length > 0 && !competicoesDaEquipa.some((c) => c.id === competitionId)) {
+    setCompetitionId(competicoesDaEquipa[0].id);
+  }
 
   /*
    * Um treino é sempre de uma equipa — como um jogo.
@@ -108,7 +132,11 @@ export function NewEventDialog({
       ? `${KIND_LABEL[kind]} · ${teamName}`
       : `${KIND_LABEL[kind]} · toda a academia`;
 
-  const valid = (!needsTeam || teamId !== "") && (!isMatch || opponent.trim() !== "");
+  const valid =
+    (!needsTeam || teamId !== "") &&
+    // Um jogo precisa de adversário **e** de prova — as duas coisas que a
+    // convocatória vai imprimir.
+    (!isMatch || (opponent.trim() !== "" && competitionId !== ""));
 
   /*
    * O local de um jogo fora.
@@ -167,6 +195,7 @@ export function NewEventDialog({
         venue: effectiveVenue,
         ...(dressingRoom ? { dressingRoom } : {}),
         ...(isMatch ? { opponent: opponent.trim(), isHome } : {}),
+        ...(isMatch && competitionId ? { competitionId } : {}),
         ...(repetir && until
           ? {
               repeat: {
@@ -341,6 +370,39 @@ export function NewEventDialog({
               </div>
             </DialogField>
           </div>
+        )}
+
+        {/*
+          A prova de um jogo — obrigatória.
+          
+          É a convocatória que a exige: herda-a do jogo e imprime-a, e um jogo
+          sem prova obrigava quem exporta a escrevê-la à mão, que era o remendo
+          que isto veio substituir. A pergunta tem sempre resposta porque toda a
+          equipa nasce com **"Amigável"** — um jogo que não é de nenhuma prova é
+          um amigável, e isso diz-se em vez de se deixar em branco.
+          
+          A lista é a **da equipa escolhida**, não o catálogo do clube: marcar um
+          jogo do Sub-13 no campeonato de seniores é um erro de dedo que ninguém
+          apanharia depois. O servidor recusa-o na mesma (ver `createSingleEvent`).
+        */}
+        {isMatch && (
+          <DialogField label="Competição">
+            {competicoesDaEquipa.length > 0 ? (
+              <SelectField
+                className="w-full"
+                value={competitionId}
+                onChange={setCompetitionId}
+                options={competicoesDaEquipa.map((c) => ({ value: c.id, label: c.label }))}
+              />
+            ) : (
+              /* Só acontece se alguém tiver removido todas as provas da equipa,
+                 "Amigável" incluída. Diz-se onde se resolve, em vez de deixar
+                 um selector vazio a bloquear o diálogo sem explicação. */
+              <p className="rounded-[var(--radius-control)] border border-dashed border-line bg-sunken/50 px-2.5 py-2 text-meta text-ink-3">
+                Esta equipa não tem competições. Junta-as na ficha da equipa para poderes marcar jogos.
+              </p>
+            )}
+          </DialogField>
         )}
 
         <DialogField label="Título" hint="opcional">

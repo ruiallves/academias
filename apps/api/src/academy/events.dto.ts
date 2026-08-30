@@ -105,10 +105,39 @@ export class CreateEventDto {
   @IsOptional()
   @IsBoolean()
   isHome?: boolean;
+
+  /** A prova deste jogo, das que a equipa disputa. Só faz sentido em `MATCH`. */
+  @IsOptional()
+  @IsString()
+  @Length(1, 40)
+  competitionId?: string;
 }
 
 /** Por agora só se cancela e reativa — a edição de um evento vem depois. */
 export class UpdateEventDto {
   @IsBoolean()
   cancelled!: boolean;
+}
+
+/**
+ * Editar um evento que já existe.
+ *
+ * **Sem `kind` e sem `teamId`**, de propósito: o tipo decide em que tabela o
+ * evento vive e a equipa decide de quem ele é. Mudar qualquer um deles não é
+ * editar — é apagar e criar outro, com outra folha de presenças e outra
+ * convocatória. Aqui muda-se o quando, o onde, e o que é próprio de cada tipo.
+ *
+ * Tudo opcional: a interface manda o que o formulário mexeu, e o que não vier
+ * fica como está.
+ */
+export class EditEventDto {
+  @IsOptional() @IsString() @Length(1, 120) title?: string;
+  @IsOptional() @IsISO8601() startsAt?: string;
+  @IsOptional() @IsISO8601() endsAt?: string;
+  @IsOptional() @IsString() @Length(1, 120) venue?: string;
+  /** String vazia limpa o balneário — é como se diz "nenhum". */
+  @IsOptional() @IsString() @Length(0, 80) dressingRoom?: string;
+  @IsOptional() @IsString() @Length(1, 80) opponent?: string;
+  @IsOptional() @IsBoolean() isHome?: boolean;
+  @IsOptional() @IsString() @Length(1, 40) competitionId?: string;
 }

@@ -39,7 +39,10 @@ import { can, type RequestContext } from "../common/permissions";
 
 // "ageGroups" saiu: o escalão e a equipa eram a mesma coisa dita duas vezes, e a
 // equipa passou a ter `maxAge`. Ver a migração `20260827160000_equipa_sem_escalao`.
-const KINDS = ["venues", "dressingRooms", "eventTypes"] as const;
+// "competitions" — as provas que o clube disputa. Entram no catálogo e não numa
+// tabela própria porque é exactamente o que os catálogos são: uma lista de
+// nomes que o clube gere, por modalidade. Ver a migração `competicoes`.
+const KINDS = ["venues", "dressingRooms", "eventTypes", "competitions"] as const;
 export type CatalogKind = (typeof KINDS)[number];
 
 export function isCatalogKind(value: string): value is CatalogKind {
@@ -52,6 +55,15 @@ export function isCatalogKind(value: string): value is CatalogKind {
  * Só os tipos de evento, e só porque o domínio os distingue — ver o cabeçalho.
  * Tudo o resto nasce vazio e é o clube que o escreve.
  */
+/**
+ * O nome da prova que todas as equipas têm.
+ *
+ * Constante e não literal espalhado: é procurada pelo nome em três sítios (a
+ * semeadura, a criação de equipas e a migração), e um deles a divergir criaria
+ * uma segunda "Amigável" que ninguém percebia de onde vinha.
+ */
+export const AMIGAVEL = "Amigável";
+
 const SEED: Partial<Record<CatalogKind, { label: string; note?: string; isSystem?: boolean }[]>> = {
   eventTypes: [
     { label: "Treino", isSystem: true },
@@ -59,6 +71,19 @@ const SEED: Partial<Record<CatalogKind, { label: string; note?: string; isSystem
     { label: "Torneio", isSystem: true },
     { label: "Evento", isSystem: true },
   ],
+  /*
+   * "Amigável" é do sistema, e é a razão de a competição poder ser obrigatória
+   * num jogo.
+   *
+   * Um jogo tem sempre uma prova — nem que seja nenhuma, e "nenhuma" chama-se
+   * amigável. Com esta a existir sempre e a entrar em cada equipa nova, pedir a
+   * competição ao marcar um jogo deixa de ser uma pergunta sem resposta
+   * possível: há sempre pelo menos uma opção certa.
+   *
+   * `isSystem` impede que seja apagada ou renomeada — é a rede, e uma rede que
+   * se pode remover do catálogo não é rede.
+   */
+  competitions: [{ label: AMIGAVEL, isSystem: true }],
 };
 
 @Injectable()
@@ -70,13 +95,20 @@ export class CatalogsService {
     if (!can(ctx, "academy:read")) throw new ForbiddenException("Sem acesso à academia");
 
     return this.prisma.runAs(ctx.academyId, async (db) => {
-      // Só os tipos de evento é que se semeiam, e só uma vez — ver o cabeçalho.
-      const seeded = await db.catalogItem.count({ where: { kind: "eventTypes" } });
-      if (seeded === 0) {
+      /*
+       * O que o domínio distingue semeia-se; o resto nasce vazio.
+       *
+       * Por `kind` e não de uma vez: uma academia criada antes de as competições
+       * existirem já tem `eventTypes` e ficaria sem "Amigável" para sempre se a
+       * condição fosse sobre o catálogo inteiro.
+       */
+      for (const kind of ["eventTypes", "competitions"] as const) {
+        const jaLa = await db.catalogItem.count({ where: { kind } });
+        if (jaLa > 0) continue;
         await db.catalogItem.createMany({
-          data: (SEED.eventTypes ?? []).map((item, i) => ({
+          data: (SEED[kind] ?? []).map((item, i) => ({
             academyId: ctx.academyId,
-            kind: "eventTypes",
+            kind,
             label: item.label,
             note: item.note ?? null,
             isSystem: item.isSystem ?? false,

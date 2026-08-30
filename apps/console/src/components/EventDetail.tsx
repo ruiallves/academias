@@ -3,23 +3,22 @@ import { Link } from "react-router-dom";
 import type { CategoricalColor } from "@academia/ui/tokens";
 import {
   KIND_LABEL,
+  matchPagePath,
   resultOutcome,
   tallyNoun,
   toggleCancelled,
   updateMatch,
-  type CallUp,
-  type CallUpStatus,
   type CalendarEvent,
 } from "@/lib/calendar";
 import { apiPatch } from "@/lib/http";
-import { events as storeEvents, matches as storeMatches, reloadAcademy } from "@/lib/store";
-import { athleteById, coachById, listAthletes, teamById } from "@/lib/api";
-import { availabilityOf, isUnavailable, useClinicalRecords } from "@/lib/clinical";
+import { events as storeEvents, matches as storeMatches, sessions as storeSessions, reloadAcademy } from "@/lib/store";
+import { athleteById, coachById, teamById } from "@/lib/api";
 import { longDate, shortName, time } from "@/lib/format";
-import { Ban, Check, MapPin, Plus, RefreshCw, Trash2, TriangleAlert, Whistle, X, type LucideIcon } from "@/lib/icons";
+import { Ban, Check, ClipboardCheck, MapPin, Pencil, Plus, RefreshCw, Trash2, TriangleAlert, Trophy, Whistle, X, type LucideIcon } from "@/lib/icons";
 import { can } from "@/lib/permissions";
 import type { Session } from "@/lib/permissions";
-import { AvailabilityTag, cx, Monogram, Pill, SelectField } from "./primitives";
+import { cx, Monogram, Pill, SelectField } from "./primitives";
+import { EditEventDialog } from "./EditEventDialog";
 
 /**
  * O painel de detalhe.
@@ -71,27 +70,61 @@ export function EventDetail({
   /*
    * O que está na base e o que ainda é local.
    *
-   * Um evento genérico vive em `store.events`, um jogo a sério em `store.matches`
-   * — tabelas diferentes, mas o mesmo `PATCH /api/events/:id` alcança as duas. O
-   * que sobra (jogos de demonstração semeados no browser) continua a cancelar-se
-   * localmente. Sem contar os jogos aqui, cancelar um jogo real caía no caminho
-   * local e não fazia nada de visível.
+   * Um evento genérico vive em `store.events`, um jogo em `store.matches` e um
+   * **treino em `store.sessions`** — três tabelas, e o mesmo
+   * `PATCH /api/events/:id` alcança as três (ver `setEventCancelled`). O que
+   * sobra (jogos de demonstração semeados no browser) continua a cancelar-se
+   * localmente.
+   *
+   * Os treinos faltavam nesta conta, e era esse o bug: `isApiEvent` dava falso
+   * para todos eles, o cancelamento caía no caminho local — que só mexe numa
+   * cópia em memória — e não acontecia **nada**. O servidor sabia cancelar
+   * treinos desde sempre; ninguém lho chegava a pedir.
    */
   const isApiEvent =
-    storeEvents.some((e) => e.id === event.id) || storeMatches.some((m) => m.id === event.id);
+    storeEvents.some((e) => e.id === event.id) ||
+    storeMatches.some((m) => m.id === event.id) ||
+    storeSessions.some((t) => t.id === event.id);
   const [cancelling, setCancelling] = useState(false);
+  const [cancelError, setCancelError] = useState<string | null>(null);
+  const [editing, setEditing] = useState(false);
+
+  /*
+   * Editar é do mesmo lote que cancelar.
+   *
+   * Quem pode desmarcar um treino pode trocar-lhe a hora — e é o mesmo
+   * `calendar:write` que o servidor exige nos dois caminhos. Só faz sentido no
+   * que vive mesmo na base: um jogo de demonstração semeado no browser não tem
+   * a quem pedir a alteração.
+   */
+  const mayEdit = meu && can(session, "calendar:write") && isApiEvent;
 
   async function toggleCancel() {
     if (cancelling) return;
     if (!isApiEvent) {
-      // Jogo semeado (ou treino recorrente): comportamento local, como antes.
+      // Jogo semeado: comportamento local, como antes.
       toggleCancelled(event.id);
       return;
     }
     setCancelling(true);
+    setCancelError(null);
     try {
       await apiPatch(`/api/events/${event.id}`, { cancelled: !event.cancelled });
+      // O painel fica aberto: o calendário guarda o **id** e relê do store, por
+      // isso o evento redesenha-se já cancelado e o botão passa a "Reativar" —
+      // que é o que se quer à mão quando o cancelamento foi engano.
       await reloadAcademy();
+    } catch (e) {
+      /*
+       * O erro tem de aparecer.
+       *
+       * Havia um `try/finally` sem `catch`: uma recusa do servidor — "um treino
+       * com presenças registadas não se desmarca", que é uma regra a sério —
+       * morria na consola do browser e o botão voltava ao estado normal, como se
+       * nada tivesse acontecido. Quem carregava ficava a achar que o produto
+       * estava avariado, quando o produto lhe estava a dizer que não.
+       */
+      setCancelError(e instanceof Error ? e.message : "Não foi possível alterar o evento.");
     } finally {
       setCancelling(false);
     }
@@ -123,9 +156,24 @@ export function EventDetail({
               {event.title}
             </h2>
           </div>
-          <button type="button" onClick={onClose} className="ctl-ghost size-8 shrink-0 justify-center px-0" aria-label="Fechar">
-            <X className="size-4" strokeWidth={1.75} />
-          </button>
+          <div className="flex shrink-0 items-center gap-1">
+            {/* Editar mora no cabeçalho, ao pé do que se está a editar — e longe
+                do rodapé, onde "Cancelar evento" é irreversível de outra maneira. */}
+            {mayEdit && (
+              <button
+                type="button"
+                onClick={() => setEditing(true)}
+                className="ctl-ghost h-8 px-2.5"
+                title="Editar a informação deste evento"
+              >
+                <Pencil className="size-3.5" strokeWidth={1.75} />
+                Editar
+              </button>
+            )}
+            <button type="button" onClick={onClose} className="ctl-ghost size-8 justify-center px-0" aria-label="Fechar">
+              <X className="size-4" strokeWidth={1.75} />
+            </button>
+          </div>
         </header>
 
         <div className="flex-1 overflow-y-auto">
@@ -145,6 +193,9 @@ export function EventDetail({
               label={coachName ?? "Sem treinador atribuído"}
               tone={coach ? undefined : "risk"}
             />
+            {/* A prova de um jogo é um facto básico como a hora: é ela que sai
+                impressa na convocatória, e vê-la aqui poupa abrir a página. */}
+            {event.match?.competition && <Fact icon={Trophy} label={event.match.competition.label} />}
           </dl>
 
           {event.kind === "match" && event.match && event.teamId && (
@@ -152,10 +203,38 @@ export function EventDetail({
               event={event}
               teamId={event.teamId}
               match={event.match}
-              session={session}
               editable={editable && !event.cancelled}
               past={past}
             />
+          )}
+
+          {/*
+            Os atalhos de um jogo.
+
+            Clicar num jogo no calendário levava-o direito à página dele e a
+            gaveta nunca chegava a abrir. O atalho fazia falta — a ficha e a
+            convocatória são o que se vem cá fazer — mas roubava a quem só queria
+            saber a hora e o campo a pré-visualização que todos os outros eventos
+            tinham. Agora abre a gaveta, e o atalho está aqui.
+
+            `matchPagePath` continua a decidir se **há** página: um jogo semeado
+            no browser ou de uma equipa que não é minha não tem nenhuma, e um
+            botão que não leva a lado nenhum é pior do que a ausência dele.
+          */}
+          {event.kind === "match" && (
+            <div className="space-y-2 px-5 py-4">
+              {matchPagePath(event) && (
+                <Link to={matchPagePath(event) as string} className="ctl-primary w-full justify-center">
+                  Abrir jogo
+                </Link>
+              )}
+              {can(session, "attendance:read") && (
+                <Link to="/convocatorias" className="ctl-outline w-full justify-center">
+                  <ClipboardCheck className="size-3.5" strokeWidth={1.75} />
+                  Ver convocatória
+                </Link>
+              )}
+            </div>
           )}
 
           {/* As presenças são de quem tem a equipa: sem `meu`, o link levava a
@@ -198,9 +277,17 @@ export function EventDetail({
             >
               {cancelling ? "A guardar…" : event.cancelled ? "Reativar evento" : "Cancelar evento"}
             </button>
+            {cancelError && (
+              <p className="mt-2 flex items-start gap-1.5 text-meta text-risk">
+                <TriangleAlert className="mt-0.5 size-3.5 shrink-0" strokeWidth={1.75} />
+                {cancelError}
+              </p>
+            )}
           </footer>
         )}
       </div>
+
+      {editing && <EditEventDialog event={event} onClose={() => setEditing(false)} />}
     </div>
   );
 }
@@ -239,21 +326,39 @@ function Fact({
 /* Corpo de um jogo                                                            */
 /* -------------------------------------------------------------------------- */
 
+/**
+ * O que a gaveta mostra de um jogo.
+ *
+ * ## Já não é aqui que se convoca
+ *
+ * Havia aqui o plantel inteiro, com os botões de convocar e de confirmar. Era
+ * trabalho a sério dentro de uma pré-visualização: a gaveta abre para se saber a
+ * que horas é e onde, e vinha com trinta linhas de lista por baixo — e o mesmo
+ * plantel estava, melhor apresentado, na página do jogo e no ecrã das
+ * Convocatórias, que é onde as famílias são avisadas.
+ *
+ * Ficam os factos e dois botões: *Abrir jogo* e *Ver convocatória*. O estado da
+ * convocatória diz-se numa linha, porque é informação; montá-la é noutro sítio,
+ * porque é uma tarefa.
+ *
+ * Depois de haver resultado, o jogo ganha a segunda vida — a estatística — e
+ * essa continua aqui: é leitura, e é curta.
+ */
 function MatchBody({
   event,
   teamId,
   match,
-  session,
   editable,
   past,
 }: {
   event: CalendarEvent;
   teamId: string;
   match: NonNullable<CalendarEvent["match"]>;
-  session: Session;
   editable: boolean;
   past: boolean;
 }) {
+  const convocados = match.callUps.length;
+  const confirmados = match.callUps.filter((c) => c.status === "confirmed").length;
   return (
     <div className="border-b border-line px-5 py-4">
       <div className="mb-3 flex flex-wrap items-center gap-2">
@@ -274,173 +379,24 @@ function MatchBody({
       {match.result ? (
         <Statistics teamId={teamId} match={match} editable={editable} eventId={event.id} />
       ) : (
-        <CallUps teamId={teamId} match={match} session={session} editable={editable} past={past} eventId={event.id} />
+        <>
+          <p className="text-meta text-ink-3">
+            {convocados === 0
+              ? "Convocatória por montar."
+              : `${confirmados} confirmados de ${convocados} convocados.`}
+          </p>
+          {/* Um jogo que já passou e não tem resultado é uma coisa por fazer, e
+              vale a pena dizê-lo — mas registá-lo é na ficha do jogo. */}
+          {past && (
+            <p className="mt-2 flex items-center gap-1.5 text-meta text-ink-3">
+              <TriangleAlert className="size-3.5 shrink-0" strokeWidth={1.75} />
+              O jogo já aconteceu e ainda não tem resultado registado.
+            </p>
+          )}
+        </>
       )}
     </div>
   );
-}
-
-/* -------------------------------------------------------------------------- */
-/* Convocatória                                                                */
-/* -------------------------------------------------------------------------- */
-
-function CallUps({
-  teamId,
-  match,
-  session,
-  editable,
-  past,
-  eventId,
-}: {
-  teamId: string;
-  match: NonNullable<CalendarEvent["match"]>;
-  session: Session;
-  editable: boolean;
-  past: boolean;
-  eventId: string;
-}) {
-  const [recording, setRecording] = useState(false);
-
-  // Redesenha quando o departamento clínico dá baixa ou alta a alguém.
-  useClinicalRecords();
-
-  const roster = listAthletes(session).filter((a) => a.teamId === teamId && a.status === "active");
-  const byAthlete = new Map(match.callUps.map((c) => [c.athleteId, c.status]));
-  const confirmed = match.callUps.filter((c) => c.status === "confirmed").length;
-  // Um atleta de baixa não é convocável. Não é um aviso — é o botão desaparecer.
-  const unavailable = roster.filter((a) => isUnavailable(a.id)).length;
-
-  const setStatus = (athleteId: string, status: CallUpStatus) => {
-    updateMatch(eventId, (m) => {
-      const exists = m.callUps.some((c) => c.athleteId === athleteId);
-      const callUps: CallUp[] = exists
-        ? m.callUps.map((c) => (c.athleteId === athleteId ? { ...c, status } : c))
-        : [...m.callUps, { athleteId, status }];
-      return { ...m, callUps };
-    });
-  };
-
-  const remove = (athleteId: string) => {
-    updateMatch(eventId, (m) => ({ ...m, callUps: m.callUps.filter((c) => c.athleteId !== athleteId) }));
-  };
-
-  if (recording) {
-    return <ResultForm teamId={teamId} match={match} eventId={eventId} onDone={() => setRecording(false)} />;
-  }
-
-  return (
-    <>
-      <div className="mb-3 flex items-center justify-between">
-        <h3 className="text-panel text-ink">Convocatória</h3>
-        <span className="text-meta text-ink-3 tabular">
-          {confirmed} confirmados de {match.callUps.length} convocados
-        </span>
-      </div>
-
-      {unavailable > 0 && (
-        <p className="mb-2 rounded-[var(--radius-control)] bg-risk-soft px-2.5 py-1.5 text-meta text-risk">
-          {unavailable} {unavailable === 1 ? "atleta indisponível" : "atletas indisponíveis"} por indicação clínica —
-          não podem ser convocados.
-        </p>
-      )}
-
-      <ul className="space-y-1">
-        {roster.map((a) => {
-          const status = byAthlete.get(a.id);
-          const availability = availabilityOf(a.id);
-          const blocked = availability === "out";
-
-          return (
-            <li key={a.id} className="flex items-center gap-2.5 rounded-[var(--radius-control)] px-1 py-1">
-              <Monogram name={a.name} photoUrl={a.photoUrl} size="sm" />
-              <span className={cx("min-w-0 flex-1 truncate text-body", blocked ? "text-ink-4" : "text-ink-2")}>
-                {shortName(a.name)}
-              </span>
-
-              {blocked ? (
-                // Sem controlos: quem está de baixa não se convoca por engano.
-                <AvailabilityTag availability={availability} size="sm" />
-              ) : editable ? (
-                status ? (
-                  <span className="flex shrink-0 items-center gap-1">
-                    <CallUpToggle status={status} onChange={(s) => setStatus(a.id, s)} />
-                    <button
-                      type="button"
-                      onClick={() => remove(a.id)}
-                      className="flex size-6 items-center justify-center rounded-[6px] text-ink-4 hover:bg-sunken hover:text-ink-2"
-                      aria-label={`Retirar ${a.name} da convocatória`}
-                    >
-                      <X className="size-3" strokeWidth={1.75} />
-                    </button>
-                  </span>
-                ) : (
-                  <button type="button" onClick={() => setStatus(a.id, "called")} className="ctl-ghost h-7 shrink-0 text-meta text-ink-3">
-                    <Plus className="size-3" strokeWidth={2} />
-                    Convocar
-                  </button>
-                )
-              ) : status ? (
-                <StatusPill status={status} />
-              ) : (
-                <span className="shrink-0 text-meta text-ink-4">—</span>
-              )}
-            </li>
-          );
-        })}
-      </ul>
-
-      {past && editable && (
-        <button type="button" onClick={() => setRecording(true)} className="ctl-primary mt-3 w-full">
-          Registar resultado
-        </button>
-      )}
-      {past && !editable && match.callUps.length > 0 && (
-        <p className="mt-3 flex items-center gap-1.5 text-meta text-ink-3">
-          <TriangleAlert className="size-3.5 shrink-0" strokeWidth={1.75} />
-          O jogo já aconteceu e ainda não tem resultado registado.
-        </p>
-      )}
-    </>
-  );
-}
-
-function CallUpToggle({ status, onChange }: { status: CallUpStatus; onChange: (s: CallUpStatus) => void }) {
-  const options: { value: CallUpStatus; label: string }[] = [
-    { value: "called", label: "Convocado" },
-    { value: "confirmed", label: "Confirmado" },
-    { value: "declined", label: "Falta" },
-  ];
-  return (
-    <span className="inline-flex items-center gap-px rounded-[7px] bg-sunken p-0.5">
-      {options.map((o) => (
-        <button
-          key={o.value}
-          type="button"
-          onClick={() => onChange(o.value)}
-          aria-pressed={status === o.value}
-          title={o.label}
-          className={cx(
-            "flex h-6 w-6 items-center justify-center rounded-[5px] text-[10px] font-bold transition-colors duration-[120ms]",
-            status === o.value
-              ? o.value === "declined"
-                ? "bg-risk-soft text-risk"
-                : o.value === "confirmed"
-                  ? "bg-ok-soft text-ok"
-                  : "bg-surface text-ink shadow-[0_1px_2px_rgb(26_25_23/0.06)]"
-              : "text-ink-4 hover:text-ink-2",
-          )}
-        >
-          {o.label[0]}
-        </button>
-      ))}
-    </span>
-  );
-}
-
-function StatusPill({ status }: { status: CallUpStatus }) {
-  if (status === "confirmed") return <Pill tone="ok">Confirmado</Pill>;
-  if (status === "declined") return <Pill tone="risk">Falta</Pill>;
-  return <Pill>Convocado</Pill>;
 }
 
 /* -------------------------------------------------------------------------- */

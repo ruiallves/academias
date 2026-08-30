@@ -115,7 +115,8 @@ export default function MemberDetail() {
           </div>
           <h1 className="break-words text-page text-ink">{m.name}</h1>
           <p className="mt-0.5 text-body text-ink-3">
-            {m.number ? `Sócio n.º ${m.number}` : "Sem número atribuído"} · {ageOf(m.birthdate)} anos
+            {m.number ? `Sócio n.º ${m.number}` : "Sem número atribuído"}
+            {m.birthdate ? ` · ${ageOf(m.birthdate)} anos` : ""}
           </p>
         </div>
 
@@ -170,12 +171,16 @@ export default function MemberDetail() {
               <PanelHead title="Dados pessoais" />
               <dl className="grid gap-x-6 px-5 py-1.5 sm:grid-cols-2">
                 <Fact label="Data de nascimento">
-                  {new Date(m.birthdate).toLocaleDateString("pt-PT")} · {ageOf(m.birthdate)} anos
+                  {m.birthdate ? (
+                    `${new Date(m.birthdate).toLocaleDateString("pt-PT")} · ${ageOf(m.birthdate)} anos`
+                  ) : (
+                    <PorPreencher />
+                  )}
                 </Fact>
                 <Fact label="Sexo">{SEX_LABEL[m.sex]}</Fact>
-                <Fact label={DOC_LABEL[m.documentKind]}>{m.documentNumber}</Fact>
+                <Fact label={DOC_LABEL[m.documentKind]}>{m.documentNumber ?? <PorPreencher />}</Fact>
                 <Fact label="Contribuinte">
-                  <span className="tabular">{m.taxId}</span>
+                  {m.taxId ? <span className="tabular">{m.taxId}</span> : <PorPreencher />}
                 </Fact>
               </dl>
             </Panel>
@@ -527,6 +532,17 @@ function MemberStatusMenu({ member, onChanged }: { member: Data; onChanged: () =
   );
 }
 
+/**
+ * Um campo que a ficha ainda não tem.
+ *
+ * Escrito, e não deixado em branco: um espaço vazio lê-se como uma falha do
+ * produto, "por preencher" lê-se como trabalho a fazer — e é isso que é, numa
+ * ficha aberta ao balcão com o nome e o telemóvel.
+ */
+function PorPreencher() {
+  return <span className="text-meta text-ink-4">Por preencher</span>;
+}
+
 function Fact({
   label,
   icon: Icon,
@@ -614,19 +630,27 @@ function EditPanel({
   onDone: () => void;
   onCancel: () => void;
 }) {
-  const [name, setName] = useState(member.name);
-  const [email, setEmail] = useState(member.email);
-  const [phone, setPhone] = useState(member.phone);
-  const [address, setAddress] = useState(member.address);
-  const [postalCode, setPostalCode] = useState(member.postalCode);
-  const [city, setCity] = useState(member.city);
+  const [name, setName] = useState(member.name ?? "");
+  const [email, setEmail] = useState(member.email ?? "");
+  const [phone, setPhone] = useState(member.phone ?? "");
+  const [address, setAddress] = useState(member.address ?? "");
+  const [postalCode, setPostalCode] = useState(member.postalCode ?? "");
+  const [city, setCity] = useState(member.city ?? "");
   const [number, setNumber] = useState(member.number?.toString() ?? "");
   const [notes, setNotes] = useState(member.notes ?? "");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const cpOk = /^\d{4}-\d{3}$/.test(postalCode.trim());
-  const valid = name.trim().length >= 3 && email.includes("@") && cpOk;
+  /*
+   * Só o nome é exigido — e o que estiver preenchido tem de estar bem.
+   *
+   * Um sócio criado ao balcão chega aqui com meia ficha de propósito (ver
+   * `MemberCreateDto`); se a edição exigisse tudo, seria impossível corrigir um
+   * telefone sem inventar a morada e o código postal no mesmo gesto.
+   */
+  const cpOk = !postalCode.trim() || /^\d{4}-\d{3}$/.test(postalCode.trim());
+  const emailOk = !email.trim() || email.includes("@");
+  const valid = name.trim().length >= 3 && cpOk && emailOk;
 
   async function save() {
     if (!valid || busy) return;

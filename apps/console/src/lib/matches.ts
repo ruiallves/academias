@@ -70,6 +70,8 @@ export type MatchDetail = {
   venue: string;
   opponent: string;
   isHome: boolean;
+  /** A prova. `null` num amigável, ou num jogo marcado antes de isto existir. */
+  competition: { id: string; label: string } | null;
   status: MatchStatus;
   ourScore: number | null;
   theirScore: number | null;

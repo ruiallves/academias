@@ -68,6 +68,21 @@ const cleanup = async () => {
 };
 await cleanup();
 
+/*
+ * A prova de cada jogo.
+ *
+ * A competição passou a ser obrigatória ao marcar um jogo (ver
+ * `createSingleEvent`): "nenhuma prova" chama-se **Amigável**, existe em cada
+ * academia e entra em cada equipa. Estes testes marcam jogos para testar outra
+ * coisa — o âmbito, os choques de horário — e usam-na como qualquer clube usaria.
+ */
+const amigavelId = (
+  await db.query(
+    `SELECT c.id FROM "CatalogItem" c JOIN "Academy" a ON a.id = c."academyId"
+      WHERE a.slug = 'life-club' AND c.kind = 'competitions' AND c.label = 'Amigável'`,
+  )
+).rows[0]?.id;
+
 const director = await login("direcao@lifeclub.pt");
 
 // Uma data no futuro, para o jogo contar como "a chegar" nas convocatórias.
@@ -78,7 +93,7 @@ const endsAt = new Date(day.getTime() + 90 * 60_000).toISOString();
 
 console.log("=== Marcar um jogo no calendário ===");
 const created = await call(director, "POST", "/api/events", {
-  kind: "MATCH", teamId: "t_sub11", title: "ZZ Jogo Teste",
+  kind: "MATCH", teamId: "t_sub11", competitionId: amigavelId, title: "ZZ Jogo Teste",
   startsAt, endsAt, venue: "Campo 1", opponent: "ZZ Adversário FC", isHome: true,
 });
 check("a direção marca um jogo (201)", created.status === 201 || created.status === 200, JSON.stringify(created.body).slice(0, 160));
@@ -118,7 +133,7 @@ check("não está em /api/events (é um Match, lido à parte)", !inEvents);
 
 console.log("\n=== Um jogo precisa de equipa e adversário ===");
 const noOpponent = await call(director, "POST", "/api/events", {
-  kind: "MATCH", teamId: "t_sub11", title: "ZZ Jogo SemAdv", startsAt, endsAt, venue: "Campo 1",
+  kind: "MATCH", teamId: "t_sub11", competitionId: amigavelId, title: "ZZ Jogo SemAdv", startsAt, endsAt, venue: "Campo 1",
 });
 check("sem adversário é recusado (400)", noOpponent.status === 400, `${noOpponent.status}`);
 const noTeam = await call(director, "POST", "/api/events", {
@@ -128,7 +143,7 @@ check("sem equipa é recusado (400)", noTeam.status === 400, `${noTeam.status}`)
 
 console.log("\n=== A mesma equipa não joga duas vezes à mesma hora ===");
 const clash = await call(director, "POST", "/api/events", {
-  kind: "MATCH", teamId: "t_sub11", title: "ZZ Jogo Choque", startsAt, endsAt, venue: "Campo 2", opponent: "ZZ Outro FC",
+  kind: "MATCH", teamId: "t_sub11", competitionId: amigavelId, title: "ZZ Jogo Choque", startsAt, endsAt, venue: "Campo 2", opponent: "ZZ Outro FC",
 });
 check("choque de horário recusado com mensagem clara (400)", clash.status === 400 && /já tem um jogo/i.test(clash.body?.message ?? ""), JSON.stringify(clash.body?.message));
 
@@ -151,7 +166,7 @@ console.log("\n=== Um jogo cancelado liberta o horário ===");
 // jogo desmarcado não ocupa o campo.
 await call(director, "PATCH", `/api/events/${matchId}`, { cancelled: true });
 const reuse = await call(director, "POST", "/api/events", {
-  kind: "MATCH", teamId: "t_sub11", title: "ZZ Jogo Substituto",
+  kind: "MATCH", teamId: "t_sub11", competitionId: amigavelId, title: "ZZ Jogo Substituto",
   startsAt, endsAt, venue: "Campo 1", opponent: "ZZ Substituto FC",
 });
 check("marca outro jogo no horário do cancelado (201)", reuse.status === 201 || reuse.status === 200, JSON.stringify(reuse.body?.message ?? reuse.status));

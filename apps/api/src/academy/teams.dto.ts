@@ -78,6 +78,19 @@ export class CreateTeamDto {
   @Length(1, 40)
   coachId?: string;
 
+  /**
+   * As provas que a equipa vai disputar, do catálogo do clube.
+   *
+   * Opcional: uma equipa nova pode ainda não ter calendário competitivo, e
+   * obrigar a escolher uma prova para a criar era pedir uma decisão que muitas
+   * vezes só se toma em Setembro.
+   */
+  @IsOptional()
+  @IsArray()
+  @ArrayMaxSize(12)
+  @IsString({ each: true })
+  competitionIds?: string[];
+
   @IsArray()
   @ArrayMaxSize(14)
   @ValidateNested({ each: true })

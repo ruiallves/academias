@@ -53,6 +53,19 @@ export class TicketsController {
     return this.tickets.list({ status, q });
   }
 
+  /*
+   * Antes do `:id`, e não por acaso.
+   *
+   * O Nest resolve as rotas por ordem de declaração: com `@Get(":id")` primeiro,
+   * `/tickets/por-tratar` seria lido como o ticket com o id "por-tratar" e daria
+   * 404. É o tipo de erro que só aparece em produção, e cuja causa não está no
+   * ficheiro onde se procura.
+   */
+  @Get("por-tratar")
+  porTratar() {
+    return this.tickets.porTratar();
+  }
+
   @Get(":id")
   get(@Param("id") id: string) {
     return this.tickets.get(id);

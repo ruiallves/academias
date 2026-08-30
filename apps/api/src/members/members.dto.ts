@@ -153,9 +153,11 @@ export class MemberImportDto {
 /**
  * Um sócio criado à mão, na secretaria.
  *
- * Os mesmos campos obrigatórios da inscrição pública — quem se inscreve na mesa
- * do clube não fica com meia ficha —, mais o que só a direção pode decidir: a
- * categoria, o número e o estado.
+ * **Só o nome é obrigatório**, mais um contacto (email ou telemóvel, exigido no
+ * serviço). A inscrição pública continua a pedir a ficha inteira, e faz sentido
+ * que peça: quem se inscreve pelo site está sentado, com os documentos à mão.
+ * Quem chega ao balcão dá o nome e o número de telefone, e o resto completa-se
+ * na ficha quando se souber. Ver a migração `socio_manual_leve`.
  *
  * `acceptedTerms` é uma pergunta e não um automatismo. Quem está a preencher tem
  * a pessoa à frente e sabe se ela assinou; carimbar o consentimento só porque
@@ -166,21 +168,33 @@ export class MemberCreateDto {
   @IsOptional() @IsString() @Length(1, 40) tierId?: string;
 
   @IsString() @Length(3, 120) name!: string;
-  @IsEmail({}, { message: "Email inválido" }) email!: string;
-  @IsISO8601() birthdate!: string;
+
+  /*
+   * Tudo o resto é opcional — mas **um contacto** é exigido no serviço.
+   *
+   * Quem inscreve ao balcão tem o nome e o telemóvel, não o cartão de cidadão.
+   * Obrigar à ficha inteira não produzia fichas completas: produzia dados
+   * inventados para o formulário deixar gravar, e um NIF inventado é pior do que
+   * um NIF em falta porque ninguém sabe que está errado.
+   *
+   * As validações de **forma** ficam todas: opcional quer dizer "pode não vir",
+   * nunca "pode vir errado". Um código postal que venha, vem no formato certo.
+   */
+  @IsOptional() @IsEmail({}, { message: "Email inválido" }) email?: string;
+  @IsOptional() @IsISO8601() birthdate?: string;
 
   @IsOptional() @IsString() @Length(2, 2) country?: string;
-  @IsString() @Length(3, 160) address!: string;
-  @Matches(/^\d{4}-\d{3}$/, { message: "Código postal no formato 0000-000" }) postalCode!: string;
-  @IsString() @Length(2, 80) city!: string;
+  @IsOptional() @IsString() @Length(3, 160) address?: string;
+  @IsOptional() @Matches(/^\d{4}-\d{3}$/, { message: "Código postal no formato 0000-000" }) postalCode?: string;
+  @IsOptional() @IsString() @Length(2, 80) city?: string;
 
   @IsOptional() @Matches(/^\+\d{1,4}$/, { message: "Indicativo inválido" }) phoneCountry?: string;
-  @Matches(/^[\d\s]{6,15}$/, { message: "Telemóvel inválido" }) phone!: string;
+  @IsOptional() @Matches(/^[\d\s]{6,15}$/, { message: "Telemóvel inválido" }) phone?: string;
 
   @IsOptional() @IsIn(SEXES as unknown as string[]) sex?: string;
   @IsOptional() @IsIn(DOCS as unknown as string[]) documentKind?: string;
-  @IsString() @Length(4, 40) documentNumber!: string;
-  @Matches(/^\d{9}$/, { message: "O NIF tem nove dígitos" }) taxId!: string;
+  @IsOptional() @IsString() @Length(4, 40) documentNumber?: string;
+  @IsOptional() @Matches(/^\d{9}$/, { message: "O NIF tem nove dígitos" }) taxId?: string;
 
   @IsOptional() @IsInt() @Min(1) @Max(9_999_999) number?: number;
   @IsOptional() @IsIn(STATUSES as unknown as string[]) status?: string;

@@ -32,6 +32,30 @@ export type Permission =
   | "report:write"
   | "settings:write"
   /**
+   * Apagar o clube inteiro.
+   *
+   * A operação mais destrutiva que existe no produto: leva atrás atletas,
+   * famílias, pagamentos, boletins clínicos e o histórico todo, por cascata.
+   * Por isso é **permissão própria** e não `settings:write` — configurar o
+   * white-label e apagar a casa não são o mesmo nível de decisão, e quem trata
+   * das definições não tem de poder fazer as duas.
+   *
+   * Por omissão: presidência e direção. Gémea do servidor.
+   */
+  | "academy:delete"
+  /**
+   * Apagar uma equipa.
+   *
+   * À parte de `team:write` (que cria e edita) porque é outra decisão: uma
+   * equipa apagada leva atrás os treinos e os jogos dela. Por omissão fica na
+   * presidência e na direção — quem coordena o desporto monta plantéis, não
+   * desmancha escalões.
+   *
+   * **Os atletas não são apagados.** Perdem a ligação a esta equipa e ficam por
+   * atribuir: uma pessoa não pertence a uma linha de organização do clube.
+   */
+  | "team:delete"
+  /**
    * Mudar o que os outros vêem.
    *
    * Separada de `staff:write` de propósito. Editar a ficha de alguém — corrigir um
@@ -150,6 +174,10 @@ const WRITE_ALL: Permission[] = [
   "report:write",
   "settings:write",
   "access:write",
+  // Apagar o clube — presidência e direção. Gémea do servidor.
+  "academy:delete",
+  // Apagar uma equipa. Gémea do servidor.
+  "team:delete",
   // A direção pode tudo — incluindo registar no boletim clínico.
   "clinical:write",
   "scouting:write",

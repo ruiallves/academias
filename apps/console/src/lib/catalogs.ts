@@ -45,9 +45,9 @@ import { apiDelete, apiGet, apiPatch, apiPost } from "@/lib/http";
  * passos e dois sítios para a mesma decisão, e nenhum deles obrigava o outro a
  * concordar. A equipa passou a ter `maxAge`, um inteiro; ver `lib/team-age.ts`.
  */
-export type CatalogKey = "venues" | "dressingRooms" | "eventTypes";
+export type CatalogKey = "venues" | "dressingRooms" | "eventTypes" | "competitions";
 
-export const CATALOG_KEYS: CatalogKey[] = ["venues", "dressingRooms", "eventTypes"];
+export const CATALOG_KEYS: CatalogKey[] = ["venues", "dressingRooms", "eventTypes", "competitions"];
 
 export type CatalogItem = {
   id: string;
@@ -85,6 +85,12 @@ export const CATALOG_META: Record<CatalogKey, { title: string; hint: string; pla
     hint: "no calendário",
     placeholder: "Estágio, Prova, Reunião de pais…",
   },
+  competitions: {
+    title: "Competições",
+    hint: "as provas que o clube disputa",
+    placeholder: "Campeonato Distrital, Taça, Torneio de Verão…",
+    noteLabel: "Organização ou escalão",
+  },
 };
 
 /* -------------------------------------------------------------------------- */
@@ -106,6 +112,7 @@ const EMPTY: Record<CatalogKey, CatalogItem[]> = {
   venues: [],
   dressingRooms: [],
   eventTypes: [],
+  competitions: [],
 };
 
 let state: Record<CatalogKey, CatalogItem[]> = { ...EMPTY };
@@ -226,6 +233,17 @@ export async function moveItem(key: CatalogKey, id: string, direction: -1 | 1): 
 /* -------------------------------------------------------------------------- */
 /* Leitura                                                                     */
 /* -------------------------------------------------------------------------- */
+
+/**
+ * O catálogo agora, sem hook.
+ *
+ * Para quem precisa de o ler **depois** de uma gravação — a seguir a um
+ * `await addItem(...)`, onde um hook não pode ser chamado e o valor do render
+ * anterior já está desactualizado.
+ */
+export function getCatalog(key: CatalogKey): CatalogItem[] {
+  return snapshot()[key];
+}
 
 /** Todos os itens, incluindo arquivados — para o ecrã de definições. */
 export function useCatalog(key: CatalogKey): CatalogItem[] {

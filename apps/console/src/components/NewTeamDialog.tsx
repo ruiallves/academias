@@ -7,6 +7,7 @@ import { useActiveCatalog } from "@/lib/catalogs";
 import { defaultSeason, seasonOptions } from "@/lib/seasons";
 import { SEM_LIMITE, teamAgeLabel } from "@/lib/team-age";
 import { Plus, Trash2 } from "@/lib/icons";
+import { CompetitionPicker } from "@/components/CompetitionPicker";
 import { Dialog, DialogField, dialogInputClass } from "./Dialog";
 import { PersonPicker } from "./PersonPicker";
 import { cx, SelectField } from "./primitives";
@@ -35,6 +36,7 @@ export function NewTeamDialog({ onClose }: { onClose: () => void }) {
   const seasonChoices = seasonOptions(knownSeasons);
 
   const [sportId, setSportId] = useState(academy.sports[0]?.id ?? "");
+  const [competitionIds, setCompetitionIds] = useState<string[]>([]);
   /*
    * A idade em texto, e não em número.
    *
@@ -81,6 +83,7 @@ export function NewTeamDialog({ onClose }: { onClose: () => void }) {
         maxAge,
         season: season.trim(),
         ...(coachId ? { coachId } : {}),
+        ...(competitionIds.length ? { competitionIds } : {}),
         schedule: slots.filter((s) => s.venue),
       });
       await reloadAcademy();
@@ -204,6 +207,16 @@ export function NewTeamDialog({ onClose }: { onClose: () => void }) {
             />
           </DialogField>
         </div>
+
+        {/*
+          As provas, entre a época e o horário.
+          É a ordem de quem monta uma equipa em Setembro: primeiro *quem é*
+          (modalidade, escalão, treinador, época), depois *onde joga*, e só no
+          fim *quando treina*.
+        */}
+        <DialogField label="Competições" hint="opcional">
+          <CompetitionPicker sportId={sportId} selected={competitionIds} onChange={setCompetitionIds} />
+        </DialogField>
 
         <fieldset>
           <legend className="mb-1.5 flex items-baseline gap-2 text-meta font-medium text-ink">

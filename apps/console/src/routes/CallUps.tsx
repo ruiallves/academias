@@ -1,8 +1,8 @@
 import { useEffect, useMemo, useState } from "react";
 import { PageHeader } from "@/components/Shell";
 import { Empty, Metric, MetricRow, Monogram, Panel, PanelHead, Pill, cx } from "@/components/primitives";
-import { ArrowUpRight, Check, Megaphone, Search, Trophy, Users } from "@/lib/icons";
-import { teamById } from "@/lib/api";
+import { ArrowUpRight, Check, Download, Megaphone, Search, Trophy, Users } from "@/lib/icons";
+import { athleteById, teamById } from "@/lib/api";
 import { useStore, type ApiMatch, type GuestCandidate } from "@/lib/store";
 import {
   eligibleFor,
@@ -15,6 +15,8 @@ import {
   submitCallUps,
   upcomingMatches,
 } from "@/lib/callups";
+import { CallUpSheetDialog, type SheetMatch } from "@/components/CallUpSheetDialog";
+import type { SheetRow } from "@/lib/callup-sheet";
 import { longDate, time } from "@/lib/format";
 import { can } from "@/lib/permissions";
 import { useSession } from "@/session";
@@ -167,6 +169,7 @@ function Squad({ match }: { match: ApiMatch }) {
   const [busy, setBusy] = useState<null | "save" | "submit" | "reopen">(null);
   const [error, setError] = useState<string | null>(null);
   const [saved, setSaved] = useState(false);
+  const [folha, setFolha] = useState(false);
 
   /*
    * Candidatos de escalões inferiores — jogam para cima, nunca para baixo.
@@ -204,6 +207,52 @@ function Squad({ match }: { match: ApiMatch }) {
   // por isso o tecto abre-se com `calendar:write` (que ele tem), não `team:write`.
   // O servidor limita-o às suas equipas pelo âmbito.
   const mayConfigure = can(session, "calendar:write");
+
+  /*
+   * A folha imprime `match.calledUp` — a lista submetida —, nunca `picked`.
+   *
+   * São a mesma coisa enquanto a convocatória estiver fechada, e é de propósito
+   * que a folha lê a do servidor: é aquela que as famílias receberam no
+   * telemóvel, e é por aquela que se assina no ponto de encontro. Uma folha
+   * tirada de uma escolha em curso seria um documento a discordar do aviso que
+   * já saiu — e alguém a assinar por um miúdo que ficou em casa.
+   *
+   * Ver a nota do botão: só há folha depois de submeter, e por isso `picked`
+   * está trancado quando isto corre.
+   */
+  const sheetRows: SheetRow[] = useMemo(
+    () =>
+      match.calledUp.map((c) => {
+        // O convidado de outro escalão pode não estar na lista de atletas de
+        // quem imprime — o âmbito de um treinador acaba na equipa dele. Aí o
+        // nome vem do lote de convidados deste jogo.
+        const atleta = athleteById(c.athleteId);
+        const guest = guests.find((g) => g.id === c.athleteId);
+
+        return {
+          squadNumber: atleta?.squadNumber ?? guest?.squadNumber ?? null,
+          name: atleta?.name ?? guest?.name ?? "—",
+          position: atleta?.position ?? guest?.position ?? null,
+          status: c.status === "CONFIRMED" || c.status === "DECLINED" ? c.status : "CALLED",
+          guestFrom: c.isGuest ? (c.guestFromTeam ?? guest?.teamName ?? "outro escalão") : null,
+        };
+      }),
+    [match.calledUp, guests],
+  );
+
+  const sheetMatch: SheetMatch = {
+    teamId: match.teamId,
+    teamName: match.teamName,
+    opponent: match.opponent,
+    isHome: match.isHome,
+    venue: match.venue,
+    // A prova do jogo — a folha pré-preenche-se com ela em vez de a pedir.
+    competition: match.competition ?? null,
+    startsAt: match.startsAt,
+    submitted: match.submitted,
+    coachName: null,
+    staff: [],
+  };
 
   function toggle(id: string, blocked: boolean) {
     if (locked || blocked) return;
@@ -246,6 +295,29 @@ function Squad({ match }: { match: ApiMatch }) {
         hint={`${longDate(d)} · ${time(d)} · ${match.venue}`}
       >
         {match.submitted && <Pill tone="ok">convocatória enviada</Pill>}
+        {/*
+          A folha para levar para o campo — e só **depois de submeter**.
+
+          Um rascunho ainda muda: sai a folha, entra um lesionado, e no ponto de
+          encontro há um papel assinado que não bate certo com o aviso que as
+          famílias receberam. Enquanto a lista não fecha, não há nada para levar
+          para lado nenhum — o botão fica à vista, desligado, a dizer o que
+          falta, em vez de aparecer do nada depois de se carregar em Submeter.
+        */}
+        <button
+          type="button"
+          onClick={() => setFolha(true)}
+          disabled={!match.submitted}
+          className="ctl-outline"
+          title={
+            match.submitted
+              ? "PDF da convocatória, para assinar no ponto de encontro"
+              : "Submete a convocatória primeiro — a folha é da lista que as famílias receberam"
+          }
+        >
+          <Download className="size-3.5" strokeWidth={1.75} />
+          Exportar PDF
+        </button>
       </PanelHead>
 
       {/* A contagem é a informação mais importante do ecrã e por isso está fixa no
@@ -375,6 +447,8 @@ function Squad({ match }: { match: ApiMatch }) {
           </>
         )}
       </footer>
+
+      {folha && <CallUpSheetDialog match={sheetMatch} rows={sheetRows} onClose={() => setFolha(false)} />}
     </Panel>
   );
 }

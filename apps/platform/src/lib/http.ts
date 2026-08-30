@@ -1,4 +1,4 @@
-import { readSession, signOut } from "@/lib/session";
+import { getAccessToken, refreshSession, signOut } from "@/lib/session";
 
 /**
  * O cliente HTTP do painel.
@@ -16,9 +16,8 @@ export class ApiError extends Error {
   }
 }
 
-async function request<T>(path: string, init?: RequestInit): Promise<T> {
-  const token = readSession()?.accessToken;
-  const res = await fetch(`${BASE}/api/platform${path}`, {
+function enviar(path: string, token: string | null, init?: RequestInit): Promise<Response> {
+  return fetch(`${BASE}/api/platform${path}`, {
     ...init,
     headers: {
       ...(token ? { Authorization: `Bearer ${token}` } : {}),
@@ -26,9 +25,30 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
       ...init?.headers,
     },
   });
+}
 
-  // Token expirado: cair para o login é a única saída útil. Repetir o pedido com
-  // o mesmo token daria o mesmo erro para sempre.
+async function request<T>(path: string, init?: RequestInit): Promise<T> {
+  const token = await getAccessToken();
+  let res = await enviar(path, token, init);
+
+  /*
+   * Um 401 merece uma segunda tentativa antes de mandar alguém para o login.
+   *
+   * O `getAccessToken()` já renova o que está a expirar; o que sobra são os
+   * casos que a validade não vê — relógio adiantado, token revogado do outro
+   * lado. Renovar e repetir **uma** vez resolve-os sem que ninguém dê por nada.
+   * Uma vez só: se o repetido também falhar, o problema não é o token estar
+   * velho, e insistir era um ciclo.
+   *
+   * Dizia aqui que "repetir com o mesmo token daria o mesmo erro para sempre" —
+   * verdade, e é por isso que se repete com um **novo**.
+   */
+  if (res.status === 401 && token) {
+    const renovado = await refreshSession();
+    if (renovado && renovado !== token) res = await enviar(path, renovado, init);
+  }
+
+  // Depois da renovação ter falhado, aí sim: cair para o login é a saída útil.
   if (res.status === 401) {
     signOut();
     throw new ApiError(401, "A sessão expirou.");

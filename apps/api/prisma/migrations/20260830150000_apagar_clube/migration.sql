@@ -1,0 +1,21 @@
+-- Apagar um clube deixa rasto na plataforma.
+--
+-- ## Porquê abrir o `AuditLog` à ligação da aplicação
+--
+-- Um clube que se apaga a si próprio é o evento mais grave que o produto tem, e
+-- é **exactamente** o que quem é dono do SaaS precisa de saber: leva atrás
+-- atletas, famílias, pagamentos e o histórico todo, e a seguir não há a quem
+-- perguntar o que aconteceu — a academia deixou de existir.
+--
+-- O registo tem de ser escrito **antes** de a linha desaparecer, e por quem está
+-- a apagar. Escrever no `AuditLog` da plataforma é o sítio certo: sobrevive à
+-- cascata (não tem `academyId`) e é onde o resto da auditoria já vive.
+--
+-- ## O mínimo, e só o mínimo
+--
+-- `INSERT` e nada mais. A academia **não lê** o registo (não saberia dos outros
+-- clubes), **não altera** e **não apaga** — um log que quem é auditado pode
+-- reescrever não é um log. É a mesma disciplina de sempre: dá-se o verbo que a
+-- operação precisa, não a tabela inteira.
+
+GRANT INSERT ON "AuditLog" TO academia_app;

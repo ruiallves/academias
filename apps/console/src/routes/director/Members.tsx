@@ -97,7 +97,7 @@ export default function Members() {
             <div className="truncate text-body font-medium text-ink">{m.name}</div>
             <div className="truncate text-meta text-ink-3">
               {m.number ? `n.º ${m.number} · ` : ""}
-              {ageOf(m.birthdate)} anos
+              {m.birthdate ? `${ageOf(m.birthdate)} anos` : "Ficha por completar"}
             </div>
           </div>
         </div>
@@ -559,35 +559,61 @@ function NewMemberDialog({ onClose, onCreated }: { onClose: () => void; onCreate
       .catch(() => setTiers([]));
   }, []);
 
+  /*
+   * Obrigatório: o nome, um contacto, e a categoria quando o clube tem alguma.
+   *
+   * A inscrição pública pede a ficha inteira, e faz sentido que peça — quem se
+   * inscreve pelo site está sentado, com os documentos à mão. Ao balcão é outra
+   * coisa: chega uma pessoa que dá o nome e o telemóvel, e exigir NIF, morada e
+   * cartão de cidadão não produzia fichas completas, produzia **dados
+   * inventados** para o formulário deixar gravar — e um NIF inventado é pior do
+   * que um NIF em falta, porque ninguém sabe que está errado.
+   *
+   * O que é preenchido continua a ser validado na forma: opcional quer dizer
+   * "pode não vir", nunca "pode vir errado".
+   */
+  const emailOk = !email.trim() || /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email.trim());
+  const phoneOk = !phone.trim() || /^\d{6,15}$/.test(phone.replace(/\s/g, ""));
+  const temContacto = Boolean(email.trim() || phone.trim());
+
   const valid =
     name.trim().length >= 3 &&
-    /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email.trim()) &&
-    /^\d{4}-\d{2}-\d{2}$/.test(birthdate) &&
-    address.trim().length >= 3 &&
-    /^\d{4}-\d{3}$/.test(postalCode) &&
-    city.trim().length >= 2 &&
-    /^\d{6,15}$/.test(phone.replace(/\s/g, "")) &&
-    documentNumber.trim().length >= 4 &&
-    /^\d{9}$/.test(taxId);
+    temContacto &&
+    emailOk &&
+    phoneOk &&
+    // A categoria só é exigida se existir alguma para escolher: um clube que
+    // ainda não as criou não pode ficar sem conseguir inscrever ninguém.
+    (tiers.length === 0 || Boolean(tierId)) &&
+    (!birthdate || /^\d{4}-\d{2}-\d{2}$/.test(birthdate)) &&
+    (!postalCode.trim() || /^\d{4}-\d{3}$/.test(postalCode)) &&
+    (!taxId.trim() || /^\d{9}$/.test(taxId));
 
   async function save() {
     if (!valid || busy) return;
     setBusy(true);
     setError(null);
     try {
+      /*
+       * O que está vazio não vai no corpo.
+       *
+       * O validador do servidor recusa um `taxId: ""` (não tem nove dígitos) e
+       * um `email: ""` (não é email) — enviar campos vazios daria erro de
+       * validação em vez de gravar a ficha curta que se quis fazer. Ausente é
+       * ausente.
+       */
       await createMember({
         name: name.trim(),
-        email: email.trim(),
-        birthdate,
+        ...(email.trim() ? { email: email.trim() } : {}),
+        ...(birthdate ? { birthdate } : {}),
         sex,
         documentKind,
-        documentNumber: documentNumber.trim(),
-        taxId,
+        ...(documentNumber.trim() ? { documentNumber: documentNumber.trim() } : {}),
+        ...(taxId.trim() ? { taxId } : {}),
         phoneCountry,
-        phone: phone.replace(/\s/g, ""),
-        address: address.trim(),
-        postalCode,
-        city: city.trim(),
+        ...(phone.trim() ? { phone: phone.replace(/\s/g, "") } : {}),
+        ...(address.trim() ? { address: address.trim() } : {}),
+        ...(postalCode.trim() ? { postalCode } : {}),
+        ...(city.trim() ? { city: city.trim() } : {}),
         ...(tierId ? { tierId } : {}),
         status,
         acceptedTerms,
@@ -604,7 +630,7 @@ function NewMemberDialog({ onClose, onCreated }: { onClose: () => void; onCreate
   return (
     <Dialog
       title="Novo sócio"
-      subtitle="Os mesmos dados que a página pública pede"
+      subtitle="Nome, um contacto e a categoria chegam — o resto completa-se depois"
       onClose={onClose}
       width={640}
       labelledBy="new-member"
