@@ -10,7 +10,10 @@
  * segunda-feira.
  *
  * **O contador.** Quem já está dentro da plataforma não tem o email à frente. O
- * número ao lado de "Tickets" responde de relance, de qualquer ecrã.
+ * número ao lado de "Tickets" responde de relance, de qualquer ecrã — e conta
+ * **só o que ninguém abriu**. Contava também os que estavam a ser tratados e os
+ * que esperavam resposta de terceiros, e ficava aceso durante dias; um emblema
+ * que nunca apaga deixa de se olhar.
  *
  * ## O que este teste protege acima de tudo
  *
@@ -127,7 +130,31 @@ try {
   )).rows[0];
   check("ficou registada uma tentativa de aviso", Boolean(enviado), "sem linha em MailLog");
   check("do tipo certo", enviado?.kind === "ticket-alert", enviado?.kind);
-  check("para um dono da plataforma", String(enviado?.to ?? "").includes("@"), `${enviado?.to}`);
+  check("para um endereço a sério", String(enviado?.to ?? "").includes("@"), `${enviado?.to}`);
+
+  /*
+   * Para onde, exactamente.
+   *
+   * Sem `PLATFORM_ALERT_EMAIL`, o aviso ia para o email dos donos tal como está
+   * na base — o endereço de trabalho, não o que se lê ao domingo. Quem atende
+   * escolhe onde quer ser incomodado, e essa escolha é configuração.
+   */
+  const destino = (readFileSync(path.join(HERE, "..", ".env"), "utf8")
+    .split("\n")
+    .find((x) => x.startsWith("PLATFORM_ALERT_EMAIL=")) ?? "")
+    .split("=")[1]
+    ?.trim()
+    .replace(/^"|"$/g, "");
+
+  if (destino) {
+    check(
+      `vai para o endereço configurado (${destino})`,
+      String(enviado?.to ?? "").split(",").map((x) => x.trim()).includes(destino),
+      `${enviado?.to}`,
+    );
+  } else {
+    console.log("  (PLATFORM_ALERT_EMAIL por definir — o aviso segue para os donos activos)");
+  }
   if (enviado && !enviado.ok) {
     console.log(`  (o envio não saiu: "${enviado.reason}" — o que importa aqui é que se tentou)`);
   }
@@ -141,8 +168,50 @@ try {
   check("o pedido está lá, tenha o email saído ou não", Boolean(guardado), "");
   check("e conta no menu", (await contar()) > antes, "");
 
-  console.log("\n=== Tratar um ticket baixa o contador ===");
+  console.log("\n=== O contador é dos que ninguém viu ===");
+  /*
+   * `ABERTO` e `RESPONDIDO` são trabalho por terminar — e mesmo assim não entram
+   * no emblema. O menu não responde a "quanto trabalho tenho?"; responde a
+   * "chegou alguma coisa?". Com os três estados, o número ficava aceso com
+   * pedidos já lidos à espera de terceiros, e deixava de se olhar.
+   */
+  for (const estado of ["ABERTO", "RESPONDIDO"]) {
+    await db.query(`UPDATE "Ticket" SET status = $2 WHERE id = $1`, [guardado.id, estado]);
+    check(`um pedido ${estado} não conta`, (await contar()) === antes, `${await contar()} vs ${antes}`);
+  }
+
+  console.log("\n=== Abrir um pedido é vê-lo ===");
+  /*
+   * Sem isto, um pedido lido e deixado para depois ficava `NOVO` para sempre e o
+   * emblema apontava para uma coisa que a pessoa já tinha lido. É a mesma regra
+   * que já existia para as notas, aplicada ao gesto mais simples de todos.
+   */
+  await db.query(`UPDATE "Ticket" SET status = 'NOVO' WHERE id = $1`, [guardado.id]);
+  check("de volta a por ver, conta outra vez", (await contar()) === antes + 1, `${await contar()}`);
+
+  const visto = await fetch(`${API}/api/platform/tickets/${guardado.id}/visto`, {
+    method: "POST",
+    headers: { Authorization: `Bearer ${plataforma}`, "Content-Type": "application/json" },
+    body: "{}",
+  });
+  check("marcar como visto responde ok", visto.status === 201 || visto.status === 200, `${visto.status}`);
+  check("o emblema apaga-se", (await contar()) === antes, `${await contar()} vs ${antes}`);
+
+  const depoisDeVer = (await db.query(`SELECT status FROM "Ticket" WHERE id = $1`, [guardado.id])).rows[0];
+  check("e o pedido passa a ABERTO", depoisDeVer?.status === "ABERTO", depoisDeVer?.status);
+
+  // Reabrir um pedido fechado para o reler não o pode desfechar: abrir a página
+  // não é uma decisão, e os outros estados são-no.
   await db.query(`UPDATE "Ticket" SET status = 'FECHADO' WHERE id = $1`, [guardado.id]);
+  await fetch(`${API}/api/platform/tickets/${guardado.id}/visto`, {
+    method: "POST",
+    headers: { Authorization: `Bearer ${plataforma}`, "Content-Type": "application/json" },
+    body: "{}",
+  });
+  const aindaFechado = (await db.query(`SELECT status FROM "Ticket" WHERE id = $1`, [guardado.id])).rows[0];
+  check("abrir um pedido fechado não o reabre", aindaFechado?.status === "FECHADO", aindaFechado?.status);
+
+  console.log("\n=== Tratar um ticket baixa o contador ===");
   check("volta ao que era", (await contar()) === antes, `${await contar()} vs ${antes}`);
 
   console.log("\n=== A contagem é só para quem é da plataforma ===");

@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import { ArrowRightLeft, Inbox, Mail, Phone, Search, Trash2 } from "lucide-react";
 import { PageHeader } from "@/components/Shell";
@@ -12,10 +12,12 @@ import {
   TICKET_STATUS_LABEL,
   TICKET_TONE,
   addTicketNote,
+  avisarQueMudou,
   converterTicket,
   removeTicket,
   replyHref,
   updateTicket,
+  verTicket,
   type Ticket,
   type TicketDetail,
   type TicketList,
@@ -216,6 +218,32 @@ function TicketBody({ id, me, onChanged }: { id: string; me: Me; onChanged: () =
   const [erro, setErro] = useState<string | null>(null);
   const [confirmar, setConfirmar] = useState(false);
 
+  /*
+   * Abrir é ver.
+   *
+   * O emblema do menu conta só os pedidos que ninguém abriu, e é este o gesto
+   * que o apaga. Uma vez por pedido — a referência guarda-o, porque a lista
+   * recarrega a seguir e o efeito voltaria a correr.
+   *
+   * Antes das saídas antecipadas de propósito: um `useEffect` a seguir a um
+   * `return` condicional é um erro de regras dos hooks que só rebenta quando o
+   * pedido demora a chegar.
+   */
+  const marcado = useRef(false);
+  useEffect(() => {
+    if (marcado.current || data?.status !== "NOVO") return;
+    marcado.current = true;
+    verTicket(id)
+      .then(() => {
+        onChanged();
+        avisarQueMudou();
+      })
+      .catch(() => {
+        // Falhou? Fica por ver — que é a verdade. Tenta-se outra vez à próxima.
+        marcado.current = false;
+      });
+  }, [data?.status, id, onChanged]);
+
   // Um bloco dentro de uma página já utilizável: disco pequeno, no sítio, e
   // não o desfoque da página inteira. Ver a nota em `Spinner`.
   if (loading && !data) return <Spinner className="py-6" />;
@@ -230,6 +258,8 @@ function TicketBody({ id, me, onChanged }: { id: string; me: Me; onChanged: () =
       await fn();
       reload();
       onChanged();
+      // Mudar o estado, escrever uma nota ou apagar mexe no que o menu conta.
+      avisarQueMudou();
     } catch (e) {
       setErro(e instanceof Error ? e.message : "Não foi possível gravar.");
     } finally {

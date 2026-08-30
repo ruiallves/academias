@@ -181,21 +181,48 @@ export class TicketsService {
    * *o que é que falta?*. Os fechados continuam a existir e vêem-se a pedido.
    */
   /**
-   * Quantos pedidos estão à espera de alguém.
+   * Quantos pedidos estão **por ver**.
    *
-   * Os mesmos três estados que o filtro "Abertos" da lista usa — `NOVO`,
-   * `ABERTO`, `RESPONDIDO`. "Respondido" conta de propósito: a bola está do
-   * outro lado, mas o assunto não está fechado, e um contador que o ignorasse
-   * dizia zero com trabalho por terminar em cima da mesa.
+   * Só `NOVO` — os que ninguém abriu ainda.
+   *
+   * Contava também os `ABERTO` e os `RESPONDIDO`, com o argumento de que são
+   * trabalho por terminar. O argumento é verdadeiro e mesmo assim o número
+   * estava errado, porque um contador no menu não responde a *"quanto trabalho
+   * tenho?"* — responde a *"chegou alguma coisa?"*. Com os três estados, o
+   * emblema ficava aceso durante dias com pedidos que já se tinham lido e que
+   * estavam à espera de terceiros; um emblema que nunca apaga deixa de se olhar,
+   * e o dia em que chega mesmo um pedido novo passa despercebido.
+   *
+   * O que o apaga é abrir o pedido — ver `marcarVisto`.
    *
    * É uma contagem e não a lista: o menu quer um número, e trazer trinta tickets
    * para desenhar "3" era pagar a página inteira por um algarismo.
    */
   async porTratar(): Promise<{ n: number }> {
-    const n = await this.prisma.ticket.count({
-      where: { status: { in: ["NOVO", "ABERTO", "RESPONDIDO"] as TicketStatus[] } },
-    });
+    const n = await this.prisma.ticket.count({ where: { status: "NOVO" } });
     return { n };
+  }
+
+  /**
+   * Abrir um pedido é vê-lo.
+   *
+   * Sem isto, um pedido lido e deixado para depois continuava `NOVO` para
+   * sempre, e o emblema do menu ficava aceso a apontar para uma coisa que a
+   * pessoa já tinha lido. A regra é a mesma que já existia para as notas —
+   * *escrever uma nota num pedido NOVO é pegar nele* — aplicada ao gesto mais
+   * simples de todos.
+   *
+   * Só de `NOVO` para `ABERTO`. Os outros estados são decisões de quem atende, e
+   * abrir a página não é uma decisão: reabrir um pedido `FECHADO` para o reler
+   * não o pode desfechar.
+   */
+  async marcarVisto(admin: PlatformAdminContext, id: string): Promise<{ ok: true }> {
+    const ticket = await this.mustExist(id);
+    if (ticket.status !== "NOVO") return { ok: true };
+
+    await this.prisma.ticket.update({ where: { id }, data: { status: "ABERTO" } });
+    await this.platform.audit(admin, "ticket.visto", "ticket", id, {});
+    return { ok: true };
   }
 
   async list(params: { status?: TicketStatus | "ABERTOS"; q?: string } = {}) {

@@ -70,6 +70,24 @@ export const converterTicket = (id: string) =>
 export const removeTicket = (id: string) => apiDelete<{ ok: true }>(`/tickets/${id}`);
 
 /**
+ * "Já vi este." Passa um pedido de `NOVO` a `ABERTO` e apaga-o do emblema do
+ * menu, que conta só o que ninguém abriu. Não faz nada aos outros estados.
+ */
+export const verTicket = (id: string) => apiPost<{ ok: true }>(`/tickets/${id}/visto`, {});
+
+/**
+ * O emblema do menu mudou.
+ *
+ * O `Shell` relê o contador de minuto a minuto, o que chega para um número que
+ * sobe sozinho — mas não para um que **desce por causa de um clique nosso**:
+ * abrir um pedido e ver o emblema aceso durante mais meio minuto lê-se como
+ * avaria. Um evento na janela é o caminho mais curto entre duas partes da
+ * aplicação que não partilham estado nenhum.
+ */
+export const TICKETS_MUDARAM = "tickets:mudaram";
+export const avisarQueMudou = () => window.dispatchEvent(new Event(TICKETS_MUDARAM));
+
+/**
  * O `mailto:` para responder, já preenchido.
  *
  * Responder é o que se faz a um ticket, e este servidor não envia email nenhum —

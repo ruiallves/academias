@@ -3,6 +3,7 @@ import { useApi } from "@/lib/query";
 import type { CSSProperties } from "react";
 import { NavLink, Outlet } from "react-router-dom";
 import { Building2, FileClock, Inbox, LayoutGrid, LogOut, ShieldCheck, TrendingUp, Users } from "lucide-react";
+import { TICKETS_MUDARAM } from "@/lib/tickets";
 import { signOut } from "@/lib/session";
 import { cx } from "./primitives";
 import { BusyProvider, BusyScreen } from "./Busy";
@@ -74,6 +75,17 @@ export function Shell({ me }: { me: Me }) {
       if (document.visibilityState === "visible") relerTickets();
     }, 60_000);
     return () => clearInterval(t);
+  }, [relerTickets]);
+
+  /*
+   * E outra vez de imediato quando alguém abre um pedido.
+   *
+   * O relógio de um minuto chega para um número que sobe sozinho; não chega
+   * para um que desce por causa de um clique. Ver `avisarQueMudou`.
+   */
+  useEffect(() => {
+    window.addEventListener(TICKETS_MUDARAM, relerTickets);
+    return () => window.removeEventListener(TICKETS_MUDARAM, relerTickets);
   }, [relerTickets]);
   const porTratar = tickets.data?.n ?? 0;
 

@@ -76,6 +76,15 @@ export class TicketsController {
     return this.tickets.update(req.admin, id, dto);
   }
 
+  /**
+   * "Já vi isto." Um `POST` e não um efeito do `GET`: uma leitura que escreve é
+   * uma leitura em que não se pode confiar — nem para repetir, nem para depurar.
+   */
+  @Post(":id/visto")
+  visto(@Req() req: PlatformRequest, @Param("id") id: string) {
+    return this.tickets.marcarVisto(req.admin, id);
+  }
+
   @Post(":id/notas")
   note(@Req() req: PlatformRequest, @Param("id") id: string, @Body() dto: NoteDto) {
     return this.tickets.addNote(req.admin, id, dto.body);
