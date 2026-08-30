@@ -242,20 +242,59 @@ export class MembersService {
     return this.prisma.runAs(ctx.academyId, async (db) => {
       const member = await db.member.findFirst({
         where: { id },
-        select: { id: true, status: true, number: true },
+        select: { id: true, status: true, number: true, acceptedTermsAt: true },
       });
       if (!member) throw new NotFoundException("Sócio não encontrado");
 
       const data: Record<string, unknown> = { updatedAt: new Date() };
 
+      /*
+       * Um campo que não veio fica como está; um campo que veio vazio limpa-se.
+       *
+       * É a distinção que faltava e que dava o "obriga a ter morada": a ficha de
+       * um sócio do balcão nasce com metade dos campos por preencher, e sem um
+       * caminho para gravar vazio não havia como lhe corrigir o telefone sem
+       * inventar a morada no mesmo gesto.
+       */
+      const texto = (v: string | undefined) => (v === undefined ? undefined : v.trim() || null);
+
       if (dto.tierId !== undefined) data.tierId = dto.tierId || null;
       if (dto.notes !== undefined) data.notes = dto.notes.trim() || null;
       if (dto.name !== undefined) data.name = dto.name.trim();
-      if (dto.email !== undefined) data.email = dto.email.trim().toLowerCase();
-      if (dto.phone !== undefined) data.phone = dto.phone.replace(/\s/g, "");
-      if (dto.address !== undefined) data.address = dto.address.trim();
-      if (dto.postalCode !== undefined) data.postalCode = dto.postalCode.trim();
-      if (dto.city !== undefined) data.city = dto.city.trim();
+      if (dto.email !== undefined) data.email = dto.email.trim().toLowerCase() || null;
+      if (dto.phone !== undefined) data.phone = dto.phone.replace(/\s/g, "") || null;
+      if (dto.phoneCountry !== undefined) data.phoneCountry = dto.phoneCountry;
+      if (dto.address !== undefined) data.address = texto(dto.address);
+      if (dto.postalCode !== undefined) data.postalCode = texto(dto.postalCode);
+      if (dto.city !== undefined) data.city = texto(dto.city);
+      if (dto.country !== undefined) data.country = dto.country.toUpperCase() || "PT";
+
+      /*
+       * A identidade — data de nascimento, documento, contribuinte.
+       *
+       * Não se editava nada disto: o argumento era que estes três campos se
+       * corrigem a olhar para o documento e que um formulário fácil de mexer é um
+       * formulário onde alguém edita o sócio errado. Só que um sócio inscrito ao
+       * balcão nasce sem nenhum deles, e sem NIF o clube não lhe passa um recibo
+       * — o campo tinha de ser preenchível **algures**, e não havia esse sítio.
+       */
+      if (dto.birthdate !== undefined) {
+        data.birthdate = dto.birthdate ? this.plausibleBirthdate(dto.birthdate) : null;
+      }
+      if (dto.sex !== undefined) data.sex = dto.sex as MemberSex;
+      if (dto.documentKind !== undefined) data.documentKind = dto.documentKind as MemberDocumentKind;
+      if (dto.documentNumber !== undefined) data.documentNumber = texto(dto.documentNumber);
+      if (dto.taxId !== undefined) data.taxId = dto.taxId.replace(/[\s.]/g, "") || null;
+
+      /*
+       * O consentimento continua a ser um carimbo: guarda-se **quando** foi dado.
+       * Marcar de novo uma caixa já marcada não reescreve a data — a prova que o
+       * clube tem é a do dia em que a pessoa assinou, não a do dia em que alguém
+       * abriu a ficha.
+       */
+      if (dto.acceptedTerms !== undefined) {
+        data.acceptedTermsAt = dto.acceptedTerms ? (member.acceptedTermsAt ?? new Date()) : null;
+      }
 
       if (dto.status !== undefined && dto.status !== member.status) {
         data.status = dto.status as MemberStatus;
@@ -276,6 +315,11 @@ export class MembersService {
       } catch (error) {
         if (isUniqueViolation(error, "number")) {
           throw new BadRequestException("Já existe um sócio com esse número");
+        }
+        // O NIF passou a ser editável, e é único por clube: sem isto, corrigir um
+        // NIF para um que já lá está rebentava com um erro de base de dados.
+        if (isUniqueViolation(error, "taxId")) {
+          throw new BadRequestException("Já existe um sócio com esse contribuinte");
         }
         throw error;
       }
@@ -479,7 +523,7 @@ export class MembersService {
    * desta plataforma existir, numa data que a folha não traz — e carimbar o
    * momento da importação seria fabricar a prova que o RGPD pede ao clube.
    */
-  async importMembers(ctx: RequestContext, rows: MemberImportRowDto[]) {
+  async importMembers(ctx: RequestContext, rows: MemberImportRowDto[], createTiers = false) {
     this.mustWrite(ctx);
     if (rows.length === 0) throw new BadRequestException("A folha não tem linhas");
 
@@ -492,84 +536,120 @@ export class MembersService {
       });
       const tierByName = new Map(tiers.map((t) => [fold(t.name), t]));
 
+      /*
+       * As categorias que a folha traz e o clube não tem.
+       *
+       * Comparadas **sem caixa e sem acentos** (`fold`): "socio ouro", "Sócio
+       * Ouro" e "SÓCIO OURO" são o mesmo tipo de sócio escrito por três pessoas
+       * diferentes, e recusar a folha por causa disso é fazer a secretaria
+       * trabalhar para o programa.
+       *
+       * O que sobra depois disso é uma categoria a sério que o clube não tem. Não
+       * se cria sozinha — uma categoria a mais são quotas, benefícios e uma linha
+       * no site — mas também não faz a importação falhar: devolve-se a lista, e
+       * quem está a importar responde. Ver `MemberImportDto.createTiers`.
+       */
+      const desconhecidas = new Map<string, string>();
+      for (const row of rows) {
+        const nome = row.tier.trim();
+        if (!nome || tierByName.has(fold(nome))) continue;
+        if (!desconhecidas.has(fold(nome))) desconhecidas.set(fold(nome), nome);
+      }
+
+      if (desconhecidas.size > 0) {
+        if (!createTiers) {
+          return {
+            ok: false as const,
+            created: 0,
+            duplicates: [],
+            problems: [],
+            unknownTiers: [...desconhecidas.values()],
+          };
+        }
+
+        // A ordem vem a seguir às que já existem, para as novas ficarem no fim da
+        // lista em vez de se meterem pelo meio de uma ordenação que o clube fez.
+        const ultima = await db.memberTier.aggregate({ _max: { order: true } });
+        let ordem = (ultima._max.order ?? 0) + 1;
+
+        for (const nome of desconhecidas.values()) {
+          const criada = await db.memberTier.create({
+            data: { academyId: ctx.academyId, name: nome, order: ordem++, isPublic: false },
+            select: { id: true, name: true, minAge: true, maxAge: true },
+          });
+          tierByName.set(fold(criada.name), criada);
+        }
+      }
+
       const existing = await db.member.findMany({ select: { taxId: true, number: true } });
-      const takenTaxIds = new Set(existing.map((m) => m.taxId));
+      const takenTaxIds = new Set(existing.map((m) => m.taxId).filter((t): t is string => !!t));
       const takenNumbers = new Set(existing.map((m) => m.number).filter((n): n is number => n !== null));
 
       const problems: { line: number; reason: string }[] = [];
       const duplicates: { line: number; name: string }[] = [];
       const create: Prisma.MemberCreateManyInput[] = [];
 
-      // O maior número já em uso. Quem vier sem número na folha segue a partir
-      // daqui, para não colidir com os que a folha traz escritos.
-      let nextNumber = Math.max(0, ...takenNumbers) + 1;
-
       rows.forEach((row, i) => {
         const line = row.line ?? i + 2;
-        const taxId = row.taxId.replace(/[\s.]/g, "");
+        const taxId = row.taxId?.replace(/[\s.]/g, "") || null;
 
-        if (takenTaxIds.has(taxId)) {
+        /*
+         * Já cá está?
+         *
+         * Pelo **número** primeiro, que é o que identifica um sócio no livro do
+         * clube — e que agora a folha traz sempre. Antes a chave era o NIF, e com
+         * o NIF a deixar de ser obrigatório uma segunda importação da mesma folha
+         * duplicava o clube inteiro com números novos.
+         */
+        if (takenNumbers.has(row.number) || (taxId && takenTaxIds.has(taxId))) {
           duplicates.push({ line, name: row.name.trim() });
           return;
         }
-        takenTaxIds.add(taxId);
+        takenNumbers.add(row.number);
+        if (taxId) takenTaxIds.add(taxId);
 
-        let birthdate: Date;
-        try {
-          birthdate = this.plausibleBirthdate(row.birthdate);
-        } catch {
-          problems.push({ line, reason: "Data de nascimento inválida" });
-          return;
-        }
-
-        let tierId: string | null = null;
-        if (row.tier?.trim()) {
-          const tier = tierByName.get(fold(row.tier));
-          if (!tier) {
-            problems.push({ line, reason: `Não existe a categoria "${row.tier.trim()}"` });
+        let birthdate: Date | null = null;
+        if (row.birthdate) {
+          try {
+            birthdate = this.plausibleBirthdate(row.birthdate);
+          } catch {
+            problems.push({ line, reason: "Data de nascimento inválida" });
             return;
           }
+        }
+
+        const tier = tierByName.get(fold(row.tier))!;
+        // A idade só se verifica quando a folha traz a data. Sem ela não há
+        // nada a verificar — e recusar a linha por isso seria voltar a exigir a
+        // data de nascimento pela porta das traseiras.
+        if (birthdate) {
           const age = ageAt(birthdate, now);
           if (tier.minAge != null && age < tier.minAge) {
-            problems.push({ line, reason: `"${row.tier.trim()}" é a partir dos ${tier.minAge} anos` });
+            problems.push({ line, reason: `"${tier.name}" é a partir dos ${tier.minAge} anos` });
             return;
           }
           if (tier.maxAge != null && age > tier.maxAge) {
-            problems.push({ line, reason: `"${row.tier.trim()}" é até aos ${tier.maxAge} anos` });
+            problems.push({ line, reason: `"${tier.name}" é até aos ${tier.maxAge} anos` });
             return;
           }
-          tierId = tier.id;
         }
-
-        // O número que a folha traz manda, se estiver livre. É o número que o
-        // sócio conhece, está no cartão dele e é por ele que a secretaria o
-        // procura — renumerar toda a gente numa importação seria trocar o livro
-        // do clube pelo nosso.
-        let number: number;
-        if (row.number != null && !takenNumbers.has(row.number)) {
-          number = row.number;
-        } else {
-          while (takenNumbers.has(nextNumber)) nextNumber++;
-          number = nextNumber;
-        }
-        takenNumbers.add(number);
 
         create.push({
           academyId: ctx.academyId,
-          tierId,
-          number,
+          tierId: tier.id,
+          number: row.number,
           name: row.name.trim(),
-          email: row.email.trim().toLowerCase(),
+          email: row.email?.trim().toLowerCase() || null,
           birthdate,
           country: (row.country ?? "PT").toUpperCase().slice(0, 2),
-          address: row.address.trim(),
-          postalCode: row.postalCode.trim(),
-          city: row.city.trim(),
+          address: row.address?.trim() || null,
+          postalCode: row.postalCode?.trim() || null,
+          city: row.city?.trim() || null,
           phoneCountry: row.phoneCountry ?? "+351",
           phone: row.phone.replace(/\s/g, ""),
           sex: (row.sex as MemberSex) ?? "UNSPECIFIED",
           documentKind: (row.documentKind as MemberDocumentKind) ?? "CC",
-          documentNumber: row.documentNumber.trim(),
+          documentNumber: row.documentNumber?.trim() || null,
           taxId,
           // Quem vem da folha do clube já é sócio. Pô-los todos por aprovar
           // dava à direção uma fila de centenas de aprovações que não são
@@ -584,14 +664,14 @@ export class MembersService {
       });
 
       if (problems.length > 0) {
-        return { ok: false as const, created: 0, duplicates: [], problems: problems.slice(0, 50) };
+        return { ok: false as const, created: 0, duplicates: [], problems: problems.slice(0, 50), unknownTiers: [] };
       }
 
       // Ou entra o livro todo, ou não entra nada: o `runAs` já corre tudo isto
       // dentro de uma transacção, e um `createMany` é uma instrução só.
       if (create.length > 0) await db.member.createMany({ data: create });
 
-      return { ok: true as const, created: create.length, duplicates, problems: [] };
+      return { ok: true as const, created: create.length, duplicates, problems: [], unknownTiers: [] };
     });
   }
 

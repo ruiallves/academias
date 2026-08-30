@@ -115,7 +115,8 @@ export function Metric({
 }
 
 export function MetricRow({ children }: { children: ReactNode }) {
-  return <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">{children}</div>;
+  // Telemóvel: duas por linha — quatro métricas empilhadas eram um ecrã inteiro.
+  return <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4 max-sm:grid-cols-2 max-sm:gap-2">{children}</div>;
 }
 
 /* -------------------------------------------------------------------------- */

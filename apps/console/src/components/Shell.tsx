@@ -4,6 +4,7 @@ import { Sidebar } from "./Sidebar";
 import { Onboarding } from "./Onboarding";
 import { BusyProvider, BusyScreen } from "./Busy";
 import { usePresence } from "@/lib/presence";
+import { MobileTabBar, MobileTopBar } from "./MobileNav";
 
 export function Shell() {
   const [collapsed, setCollapsed] = useState(false);
@@ -22,14 +23,21 @@ export function Shell() {
      * direita do sítio onde o olho o procura. Como a largura muda quando o menu
      * encolhe, uma constante em CSS não servia.
      */
+    /*
+     * Telemóvel (abaixo de 768px): a barra lateral esconde-se e entram uma barra
+     * de cima e uma de baixo — ver `MobileNav`. Tudo o que é telemóvel vive em
+     * `max-md:`/`md:hidden`; acima disso nada disto existe e o desktop é o que
+     * era, classe por classe.
+     */
     <div
-      className="flex h-dvh overflow-hidden bg-canvas"
+      className="flex h-dvh overflow-hidden bg-canvas max-md:flex-col"
       style={{ "--nav-w": collapsed ? "60px" : "236px" } as CSSProperties}
     >
+      <MobileTopBar />
       <Sidebar collapsed={collapsed} onToggle={() => setCollapsed((v) => !v)} />
       {/* `relative`: é contra este `<main>` que o disco de carregamento se
           centra. Ver `BusyScreen`. */}
-      <main className="relative flex-1 overflow-y-auto">
+      <main className="relative flex-1 overflow-y-auto max-md:pb-[calc(64px+env(safe-area-inset-bottom))]">
         {/* Largura total. A sidebar já dá o enquadramento à esquerda; uma segunda
             moldura de margem no meio do ecrã só afastava as colunas de dados umas
             das outras. O ar vem do padding, não de um limite de largura.
@@ -51,6 +59,7 @@ export function Shell() {
       {/* Ao canto e em todas as páginas: acompanha quem está a montar a academia
           sem lhe tomar o ecrã. Desaparece sozinho quando não houver passos a dar. */}
       <Onboarding />
+      <MobileTabBar />
     </div>
   );
 }

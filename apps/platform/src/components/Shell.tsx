@@ -7,6 +7,7 @@ import { signOut } from "@/lib/session";
 import { cx } from "./primitives";
 import { BusyProvider, BusyScreen } from "./Busy";
 import type { Me } from "@/lib/types";
+import { MobileTabBar, MobileTopBar } from "./MobileNav";
 
 /**
  * A casca do painel.
@@ -83,8 +84,10 @@ export function Shell({ me }: { me: Me }) {
      * (o menu do painel não encolhe), mas fica na mesma como variável para o
      * ficheiro `Busy.tsx` ser o mesmo nas duas aplicações.
      */
-    <div className="flex h-dvh overflow-hidden bg-canvas" style={{ "--nav-w": "212px" } as CSSProperties}>
-      <aside className="flex w-[212px] shrink-0 flex-col border-r border-line bg-surface">
+    <div className="flex h-dvh overflow-hidden bg-canvas max-md:flex-col" style={{ "--nav-w": "212px" } as CSSProperties}>
+      <MobileTopBar />
+      {/* Telemóvel: a barra lateral dá lugar a `MobileNav`. Ver esse ficheiro. */}
+      <aside className="flex w-[212px] shrink-0 flex-col border-r border-line bg-surface max-md:hidden">
         <div className="flex h-14 items-center gap-2.5 border-b border-line px-3">
           <span
             className="flex size-7 shrink-0 items-center justify-center rounded-[7px] text-[11px] font-bold text-white"
@@ -167,13 +170,17 @@ export function Shell({ me }: { me: Me }) {
       </aside>
 
       {/* `relative` para a camada de carregamento. Ver `BusyScreen`. */}
-      <main className="relative flex-1 overflow-y-auto">
+      <main className="relative flex-1 overflow-y-auto max-md:pb-[calc(64px+env(safe-area-inset-bottom))]">
         <BusyProvider>
           <BusyScreen>
             <Outlet />
           </BusyScreen>
         </BusyProvider>
       </main>
+      <MobileTabBar
+        me={me}
+        items={nav.map((item) => ({ ...item, badge: item.to === "/tickets" ? porTratar : undefined }))}
+      />
     </div>
   );
 }

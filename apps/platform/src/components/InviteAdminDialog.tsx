@@ -50,7 +50,7 @@ export function InviteAdminDialog({ onClose, onCreated }: { onClose: () => void;
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-ink/25 p-4"
+      className="fixed inset-0 z-50 flex items-center justify-center bg-ink/25 p-4 max-md:items-end max-md:p-0"
       onMouseDown={(e) => e.target === e.currentTarget && (created ? onCreated() : onClose())}
     >
       <div role="dialog" aria-modal="true" className="max-h-[85vh] w-full max-w-[440px] overflow-y-auto rounded-[var(--radius-panel)] border border-line bg-surface shadow-[var(--shadow-pop)]">

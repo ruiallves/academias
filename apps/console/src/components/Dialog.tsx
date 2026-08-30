@@ -37,7 +37,7 @@ export function Dialog({
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-ink/20 p-4"
+      className="fixed inset-0 z-50 flex items-center justify-center bg-ink/20 p-4 max-md:items-end max-md:p-0"
       onMouseDown={(e) => e.target === e.currentTarget && onClose()}
     >
       <div
@@ -45,7 +45,8 @@ export function Dialog({
         aria-modal="true"
         aria-labelledby={labelledBy}
         style={{ maxWidth: width }}
-        className="max-h-[85vh] w-full overflow-y-auto rounded-[var(--radius-panel)] border border-line bg-surface shadow-[var(--shadow-pop)]"
+        // Telemóvel: uma folha colada ao fundo, a toda a largura, com cantos só em cima.
+        className="max-h-[85vh] w-full overflow-y-auto rounded-[var(--radius-panel)] border border-line bg-surface shadow-[var(--shadow-pop)] max-md:max-h-[92dvh] max-md:rounded-b-none max-md:rounded-t-[20px] max-md:border-x-0 max-md:border-b-0"
       >
         <header className="sticky top-0 z-10 flex items-center justify-between gap-3 border-b border-line bg-surface px-5 py-3.5">
           <div className="min-w-0">

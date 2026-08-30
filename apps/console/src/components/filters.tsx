@@ -10,7 +10,8 @@ import { cx, SelectField } from "./primitives";
  */
 export function Toolbar({ children }: { children: ReactNode }) {
   return (
-    <div className="flex flex-wrap items-center gap-2 border-b border-line px-4 py-2.5">{children}</div>
+    // Telemóvel: uma fila que rola de lado, em vez de três linhas de filtros.
+    <div className="flex flex-wrap items-center gap-2 border-b border-line px-4 py-2.5 max-md:flex-nowrap max-md:overflow-x-auto max-md:px-3 max-md:[&>*]:shrink-0">{children}</div>
   );
 }
 

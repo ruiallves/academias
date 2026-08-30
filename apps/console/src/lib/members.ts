@@ -132,23 +132,28 @@ export const archiveTier = (id: string) => apiDelete<{ ok: boolean; members: num
 /* Importação                                                                  */
 /* -------------------------------------------------------------------------- */
 
-/** Uma linha da folha, já traduzida para os nomes que a API conhece. */
+/**
+ * Uma linha da folha, já traduzida para os nomes que a API conhece.
+ *
+ * Obrigatórios: **nome, número de sócio, telemóvel e categoria**. Tudo o resto é
+ * opcional porque a folha do clube não o tem — ver `MemberImportRowDto`.
+ */
 export type ImportRow = {
   line: number;
   name: string;
-  email: string;
-  birthdate: string;
-  address: string;
-  postalCode: string;
-  city: string;
+  number: number;
+  phone: string;
+  tier: string;
+  email?: string;
+  birthdate?: string;
+  address?: string;
+  postalCode?: string;
+  city?: string;
   country?: string;
   phoneCountry?: string;
-  phone: string;
-  documentNumber: string;
-  taxId: string;
+  documentNumber?: string;
+  taxId?: string;
   sex?: Sex;
-  tier?: string;
-  number?: number;
 };
 
 export type ImportResult = {
@@ -156,9 +161,19 @@ export type ImportResult = {
   created: number;
   duplicates: { line: number; name: string }[];
   problems: { line: number; reason: string }[];
+  /**
+   * As categorias que a folha traz e o clube não tem, quando a importação parou
+   * para perguntar. Vazio em todas as outras respostas.
+   */
+  unknownTiers: string[];
 };
 
-export const importMembers = (rows: ImportRow[]) => apiPost<ImportResult>("/api/members/import", { rows });
+/**
+ * `createTiers` responde à pergunta que o servidor faz quando a folha traz
+ * categorias novas: criá-las, ou parar. Ver `ImportDialog`.
+ */
+export const importMembers = (rows: ImportRow[], createTiers = false) =>
+  apiPost<ImportResult>("/api/members/import", { rows, createTiers });
 
 /** Idade, que é o que decide se alguém cabe numa categoria. */
 export function ageOf(birthdate: string, now = new Date()): number {

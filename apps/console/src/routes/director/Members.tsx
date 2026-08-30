@@ -835,6 +835,15 @@ function ImportDialog({ onClose, onDone }: { onClose: () => void; onDone: () => 
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<{ created: number; duplicates: number } | null>(null);
   const [tierNames, setTierNames] = useState<string[]>([]);
+  /**
+   * As categorias que a folha traz e o clube não tem.
+   *
+   * O servidor pára e devolve-as em vez de as criar sozinho: uma categoria a
+   * mais no livro do clube é uma categoria a mais nas quotas, nos benefícios e no
+   * site. A comparação é sem caixa nem acentos, por isso o que chega aqui são
+   * categorias mesmo novas — nunca "Sócio Ouro" contra "sócio ouro".
+   */
+  const [novas, setNovas] = useState<string[] | null>(null);
 
   useEffect(() => {
     listTiers()
@@ -858,16 +867,23 @@ function ImportDialog({ onClose, onDone }: { onClose: () => void; onDone: () => 
     }
   }
 
-  async function send() {
+  async function send(criarCategorias = false) {
     if (!sheet || bad.length > 0 || good.length === 0 || busy) return;
     setBusy(true);
     setError(null);
     try {
-      const res = await importMembers(good.map((r) => r.row));
+      const res = await importMembers(good.map((r) => r.row), criarCategorias);
+
+      // Categorias novas: a importação não falhou, ficou à espera de resposta.
+      if (!res.ok && res.unknownTiers.length > 0) {
+        setNovas(res.unknownTiers);
+        return;
+      }
       if (!res.ok) {
         setError(res.problems.map((p) => `Linha ${p.line}: ${p.reason}`).join(" · "));
         return;
       }
+      setNovas(null);
       setResult({ created: res.created, duplicates: res.duplicates.length });
       setSheet(null);
       onDone();
@@ -899,9 +915,15 @@ function ImportDialog({ onClose, onDone }: { onClose: () => void; onDone: () => 
               type="button"
               className="ctl-primary"
               disabled={busy || !sheet || bad.length > 0 || good.length === 0}
-              onClick={() => void send()}
+              onClick={() => void send(novas !== null)}
             >
-              {busy ? "A importar…" : good.length > 0 ? `Importar ${good.length}` : "Importar"}
+              {busy
+                ? "A importar…"
+                : novas !== null
+                  ? `Criar ${novas.length === 1 ? "a categoria" : `as ${novas.length} categorias`} e importar`
+                  : good.length > 0
+                    ? `Importar ${good.length}`
+                    : "Importar"}
             </button>
           )}
         </>
@@ -937,10 +959,32 @@ function ImportDialog({ onClose, onDone }: { onClose: () => void; onDone: () => 
             </label>
 
             <p className="text-meta leading-relaxed text-ink-3">
-              Colunas obrigatórias: {REQUIRED_COLUMNS.join(", ")}. Opcionais: {OPTIONAL_COLUMNS.join(", ")} — a
-              categoria tem de existir com o mesmo nome.
+              Colunas obrigatórias: {REQUIRED_COLUMNS.join(", ")}. Opcionais: {OPTIONAL_COLUMNS.join(", ")} — entram
+              se lá estiverem, ficam por preencher se não.
             </p>
           </>
+        )}
+
+        {novas && (
+          <div className="rounded-[var(--radius-control)] border border-warn/30 bg-warn-soft p-4">
+            <p className="text-body font-medium text-ink">
+              {novas.length === 1
+                ? "A folha traz um tipo de sócio que o clube não tem."
+                : `A folha traz ${novas.length} tipos de sócio que o clube não tem.`}
+            </p>
+            <div className="mt-2 flex flex-wrap gap-1.5">
+              {novas.map((n) => (
+                <span key={n} className="rounded-full bg-surface px-2.5 py-1 text-meta font-medium text-ink-2">
+                  {n}
+                </span>
+              ))}
+            </div>
+            <p className="mt-2.5 text-meta leading-relaxed text-ink-3">
+              {novas.length === 1 ? "Criá-lo" : "Criá-los"} agora, sem quota nem benefícios definidos, e continuar a
+              importação? {novas.length === 1 ? "Fica" : "Ficam"} fora do site até alguém {novas.length === 1 ? "o" : "os"}{" "}
+              publicar.
+            </p>
+          </div>
         )}
 
         {sheet && sheet.missing.length > 0 && (

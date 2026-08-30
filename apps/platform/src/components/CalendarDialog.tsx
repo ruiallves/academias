@@ -66,7 +66,7 @@ export function CalendarDialog({ onClose }: { onClose: () => void }) {
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-ink/25 p-4"
+      className="fixed inset-0 z-50 flex items-center justify-center bg-ink/25 p-4 max-md:items-end max-md:p-0"
       onMouseDown={(e) => e.target === e.currentTarget && onClose()}
     >
       <div role="dialog" aria-modal="true" className="w-full max-w-[520px] rounded-[var(--radius-panel)] border border-line bg-surface shadow-[var(--shadow-pop)]">

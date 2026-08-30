@@ -345,3 +345,50 @@
 .nav-icon {
   color: var(--color-signal-line);
 }
+
+/* ---------------------------------------------------------------------------
+ * Telemóvel
+ * ---------------------------------------------------------------------------
+ *
+ * Tudo aqui dentro só existe abaixo de 768px. Acima disso este bloco é
+ * invisível — é a regra que garante que o desktop fica exactamente como estava.
+ * A navegação vive em `MobileNav.tsx`; isto é o que os componentes de página
+ * precisam para caber num ecrã de 390px sem perder nada.
+ */
+@media (max-width: 767.98px) {
+  /* A moldura da página, mais justa: 14px de cada lado é o que um telemóvel dá. */
+  .page-pad { padding: 14px 14px 20px; }
+
+  /* Os campos a 16px: abaixo disso o iOS faz zoom ao focar, e a página salta. */
+  input, select, textarea { font-size: 16px; }
+
+  /* Os painéis colam-se ao ecrã: a moldura do computador, com cantos de 12px
+     dentro de 14px de margem, sobrava. */
+  .panel { border-radius: 12px; }
+  .panel-head { padding-inline: 14px; }
+
+  /* Tabelas rolam de lado dentro do painel, e não a página inteira. */
+  .panel > .overflow-x-auto table { min-width: 560px; }
+  .panel > .overflow-x-auto th, .panel > .overflow-x-auto td { padding-inline: 14px; }
+
+  /* Os diálogos de 480–640px passam a folhas — largura total, sem margem lateral. */
+  [role="dialog"] { max-width: none !important; }
+
+  /* O painel das notificações, agora pendurado num sino no canto direito. */
+  .mobile-notif > * {
+    position: fixed !important;
+    left: 12px !important;
+    right: 12px !important;
+    top: 60px !important;
+    width: auto !important;
+    max-height: 70dvh;
+  }
+
+  /* A folha do menu sobe; um passo de 180ms, sem ressalto. */
+  .mobile-sheet { animation: mobile-sheet-in 180ms var(--ease-out, ease-out); }
+  @keyframes mobile-sheet-in {
+    from { transform: translateY(24px); opacity: 0; }
+    to   { transform: translateY(0);    opacity: 1; }
+  }
+  @media (prefers-reduced-motion: reduce) { .mobile-sheet { animation: none; } }
+}

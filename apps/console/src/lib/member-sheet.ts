@@ -25,27 +25,37 @@ import type { ImportRow, Sex } from "@/lib/members";
  * "postalCode" ao código postal era fazer a secretaria trabalhar para o programa.
  */
 
-/** As colunas que a folha tem de trazer, e os nomes por que respondem. */
+/**
+ * As colunas que a folha pode trazer, e os nomes por que respondem.
+ *
+ * **Quatro são obrigatórias**: nome, número de sócio, telemóvel e categoria. As
+ * outras entram se lá estiverem e ficam por preencher se não. Eram quase todas
+ * obrigatórias — email, data de nascimento, morada, código postal, localidade,
+ * documento, NIF — e a queixa que trouxe isto foi exactamente essa: *"exige muita
+ * informação que o Excel não tem"*. Um livro de sócios real é o nome, o número, um
+ * contacto e a categoria; exigir o resto não enchia as fichas, impedia a
+ * importação.
+ */
 const COLUMNS = {
   name: { label: "Nome", required: true, aliases: ["nome", "nome completo", "socio", "sócio"] },
-  email: { label: "Email", required: true, aliases: ["email", "e-mail", "correio electronico"] },
+  number: { label: "N.º de sócio", required: true, aliases: ["n de socio", "no de socio", "numero de socio", "numero", "n socio"] },
+  phone: { label: "Telemóvel", required: true, aliases: ["telemovel", "telefone", "contacto", "tlm", "telm"] },
+  tier: { label: "Categoria", required: true, aliases: ["categoria", "tipo de socio", "tipo", "tipo socio", "escalao"] },
+  email: { label: "Email", required: false, aliases: ["email", "e-mail", "correio electronico"] },
   birthdate: {
     label: "Data de nascimento",
-    required: true,
+    required: false,
     aliases: ["data de nascimento", "nascimento", "data nascimento", "dt nascimento"],
   },
-  address: { label: "Morada", required: true, aliases: ["morada", "endereco", "rua"] },
-  postalCode: { label: "Código postal", required: true, aliases: ["codigo postal", "cod postal", "cp"] },
-  city: { label: "Localidade", required: true, aliases: ["localidade", "cidade"] },
-  phone: { label: "Telemóvel", required: true, aliases: ["telemovel", "telefone", "contacto", "tlm"] },
+  address: { label: "Morada", required: false, aliases: ["morada", "endereco", "rua"] },
+  postalCode: { label: "Código postal", required: false, aliases: ["codigo postal", "cod postal", "cp"] },
+  city: { label: "Localidade", required: false, aliases: ["localidade", "cidade"] },
   documentNumber: {
     label: "N.º de documento",
-    required: true,
+    required: false,
     aliases: ["n de documento", "no de documento", "numero de documento", "documento", "cc", "cartao de cidadao"],
   },
-  taxId: { label: "NIF", required: true, aliases: ["nif", "contribuinte", "n contribuinte"] },
-  tier: { label: "Categoria", required: false, aliases: ["categoria", "tipo de socio", "tipo"] },
-  number: { label: "N.º de sócio", required: false, aliases: ["n de socio", "no de socio", "numero de socio", "numero"] },
+  taxId: { label: "NIF", required: false, aliases: ["nif", "contribuinte", "n contribuinte"] },
   sex: { label: "Sexo", required: false, aliases: ["sexo", "genero"] },
 } as const;
 
@@ -162,6 +172,7 @@ export async function readMemberSheet(file: File): Promise<ParsedSheet> {
 
   const rows: ParsedRow[] = [];
   const seenTaxIds = new Set<string>();
+  const seenNumbers = new Set<number>();
 
   table.forEach((raw, i) => {
     // +2: a folha conta a partir de 1 e a primeira linha é o cabeçalho. É este
@@ -190,20 +201,37 @@ export async function readMemberSheet(file: File): Promise<ParsedSheet> {
     const numberRaw = text(cell(raw, "number")).replace(/\D/g, "");
     const sex = SEXES[fold(text(cell(raw, "sex")))];
 
+    const number = numberRaw ? Number(numberRaw) : 0;
+
+    /*
+     * Os quatro que são mesmo precisos — e a **forma** de tudo o que vier.
+     *
+     * Um campo vazio é um campo por preencher, e isso é a vida de um livro de
+     * sócios em papel. Um campo preenchido ao lado é outra coisa: um NIF com oito
+     * dígitos entra na base como se fosse bom e ninguém volta lá.
+     */
     const errors: string[] = [];
     if (name.length < 3) errors.push("Nome em falta");
-    if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) errors.push("Email inválido");
-    if (!birthdate) errors.push("Data de nascimento inválida");
-    if (address.length < 3) errors.push("Morada em falta");
-    if (!/^\d{4}-\d{3}$/.test(postalCode)) errors.push("Código postal no formato 0000-000");
-    if (city.length < 2) errors.push("Localidade em falta");
+    if (!number) errors.push("N.º de sócio em falta");
     if (!/^\d{6,15}$/.test(phone)) errors.push("Telemóvel inválido");
-    if (documentNumber.length < 4) errors.push("N.º de documento em falta");
-    if (!/^\d{9}$/.test(taxId)) errors.push("O NIF tem nove dígitos");
+    if (!tier) errors.push("Categoria em falta");
 
-    // O mesmo NIF duas vezes na mesma folha é quase sempre a mesma pessoa
-    // colada por engano — e o servidor recusava a importação inteira por causa
-    // dela. Apanha-se aqui, com o número da linha.
+    if (email && !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) errors.push("Email inválido");
+    if (text(cell(raw, "birthdate")) && !birthdate) errors.push("Data de nascimento inválida");
+    if (postalRaw && !/^\d{4}-\d{3}$/.test(postalCode)) errors.push("Código postal no formato 0000-000");
+    if (taxId && !/^\d{9}$/.test(taxId)) errors.push("O NIF tem nove dígitos");
+
+    /*
+     * O mesmo sócio duas vezes na mesma folha é quase sempre uma linha colada por
+     * engano — e o servidor recusava a importação inteira por causa dela.
+     * Apanha-se aqui, com o número da linha, que é o que se vê no Excel.
+     *
+     * Pelo **número** primeiro: é ele que identifica o sócio no livro do clube, e
+     * o NIF pode nem lá vir.
+     */
+    if (number && seenNumbers.has(number)) errors.push("N.º de sócio repetido nesta folha");
+    else if (number) seenNumbers.add(number);
+
     if (taxId && seenTaxIds.has(taxId)) errors.push("NIF repetido nesta folha");
     else if (taxId) seenTaxIds.add(taxId);
 
@@ -211,18 +239,18 @@ export async function readMemberSheet(file: File): Promise<ParsedSheet> {
       row: {
         line,
         name,
-        email,
-        birthdate: birthdate ?? "",
-        address,
-        postalCode,
-        city,
-        phoneCountry,
+        number,
         phone,
-        documentNumber,
-        taxId,
+        tier,
+        phoneCountry,
+        ...(email ? { email } : {}),
+        ...(birthdate ? { birthdate } : {}),
+        ...(address ? { address } : {}),
+        ...(postalCode ? { postalCode } : {}),
+        ...(city ? { city } : {}),
+        ...(documentNumber ? { documentNumber } : {}),
+        ...(taxId ? { taxId } : {}),
         ...(sex ? { sex } : {}),
-        ...(tier ? { tier } : {}),
-        ...(numberRaw ? { number: Number(numberRaw) } : {}),
       },
       errors,
     });
@@ -239,24 +267,36 @@ export async function readMemberSheet(file: File): Promise<ParsedSheet> {
  * Com uma linha de exemplo lá dentro, de propósito: um modelo só com cabeçalhos
  * deixa por dizer que a data se escreve em dia/mês/ano e que o código postal leva
  * hífen — e é aí que as importações falham.
+ *
+ * As quatro colunas obrigatórias vêm primeiro, e a segunda linha do exemplo tem
+ * **só essas** preenchidas: é a maneira de dizer, sem uma nota de rodapé que
+ * ninguém lê, que o resto pode ficar em branco.
  */
 export function downloadTemplate(tierNames: string[]): void {
   const example: Record<string, string> = {
     Nome: "Maria Alves Ferreira",
+    "N.º de sócio": "1",
+    Telemóvel: "912 345 678",
+    Categoria: tierNames[0] ?? "Sócio efectivo",
     Email: "maria.ferreira@exemplo.pt",
     "Data de nascimento": "14/03/1987",
     Morada: "Rua das Oliveiras, 24, 3.º Esq.",
     "Código postal": "4700-025",
     Localidade: "Braga",
-    Telemóvel: "912 345 678",
     "N.º de documento": "12345678 9 ZZ4",
     NIF: "212345678",
-    Categoria: tierNames[0] ?? "",
-    "N.º de sócio": "1",
     Sexo: "F",
   };
 
-  const sheet = XLSX.utils.json_to_sheet([example]);
+  const minimo: Record<string, string> = Object.fromEntries(
+    Object.keys(example).map((k) => [k, ""]),
+  );
+  minimo.Nome = "António Sousa";
+  minimo["N.º de sócio"] = "2";
+  minimo.Telemóvel = "913 000 111";
+  minimo.Categoria = tierNames[0] ?? "Sócio efectivo";
+
+  const sheet = XLSX.utils.json_to_sheet([example, minimo]);
   sheet["!cols"] = Object.keys(example).map((k) => ({ wch: Math.max(14, k.length + 4) }));
 
   const book = XLSX.utils.book_new();

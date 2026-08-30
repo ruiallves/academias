@@ -53,7 +53,7 @@ export function ContactDialog({ contact, me, onClose, onSaved }: Mode) {
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-ink/25 p-4 py-10"
+      className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-ink/25 p-4 py-10 max-md:items-end max-md:p-0"
       onMouseDown={(e) => e.target === e.currentTarget && onClose()}
     >
       <div

@@ -16,9 +16,11 @@ import {
   listTiers,
   removeMember,
   updateMember,
+  type DocumentKind,
   type MemberDetail as Data,
   type MemberStatus,
   type MemberTier,
+  type Sex,
 } from "@/lib/members";
 
 /**
@@ -613,13 +615,33 @@ function Back() {
 /* -------------------------------------------------------------------------- */
 
 /**
- * Corrigir a ficha.
+ * Corrigir a ficha — toda ela.
  *
- * A lista é fechada: nome, contactos e morada. O que **não** se edita aqui é o que
- * identifica a pessoa — data de nascimento, documento, contribuinte. Não porque
- * seja impossível estar errado, mas porque um engano nesses três campos corrige-se
- * a olhar para o documento, e um formulário que os deixe mudar em dois cliques é
- * um formulário onde alguém troca o sócio errado sem dar por isso.
+ * ## O que é obrigatório, e só isso
+ *
+ * **Nome, número de sócio e telemóvel.** Mais nada. Tudo o resto pode ficar em
+ * branco, e o que estiver preenchido pode ser apagado — um campo vazio grava
+ * vazio (ver `MemberUpdateDto`).
+ *
+ * Antes, o formulário não pedia morada nenhuma mas o servidor recusava a
+ * gravação com uma queixa sobre ela: a interface mandava sempre os campos todos,
+ * os vazios batiam num comprimento mínimo, e quem só queria corrigir um telefone
+ * levava com "morada obrigatória" sem lhe ter tocado.
+ *
+ * ## A identidade também se edita
+ *
+ * Data de nascimento, documento e contribuinte estavam de fora, com um argumento
+ * defensável: corrigem-se a olhar para o documento, e um formulário que os mude
+ * em dois cliques é um formulário onde alguém troca o sócio errado. O argumento
+ * não sobreviveu ao balcão — um sócio inscrito à pressa com o nome e o telemóvel
+ * ficava **para sempre** sem NIF, e sem NIF não há recibo.
+ *
+ * ## O número não se apaga
+ *
+ * Um sócio com número é sócio de pleno direito, e o número é o que o clube usa
+ * para o encontrar. Quem ainda não tem — uma inscrição por aprovar — pode
+ * continuar sem: o número atribui-se na aprovação, e exigi-lo aqui era impedir
+ * que se corrigisse um nome mal escrito numa candidatura.
  */
 function EditPanel({
   member,
@@ -637,20 +659,31 @@ function EditPanel({
   const [postalCode, setPostalCode] = useState(member.postalCode ?? "");
   const [city, setCity] = useState(member.city ?? "");
   const [number, setNumber] = useState(member.number?.toString() ?? "");
+  const [birthdate, setBirthdate] = useState(member.birthdate?.slice(0, 10) ?? "");
+  const [sex, setSex] = useState<Sex>(member.sex ?? "UNSPECIFIED");
+  const [documentKind, setDocumentKind] = useState<DocumentKind>(member.documentKind ?? "CC");
+  const [documentNumber, setDocumentNumber] = useState(member.documentNumber ?? "");
+  const [taxId, setTaxId] = useState(member.taxId ?? "");
   const [notes, setNotes] = useState(member.notes ?? "");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   /*
-   * Só o nome é exigido — e o que estiver preenchido tem de estar bem.
+   * Três exigências — e o que estiver preenchido tem de estar bem.
    *
-   * Um sócio criado ao balcão chega aqui com meia ficha de propósito (ver
-   * `MemberCreateDto`); se a edição exigisse tudo, seria impossível corrigir um
-   * telefone sem inventar a morada e o código postal no mesmo gesto.
+   * "Opcional" quer dizer "pode não vir", nunca "pode vir errado": um NIF com
+   * oito dígitos entra na base como se fosse bom e ninguém volta lá para o ver.
+   *
+   * O número só é exigido a quem já o tem: uma inscrição por aprovar ainda não
+   * recebeu nenhum, e pedi-lo aqui era obrigar a admitir o sócio para lhe
+   * corrigir uma letra do nome.
    */
   const cpOk = !postalCode.trim() || /^\d{4}-\d{3}$/.test(postalCode.trim());
   const emailOk = !email.trim() || email.includes("@");
-  const valid = name.trim().length >= 3 && cpOk && emailOk;
+  const nifOk = !taxId.trim() || /^\d{9}$/.test(taxId.trim());
+  const numeroOk = member.number == null || number.trim() !== "";
+  const valid =
+    name.trim().length >= 3 && phone.trim().length >= 6 && numeroOk && cpOk && emailOk && nifOk;
 
   async function save() {
     if (!valid || busy) return;
@@ -664,8 +697,13 @@ function EditPanel({
         address: address.trim(),
         postalCode: postalCode.trim(),
         city: city.trim(),
+        birthdate: birthdate.trim(),
+        sex,
+        documentKind,
+        documentNumber: documentNumber.trim(),
+        taxId: taxId.trim(),
         notes: notes.trim(),
-        ...(number ? { number: Number(number) } : {}),
+        ...(number.trim() ? { number: Number(number) } : {}),
       });
       onDone();
     } catch (e) {
@@ -697,19 +735,71 @@ function EditPanel({
             <DialogField label="Nome completo">
               <input value={name} onChange={(e) => setName(e.target.value)} className={dialogInputClass} />
             </DialogField>
-            <DialogField label="Número de sócio" hint="clubes antigos têm a sua própria numeração">
+            <DialogField
+              label="Número de sócio"
+              hint={member.number == null ? "atribuído na aprovação" : "clubes antigos têm a sua própria numeração"}
+            >
               <input
                 value={number}
                 onChange={(e) => setNumber(e.target.value.replace(/\D/g, "").slice(0, 7))}
                 inputMode="numeric"
-                className={dialogInputClass}
+                className={cx(dialogInputClass, !numeroOk && "border-risk")}
               />
             </DialogField>
-            <p className="text-meta leading-relaxed text-ink-3">
-              Data de nascimento, documento e contribuinte não se editam aqui — corrigem-se a olhar para o
-              documento, e um formulário que os mude em dois cliques é um formulário onde alguém troca o
-              sócio errado.
-            </p>
+
+            <div className="grid grid-cols-2 gap-3">
+              <DialogField label="Data de nascimento" hint="opcional">
+                <input
+                  type="date"
+                  value={birthdate}
+                  onChange={(e) => setBirthdate(e.target.value)}
+                  className={dialogInputClass}
+                />
+              </DialogField>
+              <DialogField label="Sexo" hint="opcional">
+                <select value={sex} onChange={(e) => setSex(e.target.value as Sex)} className={dialogInputClass}>
+                  {(Object.keys(SEX_LABEL) as Sex[]).map((k) => (
+                    <option key={k} value={k}>
+                      {SEX_LABEL[k]}
+                    </option>
+                  ))}
+                </select>
+              </DialogField>
+            </div>
+
+            {/* O documento e o contribuinte editam-se — sem NIF o clube não passa
+                um recibo, e um sócio inscrito ao balcão nasce sem ele. */}
+            <div className="grid grid-cols-[130px_1fr] gap-3">
+              <DialogField label="Documento">
+                <select
+                  value={documentKind}
+                  onChange={(e) => setDocumentKind(e.target.value as DocumentKind)}
+                  className={dialogInputClass}
+                >
+                  {(Object.keys(DOC_LABEL) as DocumentKind[]).map((k) => (
+                    <option key={k} value={k}>
+                      {DOC_LABEL[k]}
+                    </option>
+                  ))}
+                </select>
+              </DialogField>
+              <DialogField label="N.º do documento" hint="opcional">
+                <input
+                  value={documentNumber}
+                  onChange={(e) => setDocumentNumber(e.target.value)}
+                  className={dialogInputClass}
+                />
+              </DialogField>
+            </div>
+
+            <DialogField label="Contribuinte" hint="nove dígitos, opcional">
+              <input
+                value={taxId}
+                onChange={(e) => setTaxId(e.target.value.replace(/\D/g, "").slice(0, 9))}
+                inputMode="numeric"
+                className={cx(dialogInputClass, !nifOk && "border-risk")}
+              />
+            </DialogField>
           </div>
         </Panel>
 
@@ -721,11 +811,15 @@ function EditPanel({
                 <input value={email} onChange={(e) => setEmail(e.target.value)} className={dialogInputClass} />
               </DialogField>
               <DialogField label="Telemóvel">
-                <input value={phone} onChange={(e) => setPhone(e.target.value)} className={dialogInputClass} />
+                <input
+                  value={phone}
+                  onChange={(e) => setPhone(e.target.value)}
+                  className={cx(dialogInputClass, phone.trim().length < 6 && "border-risk")}
+                />
               </DialogField>
             </div>
 
-            <DialogField label="Morada">
+            <DialogField label="Morada" hint="opcional">
               <input value={address} onChange={(e) => setAddress(e.target.value)} className={dialogInputClass} />
             </DialogField>
 
@@ -737,7 +831,7 @@ function EditPanel({
                   className={cx(dialogInputClass, !cpOk && postalCode !== "" && "border-risk")}
                 />
               </DialogField>
-              <DialogField label="Cidade">
+              <DialogField label="Cidade" hint="opcional">
                 <input value={city} onChange={(e) => setCity(e.target.value)} className={dialogInputClass} />
               </DialogField>
             </div>

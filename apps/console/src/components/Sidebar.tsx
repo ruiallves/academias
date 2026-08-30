@@ -37,7 +37,7 @@ export function Sidebar({
   return (
     <aside
       className={cx(
-        "flex h-dvh shrink-0 flex-col border-r border-line bg-surface transition-[width] duration-200",
+        "flex h-dvh shrink-0 flex-col border-r border-line bg-surface transition-[width] duration-200 max-md:hidden",
         collapsed ? "w-[60px]" : "w-[236px]",
       )}
       style={{ transitionTimingFunction: "var(--ease-out)" }}

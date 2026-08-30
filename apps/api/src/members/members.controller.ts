@@ -45,7 +45,7 @@ export class MembersController {
    */
   @Post("import")
   importMembers(@Req() req: AuthedRequest, @Body() dto: MemberImportDto) {
-    return this.members.importMembers(req.ctx, dto.rows);
+    return this.members.importMembers(req.ctx, dto.rows, dto.createTiers ?? false);
   }
 
   @Get("tiers")

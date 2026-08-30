@@ -158,7 +158,8 @@ export function BusyScreen({ children }: { children: ReactNode }) {
             dentro passaria a medir-se contra ele em vez de contra a janela.
           */
           style={{ left: "var(--nav-w, 0px)" }}
-          className="pointer-events-none fixed inset-y-0 right-0 z-20 flex items-center justify-center"
+          // No telemóvel não há barra lateral: `left` é 0 e o disco centra na janela.
+          className="pointer-events-none fixed inset-y-0 right-0 z-20 flex items-center justify-center max-md:left-0!"
         >
           <span
             className="size-9 animate-spin rounded-full border-[3px] border-line bg-surface/0"
