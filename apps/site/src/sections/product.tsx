@@ -3,6 +3,7 @@ import { Link } from "react-router-dom";
 import { ProductFrame, Reveal, SectionMark, cx } from "@/components/primitives";
 import { PAYMENT_METHODS, PaymentIcon } from "@/components/PaymentIcons";
 import { AppShot, ConsoleShot, MembershipShot } from "@/components/shots";
+import { CampoTaticoShot } from "@/components/shots-treino";
 import { MODULES } from "@/lib/content";
 
 /* ========================================================================== */
@@ -20,7 +21,7 @@ import { MODULES } from "@/lib/content";
  * Os separadores são texto sublinhado, não pastilhas: é a microinteração de um
  * jornal, não a de uma app.
  */
-type TabId = "consola" | "familias" | "socios";
+type TabId = "consola" | "treino" | "familias" | "socios";
 
 const TABS: {
   id: TabId;
@@ -37,6 +38,16 @@ const TABS: {
       ["A época inteira, num calendário", "Treinos, jogos e consultas. Marca-se uma vez e aparece a quem interessa."],
       ["Presenças e convocatórias sem papel", "O treino fecha-se no telemóvel ao lado do campo; a convocatória sai para as famílias no momento em que fecha."],
       ["O dinheiro do clube num sítio", "Mensalidades por escalão ou por atleta, quotas de sócio, e a dívida real de sempre."],
+    ],
+  },
+  {
+    id: "treino",
+    label: "Área técnica",
+    lede: "O treino sai do caderno: o exercício desenha-se num campo à escala real, o plano monta-se por blocos e a carga calcula-se sozinha.",
+    points: [
+      ["Um editor tático com animação", "Jogadores, cones, zonas e setas num campo com as medidas verdadeiras — e frames para mostrar o movimento."],
+      ["Futebol e futsal hoje, mais desportos a caminho", "Futebol de 11, 9, 7 e 5, e futsal — cada campo com as suas medidas e o seu piso. Em expansão para outras modalidades, a começar pelo basquetebol."],
+      ["A carga sem folha à parte", "Minutos, intensidade e objetivo em cada bloco; o volume e o tempo por objetivo derivam daí."],
     ],
   },
   {
@@ -120,6 +131,15 @@ export function Tour() {
             {tab === "consola" && (
               <ProductFrame label="Visão geral · Life Club" shot="/shots/consola.png" alt="A consola do clube">
                 <ConsoleShot className="min-h-[340px]" />
+              </ProductFrame>
+            )}
+            {tab === "treino" && (
+              <ProductFrame
+                label="Editor tático · Pressão após perda"
+                shot="/shots/treino-editor.png"
+                alt="O editor tático com um exercício desenhado"
+              >
+                <CampoTaticoShot className="min-h-[340px]" />
               </ProductFrame>
             )}
             {tab === "familias" && (

@@ -2,6 +2,7 @@ import { Link } from "react-router-dom";
 import { ProductFrame, Reveal, SectionMark, cx } from "@/components/primitives";
 import { AppShot, ConsoleShot } from "@/components/shots";
 import { Socios } from "@/sections/product";
+import { AreaTecnica } from "@/sections/treino";
 import { Roteiro } from "@/sections/trust";
 import { MODULES } from "@/lib/content";
 
@@ -11,7 +12,7 @@ import { MODULES } from "@/lib/content";
  * A landing vende a tese; esta responde a "mas isso faz o quê, ao certo?".
  *
  * **O produto vem primeiro.** As duas interfaces aparecem logo a seguir ao título,
- * antes da lista de módulos: quem chega aqui quer ver, e uma lista de sete módulos
+ * antes da lista de módulos: quem chega aqui quer ver, e uma lista de oito módulos
  * a abrir a página é uma lista que se lê sem se saber ainda ao que se parece.
  *
  * O que está incluído em cada plano é dito **em cada módulo**, e não numa tabela de
@@ -26,7 +27,7 @@ export default function Software() {
             <SectionMark n="—">Software</SectionMark>
             <h1 className="display d1 mt-6 max-w-[15ch]">Tudo o que a plataforma faz hoje.</h1>
             <p className="lede mt-6">
-              Sete módulos, uma base de dados, um controlo de acessos. Tudo o que está construido e está por vir.
+              Oito módulos, uma base de dados, um controlo de acessos. Tudo o que está construido e está por vir.
             </p>
           </Reveal>
         </div>
@@ -86,6 +87,17 @@ export default function Software() {
           </ul>
         </div>
       </section>
+
+      {/*
+        A área técnica, depois da lista e não antes.
+
+        Estava a abrir a página, a seguir às duas interfaces. Ficava a dizer que
+        é a coisa mais importante do produto — e não é: quem chega aqui quer
+        primeiro saber **tudo** o que a plataforma faz. A lista responde a isso
+        em oito linhas; estas duas secções são os aprofundamentos que se leem
+        depois de já se ter a vista completa.
+      */}
+      <AreaTecnica n="—" />
 
       {/* Sócios — fecha a lista de módulos com a única peça que é pública. */}
       <Socios n="—" />

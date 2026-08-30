@@ -42,6 +42,7 @@ export const PLANS: Plan[] = [
       "Atletas, equipas, escalões e staff",
       "Papéis e permissões à medida do clube",
       "Calendário, treinos, presenças e convocatórias",
+      "Área técnica: editor tático, planos de treino e exercícios",
       "Avaliações e relatórios de atleta",
       "Departamento clínico: lesões, consultas e disponibilidade",
       "Scouting: prospectos, observações, vídeo e shortlists",
@@ -103,6 +104,20 @@ export const MODULES: Module[] = [
     name: "Equipa técnica",
     line: "O treinador trabalha no que é dele",
     items: ["Treinos e presenças", "Convocatórias", "Avaliações por competência", "Relatórios de atleta", "Plantel e âmbito por equipa"],
+  },
+  {
+    key: "treino",
+    name: "Área técnica",
+    line: "O treino desenha-se, planeia-se e mede-se.",
+    items: [
+      "Editor tático com animação por frames",
+      "Futebol de 11, 9, 7 e 5 — e futsal",
+      "Em expansão: basquetebol e outros desportos",
+      "Planos de sessão por blocos",
+      "Carga e tempo por objetivo, derivados",
+      "Biblioteca de exercícios com favoritos",
+      "Modelos de jogo e bolas paradas",
+    ],
   },
   {
     key: "familias",
@@ -213,13 +228,13 @@ export const ROADMAP: RoadmapItem[] = [
   },
   {
     when: "Novembro 2026",
-    title: "Gestão de treinos",
-    body: "Gestão da carga e treinos com exercícios, vídeos e planos de treino. O treinador planeia, o atleta executa, o clube acompanha.",
-  },
-  {
-    when: "Novembro 2026",
     title: "Sistema de bilheteira",
     body: "Gestão da venda de bilhetes para os jogos do clube.",
+  },
+  {
+    when: "Dezembro 2026",
+    title: "Área técnica noutros desportos",
+    body: "O editor tático, a biblioteca de exercícios e os modelos de jogo a chegar ao basquetebol e a outras modalidades — cada uma com o seu campo e as suas posições, não um relvado com outro nome.",
   },
   {
     when: "Janeiro 2027",
