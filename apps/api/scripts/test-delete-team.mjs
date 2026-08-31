@@ -6,6 +6,18 @@
  * podem desaparecer com o escalão, e as mensalidades também não. Mais as
  * recusas: quem não pode, e o nome mal escrito.
  *
+ * ## O caminho que este teste não via
+ *
+ * As contas da academia de demonstração não têm **cargo** atribuído, por isso
+ * caem no mapa de permissões do código (`ROLE_PERMISSIONS`). Um clube a sério
+ * tem sempre cargo — "Presidente", "Diretor" —, e aí manda a lista **guardada**
+ * na linha do cargo (`basePermissions`).
+ *
+ * São dois caminhos diferentes para a mesma pergunta, e este teste só corria o
+ * primeiro: passava a 14/14 enquanto 24 dos 26 cargos de topo da base não
+ * conseguiam apagar equipa nenhuma, porque foram criados antes de `team:delete`
+ * existir e guardaram a fotografia da altura. A secção do fim corre o segundo.
+ *
  * A equipa de teste é criada e apagada aqui, e nunca é uma das semeadas.
  *
  * Uso: node scripts/test-delete-team.mjs
@@ -72,6 +84,17 @@ await db.query('DELETE FROM "Team" WHERE name = $1', [NOME]);
 await db.query(`DELETE FROM "Athlete" WHERE name = 'ZZ Atleta da Equipa'`);
 await db.query(`UPDATE "SubscriptionPlan" SET "teamId" = NULL WHERE name = 'ZZ Plano'`);
 await db.query(`DELETE FROM "SubscriptionPlan" WHERE name = 'ZZ Plano'`);
+/*
+ * E o cargo da segunda metade — antes de tudo.
+ *
+ * Estava a ser limpo a meio do teste, e um `zzrole` deixado por uma corrida que
+ * rebentou ficava agarrado à direção: a **primeira** metade passava a correr com
+ * um cargo sem `team:delete` e falhava inteira, a apontar para um bug que não
+ * existia. Lixo de teste que altera permissões tem de sair à entrada.
+ */
+await db.query(`UPDATE "Membership" SET "customRoleId" = NULL WHERE "customRoleId" = 'zzrole'`);
+await db.query(`DELETE FROM "AcademyRole" WHERE id = 'zzrole'`);
+await db.query(`DELETE FROM "Team" WHERE id = 'zzteam2'`);
 
 const academia = (await db.query(`SELECT id FROM "Academy" WHERE slug = 'life-club'`)).rows[0];
 const sport = (await db.query('SELECT id FROM "Sport" WHERE "academyId" = $1 LIMIT 1', [academia.id])).rows[0];
@@ -144,7 +167,78 @@ check("o atleta fica no clube, por atribuir", atleta.rowCount === 1);
 const plano = await db.query(`SELECT "teamId" FROM "SubscriptionPlan" WHERE id = 'zzplan'`);
 check("o plano de preços fica, desligado da equipa", plano.rowCount === 1 && plano.rows[0].teamId === null, JSON.stringify(plano.rows[0]));
 
+console.log("\n=== Com um cargo atribuído — o caminho dos clubes a sério ===");
+/*
+ * A direção passa a ter um cargo cujas permissões estão **guardadas na linha**,
+ * como acontece em qualquer clube real. A lista é a do mapa do código para
+ * OWNER, que é o que a semeadura faz — e é o caminho que estava partido.
+ */
+const membroId = (await db.query(
+  `SELECT m.id FROM "Membership" m
+     JOIN "User" u ON u.id = m."userId"
+    WHERE u.email = 'direcao@lifeclub.pt' LIMIT 1`,
+)).rows[0]?.id;
+const cargoAnterior = (await db.query(`SELECT "customRoleId" FROM "Membership" WHERE id = $1`, [membroId])).rows[0]
+  ?.customRoleId ?? null;
+
+// O cargo é criado com a lista que a semeadura daria hoje, menos `team:delete` —
+// que é exactamente o estado em que os 24 cargos da base estavam.
+await db.query(
+  `INSERT INTO "AcademyRole" (id, "academyId", key, name, "baseRole", permissions, "navKeys", "isSystem", rank, "createdAt", "updatedAt")
+   SELECT 'zzrole', $1, 'zz-diretor', 'ZZ Diretor', 'DIRECTOR',
+          ARRAY(SELECT DISTINCT p FROM unnest(r.permissions) p WHERE p <> 'team:delete'),
+          ARRAY[]::text[], false, 20, now(), now()
+     FROM "AcademyRole" r
+    WHERE r."academyId" = $1 AND r."baseRole" IN ('OWNER','DIRECTOR')
+      AND r.permissions @> ARRAY['team:write']
+    LIMIT 1`,
+  [academia.id],
+);
+await db.query(`UPDATE "Membership" SET "customRoleId" = 'zzrole' WHERE id = $1`, [membroId]);
+
+const semCargo = await call(director, "GET", "/api/teams");
+check("a sessão continua a abrir com o cargo posto", semCargo.status === 200, `${semCargo.status}`);
+
+/*
+ * Uma equipa nova para esta metade — a primeira já foi apagada lá em cima.
+ */
+await db.query(
+  `INSERT INTO "Team" (id, "academyId", "sportId", "seasonId", name, "maxAge", "createdAt", "updatedAt")
+   VALUES ('zzteam2', $1, $2, $3, 'ZZ Equipa Cargo', 13, now(), now())`,
+  [academia.id, sport.id, season.id],
+);
+
+const cargoSemDelete = await call(director, "DELETE", "/api/teams/zzteam2", { confirmName: "ZZ Equipa Cargo" });
+check(
+  "um cargo sem 'team:delete' é recusado (403) — era isto que os clubes viam",
+  cargoSemDelete.status === 403,
+  `${cargoSemDelete.status}`,
+);
+
+// E agora com a permissão no cargo, que é o que a migração `20260831120000` fez.
+await db.query(
+  `UPDATE "AcademyRole" SET permissions = ARRAY(SELECT DISTINCT p FROM unnest(permissions || ARRAY['team:delete']) p) WHERE id = 'zzrole'`,
+);
+const comPermissao = await call(director, "DELETE", "/api/teams/zzteam2", { confirmName: "ZZ Equipa Cargo" });
+check("com a permissão no cargo, apaga (200)", comPermissao.status === 200, `${comPermissao.status} ${JSON.stringify(comPermissao.body).slice(0, 120)}`);
+check("e a equipa desapareceu", (await db.query(`SELECT 1 FROM "Team" WHERE id = 'zzteam2'`)).rowCount === 0);
+
+/*
+ * O que o cliente recebe tem de dizer o mesmo que o servidor faz — senão o botão
+ * aparece e a acção falha, ou o contrário. `GET /api/me` devolve as permissões
+ * resolvidas, e é delas que sai o botão na ficha da equipa.
+ */
+const boot = await call(director, "GET", "/api/bootstrap");
+check(
+  "e o arranque do cliente traz a permissão — o botão aparece",
+  (boot.body?.me?.permissions ?? []).includes("team:delete"),
+  `${boot.status} · ${(boot.body?.me?.permissions ?? []).length} permissões`,
+);
+
 // Limpeza.
+await db.query(`UPDATE "Membership" SET "customRoleId" = $2 WHERE id = $1`, [membroId, cargoAnterior]);
+await db.query(`DELETE FROM "AcademyRole" WHERE id = 'zzrole'`);
+await db.query(`DELETE FROM "Team" WHERE id = 'zzteam2'`);
 await db.query(`DELETE FROM "SubscriptionPlan" WHERE id = 'zzplan'`);
 await db.query(`DELETE FROM "Athlete" WHERE id = 'zzath'`);
 

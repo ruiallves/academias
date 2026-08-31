@@ -155,6 +155,13 @@ const TENANT_SCOPED = new Set<string>([
   "MemberTier",
   "Member",
   "CatalogItem",
+  // Inventário. As quatro têm `academyId` próprio — incluindo a variante, que
+  // podia tê-lo herdado do artigo: uma tabela protegida por junção é uma tabela
+  // cuja política um dia se esquece de escrever.
+  "InventoryItem",
+  "InventoryVariant",
+  "InventoryAssignment",
+  "InventoryMovement",
 ]);
 
 /**

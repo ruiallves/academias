@@ -9,6 +9,7 @@ import {
   CalendarDays,
   ClipboardCheck,
   Receipt,
+  Boxes,
   Megaphone,
   Trophy,
   Gauge,
@@ -215,6 +216,14 @@ export const NAV_CATALOG: NavGroup[] = [
         requires: "comms:read",
         badge: (c) => c.unreadThreads || undefined,
       },
+      /*
+        O armazém, em Gestão e não numa área própria.
+ 
+        É gestão do clube como as mensalidades e a comunicação — material que se
+        compra, entrega e recebe de volta. Uma área nova no topo dizia que é
+        maior do que é, e quem entra na consola não vem para aqui todos os dias.
+      */
+      { key: "inventory", label: "Inventário", to: "/inventario", icon: Boxes, requires: "inventory:read" },
     ],
   },
   {

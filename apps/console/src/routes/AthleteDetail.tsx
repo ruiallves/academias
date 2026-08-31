@@ -15,6 +15,7 @@ import {
   type Column,
 } from "@/components/primitives";
 import { Segmented } from "@/components/filters";
+import { AthleteKitPanel } from "@/components/inventory/AthleteKitPanel";
 import { ClinicalPanel } from "@/components/ClinicalPanel";
 import {
   ArrowLeft,
@@ -25,6 +26,7 @@ import {
   FileText,
   Footprints,
   Gauge,
+  Boxes,
   HeartPulse,
   Home,
   LayoutGrid,
@@ -68,7 +70,7 @@ import { useSession } from "@/session";
 import type { Athlete } from "@/data/types";
 import { Spinner } from "@/components/Busy";
 
-type Tab = "overview" | "matches" | "attendance" | "development" | "clinical" | "fees" | "family";
+type Tab = "overview" | "matches" | "attendance" | "development" | "clinical" | "kit" | "fees" | "family";
 
 /**
  * A ficha do atleta.
@@ -124,6 +126,14 @@ export default function AthleteDetail() {
       ? [{ value: "development" as const, label: "Desenvolvimento", icon: Gauge }]
       : []),
     { value: "clinical", label: "Clínico", icon: HeartPulse },
+    /*
+      O equipamento que o clube lhe entregou.
+ 
+      Separador e não um painel na visão geral: em Junho, quando se recolhe o
+      material, é uma lista que se percorre atleta a atleta — e na visão geral
+      ficava no fim de uma página que já é longa. Só a quem vê o inventário.
+    */
+    ...(can(session, "inventory:read") ? [{ value: "kit" as const, label: "Artigos", icon: Boxes }] : []),
     ...(can(session, "billing:read") ? [{ value: "fees" as const, label: "Mensalidades", icon: Wallet }] : []),
     ...(can(session, "family:read") ? [{ value: "family" as const, label: "Encarregado", icon: Home }] : []),
   ];
@@ -174,6 +184,7 @@ export default function AthleteDetail() {
       {tab === "attendance" && <Attendance athleteId={id} />}
       {tab === "development" && <Development athlete={athlete} />}
       {tab === "clinical" && <Clinical athlete={athlete} />}
+      {tab === "kit" && <AthleteKitPanel athleteId={athlete.id} athleteName={athlete.name} />}
       {tab === "fees" && <FeesTab athlete={athlete} />}
       {tab === "family" && <Family athlete={athlete} />}
       </>

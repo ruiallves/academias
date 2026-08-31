@@ -125,6 +125,19 @@ export type Permission =
    * escreve no boletim como escreve em tudo o resto: numa academia pequena é a
    * diretora que lança a baixa que o fisioterapeuta ditou ao telefone.
    */
+  /**
+   * O armazém do clube: artigos, tamanhos, stock e o que está com cada atleta.
+   *
+   * `read` acompanha quem já vê a operação — presidência, direção e coordenação.
+   * `write` é presidência e direção, como o resto do `WRITE_ALL`, e delega-se a
+   * quem trata do material (secretaria, roupeiro) no editor de cargos: é quase
+   * sempre uma pessoa só, e é ela que passa o dia a entregar equipamento.
+   *
+   * Separadas porque ver quantas t-shirts há e mexer no número são decisões
+   * diferentes: um treinador que queira saber se há coletes não tem de poder
+   * dar baixa de trinta.
+   */
+  | "inventory:read" | "inventory:write"
   | "clinical:status" | "clinical:read" | "clinical:write";
 
 const READ_ALL: Permission[] = [
@@ -135,6 +148,7 @@ const READ_ALL: Permission[] = [
   "scouting:request",
   "member:read",
   "training:read",
+  "inventory:read",
 ];
 
 const WRITE_ALL: Permission[] = [
@@ -152,6 +166,9 @@ const WRITE_ALL: Permission[] = [
   "scouting:write",
   "member:write",
   "training:write",
+  // Mexer no stock: presidência e direção. Quem trata do material recebe-a num
+  // cargo — ver a nota da permissão.
+  "inventory:write",
 ];
 
 export const ROLE_PERMISSIONS: Record<Role, Permission[]> = {
@@ -169,7 +186,16 @@ export const ROLE_PERMISSIONS: Record<Role, Permission[]> = {
    * para isso que os cargos existem.
    */
   COORDINATOR: [
-    ...READ_ALL.filter((p) => p !== "billing:read" && p !== "member:read"),
+    /*
+     * Sem `billing:read`, `member:read` — e sem `inventory:read`.
+     *
+     * Os sócios são da direção, o financeiro também, e o armazém é de quem o
+     * gere: a primeira pessoa que entra no clube, a presidência e a direção. Um
+     * coordenador desportivo monta plantéis e planeia treinos; saber quantas
+     * t-shirts há na prateleira não faz parte disso — e quem precisar recebe a
+     * permissão num cargo, que é para isso que os cargos existem.
+     */
+    ...READ_ALL.filter((p) => p !== "billing:read" && p !== "member:read" && p !== "inventory:read"),
     "athlete:write", "team:write", "calendar:write", "attendance:write",
     "comms:write", "evaluation:write", "report:write",
     // A área técnica é o trabalho dele: modelos de jogo do clube, biblioteca

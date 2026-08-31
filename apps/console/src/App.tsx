@@ -24,6 +24,10 @@ import MedicalConsultations from "@/routes/medical/Consultations";
 import Sessions from "@/routes/Sessions";
 import CallUps from "@/routes/CallUps";
 import Matches from "@/routes/Matches";
+import Inventory from "@/routes/inventory/Inventory";
+import InventoryItems from "@/routes/inventory/Items";
+import InventoryItemDetail from "@/routes/inventory/ItemDetail";
+import InventoryDeliveries from "@/routes/inventory/Deliveries";
 import MatchDetail from "@/routes/MatchDetail";
 import Evaluations from "@/routes/Evaluations";
 import Reports from "@/routes/Reports";
@@ -67,6 +71,14 @@ export default function App() {
         {/* Sócios — o livro do clube, ao lado do staff. */}
         <Route path="socios" element={<Allow p="member:read"><Members /></Allow>} />
         <Route path="socios/:id" element={<Allow p="member:read"><MemberDetail /></Allow>} />
+
+        {/* Inventário. O detalhe do artigo antes da lista não é possível aqui —
+            o router resolve por especificidade —, mas a ordem segue a leitura:
+            painel, lista, artigo, entregas. */}
+        <Route path="inventario" element={<Allow p="inventory:read"><Inventory /></Allow>} />
+        <Route path="inventario/artigos" element={<Allow p="inventory:read"><InventoryItems /></Allow>} />
+        <Route path="inventario/artigos/:id" element={<Allow p="inventory:read"><InventoryItemDetail /></Allow>} />
+        <Route path="inventario/entregas" element={<Allow p="inventory:read"><InventoryDeliveries /></Allow>} />
         {/* O menu chamava-se "Treinadores" até a academia passar a ter também
             departamento clínico e direção. Links antigos continuam a funcionar. */}
         <Route path="treinadores" element={<Navigate to="/staff" replace />} />

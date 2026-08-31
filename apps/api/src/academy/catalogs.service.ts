@@ -42,7 +42,7 @@ import { can, type RequestContext } from "../common/permissions";
 // "competitions" — as provas que o clube disputa. Entram no catálogo e não numa
 // tabela própria porque é exactamente o que os catálogos são: uma lista de
 // nomes que o clube gere, por modalidade. Ver a migração `competicoes`.
-const KINDS = ["venues", "dressingRooms", "eventTypes", "competitions"] as const;
+const KINDS = ["venues", "dressingRooms", "eventTypes", "competitions", "inventoryCategories", "inventoryLocations"] as const;
 export type CatalogKind = (typeof KINDS)[number];
 
 export function isCatalogKind(value: string): value is CatalogKind {
@@ -84,6 +84,31 @@ const SEED: Partial<Record<CatalogKind, { label: string; note?: string; isSystem
    * se pode remover do catálogo não é rede.
    */
   competitions: [{ label: AMIGAVEL, isSystem: true }],
+  /*
+   * As categorias de material, com que o armazém abre.
+   *
+   * Semeadas e não obrigatórias: um clube que abra o Inventário e encontre a
+   * lista vazia tem de inventar uma taxonomia antes de registar a primeira
+   * t-shirt — e é aí que fecha a página. Estas seis cobrem o que os clubes
+   * arrumam, e nenhuma é `isSystem`: renomeiam-se, arquivam-se e juntam-se
+   * outras, porque a arrumação do armazém é de quem o arruma.
+   */
+  inventoryCategories: [
+    { label: "Equipamento de treino" },
+    { label: "Equipamento de jogo" },
+    { label: "Material de treino" },
+    { label: "Material médico" },
+    { label: "Equipamento de staff" },
+    { label: "Outros" },
+  ],
+  /*
+   * As localizações ficam **vazias** de propósito.
+   *
+   * "Armazém principal" e "Balneário 2" são o sítio de um clube em concreto, e
+   * semear nomes que não existem naquela casa é pior do que não semear nada:
+   * ficam na lista para sempre, a ninguém ocorre apagá-los, e o campo perde o
+   * significado. Quem quiser localizações escreve as suas.
+   */
 };
 
 @Injectable()
@@ -102,7 +127,7 @@ export class CatalogsService {
        * existirem já tem `eventTypes` e ficaria sem "Amigável" para sempre se a
        * condição fosse sobre o catálogo inteiro.
        */
-      for (const kind of ["eventTypes", "competitions"] as const) {
+      for (const kind of ["eventTypes", "competitions", "inventoryCategories"] as const) {
         const jaLa = await db.catalogItem.count({ where: { kind } });
         if (jaLa > 0) continue;
         await db.catalogItem.createMany({

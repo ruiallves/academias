@@ -45,9 +45,20 @@ import { apiDelete, apiGet, apiPatch, apiPost } from "@/lib/http";
  * passos e dois sítios para a mesma decisão, e nenhum deles obrigava o outro a
  * concordar. A equipa passou a ter `maxAge`, um inteiro; ver `lib/team-age.ts`.
  */
-export type CatalogKey = "venues" | "dressingRooms" | "eventTypes" | "competitions";
+export type CatalogKey =
+  | "venues"
+  | "dressingRooms"
+  | "eventTypes"
+  | "competitions"
+  | "inventoryCategories";
 
-export const CATALOG_KEYS: CatalogKey[] = ["venues", "dressingRooms", "eventTypes", "competitions"];
+export const CATALOG_KEYS: CatalogKey[] = [
+  "venues",
+  "dressingRooms",
+  "eventTypes",
+  "competitions",
+  "inventoryCategories",
+];
 
 export type CatalogItem = {
   id: string;
@@ -91,6 +102,11 @@ export const CATALOG_META: Record<CatalogKey, { title: string; hint: string; pla
     placeholder: "Campeonato Distrital, Taça, Torneio de Verão…",
     noteLabel: "Organização ou escalão",
   },
+  inventoryCategories: {
+    title: "Categorias de material",
+    hint: "como o armazém está arrumado",
+    placeholder: "Equipamento de jogo, Material médico…",
+  },
 };
 
 /* -------------------------------------------------------------------------- */
@@ -113,6 +129,7 @@ const EMPTY: Record<CatalogKey, CatalogItem[]> = {
   dressingRooms: [],
   eventTypes: [],
   competitions: [],
+  inventoryCategories: [],
 };
 
 let state: Record<CatalogKey, CatalogItem[]> = { ...EMPTY };

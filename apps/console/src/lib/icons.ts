@@ -95,6 +95,11 @@ export {
   Hand,
   RotateCw,
   RotateCcw,
+  /* Inventário: as caixas são o armazém, a caixa aberta é a entrega, e a seta
+     de volta é a devolução. */
+  Boxes,
+  PackageOpen,
+  Undo2,
   /* O manípulo de arrasto de uma lista: três linhas, a convenção de sempre. */
   Menu as DragHandle,
   type LucideIcon,

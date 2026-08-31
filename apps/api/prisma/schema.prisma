@@ -31,14 +31,20 @@ datasource db {
   directUrl = env("MIGRATE_DATABASE_URL")
 }
 
-/* -------------------------------------------------------------------------- */
-/* Tenant                                                                      */
-/* -------------------------------------------------------------------------- */
+/**
+ * --------------------------------------------------------------------------
+ */
+/**
+ * Tenant
+ */
+/**
+ * --------------------------------------------------------------------------
+ */
 
 model Academy {
-  id        String   @id @default(cuid())
+  id        String  @id @default(cuid())
   /// Subdomínio da PWA: {slug}.academia.pt
-  slug      String   @unique
+  slug      String  @unique
   name      String
   shortName String
   city      String?
@@ -74,49 +80,55 @@ model Academy {
   membershipPoints   String[] @default([])
 
   /// Estado do cliente na plataforma. Ver `docs/04-plataforma.md`.
-  status      AcademyStatus @default(SETUP)
-  trialEndsAt DateTime?
+  status       AcademyStatus @default(SETUP)
+  trialEndsAt  DateTime?
   subscription Subscription?
 
-  sports        Sport[]
-  seasons       Season[]
-  memberships   Membership[]
-  roles         AcademyRole[]
-  departments   Department[]
-  prospects     Prospect[]
-  observations  Observation[]
-  scoutCriteria ScoutCriterion[]
-  shortlists    Shortlist[]
-  scoutRequests ScoutingRequest[]
-  fitDimensions FitDimension[]
+  sports         Sport[]
+  seasons        Season[]
+  memberships    Membership[]
+  roles          AcademyRole[]
+  departments    Department[]
+  prospects      Prospect[]
+  observations   Observation[]
+  scoutCriteria  ScoutCriterion[]
+  shortlists     Shortlist[]
+  scoutRequests  ScoutingRequest[]
+  fitDimensions  FitDimension[]
   prospectVideos ProspectVideo[]
-  memberTiers   MemberTier[]
-  members       Member[]
-  catalog       CatalogItem[]
-  athletes      Athlete[]
-  teams         Team[]
-  sessions      TrainingSession[]
-  sessionBlocks SessionBlock[]
-  exercises     Exercise[]
-  gameModels    GameModel[]
-  setPieces     SetPiece[]
-  plans         SubscriptionPlan[]
-  charges       Charge[]
-  announcements Announcement[]
-  notifications Notification[]
-  evaluations   Evaluation[]
-  clinical      ClinicalEntry[]
-  reports       AthleteReport[]
-  matches       Match[]
-  events        CalendarEvent[]
-  invites       StaffInvite[]
+  memberTiers    MemberTier[]
+  members        Member[]
+  catalog        CatalogItem[]
+  athletes       Athlete[]
+  teams          Team[]
+  sessions       TrainingSession[]
+  sessionBlocks  SessionBlock[]
+  exercises      Exercise[]
+  gameModels     GameModel[]
+  setPieces      SetPiece[]
+  plans          SubscriptionPlan[]
+  charges        Charge[]
+  announcements  Announcement[]
+  notifications  Notification[]
+  evaluations    Evaluation[]
+  clinical       ClinicalEntry[]
+  reports        AthleteReport[]
+  matches        Match[]
+  events         CalendarEvent[]
+  invites        StaffInvite[]
   /// O link de auto-registo das famílias. Um vivo de cada vez.
-  familyInvites FamilyInvite[]
+  familyInvites  FamilyInvite[]
   /// De que contacto nasceu este cliente. Ver `Contact`, do lado da plataforma.
-  contacts      Contact[]
+  contacts       Contact[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+
+  /// Inventário — artigos, tamanhos, movimentos e o que está com cada atleta.
+  inventoryItems       InventoryItem[]
+  inventoryVariants    InventoryVariant[]
+  inventoryMovements   InventoryMovement[]
+  inventoryAssignments InventoryAssignment[]
 }
 
 /// O ciclo de vida de um cliente. Derivado do onboarding e da subscrição — o
@@ -136,25 +148,25 @@ enum AcademyStatus {
 /// Uma modalidade da academia. Natação tem `positions` vazio — e a UI adapta-se
 /// por ausência, sem casos especiais no código.
 model Sport {
-  id        String   @id @default(cuid())
-  academyId String
-  academy   Academy  @relation(fields: [academyId], references: [id], onDelete: Cascade)
-  name      String
-  positions String[] @default([])
+  id                String   @id @default(cuid())
+  academyId         String
+  academy           Academy  @relation(fields: [academyId], references: [id], onDelete: Cascade)
+  name              String
+  positions         String[] @default([])
   /// Competências avaliadas nesta modalidade, na ordem em que aparecem.
-  skills    String[] @default([])
+  skills            String[] @default([])
   /// "Pé dominante" no futebol, "Mão dominante" no basquetebol, nulo na natação.
   dominantSideLabel String?
   /// Duração normal de um jogo, em minutos. Nulo em desportos individuais.
   matchMinutes      Int?
 
-  teams       Team[]
-  prospects   Prospect[]
-  criteria    ScoutCriterion[]
-  shortlists  Shortlist[]
-  requests    ScoutingRequest[]
-  fitDims     FitDimension[]
-  catalog     CatalogItem[]
+  teams      Team[]
+  prospects  Prospect[]
+  criteria   ScoutCriterion[]
+  shortlists Shortlist[]
+  requests   ScoutingRequest[]
+  fitDims    FitDimension[]
+  catalog    CatalogItem[]
 
   @@unique([academyId, name])
   @@index([academyId])
@@ -172,23 +184,32 @@ model Season {
 
   teams Team[]
 
+  /// As entregas de equipamento desta época.
+  inventoryAssignments InventoryAssignment[]
+
   @@unique([academyId, label])
   @@index([academyId])
 }
 
-/* -------------------------------------------------------------------------- */
-/* Pessoas e permissões                                                        */
-/* -------------------------------------------------------------------------- */
+/**
+ * --------------------------------------------------------------------------
+ */
+/**
+ * Pessoas e permissões
+ */
+/**
+ * --------------------------------------------------------------------------
+ */
 
 /// Espelho local do utilizador do Supabase Auth. A password nunca passa por aqui.
 model User {
-  id       String  @id @default(cuid())
+  id     String  @id @default(cuid())
   /// `auth.users.id` do Supabase.
-  authId   String  @unique
-  email    String  @unique
-  name     String
-  phone    String?
-  locale   String  @default("pt-PT")
+  authId String  @unique
+  email  String  @unique
+  name   String
+  phone  String?
+  locale String  @default("pt-PT")
 
   /// A fotografia de quem trabalha na academia, no armazenamento privado. Mesma
   /// regra da do atleta: guarda-se a chave, serve-se um link assinado.
@@ -277,36 +298,41 @@ model Membership {
   /// notificações, e ficava eternamente "Por instalar". Nulo é "nunca entrou".
   lastSeenAt DateTime?
 
-  coachOf        TeamStaff[]
-  guardianOf     GuardianLink[]
-  ledSessions    TrainingSession[] @relation("SessionCoach")
-  ledMatches     Match[]           @relation("MatchCoach")
-  matchStaff     MatchStaff[]      @relation("MatchStaff")
-  ledEvents      CalendarEvent[]   @relation("EventCoach")
-  clinicalWrites ClinicalEntry[]   @relation("ClinicalAuthor")
-  evaluations    Evaluation[]
-  reportsWritten AthleteReport[]   @relation("ReportAuthor")
-  announcements  Announcement[]
-  invitesSent    StaffInvite[]     @relation("InviteAuthor")
-  prospectsOwned Prospect[]        @relation("ProspectOwner")
-  prospectEvents ProspectEvent[]   @relation("ProspectEventActor")
-  observations   Observation[]     @relation("ObservationScout")
-  shortlistsMade Shortlist[]       @relation("ShortlistAuthor")
-  shortlistAdds  ShortlistEntry[]  @relation("ShortlistEntryAuthor")
-  requestsMade   ScoutingRequest[] @relation("RequestAuthor")
-  requestsOwned  ScoutingRequest[] @relation("RequestAssignee")
-  candidateAdds  ScoutingRequestCandidate[] @relation("RequestCandidateAuthor")
-  videosUploaded ProspectVideo[]   @relation("VideoUploader")
-  videoMoments   VideoMoment[]     @relation("MomentAuthor")
-  membersApproved Member[]         @relation("MemberApprover")
-  familyLinks    FamilyInvite[]    @relation("FamilyInviteAuthor")
-  exercisesMade  Exercise[]        @relation("ExerciseAuthor")
-  exerciseFavs   ExerciseFavorite[] @relation("ExerciseFavorites")
-  gameModelsMade GameModel[]       @relation("GameModelAuthor")
-  setPiecesMade  SetPiece[]        @relation("SetPieceAuthor")
+  coachOf         TeamStaff[]
+  guardianOf      GuardianLink[]
+  ledSessions     TrainingSession[]          @relation("SessionCoach")
+  ledMatches      Match[]                    @relation("MatchCoach")
+  matchStaff      MatchStaff[]               @relation("MatchStaff")
+  ledEvents       CalendarEvent[]            @relation("EventCoach")
+  clinicalWrites  ClinicalEntry[]            @relation("ClinicalAuthor")
+  evaluations     Evaluation[]
+  reportsWritten  AthleteReport[]            @relation("ReportAuthor")
+  announcements   Announcement[]
+  invitesSent     StaffInvite[]              @relation("InviteAuthor")
+  prospectsOwned  Prospect[]                 @relation("ProspectOwner")
+  prospectEvents  ProspectEvent[]            @relation("ProspectEventActor")
+  observations    Observation[]              @relation("ObservationScout")
+  shortlistsMade  Shortlist[]                @relation("ShortlistAuthor")
+  shortlistAdds   ShortlistEntry[]           @relation("ShortlistEntryAuthor")
+  requestsMade    ScoutingRequest[]          @relation("RequestAuthor")
+  requestsOwned   ScoutingRequest[]          @relation("RequestAssignee")
+  candidateAdds   ScoutingRequestCandidate[] @relation("RequestCandidateAuthor")
+  videosUploaded  ProspectVideo[]            @relation("VideoUploader")
+  videoMoments    VideoMoment[]              @relation("MomentAuthor")
+  membersApproved Member[]                   @relation("MemberApprover")
+  familyLinks     FamilyInvite[]             @relation("FamilyInviteAuthor")
+  exercisesMade   Exercise[]                 @relation("ExerciseAuthor")
+  exerciseFavs    ExerciseFavorite[]         @relation("ExerciseFavorites")
+  gameModelsMade  GameModel[]                @relation("GameModelAuthor")
+  setPiecesMade   SetPiece[]                 @relation("SetPieceAuthor")
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+
+  /// Quem mexeu no armazém: movimentos registados, entregas feitas e recebidas.
+  inventoryMovements InventoryMovement[]   @relation("InventoryMovementBy")
+  inventoryAssigned  InventoryAssignment[] @relation("InventoryAssignedBy")
+  inventoryReturned  InventoryAssignment[] @relation("InventoryReturnedBy")
 
   @@unique([academyId, userId, role])
   @@index([academyId])
@@ -574,9 +600,15 @@ model FamilyInvite {
   @@index([academyId, revokedAt])
 }
 
-/* -------------------------------------------------------------------------- */
-/* Atletas e equipas                                                           */
-/* -------------------------------------------------------------------------- */
+/**
+ * --------------------------------------------------------------------------
+ */
+/**
+ * Atletas e equipas
+ */
+/**
+ * --------------------------------------------------------------------------
+ */
 
 enum DominantSide {
   RIGHT
@@ -591,12 +623,12 @@ enum AthleteStatus {
 }
 
 model Athlete {
-  id        String   @id @default(cuid())
+  id        String  @id @default(cuid())
   academyId String
-  academy   Academy  @relation(fields: [academyId], references: [id], onDelete: Cascade)
+  academy   Academy @relation(fields: [academyId], references: [id], onDelete: Cascade)
 
   name      String
-  birthdate DateTime @db.Date
+  birthdate DateTime      @db.Date
   /// Endereço externo, quando a foto vive fora daqui. Hoje quase sempre nulo — as
   /// fotos carregadas pela consola vivem em `photoKey`.
   photoUrl  String?
@@ -626,8 +658,8 @@ model Athlete {
   ///
   taxId String?
 
-  heightCm Int?
-  weightKg Decimal? @db.Decimal(4, 1)
+  heightCm     Int?
+  weightKg     Decimal?      @db.Decimal(4, 1)
   /// Neutro de propósito: serve o pé no futebol e a mão no basquetebol. O rótulo
   /// vem de `Sport.dominantSideLabel`.
   dominantSide DominantSide?
@@ -650,6 +682,10 @@ model Athlete {
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+
+  /// O equipamento que lhe foi entregue, e os movimentos que o registaram.
+  inventoryAssignments InventoryAssignment[]
+  inventoryMovements   InventoryMovement[]
 
   @@unique([academyId, taxId])
   @@index([academyId])
@@ -680,7 +716,7 @@ model Team {
   seasonId  String
   season    Season  @relation(fields: [seasonId], references: [id])
 
-  name     String
+  name String
 
   /// A idade máxima da equipa: 11 num "Sub-11".
   ///
@@ -696,7 +732,7 @@ model Team {
   /// inscrito nos Sub-11 para uma convocatória de Sub-13.
   ///
   /// Ver `athleteAge` em `matches.service.ts` para a convenção de idade.
-  maxAge   Int
+  maxAge Int
 
   /// Horário regular: [{ weekday: 2, start: "17:30", end: "19:00", venue: "Campo 1" }].
   /// As sessões são geradas a partir daqui, mas cada uma vive por si depois de criada.
@@ -709,14 +745,14 @@ model Team {
   /// futebol de formação, que é o caso mais comum — e muda-se na ficha da equipa.
   maxCallUps Int @default(14)
 
-  athletes TeamMembership[]
-  staff    TeamStaff[]
-  sessions TrainingSession[]
-  matches  Match[]
-  events   CalendarEvent[]
-  plans    SubscriptionPlan[]
-  gameModels GameModel[]
-  setPieces  SetPiece[]
+  athletes     TeamMembership[]
+  staff        TeamStaff[]
+  sessions     TrainingSession[]
+  matches      Match[]
+  events       CalendarEvent[]
+  plans        SubscriptionPlan[]
+  gameModels   GameModel[]
+  setPieces    SetPiece[]
   competitions TeamCompetition[]
 
   createdAt DateTime @default(now())
@@ -727,14 +763,14 @@ model Team {
 }
 
 model TeamMembership {
-  id        String   @id @default(cuid())
+  id        String    @id @default(cuid())
   teamId    String
-  team      Team     @relation(fields: [teamId], references: [id], onDelete: Cascade)
+  team      Team      @relation(fields: [teamId], references: [id], onDelete: Cascade)
   athleteId String
-  athlete   Athlete  @relation(fields: [athleteId], references: [id], onDelete: Cascade)
+  athlete   Athlete   @relation(fields: [athleteId], references: [id], onDelete: Cascade)
   /// Valor de `Sport.positions`. Nulo em desportos sem posições.
   position  String?
-  joinedAt  DateTime @default(now())
+  joinedAt  DateTime  @default(now())
   leftAt    DateTime?
 
   @@unique([teamId, athleteId])
@@ -754,9 +790,15 @@ model TeamStaff {
   @@index([membershipId])
 }
 
-/* -------------------------------------------------------------------------- */
-/* Treinos e presenças                                                         */
-/* -------------------------------------------------------------------------- */
+/**
+ * --------------------------------------------------------------------------
+ */
+/**
+ * Treinos e presenças
+ */
+/**
+ * --------------------------------------------------------------------------
+ */
 
 enum SessionStatus {
   SCHEDULED
@@ -795,10 +837,12 @@ model TrainingSession {
   attendanceClosedAt DateTime?
   attendance         AttendanceRecord[]
 
-  /* ---- Plano de treino (Área técnica) ----------------------------------- */
-  /*
+  /**
+   * ---- Plano de treino (Área técnica) -----------------------------------
+   */
+  /**
+   * /*
    * O plano vive **na sessão**, não numa tabela paralela.
-   *
    * Um treino planeado e um treino do calendário são o mesmo treino: o que as
    * Presenças abrem, o que a app da família mostra, o que o plano descreve. Uma
    * tabela `TrainingPlan` à parte era a mesma linha dita duas vezes — e o dia em
@@ -807,21 +851,21 @@ model TrainingSession {
    */
 
   /// O objetivo principal da sessão ("Transição defensiva").
-  objective String?
+  objective        String?
   /// Objetivos secundários, na ordem em que o treinador os escreveu.
-  objectives String[] @default([])
+  objectives       String[] @default([])
   /// "Aquisitivo", "Recuperação", "Pré-competitivo", ... — vocabulário do clube.
-  sessionType String?
+  sessionType      String?
   /// Intensidade planeada, 1–10. A carga é derivada — nunca guardada.
-  intensity Int?
+  intensity        Int?
   /// Quantos atletas se esperam. Compara-se com as presenças reais depois.
   expectedAthletes Int?
   /// Material a preparar antes do treino.
-  material String?
+  material         String?
   /// Observações do plano — o que o treinador escreve antes.
-  planNotes String?
+  planNotes        String?
   /// Observações pós-treino — o que ficou, escrito depois de apitar.
-  postNotes String?
+  postNotes        String?
 
   /// Os blocos da sessão: ativação → técnica → posse → jogo. Ver `SessionBlock`.
   blocks SessionBlock[]
@@ -841,9 +885,9 @@ model TrainingSession {
 /// apagar um exercício não pode apagar o histórico dos treinos onde foi usado —
 /// o bloco guarda o próprio nome e fica (`onDelete: SetNull`).
 model SessionBlock {
-  id        String  @id @default(cuid())
+  id        String          @id @default(cuid())
   academyId String
-  academy   Academy @relation(fields: [academyId], references: [id], onDelete: Cascade)
+  academy   Academy         @relation(fields: [academyId], references: [id], onDelete: Cascade)
   sessionId String
   session   TrainingSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
 
@@ -852,14 +896,14 @@ model SessionBlock {
   durationMin Int
   /// Categoria de objetivo ("Organização ofensiva", "Físico") — é o que alimenta
   /// o "tempo por objetivo" do plano e a distribuição semanal do dashboard.
-  category  String?
-  objective String?
+  category    String?
+  objective   String?
   /// 1–10. Nulo herda a intensidade da sessão no cálculo da carga.
-  intensity Int?
-  players   String?
-  space     String?
-  material  String?
-  notes     String?
+  intensity   Int?
+  players     String?
+  space       String?
+  material    String?
+  notes       String?
 
   exerciseId String?
   exercise   Exercise? @relation(fields: [exerciseId], references: [id], onDelete: SetNull)
@@ -905,23 +949,23 @@ model Exercise {
   /// Sub-objetivos dentro da categoria: "Reação à perda", "Saída de bola".
   objectives String[] @default([])
   /// Fase do jogo, quando faz sentido distingui-la da categoria.
-  phase String?
+  phase      String?
   /// "Posse", "Vaga", "Jogo condicionado", "Circuito", ...
-  type String?
+  type       String?
 
   /// 1–10.
-  intensity Int?
+  intensity   Int?
   /// Formato: "6v4+GR". Texto porque os formatos não cabem num par de inteiros.
   players     String?
   durationMin Int?
   /// Dimensões do espaço: "30×25 m".
-  space    String?
-  material String?
+  space       String?
+  material    String?
   /// Escalões a que se destina, em idade: 8–12. Nulos = qualquer idade.
-  ageMin Int?
-  ageMax Int?
+  ageMin      Int?
+  ageMax      Int?
   /// 1–5.
-  complexity Int?
+  complexity  Int?
 
   rules          String?
   progressions   String?
@@ -991,11 +1035,11 @@ model GameModel {
 
   visibility LibraryVisibility @default(CLUB)
 
-  name   String
+  name       String
   /// O rótulo do sistema ("4-3-3") — informativo; a verdade é o `lineup`.
-  system String?
+  system     String?
   /// [{ id, label, x, y }] — posições no campo, arrastáveis.
-  lineup Json?
+  lineup     Json?
   /// { offensive: [...], defensive: [...], transitions: [...], setPieces: [...] }
   principles Json?
   notes      String?
@@ -1028,7 +1072,7 @@ model SetPiece {
   name        String
   description String?
   /// O mesmo formato do exercício: frames com posições e setas.
-  diagram Json?
+  diagram     Json?
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -1059,9 +1103,15 @@ model AttendanceRecord {
   @@index([athleteId])
 }
 
-/* -------------------------------------------------------------------------- */
-/* Mensalidades e pagamentos                                                   */
-/* -------------------------------------------------------------------------- */
+/**
+ * --------------------------------------------------------------------------
+ */
+/**
+ * Mensalidades e pagamentos
+ */
+/**
+ * --------------------------------------------------------------------------
+ */
 
 model SubscriptionPlan {
   id        String  @id @default(cuid())
@@ -1074,7 +1124,7 @@ model SubscriptionPlan {
   name        String
   amountCents Int
   /// Meses em que é cobrado (1–12). Muitas academias não cobram agosto.
-  months      Int[]  @default([1, 2, 3, 4, 5, 6, 7, 9, 10, 11, 12])
+  months      Int[]   @default([1, 2, 3, 4, 5, 6, 7, 9, 10, 11, 12])
   isActive    Boolean @default(true)
 
   enrollments Enrollment[]
@@ -1083,15 +1133,15 @@ model SubscriptionPlan {
 }
 
 model Enrollment {
-  id        String           @id @default(cuid())
-  athleteId String
-  athlete   Athlete          @relation(fields: [athleteId], references: [id], onDelete: Cascade)
-  planId    String
-  plan      SubscriptionPlan @relation(fields: [planId], references: [id])
+  id            String           @id @default(cuid())
+  athleteId     String
+  athlete       Athlete          @relation(fields: [athleteId], references: [id], onDelete: Cascade)
+  planId        String
+  plan          SubscriptionPlan @relation(fields: [planId], references: [id])
   /// Desconto de irmão, bolsa, acordo pontual — em cêntimos, subtraído ao plano.
-  discountCents Int      @default(0)
-  startsOn      DateTime @db.Date
-  endsOn        DateTime? @db.Date
+  discountCents Int              @default(0)
+  startsOn      DateTime         @db.Date
+  endsOn        DateTime?        @db.Date
 
   charges Charge[]
 
@@ -1107,11 +1157,11 @@ enum ChargeStatus {
 /// Uma mensalidade devida. É criada pelo servidor no início do período, e o seu
 /// estado deriva dos Payments — nunca é escrito directamente por um pedido do cliente.
 model Charge {
-  id        String  @id @default(cuid())
-  academyId String
-  academy   Academy @relation(fields: [academyId], references: [id], onDelete: Cascade)
-  athleteId String
-  athlete   Athlete @relation(fields: [athleteId], references: [id], onDelete: Cascade)
+  id           String      @id @default(cuid())
+  academyId    String
+  academy      Academy     @relation(fields: [academyId], references: [id], onDelete: Cascade)
+  athleteId    String
+  athlete      Athlete     @relation(fields: [athleteId], references: [id], onDelete: Cascade)
   enrollmentId String?
   enrollment   Enrollment? @relation(fields: [enrollmentId], references: [id])
 
@@ -1153,23 +1203,23 @@ enum PaymentMethod {
 }
 
 model Payment {
-  id       String  @id @default(cuid())
+  id       String @id @default(cuid())
   chargeId String
-  charge   Charge  @relation(fields: [chargeId], references: [id], onDelete: Cascade)
+  charge   Charge @relation(fields: [chargeId], references: [id], onDelete: Cascade)
 
   amountCents Int
   method      PaymentMethod
   status      PaymentStatus @default(PENDING)
 
-  provider String @default("eupago")
+  provider    String  @default("eupago")
   /// Identificador da euPago. Chave da idempotência do webhook.
   providerRef String?
   /// Entidade + referência Multibanco, quando aplicável.
-  entity    String?
-  reference String?
+  entity      String?
+  reference   String?
 
-  paidAt    DateTime?
-  expiresAt DateTime?
+  paidAt     DateTime?
+  expiresAt  DateTime?
   /// Resposta em bruto do provedor, para auditoria e para reconciliar disputas.
   rawPayload Json?
 
@@ -1199,9 +1249,15 @@ model WebhookEvent {
   @@index([processedAt])
 }
 
-/* -------------------------------------------------------------------------- */
-/* Comunicação e notificações                                                  */
-/* -------------------------------------------------------------------------- */
+/**
+ * --------------------------------------------------------------------------
+ */
+/**
+ * Comunicação e notificações
+ */
+/**
+ * --------------------------------------------------------------------------
+ */
 
 model Announcement {
   id        String     @id @default(cuid())
@@ -1210,8 +1266,8 @@ model Announcement {
   authorId  String
   author    Membership @relation(fields: [authorId], references: [id])
 
-  title String
-  body  String
+  title    String
+  body     String
   /// { "teamIds": [...] } ou { "all": true }.
   audience Json
 
@@ -1271,9 +1327,15 @@ model Notification {
   @@index([academyId, createdAt])
 }
 
-/* -------------------------------------------------------------------------- */
-/* Departamento clínico                                                        */
-/* -------------------------------------------------------------------------- */
+/**
+ * --------------------------------------------------------------------------
+ */
+/**
+ * Departamento clínico
+ */
+/**
+ * --------------------------------------------------------------------------
+ */
 
 enum ClinicalKind {
   INJURY
@@ -1320,10 +1382,10 @@ model ClinicalEntry {
   authorId String?
   author   Membership? @relation("ClinicalAuthor", fields: [authorId], references: [id])
 
-  kind   ClinicalKind
-  status ClinicalStatus @default(DONE)
+  kind     ClinicalKind
+  status   ClinicalStatus @default(DONE)
   /// Quando aconteceu, ou quando vai acontecer.
-  date   DateTime       @db.Date
+  date     DateTime       @db.Date
   /// Hora e local: só em agendamentos.
   time     String?
   location String?
@@ -1348,9 +1410,15 @@ model ClinicalEntry {
   @@index([academyId, impact, clearedOn])
 }
 
-/* -------------------------------------------------------------------------- */
-/* Jogos                                                                       */
-/* -------------------------------------------------------------------------- */
+/**
+ * --------------------------------------------------------------------------
+ */
+/**
+ * Jogos
+ */
+/**
+ * --------------------------------------------------------------------------
+ */
 
 enum MatchStatus {
   SCHEDULED
@@ -1372,7 +1440,7 @@ model Match {
   endsAt   DateTime
   venue    String
   opponent String
-  isHome   Boolean  @default(true)
+  isHome   Boolean     @default(true)
   status   MatchStatus @default(SCHEDULED)
 
   coachId String?
@@ -1380,9 +1448,9 @@ model Match {
 
   /// Preenchidos só depois de jogado — é a ausência do resultado que decide se a
   /// UI mostra a convocatória ou a estatística.
-  /*
+  /**
+   * /*
    * Em que competição se joga isto.
-   *
    * Aponta para o catálogo (`CatalogItem` de `kind = "competitions"`) e é
    * **opcional**: um amigável ou um treino-jogo não pertencem a prova nenhuma,
    * e obrigar a escolher uma faria os clubes inventarem "Amigáveis" como se
@@ -1457,7 +1525,7 @@ model MatchCallUp {
   /// escalão inferior para este jogo. É o que distingue, na convocatória, quem
   /// pertence à equipa de quem foi emprestado — e o que a ficha do atleta usa
   /// para dizer "emprestado ao Sub-13" em vez de parecer que mudou de equipa.
-  isGuest   Boolean      @default(false)
+  isGuest Boolean @default(false)
 
   @@unique([matchId, athleteId])
   @@index([athleteId])
@@ -1486,10 +1554,10 @@ model MatchAppearance {
   /// detalhe registado. `minutes` continua a valer nesse caso.
   offMinute Int?
   /// Golos no futebol, pontos nos restantes — o substantivo vem da modalidade.
-  tally   Int      @default(0)
+  tally     Int  @default(0)
   /// Assistências. Zero na maior parte das modalidades, e por isso o ecrã só as
   /// mostra a quem as quiser — mas quem as quer, quer mesmo.
-  assists Int      @default(0)
+  assists   Int  @default(0)
 
   /// Amarelos: zero, um, ou dois. Dois amarelos são uma expulsão, e é por isso
   /// que isto é um número e não um sim/não.
@@ -1516,7 +1584,7 @@ model MatchAppearance {
 
   /// Nota do jogo, 0–10. **A fórmula está por decidir** — o campo existe e é
   /// mostrado, mas nada no sistema a calcula ainda.
-  rating  Decimal? @db.Decimal(3, 1)
+  rating Decimal? @db.Decimal(3, 1)
 
   @@unique([matchId, athleteId])
   @@index([athleteId])
@@ -1552,9 +1620,15 @@ model MatchStaff {
   @@index([membershipId])
 }
 
-/* -------------------------------------------------------------------------- */
-/* Eventos do calendário                                                       */
-/* -------------------------------------------------------------------------- */
+/**
+ * --------------------------------------------------------------------------
+ */
+/**
+ * Eventos do calendário
+ */
+/**
+ * --------------------------------------------------------------------------
+ */
 
 enum CalendarEventKind {
   TRAINING
@@ -1610,9 +1684,15 @@ model CalendarEvent {
   @@index([teamId, startsAt])
 }
 
-/* -------------------------------------------------------------------------- */
-/* Notificações push                                                           */
-/* -------------------------------------------------------------------------- */
+/**
+ * --------------------------------------------------------------------------
+ */
+/**
+ * Notificações push
+ */
+/**
+ * --------------------------------------------------------------------------
+ */
 
 /// Uma subscrição Web Push de um dispositivo.
 ///
@@ -1637,9 +1717,9 @@ model MailLog {
   /// quando alguém pergunta "o convite ao João saiu?".
   to   String
 
-  ok     Boolean
+  ok       Boolean
   /// A razão, quando falhou. Curta — a mensagem que a consola mostraria.
-  reason String?
+  reason   String?
   /// Quem entregou: Resend, Brevo, SendGrid. Sobrevive a uma troca de serviço.
   provider String
 
@@ -1650,24 +1730,30 @@ model MailLog {
 }
 
 model PushSubscription {
-  id       String @id @default(cuid())
-  userId   String
-  user     User   @relation(fields: [userId], references: [id], onDelete: Cascade)
-  endpoint String @unique
-  p256dh   String
-  auth     String
+  id        String  @id @default(cuid())
+  userId    String
+  user      User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  endpoint  String  @unique
+  p256dh    String
+  auth      String
   /// Para saber que dispositivo é, quando o utilizador quiser desligar um.
   userAgent String?
 
-  createdAt DateTime  @default(now())
+  createdAt  DateTime  @default(now())
   lastUsedAt DateTime?
 
   @@index([userId])
 }
 
-/* -------------------------------------------------------------------------- */
-/* Desenvolvimento do atleta                                                   */
-/* -------------------------------------------------------------------------- */
+/**
+ * --------------------------------------------------------------------------
+ */
+/**
+ * Desenvolvimento do atleta
+ */
+/**
+ * --------------------------------------------------------------------------
+ */
 
 enum EvaluationStatus {
   DRAFT
@@ -1692,13 +1778,11 @@ model Evaluation {
   /// A leitura do treinador. É o que os pais lêem primeiro.
   note   String?
 
-  /*
+  /**
    * Os dois campos que transformam uma grelha de números numa avaliação.
-   *
    * Cinco pontuações dizem *onde* o atleta está; não dizem o que fazer com isso.
    * Um pai que lê "Técnica 3" fica na mesma — e o treinador, que sabe a resposta,
    * escreve-a uma vez em vez de a repetir ao telefone a vinte famílias.
-   *
    * Separados da `note` de propósito: são perguntas diferentes, e um campo de texto
    * livre único acaba sempre com um dos dois lados por escrever.
    */
@@ -1749,24 +1833,22 @@ model AthleteReport {
   authorId String
   author   Membership @relation("ReportAuthor", fields: [authorId], references: [id])
 
-  title String
+  title  String
   /// "2026/27 · 1.º período", ou nulo num relatório pontual que não pertence a nenhum.
   period String?
   /// O texto. Parágrafos separados por linhas em branco — sem HTML, sem editor rico:
   /// o que faz falta aqui é escrever depressa no fim de um treino.
-  body  String
+  body   String
 
   visibility ReportVisibility @default(INTERNAL)
   status     ReportStatus     @default(DRAFT)
 
-  /*
+  /**
    * Os números no dia em que foi publicado.
-   *
    * Um relatório é um documento: quem o abre em Junho tem de ler o que lá estava em
    * Janeiro. Se a assiduidade fosse lida ao vivo, o texto do treinador ("tem faltado")
    * acabava ao lado de 96% — e o documento passava a mentir sozinho, sem ninguém lhe
    * tocar.
-   *
    * { attendance: { attended, total }, matches: n, evaluation: { period, scores } }
    */
   snapshot Json?
@@ -1791,11 +1873,21 @@ enum ReportStatus {
   PUBLISHED
 }
 
-/* -------------------------------------------------------------------------- */
-/* Plataforma                                                                  */
-/* -------------------------------------------------------------------------- */
-/* Scouting                                                                    */
-/* -------------------------------------------------------------------------- */
+/**
+ * --------------------------------------------------------------------------
+ */
+/**
+ * Plataforma
+ */
+/**
+ * --------------------------------------------------------------------------
+ */
+/**
+ * Scouting
+ */
+/**
+ * --------------------------------------------------------------------------
+ */
 
 /// O funil. A ordem do enum é a ordem do funil, e é usada para o desenhar.
 ///
@@ -1871,7 +1963,7 @@ model Prospect {
 
   /// Valor de `Sport.positions`.
   position           String?
-  secondaryPositions String[] @default([])
+  secondaryPositions String[]      @default([])
   dominantSide       DominantSide?
 
   stage ProspectStage @default(DISCOVERED)
@@ -1893,7 +1985,7 @@ model Prospect {
   notes String?
 
   /// Preenchido na conversão. É o que liga o dossiê à ficha do atleta.
-  athleteId String?  @unique
+  athleteId String? @unique
 
   archivedAt DateTime?
 
@@ -1968,7 +2060,7 @@ model Observation {
 
   /// Quantos minutos foi mesmo visto. Vinte minutos de um jogo não valem o mesmo
   /// que noventa, e sem este número as observações parecem todas iguais.
-  minutesObserved Int?
+  minutesObserved  Int?
   /// A posição em que jogou **nesse dia** — que pode não ser a dele.
   positionObserved String?
 
@@ -2026,7 +2118,7 @@ model ScoutCriterion {
   group String
   name  String
   /// Ordem dentro do grupo.
-  order Int @default(0)
+  order Int    @default(0)
 
   archivedAt DateTime?
 
@@ -2036,9 +2128,15 @@ model ScoutCriterion {
   @@index([academyId, sportId])
 }
 
-/* -------------------------------------------------------------------------- */
-/* Scouting — trabalho, vídeo e recrutamento                                   */
-/* -------------------------------------------------------------------------- */
+/**
+ * --------------------------------------------------------------------------
+ */
+/**
+ * Scouting — trabalho, vídeo e recrutamento
+ */
+/**
+ * --------------------------------------------------------------------------
+ */
 
 /// Uma lista de trabalho: "Sub-13 · Defesa central", "Guarda-redes 2027".
 ///
@@ -2085,7 +2183,7 @@ model ShortlistEntry {
   /// lista dois meses depois e ninguém se lembra do critério.
   note String?
   /// Ordem manual — quem lidera a lista é uma opinião, não uma média.
-  rank Int @default(0)
+  rank Int     @default(0)
 
   addedById String?
   addedBy   Membership? @relation("ShortlistEntryAuthor", fields: [addedById], references: [id], onDelete: SetNull)
@@ -2185,7 +2283,7 @@ model FitDimension {
   sport   Sport?  @relation(fields: [sportId], references: [id], onDelete: SetNull)
 
   name  String
-  order Int @default(0)
+  order Int    @default(0)
 
   archivedAt DateTime?
 
@@ -2311,9 +2409,15 @@ model VideoMoment {
   @@index([videoId, atSec])
 }
 
-/* -------------------------------------------------------------------------- */
-/* Sócios                                                                      */
-/* -------------------------------------------------------------------------- */
+/**
+ * --------------------------------------------------------------------------
+ */
+/**
+ * Sócios
+ */
+/**
+ * --------------------------------------------------------------------------
+ */
 
 /// Uma categoria de sócio, criada pelo clube.
 ///
@@ -2439,7 +2543,7 @@ model Member {
   birthdate DateTime? @db.Date
 
   /// Morada. `country` guarda o código ISO de duas letras.
-  country    String @default("PT")
+  country    String  @default("PT")
   address    String?
   postalCode String?
   city       String?
@@ -2447,7 +2551,7 @@ model Member {
   /// Indicativo e número, separados: o indicativo é uma escolha e o número é
   /// texto livre. Juntos num campo só, ninguém consegue filtrar por país nem
   /// validar o formato de nenhum.
-  phoneCountry String @default("+351")
+  phoneCountry String  @default("+351")
   phone        String?
 
   sex MemberSex @default(UNSPECIFIED)
@@ -2545,10 +2649,13 @@ model CatalogItem {
 
   /// Só para `kind = "competitions"`: as equipas que a disputam e os jogos dela.
   teams   TeamCompetition[]
-  matches Match[]          @relation("MatchCompetition")
+  matches Match[]           @relation("MatchCompetition")
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+
+  /// Inventário: as categorias de material (`kind = "inventoryCategories"`).
+  inventoryItemsByCategory InventoryItem[] @relation("InventoryItemCategory")
 
   /// O desporto entra na chave: "Sub-13" pode existir no futebol **e** na
   /// natação, e são dois itens diferentes. Sem ele, criar o segundo dava erro de
@@ -2582,7 +2689,9 @@ model TeamCompetition {
   @@index([competitionId])
 }
 
-/* -------------------------------------------------------------------------- */
+/**
+ * --------------------------------------------------------------------------
+ */
 //
 // Tudo o que está abaixo é **nosso**, não de nenhuma academia. Não leva
 // `academyId`, não entra na RLS por tenant, e é lido por um guard diferente.
@@ -2623,8 +2732,8 @@ model PlatformAdmin {
   supportFor   SupportSession[]
   contacts     Contact[]
   invitesSent  PlatformAdminInvite[]
-  ticketsOwned Ticket[]     @relation("TicketAssignee")
-  ticketNotes  TicketNote[] @relation("TicketNoteAuthor")
+  ticketsOwned Ticket[]              @relation("TicketAssignee")
+  ticketNotes  TicketNote[]          @relation("TicketNoteAuthor")
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -2650,7 +2759,7 @@ model PlatformAdminInvite {
   invitedById String
   invitedBy   PlatformAdmin @relation(fields: [invitedById], references: [id], onDelete: Cascade)
 
-  expiresAt DateTime
+  expiresAt  DateTime
   /// Uso único: preenchido no resgate, e a partir daí o link não vale mais nada.
   redeemedAt DateTime?
 
@@ -2671,17 +2780,17 @@ enum PlatformRole {
 /// Não confundir com `SubscriptionPlan`, que é a mensalidade que a academia cobra
 /// às famílias. São dois negócios distintos e não se tocam.
 model Plan {
-  id          String  @id @default(cuid())
-  name        String
+  id               String  @id @default(cuid())
+  name             String
   /// A frase que explica o plano numa linha. "O clube por dentro."
-  tagline     String?
+  tagline          String?
   /// Preço base mensal, em cêntimos.
-  amountCents Int
+  amountCents      Int
   /// Preço por atleta acima do incluído — zero em planos de preço fixo.
-  perAthleteCents Int @default(0)
-  includedAthletes Int @default(0)
-  trialDays   Int     @default(30)
-  isActive    Boolean @default(true)
+  perAthleteCents  Int     @default(0)
+  includedAthletes Int     @default(0)
+  trialDays        Int     @default(30)
+  isActive         Boolean @default(true)
 
   /// O que o plano traz, pela ordem em que se lê no cartão.
   features String[] @default([])
@@ -2738,12 +2847,12 @@ enum SubscriptionStatus {
 /// **Append-only**: não existe endpoint que apague uma entrada, e não deve existir.
 /// Um registo que se pode limpar não é um registo — é uma sugestão.
 model AuditLog {
-  id      String @id @default(cuid())
+  id      String         @id @default(cuid())
   adminId String?
   admin   PlatformAdmin? @relation(fields: [adminId], references: [id], onDelete: SetNull)
 
   /// "academy.create", "invite.send", "support.start", "subscription.change".
-  action String
+  action     String
   /// Sobre o quê — academia, subscrição, convite.
   targetType String?
   targetId   String?
@@ -2782,9 +2891,15 @@ model SupportSession {
   @@index([adminId, startedAt])
 }
 
-/* -------------------------------------------------------------------------- */
-/* Contactos — quem já falámos, e em que pé está                               */
-/* -------------------------------------------------------------------------- */
+/**
+ * --------------------------------------------------------------------------
+ */
+/**
+ * Contactos — quem já falámos, e em que pé está
+ */
+/**
+ * --------------------------------------------------------------------------
+ */
 
 /// Uma pessoa de fora com quem falámos sobre o produto.
 ///
@@ -2835,15 +2950,15 @@ model Ticket {
 
   /// O assunto escolhido no formulário, por palavras: "Experimentar a
   /// plataforma", "Marcar reunião", "Outro assunto".
-  subject String
+  subject   String
   /// O id do assunto, estável: "experimentar", "reuniao", "outro". É por aqui que
   /// se filtra — o rótulo pode ser reescrito no site sem partir nada.
   subjectId String?
 
-  name    String
-  email   String
-  phone   String?
-  club    String?
+  name     String
+  email    String
+  phone    String?
+  club     String?
   /// Quantos atletas o clube tem, como foi escrito. Texto livre porque a pergunta
   /// no site é livre — "cerca de 200" é uma resposta útil e não é um número.
   athletes String?
@@ -3007,4 +3122,252 @@ enum ContactChannel {
   REUNIAO
   MENSAGEM
   OUTRO
+}
+
+/**
+ * --------------------------------------------------------------------------
+ */
+/**
+ * Inventário
+ */
+/**
+ * --------------------------------------------------------------------------
+ */
+
+/// Um artigo do armazém do clube: t-shirts, bolas, coletes, material médico.
+///
+/// ## O artigo e os tamanhos são coisas diferentes
+///
+/// "T-shirt de aquecimento" é **um** artigo com seis variantes (XS…XXL), e não
+/// seis artigos com nomes parecidos. É a diferença entre perguntar "quantas
+/// t-shirts temos?" e ter de somar seis linhas à mão — e entre renomear o artigo
+/// uma vez ou seis. O stock vive nas variantes, porque é aí que ele existe: um
+/// M esgotado não se resolve com um XXL a mais.
+///
+/// Um artigo sem tamanhos (uma bola, um kit médico) tem uma variante só, com o
+/// rótulo "Único". A regra do produto passa a ser uma: o stock está sempre numa
+/// variante, nunca no artigo.
+model InventoryItem {
+  id        String  @id @default(cuid())
+  academyId String
+  academy   Academy @relation(fields: [academyId], references: [id], onDelete: Cascade)
+
+  name        String
+  description String?
+
+  /// A categoria, do catálogo do clube (`CatalogItem.kind = "inventoryCategories"`).
+  ///
+  /// Catálogo e não enum: "Material médico" ou "Equipamento de staff" são
+  /// decisões de cada clube, e a tabela de catálogos já traz ordenação, arquivo
+  /// e um ecrã de definições que não vale a pena escrever outra vez.
+  categoryId String?
+  category   CatalogItem? @relation("InventoryItemCategory", fields: [categoryId], references: [id], onDelete: SetNull)
+
+  /// Referência interna do clube. Livre de propósito — cada clube numera à sua
+  /// maneira, e é por aqui que um leitor de códigos entra no dia em que existir.
+  sku   String?
+  brand String?
+
+  /// O mínimo por omissão das variantes que não definirem o seu. Um "M" de uma
+  /// t-shirt e um "XXL" não se esgotam ao mesmo ritmo, mas quase todos os clubes
+  /// começam por um número só para o artigo inteiro.
+  minimumStock Int @default(0)
+
+  notes String?
+
+  /// As fotografias do artigo, por chave no armazenamento privado.
+  ///
+  /// **Chaves e não URLs**, como em todo o produto: um endereço assinado expira,
+  /// e guardar um que expirou é guardar uma imagem partida. O link gera-se na
+  /// leitura, com validade de horas.
+  ///
+  /// Serve para o que uma descrição não resolve: duas t-shirts pretas de treino
+  /// de épocas diferentes distinguem-se numa foto e não em palavras — e quem
+  /// procura no armazém procura pela imagem.
+  imageKeys String[] @default([])
+
+  /// Arquivado, não apagado: o histórico de movimentos e as entregas feitas
+  /// continuam a apontar para aqui, e apagar a linha reescrevia o passado.
+  archivedAt DateTime?
+
+  variants InventoryVariant[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([academyId, archivedAt])
+  @@index([academyId, categoryId])
+}
+
+/// Um tamanho — ou a variante única de um artigo que não tem tamanhos.
+///
+/// ## O que se guarda, e o que se calcula
+///
+/// Guardam-se as **unidades vivas** (`totalQuantity`) e as que estão com alguém
+/// (`assignedQuantity`). O **disponível é derivado**: `total − atribuído`.
+///
+/// Não se guarda porque seria a mesma verdade escrita duas vezes, e a cópia
+/// diverge à primeira operação que falhe a meio — é a mesma regra da carga de
+/// treino e da disponibilidade clínica, que também se calculam na leitura.
+///
+/// `damagedQuantity` e `lostQuantity` são contadores **acumulados** de baixas, e
+/// não fazem parte do total: uma t-shirt rasgada deixa de ser uma t-shirt que o
+/// clube pode entregar. Ficam para responder a "quanto se perdeu esta época".
+model InventoryVariant {
+  id     String        @id @default(cuid())
+  itemId String
+  item   InventoryItem @relation(fields: [itemId], references: [id], onDelete: Cascade)
+
+  /// Desnormalizado de propósito: a política de isolamento por academia é uma
+  /// condição na coluna, e uma tabela sem `academyId` teria de a ir buscar por
+  /// junção — que é exactamente o tipo de política que um dia se esquece.
+  academyId String
+  academy   Academy @relation(fields: [academyId], references: [id], onDelete: Cascade)
+
+  /// "M", "L", "Único", "Nº 5". Texto e não enum: o tamanho de uma bola não é o
+  /// de uma camisola, e o de um casaco de staff não é o de nenhum dos dois.
+  label String
+  sku   String?
+
+  /// A ordem do tamanho, que não sai de nenhuma ordenação automática: "XS, S, M,
+  /// L, XL" não está por ordem alfabética nem numérica.
+  order Int @default(0)
+
+  /// Sobrepõe-se ao do artigo quando definido. Nulo = usa o do artigo.
+  minimumStock Int?
+
+  /// Unidades utilizáveis: as que estão na prateleira mais as que estão com
+  /// atletas. Baixas (danificado, perdido) já não contam aqui.
+  totalQuantity    Int @default(0)
+  /// Unidades neste momento com atletas. Sobe na entrega, desce na devolução.
+  assignedQuantity Int @default(0)
+  /// Baixas acumuladas — não voltam ao total.
+  damagedQuantity  Int @default(0)
+  lostQuantity     Int @default(0)
+
+  archivedAt DateTime?
+
+  movements   InventoryMovement[]
+  assignments InventoryAssignment[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([academyId])
+  @@index([itemId, order])
+}
+
+enum InventoryMovementType {
+  /// Compra, oferta, o que entra de novo no armazém.
+  ENTRY
+  /// Sai e não volta: consumível gasto, oferta a outro clube.
+  EXIT
+  /// Correcção de contagem, para cima ou para baixo. `quantity` diz quanto.
+  ADJUSTMENT
+  /// Entregue a um atleta.
+  ASSIGNMENT
+  /// Devolvido em condições de voltar à prateleira.
+  RETURN
+  /// Devolvido inutilizado.
+  DAMAGE
+  /// Não voltou.
+  LOSS
+}
+
+/// O histórico. **Nunca se apaga.**
+///
+/// Cada alteração de stock passa por aqui, na mesma transacção que a alteração.
+/// É o que separa este módulo da folha de Excel que veio substituir: a folha diz
+/// quanto há hoje, isto diz porque é que há esse número e quem o mudou.
+model InventoryMovement {
+  id        String  @id @default(cuid())
+  academyId String
+  academy   Academy @relation(fields: [academyId], references: [id], onDelete: Cascade)
+
+  variantId String
+  variant   InventoryVariant @relation(fields: [variantId], references: [id], onDelete: Cascade)
+
+  type InventoryMovementType
+
+  /// Unidades movidas, sempre positivo. O sentido está no `type` — um número com
+  /// sinal obrigaria toda a leitura a saber que "-1 de uma devolução" é uma
+  /// entrada, e a primeira que se enganasse escrevia história falsa.
+  quantity Int
+
+  /// A quem, quando é uma entrega ou devolução.
+  athleteId String?
+  athlete   Athlete? @relation(fields: [athleteId], references: [id], onDelete: SetNull)
+
+  assignmentId String?
+  assignment   InventoryAssignment? @relation(fields: [assignmentId], references: [id], onDelete: SetNull)
+
+  /// O que quem registou escreveu — "compra de época", "rasgou no jogo".
+  reason String?
+
+  /// Quem fez o movimento. `SetNull` e não cascata: se a pessoa sair do clube, o
+  /// movimento fica — um histórico que desaparece com quem o escreveu não é um
+  /// histórico.
+  performedById String?
+  performedBy   Membership? @relation("InventoryMovementBy", fields: [performedById], references: [id], onDelete: SetNull)
+
+  createdAt DateTime @default(now())
+
+  @@index([academyId, createdAt])
+  @@index([variantId, createdAt])
+}
+
+enum InventoryAssignmentStatus {
+  /// Está com o atleta.
+  ACTIVE
+  /// Voltou em condições de ser entregue a outro.
+  RETURNED
+  /// Voltou inutilizado.
+  DAMAGED
+  /// Não voltou.
+  LOST
+}
+
+/// O que cada atleta tem em mãos.
+///
+/// Uma linha por entrega, e não um saldo por atleta: "recebeu 1 M em Setembro e
+/// devolveu em Junho" é a pergunta que o clube faz, e um saldo não a responde.
+model InventoryAssignment {
+  id        String  @id @default(cuid())
+  academyId String
+  academy   Academy @relation(fields: [academyId], references: [id], onDelete: Cascade)
+
+  athleteId String
+  athlete   Athlete @relation(fields: [athleteId], references: [id], onDelete: Cascade)
+
+  variantId String
+  variant   InventoryVariant @relation(fields: [variantId], references: [id], onDelete: Cascade)
+
+  quantity Int @default(1)
+
+  status InventoryAssignmentStatus @default(ACTIVE)
+
+  assignedAt DateTime  @default(now())
+  returnedAt DateTime?
+
+  /// A época em que foi entregue. Guardada e não derivada da data: as épocas do
+  /// clube têm as datas que o clube definiu, e mudá-las não pode reescrever o
+  /// que já aconteceu. É por aqui que "consumo por época" há-de responder.
+  seasonId String?
+  season   Season? @relation(fields: [seasonId], references: [id], onDelete: SetNull)
+
+  notes String?
+
+  assignedById String?
+  assignedBy   Membership? @relation("InventoryAssignedBy", fields: [assignedById], references: [id], onDelete: SetNull)
+  returnedById String?
+  returnedBy   Membership? @relation("InventoryReturnedBy", fields: [returnedById], references: [id], onDelete: SetNull)
+
+  movements InventoryMovement[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([academyId, status])
+  @@index([athleteId, status])
+  @@index([variantId, status])
 }

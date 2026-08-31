@@ -97,7 +97,7 @@ export const MODULES: Module[] = [
     key: "gestao",
     name: "Gestão",
     line: "O registo do clube, com quem pode ver o quê.",
-    items: ["Atletas e equipas", "Staff e papéis", "Permissões por pessoa", "Calendário", "Presenças", "Convocatórias", "Gestão de Sócios e quotas"],
+    items: ["Atletas e equipas", "Staff e papéis", "Permissões por pessoa", "Calendário", "Presenças e Convocatórias", "Gestão de Inventário", "Gestão de Sócios e quotas"],
   },
   {
     key: "tecnica",
