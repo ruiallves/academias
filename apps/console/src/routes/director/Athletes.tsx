@@ -4,6 +4,9 @@ import { PageHeader } from "@/components/Shell";
 import { NewAthleteDialog } from "@/components/NewAthleteDialog";
 import { ImportAthletesDialog } from "@/components/ImportAthletesDialog";
 import { AvailabilityTag, cx, DataTable, Empty, Monogram, Panel, Pill, type Column } from "@/components/primitives";
+import { BulkBar, BulkDeleteDialog } from "@/components/BulkDelete";
+import { apiDelete } from "@/lib/http";
+import { reloadAcademy } from "@/lib/store";
 import { ResultCount, SearchInput, Segmented, Select, Toolbar } from "@/components/filters";
 import { Plus, Upload, Users } from "@/lib/icons";
 import { academy, currentPeriod, guardiansOf, listAthletes, listFees, listTeams, today } from "@/lib/api";
@@ -102,6 +105,16 @@ export default function Athletes() {
   // O mesmo ecrã serve o diretor e o treinador — o que muda é o âmbito dos dados
   // (aplicado em listAthletes) e as colunas que as permissões deixam ver.
   const showBilling = can(session, "billing:read");
+  const podeApagar = can(session, "athlete:write");
+  /*
+   * A selecção múltipla.
+   *
+   * Vive na página e não na tabela: é a página que sabe o que fazer com as
+   * linhas escolhidas. A tabela só sabe desenhar as caixas — ver `DataTable`.
+   */
+  const [escolhidos, setEscolhidos] = useState<Set<string>>(new Set());
+  const [aApagar, setAApagar] = useState(false);
+
   const showGuardian = can(session, "family:read");
 
   const allColumns: Column<Athlete>[] = [
@@ -277,6 +290,9 @@ export default function Athletes() {
           rows={rows}
           keyOf={(a) => a.id}
           to={(a) => `/atletas/${a.id}`}
+          selection={
+            podeApagar ? { selected: escolhidos, onChange: setEscolhidos } : undefined
+          }
           empty={
             <Empty
               icon={Users}
@@ -286,6 +302,26 @@ export default function Athletes() {
           }
         />
       </Panel>
+
+      <BulkBar
+        count={escolhidos.size}
+        noun={["atleta", "atletas"]}
+        onClear={() => setEscolhidos(new Set())}
+        onDelete={() => setAApagar(true)}
+      />
+
+      {aApagar && (
+        <BulkDeleteDialog
+          noun={["atleta", "atletas"]}
+          targets={rows.filter((a) => escolhidos.has(a.id)).map((a) => ({ id: a.id, name: a.name }))}
+          remove={(id) => apiDelete(`/api/athletes/${id}`)}
+          onClose={() => setAApagar(false)}
+          onDone={async () => {
+            setEscolhidos(new Set());
+            await reloadAcademy();
+          }}
+        />
+      )}
 
       {creating && <NewAthleteDialog session={session} onClose={() => setCreating(false)} />}
       {importing && <ImportAthletesDialog onClose={() => setImporting(false)} />}

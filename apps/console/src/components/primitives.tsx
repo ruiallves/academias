@@ -240,6 +240,7 @@ export function DataTable<T>({
   to,
   onRowClick,
   empty,
+  selection,
 }: {
   columns: Column<T>[];
   rows: T[];
@@ -254,17 +255,91 @@ export function DataTable<T>({
    */
   onRowClick?: (row: T) => void;
   empty?: ReactNode;
+  /**
+   * Escolher várias linhas para agir sobre elas de uma vez.
+   *
+   * Vive aqui e não em cada página porque a caixa de selecção é um comportamento
+   * de tabela, não de sócios ou de atletas: escrito três vezes, seriam três
+   * comportamentos ligeiramente diferentes daqui a um ano — um a marcar com o
+   * clique na linha, outro a perder a escolha ao filtrar.
+   *
+   * Opcional: as tabelas que não o passam continuam exactamente como estavam.
+   */
+  selection?: {
+    selected: Set<string>;
+    onChange: (ids: Set<string>) => void;
+    /** Linhas que não se podem escolher — sem caixa, e fora do "todos". */
+    disabled?: (row: T) => boolean;
+  };
 }) {
   const navigate = useNavigate();
   const hide = { sm: "hidden sm:table-cell", md: "hidden md:table-cell", lg: "hidden lg:table-cell" };
 
   if (rows.length === 0) return <div className="px-5 py-14">{empty ?? <Empty title="Sem resultados" />}</div>;
 
+  /*
+   * "Todos" é todos os **visíveis**, não todos os que existem.
+   *
+   * Quem filtrou por "Sub-13" e marca a caixa do cabeçalho quer os do Sub-13. A
+   * alternativa — marcar a base inteira — é a origem clássica do apagar em massa
+   * que ninguém queria.
+   */
+  const elegiveis = rows.filter((r) => !selection?.disabled?.(r)).map(keyOf);
+  const todosMarcados = elegiveis.length > 0 && elegiveis.every((id) => selection?.selected.has(id));
+  const algunsMarcados = !todosMarcados && elegiveis.some((id) => selection?.selected.has(id));
+
+  const alternarTodos = () => {
+    if (!selection) return;
+    const proximo = new Set(selection.selected);
+    if (todosMarcados) for (const id of elegiveis) proximo.delete(id);
+    else for (const id of elegiveis) proximo.add(id);
+    selection.onChange(proximo);
+  };
+
+  const alternar = (id: string) => {
+    if (!selection) return;
+    const proximo = new Set(selection.selected);
+    if (proximo.has(id)) proximo.delete(id);
+    else proximo.add(id);
+    selection.onChange(proximo);
+  };
+
+  /*
+   * O modo de selecção.
+   *
+   * Com alguma linha escolhida, **clicar numa linha escolhe-a** em vez de abrir
+   * a ficha. É o comportamento de qualquer caixa de correio, e resolve o que
+   * torna a selecção múltipla penosa numa tabela onde a linha navega: escolher
+   * cinco pessoas obrigava a acertar cinco vezes num quadrado de catorze pixéis,
+   * e um desvio de dois milímetros levava a página para outro sítio — com a
+   * escolha toda perdida no regresso.
+   *
+   * Sem nada escolhido, a linha volta a abrir a ficha. A porta de entrada no
+   * modo continua a ser a caixa, que é explícita; a saída é limpar a selecção.
+   */
+  const emSelecao = Boolean(selection && selection.selected.size > 0);
+
   return (
     <div className="overflow-x-auto">
       <table className="w-full border-collapse text-body">
         <thead>
           <tr className="border-b border-line bg-sunken/60">
+            {selection && (
+              <th scope="col" className="w-9 px-3 py-2">
+                <input
+                  type="checkbox"
+                  aria-label="Escolher todas as linhas visíveis"
+                  checked={todosMarcados}
+                  ref={(el) => {
+                    // O estado "algumas": um traço em vez de visto. É o que
+                    // distingue "escolhi três de dez" de "não escolhi nada".
+                    if (el) el.indeterminate = algunsMarcados;
+                  }}
+                  onChange={alternarTodos}
+                  className="size-3.5 accent-[var(--color-signal)]"
+                />
+              </th>
+            )}
             {columns.map((c) => (
               <th
                 key={c.key}
@@ -284,16 +359,47 @@ export function DataTable<T>({
         <tbody>
           {rows.map((row) => {
             const href = to?.(row);
-            const clickable = Boolean(href || onRowClick);
+            // Em modo de selecção, uma linha que não se pode escolher não faz
+            // nada — como não tem caixa, também não tem clique.
+            const bloqueada = emSelecao && Boolean(selection?.disabled?.(row));
+            const clickable = !bloqueada && Boolean(href || onRowClick || emSelecao);
+
+            const aoClicar = () => {
+              if (bloqueada) return;
+              if (emSelecao) return alternar(keyOf(row));
+              if (href) return navigate(href);
+              if (onRowClick) return onRowClick(row);
+            };
+
             return (
               <tr
                 key={keyOf(row)}
                 className={cx(
                   "border-b border-line last:border-0 transition-colors duration-[120ms]",
                   clickable && "cursor-pointer hover:bg-sunken/50",
+                  bloqueada && "opacity-60",
+                  selection?.selected.has(keyOf(row)) && "bg-signal-soft/40",
                 )}
-                onClick={href ? () => navigate(href) : onRowClick ? () => onRowClick(row) : undefined}
+                onClick={clickable ? aoClicar : undefined}
               >
+                {selection && (
+                  <td className="w-9 px-3 align-middle">
+                    {selection.disabled?.(row) ? (
+                      <span className="block size-3.5" aria-hidden />
+                    ) : (
+                      <input
+                        type="checkbox"
+                        aria-label="Escolher esta linha"
+                        checked={selection.selected.has(keyOf(row))}
+                        onChange={() => alternar(keyOf(row))}
+                        // A caixa não abre a ficha: quem a marca quer escolher,
+                        // não navegar.
+                        onClick={(e) => e.stopPropagation()}
+                        className="size-3.5 accent-[var(--color-signal)]"
+                      />
+                    )}
+                  </td>
+                )}
                 {columns.map((c) => (
                   <td
                     key={c.key}

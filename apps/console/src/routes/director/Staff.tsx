@@ -1,6 +1,9 @@
 import { useMemo, useState } from "react";
 import { PageHeader } from "@/components/Shell";
 import { DataTable, Empty, Metric, MetricRow, Monogram, Panel, PanelHead, Pill, type Column } from "@/components/primitives";
+import { BulkBar, BulkDeleteDialog } from "@/components/BulkDelete";
+import { apiDelete } from "@/lib/http";
+import { reloadAcademy } from "@/lib/store";
 import { ResultCount, SearchInput, Segmented, Toolbar } from "@/components/filters";
 import { Clock, HeartPulse, Plus, Shield, Users, Whistle } from "@/lib/icons";
 import { listStaff, teamById, unrecordedSessions } from "@/lib/api";
@@ -29,6 +32,16 @@ type Filter = "todos" | StaffDepartment;
  */
 export default function Staff() {
   const { session } = useSession();
+  const podeApagar = can(session, "staff:write");
+  /*
+   * A selecção múltipla.
+   *
+   * Vive na página e não na tabela: é a página que sabe o que fazer com as
+   * linhas escolhidas. A tabela só sabe desenhar as caixas — ver `DataTable`.
+   */
+  const [escolhidos, setEscolhidos] = useState<Set<string>>(new Set());
+  const [aApagar, setAApagar] = useState(false);
+
   const [filter, setFilter] = useState<Filter>("todos");
   const [query, setQuery] = useState("");
   const [inviting, setInviting] = useState(false);
@@ -234,10 +247,47 @@ export default function Staff() {
             rows={rows}
             keyOf={(m) => m.id}
             to={(m) => `/staff/${m.id}`}
+            selection={
+              podeApagar
+                ? {
+                    selected: escolhidos,
+                    onChange: setEscolhidos,
+                    /*
+                      Sem caixa na própria linha.
+
+                      O servidor já recusa ("não te podes apagar a ti próprio"),
+                      mas oferecer a caixa é oferecer uma acção que dá sempre
+                      erro — e num apagar em massa seria descobrir isso a meio,
+                      com metade da lista já apagada.
+                    */
+                    disabled: (m) => m.id === session.staffId,
+                  }
+                : undefined
+            }
             empty={<Empty icon={Users} title="Ninguém neste filtro" />}
           />
         </Panel>
       </div>
+
+      <BulkBar
+        count={escolhidos.size}
+        noun={["pessoa", "pessoas"]}
+        onClear={() => setEscolhidos(new Set())}
+        onDelete={() => setAApagar(true)}
+      />
+
+      {aApagar && (
+        <BulkDeleteDialog
+          noun={["pessoa", "pessoas"]}
+          targets={rows.filter((m) => escolhidos.has(m.id)).map((m) => ({ id: m.id, name: m.name }))}
+          remove={(id) => apiDelete(`/api/memberships/${id}`)}
+          onClose={() => setAApagar(false)}
+          onDone={async () => {
+            setEscolhidos(new Set());
+            await reloadAcademy();
+          }}
+        />
+      )}
     </>
   );
 }

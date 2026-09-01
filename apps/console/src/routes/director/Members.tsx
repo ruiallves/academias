@@ -6,6 +6,7 @@ import { Dialog, DialogField, dialogInputClass } from "@/components/Dialog";
 import { Download, ExternalLink, Home, Plus, Settings, Trash2, Upload } from "@/lib/icons";
 import { can } from "@/lib/permissions";
 import { useSession } from "@/session";
+import { BulkBar, BulkDeleteDialog } from "@/components/BulkDelete";
 import { academy } from "@/lib/api";
 import { money } from "@/lib/format";
 import { apiOrigin, apiPatch } from "@/lib/http";
@@ -23,6 +24,7 @@ import {
   createTier,
   importMembers,
   listMembers,
+  removeMember,
   listTiers,
   updateTier,
   type FeePeriod,
@@ -62,6 +64,16 @@ export default function Members() {
   const [newOpen, setNewOpen] = useState(false);
 
   const mayWrite = can(session, "member:write");
+  const podeApagar = mayWrite;
+  /*
+   * A selecção múltipla.
+   *
+   * Vive na página e não na tabela: é a página que sabe o que fazer com as
+   * linhas escolhidas. A tabela só sabe desenhar as caixas — ver `DataTable`.
+   */
+  const [escolhidos, setEscolhidos] = useState<Set<string>>(new Set());
+  const [aApagar, setAApagar] = useState(false);
+
 
   const load = useCallback(() => {
     setError(null);
@@ -210,7 +222,13 @@ export default function Members() {
             />
           </div>
         ) : (
-          <DataTable rows={data.members} columns={columns} keyOf={(m) => m.id} to={(m) => `/socios/${m.id}`} />
+          <DataTable
+            rows={data.members}
+            columns={columns}
+            keyOf={(m) => m.id}
+            to={(m) => `/socios/${m.id}`}
+            selection={podeApagar ? { selected: escolhidos, onChange: setEscolhidos } : undefined}
+          />
         )}
       </Panel>
 
@@ -218,6 +236,28 @@ export default function Members() {
         <p className="mt-3 px-1 text-meta text-ink-3">
           {pending} {pending === 1 ? "inscrição está" : "inscrições estão"} à espera de aprovação.
         </p>
+      )}
+
+      <BulkBar
+        count={escolhidos.size}
+        noun={["sócio", "sócios"]}
+        onClear={() => setEscolhidos(new Set())}
+        onDelete={() => setAApagar(true)}
+      />
+
+      {aApagar && (
+        <BulkDeleteDialog
+          noun={["sócio", "sócios"]}
+          targets={(data?.members ?? [])
+            .filter((m) => escolhidos.has(m.id))
+            .map((m) => ({ id: m.id, name: m.name }))}
+          remove={(id) => removeMember(id)}
+          onClose={() => setAApagar(false)}
+          onDone={() => {
+            setEscolhidos(new Set());
+            load();
+          }}
+        />
       )}
 
       {pageOpen && <PageDialog mayWrite={mayWrite} onClose={() => setPageOpen(false)} />}

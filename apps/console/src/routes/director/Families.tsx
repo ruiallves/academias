@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import { PageHeader } from "@/components/Shell";
 import { DataTable, Empty, Metric, MetricRow, Monogram, Panel, Pill, type Column } from "@/components/primitives";
+import { BulkBar, BulkDeleteDialog } from "@/components/BulkDelete";
 import { ResultCount, SearchInput, Segmented, Toolbar } from "@/components/filters";
 import { FamilyInviteDialog } from "@/components/FamilyInviteDialog";
 import { Check, Copy, Home, Link2, Send, Trash2 } from "@/lib/icons";
@@ -34,6 +35,12 @@ export default function Families() {
   const [busy, setBusy] = useState<string | null>(null);
   const [erro, setErro] = useState<string | null>(null);
   const mayWrite = can(session, "family:write");
+
+  /*
+   * A selecção múltipla — a mesma das outras listas. Ver `DataTable`.
+   */
+  const [escolhidos, setEscolhidos] = useState<Set<string>>(new Set());
+  const [aApagar, setAApagar] = useState(false);
 
   /*
    * O link de convite que estiver vivo. `null` quando não há nenhum.
@@ -268,10 +275,31 @@ export default function Families() {
             columns={columns}
             rows={rows}
             keyOf={(g) => g.id}
+            selection={mayWrite ? { selected: escolhidos, onChange: setEscolhidos } : undefined}
             empty={<Empty icon={Home} title="Nenhuma família corresponde" />}
           />
         </Panel>
       </div>
+
+      <BulkBar
+        count={escolhidos.size}
+        noun={["encarregado", "encarregados"]}
+        onClear={() => setEscolhidos(new Set())}
+        onDelete={() => setAApagar(true)}
+      />
+
+      {aApagar && (
+        <BulkDeleteDialog
+          noun={["encarregado", "encarregados"]}
+          targets={rows.filter((g) => escolhidos.has(g.id)).map((g) => ({ id: g.id, name: g.name }))}
+          remove={(id) => apiDelete(`/api/memberships/${id}`)}
+          onClose={() => setAApagar(false)}
+          onDone={async () => {
+            setEscolhidos(new Set());
+            await reloadAcademy();
+          }}
+        />
+      )}
     </>
   );
 }
