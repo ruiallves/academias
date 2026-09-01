@@ -50,7 +50,9 @@ export type CatalogKey =
   | "dressingRooms"
   | "eventTypes"
   | "competitions"
-  | "inventoryCategories";
+  | "inventoryCategories"
+  | "financeIncome"
+  | "financeExpense";
 
 export const CATALOG_KEYS: CatalogKey[] = [
   "venues",
@@ -58,6 +60,8 @@ export const CATALOG_KEYS: CatalogKey[] = [
   "eventTypes",
   "competitions",
   "inventoryCategories",
+  "financeIncome",
+  "financeExpense",
 ];
 
 export type CatalogItem = {
@@ -107,6 +111,16 @@ export const CATALOG_META: Record<CatalogKey, { title: string; hint: string; pla
     hint: "como o armazém está arrumado",
     placeholder: "Equipamento de jogo, Material médico…",
   },
+  financeIncome: {
+    title: "Categorias de receita",
+    hint: "de onde entra o dinheiro",
+    placeholder: "Patrocínios, Bilheteira, Bar…",
+  },
+  financeExpense: {
+    title: "Categorias de despesa",
+    hint: "em que se gasta",
+    placeholder: "Transportes, Arbitragem, Instalações…",
+  },
 };
 
 /* -------------------------------------------------------------------------- */
@@ -130,6 +144,8 @@ const EMPTY: Record<CatalogKey, CatalogItem[]> = {
   eventTypes: [],
   competitions: [],
   inventoryCategories: [],
+  financeIncome: [],
+  financeExpense: [],
 };
 
 let state: Record<CatalogKey, CatalogItem[]> = { ...EMPTY };

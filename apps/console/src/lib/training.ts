@@ -950,6 +950,59 @@ export const removeExerciseImage = (exerciseId: string, key: string) =>
 export const listPlans = (from?: string, to?: string) =>
   apiGet<PlanSummary[]>("/api/training/plans", { from, to });
 export const getPlan = (sessionId: string) => apiGet<SessionPlan>(`/api/training/sessions/${sessionId}/plan`);
+
+/* -------------------------------------------------------------------------- */
+/* Modelos de treino                                                          */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * Um plano guardado para se voltar a usar.
+ *
+ * É o plano de uma sessão sem a data, a equipa e o local. Ver
+ * `TrainingService.saveTemplate`, do lado do servidor, para o que se copia e o
+ * que fica para trás.
+ */
+export type SessionTemplateRow = {
+  id: string;
+  name: string;
+  visibility: Visibility;
+  objective: string | null;
+  objectives: string[];
+  sessionType: string | null;
+  intensity: number | null;
+  expectedAthletes: number | null;
+  material: string | null;
+  planNotes: string | null;
+  useCount: number;
+  lastUsedAt: string | null;
+  updatedAt: string;
+  authorName: string | null;
+  mine: boolean;
+  blockCount: number;
+  totalMin: number;
+  blocks: {
+    name: string;
+    durationMin: number;
+    category: string | null;
+    objective: string | null;
+    intensity: number | null;
+    players: string | null;
+    notes: string | null;
+    exerciseId: string | null;
+    exerciseName: string | null;
+  }[];
+};
+
+export const listTemplates = () => apiGet<SessionTemplateRow[]>("/api/training/templates");
+
+export const saveTemplate = (sessionId: string, body: { name: string; visibility?: Visibility }) =>
+  apiPost<{ id: string; name: string }>(`/api/training/sessions/${sessionId}/template`, body);
+
+/** Aplica e devolve o plano já com o modelo lá dentro. */
+export const applyTemplate = (sessionId: string, templateId: string) =>
+  apiPost<SessionPlan>(`/api/training/sessions/${sessionId}/template/${templateId}`, {});
+
+export const deleteTemplate = (id: string) => apiDelete<{ ok: boolean }>(`/api/training/templates/${id}`);
 export const savePlan = (
   sessionId: string,
   body: Partial<Pick<SessionPlan, "objective" | "objectives" | "sessionType" | "intensity" | "expectedAthletes" | "material" | "planNotes" | "postNotes">> & {

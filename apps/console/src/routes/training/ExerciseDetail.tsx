@@ -4,7 +4,7 @@ import { PageHeader } from "@/components/Shell";
 import { DialogField, dialogInputClass } from "@/components/Dialog";
 import { DiagramPlayer, FieldEditor } from "@/components/FieldEditor";
 import { Empty, Loading, Panel, PanelHead, cx } from "@/components/primitives";
-import { Check, Copy, ExternalLink, Trash2, TriangleAlert } from "@/lib/icons";
+import { Check, Copy, Download, ExternalLink, Trash2, TriangleAlert } from "@/lib/icons";
 import { can } from "@/lib/permissions";
 import {
   OBJECTIVE_CATEGORIES,
@@ -75,6 +75,28 @@ export default function ExerciseDetail() {
   const [draft, setDraft] = useState<Draft | null>(isNew ? BLANK : null);
   const [editable, setEditable] = useState(isNew);
   const [error, setError] = useState<string | null>(null);
+  /*
+   * O PDF, pedido a pedido.
+   *
+   * `import()` dinâmico: o `jspdf` são umas centenas de kilobytes que só fazem
+   * falta a quem carrega no botão. E o erro aparece no ecrã em vez de morrer na
+   * consola do browser — quem carrega em Exportar e não vê nada acontecer
+   * carrega outra vez.
+   */
+  const [aExportar, setAExportar] = useState(false);
+  async function exportarPdf() {
+    if (!draft) return;
+    setAExportar(true);
+    try {
+      const pdf = await import("@/lib/training-pdf");
+      await pdf.exportarExercicio(draft!);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Não foi possível gerar o PDF.");
+    } finally {
+      setAExportar(false);
+    }
+  }
+
   const [dirty, setDirty] = useState(isNew);
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
@@ -215,6 +237,14 @@ export default function ExerciseDetail() {
         <Link to="/exercicios" className="ctl-ghost">
           Biblioteca
         </Link>
+        {/* Sem gravar é uma ficha por acabar — mas um exercício novo ainda sem
+            nome não é uma folha, é uma folha em branco. */}
+        {!isNew && (
+          <button type="button" className="ctl-outline" onClick={() => void exportarPdf()} disabled={aExportar}>
+            <Download className="size-3.5" strokeWidth={1.75} />
+            {aExportar ? "A gerar…" : "PDF"}
+          </button>
+        )}
         {!isNew && mayWrite && (
           <button type="button" className="ctl-outline" onClick={duplicate}>
             <Copy className="size-3.5" strokeWidth={1.75} />

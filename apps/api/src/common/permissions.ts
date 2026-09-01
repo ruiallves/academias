@@ -138,6 +138,16 @@ export type Permission =
    * dar baixa de trinta.
    */
   | "inventory:read" | "inventory:write"
+  /**
+   * Contas — o dinheiro do clube: saldo, movimentos, orçamentos e previsões.
+   *
+   * `read` e `write` separados como em tudo: ver quanto há e registar uma
+   * despesa são decisões diferentes. Por omissão ficam com a primeira pessoa do
+   * clube, a presidência e a direção — como o inventário e o `billing:*` — e a
+   * coordenação fica de fora: quem gere o desporto não gere a tesouraria, e
+   * quem acumular as duas recebe-o num cargo.
+   */
+  | "finance:read" | "finance:write"
   | "clinical:status" | "clinical:read" | "clinical:write";
 
 const READ_ALL: Permission[] = [
@@ -149,6 +159,7 @@ const READ_ALL: Permission[] = [
   "member:read",
   "training:read",
   "inventory:read",
+  "finance:read",
 ];
 
 const WRITE_ALL: Permission[] = [
@@ -169,6 +180,7 @@ const WRITE_ALL: Permission[] = [
   // Mexer no stock: presidência e direção. Quem trata do material recebe-a num
   // cargo — ver a nota da permissão.
   "inventory:write",
+  "finance:write",
 ];
 
 export const ROLE_PERMISSIONS: Record<Role, Permission[]> = {
@@ -195,7 +207,9 @@ export const ROLE_PERMISSIONS: Record<Role, Permission[]> = {
      * t-shirts há na prateleira não faz parte disso — e quem precisar recebe a
      * permissão num cargo, que é para isso que os cargos existem.
      */
-    ...READ_ALL.filter((p) => p !== "billing:read" && p !== "member:read" && p !== "inventory:read"),
+    ...READ_ALL.filter(
+      (p) => p !== "billing:read" && p !== "member:read" && p !== "inventory:read" && p !== "finance:read",
+    ),
     "athlete:write", "team:write", "calendar:write", "attendance:write",
     "comms:write", "evaluation:write", "report:write",
     // A área técnica é o trabalho dele: modelos de jogo do clube, biblioteca

@@ -95,6 +95,11 @@ class PlanDto {
   blocks?: PlanBlockDto[];
 }
 
+class TemplateDto {
+  @IsString() @Length(2, 80) name!: string;
+  @IsOptional() @IsIn(["PRIVATE", "CLUB"]) visibility?: string;
+}
+
 class GameModelDto {
   @IsString() @Length(1, 80) name!: string;
   @IsOptional() @IsString() @Length(0, 20) system?: string;
@@ -219,6 +224,39 @@ export class TrainingController {
   }
 
   /* Modelos de jogo --------------------------------------------------------- */
+
+  /* --- Modelos de treino ------------------------------------------------- */
+
+  @Get("templates")
+  listTemplates(@Req() req: AuthedRequest) {
+    return this.training.listTemplates(req.ctx);
+  }
+
+  /**
+   * Guardar o plano de uma sessão como modelo.
+   *
+   * O `sessionId` vai no caminho e não no corpo: é o treino que se está a
+   * guardar, e a permissão de escrita mede-se sobre a equipa **dele**.
+   */
+  @Post("sessions/:id/template")
+  saveTemplate(@Req() req: AuthedRequest, @Param("id") id: string, @Body() dto: TemplateDto) {
+    return this.training.saveTemplate(req.ctx, id, { name: dto.name, visibility: dto.visibility as never });
+  }
+
+  /** Aplicar um modelo a uma sessão — devolve o plano já com ele lá dentro. */
+  @Post("sessions/:id/template/:templateId")
+  applyTemplate(
+    @Req() req: AuthedRequest,
+    @Param("id") id: string,
+    @Param("templateId") templateId: string,
+  ) {
+    return this.training.applyTemplate(req.ctx, id, templateId);
+  }
+
+  @Delete("templates/:id")
+  deleteTemplate(@Req() req: AuthedRequest, @Param("id") id: string) {
+    return this.training.deleteTemplate(req.ctx, id);
+  }
 
   @Get("game-models")
   listGameModels(@Req() req: AuthedRequest) {

@@ -19,6 +19,7 @@ import { can } from "@/lib/permissions";
 import type { Session } from "@/lib/permissions";
 import { cx, Monogram, Pill, SelectField } from "./primitives";
 import { EditEventDialog } from "./EditEventDialog";
+import { EventFinance } from "./finance/EventFinance";
 
 /**
  * O painel de detalhe.
@@ -254,6 +255,24 @@ export function EventDetail({
               )}
             </div>
           )}
+
+          {/*
+            O dinheiro do evento — só para quem pode ver as Contas.
+
+            Um jogo liga-se pelo jogo, o resto pelo evento genérico; um treino
+            fica de fora porque não tem custos próprios (o campo e o material
+            são do clube, não da sessão). E só o que vive na base entra: um
+            jogo semeado no browser não tem a quem pendurar uma despesa.
+          */}
+          {can(session, "finance:read") && event.kind === "match" && storeMatches.some((m) => m.id === event.id) && (
+            <EventFinance session={session} link={{ matchId: event.id }} eventLabel={event.title} />
+          )}
+          {can(session, "finance:read") &&
+            event.kind !== "match" &&
+            event.kind !== "training" &&
+            storeEvents.some((e2) => e2.id === event.id) && (
+              <EventFinance session={session} link={{ calendarEventId: event.id }} eventLabel={event.title} />
+            )}
         </div>
 
         {/* Um evento de outra equipa lê-se e não se toca. Dizê-lo é melhor do que

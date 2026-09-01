@@ -103,6 +103,8 @@ model Academy {
   teams          Team[]
   sessions       TrainingSession[]
   sessionBlocks  SessionBlock[]
+  templates      SessionTemplate[]
+  templateBlocks SessionTemplateBlock[]
   exercises      Exercise[]
   gameModels     GameModel[]
   setPieces      SetPiece[]
@@ -129,6 +131,11 @@ model Academy {
   inventoryVariants    InventoryVariant[]
   inventoryMovements   InventoryMovement[]
   inventoryAssignments InventoryAssignment[]
+
+  /// Contas — movimentos, orçamentos e o ponto de partida do saldo.
+  financialTransactions FinancialTransaction[]
+  financeSettings       FinanceSettings?
+  financialBudgets      FinancialBudget[]
 }
 
 /// O ciclo de vida de um cliente. Derivado do onboarding e da subscrição — o
@@ -186,6 +193,8 @@ model Season {
 
   /// As entregas de equipamento desta época.
   inventoryAssignments InventoryAssignment[]
+
+  financialBudgets FinancialBudget[]
 
   @@unique([academyId, label])
   @@index([academyId])
@@ -325,6 +334,7 @@ model Membership {
   exerciseFavs    ExerciseFavorite[]         @relation("ExerciseFavorites")
   gameModelsMade  GameModel[]                @relation("GameModelAuthor")
   setPiecesMade   SetPiece[]                 @relation("SetPieceAuthor")
+  templatesMade   SessionTemplate[]          @relation("SessionTemplateAuthor")
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -333,6 +343,11 @@ model Membership {
   inventoryMovements InventoryMovement[]   @relation("InventoryMovementBy")
   inventoryAssigned  InventoryAssignment[] @relation("InventoryAssignedBy")
   inventoryReturned  InventoryAssignment[] @relation("InventoryReturnedBy")
+
+  /// Contas: movimentos desta pessoa, e os que registou ou alterou.
+  financeAsStaff FinancialTransaction[] @relation("FinanceStaff")
+  financeCreated FinancialTransaction[] @relation("FinanceCreatedBy")
+  financeUpdated FinancialTransaction[] @relation("FinanceUpdatedBy")
 
   @@unique([academyId, userId, role])
   @@index([academyId])
@@ -687,6 +702,9 @@ model Athlete {
   inventoryAssignments InventoryAssignment[]
   inventoryMovements   InventoryMovement[]
 
+  /// O dinheiro que lhe diz respeito — seguros, inscrições, transferências.
+  financialTransactions FinancialTransaction[]
+
   @@unique([academyId, taxId])
   @@index([academyId])
   @@index([academyId, status])
@@ -757,6 +775,8 @@ model Team {
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+
+  financialTransactions FinancialTransaction[]
 
   @@index([academyId])
   @@index([academyId, seasonId])
@@ -841,6 +861,7 @@ model TrainingSession {
    * ---- Plano de treino (Área técnica) -----------------------------------
    */
   /**
+   * /**
    * /*
    * O plano vive **na sessão**, não numa tabela paralela.
    * Um treino planeado e um treino do calendário são o mesmo treino: o que as
@@ -884,6 +905,82 @@ model TrainingSession {
 /// um bloco pode ser só "retorno à calma, 5 min" sem exercício da biblioteca, e
 /// apagar um exercício não pode apagar o histórico dos treinos onde foi usado —
 /// o bloco guarda o próprio nome e fica (`onDelete: SetNull`).
+/// Um plano de treino guardado para se voltar a usar.
+///
+/// ## Porquê uma tabela e não uma bandeira na sessão
+///
+/// Uma `TrainingSession` com `isTemplate = true` obrigava a excluir modelos de
+/// **todas** as leituras do produto — o calendário, as presenças, a app da
+/// família, os contadores do menu. Um `WHERE` esquecido num desses sítios põe um
+/// treino fantasma no calendário de um clube. Uma tabela à parte não se esquece:
+/// não está lá.
+///
+/// É o plano de uma sessão sem a data, a equipa e o local — é isso que faz dele
+/// um modelo, e não uma cópia de um treino.
+model SessionTemplate {
+  id        String  @id @default(cuid())
+  academyId String
+  academy   Academy @relation(fields: [academyId], references: [id], onDelete: Cascade)
+
+  createdById String?
+  createdBy   Membership? @relation("SessionTemplateAuthor", fields: [createdById], references: [id], onDelete: SetNull)
+
+  visibility LibraryVisibility @default(CLUB)
+
+  /// Único por academia — é a resposta a "garante que este treino já não existe".
+  /// Três modelos chamados "Terça" são três modelos que ninguém distingue na
+  /// lista onde os vai escolher.
+  name String
+
+  objective        String?
+  objectives       String[] @default([])
+  sessionType      String?
+  intensity        Int?
+  expectedAthletes Int?
+  material         String?
+  planNotes        String?
+
+  /// Quantas vezes foi aplicado. Ordena a lista pelo que se usa mesmo, e não
+  /// pelo que se criou primeiro.
+  useCount   Int       @default(0)
+  lastUsedAt DateTime?
+
+  blocks SessionTemplateBlock[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([academyId, name])
+  @@index([academyId, visibility])
+  @@index([createdById])
+}
+
+model SessionTemplateBlock {
+  id         String          @id @default(cuid())
+  academyId  String
+  academy    Academy         @relation(fields: [academyId], references: [id], onDelete: Cascade)
+  templateId String
+  template   SessionTemplate @relation(fields: [templateId], references: [id], onDelete: Cascade)
+
+  order       Int
+  name        String
+  durationMin Int
+  category    String?
+  objective   String?
+  intensity   Int?
+  players     String?
+  notes       String?
+
+  /// `SetNull`: apagar um exercício da biblioteca não desfaz o modelo. O bloco
+  /// fica, com o nome que tinha, e sem ficha atrás.
+  exerciseId String?
+  exercise   Exercise? @relation(fields: [exerciseId], references: [id], onDelete: SetNull)
+
+  @@index([templateId, order])
+  @@index([academyId])
+  @@index([exerciseId])
+}
+
 model SessionBlock {
   id        String          @id @default(cuid())
   academyId String
@@ -991,8 +1088,9 @@ model Exercise {
   /// Arquivado sai da biblioteca sem apagar o histórico de utilizações.
   archivedAt DateTime?
 
-  favorites ExerciseFavorite[]
-  blocks    SessionBlock[]
+  favorites      ExerciseFavorite[]
+  blocks         SessionBlock[]
+  templateBlocks SessionTemplateBlock[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -1449,6 +1547,7 @@ model Match {
   /// Preenchidos só depois de jogado — é a ausência do resultado que decide se a
   /// UI mostra a convocatória ou a estatística.
   /**
+   * /**
    * /*
    * Em que competição se joga isto.
    * Aponta para o catálogo (`CatalogItem` de `kind = "competitions"`) e é
@@ -1493,6 +1592,9 @@ model Match {
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+
+  /// Os custos e receitas deste jogo — estimados e realizados.
+  financialTransactions FinancialTransaction[]
 
   /// Idempotência da importação: o mesmo jogo importado duas vezes actualiza.
   ///
@@ -1679,6 +1781,8 @@ model CalendarEvent {
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+
+  financialTransactions FinancialTransaction[]
 
   @@index([academyId, startsAt])
   @@index([teamId, startsAt])
@@ -2587,6 +2691,8 @@ model Member {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
+  financialTransactions FinancialTransaction[]
+
   /// Único por clube e não global: a mesma pessoa pode ser sócia de dois clubes,
   /// e é o clube que responde pelos seus sócios.
   @@unique([academyId, taxId])
@@ -2656,6 +2762,10 @@ model CatalogItem {
 
   /// Inventário: as categorias de material (`kind = "inventoryCategories"`).
   inventoryItemsByCategory InventoryItem[] @relation("InventoryItemCategory")
+
+  /// Contas: `kind = "financeIncome"` e `kind = "financeExpense"`.
+  financeTransactions FinancialTransaction[] @relation("FinanceCategory")
+  financeBudgets      FinancialBudget[]      @relation("FinanceBudgetCategory")
 
   /// O desporto entra na chave: "Sub-13" pode existir no futebol **e** na
   /// natação, e são dois itens diferentes. Sem ele, criar o segundo dava erro de
@@ -3370,4 +3480,198 @@ model InventoryAssignment {
   @@index([academyId, status])
   @@index([athleteId, status])
   @@index([variantId, status])
+}
+
+/**
+ * --------------------------------------------------------------------------
+ */
+/**
+ * Contas — a gestão financeira do clube
+ */
+/**
+ * --------------------------------------------------------------------------
+ */
+
+/// Receita ou despesa.
+enum FinanceKind {
+  INCOME
+  EXPENSE
+}
+
+/// O ciclo de vida de um movimento.
+///
+/// `PLANNED` é a metade que faz disto uma ferramenta de gestão e não um
+/// extracto: o custo estimado de um jogo fora, a renda do mês que vem. Só o
+/// `COMPLETED` conta para o saldo — o previsto vive nas previsões, e a
+/// distinção nunca se mistura.
+///
+/// Cancelar não apaga: um movimento financeiro que desaparece em silêncio é um
+/// buraco numa conta, e buracos em contas são o fim da confiança no módulo.
+enum FinanceStatus {
+  /// Estimado — sabe-se que vai acontecer, não aconteceu.
+  PLANNED
+  /// Comprometido — a factura chegou, falta pagar/receber.
+  PENDING
+  /// Aconteceu. É o único estado que mexe no saldo.
+  COMPLETED
+  /// Não aconteceu nem vai acontecer. Fica, riscado.
+  CANCELLED
+}
+
+/// Um movimento de dinheiro — registado à mão, ou previsto.
+///
+/// ## O que NUNCA vive aqui: as mensalidades pagas
+///
+/// As receitas automáticas (mensalidades confirmadas pela euPago) **não são
+/// linhas nesta tabela**. São derivadas na leitura a partir de `Charge`, que já
+/// é a verdade delas — materializá-las aqui seria a mesma verdade em duas
+/// tabelas, com backfill, deduplicação por webhook e uma divergência garantida
+/// no primeiro estorno. Ver `FinanceService.autoIncome`.
+///
+/// A consequência boa: "nunca duplicar movimentos" (a regra crítica da
+/// integração de pagamentos) é trivialmente verdade, porque não há segunda
+/// escrita nenhuma.
+model FinancialTransaction {
+  id        String  @id @default(cuid())
+  academyId String
+  academy   Academy @relation(fields: [academyId], references: [id], onDelete: Cascade)
+
+  kind   FinanceKind
+  status FinanceStatus @default(COMPLETED)
+
+  description String
+  /// Sempre positivo, em cêntimos como todo o dinheiro do produto. O sentido
+  /// está em `kind` — valores com sinal obrigam toda a leitura a saber que uma
+  /// despesa negativa é uma receita, e a primeira que se engana soma ao contrário.
+  amountCents Int
+
+  /// Quando aconteceu — ou, num previsto, quando se espera que aconteça.
+  occurredAt DateTime  @db.Date
+  /// Prazo de um `PENDING`: a factura que há que pagar até dia tal.
+  dueDate    DateTime? @db.Date
+
+  /// A categoria, do catálogo (`financeIncome` / `financeExpense`) — o mesmo
+  /// sistema dos locais e das provas, com o ecrã de definições já feito.
+  categoryId String?
+  category   CatalogItem? @relation("FinanceCategory", fields: [categoryId], references: [id], onDelete: SetNull)
+
+  /// Como o dinheiro se moveu. Reutiliza o enum dos pagamentos — MB WAY não é
+  /// outra coisa por aparecer nas contas. Nulo = outro/não se sabe.
+  method PaymentMethod?
+
+  /// De onde veio ou para onde foi: o fornecedor, o patrocinador, a câmara.
+  /// Texto livre na fase 1 — a entidade Fornecedor é a fase 2, e um campo de
+  /// texto que já se preenche migra; um que não existe, não.
+  counterparty String?
+
+  notes String?
+
+  /**
+   * As ligações. Todas opcionais, todas `SetNull`: o dinheiro sobrevive a tudo
+   * — um atleta que sai não leva as despesas que causou, e apagar um evento não
+   * pode abrir um buraco nas contas.
+   */
+  athleteId String?
+  athlete   Athlete? @relation(fields: [athleteId], references: [id], onDelete: SetNull)
+
+  memberId String?
+  member   Member? @relation(fields: [memberId], references: [id], onDelete: SetNull)
+
+  teamId String?
+  team   Team?   @relation(fields: [teamId], references: [id], onDelete: SetNull)
+
+  /// Staff: a pessoa do quadro a quem o movimento diz respeito (salário, ajuda).
+  staffId String?
+  staff   Membership? @relation("FinanceStaff", fields: [staffId], references: [id], onDelete: SetNull)
+
+  /// O evento que custa ou rende dinheiro — um jogo, ou um evento genérico do
+  /// calendário. É por aqui que "custo estimado do jogo" chega às previsões.
+  matchId String?
+  match   Match?  @relation(fields: [matchId], references: [id], onDelete: SetNull)
+
+  calendarEventId String?
+  calendarEvent   CalendarEvent? @relation(fields: [calendarEventId], references: [id], onDelete: SetNull)
+
+  /**
+   * A série a que este movimento pertence, quando é uma despesa (ou receita)
+   * fixa mensal — a renda do pavilhão, o seguro, o contrato do roupeiro.
+   *
+   * As ocorrências são **linhas de verdade**, geradas de uma vez de X a Y, e
+   * não uma regra avaliada na leitura. Uma regra não se confirma: cada mês
+   * daquela renda vai ser pago num dia diferente, com um método diferente, e
+   * às vezes por um valor diferente — e é isso que uma linha própria guarda. É
+   * também como o calendário trata os treinos que se repetem.
+   *
+   * Só isto: nenhuma tabela de regras. O que uma série precisa de saber é
+   * "quem são os meus irmãos", e um id partilhado responde.
+   */
+  seriesId String?
+
+  /// Auditoria: quem registou e quem mexeu por último. `SetNull` — o registo
+  /// fica mesmo que a pessoa saia do clube.
+  createdById String?
+  createdBy   Membership? @relation("FinanceCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
+  updatedById String?
+  updatedBy   Membership? @relation("FinanceUpdatedBy", fields: [updatedById], references: [id], onDelete: SetNull)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([academyId, occurredAt])
+  @@index([academyId, kind, status])
+  @@index([matchId])
+  @@index([calendarEventId])
+  @@index([academyId, seriesId])
+}
+
+/// O ponto de partida do saldo, e o que conta para ele.
+///
+/// Uma linha por academia. O saldo é derivado — inicial + concluídos + as
+/// fontes automáticas ligadas — e nunca guardado: um saldo em coluna diverge do
+/// que o compõe à primeira escrita concorrente.
+model FinanceSettings {
+  id        String  @id @default(cuid())
+  academyId String  @unique
+  academy   Academy @relation(fields: [academyId], references: [id], onDelete: Cascade)
+
+  /// O que o clube tinha quando começou a usar as Contas.
+  initialBalanceCents Int       @default(0)
+  /// A partir de quando os movimentos contam. Nulo = desde sempre. O que
+  /// aconteceu antes desta data está dentro do saldo inicial — contá-lo outra
+  /// vez seria contá-lo duas.
+  initialBalanceAt    DateTime? @db.Date
+
+  /// As mensalidades pagas entram no saldo? Desligar não apaga nem cancela
+  /// pagamento nenhum — só decide se esta fonte automática conta aqui.
+  includeFees   Boolean @default(true)
+  /// Reservado para o dia em que as quotas de sócio se cobrarem na plataforma.
+  /// Hoje não há cobrança de quotas — o interruptor fica pronto, sem fio.
+  includeQuotas Boolean @default(true)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+/// O orçamento de uma categoria numa época.
+///
+/// "Transportes: €8.000 na época 2026/27." O gasto não se guarda — soma-se dos
+/// movimentos concluídos dessa categoria dentro das datas da época.
+model FinancialBudget {
+  id        String  @id @default(cuid())
+  academyId String
+  academy   Academy @relation(fields: [academyId], references: [id], onDelete: Cascade)
+
+  seasonId String
+  season   Season @relation(fields: [seasonId], references: [id], onDelete: Cascade)
+
+  categoryId String
+  category   CatalogItem @relation("FinanceBudgetCategory", fields: [categoryId], references: [id], onDelete: Cascade)
+
+  amountCents Int
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([academyId, seasonId, categoryId])
+  @@index([academyId, seasonId])
 }

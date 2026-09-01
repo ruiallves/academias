@@ -1,5 +1,5 @@
 import { randomBytes } from "node:crypto";
-import { BadRequestException, ForbiddenException, Injectable, NotFoundException } from "@nestjs/common";
+import { BadRequestException, ConflictException, ForbiddenException, Injectable, NotFoundException } from "@nestjs/common";
 import { Prisma, type LibraryVisibility } from "@prisma/client";
 import { PrismaService, type ScopedClient } from "../prisma/prisma.service";
 import { StorageService } from "../storage/storage.service";
@@ -384,66 +384,78 @@ export class TrainingService {
   async getPlan(ctx: RequestContext, sessionId: string) {
     if (!can(ctx, "training:read")) throw new ForbiddenException("Sem acesso à área técnica");
 
-    return this.prisma.runAs(ctx.academyId, async (db) => {
-      const s = await db.trainingSession.findFirst({
-        where: { id: sessionId },
-        select: {
-          id: true, teamId: true, startsAt: true, endsAt: true, venue: true, status: true,
-          objective: true, objectives: true, sessionType: true, intensity: true,
-          expectedAthletes: true, material: true, planNotes: true, postNotes: true,
-          team: { select: { name: true } },
-          coach: { select: { user: { select: { name: true } } } },
-          blocks: {
-            orderBy: { order: "asc" },
-            select: {
-              id: true, order: true, name: true, durationMin: true, category: true, objective: true,
-              intensity: true, players: true, space: true, material: true, notes: true,
-              exerciseId: true,
-              exercise: { select: { id: true, name: true, diagram: true, visibility: true, createdById: true } },
-            },
+    return this.prisma.runAs(ctx.academyId, (db) => this.lerPlano(db, ctx, sessionId));
+  }
+
+  /**
+   * O plano, lido numa transacção que já está aberta.
+   *
+   * Separado de `getPlan` por causa do `applyTemplate`, que quer devolver o
+   * plano acabado de aplicar. Chamar `getPlan` de dentro de um `runAs` abria uma
+   * **segunda** transacção — e portanto uma segunda ligação — com a primeira
+   * ainda de pé: com `connection_limit=5`, cinco treinadores a aplicarem um
+   * modelo ao mesmo tempo tomavam as cinco ligações e ficavam todos à espera de
+   * uma sexta que não existe. É o P2028 que já nos mordeu noutro sítio.
+   */
+  private async lerPlano(db: ScopedClient, ctx: RequestContext, sessionId: string) {
+    const s = await db.trainingSession.findFirst({
+      where: { id: sessionId },
+      select: {
+        id: true, teamId: true, startsAt: true, endsAt: true, venue: true, status: true,
+        objective: true, objectives: true, sessionType: true, intensity: true,
+        expectedAthletes: true, material: true, planNotes: true, postNotes: true,
+        team: { select: { name: true } },
+        coach: { select: { user: { select: { name: true } } } },
+        blocks: {
+          orderBy: { order: "asc" },
+          select: {
+            id: true, order: true, name: true, durationMin: true, category: true, objective: true,
+            intensity: true, players: true, space: true, material: true, notes: true,
+            exerciseId: true,
+            exercise: { select: { id: true, name: true, diagram: true, visibility: true, createdById: true } },
           },
         },
-      });
-      if (!s) throw new NotFoundException("Treino não encontrado");
-
-      return {
-        sessionId: s.id,
-        teamId: s.teamId,
-        teamName: s.team.name,
-        startsAt: s.startsAt,
-        endsAt: s.endsAt,
-        venue: s.venue,
-        status: s.status,
-        coachName: s.coach?.user.name ?? null,
-        mine: inTeamScope(ctx, s.teamId),
-        objective: s.objective,
-        objectives: s.objectives,
-        sessionType: s.sessionType,
-        intensity: s.intensity,
-        expectedAthletes: s.expectedAthletes,
-        material: s.material,
-        planNotes: s.planNotes,
-        postNotes: s.postNotes,
-        blocks: s.blocks.map((b) => ({
-          id: b.id,
-          order: b.order,
-          name: b.name,
-          durationMin: b.durationMin,
-          category: b.category,
-          objective: b.objective,
-          intensity: b.intensity,
-          players: b.players,
-          space: b.space,
-          material: b.material,
-          notes: b.notes,
-          exerciseId: b.exerciseId,
-          // Um exercício privado de outra pessoa dentro de um plano partilhado:
-          // o nome do bloco chega (é do plano), a miniatura não.
-          exerciseName: b.exercise && exerciseVisible(ctx, b.exercise) ? b.exercise.name : null,
-          exerciseThumb: b.exercise && exerciseVisible(ctx, b.exercise) ? thumbnailOf(b.exercise.diagram) : null,
-        })),
-      };
+      },
     });
+    if (!s) throw new NotFoundException("Treino não encontrado");
+
+    return {
+      sessionId: s.id,
+      teamId: s.teamId,
+      teamName: s.team.name,
+      startsAt: s.startsAt,
+      endsAt: s.endsAt,
+      venue: s.venue,
+      status: s.status,
+      coachName: s.coach?.user.name ?? null,
+      mine: inTeamScope(ctx, s.teamId),
+      objective: s.objective,
+      objectives: s.objectives,
+      sessionType: s.sessionType,
+      intensity: s.intensity,
+      expectedAthletes: s.expectedAthletes,
+      material: s.material,
+      planNotes: s.planNotes,
+      postNotes: s.postNotes,
+      blocks: s.blocks.map((b) => ({
+        id: b.id,
+        order: b.order,
+        name: b.name,
+        durationMin: b.durationMin,
+        category: b.category,
+        objective: b.objective,
+        intensity: b.intensity,
+        players: b.players,
+        space: b.space,
+        material: b.material,
+        notes: b.notes,
+        exerciseId: b.exerciseId,
+        // Um exercício privado de outra pessoa dentro de um plano partilhado:
+        // o nome do bloco chega (é do plano), a miniatura não.
+        exerciseName: b.exercise && exerciseVisible(ctx, b.exercise) ? b.exercise.name : null,
+        exerciseThumb: b.exercise && exerciseVisible(ctx, b.exercise) ? thumbnailOf(b.exercise.diagram) : null,
+      })),
+    };
   }
 
   /**
@@ -738,6 +750,322 @@ export class TrainingService {
     const team = await db.team.findFirst({ where: { id: teamId }, select: { id: true } });
     if (!team) throw new BadRequestException("Equipa desconhecida");
   }
+
+  /* ------------------------------------------------------------------------ */
+  /* Modelos de treino                                                        */
+  /* ------------------------------------------------------------------------ */
+
+  /**
+   * Os modelos que esta pessoa pode usar.
+   *
+   * A mesma regra de visibilidade da biblioteca (`visibleTo`): os do clube e os
+   * meus. Ordenados pelo que se usa mais e não pelo que se criou primeiro — ao
+   * fim de uma época, a lista tem trinta e a que interessa é a de terça-feira.
+   */
+  async listTemplates(ctx: RequestContext) {
+    if (!can(ctx, "training:read")) throw new ForbiddenException("Sem acesso à área técnica");
+
+    return this.prisma.runAs(ctx.academyId, async (db) => {
+      const rows = await db.sessionTemplate.findMany({
+        where: visibleTo(ctx),
+        orderBy: [{ useCount: "desc" }, { updatedAt: "desc" }],
+        select: {
+          id: true, name: true, visibility: true, createdById: true,
+          objective: true, objectives: true, sessionType: true, intensity: true,
+          expectedAthletes: true, material: true, planNotes: true,
+          useCount: true, lastUsedAt: true, updatedAt: true,
+          createdBy: { select: { user: { select: { name: true } } } },
+          blocks: {
+            orderBy: { order: "asc" },
+            select: {
+              order: true, name: true, durationMin: true, category: true, objective: true,
+              intensity: true, players: true, notes: true, exerciseId: true,
+              exercise: { select: { name: true } },
+            },
+          },
+        },
+      });
+
+      return rows.map((t) => ({
+        id: t.id,
+        name: t.name,
+        visibility: t.visibility,
+        objective: t.objective,
+        objectives: t.objectives,
+        sessionType: t.sessionType,
+        intensity: t.intensity,
+        expectedAthletes: t.expectedAthletes,
+        material: t.material,
+        planNotes: t.planNotes,
+        useCount: t.useCount,
+        lastUsedAt: t.lastUsedAt,
+        updatedAt: t.updatedAt,
+        authorName: t.createdBy?.user.name ?? null,
+        mine: t.createdById === ctx.membershipId,
+        /* O que a lista mostra sem abrir: quantos blocos e quanto tempo. */
+        blockCount: t.blocks.length,
+        totalMin: t.blocks.reduce((n, b) => n + b.durationMin, 0),
+        blocks: t.blocks.map((b) => ({
+          name: b.name,
+          durationMin: b.durationMin,
+          category: b.category,
+          objective: b.objective,
+          intensity: b.intensity,
+          players: b.players,
+          notes: b.notes,
+          exerciseId: b.exerciseId,
+          exerciseName: b.exercise?.name ?? null,
+        })),
+      }));
+    });
+  }
+
+  /**
+   * Guardar o plano de uma sessão como modelo.
+   *
+   * ## O que se copia, e o que fica para trás
+   *
+   * Vai o **plano**: objectivo, tipo, intensidade, material, notas e os blocos
+   * por ordem. Não vai a data, a equipa, o local nem as notas do pós-treino —
+   * essas são daquele treino, daquele dia, e num modelo seriam mentira na
+   * primeira vez que fosse aplicado.
+   *
+   * ## "Garante que não existe já"
+   *
+   * Duas verificações, porque são duas perguntas diferentes:
+   *
+   *  1. **O nome já está tomado.** Recusa-se e diz-se qual. O índice único da
+   *     base fica como rede — duas gravações ao mesmo tempo passariam as duas
+   *     por esta verificação e uma delas rebentaria com um erro do Postgres que
+   *     ninguém percebe.
+   *
+   *  2. **O conteúdo já está guardado com outro nome.** É o caso que interessa
+   *     a sério: um treinador que carrega em "guardar como modelo" duas semanas
+   *     seguidas no mesmo treino fica com dois modelos iguais e nomes
+   *     diferentes, e a lista deixa de servir para escolher. Diz-se-lhe qual é o
+   *     que já existe, em vez de fazer o gémeo em silêncio.
+   */
+  async saveTemplate(
+    ctx: RequestContext,
+    sessionId: string,
+    dto: { name: string; visibility?: LibraryVisibility },
+  ) {
+    if (!can(ctx, "training:write")) throw new ForbiddenException("Sem permissão para planear treinos");
+
+    const name = dto.name.trim();
+    if (name.length < 2) throw new BadRequestException("O modelo precisa de um nome");
+
+    return this.prisma.runAs(ctx.academyId, async (db) => {
+      const s = await db.trainingSession.findFirst({
+        where: { id: sessionId },
+        select: {
+          teamId: true,
+          objective: true, objectives: true, sessionType: true, intensity: true,
+          expectedAthletes: true, material: true, planNotes: true,
+          blocks: {
+            orderBy: { order: "asc" },
+            select: {
+              name: true, durationMin: true, category: true, objective: true,
+              intensity: true, players: true, notes: true, exerciseId: true,
+            },
+          },
+        },
+      });
+      if (!s) throw new NotFoundException("Treino não encontrado");
+
+      const scope = teamScopeFilter(ctx);
+      if (scope && !scope.in.includes(s.teamId)) {
+        throw new ForbiddenException("Este treino é de uma equipa fora do teu âmbito");
+      }
+
+      /*
+       * Um plano vazio não é um modelo.
+       *
+       * Guardar "sem blocos" dá uma linha na lista que, aplicada, apaga o plano
+       * de quem a escolher. É mais fácil recusar do que explicar isso depois.
+       */
+      if (s.blocks.length === 0) {
+        throw new BadRequestException("Este treino ainda não tem blocos — monta o plano antes de o guardar");
+      }
+
+      const repetido = await db.sessionTemplate.findFirst({
+        where: { name },
+        select: { id: true },
+      });
+      if (repetido) {
+        throw new ConflictException(`Já existe um modelo chamado "${name}". Escolhe outro nome.`);
+      }
+
+      /* O mesmo plano com outro nome — ver a nota do método. */
+      const existentes = await db.sessionTemplate.findMany({
+        where: visibleTo(ctx),
+        select: {
+          id: true, name: true, objective: true, sessionType: true,
+          blocks: {
+            orderBy: { order: "asc" },
+            select: { name: true, durationMin: true, category: true, exerciseId: true },
+          },
+        },
+      });
+      const assinatura = assinaturaDoPlano(s);
+      const gemeo = existentes.find((t) => assinaturaDoPlano(t) === assinatura);
+      if (gemeo) {
+        throw new ConflictException(
+          `Este plano já está guardado como "${gemeo.name}" — usa esse em vez de criar outro igual.`,
+        );
+      }
+
+      const criado = await db.sessionTemplate.create({
+        data: {
+          academyId: ctx.academyId,
+          createdById: ctx.membershipId,
+          visibility: dto.visibility ?? "CLUB",
+          name,
+          objective: s.objective,
+          objectives: s.objectives,
+          sessionType: s.sessionType,
+          intensity: s.intensity,
+          expectedAthletes: s.expectedAthletes,
+          material: s.material,
+          planNotes: s.planNotes,
+          updatedAt: new Date(),
+          blocks: {
+            create: s.blocks.map((b, i) => ({
+              academyId: ctx.academyId,
+              order: i,
+              name: b.name,
+              durationMin: b.durationMin,
+              category: b.category,
+              objective: b.objective,
+              intensity: b.intensity,
+              players: b.players,
+              notes: b.notes,
+              exerciseId: b.exerciseId,
+            })),
+          },
+        },
+        select: { id: true, name: true },
+      });
+
+      return { id: criado.id, name: criado.name };
+    });
+  }
+
+  /**
+   * Aplicar um modelo a uma sessão — passa a ser o plano dela.
+   *
+   * ## Substitui, e diz que substitui
+   *
+   * Os blocos da sessão são apagados e postos os do modelo. Fundir os dois seria
+   * pior: um treino com o aquecimento a dobrar, e nenhuma forma de perceber de
+   * onde veio o segundo. Quem aplica um modelo está a dizer "quero este treino";
+   * o aviso está na interface, antes de carregar.
+   *
+   * ## O que a sessão mantém
+   *
+   * A data, a equipa, o local, o treinador e as notas do pós-treino. O modelo
+   * não os tem — e mesmo que tivesse, sobrepô-los era um modelo a mudar o
+   * calendário de um clube.
+   */
+  async applyTemplate(ctx: RequestContext, sessionId: string, templateId: string) {
+    if (!can(ctx, "training:write")) throw new ForbiddenException("Sem permissão para planear treinos");
+
+    return this.prisma.runAs(ctx.academyId, async (db) => {
+      const s = await db.trainingSession.findFirst({ where: { id: sessionId }, select: { teamId: true } });
+      if (!s) throw new NotFoundException("Treino não encontrado");
+
+      const scope = teamScopeFilter(ctx);
+      if (scope && !scope.in.includes(s.teamId)) {
+        throw new ForbiddenException("Este treino é de uma equipa fora do teu âmbito");
+      }
+
+      const t = await db.sessionTemplate.findFirst({
+        where: { id: templateId, ...visibleTo(ctx) },
+        select: {
+          id: true,
+          objective: true, objectives: true, sessionType: true, intensity: true,
+          expectedAthletes: true, material: true, planNotes: true,
+          blocks: {
+            orderBy: { order: "asc" },
+            select: {
+              name: true, durationMin: true, category: true, objective: true,
+              intensity: true, players: true, notes: true, exerciseId: true,
+            },
+          },
+        },
+      });
+      if (!t) throw new NotFoundException("Modelo não encontrado");
+
+      await db.trainingSession.update({
+        where: { id: sessionId },
+        data: {
+          objective: t.objective,
+          objectives: t.objectives,
+          sessionType: t.sessionType,
+          intensity: t.intensity,
+          expectedAthletes: t.expectedAthletes,
+          material: t.material,
+          planNotes: t.planNotes,
+        },
+      });
+
+      await db.sessionBlock.deleteMany({ where: { sessionId } });
+      if (t.blocks.length > 0) {
+        await db.sessionBlock.createMany({
+          data: t.blocks.map((b, i) => ({
+            academyId: ctx.academyId,
+            sessionId,
+            order: i,
+            name: b.name,
+            durationMin: b.durationMin,
+            category: b.category,
+            objective: b.objective,
+            intensity: b.intensity,
+            players: b.players,
+            notes: b.notes,
+            exerciseId: b.exerciseId,
+          })),
+        });
+      }
+
+      /*
+       * A contagem de uso, que é o que ordena a lista.
+       *
+       * Dentro da mesma transacção de propósito: um modelo que conta uma
+       * aplicação que não chegou a acontecer sobe na lista por nada.
+       */
+      await db.sessionTemplate.update({
+        where: { id: templateId },
+        data: { useCount: { increment: 1 }, lastUsedAt: new Date() },
+      });
+
+      return this.lerPlano(db, ctx, sessionId);
+    });
+  }
+
+  /**
+   * Apagar um modelo.
+   *
+   * Só o autor ou quem vê a academia toda — a mesma linha da biblioteca: o que é
+   * do clube afina-se por qualquer treinador, mas só a direcção o tira de lá.
+   */
+  async deleteTemplate(ctx: RequestContext, id: string) {
+    if (!can(ctx, "training:write")) throw new ForbiddenException("Sem permissão para planear treinos");
+
+    return this.prisma.runAs(ctx.academyId, async (db) => {
+      const t = await db.sessionTemplate.findFirst({
+        where: { id },
+        select: { id: true, createdById: true },
+      });
+      if (!t) throw new NotFoundException("Modelo não encontrado");
+      if (t.createdById !== ctx.membershipId && !academyWide(ctx)) {
+        throw new ForbiddenException("Este modelo é de outro treinador");
+      }
+
+      await db.sessionTemplate.delete({ where: { id } });
+      return { ok: true as const };
+    });
+  }
 }
 
 /* -------------------------------------------------------------------------- */
@@ -810,6 +1138,28 @@ export type SetPieceInput = {
 };
 
 /** Vejo o que é do clube e o que é meu — a visibilidade, como filtro Prisma. */
+
+/**
+ * A identidade de um plano, para lhe reconhecer um gémeo.
+ *
+ * Só o que faz dele **aquele** treino: o objectivo, o tipo, e a sequência dos
+ * blocos com a duração, a categoria e o exercício de cada um. As notas ficam de
+ * fora de propósito — dois modelos iguais em que um deles tem "lembrar de levar
+ * coletes" escrito num bloco continuam a ser o mesmo treino, e recusar o segundo
+ * por causa disso seria o produto a ser esperto onde ninguém lhe pediu.
+ */
+function assinaturaDoPlano(p: {
+  objective: string | null;
+  sessionType: string | null;
+  blocks: { name: string; durationMin: number; category: string | null; exerciseId: string | null }[];
+}): string {
+  const cabeca = [p.objective?.trim() ?? "", p.sessionType?.trim() ?? ""].join("|");
+  const corpo = p.blocks
+    .map((b) => [b.name.trim(), b.durationMin, b.category?.trim() ?? "", b.exerciseId ?? ""].join("~"))
+    .join("//");
+  return `${cabeca}::${corpo}`;
+}
+
 function visibleTo(ctx: RequestContext) {
   return { OR: [{ visibility: "CLUB" as LibraryVisibility }, { createdById: ctx.membershipId }] };
 }

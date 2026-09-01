@@ -64,6 +64,7 @@ export {
   Trash2,
   Link2,
   RefreshCw,
+  Repeat,
   ExternalLink,
   Loader2,
   Trophy,

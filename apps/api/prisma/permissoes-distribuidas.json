@@ -57,5 +57,7 @@
   "team:delete": "20260831120000_apagar_equipa_nos_cargos",
   "academy:delete": "Por decisão: apagar o clube inteiro é irreversível e leva atrás atletas, famílias e pagamentos. Os cargos criados depois de 20260830150000 recebem-na da semeadura; os anteriores não, e dá-la a 24 cargos sem ninguém a ter pedido não é decisão de uma migração. Quem a quiser, concede-a no editor de cargos.",
   "inventory:read": "20260831140000_inventario",
-  "inventory:write": "20260831140000_inventario"
+  "inventory:write": "20260831140000_inventario",
+  "finance:read": "20260901100000_contas",
+  "finance:write": "20260901100000_contas"
 }

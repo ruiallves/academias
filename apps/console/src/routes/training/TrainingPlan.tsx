@@ -4,19 +4,25 @@ import { PageHeader } from "@/components/Shell";
 import { Dialog, DialogField, dialogInputClass } from "@/components/Dialog";
 import { FieldView, THUMB_RATIO } from "@/components/FieldEditor";
 import { Empty, Loading, Panel, PanelHead, Pill, cx } from "@/components/primitives";
-import { Check, ChevronDown, ChevronRight, Clock, DragHandle, Plus, Search, Star, Trash2, TriangleAlert, Whistle, X } from "@/lib/icons";
+import { Check, ChevronDown, ChevronRight, Clock, Copy, DragHandle, Download, Plus, Search, Star, Trash2, TriangleAlert, Whistle, X } from "@/lib/icons";
 import { can } from "@/lib/permissions";
 import { longDate, time } from "@/lib/format";
 import {
   OBJECTIVE_CATEGORIES,
   SESSION_TYPES,
+  applyTemplate,
+  deleteTemplate,
+  getExercise,
   getPlan,
   listExercises,
+  listTemplates,
+  saveTemplate,
   minutesByCategory,
   savePlan,
   sessionLoad,
   type ExerciseSummary,
   type PlanBlock,
+  type SessionTemplateRow,
   type SessionPlan,
 } from "@/lib/training";
 import { useSession } from "@/session";
@@ -43,6 +49,37 @@ export default function TrainingPlan() {
 
   const [plan, setPlan] = useState<SessionPlan | null>(null);
   const [error, setError] = useState<string | null>(null);
+  /*
+   * O PDF, pedido a pedido.
+   *
+   * `import()` dinâmico: o `jspdf` são umas centenas de kilobytes que só fazem
+   * falta a quem carrega no botão. E o erro aparece no ecrã em vez de morrer na
+   * consola do browser — quem carrega em Exportar e não vê nada acontecer
+   * carrega outra vez.
+   */
+  const [aExportar, setAExportar] = useState(false);
+  async function exportarPdf() {
+    if (!plan || dirty) return;
+    setAExportar(true);
+    try {
+      const pdf = await import("@/lib/training-pdf");
+      await pdf.exportarPlano(plan!, getExercise);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Não foi possível gerar o PDF.");
+    } finally {
+      setAExportar(false);
+    }
+  }
+
+  /*
+   * Este plano acabou de ser aplicado a partir de um modelo.
+   *
+   * Serve para não perguntar "queres guardar como modelo?" a seguir a gravar um
+   * plano que **é** um modelo — que é a forma mais rápida de encher a lista de
+   * cópias do mesmo treino. Vive em estado e não na base: a pergunta é sobre
+   * esta sessão de trabalho, não sobre o treino para sempre.
+   */
+  const [veioDeModelo, setVeioDeModelo] = useState(false);
   const [dirty, setDirty] = useState(false);
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
@@ -53,6 +90,26 @@ export default function TrainingPlan() {
    * existe — que era o caminho que faltava: quem criasse um bloco à mão ficava
    * sem forma de lhe anexar um exercício da biblioteca a seguir.
    */
+  /*
+   * Modelos de treino.
+   *
+   * `aPerguntar` abre a seguir a uma gravação com blocos — é o momento em que o
+   * treinador acabou de montar o treino e sabe se ele vale a pena guardar.
+   * Perguntar antes seria pedir uma decisão sobre trabalho por acabar; num menu
+   * escondido, ninguém saberia que a hipótese existe.
+   */
+  const [aPerguntar, setAPerguntar] = useState(false);
+  const [aEscolher, setAEscolher] = useState(false);
+  /*
+   * Pergunta-se uma vez por visita.
+   *
+   * Um plano grava-se cinco ou seis vezes enquanto se monta. A mesma janela a
+   * aparecer a cada gravação deixava de ser uma pergunta e passava a ser um
+   * obstáculo, do tipo que se fecha sem ler. Quem disser "agora não" e mudar de
+   * ideias tem o botão "Modelos" — não fica sem caminho.
+   */
+  const jaPerguntou = useRef(false);
+
   const [picking, setPicking] = useState<"new" | number | null>(null);
   const [open, setOpen] = useState<number | null>(null);
 
@@ -209,6 +266,15 @@ export default function TrainingPlan() {
       });
       setDirty(false);
       setSaved(true);
+      /*
+       * Um treino sem blocos não dá modelo — e um treino que **veio** de um
+       * modelo já lá está. Perguntar nesses dois casos era ruído a seguir a
+       * cada gravação.
+       */
+      if (plan.blocks.length > 0 && !veioDeModelo && !jaPerguntou.current) {
+        jaPerguntou.current = true;
+        setAPerguntar(true);
+      }
     } catch (e) {
       alert(e instanceof Error ? e.message : "Não foi possível gravar o plano.");
     } finally {
@@ -243,6 +309,41 @@ export default function TrainingPlan() {
         <Link to="/treinos" className="ctl-ghost">
           Todos os treinos
         </Link>
+        {/*
+          Um botão, e não dois.
+
+          "Usar modelo" e "guardar como modelo" são o mesmo assunto, e o
+          cabeçalho já leva cinco acções — em telemóvel, a sexta empurrava a
+          linha para fora. Abre-se a lista, e é de lá que também se guarda.
+        */}
+        {editable && (
+          <button type="button" className="ctl-outline" onClick={() => setAEscolher(true)}>
+            <Copy className="size-3.5" strokeWidth={1.75} />
+            Modelos Favoritos
+          </button>
+        )}
+        {/*
+          Leva os exercícios do plano atrás — ver `exportarPlano`. É por isso que
+          demora mais do que os outros: vai buscar cada ficha à API.
+
+          E só com o plano gravado. Um PDF de um plano por gravar é uma folha que
+          o clube leva para o campo e que não corresponde ao que está no sistema —
+          o treinador imprime, fecha o separador sem gravar, e fica com a única
+          cópia do treino em papel. O botão diz porque está travado.
+        */}
+        {/* O `title` vai no <span> e não no <button>: um botão desactivado não
+            recebe eventos do rato, e a dica nunca chegava a aparecer. */}
+        <span title={dirty ? "Grava o plano primeiro — o PDF sai do que está gravado." : undefined}>
+          <button
+            type="button"
+            className="ctl-outline"
+            onClick={() => void exportarPdf()}
+            disabled={aExportar || dirty}
+          >
+            <Download className="size-3.5" strokeWidth={1.75} />
+            {aExportar ? "A gerar…" : "PDF"}
+          </button>
+        </span>
         {past && (
           <Link to="/presencas" className="ctl-outline">
             <Whistle className="size-3.5" strokeWidth={1.75} />
@@ -537,6 +638,36 @@ export default function TrainingPlan() {
           }}
         />
       )}
+
+      {aPerguntar && plan && (
+        <GuardarModeloDialog
+          plan={plan}
+          onClose={() => setAPerguntar(false)}
+          onGuardado={() => setAPerguntar(false)}
+        />
+      )}
+
+      {aEscolher && plan && (
+        <ModelosDialog
+          sessionId={plan.sessionId}
+          temPlano={plan.blocks.length > 0}
+          /* Guardar o que está no ecrã só faz sentido se o que está no ecrã já
+             estiver gravado — senão guardava-se um plano que a base não tem. */
+          podeGuardar={editable && plan.blocks.length > 0 && !dirty}
+          onGuardar={() => {
+            setAEscolher(false);
+            setAPerguntar(true);
+          }}
+          onClose={() => setAEscolher(false)}
+          onAplicado={(novo) => {
+            setPlan(novo);
+            setAEscolher(false);
+            setVeioDeModelo(true);
+            setDirty(false);
+            setSaved(true);
+          }}
+        />
+      )}
     </>
   );
 }
@@ -638,7 +769,7 @@ function BlockRow({
         <div className="space-y-3 border-t border-line bg-sunken/30 px-5 py-4">
           {/*
             O exercício vem primeiro, e com o desenho à vista.
-            
+
             É a pergunta que se faz ao abrir um bloco — *qual é o exercício?* —
             e a resposta é uma imagem, não um nome. Um bloco sem exercício diz
             que se pode ir buscar um; um bloco com exercício mostra-o, e deixa
@@ -987,5 +1118,285 @@ function ObjectiveChips({
         </select>
       )}
     </div>
+  );
+}
+
+/* -------------------------------------------------------------------------- */
+/* Modelos de treino                                                          */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * "Queres guardar este treino como modelo?", a seguir a gravar.
+ *
+ * ## Porque é que a pergunta aparece aqui e não num botão
+ *
+ * Porque é aqui que ela tem resposta. Um botão "guardar como modelo" no
+ * cabeçalho está sempre lá, incluindo quando o plano está a meio — e quem o
+ * carrega nessa altura guarda um treino por acabar. A seguir a gravar, o
+ * treinador acabou de olhar para o plano inteiro e sabe se o vai voltar a usar.
+ *
+ * Sai com Escape ou "Agora não": a pergunta faz-se uma vez e não insiste.
+ */
+function GuardarModeloDialog({
+  plan,
+  onClose,
+  onGuardado,
+}: {
+  plan: SessionPlan;
+  onClose: () => void;
+  onGuardado: () => void;
+}) {
+  /* Um nome de partida que já diz o que o treino é — quase sempre serve. */
+  const [nome, setNome] = useState(plan.objective?.trim() || plan.sessionType?.trim() || "");
+  const [soMeu, setSoMeu] = useState(false);
+  const [guardando, setGuardando] = useState(false);
+  const [erro, setErro] = useState<string | null>(null);
+  const [feito, setFeito] = useState(false);
+
+  const total = plan.blocks.reduce((n, b) => n + (b.durationMin || 0), 0);
+
+  async function guardar() {
+    if (!nome.trim() || guardando) return;
+    setGuardando(true);
+    setErro(null);
+    try {
+      await saveTemplate(plan.sessionId, {
+        name: nome.trim(),
+        visibility: soMeu ? "PRIVATE" : "CLUB",
+      });
+      setFeito(true);
+      setTimeout(onGuardado, 900);
+    } catch (e) {
+      /*
+       * O servidor recusa por duas razões — o nome já existe, ou o plano já
+       * está guardado com outro nome — e diz qual em português. Mostra-se o que
+       * ele disse: "não foi possível guardar" mandava o treinador adivinhar.
+       */
+      setErro(e instanceof Error ? e.message : "Não foi possível guardar o modelo.");
+      setGuardando(false);
+    }
+  }
+
+  return (
+    <Dialog
+      title="Guardar como modelo?"
+      subtitle={`${plan.blocks.length} ${plan.blocks.length === 1 ? "bloco" : "blocos"} · ${total} min — para voltares a usar noutro treino.`}
+      onClose={onClose}
+      width={440}
+      footer={
+        <>
+          <button type="button" className="ctl-ghost" onClick={onClose}>
+            Agora não
+          </button>
+          <button type="button" className="ctl-primary" onClick={() => void guardar()} disabled={guardando || !nome.trim() || feito}>
+            {feito ? (
+              <>
+                <Check className="size-3.5" strokeWidth={2} /> Guardado
+              </>
+            ) : guardando ? (
+              "A guardar…"
+            ) : (
+              "Guardar modelo"
+            )}
+          </button>
+        </>
+      }
+    >
+      <div className="space-y-3 px-5 py-4">
+        <DialogField label="Nome do modelo" hint="É por aqui que o vais encontrar na lista">
+          <input
+            autoFocus
+            className={dialogInputClass}
+            value={nome}
+            onChange={(e) => setNome(e.target.value)}
+            onKeyDown={(e) => e.key === "Enter" && void guardar()}
+            placeholder="Terça — posse em bloco médio"
+            maxLength={80}
+          />
+        </DialogField>
+
+        <div className="rounded-[var(--radius-control)] border border-line">
+          <label className="flex cursor-pointer items-start gap-2.5 px-3 py-2.5">
+            <input
+              type="checkbox"
+              checked={soMeu}
+              onChange={(e) => setSoMeu(e.target.checked)}
+              className="mt-0.5 size-3.5 accent-[var(--color-signal)]"
+            />
+            <span className="min-w-0">
+              <span className="block text-body text-ink">Só para mim</span>
+              <span className="mt-0.5 block text-meta leading-relaxed text-ink-3">
+                Por omissão fica disponível a toda a equipa técnica — é a razão de existir uma
+                biblioteca. Marca isto se for um treino teu que ainda estás a afinar.
+              </span>
+            </span>
+          </label>
+        </div>
+
+        {erro && (
+          <p role="alert" className="rounded-[var(--radius-control)] bg-risk-soft px-3 py-2 text-meta leading-relaxed text-risk">
+            {erro}
+          </p>
+        )}
+      </div>
+    </Dialog>
+  );
+}
+
+/**
+ * A lista de modelos — escolher um, ou guardar este treino como mais um.
+ *
+ * As duas coisas no mesmo sítio porque são a mesma pergunta vista dos dois
+ * lados, e porque separá-las custava outro botão no cabeçalho.
+ *
+ * O aviso de que aplicar **substitui** está à vista antes de escolher, e não
+ * numa confirmação por cima: quem já carregou no modelo decidiu, e uma segunda
+ * janela a perguntar "de certeza?" carrega-se sem ler.
+ */
+function ModelosDialog({
+  sessionId,
+  temPlano,
+  podeGuardar,
+  onGuardar,
+  onClose,
+  onAplicado,
+}: {
+  sessionId: string;
+  temPlano: boolean;
+  podeGuardar: boolean;
+  onGuardar: () => void;
+  onClose: () => void;
+  onAplicado: (plan: SessionPlan) => void;
+}) {
+  const [modelos, setModelos] = useState<SessionTemplateRow[] | null>(null);
+  const [erro, setErro] = useState<string | null>(null);
+  const [aAplicar, setAAplicar] = useState<string | null>(null);
+  /* Apagar pede confirmação no próprio sítio: o segundo toque no caixote. */
+  const [aApagar, setAApagar] = useState<string | null>(null);
+
+  useEffect(() => {
+    listTemplates()
+      .then(setModelos)
+      .catch((e: Error) => setErro(e.message));
+  }, []);
+
+  async function aplicar(id: string) {
+    if (aAplicar) return;
+    setAAplicar(id);
+    setErro(null);
+    try {
+      onAplicado(await applyTemplate(sessionId, id));
+    } catch (e) {
+      setErro(e instanceof Error ? e.message : "Não foi possível aplicar o modelo.");
+      setAAplicar(null);
+    }
+  }
+
+  async function apagar(id: string) {
+    setErro(null);
+    try {
+      await deleteTemplate(id);
+      setModelos((atuais) => (atuais ?? []).filter((m) => m.id !== id));
+    } catch (e) {
+      setErro(e instanceof Error ? e.message : "Não foi possível apagar o modelo.");
+    } finally {
+      setAApagar(null);
+    }
+  }
+
+  return (
+    <Dialog
+      title="Modelos de treino"
+      subtitle={
+        temPlano
+          ? "O plano que está aqui é substituído pelo do modelo."
+          : "O plano deste treino passa a ser o do modelo."
+      }
+      onClose={onClose}
+      width={520}
+      footer={
+        <>
+          {podeGuardar && (
+            <button type="button" className="ctl-outline mr-auto" onClick={onGuardar}>
+              <Star className="size-3.5" strokeWidth={1.75} />
+              Guardar este treino
+            </button>
+          )}
+          <button type="button" className="ctl-ghost" onClick={onClose}>
+            Fechar
+          </button>
+        </>
+      }
+    >
+      {erro && (
+        <p role="alert" className="border-b border-line bg-risk-soft px-5 py-2.5 text-meta text-risk">
+          {erro}
+        </p>
+      )}
+
+      {modelos === null ? (
+        <div className="px-5 py-12"><Loading size="panel" /></div>
+      ) : modelos.length === 0 ? (
+        <div className="px-5 py-10">
+          <Empty
+            title="Ainda não há modelos"
+            detail="Monta um treino, grava-o, e guarda-o como modelo — passa a estar aqui para os próximos."
+          />
+        </div>
+      ) : (
+        <ul>
+          {modelos.map((m) => (
+            <li key={m.id} className="group flex items-center border-b border-line last:border-0">
+              <button
+                type="button"
+                onClick={() => void aplicar(m.id)}
+                disabled={aAplicar !== null}
+                className="flex min-w-0 flex-1 items-center gap-3 py-3 pl-5 text-left transition-colors hover:bg-sunken disabled:opacity-60"
+              >
+                <span className="min-w-0 flex-1">
+                  <span className="flex items-center gap-2">
+                    <span className="truncate text-body font-medium text-ink">{m.name}</span>
+                    {m.visibility === "PRIVATE" && <Pill tone="neutral">Só meu</Pill>}
+                  </span>
+                  <span className="mt-0.5 block truncate text-meta text-ink-3">
+                    {m.blockCount} {m.blockCount === 1 ? "bloco" : "blocos"} · {m.totalMin} min
+                    {m.objective ? ` · ${m.objective}` : ""}
+                    {/* Quantas vezes já foi usado: é o que distingue o modelo de
+                        terça-feira de um que se guardou uma vez e nunca mais. */}
+                    {m.useCount > 0 ? ` · usado ${m.useCount}×` : ""}
+                  </span>
+                </span>
+                {aAplicar === m.id ? (
+                  <span className="shrink-0 text-meta text-ink-3">A aplicar…</span>
+                ) : (
+                  <ChevronRight className="size-4 shrink-0 text-ink-4" strokeWidth={1.75} />
+                )}
+              </button>
+              {/*
+                Fora do botão de aplicar, e não lá dentro: um <button> dentro de
+                outro não é HTML válido, e clicar no caixote não pode ser um
+                clique na linha.
+              */}
+              <span className="shrink-0 pr-3 pl-2">
+                {aApagar === m.id ? (
+                  <button type="button" className="ctl-ghost text-risk" onClick={() => void apagar(m.id)}>
+                    Apagar?
+                  </button>
+                ) : (
+                  <button
+                    type="button"
+                    aria-label={`Apagar o modelo ${m.name}`}
+                    className="ctl-ghost size-8 justify-center px-0 text-ink-4 hover:text-risk"
+                    onClick={() => setAApagar(m.id)}
+                  >
+                    <Trash2 className="size-3.5" strokeWidth={1.75} />
+                  </button>
+                )}
+              </span>
+            </li>
+          ))}
+        </ul>
+      )}
+    </Dialog>
   );
 }

@@ -15,13 +15,59 @@ import { cx } from "./primitives";
 /* A consola                                                                   */
 /* -------------------------------------------------------------------------- */
 
-const NAV_GROUPS: { label?: string; items: { t: string; on?: boolean; badge?: number }[] }[] = [
-  { items: [{ t: "Visão geral", on: true }] },
-  { label: "Pessoas", items: [{ t: "Atletas" }, { t: "Famílias" }, { t: "Equipas" }, { t: "Staff" }, { t: "Sócios" }] },
-  { label: "Clínico", items: [{ t: "Boletins" }, { t: "Consultas" }] },
+/**
+ * O menu, como a consola o mostra hoje.
+ *
+ * Duas coisas mudaram, e as duas se vêem aqui.
+ *
+ * **Os grupos abrem e fecham.** A barra chegou aos vinte e cinco destinos e num
+ * portátil deixou de caber; agora cada grupo recolhe, e o produto abre com três
+ * abertos — Pessoas, Operação e Área técnica, o dia de qualquer clube. É o mesmo
+ * que `ABERTOS_POR_OMISSAO` faz na consola (`lib/nav-groups.ts`), e é por isso
+ * que este desenho não mostra tudo escancarado: ninguém vê o produto assim ao
+ * abri-lo.
+ *
+ * **A ordem é a do clube, não a do organigrama.** Quem cá está, o que se faz com
+ * eles, o trabalho do treinador, o dinheiro, como evoluem. Scouting e Clínico
+ * foram para o fim porque são departamentos — não são etapas daquela sequência, e
+ * a maior parte das pessoas nem os vê.
+ *
+ * Manter isto a par de `NAV_CATALOG` é trabalho manual e assumido: o site não
+ * importa da consola, para não arrastar as permissões e os ícones dela para um
+ * desenho de 150px de largura.
+ */
+const NAV_GROUPS: {
+  label?: string;
+  /** Aberto por omissão. Fechado mostra só o cabeçalho, com a seta de lado. */
+  open?: boolean;
+  items: { t: string; on?: boolean; badge?: number }[];
+}[] = [
+  { open: true, items: [{ t: "Visão geral", on: true }] },
+  {
+    label: "Pessoas",
+    open: true,
+    items: [{ t: "Atletas" }, { t: "Famílias" }, { t: "Equipas" }, { t: "Staff" }, { t: "Sócios" }],
+  },
+  {
+    label: "Operação",
+    open: true,
+    items: [{ t: "Calendário" }, { t: "Presenças", badge: 2 }, { t: "Convocatórias", badge: 2 }],
+  },
+  {
+    label: "Área técnica",
+    open: true,
+    items: [
+      { t: "Treinos" },
+      { t: "Jogos", badge: 1 },
+      { t: "Exercícios" },
+      { t: "Modelos de jogo" },
+      { t: "Bolas paradas" },
+    ],
+  },
+  { label: "Gestão", items: [{ t: "Mensalidades" }, { t: "Contas" }, { t: "Comunicação" }, { t: "Inventário" }] },
+  { label: "Desenvolvimento", items: [{ t: "Avaliações" }, { t: "Relatórios" }] },
   { label: "Scouting", items: [{ t: "Prospects" }, { t: "Observações" }, { t: "Pedidos" }] },
-  { label: "Operação", items: [{ t: "Calendário" }, { t: "Presenças", badge: 2 }, { t: "Convocatórias", badge: 2 }] },
-  { label: "Gestão", items: [{ t: "Mensalidades", badge: 2 }, { t: "Comunicação" }] },
+  { label: "Clínico", items: [{ t: "Boletins" }, { t: "Consultas" }] },
 ];
 
 const ATENCAO = [
@@ -68,29 +114,60 @@ export function ConsoleShot({ className }: { className?: string }) {
           {NAV_GROUPS.map((g, gi) => (
             <div key={g.label ?? gi} className={gi > 0 ? "mt-2" : ""}>
               {g.label && (
-                <div className="px-1.5 pb-0.5 text-[6.5px] font-semibold tracking-[0.12em] text-[#ada89d] uppercase">
-                  {g.label}
+                /* O cabeçalho deixou de ser uma legenda apagada: é o botão que
+                   abre e fecha o grupo, e por isso lê-se a tinta cheia. */
+                <div className="flex items-center gap-1 px-1.5 pb-0.5">
+                  <span className="min-w-0 flex-1 truncate text-[6.5px] font-semibold tracking-[0.12em] text-[#1a1917] uppercase">
+                    {g.label}
+                  </span>
+                  {/* Uma seta só, que roda — para baixo aberta, de lado fechada. */}
+                  <span
+                    className="size-[5px] shrink-0 bg-[#ada89d]"
+                    style={{
+                      clipPath: g.open
+                        ? "polygon(0 25%, 100% 25%, 50% 85%)"
+                        : "polygon(25% 0, 85% 50%, 25% 100%)",
+                    }}
+                  />
                 </div>
               )}
-              {g.items.map((it) => (
-                <div
-                  key={it.t}
-                  className={cx(
-                    "flex h-[17px] items-center gap-1.5 rounded-[3px] px-1.5 text-[8.5px]",
-                    it.on ? "bg-[#e7f0ee] font-medium text-[#0a4c45]" : "text-[#524f48]",
-                  )}
-                >
-                  <span className={cx("size-1 rounded-[1px]", it.on ? "bg-[#0f6b62]" : "bg-[#d3cfc6]")} />
-                  <span className="min-w-0 flex-1 truncate">{it.t}</span>
-                  {it.badge && (
-                    <span className="rounded-full bg-[#fae9e7] px-1 text-[6.5px] font-semibold text-[#a82a20]">
-                      {it.badge}
-                    </span>
-                  )}
+              {/* Os destinos entram um pouco para dentro do título do grupo —
+                  sem isso, a hierarquia lia-se pelo tamanho da letra e mais nada. */}
+              {g.open && (
+                <div className={g.label ? "ml-1.5" : undefined}>
+                  {g.items.map((it) => (
+                    <div
+                      key={it.t}
+                      className={cx(
+                        "flex h-[17px] items-center gap-1.5 rounded-[3px] px-1.5 text-[8.5px]",
+                        it.on ? "bg-[#e7f0ee] font-medium text-[#0a4c45]" : "text-[#524f48]",
+                      )}
+                    >
+                      {/* O ícone leva a cor do clube, aceso ou não — é o que dá
+                          ao menu os pontos de referência. */}
+                      <span className={cx("size-1 rounded-[1px]", it.on ? "bg-[#0a4c45]" : "bg-[#0f6b62]")} />
+                      <span className="min-w-0 flex-1 truncate">{it.t}</span>
+                      {/* O contador é da cor do clube, não vermelho: diz quanto
+                          falta fazer, não que algo correu mal. */}
+                      {it.badge && (
+                        <span className="rounded-full bg-[#0f6b62] px-1 text-[6.5px] font-semibold text-white">
+                          {it.badge}
+                        </span>
+                      )}
+                    </div>
+                  ))}
                 </div>
-              ))}
+              )}
             </div>
           ))}
+        </div>
+
+        {/* Definições vive fora dos grupos, encostada ao cartão de quem entrou. */}
+        <div className="px-1.5 pb-1.5">
+          <div className="flex h-[17px] items-center gap-1.5 rounded-[3px] px-1.5 text-[8.5px] text-[#524f48]">
+            <span className="size-1 rounded-[1px] bg-[#0f6b62]" />
+            <span className="min-w-0 flex-1 truncate">Definições</span>
+          </div>
         </div>
 
         <div className="flex items-center gap-1.5 border-t border-[#e5e2dc] px-2 py-1.5">

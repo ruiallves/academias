@@ -42,7 +42,7 @@ import { can, type RequestContext } from "../common/permissions";
 // "competitions" — as provas que o clube disputa. Entram no catálogo e não numa
 // tabela própria porque é exactamente o que os catálogos são: uma lista de
 // nomes que o clube gere, por modalidade. Ver a migração `competicoes`.
-const KINDS = ["venues", "dressingRooms", "eventTypes", "competitions", "inventoryCategories", "inventoryLocations"] as const;
+const KINDS = ["venues", "dressingRooms", "eventTypes", "competitions", "inventoryCategories", "financeIncome", "financeExpense"] as const;
 export type CatalogKind = (typeof KINDS)[number];
 
 export function isCatalogKind(value: string): value is CatalogKind {
@@ -102,6 +102,42 @@ const SEED: Partial<Record<CatalogKind, { label: string; note?: string; isSystem
     { label: "Outros" },
   ],
   /*
+   * As categorias das Contas, com que o módulo abre.
+   *
+   * Um clube que abra as Contas com a lista vazia tem de inventar uma taxonomia
+   * antes de registar a primeira despesa — e fecha a página. Estas cobrem o que
+   * um clube de formação mexe; nenhuma é `isSystem`: renomeiam-se e arquivam-se,
+   * porque a arrumação do dinheiro é de quem o gere.
+   *
+   * As receitas automáticas (mensalidades) não dependem de nenhuma destas —
+   * derivam de `Charge` e trazem o rótulo com elas.
+   */
+  financeIncome: [
+    { label: "Quotas de sócios" },
+    { label: "Inscrições" },
+    { label: "Patrocínios" },
+    { label: "Subsídios e apoios" },
+    { label: "Donativos" },
+    { label: "Bilheteira" },
+    { label: "Eventos e torneios" },
+    { label: "Bar" },
+    { label: "Venda de equipamento" },
+    { label: "Outras receitas" },
+  ],
+  financeExpense: [
+    { label: "Transportes" },
+    { label: "Equipamento" },
+    { label: "Instalações" },
+    { label: "Competições e arbitragem" },
+    { label: "Salários e prémios" },
+    { label: "Alimentação e alojamento" },
+    { label: "Material de treino" },
+    { label: "Material médico" },
+    { label: "Seguros" },
+    { label: "Administração" },
+    { label: "Outras despesas" },
+  ],
+  /*
    * As localizações ficam **vazias** de propósito.
    *
    * "Armazém principal" e "Balneário 2" são o sítio de um clube em concreto, e
@@ -127,7 +163,7 @@ export class CatalogsService {
        * existirem já tem `eventTypes` e ficaria sem "Amigável" para sempre se a
        * condição fosse sobre o catálogo inteiro.
        */
-      for (const kind of ["eventTypes", "competitions", "inventoryCategories"] as const) {
+      for (const kind of ["eventTypes", "competitions", "inventoryCategories", "financeIncome", "financeExpense"] as const) {
         const jaLa = await db.catalogItem.count({ where: { kind } });
         if (jaLa > 0) continue;
         await db.catalogItem.createMany({

@@ -9,6 +9,7 @@ import {
   CalendarDays,
   ClipboardCheck,
   Receipt,
+  Wallet,
   Boxes,
   Megaphone,
   Trophy,
@@ -208,6 +209,12 @@ export const NAV_CATALOG: NavGroup[] = [
         requires: "billing:read",
         badge: (c) => c.overdueFees || undefined,
       },
+      /*
+        As contas do clube — saldo, movimentos, orçamento. Ao lado das
+        mensalidades porque é a mesma conversa (dinheiro), mas com permissão
+        própria: quem lança mensalidades nem sempre pode ver o saldo do clube.
+      */
+      { key: "finance", label: "Contas", to: "/contas", icon: Wallet, requires: "finance:read" },
       {
         key: "comms",
         label: "Comunicação",

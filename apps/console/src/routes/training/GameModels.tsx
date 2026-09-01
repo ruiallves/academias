@@ -4,7 +4,7 @@ import { PageHeader } from "@/components/Shell";
 import { Dialog, DialogField, dialogInputClass } from "@/components/Dialog";
 import { Pitch, THUMB_RATIO, baseView, itemScale, pitchBackground } from "@/components/FieldEditor";
 import { Empty, Loading, Panel, PanelHead, Pill, SelectField, cx } from "@/components/primitives";
-import { Check, ChevronDown, ChevronRight, Plus, Shield, Trash2, TriangleAlert } from "@/lib/icons";
+import { Check, ChevronDown, ChevronRight, Download, Plus, Shield, Trash2, TriangleAlert } from "@/lib/icons";
 import { listTeams } from "@/lib/api";
 import { can } from "@/lib/permissions";
 import {
@@ -223,6 +223,28 @@ export function GameModelDetail() {
   const teams = listTeams(session);
 
   const [model, setModel] = useState<GameModelRow | null>(null);
+  /*
+   * O PDF, pedido a pedido.
+   *
+   * `import()` dinâmico: o `jspdf` são umas centenas de kilobytes que só fazem
+   * falta a quem carrega no botão. E o erro aparece no ecrã em vez de morrer na
+   * consola do browser — quem carrega em Exportar e não vê nada acontecer
+   * carrega outra vez.
+   */
+  const [aExportar, setAExportar] = useState(false);
+  async function exportarPdf() {
+    if (!model) return;
+    setAExportar(true);
+    try {
+      const pdf = await import("@/lib/training-pdf");
+      await pdf.exportarModelo(model!);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Não foi possível gerar o PDF.");
+    } finally {
+      setAExportar(false);
+    }
+  }
+
   const [error, setError] = useState<string | null>(null);
   const [dirty, setDirty] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -307,6 +329,10 @@ export function GameModelDetail() {
         <Link to="/modelos-jogo" className="ctl-ghost">
           Modelos
         </Link>
+        <button type="button" className="ctl-outline" onClick={() => void exportarPdf()} disabled={aExportar}>
+          <Download className="size-3.5" strokeWidth={1.75} />
+          {aExportar ? "A gerar…" : "PDF"}
+        </button>
         {editable && model.deletable && (
           <button type="button" className="ctl-ghost text-risk hover:bg-risk-soft hover:text-risk" onClick={remove}>
             <Trash2 className="size-3.5" strokeWidth={1.75} />

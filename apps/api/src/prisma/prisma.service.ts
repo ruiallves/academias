@@ -162,6 +162,10 @@ const TENANT_SCOPED = new Set<string>([
   "InventoryVariant",
   "InventoryAssignment",
   "InventoryMovement",
+  // Contas. Dinheiro é a última coisa que pode atravessar clubes.
+  "FinancialTransaction",
+  "FinanceSettings",
+  "FinancialBudget",
 ]);
 
 /**
