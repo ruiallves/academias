@@ -222,11 +222,6 @@ export const ROADMAP: RoadmapItem[] = [
     body: "O atleta instala a app do clube, vê o que é dele e recebe notificações. Treinos, convocatórias, presenças e avaliações.",
   },
   {
-    when: "Outubro 2026",
-    title: "Sistema Financeiro Avançado",
-    body: "Todo o sistema financeiro do clube com despesas, receitas, relatórios e exportação para contabilidade.",
-  },
-  {
     when: "Novembro 2026",
     title: "Sistema de bilheteira",
     body: "Gestão da venda de bilhetes para os jogos do clube.",
