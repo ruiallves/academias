@@ -2,6 +2,7 @@ import { BadRequestException, ConflictException, ForbiddenException, Injectable,
 import { ConfigService } from "@nestjs/config";
 import { Prisma, type CalendarEventKind, type Role } from "@prisma/client";
 import { PrismaService, type ScopedClient } from "../prisma/prisma.service";
+import { headCoaches } from "./head-coaches";
 import { StorageService } from "../storage/storage.service";
 import { PHOTO_BUCKET, PHOTO_TTL } from "../storage/photos.service";
 import { basePermissions, can, ROLE_PERMISSIONS, type Permission, type RequestContext } from "../common/permissions";
@@ -1261,26 +1262,16 @@ export class AcademyService {
    * Entre vários, ganha o principal; depois qualquer treinador; e só depois o
    * resto do staff da equipa (um delegado é melhor do que ninguém).
    */
-  private async headCoaches(db: ScopedClient, teamIds: string[]) {
-    const ids = [...new Set(teamIds)];
-    const found = new Map<string, { id: string; name: string }>();
-    if (ids.length === 0) return found;
-
-    const rows = await db.teamStaff.findMany({
-      where: { teamId: { in: ids }, membership: { isActive: true } },
-      orderBy: { title: "asc" },
-      select: { teamId: true, title: true, membership: { select: { id: true, user: { select: { name: true } } } } },
-    });
-
-    const rank = (title: string) => (/principal/i.test(title) ? 2 : /treinad/i.test(title) ? 1 : 0);
-    const best = new Map<string, number>();
-    for (const r of rows) {
-      const k = rank(r.title);
-      if (found.has(r.teamId) && k <= (best.get(r.teamId) ?? -1)) continue;
-      best.set(r.teamId, k);
-      found.set(r.teamId, { id: r.membership.id, name: r.membership.user.name });
-    }
-    return found;
+  /**
+   * O treinador de cada equipa.
+   *
+   * Era privado daqui, e por isso os **jogos** — que vivem noutro serviço — não
+   * lhe chegavam: o calendário mostrava o treinador dos treinos e não o dos
+   * jogos. Mudou-se para `./head-coaches`, ao alcance dos dois. Este continua a
+   * existir para não reescrever as dezenas de chamadas que já lhe apontam.
+   */
+  private headCoaches(db: ScopedClient, teamIds: (string | null)[]) {
+    return headCoaches(db, teamIds);
   }
 
   /**

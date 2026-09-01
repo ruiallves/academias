@@ -244,6 +244,15 @@ export function fromApiMatch(m: ApiMatch): CalendarEvent {
     end: new Date(m.endsAt),
     venue: m.venue,
     cancelled: m.status === "CANCELLED",
+    /*
+     * O treinador do jogo.
+     *
+     * Não vinha para aqui, e por isso a gaveta de um jogo dizia sempre "sem
+     * treinador atribuído" — mesmo com a equipa a ter um. Não era um valor que
+     * se desactualizava: era um valor que nunca chegava a existir.
+     */
+    coachId: m.coachId ?? undefined,
+    coachName: m.coachName ?? undefined,
     match: {
       opponent: m.opponent,
       home: m.isHome,

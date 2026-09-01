@@ -2,6 +2,7 @@ import { BadRequestException, ForbiddenException, Injectable, NotFoundException 
 import { PrismaService, type ScopedClient } from "../prisma/prisma.service";
 import { NotificationsService } from "../notifications/notifications.service";
 import { calendarScopeFilter, can, inTeamScope, teamScopeFilter, type RequestContext } from "../common/permissions";
+import { headCoaches } from "./head-coaches";
 
 /**
  * Jogos e convocatórias.
@@ -49,6 +50,13 @@ export class MatchesService {
           // A prova, para a convocatória a poder imprimir sem ninguém a escrever.
           competition: { select: { id: true, label: true } },
           team: { select: { name: true, maxCallUps: true } },
+          /*
+           * O treinador do jogo, quando o jogo tem um seu. Quase nunca tem —
+           * quem marca um jogo no calendário não escolhe quem o dirige, porque
+           * isso está decidido na ficha da equipa. A queda para o treinador da
+           * equipa está mais abaixo. Ver `headCoaches`.
+           */
+          coach: { select: { id: true, user: { select: { name: true } } } },
           callUps: {
             select: {
               athleteId: true, status: true, isGuest: true,
@@ -92,6 +100,16 @@ export class MatchesService {
         },
       });
 
+      /*
+       * Quem não tem treinador próprio herda o da equipa — como os treinos e os
+       * eventos do calendário já faziam.
+       *
+       * Faltava aqui, e era o bug: um jogo aparecia **sempre** "sem treinador",
+       * tivesse a equipa treinador ou não. Atribuir um treinador à equipa não
+       * mudava nada, porque o jogo nunca chegou a perguntar por ele.
+       */
+      const porEquipa = await headCoaches(db, matches.map((m) => m.teamId));
+
       return matches.map((m) => {
         /*
          * O jogo aparece a todo o clube; a convocatória e a ficha, não.
@@ -118,6 +136,9 @@ export class MatchesService {
           status: m.status,
           ourScore: m.ourScore,
           theirScore: m.theirScore,
+          /** O do jogo, ou o da equipa. Derivado na leitura — ver `headCoaches`. */
+          coachId: m.coach?.id ?? porEquipa.get(m.teamId)?.id ?? null,
+          coachName: m.coach?.user.name ?? porEquipa.get(m.teamId)?.name ?? null,
           submitted: m.callUpsClosedAt !== null,
           submittedAt: m.callUpsClosedAt,
           /** É de uma equipa minha? Decide o que vem preenchido, e o que a consola deixa abrir. */
@@ -261,7 +282,10 @@ export class MatchesService {
         status: m.status,
         ourScore: m.ourScore,
         theirScore: m.theirScore,
-        coachName: m.coach?.user.name ?? null,
+        // A mesma queda do resto do calendário: sem treinador próprio, o da
+        // equipa. A ficha do jogo dizia "sem treinador" a jogos de equipas que
+        // têm um, exactamente como a lista.
+        coachName: m.coach?.user.name ?? (await headCoaches(db, [m.teamId])).get(m.teamId)?.name ?? null,
         submitted: m.callUpsClosedAt !== null,
         submittedAt: m.callUpsClosedAt,
         statsEnteredAt: m.statsEnteredAt,

@@ -151,6 +151,13 @@ export type ApiMatch = {
   id: string; teamId: string; teamName: string; maxCallUps: number;
   startsAt: string; endsAt: string; venue: string; opponent: string; isHome: boolean;
   status: string; ourScore: number | null; theirScore: number | null;
+  /**
+   * Quem o dirige — o do jogo, ou o da equipa quando o jogo não tem o seu.
+   *
+   * Derivado no servidor (ver `headCoaches`), como nos treinos. Faltava aqui, e
+   * era metade do bug: mesmo que a API o mandasse, o calendário não o lia.
+   */
+  coachId: string | null; coachName: string | null;
   /** A prova em que se joga. `null` num amigável. */
   competition: { id: string; label: string } | null;
   submitted: boolean; submittedAt: string | null;
