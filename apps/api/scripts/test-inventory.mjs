@@ -714,6 +714,120 @@ check("nem apaga artigos (403)", naoApaga.status === 403, `${naoApaga.status}`);
 await db.query(`UPDATE "Membership" SET "customRoleId" = $2 WHERE id = $1`, [membroCoach.id, membroCoach.customRoleId]);
 await db.query(`DELETE FROM "AcademyRole" WHERE id = $1`, [cargoSoLeitura]);
 
+console.log("\n=== Editar um artigo ===");
+const paraEditar = await call(director, "POST", "/api/inventory/items", {
+  name: "ZI Artigo a editar",
+  categoryId: cat?.id,
+  brand: "ZI Marca Velha",
+  minimumStock: 3,
+  variants: [{ label: "M", quantity: 10 }, { label: "L", quantity: 5 }],
+});
+const idEditar = paraEditar.body.id;
+const refInicial = paraEditar.body.sku;
+
+const editado = await call(director, "PATCH", `/api/inventory/items/${idEditar}`, {
+  name: "ZI Artigo editado",
+  brand: "ZI Marca Nova",
+  minimumStock: 8,
+  description: "Uma descrição que não existia",
+});
+check("editar devolve 200", editado.status === 200, `${editado.status} ${JSON.stringify(editado.body).slice(0, 120)}`);
+
+const depoisDeEditar = await call(director, "GET", `/api/inventory/items/${idEditar}`);
+check(
+  "o nome, a marca e o mínimo mudam",
+  depoisDeEditar.body.name === "ZI Artigo editado" &&
+    depoisDeEditar.body.brand === "ZI Marca Nova" &&
+    depoisDeEditar.body.minimumStock === 8,
+  JSON.stringify({ n: depoisDeEditar.body.name, m: depoisDeEditar.body.brand, s: depoisDeEditar.body.minimumStock }),
+);
+check("e a descrição entra", depoisDeEditar.body.description === "Uma descrição que não existia");
+
+/*
+ * O stock não se toca a editar a ficha. É a garantia que faz o histórico valer:
+ * se houvesse dois caminhos para mudar um número e só um deixasse movimento, o
+ * histórico deixava de ser a explicação do stock.
+ */
+check(
+  "e o stock fica exactamente como estava",
+  depoisDeEditar.body.variants.find((v) => v.label === "M").total === 10,
+  JSON.stringify(depoisDeEditar.body.variants.map((v) => `${v.label}:${v.total}`)),
+);
+
+// Vazio limpa, ausente não mexe — a regra do resto do produto.
+await call(director, "PATCH", `/api/inventory/items/${idEditar}`, { brand: "" });
+const semMarca = await call(director, "GET", `/api/inventory/items/${idEditar}`);
+check("um campo enviado vazio limpa-se", semMarca.body.brand === null, JSON.stringify(semMarca.body.brand));
+check("e o que não veio no pedido fica", semMarca.body.name === "ZI Artigo editado");
+
+console.log("\n=== A referência muda, e os tamanhos vão com ela ===");
+/*
+ * Sem isto, trocar `ET-0001` por outra coisa deixava os tamanhos a dizer
+ * `ET-0001-M` — o artigo passava a ter duas referências, uma delas de nada.
+ */
+const antesDaTroca = await call(director, "GET", `/api/inventory/items/${idEditar}`);
+check(
+  "os tamanhos seguiam a referência antiga",
+  antesDaTroca.body.variants.every((v) => v.sku === `${refInicial}-${v.label}`),
+  JSON.stringify(antesDaTroca.body.variants.map((v) => v.sku)),
+);
+
+// Um tamanho com código escrito à mão: este **não** deve ser arrastado.
+const oL = antesDaTroca.body.variants.find((v) => v.label === "L");
+await call(director, "PATCH", `/api/inventory/variants/${oL.id}`, { sku: "ZI-ETIQUETA-COLADA" });
+
+await call(director, "PATCH", `/api/inventory/items/${idEditar}`, { sku: "ZI-REF-NOVA" });
+const depoisDaTroca = await call(director, "GET", `/api/inventory/items/${idEditar}`);
+check("o artigo fica com a nova", depoisDaTroca.body.sku === "ZI-REF-NOVA", depoisDaTroca.body.sku);
+check(
+  "os tamanhos gerados seguem-na",
+  depoisDaTroca.body.variants.find((v) => v.label === "M").sku === "ZI-REF-NOVA-M",
+  JSON.stringify(depoisDaTroca.body.variants.map((v) => v.sku)),
+);
+check(
+  "e o escrito à mão fica como estava",
+  depoisDaTroca.body.variants.find((v) => v.label === "L").sku === "ZI-ETIQUETA-COLADA",
+  JSON.stringify(depoisDaTroca.body.variants.find((v) => v.label === "L").sku),
+);
+
+/*
+ * Duas referências iguais são o mesmo artigo — e ao editar não se juntam, como
+ * na criação: fundir dois artigos que já têm stock e histórico é outra
+ * operação, e não é esta.
+ */
+const refOcupada = await call(director, "PATCH", `/api/inventory/items/${idEditar}`, { sku: "ZI-MINHA-001" });
+check("uma referência já usada é recusada (400)", refOcupada.status === 400, `${refOcupada.status}`);
+check(
+  "e a mensagem diz de quem é",
+  String(refOcupada.body?.message ?? "").includes("ZI Com referência própria"),
+  JSON.stringify(refOcupada.body?.message),
+);
+
+console.log("\n=== Editar um tamanho ===");
+const oM = depoisDaTroca.body.variants.find((v) => v.label === "M");
+const tamanhoEditado = await call(director, "PATCH", `/api/inventory/variants/${oM.id}`, {
+  label: "Médio",
+  minimumStock: 4,
+});
+check("renomear o tamanho passa", tamanhoEditado.status === 200, `${tamanhoEditado.status}`);
+
+const comMedio = await call(director, "GET", `/api/inventory/items/${idEditar}`);
+const medio = comMedio.body.variants.find((v) => v.label === "Médio");
+check("o novo nome fica", Boolean(medio), JSON.stringify(comMedio.body.variants.map((v) => v.label)));
+check("com o mínimo próprio", medio?.ownMinimum === 4 && medio?.minimumStock === 4, JSON.stringify(medio));
+check("e o stock intacto", medio?.total === 10, `${medio?.total}`);
+
+// O mínimo do artigo continua a valer para quem não tem o seu.
+const semProprio = comMedio.body.variants.find((v) => v.label === "L");
+check(
+  "quem não tem mínimo próprio herda o do artigo",
+  semProprio?.ownMinimum === null && semProprio?.minimumStock === 8,
+  JSON.stringify({ p: semProprio?.ownMinimum, e: semProprio?.minimumStock }),
+);
+
+const editarSemPermissao = await call(coach, "PATCH", `/api/inventory/items/${idEditar}`, { name: "ZI Roubado" });
+check("um treinador não edita artigos (403)", editarSemPermissao.status === 403, `${editarSemPermissao.status}`);
+
 /* ------------------------------------------------------------------ limpeza */
 await limpar();
 await db.end();

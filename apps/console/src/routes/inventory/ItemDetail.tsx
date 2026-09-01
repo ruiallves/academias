@@ -4,8 +4,9 @@ import { PageHeader } from "@/components/Shell";
 import { DataTable, Empty, Loading, Panel, PanelHead, Pill, cx } from "@/components/primitives";
 import { Dialog, DialogField, dialogInputClass } from "@/components/Dialog";
 import { DeleteItemDialog } from "@/components/inventory/DeleteItemDialog";
+import { EditItemDialog } from "@/components/inventory/EditItemDialog";
 import { ItemPhotos } from "@/components/inventory/ItemPhotos";
-import { ArrowLeft, Boxes, Plus, Trash2, TriangleAlert } from "@/lib/icons";
+import { ArrowLeft, Boxes, Pencil, Plus, Trash2, TriangleAlert } from "@/lib/icons";
 import { shortDate, time } from "@/lib/format";
 import { can } from "@/lib/permissions";
 import { useSession } from "@/session";
@@ -17,6 +18,7 @@ import {
   addVariant,
   getItem,
   moveStock,
+  updateVariant,
   type ItemDetail as Data,
   type Variant,
 } from "@/lib/inventory";
@@ -42,6 +44,8 @@ export default function ItemDetail() {
   const [mexer, setMexer] = useState<Variant | null>(null);
   const [novoTamanho, setNovoTamanho] = useState(false);
   const [tirar, setTirar] = useState(false);
+  const [editar, setEditar] = useState(false);
+  const [renomear, setRenomear] = useState<Variant | null>(null);
 
   async function carregar() {
     setErro(null);
@@ -72,6 +76,12 @@ export default function ItemDetail() {
         subtitle={[data.brand, data.sku].filter(Boolean).join(" · ") || undefined}
       >
         <Pill tone={STATUS_TONE[data.status]}>{STATUS_LABEL[data.status]}</Pill>
+        {podeEscrever && (
+          <button type="button" className="ctl-ghost" onClick={() => setEditar(true)}>
+            <Pencil className="size-3.5" strokeWidth={1.75} />
+            Editar
+          </button>
+        )}
         {/*
           Tirar do armazém fica no fim e discreto: é a única acção desta página
           sem volta, e ninguém deve tropeçar nela a caminho de ver o stock.
@@ -141,6 +151,35 @@ export default function ItemDetail() {
                 align: "right",
                 render: (v) => <Pill tone={STATUS_TONE[v.status]}>{STATUS_LABEL[v.status]}</Pill>,
               },
+              /*
+                Editar o tamanho vive numa coluna própria, e não no diálogo do
+                stock: mudar quantas há e mudar como se chama são coisas
+                diferentes, e quem abre um "M" para dar entrada de cinquenta não
+                deve encontrar o nome dele editável ao lado do número.
+              */
+              ...(podeEscrever
+                ? [
+                    {
+                      key: "editar",
+                      header: "",
+                      align: "right" as const,
+                      width: "44px",
+                      render: (v: Variant) => (
+                        <button
+                          type="button"
+                          aria-label={`Editar o tamanho ${v.label}`}
+                          className="flex size-7 items-center justify-center rounded-[6px] text-ink-4 hover:bg-sunken hover:text-ink-2"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setRenomear(v);
+                          }}
+                        >
+                          <Pencil className="size-3.5" strokeWidth={1.75} />
+                        </button>
+                      ),
+                    },
+                  ]
+                : []),
             ]}
           />
           {podeEscrever && data.variants.length > 0 && (
@@ -202,6 +241,28 @@ export default function ItemDetail() {
           onClose={() => setMexer(null)}
           onDone={() => {
             setMexer(null);
+            void carregar();
+          }}
+        />
+      )}
+
+      {editar && (
+        <EditItemDialog
+          item={data}
+          onClose={() => setEditar(false)}
+          onDone={() => {
+            setEditar(false);
+            void carregar();
+          }}
+        />
+      )}
+
+      {renomear && (
+        <EditVariantDialog
+          variant={renomear}
+          onClose={() => setRenomear(null)}
+          onDone={() => {
+            setRenomear(null);
             void carregar();
           }}
         />
@@ -422,6 +483,94 @@ function NewVariantDialog({ itemId, onClose, onDone }: { itemId: string; onClose
             />
           </DialogField>
         </div>
+
+        {erro && (
+          <p className="flex items-start gap-1.5 text-meta text-risk">
+            <TriangleAlert className="mt-0.5 size-3.5 shrink-0" strokeWidth={1.75} />
+            {erro}
+          </p>
+        )}
+      </form>
+    </Dialog>
+  );
+}
+
+/**
+ * Editar um tamanho: como se chama, o código e o mínimo dele.
+ *
+ * O mínimo em branco herda o do artigo — é o que quase todos os clubes querem,
+ * e é por isso que a dica o diz em vez de o campo nascer preenchido com um
+ * número que ninguém escolheu.
+ *
+ * As quantidades não estão aqui: são o outro diálogo, o que deixa movimento.
+ */
+function EditVariantDialog({ variant, onClose, onDone }: { variant: Variant; onClose: () => void; onDone: () => void }) {
+  const [label, setLabel] = useState(variant.label);
+  const [sku, setSku] = useState(variant.sku ?? "");
+  const [minimo, setMinimo] = useState(variant.ownMinimum === null ? "" : String(variant.ownMinimum));
+  const [busy, setBusy] = useState(false);
+  const [erro, setErro] = useState<string | null>(null);
+
+  async function submeter(e: React.FormEvent) {
+    e.preventDefault();
+    if (!label.trim() || busy) return;
+    setBusy(true);
+    setErro(null);
+    try {
+      await updateVariant(variant.id, {
+        label: label.trim(),
+        sku: sku.trim(),
+        // Vazio volta a herdar o do artigo; um número fixa-o só neste tamanho.
+        ...(minimo.trim() ? { minimumStock: Number(minimo) } : {}),
+      });
+      onDone();
+    } catch (err) {
+      setErro(err instanceof Error ? err.message : "Não foi possível guardar.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <Dialog
+      labelledBy="editar-tamanho"
+      title={`Editar ${variant.label}`}
+      subtitle={`${variant.total} unidades · ${variant.assigned} com atletas`}
+      onClose={onClose}
+      footer={
+        <>
+          <button type="button" onClick={onClose} className="ctl-ghost" disabled={busy}>
+            Cancelar
+          </button>
+          <button type="submit" form="form-editar-tamanho" className="ctl-primary" disabled={!label.trim() || busy}>
+            {busy ? "A guardar…" : "Guardar"}
+          </button>
+        </>
+      }
+    >
+      <form id="form-editar-tamanho" onSubmit={submeter} className="space-y-4 p-5">
+        <div className="grid grid-cols-3 gap-3">
+          <DialogField label="Tamanho">
+            <input value={label} onChange={(e) => setLabel(e.target.value)} className={dialogInputClass} autoFocus />
+          </DialogField>
+          <DialogField label="Referência" hint="opcional">
+            <input value={sku} onChange={(e) => setSku(e.target.value)} className={dialogInputClass} />
+          </DialogField>
+          <DialogField label="Mínimo" hint="vazio = o do artigo">
+            <input
+              type="number"
+              min={0}
+              value={minimo}
+              onChange={(e) => setMinimo(e.target.value)}
+              placeholder={String(variant.minimumStock)}
+              className={cx(dialogInputClass, "tabular")}
+            />
+          </DialogField>
+        </div>
+
+        <p className="text-meta leading-relaxed text-ink-3">
+          As quantidades mexem-se clicando na linha — cada entrada, saída ou contagem fica no histórico.
+        </p>
 
         {erro && (
           <p className="flex items-start gap-1.5 text-meta text-risk">

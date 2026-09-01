@@ -541,17 +541,41 @@ export class InventoryService {
     return `${prefixo}-${String(maior + 1).padStart(4, "0")}`;
   }
 
+  /**
+   * Corrigir a ficha de um artigo.
+   *
+   * Vazio limpa, ausente não mexe — a mesma regra da ficha de sócio. O stock não
+   * se toca aqui: mexe-se tamanho a tamanho, e cada alteração deixa um
+   * movimento. Um campo de quantidade neste formulário seria um caminho para
+   * mudar números sem explicação.
+   */
   async updateItem(ctx: RequestContext, id: string, dto: UpdateItemDto) {
     this.mustWrite(ctx);
 
     return this.prisma.runAs(ctx.academyId, async (db) => {
-      const existe = await db.inventoryItem.findFirst({ where: { id }, select: { id: true } });
-      if (!existe) throw new NotFoundException("Artigo não encontrado");
+      const antes = await db.inventoryItem.findFirst({
+        where: { id },
+        select: { id: true, sku: true, variants: { select: { id: true, label: true, sku: true } } },
+      });
+      if (!antes) throw new NotFoundException("Artigo não encontrado");
 
       await this.validarCatalogo(db, dto.categoryId, "inventoryCategories");
 
-      // Vazio limpa, ausente não mexe — a mesma regra da ficha de sócio.
       const texto = (v: string | undefined) => (v === undefined ? undefined : v.trim() || null);
+      const novaRef = dto.sku === undefined ? undefined : dto.sku.trim() || null;
+
+      /*
+       * Uma referência já usada é o mesmo artigo — e o mesmo artigo não pode
+       * existir duas vezes. Aqui não se junta como na criação: juntar dois
+       * artigos que já têm stock e histórico é outra operação, e não é esta.
+       */
+      if (novaRef && novaRef !== antes.sku) {
+        const ocupada = await db.inventoryItem.findFirst({
+          where: { id: { not: id }, archivedAt: null, sku: { equals: novaRef, mode: "insensitive" } },
+          select: { name: true },
+        });
+        if (ocupada) throw new BadRequestException(`A referência ${novaRef} já é de "${ocupada.name}"`);
+      }
 
       await db.inventoryItem.update({
         where: { id },
@@ -559,12 +583,34 @@ export class InventoryService {
           ...(dto.name !== undefined ? { name: dto.name.trim() } : {}),
           ...(dto.description !== undefined ? { description: texto(dto.description) } : {}),
           ...(dto.categoryId !== undefined ? { categoryId: dto.categoryId || null } : {}),
-          ...(dto.sku !== undefined ? { sku: texto(dto.sku) } : {}),
+          ...(novaRef !== undefined ? { sku: novaRef } : {}),
           ...(dto.brand !== undefined ? { brand: texto(dto.brand) } : {}),
           ...(dto.minimumStock !== undefined ? { minimumStock: dto.minimumStock } : {}),
           ...(dto.notes !== undefined ? { notes: texto(dto.notes) } : {}),
         },
       });
+
+      /*
+       * A referência mudou: os tamanhos que a seguiam seguem-na.
+       *
+       * Só os que foram gerados — aqueles cujo código é exactamente
+       * `referência-tamanho`. Um tamanho com referência escrita à mão fica como
+       * está: foi alguém que a escreveu, e é a que está na etiqueta.
+       *
+       * Sem isto, mudar `ET-0001` para `ET-0009` deixava seis tamanhos a dizer
+       * `ET-0001-M` — e o artigo passava a ter duas referências, uma delas de
+       * nada.
+       */
+      if (novaRef !== undefined && novaRef !== antes.sku) {
+        for (const v of antes.variants) {
+          const derivada = skuDaVariante(antes.sku, v.label);
+          if (v.sku !== derivada && v.sku !== null) continue;
+          await db.inventoryVariant.update({
+            where: { id: v.id },
+            data: { sku: skuDaVariante(novaRef, v.label) },
+          });
+        }
+      }
 
       return { ok: true };
     });
