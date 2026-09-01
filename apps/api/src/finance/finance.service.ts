@@ -3,6 +3,7 @@ import { BadRequestException, ForbiddenException, Injectable, NotFoundException 
 import type { FinanceKind, FinanceStatus, PaymentMethod } from "@prisma/client";
 import { PrismaService, type ScopedClient } from "../prisma/prisma.service";
 import { can, type RequestContext } from "../common/permissions";
+import { currentSeason } from "../common/seasons";
 import type { BudgetDto, CreateTransactionDto, SettingsDto, UpdateTransactionDto } from "./finance.dto";
 
 /**
@@ -564,10 +565,32 @@ export class FinanceService {
     this.mustRead(ctx);
 
     return this.prisma.runAs(ctx.academyId, async (db) => {
+      /*
+       * Sem `seasonId`, a época em curso — e "em curso" não é `isCurrent`.
+       *
+       * Era `findFirst({ isCurrent: true })`, e a página do Orçamento não abria
+       * em clube nenhum: as épocas nascem por marcar (ver `currentSeason`), e
+       * uma academia inteira ficava a olhar para "Época não encontrada" sem
+       * nada que pudesse fazer na consola para o resolver.
+       */
       const season = seasonId
         ? await db.season.findFirst({ where: { id: seasonId }, select: { id: true, label: true, startsOn: true, endsOn: true } })
-        : await db.season.findFirst({ where: { isCurrent: true }, select: { id: true, label: true, startsOn: true, endsOn: true } });
-      if (!season) throw new NotFoundException("Época não encontrada");
+        : await currentSeason(db);
+      /*
+       * Sem época nenhuma é outro caso, e merece outra frase.
+       *
+       * Um clube fica sem épocas até criar a primeira equipa — é a equipa que
+       * abre a época (`resolveSeason`). "Época não encontrada" mandava a
+       * direcção procurar uma coisa que ainda não existe; a frase diz-lhe o que
+       * fazer para ela passar a existir.
+       */
+      if (!season) {
+        throw new NotFoundException(
+          seasonId
+            ? "Época não encontrada"
+            : "Este clube ainda não tem épocas — a primeira abre com a primeira equipa.",
+        );
+      }
 
       const [orcamentos, gastos, categorias] = await Promise.all([
         db.financialBudget.findMany({ where: { seasonId: season.id }, select: { categoryId: true, amountCents: true } }),

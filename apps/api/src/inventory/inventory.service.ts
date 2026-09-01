@@ -4,6 +4,7 @@ import type { InventoryAssignmentStatus, InventoryMovementType, Prisma } from "@
 import { PrismaService, type ScopedClient } from "../prisma/prisma.service";
 import { StorageService } from "../storage/storage.service";
 import { can, type RequestContext } from "../common/permissions";
+import { currentSeason } from "../common/seasons";
 import type {
   AssignDto,
   CreateItemDto,
@@ -1137,10 +1138,15 @@ export class InventoryService {
 
       await this.descontarDisponivel(db, dto.variantId, dto.quantity);
 
-      const season = await db.season.findFirst({
-        where: { isCurrent: true },
-        select: { id: true },
-      });
+      /*
+       * A época da entrega.
+       *
+       * Guardava-se `null` sempre que ninguém tivesse marcado `isCurrent` — que
+       * é o estado normal de um clube (ver `currentSeason`). Uma entrega sem
+       * época não aparece no que o clube deu esta época, e o buraco só se nota
+       * meses depois, a fechar contas.
+       */
+      const season = await currentSeason(db);
 
       const entrega = await db.inventoryAssignment.create({
         data: {
