@@ -219,7 +219,21 @@ export default function Fees() {
       key: "period",
       header: "Período",
       hideBelow: "sm",
-      render: (f) => <span className="text-ink-2">{periodLabel(f.period)}</span>,
+      /*
+        A coluna diz o mês numa mensalidade e o que se cobrou numa avulsa.
+        Sem isto, duas linhas do mesmo atleta no mesmo mês liam-se como uma
+        mensalidade repetida — e a primeira reacção de quem visse isso seria
+        apagar uma delas.
+      */
+      render: (f) =>
+        f.extra ? (
+          <span className="flex min-w-0 items-center gap-1.5">
+            <span className="truncate text-ink">{f.title ?? "Cobrança"}</span>
+            <Pill>{periodLabel(f.period)}</Pill>
+          </span>
+        ) : (
+          <span className="text-ink-2">{periodLabel(f.period)}</span>
+        ),
     },
     {
       key: "due",

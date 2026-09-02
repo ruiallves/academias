@@ -1,5 +1,5 @@
 import { Body, Controller, Delete, Get, Param, Patch, Post, Put, Query, Req } from "@nestjs/common";
-import { ArrayMaxSize, IsArray, IsBoolean, IsIn, IsInt, IsOptional, IsString, Length, Max, Min } from "class-validator";
+import { ArrayMaxSize, IsArray, IsBoolean, IsIn, IsInt, IsOptional, IsString, Length, Matches, Max, Min } from "class-validator";
 import { ChargeStatus, type AthleteStatus } from "@prisma/client";
 import type { AuthedRequest } from "../auth/auth.guard";
 import { AcademyService } from "./academy.service";
@@ -9,6 +9,37 @@ import { AthleteInputDto, AthleteTaxIdDto, AthleteUpdateDto, ImportAthletesDto }
 import { CreateTeamDto, ImportTeamsDto } from "./teams.dto";
 import { CreateEventDto, EditEventDto, UpdateEventDto } from "./events.dto";
 import { BillingService, periodoActual, type AplicarEm } from "../billing/billing.service";
+
+/**
+ * Cobrar uma coisa avulsa a uma família — o equipamento, o torneio, o autocarro.
+ *
+ * O valor volta a ser validado no serviço (`assertValidAmount`, 1 € a 1000 €):
+ * aqui trava-se a forma, lá trava-se a regra, e é a regra que conta.
+ */
+class CreateExtraChargeDto {
+  @IsString()
+  athleteId!: string;
+
+  @IsString()
+  @Length(2, 80)
+  title!: string;
+
+  @IsInt()
+  amountCents!: number;
+
+  /** `AAAA-MM-DD`. O mês desta data é o período em que a cobrança aparece. */
+  @Matches(/^\d{4}-\d{2}-\d{2}$/, { message: "Data de vencimento inválida" })
+  dueDate!: string;
+
+  @IsOptional()
+  @IsString()
+  categoryId?: string;
+
+  @IsOptional()
+  @IsString()
+  @Length(0, 400)
+  notes?: string;
+}
 
 /** O estado a atribuir manualmente a uma mensalidade. Validado — só os três reais. */
 class SetChargeStatusDto {
@@ -580,6 +611,17 @@ export class AcademyController {
   @Post("charges/reminders")
   sendOverdueReminders(@Req() req: AuthedRequest) {
     return this.billing.sendOverdueReminders(req.ctx);
+  }
+
+  /**
+   * Cobrar uma coisa avulsa a uma família.
+   *
+   * Cria a cobrança e avisa o encarregado pagador — na app, e no telemóvel pelo
+   * canal de push. Ver `BillingService.createExtraCharge`.
+   */
+  @Post("charges/avulsa")
+  createExtraCharge(@Req() req: AuthedRequest, @Body() body: CreateExtraChargeDto) {
+    return this.billing.createExtraCharge(req.ctx, body);
   }
 
   /** O que este atleta paga hoje — individual, da equipa, ou nenhum dos dois. */

@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { Pill, cx } from "@/components/primitives";
 import { TransactionDialog } from "@/components/finance/TransactionDialog";
-import { Check, Minus, Plus } from "@/lib/icons";
+import { Check, Plus } from "@/lib/icons";
 import { can, type Session } from "@/lib/permissions";
 import {
   STATUS_LABEL,
@@ -148,16 +148,14 @@ export function EventFinance({
       )}
 
       {podeEscrever && (
-        <div className="flex items-center gap-2">
-          <button type="button" className="ctl-outline flex-1 justify-center" onClick={() => setRegistar("EXPENSE")}>
-            <Minus className="size-3.5" strokeWidth={2} />
-            Custo
-          </button>
-          <button type="button" className="ctl-outline flex-1 justify-center" onClick={() => setRegistar("INCOME")}>
-            <Plus className="size-3.5" strokeWidth={2} />
-            Receita
-          </button>
-        </div>
+        <button
+          type="button"
+          className="ctl-outline w-full justify-center"
+          onClick={() => setRegistar("EXPENSE")}
+        >
+          <Plus className="size-3.5" strokeWidth={2} />
+          Movimento deste jogo
+        </button>
       )}
 
       {registar && (

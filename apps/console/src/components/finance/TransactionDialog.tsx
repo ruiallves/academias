@@ -1,38 +1,53 @@
 import { useState, type FormEvent } from "react";
 import { Dialog, DialogField, dialogInputClass } from "@/components/Dialog";
 import { SelectField, cx } from "@/components/primitives";
-import { Repeat, TriangleAlert } from "@/lib/icons";
+import { Repeat, TrendingDown, TrendingUp, TriangleAlert } from "@/lib/icons";
 import { useActiveCatalog } from "@/lib/catalogs";
 import { listTeams } from "@/lib/api";
 import { useSession } from "@/session";
 import { METHOD_LABEL, createTransaction, type FinanceKind } from "@/lib/finance";
 
 /**
- * Registar uma receita ou uma despesa — o mesmo diálogo, porque são o mesmo
- * gesto com o sinal trocado, e dois formulários iguais divergem.
+ * Registar um movimento — receita ou despesa, no mesmo diálogo.
  *
- * ## O estado é a pergunta mais importante
+ * ## Um botão, não dois
  *
- * "Já aconteceu" ou "está previsto" decidem se o movimento mexe no saldo ou nas
- * previsões — e é a distinção que faz o saldo dizer a verdade. Por isso são as
- * duas primeiras pastilhas, não um selector escondido no fim.
+ * O formulário já era um só: receita e despesa são o mesmo gesto com o sinal
+ * trocado, e o `kind` só mudava o título e uns quantos exemplos. O que estava a
+ * dobrar era a **entrada** — dois botões no cabeçalho de cada página, a obrigar
+ * a decidir o tipo antes de ver o formulário, quando quem chega ali muitas vezes
+ * só tem um papel na mão e ainda vai a pensar no que ele é.
+ *
+ * Agora o tipo escolhe-se lá dentro, na primeira linha, e muda-se sem fechar
+ * nada. A escolha errada deixou de custar um cancelar e um segundo clique.
+ *
+ * ## As duas perguntas do topo, por ordem
+ *
+ * **O quê** (receita ou despesa) decide o sinal; **quando** (já aconteceu ou
+ * está previsto) decide se mexe no saldo ou nas previsões — e é essa que faz o
+ * saldo dizer a verdade. Nenhuma das duas é um selector escondido no fim.
  *
  * O valor escreve-se em euros e guarda-se em cêntimos: ninguém pensa em
  * cêntimos, e nenhuma conta do produto aceita floats.
  */
 export function TransactionDialog({
-  kind,
+  kind: kindInicial = "EXPENSE",
   eventLink,
   onClose,
   onDone,
 }: {
-  kind: FinanceKind;
+  /**
+   * Por onde o diálogo abre. É só o ponto de partida — quem o abre pode ter uma
+   * pista (o botão de um evento, um atalho), e quem o usa muda à vontade.
+   */
+  kind?: FinanceKind;
   /** Quando se chega pelo calendário, o movimento já nasce ligado ao evento. */
   eventLink?: { matchId?: string; calendarEventId?: string; label: string };
   onClose: () => void;
   onDone: () => void;
 }) {
   const { session } = useSession();
+  const [kind, setKind] = useState<FinanceKind>(kindInicial);
   const receita = kind === "INCOME";
   const categorias = useActiveCatalog(receita ? "financeIncome" : "financeExpense");
   const equipas = listTeams(session);
@@ -89,7 +104,7 @@ export function TransactionDialog({
   return (
     <Dialog
       labelledBy="novo-movimento"
-      title={receita ? "Nova receita" : "Nova despesa"}
+      title="Novo movimento"
       subtitle={eventLink ? eventLink.label : undefined}
       onClose={onClose}
       width={540}
@@ -105,6 +120,55 @@ export function TransactionDialog({
       }
     >
       <form id="form-movimento" onSubmit={submeter} className="space-y-4 p-5">
+        {/*
+          Entra ou sai? É a primeira pergunta, e a que muda o resto do formulário
+          — as categorias, os exemplos, o rótulo da contraparte. Duas metades do
+          mesmo tamanho, e a escolhida pinta-se com o sinal do dinheiro: verde a
+          entrar, vermelho a sair. É a única cor semântica do diálogo, e é a que
+          impede alguém de registar uma despesa como receita sem dar por isso.
+        */}
+        <fieldset>
+          <legend className="mb-1.5 text-meta font-medium text-ink">O quê</legend>
+          <div className="grid grid-cols-2 gap-2">
+            {(
+              [
+                ["EXPENSE", "Despesa", "sai do clube"],
+                ["INCOME", "Receita", "entra no clube"],
+              ] as const
+            ).map(([v, label, hint]) => {
+              const activo = kind === v;
+              const Icon = v === "INCOME" ? TrendingUp : TrendingDown;
+              return (
+                <button
+                  key={v}
+                  type="button"
+                  onClick={() => {
+                    setKind(v);
+                    // A categoria é de outro catálogo do outro lado: mantê-la
+                    // guardava o id de uma categoria de despesa numa receita.
+                    setCategoria("");
+                  }}
+                  aria-pressed={activo}
+                  className={cx(
+                    "flex items-center gap-2.5 rounded-[var(--radius-control)] border px-3 py-2.5 text-left transition-colors duration-[120ms]",
+                    activo
+                      ? v === "INCOME"
+                        ? "border-ok bg-ok-soft text-ok"
+                        : "border-risk bg-risk-soft text-risk"
+                      : "border-line text-ink-3 hover:bg-sunken hover:text-ink-2",
+                  )}
+                >
+                  <Icon className="size-4 shrink-0" strokeWidth={1.75} />
+                  <span className="min-w-0">
+                    <span className="block text-body font-semibold">{label}</span>
+                    <span className="block text-meta opacity-80">{hint}</span>
+                  </span>
+                </button>
+              );
+            })}
+          </div>
+        </fieldset>
+
         {/* Já aconteceu, ou está previsto? É o que separa o saldo das previsões. */}
         <fieldset>
           <legend className="mb-1.5 text-meta font-medium text-ink">Quando</legend>

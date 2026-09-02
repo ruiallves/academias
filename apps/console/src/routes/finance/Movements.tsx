@@ -4,7 +4,7 @@ import { PageHeader } from "@/components/Shell";
 import { DataTable, Empty, Loading, Panel, Pill, SelectField } from "@/components/primitives";
 import { TransactionDialog } from "@/components/finance/TransactionDialog";
 import { Dialog } from "@/components/Dialog";
-import { ArrowLeft, Check, Download, Minus, Plus, Repeat, Search, TriangleAlert, Wallet, X } from "@/lib/icons";
+import { ArrowLeft, Check, Download, Plus, Repeat, Search, TriangleAlert, Wallet, X } from "@/lib/icons";
 import { shortDate } from "@/lib/format";
 import { can } from "@/lib/permissions";
 import { useSession } from "@/session";
@@ -137,13 +137,15 @@ export default function Movements() {
         )}
         {podeEscrever && (
           <>
-            <button type="button" className="ctl-outline" onClick={() => setRegistar("EXPENSE")}>
-              <Minus className="size-3.5" strokeWidth={2} />
-              Despesa
-            </button>
-            <button type="button" className="ctl-primary" onClick={() => setRegistar("INCOME")}>
+            {/*
+              Um botão só. Receita e despesa são o mesmo gesto com o sinal
+              trocado, e escolher o sinal antes de ver o formulário obrigava a
+              decidir cedo de mais — a escolha passou para dentro do diálogo,
+              onde se muda sem fechar nada.
+            */}
+            <button type="button" className="ctl-primary" onClick={() => setRegistar("EXPENSE")}>
               <Plus className="size-3.5" strokeWidth={2} />
-              Receita
+              Novo movimento
             </button>
           </>
         )}

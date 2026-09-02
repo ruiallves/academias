@@ -4,7 +4,8 @@ import { PageHeader } from "@/components/Shell";
 import { Dialog, DialogField, dialogInputClass } from "@/components/Dialog";
 import { Empty, Loading, Panel, PanelHead, SelectField, cx } from "@/components/primitives";
 import { TransactionDialog } from "@/components/finance/TransactionDialog";
-import { Minus, Plus, Settings, TriangleAlert, TrendingDown, TrendingUp, Wallet } from "@/lib/icons";
+import { ChargeFamilyDialog } from "@/components/finance/ChargeFamilyDialog";
+import { Plus, Send, Settings, TriangleAlert, TrendingDown, TrendingUp, Wallet } from "@/lib/icons";
 import { shortDate } from "@/lib/format";
 import { can } from "@/lib/permissions";
 import { useSession } from "@/session";
@@ -42,6 +43,7 @@ export default function Finance() {
   const [erro, setErro] = useState<string | null>(null);
   const [horizonte, setHorizonte] = useState(30);
   const [registar, setRegistar] = useState<FinanceKind | null>(null);
+  const [cobrar, setCobrar] = useState(false);
   const [definicoes, setDefinicoes] = useState(false);
 
   async function carregar() {
@@ -90,13 +92,26 @@ export default function Finance() {
         </Link>
         {podeEscrever && (
           <>
-            <button type="button" className="ctl-outline" onClick={() => setRegistar("EXPENSE")}>
-              <Minus className="size-3.5" strokeWidth={2} />
-              Despesa
+            {/*
+              Um botão só. Receita e despesa são o mesmo gesto com o sinal
+              trocado, e escolher o sinal antes de ver o formulário obrigava a
+              decidir cedo de mais — a escolha passou para dentro do diálogo,
+              onde se muda sem fechar nada.
+            */}
+            {/*
+              Cobrar a uma família é outra coisa e por isso é outro botão: um
+              movimento regista o que já se sabe, isto **pede** dinheiro a
+              alguém e faz tocar um telemóvel. Misturar as duas no mesmo
+              formulário era pôr um botão que avisa doze pais ao lado de um que
+              não avisa ninguém.
+            */}
+            <button type="button" className="ctl-outline" onClick={() => setCobrar(true)}>
+              <Send className="size-3.5" strokeWidth={1.75} />
+              Cobrar a uma família
             </button>
-            <button type="button" className="ctl-primary" onClick={() => setRegistar("INCOME")}>
+            <button type="button" className="ctl-primary" onClick={() => setRegistar("EXPENSE")}>
               <Plus className="size-3.5" strokeWidth={2} />
-              Receita
+              Novo movimento
             </button>
           </>
         )}
@@ -265,6 +280,16 @@ export default function Finance() {
           onClose={() => setDefinicoes(false)}
           onDone={() => {
             setDefinicoes(false);
+            void carregar();
+          }}
+        />
+      )}
+
+      {cobrar && (
+        <ChargeFamilyDialog
+          onClose={() => setCobrar(false)}
+          onDone={() => {
+            setCobrar(false);
             void carregar();
           }}
         />

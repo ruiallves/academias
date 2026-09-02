@@ -1269,6 +1269,21 @@ enum ChargeStatus {
 
 /// Uma mensalidade devida. É criada pelo servidor no início do período, e o seu
 /// estado deriva dos Payments — nunca é escrito directamente por um pedido do cliente.
+/// O que uma cobrança é.
+///
+/// `FEE` é a mensalidade do mês, gerada em lote a partir do plano de preços.
+/// `EXTRA` é tudo o resto que o clube pede a uma família de uma vez só — o
+/// equipamento, a inscrição no torneio, a viagem do autocarro.
+///
+/// Uma tabela e não duas, porque do lado do pai são a mesma coisa: aparecem no
+/// mesmo sítio, pagam-se pelos mesmos meios, e a euPago não distingue nenhuma
+/// das duas. Separá-las obrigava a duplicar o fluxo de pagamento inteiro para
+/// mudar um rótulo.
+enum ChargeKind {
+  FEE
+  EXTRA
+}
+
 model Charge {
   id           String      @id @default(cuid())
   academyId    String
@@ -1278,8 +1293,42 @@ model Charge {
   enrollmentId String?
   enrollment   Enrollment? @relation(fields: [enrollmentId], references: [id])
 
+  kind ChargeKind @default(FEE)
+
   /// "2026-08"
-  period      String
+  period String
+
+  /// O que distingue duas cobranças do mesmo atleta no mesmo mês.
+  ///
+  /// Vazio na mensalidade: é isso que faz `[athleteId, period, slot]` continuar
+  /// a garantir **uma** mensalidade por atleta por mês — a corrida entre duas
+  /// secretarias a gerar o mesmo período trava na base, como sempre travou.
+  ///
+  /// Único em cada `EXTRA`, porque um clube pode pedir o equipamento e a viagem
+  /// ao mesmo pai no mesmo mês, e as duas coisas são duas cobranças.
+  ///
+  /// A alternativa era um índice único parcial (`WHERE kind = 'FEE'`), que o
+  /// Postgres faz bem e o Prisma não sabe escrever: ficaria fora do
+  /// `schema.prisma` e o `check:schema` — que compara a base com o modelo —
+  /// passaria a acusar deriva para sempre. Uma coluna que o modelo conhece vale
+  /// mais do que um índice que ele não vê.
+  slot String @default("")
+
+  /// O que se está a cobrar: "Equipamento de treino", "Torneio de Páscoa".
+  ///
+  /// Nulo na mensalidade — o título dela é o mês, e escrever "Mensalidade de
+  /// Setembro" em cada linha seria guardar o que já se sabe. A app da família
+  /// usa isto quando existe e o período quando não.
+  title String?
+
+  /// A categoria de receita, do catálogo (`CatalogItem.kind = "financeIncome"`).
+  /// Nula quando a academia ainda não organizou as receitas por categoria.
+  categoryId String?
+  category   CatalogItem? @relation("ChargeCategory", fields: [categoryId], references: [id], onDelete: SetNull)
+
+  /// O que o clube quis explicar à família. Vai na notificação e no detalhe.
+  notes String?
+
   amountCents Int
   dueDate     DateTime     @db.Date
   status      ChargeStatus @default(OPEN)
@@ -1290,9 +1339,10 @@ model Charge {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  @@unique([athleteId, period])
+  @@unique([athleteId, period, slot])
   @@index([academyId, period])
   @@index([academyId, status])
+  @@index([categoryId])
 }
 
 enum PaymentStatus {
@@ -2832,6 +2882,9 @@ model CatalogItem {
   /// Contas: `kind = "financeIncome"` e `kind = "financeExpense"`.
   financeTransactions FinancialTransaction[] @relation("FinanceCategory")
   financeBudgets      FinancialBudget[]      @relation("FinanceBudgetCategory")
+  /// As cobranças avulsas às famílias, categorizadas pelo mesmo catálogo de
+  /// receitas — o que o clube pede a um pai é receita como qualquer outra.
+  charges             Charge[]               @relation("ChargeCategory")
 
   /// O desporto entra na chave: "Sub-13" pode existir no futebol **e** na
   /// natação, e são dois itens diferentes. Sem ele, criar o segundo dava erro de

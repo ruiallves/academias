@@ -277,6 +277,15 @@ export type Fee = {
   athleteId: string;
   /** `2026-08` */
   period: string;
+  /**
+   * Não é a mensalidade do mês: é uma cobrança avulsa — o equipamento, o
+   * torneio, a viagem. Vive na mesma tabela e no mesmo período porque do lado
+   * da família é a mesma coisa (ver `ChargeKind` no `schema.prisma`); o que
+   * muda é o rótulo, e é isto que o diz.
+   */
+  extra: boolean;
+  /** O que se cobrou. Só nas avulsas — o título de uma mensalidade é o mês. */
+  title?: string;
   amountCents: number;
   dueDate: string;
   status: FeeStatus;

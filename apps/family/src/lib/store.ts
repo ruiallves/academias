@@ -84,6 +84,12 @@ type ApiCharge = {
   athleteId: string;
   athleteName: string;
   period: string;
+  /** `FEE` é a mensalidade do mês; `EXTRA` é o que o clube pediu à parte. */
+  kind: string;
+  /** O que se está a cobrar. Nulo na mensalidade — o título dela é o mês. */
+  title: string | null;
+  category: string | null;
+  notes: string | null;
   amountCents: number;
   dueDate: string;
   status: string;
@@ -197,7 +203,17 @@ export type Payment = {
   id: string;
   childId: string;
   period: string;
+  /**
+   * O que aparece na linha: o mês, numa mensalidade; o que o clube pediu, numa
+   * cobrança avulsa. Resolvido aqui e não no servidor — o mês escreve-se na
+   * língua e no formato de quem lê, e guardar "Mensalidade de Setembro" em cada
+   * linha da base era guardar o que já se sabe.
+   */
   label: string;
+  /** `true` quando não é a mensalidade do mês. Muda o rótulo e ganha uma etiqueta. */
+  extra: boolean;
+  /** O que o clube escreveu à família sobre esta cobrança. */
+  notes: string | null;
   amountCents: number;
   dueDate: Date;
   status: "paid" | "pending" | "overdue" | "void";
@@ -495,7 +511,12 @@ function build(
     id: c.id,
     childId: c.athleteId,
     period: c.period,
-    label: monthLabel(c.period),
+    extra: c.kind === "EXTRA",
+    // O título da cobrança avulsa, e o mês quando não há nenhum. `??` e não
+    // `||`: um clube que escreva um título vazio não devia acontecer, mas se
+    // acontecer é melhor ver o mês do que uma linha sem nome.
+    label: c.title?.trim() || monthLabel(c.period),
+    notes: c.notes,
     amountCents: c.amountCents,
     dueDate: new Date(c.dueDate),
     status:

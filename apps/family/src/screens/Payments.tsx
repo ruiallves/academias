@@ -129,9 +129,16 @@ export default function Payments() {
                 {chosen.length > 0 ? "A pagar" : "Em dívida"}
               </span>
               <span className="text-[12px] font-medium text-white/55">
+                {/*
+                  "Mensalidades" só quando são todas mensalidades. Com uma
+                  cobrança avulsa à mistura — o equipamento, o torneio — a
+                  palavra passa a "pagamentos", que é o que elas têm em comum.
+                */}
                 {chosen.length > 0
                   ? `${chosen.length} de ${outstanding.length}`
-                  : `${outstanding.length} ${outstanding.length === 1 ? "mensalidade" : "mensalidades"}`}
+                  : outstanding.every((p) => !p.extra)
+                    ? `${outstanding.length} ${outstanding.length === 1 ? "mensalidade" : "mensalidades"}`
+                    : `${outstanding.length} ${outstanding.length === 1 ? "pagamento" : "pagamentos"}`}
               </span>
             </div>
 
@@ -325,6 +332,13 @@ function MonthRow({ payment, selected, onToggle }: { payment: Payment; selected:
           <span className={cx("block text-[12px] font-medium", overdue ? "text-risk" : "text-ink-3")}>
             {overdue ? `Venceu a ${dateShort(payment.dueDate)}` : `Vence a ${dateShort(payment.dueDate)}`}
           </span>
+          {/*
+            A nota que o clube escreveu — "o equipamento é entregue no treino de
+            quinta". Vai na notificação, e tem de ficar aqui também: a
+            notificação lê-se uma vez e desaparece, esta linha é onde o pai volta
+            quando já não se lembra do que é que isto era.
+          */}
+          {payment.notes && <span className="block text-[12px] leading-snug text-ink-2">{payment.notes}</span>}
           {/* A tentativa em curso — a referência Multibanco já gerada, ou o
               pagamento a caminho. Sem isto, o pai que fechou a app perdia a
               referência e gerava outra. */}

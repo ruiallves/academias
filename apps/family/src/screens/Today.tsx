@@ -153,10 +153,35 @@ const byStart = (a: { start: Date }, b: { start: Date }) => a.start.getTime() - 
  * Com mais do que uma em atraso mostra-se o **total**, não a primeira: um pai com
  * três meses por pagar quer saber quanto deve, não qual é o mês mais antigo.
  */
-function PaymentDue({ items, childName }: { items: { amountCents: number; label: string; status: string }[]; childName: string }) {
+function PaymentDue({
+  items,
+  childName,
+}: {
+  items: { amountCents: number; label: string; status: string; extra: boolean }[];
+  childName: string;
+}) {
   const total = items.reduce((n, p) => n + p.amountCents, 0);
   const overdue = items.some((p) => p.status === "overdue");
   const many = items.length > 1;
+
+  /*
+   * O que a faixa diz, com uma cobrança avulsa pelo meio.
+   *
+   * Uma só: o nome do que é. "Mensalidade de setembro" quando é a mensalidade —
+   * o rótulo dela é o mês e a palavra tem de vir daqui —, e o título tal como o
+   * clube o escreveu quando não é: "Equipamento de treino" já se explica, e
+   * "Mensalidade de equipamento de treino" seria mentira.
+   *
+   * Várias: só se lhes pode chamar "mensalidades" se forem todas mensalidades.
+   * Com uma avulsa à mistura são "pagamentos", que é o que têm em comum.
+   */
+  const titulo = many
+    ? items.every((p) => !p.extra)
+      ? `${items.length} mensalidades`
+      : `${items.length} pagamentos`
+    : items[0].extra
+      ? items[0].label
+      : `Mensalidade de ${items[0].label.toLowerCase()}`;
 
   return (
     <Link
@@ -173,9 +198,7 @@ function PaymentDue({ items, childName }: { items: { amountCents: number; label:
         <span className="block text-[11px] font-semibold tracking-[0.06em] text-white/55 uppercase">
           {overdue ? "Por pagar · vencida" : "Por pagar"} · {childName}
         </span>
-        <span className="block truncate text-[15px] font-semibold">
-          {many ? `${items.length} mensalidades` : `Mensalidade de ${items[0].label.toLowerCase()}`}
-        </span>
+        <span className="block truncate text-[15px] font-semibold">{titulo}</span>
       </span>
 
       <span className="num shrink-0 text-[19px] font-semibold">{money(total)}</span>

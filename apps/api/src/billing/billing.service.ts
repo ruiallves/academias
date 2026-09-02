@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import { BadRequestException, ForbiddenException, Injectable, Logger, NotFoundException } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
 import { PaymentMethod, PaymentStatus, ChargeStatus, NotificationType, type Payment } from "@prisma/client";
@@ -110,6 +111,128 @@ export class BillingService {
       }
 
       return { sent, athletes: remindedAthletes.size, overdue: overdue.length };
+    });
+  }
+
+  /* ------------------------------------------------------------------------ */
+  /* Cobrança avulsa                                                           */
+  /* ------------------------------------------------------------------------ */
+
+  /**
+   * Pedir a uma família que pague uma coisa que não é a mensalidade.
+   *
+   * O equipamento de treino, a inscrição no torneio, a viagem do autocarro. É o
+   * que hoje se combina no grupo de WhatsApp e se cobra em envelope à beira do
+   * campo — e é onde o clube perde dinheiro, porque ninguém sabe quem já pagou.
+   *
+   * ## Porque é que isto é uma `Charge` e não uma tabela nova
+   *
+   * Porque do lado do pai é a mesma coisa: aparece na mesma lista, com o mesmo
+   * aspecto, e paga-se pelos mesmos meios. A euPago não distingue as duas, o
+   * webhook que liquida uma liquida a outra, e o painel de Contas conta as duas
+   * como receita. Uma tabela nova era o fluxo de pagamento inteiro duplicado
+   * para mudar um rótulo. Ver `ChargeKind` no `schema.prisma`.
+   *
+   * ## O que se envia, e a quem
+   *
+   * Ao encarregado **pagador**, como os lembretes de mensalidade vencida: um
+   * encarregado que só acompanha não tem de receber uma conta que não é dele
+   * resolver. Sem nenhum marcado como pagador — acontece em fichas antigas — vai
+   * para todos os que estejam activos, porque uma cobrança que ninguém recebe é
+   * pior do que uma cobrança recebida a mais.
+   *
+   * A notificação leva o título, o valor e o prazo no corpo. "Tens uma
+   * notificação" obriga a abrir a app para saber o quê; isto diz-se de uma vez,
+   * e é o que aparece no ecrã bloqueado do telemóvel.
+   */
+  async createExtraCharge(
+    ctx: RequestContext,
+    input: { athleteId: string; title: string; amountCents: number; dueDate: string; categoryId?: string; notes?: string },
+  ) {
+    if (!can(ctx, "billing:write")) throw new ForbiddenException("Sem permissão para cobrar");
+
+    const title = input.title.trim();
+    if (title.length < 2) throw new BadRequestException("Falta dizer o que se está a cobrar");
+    assertValidAmount(input.amountCents);
+
+    const dueDate = new Date(`${input.dueDate}T00:00:00.000Z`);
+    if (Number.isNaN(dueDate.getTime())) throw new BadRequestException("Data de vencimento inválida");
+
+    return this.prisma.runAs(ctx.academyId, async (db) => {
+      /*
+       * O âmbito, e não só a academia.
+       *
+       * `athleteScopeFilter` é o que impede alguém com `billing:write` de âmbito
+       * estreito de cobrar a um atleta que não é dele. Para a direcção devolve
+       * `undefined` e a condição desaparece, como em todo o lado.
+       */
+      const athlete = await db.athlete.findFirst({
+        where: { id: input.athleteId, ...(athleteScopeFilter(ctx) ? { id: athleteScopeFilter(ctx) } : {}) },
+        select: {
+          id: true,
+          name: true,
+          guardians: {
+            select: { isPayer: true, membership: { select: { userId: true, isActive: true } } },
+          },
+        },
+      });
+      if (!athlete) throw new NotFoundException("Atleta não encontrado");
+
+      // A categoria tem de ser de receita: cobrar a uma família por "Autocarro"
+      // (despesa) faria o painel de Contas somar a mesma coisa nos dois lados.
+      if (input.categoryId) {
+        const categoria = await db.catalogItem.findFirst({
+          where: { id: input.categoryId, kind: "financeIncome" },
+          select: { id: true },
+        });
+        if (!categoria) throw new BadRequestException("Categoria de receita desconhecida");
+      }
+
+      const charge = await db.charge.create({
+        data: {
+          academyId: ctx.academyId,
+          athleteId: athlete.id,
+          kind: "EXTRA",
+          /*
+           * O período é o mês do vencimento, e não o mês de hoje: é assim que a
+           * cobrança aparece na lista do mês em que tem de ser paga, ao lado da
+           * mensalidade que a acompanha.
+           *
+           * `slot` único é o que deixa haver duas no mesmo mês — ver a nota da
+           * coluna no `schema.prisma`.
+           */
+          period: `${dueDate.getUTCFullYear()}-${String(dueDate.getUTCMonth() + 1).padStart(2, "0")}`,
+          slot: randomUUID(),
+          title,
+          categoryId: input.categoryId || null,
+          notes: input.notes?.trim() || null,
+          amountCents: input.amountCents,
+          dueDate,
+        },
+        select: { id: true, period: true, title: true, amountCents: true, dueDate: true },
+      });
+
+      const activos = athlete.guardians.filter((g) => g.membership.isActive);
+      const pagadores = activos.filter((g) => g.isPayer);
+      const destinatarios = pagadores.length > 0 ? pagadores : activos;
+
+      for (const g of destinatarios) {
+        await this.notifications.enqueue(
+          {
+            academyId: ctx.academyId,
+            userId: g.membership.userId,
+            type: NotificationType.PAYMENT_DUE,
+            title,
+            body: `${athlete.name} · ${(charge.amountCents / 100).toFixed(2)} € até ${dateLabelPt(charge.dueDate)}.${
+              input.notes?.trim() ? ` ${input.notes.trim()}` : ""
+            }`,
+            payload: { route: "/pagamentos", chargeId: charge.id },
+          },
+          db,
+        );
+      }
+
+      return { ...charge, avisados: destinatarios.length };
     });
   }
 

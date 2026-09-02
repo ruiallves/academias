@@ -196,6 +196,8 @@ export type GuestCandidate = {
 
 type ApiCharge = {
   id: string; athleteId: string; athleteName: string; teamId: string | null; period: string;
+  /** `FEE` é a mensalidade do mês; `EXTRA` é o que o clube cobrou à parte. */
+  kind: string; title: string | null;
   amountCents: number; dueDate: string; status: string; overdue: boolean;
 };
 
@@ -499,6 +501,8 @@ function build(
     id: c.id,
     athleteId: c.athleteId,
     period: c.period,
+    extra: c.kind === "EXTRA",
+    title: c.title ?? undefined,
     amountCents: c.amountCents,
     dueDate: c.dueDate,
     // "Vencida" não é estado guardado: é derivado da data, e o servidor já o disse.

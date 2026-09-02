@@ -1834,6 +1834,10 @@ export class AcademyService {
         orderBy: [{ period: "desc" }, { dueDate: "asc" }],
         select: {
           id: true, athleteId: true, period: true, amountCents: true, dueDate: true, status: true,
+          // O que distingue uma cobrança avulsa da mensalidade do mês: o tipo, o
+          // que se está a cobrar e porquê. Ver `ChargeKind` no `schema.prisma`.
+          kind: true, title: true, notes: true,
+          category: { select: { label: true } },
           athlete: { select: { name: true, teams: { select: { teamId: true }, take: 1 } } },
           // A tentativa de pagamento viva, se houver — é o que deixa a app do
           // pai voltar a mostrar a referência Multibanco ou reabrir o
@@ -1857,6 +1861,18 @@ export class AcademyService {
           athleteName: c.athlete.name,
           teamId: c.athlete.teams[0]?.teamId ?? null,
           period: c.period,
+          kind: c.kind,
+          /*
+           * O título só existe numa cobrança avulsa.
+           *
+           * Numa mensalidade é nulo de propósito — o título dela é o mês, e cada
+           * cliente já sabe escrevê-lo na sua língua e no seu formato. Guardar
+           * "Mensalidade de Setembro" em cada linha era guardar o que já se sabe,
+           * e ficava errado no dia em que o rótulo mudasse.
+           */
+          title: c.title,
+          category: c.category?.label ?? null,
+          notes: c.notes,
           amountCents: c.amountCents,
           dueDate: c.dueDate,
           status: c.status,
