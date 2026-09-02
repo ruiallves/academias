@@ -1,4 +1,4 @@
-import { Injectable, Logger, type OnModuleInit } from "@nestjs/common";
+import { Injectable, Logger, ServiceUnavailableException, type OnModuleInit } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
 import { createHmac, timingSafeEqual } from "node:crypto";
 
@@ -78,7 +78,21 @@ export class EupagoClient implements OnModuleInit {
    */
   onModuleInit() {
     const secret = this.config.get<string>("EUPAGO_WEBHOOK_SECRET") ?? "";
-    const eupagoEnabled = (this.config.get<string>("EUPAGO_API_KEY") ?? "") !== "";
+    const eupagoEnabled = this.chaveDe() !== "";
+
+    /*
+     * O estado da euPago, dito **ao arrancar**.
+     *
+     * Um servidor sem chave só se denunciava no dia em que um pai tentasse
+     * pagar — e denunciava-se com um aviso no meio de um log que ninguém lê a
+     * meio da tarde. Dito aqui, aparece nas primeiras linhas de cada deploy.
+     */
+    if (!eupagoEnabled) {
+      const aviso =
+        "EUPAGO_API_KEY não está configurada — os pagamentos online não funcionam neste servidor.";
+      if (process.env.NODE_ENV === "production") this.log.error(aviso + " Os pedidos de pagamento vão ser recusados.");
+      else this.log.warn(aviso + " Em desenvolvimento, as referências são simuladas e nada fica pago.");
+    }
 
     if (secret.length < 16) {
       const msg =
@@ -91,8 +105,18 @@ export class EupagoClient implements OnModuleInit {
     }
   }
 
+  /**
+   * A chave a usar: a do canal do clube, ou a global do ambiente.
+   *
+   * Uma coluna a `""` é tão "sem chave" como uma coluna nula — e o `??` não via
+   * a diferença, o que dava uma configuração silenciosamente inerte.
+   */
+  private chaveDe(override?: string): string {
+    return override?.trim() || this.config.get<string>("EUPAGO_API_KEY")?.trim() || "";
+  }
+
   private key(override?: string) {
-    const k = override ?? this.config.get<string>("EUPAGO_API_KEY") ?? "";
+    const k = this.chaveDe(override);
     if (!k) throw new Error("euPago sem chave configurada");
     return k;
   }
@@ -121,7 +145,27 @@ export class EupagoClient implements OnModuleInit {
    * pedir a referência, não o de a pagar.
    */
   private devMode(override?: string): boolean {
-    return (override ?? this.config.get<string>("EUPAGO_API_KEY") ?? "") === "";
+    if (this.chaveDe(override)) return false;
+
+    /*
+     * Em produção não se finge.
+     *
+     * A simulação existe para o fluxo da app se poder percorrer sem
+     * credenciais. Num servidor a sério é a pior coisa possível: o pai carrega
+     * em "pagar", recebe um pedido que parece ter seguido, e a mensalidade fica
+     * "a confirmar" **para sempre** — porque a referência é falsa e nenhum
+     * webhook virá. Nem dinheiro, nem erro, nem forma de perceber porquê.
+     *
+     * Aconteceu: um servidor sem `EUPAGO_API_KEY` a simular MB Way a sério.
+     * Mais vale recusar e dizer que falta configurar.
+     */
+    if (process.env.NODE_ENV === "production") {
+      this.log.error("Pagamento pedido sem EUPAGO_API_KEY configurada — recusado em vez de simulado");
+      throw new ServiceUnavailableException(
+        "Os pagamentos online ainda não estão configurados neste servidor. Avisa o clube.",
+      );
+    }
+    return true;
   }
 
   /* ------------------------------------------------------------------------ */
