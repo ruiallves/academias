@@ -9,7 +9,7 @@ import { apiDelete } from "@/lib/http";
 import { reloadAcademy } from "@/lib/store";
 import { ResultCount, SearchInput, Segmented, Select, Toolbar } from "@/components/filters";
 import { Plus, Upload, Users } from "@/lib/icons";
-import { academy, currentPeriod, guardiansOf, listAthletes, listFees, listTeams, today } from "@/lib/api";
+import { academy, currentPeriod, guardiansOf, listAthletes, listFees, listTeams, semEquipa, today } from "@/lib/api";
 import { age, shortDate, shortName } from "@/lib/format";
 import type { Athlete } from "@/data/types";
 import { availabilityOf, useClinicalRecords } from "@/lib/clinical";
@@ -68,7 +68,7 @@ export default function Athletes() {
   const rows = useMemo(() => {
     const q = query.trim().toLowerCase();
     return athletes
-      .filter((a) => (team === "all" ? true : team === "none" ? a.teamId === null : a.teamId === team))
+      .filter((a) => (team === "all" ? true : team === "none" ? semEquipa(a) : a.teamId === team))
       .filter((a) => {
         if (estado === "activos") return a.status === "active";
         if (estado === "pausa") return a.status === "paused";
@@ -152,7 +152,14 @@ export default function Athletes() {
     {
       key: "team",
       header: "Equipa",
-      render: (a) => <span className="text-ink-2">{teams.find((t) => t.id === a.teamId)?.name}</span>,
+      // Sem equipa diz-se, não se deixa em branco: uma célula vazia lê-se como
+      // um erro de carregamento, e este atleta precisa mesmo que reparem nele.
+      render: (a) =>
+        semEquipa(a) ? (
+          <Pill tone="warn">Sem equipa</Pill>
+        ) : (
+          <span className="text-ink-2">{teams.find((t) => t.id === a.teamId)?.name}</span>
+        ),
     },
     {
       key: "position",
@@ -281,7 +288,7 @@ export default function Athletes() {
               // Só aparece quando há algum — e quando há, é uma coisa por
               // resolver: alguém ficou sem escalão (a equipa dele foi apagada)
               // e não treina em lado nenhum até ser recolocado.
-              ...(athletes.some((a) => a.teamId === null) ? [{ value: "none", label: "Sem equipa" }] : []),
+              ...(athletes.some(semEquipa) ? [{ value: "none", label: "Sem equipa" }] : []),
             ]}
           />
 

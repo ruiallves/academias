@@ -190,6 +190,16 @@ export type Athlete = {
    * ou quando quem está a ler não tem `family:read`.
    */
   taxId?: string;
+  /**
+   * A equipa. **Vazio quando não tem nenhuma** — e isso acontece a sério:
+   * apagar uma equipa deixa os atletas dela sem ligação a plantel nenhum.
+   *
+   * Não é `null` por acidente histórico (o store converte, ver `store.ts`), e
+   * a diferença deixou de ser inofensiva no dia em que um clube apagou um
+   * escalão: comparar `teamId` com a lista de equipas exclui o vazio, e o
+   * atleta desaparecia de tudo. Quem precisa de fazer a pergunta usa
+   * `semEquipa()`, em `lib/api.ts`, em vez de a repetir à mão.
+   */
   teamId: string;
   position?: string;
   guardianIds: string[];

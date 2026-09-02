@@ -216,6 +216,45 @@ if (semColunas) {
   );
 }
 
+/* ================================================ nas mensalidades ======= */
+
+console.log("\n=== Aparece nas mensalidades, e pode ser cobrado ===");
+/*
+ * Sem equipa não há preço de equipa — logo não nasce mensalidade sozinha. O
+ * que **não** pode acontecer é ele desaparecer do painel: tem de aparecer em
+ * "mensalidades em falta", a dizer porquê, para a direcção decidir (dar-lhe
+ * preço individual, ou pô-lo numa equipa).
+ */
+const emFalta = await call(director, "GET", `/api/charges/em-falta?period=${new Date().toISOString().slice(0, 7)}`);
+const linhaDele = emFalta.body?.atletas?.find?.((a) => a.athleteId === atletaId);
+check("aparece no painel de mensalidades em falta", Boolean(linhaDele), `${emFalta.status} ${JSON.stringify(emFalta.body?.atletas?.length)}`);
+check(
+  "e diz o motivo certo: falta-lhe preço",
+  linhaDele?.reason === "sem-preco",
+  JSON.stringify(linhaDele),
+);
+
+// Com preço individual, passa a ter mensalidade como qualquer outro. (Emitir
+// uma cobrança toca nas colunas novas de `Charge` — sem a migração, isto não
+// chega sequer ao que aqui se testa.)
+if (semColunas) {
+  bloqueados += 2;
+  console.log("  BLOQUEADO  dar-lhe preço e emitir a mensalidade — a mesma migração em falta");
+} else {
+  const comPreco = await call(director, "PUT", `/api/athletes/${atletaId}/fee`, { amountCents: 3000 });
+  check("dá-se-lhe um preço individual", comPreco.status === 200, `${comPreco.status} ${JSON.stringify(comPreco.body).slice(0, 140)}`);
+
+  const gerada = await db.query(
+    `SELECT "amountCents" FROM "Charge" WHERE "athleteId" = $1 AND period = $2`,
+    [atletaId, new Date().toISOString().slice(0, 7)],
+  );
+  check(
+    "e a mensalidade dele nasce, sem equipa e tudo",
+    gerada.rows[0]?.amountCents === 3000,
+    JSON.stringify(gerada.rows),
+  );
+}
+
 /* ===================================================== recolocá-lo ======= */
 
 console.log("\n=== E consegue-se pô-lo noutra equipa ===");

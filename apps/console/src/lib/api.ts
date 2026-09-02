@@ -93,7 +93,19 @@ export function listTeams(session: Session) {
 export function listAthletes(session: Session): Athlete[] {
   const ids = new Set(scopedTeamIds(session));
   const orfaos = can(session, "team:write");
-  return allAthletes().filter((a) => (a.teamId === null ? orfaos : ids.has(a.teamId)));
+  return allAthletes().filter((a) => (semEquipa(a) ? orfaos : ids.has(a.teamId)));
+}
+
+/**
+ * Este atleta não tem equipa nenhuma?
+ *
+ * O `teamId` vazio é a convenção do domínio (ver `Athlete` em `data/types.ts`).
+ * Existe como função, e não como `a.teamId === ""` escrito em cada sítio,
+ * porque foi precisamente uma dessas comparações espalhadas que fez um atleta
+ * desaparecer do produto inteiro.
+ */
+export function semEquipa(a: { teamId: string }): boolean {
+  return a.teamId === "";
 }
 
 /**
