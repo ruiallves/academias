@@ -443,3 +443,41 @@ export function athleteScopeFilter(ctx: RequestContext): { in: string[] } | unde
   if (ctx.role === "GUARDIAN" || ctx.role === "ATHLETE") return { in: ctx.scope.athleteIds ?? [] };
   return undefined;
 }
+
+/**
+ * A parte de **equipa** do âmbito de um atleta — e o atleta que não tem nenhuma.
+ *
+ * ## O buraco que isto tapa
+ *
+ * Todas as listas de atletas perguntavam a mesma coisa: *a equipa dele é uma das
+ * minhas?* Um atleta **sem equipa nenhuma** responde "não" a toda a gente — e
+ * apagar uma equipa deixa os atletas dela exactamente assim. O resultado era um
+ * fantasma: continuava na base a ocupar o NIF (logo não se voltava a inscrever),
+ * não aparecia em lista nenhuma, e ninguém lhe podia dar equipa porque nem se
+ * conseguia abrir. Chegou a acontecer a um clube a sério.
+ *
+ * Duas pessoas têm de o ver, e por razões diferentes:
+ *
+ * - **quem organiza plantéis** (`team:write`): a visibilidade segue a capacidade
+ *   de agir, e o único arranjo para um atleta sem equipa é pô-lo numa. Um
+ *   treinador não o vê — não é da equipa dele, e não devia poder chamá-lo.
+ * - **a família dele**: um filho não deixa de ser filho por o escalão ter sido
+ *   apagado. Sem isto, o pai abria a app e não via educando nenhum — nem as
+ *   mensalidades dele.
+ *
+ * Devolve `undefined` para quem vê a academia toda (direcção, clínico), onde
+ * nunca houve filtro nenhum. Quem tem âmbito de atleta cruza isto com ele: a
+ * família continua a ver só os seus, porque o `id` manda por cima.
+ */
+export function athleteTeamScopeWhere(ctx: RequestContext) {
+  const teamScope = teamScopeFilter(ctx);
+  if (!teamScope) return undefined;
+
+  const semEquipa = can(ctx, "team:write") || athleteScopeFilter(ctx) !== undefined;
+  return {
+    OR: [
+      { teams: { some: { teamId: teamScope } } },
+      ...(semEquipa ? [{ teams: { none: {} } }] : []),
+    ],
+  };
+}

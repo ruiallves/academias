@@ -5,7 +5,7 @@ import { PaymentMethod, PaymentStatus, ChargeStatus, NotificationType, type Paym
 import { PrismaService, type ScopedClient } from "../prisma/prisma.service";
 import { NotificationsService } from "../notifications/notifications.service";
 import { EupagoClient, type ChargeResult, type RedirectUrls } from "./eupago.client";
-import { athleteScopeFilter, can, teamScopeFilter, type RequestContext } from "../common/permissions";
+import { athleteScopeFilter, athleteTeamScopeWhere, can, teamScopeFilter, type RequestContext } from "../common/permissions";
 
 /**
  * Quando é que um preço acabado de definir começa a ser cobrado.
@@ -405,8 +405,6 @@ export class BillingService {
   async missingCharges(ctx: RequestContext, period: string) {
     if (!can(ctx, "billing:read")) throw new ForbiddenException("Sem acesso a mensalidades");
     if (!/^\d{4}-\d{2}$/.test(period)) throw new BadRequestException("Período inválido (esperado AAAA-MM)");
-
-    const scope = teamScopeFilter(ctx);
     const athleteScope = athleteScopeFilter(ctx);
     const mes = Number(period.slice(5, 7));
 
@@ -414,7 +412,9 @@ export class BillingService {
       const atletas = await db.athlete.findMany({
         where: {
           status: "ACTIVE",
-          ...(scope ? { teams: { some: { teamId: scope } } } : {}),
+          // Um atleta sem equipa continua a dever mensalidade — e continua a
+          // ter de aparecer a quem gere plantéis. Ver `athleteTeamScopeWhere`.
+          ...(athleteTeamScopeWhere(ctx) ?? {}),
           ...(athleteScope ? { id: athleteScope } : {}),
         },
         orderBy: { name: "asc" },

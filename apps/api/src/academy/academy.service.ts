@@ -6,7 +6,7 @@ import { headCoaches } from "./head-coaches";
 import { StorageService } from "../storage/storage.service";
 import { PHOTO_BUCKET, PHOTO_TTL } from "../storage/photos.service";
 import { basePermissions, can, ROLE_PERMISSIONS, type Permission, type RequestContext } from "../common/permissions";
-import { athleteScopeFilter, calendarScopeFilter, inTeamScope, teamScopeFilter } from "../common/permissions";
+import { athleteScopeFilter, athleteTeamScopeWhere, calendarScopeFilter, inTeamScope, teamScopeFilter } from "../common/permissions";
 import { gerarCobrancas, periodoActual } from "../billing/billing.service";
 import { SHORT_NAME_MAX } from "../common/short-name";
 import { AMIGAVEL } from "./catalogs.service";
@@ -1003,7 +1003,6 @@ export class AcademyService {
    */
   async athletes(ctx: RequestContext) {
     if (!can(ctx, "athlete:read")) throw new ForbiddenException("Sem acesso a atletas");
-    const scope = teamScopeFilter(ctx);
     const athleteScope = athleteScopeFilter(ctx);
 
     /*
@@ -1046,7 +1045,9 @@ export class AcademyService {
          * que impede a app do pai de listar os colegas do filho.
          */
         where: {
-          ...(scope ? { teams: { some: { teamId: scope } } } : {}),
+          // O âmbito de equipas — incluindo quem não tem equipa nenhuma, para
+          // quem o deve ver. Ver `athleteTeamScopeWhere`.
+          ...(athleteTeamScopeWhere(ctx) ?? {}),
           ...(athleteScope ? { id: athleteScope } : {}),
         },
         orderBy: { name: "asc" },
@@ -1819,7 +1820,6 @@ export class AcademyService {
   /** Mensalidades. "Vencida" é derivado da data — não é um estado guardado. */
   async charges(ctx: RequestContext, period?: string) {
     if (!can(ctx, "billing:read")) throw new ForbiddenException("Sem acesso a mensalidades");
-    const scope = teamScopeFilter(ctx);
     // Dinheiro é o mais pessoal que aqui há: um encarregado vê as mensalidades
     // dos filhos e de mais ninguém, mesmo tendo âmbito nas equipas deles.
     const athleteScope = athleteScopeFilter(ctx);
@@ -1828,7 +1828,9 @@ export class AcademyService {
       const rows = await db.charge.findMany({
         where: {
           ...(period ? { period } : {}),
-          ...(scope ? { athlete: { teams: { some: { teamId: scope } } } } : {}),
+          // Um filho sem equipa continua a ser filho: sem isto, o pai abria a
+          // app e não via as mensalidades dele. Ver `athleteTeamScopeWhere`.
+          ...(athleteTeamScopeWhere(ctx) ? { athlete: athleteTeamScopeWhere(ctx) } : {}),
           ...(athleteScope ? { athleteId: athleteScope } : {}),
         },
         orderBy: [{ period: "desc" }, { dueDate: "asc" }],

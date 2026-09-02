@@ -93,9 +93,22 @@ export class AthletesService {
       });
       if (!athlete) throw new BadRequestException("Atleta não encontrado");
 
-      // O âmbito passa pelas equipas, como em todo o resto: um treinador só mexe
-      // nos atletas das equipas dele. A RLS garante a academia; isto o resto.
-      if (!athlete.teams.some((t) => teams.has(t.teamId))) {
+      /*
+       * O âmbito passa pelas equipas, como em todo o resto: um treinador só mexe
+       * nos atletas das equipas dele. A RLS garante a academia; isto o resto.
+       *
+       * **Com uma excepção: o atleta sem equipa nenhuma.** Esse não pertence ao
+       * âmbito de ninguém — e a verificação de cima, tal como estava, recusava-o
+       * a toda a gente, presidente incluído. Ficava intocável: não se editava
+       * para lhe dar equipa, e não se voltava a inscrever porque o NIF já era
+       * dele. Quem organiza plantéis (`team:write`) é quem o pode recolocar, e
+       * portanto é quem lhe pode mexer.
+       */
+      if (athlete.teams.length === 0) {
+        if (!can(ctx, "team:write")) {
+          throw new ForbiddenException("Este atleta está sem equipa — só quem gere equipas o pode recolocar");
+        }
+      } else if (!athlete.teams.some((t) => teams.has(t.teamId))) {
         throw new ForbiddenException("Esse atleta está fora do teu âmbito");
       }
 
@@ -475,6 +488,32 @@ export class AthletesService {
       return { error: "Data de nascimento improvável" };
     }
 
+    /*
+     * O NIF repetido, perguntado antes de tentar.
+     *
+     * A recusa vinha da base (índice único `academyId, taxId`) e era traduzida
+     * a partir do `meta.target` do erro do Prisma — que **vem nulo** neste
+     * caminho, por ser uma escrita aninhada (atleta + ligação à equipa). Sem
+     * saber a coluna, a mensagem caía sempre na genérica: quem tentava
+     * reinscrever alguém que já lá estava lia "número de camisola em uso" e ia
+     * procurar um problema que não existia.
+     *
+     * Perguntar primeiro custa uma leitura e paga-a toda: em vez de adivinhar a
+     * causa, diz-se **quem** é que já tem aquele NIF — que é o que a secretaria
+     * precisa de saber para ir buscar a ficha em vez de criar outra.
+     */
+    const nif = dto.taxId.replace(/[\s.]/g, "");
+    const jaExiste = await db.athlete.findFirst({
+      where: { taxId: nif },
+      select: { name: true, teams: { select: { team: { select: { name: true } } }, take: 1 } },
+    });
+    if (jaExiste) {
+      const equipa = jaExiste.teams[0]?.team.name;
+      return {
+        error: `Já existe um atleta com este NIF: ${jaExiste.name}${equipa ? ` (${equipa})` : " — sem equipa"}`,
+      };
+    }
+
     // Estilo unchecked (`academyId` escalar + `teamId` na ligação): é o que casa
     // com a extensão de tenant, que injecta `academyId` no `create`. A ligação à
     // equipa entra na mesma escrita — atleta e plantel, ou nada.
@@ -484,7 +523,7 @@ export class AthletesService {
       birthdate: birth,
       status: "ACTIVE" as AthleteStatus,
       // Sempre presente: o DTO recusa a inscrição sem ele.
-      taxId: dto.taxId.replace(/[\s.]/g, ""),
+      taxId: nif,
       ...(dto.medicalValidUntil ? { medicalValidUntil: new Date(dto.medicalValidUntil) } : {}),
       ...(dto.heightCm != null ? { heightCm: dto.heightCm } : {}),
       ...(dto.weightDg != null ? { weightKg: dto.weightDg / 10 } : {}),

@@ -69,9 +69,31 @@ export function listTeams(session: Session) {
   return allTeams().filter((t) => ids.has(t.id));
 }
 
+/**
+ * Os atletas que esta pessoa vê.
+ *
+ * ## O atleta sem equipa
+ *
+ * A lista responde "os atletas das equipas que eu vejo" — e isso deixava de
+ * fora quem não tem equipa nenhuma. Não é um caso teórico: apagar uma equipa
+ * leva as ligações ao plantel atrás, e os atletas ficam órfãos. Desapareciam
+ * de **tudo** (lista, pesquisa, contagens) e continuavam na base a ocupar o
+ * NIF — inscrevê-los outra vez batia no índice único, e não havia como lhes
+ * dar equipa porque nem se conseguia abri-los. Um fantasma.
+ *
+ * Quem os vê é **quem tem `team:write`** — a direcção e a coordenação, quem
+ * organiza plantéis. É a regra certa porque a visibilidade segue a capacidade
+ * de agir: o único arranjo para um atleta sem equipa é pô-lo numa, e é essa
+ * gente que o pode fazer. Um treinador não os vê, e ainda bem: um órfão não é
+ * da equipa dele, e não devia poder chamá-lo para lá sem mais.
+ *
+ * Onde não podem entrar, não entram por si: as convocatórias e as presenças
+ * filtram por `a.teamId === team.id`, e `null` nunca é igual a uma equipa.
+ */
 export function listAthletes(session: Session): Athlete[] {
   const ids = new Set(scopedTeamIds(session));
-  return allAthletes().filter((a) => ids.has(a.teamId));
+  const orfaos = can(session, "team:write");
+  return allAthletes().filter((a) => (a.teamId === null ? orfaos : ids.has(a.teamId)));
 }
 
 /**

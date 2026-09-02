@@ -68,7 +68,7 @@ export default function Athletes() {
   const rows = useMemo(() => {
     const q = query.trim().toLowerCase();
     return athletes
-      .filter((a) => (team === "all" ? true : a.teamId === team))
+      .filter((a) => (team === "all" ? true : team === "none" ? a.teamId === null : a.teamId === team))
       .filter((a) => {
         if (estado === "activos") return a.status === "active";
         if (estado === "pausa") return a.status === "paused";
@@ -278,6 +278,10 @@ export default function Athletes() {
               ...academy.sports.flatMap((s) =>
                 teams.filter((t) => t.sportId === s.id).map((t) => ({ value: t.id, label: t.name })),
               ),
+              // Só aparece quando há algum — e quando há, é uma coisa por
+              // resolver: alguém ficou sem escalão (a equipa dele foi apagada)
+              // e não treina em lado nenhum até ser recolocado.
+              ...(athletes.some((a) => a.teamId === null) ? [{ value: "none", label: "Sem equipa" }] : []),
             ]}
           />
 

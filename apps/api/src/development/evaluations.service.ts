@@ -1,7 +1,7 @@
 import { BadRequestException, ForbiddenException, Injectable, NotFoundException } from "@nestjs/common";
 import { PrismaService, type ScopedClient } from "../prisma/prisma.service";
 import { NotificationsService } from "../notifications/notifications.service";
-import { athleteScopeFilter, can, teamScopeFilter, type RequestContext } from "../common/permissions";
+import { athleteScopeFilter, athleteTeamScopeWhere, can, teamScopeFilter, type RequestContext } from "../common/permissions";
 
 /**
  * Avaliações.
@@ -251,10 +251,11 @@ export class EvaluationsService {
   /** O filtro de atletas desta pessoa: os filhos, ou os das suas equipas. */
   private athleteWhere(ctx: RequestContext) {
     const athleteScope = athleteScopeFilter(ctx);
-    const teamScope = teamScopeFilter(ctx);
     return {
       ...(athleteScope ? { id: athleteScope } : {}),
-      ...(teamScope ? { teams: { some: { teamId: teamScope } } } : {}),
+      // Inclui o atleta sem equipa nenhuma, para quem o deve ver — ver
+      // `athleteTeamScopeWhere`.
+      ...(athleteTeamScopeWhere(ctx) ?? {}),
     };
   }
 

@@ -143,7 +143,10 @@ export function DeleteTeamDialog({
               <span className="font-semibold text-ink">O que não se perde:</span>
               <ul className="mt-1 space-y-0.5">
                 <li>
-                  {impacto.atletas} atleta{impacto.atletas === 1 ? "" : "s"} — ficam no clube, por atribuir
+                  {impacto.atletas} atleta{impacto.atletas === 1 ? "" : "s"} — fica
+                  {impacto.atletas === 1 ? "" : "m"} no clube, sem equipa. Encontra-l
+                  {impacto.atletas === 1 ? "o" : "os"} em Atletas, no filtro “Sem equipa”, para
+                  {impacto.atletas === 1 ? " o" : " os"} colocar noutra.
                 </li>
                 <li>O staff desta equipa mantém a conta e as outras equipas</li>
                 {impacto.planos > 0 && <li>As mensalidades e os valores já cobrados</li>}

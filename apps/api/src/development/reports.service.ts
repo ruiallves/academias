@@ -2,7 +2,7 @@ import { BadRequestException, ForbiddenException, Injectable, NotFoundException 
 import type { ReportVisibility } from "@prisma/client";
 import { PrismaService, type ScopedClient } from "../prisma/prisma.service";
 import { NotificationsService } from "../notifications/notifications.service";
-import { athleteScopeFilter, can, teamScopeFilter, type RequestContext } from "../common/permissions";
+import { athleteScopeFilter, athleteTeamScopeWhere, can, teamScopeFilter, type RequestContext } from "../common/permissions";
 import { firstName, isFamily } from "./evaluations.service";
 
 /**
@@ -239,10 +239,11 @@ export class ReportsService {
 
   private athleteWhere(ctx: RequestContext) {
     const athleteScope = athleteScopeFilter(ctx);
-    const teamScope = teamScopeFilter(ctx);
     return {
       ...(athleteScope ? { id: athleteScope } : {}),
-      ...(teamScope ? { teams: { some: { teamId: teamScope } } } : {}),
+      // Inclui o atleta sem equipa nenhuma, para quem o deve ver — ver
+      // `athleteTeamScopeWhere`.
+      ...(athleteTeamScopeWhere(ctx) ?? {}),
     };
   }
 
