@@ -84,6 +84,8 @@ export {
   Apple,
   Brain,
   Activity,
+  /* Academias AI: o alvo é a análise de adversários. */
+  Target,
   /* Área técnica: o haltere é o treino, as formas são a biblioteca de
      exercícios, a rede é o modelo de jogo, a baliza são as bolas paradas. */
   Dumbbell,

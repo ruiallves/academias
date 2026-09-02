@@ -7,7 +7,7 @@ import { SHORT_NAME_MAX } from "../common/short-name";
 import { AthletesService } from "./athletes.service";
 import { AthleteInputDto, AthleteTaxIdDto, AthleteUpdateDto, ImportAthletesDto } from "./athletes.dto";
 import { CreateTeamDto, ImportTeamsDto } from "./teams.dto";
-import { CreateEventDto, EditEventDto, UpdateEventDto } from "./events.dto";
+import { AttendanceDto, CreateEventDto, EditEventDto, UpdateEventDto } from "./events.dto";
 import { BillingService, periodoActual, type AplicarEm } from "../billing/billing.service";
 
 /**
@@ -111,6 +111,11 @@ class SetAthleteFeeBulkDto {
  * Limites curtos de propósito: uma frase de abertura com 200 caracteres não é uma
  * frase, é um parágrafo — e desenha mal em qualquer ecrã.
  */
+class MemberCardDto {
+  @IsOptional() @IsBoolean() cardEnabled?: boolean;
+  @IsOptional() @IsBoolean() qrEnabled?: boolean;
+}
+
 class MembershipCopyDto {
   @IsOptional() @IsString() @Length(0, 90) headline?: string;
   @IsOptional() @IsString() @Length(0, 240) intro?: string;
@@ -326,6 +331,12 @@ export class AcademyController {
     return this.academy.setMembershipCopy(req.ctx, body);
   }
 
+  /** O cartão de sócio na app do clube — dois interruptores, settings:write. */
+  @Patch("member-card")
+  setMemberCard(@Req() req: AuthedRequest, @Body() body: MemberCardDto) {
+    return this.academy.setMemberCard(req.ctx, body);
+  }
+
   /**
    * A cor e o símbolo do clube.
    *
@@ -504,6 +515,18 @@ export class AcademyController {
     const start = from ? new Date(from) : new Date(now.getTime() - 21 * 86_400_000);
     const end = to ? new Date(to) : new Date(now.getTime() + 21 * 86_400_000);
     return this.academy.sessions(req.ctx, start, end);
+  }
+
+  /**
+   * Fechar a folha de presenças de um treino.
+   *
+   * `PUT` e não `POST`: o corpo é a folha inteira do treino, e gravar duas vezes
+   * seguidas dá o mesmo resultado. O que vai no corpo é **só quem faltou** — os
+   * presentes são o resto do plantel, e uma lista vazia diz "estiveram todos".
+   */
+  @Put("sessions/:id/attendance")
+  recordAttendance(@Req() req: AuthedRequest, @Param("id") id: string, @Body() body: AttendanceDto) {
+    return this.academy.recordAttendance(req.ctx, id, body.absences);
   }
 
   /** Eventos pontuais do calendário num intervalo (mesmo padrão de `sessions`). */

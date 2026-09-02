@@ -904,6 +904,105 @@ export class BillingService {
   }
 
   /**
+   * Pagar uma quota de sócio — MB Way ou Multibanco.
+   *
+   * ## Porque é que não é o `startPayment`
+   *
+   * Aquele parte de um `RequestContext` — o pagador é um encarregado com
+   * membership, o âmbito filtra por `athleteScopeFilter`, o mandato de débito
+   * é o dele. Nada disso existe para um sócio: quem chega aqui foi autenticado
+   * pela ficha reclamada (ver `ClubAppService`) e o `memberId` **já vem
+   * verificado** — este método confia nele de propósito, e é por isso que só a
+   * área de sócio lhe chama.
+   *
+   * O ciclo de vida das tentativas é o mesmo do outro lado: uma viva de cada
+   * vez, MB Way morre aos 10 minutos, trocar de método mata a anterior.
+   */
+  async startMemberFeePayment(
+    academyId: string,
+    memberId: string,
+    feeId: string,
+    method: PaymentMethod,
+    payerPhone?: string,
+  ) {
+    if (method !== PaymentMethod.MBWAY && method !== PaymentMethod.MULTIBANCO) {
+      throw new BadRequestException("Método de pagamento desconhecido");
+    }
+
+    return this.prisma.runAs(academyId, async (db) => {
+      const fee = await db.memberFee.findFirst({
+        where: { id: feeId, memberId },
+        include: { member: { select: { name: true, email: true } }, payments: true },
+      });
+
+      if (!fee) throw new NotFoundException("Quota não encontrada");
+      if (fee.status === ChargeStatus.SETTLED) throw new BadRequestException("Já está paga");
+      if (fee.status === ChargeStatus.VOID) throw new BadRequestException("Esta quota foi anulada");
+
+      const agora = Date.now();
+      for (const p of fee.payments) {
+        if (p.status !== PaymentStatus.PENDING && p.status !== PaymentStatus.PROCESSING) continue;
+        const morto =
+          (p.expiresAt && p.expiresAt.getTime() < agora) ||
+          (p.method === PaymentMethod.MBWAY && agora - p.createdAt.getTime() > 10 * 60_000);
+        if (!morto && p.method === method) return p;
+        await db.payment.update({ where: { id: p.id }, data: { status: PaymentStatus.EXPIRED } });
+      }
+
+      const academia = await db.academy.findFirst({
+        where: { id: academyId },
+        select: { eupagoApiKey: true },
+      });
+      const apiKey = academia?.eupagoApiKey ?? undefined;
+
+      const payment = await db.payment.create({
+        data: {
+          memberFeeId: fee.id,
+          amountCents: fee.amountCents,
+          method,
+          status: PaymentStatus.PENDING,
+        },
+      });
+
+      const request = {
+        reference: payment.id,
+        amountCents: fee.amountCents,
+        description: `${fee.label ?? `Quota ${fee.period}`} — ${fee.member.name}`,
+        payerName: fee.member.name,
+        payerEmail: fee.member.email ?? "",
+        apiKey,
+      };
+
+      try {
+        const result =
+          method === PaymentMethod.MBWAY
+            ? await this.eupago.createMbWayCharge({ ...request, payerPhone: requirePhone(payerPhone) })
+            : await this.eupago.createMultibancoCharge(request);
+
+        return await db.payment.update({
+          where: { id: payment.id },
+          data: {
+            providerRef: result.providerRef,
+            entity: result.entity,
+            reference: result.reference,
+            expiresAt: result.expiresAt,
+            status: method === PaymentMethod.MBWAY ? PaymentStatus.PROCESSING : PaymentStatus.PENDING,
+          },
+        });
+      } catch (error) {
+        await db.payment.update({
+          where: { id: payment.id },
+          data: {
+            status: PaymentStatus.FAILED,
+            rawPayload: { error: error instanceof Error ? error.message : String(error) },
+          },
+        });
+        throw error;
+      }
+    });
+  }
+
+  /**
    * Débito directo de uma mensalidade — contra o mandato do pagador.
    *
    * O mandato é do **membership que pede**, nunca de outro: um encarregado só
@@ -1073,7 +1172,10 @@ export class BillingService {
     return this.prisma.runAs(found.academyId, async (db) => {
       const payment = await db.payment.findFirst({
         where: { id: found.paymentId },
-        include: { charge: { include: { athlete: { include: { guardians: { include: { membership: true } } } } } } },
+        include: {
+          charge: { include: { athlete: { include: { guardians: { include: { membership: true } } } } } },
+          memberFee: { include: { member: { select: { id: true, name: true, userId: true } } } },
+        },
       });
 
       if (!payment) return { handled: false as const };
@@ -1103,7 +1205,51 @@ export class BillingService {
         return { handled: true as const, amountMismatch: true };
       }
 
+      /*
+       * Uma quota de sócio liquida-se aqui e sai — o resto deste método é o
+       * mundo das mensalidades (mandatos, encarregados, pagadores) e nada dele
+       * se aplica a um sócio.
+       */
+      if (payment.memberFee) {
+        const fee = payment.memberFee;
+        const duplicada = fee.status === ChargeStatus.SETTLED;
+        if (duplicada) {
+          this.log.error(
+            `PAGAMENTO DUPLICADO: a quota ${fee.id} (${fee.period}) já estava liquidada e chegou outro ` +
+              `pagamento de ${(payment.amountCents / 100).toFixed(2)} € (payment ${payment.id}). Reembolsar na euPago.`,
+          );
+        }
+
+        await db.payment.update({
+          where: { id: payment.id },
+          data: { status: PaymentStatus.PAID, paidAt, rawPayload: rawPayload as object },
+        });
+        if (!duplicada) {
+          await db.memberFee.update({
+            where: { id: fee.id },
+            data: { status: ChargeStatus.SETTLED, settledAt: paidAt, method: payment.method },
+          });
+        }
+
+        if (fee.member.userId) {
+          await this.notifications.enqueue(
+            {
+              academyId: fee.academyId,
+              userId: fee.member.userId,
+              type: NotificationType.PAYMENT_RECEIVED,
+              title: "Quota paga",
+              body: `Recebemos ${(payment.amountCents / 100).toFixed(2)} € da quota ${fee.label ?? fee.period}.`,
+              payload: { route: "/socio/quotas", memberFeeId: fee.id },
+            },
+            db,
+          );
+        }
+
+        return { handled: true as const, duplicate: false };
+      }
+
       const charge = payment.charge;
+      if (!charge) return { handled: false as const };
 
       // O primeiro débito directo confirmado prova que o mandato está vivo. O
       // id vem do rawPayload guardado ao debitar — lido ANTES de o webhook o
@@ -1173,7 +1319,10 @@ export class BillingService {
     return this.prisma.runAs(found.academyId, async (db) => {
       const payment = await db.payment.findFirst({
         where: { id: found.paymentId },
-        include: { charge: { include: { athlete: { include: { guardians: { include: { membership: true } } } } } } },
+        include: {
+          charge: { include: { athlete: { include: { guardians: { include: { membership: true } } } } } },
+          memberFee: { include: { member: { select: { userId: true } } } },
+        },
       });
       if (!payment || payment.status === PaymentStatus.PAID) return { handled: false as const };
 
@@ -1186,8 +1335,8 @@ export class BillingService {
       });
 
       // Uma referência que expira em silêncio não precisa de acordar ninguém;
-      // um pagamento recusado precisa — o pai pensa que pagou.
-      if (markAs === "FAILED") {
+      // um pagamento recusado precisa — quem pagou pensa que pagou.
+      if (markAs === "FAILED" && payment.charge) {
         for (const link of payment.charge.athlete.guardians.filter((g) => g.isPayer)) {
           await this.notifications.enqueue({
             academyId: payment.charge.academyId,
@@ -1198,6 +1347,16 @@ export class BillingService {
             payload: { route: "/pagamentos", chargeId: payment.chargeId },
           }, db);
         }
+      }
+      if (markAs === "FAILED" && payment.memberFee?.member.userId) {
+        await this.notifications.enqueue({
+          academyId: payment.memberFee.academyId,
+          userId: payment.memberFee.member.userId,
+          type: NotificationType.PAYMENT_FAILED,
+          title: "O pagamento não foi concluído",
+          body: reason,
+          payload: { route: "/socio/quotas", memberFeeId: payment.memberFeeId },
+        }, db);
       }
 
       return { handled: true as const };
@@ -1216,7 +1375,10 @@ export class BillingService {
     return this.prisma.runAs(found.academyId, async (db) => {
       const payment = await db.payment.findFirst({
         where: { id: found.paymentId },
-        include: { charge: { select: { id: true, status: true } } },
+        include: {
+          charge: { select: { id: true, status: true } },
+          memberFee: { select: { id: true, status: true } },
+        },
       });
       if (!payment || payment.status !== PaymentStatus.PAID) return { handled: false as const };
 
@@ -1224,10 +1386,16 @@ export class BillingService {
         where: { id: payment.id },
         data: { status: PaymentStatus.REFUNDED, rawPayload: rawPayload as object },
       });
-      if (payment.charge.status === ChargeStatus.SETTLED) {
+      if (payment.charge && payment.charge.status === ChargeStatus.SETTLED) {
         await db.charge.update({
           where: { id: payment.charge.id },
           data: { status: ChargeStatus.OPEN, settledAt: null },
+        });
+      }
+      if (payment.memberFee && payment.memberFee.status === ChargeStatus.SETTLED) {
+        await db.memberFee.update({
+          where: { id: payment.memberFee.id },
+          data: { status: ChargeStatus.OPEN, settledAt: null, method: null },
         });
       }
 

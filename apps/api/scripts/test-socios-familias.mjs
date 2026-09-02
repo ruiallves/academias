@@ -153,14 +153,29 @@ check("nenhum atleta fora das equipas dele", foraDoAmbito.length === 0, foraDoAm
  * contra a base, e não contra a resposta: é a diferença entre "a API não mo
  * mandou" e "não existe maneira de eu lá chegar".
  */
+/*
+ * "De fora" é quem não tem NENHUM educando nas equipas dele — e não quem tem
+ * *algum* de fora. A primeira versão marcava o pai do Martim (Sub-11, do
+ * treinador) como alheio por ele também ser pai da Leonor (Sub-13): uma família
+ * com filhos em dois escalões é o caso normal de um clube, e o treinador vê esse
+ * pai **como pai do Martim** — que é exactamente o âmbito a funcionar.
+ *
+ * O ramo esteve anos a saltar-se ("todas as famílias eram deste treinador") e
+ * correu pela primeira vez no dia em que o treinador deixou os Sub-13 — com a
+ * lógica errada, a acusar uma fuga que não existe.
+ */
 const alheios = (await db.query(
-  `SELECT DISTINCT ag."membershipId"
-     FROM "GuardianLink" ag
-     JOIN "Athlete" a ON a.id = ag."athleteId"
-    WHERE NOT EXISTS (
-      SELECT 1 FROM "TeamMembership" tm
-       WHERE tm."athleteId" = a.id AND tm."teamId" = ANY($1::text[])
-    )`,
+  `SELECT DISTINCT gl."membershipId"
+     FROM "GuardianLink" gl
+     JOIN "Athlete" a ON a.id = gl."athleteId"
+    WHERE a."academyId" = 'acd_lifeclub'
+      AND NOT EXISTS (
+        SELECT 1
+          FROM "GuardianLink" g2
+          JOIN "TeamMembership" tm ON tm."athleteId" = g2."athleteId"
+         WHERE g2."membershipId" = gl."membershipId"
+           AND tm."teamId" = ANY($1::text[])
+      )`,
   [doCoach],
 )).rows.map((r) => r.membershipId);
 

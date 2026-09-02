@@ -120,6 +120,47 @@ export class UpdateEventDto {
 }
 
 /**
+ * Uma falta na folha de presenças.
+ *
+ * `present` não é um valor possível: a presença é a **ausência** de marca, e é
+ * isso que faz a folha de um treino guardar duas linhas em vez de dezoito. O
+ * motivo só acompanha a justificada — o serviço deita fora o resto, para não
+ * ficar um texto órfão preso a um estado que já não o explica.
+ */
+export class AbsenceDto {
+  @IsString()
+  @Length(1, 40)
+  athleteId!: string;
+
+  @IsIn(["absent", "justified", "late"])
+  kind!: "absent" | "justified" | "late";
+
+  @IsOptional()
+  @IsString()
+  @Length(0, 200)
+  note?: string;
+}
+
+/**
+ * A folha de presenças de um treino, inteira.
+ *
+ * Uma lista vazia é uma afirmação — *estiveram todos* — e não um corpo por
+ * preencher: é diferente de nunca ter sido registada, que é o que a ausência de
+ * `attendanceClosedAt` diz. É a distinção que impede um treino por verificar de
+ * inflacionar a assiduidade de toda a gente.
+ *
+ * O tecto de 60 é o plantel mais generoso que faz sentido num treino; acima
+ * disso é engano ou abuso, e recusa-se aqui em vez de escrever sessenta linhas.
+ */
+export class AttendanceDto {
+  @IsArray()
+  @ArrayMaxSize(60)
+  @ValidateNested({ each: true })
+  @Type(() => AbsenceDto)
+  absences!: AbsenceDto[];
+}
+
+/**
  * Editar um evento que já existe.
  *
  * **Sem `kind` e sem `teamId`**, de propósito: o tipo decide em que tabela o

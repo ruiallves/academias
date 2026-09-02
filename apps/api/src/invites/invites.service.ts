@@ -79,6 +79,14 @@ export type CreateInvite = {
    * cargo que carrega as permissões, que é onde elas sempre estiveram.
    */
   academyRoleId: string;
+  /**
+   * Os cargos **secundários** com que a pessoa entra.
+   *
+   * Um presidente que também treina os Sub-13 diz-se de uma vez, no convite, em
+   * vez de entrar como presidente e alguém se lembrar de lhe acrescentar o
+   * segundo cargo na semana seguinte — que é a versão em que ninguém se lembra.
+   */
+  extraRoleIds?: string[];
   teamIds?: string[];
 };
 
@@ -176,6 +184,28 @@ export class InvitesService {
         throw new ForbiddenException("Não podes convidar alguém para um cargo acima do teu");
       }
 
+      /*
+       * Os cargos secundários, validados um a um.
+       *
+       * A patente verifica-se em todos e não só no principal: sem isto, quem
+       * tivesse `staff:write` convidava alguém como "Roupeiro" com "Presidente"
+       * de secundário, e a hierarquia caía por uma porta das traseiras. É a
+       * mesma regra do cargo principal, aplicada onde ela também tem de valer.
+       */
+      const extraRoleIds = [...new Set(dto.extraRoleIds ?? [])].filter((id) => id !== cargo.id);
+      if (extraRoleIds.length) {
+        const extras = await db.academyRole.findMany({
+          where: { id: { in: extraRoleIds }, archivedAt: null },
+          select: { id: true, baseRole: true },
+        });
+        if (extras.length !== extraRoleIds.length) throw new BadRequestException("Cargo desconhecido");
+        for (const extra of extras) {
+          if (RANK[extra.baseRole] > RANK[ctx.role]) {
+            throw new ForbiddenException("Não podes convidar alguém para um cargo acima do teu");
+          }
+        }
+      }
+
       // As equipas têm de ser desta academia. A RLS já o garante; verificar aqui é
       // o que transforma um silêncio (equipa ignorada) num erro visível.
       const teamIds = [...new Set(dto.teamIds ?? [])];
@@ -212,6 +242,7 @@ export class InvitesService {
              */
             department: null,
             academyRoleId: cargo.id,
+            extraRoleIds,
             teamIds,
             invitedById: ctx.membershipId,
             expiresAt,
@@ -395,7 +426,7 @@ export class InvitesService {
         where: { tokenHash, acceptedAt: null, revokedAt: null, expiresAt: { gt: new Date() } },
         select: {
           id: true, email: true, name: true, role: true, title: true,
-          department: true, teamIds: true, academyRoleId: true,
+          department: true, teamIds: true, academyRoleId: true, extraRoleIds: true,
         },
       }),
     );
@@ -466,6 +497,28 @@ export class InvitesService {
         },
         select: { id: true },
       });
+
+      /*
+       * Os cargos secundários do convite.
+       *
+       * Revalidados aqui e não copiados às cegas: entre convidar e resgatar
+       * podem passar dias, e nesse tempo um cargo pode ter sido arquivado. Um id
+       * que já não existe é ignorado em silêncio — recusar o convite inteiro por
+       * causa de um cargo secundário deixaria a pessoa de fora do clube por uma
+       * coisa que ela não escolheu nem pode resolver.
+       */
+      const secundarios = await db.academyRole.findMany({
+        where: { id: { in: invite.extraRoleIds }, archivedAt: null },
+        select: { id: true },
+      });
+      for (const role of secundarios) {
+        if (role.id === invite.academyRoleId) continue;
+        await db.membershipRole.upsert({
+          where: { membershipId_roleId: { membershipId: membership.id, roleId: role.id } },
+          update: {},
+          create: { membershipId: membership.id, roleId: role.id },
+        });
+      }
 
       // As equipas do convite — decididas por quem convidou, nunca aqui.
       for (const teamId of invite.teamIds) {

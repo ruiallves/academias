@@ -32,6 +32,19 @@ export class CreateInviteDto {
   @Length(1, 40)
   academyRoleId!: string;
 
+  /**
+   * Os cargos secundários, se os houver.
+   *
+   * Dez chegam e sobram: quem precisa de mais do que isso não tem cargos, tem
+   * um clube inteiro numa pessoa — e nesse caso o que falta é um cargo que diga
+   * isso, não uma lista mais comprida.
+   */
+  @IsOptional()
+  @IsArray()
+  @ArrayMaxSize(10)
+  @IsString({ each: true })
+  extraRoleIds?: string[];
+
   @IsOptional()
   @IsArray()
   @ArrayMaxSize(50)

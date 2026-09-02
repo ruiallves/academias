@@ -1,7 +1,7 @@
 import { ForbiddenException, Injectable, NotFoundException } from "@nestjs/common";
 import type { Role } from "@prisma/client";
 import { PrismaService } from "../prisma/prisma.service";
-import type { Permission, RequestContext, Scope } from "../common/permissions";
+import { ROLE_PERMISSIONS, type Permission, type RequestContext, type Scope } from "../common/permissions";
 
 type MembershipRow = {
   membership_id: string;
@@ -159,6 +159,7 @@ export class AuthService {
       rolePermissions: exceptions.rolePermissions,
       roleId: exceptions.roleId,
       roleName: exceptions.roleName,
+      extraRoles: exceptions.extraRoles,
       navKeys: exceptions.navKeys,
       scope,
     };
@@ -185,6 +186,7 @@ export class AuthService {
     rolePermissions: Permission[] | null;
     roleId: string | null;
     roleName: string | null;
+    extraRoles: { id: string; name: string }[];
     navKeys: string[];
   }> {
     return this.prisma.runAs(academyId, async (db) => {
@@ -193,21 +195,79 @@ export class AuthService {
         select: {
           grants: true,
           revokes: true,
+          // O papel-base entra na conta quando não há cargo principal — ver a
+          // nota do `chao` mais abaixo.
+          role: true,
           customRole: {
             select: { id: true, name: true, permissions: true, navKeys: true, archivedAt: true },
+          },
+          extraRoles: {
+            select: {
+              role: { select: { id: true, name: true, permissions: true, navKeys: true, archivedAt: true } },
+            },
           },
         },
       });
 
-      const role = m?.customRole && !m.customRole.archivedAt ? m.customRole : null;
+      const principal = m?.customRole && !m.customRole.archivedAt ? m.customRole : null;
+      const secundarios = (m?.extraRoles ?? []).map((r) => r.role).filter((r) => !r.archivedAt);
+
+      /*
+       * A soma dos cargos, e nunca a interseção.
+       *
+       * Um presidente que também treina os Sub-13 tem de poder ver as contas
+       * **e** convocar. Acrescentar um cargo a alguém só pode dar acesso; se
+       * pudesse tirar, ninguém saberia dizer o que um cargo faz sem ver os
+       * outros que a pessoa tem ao lado.
+       *
+       * As retiradas por pessoa (`revokes`) continuam a ganhar a tudo isto —
+       * são a excepção deliberada de quem configurou, e é assim que se tira
+       * `billing:read` a um presidente sem lhe mexer no cargo. Ver `can` em
+       * `common/permissions.ts`.
+       *
+       * `rolePermissions` fica nulo quando não há cargo nenhum vivo: nulo
+       * significa "usa os valores por omissão do papel-base", e é diferente de
+       * uma lista vazia, que significa "este cargo não pode nada". Alguém que
+       * ficasse com uma lista vazia por lhe terem arquivado o cargo ficava
+       * trancado fora do produto sem ninguém perceber porquê.
+       */
+      const vivos = principal ? [principal, ...secundarios] : secundarios;
+
+      /*
+       * O chão: o que a pessoa já podia antes de lhe acrescentarem nada.
+       *
+       * Um cargo **principal** substitui os valores por omissão do papel-base —
+       * é a regra de sempre, e é o que faz um cargo à medida ser à medida. Mas
+       * quem não tem cargo principal nenhum vive desses valores por omissão, e
+       * aí acrescentar-lhe um secundário não pode **trocá-los**: um treinador
+       * sem cargo configurado que passasse a "também direcção" perdia o
+       * `scouting:request` e o resto do que o enum lhe dava, e acrescentar um
+       * cargo ficava a tirar acesso. Foi o que o `test-multi-roles` apanhou.
+       *
+       * Com cargo principal o chão não entra, porque aí quem manda é o cargo.
+       */
+      const chao = !principal && secundarios.length > 0 ? ROLE_PERMISSIONS[m!.role] : [];
 
       return {
         grants: (m?.grants ?? []) as Permission[],
         revokes: (m?.revokes ?? []) as Permission[],
-        rolePermissions: role ? (role.permissions as Permission[]) : null,
-        roleId: role?.id ?? null,
-        roleName: role?.name ?? null,
-        navKeys: role?.navKeys ?? [],
+        rolePermissions:
+          vivos.length > 0
+            ? ([...new Set([...chao, ...vivos.flatMap((r) => r.permissions)])] as Permission[])
+            : null,
+        // O principal continua a ser **um**: é dele que vem o `baseRole`, e é ele
+        // que a lista de staff e a ficha de um jogo mostram.
+        roleId: principal?.id ?? null,
+        roleName: principal?.name ?? null,
+        extraRoles: secundarios.map((r) => ({ id: r.id, name: r.name })),
+        /*
+         * Os menus somam-se pela mesma regra, com uma nuance: `navKeys` vazio
+         * quer dizer "todos os que a permissão deixar". Um cargo assim, na
+         * soma, abre tudo — e é o que tem de acontecer: se um dos cargos não
+         * esconde nada, esconder por causa do outro escondia à pessoa uma área
+         * que ela pode mesmo abrir.
+         */
+        navKeys: vivos.some((r) => r.navKeys.length === 0) ? [] : [...new Set(vivos.flatMap((r) => r.navKeys))],
       };
     });
   }

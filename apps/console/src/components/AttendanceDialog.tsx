@@ -91,6 +91,9 @@ export function AttendanceDialog({
   const setNote = (athleteId: string, note: string) =>
     setNotes((current) => ({ ...current, [athleteId]: note }));
 
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
   // Quem está de baixa não entra na conta: não faltou ao treino, está impedido de
   // o fazer. Contá-lo como falta puniria o atleta pela lesão no seu próprio
   // relatório de assiduidade.
@@ -99,17 +102,33 @@ export function AttendanceDialog({
   const missing = eligible.filter((a) => absences[a.id] && absences[a.id] !== "late").length;
   const present = eligible.length - missing;
 
-  const save = () => {
-    recordAttendance(
-      training.id,
-      Object.entries(absences).map(([athleteId, kind]) => ({
-        athleteId,
-        kind,
-        // O motivo só faz sentido numa falta justificada; nas outras vai vazio.
-        ...(kind === "justified" && notes[athleteId]?.trim() ? { note: notes[athleteId].trim() } : {}),
-      })),
-    );
-    onClose();
+  /**
+   * Guardar espera pelo servidor.
+   *
+   * Fechava de imediato, e a gravação nem sequer saía do browser: a folha
+   * parecia registada e ao recarregar a página estava tudo por fazer outra vez.
+   * Agora o diálogo só fecha quando o servidor confirmar — e se recusar (uma
+   * falta a quem está de baixa, um treino fora do âmbito), diz porquê aqui, com
+   * as marcas todas onde estavam.
+   */
+  const save = async () => {
+    setSaving(true);
+    setError(null);
+    try {
+      await recordAttendance(
+        training.id,
+        Object.entries(absences).map(([athleteId, kind]) => ({
+          athleteId,
+          kind,
+          // O motivo só faz sentido numa falta justificada; nas outras vai vazio.
+          ...(kind === "justified" && notes[athleteId]?.trim() ? { note: notes[athleteId].trim() } : {}),
+        })),
+      );
+      onClose();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Não foi possível guardar as presenças.");
+      setSaving(false);
+    }
   };
 
   return (
@@ -125,19 +144,23 @@ export function AttendanceDialog({
             {present} de {eligible.length} presentes
             {injured.length > 0 && <span className="text-ink-4"> · {injured.length} de baixa</span>}
           </span>
-          <button type="button" onClick={onClose} className="ctl-ghost">
+          <button type="button" onClick={onClose} className="ctl-ghost" disabled={saving}>
             Cancelar
           </button>
-          <button type="button" onClick={save} className="ctl-primary">
-            Guardar
+          <button type="button" onClick={save} className="ctl-primary" disabled={saving}>
+            {saving ? "A guardar…" : "Guardar"}
           </button>
         </>
       }
     >
-      <p className="border-b border-line bg-sunken/40 px-5 py-2.5 text-meta text-ink-3">
-        Escolhe o estado de cada atleta. Por omissão estão todos{" "}
-        <strong className="font-medium text-ink">presentes</strong>.
-      </p>
+      {error ? (
+        <p className="border-b border-line bg-risk-soft px-5 py-2.5 text-meta text-risk">{error}</p>
+      ) : (
+        <p className="border-b border-line bg-sunken/40 px-5 py-2.5 text-meta text-ink-3">
+          Escolhe o estado de cada atleta. Por omissão estão todos{" "}
+          <strong className="font-medium text-ink">presentes</strong>.
+        </p>
+      )}
 
       <ul className="p-2">
         {roster.map((a) => {

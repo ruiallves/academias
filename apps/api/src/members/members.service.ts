@@ -3,6 +3,8 @@ import type { MemberDocumentKind, MemberFeePeriod, MemberSex, MemberStatus, Pris
 import { PrismaService, type ScopedClient } from "../prisma/prisma.service";
 import { AuthService } from "../auth/auth.service";
 import { can, type RequestContext } from "../common/permissions";
+import { CARD_QR_PREFIX } from "../club-app/club-app.service";
+import { MemberInvitesService } from "./member-invites.service";
 import type {
   MemberCreateDto,
   MemberImportRowDto,
@@ -27,6 +29,7 @@ export class MembersService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly auth: AuthService,
+    private readonly invites: MemberInvitesService,
   ) {}
 
   /* ---------------------------------------------------------------------- */
@@ -219,6 +222,9 @@ export class MembersService {
           status: true, source: true, notes: true,
           acceptedTermsAt: true, partnerCommsAt: true, partnerDataAt: true,
           createdAt: true, approvedAt: true,
+          /* A app do clube: a ficha diz se a conta já foi reclamada e quando
+             saiu o último convite — é o que decide o texto do botão. */
+          userId: true, inviteSentAt: true,
           tier: { select: { id: true, name: true, feeCents: true, period: true } },
           approvedBy: { select: { user: { select: { name: true } } } },
         },
@@ -296,6 +302,7 @@ export class MembersService {
         data.acceptedTermsAt = dto.acceptedTerms ? (member.acceptedTermsAt ?? new Date()) : null;
       }
 
+      let aprovadoAgora = false;
       if (dto.status !== undefined && dto.status !== member.status) {
         data.status = dto.status as MemberStatus;
 
@@ -303,6 +310,7 @@ export class MembersService {
           data.number = await this.nextNumber(db);
           data.approvedAt = new Date();
           data.approvedById = ctx.membershipId;
+          aprovadoAgora = true;
         }
       }
 
@@ -324,7 +332,45 @@ export class MembersService {
         throw error;
       }
 
-      return { ok: true };
+      return { ok: true, aprovadoAgora };
+    }).then((r) => {
+      /* Quem aderiu pelo site recebe o convite quando o clube o aceita —
+         sem segurar a resposta, como na criação. */
+      if (r.aprovadoAgora) void this.invites.enviarSePossivel(ctx.academyId, id);
+      return { ok: true as const };
+    });
+  }
+
+  /**
+   * O que um QR de cartão diz a quem o lê na portaria.
+   *
+   * A resposta é a validação e mais nada: nome, número, categoria e estado —
+   * os mesmos quatro campos que estão impressos num cartão físico. O QR em si
+   * não carrega nenhum destes dados; carrega um token opaco, e é este endpoint
+   * (atrás de `member:read`) que o troca pela resposta.
+   */
+  async cardInfo(ctx: RequestContext, raw: string) {
+    if (!can(ctx, "member:read")) throw new ForbiddenException("Sem acesso aos sócios");
+
+    const token = raw.startsWith(CARD_QR_PREFIX) ? raw.slice(CARD_QR_PREFIX.length) : raw;
+    if (!token || token.length < 16) throw new NotFoundException("Cartão não reconhecido");
+
+    return this.prisma.runAs(ctx.academyId, async (db) => {
+      const member = await db.member.findFirst({
+        where: { cardToken: token },
+        select: {
+          name: true, number: true, status: true,
+          tier: { select: { name: true } },
+        },
+      });
+      if (!member) throw new NotFoundException("Cartão não reconhecido");
+
+      return {
+        name: member.name,
+        number: member.number,
+        status: member.status,
+        tierName: member.tier?.name ?? null,
+      };
     });
   }
 
@@ -491,6 +537,16 @@ export class MembersService {
         }
         throw error;
       }
+    }).then((member) => {
+      /*
+       * O convite para a app, logo a seguir — foi pedido assim: quem é inscrito
+       * à mão recebe imediatamente o email para configurar a conta. **Depois**
+       * da transacção (HTTP nunca entra num `runAs`), **sem** await (a resposta
+       * da secretaria não espera pelo Resend) e silencioso (um email que falha
+       * não desfaz uma inscrição — o botão de reenviar existe para isso).
+       */
+      void this.invites.enviarSePossivel(ctx.academyId, member.id);
+      return member;
     });
   }
 

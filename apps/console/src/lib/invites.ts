@@ -93,6 +93,8 @@ export async function createInvite(input: {
   name: string;
   email: string;
   academyRoleId: string;
+  /** Os cargos que se acrescentam ao principal. Vazio no caso normal. */
+  extraRoleIds?: string[];
   teamIds: string[];
 }): Promise<Invite> {
   const created = await apiPost<{

@@ -79,6 +79,15 @@ model Academy {
   /// enquanto só um clube cobra online. Nunca sai por nenhum endpoint.
   eupagoApiKey String?
 
+  /// ## O cartão de sócio na app do clube
+  ///
+  /// Dois interruptores e não um: há clubes que querem o cartão digital mas não
+  /// querem QR nenhum (não validam entradas), e desligar o cartão inteiro por
+  /// causa disso seria tirar-lhes a parte que queriam.
+  memberCardEnabled   Boolean @default(true)
+  /// O QR identifica o sócio por um token opaco — nunca leva dados pessoais.
+  memberCardQrEnabled Boolean @default(true)
+
   /// ## A página de adesão a sócio, escrita pelo clube
   ///
   /// A frase que abre, a que explica, e os pontos que dizem o que se ganha. São
@@ -110,6 +119,10 @@ model Academy {
   prospectVideos ProspectVideo[]
   memberTiers    MemberTier[]
   members        Member[]
+  memberFees  MemberFee[]
+  polls       Poll[]
+  pollOptions PollOption[]
+  pollVotes   PollVote[]
   catalog        CatalogItem[]
   athletes       Athlete[]
   teams          Team[]
@@ -149,6 +162,16 @@ model Academy {
   financeSettings       FinanceSettings?
   financialBudgets      FinancialBudget[]
   directDebitMandates   DirectDebitMandate[]
+
+  /// Academias AI — análise de vídeo. Ver a secção no fim do ficheiro.
+  aiAnalyses         AIAnalysis[]
+  aiVideos           AIVideo[]
+  aiJobs             AIJob[]
+  aiTracks           PlayerTrack[]
+  aiEvents           DetectedEvent[]
+  aiInsights         AIInsight[]
+  aiCorrections      HumanCorrection[]
+  aiIdentityProfiles PlayerIdentityProfile[]
 }
 
 /// O ciclo de vida de um cliente. Derivado do onboarding e da subscrição — o
@@ -241,6 +264,11 @@ model User {
   notifications Notification[]
   pushSubs      PushSubscription[]
 
+  /// As fichas de sócio que esta conta reclamou — o contexto "Sócio" da app do
+  /// clube. Uma por academia (ver o unique no `Member`): a mesma pessoa pode ser
+  /// sócia de dois clubes, e são duas fichas.
+  memberLinks Member[] @relation("MemberAccount")
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 }
@@ -320,6 +348,9 @@ model Membership {
   /// notificações, e ficava eternamente "Por instalar". Nulo é "nunca entrou".
   lastSeenAt DateTime?
 
+  /// Os cargos **secundários** desta pessoa. Ver `MembershipRole`.
+  extraRoles      MembershipRole[]
+
   coachOf         TeamStaff[]
   guardianOf      GuardianLink[]
   ledSessions     TrainingSession[]          @relation("SessionCoach")
@@ -342,6 +373,7 @@ model Membership {
   videosUploaded  ProspectVideo[]            @relation("VideoUploader")
   videoMoments    VideoMoment[]              @relation("MomentAuthor")
   membersApproved Member[]                   @relation("MemberApprover")
+  pollsCreated    Poll[]                     @relation("PollAuthor")
   familyLinks     FamilyInvite[]             @relation("FamilyInviteAuthor")
   exercisesMade   Exercise[]                 @relation("ExerciseAuthor")
   exerciseFavs    ExerciseFavorite[]         @relation("ExerciseFavorites")
@@ -362,6 +394,11 @@ model Membership {
   financeCreated     FinancialTransaction[] @relation("FinanceCreatedBy")
   financeUpdated     FinancialTransaction[] @relation("FinanceUpdatedBy")
   directDebitMandate DirectDebitMandate?
+
+  /// Academias AI: análises criadas, vídeos carregados e correções feitas.
+  aiAnalysesMade AIAnalysis[]      @relation("AIAnalysisAuthor")
+  aiVideosSent   AIVideo[]         @relation("AIVideoUploader")
+  aiCorrections  HumanCorrection[] @relation("AICorrectionAuthor")
 
   @@unique([academyId, userId, role])
   @@index([academyId])
@@ -502,6 +539,8 @@ model AcademyRole {
   archivedAt DateTime?
 
   memberships Membership[]
+  /// Quem veste este cargo como **secundário**. Ver `MembershipRole`.
+  extraOf     MembershipRole[]
   invites     StaffInvite[]
 
   createdAt DateTime @default(now())
@@ -512,6 +551,48 @@ model AcademyRole {
   /// Os cargos de um departamento — o menu do convite pergunta exactamente isso.
   /// Criado na migração `20260826230000_departamentos` e nunca declarado aqui.
   @@index([departmentId])
+}
+
+/// Um cargo **secundário** de uma pessoa.
+///
+/// ## Porquê uma tabela, e não uma segunda coluna
+///
+/// Porque "um presidente que também treina os Sub-13" não é um caso especial de
+/// dois: é o caso normal de *n*. Num clube pequeno a mesma pessoa é direcção,
+/// treinadora e quem trata das inscrições, e a segunda coluna esgotava-se no
+/// primeiro dia. Uma tabela de ligação não tem tecto e apaga-se em cascata dos
+/// dois lados.
+///
+/// ## O principal continua onde estava
+///
+/// `Membership.customRoleId` é o cargo **principal** — o que dá o `baseRole` (e
+/// com ele o âmbito e a hierarquia), o que se lê na lista de staff, e o que a
+/// escalada de patente verifica. Isto são os que se acrescentam.
+///
+/// Podia ter sido tudo aqui, com uma coluna `isPrimary`. Não foi, por uma razão
+/// prática: o principal é lido em dezena e meia de sítios — a lista de staff, a
+/// ficha técnica de um jogo, o painel da plataforma — e todos esperam **um**.
+/// Trocá-los todos por um `find(r => r.isPrimary)` era arriscar que um deles
+/// ficasse a mostrar o cargo errado, para arrumar o que já estava arrumado.
+///
+/// ## O que isto muda, e onde
+///
+/// **Só permissões e menus.** `contextFor` soma as permissões e os `navKeys` de
+/// todos os cargos — principal e secundários — e é essa união que o produto
+/// inteiro passa a ler. O `baseRole`, o âmbito e a patente continuam a vir do
+/// principal: um presidente que treina continua a ver a academia toda, porque é
+/// isso que "presidente" quer dizer, e não fica preso às equipas dele por
+/// também ser treinador.
+model MembershipRole {
+  membershipId String
+  membership   Membership  @relation(fields: [membershipId], references: [id], onDelete: Cascade)
+  roleId       String
+  role         AcademyRole @relation(fields: [roleId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+
+  @@id([membershipId, roleId])
+  @@index([roleId])
 }
 
 /// Um convite para alguém passar a fazer parte da academia.
@@ -558,6 +639,16 @@ model StaffInvite {
   /// decidir, como sempre decidiu.
   academyRoleId String?
   academyRole   AcademyRole? @relation(fields: [academyRoleId], references: [id], onDelete: SetNull)
+
+  /// Os cargos **secundários** com que a pessoa entra.
+  ///
+  /// Ids em coluna de texto, e não uma tabela de ligação como em `MembershipRole`:
+  /// um convite é papel de embrulho, dura dias e morre no resgate. Uma tabela
+  /// para isso era uma cascata a mais para manter. A validação — existe, não
+  /// está arquivado, não tem patente acima de quem convida — é feita duas vezes:
+  /// ao criar o convite e ao resgatá-lo, porque entre uma coisa e outra o cargo
+  /// pode ter sido arquivado.
+  extraRoleIds String[] @default([])
 
   /// Equipas a atribuir no resgate. Vazio significa vazio: a pessoa entra sem
   /// âmbito e não vê atletas nenhuns até a direção lhe atribuir equipas.
@@ -719,6 +810,14 @@ model Athlete {
   /// O dinheiro que lhe diz respeito — seguros, inscrições, transferências.
   financialTransactions FinancialTransaction[]
 
+  /// Academias AI: presenças em análises, tracks, eventos, insights e o perfil
+  /// de identidade visual (sem biometria facial — ver `PlayerIdentityProfile`).
+  aiSquadEntries AIAnalysisPlayer[]
+  aiTracks       PlayerTrack[]
+  aiEvents       DetectedEvent[]
+  aiInsights     AIInsight[]
+  aiIdentity     PlayerIdentityProfile?
+
   @@unique([academyId, taxId])
   @@index([academyId])
   @@index([academyId, status])
@@ -791,6 +890,10 @@ model Team {
   updatedAt DateTime @updatedAt
 
   financialTransactions FinancialTransaction[]
+
+  /// Academias AI: análises de vídeo desta equipa, e insights coletivos.
+  aiAnalyses AIAnalysis[]
+  aiInsights AIInsight[]
 
   @@index([academyId])
   @@index([academyId, seasonId])
@@ -1373,8 +1476,17 @@ enum PaymentMethod {
 
 model Payment {
   id       String @id @default(cuid())
-  chargeId String
-  charge   Charge @relation(fields: [chargeId], references: [id], onDelete: Cascade)
+  /// ## Exactamente um dos dois
+  ///
+  /// Um pagamento é de uma mensalidade de atleta (`chargeId`) **ou** de uma
+  /// quota de sócio (`memberFeeId`) — nunca dos dois, nunca de nenhum. O
+  /// Postgres garante-o com um CHECK na migração `app_do_clube`; o Prisma não
+  /// sabe exprimir "ou exclusivo", por isso os dois são opcionais aqui.
+  chargeId String?
+  charge   Charge? @relation(fields: [chargeId], references: [id], onDelete: Cascade)
+
+  memberFeeId String?
+  memberFee   MemberFee? @relation(fields: [memberFeeId], references: [id], onDelete: Cascade)
 
   amountCents Int
   method      PaymentMethod
@@ -1401,6 +1513,7 @@ model Payment {
 
   @@unique([provider, providerRef])
   @@index([chargeId])
+  @@index([memberFeeId])
   @@index([status])
 }
 
@@ -1512,6 +1625,9 @@ enum NotificationType {
   /// Esta é para quem trabalha lá e diz "és preciso". Quem recebe e o que faz a
   /// seguir são diferentes.
   MATCH_STAFF_ASSIGNED
+  /// A análise de vídeo terminou. O processamento é assíncrono de propósito —
+  /// o treinador fecha a consola e é isto que lhe diz que pode voltar.
+  AI_ANALYSIS_COMPLETED
 }
 
 /// Uma notificação é uma linha na base de dados; os canais são adaptadores por
@@ -1711,6 +1827,9 @@ model Match {
 
   /// Os custos e receitas deste jogo — estimados e realizados.
   financialTransactions FinancialTransaction[]
+
+  /// Academias AI: as análises de vídeo deste jogo.
+  aiAnalyses AIAnalysis[]
 
   /// Idempotência da importação: o mesmo jogo importado duas vezes actualiza.
   ///
@@ -2783,6 +2902,31 @@ model Member {
 
   status MemberStatus @default(PENDING)
 
+  /// ## A ponte para a app do clube
+  ///
+  /// Um sócio continua a não ser um `User` — a maioria nunca abre aplicação
+  /// nenhuma, e isso está explicado no cabeçalho deste modelo. Este campo é o
+  /// contrário: a conta que **reclamou** esta ficha, pelo convite que o clube
+  /// lhe mandou (ver `MembersService.enviarConvite`). Com ele preenchido, a app
+  /// do clube ganha o contexto "Sócio" para esta pessoa nesta academia.
+  userId String?
+  user   User?   @relation("MemberAccount", fields: [userId], references: [id], onDelete: SetNull)
+
+  /// O token do QR do cartão. Opaco e revogável — é ele que vai no QR, e **só**
+  /// ele: nunca NIF, email, morada ou qualquer outro dado da ficha.
+  cardToken String? @unique
+
+  /// ## O convite para criar conta
+  ///
+  /// Guarda-se o **hash** do token, como nos convites de staff: quem leia a base
+  /// não consegue reconstruir o link. Um convite por sócio de cada vez — enviar
+  /// outro substitui o anterior.
+  inviteTokenHash String?   @unique
+  inviteSentAt    DateTime?
+
+  fees      MemberFee[]
+  pollVotes PollVote[]
+
   /// ## O consentimento é um carimbo, não uma caixa
   ///
   /// Guarda-se **quando** foi dado e não apenas que sim. O RGPD pede que o clube
@@ -2813,8 +2957,129 @@ model Member {
   /// e é o clube que responde pelos seus sócios.
   @@unique([academyId, taxId])
   @@unique([academyId, number])
+  /// Uma conta reclama no máximo uma ficha por clube. Nada impede a mesma conta
+  /// de ser sócia de outro clube — a chave é composta de propósito.
+  @@unique([academyId, userId])
   @@index([academyId, status])
   @@index([academyId, name])
+}
+
+/// Uma quota devida por um sócio — o irmão do `Charge` dos atletas.
+///
+/// ## Porque é que não é um `Charge`
+///
+/// O `Charge` está preso ao atleta por coluna obrigatória e por tudo o que o
+/// rodeia: âmbito de encarregados, geração por equipa, lembretes às famílias.
+/// Uma quota é doutro mundo — pertence ao sócio, gera-se pela categoria
+/// (`MemberTier.feeCents` + período) e cobra-se ao próprio. Esticar o `Charge`
+/// para servir os dois era pôr cada leitura de mensalidades a ter de se lembrar
+/// de excluir sócios, para sempre.
+///
+/// O estado reutiliza `ChargeStatus` (OPEN/SETTLED/VOID): é o mesmo ciclo de
+/// vida, e inventar um segundo enum igual só criava conversões.
+model MemberFee {
+  id        String  @id @default(cuid())
+  academyId String
+  academy   Academy @relation(fields: [academyId], references: [id], onDelete: Cascade)
+  memberId  String
+  member    Member  @relation(fields: [memberId], references: [id], onDelete: Cascade)
+
+  /// "2026" (anual), "2026-09" (mensal), "2026-T3" (trimestral). Texto e não
+  /// data: é um rótulo de período, e ordena bem lexicograficamente.
+  period String
+  /// O que aparece ao sócio — "Quota anual 2026". Derivado na geração.
+  label  String?
+
+  amountCents Int
+  /// Até quando. Nulo = sem prazo formal.
+  dueOn DateTime? @db.Date
+
+  status    ChargeStatus @default(OPEN)
+  settledAt DateTime?
+  /// Como entrou o dinheiro quando foi registado à mão (numerário, transferência).
+  /// Nulo num pagamento online — aí a verdade está no `Payment`.
+  method PaymentMethod?
+  notes  String?
+
+  payments Payment[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  /// Uma quota por período por sócio — gerar duas vezes o mesmo período não
+  /// duplica dívida.
+  @@unique([memberId, period])
+  @@index([academyId, status])
+  @@index([academyId, period])
+}
+
+enum PollStatus {
+  /// Em preparação — só a consola a vê.
+  DRAFT
+  OPEN
+  CLOSED
+}
+
+/// Uma sondagem aos sócios.
+model Poll {
+  id        String  @id @default(cuid())
+  academyId String
+  academy   Academy @relation(fields: [academyId], references: [id], onDelete: Cascade)
+
+  question String
+  /// Contexto opcional por baixo da pergunta.
+  details  String?
+
+  status      PollStatus @default(DRAFT)
+  publishedAt DateTime?
+  closedAt    DateTime?
+
+  createdById String?
+  createdBy   Membership? @relation("PollAuthor", fields: [createdById], references: [id], onDelete: SetNull)
+
+  options PollOption[]
+  votes   PollVote[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([academyId, status])
+}
+
+model PollOption {
+  id        String  @id @default(cuid())
+  /// Duplicado do pai de propósito — é o que deixa a RLS comparar direto, sem
+  /// `EXISTS`, como em todas as tabelas-filho deste schema.
+  academyId String
+  academy   Academy @relation(fields: [academyId], references: [id], onDelete: Cascade)
+  pollId    String
+  poll      Poll    @relation(fields: [pollId], references: [id], onDelete: Cascade)
+
+  label String
+  order Int    @default(0)
+
+  votes PollVote[]
+
+  @@index([pollId])
+}
+
+/// Um voto. O par único `(pollId, memberId)` é a regra "um sócio, um voto" —
+/// o serviço recusa antes com uma frase em português, o índice fica de rede.
+model PollVote {
+  id        String     @id @default(cuid())
+  academyId String
+  academy   Academy    @relation(fields: [academyId], references: [id], onDelete: Cascade)
+  pollId    String
+  poll      Poll       @relation(fields: [pollId], references: [id], onDelete: Cascade)
+  optionId  String
+  option    PollOption @relation(fields: [optionId], references: [id], onDelete: Cascade)
+  memberId  String
+  member    Member     @relation(fields: [memberId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+
+  @@unique([pollId, memberId])
+  @@index([optionId])
 }
 
 /// Um item de catálogo da academia — locais, balneários, escalões, cargos.
@@ -3791,4 +4056,462 @@ model FinancialBudget {
 
   @@unique([academyId, seasonId, categoryId])
   @@index([academyId, seasonId])
+}
+
+/**
+ * --------------------------------------------------------------------------
+ */
+/**
+ * Academias AI — análise de vídeo
+ */
+/**
+ * --------------------------------------------------------------------------
+ */
+/// A arquitectura, numa linha:
+///
+///   Vídeo → Computer Vision → dados estruturados → validação humana →
+///   estatística → interpretação.
+///
+/// O processamento **não** vive no NestJS: um worker Python (`ai-worker/` na
+/// raiz do repo) reclama trabalhos por HTTP e devolve resultados estruturados,
+/// sempre com confidence. O LLM nunca calcula estatísticas — só as interpreta,
+/// e só quando a confiança dos dados o permitir.
+///
+/// Multi-desporto por construção: o vocabulário de eventos (`DetectedEvent.kind`)
+/// e as etapas do pipeline (`AIJob.kind`) são texto, como `Sport.positions` — o
+/// futsal e o basquetebol entram sem migração.
+
+/// O ciclo de vida de uma análise. Estado derivado dos jobs, nunca editado à mão.
+enum AIAnalysisStatus {
+  /// Criada — equipa e plantel escolhidos, vídeo por carregar.
+  DRAFT
+  /// Vídeo a caminho do Storage.
+  UPLOADING
+  /// Na fila, à espera de um worker.
+  QUEUED
+  /// Um worker está a trabalhar nela.
+  PROCESSING
+  /// Terminou, mas há itens abaixo do limiar de confiança à espera de revisão.
+  REVIEW
+  COMPLETED
+  FAILED
+  CANCELLED
+}
+
+/// Uma análise de vídeo de um jogo.
+model AIAnalysis {
+  id        String  @id @default(cuid())
+  academyId String
+  academy   Academy @relation(fields: [academyId], references: [id], onDelete: Cascade)
+  teamId    String
+  team      Team    @relation(fields: [teamId], references: [id], onDelete: Cascade)
+
+  /// O jogo do calendário, quando existe. `SetNull` porque apagar um jogo do
+  /// calendário não pode apagar horas de processamento e correções humanas.
+  matchId String?
+  match   Match?  @relation(fields: [matchId], references: [id], onDelete: SetNull)
+
+  /// "match" hoje; "opponent" e "scouting" amanhã. Texto e não enum, pela mesma
+  /// razão de `SetPiece.kind`: os usos novos entram sem migração.
+  kind String @default("match")
+
+  title       String
+  opponent    String?
+  competition String?
+  playedOn    DateTime? @db.Date
+
+  status AIAnalysisStatus @default(DRAFT)
+  /// 0–100. Cache de leitura para listas e dashboard — a verdade são os jobs.
+  progress Int @default(0)
+
+  /// Confidence agregada por dimensão, escrita pelo worker no fim de cada etapa:
+  /// { "player_tracking": 0.91, "field_detection": 0.96, "ball_tracking": 0.72 }.
+  /// A aplicação usa isto para saber quando NÃO confiar num resultado.
+  confidence Json?
+
+  /// Quantos itens estão à espera de revisão humana. Cache — deriva de tracks e
+  /// eventos abaixo do limiar; recalculado quando um job termina ou uma correção
+  /// é aplicada.
+  reviewCount Int @default(0)
+
+  failReason String?
+
+  createdById String?
+  createdBy   Membership? @relation("AIAnalysisAuthor", fields: [createdById], references: [id], onDelete: SetNull)
+
+  squad       AIAnalysisPlayer[]
+  videos      AIVideo[]
+  jobs        AIJob[]
+  tracks      PlayerTrack[]
+  events      DetectedEvent[]
+  insights    AIInsight[]
+  corrections HumanCorrection[]
+
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  completedAt DateTime?
+
+  @@index([academyId, createdAt])
+  @@index([teamId])
+  @@index([matchId])
+}
+
+/// O plantel confirmado de uma análise — "#10 = Rui Silva", dito **antes** do
+/// processamento. É o contexto que torna a identificação possível sem biometria:
+/// a IA só tem de distinguir 16 nomes conhecidos, não o mundo inteiro.
+model AIAnalysisPlayer {
+  id         String     @id @default(cuid())
+  analysisId String
+  analysis   AIAnalysis @relation(fields: [analysisId], references: [id], onDelete: Cascade)
+  athleteId  String
+  athlete    Athlete    @relation(fields: [athleteId], references: [id], onDelete: Cascade)
+
+  /// O número da camisola **neste jogo** — pode diferir do `squadNumber` da ficha.
+  jerseyNumber Int?
+
+  createdAt DateTime @default(now())
+
+  @@unique([analysisId, athleteId])
+  @@index([athleteId])
+}
+
+/// Um vídeo de uma análise. Como no scouting: nunca há URLs permanentes — a
+/// chave fica aqui, cada leitura assina um link curto. Ver `ai-video.service.ts`.
+model AIVideo {
+  id         String     @id @default(cuid())
+  academyId  String
+  academy    Academy    @relation(fields: [academyId], references: [id], onDelete: Cascade)
+  analysisId String
+  analysis   AIAnalysis @relation(fields: [analysisId], references: [id], onDelete: Cascade)
+
+  /// `{academyId}/{analysisId}/{videoId}.{ext}` no bucket privado `ai-videos`.
+  storageKey String
+  mimeType   String
+  /// BigInt e não Int: um jogo inteiro em 1080p passa dos 2 GB com folga.
+  sizeBytes  BigInt?
+  status     VideoStatus @default(UPLOADING)
+
+  /// Metadados técnicos, escritos pelo worker na verificação de qualidade.
+  durationSec Float?
+  width       Int?
+  height      Int?
+  fps         Float?
+
+  /// O relatório da verificação de qualidade: verdict ("good"/"acceptable"/
+  /// "poor"), viabilidade por dimensão (0–1) e as medições que as justificam.
+  /// Nunca se finge precisão: má iluminação é dita, não escondida.
+  quality Json?
+
+  uploadedById String?
+  uploadedBy   Membership? @relation("AIVideoUploader", fields: [uploadedById], references: [id], onDelete: SetNull)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([academyId])
+  @@index([analysisId])
+}
+
+enum AIJobStatus {
+  PENDING
+  /// Um worker reclamou-o; ainda não confirmou que começou.
+  CLAIMED
+  RUNNING
+  DONE
+  FAILED
+  CANCELLED
+}
+
+/// Um trabalho da fila de processamento.
+///
+/// ## Porque é que a fila é uma tabela
+///
+/// O stack não tem Redis nem SQS, e não vale a pena trazê-los por isto: o
+/// Postgres faz uma fila correcta com `FOR UPDATE SKIP LOCKED`, os jobs ficam
+/// ao lado dos dados que descrevem, e um worker novo — local ou na cloud — só
+/// precisa do URL da API e de um token. Ver `ai-worker.controller.ts`.
+///
+/// `kind` é texto ("quality_check", "detect_track", …): as etapas novas do
+/// pipeline entram sem migração, e o worker anuncia as que sabe fazer.
+model AIJob {
+  id         String     @id @default(cuid())
+  academyId  String
+  academy    Academy    @relation(fields: [academyId], references: [id], onDelete: Cascade)
+  analysisId String
+  analysis   AIAnalysis @relation(fields: [analysisId], references: [id], onDelete: Cascade)
+
+  kind     String
+  status   AIJobStatus @default(PENDING)
+  priority Int         @default(0)
+
+  /// Tentativas gastas. Um job que falha volta a PENDING até esgotar — uma
+  /// falha de rede a meio de 90 minutos de vídeo não pode exigir um humano.
+  attempts    Int @default(0)
+  maxAttempts Int @default(2)
+
+  /// Parâmetros de entrada (ex.: janelas a reprocessar depois de uma correção).
+  params Json?
+  /// O resultado estruturado — sempre com confidence por dimensão.
+  result Json?
+  error  String?
+
+  /// 0–100, escrito pelo worker via heartbeat.
+  progress Int @default(0)
+
+  /// Que worker o tem, e desde quando. `heartbeatAt` velho = worker morto — o
+  /// job volta à fila (ver `requeueStale`).
+  claimedBy   String?
+  claimedAt   DateTime?
+  heartbeatAt DateTime?
+  startedAt   DateTime?
+  finishedAt  DateTime?
+
+  /// As versões de modelo usadas, escritas pelo worker:
+  /// { "detector": "torchvision-fasterrcnn@0.19", "tracker": "bytetrack@sv0.25" }.
+  /// É o que permite comparar resultados quando um modelo for afinado.
+  modelVersions Json?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([status, priority, createdAt])
+  @@index([analysisId])
+  @@index([academyId])
+}
+
+/// Um track persistente de um jogador ao longo do vídeo.
+///
+/// ## Onde vivem os frames
+///
+/// **No Storage, não aqui.** Um jogo a 5 FPS são ~27 000 frames × 22 pessoas —
+/// meio milhão de linhas por análise se cada posição fosse uma linha. O worker
+/// escreve as posições num JSON comprimido (`dataKey`) e esta linha guarda o
+/// resumo: janela temporal, confiança, posição média, distância. Reconstruir a
+/// trajetória é ler um ficheiro; listar tracks é uma query barata.
+model PlayerTrack {
+  id         String     @id @default(cuid())
+  academyId  String
+  academy    Academy    @relation(fields: [academyId], references: [id], onDelete: Cascade)
+  analysisId String
+  analysis   AIAnalysis @relation(fields: [analysisId], references: [id], onDelete: Cascade)
+
+  /// O número que o tracker lhe deu ("Track 17"). Não é único: um merge de
+  /// tracks partidos mantém os números de origem no `summary`.
+  trackNumber Int
+
+  /// O atleta, quando identificado. `SetNull` — apagar um atleta não apaga a
+  /// análise, mas o track dele fica anónimo (e o RGPD é servido pelo apagar
+  /// da análise/embeddings, ver `PlayerIdentityProfile`).
+  athleteId String?
+  athlete   Athlete? @relation(fields: [athleteId], references: [id], onDelete: SetNull)
+
+  /// "ours" | "theirs" | "referee" | "unknown" — lado atribuído por cor/contexto.
+  side String @default("unknown")
+
+  /// O número de camisola lido do vídeo, quando legível.
+  jerseyNumber Int?
+
+  /// Confiança na identidade (quem é) e no tracking (que é a mesma pessoa do
+  /// princípio ao fim). São perguntas diferentes com números diferentes.
+  identityConfidence Float?
+  trackConfidence    Float?
+
+  /// Janela temporal no vídeo, em milissegundos.
+  firstMs    Int
+  lastMs     Int
+  frameCount Int @default(0)
+
+  /// Chave do JSON comprimido com as posições por frame, no bucket `ai-videos`.
+  dataKey String?
+
+  /// Resumo derivado para leitura rápida: posição média, distância estimada,
+  /// zonas, velocidade. Escrito pelo worker; recalculável a partir de `dataKey`.
+  summary Json?
+
+  /// "auto" | "corrected" | "merged" | "discarded" — o que lhe aconteceu depois
+  /// do worker. Uma correção humana nunca apaga o valor original (`HumanCorrection`).
+  status String @default("auto")
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([analysisId])
+  @@index([athleteId])
+  @@index([academyId])
+}
+
+/// Um evento detectado no vídeo — passe, remate, perda, recuperação…
+///
+/// `kind` é vocabulário do desporto em texto, como `Sport.positions`: o futsal
+/// e o basquetebol trazem os seus sem migração. A confiança é obrigatória, e um
+/// evento abaixo do limiar entra na fila de revisão em vez de fingir certeza.
+model DetectedEvent {
+  id         String     @id @default(cuid())
+  academyId  String
+  academy    Academy    @relation(fields: [academyId], references: [id], onDelete: Cascade)
+  analysisId String
+  analysis   AIAnalysis @relation(fields: [analysisId], references: [id], onDelete: Cascade)
+
+  kind String
+
+  /// Instante (e fim, para eventos com duração), em ms do vídeo.
+  tsMs    Int
+  endTsMs Int?
+
+  confidence Float
+
+  athleteId String?
+  athlete   Athlete? @relation(fields: [athleteId], references: [id], onDelete: SetNull)
+
+  /// Detalhe estruturado do evento (posições, alvo do passe, resultado).
+  payload Json?
+
+  /// Chave do clip gerado no Storage, quando existe. Nunca um URL.
+  clipKey String?
+
+  /// "auto" | "confirmed" | "rejected" — o veredicto humano, quando houve.
+  status String @default("auto")
+
+  createdAt DateTime @default(now())
+
+  @@index([analysisId, tsMs])
+  @@index([athleteId])
+  @@index([academyId, kind])
+}
+
+/// Um insight — a única camada onde há interpretação, e a última a nascer.
+///
+/// Deriva **sempre** de dados estruturados com confiança suficiente; a regra é
+/// a dos alertas da semana de treino: derivado, nunca inventado. Um insight
+/// guarda em `data` os números de que nasceu, para ser auditável.
+model AIInsight {
+  id        String  @id @default(cuid())
+  academyId String
+  academy   Academy @relation(fields: [academyId], references: [id], onDelete: Cascade)
+
+  analysisId String?
+  analysis   AIAnalysis? @relation(fields: [analysisId], references: [id], onDelete: Cascade)
+  /// Cascade nos dois: um insight sobre um atleta apagado não pode sobreviver-lhe.
+  athleteId  String?
+  athlete    Athlete?    @relation(fields: [athleteId], references: [id], onDelete: Cascade)
+  teamId     String?
+  team       Team?       @relation(fields: [teamId], references: [id], onDelete: Cascade)
+
+  /// "player_trend" | "team_pattern" | "recovery_zones" | … — texto, como os eventos.
+  kind       String
+  text       String
+  confidence Float
+  /// Os números de que o texto nasceu.
+  data       Json?
+
+  dismissedAt DateTime?
+  createdAt   DateTime  @default(now())
+
+  @@index([academyId, createdAt])
+  @@index([athleteId])
+  @@index([analysisId])
+}
+
+/// Uma correção humana — a matéria-prima do active learning.
+///
+/// Não é um log: é um dado de treino futuro. Guarda o antes e o depois em
+/// estrutura, quem corrigiu, e `exportedAt` marca quando entrou num dataset de
+/// fine-tuning. Apagar a análise leva as correções — são derivadas do vídeo, e
+/// o apagamento tem de ser completo (RGPD).
+model HumanCorrection {
+  id         String     @id @default(cuid())
+  academyId  String
+  academy    Academy    @relation(fields: [academyId], references: [id], onDelete: Cascade)
+  analysisId String
+  analysis   AIAnalysis @relation(fields: [analysisId], references: [id], onDelete: Cascade)
+
+  /// "player_identity" | "ball_position" | "field_keypoints" | "event" | "track".
+  kind String
+
+  /// O que foi corrigido: o id do track/evento/vídeo a que a correção se aplica.
+  targetType String?
+  targetId   String?
+
+  /// O instante do vídeo a que diz respeito, quando pontual.
+  tsMs Int?
+
+  /// O que a IA tinha dito, e o que o humano disse. `before` pode ser nulo
+  /// (a IA não tinha dito nada — a bola perdida que o treinador apontou).
+  before Json?
+  after  Json
+
+  correctedById String?
+  correctedBy   Membership? @relation("AICorrectionAuthor", fields: [correctedById], references: [id], onDelete: SetNull)
+
+  /// O job de propagação que esta correção disparou (recalcular o track, a
+  /// homography, a trajetória da bola) — a correção não fica só num frame.
+  jobId String?
+
+  /// Quando entrou num dataset de fine-tuning. Nulo = ainda por usar.
+  exportedAt DateTime?
+
+  createdAt DateTime @default(now())
+
+  @@index([analysisId])
+  @@index([academyId, kind])
+}
+
+/// O perfil de identidade visual de um atleta — o que faz a identificação
+/// melhorar de jogo para jogo.
+///
+/// ## Sem biometria facial, de propósito
+///
+/// São menores. A identificação combina camisola, número, aparência geral
+/// (embedding de corpo inteiro, não de cara), trajetória e a confirmação humana
+/// do plantel. Os embeddings vivem no Storage (`embeddingKey`) e não na base:
+/// apagá-los é apagar um ficheiro, e o RGPD pede exactamente isso.
+model PlayerIdentityProfile {
+  id        String  @id @default(cuid())
+  academyId String
+  academy   Academy @relation(fields: [academyId], references: [id], onDelete: Cascade)
+  athleteId String  @unique
+  athlete   Athlete @relation(fields: [athleteId], references: [id], onDelete: Cascade)
+
+  /// Números que já lhe foram vistos — o 10 habitual e o 14 do dia em que o 10
+  /// estava na lavandaria.
+  jerseyNumbers Int[] @default([])
+
+  /// Posições em que foi visto a jogar nas análises. Texto do desporto.
+  seenPositions String[] @default([])
+
+  gamesAnalysed      Int    @default(0)
+  identityConfidence Float?
+
+  /// Chave dos embeddings de aparência no Storage. Nulo = ainda sem embeddings.
+  embeddingKey String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([academyId])
+}
+
+/// Uma versão de modelo de CV — tabela da **plataforma**, sem tenant.
+///
+/// Regista que modelo, com que licença, correu em que época. É o que torna
+/// possível dizer "os números de Setembro vieram do detector X\@1.2" quando um
+/// fine-tuning mudar os resultados. A licença fica escrita na linha porque a
+/// verificação de compatibilidade comercial é um facto do modelo, não uma
+/// lembrança de quem o integrou.
+model AIModelVersion {
+  id      String @id @default(cuid())
+  /// "detection" | "tracking" | "reid" | "field" | "ball" | "quality".
+  task    String
+  name    String
+  version String
+  license String
+  source  String?
+  /// Pesos afinados nossos, quando existirem. Nulo = pesos públicos de origem.
+  weightsKey String?
+  active     Boolean @default(true)
+  notes      String?
+
+  createdAt DateTime @default(now())
+
+  @@unique([task, name, version])
 }

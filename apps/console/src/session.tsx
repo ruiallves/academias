@@ -57,6 +57,13 @@ export function SessionProvider({ children }: { children: ReactNode }) {
        */
       roleId: me.roleId,
       roleName: me.roleName,
+      /*
+       * Os cargos secundários chegam já somados nas permissões — a união é feita
+       * no servidor, em `exceptionsFor`, e o cliente nunca a reconstrói. Isto
+       * serve só para dizer quem a pessoa é: "Presidente · também Treinador
+       * Sub-13".
+       */
+      extraRoles: me.extraRoles ?? [],
       rolePermissions: me.permissions?.length ? (me.permissions as Session["rolePermissions"]) : undefined,
       navKeys: me.navKeys ?? [],
       // Sem âmbito para quem vê a academia toda; com equipas para quem não vê.

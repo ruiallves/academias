@@ -155,6 +155,10 @@ const TENANT_SCOPED = new Set<string>([
   "ProspectVideo",
   "MemberTier",
   "Member",
+  "MemberFee",
+  "Poll",
+  "PollOption",
+  "PollVote",
   "CatalogItem",
   // Inventário. As quatro têm `academyId` próprio — incluindo a variante, que
   // podia tê-lo herdado do artigo: uma tabela protegida por junção é uma tabela
@@ -167,6 +171,16 @@ const TENANT_SCOPED = new Set<string>([
   "FinancialTransaction",
   "FinanceSettings",
   "FinancialBudget",
+  // Academias AI. `AIAnalysisPlayer` fica de fora — herda o tenant da análise,
+  // e a RLS trata-o por junção. `AIModelVersion` é global de propósito.
+  "AIAnalysis",
+  "AIVideo",
+  "AIJob",
+  "PlayerTrack",
+  "DetectedEvent",
+  "AIInsight",
+  "HumanCorrection",
+  "PlayerIdentityProfile",
 ]);
 
 /**

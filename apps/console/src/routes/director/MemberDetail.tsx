@@ -21,6 +21,12 @@ import {
   type MemberStatus,
   type MemberTier,
   type Sex,
+  inviteMember,
+  listMemberFees,
+  reopenFee,
+  settleFee,
+  voidFee,
+  type MemberFeeRow,
 } from "@/lib/members";
 
 /**
@@ -213,6 +219,10 @@ export default function MemberDetail() {
           <div className="space-y-3">
             <QuotaPanel member={m} tiers={tiers} mayWrite={mayWrite} busy={busy} onChange={set} />
 
+            <QuotasLancadasPanel memberId={m.id} mayWrite={mayWrite} />
+
+            <AppDoClubePanel member={m} mayWrite={mayWrite} onChanged={load} />
+
             <Panel>
               <PanelHead title="Consentimentos" hint="com data" />
               <ul className="px-5 py-2.5">
@@ -277,6 +287,179 @@ export default function MemberDetail() {
  * inventar — e é o tipo de número que um clube usa para decidir quem vota numa
  * assembleia.
  */
+/**
+ * As quotas lançadas — o livro, não a configuração.
+ *
+ * O painel de cima ("Quota") diz quanto a categoria custa; este diz o que foi
+ * mesmo cobrado e o que falta. Liquidar aqui é o balcão — numerário ou
+ * transferência; o pagamento online liquida sozinho pelo webhook, e o botão de
+ * gerar vive na lista de sócios porque se gera para o clube inteiro.
+ */
+function QuotasLancadasPanel({ memberId, mayWrite }: { memberId: string; mayWrite: boolean }) {
+  const [fees, setFees] = useState<MemberFeeRow[] | null>(null);
+  const [busy, setBusy] = useState<string | null>(null);
+  const [erro, setErro] = useState<string | null>(null);
+
+  const carregar = useCallback(() => {
+    listMemberFees(memberId)
+      .then(setFees)
+      .catch((e: Error) => setErro(e.message));
+  }, [memberId]);
+
+  useEffect(() => {
+    carregar();
+  }, [carregar]);
+
+  async function agir(id: string, fn: () => Promise<unknown>) {
+    if (busy) return;
+    setBusy(id);
+    setErro(null);
+    try {
+      await fn();
+      carregar();
+    } catch (e) {
+      setErro(e instanceof Error ? e.message : "Não foi possível.");
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  const TONE: Record<MemberFeeRow["status"], Tone> = { OPEN: "warn", SETTLED: "ok", VOID: "neutral" };
+  const LABEL: Record<MemberFeeRow["status"], string> = { OPEN: "Por pagar", SETTLED: "Paga", VOID: "Anulada" };
+
+  return (
+    <Panel>
+      <PanelHead title="Quotas lançadas" hint={fees ? `${fees.length}` : undefined} />
+      {erro && <p className="px-5 pt-2 text-meta text-risk">{erro}</p>}
+      {fees === null ? (
+        <p className="px-5 py-3 text-meta text-ink-3">A carregar…</p>
+      ) : fees.length === 0 ? (
+        <p className="px-5 py-3 text-meta leading-relaxed text-ink-3">
+          Ainda nenhuma. Gera-se na lista de sócios — "Gerar quotas" lança a do período corrente a
+          todos os activos com categoria.
+        </p>
+      ) : (
+        <ul className="px-5 py-1.5">
+          {fees.map((f) => (
+            <li key={f.id} className="flex items-center gap-3 border-b border-line py-2.5 last:border-0">
+              <span className="min-w-0 flex-1">
+                <span className="block truncate text-body text-ink">{f.label ?? f.period}</span>
+                <span className="block text-meta text-ink-3">
+                  {money(f.amountCents)}
+                  {f.status === "SETTLED" && f.method === "CASH" && " · numerário"}
+                  {f.status === "SETTLED" && f.method === "TRANSFER" && " · transferência"}
+                  {f.status === "SETTLED" && f.method === "MBWAY" && " · MB Way"}
+                  {f.status === "SETTLED" && f.method === "MULTIBANCO" && " · Multibanco"}
+                </span>
+              </span>
+              <Pill tone={TONE[f.status]}>{LABEL[f.status]}</Pill>
+              {mayWrite && f.status === "OPEN" && (
+                <span className="flex shrink-0 items-center gap-1">
+                  <button
+                    type="button"
+                    disabled={busy === f.id}
+                    onClick={() => void agir(f.id, () => settleFee(f.id, "CASH"))}
+                    className="ctl-ghost"
+                    title="Recebido em numerário ao balcão"
+                  >
+                    Numerário
+                  </button>
+                  <button
+                    type="button"
+                    disabled={busy === f.id}
+                    onClick={() => void agir(f.id, () => settleFee(f.id, "TRANSFER"))}
+                    className="ctl-ghost"
+                    title="Recebido por transferência"
+                  >
+                    Transf.
+                  </button>
+                  <button
+                    type="button"
+                    disabled={busy === f.id}
+                    onClick={() => void agir(f.id, () => voidFee(f.id))}
+                    className="ctl-ghost text-risk"
+                    title="Anular — foi gerada por engano ou o sócio saiu"
+                  >
+                    Anular
+                  </button>
+                </span>
+              )}
+              {mayWrite && f.status !== "OPEN" && f.method !== "MBWAY" && f.method !== "MULTIBANCO" && (
+                <button
+                  type="button"
+                  disabled={busy === f.id}
+                  onClick={() => void agir(f.id, () => reopenFee(f.id))}
+                  className="ctl-ghost shrink-0"
+                  title="Reabrir — foi marcada por engano"
+                >
+                  Reabrir
+                </button>
+              )}
+            </li>
+          ))}
+        </ul>
+      )}
+    </Panel>
+  );
+}
+
+/**
+ * A conta na app do clube.
+ *
+ * Três estados possíveis, e o painel diz sempre em qual se está: conta ligada
+ * (a ficha foi reclamada), convite enviado à espera, ou nada ainda. O convite
+ * sai sozinho na criação manual e na aprovação; este botão é para os sócios
+ * que já existiam antes da app, e para reenviar quando o email se perdeu.
+ */
+function AppDoClubePanel({ member, mayWrite, onChanged }: { member: Data; mayWrite: boolean; onChanged: () => void }) {
+  const [busy, setBusy] = useState(false);
+  const [resultado, setResultado] = useState<string | null>(null);
+
+  async function convidar() {
+    if (busy) return;
+    setBusy(true);
+    setResultado(null);
+    try {
+      const r = await inviteMember(member.id);
+      setResultado(`Convite enviado para ${r.email}.`);
+      onChanged();
+    } catch (e) {
+      setResultado(e instanceof Error ? e.message : "Não foi possível enviar.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <Panel>
+      <PanelHead title="App do clube" />
+      <div className="space-y-2 px-5 py-3">
+        {member.userId ? (
+          <p className="flex items-center gap-2 text-body text-ink-2">
+            <CircleCheck className="size-4 shrink-0 text-ok" strokeWidth={1.75} />
+            Conta ligada — este sócio já usa a app.
+          </p>
+        ) : (
+          <>
+            <p className="text-meta leading-relaxed text-ink-3">
+              {member.inviteSentAt
+                ? "Convite enviado, à espera que crie a conta."
+                : "Ainda sem conta na app do clube."}
+            </p>
+            {mayWrite && (
+              <button type="button" className="ctl-outline" disabled={busy} onClick={() => void convidar()}>
+                <Mail className="size-3.5" strokeWidth={1.75} />
+                {busy ? "A enviar…" : member.inviteSentAt ? "Reenviar convite" : "Enviar convite"}
+              </button>
+            )}
+          </>
+        )}
+        {resultado && <p className="text-meta text-ink-2">{resultado}</p>}
+      </div>
+    </Panel>
+  );
+}
+
 function QuotaPanel({
   member,
   tiers,

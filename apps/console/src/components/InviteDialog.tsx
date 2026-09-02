@@ -8,7 +8,7 @@ import { loadRoles, useRoles, type AcademyRole } from "@/lib/roles";
 import { Check, Copy, TriangleAlert, Users } from "@/lib/icons";
 import type { Role, Session } from "@/lib/permissions";
 import { Dialog, DialogField, dialogInputClass } from "./Dialog";
-import { SelectField } from "./primitives";
+import { SelectField, cx } from "./primitives";
 
 /**
  * Convidar alguém para a academia.
@@ -91,6 +91,15 @@ export function InviteDialog({ session, onClose }: { session: Session; onClose: 
   const [email, setEmail] = useState("");
   const [department, setDepartment] = useState<Grupo>("");
   const [roleId, setRoleId] = useState("");
+  /**
+   * Os cargos que se acrescentam ao principal.
+   *
+   * Vivem fora do departamento escolhido de propósito: um presidente que também
+   * treina os Sub-13 tem os dois cargos em departamentos diferentes, e obrigar a
+   * voltar ao menu do departamento para cada um seria a razão pela qual ninguém
+   * usaria isto.
+   */
+  const [extraRoleIds, setExtraRoleIds] = useState<string[]>([]);
   const [teamIds, setTeamIds] = useState<string[]>([]);
   const [created, setCreated] = useState<Invite | null>(null);
   const [erro, setErro] = useState<string | null>(null);
@@ -233,6 +242,8 @@ export function InviteDialog({ session, onClose }: { session: Session; onClose: 
 
   const cargo: AcademyRole | undefined = convidaveis.find((r) => r.id === roleId);
   const comEquipas = cargo ? usesTeams(cargo.baseRole) : false;
+  /** Tudo o que este utilizador pode dar, menos o que já é o principal. */
+  const outrosCargos = convidaveis.filter((r) => r.id !== roleId);
 
   const valid = name.trim().length >= 2 && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim()) && Boolean(roleId);
 
@@ -251,6 +262,9 @@ export function InviteDialog({ session, onClose }: { session: Session; onClose: 
           name: name.trim(),
           email: email.trim(),
           academyRoleId: roleId,
+          // O principal nunca se repete nos secundários — seria a mesma coisa
+          // dita duas vezes, e o servidor filtra-o na mesma.
+          extraRoleIds: extraRoleIds.filter((id) => id !== roleId),
           teamIds: comEquipas ? teamIds : [],
         }),
       );
@@ -393,6 +407,61 @@ export function InviteDialog({ session, onClose }: { session: Session; onClose: 
             </div>
 
             {cargo?.description && <p className="text-[11px] leading-relaxed text-ink-3">{cargo.description}</p>}
+
+            {/*
+              "Também é" — os cargos a mais, se os houver.
+              
+              Fora do menu do departamento, e não dentro: um presidente que
+              também treina tem os dois cargos em departamentos diferentes, e
+              obrigar a voltar ao menu de cima por cada um era garantir que
+              ninguém o fazia. Aqui está a lista toda que este utilizador pode
+              dar, sem o principal — marcam-se as que forem precisas.
+
+              Fechado por omissão: a esmagadora maioria dos convites é para um
+              cargo só, e um campo aberto a mais em cada convite é atrito para
+              toda a gente por causa de uma minoria.
+            */}
+            {outrosCargos.length > 0 && (
+              <details className="rounded-[var(--radius-control)] border border-line">
+                <summary className="flex cursor-pointer items-baseline justify-between gap-2 px-3 py-2.5">
+                  <span className="text-meta font-medium text-ink">Também é…</span>
+                  <span className="text-[11px] text-ink-3">
+                    {extraRoleIds.length === 0
+                      ? "opcional"
+                      : `${extraRoleIds.length} ${extraRoleIds.length === 1 ? "cargo" : "cargos"} a mais`}
+                  </span>
+                </summary>
+                <div className="border-t border-line p-3">
+                  <div className="flex flex-wrap gap-1.5">
+                    {outrosCargos.map((r) => {
+                      const on = extraRoleIds.includes(r.id);
+                      return (
+                        <button
+                          key={r.id}
+                          type="button"
+                          aria-pressed={on}
+                          onClick={() =>
+                            setExtraRoleIds((xs) => (on ? xs.filter((x) => x !== r.id) : [...xs, r.id]))
+                          }
+                          className={cx(
+                            "rounded-[var(--radius-control)] border px-2.5 py-1 text-meta font-medium transition-colors",
+                            on
+                              ? "border-transparent bg-signal-soft text-signal-ink"
+                              : "border-line text-ink-3 hover:border-line-strong hover:text-ink-2",
+                          )}
+                        >
+                          {r.name}
+                        </button>
+                      );
+                    })}
+                  </div>
+                  <p className="mt-2 text-[11px] leading-relaxed text-ink-3">
+                    O que a pessoa pode passa a ser a soma de todos. O <strong className="font-medium text-ink-2">cargo
+                    de cima</strong> é que decide o que ela vê — a academia toda, ou só as equipas dela.
+                  </p>
+                </div>
+              </details>
+            )}
 
             {comEquipas ? (
               <div>

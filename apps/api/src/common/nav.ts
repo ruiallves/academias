@@ -34,6 +34,12 @@ export const NAV_KEYS: Record<string, Permission> = {
   exercises: "training:read",
   "game-models": "training:read",
   "set-pieces": "training:read",
+  // Academias AI.
+  "ai-overview": "ai:read",
+  "ai-analyses": "ai:read",
+  "ai-insights": "ai:read",
+  "ai-development": "ai:read",
+  "ai-opponents": "ai:read",
   fees: "billing:read",
   comms: "comms:read",
   evaluations: "evaluation:read",

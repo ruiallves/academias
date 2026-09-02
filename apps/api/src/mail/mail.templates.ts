@@ -364,6 +364,44 @@ export function familyInviteEmail(input: {
   };
 }
 
+/**
+ * O convite de um sócio para a app do clube.
+ *
+ * Sai quando a direcção inscreve o sócio à mão e quando aprova uma adesão do
+ * site — foi assim que foi pedido: o sócio recebe logo o caminho para escolher
+ * a password e instalar a app. O link reclama a ficha **dele**: a conta nasce
+ * com o email que o clube tem na ficha, e com mais nenhum.
+ */
+export function memberInviteEmail(input: {
+  brand: MailBrand;
+  name: string;
+  link: string;
+}): { subject: string; html: string; text: string } {
+  const heading = "A tua área de sócio";
+  const paragraphs = [
+    "És sócio de <strong>" + esc(input.brand.name) + "</strong> — e o clube tem uma app onde podes ver o teu cartão, as quotas, os jogos e as novidades.",
+    "Abre o link, escolhe a tua palavra-passe e instala a app. Fica tudo pronto em menos de um minuto.",
+  ];
+  const notes = [
+    "Este convite é só teu — a conta fica ligada ao email para onde ele foi enviado.",
+    "Se não pediste isto, podes ignorar este email.",
+  ];
+
+  return {
+    subject: input.brand.shortName + " · a tua área de sócio",
+    html: layout({ brand: input.brand, heading, paragraphs, cta: { label: "Criar a minha conta", url: input.link }, notes }),
+    text: plain(
+      "Olá " + input.name.trim().split(/\s+/)[0] + ",",
+      [
+        "És sócio de " + input.brand.name + " — e o clube tem uma app onde podes ver o teu cartão, as quotas, os jogos e as novidades.",
+        "Abre o link, escolhe a tua palavra-passe e instala a app.",
+      ],
+      { label: "Criar a minha conta", url: input.link },
+      notes.map(semTags),
+    ),
+  };
+}
+
 /* -------------------------------------------------------------------------- */
 /* Clube acabado de abrir — o primeiro convite, o de quem o vai montar         */
 /* -------------------------------------------------------------------------- */

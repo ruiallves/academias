@@ -15,6 +15,9 @@
  *
  * Pressupõe `node dist/main.js` e `npm run seed`.
  *
+ * O registo está atrás de um throttle (5/min): correr a suite duas vezes
+ * seguidas dá 429 no fim. Espera um minuto entre corridas.
+ *
  * Uso: node scripts/test-family-invite.mjs
  */
 import { readFileSync } from "node:fs";
@@ -76,7 +79,15 @@ const EMAIL = `pai-${stamp}@exemplo.pt`;
 
 console.log("=== O NIF do atleta ===");
 const atletas = (await asStaff(director, "GET", "/api/athletes")).body;
-const alvo = atletas[0];
+/*
+ * O alvo tem de ser um atleta que o TREINADOR também veja — a prova lá em baixo
+ * é "vê o atleta, não vê o NIF". Era `atletas[0]` da lista da direcção, e
+ * funcionou enquanto o treinador esteve em todas as equipas; no dia em que
+ * saiu dos Sub-13, o primeiro da lista podia ser de lá e a prova avaliava um
+ * `undefined` — a acusar o que era, na verdade, o âmbito a funcionar.
+ */
+const daEquipaDoCoach = (await asStaff(coach, "GET", "/api/athletes")).body ?? [];
+const alvo = atletas.find((a) => daEquipaDoCoach.some((c) => c.id === a.id)) ?? atletas[0];
 check("a direção vê os atletas", Array.isArray(atletas) && atletas.length > 0, `${atletas?.length}`);
 
 const posto = await asStaff(director, "PATCH", `/api/athletes/${alvo.id}/nif`, { taxId: NIF });

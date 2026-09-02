@@ -5,7 +5,13 @@ import { load, resetAndLoad, useStore, type Child } from "@/lib/store";
 import { hasOnboarded } from "@/lib/onboarding";
 import { readToken, signOut, useSession } from "@/lib/session";
 import { usePresence } from "@/lib/presence";
+import { loadContexts, useContexts } from "@/lib/contexts";
+import { readMemberInvite } from "@/lib/invite";
 import Entrar from "@/screens/Entrar";
+import SocioApp from "@/screens/socio/SocioApp";
+import EscolherArea from "@/screens/socio/EscolherArea";
+import ConviteSocio from "@/screens/socio/ConviteSocio";
+import { AreaSwitch } from "@/screens/socio/AreaSwitch";
 import { Avatar, cx } from "@/ui";
 import { ClubMark } from "@/ClubMark";
 import Today from "@/screens/Today";
@@ -64,15 +70,32 @@ export default function App() {
   const [childId, setChild] = useState<string | null>(null);
   const [onboarded, setOnboarded] = useState(hasOnboarded);
 
-  // Com sessão, e não antes: sem token cada batida voltava 401. Ver `presence.ts`.
-  usePresence(Boolean(session));
 
-  // Só se carrega o que há para carregar quando há quem o possa ler. Sem sessão,
-  // cada pedido voltaria 401 e a app abria num ecrã de erro — quando o que se
-  // passa não é uma avaria, é ainda não ter entrado.
+  /*
+   * A primeira pergunta pós-sessão é "que contextos tens aqui?" — Família,
+   * Sócio, ou os dois. Só depois se carrega a vista certa: o bootstrap da
+   * família devolve 403 a um sócio sem filhos no clube, e carregá-lo às cegas
+   * era abrir a app num ecrã de erro para a pessoa certa.
+   */
+  const { contexts, active, error: contextsError } = useContexts();
+  const semContexto = contexts !== null && contexts.length === 0;
+  /* Uma conta sem contexto nenhum cai no fluxo antigo da família — que sabe
+     explicar "esta conta não é de encarregado" melhor do que nós aqui. */
+  const areaActiva = active ?? (semContexto ? ("FAMILY" as const) : null);
+
+  /*
+   * Presença só no contexto de família: o endpoint passa pelo guard, e uma
+   * conta só-de-sócio não tem membership — cada batida seria um 403 de ruído.
+   */
+  usePresence(Boolean(session) && areaActiva === "FAMILY");
+
   useEffect(() => {
-    if (readToken()) void load();
-  }, []);
+    if (readToken()) void loadContexts();
+  }, [session]);
+
+  useEffect(() => {
+    if (areaActiva === "FAMILY" && readToken()) void load();
+  }, [areaActiva]);
 
   // O primeiro filho, até alguém escolher outro. Segue os dados: antes de a
   // academia chegar não há filho nenhum para escolher.
@@ -86,7 +109,24 @@ export default function App() {
    * desenvolvimento que já não faz sentido agora que as famílias se registam a
    * sério pelo link do clube. Ver `screens/Entrar.tsx`.
    */
-  if (!session) return <Entrar onEntered={() => void resetAndLoad()} />;
+  if (!session) {
+    /* Quem chegou pelo convite de sócio escolhe a password primeiro — o resto
+       da app só existe depois de haver conta. */
+    const conviteSocio = readMemberInvite();
+    if (conviteSocio) return <ConviteSocio token={conviteSocio} onDone={() => void loadContexts()} />;
+    return <Entrar onEntered={() => void resetAndLoad()} />;
+  }
+
+  if (contexts === null) {
+    if (contextsError) return <Failed message={contextsError} />;
+    return <Splash />;
+  }
+
+  /* Mais do que um contexto e nenhum vestido: "como queres continuar?" */
+  if (areaActiva === null) return <EscolherArea name={session.name ?? ""} />;
+
+  /* A área de sócio é outra vista da mesma app — mesma sessão, mesma marca. */
+  if (areaActiva === "MEMBER") return <SocioApp />;
 
   if (!store.ready) return <Splash />;
   // O servidor recusou esta conta nesta app. Não é avaria — tem saída própria.
@@ -344,6 +384,7 @@ function Header() {
           <span className="block truncate text-[15px] font-semibold text-ink">{store.academy.shortName}</span>
           <span className="block truncate text-[12px] text-ink-3">{store.guardian.name}</span>
         </span>
+        <AreaSwitch />
         <button type="button" onClick={() => navigate("/notificacoes")} className="icon-btn" aria-label="Notificações">
           <Bell className="size-[22px]" strokeWidth={1.75} />
           {unread > 0 && (

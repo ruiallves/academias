@@ -17,8 +17,8 @@ export class CreateAnnouncementDto {
   @Length(1, 2000)
   body!: string;
 
-  @IsIn(["all", "guardians", "coaches"])
-  audience!: "all" | "guardians" | "coaches";
+  @IsIn(["all", "guardians", "coaches", "members"])
+  audience!: "all" | "guardians" | "coaches" | "members";
 
   /**
    * Os escalões, quando o aviso é para os pais.

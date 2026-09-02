@@ -24,6 +24,11 @@ import {
   Shapes,
   Network,
   Goal,
+  Brain,
+  Film,
+  Sparkle,
+  Activity,
+  Target,
   type LucideIcon,
 } from "@/lib/icons";
 import type { Permission, Session } from "@/lib/permissions";
@@ -286,6 +291,34 @@ export const NAV_CATALOG: NavGroup[] = [
     ],
   },
 ];
+
+/**
+ * Academias AI — **fora do menu por agora**.
+ *
+ * A área está construída e as rotas continuam a responder (`/ai`, `/ai/analises`,
+ * …) a quem tiver `ai:read` e souber o endereço. O que não está feito é a
+ * cadeia toda a funcionar sem um worker a correr: sem GPU do outro lado, um
+ * treinador que entrasse por aqui carregava um vídeo e ficava com uma análise
+ * eternamente "na fila". Um menu que promete o que ninguém pode cumprir hoje
+ * é pior do que menu nenhum.
+ *
+ * **Para voltar a mostrar**: acrescentar `AI_GROUP` ao `NAV_CATALOG`, a seguir
+ * à Área técnica — é onde estava, e é a continuação natural dela. Fica aqui, e
+ * não apagado, para a religação ser uma linha e não uma arqueologia no git.
+ *
+ * Nada mais foi desfeito: as permissões (`ai:read`/`ai:write`), as chaves de
+ * menu no servidor, as tabelas e o worker continuam todos no sítio.
+ */
+export const AI_GROUP: NavGroup = {
+  label: "Academias AI",
+  items: [
+    { key: "ai-overview", label: "Visão AI", to: "/ai", icon: Brain, requires: "ai:read" },
+    { key: "ai-analyses", label: "Análises", to: "/ai/analises", icon: Film, requires: "ai:read" },
+    { key: "ai-insights", label: "Insights", to: "/ai/insights", icon: Sparkle, requires: "ai:read" },
+    { key: "ai-development", label: "Desenvolvimento", to: "/ai/desenvolvimento", icon: Activity, requires: "ai:read", beta: true },
+    { key: "ai-opponents", label: "Adversários", to: "/ai/adversarios", icon: Target, requires: "ai:read", beta: true },
+  ],
+};
 
 export const SETTINGS_ITEM: NavItem = {
   key: "settings",

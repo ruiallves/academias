@@ -71,9 +71,11 @@ type ApiBootstrap = {
     name: string;
     email: string;
     role: Role;
-    /** O papel da academia, quando esta pessoa tem um configurado. */
+    /** O cargo principal, quando esta pessoa tem um configurado. */
     roleId: string | null;
     roleName: string | null;
+    /** Os cargos secundários — só para se mostrarem; as permissões já vêm somadas. */
+    extraRoles: { id: string; name: string }[];
     /**
      * As permissões do papel, resolvidas pelo servidor.
      *
@@ -125,8 +127,10 @@ type ApiStaff = {
   /** Link assinado com prazo, ou nulo. A chave nunca sai do servidor. */
   photoUrl: string | null;
   title: string | null; department: string | null; isActive: boolean; grants: string[]; revokes: string[];
-  /** O papel da academia atribuído a esta pessoa, quando tem um. */
+  /** O cargo principal atribuído a esta pessoa, quando tem um. */
   roleId: string | null; roleName: string | null;
+  /** Os cargos que se lhe acrescentaram. Ver `MembershipRole` no servidor. */
+  extraRoles: { id: string; name: string }[];
   since: string; teamIds: string[];
 };
 
@@ -136,7 +140,7 @@ type ApiSession = {
   /** É de uma equipa minha? Ver `inTeamScope` no servidor. */
   mine: boolean;
   /** Vazio quando o treino não é meu — quem faltou é do escalão. */
-  absences: { athleteId: string; status: string }[];
+  absences: { athleteId: string; status: string; note?: string | null }[];
 };
 
 /** Um evento pontual do calendário — o que "Novo evento" cria. Ver `GET /api/events`. */
@@ -470,6 +474,7 @@ function build(
     revokes: s.revokes,
     roleId: s.roleId,
     roleName: s.roleName,
+    extraRoles: s.extraRoles ?? [],
   }));
 
   const sessions: TrainingSession[] = apiSessions.map((s) => ({
@@ -491,6 +496,9 @@ function build(
           absences: s.absences.map((x) => ({
             athleteId: x.athleteId,
             kind: x.status === "JUSTIFIED" ? "justified" : x.status === "LATE" ? "late" : "absent",
+            // O motivo da justificada — a ficha do atleta mostra-o ao lado da
+            // falta, e sem ele o campo aparecia vazio depois de recarregar.
+            ...(x.note ? { note: x.note } : {}),
           })),
           recordedAt: s.endsAt,
         }

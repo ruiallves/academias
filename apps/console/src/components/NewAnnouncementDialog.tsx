@@ -33,12 +33,13 @@ import { cx } from "./primitives";
  * pergunta.
  */
 
-type Audience = "all" | "guardians" | "coaches";
+type Audience = "all" | "guardians" | "coaches" | "members";
 
 const AUDIENCE_META: { value: Audience; label: string; hint: string }[] = [
   { value: "all", label: "Geral", hint: "toda a academia" },
   { value: "guardians", label: "Pais", hint: "encarregados de educação" },
   { value: "coaches", label: "Treinadores", hint: "equipa técnica" },
+  { value: "members", label: "Sócios", hint: "quem tem a app recebe aviso" },
 ];
 
 export function NewAnnouncementDialog({

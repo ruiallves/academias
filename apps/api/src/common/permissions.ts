@@ -148,6 +148,16 @@ export type Permission =
    * quem acumular as duas recebe-o num cargo.
    */
   | "finance:read" | "finance:write"
+  /**
+   * Academias AI — análise de vídeo com computer vision.
+   *
+   * À parte de `training:*` de propósito: o vídeo de um jogo é imagem de
+   * menores, e planear um treino não é a mesma decisão que carregar noventa
+   * minutos de filmagem deles. `write` cria análises, carrega vídeo e aplica
+   * correções; `read` vê relatórios e insights. O âmbito manda como em tudo:
+   * um treinador analisa os jogos **das suas equipas** (`teamScopeFilter`).
+   */
+  | "ai:read" | "ai:write"
   | "clinical:status" | "clinical:read" | "clinical:write";
 
 const READ_ALL: Permission[] = [
@@ -160,6 +170,7 @@ const READ_ALL: Permission[] = [
   "training:read",
   "inventory:read",
   "finance:read",
+  "ai:read",
 ];
 
 const WRITE_ALL: Permission[] = [
@@ -181,6 +192,7 @@ const WRITE_ALL: Permission[] = [
   // cargo — ver a nota da permissão.
   "inventory:write",
   "finance:write",
+  "ai:write",
 ];
 
 export const ROLE_PERMISSIONS: Record<Role, Permission[]> = {
@@ -264,6 +276,9 @@ export const ROLE_PERMISSIONS: Record<Role, Permission[]> = {
     // cria exercícios e desenha bolas paradas. O que pode **planear** continua
     // limitado pelo âmbito — o plano é da sessão, e a sessão é de uma equipa.
     "training:read", "training:write",
+    // Analisa os jogos das suas equipas com a Academias AI — é ele que filma e
+    // é ele que corrige. O âmbito (`teamScopeFilter`) limita-o como em tudo.
+    "ai:read", "ai:write",
   ],
 
   /**
@@ -343,15 +358,25 @@ export type RequestContext = {
   /** Retiradas por baixo do papel. Ganham às concessões — ver `can`. */
   revokes: Permission[];
   /**
-   * As permissões do papel da academia, quando esta pessoa tem um.
+   * As permissões dos cargos desta pessoa — **a união de todos**, principal e
+   * secundários. Ver `exceptionsFor`.
    *
    * Substitui — não acumula com — o mapa em código. Nulo significa "o papel-base
    * por omissão", que é o que toda a gente tinha antes de os papéis existirem.
    */
   rolePermissions: Permission[] | null;
-  /** O papel da academia, para o cliente o poder mostrar. */
+  /**
+   * O cargo **principal** — o que dá o `baseRole`, o âmbito e a patente, e o que
+   * se mostra quando só cabe um nome.
+   */
   roleId: string | null;
   roleName: string | null;
+  /**
+   * Os cargos secundários. Não decidem âmbito nem patente: entram nas permissões
+   * (já somadas em `rolePermissions`) e existem aqui para se poderem mostrar —
+   * "Presidente · também Treinador Sub-13".
+   */
+  extraRoles: { id: string; name: string }[];
   /** Menus que este papel mostra. Vazio = todos os que a permissão deixar. */
   navKeys: string[];
   scope: Scope;

@@ -44,6 +44,14 @@ class SetNavDto {
 class AssignRoleDto {
   /** `null` devolve a pessoa aos valores por omissão do papel-base. */
   @IsOptional() @IsString() roleId?: string | null;
+
+  /**
+   * Os cargos secundários. **Ausente não mexe** neles; lista vazia limpa-os.
+   *
+   * A diferença importa: quem só troca o cargo principal não tem de reenviar os
+   * secundários para não os perder, e quem os quer tirar tem forma de o dizer.
+   */
+  @IsOptional() @IsArray() @ArrayMaxSize(10) @IsString({ each: true }) extraRoleIds?: string[];
 }
 
 /**
@@ -90,6 +98,6 @@ export class RolesController {
    */
   @Patch("assign/:membershipId")
   assign(@Req() req: AuthedRequest, @Param("membershipId") membershipId: string, @Body() dto: AssignRoleDto) {
-    return this.roles.assign(req.ctx, membershipId, dto.roleId ?? null);
+    return this.roles.assign(req.ctx, membershipId, dto.roleId ?? null, dto.extraRoleIds);
   }
 }

@@ -428,6 +428,45 @@ relação, como `AttendanceRecord`.
 Verificado por `npm run test:training` (33) — visibilidade, âmbito, autoria,
 favoritos, plano com blocos, arquivar-em-vez-de-apagar, e as recusas todas.
 
+## Academias AI
+
+A camada de inteligência: vídeo de jogo → computer vision → dados com
+confiança → revisão humana → estatística. O desenho completo, e o porquê de
+cada decisão, vive em [06-academias-ai](06-academias-ai.md); aqui fica o que
+existe.
+
+**Grupo próprio no menu** a seguir à Área técnica — Visão AI, Análises,
+Insights, e Desenvolvimento/Adversários marcados como beta com destino honesto
+(`Soon`). Permissões novas `ai:read`/`ai:write`, gémeas cliente/servidor e à
+parte de `training:*` (o vídeo de um jogo é imagem de menores); distribuídas
+aos cargos existentes pela migração `20260902200000_academias_ai`, registada
+no manifesto.
+
+**O fluxo do MVP funciona de ponta a ponta**: criar a análise (equipa + jogo
+do calendário a preencher o resto), confirmar o plantel — "#10 = Rui Silva",
+dito *antes* do processamento, é o que dispensa reconhecimento facial —,
+carregar o vídeo direto para o bucket privado `ai-videos` (o caminho das
+fotografias, com barra de progresso), e o pipeline corre sozinho: verificação
+de qualidade (real: nitidez, luz, estabilidade, terreno — OpenCV) e detecção +
+tracking (torchvision + ByteTrack, ~5 FPS). O detalhe da análise mostra o
+progresso ao vivo, a qualidade por dimensão, a confiança **medida** (nunca uma
+média — mostra-se o elo fraco), e a fila de revisão: o que ficou abaixo de
+0,75 pede um humano, e a correção vale para o track inteiro e fica guardada
+(`HumanCorrection`, o dataset do fine-tuning futuro). Terminar notifica quem
+criou (`AI_ANALYSIS_COMPLETED`).
+
+**O processamento não vive no NestJS.** `ai-worker/` (Python, raiz do repo)
+reclama trabalhos da fila (`AIJob`, `FOR UPDATE SKIP LOCKED`) por HTTP com
+`AI_WORKER_TOKEN` — sem token configurado a porta está fechada, a lição do
+webhook. Só modelos com licença limpa (o crivo está em `ai-worker/LICENSES.md`;
+o Ultralytics YOLO ficou fora por ser AGPL), e cada modelo regista-se em
+`AIModelVersion` com a licença — a proveniência dos números fica na base.
+
+Por fazer, pela ordem do plano: campo/homography, bola, identificação
+automática, métricas derivadas, eventos/clips, relatório de jogo, evolução,
+adversários, scouting. Cada capacidade que ainda não é robusta diz "não há
+confiança suficiente" em vez de inventar — é a regra da área inteira.
+
 ## Apagar equipas e clubes
 
 Duas permissões novas, ambas na presidência e na direção por omissão e ambas
@@ -1170,9 +1209,26 @@ de infraestrutura, não de código da aplicação.
   "Novo evento" já aberto no tipo **e na equipa certos**
   (`/calendario?novo=treino&equipa=…`). Marcar continua a ser do calendário — é lá
   que se vê o que já está ocupado —, o que desapareceu foi a viagem às cegas.
+- **As presenças já se gravam a sério.** Viviam inteiras num `Record` em memória
+  do browser: o treinador registava as faltas, carregava em Guardar, via a folha
+  fechada — e ao recarregar a página estava tudo por registar outra vez. Sem erro
+  nenhum, porque não havia erro: **a escrita nunca saía do browser**. O
+  `GET /api/sessions` já devolvia as presenças da base desde sempre; o que faltava
+  era um endpoint que lá pusesse alguma coisa.
+  `PUT /api/sessions/:id/attendance` fecha a folha (`attendance:write`, com âmbito
+  por equipa): substitui em vez de acumular — corrigir é regravar, e quem sai da
+  segunda lista deixa de ter falta —, marca `attendanceClosedAt` e passa o treino
+  a realizado. O corpo traz **só quem faltou**, e uma lista vazia continua a ser a
+  afirmação "estiveram todos", diferente de ninguém ter verificado. O servidor
+  recusa uma falta a quem está de baixa (a mesma regra da convocatória, derivada
+  do boletim) e um atleta que não é do plantel daquela equipa. O diálogo passou a
+  esperar pela resposta: só fecha quando o servidor confirmar, e uma recusa
+  aparece lá dentro com as marcas todas onde estavam.
+  Verificado por `npm run test:attendance` (28), que começa pelo que faltava —
+  gravar, reler num pedido novo, e exigir que as faltas continuem lá.
 - **Falta justificada leva motivo.** No registo de presenças, escolher "Justificada"
   abre um campo para o motivo (ex.: consulta médica); o motivo aparece também na
-  ficha do atleta, ao lado da falta. Vive com as presenças, que ainda são locais.
+  ficha do atleta, ao lado da falta — e persiste com a folha, como o resto.
 - **Sem escrita nenhuma ainda: avaliações.** **Não** tem escrita local a converter —
   é um ecrã só de leitura (`Evaluation` existe na base, mas não há UI que a crie nem
   endpoint de escrita). É uma feature a construir de raiz, não uma migração.

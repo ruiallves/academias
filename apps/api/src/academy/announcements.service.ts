@@ -4,13 +4,14 @@ import { PrismaService, type ScopedClient } from "../prisma/prisma.service";
 import { NotificationsService } from "../notifications/notifications.service";
 import { can, teamScopeFilter, type RequestContext } from "../common/permissions";
 
-type AudienceKind = "all" | "guardians" | "coaches";
+type AudienceKind = "all" | "guardians" | "coaches" | "members";
 
 /** O rótulo que a consola mostra — a direção lê "Pais", não `{ kind: "guardians" }`. */
 const AUDIENCE_LABEL: Record<AudienceKind, string> = {
   all: "Geral",
   guardians: "Pais",
   coaches: "Treinadores",
+  members: "Sócios",
 };
 
 /**
@@ -327,6 +328,19 @@ export class AnnouncementsService {
         select: { userId: true },
       });
       return unique(guardians.map((m) => m.userId));
+    }
+
+    /*
+     * Sócios: só os que reclamaram a ficha recebem push — os outros não têm
+     * conta para onde o mandar. O aviso em si fica visível a todos os sócios
+     * na app, quando entrarem.
+     */
+    if (kind === "members") {
+      const socios = await db.member.findMany({
+        where: { userId: { not: null }, status: "ACTIVE" },
+        select: { userId: true },
+      });
+      return unique(socios.map((m) => m.userId).filter((u): u is string => Boolean(u)));
     }
 
     if (kind === "coaches") {

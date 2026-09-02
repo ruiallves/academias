@@ -423,37 +423,95 @@ export class RolesService {
   }
 
   /**
-   * Dar um papel a uma pessoa.
+   * Dar cargos a uma pessoa — o principal, e os secundários que se acrescentam.
    *
-   * Escreve **as duas** colunas: `customRoleId` e `role`. O enum tem de seguir o
-   * papel-base, senão uma pessoa com o papel "Dep. Scouting" continuava a derivar
-   * o âmbito como treinador — e o âmbito é o que a impede de ver o que não é dela.
+   * ## Um principal, e os outros por cima
+   *
+   * O **principal** escreve duas colunas: `customRoleId` e `role`. O enum tem de
+   * seguir o papel-base, senão uma pessoa com o cargo "Dep. Scouting" continuava
+   * a derivar o âmbito como treinador — e o âmbito é o que a impede de ver o que
+   * não é dela.
+   *
+   * Os **secundários** não mexem no enum. É a decisão que faz isto funcionar: um
+   * presidente que também treina os Sub-13 continua a ver a academia toda,
+   * porque é isso que "presidente" quer dizer. Se o segundo cargo trocasse o
+   * `baseRole`, acrescentar "treinador" a um presidente prendia-o às equipas
+   * dele — tirava-lhe acesso em vez de lho dar, que é o oposto do que se pediu.
+   * O que os secundários fazem é somar permissões e menus, em `exceptionsFor`.
+   *
+   * ## As guardas
+   *
+   * A patente verifica-se em **todos**, um a um: quem convida não pode dar um
+   * cargo de patente acima da sua, e isso não pode ter uma porta das traseiras
+   * pelo campo dos secundários.
+   *
+   * O principal não pode repetir-se nos secundários — seria a mesma coisa dita
+   * duas vezes, e a lista da ficha ficaria com o nome dele lá duas vezes.
+   *
+   * `extraRoleIds` a `undefined` **não mexe** nos secundários: quem só quer
+   * trocar o principal não tem de reenviar os outros para não os perder. Uma
+   * lista vazia limpa-os, que é como se tiram.
    */
-  async assign(ctx: RequestContext, membershipId: string, roleId: string | null) {
+  async assign(
+    ctx: RequestContext,
+    membershipId: string,
+    roleId: string | null,
+    extraRoleIds?: string[],
+  ) {
     if (!can(ctx, "access:write")) throw new ForbiddenException("Sem permissão para gerir acessos");
-    if (membershipId === ctx.membershipId) throw new BadRequestException("Não podes alterar o teu próprio papel");
+    if (membershipId === ctx.membershipId) throw new BadRequestException("Não podes alterar os teus próprios cargos");
 
     return this.prisma.runAs(ctx.academyId, async (db) => {
       const target = await db.membership.findFirst({
         where: { id: membershipId, role: { notIn: ["GUARDIAN", "ATHLETE"] } },
-        select: { id: true, role: true },
+        select: { id: true, role: true, customRoleId: true },
       });
       if (!target) throw new NotFoundException("Pessoa não encontrada");
 
+      /* ---------------------------------------------------------- principal */
       if (roleId === null) {
         await db.membership.update({ where: { id: membershipId }, data: { customRoleId: null } });
-        return { ok: true };
+      } else {
+        const role = await this.mustFind(db, roleId);
+        if (role.rank > RANK[ctx.role]) {
+          throw new ForbiddenException("Não podes dar um cargo com mais acesso do que o teu");
+        }
+        await db.membership.update({
+          where: { id: membershipId },
+          data: { customRoleId: roleId, role: role.baseRole },
+        });
       }
 
-      const role = await this.mustFind(db, roleId);
-      if (role.rank > RANK[ctx.role]) {
-        throw new ForbiddenException("Não podes dar um papel com mais acesso do que o teu");
+      /* -------------------------------------------------------- secundários */
+      if (extraRoleIds) {
+        const principal = roleId;
+        const pedidos = [...new Set(extraRoleIds)].filter((id) => id !== principal);
+
+        for (const id of pedidos) {
+          const extra = await this.mustFind(db, id);
+          if (extra.rank > RANK[ctx.role]) {
+            throw new ForbiddenException("Não podes dar um cargo com mais acesso do que o teu");
+          }
+        }
+
+        /*
+         * Apagar e reescrever, e não reconciliar linha a linha.
+         *
+         * São meia dúzia de linhas por pessoa, dentro da mesma transacção: a
+         * reconciliação daria o mesmo resultado com três vezes mais código e um
+         * estado intermédio a mais para estar errado. `createdAt` perde-se, e não
+         * serve para nada — ninguém pergunta desde quando é que alguém é também
+         * treinador; se um dia perguntar, é o `AuditLog` que responde.
+         */
+        await db.membershipRole.deleteMany({ where: { membershipId } });
+        if (pedidos.length > 0) {
+          await db.membershipRole.createMany({
+            data: pedidos.map((id) => ({ membershipId, roleId: id })),
+            skipDuplicates: true,
+          });
+        }
       }
 
-      await db.membership.update({
-        where: { id: membershipId },
-        data: { customRoleId: roleId, role: role.baseRole },
-      });
       return { ok: true };
     });
   }

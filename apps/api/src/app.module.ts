@@ -12,6 +12,8 @@ import { PushController } from "./notifications/push.controller";
 import { NotificationsController } from "./notifications/notifications.controller";
 import { EupagoClient } from "./billing/eupago.client";
 import { BillingService } from "./billing/billing.service";
+import { ClubAppController } from "./club-app/club-app.controller";
+import { ClubAppService } from "./club-app/club-app.service";
 import { BillingController } from "./billing/billing.controller";
 import { EupagoWebhookController } from "./billing/webhooks.controller";
 import { LandingController } from "./landing/landing.controller";
@@ -20,6 +22,10 @@ import { InvitesController, InvitePageController } from "./invites/invites.contr
 import { InvitesService } from "./invites/invites.service";
 import { MembersController, PublicMembersController } from "./members/members.controller";
 import { MembersService } from "./members/members.service";
+import { MemberFeesService } from "./members/member-fees.service";
+import { MemberInvitesService } from "./members/member-invites.service";
+import { PollsService } from "./members/polls.service";
+import { PollsController } from "./members/polls.controller";
 import { ScoutingController, ScoutingVideoController, ScoutingWorkflowController } from "./scouting/scouting.controller";
 import { ScoutingService } from "./scouting/scouting.service";
 import { ScoutingVideoService } from "./scouting/scouting-video.service";
@@ -66,6 +72,12 @@ import { StorageService } from "./storage/storage.service";
 import { ReportsService } from "./development/reports.service";
 import { SupabaseAccountsService } from "./auth/supabase-accounts.service";
 import { TenantAssetsController } from "./tenant/tenant-assets.controller";
+import { AiController, AiWorkerController } from "./ai/ai.controller";
+import { AiService } from "./ai/ai.service";
+import { AiVideoService } from "./ai/ai-video.service";
+import { AiJobsService } from "./ai/ai-jobs.service";
+import { AiWorkerService } from "./ai/ai-worker.service";
+import { AiWorkerGuard } from "./ai/ai-worker.guard";
 
 /**
  * Monólito modular.
@@ -94,6 +106,7 @@ import { TenantAssetsController } from "./tenant/tenant-assets.controller";
   ],
   controllers: [
     BillingController,
+    ClubAppController,
     EupagoWebhookController,
     LandingController,
     InvitesController,
@@ -104,6 +117,7 @@ import { TenantAssetsController } from "./tenant/tenant-assets.controller";
     RolesController,
     ScoutingController,
     MembersController,
+    PollsController,
     // Público: a inscrição de sócio a partir da página do clube.
     PublicMembersController,
     ScoutingVideoController,
@@ -112,6 +126,9 @@ import { TenantAssetsController } from "./tenant/tenant-assets.controller";
     AnnouncementsController,
     // Área técnica: planos de treino, exercícios, modelos de jogo, bolas paradas.
     TrainingController,
+    // Academias AI: análises de vídeo — e as rotas dos workers de CV, com guard próprio.
+    AiController,
+    AiWorkerController,
     InventoryController,
     FinanceController,
     PushController,
@@ -144,6 +161,7 @@ import { TenantAssetsController } from "./tenant/tenant-assets.controller";
     PushService,
     EupagoClient,
     BillingService,
+    ClubAppService,
     LandingService,
     InvitesService,
     AcademyService,
@@ -152,12 +170,20 @@ import { TenantAssetsController } from "./tenant/tenant-assets.controller";
     RolesService,
     ScoutingService,
     MembersService,
+    MemberFeesService,
+    MemberInvitesService,
+    PollsService,
     ScoutingVideoService,
     ScoutingWorkflowService,
     AthletesService,
     MatchesService,
     AnnouncementsService,
     TrainingService,
+    AiService,
+    AiVideoService,
+    AiJobsService,
+    AiWorkerService,
+    AiWorkerGuard,
     InventoryService,
     FinanceService,
     PlatformService,

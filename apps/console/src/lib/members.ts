@@ -99,7 +99,62 @@ export type MemberDetail = MemberRow & {
   partnerCommsAt: string | null;
   partnerDataAt: string | null;
   approvedBy: string | null;
+  /** A conta da app do clube: reclamada (`userId`) e o carimbo do convite. */
+  userId: string | null;
+  inviteSentAt: string | null;
 };
+
+/* ---------------------------------------------------------------------------- */
+/* Quotas e app                                                                  */
+/* ---------------------------------------------------------------------------- */
+
+export type MemberFeeRow = {
+  id: string;
+  period: string;
+  label: string | null;
+  amountCents: number;
+  dueOn: string | null;
+  status: "OPEN" | "SETTLED" | "VOID";
+  settledAt: string | null;
+  method: string | null;
+  notes: string | null;
+};
+
+export const listMemberFees = (memberId: string) => apiGet<MemberFeeRow[]>(`/api/members/${memberId}/fees`);
+export const generateFees = () => apiPost<{ created: number; members: number }>("/api/members/fees/generate", {});
+export const settleFee = (id: string, method: "CASH" | "TRANSFER") =>
+  apiPost<{ ok: true }>(`/api/members/fees/${id}/settle`, { method });
+export const voidFee = (id: string) => apiPost<{ ok: true }>(`/api/members/fees/${id}/void`, {});
+export const reopenFee = (id: string) => apiPost<{ ok: true }>(`/api/members/fees/${id}/reopen`, {});
+
+export const inviteMember = (id: string) => apiPost<{ ok: true; email: string }>(`/api/members/${id}/invite`, {});
+
+/* ---------------------------------------------------------------------------- */
+/* Sondagens                                                                     */
+/* ---------------------------------------------------------------------------- */
+
+export type PollRow = {
+  id: string;
+  question: string;
+  details: string | null;
+  status: "DRAFT" | "OPEN" | "CLOSED";
+  publishedAt: string | null;
+  closedAt: string | null;
+  createdAt: string;
+  totalVotes: number;
+  options: { id: string; label: string; votes: number }[];
+};
+
+export const listPolls = () => apiGet<PollRow[]>("/api/polls");
+export const createPoll = (body: { question: string; details?: string; options: string[] }) =>
+  apiPost<{ id: string }>("/api/polls", body);
+export const publishPoll = (id: string) => apiPost<{ ok: true }>(`/api/polls/${id}/publish`, {});
+export const closePoll = (id: string) => apiPost<{ ok: true }>(`/api/polls/${id}/close`, {});
+export const removePoll = (id: string) => apiDelete<{ ok: true }>(`/api/polls/${id}`);
+
+/* O cartão na app — os dois interruptores das definições do clube. */
+export const setMemberCard = (body: { cardEnabled?: boolean; qrEnabled?: boolean }) =>
+  apiPatch<{ cardEnabled: boolean; qrEnabled: boolean }>("/api/academy/member-card", body);
 
 export const listMembers = (filters: { status?: string; tierId?: string; q?: string } = {}) =>
   apiGet<{ members: MemberRow[]; counts: Partial<Record<MemberStatus, number>> }>("/api/members", filters);

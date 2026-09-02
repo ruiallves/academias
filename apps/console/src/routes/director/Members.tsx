@@ -7,6 +7,7 @@ import { Download, ExternalLink, Home, Plus, Settings, Trash2, Upload } from "@/
 import { can } from "@/lib/permissions";
 import { useSession } from "@/session";
 import { BulkBar, BulkDeleteDialog } from "@/components/BulkDelete";
+import { SociosAppDialog } from "@/components/SociosAppDialog";
 import { academy } from "@/lib/api";
 import { money } from "@/lib/format";
 import { apiOrigin, apiPatch } from "@/lib/http";
@@ -33,6 +34,7 @@ import {
   type MemberTier,
   type DocumentKind,
   type Sex,
+  generateFees,
 } from "@/lib/members";
 
 /**
@@ -60,6 +62,31 @@ export default function Members() {
   const [data, setData] = useState<{ members: MemberRow[]; counts: Partial<Record<MemberStatus, number>> } | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [pageOpen, setPageOpen] = useState(false);
+  const [appOpen, setAppOpen] = useState(false);
+  /*
+   * "Gerar quotas" responde no próprio botão — quantas criou, ou que já estava
+   * tudo. É idempotente no servidor, por isso carregar duas vezes não assusta.
+   */
+  const [quotas, setQuotas] = useState<string | null>(null);
+  const [aGerar, setAGerar] = useState(false);
+
+  async function gerarQuotas() {
+    if (aGerar) return;
+    setAGerar(true);
+    setQuotas(null);
+    try {
+      const r = await generateFees();
+      setQuotas(
+        r.created === 0
+          ? "As quotas do período já estavam todas lançadas."
+          : `${r.created} ${r.created === 1 ? "quota lançada" : "quotas lançadas"} (${r.members} sócios activos com categoria).`,
+      );
+    } catch (e) {
+      setQuotas(e instanceof Error ? e.message : "Não foi possível gerar as quotas.");
+    } finally {
+      setAGerar(false);
+    }
+  }
   const [importOpen, setImportOpen] = useState(false);
   const [newOpen, setNewOpen] = useState(false);
 
@@ -179,6 +206,14 @@ export default function Members() {
             Gerir página de inscrição
           </button>
         )}
+        <button type="button" className="ctl-outline" onClick={() => setAppOpen(true)}>
+          App do clube
+        </button>
+        {mayWrite && (
+          <button type="button" className="ctl-outline" onClick={() => void gerarQuotas()} disabled={aGerar}>
+            {aGerar ? "A gerar…" : "Gerar quotas"}
+          </button>
+        )}
         {mayWrite && (
           <button type="button" className="ctl-primary" onClick={() => setNewOpen(true)}>
             <Plus className="size-3.5" strokeWidth={2} />
@@ -186,6 +221,10 @@ export default function Members() {
           </button>
         )}
       </PageHeader>
+
+      {quotas && (
+        <p className="mb-3 rounded-[var(--radius-control)] bg-sunken px-3 py-2 text-meta text-ink-2">{quotas}</p>
+      )}
 
       {/*
         Os pendentes primeiro e com contador: uma inscrição feita no site e
@@ -260,6 +299,7 @@ export default function Members() {
         />
       )}
 
+      {appOpen && <SociosAppDialog mayWrite={mayWrite} onClose={() => setAppOpen(false)} />}
       {pageOpen && <PageDialog mayWrite={mayWrite} onClose={() => setPageOpen(false)} />}
       {importOpen && <ImportDialog onClose={() => setImportOpen(false)} onDone={load} />}
       {newOpen && <NewMemberDialog onClose={() => setNewOpen(false)} onCreated={load} />}

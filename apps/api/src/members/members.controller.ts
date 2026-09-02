@@ -3,6 +3,8 @@ import { Throttle } from "@nestjs/throttler";
 import type { AuthedRequest } from "../auth/auth.guard";
 import { Public } from "../auth/auth.guard";
 import { MembersService } from "./members.service";
+import { MemberFeesService } from "./member-fees.service";
+import { MemberInvitesService } from "./member-invites.service";
 import {
   MemberCreateDto,
   MemberImportDto,
@@ -18,7 +20,44 @@ import {
  */
 @Controller("api/members")
 export class MembersController {
-  constructor(private readonly members: MembersService) {}
+  constructor(
+    private readonly members: MembersService,
+    private readonly fees: MemberFeesService,
+    private readonly invites: MemberInvitesService,
+  ) {}
+
+  /*
+   * As rotas com prefixo literal vêm ANTES de `:id` — a lição do `por-tratar`
+   * dos tickets: o Nest casa por ordem de declaração, e um `:id` guloso
+   * engoliria `card/...` e `fees/...` inteiros.
+   */
+
+  /** O leitor do QR na portaria: token → quem é, e se está activo. */
+  @Get("card/:token")
+  card(@Req() req: AuthedRequest, @Param("token") token: string) {
+    return this.members.cardInfo(req.ctx, token);
+  }
+
+  /** Gerar as quotas do período corrente — idempotente, diz quantas criou. */
+  @Post("fees/generate")
+  generateFees(@Req() req: AuthedRequest) {
+    return this.fees.gerar(req.ctx);
+  }
+
+  @Post("fees/:id/settle")
+  settleFee(@Req() req: AuthedRequest, @Param("id") id: string, @Body() body: { method?: string }) {
+    return this.fees.liquidar(req.ctx, id, body?.method);
+  }
+
+  @Post("fees/:id/void")
+  voidFee(@Req() req: AuthedRequest, @Param("id") id: string) {
+    return this.fees.anular(req.ctx, id);
+  }
+
+  @Post("fees/:id/reopen")
+  reopenFee(@Req() req: AuthedRequest, @Param("id") id: string) {
+    return this.fees.reabrir(req.ctx, id);
+  }
 
   @Get()
   list(
@@ -71,6 +110,18 @@ export class MembersController {
   @Get(":id")
   detail(@Req() req: AuthedRequest, @Param("id") id: string) {
     return this.members.detail(req.ctx, id);
+  }
+
+  @Get(":id/fees")
+  memberFees(@Req() req: AuthedRequest, @Param("id") id: string) {
+    return this.fees.doSocio(req.ctx, id);
+  }
+
+  /** (Re)enviar o convite para a app — o botão da ficha. */
+  @Throttle({ default: { ttl: 60_000, limit: 10 } })
+  @Post(":id/invite")
+  invite(@Req() req: AuthedRequest, @Param("id") id: string) {
+    return this.invites.enviar(req.ctx, id);
   }
 
   @Patch(":id")

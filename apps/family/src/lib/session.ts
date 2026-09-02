@@ -208,6 +208,14 @@ export function signOut(): void {
   snapshot = null;
   try {
     localStorage.removeItem(KEY);
+    /*
+     * A escolha de contexto sai com a sessão — pelo prefixo, e não pelo módulo:
+     * importar `lib/contexts` daqui fechava um ciclo (contexts → http → session).
+     * A conta seguinte não tem de herdar a área em que a anterior ficou.
+     */
+    for (const k of Object.keys(localStorage)) {
+      if (k.startsWith("academia.app.contexto")) localStorage.removeItem(k);
+    }
   } catch {
     /* nada a fazer — o passo seguinte é o ecrã de entrada na mesma */
   }

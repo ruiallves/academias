@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   AREAS,
   CLINICAL_AREAS,
@@ -15,6 +15,7 @@ import {
 import { ROLE_PERMISSIONS, can, type Permission, type Session } from "@/lib/permissions";
 import { assignRole, loadRoles, useRoles } from "@/lib/roles";
 import { ROLE_LABEL } from "@/session";
+import { Check } from "@/lib/icons";
 import { Panel, PanelHead, Pill, cx } from "./primitives";
 import { reloadAcademy } from "@/lib/store";
 import type { StaffMember } from "@/data/types";
@@ -48,19 +49,40 @@ export function AccessPanel({ member, session }: { member: StaffMember; session:
   }, [member.id, member.grants, member.revokes]);
 
   const mayEdit = can(session, "access:write");
-  const permissions = effectivePermissions(member.role, member.id);
+  const { roles } = useRoles();
   const { grants, revokes } = overridesFor(member.id);
   const changed = grants.length + revokes.length;
 
-  // O nome do papel da academia quando existe; o do papel-base quando não.
+  /*
+   * O que os cargos desta pessoa dão, somados.
+   *
+   * Todos: o principal e os que se lhe acrescentaram. É a mesma união que o
+   * servidor faz para decidir o que ela pode — aqui serve para a matriz abaixo
+   * mostrar a verdade, e para a etiqueta "alterado" comparar contra a coisa
+   * certa. Sem cargos configurados fica nulo, e cai-se nos valores do papel-base.
+   */
+  const doCargo = useMemo(() => {
+    const ids = [member.roleId, ...(member.extraRoles ?? []).map((r) => r.id)].filter(
+      (id): id is string => Boolean(id),
+    );
+    if (ids.length === 0) return null;
+    return [...new Set(ids.flatMap((id) => roles.find((r) => r.id === id)?.permissions ?? []))];
+  }, [member.roleId, member.extraRoles, roles]);
+
+  const permissions = effectivePermissions(member.role, member.id, doCargo);
+
+  // O nome do cargo principal quando existe; o do papel-base quando não.
   const roleLabel = member.roleName ?? ROLE_LABEL[member.role];
+  const tambem = member.extraRoles ?? [];
 
   return (
     <div className="space-y-3">
       <Panel>
         <PanelHead
           title="Acesso"
-          hint={`papel: ${roleLabel}${changed ? ` · ${changed} ${changed === 1 ? "excepção" : "excepções"}` : ""}`}
+          hint={`${roleLabel}${tambem.length > 0 ? ` · também ${tambem.map((r) => r.name).join(", ")}` : ""}${
+            changed ? ` · ${changed} ${changed === 1 ? "excepção" : "excepções"}` : ""
+          }`}
         >
           {mayEdit && changed > 0 && (
             <button type="button" onClick={() => resetAccess(member.id)} className="ctl-ghost">
@@ -86,7 +108,7 @@ export function AccessPanel({ member, session }: { member: StaffMember; session:
 
         {mayEdit && <RolePicker member={member} session={session} />}
 
-        <AreaTable areas={AREAS} member={member} permissions={permissions} mayEdit={mayEdit} />
+        <AreaTable areas={AREAS} member={member} permissions={permissions} base={doCargo} mayEdit={mayEdit} />
       </Panel>
 
       <Panel>
@@ -97,55 +119,99 @@ export function AccessPanel({ member, session }: { member: StaffMember; session:
           fica no departamento clínico, para a origem de um diagnóstico ser sempre rastreável a quem o pode
           fazer.
         </p>
-        <AreaTable areas={CLINICAL_AREAS} member={member} permissions={permissions} mayEdit={mayEdit} />
+        <AreaTable areas={CLINICAL_AREAS} member={member} permissions={permissions} base={doCargo} mayEdit={mayEdit} />
       </Panel>
     </div>
   );
 }
 
 /**
- * Que papel esta pessoa veste.
+ * Que cargos esta pessoa veste.
  *
  * Está aqui, e não na ficha ao lado do telemóvel, pela mesma razão de
  * `access:write` existir à parte de `staff:write`: mudar o cargo de alguém é
- * secretaria, mudar o **papel** é mudar o que essa pessoa pode fazer na academia.
+ * secretaria, mudar o **acesso** é mudar o que essa pessoa pode fazer.
  *
- * O servidor põe o papel-base a condizer com o papel escolhido — é ele que decide
- * de onde vem o âmbito, e um papel de scouting com âmbito de treinador seria uma
- * pessoa presa a equipas que não tem.
+ * ## Um principal, e os que se acrescentam
+ *
+ * Num clube pequeno a mesma pessoa é presidente e treina os Sub-13. Até aqui
+ * tinha de escolher — ou via as contas, ou convocava — e quem tentava resolvê-lo
+ * criava um cargo "Presidente e treinador" com as permissões somadas à mão. Ao
+ * fim de uma época havia oito cargos que eram combinações de três.
+ *
+ * O **principal** é o que decide de onde vem o âmbito: o servidor põe o
+ * papel-base a condizer com ele. É por isso que continua a ser um só, e escolhe-se
+ * como sempre se escolheu — uma pastilha acesa entre as outras.
+ *
+ * Os **secundários** só somam permissões e menus. Um presidente que também treina
+ * continua a ver a academia toda: se o segundo cargo trocasse o papel-base,
+ * acrescentar "treinador" prendia-o às equipas dele e tirava-lhe acesso em vez de
+ * lho dar — o contrário do que se quer.
+ *
+ * ## Porque é que são duas listas e não uma com dois cliques
+ *
+ * Porque são duas perguntas diferentes, e a segunda não faz sentido sem a
+ * primeira. Uma lista só, com "clica uma vez para principal, duas para
+ * secundário", é o género de coisa que ninguém descobre e toda a gente erra. Aqui
+ * o principal está sempre visível em cima, e o resto é uma linha de caixas —
+ * marcam-se as que quiser, e o que ela é lê-se de uma vez.
  */
 function RolePicker({ member, session }: { member: StaffMember; session: Session }) {
   const { roles } = useRoles();
-  const [busy, setBusy] = useState(false);
+  const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     void loadRoles();
   }, []);
 
-  // Ninguém muda o seu próprio papel — o servidor recusa, e oferecê-lo era
+  // Ninguém muda os seus próprios cargos — o servidor recusa, e oferecê-lo era
   // prometer o que não se cumpre.
   const isSelf = session.staffId === member.id;
   if (roles.length === 0 || isSelf) return null;
 
-  async function choose(roleId: string) {
-    if (roleId === member.roleId) return;
-    setBusy(true);
+  const extras = member.extraRoles ?? [];
+  const extraIds = new Set(extras.map((r) => r.id));
+
+  async function guardar(what: string, roleId: string | null, extraRoleIds?: string[]) {
+    setBusy(what);
     setError(null);
     try {
-      await assignRole(member.id, roleId);
+      await assignRole(member.id, roleId, extraRoleIds);
       await reloadAcademy();
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Não foi possível mudar o papel.");
+      setError(e instanceof Error ? e.message : "Não foi possível mudar os cargos.");
     } finally {
-      setBusy(false);
+      setBusy(null);
     }
   }
+
+  /*
+   * Promover um secundário a principal tira-o da lista dos secundários.
+   *
+   * Sem isto, o mesmo cargo ficava nas duas listas — o nome dele aparecia duas
+   * vezes na ficha, e a soma das permissões contava-o duas vezes sem que isso
+   * mudasse nada. O servidor também o filtra; fazê-lo aqui é o que evita o
+   * segundo em que o ecrã mostra o erro antes de a resposta chegar.
+   */
+  function escolherPrincipal(roleId: string) {
+    if (roleId === member.roleId) return;
+    void guardar(roleId, roleId, extraIds.has(roleId) ? [...extraIds].filter((id) => id !== roleId) : undefined);
+  }
+
+  function alternarSecundario(roleId: string) {
+    const proximos = extraIds.has(roleId)
+      ? [...extraIds].filter((id) => id !== roleId)
+      : [...extraIds, roleId];
+    void guardar(roleId, member.roleId ?? null, proximos);
+  }
+
+  const disponiveis = roles.filter((r) => r.id !== member.roleId);
 
   return (
     <div className="border-b border-line px-5 py-3">
       <div className="mb-2 flex items-baseline justify-between gap-3">
-        <span className="text-group text-ink-3 uppercase">Papel</span>
+        <span className="text-group text-ink-3 uppercase">Cargo principal</span>
         {error && <span className="text-meta text-risk">{error}</span>}
       </div>
       <div className="flex flex-wrap gap-1.5">
@@ -155,12 +221,12 @@ function RolePicker({ member, session }: { member: StaffMember; session: Session
             <button
               key={role.id}
               type="button"
-              disabled={busy}
-              onClick={() => void choose(role.id)}
+              disabled={busy !== null}
+              onClick={() => escolherPrincipal(role.id)}
               className={cx(
                 "rounded-[var(--radius-control)] border px-2.5 py-1 text-meta font-medium transition-colors",
                 on ? "border-transparent bg-ink text-surface" : "border-line text-ink-2 hover:border-line-strong",
-                busy && "opacity-60",
+                busy !== null && "opacity-60",
               )}
             >
               {role.name}
@@ -168,6 +234,57 @@ function RolePicker({ member, session }: { member: StaffMember; session: Session
           );
         })}
       </div>
+
+      {/*
+        O que decide o âmbito, dito onde se decide. Sem esta linha, "principal" e
+        "também" pareciam a mesma coisa com nomes diferentes — e a pergunta que
+        aparecia a seguir era sempre porque é que a ordem importa.
+      */}
+      <p className="mt-2 text-meta leading-relaxed text-ink-3">
+        O principal decide o que esta pessoa <strong className="font-medium text-ink-2">vê</strong> — a academia toda,
+        ou só as equipas dela.
+      </p>
+
+      {disponiveis.length > 0 && (
+        <>
+          <div className="mt-4 mb-2 flex items-baseline gap-2">
+            <span className="text-group text-ink-3 uppercase">Também é</span>
+            <span className="text-meta text-ink-4">
+              {extras.length === 0
+                ? "opcional"
+                : `${extras.length} ${extras.length === 1 ? "cargo" : "cargos"} a mais`}
+            </span>
+          </div>
+          <div className="flex flex-wrap gap-1.5">
+            {disponiveis.map((role) => {
+              const on = extraIds.has(role.id);
+              return (
+                <button
+                  key={role.id}
+                  type="button"
+                  disabled={busy !== null}
+                  onClick={() => alternarSecundario(role.id)}
+                  aria-pressed={on}
+                  className={cx(
+                    "inline-flex items-center gap-1.5 rounded-[var(--radius-control)] border px-2.5 py-1 text-meta font-medium transition-colors",
+                    on
+                      ? "border-transparent bg-signal-soft text-signal-ink"
+                      : "border-line text-ink-3 hover:border-line-strong hover:text-ink-2",
+                    busy !== null && "opacity-60",
+                  )}
+                >
+                  {on && <Check className="size-3" strokeWidth={2.5} />}
+                  {role.name}
+                </button>
+              );
+            })}
+          </div>
+          <p className="mt-2 text-meta leading-relaxed text-ink-3">
+            Um cargo a mais só <strong className="font-medium text-ink-2">acrescenta</strong> — o que esta pessoa pode
+            é a soma de todos. Nunca tira nada.
+          </p>
+        </>
+      )}
     </div>
   );
 }
@@ -176,14 +293,20 @@ function AreaTable({
   areas,
   member,
   permissions,
+  base: doCargo,
   mayEdit,
 }: {
   areas: Area[];
   member: StaffMember;
   permissions: Set<Permission>;
+  /** O que os cargos desta pessoa dão, somados. Nulo = os valores do papel-base. */
+  base: Permission[] | null;
   mayEdit: boolean;
 }) {
-  const base = ROLE_PERMISSIONS[member.role];
+  // A referência de "alterado" é o que os cargos dão — não o enum. Comparar com o
+  // enum acendia a etiqueta em metade das linhas de quem tem um cargo à medida,
+  // e "alterado" deixava de querer dizer alguma coisa.
+  const base = doCargo ?? ROLE_PERMISSIONS[member.role];
 
   return (
     <ul>
@@ -211,7 +334,7 @@ function AreaTable({
             </div>
 
             {mayEdit ? (
-              <LevelPicker area={area} member={member} level={level} />
+              <LevelPicker area={area} member={member} level={level} base={doCargo} />
             ) : (
               <LevelTag level={level} hasWrite={Boolean(area.write)} />
             )}
@@ -229,7 +352,18 @@ function AreaTable({
  * interruptores deixavam exprimir esse estado impossível. Assim o estado inválido
  * não é evitado por validação: não cabe na interface.
  */
-function LevelPicker({ area, member, level }: { area: Area; member: StaffMember; level: Level }) {
+function LevelPicker({
+  area,
+  member,
+  level,
+  base: doCargo,
+}: {
+  area: Area;
+  member: StaffMember;
+  level: Level;
+  /** A união dos cargos desta pessoa — a referência contra a qual a excepção se mede. */
+  base: Permission[] | null;
+}) {
   const options: { value: Level; label: string }[] = [
     { value: "none", label: "Não vê" },
     { value: "read", label: "Vê" },
@@ -238,8 +372,8 @@ function LevelPicker({ area, member, level }: { area: Area; member: StaffMember;
 
   function choose(next: Level) {
     if (next === level) return;
-    setPermission(member.id, member.role, area.read, next !== "none");
-    if (area.write) setPermission(member.id, member.role, area.write, next === "write");
+    setPermission(member.id, doCargo, member.role, area.read, next !== "none");
+    if (area.write) setPermission(member.id, doCargo, member.role, area.write, next === "write");
   }
 
   return (

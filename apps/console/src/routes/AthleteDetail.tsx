@@ -46,7 +46,7 @@ import {
   athleteSessions,
   feeHistory,
   guardiansOf,
-  listTeams,
+  listAthletes,
   sportById,
   teamById,
   today,
@@ -91,7 +91,16 @@ export default function AthleteDetail() {
   const [editing, setEditing] = useState(false);
 
   const athlete = athleteById(id);
-  const inScope = athlete ? listTeams(session).some((t) => t.id === athlete.teamId) : false;
+  /*
+   * Quem abre a ficha é quem vê o atleta na lista — e é assim que se pergunta,
+   * em vez de repetir a regra aqui.
+   *
+   * Repeti-la foi o que deu: isto perguntava se a equipa do atleta era uma das
+   * minhas, e um atleta **sem equipa** respondia "não" a toda a gente. Ele
+   * aparecia na lista (que já sabe destes casos), clicava-se, e a ficha dizia
+   * "Atleta não encontrado". Duas respostas diferentes à mesma pergunta.
+   */
+  const inScope = athlete ? listAthletes(session).some((a) => a.id === athlete.id) : false;
 
   const matches = useAthleteMatches(session, id);
 

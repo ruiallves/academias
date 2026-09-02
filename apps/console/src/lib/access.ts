@@ -73,14 +73,31 @@ export function hasOverrides(staffId: string): boolean {
 /**
  * Define uma permissão para uma pessoa.
  *
- * Guarda-se a **diferença** para o papel, não o valor absoluto: se o papel já
- * concede aquilo, não fica excepção nenhuma. O painel chama isto duas vezes para
- * um nível "editar" (o ver e o escrever); o `persist` é adiado por um instante
- * para os dois updates seguirem numa só gravação, em vez de duas idas ao servidor
- * a correrem uma contra a outra.
+ * Guarda-se a **diferença** para o que os cargos dela dão, não o valor absoluto:
+ * se os cargos já concedem aquilo, não fica excepção nenhuma. O painel chama
+ * isto duas vezes para um nível "editar" (o ver e o escrever); o `persist` é
+ * adiado por um instante para os dois updates seguirem numa só gravação, em vez
+ * de duas idas ao servidor a correrem uma contra a outra.
+ *
+ * ## `rolePermissions`, e não o papel-base
+ *
+ * A diferença tem de ser medida contra a **mesma** referência que a matriz
+ * mostra — a união dos cargos da pessoa. Media-se contra `ROLE_PERMISSIONS[role]`,
+ * e isso partia-se assim que alguém tivesse um cargo à medida: desligar uma área
+ * que o cargo dá mas o enum não dava `allowed=false, base=false`, que não escreve
+ * retirada nenhuma — o interruptor voltava a ligar-se sozinho e ninguém percebia
+ * porquê.
+ *
+ * Nulo cai no papel-base, que continua a ser a referência de quem não tem cargo.
  */
-export function setPermission(staffId: string, role: Role, permission: Permission, allowed: boolean): void {
-  const base = ROLE_PERMISSIONS[role].includes(permission);
+export function setPermission(
+  staffId: string,
+  rolePermissions: Permission[] | null,
+  role: Role,
+  permission: Permission,
+  allowed: boolean,
+): void {
+  const base = (rolePermissions ?? ROLE_PERMISSIONS[role]).includes(permission);
   const current = overridesFor(staffId);
 
   const grants = current.grants.filter((p) => p !== permission);
@@ -137,10 +154,26 @@ async function persist(staffId: string): Promise<void> {
   }
 }
 
-/** O que a pessoa pode, mesmo — papel mais excepções. */
-export function effectivePermissions(role: Role, staffId: string): Set<Permission> {
+/**
+ * O que a pessoa pode, mesmo — cargos mais excepções.
+ *
+ * `rolePermissions` é a **união dos cargos** dela: o principal e os que se lhe
+ * acrescentaram. Vem de fora porque é o ecrã que sabe quais são — e é a mesma
+ * soma que o servidor faz em `exceptionsFor`, do lado onde ela decide alguma
+ * coisa. Aqui só decide o que se mostra.
+ *
+ * Nulo (ou ausente) cai nos valores do papel-base, que é o que uma pessoa sem
+ * cargo configurado tem. Era o que isto fazia sempre — e por isso a matriz de
+ * quem tinha um cargo mostrava as permissões do enum e não as do cargo, que é
+ * uma mentira pequena que ninguém tinha apanhado.
+ */
+export function effectivePermissions(
+  role: Role,
+  staffId: string,
+  rolePermissions?: Permission[] | null,
+): Set<Permission> {
   const { grants, revokes } = overridesFor(staffId);
-  const allowed = new Set<Permission>([...ROLE_PERMISSIONS[role], ...grants]);
+  const allowed = new Set<Permission>([...(rolePermissions ?? ROLE_PERMISSIONS[role]), ...grants]);
   for (const p of revokes) allowed.delete(p);
   return allowed;
 }

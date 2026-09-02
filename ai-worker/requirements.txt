@@ -1,0 +1,10 @@
+# Base — chega para `quality_check` (CPU). Licenças em LICENSES.md.
+requests>=2.32
+numpy>=1.26
+opencv-python>=4.10
+
+# Detecção + tracking (`detect_track`) — instalar à parte, porque o torch pesa
+# gigabytes e um worker só de qualidade não precisa dele:
+#   pip install torch torchvision supervision
+# Com GPU NVIDIA, seguir https://pytorch.org/get-started/locally/ para a build
+# CUDA certa. Sem estes pacotes o worker anuncia apenas `quality_check`.

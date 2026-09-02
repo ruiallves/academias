@@ -47,6 +47,12 @@ import Exercises from "@/routes/training/Exercises";
 import ExerciseDetail from "@/routes/training/ExerciseDetail";
 import GameModels, { GameModelDetail } from "@/routes/training/GameModels";
 import SetPieces, { SetPieceDetail } from "@/routes/training/SetPieces";
+import AiOverview from "@/routes/ai/Overview";
+import AiAnalyses from "@/routes/ai/Analyses";
+import NewAiAnalysis from "@/routes/ai/NewAnalysis";
+import AiAnalysisDetail from "@/routes/ai/AnalysisDetail";
+import AiInsights from "@/routes/ai/Insights";
+import Soon from "@/routes/Soon";
 
 /**
  * A mesma árvore de rotas serve os dois perfis.
@@ -114,6 +120,20 @@ export default function App() {
         <Route path="bolas-paradas/:id" element={<Allow p="training:read"><SetPieceDetail /></Allow>} />
         <Route path="jogos" element={<Allow p="calendar:read"><Matches /></Allow>} />
         <Route path="jogos/:id" element={<Allow p="calendar:read"><MatchDetail /></Allow>} />
+
+        {/*
+          Academias AI. `ai:read` guarda a leitura; criar e corrigir pedem
+          `ai:write`, verificadas no servidor — aqui, como sempre, só se decide
+          o que se mostra. "nova" antes de ":id", senão o router lia "nova"
+          como um id.
+        */}
+        <Route path="ai" element={<Allow p="ai:read"><AiOverview /></Allow>} />
+        <Route path="ai/analises" element={<Allow p="ai:read"><AiAnalyses /></Allow>} />
+        <Route path="ai/analises/nova" element={<Allow p="ai:write"><NewAiAnalysis /></Allow>} />
+        <Route path="ai/analises/:id" element={<Allow p="ai:read"><AiAnalysisDetail /></Allow>} />
+        <Route path="ai/insights" element={<Allow p="ai:read"><AiInsights /></Allow>} />
+        <Route path="ai/desenvolvimento" element={<Allow p="ai:read"><Soon title="Desenvolvimento" phase="A evolução de cada atleta, jogo a jogo — nasce quando houver análises suficientes com confiança." /></Allow>} />
+        <Route path="ai/adversarios" element={<Allow p="ai:read"><Soon title="Adversários" phase="Opponent Intelligence — modelo de jogo, padrões e jogadores perigosos, com clips como prova." /></Allow>} />
 
         <Route path="mensalidades" element={<Allow p="billing:read"><Fees /></Allow>} />
         <Route path="comunicacao" element={<Allow p="comms:read"><Comms /></Allow>} />

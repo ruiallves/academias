@@ -164,6 +164,13 @@ export function AthleteEditPanel({
             <div className="grid grid-cols-2 gap-3">
               <Field label="Equipa">
                 <select value={teamId} onChange={(e) => setTeamId(e.target.value)} className={dialogInputClass}>
+                  {/*
+                    Um atleta sem equipa — a dele foi apagada — abre aqui sem
+                    nada escolhido. Sem esta opção, o browser mostrava a
+                    primeira equipa da lista como se já fosse a dele, e o
+                    Guardar ficava desactivado sem nada que o explicasse.
+                  */}
+                  {teamId === "" && <option value="">Sem equipa — escolhe uma</option>}
                   {teams.map((t) => (
                     <option key={t.id} value={t.id}>
                       {t.name}

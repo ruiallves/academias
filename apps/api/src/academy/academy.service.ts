@@ -1,6 +1,6 @@
 import { BadRequestException, ConflictException, ForbiddenException, Injectable, NotFoundException } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
-import { Prisma, type CalendarEventKind, type Role } from "@prisma/client";
+import { Prisma, type AttendanceStatus, type CalendarEventKind, type Role } from "@prisma/client";
 import { PrismaService, type ScopedClient } from "../prisma/prisma.service";
 import { headCoaches } from "./head-coaches";
 import { StorageService } from "../storage/storage.service";
@@ -87,6 +87,18 @@ const DELEGATABLE: ReadonlySet<Permission> = new Set<Permission>([
   "scouting:read", "scouting:write", "scouting:video:read", "scouting:video:write",
   "scouting:request",
   "member:read", "member:write",
+  /*
+   * A área técnica — planos de treino, exercícios, modelos de jogo.
+   *
+   * Faltava aqui, e o painel de Acesso oferecia-a na mesma: `AREAS` no cliente
+   * tem a linha "Área técnica" desde que a área nasceu, mas o interruptor não
+   * gravava nada — `filterDelegatable` deitava-a fora em silêncio, e quem o
+   * carregasse via-o voltar atrás sem uma palavra.
+   *
+   * É exactamente a lição que o comentário de `AREAS` já registava: uma
+   * permissão que não está num destes catálogos é uma permissão sem dono.
+   */
+  "training:read", "training:write",
   /*
    * Delegar a criação de papéis é o ponto da funcionalidade: a presidência pode
    * passá-la à direção, ou a uma pessoa em concreto, sem lhe dar mais nada. Não
@@ -252,6 +264,15 @@ export class AcademyService {
            */
           roleId: ctx.roleId,
           roleName: ctx.roleName,
+          /*
+           * Os cargos secundários seguem só para se poderem **mostrar**.
+           *
+           * As permissões deles já vêm somadas em `permissions` — quem decide
+           * isso é o servidor, em `exceptionsFor`, e o cliente nunca reconstrói
+           * a soma. Isto é o que deixa a barra lateral escrever "Presidente ·
+           * também Treinador Sub-13" em vez de esconder metade do que a pessoa é.
+           */
+          extraRoles: ctx.extraRoles,
           permissions: basePermissions(ctx),
           /** Menus que o papel mostra. Vazio = todos os que a permissão deixar. */
           navKeys: ctx.navKeys,
@@ -295,6 +316,32 @@ export class AcademyService {
       });
 
       return { ok: true };
+    });
+  }
+
+  /**
+   * Os interruptores do cartão de sócio na app do clube.
+   *
+   * Dois e não um, de propósito: há clubes que querem o cartão digital mas não
+   * validam entradas — o QR seria um enfeite que levanta perguntas. Desligar o
+   * cartão desliga tudo; desligar só o QR deixa o cartão sem código.
+   */
+  async setMemberCard(ctx: RequestContext, dto: { cardEnabled?: boolean; qrEnabled?: boolean }) {
+    if (!can(ctx, "settings:write")) throw new ForbiddenException("Sem permissão para mudar as definições");
+
+    return this.prisma.runAs(ctx.academyId, async (db) => {
+      await db.academy.update({
+        where: { id: ctx.academyId },
+        data: {
+          ...(dto.cardEnabled !== undefined ? { memberCardEnabled: dto.cardEnabled } : {}),
+          ...(dto.qrEnabled !== undefined ? { memberCardQrEnabled: dto.qrEnabled } : {}),
+        },
+      });
+      const row = await db.academy.findFirst({
+        where: { id: ctx.academyId },
+        select: { memberCardEnabled: true, memberCardQrEnabled: true },
+      });
+      return { cardEnabled: row?.memberCardEnabled ?? true, qrEnabled: row?.memberCardQrEnabled ?? true };
     });
   }
 
@@ -1210,6 +1257,9 @@ export class AcademyService {
           id: true, role: true, title: true, department: true, isActive: true, grants: true, revokes: true, createdAt: true,
           customRoleId: true,
           customRole: { select: { name: true } },
+          // Os cargos secundários de cada pessoa — o que faz a ficha dela dizer
+          // tudo o que ela é, e não só o cargo com que foi convidada.
+          extraRoles: { select: { role: { select: { id: true, name: true, archivedAt: true } } } },
           user: { select: { name: true, email: true, phone: true, photoKey: true } },
           coachOf: { select: { teamId: true, title: true } },
         },
@@ -1224,6 +1274,9 @@ export class AcademyService {
         role: m.role,
         roleId: m.customRoleId,
         roleName: m.customRole?.name ?? null,
+        // Um cargo arquivado deixa de contar em toda a parte (ver `exceptionsFor`);
+        // mostrá-lo aqui era prometer um acesso que já não existe.
+        extraRoles: m.extraRoles.filter((r) => !r.role.archivedAt).map((r) => ({ id: r.role.id, name: r.role.name })),
         title: m.title,
         department: m.department,
         isActive: m.isActive,
@@ -1306,7 +1359,7 @@ export class AcademyService {
           attendanceClosedAt: true,
           coach: { select: { id: true, user: { select: { name: true } } } },
           team: { select: { name: true } },
-          attendance: { select: { athleteId: true, status: true } },
+          attendance: { select: { athleteId: true, status: true, note: true } },
         },
       });
 
@@ -1338,9 +1391,116 @@ export class AcademyService {
         absences: inTeamScope(ctx, s.teamId)
           ? s.attendance
               .filter((a) => a.status !== "PRESENT")
-              .map((a) => ({ athleteId: a.athleteId, status: a.status }))
+              // O motivo acompanha a falta justificada — é o que a ficha do
+              // atleta mostra ao lado dela, e sem ele o registo perdia-se ao
+              // recarregar mesmo depois de gravado.
+              .map((a) => ({ athleteId: a.athleteId, status: a.status, note: a.note }))
           : [],
       }));
+    });
+  }
+
+  /**
+   * Fechar a folha de presenças de um treino.
+   *
+   * ## Guarda-se a excepção, não a norma
+   *
+   * O corpo traz **só quem faltou**. Uma lista vazia é uma afirmação — "estiveram
+   * todos" — e é diferente de nunca ter sido registada, que é o que
+   * `attendanceClosedAt` a nulo diz. Sem esta distinção, um treino por verificar
+   * inflacionava a assiduidade de toda a gente.
+   *
+   * ## Porque é que substitui em vez de acrescentar
+   *
+   * Registar presenças é um acto único por treino, e corrigir é reabrir a folha e
+   * gravar outra vez. Fundir listas obrigaria a decidir o que fazer com quem
+   * desapareceu da segunda — e a resposta certa ("deixou de ter falta") é
+   * exactamente o que a substituição faz sozinha.
+   *
+   * ## Quem está de baixa não leva falta
+   *
+   * O cliente já não os oferece, e o servidor confirma-o: uma falta lançada a um
+   * atleta com baixa activa é recusada. Contá-la puniria o atleta pela lesão no
+   * seu próprio relatório de assiduidade — a mesma regra que impede convocá-lo.
+   */
+  async recordAttendance(
+    ctx: RequestContext,
+    sessionId: string,
+    absences: { athleteId: string; kind: string; note?: string }[],
+  ) {
+    if (!can(ctx, "attendance:write")) throw new ForbiddenException("Sem permissão para registar presenças");
+    const scope = teamScopeFilter(ctx);
+
+    return this.prisma.runAs(ctx.academyId, async (db) => {
+      const training = await db.trainingSession.findFirst({
+        where: { id: sessionId },
+        select: { id: true, teamId: true, status: true },
+      });
+      if (!training) throw new NotFoundException("Treino não encontrado");
+      if (scope && !scope.in.includes(training.teamId)) {
+        throw new ForbiddenException("Esse treino é de uma equipa fora do teu âmbito");
+      }
+      if (training.status === "CANCELLED") {
+        throw new BadRequestException("Um treino cancelado não tem presenças para registar");
+      }
+
+      const marcados = [...new Set(absences.map((a) => a.athleteId))];
+      if (marcados.length > 0) {
+        /*
+         * Quem se marca tem de ser do plantel desta equipa.
+         *
+         * Não é preciosismo: sem isto, um id de outro escalão entrava na folha e
+         * aparecia na assiduidade de um atleta que nunca foi àquele treino. A RLS
+         * já garante que é da academia; isto garante que é da equipa.
+         */
+        const doPlantel = await db.athlete.findMany({
+          where: { id: { in: marcados }, teams: { some: { teamId: training.teamId } } },
+          select: {
+            id: true,
+            name: true,
+            // A disponibilidade não é um campo — deriva do boletim. A mesma
+            // consulta das convocatórias (ver `matches.service.ts`), para as
+            // duas regras não divergirem à primeira alteração.
+            clinical: { where: { clearedOn: null, impact: { not: "NONE" } }, select: { impact: true } },
+          },
+        });
+        if (doPlantel.length !== marcados.length) {
+          throw new BadRequestException("Há atletas marcados que não pertencem ao plantel desta equipa");
+        }
+
+        // Uma baixa activa é um impedimento, não uma falta. Ver o cabeçalho.
+        const parado = doPlantel.find((a) => a.clinical.some((c) => c.impact === "OUT"));
+        if (parado) {
+          throw new BadRequestException(`${parado.name} está de baixa — não pode levar falta a este treino`);
+        }
+      }
+
+      // Substituir, não acrescentar: a folha desta gravação é a folha do treino.
+      await db.attendanceRecord.deleteMany({ where: { sessionId } });
+      if (absences.length > 0) {
+        await db.attendanceRecord.createMany({
+          data: absences.map((a) => ({
+            sessionId,
+            athleteId: a.athleteId,
+            status: statusFromKind(a.kind),
+            // O motivo é da falta justificada e de mais nenhuma — nas outras
+            // seria um texto órfão preso a um estado que já não o explica.
+            note: a.kind === "justified" && a.note?.trim() ? a.note.trim().slice(0, 200) : null,
+          })),
+        });
+      }
+
+      await db.trainingSession.update({
+        where: { id: sessionId },
+        data: {
+          attendanceClosedAt: new Date(),
+          // Um treino com a folha fechada é um treino que aconteceu. O estado
+          // acompanha o facto em vez de ficar "agendado" para sempre.
+          ...(training.status === "SCHEDULED" ? { status: "DONE" as const } : {}),
+        },
+      });
+
+      return { ok: true, recordedAt: new Date().toISOString() };
     });
   }
 
@@ -1927,13 +2087,42 @@ export class AcademyService {
     return this.prisma.runAs(ctx.academyId, async (db) => {
       const target = await db.membership.findFirst({
         where: { id: membershipId, role: { notIn: ["GUARDIAN", "ATHLETE"] } },
-        select: { id: true, role: true },
+        select: {
+          id: true,
+          role: true,
+          customRole: { select: { permissions: true, archivedAt: true } },
+          extraRoles: { select: { role: { select: { permissions: true, archivedAt: true } } } },
+        },
       });
       if (!target) throw new NotFoundException("Pessoa não encontrada");
 
-      // Guarda-se só a diferença para o papel: uma concessão que o papel já dá, ou
-      // uma retirada de algo que o papel não tem, não deixam marca.
-      const base = new Set(ROLE_PERMISSIONS[target.role]);
+      /*
+       * Guarda-se só a diferença para o que a pessoa já tem: uma concessão que os
+       * cargos dela já dão, ou uma retirada de algo que eles não dão, não deixam
+       * marca.
+       *
+       * ## Contra os **cargos**, e não contra o papel-base
+       *
+       * Media-se contra `ROLE_PERMISSIONS[target.role]` — o enum —, e isso
+       * partia-se em quem tem um cargo à medida: retirar `staff:read` a um
+       * treinador cujo cargo lho dava caía aqui, porque o enum de COACH não o
+       * tem. A retirada era deitada fora por "desnecessária" e a permissão ficava.
+       * Da consola parecia um interruptor que se voltava a ligar sozinho.
+       *
+       * A mesma soma de `AuthService.exceptionsFor`, e pela mesma razão: é essa
+       * que decide o que a pessoa pode, por isso é contra essa que uma excepção
+       * se mede. Gémea da correcção em `lib/access.ts` no cliente.
+       */
+      const principal = target.customRole && !target.customRole.archivedAt ? target.customRole : null;
+      const secundarios = target.extraRoles.map((r) => r.role).filter((r) => !r.archivedAt);
+      const dosCargos = [
+        ...(principal ? [] : ROLE_PERMISSIONS[target.role]),
+        ...(principal ? principal.permissions : []),
+        ...secundarios.flatMap((r) => r.permissions),
+      ];
+      const base = new Set(
+        principal || secundarios.length > 0 ? (dosCargos as Permission[]) : ROLE_PERMISSIONS[target.role],
+      );
       const finalGrants = cleanGrants.filter((p) => !base.has(p));
       const finalRevokes = cleanRevokes.filter((p) => base.has(p));
 
@@ -2834,6 +3023,19 @@ export function canonicalSeasonLabel(label: string): string {
 function toFullYear(value: string): number {
   const n = Number(value);
   return value.length === 4 ? n : 2000 + n;
+}
+
+/**
+ * O vocabulário da consola para o enum da base.
+ *
+ * "Presente" não chega aqui — é a ausência de marca, e é isso que faz a folha
+ * guardar duas linhas em vez de dezoito. Um valor desconhecido cai em `ABSENT`:
+ * é a leitura conservadora, e o DTO já o teria recusado antes.
+ */
+function statusFromKind(kind: string): AttendanceStatus {
+  if (kind === "justified") return "JUSTIFIED";
+  if (kind === "late") return "LATE";
+  return "ABSENT";
 }
 
 /**

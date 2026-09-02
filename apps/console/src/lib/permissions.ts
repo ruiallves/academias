@@ -144,6 +144,15 @@ export type Permission =
    * quem acumular as duas recebe-o num cargo.
    */
   | "finance:read" | "finance:write"
+  /**
+   * Academias AI — análise de vídeo com computer vision.
+   *
+   * À parte de `training:*` de propósito: o vídeo de um jogo é imagem de
+   * menores, e planear um treino não é a mesma decisão que carregar noventa
+   * minutos de filmagem deles. `write` cria análises, carrega vídeo e aplica
+   * correções; `read` vê relatórios e insights. Gémea do servidor.
+   */
+  | "ai:read" | "ai:write"
   | "clinical:write";
 
 export type Role =
@@ -179,6 +188,7 @@ const READ_ALL: Permission[] = [
   "training:read",
   "inventory:read",
   "finance:read",
+  "ai:read",
 ];
 
 const WRITE_ALL: Permission[] = [
@@ -206,6 +216,7 @@ const WRITE_ALL: Permission[] = [
   "training:write",
   "inventory:write",
   "finance:write",
+  "ai:write",
 ];
 
 export const ROLE_PERMISSIONS: Record<Role, Permission[]> = {
@@ -297,6 +308,10 @@ export const ROLE_PERMISSIONS: Record<Role, Permission[]> = {
     // cria exercícios e desenha bolas paradas. Gémeo do servidor.
     "training:read",
     "training:write",
+    // Analisa os jogos das suas equipas com a Academias AI — é ele que filma e
+    // é ele que corrige. O âmbito limita-o no servidor, como em tudo.
+    "ai:read",
+    "ai:write",
   ],
 
   /**
@@ -401,9 +416,17 @@ export type Session = {
    * valores por omissão do papel-base", que é o que existia antes dos papéis.
    */
   rolePermissions?: Permission[];
-  /** O papel da academia, para o poder mostrar por nome. */
+  /** O cargo principal, para o poder mostrar por nome. */
   roleId?: string | null;
   roleName?: string | null;
+  /**
+   * Os cargos que se acrescentaram a este.
+   *
+   * Não entram em `permissionsOf`: as permissões deles já vêm somadas em
+   * `rolePermissions`, decididas pelo servidor. Estão aqui para se mostrarem —
+   * um presidente que também treina tem de o ver escrito na barra lateral.
+   */
+  extraRoles?: { id: string; name: string }[];
   /** Menus que o papel mostra. Vazio = todos os que a permissão deixar. */
   navKeys?: string[];
   scope?: Scope;

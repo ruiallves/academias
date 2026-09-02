@@ -159,9 +159,23 @@ export type StaffMember = {
   /** Excepções de acesso guardadas no servidor — a diferença para o papel. */
   grants?: string[];
   revokes?: string[];
-  /** O papel da academia atribuído a esta pessoa. Nulo = os valores do papel-base. */
+  /**
+   * O cargo **principal** desta pessoa. Nulo = os valores do papel-base.
+   *
+   * É ele que dá o papel-base — e com ele o âmbito e a patente — e é ele que se
+   * mostra quando só cabe um nome.
+   */
   roleId?: string | null;
   roleName?: string | null;
+  /**
+   * Os cargos que se acrescentam. Um presidente que também treina os Sub-13
+   * tem-no aqui.
+   *
+   * Só somam permissões e menus: o âmbito continua a vir do principal, porque
+   * senão acrescentar "treinador" a um presidente prendia-o às equipas dele — e
+   * isso tirava-lhe acesso em vez de lho dar.
+   */
+  extraRoles?: { id: string; name: string }[];
 };
 
 export type Guardian = {

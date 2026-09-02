@@ -128,9 +128,23 @@ export async function archiveRole(id: string): Promise<void> {
   await recarregar();
 }
 
-/** Dar um papel a uma pessoa. O servidor põe o papel-base a condizer. */
-export async function assignRole(membershipId: string, roleId: string | null): Promise<void> {
-  await apiPatch(`/api/roles/assign/${membershipId}`, { roleId });
+/**
+ * Dar cargos a uma pessoa — o principal, e os que se lhe acrescentam.
+ *
+ * O servidor põe o papel-base a condizer com o **principal**, e é dele que
+ * continua a vir o âmbito. Os secundários só somam permissões e menus: um
+ * presidente que também treina os Sub-13 continua a ver a academia toda.
+ *
+ * `extraRoleIds` a `undefined` não mexe nos secundários — quem só troca o
+ * principal não tem de reenviar os outros para não os perder. Uma lista vazia
+ * limpa-os.
+ */
+export async function assignRole(
+  membershipId: string,
+  roleId: string | null,
+  extraRoleIds?: string[],
+): Promise<void> {
+  await apiPatch(`/api/roles/assign/${membershipId}`, { roleId, ...(extraRoleIds ? { extraRoleIds } : {}) });
   await recarregar();
 }
 
