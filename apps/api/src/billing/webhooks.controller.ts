@@ -6,9 +6,17 @@ import { BillingService } from "./billing.service";
 import { EupagoClient } from "./eupago.client";
 
 /**
- * O webhook da euPago — a única fonte de verdade sobre pagamentos.
+ * O webhook da euPago (Realtime Webhooks 2.0) — a única fonte de verdade sobre
+ * pagamentos.
  *
- * A ordem dos passos não é arbitrária:
+ * ## O formato
+ *
+ * A euPago envia um POST JSON com um objecto `transactions` — `identifier` (o
+ * nosso id de Payment, que lhe enviámos ao criar), `reference`, `trid`,
+ * `amount.value` em euros, `status` em `PAID | REFUND | ERROR | CANCEL |
+ * EXPIRED` — e o header `X-Signature` com o HMAC-SHA256 do corpo em base64.
+ *
+ * ## A ordem dos passos não é arbitrária
  *
  *  1. verificar a assinatura (senão qualquer pessoa liquida mensalidades);
  *  2. gravar o evento em bruto **antes** de o interpretar — se o passo 3 rebentar,
@@ -36,7 +44,7 @@ export class EupagoWebhookController {
   async handle(
     @Req() req: Request,
     @Body() payload: Record<string, unknown>,
-    @Headers("x-eupago-signature") signature?: string,
+    @Headers("x-signature") signature?: string,
   ) {
     // Os bytes exactos que chegaram, preservados em main.ts. Reserializar o JSON
     // reordenaria chaves e invalidaria a assinatura.
@@ -48,7 +56,41 @@ export class EupagoWebhookController {
       throw new UnauthorizedException();
     }
 
-    const eventId = String(payload.transacao ?? payload.identificador ?? "");
+    const t = (payload.transactions ?? payload.transaction) as Record<string, unknown> | undefined;
+
+    /*
+     * Payload encriptado (opção `encrypt` do backoffice): vem só um campo
+     * `data` com AES-256-CBC. Não o suportamos — a assinatura já garante a
+     * autenticidade, e o canal é TLS. Fica gravado com o motivo, para o erro
+     * de configuração se ver em vez de os pagamentos deixarem de confirmar em
+     * silêncio.
+     */
+    if (!t && typeof payload.data === "string" && payload.data.length > 0) {
+      this.log.error("Webhook encriptado — desactiva a encriptação do webhook no backoffice da euPago");
+      await this.prisma.webhookEvent
+        .create({
+          data: {
+            provider: "eupago",
+            eventId: `encrypted-${Date.now()}`,
+            signature,
+            payload: payload as object,
+            error: "payload encriptado — desactivar encrypt no backoffice",
+          },
+        })
+        .catch(() => undefined);
+      return { ok: true, ignored: "encriptado" };
+    }
+
+    if (!t) return { ok: true, ignored: "sem transacções" };
+
+    const identifier = valor(t.identifier);
+    const reference = valor(t.reference);
+    const trid = valor(t.trid);
+    const status = valor(t.status).toUpperCase();
+
+    // O id do evento: o trid é único por transacção; sem ele, a combinação
+    // referência+estado — o mesmo estado da mesma referência só conta uma vez.
+    const eventId = trid || (reference || identifier ? `${reference || identifier}:${status}` : "");
     if (!eventId) return { ok: true, ignored: "sem identificador" };
 
     // Idempotência na porta de entrada: o índice único de (provider, eventId)
@@ -65,18 +107,25 @@ export class EupagoWebhookController {
       }));
 
     try {
-      const providerRef = String(payload.referencia ?? payload.identificador ?? "");
-      const status = String(payload.estado ?? "").toLowerCase();
+      // Por ordem de confiança: o nosso identifier primeiro — é o id que nós
+      // próprios enviámos —, depois a referência e o trid do provedor.
+      const refs = [identifier, reference, trid].filter(Boolean);
 
-      if (status === "paga" || status === "pago" || payload.sucesso === true) {
-        const paidAt = payload.data ? new Date(String(payload.data)) : new Date();
-        // O valor pago, quando o provedor o envia — em euros decimais. O serviço
-        // compara-o com o esperado: defesa em profundidade contra um evento
-        // (legítimo mas) com valor divergente.
-        const paidCents = payload.valor != null ? Math.round(Number(payload.valor) * 100) : undefined;
-        await this.billing.confirmPayment(providerRef, paidAt, payload, paidCents);
+      const amount = (t.amount ?? {}) as Record<string, unknown>;
+      const paidCents = amount.value != null ? Math.round(Number(amount.value) * 100) : undefined;
+      const when = t.date ? new Date(String(t.date)) : new Date();
+      const quando = Number.isNaN(when.getTime()) ? new Date() : when;
+
+      if (status === "PAID") {
+        await this.billing.confirmPayment(refs, quando, payload, paidCents);
+      } else if (status === "REFUND") {
+        await this.billing.refundPayment(refs, payload);
+      } else if (status === "EXPIRED") {
+        await this.billing.failPayment(refs, "A referência expirou sem ser paga.", payload, "EXPIRED");
+      } else if (status === "ERROR" || status === "CANCEL") {
+        await this.billing.failPayment(refs, "O pagamento foi recusado ou cancelado.", payload, "FAILED");
       } else {
-        await this.billing.failPayment(providerRef, "O pagamento foi recusado ou expirou.", payload);
+        this.log.warn(`Webhook com estado desconhecido "${status}" — gravado sem processamento`);
       }
 
       await this.prisma.webhookEvent.update({
@@ -102,4 +151,9 @@ export class EupagoWebhookController {
       return { ok: true, deferred: true };
     }
   }
+}
+
+/** Números, strings, o que vier — como string aparada, vazia quando não há nada. */
+function valor(v: unknown): string {
+  return v == null ? "" : String(v).trim();
 }

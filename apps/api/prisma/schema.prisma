@@ -67,6 +67,18 @@ model Academy {
   /// Ver `gerarCobrancas` e `docs/03-estado.md`.
   billingMonths Int[] @default([1, 2, 3, 4, 5, 6, 7, 9, 10, 11, 12])
 
+  /// ## O canal euPago do clube — a arquitectura do "split"
+  ///
+  /// O dinheiro das mensalidades é **do clube**, a plataforma não fica com
+  /// nada. A forma limpa de o garantir não é repartir percentagens: é cada
+  /// clube ter o seu canal na euPago, com o seu IBAN de liquidação, e os
+  /// pagamentos dele serem criados com a chave desse canal — 100% para o clube
+  /// por construção, e a plataforma nunca toca no dinheiro.
+  ///
+  /// Nulo = usa a chave global do ambiente (`EUPAGO_API_KEY`), que serve
+  /// enquanto só um clube cobra online. Nunca sai por nenhum endpoint.
+  eupagoApiKey String?
+
   /// ## A página de adesão a sócio, escrita pelo clube
   ///
   /// A frase que abre, a que explica, e os pontos que dizem o que se ganha. São
@@ -136,6 +148,7 @@ model Academy {
   financialTransactions FinancialTransaction[]
   financeSettings       FinanceSettings?
   financialBudgets      FinancialBudget[]
+  directDebitMandates   DirectDebitMandate[]
 }
 
 /// O ciclo de vida de um cliente. Derivado do onboarding e da subscrição — o
@@ -345,9 +358,10 @@ model Membership {
   inventoryReturned  InventoryAssignment[] @relation("InventoryReturnedBy")
 
   /// Contas: movimentos desta pessoa, e os que registou ou alterou.
-  financeAsStaff FinancialTransaction[] @relation("FinanceStaff")
-  financeCreated FinancialTransaction[] @relation("FinanceCreatedBy")
-  financeUpdated FinancialTransaction[] @relation("FinanceUpdatedBy")
+  financeAsStaff     FinancialTransaction[] @relation("FinanceStaff")
+  financeCreated     FinancialTransaction[] @relation("FinanceCreatedBy")
+  financeUpdated     FinancialTransaction[] @relation("FinanceUpdatedBy")
+  directDebitMandate DirectDebitMandate?
 
   @@unique([academyId, userId, role])
   @@index([academyId])
@@ -862,6 +876,7 @@ model TrainingSession {
    */
   /**
    * /**
+   * /**
    * /*
    * O plano vive **na sessão**, não numa tabela paralela.
    * Um treino planeado e um treino do calendário são o mesmo treino: o que as
@@ -1296,6 +1311,12 @@ enum PaymentMethod {
   MBWAY
   MULTIBANCO
   CARD
+  /// Formulário alojado da euPago — como o cartão, com redireccionamento.
+  GOOGLE_PAY
+  APPLE_PAY
+  PAYSAFECARD
+  /// Débito directo SEPA, contra uma autorização (mandato) dada uma vez.
+  DIRECT_DEBIT
   TRANSFER
   CASH
 }
@@ -1315,6 +1336,10 @@ model Payment {
   /// Entidade + referência Multibanco, quando aplicável.
   entity      String?
   reference   String?
+  /// O formulário alojado (cartão, Google Pay, Apple Pay, PaySafeCard): o URL
+  /// para onde o pai é levado. Guardado para um reload poder reabri-lo em vez
+  /// de criar outro pagamento.
+  redirectUrl String?
 
   paidAt     DateTime?
   expiresAt  DateTime?
@@ -1327,6 +1352,46 @@ model Payment {
   @@unique([provider, providerRef])
   @@index([chargeId])
   @@index([status])
+}
+
+enum MandateStatus {
+  /// Autorização pedida à euPago; o PDF seguiu para o email do pai. Ainda não
+  /// se debitou nada por ela.
+  PENDING
+  /// Já debitou com sucesso pelo menos uma vez — a autorização está viva.
+  ACTIVE
+  CANCELLED
+}
+
+/// A autorização de débito directo SEPA de um encarregado — dada **uma vez**,
+/// debitada mensalidade a mensalidade.
+///
+/// O IBAN completo não se guarda: fica na euPago, que é quem debita. Aqui
+/// ficam os últimos quatro dígitos (para o pai reconhecer a conta) e a
+/// referência da autorização, que é o que a API precisa para debitar.
+model DirectDebitMandate {
+  id        String  @id @default(cuid())
+  academyId String
+  academy   Academy @relation(fields: [academyId], references: [id], onDelete: Cascade)
+
+  /// O pagador — o encarregado que deu a autorização. Um mandato por pessoa
+  /// por academia: é a conta dela, serve para todos os educandos.
+  membershipId String     @unique
+  membership   Membership @relation(fields: [membershipId], references: [id], onDelete: Cascade)
+
+  debtorName String
+  /// Só os últimos 4 — o suficiente para "a conta ***1234", e nada que sirva
+  /// para debitar seja quem for.
+  ibanTail   String
+  /// A referência da autorização na euPago — o que se passa a
+  /// `/directdebit/payment/{reference}` para debitar.
+  eupagoRef  String        @unique
+  status     MandateStatus @default(PENDING)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([academyId])
 }
 
 /// Todos os eventos do provedor entram aqui em bruto **antes** de serem
@@ -1547,6 +1612,7 @@ model Match {
   /// Preenchidos só depois de jogado — é a ausência do resultado que decide se a
   /// UI mostra a convocatória ou a estatística.
   /**
+   * /**
    * /**
    * /*
    * Em que competição se joga isto.
@@ -3595,13 +3661,11 @@ model FinancialTransaction {
   /**
    * A série a que este movimento pertence, quando é uma despesa (ou receita)
    * fixa mensal — a renda do pavilhão, o seguro, o contrato do roupeiro.
-   *
    * As ocorrências são **linhas de verdade**, geradas de uma vez de X a Y, e
    * não uma regra avaliada na leitura. Uma regra não se confirma: cada mês
    * daquela renda vai ser pago num dia diferente, com um método diferente, e
    * às vezes por um valor diferente — e é isso que uma linha própria guarda. É
    * também como o calendário trata os treinos que se repetem.
-   *
    * Só isto: nenhuma tabela de regras. O que uma série precisa de saber é
    * "quem são os meus irmãos", e um id partilhado responde.
    */

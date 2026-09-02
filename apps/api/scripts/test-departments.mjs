@@ -227,7 +227,15 @@ const aplicado = await call(director, "PATCH", `/api/departments/${depId}`, {
   permissions: ["team:read", "calendar:read", "calendar:write", "athlete:read"],
   applyToRoles: true,
 });
-check("com applyToRoles, diz quantos cargos mudou", aplicado.body?.updatedRoles === 1, `${aplicado.body?.updatedRoles}`);
+/*
+ * Dois, e não um.
+ *
+ * Um departamento passou a nascer com um cargo — sem ele não se pode convidar
+ * ninguém para lá, que era o buraco que se via ao criar um departamento novo (ver
+ * `test-departamento-novo.mjs`). Por isso este departamento tem o cargo que
+ * nasceu com ele **e** o "ZZ Roupeiro" que este teste criou.
+ */
+check("com applyToRoles, mexe nos dois cargos do departamento", aplicado.body?.updatedRoles === 2, `${aplicado.body?.updatedRoles}`);
 const comAplicar = await db.query(`SELECT permissions FROM "AcademyRole" WHERE name = 'ZZ Roupeiro'`);
 check(
   "e o cargo passou mesmo a ter a permissão nova",
@@ -243,7 +251,8 @@ check("mudar o âmbito depois de criado não passa", aindaStaff.rows[0]?.baseRol
 console.log("\n=== Apagar não apaga quem lá trabalhava ===");
 const apagado = await call(director, "DELETE", `/api/departments/${depId}`);
 check("a direção apaga o departamento", apagado.status === 200, `${apagado.status}`);
-check("e avisa quantos cargos ficaram órfãos", apagado.body?.orphanedRoles === 1, `${apagado.body?.orphanedRoles}`);
+/* Os mesmos dois de cima — o do departamento e o que o teste criou. */
+check("e avisa quantos cargos ficaram órfãos", apagado.body?.orphanedRoles === 2, `${apagado.body?.orphanedRoles}`);
 const orfao = await db.query(`SELECT "departmentId", permissions FROM "AcademyRole" WHERE name = 'ZZ Roupeiro'`);
 check("o cargo continua a existir", orfao.rows.length === 1, `${orfao.rows.length}`);
 check("sem departamento", orfao.rows[0]?.departmentId === null, `${orfao.rows[0]?.departmentId}`);

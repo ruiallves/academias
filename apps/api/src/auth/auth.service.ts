@@ -114,10 +114,26 @@ export class AuthService {
    * ecrã, não uma coisa específica das convocatórias.
    *
    * `academyIdBySlug` e `membershipsOf` não dependem uma da outra — a primeira só
-   * precisa do slug, a segunda só do `authId`. `scopeFor` e `grantsFor`, depois de
-   * se saber a academia e a membership, também não dependem uma da outra. Correr
+   * precisa do slug, a segunda só do `authId`. `scopeFor` e `exceptionsFor`, depois
+   * de se saber a academia e a membership, também não dependem uma da outra. Correr
    * cada par com `Promise.all` sobrepõe a latência de rede em vez de a somar, e
    * corta o tempo de fila a meio sem mudar nada do que cada função devolve.
+   *
+   * ## Duas transacções, e não uma partilhada
+   *
+   * Parece desperdício: `scopeFor` e `exceptionsFor` são da mesma academia e
+   * podiam correr as duas consultas dentro de um `runAs` só, poupando um BEGIN e
+   * um COMMIT. Foi tentado e **é mais lento** — 336 ms contra 275 ms, medido
+   * contra o pooler do Supabase.
+   *
+   * A razão é o protocolo: duas consultas na mesma ligação são servidas em fila,
+   * por muito `Promise.all` que se lhes ponha à volta. Em transacções separadas
+   * vão por ligações diferentes e sobrepõem-se de verdade — e as duas idas
+   * sobrepostas custam menos do que duas consultas em fila numa só.
+   *
+   * O preço são duas das cinco ligações do pool ocupadas ao mesmo tempo. Se
+   * alguma vez o pool for o aperto, é aqui que se troca latência por ligações —
+   * com uma medição nova, não por parecer mais arrumado.
    */
   async contextFor(authId: string, slug: string, app?: AppKind): Promise<RequestContext> {
     const [academyId, memberships] = await Promise.all([this.academyIdBySlug(slug), this.membershipsOf(authId)]);

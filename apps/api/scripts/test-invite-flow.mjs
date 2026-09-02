@@ -79,6 +79,42 @@ async function main() {
   const teamId = team.rows[0].id;
   console.log(`      equipa de teste: ${team.rows[0].name}`);
 
+  /*
+   * O convite aponta para um **cargo**, e não para um papel.
+   *
+   * Este teste mandava `role: "COACH"`, `title` e `department` — a forma que a
+   * API tinha antes de os departamentos existirem. Deixou de passar da primeira
+   * chamada, e ficou assim: uma suite inteira vermelha por uma razão que não
+   * tinha nada que ver com o que ela testa. O que se convida hoje é um
+   * `academyRoleId`, e é dele que o servidor lê o papel-base, o cargo e as
+   * permissões (ver `InvitesService.create`).
+   *
+   * O cargo cria-se aqui em vez de se ir buscar um existente: o `title` do
+   * membro passa a ser o nome do cargo, e um nome próprio deste teste é o que
+   * torna a asserção lá em baixo uma prova e não uma coincidência.
+   */
+  await db.query(`DELETE FROM "AcademyRole" WHERE "academyId" = 'acd_lifeclub' AND name LIKE 'ZZ %'`);
+  const tecnica = await db.query(
+    `SELECT id FROM "Department" WHERE "academyId" = 'acd_lifeclub' AND key = 'tecnica'`,
+  );
+  const cargo = await db.query(
+    `INSERT INTO "AcademyRole" (id, "academyId", key, name, "baseRole", "departmentId", permissions, "navKeys", "isSystem", rank, "updatedAt")
+     VALUES ($1, 'acd_lifeclub', $2, 'ZZ Treinador adjunto', 'COACH', $3, $4, '{}', false, 40, now())
+     RETURNING id`,
+    [
+      `zz_role_${Date.now().toString(36)}`,
+      `zz-treinador-adjunto-${Date.now().toString(36)}`,
+      tecnica.rows[0]?.id ?? null,
+      ["team:read", "calendar:read", "attendance:write"],
+    ],
+  );
+  const cargoId = cargo.rows[0].id;
+
+  /* O do presidente, para a prova de escalada: está acima da direção. */
+  const presidencia = await db.query(
+    `SELECT id FROM "AcademyRole" WHERE "academyId" = 'acd_lifeclub' AND key = 'presidente'`,
+  );
+
   console.log("\n=== Criar o convite ===");
   const created = await fetch(`${API}/api/invites`, {
     method: "POST",
@@ -86,9 +122,7 @@ async function main() {
     body: JSON.stringify({
       name: "Treinador de Teste",
       email: NEW_EMAIL,
-      role: "COACH",
-      title: "Treinador adjunto",
-      department: "TECHNICAL",
+      academyRoleId: cargoId,
       teamIds: [teamId],
     }),
   });
@@ -147,7 +181,7 @@ async function main() {
   );
   check("a pessoa tem membership", membership.rows.length === 1);
   check("com o papel do convite", membership.rows[0]?.role === "COACH", `veio ${membership.rows[0]?.role}`);
-  check("com o cargo do convite", membership.rows[0]?.title === "Treinador adjunto");
+  check("com o cargo do convite", membership.rows[0]?.title === "ZZ Treinador adjunto", `${membership.rows[0]?.title}`);
   check("e o telemóvel que indicou", membership.rows[0]?.phone === "912345678");
 
   const staffRows = await db.query(
@@ -195,9 +229,7 @@ async function main() {
     body: JSON.stringify({
       name: "Sandra Bragança",
       email: GUARDIAN,
-      role: "COACH",
-      title: "Treinadora adjunta",
-      department: "TECHNICAL",
+      academyRoleId: cargoId,
       teamIds: [teamId],
     }),
   });
@@ -239,7 +271,7 @@ async function main() {
   const forbidden = await fetch(`${API}/api/invites`, {
     method: "POST",
     headers: headers(coach),
-    body: JSON.stringify({ name: "Alguém", email: `nao-devia-${Date.now()}@exemplo.pt`, role: "COACH" }),
+    body: JSON.stringify({ name: "Alguém", email: `nao-devia-${Date.now()}@exemplo.pt`, academyRoleId: cargoId }),
   });
   check("um treinador não convida ninguém", forbidden.status === 403, `deu ${forbidden.status}`);
 
@@ -248,7 +280,7 @@ async function main() {
   const escalate = await fetch(`${API}/api/invites`, {
     method: "POST",
     headers: headers(director),
-    body: JSON.stringify({ name: "Dono", email: `dono-${Date.now()}@exemplo.pt`, role: "OWNER" }),
+    body: JSON.stringify({ name: "Dono", email: `dono-${Date.now()}@exemplo.pt`, academyRoleId: presidencia.rows[0]?.id }),
   });
   check("a direção não pode convidar um OWNER", escalate.status === 403, `deu ${escalate.status}`);
 
@@ -256,11 +288,12 @@ async function main() {
   const anon = await fetch(`${API}/api/invites`, {
     method: "POST",
     headers: { "Content-Type": "application/json", "x-academy-slug": SLUG },
-    body: JSON.stringify({ name: "X", email: "x@exemplo.pt", role: "COACH" }),
+    body: JSON.stringify({ name: "X", email: "x@exemplo.pt", academyRoleId: cargoId }),
   });
   check("não se convida sem sessão", anon.status === 401, `deu ${anon.status}`);
 
   console.log("\n=== Limpeza ===");
+  await db.query(`DELETE FROM "AcademyRole" WHERE "academyId" = 'acd_lifeclub' AND name LIKE 'ZZ %'`);
   const authId = membership.rows[0]?.authId;
   await db.query(
     `DELETE FROM "StaffInvite" WHERE email LIKE 'teste-fluxo-%' OR email LIKE 'dono-%' OR email LIKE 'nao-devia-%' OR email = $1`,

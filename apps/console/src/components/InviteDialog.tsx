@@ -60,13 +60,22 @@ const RANK: Record<Role, number> = {
 /**
  * Um grupo no menu de departamentos.
  *
- * O id de um departamento a sério, ou `"presidencia"` — que não é um
+ * O id de um departamento a sério, ou `SEM_DEPARTAMENTO` — que não é um
  * departamento: é onde vive o cargo que não pertence a nenhum. Ver `departamentos`.
  */
 type Grupo = string;
 
-/** O grupo dos cargos sem departamento. Um id nunca colide com isto. */
-const PRESIDENCIA = "presidencia";
+/**
+ * O grupo dos cargos sem departamento. Um id nunca colide com isto.
+ *
+ * Chamava-se "Presidência" aqui e "Sem departamento" nas Definições — o mesmo
+ * grupo com dois nomes, em dois ecrãs que a mesma pessoa usa a seguir um ao
+ * outro. E o nome daqui só estava certo por acaso: assim que um clube apaga um
+ * departamento, os cargos dele caem neste grupo (`onDelete: SetNull`), e passava
+ * a haver um "Dep. Scouting" arrumado debaixo de "Presidência". Um nome só, e o
+ * das Definições, que é onde isto se gere.
+ */
+const SEM_DEPARTAMENTO = "sem-departamento";
 
 /** Só quem trabalha com equipas tem âmbito por equipa. */
 function usesTeams(base: Role): boolean {
@@ -76,7 +85,7 @@ function usesTeams(base: Role): boolean {
 export function InviteDialog({ session, onClose }: { session: Session; onClose: () => void }) {
   const teams = listTeams(session);
   const { roles, loaded } = useRoles();
-  const { departments } = useDepartments();
+  const { departments, loaded: departamentosLidos } = useDepartments();
 
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
@@ -87,6 +96,18 @@ export function InviteDialog({ session, onClose }: { session: Session; onClose: 
   const [erro, setErro] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
+  /*
+   * Os dois em paralelo, e não um a seguir ao outro.
+   *
+   * Chegaram a ser em série, para garantir que a lista de cargos vinha depois da
+   * reparação que a leitura dos departamentos faz. Custava o dobro: 1,7 s → 3,3 s
+   * de espera, medidos, num diálogo que já demorava. A garantia passou para o
+   * servidor — as duas leituras reparam (ver `departments/first-role.ts`) — e a
+   * ordem de chegada deixou de importar.
+   *
+   * Na página do Staff isto já foi carregado ao entrar, por isso quase sempre
+   * não se espera por nada: o `store` responde do que tem enquanto relê.
+   */
   useEffect(() => {
     void loadRoles();
     void loadDepartments();
@@ -119,47 +140,96 @@ export function InviteDialog({ session, onClose }: { session: Session; onClose: 
   );
 
   /**
-   * Os departamentos que têm mesmo cargos — não vale a pena oferecer os vazios.
+   * Os departamentos, tal como estão nas Definições.
    *
-   * `"presidencia"` é um grupo à parte e não um departamento a sério: o
-   * presidente responde por tudo e não pertence a nenhuma área, por isso tem
-   * `department: null` na base de dados. Sem este grupo, um cargo sem
-   * departamento não tinha onde aparecer no menu.
+   * ## Porque é que são todos, e não só os que têm cargos
+   *
+   * Eram só os que tinham cargos convidáveis — "não vale a pena oferecer os
+   * vazios". Parecia arrumado e era um buraco: quem criava um departamento novo
+   * vinha a seguir convidar alguém para lá e **o departamento não estava na
+   * lista**. Nada no ecrã dizia porquê, e a conclusão razoável era que a criação
+   * não tinha funcionado.
+   *
+   * Um menu que esconde o que o utilizador acabou de criar não está a poupar-lhe
+   * uma linha: está a mentir-lhe sobre o estado do clube. Agora aparecem todos,
+   * e o que falta a cada um diz-se lá dentro — ver `faltaNoDepartamento`.
+   *
+   * (O servidor passou a dar um primeiro cargo a cada departamento que nasce, por
+   * isso o caso vazio ficou raro. Raro não é impossível: os cargos podem estar
+   * todos arquivados, ou todos acima do nível de quem convida.)
+   *
+   * `SEM_DEPARTAMENTO` é um grupo à parte e não um departamento a sério: é onde
+   * caem os cargos com `departmentId: null` — o presidente, que não pertence a
+   * área nenhuma, e os que sobraram de um departamento apagado. Sem este grupo,
+   * um cargo sem departamento não tinha onde aparecer.
    */
   const departamentos = useMemo(() => {
-    const usados = new Set(convidaveis.map((r) => r.departmentId).filter(Boolean));
-    const reais = departments.filter((d) => usados.has(d.id)).map((d) => d.id);
     const semDepartamento = convidaveis.some((r) => r.departmentId === null);
-    return [...(semDepartamento ? [PRESIDENCIA] : []), ...reais];
+    /* No fim, como nas Definições: é o grupo dos que sobram, não o primeiro. */
+    return [...departments.map((d) => d.id), ...(semDepartamento ? [SEM_DEPARTAMENTO] : [])];
   }, [convidaveis, departments]);
 
   /** O nome a mostrar para um grupo. Os ids não se mostram a ninguém. */
   const nomeDoGrupo = useCallback(
-    (g: Grupo) => (g === PRESIDENCIA ? "Presidência" : (departments.find((d) => d.id === g)?.name ?? "Departamento")),
+    (g: Grupo) => (g === SEM_DEPARTAMENTO ? "Sem departamento" : (departments.find((d) => d.id === g)?.name ?? "Departamento")),
     [departments],
   );
 
   const cargosDoDepartamento = useMemo(
     () =>
       convidaveis.filter((r) =>
-        department === PRESIDENCIA ? r.departmentId === null : r.departmentId === department,
+        department === SEM_DEPARTAMENTO ? r.departmentId === null : r.departmentId === department,
       ),
     [convidaveis, department],
   );
 
-  // O primeiro departamento que tenha cargos, e o primeiro cargo dele. Sem isto,
-  // o formulário abria num departamento vazio e parecia não ter cargos nenhuns.
+  /**
+   * O que falta a este departamento para se poder convidar alguém para ele.
+   *
+   * Três estados, e são três frases diferentes porque são três problemas
+   * diferentes: um resolve-se nas Definições, outro resolve-se com quem está
+   * acima, e o terceiro não é problema nenhum.
+   */
+  const faltaNoDepartamento = useMemo(() => {
+    if (department === SEM_DEPARTAMENTO || cargosDoDepartamento.length > 0) return null;
+    const d = departments.find((x) => x.id === department);
+    /* Tem cargos, mas nenhum que **eu** possa dar: é hierarquia, não configuração. */
+    if (d && d.roles.length > 0) return "acima";
+    return "sem-cargos";
+  }, [department, cargosDoDepartamento, departments]);
+
+  /*
+   * Abrir num departamento que dê para usar.
+   *
+   * A lista passou a incluir os vazios, e abrir num vazio era pôr o problema à
+   * frente de quem se calhar nem ia por ali. Escolhe-se o primeiro que tenha
+   * cargos convidáveis; se não houver nenhum, o primeiro da lista — e aí a
+   * mensagem lá dentro explica o que falta.
+   */
   useEffect(() => {
-    if (departamentos.length > 0 && !departamentos.includes(department)) {
-      setDepartment(departamentos[0]);
-    }
-  }, [departamentos, department]);
+    if (departamentos.length === 0 || departamentos.includes(department)) return;
+    const comCargos = departamentos.find((g) =>
+      convidaveis.some((r) => (g === SEM_DEPARTAMENTO ? r.departmentId === null : r.departmentId === g)),
+    );
+    setDepartment(comCargos ?? departamentos[0]);
+  }, [departamentos, department, convidaveis]);
 
   useEffect(() => {
     if (!cargosDoDepartamento.some((r) => r.id === roleId)) {
       setRoleId(cargosDoDepartamento[0]?.id ?? "");
     }
   }, [cargosDoDepartamento, roleId]);
+
+  /*
+   * Só se desenha a escolha quando as **duas** listas chegaram.
+   *
+   * São dois pedidos independentes e o ecrã depende dos dois cruzados: os
+   * departamentos dizem que grupos existem, os cargos dizem o que há dentro de
+   * cada um. Com um só, tudo o que se mostrasse estaria errado durante o tempo
+   * que o outro demorasse — e demora, porque cada leitura destas custa perto de
+   * um segundo e meio.
+   */
+  const pronto = loaded && departamentosLidos;
 
   const cargo: AcademyRole | undefined = convidaveis.find((r) => r.id === roleId);
   const comEquipas = cargo ? usesTeams(cargo.baseRole) : false;
@@ -234,7 +304,28 @@ export function InviteDialog({ session, onClose }: { session: Session; onClose: 
           </DialogField>
         </div>
 
-        {loaded && convidaveis.length === 0 ? (
+        {!pronto ? (
+          /*
+           * Enquanto não estiverem os dois, um esqueleto — e não os campos a
+           * meio.
+           *
+           * Meio segundo com uma das listas por chegar bastava para o ecrã
+           * mentir: os menus apareciam vazios, o "Departamento" enchia-se
+           * primeiro e o "Cargo" só a seguir, e a mensagem sobre o que falta ao
+           * departamento chegava a passar pela frase errada — "os cargos estão
+           * acima do teu nível", quando o que se passava era não terem ainda
+           * chegado. Um esqueleto da altura certa não diz nada de falso e não
+           * deixa a caixa saltar quando os dados entram.
+           */
+          <div className="grid grid-cols-2 gap-3" aria-hidden>
+            {[0, 1].map((i) => (
+              <div key={i}>
+                <div className="mb-1.5 h-3 w-20 rounded bg-sunken" />
+                <div className="h-9 w-full animate-pulse rounded-[var(--radius-control)] bg-sunken" />
+              </div>
+            ))}
+          </div>
+        ) : convidaveis.length === 0 ? (
           /*
            * Um clube acabado de abrir só tem o cargo de presidente, e esse não se
            * convida. Dizer o que falta — e levar lá — é melhor do que dois menus
@@ -271,12 +362,33 @@ export function InviteDialog({ session, onClose }: { session: Session; onClose: 
                     gerir cargos
                   </Link>
                 </div>
-                <SelectField
-                  className="w-full"
-                  value={roleId}
-                  onChange={setRoleId}
-                  options={cargosDoDepartamento.map((r) => ({ value: r.id, label: r.name }))}
-                />
+                {faltaNoDepartamento ? (
+                  /*
+                   * No lugar do menu, e não por baixo dele: um `<select>` vazio
+                   * a par de uma explicação é um controlo que convida a ser
+                   * carregado e não faz nada.
+                   */
+                  <p className="rounded-[var(--radius-control)] bg-sunken px-3 py-2 text-[11px] leading-relaxed text-ink-2">
+                    {faltaNoDepartamento === "acima" ? (
+                      "Os cargos deste departamento estão acima do teu nível — só quem estiver acima os pode dar."
+                    ) : (
+                      <>
+                        Ainda não tem cargos.{" "}
+                        <Link to="/definicoes?painel=cargos" className="font-medium text-ink hover:underline">
+                          Cria um nas definições
+                        </Link>
+                        .
+                      </>
+                    )}
+                  </p>
+                ) : (
+                  <SelectField
+                    className="w-full"
+                    value={roleId}
+                    onChange={setRoleId}
+                    options={cargosDoDepartamento.map((r) => ({ value: r.id, label: r.name }))}
+                  />
+                )}
               </div>
             </div>
 

@@ -3,6 +3,7 @@ import type { Role } from "@prisma/client";
 import { PrismaService, type ScopedClient } from "../prisma/prisma.service";
 import { isNavKey } from "../common/nav";
 import { ROLE_PERMISSIONS, can, type Permission, type RequestContext } from "../common/permissions";
+import { semearCargosEmFalta } from "./first-role";
 
 /**
  * Departamentos da academia.
@@ -74,30 +75,36 @@ export const SEED_DEPARTMENTS: {
   name: string;
   description: string;
   baseRole: Role;
+  /** O cargo com que o departamento nasce. Ver `semearCargosEmFalta`. */
+  roleName: string;
 }[] = [
   {
     key: "direcao",
     name: "Direção",
     description: "Responde pelo clube: sócios, mensalidades, staff e definições.",
     baseRole: "DIRECTOR",
+    roleName: "Diretor",
   },
   {
     key: "tecnica",
     name: "Equipa Técnica",
     description: "Treina: as suas equipas, presenças, convocatórias e calendário.",
     baseRole: "COACH",
+    roleName: "Treinador",
   },
   {
     key: "clinico",
     name: "Departamento Clínico",
     description: "Dá baixas e altas, e é quem vê o boletim clínico.",
     baseRole: "MEDICAL",
+    roleName: "Médico",
   },
   {
     key: "scouting",
     name: "Departamento Scouting",
     description: "Observa, avalia e recruta.",
     baseRole: "SCOUT",
+    roleName: "Observador",
   },
 ];
 
@@ -137,6 +144,8 @@ export class DepartmentsService {
           skipDuplicates: true,
         });
       }
+
+      await semearCargosEmFalta(db, ctx.academyId);
 
       const rows = await db.department.findMany({
         orderBy: [{ order: "asc" }, { name: "asc" }],
@@ -193,7 +202,7 @@ export class DepartmentsService {
     return this.prisma.runAs(ctx.academyId, async (db) => {
       const key = await this.freeKey(db, slugify(name));
       const last = await db.department.findFirst({ orderBy: { order: "desc" }, select: { order: true } });
-      return db.department.create({
+      const criado = await db.department.create({
         data: {
           academyId: ctx.academyId,
           key,
@@ -208,6 +217,30 @@ export class DepartmentsService {
         },
         select: { id: true, key: true, name: true },
       });
+
+      /*
+       * E nasce com um cargo lá dentro.
+       *
+       * Sem isto, criar um departamento produzia uma coisa que não se pode usar
+       * para nada. Ninguém pertence a um departamento: pertence a um **cargo**,
+       * e é o cargo que carrega as permissões. Um departamento sem cargos não
+       * aparece no convite (não há nada para convidar), não se atribui a
+       * ninguém, e a direcção fica a olhar para uma linha que criou e que não
+       * faz nada — que foi exactamente o que aconteceu.
+       *
+       * O nome é o do departamento porque é o que quem o criou acabou de
+       * escrever, e renomear um cargo é um clique. Inventar-lhe um nome era
+       * adivinhar pior.
+       */
+      const cargo = await this.criarPrimeiroCargo(db, ctx.academyId, {
+        departmentId: criado.id,
+        name,
+        baseRole: input.baseRole,
+        permissions,
+        navKeys,
+      });
+
+      return { ...criado, roleId: cargo.id, roleName: cargo.name };
     });
   }
 
@@ -300,6 +333,52 @@ export class DepartmentsService {
     });
   }
 
+  /**
+   * O cargo com que um departamento nasce.
+   *
+   * Copia as permissões do departamento — não fica a apontar para elas. É a
+   * regra da casa e está explicada no cabeçalho deste ficheiro: resolver herança
+   * na leitura punha um `JOIN` no caminho de cada pedido, e editar um
+   * departamento passaria a mudar em silêncio o que as pessoas podem fazer.
+   */
+  private async criarPrimeiroCargo(
+    db: ScopedClient,
+    academyId: string,
+    d: {
+      departmentId: string;
+      name: string;
+      baseRole: Role;
+      permissions: Permission[];
+      navKeys: string[];
+    },
+  ) {
+    const key = await this.freeRoleKey(db, slugify(d.name));
+    return db.academyRole.create({
+      data: {
+        academyId,
+        key,
+        name: d.name,
+        description: null,
+        baseRole: d.baseRole,
+        departmentId: d.departmentId,
+        permissions: d.permissions,
+        navKeys: d.navKeys,
+        /*
+         * Nunca `isSystem`, nem no departamento de origem.
+         *
+         * `isSystem` num cargo quer dizer "não se mexe" — é o que protege o
+         * presidente. Este é um ponto de partida para o clube renomear, ajustar
+         * ou arquivar; trancá-lo era dar-lhe um departamento que não pode usar
+         * à sua maneira, que é meio caminho para o problema de origem.
+         */
+        isSystem: false,
+        rank: RANK[d.baseRole],
+        updatedAt: new Date(),
+      },
+      select: { id: true, name: true },
+    });
+  }
+
   /** Regra 1: só o que é permissão a sério **e** que quem grava também tem. */
   private filterGrantable(ctx: RequestContext, permissions: string[]): Permission[] {
     const known = new Set<string>(Object.values(ROLE_PERMISSIONS).flat());
@@ -312,6 +391,16 @@ export class DepartmentsService {
     for (let i = 0; i < 50; i++) {
       const key = i === 0 ? base : `${base}-${i + 1}`;
       const taken = await db.department.findFirst({ where: { key }, select: { id: true } });
+      if (!taken) return key;
+    }
+    return `${base}-${Date.now()}`;
+  }
+
+  /** O mesmo, na tabela dos cargos — a chave também é única por academia lá. */
+  private async freeRoleKey(db: ScopedClient, base: string): Promise<string> {
+    for (let i = 0; i < 50; i++) {
+      const key = i === 0 ? base : `${base}-${i + 1}`;
+      const taken = await db.academyRole.findFirst({ where: { key }, select: { id: true } });
       if (!taken) return key;
     }
     return `${base}-${Date.now()}`;

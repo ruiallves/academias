@@ -1835,21 +1835,43 @@ export class AcademyService {
         select: {
           id: true, athleteId: true, period: true, amountCents: true, dueDate: true, status: true,
           athlete: { select: { name: true, teams: { select: { teamId: true }, take: 1 } } },
+          // A tentativa de pagamento viva, se houver — é o que deixa a app do
+          // pai voltar a mostrar a referência Multibanco ou reabrir o
+          // formulário, em vez de criar outra cobrança na euPago.
+          payments: {
+            where: { status: { in: ["PENDING", "PROCESSING"] } },
+            orderBy: { createdAt: "desc" },
+            take: 1,
+            select: { method: true, status: true, entity: true, reference: true, redirectUrl: true, expiresAt: true },
+          },
         },
       });
 
       const today = new Date();
-      return rows.map((c) => ({
-        id: c.id,
-        athleteId: c.athleteId,
-        athleteName: c.athlete.name,
-        teamId: c.athlete.teams[0]?.teamId ?? null,
-        period: c.period,
-        amountCents: c.amountCents,
-        dueDate: c.dueDate,
-        status: c.status,
-        overdue: c.status === "OPEN" && c.dueDate < today,
-      }));
+      return rows.map((c) => {
+        const aberto = c.payments[0];
+        const vivo = aberto && (!aberto.expiresAt || aberto.expiresAt.getTime() > today.getTime());
+        return {
+          id: c.id,
+          athleteId: c.athleteId,
+          athleteName: c.athlete.name,
+          teamId: c.athlete.teams[0]?.teamId ?? null,
+          period: c.period,
+          amountCents: c.amountCents,
+          dueDate: c.dueDate,
+          status: c.status,
+          overdue: c.status === "OPEN" && c.dueDate < today,
+          openPayment: vivo
+            ? {
+                method: aberto.method,
+                status: aberto.status,
+                entity: aberto.entity,
+                reference: aberto.reference,
+                redirectUrl: aberto.redirectUrl,
+              }
+            : null,
+        };
+      });
     });
   }
 

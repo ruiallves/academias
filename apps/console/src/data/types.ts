@@ -333,6 +333,19 @@ export type TrainingSession = {
    * adivinhar a partir do âmbito da sessão.
    */
   mine?: boolean;
+  /**
+   * Marcado, dado ou desmarcado.
+   *
+   * **`done` não chega da API.** O servidor cria os treinos em `SCHEDULED` e
+   * nunca os passa a `DONE` — nem quando a hora passa, nem quando as presenças
+   * são registadas. O valor fica aqui porque o enum do Prisma o tem e um dia
+   * pode começar a ser escrito; até lá, quem quiser saber se um treino **já
+   * aconteceu** pergunta ao relógio (`start <= agora` e não cancelado), nunca a
+   * este campo.
+   *
+   * Custou uma vez: `unrecordedSessions` exigia `done`, e por isso um treino
+   * marcado para ontem não aparecia em lado nenhum das Presenças.
+   */
   status: "scheduled" | "done" | "cancelled";
   /** Nulo enquanto o treinador não registar presenças. Nunca vem de equipas que não são minhas. */
   attendance?: SessionAttendance;

@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { PageHeader } from "@/components/Shell";
 import { DataTable, Empty, Metric, MetricRow, Monogram, Panel, PanelHead, Pill, type Column } from "@/components/primitives";
 import { BulkBar, BulkDeleteDialog } from "@/components/BulkDelete";
@@ -9,6 +9,8 @@ import { Clock, HeartPulse, Plus, Shield, Users, Whistle } from "@/lib/icons";
 import { listStaff, teamById, unrecordedSessions } from "@/lib/api";
 import { revokeInvite, usePendingInvites } from "@/lib/invites";
 import { useStaffEdits } from "@/lib/staff-edits";
+import { loadDepartments } from "@/lib/departments";
+import { loadRoles } from "@/lib/roles";
 import { shortDate } from "@/lib/format";
 import { can } from "@/lib/permissions";
 import { ROLE_LABEL, useSession } from "@/session";
@@ -48,6 +50,27 @@ export default function Staff() {
 
   // Redesenha quando uma ficha for editada — o nome ou o cargo mudam aqui também.
   useStaffEdits();
+
+  /*
+   * Os cargos e os departamentos, carregados **ao abrir a página**.
+   *
+   * O diálogo de convite precisa dos dois, e a ida à base custa perto de um
+   * segundo e meio cada uma (medido). Carregados só ao abrir o diálogo, o
+   * primeiro convite de cada sessão era: clicar, esperar, ver os departamentos
+   * aparecer, esperar outra vez, ver os cargos aparecer.
+   *
+   * Aqui não custa nada a ninguém: a página já está a desenhar a lista de staff,
+   * e quem vem a esta página é quem vai carregar em "Convidar". Quando o diálogo
+   * abre, os dados já estão no `store` e ele desenha cheio à primeira.
+   *
+   * O diálogo continua a pedi-los na mesma — não pode depender de ter sido
+   * aberto a partir daqui (também abre em Famílias), e uma segunda leitura
+   * apanha o que tiver mudado entretanto.
+   */
+  useEffect(() => {
+    void loadRoles();
+    void loadDepartments();
+  }, []);
 
   const all = listStaff();
   const invites = usePendingInvites();

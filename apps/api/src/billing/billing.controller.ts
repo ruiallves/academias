@@ -1,5 +1,5 @@
-import { Body, Controller, Get, Param, Post, Query, Req } from "@nestjs/common";
-import { IsEnum, IsOptional, IsString, Matches } from "class-validator";
+import { Body, Controller, Delete, Get, Param, Post, Query, Req } from "@nestjs/common";
+import { IsEnum, IsOptional, IsString, Length, Matches } from "class-validator";
 import { PaymentMethod } from "@prisma/client";
 import type { Request } from "express";
 import { BillingService } from "./billing.service";
@@ -14,6 +14,22 @@ class StartPaymentDto {
   @IsString()
   @Matches(/^\+?\d{9,15}$/, { message: "Número de telemóvel inválido" })
   payerPhone?: string;
+}
+
+class CreateMandateDto {
+  /** Validado a sério no serviço (mod-97); aqui só a forma. */
+  @IsString()
+  @Matches(/^[A-Za-z]{2}[\s0-9A-Za-z]{12,40}$/, { message: "IBAN inválido" })
+  iban!: string;
+
+  @IsString()
+  @Length(3, 120)
+  name!: string;
+
+  @IsOptional()
+  @IsString()
+  @Matches(/^[A-Za-z0-9]{8,11}$/, { message: "BIC inválido" })
+  bic?: string;
 }
 
 @Controller("billing")
@@ -35,6 +51,30 @@ export class BillingController {
   @Post("charges/:id/pay")
   startPayment(@Req() req: Request, @Param("id") id: string, @Body() dto: StartPaymentDto) {
     return this.billing.startPayment(ctx(req), id, dto.method, dto.payerPhone);
+  }
+
+  /* ------------------------------------------------------------------------ */
+  /* Débito directo — o mandato do próprio                                     */
+  /* ------------------------------------------------------------------------ */
+
+  /** O mandato de quem pergunta — nunca o de outra pessoa. */
+  @Get("mandate")
+  getMandate(@Req() req: Request) {
+    return this.billing.getMandate(ctx(req));
+  }
+
+  /**
+   * Autorizar o débito directo. O IBAN segue para a euPago e **não fica** na
+   * nossa base — guardam-se os últimos 4 dígitos e a referência do mandato.
+   */
+  @Post("mandate")
+  createMandate(@Req() req: Request, @Body() dto: CreateMandateDto) {
+    return this.billing.createMandate(ctx(req), dto);
+  }
+
+  @Delete("mandate")
+  cancelMandate(@Req() req: Request) {
+    return this.billing.cancelMandate(ctx(req));
   }
 }
 

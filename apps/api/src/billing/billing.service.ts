@@ -1,13 +1,14 @@
 import { BadRequestException, ForbiddenException, Injectable, Logger, NotFoundException } from "@nestjs/common";
-import { PaymentMethod, PaymentStatus, ChargeStatus, NotificationType } from "@prisma/client";
+import { ConfigService } from "@nestjs/config";
+import { PaymentMethod, PaymentStatus, ChargeStatus, NotificationType, type Payment } from "@prisma/client";
 import { PrismaService, type ScopedClient } from "../prisma/prisma.service";
 import { NotificationsService } from "../notifications/notifications.service";
-import { EupagoClient } from "./eupago.client";
+import { EupagoClient, type ChargeResult, type RedirectUrls } from "./eupago.client";
 import { athleteScopeFilter, can, teamScopeFilter, type RequestContext } from "../common/permissions";
 
 /**
  * Quando é que um preço acabado de definir começa a ser cobrado.
- *
+ *vscode-webview://1ob97fh12humrgiq50j4v2uospofrr9cgtpigtgrt1vh8pfmvnct/index.html?id=74ac0831-4d4d-44c1-a659-f8ebe7095855&parentId=1&origin=5219657b-d472-4830-9805-0aa443d03f78&swVersion=6&extensionId=Anthropic.claude-code&platform=electron&vscode-resource-base-authority=vscode-resource.vscode-cdn.net&parentOrigin=vscode-file%3A%2F%2Fvscode-app&purpose=webviewView&session=28b7868d-b60b-4296-97c0-4e2d337e5eee#
  * "atual" emite já a mensalidade deste mês; "proximo" só regista o preço. Ver
  * `BillingService.geraAgora`, que explica porque é que isto passou a perguntar-se.
  */
@@ -21,6 +22,7 @@ export class BillingService {
     private readonly prisma: PrismaService,
     private readonly eupago: EupagoClient,
     private readonly notifications: NotificationsService,
+    private readonly config: ConfigService,
   ) {}
 
   /* ------------------------------------------------------------------------ */
@@ -218,7 +220,42 @@ export class BillingService {
     if (!can(ctx, "billing:write")) throw new ForbiddenException("Sem permissão para gerar mensalidades");
     if (!/^\d{4}-\d{2}$/.test(period)) throw new BadRequestException("Período inválido (esperado AAAA-MM)");
 
-    return this.prisma.runAs(ctx.academyId, (db) => gerarCobrancas(db, ctx.academyId, period));
+    return this.prisma.runAs(ctx.academyId, async (db) => {
+      const resultado = await gerarCobrancas(db, ctx.academyId, period);
+
+      /*
+       * O envio da mensalidade.
+       *
+       * Emitir o mês é o gesto deliberado da direcção — e a família tem de o
+       * saber, senão a mensalidade fica à espera de que alguém se lembre de
+       * abrir a app. Um aviso por cobrança nova, só aos encarregados pagadores,
+       * e só às **novas**: gerar o mês duas vezes não incomoda ninguém duas
+       * vezes, porque a segunda não cria nada.
+       */
+      if (resultado.atletasNovos.length > 0) {
+        const cobrancas = await db.charge.findMany({
+          where: { period, athleteId: { in: resultado.atletasNovos } },
+          include: { athlete: { include: { guardians: { include: { membership: true } } } } },
+        });
+        for (const c of cobrancas) {
+          for (const link of c.athlete.guardians.filter((g) => g.isPayer && g.membership.isActive)) {
+            await this.notifications.enqueue(
+              {
+                academyId: c.academyId,
+                userId: link.membership.userId,
+                type: NotificationType.PAYMENT_PENDING,
+                title: "Nova mensalidade",
+                body: `A mensalidade de ${periodLabelPt(period)} de ${c.athlete.name} já está disponível — ${(c.amountCents / 100).toFixed(2)} €, até ${dateLabelPt(c.dueDate)}.`,
+                payload: { route: "/pagamentos", chargeId: c.id },
+              },
+              db,
+            );
+          }
+        }
+      }
+
+      return resultado;
+    });
   }
 
   /**
@@ -589,11 +626,22 @@ export class BillingService {
   /* ------------------------------------------------------------------------ */
 
   /**
-   * Inicia o pagamento de uma mensalidade.
+   * Inicia o pagamento de uma mensalidade — por qualquer um dos métodos.
    *
    * O valor **nunca** vem do cliente. O pedido traz apenas o id da cobrança e o
    * método; o montante é lido da base de dados. Se viesse do corpo do pedido, um
-   * pai conseguiria pagar quarenta euros com um cêntimo.
+   * pai conseguiria pagar quarenta euros com um cêntimo. Os URLs de retorno dos
+   * formulários alojados também são construídos aqui — um URL vindo do cliente
+   * era um redireccionamento aberto à espera de servir phishing.
+   *
+   * ## Uma tentativa viva de cada vez
+   *
+   * Duas referências abertas para a mesma mensalidade é como se paga duas
+   * vezes. Uma tentativa em curso do **mesmo** método devolve-se tal como está
+   * (a app volta a mostrar a referência ou reabre o formulário). Trocar de
+   * método marca a antiga como expirada — e se o pai ainda assim pagar a
+   * referência velha e a nova, o webhook apanha o duplicado e deixa-o visível
+   * para reembolso, em vez de o engolir (ver `confirmPayment`).
    */
   async startPayment(
     ctx: RequestContext,
@@ -603,67 +651,277 @@ export class BillingService {
   ) {
     if (!can(ctx, "billing:read")) throw new ForbiddenException();
 
+    if (method === PaymentMethod.CASH || method === PaymentMethod.TRANSFER) {
+      throw new BadRequestException("Esse método não é um pagamento online");
+    }
+
     // Tudo dentro do mesmo contexto de tenant: a RLS só está activa dentro da
     // transação aberta por `runAs`.
     return this.prisma.runAs(ctx.academyId, async (db) => {
-    // findFirst, não findUnique: é assim que o filtro de tenant se aplica.
-    const charge = await db.charge.findFirst({
-      where: { id: chargeId, athleteId: athleteScopeFilter(ctx) },
-      include: { athlete: { select: { name: true } }, payments: true },
-    });
+      // findFirst, não findUnique: é assim que o filtro de tenant se aplica.
+      const charge = await db.charge.findFirst({
+        where: { id: chargeId, athleteId: athleteScopeFilter(ctx) },
+        include: { athlete: { select: { name: true } }, payments: true },
+      });
 
-    if (!charge) throw new NotFoundException("Mensalidade não encontrada");
-    if (charge.status === ChargeStatus.SETTLED) throw new BadRequestException("Já está paga");
+      if (!charge) throw new NotFoundException("Mensalidade não encontrada");
+      if (charge.status === ChargeStatus.SETTLED) throw new BadRequestException("Já está paga");
+      if (charge.status === ChargeStatus.VOID) throw new BadRequestException("Esta mensalidade foi anulada");
 
-    // Se já existe uma tentativa em curso, devolve-se essa em vez de criar outra.
-    // Duas referências abertas para a mesma mensalidade é como se cobra duas vezes.
-    const inFlight = charge.payments.find(
-      (p) => p.status === PaymentStatus.PENDING || p.status === PaymentStatus.PROCESSING,
-    );
-    if (inFlight) return inFlight;
+      const agora = Date.now();
+      const vivos = charge.payments.filter(
+        (p) => p.status === PaymentStatus.PENDING || p.status === PaymentStatus.PROCESSING,
+      );
 
-    const payment = await db.payment.create({
-      data: {
-        chargeId: charge.id,
-        amountCents: charge.amountCents,
-        method,
-        status: PaymentStatus.PENDING,
-      },
-    });
+      for (const p of vivos) {
+        // Um MB Way tem 5 minutos de vida e um formulário 30 — passado o prazo
+        // a tentativa está morta, marque-a quem a encontrar primeiro.
+        const morto =
+          (p.expiresAt && p.expiresAt.getTime() < agora) ||
+          (p.method === PaymentMethod.MBWAY && agora - p.createdAt.getTime() > 10 * 60_000);
+        if (morto) {
+          await db.payment.update({ where: { id: p.id }, data: { status: PaymentStatus.EXPIRED } });
+          continue;
+        }
+        if (p.method === method) return p;
+        // Trocar de método: a tentativa antiga morre já. A referência antiga
+        // pode continuar pagável do lado do provedor até expirar — se o pai a
+        // pagar na mesma, o webhook trata o duplicado às claras.
+        await db.payment.update({ where: { id: p.id }, data: { status: PaymentStatus.EXPIRED } });
+      }
 
-    const request = {
-      reference: payment.id,
-      amountCents: charge.amountCents,
-      description: `Mensalidade ${charge.period} — ${charge.athlete.name}`,
-      payerName: charge.athlete.name,
-      payerEmail: "",
-    };
+      // A chave do canal do clube, quando existe — é o que faz o dinheiro
+      // liquidar no IBAN do clube, e não em mais lado nenhum. O slug é para o
+      // URL de retorno: cada clube tem o seu subdomínio na app da família.
+      const academia = await db.academy.findFirst({
+        where: { id: ctx.academyId },
+        select: { eupagoApiKey: true, slug: true },
+      });
+      const apiKey = academia?.eupagoApiKey ?? undefined;
 
-    try {
-      const result =
-        method === PaymentMethod.MBWAY
-          ? await this.eupago.createMbWayCharge({ ...request, payerPhone: requirePhone(payerPhone) })
-          : await this.eupago.createMultibancoCharge(request);
+      // Quem paga — o email segue para a euPago para o recibo do formulário.
+      const pagador = ctx.membershipId
+        ? await db.membership.findFirst({
+            where: { id: ctx.membershipId },
+            select: { user: { select: { name: true, email: true } } },
+          })
+        : null;
 
-      return await db.payment.update({
-        where: { id: payment.id },
+      const payment = await db.payment.create({
         data: {
-          providerRef: result.providerRef,
-          entity: result.entity,
-          reference: result.reference,
-          expiresAt: result.expiresAt,
-          // MB Way espera confirmação no telemóvel — já está "a caminho".
-          // Multibanco fica pendente até alguém pagar na caixa.
-          status: method === PaymentMethod.MBWAY ? PaymentStatus.PROCESSING : PaymentStatus.PENDING,
+          chargeId: charge.id,
+          amountCents: charge.amountCents,
+          method,
+          status: PaymentStatus.PENDING,
         },
       });
-    } catch (error) {
-      await db.payment.update({
-        where: { id: payment.id },
-        data: { status: PaymentStatus.FAILED, rawPayload: { error: String(error) } },
-      });
-      throw error;
+
+      const request = {
+        reference: payment.id,
+        amountCents: charge.amountCents,
+        description: `Mensalidade ${charge.period} — ${charge.athlete.name}`,
+        payerName: pagador?.user.name ?? charge.athlete.name,
+        payerEmail: pagador?.user.email ?? "",
+        apiKey,
+      };
+      const urls = this.urlsDeRetorno(academia?.slug ?? "");
+
+      try {
+        const result = await (async () => {
+          switch (method) {
+            case PaymentMethod.MBWAY:
+              return this.eupago.createMbWayCharge({ ...request, payerPhone: requirePhone(payerPhone) });
+            case PaymentMethod.MULTIBANCO:
+              return this.eupago.createMultibancoCharge(request);
+            case PaymentMethod.CARD:
+              return this.eupago.createCardCharge(request, urls);
+            case PaymentMethod.GOOGLE_PAY:
+              return this.eupago.createGooglePayCharge(request, urls);
+            case PaymentMethod.APPLE_PAY:
+              return this.eupago.createApplePayCharge(request, urls);
+            case PaymentMethod.PAYSAFECARD:
+              return this.eupago.createPaysafecardCharge(request, urls);
+            case PaymentMethod.DIRECT_DEBIT:
+              return this.debitarPorMandato(db, ctx, payment, charge.amountCents, apiKey);
+            default:
+              throw new BadRequestException("Método de pagamento desconhecido");
+          }
+        })();
+
+        /*
+         * O estado inicial diz o que falta acontecer:
+         * - MB Way e débito directo já estão "a caminho" (push aceite no
+         *   telemóvel / débito submetido ao banco) — PROCESSING;
+         * - Multibanco e formulários ficam PENDING até alguém pagar.
+         */
+        const aCaminho = method === PaymentMethod.MBWAY || method === PaymentMethod.DIRECT_DEBIT;
+
+        return await db.payment.update({
+          where: { id: payment.id },
+          data: {
+            providerRef: result.providerRef,
+            entity: result.entity,
+            reference: result.reference,
+            redirectUrl: result.redirectUrl,
+            expiresAt: result.expiresAt,
+            status: aCaminho ? PaymentStatus.PROCESSING : PaymentStatus.PENDING,
+          },
+        });
+      } catch (error) {
+        await db.payment.update({
+          where: { id: payment.id },
+          data: {
+            status: PaymentStatus.FAILED,
+            rawPayload: { error: error instanceof Error ? error.message : String(error) },
+          },
+        });
+        throw error;
+      }
+    });
+  }
+
+  /**
+   * Débito directo de uma mensalidade — contra o mandato do pagador.
+   *
+   * O mandato é do **membership que pede**, nunca de outro: um encarregado só
+   * debita da conta que ele próprio autorizou.
+   */
+  private async debitarPorMandato(
+    db: ScopedClient,
+    ctx: RequestContext,
+    payment: Payment,
+    amountCents: number,
+    apiKey?: string,
+  ): Promise<ChargeResult> {
+    if (!ctx.membershipId) throw new BadRequestException("Sessão sem pagador identificado");
+
+    const mandato = await db.directDebitMandate.findFirst({
+      where: { membershipId: ctx.membershipId, status: { not: "CANCELLED" } },
+    });
+    if (!mandato) {
+      throw new BadRequestException("Ainda não autorizaste o débito directo — configura-o primeiro");
     }
+
+    const r = await this.eupago.chargeDirectDebit({
+      mandateRef: mandato.eupagoRef,
+      paymentId: payment.id,
+      amountCents,
+      apiKey,
+    });
+
+    // O mandato fica ligado ao pagamento (em rawPayload, lido na confirmação)
+    // para o primeiro débito confirmado o marcar como ACTIVO.
+    await db.payment.update({
+      where: { id: payment.id },
+      data: { rawPayload: { mandateId: mandato.id, collectionDate: r.collectionDate ?? null } },
+    });
+
+    // O débito SEPA leva dias a liquidar; o webhook dirá quando chegou. O
+    // identificador que volta é o nosso payment.id (o `obs` do pedido).
+    return { providerRef: payment.id };
+  }
+
+  /**
+   * Os URLs de retorno dos formulários alojados — sempre do servidor.
+   *
+   * Cada clube tem o seu subdomínio na app da família (`ad-fafe.academias.pt`),
+   * por isso `FAMILY_APP_URL` aceita `{slug}`: com
+   * `https://{slug}.academias.pt`, o pai do AD Fafe volta ao AD Fafe. Sem o
+   * marcador, é um URL único — o suficiente em desenvolvimento.
+   */
+  private urlsDeRetorno(slug: string): RedirectUrls {
+    const base = (this.config.get<string>("FAMILY_APP_URL") ?? "http://localhost:5174")
+      .replace("{slug}", slug)
+      .replace(/\/$/, "");
+    return {
+      successUrl: `${base}/pagamentos?retorno=ok`,
+      failUrl: `${base}/pagamentos?retorno=falhou`,
+      backUrl: `${base}/pagamentos?retorno=voltei`,
+    };
+  }
+
+  /* ------------------------------------------------------------------------ */
+  /* Débito directo — o mandato                                                */
+  /* ------------------------------------------------------------------------ */
+
+  /** O mandato do próprio — só os dados que a app precisa de mostrar. */
+  async getMandate(ctx: RequestContext) {
+    if (!can(ctx, "billing:read")) throw new ForbiddenException();
+    if (!ctx.membershipId) return null;
+
+    return this.prisma.runAs(ctx.academyId, async (db) => {
+      const m = await db.directDebitMandate.findFirst({
+        where: { membershipId: ctx.membershipId!, status: { not: "CANCELLED" } },
+        select: { id: true, debtorName: true, ibanTail: true, status: true, createdAt: true },
+      });
+      return m ?? null;
+    });
+  }
+
+  /**
+   * Autorizar o débito directo — uma vez, para todos os educandos.
+   *
+   * O IBAN valida-se aqui (mod-97) e **não se guarda**: segue para a euPago,
+   * que é quem debita, e na base ficam só os últimos 4 dígitos para o pai
+   * reconhecer a conta. A euPago envia o PDF do mandato para o email do
+   * pagador — o débito só funciona depois de ela o dar por autorizado.
+   */
+  async createMandate(ctx: RequestContext, dto: { iban: string; name: string; bic?: string }) {
+    if (!can(ctx, "billing:read")) throw new ForbiddenException();
+    if (!ctx.membershipId) throw new BadRequestException("Sessão sem pagador identificado");
+
+    const iban = dto.iban.replace(/\s/g, "").toUpperCase();
+    if (!ibanValido(iban)) throw new BadRequestException("IBAN inválido — confere os dígitos");
+    const nome = dto.name.trim();
+    if (nome.length < 3) throw new BadRequestException("Escreve o nome do titular da conta");
+
+    return this.prisma.runAs(ctx.academyId, async (db) => {
+      const pagador = await db.membership.findFirst({
+        where: { id: ctx.membershipId! },
+        select: { id: true, user: { select: { email: true } } },
+      });
+      if (!pagador?.user.email) throw new BadRequestException("A tua conta não tem email — o mandato segue por email");
+
+      const existente = await db.directDebitMandate.findFirst({ where: { membershipId: ctx.membershipId! } });
+
+      const auth = await this.eupago.createDebitAuthorization({
+        reference: existente?.id ?? ctx.membershipId!,
+        iban,
+        name: nome,
+        email: pagador.user.email,
+        bic: dto.bic?.trim() || undefined,
+        apiKey: (await db.academy.findFirst({ where: { id: ctx.academyId }, select: { eupagoApiKey: true } }))
+          ?.eupagoApiKey ?? undefined,
+      });
+
+      const dados = {
+        debtorName: nome,
+        ibanTail: iban.slice(-4),
+        eupagoRef: auth.providerRef,
+        status: "PENDING" as const,
+      };
+
+      const m = existente
+        ? await db.directDebitMandate.update({ where: { id: existente.id }, data: dados })
+        : await db.directDebitMandate.create({
+            data: { academyId: ctx.academyId, membershipId: ctx.membershipId!, ...dados },
+          });
+
+      return { id: m.id, debtorName: m.debtorName, ibanTail: m.ibanTail, status: m.status };
+    });
+  }
+
+  /** Cancelar o mandato — deixa de ser possível debitar por ele a partir daqui. */
+  async cancelMandate(ctx: RequestContext) {
+    if (!can(ctx, "billing:read")) throw new ForbiddenException();
+    if (!ctx.membershipId) throw new BadRequestException("Sessão sem pagador identificado");
+
+    return this.prisma.runAs(ctx.academyId, async (db) => {
+      await db.directDebitMandate.updateMany({
+        where: { membershipId: ctx.membershipId! },
+        data: { status: "CANCELLED" },
+      });
+      return { ok: true };
     });
   }
 
@@ -677,21 +935,21 @@ export class BillingService {
    * Chamado exclusivamente pelo controlador de webhooks, depois de a assinatura
    * ser verificada e de o evento ficar gravado em bruto. É idempotente: reprocessar
    * o mesmo evento não liquida a cobrança duas vezes nem envia duas notificações.
+   *
+   * `refs` são os candidatos a identificar o pagamento, por ordem de confiança:
+   * o nosso `identifier` (o id do Payment, que nós próprios enviámos), depois a
+   * referência e o trid do provedor.
    */
-  async confirmPayment(providerRef: string, paidAt: Date, rawPayload: unknown, paidCents?: number) {
-    // O webhook chega sem tenant — é o pagamento que o identifica. Resolve-se
-    // primeiro, por uma função que só sabe devolver um id, e só depois se abre o
-    // contexto. Sem este passo a RLS bloquearia a leitura e os pagamentos
-    // deixariam de confirmar, em silêncio.
-    const academyId = await this.prisma.resolvePaymentAcademy("eupago", providerRef);
-    if (!academyId) {
-      this.log.warn(`Webhook para um pagamento desconhecido: ${providerRef}`);
+  async confirmPayment(refs: string[], paidAt: Date, rawPayload: unknown, paidCents?: number) {
+    const found = await this.encontrarPagamento(refs);
+    if (!found) {
+      this.log.warn(`Webhook para um pagamento desconhecido: ${refs.join(", ")}`);
       return { handled: false as const };
     }
 
-    return this.prisma.runAs(academyId, async (db) => {
+    return this.prisma.runAs(found.academyId, async (db) => {
       const payment = await db.payment.findFirst({
-        where: { provider: "eupago", providerRef },
+        where: { id: found.paymentId },
         include: { charge: { include: { athlete: { include: { guardians: { include: { membership: true } } } } } } },
       });
 
@@ -713,7 +971,7 @@ export class BillingService {
        */
       if (paidCents !== undefined && paidCents !== payment.amountCents) {
         this.log.warn(
-          `Valor divergente no webhook de ${providerRef}: pago ${paidCents}, esperado ${payment.amountCents}`,
+          `Valor divergente no webhook de ${payment.id}: pago ${paidCents}, esperado ${payment.amountCents}`,
         );
         await db.payment.update({
           where: { id: payment.id },
@@ -724,16 +982,50 @@ export class BillingService {
 
       const charge = payment.charge;
 
+      // O primeiro débito directo confirmado prova que o mandato está vivo. O
+      // id vem do rawPayload guardado ao debitar — lido ANTES de o webhook o
+      // substituir.
+      const mandateId =
+        payment.method === PaymentMethod.DIRECT_DEBIT &&
+        payment.rawPayload &&
+        typeof payment.rawPayload === "object"
+          ? String((payment.rawPayload as Record<string, unknown>).mandateId ?? "")
+          : "";
+
+      /*
+       * Dinheiro a dobrar não se esconde.
+       *
+       * Se a cobrança já está liquidada por outro pagamento (o pai pagou a
+       * referência antiga E a nova), este pagamento fica PAID na mesma — o
+       * dinheiro entrou de verdade — mas a cobrança não se toca e o caso fica
+       * gritado no log, porque o passo seguinte é um reembolso humano.
+       */
+      const jaLiquidada = charge.status === ChargeStatus.SETTLED;
+      if (jaLiquidada) {
+        this.log.error(
+          `PAGAMENTO DUPLICADO: a mensalidade ${charge.id} (${charge.period}) já estava liquidada e chegou ` +
+            `outro pagamento de ${(payment.amountCents / 100).toFixed(2)} € (payment ${payment.id}). Reembolsar na euPago.`,
+        );
+      }
+
       // Já estamos dentro da transação de `runAs` — as duas escritas caem ou
       // passam juntas sem precisar de um `$transaction` aninhado.
       await db.payment.update({
         where: { id: payment.id },
         data: { status: PaymentStatus.PAID, paidAt, rawPayload: rawPayload as object },
       });
-      await db.charge.update({
-        where: { id: charge.id },
-        data: { status: ChargeStatus.SETTLED, settledAt: paidAt },
-      });
+      if (!jaLiquidada) {
+        await db.charge.update({
+          where: { id: charge.id },
+          data: { status: ChargeStatus.SETTLED, settledAt: paidAt },
+        });
+      }
+
+      if (mandateId) {
+        await db.directDebitMandate
+          .update({ where: { id: mandateId }, data: { status: "ACTIVE" } })
+          .catch(() => undefined);
+      }
 
       // Só depois de a base de dados estar consistente é que se avisa a família.
       for (const link of charge.athlete.guardians.filter((g) => g.isPayer)) {
@@ -751,41 +1043,123 @@ export class BillingService {
     });
   }
 
-  async failPayment(providerRef: string, reason: string, rawPayload: unknown) {
-    const academyId = await this.prisma.resolvePaymentAcademy("eupago", providerRef);
-    if (!academyId) return { handled: false as const };
+  async failPayment(refs: string[], reason: string, rawPayload: unknown, markAs: "FAILED" | "EXPIRED" = "FAILED") {
+    const found = await this.encontrarPagamento(refs);
+    if (!found) return { handled: false as const };
 
-    return this.prisma.runAs(academyId, async (db) => {
+    return this.prisma.runAs(found.academyId, async (db) => {
       const payment = await db.payment.findFirst({
-        where: { provider: "eupago", providerRef },
+        where: { id: found.paymentId },
         include: { charge: { include: { athlete: { include: { guardians: { include: { membership: true } } } } } } },
       });
       if (!payment || payment.status === PaymentStatus.PAID) return { handled: false as const };
 
       await db.payment.update({
         where: { id: payment.id },
-        data: { status: PaymentStatus.FAILED, rawPayload: rawPayload as object },
+        data: {
+          status: markAs === "EXPIRED" ? PaymentStatus.EXPIRED : PaymentStatus.FAILED,
+          rawPayload: rawPayload as object,
+        },
       });
 
-      for (const link of payment.charge.athlete.guardians.filter((g) => g.isPayer)) {
-        await this.notifications.enqueue({
-          academyId: payment.charge.academyId,
-          userId: link.membership.userId,
-          type: NotificationType.PAYMENT_FAILED,
-          title: "O pagamento não foi concluído",
-          body: reason,
-          payload: { route: "/pagamentos", chargeId: payment.chargeId },
-        }, db);
+      // Uma referência que expira em silêncio não precisa de acordar ninguém;
+      // um pagamento recusado precisa — o pai pensa que pagou.
+      if (markAs === "FAILED") {
+        for (const link of payment.charge.athlete.guardians.filter((g) => g.isPayer)) {
+          await this.notifications.enqueue({
+            academyId: payment.charge.academyId,
+            userId: link.membership.userId,
+            type: NotificationType.PAYMENT_FAILED,
+            title: "O pagamento não foi concluído",
+            body: reason,
+            payload: { route: "/pagamentos", chargeId: payment.chargeId },
+          }, db);
+        }
       }
 
       return { handled: true as const };
     });
+  }
+
+  /**
+   * Um reembolso feito na euPago (backoffice do clube) volta pelo webhook. O
+   * pagamento fica `REFUNDED` e a mensalidade reabre — o histórico conta a
+   * história toda: pagou, foi devolvido, voltou a estar por pagar.
+   */
+  async refundPayment(refs: string[], rawPayload: unknown) {
+    const found = await this.encontrarPagamento(refs);
+    if (!found) return { handled: false as const };
+
+    return this.prisma.runAs(found.academyId, async (db) => {
+      const payment = await db.payment.findFirst({
+        where: { id: found.paymentId },
+        include: { charge: { select: { id: true, status: true } } },
+      });
+      if (!payment || payment.status !== PaymentStatus.PAID) return { handled: false as const };
+
+      await db.payment.update({
+        where: { id: payment.id },
+        data: { status: PaymentStatus.REFUNDED, rawPayload: rawPayload as object },
+      });
+      if (payment.charge.status === ChargeStatus.SETTLED) {
+        await db.charge.update({
+          where: { id: payment.charge.id },
+          data: { status: ChargeStatus.OPEN, settledAt: null },
+        });
+      }
+
+      return { handled: true as const };
+    });
+  }
+
+  /**
+   * De um punhado de candidatos do webhook para um pagamento nosso.
+   *
+   * O webhook chega sem tenant — é o pagamento que o identifica. A resolução
+   * passa por uma função `SECURITY DEFINER` que só sabe devolver um id de
+   * academia (nem valor, nem nomes, nem mais nada), e só depois se abre o
+   * contexto. Sem este passo a RLS bloquearia a leitura e os pagamentos
+   * deixariam de confirmar, em silêncio.
+   */
+  private async encontrarPagamento(refs: string[]): Promise<{ academyId: string; paymentId: string } | null> {
+    for (const ref of refs) {
+      if (!ref) continue;
+      const academyId = await this.prisma.resolvePaymentAcademy("eupago", ref);
+      if (!academyId) continue;
+
+      const paymentId = await this.prisma.runAs(academyId, async (db) => {
+        const p = await db.payment.findFirst({
+          where: { provider: "eupago", OR: [{ providerRef: ref }, { id: ref }] },
+          select: { id: true },
+        });
+        return p?.id ?? null;
+      });
+      if (paymentId) return { academyId, paymentId };
+    }
+    return null;
   }
 }
 
 function requirePhone(phone: string | undefined): string {
   if (!phone) throw new BadRequestException("MB Way precisa de um número de telemóvel");
   return phone;
+}
+
+/**
+ * Validação de IBAN (ISO 13616, mod-97): os quatro primeiros caracteres vão
+ * para o fim, letras viram números (A=10 … Z=35), e o resto da divisão por 97
+ * tem de ser 1. Apanha o dígito trocado antes de o mandato seguir para o banco
+ * — um IBAN errado no débito directo é uma devolução semanas depois.
+ */
+function ibanValido(iban: string): boolean {
+  if (!/^[A-Z]{2}\d{2}[A-Z0-9]{10,30}$/.test(iban)) return false;
+  const rodado = iban.slice(4) + iban.slice(0, 4);
+  const digitos = rodado.replace(/[A-Z]/g, (c) => String(c.charCodeAt(0) - 55));
+  let resto = 0;
+  for (let i = 0; i < digitos.length; i += 7) {
+    resto = Number(String(resto) + digitos.slice(i, i + 7)) % 97;
+  }
+  return resto === 1;
 }
 
 /**
@@ -965,7 +1339,15 @@ export async function gerarCobrancas(
   period: string,
   /** Limita a geração a estes atletas. Sem isto, gera para a academia toda. */
   apenasAtletas?: string[],
-): Promise<{ period: string; criadas: number; jaExistiam: number; semPreco: number; foraDoMes: number }> {
+): Promise<{
+  period: string;
+  criadas: number;
+  jaExistiam: number;
+  semPreco: number;
+  foraDoMes: number;
+  /** Quem ganhou cobrança nova — é a quem o "envio da mensalidade" avisa. */
+  atletasNovos: string[];
+}> {
   const mes = Number(period.slice(5, 7));
 
   const atletas = await db.athlete.findMany({
@@ -976,7 +1358,7 @@ export async function gerarCobrancas(
     select: { id: true, joinedAt: true, teams: { select: { teamId: true }, take: 1 } },
   });
   if (atletas.length === 0) {
-    return { period, criadas: 0, jaExistiam: 0, semPreco: 0, foraDoMes: 0 };
+    return { period, criadas: 0, jaExistiam: 0, semPreco: 0, foraDoMes: 0, atletasNovos: [] };
   }
 
   const ids = atletas.map((a) => a.id);
@@ -1126,7 +1508,14 @@ export async function gerarCobrancas(
     await db.charge.createMany({ data: novas, skipDuplicates: true });
   }
 
-  return { period, criadas: novas.length, jaExistiam, semPreco, foraDoMes };
+  return {
+    period,
+    criadas: novas.length,
+    jaExistiam,
+    semPreco,
+    foraDoMes,
+    atletasNovos: novas.map((n) => n.athleteId),
+  };
 }
 
 /** O período de hoje, no formato `AAAA-MM` que o `Charge` usa. */

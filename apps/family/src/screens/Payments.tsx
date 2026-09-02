@@ -1,6 +1,22 @@
 import { useEffect, useMemo, useState } from "react";
-import { Check, CheckCircle2, Copy, CreditCard, Loader, ShieldCheck, Smartphone, TriangleAlert } from "lucide-react";
-import { apiPost } from "@/lib/http";
+import { useSearchParams } from "react-router-dom";
+import {
+  Apple,
+  Banknote,
+  Check,
+  CheckCircle2,
+  ChevronRight,
+  Copy,
+  CreditCard,
+  Landmark,
+  Loader,
+  ShieldCheck,
+  Smartphone,
+  Ticket,
+  TriangleAlert,
+  Wallet,
+} from "lucide-react";
+import { apiGet, apiPost } from "@/lib/http";
 import { reload, useStore, type Payment } from "@/lib/store";
 import { Avatar, Money, cx, dateShort, money } from "@/ui";
 
@@ -47,6 +63,21 @@ export default function Payments() {
   const [sheet, setSheet] = useState<"none" | "method" | "result">("none");
   const [result, setResult] = useState<PayResult | null>(null);
 
+  /*
+   * O regresso de um formulário alojado da euPago (cartão, Google Pay, Apple
+   * Pay). O parâmetro só diz por onde o pai voltou — **nunca** decide que algo
+   * foi pago: isso é do webhook, e a app continua a mostrar "a confirmar" até
+   * o servidor mudar de ideias.
+   */
+  const [params, setParams] = useSearchParams();
+  const retorno = params.get("retorno");
+  useEffect(() => {
+    if (!retorno) return;
+    void reload();
+    const t = setTimeout(() => setParams({}, { replace: true }), 8000);
+    return () => clearTimeout(t);
+  }, [retorno, setParams]);
+
   const chosen = outstanding.filter((p) => selected.has(p.id));
   const total = useMemo(() => chosen.reduce((n, p) => n + p.amountCents, 0), [chosen]);
   const owedTotal = outstanding.reduce((n, p) => n + p.amountCents, 0);
@@ -69,6 +100,20 @@ export default function Payments() {
   return (
     <div className="pt-3">
       <h1 className="px-1 text-[28px] leading-tight font-semibold tracking-[-0.03em] text-ink">Pagamentos</h1>
+
+      {retorno === "ok" && (
+        <div className="mt-3 flex items-start gap-2.5 rounded-[var(--radius-md)] bg-signal-soft p-3.5 text-[13px] leading-relaxed text-signal-ink">
+          <ShieldCheck className="mt-0.5 size-4 shrink-0" strokeWidth={2} />
+          Pagamento enviado. Fica “a confirmar” até o banco responder ao servidor — recebes uma notificação quando
+          estiver pago.
+        </div>
+      )}
+      {retorno === "falhou" && (
+        <div className="mt-3 flex items-start gap-2.5 rounded-[var(--radius-md)] bg-risk-soft p-3.5 text-[13px] leading-relaxed text-risk">
+          <TriangleAlert className="mt-0.5 size-4 shrink-0" strokeWidth={2} />
+          O pagamento não foi concluído. Nada foi cobrado — podes tentar outra vez ou escolher outro método.
+        </div>
+      )}
 
       {outstanding.length === 0 ? (
         <AllSettled />
@@ -280,6 +325,18 @@ function MonthRow({ payment, selected, onToggle }: { payment: Payment; selected:
           <span className={cx("block text-[12px] font-medium", overdue ? "text-risk" : "text-ink-3")}>
             {overdue ? `Venceu a ${dateShort(payment.dueDate)}` : `Vence a ${dateShort(payment.dueDate)}`}
           </span>
+          {/* A tentativa em curso — a referência Multibanco já gerada, ou o
+              pagamento a caminho. Sem isto, o pai que fechou a app perdia a
+              referência e gerava outra. */}
+          {payment.openPayment?.entity && payment.openPayment.reference ? (
+            <span className="num block text-[12px] font-medium text-ink-2">
+              MB {payment.openPayment.entity} · {payment.openPayment.reference}
+            </span>
+          ) : payment.openPayment ? (
+            <span className="block text-[12px] font-medium text-ink-3">
+              {payment.openPayment.status === "PROCESSING" ? "Pagamento a confirmar…" : "Pagamento iniciado"}
+            </span>
+          ) : null}
         </span>
 
         <span className="num shrink-0 text-[16px] font-semibold text-ink">{money(payment.amountCents)}</span>
@@ -313,14 +370,30 @@ type PayResult = {
   /** Referências Multibanco geradas, para quem prefere pagar na caixa. */
   references: { label: string; entity: string; reference: string }[];
   error?: string;
+  /** Débito directo: a mensagem do fim é outra — o banco demora dias. */
+  debitado?: boolean;
 };
 
 type StartedPayment = {
   method: string;
   entity: string | null;
   reference: string | null;
+  redirectUrl: string | null;
   status: string;
 };
+
+type Mandate = { id: string; debtorName: string; ibanTail: string; status: "PENDING" | "ACTIVE" } | null;
+
+/** Um método por linha — nome, ícone, e como se comporta. */
+const METODOS = [
+  { key: "MBWAY", label: "MB Way", hint: "Confirmas no telemóvel", icon: Smartphone, kind: "direct" },
+  { key: "MULTIBANCO", label: "Referência Multibanco", hint: "Pagas na caixa ou no homebanking", icon: Landmark, kind: "direct" },
+  { key: "CARD", label: "Cartão", hint: "Visa e Mastercard", icon: CreditCard, kind: "redirect" },
+  { key: "GOOGLE_PAY", label: "Google Pay", hint: null, icon: Wallet, kind: "redirect" },
+  { key: "APPLE_PAY", label: "Apple Pay", hint: null, icon: Apple, kind: "redirect" },
+  { key: "PAYSAFECARD", label: "PaySafeCard", hint: null, icon: Ticket, kind: "redirect" },
+  { key: "DIRECT_DEBIT", label: "Débito direto", hint: "Autorizas uma vez, debita da conta", icon: Banknote, kind: "debit" },
+] as const;
 
 function MethodSheet({
   charges,
@@ -336,9 +409,30 @@ function MethodSheet({
   onPaid: (r: PayResult) => void;
 }) {
   const [busy, setBusy] = useState(false);
+  const [view, setView] = useState<"menu" | "mbway" | "iban">("menu");
   const [phone, setPhone] = useState("");
-  const [askPhone, setAskPhone] = useState(false);
+  const [iban, setIban] = useState("");
+  const [titular, setTitular] = useState("");
   const [error, setError] = useState<string | null>(null);
+  const [mandate, setMandate] = useState<Mandate>(null);
+  const [mandateReady, setMandateReady] = useState(false);
+  const [mandateNovo, setMandateNovo] = useState(false);
+
+  // O mandato de débito directo do pagador — para a folha saber se mostra
+  // "debitar da conta ···1234" ou o formulário de autorização.
+  useEffect(() => {
+    apiGet<Mandate>("/billing/mandate")
+      .then((m) => setMandate(m))
+      .catch(() => setMandate(null))
+      .finally(() => setMandateReady(true));
+  }, []);
+
+  /*
+   * Os formulários alojados (cartão, Google Pay, Apple Pay, PaySafeCard) são um
+   * redireccionamento — e um browser só segue um. Com vários meses escolhidos
+   * paga-se um de cada vez; a folha di-lo em vez de esconder os botões.
+   */
+  const varios = charges.length > 1;
 
   /**
    * Uma mensalidade, um pagamento.
@@ -346,10 +440,18 @@ function MethodSheet({
    * O servidor cria a cobrança por `Charge` — pagar três é pedir três
    * referências. Falham-se umas e outras não: o que correu bem fica feito, e o
    * que falhou continua por pagar em vez de desaparecer sem explicação.
+   *
+   * O corpo do pedido leva o método e, no MB Way, o telemóvel. **Nunca o
+   * valor** — esse é o servidor que o sabe.
    */
-  async function pay(method: "MBWAY" | "MULTIBANCO") {
+  async function pay(method: (typeof METODOS)[number]["key"]) {
     if (method === "MBWAY" && !phone.trim()) {
-      setAskPhone(true);
+      setView("mbway");
+      setError(null);
+      return;
+    }
+    if (method === "DIRECT_DEBIT" && !mandate) {
+      setView("iban");
       setError(null);
       return;
     }
@@ -372,6 +474,13 @@ function MethodSheet({
         if (p.entity && p.reference) {
           references.push({ label: c.label, entity: p.entity, reference: p.reference });
         }
+        // Um formulário alojado: sai-se da app para a página segura da euPago.
+        // O resultado conta-se no regresso (`?retorno=…`) — e a verdade, como
+        // sempre, só no webhook.
+        if (p.redirectUrl) {
+          window.location.assign(p.redirectUrl);
+          return;
+        }
       } catch (err) {
         failed++;
         firstError ??= err instanceof Error ? err.message : "Não foi possível iniciar o pagamento.";
@@ -379,7 +488,26 @@ function MethodSheet({
     }
 
     setBusy(false);
-    onPaid({ ok, failed, references, error: firstError });
+    onPaid({ ok, failed, references, error: firstError, debitado: method === "DIRECT_DEBIT" });
+  }
+
+  /** Autorizar o débito directo — o IBAN segue para a euPago e não fica na app. */
+  async function autorizar() {
+    setBusy(true);
+    setError(null);
+    try {
+      const m = await apiPost<NonNullable<Mandate>>("/billing/mandate", {
+        iban: iban.trim(),
+        name: titular.trim(),
+      });
+      setMandate(m);
+      setMandateNovo(true);
+      setView("menu");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Não foi possível criar a autorização.");
+    } finally {
+      setBusy(false);
+    }
   }
 
   return (
@@ -396,31 +524,129 @@ function MethodSheet({
         </span>
       </div>
 
-      {askPhone && (
-        <div className="mb-3">
-          <label className="mb-1.5 block text-meta font-medium text-ink-3">Telemóvel do MB Way</label>
-          <input
-            type="tel"
-            inputMode="tel"
-            value={phone}
-            onChange={(e) => setPhone(e.target.value)}
-            placeholder="9xx xxx xxx"
-            autoFocus
-            className="h-12 w-full rounded-[var(--radius-md)] border border-line bg-surface px-3.5 text-body text-ink placeholder:text-ink-4 focus:border-line-strong focus:outline-none"
-          />
-        </div>
+      {view === "mbway" && (
+        <>
+          <div className="mb-3">
+            <label className="mb-1.5 block text-meta font-medium text-ink-3">Telemóvel do MB Way</label>
+            <input
+              type="tel"
+              inputMode="tel"
+              value={phone}
+              onChange={(e) => setPhone(e.target.value)}
+              placeholder="9xx xxx xxx"
+              autoFocus
+              className="h-12 w-full rounded-[var(--radius-md)] border border-line bg-surface px-3.5 text-body text-ink placeholder:text-ink-4 focus:border-line-strong focus:outline-none"
+            />
+          </div>
+          <button type="button" onClick={() => void pay("MBWAY")} disabled={busy || !phone.trim()} className="cta w-full justify-center gap-3">
+            {busy ? <Loader className="size-5 animate-spin" strokeWidth={2} /> : <Smartphone className="size-5" strokeWidth={1.9} />}
+            Confirmar MB Way
+          </button>
+          <button type="button" onClick={() => setView("menu")} disabled={busy} className="mt-2 w-full py-2 text-center text-meta font-medium text-ink-3">
+            Outro método
+          </button>
+        </>
       )}
 
-      <div className="space-y-2">
-        <button type="button" onClick={() => void pay("MBWAY")} disabled={busy} className="cta w-full justify-start gap-3">
-          {busy ? <Loader className="size-5 animate-spin" strokeWidth={2} /> : <Smartphone className="size-5" strokeWidth={1.9} />}
-          {askPhone ? "Confirmar MB Way" : "Pagar com MB Way"}
-        </button>
-        <button type="button" onClick={() => void pay("MULTIBANCO")} disabled={busy} className="cta-quiet w-full justify-start gap-3">
-          <CreditCard className="size-5" strokeWidth={1.9} />
-          Referência Multibanco
-        </button>
-      </div>
+      {view === "iban" && (
+        <>
+          <p className="mb-3 px-1 text-[13px] leading-relaxed text-ink-3">
+            Autorizas <strong className="font-semibold text-ink">uma vez</strong> e as mensalidades passam a poder ser
+            debitadas da tua conta. A autorização chega ao teu email para assinares; o IBAN fica na euPago — a academia
+            nunca o vê.
+          </p>
+          <div className="mb-3 space-y-3">
+            <div>
+              <label className="mb-1.5 block text-meta font-medium text-ink-3">Nome do titular da conta</label>
+              <input
+                value={titular}
+                onChange={(e) => setTitular(e.target.value)}
+                placeholder="Como está no banco"
+                autoFocus
+                className="h-12 w-full rounded-[var(--radius-md)] border border-line bg-surface px-3.5 text-body text-ink placeholder:text-ink-4 focus:border-line-strong focus:outline-none"
+              />
+            </div>
+            <div>
+              <label className="mb-1.5 block text-meta font-medium text-ink-3">IBAN</label>
+              <input
+                value={iban}
+                onChange={(e) => setIban(e.target.value)}
+                placeholder="PT50 …"
+                inputMode="text"
+                autoCapitalize="characters"
+                className="num h-12 w-full rounded-[var(--radius-md)] border border-line bg-surface px-3.5 text-body text-ink placeholder:text-ink-4 focus:border-line-strong focus:outline-none"
+              />
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={() => void autorizar()}
+            disabled={busy || iban.trim().length < 15 || titular.trim().length < 3}
+            className="cta w-full justify-center gap-3"
+          >
+            {busy ? <Loader className="size-5 animate-spin" strokeWidth={2} /> : <Banknote className="size-5" strokeWidth={1.9} />}
+            Autorizar débito direto
+          </button>
+          <button type="button" onClick={() => setView("menu")} disabled={busy} className="mt-2 w-full py-2 text-center text-meta font-medium text-ink-3">
+            Outro método
+          </button>
+        </>
+      )}
+
+      {view === "menu" && (
+        <>
+          {mandateNovo && (
+            <p className="mb-3 rounded-[var(--radius-md)] bg-signal-soft p-3 text-[13px] leading-relaxed text-signal-ink">
+              A autorização seguiu para o teu email — assina-a e o débito fica pronto. Podes já tentar debitar: se o
+              banco ainda não a tiver, dizemos-te.
+            </p>
+          )}
+          <ul className="overflow-hidden rounded-[var(--radius-lg)] bg-surface shadow-[var(--shadow-soft)]">
+            {METODOS.map((m) => {
+              const bloqueado = m.kind === "redirect" && varios;
+              const Icon = m.icon;
+              const hint =
+                m.key === "DIRECT_DEBIT" && mandate
+                  ? `Da conta ···${mandate.ibanTail}`
+                  : bloqueado
+                    ? "Só um mês de cada vez"
+                    : m.hint;
+              return (
+                <li key={m.key} className="border-b border-line last:border-0">
+                  <button
+                    type="button"
+                    disabled={busy || bloqueado || (m.key === "DIRECT_DEBIT" && !mandateReady)}
+                    onClick={() => void pay(m.key)}
+                    className={cx(
+                      "flex w-full items-center gap-3.5 px-4 py-3.5 text-left transition-colors duration-150",
+                      bloqueado ? "opacity-45" : "active:bg-sunken/60",
+                    )}
+                  >
+                    <span className="flex size-10 shrink-0 items-center justify-center rounded-full bg-sunken text-ink-2">
+                      <Icon className="size-5" strokeWidth={1.9} />
+                    </span>
+                    <span className="min-w-0 flex-1">
+                      <span className="block text-body font-semibold text-ink">{m.label}</span>
+                      {hint && <span className="block text-[12px] font-medium text-ink-3">{hint}</span>}
+                    </span>
+                    {busy ? (
+                      <Loader className="size-4 shrink-0 animate-spin text-ink-4" strokeWidth={2} />
+                    ) : (
+                      <ChevronRight className="size-4 shrink-0 text-ink-4" strokeWidth={2} />
+                    )}
+                  </button>
+                </li>
+              );
+            })}
+          </ul>
+          {varios && (
+            <p className="mt-2.5 px-1 text-[12px] leading-relaxed text-ink-4">
+              Cartão, Google Pay, Apple Pay e PaySafeCard pagam um mês de cada vez — escolhe só um mês para os usar. MB
+              Way, Multibanco e débito direto pagam os {charges.length} de uma vez.
+            </p>
+          )}
+        </>
+      )}
 
       {error && <p className="mt-3 text-meta text-risk">{error}</p>}
 
@@ -461,8 +687,9 @@ function ResultSheet({ result, onClose }: { result: PayResult; onClose: () => vo
             </span>
             <p className="text-[19px] font-semibold text-ink">Pedido enviado</p>
             <p className="mx-auto mt-1.5 max-w-[34ch] text-meta leading-relaxed text-ink-3">
-              {result.ok === 1 ? "A mensalidade fica" : "As mensalidades ficam"} em “a confirmar” até o banco
-              responder — recebes uma notificação assim que estiver pago.
+              {result.debitado
+                ? "O débito seguiu para o banco — pode levar alguns dias a confirmar. Recebes uma notificação quando estiver pago."
+                : `${result.ok === 1 ? "A mensalidade fica" : "As mensalidades ficam"} em “a confirmar” até o banco responder — recebes uma notificação assim que estiver pago.`}
             </p>
             {result.failed > 0 && (
               <p className="mx-auto mt-2 max-w-[34ch] text-meta text-warn">

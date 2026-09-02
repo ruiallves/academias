@@ -88,6 +88,16 @@ type ApiCharge = {
   dueDate: string;
   status: string;
   overdue: boolean;
+  openPayment: OpenPayment | null;
+};
+
+/** A tentativa de pagamento viva de uma mensalidade, se houver. */
+export type OpenPayment = {
+  method: string;
+  status: string;
+  entity: string | null;
+  reference: string | null;
+  redirectUrl: string | null;
 };
 
 type ApiAnnouncement = {
@@ -191,6 +201,8 @@ export type Payment = {
   amountCents: number;
   dueDate: Date;
   status: "paid" | "pending" | "overdue" | "void";
+  /** A tentativa em curso — a referência Multibanco gerada, o formulario aberto. */
+  openPayment: OpenPayment | null;
 };
 
 export type Notice = {
@@ -483,6 +495,7 @@ function build(
     dueDate: new Date(c.dueDate),
     status:
       c.status === "SETTLED" ? "paid" : c.status === "VOID" ? "void" : c.overdue ? "overdue" : "pending",
+    openPayment: c.openPayment ?? null,
   }));
 
   const notices: Notice[] = announcements

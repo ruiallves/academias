@@ -1,6 +1,7 @@
 import { BadRequestException, ForbiddenException, Injectable, NotFoundException } from "@nestjs/common";
 import type { Role } from "@prisma/client";
 import { PrismaService, type ScopedClient } from "../prisma/prisma.service";
+import { semearCargosEmFalta } from "../departments/first-role";
 import { NAV_KEYS, isNavKey } from "../common/nav";
 import { ROLE_PERMISSIONS, can, type Permission, type RequestContext } from "../common/permissions";
 
@@ -222,6 +223,16 @@ export class RolesService {
           skipDuplicates: true,
         });
       }
+
+      /*
+       * E os cargos que faltam aos departamentos.
+       *
+       * Mora em `departments/first-role.ts` e corre nas **duas** leituras — aqui
+       * e no `GET /api/departments`. O diálogo de convite lê os dois em paralelo:
+       * se só uma delas reparasse, a outra podia responder de antes da reparação
+       * e mostrar um departamento "sem cargos" que já os tinha. Ver a nota lá.
+       */
+      await semearCargosEmFalta(db, ctx.academyId);
 
       const roles = await db.academyRole.findMany({
         where: { archivedAt: null },

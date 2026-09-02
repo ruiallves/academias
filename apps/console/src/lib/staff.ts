@@ -114,10 +114,17 @@ export function coachActivity(id: string): CoachActivity {
   const member = staffMember(id);
   const teamIds = new Set(member?.teamIds ?? []);
 
-  // Treinos que já aconteceram. `coachId` é quem o deu — pode não ser o titular da
-  // equipa, e é por isso que se filtra por ele e não só pela equipa.
+  /*
+   * Treinos que já aconteceram. `coachId` é quem o deu — pode não ser o titular
+   * da equipa, e é por isso que se filtra por ele e não só pela equipa.
+   *
+   * "Já aconteceu" é a hora ter passado, não o `status` dizer `done`: nada na
+   * API escreve esse estado (ver `unrecordedSessions`), e enquanto isto o pediu,
+   * a ficha de qualquer treinador mostrava zero treinos dados e uma taxa de
+   * registo vazia — por muito que ele treinasse.
+   */
   const done = sessions.filter(
-    (s) => s.coachId === id && s.status === "done" && new Date(s.start) <= today,
+    (s) => s.coachId === id && s.status !== "cancelled" && new Date(s.start) <= today,
   );
   const recorded = done.filter((s) => s.attendance);
 

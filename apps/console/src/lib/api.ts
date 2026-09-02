@@ -408,7 +408,6 @@ export function athleteAttendanceSummary(athleteId: string, limitDays = 180): At
   };
 }
 
-/** Sessões passadas que ninguém registou. É trabalho por fazer, não estatística. */
 /**
  * Treinos já dados e por registar — o trabalho **desta** pessoa.
  *
@@ -416,11 +415,32 @@ export function athleteAttendanceSummary(athleteId: string, limitDays = 180): At
  * clube todo; a lista de pendências não pode acompanhar, senão um treinador
  * abria a consola com "catorze treinos por fechar" de escalões que não são dele
  * e que não tem como fechar.
+ *
+ * ## Quem decide que o treino já foi é o relógio, não o `status`
+ *
+ * Isto pedia `status === "done"`, e por isso **nunca devolvia nada**. O servidor
+ * cria os treinos em `SCHEDULED` e não há uma linha em toda a API que os passe a
+ * `DONE` — nem quando a hora passa, nem quando as presenças são registadas. O
+ * valor existe no enum do Prisma e mais nada. Resultado: marcava-se um treino
+ * para ontem e ele não aparecia em lado nenhum das Presenças — nem em "Por
+ * registar" (exigia `done`), nem em "Registados" (não tem presenças), nem em "A
+ * seguir" (já passou). Desaparecia do ecrã que existe exactamente para o
+ * apanhar, e o mesmo buraco calava o contador do menu e o aviso da Visão geral.
+ *
+ * Um treino já dado é um treino cuja hora passou e que não foi cancelado. Isso é
+ * uma conta com o relógio, não um estado que alguém tem de se lembrar de
+ * escrever — e como `listSessions` já corta em `agora`, o que sobra filtrar é o
+ * cancelado e o já registado.
+ *
+ * O relógio é lido **agora** e não do `today` do módulo: `today` é `new Date()`
+ * no arranque, e numa consola aberta desde as nove da manhã um treino que acabou
+ * às sete da tarde ficaria fora da janela até alguém recarregar a página.
  */
 export function unrecordedSessions(session: Session): TrainingSession[] {
-  const from = new Date(today.getTime() - 21 * 86_400_000);
-  return listSessions(session, from, today).filter(
-    (s) => (s.mine ?? true) && s.status === "done" && !s.attendance,
+  const agora = new Date();
+  const from = new Date(agora.getTime() - 21 * 86_400_000);
+  return listSessions(session, from, agora).filter(
+    (s) => (s.mine ?? true) && s.status !== "cancelled" && !s.attendance,
   );
 }
 
