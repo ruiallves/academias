@@ -259,7 +259,12 @@ type State = {
    */
   denied: string | null;
   academy: { name: string; shortName: string; mark: string; signalColor: string; logoUrl: string | null };
-  guardian: { name: string; firstName: string };
+  /**
+   * Quem entrou. O email vem junto porque há um ecrã que precisa dele: quando a
+   * conta não tem educandos, a pergunta que fica no ar é "em que conta é que eu
+   * estou?" — e ninguém a responde a partir do primeiro nome.
+   */
+  guardian: { name: string; firstName: string; email: string };
   /**
    * O papel de quem entrou nesta academia.
    *
@@ -285,7 +290,7 @@ const EMPTY: State = {
   error: null,
   denied: null,
   academy: { name: "", shortName: "", mark: "", signalColor: "#0f6b62", logoUrl: null },
-  guardian: { name: "", firstName: "" },
+  guardian: { name: "", firstName: "", email: "" },
   role: "",
   children: [],
   trainings: [],
@@ -576,7 +581,7 @@ function build(
       logoUrl: boot.academy.logoUrl ?? null,
       signalColor: boot.academy.signalColor,
     },
-    guardian: { name: boot.me.name, firstName: boot.me.name.split(/\s+/)[0] },
+    guardian: { name: boot.me.name, firstName: boot.me.name.split(/\s+/)[0], email: boot.me.email },
     role: boot.me.role,
     children,
     trainings,

@@ -1,4 +1,4 @@
-import { useEffect, type ReactNode } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import { signalVars } from "@academia/ui/tokens";
 import { loadAcademy, useStore } from "@/lib/store";
 import { loadCatalogs } from "@/lib/catalogs";
@@ -74,11 +74,34 @@ export function AcademyBoot({ children }: { children: ReactNode }) {
   return <>{children}</>;
 }
 
+/**
+ * O arranque, antes de haver casca.
+ *
+ * ## E se não acabar
+ *
+ * `loadAcademy` apanha tudo o que corre mal e acaba sempre em `ready` — o que
+ * não cobre é um pedido que **nunca responde**. Aí a consola ficava a girar para
+ * sempre, sem uma palavra e sem um botão. Ao fim de dez segundos assume-se que
+ * não vem e mostram-se as mesmas duas saídas do erro de arranque.
+ *
+ * Dez segundos e não três: um arranque numa ligação fraca demora uns segundos
+ * com toda a legitimidade, e oferecer "entrar outra vez" a meio de um arranque
+ * normal é sugerir um problema que não existe.
+ */
 function BootLoading() {
+  const [demora, setDemora] = useState(false);
+
+  useEffect(() => {
+    const t = setTimeout(() => setDemora(true), 10_000);
+    return () => clearTimeout(t);
+  }, []);
+
+  if (demora) {
+    return <BootError message="A academia está a demorar mais do que devia a carregar. Pode ser a ligação — ou a sessão, se já vem de trás." />;
+  }
+
   return (
     /*
-     * O arranque, antes de haver casca.
-     *
      * O disco sozinho, sem legenda: é o mesmo tratamento do resto da aplicação,
      * onde o carregamento passou a ser movimento e não texto. Aqui não há página
      * para desfocar — ainda não há página nenhuma — por isso o disco fica no meio

@@ -1,4 +1,4 @@
-import { createContext, useContext, useEffect, useMemo, useState } from "react";
+import { createContext, useContext, useEffect, useMemo, useState, type ReactNode } from "react";
 import { NavLink, Navigate, Route, Routes, useLocation, useNavigate } from "react-router-dom";
 import { Bell, CalendarDays, Home, RefreshCw, User, Wallet } from "lucide-react";
 import { load, resetAndLoad, useStore, type Child } from "@/lib/store";
@@ -151,8 +151,93 @@ export default function App() {
 /* Estados de arranque                                                         */
 /* -------------------------------------------------------------------------- */
 
-/** Enquanto a academia não chega. Um pulsar discreto, não um spinner ansioso. */
+/**
+ * A moldura de todos os ecrãs que ocupam a app inteira.
+ *
+ * ## Porque é que isto existe
+ *
+ * Porque um deles não tinha saída. "Ainda não há atletas associados" era uma
+ * frase no meio do ecrã e mais nada: sem barra de navegação por baixo — ainda não
+ * há educando para ela mostrar —, sem barra de endereço à volta — a app corre
+ * instalada, em ecrã inteiro — e sem forma nenhuma de voltar ao login. Quem lá
+ * chegasse com a conta errada ficava preso, e a única saída era desinstalar a app.
+ *
+ * Os outros ecrãs tinham a saída porque alguém se lembrou, um de cada vez.
+ * Lembrar-se não é uma garantia: o terceiro esqueceu-se, e o quinto esquecer-se-ia
+ * também. Agora a saída é **da moldura** e não de cada ecrã — quem escrever o
+ * próximo não tem como a deixar de fora, porque não é ele que a põe.
+ *
+ * Vem discreta e por baixo da acção principal: na maioria das vezes o que resolve
+ * é tentar outra vez, e terminar a sessão seria a resposta errada. Mas está
+ * sempre lá.
+ */
+function Gate({
+  title,
+  children,
+  action,
+}: {
+  title: string;
+  children: ReactNode;
+  /** A acção que resolve o caso normal. A saída para o login vem sempre a seguir. */
+  action?: ReactNode;
+}) {
+  return (
+    <div className="flex min-h-dvh flex-col items-center justify-center gap-3 px-8 text-center">
+      <p className="text-[19px] font-semibold text-ink">{title}</p>
+      <p className="max-w-[34ch] text-meta leading-relaxed text-ink-3">{children}</p>
+      {action}
+      <button
+        type="button"
+        onClick={() => signOut()}
+        className="mt-1 text-meta font-semibold text-ink-3 underline-offset-2 active:underline"
+      >
+        Entrar com outra conta
+      </button>
+    </div>
+  );
+}
+
+/** Recarregar — o que resolve uma rede que caiu, ou um dado que acabou de mudar. */
+function Retry({ label = "Tentar outra vez" }: { label?: string }) {
+  return (
+    <button type="button" onClick={() => window.location.reload()} className="cta mt-2">
+      <RefreshCw className="size-[18px]" strokeWidth={1.9} />
+      {label}
+    </button>
+  );
+}
+
+/**
+ * Enquanto a academia não chega. Um pulsar discreto, não um spinner ansioso.
+ *
+ * ## E se não chegar
+ *
+ * O arranque acaba sempre num estado: `load()` apanha tudo o que corre mal e
+ * escreve `ready`. O que ele não cobre é um pedido que **nunca responde** — um
+ * telemóvel num pavilhão sem rede fica aqui a pulsar, para sempre. É o mesmo beco
+ * do "sem educandos", só que mais bonito.
+ *
+ * Ao fim de oito segundos a app admite que está a demorar e mostra as saídas.
+ * Oito, e não dois: um arranque em rede fraca demora uns segundos com toda a
+ * legitimidade, e oferecer "entrar com outra conta" a meio de um arranque normal
+ * é sugerir que a culpa é da conta.
+ */
 function Splash() {
+  const [demora, setDemora] = useState(false);
+
+  useEffect(() => {
+    const t = setTimeout(() => setDemora(true), 8000);
+    return () => clearTimeout(t);
+  }, []);
+
+  if (demora) {
+    return (
+      <Gate title="Está a demorar mais do que devia" action={<Retry />}>
+        Pode ser a ligação. Se insistir, entra outra vez — a sessão pode ter caducado.
+      </Gate>
+    );
+  }
+
   return (
     <div className="flex min-h-dvh flex-col items-center justify-center gap-4 px-8">
       <span
@@ -168,44 +253,18 @@ function Splash() {
 /**
  * Não deu para carregar.
  *
- * ## Porque é que há uma segunda saída
- *
- * Havia só "Tentar outra vez", e isso recarrega a página — o que resolve uma
- * rede que caiu e **não resolve mais nada**. Quem estivesse preso por causa da
- * sessão (a conta errada, um token que o servidor já não aceita) ficava a
- * carregar no mesmo botão para chegar ao mesmo ecrã, sem forma de voltar ao
- * login. Um beco sem saída dentro de uma app instalada, sem barra de endereço
- * para escapar.
- *
- * "Entrar com outra conta" é discreto de propósito: na esmagadora maioria das
- * vezes o problema é mesmo a rede, e sair da sessão seria a resposta errada.
+ * "Tentar outra vez" primeiro porque na esmagadora maioria das vezes o problema é
+ * mesmo a rede. A saída para o login vem da moldura — ver `Gate`, e a razão de
+ * ela não ser opcional.
  */
 function Failed({ message }: { message: string }) {
   return (
-    <div className="flex min-h-dvh flex-col items-center justify-center gap-4 px-8 text-center">
-      <p className="text-[19px] font-semibold text-ink">Não foi possível carregar</p>
-      <p className="max-w-[32ch] text-meta leading-relaxed text-ink-3">{message}</p>
-      <button type="button" onClick={() => window.location.reload()} className="cta mt-2">
-        <RefreshCw className="size-[18px]" strokeWidth={1.9} />
-        Tentar outra vez
-      </button>
-      <button
-        type="button"
-        onClick={() => signOut()}
-        className="text-meta font-semibold text-ink-3 underline-offset-2 active:underline"
-      >
-        Entrar com outra conta
-      </button>
-    </div>
+    <Gate title="Não foi possível carregar" action={<Retry />}>
+      {message}
+    </Gate>
   );
 }
 
-/**
- * Uma conta sem educandos associados.
- *
- * Acontece a sério: um pai convidado antes de o atleta estar inscrito. Dizer isto
- * é melhor do que uma app vazia que parece avariada.
- */
 /** Os papéis que esta app serve. Os outros entram pela consola do clube. */
 const ehFamilia = (role: string) => role === "GUARDIAN" || role === "ATHLETE";
 
@@ -218,27 +277,49 @@ const ehFamilia = (role: string) => role === "GUARDIAN" || role === "ATHLETE";
  */
 function ContaErrada({ motivo }: { motivo?: string }) {
   return (
-    <div className="flex min-h-dvh flex-col items-center justify-center gap-3 px-8 text-center">
-      <p className="text-[19px] font-semibold text-ink">Esta conta não é de encarregado</p>
-      <p className="max-w-[34ch] text-meta leading-relaxed text-ink-3">
-        {motivo ?? "Esta app é das famílias."} Se és do staff do clube, a academia gere-se pela consola, no
-        computador — aqui entra com a conta de encarregado.
-      </p>
-      <button type="button" onClick={() => signOut()} className="cta mt-2 px-6">
-        Entrar com outra conta
-      </button>
-    </div>
+    <Gate title="Esta conta não é de encarregado">
+      {motivo ?? "Esta app é das famílias."} Se és do staff do clube, a academia gere-se pela consola, no
+      computador — aqui entra com a conta de encarregado.
+    </Gate>
   );
 }
 
+/**
+ * Uma conta de encarregado sem educandos associados.
+ *
+ * Acontece a sério: um pai convidado antes de o atleta estar inscrito, ou uma
+ * conta criada com o email errado. Dizer isto é melhor do que uma app vazia que
+ * parece avariada — mas dizê-lo **e mais nada** era pior do que as duas coisas,
+ * porque é o único ecrã da app sem barra de navegação e sem nada que se possa
+ * tocar. Era daqui que não se saía.
+ *
+ * As duas saídas são as duas explicações possíveis, por ordem de probabilidade.
+ * "Verificar outra vez" serve quem está à espera que a academia faça a ligação —
+ * pode acontecer com o ecrã aberto, e sem isto era preciso fechar a app para a
+ * ver. "Entrar com outra conta" serve quem entrou na conta errada, que é o caso
+ * em que se ficava preso.
+ */
 function NoChildren() {
+  const { guardian } = useStore();
+
   return (
-    <div className="flex min-h-dvh flex-col items-center justify-center gap-3 px-8 text-center">
-      <p className="text-[19px] font-semibold text-ink">Ainda não há atletas associados</p>
-      <p className="max-w-[34ch] text-meta leading-relaxed text-ink-3">
-        A academia ainda não ligou nenhum educando a esta conta. Assim que o fizer, aparece aqui.
-      </p>
-    </div>
+    <Gate title="Ainda não há atletas associados" action={<Retry label="Verificar outra vez" />}>
+      A academia ainda não ligou nenhum educando a esta conta. Assim que o fizer, aparece aqui.
+      {/*
+        Em que conta é que eu estou?
+        É a pergunta que este ecrã deixava no ar, e a resposta decide qual das
+        duas saídas serve: quem está na conta certa espera, quem entrou na
+        errada sai. Sem isto, as duas hipóteses são indistinguíveis de dentro.
+      */}
+      {guardian.email && (
+        <>
+          {" "}
+          <span className="block pt-2 text-ink-2">
+            Sessão iniciada como <span className="font-semibold">{guardian.email}</span>.
+          </span>
+        </>
+      )}
+    </Gate>
   );
 }
 
