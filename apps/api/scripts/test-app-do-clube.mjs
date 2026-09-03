@@ -299,6 +299,61 @@ try {
   check("o sócio vê o comunicado", noticias.some((n) => n.title === "ZZ Comunicado aos sócios"));
 
   /* ------------------------------------------------------------------ */
+  console.log("\n=== Ligar uma conta que já existe (sem email) ===");
+  /*
+   * O caminho que faltava no dia em que os convites foram desligados: uma ficha
+   * de sócio cujo email é o de uma conta que já existe neste clube — o pai que
+   * também é sócio. Ligar é um gesto da direcção, não um emparelhamento
+   * automático, e não manda nada a ninguém.
+   */
+  const idLigar = `zz_lig_${Date.now().toString(36)}`;
+  await db.query(
+    `INSERT INTO "Member" (id, "academyId", name, email, number, status, source, "updatedAt")
+     VALUES ($1, $2, 'ZZ Sócio Ligado', 'familia@lifeclub.pt', 98765, 'ACTIVE', 'secretaria', now())`,
+    [idLigar, AC],
+  );
+
+  const ligou = await call(director, "POST", `/api/members/${idLigar}/link-account`);
+  check("a direcção liga a ficha à conta", ligou.status === 201 || ligou.status === 200, `${ligou.status} ${JSON.stringify(ligou.body).slice(0, 120)}`);
+  check("e diz de quem é a conta", ligou.body?.email === "familia@lifeclub.pt", `${ligou.body?.email}`);
+
+  const doisContextos = await call(familia, "GET", "/api/app/contexts");
+  check("o pai passa a ter os dois contextos", doisContextos.body?.contexts?.length === 2, JSON.stringify(doisContextos.body?.contexts));
+  check("família e sócio", ["FAMILY", "MEMBER"].every((t) => doisContextos.body.contexts.some((c) => c.type === t)));
+
+  const outraFicha = `zz_lig2_${Date.now().toString(36)}`;
+  await db.query(
+    `INSERT INTO "Member" (id, "academyId", name, email, number, status, source, "updatedAt")
+     VALUES ($1, $2, 'ZZ Segunda Ficha', 'familia@lifeclub.pt', 98766, 'ACTIVE', 'secretaria', now())`,
+    [outraFicha, AC],
+  );
+  const duplicada = await call(director, "POST", `/api/members/${outraFicha}/link-account`);
+  check("uma conta não fica com duas fichas do mesmo clube (400)", duplicada.status === 400, `${duplicada.status}`);
+
+  const jaLigada = await call(director, "POST", `/api/members/${idLigar}/link-account`);
+  check("ligar a mesma ficha outra vez é recusado (400)", jaLigada.status === 400, `${jaLigada.status}`);
+
+  const porTreinador = await call(await login("treinador@lifeclub.pt"), "POST", `/api/members/${idLigar}/link-account`);
+  check("um treinador não liga contas (403)", porTreinador.status === 403, `${porTreinador.status}`);
+
+  const desligou = await call(director, "DELETE", `/api/members/${idLigar}/link-account`);
+  check("e desliga-se se foi engano", desligou.status === 200, `${desligou.status}`);
+  const voltouAUm = await call(familia, "GET", "/api/app/contexts");
+  check("o contexto de sócio desaparece", voltouAUm.body?.contexts?.length === 1, JSON.stringify(voltouAUm.body?.contexts));
+
+  console.log("\n=== Os convites de sócio estão desligados ===");
+  /*
+   * O interruptor é `MEMBER_INVITES_ENABLED` e nasce desligado (ver
+   * `MemberInvitesService.activo`). Enquanto assim for, esta é a asserção certa;
+   * no dia em que os convites forem ligados é este bloco que passa a esperar
+   * 200 — e a falha aqui é o lembrete de que alguém mexeu no interruptor.
+   */
+  const conviteOff = await call(director, "POST", `/api/members/${outraFicha}/invite`);
+  check("o botão de convite recusa com uma frase (400)", conviteOff.status === 400, `${conviteOff.status}`);
+  check("e diz que estão desligados", String(conviteOff.body?.message ?? "").includes("desligados"), `${conviteOff.body?.message}`);
+  const semToken = (await db.query(`SELECT "inviteTokenHash" FROM "Member" WHERE id = $1`, [outraFicha])).rows[0];
+  check("e não deixa um token órfão na ficha", semToken?.inviteTokenHash === null);
+
   console.log("\n=== Liquidar ao balcão ===");
   const balcao = await call(director, "POST", `/api/members/fees/${feeId2}/settle`, { method: "CASH" });
   check("numerário liquida", balcao.status === 201 || balcao.status === 200, `${balcao.status}`);

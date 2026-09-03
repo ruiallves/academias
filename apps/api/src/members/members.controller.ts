@@ -124,6 +124,17 @@ export class MembersController {
     return this.invites.enviar(req.ctx, id);
   }
 
+  /** Ligar a ficha a uma conta que já existe neste clube — sem mandar email. */
+  @Post(":id/link-account")
+  linkAccount(@Req() req: AuthedRequest, @Param("id") id: string) {
+    return this.invites.ligarConta(req.ctx, id);
+  }
+
+  @Delete(":id/link-account")
+  unlinkAccount(@Req() req: AuthedRequest, @Param("id") id: string) {
+    return this.invites.desligarConta(req.ctx, id);
+  }
+
   @Patch(":id")
   update(@Req() req: AuthedRequest, @Param("id") id: string, @Body() dto: MemberUpdateDto) {
     return this.members.update(req.ctx, id, dto);

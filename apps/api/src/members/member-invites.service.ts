@@ -103,6 +103,95 @@ export class MemberInvitesService {
     }
   }
 
+  /**
+   * Ligar a ficha a uma conta que já existe, sem mandar nada.
+   *
+   * ## Porque é que isto existe à parte do convite
+   *
+   * Porque ligar e convidar eram o mesmo gesto, e no dia em que os emails foram
+   * desligados o produto ficou sem forma nenhuma de dar a área de sócio a
+   * alguém — nem a quem já tem conta e está a olhar para a app. Duas coisas
+   * diferentes coladas numa: o convite **cria** a conta (e por isso manda
+   * email); isto só **reconhece** uma que já lá está.
+   *
+   * ## Porque é que ligar por email não repete a pergunta que já se fez
+   *
+   * A escolha foi convite e não emparelhamento automático — e continua a ser:
+   * isto não acontece sozinho. É a direcção, com `member:write`, a olhar para
+   * uma ficha e a carregar num botão que diz de quem é a conta. O email é a
+   * prova de que estão a falar da mesma pessoa; quem decide é quem carrega.
+   *
+   * A conta tem de já ter vínculo **nesta academia** — é o que a política de
+   * `User` deixa ver de dentro do tenant, e é também a garantia que interessa:
+   * não se liga uma ficha a uma conta que nada tem que ver com este clube.
+   */
+  async ligarConta(ctx: RequestContext, memberId: string) {
+    if (!can(ctx, "member:write")) throw new ForbiddenException("Sem permissão para gerir sócios");
+
+    return this.prisma.runAs(ctx.academyId, async (db) => {
+      const member = await db.member.findFirst({
+        where: { id: memberId },
+        select: { id: true, name: true, email: true, userId: true },
+      });
+      if (!member) throw new NotFoundException("Sócio não encontrado");
+      if (member.userId) throw new BadRequestException("Esta ficha já está ligada a uma conta.");
+      if (!member.email) {
+        throw new BadRequestException("A ficha não tem email — é por ele que se encontra a conta.");
+      }
+
+      const user = await db.user.findFirst({
+        where: { email: member.email.trim().toLowerCase() },
+        select: { id: true, name: true, email: true },
+      });
+      if (!user) {
+        throw new BadRequestException(
+          `Não há nenhuma conta com ${member.email} neste clube. Quando os convites forem ligados, é por aí que ela nasce.`,
+        );
+      }
+
+      /*
+       * Uma conta, uma ficha por clube — o índice único diz o mesmo, mas a
+       * mensagem daqui explica o que fazer em vez de mostrar um erro do Postgres.
+       */
+      const jaTem = await db.member.findFirst({
+        where: { userId: user.id },
+        select: { number: true, name: true },
+      });
+      if (jaTem) {
+        throw new BadRequestException(
+          `Essa conta já é o sócio n.º ${jaTem.number ?? "—"} (${jaTem.name}). Uma conta tem uma ficha por clube.`,
+        );
+      }
+
+      await db.member.update({
+        where: { id: member.id },
+        /* O convite pendente perde o sentido — a ficha já tem dono. */
+        data: { userId: user.id, inviteTokenHash: null },
+      });
+
+      return { ok: true as const, email: user.email, name: user.name };
+    });
+  }
+
+  /**
+   * Desligar — para quando se ligou a ficha errada.
+   *
+   * Não apaga nada do sócio: tira-lhe o acesso à área de sócio na app e mais
+   * nada. Sem isto, um clique enganado ficava sem desfazer.
+   */
+  async desligarConta(ctx: RequestContext, memberId: string) {
+    if (!can(ctx, "member:write")) throw new ForbiddenException("Sem permissão para gerir sócios");
+
+    return this.prisma.runAs(ctx.academyId, async (db) => {
+      const member = await db.member.findFirst({ where: { id: memberId }, select: { id: true, userId: true } });
+      if (!member) throw new NotFoundException("Sócio não encontrado");
+      if (!member.userId) throw new BadRequestException("Esta ficha não está ligada a nenhuma conta.");
+
+      await db.member.update({ where: { id: member.id }, data: { userId: null } });
+      return { ok: true as const };
+    });
+  }
+
   /* ------------------------------------------------------------------------ */
 
   private async preparar(academyId: string, memberId: string) {

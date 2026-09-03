@@ -129,6 +129,12 @@ export const reopenFee = (id: string) => apiPost<{ ok: true }>(`/api/members/fee
 
 export const inviteMember = (id: string) => apiPost<{ ok: true; email: string }>(`/api/members/${id}/invite`, {});
 
+/** Ligar a ficha a uma conta que já existe — o caminho sem email. */
+export const linkMemberAccount = (id: string) =>
+  apiPost<{ ok: true; email: string; name: string }>(`/api/members/${id}/link-account`, {});
+
+export const unlinkMemberAccount = (id: string) => apiDelete<{ ok: true }>(`/api/members/${id}/link-account`);
+
 /* ---------------------------------------------------------------------------- */
 /* Sondagens                                                                     */
 /* ---------------------------------------------------------------------------- */

@@ -22,6 +22,8 @@ import {
   type MemberTier,
   type Sex,
   inviteMember,
+  linkMemberAccount,
+  unlinkMemberAccount,
   listMemberFees,
   reopenFee,
   settleFee,
@@ -415,30 +417,49 @@ function AppDoClubePanel({ member, mayWrite, onChanged }: { member: Data; mayWri
   const [busy, setBusy] = useState(false);
   const [resultado, setResultado] = useState<string | null>(null);
 
-  async function convidar() {
+  /* Um invólucro só, para as três acções darem a resposta no mesmo sítio. */
+  async function agir(fn: () => Promise<string>) {
     if (busy) return;
     setBusy(true);
     setResultado(null);
     try {
-      const r = await inviteMember(member.id);
-      setResultado(`Convite enviado para ${r.email}.`);
+      setResultado(await fn());
       onChanged();
     } catch (e) {
-      setResultado(e instanceof Error ? e.message : "Não foi possível enviar.");
+      setResultado(e instanceof Error ? e.message : "Não foi possível.");
     } finally {
       setBusy(false);
     }
   }
+
+  const convidar = async () => `Convite enviado para ${(await inviteMember(member.id)).email}.`;
+
+  const ligar = async () => {
+    const r = await linkMemberAccount(member.id);
+    return `Ligado à conta de ${r.name} (${r.email}). Já pode trocar para a área de sócio na app.`;
+  };
+
+  const unlink = async () => {
+    await unlinkMemberAccount(member.id);
+    return "Conta desligada — o sócio deixa de ver a área de sócio na app.";
+  };
 
   return (
     <Panel>
       <PanelHead title="App do clube" />
       <div className="space-y-2 px-5 py-3">
         {member.userId ? (
-          <p className="flex items-center gap-2 text-body text-ink-2">
-            <CircleCheck className="size-4 shrink-0 text-ok" strokeWidth={1.75} />
-            Conta ligada — este sócio já usa a app.
-          </p>
+          <>
+            <p className="flex items-center gap-2 text-body text-ink-2">
+              <CircleCheck className="size-4 shrink-0 text-ok" strokeWidth={1.75} />
+              Conta ligada — este sócio já vê a área de sócio na app.
+            </p>
+            {mayWrite && (
+              <button type="button" className="ctl-ghost" disabled={busy} onClick={() => void agir(unlink)}>
+                Desligar a conta
+              </button>
+            )}
+          </>
         ) : (
           <>
             <p className="text-meta leading-relaxed text-ink-3">
@@ -447,10 +468,21 @@ function AppDoClubePanel({ member, mayWrite, onChanged }: { member: Data; mayWri
                 : "Ainda sem conta na app do clube."}
             </p>
             {mayWrite && (
-              <button type="button" className="ctl-outline" disabled={busy} onClick={() => void convidar()}>
-                <Mail className="size-3.5" strokeWidth={1.75} />
-                {busy ? "A enviar…" : member.inviteSentAt ? "Reenviar convite" : "Enviar convite"}
-              </button>
+              <div className="flex flex-wrap items-center gap-2">
+                {/*
+                  Duas coisas diferentes, e por isso dois botões.
+                  "Ligar" reconhece uma conta que já existe (o pai que também é
+                  sócio, e que já tem a app instalada); "convite" **cria** a
+                  conta de quem ainda não a tem, e por isso manda email.
+                */}
+                <button type="button" className="ctl-outline" disabled={busy} onClick={() => void agir(ligar)}>
+                  Ligar a conta existente
+                </button>
+                <button type="button" className="ctl-ghost" disabled={busy} onClick={() => void agir(convidar)}>
+                  <Mail className="size-3.5" strokeWidth={1.75} />
+                  {member.inviteSentAt ? "Reenviar convite" : "Enviar convite"}
+                </button>
+              </div>
             )}
           </>
         )}
