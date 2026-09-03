@@ -111,7 +111,7 @@ type ApiAthlete = {
   medicalValidUntil: string | null; teamId: string | null; position: string | null;
   guardians: {
     membershipId: string; name: string; email: string; phone: string | null; relation: string;
-    isPayer: boolean; isActive: boolean;
+    isActive: boolean;
     /** Se esta família tem a app a funcionar num telemóvel. Ver `athletes()` na API. */
     appInstalled: boolean;
   }[];

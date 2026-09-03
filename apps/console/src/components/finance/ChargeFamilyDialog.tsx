@@ -27,15 +27,14 @@ import type { Athlete, Guardian } from "@/data/types";
  * ## O atleta primeiro, e o encarregado a seguir — mostrado, não escolhido
  *
  * Escolhe-se **o atleta**, porque é assim que um clube pensa: cobra-se o
- * equipamento *do Tomás*, não se cobra *ao senhor Joaquim*. Quem paga sai daí —
- * é o encarregado pagador daquele atleta —, e o diálogo mostra-o mal o atleta
+ * equipamento *do Tomás*, não se cobra *ao senhor Joaquim*. Quem recebe o aviso
+ * sai daí — os encarregados daquele atleta —, e o diálogo mostra-os mal o atleta
  * seja escolhido.
  *
- * **Mostrado e não escolhido** é deliberado. Pôr um segundo selector com os
- * encarregados era abrir a porta a cobrar ao pai errado por engano de clique, e
- * a resposta certa já está na ficha do atleta. Quando lá não está — ficha antiga
- * sem pagador marcado —, diz-se, em vez de se calar: o aviso vai para todos os
- * encarregados activos, e é melhor saber isso antes de carregar.
+ * **Mostrados e não escolhidos** é deliberado. Pôr um segundo selector era abrir
+ * a porta a avisar o pai errado por engano de clique, e não há decisão nenhuma a
+ * tomar: o aviso vai para **todos** os encarregados activos. Quando o atleta não
+ * tem nenhum, diz-se em vez de se calar — é melhor saber isso antes de carregar.
  *
  * ## Uma família sem app não recebe nada
  *
@@ -270,9 +269,11 @@ function ListaDeAtletas({
 /**
  * O atleta escolhido, e quem vai receber a conta.
  *
- * Os três casos estão todos ditos, porque são três consequências diferentes de
- * carregar no botão: um pagador marcado (vai para ele), nenhum marcado (vai para
- * todos os encarregados), nenhum encarregado (não vai para lado nenhum).
+ * A conta vai para **todos** os encarregados activos. Houve um tempo em que ia
+ * só para um "pagador" marcado — o primeiro a registar-se na app —, e isso
+ * partia-se no caso mais banal que há: pais separados, em que qualquer um paga.
+ * Restam duas consequências de carregar no botão, e dizem-se as duas: há
+ * encarregados (vai para eles), ou não há nenhum (não vai para lado nenhum).
  */
 function Escolhido({
   atleta,
@@ -283,12 +284,6 @@ function Escolhido({
   encarregados: Guardian[];
   onTrocar: () => void;
 }) {
-  /*
-   * Quem paga não vem marcado na lista que a consola tem em memória — `isPayer`
-   * vive na ligação do lado do servidor, e é lá que se decide para quem vai o
-   * aviso. Aqui mostra-se quem existe; quem recebe é dito pelo texto por baixo,
-   * na linguagem da regra e não numa etiqueta que ninguém saberia ler.
-   */
   const semNinguem = encarregados.length === 0;
   const semApp = encarregados.length > 0 && encarregados.every((g) => !g.appInstalled);
 

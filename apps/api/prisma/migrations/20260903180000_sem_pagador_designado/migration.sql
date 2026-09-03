@@ -1,0 +1,28 @@
+-- ---------------------------------------------------------------------------
+-- Um atleta não tem "o" encarregado pagador
+-- ---------------------------------------------------------------------------
+--
+-- `GuardianLink.isPayer` marcava um encarregado — o **primeiro a registar-se na
+-- app** — como o responsável financeiro, e só ele recebia os avisos de cobrança:
+-- mensalidade nova, dívida em atraso, pagamento confirmado, pagamento falhado.
+--
+-- A marca partia-se no caso mais banal que existe. Um clube perguntou-o na
+-- primeira semana: pais separados. Qualquer um paga, nenhum é "o" pagador, e
+-- quem ficava de fora dos avisos era decidido por quem tinha aberto a app
+-- primeiro — sem nenhuma forma de trocar, porque nunca chegou a existir
+-- endpoint nenhum que escrevesse esta coluna.
+--
+-- ## O que isto NÃO muda
+--
+-- Ver e pagar já podiam os dois desde sempre: o âmbito da família sai de
+-- `GuardianLink` sem olhar para esta marca, e `startPayment` filtra por âmbito,
+-- não por pagador. Só o **aviso** ia a um só. A cobrança continua a ser uma:
+-- dois encarregados a pagar a mesma mensalidade encontram a mesma tentativa em
+-- curso (ver `startPayment`), e um pagamento a dobrar continua a gritar no log
+-- para reembolso humano (ver `confirmPayment`).
+--
+-- Apaga-se em vez de se deixar a `true` para toda a gente: uma coluna que
+-- ninguém lê é uma coluna que alguém volta a ler daqui a um ano, a achar que
+-- significa alguma coisa.
+
+ALTER TABLE "GuardianLink" DROP COLUMN "isPayer";

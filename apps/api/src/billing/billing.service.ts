@@ -75,11 +75,22 @@ export class BillingService {
       let sent = 0;
 
       for (const charge of overdue) {
-        // Só quem paga — um encarregado que só acompanha não precisa de ser
-        // avisado de uma dívida que não é dele resolver.
-        const payers = charge.athlete.guardians.filter((g) => g.isPayer && g.membership.isActive);
+        /*
+         * Todos os encarregados, e não "o pagador".
+         *
+         * Havia um encarregado marcado como pagador — o primeiro a registar-se —
+         * e só ele recebia os avisos. Não resistia ao caso normal: pais
+         * separados, em que qualquer um paga e nenhum é "o" pagador. Pior,
+         * quem ficava de fora era decidido por quem chegou primeiro à app, e
+         * não havia como trocar.
+         *
+         * Ver e pagar já podiam os dois — o âmbito da família nunca olhou para
+         * essa marca. Era só o aviso que ia a um só, e isso deixava o outro sem
+         * saber que havia uma dívida que ele podia resolver.
+         */
+        const avisar = charge.athlete.guardians.filter((g) => g.membership.isActive);
 
-        for (const link of payers) {
+        for (const link of avisar) {
           const already = await db.notification.findFirst({
             where: {
               userId: link.membership.userId,
@@ -172,7 +183,7 @@ export class BillingService {
           id: true,
           name: true,
           guardians: {
-            select: { isPayer: true, membership: { select: { userId: true, isActive: true } } },
+            select: { membership: { select: { userId: true, isActive: true } } },
           },
         },
       });
@@ -212,9 +223,8 @@ export class BillingService {
         select: { id: true, period: true, title: true, amountCents: true, dueDate: true },
       });
 
-      const activos = athlete.guardians.filter((g) => g.membership.isActive);
-      const pagadores = activos.filter((g) => g.isPayer);
-      const destinatarios = pagadores.length > 0 ? pagadores : activos;
+      /* Todos os encarregados activos — ver a nota em `sendOverdueReminders`. */
+      const destinatarios = athlete.guardians.filter((g) => g.membership.isActive);
 
       for (const g of destinatarios) {
         await this.notifications.enqueue(
@@ -361,7 +371,7 @@ export class BillingService {
           include: { athlete: { include: { guardians: { include: { membership: true } } } } },
         });
         for (const c of cobrancas) {
-          for (const link of c.athlete.guardians.filter((g) => g.isPayer && g.membership.isActive)) {
+          for (const link of c.athlete.guardians.filter((g) => g.membership.isActive)) {
             await this.notifications.enqueue(
               {
                 academyId: c.academyId,
@@ -1296,8 +1306,12 @@ export class BillingService {
           .catch(() => undefined);
       }
 
-      // Só depois de a base de dados estar consistente é que se avisa a família.
-      for (const link of charge.athlete.guardians.filter((g) => g.isPayer)) {
+      /*
+       * Só depois de a base estar consistente é que se avisa a família — e
+       * avisa-se a família toda: se o pai pagou, a mãe quer saber que está pago
+       * tanto como ele. É o aviso que mais vale a pena chegar aos dois.
+       */
+      for (const link of charge.athlete.guardians) {
         await this.notifications.enqueue({
           academyId: charge.academyId,
           userId: link.membership.userId,
@@ -1337,7 +1351,7 @@ export class BillingService {
       // Uma referência que expira em silêncio não precisa de acordar ninguém;
       // um pagamento recusado precisa — quem pagou pensa que pagou.
       if (markAs === "FAILED" && payment.charge) {
-        for (const link of payment.charge.athlete.guardians.filter((g) => g.isPayer)) {
+        for (const link of payment.charge.athlete.guardians) {
           await this.notifications.enqueue({
             academyId: payment.charge.academyId,
             userId: link.membership.userId,

@@ -331,14 +331,15 @@ export class FamilyInvitesService {
         select: { id: true },
       });
 
-      // Quem paga é o primeiro a chegar. Numa família só um recebe as cobranças, e
-      // a secretaria troca isso na consola se for o outro — mas alguém tem de ser,
-      // senão a mensalidade nasce sem destinatário.
-      const jaHaPagador = await db.guardianLink.findFirst({
-        where: { athleteId, isPayer: true },
-        select: { id: true },
-      });
-
+      /*
+       * Sem pagador designado.
+       *
+       * Havia um: o primeiro a registar-se ficava `isPayer` e era o único a
+       * receber os avisos de cobrança. Assumia uma família com um responsável
+       * financeiro — e a primeira pergunta que um clube fez foi sobre pais
+       * separados, onde qualquer um paga. A marca saiu da base; os avisos vão
+       * a todos os encarregados, e a cobrança continua a ser uma só.
+       */
       await db.guardianLink.upsert({
         where: { athleteId_membershipId: { athleteId, membershipId: membership.id } },
         update: { relation: dto.relation.trim() || "Encarregado" },
@@ -346,7 +347,6 @@ export class FamilyInvitesService {
           athleteId,
           membershipId: membership.id,
           relation: dto.relation.trim() || "Encarregado",
-          isPayer: !jaHaPagador,
         },
       });
 
@@ -393,12 +393,10 @@ export class FamilyInvitesService {
     const athleteId = await this.matchAthlete(ctx.academyId, taxId, birthdate);
 
     return this.prisma.runAs(ctx.academyId, async (db) => {
-      const jaHaPagador = await db.guardianLink.findFirst({ where: { athleteId, isPayer: true }, select: { id: true } });
-
       await db.guardianLink.upsert({
         where: { athleteId_membershipId: { athleteId, membershipId: ctx.membershipId } },
         update: {},
-        create: { athleteId, membershipId: ctx.membershipId, relation: "Encarregado", isPayer: !jaHaPagador },
+        create: { athleteId, membershipId: ctx.membershipId, relation: "Encarregado" },
       });
 
       const athlete = await db.athlete.findFirst({ where: { id: athleteId }, select: { id: true, name: true } });

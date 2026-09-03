@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { createPortal } from "react-dom";
 import { ChevronDown, Check, IdCard, Users } from "lucide-react";
 import { chooseContext, useContexts, type ContextType } from "@/lib/contexts";
 import { resetSocio } from "@/lib/socio";
@@ -22,6 +23,20 @@ import { cx } from "@/ui";
  * Escreve a escolha, limpa o cache do contexto que se deixa, e deixa o `App`
  * redesenhar. Sem logout, sem pedir credenciais, sem recarregar a página — é
  * uma mudança de roupa, não de pessoa.
+ *
+ * ## Porque é que a folha sai por um portal
+ *
+ * Porque o chip vive dentro do `<header>`, e o header tem `backdrop-blur-xl`.
+ * **Um `backdrop-filter` diferente de `none` cria um containing block para os
+ * descendentes `fixed`** — a mesma regra do `transform` e do `filter`. O
+ * `fixed inset-0` deixava de cobrir o ecrã e passava a cobrir o **header**, de
+ * modo que o `items-end` encostava a folha ao fundo dele: uma folha que se
+ * abria colada ao topo do ecrã, por baixo da barra, em vez de subir de baixo.
+ *
+ * Tirar o `backdrop-blur` resolveria e estragava o header. Pôr a folha no
+ * `body` resolve sem lhe tocar, e é o que qualquer diálogo devia fazer. Os
+ * outros overlays da app (pagamentos, ficha do atleta) não precisam disto
+ * porque vivem no corpo da página, onde não há filtro nenhum por cima.
  */
 
 const AREAS: { type: ContextType; label: string; hint: string; icon: typeof Users }[] = [
@@ -82,7 +97,7 @@ export function AreaSwitch({ asList }: { asList?: boolean }) {
         <ChevronDown className="size-3.5" strokeWidth={2.2} />
       </button>
 
-      {aberto && (
+      {aberto && createPortal(
         <div className="fixed inset-0 z-40 flex items-end justify-center bg-ink/40" onClick={() => setAberto(false)}>
           <div
             className="w-full max-w-[480px] rounded-t-[24px] bg-canvas p-5 pb-[calc(20px+env(safe-area-inset-bottom))]"
@@ -113,7 +128,8 @@ export function AreaSwitch({ asList }: { asList?: boolean }) {
               ))}
             </div>
           </div>
-        </div>
+        </div>,
+        document.body,
       )}
     </>
   );

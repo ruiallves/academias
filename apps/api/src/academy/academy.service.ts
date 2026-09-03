@@ -1104,7 +1104,7 @@ export class AcademyService {
           teams: { select: { teamId: true, position: true }, take: 1 },
           guardians: {
             select: {
-              relation: true, isPayer: true,
+              relation: true,
               membership: {
                 select: {
                   id: true, isActive: true, userId: true, lastSeenAt: true,
@@ -1182,7 +1182,6 @@ export class AcademyService {
             email: g.membership.user.email,
             phone: g.membership.user.phone,
             relation: g.relation,
-            isPayer: g.isPayer,
             appInstalled: g.membership.lastSeenAt !== null || comApp.has(g.membership.userId),
           })),
           // "available" | "limited" | "out" — `clinical:status`, chega a todos.

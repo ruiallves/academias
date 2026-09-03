@@ -832,7 +832,6 @@ model GuardianLink {
   /// "Mãe", "Pai", "Encarregado" — texto livre porque as famílias não cabem num enum.
   relation     String
   /// Quem recebe as cobranças. Numa família só um paga.
-  isPayer      Boolean    @default(true)
 
   @@unique([athleteId, membershipId])
   @@index([membershipId])
