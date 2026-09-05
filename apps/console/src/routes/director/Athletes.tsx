@@ -3,7 +3,7 @@ import { useSearchParams } from "react-router-dom";
 import { PageHeader } from "@/components/Shell";
 import { NewAthleteDialog } from "@/components/NewAthleteDialog";
 import { ImportAthletesDialog } from "@/components/ImportAthletesDialog";
-import { AvailabilityTag, cx, DataTable, Empty, Monogram, Panel, Pill, type Column } from "@/components/primitives";
+import { AvailabilityTag, cx, DataTable, Empty, Monogram, Panel, Pill, RowLink, type Column } from "@/components/primitives";
 import { BulkBar, BulkDeleteDialog } from "@/components/BulkDelete";
 import { apiDelete } from "@/lib/http";
 import { reloadAcademy } from "@/lib/store";
@@ -138,9 +138,13 @@ export default function Athletes() {
             </div>
             <div className="min-w-0">
               <div className="flex items-center gap-1.5">
-                <span className={cx("truncate font-medium", saiu ? "text-ink-3" : "text-ink")}>
+                {/* Só o nome abre a ficha — a linha serve para escolher. */}
+                <RowLink
+                  to={`/atletas/${a.id}`}
+                  className={cx("truncate font-medium", saiu ? "text-ink-3" : "text-ink")}
+                >
                   {shortName(a.name)}
-                </span>
+                </RowLink>
                 {saiu ? <Pill tone="risk">Saiu</Pill> : <AvailabilityTag availability={availabilityOf(a.id)} size="sm" />}
               </div>
               <div className="text-meta text-ink-3 tabular">{age(new Date(a.birthdate), today)} anos</div>

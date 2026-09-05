@@ -1090,6 +1090,36 @@ assinado — não encontrava o pagamento e saía em 200 "desconhecido". Reposto 
 não é negar"). E um detalhe da API antiga: em `multibanco/info` o estado por
 palavras vem em `estado_referencia`, não em `estado` (que é um número).
 
+**Ninguém mexe em quem está acima.** A patente de uma pessoa é a do cargo **mais
+alto** que ela veste — principal ou secundário —, e é medida em `rankOf`
+(`common/permissions.ts`), num sítio só. Quatro portas passaram a verificá-la, e
+três delas não verificavam nada:
+
+| Porta | Antes |
+| --- | --- |
+| apagar (`DELETE /memberships/:id`) | verificava — mas só o cargo principal |
+| desactivar (`PATCH /memberships/:id/active`) | idem |
+| **despromover** (`PATCH /roles/assign/:id`) | **não verificava o alvo** |
+| **retirar acesso** (`PATCH /staff/:id/access`) | **não verificava o alvo** |
+
+A despromoção era a que dava o clube: um director com `access:write` dava
+"Roupeiro" ao presidente — cargo de patente 20, bem abaixo da dele, logo aceite
+— e o presidente ficava `STAFF`. A seguir apagava-se pelas regras normais. A
+protecção do apagar era verdadeira e inútil, porque se contornava com um pedido
+antes. Retirar acesso era a mais silenciosa: um presidente sem `role:write` nem
+`staff:write` é um presidente de nome.
+
+O cargo principal deixou de descrever a pessoa quando os cargos passaram a ser
+vários: na base real havia uma treinadora com o cargo secundário de *Diretora*
+(patente 100) que, pelo principal, qualquer treinador podia apagar. As
+permissões dela eram a soma dos cargos; a protecção tinha de ser da mesma soma.
+
+A assimetria é deliberada: **quem age** mede-se pelo papel-base, **quem é alvo**
+pelo cargo mais alto. As duas erram para o lado de recusar. Verificado por
+`npm run test:hierarquia` (18) — e o teste foi validado ao contrário, com a
+guarda desligada: sem ela, um treinador apagou a conta de quem também era
+director, e a direcção despromoveu e neutralizou o presidente.
+
 **Rate-limiting e cabeçalhos de segurança** globais (`@nestjs/throttler`,
 `helmet`). Ver [05-seguranca](05-seguranca.md).
 

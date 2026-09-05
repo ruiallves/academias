@@ -44,6 +44,7 @@
     "test:match-events": "node scripts/test-match-events.mjs",
     "test:match-sheet": "node scripts/test-match-sheet.mjs",
     "test:announcements": "node scripts/test-announcements.mjs",
+    "test:hierarquia": "node scripts/test-hierarquia.mjs",
     "test:emissao": "node scripts/test-emissao-automatica.mjs",
     "test:finance": "node scripts/test-finance.mjs",
     "test:fees": "node scripts/test-fees.mjs",

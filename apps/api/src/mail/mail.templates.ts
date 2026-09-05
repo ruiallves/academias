@@ -549,6 +549,7 @@ export function ticketAlertEmail(input: {
   phone?: string | null;
   club?: string | null;
   subject: string;
+  role?: string | null;
   athletes?: string | null;
   message?: string | null;
   link: string;
@@ -561,6 +562,7 @@ export function ticketAlertEmail(input: {
     ["Email", input.email],
     ["Telefone", input.phone],
     ["Assunto", input.subject],
+    ["Cargo", input.role],
     ["Atletas", input.athletes],
   ];
   const preenchidos = campos.filter((c): c is [string, string] => Boolean(c[1]));

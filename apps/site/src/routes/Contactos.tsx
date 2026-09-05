@@ -37,6 +37,22 @@ type Subject = {
   steps: [string, string][];
 };
 
+/**
+ * Os cargos que aparecem como sugestão.
+ *
+ * Os que cobrem a esmagadora maioria de quem escreve, pela ordem em que
+ * aparecem num clube. Não é uma lista fechada — ver o campo.
+ */
+const CARGOS = [
+  "Presidente",
+  "Vice-presidente",
+  "Direcção",
+  "Coordenador",
+  "Director desportivo",
+  "Treinador",
+  "Secretaria",
+];
+
 const SUBJECTS: Subject[] = [
   {
     id: "experimentar",
@@ -65,6 +81,7 @@ export default function Contactos() {
   const [subject, setSubject] = useState<Subject>(SUBJECTS[0]);
   const [name, setName] = useState("");
   const [club, setClub] = useState("");
+  const [role, setRole] = useState("");
   const [email, setEmail] = useState("");
   const [phone, setPhone] = useState("");
   const [athletes, setAthletes] = useState("");
@@ -96,6 +113,7 @@ export default function Contactos() {
           email: email.trim(),
           phone: phone.trim() || undefined,
           club: subject.clube ? club.trim() || undefined : undefined,
+          role: subject.clube ? role.trim() || undefined : undefined,
           subject: subject.label,
           // O id estável, a par do rótulo: é por ele que a plataforma filtra.
           subjectId: subject.id,
@@ -117,6 +135,7 @@ export default function Contactos() {
         `Assunto: ${subject.label}`,
         `Nome: ${name.trim()}`,
         subject.clube && club.trim() && `Clube: ${club.trim()}`,
+        subject.clube && role.trim() && `Cargo: ${role.trim()}`,
         `Email: ${email.trim()}`,
         phone.trim() && `Telefone: ${phone.trim()}`,
         subject.clube && athletes.trim() && `Atletas: ${athletes.trim()}`,
@@ -255,8 +274,36 @@ export default function Contactos() {
                 {/* Só para quem vem por causa do clube. */}
                 {subject.clube && (
                   <>
-                    <Field label="Clube ou academia" className="sm:col-span-2">
+                    <Field label="Clube ou academia">
                       <input value={club} onChange={(e) => setClub(e.target.value)} className="input-line" />
+                    </Field>
+
+                    {/*
+                      O cargo — a pergunta que decide como a conversa começa.
+                      Um presidente que pede para experimentar pode decidir; um
+                      treinador vai ter de convencer alguém. Sem isto, quem
+                      responde descobre-o ao telefone, cinco minutos depois de já
+                      ter escolhido o tom.
+
+                      Texto livre com sugestões, e não um menu: "Vice-presidente
+                      para a formação" é um cargo a sério, e um menu fechado
+                      obrigava essa pessoa a escolher-se mal. O `datalist` dá a
+                      rapidez do menu a quem cabe nele, sem fechar a porta a quem
+                      não cabe.
+                    */}
+                    <Field label="O teu cargo" hint="opcional">
+                      <input
+                        value={role}
+                        onChange={(e) => setRole(e.target.value)}
+                        className="input-line"
+                        list="cargos-no-clube"
+                        autoComplete="organization-title"
+                      />
+                      <datalist id="cargos-no-clube">
+                        {CARGOS.map((c) => (
+                          <option key={c} value={c} />
+                        ))}
+                      </datalist>
                     </Field>
 
                     <Field label="Quantos atletas" hint="mais ou menos">

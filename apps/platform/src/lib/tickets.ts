@@ -44,6 +44,8 @@ export type Ticket = {
   email: string;
   phone: string | null;
   club: string | null;
+  /** O cargo de quem escreveu — decide como a conversa começa. */
+  role: string | null;
   athletes: string | null;
   message: string | null;
   status: TicketStatus;

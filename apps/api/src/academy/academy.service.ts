@@ -5,7 +5,7 @@ import { PrismaService, type ScopedClient } from "../prisma/prisma.service";
 import { headCoaches } from "./head-coaches";
 import { StorageService } from "../storage/storage.service";
 import { PHOTO_BUCKET, PHOTO_TTL } from "../storage/photos.service";
-import { basePermissions, can, ROLE_PERMISSIONS, type Permission, type RequestContext } from "../common/permissions";
+import { basePermissions, can, outranks, ROLE_PERMISSIONS, type Permission, type RequestContext } from "../common/permissions";
 import { athleteScopeFilter, athleteTeamScopeWhere, calendarScopeFilter, inTeamScope, teamScopeFilter } from "../common/permissions";
 import { gerarCobrancas, periodoActual } from "../billing/billing.service";
 import { SHORT_NAME_MAX } from "../common/short-name";
@@ -604,20 +604,23 @@ export class AcademyService {
     return this.prisma.runAs(ctx.academyId, async (db) => {
       const target = await db.membership.findFirst({
         where: { id: membershipId },
-        select: { id: true, role: true, customRole: { select: { rank: true, key: true } } },
+        select: {
+          id: true,
+          role: true,
+          customRole: { select: { rank: true, key: true, archivedAt: true } },
+          extraRoles: { select: { role: { select: { rank: true, archivedAt: true } } } },
+        },
       });
       if (!target) throw new NotFoundException("Pessoa não encontrada");
 
       /*
        * Não se desactiva acima do próprio nível.
        *
-       * A mesma regra dos convites e dos papéis: sem ela, quem tivesse
-       * `staff:write` desligava o presidente e ficava dono do clube. O rank vem
-       * do cargo quando existe, e do enum quando não — que é o que as
-       * memberships antigas ainda usam.
+       * Sem isto, quem tivesse `staff:write` desligava o presidente e ficava
+       * dono do clube. A patente do alvo é a do cargo **mais alto** que ele
+       * veste — ver `rankOf`, e a treinadora que também era directora.
        */
-      const targetRank = target.customRole?.rank ?? ROLE_RANK[target.role];
-      if (targetRank > ROLE_RANK[ctx.role]) {
+      if (!outranks(ctx, target)) {
         throw new ForbiddenException("Essa pessoa tem um cargo acima do teu");
       }
 
@@ -661,7 +664,8 @@ export class AcademyService {
         select: {
           id: true,
           role: true,
-          customRole: { select: { rank: true } },
+          customRole: { select: { rank: true, archivedAt: true } },
+          extraRoles: { select: { role: { select: { rank: true, archivedAt: true } } } },
           user: { select: { name: true } },
         },
       });
@@ -670,8 +674,7 @@ export class AcademyService {
       // A mesma hierarquia de `setMembershipActive`: sem isto, quem tivesse
       // `staff:write` apagava o presidente — pior do que o desligar, porque não
       // há como voltar atrás.
-      const targetRank = target.customRole?.rank ?? ROLE_RANK[target.role];
-      if (targetRank > ROLE_RANK[ctx.role]) {
+      if (!outranks(ctx, target)) {
         throw new ForbiddenException("Essa pessoa tem um cargo acima do teu");
       }
 
@@ -2149,11 +2152,24 @@ export class AcademyService {
         select: {
           id: true,
           role: true,
-          customRole: { select: { permissions: true, archivedAt: true } },
-          extraRoles: { select: { role: { select: { permissions: true, archivedAt: true } } } },
+          customRole: { select: { rank: true, permissions: true, archivedAt: true } },
+          extraRoles: { select: { role: { select: { rank: true, permissions: true, archivedAt: true } } } },
         },
       });
       if (!target) throw new NotFoundException("Pessoa não encontrada");
+
+      /*
+       * Nem sequer as excepções sobem a hierarquia.
+       *
+       * Faltava aqui, e era o buraco mais silencioso dos três: quem tivesse
+       * `access:write` não apagava o presidente — mas retirava-lhe `role:write`,
+       * `team:delete`, `billing:read`, tudo o que é delegável. Ficava um
+       * presidente de nome, sem poder nenhum, e sem nada no ecrã a explicar
+       * porquê. Uma conta neutralizada é uma conta tomada.
+       */
+      if (!outranks(ctx, target)) {
+        throw new ForbiddenException("Essa pessoa tem um cargo acima do teu");
+      }
 
       /*
        * Guarda-se só a diferença para o que a pessoa já tem: uma concessão que os
@@ -2921,26 +2937,6 @@ export class AcademyService {
 }
 
 /* ---------------------------------------------------------------------------- */
-
-/**
- * A hierarquia, outra vez.
- *
- * Gémeo do `RANK` de `invites.service.ts` e de `roles.service.ts`. Duplicado de
- * propósito e não importado: são três módulos com fronteiras próprias, e uma
- * dependência entre eles só para partilhar nove números seria pior do que os
- * nove números. Se um dia divergirem, o teste `test:security` apanha-o.
- */
-const ROLE_RANK: Record<Role, number> = {
-  OWNER: 100,
-  DIRECTOR: 80,
-  COORDINATOR: 60,
-  MEDICAL: 40,
-  SCOUT: 40,
-  COACH: 40,
-  STAFF: 20,
-  GUARDIAN: 0,
-  ATHLETE: 0,
-};
 
 /**
  * Quantas ocorrências uma série pode ter.

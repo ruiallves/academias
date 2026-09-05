@@ -2,7 +2,7 @@ import { useCallback, useEffect, useState } from "react";
 import { CustoDoPagamento } from "@/components/finance/CustoDoPagamento";
 import { PageHeader } from "@/components/Shell";
 import { SearchInput } from "@/components/filters";
-import { DataTable, Empty, Loading, Monogram, Panel, Pill, cx, type Column, type Tone } from "@/components/primitives";
+import { DataTable, Empty, Loading, Monogram, Panel, Pill, RowLink, cx, type Column, type Tone } from "@/components/primitives";
 import { Dialog, DialogField, dialogInputClass } from "@/components/Dialog";
 import { Download, ExternalLink, Home, Plus, Settings, Trash2, Upload } from "@/lib/icons";
 import { can } from "@/lib/permissions";
@@ -134,7 +134,10 @@ export default function Members() {
             acção quando o elemento já tem uma largura definida para exceder.
           */}
           <div className="min-w-0 max-w-[200px]">
-            <div className="truncate text-body font-medium text-ink">{m.name}</div>
+            {/* Só o nome abre a ficha — a linha serve para escolher. */}
+            <RowLink to={`/socios/${m.id}`} className="inline-block max-w-full truncate align-bottom text-body font-medium text-ink">
+              {m.name}
+            </RowLink>
             <div className="truncate text-meta text-ink-3">
               {m.number ? `n.º ${m.number} · ` : ""}
               {m.birthdate ? `${ageOf(m.birthdate)} anos` : "Ficha por completar"}

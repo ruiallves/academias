@@ -70,7 +70,17 @@ console.table([...porMetodo.values()].map((m) => ({ método: m.label, fixo: (m.f
 for (const m of ["MBWAY", "MULTIBANCO", "CARD", "APPLE_PAY", "GOOGLE_PAY", "DIRECT_DEBIT", "PAYSAFECARD"]) {
   check(`${m} tem taxa`, porMetodo.has(m), "falta na tabela do servidor");
 }
-check("e todos marcados como oferecidos", [...porMetodo.values()].every((m) => m.offered === true));
+check(
+  "o PaySafeCard está na tabela mas fora da oferta",
+  porMetodo.get("PAYSAFECARD")?.offered === false,
+  "12 % — saiu da app; ver METODOS em screens/Payments.tsx",
+);
+check(
+  "e os outros seis estão oferecidos",
+  ["MBWAY", "MULTIBANCO", "CARD", "APPLE_PAY", "GOOGLE_PAY", "DIRECT_DEBIT"].every(
+    (k) => porMetodo.get(k)?.offered === true,
+  ),
+);
 
 /*
  * Os valores públicos da euPago, a 5 de Setembro de 2026. Se um clube negociar
@@ -109,6 +119,35 @@ if (mCaminho) {
   check("e com a tabela lá dentro", Array.isArray(resposta.body?.methods) && resposta.body.methods.length > 0);
 }
 
+console.log("\n=== O que a app oferece é o que o cálculo conta ===");
+/*
+ * O invariante que faltava.
+ *
+ * A linha de custo promete ao clube "isto e o que podes receber" — e essa
+ * promessa so vale se os metodos que entram na conta forem exactamente os que a
+ * familia consegue escolher na app. Se alguem acrescentar um botao de pagamento
+ * e se esquecer da taxa, o clube ve um intervalo que a realidade fura; se tirar
+ * um botao e se esquecer daqui, o clube ve uma comissao que ninguem paga.
+ *
+ * Le-se a lista da app e compara-se com a do servidor. Foi assim que o
+ * PaySafeCard saiu dos dois lados de uma vez.
+ */
+const APP_PAGAMENTOS = path.join(HERE, "..", "..", "family", "src", "screens", "Payments.tsx");
+const fonteApp = readFileSync(APP_PAGAMENTOS, "utf8");
+const bloco = fonteApp.slice(fonteApp.indexOf("const METODOS"), fonteApp.indexOf("] as const"));
+const naApp = [...bloco.matchAll(/key: "([A-Z_]+)"/g)].map((m) => m[1]).sort();
+const noCalculo = r.body.methods.filter((m) => m.offered).map((m) => m.method).sort();
+
+console.log("     app:     ", naApp.join(", "));
+console.log("     cálculo: ", noCalculo.join(", "));
+check("a app oferece seis métodos", naApp.length === 6, naApp.join(", "));
+check(
+  "e são exactamente os que entram na conta",
+  JSON.stringify(naApp) === JSON.stringify(noCalculo),
+  "as duas listas divergiram — ou falta uma taxa, ou sobra um método",
+);
+check("nenhum deles é o PaySafeCard", !naApp.includes("PAYSAFECARD"));
+
 console.log("\n=== A conta ===");
 /* A mesma fórmula das duas pontas. Reescrita aqui de propósito: se o teste
    importasse a função, provava que ela é igual a si própria. */
@@ -139,9 +178,15 @@ check(
   "num valor alto o débito directo é o melhor para o clube",
   liquido(20000, porMetodo.get("DIRECT_DEBIT"), iva) > liquido(20000, porMetodo.get("MBWAY"), iva),
 );
-/* E o PaySafeCard, a 12 %, é sempre o pior — é o que alarga o intervalo. */
-const piores = [...porMetodo.values()].map((m) => ({ m: m.method, n: liquido(4000, m, iva) })).sort((a, b) => a.n - b.n);
-check("o PaySafeCard é o mais caro de todos", piores[0].m === "PAYSAFECARD", piores[0].m);
+/*
+ * Com o PaySafeCard fora, o pior dos oferecidos é o Multibanco (e os que lhe são
+ * gémeos no preço). É esse que passa a fechar o intervalo que o clube vê — o
+ * intervalo encolheu de 34,09–39,56 € para 39,01–39,56 € numa mensalidade de 40 €.
+ */
+const oferecidos = [...porMetodo.values()].filter((m) => m.offered);
+const piores = oferecidos.map((m) => ({ m: m.method, n: liquido(4000, m, iva) })).sort((a, b) => a.n - b.n);
+check("o pior dos oferecidos custa 1,5 % + 0,20 €", piores[0].n === liquido(4000, porMetodo.get("MULTIBANCO"), iva), piores[0].m);
+check("e o PaySafeCard já não entra na conta", !oferecidos.some((m) => m.method === "PAYSAFECARD"));
 
 console.log("\n=== E aparece em todo o lado — agora e no futuro ===");
 /*

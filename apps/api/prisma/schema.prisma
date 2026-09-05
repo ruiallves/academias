@@ -3452,6 +3452,10 @@ model Ticket {
   email    String
   phone    String?
   club     String?
+  /// O cargo de quem escreve — presidente, treinador, secretaria. Decide como a
+  /// conversa começa: quem pode decidir e quem vai ter de convencer alguém.
+  /// Texto livre, porque os cargos de um clube não cabem numa lista fechada.
+  role     String?
   /// Quantos atletas o clube tem, como foi escrito. Texto livre porque a pergunta
   /// no site é livre — "cerca de 200" é uma resposta útil e não é um número.
   athletes String?

@@ -31,6 +31,16 @@ class SiteContactDto {
   @IsOptional() @IsString() @Length(0, 40)
   subjectId?: string;
 
+  /**
+   * O cargo de quem escreve.
+   *
+   * Opcional, e texto livre: os cargos de um clube não cabem numa lista fechada
+   * ("Vice-presidente para a formação" é um cargo a sério). O formulário sugere
+   * os comuns e aceita o que vier.
+   */
+  @IsOptional() @IsString() @Length(0, 80)
+  role?: string;
+
   @IsOptional() @IsString() @Length(0, 20)
   athletes?: string;
 

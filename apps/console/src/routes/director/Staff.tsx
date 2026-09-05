@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { PageHeader } from "@/components/Shell";
-import { DataTable, Empty, Metric, MetricRow, Monogram, Panel, PanelHead, Pill, type Column } from "@/components/primitives";
+import { DataTable, Empty, Metric, MetricRow, Monogram, Panel, PanelHead, Pill, RowLink, type Column } from "@/components/primitives";
 import { BulkBar, BulkDeleteDialog } from "@/components/BulkDelete";
 import { apiDelete } from "@/lib/http";
 import { reloadAcademy } from "@/lib/store";
@@ -116,7 +116,10 @@ export default function Staff() {
         <div className="flex items-center gap-2.5">
           <Monogram name={m.name} photoUrl={m.photoUrl} />
           <div className="min-w-0">
-            <div className="truncate font-medium text-ink">{m.name}</div>
+            {/* Só o nome abre a ficha — a linha serve para escolher. */}
+            <RowLink to={`/staff/${m.id}`} className="inline-block max-w-full truncate align-bottom font-medium text-ink">
+              {m.name}
+            </RowLink>
             <div className="truncate text-meta text-ink-3">{m.title}</div>
           </div>
         </div>

@@ -63,6 +63,7 @@ export class TicketsService {
       club?: string;
       subject: string;
       subjectId?: string;
+      role?: string;
       athletes?: string;
       message?: string;
     },
@@ -79,6 +80,7 @@ export class TicketsService {
         club: dto.club?.trim() || null,
         subject: dto.subject.trim(),
         subjectId: dto.subjectId?.trim() || null,
+        role: dto.role?.trim() || null,
         athletes: dto.athletes?.trim() || null,
         message: dto.message?.trim() || null,
         status: "NOVO",
@@ -125,7 +127,10 @@ export class TicketsService {
    */
   private async avisar(
     ticketId: string,
-    dto: { name: string; email: string; phone?: string; club?: string; subject: string; athletes?: string; message?: string },
+    dto: {
+      name: string; email: string; phone?: string; club?: string;
+      subject: string; role?: string; athletes?: string; message?: string;
+    },
   ): Promise<void> {
     try {
       const destinos = await this.destinatarios();
@@ -138,6 +143,7 @@ export class TicketsService {
         phone: dto.phone,
         club: dto.club,
         subject: dto.subject,
+        role: dto.role,
         athletes: dto.athletes,
         message: dto.message,
         link: `${base}/tickets?ticket=${ticketId}`,
@@ -260,7 +266,8 @@ export class TicketsService {
           email: true,
           phone: true,
           club: true,
-          athletes: true,
+          role: true,
+        athletes: true,
           message: true,
           status: true,
           createdAt: true,
@@ -293,6 +300,7 @@ export class TicketsService {
         email: true,
         phone: true,
         club: true,
+        role: true,
         athletes: true,
         message: true,
         status: true,
@@ -390,7 +398,7 @@ export class TicketsService {
       where: { id },
       select: {
         id: true, name: true, email: true, phone: true, club: true,
-        subject: true, athletes: true, message: true, contactId: true,
+        subject: true, role: true, athletes: true, message: true, contactId: true,
       },
     });
     if (!ticket) throw new NotFoundException("Pedido não encontrado");

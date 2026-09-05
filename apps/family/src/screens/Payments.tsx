@@ -12,7 +12,6 @@ import {
   Loader,
   ShieldCheck,
   Smartphone,
-  Ticket,
   TriangleAlert,
   Wallet,
 } from "lucide-react";
@@ -410,8 +409,17 @@ const METODOS = [
   { key: "CARD", label: "Cartão", hint: "Visa e Mastercard", icon: CreditCard, kind: "redirect" },
   { key: "GOOGLE_PAY", label: "Google Pay", hint: null, icon: Wallet, kind: "redirect" },
   { key: "APPLE_PAY", label: "Apple Pay", hint: null, icon: Apple, kind: "redirect" },
-  { key: "PAYSAFECARD", label: "PaySafeCard", hint: null, icon: Ticket, kind: "redirect" },
   { key: "DIRECT_DEBIT", label: "Débito direto", hint: "Autorizas uma vez, debita da conta", icon: Banknote, kind: "debit" },
+  /*
+   * PaySafeCard fora, por enquanto.
+   *
+   * 12 % de comissão, sem parte fixa — mais de dez vezes o MB Way. Numa
+   * mensalidade de 40 € são 5,91 € que o clube não recebe, e o clube nem
+   * escolhe: quem escolhe o método é quem paga. O servidor continua a saber
+   * criar o pagamento (`createPaysafecardCharge`) e a taxa continua na tabela,
+   * marcada como não oferecida — voltar a ligá-lo é acrescentar esta linha e
+   * pôr `offered: true`.
+   */
 ] as const;
 
 function MethodSheet({

@@ -1,6 +1,6 @@
 import { Link } from "react-router-dom";
 import { CONTACT_EMAIL } from "@/lib/content";
-import { PAYMENT_METHODS, PaymentIcon } from "./PaymentIcons";
+import { PAYMENT_METHODS, PaymentMark } from "./PaymentIcons";
 import { Mark } from "./primitives";
 
 const COLUMNS: { title: string; links: { to: string; label: string }[] }[] = [
@@ -66,11 +66,18 @@ export function Footer() {
               Feito em Portugal, para clubes e academias desportivas portuguesas.
             </p>
 
-            {/* Os meios de pagamento, discretos — o rodapé confirma, não vende. */}
-            <ul className="mt-7 flex flex-wrap gap-3" aria-label="Meios de pagamento aceites">
+            {/* Os meios de pagamento — o rodapé confirma, não vende.
+                As marcas vão em reverso monocromático sobre o pinheiro; sem
+                pastilhas, que faziam disto uma parede de rectângulos brancos.
+                Ver `PaymentMark`. O espaçamento é maior do que era porque, sem
+                caixa à volta, é o vazio que separa uma marca da seguinte. */}
+            <ul
+              className="mt-7 flex flex-wrap items-center gap-x-6 gap-y-4"
+              aria-label="Meios de pagamento aceites"
+            >
               {PAYMENT_METHODS.map((m) => (
-                <li key={m.id} title={m.label}>
-                  <PaymentIcon id={m.id} className="size-[18px] text-ink-4" />
+                <li key={m.id}>
+                  <PaymentMark method={m} onDark />
                 </li>
               ))}
             </ul>

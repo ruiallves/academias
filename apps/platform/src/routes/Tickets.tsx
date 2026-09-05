@@ -275,6 +275,12 @@ function TicketBody({ id, me, onChanged }: { id: string; me: Me; onChanged: () =
           <div className="rounded-[9px] border border-line bg-surface p-3">
             <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
               <span className="text-body font-medium text-ink">{t.subject}</span>
+              {/*
+                O cargo a par do assunto, e antes do número de atletas: entre
+                "quem é esta pessoa" e "que tamanho tem o clube", é o primeiro
+                que decide o tom da resposta.
+              */}
+              {t.role && <span className="text-[12px] text-ink-2">{t.role}</span>}
               {t.athletes && <span className="text-[12px] text-ink-3">{t.athletes} atletas</span>}
             </div>
             {t.message ? (

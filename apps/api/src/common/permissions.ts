@@ -389,6 +389,84 @@ export type RequestContext = {
  * nas duas listas (engano de quem configurou), a leitura segura é a que dá menos
  * acesso: nega-se. É a gémea de `permissionsOf` no cliente.
  */
+/* -------------------------------------------------------------------------- */
+/* Hierarquia — quem manda em quem                                             */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * A patente de cada papel-base.
+ *
+ * Vive aqui, e não numa cópia por serviço, porque deixou de ser só nove
+ * números: é a escala em que se decide quem pode apagar, desactivar, despromover
+ * e retirar acesso a quem. Uma regra de segurança com duas definições é uma
+ * regra que um dia diverge — e a divergência aparece como um director a
+ * conseguir apagar o presidente, não como um teste vermelho.
+ *
+ * Os `RANK` de `invites`, `departments` e `first-role` continuam onde estão: lá
+ * a pergunta é outra — "que cargo posso **dar**" — e não protege uma conta.
+ */
+export const ROLE_RANK: Record<Role, number> = {
+  OWNER: 100,
+  DIRECTOR: 80,
+  COORDINATOR: 60,
+  MEDICAL: 40,
+  SCOUT: 40,
+  COACH: 40,
+  STAFF: 20,
+  GUARDIAN: 0,
+  ATHLETE: 0,
+};
+
+/** O que basta saber de alguém para lhe medir a patente. */
+export type RankedMembership = {
+  role: Role;
+  customRole?: { rank: number; archivedAt?: Date | null } | null;
+  extraRoles?: { role: { rank: number; archivedAt?: Date | null } }[];
+};
+
+/**
+ * A patente de uma pessoa: a **mais alta** de todos os cargos que veste.
+ *
+ * ## Porque é que é o máximo, e não o principal
+ *
+ * Porque desde que a mesma pessoa pode ter vários cargos, o principal deixou de
+ * a descrever. Havia — em dados reais — uma treinadora com o cargo secundário
+ * de *Diretora*, patente 100: pelo principal valia 40, e qualquer outro
+ * treinador com `staff:write` podia apagá-la. As permissões dela eram a soma dos
+ * cargos (ver `exceptionsFor`); a protecção tinha de ser da mesma soma, senão o
+ * produto dava com uma mão e tirava com a outra.
+ *
+ * Um cargo arquivado não conta — não dá permissões nenhumas, e não pode proteger
+ * o que não dá.
+ *
+ * Sem cargo nenhum vale o papel-base, que é o que as memberships antigas têm.
+ */
+export function rankOf(m: RankedMembership): number {
+  const vivos = [
+    ...(m.customRole && !m.customRole.archivedAt ? [m.customRole.rank] : []),
+    ...(m.extraRoles ?? []).filter((e) => !e.role.archivedAt).map((e) => e.role.rank),
+  ];
+  return vivos.length > 0 ? Math.max(...vivos) : ROLE_RANK[m.role];
+}
+
+/**
+ * Quem faz o pedido manda o suficiente para mexer nesta pessoa?
+ *
+ * ## A assimetria é deliberada
+ *
+ * Quem age mede-se pelo **papel-base** (`ctx.role`); quem é alvo mede-se pelo
+ * **cargo mais alto** que veste. As duas escolhas erram para o mesmo lado — o de
+ * recusar —, e é esse o lado certo numa regra cuja falha entrega um clube a
+ * quem não devia.
+ *
+ * Medir quem age pelo cargo mais alto daria mais poder a quem tem um cargo
+ * secundário graúdo, e isso é uma decisão de produto que ninguém pediu. Medir o
+ * alvo pelo principal deixava-o a descoberto, que foi o buraco que isto fecha.
+ */
+export function outranks(ctx: RequestContext, target: RankedMembership): boolean {
+  return rankOf(target) <= ROLE_RANK[ctx.role];
+}
+
 export function can(ctx: RequestContext, permission: Permission): boolean {
   if (ctx.revokes.includes(permission)) return false;
   return basePermissions(ctx).includes(permission) || ctx.grants.includes(permission);

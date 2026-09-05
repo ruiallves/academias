@@ -88,12 +88,19 @@ const PUBLICAS: MetodoComTaxa[] = [
      a diferença. Vale a pena o clube ver isso quando decide o que promover. */
   { method: "DIRECT_DEBIT", label: "Débito directo", fixedCents: 45, percent: 0, offered: true },
   /*
-   * 12 %, sem parte fixa. É de longe o mais caro e é o que alarga o intervalo
-   * que o clube vê — está na app, por isso está aqui: escondê-lo era mostrar um
-   * intervalo que a realidade podia furar. Se o clube o quiser fora, tira-se da
-   * app **e** daqui, com `EUPAGO_METHODS`.
+   * PaySafeCard: na tabela, fora da oferta.
+   *
+   * 12 %, sem parte fixa — de longe o mais caro, e era ele que alargava o
+   * intervalo que o clube vê. Saiu da app da família (ver `METODOS` em
+   * `screens/Payments.tsx`) e por isso sai do cálculo: contar com uma comissão
+   * que ninguém pode escolher era assustar o clube com dinheiro que nunca vai
+   * perder.
+   *
+   * Fica na tabela, e não apagado, porque é "por enquanto": a taxa continua a
+   * ser esta no dia em que voltar, e voltar é pôr `offered: true` aqui e a
+   * linha de volta na app.
    */
-  { method: "PAYSAFECARD", label: "PaySafeCard", fixedCents: 0, percent: 12, offered: true },
+  { method: "PAYSAFECARD", label: "PaySafeCard", fixedCents: 0, percent: 12, offered: false },
 ];
 
 /**

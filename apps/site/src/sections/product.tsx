@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { Link } from "react-router-dom";
 import { ProductFrame, Reveal, SectionMark, cx } from "@/components/primitives";
-import { PAYMENT_METHODS, PaymentIcon } from "@/components/PaymentIcons";
+import { PAYMENT_METHODS, PaymentMark } from "@/components/PaymentIcons";
 import { AppShot, ConsoleShot, MembershipShot } from "@/components/shots";
 import { CampoTaticoShot } from "@/components/shots-treino";
 import { MODULES } from "@/lib/content";
@@ -188,8 +188,9 @@ const PASSOS = [
  * Pagamentos — cinco passos numerados em serifa, sobre papel escurecido.
  *
  * Os números grandes fazem o trabalho que antes faziam cartões: dão ritmo e
- * ordem sem caixas. Os meios de pagamento são pictogramas (não logótipos — ver
- * `PaymentIcons.tsx`), ditos numa linha discreta.
+ * ordem sem caixas. Os meios de pagamento fecham a secção numa linha discreta,
+ * com os logótipos verdadeiros — e com o nome escrito nos dois que não têm
+ * logótipo para ter, o cartão e o débito directo. Ver `PaymentIcons.tsx`.
  */
 export function Pagamentos() {
   return (
@@ -232,11 +233,13 @@ export function Pagamentos() {
                 somos parte no pagamento.
               </p>
             </div>
-            <ul className="flex flex-wrap items-center gap-x-7 gap-y-3">
+            {/* As marcas assentam directamente no papel — são tinta escura sobre
+                creme, e uma pastilha à volta só acrescentaria uma caixa que a
+                página não tem em mais lado nenhum. Ver `PaymentMark`. */}
+            <ul className="flex flex-wrap items-center gap-x-7 gap-y-4" aria-label="Meios de pagamento aceites">
               {PAYMENT_METHODS.map((m) => (
-                <li key={m.id} className="flex items-center gap-2 text-[14px] font-semibold tracking-[-0.01em] text-ink-2">
-                  <PaymentIcon id={m.id} className="size-[18px] shrink-0 text-ink-3" />
-                  {m.label}
+                <li key={m.id} className="flex items-center">
+                  <PaymentMark method={m} />
                 </li>
               ))}
             </ul>

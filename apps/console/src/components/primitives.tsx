@@ -233,6 +233,50 @@ export type Column<T> = {
   render: (row: T) => ReactNode;
 };
 
+/**
+ * O nome que abre a ficha, dentro de uma linha que faz outra coisa.
+ *
+ * ## Porque é que isto não vive na tabela
+ *
+ * Viveu, e estava errado. A tabela envolvia a **célula inteira** num link — e
+ * uma célula é o monograma, o nome, o subtítulo e todo o espaço vazio até à
+ * coluna seguinte. Clicar dois centímetros à direita do nome, ou na fotografia,
+ * ou na idade por baixo, abria a ficha na mesma: metade da linha continuava a
+ * navegar quando devia estar a escolher.
+ *
+ * O alvo certo é o nome, e quem sabe onde ele acaba é a célula que o desenha —
+ * não a tabela, que só vê `ReactNode`. Por isso o link desceu para aqui e
+ * põe-se à volta do texto, mais nada.
+ *
+ * E o texto, mesmo: quem o usa dá-lhe `inline-block max-w-full` (ou deixa-o ser
+ * um item de flex), nunca `block`. Um link `block` estica-se até à largura do
+ * pai, e um nome curto numa coluna larga volta a dar dois centímetros de vazio
+ * que abrem a ficha — o mesmo erro, num sítio mais pequeno.
+ *
+ * ## O que ele garante
+ *
+ * `stopPropagation`, para o clique não subir à linha e escolher ao mesmo tempo
+ * que navega. E é um `<Link>` a sério: ganha o menu do botão direito, o abrir
+ * em separador novo e o foco por teclado — que a linha nunca teve. É a mesma
+ * mecânica do `PersonLink`, que já fazia isto para o staff; este é o genérico,
+ * para quando o destino não é `/staff/:id`.
+ */
+export function RowLink({
+  to,
+  className,
+  children,
+}: {
+  to: string;
+  className?: string;
+  children: ReactNode;
+}) {
+  return (
+    <Link to={to} onClick={(e) => e.stopPropagation()} className={cx("hover:underline", className)}>
+      {children}
+    </Link>
+  );
+}
+
 export function DataTable<T>({
   columns,
   rows,
@@ -305,19 +349,31 @@ export function DataTable<T>({
   };
 
   /*
-   * O modo de selecção.
+   * Numa tabela que se pode escolher, a linha **escolhe**. Sempre.
    *
-   * Com alguma linha escolhida, **clicar numa linha escolhe-a** em vez de abrir
-   * a ficha. É o comportamento de qualquer caixa de correio, e resolve o que
-   * torna a selecção múltipla penosa numa tabela onde a linha navega: escolher
-   * cinco pessoas obrigava a acertar cinco vezes num quadrado de catorze pixéis,
-   * e um desvio de dois milímetros levava a página para outro sítio — com a
-   * escolha toda perdida no regresso.
+   * ## O que estava antes, e porque é que não chegava
    *
-   * Sem nada escolhido, a linha volta a abrir a ficha. A porta de entrada no
-   * modo continua a ser a caixa, que é explícita; a saída é limpar a selecção.
+   * A selecção era um modo: a linha navegava até alguém marcar a primeira caixa,
+   * e só a partir daí é que clicar na linha escolhia. Resolvia metade do
+   * problema — escolher a segunda pessoa deixava de exigir pontaria — e deixava
+   * a pior metade de pé: a **primeira** continuava a ser um quadrado de catorze
+   * pixéis, e falhá-lo por dois milímetros levava a página para outro sítio.
+   *
+   * Pior do que isso, a mesma linha fazia duas coisas diferentes conforme um
+   * estado que não se vê. Um clique que ora escolhe ora navega não se aprende;
+   * hesita-se antes de cada um.
+   *
+   * ## Agora
+   *
+   * A linha escolhe, e entra-se na ficha pelo **nome** — que é um link a sério,
+   * com sublinhado no hover, como o `PersonLink` já fazia dentro das linhas
+   * clicáveis deste produto. Cada gesto tem um sítio, e nenhum depende de estado
+   * invisível.
+   *
+   * Nas tabelas **sem** selecção nada disto se aplica: não há o que escolher, e
+   * a linha continua a abrir o que sempre abriu.
    */
-  const emSelecao = Boolean(selection && selection.selected.size > 0);
+  const escolheAoClicar = Boolean(selection);
 
   return (
     <div className="overflow-x-auto">
@@ -359,14 +415,25 @@ export function DataTable<T>({
         <tbody>
           {rows.map((row) => {
             const href = to?.(row);
-            // Em modo de selecção, uma linha que não se pode escolher não faz
-            // nada — como não tem caixa, também não tem clique.
-            const bloqueada = emSelecao && Boolean(selection?.disabled?.(row));
-            const clickable = !bloqueada && Boolean(href || onRowClick || emSelecao);
+            /*
+             * Uma linha que não se pode escolher não tem clique — como não tem
+             * caixa, também não tem gesto. A ficha continua a abrir-se pelo
+             * nome, que é um link à parte.
+             *
+             * E **não** fica esbatida. Ficava, enquanto a selecção era um modo:
+             * o cinzento durava o tempo da escolha e dizia "esta não". Agora que
+             * a selecção está sempre ligada, o mesmo cinzento passaria a ser
+             * permanente — e em Staff a linha que não se escolhe é a **do
+             * próprio**, que ficaria a 60% para sempre, como se a conta de quem
+             * está a olhar tivesse algum problema. A caixa em falta chega para
+             * dizer o que há a dizer.
+             */
+            const bloqueada = escolheAoClicar && Boolean(selection?.disabled?.(row));
+            const clickable = !bloqueada && (escolheAoClicar || Boolean(href || onRowClick));
 
             const aoClicar = () => {
               if (bloqueada) return;
-              if (emSelecao) return alternar(keyOf(row));
+              if (escolheAoClicar) return alternar(keyOf(row));
               if (href) return navigate(href);
               if (onRowClick) return onRowClick(row);
             };
@@ -377,7 +444,6 @@ export function DataTable<T>({
                 className={cx(
                   "border-b border-line last:border-0 transition-colors duration-[120ms]",
                   clickable && "cursor-pointer hover:bg-sunken/50",
-                  bloqueada && "opacity-60",
                   selection?.selected.has(keyOf(row)) && "bg-signal-soft/40",
                 )}
                 onClick={clickable ? aoClicar : undefined}

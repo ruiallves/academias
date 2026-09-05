@@ -3,7 +3,7 @@ import type { Role } from "@prisma/client";
 import { PrismaService, type ScopedClient } from "../prisma/prisma.service";
 import { semearCargosEmFalta } from "../departments/first-role";
 import { NAV_KEYS, isNavKey } from "../common/nav";
-import { ROLE_PERMISSIONS, can, type Permission, type RequestContext } from "../common/permissions";
+import { ROLE_PERMISSIONS, can, outranks, type Permission, type RequestContext } from "../common/permissions";
 
 /**
  * Papéis da academia.
@@ -464,9 +464,35 @@ export class RolesService {
     return this.prisma.runAs(ctx.academyId, async (db) => {
       const target = await db.membership.findFirst({
         where: { id: membershipId, role: { notIn: ["GUARDIAN", "ATHLETE"] } },
-        select: { id: true, role: true, customRoleId: true },
+        select: {
+          id: true,
+          role: true,
+          customRoleId: true,
+          customRole: { select: { rank: true, archivedAt: true } },
+          extraRoles: { select: { role: { select: { rank: true, archivedAt: true } } } },
+        },
       });
       if (!target) throw new NotFoundException("Pessoa não encontrada");
+
+      /*
+       * Não se mexe nos cargos de quem está acima.
+       *
+       * Faltava, e era o buraco que dava o clube inteiro. As guardas abaixo
+       * verificam o cargo que se **dá** — e por isso deixavam passar o
+       * contrário: um director com `access:write` dava "Roupeiro" ao presidente
+       * (patente 20, bem abaixo da dele, logo aceite) e o presidente ficava
+       * `STAFF`. Ou passava `null` e o cargo caía sem verificação nenhuma.
+       *
+       * A seguir, já despromovido, o presidente podia ser desactivado e apagado
+       * pelas regras normais. A protecção de `removeMembership` era verdadeira e
+       * inútil: contornava-se com um pedido antes.
+       *
+       * Duas perguntas diferentes, e agora as duas se fazem: **quem é o alvo**
+       * (aqui) e **que cargo se dá** (abaixo).
+       */
+      if (!outranks(ctx, target)) {
+        throw new ForbiddenException("Essa pessoa tem um cargo acima do teu");
+      }
 
       /* ---------------------------------------------------------- principal */
       if (roleId === null) {
