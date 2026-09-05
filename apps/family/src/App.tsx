@@ -5,7 +5,8 @@ import { load, resetAndLoad, useStore, type Child } from "@/lib/store";
 import { hasOnboarded } from "@/lib/onboarding";
 import { readToken, signOut, useSession } from "@/lib/session";
 import { usePresence } from "@/lib/presence";
-import { loadContexts, useContexts } from "@/lib/contexts";
+import { chooseContext, loadContexts, useContexts } from "@/lib/contexts";
+import { consoleUrl, irParaConsola } from "@/lib/handoff";
 import { readMemberInvite } from "@/lib/invite";
 import Entrar from "@/screens/Entrar";
 import SocioApp from "@/screens/socio/SocioApp";
@@ -127,6 +128,9 @@ export default function App() {
 
   /* A área de sócio é outra vista da mesma app — mesma sessão, mesma marca. */
   if (areaActiva === "MEMBER") return <SocioApp />;
+
+  /* A de staff é a consola: entrega-se a sessão e sai-se daqui. Ver `lib/handoff.ts`. */
+  if (areaActiva === "STAFF") return <AbrirConsola temOutras={contexts.length > 1} />;
 
   if (!store.ready) return <Splash />;
   // O servidor recusou esta conta nesta app. Não é avaria — tem saída própria.
@@ -262,6 +266,43 @@ function Retry({ label = "Tentar outra vez" }: { label?: string }) {
  * legitimidade, e oferecer "entrar com outra conta" a meio de um arranque normal
  * é sugerir que a culpa é da conta.
  */
+/**
+ * O instante entre escolher "Staff" e a consola abrir.
+ *
+ * A entrega corre num efeito, e não no clique, para valer também no arranque:
+ * quem deixou a app em Staff ontem abre-a hoje e vai direito à consola sem
+ * tocar em nada. Se a navegação não acontecer (um browser a bloquear, uma
+ * sessão que se perdeu pelo caminho), fica aqui um botão que a repete e outro
+ * que volta às áreas desta app — nunca um ecrã sem saída.
+ */
+function AbrirConsola({ temOutras }: { temOutras: boolean }) {
+  useEffect(() => {
+    irParaConsola();
+  }, []);
+
+  return (
+    <div className="mx-auto flex min-h-dvh max-w-[480px] flex-col items-center justify-center gap-5 px-6 py-10 text-center">
+      <span className="size-9 animate-spin rounded-full border-[3px] border-ink/10 border-t-[var(--color-signal)]" role="status" aria-label="A abrir a consola" />
+      <div>
+        <p className="text-[19px] font-semibold tracking-[-0.01em] text-ink">A abrir a consola…</p>
+        <p className="mt-1 text-[14px] leading-relaxed text-ink-3">
+          A tua área de staff é a consola do clube — a mesma do computador, no telemóvel.
+        </p>
+      </div>
+      <div className="flex flex-col items-center gap-2">
+        <a href={`${consoleUrl()}/`} onClick={(e) => { e.preventDefault(); irParaConsola(); }} className="text-[14px] font-semibold text-signal-ink underline">
+          Abrir agora
+        </a>
+        {temOutras && (
+          <button type="button" onClick={() => chooseContext("FAMILY")} className="text-[13px] text-ink-3 underline">
+            Ficar na app
+          </button>
+        )}
+      </div>
+    </div>
+  );
+}
+
 function Splash() {
   const [demora, setDemora] = useState(false);
 

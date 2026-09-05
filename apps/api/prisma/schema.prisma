@@ -195,6 +195,19 @@ model Sport {
   academyId         String
   academy           Academy  @relation(fields: [academyId], references: [id], onDelete: Cascade)
   name              String
+  /// A **disciplina** — `football`, `futsal`, `basketball` — ou nulo.
+  ///
+  /// O nome é o que o clube escreve e continua livre ("Futebol", "Futebol
+  /// feminino", "Basket"). O código é o que liga a modalidade ao seu **perfil
+  /// técnico** na consola: que módulos tem a Área técnica (exercícios, modelos
+  /// ou sistemas de jogo, bolas paradas ou situações especiais), que terrenos
+  /// desenha o editor, que vocabulário aparece nos filtros. Sem código não há
+  /// área técnica — natação e setas continuam a existir como modalidades, com
+  /// equipas, escalões e catálogos, mas sem biblioteca de exercícios.
+  ///
+  /// Texto e não enum, como `SetPiece.kind`: o dia em que o andebol chegar
+  /// entra com um perfil novo na consola e sem migração.
+  code              String?
   positions         String[] @default([])
   /// Competências avaliadas nesta modalidade, na ordem em que aparecem.
   skills            String[] @default([])
@@ -210,6 +223,11 @@ model Sport {
   requests   ScoutingRequest[]
   fitDims    FitDimension[]
   catalog    CatalogItem[]
+
+  /// A área técnica desta modalidade.
+  exercises  Exercise[]
+  gameModels GameModel[]
+  setPieces  SetPiece[]
 
   @@unique([academyId, name])
   @@index([academyId])
@@ -1153,6 +1171,16 @@ model Exercise {
   createdById String?
   createdBy   Membership? @relation("ExerciseAuthor", fields: [createdById], references: [id], onDelete: SetNull)
 
+  /// A modalidade a que pertence. É o que decide em que Área técnica aparece:
+  /// um clube com futebol e basquetebol tem duas bibliotecas, não uma com os
+  /// rondos misturados com os drills de lançamento.
+  ///
+  /// Nulo é "sem modalidade" — só acontece a conteúdo anterior a esta coluna
+  /// em clubes que ainda não configuraram a modalidade certa; ao criá-la, o
+  /// serviço adopta-o pela disciplina do desenho (ver `adoptOrphans`).
+  sportId String?
+  sport   Sport?  @relation(fields: [sportId], references: [id], onDelete: SetNull)
+
   visibility LibraryVisibility @default(CLUB)
 
   name        String
@@ -1208,11 +1236,15 @@ model Exercise {
   favorites      ExerciseFavorite[]
   blocks         SessionBlock[]
   templateBlocks SessionTemplateBlock[]
+  /// Os sistemas de jogo e as situações que o usam para treinar.
+  gameModelLinks GameModelExercise[]
+  setPieceLinks  SetPieceExercise[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
   @@index([academyId, visibility])
+  @@index([academyId, sportId])
   @@index([createdById])
 }
 
@@ -1245,12 +1277,23 @@ model GameModel {
   teamId String?
   team   Team?   @relation(fields: [teamId], references: [id], onDelete: SetNull)
 
+  /// Ver `Exercise.sportId`.
+  sportId String?
+  sport   Sport?  @relation(fields: [sportId], references: [id], onDelete: SetNull)
+
   createdById String?
   createdBy   Membership? @relation("GameModelAuthor", fields: [createdById], references: [id], onDelete: SetNull)
 
   visibility LibraryVisibility @default(CLUB)
 
   name       String
+  /// O tipo, onde a modalidade o pede.
+  ///
+  /// No basquetebol um "sistema de jogo" é de ataque, de defesa ou de
+  /// transição — o 5-out e a zona 2-3 não são o mesmo objecto, e o treinador
+  /// arruma-os em colunas diferentes. No futebol o modelo é o todo da equipa e
+  /// isto fica nulo. Texto com vocabulário na consola, como `SetPiece.kind`.
+  kind       String?
   /// O rótulo do sistema ("4-3-3") — informativo; a verdade é o `lineup`.
   system     String?
   /// [{ id, label, x, y }] — posições no campo, arrastáveis.
@@ -1259,11 +1302,32 @@ model GameModel {
   principles Json?
   notes      String?
 
+  /// Os exercícios com que se treina este sistema — e as situações que o usam.
+  exercises GameModelExercise[]
+  setPieces SetPiece[]
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
   @@index([academyId])
+  @@index([academyId, sportId])
   @@index([teamId])
+}
+
+/// Um exercício ligado a um sistema de jogo — "para treinar o pick & roll
+/// central, estes três". Tabela própria com chaves estrangeiras e não um array
+/// de ids: apagar o exercício tira a ligação sozinho, e a pergunta inversa
+/// ("em que sistemas entra este exercício?") responde-se com um índice.
+model GameModelExercise {
+  gameModelId String
+  gameModel   GameModel @relation(fields: [gameModelId], references: [id], onDelete: Cascade)
+  exerciseId  String
+  exercise    Exercise  @relation(fields: [exerciseId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+
+  @@id([gameModelId, exerciseId])
+  @@index([exerciseId])
 }
 
 /// Um esquema de bola parada — canto ofensivo, livre defensivo, lançamento.
@@ -1278,6 +1342,16 @@ model SetPiece {
   teamId String?
   team   Team?   @relation(fields: [teamId], references: [id], onDelete: SetNull)
 
+  /// Ver `Exercise.sportId`.
+  sportId String?
+  sport   Sport?  @relation(fields: [sportId], references: [id], onDelete: SetNull)
+
+  /// O sistema de jogo de que esta situação parte — a reposição de fundo que
+  /// acaba no ataque 5-out. Uma só: uma situação é a execução de um sistema
+  /// num momento concreto, não uma colecção deles.
+  gameModelId String?
+  gameModel   GameModel? @relation(fields: [gameModelId], references: [id], onDelete: SetNull)
+
   createdById String?
   createdBy   Membership? @relation("SetPieceAuthor", fields: [createdById], references: [id], onDelete: SetNull)
 
@@ -1289,11 +1363,29 @@ model SetPiece {
   /// O mesmo formato do exercício: frames com posições e setas.
   diagram     Json?
 
+  /// Os exercícios com que se ensaia esta situação.
+  exercises SetPieceExercise[]
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
   @@index([academyId, kind])
+  @@index([academyId, sportId])
   @@index([teamId])
+  @@index([gameModelId])
+}
+
+/// Um exercício ligado a uma situação especial — gémeo de `GameModelExercise`.
+model SetPieceExercise {
+  setPieceId String
+  setPiece   SetPiece @relation(fields: [setPieceId], references: [id], onDelete: Cascade)
+  exerciseId String
+  exercise   Exercise @relation(fields: [exerciseId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+
+  @@id([setPieceId, exerciseId])
+  @@index([exerciseId])
 }
 
 enum AttendanceStatus {

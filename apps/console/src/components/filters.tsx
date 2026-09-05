@@ -11,7 +11,7 @@ import { cx, SelectField } from "./primitives";
 export function Toolbar({ children }: { children: ReactNode }) {
   return (
     // Telemóvel: uma fila que rola de lado, em vez de três linhas de filtros.
-    <div className="flex flex-wrap items-center gap-2 border-b border-line px-4 py-2.5 max-md:flex-nowrap max-md:overflow-x-auto max-md:px-3 max-md:[&>*]:shrink-0">{children}</div>
+    <div className="scroll-x-clean flex flex-wrap items-center gap-2 border-b border-line px-4 py-2.5 max-md:flex-nowrap max-md:overflow-x-auto max-md:px-3 max-md:[&>*]:shrink-0">{children}</div>
   );
 }
 
@@ -55,6 +55,9 @@ export function Segmented<T extends string>({
       aria-label={label}
       className={cx(
         "inline-flex items-center gap-px rounded-[var(--radius-control)] bg-sunken",
+        // Seis separadores numa ficha não cabem em 360px: o carril rola de lado
+        // dentro da sua largura, em vez de sair do ecrã. Sem barra (`scroll-x-clean`).
+        "scroll-x-clean max-w-full max-md:overflow-x-auto max-md:[&>*]:shrink-0",
         md ? "p-1" : "p-0.5",
       )}
     >

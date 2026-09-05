@@ -29,11 +29,13 @@ export const NAV_KEYS: Record<string, Permission> = {
   // Faltava — o menu Jogos existe no cliente desde a ficha de jogo, e um papel
   // que o quisesse recortar levava com "chave desconhecida".
   matches: "calendar:read",
-  // Área técnica.
+  // Área técnica. `sports` é o item que representa **todas** as modalidades
+  // com área técnica (⚽ Futebol, 🏀 Basquetebol…): o cliente desdobra-o num
+  // item por modalidade, mas para o cargo é uma decisão só — mostra-se ou não.
+  // As chaves antigas (`exercises`, `game-models`, `set-pieces`) foram
+  // convertidas nesta pela migração `area_tecnica_por_modalidade`.
   training: "training:read",
-  exercises: "training:read",
-  "game-models": "training:read",
-  "set-pieces": "training:read",
+  sports: "training:read",
   // Academias AI.
   "ai-overview": "ai:read",
   "ai-analyses": "ai:read",

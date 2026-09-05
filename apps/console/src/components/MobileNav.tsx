@@ -2,6 +2,8 @@ import { useEffect, useMemo, useState } from "react";
 import { NavLink, useLocation, useNavigate } from "react-router-dom";
 import { Menu } from "lucide-react";
 import { Bell, LogOut, Search, X } from "@/lib/icons";
+import { IdCard, Users } from "lucide-react";
+import { AREA_LABEL, irParaApp, useAppAreas } from "@/lib/app-contexts";
 import { navFor, SETTINGS_ITEM, type NavItem } from "@/lib/nav";
 import { permissionsOf } from "@/lib/permissions";
 import { academy, listAthletes, listTeams, navCounts, teamById } from "@/lib/api";
@@ -288,6 +290,8 @@ function MobileMenuSheet({ onClose }: { onClose: () => void }) {
             </section>
           )}
 
+          <MudarDeArea />
+
           <section className="mt-4">
             <div className="flex items-center gap-3 rounded-[14px] border border-line px-3 py-2.5">
               <Monogram name={session.name} self />
@@ -310,6 +314,47 @@ function MobileMenuSheet({ onClose }: { onClose: () => void }) {
         </div>
       </div>
     </div>
+  );
+}
+
+/**
+ * As outras áreas desta conta na app do clube.
+ *
+ * Quem é treinador **e** pai chegou aqui pela app, ao escolher "Staff". Esta é
+ * a porta de volta — para a Família ou para o Sócio — sem sair da conta: a
+ * sessão é devolvida à app já vestida com a área pedida (ver
+ * `lib/app-contexts.ts`). Não aparece a quem só é staff: uma secção com zero
+ * opções é mobília.
+ */
+function MudarDeArea() {
+  const areas = useAppAreas();
+  if (!areas || areas.length === 0) return null;
+  const icone = { FAMILY: Users, MEMBER: IdCard } as const;
+
+  return (
+    <section className="mt-4">
+      <h3 className="px-2 pb-1.5 text-group font-semibold text-ink uppercase">Mudar de área</h3>
+      <ul className="overflow-hidden rounded-[14px] border border-line">
+        {areas.map((area) => {
+          const Icon = icone[area];
+          return (
+            <li key={area} className="border-b border-line last:border-0">
+              <button
+                type="button"
+                onClick={() => irParaApp(area)}
+                className="flex min-h-12 w-full items-center gap-3 px-3 text-left text-body font-medium text-ink"
+              >
+                <Icon className="nav-icon size-[18px] shrink-0" strokeWidth={1.75} />
+                <span className="min-w-0 flex-1">
+                  <span className="block truncate">{AREA_LABEL[area].label}</span>
+                  <span className="block truncate text-[11px] font-normal text-ink-3">{AREA_LABEL[area].hint}</span>
+                </span>
+              </button>
+            </li>
+          );
+        })}
+      </ul>
+    </section>
   );
 }
 

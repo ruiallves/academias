@@ -1,12 +1,16 @@
 import { useState } from "react";
 import { createPortal } from "react-dom";
-import { ChevronDown, Check, IdCard, Users } from "lucide-react";
+import { Briefcase, ChevronDown, Check, IdCard, Users } from "lucide-react";
 import { chooseContext, useContexts, type ContextType } from "@/lib/contexts";
 import { resetSocio } from "@/lib/socio";
 import { cx } from "@/ui";
 
 /**
- * O switcher de área — Família ⇄ Sócio, sem logout.
+ * O switcher de área — Família ⇄ Sócio ⇄ Staff, sem logout.
+ *
+ * Staff é a excepção que confirma a regra: escolhê-lo veste o contexto como os
+ * outros, e é o `App` que, ao vê-lo vestido, entrega a sessão à consola e sai
+ * (ver `lib/handoff.ts`). Daqui é só mais uma opção.
  *
  * ## Duas formas, um componente
  *
@@ -40,6 +44,7 @@ import { cx } from "@/ui";
  */
 
 const AREAS: { type: ContextType; label: string; hint: string; icon: typeof Users }[] = [
+  { type: "STAFF", label: "Staff", hint: "A consola do clube, no telemóvel", icon: Briefcase },
   { type: "FAMILY", label: "Família", hint: "Acompanha os teus atletas, treinos e pagamentos", icon: Users },
   { type: "MEMBER", label: "Sócio", hint: "O teu cartão, quotas e novidades do clube", icon: IdCard },
 ];

@@ -94,6 +94,19 @@ try {
   check("responde", soPai.status === 200, `${soPai.status} ${JSON.stringify(soPai.body).slice(0, 120)}`);
   check("tem o contexto de família", soPai.body?.contexts?.some((c) => c.type === "FAMILY"));
   check("e não o de sócio", !soPai.body?.contexts?.some((c) => c.type === "MEMBER"));
+  check("nem o de staff", !soPai.body?.contexts?.some((c) => c.type === "STAFF"));
+
+  /*
+   * Staff: qualquer membership que não seja de família. A app não desenha essa
+   * vista — entrega a pessoa à consola — mas tem de saber que existe para a
+   * oferecer no ecrã de escolha, com o papel para o nomear.
+   */
+  const treinador = await login("treinador@lifeclub.pt");
+  const doTreinador = await call(treinador, "GET", "/api/app/contexts");
+  check("um treinador responde", doTreinador.status === 200, `${doTreinador.status}`);
+  const staff = doTreinador.body?.contexts?.find((c) => c.type === "STAFF");
+  check("tem o contexto de staff", Boolean(staff), JSON.stringify(doTreinador.body?.contexts));
+  check("com o papel dele", staff?.role === "COACH", `${staff?.role}`);
 
   /* ------------------------------------------------------------------ */
   console.log("\n=== A ficha de sócio, com categoria e quota ===");

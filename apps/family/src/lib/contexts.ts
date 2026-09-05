@@ -7,10 +7,18 @@ import { academySlug } from "@/lib/invite";
  *
  * ## "Contexto", e não "role"
  *
- * A mesma conta pode ser Família e Sócio no mesmo clube — e um dia Atleta ou
- * Staff. Um "role" global no utilizador não tem onde pôr isso; um contexto é
+ * A mesma conta pode ser Família, Sócio e Staff no mesmo clube — e um dia
+ * Atleta. Um "role" global no utilizador não tem onde pôr isso; um contexto é
  * `(conta, clube, relação)` e cresce sem partir nada: acrescentar "ATHLETE" a
  * este union e a vista correspondente no `App.tsx` é a migração inteira.
+ *
+ * ## Staff não é uma vista desta app
+ *
+ * É a consola — a mesma que vive no computador, servida na mesma origem
+ * (`/consola`) e dentro do âmbito da app instalada. Escolher "Staff" entrega a
+ * sessão à consola e sai daqui (ver `lib/handoff.ts`). Reescrever a consola em
+ * miniatura seria ter duas consolas para manter, e a de telemóvel ficaria
+ * sempre um passo atrás.
  *
  * ## A escolha fica guardada por clube
  *
@@ -19,11 +27,13 @@ import { academySlug } from "@/lib/invite";
  * um dia servir mais do que um clube, e a escolha de um não é a escolha do outro.
  */
 
-export type ContextType = "FAMILY" | "MEMBER";
+export type ContextType = "FAMILY" | "MEMBER" | "STAFF";
 
 export type AppContext =
   | { type: "FAMILY" }
-  | { type: "MEMBER"; memberId: string; number: number | null; status: string };
+  | { type: "MEMBER"; memberId: string; number: number | null; status: string }
+  /** O papel na consola (COACH, DIRECTOR…) — só para o nomear no ecrã de escolha. */
+  | { type: "STAFF"; role: string };
 
 type State = {
   /** `null` = ainda não se perguntou ao servidor. */
@@ -38,7 +48,7 @@ const escolhaKey = () => `academia.app.contexto:${academySlug()}`;
 function lerEscolha(): ContextType | null {
   try {
     const v = localStorage.getItem(escolhaKey());
-    return v === "FAMILY" || v === "MEMBER" ? v : null;
+    return v === "FAMILY" || v === "MEMBER" || v === "STAFF" ? v : null;
   } catch {
     return null;
   }
@@ -89,6 +99,24 @@ export function chooseContext(type: ContextType): void {
   }
   state = { ...state, active: type };
   emit();
+}
+
+/**
+ * A área que a consola pediu ao devolver a sessão (`?area=FAMILY`).
+ *
+ * Em produção a consola escreve a escolha directamente na chave desta app —
+ * mesma origem, mesmo `localStorage`. Em desenvolvimento não pode, e manda-a
+ * na query, ao lado da sessão que vai no fragmento (ver `adoptSessionFromUrl`).
+ * Corre antes do primeiro render, no `main.tsx`, e limpa o que leu.
+ */
+export function captureAreaFromUrl(): void {
+  const params = new URLSearchParams(window.location.search);
+  const area = params.get("area");
+  if (!area) return;
+  if (area === "FAMILY" || area === "MEMBER" || area === "STAFF") chooseContext(area);
+  params.delete("area");
+  const resto = params.toString();
+  window.history.replaceState(null, "", window.location.pathname + (resto ? `?${resto}` : "") + window.location.hash);
 }
 
 /** No fim da sessão — a conta seguinte não herda a escolha desta. */

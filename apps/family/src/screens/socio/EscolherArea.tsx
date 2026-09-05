@@ -1,6 +1,7 @@
-import { IdCard, Users } from "lucide-react";
+import { Briefcase, IdCard, Users } from "lucide-react";
 import { readBrand } from "@/lib/brand";
-import { chooseContext, type ContextType } from "@/lib/contexts";
+import { chooseContext, useContexts, type ContextType } from "@/lib/contexts";
+import { ROLE_LABEL } from "@/lib/handoff";
 import { ClubMark } from "@/ClubMark";
 
 /**
@@ -14,15 +15,37 @@ import { ClubMark } from "@/ClubMark";
  *
  * A escolha fica guardada: amanhã a app abre onde se ficou, e troca-se pelo
  * switcher sem voltar aqui.
+ *
+ * ## Só as áreas que a pessoa tem
+ *
+ * A lista vem dos contextos do servidor, não de uma constante. Enquanto só
+ * havia Família e Sócio, "mais do que um" queria dizer "os dois" e uma lista
+ * fixa servia; com Staff, um treinador que é pai tem Família e Staff, e mostrar-
+ * -lhe "Sócio" era oferecer uma porta que dá numa parede.
+ *
+ * Staff vem primeiro: quem tem trabalho no clube abre a app para o trabalho.
  */
 export default function EscolherArea({ name }: { name: string }) {
   const brand = readBrand();
+  const { contexts } = useContexts();
   const primeiro = name.trim().split(/\s+/)[0];
 
-  const opcoes: { type: ContextType; label: string; hint: string; icon: typeof Users }[] = [
+  const staff = contexts?.find((c) => c.type === "STAFF");
+  const papel = staff?.type === "STAFF" ? ROLE_LABEL[staff.role] : undefined;
+
+  const todas: { type: ContextType; label: string; hint: string; icon: typeof Users }[] = [
+    {
+      type: "STAFF",
+      label: "Staff",
+      hint: papel
+        ? `${papel} — a consola do clube: atletas, equipas, calendário e o resto do teu trabalho.`
+        : "A consola do clube: atletas, equipas, calendário e o resto do teu trabalho.",
+      icon: Briefcase,
+    },
     { type: "FAMILY", label: "Família", hint: "Acompanha os teus atletas: treinos, convocatórias, avaliações e pagamentos.", icon: Users },
     { type: "MEMBER", label: "Sócio", hint: "O teu cartão, as quotas, os jogos e as novidades do clube.", icon: IdCard },
   ];
+  const opcoes = todas.filter((o) => contexts?.some((c) => c.type === o.type));
 
   return (
     <div className="mx-auto flex min-h-dvh max-w-[480px] flex-col justify-center gap-6 px-6 py-10">

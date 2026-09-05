@@ -163,7 +163,7 @@ export class AcademyService {
       const [sports, seasons, me, fundador] = await Promise.all([
         db.sport.findMany({
           orderBy: { name: "asc" },
-          select: { id: true, name: true, positions: true, skills: true, dominantSideLabel: true, matchMinutes: true },
+          select: { id: true, name: true, code: true, positions: true, skills: true, dominantSideLabel: true, matchMinutes: true },
         }),
         /*
          * Todas as épocas, não só a corrente.
@@ -491,35 +491,39 @@ export class AcademyService {
    * tipos de evento podem ser de um desporto só. Daí `settings:write` e não
    * `team:write`.
    */
-  async createSport(ctx: RequestContext, dto: { name?: string; positions?: string[]; skills?: string[]; dominantSideLabel?: string; matchMinutes?: number }) {
+  async createSport(ctx: RequestContext, dto: SportInput) {
     if (!can(ctx, "settings:write")) throw new ForbiddenException("Sem permissão para mudar as definições");
 
     const name = (dto.name ?? "").trim();
     if (name.length < 2) throw new BadRequestException("Falta o nome da modalidade");
+    const code = sportCodeOf(dto.code);
 
     return this.prisma.runAs(ctx.academyId, async (db) => {
       const taken = await db.sport.findFirst({ where: { name }, select: { id: true } });
       if (taken) throw new BadRequestException(`"${name}" já existe`);
 
-      return db.sport.create({
+      const sport = await db.sport.create({
         data: {
           academyId: ctx.academyId,
           name,
+          code,
           positions: clean(dto.positions),
           skills: clean(dto.skills),
           dominantSideLabel: dto.dominantSideLabel?.trim() || null,
           matchMinutes: dto.matchMinutes ?? null,
         },
-        select: { id: true, name: true, positions: true, skills: true, dominantSideLabel: true, matchMinutes: true },
+        select: SPORT_SELECT,
       });
+      if (code) await adoptOrphans(db, sport.id, code);
+      return sport;
     });
   }
 
-  async updateSport(ctx: RequestContext, id: string, dto: { name?: string; positions?: string[]; skills?: string[]; dominantSideLabel?: string; matchMinutes?: number }) {
+  async updateSport(ctx: RequestContext, id: string, dto: SportInput) {
     if (!can(ctx, "settings:write")) throw new ForbiddenException("Sem permissão para mudar as definições");
 
     return this.prisma.runAs(ctx.academyId, async (db) => {
-      const sport = await db.sport.findFirst({ where: { id }, select: { id: true } });
+      const sport = await db.sport.findFirst({ where: { id }, select: { id: true, code: true } });
       if (!sport) throw new NotFoundException("Modalidade não encontrada");
 
       const name = dto.name?.trim();
@@ -530,17 +534,23 @@ export class AcademyService {
         if (taken) throw new BadRequestException(`"${name}" já existe`);
       }
 
-      return db.sport.update({
+      const code = dto.code !== undefined ? sportCodeOf(dto.code) : undefined;
+
+      const updated = await db.sport.update({
         where: { id },
         data: {
           ...(name ? { name } : {}),
+          ...(code !== undefined ? { code } : {}),
           ...(dto.positions !== undefined ? { positions: clean(dto.positions) } : {}),
           ...(dto.skills !== undefined ? { skills: clean(dto.skills) } : {}),
           ...(dto.dominantSideLabel !== undefined ? { dominantSideLabel: dto.dominantSideLabel.trim() || null } : {}),
           ...(dto.matchMinutes !== undefined ? { matchMinutes: dto.matchMinutes } : {}),
         },
-        select: { id: true, name: true, positions: true, skills: true, dominantSideLabel: true, matchMinutes: true },
+        select: SPORT_SELECT,
       });
+      // Ganhou disciplina agora (ou trocou): o que estava à espera dela entra.
+      if (code && code !== sport.code) await adoptOrphans(db, id, code);
+      return updated;
     });
   }
 
@@ -3038,6 +3048,75 @@ function occurrences(
 }
 
 /** Lista de texto do cliente: sem vazios, sem repetidos, sem espaços à volta. */
+type SportInput = {
+  name?: string;
+  code?: string;
+  positions?: string[];
+  skills?: string[];
+  dominantSideLabel?: string;
+  matchMinutes?: number;
+};
+
+const SPORT_SELECT = {
+  id: true, name: true, code: true, positions: true, skills: true, dominantSideLabel: true, matchMinutes: true,
+} as const;
+
+/**
+ * As disciplinas com Área técnica própria.
+ *
+ * Gémea de `SPORT_PROFILES` na consola, que é quem sabe o que cada uma tem lá
+ * dentro (módulos, terrenos, vocabulário). O servidor só precisa de recusar um
+ * código que não exista — o resto é interface.
+ */
+export const SPORT_CODES = ["football", "futsal", "basketball"] as const;
+export type SportCode = (typeof SPORT_CODES)[number];
+
+function sportCodeOf(value: string | undefined): SportCode | null {
+  const v = (value ?? "").trim();
+  if (!v) return null;
+  if (!(SPORT_CODES as readonly string[]).includes(v)) throw new BadRequestException("Disciplina desconhecida");
+  return v as SportCode;
+}
+
+/**
+ * O conteúdo técnico que esperava por esta modalidade entra nela.
+ *
+ * Um clube que se registou, recebeu a biblioteca base e só depois criou a
+ * modalidade "Futebol" tinha os exercícios **sem modalidade** — invisíveis na
+ * área técnica, porque ela é por modalidade. No momento em que a modalidade
+ * ganha disciplina, o que tem um desenho dessa disciplina passa a ser dela:
+ * os rondos de relva vão para o futebol, os de pavilhão para o futsal, e nada
+ * se mistura.
+ *
+ * A mesma regra da migração `area_tecnica_por_modalidade`, a correr para o
+ * futuro. Só toca no que está sem modalidade — o que já é de uma fica onde está.
+ */
+async function adoptOrphans(db: ScopedClient, sportId: string, code: SportCode) {
+  const disciplina = (campo: Prisma.Sql) => Prisma.sql`CASE
+    WHEN ${campo} ILIKE 'futsal%' THEN 'futsal'
+    WHEN ${campo} ILIKE 'basket%' THEN 'basketball'
+    WHEN ${campo} IS NOT NULL THEN 'football'
+  END`;
+
+  await db.$executeRaw`
+    UPDATE "Exercise" e SET "sportId" = ${sportId}
+     WHERE e."sportId" IS NULL
+       AND e."academyId" = (SELECT "academyId" FROM "Sport" WHERE id = ${sportId})
+       AND ${disciplina(Prisma.sql`e.diagram->>'field'`)} = ${code}`;
+
+  await db.$executeRaw`
+    UPDATE "GameModel" g SET "sportId" = ${sportId}
+     WHERE g."sportId" IS NULL
+       AND g."academyId" = (SELECT "academyId" FROM "Sport" WHERE id = ${sportId})
+       AND coalesce(${disciplina(Prisma.sql`g.lineup->>'pitch'`)}, 'football') = ${code}`;
+
+  await db.$executeRaw`
+    UPDATE "SetPiece" p SET "sportId" = ${sportId}
+     WHERE p."sportId" IS NULL
+       AND p."academyId" = (SELECT "academyId" FROM "Sport" WHERE id = ${sportId})
+       AND coalesce(${disciplina(Prisma.sql`p.diagram->>'field'`)}, 'football') = ${code}`;
+}
+
 function clean(values?: string[]): string[] {
   return [...new Set((values ?? []).map((v) => v.trim()).filter(Boolean))].slice(0, 40);
 }

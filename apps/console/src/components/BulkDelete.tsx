@@ -49,7 +49,7 @@ export function BulkBar({
      * trás e obriga a subir para agir. Flutuar sobre a página mantém a acção à
      * mão em qualquer ponto — e desaparece assim que se limpa a escolha.
      */
-    <div className="pointer-events-none fixed inset-x-0 bottom-4 z-40 flex justify-center px-4">
+    <div className="pointer-events-none fixed inset-x-0 bottom-4 z-40 flex justify-center px-4 max-md:bottom-[calc(76px+env(safe-area-inset-bottom))]">
       <div className="pointer-events-auto flex items-center gap-3 rounded-full border border-line bg-ink px-3 py-2 text-surface shadow-[var(--shadow-pop)]">
         <span className="pl-1.5 text-body font-medium tabular">
           {count} {count === 1 ? noun[0] : noun[1]}

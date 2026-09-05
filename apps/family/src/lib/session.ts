@@ -68,6 +68,42 @@ export function readToken(): string | null {
   return read()?.accessToken ?? null;
 }
 
+/**
+ * A sessão inteira, para a entregar a outra app.
+ *
+ * Só a `lib/handoff.ts` precisa disto: a consola quer o par completo (acesso e
+ * renovação), e não só o token de acesso que `readToken` dá a toda a gente.
+ */
+export function readStoredSession(): Stored | null {
+  return read();
+}
+
+/**
+ * Recebe uma sessão entregue no fragmento do URL (`#s=…`).
+ *
+ * É o caminho de volta da consola em desenvolvimento, onde as duas apps vivem
+ * em portas diferentes e o `localStorage` de uma não se vê da outra. Em
+ * produção partilham a origem e a consola escreve directamente na chave desta
+ * app — este código nunca chega a correr. O mesmo desenho, e o mesmo formato,
+ * do `adoptSessionFromUrl` da consola.
+ *
+ * O fragmento nunca vai ao servidor, e sai do URL no instante em que é lido.
+ */
+export function adoptSessionFromUrl(): void {
+  const hash = window.location.hash;
+  if (!hash.startsWith("#s=")) return;
+  try {
+    const parsed = JSON.parse(atob(decodeURIComponent(hash.slice(3)))) as Partial<Stored>;
+    if (parsed.accessToken) {
+      saveSession({ accessToken: parsed.accessToken, refreshToken: parsed.refreshToken ?? null, name: parsed.name });
+    }
+  } catch {
+    /* ilegível: fica como estava */
+  } finally {
+    window.history.replaceState(null, "", window.location.pathname + window.location.search);
+  }
+}
+
 /* -------------------------------------------------------------------------- */
 /* Renovação                                                                   */
 /* -------------------------------------------------------------------------- */
@@ -216,6 +252,13 @@ export function signOut(): void {
     for (const k of Object.keys(localStorage)) {
       if (k.startsWith("academia.app.contexto")) localStorage.removeItem(k);
     }
+    /*
+     * E a sessão da consola, que vive na mesma origem. Quem é treinador e pai
+     * entrou uma vez e a sessão foi entregue às duas apps (ver `lib/handoff.ts`);
+     * "terminar sessão" tem de terminar nas duas, senão sair daqui deixava a
+     * consola aberta a quem pegasse no telemóvel a seguir.
+     */
+    localStorage.removeItem("academia.session");
   } catch {
     /* nada a fazer — o passo seguinte é o ecrã de entrada na mesma */
   }

@@ -86,7 +86,11 @@ export function PageHeader({
         <h1 className="text-page text-ink">{title}</h1>
         {subtitle && <p className="mt-1 text-body text-ink-3">{subtitle}</p>}
       </div>
-      {children && <div className="flex shrink-0 items-center gap-2">{children}</div>}
+      {/* Telemóvel: as acções descem para uma linha própria e embrulham, em vez de
+          empurrar o título para fora do ecrã. */}
+      {children && (
+        <div className="flex shrink-0 items-center gap-2 max-md:w-full max-md:flex-wrap max-md:[&>*]:min-w-0">{children}</div>
+      )}
     </header>
   );
 }

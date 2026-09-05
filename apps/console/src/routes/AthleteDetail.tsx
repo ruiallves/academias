@@ -430,7 +430,7 @@ function AthleteStatusMenu({ athlete }: { athlete: Athlete }) {
       )}
 
       {erro && (
-        <p className="absolute top-full right-0 z-30 mt-1 w-[300px] rounded-[var(--radius-control)] border border-risk/25 bg-risk-soft px-3 py-2 text-meta leading-relaxed text-risk">
+        <p className="pop-erro absolute top-full right-0 z-30 mt-1 w-[300px] rounded-[var(--radius-control)] border border-risk/25 bg-risk-soft px-3 py-2 text-meta leading-relaxed text-risk">
           {erro}
           <button type="button" onClick={() => setErro(null)} className="mt-1 block font-medium underline">
             Fechar

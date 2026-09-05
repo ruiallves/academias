@@ -14,6 +14,7 @@ import { KIND_LABEL, groupByDay, useEvents, useTeamColors, type CalendarEvent, t
 import { dayShort, longDate, monthName, time } from "@/lib/format";
 import { can, isAcademyWide } from "@/lib/permissions";
 import { useSession } from "@/session";
+import { isMobile } from "@/lib/viewport";
 
 type View = "agenda" | "mes";
 
@@ -45,7 +46,9 @@ export default function Calendar() {
   // O mês é a vista de planeamento — é a que responde "onde há espaço?" antes de
   // se saber o que se procura, por isso é a que abre por omissão. A agenda serve
   // melhor uma pergunta já orientada ("o que se segue?"), e fica a um clique.
-  const [view, setView] = useState<View>("mes");
+  // Telemóvel: a agenda primeiro. A grelha do mês existe lá também — em ponto
+  // pequeno, ver `MonthGrid` — mas "o que se segue?" é a pergunta do bolso.
+  const [view, setView] = useState<View>(() => (isMobile() ? "agenda" : "mes"));
   const [cursor, setCursor] = useState(today);
   const [hidden, setHidden] = useState<Set<string>>(new Set());
   const [composing, setComposing] = useState<Date | null>(null);

@@ -1,6 +1,7 @@
 import type { ReactNode } from "react";
+import { useMobile } from "@/lib/viewport";
 import { Link, useNavigate } from "react-router-dom";
-import { ArrowRight, ChevronDown, TrendingDown, TrendingUp, type LucideIcon } from "@/lib/icons";
+import { ArrowRight, ChevronDown, TrendingDown, TrendingUp, type LucideIcon, ChevronRight } from "@/lib/icons";
 import { initials } from "@/lib/format";
 import { Spinner, useBusy } from "@/components/Busy";
 
@@ -230,6 +231,12 @@ export type Column<T> = {
   width?: string;
   /** Colunas secundárias desaparecem antes das primárias em ecrãs estreitos. */
   hideBelow?: "sm" | "md" | "lg";
+  /**
+   * A coluna que **é** a linha — o nome, o artigo, o título. No telemóvel é o
+   * cabeçalho do cartão; as outras vêm por baixo, rotuladas. Sem marcação, é a
+   * primeira, que é onde as tabelas desta consola já põem a identidade.
+   */
+  primary?: true;
   render: (row: T) => ReactNode;
 };
 
@@ -317,6 +324,7 @@ export function DataTable<T>({
   };
 }) {
   const navigate = useNavigate();
+  const mobile = useMobile();
   const hide = { sm: "hidden sm:table-cell", md: "hidden md:table-cell", lg: "hidden lg:table-cell" };
 
   if (rows.length === 0) return <div className="px-5 py-14">{empty ?? <Empty title="Sem resultados" />}</div>;
@@ -375,6 +383,134 @@ export function DataTable<T>({
    */
   const escolheAoClicar = Boolean(selection);
 
+  /*
+   * Cada linha decide o seu gesto uma vez, para as duas formas de a desenhar.
+   *
+   * Uma linha que não se pode escolher não tem clique — como não tem caixa,
+   * também não tem gesto. A ficha continua a abrir-se pelo nome, que é um link
+   * à parte.
+   *
+   * E **não** fica esbatida. Ficava, enquanto a selecção era um modo: o cinzento
+   * durava o tempo da escolha e dizia "esta não". Agora que a selecção está
+   * sempre ligada, o mesmo cinzento passaria a ser permanente — e em Staff a
+   * linha que não se escolhe é a **do próprio**, que ficaria a 60% para sempre,
+   * como se a conta de quem está a olhar tivesse algum problema. A caixa em
+   * falta chega para dizer o que há a dizer.
+   */
+  const gestoDe = (row: T) => {
+    const href = to?.(row);
+    const bloqueada = escolheAoClicar && Boolean(selection?.disabled?.(row));
+    const clickable = !bloqueada && (escolheAoClicar || Boolean(href || onRowClick));
+    const aoClicar = () => {
+      if (bloqueada) return;
+      if (escolheAoClicar) return alternar(keyOf(row));
+      if (href) return navigate(href);
+      if (onRowClick) return onRowClick(row);
+    };
+    return { href, clickable, aoClicar };
+  };
+
+  /*
+   * No telemóvel a tabela é uma lista de cartões.
+   *
+   * ## Porquê não uma tabela mais pequena
+   *
+   * Uma tabela de seis colunas num ecrã de 360px só tem duas saídas, e as duas
+   * são más: esconder colunas (e com elas a informação — o encarregado, a ficha
+   * médica), ou deixá-la rolar de lado, com a pessoa a arrastar o polegar para
+   * ver se o atleta tem a mensalidade paga. Nenhuma é "a consola no telemóvel";
+   * é a consola a caber à força.
+   *
+   * O cartão tem a mesma informação toda: a coluna principal como cabeçalho, e
+   * as outras por baixo, cada uma com o seu rótulo — o mesmo texto que era o
+   * cabeçalho da coluna. As que a tabela esconde em ecrãs médios (`hideBelow`)
+   * aparecem aqui, porque aqui há sítio para elas.
+   *
+   * ## O mesmo gesto
+   *
+   * Tocar no cartão faz o que clicar na linha fazia: escolhe, numa lista com
+   * selecção; abre, nas outras. As caixas e o "todos" são as mesmas — só mudou
+   * onde estão desenhadas.
+   */
+  if (mobile) {
+    const principal = columns.find((c) => c.primary) ?? columns[0];
+    const resto = columns.filter((c) => c !== principal);
+
+    return (
+      <div>
+        {selection && elegiveis.length > 0 && (
+          <label className="flex min-h-11 cursor-pointer items-center gap-3 border-b border-line bg-sunken/40 px-4 text-meta text-ink-2 select-none">
+            <input
+              type="checkbox"
+              aria-label="Escolher todas as linhas visíveis"
+              checked={todosMarcados}
+              ref={(el) => {
+                if (el) el.indeterminate = algunsMarcados;
+              }}
+              onChange={alternarTodos}
+              className="size-4 accent-[var(--color-signal)]"
+            />
+            {todosMarcados ? "Desmarcar todos" : algunsMarcados ? `${selection.selected.size} escolhidos` : "Escolher todos os visíveis"}
+          </label>
+        )}
+        <ul>
+          {rows.map((row) => {
+            const id = keyOf(row);
+            const { href, clickable, aoClicar } = gestoDe(row);
+            const marcada = Boolean(selection?.selected.has(id));
+            return (
+              <li
+                key={id}
+                onClick={clickable ? aoClicar : undefined}
+                className={cx(
+                  "border-b border-line last:border-0 transition-colors duration-[120ms]",
+                  clickable && "cursor-pointer active:bg-sunken/60",
+                  marcada && "bg-signal-soft/40",
+                )}
+              >
+                <div className="flex items-start gap-3 px-4 py-3">
+                  {selection &&
+                    (selection.disabled?.(row) ? (
+                      <span className="mt-1 block size-4" aria-hidden />
+                    ) : (
+                      <input
+                        type="checkbox"
+                        aria-label="Escolher esta linha"
+                        checked={marcada}
+                        onChange={() => alternar(id)}
+                        onClick={(e) => e.stopPropagation()}
+                        className="mt-1 size-4 shrink-0 accent-[var(--color-signal)]"
+                      />
+                    ))}
+
+                  <div className="min-w-0 flex-1">
+                    <div className="min-w-0">{principal.render(row)}</div>
+
+                    {resto.length > 0 && (
+                      <dl className="mt-2.5 grid grid-cols-2 gap-x-4 gap-y-2">
+                        {resto.map((c) => (
+                          <div key={c.key} className="min-w-0">
+                            <dt className="text-[10.5px] font-semibold tracking-[0.04em] text-ink-4 uppercase">{c.header}</dt>
+                            <dd className="mt-0.5 min-w-0 text-body text-ink-2">{c.render(row)}</dd>
+                          </div>
+                        ))}
+                      </dl>
+                    )}
+                  </div>
+
+                  {/* A seta diz "isto abre" — só nas listas que abrem, e nunca nas que escolhem. */}
+                  {href && !escolheAoClicar && (
+                    <ChevronRight className="mt-1 size-4 shrink-0 text-ink-4" strokeWidth={1.75} aria-hidden />
+                  )}
+                </div>
+              </li>
+            );
+          })}
+        </ul>
+      </div>
+    );
+  }
+
   return (
     <div className="overflow-x-auto">
       <table className="w-full border-collapse text-body">
@@ -414,29 +550,7 @@ export function DataTable<T>({
         </thead>
         <tbody>
           {rows.map((row) => {
-            const href = to?.(row);
-            /*
-             * Uma linha que não se pode escolher não tem clique — como não tem
-             * caixa, também não tem gesto. A ficha continua a abrir-se pelo
-             * nome, que é um link à parte.
-             *
-             * E **não** fica esbatida. Ficava, enquanto a selecção era um modo:
-             * o cinzento durava o tempo da escolha e dizia "esta não". Agora que
-             * a selecção está sempre ligada, o mesmo cinzento passaria a ser
-             * permanente — e em Staff a linha que não se escolhe é a **do
-             * próprio**, que ficaria a 60% para sempre, como se a conta de quem
-             * está a olhar tivesse algum problema. A caixa em falta chega para
-             * dizer o que há a dizer.
-             */
-            const bloqueada = escolheAoClicar && Boolean(selection?.disabled?.(row));
-            const clickable = !bloqueada && (escolheAoClicar || Boolean(href || onRowClick));
-
-            const aoClicar = () => {
-              if (bloqueada) return;
-              if (escolheAoClicar) return alternar(keyOf(row));
-              if (href) return navigate(href);
-              if (onRowClick) return onRowClick(row);
-            };
+            const { clickable, aoClicar } = gestoDe(row);
 
             return (
               <tr

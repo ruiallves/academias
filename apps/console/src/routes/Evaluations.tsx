@@ -1,4 +1,5 @@
 import { useMemo, useState } from "react";
+import { useMobile } from "@/lib/viewport";
 import { PageHeader } from "@/components/Shell";
 import { Bar, Empty, Loading, Monogram, Panel, Pill, SelectField, cx } from "@/components/primitives";
 import { ResultCount, SearchInput, Segmented, Toolbar } from "@/components/filters";
@@ -33,6 +34,7 @@ import { useSession } from "@/session";
  * "publicar" sem saber quantos telemóveis vão tocar.
  */
 export default function Evaluations() {
+  const mobile = useMobile();
   const { session } = useSession();
   const teams = listTeams(session);
   const athletes = listAthletes(session);
@@ -211,6 +213,74 @@ export default function Evaluations() {
               detail={roster.length === 0 ? "Inscreve atletas na equipa e eles aparecem aqui para avaliar." : undefined}
             />
           </div>
+        ) : mobile ? (
+          /*
+           * Telemóvel: um cartão por atleta.
+           *
+           * A mesma informação da tabela, menos as notas por competência — que
+           * a tabela também esconde abaixo de `lg`, e que vivem na avaliação
+           * (em "Abrir"). A caixa de escolha só existe nos rascunhos, como lá.
+           */
+          <ul>
+            {rows.map((r, i) => {
+              const e = r.evaluation;
+              const media = e ? average(e.scores) : null;
+              const id = e?.id;
+              const escolhivel = mayWrite && e?.status === "DRAFT";
+              return (
+                <li key={r.athlete.id} className="border-b border-line last:border-b-0">
+                  <div className="flex items-center gap-3 px-4 py-3">
+                    {mayWrite && (
+                      escolhivel ? (
+                        <input
+                          type="checkbox"
+                          aria-label={`Seleccionar ${r.athlete.name}`}
+                          checked={selected.has(id!)}
+                          onChange={(ev) =>
+                            setSelected((s) => {
+                              const next = new Set(s);
+                              if (ev.target.checked) next.add(id!);
+                              else next.delete(id!);
+                              return next;
+                            })
+                          }
+                          className="size-4 shrink-0 accent-[var(--color-signal)]"
+                        />
+                      ) : (
+                        <span className="block size-4 shrink-0" aria-hidden />
+                      )
+                    )}
+                    <Monogram name={r.athlete.name} photoUrl={r.athlete.photoUrl} />
+                    <div className="min-w-0 flex-1">
+                      <div className="truncate font-medium text-ink">{shortName(r.athlete.name)}</div>
+                      <div className="flex items-center gap-2 text-meta text-ink-3">
+                        <span className="truncate">{e ? `${e.coachName.split(" ")[0]}` : teamById(r.athlete.teamId)?.name}</span>
+                        {media !== null && (
+                          <span className="shrink-0 font-medium text-ink tabular">· {media.toFixed(1)}</span>
+                        )}
+                      </div>
+                    </div>
+                    <div className="flex shrink-0 flex-col items-end gap-1.5">
+                      {!e ? (
+                        <Pill tone="neutral">Por avaliar</Pill>
+                      ) : e.status === "DRAFT" ? (
+                        <Pill tone="warn">Rascunho</Pill>
+                      ) : (
+                        <Pill tone="ok">Entregue</Pill>
+                      )}
+                      {mayWrite ? (
+                        <button type="button" onClick={() => setEditing(i)} className="ctl-outline h-8">
+                          {e ? "Abrir" : "Avaliar"}
+                        </button>
+                      ) : (
+                        e?.status === "PUBLISHED" && <Check className="size-3.5 text-ink-3" strokeWidth={2} />
+                      )}
+                    </div>
+                  </div>
+                </li>
+              );
+            })}
+          </ul>
         ) : (
           <div className="overflow-x-auto">
             <table className="w-full border-collapse text-body">

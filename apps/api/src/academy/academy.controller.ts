@@ -184,6 +184,11 @@ class SetAthleteStatusDto {
  */
 class SportDto {
   @IsOptional() @IsString() @Length(2, 60) name?: string;
+  /**
+   * A disciplina — decide se a modalidade tem Área técnica e qual. Vazio tira
+   * o código (uma modalidade "outra", sem área técnica). Ver `Sport.code`.
+   */
+  @IsOptional() @IsIn(["", "football", "futsal", "basketball"]) code?: string;
   @IsOptional() @IsArray() @ArrayMaxSize(40) @IsString({ each: true }) positions?: string[];
   @IsOptional() @IsArray() @ArrayMaxSize(40) @IsString({ each: true }) skills?: string[];
   @IsOptional() @IsString() @Length(0, 40) dominantSideLabel?: string;

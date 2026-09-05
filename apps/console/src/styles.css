@@ -367,9 +367,24 @@
   .panel { border-radius: 12px; }
   .panel-head { padding-inline: 14px; }
 
-  /* Tabelas rolam de lado dentro do painel, e não a página inteira. */
-  .panel > .overflow-x-auto table { min-width: 560px; }
+  /*
+   * Já não há tabelas a rolar de lado.
+   *
+   * Havia aqui uma largura mínima de 560 píxeis que as obrigava a rolar dentro do painel
+   * — a forma de "caber" que não cabe: ver se um atleta tem a mensalidade paga
+   * era arrastar o polegar. A `DataTable` passou a desenhar cartões abaixo dos
+   * 768px, e as três tabelas feitas à mão (avaliações, comparação de prospectos,
+   * matriz de acessos) têm cada uma a sua forma de telemóvel. O que sobra de
+   * `<table>` neste ecrã é a linha de custo do pagamento, que cabe.
+   */
   .panel > .overflow-x-auto th, .panel > .overflow-x-auto td { padding-inline: 14px; }
+
+  /* Um menu pendurado à direita nunca sai do ecrã, seja qual for a largura que pediu. */
+  [role="menu"].absolute, .pop-erro { max-width: calc(100vw - 28px); }
+
+  /* Uma fila que rola de lado sem barra: filtros, separadores. O gesto é o mesmo; a barra era ruído. */
+  .scroll-x-clean { scrollbar-width: none; -webkit-overflow-scrolling: touch; }
+  .scroll-x-clean::-webkit-scrollbar { display: none; }
 
   /* Os diálogos de 480–640px passam a folhas — largura total, sem margem lateral. */
   [role="dialog"] { max-width: none !important; }

@@ -64,7 +64,7 @@ export function NotificationsPanel({ onClose }: { onClose: () => void }) {
         espaço. Vale nos dois estados do menu — encolhido, o sino está ainda mais
         à esquerda, e continua a haver ecrã à direita.
       */
-      className="absolute top-full left-0 z-50 mt-1.5 w-[320px] overflow-hidden rounded-[var(--radius-panel)] border border-line bg-surface shadow-[var(--shadow-pop)]"
+      className="absolute top-full left-0 z-50 mt-1.5 w-[320px] max-w-[calc(100vw-24px)] overflow-hidden rounded-[var(--radius-panel)] border border-line bg-surface shadow-[var(--shadow-pop)]"
     >
       <div className="border-b border-line px-4 py-2.5">
         <span className="text-body font-medium text-ink">Notificações</span>

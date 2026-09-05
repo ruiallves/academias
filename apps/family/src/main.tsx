@@ -5,6 +5,8 @@ import App from "./App";
 import { StandaloneGate } from "./StandaloneGate";
 import { applyBrand } from "./lib/brand";
 import { captureFromUrl } from "./lib/invite";
+import { adoptSessionFromUrl } from "./lib/session";
+import { captureAreaFromUrl } from "./lib/contexts";
 import "./styles.css";
 
 /**
@@ -24,6 +26,9 @@ import "./styles.css";
  * não traz nada.
  */
 captureFromUrl();
+// A sessão e a área que a consola entregou no URL — só em desenvolvimento, ver `lib/session.ts`.
+adoptSessionFromUrl();
+captureAreaFromUrl();
 
 applyBrand();
 

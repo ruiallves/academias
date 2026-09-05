@@ -1,4 +1,5 @@
 import { Fragment, useCallback, useEffect, useState } from "react";
+import { useMobile } from "@/lib/viewport";
 import { Link, useParams } from "react-router-dom";
 import { PageHeader } from "@/components/Shell";
 import { Bar, Empty, Loading, Monogram, Panel, PanelHead, Pill, cx } from "@/components/primitives";
@@ -407,6 +408,7 @@ export function ShortlistDetail() {
  * pintá-la de zero faria um prospecto pouco observado parecer mau.
  */
 function ComparisonPanel({ data, dimensions }: { data: Comparison; dimensions: FitDimension[] }) {
+  const mobile = useMobile();
   const groups = [...new Set(data.criteria.map((c) => c.group))];
   const cols = data.prospects;
 
@@ -415,6 +417,71 @@ function ComparisonPanel({ data, dimensions }: { data: Comparison; dimensions: F
       <Panel>
         <PanelHead title="Comparação" hint="mesma escala, dimensão a dimensão" />
 
+        {mobile ? (
+          /*
+           * Telemóvel: a matriz transposta.
+           *
+           * Uma coluna por prospecto não cabe em 360px, e rolar de lado numa
+           * comparação é perder exactamente o que se quer — os dois lado a lado.
+           * Aqui cada dimensão é um bloco, e dentro dele os prospectos em
+           * linhas, com as barras na mesma escala e umas por cima das outras:
+           * a comparação faz-se a olhar para baixo, que é o gesto do telemóvel.
+           */
+          <div>
+            <div className="flex flex-wrap gap-x-4 gap-y-1 border-b border-line px-4 py-2.5">
+              {cols.map((p) => (
+                <Link key={p.id} to={`/scouting/prospects/${p.id}`} className="text-meta font-medium text-ink hover:underline">
+                  {p.name}
+                  <span className="font-normal text-ink-4"> · {ageOf(p.birthdate)}{p.position && ` · ${p.position}`}</span>
+                </Link>
+              ))}
+            </div>
+
+            {dimensions.length > 0 && (
+              <section>
+                <div className="bg-sunken/30 px-4 py-1.5 text-group text-ink-3 uppercase">Fit com o clube</div>
+                {dimensions.map((d) => (
+                  <div key={d.id} className="border-b border-line px-4 py-2.5">
+                    <div className="mb-1.5 text-body text-ink-2">{d.name}</div>
+                    <div className="space-y-1.5">
+                      {cols.map((p) => (
+                        <div key={p.id} className="flex items-center gap-2">
+                          <span className="w-[30%] shrink-0 truncate text-meta text-ink-3">{p.name.split(" ")[0]}</span>
+                          <div className="min-w-0 flex-1">
+                            <Cell value={p.fit[d.id]} max={100} />
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                ))}
+              </section>
+            )}
+
+            {groups.map((group) => (
+              <section key={group}>
+                <div className="bg-sunken/30 px-4 py-1.5 text-group text-ink-3 uppercase">{group}</div>
+                {data.criteria
+                  .filter((c) => c.group === group)
+                  .map((c) => (
+                    <div key={c.id} className="border-b border-line px-4 py-2.5 last:border-0">
+                      <div className="mb-1.5 text-body text-ink-2">{c.name}</div>
+                      <div className="space-y-1.5">
+                        {cols.map((p) => (
+                          <div key={p.id} className="flex items-center gap-2">
+                            <span className="w-[30%] shrink-0 truncate text-meta text-ink-3">{p.name.split(" ")[0]}</span>
+                            <div className="min-w-0 flex-1">
+                              <Cell value={p.ratings[c.id]} max={5} />
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  ))}
+              </section>
+            ))}
+          </div>
+        ) : (
         <div className="overflow-x-auto">
           <table className="w-full border-collapse text-body">
             <thead>
@@ -478,6 +545,7 @@ function ComparisonPanel({ data, dimensions }: { data: Comparison; dimensions: F
             </tbody>
           </table>
         </div>
+        )}
       </Panel>
     </div>
   );

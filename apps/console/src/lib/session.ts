@@ -222,6 +222,19 @@ export function clearSession(): void {
     // armazenamento do separador.
     store()?.removeItem(KEY);
     sessionStorage.removeItem(KEY);
+    /*
+     * E a sessão da app do clube, que em produção vive na mesma origem. Quem é
+     * treinador e pai foi entregue de uma app à outra com a mesma sessão (ver
+     * `lib/app-contexts.ts`); terminar aqui tem de terminar lá, senão "Sair"
+     * deixava a app da família aberta a quem pegasse no telemóvel a seguir.
+     */
+    const st = store();
+    if (st) {
+      st.removeItem("academia.family.session");
+      for (const k of Object.keys(st)) {
+        if (k.startsWith("academia.app.contexto")) st.removeItem(k);
+      }
+    }
   } catch {
     /* modo privado: não havia nada para limpar */
   }

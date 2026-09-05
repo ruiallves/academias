@@ -52,18 +52,26 @@ export class TrainingService {
   /* Exercícios                                                                */
   /* ------------------------------------------------------------------------ */
 
-  async listExercises(ctx: RequestContext) {
+  /**
+   * A biblioteca — de uma modalidade, quando se pede.
+   *
+   * `sportId` é o filtro que a Área técnica de cada modalidade usa: o Futebol
+   * não vê os drills de lançamento nem o Basquetebol os rondos. Sem filtro vem
+   * tudo, que é o que o planner precisa para importar num bloco (a equipa do
+   * treino diz a modalidade, e o cliente estreita).
+   */
+  async listExercises(ctx: RequestContext, sportId?: string) {
     if (!can(ctx, "training:read")) throw new ForbiddenException("Sem acesso à área técnica");
 
     return this.prisma.runAs(ctx.academyId, async (db) => {
       const rows = await db.exercise.findMany({
-        where: { archivedAt: null, ...visibleTo(ctx) },
+        where: { archivedAt: null, ...visibleTo(ctx), ...(sportId ? { sportId } : {}) },
         orderBy: { updatedAt: "desc" },
         select: {
           id: true, name: true, description: true, category: true, objectives: true, phase: true, type: true,
           intensity: true, players: true, durationMin: true, space: true, material: true,
           ageMin: true, ageMax: true, complexity: true, visibility: true, videoUrl: true,
-          diagram: true, createdById: true, updatedAt: true,
+          diagram: true, createdById: true, updatedAt: true, sportId: true,
           createdBy: { select: { user: { select: { name: true } } } },
           favorites: { where: { membershipId: ctx.membershipId }, select: { id: true } },
         },
@@ -107,6 +115,7 @@ export class TrainingService {
         complexity: e.complexity,
         visibility: e.visibility,
         videoUrl: e.videoUrl,
+        sportId: e.sportId,
         // A lista traz só o primeiro frame — é o que os cartões desenham. O
         // desenho completo, com todos os frames, vem na ficha (`getExercise`).
         thumbnail: thumbnailOf(e.diagram),
@@ -127,7 +136,13 @@ export class TrainingService {
     return this.prisma.runAs(ctx.academyId, async (db) => {
       const e = await db.exercise.findFirst({
         where: { id, ...visibleTo(ctx) },
-        include: { createdBy: { select: { user: { select: { name: true } } } } },
+        include: {
+          createdBy: { select: { user: { select: { name: true } } } },
+          // Onde este exercício entra — os sistemas e as situações que o usam
+          // para treinar. Só os que quem lê pode ver.
+          gameModelLinks: { where: { gameModel: visibleTo(ctx) }, select: { gameModel: { select: { id: true, name: true } } } },
+          setPieceLinks: { where: { setPiece: visibleTo(ctx) }, select: { setPiece: { select: { id: true, name: true } } } },
+        },
       });
       if (!e) throw new NotFoundException("Exercício não encontrado");
 
@@ -145,6 +160,10 @@ export class TrainingService {
         mine: e.createdById === ctx.membershipId,
         editable: this.mayEdit(ctx, e.createdById),
         deletable: this.mayDelete(ctx, e.createdById),
+        usedIn: {
+          gameModels: e.gameModelLinks.map((l) => l.gameModel),
+          setPieces: e.setPieceLinks.map((l) => l.setPiece),
+        },
       };
     });
   }
@@ -230,12 +249,14 @@ export class TrainingService {
     checkDiagram(dto.diagram);
 
     return this.prisma.runAs(ctx.academyId, async (db) => {
+      await this.checkSport(db, dto.sportId);
       const e = await db.exercise.create({
         // O cast é só para o spread: `exerciseData` devolve as chaves certas mas
         // o TypeScript não vê `name` através de um Record.
         data: {
           academyId: ctx.academyId,
           createdById: ctx.membershipId,
+          sportId: dto.sportId || null,
           ...exerciseData(dto),
         } as Prisma.ExerciseUncheckedCreateInput,
       });
@@ -257,8 +278,15 @@ export class TrainingService {
       if (e.visibility === "PRIVATE" && e.createdById !== ctx.membershipId && !academyWide(ctx)) {
         throw new NotFoundException("Exercício não encontrado");
       }
+      if (dto.sportId !== undefined) await this.checkSport(db, dto.sportId);
 
-      await db.exercise.update({ where: { id }, data: exerciseData(dto, true) as Prisma.ExerciseUncheckedUpdateInput });
+      await db.exercise.update({
+        where: { id },
+        data: {
+          ...(exerciseData(dto, true) as Prisma.ExerciseUncheckedUpdateInput),
+          ...(dto.sportId !== undefined ? { sportId: dto.sportId || null } : {}),
+        },
+      });
       return { ok: true };
     });
   }
@@ -306,6 +334,7 @@ export class TrainingService {
         data: {
           academyId: ctx.academyId,
           createdById: ctx.membershipId,
+          sportId: e.sportId,
           visibility: "PRIVATE",
           name: `${e.name} (cópia)`,
           description: e.description, category: e.category, objectives: e.objectives,
@@ -531,28 +560,35 @@ export class TrainingService {
   /* Modelos de jogo                                                           */
   /* ------------------------------------------------------------------------ */
 
-  async listGameModels(ctx: RequestContext) {
+  async listGameModels(ctx: RequestContext, sportId?: string) {
     if (!can(ctx, "training:read")) throw new ForbiddenException("Sem acesso à área técnica");
 
     return this.prisma.runAs(ctx.academyId, async (db) => {
       const rows = await db.gameModel.findMany({
-        where: visibleTo(ctx),
+        where: { ...visibleTo(ctx), ...(sportId ? { sportId } : {}) },
         orderBy: { updatedAt: "desc" },
         include: {
           team: { select: { name: true } },
           createdBy: { select: { user: { select: { name: true } } } },
+          exercises: {
+            where: { exercise: { archivedAt: null, ...visibleTo(ctx) } },
+            select: { exercise: { select: { id: true, name: true } } },
+          },
         },
       });
       return rows.map((m) => ({
         id: m.id,
         name: m.name,
+        kind: m.kind,
         system: m.system,
         teamId: m.teamId,
         teamName: m.team?.name ?? null,
+        sportId: m.sportId,
         visibility: m.visibility,
         lineup: m.lineup,
         principles: m.principles,
         notes: m.notes,
+        exercises: m.exercises.map((l) => l.exercise),
         mine: m.createdById === ctx.membershipId,
         editable: this.mayEdit(ctx, m.createdById),
         deletable: this.mayDelete(ctx, m.createdById),
@@ -569,17 +605,22 @@ export class TrainingService {
 
     return this.prisma.runAs(ctx.academyId, async (db) => {
       await this.checkTeam(ctx, db, dto.teamId);
+      await this.checkSport(db, dto.sportId);
+      const exerciseIds = await this.checkExercises(ctx, db, dto.exerciseIds);
       const m = await db.gameModel.create({
         data: {
           academyId: ctx.academyId,
           createdById: ctx.membershipId,
           teamId: dto.teamId || null,
+          sportId: dto.sportId || null,
           visibility: visibilityOf(dto.visibility),
           name: dto.name.trim().slice(0, 80),
+          kind: dto.kind?.trim().slice(0, 40) || null,
           system: dto.system?.trim() || null,
           lineup: json(dto.lineup),
           principles: json(dto.principles),
           notes: dto.notes?.trim() || null,
+          ...(exerciseIds ? { exercises: { create: exerciseIds.map((exerciseId) => ({ exerciseId })) } } : {}),
         },
       });
       return { id: m.id };
@@ -596,17 +637,26 @@ export class TrainingService {
       if (!m) throw new NotFoundException("Modelo não encontrado");
       if (!this.mayEdit(ctx, m.createdById)) throw new ForbiddenException("Este modelo é de outra pessoa");
       if (dto.teamId !== undefined) await this.checkTeam(ctx, db, dto.teamId);
+      if (dto.sportId !== undefined) await this.checkSport(db, dto.sportId);
+      const exerciseIds = await this.checkExercises(ctx, db, dto.exerciseIds);
 
       await db.gameModel.update({
         where: { id },
         data: {
           ...(dto.name !== undefined ? { name: dto.name.trim().slice(0, 80) } : {}),
+          ...(dto.kind !== undefined ? { kind: dto.kind?.trim().slice(0, 40) || null } : {}),
           ...(dto.system !== undefined ? { system: dto.system?.trim() || null } : {}),
           ...(dto.teamId !== undefined ? { teamId: dto.teamId || null } : {}),
+          ...(dto.sportId !== undefined ? { sportId: dto.sportId || null } : {}),
           ...(dto.visibility !== undefined ? { visibility: visibilityOf(dto.visibility) } : {}),
           ...(dto.lineup !== undefined ? { lineup: json(dto.lineup) } : {}),
           ...(dto.principles !== undefined ? { principles: json(dto.principles) } : {}),
           ...(dto.notes !== undefined ? { notes: dto.notes?.trim() || null } : {}),
+          // A lista substitui-se inteira: é o que o ecrã envia, e um "junta
+          // este" que não soubesse dos outros criava duplicados ou perdas.
+          ...(exerciseIds
+            ? { exercises: { deleteMany: {}, create: exerciseIds.map((exerciseId) => ({ exerciseId })) } }
+            : {}),
         },
       });
       return { ok: true };
@@ -628,33 +678,47 @@ export class TrainingService {
   /* Bolas paradas                                                             */
   /* ------------------------------------------------------------------------ */
 
-  async listSetPieces(ctx: RequestContext) {
+  async listSetPieces(ctx: RequestContext, sportId?: string) {
     if (!can(ctx, "training:read")) throw new ForbiddenException("Sem acesso à área técnica");
 
     return this.prisma.runAs(ctx.academyId, async (db) => {
       const rows = await db.setPiece.findMany({
-        where: visibleTo(ctx),
+        where: { ...visibleTo(ctx), ...(sportId ? { sportId } : {}) },
         orderBy: { updatedAt: "desc" },
         include: {
           team: { select: { name: true } },
           createdBy: { select: { user: { select: { name: true } } } },
+          gameModel: { select: { id: true, name: true, visibility: true, createdById: true } },
+          exercises: {
+            where: { exercise: { archivedAt: null, ...visibleTo(ctx) } },
+            select: { exercise: { select: { id: true, name: true } } },
+          },
         },
       });
-      return rows.map((p) => ({
-        id: p.id,
-        kind: p.kind,
-        name: p.name,
-        description: p.description,
-        teamId: p.teamId,
-        teamName: p.team?.name ?? null,
-        visibility: p.visibility,
-        diagram: p.diagram,
-        mine: p.createdById === ctx.membershipId,
-        editable: this.mayEdit(ctx, p.createdById),
-        deletable: this.mayDelete(ctx, p.createdById),
-        authorName: p.createdBy?.user.name ?? null,
-        updatedAt: p.updatedAt,
-      }));
+      return rows.map((p) => {
+        // Um sistema privado de outra pessoa não se nomeia — a ligação existe,
+        // mas para quem lê é como se não estivesse lá.
+        const gm = p.gameModel && exerciseVisible(ctx, p.gameModel) ? p.gameModel : null;
+        return {
+          id: p.id,
+          kind: p.kind,
+          name: p.name,
+          description: p.description,
+          teamId: p.teamId,
+          teamName: p.team?.name ?? null,
+          sportId: p.sportId,
+          gameModelId: gm?.id ?? null,
+          gameModelName: gm?.name ?? null,
+          visibility: p.visibility,
+          diagram: p.diagram,
+          exercises: p.exercises.map((l) => l.exercise),
+          mine: p.createdById === ctx.membershipId,
+          editable: this.mayEdit(ctx, p.createdById),
+          deletable: this.mayDelete(ctx, p.createdById),
+          authorName: p.createdBy?.user.name ?? null,
+          updatedAt: p.updatedAt,
+        };
+      });
     });
   }
 
@@ -664,16 +728,22 @@ export class TrainingService {
 
     return this.prisma.runAs(ctx.academyId, async (db) => {
       await this.checkTeam(ctx, db, dto.teamId);
+      await this.checkSport(db, dto.sportId);
+      await this.checkGameModel(ctx, db, dto.gameModelId);
+      const exerciseIds = await this.checkExercises(ctx, db, dto.exerciseIds);
       const p = await db.setPiece.create({
         data: {
           academyId: ctx.academyId,
           createdById: ctx.membershipId,
           teamId: dto.teamId || null,
+          sportId: dto.sportId || null,
+          gameModelId: dto.gameModelId || null,
           visibility: visibilityOf(dto.visibility),
           kind: dto.kind.trim().slice(0, 40),
           name: dto.name.trim().slice(0, 80),
           description: dto.description?.trim() || null,
           diagram: json(dto.diagram),
+          ...(exerciseIds ? { exercises: { create: exerciseIds.map((exerciseId) => ({ exerciseId })) } } : {}),
         },
       });
       return { id: p.id };
@@ -689,6 +759,9 @@ export class TrainingService {
       if (!p) throw new NotFoundException("Esquema não encontrado");
       if (!this.mayEdit(ctx, p.createdById)) throw new ForbiddenException("Este esquema é de outra pessoa");
       if (dto.teamId !== undefined) await this.checkTeam(ctx, db, dto.teamId);
+      if (dto.sportId !== undefined) await this.checkSport(db, dto.sportId);
+      if (dto.gameModelId !== undefined) await this.checkGameModel(ctx, db, dto.gameModelId);
+      const exerciseIds = await this.checkExercises(ctx, db, dto.exerciseIds);
 
       await db.setPiece.update({
         where: { id },
@@ -697,11 +770,38 @@ export class TrainingService {
           ...(dto.name !== undefined ? { name: dto.name.trim().slice(0, 80) } : {}),
           ...(dto.description !== undefined ? { description: dto.description?.trim() || null } : {}),
           ...(dto.teamId !== undefined ? { teamId: dto.teamId || null } : {}),
+          ...(dto.sportId !== undefined ? { sportId: dto.sportId || null } : {}),
+          ...(dto.gameModelId !== undefined ? { gameModelId: dto.gameModelId || null } : {}),
           ...(dto.visibility !== undefined ? { visibility: visibilityOf(dto.visibility) } : {}),
           ...(dto.diagram !== undefined ? { diagram: json(dto.diagram) } : {}),
+          ...(exerciseIds
+            ? { exercises: { deleteMany: {}, create: exerciseIds.map((exerciseId) => ({ exerciseId })) } }
+            : {}),
         },
       });
       return { ok: true };
+    });
+  }
+
+  /* ------------------------------------------------------------------------ */
+  /* A área técnica de uma modalidade, em números                              */
+  /* ------------------------------------------------------------------------ */
+
+  /**
+   * Os três contadores da página de entrada — "24 exercícios · 8 sistemas · 12
+   * situações". Contados com a mesma visibilidade das listas, senão a página
+   * prometia um número e a lista mostrava outro.
+   */
+  async summary(ctx: RequestContext, sportId: string) {
+    if (!can(ctx, "training:read")) throw new ForbiddenException("Sem acesso à área técnica");
+
+    return this.prisma.runAs(ctx.academyId, async (db) => {
+      const [exercises, gameModels, setPieces] = await Promise.all([
+        db.exercise.count({ where: { sportId, archivedAt: null, ...visibleTo(ctx) } }),
+        db.gameModel.count({ where: { sportId, ...visibleTo(ctx) } }),
+        db.setPiece.count({ where: { sportId, ...visibleTo(ctx) } }),
+      ]);
+      return { exercises, gameModels, setPieces };
     });
   }
 
@@ -749,6 +849,38 @@ export class TrainingService {
     if (scope && !scope.in.includes(teamId)) throw new ForbiddenException("Equipa fora do teu âmbito");
     const team = await db.team.findFirst({ where: { id: teamId }, select: { id: true } });
     if (!team) throw new BadRequestException("Equipa desconhecida");
+  }
+
+  /** A modalidade tem de ser do clube — o RLS já garante; isto dá a mensagem. */
+  private async checkSport(db: ScopedClient, sportId: string | null | undefined) {
+    if (!sportId) return;
+    const sport = await db.sport.findFirst({ where: { id: sportId }, select: { id: true } });
+    if (!sport) throw new BadRequestException("Modalidade desconhecida");
+  }
+
+  /** O sistema de jogo de que uma situação parte: tem de existir e ser visível. */
+  private async checkGameModel(ctx: RequestContext, db: ScopedClient, gameModelId: string | null | undefined) {
+    if (!gameModelId) return;
+    const gm = await db.gameModel.findFirst({ where: { id: gameModelId, ...visibleTo(ctx) }, select: { id: true } });
+    if (!gm) throw new BadRequestException("Sistema de jogo desconhecido");
+  }
+
+  /**
+   * Os exercícios a ligar: todos têm de existir, estar vivos e ser visíveis a
+   * quem liga — ligar o exercício privado de um colega revelava-lhe o nome.
+   * Devolve a lista limpa (sem repetidos) ou `undefined` quando não veio nada,
+   * para o chamador distinguir "não mexer" de "esvaziar".
+   */
+  private async checkExercises(ctx: RequestContext, db: ScopedClient, ids: string[] | undefined): Promise<string[] | undefined> {
+    if (ids === undefined) return undefined;
+    const unique = [...new Set(ids.filter(Boolean))].slice(0, 40);
+    if (unique.length === 0) return [];
+    const found = await db.exercise.findMany({
+      where: { id: { in: unique }, archivedAt: null, ...visibleTo(ctx) },
+      select: { id: true },
+    });
+    if (found.length !== unique.length) throw new BadRequestException("Há exercícios que não existem ou não são visíveis");
+    return unique;
   }
 
   /* ------------------------------------------------------------------------ */
@@ -1093,6 +1225,8 @@ export type ExerciseInput = {
   videoUrl?: string | null;
   visibility?: string;
   diagram?: unknown;
+  /** A modalidade — ver `Exercise.sportId`. */
+  sportId?: string | null;
 };
 
 export type PlanInput = {
@@ -1126,6 +1260,11 @@ export type GameModelInput = {
   lineup?: unknown;
   principles?: unknown;
   notes?: string | null;
+  sportId?: string | null;
+  /** Ataque / defesa / transição, onde a modalidade o pede. */
+  kind?: string | null;
+  /** Os exercícios com que se treina este sistema — substitui a lista inteira. */
+  exerciseIds?: string[];
 };
 
 export type SetPieceInput = {
@@ -1135,6 +1274,10 @@ export type SetPieceInput = {
   teamId?: string | null;
   visibility?: string;
   diagram?: unknown;
+  sportId?: string | null;
+  /** O sistema de jogo de que esta situação parte. */
+  gameModelId?: string | null;
+  exerciseIds?: string[];
 };
 
 /** Vejo o que é do clube e o que é meu — a visibilidade, como filtro Prisma. */
@@ -1227,12 +1370,13 @@ function serializeExercise(e: {
   ageMin: number | null; ageMax: number | null; complexity: number | null;
   rules: string | null; progressions: string | null; regressions: string | null;
   coachingPoints: string | null; commonErrors: string | null; videoUrl: string | null;
-  visibility: LibraryVisibility; diagram: unknown; createdById: string | null;
+  visibility: LibraryVisibility; diagram: unknown; createdById: string | null; sportId: string | null;
   createdBy: { user: { name: string } } | null; updatedAt: Date;
 }) {
   return {
     id: e.id,
     name: e.name,
+    sportId: e.sportId,
     description: e.description,
     category: e.category,
     objectives: e.objectives,

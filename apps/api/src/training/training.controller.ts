@@ -46,6 +46,8 @@ class ExerciseDto {
   @IsOptional() @IsString() @Length(0, 500) videoUrl?: string;
   @IsOptional() @IsIn(["PRIVATE", "CLUB"]) visibility?: string;
   @IsOptional() @IsObject() diagram?: Record<string, unknown>;
+  /** A modalidade. Vazio tira-a — ver `Exercise.sportId`. */
+  @IsOptional() @IsString() @Length(0, 40) sportId?: string;
 }
 
 /** A edição aceita tudo opcional — até o nome, que só muda se vier. */
@@ -113,6 +115,11 @@ class GameModelDto {
   @IsOptional() @Allow() lineup?: unknown;
   @IsOptional() @IsObject() principles?: Record<string, unknown>;
   @IsOptional() @IsString() @Length(0, 4000) notes?: string;
+  @IsOptional() @IsString() @Length(0, 40) sportId?: string;
+  /** Ataque / defesa / transição — vocabulário da consola, por modalidade. */
+  @IsOptional() @IsString() @Length(0, 40) kind?: string;
+  /** Os exercícios relacionados — a lista inteira, que substitui a anterior. */
+  @IsOptional() @IsArray() @ArrayMaxSize(40) @IsString({ each: true }) exerciseIds?: string[];
 }
 
 class GameModelPatchDto extends GameModelDto {
@@ -126,6 +133,10 @@ class SetPieceDto {
   @IsOptional() @IsString() teamId?: string;
   @IsOptional() @IsIn(["PRIVATE", "CLUB"]) visibility?: string;
   @IsOptional() @IsObject() diagram?: Record<string, unknown>;
+  @IsOptional() @IsString() @Length(0, 40) sportId?: string;
+  /** O sistema de jogo de que a situação parte. Vazio desliga. */
+  @IsOptional() @IsString() @Length(0, 40) gameModelId?: string;
+  @IsOptional() @IsArray() @ArrayMaxSize(40) @IsString({ each: true }) exerciseIds?: string[];
 }
 
 class SetPiecePatchDto extends SetPieceDto {
@@ -145,9 +156,16 @@ export class TrainingController {
 
   /* Exercícios ------------------------------------------------------------- */
 
+  /** `?sport=` estreita à modalidade — é o que a Área técnica de cada uma pede. */
   @Get("exercises")
-  listExercises(@Req() req: AuthedRequest) {
-    return this.training.listExercises(req.ctx);
+  listExercises(@Req() req: AuthedRequest, @Query("sport") sport?: string) {
+    return this.training.listExercises(req.ctx, sport || undefined);
+  }
+
+  /** Os contadores da página de entrada de uma modalidade. */
+  @Get("summary")
+  summary(@Req() req: AuthedRequest, @Query("sport") sport: string) {
+    return this.training.summary(req.ctx, sport ?? "");
   }
 
   @Post("exercises")
@@ -259,8 +277,8 @@ export class TrainingController {
   }
 
   @Get("game-models")
-  listGameModels(@Req() req: AuthedRequest) {
-    return this.training.listGameModels(req.ctx);
+  listGameModels(@Req() req: AuthedRequest, @Query("sport") sport?: string) {
+    return this.training.listGameModels(req.ctx, sport || undefined);
   }
 
   @Post("game-models")
@@ -281,8 +299,8 @@ export class TrainingController {
   /* Bolas paradas ----------------------------------------------------------- */
 
   @Get("set-pieces")
-  listSetPieces(@Req() req: AuthedRequest) {
-    return this.training.listSetPieces(req.ctx);
+  listSetPieces(@Req() req: AuthedRequest, @Query("sport") sport?: string) {
+    return this.training.listSetPieces(req.ctx, sport || undefined);
   }
 
   @Post("set-pieces")

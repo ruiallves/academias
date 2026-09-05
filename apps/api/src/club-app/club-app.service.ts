@@ -111,7 +111,16 @@ export class ClubAppService {
 
     const memberships = await this.auth.membershipsOf(eu.authId);
     const daAcademia = memberships.filter((m) => m.academy_id === academyId);
-    const familia = daAcademia.some((m) => m.role === "GUARDIAN" || m.role === "ATHLETE");
+    const deFamilia = (role: string) => role === "GUARDIAN" || role === "ATHLETE";
+    const familia = daAcademia.some((m) => deFamilia(m.role));
+    /*
+     * Staff é qualquer membership que não seja de família — presidente,
+     * treinador, médico, observador. A app não desenha essa vista: entrega a
+     * pessoa à consola, que já existe e já sabe tudo o que ela pode fazer. O
+     * contexto só diz "há para onde ir", e leva o papel para a app o poder
+     * nomear ("Equipa técnica") no ecrã de escolha.
+     */
+    const staff = daAcademia.find((m) => !deFamilia(m.role));
 
     return this.prisma.runAs(academyId, async (db) => {
       const member = eu.userId ? await db.member.findFirst({ where: { userId: eu.userId } }) : null;
@@ -126,6 +135,7 @@ export class ClubAppService {
           status: member.status,
         });
       }
+      if (staff) contexts.push({ type: "STAFF", role: staff.role });
 
       return { contexts };
     });

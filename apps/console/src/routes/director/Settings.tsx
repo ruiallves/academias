@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { useMobile } from "@/lib/viewport";
 import { Link, useSearchParams } from "react-router-dom";
 import { PageHeader } from "@/components/Shell";
 import { DepartmentDialog } from "@/components/DepartmentDialog";
@@ -545,7 +546,50 @@ function RoleRow({ role, onEdit }: { role: AcademyRole; onEdit: () => void }) {
  * deixava de responder a qualquer uma.
  */
 function PermissionMatrix({ roles }: { roles: AcademyRole[] }) {
+  const mobile = useMobile();
   const areas: Area[] = [...AREAS, ...CLINICAL_AREAS, ...SCOUTING_AREAS];
+
+  /*
+   * Telemóvel: um bloco por cargo, com as áreas em duas colunas.
+   *
+   * A matriz responde "quem vê o quê" a olhar para uma linha; no telemóvel a
+   * pergunta que se faz é "o que é que o treinador vê?", e a resposta é um
+   * cargo de cada vez. A informação é a mesma — todas as áreas, incluindo as
+   * que ficam a "—", porque "não vê" também é uma resposta.
+   */
+  if (mobile) {
+    return (
+      <div>
+        {roles.map((role) => {
+          const perms = new Set(role.permissions as Permission[]);
+          return (
+            <section key={role.id} className="border-b border-line last:border-0">
+              <h3 className="bg-sunken/40 px-4 py-2 text-body font-medium text-ink">{role.name}</h3>
+              <dl className="grid grid-cols-2 gap-x-4 gap-y-2 px-4 py-3">
+                {areas.map((area) => {
+                  const level = levelOf(area, perms);
+                  return (
+                    <div key={area.label} className="flex min-w-0 items-center justify-between gap-2">
+                      <dt className="truncate text-meta text-ink-2">{area.label}</dt>
+                      <dd className="shrink-0">
+                        {level === "write" ? (
+                          <Pill tone="signal">editar</Pill>
+                        ) : level === "read" ? (
+                          <Pill>ver</Pill>
+                        ) : (
+                          <span className="text-meta text-ink-4">—</span>
+                        )}
+                      </dd>
+                    </div>
+                  );
+                })}
+              </dl>
+            </section>
+          );
+        })}
+      </div>
+    );
+  }
 
   return (
     <div className="overflow-x-auto">
