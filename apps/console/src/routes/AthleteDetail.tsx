@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
+import { CustoDoPagamento } from "@/components/finance/CustoDoPagamento";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import {
   AvailabilityTag,
@@ -1269,6 +1270,7 @@ function FeeEditor({
             className="h-9 flex-1 rounded-[var(--radius-control)] border border-line bg-surface px-2.5 text-body tabular focus:border-line-strong focus:outline-none"
           />
         </div>
+        <CustoDoPagamento amountCents={paraCentimosDoAjuste(value)} />
         {error && <p className="mt-1.5 text-meta text-risk">{error}</p>}
         <div className="mt-3 flex gap-2">
           <button type="button" onClick={() => setEditing(false)} disabled={busy} className="ctl-ghost">
@@ -1318,4 +1320,15 @@ function FeeEditor({
       )}
     </div>
   );
+}
+
+/**
+ * O valor escrito no campo, em cêntimos — só para a linha de custo.
+ *
+ * Não valida nada: quem valida é a gravação, contra o servidor. Aqui só se quer
+ * saber se já há número suficiente para fazer a conta enquanto se escreve.
+ */
+function paraCentimosDoAjuste(v: string): number | null {
+  const n = Number(v.trim().replace(/\s/g, "").replace("€", "").replace(",", "."));
+  return Number.isFinite(n) && n > 0 ? Math.round(n * 100) : null;
 }

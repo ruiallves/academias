@@ -10,6 +10,7 @@ import type {
   Guardian,
   StaffMember,
   Team,
+  ClinicalEntry,
   TrainingSession,
 } from "@/data/types";
 import type { Role } from "@/lib/permissions";
@@ -120,6 +121,27 @@ type ApiAthlete = {
   // servidor retém o dado sensível, mas mantém a disponibilidade. Ver a auditoria
   // de segurança, VULN-002.
   restriction: { id: string; title: string | null; since: string; expectedReturn: string | null } | null;
+  /**
+   * O boletim clínico, como o servidor o manda.
+   *
+   * Completo para quem tem `clinical:read`; só a restrição activa para quem tem
+   * apenas `clinical:status`. Em qualquer dos casos o `title` e o `detail` vêm
+   * `null` a quem não pode ler o diagnóstico. Ver `athletes()` na API.
+   */
+  clinical?: {
+    id: string;
+    kind: string;
+    status: string;
+    date: string;
+    time: string | null;
+    location: string | null;
+    title: string | null;
+    detail: string | null;
+    impact: string;
+    expectedReturn: string | null;
+    outDays: number | null;
+    clearedOn: string | null;
+  }[];
 };
 
 type ApiStaff = {
@@ -404,24 +426,50 @@ function build(
      * Uma entrada só, a que está a afectar hoje: é o que o `/api/athletes`
      * traz. O boletim completo é outra leitura, do departamento clínico.
      */
-    clinical: a.restriction
-      ? [
-          {
-            id: a.restriction.id,
-            kind: "injury",
-            // `DONE`: é uma baixa a decorrer, não um agendamento. A leitura de
-            // `activeRestriction` ignora agendados e cancelados.
-            status: "done",
-            date: a.restriction.since.slice(0, 10),
-            // Sem `clinical:read` o servidor retém o diagnóstico e manda `null`
-            // — a disponibilidade chega na mesma, o motivo é que não.
-            title: a.restriction.title ?? "Indisponível",
-            impact: a.availability === "out" ? "out" : "limited",
-            expectedReturn: a.restriction.expectedReturn ?? undefined,
-            clearedOn: undefined,
-          },
-        ]
-      : undefined,
+    /*
+     * O boletim vem do servidor — já não se fabrica aqui.
+     *
+     * Isto construía **uma** entrada a partir da `restriction`, com `kind:
+     * "injury"` e `status: "done"` escritos à mão. Servia para a
+     * disponibilidade e mais nada: uma consulta de nutrição agendada não tem
+     * restrição nenhuma, por isso não existia deste lado — a médica agendava e
+     * o ecrã das Consultas continuava vazio, mesmo com a linha gravada na base.
+     *
+     * Agora usa-se o que a API manda. A `restriction` fica como recurso para o
+     * caso de uma resposta antiga em cache não trazer `clinical` — a app é uma
+     * PWA e um `dist` velho sobrevive a um deploy.
+     */
+    clinical: a.clinical
+      ? a.clinical.map((c) => ({
+          id: c.id,
+          kind: c.kind as ClinicalEntry["kind"],
+          status: c.status as ClinicalEntry["status"],
+          date: c.date.slice(0, 10),
+          time: c.time ?? undefined,
+          location: c.location ?? undefined,
+          // Sem `clinical:read` o servidor retém o diagnóstico e manda `null`
+          // — a disponibilidade chega na mesma, o motivo é que não.
+          title: c.title ?? "Indisponível",
+          detail: c.detail ?? undefined,
+          impact: c.impact as ClinicalEntry["impact"],
+          expectedReturn: c.expectedReturn?.slice(0, 10) ?? undefined,
+          outDays: c.outDays ?? undefined,
+          clearedOn: c.clearedOn?.slice(0, 10) ?? undefined,
+        }))
+      : a.restriction
+        ? [
+            {
+              id: a.restriction.id,
+              kind: "injury" as const,
+              status: "done" as const,
+              date: a.restriction.since.slice(0, 10),
+              title: a.restriction.title ?? "Indisponível",
+              impact: (a.availability === "out" ? "out" : "limited") as ClinicalEntry["impact"],
+              expectedReturn: a.restriction.expectedReturn ?? undefined,
+              clearedOn: undefined,
+            },
+          ]
+        : undefined,
   }));
 
   /*

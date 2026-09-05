@@ -788,12 +788,29 @@ ${
           })
             .then(function (r) { return r.json(); })
             .then(function (me) {
-              var here = (me.academies || []).filter(function (a) { return a.slug === slug; })[0];
-              if (!here) {
+              /*
+               * A mesma pessoa pode ter varios vinculos ao mesmo clube.
+               *
+               * Um treinador que tambem e pai tem duas memberships aqui, e esta
+               * porta olhava so para a primeira que o Postgres devolvesse — a
+               * consulta nao tem ORDER BY nenhum. Se calhasse vir a de
+               * encarregado, o treinador era mandado embora com "as familias
+               * entram pela aplicacao", e na tentativa seguinte podia entrar.
+               * Uma porta que decide por ordem de linhas nao e uma porta.
+               *
+               * A regra certa: recusa-se quem **so** tem vinculo de familia. Ter
+               * um de staff basta para entrar, e e o servidor que a seguir
+               * escolhe esse (ver escolherMembership, com x-app: console).
+               */
+              var meus = (me.academies || []).filter(function (a) { return a.slug === slug; });
+              if (meus.length === 0) {
                 fail('Esta conta não tem acesso a esta academia.');
                 return;
               }
-              if (here.role === 'GUARDIAN' || here.role === 'ATHLETE') {
+              var daStaff = meus.filter(function (a) {
+                return a.role !== 'GUARDIAN' && a.role !== 'ATHLETE';
+              });
+              if (daStaff.length === 0) {
                 fail('As famílias entram pela aplicação. Instala-a aqui em cima.');
                 return;
               }

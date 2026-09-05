@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
+import { CustoDoPagamento } from "@/components/finance/CustoDoPagamento";
 import { PageHeader } from "@/components/Shell";
 import { SearchInput } from "@/components/filters";
 import { DataTable, Empty, Loading, Monogram, Panel, Pill, cx, type Column, type Tone } from "@/components/primitives";
@@ -1172,7 +1173,7 @@ function TierForm({
       </DialogField>
 
       <div className="grid grid-cols-4 gap-3">
-        <DialogField label="Quota" hint="€">
+        <DialogField label="Quota" hint="€" className="col-span-2">
           <input
             value={fee}
             onChange={(e) => setFee(e.target.value.replace(/[^\d.,]/g, ""))}
@@ -1180,6 +1181,7 @@ function TierForm({
             placeholder="30"
             className={dialogInputClass}
           />
+          <CustoDoPagamento amountCents={paraCentimosDaQuota(fee)} />
         </DialogField>
         <DialogField label="Período">
           <select value={period} onChange={(e) => setPeriod(e.target.value as FeePeriod)} className={dialogInputClass}>
@@ -1245,4 +1247,15 @@ function TierForm({
       </div>
     </div>
   );
+}
+
+/**
+ * O valor escrito no campo, em cêntimos — só para a linha de custo.
+ *
+ * Não valida nada: quem valida é a gravação, contra o servidor. Aqui só se quer
+ * saber se já há número suficiente para fazer a conta enquanto se escreve.
+ */
+function paraCentimosDaQuota(v: string): number | null {
+  const n = Number(v.trim().replace(/\s/g, "").replace("€", "").replace(",", "."));
+  return Number.isFinite(n) && n > 0 ? Math.round(n * 100) : null;
 }

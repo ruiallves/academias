@@ -80,6 +80,139 @@ check("estado inválido recusado (400)", bad1.status === 400, `${bad1.status}`);
 const bad2 = await call(director, "PATCH", `/api/charges/nao_existe/status`, { status: "OPEN" });
 check("cobrança inexistente recusada (404)", bad2.status === 404, `${bad2.status}`);
 
+console.log("\n=== Lançar mensalidade à mão ===");
+
+/*
+ * O que isto cobre.
+ *
+ * A emissão automática deriva o valor do plano e salta quem não tem preço. O
+ * lançamento à mão é o gesto directo — este atleta, este valor, estes meses —
+ * e serve o atleta sem preço, o mês fora do calendário do clube, e o acerto de
+ * quem entrou a meio da época. O que interessa provar: as linhas nascem como
+ * mensalidade (`FEE`, `slot` vazio, para a emissão automática as reconhecer),
+ * um mês repetido salta em vez de rebentar o pedido inteiro, e a fronteira é a
+ * do costume.
+ */
+const ANO_TESTE = 2031;
+const mesesTeste = [`${ANO_TESTE}-03`, `${ANO_TESTE}-04`, `${ANO_TESTE}-05`];
+await db.query(`DELETE FROM "Charge" WHERE period LIKE $1`, [`${ANO_TESTE}-%`]);
+
+/*
+ * Um atleta **com encarregado activo** — e não o primeiro que aparecer.
+ *
+ * Era `LIMIT 1` sobre os activos, e calhava o Dinis, que no plantel semeado não
+ * tem ninguém ligado a ele. As mensalidades nasciam bem e o aviso à família não
+ * saía, porque não havia família a quem sair: a asserção do fim falhava a
+ * acusar o produto de uma coisa que o produto faz. O que este bloco tem de
+ * provar inclui o aviso, e por isso o atleta tem de poder recebê-lo.
+ */
+const alvoAtleta = (
+  await db.query(
+    `SELECT a.id, a.name FROM "Athlete" a
+      JOIN "Academy" ac ON ac.id = a."academyId"
+      JOIN "GuardianLink" g ON g."athleteId" = a.id
+      JOIN "Membership" m ON m.id = g."membershipId" AND m."isActive"
+     WHERE ac.slug = 'life-club' AND a.status = 'ACTIVE' LIMIT 1`,
+  )
+).rows[0];
+check("há um atleta com encarregado para lançar", Boolean(alvoAtleta));
+
+const lancadas = await call(director, "POST", "/api/charges/mensalidade", {
+  athleteId: alvoAtleta.id,
+  amountCents: 3500,
+  periods: mesesTeste,
+  notes: "ZF acerto de teste",
+});
+check("a direção lança três meses", lancadas.status === 201 || lancadas.status === 200, `${lancadas.status} ${JSON.stringify(lancadas.body).slice(0, 140)}`);
+check("e diz que criou três", lancadas.body?.criadas === 3, JSON.stringify(lancadas.body));
+
+const naBase = (
+  await db.query(
+    `SELECT period, kind, slot, "amountCents", status FROM "Charge"
+      WHERE "athleteId" = $1 AND period LIKE $2 ORDER BY period`,
+    [alvoAtleta.id, `${ANO_TESTE}-%`],
+  )
+).rows;
+check("as três linhas existem na base", naBase.length === 3, `${naBase.length}`);
+check("nascem como mensalidade (FEE)", naBase.every((c) => c.kind === "FEE"), JSON.stringify(naBase.map((c) => c.kind)));
+check(
+  "com o slot vazio — é o que impede uma segunda no mesmo mês",
+  naBase.every((c) => c.slot === ""),
+  JSON.stringify(naBase.map((c) => c.slot)),
+);
+check("com o valor escolhido", naBase.every((c) => c.amountCents === 3500), JSON.stringify(naBase.map((c) => c.amountCents)));
+check("e por pagar", naBase.every((c) => c.status === "OPEN"), JSON.stringify(naBase.map((c) => c.status)));
+
+/* O vencimento é o dia do clube, como nas automáticas. */
+const diaClube = (
+  await db.query(`SELECT "billingDueDay" FROM "Academy" WHERE slug = 'life-club'`)
+).rows[0]?.billingDueDay;
+const vencimentos = (
+  await db.query(
+    `SELECT EXTRACT(DAY FROM "dueDate")::int AS dia FROM "Charge" WHERE "athleteId" = $1 AND period LIKE $2`,
+    [alvoAtleta.id, `${ANO_TESTE}-%`],
+  )
+).rows;
+check(
+  "o vencimento é o dia de cobrança do clube",
+  vencimentos.every((v) => v.dia === diaClube),
+  `esperado ${diaClube}, veio ${JSON.stringify(vencimentos.map((v) => v.dia))}`,
+);
+
+/* Repetir: os meses que já existem saltam, os novos entram. */
+const repetido = await call(director, "POST", "/api/charges/mensalidade", {
+  athleteId: alvoAtleta.id,
+  amountCents: 3500,
+  periods: [`${ANO_TESTE}-05`, `${ANO_TESTE}-06`],
+});
+check("repetir um mês não rebenta o pedido", repetido.status === 201 || repetido.status === 200, `${repetido.status}`);
+check("cria só o mês novo", repetido.body?.criadas === 1, JSON.stringify(repetido.body));
+check(
+  "e diz qual já existia",
+  Array.isArray(repetido.body?.jaExistiam) && repetido.body.jaExistiam.includes(`${ANO_TESTE}-05`),
+  JSON.stringify(repetido.body?.jaExistiam),
+);
+
+console.log("\n=== O que o lançamento à mão recusa ===");
+const semPermissao = await call(parent, "POST", "/api/charges/mensalidade", {
+  athleteId: alvoAtleta.id,
+  amountCents: 3500,
+  periods: [`${ANO_TESTE}-07`],
+});
+check("um encarregado não lança mensalidades (403)", semPermissao.status === 403, `${semPermissao.status}`);
+
+const mesInvalido = await call(director, "POST", "/api/charges/mensalidade", {
+  athleteId: alvoAtleta.id,
+  amountCents: 3500,
+  periods: ["2031-13"],
+});
+check("um mês impossível é recusado (400)", mesInvalido.status === 400, `${mesInvalido.status}`);
+
+const semMeses = await call(director, "POST", "/api/charges/mensalidade", {
+  athleteId: alvoAtleta.id,
+  amountCents: 3500,
+  periods: [],
+});
+check("sem meses nenhum é recusado (400)", semMeses.status === 400, `${semMeses.status}`);
+
+const atletaFantasma = await call(director, "POST", "/api/charges/mensalidade", {
+  athleteId: "nao_existe",
+  amountCents: 3500,
+  periods: [`${ANO_TESTE}-07`],
+});
+check("um atleta que não existe dá 404", atletaFantasma.status === 404, `${atletaFantasma.status}`);
+
+/* A família fica avisada — é o que faz a mensalidade aparecer no telemóvel. */
+const avisos = (
+  await db.query(
+    `SELECT COUNT(*)::int AS n FROM "Notification"
+      WHERE type = 'PAYMENT_PENDING' AND title = 'Nova mensalidade' AND "createdAt" > now() - interval '2 minutes'`,
+  )
+).rows[0];
+check("a família foi avisada das mensalidades novas", avisos.n >= 1, `${avisos.n} notificações`);
+
+await db.query(`DELETE FROM "Charge" WHERE period LIKE $1`, [`${ANO_TESTE}-%`]);
+
 console.log("\n=== Repor estado original ===");
 // Limpa os pagamentos manuais de teste e repõe a cobrança como estava.
 await db.query(`DELETE FROM "Payment" WHERE "chargeId"=$1 AND provider='manual'`, [target.id]);

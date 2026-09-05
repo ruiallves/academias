@@ -1,4 +1,4 @@
-import { apiGet, apiPatch, apiPost, apiPut } from "@/lib/http";
+import { apiDelete, apiGet, apiPatch, apiPost, apiPut } from "@/lib/http";
 
 /**
  * Contas, do lado do cliente. Tipos e chamadas, sem estado — como o inventário,
@@ -119,6 +119,16 @@ export const createTransaction = (body: Record<string, unknown>) =>
 
 export const updateTransaction = (id: string, body: Record<string, unknown>) =>
   apiPatch<{ ok: true }>(`/api/finance/transactions/${id}`, body);
+
+/**
+ * Apagar um movimento lançado à mão.
+ *
+ * Não é o par do cancelar — é a saída para o que nunca devia ter existido (ver
+ * a regra 3 no serviço). `scope: "series"` leva também os meses seguintes da
+ * mesma série; devolve quantas linhas desapareceram, para o ecrã o poder dizer.
+ */
+export const deleteTransaction = (id: string, scope?: "one" | "series") =>
+  apiDelete<{ ok: true; deleted: number }>(`/api/finance/transactions/${id}`, scope ? { scope } : {});
 
 export const getSettings = () => apiGet<FinanceSettings>("/api/finance/settings");
 

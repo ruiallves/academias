@@ -3,6 +3,7 @@ import { IsEnum, IsOptional, IsString, Length, Matches } from "class-validator";
 import { PaymentMethod } from "@prisma/client";
 import type { Request } from "express";
 import { BillingService } from "./billing.service";
+import { EupagoFeesService } from "./eupago-fees";
 import type { RequestContext } from "../common/permissions";
 
 class StartPaymentDto {
@@ -34,7 +35,27 @@ class CreateMandateDto {
 
 @Controller("billing")
 export class BillingController {
-  constructor(private readonly billing: BillingService) {}
+  constructor(
+    private readonly billing: BillingService,
+    private readonly fees: EupagoFeesService,
+  ) {}
+
+  /**
+   * As taxas da euPago, para os ecrãs de preços fazerem a conta.
+   *
+   * Público dentro da academia — quem define preços precisa disto, e quem
+   * define preços é meia dúzia de papéis diferentes (direcção, secretaria,
+   * quem gere sócios). Não há aqui nada de sensível: são preços de balcão,
+   * publicados no site da euPago.
+   *
+   * A conta faz-se no cliente e não aqui, de propósito: o valor muda a cada
+   * tecla no input, e uma ida ao servidor por tecla seria absurda. O que vem
+   * daqui é a **tabela**; a fórmula é a mesma dos dois lados (ver `liquidoDe`).
+   */
+  @Get("fees")
+  eupagoFees() {
+    return this.fees.tabela();
+  }
 
   @Get("charges")
   listCharges(@Req() req: Request, @Query("period") period: string) {

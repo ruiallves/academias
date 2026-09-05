@@ -41,6 +41,35 @@ class CreateExtraChargeDto {
   notes?: string;
 }
 
+/**
+ * Lançar mensalidades à mão a um atleta.
+ *
+ * Os meses vêm em `AAAA-MM` porque é isso que uma mensalidade é — um mês, não
+ * uma data. O dia de vencimento não se pergunta: é o do clube
+ * (`Academy.billingDueDay`), o mesmo das mensalidades emitidas
+ * automaticamente, para a família não ter de aprender dois prazos.
+ *
+ * O tecto de 24 meses é o de duas épocas: acima disso é engano de quem clicou,
+ * e recusa-se aqui em vez de escrever vinte e cinco linhas na conta de alguém.
+ */
+class CreateManualFeesDto {
+  @IsString()
+  athleteId!: string;
+
+  @IsInt()
+  amountCents!: number;
+
+  @IsArray()
+  @ArrayMaxSize(24)
+  @Matches(/^\d{4}-\d{2}$/, { each: true, message: "Mês inválido (esperado AAAA-MM)" })
+  periods!: string[];
+
+  @IsOptional()
+  @IsString()
+  @Length(0, 500)
+  notes?: string;
+}
+
 /** O estado a atribuir manualmente a uma mensalidade. Validado — só os três reais. */
 class SetChargeStatusDto {
   @IsIn(["OPEN", "SETTLED", "VOID"])
@@ -637,6 +666,16 @@ export class AcademyController {
   }
 
   /**
+   * Perguntar à euPago pelos pagamentos em voo desta academia e acertar o que
+   * ela souber. Corre sozinho de dez em dez minutos; isto é o botão para quem
+   * não quer esperar. Ver `BillingService.reconcilePayments`.
+   */
+  @Post("charges/reconciliar")
+  reconcileCharges(@Req() req: AuthedRequest) {
+    return this.billing.reconcileAcademy(req.ctx);
+  }
+
+  /**
    * Cobrar uma coisa avulsa a uma família.
    *
    * Cria a cobrança e avisa o encarregado pagador — na app, e no telemóvel pelo
@@ -645,6 +684,19 @@ export class AcademyController {
   @Post("charges/avulsa")
   createExtraCharge(@Req() req: AuthedRequest, @Body() body: CreateExtraChargeDto) {
     return this.billing.createExtraCharge(req.ctx, body);
+  }
+
+  /**
+   * Lançar mensalidades a um atleta, à mão.
+   *
+   * À parte da geração automática (`charges/gerar`), que emite o mês ao plantel
+   * a partir dos planos: isto é *este atleta, este valor, estes meses* — o
+   * atleta sem preço configurado, o mês fora do calendário do clube, o acerto
+   * de quem entrou a meio da época. Ver o serviço.
+   */
+  @Post("charges/mensalidade")
+  createManualFees(@Req() req: AuthedRequest, @Body() body: CreateManualFeesDto) {
+    return this.billing.createManualFees(req.ctx, body);
   }
 
   /** O que este atleta paga hoje — individual, da equipa, ou nenhum dos dois. */

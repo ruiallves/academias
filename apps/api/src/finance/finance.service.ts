@@ -4,7 +4,7 @@ import type { FinanceKind, FinanceStatus, PaymentMethod } from "@prisma/client";
 import { PrismaService, type ScopedClient } from "../prisma/prisma.service";
 import { can, type RequestContext } from "../common/permissions";
 import { currentSeason } from "../common/seasons";
-import type { BudgetDto, CreateTransactionDto, SettingsDto, UpdateTransactionDto } from "./finance.dto";
+import type { BudgetDto, CreateTransactionDto, DeleteTransactionDto, SettingsDto, UpdateTransactionDto } from "./finance.dto";
 
 /**
  * Contas — a gestão financeira do clube.
@@ -24,9 +24,20 @@ import type { BudgetDto, CreateTransactionDto, SettingsDto, UpdateTransactionDto
  *    lê — e por isso "nunca duplicar movimentos" é trivialmente verdade, e
  *    desligar a fonte no saldo não apaga pagamento nenhum.
  *
- * 3. **Nada se apaga.** Um movimento errado cancela-se e fica riscado, com quem
- *    o mexeu. Contas onde linhas desaparecem deixam de merecer confiança na
- *    primeira contagem que não bate certo.
+ * 3. **O que aconteceu não se apaga; o que nunca existiu, sim.** Um movimento
+ *    que se concretizou e depois caiu — o autocarro desmarcado — **cancela-se**
+ *    e fica riscado, com quem lhe mexeu: contas onde a história desaparece
+ *    deixam de merecer confiança na primeira contagem que não bate certo.
+ *
+ *    Mas um lançamento **feito por engano** — a linha a dobrar, o treino do
+ *    primeiro dia a usar o produto — não é história de nada, e obrigar o clube
+ *    a viver com ela riscada para sempre é sujar o extracto para defender um
+ *    princípio que ali não se aplica. Esse apaga-se (`deleteTransaction`), com
+ *    confirmação e só com `finance:write`.
+ *
+ *    As mensalidades ficam de fora das duas: derivam de `Charge` (regra 2), não
+ *    são linhas desta tabela, e um id delas não chega sequer a ser encontrado
+ *    aqui.
  *
  * ## Previsto ≠ realizado
  *
@@ -523,6 +534,53 @@ export class FinanceService {
       });
 
       return { ok: true };
+    });
+  }
+
+  /**
+   * Apagar um movimento — a saída para o que nunca devia ter sido lançado.
+   *
+   * ## Porque é que apagar existe ao lado de cancelar
+   *
+   * Ver a regra 3 no cabeçalho: cancelar conta uma história ("estava previsto e
+   * não se concretizou"), apagar admite um engano. Um clube que lançou a mesma
+   * despesa duas vezes não quer a duplicada riscada no extracto para sempre —
+   * quer o extracto certo.
+   *
+   * ## O que apaga, e o que nunca alcança
+   *
+   * Só linhas desta tabela, que são as **lançadas à mão**. As mensalidades pagas
+   * derivam de `Charge` e nem sequer existem aqui: um id delas cai no 404, e o
+   * estorno continua a acontecer onde a verdade delas vive.
+   *
+   * ## A série
+   *
+   * `scope: "series"` apaga este mês e os **seguintes** da mesma série — nunca
+   * os anteriores, que já passaram e não são deste engano. Ao contrário do
+   * cancelar em série, não filtra por estado: quem apaga está a dizer que a
+   * série inteira foi um erro, e deixar de fora um mês já confirmado devolvia
+   * uma limpeza pela metade, com uma linha órfã sem as irmãs. O número de linhas
+   * apagadas volta na resposta para a interface o poder dizer.
+   */
+  async deleteTransaction(ctx: RequestContext, id: string, dto: DeleteTransactionDto) {
+    this.mustWrite(ctx);
+
+    return this.prisma.runAs(ctx.academyId, async (db) => {
+      const atual = await db.financialTransaction.findFirst({
+        where: { id },
+        select: { id: true, seriesId: true, occurredAt: true },
+      });
+      if (!atual) throw new NotFoundException("Movimento não encontrado");
+
+      if (dto.scope === "series" && atual.seriesId) {
+        const { count } = await db.financialTransaction.deleteMany({
+          where: { seriesId: atual.seriesId, occurredAt: { gte: atual.occurredAt } },
+        });
+        return { ok: true, deleted: count };
+      }
+
+      await db.financialTransaction.delete({ where: { id } });
+      return { ok: true, deleted: 1 };
     });
   }
 

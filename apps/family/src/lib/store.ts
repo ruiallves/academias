@@ -217,6 +217,16 @@ export type Payment = {
   amountCents: number;
   dueDate: Date;
   status: "paid" | "pending" | "overdue" | "void";
+  /**
+   * O pai já pagou e o servidor ainda não teve a confirmação.
+   *
+   * É um MB Way aceite no telemóvel (ou um débito submetido) à espera do
+   * webhook ou da reconciliação. Continua "por pagar" na base — ninguém marca
+   * nada como pago sem a euPago dizer —, mas dizer "por pagar" a quem acabou
+   * de pagar é o que faz um pai marcar em dinheiro na secretaria uma coisa que
+   * já pagou. Por isso a faixa de topo e o total em dívida tratam-no à parte.
+   */
+  confirming: boolean;
   /** A tentativa em curso — a referência Multibanco gerada, o formulario aberto. */
   openPayment: OpenPayment | null;
 };
@@ -521,6 +531,7 @@ function build(
     dueDate: new Date(c.dueDate),
     status:
       c.status === "SETTLED" ? "paid" : c.status === "VOID" ? "void" : c.overdue ? "overdue" : "pending",
+    confirming: c.status === "OPEN" && c.openPayment?.status === "PROCESSING",
     openPayment: c.openPayment ?? null,
   }));
 

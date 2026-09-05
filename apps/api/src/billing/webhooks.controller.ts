@@ -52,7 +52,39 @@ export class EupagoWebhookController {
     if (!raw) throw new UnauthorizedException("Corpo em bruto indisponível");
 
     if (!this.eupago.verifySignature(raw, signature)) {
+      /*
+       * A rejeição deixa rasto.
+       *
+       * Não deixava: o 401 saía antes de qualquer escrita, e um dia inteiro de
+       * webhooks da euPago assinados com a chave errada era **invisível** na
+       * base — só um aviso num log que ninguém lê. Foi assim que dois
+       * pagamentos MB Way ficaram "a confirmar" sem ninguém saber se a euPago
+       * chegou sequer a bater à porta.
+       *
+       * Grava-se o mínimo que responde a "o que é que chegou?": se vinha
+       * assinatura, o tamanho do corpo, o nome do canal se o corpo o trouxer.
+       * Nunca o corpo inteiro: não foi verificado, e o que não foi verificado
+       * não entra na base como se fosse da euPago. Continua a ser 401.
+       */
       this.log.warn("Webhook com assinatura inválida — ignorado");
+      const canal = (() => {
+        try {
+          return String((JSON.parse(raw) as { channel?: { name?: unknown } }).channel?.name ?? "");
+        } catch {
+          return "";
+        }
+      })();
+      await this.prisma.webhookEvent
+        .create({
+          data: {
+            provider: "eupago",
+            eventId: `rejected-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+            signature: signature ? "presente" : null,
+            payload: { channel: canal, bodyLength: raw.length, hadSignature: Boolean(signature) },
+            error: signature ? "assinatura inválida" : "sem assinatura",
+          },
+        })
+        .catch(() => undefined);
       throw new UnauthorizedException();
     }
 

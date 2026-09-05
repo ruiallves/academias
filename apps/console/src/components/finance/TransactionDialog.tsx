@@ -1,11 +1,18 @@
 import { useState, type FormEvent } from "react";
 import { Dialog, DialogField, dialogInputClass } from "@/components/Dialog";
 import { SelectField, cx } from "@/components/primitives";
-import { Repeat, TrendingDown, TrendingUp, TriangleAlert } from "@/lib/icons";
+import { Repeat, Trash2, TrendingDown, TrendingUp, TriangleAlert } from "@/lib/icons";
 import { useActiveCatalog } from "@/lib/catalogs";
 import { listTeams } from "@/lib/api";
 import { useSession } from "@/session";
-import { METHOD_LABEL, createTransaction, type FinanceKind } from "@/lib/finance";
+import {
+  METHOD_LABEL,
+  createTransaction,
+  deleteTransaction,
+  updateTransaction,
+  type FinanceKind,
+  type TransactionRow,
+} from "@/lib/finance";
 
 /**
  * Registar um movimento — receita ou despesa, no mesmo diálogo.
@@ -29,9 +36,32 @@ import { METHOD_LABEL, createTransaction, type FinanceKind } from "@/lib/finance
  *
  * O valor escreve-se em euros e guarda-se em cêntimos: ninguém pensa em
  * cêntimos, e nenhuma conta do produto aceita floats.
+ *
+ * ## Registar e corrigir são o mesmo formulário
+ *
+ * Com `transaction` preenchido, isto abre em modo de edição. É o mesmo diálogo
+ * de propósito: os campos são os mesmos, e um segundo formulário só para
+ * corrigir uma categoria mal escolhida seria a mesma coisa dita duas vezes, a
+ * divergir na primeira alteração.
+ *
+ * O que muda em edição, e porquê:
+ *
+ * - **O tipo fica preso.** Uma despesa que vira receita não é uma correcção, é
+ *   outro movimento — a API recusa-o, e mostrá-lo clicável era prometer o que
+ *   não se cumpre.
+ * - **A repetição desaparece.** Transformar um movimento solto numa série a
+ *   meio de uma correcção criaria doze linhas que ninguém pediu; quem quer uma
+ *   série regista-a.
+ * - **Uma linha de série pergunta o alcance** — só este mês, ou também os
+ *   seguintes. É a pergunta do "a renda subiu", e sem ela quem tem trinta e
+ *   seis meses lançados corrigia trinta e seis à mão.
+ * - **Aparece o apagar**, para o que nunca devia ter sido lançado. Cancelar
+ *   continua na linha da lista: são coisas diferentes, e a regra 3 do serviço
+ *   explica porquê.
  */
 export function TransactionDialog({
   kind: kindInicial = "EXPENSE",
+  transaction,
   eventLink,
   onClose,
   onDone,
@@ -41,30 +71,51 @@ export function TransactionDialog({
    * pista (o botão de um evento, um atalho), e quem o usa muda à vontade.
    */
   kind?: FinanceKind;
+  /** Preenchido = corrigir este movimento, em vez de registar um novo. */
+  transaction?: TransactionRow;
   /** Quando se chega pelo calendário, o movimento já nasce ligado ao evento. */
   eventLink?: { matchId?: string; calendarEventId?: string; label: string };
   onClose: () => void;
   onDone: () => void;
 }) {
+  const editar = transaction ?? null;
   const { session } = useSession();
-  const [kind, setKind] = useState<FinanceKind>(kindInicial);
+  const [kind, setKind] = useState<FinanceKind>(editar?.kind ?? kindInicial);
   const receita = kind === "INCOME";
   const categorias = useActiveCatalog(receita ? "financeIncome" : "financeExpense");
   const equipas = listTeams(session);
 
-  const [descricao, setDescricao] = useState("");
-  const [valor, setValor] = useState("");
-  const [data, setData] = useState(hoje());
-  const [estado, setEstado] = useState<"COMPLETED" | "PLANNED">(eventLink ? "PLANNED" : "COMPLETED");
+  const [descricao, setDescricao] = useState(editar?.description ?? "");
+  const [valor, setValor] = useState(editar ? paraEuros(editar.amountCents) : "");
+  const [data, setData] = useState(editar ? diaDe(editar.occurredAt) : hoje());
+  const [estado, setEstado] = useState<"COMPLETED" | "PLANNED">(
+    editar ? (editar.status === "COMPLETED" ? "COMPLETED" : "PLANNED") : eventLink ? "PLANNED" : "COMPLETED",
+  );
   const [fixa, setFixa] = useState(false);
   const [ate, setAte] = useState("");
-  const [categoria, setCategoria] = useState("");
-  const [metodo, setMetodo] = useState("");
-  const [contraparte, setContraparte] = useState("");
-  const [equipa, setEquipa] = useState("");
-  const [notas, setNotas] = useState("");
+  const [categoria, setCategoria] = useState(editar?.category?.id ?? "");
+  const [metodo, setMetodo] = useState(editar?.method ?? "");
+  const [contraparte, setContraparte] = useState(editar?.counterparty ?? "");
+  const [equipa, setEquipa] = useState(editar?.team?.id ?? "");
+  const [notas, setNotas] = useState(editar?.notes ?? "");
   const [busy, setBusy] = useState(false);
   const [erro, setErro] = useState<string | null>(null);
+  /**
+   * A correcção de uma linha de série alcança só este mês ou também os
+   * seguintes. Começa em "só este": dos dois enganos possíveis, corrigir de
+   * menos desfaz-se com outra correcção, e corrigir trinta e seis meses sem
+   * querer não.
+   */
+  const [alcance, setAlcance] = useState<"one" | "series">("one");
+  /** O apagar confirma-se aqui dentro — um diálogo por cima de outro é pior. */
+  const [aApagar, setAApagar] = useState(false);
+
+  /*
+   * Um movimento cancelado é história: a API recusa reactivá-lo, e por isso o
+   * "quando" não se mostra. O resto continua editável — corrigir a categoria de
+   * uma linha cancelada é arrumação legítima do extracto.
+   */
+  const cancelado = editar?.status === "CANCELLED";
 
   const cents = paraCentimos(valor);
   const meses = fixa && ate ? contarMeses(data, ate) : 0;
@@ -77,6 +128,33 @@ export function TransactionDialog({
     setBusy(true);
     setErro(null);
     try {
+      if (editar) {
+        await updateTransaction(editar.id, {
+          ...(editar.seriesId ? { scope: alcance } : {}),
+          description: descricao.trim(),
+          amountCents: cents,
+          occurredAt: data,
+          // Vazio limpa, como manda a regra da casa dos DTOs — é assim que se
+          // tira uma categoria mal escolhida sem ter de escolher outra.
+          categoryId: categoria,
+          method: metodo,
+          counterparty: contraparte.trim(),
+          teamId: equipa,
+          notes: notas.trim(),
+          /*
+           * O estado só vai quando **mudou**.
+           *
+           * O selector tem dois valores e a base tem quatro: um movimento
+           * `PENDING` aparece no botão "Prevista", e mandá-lo sempre convertia-o
+           * em `PLANNED` a cada correcção de categoria — uma mudança de estado
+           * que ninguém pediu, escondida dentro de outra coisa.
+           */
+          ...(cancelado || estado === editar.status ? {} : { status: estado }),
+        });
+        onDone();
+        return;
+      }
+
       await createTransaction({
         kind,
         // Uma série é sempre previsão: nenhum mês por vir já foi pago.
@@ -101,22 +179,89 @@ export function TransactionDialog({
     }
   }
 
+  /** Apagar o que nunca devia ter sido lançado. Ver a regra 3 no serviço. */
+  async function apagar(scope: "one" | "series") {
+    if (!editar || busy) return;
+    setBusy(true);
+    setErro(null);
+    try {
+      await deleteTransaction(editar.id, scope);
+      onDone();
+    } catch (err) {
+      setErro(err instanceof Error ? err.message : "Não foi possível apagar.");
+      setBusy(false);
+      setAApagar(false);
+    }
+  }
+
   return (
     <Dialog
       labelledBy="novo-movimento"
-      title="Novo movimento"
-      subtitle={eventLink ? eventLink.label : undefined}
+      title={editar ? "Editar movimento" : "Novo movimento"}
+      subtitle={eventLink ? eventLink.label : editar?.seriesId ? "Um mês de um movimento fixo" : undefined}
       onClose={onClose}
       width={540}
       footer={
-        <>
-          <button type="button" onClick={onClose} className="ctl-ghost" disabled={busy}>
-            Cancelar
-          </button>
-          <button type="submit" form="form-movimento" className="ctl-primary" disabled={!valido || busy}>
-            {busy ? "A registar…" : fixa && meses > 0 ? `Registar ${meses} meses` : "Registar"}
-          </button>
-        </>
+        aApagar ? (
+          /*
+           * A confirmação vive no rodapé, no lugar dos botões — e não num
+           * segundo diálogo por cima deste, que rouba o foco e deixa duas
+           * camadas de sombra em cima do formulário. Quem chegou aqui já vê o
+           * que está prestes a apagar; o que falta é dizer o que desaparece.
+           */
+          <>
+            <span className="mr-auto text-meta text-ink-2">
+              {editar?.seriesId
+                ? "Apagar este mês, ou também os seguintes?"
+                : "Apagar de vez? Não fica no histórico."}
+            </span>
+            <button type="button" onClick={() => setAApagar(false)} className="ctl-ghost" disabled={busy}>
+              Não apagar
+            </button>
+            {editar?.seriesId && (
+              <button type="button" onClick={() => void apagar("series")} className="ctl-risk" disabled={busy}>
+                Este e os seguintes
+              </button>
+            )}
+            <button type="button" onClick={() => void apagar("one")} className="ctl-risk" disabled={busy}>
+              {editar?.seriesId ? "Só este mês" : busy ? "A apagar…" : "Apagar"}
+            </button>
+          </>
+        ) : (
+          <>
+            {/*
+              O apagar fica longe do Guardar, encostado à esquerda e sem
+              preenchimento: é a acção que não se desfaz, e não deve poder ser
+              acertada por quem ia carregar no botão do lado.
+            */}
+            {editar && (
+              <button
+                type="button"
+                onClick={() => setAApagar(true)}
+                className="ctl-ghost mr-auto text-ink-3 hover:text-risk"
+                disabled={busy}
+                title="Apagar — para o que nunca devia ter sido lançado"
+              >
+                <Trash2 className="size-3.5" strokeWidth={1.75} />
+                Apagar
+              </button>
+            )}
+            <button type="button" onClick={onClose} className="ctl-ghost" disabled={busy}>
+              Cancelar
+            </button>
+            <button type="submit" form="form-movimento" className="ctl-primary" disabled={!valido || busy}>
+              {editar
+                ? busy
+                  ? "A guardar…"
+                  : "Guardar"
+                : busy
+                  ? "A registar…"
+                  : fixa && meses > 0
+                    ? `Registar ${meses} meses`
+                    : "Registar"}
+            </button>
+          </>
+        )
       }
     >
       <form id="form-movimento" onSubmit={submeter} className="space-y-4 p-5">
@@ -129,7 +274,7 @@ export function TransactionDialog({
         */}
         <fieldset>
           <legend className="mb-1.5 text-meta font-medium text-ink">O quê</legend>
-          <div className="grid grid-cols-2 gap-2">
+          <div className={cx("grid gap-2", editar ? "grid-cols-1" : "grid-cols-2")}>
             {(
               [
                 ["EXPENSE", "Despesa", "sai do clube"],
@@ -148,6 +293,13 @@ export function TransactionDialog({
                     // guardava o id de uma categoria de despesa numa receita.
                     setCategoria("");
                   }}
+                  /*
+                    Em edição não se troca o tipo: a API recusa-o, e uma despesa
+                    que vira receita não é uma correcção — é outro movimento.
+                    Fica só o escolhido, sem o outro a convidar ao clique.
+                  */
+                  disabled={Boolean(editar)}
+                  hidden={Boolean(editar) && !activo}
                   aria-pressed={activo}
                   className={cx(
                     "flex items-center gap-2.5 rounded-[var(--radius-control)] border px-3 py-2.5 text-left transition-colors duration-[120ms]",
@@ -169,7 +321,21 @@ export function TransactionDialog({
           </div>
         </fieldset>
 
+        {/*
+          Um cancelado não volta atrás — a API recusa reactivá-lo, e é a regra
+          certa: o que se cancelou aconteceu assim. O resto do formulário fica
+          aberto, porque arrumar a categoria de uma linha cancelada continua a
+          ser arrumação legítima.
+        */}
+        {cancelado && (
+          <p className="rounded-[var(--radius-control)] bg-sunken px-3 py-2 text-meta text-ink-3">
+            Este movimento está cancelado e fica assim — para o repor, regista um novo. Aqui podes
+            corrigir a descrição, a categoria e o resto.
+          </p>
+        )}
+
         {/* Já aconteceu, ou está previsto? É o que separa o saldo das previsões. */}
+        {!cancelado && (
         <fieldset>
           <legend className="mb-1.5 text-meta font-medium text-ink">Quando</legend>
           <div className="inline-flex items-center gap-1 rounded-[var(--radius-control)] bg-sunken p-1">
@@ -202,6 +368,7 @@ export function TransactionDialog({
           </div>
           {fixa && <p className="mt-1.5 text-meta text-ink-3">Uma série é sempre previsão — cada mês confirma-se quando acontecer.</p>}
         </fieldset>
+        )}
 
         <div className="grid grid-cols-[1fr_130px] gap-3">
           <DialogField label="Descrição">
@@ -243,7 +410,7 @@ export function TransactionDialog({
           Fica ao pé da data porque é a data que ela repete, e não noutro passo:
           é a mesma despesa, dita uma vez em vez de doze.
         */}
-        {!eventLink && (
+        {!eventLink && !editar && (
           <div className="rounded-[var(--radius-control)] border border-line bg-sunken/40 p-3">
             <label className="flex items-center gap-2">
               <input
@@ -309,6 +476,51 @@ export function TransactionDialog({
           </DialogField>
         )}
 
+        {/*
+          "E os meses seguintes."
+
+          A renda subiu, o seguro mudou de valor — e quem tem trinta e seis
+          meses lançados não vai lá corrigir trinta e seis. A data fica sempre
+          de fora do alcance alargado (é o servidor que a exclui): mudar a data
+          "e seguintes" punha todos os meses no mesmo dia, que nunca é o que se
+          quer pedir.
+        */}
+        {editar?.seriesId && (
+          <fieldset className="rounded-[var(--radius-control)] border border-line bg-sunken/40 p-3">
+            <legend className="flex items-center gap-1.5 px-1 text-meta font-medium text-ink">
+              <Repeat className="size-3.5 text-ink-3" strokeWidth={1.75} />
+              Este movimento repete-se
+            </legend>
+            <div className="mt-1 inline-flex items-center gap-1 rounded-[var(--radius-control)] bg-surface p-1">
+              {(
+                [
+                  ["one", "Só este mês"],
+                  ["series", "Este e os seguintes"],
+                ] as const
+              ).map(([v, l]) => (
+                <button
+                  key={v}
+                  type="button"
+                  onClick={() => setAlcance(v)}
+                  aria-pressed={alcance === v}
+                  className={cx(
+                    "h-8 rounded-[7px] px-3 text-meta font-semibold transition-colors duration-[120ms]",
+                    alcance === v ? "bg-ink text-surface" : "text-ink-3 hover:bg-sunken hover:text-ink-2",
+                  )}
+                >
+                  {l}
+                </button>
+              ))}
+            </div>
+            {alcance === "series" && (
+              <p className="mt-2 text-meta text-ink-3">
+                A correcção vale para este mês e para os que vêm depois — nunca para os que já
+                passaram, e a data continua a ser só deste.
+              </p>
+            )}
+          </fieldset>
+        )}
+
         <DialogField label="Notas" hint="opcional">
           <input value={notas} onChange={(e) => setNotas(e.target.value)} className={dialogInputClass} />
         </DialogField>
@@ -322,6 +534,21 @@ export function TransactionDialog({
       </form>
     </Dialog>
   );
+}
+
+/** Cêntimos → o que se escreve no campo. O par de `paraCentimos`, ao contrário. */
+function paraEuros(cents: number): string {
+  return (cents / 100).toFixed(2).replace(".", ",");
+}
+
+/**
+ * O dia de uma data ISO, para um `<input type="date">`.
+ *
+ * Corta a cadeia em vez de passar por `Date`: `toISOString()` converte para UTC
+ * e um movimento registado às 23h de Lisboa reabria no dia seguinte.
+ */
+function diaDe(iso: string): string {
+  return iso.slice(0, 10);
 }
 
 /**

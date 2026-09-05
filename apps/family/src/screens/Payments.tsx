@@ -80,7 +80,10 @@ export default function Payments() {
 
   const chosen = outstanding.filter((p) => selected.has(p.id));
   const total = useMemo(() => chosen.reduce((n, p) => n + p.amountCents, 0), [chosen]);
-  const owedTotal = outstanding.reduce((n, p) => n + p.amountCents, 0);
+  // O que já foi pago e espera confirmação não é dívida — é espera. Contá-lo
+  // no total era dizer ao pai que devia o que acabou de pagar.
+  const owedTotal = outstanding.filter((p) => !p.confirming).reduce((n, p) => n + p.amountCents, 0);
+  const confirmingCount = outstanding.filter((p) => p.confirming).length;
 
   const toggle = (id: string) =>
     setSelected((s) => {
@@ -136,9 +139,11 @@ export default function Payments() {
                 */}
                 {chosen.length > 0
                   ? `${chosen.length} de ${outstanding.length}`
-                  : outstanding.every((p) => !p.extra)
-                    ? `${outstanding.length} ${outstanding.length === 1 ? "mensalidade" : "mensalidades"}`
-                    : `${outstanding.length} ${outstanding.length === 1 ? "pagamento" : "pagamentos"}`}
+                  : confirmingCount === outstanding.length
+                    ? `${confirmingCount} a confirmar`
+                    : outstanding.every((p) => !p.extra)
+                      ? `${outstanding.length} ${outstanding.length === 1 ? "mensalidade" : "mensalidades"}`
+                      : `${outstanding.length} ${outstanding.length === 1 ? "pagamento" : "pagamentos"}`}
               </span>
             </div>
 

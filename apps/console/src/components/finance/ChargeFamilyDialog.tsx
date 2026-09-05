@@ -1,10 +1,12 @@
 import { useMemo, useState, type FormEvent } from "react";
+import { CustoDoPagamento } from "./CustoDoPagamento";
 import { Dialog, DialogField, dialogInputClass } from "@/components/Dialog";
 import { Monogram, SelectField, cx } from "@/components/primitives";
 import { Check, Home, Search, Send, TriangleAlert, Wallet } from "@/lib/icons";
 import { useActiveCatalog } from "@/lib/catalogs";
 import { guardiansOf, listAthletes, teamById } from "@/lib/api";
 import { apiPost } from "@/lib/http";
+import { reloadAcademy } from "@/lib/store";
 import { money } from "@/lib/format";
 import { useSession } from "@/session";
 import type { Athlete, Guardian } from "@/data/types";
@@ -76,6 +78,14 @@ export function ChargeFamilyDialog({ onClose, onDone }: { onClose: () => void; o
         categoryId: categoria || undefined,
         notes: nota.trim() || undefined,
       });
+
+      /*
+       * Uma cobrança avulsa é uma `Charge` como as mensalidades, e o `store`
+       * guarda-as todas. Sem esta linha ela nascia invisível para o resto da
+       * consola — nomeadamente para a tabela das Mensalidades, que é onde a
+       * direcção vai ver quem deve o quê. Mesma razão de `NewFeeDialog`.
+       */
+      await reloadAcademy();
       onDone();
     } catch (err) {
       setErro(err instanceof Error ? err.message : "Não foi possível criar a cobrança.");
@@ -164,6 +174,15 @@ export function ChargeFamilyDialog({ onClose, onDone }: { onClose: () => void; o
               </DialogField>
             </div>
 
+            {/*
+              Fora da coluna do valor, e à largura toda.
+              Estava dentro do `DialogField` de "Valor (€)", que tem 130px: a
+              tabela por método ficava espremida e "Débito directo" partia-se em
+              duas linhas. O sítio de uma nota sobre o preço é por baixo da
+              linha do preço, não dentro do campo.
+            */}
+            <CustoDoPagamento amountCents={cents} className="-mt-1" />
+
             <div className="grid grid-cols-2 gap-3">
               <DialogField label="Categoria" hint="receita">
                 <SelectField
@@ -218,7 +237,7 @@ export function ChargeFamilyDialog({ onClose, onDone }: { onClose: () => void; o
 /* -------------------------------------------------------------------------- */
 
 /** A lista de onde se escolhe. Sem procura, os primeiros; com procura, o que bate. */
-function ListaDeAtletas({
+export function ListaDeAtletas({
   atletas,
   procura,
   onEscolher,
@@ -275,7 +294,7 @@ function ListaDeAtletas({
  * Restam duas consequências de carregar no botão, e dizem-se as duas: há
  * encarregados (vai para eles), ou não há nenhum (não vai para lado nenhum).
  */
-function Escolhido({
+export function Escolhido({
   atleta,
   encarregados,
   onTrocar,
@@ -350,7 +369,7 @@ function Escolhido({
 /* -------------------------------------------------------------------------- */
 
 /** "35", "35,50" → cêntimos. Nulo quando não é um valor — e o campo fica vermelho. */
-function paraCentimos(v: string): number | null {
+export function paraCentimos(v: string): number | null {
   const limpo = v.trim().replace(/\s/g, "").replace("€", "").replace(",", ".");
   if (!limpo) return null;
   const n = Number(limpo);
@@ -364,4 +383,4 @@ function daquiA(dias: number): string {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 }
 
-const primeiroNome = (nome: string) => nome.trim().split(/\s+/)[0];
+export const primeiroNome = (nome: string) => nome.trim().split(/\s+/)[0];

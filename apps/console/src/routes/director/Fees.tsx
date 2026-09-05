@@ -1,11 +1,13 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { CustoDoPagamento } from "@/components/finance/CustoDoPagamento";
 import { createPortal } from "react-dom";
 import { Link, useSearchParams } from "react-router-dom";
 import { PageHeader } from "@/components/Shell";
 import { Dialog, DialogField } from "@/components/Dialog";
 import { DataTable, Empty, Metric, MetricRow, Monogram, Panel, PanelHead, Pill, SelectField, cx, type Column } from "@/components/primitives";
 import { ResultCount, SearchInput, Segmented, Select, Toolbar } from "@/components/filters";
-import { CalendarDays, Check, ChevronDown, CircleCheck, Download, Loader2, Search, Send, Settings, TriangleAlert, Users, Wallet } from "@/lib/icons";
+import { NewFeeDialog } from "@/components/finance/NewFeeDialog";
+import { CalendarDays, Check, ChevronDown, CircleCheck, Download, Loader2, Plus, Search, Send, Settings, TriangleAlert, Users, Wallet } from "@/lib/icons";
 import {
   arrears,
   athleteById,
@@ -20,7 +22,7 @@ import {
   today,
 } from "@/lib/api";
 import { apiGet, apiPatch, apiPost, apiPut } from "@/lib/http";
-import { reloadAcademy } from "@/lib/store";
+import { reloadAcademy, useStore } from "@/lib/store";
 import { money, percent, periodLabel, relativeDays, shortName } from "@/lib/format";
 import { exportFees, nomeDoFicheiro } from "@/lib/fees-export";
 import { can } from "@/lib/permissions";
@@ -84,6 +86,21 @@ export default function Fees() {
   const { session } = useSession();
   const [params, setParams] = useSearchParams();
   const [query, setQuery] = useState("");
+
+  /*
+   * Subscrever o armazém — a página inteira sai de lá.
+   *
+   * `availablePeriods()`, `listAllFees()`, `listFees()` e `arrears()` lêem
+   * arrays ao nível do módulo em `lib/api.ts`, que o `reloadAcademy()`
+   * substitui. Ler não subscreve: sem esta linha, a página só se redesenhava
+   * quando alguma outra coisa a obrigasse — um estado local a mudar por acaso —
+   * e o que dependesse só do armazém ficava a mostrar o que já não é verdade.
+   *
+   * Não se usa o valor devolvido de propósito: o que se quer é a subscrição.
+   * Quem lê os dados são as funções acima, que já sabem o âmbito de quem
+   * pergunta.
+   */
+  useStore();
 
   const estado = (params.get("estado") ?? "todos") as FeeStatus | "todos";
   const setEstado = (v: FeeStatus | "todos") => {
@@ -174,6 +191,14 @@ export default function Fees() {
   const onFeeSaved = useCallback(() => setFeesVersion((v) => v + 1), []);
   const [sendingReminders, setSendingReminders] = useState(false);
   const [reminderResult, setReminderResult] = useState<string | null>(null);
+  /**
+   * Lançar uma mensalidade à mão.
+   *
+   * Ao lado da emissão do mês, que trabalha sobre o plantel a partir dos
+   * planos: isto é para o atleta sem preço, o mês fora do calendário do clube,
+   * e o acerto de quem entrou a meio da época. Ver `NewFeeDialog`.
+   */
+  const [lancarOpen, setLancarOpen] = useState(false);
 
   async function sendReminders() {
     setSendingReminders(true);
@@ -302,6 +327,10 @@ export default function Fees() {
         </button>
         {mayEditFees && (
           <>
+            <button type="button" className="ctl-outline" onClick={() => setLancarOpen(true)}>
+              <Plus className="size-3.5" strokeWidth={2} />
+              Lançar mensalidade
+            </button>
             <button type="button" className="ctl-outline" onClick={() => setPricesOpen(true)}>
               <Settings className="size-3.5" strokeWidth={1.75} />
               Preços por equipa
@@ -448,6 +477,16 @@ export default function Fees() {
       {exportOpen && (
         <ExportFeesDialog session={session} periods={periods} onClose={() => setExportOpen(false)} />
       )}
+      {lancarOpen && (
+        <NewFeeDialog
+          onClose={() => setLancarOpen(false)}
+          onDone={() => {
+            setLancarOpen(false);
+            onFeeSaved();
+          }}
+        />
+      )}
+
       {pricesOpen && (
         <TeamFeesDialog session={session} onSaved={onFeeSaved} onClose={() => setPricesOpen(false)} />
       )}
@@ -1142,8 +1181,21 @@ function TeamFeeInput({
           {erro}
         </span>
       )}
+      {/* Largura fixa para a tabela caber: o nome da equipa trunca para lha dar. */}
+      <CustoDoPagamento amountCents={paraCentimosDoPreco(value)} className="w-[248px] text-right" />
     </div>
   );
+}
+
+/**
+ * O valor escrito no campo, em cêntimos — só para a linha de custo.
+ *
+ * Não valida nada: quem valida é o `commit`, contra o servidor. Aqui só se quer
+ * saber se já há número suficiente para fazer a conta enquanto a pessoa escreve.
+ */
+function paraCentimosDoPreco(v: string): number | null {
+  const n = Number(v.trim().replace(/\s/g, "").replace("€", "").replace(",", "."));
+  return Number.isFinite(n) && n > 0 ? Math.round(n * 100) : null;
 }
 
 /**
@@ -1300,6 +1352,7 @@ function AthleteFeesDialog({
             className="h-9 w-32 rounded-[var(--radius-control)] border border-line bg-surface px-2.5 text-body tabular focus:border-line-strong focus:outline-none"
           />
         </div>
+        <CustoDoPagamento amountCents={paraCentimosDoPreco(amount)} />
         {error && <p className="mt-2 text-meta text-risk">{error}</p>}
         {result && <p className="mt-2 text-meta text-ok">{result}</p>}
       </div>

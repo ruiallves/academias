@@ -73,6 +73,27 @@ export class UpdateTransactionDto {
   @IsOptional() @IsString() @Length(0, 40) teamId?: string;
 }
 
+/**
+ * Apagar um movimento.
+ *
+ * Existe ao lado de cancelar porque são coisas diferentes, e confundi-las
+ * estraga as contas nos dois sentidos:
+ *
+ * - **Cancelar** é "estava previsto e não se concretizou" — o autocarro que se
+ *   desmarcou. Aconteceu na vida do clube, e por isso fica no histórico,
+ *   riscado, com quem lhe mexeu.
+ * - **Apagar** é "isto nunca devia ter existido" — a linha lançada a dobrar, o
+ *   engano de quem estava a aprender a usar o produto. Deixá-la riscada para
+ *   sempre é sujar o extracto com uma coisa que não é história de nada.
+ *
+ * `series` estende a "este e os meses seguintes", como no editar — para quem
+ * criou uma série de trinta e seis meses por engano não ter de apagar trinta e
+ * seis linhas à mão.
+ */
+export class DeleteTransactionDto {
+  @IsOptional() @IsIn(["one", "series"]) scope?: string;
+}
+
 /** O ponto de partida do saldo, e o que conta para ele. */
 export class SettingsDto {
   @IsOptional() @IsInt() @Min(-1_000_000_000) @Max(1_000_000_000) initialBalanceCents?: number;

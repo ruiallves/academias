@@ -1113,11 +1113,41 @@ export class AcademyService {
               },
             },
           },
-          clinical: {
-            where: { clearedOn: null, impact: { not: "NONE" } },
-            orderBy: { date: "desc" },
-            select: { id: true, impact: true, title: true, expectedReturn: true, date: true },
-          },
+          /*
+           * Duas leituras do boletim, e a diferença é quem está a olhar.
+           *
+           * Isto trazia **só** a restrição activa — `clearedOn: null` e `impact
+           * != NONE` — porque a única pergunta que a lista de atletas fazia era
+           * "este está lesionado?". Ficou a mentir no dia em que o departamento
+           * clínico ganhou ecrãs próprios: uma consulta de nutrição agendada tem
+           * `impact: NONE` por definição (um agendamento não afasta ninguém), e
+           * por isso **nunca voltava na resposta**. A médica agendava, a base
+           * gravava, e o ecrã continuava vazio — que é a queixa.
+           *
+           * A quem tem `clinical:read` (departamento clínico, treinadores) vai o
+           * boletim inteiro, com os campos que fazem dele um boletim: tipo,
+           * estado, hora, local. A quem só tem `clinical:status` (direcção,
+           * família) continua a ir apenas a restrição activa — o que decide a
+           * disponibilidade, e nada do que a explica.
+           */
+          clinical: mayReadDiagnosis
+            ? {
+                orderBy: { date: "desc" },
+                select: {
+                  id: true, kind: true, status: true, date: true, time: true, location: true,
+                  title: true, detail: true, impact: true, expectedReturn: true,
+                  outDays: true, clearedOn: true,
+                },
+              }
+            : {
+                where: { clearedOn: null, impact: { not: "NONE" }, status: "DONE" },
+                orderBy: { date: "desc" },
+                select: {
+                  id: true, kind: true, status: true, date: true, time: true, location: true,
+                  title: true, detail: true, impact: true, expectedReturn: true,
+                  outDays: true, clearedOn: true,
+                },
+              },
         },
       });
 
@@ -1158,7 +1188,18 @@ export class AcademyService {
       );
 
       return athletes.map((a) => {
-        const active = a.clinical[0];
+        /*
+         * A restrição activa, escolhida e não presumida.
+         *
+         * Era `a.clinical[0]` — o primeiro da lista, que funcionava só porque a
+         * consulta já vinha filtrada a restrições activas. Agora a lista traz o
+         * boletim todo, e o primeiro pode ser uma consulta de nutrição de
+         * amanhã. A regra é a mesma que o cliente aplica: nada agendado, nada
+         * cancelado, com impacto e sem alta.
+         */
+        const active = a.clinical.find(
+          (c) => c.status === "DONE" && c.impact !== "NONE" && c.clearedOn === null,
+        );
         return {
           id: a.id,
           name: a.name,
@@ -1186,6 +1227,25 @@ export class AcademyService {
           })),
           // "available" | "limited" | "out" — `clinical:status`, chega a todos.
           availability: !active ? "available" : active.impact === "OUT" ? "out" : "limited",
+          /*
+           * O boletim, em minúsculas — é assim que o cliente o modela desde
+           * sempre (`data/types.ts`), e traduzir aqui poupa a cada ecrã ter de
+           * se lembrar de o fazer.
+           */
+          clinical: a.clinical.map((c) => ({
+            id: c.id,
+            kind: c.kind.toLowerCase(),
+            status: c.status.toLowerCase(),
+            date: c.date,
+            time: c.time,
+            location: c.location,
+            title: mayReadDiagnosis ? c.title : null,
+            detail: mayReadDiagnosis ? c.detail : null,
+            impact: c.impact.toLowerCase(),
+            expectedReturn: c.expectedReturn,
+            outDays: c.outDays,
+            clearedOn: c.clearedOn,
+          })),
           // O título (diagnóstico) só a quem tem `clinical:read`. As datas de
           // regresso são planeamento e acompanham o estado; o título é que é o
           // dado sensível, e é esse que se retém.

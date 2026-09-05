@@ -4409,6 +4409,10 @@ model AIInsight {
   @@index([academyId, createdAt])
   @@index([athleteId])
   @@index([analysisId])
+  /// Criado na migração `20260902200000_academias_ai` e nunca declarado aqui —
+  /// era o único drift que o `check:schema` acusava. Declarar é o lado certo:
+  /// o índice existe e serve; o que estava incompleto era o modelo.
+  @@index([teamId])
 }
 
 /// Uma correção humana — a matéria-prima do active learning.

@@ -1,5 +1,6 @@
-import { useSyncExternalStore } from "react";
 import { athleteById, today } from "@/lib/api";
+import { apiDelete, apiPatch, apiPost } from "@/lib/http";
+import { reloadAcademy } from "@/lib/store";
 import type { ClinicalEntry, ClinicalImpact, ClinicalKind } from "@/data/types";
 
 /**
@@ -13,6 +14,19 @@ import type { ClinicalEntry, ClinicalImpact, ClinicalKind } from "@/data/types";
  * A alternativa — um `status: "injured"` guardado à parte — dessincroniza-se na
  * primeira vez que alguém der alta e se esquecer de o mudar, e a partir daí o
  * treinador convoca um lesionado.
+ *
+ * ## O que mudou aqui, e porquê
+ *
+ * Isto tinha um `let added: Record<string, ClinicalEntry[]> = {}` — um objecto em
+ * memória onde ficava tudo o que a consola registasse, com um comentário a dizer
+ * "quando a API existir, isto passa a `POST /athletes/:id/clinical`". A API não
+ * existia, e o resultado era o pior possível: a médica dava uma baixa, via-a no
+ * ecrã, recarregava a página e ela tinha desaparecido — com o atleta outra vez
+ * apto para o treinador convocar.
+ *
+ * Agora escreve-se no servidor e recarrega-se a academia, como em todo o resto do
+ * produto. As leituras daqui para baixo não mudaram uma linha: já liam de
+ * `athleteById(...).clinical`, que vem da API — o que faltava era o outro lado.
  */
 
 export type Availability = "available" | "limited" | "out";
@@ -39,78 +53,107 @@ export const IMPACT_LABEL: Record<ClinicalImpact, string> = {
 };
 
 /* -------------------------------------------------------------------------- */
-/* Registos criados na consola                                                 */
+/* Escritas                                                                    */
 /* -------------------------------------------------------------------------- */
 
-/**
- * Mesmo padrão de `lib/roster.ts` e `lib/attendance.ts`: o que vem da base de dados é
- * estático, por isso o que o departamento clínico regista vive aqui e é fundido
- * na leitura. Quando a API existir, isto passa a `POST /athletes/:id/clinical`.
+/*
+ * Os enums do servidor são em maiúsculas; os do cliente em minúsculas, porque é
+ * assim que vivem no `data/types.ts` desde o princípio. A tradução é aqui e só
+ * aqui — espalhá-la pelos ecrãs era garantir que um deles mandava o valor errado.
  */
-let added: Record<string, ClinicalEntry[]> = {};
-const listeners = new Set<() => void>();
+const paraApi = (v: string) => v.toUpperCase();
 
-function emit() {
-  added = { ...added };
-  listeners.forEach((l) => l());
-}
+export type NovaEntrada = {
+  kind: ClinicalKind;
+  status: "done" | "scheduled";
+  date: string;
+  time?: string;
+  location?: string;
+  title?: string;
+  detail?: string;
+  impact: ClinicalImpact;
+  expectedReturn?: string;
+  /** Só em exames realizados: escreve também a validade na ficha do atleta. */
+  validUntil?: string;
+};
 
-function subscribe(listener: () => void) {
-  listeners.add(listener);
-  return () => listeners.delete(listener);
-}
-
-const snapshot = () => added;
-
-/** Subscrever faz o ecrã redesenhar-se quando o médico dá baixa ou alta. */
-export function useClinicalRecords(): Record<string, ClinicalEntry[]> {
-  return useSyncExternalStore(subscribe, snapshot, snapshot);
-}
-
-let seq = 0;
-
-export function addClinicalEntry(athleteId: string, entry: Omit<ClinicalEntry, "id">) {
-  const withId: ClinicalEntry = { ...entry, id: `cl_${Date.now().toString(36)}_${seq++}` };
-  added = { ...added, [athleteId]: [...(added[athleteId] ?? []), withId] };
-  emit();
+/**
+ * Registar no boletim — ou agendar.
+ *
+ * Recarrega a academia a seguir: o boletim vem dentro do atleta, e é de lá que
+ * todos os ecrãs o lêem. Sem o recarregamento, o registo estava na base e não no
+ * ecrã — que é o mesmo sintoma, ao contrário.
+ */
+export async function addClinicalEntry(athleteId: string, entry: NovaEntrada): Promise<void> {
+  await apiPost(`/api/athletes/${athleteId}/clinical`, {
+    kind: paraApi(entry.kind),
+    status: paraApi(entry.status),
+    impact: paraApi(entry.impact),
+    date: entry.date,
+    ...(entry.time ? { time: entry.time } : {}),
+    ...(entry.location ? { location: entry.location } : {}),
+    ...(entry.title ? { title: entry.title } : {}),
+    ...(entry.detail ? { detail: entry.detail } : {}),
+    ...(entry.expectedReturn ? { expectedReturn: entry.expectedReturn } : {}),
+    ...(entry.validUntil ? { validUntil: entry.validUntil } : {}),
+  });
+  await reloadAcademy();
 }
 
 /**
  * Dar alta. Fecha a entrada em vez de criar outra — a alta é o fim daquela
  * ocorrência, não um acontecimento separado no historial.
  */
-export function clearClinicalEntry(athleteId: string, entryId: string, on = isoToday()) {
-  const athlete = athleteById(athleteId);
-  const fromDemo = athlete?.clinical ?? [];
-  const existing = added[athleteId] ?? [];
+export async function clearClinicalEntry(_athleteId: string, entryId: string, on?: string): Promise<void> {
+  await apiPost(`/api/clinical/${entryId}/alta`, on ? { on } : {});
+  await reloadAcademy();
+}
 
-  // Se a entrada vem dos dados estáticos, guarda-se aqui uma cópia fechada; a
-  // fusão em `clinicalOf` dá prioridade a esta.
-  const inAdded = existing.find((e) => e.id === entryId);
-  if (inAdded) {
-    added = {
-      ...added,
-      [athleteId]: existing.map((e) => (e.id === entryId ? { ...e, clearedOn: on } : e)),
-    };
-  } else {
-    const original = fromDemo.find((e) => e.id === entryId);
-    if (!original) return;
-    added = { ...added, [athleteId]: [...existing, { ...original, clearedOn: on }] };
-  }
-  emit();
+/** Desfazer uma alta dada por engano. */
+export async function reopenClinicalEntry(entryId: string): Promise<void> {
+  await apiPost(`/api/clinical/${entryId}/reabrir`, {});
+  await reloadAcademy();
+}
+
+/** Corrigir um registo. */
+export async function updateClinicalEntry(entryId: string, patch: Partial<NovaEntrada>): Promise<void> {
+  await apiPatch(`/api/clinical/${entryId}`, {
+    ...(patch.kind ? { kind: paraApi(patch.kind) } : {}),
+    ...(patch.status ? { status: paraApi(patch.status) } : {}),
+    ...(patch.impact ? { impact: paraApi(patch.impact) } : {}),
+    ...(patch.date ? { date: patch.date } : {}),
+    ...(patch.time !== undefined ? { time: patch.time } : {}),
+    ...(patch.location !== undefined ? { location: patch.location } : {}),
+    ...(patch.title !== undefined ? { title: patch.title } : {}),
+    ...(patch.detail !== undefined ? { detail: patch.detail } : {}),
+    ...(patch.expectedReturn !== undefined ? { expectedReturn: patch.expectedReturn } : {}),
+    ...(patch.validUntil ? { validUntil: patch.validUntil } : {}),
+  });
+  await reloadAcademy();
+}
+
+/** Desmarcar um agendamento. O servidor recusa apagar o que já aconteceu. */
+export async function deleteClinicalEntry(entryId: string): Promise<void> {
+  await apiDelete(`/api/clinical/${entryId}`);
+  await reloadAcademy();
 }
 
 /* -------------------------------------------------------------------------- */
 /* Leitura                                                                     */
 /* -------------------------------------------------------------------------- */
 
-/** O boletim completo, com os registos da consola a sobreporem-se aos estáticos. */
+/**
+ * Já não há nada para subscrever — o boletim vive no store da academia, e é esse
+ * que notifica os ecrãs quando recarrega. Fica como no-op para os ecrãs que a
+ * chamavam não terem de mudar de forma por causa de uma mecânica que desapareceu.
+ */
+export function useClinicalRecords(): void {
+  /* O `useStore` de quem desenha já trata do redesenho. */
+}
+
+/** O boletim completo do atleta, como veio do servidor. */
 export function clinicalOf(athleteId: string): ClinicalEntry[] {
-  const base = athleteById(athleteId)?.clinical ?? [];
-  const overrides = added[athleteId] ?? [];
-  const byId = new Map(base.map((e) => [e.id, e]));
-  for (const e of overrides) byId.set(e.id, e);
-  return [...byId.values()].sort((a, b) => b.date.localeCompare(a.date));
+  return [...(athleteById(athleteId)?.clinical ?? [])].sort((a, b) => b.date.localeCompare(a.date));
 }
 
 /** Agendamentos futuros — o que o pai vê na app e o que enche a agenda clínica. */

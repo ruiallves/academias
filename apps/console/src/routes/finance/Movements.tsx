@@ -4,7 +4,7 @@ import { PageHeader } from "@/components/Shell";
 import { DataTable, Empty, Loading, Panel, Pill, SelectField } from "@/components/primitives";
 import { TransactionDialog } from "@/components/finance/TransactionDialog";
 import { Dialog } from "@/components/Dialog";
-import { ArrowLeft, Check, Download, Plus, Repeat, Search, TriangleAlert, Wallet, X } from "@/lib/icons";
+import { ArrowLeft, Check, Download, Pencil, Plus, Repeat, Search, Trash2, TriangleAlert, Wallet, X } from "@/lib/icons";
 import { shortDate } from "@/lib/format";
 import { can } from "@/lib/permissions";
 import { useSession } from "@/session";
@@ -13,6 +13,7 @@ import {
   METHOD_LABEL,
   STATUS_LABEL,
   STATUS_TONE,
+  deleteTransaction,
   euros,
   listTransactions,
   updateTransaction,
@@ -44,6 +45,47 @@ export default function Movements() {
   const [aMexer, setAMexer] = useState<string | null>(null);
   /** Cancelar um mês de uma série obriga a perguntar: só este, ou os seguintes? */
   const [cancelar, setCancelar] = useState<TransactionRow | null>(null);
+  /**
+   * A linha que se está a corrigir.
+   *
+   * Abre-se pelo lápis no fim da linha — ou clicando na linha, que continua a
+   * funcionar para quem já lá carregava. O clique sozinho não chegava: era um
+   * gesto que não se anuncia, e quem via uma categoria errada não tinha como
+   * adivinhar que a podia corrigir. A única saída conhecida era cancelar o
+   * movimento e registá-lo outra vez de raiz.
+   */
+  const [editar, setEditar] = useState<TransactionRow | null>(null);
+  /**
+   * A linha que se está a apagar.
+   *
+   * Apagar e cancelar são coisas diferentes e ambas ficam à mão: cancelar conta
+   * uma história — o autocarro afinal não se pagou — e a linha fica no
+   * histórico, riscada; apagar admite um engano, e o engano não é histórico
+   * nenhum. Ver `deleteTransaction` no serviço, que já dizia isto e não tinha
+   * quem lho pedisse.
+   */
+  const [apagar, setApagar] = useState<TransactionRow | null>(null);
+
+  /**
+   * Apagar de vez — uma linha, ou este mês e os seguintes de uma série.
+   *
+   * O `scope` só se pergunta quando há série; sem ela a pergunta não tem duas
+   * respostas e o diálogo apaga logo. É a mesma regra do cancelar em série,
+   * pelo mesmo motivo: adivinhar erra nos dois sentidos.
+   */
+  async function apagarMovimento(t: TransactionRow, scope?: "one" | "series") {
+    setAMexer(t.id);
+    setErro(null);
+    try {
+      await deleteTransaction(t.id, scope);
+      setApagar(null);
+      await carregar();
+    } catch (e) {
+      setErro(e instanceof Error ? e.message : "Não foi possível apagar o movimento.");
+    } finally {
+      setAMexer(null);
+    }
+  }
 
   const tipo = params.get("tipo") ?? "";
   const estado = params.get("estado") ?? "";
@@ -199,6 +241,13 @@ export default function Movements() {
         <DataTable
           rows={filtrados}
           keyOf={(t) => t.id}
+          /*
+            As mensalidades não se editam aqui: a verdade delas vive nas
+            Mensalidades (a euPago confirma lá, o estorno acontece lá), e esta
+            lista só as mostra. Abrir-lhes um formulário seria prometer uma
+            correcção que este módulo não tem como fazer.
+          */
+          onRowClick={podeEscrever ? (t) => t.source === "manual" && setEditar(t) : undefined}
           empty={
             <Empty
               title="Sem movimentos"
@@ -275,42 +324,100 @@ export default function Movements() {
                   <Pill tone={STATUS_TONE[t.status]}>{STATUS_LABEL[t.status]}</Pill>
                 ),
             },
+            /*
+              O que se pode fazer à linha, no fim da linha.
+
+              Estava tudo escondido: editar era um clique na linha que nada
+              anunciava, e apagar não existia de todo na interface — o servidor
+              já o sabia fazer e ninguém lho pedia. Agora as acções estão onde
+              se procuram, com o mesmo peso visual da informação que
+              acompanham: cinzentas em repouso, e só a que destrói ganha
+              vermelho ao passar por cima.
+
+              Quatro no máximo, e só num previsto. Um movimento já concluído
+              mostra dois — corrigir e apagar —, que são os únicos que ainda
+              fazem sentido. As mensalidades não mostram nenhum: a verdade
+              delas vive noutro ecrã, e prometer aqui uma correcção que este
+              módulo não faz seria mentir com um ícone.
+            */
             {
               key: "accoes",
               header: "",
               align: "right",
-              render: (t) =>
-                podeEscrever && t.source === "manual" && (t.status === "PLANNED" || t.status === "PENDING") ? (
+              width: "168px",
+              render: (t) => {
+                if (!podeEscrever || t.source !== "manual") return null;
+                const porConfirmar = t.status === "PLANNED" || t.status === "PENDING";
+                const ocupado = aMexer === t.id;
+
+                return (
                   <span className="flex items-center justify-end gap-1">
+                    {porConfirmar && (
+                      <button
+                        type="button"
+                        className="ctl-ghost h-7 text-meta text-ok"
+                        disabled={ocupado}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          void mudarEstado(t, "COMPLETED");
+                        }}
+                        title={t.kind === "INCOME" ? "Marcar como recebida" : "Marcar como paga"}
+                      >
+                        <Check className="size-3.5" strokeWidth={2} />
+                        Confirmar
+                      </button>
+                    )}
+
                     <button
                       type="button"
-                      className="ctl-ghost h-7 text-meta text-ok"
-                      disabled={aMexer === t.id}
+                      className="flex size-7 items-center justify-center rounded-[6px] text-ink-4 hover:bg-sunken hover:text-ink"
+                      disabled={ocupado}
                       onClick={(e) => {
                         e.stopPropagation();
-                        void mudarEstado(t, "COMPLETED");
+                        setEditar(t);
                       }}
-                      title={t.kind === "INCOME" ? "Marcar como recebida" : "Marcar como paga"}
+                      aria-label="Editar movimento"
+                      title="Editar"
                     >
-                      <Check className="size-3.5" strokeWidth={2} />
-                      Confirmar
+                      <Pencil className="size-3.5" strokeWidth={1.75} />
                     </button>
+
+                    {/* Cancelar só faz sentido no que ainda não aconteceu: um
+                        movimento concluído não se desmarca, corrige-se ou
+                        apaga-se. */}
+                    {porConfirmar && (
+                      <button
+                        type="button"
+                        className="flex size-7 items-center justify-center rounded-[6px] text-ink-4 hover:bg-warn-soft hover:text-warn"
+                        disabled={ocupado}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          if (t.seriesId) setCancelar(t);
+                          else void mudarEstado(t, "CANCELLED");
+                        }}
+                        aria-label="Cancelar movimento"
+                        title="Cancelar — fica no histórico, riscado"
+                      >
+                        <X className="size-3.5" strokeWidth={1.75} />
+                      </button>
+                    )}
+
                     <button
                       type="button"
                       className="flex size-7 items-center justify-center rounded-[6px] text-ink-4 hover:bg-risk-soft hover:text-risk"
-                      disabled={aMexer === t.id}
+                      disabled={ocupado}
                       onClick={(e) => {
                         e.stopPropagation();
-                        if (t.seriesId) setCancelar(t);
-                        else void mudarEstado(t, "CANCELLED");
+                        setApagar(t);
                       }}
-                      aria-label="Cancelar movimento"
-                      title="Cancelar — fica no histórico, riscado"
+                      aria-label="Apagar movimento"
+                      title="Apagar — para o que nunca devia ter sido lançado"
                     >
-                      <X className="size-3.5" strokeWidth={1.75} />
+                      <Trash2 className="size-3.5" strokeWidth={1.75} />
                     </button>
                   </span>
-                ) : null,
+                );
+              },
             },
           ]}
         />
@@ -325,6 +432,106 @@ export default function Movements() {
             void carregar();
           }}
         />
+      )}
+
+      {editar && (
+        <TransactionDialog
+          transaction={editar}
+          onClose={() => setEditar(null)}
+          onDone={() => {
+            setEditar(null);
+            void carregar();
+          }}
+        />
+      )}
+
+      {/*
+        Apagar é irreversível, e por isso pergunta-se — mas pergunta-se uma vez
+        só e com a saída mais branda à vista. Quem chegou aqui por engano quase
+        sempre queria cancelar: dizê-lo no próprio diálogo evita a viagem de
+        volta à linha para encontrar o outro ícone.
+      */}
+      {apagar && (
+        <Dialog
+          labelledBy="apagar-movimento"
+          title="Apagar movimento"
+          subtitle={`${apagar.description} · ${apagar.kind === "INCOME" ? "+" : "−"}${euros(apagar.amountCents)}`}
+          onClose={() => setApagar(null)}
+          width={460}
+          footer={
+            <button type="button" className="ctl-ghost" onClick={() => setApagar(null)} disabled={Boolean(aMexer)}>
+              Voltar
+            </button>
+          }
+        >
+          <div className="space-y-2 p-5">
+            {/*
+              A saída mais branda, e só onde ela existe.
+
+              Num movimento por confirmar, quem chegou aqui quase sempre queria
+              cancelar — dizê-lo no próprio diálogo evita a viagem de volta à
+              linha para procurar o outro ícone. Num já concluído a sugestão
+              não se faz: o dinheiro mexeu-se, e a linha do fim da tabela também
+              não oferece cancelar. Uma porta que só existe em metade dos casos
+              não pode aparecer nos dois.
+            */}
+            {apagar.status === "PLANNED" || apagar.status === "PENDING" ? (
+              <p className="mb-3 text-body leading-relaxed text-ink-2">
+                Apagar não deixa rasto — é para o que nunca devia ter sido lançado. Se o movimento chegou a existir e
+                apenas não se concretizou,{" "}
+                <button
+                  type="button"
+                  className="font-medium text-ink underline underline-offset-2"
+                  disabled={Boolean(aMexer)}
+                  onClick={() => {
+                    const alvo = apagar;
+                    setApagar(null);
+                    if (alvo.seriesId) setCancelar(alvo);
+                    else void mudarEstado(alvo, "CANCELLED");
+                  }}
+                >
+                  cancela-o
+                </button>{" "}
+                — fica no histórico, riscado.
+              </p>
+            ) : (
+              <p className="mb-3 text-body leading-relaxed text-ink-2">
+                Apagar não deixa rasto — o movimento sai das contas como se nunca tivesse sido lançado, e o saldo
+                acerta-se sozinho. É para o engano, não para o que correu mal.
+              </p>
+            )}
+
+            {apagar.seriesId ? (
+              <>
+                <button
+                  type="button"
+                  className="ctl-outline w-full justify-center text-risk"
+                  disabled={Boolean(aMexer)}
+                  onClick={() => void apagarMovimento(apagar, "one")}
+                >
+                  Apagar só {shortDate(new Date(apagar.occurredAt))}
+                </button>
+                <button
+                  type="button"
+                  className="ctl-outline w-full justify-center text-risk"
+                  disabled={Boolean(aMexer)}
+                  onClick={() => void apagarMovimento(apagar, "series")}
+                >
+                  Apagar este mês e os seguintes
+                </button>
+              </>
+            ) : (
+              <button
+                type="button"
+                className="ctl-outline w-full justify-center text-risk"
+                disabled={Boolean(aMexer)}
+                onClick={() => void apagarMovimento(apagar)}
+              >
+                Apagar de vez
+              </button>
+            )}
+          </div>
+        </Dialog>
       )}
 
       {/*

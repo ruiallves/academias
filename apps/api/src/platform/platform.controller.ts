@@ -5,6 +5,7 @@ import { Public } from "../auth/auth.guard";
 import { PlatformGuard, PlatformRoles, type PlatformRequest } from "./platform.guard";
 import { PlatformService } from "./platform.service";
 import { ClubLogoService } from "../storage/club-logo.service";
+import { BillingService } from "../billing/billing.service";
 
 /**
  * O corpo de "criar academia", validado. Classe e não interface — ver
@@ -130,6 +131,7 @@ export class PlatformController {
   constructor(
     private readonly platform: PlatformService,
     private readonly logo: ClubLogoService,
+    private readonly billing: BillingService,
   ) {}
 
   /** Quem sou eu, do lado da plataforma. A app usa-o para arrancar. */
@@ -224,6 +226,37 @@ export class PlatformController {
     @Body() body: DeleteAcademyDto,
   ) {
     return this.platform.deleteAcademy(req.admin, id, body.slug, ip);
+  }
+
+  /**
+   * Reconciliar os pagamentos em voo de **todas** as academias, agora.
+   *
+   * O mesmo passe que corre sozinho de dez em dez minutos — aqui para quem
+   * acabou de corrigir a configuração do webhook na euPago e quer ver os
+   * pagamentos presos a resolverem-se sem esperar. Devolve as contagens.
+   */
+  @Post("billing/reconciliar")
+  @PlatformRoles("OWNER", "ADMIN")
+  reconcilePayments() {
+    return this.billing.reconcilePayments();
+  }
+
+  /**
+   * Emitir as mensalidades do mês corrente em todos os clubes, agora.
+   *
+   * O mesmo passe que corre sozinho de hora a hora — aqui para quem não quer
+   * esperar, ou para conferir o que ele faria. É idempotente: correr duas vezes
+   * seguidas não emite nada na segunda.
+   */
+  @Post("billing/emitir")
+  @PlatformRoles("OWNER", "ADMIN")
+  issueMonthlyCharges(@Query("academia") academia?: string) {
+    /*
+     * `?academia=` estreita a um clube. Serve o apoio — "emite já as deste
+     * clube" sem mexer nos outros dezoito — e é o que torna isto exercitável
+     * num teste sem emitir cobranças reais em toda a plataforma.
+     */
+    return this.billing.issueMonthlyCharges(academia?.trim() || undefined);
   }
 
   @Get("audit")

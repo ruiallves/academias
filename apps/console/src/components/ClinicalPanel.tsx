@@ -35,6 +35,29 @@ export function ClinicalPanel({ athlete, session }: { athlete: Athlete; session:
   useClinicalRecords();
   const [composing, setComposing] = useState<"done" | "scheduled" | null>(null);
 
+  /*
+   * A alta passou a ser uma ida ao servidor.
+   *
+   * Era uma escrita em memória e não podia falhar; agora pode — rede, permissão,
+   * um registo que já não existe. Sem isto, um erro voltava a produzir
+   * exactamente a queixa que trouxe aqui: "carreguei e ficou tudo na mesma".
+   */
+  const [aDarAlta, setADarAlta] = useState<string | null>(null);
+  const [erro, setErro] = useState<string | null>(null);
+
+  async function darAlta(entryId: string) {
+    if (aDarAlta) return;
+    setADarAlta(entryId);
+    setErro(null);
+    try {
+      await clearClinicalEntry(athlete.id, entryId);
+    } catch (e) {
+      setErro(e instanceof Error ? e.message : "Não foi possível dar alta.");
+    } finally {
+      setADarAlta(null);
+    }
+  }
+
   const all = clinicalOf(athlete.id);
   const appointments = upcomingAppointments(athlete.id);
   // O boletim é o historial; os agendamentos vivem à parte, em cima, porque são
@@ -52,6 +75,12 @@ export function ClinicalPanel({ athlete, session }: { athlete: Athlete; session:
 
   return (
     <div className="space-y-3">
+      {erro && (
+        <p role="alert" className="rounded-[var(--radius-panel)] bg-risk-soft px-4 py-2.5 text-meta leading-relaxed text-risk">
+          {erro}
+        </p>
+      )}
+
       {restriction && (
         <div
           className={cx(
@@ -68,11 +97,12 @@ export function ClinicalPanel({ athlete, session }: { athlete: Athlete; session:
           {mayWrite && (
             <button
               type="button"
-              onClick={() => clearClinicalEntry(athlete.id, restriction.id)}
+              onClick={() => void darAlta(restriction.id)}
+              disabled={aDarAlta !== null}
               className="ctl-outline shrink-0"
             >
               <Check className="size-3.5" strokeWidth={2} />
-              Dar alta
+              {aDarAlta === restriction.id ? "A dar alta…" : "Dar alta"}
             </button>
           )}
         </div>
@@ -162,7 +192,7 @@ export function ClinicalPanel({ athlete, session }: { athlete: Athlete; session:
                 key={e.id}
                 entry={e}
                 mayWrite={mayWrite}
-                onClear={() => clearClinicalEntry(athlete.id, e.id)}
+                onClear={() => void darAlta(e.id)}
               />
             ))}
           </ul>

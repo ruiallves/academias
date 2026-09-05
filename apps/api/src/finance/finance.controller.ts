@@ -1,7 +1,7 @@
-import { Body, Controller, Get, Patch, Post, Put, Query, Param, Req } from "@nestjs/common";
+import { Body, Controller, Delete, Get, Patch, Post, Put, Query, Param, Req } from "@nestjs/common";
 import type { AuthedRequest } from "../auth/auth.guard";
 import { FinanceService } from "./finance.service";
-import { BudgetDto, CreateTransactionDto, SettingsDto, UpdateTransactionDto } from "./finance.dto";
+import { BudgetDto, CreateTransactionDto, DeleteTransactionDto, SettingsDto, UpdateTransactionDto } from "./finance.dto";
 
 /**
  * Contas. As permissões vivem no serviço, como em todo o produto — o
@@ -39,10 +39,23 @@ export class FinanceController {
     return this.finance.createTransaction(req.ctx, dto);
   }
 
-  /** Editar, confirmar um previsto, ou cancelar. Apagar não existe — ver o serviço. */
+  /** Editar, confirmar um previsto, ou cancelar. */
   @Patch("transactions/:id")
   update(@Req() req: AuthedRequest, @Param("id") id: string, @Body() dto: UpdateTransactionDto) {
     return this.finance.updateTransaction(req.ctx, id, dto);
+  }
+
+  /**
+   * Apagar o que nunca devia ter sido lançado.
+   *
+   * À parte de cancelar de propósito — cancelar conta uma história, apagar
+   * admite um engano. Ver a regra 3 no cabeçalho do serviço. O `scope` vai no
+   * corpo (um DELETE com corpo é legal em HTTP) para não pendurar a decisão na
+   * query, onde ficaria escrita nos registos do servidor.
+   */
+  @Delete("transactions/:id")
+  remove(@Req() req: AuthedRequest, @Param("id") id: string, @Body() dto: DeleteTransactionDto) {
+    return this.finance.deleteTransaction(req.ctx, id, dto ?? {});
   }
 
   @Get("settings")

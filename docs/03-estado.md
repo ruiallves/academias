@@ -1034,9 +1034,61 @@ Módulos NestJS: academia (leituras **e escrita de atletas**), convocatórias,
 convites, faturação euPago (webhook idempotente e assinado), notificações com
 canais como adaptadores, landing SSR, plataforma.
 
-**O pagamento só muda de estado pelo webhook.** Não existe endpoint que marque
-algo como pago; o navegador nunca decide. O webhook verifica assinatura HMAC (com
-segredo forte obrigatório) e o valor pago.
+**As mensalidades do mês emitem-se sozinhas.** No dia 1 não acontecia nada: a
+emissão tinha três portas — o botão "Gerar mensalidades", gravar o calendário de
+cobrança, definir um preço — e todas exigiam alguém a carregar. Um presidente
+que se esquecesse duas semanas deixava as famílias sem mensalidade na app e sem
+aviso, com o vencimento a passar pelo meio.
+
+Agora o servidor varre os clubes de hora a hora e garante o período corrente,
+pela mesma `gerarCobrancas` do botão — o mesmo calendário (`billingMonths`), o
+mesmo dia de vencimento, os mesmos planos, o mesmo aviso à família. Não há uma
+segunda regra de emissão a viver em paralelo.
+
+De hora a hora, e não "à meia-noite do dia 1": um relógio que dispara uma vez
+por mês falha uma vez por mês — basta o processo estar a reiniciar naquele
+minuto. Uma varredura frequente sobre uma operação **idempotente** (`gerarCobrancas`
+só cria o que falta) emite na primeira passagem depois da meia-noite, não faz
+nada nas seguintes, e apanha o atraso sozinha se o servidor esteve em baixo. O
+custo fica em nada por causa do memo `emitido`, que salta o clube até o mês virar.
+
+Entram todos os clubes menos os `CANCELLED` — e não só os `ACTIVE`: na base real
+há dezoito em `SETUP`, com atletas e pagamentos a sério, e um só em `ACTIVE`.
+`AUTO_BILLING_INTERVAL_MIN=0` desliga, e **está a 0 no `.env` de
+desenvolvimento**: esse ficheiro aponta para a base de produção, e um servidor
+local a arrancar emitiria cobranças verdadeiras em todos os clubes. Verificado
+por `npm run test:emissao` (21), sobre um clube descartável.
+
+**O pagamento só muda de estado pelo servidor, com a euPago a dizer.** Não existe
+endpoint que marque algo como pago; o navegador nunca decide. Há dois caminhos, e
+liquidam pela mesma função (`confirmPayment`, com verificação de valor):
+
+- o **webhook** — rápido, assinado (HMAC com segredo forte obrigatório);
+- a **reconciliação** — de dez em dez minutos, o servidor pergunta à euPago pelos
+  pagamentos em voo (`multibanco/info` para Multibanco; a lista de transacções
+  pagas, por OAuth, para MB Way e o resto) e acerta o que ela souber. É a rede.
+
+A rede existe porque foi precisa: dois pais pagaram por MB Way e de manhã a app
+dizia-lhes que deviam. Em toda a base **não havia um único pagamento confirmado
+pelo webhook** — o servidor aceita um evento bem assinado (verificado em
+produção), mas o da euPago nunca chegou, ou chegou assinado com outra chave e caiu
+em 401 sem rasto. Isso corrige-se no backoffice da euPago (URL, segredo, sem
+encriptação); o que o código passou a garantir é que um webhook perdido já não
+deixa um pagamento "a confirmar" para sempre. As rejeições do webhook passaram a
+ficar gravadas em `WebhookEvent` com o motivo — o silêncio era metade do problema.
+
+Sem `EUPAGO_CLIENT_ID`/`EUPAGO_CLIENT_SECRET` a reconciliação só confirma
+Multibanco; MB Way fica dependente do webhook (e expira ao fim de dez minutos,
+para a app dizer "por pagar" em vez de prometer). O servidor avisa-o ao arrancar.
+
+Havia uma terceira causa, escondida atrás das outras duas: a migração
+`app_do_clube` redefiniu `app.resolve_payment_academy` sem o `OR p.id = p_ref`
+que `pagamentos_eupago` tinha acabado de acrescentar. Como o `identifier` que a
+euPago devolve é o **nosso** id de `Payment`, um webhook de MB Way — mesmo bem
+assinado — não encontrava o pagamento e saía em 200 "desconhecido". Reposto em
+`resolver_pagamento_por_id`; apanhado pelo teste `test:reconciliar` ("expirar
+não é negar"). E um detalhe da API antiga: em `multibanco/info` o estado por
+palavras vem em `estado_referencia`, não em `estado` (que é um número).
 
 **Rate-limiting e cabeçalhos de segurança** globais (`@nestjs/throttler`,
 `helmet`). Ver [05-seguranca](05-seguranca.md).

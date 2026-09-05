@@ -460,6 +460,121 @@ check(
   "nenhuma linha traz seriesId",
 );
 
+/* ============================================ corrigir e apagar ============ */
+
+/*
+ * Um clube pôs a categoria errada num movimento e perguntou como a mudava. Não
+ * mudava: a API já aceitava a correcção, mas não havia por onde a pedir, e a
+ * única saída era cancelar a linha e registá-la de novo — o extracto ficava com
+ * o engano riscado ao lado do certo.
+ *
+ * Estes testes cobrem os dois lados que faltavam: corrigir uma linha (incluindo
+ * a categoria, que foi o pedido) e apagar o que nunca devia ter sido lançado.
+ */
+console.log("\n=== Corrigir um movimento ===");
+
+/* A categoria de destino: outra qualquer de despesa, que não a de partida. */
+const catOutra = (
+  await db.query(
+    `SELECT id, label FROM "CatalogItem"
+      WHERE "academyId" = $1 AND kind = 'financeExpense' AND id <> $2 AND "archivedAt" IS NULL
+      LIMIT 1`,
+    [academia, catTransportes.id],
+  )
+).rows[0];
+check("há uma segunda categoria de despesa para onde mudar", Boolean(catOutra));
+
+const diaDeHoje = new Date().toISOString().slice(0, 10);
+
+const paraCorrigir = await call(director, "POST", "/api/finance/transactions", {
+  kind: "EXPENSE",
+  status: "COMPLETED",
+  description: "ZF Estojo de primeiros socorros",
+  amountCents: 4500,
+  occurredAt: diaDeHoje,
+  categoryId: catTransportes.id,
+});
+check("movimento criado para corrigir", paraCorrigir.status === 201 || paraCorrigir.status === 200, `${paraCorrigir.status}`);
+const corrigirId = paraCorrigir.body?.id ?? paraCorrigir.body?.ids?.[0];
+
+const corrigido = await call(director, "PATCH", `/api/finance/transactions/${corrigirId}`, {
+  description: "ZF Estojo de primeiros socorros (corrigido)",
+  amountCents: 5200,
+  categoryId: catOutra ? catOutra.id : "",
+});
+check("a correcção é aceite", corrigido.status === 200, `${corrigido.status} ${JSON.stringify(corrigido.body).slice(0, 120)}`);
+
+const depoisDaCorreccao = (
+  await db.query(`SELECT description, "amountCents", "categoryId" FROM "FinancialTransaction" WHERE id = $1`, [corrigirId])
+).rows[0];
+check("a descrição mudou", depoisDaCorreccao?.description.endsWith("(corrigido)"), depoisDaCorreccao?.description);
+check("o valor mudou", depoisDaCorreccao?.amountCents === 5200, `${depoisDaCorreccao?.amountCents}`);
+check(
+  "e a categoria mudou — o pedido que deu origem a isto",
+  depoisDaCorreccao?.categoryId !== catTransportes.id,
+  `continua ${depoisDaCorreccao?.categoryId}`,
+);
+
+/* Tirar a categoria por completo: vazio limpa, que é a regra da casa. */
+const semCategoria = await call(director, "PATCH", `/api/finance/transactions/${corrigirId}`, { categoryId: "" });
+check("tirar a categoria é aceite", semCategoria.status === 200, `${semCategoria.status}`);
+const limpa = (await db.query(`SELECT "categoryId" FROM "FinancialTransaction" WHERE id = $1`, [corrigirId])).rows[0];
+check("e a linha fica sem categoria", limpa?.categoryId === null, `${limpa?.categoryId}`);
+
+console.log("\n=== Apagar ===");
+
+const semPermissao = await call(coach, "DELETE", `/api/finance/transactions/${corrigirId}`, {});
+check("um treinador não apaga movimentos (403)", semPermissao.status === 403, `${semPermissao.status}`);
+
+const apagado = await call(director, "DELETE", `/api/finance/transactions/${corrigirId}`, {});
+check("a direção apaga", apagado.status === 200, `${apagado.status} ${JSON.stringify(apagado.body).slice(0, 120)}`);
+check("e diz quantas linhas foram", apagado.body?.deleted === 1, JSON.stringify(apagado.body));
+const sumiu = (await db.query(`SELECT COUNT(*)::int AS n FROM "FinancialTransaction" WHERE id = $1`, [corrigirId])).rows[0];
+check("a linha desapareceu mesmo da base", sumiu.n === 0, `${sumiu.n}`);
+
+const outraVez = await call(director, "DELETE", `/api/finance/transactions/${corrigirId}`, {});
+check("apagar o que já não existe dá 404", outraVez.status === 404, `${outraVez.status}`);
+
+/*
+ * A série inteira.
+ *
+ * Quem cria trinta e seis meses por engano não vai apagar trinta e seis linhas
+ * à mão. Apaga este mês e os seguintes — e os anteriores ficam, porque não são
+ * deste engano.
+ */
+const serieParaApagar = await call(director, "POST", "/api/finance/transactions", {
+  kind: "EXPENSE",
+  description: "ZF Serie a apagar",
+  amountCents: 1000,
+  occurredAt: `${new Date().getFullYear()}-01-10`,
+  repeatMonthly: true,
+  repeatUntil: `${new Date().getFullYear()}-12-10`,
+});
+const linhasApagar = (
+  await db.query(
+    `SELECT id, "occurredAt" AS d FROM "FinancialTransaction" WHERE description LIKE 'ZF Serie a apagar%' ORDER BY "occurredAt"`,
+  )
+).rows;
+check("a série de teste nasceu com doze meses", linhasApagar.length === 12, `${linhasApagar.length}`);
+
+const apagouSerie = await call(director, "DELETE", `/api/finance/transactions/${linhasApagar[9].id}`, { scope: "series" });
+check("apagar em série é aceite", apagouSerie.status === 200, `${apagouSerie.status}`);
+check("apagou os três últimos meses", apagouSerie.body?.deleted === 3, JSON.stringify(apagouSerie.body));
+
+const sobraram = (
+  await db.query(`SELECT COUNT(*)::int AS n FROM "FinancialTransaction" WHERE description LIKE 'ZF Serie a apagar%'`)
+).rows[0];
+check("e os nove primeiros meses ficaram de pé", sobraram.n === 9, `${sobraram.n}`);
+
+/* Só este mês, agora — a outra metade da pergunta. */
+const soUm = await call(director, "DELETE", `/api/finance/transactions/${linhasApagar[0].id}`, { scope: "one" });
+check("apagar só um mês de uma série é aceite", soUm.status === 200, `${soUm.status}`);
+check("e leva uma linha, não a série", soUm.body?.deleted === 1, JSON.stringify(soUm.body));
+const sobraram2 = (
+  await db.query(`SELECT COUNT(*)::int AS n FROM "FinancialTransaction" WHERE description LIKE 'ZF Serie a apagar%'`)
+).rows[0];
+check("ficam oito", sobraram2.n === 8, `${sobraram2.n}`);
+
 /* ================================================ saldo inicial datado ==== */
 
 /*

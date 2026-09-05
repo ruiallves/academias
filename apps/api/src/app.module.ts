@@ -12,6 +12,7 @@ import { PushController } from "./notifications/push.controller";
 import { NotificationsController } from "./notifications/notifications.controller";
 import { EupagoClient } from "./billing/eupago.client";
 import { BillingService } from "./billing/billing.service";
+import { EupagoFeesService } from "./billing/eupago-fees";
 import { ClubAppController } from "./club-app/club-app.controller";
 import { ClubAppService } from "./club-app/club-app.service";
 import { BillingController } from "./billing/billing.controller";
@@ -35,6 +36,8 @@ import { DepartmentsService } from "./departments/departments.service";
 import { RolesController } from "./roles/roles.controller";
 import { RolesService } from "./roles/roles.service";
 import { AcademyController } from "./academy/academy.controller";
+import { ClinicalController } from "./academy/clinical.controller";
+import { ClinicalService } from "./academy/clinical.service";
 import { AcademyService } from "./academy/academy.service";
 import { CatalogsController } from "./academy/catalogs.controller";
 import { CatalogsService } from "./academy/catalogs.service";
@@ -112,6 +115,7 @@ import { AiWorkerGuard } from "./ai/ai-worker.guard";
     InvitesController,
     InvitePageController,
     AcademyController,
+    ClinicalController,
     CatalogsController,
     DepartmentsController,
     RolesController,
@@ -161,6 +165,8 @@ import { AiWorkerGuard } from "./ai/ai-worker.guard";
     PushService,
     EupagoClient,
     BillingService,
+    EupagoFeesService,
+    ClinicalService,
     ClubAppService,
     LandingService,
     InvitesService,

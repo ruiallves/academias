@@ -94,6 +94,22 @@ export class EupagoClient implements OnModuleInit {
       else this.log.warn(aviso + " Em desenvolvimento, as referências são simuladas e nada fica pago.");
     }
 
+    /*
+     * A via de reconciliação, dita também ao arrancar.
+     *
+     * Sem `EUPAGO_CLIENT_ID`/`EUPAGO_CLIENT_SECRET` a reconciliação só consegue
+     * confirmar Multibanco (a API antiga responde com a chave do canal); MB Way,
+     * cartão e o resto só se confirmam pelo webhook — ou pela lista de
+     * transacções pagas, que exige OAuth. Dizê-lo aqui é o que impede a
+     * pergunta "porque é que o MB Way não reconcilia" daqui a um mês.
+     */
+    if (eupagoEnabled && !this.temCredenciaisDeGestao()) {
+      this.log.warn(
+        "EUPAGO_CLIENT_ID/EUPAGO_CLIENT_SECRET não configurados — a reconciliação confirma Multibanco, " +
+          "mas MB Way e cartão dependem só do webhook. Cria as credenciais OAuth no backoffice da euPago.",
+      );
+    }
+
     if (secret.length < 16) {
       const msg =
         "EUPAGO_WEBHOOK_SECRET ausente ou com menos de 16 caracteres. " +
@@ -344,6 +360,135 @@ export class EupagoClient implements OnModuleInit {
     );
 
     return { collectionDate: body.collectionDate ? String(body.collectionDate) : undefined };
+  }
+
+  /* ------------------------------------------------------------------------ */
+  /* Consultar — a segunda fonte de verdade                                     */
+  /* ------------------------------------------------------------------------ */
+
+  /**
+   * O estado de uma referência Multibanco, perguntado à euPago.
+   *
+   * A API antiga responde com a chave do canal no corpo — a mesma com que a
+   * referência foi criada. É o que deixa reconciliar Multibanco sem OAuth.
+   *
+   * O vocabulário de `estado` não está documentado além de "pendente". Devolve-se
+   * o texto tal como veio, e quem o lê (`BillingService.reconcilePayments`)
+   * decide com regras largas — e regista o que não reconhecer, para o
+   * vocabulário se revelar em produção em vez de se adivinhar aqui.
+   */
+  async getMultibancoStatus(
+    entity: string,
+    reference: string,
+    apiKey?: string,
+  ): Promise<{ estado: string; identificador: string; raw: Record<string, unknown> } | null> {
+    if (this.devMode(apiKey)) return null;
+
+    try {
+      const body = await this.postRest("/multibanco/info", {
+        chave: this.key(apiKey),
+        referencia: reference,
+        entidade: entity,
+      });
+      /*
+       * O texto está em `estado_referencia`, não em `estado`.
+       *
+       * Verificado contra a resposta real: `estado` vem como **número** (`0`
+       * numa pendente) e o estado por palavras — "pendente", e presumivelmente
+       * "paga"/"pago" — vem em `estado_referencia`. Ler só `estado` dava "0",
+       * que não bate em regra nenhuma, e uma referência paga ficava em voo.
+       * `estado` fica como recurso para o caso de a euPago o mandar em texto.
+       */
+      const texto = [body.estado_referencia, body.estado]
+        .map((v) => (typeof v === "string" ? v.trim().toLowerCase() : ""))
+        .find((v) => v.length > 0);
+      return {
+        estado: texto ?? String(body.estado ?? ""),
+        identificador: String(body.identificador ?? ""),
+        raw: body,
+      };
+    } catch (error) {
+      // Uma referência que a euPago já não conhece (-8/-11) não é avaria nossa:
+      // fica sem resposta e a reconciliação segue para a seguinte.
+      this.log.warn(`multibanco/info sem resposta para ${entity}/${reference}: ${error}`);
+      return null;
+    }
+  }
+
+  /** Há credenciais para a API de gestão? Sem elas a lista de pagos não existe. */
+  temCredenciaisDeGestao(): boolean {
+    return Boolean(this.config.get<string>("EUPAGO_CLIENT_ID")?.trim() && this.config.get<string>("EUPAGO_CLIENT_SECRET")?.trim());
+  }
+
+  private bearer: { token: string; expiresAt: number } | null = null;
+
+  /**
+   * As transacções **pagas** do canal, nos últimos três meses, por identificador.
+   *
+   * É a única forma de confirmar um MB Way sem webhook: a euPago não tem uma
+   * consulta por transacção, tem esta lista. O `identifier` é o id do nosso
+   * `Payment`, que enviámos ao criar — por isso a lista responde directamente
+   * "este pagamento está pago".
+   *
+   * Exige OAuth (`client_credentials`) com credenciais próprias do backoffice,
+   * distintas da chave do canal. Sem elas devolve `null` e não `Map` vazio: a
+   * diferença entre "não sei" e "nenhum está pago" é a diferença entre não
+   * mexer e expirar um pagamento que foi pago.
+   */
+  async listPaidTransactions(): Promise<Map<string, { trid: string; paidAt: Date; amountCents: number }> | null> {
+    if (!this.temCredenciaisDeGestao()) return null;
+
+    const token = await this.bearerToken();
+    if (!token) return null;
+
+    const res = await fetch(`${this.apiRoot}/management/v1.02/transactions?status=paga`, {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    const body = (await res.json().catch(() => ({}))) as Record<string, unknown>;
+    if (!res.ok || body.transactionStatus !== "Success") {
+      this.log.error(`euPago management/transactions falhou: ${res.status} ${body.code ?? ""} ${body.text ?? ""}`);
+      return null;
+    }
+
+    const out = new Map<string, { trid: string; paidAt: Date; amountCents: number }>();
+    for (const t of (body.transactionList as Record<string, unknown>[] | undefined) ?? []) {
+      const identifier = String(t.identifier ?? "").trim();
+      if (!identifier) continue;
+      const when = new Date(String(t.datePayment ?? ""));
+      out.set(identifier, {
+        trid: String(t.trid ?? ""),
+        paidAt: Number.isNaN(when.getTime()) ? new Date() : when,
+        amountCents: Math.round(Number(t.amount ?? 0) * 100),
+      });
+    }
+    return out;
+  }
+
+  /** O token OAuth, renovado um minuto antes de expirar. */
+  private async bearerToken(): Promise<string | null> {
+    if (this.bearer && this.bearer.expiresAt - 60_000 > Date.now()) return this.bearer.token;
+
+    const res = await fetch(`${this.apiRoot}/auth/token`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        client_id: this.config.get<string>("EUPAGO_CLIENT_ID")?.trim(),
+        client_secret: this.config.get<string>("EUPAGO_CLIENT_SECRET")?.trim(),
+        grant_type: "client_credentials",
+      }),
+    });
+    const body = (await res.json().catch(() => ({}))) as Record<string, unknown>;
+    if (!res.ok || !body.access_token) {
+      // Nunca as credenciais no log. O código chega.
+      this.log.error(`euPago auth/token falhou: ${res.status} ${body.code ?? ""} ${body.text ?? ""}`);
+      return null;
+    }
+
+    // `expires_in` vem como data-hora, não como segundos. Uma data ilegível
+    // vale uma hora, que é o mais curto que faz sentido.
+    const ate = new Date(String(body.expires_in ?? "")).getTime();
+    this.bearer = { token: String(body.access_token), expiresAt: Number.isNaN(ate) ? Date.now() + 3_600_000 : ate };
+    return this.bearer.token;
   }
 
   /* ------------------------------------------------------------------------ */

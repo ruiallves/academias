@@ -9,6 +9,13 @@ import type { Session } from "@/lib/permissions";
 import type { Athlete, ClinicalImpact, ClinicalKind } from "@/data/types";
 
 const KINDS: ClinicalKind[] = ["injury", "physio", "exam", "nutrition", "psychology", "note"];
+
+/** Um ano a contar de hoje — a validade típica de um exame médico-desportivo. */
+function maisUmAno(): string {
+  const d = new Date();
+  d.setFullYear(d.getFullYear() + 1);
+  return d.toISOString().slice(0, 10);
+}
 const IMPACTS: ClinicalImpact[] = ["none", "limited", "out"];
 
 /**
@@ -45,33 +52,52 @@ export function ClinicalEntryDialog({
   const [time, setTime] = useState("10:00");
   const [location, setLocation] = useState("");
   const [expectedReturn, setExpectedReturn] = useState("");
+  /*
+   * Até quando o exame vale.
+   *
+   * Um ano a contar de hoje é o que a esmagadora maioria dos exames desportivos
+   * dá, e é o valor que a médica confirmaria à mão em quase todos os casos.
+   */
+  const [validUntil, setValidUntil] = useState(maisUmAno());
+
+  const [busy, setBusy] = useState(false);
+  const [erro, setErro] = useState<string | null>(null);
 
   const scheduling = mode === "scheduled";
+  /* O exame realizado é o único registo que também escreve na ficha do atleta. */
+  const exameFeito = !scheduling && kind === "exam";
 
-  function submit(e: FormEvent) {
+  async function submit(e: FormEvent) {
     e.preventDefault();
-    if (!picked) return;
-
-    const outDays =
-      !scheduling && impact !== "none" && expectedReturn
-        ? Math.max(0, Math.round((new Date(expectedReturn).getTime() - new Date(date).getTime()) / 86_400_000))
-        : undefined;
-
-    addClinicalEntry(picked.id, {
-      date,
-      status: scheduling ? "scheduled" : "done",
-      time: scheduling ? time : undefined,
-      location: scheduling ? location.trim() || undefined : undefined,
-      kind,
-      title: title.trim() || KIND_LABEL[kind],
-      detail: detail.trim() || undefined,
-      // Um agendamento futuro não afasta ninguém hoje.
-      impact: scheduling ? "none" : impact,
-      expectedReturn: !scheduling && impact !== "none" && expectedReturn ? expectedReturn : undefined,
-      outDays,
-      authorId: session.userId,
-    });
-    onClose();
+    if (!picked || busy) return;
+    setBusy(true);
+    setErro(null);
+    try {
+      /*
+       * Os dias de paragem e o autor deixaram de ser calculados aqui: são do
+       * servidor. O autor sobretudo — um boletim clínico tem de dizer quem
+       * escreveu, e quem escreveu é quem o pedido autentica, não o que o browser
+       * disser que é.
+       */
+      await addClinicalEntry(picked.id, {
+        date,
+        status: scheduling ? "scheduled" : "done",
+        time: scheduling ? time : undefined,
+        location: scheduling ? location.trim() || undefined : undefined,
+        kind,
+        title: title.trim() || KIND_LABEL[kind],
+        detail: detail.trim() || undefined,
+        // Um agendamento futuro não afasta ninguém hoje.
+        impact: scheduling ? "none" : impact,
+        expectedReturn: !scheduling && impact !== "none" && expectedReturn ? expectedReturn : undefined,
+        /* Só num exame realizado — é o que actualiza a validade na ficha. */
+        validUntil: exameFeito && validUntil ? validUntil : undefined,
+      });
+      onClose();
+    } catch (err) {
+      setErro(err instanceof Error ? err.message : "Não foi possível guardar.");
+      setBusy(false);
+    }
   }
 
   return (
@@ -85,13 +111,18 @@ export function ClinicalEntryDialog({
           <button type="button" onClick={onClose} className="ctl-ghost">
             Cancelar
           </button>
-          <button type="submit" form="form-clinico" className="ctl-primary" disabled={!picked}>
-            Guardar
+          <button type="submit" form="form-clinico" className="ctl-primary" disabled={!picked || busy}>
+            {busy ? "A guardar…" : "Guardar"}
           </button>
         </>
       }
     >
       <form id="form-clinico" onSubmit={submit} className="space-y-4 p-5">
+        {erro && (
+          <p role="alert" className="rounded-[var(--radius-control)] bg-risk-soft px-3 py-2 text-meta leading-relaxed text-risk">
+            {erro}
+          </p>
+        )}
         <div className="inline-flex items-center gap-px rounded-[var(--radius-control)] bg-sunken p-0.5">
           {(["done", "scheduled"] as const).map((m) => (
             <button
@@ -159,6 +190,31 @@ export function ClinicalEntryDialog({
             className={cx(dialogInputClass, "h-auto resize-none py-2")}
           />
         </DialogField>
+
+        {/*
+          A validade do exame, aqui e não no formulário administrativo.
+
+          Era só lá que `medicalValidUntil` se escrevia — um formulário que pede
+          `athlete:write` e que exige o NIF do atleta para gravar seja o que for.
+          A médica não tem a primeira e não tem por que saber o segundo: ficava
+          a registar exames que a ficha continuava a dar como inexistentes.
+        */}
+        {exameFeito && (
+          <div className="rounded-[var(--radius-control)] border border-line bg-sunken/40 p-3">
+            <DialogField label="Exame válido até" hint="actualiza a ficha do atleta">
+              <input
+                type="date"
+                value={validUntil}
+                onChange={(e) => setValidUntil(e.target.value)}
+                className={dialogInputClass}
+              />
+            </DialogField>
+            <p className="mt-2 text-meta leading-relaxed text-ink-3">
+              Ao guardar, o atleta deixa de aparecer em "exame por fazer" e a data passa a
+              contar para as convocatórias. Deixa em branco se este exame não renova a validade.
+            </p>
+          </div>
+        )}
 
         {scheduling ? (
           <p className="rounded-[var(--radius-control)] border border-line bg-sunken/40 p-3 text-meta text-ink-3">

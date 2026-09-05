@@ -34,9 +34,17 @@ export default function Today() {
   const next =
     nextTraining && nextMatch ? (nextTraining.start <= nextMatch.start ? nextTraining : nextMatch) : (nextTraining ?? nextMatch);
 
-  const outstanding = store.payments
-    .filter((p) => p.childId === child.id && (p.status === "overdue" || p.status === "pending"))
-    .sort((a, b) => a.dueDate.getTime() - b.dueDate.getTime());
+  /*
+   * "Por pagar" e "a confirmar" são duas faixas, não uma.
+   *
+   * Um pai que pagou por MB Way ontem à noite abria a app de manhã e via a
+   * faixa escura a dizer que devia — e ia à secretaria marcar em dinheiro uma
+   * mensalidade já paga. A base tinha razão (a euPago ainda não tinha
+   * confirmado), mas a faixa dizia a coisa certa da forma errada.
+   */
+  const mine = store.payments.filter((p) => p.childId === child.id && (p.status === "overdue" || p.status === "pending"));
+  const outstanding = mine.filter((p) => !p.confirming).sort((a, b) => a.dueDate.getTime() - b.dueDate.getTime());
+  const confirming = mine.filter((p) => p.confirming);
 
   const notices = store.notices.slice(0, 3);
   const calledUp = myMatches.filter((m) => m.calledUp && m.end >= now).sort(byStart)[0];
@@ -65,6 +73,32 @@ export default function Today() {
       {outstanding.length > 0 && (
         <div className="rise" style={{ ["--i" as string]: i++ }}>
           <PaymentDue items={outstanding} childName={child.firstName} />
+        </div>
+      )}
+
+      {confirming.length > 0 && (
+        <div className="rise" style={{ ["--i" as string]: i++ }}>
+          <Link
+            to="/pagamentos"
+            className="flex items-center gap-3.5 rounded-[var(--radius-lg)] bg-surface p-3.5 shadow-[var(--shadow-soft)] active:scale-[0.99]"
+          >
+            <span className="flex size-10 shrink-0 items-center justify-center rounded-[13px] bg-signal-soft text-signal-ink">
+              <Wallet className="size-[19px]" strokeWidth={1.9} />
+            </span>
+            <span className="min-w-0 flex-1">
+              <span className="block text-[11px] font-semibold tracking-[0.06em] text-ink-3 uppercase">
+                A confirmar · {child.firstName}
+              </span>
+              <span className="block truncate text-body font-semibold text-ink">
+                {confirming.length === 1
+                  ? `${confirming[0].extra ? confirming[0].label : `Mensalidade de ${confirming[0].label.toLowerCase()}`} — pagamento enviado`
+                  : `${confirming.length} pagamentos enviados`}
+              </span>
+            </span>
+            <span className="num shrink-0 text-body font-semibold text-ink-3">
+              {money(confirming.reduce((n, p) => n + p.amountCents, 0))}
+            </span>
+          </Link>
         </div>
       )}
 

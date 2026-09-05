@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { BadRequestException, ForbiddenException, Injectable, Logger, NotFoundException } from "@nestjs/common";
+import { BadRequestException, ForbiddenException, Injectable, Logger, NotFoundException, type OnModuleDestroy, type OnModuleInit } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
 import { PaymentMethod, PaymentStatus, ChargeStatus, NotificationType, type Payment } from "@prisma/client";
 import { PrismaService, type ScopedClient } from "../prisma/prisma.service";
@@ -16,8 +16,102 @@ import { athleteScopeFilter, athleteTeamScopeWhere, can, teamScopeFilter, type R
 export type AplicarEm = "atual" | "proximo";
 
 @Injectable()
-export class BillingService {
+export class BillingService implements OnModuleInit, OnModuleDestroy {
   private readonly log = new Logger(BillingService.name);
+
+  /* ------------------------------------------------------------------------ */
+  /* O temporizador da reconciliação                                           */
+  /* ------------------------------------------------------------------------ */
+
+  private reconciliacao: NodeJS.Timeout | null = null;
+  private emissao: NodeJS.Timeout | null = null;
+
+  /**
+   * O último período já garantido em cada academia, nesta vida do processo.
+   *
+   * É o que faz a varredura horária custar praticamente nada: emitido o mês
+   * para um clube, salta-se esse clube até o mês virar. Não é uma cache de
+   * dados — é uma marca de "já perguntei" —, e perdê-la num deploy só custa
+   * uma passagem a mais, que não cria nada por a emissão ser idempotente.
+   */
+  private readonly emitido = new Map<string, string>();
+
+  /**
+   * A reconciliação corre sozinha, de dez em dez minutos.
+   *
+   * ## Porquê um temporizador, quando `presence.service` recusou um
+   *
+   * Lá havia uma escrita onde pendurar a varredura. Aqui não há: o que se
+   * está à espera é de um evento **que não chega**, e não há escrita nossa que
+   * o anuncie. Ou se pergunta de tempos a tempos, ou não se pergunta.
+   *
+   * `unref()` é o que deixa o processo morrer nos testes e nas fechaduras
+   * graciosas sem esperar pela próxima volta; `onModuleDestroy` limpa-o na
+   * mesma, por higiene. O primeiro passe é meio minuto depois do arranque — a
+   * base já está ligada, e um deploy a seguir a um dia de webhooks perdidos
+   * apanha-os sem ninguém carregar em nada.
+   *
+   * Desligado quando `RECONCILE_INTERVAL_MIN=0`, para um ambiente que não
+   * queira que o servidor fale com a euPago por conta própria.
+   */
+  onModuleInit() {
+    const minutos = Number(this.config.get<string>("RECONCILE_INTERVAL_MIN") ?? "10");
+    if (!Number.isFinite(minutos) || minutos <= 0) {
+      this.log.warn("Reconciliação automática desligada (RECONCILE_INTERVAL_MIN=0)");
+      return;
+    }
+    const passe = () =>
+      this.reconcilePayments().catch((e) => this.log.error(`Reconciliação falhou: ${e instanceof Error ? e.message : e}`));
+
+    setTimeout(passe, 30_000).unref();
+    this.reconciliacao = setInterval(passe, minutos * 60_000);
+    this.reconciliacao.unref();
+
+    this.arrancarEmissao();
+  }
+
+  /**
+   * A emissão do mês, sozinha.
+   *
+   * ## Porquê de hora a hora, e não "à meia-noite do dia 1"
+   *
+   * Porque um relógio que dispara uma vez por mês é um relógio que falha uma
+   * vez por mês: basta o processo estar a reiniciar naquele minuto — um deploy,
+   * o Railway a mover o contentor — para o mês inteiro ficar por emitir, e só
+   * se dar por isso quando um pai telefonar. Uma varredura frequente sobre uma
+   * operação idempotente não tem esse problema: a primeira passagem depois da
+   * meia-noite emite, as outras não fazem nada, e um servidor que esteve em
+   * baixo apanha o atraso assim que voltar.
+   *
+   * O preço é uma ida à base por clube, uma vez por mês — o `emitido` trata do
+   * resto. `unref()` deixa o processo morrer nos testes sem esperar pela volta
+   * seguinte.
+   *
+   * `AUTO_BILLING_INTERVAL_MIN=0` desliga, para um ambiente que não queira o
+   * servidor a emitir cobranças por conta própria.
+   */
+  private arrancarEmissao() {
+    const minutos = Number(this.config.get<string>("AUTO_BILLING_INTERVAL_MIN") ?? "60");
+    if (!Number.isFinite(minutos) || minutos <= 0) {
+      this.log.warn("Emissão automática de mensalidades desligada (AUTO_BILLING_INTERVAL_MIN=0)");
+      return;
+    }
+    const passe = () =>
+      this.issueMonthlyCharges().catch((e) =>
+        this.log.error(`Emissão automática falhou: ${e instanceof Error ? e.message : e}`),
+      );
+
+    // Um minuto depois de arrancar: a base já está ligada, e um deploy feito no
+    // dia 1 emite sem esperar pela hora seguinte.
+    setTimeout(passe, 60_000).unref();
+    this.emissao = setInterval(passe, minutos * 60_000);
+    this.emissao.unref();
+  }
+
+  onModuleDestroy() {
+    if (this.reconciliacao) clearInterval(this.reconciliacao);
+    if (this.emissao) clearInterval(this.emissao);
+  }
 
   constructor(
     private readonly prisma: PrismaService,
@@ -123,6 +217,283 @@ export class BillingService {
 
       return { sent, athletes: remindedAthletes.size, overdue: overdue.length };
     });
+  }
+
+  /* ------------------------------------------------------------------------ */
+  /* Emissão automática do mês                                                 */
+  /* ------------------------------------------------------------------------ */
+
+  /**
+   * Garante as mensalidades do mês corrente em todos os clubes.
+   *
+   * ## O que faz, e o que deliberadamente não faz
+   *
+   * Chama a mesma `gerarCobrancas` do botão "Gerar mensalidades" — o mesmo
+   * calendário do clube (`billingMonths`), o mesmo dia de vencimento, os mesmos
+   * planos de equipa e ajustes individuais — e manda o mesmo aviso às famílias.
+   * Não há uma segunda regra de emissão a viver em paralelo com a primeira: se
+   * amanhã o cálculo mudar, muda num sítio e os dois caminhos seguem-no.
+   *
+   * O que não faz é decidir seja o que for sobre quem paga: um clube que não
+   * cobra Agosto continua a não cobrar Agosto, e um atleta sem preço continua a
+   * aparecer no painel de "em falta" à espera de que alguém lhe defina um.
+   * Automatizar a emissão não é automatizar a configuração.
+   *
+   * ## Idempotente, e por isso segura de repetir
+   *
+   * `gerarCobrancas` só cria o que falta. Correr isto dez vezes no dia 1 dá o
+   * mesmo resultado que correr uma; correr no dia 14 emite o que faltava desde
+   * o dia 1 sem tocar no que já lá está. É essa propriedade que permite a
+   * varredura frequente em vez de um disparo único e frágil.
+   *
+   * `apenasAcademia` serve o gatilho manual do painel da plataforma.
+   */
+  async issueMonthlyCharges(apenasAcademia?: string) {
+    const period = periodoActual();
+    const linhas = await this.prisma.$queryRaw<{ academy_id: string }[]>`
+      SELECT * FROM app.academies_for_billing()
+    `;
+    const alvo = apenasAcademia ? linhas.filter((l) => l.academy_id === apenasAcademia) : linhas;
+
+    const totais = { period, academias: alvo.length, visitadas: 0, criadas: 0, comErro: 0 };
+
+    for (const { academy_id: academyId } of alvo) {
+      // Já garantido este mês nesta vida do processo — ver `emitido`.
+      if (!apenasAcademia && this.emitido.get(academyId) === period) continue;
+
+      try {
+        const criadas = await this.prisma.runAs(academyId, async (db) => {
+          const resultado = await gerarCobrancas(db, academyId, period);
+          await this.avisarMensalidadesNovas(db, period, resultado.atletasNovos);
+          return resultado.criadas;
+        });
+
+        this.emitido.set(academyId, period);
+        totais.visitadas++;
+        totais.criadas += criadas;
+        if (criadas > 0) {
+          this.log.log(`Emissão automática: ${criadas} mensalidades de ${period} no clube ${academyId}`);
+        }
+      } catch (error) {
+        /*
+         * Um clube que falha não trava os outros, e **não** fica marcado como
+         * emitido: a passagem seguinte volta a tentar. É a diferença entre um
+         * erro que se resolve sozinho daqui a uma hora e um mês inteiro perdido
+         * por causa de uma transacção que bateu num impasse.
+         */
+        totais.comErro++;
+        this.log.error(
+          `Emissão automática falhou no clube ${academyId}: ${error instanceof Error ? error.message : error}`,
+        );
+      }
+    }
+
+    return totais;
+  }
+
+  /**
+   * O aviso de mensalidade nova às famílias.
+   *
+   * Extraído de `ensureCharges` quando a emissão passou a ter dois caminhos — o
+   * botão e o relógio. Duas cópias da mesma mensagem divergem: uma ganha o
+   * valor no corpo, a outra fica sem, e a família recebe coisas diferentes
+   * consoante quem carregou no quê.
+   *
+   * Só aos encarregados **activos**, e só pelas cobranças **novas**: emitir o
+   * mês duas vezes não incomoda ninguém duas vezes, porque a segunda não cria
+   * nada e esta lista chega vazia.
+   */
+  private async avisarMensalidadesNovas(db: ScopedClient, period: string, atletasNovos: string[]) {
+    if (atletasNovos.length === 0) return;
+
+    const cobrancas = await db.charge.findMany({
+      where: { period, athleteId: { in: atletasNovos } },
+      include: { athlete: { include: { guardians: { include: { membership: true } } } } },
+    });
+
+    for (const c of cobrancas) {
+      for (const link of c.athlete.guardians.filter((g) => g.membership.isActive)) {
+        await this.notifications.enqueue(
+          {
+            academyId: c.academyId,
+            userId: link.membership.userId,
+            type: NotificationType.PAYMENT_PENDING,
+            title: "Nova mensalidade",
+            body: `A mensalidade de ${periodLabelPt(period)} de ${c.athlete.name} já está disponível — ${(c.amountCents / 100).toFixed(2)} €, até ${dateLabelPt(c.dueDate)}.`,
+            payload: { route: "/pagamentos", chargeId: c.id },
+          },
+          db,
+        );
+      }
+    }
+  }
+
+  /* ------------------------------------------------------------------------ */
+  /* Reconciliação — a segunda fonte de verdade                                */
+  /* ------------------------------------------------------------------------ */
+
+  /**
+   * Pergunta à euPago pelos pagamentos em voo e acerta o que ela souber.
+   *
+   * ## O que aconteceu, e porque é que isto existe
+   *
+   * Dois pais pagaram por MB Way; de manhã a app dizia-lhes que deviam. A
+   * euPago tinha o dinheiro e nós não tínhamos o webhook — e nunca tivemos: em
+   * toda a base não há um único pagamento confirmado pelo webhook, só os
+   * marcados à mão. O servidor aceita um evento bem assinado (verificado em
+   * produção); o que não chega é o evento da euPago. Isso resolve-se no
+   * backoffice dela, não aqui. O que se resolve aqui é o **efeito**: um
+   * pagamento feito não pode ficar "a confirmar" para sempre por falta de um
+   * POST que se perdeu.
+   *
+   * ## A regra continua inteira
+   *
+   * O navegador nunca decide. Quem liquida é `confirmPayment` — o mesmo do
+   * webhook, com a mesma verificação de valor. Isto só lhe dá uma segunda
+   * fonte: a resposta da própria euPago a uma pergunta nossa.
+   *
+   * ## As decisões, por ordem, para cada pagamento em voo
+   *
+   * 1. Referência `dev-*` — simulada, nunca teve dinheiro atrás: expira.
+   * 2. A cobrança já está liquidada ou anulada por outro caminho (a direcção
+   *    marcou em dinheiro, por exemplo): a tentativa fica **substituída** e
+   *    expira, para a app deixar de a mostrar "a confirmar". Se um dia o
+   *    webhook dela chegar, `confirmPayment` grita o duplicado como sempre.
+   * 3. Multibanco com entidade e referência: `multibanco/info`. Pago liquida;
+   *    expirado/cancelado expira; o resto fica e regista-se o estado
+   *    desconhecido.
+   * 4. Tudo o resto (MB Way, cartão, formulários): a lista de pagos da API de
+   *    gestão, quando há credenciais OAuth. Está lá — liquida.
+   * 5. Sem resposta que o confirme: um MB Way com mais de dez minutos, ou
+   *    qualquer tentativa com `expiresAt` passado, expira. **Expirar não é
+   *    negar**: `confirmPayment` liquida um pagamento EXPIRED na mesma se o
+   *    dinheiro aparecer depois — pelo webhook ou por um passe seguinte com
+   *    credenciais. O que muda é só o que a app diz entretanto: "por pagar",
+   *    que é honesto, em vez de "a confirmar", que era uma promessa.
+   *
+   * Corre fora de qualquer pedido, por isso enumera os pares (academia,
+   * pagamento) por uma função SECURITY DEFINER estreita e faz o resto dentro
+   * de `runAs`, com a RLS de sempre. Ver a migração `reconciliacao_pagamentos`.
+   */
+  async reconcilePayments(apenasAcademia?: string) {
+    const pares = await this.prisma.$queryRaw<{ academy_id: string; payment_id: string }[]>`
+      SELECT * FROM app.payments_in_flight()
+    `;
+    const alvo = apenasAcademia ? pares.filter((p) => p.academy_id === apenasAcademia) : pares;
+
+    const totais = { vistos: alvo.length, liquidados: 0, expirados: 0, substituidos: 0, semResposta: 0 };
+    if (alvo.length === 0) return totais;
+
+    // A lista de pagos pede-se uma vez por passe, não uma vez por pagamento.
+    // `null` quer dizer "não sei" — e não sei não é "nenhum está pago".
+    const pagos = await this.eupago.listPaidTransactions();
+
+    for (const par of alvo) {
+      try {
+        const resultado = await this.reconciliarUm(par.academy_id, par.payment_id, pagos);
+        totais[resultado]++;
+      } catch (error) {
+        totais.semResposta++;
+        this.log.warn(`Reconciliação de ${par.payment_id} falhou: ${error instanceof Error ? error.message : error}`);
+      }
+    }
+
+    if (totais.liquidados || totais.expirados || totais.substituidos) {
+      this.log.log(
+        `Reconciliação: ${totais.vistos} em voo — ${totais.liquidados} liquidados, ` +
+          `${totais.substituidos} substituídos, ${totais.expirados} expirados, ${totais.semResposta} sem resposta`,
+      );
+    }
+    return totais;
+  }
+
+  /** A mesma varredura, só para a academia de quem pede. Exige `billing:write`. */
+  async reconcileAcademy(ctx: RequestContext) {
+    if (!can(ctx, "billing:write")) throw new ForbiddenException("Sem permissão para reconciliar pagamentos");
+    return this.reconcilePayments(ctx.academyId);
+  }
+
+  private async reconciliarUm(
+    academyId: string,
+    paymentId: string,
+    pagos: Map<string, { trid: string; paidAt: Date; amountCents: number }> | null,
+  ): Promise<"liquidados" | "expirados" | "substituidos" | "semResposta"> {
+    const payment = await this.prisma.runAs(academyId, (db) =>
+      db.payment.findFirst({
+        where: { id: paymentId },
+        include: { charge: { select: { status: true } }, memberFee: { select: { status: true } } },
+      }),
+    );
+    if (!payment || (payment.status !== PaymentStatus.PENDING && payment.status !== PaymentStatus.PROCESSING)) {
+      return "semResposta";
+    }
+
+    const expirar = (motivo: string) =>
+      this.prisma.runAs(academyId, async (db) => {
+        await db.payment.update({
+          where: { id: payment.id },
+          data: { status: PaymentStatus.EXPIRED, rawPayload: { reconciliacao: motivo, em: new Date().toISOString() } },
+        });
+      });
+
+    // 1. Simulado em desenvolvimento — nunca houve dinheiro atrás disto.
+    if (payment.providerRef?.startsWith("dev-")) {
+      await expirar("referência simulada (dev)");
+      return "expirados";
+    }
+
+    // 2. A cobrança já foi resolvida por outro caminho: a tentativa ficou órfã.
+    const cobranca = payment.charge?.status ?? payment.memberFee?.status;
+    if (cobranca === ChargeStatus.SETTLED || cobranca === ChargeStatus.VOID) {
+      await expirar(`substituída — a cobrança já está ${cobranca === ChargeStatus.SETTLED ? "liquidada" : "anulada"}`);
+      return "substituidos";
+    }
+
+    const apiKey = await this.prisma.runAs(academyId, async (db) =>
+      (await db.academy.findFirst({ where: { id: academyId }, select: { eupagoApiKey: true } }))?.eupagoApiKey ?? undefined,
+    );
+
+    // 3. Multibanco: a API antiga responde à pergunta com a chave do canal.
+    if (payment.method === PaymentMethod.MULTIBANCO && payment.entity && payment.reference) {
+      const info = await this.eupago.getMultibancoStatus(payment.entity, payment.reference, apiKey);
+      if (info) {
+        if (/pag/.test(info.estado)) {
+          await this.confirmPayment([payment.id], new Date(), { reconciliacao: "multibanco/info", ...info.raw });
+          return "liquidados";
+        }
+        if (/expir|cancel|anul|devolv/.test(info.estado)) {
+          await this.failPayment([payment.id], "A referência expirou sem ser paga.", { reconciliacao: "multibanco/info", ...info.raw }, "EXPIRED");
+          return "expirados";
+        }
+        if (!/pend/.test(info.estado)) {
+          this.log.warn(`multibanco/info com estado desconhecido "${info.estado}" para ${payment.id} — fica em voo`);
+        }
+      }
+    }
+
+    // 4. A lista de pagos da API de gestão — a única resposta possível para MB Way.
+    const pago = pagos?.get(payment.id);
+    if (pago) {
+      await this.confirmPayment(
+        [payment.id],
+        pago.paidAt,
+        { reconciliacao: "management/transactions", trid: pago.trid },
+        pago.amountCents || undefined,
+      );
+      return "liquidados";
+    }
+
+    // 5. Sem confirmação: o que já morreu pelo relógio expira. O resto fica.
+    const agora = Date.now();
+    const morto =
+      (payment.expiresAt && payment.expiresAt.getTime() < agora) ||
+      (payment.method === PaymentMethod.MBWAY && agora - payment.createdAt.getTime() > 10 * 60_000);
+    if (morto) {
+      await expirar(pagos === null ? "prazo passado; sem credenciais de gestão para confirmar" : "prazo passado; não consta dos pagos");
+      return "expirados";
+    }
+
+    return "semResposta";
   }
 
   /* ------------------------------------------------------------------------ */
@@ -247,6 +618,150 @@ export class BillingService {
   }
 
   /* ------------------------------------------------------------------------ */
+  /* Mensalidade lançada à mão                                                 */
+  /* ------------------------------------------------------------------------ */
+
+  /**
+   * Lançar mensalidades a um atleta, mês a mês, com um valor escolhido.
+   *
+   * ## Porque é que isto existe ao lado da geração automática
+   *
+   * A geração (`gerarCobrancas`) responde a "emite o mês ao plantel todo" e
+   * deriva o valor do plano — da equipa ou da inscrição individual. Cobre o dia
+   * a dia de um clube, e não cobre o resto:
+   *
+   * - o atleta **sem preço configurado**, que a geração salta (`semPreco`) e
+   *   que hoje só se resolvia indo criar um plano para uma pessoa só;
+   * - o mês **fora do calendário de cobrança** do clube, que a geração ignora
+   *   de propósito — e que às vezes se cobra a um atleta em concreto;
+   * - o acerto de meses **em atraso** de quem entrou a meio da época, que
+   *   obrigava a gerar mês a mês para a academia inteira para apanhar um.
+   *
+   * Em todos, o que faltava era o gesto directo: *este atleta, este valor,
+   * estes meses*. É uma `Charge` igual às outras — aparece na mesma lista, na
+   * app da família, e paga-se pelos mesmos meios.
+   *
+   * ## Porque é que é `FEE` e `slot` vazio
+   *
+   * Porque **é** uma mensalidade, e não um extra. O `slot` vazio põe-na debaixo
+   * do mesmo `@@unique([athleteId, period, slot])` das geradas: um atleta não
+   * tem duas mensalidades no mesmo mês, e a geração automática passa a
+   * considerá-la existente em vez de criar uma segunda por cima. É essa a
+   * diferença para a cobrança avulsa, que leva `slot` aleatório precisamente
+   * para poder haver várias no mesmo mês.
+   *
+   * ## Os meses que já tinham mensalidade
+   *
+   * Saltam-se, e a resposta diz quais. Rebentar o pedido inteiro por causa de
+   * um mês repetido obrigaria a adivinhar quais os que faltavam — e a intenção
+   * de quem escolheu seis meses é ter os seis lançados, não perder os cinco que
+   * ainda não existiam. Substituir por cima também não: reescrever uma
+   * mensalidade que a família já pode ter pago não é o que "lançar" quer dizer.
+   */
+  async createManualFees(
+    ctx: RequestContext,
+    input: { athleteId: string; amountCents: number; periods: string[]; notes?: string },
+  ) {
+    if (!can(ctx, "billing:write")) throw new ForbiddenException("Sem permissão para cobrar");
+    assertValidAmount(input.amountCents);
+
+    const periodos = [...new Set(input.periods)].sort();
+    if (periodos.length === 0) throw new BadRequestException("Escolhe pelo menos um mês");
+    if (periodos.length > 24) throw new BadRequestException("São demasiados meses de uma vez (máximo 24)");
+    for (const p of periodos) {
+      if (!/^\d{4}-\d{2}$/.test(p)) throw new BadRequestException(`Mês inválido: ${p}`);
+      const mes = Number(p.slice(5, 7));
+      if (mes < 1 || mes > 12) throw new BadRequestException(`Mês inválido: ${p}`);
+    }
+
+    return this.prisma.runAs(ctx.academyId, async (db) => {
+      // O âmbito, e não só a academia — como na cobrança avulsa.
+      const athlete = await db.athlete.findFirst({
+        where: { id: input.athleteId, ...(athleteScopeFilter(ctx) ? { id: athleteScopeFilter(ctx) } : {}) },
+        select: {
+          id: true,
+          name: true,
+          guardians: { select: { membership: { select: { userId: true, isActive: true } } } },
+        },
+      });
+      if (!athlete) throw new NotFoundException("Atleta não encontrado");
+
+      const academia = await db.academy.findFirst({
+        where: { id: ctx.academyId },
+        select: { billingDueDay: true },
+      });
+      const diaDoClube = academia?.billingDueDay ?? 8;
+
+      // Quem já tem mensalidade nestes meses. Uma leitura, não uma por mês.
+      const existentes = new Set(
+        (
+          await db.charge.findMany({
+            where: { athleteId: athlete.id, period: { in: periodos }, slot: "" },
+            select: { period: true },
+          })
+        ).map((c) => c.period),
+      );
+
+      const criadas: { id: string; period: string; amountCents: number; dueDate: Date }[] = [];
+      for (const period of periodos) {
+        if (existentes.has(period)) continue;
+
+        const charge = await db.charge.create({
+          data: {
+            academyId: ctx.academyId,
+            athleteId: athlete.id,
+            kind: "FEE",
+            period,
+            slot: "",
+            notes: input.notes?.trim() || null,
+            amountCents: input.amountCents,
+            /*
+             * O dia de vencimento é o do clube, como nas geradas — a família
+             * não tem de aprender um prazo diferente por a mensalidade ter
+             * sido lançada à mão. Um mês em atraso nasce vencido, e é o que
+             * se quer: é exactamente o que ele é.
+             */
+            dueDate: diaDeVencimento(period, diaDoClube),
+          },
+          select: { id: true, period: true, amountCents: true, dueDate: true },
+        });
+        criadas.push(charge);
+      }
+
+      /*
+       * O aviso à família, uma vez por mensalidade nova.
+       *
+       * A mesma mensagem da emissão automática (ver `ensureCharges`): dizer o
+       * mês, o valor e o prazo no corpo, para se ler no ecrã bloqueado sem
+       * abrir a app. Só as **novas** — os meses que já existiam não voltam a
+       * incomodar ninguém.
+       */
+      const destinatarios = athlete.guardians.filter((g) => g.membership.isActive);
+      for (const c of criadas) {
+        for (const g of destinatarios) {
+          await this.notifications.enqueue(
+            {
+              academyId: ctx.academyId,
+              userId: g.membership.userId,
+              type: NotificationType.PAYMENT_PENDING,
+              title: "Nova mensalidade",
+              body: `A mensalidade de ${periodLabelPt(c.period)} de ${athlete.name} já está disponível — ${(c.amountCents / 100).toFixed(2)} €, até ${dateLabelPt(c.dueDate)}.`,
+              payload: { route: "/pagamentos", chargeId: c.id },
+            },
+            db,
+          );
+        }
+      }
+
+      return {
+        criadas: criadas.length,
+        jaExistiam: periodos.filter((p) => existentes.has(p)),
+        avisados: criadas.length > 0 ? destinatarios.length : 0,
+      };
+    });
+  }
+
+  /* ------------------------------------------------------------------------ */
   /* Ajuste manual                                                             */
   /* ------------------------------------------------------------------------ */
 
@@ -357,35 +872,23 @@ export class BillingService {
       const resultado = await gerarCobrancas(db, ctx.academyId, period);
 
       /*
-       * O envio da mensalidade.
+       * O envio da mensalidade — o mesmo que a emissão automática manda.
        *
-       * Emitir o mês é o gesto deliberado da direcção — e a família tem de o
-       * saber, senão a mensalidade fica à espera de que alguém se lembre de
-       * abrir a app. Um aviso por cobrança nova, só aos encarregados pagadores,
-       * e só às **novas**: gerar o mês duas vezes não incomoda ninguém duas
-       * vezes, porque a segunda não cria nada.
+       * Emitir o mês avisa a família, seja quem for a emitir: sem aviso, a
+       * mensalidade fica à espera de que alguém se lembre de abrir a app. A
+       * mensagem vive em `avisarMensalidadesNovas` para os dois caminhos não
+       * poderem divergir.
        */
-      if (resultado.atletasNovos.length > 0) {
-        const cobrancas = await db.charge.findMany({
-          where: { period, athleteId: { in: resultado.atletasNovos } },
-          include: { athlete: { include: { guardians: { include: { membership: true } } } } },
-        });
-        for (const c of cobrancas) {
-          for (const link of c.athlete.guardians.filter((g) => g.membership.isActive)) {
-            await this.notifications.enqueue(
-              {
-                academyId: c.academyId,
-                userId: link.membership.userId,
-                type: NotificationType.PAYMENT_PENDING,
-                title: "Nova mensalidade",
-                body: `A mensalidade de ${periodLabelPt(period)} de ${c.athlete.name} já está disponível — ${(c.amountCents / 100).toFixed(2)} €, até ${dateLabelPt(c.dueDate)}.`,
-                payload: { route: "/pagamentos", chargeId: c.id },
-              },
-              db,
-            );
-          }
-        }
-      }
+      await this.avisarMensalidadesNovas(db, period, resultado.atletasNovos);
+
+      /*
+       * O mês corrente fica marcado como garantido.
+       *
+       * Quem carregou no botão fez o trabalho da varredura — e sem esta linha
+       * ela voltava a percorrer este clube na hora seguinte para não criar
+       * nada. Ver `emitido`.
+       */
+      if (period === periodoActual()) this.emitido.set(ctx.academyId, period);
 
       return resultado;
     });
