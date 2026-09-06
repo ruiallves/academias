@@ -69,6 +69,45 @@ export class AiVideoService {
    * da análise **não** é apagada — melhor uma análise que ainda aparece do que
    * ficheiros de menores que ninguém volta a encontrar para apagar.
    */
+  /**
+   * Pedir a um worker que apague já o ficheiro de um vídeo.
+   *
+   * ## Porque é que isto não passa pela fila
+   *
+   * Porque o que a desencadeia é **apagar a análise** — e um job dessa análise
+   * desaparece com ela, por cascata, antes de qualquer worker o ver. A purga
+   * normal (depois de processar) vai pela fila, que é onde ela pertence; esta
+   * não pode.
+   *
+   * ## O endereço
+   *
+   * `AI_WORKER_PUBLIC_URL` — o mesmo que o browser usa para carregar. Com mais
+   * do que um worker isto passa a estar errado (só sabe falar com um), e a
+   * altura de o resolver é quando existir o segundo: aí o `holder` deixa de ser
+   * um nome para diagnóstico e passa a ter de trazer o endereço consigo.
+   *
+   * Falhar não é fatal: o zelador do worker apaga o que tiver mais de
+   * `AI_WORKER_SPOOL_TTL_HOURS`. Fica registado, e a análise apaga-se na mesma —
+   * ao contrário do Storage, aqui não há como ficar um órfão eterno.
+   */
+  async askWorkerToPurge(videoId: string): Promise<void> {
+    const base = this.config.get<string>("AI_WORKER_PUBLIC_URL")?.trim().replace(/\/$/, "");
+    const token = this.config.get<string>("AI_WORKER_TOKEN")?.trim();
+    if (!base || !token) return;
+
+    try {
+      const res = await fetch(`${base}/video/${encodeURIComponent(videoId)}`, {
+        method: "DELETE",
+        headers: { "x-ai-worker-token": token },
+        // Um worker em baixo não pode segurar o pedido de quem está a apagar.
+        signal: AbortSignal.timeout(8000),
+      });
+      if (!res.ok) this.log.warn(`O worker recusou apagar ${videoId}: ${res.status}`);
+    } catch (error) {
+      this.log.warn(`Não foi possível pedir ao worker que apagasse ${videoId}: ${String(error)}`);
+    }
+  }
+
   async deletePrefix(prefix: string): Promise<void> {
     await this.ensureBucket();
 

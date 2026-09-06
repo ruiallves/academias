@@ -66,21 +66,44 @@ export function Footer() {
               Feito em Portugal, para clubes e academias desportivas portuguesas.
             </p>
 
-            {/* Os meios de pagamento — o rodapé confirma, não vende.
-                As marcas vão em reverso monocromático sobre o pinheiro; sem
-                pastilhas, que faziam disto uma parede de rectângulos brancos.
-                Ver `PaymentMark`. O espaçamento é maior do que era porque, sem
-                caixa à volta, é o vazio que separa uma marca da seguinte. */}
-            <ul
-              className="mt-7 flex flex-wrap items-center gap-x-6 gap-y-4"
-              aria-label="Meios de pagamento aceites"
-            >
-              {PAYMENT_METHODS.map((m) => (
-                <li key={m.id}>
-                  <PaymentMark method={m} onDark />
-                </li>
-              ))}
-            </ul>
+            {/*
+              Os meios de pagamento — o rodapé confirma, não vende.
+
+              As marcas vão em reverso monocromático sobre o pinheiro; sem
+              pastilhas, que faziam disto uma parede de rectângulos brancos.
+              Ver `PaymentMark`. O espaçamento é maior do que era porque, sem
+              caixa à volta, é o vazio que separa uma marca da seguinte.
+
+              ## Duas linhas, e porquê
+
+              Os quatro que têm logótipo são **imagens**; o Cartão e o Débito
+              directo são **palavras**, porque não há marca nenhuma que os
+              represente. Misturados na mesma fila, as duas palavras liam-se
+              como marcas em falta — um buraco no alinhamento das alturas —
+              e os pictogramas que os acompanhavam pioravam-no, porque eram
+              desenhos nossos ao lado de marcas verdadeiras.
+
+              Separados, cada linha diz uma coisa só: em cima, as marcas que o
+              clube reconhece; por baixo, em texto, os outros dois meios. Sem
+              ícones: a linha de cima já disse que isto são pagamentos.
+            */}
+            <div className="mt-7 space-y-3.5">
+              <ul className="flex flex-wrap items-center gap-x-6 gap-y-4" aria-label="Meios de pagamento aceites">
+                {PAYMENT_METHODS.filter((m) => m.logo).map((m) => (
+                  <li key={m.id}>
+                    <PaymentMark method={m} onDark />
+                  </li>
+                ))}
+              </ul>
+
+              <ul className="flex flex-wrap items-center gap-x-5 gap-y-2">
+                {PAYMENT_METHODS.filter((m) => !m.logo).map((m) => (
+                  <li key={m.id}>
+                    <PaymentMark method={m} onDark icon={false} />
+                  </li>
+                ))}
+              </ul>
+            </div>
           </div>
 
           {COLUMNS.map((col) => (

@@ -823,6 +823,61 @@ export function AvailabilityTag({
   );
 }
 
+/**
+ * V, E ou D — o desfecho de um jogo, numa letra.
+ *
+ * ## Porque é preenchido e não suave
+ *
+ * As pastilhas do produto são fundo suave com tinta da cor. Esta não pode ser:
+ * vive dentro da pastilha do calendário, que já tem o fundo pintado com a cor
+ * do escalão — um `bg-ok-soft` por cima de um verde-água do Sub-11 deixa de se
+ * ver. Preenchida com texto branco lê-se em cima de qualquer fundo, e é a mesma
+ * forma que a "Forma recente" da ficha da equipa já usava.
+ *
+ * O empate leva cinzento e não amarelo de propósito: um empate não é um aviso.
+ *
+ * `score` entra no `title` e, quando `withScore`, ao lado da letra — nas listas
+ * há espaço para "V 3–1", na pastilha do mês não há.
+ */
+export function OutcomeTag({
+  outcome,
+  score,
+  withScore = false,
+  size = "md",
+}: {
+  outcome: "win" | "draw" | "loss";
+  /** "3–1", já formatado por quem sabe de que lado é o "nós". */
+  score?: string;
+  withScore?: boolean;
+  size?: "sm" | "md";
+}) {
+  const letra = { win: "V", draw: "E", loss: "D" }[outcome];
+  const nome = { win: "Vitória", draw: "Empate", loss: "Derrota" }[outcome];
+  const fundo = { win: "bg-ok", draw: "bg-ink-4", loss: "bg-risk" }[outcome];
+
+  return (
+    <span
+      title={score ? `${nome} · ${score}` : nome}
+      aria-label={score ? `${nome}, ${score}` : nome}
+      className={cx(
+        "inline-flex shrink-0 items-center justify-center gap-1 font-bold text-white tabular",
+        fundo,
+        size === "sm" ? "h-4 rounded-[4px] text-[9.5px]" : "h-5 rounded-full text-[11px]",
+        withScore && score
+          ? size === "sm"
+            ? "px-1"
+            : "px-2"
+          : size === "sm"
+            ? "w-4"
+            : "w-5",
+      )}
+    >
+      {letra}
+      {withScore && score && <span className="font-semibold opacity-90">{score}</span>}
+    </span>
+  );
+}
+
 /** Barra proporcional para composições dentro de tabelas e listas. */
 export function Bar({ value, tone = "signal" }: { value: number; tone?: Tone }) {
   const fill = { ok: "bg-ok", warn: "bg-warn", risk: "bg-risk", neutral: "bg-ink-3", signal: "bg-signal" }[tone];

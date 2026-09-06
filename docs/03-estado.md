@@ -200,6 +200,40 @@ ecrã. Um convocado emprestado aparece marcado como tal na convocatória e na
 própria ficha ("Emprestado ao Sub-13"), e o pai recebe uma notificação concreta —
 adversário, hora, sítio — não um "tens uma notificação".
 
+### O resultado grava-se num sítio só
+
+A gaveta do calendário mostrava a estatística assim que o jogo tinha resultado —
+e tinha, ao lado dela, um botão "Editar" com formulário próprio. Esse formulário
+escrevia num repositório do browser (`custom`, em `lib/calendar.ts`) que **deixou
+de receber jogos** quando eles passaram a vir da API: gravava-se, o painel
+fechava, e não acontecia nada — nem na base, nem no ecrã, nem depois de
+recarregar. Um botão que não faz nada é pior do que a ausência dele.
+
+Foi removido, e não reposto contra `store.matches`: o resultado tem um caminho
+só (`POST /api/matches/:id/resultado`, com as validações contra a ficha — não se
+grava 2-1 num jogo cuja ficha já atribui três golos). O "Editar" da gaveta leva
+agora à ficha, e o aviso **"o jogo já aconteceu e ainda não tem resultado"**
+deixou de ser uma frase para se olhar: tem lá a porta para o registar.
+
+O outro meio do problema era leitura. A página do jogo recarregava-se a si
+mesma (`getMatch`) e mais nada — mas o calendário, as convocatórias e a ficha do
+atleta leem `store.matches`, carregada uma vez no arranque. Um resultado gravado
+na ficha só chegava a esses ecrãs na recarga seguinte da página, e até lá a
+gaveta continuava a dizer que não havia resultado num jogo que já o tinha.
+Gravar passou a `reloadAcademy()` também.
+
+**V, E ou D no próprio calendário.** Um jogo com resultado passou a levar a
+letra do desfecho — verde, cinzento ou vermelho, preenchida a branco porque a
+pastilha do mês já tem o fundo pintado com a cor do escalão e uma etiqueta suave
+por cima desapareceria. Na pastilha do mês vai só a letra (a 11px não cabe mais,
+e o marcador está no `title` e na gaveta); nas listas vai "V 3–1". Está nos
+quatro sítios que são calendário: a grelha do mês, a lista do telemóvel, a
+agenda do calendário do clube e o separador de calendário da ficha da equipa.
+
+O `OutcomeTag` e o mapa `OUTCOME_LETTER` nasceram para isto não ser a quarta
+cópia do mesmo ternário: a letra já estava escrita à mão em três sítios da ficha
+da equipa, cada um com o seu.
+
 ### A folha para levar para o campo
 
 No dia do jogo o telemóvel não serve para nada: o treinador precisa de papel onde
@@ -971,17 +1005,67 @@ os tokens do produto acabaria a parecer uma captura de ecrã dele.
 | **Contraste** | blocos claros e escuros a alternar. O ritmo faz-se com luz, não com sombras |
 | **Movimento** | uma regra: `data-reveal` + `IntersectionObserver`, entrada de 14px com atraso escalonado. Sem biblioteca de animação, e desligado em `prefers-reduced-motion` |
 
+### Três planos, e um deles ainda não se vende
+
+Consola (14,99 €), **Connect** (19,99 €, recomendado) e **Vision** (29,99 €,
+por sair — a Academias AI empacotada: o vídeo do jogo transformado em dados
+sobre os atletas e a equipa).
+
+Os três estão lado a lado na mesma mesa — e a mesa passou a correr em
+`.wrap-wide` (1440px) em vez da `.wrap` da página (1180px). Não é excepção por
+gosto: 1180 é a medida de **leitura**, e uma coluna de prosa mais larga cansa;
+mas os planos não se leem em coluna, comparam-se — e três lugares dentro de 1180
+deixavam 280px de texto em cada um, com as frases a partir a meio. A régua de
+uma tabela não é a de um parágrafo. Abaixo dos 1380px as duas caixas coincidem e
+a diferença desaparece. A tabela de comparação de `/planos` foi com ela, para
+não haver duas larguras na mesma página.
+
+O Vision ocupa o terceiro lugar com o preço à vista e **sem** botão de
+experimentar: etiqueta "brevemente" a tracejado, "Previsto para breve" onde os
+outros dizem como se factura, e "avisa-me quando sair" no lugar do botão. O
+preço está lá porque um clube que escolhe plataforma quer saber para onde ela
+vai, e "sob consulta" manda-o comparar noutro lado; o que não se faz é vendê-lo
+— não há trinta dias grátis de uma coisa que ninguém abre.
+
+Na tabela de comparação a linha da IA leva um **anel** e não o ponto cheio dos
+outros — o terceiro estado do `Cell` existe precisamente para não vender hoje o
+que só abre depois.
+
+### A app é do clube, e não só das famílias
+
+Quando a app ganhou as áreas de **sócio** e de **staff**, o site continuou a
+vender uma "app das famílias" — a página a prometer menos do que o produto faz,
+que é o erro menos falado e não o menos caro: um clube com quinhentos sócios lia
+aquilo e não percebia que a plataforma também os servia.
+
+Passou a dizer-se em três sítios, e a mesma coisa nos três: o separador **A app do
+clube** no tour da homepage, a secção `AppDoClube` em `/software` (a seguir às duas
+caras, que é onde a pergunta nasce), e a área de sócio no fecho da secção Sócios.
+O módulo `familias` do `content.ts` deu lugar a `app`, com as três áreas listadas —
+é o que alimenta também a tabela de comparação dos planos, sem ninguém a escrever
+lá nada.
+
+**Staff é a consola, e diz-se que é.** A tentação era vender "app para
+treinadores"; seria falso e pior do que a verdade — a área de staff entrega a
+sessão à consola dentro da própria app instalada, e é por isso que nunca fica um
+passo atrás dela. A área do atleta continua no roteiro, dita como a quarta, e não
+se conta como feita.
+
 ### As capturas de produto
 
-Três caras do produto — a consola, a app da família e a página pública de adesão a
-sócio — estão **reconstruídas em HTML**, a partir dos ecrãs reais e com os tokens
-reais: os mesmos grupos de navegação, os mesmos alertas com acção à direita, a mesma
-faixa da semana, o mesmo cartão de sócio. Nítidas em qualquer resolução e sempre
-iguais ao produto de hoje.
+Cinco caras do produto — a consola, o editor tático, a app da família, a escolha
+de área e a área de sócio — estão **reconstruídas em HTML**, a partir dos ecrãs
+reais e com os tokens reais: os mesmos grupos de navegação, os mesmos alertas com
+acção à direita, a mesma faixa da semana, o mesmo cartão de sócio. Nítidas em
+qualquer resolução e sempre iguais ao produto de hoje.
 
-Largar `consola.png`, `app.png` e `socios.png` em `apps/site/public/shots/` substitui
-as reconstruções automaticamente; se um ficheiro falhar, a reconstrução volta sozinha
-(ver `public/shots/LEIA-ME.md`).
+Os telemóveis vivem em `shots-app.tsx` e partilham a moldura (`Telemovel`) — dois
+lado a lado encolhem com `zoom` e não com `width`, porque estreitar a caixa
+apertaria o texto contra as margens em vez de encolher o desenho.
+
+Largar `consola.png`, `app.png`, `app-areas.png`, `app-socio.png` e `socios.png` em
+`apps/site/public/shots/` substitui as reconstruções automaticamente; se um ficheiro
+falhar, a reconstrução volta sozinha (ver `public/shots/LEIA-ME.md`).
 
 ### O formulário de contacto cai na nossa CRM
 

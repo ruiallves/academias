@@ -53,8 +53,8 @@ export function Hero() {
 
         <Reveal i={2}>
           <p className="lede mx-auto mt-6">
-            A plataforma mais atual de gestão desportiva portuguesa. Liga a direção, os treinadores, os departamentos e
-            as famílias.
+            A plataforma mais atual de gestão desportiva portuguesa. Liga a direção, os treinadores, os departamentos,
+            as famílias e os sócios.
           </p>
         </Reveal>
 

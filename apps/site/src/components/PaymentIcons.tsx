@@ -90,7 +90,26 @@ const ALTURA = 17;
  * assenta como está. Os dois meios sem logótipo não precisam de saber — os
  * tokens de tinta já mudam sozinhos com a secção.
  */
-export function PaymentMark({ method, onDark = false }: { method: PaymentMethod; onDark?: boolean }) {
+export function PaymentMark({
+  method,
+  onDark = false,
+  /**
+   * Desenhar o pictograma dos meios sem logótipo.
+   *
+   * No rodapé não. Ali os dois sem marca — Cartão e Débito directo — descem
+   * para uma linha própria, e nessa linha um pictograma de traço fino ao lado
+   * de duas palavras não acrescenta nada: os logótipos de cima já dizem que
+   * aquilo é uma lista de meios de pagamento, e dois desenhos inventados por
+   * nós ao lado de marcas verdadeiras só chamavam a atenção para o facto de
+   * não serem marcas. Na página, onde a lista é a apresentação e não a
+   * confirmação, continuam a aparecer.
+   */
+  icon = true,
+}: {
+  method: PaymentMethod;
+  onDark?: boolean;
+  icon?: boolean;
+}) {
   const conteudo = method.logo ? (
     <img
       src={method.logo}
@@ -111,7 +130,7 @@ export function PaymentMark({ method, onDark = false }: { method: PaymentMethod;
         que é o que se quer sobre pinheiro — e fora dele para tinta escura sobre
         papel. Foi a pastilha branca que os pôs a mentir; sem ela dizem a verdade.
       */}
-      <PaymentIcon id={method.id} className="size-[17px] text-ink-3" />
+      {icon && <PaymentIcon id={method.id} className="size-[17px] text-ink-3" />}
       <span className="text-[13.5px] font-semibold tracking-[-0.01em] whitespace-nowrap text-ink-2">
         {method.label}
       </span>

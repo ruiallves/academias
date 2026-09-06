@@ -136,6 +136,20 @@ export default function App() {
           o que se mostra. "nova" antes de ":id", senão o router lia "nova"
           como um id.
         */}
+        {/*
+          A Academias AI está fora de produção — ver `GRUPO_AI` em `lib/nav.ts`.
+
+          Esconder o menu não chegava: um endereço escrito à mão, ou um link
+          antigo num email, continuava a abrir a área. Com isto `/ai/...` cai no
+          `Navigate` do fim, como qualquer caminho que não existe.
+
+          Os ecrãs em si continuam a ser importados no topo deste ficheiro e
+          portanto continuam dentro do pacote — inalcançáveis, mas presentes.
+          Tirá-los de lá é trocar estes `import` por `lazy()`, e isso é uma
+          mudança à parte, que se faz quando o peso do pacote for o problema.
+        */}
+        {import.meta.env.DEV && (
+          <>
         <Route path="ai" element={<Allow p="ai:read"><AiOverview /></Allow>} />
         <Route path="ai/analises" element={<Allow p="ai:read"><AiAnalyses /></Allow>} />
         <Route path="ai/analises/nova" element={<Allow p="ai:write"><NewAiAnalysis /></Allow>} />
@@ -143,6 +157,8 @@ export default function App() {
         <Route path="ai/insights" element={<Allow p="ai:read"><AiInsights /></Allow>} />
         <Route path="ai/desenvolvimento" element={<Allow p="ai:read"><Soon title="Desenvolvimento" phase="A evolução de cada atleta, jogo a jogo — nasce quando houver análises suficientes com confiança." /></Allow>} />
         <Route path="ai/adversarios" element={<Allow p="ai:read"><Soon title="Adversários" phase="Opponent Intelligence — modelo de jogo, padrões e jogadores perigosos, com clips como prova." /></Allow>} />
+          </>
+        )}
 
         <Route path="mensalidades" element={<Allow p="billing:read"><Fees /></Allow>} />
         <Route path="comunicacao" element={<Allow p="comms:read"><Comms /></Allow>} />

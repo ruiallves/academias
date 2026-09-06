@@ -21,7 +21,7 @@
 export const ANNUAL_DISCOUNT = 0.1;
 
 export type Plan = {
-  id: "consola" | "ligado";
+  id: "consola" | "ligado" | "vision";
   name: string;
   tagline: string;
   monthly: number;
@@ -30,6 +30,18 @@ export type Plan = {
   includes: string[];
   /** Só no plano de baixo: o que fica de fora, dito sem rodeios. */
   excludes?: string[];
+  /**
+   * Ainda não se vende.
+   *
+   * O preço está à vista de propósito — um clube que planeia o orçamento da
+   * época quer saber quanto lhe vai custar, e "sob consulta" num plano por sair
+   * é a forma mais rápida de o mandar comparar noutro lado. O que **não** se
+   * faz é oferecer o botão de experimentar: prometer trinta dias de uma coisa
+   * que ninguém pode abrir é a mentira que custa o cliente todo.
+   */
+  soon?: boolean;
+  /** Quando se espera. Uma intenção, e a página di-lo. */
+  soonWhen?: string;
 };
 
 export const PLANS: Plan[] = [
@@ -49,23 +61,54 @@ export const PLANS: Plan[] = [
       "Comunicação segmentada e notificações",
       "Importação de atletas por Excel",
     ],
-    excludes: ["App das famílias", "Mensalidades e pagamentos", "Página pública de adesão a sócio"],
+    excludes: ["App do clube para famílias e sócios", "Mensalidades e pagamentos", "Página pública de adesão a sócio"],
   },
   {
     id: "ligado",
     name: "Connect",
-    tagline: "O clube, as famílias e o dinheiro. A plataforma inteira.",
+    tagline: "O clube, as famílias, os sócios e o dinheiro. A plataforma inteira.",
     monthly: 19.99,
     featured: true,
     includes: [
       "Tudo o que está na Consola",
-      "App das famílias com a marca do clube (PWA)",
-      "Convocatórias, presenças e avaliações no telemóvel dos pais",
+      "App do clube com a marca do clube (PWA)",
+      "Área da família: convocatórias, presenças e avaliações no telemóvel dos pais",
+      "Área do sócio: cartão digital, quotas, jogos e novidades",
+      "Área do staff: a consola dentro da mesma app instalada",
       "Mensalidades: MB WAY, Multibanco e cartão",
       "Confirmação automática e estado sempre actualizado",
       "Página pública de adesão a sócio",
       "Gestão de sócios e quotas",
-      "Notificações push para as famílias",
+      "Notificações push",
+    ],
+  },
+  /*
+    Vision — o plano que ainda não se vende, e que aparece na mesma.
+
+    Está aqui por duas razões, e nenhuma é entusiasmo. A primeira: um clube
+    escolhe plataforma uma vez e fica cinco anos, e quer saber para onde é que
+    ela vai antes de assinar. A segunda: o preço à vista permite-lhe orçamentar
+    a época — "sob consulta" num plano por sair manda-o comparar noutro lado.
+
+    O que o trava é o botão. Não há "experimentar 30 dias" numa coisa que
+    ninguém pode abrir; há "avisa-me quando sair". A diferença entre despertar
+    interesse e prometer o que não se entrega é exactamente esta linha.
+  */
+  {
+    id: "vision",
+    name: "Vision",
+    tagline: "Transforma o vídeo dos teus jogos em dados sobre os teus atletas e a tua equipa.",
+    monthly: 29.99,
+    soon: true,
+    soonWhen: "Previsto para breve",
+    includes: [
+      "Tudo o que está no Connect",
+      "Análise automática de jogos",
+      "Deteção e tracking de cada jogador",
+      "Distância percorrida, zonas ocupadas e tempo em campo",
+      "Estatísticas, momentos-chave e clips por jogador",
+      "Análise do adversário a partir do que o clube já grava",
+      "Relatórios de jogo e métricas por atleta",
     ],
   },
 ];
@@ -120,11 +163,23 @@ export const MODULES: Module[] = [
     ],
   },
   {
-    key: "familias",
-    name: "Famílias",
-    line: "A app do clube no telemóvel dos pais.",
+    /*
+      Era "Famílias", e a app era só delas. Deixou de ser: a mesma instalação
+      abre na área de quem entra — família, sócio ou staff. Listar as três aqui
+      é o que impede a página de continuar a prometer menos do que o produto faz.
+    */
+    key: "app",
+    name: "A app do clube",
+    line: "Uma app instalada, três áreas — conforme quem entra.",
     paidTier: true,
-    items: ["Próximo treino e próximo jogo", "Convocatórias", "Assiduidade", "Avaliações e relatórios", "Notificações", "Mensalidades"],
+    items: [
+      "Família: treinos, jogos, convocatórias e assiduidade",
+      "Família: avaliações, relatórios e mensalidades",
+      "Sócio: cartão digital com código, quotas e votações",
+      "Sócio: próximo jogo e novidades do clube",
+      "Staff: a consola do clube, dentro da mesma app",
+      "Marca do clube, notificações e instalação sem loja",
+    ],
   },
   {
     key: "pagamentos",
@@ -213,8 +268,8 @@ export const ROADMAP: RoadmapItem[] = [
   },
   {
     when: "Outubro 2026",
-    title: "Aplicação para os atletas",
-    body: "O atleta instala a app do clube, vê o que é dele e recebe notificações. Treinos, convocatórias, presenças e avaliações.",
+    title: "Área do atleta na app",
+    body: "A quarta área da app do clube, ao lado da família, do sócio e do staff: o atleta entra na sua, vê o que é dele e recebe notificações. Treinos, convocatórias, presenças e avaliações.",
   },
   {
     when: "Novembro 2026",
@@ -224,12 +279,12 @@ export const ROADMAP: RoadmapItem[] = [
   {
     when: "Janeiro 2027",
     title: "IA sobre os dados do clube",
-    body: "Resumos e sinais a partir do que já lá está — nunca a inventar o que ninguém registou.",
+    body: "Resumos e sinais a partir do que já lá está — nunca a inventar o que ninguém registou. Entra no plano Vision.",
   },
     {
     when: "Março 2027",
-    title: "IA sobre os videos do clube",
-    body: "Análise de vídeo com visão computacional, para extrair métricas e insights a partir do que o clube já grava para analisar adversarios, treinos e jogos.",
+    title: "IA sobre os vídeos do clube",
+    body: "Análise de vídeo por visão computacional: cada jogador seguido ao longo do jogo, métricas por atleta, clips ligados ao lance, e a leitura do adversário a partir do que o clube já grava. É o que o plano Vision traz — e cada número vem com a confiança medida ao lado.",
   },
 ];
 
@@ -247,11 +302,15 @@ export const FAQ = [
     a: "Os dados são do clube. Hoje a exportação é feita por nós a pedido, em formato aberto, sem custo. A exportação directa a partir da consola está no roteiro.",
   },
   {
-    q: "Como funciona a app das famílias?",
-    a: "O clube gera um link e manda-o às famílias. O pai abre no telemóvel, instala a app do clube — nome, cor e ícone do clube, não os nossos — e identifica o filho pelo NIF e data de nascimento. A partir daí tem treinos, convocatórias, assiduidade, avaliações e mensalidades.",
+    q: "Como funciona a app do clube?",
+    a: "O clube gera um link e manda-o a quem interessa. A pessoa abre no telemóvel, instala a app do clube — nome, cor e ícone do clube, não os nossos — e entra. Um pai identifica o filho pelo NIF e data de nascimento e passa a ter treinos, convocatórias, assiduidade, avaliações e mensalidades; um sócio tem o cartão, as quotas, os jogos e as novidades.",
   },
   {
-    q: "Os pais têm de instalar alguma coisa da App Store?",
+    q: "É preciso uma app para as famílias e outra para os sócios?",
+    a: "Não. É a mesma app, a mesma conta e a mesma instalação — o que muda é a área. Quem é só pai entra direto na área da família; quem é só sócio entra direto na do sócio; quem é as duas coisas escolhe ao entrar e troca quando quiser, sem sair da conta. Quem trabalha no clube tem também a área de staff, que abre a consola dentro da própria app instalada — não é uma segunda consola em ponto pequeno, é a mesma.",
+  },
+  {
+    q: "Os pais e os sócios têm de instalar alguma coisa da App Store?",
     a: "Não. É uma PWA: instala-se a partir do link, em dois toques, no iPhone e no Android. Não há loja, não há aprovação, não há actualizações a fazer.",
   },
   {
@@ -260,7 +319,15 @@ export const FAQ = [
   },
   {
     q: "Podemos pôr a nossa marca na plataforma?",
-    a: "Sim. O nome, a cor e o ícone do clube atravessam a consola, a app das famílias e a página pública de adesão. Quem instala a app instala a app do clube.",
+    a: "Sim. O nome, a cor e o ícone do clube atravessam a consola, a app — em todas as áreas — e a página pública de adesão. Quem instala a app instala a app do clube.",
+  },
+  {
+    q: "O que é o plano Vision, e porque é que aparece se ainda não existe?",
+    a: "É o passo a seguir ao Connect: o vídeo que o clube já grava transformado em dados — cada jogador seguido ao longo do jogo, distância e zonas por atleta, clips ligados ao lance, relatório de jogo e leitura do adversário. Aparece porque um clube escolhe plataforma uma vez e fica anos com ela: esconder para onde vamos era deixar-te decidir sem essa informação, e o preço à vista é o que te permite orçamentar a época. O que não fazemos é vendê-lo já — não há período de teste de uma coisa que ninguém pode abrir, e a data é uma intenção, não um compromisso.",
+  },
+  {
+    q: "A IA vai inventar estatísticas sobre os nossos atletas?",
+    a: "Não, e a arquitetura é feita para que não possa. A visão computacional produz dados com a confiança medida; a estatística deriva desses dados; a interpretação só nasce quando a confiança chega. O que fica abaixo do limiar pede uma confirmação a um treinador em vez de se fazer passar por certo — um número inventado sobre um miúdo de treze anos vale menos do que número nenhum. E não há reconhecimento facial: são menores, e a identificação faz-se pelo plantel confirmado antes do processamento, pelo número da camisola e pela trajetória.",
   },
   {
     q: "Existe período de teste?",

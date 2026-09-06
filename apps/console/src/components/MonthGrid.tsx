@@ -1,11 +1,11 @@
 import { Fragment, useState } from "react";
 import type { CategoricalColor } from "@academia/ui/tokens";
-import { KIND_LABEL, dayKey, groupByDay, monthGrid, type CalendarEvent } from "@/lib/calendar";
+import { KIND_LABEL, dayKey, eventOutcome, groupByDay, monthGrid, type CalendarEvent } from "@/lib/calendar";
 import { today } from "@/lib/api";
 import { time } from "@/lib/format";
 import { Plus } from "@/lib/icons";
 import { useMobile } from "@/lib/viewport";
-import { cx } from "./primitives";
+import { cx, OutcomeTag } from "./primitives";
 
 const WEEKDAYS = ["Seg", "Ter", "Qua", "Qui", "Sex", "Sáb", "Dom"];
 
@@ -137,12 +137,17 @@ function EventChip({
   onClick: () => void;
 }) {
   const alert = event.alert === "unassigned";
+  // O desfecho, quando o jogo já tem resultado. Ver `OutcomeTag`.
+  const outcome = eventOutcome(event);
+  const score = event.match?.result
+    ? `${event.match.result.ourScore}–${event.match.result.theirScore}`
+    : undefined;
 
   return (
     <button
       type="button"
       onClick={onClick}
-      title={`${KIND_LABEL[event.kind]} · ${event.title} · ${event.venue}`}
+      title={`${KIND_LABEL[event.kind]} · ${event.title} · ${event.venue}${score ? ` · ${score}` : ""}`}
       className={cx(
         "flex w-full items-center gap-1.5 rounded-[5px] border px-1.5 py-1 text-left text-[11px] leading-tight transition-[filter] duration-[120ms] hover:brightness-[0.97]",
         event.cancelled && "border-line bg-sunken/60 text-ink-4",
@@ -167,6 +172,9 @@ function EventChip({
         {event.title}
       </span>
       {alert && <span className="shrink-0 font-semibold text-risk">sem treinador</span>}
+      {/* Só a letra: numa pastilha de 11px o resultado não cabe, e está no
+          `title` e na gaveta para quem o quiser. */}
+      {outcome && !event.cancelled && <OutcomeTag outcome={outcome} score={score} size="sm" />}
     </button>
   );
 }
@@ -292,6 +300,12 @@ function MobileMonth({
                       {alert && <span className="font-semibold text-risk"> · sem treinador</span>}
                     </span>
                   </span>
+                  {(() => {
+                    const outcome = eventOutcome(e);
+                    if (!outcome || e.cancelled) return null;
+                    const r = e.match!.result!;
+                    return <OutcomeTag outcome={outcome} score={`${r.ourScore}–${r.theirScore}`} withScore />;
+                  })()}
                 </button>
               </li>
             );

@@ -89,15 +89,55 @@ export class PrismaService extends PrismaClient implements OnModuleInit, OnModul
    *
    * Tudo o que toque em dados de domínio passa por aqui. O cliente que `work`
    * recebe já tem RLS activa e o filtro de aplicação injectado.
+   *
+   * ## O tecto de tempo, e porque é que ele existe
+   *
+   * Uma transação interactiva do Prisma tem **cinco segundos** por omissão.
+   * Passados esses, a transação fecha-se sozinha e a escrita seguinte rebenta
+   * com `P2028` — que sai da API como um 500 sem explicação nenhuma.
+   *
+   * Para a esmagadora maioria das operações (uma leitura, uma escrita, um par
+   * de ambas) cinco segundos são muito mais do que preciso, e o limite baixo é
+   * uma protecção: uma transação esquecida aberta prende uma das **cinco**
+   * ligações do `pgbouncer` e estrangula o resto do servidor.
+   *
+   * Mas há operações que são legitimamente longas — a importação de atletas
+   * aceita 400 linhas por pedido, e cada linha são duas idas à base. A 640ms
+   * por linha (medido, com a base no Supabase), passa dos cinco segundos ao
+   * **oitavo atleta**. Era o que estava a acontecer: importar um plantel dava
+   * 500, e importar meia dúzia funcionava — o que faz o problema parecer
+   * intermitente quando é aritmética.
+   *
+   * Por isso o tecto é um argumento e não uma constante: quem faz uma operação
+   * em lote diz quanto tempo ela pode custar, e todo o resto continua com o
+   * limite curto, que é onde ele protege.
    */
-  runAs<T>(academyId: string, work: (db: ScopedClient) => Promise<T>): Promise<T> {
+  runAs<T>(
+    academyId: string,
+    work: (db: ScopedClient) => Promise<T>,
+    /** Tecto da transação, em milissegundos. Só para operações em lote. */
+    opcoes?: { timeoutMs?: number },
+  ): Promise<T> {
     return tenant.run({ academyId }, () =>
-      this.scoped.$transaction(async (tx) => {
-        // `set_config(..., true)` = LOCAL. Parametrizado, nunca interpolado: um
-        // academyId vindo de um JWT não pode virar SQL.
-        await tx.$executeRaw`SELECT set_config('app.academy_id', ${academyId}, true)`;
-        return work(tx as ScopedClient);
-      }),
+      this.scoped.$transaction(
+        async (tx) => {
+          // `set_config(..., true)` = LOCAL. Parametrizado, nunca interpolado: um
+          // academyId vindo de um JWT não pode virar SQL.
+          await tx.$executeRaw`SELECT set_config('app.academy_id', ${academyId}, true)`;
+          return work(tx as ScopedClient);
+        },
+        opcoes?.timeoutMs
+          ? {
+              timeout: opcoes.timeoutMs,
+              /*
+               * Esperar por uma ligação livre também tem de dar mais folga: com
+               * cinco ligações e um lote a segurar uma delas, o pedido seguinte
+               * batia nos dois segundos por omissão e falhava à espera da vez.
+               */
+              maxWait: Math.min(opcoes.timeoutMs, 20_000),
+            }
+          : undefined,
+      ),
     );
   }
 

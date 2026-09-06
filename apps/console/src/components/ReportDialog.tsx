@@ -119,7 +119,7 @@ export function ReportDialog({
 
   async function unshare() {
     if (!report || busy) return;
-    if (!confirm("Tirar da app da família? Quem já o leu, leu — deixa é de aparecer daqui para a frente.")) return;
+    if (!confirm("Tirar da app do clube? Quem já o leu, leu — deixa é de aparecer daqui para a frente.")) return;
     setBusy(true);
     try {
       await apiPatch(`/api/reports/${report.id}`, { visibility: "INTERNAL" });

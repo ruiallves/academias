@@ -1,6 +1,11 @@
 """O ciclo do worker: perguntar, trabalhar, responder, repetir.
 
-    claim → download do vídeo → pipeline (com heartbeats) → complete/fail
+    claim → o vídeo (no disco, ou descarregado) → pipeline (com heartbeats) → complete/fail
+
+O vídeo chega ao disco **antes** do claim, pelo servidor de ingestão
+(`ingest.py`): o browser envia-o em blocos para aqui, e a API só põe a análise
+na fila quando este worker diz que o tem. O download por link assinado é o
+caminho antigo, pelo Storage, e continua a existir para quem o usar.
 
 Um processo, um job de cada vez — de propósito. A GPU não ganha nada em fazer
 dois vídeos ao mesmo tempo, e um worker simples é um worker que se percebe às
@@ -17,7 +22,7 @@ from typing import Any
 
 import requests
 
-from . import api, config, pipelines
+from . import api, config, ingest, pipelines
 
 
 def main() -> None:
@@ -27,6 +32,10 @@ def main() -> None:
     print(f"Academias AI worker '{config.WORKER_NAME}' — etapas: {', '.join(kinds)}")
     if "detect_track" not in kinds:
         print("  (sem torch/torchvision/supervision — só qualidade de vídeo; ver README)")
+
+    # A porta do vídeo abre antes da fila: um jogo pode começar a chegar
+    # enquanto ainda se registam modelos.
+    ingest.start()
 
     # A proveniência primeiro: que modelos, que versões, que licenças.
     for model in pipelines.model_manifest(kinds):
@@ -69,10 +78,22 @@ def _work(job: dict[str, Any], pipeline: Any) -> None:
             except requests.RequestException:
                 pass  # um heartbeat perdido não é razão para parar o trabalho
 
+    video = job.get("video", {})
     video_path = None
+    # Um vídeo que vive neste disco não se apaga no fim do job: a etapa seguinte
+    # ainda o vai ler. Quem o apaga é o job `purge_video`, quando a API o pedir.
+    temporary = False
     try:
         api.heartbeat(job_id, 0)
-        video_path = api.download_video(job["video"]["url"], suffix=_suffix(job["video"].get("mimeType", "")))
+        if job["kind"] == "purge_video":
+            video_path = ingest.spool_path(video.get("id", ""), video.get("mimeType", ""))
+        elif video.get("source") == "worker":
+            video_path = ingest.spool_path(video["id"], video.get("mimeType", ""))
+            if not video_path.exists():
+                raise RuntimeError("O vídeo já não está neste worker — carrega-o outra vez numa análise nova")
+        else:
+            video_path = api.download_video(video["url"], suffix=_suffix(video.get("mimeType", "")))
+            temporary = True
         result = pipeline.run(job, video_path, progress)
         api.complete(job_id, result, _versions(pipeline))
         print(f"[{job_id}] concluído")
@@ -83,7 +104,7 @@ def _work(job: dict[str, Any], pipeline: Any) -> None:
         except requests.RequestException:
             print(f"[{job_id}] não consegui reportar a falha — a API repõe o job por heartbeat", file=sys.stderr)
     finally:
-        if video_path is not None:
+        if temporary and video_path is not None:
             video_path.unlink(missing_ok=True)
 
 

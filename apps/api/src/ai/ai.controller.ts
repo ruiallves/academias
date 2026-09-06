@@ -17,6 +17,7 @@ import {
   WorkerHeartbeatDto,
   WorkerModelDto,
   WorkerUploadUrlDto,
+  WorkerVideoReceivedDto,
 } from "./ai.dto";
 
 /**
@@ -132,6 +133,12 @@ export class AiWorkerController {
   @Post("jobs/:id/upload-url")
   uploadUrl(@Param("id") id: string, @Body() dto: WorkerUploadUrlDto) {
     return this.worker.uploadUrl(id, dto);
+  }
+
+  /** O vídeo chegou inteiro ao worker — o caminho directo, sem Storage. */
+  @Post("videos/:id/received")
+  videoReceived(@Param("id") id: string, @Body() dto: WorkerVideoReceivedDto) {
+    return this.worker.videoReceived(id, dto);
   }
 
   @Post("models")

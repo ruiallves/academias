@@ -125,6 +125,35 @@ export type NavCounts = {
  * para quem tem acesso a tudo: lia-se atletas, boletins clínicos, prospectos,
  * calendário. As Definições ficam à parte, no fundo da barra — ver `SETTINGS_ITEM`.
  */
+/**
+ * Academias AI — **fora de produção, por agora**.
+ *
+ * Não é uma permissão nem um interruptor de funcionalidade: é uma área que
+ * ainda não é para os clubes verem. A diferença importa — uma permissão
+ * esconde-se de quem não a tem e mostra-se a quem a tem, e hoje qualquer
+ * presidente tem `ai:read` no cargo.
+ *
+ * Entra no catálogo com um *spread* condicional em vez de uma marca lida em
+ * tempo de execução, e a diferença é real: o Vite substitui
+ * `import.meta.env.DEV` por `false` na compilação, o que deixa
+ * `...(false ? [GRUPO_AI] : [])` sem ninguém a referir `GRUPO_AI` — e o
+ * empacotador deita-o fora. Uma marca `devOnly` filtrada no `navFor` deixava
+ * os rótulos e os caminhos todos dentro do pacote que o clube descarrega.
+ *
+ * O lugar é a seguir à Área técnica, que é a sua continuação natural: o vídeo
+ * do jogo é o mesmo trabalho de conteúdo do treinador, um passo à frente.
+ */
+const GRUPO_AI: NavGroup = {
+  label: "Academias AI",
+  items: [
+    { key: "ai-overview", label: "Visão AI", to: "/ai", icon: Brain, requires: "ai:read" },
+    { key: "ai-analyses", label: "Análises", to: "/ai/analises", icon: Film, requires: "ai:read" },
+    { key: "ai-insights", label: "Insights", to: "/ai/insights", icon: Sparkle, requires: "ai:read" },
+    { key: "ai-development", label: "Desenvolvimento", to: "/ai/desenvolvimento", icon: Activity, requires: "ai:read", beta: true },
+    { key: "ai-opponents", label: "Adversários", to: "/ai/adversarios", icon: Target, requires: "ai:read", beta: true },
+  ],
+};
+
 export const NAV_CATALOG: NavGroup[] = [
   {
     items: [{ key: "overview", label: "Visão geral", to: "/", icon: LayoutGrid, requires: "academy:read" }],
@@ -215,7 +244,7 @@ export const NAV_CATALOG: NavGroup[] = [
       { key: "sports", label: "Modalidades (área técnica)", to: "/modalidades", icon: Shapes, requires: "training:read", dynamic: "sports" },
     ],
   },
-  {
+    {
     label: "Gestão",
     items: [
       {
@@ -302,35 +331,8 @@ export const NAV_CATALOG: NavGroup[] = [
       { key: "consultations", label: "Consultas", to: "/clinico/consultas", icon: Stethoscope, requires: "clinical:read" },
     ],
   },
+  ...(import.meta.env.DEV ? [GRUPO_AI] : []),
 ];
-
-/**
- * Academias AI — **fora do menu por agora**.
- *
- * A área está construída e as rotas continuam a responder (`/ai`, `/ai/analises`,
- * …) a quem tiver `ai:read` e souber o endereço. O que não está feito é a
- * cadeia toda a funcionar sem um worker a correr: sem GPU do outro lado, um
- * treinador que entrasse por aqui carregava um vídeo e ficava com uma análise
- * eternamente "na fila". Um menu que promete o que ninguém pode cumprir hoje
- * é pior do que menu nenhum.
- *
- * **Para voltar a mostrar**: acrescentar `AI_GROUP` ao `NAV_CATALOG`, a seguir
- * à Área técnica — é onde estava, e é a continuação natural dela. Fica aqui, e
- * não apagado, para a religação ser uma linha e não uma arqueologia no git.
- *
- * Nada mais foi desfeito: as permissões (`ai:read`/`ai:write`), as chaves de
- * menu no servidor, as tabelas e o worker continuam todos no sítio.
- */
-export const AI_GROUP: NavGroup = {
-  label: "Academias AI",
-  items: [
-    { key: "ai-overview", label: "Visão AI", to: "/ai", icon: Brain, requires: "ai:read" },
-    { key: "ai-analyses", label: "Análises", to: "/ai/analises", icon: Film, requires: "ai:read" },
-    { key: "ai-insights", label: "Insights", to: "/ai/insights", icon: Sparkle, requires: "ai:read" },
-    { key: "ai-development", label: "Desenvolvimento", to: "/ai/desenvolvimento", icon: Activity, requires: "ai:read", beta: true },
-    { key: "ai-opponents", label: "Adversários", to: "/ai/adversarios", icon: Target, requires: "ai:read", beta: true },
-  ],
-};
 
 export const SETTINGS_ITEM: NavItem = {
   key: "settings",

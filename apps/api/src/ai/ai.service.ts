@@ -1,5 +1,7 @@
 import { BadRequestException, ForbiddenException, Injectable, NotFoundException } from "@nestjs/common";
+import { ConfigService } from "@nestjs/config";
 import { PrismaService } from "../prisma/prisma.service";
+import { issueTicket } from "./ai-ticket";
 import { can, teamScopeFilter, type RequestContext } from "../common/permissions";
 import { AiVideoService, videoExtensionFor } from "./ai-video.service";
 import { AiJobsService } from "./ai-jobs.service";
@@ -34,6 +36,7 @@ export class AiService {
     private readonly prisma: PrismaService,
     private readonly video: AiVideoService,
     private readonly jobs: AiJobsService,
+    private readonly config: ConfigService,
   ) {}
 
   /* ---------------------------------------------------------------------- */
@@ -183,7 +186,7 @@ export class AiService {
             select: {
               id: true, status: true, mimeType: true, sizeBytes: true,
               durationSec: true, width: true, height: true, fps: true,
-              quality: true, createdAt: true,
+              quality: true, createdAt: true, holder: true, purgedAt: true,
             },
           },
           jobs: {
@@ -275,10 +278,33 @@ export class AiService {
     const found = await this.prisma.runAs(ctx.academyId, (db) =>
       db.aIAnalysis.findFirst({
         where: { id, ...(teamScope ? { teamId: teamScope } : {}) },
-        select: { id: true },
+        select: { id: true, videos: { select: { id: true, holder: true } } },
       }),
     );
     if (!found) throw new NotFoundException("Análise não encontrada");
+
+    /*
+     * Os ficheiros primeiro, e nos dois sítios onde podem estar: o disco de um
+     * worker (o caminho de hoje) e o Storage (o antigo). Uma análise apagada
+     * que deixasse o vídeo de um jogo de menores no disco de alguém não era um
+     * apagamento — era uma listagem a desaparecer.
+     */
+    /*
+     * Para **todos** os vídeos, e não só os que têm `holder`.
+     *
+     * `holder` só se escreve quando o carregamento chega ao fim. Um
+     * carregamento interrompido — o caso mais comum de todos: a pessoa fechou
+     * o separador, a rede caiu, o ficheiro era o errado — deixa os bytes que
+     * já subiram no disco do worker e a coluna a nulo. Filtrar por `holder`
+     * era limpar o caso arrumado e deixar o desarrumado, que é precisamente ao
+     * contrário do que faz falta.
+     *
+     * O pedido é idempotente: sem nada para apagar, o worker responde que não
+     * havia nada e acabou.
+     */
+    for (const v of found.videos) {
+      await this.video.askWorkerToPurge(v.id);
+    }
 
     await this.video.deletePrefix(`${ctx.academyId}/${id}`);
 
@@ -325,6 +351,34 @@ export class AiService {
 
       return { id: video.id, storageKey };
     });
+
+    /*
+     * Por onde vão os bytes.
+     *
+     * Com `AI_WORKER_PUBLIC_URL`, vão **direitos ao worker**: o browser recebe
+     * o endereço dele e um bilhete assinado (ver `ai-ticket.ts`), e envia o
+     * ficheiro em blocos com retoma. O Supabase não vê o vídeo — nem o tecto de
+     * 50 MB do plano, nem o de 5 GB dos uploads simples se aplicam. É o caminho
+     * de hoje.
+     *
+     * Sem essa variável fica o caminho antigo, pelo Storage — para um ambiente
+     * sem worker exposto continuar a funcionar como funcionava.
+     */
+    const ingest = this.config.get<string>("AI_WORKER_PUBLIC_URL")?.trim().replace(/\/$/, "");
+    if (ingest) {
+      const secret = this.config.get<string>("AI_WORKER_TOKEN")?.trim();
+      if (!secret || secret.length < 16) {
+        throw new BadRequestException("AI_WORKER_TOKEN não está configurado — o worker não pode receber vídeo");
+      }
+      const ticket = issueTicket(secret, {
+        v: created.id,
+        a: analysisId,
+        ac: ctx.academyId,
+        s: dto.sizeBytes ?? 0,
+        m: dto.mimeType,
+      });
+      return { id: created.id, storageKey: created.storageKey, ingestUrl: ingest, ticket };
+    }
 
     // A assinatura fora da transação, como sempre: rede não segura ligações do pool.
     const upload = await this.video.signUpload(created.storageKey);
@@ -379,10 +433,12 @@ export class AiService {
     const video = await this.prisma.runAs(ctx.academyId, (db) =>
       db.aIVideo.findFirst({
         where: { id: videoId, status: "READY" },
-        select: { storageKey: true },
+        select: { storageKey: true, holder: true },
       }),
     );
     if (!video) throw new NotFoundException("Vídeo não encontrado");
+    // No disco de um worker não há link para dar — e depois de processado nem ficheiro há.
+    if (video.holder) throw new NotFoundException("O vídeo não fica guardado — só os dados");
 
     return { url: await this.video.signDownload(video.storageKey, 600), expiresIn: 600 };
   }
@@ -404,12 +460,16 @@ export class AiService {
         where: { id: analysisId, ...(teamScope ? { teamId: teamScope } : {}) },
         select: {
           id: true, status: true,
-          videos: { where: { status: "READY" }, select: { id: true }, take: 1 },
+          videos: { where: { status: { in: ["READY", "PURGED"] } }, select: { id: true, status: true }, take: 1 },
           jobs: { where: { status: { in: ["PENDING", "CLAIMED", "RUNNING"] } }, select: { id: true }, take: 1 },
         },
       });
       if (!a) throw new NotFoundException("Análise não encontrada");
       if (a.videos.length === 0) throw new BadRequestException("A análise ainda não tem vídeo");
+      // O ficheiro foi apagado depois de processar — reprocessar é carregar outra vez, numa análise nova.
+      if (a.videos[0].status === "PURGED") {
+        throw new BadRequestException("O vídeo já foi apagado depois do processamento — cria uma análise nova e carrega-o outra vez");
+      }
       if (a.jobs.length > 0) throw new BadRequestException("Já há processamento em curso");
 
       const videoId = a.videos[0].id;

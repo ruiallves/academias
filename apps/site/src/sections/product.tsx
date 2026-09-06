@@ -3,6 +3,7 @@ import { Link } from "react-router-dom";
 import { ProductFrame, Reveal, SectionMark, cx } from "@/components/primitives";
 import { PAYMENT_METHODS, PaymentMark } from "@/components/PaymentIcons";
 import { AppShot, ConsoleShot, MembershipShot } from "@/components/shots";
+import { EscolhaAreaShot, SocioShot } from "@/components/shots-app";
 import { CampoTaticoShot } from "@/components/shots-treino";
 import { MODULES } from "@/lib/content";
 
@@ -14,14 +15,14 @@ import { MODULES } from "@/lib/content";
  * O tour do produto.
  *
  * A homepage antiga explicava o produto em quatro secções compridas; esta
- * mostra-o num sítio só, com três separadores: a consola, a app das famílias e
- * a página de sócios. Quem quer a lista completa tem a página Software — a
+ * mostra-o num sítio só, com quatro separadores: a consola, a área técnica, a
+ * app do clube e os sócios. Quem quer a lista completa tem a página Software — a
  * homepage vende a vista, não o inventário.
  *
  * Os separadores são texto sublinhado, não pastilhas: é a microinteração de um
  * jornal, não a de uma app.
  */
-type TabId = "consola" | "treino" | "familias" | "socios";
+type TabId = "consola" | "treino" | "app" | "socios";
 
 const TABS: {
   id: TabId;
@@ -51,13 +52,14 @@ const TABS: {
     ],
   },
   {
-    id: "familias",
-    label: "A app das famílias",
-    lede: "A parte do produto que os pais vêem todos os dias — com o nome, a cor e o ícone do clube, não os nossos.",
+    id: "app",
+    label: "A app do clube",
+    lede: "Uma app instalada, com o nome, a cor e o ícone do clube — e três áreas lá dentro. Abre na de quem entra: o pai, o sócio, ou quem trabalha no clube.",
     points: [
       ["Instala-se num link", "Sem App Store, sem aprovações. Dois toques a partir da mensagem que o clube manda."],
-      ["Deixa de haver o grupo do WhatsApp", "Horário, alteração de última hora, convocatória e mensalidade — tudo chega ao mesmo sítio, com aviso no telemóvel."],
-      ["Os pais vêem o filho crescer", "Assiduidade, jogos, avaliações do treinador e relatórios que o clube decida partilhar."],
+      ["A família deixa de depender do grupo do WhatsApp", "Horário, alteração de última hora, convocatória, avaliações e mensalidade — tudo no mesmo sítio, com aviso no telemóvel."],
+      ["O sócio traz o cartão no bolso", "Cartão de sócio digital com código para mostrar à porta, quotas pagas ali mesmo, o próximo jogo e as novidades do clube."],
+      ["Quem trabalha no clube abre a consola na mesma app", "A área de staff não é uma consola em ponto pequeno — é a consola, dentro da app instalada. Uma funcionalidade nova nunca fica a faltar de um dos lados."],
     ],
   },
   {
@@ -142,9 +144,14 @@ export function Tour() {
                 <CampoTaticoShot className="min-h-[340px]" />
               </ProductFrame>
             )}
-            {tab === "familias" && (
-              <div className="canto flex justify-center overflow-hidden bg-pine px-6 py-12 sm:py-16">
-                <AppShot />
+            {tab === "app" && (
+              /* Dois telemóveis, e não um: a escolha de área é a prova de que é
+                 uma app só, e o "Hoje" da família é o que mostra o que há lá
+                 dentro. Num ecrã estreito fica o primeiro — a tese antes do
+                 exemplo. */
+              <div className="canto flex justify-center gap-5 overflow-hidden bg-pine px-4 py-12 sm:px-6 sm:py-16">
+                <EscolhaAreaShot scale={0.82} />
+                <AppShot scale={0.82} className="hidden sm:block" />
               </div>
             )}
             {tab === "socios" && (
@@ -251,6 +258,98 @@ export function Pagamentos() {
 }
 
 /* ========================================================================== */
+/* A app do clube — as três áreas, usada na página Software                   */
+/* ========================================================================== */
+
+/**
+ * As áreas da app.
+ *
+ * O produto tinha uma app das famílias; passou a ter uma app do clube com três
+ * áreas, e o site dizia ainda a versão antiga — a página prometia menos do que
+ * o produto faz, que é o erro menos falado e não o menos caro: um clube com
+ * quinhentos sócios lia "app das famílias" e não percebia que a plataforma
+ * também servia os sócios dele.
+ *
+ * **Staff é a consola, e diz-se que é.** A tentação era vender "app para
+ * treinadores"; seria falso e pior — o que existe é melhor do que isso. A área
+ * de staff entrega a sessão à consola dentro da própria app instalada, e é por
+ * isso que nunca fica um passo atrás dela.
+ */
+const AREAS_DA_APP: { label: string; para: string; items: string[]; nota?: string }[] = [
+  {
+    label: "Staff",
+    para: "Para quem trabalha no clube",
+    items: ["A consola inteira, dentro da app instalada", "O que cada papel pode ver e fazer", "Presenças e convocatórias ao lado do campo"],
+  },
+  {
+    label: "Família",
+    para: "Para os pais",
+    items: ["Próximo treino e próximo jogo", "Convocatórias e assiduidade", "Avaliações e relatórios", "Mensalidades e histórico"],
+  },
+  {
+    label: "Sócio",
+    para: "Para quem paga quota",
+    items: ["Cartão de sócio digital com código", "Quotas, pagas na app", "O próximo jogo e as novidades", "Votações do clube"],
+  },
+];
+
+export function AppDoClube({ n }: { n?: string } = {}) {
+  return (
+    <section id="app" className="dark band">
+      <div className="wrap">
+        <Reveal>
+          <SectionMark n={n}>A app do clube</SectionMark>
+        </Reveal>
+
+        <div className="mt-8 grid gap-12 lg:grid-cols-[minmax(0,1fr)_auto] lg:gap-16">
+          <Reveal i={1}>
+            <h2 className="display d2 max-w-[15ch]">Uma app. Cada pessoa entra na sua área.</h2>
+            <p className="lede mt-5 text-ink-2">
+              A mesma instalação, a mesma conta, o nome e a cor do clube. Quem só é pai entra direto na área da família;
+              quem só é sócio, na do sócio. Quem é as duas coisas escolhe ao entrar — e troca quando quiser, sem sair da
+              conta.
+            </p>
+
+            <dl className="mt-10">
+              {AREAS_DA_APP.map((a) => (
+                <div key={a.label} className="border-t border-line py-5 last:border-b">
+                  <dt className="flex items-baseline gap-3">
+                    <span className="text-[17px] font-semibold tracking-[-0.02em]">{a.label}</span>
+                    <span className="text-[13px] text-ink-3">{a.para}</span>
+                  </dt>
+                  <dd className="mt-2">
+                    <ul className="flex flex-wrap gap-x-5 gap-y-1.5">
+                      {a.items.map((it) => (
+                        <li key={it} className="flex gap-2 text-[14.5px] text-ink-2">
+                          <span aria-hidden className="mt-[9px] size-1.5 shrink-0 rounded-full bg-mint" />
+                          {it}
+                        </li>
+                      ))}
+                    </ul>
+                    {a.nota && <p className="mt-2 text-[13.5px] text-ink-3">{a.nota}</p>}
+                  </dd>
+                </div>
+              ))}
+            </dl>
+
+            <p className="mt-8 max-w-[52ch] text-[14.5px] leading-relaxed text-ink-3">
+              A área do atleta é a quarta, e está no roteiro — não a contamos como feita.
+            </p>
+          </Reveal>
+
+          <Reveal i={2}>
+            <div className="flex justify-center gap-5 lg:justify-start">
+              <EscolhaAreaShot scale={0.76} />
+              <SocioShot scale={0.76} className="hidden sm:block" />
+            </div>
+          </Reveal>
+        </div>
+      </div>
+    </section>
+  );
+}
+
+/* ========================================================================== */
 /* Sócios — a secção completa, usada na página Software                       */
 /* ========================================================================== */
 
@@ -266,14 +365,15 @@ export function Socios({ n }: { n?: string } = {}) {
           <Reveal i={1}>
             <h2 className="display d2 max-w-[14ch]">O clube também vive de sócios.</h2>
             <p className="lede mt-5">
-              Uma página pública com a marca do clube, onde qualquer pessoa se torna sócia em dois minutos — e o clube
-              deixa de andar atrás de fichas em papel.
+              Uma página pública com a marca do clube, onde qualquer pessoa se torna sócia em dois minutos — e, aprovada
+              a adesão, leva o cartão no telemóvel. O clube deixa de andar atrás de fichas em papel.
             </p>
 
             <ul className="mt-9">
               {[
                 ["As categorias são do clube", "Categorias, quotas e benefícios, tudo configurável pelo clube."],
                 ["Adesão sem papel", "A pessoa preenche, aceita os termos e fica à espera de aprovação. A direção aprova e o número de sócio é atribuído."],
+                ["O cartão fica no telemóvel", "A área de sócio da app do clube: cartão digital com código para mostrar à porta, quotas, o próximo jogo, as novidades e as votações."],
                 ["Quotas como mensalidades", "As quotas cobram-se pelos mesmos meios, com o mesmo estado sempre certo."],
               ].map(([t, d]) => (
                 <li key={t} className="border-t border-line py-5 last:border-b">
@@ -288,9 +388,23 @@ export function Socios({ n }: { n?: string } = {}) {
             <ProductFrame label="lifeclub.academias.pt/sersocio" shot="/shots/socios.png" alt="Página de adesão a sócio">
               <MembershipShot className="min-h-[300px]" />
             </ProductFrame>
-            <p className="mt-4 text-[13.5px] text-ink-3">
-              Incluída no plano <span className="font-semibold text-ink">Connect</span>.
-            </p>
+
+            {/* Os dois lados da mesma coisa: a página onde se adere, e o cartão
+                que fica no telemóvel de quem aderiu. O telemóvel entra pequeno e
+                à esquerda — é o desfecho da página, não o protagonista dela. */}
+            <div className="mt-8 flex flex-col gap-6 sm:flex-row sm:items-center">
+              <SocioShot scale={0.58} />
+              <div className="min-w-0">
+                <p className="text-[16.5px] font-semibold tracking-[-0.02em]">E depois de aprovado, o cartão.</p>
+                <p className="mt-1.5 max-w-[32ch] text-[14.5px] leading-relaxed text-ink-2">
+                  A área de sócio abre na mesma app do clube que as famílias instalam — e quem é as duas coisas troca
+                  de área sem sair da conta.
+                </p>
+                <p className="mt-4 text-[13.5px] text-ink-3">
+                  Incluído no plano <span className="font-semibold text-ink">Connect</span>.
+                </p>
+              </div>
+            </div>
           </Reveal>
         </div>
       </div>

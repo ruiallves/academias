@@ -135,7 +135,7 @@ export function ClinicalPanel({ athlete, session }: { athlete: Athlete; session:
 
           {appointments.length === 0 ? (
             <div className="px-5 py-8">
-              <Empty title="Nada agendado" detail="Exames, consultas e reavaliações aparecem aqui — e na app da família." />
+              <Empty title="Nada agendado" detail="Exames, consultas e reavaliações aparecem aqui — e na app do clube." />
             </div>
           ) : (
             <ul>

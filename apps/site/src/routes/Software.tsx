@@ -1,7 +1,7 @@
 import { Link } from "react-router-dom";
 import { ProductFrame, Reveal, SectionMark, cx } from "@/components/primitives";
 import { AppShot, ConsoleShot } from "@/components/shots";
-import { Socios } from "@/sections/product";
+import { AppDoClube, Socios } from "@/sections/product";
 import { AreaTecnica } from "@/sections/treino";
 import { Roteiro } from "@/sections/trust";
 import { MODULES } from "@/lib/content";
@@ -56,12 +56,25 @@ export default function Software() {
                 <AppShot />
               </div>
               <p className="mx-auto mt-6 max-w-[34ch] text-center text-[14.5px] leading-relaxed text-ink-2">
-                A app das famílias, com a marca do clube. Instala-se a partir de um link, sem loja de aplicações.
+                A app do clube, com a marca do clube. Instala-se a partir de um link, sem loja de aplicações — e abre na
+                área de quem entra.
               </p>
             </Reveal>
           </div>
         </div>
       </section>
+
+      {/*
+        A app, a seguir às duas caras e antes da lista de módulos.
+
+        Porque é aqui que a pergunta nasce: acabou de se dizer que há uma consola
+        e uma app, e a pergunta seguinte de quem lê é "e os sócios? e eu, que sou
+        treinador e pai?". Responder-lhe oito módulos abaixo é responder tarde.
+
+        A ordem das áreas é a do ecrã real — staff primeiro, porque quem tem
+        trabalho no clube abre a app para o trabalho.
+      */}
+      <AppDoClube n="—" />
 
       {/* Os módulos */}
       <section className="band-tight">

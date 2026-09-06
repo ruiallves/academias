@@ -155,6 +155,39 @@ console.log("\n=== Tudo isto ficou mesmo na base ===");
 const total = (await db.query(`SELECT count(*)::int n FROM "Athlete" WHERE name LIKE 'ZZ Teste%'`)).rows[0].n;
 check("6 atletas de teste na base (1 direção + 1 sem exame + 1 treinador + 3 importados)", total === 6, `${total}`);
 
+/*
+ * Um lote a sério — o que o tecto de cinco segundos partia.
+ *
+ * A importação acima tem seis linhas e corre em três segundos: passava, e por
+ * isso o problema viveu escondido. Uma transação interactiva do Prisma fecha-se
+ * aos **cinco segundos** por omissão, e cada linha custa cerca de meio segundo
+ * (duas idas à base, com a base do outro lado da Internet). Ao oitavo atleta a
+ * transação já estava fechada e a escrita seguinte devolvia 500 — sem
+ * mensagem, sem linha, sem nada que dissesse porquê.
+ *
+ * Um clube a inscrever o plantel batia nisto à primeira, e o DTO aceita **400**
+ * linhas por pedido. Catorze linhas chegam para passar dos cinco segundos e
+ * para esta afirmação continuar a valer: um lote grande entra inteiro.
+ */
+console.log("\n=== Um lote grande passa do tecto da transação ===");
+const lote = Array.from({ length: 14 }, (_, i) => ({
+  name: `ZZ Teste Lote ${String(i).padStart(2, "0")}`,
+  taxId: nif(),
+  birthdate: "2015-02-02",
+  teamId: "t_sub11",
+  position: "Médio",
+}));
+const t0 = Date.now();
+const grande = await call(director, "POST", "/api/athletes/import", { rows: lote });
+const demorou = Date.now() - t0;
+check("catorze linhas entram todas", grande.body?.created === 14, `criou ${grande.body?.created} (HTTP ${grande.status})`);
+check("sem erros de linha", grande.body?.errors?.length === 0, JSON.stringify(grande.body?.errors ?? []).slice(0, 160));
+check(
+  "e demorou mesmo mais do que o tecto por omissão (senão isto não prova nada)",
+  demorou > 5000,
+  `${demorou}ms — se a base ficou rápida, sobe o número de linhas`,
+);
+
 console.log("\n=== Limpeza ===");
 await db.query(`DELETE FROM "Athlete" WHERE name LIKE 'ZZ Teste%'`);
 await db.end();

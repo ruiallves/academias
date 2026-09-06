@@ -1,11 +1,13 @@
 # Capturas de produto
 
-Duas imagens, e o site usa-as automaticamente:
+Sete imagens, e o site usa-as automaticamente:
 
 | Ficheiro | Onde aparece | Proporção sugerida |
 |---|---|---|
 | `consola.png` | herói, secção "Gestão do clube", página Software | 16:10, ≥ 2400px de largura |
-| `app.png` | dentro do telemóvel, em três sítios | 9:19.5 (ecrã de telemóvel), ≥ 1200px de largura |
+| `app.png` | área da família, dentro do telemóvel, em três sítios | 9:19.5 (ecrã de telemóvel), ≥ 1200px de largura |
+| `app-areas.png` | o ecrã "Como queres continuar?", no tour e em Software | 9:19.5, ≥ 1200px de largura |
+| `app-socio.png` | a área de sócio (separador Cartão), em Software e na secção Sócios | 9:19.5, ≥ 1200px de largura |
 | `socios.png` | secção "Sócios" da landing | 16:10, ≥ 2000px de largura |
 | `treino-editor.png` | secção "Área técnica" (Software e landing) | 16:10, ≥ 2000px de largura |
 | `treino-plano.png` | secção "Área técnica" da página Software | 16:10, ≥ 2000px de largura |
@@ -22,8 +24,14 @@ reconstrução volta sozinha — o site nunca mostra um rectângulo partido.
 - **Consola**: a Visão geral da direção, com dados de demonstração. Janela larga,
   sem separadores do browser à volta.
 - **Sócios**: a página pública de adesão, no passo "A tua categoria".
-- **App**: o primeiro ecrã da app da família (o que tem a mensalidade e o próximo
+- **App**: o primeiro ecrã da área da família (o que tem a mensalidade e o próximo
   treino), num telemóvel ou no modo dispositivo do Chrome, sem barra de browser.
+- **Áreas da app**: o ecrã "Como queres continuar?", com as três áreas à vista.
+  Só aparece a quem tem mais do que uma — para o apanhar, entra com uma conta que
+  seja família e sócia do mesmo clube (ou família e staff).
+- **Área de sócio**: o separador **Cartão**, com o cartão e o código à vista.
+  Confirma que o clube tem o cartão e o QR activados nas definições, senão o ecrã
+  mostra o vazio em vez do cartão.
 - **Editor tático**: um exercício com jogadores, zona e setas desenhados, no campo
   de 11 — com a barra de ferramentas e a régua de frames à vista.
 - **Plano de treino**: a página de um treino planeado (`/treinos/:id`) com 4–5

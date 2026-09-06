@@ -12,10 +12,38 @@ resultados  ◄──  este worker (Python, GPU local ou cloud)
 ```
 
 O worker só conhece **duas coisas**: o URL da API e o token
-(`AI_WORKER_TOKEN`). Não tem credenciais da base de dados nem do Storage — o
-vídeo chega por link assinado com prazo, e os artefactos sobem por endereços
-assinados pedidos job a job. É isto que permite amanhã correr o mesmo processo
-num worker GPU na cloud sem tocar em nada.
+(`AI_WORKER_TOKEN`). Não tem credenciais da base de dados nem do Storage — os
+artefactos sobem por endereços assinados pedidos job a job. É isto que permite
+amanhã correr o mesmo processo num worker GPU na cloud sem tocar em nada.
+
+## O vídeo chega directamente ao worker
+
+O ficheiro do jogo **não passa pelo Supabase**. O worker abre uma porta de
+ingestão (`AI_WORKER_INGEST_PORT`, 8765 por omissão — ver
+`academias_ai/ingest.py`); o browser envia o vídeo para lá em blocos de 8 MB,
+com um bilhete assinado pela API, e o ficheiro fica na pasta `spool/` só
+enquanto se processa. No fim a API pede a purga (`purge_video`) e o ficheiro
+desaparece; os dados ficam. Um zelador apaga tudo o que tenha mais de
+`AI_WORKER_SPOOL_TTL_HOURS`.
+
+A API precisa de saber onde está esta porta: `AI_WORKER_PUBLIC_URL` no `.env`
+dela (`http://localhost:8765` em desenvolvimento). Em produção a consola é
+HTTPS, por isso a porta também tem de ser — o browser bloqueia, em silêncio,
+qualquer pedido `http://` feito a partir de uma página `https://`.
+
+Em produção isso resolve-se com o deploy: o worker é um serviço do Railway com
+domínio próprio (ver [`docs/05-deploy.md`](../docs/05-deploy.md) e o
+`Dockerfile` aqui ao lado). Para expor a máquina local a uma consola em HTTPS,
+um túnel chega:
+
+```sh
+cloudflared tunnel --url http://localhost:8765
+# e AI_WORKER_PUBLIC_URL=https://<o-endereço-que-ele-der>
+```
+
+`AI_WORKER_NAME` deixou de ser só diagnóstico: é o `holder` do vídeo, e só o
+worker com esse nome processa os jogos que recebeu. Um nome por máquina,
+estável.
 
 ## Correr
 
@@ -42,6 +70,31 @@ OpenCV, que é menos fiável a medir FPS.
 |---|---|---|
 | `quality_check` | resolução, FPS, nitidez, luz, estabilidade, visibilidade do terreno → veredicto + viabilidade por dimensão | OpenCV (CPU) |
 | `detect_track` | detecção de pessoas + tracking persistente (ByteTrack) a ~5 FPS, tracks com confidence | torch + torchvision + supervision |
+| `purge_video` | apaga o ficheiro do vídeo desta máquina quando a API o pede | — |
+
+## Quanto tempo demora — e como se afina
+
+A detecção é praticamente todo o custo (a descodificação do vídeo inteiro são
+0,9 min por jogo; medido). O que decide o resto está em quatro variáveis, todas
+com valores medidos por omissão — ver o cabeçalho de
+`academias_ai/pipelines/detect_track.py`:
+
+| Variável | Faz | Custo em precisão |
+| --- | --- | --- |
+| `AI_WORKER_MAX_UPSCALE` | quanto um frame pode ser ampliado antes de detectar | real em vídeo de baixa resolução — ampliar ajuda a ver jogadores pequenos |
+| `AI_WORKER_HALF` | meia precisão na GPU | nenhum mensurável |
+| `AI_WORKER_BATCH` | frames por lote | nenhum — é a mesma conta |
+| `AI_WORKER_DETECTOR` | `fasterrcnn` ou `ssdlite` | o `ssdlite` falha mais com jogadores sobrepostos |
+
+Antes de trocar precisão por tempo, medir:
+
+```sh
+python scripts/comparar-detector.py um-clip.mp4
+```
+
+Corre as configurações no mesmo clip e diz, para cada uma, quantos frames por
+segundo e **quantas pessoas encontrou** — que é a metade da troca que costuma
+ficar por medir.
 
 As etapas seguintes (campo/homography, bola, identificação, eventos) entram
 como novos módulos em `academias_ai/pipelines/` — o `kind` é texto na fila, e

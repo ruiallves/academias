@@ -2750,10 +2750,12 @@ enum VideoKind {
 }
 
 enum VideoStatus {
-  /// Linha criada, bytes ainda a caminho do Storage.
+  /// Linha criada, bytes ainda a caminho do Storage (ou do worker).
   UPLOADING
   READY
   FAILED
+  /// Processado e apagado: os dados derivados ficam, o ficheiro não. Só na AI.
+  PURGED
 }
 
 /// Um vídeo do prospecto.
@@ -4280,11 +4282,26 @@ model AIVideo {
   analysis   AIAnalysis @relation(fields: [analysisId], references: [id], onDelete: Cascade)
 
   /// `{academyId}/{analysisId}/{videoId}.{ext}` no bucket privado `ai-videos`.
+  ///
+  /// Só no caminho antigo. Hoje o vídeo **não fica no Storage**: vai direito
+  /// ao worker (ver `holder`), e esta chave fica preenchida por forma — nada a
+  /// lê enquanto `holder` não for nulo.
   storageKey String
   mimeType   String
   /// BigInt e não Int: um jogo inteiro em 1080p passa dos 2 GB com folga.
   sizeBytes  BigInt?
   status     VideoStatus @default(UPLOADING)
+
+  /// O worker que tem o ficheiro no disco — `AI_WORKER_NAME` dele.
+  ///
+  /// O vídeo de um jogo são gigabytes de imagem de menores; não há razão para
+  /// os guardar num bucket depois de processados, e o plano do Storage não os
+  /// aceitaria de qualquer maneira. O browser envia-o em blocos para o worker,
+  /// que o guarda em disco local só enquanto trabalha. Esta coluna é o que faz
+  /// o claim entregar os jobs desta análise **a esse worker e a mais nenhum**.
+  holder   String?
+  /// Quando o ficheiro foi apagado do worker. Os dados ficam; o vídeo não.
+  purgedAt DateTime?
 
   /// Metadados técnicos, escritos pelo worker na verificação de qualidade.
   durationSec Float?
@@ -4417,6 +4434,13 @@ model PlayerTrack {
   frameCount Int @default(0)
 
   /// Chave do JSON comprimido com as posições por frame, no bucket `ai-videos`.
+  /// O ficheiro com as posições por frame, no Storage.
+  ///
+  /// **É o mesmo para todos os tracks de uma análise** (`.../derived/tracks/
+  /// positions.json.gz`), com o número do track a dizer onde ler lá dentro.
+  /// Era um ficheiro por track, e num jogo real isso deu oito mil escritas
+  /// depois de o trabalho estar feito — dez minutos de rede com a análise
+  /// parada nos 95 %. Ver `_summarise` em `ai-worker`.
   dataKey String?
 
   /// Resumo derivado para leitura rápida: posição média, distância estimada,

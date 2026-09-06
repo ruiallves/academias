@@ -198,6 +198,20 @@
     padding-inline: clamp(20px, 5vw, 48px);
   }
 
+  /* A caixa larga — para o que é uma tabela e não um texto.
+     1180px é a medida de leitura da página: uma coluna de prosa a mais do que
+     isso cansa. Mas os planos não se leem em coluna, comparam-se lado a lado, e
+     três lugares dentro de 1180 deixavam 280px de texto em cada um — as frases
+     partiam-se e a comparação passava a dar trabalho. Aqui a régua é outra: o
+     que a caixa tem de servir é a comparação, não o parágrafo. Alinha com a
+     `.wrap` abaixo dos 1380px, que é onde a diferença deixaria de caber. */
+  .wrap-wide {
+    width: 100%;
+    max-width: 1440px;
+    margin-inline: auto;
+    padding-inline: clamp(20px, 5vw, 48px);
+  }
+
   .band { padding-block: clamp(76px, 11vw, 150px); }
   .band-tight { padding-block: clamp(52px, 7vw, 96px); }
 

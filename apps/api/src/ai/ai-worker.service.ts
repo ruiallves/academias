@@ -12,6 +12,7 @@ import type {
   WorkerHeartbeatDto,
   WorkerModelDto,
   WorkerUploadUrlDto,
+  WorkerVideoReceivedDto,
 } from "./ai.dto";
 
 /**
@@ -71,9 +72,23 @@ export class AiWorkerService {
         attempts = attempts + 1,
         "updatedAt" = now()
       WHERE id = (
-        SELECT id FROM "AIJob"
-        WHERE status = 'PENDING' AND kind = ANY(${dto.kinds})
-        ORDER BY priority DESC, "createdAt" ASC
+        SELECT j.id FROM "AIJob" j
+        WHERE j.status = 'PENDING' AND j.kind = ANY(${dto.kinds})
+          /*
+           * O vídeo vive no disco de um worker (ver AIVideo.holder). Um job
+           * dessa análise só serve a esse worker: outro reclamá-lo era falhar
+           * de certeza, gastar uma tentativa e devolver o job à fila — e com
+           * dois workers a alternar, gastar as duas. Sem holder (caminho pelo
+           * Storage) qualquer um serve, como sempre.
+           */
+          AND NOT EXISTS (
+            SELECT 1 FROM "AIVideo" v
+            WHERE v."analysisId" = j."analysisId"
+              AND v.status = 'READY'
+              AND v.holder IS NOT NULL
+              AND v.holder <> ${dto.worker}
+          )
+        ORDER BY j.priority DESC, j."createdAt" ASC
         FOR UPDATE SKIP LOCKED
         LIMIT 1
       )
@@ -102,7 +117,7 @@ export class AiWorkerService {
             where: { status: "READY" },
             orderBy: { createdAt: "asc" },
             take: 1,
-            select: { id: true, storageKey: true, mimeType: true, durationSec: true, quality: true },
+            select: { id: true, storageKey: true, mimeType: true, durationSec: true, quality: true, holder: true },
           },
         },
       });
@@ -117,15 +132,30 @@ export class AiWorkerService {
         return null;
       }
 
-      await db.aIAnalysis.update({
-        where: { id: analysis.id },
-        data: { status: "PROCESSING", updatedAt: new Date() },
-      });
+      /*
+       * Reclamar um job põe a análise "a processar" — menos quando o job é a
+       * purga. Apagar o ficheiro é arrumação depois do trabalho feito; marcá-la
+       * como a processar fazia uma análise **concluída** voltar a "A processar"
+       * à frente de quem estava a olhar, e ficar lá para sempre, porque a purga
+       * não tem um fim que a devolva a COMPLETED.
+       */
+      if (job.kind !== "purge_video") {
+        await db.aIAnalysis.update({
+          where: { id: analysis.id },
+          data: { status: "PROCESSING", updatedAt: new Date() },
+        });
+      }
 
       const video = analysis.videos[0];
-      // Duas horas: chega para descarregar um jogo inteiro numa ligação caseira,
-      // e caduca sozinho — o worker pede outro se precisar.
-      const videoUrl = await this.video.signDownload(video.storageKey, 7200);
+      /*
+       * De onde vem o vídeo.
+       *
+       * Com `holder`, está no disco do próprio worker que está a reclamar (o
+       * claim já garantiu isso) — vai o id, e o worker sabe o caminho. Sem
+       * `holder` é o caminho antigo: um link assinado de duas horas, que chega
+       * para descarregar um jogo numa ligação caseira e caduca sozinho.
+       */
+      const videoUrl = video.holder ? null : await this.video.signDownload(video.storageKey, 7200);
 
       return {
         id: job.id,
@@ -147,6 +177,7 @@ export class AiWorkerService {
         },
         video: {
           id: video.id,
+          source: video.holder ? "worker" : "storage",
           url: videoUrl,
           mimeType: video.mimeType,
           durationSec: video.durationSec,
@@ -154,6 +185,51 @@ export class AiWorkerService {
         },
       };
     });
+  }
+
+  /* ---------------------------------------------------------------------- */
+  /* O vídeo chegou ao worker                                                */
+  /* ---------------------------------------------------------------------- */
+
+  /**
+   * O caminho directo: o browser enviou o vídeo em blocos para o worker, o
+   * worker juntou-os, mediu-os, e diz-nos que os tem. É o que põe a análise na
+   * fila — com `holder` marcado, para os jobs irem ter com quem tem o ficheiro.
+   *
+   * A confiança vem do token de worker (guard) e do id do vídeo: um worker só
+   * fecha vídeos que estejam à espera de bytes. Um id inventado dá 404.
+   */
+  async videoReceived(videoId: string, dto: WorkerVideoReceivedDto) {
+    const video = await this.platform.aIVideo.findUnique({
+      where: { id: videoId },
+      select: { id: true, academyId: true, analysisId: true, status: true },
+    });
+    if (!video) throw new NotFoundException("Vídeo não encontrado");
+    // Idempotente: um `complete` repetido pelo browser não enfileira duas vezes.
+    if (video.status === "READY") return { ok: true, already: true };
+    if (video.status !== "UPLOADING") throw new BadRequestException("Este vídeo já não aceita carregamento");
+
+    await this.prisma.runAs(video.academyId, async (db) => {
+      await db.aIVideo.update({
+        where: { id: videoId },
+        data: {
+          status: "READY",
+          holder: dto.worker,
+          sizeBytes: BigInt(dto.sizeBytes),
+          durationSec: dto.durationSec ?? null,
+          width: dto.width ?? null,
+          height: dto.height ?? null,
+          fps: dto.fps ?? null,
+          updatedAt: new Date(),
+        },
+      });
+      await db.aIAnalysis.update({
+        where: { id: video.analysisId },
+        data: { status: "QUEUED", progress: 0, updatedAt: new Date() },
+      });
+      await this.jobs.enqueue(db, video.academyId, video.analysisId, "quality_check", { videoId });
+    });
+    return { ok: true };
   }
 
   /**
@@ -199,7 +275,8 @@ export class AiWorkerService {
           updatedAt: new Date(),
         },
       });
-      if (dto.progress != null) {
+      // A purga não é progresso da análise — ver a nota no claim.
+      if (dto.progress != null && job.kind !== "purge_video") {
         await db.aIAnalysis.update({
           where: { id: job.analysisId },
           data: { progress: overallProgress(job.kind, dto.progress), updatedAt: new Date() },
@@ -237,6 +314,8 @@ export class AiWorkerService {
         await this.applyQuality(db, job, dto.result);
       } else if (job.kind === "detect_track") {
         await this.applyDetectTrack(db, job, dto.result);
+      } else if (job.kind === "purge_video") {
+        await this.applyPurge(db, job);
       } else {
         this.log.warn(`Job ${jobId} de tipo desconhecido "${job.kind}" terminou — resultado guardado, sem efeitos.`);
       }
@@ -277,6 +356,9 @@ export class AiWorkerService {
           where: { id: job.analysisId },
           data: { status: "FAILED", failReason: dto.error, updatedAt: new Date() },
         });
+        // Falhou de vez: o ficheiro não fica à espera de ninguém. A purga
+        // própria não se purga — senão era um job a gerar-se a si mesmo.
+        if (job.kind !== "purge_video") await this.enqueuePurge(db, job.academyId, job.analysisId);
       }
     });
     return { ok: true };
@@ -430,6 +512,13 @@ export class AiWorkerService {
     // Decide REVIEW vs COMPLETED a partir do que ficou abaixo do limiar.
     await this.jobs.recomputeReview(db, job.analysisId);
 
+    /*
+     * O ficheiro já deu o que tinha a dar. A revisão de identidades faz-se com
+     * os tracks, não com o vídeo (a consola não o reproduz), e o que vier
+     * abaixo do limiar corrige-se sem ele. Fica só o que é dado.
+     */
+    await this.enqueuePurge(db, job.academyId, job.analysisId);
+
     // O treinador fechou a consola há uma hora — é isto que lhe diz que pode voltar.
     if (analysis?.createdBy?.userId) {
       await this.notifications.enqueue(
@@ -444,6 +533,47 @@ export class AiWorkerService {
         db,
       );
     }
+  }
+
+  /* ---------------------------------------------------------------------- */
+  /* A purga do vídeo                                                       */
+  /* ---------------------------------------------------------------------- */
+
+  /**
+   * Pede ao worker que apague o ficheiro — só quando há um worker a tê-lo.
+   *
+   * Um job e não uma chamada: o worker não tem porta para lhe ligarmos (é
+   * ele que nos pergunta por trabalho), e a fila já sabe entregar a quem tem
+   * o vídeo. Prioridade alta para o disco se libertar antes do jogo seguinte.
+   * Pelo Storage (sem `holder`) não há nada a fazer aqui — esse caminho tem
+   * outra vida.
+   */
+  private async enqueuePurge(db: TenantDb, academyId: string, analysisId: string) {
+    const video = await db.aIVideo.findFirst({
+      where: { analysisId, status: "READY", holder: { not: null } },
+      select: { id: true },
+    });
+    if (!video) return;
+    const pendente = await db.aIJob.findFirst({
+      where: { analysisId, kind: "purge_video", status: { in: ["PENDING", "CLAIMED", "RUNNING"] } },
+      select: { id: true },
+    });
+    if (pendente) return;
+    await this.jobs.enqueue(db, academyId, analysisId, "purge_video", { videoId: video.id }, 10);
+  }
+
+  /** O worker apagou: a linha fica, com o tamanho e a duração, para a página dizer o que analisou. */
+  private async applyPurge(db: TenantDb, job: LocatedJob) {
+    const videoId = (job.params as { videoId?: string } | null)?.videoId;
+    const video = await db.aIVideo.findFirst({
+      where: videoId ? { id: videoId } : { analysisId: job.analysisId, status: "READY", holder: { not: null } },
+      select: { id: true },
+    });
+    if (!video) return;
+    await db.aIVideo.update({
+      where: { id: video.id },
+      data: { status: "PURGED", holder: null, purgedAt: new Date(), updatedAt: new Date() },
+    });
   }
 
   /* ---------------------------------------------------------------------- */
@@ -500,6 +630,8 @@ function overallProgress(kind: string, jobProgress: number): number {
   const windows: Record<string, [number, number]> = {
     quality_check: [0, 15],
     detect_track: [15, 100],
+    // Apagar o ficheiro não é progresso da análise — ela já estava a 100.
+    purge_video: [100, 100],
   };
   const [from, to] = windows[kind] ?? [0, 100];
   return Math.min(100, Math.max(0, Math.round(from + ((to - from) * jobProgress) / 100)));

@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import { PageHeader } from "@/components/Shell";
 import { PersonLink } from "@/components/PersonLink";
-import { cx, Empty, Monogram, Panel, Pill } from "@/components/primitives";
+import { cx, Empty, Monogram, OutcomeTag, Panel, Pill } from "@/components/primitives";
 import { Segmented } from "@/components/filters";
 import { MonthGrid } from "@/components/MonthGrid";
 import { NewEventDialog } from "@/components/NewEventDialog";
@@ -10,7 +10,7 @@ import { EventDetail } from "@/components/EventDetail";
 import { CalendarDays, ChevronLeft, ChevronRight, Plus } from "@/lib/icons";
 import type { CategoricalColor } from "@academia/ui/tokens";
 import { coachById, listTeams, today } from "@/lib/api";
-import { KIND_LABEL, groupByDay, useEvents, useTeamColors, type CalendarEvent, type EventKind } from "@/lib/calendar";
+import { KIND_LABEL, eventOutcome, groupByDay, useEvents, useTeamColors, type CalendarEvent, type EventKind } from "@/lib/calendar";
 import { dayShort, longDate, monthName, time } from "@/lib/format";
 import { can, isAcademyWide } from "@/lib/permissions";
 import { useSession } from "@/session";
@@ -339,6 +339,14 @@ function AgendaList({
                       {e.title}
                     </span>
                     {e.kind !== "training" && <Pill tone="neutral">{KIND_LABEL[e.kind]}</Pill>}
+                    {/* O desfecho, quando já há resultado — aqui cabe com o
+                        marcador ao lado, ao contrário da pastilha do mês. */}
+                    {(() => {
+                      const outcome = eventOutcome(e);
+                      if (!outcome || e.cancelled) return null;
+                      const r = e.match!.result!;
+                      return <OutcomeTag outcome={outcome} score={`${r.ourScore}–${r.theirScore}`} withScore />;
+                    })()}
                     <span className="shrink-0 text-meta text-ink-3">{e.venue}</span>
 
                     {e.cancelled ? (

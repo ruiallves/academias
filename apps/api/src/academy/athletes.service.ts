@@ -384,6 +384,20 @@ export class AthletesService {
   async importMany(ctx: RequestContext, rows: AthleteInputDto[]) {
     if (!can(ctx, "athlete:write")) throw new ForbiddenException("Sem permissão para inscrever atletas");
 
+    /*
+     * O tempo que um lote pode demorar.
+     *
+     * Cada linha são duas idas à base — perguntar pelo NIF e escrever o atleta
+     * com a ligação à equipa — e a base está do outro lado da Internet: cerca
+     * de 640ms por atleta, medidos. Com o tecto por omissão de cinco segundos
+     * do Prisma, um plantel de vinte morria a meio e devolvia 500 sem dizer
+     * porquê; quatro atletas passavam. Um segundo por linha, com um mínimo de
+     * trinta, cobre as 400 linhas que o DTO aceita sem prometer eternidade a
+     * uma transação — que continua a segurar uma das cinco ligações enquanto
+     * dura.
+     */
+    const tectoMs = Math.min(Math.max(30_000, rows.length * 1_000), 420_000);
+
     return this.prisma.runAs(ctx.academyId, async (db) => {
       const teams = await this.teamsInScope(ctx, db);
 
@@ -448,7 +462,7 @@ export class AthletesService {
       }
 
       return { created: created.length, errors, athletes: created };
-    });
+    }, { timeoutMs: tectoMs });
   }
 
   /* ------------------------------------------------------------------------ */

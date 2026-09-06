@@ -347,7 +347,7 @@ export default function NewAnalysis() {
                 <Bar value={progress} />
                 <p className="mt-1.5 text-meta text-ink-3">
                   {progress < 1
-                    ? `A carregar — ${Math.round(progress * 100)}%. Não feches este separador.`
+                    ? `A carregar — ${Math.round(progress * 100)}%. Se a ligação falhar, retoma de onde ficou.`
                     : "A confirmar o carregamento…"}
                 </p>
               </div>
@@ -365,7 +365,8 @@ export default function NewAnalysis() {
               </button>
             </div>
             <p className="text-meta leading-relaxed text-ink-4">
-              Depois do carregamento o processamento corre sozinho — podes fechar a consola. Recebes uma
+              O vídeo vai directamente para o servidor de análise e é apagado quando o processamento acabar —
+              ficam os dados, não as imagens. Depois do carregamento podes fechar a consola; recebes uma
               notificação quando a análise terminar.
             </p>
           </div>

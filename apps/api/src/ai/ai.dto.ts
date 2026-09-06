@@ -5,6 +5,7 @@ import {
   IsIn,
   IsInt,
   IsISO8601,
+  IsNumber,
   IsObject,
   IsOptional,
   IsString,
@@ -85,6 +86,21 @@ export class WorkerUploadUrlDto {
   /** Caminho relativo dentro da pasta de derivados da análise. */
   @IsString() @Length(1, 200) path!: string;
   @IsOptional() @IsString() @Length(1, 100) contentType?: string;
+}
+
+/**
+ * O worker recebeu o vídeo inteiro pelo caminho directo (ver `ai-ticket.ts`) e
+ * já o mediu. É o que põe a análise na fila — o equivalente ao `complete` do
+ * caminho pelo Storage, mas dito por quem tem mesmo o ficheiro.
+ */
+export class WorkerVideoReceivedDto {
+  /** O `AI_WORKER_NAME` de quem tem o ficheiro — fica como `holder`. */
+  @IsString() @Length(1, 80) worker!: string;
+  @IsInt() @Min(0) sizeBytes!: number;
+  @IsOptional() @IsInt() @Min(0) durationSec?: number;
+  @IsOptional() @IsInt() @Min(0) width?: number;
+  @IsOptional() @IsInt() @Min(0) height?: number;
+  @IsOptional() @IsNumber() @Min(0) fps?: number;
 }
 
 export class WorkerModelDto {

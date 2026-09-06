@@ -1,7 +1,8 @@
 import { cx } from "./primitives";
+import { Telemovel } from "./shots-app";
 
 /**
- * As três caras do produto, reconstruídas.
+ * As caras do produto, reconstruídas.
  *
  * Feitas a partir do produto real, ecrã a ecrã: os mesmos grupos de navegação, os
  * mesmos alertas com acção à direita, a mesma faixa da semana, o mesmo cartão de
@@ -408,7 +409,7 @@ export function MembershipShot({ className }: { className?: string }) {
 }
 
 /* -------------------------------------------------------------------------- */
-/* A app da família                                                            */
+/* A área da família, na app do clube                                          */
 /* -------------------------------------------------------------------------- */
 
 const SEMANA_APP = [
@@ -467,7 +468,7 @@ function AppTabIcon({ id, className }: { id: string; className?: string }) {
 }
 
 /**
- * O primeiro ecrã da app da família — "Hoje".
+ * O primeiro ecrã da área da família, na app do clube — "Hoje".
  *
  * Reconstruído ao pormenor a partir do ecrã real: o cabeçalho branco (não o herói
  * de cor que uma app genérica poria aqui), o selector de educando em pastilhas, a
@@ -478,33 +479,21 @@ function AppTabIcon({ id, className }: { id: string; className?: string }) {
  * **A largura é a de um telemóvel a sério.** 288px de conteúdo dão a proporção de
  * um iPhone moderno (perto de 1:2); os 248px que aqui estavam faziam um aparelho
  * estreito de mais, e um telemóvel com proporções erradas lê-se como maqueta —
- * exactamente o oposto do que esta peça existe para fazer.
+ * exactamente o oposto do que esta peça existe para fazer. A moldura mudou-se
+ * para `shots-app.tsx` quando passaram a ser três telemóveis lado a lado — uma
+ * moldura copiada três vezes é uma moldura que diverge à terceira alteração.
  */
-export function AppShot({ className, shot = "/shots/app.png" }: { className?: string; shot?: string }) {
+export function AppShot({
+  className,
+  shot = "/shots/app.png",
+  scale,
+}: {
+  className?: string;
+  shot?: string;
+  scale?: number;
+}) {
   return (
-    <div
-      className={cx(
-        "shot relative w-[288px] shrink-0 overflow-hidden rounded-[38px] border-[7px] border-[#0c100f] bg-[#f6f5f2] shadow-[0_24px_60px_-28px_rgb(12_16_15/0.55)]",
-        className,
-      )}
-      aria-hidden
-    >
-      {/* A captura verdadeira, quando existir — cobre o interior e deixa a moldura. */}
-      {shot && (
-        <img
-          src={shot}
-          alt=""
-          loading="lazy"
-          className="absolute inset-0 z-10 h-full w-full object-cover"
-          onError={(e) => e.currentTarget.remove()}
-        />
-      )}
-
-      <div className="flex items-center justify-between px-4 pt-2.5 pb-1 text-[9px] font-semibold text-[#1a1917]">
-        <span>9:41</span>
-        <span className="h-[7px] w-[16px] rounded-[2px] border border-[#1a1917]" />
-      </div>
-
+    <Telemovel className={className} shot={shot} scale={scale}>
       {/* Cabeçalho — branco. O herói de cor entrou só no cartão de mensalidade. */}
       <div className="flex items-center gap-2 px-4 pt-1.5 pb-3">
         <span className="flex size-8 shrink-0 items-center justify-center rounded-full bg-[#0f6b62] text-[10px] font-bold text-white">
@@ -692,6 +681,6 @@ export function AppShot({ className, shot = "/shots/app.png" }: { className?: st
           ))}
         </div>
       </div>
-    </div>
+    </Telemovel>
   );
 }

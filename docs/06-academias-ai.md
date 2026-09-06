@@ -36,9 +36,23 @@ Consola ──► NestJS (módulo ai/) ──► AIJob (fila no Postgres)
 - **O processamento não vive no NestJS.** O worker (`ai-worker/` na raiz do
   repo) reclama trabalhos por HTTP com um segredo partilhado
   (`AI_WORKER_TOKEN` — sem ele configurado, a porta está *fechada*, a lição do
-  webhook). Não tem credenciais da base nem do Storage: o vídeo chega por link
-  assinado, os artefactos sobem por links assinados pedidos job a job. Mover o
-  worker para uma GPU na cloud é copiar o processo e o token.
+  webhook). Não tem credenciais da base nem do Storage: os artefactos sobem
+  por links assinados pedidos job a job. Mover o worker para uma GPU na cloud
+  é copiar o processo e o token.
+- **O vídeo vai direito ao worker, e não fica guardado.** O browser envia o
+  ficheiro em blocos de 8 MB para a porta de ingestão do worker
+  (`AI_WORKER_PUBLIC_URL` na API; `academias_ai/ingest.py`), com um bilhete
+  HMAC assinado pela API com o mesmo `AI_WORKER_TOKEN` — o worker verifica-o
+  sozinho. O Supabase nunca vê o vídeo: nem o tecto de 50 MB por ficheiro do
+  plano, nem o de 5 GB dos uploads simples, nem o custo de guardar
+  gigabytes de imagem de menores que ninguém volta a ler. O ficheiro vive no
+  disco do worker (`AIVideo.holder` diz qual — e o claim só entrega os jobs
+  dessa análise a esse worker), e é apagado pelo job `purge_video` quando o
+  processamento termina (`AIVideo.status = PURGED`; os dados ficam). Um
+  zelador no worker apaga o que tiver mais de `AI_WORKER_SPOOL_TTL_HOURS`,
+  aconteça o que acontecer. O carregamento é retomável bloco a bloco — uma
+  ligação que cai aos 90 % continua dos 90 %. Sem `AI_WORKER_PUBLIC_URL`, fica
+  o caminho antigo pelo Storage, com link assinado.
 - **A fila é uma tabela** (`AIJob`, `FOR UPDATE SKIP LOCKED`). O stack não tem
   Redis e não precisa: dois workers nunca levam o mesmo job, um worker morto
   devolve o job à fila por falta de heartbeat, e as tentativas têm tecto.
@@ -49,8 +63,9 @@ Consola ──► NestJS (módulo ai/) ──► AIJob (fila no Postgres)
 ## Dados
 
 `AIAnalysis` (a análise, com `status`/`progress`/`confidence`/`reviewCount`),
-`AIAnalysisPlayer` (o plantel confirmado), `AIVideo` (chave no bucket privado
-`ai-videos`, nunca URLs), `AIJob` (fila), `PlayerTrack`, `DetectedEvent`,
+`AIAnalysisPlayer` (o plantel confirmado), `AIVideo` (o worker que o tem em
+`holder`, ou — no caminho antigo — a chave no bucket privado `ai-videos`;
+nunca URLs; `PURGED` depois de processado), `AIJob` (fila), `PlayerTrack`, `DetectedEvent`,
 `AIInsight`, `HumanCorrection`, `PlayerIdentityProfile`, `AIModelVersion`
 (plataforma: que modelo, com que licença, produziu que números).
 

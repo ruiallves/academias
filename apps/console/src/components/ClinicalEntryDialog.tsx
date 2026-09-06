@@ -218,7 +218,7 @@ export function ClinicalEntryDialog({
 
         {scheduling ? (
           <p className="rounded-[var(--radius-control)] border border-line bg-sunken/40 p-3 text-meta text-ink-3">
-            O agendamento aparece na app da família e na agenda do departamento clínico. A
+            O agendamento aparece na app do clube e na agenda do departamento clínico. A
             disponibilidade do atleta só muda quando registares o resultado.
           </p>
         ) : (

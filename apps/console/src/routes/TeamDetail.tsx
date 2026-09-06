@@ -18,6 +18,7 @@ import {
   Metric,
   MetricRow,
   Monogram,
+  OutcomeTag,
   Panel,
   PanelHead,
   Pill,
@@ -63,6 +64,8 @@ import { useSession } from "@/session";
 import {
   groupByDay,
   KIND_LABEL,
+  eventOutcome,
+  OUTCOME_LETTER,
   resultOutcome,
   tallyNoun,
   useEvents,
@@ -426,7 +429,7 @@ function OverviewTab({
               {recentForm.map((m) => {
                 const outcome = resultOutcome(m.match)!;
                 const tone = outcome === "win" ? "bg-ok text-white" : outcome === "loss" ? "bg-risk text-white" : "bg-ink-4 text-white";
-                const letter = outcome === "win" ? "V" : outcome === "loss" ? "D" : "E";
+                const letter = OUTCOME_LETTER[outcome];
                 return (
                   <button
                     key={m.id}
@@ -650,7 +653,7 @@ function StatsTab({
                     <span className="shrink-0 text-meta font-semibold text-ink tabular">
                       {m.match.result!.ourScore}-{m.match.result!.theirScore}
                     </span>
-                    <Pill tone={tone}>{outcome === "win" ? "V" : outcome === "loss" ? "D" : "E"}</Pill>
+                    <Pill tone={tone}>{OUTCOME_LETTER[outcome]}</Pill>
                   </li>
                 );
               })}
@@ -920,11 +923,14 @@ function CalendarTab({
                         {e.kind === "match" && e.match ? ` vs ${e.match.opponent}` : ""}
                       </span>
                       <span className="shrink-0 text-meta text-ink-3">{e.venue}</span>
-                      {e.kind === "match" && e.match?.result && (
-                        <Pill tone={resultOutcome(e.match) === "win" ? "ok" : resultOutcome(e.match) === "loss" ? "risk" : "neutral"}>
-                          {e.match.result.ourScore}-{e.match.result.theirScore}
-                        </Pill>
-                      )}
+                      {(() => {
+                        // A mesma etiqueta do calendário do clube — este
+                        // separador é um calendário, e mostrava só o marcador.
+                        const outcome = eventOutcome(e);
+                        if (!outcome) return null;
+                        const r = e.match!.result!;
+                        return <OutcomeTag outcome={outcome} score={`${r.ourScore}–${r.theirScore}`} withScore />;
+                      })()}
                     </button>
                   ))}
                 </div>

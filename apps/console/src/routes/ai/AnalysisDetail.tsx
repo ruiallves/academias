@@ -392,6 +392,8 @@ function QualityPanel({ quality, video }: { quality: QualityReport; video: Detai
     video.width && video.height ? `${video.width}×${video.height}` : null,
     video.fps ? `${Math.round(video.fps)} fps` : null,
     video.durationSec ? `${Math.round(video.durationSec / 60)} min` : null,
+    // O ficheiro foi-se depois de processar; o que a página mostra são os dados dele.
+    video.status === "PURGED" ? "vídeo apagado após o processamento" : null,
   ].filter(Boolean);
 
   return (

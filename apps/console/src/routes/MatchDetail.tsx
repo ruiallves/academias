@@ -21,6 +21,7 @@ import { useSession } from "@/session";
 import { can } from "@/lib/permissions";
 import { athleteById, sportById, teamById } from "@/lib/api";
 import { tallyNoun } from "@/lib/calendar";
+import { reloadAcademy } from "@/lib/store";
 import { SaveVeil, Spinner, useSaving } from "@/components/Busy";
 import { CallUpSheetDialog, type SheetMatch } from "@/components/CallUpSheetDialog";
 import type { SheetRow } from "@/lib/callup-sheet";
@@ -98,6 +99,24 @@ export default function MatchDetail() {
     }
   }
 
+  /*
+   * Depois de gravar: esta página **e** o resto da consola.
+   *
+   * `getMatch` só actualiza o que está neste ecrã. O calendário, as
+   * convocatórias e a ficha do atleta leem `store.matches`, que é carregada uma
+   * vez no arranque — sem este `reloadAcademy`, um resultado gravado aqui só
+   * chegava lá na recarga seguinte da página, e até lá a gaveta do jogo no
+   * calendário continuava a dizer "ainda não tem resultado registado" sobre um
+   * jogo que já o tinha.
+   *
+   * Sem `await`: o ecrã já tem o que precisa do `recarregar`, e prender o botão
+   * a nove pedidos da academia inteira era pagar duas vezes pelo mesmo gesto.
+   */
+  async function guardado() {
+    await recarregar();
+    void reloadAcademy();
+  }
+
   useEffect(() => {
     setLoading(true);
     void recarregar();
@@ -122,15 +141,15 @@ export default function MatchDetail() {
         </Link>
       </PageHeader>
 
-      <Scoreboard match={match} aDecorrer={aDecorrer} passou={passou} mayRecord={mayRecord} onSaved={recarregar} />
+      <Scoreboard match={match} aDecorrer={aDecorrer} passou={passou} mayRecord={mayRecord} onSaved={guardado} />
 
       <div className="mt-3 grid items-start gap-3 lg:grid-cols-[minmax(0,1fr)_320px]">
         <div className="space-y-3">
           {passou ? (
             temPlantel ? (
-              <SheetPanel match={match} mayRecord={mayRecord} onSaved={recarregar} />
+              <SheetPanel match={match} mayRecord={mayRecord} onSaved={guardado} />
             ) : (
-              <RetroSquadPanel match={match} mayRecord={mayRecord} onSaved={recarregar} />
+              <RetroSquadPanel match={match} mayRecord={mayRecord} onSaved={guardado} />
             )
           ) : (
             <CallUpPanel match={match} />
@@ -138,12 +157,12 @@ export default function MatchDetail() {
 
           {/* Corrigir um plantel retroactivo já registado — discreto, mas à mão. */}
           {passou && temPlantel && mayRecord && (
-            <RetroSquadPanel match={match} mayRecord={mayRecord} onSaved={recarregar} collapsed />
+            <RetroSquadPanel match={match} mayRecord={mayRecord} onSaved={guardado} collapsed />
           )}
         </div>
 
         <div className="space-y-3">
-          <StaffPanel match={match} passou={passou} mayRecord={mayRecord} onSaved={recarregar} />
+          <StaffPanel match={match} passou={passou} mayRecord={mayRecord} onSaved={guardado} />
           <FactsPanel match={match} passou={passou} />
         </div>
       </div>

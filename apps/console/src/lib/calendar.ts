@@ -137,11 +137,36 @@ export function tallyNoun(teamId: string | undefined): string {
   return sport?.name === "Futebol" ? "golo" : "ponto";
 }
 
-export function resultOutcome(m: MatchInfo): "win" | "draw" | "loss" | undefined {
+export type Outcome = "win" | "draw" | "loss";
+
+export function resultOutcome(m: MatchInfo): Outcome | undefined {
   if (!m.result) return undefined;
   if (m.result.ourScore > m.result.theirScore) return "win";
   if (m.result.ourScore < m.result.theirScore) return "loss";
   return "draw";
+}
+
+/**
+ * V, E, D — e o que cada letra quer dizer por extenso.
+ *
+ * A letra estava escrita à mão em três sítios da ficha da equipa, cada um com o
+ * seu ternário. Enquanto era uma peça só não fazia mal; com o calendário a
+ * mostrá-la também, passavam a ser seis — e a primeira vez que alguém decidisse
+ * mostrar "E" a azul, mudavam cinco.
+ */
+export const OUTCOME_LETTER: Record<Outcome, string> = { win: "V", draw: "E", loss: "D" };
+export const OUTCOME_LABEL: Record<Outcome, string> = { win: "Vitória", draw: "Empate", loss: "Derrota" };
+
+/**
+ * O desfecho de um evento do calendário — `undefined` no que não é jogo, e no
+ * jogo que ainda não tem resultado.
+ *
+ * É a pergunta que as vistas fazem: um treino não tem desfecho, e um jogo por
+ * jogar também não. Uma cor de "empate" num jogo de sábado seria pior do que
+ * não mostrar nada.
+ */
+export function eventOutcome(e: CalendarEvent): Outcome | undefined {
+  return e.kind === "match" && e.match ? resultOutcome(e.match) : undefined;
 }
 
 /* -------------------------------------------------------------------------- */
@@ -303,11 +328,20 @@ export function toggleCancelled(id: string) {
   emit();
 }
 
-/** Único caminho para mudar convocatória ou resultado — mantém as duas peças no mesmo sítio. */
-export function updateMatch(id: string, updater: (m: MatchInfo) => MatchInfo) {
-  custom = custom.map((e) => (e.id === id && e.match ? { ...e, match: updater(e.match) } : e));
-  emit();
-}
+/*
+ * Aqui vivia um `updateMatch`, e era um alçapão.
+ *
+ * Escrevia o resultado de um jogo neste `custom` — o repositório do browser — e
+ * `custom` deixou de receber jogos no dia em que eles passaram a vir da API
+ * (`fromApiMatch`, a partir de `store.matches`). O painel do calendário tinha um
+ * formulário de resultado que o chamava: gravava-se, o painel fechava, e não
+ * acontecia **nada** — nem na base, nem no ecrã, nem depois de recarregar.
+ *
+ * Não foi reposto contra `store.matches`: o resultado tem um sítio só onde se
+ * grava, que é a ficha do jogo (`POST /api/matches/:id/resultado`), com as
+ * validações contra a ficha que lá estão. Dois sítios a gravar a mesma coisa com
+ * regras diferentes é o problema seguinte, não a solução deste.
+ */
 
 export function getEvent(id: string): CalendarEvent | undefined {
   return custom.find((e) => e.id === id);

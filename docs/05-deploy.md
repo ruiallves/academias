@@ -7,8 +7,97 @@ próprio — são compiladas e servidas pela API. Ver "Uma origem por clube" em
 | Onde | O quê | Domínios |
 | --- | --- | --- |
 | Railway | a API + a consola + a app da família | `*.academias.pt`, `api.academias.pt` |
+| Railway | o worker da Academias AI (serviço à parte) | o domínio que o Railway der |
 | Vercel | o site de marketing | `academias.pt`, `www.academias.pt` |
 | Vercel | o painel da plataforma | `admin.academias.pt` |
+
+---
+
+## Railway — o worker da Academias AI
+
+Serviço **à parte** da API, no mesmo projecto. Não é uma escolha de arrumação:
+processar um jogo demora horas, e um deploy da API não pode matar isso a meio.
+
+### Como se cria
+
+Serviço novo → mesmo repositório → **Root Directory `ai-worker`**. O
+[`Dockerfile`](../ai-worker/Dockerfile) e o
+[`railway.json`](../ai-worker/railway.json) estão lá e dizem o resto: ffmpeg no
+contentor, torch na build de **CPU** (a de CUDA traz dois gigabytes de
+dependências da NVIDIA para uma máquina sem GPU), healthcheck em `/health`.
+
+### O que tem de ser configurado
+
+```
+AI_WORKER_TOKEN=<o mesmo valor que a API tem>
+ACADEMIAS_API_URL=https://api.academias.pt
+AI_WORKER_NAME=railway-1
+AI_WORKER_SPOOL=/data/spool
+AI_WORKER_SPOOL_TTL_HOURS=72
+```
+
+E, do lado da **API**, o endereço público deste serviço:
+
+```
+AI_WORKER_PUBLIC_URL=https://<o-domínio-do-worker>.up.railway.app
+```
+
+Sem essa variável a API volta ao caminho antigo — o vídeo pelo Supabase, com o
+tecto de 50 MB por ficheiro do plano. É esta variável que liga o caminho
+directo.
+
+### O volume
+
+O vídeo aterra no disco deste serviço e vive lá enquanto se processa. Montar um
+**volume em `/data`**, com espaço para o maior jogo que se espera receber (um
+jogo de duas horas em 1080p passa dos 7 GB). Sem volume o carregamento
+funciona na mesma, mas um restart a meio obriga a repeti-lo.
+
+O que sobra é limpo sozinho: a API pede a purga quando o processamento acaba, e
+o zelador do worker apaga o que tiver mais de `AI_WORKER_SPOOL_TTL_HOURS`.
+
+### Uma réplica, sempre
+
+O carregamento faz-se em blocos que se somam a um ficheiro **local**. Com duas
+réplicas atrás do mesmo domínio, os blocos dividem-se por duas máquinas e
+nenhuma fica com o vídeo inteiro. `numReplicas: 1` está no `railway.json` e não
+deve ser mexido — escalar faz-se com mais **serviços**, cada um com o seu
+`AI_WORKER_NAME` e o seu domínio (e a API a apontar para um deles).
+
+### Quanto tempo demora, e porquê
+
+No Railway não há GPU: a detecção corre em CPU, na variante MobileNet do
+detector. Um jogo de duas horas a 5 FPS são cerca de 33 mil frames.
+
+Medido numa fonte de 640×360, 4 threads, lotes de 2 — 33 300 frames por jogo:
+
+| Lado curto de trabalho | Por frame | Por jogo de 111 min |
+| --- | --- | --- |
+| 800 px — como estava | 322 ms | **178 min** |
+| 540 px (`MAX_UPSCALE=1.5`, o valor por omissão) | 144 ms | 80 min |
+| 450 px (`MAX_UPSCALE=1.25`, o que o `Dockerfile` põe) | 97 ms | **54 min** |
+| 360 px — a resolução da fonte | 70 ms | 39 min |
+| `AI_WORKER_DETECTOR=ssdlite` (320 px fixos) | 43 ms | 24 min |
+
+O `Dockerfile` fica em 1,25× por ser onde a curva ainda paga: 3,3× mais
+rápido do que estava, e ainda amplia o suficiente para um jogador de 30 px não
+desaparecer. Descer daí troca precisão por minutos, e essa troca mede-se antes
+de se fazer.
+
+O `ssdlite` não é o valor por omissão de propósito: é um detector de um passo,
+e falha mais com jogadores sobrepostos — que num jogo são muitos. Está a uma
+variável de distância para quando o tempo mandar, e
+`ai-worker/scripts/comparar-detector.py` mede a troca num clip real antes de
+se decidir.
+
+Mais vCPU no serviço encurta tudo isto quase linearmente — é a forma mais
+directa de comprar tempo sem tocar em precisão.
+
+É aceitável porque ninguém está à espera à frente do ecrã (a consola diz "podes
+fechar" e a notificação chega no fim). E é a razão de o worker ser um serviço
+separado: pode ser movido para uma máquina com GPU sem tocar em mais nada —
+copia-se o processo, o token, e aponta-se o `AI_WORKER_PUBLIC_URL` da API para
+lá. Numa RTX 5050 o mesmo jogo passou de 1h51 para cerca de 40 minutos.
 
 ---
 

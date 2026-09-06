@@ -1,7 +1,11 @@
 # Base — chega para `quality_check` (CPU). Licenças em LICENSES.md.
 requests>=2.32
 numpy>=1.26
-opencv-python>=4.10
+# `headless` e não `opencv-python`: é a mesma biblioteca sem as funções de
+# janela (`imshow` e afins), que este worker nunca usa. Num contentor sem
+# ambiente gráfico a versão normal falha a importar por falta de `libGL` — e
+# instalar um servidor gráfico para não desenhar nada é peso a mais.
+opencv-python-headless>=4.10
 
 # Detecção + tracking (`detect_track`) — instalar à parte, porque o torch pesa
 # gigabytes e um worker só de qualidade não precisa dele:

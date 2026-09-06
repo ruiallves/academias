@@ -7,17 +7,16 @@ import {
   resultOutcome,
   tallyNoun,
   toggleCancelled,
-  updateMatch,
   type CalendarEvent,
 } from "@/lib/calendar";
 import { apiPatch } from "@/lib/http";
 import { events as storeEvents, matches as storeMatches, sessions as storeSessions, reloadAcademy } from "@/lib/store";
 import { athleteById, coachById, teamById } from "@/lib/api";
 import { longDate, shortName, time } from "@/lib/format";
-import { Ban, Check, ClipboardCheck, MapPin, Pencil, Plus, RefreshCw, Trash2, TriangleAlert, Trophy, Whistle, X, type LucideIcon } from "@/lib/icons";
+import { Ban, ClipboardCheck, MapPin, Pencil, RefreshCw, TriangleAlert, Trophy, Whistle, X, type LucideIcon } from "@/lib/icons";
 import { can } from "@/lib/permissions";
 import type { Session } from "@/lib/permissions";
-import { cx, Monogram, Pill, SelectField } from "./primitives";
+import { cx, Monogram, Pill } from "./primitives";
 import { EditEventDialog } from "./EditEventDialog";
 import { EventFinance } from "./finance/EventFinance";
 
@@ -378,6 +377,9 @@ function MatchBody({
 }) {
   const convocados = match.callUps.length;
   const confirmados = match.callUps.filter((c) => c.status === "confirmed").length;
+  // A ficha do jogo é o único sítio onde o resultado se grava. `null` num jogo
+  // de outra equipa ou semeado no browser — e aí não se oferece a porta.
+  const fichaPath = matchPagePath(event);
   return (
     <div className="border-b border-line px-5 py-4">
       <div className="mb-3 flex flex-wrap items-center gap-2">
@@ -396,7 +398,7 @@ function MatchBody({
       </div>
 
       {match.result ? (
-        <Statistics teamId={teamId} match={match} editable={editable} eventId={event.id} />
+        <Statistics teamId={teamId} match={match} editable={editable} fichaPath={fichaPath} />
       ) : (
         <>
           <p className="text-meta text-ink-3">
@@ -404,141 +406,33 @@ function MatchBody({
               ? "Convocatória por montar."
               : `${confirmados} confirmados de ${convocados} convocados.`}
           </p>
-          {/* Um jogo que já passou e não tem resultado é uma coisa por fazer, e
-              vale a pena dizê-lo — mas registá-lo é na ficha do jogo. */}
+          {/*
+            Um jogo que já passou e não tem resultado é uma coisa por fazer.
+
+            Dizê-lo não chegava: dizia-se, e a pessoa ficava a olhar para o aviso
+            sem nada para carregar — o resultado grava-se na ficha do jogo, e
+            quem lê isto está a três centímetros dela sem saber. Agora o aviso é
+            a porta.
+          */}
           {past && (
-            <p className="mt-2 flex items-center gap-1.5 text-meta text-ink-3">
-              <TriangleAlert className="size-3.5 shrink-0" strokeWidth={1.75} />
-              O jogo já aconteceu e ainda não tem resultado registado.
-            </p>
+            <div className="mt-2 flex items-start gap-1.5 text-meta text-ink-3">
+              <TriangleAlert className="mt-0.5 size-3.5 shrink-0" strokeWidth={1.75} />
+              <span>
+                O jogo já aconteceu e ainda não tem resultado registado.
+                {fichaPath && editable && (
+                  <>
+                    {" "}
+                    <Link to={fichaPath} className="font-medium text-ink underline underline-offset-2">
+                      Registar resultado
+                    </Link>
+                  </>
+                )}
+              </span>
+            </div>
           )}
         </>
       )}
     </div>
-  );
-}
-
-/* -------------------------------------------------------------------------- */
-/* Registar resultado                                                          */
-/* -------------------------------------------------------------------------- */
-
-function ResultForm({
-  teamId,
-  match,
-  eventId,
-  onDone,
-}: {
-  teamId: string;
-  match: NonNullable<CalendarEvent["match"]>;
-  eventId: string;
-  onDone: () => void;
-}) {
-  const [ourScore, setOurScore] = useState(0);
-  const [theirScore, setTheirScore] = useState(0);
-  const [scorers, setScorers] = useState<{ athleteId: string; tally: number }[]>([]);
-  const [pickAthlete, setPickAthlete] = useState("");
-
-  const eligible = match.callUps.filter((c) => c.status !== "declined");
-  const noun = tallyNoun(teamId);
-  const available = eligible.filter((c) => !scorers.some((s) => s.athleteId === c.athleteId));
-
-  const addScorer = () => {
-    if (!pickAthlete) return;
-    setScorers((s) => [...s, { athleteId: pickAthlete, tally: 1 }]);
-    setPickAthlete("");
-  };
-
-  return (
-    <>
-      <h3 className="mb-3 text-panel text-ink">Registar resultado</h3>
-
-      <div className="mb-4 flex items-center justify-center gap-3 rounded-[var(--radius-control)] border border-line bg-sunken/40 p-3">
-        <ScoreInput value={ourScore} onChange={setOurScore} label="Nós" />
-        <span className="text-ink-4">–</span>
-        <ScoreInput value={theirScore} onChange={setTheirScore} label={match.opponent} />
-      </div>
-
-      <div className="mb-2 text-meta font-medium text-ink">
-        {noun[0].toUpperCase()}
-        {noun.slice(1)}s
-      </div>
-
-      <ul className="mb-2 space-y-1">
-        {scorers.map((s) => (
-          <li key={s.athleteId} className="flex items-center gap-2 rounded-[var(--radius-control)] bg-sunken/50 px-2 py-1.5">
-            <span className="min-w-0 flex-1 truncate text-body text-ink-2">{shortName(athleteById(s.athleteId)?.name ?? "—")}</span>
-            <input
-              type="number"
-              min={1}
-              value={s.tally}
-              onChange={(e) =>
-                setScorers((xs) => xs.map((x) => (x.athleteId === s.athleteId ? { ...x, tally: Number(e.target.value) || 1 } : x)))
-              }
-              className="h-6 w-12 rounded-[5px] border border-line bg-surface px-1.5 text-center text-meta tabular focus:border-line-strong focus:outline-none"
-            />
-            <button
-              type="button"
-              onClick={() => setScorers((xs) => xs.filter((x) => x.athleteId !== s.athleteId))}
-              className="flex size-6 items-center justify-center rounded-[5px] text-ink-4 hover:bg-sunken hover:text-risk"
-              aria-label="Remover"
-            >
-              <Trash2 className="size-3" strokeWidth={1.75} />
-            </button>
-          </li>
-        ))}
-      </ul>
-
-      {available.length > 0 && (
-        <div className="mb-4 flex items-center gap-1.5">
-          <SelectField
-            size="sm"
-            className="flex-1"
-            aria-label="Adicionar marcador"
-            value={pickAthlete}
-            onChange={setPickAthlete}
-            options={[
-              { value: "", label: "Adicionar atleta…" },
-              ...available.map((c) => ({ value: c.athleteId, label: athleteById(c.athleteId)?.name ?? "—" })),
-            ]}
-          />
-          <button type="button" onClick={addScorer} disabled={!pickAthlete} className="ctl-outline h-8">
-            <Plus className="size-3.5" strokeWidth={2} />
-          </button>
-        </div>
-      )}
-
-      <div className="flex items-center gap-2">
-        <button type="button" onClick={onDone} className="ctl-ghost flex-1 justify-center">
-          Cancelar
-        </button>
-        <button
-          type="button"
-          onClick={() => {
-            updateMatch(eventId, (m) => ({ ...m, result: { ourScore, theirScore, scorers } }));
-            onDone();
-          }}
-          className="ctl-primary flex-1 justify-center"
-        >
-          <Check className="size-3.5" strokeWidth={2} />
-          Guardar
-        </button>
-      </div>
-    </>
-  );
-}
-
-function ScoreInput({ value, onChange, label }: { value: number; onChange: (n: number) => void; label: string }) {
-  return (
-    <label className="flex flex-col items-center gap-1">
-      <span className="max-w-[92px] truncate text-[11px] text-ink-3">{label}</span>
-      <input
-        type="number"
-        min={0}
-        value={value}
-        onChange={(e) => onChange(Math.max(0, Number(e.target.value) || 0))}
-        className="h-11 w-14 rounded-[var(--radius-control)] border border-line bg-surface text-center text-[22px] font-semibold text-ink tabular focus:border-line-strong focus:outline-none"
-      />
-    </label>
   );
 }
 
@@ -550,21 +444,16 @@ function Statistics({
   teamId,
   match,
   editable,
-  eventId,
+  fichaPath,
 }: {
   teamId: string;
   match: NonNullable<CalendarEvent["match"]>;
   editable: boolean;
-  eventId: string;
+  fichaPath: string | null;
 }) {
-  const [editing, setEditing] = useState(false);
   const result = match.result!;
   const outcome = resultOutcome(match);
   const noun = tallyNoun(teamId);
-
-  if (editing) {
-    return <ResultForm teamId={teamId} match={match} eventId={eventId} onDone={() => setEditing(false)} />;
-  }
 
   const tone = outcome === "win" ? "ok" : outcome === "loss" ? "risk" : "neutral";
   const label = outcome === "win" ? "Vitória" : outcome === "loss" ? "Derrota" : "Empate";
@@ -573,10 +462,19 @@ function Statistics({
     <>
       <div className="mb-4 flex items-center justify-between">
         <h3 className="text-panel text-ink">Estatística</h3>
-        {editable && (
-          <button type="button" onClick={() => setEditing(true)} className="ctl-ghost h-7 text-meta">
-            Editar
-          </button>
+        {/*
+          "Editar" abria aqui um formulário próprio — e esse formulário escrevia
+          num repositório do browser que deixou de receber jogos quando eles
+          passaram a vir da API. Gravava-se, fechava, e não acontecia nada: nem
+          na base, nem no ecrã. Um botão que não faz nada é pior do que a
+          ausência dele, e reconstruir o formulário aqui seria ter dois sítios a
+          gravar resultados com validações diferentes. O resultado grava-se onde
+          vive a ficha.
+        */}
+        {editable && fichaPath && (
+          <Link to={fichaPath} className="ctl-ghost h-7 text-meta">
+            Editar na ficha
+          </Link>
         )}
       </div>
 

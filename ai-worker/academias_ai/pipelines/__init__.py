@@ -17,9 +17,10 @@ class Pipeline(Protocol):
 
 def available() -> dict[str, Any]:
     """kind → módulo, só com as dependências satisfeitas."""
-    from . import quality
+    from . import purge_video, quality
 
-    kinds: dict[str, Any] = {"quality_check": quality}
+    # A purga está sempre disponível: não precisa de modelos, só de apagar um ficheiro.
+    kinds: dict[str, Any] = {"quality_check": quality, "purge_video": purge_video}
 
     try:
         from . import detect_track
