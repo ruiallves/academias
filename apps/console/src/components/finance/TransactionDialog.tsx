@@ -370,7 +370,7 @@ export function TransactionDialog({
         </fieldset>
         )}
 
-        <div className="grid grid-cols-[1fr_130px] gap-3">
+        <div className="grid grid-cols-[minmax(0,1fr)_130px] gap-3">
           <DialogField label="Descrição">
             <input
               value={descricao}

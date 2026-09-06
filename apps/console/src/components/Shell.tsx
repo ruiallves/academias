@@ -35,9 +35,23 @@ export function Shell() {
     >
       <MobileTopBar />
       <Sidebar collapsed={collapsed} onToggle={() => setCollapsed((v) => !v)} />
-      {/* `relative`: é contra este `<main>` que o disco de carregamento se
-          centra. Ver `BusyScreen`. */}
-      <main className="relative flex-1 overflow-y-auto max-md:pb-[calc(64px+env(safe-area-inset-bottom))]">
+      {/*
+        `relative`: é contra este `<main>` que o disco de carregamento se
+        centra. Ver `BusyScreen`.
+
+        `min-w-0` é o que impede a página de fugir para a direita, e não é
+        detalhe: um item de flex nasce com `min-width: auto`, o que quer dizer
+        *nunca encolhas abaixo do teu conteúdo*. Bastava uma tabela larga lá
+        dentro para o `<main>` crescer, empurrar a página para fora da janela e
+        ser cortado pelo `overflow-hidden` da moldura — conteúdo escondido à
+        direita, sem barra de scroll para lá chegar.
+
+        Com `min-w-0` o `<main>` volta a caber, e os `overflow-x-auto` que já
+        existem por dentro (o da `DataTable`, por exemplo) passam a fazer o que
+        prometem: o scroll acontece **dentro** do painel, e a página fica
+        quieta. É por isso que isto está aqui em cima e não em cada tabela.
+      */}
+      <main className="relative min-w-0 flex-1 overflow-y-auto max-md:pb-[calc(64px+env(safe-area-inset-bottom))]">
         {/* Largura total. A sidebar já dá o enquadramento à esquerda; uma segunda
             moldura de margem no meio do ecrã só afastava as colunas de dados umas
             das outras. O ar vem do padding, não de um limite de largura.

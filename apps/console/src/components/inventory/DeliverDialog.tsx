@@ -260,7 +260,7 @@ export function DeliverDialog({
 
         {/* 4. Quantas */}
         {variante && (
-          <div className="grid grid-cols-[120px_1fr] gap-3">
+          <div className="grid grid-cols-[120px_minmax(0,1fr)] gap-3">
             <DialogField label="Quantidade">
               <input
                 type="number"

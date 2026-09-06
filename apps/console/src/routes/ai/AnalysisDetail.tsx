@@ -176,7 +176,7 @@ export default function AnalysisDetail() {
         </Panel>
       )}
 
-      <div className="grid gap-4 xl:grid-cols-[1fr_360px]">
+      <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_360px]">
         <div className="space-y-4">
           {quality && <QualityPanel quality={quality} video={detail.videos[0]} />}
 

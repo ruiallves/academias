@@ -124,7 +124,7 @@ export default function MatchDetail() {
 
       <Scoreboard match={match} aDecorrer={aDecorrer} passou={passou} mayRecord={mayRecord} onSaved={recarregar} />
 
-      <div className="mt-3 grid items-start gap-3 lg:grid-cols-[1fr_320px]">
+      <div className="mt-3 grid items-start gap-3 lg:grid-cols-[minmax(0,1fr)_320px]">
         <div className="space-y-3">
           {passou ? (
             temPlantel ? (
@@ -225,7 +225,7 @@ function Scoreboard({
         </div>
 
         {/* O marcador em si: nome — número — nome. */}
-        <div className="grid grid-cols-[1fr_auto_1fr] items-center gap-3 sm:gap-6">
+        <div className="grid grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] items-center gap-3 sm:gap-6">
           <TeamSide name={casa} ours={match.isHome} align="right" />
 
           <div className="flex flex-col items-center gap-1.5">

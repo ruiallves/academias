@@ -44,8 +44,14 @@
     @apply cursor-not-allowed opacity-50 hover:brightness-100;
   }
 
+  /* `min-w-0` pela mesma razão do `<main>` (ver `Shell.tsx`), um nível abaixo.
+     Um painel é quase sempre filho directo de uma grelha de duas colunas, e uma
+     coluna `1fr` também nasce com `min-width: auto`: sem isto, um painel com uma
+     tabela larga esticava a coluna, a coluna esticava a grelha, e a página
+     saía do ecrã pela direita. Posto no painel, apanha as dezenas de grelhas do
+     produto de uma vez — e o `overflow-x-auto` de dentro volta a mandar. */
   .panel {
-    @apply rounded-[var(--radius-panel)] border border-line bg-surface;
+    @apply min-w-0 rounded-[var(--radius-panel)] border border-line bg-surface;
   }
 
   /* Cabeçalho de painel: título à esquerda, controlos à direita, hairline por

@@ -761,7 +761,7 @@ function NewMemberDialog({ onClose, onCreated }: { onClose: () => void; onCreate
           </DialogField>
         </div>
 
-        <div className="grid gap-3 sm:grid-cols-[1fr_2fr]">
+        <div className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_minmax(0,2fr)]">
           <DialogField label="Indicativo">
             <input
               value={phoneCountry}
@@ -789,7 +789,7 @@ function NewMemberDialog({ onClose, onCreated }: { onClose: () => void; onCreate
           />
         </DialogField>
 
-        <div className="grid gap-3 sm:grid-cols-[200px_1fr]">
+        <div className="grid gap-3 sm:grid-cols-[200px_minmax(0,1fr)]">
           <DialogField label="Código postal">
             <input
               value={postalCode}

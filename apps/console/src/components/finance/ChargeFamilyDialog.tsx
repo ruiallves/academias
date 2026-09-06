@@ -148,7 +148,7 @@ export function ChargeFamilyDialog({ onClose, onDone }: { onClose: () => void; o
         */}
         {atleta && (
           <>
-            <div className="grid grid-cols-[1fr_130px] gap-3">
+            <div className="grid grid-cols-[minmax(0,1fr)_130px] gap-3">
               <DialogField label="O que vai pagar">
                 <input
                   autoFocus

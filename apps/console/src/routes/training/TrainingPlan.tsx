@@ -841,7 +841,7 @@ function BlockRow({
             )}
           </div>
 
-          <div className="grid gap-3 sm:grid-cols-[1fr_110px_150px]">
+          <div className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_110px_150px]">
             <DialogField label="Nome do bloco">
               <input className={dialogInputClass} value={block.name} onChange={(e) => onPatch({ name: e.target.value })} placeholder="Posse 6v4" disabled={!editable} />
             </DialogField>
@@ -869,7 +869,7 @@ function BlockRow({
             </DialogField>
           </div>
 
-          <div className="grid gap-3 sm:grid-cols-[1fr_150px]">
+          <div className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_150px]">
             <DialogField label="Objetivo">
               <select
                 className={dialogInputClass}

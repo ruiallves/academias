@@ -329,7 +329,7 @@ export function NewEventDialog({
 
         {/* Só um jogo tem adversário — e é ele que o torna convocável. */}
         {isMatch && (
-          <div className="grid grid-cols-[1fr_auto] gap-3">
+          <div className="grid grid-cols-[minmax(0,1fr)_auto] gap-3">
             <DialogField label="Adversário">
               <input
                 value={opponent}
@@ -409,7 +409,7 @@ export function NewEventDialog({
           <input value={title} onChange={(e) => setTitle(e.target.value)} placeholder={suggested} className={dialogInputClass} />
         </DialogField>
 
-        <div className="grid grid-cols-[1.4fr_1fr_1fr] gap-3">
+        <div className="grid grid-cols-[minmax(0,1.4fr)_minmax(0,1fr)_minmax(0,1fr)] gap-3">
           <DialogField label="Data">
             <input type="date" value={date} onChange={(e) => setDate(e.target.value)} className={dialogInputClass} required />
           </DialogField>

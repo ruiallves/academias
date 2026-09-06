@@ -90,7 +90,7 @@ export default function CallUps() {
             />
           </MetricRow>
 
-          <div className="grid gap-3 lg:grid-cols-[280px_1fr]">
+          <div className="grid gap-3 lg:grid-cols-[280px_minmax(0,1fr)]">
             <MatchList matches={upcoming} selectedId={match?.id} onSelect={setSelectedId} />
             {match && <Squad key={match.id} match={match} />}
           </div>

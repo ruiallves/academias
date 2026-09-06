@@ -351,7 +351,7 @@ function Row({ match, passado, pendente }: { match: MatchListRow; passado: boole
         </span>
 
         {/* O mini-marcador. */}
-        <span className="grid min-w-0 flex-1 grid-cols-[1fr_auto_1fr] items-center gap-2 sm:gap-3">
+        <span className="grid min-w-0 flex-1 grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] items-center gap-2 sm:gap-3">
           <span
             className={cx(
               "truncate text-right text-body",

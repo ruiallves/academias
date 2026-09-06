@@ -158,7 +158,7 @@ export function ClinicalEntryDialog({
         </div>
 
         {scheduling && (
-          <div className="grid grid-cols-[auto_1fr] gap-3">
+          <div className="grid grid-cols-[auto_minmax(0,1fr)] gap-3">
             <DialogField label="Hora">
               <input type="time" value={time} onChange={(e) => setTime(e.target.value)} className={dialogInputClass} required />
             </DialogField>

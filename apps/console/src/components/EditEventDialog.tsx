@@ -137,7 +137,7 @@ export function EditEventDialog({ event, onClose }: { event: CalendarEvent; onCl
         </p>
 
         {isMatch && (
-          <div className="grid grid-cols-[1fr_auto] gap-3">
+          <div className="grid grid-cols-[minmax(0,1fr)_auto] gap-3">
             <DialogField label="Adversário">
               <input
                 value={opponent}
@@ -206,7 +206,7 @@ export function EditEventDialog({ event, onClose }: { event: CalendarEvent; onCl
           </DialogField>
         )}
 
-        <div className="grid grid-cols-[1.4fr_1fr_1fr] gap-3">
+        <div className="grid grid-cols-[minmax(0,1.4fr)_minmax(0,1fr)_minmax(0,1fr)] gap-3">
           <DialogField label="Data">
             <input type="date" value={date} onChange={(e) => setDate(e.target.value)} className={dialogInputClass} required />
           </DialogField>

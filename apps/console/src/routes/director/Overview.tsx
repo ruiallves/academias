@@ -97,7 +97,7 @@ export default function DirectorOverview() {
 
         {/* Em ecrãs muito largos a cobrança ganha o espaço extra — é a coluna com
             mais linhas. O painel de comunicação estica mal. */}
-        <div className="grid gap-3 lg:grid-cols-[1.55fr_1fr] 2xl:grid-cols-[2.2fr_1fr]">
+        <div className="grid gap-3 lg:grid-cols-[minmax(0,1.55fr)_minmax(0,1fr)] 2xl:grid-cols-[minmax(0,2.2fr)_minmax(0,1fr)]">
           <BillingByTeam />
           <RecentComms />
         </div>
@@ -142,10 +142,21 @@ function BillingByTeam() {
         </Link>
       </PanelHead>
 
+      {/*
+        As larguras fixas somavam mais do que a coluna tem num portátil.
+
+        Cinco colunas rígidas — 160 + 56 + 96 + 64, mais quatro intervalos e a
+        moldura do painel — pediam perto de 470px, e nesta grelha a coluna da
+        cobrança só tem cerca de 445 num ecrã de 1024. O que sobrava saía pela
+        direita. Agora o nome encolhe até 128px e volta aos 160 quando há
+        espaço, e o par cobrado/facturado — o único que se pode adiar, porque a
+        percentagem ao lado diz o mesmo — só aparece a partir de `xl`. O mínimo
+        passa a cerca de 325px, que cabe em qualquer coluna desta página.
+      */}
       <ul className="px-5 py-1.5">
         {rows.map(({ team, collected, billed, open, rate }) => (
           <li key={team.id} className="flex items-center gap-3 border-b border-line py-2.5 last:border-0">
-            <span className="w-40 shrink-0 truncate text-body font-medium text-ink">{team.name}</span>
+            <span className="w-32 shrink-0 truncate text-body font-medium text-ink 2xl:w-40">{team.name}</span>
 
             <span className="min-w-0 flex-1">
               <Bar value={rate} tone={rate >= 0.9 ? "ok" : rate >= 0.75 ? "signal" : "warn"} />
@@ -153,7 +164,7 @@ function BillingByTeam() {
 
             <span className="w-14 shrink-0 text-right text-meta font-semibold text-ink tabular">{percent(rate)}</span>
 
-            <span className="w-24 shrink-0 text-right text-meta text-ink-3 tabular">
+            <span className="hidden w-24 shrink-0 text-right text-meta text-ink-3 tabular xl:block">
               {money(collected, { compact: true })} / {money(billed, { compact: true })}
             </span>
 

@@ -557,7 +557,7 @@ function Overview({
         )}
       </MetricRow>
 
-      <div className="grid gap-3 lg:grid-cols-[1fr_1fr]">
+      <div className="grid gap-3 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
         <Panel>
           <PanelHead title="Ficha física" hint="actualizada manualmente" />
           <dl className="px-5 py-1.5">

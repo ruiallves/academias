@@ -145,7 +145,7 @@ export function CallUpSheetDialog({ match, rows, onClose }: { match: SheetMatch;
         </p>
 
         <Bloco titulo="A prova">
-          <div className="grid grid-cols-[1fr_140px] gap-3">
+          <div className="grid grid-cols-[minmax(0,1fr)_140px] gap-3">
             <DialogField
               label="Competição"
               hint={match.competition ? "do jogo" : "opcional"}

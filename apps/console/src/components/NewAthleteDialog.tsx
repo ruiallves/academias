@@ -119,7 +119,7 @@ export function NewAthleteDialog({ session, onClose }: { session: Session; onClo
             {!nifOk && <p className="mt-1 text-[11px] text-[#a82a20]">O NIF tem nove dígitos.</p>}
           </DialogField>
 
-          <div className="grid grid-cols-[1fr_auto] gap-3">
+          <div className="grid grid-cols-[minmax(0,1fr)_auto] gap-3">
             <DialogField label="Equipa">
               <SelectField
                 className="w-full"

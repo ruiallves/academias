@@ -175,7 +175,7 @@ export default function MemberDetail() {
           onCancel={() => setEditing(false)}
         />
       ) : (
-        <div className="grid gap-3 lg:grid-cols-[1.2fr_1fr]">
+        <div className="grid gap-3 lg:grid-cols-[minmax(0,1.2fr)_minmax(0,1fr)]">
           <div className="space-y-3">
             <Panel>
               <PanelHead title="Dados pessoais" />
@@ -984,7 +984,7 @@ function EditPanel({
 
             {/* O documento e o contribuinte editam-se — sem NIF o clube não passa
                 um recibo, e um sócio inscrito ao balcão nasce sem ele. */}
-            <div className="grid grid-cols-[130px_1fr] gap-3">
+            <div className="grid grid-cols-[130px_minmax(0,1fr)] gap-3">
               <DialogField label="Documento">
                 <select
                   value={documentKind}

@@ -125,7 +125,7 @@ export default function Budget() {
               return (
                 <div
                   key={r.categoryId}
-                  className="grid grid-cols-[1fr_auto] items-center gap-x-4 gap-y-1.5 px-4 py-3 sm:grid-cols-[1fr_150px_130px]"
+                  className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-x-4 gap-y-1.5 px-4 py-3 sm:grid-cols-[minmax(0,1fr)_150px_130px]"
                 >
                   <div className="min-w-0">
                     <p className="truncate text-body font-medium text-ink">{r.label}</p>

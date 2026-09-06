@@ -290,7 +290,7 @@ function PlayerDialog({
         </>
       }
     >
-      <div className="grid gap-0 lg:grid-cols-[1fr_300px]">
+      <div className="grid gap-0 lg:grid-cols-[minmax(0,1fr)_300px]">
         <div className="border-b border-line lg:border-r lg:border-b-0">
           <div className="bg-ink">
             {error ? (

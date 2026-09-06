@@ -389,7 +389,7 @@ function OverviewTab({
           número. */}
       <TeamCompetitionsPanel team={team} editable={can(session, "team:write")} />
 
-      <div className="grid gap-3 lg:grid-cols-[1fr_1fr]">
+      <div className="grid gap-3 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
         {nextEvent && (
           <Panel>
             <PanelHead title="A seguir" hint={relativeDays(nextEvent.start, today)} />

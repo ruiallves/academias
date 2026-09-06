@@ -114,7 +114,7 @@ export default function MedicalOverview() {
           />
         </MetricRow>
 
-        <div className="grid gap-3 lg:grid-cols-[1.4fr_1fr]">
+        <div className="grid gap-3 lg:grid-cols-[minmax(0,1.4fr)_minmax(0,1fr)]">
           <Panel className="flex flex-col">
             <PanelHead title="Atletas parados" hint={`${out.length + limited.length}`} />
             {out.length + limited.length === 0 ? (

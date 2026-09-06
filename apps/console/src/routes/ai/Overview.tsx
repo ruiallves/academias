@@ -83,7 +83,7 @@ export default function AiOverview() {
         <Metric label="Insights ativos" value={String(activeInsights)} icon={Sparkle} note="derivados dos jogos" />
       </MetricRow>
 
-      <div className="mt-4 grid gap-4 xl:grid-cols-[1fr_380px]">
+      <div className="mt-4 grid gap-4 xl:grid-cols-[minmax(0,1fr)_380px]">
         <Panel>
           <PanelHead title="Análises recentes" hint={data.recent.length > 0 ? `${data.recent.length} mais recentes` : undefined} />
           <AnalysesTable rows={data.recent} mayWrite={mayWrite} />
