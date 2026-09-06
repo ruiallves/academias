@@ -208,11 +208,6 @@ export type RoadmapItem = { when: string; title: string; body: string };
 export const ROADMAP: RoadmapItem[] = [
   {
     when: "Setembro 2026",
-    title: "Pagamentos de mensalidade",
-    body: "MB WAY, Multibanco e cartão. O clube define a mensalidade, a família paga, o estado actualiza-se sozinha.",
-  },
-  {
-    when: "Setembro 2026",
     title: "Integração ZeroZero e FPF",
     body: "Jogos, calendários e resultados oficiais sem ninguém os copiar à mão. Depende de licenciamento — estamos a tratar disso.",
   },
@@ -225,11 +220,6 @@ export const ROADMAP: RoadmapItem[] = [
     when: "Novembro 2026",
     title: "Sistema de bilheteira",
     body: "Gestão da venda de bilhetes para os jogos do clube.",
-  },
-  {
-    when: "Dezembro 2026",
-    title: "Área técnica noutros desportos",
-    body: "O editor tático, a biblioteca de exercícios e os modelos de jogo a chegar ao basquetebol e a outras modalidades — cada uma com o seu campo e as suas posições, não um relvado com outro nome.",
   },
   {
     when: "Janeiro 2027",

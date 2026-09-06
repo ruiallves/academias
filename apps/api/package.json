@@ -38,6 +38,7 @@
     "test:events": "node scripts/test-events.mjs",
     "test:attendance": "node scripts/test-attendance.mjs",
     "test:training": "node scripts/test-training.mjs",
+    "test:modalidades": "node scripts/test-modalidades.mjs",
     "test:delete-academy": "node scripts/test-delete-academy.mjs",
     "test:delete-team": "node scripts/test-delete-team.mjs",
     "test:refresh": "node scripts/test-refresh.mjs",

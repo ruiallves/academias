@@ -56,13 +56,9 @@ const NAV_GROUPS: {
   {
     label: "Área técnica",
     open: true,
-    items: [
-      { t: "Treinos" },
-      { t: "Jogos", badge: 1 },
-      { t: "Exercícios" },
-      { t: "Modelos de jogo" },
-      { t: "Bolas paradas" },
-    ],
+    // Exercícios, modelos e bolas paradas vivem dentro de cada modalidade — o
+    // menu mostra as modalidades do clube, como a consola faz.
+    items: [{ t: "Treinos" }, { t: "Jogos", badge: 1 }, { t: "Futebol" }, { t: "Basquetebol" }],
   },
   { label: "Gestão", items: [{ t: "Mensalidades" }, { t: "Contas" }, { t: "Comunicação" }, { t: "Inventário" }] },
   { label: "Desenvolvimento", items: [{ t: "Avaliações" }, { t: "Relatórios" }] },

@@ -496,11 +496,13 @@ export class AcademyService {
 
     const name = (dto.name ?? "").trim();
     if (name.length < 2) throw new BadRequestException("Falta o nome da modalidade");
-    const code = sportCodeOf(dto.code);
+    // O nome manda quando o diz; senão vale a escolha. Ver `resolveSportCode`.
+    const code = resolveSportCode(name, dto.code);
 
     return this.prisma.runAs(ctx.academyId, async (db) => {
       const taken = await db.sport.findFirst({ where: { name }, select: { id: true } });
       if (taken) throw new BadRequestException(`"${name}" já existe`);
+      await checkDisciplinaLivre(db, code);
 
       const sport = await db.sport.create({
         data: {
@@ -523,7 +525,7 @@ export class AcademyService {
     if (!can(ctx, "settings:write")) throw new ForbiddenException("Sem permissão para mudar as definições");
 
     return this.prisma.runAs(ctx.academyId, async (db) => {
-      const sport = await db.sport.findFirst({ where: { id }, select: { id: true, code: true } });
+      const sport = await db.sport.findFirst({ where: { id }, select: { id: true, name: true, code: true } });
       if (!sport) throw new NotFoundException("Modalidade não encontrada");
 
       const name = dto.name?.trim();
@@ -534,7 +536,18 @@ export class AcademyService {
         if (taken) throw new BadRequestException(`"${name}" já existe`);
       }
 
-      const code = dto.code !== undefined ? sportCodeOf(dto.code) : undefined;
+      /*
+       * Renomear reclassifica. Chamar "Basquetebol" a uma modalidade que era
+       * "Futebol" muda a área técnica dela, e é isso que quem renomeia quer —
+       * ficar com o nome novo e o vocabulário antigo seria o pior dos dois.
+       * Só se recalcula quando o nome ou a escolha vêm no corpo; um PATCH que
+       * só mexe nas posições não toca na disciplina.
+       */
+      const code =
+        name !== undefined || dto.code !== undefined
+          ? resolveSportCode(name ?? sport.name, dto.code ?? sport.code ?? undefined)
+          : undefined;
+      if (code !== undefined) await checkDisciplinaLivre(db, code, id);
 
       const updated = await db.sport.update({
         where: { id },
@@ -3076,6 +3089,71 @@ function sportCodeOf(value: string | undefined): SportCode | null {
   if (!v) return null;
   if (!(SPORT_CODES as readonly string[]).includes(v)) throw new BadRequestException("Disciplina desconhecida");
   return v as SportCode;
+}
+
+/**
+ * A disciplina que o **nome** diz — "Futebol" é futebol, escreva-se como se
+ * escrever.
+ *
+ * ## Porque é que o nome ganha
+ *
+ * A área técnica existe por disciplina, e um clube que chama "Futebol" à sua
+ * modalidade quer a área técnica de futebol. Exigir que alguém carregue num
+ * botão para o confirmar é pedir um passo que só existe para o programa: os
+ * clubes que já lá estavam nunca o dariam, e cada modalidade criada a escrever
+ * o nome nasceria sem área nenhuma — que foi exactamente o que aconteceu.
+ *
+ * Por isso o nome manda **quando é reconhecível**, aqui e no cliente
+ * (`inferSportCode` em `lib/sports.ts`, gémea desta). Quando não é — "Cesto",
+ * "Andebol", "Natação" — vale o que a pessoa escolheu, e escolher nada é ficar
+ * sem área técnica, que é o correcto para a natação.
+ *
+ * ## O que a regra apanha
+ *
+ * Compara sem maiúsculas e sem acentos, e por conteúdo: "FUTEBOL", "futebol ",
+ * "Futebol 7", "Futebol Feminino" e até "Futeboll" caem todos em futebol. O
+ * futsal vem primeiro de propósito — "futebol de salão" **é** futsal, e a ordem
+ * inversa fazia dele futebol. É a mesma regra da migração
+ * `area_tecnica_por_modalidade`, que classificou os clubes que já existiam.
+ */
+export function inferSportCode(name: string | undefined): SportCode | null {
+  // Sem acentos: "Natação" e "salão" comparam-se como o resto.
+  const n = (name ?? "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
+  if (/futsal|salao|futebol\s*de\s*5/.test(n)) return "futsal";
+  if (/futebol|futbol|football|soccer/.test(n)) return "football";
+  if (/basquet|basket/.test(n)) return "basketball";
+  return null;
+}
+
+/**
+ * A disciplina final de uma modalidade: o nome quando o diz, senão a escolha.
+ *
+ * `escolhido` é o que veio no corpo — `undefined` é "não mexer", que só o
+ * `updateSport` distingue de "" ("sem disciplina").
+ */
+function resolveSportCode(name: string, escolhido: string | undefined): SportCode | null {
+  return inferSportCode(name) ?? sportCodeOf(escolhido);
+}
+
+/**
+ * Uma disciplina por clube.
+ *
+ * Duas modalidades de futebol dariam duas áreas técnicas de futebol, com a
+ * biblioteca do clube partida ao meio e o treinador a perguntar-se em qual é
+ * que grava o exercício. O que distingue o Sub-15 do feminino é a **equipa**,
+ * não a modalidade — e as equipas já sabem distinguir-se.
+ */
+async function checkDisciplinaLivre(db: ScopedClient, code: SportCode | null, exceptId?: string) {
+  if (!code) return;
+  const taken = await db.sport.findFirst({
+    where: { code, ...(exceptId ? { id: { not: exceptId } } : {}) },
+    select: { name: true },
+  });
+  if (taken) {
+    throw new BadRequestException(
+      `Esta disciplina já está configurada em "${taken.name}". Uma modalidade por disciplina — o que distingue escalões e géneros são as equipas.`,
+    );
+  }
 }
 
 /**

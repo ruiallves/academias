@@ -6,22 +6,14 @@ import { Empty, Loading, Panel, Pill, SelectField, cx } from "@/components/primi
 import { Film, Plus, Search, Star } from "@/lib/icons";
 import { shortDate } from "@/lib/format";
 import { can } from "@/lib/permissions";
-import {
-  FORMAT_LABEL,
-  GAME_FORMATS,
-  OBJECTIVE_CATEGORIES,
-  asDiagram,
-  formatOf,
-  listExercises,
-  setExerciseFavorite,
-  type ExerciseSummary,
-} from "@/lib/training";
+import { FORMAT_LABEL, asDiagram, formatOf, listExercises, setExerciseFavorite, type ExerciseSummary } from "@/lib/training";
 import { useSession } from "@/session";
+import { useSportArea } from "./sport-area-context";
 
 type Tab = "all" | "fav" | "mine" | "used";
 
 /**
- * A biblioteca de exercícios.
+ * A biblioteca de exercícios — de uma modalidade.
  *
  * ## Cartões, não tabela
  *
@@ -31,22 +23,33 @@ type Tab = "all" | "fav" | "mine" | "used";
  *
  * Os separadores são as perguntas reais: *os meus favoritos* (o treino de
  * terça monta-se daqui), *o que eu criei*, *o que o clube mais usa*.
+ *
+ * ## O que vem da modalidade
+ *
+ * A lista pede só os exercícios desta modalidade, e o vocabulário dos filtros
+ * — categorias de objectivo, variantes de terreno — é o do perfil dela. O
+ * futebol filtra por "Organização ofensiva" e por "Futebol 7"; o basquetebol
+ * por "Tomada de decisão", e não tem variantes para escolher.
  */
 export default function Exercises() {
+  const { sport, profile, path } = useSportArea();
   const { session } = useSession();
   const navigate = useNavigate();
   const mayWrite = can(session, "training:write");
+  const categories = profile.exercises.categories;
+  const formats = profile.vocabulary.formats;
 
   const [rows, setRows] = useState<ExerciseSummary[] | null>(null);
   const [tab, setTab] = useState<Tab>("all");
   const [q, setQ] = useState("");
   const [category, setCategory] = useState("");
   const [intensity, setIntensity] = useState("");
-  const [sport, setSport] = useState("");
+  const [variant, setVariant] = useState("");
 
   useEffect(() => {
-    listExercises().then(setRows).catch(() => setRows([]));
-  }, []);
+    setRows(null);
+    listExercises(sport.id).then(setRows).catch(() => setRows([]));
+  }, [sport.id]);
 
   const filtered = useMemo(() => {
     if (!rows) return [];
@@ -60,9 +63,9 @@ export default function Exercises() {
        * todos os filtros: esconder por falta de dado seria fazê-lo desaparecer
        * da biblioteca de quem filtra.
        */
-      if (sport) {
+      if (variant) {
         const field = asDiagram(e.thumbnail)?.field;
-        if (field && formatOf(field) !== sport) return false;
+        if (field && formatOf(field) !== variant) return false;
       }
       if (category && e.category !== category) return false;
       if (intensity) {
@@ -81,7 +84,7 @@ export default function Exercises() {
     });
     if (tab === "used") out = [...out].sort((a, b) => b.usageCount - a.usageCount);
     return out;
-  }, [rows, tab, q, category, intensity, sport]);
+  }, [rows, tab, q, category, intensity, variant]);
 
   async function toggleFavorite(e: ExerciseSummary) {
     // A estrela responde já; se o servidor recusar, volta atrás.
@@ -97,12 +100,9 @@ export default function Exercises() {
 
   return (
     <>
-      <PageHeader
-        title="Exercícios"
-        subtitle="A biblioteca do clube — desenhados, filtráveis e prontos a entrar num treino."
-      >
+      <PageHeader title={profile.exercises.label} subtitle={profile.exercises.description}>
         {mayWrite && (
-          <Link to="/exercicios/novo" className="ctl-primary">
+          <Link to={path("exercises", "novo")} className="ctl-primary">
             <Plus className="size-3.5" strokeWidth={1.75} />
             Novo exercício
           </Link>
@@ -133,16 +133,19 @@ export default function Exercises() {
           ))}
 
           <div className="ml-auto flex flex-wrap items-center gap-1.5">
-            <SelectField
-              aria-label="Variante"
-              size="sm"
-              value={sport}
-              onChange={setSport}
-              options={[
-                { value: "", label: "Todas as variantes" },
-                ...GAME_FORMATS.map((f) => ({ value: f, label: FORMAT_LABEL[f] })),
-              ]}
-            />
+            {/* Uma variante só (basquetebol, futsal) não é um filtro. */}
+            {formats.length > 1 && (
+              <SelectField
+                aria-label="Variante"
+                size="sm"
+                value={variant}
+                onChange={setVariant}
+                options={[
+                  { value: "", label: "Todas as variantes" },
+                  ...formats.map((f) => ({ value: f, label: FORMAT_LABEL[f] })),
+                ]}
+              />
+            )}
             <SelectField
               aria-label="Objetivo"
               size="sm"
@@ -150,7 +153,7 @@ export default function Exercises() {
               onChange={setCategory}
               options={[
                 { value: "", label: "Todos os objetivos" },
-                ...OBJECTIVE_CATEGORIES.map((c) => ({ value: c.label, label: c.label })),
+                ...categories.map((c) => ({ value: c.label, label: c.label })),
               ]}
             />
             <SelectField
@@ -189,7 +192,7 @@ export default function Exercises() {
               icon={Film}
             >
               {rows.length === 0 && mayWrite && (
-                <Link to="/exercicios/novo" className="ctl-primary">
+                <Link to={path("exercises", "novo")} className="ctl-primary">
                   Criar o primeiro exercício
                 </Link>
               )}
@@ -198,14 +201,15 @@ export default function Exercises() {
         ) : (
           <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-4">
             {filtered.map((e) => {
-              const cat = OBJECTIVE_CATEGORIES.find((c) => c.label === e.category);
+              const cat = categories.find((c) => c.label === e.category);
+              const to = path("exercises", e.id);
               return (
                 <div
                   key={e.id}
                   role="link"
                   tabIndex={0}
-                  onClick={() => navigate(`/exercicios/${e.id}`)}
-                  onKeyDown={(ev) => ev.key === "Enter" && navigate(`/exercicios/${e.id}`)}
+                  onClick={() => navigate(to)}
+                  onKeyDown={(ev) => ev.key === "Enter" && navigate(to)}
                   className="panel group cursor-pointer overflow-hidden transition-colors hover:border-line-strong"
                 >
                   <div className="relative">

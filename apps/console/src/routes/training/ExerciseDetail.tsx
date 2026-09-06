@@ -7,7 +7,6 @@ import { Empty, Loading, Panel, PanelHead, cx } from "@/components/primitives";
 import { Check, Copy, Download, ExternalLink, Trash2, TriangleAlert } from "@/lib/icons";
 import { can } from "@/lib/permissions";
 import {
-  OBJECTIVE_CATEGORIES,
   asDiagram,
   clubDefaultFormat,
   createExercise,
@@ -22,9 +21,8 @@ import {
   type ExerciseFull,
   type ExerciseImage,
 } from "@/lib/training";
-
-const EXERCISE_TYPES = ["Posse", "Vaga", "Jogo condicionado", "Jogo reduzido", "Circuito", "Finalização", "Analítico", "Rondo", "Onda/Transição"];
 import { useSession } from "@/session";
+import { useSportArea } from "./sport-area-context";
 
 type Draft = Omit<ExerciseFull, "id" | "authorName" | "updatedAt" | "mine" | "editable" | "visibility"> & {
   visibility: "PRIVATE" | "CLUB";
@@ -55,6 +53,7 @@ const BLANK: Draft = {
   videoUrl: null,
   visibility: "CLUB",
   diagram: null,
+  sportId: null,
 };
 
 /**
@@ -71,6 +70,19 @@ export default function ExerciseDetail() {
   const navigate = useNavigate();
   const { session } = useSession();
   const mayWrite = can(session, "training:write");
+  /*
+   * A modalidade veste a ficha: as categorias de objectivo, os tipos de
+   * exercício, os exemplos nos campos e o que o editor oferece vêm do perfil —
+   * e o exercício nasce **desta** modalidade (`sportId`), que é o que o põe na
+   * biblioteca certa.
+   */
+  const { sport, profile, path } = useSportArea();
+  const categories = profile.exercises.categories;
+  const types = profile.exercises.types;
+  const ph = profile.exercises.placeholders;
+  // O terreno de partida: o das equipas desta modalidade, se cabe no perfil.
+  const suggested = clubDefaultFormat(sport.id);
+  const startFormat = profile.vocabulary.formats.includes(suggested) ? suggested : profile.defaultFormat;
 
   const [draft, setDraft] = useState<Draft | null>(isNew ? BLANK : null);
   const [editable, setEditable] = useState(isNew);
@@ -170,10 +182,11 @@ export default function ExerciseDetail() {
         videoUrl: draft.videoUrl,
         visibility: draft.visibility,
         diagram: draft.diagram,
+        sportId: sport.id,
       };
       if (isNew) {
         const { id: newId } = await createExercise(payload);
-        navigate(`/exercicios/${newId}`, { replace: true });
+        navigate(path("exercises", newId), { replace: true });
       } else {
         await updateExercise(id!, payload);
         setDirty(false);
@@ -189,21 +202,21 @@ export default function ExerciseDetail() {
   async function duplicate() {
     if (isNew) return;
     const { id: copyId } = await duplicateExercise(id!);
-    navigate(`/exercicios/${copyId}`);
+    navigate(path("exercises", copyId));
   }
 
   async function remove() {
     if (isNew) return;
     if (!confirm("Apagar este exercício? Se já entrou em treinos, é arquivado e o histórico mantém-se.")) return;
     await deleteExercise(id!);
-    navigate("/exercicios");
+    navigate(path("exercises"));
   }
 
   if (error) {
     return (
       <Panel>
         <Empty title="Exercício não encontrado" detail={error} icon={TriangleAlert}>
-          <Link to="/exercicios" className="ctl-outline">
+          <Link to={path("exercises")} className="ctl-outline">
             Voltar à biblioteca
           </Link>
         </Empty>
@@ -217,7 +230,7 @@ export default function ExerciseDetail() {
   return (
     <>
       <PageHeader
-        eyebrow="Biblioteca de exercícios"
+        eyebrow={`${sport.name} · ${profile.exercises.label}`}
         title={isNew ? "Novo exercício" : draft.name || "Exercício"}
         /*
          * Três casos, três frases. O que é da biblioteca base precisa de ser
@@ -234,8 +247,8 @@ export default function ExerciseDetail() {
                 : undefined
         }
       >
-        <Link to="/exercicios" className="ctl-ghost">
-          Biblioteca
+        <Link to={path("exercises")} className="ctl-ghost">
+          {profile.exercises.label}
         </Link>
         {/* Sem gravar é uma ficha por acabar — mas um exercício novo ainda sem
             nome não é uma folha, é uma folha em branco. */}
@@ -301,8 +314,9 @@ export default function ExerciseDetail() {
             {editable && mode === "edit" ? (
               <FieldEditor
                 key={isNew ? "novo" : id}
-                initial={draft.diagram ?? emptyDiagram(clubDefaultFormat())}
+                initial={draft.diagram ?? emptyDiagram(startFormat)}
                 onChange={(d: Diagram) => patch({ diagram: d })}
+                vocabulary={profile.vocabulary}
               />
             ) : diagram ? (
               <DiagramPlayer diagram={draft.diagram} />
@@ -318,7 +332,7 @@ export default function ExerciseDetail() {
             <PanelHead title="Ficha" />
             <div className="space-y-3.5 p-5">
               <DialogField label="Nome">
-                <input className={dialogInputClass} value={draft.name} onChange={(e) => patch({ name: e.target.value })} placeholder='Ex.: "Posse 6v4 — saída sob pressão"' disabled={!editable} />
+                <input className={dialogInputClass} value={draft.name} onChange={(e) => patch({ name: e.target.value })} placeholder={ph.name} disabled={!editable} />
               </DialogField>
 
               {editable && (
@@ -356,18 +370,23 @@ export default function ExerciseDetail() {
                   disabled={!editable}
                 >
                   <option value="">Sem categoria</option>
-                  {OBJECTIVE_CATEGORIES.map((c) => (
+                  {categories.map((c) => (
                     <option key={c.key} value={c.label}>
                       {c.label}
                     </option>
                   ))}
+                  {/* Uma categoria de outro vocabulário (exercício importado,
+                      mudança de perfil) continua lá, como opção própria. */}
+                  {draft.category && !categories.some((c) => c.label === draft.category) && (
+                    <option value={draft.category}>{draft.category}</option>
+                  )}
                 </select>
               </DialogField>
 
               {draft.category && (
                 <DialogField label="Sub-objetivos">
                   <div className="flex flex-wrap gap-1.5">
-                    {(OBJECTIVE_CATEGORIES.find((c) => c.label === draft.category)?.subs ?? []).map((s) => {
+                    {(categories.find((c) => c.label === draft.category)?.subs ?? []).map((s) => {
                       const on = draft.objectives.includes(s);
                       return (
                         <button
@@ -402,22 +421,22 @@ export default function ExerciseDetail() {
                     disabled={!editable}
                   >
                     <option value="">Sem tipo</option>
-                    {EXERCISE_TYPES.map((t) => (
+                    {types.map((t) => (
                       <option key={t} value={t}>
                         {t}
                       </option>
                     ))}
-                    {draft.type && !EXERCISE_TYPES.includes(draft.type) && <option value={draft.type}>{draft.type}</option>}
+                    {draft.type && !types.includes(draft.type) && <option value={draft.type}>{draft.type}</option>}
                   </select>
                 </DialogField>
                 <DialogField label="Jogadores">
-                  <input className={dialogInputClass} value={draft.players ?? ""} onChange={(e) => patch({ players: e.target.value || null })} placeholder="6v4+GR" disabled={!editable} />
+                  <input className={dialogInputClass} value={draft.players ?? ""} onChange={(e) => patch({ players: e.target.value || null })} placeholder={ph.players} disabled={!editable} />
                 </DialogField>
                 <DialogField label="Duração (min)">
                   <input type="number" min={1} max={240} className={dialogInputClass} value={draft.durationMin ?? ""} onChange={(e) => patch({ durationMin: e.target.value === "" ? null : Number(e.target.value) })} disabled={!editable} />
                 </DialogField>
                 <DialogField label="Dimensões">
-                  <input className={dialogInputClass} value={draft.space ?? ""} onChange={(e) => patch({ space: e.target.value || null })} placeholder="30×25 m" disabled={!editable} />
+                  <input className={dialogInputClass} value={draft.space ?? ""} onChange={(e) => patch({ space: e.target.value || null })} placeholder={ph.space} disabled={!editable} />
                 </DialogField>
                 <DialogField label="Idades">
                   <div className="flex items-center gap-1.5">
@@ -436,7 +455,7 @@ export default function ExerciseDetail() {
               </DialogField>
 
               <DialogField label="Material">
-                <input className={dialogInputClass} value={draft.material ?? ""} onChange={(e) => patch({ material: e.target.value || null })} placeholder="8 cones, coletes, 2 mini-balizas" disabled={!editable} />
+                <input className={dialogInputClass} value={draft.material ?? ""} onChange={(e) => patch({ material: e.target.value || null })} placeholder={ph.material} disabled={!editable} />
               </DialogField>
 
               <DialogField label="Vídeo" hint="link externo">
@@ -451,6 +470,36 @@ export default function ExerciseDetail() {
               </DialogField>
             </div>
           </Panel>
+
+          {/*
+            Onde este exercício entra — os sistemas e as situações que o
+            escolheram para se treinarem. É a ligação inversa da ficha do
+            sistema, e é o que diz a quem edita o exercício para que é que ele
+            serve na metodologia do clube.
+          */}
+          {draft.usedIn && (draft.usedIn.gameModels.length > 0 || draft.usedIn.setPieces.length > 0) && (
+            <Panel>
+              <PanelHead title="Onde entra" hint="o que se treina com ele" />
+              <ul className="divide-y divide-line">
+                {draft.usedIn.gameModels.map((g) => (
+                  <li key={g.id} className="flex items-center gap-2 px-5 py-2.5">
+                    <span className="w-28 shrink-0 text-meta text-ink-4">{profile.playbook.label}</span>
+                    <Link to={path("playbook", g.id)} className="min-w-0 flex-1 truncate text-body text-ink hover:underline">
+                      {g.name}
+                    </Link>
+                  </li>
+                ))}
+                {draft.usedIn.setPieces.map((p) => (
+                  <li key={p.id} className="flex items-center gap-2 px-5 py-2.5">
+                    <span className="w-28 shrink-0 text-meta text-ink-4">{profile.situations.label}</span>
+                    <Link to={path("situations", p.id)} className="min-w-0 flex-1 truncate text-body text-ink hover:underline">
+                      {p.name}
+                    </Link>
+                  </li>
+                ))}
+              </ul>
+            </Panel>
+          )}
 
           <Panel>
             <PanelHead title="Imagens" hint="montagem, prancheta, quadro" />

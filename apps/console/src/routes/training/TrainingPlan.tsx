@@ -1,14 +1,15 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { createContext, useContext, useEffect, useMemo, useRef, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import { PageHeader } from "@/components/Shell";
 import { Dialog, DialogField, dialogInputClass } from "@/components/Dialog";
 import { FieldView, THUMB_RATIO } from "@/components/FieldEditor";
 import { Empty, Loading, Panel, PanelHead, Pill, cx } from "@/components/primitives";
 import { Check, ChevronDown, ChevronRight, Clock, Copy, DragHandle, Download, Plus, Search, Star, Trash2, TriangleAlert, Whistle, X } from "@/lib/icons";
+import { teamById } from "@/lib/api";
 import { can } from "@/lib/permissions";
 import { longDate, time } from "@/lib/format";
+import { categoriesFor, exercisePath } from "@/lib/sports";
 import {
-  OBJECTIVE_CATEGORIES,
   SESSION_TYPES,
   applyTemplate,
   deleteTemplate,
@@ -21,11 +22,26 @@ import {
   savePlan,
   sessionLoad,
   type ExerciseSummary,
+  type ObjectiveCategory,
   type PlanBlock,
   type SessionTemplateRow,
   type SessionPlan,
 } from "@/lib/training";
 import { useSession } from "@/session";
+
+/**
+ * O vocabulário do plano — as categorias de objectivo da modalidade da equipa
+ * e a modalidade em si, para os blocos e os selectores lá dentro.
+ *
+ * Um plano do Sub-14 de basquetebol oferece "Tomada de decisão" e não
+ * "Bolas paradas"; a ficha do exercício abre-se na área técnica certa. Vai por
+ * contexto e não por props porque atravessa três níveis de componentes que
+ * não têm mais nada a ver com isto.
+ */
+const PlanVocab = createContext<{ categories: ObjectiveCategory[]; sportId: string | null }>({
+  categories: categoriesFor(null),
+  sportId: null,
+});
 
 /**
  * O plano de uma sessão.
@@ -297,9 +313,13 @@ export default function TrainingPlan() {
   const load = sessionLoad(plan.blocks, plan.intensity);
   const byCat = minutesByCategory(plan.blocks);
   const past = end < new Date();
-  const allObjectiveValues = OBJECTIVE_CATEGORIES.flatMap((c) => [c.label, ...c.subs]);
+  // A modalidade é a da equipa do treino — é ela que dá o vocabulário.
+  const sportId = teamById(plan.teamId)?.sportId ?? null;
+  const categories = categoriesFor(sportId);
+  const allObjectiveValues = categories.flatMap((c) => [c.label, ...c.subs]);
 
   return (
+    <PlanVocab.Provider value={{ categories, sportId }}>
     <>
       <PageHeader
         eyebrow="Plano de treino"
@@ -382,7 +402,7 @@ export default function TrainingPlan() {
                   disabled={!editable}
                 >
                   <option value="">Sem objetivo definido</option>
-                  {OBJECTIVE_CATEGORIES.map((c) => (
+                  {categories.map((c) => (
                     <optgroup key={c.key} label={c.label}>
                       <option value={c.label}>{c.label} (geral)</option>
                       {c.subs.map((s) => (
@@ -598,6 +618,7 @@ export default function TrainingPlan() {
 
       {picking !== null && (
         <ExercisePicker
+          sportId={sportId}
           toBlock={typeof picking === "number" ? plan.blocks[picking]?.name || `Bloco ${picking + 1}` : undefined}
           onClose={() => setPicking(null)}
           onPick={(e) => {
@@ -669,6 +690,7 @@ export default function TrainingPlan() {
         />
       )}
     </>
+    </PlanVocab.Provider>
   );
 }
 
@@ -705,7 +727,8 @@ function BlockRow({
   onDragMove: (e: React.PointerEvent) => void;
   onDragEnd: () => void;
 }) {
-  const cat = OBJECTIVE_CATEGORIES.find((c) => c.label === block.category);
+  const { categories, sportId } = useContext(PlanVocab);
+  const cat = categories.find((c) => c.label === block.category);
 
   return (
     // `data-block` é o que o arrasto lê para saber onde larga — ver `onDragMove`.
@@ -754,7 +777,7 @@ function BlockRow({
         </div>
         {block.exerciseName && (
           <Link
-            to={`/exercicios/${block.exerciseId}`}
+            to={exercisePath(sportId, block.exerciseId ?? "")}
             onClick={(e) => e.stopPropagation()}
             className="hidden shrink-0 items-center gap-1.5 text-meta text-signal-ink hover:underline sm:inline-flex"
           >
@@ -787,7 +810,7 @@ function BlockRow({
               {block.exerciseId ? (
                 <>
                   <div className="truncate text-body font-medium text-ink">{block.exerciseName ?? "Exercício da biblioteca"}</div>
-                  <Link to={`/exercicios/${block.exerciseId}`} target="_blank" className="text-meta text-signal-ink hover:underline">
+                  <Link to={exercisePath(sportId, block.exerciseId)} target="_blank" className="text-meta text-signal-ink hover:underline">
                     Abrir ficha do exercício
                   </Link>
                 </>
@@ -858,7 +881,7 @@ function BlockRow({
                 disabled={!editable}
               >
                 <option value="">Sem objetivo</option>
-                {OBJECTIVE_CATEGORIES.map((c) => (
+                {categories.map((c) => (
                   <optgroup key={c.key} label={c.label}>
                     <option value={`${c.label}::`}>{c.label} (geral)</option>
                     {c.subs.map((s) => (
@@ -924,18 +947,21 @@ function ExercisePicker({
   onClose,
   onPick,
   toBlock,
+  sportId,
 }: {
   onClose: () => void;
   onPick: (e: ExerciseSummary) => void;
   /** O bloco que o vai receber, quando não é um bloco novo. */
   toBlock?: string;
+  /** A modalidade do treino — só a biblioteca dela faz sentido aqui. */
+  sportId?: string | null;
 }) {
   const [all, setAll] = useState<ExerciseSummary[] | null>(null);
   const [q, setQ] = useState("");
   const [tab, setTab] = useState<"fav" | "mine" | "all">("fav");
 
   useEffect(() => {
-    listExercises()
+    listExercises(sportId ?? undefined)
       .then((rows) => {
         setAll(rows);
         // Sem favoritos ainda, o separador certo é "Todos" — não uma lista vazia.
@@ -1078,6 +1104,7 @@ function ObjectiveChips({
   onChange: (v: string[]) => void;
   disabled?: boolean;
 }) {
+  const { categories } = useContext(PlanVocab);
   return (
     <div className="space-y-1.5">
       {values.length > 0 && (
@@ -1104,7 +1131,7 @@ function ObjectiveChips({
           }}
         >
           <option value="">Juntar objetivo…</option>
-          {OBJECTIVE_CATEGORIES.map((c) => (
+          {categories.map((c) => (
             <optgroup key={c.key} label={c.label}>
               {c.subs
                 .filter((s) => !values.includes(s))

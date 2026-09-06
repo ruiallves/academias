@@ -3,12 +3,12 @@ import { Link, useNavigate } from "react-router-dom";
 import { PageHeader } from "@/components/Shell";
 import { Empty, Loading, Metric, MetricRow, Panel, PanelHead, Pill, cx } from "@/components/primitives";
 import { ChevronLeft, ChevronRight, ClipboardCheck, Sparkle, Trophy } from "@/lib/icons";
-import { listSessions } from "@/lib/api";
+import { listSessions, teamById } from "@/lib/api";
 import { matches, today } from "@/lib/store";
 import { dayShort, relativeDays, time } from "@/lib/format";
 import { can } from "@/lib/permissions";
+import { categoriesFor } from "@/lib/sports";
 import {
-  OBJECTIVE_CATEGORIES,
   categoryByLabel,
   listPlans,
   minutesByCategory,
@@ -98,7 +98,19 @@ export default function Trainings() {
   const alerts = useMemo(() => {
     const out: string[] = [];
     if (week.planned >= 2) {
-      const zero = OBJECTIVE_CATEGORIES.filter(
+      /*
+       * As categorias são as da modalidade que mais treina esta semana — um
+       * clube de basquetebol não leva um aviso sobre "bolas paradas". Com
+       * várias modalidades na mesma semana ganha a que tem mais treinos; o
+       * aviso é uma sugestão, não uma auditoria.
+       */
+      const porModalidade = new Map<string | null, number>();
+      for (const s of weekSessions) {
+        const sportId = teamById(s.teamId)?.sportId ?? null;
+        porModalidade.set(sportId, (porModalidade.get(sportId) ?? 0) + 1);
+      }
+      const dominante = [...porModalidade.entries()].sort((a, b) => b[1] - a[1])[0]?.[0] ?? null;
+      const zero = categoriesFor(dominante).filter(
         (c) => c.key !== "bp" && !week.byCategory.some((b) => b.label === c.label && b.minutes > 0),
       );
       if (zero.length > 0 && zero.length <= 3) {
@@ -107,7 +119,7 @@ export default function Trainings() {
       if (week.score >= 80) out.push("A carga média da semana está muito alta — vale a pena rever a véspera de jogo.");
     }
     return out;
-  }, [week]);
+  }, [week, weekSessions]);
 
   /*
    * "A planear" é uma lista de trabalho — só o que é **meu** entra nela.

@@ -43,10 +43,8 @@ import ScoutingObservations from "@/routes/scouting/Observations";
 import ScoutingOverviewHome from "@/routes/scouting/Overview";
 import Trainings from "@/routes/training/Trainings";
 import TrainingPlan from "@/routes/training/TrainingPlan";
-import Exercises from "@/routes/training/Exercises";
-import ExerciseDetail from "@/routes/training/ExerciseDetail";
-import GameModels, { GameModelDetail } from "@/routes/training/GameModels";
-import SetPieces, { SetPieceDetail } from "@/routes/training/SetPieces";
+import SportArea, { SportHome, SportModule, SportModuleDetail } from "@/routes/training/SportArea";
+import LegacyTechnical from "@/routes/training/LegacyTechnical";
 import AiOverview from "@/routes/ai/Overview";
 import AiAnalyses from "@/routes/ai/Analyses";
 import NewAiAnalysis from "@/routes/ai/NewAnalysis";
@@ -110,14 +108,25 @@ export default function App() {
         */}
         <Route path="treinos" element={<Allow p="training:read"><Trainings /></Allow>} />
         <Route path="treinos/:id" element={<Allow p="training:read"><TrainingPlan /></Allow>} />
-        <Route path="exercicios" element={<Allow p="training:read"><Exercises /></Allow>} />
-        {/* "novo" antes de ":id", senão o router lia "novo" como um id. */}
-        <Route path="exercicios/novo" element={<Allow p="training:write"><ExerciseDetail /></Allow>} />
-        <Route path="exercicios/:id" element={<Allow p="training:read"><ExerciseDetail /></Allow>} />
-        <Route path="modelos-jogo" element={<Allow p="training:read"><GameModels /></Allow>} />
-        <Route path="modelos-jogo/:id" element={<Allow p="training:read"><GameModelDetail /></Allow>} />
-        <Route path="bolas-paradas" element={<Allow p="training:read"><SetPieces /></Allow>} />
-        <Route path="bolas-paradas/:id" element={<Allow p="training:read"><SetPieceDetail /></Allow>} />
+        {/*
+          A Área técnica de cada modalidade: `/modalidades/:sportId` é a entrada
+          (os três cartões), e os módulos — exercícios, modelos ou sistemas de
+          jogo, bolas paradas ou situações especiais — vivem por baixo com o
+          caminho que o perfil da modalidade lhes dá. Ver `SportArea`.
+        */}
+        <Route path="modalidades/:sportId" element={<Allow p="training:read"><SportArea /></Allow>}>
+          <Route index element={<SportHome />} />
+          <Route path=":module" element={<SportModule />} />
+          <Route path=":module/:id" element={<SportModuleDetail />} />
+        </Route>
+        {/* Os caminhos antigos, de quando estes eram menus soltos — ver `LegacyTechnical`. */}
+        <Route path="modalidades" element={<Allow p="training:read"><LegacyTechnical /></Allow>} />
+        <Route path="exercicios" element={<Allow p="training:read"><LegacyTechnical module="exercises" /></Allow>} />
+        <Route path="exercicios/:id" element={<Allow p="training:read"><LegacyTechnical module="exercises" /></Allow>} />
+        <Route path="modelos-jogo" element={<Allow p="training:read"><LegacyTechnical module="playbook" /></Allow>} />
+        <Route path="modelos-jogo/:id" element={<Allow p="training:read"><LegacyTechnical module="playbook" /></Allow>} />
+        <Route path="bolas-paradas" element={<Allow p="training:read"><LegacyTechnical module="situations" /></Allow>} />
+        <Route path="bolas-paradas/:id" element={<Allow p="training:read"><LegacyTechnical module="situations" /></Allow>} />
         <Route path="jogos" element={<Allow p="calendar:read"><Matches /></Allow>} />
         <Route path="jogos/:id" element={<Allow p="calendar:read"><MatchDetail /></Allow>} />
 

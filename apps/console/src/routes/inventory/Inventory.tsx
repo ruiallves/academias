@@ -98,17 +98,28 @@ export default function Inventory() {
         </Empty>
       ) : (
         <>
+          {/*
+            O stock baixo à cabeça: das quatro, é a única que pede **acção** —
+            as outras três descrevem o que o clube tem. Vinha em último, no
+            fim de uma fila de números tranquilos, e é a que faz alguém sair
+            desta página para ir encomendar.
+
+            "Atribuídas" saiu. Era o complemento aritmético de "Disponíveis"
+            sobre "Unidades em stock" — as três juntas diziam a mesma coisa
+            duas vezes, e a que interessa é quanto há para entregar. Quem
+            precisa de saber o que está com quem tem as entregas, que dizem
+            **com quem**, e não só quantas.
+          */}
           <MetricRow>
-            <Metric label="Artigos" value={String(overview.artigos)} icon={Boxes} />
-            <Metric label="Unidades em stock" value={fmt(overview.unidades)} note="o que o clube tem" />
-            <Metric label="Disponíveis" value={fmt(overview.disponiveis)} note="prontas a entregar" />
-            <Metric label="Atribuídas" value={fmt(overview.atribuidas)} note="com atletas" />
             <Metric
               label="Stock baixo"
               value={String(overview.stockBaixo)}
               note={overview.stockBaixo ? "tamanhos a repor" : "nada por repor"}
               icon={overview.stockBaixo ? TriangleAlert : undefined}
             />
+            <Metric label="Artigos" value={String(overview.artigos)} icon={Boxes} />
+            <Metric label="Unidades em stock" value={fmt(overview.unidades)} note="o que o clube tem" />
+            <Metric label="Disponíveis" value={fmt(overview.disponiveis)} note="prontas a entregar" />
           </MetricRow>
 
           <div className="mt-3 grid gap-3 xl:grid-cols-2">

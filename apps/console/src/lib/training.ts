@@ -173,9 +173,9 @@ export function minutesByCategory(
  * foi: cada exercício, esquema ou modelo diz em que jogo vive, e a mesma
  * biblioteca serve o clube inteiro sem um "modo" global a decidir por todos.
  */
-export type GameFormat = "f11" | "f9" | "f7" | "f5" | "futsal";
+export type GameFormat = "f11" | "f9" | "f7" | "f5" | "futsal" | "basket";
 
-export const GAME_FORMATS: GameFormat[] = ["f11", "f9", "f7", "f5", "futsal"];
+export const GAME_FORMATS: GameFormat[] = ["f11", "f9", "f7", "f5", "futsal", "basket"];
 
 export const FORMAT_LABEL: Record<GameFormat, string> = {
   f11: "Futebol 11",
@@ -183,7 +183,38 @@ export const FORMAT_LABEL: Record<GameFormat, string> = {
   f7: "Futebol 7",
   f5: "Futebol 5",
   futsal: "Futsal",
+  basket: "Basquetebol",
 };
+
+/**
+ * A disciplina de cada terreno — o que liga um desenho a uma modalidade.
+ *
+ * É por aqui que um exercício antigo, sem `sportId`, se sabe de que modalidade
+ * é: um desenho em `futsal-half` é de futsal, um em `f7` é de futebol. E é por
+ * aqui que a Área técnica de cada modalidade limita o seletor de terreno do
+ * editor ao que faz sentido nela — um treinador de basquetebol não tem de ver
+ * "Futebol 9" na lista.
+ */
+export type Discipline = "football" | "futsal" | "basketball";
+
+export const FORMAT_DISCIPLINE: Record<GameFormat, Discipline> = {
+  f11: "football",
+  f9: "football",
+  f7: "football",
+  f5: "football",
+  futsal: "futsal",
+  basket: "basketball",
+};
+
+export function formatsOf(discipline: Discipline): GameFormat[] {
+  return GAME_FORMATS.filter((f) => FORMAT_DISCIPLINE[f] === discipline);
+}
+
+/** A disciplina de um desenho, ou nula quando não há desenho. */
+export function diagramDiscipline(diagram: unknown): Discipline | null {
+  const d = asDiagram(diagram);
+  return d ? FORMAT_DISCIPLINE[formatOf(d.field)] : null;
+}
 
 /**
  * As medidas de cada terreno, em metros — o referencial das coordenadas.
@@ -193,6 +224,8 @@ export const FORMAT_LABEL: Record<GameFormat, string> = {
  * retangulares — é a diferença que mais salta à vista num desenho.
  */
 export type PitchSpec = {
+  /** O que se desenha: um campo com balizas, ou um campo com cestos. */
+  kind: "football" | "basketball";
   w: number;
   h: number;
   /** Raio do círculo central. */
@@ -211,16 +244,61 @@ export type PitchSpec = {
   goal: number;
   /** Pavilhão em vez de relva: muda o piso e a espessura das linhas. */
   indoor: boolean;
+  /** As marcações de basquetebol — só quando `kind` é `basketball`. */
+  court?: CourtSpec;
+};
+
+/**
+ * As medidas de um campo de basquetebol, em metros (FIBA).
+ *
+ * O cesto não está na linha de fundo: o centro do aro fica a 1,575 m dela, e é
+ * daí que se mede tudo o resto — a linha de três, a área restritiva, o
+ * semicírculo de não-carga. Por isso `basket` é a medida-mãe.
+ */
+export type CourtSpec = {
+  /** Centro do aro à linha de fundo. */
+  basket: number;
+  /** Raio do aro. */
+  ring: number;
+  /** Tabela: a que distância da linha de fundo e com que largura. */
+  board: { at: number; width: number };
+  /** Linha de três: raio a partir do cesto, e a distância dos troços rectos à linha lateral. */
+  three: { radius: number; side: number };
+  /** Garrafão: largura e profundidade (da linha de fundo à linha de lance livre). */
+  key: { width: number; depth: number };
+  /** Raio do semicírculo de lance livre. */
+  freeThrow: number;
+  /** Raio do semicírculo de não-carga, e o comprimento dos troços rectos até à linha de fundo. */
+  noCharge: { radius: number; straight: number };
 };
 
 export const FORMAT_PITCH: Record<GameFormat, PitchSpec> = {
-  f11: { w: 105, h: 68, circle: 9.15, box: { depth: 16.5, width: 40.32 }, goalArea: { depth: 5.5, width: 18.32 }, arc: null, penalty: 11, secondPenalty: null, goal: 7.32, indoor: false },
-  f9: { w: 72, h: 50, circle: 7, box: { depth: 13, width: 26 }, goalArea: { depth: 4, width: 12 }, arc: null, penalty: 9, secondPenalty: null, goal: 6, indoor: false },
-  f7: { w: 55, h: 37, circle: 6, box: { depth: 10, width: 20 }, goalArea: null, arc: null, penalty: 8, secondPenalty: null, goal: 6, indoor: false },
+  f11: { kind: "football", w: 105, h: 68, circle: 9.15, box: { depth: 16.5, width: 40.32 }, goalArea: { depth: 5.5, width: 18.32 }, arc: null, penalty: 11, secondPenalty: null, goal: 7.32, indoor: false },
+  f9: { kind: "football", w: 72, h: 50, circle: 7, box: { depth: 13, width: 26 }, goalArea: { depth: 4, width: 12 }, arc: null, penalty: 9, secondPenalty: null, goal: 6, indoor: false },
+  f7: { kind: "football", w: 55, h: 37, circle: 6, box: { depth: 10, width: 20 }, goalArea: null, arc: null, penalty: 8, secondPenalty: null, goal: 6, indoor: false },
   // A área do futebol 5 tem de conter a marca de penálti — com 6 m de
   // profundidade e a marca aos 7, a marca caía fora da própria área.
-  f5: { w: 42, h: 25, circle: 4, box: { depth: 8, width: 16 }, goalArea: null, arc: null, penalty: 6, secondPenalty: null, goal: 3, indoor: false },
-  futsal: { w: 40, h: 20, circle: 3, box: null, goalArea: null, arc: 6, penalty: 6, secondPenalty: 10, goal: 3, indoor: true },
+  f5: { kind: "football", w: 42, h: 25, circle: 4, box: { depth: 8, width: 16 }, goalArea: null, arc: null, penalty: 6, secondPenalty: null, goal: 3, indoor: false },
+  futsal: { kind: "football", w: 40, h: 20, circle: 3, box: null, goalArea: null, arc: 6, penalty: 6, secondPenalty: 10, goal: 3, indoor: true },
+  /*
+   * O campo FIBA: 28×15, cesto a 1,575 m da linha de fundo, três pontos a
+   * 6,75 m do cesto com os troços rectos a 0,90 m da lateral, garrafão de
+   * 4,90×5,80, semicírculo de lance livre de 1,80 e o de não-carga de 1,25.
+   * Os campos que não servem — `box`, `goal`, `penalty` — ficam a zero e
+   * nulos: quem desenha olha para `court`.
+   */
+  basket: {
+    kind: "basketball", w: 28, h: 15, circle: 1.8, box: null, goalArea: null, arc: null, penalty: 0, secondPenalty: null, goal: 0, indoor: true,
+    court: {
+      basket: 1.575,
+      ring: 0.225,
+      board: { at: 1.2, width: 1.8 },
+      three: { radius: 6.75, side: 0.9 },
+      key: { width: 4.9, depth: 5.8 },
+      freeThrow: 1.8,
+      noCharge: { radius: 1.25, straight: 0.375 },
+    },
+  },
 };
 
 /**
@@ -283,6 +361,9 @@ export function teamFormat(teamId: string | null | undefined): GameFormat {
   const sport = team ? storeAcademy.sports.find((s) => s.id === team.sportId) : undefined;
   const name = sport?.name ?? "";
 
+  // A disciplina da modalidade, quando está configurada, ganha ao nome.
+  if (sport?.code === "basketball") return "basket";
+  if (sport?.code === "futsal") return "futsal";
   if (isFutsalSportName(name)) return "futsal";
   // "Futebol 7", "Futebol de 9" — o número na modalidade é a variante.
   const declared = /\b(?:de\s*)?(5|7|9|11)\b/.exec(name);
@@ -303,10 +384,14 @@ export function teamFormat(teamId: string | null | undefined): GameFormat {
  * tinha de trocar o terreno de cada vez; assim começa onde trabalha. Empate
  * resolve-se pelo campo maior, que é o mais fácil de encolher a seguir.
  */
-export function clubDefaultFormat(): GameFormat {
+export function clubDefaultFormat(sportId?: string): GameFormat {
+  const teams = sportId ? storeTeams.filter((t) => t.sportId === sportId) : storeTeams;
   const counts = new Map<GameFormat, number>();
-  for (const t of storeTeams) counts.set(teamFormat(t.id), (counts.get(teamFormat(t.id)) ?? 0) + 1);
-  let best: GameFormat = "f11";
+  for (const t of teams) counts.set(teamFormat(t.id), (counts.get(teamFormat(t.id)) ?? 0) + 1);
+  // Sem equipas nessa modalidade, o terreno natural dela — um clube de
+  // basquetebol sem equipas ainda não começa num campo de onze.
+  const sport = sportId ? storeAcademy.sports.find((s) => s.id === sportId) : undefined;
+  let best: GameFormat = sport?.code === "basketball" ? "basket" : sport?.code === "futsal" ? "futsal" : "f11";
   let most = 0;
   for (const f of GAME_FORMATS) {
     const n = counts.get(f) ?? 0;
@@ -399,6 +484,39 @@ export const ITEM_LABEL: Record<ItemKind, string> = {
   zone: "Zona",
   text: "Texto",
 };
+
+export const ALL_ITEM_KINDS: ItemKind[] = ["player", "opponent", "gk", "playerBall", "ball", "cone", "pole", "miniGoal", "goal", "barrier", "ladder", "dummy", "zone", "text"];
+export const ALL_ARROW_KINDS: ArrowKind[] = ["pass", "run", "dribble", "shot", "press", "cross"];
+
+/**
+ * O que o editor oferece numa modalidade.
+ *
+ * O quadro de um treinador de basquetebol não tem guarda-redes, balizas nem
+ * cruzamentos — e chama "lançamento" ao que o futebol chama "remate". O editor
+ * é o mesmo; o vocabulário vem do perfil da modalidade (`lib/sports.ts`). Sem
+ * perfil, oferece tudo com os nomes de sempre.
+ */
+export type EditorVocabulary = {
+  formats: GameFormat[];
+  items: ItemKind[];
+  arrows: ArrowKind[];
+  labels: Partial<Record<ItemKind | ArrowKind, string>>;
+};
+
+export const DEFAULT_VOCABULARY: EditorVocabulary = {
+  formats: GAME_FORMATS,
+  items: ALL_ITEM_KINDS,
+  arrows: ALL_ARROW_KINDS,
+  labels: {},
+};
+
+export function itemLabel(kind: ItemKind, vocab: EditorVocabulary = DEFAULT_VOCABULARY): string {
+  return vocab.labels[kind] ?? ITEM_LABEL[kind];
+}
+
+export function arrowLabel(kind: ArrowKind, vocab: EditorVocabulary = DEFAULT_VOCABULARY): string {
+  return vocab.labels[kind] ?? ARROW_LABEL[kind];
+}
 
 export function emptyDiagram(field: FieldKind = "f11"): Diagram {
   return { field, frames: [{ id: newId(), durationMs: 1200, items: [], arrows: [] }] };
@@ -496,7 +614,7 @@ export function asLineupData(value: unknown): LineupData {
   return { pitch: "f11", slots: [] };
 }
 
-type SystemSpec = { label: string; slots: [string, number, number][] };
+export type SystemSpec = { label: string; slots: [string, number, number][] };
 
 /**
  * Sistemas de partida — pontos de partida, nunca limites: o treinador arrasta
@@ -723,12 +841,35 @@ export const F5_SYSTEMS: SystemSpec[] = [
   { label: "4-0 (rotação)", slots: [["GR", 3.5, 12.5], ["U", 20, 4.5], ["U", 18, 10], ["U", 18, 15], ["U", 20, 20.5]] },
 ];
 
+/**
+ * Os sistemas do basquetebol — cinco em meio campo, a atacar o cesto da direita
+ * (a 26,4 m; o campo tem 28). Rótulos pelos números das posições, que é como um
+ * treinador de basquetebol fala: o 1 é o base, o 5 o poste.
+ *
+ * Os de ataque são estruturas de partida (o espaçamento antes de a jogada
+ * começar); os de defesa são as zonas, com a linha da frente à esquerda. A
+ * individual não tem posições próprias — marca-se quem está à frente — e por
+ * isso parte de uma zona 2-3 aberta, que é a forma mais próxima.
+ */
+export const BASKET_SYSTEMS: SystemSpec[] = [
+  { label: "5-out", slots: [["1", 17.5, 7.5], ["2", 22.0, 2.0], ["3", 22.0, 13.0], ["4", 26.4, 0.9], ["5", 26.4, 14.1]] },
+  { label: "4-out 1-in", slots: [["1", 17.5, 7.5], ["2", 22.0, 2.2], ["3", 22.0, 12.8], ["4", 26.3, 1.4], ["5", 25.0, 9.9]] },
+  { label: "3-out 2-in", slots: [["1", 17.5, 7.5], ["2", 21.5, 2.2], ["3", 21.5, 12.8], ["4", 25.2, 5.0], ["5", 25.2, 10.0]] },
+  { label: "Horns (1-4 alto)", slots: [["1", 16.5, 7.5], ["2", 26.4, 1.0], ["3", 26.4, 14.0], ["4", 21.6, 5.1], ["5", 21.6, 9.9]] },
+  { label: "1-3-1 (ataque)", slots: [["1", 16.5, 7.5], ["2", 21.0, 2.0], ["3", 21.0, 13.0], ["4", 21.8, 7.5], ["5", 26.0, 7.5]] },
+  { label: "Zona 2-3", slots: [["1", 21.0, 5.0], ["2", 21.0, 10.0], ["3", 24.8, 2.2], ["4", 25.5, 7.5], ["5", 24.8, 12.8]] },
+  { label: "Zona 3-2", slots: [["1", 20.6, 7.5], ["2", 21.4, 3.0], ["3", 21.4, 12.0], ["4", 25.2, 4.6], ["5", 25.2, 10.4]] },
+  { label: "Zona 1-3-1", slots: [["1", 19.5, 7.5], ["2", 22.8, 2.6], ["3", 22.8, 12.4], ["4", 22.6, 7.5], ["5", 26.0, 7.5]] },
+  { label: "Individual", slots: [["1", 19.5, 7.5], ["2", 22.5, 3.2], ["3", 22.5, 11.8], ["4", 25.4, 5.4], ["5", 25.4, 9.6]] },
+];
+
 const SYSTEMS_BY_FORMAT: Record<GameFormat, SystemSpec[]> = {
   f11: FOOTBALL_SYSTEMS,
   f9: F9_SYSTEMS,
   f7: F7_SYSTEMS,
   f5: F5_SYSTEMS,
   futsal: FUTSAL_SYSTEMS,
+  basket: BASKET_SYSTEMS,
 };
 
 export function systemsFor(pitch: LineupPitch): SystemSpec[] {
@@ -741,7 +882,10 @@ export function systemLineup(label: string, pitch: LineupPitch = "f11"): LineupS
   return sys.slots.map(([slot, x, y]) => ({ id: newId(), label: slot, x, y }));
 }
 
-/** As quatro secções escritas de um modelo de jogo. */
+/** Uma secção escrita de um modelo — o rótulo e os tópicos por baixo. */
+export type PrincipleSection = { key: string; label: string; topics: readonly string[] };
+
+/** As quatro secções escritas de um modelo de jogo (futebol). */
 export const PRINCIPLE_SECTIONS = [
   {
     key: "offensive",
@@ -791,6 +935,8 @@ export type ExerciseSummary = {
   complexity: number | null;
   visibility: Visibility;
   videoUrl: string | null;
+  /** A modalidade — nula só em conteúdo antigo por adoptar. */
+  sportId: string | null;
   thumbnail: unknown;
   frames: number;
   mine: boolean;
@@ -802,6 +948,9 @@ export type ExerciseSummary = {
 };
 
 export type ExerciseImage = { key: string; url: string };
+
+/** Uma referência curta a outro conteúdo técnico — o que chega para um link. */
+export type TechnicalRef = { id: string; name: string };
 
 export type ExerciseFull = Omit<ExerciseSummary, "thumbnail" | "frames" | "favorite" | "usageCount" | "lastUsedAt"> & {
   rules: string | null;
@@ -815,6 +964,8 @@ export type ExerciseFull = Omit<ExerciseSummary, "thumbnail" | "frames" | "favor
   /** Editar e apagar são portas diferentes: o que é do clube afina-se por
    * qualquer treinador, mas só a direção o tira da biblioteca. */
   deletable: boolean;
+  /** Onde este exercício entra — os sistemas e situações que o usam. */
+  usedIn?: { gameModels: TechnicalRef[]; setPieces: TechnicalRef[] };
 };
 
 /**
@@ -875,13 +1026,18 @@ export type PlanSummary = {
 export type GameModelRow = {
   id: string;
   name: string;
+  /** Ataque / defesa / transição, nas modalidades que o distinguem. */
+  kind: string | null;
   system: string | null;
   teamId: string | null;
   teamName: string | null;
+  sportId: string | null;
   visibility: Visibility;
   lineup: unknown;
   principles: unknown;
   notes: string | null;
+  /** Os exercícios com que se treina este sistema. */
+  exercises: TechnicalRef[];
   mine: boolean;
   editable: boolean;
   deletable: boolean;
@@ -896,8 +1052,13 @@ export type SetPieceRow = {
   description: string | null;
   teamId: string | null;
   teamName: string | null;
+  sportId: string | null;
+  /** O sistema de jogo de que esta situação parte. */
+  gameModelId: string | null;
+  gameModelName: string | null;
   visibility: Visibility;
   diagram: unknown;
+  exercises: TechnicalRef[];
   mine: boolean;
   editable: boolean;
   deletable: boolean;
@@ -905,11 +1066,57 @@ export type SetPieceRow = {
   updatedAt: string;
 };
 
+/**
+ * A entrada de uma modalidade: quanto há em cada módulo e os últimos nomes que
+ * lá entraram — o que diz que a biblioteca é do clube e está viva.
+ */
+export type ModuleSummary = { count: number; recent: string[] };
+
+export type TechnicalSummary = {
+  exercises: ModuleSummary;
+  gameModels: ModuleSummary;
+  setPieces: ModuleSummary;
+};
+
+const VAZIO: ModuleSummary = { count: 0, recent: [] };
+export const EMPTY_SUMMARY: TechnicalSummary = { exercises: VAZIO, gameModels: VAZIO, setPieces: VAZIO };
+
 /* -------------------------------------------------------------------------- */
 /* Chamadas                                                                    */
 /* -------------------------------------------------------------------------- */
 
-export const listExercises = () => apiGet<ExerciseSummary[]>("/api/training/exercises");
+/** A biblioteca — de uma modalidade quando se pede, do clube inteiro quando não. */
+export const listExercises = (sportId?: string) => apiGet<ExerciseSummary[]>("/api/training/exercises", { sport: sportId });
+/**
+ * O resumo da entrada de uma modalidade, **sempre na forma certa**.
+ *
+ * A resposta é normalizada aqui e não confiada tal como vem. Um servidor a
+ * responder noutra forma — durante um deploy, com a consola já recarregada e a
+ * API ainda a compilar — deitava a página abaixo com "cannot read properties of
+ * undefined", que é o pior desfecho possível para uma discrepância temporária:
+ * um ecrã em branco em vez de três zeros.
+ *
+ * A regra da casa para fronteiras de dados, a mesma de `asDiagram` e
+ * `asLineupData`: ler com tolerância, escrever com precisão.
+ */
+export const technicalSummary = async (sportId: string): Promise<TechnicalSummary> => {
+  const raw = await apiGet<Record<string, unknown>>("/api/training/summary", { sport: sportId });
+  return {
+    exercises: asModuleSummary(raw?.exercises),
+    gameModels: asModuleSummary(raw?.gameModels),
+    setPieces: asModuleSummary(raw?.setPieces),
+  };
+};
+
+function asModuleSummary(value: unknown): ModuleSummary {
+  // Já foi um número simples, antes de a entrada mostrar os nomes recentes.
+  if (typeof value === "number") return { count: value, recent: [] };
+  const v = (value ?? {}) as Partial<ModuleSummary>;
+  return {
+    count: typeof v.count === "number" ? v.count : 0,
+    recent: Array.isArray(v.recent) ? v.recent.filter((n): n is string => typeof n === "string") : [],
+  };
+}
 export const getExercise = (id: string) => apiGet<ExerciseFull>(`/api/training/exercises/${id}`);
 export const createExercise = (body: Partial<ExerciseFull>) =>
   apiPost<{ id: string }>("/api/training/exercises", body);
@@ -1010,14 +1217,14 @@ export const savePlan = (
   },
 ) => apiPut<{ ok: true }>(`/api/training/sessions/${sessionId}/plan`, body);
 
-export const listGameModels = () => apiGet<GameModelRow[]>("/api/training/game-models");
+export const listGameModels = (sportId?: string) => apiGet<GameModelRow[]>("/api/training/game-models", { sport: sportId });
 export const createGameModel = (body: Partial<GameModelRow>) =>
   apiPost<{ id: string }>("/api/training/game-models", body);
 export const updateGameModel = (id: string, body: Partial<GameModelRow>) =>
   apiPatch<{ ok: true }>(`/api/training/game-models/${id}`, body);
 export const deleteGameModel = (id: string) => apiDelete<{ ok: true }>(`/api/training/game-models/${id}`);
 
-export const listSetPieces = () => apiGet<SetPieceRow[]>("/api/training/set-pieces");
+export const listSetPieces = (sportId?: string) => apiGet<SetPieceRow[]>("/api/training/set-pieces", { sport: sportId });
 export const createSetPiece = (body: Partial<SetPieceRow>) =>
   apiPost<{ id: string }>("/api/training/set-pieces", body);
 export const updateSetPiece = (id: string, body: Partial<SetPieceRow>) =>

@@ -1,10 +1,9 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
-  ARROW_LABEL,
+  DEFAULT_VOCABULARY,
   FORMAT_LABEL,
   FORMAT_PITCH,
-  GAME_FORMATS,
-  ITEM_LABEL,
+  arrowLabel,
   asDiagram,
   emptyDiagram,
   fieldFor,
@@ -12,9 +11,11 @@ import {
   formatOf,
   isIndoorField,
   isHalfField,
+  itemLabel,
   newId,
   type ArrowKind,
   type Diagram,
+  type EditorVocabulary,
   type GameFormat,
   type PitchSpec,
   type DiagramArrow,
@@ -67,6 +68,16 @@ const PITCH = "#527a5e";
  */
 const FUTSAL_FLOOR = "#a87d4f";
 const FUTSAL_LINES = "rgba(255,255,255,0.85)";
+/*
+ * O campo de basquetebol é madeira clara — ácer, e não o carvalho escuro do
+ * pavilhão de futsal. A diferença é de propósito: num cartão pequeno, a cor do
+ * piso é o que diz "isto é basquetebol" antes de se ver um cesto.
+ */
+const BASKET_FLOOR = "#c9975c";
+const BASKET_KEY = "rgba(0,0,0,0.11)";
+/* O couro da bola e as costuras — a mesma laranja do aro, que é a do jogo. */
+const BASKET_BALL = "#e0762c";
+const BASKET_SEAM = "rgba(40,20,8,0.75)";
 const LINES = "rgba(255,255,255,0.75)";
 const US = "#1d3a5f";
 const THEM = "#f4f1ea";
@@ -102,21 +113,39 @@ export function baseView(field: FieldKind) {
 /**
  * A escala dos símbolos por terreno.
  *
- * As coordenadas são metros, e os campos vão de 40×20 (futsal) a 105×68: um
- * círculo de 1,9 m que fica bem no campo de onze tapa meia área num campo de
- * futebol 5. Os símbolos encolhem com o campo — as **posições** continuam em
- * metros verdadeiros, e as zonas mantêm as medidas reais.
+ * As coordenadas são metros, e os campos vão de 28×15 (basquetebol) a 105×68:
+ * um círculo de 1,9 m que fica bem no campo de onze tapa meia área num campo
+ * de futebol 5. Os símbolos encolhem com o campo — as **posições** continuam
+ * em metros verdadeiros, e as zonas mantêm as medidas reais.
  *
- * O piso de 0,45 existe porque abaixo dele um número dentro de um círculo
- * deixa de se ler, e um quadro tático que não se lê não serve para nada.
+ * ## O piso era 0,45, e partia os campos pequenos
+ *
+ * `w / 105` dá um símbolo que é sempre a mesma **fração da largura do campo**
+ * (3,6%), e por isso ocupa o mesmo espaço no ecrã em qualquer terreno: um
+ * campo mais pequeno é desenhado com mais pixéis por metro, e a proporção
+ * trata do resto sozinha.
+ *
+ * O piso de 0,45 quebrava exactamente isso. No futsal e no futebol 5 mordia
+ * pouco; no **basquetebol**, que tem 28 m de largura, empurrava o símbolo dos
+ * 3,6% para 6,1% da largura e para 11% da altura — jogadores do tamanho do
+ * garrafão, o dobro do que são num campo de onze.
+ *
+ * A razão que o piso invocava — "abaixo disto o número dentro do círculo deixa
+ * de se ler" — não se resolve inflacionando os campos pequenos, porque o
+ * problema aparece igual no campo de onze visto pequeno. Quem precisa de ver
+ * de perto tem o zoom, que é o instrumento certo e já existe. O piso fica em
+ * 0,25 só como salvaguarda para um terreno absurdamente pequeno que alguém
+ * venha a acrescentar.
  */
 export function itemScale(field: FieldKind): number {
-  return Math.max(0.45, fieldSize(field).w / 105);
+  return Math.max(0.25, fieldSize(field).w / 105);
 }
 
 /** A cor do piso — relva ou madeira. É o que preenche as barras de uma moldura
  *  de proporção fixa, para nenhuma miniatura ter cantos brancos. */
 export function pitchBackground(field: FieldKind): string {
+  const s = FORMAT_PITCH[formatOf(field)];
+  if (s.kind === "basketball") return BASKET_FLOOR;
   return isIndoorField(field) ? FUTSAL_FLOOR : PITCH;
 }
 
@@ -145,6 +174,14 @@ export const THUMB_RATIO = 4 / 3;
  * Exportado para os quadros que não são o editor — o sistema do modelo de jogo.
  */
 export function Pitch({ field }: { field: FieldKind }) {
+  const format = formatOf(field);
+  const s = FORMAT_PITCH[format];
+  // Um campo com cestos desenha-se de outra maneira — ver `Court`.
+  if (s.kind === "basketball" && s.court) return <Court field={field} />;
+  return <FootballPitch field={field} />;
+}
+
+function FootballPitch({ field }: { field: FieldKind }) {
   const format = formatOf(field);
   const s = FORMAT_PITCH[format];
   const half = isHalfField(field);
@@ -254,6 +291,86 @@ export function Pitch({ field }: { field: FieldKind }) {
 }
 
 /**
+ * O campo de basquetebol, derivado das medidas FIBA em `CourtSpec`.
+ *
+ * Tudo se mede a partir do **cesto**, que não está na linha de fundo: o aro
+ * fica a 1,575 m dela, e é dele que saem a linha de três (6,75 m de raio, com
+ * troços rectos a 0,90 m da lateral onde o arco já não cabe), o semicírculo
+ * de não-carga (1,25 m) e a tabela (1,20 m da linha). O garrafão é o
+ * retângulo pintado; o semicírculo de lance livre desenha-se só para fora
+ * dele, como a FIBA manda desde 2010.
+ *
+ * A nossa equipa ataca o cesto da direita; o meio campo mostra só esse.
+ */
+function Court({ field }: { field: FieldKind }) {
+  const s = FORMAT_PITCH[formatOf(field)];
+  const c = s.court!;
+  const half = isHalfField(field);
+  const v = baseView(field);
+  const ink = "rgba(255,255,255,0.92)";
+  const lw = Math.max(0.12, 0.35 * (s.w / 105));
+  const l = { stroke: ink, strokeWidth: lw, fill: "none" } as const;
+  const cy = s.h / 2;
+  const mid = s.w / 2;
+
+  /** Um cesto e as marcações dele — à direita (`dir` +1) ou à esquerda (−1). */
+  const endAt = (dir: 1 | -1) => {
+    const x0 = dir === 1 ? s.w : 0;
+    /** Uma distância desde a linha de fundo, no sentido do meio campo. */
+    const from = (d: number) => x0 - dir * d;
+    const bx = from(c.basket);
+    const keyX = dir === 1 ? s.w - c.key.depth : 0;
+    const ftx = from(c.key.depth);
+    // Onde o arco dos três pontos encontra o troço recto: à altura `side` da
+    // lateral, a distância ao cesto é `dy`, e o arco fecha a `dx` dele.
+    const dy = cy - c.three.side;
+    const dx = Math.sqrt(Math.max(0, c.three.radius ** 2 - dy ** 2));
+    const tx = bx - dir * dx;
+    const sweep = dir === 1 ? 0 : 1;
+    const R = c.three.radius;
+    const nc = c.noCharge;
+
+    return (
+      <g>
+        {/* Garrafão pintado */}
+        <rect x={keyX} y={cy - c.key.width / 2} width={c.key.depth} height={c.key.width} {...l} fill={BASKET_KEY} />
+        {/* Semicírculo de lance livre, para fora do garrafão */}
+        <path d={`M ${ftx} ${cy - c.freeThrow} A ${c.freeThrow} ${c.freeThrow} 0 0 ${sweep} ${ftx} ${cy + c.freeThrow}`} {...l} />
+        {/* Linha de três: dois troços rectos e o arco */}
+        <line x1={x0} y1={c.three.side} x2={tx} y2={c.three.side} {...l} />
+        <line x1={x0} y1={s.h - c.three.side} x2={tx} y2={s.h - c.three.side} {...l} />
+        <path d={`M ${tx} ${c.three.side} A ${R} ${R} 0 0 ${sweep} ${tx} ${s.h - c.three.side}`} {...l} />
+        {/* Semicírculo de não-carga, com os troços rectos até à linha de fundo */}
+        <path
+          d={`M ${bx + dir * nc.straight} ${cy - nc.radius} L ${bx} ${cy - nc.radius} A ${nc.radius} ${nc.radius} 0 0 ${sweep} ${bx} ${cy + nc.radius} L ${bx + dir * nc.straight} ${cy + nc.radius}`}
+          {...l}
+        />
+        {/* Tabela e aro */}
+        <line x1={from(c.board.at)} y1={cy - c.board.width / 2} x2={from(c.board.at)} y2={cy + c.board.width / 2} stroke={ink} strokeWidth={lw * 1.8} />
+        <circle cx={bx} cy={cy} r={c.ring} stroke="#e8632b" strokeWidth={lw * 0.9} fill="none" />
+      </g>
+    );
+  };
+
+  return (
+    <g>
+      <rect x={v.x} y={v.y} width={v.w} height={v.h} fill={BASKET_FLOOR} />
+      {/* As tábuas correm ao comprido do campo — mal visíveis, como no futsal. */}
+      {Array.from({ length: Math.ceil(v.h / 1.2) }, (_, i) => v.y + 1.2 * (i + 1)).map((y) => (
+        <line key={y} x1={v.x} y1={y} x2={v.x + v.w} y2={y} stroke="rgba(0,0,0,0.045)" strokeWidth={lw * 0.6} />
+      ))}
+
+      <rect x={0} y={0} width={s.w} height={s.h} {...l} />
+      <line x1={mid} y1={0} x2={mid} y2={s.h} {...l} />
+      <circle cx={mid} cy={cy} r={s.circle} {...l} />
+
+      {!half && endAt(-1)}
+      {endAt(1)}
+    </g>
+  );
+}
+
+/**
  * O arco à boca da área — a parte do círculo de penálti que fica de fora.
  *
  * Só existe quando o círculo centrado na marca ultrapassa a linha da área; num
@@ -276,8 +393,51 @@ function arcOutsideBox(s: PitchSpec, dir: 1 | -1): string {
 /* Elementos                                                                   */
 /* -------------------------------------------------------------------------- */
 
-function ItemShape({ item, selected, k = 1 }: { item: DiagramItem; selected?: boolean; k?: number }) {
+/**
+ * A bola, conforme o jogo.
+ *
+ * Era sempre a esfera branca de contorno escuro — a bola de futebol — e num
+ * campo de basquetebol lia-se como um cone visto de cima. A bola de basquetebol
+ * é laranja e tem costuras, e é por elas que se reconhece de relance; a cor é a
+ * mesma do aro, para o desenho ter um vocabulário só.
+ *
+ * As costuras são as quatro do desenho real: o meridiano, o equador e os dois
+ * arcos laterais. A tamanhos pequenos fundem-se numa textura, que é
+ * exactamente o que uma bola de basquetebol parece de longe.
+ */
+function Ball({ r, selected, basket }: { r: number; selected?: boolean; basket: boolean }) {
+  const contorno = selected ? "#ffd65a" : basket ? "rgba(40,20,8,0.85)" : "#1f2937";
+  const traco = (selected ? 0.4 : 0.2) * (r / 0.9);
+
+  if (!basket) return <circle r={r} fill="#fff" stroke={contorno} strokeWidth={traco} />;
+
+  const costura = { stroke: BASKET_SEAM, strokeWidth: traco * 0.9, fill: "none" } as const;
+  return (
+    <g>
+      <circle r={r} fill={BASKET_BALL} stroke={contorno} strokeWidth={traco} />
+      <line x1={0} y1={-r} x2={0} y2={r} {...costura} />
+      <line x1={-r} y1={0} x2={r} y2={0} {...costura} />
+      {/* Os dois arcos: curvam para fora, como as linhas laterais do couro. */}
+      <path d={`M ${-r * 0.72} ${-r * 0.7} Q 0 0 ${-r * 0.72} ${r * 0.7}`} {...costura} />
+      <path d={`M ${r * 0.72} ${-r * 0.7} Q 0 0 ${r * 0.72} ${r * 0.7}`} {...costura} />
+    </g>
+  );
+}
+
+function ItemShape({
+  item,
+  selected,
+  k = 1,
+  /** O terreno onde isto está desenhado — é o que decide a bola. */
+  field = "f11",
+}: {
+  item: DiagramItem;
+  selected?: boolean;
+  k?: number;
+  field?: FieldKind;
+}) {
   const label = item.label ?? "";
+  const basket = FORMAT_PITCH[formatOf(field)].kind === "basketball";
 
   switch (item.kind) {
     case "player":
@@ -296,12 +456,18 @@ function ItemShape({ item, selected, k = 1 }: { item: DiagramItem; selected?: bo
               {label}
             </text>
           )}
-          {item.kind === "playerBall" && <circle cx={1.9} cy={1.6} r={0.8} fill="#fff" stroke="#1f2937" strokeWidth={0.18} />}
+          {item.kind === "playerBall" && (
+            /* Dentro de um `scale(k)`, por isso a bolinha vai em medidas de
+               símbolo (não escaladas outra vez) — ver o `<g>` acima. */
+            <g transform="translate(1.9 1.6)">
+              <Ball r={0.8} basket={basket} />
+            </g>
+          )}
         </g>
       );
     }
     case "ball":
-      return <circle r={0.9 * k} fill="#fff" stroke={selected ? "#ffd65a" : "#1f2937"} strokeWidth={(selected ? 0.4 : 0.2) * k} />;
+      return <Ball r={0.9 * k} selected={selected} basket={basket} />;
     case "cone":
       return (
         <g transform={`scale(${k})`}>
@@ -496,7 +662,7 @@ export function FieldView({
       ))}
       {f.items.map((i) => (
         <g key={i.id} transform={`translate(${i.x} ${i.y}) rotate(${i.rot ?? 0})`}>
-          <ItemShape item={i} k={k} />
+          <ItemShape item={i} k={k} field={d.field} />
         </g>
       ))}
     </svg>
@@ -604,13 +770,15 @@ export function DiagramPlayer({ diagram, className }: { diagram: unknown; classN
           .filter((i) => !(playing && i.kind === "ball"))
           .map((i) => (
             <g key={i.id} transform={`translate(${i.x} ${i.y}) rotate(${i.rot ?? 0})`}>
-              <ItemShape item={playing && i.kind === "playerBall" ? { ...i, kind: "player" } : i} k={k} />
+              <ItemShape item={playing && i.kind === "playerBall" ? { ...i, kind: "player" } : i} k={k} field={d.field} />
             </g>
           ))}
         {/* Durante a reprodução, as bolas estáticas escondem-se e estas viajam. */}
         {playing &&
           movingBalls.map((b, i) => (
-            <circle key={i} cx={b.x} cy={b.y} r={0.9 * k} fill="#fff" stroke="#1f2937" strokeWidth={0.2 * k} />
+            <g key={i} transform={`translate(${b.x} ${b.y})`}>
+              <Ball r={0.9 * k} basket={FORMAT_PITCH[formatOf(d.field)].kind === "basketball"} />
+            </g>
           ))}
       </svg>
 
@@ -671,26 +839,31 @@ type Tool =
 /** O que tem orientação para rodar. Círculos e bola não — rodar não muda nada. */
 const ROTATABLE = new Set<ItemKind>(["barrier", "goal", "miniGoal", "ladder", "dummy", "zone", "cone", "text"]);
 
-const PALETTE: { kind: ItemKind; label: string }[] = (
-  ["player", "opponent", "gk", "playerBall", "ball", "cone", "pole", "miniGoal", "goal", "barrier", "ladder", "dummy", "zone", "text"] as ItemKind[]
-).map((kind) => ({ kind, label: ITEM_LABEL[kind] }));
-
-const ARROWS: ArrowKind[] = ["pass", "run", "dribble", "shot", "press", "cross"];
-
 /**
  * O editor. Não controlado de propósito: guarda o desenho enquanto se trabalha e
  * entrega-o em `onChange` a cada gesto concluído — quem grava é a página, quando
  * quiser. Mudar de exercício muda a `key` e o editor renasce limpo.
+ *
+ * `vocabulary` é o que a modalidade oferece — terrenos, peças, setas e os nomes
+ * delas (ver `EditorVocabulary`). Sem ele, o editor mostra tudo: é o que o
+ * plano de treino precisa quando ainda não sabe de que modalidade é.
  */
 export function FieldEditor({
   initial,
   onChange,
   className,
+  vocabulary = DEFAULT_VOCABULARY,
 }: {
   initial: unknown;
   onChange: (d: Diagram) => void;
   className?: string;
+  vocabulary?: EditorVocabulary;
 }) {
+  const palette = useMemo(
+    () => vocabulary.items.map((kind) => ({ kind, label: itemLabel(kind, vocabulary) })),
+    [vocabulary],
+  );
+  const arrows = vocabulary.arrows;
   const [diagram, setDiagram] = useState<Diagram>(() => asDiagram(initial) ?? emptyDiagram("f11"));
   const [frameIx, setFrameIx] = useState(0);
   const [tool, setTool] = useState<Tool>({ mode: "select" });
@@ -1160,7 +1333,7 @@ export function FieldEditor({
           Mover vista
         </ToolButton>
         <span className="mx-1 h-5 w-px bg-line" />
-        {ARROWS.map((k) => (
+        {arrows.map((k) => (
           <ToolButton
             key={k}
             active={tool.mode === "arrow" && tool.kind === k}
@@ -1169,7 +1342,7 @@ export function FieldEditor({
             <svg viewBox="0 0 24 10" className="h-2.5 w-6">
               <ArrowShape arrow={{ id: "x", kind: k, x1: 1, y1: 5, x2: 22, y2: 5 }} />
             </svg>
-            {ARROW_LABEL[k]}
+            {arrowLabel(k, vocabulary)}
           </ToolButton>
         ))}
         <span className="mx-1 h-5 w-px bg-line" />
@@ -1199,18 +1372,21 @@ export function FieldEditor({
             uma escolha por exercício) e a extensão fica em pílulas (troca-se a
             meio do desenho, e o gesto tem de ser imediato).
           */}
-          <select
-            aria-label="Variante"
-            value={formatOf(diagram.field)}
-            onChange={(e) => setField(fieldFor(e.target.value as GameFormat, isHalfField(diagram.field)))}
-            className="h-8 cursor-pointer rounded-[var(--radius-control)] border border-line bg-surface px-2 text-meta font-medium text-ink-2 hover:border-line-strong focus:outline-none"
-          >
-            {GAME_FORMATS.map((f) => (
-              <option key={f} value={f}>
-                {FORMAT_LABEL[f]}
-              </option>
-            ))}
-          </select>
+          {/* Um terreno só (basquetebol, futsal) não é uma escolha — o seletor sai. */}
+          {vocabulary.formats.length > 1 && (
+            <select
+              aria-label="Variante"
+              value={formatOf(diagram.field)}
+              onChange={(e) => setField(fieldFor(e.target.value as GameFormat, isHalfField(diagram.field)))}
+              className="h-8 cursor-pointer rounded-[var(--radius-control)] border border-line bg-surface px-2 text-meta font-medium text-ink-2 hover:border-line-strong focus:outline-none"
+            >
+              {vocabulary.formats.map((f) => (
+                <option key={f} value={f}>
+                  {FORMAT_LABEL[f]}
+                </option>
+              ))}
+            </select>
+          )}
           <SelectPill
             value={isHalfField(diagram.field) ? "half" : "full"}
             options={[
@@ -1225,7 +1401,7 @@ export function FieldEditor({
       <div className="flex gap-2">
         {/* Paleta */}
         <div className="flex w-28 shrink-0 flex-col gap-1 overflow-y-auto rounded-[var(--radius-control)] border border-line bg-sunken/40 p-1.5" style={{ maxHeight: 480 }}>
-          {PALETTE.map(({ kind, label }) => (
+          {palette.map(({ kind, label }) => (
             <button
               key={kind}
               type="button"
@@ -1235,9 +1411,14 @@ export function FieldEditor({
                 tool.mode === "stamp" && tool.kind === kind ? "bg-signal-soft text-signal-ink" : "text-ink-2 hover:bg-sunken",
               )}
             >
-              <svg viewBox="-3 -3 6 6" className="size-5 shrink-0 rounded bg-[#527a5e]">
+              {/* O botão da paleta desenha a peça no piso deste terreno: num
+                  campo de basquetebol, a bola do botão é a laranja. */}
+              <svg viewBox="-3 -3 6 6" className="size-5 shrink-0 rounded" style={{ background: pitchBackground(diagram.field) }}>
                 <g transform="scale(0.9)">
-                  <ItemShape item={{ id: "p", kind, x: 0, y: 0, w: 5, h: 4, label: kind === "player" ? "7" : kind === "opponent" ? "9" : undefined }} />
+                  <ItemShape
+                    item={{ id: "p", kind, x: 0, y: 0, w: 5, h: 4, label: kind === "player" ? "7" : kind === "opponent" ? "9" : undefined }}
+                    field={diagram.field}
+                  />
                 </g>
               </svg>
               <span className="leading-tight">{label}</span>
@@ -1270,7 +1451,7 @@ export function FieldEditor({
             ))}
             {frame.items.map((i) => (
               <g key={i.id} data-id={i.id} transform={`translate(${i.x} ${i.y}) rotate(${i.rot ?? 0})`} className="cursor-move">
-                <ItemShape item={i} selected={selected.has(i.id)} k={kScale} />
+                <ItemShape item={i} selected={selected.has(i.id)} k={kScale} field={diagram.field} />
                 {i.kind === "zone" && selected.has(i.id) && (
                   <circle
                     data-resize={i.id}
@@ -1305,7 +1486,7 @@ export function FieldEditor({
             {selected.size > 0 ? (
               <>
                 <span className="text-meta text-ink-3">
-                  {selected.size === 1 && single ? ITEM_LABEL[single.kind] : `${selected.size} selecionados`}
+                  {selected.size === 1 && single ? itemLabel(single.kind, vocabulary) : `${selected.size} selecionados`}
                 </span>
                 {labelled && (
                   <input
@@ -1340,9 +1521,9 @@ export function FieldEditor({
             ) : (
               <span className="text-meta text-ink-4">
                 {tool.mode === "stamp"
-                  ? `Toca no campo para colocar: ${ITEM_LABEL[tool.kind]}`
+                  ? `Toca no campo para colocar: ${itemLabel(tool.kind, vocabulary)}`
                   : tool.mode === "arrow"
-                    ? `Arrasta no campo para desenhar: ${ARROW_LABEL[tool.kind]}`
+                    ? `Arrasta no campo para desenhar: ${arrowLabel(tool.kind, vocabulary)}`
                     : tool.mode === "pan"
                       ? "Arrasta para mover a vista · roda para aproximar"
                       : "Toca para selecionar · arrasta no vazio para laçar vários · roda para aproximar"}

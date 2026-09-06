@@ -3,251 +3,300 @@ import { Link, useNavigate, useParams } from "react-router-dom";
 import { PageHeader } from "@/components/Shell";
 import { Dialog, DialogField, dialogInputClass } from "@/components/Dialog";
 import { DiagramPlayer, FieldEditor, FieldView, THUMB_RATIO } from "@/components/FieldEditor";
+import { RelatedExercisesPanel } from "@/components/training/RelatedExercises";
 import { Empty, Loading, Panel, PanelHead, Pill, cx } from "@/components/primitives";
 import { Check, Download, Plus, Sparkle, Trash2, TriangleAlert } from "@/lib/icons";
 import { listTeams } from "@/lib/api";
 import { can } from "@/lib/permissions";
+import { allKinds, kindLabel, type KindGroup } from "@/lib/sports";
 import {
   FORMAT_LABEL,
-  FORMAT_PITCH,
-  GAME_FORMATS,
-  SET_PIECE_KINDS,
   asDiagram,
-  fieldFor,
   createSetPiece,
   deleteSetPiece,
-  emptyDiagram,
+  listGameModels,
   listSetPieces,
-  newId,
-  setPieceLabel,
   teamFormat,
   updateSetPiece,
-  type Diagram,
-  type DiagramItem,
   type GameFormat,
+  type GameModelRow,
   type SetPieceRow,
 } from "@/lib/training";
 import { useSession } from "@/session";
+import { useSportArea } from "./sport-area-context";
+
+/** O valor do seletor que quer dizer "um tipo que eu escrevo". */
+const CUSTOM = "__outra__";
 
 /**
- * Bolas paradas.
+ * Bolas paradas — ou situações especiais, conforme a modalidade.
  *
- * Metade dos golos da formação nasce aqui, e é a área onde um desenho vale mais
- * do que qualquer texto: quem ataca o primeiro poste, quem bloqueia, quem fica à
- * entrada da área. Os esquemas organizam-se pelo lance (canto ofensivo, livre
- * defensivo, lançamento) e cada um é um desenho em meio campo, com frames — o
- * bloqueio no frame 1, o movimento no 2, a finalização no 3.
+ * No futebol, metade dos golos da formação nasce aqui, e é a área onde um
+ * desenho vale mais do que qualquer texto: quem ataca o primeiro poste, quem
+ * bloqueia, quem fica à entrada da área. No basquetebol são as reposições, os
+ * finais de jogo e as jogadas após desconto de tempo — o que o treinador
+ * prepara e quer memorizado.
+ *
+ * ## O que vem da modalidade
+ *
+ * Os tipos e os seus grupos (`profile.situations.groups`), o lance montado com
+ * que uma situação nova nasce (`starter`), o terreno do editor e os nomes. Os
+ * tipos são vocabulário, não uma lista fechada: quem precisa de um que não
+ * existe escreve-o, e ele passa a filtrar como os outros.
  */
 export default function SetPieces() {
+  const { sport, profile, path } = useSportArea();
   const { session } = useSession();
   const navigate = useNavigate();
   const mayWrite = can(session, "training:write");
+  const groups = profile.situations.groups;
+  const flat = groups.length === 1 && groups[0].label === null;
 
   const [rows, setRows] = useState<SetPieceRow[] | null>(null);
   const [kind, setKind] = useState<string>("");
   const [creating, setCreating] = useState(false);
 
   useEffect(() => {
-    listSetPieces().then(setRows).catch(() => setRows([]));
-  }, []);
+    setRows(null);
+    listSetPieces(sport.id).then(setRows).catch(() => setRows([]));
+  }, [sport.id]);
 
   const filtered = useMemo(() => (rows ?? []).filter((r) => !kind || r.kind === kind), [rows, kind]);
 
+  /** Os tipos escritos à mão que existem nas linhas — filtram-se como os outros. */
+  const customKinds = useMemo(() => {
+    const known = new Set(allKinds(groups).map((k) => k.key));
+    return [...new Set((rows ?? []).map((r) => r.kind))].filter((k) => !known.has(k));
+  }, [rows, groups]);
+
   if (rows === null) return <Loading />;
+
+  const chip = (key: string, label: string, count: number) => (
+    <button
+      key={key}
+      type="button"
+      onClick={() => setKind(kind === key ? "" : key)}
+      className={cx(
+        "h-8 rounded-full px-3 text-meta font-medium transition-colors",
+        kind === key ? "bg-ink text-surface" : "bg-sunken text-ink-2 hover:text-ink",
+      )}
+    >
+      {label}
+      {count > 0 && <span className="ml-1.5 text-[10px] opacity-70 tabular">{count}</span>}
+    </button>
+  );
+  const countOf = (key: string) => rows.filter((r) => r.kind === key).length;
+  const allChip = (
+    <button
+      type="button"
+      onClick={() => setKind("")}
+      className={cx("h-8 rounded-full px-3 text-meta font-medium transition-colors", !kind ? "bg-ink text-surface" : "bg-sunken text-ink-2 hover:text-ink")}
+    >
+      Todos
+    </button>
+  );
 
   return (
     <>
-      <PageHeader title="Bolas paradas" subtitle="Cantos, livres e lançamentos — desenhados, animados e prontos a rever na véspera do jogo.">
+      <PageHeader title={profile.situations.label} subtitle={profile.situations.description}>
         {mayWrite && (
           <button type="button" className="ctl-primary" onClick={() => setCreating(true)}>
             <Plus className="size-3.5" strokeWidth={1.75} />
-            Novo esquema
+            {profile.situations.singular === "situação" ? "Nova situação" : "Novo esquema"}
           </button>
         )}
       </PageHeader>
 
       <div className="space-y-3">
-        <div className="flex flex-wrap items-center gap-1.5">
-          <button
-            type="button"
-            onClick={() => setKind("")}
-            className={cx("h-8 rounded-full px-3 text-meta font-medium transition-colors", !kind ? "bg-ink text-surface" : "bg-sunken text-ink-2 hover:text-ink")}
-          >
-            Todos
-          </button>
-          {SET_PIECE_KINDS.map((k) => {
-            const count = rows.filter((r) => r.kind === k.key).length;
-            return (
-              <button
-                key={k.key}
-                type="button"
-                onClick={() => setKind(kind === k.key ? "" : k.key)}
-                className={cx(
-                  "h-8 rounded-full px-3 text-meta font-medium transition-colors",
-                  kind === k.key ? "bg-ink text-surface" : "bg-sunken text-ink-2 hover:text-ink",
-                )}
-              >
-                {k.label}
-                {count > 0 && <span className="ml-1.5 text-[10px] opacity-70 tabular">{count}</span>}
-              </button>
-            );
-          })}
-        </div>
+        {flat ? (
+          <div className="flex flex-wrap items-center gap-1.5">
+            {allChip}
+            {groups[0].kinds.map((k) => chip(k.key, k.label, countOf(k.key)))}
+            {customKinds.map((k) => chip(k, k, countOf(k)))}
+          </div>
+        ) : (
+          /*
+           * Com grupos, uma linha por grupo — "Reposições", "Final de jogo" —
+           * porque quinze pílulas em fila não se lêem, e o treinador de
+           * basquetebol pensa nas situações por estes quatro capítulos.
+           */
+          <div className="space-y-1.5">
+            <div className="flex flex-wrap items-center gap-1.5">
+              <span className="w-32 shrink-0 text-meta text-ink-4" />
+              {allChip}
+              {customKinds.map((k) => chip(k, k, countOf(k)))}
+            </div>
+            {groups.map((g) => (
+              <div key={g.label} className="flex flex-wrap items-center gap-1.5">
+                <span className="w-32 shrink-0 truncate text-meta text-ink-4">{g.label}</span>
+                {g.kinds.map((k) => chip(k.key, k.label, countOf(k.key)))}
+              </div>
+            ))}
+          </div>
+        )}
 
         {filtered.length === 0 ? (
           <Panel>
             <Empty
-              title={rows.length === 0 ? "Ainda não há esquemas" : "Nada neste lance"}
-              detail="Um canto ensaiado à quarta-feira ganha jogos ao sábado. Desenha o primeiro — jogadores, bloqueios, ataques ao poste."
+              title={rows.length === 0 ? `Ainda não há ${profile.situations.label.toLowerCase()}` : "Nada deste tipo"}
+              detail={
+                profile.code === "basketball"
+                  ? "Uma reposição de fundo ensaiada à quarta-feira ganha o jogo ao sábado. Desenha a primeira — quem repõe, quem bloqueia, quem sai para o lançamento."
+                  : "Um canto ensaiado à quarta-feira ganha jogos ao sábado. Desenha o primeiro — jogadores, bloqueios, ataques ao poste."
+              }
               icon={Sparkle}
             >
               {mayWrite && rows.length === 0 && (
                 <button type="button" className="ctl-primary" onClick={() => setCreating(true)}>
-                  Desenhar o primeiro
+                  Desenhar a primeira
                 </button>
               )}
             </Empty>
           </Panel>
         ) : (
           <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
-            {filtered.map((p) => (
-              <div
-                key={p.id}
-                role="link"
-                tabIndex={0}
-                onClick={() => navigate(`/bolas-paradas/${p.id}`)}
-                onKeyDown={(e) => e.key === "Enter" && navigate(`/bolas-paradas/${p.id}`)}
-                className="panel cursor-pointer overflow-hidden transition-colors hover:border-line-strong"
-              >
-                {asDiagram(p.diagram) ? (
-                  <FieldView diagram={p.diagram} className="block w-full" ratio={THUMB_RATIO} />
-                ) : (
-                  <div className="flex aspect-[4/3] w-full items-center justify-center bg-[#527a5e] text-[11px] text-white/70">Sem desenho</div>
-                )}
-                <div className="space-y-1 p-3.5">
-                  <div className="flex items-start justify-between gap-2">
-                    <h3 className="min-w-0 truncate text-body font-semibold text-ink">{p.name}</h3>
-                    <Pill tone="signal">{setPieceLabel(p.kind)}</Pill>
-                  </div>
-                  <div className="text-meta text-ink-3">
-                    {p.teamName ?? "Todo o clube"}
-                    {p.visibility === "PRIVATE" ? " · só meu" : ""}
+            {filtered.map((p) => {
+              const to = path("situations", p.id);
+              return (
+                <div
+                  key={p.id}
+                  role="link"
+                  tabIndex={0}
+                  onClick={() => navigate(to)}
+                  onKeyDown={(e) => e.key === "Enter" && navigate(to)}
+                  className="panel cursor-pointer overflow-hidden transition-colors hover:border-line-strong"
+                >
+                  {asDiagram(p.diagram) ? (
+                    <FieldView diagram={p.diagram} className="block w-full" ratio={THUMB_RATIO} />
+                  ) : (
+                    <div className="flex aspect-[4/3] w-full items-center justify-center bg-[#527a5e] text-[11px] text-white/70">Sem desenho</div>
+                  )}
+                  <div className="space-y-1 p-3.5">
+                    <div className="flex items-start justify-between gap-2">
+                      <h3 className="min-w-0 truncate text-body font-semibold text-ink">{p.name}</h3>
+                      <Pill tone="signal">{kindLabel(groups, p.kind)}</Pill>
+                    </div>
+                    <div className="text-meta text-ink-3">
+                      {p.teamName ?? "Todo o clube"}
+                      {p.gameModelName ? ` · ${p.gameModelName}` : ""}
+                      {p.visibility === "PRIVATE" ? " · só meu" : ""}
+                    </div>
                   </div>
                 </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
         )}
       </div>
 
-      {creating && <NewSetPieceDialog onClose={() => setCreating(false)} onCreated={(id) => navigate(`/bolas-paradas/${id}`)} />}
+      {creating && <NewSetPieceDialog onClose={() => setCreating(false)} onCreated={(id) => navigate(path("situations", id))} />}
     </>
   );
 }
 
 /**
- * Um lance montado, à medida da variante.
- *
- * Um canto ofensivo não começa num campo vazio: nasce com a bola no canto, o
- * batedor, a estrutura habitual na área e a defesa a marcar — apaga-se o que
- * sobra, arrasta-se o resto. É a diferença entre desenhar e preencher.
- *
- * ## Porque é que as posições são frações
- *
- * Eram duas cópias em metros — uma do campo de onze, outra do futsal — e com
- * cinco variantes seriam cinco, a divergir umas das outras à primeira correção.
- * Aqui o lance descreve-se **uma vez** em frações do campo (0–1) e escala-se
- * para o terreno de cada uma; o que muda com a variante é o que tem mesmo de
- * mudar: **quanta gente entra**, porque um canto de futebol 5 não tem seis
- * atacantes na área.
+ * O seletor de tipo — com os grupos como `optgroup` quando existem, e a opção
+ * de escrever um tipo próprio. Um tipo gravado que não esteja no vocabulário
+ * (escrito à mão, ou de um perfil anterior) aparece como opção sua.
  */
-function starterDiagram(kind: string, format: GameFormat = "f11"): Diagram {
-  const s = FORMAT_PITCH[format];
-  const d = emptyDiagram(fieldFor(format, true));
-  /** Uma posição em frações do campo → metros do terreno desta variante. */
-  const at = (k: DiagramItem["kind"], fx: number, fy: number, label?: string): DiagramItem => ({
-    id: newId(),
-    kind: k,
-    x: fx * s.w,
-    y: fy * s.h,
-    ...(label ? { label } : {}),
-  });
+function KindSelect({
+  groups,
+  value,
+  onChange,
+  disabled,
+}: {
+  groups: KindGroup[];
+  value: string;
+  onChange: (kind: string) => void;
+  disabled?: boolean;
+}) {
+  const known = allKinds(groups).some((k) => k.key === value);
+  const [custom, setCustom] = useState(!known && value !== "");
+  const [text, setText] = useState(known ? "" : value);
+  const flat = groups.length === 1 && groups[0].label === null;
 
-  /** Quantos jogadores de campo tem esta variante (sem o guarda-redes). */
-  const outfield = { f11: 10, f9: 8, f7: 6, f5: 4, futsal: 4 }[format];
+  const options = (kinds: KindGroup["kinds"]) =>
+    kinds.map((k) => (
+      <option key={k.key} value={k.key}>
+        {k.label}
+      </option>
+    ));
 
-  if (kind === "corner-off" || kind === "corner-def") {
-    // Do mais importante para o menos: o batedor, quem ataca os postes, quem
-    // sobra atrás. Corta-se pelo fim conforme a variante.
-    const ours = [
-      at("player", 0.981, 0.037, "7"),
-      at("player", 0.914, 0.412, "9"),
-      at("player", 0.895, 0.5, "10"),
-      at("player", 0.914, 0.588, "11"),
-      at("player", 0.848, 0.5, "8"),
-      at("player", 0.781, 0.353, "6"),
-    ].slice(0, Math.min(6, outfield));
-    const theirs = [
-      at("opponent", 0.933, 0.441, "4"),
-      at("opponent", 0.933, 0.559, "5"),
-      at("opponent", 0.886, 0.441, "2"),
-    ].slice(0, outfield <= 4 ? 2 : 3);
-    d.frames[0].items = [at("ball", 0.995, 0.01), ...ours, ...theirs, at("gk", 0.981, 0.5, "GR")];
-  } else if (kind === "free-off" || kind === "free-def") {
-    const barreira = [
-      at("opponent", 0.838, 0.397, "2"),
-      at("opponent", 0.838, 0.441, "4"),
-      at("opponent", 0.838, 0.485, "5"),
-    ].slice(0, outfield <= 4 ? 2 : 3);
-    const ours = [
-      at("player", 0.743, 0.324, "10"),
-      at("player", 0.876, 0.588, "9"),
-      at("player", 0.857, 0.662, "11"),
-    ].slice(0, Math.min(3, outfield));
-    d.frames[0].items = [at("ball", 0.762, 0.353), ...ours, ...barreira, at("gk", 0.985, 0.529, "GR")];
-  } else if (kind === "throw-in") {
-    d.frames[0].items = [
-      at("ball", 0.81, 0.007),
-      at("player", 0.81, 0.022, "2"),
-      at("player", 0.857, 0.176, "7"),
-      at("player", 0.762, 0.176, "8"),
-      at("opponent", 0.838, 0.147, "3"),
-    ];
-  } else if (kind === "penalty") {
-    // A marca é a real da variante, não uma fração: aos 11 m no campo de onze,
-    // aos 6 no futsal.
-    const px = (s.w - s.penalty) / s.w;
-    d.frames[0].items = [at("ball", px, 0.5), at("player", px - 0.03, 0.5, "9"), at("gk", 0.99, 0.5, "GR")];
-  }
-  return d;
+  return (
+    <div className="space-y-2">
+      <select
+        className={dialogInputClass}
+        value={custom ? CUSTOM : value}
+        disabled={disabled}
+        onChange={(e) => {
+          if (e.target.value === CUSTOM) {
+            setCustom(true);
+            if (text.trim()) onChange(text.trim());
+            return;
+          }
+          setCustom(false);
+          onChange(e.target.value);
+        }}
+      >
+        {flat
+          ? options(groups[0].kinds)
+          : groups.map((g) => (
+              <optgroup key={g.label ?? ""} label={g.label ?? ""}>
+                {options(g.kinds)}
+              </optgroup>
+            ))}
+        <option value={CUSTOM}>Outra…</option>
+      </select>
+      {custom && (
+        <input
+          className={dialogInputClass}
+          value={text}
+          disabled={disabled}
+          autoFocus
+          placeholder="O nome do tipo — ex.: Saída de pressão"
+          onChange={(e) => {
+            setText(e.target.value);
+            if (e.target.value.trim()) onChange(e.target.value.trim().slice(0, 40));
+          }}
+        />
+      )}
+    </div>
+  );
 }
 
 function NewSetPieceDialog({ onClose, onCreated }: { onClose: () => void; onCreated: (id: string) => void }) {
+  const { sport, profile } = useSportArea();
   const { session } = useSession();
-  const teams = listTeams(session);
+  const teams = listTeams(session).filter((t) => t.sportId === sport.id);
+  const formats = profile.vocabulary.formats;
+  const groups = profile.situations.groups;
+
+  const suggested = teamFormat(teams[0]?.id);
   const [name, setName] = useState("");
-  const [kind, setKind] = useState<string>("corner-off");
+  const [kind, setKind] = useState<string>(allKinds(groups)[0]?.key ?? "");
   const [teamId, setTeamId] = useState(teams[0]?.id ?? "");
-  const [pitch, setPitch] = useState<GameFormat>(() => teamFormat(teams[0]?.id));
+  const [pitch, setPitch] = useState<GameFormat>(() => (formats.includes(suggested) ? suggested : profile.defaultFormat));
   const [busy, setBusy] = useState(false);
 
-  // A equipa traz a modalidade por omissão — um canto de futsal não nasce num
+  // A equipa traz a variante por omissão — um canto de futsal não nasce num
   // campo de onze. Continua a poder trocar-se à mão.
   const chooseTeam = (id: string) => {
     setTeamId(id);
-    setPitch(teamFormat(id));
+    const p = teamFormat(id);
+    if (formats.includes(p)) setPitch(p);
   };
 
   async function create() {
-    if (!name.trim() || busy) return;
+    if (!name.trim() || !kind.trim() || busy) return;
     setBusy(true);
     try {
       const { id } = await createSetPiece({
         kind,
         name: name.trim(),
         teamId: teamId || null,
+        sportId: sport.id,
         visibility: "CLUB",
-        diagram: starterDiagram(kind, pitch),
+        diagram: profile.situations.starter(kind, pitch),
       });
       onCreated(id);
     } catch (e) {
@@ -258,7 +307,7 @@ function NewSetPieceDialog({ onClose, onCreated }: { onClose: () => void; onCrea
 
   return (
     <Dialog
-      title="Novo esquema"
+      title={profile.situations.singular === "situação" ? "Nova situação" : "Novo esquema"}
       subtitle="Nasce com o lance já montado — depois é arrastar e desenhar os movimentos."
       onClose={onClose}
       footer={
@@ -266,34 +315,30 @@ function NewSetPieceDialog({ onClose, onCreated }: { onClose: () => void; onCrea
           <button type="button" className="ctl-outline" onClick={onClose}>
             Cancelar
           </button>
-          <button type="button" className="ctl-primary" onClick={create} disabled={!name.trim() || busy}>
+          <button type="button" className="ctl-primary" onClick={create} disabled={!name.trim() || !kind.trim() || busy}>
             Criar e desenhar
           </button>
         </>
       }
     >
       <div className="space-y-3.5 p-5">
-        <DialogField label="Lance">
-          <select className={dialogInputClass} value={kind} onChange={(e) => setKind(e.target.value)}>
-            {SET_PIECE_KINDS.map((k) => (
-              <option key={k.key} value={k.key}>
-                {k.label}
-              </option>
-            ))}
-          </select>
+        <DialogField label={profile.situations.singular === "situação" ? "Situação" : "Lance"}>
+          <KindSelect groups={groups} value={kind} onChange={setKind} />
         </DialogField>
         <DialogField label="Nome">
-          <input autoFocus className={dialogInputClass} value={name} onChange={(e) => setName(e.target.value)} placeholder='Ex.: "Canto curto — 2º poste"' />
+          <input autoFocus className={dialogInputClass} value={name} onChange={(e) => setName(e.target.value)} placeholder={profile.situations.newPlaceholder} />
         </DialogField>
-        <DialogField label="Variante" hint="a equipa sugere, tu decides">
-          <select className={dialogInputClass} value={pitch} onChange={(e) => setPitch(e.target.value as GameFormat)}>
-            {GAME_FORMATS.map((f) => (
-              <option key={f} value={f}>
-                {FORMAT_LABEL[f]}
-              </option>
-            ))}
-          </select>
-        </DialogField>
+        {formats.length > 1 && (
+          <DialogField label="Variante" hint="a equipa sugere, tu decides">
+            <select className={dialogInputClass} value={pitch} onChange={(e) => setPitch(e.target.value as GameFormat)}>
+              {formats.map((f) => (
+                <option key={f} value={f}>
+                  {FORMAT_LABEL[f]}
+                </option>
+              ))}
+            </select>
+          </DialogField>
+        )}
         <DialogField label="Equipa">
           <select className={dialogInputClass} value={teamId} onChange={(e) => chooseTeam(e.target.value)}>
             {teams.map((t) => (
@@ -310,17 +355,21 @@ function NewSetPieceDialog({ onClose, onCreated }: { onClose: () => void; onCrea
 }
 
 /* -------------------------------------------------------------------------- */
-/* Ficha do esquema                                                            */
+/* Ficha                                                                       */
 /* -------------------------------------------------------------------------- */
 
 export function SetPieceDetail() {
   const { id = "" } = useParams();
+  const { sport, profile, path } = useSportArea();
   const navigate = useNavigate();
   const { session } = useSession();
   const mayWrite = can(session, "training:write");
-  const teams = listTeams(session);
+  const teams = listTeams(session).filter((t) => t.sportId === sport.id);
+  const groups = profile.situations.groups;
 
   const [piece, setPiece] = useState<SetPieceRow | null>(null);
+  /** Os sistemas de jogo desta modalidade — para ligar a situação a um. */
+  const [models, setModels] = useState<GameModelRow[]>([]);
   /*
    * O PDF, pedido a pedido.
    *
@@ -350,17 +399,18 @@ export function SetPieceDetail() {
   const [mode, setMode] = useState<"edit" | "play">("edit");
 
   useEffect(() => {
-    listSetPieces()
+    listSetPieces(sport.id)
       .then((rows) => {
         const p = rows.find((r) => r.id === id);
-        if (!p) setError("Este esquema não existe ou não é visível para ti.");
+        if (!p) setError("Isto não existe ou não é visível para ti.");
         else {
           setPiece(p);
           setMode(p.editable && mayWrite ? "edit" : "play");
         }
       })
       .catch((e: Error) => setError(e.message));
-  }, [id, mayWrite]);
+    listGameModels(sport.id).then(setModels).catch(() => setModels([]));
+  }, [id, mayWrite, sport.id]);
 
   const editable = Boolean(piece?.editable) && mayWrite;
 
@@ -379,9 +429,11 @@ export function SetPieceDetail() {
         name: piece.name,
         description: piece.description,
         teamId: piece.teamId,
+        gameModelId: piece.gameModelId,
         visibility: piece.visibility,
         diagram: piece.diagram,
-      });
+        exerciseIds: piece.exercises.map((e) => e.id),
+      } as Partial<SetPieceRow> & { exerciseIds: string[] });
       setDirty(false);
       setSaved(true);
     } catch (e) {
@@ -393,16 +445,16 @@ export function SetPieceDetail() {
 
   async function remove() {
     if (!piece) return;
-    if (!confirm("Apagar este esquema?")) return;
+    if (!confirm(`Apagar est${profile.situations.singular === "situação" ? "a situação" : "e esquema"}?`)) return;
     await deleteSetPiece(piece.id);
-    navigate("/bolas-paradas");
+    navigate(path("situations"));
   }
 
   if (error) {
     return (
       <Panel>
-        <Empty title="Esquema não encontrado" detail={error} icon={TriangleAlert}>
-          <Link to="/bolas-paradas" className="ctl-outline">
+        <Empty title="Não encontrado" detail={error} icon={TriangleAlert}>
+          <Link to={path("situations")} className="ctl-outline">
             Voltar
           </Link>
         </Empty>
@@ -411,11 +463,13 @@ export function SetPieceDetail() {
   }
   if (!piece) return <Loading />;
 
+  const playbookOne = profile.playbook.count(1).replace(/^1 /, "");
+
   return (
     <>
-      <PageHeader eyebrow={setPieceLabel(piece.kind)} title={piece.name} subtitle={piece.teamName ?? "Todo o clube"}>
-        <Link to="/bolas-paradas" className="ctl-ghost">
-          Bolas paradas
+      <PageHeader eyebrow={kindLabel(groups, piece.kind)} title={piece.name} subtitle={piece.teamName ?? "Todo o clube"}>
+        <Link to={path("situations")} className="ctl-ghost">
+          {profile.situations.label}
         </Link>
         <button type="button" className="ctl-outline" onClick={() => void exportarPdf()} disabled={aExportar}>
           <Download className="size-3.5" strokeWidth={1.75} />
@@ -442,36 +496,53 @@ export function SetPieceDetail() {
       </PageHeader>
 
       <div className="grid gap-3 xl:grid-cols-3">
-        <Panel className="xl:col-span-2 self-start">
-          <PanelHead title="Desenho">
-            {editable && (
-              <div className="inline-flex overflow-hidden rounded-[var(--radius-control)] border border-line">
-                {(
-                  [
-                    ["edit", "Editar"],
-                    ["play", "Animação"],
-                  ] as const
-                ).map(([m, label]) => (
-                  <button
-                    key={m}
-                    type="button"
-                    onClick={() => setMode(m)}
-                    className={cx("h-8 px-2.5 text-meta font-medium transition-colors", mode === m ? "bg-ink text-surface" : "bg-surface text-ink-2 hover:bg-sunken")}
-                  >
-                    {label}
-                  </button>
-                ))}
-              </div>
-            )}
-          </PanelHead>
-          <div className="p-4">
-            {editable && mode === "edit" ? (
-              <FieldEditor key={id} initial={piece.diagram ?? starterDiagram(piece.kind)} onChange={(d) => patch({ diagram: d })} />
-            ) : (
-              <DiagramPlayer diagram={piece.diagram} />
-            )}
-          </div>
-        </Panel>
+        <div className="space-y-3 xl:col-span-2">
+          <Panel className="self-start">
+            <PanelHead title="Desenho">
+              {editable && (
+                <div className="inline-flex overflow-hidden rounded-[var(--radius-control)] border border-line">
+                  {(
+                    [
+                      ["edit", "Editar"],
+                      ["play", "Animação"],
+                    ] as const
+                  ).map(([m, label]) => (
+                    <button
+                      key={m}
+                      type="button"
+                      onClick={() => setMode(m)}
+                      className={cx("h-8 px-2.5 text-meta font-medium transition-colors", mode === m ? "bg-ink text-surface" : "bg-surface text-ink-2 hover:bg-sunken")}
+                    >
+                      {label}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </PanelHead>
+            <div className="p-4">
+              {editable && mode === "edit" ? (
+                <FieldEditor
+                  key={id}
+                  initial={piece.diagram ?? profile.situations.starter(piece.kind, profile.defaultFormat)}
+                  onChange={(d) => patch({ diagram: d })}
+                  vocabulary={profile.vocabulary}
+                />
+              ) : (
+                <DiagramPlayer diagram={piece.diagram} />
+              )}
+            </div>
+          </Panel>
+
+          <Panel>
+            <RelatedExercisesPanel
+              sportId={sport.id}
+              exercises={piece.exercises}
+              editable={editable}
+              onChange={(next) => patch({ exercises: next })}
+              hint={`com que se ensaia ${profile.situations.singular === "situação" ? "esta situação" : "este esquema"}`}
+            />
+          </Panel>
+        </div>
 
         <Panel className="self-start">
           <PanelHead title="Ficha" />
@@ -479,14 +550,8 @@ export function SetPieceDetail() {
             <DialogField label="Nome">
               <input className={dialogInputClass} value={piece.name} onChange={(e) => patch({ name: e.target.value })} disabled={!editable} />
             </DialogField>
-            <DialogField label="Lance">
-              <select className={dialogInputClass} value={piece.kind} onChange={(e) => patch({ kind: e.target.value })} disabled={!editable}>
-                {SET_PIECE_KINDS.map((k) => (
-                  <option key={k.key} value={k.key}>
-                    {k.label}
-                  </option>
-                ))}
-              </select>
+            <DialogField label={profile.situations.singular === "situação" ? "Situação" : "Lance"}>
+              <KindSelect groups={groups} value={piece.kind} onChange={(k) => patch({ kind: k })} disabled={!editable} />
             </DialogField>
             <DialogField label="Equipa">
               <select className={dialogInputClass} value={piece.teamId ?? ""} onChange={(e) => patch({ teamId: e.target.value || null })} disabled={!editable}>
@@ -498,6 +563,39 @@ export function SetPieceDetail() {
                 ))}
               </select>
             </DialogField>
+            {/*
+              O sistema de que a situação parte — "a reposição de fundo que
+              acaba no 5-out". Uma só: a situação é a execução de um sistema
+              num momento concreto. Só aparece quando há sistemas para ligar.
+            */}
+            {(models.length > 0 || piece.gameModelId) && (
+              <DialogField label={playbookOne[0].toUpperCase() + playbookOne.slice(1)} hint="de que parte">
+                <select
+                  className={dialogInputClass}
+                  value={piece.gameModelId ?? ""}
+                  disabled={!editable}
+                  onChange={(e) => {
+                    const gm = models.find((m) => m.id === e.target.value);
+                    patch({ gameModelId: gm?.id ?? null, gameModelName: gm?.name ?? null });
+                  }}
+                >
+                  <option value="">Nenhum</option>
+                  {models.map((m) => (
+                    <option key={m.id} value={m.id}>
+                      {m.name}
+                    </option>
+                  ))}
+                  {piece.gameModelId && !models.some((m) => m.id === piece.gameModelId) && (
+                    <option value={piece.gameModelId}>{piece.gameModelName ?? "Sistema"}</option>
+                  )}
+                </select>
+                {piece.gameModelId && (
+                  <Link to={path("playbook", piece.gameModelId)} className="mt-1 inline-block text-meta text-signal-ink hover:underline">
+                    Abrir {playbookOne}
+                  </Link>
+                )}
+              </DialogField>
+            )}
             {editable && (
               <DialogField label="Quem o vê">
                 <div className="grid grid-cols-2 gap-2">
@@ -528,7 +626,11 @@ export function SetPieceDetail() {
                 className={cx(dialogInputClass, "h-auto py-2")}
                 value={piece.description ?? ""}
                 onChange={(e) => patch({ description: e.target.value || null })}
-                placeholder="Quem bate, sinais, variantes, quem fica na cobertura defensiva…"
+                placeholder={
+                  profile.code === "basketball"
+                    ? "Quem repõe, sinais, opções de leitura, o que fazer se a primeira opção fechar…"
+                    : "Quem bate, sinais, variantes, quem fica na cobertura defensiva…"
+                }
                 disabled={!editable}
               />
             </DialogField>

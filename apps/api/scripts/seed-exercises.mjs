@@ -11,6 +11,17 @@
  * progressões) e desenho com frames — servem como treino e como demonstração
  * do editor.
  *
+ * ## Por modalidade
+ *
+ * Cada exercício é de uma disciplina — a do terreno do desenho: relva é
+ * futebol, pavilhão de 40×20 é futsal, campo de 28×15 é basquetebol — e só se
+ * semeia numa academia que tenha uma modalidade dessa disciplina
+ * (`Sport.code`), já ligado a ela (`sportId`). Um clube de basquetebol não
+ * recebe rondos de relva; um clube só de futebol não recebe os de pavilhão.
+ * Foi assim que os primeiros clubes ficaram com 29 exercícios de duas
+ * modalidades que não praticavam — a migração `area_tecnica_por_modalidade`
+ * arrumou esses, e daqui para a frente a semente não volta a fazê-lo.
+ *
  * ## Como se comporta
  *
  * Idempotente por nome e por academia: correr duas vezes não duplica nada.
@@ -408,6 +419,108 @@ function powerPlay() {
   const f3i = move(f2i, { 2: { kind: "player" }, 1: { kind: "playerBall" }, 3: { x: 34, y: 4 } });
   const f3a = [pass(25, 4.5, 33, 4.5), shot(35, 5, 38.3, 8.8)];
   return { field: "futsal", frames: [frame(f1i, f1a), frame(f2i, f2a), frame(f3i, f3a)] };
+}
+
+/* -------------------------------------------------------------------------- */
+/* Basquetebol                                                                 */
+/* -------------------------------------------------------------------------- */
+
+/*
+ * O campo FIBA de 28×15, a nossa equipa a atacar o cesto da direita (o aro a
+ * 26,4 m). O meio campo (`basket-half`) mostra dos 12 m para a frente. As
+ * posições são metros verdadeiros: o topo da chave está a ~19,5, a linha de
+ * lance livre a 22,2, o cesto a 26,4.
+ */
+const B = (x, y, n) => item("player", x, y, String(n));
+const BB = (x, y, n) => item("playerBall", x, y, String(n));
+const BO = (x, y, n) => item("opponent", x, y, String(n));
+
+function passeEstrela() {
+  // Cinco à volta do círculo de lance livre; a bola salta um — e quem passa
+  // corre para o lugar de quem recebe.
+  const f1i = [BB(18.5, 7.5, 1), B(21.0, 3.8, 2), B(25.5, 5.2, 3), B(25.5, 9.8, 4), B(21.0, 11.2, 5)];
+  const f1a = [pass(18.5, 7.5, 25.5, 5.2), run(18.9, 7.0, 24.8, 5.4)];
+  const f2i = [B(25.5, 5.2, 1), B(21.0, 3.8, 2), BB(24.6, 5.6, 3), B(25.5, 9.8, 4), B(21.0, 11.2, 5)];
+  const f2a = [pass(24.6, 5.6, 21.0, 11.2), run(24.2, 6.0, 21.6, 10.8)];
+  return { field: "basket-half", frames: [frame(f1i, f1a), frame(f2i, f2a)] };
+}
+
+function tranca3() {
+  // Três saem da linha de fundo: passa e corre por trás de quem recebe, campo
+  // inteiro, a terminar em lay-up.
+  const f1i = [B(2, 4, 1), BB(2, 7.5, 2), B(2, 11, 3)];
+  const f1a = [pass(2, 7.5, 6, 4.5), run(2.5, 8, 7, 12.5), run(2.5, 4, 8, 6)];
+  const f2i = [BB(9, 5, 1), B(9, 12.5, 2), B(9, 8.5, 3)];
+  const f2a = [pass(9, 5, 14, 12), run(9.5, 5.5, 16, 12.8), run(9.5, 12, 17, 4.5)];
+  const f3i = [B(19, 12.5, 1), BB(20, 10, 2), B(20, 4.5, 3)];
+  const f3a = [pass(20, 10, 24, 5), run(24.5, 5, 26.2, 6.8), shot(25.8, 6.2, 26.4, 7.3)];
+  return { field: "basket", frames: [frame(f1i, f1a), frame(f2i, f2a), frame(f3i, f3a)] };
+}
+
+function shellDrill() {
+  // Quatro por fora, quatro a defender: bola no topo, os ajudantes uma passada
+  // para dentro; a bola vai à ala e a "concha" roda.
+  const ataque = [BB(18.5, 7.5, 1), B(22.0, 2.5, 2), B(22.0, 12.5, 3), B(26.0, 1.3, 4), B(26.0, 13.7, 5)];
+  const def1 = [BO(20.0, 7.5, 1), BO(22.6, 4.3, 2), BO(22.6, 10.7, 3), BO(25.0, 3.6, 4), BO(25.0, 11.4, 5)];
+  const f1a = [pass(18.5, 7.5, 22.0, 2.5)];
+  const def2 = [BO(20.4, 6.0, 1), BO(23.2, 2.9, 2), BO(23.5, 7.5, 3), BO(25.4, 2.4, 4), BO(25.6, 7.8, 5)];
+  const ataque2 = [B(18.5, 7.5, 1), BB(22.0, 2.5, 2), B(22.0, 12.5, 3), B(26.0, 1.3, 4), B(26.0, 13.7, 5)];
+  const f2a = [run(22.6, 10.7, 23.5, 7.7), run(25.0, 11.4, 25.6, 8.2)];
+  return { field: "basket-half", frames: [frame([...ataque, ...def1], f1a), frame([...ataque2, ...def2], f2a)] };
+}
+
+function pickRoll2x2() {
+  // O 5 vem bloquear o defensor do 1; o 1 sai por cima do bloqueio e o 5 rola
+  // para o cesto — a leitura é passe ou finalização, conforme a ajuda.
+  const f1i = [BB(19.0, 6.0, 1), B(22.5, 9.5, 5), BO(20.3, 6.3, 1), BO(23.2, 9.2, 5)];
+  const f1a = [run(22.5, 9.5, 20.9, 5.6)];
+  const f2i = [BB(20.6, 8.6, 1), B(21.0, 5.6, 5), BO(20.7, 5.0, 1), BO(23.4, 8.0, 5)];
+  const f2a = [dribble(20.6, 8.6, 23.6, 10.0), run(21.0, 5.6, 25.4, 6.8)];
+  const f3i = [BB(23.6, 10.0, 1), B(25.4, 6.8, 5), BO(22.4, 9.6, 1), BO(24.6, 8.2, 5)];
+  const f3a = [pass(23.6, 10.0, 25.4, 6.8), shot(25.6, 6.8, 26.3, 7.3)];
+  return { field: "basket-half", frames: [frame(f1i, f1a), frame(f2i, f2a), frame(f3i, f3a)] };
+}
+
+function closeout1x1() {
+  // O defensor sai debaixo do cesto a fechar sobre o atacante que recebe na
+  // ala — passos curtos, mão em cima — e joga o 1x1 a seguir.
+  const f1i = [B(22.0, 3.0, 1), BB(19.0, 7.5, "T"), BO(25.5, 7.5, 1)];
+  const f1a = [pass(19.0, 7.5, 22.0, 3.0), run(25.5, 7.5, 22.9, 3.9)];
+  const f2i = [BB(22.0, 3.0, 1), B(19.0, 7.5, "T"), BO(22.9, 3.9, 1)];
+  const f2a = [dribble(22.0, 3.0, 25.6, 5.6), shot(25.6, 5.6, 26.3, 7.2)];
+  return { field: "basket-half", frames: [frame(f1i, f1a), frame(f2i, f2a)] };
+}
+
+function contra3x2() {
+  // Três a atacar dois no campo inteiro: a bola no meio, as alas largas, e a
+  // decisão feita antes da linha de três.
+  const f1i = [B(8, 3, 2), BB(8, 7.5, 1), B(8, 12, 3), BO(20, 6, 1), BO(20, 9, 2)];
+  const f1a = [dribble(8, 7.5, 17, 7.5), run(8, 3, 21, 2), run(8, 12, 21, 13)];
+  const f2i = [B(21, 2, 2), BB(17, 7.5, 1), B(21, 13, 3), BO(19, 7, 1), BO(23, 9.5, 2)];
+  const f2a = [pass(17, 7.5, 21, 2), run(21, 2, 25, 5)];
+  const f3i = [BB(24.5, 4.6, 2), B(19, 7.5, 1), B(21, 13, 3), BO(21, 6.5, 1), BO(24.8, 8.5, 2)];
+  const f3a = [shot(24.5, 4.6, 26.2, 7.0)];
+  return { field: "basket", frames: [frame(f1i, f1a), frame(f2i, f2a), frame(f3i, f3a)] };
+}
+
+function mikan() {
+  // Lay-ups alternados debaixo do cesto, sem deixar a bola cair: direita,
+  // esquerda, direita — o gesto mil vezes.
+  const f1i = [BB(25.2, 5.8, 1)];
+  const f1a = [shot(25.2, 5.8, 26.2, 7.2)];
+  const f2i = [BB(25.2, 9.2, 1)];
+  const f2a = [shot(25.2, 9.2, 26.2, 7.8)];
+  return { field: "basket-half", frames: [frame(f1i, f1a), frame(f2i, f2a)] };
+}
+
+function passaCorta5out() {
+  // O espaçamento a cinco fora: passa à ala e corta para o cesto; o canto sobe
+  // a ocupar a ala vazia, e o ciclo recomeça.
+  const f1i = [BB(17.5, 7.5, 1), B(22.0, 2.0, 2), B(22.0, 13.0, 3), B(26.4, 0.9, 4), B(26.4, 14.1, 5)];
+  const f1a = [pass(17.5, 7.5, 22.0, 2.0), run(18.0, 8.0, 25.2, 7.0)];
+  const f2i = [B(25.2, 7.0, 1), BB(22.0, 2.0, 2), B(22.0, 13.0, 3), B(26.4, 0.9, 4), B(26.4, 14.1, 5)];
+  const f2a = [run(26.4, 14.1, 26.2, 9.5), run(22.0, 13.0, 17.8, 7.6), pass(22.0, 2.0, 25.2, 7.0)];
+  return { field: "basket-half", frames: [frame(f1i, f1a), frame(f2i, f2a)] };
 }
 
 /* -------------------------------------------------------------------------- */
@@ -884,6 +997,136 @@ const EXERCISES = [
     regressions: "Sem limite de tempo por posse.",
     diagram: powerPlay,
   },
+
+  /* ---- Basquetebol ------------------------------------------------------- */
+  {
+    name: "Passe em estrela",
+    category: "Técnica individual",
+    objectives: ["Passe", "Jogo de pés"],
+    type: "Analítico",
+    intensity: 4, players: "5", durationMin: 8, space: "Meio campo", complexity: 1,
+    ageMin: 8, ageMax: 99,
+    material: "1 bola (2 de reserva)",
+    description: "Cinco jogadores à volta do círculo de lance livre. A bola salta sempre um companheiro; quem passa corre para o lugar de quem recebeu. O aquecimento com bola de qualquer equipa de formação.",
+    rules: "Passe de peito ou picado, nunca por cima da cabeça. Quem passa não pára — corre logo. Juntar uma segunda bola quando o ritmo estabiliza.",
+    coachingPoints: "Passe forte e à altura do peito; mãos prontas a receber antes de a bola sair; o corte faz-se a acelerar, com o olhar na bola seguinte.",
+    commonErrors: "Passar e ficar a ver; passe bombeado que dá tempo à defesa; receber de lado com uma mão só.",
+    progressions: "Duas bolas em simultâneo; passe com a mão fraca; receber e fintar antes de passar.",
+    regressions: "Reduzir para quatro; caminhar o padrão antes de o correr.",
+    diagram: passeEstrela,
+  },
+  {
+    name: "Trança a três (3-man weave)",
+    category: "Transição",
+    objectives: ["Contra-ataque", "Transição ofensiva"],
+    type: "Circuito",
+    intensity: 7, players: "3", durationMin: 10, space: "Campo inteiro", complexity: 2,
+    ageMin: 9, ageMax: 99,
+    material: "Bolas, 2 cestos",
+    description: "Três saem da linha de fundo: passa e corre por trás de quem recebe, campo inteiro, a terminar em lay-up sem a bola tocar no chão. O clássico da transição.",
+    rules: "Sem drible. Quem finaliza volta a defender no grupo seguinte. Contar as finalizações em 2 minutos.",
+    coachingPoints: "Passar para a frente, não para o lado; correr largo depois de passar; o último passe é para a mão de fora de quem finaliza.",
+    commonErrors: "Passes curtos que fazem o grupo andar devagar; correr por dentro em vez de por trás; lay-up com a mão errada.",
+    progressions: "Trança a cinco; ida a três e volta 2x1 contra quem finalizou.",
+    regressions: "Meio campo; permitir um drible.",
+    diagram: tranca3,
+  },
+  {
+    name: "Shell drill 4x4",
+    category: "Defesa",
+    objectives: ["Ajudas e rotações", "1x1 defensivo"],
+    type: "Shell drill",
+    intensity: 6, players: "4x4", durationMin: 12, space: "Meio campo", complexity: 3,
+    ageMin: 11, ageMax: 99,
+    material: "1 bola, coletes",
+    description: "Quatro atacantes por fora, quatro defensores em concha: quem defende a bola aperta, os outros afastam-se uma passada para a linha da bola. A bola circula ao sinal do treinador e a concha roda toda.",
+    rules: "Ataque passa só ao sinal, sem driblar nem cortar. Defesa em posição a cada passe, antes de a bola chegar. Depois de 6 passes, jogo livre a partir daí.",
+    coachingPoints: "Uma passada para a bola, uma passada para o cesto; ver bola e homem ao mesmo tempo; falar — 'bola', 'ajuda', 'troca'.",
+    commonErrors: "Ajudantes colados ao seu homem sem ver a bola; rodar depois do passe em vez de durante; silêncio.",
+    progressions: "Permitir corte pela frente; permitir drible de penetração; 5x5.",
+    regressions: "3x3; o treinador passa a bola em vez do ataque.",
+    diagram: shellDrill,
+  },
+  {
+    name: "Pick & roll 2x2 com ajuda",
+    category: "Ataque",
+    objectives: ["Pick & roll", "2x2", "Leitura de vantagem"],
+    type: "1x1 / 2x2 / 3x3",
+    intensity: 7, players: "2x2", durationMin: 15, space: "Meio campo", complexity: 3,
+    ageMin: 12, ageMax: 99,
+    material: "Bolas, coletes",
+    description: "O poste vem bloquear o defensor do base; o base sai por cima do bloqueio e o poste rola para o cesto. A leitura é o exercício: se o defensor do poste ajuda, passe; se fica, finalização.",
+    rules: "O bloqueio tem de ser parado e com contacto. Duas leituras permitidas: passe ao poste que rola, ou finalização do base. Ponto a dobrar se a decisão for tomada em dois dribles.",
+    coachingPoints: "Esperar o bloqueio — não sair antes de ele estar posto; ombro junto ao ombro do bloqueador; o poste rola a olhar para a bola.",
+    commonErrors: "Base a sair cedo e a levar o defensor pelo bloqueio; poste a rolar para o mesmo corredor do base; passe picado tardio.",
+    progressions: "Juntar um terceiro defensor a ajudar do lado fraco (2x3); pick & pop com o poste a abrir.",
+    regressions: "Defensor do poste passivo; sem defensor do base nas primeiras repetições.",
+    diagram: pickRoll2x2,
+  },
+  {
+    name: "Closeout + 1x1",
+    category: "Defesa",
+    objectives: ["Closeout", "1x1 defensivo"],
+    type: "1x1 / 2x2 / 3x3",
+    intensity: 8, players: "1x1", durationMin: 10, space: "Meio campo", complexity: 2,
+    ageMin: 10, ageMax: 99,
+    material: "Bolas",
+    description: "O defensor sai debaixo do cesto a fechar sobre o atacante que recebe na ala: passos curtos nos últimos metros, mão em cima da bola. A seguir joga-se o 1x1 até finalização ou recuperação.",
+    rules: "O atacante só ataca depois de receber. Máximo 3 dribles. Troca de papéis a cada posse.",
+    coachingPoints: "Sprint até meio, passos curtos no fim; mão alta a tirar o lançamento; forçar o atacante para a mão fraca ou para a linha lateral.",
+    commonErrors: "Chegar a correr e passar ao lado; saltar à finta de lançamento; deixar o corredor central aberto.",
+    progressions: "Closeout de ajuda (o defensor vem do lado contrário); 2x2 com closeout.",
+    regressions: "Atacante sem drible — só lançamento ou passe.",
+    diagram: closeout1x1,
+  },
+  {
+    name: "Contra-ataque 3x2 → 2x1",
+    category: "Transição",
+    objectives: ["Contra-ataque", "Transição defensiva"],
+    type: "Jogo reduzido",
+    intensity: 8, players: "3x2", durationMin: 12, space: "Campo inteiro", complexity: 3,
+    ageMin: 11, ageMax: 99,
+    material: "Bolas, coletes",
+    description: "Três atacam dois no campo inteiro: a bola no meio, as alas largas, decisão antes da linha de três. Quem perde a bola (ou quem finaliza) volta a defender 2x1 contra os dois que defenderam.",
+    rules: "Máximo 2 passes depois de passar o meio campo. O 2x1 de volta começa no momento em que a bola sai do aro ou é recuperada.",
+    coachingPoints: "Alas a correr fora da linha de três; a bola no meio pelo melhor passador; parar antes da linha de três e escolher — passe ou finalização.",
+    commonErrors: "Os três a correr juntos pelo meio; driblar até baixo do cesto e só depois decidir; ninguém a voltar depois de finalizar.",
+    progressions: "4x3 → 3x2; limitar a 6 segundos de posse.",
+    regressions: "3x1; sem a volta 2x1.",
+    diagram: contra3x2,
+  },
+  {
+    name: "Mikan drill",
+    category: "Técnica individual",
+    objectives: ["Finalização", "Jogo de pés"],
+    type: "Analítico",
+    intensity: 5, players: "1", durationMin: 6, space: "Meio campo", complexity: 1,
+    ageMin: 8, ageMax: 99,
+    material: "1 bola por jogador",
+    description: "Lay-ups alternados debaixo do cesto, sem deixar a bola cair: direita, esquerda, direita. O gesto repetido mil vezes é o que faz a finalização perto do cesto ser automática.",
+    rules: "Sem drible entre lançamentos. Contar cestos em 30 segundos. Mão direita à direita, esquerda à esquerda.",
+    coachingPoints: "Pé de fora, mão de fora; a bola alta e afastada do defensor imaginário; olhos no quadrado da tabela.",
+    commonErrors: "Finalizar sempre com a mão forte; deixar a bola cair depois do ressalto; saltar para trás em vez de para cima.",
+    progressions: "Reverse Mikan (por trás do cesto); com um defensor passivo a fazer contacto.",
+    regressions: "Duas mãos; sem a alternância.",
+    diagram: mikan,
+  },
+  {
+    name: "5-out — passe e corte",
+    category: "Ataque",
+    objectives: ["Espaçamento", "5x5"],
+    type: "5x5 condicionado",
+    intensity: 6, players: "5 (+5)", durationMin: 15, space: "Meio campo", complexity: 3,
+    ageMin: 10, ageMax: 99,
+    material: "Bolas, coletes",
+    description: "O espaçamento a cinco fora: passa à ala e corta para o cesto; o canto sobe a ocupar a ala vazia e o ciclo recomeça. A base de qualquer ataque de formação — ler o espaço antes de decorar jogadas.",
+    rules: "Depois de passar, cortar sempre. Sem drible nas primeiras repetições. Com defesa: só se pode finalizar depois de um corte ter sido servido ou fechado.",
+    coachingPoints: "Cortar a acelerar e com as mãos prontas; preencher o lugar vazio na hora; passar para a mão de fora; manter a linha de três como referência de largura.",
+    commonErrors: "Cortar a trote e ficar no meio do caminho; dois a preencher o mesmo lugar; deixar o espaçamento fechar-se para dentro da linha de três.",
+    progressions: "Com defesa passiva → activa; permitir drible de penetração com regra de 'drible e passe'.",
+    regressions: "4-out sem oposição; caminhar os cortes.",
+    diagram: passaCorta5out,
+  },
 ];
 
 /* -------------------------------------------------------------------------- */
@@ -906,9 +1149,25 @@ if (academies.length === 0) {
 
 let inserted = 0;
 let skipped = 0;
+let semModalidade = 0;
+
+/** A disciplina de um desenho — a mesma regra da migração e de `adoptOrphans`. */
+const disciplineOf = (field) => (/^futsal/.test(field) ? "futsal" : /^basket/.test(field) ? "basketball" : "football");
 
 for (const academy of academies) {
+  // As modalidades com disciplina desta academia: é o que decide o que se semeia.
+  const sports = (await db.query(`SELECT id, code FROM "Sport" WHERE "academyId" = $1 AND code IS NOT NULL`, [academy.id])).rows;
+  const byCode = new Map(sports.map((s) => [s.code, s.id]));
+
   for (const ex of EXERCISES) {
+    const diagram = ex.diagram();
+    const sportId = byCode.get(disciplineOf(diagram.field));
+    if (!sportId) {
+      // A academia não pratica esta disciplina — o exercício não é para ela.
+      semModalidade++;
+      continue;
+    }
+
     const exists = await db.query(`SELECT 1 FROM "Exercise" WHERE "academyId" = $1 AND name = $2`, [
       academy.id,
       ex.name,
@@ -923,8 +1182,8 @@ for (const academy of academies) {
          id, "academyId", "createdById", visibility, name, description, category,
          objectives, type, intensity, players, "durationMin", space, material,
          "ageMin", "ageMax", complexity, rules, progressions, regressions,
-         "coachingPoints", "commonErrors", diagram, "updatedAt"
-       ) VALUES ($1,$2,NULL,'CLUB',$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,now())`,
+         "coachingPoints", "commonErrors", diagram, "sportId", "updatedAt"
+       ) VALUES ($1,$2,NULL,'CLUB',$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,now())`,
       [
         "seed" + randomBytes(10).toString("hex"),
         academy.id,
@@ -946,13 +1205,16 @@ for (const academy of academies) {
         ex.regressions ?? null,
         ex.coachingPoints,
         ex.commonErrors ?? null,
-        JSON.stringify(ex.diagram()),
+        JSON.stringify(diagram),
+        sportId,
       ],
     );
     inserted++;
   }
-  console.log(`  ${academy.slug}: pronto`);
+  console.log(`  ${academy.slug}: pronto (${sports.map((s) => s.code).join(", ") || "sem modalidades com disciplina"})`);
 }
 
-console.log(`\n${inserted} exercícios inseridos, ${skipped} já existiam (${academies.length} academia(s)).`);
+console.log(
+  `\n${inserted} exercícios inseridos, ${skipped} já existiam, ${semModalidade} não eram de nenhuma modalidade do clube (${academies.length} academia(s)).`,
+);
 await db.end();

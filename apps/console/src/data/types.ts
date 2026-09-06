@@ -10,6 +10,15 @@ import type { Role } from "@/lib/permissions";
 export type Sport = {
   id: string;
   name: string;
+  /**
+   * A disciplina — `football`, `futsal`, `basketball` — ou nulo.
+   *
+   * É o que liga a modalidade ao seu perfil técnico (`SPORT_PROFILES` em
+   * `lib/sports.ts`): que Área técnica tem, com que módulos, em que terreno se
+   * desenha. Sem código a modalidade existe (equipas, escalões, catálogos) mas
+   * não tem área técnica — natação, setas.
+   */
+  code?: string | null;
   /** Vazio em desportos sem posições (natação, atletismo) — a UI adapta-se por ausência. */
   positions: string[];
   /**

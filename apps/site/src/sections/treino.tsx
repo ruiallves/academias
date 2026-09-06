@@ -41,15 +41,15 @@ export function AreaTecnica({ n }: { n?: string } = {}) {
               {[
                 [
                   "Um editor tático a sério",
-                  "Jogadores, adversários, bolas, cones e zonas num campo com as medidas verdadeiras — futebol de 11, 9, 7 e 5, e futsal. Setas de passe, deslocamento e condução, e animação por frames para mostrar o movimento, não só a foto.",
+                  "Jogadores, adversários, bolas, cones e zonas num campo com as medidas verdadeiras — futebol de 11, 9, 7 e 5, futsal, e o campo de basquetebol. Setas de passe, deslocamento e condução, e animação por frames para mostrar o movimento, não só a foto.",
                 ],
                 [
                   "Uma biblioteca que cresce com o clube",
-                  "Exercícios prontos de futebol e futsal para começar, e os do treinador guardados com imagem, filtros e favoritos. Cada um importa-se para o plano num toque.",
+                  "Exercícios prontos de futebol, futsal e basquetebol para começar, e os do treinador guardados com imagem, filtros e favoritos. Cada um importa-se para o plano num toque.",
                 ],
                 [
-                  "Modelos de jogo e bolas paradas",
-                  "O sistema desenhado, os princípios por escrito, os cantos e livres ensaiados — do treinador, ou do clube inteiro, para a metodologia sobreviver à saída de quem a criou.",
+                  "Uma área técnica por modalidade",
+                  "No futebol e no futsal, modelos de jogo e bolas paradas; no basquetebol, sistemas de jogo e situações especiais — cada um com os exercícios que o treinam ligados. Do treinador, ou do clube inteiro, para a metodologia sobreviver à saída de quem a criou.",
                 ],
               ].map(([t, d]) => (
                 <li key={t} className="border-t border-line py-5 last:border-b">

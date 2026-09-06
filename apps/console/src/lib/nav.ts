@@ -22,8 +22,6 @@ import {
   Stethoscope,
   Dumbbell,
   Shapes,
-  Network,
-  Goal,
   Brain,
   Film,
   Sparkle,
@@ -33,6 +31,7 @@ import {
 } from "@/lib/icons";
 import type { Permission, Session } from "@/lib/permissions";
 import { permissionsOf } from "@/lib/permissions";
+import { profileOf, profiledSports, sportPath } from "@/lib/sports";
 
 /**
  * A navegação, como catálogo.
@@ -74,6 +73,15 @@ export type NavItem = {
    * pronta é apagar uma linha, no mesmo sítio onde ela foi posta.
    */
   beta?: true;
+  /**
+   * Um item que se desdobra conforme a configuração do clube.
+   *
+   * `sports` é a Área técnica das modalidades: no catálogo é **um** item (e é
+   * assim que o editor de cargos o mostra e guarda — mostra-se ou não), mas no
+   * menu vira um item por modalidade com perfil técnico: ⚽ Futebol, 🏀
+   * Basquetebol. Um clube só de natação não vê nenhum. Ver `navFor`.
+   */
+  dynamic?: "sports";
 };
 
 export type NavGroup = {
@@ -198,9 +206,13 @@ export const NAV_CATALOG: NavGroup[] = [
         requires: "calendar:read",
         badge: (c) => c.matchesToFill || undefined,
       },
-      { key: "exercises", label: "Exercícios", to: "/exercicios", icon: Shapes, requires: "training:read", beta: true },
-      { key: "game-models", label: "Modelos de jogo", to: "/modelos-jogo", icon: Network, requires: "training:read", beta: true },
-      { key: "set-pieces", label: "Bolas paradas", to: "/bolas-paradas", icon: Goal, requires: "training:read", beta: true },
+      /*
+        Exercícios, Modelos de jogo e Bolas paradas deixaram de ser três menus
+        soltos: vivem dentro de cada modalidade, e o que aparece aqui é um
+        item por modalidade com área técnica — ver `dynamic` e `navFor`. O
+        ícone e o rótulo deste item só se vêem no editor de cargos.
+      */
+      { key: "sports", label: "Modalidades (área técnica)", to: "/modalidades", icon: Shapes, requires: "training:read", dynamic: "sports" },
     ],
   },
   {
@@ -344,6 +356,26 @@ export function navFor(session: Session): NavGroup[] {
 
   return NAV_CATALOG.map((group) => ({
     ...group,
-    items: group.items.filter((i) => perms.has(i.requires) && (!chosen || chosen.has(i.key))),
+    items: group.items
+      .filter((i) => perms.has(i.requires) && (!chosen || chosen.has(i.key)))
+      .flatMap((i) => (i.dynamic === "sports" ? sportItems(i) : [i])),
   })).filter((group) => group.items.length > 0);
+}
+
+/**
+ * Um item por modalidade com área técnica.
+ *
+ * A chave leva o id da modalidade para as listas não terem chaves repetidas;
+ * a chave de **configuração** (a que o cargo guarda) continua a ser a do item
+ * do catálogo, e já foi verificada antes de se chegar aqui.
+ */
+function sportItems(item: NavItem): NavItem[] {
+  return profiledSports().map((sport) => ({
+    ...item,
+    key: `${item.key}:${sport.id}`,
+    label: sport.name,
+    to: sportPath(sport.id),
+    icon: profileOf(sport)!.icon,
+    dynamic: undefined,
+  }));
 }

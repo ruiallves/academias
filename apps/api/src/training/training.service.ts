@@ -788,20 +788,37 @@ export class TrainingService {
   /* ------------------------------------------------------------------------ */
 
   /**
-   * Os três contadores da página de entrada — "24 exercícios · 8 sistemas · 12
-   * situações". Contados com a mesma visibilidade das listas, senão a página
+   * A página de entrada de uma modalidade: quanto há em cada módulo, e o que lá
+   * entrou por último.
+   *
+   * Os nomes recentes são o que dá vida a uma página que de outra forma são
+   * três números: "Rondo 5v2 · Posse 6v4" diz que a biblioteca é do clube e
+   * está viva, e diz onde se ficou. Três chegam — a lista completa está a um
+   * clique de distância, e é para isso que ela existe.
+   *
+   * Contados e amostrados com a mesma visibilidade das listas, senão a página
    * prometia um número e a lista mostrava outro.
    */
   async summary(ctx: RequestContext, sportId: string) {
     if (!can(ctx, "training:read")) throw new ForbiddenException("Sem acesso à área técnica");
 
     return this.prisma.runAs(ctx.academyId, async (db) => {
-      const [exercises, gameModels, setPieces] = await Promise.all([
+      const recentes = { orderBy: { updatedAt: "desc" }, select: { name: true }, take: 3 } as const;
+      const [exercises, gameModels, setPieces, ex, gm, sp] = await Promise.all([
         db.exercise.count({ where: { sportId, archivedAt: null, ...visibleTo(ctx) } }),
         db.gameModel.count({ where: { sportId, ...visibleTo(ctx) } }),
         db.setPiece.count({ where: { sportId, ...visibleTo(ctx) } }),
+        db.exercise.findMany({ where: { sportId, archivedAt: null, ...visibleTo(ctx) }, ...recentes }),
+        db.gameModel.findMany({ where: { sportId, ...visibleTo(ctx) }, ...recentes }),
+        db.setPiece.findMany({ where: { sportId, ...visibleTo(ctx) }, ...recentes }),
       ]);
-      return { exercises, gameModels, setPieces };
+
+      const nomes = (rows: { name: string }[]) => rows.map((r) => r.name);
+      return {
+        exercises: { count: exercises, recent: nomes(ex) },
+        gameModels: { count: gameModels, recent: nomes(gm) },
+        setPieces: { count: setPieces, recent: nomes(sp) },
+      };
     });
   }
 

@@ -60,7 +60,16 @@ type ApiBootstrap = {
     membershipIntro: string | null;
     membershipPoints: string[];
   };
-  sports: { id: string; name: string; positions: string[]; skills: string[]; dominantSideLabel: string | null; matchMinutes: number | null }[];
+  sports: {
+    id: string;
+    name: string;
+    /** A disciplina — é o que dá área técnica à modalidade. Ver `Sport.code`. */
+    code: string | null;
+    positions: string[];
+    skills: string[];
+    dominantSideLabel: string | null;
+    matchMinutes: number | null;
+  }[];
   season: { id: string; label: string } | null;
   /** Todas as épocas da academia, da mais recente para trás. */
   seasons?: { id: string; label: string; isCurrent: boolean }[];
@@ -587,9 +596,17 @@ function build(
       membershipHeadline: boot.academy.membershipHeadline ?? "",
       membershipIntro: boot.academy.membershipIntro ?? "",
       membershipPoints: boot.academy.membershipPoints ?? [],
+      /*
+       * Campo a campo, e por isso é preciso cuidado: o que não estiver aqui
+       * **não chega ao ecrã**, mesmo estando certo na base de dados. Foi o que
+       * aconteceu ao `code` quando a área técnica passou a ser por modalidade —
+       * a disciplina estava gravada, o menu ficou vazio, e nada no caminho deu
+       * erro. Ao acrescentar um campo à modalidade, acrescentar aqui também.
+       */
       sports: boot.sports.map((s) => ({
         id: s.id,
         name: s.name,
+        code: s.code ?? null,
         positions: s.positions,
         skills: s.skills,
         dominantSideLabel: s.dominantSideLabel ?? undefined,

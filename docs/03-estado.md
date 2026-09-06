@@ -428,6 +428,104 @@ relação, como `AttendanceRecord`.
 Verificado por `npm run test:training` (33) — visibilidade, âmbito, autoria,
 favoritos, plano com blocos, arquivar-em-vez-de-apagar, e as recusas todas.
 
+### Uma Área técnica por modalidade
+
+Exercícios, Modelos de jogo e Bolas paradas **deixaram de ser menus**: vivem
+dentro de cada modalidade. O grupo Área técnica tem Treinos, Jogos e **um item
+por modalidade com perfil técnico** — ⚽ Futebol, 🥅 Futsal, 🏀 Basquetebol —
+e cada um abre em `/modalidades/:sportId`: a entrada com os três cartões e as
+contagens, e por baixo os três módulos com uma barra fina para saltar entre
+eles. Um clube só de natação não vê nenhum.
+
+**A entrada da modalidade, à terceira.** Foi um emoji no título e três cartões
+com um círculo verde cada — podia ser a entrada de qualquer coisa. Depois foi
+tentada com **imagens**: o campo da modalidade em grande no cabeçalho e o
+desenho mais recente em cada cartão. Ficou pior — um campo chapado a ocupar um
+terço do ecrã é um cartaz, não identidade, e os módulos ainda vazios mostravam
+três rectângulos de relva seguidos. Agora é o que a consola é em todo o lado:
+cabeçalho normal, três cartões baixos com o número em grande, o rótulo, a
+descrição e **os últimos nomes que lá entraram**, e as equipas em rodapé como
+contexto. A identidade não precisa de desenho nenhum: está no nome, nos rótulos
+dos módulos (*Bolas paradas* contra *Situações especiais*) e nos ícones.
+`GET training/summary` devolve por módulo `{ count, recent }`. **Os emojis
+saíram todos** — do menu, da entrada e das Definições: desenham-se à maneira do
+sistema operativo de quem olha, não têm a espessura de traço da consola, e ao
+lado de tipografia séria lêem-se como autocolantes.
+
+**O nome manda.** A modalidade ganhou `Sport.code` — a *disciplina*
+(`football`, `futsal`, `basketball`, ou nulo) — mas ninguém tem de a escolher:
+quem chama "Futebol" à sua modalidade tem a área técnica de futebol, e é o
+`inferSportCode` que o decide, no servidor e no cliente (gémeas: uma em
+`academy.service.ts`, outra em `lib/sports.ts`). Compara sem maiúsculas e sem
+acentos e por conteúdo, com o futsal antes do futebol porque "futebol de
+salão" **é** futsal; "FUTEBOL", "Futebol 7", "Futeboll" e "Futbol" caem todos
+em futebol. Sem isto, os clubes que já lá estavam nunca teriam área técnica,
+que foi exactamente o que aconteceu à primeira. A escolha à mão só vale para
+nomes que a regra não conhece, e renomear reclassifica. `profileOf` no cliente
+também cai para o nome quando o código não está gravado.
+
+**Uma disciplina por clube.** Duas modalidades de futebol dariam duas áreas
+técnicas de futebol, com a biblioteca partida ao meio; o que distingue
+escalões e géneros são as equipas. `checkDisciplinaLivre` recusa com o nome de
+quem já a ocupa, e o diálogo desactiva esses padrões antes de se tentar.
+
+**O resto da configuração.** Nas Definições escolhe-se um dos três padrões (que
+preenche nome, posições, competências, lado dominante e duração **só onde
+estava vazio**) ou "Outra", texto livre sem área técnica — e "Outra" desaparece
+quando o nome já diz a disciplina, porque seria um botão a prometer o que a
+gravação não cumpre.
+
+**Cuidado com o store.** `boot.sports` é remapeado campo a campo em
+`lib/store.ts`: o `code` ficou de fora à primeira, a disciplina estava certa na
+base de dados, o menu apareceu vazio e nada deu erro. Ao acrescentar um campo à
+modalidade, acrescentar lá também. O **perfil** de cada disciplina é código,
+em `apps/console/src/lib/sports.ts` (`SPORT_PROFILES`): os módulos e os seus
+nomes e caminhos (`/modelos-jogo` no futebol, `/sistemas-jogo` no
+basquetebol — a mesma página), os terrenos do editor, o vocabulário (categorias
+de objectivo, tipos de exercício, secções dos princípios, tipos de situação em
+grupos), os sistemas de partida e os lances montados. Um perfil novo (andebol,
+voleibol) é um objecto a mais — sem tabela, sem migração, sem página nova. As
+três chaves de menu antigas viraram uma, `sports`, no servidor e nos cargos.
+
+**O conteúdo diz de que modalidade é.** `Exercise`, `GameModel` e `SetPiece`
+ganharam `sportId`; as listas filtram por `?sport=` e há um `summary` para os
+contadores. A migração `20260906100000_area_tecnica_por_modalidade` preencheu
+o código pelo nome (futsal antes de futebol — "futebol de salão" é futsal),
+normalizou "futebol" → "Futebol" onde era só maiúsculas, e atribuiu modalidade
+ao que existia: pela equipa, senão pelo terreno do desenho (relva é futebol,
+pavilhão 40×20 é futsal, 28×15 é basquetebol), senão — só para trabalho de
+alguém — pela modalidade principal do clube. A **biblioteca base sem
+correspondência** (os rondos de relva num clube só de futsal) ficou sem
+modalidade de propósito e é **adoptada** no dia em que o clube criar a
+disciplina certa (`adoptOrphans` em `createSport`/`updateSport`). A semente
+(`seed:exercises`) passou a semear só as disciplinas que a academia tem, já
+com `sportId`, e trouxe oito exercícios clássicos de basquetebol.
+
+**Basquetebol não é futebol renomeado.** Campo FIBA de 28×15 no editor
+(`Court` em `FieldEditor.tsx`, derivado de `CourtSpec`: cesto a 1,575 m,
+três pontos a 6,75, garrafão 4,90×5,80, não-carga 1,25), paleta sem
+guarda-redes, balizas nem cruzamentos e "Lançamento" em vez de "Remate"
+(`EditorVocabulary`), categorias próprias (Técnica individual, Ataque,
+Defesa, Transição, Físico, Tomada de decisão), **Sistemas de jogo** com
+`GameModel.kind` (ataque/defesa/transição) e formações de partida (5-out,
+4-out 1-in, horns, zonas 2-3/3-2/1-3-1), e **Situações especiais** em quatro
+grupos (reposições, final de jogo, descontos de tempo, outras) que nascem com
+o lance montado — e um tipo escrito à mão entra como os outros. O futsal
+ganhou os seus lances (pontapés de linha lateral, livres de 10 m, saídas de
+baliza).
+
+**As relações.** `GameModelExercise` e `SetPieceExercise` (tabelas com chaves
+estrangeiras e RLS pelo pai, não arrays de ids) e `SetPiece.gameModelId`: um
+sistema tem os exercícios com que se treina, uma situação parte de um sistema
+e tem os exercícios com que se ensaia, e a ficha do exercício diz **onde
+entra**. Ligar o exercício privado de um colega é 400. O plano de treino
+oferece as categorias da modalidade da equipa e abre a ficha na área certa;
+os caminhos antigos (`/exercicios/:id`, …) resolvem a modalidade pelo próprio
+conteúdo e reencaminham (`LegacyTechnical`).
+
+Verificado por `npm run test:modalidades` — disciplina, adopção, isolamento
+por modalidade, contadores, relações e as recusas.
+
 ## Academias AI
 
 A camada de inteligência: vídeo de jogo → computer vision → dados com

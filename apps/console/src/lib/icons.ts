@@ -107,3 +107,29 @@ export {
   Menu as DragHandle,
   type LucideIcon,
 } from "lucide-react";
+
+/* -------------------------------------------------------------------------- */
+/* As modalidades                                                              */
+/* -------------------------------------------------------------------------- */
+
+import { createLucideIcon, Goal as GoalIcon } from "lucide-react";
+
+/**
+ * A bola de futebol e a de basquetebol, desenhadas na gramática da biblioteca
+ * (viewBox 24, traço 2, cantos redondos) para se sentarem ao lado das outras no
+ * menu sem parecer que vieram de outro sítio. O futsal usa a baliza (`Goal`),
+ * que já existia: é o pavilhão de que o futsal é o jogo.
+ */
+export const Football = createLucideIcon("Football", [
+  ["circle", { cx: "12", cy: "12", r: "10", key: "c" }],
+  ["path", { d: "M12 7l4.2 3-1.6 5H9.4L7.8 10z", key: "p" }],
+  ["path", { d: "M12 2v5M7.8 10 3.5 8.6M16.2 10l4.3-1.4M9.4 15l-2.7 3.9M14.6 15l2.7 3.9", key: "s" }],
+]);
+
+export const Basketball = createLucideIcon("Basketball", [
+  ["circle", { cx: "12", cy: "12", r: "10", key: "c" }],
+  ["path", { d: "M4.9 4.9a10 10 0 0 0 14.2 14.2M19.1 4.9A10 10 0 0 0 4.9 19.1", key: "a" }],
+  ["path", { d: "M2 12h20M12 2v20", key: "x" }],
+]);
+
+export const Futsal = GoalIcon;

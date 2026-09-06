@@ -3,11 +3,11 @@ import { signalOnSurface } from "@academia/ui/tokens";
 import { FieldView, Pitch, baseView, itemScale, pitchBackground } from "@/components/FieldEditor";
 import { academy } from "@/lib/store";
 import { longDate, time } from "@/lib/format";
+import { SPORT_PROFILES, kindLabel, sportAreaById } from "@/lib/sports";
 import {
   ARROW_LABEL,
   ITEM_LABEL,
   PRINCIPLE_SECTIONS,
-  SET_PIECE_KINDS,
   asDiagram,
   asLineupData,
   type ExerciseFull,
@@ -484,13 +484,18 @@ export async function exportarExercicio(ex: ExercicioImprimivel): Promise<void> 
 
 export async function exportarModelo(m: GameModelRow): Promise<void> {
   const folha = await novaFolha();
-  folha.cabecalho("", "Modelo de jogo");
+  // O perfil da modalidade dá os nomes — "Sistema de jogo", "Posições de
+  // partida" — e as secções dos princípios; sem ele, o futebol de sempre.
+  const perfil = sportAreaById(m.sportId)?.profile ?? SPORT_PROFILES.football;
+  const tipo = perfil.playbook.kinds && m.kind ? kindLabel([{ label: null, kinds: perfil.playbook.kinds }], m.kind) : null;
+  const um = perfil.playbook.count(1).replace(/^1 /, "");
+  folha.cabecalho("", um[0].toUpperCase() + um.slice(1));
   folha.titulo(m.name);
-  folha.subtitulo([m.system, m.teamName].filter(Boolean).join(" · "));
+  folha.subtitulo([tipo, m.system, m.teamName].filter(Boolean).join(" · "));
 
   const lineup = asLineupData(m.lineup);
   if (lineup.slots.length > 0) {
-    folha.seccao("Onze-tipo");
+    folha.seccao(perfil.playbook.lineupLabel);
     const v = baseView(lineup.pitch);
     const ratio = v.w / v.h;
     await folha.campo(svgDoOnze(lineup, ratio), ratio, Math.min(LARGURA / ratio, 155));
@@ -505,7 +510,8 @@ export async function exportarModelo(m: GameModelRow): Promise<void> {
    * o que diz é que ainda não escreveu.
    */
   const principios = (m.principles ?? {}) as Principles;
-  for (const seccao of PRINCIPLE_SECTIONS) {
+  const seccoes = perfil.playbook.sections.length ? perfil.playbook.sections : PRINCIPLE_SECTIONS;
+  for (const seccao of seccoes) {
     const conteudo = principios[seccao.key] ?? {};
     const escritos = seccao.topics.filter((t) => conteudo[t]?.trim());
     if (escritos.length === 0) continue;
@@ -523,12 +529,17 @@ export async function exportarModelo(m: GameModelRow): Promise<void> {
     }
   }
 
+  if (m.exercises?.length) {
+    folha.seccao("Exercícios relacionados");
+    for (const e of m.exercises) folha.paragrafo(`• ${e.name}`);
+  }
+
   if (m.notes?.trim()) {
     folha.seccao("Notas");
     folha.paragrafo(m.notes);
   }
 
-  guardar(folha, nomeDoFicheiro("modelo-de-jogo", m.name));
+  guardar(folha, nomeDoFicheiro(perfil.playbook.slug, m.name));
 }
 
 /* -------------------------------------------------------------------------- */
@@ -537,11 +548,12 @@ export async function exportarModelo(m: GameModelRow): Promise<void> {
 
 export async function exportarBolaParada(sp: SetPieceRow): Promise<void> {
   const folha = await novaFolha();
-  const tipo = SET_PIECE_KINDS.find((k) => k.key === sp.kind)?.label ?? "Bola parada";
+  const perfil = sportAreaById(sp.sportId)?.profile ?? SPORT_PROFILES.football;
+  const tipo = kindLabel(perfil.situations.groups, sp.kind);
 
   folha.cabecalho("", tipo);
   folha.titulo(sp.name);
-  folha.subtitulo(sp.teamName ?? "");
+  folha.subtitulo([sp.teamName, sp.gameModelName].filter(Boolean).join(" · "));
 
   if (sp.description?.trim()) {
     folha.seccao("Descrição");
@@ -550,7 +562,12 @@ export async function exportarBolaParada(sp: SetPieceRow): Promise<void> {
 
   await frames(folha, sp.diagram, sp.name);
 
-  guardar(folha, nomeDoFicheiro("bola-parada", sp.name));
+  if (sp.exercises?.length) {
+    folha.seccao("Exercícios relacionados");
+    for (const e of sp.exercises) folha.paragrafo(`• ${e.name}`);
+  }
+
+  guardar(folha, nomeDoFicheiro(perfil.situations.slug, sp.name));
 }
 
 /* -------------------------------------------------------------------------- */

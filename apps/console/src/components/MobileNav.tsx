@@ -280,29 +280,28 @@ function MobileMenuSheet({ onClose }: { onClose: () => void }) {
             </section>
           ))}
 
-          {showSettings && (
-            <section className="mt-4">
-              <ul className="overflow-hidden rounded-[14px] border border-line">
-                <li>
-                  <SheetItem item={SETTINGS_ITEM} />
-                </li>
-              </ul>
-            </section>
-          )}
-
           <MudarDeArea />
 
+          {/* A conta: quem está, as Definições (a quem as tem) e a saída — o
+              mesmo menu que na barra lateral abre ao clicar no nome. */}
           <section className="mt-4">
-            <div className="flex items-center gap-3 rounded-[14px] border border-line px-3 py-2.5">
-              <Monogram name={session.name} self />
-              <div className="min-w-0 flex-1">
-                <div className="truncate text-body font-medium text-ink">{session.name}</div>
-                <div className="truncate text-[11px] text-ink-3">{ROLE_LABEL[session.role]}</div>
+            <div className="overflow-hidden rounded-[14px] border border-line">
+              <div className="flex items-center gap-3 px-3 py-2.5">
+                <Monogram name={session.name} self />
+                <div className="min-w-0 flex-1">
+                  <div className="truncate text-body font-medium text-ink">{session.name}</div>
+                  <div className="truncate text-[11px] text-ink-3">{ROLE_LABEL[session.role]}</div>
+                </div>
+                <button type="button" onClick={signOut} className="ctl-outline h-9" aria-label="Terminar sessão">
+                  <LogOut className="size-3.5" strokeWidth={1.75} />
+                  Sair
+                </button>
               </div>
-              <button type="button" onClick={signOut} className="ctl-outline h-9" aria-label="Terminar sessão">
-                <LogOut className="size-3.5" strokeWidth={1.75} />
-                Sair
-              </button>
+              {showSettings && (
+                <div className="border-t border-line">
+                  <SheetItem item={SETTINGS_ITEM} />
+                </div>
+              )}
             </div>
             <TrialBadge
               status={academy.status}
