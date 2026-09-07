@@ -20,6 +20,17 @@ from . import config
 
 _session = requests.Session()
 
+
+class JobGone(Exception):
+    """O job já não existe do lado da API — apagado, cancelado ou já concluído.
+
+    É diferente de uma falha de rede, e o worker trata-o ao contrário: numa
+    falha de rede insiste-se, aqui pára-se já. Uma análise apagada a meio do
+    processamento deixava o worker a moer uma hora e meia de vídeo para um
+    destino que não existe — e a fila parada atrás dele, porque um worker faz
+    um job de cada vez.
+    """
+
 # Quantas vezes se repete um pedido que falhou por rede, e o recuo entre elas.
 #
 # Isto custou duas horas de trabalho para se aprender. O worker acabou uma
@@ -78,13 +89,54 @@ def claim(kinds: list[str]) -> dict[str, Any] | None:
 
 
 def heartbeat(job_id: str, progress: int | None = None) -> None:
-    body: dict[str, Any] = {}
+    """Diz que ainda cá está — e ouve a resposta.
+
+    O 404 é a única forma que a API tem de dizer "esse job desapareceu": não há
+    canal do servidor para o worker, e inventar um (websocket, fila de comandos)
+    para uma mensagem que já cabe aqui era construir infra-estrutura a mais. O
+    heartbeat já bate de cinco em cinco segundos; é o sítio certo para ouvir.
+    """
+    body: dict[str, Any] = {"worker": config.WORKER_NAME}
     if progress is not None:
         body["progress"] = max(0, min(100, int(progress)))
-    _post(f"/api/ai/worker/jobs/{job_id}/heartbeat", body)
+    try:
+        _post(f"/api/ai/worker/jobs/{job_id}/heartbeat", body)
+    except requests.HTTPError as error:
+        if error.response is not None and error.response.status_code == 404:
+            raise JobGone(job_id) from error
+        raise
+
+
+LOTE_TRACKS = 400
+
+
+def send_tracks(job_id: str, tracks: list[dict[str, Any]]) -> None:
+    """Os tracks, em lotes, antes do `complete`.
+
+    Iam dentro do `complete`, e o corpo desse pedido passou a depender do jogo:
+    um jogo filmado de longe produz milhares de tracks e o JSON passou os 16 MB
+    que a API aceita. **413**, job dado por falhado, duas horas de deteccao
+    deitadas fora depois de estarem feitas. Aconteceu.
+
+    Em lotes o tamanho de cada pedido e uma constante nossa. O primeiro leva
+    `reset`, que substitui os automaticos e preserva os corrigidos — o que o
+    `complete` fazia.
+    """
+    for i in range(0, max(1, len(tracks)), LOTE_TRACKS):
+        _post(
+            f"/api/ai/worker/jobs/{job_id}/tracks",
+            {"tracks": tracks[i : i + LOTE_TRACKS], "reset": i == 0},
+        )
 
 
 def complete(job_id: str, result: dict[str, Any], model_versions: dict[str, str] | None = None) -> None:
+    # Os tracks seguem à parte; o `complete` fica com o resumo, que é pequeno e
+    # não cresce com o jogo.
+    tracks = result.get("tracks")
+    if isinstance(tracks, list):
+        send_tracks(job_id, tracks)
+        result = {**result, "tracks": [], "trackCount": len(tracks)}
+
     body: dict[str, Any] = {"result": result}
     if model_versions:
         body["modelVersions"] = model_versions
@@ -103,24 +155,30 @@ def register_model(task: str, name: str, version: str, license_: str, source: st
     )
 
 
-def upload_json_gz(job_id: str, rel_path: str, payload: Any) -> str:
-    """Guarda um derivado (ex.: posições de um track) no Storage da análise.
+def upload_bytes(job_id: str, rel_path: str, data: bytes, content_type: str) -> str:
+    """Guarda um derivado no Storage da análise — bytes, seja o que forem.
 
-    Devolve a chave do objecto — é o que se escreve em `dataKey`. O caminho é
-    relativo à pasta `derived/` da análise; a API recusa qualquer tentativa de
-    sair dela.
+    Devolve a chave do objecto. O caminho é relativo à pasta `derived/` da
+    análise; a API recusa qualquer tentativa de sair dela. É o caminho comum a
+    tudo o que o worker produz: JSON comprimido, folhas de recortes, e o que
+    vier — um só sítio a saber pedir o URL e a repetir quando a rede falha.
     """
-    data = gzip.compress(json.dumps(payload, separators=(",", ":")).encode("utf-8"))
 
     def enviar():
         # O URL assinado pede-se **dentro** da repetição: se a subida falhar por
         # ele ter caducado, tentar outra vez com o mesmo não resolve nada.
-        signed = _post(f"/api/ai/worker/jobs/{job_id}/upload-url", {"path": rel_path, "contentType": "application/gzip"})
-        res = _session.put(signed["url"], data=data, headers={"Content-Type": "application/gzip"}, timeout=600)
+        signed = _post(f"/api/ai/worker/jobs/{job_id}/upload-url", {"path": rel_path, "contentType": content_type})
+        res = _session.put(signed["url"], data=data, headers={"Content-Type": content_type}, timeout=600)
         res.raise_for_status()
         return signed["key"]
 
     return _com_repeticao(f"subir {rel_path} ({len(data) / 1048576:.1f} MB)", enviar)
+
+
+def upload_json_gz(job_id: str, rel_path: str, payload: Any) -> str:
+    """Um JSON comprimido — posições, índices, embeddings. Ver `upload_bytes`."""
+    data = gzip.compress(json.dumps(payload, separators=(",", ":")).encode("utf-8"))
+    return upload_bytes(job_id, rel_path, data, "application/gzip")
 
 
 def video_received(
@@ -143,6 +201,28 @@ def video_received(
     if fps:
         body["fps"] = float(fps)
     return _post(f"/api/ai/worker/videos/{video_id}/received", body)
+
+
+def download_derived(job_id: str, rel_path: str) -> bytes | None:
+    """Lê um derivado da análise — recortes, índices, embeddings.
+
+    O espelho de `upload_bytes`: pede-se um link de leitura à API (preso à
+    pasta `derived/` desta análise, como o de escrita) e descarrega-se. `None`
+    quando o ficheiro não existe — a etapa que o produzia não correu, ou a
+    análise é anterior a ela. Quem chama decide se isso é erro.
+    """
+
+    def buscar():
+        signed = _post(f"/api/ai/worker/jobs/{job_id}/download-url", {"path": rel_path})
+        if not signed or not signed.get("url"):
+            return None
+        res = _session.get(signed["url"], timeout=600)
+        if res.status_code in (400, 404):
+            return None
+        res.raise_for_status()
+        return res.content
+
+    return _com_repeticao(f"ler {rel_path}", buscar)
 
 
 def download_video(url: str, suffix: str = ".mp4") -> Path:

@@ -5,9 +5,11 @@ import { issueTicket } from "./ai-ticket";
 import { can, teamScopeFilter, type RequestContext } from "../common/permissions";
 import { AiVideoService, videoExtensionFor } from "./ai-video.service";
 import { AiJobsService } from "./ai-jobs.service";
+import { AiPresenceService } from "./ai-presence.service";
 import type {
   CompleteVideoDto,
   CreateAnalysisDto,
+  IdentifyIdentityDto,
   IdentifyTrackDto,
   StartVideoUploadDto,
   UpdateSquadDto,
@@ -36,6 +38,7 @@ export class AiService {
     private readonly prisma: PrismaService,
     private readonly video: AiVideoService,
     private readonly jobs: AiJobsService,
+    private readonly presence: AiPresenceService,
     private readonly config: ConfigService,
   ) {}
 
@@ -205,14 +208,40 @@ export class AiService {
               firstMs: true, lastMs: true, frameCount: true, summary: true, status: true,
             },
           },
+          /*
+           * As pessoas — o que o treinador revê. Por tempo de presença, que é a
+           * ordem em que interessam: quem esteve 60 minutos em campo primeiro,
+           * quem apareceu 25 segundos depois. Os tracks continuam a vir, mas
+           * são o detalhe técnico.
+           */
+          identities: {
+            orderBy: [{ presenceMs: "desc" }, { label: "asc" }],
+            select: {
+              id: true, label: true, status: true, side: true,
+              athleteId: true, athlete: { select: { name: true } },
+              proposedAthleteId: true, proposedConfidence: true,
+              jerseyNumber: true, jerseyConfidence: true,
+              firstMs: true, lastMs: true, trackCount: true, presenceMs: true, summary: true,
+            },
+          },
           _count: { select: { events: true, corrections: true } },
         },
       });
       if (!a) throw new NotFoundException("Análise não encontrada");
 
-      const { videos, jobs, tracks, squad, createdBy, _count, ...rest } = a;
+      const { videos, jobs, tracks, identities, squad, createdBy, _count, ...rest } = a;
       return {
         ...toAnalysisRow(rest as Parameters<typeof toAnalysisRow>[0]),
+        identities: identities.map((i) => ({ ...i, athleteName: i.athlete?.name ?? null, athlete: undefined })),
+        /*
+         * Há quem processe isto?
+         *
+         * Vai com a análise e não num endpoint próprio: quem está a olhar para
+         * uma barra parada nos 0% faz esta pergunta **sobre esta análise**, e
+         * um segundo pedido para a responder era uma volta a mais no poll de
+         * cinco segundos. Ver `AiPresenceService`.
+         */
+        workers: this.presence.resumo(),
         failReason: a.failReason,
         createdBy: createdBy?.user.name ?? null,
         squad: squad.map((s) => ({
@@ -227,6 +256,55 @@ export class AiService {
         correctionCount: _count.corrections,
       };
     });
+  }
+
+  /**
+   * Os recortes de uma análise — o que o treinador vê quando confirma quem é quem.
+   *
+   * O worker guarda, por track, os frames em que o jogador está maior e mais
+   * nítido, em **folhas** (grelhas de recortes) no Storage. Aqui devolve-se o
+   * índice e um link curto por folha; o cliente recorta a partir dela — nunca
+   * há um pedido por jogador. É também o que a etapa de identificação lê.
+   *
+   * Sem índice não há erro: é uma análise anterior aos recortes, ou a etapa
+   * ainda não chegou lá. Devolve-se vazio e o ecrã diz isso, em vez de mostrar
+   * um quadrado partido.
+   */
+  async analysisCrops(ctx: RequestContext, analysisId: string) {
+    if (!can(ctx, "ai:read")) throw new ForbiddenException("Sem acesso à Academias AI");
+    const teamScope = teamScopeFilter(ctx);
+
+    const found = await this.prisma.runAs(ctx.academyId, (db) =>
+      db.aIAnalysis.findFirst({
+        where: { id: analysisId, ...(teamScope ? { teamId: teamScope } : {}) },
+        select: { id: true },
+      }),
+    );
+    if (!found) throw new NotFoundException("Análise não encontrada");
+
+    // Fora da transação, como sempre: é rede.
+    const base = `${ctx.academyId}/${analysisId}/derived/crops`;
+    const index = await this.video.readJsonGz<{
+      tile: [number, number];
+      cols: number;
+      rows: number;
+      sheets: number;
+      tracks: Record<string, { s: number; i: number; ts: number; box: [number, number, number, number] }[]>;
+    }>(`${base}/index.json.gz`);
+
+    const vazio = { tile: [0, 0] as [number, number], cols: 0, rows: 0, sheets: [] as (string | null)[], tracks: {}, expiresIn: 0 };
+    if (!index) return vazio;
+
+    const keys = Array.from({ length: index.sheets }, (_, i) => `${base}/sheet-${String(i).padStart(3, "0")}.jpg`);
+    const urls = await this.video.signMany(keys, 600);
+    return {
+      tile: index.tile,
+      cols: index.cols,
+      rows: index.rows,
+      sheets: keys.map((k) => urls.get(k) ?? null),
+      tracks: index.tracks,
+      expiresIn: 600,
+    };
   }
 
   async updateSquad(ctx: RequestContext, id: string, dto: UpdateSquadDto) {
@@ -500,6 +578,118 @@ export class AiService {
    * depois), e alimenta o perfil de identidade do atleta — o active learning
    * começa por guardar bem, não por treinar já.
    */
+  /**
+   * Confirmar quem é uma identidade — a correção que vale para o jogador inteiro.
+   *
+   * O treinador olha para os recortes e diz "é o Rui" ou "não é ninguém do
+   * plantel". O veredicto desce a todos os tracks da identidade (é a razão de
+   * ela existir), fica em `HumanCorrection` com o antes e o depois, e anota o
+   * número no perfil do atleta.
+   *
+   * ## E propaga-se
+   *
+   * Uma identidade confirmada é uma **âncora**: os fragmentos que ficaram
+   * soltos e se parecem com ela devem ganhar a mesma proposta. Isso é trabalho
+   * do worker — re-agrupar com a âncora à frente — por isso enfileira-se uma
+   * passagem de `identify` marcada como propagação: não muda o estado da
+   * análise, não move a barra, reaproveita os embeddings e devolve em
+   * segundos. Uma de cada vez: se já há uma na fila, ela vai apanhar esta
+   * confirmação também.
+   */
+  async identifyIdentity(ctx: RequestContext, identityId: string, dto: IdentifyIdentityDto) {
+    if (!can(ctx, "ai:write")) throw new ForbiddenException("Sem permissão para corrigir");
+
+    return this.prisma.runAs(ctx.academyId, async (db) => {
+      const identity = await db.playerIdentity.findFirst({
+        where: { id: identityId },
+        select: {
+          id: true, analysisId: true, athleteId: true, proposedAthleteId: true, proposedConfidence: true,
+          jerseyNumber: true, status: true,
+          analysis: { select: { teamId: true, status: true } },
+        },
+      });
+      if (!identity) throw new NotFoundException("Jogador não encontrado");
+      this.assertTeamInScope(ctx, identity.analysis.teamId);
+
+      const athleteId = dto.athleteId ?? null;
+      if (athleteId) {
+        const athlete = await db.athlete.findFirst({ where: { id: athleteId }, select: { id: true } });
+        if (!athlete) throw new BadRequestException("Esse atleta não é desta academia");
+      }
+      const status = athleteId ? "confirmed" : "rejected";
+
+      await db.playerIdentity.update({
+        where: { id: identityId },
+        data: { athleteId, status, updatedAt: new Date() },
+      });
+      await db.playerTrack.updateMany({
+        where: { identityId },
+        data: {
+          athleteId,
+          // Confirmado por um humano: a confiança passa a ser a dele. Rejeitado: sai da conta.
+          identityConfidence: athleteId ? 1 : null,
+          status: athleteId ? "corrected" : "discarded",
+          updatedAt: new Date(),
+        },
+      });
+
+      // A propagação, se houver a quem propagar — e só uma de cada vez.
+      let jobId: string | null = null;
+      if (athleteId && ["REVIEW", "COMPLETED"].includes(identity.analysis.status)) {
+        const pendente = await db.aIJob.findFirst({
+          where: { analysisId: identity.analysisId, kind: "identify", status: { in: ["PENDING", "CLAIMED", "RUNNING"] } },
+          select: { id: true },
+        });
+        if (!pendente) {
+          const job = await this.jobs.enqueue(db, ctx.academyId, identity.analysisId, "identify", { reason: "propagate" }, 5);
+          jobId = job.id;
+        }
+      }
+
+      await db.humanCorrection.create({
+        data: {
+          academyId: ctx.academyId,
+          analysisId: identity.analysisId,
+          kind: "player_identity",
+          targetType: "identity",
+          targetId: identityId,
+          before: {
+            athleteId: identity.athleteId,
+            proposedAthleteId: identity.proposedAthleteId,
+            confidence: identity.proposedConfidence,
+            status: identity.status,
+          },
+          after: { athleteId, status },
+          correctedById: ctx.membershipId,
+          jobId,
+        },
+      });
+
+      // O perfil de identidade aprende: o número visto neste jogo fica anotado.
+      if (athleteId && identity.jerseyNumber != null) {
+        const profile = await db.playerIdentityProfile.findFirst({
+          where: { athleteId },
+          select: { id: true, jerseyNumbers: true },
+        });
+        if (profile) {
+          if (!profile.jerseyNumbers.includes(identity.jerseyNumber)) {
+            await db.playerIdentityProfile.update({
+              where: { id: profile.id },
+              data: { jerseyNumbers: [...profile.jerseyNumbers, identity.jerseyNumber], updatedAt: new Date() },
+            });
+          }
+        } else {
+          await db.playerIdentityProfile.create({
+            data: { academyId: ctx.academyId, athleteId, jerseyNumbers: [identity.jerseyNumber], updatedAt: new Date() },
+          });
+        }
+      }
+
+      await this.jobs.recomputeReview(db, identity.analysisId);
+      return { ok: true, propagating: jobId !== null };
+    });
+  }
+
   async identifyTrack(ctx: RequestContext, trackId: string, dto: IdentifyTrackDto) {
     if (!can(ctx, "ai:write")) throw new ForbiddenException("Sem permissão para corrigir");
 

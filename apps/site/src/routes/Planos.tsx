@@ -41,7 +41,7 @@ export default function Planos() {
                       Connect
                     </th>
                     <th className="w-[140px] py-4 text-center text-[12px] font-[650] tracking-[0.12em] text-ink-3 uppercase">
-                      Vision
+                      Vision AI
                       <span className="mt-1 block text-[10px] font-medium tracking-[0.08em] normal-case">
                         brevemente
                       </span>
@@ -61,7 +61,7 @@ export default function Planos() {
                       <td className="py-3.5 text-center">
                         <Cell on />
                       </td>
-                      {/* O Vision é o Connect mais a IA: tudo o que lá está, está aqui. */}
+                      {/* O Vision AI é o Connect mais a IA: tudo o que lá está, está aqui. */}
                       <td className="py-3.5 text-center">
                         <Cell on />
                       </td>
@@ -91,7 +91,7 @@ export default function Planos() {
                     <td className="py-3.5 pr-4 pl-6">
                       <p className="text-[15.5px] font-medium">Academias AI — análise de vídeo</p>
                       <p className="hidden text-[13.5px] text-ink-3 sm:block">
-                        O jogo gravado vira números, com a confiança à vista.
+                        O jogo gravado vira números, com a confiança à vista. Cobrado por análises.
                       </p>
                     </td>
                     <td className="py-3.5 text-center">
@@ -114,9 +114,9 @@ export default function Planos() {
               Na prática: a <span className="font-semibold text-ink">Consola</span> resolve o clube por dentro. O{" "}
               <span className="font-semibold text-ink">Connect</span> acrescenta as duas coisas que as famílias e os
               sócios vêem — a app do clube e os pagamentos. Quase todos os clubes acabam no segundo; começa no que
-              fizer sentido e muda quando quiseres. O <span className="font-semibold text-ink">Vision</span> é o passo
+              fizer sentido e muda quando quiseres. O <span className="font-semibold text-ink">Vision AI</span> é o passo
               a seguir e ainda não se vende — fica aqui para saberes para onde é que a plataforma vai antes de
-              escolheres.
+              escolheres, e cobra-se por análises de jogo, não por atleta.
             </p>
           </Reveal>
         </div>

@@ -168,6 +168,7 @@ model Academy {
   aiVideos           AIVideo[]
   aiJobs             AIJob[]
   aiTracks           PlayerTrack[]
+  aiIdentities       PlayerIdentity[]
   aiEvents           DetectedEvent[]
   aiInsights         AIInsight[]
   aiCorrections      HumanCorrection[]
@@ -835,6 +836,7 @@ model Athlete {
   aiEvents       DetectedEvent[]
   aiInsights     AIInsight[]
   aiIdentity     PlayerIdentityProfile?
+  aiIdentities   PlayerIdentity[]
 
   @@unique([academyId, taxId])
   @@index([academyId])
@@ -893,6 +895,12 @@ model Team {
   /// futebol de formação, que é o caso mais comum — e muda-se na ficha da equipa.
   maxCallUps Int @default(14)
 
+  /// Não há duas equipas com o mesmo nome na mesma modalidade e época — o
+  /// índice único vive na migração `20260907140000_equipa_sem_nome_repetido`,
+  /// escrito à mão porque é sobre `lower(btrim(name))` e o Prisma não modela
+  /// índices por expressão. Não o apagues: a verificação em código não trava
+  /// duas importações em simultâneo, e foi assim que um clube ficou com oito
+  /// equipas em triplicado.
   athletes     TeamMembership[]
   staff        TeamStaff[]
   sessions     TrainingSession[]
@@ -4240,6 +4248,7 @@ model AIAnalysis {
   videos      AIVideo[]
   jobs        AIJob[]
   tracks      PlayerTrack[]
+  identities  PlayerIdentity[]
   events      DetectedEvent[]
   insights    AIInsight[]
   corrections HumanCorrection[]
@@ -4411,6 +4420,13 @@ model PlayerTrack {
   /// tracks partidos mantém os números de origem no `summary`.
   trackNumber Int
 
+  /// A identidade a que o track pertence — o **jogador** que o treinador vê,
+  /// por oposição ao track, que é o que o tracker produziu. Nula enquanto a
+  /// etapa de identificação não correr. `SetNull`: re-agrupar identidades não
+  /// apaga tracks.
+  identityId String?
+  identity   PlayerIdentity? @relation(fields: [identityId], references: [id], onDelete: SetNull)
+
   /// O atleta, quando identificado. `SetNull` — apagar um atleta não apaga a
   /// análise, mas o track dele fica anónimo (e o RGPD é servido pelo apagar
   /// da análise/embeddings, ver `PlayerIdentityProfile`).
@@ -4455,6 +4471,77 @@ model PlayerTrack {
   updatedAt DateTime @updatedAt
 
   @@index([analysisId])
+  @@index([athleteId])
+  @@index([academyId])
+  @@index([identityId])
+}
+
+/// Um jogador visto neste jogo — a camada entre o track e o atleta.
+///
+/// ## Porque é que existe
+///
+/// Um jogador real dá dezenas de tracks: cada oclusão, saída de enquadramento
+/// ou salto da câmara abre um novo. Pedir ao treinador que nomeie 150 tracks é
+/// pedir-lhe que faça à mão o trabalho da máquina — e ele pensa "este é o
+/// Rui", não "este é o Track 77". A identidade é o que ele vê e confirma; o
+/// track é o que o tracker produziu. Uma correção aplica-se aqui e vale para
+/// todos os tracks do grupo.
+///
+/// `athleteId` é o veredicto (da IA acima do limiar, ou do humano). A proposta
+/// fica à parte, mesmo depois de corrigida: é o dado que diz quão bem a máquina
+/// está a acertar, e o que o active learning vai ler.
+model PlayerIdentity {
+  id         String     @id @default(cuid())
+  academyId  String
+  academy    Academy    @relation(fields: [academyId], references: [id], onDelete: Cascade)
+  analysisId String
+  analysis   AIAnalysis @relation(fields: [analysisId], references: [id], onDelete: Cascade)
+
+  /// O número de ordem no ecrã ("Jogador 3") enquanto não há nome.
+  label Int
+
+  /// O atleta a que esta identidade corresponde — decidido pela IA acima do
+  /// limiar, ou por um humano. `SetNull`: apagar o atleta anonimiza, não apaga.
+  athleteId String?
+  athlete   Athlete? @relation(fields: [athleteId], references: [id], onDelete: SetNull)
+
+  /// O que a IA propôs, e com que confiança. Nulo = não teve nada para propor.
+  proposedAthleteId  String?
+  proposedConfidence Float?
+
+  /// O número de camisola lido nos recortes (o mais frequente) e a confiança da leitura.
+  jerseyNumber     Int?
+  jerseyConfidence Float?
+
+  /// "ours" | "theirs" | "referee" | "unknown" — lado atribuído por cor/contexto.
+  side String @default("unknown")
+
+  /// A máquina de estados da revisão. Texto, como os outros vocabulários:
+  ///   "unknown"   — sem proposta; pede um humano
+  ///   "proposed"  — a IA propôs abaixo do limiar; pede confirmação
+  ///   "accepted"  — a IA propôs acima do limiar; `athleteId` preenchido, revisível
+  ///   "confirmed" — um humano disse quem é
+  ///   "rejected"  — um humano disse que não é do plantel (árbitro, adversário)
+  status String @default("unknown")
+
+  /// Janela total no vídeo, quantos tracks a compõem, e quanto tempo somam —
+  /// é o tempo de presença que decide se vale a pena pedir a um humano.
+  firstMs    Int
+  lastMs     Int
+  trackCount Int @default(0)
+  presenceMs Int @default(0)
+
+  /// Chave do embedding médio de aparência no Storage — apagar é apagar um ficheiro.
+  embeddingKey String?
+  /// Resumo para leitura: recortes representativos, grupo de cor, sinais usados na proposta.
+  summary Json?
+
+  tracks PlayerTrack[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([analysisId, status])
   @@index([athleteId])
   @@index([academyId])
 }

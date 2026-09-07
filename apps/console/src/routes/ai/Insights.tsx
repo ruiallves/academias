@@ -1,8 +1,8 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { PageHeader } from "@/components/Shell";
 import { Empty, Loading, Panel, PanelHead, Pill } from "@/components/primitives";
-import { Sparkle, X } from "@/lib/icons";
+import { Sparkle, TriangleAlert, X } from "@/lib/icons";
 import { shortDate } from "@/lib/format";
 import { can } from "@/lib/permissions";
 import { useSession } from "@/session";
@@ -18,13 +18,38 @@ import { confidenceTone, dismissInsight, listInsights, pct, type Insight } from 
 export default function AiInsights() {
   const { session } = useSession();
   const [rows, setRows] = useState<Insight[] | null>(null);
+  const [falhou, setFalhou] = useState<string | null>(null);
   const mayWrite = can(session, "ai:write");
 
-  useEffect(() => {
-    listInsights().then(setRows).catch(() => setRows([]));
+  /*
+    Uma falha do servidor não é uma lista vazia.
+
+    Isto era `.catch(() => setRows([]))`, e a lista vazia desenha "ainda não há
+    nada" — a mensagem exactamente errada quando o que houve foi um 500. É o
+    mesmo princípio que manda em toda a área: o vazio é uma afirmação, e só se
+    faz quando é verdade.
+  */
+  const carregar = useCallback(() => {
+    setFalhou(null);
+    listInsights()
+      .then(setRows)
+      .catch((e: unknown) => setFalhou(e instanceof Error ? e.message : "Não foi possível carregar."));
   }, []);
 
-  if (!rows) return <Loading />;
+  useEffect(carregar, [carregar]);
+
+  if (!rows) {
+    if (!falhou) return <Loading />;
+    return (
+      <Panel>
+        <Empty icon={TriangleAlert} title="Não foi possível carregar" detail={falhou}>
+          <button type="button" className="ctl-outline" onClick={carregar}>
+            Tentar outra vez
+          </button>
+        </Empty>
+      </Panel>
+    );
+  }
 
   const dismiss = async (id: string) => {
     await dismissInsight(id);

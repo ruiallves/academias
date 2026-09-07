@@ -94,7 +94,19 @@ export type Track = {
   status: "auto" | "corrected" | "merged" | "discarded";
 };
 
+/**
+ * Quem está do outro lado a processar — e o que sabe fazer.
+ *
+ * `online: 0` quer dizer que **nenhuma** máquina de processamento está ligada:
+ * a análise fica na fila e não avança. O ecrã diz isso em vez de prometer uma
+ * notificação que ninguém vai enviar.
+ */
+export type WorkersInfo = { online: number; kinds: string[] };
+
 export type AnalysisDetail = AnalysisRow & {
+  workers: WorkersInfo;
+  /** As pessoas, por tempo de presença. Vazio numa análise anterior à identificação. */
+  identities: Identity[];
   failReason: string | null;
   createdBy: string | null;
   squad: SquadEntry[];
@@ -156,6 +168,96 @@ export const listInsights = () => apiGet<Insight[]>("/api/ai/insights");
 export const dismissInsight = (id: string) => apiPost(`/api/ai/insights/${id}/dismiss`, {});
 
 export const videoUrl = (videoId: string) => apiGet<{ url: string; expiresIn: number }>(`/api/ai/videos/${videoId}/url`);
+
+/**
+ * Os recortes de uma análise.
+ *
+ * O worker guarda, por track, os frames em que o jogador está maior e mais
+ * nítido — em **folhas**: grelhas de `cols × rows` recortes de `tile` píxeis,
+ * uma imagem por folha. Cada track sabe em que folha (`s`) e posição (`i`)
+ * estão os seus. O browser descarrega uma folha e recorta dez vezes, em vez
+ * de dez imagens.
+ *
+ * `sheets` vazio = a análise não tem recortes (anterior a esta etapa, ou a
+ * etapa por correr). Não é erro, e o ecrã não desenha quadrados partidos.
+ */
+export type CropRef = { s: number; i: number; ts: number; box: [number, number, number, number] };
+export type CropsIndex = {
+  tile: [number, number];
+  cols: number;
+  rows: number;
+  /** Um link curto por folha, pela ordem de `s`. Caduca em `expiresIn` segundos. */
+  sheets: (string | null)[];
+  tracks: Record<string, CropRef[]>;
+  expiresIn: number;
+};
+export const analysisCrops = (analysisId: string) => apiGet<CropsIndex>(`/api/ai/analyses/${analysisId}/crops`);
+
+/* -------------------------------------------------------------------------- */
+/* Identidades — as pessoas, por oposição aos tracks                           */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * O estado de uma identidade — a máquina de estados da revisão.
+ *
+ *   unknown   — sem proposta; pede um humano
+ *   proposed  — a IA propôs abaixo do limiar; pede confirmação
+ *   accepted  — a IA propôs acima do limiar; atleta escrito, revisível
+ *   confirmed — um humano disse quem é
+ *   rejected  — um humano disse que não é do plantel (árbitro, adversário)
+ */
+export type IdentityStatus = "unknown" | "proposed" | "accepted" | "confirmed" | "rejected";
+
+/**
+ * Um jogador visto no jogo — o que o treinador revê.
+ *
+ * Um jogador real dá dezenas de tracks; a identidade é o grupo deles, com a
+ * proposta da IA (quem, com que confiança), o número lido na camisola, e o
+ * veredicto. Os tracks continuam a existir como detalhe técnico.
+ */
+export type Identity = {
+  id: string;
+  /** "Jogador 3" enquanto não há nome. */
+  label: number;
+  status: IdentityStatus;
+  side: string;
+  athleteId: string | null;
+  athleteName: string | null;
+  proposedAthleteId: string | null;
+  proposedConfidence: number | null;
+  jerseyNumber: number | null;
+  jerseyConfidence: number | null;
+  firstMs: number;
+  lastMs: number;
+  trackCount: number;
+  /** Tempo de presença somado pelos tracks, em ms. */
+  presenceMs: number;
+  summary: {
+    /** Até três recortes representativos, nas folhas de `analysisCrops`. */
+    crops?: { s: number; i: number; ts: number; track: number }[];
+    signals?: Record<string, unknown>;
+  } | null;
+};
+
+export const IDENTITY_STATUS_LABEL: Record<IdentityStatus, string> = {
+  unknown: "Por identificar",
+  proposed: "Proposta por confirmar",
+  accepted: "Identificado pela IA",
+  confirmed: "Confirmado por ti",
+  rejected: "Fora do plantel",
+};
+
+/**
+ * Pede um humano? O gémeo de `recomputeReview` no servidor: sem proposta ou
+ * com proposta abaixo do limiar, e com tempo de presença que valha o clique —
+ * vinte segundos de figurante não.
+ */
+export function identityNeedsReview(i: Identity): boolean {
+  return (i.status === "unknown" || i.status === "proposed") && i.presenceMs >= 20_000;
+}
+
+export const identifyIdentity = (identityId: string, athleteId: string | null) =>
+  apiPost<{ ok: true; propagating: boolean }>(`/api/ai/identities/${identityId}/identify`, { athleteId });
 
 /* -------------------------------------------------------------------------- */
 /* Upload                                                                      */
@@ -401,6 +503,7 @@ export const JOB_LABEL: Record<string, string> = {
   field_detect: "Detecção do campo",
   ball_track: "Tracking da bola",
   identify: "Identificação de jogadores",
+  purge_video: "Apagar o vídeo",
   metrics: "Métricas",
   events: "Eventos",
   clips: "Clips",
@@ -414,6 +517,7 @@ export const CONFIDENCE_LABEL: Record<string, string> = {
   ball_tracking: "Tracking da bola",
   event_detection: "Detecção de eventos",
   individual_analysis: "Análise individual",
+  jersey_reading: "Leitura de camisolas",
 };
 
 /**

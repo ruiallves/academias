@@ -79,6 +79,7 @@ import { AiController, AiWorkerController } from "./ai/ai.controller";
 import { AiService } from "./ai/ai.service";
 import { AiVideoService } from "./ai/ai-video.service";
 import { AiJobsService } from "./ai/ai-jobs.service";
+import { AiPresenceService } from "./ai/ai-presence.service";
 import { AiWorkerService } from "./ai/ai-worker.service";
 import { AiWorkerGuard } from "./ai/ai-worker.guard";
 
@@ -188,6 +189,7 @@ import { AiWorkerGuard } from "./ai/ai-worker.guard";
     AiService,
     AiVideoService,
     AiJobsService,
+    AiPresenceService,
     AiWorkerService,
     AiWorkerGuard,
     InventoryService,

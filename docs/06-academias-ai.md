@@ -117,6 +117,113 @@ existentes (o padrão de `area_tecnica_nos_cargos`) e está registada em
 todas as tabelas de tenant, e apagar uma análise varre primeiro a pasta no
 Storage — se o Storage falhar, a linha fica, para nada ficar órfão.
 
+## Os dois tectos que o primeiro jogo a sério encontrou
+
+Um jogo de 111 minutos chegou aos 100 % e recuou para os 15 %, duas vezes, até
+falhar e levar o vídeo com ele na purga. Não foi a visão computacional: foram
+dois limites de infra-estrutura no caminho de volta.
+
+- **100 KB de corpo no `body-parser`.** O `detect_track` devolve um registo por
+  track e trouxe 1,1 MB; o `complete` levava 413, o worker reportava falha, o
+  job voltava à fila, e a análise recuava para o fim da verificação de qualidade
+  — que é exactamente o que 15 % quer dizer (`overallProgress`). O tecto subiu
+  para 16 MB **só em `/api/ai/worker`**, montado antes do parser global: um
+  pedido de 10 MB numa rota de sessão continua a ser um ataque, não um
+  utilizador.
+- **Um `INSERT` por track dentro de uma transação de 5 s.** Passava com os vinte
+  e dois tracks de um jogo bem seguido e estourava com os milhares que o
+  ByteTrack produz sem Re-ID. Passou a `createMany` em lotes de 500 (o tecto de
+  65 535 parâmetros do Postgres chega por volta dos cinco mil tracks), e o
+  `complete` corre com `timeoutMs: 60_000` — falhar ali é o pior sítio para
+  falhar, porque o trabalho está todo feito e perde-se inteiro.
+
+**O número de tracks é o sintoma que fica.** Milhares num jogo querem dizer que
+cada oclusão parte um track em dois — é a ausência de Re-ID e de compensação de
+movimento de câmara a ver-se nos dados. Resolve-se na fase da identificação, não
+aqui; o que estas duas correcções garantem é que o resultado chega inteiro à
+base para se poder olhar para ele.
+
+## Dos tracks às pessoas — a camada de identidade
+
+Um jogo real de 111 minutos deu **733 tracks para 22 jogadores**: cada
+oclusão, saída de enquadramento ou salto da câmara abre um track novo. A
+revisão contava tracks e pedia ao treinador 150 confirmações de "Track 77" às
+cegas — sem imagem, sem proposta. Ele pensa "este é o Rui", não "este é o
+Track 77". A arquitectura passou a ter a camada que faltava:
+
+```
+detect_track ──► recortes (folhas no Storage) ──► identify ──► PlayerIdentity ──► revisão por pessoa
+     │                                                │
+     └─ PlayerTrack (dado técnico) ◄──── identityId ──┘
+```
+
+- **Recortes antes da purga.** O `detect_track` guarda, por track, os três
+  frames em que o jogador está maior e mais nítido — em **folhas** (grelhas de
+  20×10 recortes de 128×256, o formato de entrada dos modelos de re-ID) e um
+  índice, no `derived/crops/` da análise. Dez ficheiros e não dois mil; e o
+  vídeo pode ser apagado a seguir, que os recortes ficam. `GET
+  /api/ai/analyses/:id/crops` devolve o índice com links curtos por folha; a
+  consola recorta por `background-position`.
+- **`identify`**, o job entre a detecção e a purga (`ai-worker/…/identify.py`).
+  Embedding de aparência por track (ResNet-50 do torchvision, BSD-3 —
+  **não** um modelo de re-ID treinado; o upgrade é OSNet, e a confiança di-lo)
+  mais histograma de cor do tronco; OCR de dígitos no tronco (EasyOCR,
+  Apache-2.0) só onde há píxeis; agrupamento hierárquico de ligação
+  **completa** com duas regras duras — dois tracks vivos ao mesmo tempo não
+  são a mesma pessoa, dois grupos de cor não são a mesma equipa. Propostas só
+  quando há **exactamente um** atleta do plantel com o número lido, ou quando
+  a aparência se parece com alguém já confirmado. Sem sinal, `unknown` — e
+  pede um humano com a imagem à frente.
+- **`PlayerIdentity`** — a tabela nova: atleta (veredicto), proposta e
+  confiança (guardadas mesmo depois de corrigidas — é o dado do active
+  learning), número lido, lado, `status ∈ unknown|proposed|accepted|confirmed|rejected`,
+  presença somada. O track aponta para ela (`SetNull`). `recomputeReview`
+  conta identidades por confirmar, não tracks — e cai para a regra antiga nas
+  análises anteriores à etapa.
+- **Confirmar propaga.** `POST /api/ai/identities/:id/identify` escreve o
+  veredicto na identidade e em todos os tracks dela, regista a
+  `HumanCorrection`, e enfileira uma passagem de `identify` marcada
+  `propagate`: não muda o estado nem a barra, reaproveita os embeddings
+  guardados (`identities/embeddings.json.gz`) e re-agrupa com a confirmação
+  como **âncora** — os fragmentos parecidos ganham a mesma proposta, e o grupo
+  de cor da pessoa confirmada passa a "ours". Uma de cada vez; se já há uma na
+  fila, apanha esta confirmação também.
+- **A consola fala de jogadores.** "A IA identificou 16 do plantel de 20.
+  Precisas de confirmar 2." — três cores por baixo (automáticos, confirmados
+  por ti, por identificar), cartões com três recortes, a proposta e a
+  confiança, e três gestos: confirmar, escolher outro, não é do plantel. Os
+  tracks ficam em "Detalhes técnicos".
+- **A convocatória é o plantel.** `NewAnalysis` pré-preenche com quem foi ao
+  jogo (`MatchCallUp`, convidados incluídos, recusas desmarcadas); o plantel da
+  equipa só sem jogo escolhido.
+
+## O que o tracking vê — as alavancas de recall
+
+Medido no mesmo jogo: os tracks cobriam **8 % do tempo de jogador**, com 1,8
+pessoas seguidas em média num campo com 22. Não era o tracking: era o Faster
+R-CNN a não ver jogadores de 30–50 píxeis depois de o frame descer aos 800.
+A identificação organiza o que o tracking vê; não pode inventar o que ele não
+viu. Três alavancas em `config.py`, todas a trocar tempo por recall, e uma
+medida que as julga (`stats.meanConcurrentTracks`):
+
+| Alavanca | O que faz | Custo |
+|---|---|---|
+| `AI_WORKER_TILES=2` | cada frame vai ao detector em 2×2 janelas com folga; NMS junta as fronteiras | ~4,6× a detecção |
+| `AI_WORKER_SCORE_THRESHOLD=0.4` | dá ao ByteTrack detecções fracas para continuar tracks | nenhum |
+| `AI_WORKER_WORK_SHORT` até 1333 | resolução de trabalho acima do tecto dos pesos | quadrático |
+
+O `.env` local está com mosaicos 2×2 e limiar 0,4. O número que diz se chegou
+é o `meanConcurrentTracks` da próxima análise — não se assume.
+
+## O que ainda não está
+
+**Identificação progressiva** (propor identidades durante o processamento, e
+não só no fim) exige o `detect_track` por segmentos com resultados parciais —
+a fila já aceita `params.fromMs/toMs`, o job ainda é monolítico. **Re-ID a
+sério** (OSNet) em vez do embedding genérico. **Separação de equipas** sem
+confirmação humana — hoje o lado só se atribui depois de alguém confirmar um
+jogador do plantel, de propósito.
+
 ## O processamento em passes
 
 Pass 1 a ~5 FPS (jogadores, campo, candidatos a eventos) → Pass 2 encontra os
@@ -132,8 +239,8 @@ reprocessar são parâmetros, não código novo).
 | 2 | Upload + storage + fila de jobs + worker | feito |
 | 3 | Qualidade do vídeo (real, CPU) | feito |
 | 4 | Detecção + tracking (torchvision + ByteTrack) | feito no worker; melhora com GPU |
-| 5 | Identificação (camisola + embedding + plantel) | infraestrutura pronta, modelo por integrar |
-| 6 | Interface de correção | identidade de tracks feita; bola e campo por fazer |
+| 5 | Identificação (camisola + embedding + plantel) | feito: recortes, `identify`, `PlayerIdentity`, propostas com confiança; Re-ID genérico (upgrade: OSNet) |
+| 6 | Interface de correção | revisão por pessoa com recortes e propagação; bola e campo por fazer |
 | 7 | Active learning | correções guardadas com antes/depois; export por fazer |
 | 8–17 | Campo/homography, bola, métricas, eventos/clips, relatório, evolução, adversários, scouting, multi-desporto | por fazer, por esta ordem |
 

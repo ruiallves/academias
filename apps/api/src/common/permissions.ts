@@ -508,6 +508,34 @@ export function teamScopeFilter(ctx: RequestContext): { in: string[] } | undefin
 }
 
 /**
+ * O âmbito de quem **monta plantéis** — o clube inteiro, não as suas equipas.
+ *
+ * ## O que isto corrige
+ *
+ * Uma treinadora com `athlete:write` mas sem equipas atribuídas via a lista de
+ * equipas **vazia**. O importador de atletas lê essa lista para decidir o que
+ * já existe, concluía que as oito equipas do ficheiro eram novas, e oferecia-se
+ * para as criar. Ela dizia que sim — e ficava com o clube em triplicado, com a
+ * mesma equipa criada três vezes em dois dias.
+ *
+ * O erro não era do importador: era pedir-lhe que decidisse "isto já existe?"
+ * com uma lista que, por desenho, não mostra tudo o que existe.
+ *
+ * ## Porque é que isto não abre a academia
+ *
+ * O âmbito existe para que um treinador não veja os **atletas** das outras
+ * equipas — e esse continua estreito, porque quem o estreita é
+ * `teamScopeFilter`, que não muda. O que se alarga é ver **que equipas o clube
+ * tem**: o nome, o escalão, a modalidade. Quem pode inscrever um atleta tem de
+ * poder escolher a equipa dele de entre as que existem; a alternativa é
+ * inscrever às cegas, e foi isso que aconteceu.
+ */
+export function teamScopeForRoster(ctx: RequestContext): { in: string[] } | undefined {
+  if (can(ctx, "athlete:write")) return undefined;
+  return teamScopeFilter(ctx);
+}
+
+/**
  * O âmbito de quem **lê o calendário** — mais largo do que o de quem escreve.
  *
  * ## Porque é que existe um segundo filtro

@@ -30,6 +30,18 @@ def available() -> dict[str, Any]:
     except Exception:
         pass
 
+    # A identificação precisa do torch (embeddings) mas não do vídeo: trabalha
+    # sobre os recortes que o detect_track deixou no Storage. O OCR é opcional
+    # lá dentro — sem EasyOCR, lê-se aparência e não se leem números, e o
+    # resultado di-lo.
+    try:
+        from . import identify
+
+        if identify.dependencies_ok():
+            kinds["identify"] = identify
+    except Exception:
+        pass
+
     return kinds
 
 

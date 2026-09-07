@@ -72,10 +72,38 @@ export default function NewAnalysis() {
   const teamAthletes = athletes.filter((a) => a.teamId === teamId && a.status === "active");
   const selectedMatch = teamMatches.find((m) => m.id === matchId) ?? null;
 
+  /*
+   * Quem pode entrar no plantel da análise.
+   *
+   * A convocatória do jogo manda quando existe: é a lista que o treinador já
+   * fez, e traz os convidados de outros escalões — que não estão em
+   * `teamAthletes` e sem isto desapareciam da análise. Quem recusou fica
+   * desmarcado por omissão, mas continua na lista (recusou e depois foi).
+   * Sem convocatória, o plantel da equipa, todos marcados.
+   */
+  const convocatoria = selectedMatch?.calledUp ?? [];
+  const temConvocatoria = convocatoria.length > 0;
+  const candidatos: { id: string; name: string; squadNumber: number | null; position?: string; convocado: boolean; convidado: boolean }[] =
+    temConvocatoria
+      ? convocatoria.flatMap((c) => {
+          const a = athletes.find((x) => x.id === c.athleteId);
+          if (!a) return [];
+          return [{ id: a.id, name: a.name, squadNumber: a.squadNumber ?? null, position: a.position, convocado: c.status !== "DECLINED", convidado: c.isGuest }];
+        })
+      : teamAthletes.map((a) => ({ id: a.id, name: a.name, squadNumber: a.squadNumber ?? null, position: a.position, convocado: true, convidado: false }));
+
   /** Entrar no passo do plantel: todos convocáveis pré-escolhidos, número da ficha. */
+  /**
+   * Entrar no passo do plantel — pré-preenchido com quem foi mesmo ao jogo.
+   *
+   * Havendo jogo escolhido e convocatória feita, o plantel da análise é a
+   * convocatória (quem não recusou), com o número da ficha. Sem convocatória,
+   * o plantel inteiro da equipa, como antes. O treinador corrige — não volta a
+   * fazer à mão uma lista que já fez para a convocatória.
+   */
   const goToSquad = () => {
     if (squad.size === 0) {
-      setSquad(new Map(teamAthletes.map((a) => [a.id, a.squadNumber ?? null])));
+      setSquad(new Map(candidatos.filter((c) => c.convocado).map((c) => [c.id, c.squadNumber])));
     }
     setStep(2);
   };
@@ -197,7 +225,11 @@ export default function NewAnalysis() {
               <SelectField
                 aria-label="Jogo"
                 value={matchId}
-                onChange={setMatchId}
+                onChange={(v) => {
+                  setMatchId(v);
+                  // Outro jogo, outra convocatória: o plantel volta a pré-preencher-se.
+                  setSquad(new Map());
+                }}
                 options={[
                   { value: "", label: "Sem jogo associado" },
                   ...teamMatches.map((m) => ({
@@ -251,18 +283,18 @@ export default function NewAnalysis() {
         <Panel className="max-w-2xl">
           <PanelHead
             title="Quem está em campo"
-            hint={`${squad.size} de ${teamAthletes.length} escolhidos`}
+            hint={`${squad.size} de ${candidatos.length} escolhidos${temConvocatoria ? " · da convocatória do jogo" : ""}`}
           />
           <div className="px-5 py-3">
             <p className="mb-3 text-meta leading-relaxed text-ink-3">
               A IA vai saber que <strong className="text-ink-2">#10 = nome</strong> durante o jogo inteiro — é
               isto que dispensa reconhecimento facial. Confirma quem jogou e com que número.
             </p>
-            {teamAthletes.length === 0 ? (
+            {candidatos.length === 0 ? (
               <Empty compact title="Esta equipa não tem atletas ativos" detail="Inscreve-os primeiro na página de Atletas." />
             ) : (
               <ul className="divide-y divide-line">
-                {teamAthletes.map((a) => {
+                {candidatos.map((a) => {
                   const on = squad.has(a.id);
                   return (
                     <li key={a.id} className="flex items-center gap-3 py-2">
@@ -285,6 +317,10 @@ export default function NewAnalysis() {
                         onChange={(e) => setNumber(a.id, e.target.value)}
                       />
                       <span className={cx("min-w-0 truncate text-body", on ? "text-ink" : "text-ink-4")}>{a.name}</span>
+                      {/* Emprestado por outro escalão: a IA precisa de o saber como
+                          qualquer outro, mas quem lê a lista precisa de perceber
+                          porque é que ele cá está. */}
+                      {a.convidado && <Pill tone="neutral">convidado</Pill>}
                       {a.position && <span className="ml-auto shrink-0 text-meta text-ink-3">{a.position}</span>}
                     </li>
                   );

@@ -170,9 +170,38 @@ export function calledUpFor(athleteId: string): ApiMatch | undefined {
     .sort((a, b) => a.startsAt.localeCompare(b.startsAt))[0];
 }
 
-/** Nome do adversário e sítio, para a etiqueta e para os avisos. */
+/**
+ * O adversário e o sítio — **sem** a equipa.
+ *
+ * Serve os ecrãs onde o escalão já está escrito ao lado: a ficha do atleta, a
+ * lista de jogos dentro das Convocatórias, o cabeçalho que monta
+ * `${match.teamName} ${matchLabel(match)}`. Quando o rótulo aparece sozinho —
+ * no calendário, por exemplo — o nome que se quer é o de `matchTitle`.
+ */
 export function matchLabel(m: ApiMatch): string {
   return `${m.isHome ? "vs" : "@"} ${m.opponent}`;
+}
+
+/**
+ * O nome de um jogo, com a equipa à frente: "Sub-11 Futebol vs Benfica".
+ *
+ * ## Porque é que a equipa vem no nome
+ *
+ * No calendário, um jogo chamava-se só "vs Benfica" — e ao lado de treinos que
+ * se chamam "Sub-11 Futebol" deixava metade da pergunta por responder: *quem*
+ * é que joga contra o Benfica? Num clube com dez escalões, todos jogam ao
+ * sábado, e a lista do dia era uma coluna de "vs" sem dono. A cor do filete
+ * dizia o escalão a quem já soubesse a paleta de cor; mais ninguém.
+ *
+ * O escalão à frente não é invenção: é a forma como as Convocatórias já
+ * escrevem o cabeçalho de um jogo, e põe o que distingue no princípio da
+ * linha, onde uma lista truncada ainda o mostra.
+ *
+ * Gémeo de `matchTitle` em `apps/api/src/common/match-title.ts`.
+ */
+export function matchTitle(m: { isHome: boolean; opponent: string; teamName?: string | null }): string {
+  const contra = `${m.isHome ? "vs" : "@"} ${m.opponent}`;
+  return m.teamName ? `${m.teamName} ${contra}` : contra;
 }
 
 export function athleteName(id: string): string {

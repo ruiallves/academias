@@ -57,7 +57,21 @@ export class AiJobsService {
    * verdade própria.
    */
   async recomputeReview(db: ScopedClient, analysisId: string) {
-    const [tracks, lowEvents, analysis] = await Promise.all([
+    const [identidades, tracks, lowEvents, analysis] = await Promise.all([
+      /*
+       * Conta-se **pessoas**, não tracks.
+       *
+       * Um jogo real deu 733 tracks para 22 jogadores, e a contagem por track
+       * pedia 150 confirmações — de "Track 77", às cegas. A identidade é o que
+       * o treinador vê; é ela que pede, ou não, um humano: sem proposta, ou
+       * com proposta abaixo do limiar, e com tempo de presença que valha o
+       * clique. Uma identidade que a IA aceitou acima do limiar não pede nada
+       * — fica revisível, que é diferente.
+       */
+      db.playerIdentity.findMany({
+        where: { analysisId },
+        select: { status: true, presenceMs: true },
+      }),
       db.playerTrack.findMany({
         where: {
           analysisId,
@@ -76,7 +90,13 @@ export class AiJobsService {
     ]);
 
     // Só o que tem tempo de jogo relevante pede um humano — 20 s de figurante não.
-    const lowIdentity = tracks.filter((t) => t.lastMs - t.firstMs >= REVIEW_MIN_TRACK_MS).length;
+    const porIdentidade = identidades.filter(
+      (i) => (i.status === "unknown" || i.status === "proposed") && i.presenceMs >= REVIEW_MIN_TRACK_MS,
+    ).length;
+    // Sem identidades — análise anterior à etapa de identificação — vale a
+    // regra antiga por track, para essas continuarem a dizer o que diziam.
+    const porTrack = tracks.filter((t) => t.lastMs - t.firstMs >= REVIEW_MIN_TRACK_MS).length;
+    const lowIdentity = identidades.length > 0 ? porIdentidade : porTrack;
     const reviewCount = lowIdentity + lowEvents;
     const data: { reviewCount: number; updatedAt: Date; status?: "REVIEW" | "COMPLETED" } = {
       reviewCount,

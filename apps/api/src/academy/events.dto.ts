@@ -59,8 +59,14 @@ export class CreateEventDto {
   @IsISO8601()
   endsAt!: string;
 
+  /*
+     O erro deste campo chega ao ecrã tal e qual — por isso é escrito para se
+     ler, e em português. "venue must be longer than or equal to 1 characters"
+     por cima de um formulário com o local visivelmente escolhido não ajuda
+     ninguém a perceber o que fazer a seguir.
+  */
   @IsString()
-  @Length(1, 80)
+  @Length(1, 80, { message: "Escolhe o local do evento" })
   venue!: string;
 
   /**
@@ -175,7 +181,7 @@ export class EditEventDto {
   @IsOptional() @IsString() @Length(1, 120) title?: string;
   @IsOptional() @IsISO8601() startsAt?: string;
   @IsOptional() @IsISO8601() endsAt?: string;
-  @IsOptional() @IsString() @Length(1, 120) venue?: string;
+  @IsOptional() @IsString() @Length(1, 120, { message: "Escolhe o local do evento" }) venue?: string;
   /** String vazia limpa o balneário — é como se diz "nenhum". */
   @IsOptional() @IsString() @Length(0, 80) dressingRoom?: string;
   @IsOptional() @IsString() @Length(1, 80) opponent?: string;

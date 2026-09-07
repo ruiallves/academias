@@ -65,7 +65,7 @@ import { tallyNoun } from "@/lib/calendar";
 import { calledUpFor, matchLabel } from "@/lib/callups";
 import { reloadAcademy, useStore } from "@/lib/store";
 import { age, longDate, money, percent, periodLabel, relativeDays, shortDate, time } from "@/lib/format";
-import { can } from "@/lib/permissions";
+import { can, mayReadTaxId } from "@/lib/permissions";
 import { AthleteEditPanel } from "@/components/AthleteEditPanel";
 import { useSession } from "@/session";
 import type { Athlete } from "@/data/types";
@@ -919,7 +919,18 @@ function Family({ athlete }: { athlete: Athlete }) {
  */
 function TaxIdPanel({ athlete }: { athlete: Athlete }) {
   const { session } = useSession();
-  const mayEdit = can(session, "athlete:write");
+  /*
+   * Ver antes de editar.
+   *
+   * O painel media o vazio por `athlete.taxId` — e a quem não recebe o campo
+   * (ver `mayReadTaxId`) ele chega sempre vazio. Um treinador lia "Por
+   * preencher — nenhum encarregado consegue reclamar este atleta" na ficha de
+   * um miúdo cujo NIF está lá desde o primeiro dia, e o botão convidava-o a
+   * escrever um por cima. Um aviso falso é pior do que aviso nenhum, e a
+   * correcção que ele convidava a fazer estragava o dado certo.
+   */
+  const vejoNif = mayReadTaxId(session);
+  const mayEdit = can(session, "athlete:write") && vejoNif;
 
   const [editing, setEditing] = useState(false);
   const [value, setValue] = useState(athlete.taxId ?? "");
@@ -972,7 +983,11 @@ function TaxIdPanel({ athlete }: { athlete: Athlete }) {
           </div>
         ) : (
           <div className="flex flex-wrap items-center justify-between gap-3">
-            {athlete.taxId ? (
+            {!vejoNif ? (
+              <span className="text-meta leading-relaxed text-ink-3">
+                O NIF é de quem trata das famílias e emite recibos. Não aparece aqui.
+              </span>
+            ) : athlete.taxId ? (
               <span className="text-body tabular text-ink">{athlete.taxId}</span>
             ) : (
               <span className="text-meta leading-relaxed text-[#8a5a12]">

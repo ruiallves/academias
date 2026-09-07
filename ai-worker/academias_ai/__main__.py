@@ -68,15 +68,24 @@ def _work(job: dict[str, Any], pipeline: Any) -> None:
     last_beat = 0.0
 
     def progress(value: int) -> None:
-        # Heartbeats com tecto de cadência: a API não precisa de saber cada frame.
+        """Diz onde vai — e desiste se entretanto o job deixou de existir.
+
+        Um heartbeat perdido não é razão para parar: a rede falha, e o trabalho
+        continua. Um **404** é outra coisa — a análise foi apagada, ou o job
+        cancelado, e o que se está a fazer já não tem destino. Sem isto, apagar
+        uma análise a meio deixava o worker a moer uma hora e meia de vídeo para
+        o lixo, com a fila parada atrás dele: um worker faz um job de cada vez.
+        """
         nonlocal last_beat
         now = time.monotonic()
         if now - last_beat >= 5:
             last_beat = now
             try:
                 api.heartbeat(job_id, value)
+            except api.JobGone:
+                raise
             except requests.RequestException:
-                pass  # um heartbeat perdido não é razão para parar o trabalho
+                pass  # a rede falhou; o trabalho continua
 
     video = job.get("video", {})
     video_path = None
@@ -87,6 +96,10 @@ def _work(job: dict[str, Any], pipeline: Any) -> None:
         api.heartbeat(job_id, 0)
         if job["kind"] == "purge_video":
             video_path = ingest.spool_path(video.get("id", ""), video.get("mimeType", ""))
+        elif job["kind"] == "identify":
+            # Trabalha sobre os derivados no Storage, não sobre o vídeo — que a
+            # esta altura pode já ter sido purgado, e não faz falta nenhuma.
+            video_path = None
         elif video.get("source") == "worker":
             video_path = ingest.spool_path(video["id"], video.get("mimeType", ""))
             if not video_path.exists():
@@ -97,6 +110,9 @@ def _work(job: dict[str, Any], pipeline: Any) -> None:
         result = pipeline.run(job, video_path, progress)
         api.complete(job_id, result, _versions(pipeline))
         print(f"[{job_id}] concluído")
+    except api.JobGone:
+        # Nada a reportar: não há a quem. Passa-se ao seguinte da fila.
+        print(f"[{job_id}] a análise foi apagada ou cancelada — trabalho abandonado")
     except Exception as error:  # noqa: BLE001 — a fronteira do job reporta tudo
         traceback.print_exc()
         try:

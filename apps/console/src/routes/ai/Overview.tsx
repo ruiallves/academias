@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { PageHeader } from "@/components/Shell";
 import { Bar, DataTable, Empty, Loading, Metric, MetricRow, Panel, PanelHead, PanelLink, Pill } from "@/components/primitives";
@@ -35,18 +35,29 @@ import {
 export default function AiOverview() {
   const { session } = useSession();
   const [data, setData] = useState<AiDashboard | null>(null);
-  const [failed, setFailed] = useState(false);
+  const [failed, setFailed] = useState<string | null>(null);
 
-  useEffect(() => {
-    aiDashboard().then(setData).catch(() => setFailed(true));
+  // A razão da falha vem do servidor e diz mais do que "tenta outra vez" — e o
+  // botão poupa uma recarga da página a quem só apanhou um segundo mau.
+  const carregar = useCallback(() => {
+    setFailed(null);
+    aiDashboard()
+      .then(setData)
+      .catch((e: unknown) => setFailed(e instanceof Error ? e.message : "Não foi possível carregar."));
   }, []);
 
-  if (failed) {
+  useEffect(carregar, [carregar]);
+
+  if (failed && !data) {
     return (
       <>
         <PageHeader eyebrow="Academias AI" title="Visão AI" />
         <Panel>
-          <Empty icon={TriangleAlert} title="Não foi possível carregar" detail="Tenta outra vez daqui a pouco." />
+          <Empty icon={TriangleAlert} title="Não foi possível carregar" detail={failed}>
+            <button type="button" className="ctl-outline" onClick={carregar}>
+              Tentar outra vez
+            </button>
+          </Empty>
         </Panel>
       </>
     );

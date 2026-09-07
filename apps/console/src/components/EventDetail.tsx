@@ -148,8 +148,22 @@ export function EventDetail({
                 style={{ background: color?.base ?? "var(--color-ink-4)" }}
                 aria-hidden
               />
+              {/*
+                A equipa só aqui quando o título não a disser já.
+
+                Um treino chama-se "Sub-11 Futebol" e um jogo passou a
+                chamar-se "Sub-11 Futebol vs Benfica" — repetir o escalão na
+                linha de cima dava "Sub-11 Futebol · Treino" logo por cima de
+                "Sub-11 Futebol", que é ler duas vezes a mesma coisa no espaço
+                de uma linha. Quando o nome já a traz, esta linha fica só com o
+                tipo de evento, que é o que ela ainda acrescenta.
+              */}
               <span className="text-meta font-medium text-ink-3">
-                {team?.name ?? event.teamName ?? "Toda a academia"} · {KIND_LABEL[event.kind]}
+                {(() => {
+                  const equipa = team?.name ?? event.teamName ?? null;
+                  if (equipa && event.title.startsWith(equipa)) return KIND_LABEL[event.kind];
+                  return `${equipa ?? "Toda a academia"} · ${KIND_LABEL[event.kind]}`;
+                })()}
               </span>
             </div>
             <h2 id="detalhe-evento" className={cx("text-page text-ink", event.cancelled && "text-ink-4 line-through")}>

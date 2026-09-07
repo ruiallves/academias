@@ -3,7 +3,7 @@ import { apiPatch } from "@/lib/http";
 import { listTeams, sportById } from "@/lib/api";
 import { reloadAcademy } from "@/lib/store";
 import type { Athlete } from "@/data/types";
-import type { Session } from "@/lib/permissions";
+import { mayReadTaxId, type Session } from "@/lib/permissions";
 import { dialogInputClass } from "./Dialog";
 import { Panel, PanelHead, cx } from "./primitives";
 
@@ -58,10 +58,25 @@ export function AthleteEditPanel({
   const sport = team ? sportById(team.sportId) : undefined;
   const positions = sport?.positions ?? [];
 
-  // O NIF é obrigatório desde que passou a ser a chave do registo da família. Numa
-  // ficha antiga pode estar vazio — e é aqui que se corrige, por isso o formulário
-  // exige-o para gravar.
-  const nifOk = /^\d{9}$/.test(taxId.replace(/\s/g, ""));
+  /*
+   * O NIF só entra no formulário de quem o recebe.
+   *
+   * O servidor devolve-o a nulo a quem não trata de famílias (ver
+   * `mayReadTaxId`), e o campo ficava na mesma no ecrã: vazio, com o
+   * `123456789` cinzento por trás e a exigência de nove dígitos para gravar.
+   * Um treinador com `athlete:write` ficava assim sem poder mudar a altura de
+   * um atleta — e a única saída que o ecrã lhe dava era escrever um NIF de
+   * memória por cima do que já lá estava.
+   *
+   * Sem permissão, o campo desaparece, não é exigido e **não vai no corpo** —
+   * um `PATCH` sem `taxId` deixa o que está gravado exactamente como está.
+   */
+  const vejoNif = mayReadTaxId(session);
+
+  // Obrigatório desde que passou a ser a chave do registo da família. Numa ficha
+  // antiga pode estar vazio — e é aqui que se corrige, por isso o formulário
+  // exige-o a quem o vê.
+  const nifOk = !vejoNif || /^\d{9}$/.test(taxId.replace(/\s/g, ""));
   const heightOk = heightCm === "" || (Number(heightCm) >= 50 && Number(heightCm) <= 250);
   const weightOk = weightKg === "" || (Number(weightKg) >= 20 && Number(weightKg) <= 200);
   const valid = name.trim().length >= 2 && birthdate !== "" && teamId !== "" && nifOk && heightOk && weightOk;
@@ -85,7 +100,7 @@ export function AthleteEditPanel({
         name: name.trim(),
         birthdate,
         teamId,
-        taxId: taxId.replace(/\s/g, ""),
+        ...(vejoNif ? { taxId: taxId.replace(/\s/g, "") } : {}),
         position: position.trim(),
         ...(squadNumber ? { squadNumber: Number(squadNumber) } : {}),
         ...(heightCm ? { heightCm: Number(heightCm) } : {}),
@@ -138,15 +153,17 @@ export function AthleteEditPanel({
                 />
               </Field>
 
-              <Field label="NIF" hint="obrigatório">
-                <input
-                  value={taxId}
-                  onChange={(e) => setTaxId(e.target.value)}
-                  inputMode="numeric"
-                  placeholder="123456789"
-                  className={cx(dialogInputClass, !nifOk && taxId !== "" && "border-risk")}
-                />
-              </Field>
+              {vejoNif && (
+                <Field label="NIF" hint="obrigatório">
+                  <input
+                    value={taxId}
+                    onChange={(e) => setTaxId(e.target.value)}
+                    inputMode="numeric"
+                    placeholder="123456789"
+                    className={cx(dialogInputClass, !nifOk && taxId !== "" && "border-risk")}
+                  />
+                </Field>
+              )}
             </div>
 
             {!nifOk && (

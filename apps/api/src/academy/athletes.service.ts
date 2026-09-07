@@ -3,7 +3,7 @@ import type { AthleteStatus, DominantSide, Prisma } from "@prisma/client";
 import { PrismaService, type ScopedClient } from "../prisma/prisma.service";
 import { StorageService } from "../storage/storage.service";
 import { PHOTO_BUCKET } from "../storage/photos.service";
-import { can, teamScopeFilter, type RequestContext } from "../common/permissions";
+import { can, teamScopeFilter, type RequestContext, teamScopeForRoster } from "../common/permissions";
 import { gerarCobrancas, periodoActual } from "../billing/billing.service";
 import type { AthleteInputDto, AthleteUpdateDto } from "./athletes.dto";
 
@@ -467,9 +467,15 @@ export class AthletesService {
 
   /* ------------------------------------------------------------------------ */
 
-  /** As equipas que quem cria pode usar — o âmbito, resolvido uma vez por operação. */
+  /**
+   * As equipas que quem cria pode usar — resolvido uma vez por operação.
+   *
+   * O mesmo âmbito largo da lista de equipas (`teamScopeForRoster`), e tem de
+   * ser o mesmo: mostrar uma equipa a quem inscreve e depois recusá-la com
+   * "fora do teu âmbito" seria oferecer uma escolha impossível.
+   */
   private async teamsInScope(ctx: RequestContext, db: ScopedClient): Promise<Map<string, string>> {
-    const scope = teamScopeFilter(ctx);
+    const scope = teamScopeForRoster(ctx);
     const teams = await db.team.findMany({
       where: scope ? { id: scope } : {},
       select: { id: true, name: true },

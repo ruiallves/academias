@@ -147,7 +147,25 @@ export function NewEventDialog({
    * o que um pai precisa de ler na agenda.
    */
   const awayVenuePlaceholder = opponent.trim() ? `Fora · ${opponent.trim()}` : "Campo do adversário";
-  const effectiveVenue = isMatch && !isHome ? venue.trim() || awayVenuePlaceholder : venue;
+
+  /*
+   * O local do catálogo, com rede.
+   *
+   * `useState(venues[0]?.label ?? "")` fixa o valor no **primeiro** render — e
+   * os locais não estão lá nesse instante: chegam por HTTP depois do arranque
+   * (ver `loadCatalogs`). Quem abrisse este diálogo cedo ficava com o estado a
+   * `""` para sempre, enquanto o `<select>` mostrava "Campo 1" — o browser
+   * mostra a primeira opção quando o valor não existe. Carregar em Agendar
+   * mandava vazio, e o servidor respondia "venue must be longer than or equal
+   * to 1 characters", em inglês e sobre um campo que estava visivelmente
+   * preenchido.
+   *
+   * Derivar em vez de guardar resolve-o de raiz: o valor que se vê é sempre o
+   * que existe na lista, e a lista pode chegar quando quiser. Fora de casa não
+   * se aplica — ali o local é texto livre e o catálogo não manda.
+   */
+  const venueDoCatalogo = venues.some((v) => v.label === venue) ? venue : (venues[0]?.label ?? "");
+  const effectiveVenue = isMatch && !isHome ? venue.trim() || awayVenuePlaceholder : venueDoCatalogo;
 
   /*
    * A repetição.
@@ -452,7 +470,7 @@ export function NewEventDialog({
             {venues.length > 0 ? (
               <SelectField
                 className="w-full"
-                value={venue}
+                value={venueDoCatalogo}
                 onChange={setVenue}
                 options={venues.map((v) => ({ value: v.label, label: v.label }))}
               />

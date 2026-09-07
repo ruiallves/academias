@@ -3,6 +3,7 @@ import { categoryColor, type CategoricalColor } from "@academia/ui/tokens";
 import { useStore, type ApiEvent, type ApiMatch } from "@/lib/store";
 import { listSessions, listTeams, sportById, teamById } from "@/lib/api";
 import type { Session } from "@/lib/permissions";
+import { matchTitle } from "@/lib/callups";
 
 /**
  * O calendário fala de **eventos**, não de treinos.
@@ -169,6 +170,24 @@ export function eventOutcome(e: CalendarEvent): Outcome | undefined {
   return e.kind === "match" && e.match ? resultOutcome(e.match) : undefined;
 }
 
+/**
+ * O título sem o escalão à frente — para onde ele já é evidente.
+ *
+ * O nome de um jogo passou a trazer a equipa ("Sub-11 Futebol vs Benfica"),
+ * porque numa lista de sábado ninguém adivinha de quem é o "vs Benfica". Numa
+ * pastilha da grelha do mês isso vira-se contra si: o espaço dá para umas
+ * quinze letras, e "Sub-11 Futeb…" esconde precisamente a parte que distingue
+ * um jogo de outro no mesmo dia.
+ *
+ * Ali o escalão já está dito de duas maneiras — a cor de fundo e o ponto — por
+ * isso a pastilha corta-o e fica com o resto. Num treino, onde o título é só o
+ * nome da equipa, não há resto: devolve-se o nome, que é o que sempre mostrou.
+ */
+export function tituloCompacto(e: CalendarEvent): string {
+  if (!e.teamName || !e.title.startsWith(e.teamName)) return e.title;
+  return e.title.slice(e.teamName.length).trim() || e.teamName;
+}
+
 /* -------------------------------------------------------------------------- */
 /* Cor por escalão                                                             */
 /* -------------------------------------------------------------------------- */
@@ -264,7 +283,7 @@ export function fromApiMatch(m: ApiMatch): CalendarEvent {
     teamId: m.teamId,
     teamName: m.teamName,
     mine: m.mine,
-    title: `${m.isHome ? "vs" : "@"} ${m.opponent}`,
+    title: matchTitle(m),
     start: new Date(m.startsAt),
     end: new Date(m.endsAt),
     venue: m.venue,

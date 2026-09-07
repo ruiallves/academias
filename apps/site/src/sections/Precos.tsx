@@ -27,7 +27,7 @@ import { ANNUAL_DISCOUNT, annualTotal, euro, PLANS } from "@/lib/content";
  *
  * ## O plano que ainda não se vende está na mesa na mesma
  *
- * O **Vision** ocupa o terceiro lugar com o preço à vista e **sem** botão de
+ * O **Vision AI** ocupa o terceiro lugar com o preço à vista e **sem** botão de
  * experimentar. Um clube escolhe plataforma uma vez e quer saber para onde é
  * que ela vai; esconder o plano até estar pronto era deixá-lo decidir sem essa
  * informação, e "sob consulta" mandava-o comparar noutro lado. Prometer-lhe
@@ -128,17 +128,26 @@ export function Precos({ compact = false }: { compact?: boolean }) {
                   </div>
 
                   <div className="mt-9 flex items-end gap-2.5 max-h-screen-sm:mt-6">
+                    {/* "desde" num plano que sobe com o consumo: o número
+                        sozinho seria o preço de entrada a passar por preço. */}
+                    {p.from && <span className="mb-1.5 text-[14px] text-ink-3">desde</span>}
                     <span className="display text-[3rem] leading-none tabular max-h-screen-sm:text-[2.4rem]">
                       {euro(perMonth)}
                     </span>
                     <span className="mb-1 text-[14px] text-ink-3">/ mês</span>
                   </div>
-                  {/* Onde os outros dizem como se factura, o Vision diz que
-                      ainda não se factura — é o que impede o preço de se ler
-                      como uma coisa que já se pode pagar. */}
-                  <p className="mt-2.5 text-[13.5px] text-ink-3 tabular">
-                    {p.soon
-                      ? p.soonWhen
+                  {/*
+                    A linha por baixo do preço.
+
+                    Nos planos que se vendem diz como se paga. No Vision AI diz o
+                    que o preço dá — e é a linha mais importante do cartão,
+                    porque um plano por créditos sem ela é um preço que muda sem
+                    aviso. Não é `tabular` como as outras: é uma frase, e o
+                    espaçamento de números faz as palavras andarem soltas.
+                  */}
+                  <p className={cx("mt-2.5 text-[13.5px] leading-relaxed text-ink-3", !p.priceNote && "tabular")}>
+                    {p.priceNote
+                      ? p.priceNote
                       : annual
                         ? `${euro(annualTotal(p.monthly))} por ano, facturado à cabeça`
                         : "Facturado mensalmente"}
@@ -184,8 +193,9 @@ export function Precos({ compact = false }: { compact?: boolean }) {
         <Reveal i={3}>
           <p className="mt-7 max-w-[76ch] text-[14px] leading-relaxed text-ink-3">
             Trinta dias com tudo o que já existe, sem cartão. Depois disso, muda-se de plano ou cancela-se sem período
-            mínimo — e os dados do clube saem contigo. O <span className="font-semibold text-ink">Vision</span> ainda
-            não se vende: o preço está aqui para poderes contar com ele no orçamento da época.
+            mínimo — e os dados do clube saem contigo. O <span className="font-semibold text-ink">Vision AI</span> ainda
+            não se vende, e cobra-se por análises e não por atleta: começa nas cinco por mês e sobe com o que o clube
+            precisar. O preço está aqui para poderes contar com ele no orçamento da época.
           </p>
         </Reveal>
       </div>

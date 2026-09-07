@@ -17,6 +17,8 @@ from pathlib import Path
 import cv2
 import numpy as np
 
+from . import config
+
 
 @dataclass
 class VideoMeta:
@@ -35,13 +37,21 @@ def probe(path: Path) -> VideoMeta:
     return _opencv_meta(path)
 
 
+def ffprobe_bin() -> str | None:
+    """O `ffprobe` a usar: o configurado, senão o do PATH, senão nenhum."""
+    if config.FFPROBE:
+        return config.FFPROBE if Path(config.FFPROBE).exists() else None
+    return shutil.which("ffprobe")
+
+
 def _ffprobe(path: Path) -> VideoMeta | None:
-    if not shutil.which("ffprobe"):
+    binario = ffprobe_bin()
+    if not binario:
         return None
     try:
         out = subprocess.run(
             [
-                "ffprobe", "-v", "error", "-select_streams", "v:0",
+                binario, "-v", "error", "-select_streams", "v:0",
                 "-show_entries", "stream=width,height,avg_frame_rate,nb_frames:format=duration",
                 "-of", "json", str(path),
             ],

@@ -560,6 +560,25 @@ conteúdo e reencaminham (`LegacyTechnical`).
 Verificado por `npm run test:modalidades` — disciplina, adopção, isolamento
 por modalidade, contadores, relações e as recusas.
 
+### O NIF do atleta
+
+Quem **edita a ficha** (`athlete:write`) vê o NIF; quem só a lê não. Esteve em
+`family:read`, apertou-se para `family:write` quando o treinador ganhou a lista
+de encarregados, e isso criou o desencontro que interessa registar: **escrever**
+o NIF sempre exigiu `athlete:write` (`setTaxId` e `update`), portanto um
+treinador podia gravar um número que nunca via. Na prática lia "Por preencher"
+num atleta cujo NIF estava lá desde o primeiro dia, e o ecrã convidava-o a
+escrever por cima do certo — das duas metades, a aberta era a perigosa. Ler e
+escrever passaram a pedir a mesma coisa.
+
+O cliente tem a gémea (`mayReadTaxId` em `lib/permissions.ts`) e **precisa
+dela**: sem a pergunta, os ecrãs não distinguem "este atleta não tem NIF" de
+"eu não posso ver este NIF", que no cliente são o mesmo `undefined` com
+consequências opostas. Sem permissão, o campo sai do formulário, deixa de ser
+exigido para gravar e **não vai no corpo do PATCH** — o que estava gravado fica
+como está. A app da família continua sem o receber: ali o NIF entra ao
+contrário, é o pai que o escreve para reclamar o educando.
+
 ## Academias AI
 
 A camada de inteligência: vídeo de jogo → computer vision → dados com
@@ -1007,9 +1026,17 @@ os tokens do produto acabaria a parecer uma captura de ecrã dele.
 
 ### Três planos, e um deles ainda não se vende
 
-Consola (14,99 €), **Connect** (19,99 €, recomendado) e **Vision** (29,99 €,
-por sair — a Academias AI empacotada: o vídeo do jogo transformado em dados
-sobre os atletas e a equipa).
+Consola (14,99 €), **Connect** (19,99 €, recomendado) e **Vision AI** (desde
+29,99 €, por sair — a Academias AI empacotada: o vídeo do jogo transformado em
+dados sobre os atletas e a equipa).
+
+**O Vision AI cobra-se por análises, e o cartão diz "desde".** Analisar um jogo
+custa tempo de GPU: um clube com dois jogos por mês não pode pagar o mesmo que
+um com vinte, nem o contrário, que era pôr o pequeno a subsidiar o grande. 29,99 €
+dão cinco análises, 49,99 € dez, e acima disso fala-se. O `from` e o `priceNote`
+do `Plan` existem para isto — escrever "29,99 €" seco num plano que sobe com o
+consumo é deixar o clube descobrir o resto na factura, que é o pior sítio para
+haver surpresas.
 
 Os três estão lado a lado na mesma mesa — e a mesa passou a correr em
 `.wrap-wide` (1440px) em vez da `.wrap` da página (1180px). Não é excepção por
@@ -1020,7 +1047,7 @@ uma tabela não é a de um parágrafo. Abaixo dos 1380px as duas caixas coincide
 a diferença desaparece. A tabela de comparação de `/planos` foi com ela, para
 não haver duas larguras na mesma página.
 
-O Vision ocupa o terceiro lugar com o preço à vista e **sem** botão de
+O Vision AI ocupa o terceiro lugar com o preço à vista e **sem** botão de
 experimentar: etiqueta "brevemente" a tracejado, "Previsto para breve" onde os
 outros dizem como se factura, e "avisa-me quando sair" no lugar do botão. O
 preço está lá porque um clube que escolhe plataforma quer saber para onde ela

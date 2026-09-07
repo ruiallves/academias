@@ -2,9 +2,10 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import { PageHeader } from "@/components/Shell";
 import { Bar, Empty, Loading, Panel, PanelHead, Pill, cx, type Tone } from "@/components/primitives";
-import { ArrowLeft, Check, CircleCheck, Film, Loader2, TriangleAlert, X } from "@/lib/icons";
-import { shortDate } from "@/lib/format";
+import { ArrowLeft, Check, CircleCheck, Film, Loader2, TriangleAlert, Users, X } from "@/lib/icons";
+import { shortDate, shortName } from "@/lib/format";
 import { can } from "@/lib/permissions";
+import { ApiError } from "@/lib/http";
 import { useSession } from "@/session";
 import {
   CONFIDENCE_LABEL,
@@ -21,6 +22,12 @@ import {
   type AnalysisDetail as Detail,
   type QualityReport,
   type Track,
+  analysisCrops,
+  type CropsIndex,
+  IDENTITY_STATUS_LABEL,
+  identifyIdentity,
+  identityNeedsReview,
+  type Identity,
 } from "@/lib/ai";
 
 /**
@@ -45,28 +52,78 @@ export default function AnalysisDetail() {
   const navigate = useNavigate();
   const [detail, setDetail] = useState<Detail | null>(null);
   const [missing, setMissing] = useState(false);
+  /** Uma falha passageira — rede, servidor. Não é "não existe". */
+  const [falhou, setFalhou] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const timer = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const mayWrite = can(session, "ai:write");
 
+  /*
+   * Uma falha de rede não é uma análise apagada.
+   *
+   * Isto apanhava tudo num `catch` só e dizia "Análise não encontrada — pode ter
+   * sido apagada, ou não é das tuas equipas". Um 500 de um segundo (o servidor a
+   * reiniciar, o portátil a acordar de suspensão com um pedido a meio) fazia o
+   * ecrã mentir sobre uma análise que estava lá — e, pior, matava o poll: sem
+   * `detail` não há `active`, e a página ficava assim até alguém a recarregar à
+   * mão.
+   *
+   * Agora só o 404 e o 403 dizem que não há: são a resposta do servidor à
+   * pergunta. O resto guarda o que já se tinha, di-lo numa faixa, e continua a
+   * tentar — a análise pode estar a meio do processamento e a próxima volta do
+   * poll resolve sozinha.
+   */
   const load = useCallback(() => {
     getAnalysis(id)
-      .then(setDetail)
-      .catch(() => setMissing(true));
+      .then((d) => {
+        setDetail(d);
+        setFalhou(null);
+      })
+      .catch((e: unknown) => {
+        const status = e instanceof ApiError ? e.status : 0;
+        if (status === 404 || status === 403) setMissing(true);
+        else setFalhou(e instanceof Error ? e.message : "Não foi possível carregar.");
+      });
   }, [id]);
 
   useEffect(load, [load]);
 
-  // O poll enquanto a máquina trabalha — e só enquanto trabalha.
-  const active = detail && ["UPLOADING", "QUEUED", "PROCESSING"].includes(detail.status);
+  /*
+   * Os recortes chegam à parte, uma vez, e só quando há o que ver.
+   *
+   * Não vêm com a análise: são folhas de imagens com links assinados, e
+   * pedi-los a cada volta do poll de cinco segundos era assinar dez links por
+   * nada enquanto o processamento ainda corre. Quando a análise fecha, pede-se
+   * uma vez. Uma análise anterior a esta etapa responde vazio, e as linhas
+   * ficam sem imagem — nunca com um quadrado partido.
+   */
+  const [crops, setCrops] = useState<CropsIndex | null>(null);
+  const concluida = detail?.status === "REVIEW" || detail?.status === "COMPLETED";
   useEffect(() => {
-    if (!active) return;
+    if (!concluida) return;
+    analysisCrops(id)
+      .then(setCrops)
+      .catch(() => setCrops(null));
+  }, [id, concluida]);
+
+  // O poll enquanto a máquina trabalha — e só enquanto trabalha. Também
+  // enquanto houver uma falha por resolver (é o que a faz desaparecer sozinha)
+  // e enquanto uma confirmação se propaga: a análise fica em revisão, mas há
+  // um job a re-agrupar, e o ecrã quer os nomes novos quando ele acabar.
+  const active = !!detail && ["UPLOADING", "QUEUED", "PROCESSING"].includes(detail.status);
+  const propagando =
+    !!detail &&
+    !active &&
+    detail.jobs.some((j) => j.kind === "identify" && ["PENDING", "CLAIMED", "RUNNING"].includes(j.status));
+  const polling = active || propagando || (falhou !== null && !missing);
+  useEffect(() => {
+    if (!polling) return;
     timer.current = setInterval(load, 5000);
     return () => {
       if (timer.current) clearInterval(timer.current);
     };
-  }, [active, load]);
+  }, [polling, load]);
 
   if (missing) {
     return (
@@ -80,10 +137,30 @@ export default function AnalysisDetail() {
       </Panel>
     );
   }
-  if (!detail) return <Loading />;
+  if (!detail) {
+    // Ainda não há nada para mostrar: ou está a carregar, ou a primeira tentativa
+    // falhou. Dizer qual das duas é a diferença entre esperar e ir chamar alguém.
+    if (!falhou) return <Loading />;
+    return (
+      <Panel>
+        <Empty icon={TriangleAlert} title="Não foi possível carregar" detail={falhou}>
+          <button type="button" className="ctl-outline" onClick={load}>
+            Tentar outra vez
+          </button>
+        </Empty>
+      </Panel>
+    );
+  }
 
   const quality = detail.videos[0]?.quality ?? null;
   const reviewTracks = detail.tracks.filter(needsReview);
+
+  // As pessoas. Sem identidades — análise anterior à etapa de identificação —
+  // o ecrã volta a falar de tracks, e diz porquê.
+  const temIdentidades = detail.identities.length > 0;
+  const porConfirmar = detail.identities.filter(identityNeedsReview);
+  const noPlantel = detail.identities.filter((i) => i.status !== "rejected");
+  const foraDoPlantel = detail.identities.filter((i) => i.status === "rejected");
 
   const remove = async () => {
     if (!window.confirm("Apagar esta análise apaga o vídeo, os tracks e as correções. Continuar?")) return;
@@ -144,8 +221,24 @@ export default function AnalysisDetail() {
             </div>
           </div>
           <p className="border-t border-line px-5 py-2.5 text-meta text-ink-4">
-            Podes fechar a consola — recebes uma notificação quando terminar.
+            {rodapeDoProgresso(detail)}
           </p>
+        </Panel>
+      )}
+
+      {/* Já há dados no ecrã, mas a última actualização não chegou. Diz-se, sem
+          deitar fora o que se tinha — e o poll continua a tentar. */}
+      {falhou && (
+        <Panel className="mb-4">
+          <div className="flex items-center gap-2.5 px-5 py-3">
+            <TriangleAlert className="size-4 shrink-0 text-warn" strokeWidth={1.75} />
+            <p className="min-w-0 flex-1 text-meta text-ink-3">
+              Os dados podem estar desactualizados — {falhou}
+            </p>
+            <button type="button" className="ctl-outline shrink-0" onClick={load}>
+              Actualizar
+            </button>
+          </div>
         </Panel>
       )}
 
@@ -161,16 +254,44 @@ export default function AnalysisDetail() {
         </Panel>
       )}
 
-      {/* O que precisa de um humano — primeiro, porque é accionável. */}
-      {mayWrite && reviewTracks.length > 0 && (
+      {/*
+        O que precisa de um humano — primeiro, porque é accionável.
+
+        Por **pessoa**, não por track. Um jogo real deu 733 tracks para 22
+        jogadores; a lista por track pedia 150 confirmações de "Track 77" às
+        cegas. Agora o resumo diz quantos a IA identificou sozinha e quantos
+        precisam de alguém, e cada pedido traz a imagem, a proposta e a
+        confiança — e a resposta vale para o jogador inteiro.
+      */}
+      {temIdentidades && concluida && (
+        <IdentitySummary identities={detail.identities} squadCount={detail.squad.length} propagando={propagando} />
+      )}
+      {temIdentidades && mayWrite && porConfirmar.length > 0 && (
+        <Panel className="mb-4">
+          <PanelHead
+            title="Precisa da tua confirmação"
+            hint={`${porConfirmar.length} ${porConfirmar.length === 1 ? "jogador" : "jogadores"}`}
+          />
+          <ul className="divide-y divide-line">
+            {porConfirmar.map((i) => (
+              <IdentityCard key={i.id} identity={i} squad={detail.squad} crops={crops} onDone={load} />
+            ))}
+          </ul>
+        </Panel>
+      )}
+
+      {/* Uma análise anterior à identificação: fica a revisão antiga, por
+          track, com a razão à vista. Reprocessar o vídeo é o que a traz para
+          o modelo novo. */}
+      {!temIdentidades && mayWrite && reviewTracks.length > 0 && (
         <Panel className="mb-4">
           <PanelHead
             title="Precisa de revisão"
-            hint={`${reviewTracks.length} ${reviewTracks.length === 1 ? "identidade por confirmar" : "identidades por confirmar"}`}
+            hint={`${reviewTracks.length} ${reviewTracks.length === 1 ? "track por confirmar" : "tracks por confirmar"} · análise anterior à identificação`}
           />
           <ul className="divide-y divide-line">
             {reviewTracks.map((t) => (
-              <ReviewRow key={t.id} track={t} squad={detail.squad} onDone={load} />
+              <ReviewRow key={t.id} track={t} squad={detail.squad} crops={crops} onDone={load} />
             ))}
           </ul>
         </Panel>
@@ -181,7 +302,16 @@ export default function AnalysisDetail() {
           {quality && <QualityPanel quality={quality} video={detail.videos[0]} />}
 
           <Panel>
-            <PanelHead title="Jogadores no vídeo" hint={detail.tracks.length ? `${detail.tracks.length} tracks` : undefined} />
+            <PanelHead
+              title="Jogadores"
+              hint={
+                temIdentidades
+                  ? `${noPlantel.length} ${noPlantel.length === 1 ? "pessoa vista" : "pessoas vistas"} no vídeo`
+                  : detail.tracks.length
+                    ? `${detail.tracks.length} tracks · análise anterior à identificação`
+                    : undefined
+              }
+            />
             {detail.tracks.length === 0 ? (
               <Empty
                 icon={Film}
@@ -189,16 +319,55 @@ export default function AnalysisDetail() {
                 title="Ainda sem tracking"
                 detail={
                   active
-                    ? "Os tracks aparecem quando a detecção terminar."
+                    ? "Os jogadores aparecem quando a detecção e a identificação terminarem."
                     : "Esta análise ainda não foi processada."
                 }
               />
+            ) : temIdentidades ? (
+              <>
+                <ul className="divide-y divide-line">
+                  {noPlantel.map((i) => (
+                    <IdentityRow key={i.id} identity={i} squad={detail.squad} crops={crops} mayWrite={mayWrite} onDone={load} />
+                  ))}
+                </ul>
+                {foraDoPlantel.length > 0 && (
+                  <details className="border-t border-line">
+                    <summary className="cursor-pointer px-5 py-2.5 text-meta text-ink-3 select-none">
+                      Fora do plantel · {foraDoPlantel.length} — árbitros, adversários, enganos que marcaste
+                    </summary>
+                    <ul className="divide-y divide-line border-t border-line">
+                      {foraDoPlantel.map((i) => (
+                        <IdentityRow key={i.id} identity={i} squad={detail.squad} crops={crops} mayWrite={mayWrite} onDone={load} />
+                      ))}
+                    </ul>
+                  </details>
+                )}
+                {/*
+                  Os tracks são o dado técnico: o que o tracker produziu, antes
+                  de se juntarem em pessoas. Ficam acessíveis — para perceber
+                  porque é que um jogador tem vinte fragmentos — mas não são o
+                  que se lê. Um treinador não sabe nem quer saber o que é um
+                  track, e o ecrã já não lho pede.
+                */}
+                <details className="border-t border-line">
+                  <summary className="cursor-pointer px-5 py-2.5 text-meta text-ink-3 select-none">
+                    Detalhes técnicos · {detail.tracks.length} tracks
+                  </summary>
+                  <ul className="divide-y divide-line border-t border-line">
+                    {detail.tracks
+                      .filter((t) => t.status !== "discarded")
+                      .map((t) => (
+                        <TrackRow key={t.id} track={t} crops={crops} />
+                      ))}
+                  </ul>
+                </details>
+              </>
             ) : (
               <ul className="divide-y divide-line">
                 {detail.tracks
                   .filter((t) => t.status !== "discarded")
                   .map((t) => (
-                    <TrackRow key={t.id} track={t} />
+                    <TrackRow key={t.id} track={t} crops={crops} />
                   ))}
               </ul>
             )}
@@ -255,10 +424,12 @@ export default function AnalysisDetail() {
 function ReviewRow({
   track,
   squad,
+  crops,
   onDone,
 }: {
   track: Track;
   squad: Detail["squad"];
+  crops: CropsIndex | null;
   onDone: () => void;
 }) {
   const [choice, setChoice] = useState(track.athleteId ?? "");
@@ -276,6 +447,9 @@ function ReviewRow({
 
   return (
     <li className="flex flex-wrap items-center gap-3 px-5 py-3">
+      {/* O que a IA viu — antes de perguntar quem é. Sem isto o treinador
+          confirmava "Track 77" às cegas. */}
+      <CropTile crops={crops} trackNumber={track.trackNumber} size="md" />
       <div className="min-w-0 flex-1">
         <div className="text-body font-medium text-ink">
           {track.athleteName ?? "Jogador por identificar"}
@@ -336,7 +510,398 @@ function needsReview(t: Track): boolean {
 /* Tracks                                                                      */
 /* -------------------------------------------------------------------------- */
 
-function TrackRow({ track }: { track: Track }) {
+/**
+ * Um recorte do jogador, cortado da folha.
+ *
+ * As folhas são grelhas de `cols × rows` recortes de `tile` píxeis; cada track
+ * sabe em que folha e posição estão os seus. Desenha-se com
+ * `background-position` — o browser descarrega a folha uma vez e recorta dez
+ * vezes, em vez de dez imagens. Escolhe-se o recorte do meio no tempo: o
+ * primeiro e o último são os extremos de um track, e o do meio é o mais
+ * provável de o mostrar de corpo inteiro.
+ *
+ * Sem recortes (análise anterior a esta etapa, ou etapa por correr) não se
+ * desenha nada: o espaço fica, o quadrado partido não.
+ */
+const TILE_WIDTH = { sm: 36, md: 56, lg: 84 } as const;
+
+/** Um azulejo de uma folha, por referência explícita — o bloco de que tudo o resto se faz. */
+function SheetTile({
+  crops,
+  at,
+  size = "md",
+}: {
+  crops: CropsIndex | null;
+  at: { s: number; i: number; ts: number } | undefined;
+  size?: keyof typeof TILE_WIDTH;
+}) {
+  const url = at ? crops?.sheets[at.s] : null;
+  if (!crops || !at || !url) return null;
+
+  const [tw, th] = crops.tile;
+  const escala = TILE_WIDTH[size] / tw;
+  const col = at.i % crops.cols;
+  const row = Math.floor(at.i / crops.cols);
+
+  return (
+    <span
+      aria-hidden
+      title={`Visto aos ${videoTime(at.ts)}`}
+      className="shrink-0 overflow-hidden rounded-[6px] bg-sunken"
+      style={{
+        width: tw * escala,
+        height: th * escala,
+        backgroundImage: `url("${url}")`,
+        backgroundSize: `${crops.cols * tw * escala}px ${crops.rows * th * escala}px`,
+        backgroundPosition: `-${col * tw * escala}px -${row * th * escala}px`,
+      }}
+    />
+  );
+}
+
+/** O recorte de um track — o do meio no tempo, o mais provável de o mostrar de corpo inteiro. */
+function CropTile({ crops, trackNumber, size = "md" }: { crops: CropsIndex | null; trackNumber: number; size?: "sm" | "md" }) {
+  const refs = crops?.tracks[String(trackNumber)];
+  return <SheetTile crops={crops} at={refs?.[Math.floor((refs.length - 1) / 2)]} size={size} />;
+}
+
+/**
+ * Os recortes de uma pessoa — até três, espalhados pelos tracks dela.
+ *
+ * É isto que o treinador vê antes de responder: a mesma pessoa em três
+ * momentos do jogo, e não um nome de track. Sem recortes não se desenha nada
+ * — o espaço fica, o quadrado partido não.
+ */
+function IdentityCrops({ identity, crops, size = "md" }: { identity: Identity; crops: CropsIndex | null; size?: keyof typeof TILE_WIDTH }) {
+  const refs = identity.summary?.crops ?? [];
+  if (!crops || refs.length === 0) return null;
+  return (
+    <span className="flex shrink-0 gap-1">
+      {refs.slice(0, 3).map((r, k) => (
+        <SheetTile key={k} crops={crops} at={r} size={size} />
+      ))}
+    </span>
+  );
+}
+
+/* -------------------------------------------------------------------------- */
+/* Identidades — as pessoas                                                    */
+/* -------------------------------------------------------------------------- */
+
+const IDENTITY_TONE: Record<Identity["status"], Tone> = {
+  unknown: "risk",
+  proposed: "warn",
+  accepted: "ok",
+  confirmed: "ok",
+  rejected: "neutral",
+};
+
+/** "12 min em campo", "40 s em campo" — o tempo de presença somado pelos tracks. */
+function presenceLabel(ms: number): string {
+  if (ms >= 90_000) return `${Math.round(ms / 60_000)} min em campo`;
+  return `${Math.round(ms / 1000)} s em campo`;
+}
+
+/** O nome de quem a IA propôs, resolvido no plantel da análise. */
+function proposedName(identity: Identity, squad: Detail["squad"]): string | null {
+  return squad.find((s) => s.athleteId === identity.proposedAthleteId)?.name ?? null;
+}
+
+/**
+ * O resumo — a frase que responde à pergunta de quem abre a análise.
+ *
+ * "A IA identificou 16. Preciso de confirmar 2." E os números por trás, em
+ * três cores: o que a máquina resolveu sozinha, o que tu já resolveste, e o
+ * que falta. As passagens curtas (menos de vinte segundos) não pedem nada e
+ * dizem-se à parte — não são jogadores por identificar, são figurantes.
+ */
+function IdentitySummary({
+  identities,
+  squadCount,
+  propagando,
+}: {
+  identities: Identity[];
+  squadCount: number;
+  propagando: boolean;
+}) {
+  const aceites = identities.filter((i) => i.status === "accepted").length;
+  const confirmadas = identities.filter((i) => i.status === "confirmed").length;
+  const porConfirmar = identities.filter(identityNeedsReview).length;
+  const curtas = identities.filter((i) => (i.status === "unknown" || i.status === "proposed") && !identityNeedsReview(i)).length;
+  const fora = identities.filter((i) => i.status === "rejected").length;
+  const identificados = aceites + confirmadas;
+
+  return (
+    <Panel className="mb-4">
+      <div className="flex items-start gap-3 px-5 py-4">
+        <span className="flex size-9 shrink-0 items-center justify-center rounded-full bg-signal-soft text-signal-ink">
+          <Users className="size-4.5" strokeWidth={1.75} />
+        </span>
+        <div className="min-w-0 flex-1">
+          <p className="text-body font-medium text-ink">
+            {identificados === 0 && porConfirmar === 0
+              ? "A IA não conseguiu identificar ninguém com confiança."
+              : porConfirmar === 0
+                ? `A IA identificou ${identificados} ${identificados === 1 ? "jogador" : "jogadores"} do plantel de ${squadCount}. Não precisa de mais nada.`
+                : `A IA identificou ${identificados} ${identificados === 1 ? "jogador" : "jogadores"} do plantel de ${squadCount}. Precisas de confirmar ${porConfirmar}.`}
+          </p>
+          <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-meta">
+            <span className="flex items-center gap-1.5 text-ink-2">
+              <span className="size-2 rounded-full bg-ok" aria-hidden />
+              {aceites} {aceites === 1 ? "identificado" : "identificados"} automaticamente
+            </span>
+            <span className="flex items-center gap-1.5 text-ink-2">
+              <span className="size-2 rounded-full bg-signal" aria-hidden />
+              {confirmadas} {confirmadas === 1 ? "confirmado" : "confirmados"} por ti
+            </span>
+            <span className="flex items-center gap-1.5 text-ink-2">
+              <span className="size-2 rounded-full bg-risk" aria-hidden />
+              {porConfirmar} por identificar
+            </span>
+            {curtas > 0 && (
+              <span className="text-ink-4">
+                {curtas} {curtas === 1 ? "passagem curta" : "passagens curtas"}, sem confirmação pedida
+              </span>
+            )}
+            {fora > 0 && (
+              <span className="text-ink-4">
+                {fora} fora do plantel
+              </span>
+            )}
+          </div>
+          {propagando && (
+            <p className="mt-2 flex items-center gap-1.5 text-meta text-ink-3">
+              <Loader2 className="size-3.5 animate-spin text-signal" strokeWidth={2} />
+              A propagar a tua confirmação aos fragmentos parecidos…
+            </p>
+          )}
+        </div>
+      </div>
+    </Panel>
+  );
+}
+
+/**
+ * Escolher quem é — o único selector da área, e só aparece quando se pede.
+ *
+ * Nunca à cabeça: primeiro o recorte e a proposta, e só quem diz "é outro" vê
+ * a lista. Um dropdown de dezasseis nomes sem contexto é o que se está a
+ * substituir.
+ */
+function IdentityChooser({
+  identity,
+  squad,
+  onDone,
+  onCancel,
+}: {
+  identity: Identity;
+  squad: Detail["squad"];
+  onDone: () => void;
+  onCancel: () => void;
+}) {
+  const [choice, setChoice] = useState(identity.athleteId ?? identity.proposedAthleteId ?? "");
+  const [saving, setSaving] = useState(false);
+
+  const apply = async (athleteId: string | null) => {
+    setSaving(true);
+    try {
+      await identifyIdentity(identity.id, athleteId);
+      onDone();
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <div className="flex flex-wrap items-center gap-2">
+      <select
+        aria-label="Quem é este jogador"
+        className="h-8 rounded-[var(--radius-control)] border border-line bg-surface px-2 text-meta text-ink"
+        value={choice}
+        onChange={(e) => setChoice(e.target.value)}
+        disabled={saving}
+      >
+        <option value="">Escolher jogador…</option>
+        {squad.map((s) => (
+          <option key={s.athleteId} value={s.athleteId}>
+            {s.jerseyNumber != null ? `#${s.jerseyNumber} · ` : ""}
+            {s.name}
+          </option>
+        ))}
+      </select>
+      <button type="button" className="ctl-primary gap-1" disabled={!choice || saving} onClick={() => apply(choice)}>
+        <Check className="size-3.5" strokeWidth={2} />
+        Confirmar
+      </button>
+      <button type="button" className="ctl-outline gap-1" disabled={saving} onClick={() => apply(null)} title="Árbitro, adversário ou engano">
+        <X className="size-3.5" strokeWidth={2} />
+        Não é do plantel
+      </button>
+      <button type="button" className="ctl-ghost" disabled={saving} onClick={onCancel}>
+        Cancelar
+      </button>
+    </div>
+  );
+}
+
+/**
+ * Um pedido de confirmação — a unidade de trabalho do treinador.
+ *
+ * Recortes à esquerda, a proposta e a confiança à direita, e os três gestos
+ * que interessam: confirmar a proposta num clique, escolher outro, ou dizer
+ * que não é ninguém do plantel. A resposta vale para todos os tracks da
+ * pessoa — é a razão de o pedido ser por pessoa.
+ */
+function IdentityCard({
+  identity,
+  squad,
+  crops,
+  onDone,
+}: {
+  identity: Identity;
+  squad: Detail["squad"];
+  crops: CropsIndex | null;
+  onDone: () => void;
+}) {
+  const [choosing, setChoosing] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const proposta = proposedName(identity, squad);
+
+  const confirmarProposta = async () => {
+    if (!identity.proposedAthleteId) return;
+    setSaving(true);
+    try {
+      await identifyIdentity(identity.id, identity.proposedAthleteId);
+      onDone();
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const rejeitar = async () => {
+    setSaving(true);
+    try {
+      await identifyIdentity(identity.id, null);
+      onDone();
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <li className="flex flex-wrap items-start gap-4 px-5 py-4">
+      <IdentityCrops identity={identity} crops={crops} size="lg" />
+      <div className="min-w-0 flex-1">
+        <div className="flex flex-wrap items-center gap-2">
+          <span className="text-body font-medium text-ink">{proposta ? `Possível jogador: ${proposta}` : "Jogador por identificar"}</span>
+          {identity.proposedConfidence != null && (
+            <Pill tone={confidenceTone(identity.proposedConfidence)}>{pct(identity.proposedConfidence)}</Pill>
+          )}
+        </div>
+        <div className="mt-0.5 text-meta text-ink-3">
+          Jogador {identity.label} · {presenceLabel(identity.presenceMs)} · visto {videoTime(identity.firstMs)}–{videoTime(identity.lastMs)}
+          {identity.jerseyNumber != null && (
+            <>
+              {" · "}
+              <span className="font-mono">#{identity.jerseyNumber}</span> lido na camisola
+              {identity.jerseyConfidence != null ? ` (${pct(identity.jerseyConfidence)})` : ""}
+            </>
+          )}
+        </div>
+
+        <div className="mt-3">
+          {choosing || !identity.proposedAthleteId ? (
+            <IdentityChooser identity={identity} squad={squad} onDone={onDone} onCancel={() => setChoosing(false)} />
+          ) : (
+            <div className="flex flex-wrap items-center gap-2">
+              <button type="button" className="ctl-primary gap-1" disabled={saving} onClick={confirmarProposta}>
+                <Check className="size-3.5" strokeWidth={2} />
+                Confirmar {shortName(proposta ?? "")}
+              </button>
+              <button type="button" className="ctl-outline" disabled={saving} onClick={() => setChoosing(true)}>
+                Escolher outro jogador
+              </button>
+              <button type="button" className="ctl-ghost gap-1" disabled={saving} onClick={rejeitar} title="Árbitro, adversário ou engano">
+                <X className="size-3.5" strokeWidth={2} />
+                Não é do plantel
+              </button>
+            </div>
+          )}
+        </div>
+      </div>
+    </li>
+  );
+}
+
+/** Uma pessoa na lista — nome, estado, presença; e "Alterar" para quem pode. */
+function IdentityRow({
+  identity,
+  squad,
+  crops,
+  mayWrite,
+  onDone,
+}: {
+  identity: Identity;
+  squad: Detail["squad"];
+  crops: CropsIndex | null;
+  mayWrite: boolean;
+  onDone: () => void;
+}) {
+  const [editing, setEditing] = useState(false);
+  const nome = identity.athleteName ?? (identity.status === "proposed" ? proposedName(identity, squad) : null);
+
+  return (
+    <li className="flex flex-wrap items-center gap-3 px-5 py-2.5">
+      <IdentityCrops identity={identity} crops={crops} size="sm" />
+      <div className="min-w-0 flex-1">
+        <div className="flex items-center gap-1.5">
+          <span className={cx("truncate text-body font-medium", identity.status === "rejected" ? "text-ink-3" : "text-ink")}>
+            {nome ?? `Jogador ${identity.label}`}
+            {identity.status === "proposed" && nome ? "?" : ""}
+          </span>
+          {identity.status === "confirmed" && (
+            <span title="Confirmado por um humano">
+              <CircleCheck className="size-3.5 shrink-0 text-ok" strokeWidth={2} />
+            </span>
+          )}
+        </div>
+        <div className="text-meta text-ink-3">
+          {presenceLabel(identity.presenceMs)} · {videoTime(identity.firstMs)}–{videoTime(identity.lastMs)}
+          {identity.jerseyNumber != null ? ` · #${identity.jerseyNumber}` : ""}
+          {identity.trackCount > 1 ? ` · ${identity.trackCount} fragmentos` : ""}
+        </div>
+        {editing && (
+          <div className="mt-2">
+            <IdentityChooser
+              identity={identity}
+              squad={squad}
+              onDone={() => {
+                setEditing(false);
+                onDone();
+              }}
+              onCancel={() => setEditing(false)}
+            />
+          </div>
+        )}
+      </div>
+      {!editing && (
+        <>
+          <Pill tone={IDENTITY_TONE[identity.status]}>
+            {IDENTITY_STATUS_LABEL[identity.status]}
+            {identity.status === "accepted" && identity.proposedConfidence != null ? ` · ${pct(identity.proposedConfidence)}` : ""}
+          </Pill>
+          {mayWrite && (
+            <button type="button" className="ctl-ghost h-7 text-meta" onClick={() => setEditing(true)}>
+              Alterar
+            </button>
+          )}
+        </>
+      )}
+    </li>
+  );
+}
+
+function TrackRow({ track, crops }: { track: Track; crops: CropsIndex | null }) {
   const summary = track.summary ?? {};
   const distance = typeof summary.distanceM === "number" ? `${(summary.distanceM / 1000).toFixed(1)} km` : null;
 
@@ -350,6 +915,7 @@ function TrackRow({ track }: { track: Track }) {
       >
         {track.jerseyNumber != null ? track.jerseyNumber : "?"}
       </span>
+      <CropTile crops={crops} trackNumber={track.trackNumber} size="sm" />
       <div className="min-w-0 flex-1">
         <div className="flex items-center gap-1.5">
           <span className="truncate text-body font-medium text-ink">
@@ -470,6 +1036,38 @@ function JobDot({ status }: { status: string }) {
   if (status === "RUNNING" || status === "CLAIMED")
     return <Loader2 className="size-4 shrink-0 animate-spin text-signal" strokeWidth={2} />;
   return <span className="mx-1 inline-block size-2 shrink-0 rounded-full bg-ink-4" aria-hidden />;
+}
+
+/**
+ * O que se diz por baixo da barra — e o que se deixou de dizer.
+ *
+ * Dizia sempre "podes fechar a consola, recebes uma notificação quando
+ * terminar". Com nenhuma máquina de processamento ligada, isso é uma promessa
+ * que ninguém pode cumprir: a análise fica na fila para sempre, o ecrã não
+ * explica porquê, e quem espera fica a achar que o produto está avariado — em
+ * vez de ir ligar o que falta.
+ *
+ * São três situações diferentes e três frases diferentes: não há ninguém a
+ * processar; há, mas está ocupado; ou está mesmo a trabalhar nesta.
+ */
+function rodapeDoProgresso(detail: Detail): string {
+  if (detail.status === "UPLOADING") return "Não feches este separador enquanto o vídeo sobe.";
+
+  const aTrabalhar = detail.jobs.some((j) => j.status === "RUNNING" || j.status === "CLAIMED");
+  if (aTrabalhar) return "Podes fechar a consola — recebes uma notificação quando terminar.";
+
+  if (detail.workers.online === 0) {
+    return "Nenhuma máquina de processamento está ligada — a análise fica na fila até haver uma. Nada se perde.";
+  }
+
+  // Ligada mas sem saber fazer a etapa: acontece quando o worker não tem os
+  // modelos de detecção instalados e só anuncia a verificação de qualidade.
+  const etapa = detail.jobs.find((j) => j.status === "PENDING")?.kind;
+  if (etapa && !detail.workers.kinds.includes(etapa)) {
+    return `A máquina ligada não faz a etapa "${JOB_LABEL[etapa] ?? etapa}" — a análise espera por uma que a faça.`;
+  }
+
+  return "Há uma máquina ligada, ocupada com outro trabalho. Esta entra a seguir — podes fechar a consola.";
 }
 
 function currentStage(detail: Detail): string {

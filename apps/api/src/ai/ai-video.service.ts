@@ -1,5 +1,6 @@
 import { BadRequestException, Injectable, Logger, NotFoundException } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
+import { gunzipSync } from "node:zlib";
 import { StorageService } from "../storage/storage.service";
 
 /**
@@ -54,6 +55,38 @@ export class AiVideoService {
     const url = await this.storage.signDownload(this.bucket, storageKey, expiresIn);
     if (!url) throw new NotFoundException("Ficheiro indisponível");
     return url;
+  }
+
+  /**
+   * Vários links de leitura de uma vez — as folhas de recortes de uma análise.
+   * Curtos, como todos: são imagens de menores, e um link que vive dez minutos
+   * é um link que não se guarda.
+   */
+  async signMany(storageKeys: string[], expiresIn: number): Promise<Map<string, string>> {
+    await this.ensureBucket();
+    return this.storage.signMany(this.bucket, storageKeys, expiresIn);
+  }
+
+  /**
+   * Lê um JSON comprimido que o worker escreveu — o índice dos recortes, as
+   * posições. Pelo link assinado e não por credenciais de Storage no serviço:
+   * é o mesmo caminho que qualquer leitor faz, e o único que existe.
+   *
+   * `null` quando não há ficheiro — a análise é anterior a esta etapa, ou ela
+   * ainda não correu. Não é erro: é "ainda não", e quem chama diz isso.
+   */
+  async readJsonGz<T = unknown>(storageKey: string): Promise<T | null> {
+    await this.ensureBucket();
+    const url = await this.storage.signDownload(this.bucket, storageKey, 120);
+    if (!url) return null;
+    const res = await fetch(url);
+    if (res.status === 404 || res.status === 400) return null;
+    if (!res.ok) {
+      this.log.error(`Leitura de ${storageKey} falhou: ${res.status}`);
+      throw new BadRequestException("Não foi possível ler o ficheiro da análise");
+    }
+    const buf = Buffer.from(await res.arrayBuffer());
+    return JSON.parse(gunzipSync(buf).toString("utf8")) as T;
   }
 
   async exists(storageKey: string): Promise<boolean> {

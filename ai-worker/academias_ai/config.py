@@ -42,6 +42,19 @@ POLL_SECONDS = float(os.environ.get("AI_WORKER_POLL_SECONDS", "5"))
 INGEST_PORT = int(os.environ.get("PORT") or os.environ.get("AI_WORKER_INGEST_PORT", "8765"))
 # Onde os vídeos vivem enquanto se processam.
 SPOOL = Path(os.environ.get("AI_WORKER_SPOOL", str(Path(__file__).resolve().parent.parent / "spool")))
+
+# O ffprobe, por caminho e não por sorte do PATH.
+#
+# Duas razões, e as duas doeram. A primeira: um serviço arrancado por outro
+# processo herda o ambiente de quem o arrancou, e não o PATH que o instalador
+# escreveu no registo — o worker dizia "sem ffprobe" numa máquina que o tinha
+# instalado, e caía para as estimativas do OpenCV sem ninguém perceber porquê.
+# A segunda é de licença: uma máquina pode ter mais do que uma build de FFmpeg,
+# e a primeira do PATH pode ser a GPL. O produto assume LGPL chamado por
+# processo (ver LICENSES.md), e isso decide-se apontando, não torcendo.
+#
+# Vazio = procurar no PATH, como antes.
+FFPROBE = os.environ.get("AI_WORKER_FFPROBE", "").strip()
 # Ao fim de quantas horas um ficheiro esquecido é apagado, peça a API o que pedir.
 SPOOL_TTL_HOURS = float(os.environ.get("AI_WORKER_SPOOL_TTL_HOURS", "72"))
 
@@ -87,6 +100,25 @@ DETECTOR = os.environ.get("AI_WORKER_DETECTOR", "")
 
 # Threads do PyTorch em CPU. 0 = o que o PyTorch achar.
 THREADS = int(_num("AI_WORKER_THREADS", 0))
+
+# --- Recall: ver o jogo inteiro, e não só quem está perto da câmara ------------
+#
+# Medido num jogo real de 111 minutos a 1080p, filmado de cima: os tracks
+# cobriam **8 %** do tempo de jogador, com 1,8 pessoas seguidas em média num
+# campo com 22. Não era o tracking a falhar — era o detector a não ver
+# jogadores de 30–50 píxeis, ainda mais depois de o frame descer aos 800 px.
+# Estas três alavancas trocam tempo por recall; o resultado di-lo em
+# `stats.meanConcurrentTracks`, para a troca se medir e não se assumir.
+
+# Detecção por mosaicos: 2 = o frame parte-se em 2×2 janelas (com folga) e
+# cada uma vai ao detector na resolução de trabalho — um jogador fica com o
+# dobro dos píxeis. Custa ~4× o tempo de detecção. 1 = desligado.
+TILES = int(_num("AI_WORKER_TILES", 1))
+
+# O limiar de confiança do detector. O ByteTrack usa detecções fracas para
+# continuar tracks já abertos; baixar isto de 0,5 para 0,4 dá-lhe esse
+# material. Abaixo de 0,3 entram bancos, sacos e sombras.
+SCORE_THRESHOLD = _num("AI_WORKER_SCORE_THRESHOLD", 0.5)
 
 
 def validate() -> None:

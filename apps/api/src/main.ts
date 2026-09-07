@@ -53,6 +53,23 @@ async function bootstrap() {
    */
   app.use(tenantMiddleware);
 
+  /*
+   * Os resultados dos workers de visão computacional são grandes — e só eles.
+   *
+   * O tecto de 100 KB do `body-parser` é o certo para um formulário: um pedido
+   * de 10 MB numa rota de sessão é um ataque, não um utilizador. Mas o
+   * `detect_track` de um jogo inteiro devolve um registo por track, e um jogo
+   * mal segmentado traz milhares — 1,1 MB num caso real. O worker levava 413, o
+   * job dava-se por falhado, voltava à fila, e a análise recuava dos 100% para
+   * os 15% do fim da verificação de qualidade. Duas vezes, e o vídeo era purgado.
+   *
+   * O tecto sobe **só aqui**, e antes do parser global: o `body-parser` marca o
+   * pedido como já lido, por isso o `json()` de baixo passa-lhe ao lado. A
+   * fronteira destas rotas continua a ser o `AI_WORKER_TOKEN`, e nenhuma outra
+   * rota da API ganha um milímetro de folga.
+   */
+  app.use("/api/ai/worker", json({ limit: "16mb" }));
+
   /**
    * O corpo em bruto é preservado para as rotas de webhook: a assinatura HMAC é
    * calculada sobre os bytes exactos que a euPago enviou, e um `JSON.parse` seguido

@@ -40,8 +40,23 @@ export type Plan = {
    * que ninguém pode abrir é a mentira que custa o cliente todo.
    */
   soon?: boolean;
-  /** Quando se espera. Uma intenção, e a página di-lo. */
-  soonWhen?: string;
+  /**
+   * O preço é o **ponto de partida** e não o preço: o cartão escreve "desde".
+   *
+   * Um plano que sobe com o consumo tem de o dizer no sítio onde o número
+   * aparece. Escrever "29,99 €" sozinho num plano que custa 49,99 € a quem
+   * analisa dez jogos é a forma de descobrir o resto na factura — e a factura é
+   * o pior sítio para haver uma surpresa.
+   */
+  from?: boolean;
+  /**
+   * A linha por baixo do preço, no lugar de "facturado mensalmente".
+   *
+   * Nos planos que se vendem essa linha diz como se paga. Num plano por sair
+   * diz o que o preço dá — e num plano por consumo é a linha mais importante
+   * do cartão, porque é a que responde a "e se eu tiver mais jogos?".
+   */
+  priceNote?: string;
 };
 
 export const PLANS: Plan[] = [
@@ -93,14 +108,27 @@ export const PLANS: Plan[] = [
     O que o trava é o botão. Não há "experimentar 30 dias" numa coisa que
     ninguém pode abrir; há "avisa-me quando sair". A diferença entre despertar
     interesse e prometer o que não se entrega é exactamente esta linha.
+
+    ## Porque é que o preço é "desde"
+
+    Analisar um jogo custa tempo de GPU, e um clube que analisa dois jogos por
+    mês não pode pagar o mesmo que um que analisa vinte — nem o contrário, que
+    era pôr o pequeno a subsidiar o grande. Por isso o plano é por créditos, e o
+    número que aparece é o degrau de entrada.
+
+    Dizer "29,99 €" e cobrar 49,99 € a quem analisa dez jogos é a forma de o
+    clube descobrir o resto na factura, que é o pior sítio para haver surpresas.
+    Daí o **desde**, e daí a linha de créditos por baixo do preço ser a mais
+    importante do cartão: é a que responde a "e se eu tiver mais jogos?".
   */
   {
     id: "vision",
-    name: "Vision",
+    name: "Vision AI",
     tagline: "Transforma o vídeo dos teus jogos em dados sobre os teus atletas e a tua equipa.",
     monthly: 29.99,
+    from: true,
     soon: true,
-    soonWhen: "Previsto para breve",
+    priceNote: "inclui 5 análises de jogo por mês",
     includes: [
       "Tudo o que está no Connect",
       "Análise automática de jogos",
@@ -108,7 +136,6 @@ export const PLANS: Plan[] = [
       "Distância percorrida, zonas ocupadas e tempo em campo",
       "Estatísticas, momentos-chave e clips por jogador",
       "Análise do adversário a partir do que o clube já grava",
-      "Relatórios de jogo e métricas por atleta",
     ],
   },
 ];
@@ -279,12 +306,12 @@ export const ROADMAP: RoadmapItem[] = [
   {
     when: "Janeiro 2027",
     title: "IA sobre os dados do clube",
-    body: "Resumos e sinais a partir do que já lá está — nunca a inventar o que ninguém registou. Entra no plano Vision.",
+    body: "Resumos e sinais a partir do que já lá está — nunca a inventar o que ninguém registou. Entra no plano Vision AI.",
   },
     {
     when: "Março 2027",
     title: "IA sobre os vídeos do clube",
-    body: "Análise de vídeo por visão computacional: cada jogador seguido ao longo do jogo, métricas por atleta, clips ligados ao lance, e a leitura do adversário a partir do que o clube já grava. É o que o plano Vision traz — e cada número vem com a confiança medida ao lado.",
+    body: "Análise de vídeo por visão computacional: cada jogador seguido ao longo do jogo, métricas por atleta, clips ligados ao lance, e a leitura do adversário a partir do que o clube já grava. É o que o plano Vision AI traz — e cada número vem com a confiança medida ao lado.",
   },
 ];
 
@@ -322,8 +349,12 @@ export const FAQ = [
     a: "Sim. O nome, a cor e o ícone do clube atravessam a consola, a app — em todas as áreas — e a página pública de adesão. Quem instala a app instala a app do clube.",
   },
   {
-    q: "O que é o plano Vision, e porque é que aparece se ainda não existe?",
-    a: "É o passo a seguir ao Connect: o vídeo que o clube já grava transformado em dados — cada jogador seguido ao longo do jogo, distância e zonas por atleta, clips ligados ao lance, relatório de jogo e leitura do adversário. Aparece porque um clube escolhe plataforma uma vez e fica anos com ela: esconder para onde vamos era deixar-te decidir sem essa informação, e o preço à vista é o que te permite orçamentar a época. O que não fazemos é vendê-lo já — não há período de teste de uma coisa que ninguém pode abrir, e a data é uma intenção, não um compromisso.",
+    q: "O que é o plano Vision AI, e porque é que aparece se ainda não existe?",
+    a: "É o passo a seguir ao Connect: o vídeo que o clube já grava transformado em dados — cada jogador seguido ao longo do jogo, distância e zonas por atleta, clips ligados ao lance, e a leitura do adversário. Aparece porque um clube escolhe plataforma uma vez e fica anos com ela: esconder para onde vamos era deixar-te decidir sem essa informação, e o preço à vista é o que te permite orçamentar a época. O que não fazemos é vendê-lo já — não há período de teste de uma coisa que ninguém pode abrir.",
+  },
+  {
+    q: "Como é que o Vision AI é cobrado?",
+    a: "Por análises, e não por jogador ou por equipa. Analisar um jogo custa tempo de máquina, e um clube que analisa dois jogos por mês não pode pagar o mesmo que um que analisa vinte — nem o contrário, que era pôr o pequeno a subsidiar o grande. O plano começa nos 29,99 €/mês com cinco análises de jogo; 49,99 € analisa até dez. Precisas de mais do que isso, ou de um mês de pico a meio da época? Fala connosco e estende-se — não vais bater numa parede a meio de um apuramento.",
   },
   {
     q: "A IA vai inventar estatísticas sobre os nossos atletas?",

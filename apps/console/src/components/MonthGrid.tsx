@@ -1,6 +1,6 @@
 import { Fragment, useState } from "react";
 import type { CategoricalColor } from "@academia/ui/tokens";
-import { KIND_LABEL, dayKey, eventOutcome, groupByDay, monthGrid, type CalendarEvent } from "@/lib/calendar";
+import { KIND_LABEL, dayKey, eventOutcome, groupByDay, monthGrid, tituloCompacto, type CalendarEvent } from "@/lib/calendar";
 import { today } from "@/lib/api";
 import { time } from "@/lib/format";
 import { Plus } from "@/lib/icons";
@@ -168,8 +168,9 @@ function EventChip({
         aria-hidden
       />
       <span className="shrink-0 font-mono tabular opacity-80">{time(event.start)}</span>
+      {/* Sem o escalão: a cor e o ponto já o dizem, e o espaço é curto. */}
       <span className={cx("min-w-0 flex-1 truncate font-medium", event.cancelled && "line-through")}>
-        {event.title}
+        {tituloCompacto(event)}
       </span>
       {alert && <span className="shrink-0 font-semibold text-risk">sem treinador</span>}
       {/* Só a letra: numa pastilha de 11px o resultado não cabe, e está no

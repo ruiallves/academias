@@ -8,6 +8,7 @@ import { AiWorkerGuard } from "./ai-worker.guard";
 import {
   CompleteVideoDto,
   CreateAnalysisDto,
+  IdentifyIdentityDto,
   IdentifyTrackDto,
   StartVideoUploadDto,
   UpdateSquadDto,
@@ -16,7 +17,9 @@ import {
   WorkerFailDto,
   WorkerHeartbeatDto,
   WorkerModelDto,
+  WorkerTracksDto,
   WorkerUploadUrlDto,
+  WorkerDownloadUrlDto,
   WorkerVideoReceivedDto,
 } from "./ai.dto";
 
@@ -78,9 +81,19 @@ export class AiController {
     return this.ai.videoUrl(req.ctx, id);
   }
 
+  @Get("analyses/:id/crops")
+  crops(@Req() req: AuthedRequest, @Param("id") id: string) {
+    return this.ai.analysisCrops(req.ctx, id);
+  }
+
   @Post("tracks/:id/identify")
   identify(@Req() req: AuthedRequest, @Param("id") id: string, @Body() dto: IdentifyTrackDto) {
     return this.ai.identifyTrack(req.ctx, id, dto);
+  }
+
+  @Post("identities/:id/identify")
+  identifyIdentity(@Req() req: AuthedRequest, @Param("id") id: string, @Body() dto: IdentifyIdentityDto) {
+    return this.ai.identifyIdentity(req.ctx, id, dto);
   }
 
   @Get("insights")
@@ -120,6 +133,12 @@ export class AiWorkerController {
     return this.worker.heartbeat(id, dto);
   }
 
+  /** Os tracks, em lotes, antes do `complete`. Ver `WorkerTracksDto`. */
+  @Post("jobs/:id/tracks")
+  tracks(@Param("id") id: string, @Body() dto: WorkerTracksDto) {
+    return this.worker.saveTracks(id, dto);
+  }
+
   @Post("jobs/:id/complete")
   complete(@Param("id") id: string, @Body() dto: WorkerCompleteDto) {
     return this.worker.complete(id, dto);
@@ -133,6 +152,11 @@ export class AiWorkerController {
   @Post("jobs/:id/upload-url")
   uploadUrl(@Param("id") id: string, @Body() dto: WorkerUploadUrlDto) {
     return this.worker.uploadUrl(id, dto);
+  }
+
+  @Post("jobs/:id/download-url")
+  downloadUrl(@Param("id") id: string, @Body() dto: WorkerDownloadUrlDto) {
+    return this.worker.downloadUrl(id, dto);
   }
 
   /** O vídeo chegou inteiro ao worker — o caminho directo, sem Storage. */

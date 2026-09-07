@@ -451,6 +451,24 @@ export function can(session: Session, permission: Permission): boolean {
 }
 
 /**
+ * Quem recebe o NIF de um atleta: quem pode **editar a ficha**.
+ *
+ * Gémea de `mayReadTaxId` em `academy.service.ts` — a razão longa está lá. Em
+ * resumo: escrever o NIF sempre exigiu `athlete:write`, ler exigia outra
+ * permissão, e quem podia escrever sem ver acabava a escrever por cima do
+ * número certo.
+ *
+ * Continua a fazer falta aqui mesmo com as duas alinhadas: sem esta pergunta,
+ * os ecrãs não distinguem **"este atleta não tem NIF"** de **"eu não posso ver
+ * o NIF deste atleta"** — dois estados idênticos no cliente e com consequências
+ * opostas. É o que separa o aviso legítimo ("por preencher, e por isso nenhuma
+ * família o reclama") do aviso falso sobre um dado que existe.
+ */
+export function mayReadTaxId(session: Session): boolean {
+  return can(session, "athlete:write");
+}
+
+/**
  * Verdadeiro quando o utilizador vê a academia toda, falso quando vê só o seu âmbito.
  *
  * O departamento clínico entra aqui: uma lesão não conhece escalões, e obrigar o

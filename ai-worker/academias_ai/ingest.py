@@ -60,6 +60,7 @@ import json
 import shutil
 import sys
 import threading
+import traceback
 import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
@@ -132,26 +133,67 @@ def _received(path: Path) -> int:
 
 
 def purge(video_id: str, mime: str | None = None) -> bool:
-    """Apaga o ficheiro deste vídeo, seja qual for a extensão. True se havia algo."""
-    removed = False
+    """Apaga o ficheiro deste vídeo, seja qual for a extensão. True se apagou algo.
+
+    ## Nunca levanta excepção — e a razão é uma cicatriz
+
+    Em Windows não se apaga um ficheiro que outro processo tem aberto: o
+    `unlink` levanta `PermissionError`. E há um caso em que isso acontece
+    naturalmente — a API pede a purga de um vídeo **enquanto o browser ainda o
+    está a carregar** (alguém apagou a análise a meio do upload). O `unlink`
+    rebentava, a excepção subia pelo servidor de HTTP, e levava o worker
+    inteiro atrás. Um pedido de apagar não pode derrubar a máquina que está a
+    processar outro jogo.
+
+    Um ficheiro que não se conseguiu apagar não fica perdido: o zelador volta a
+    tentar dentro de uma hora e, mais tarde, apaga-o por idade de qualquer
+    maneira. É por isso que ele existe.
+    """
+    apagados = 0
+    presos = 0
     for candidate in config.SPOOL.glob(f"{video_id}.*"):
-        candidate.unlink(missing_ok=True)
-        removed = True
-    return removed
+        try:
+            candidate.unlink()
+            apagados += 1
+        except FileNotFoundError:
+            pass  # outro pedido chegou primeiro; o fim é o mesmo
+        except OSError as erro:
+            presos += 1
+            _por_apagar.add(candidate.name)
+            print(f"[spool] {candidate.name} não pôde ser apagado agora ({erro.__class__.__name__}); "
+                  "fica para o zelador", file=sys.stderr)
+    return apagados > 0 and presos == 0
 
 
 def janitor(ttl_hours: float) -> None:
-    """Apaga o que já ninguém quer: ficheiros mais velhos do que o prazo."""
-    if ttl_hours <= 0:
+    """Apaga o que já ninguém quer: ficheiros mais velhos do que o prazo.
+
+    E o que ficou por apagar à primeira — ver `purge`. Um ficheiro que estava
+    aberto quando a API pediu para o apagar já não estará daqui a uma hora.
+    """
+    limit = time.time() - ttl_hours * 3600 if ttl_hours > 0 else None
+    try:
+        ficheiros = list(config.SPOOL.iterdir())
+    except OSError:
         return
-    limit = time.time() - ttl_hours * 3600
-    for f in config.SPOOL.iterdir():
+
+    for f in ficheiros:
         try:
-            if f.is_file() and f.stat().st_mtime < limit:
+            if not f.is_file():
+                continue
+            if f.name in _por_apagar:
+                f.unlink()
+                _por_apagar.discard(f.name)
+                print(f"[spool] apagado na segunda tentativa: {f.name}")
+            elif limit is not None and f.stat().st_mtime < limit:
                 f.unlink()
                 print(f"[spool] apagado por idade: {f.name}")
         except OSError:
-            pass
+            pass  # continua preso; volta a tentar-se na próxima ronda
+
+
+# Os que a API mandou apagar e estavam abertos. O zelador acaba o serviço.
+_por_apagar: set[str] = set()
 
 
 # ---------------------------------------------------------------------------
@@ -165,6 +207,28 @@ class _Handler(BaseHTTPRequestHandler):
     # O log do servidor de HTTP é ruído a cada bloco; o que interessa diz-se à mão.
     def log_message(self, format: str, *args: Any) -> None:  # noqa: A002
         return
+
+    def handle_one_request(self) -> None:
+        """A fronteira: um pedido que rebente não leva o worker atrás.
+
+        Estava a levar. Um `PermissionError` a apagar um ficheiro aberto subiu
+        daqui até acima e matou o processo — que estava, ao mesmo tempo, a
+        processar duas horas de vídeo. O servidor de ingestão é uma porta de
+        serviço; um erro nela responde 500 e a máquina continua a trabalhar.
+        """
+        try:
+            super().handle_one_request()
+        except (ConnectionError, BrokenPipeError):
+            # O browser desligou-se a meio. Não é um erro nosso, e o carregamento
+            # retoma-se sozinho — ver a nota de topo.
+            self.close_connection = True
+        except Exception as erro:  # noqa: BLE001 — é isto que protege o processo
+            traceback.print_exc()
+            self.close_connection = True
+            try:
+                self._json(500, {"error": f"erro interno no worker: {type(erro).__name__}"})
+            except Exception:  # noqa: BLE001 — a ligação já não dá para nada
+                pass
 
     # --- respostas ------------------------------------------------------------
 

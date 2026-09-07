@@ -4,10 +4,41 @@ import { Sidebar } from "./Sidebar";
 import { Onboarding } from "./Onboarding";
 import { BusyProvider, BusyScreen } from "./Busy";
 import { usePresence } from "@/lib/presence";
+import { useStore } from "@/lib/store";
 import { MobileTabBar, MobileTopBar } from "./MobileNav";
 
 export function Shell() {
   const [collapsed, setCollapsed] = useState(false);
+
+  /*
+   * A página inteira ouve o arranque. É por isso que não é preciso F5.
+   *
+   * ## O que estava a acontecer
+   *
+   * `listAthletes`, `listTeams`, `listFees` e companhia lêem **variáveis de
+   * módulo** de `lib/store.ts` — não são estado do React. Quem escreve chama
+   * `reloadAcademy()`, que as substitui e avisa os subscritores; mas uma página
+   * que só as *chama* não é subscritora nenhuma, e o React não tem como saber
+   * que o que ela desenhou ficou velho.
+   *
+   * Importar cinquenta atletas fazia exactamente isto: o servidor gravava, o
+   * store recarregava, e a lista à frente da pessoa continuava a mostrar o que
+   * mostrava antes. Só um F5 — que remonta tudo e volta a ler as variáveis —
+   * é que revelava o trabalho. Vinte e quatro páginas estavam nesta situação.
+   *
+   * ## Porque é que a subscrição vive aqui
+   *
+   * Porque a alternativa é lembrar-se de `useStore()` em cada página que lê o
+   * store, e esquecer-se numa é reabrir o mesmo bug em silêncio — não há aviso,
+   * nem erro, nem teste que o apanhe: só uma lista que teima em estar
+   * desactualizada. Já aconteceu vinte e quatro vezes.
+   *
+   * O `Shell` é o pai de todas as rotas: subscrito aqui, qualquer página
+   * presente ou futura reage ao store sem ter de saber que ele existe. O custo
+   * é redesenhar a árvore quando o arranque muda — o que acontece depois de uma
+   * escrita, não continuamente.
+   */
+  useStore();
 
   // A consola só chega aqui com sessão e academia resolvidas (ver `AcademyBoot`),
   // por isso é o sítio certo para dizer ao servidor que este separador está vivo.

@@ -122,6 +122,7 @@ SCORE_THRESHOLD = 0.5
 # Os limites da resolução de trabalho. Ver a nota de topo.
 MAX_SHORT = 800   # o valor para que os pesos COCO foram treinados
 MIN_SHORT = 320   # abaixo disto um jogador ao longe deixa de existir
+HARD_MAX_SHORT = 1333  # o máximo que o torchvision aceita sem partir a proporção
 
 # --- Junção de fragmentos ---------------------------------------------------
 #
@@ -140,6 +141,29 @@ MERGE_SPEED_FRAC = 0.35
 # E quanto pode ter mudado de tamanho. Um jogador aproxima-se da câmara, não
 # duplica de altura num segundo.
 MERGE_SIZE_RATIO = 1.8
+
+# --- Recortes representativos -----------------------------------------------
+#
+# O vídeo é apagado quando o processamento acaba (`purge_video`), e até aqui
+# não ficava um único píxel — o treinador confirmava "Track 77" às cegas, e a
+# identificação (camisola, aparência) não tinha em que trabalhar. Guardam-se
+# agora os melhores recortes de cada track: os frames em que o jogador está
+# maior e mais nítido, que é onde um número se lê e uma camisola se vê.
+#
+# Vão em **folhas** (uma grelha de recortes por imagem) e não um ficheiro por
+# recorte: dois mil recortes eram dois mil pedidos de URL e dois mil PUTs — o
+# mesmo problema que as posições já tiveram. Dez folhas e um índice chegam.
+CROPS_PER_TRACK = 3
+# Largura × altura de cada recorte na folha. 128×256 é a entrada dos modelos de
+# re-identificação de pessoas (OSNet e família), para a folha servir tal e qual.
+CROP_TILE = (128, 256)
+CROP_SHEET_COLS = 20
+CROP_SHEET_ROWS = 10
+# Folga à volta da caixa: os braços, a cabeça e os pés que o detector corta rente.
+CROP_MARGIN = 0.15
+# Abaixo disto o recorte é um borrão — nem vale o espaço na folha.
+CROP_MIN_HEIGHT_PX = 24
+CROPS_INDEX_KEY = "crops/index.json.gz"
 
 
 def dependencies_ok() -> bool:
@@ -188,6 +212,8 @@ def run(job: dict[str, Any], video_path: Path, progress: Callable[[int], None]) 
 
     stride = max(1, round(meta.fps / TARGET_FPS))
     tracks: dict[int, list[tuple[int, float, float, float, float, float]]] = {}
+    # tid bruto → os melhores recortes até agora: (pontuação, tsMs, caixa, jpeg).
+    recortes: dict[int, list[tuple[float, int, tuple[int, int, int, int], bytes]]] = {}
     frames_processed = 0
     detections_total = 0
 
@@ -202,7 +228,7 @@ def run(job: dict[str, Any], video_path: Path, progress: Callable[[int], None]) 
             nonlocal frames_processed, detections_total
             if not lote_frames:
                 return
-            for ts_ms, deteccoes in zip(lote_ts, _detect_people(model, lote_frames, device, plano)):
+            for k, (ts_ms, deteccoes) in enumerate(zip(lote_ts, _detect_people(model, lote_frames, device, plano))):
                 detections_total += len(deteccoes)
                 seguidos = tracker.update_with_detections(deteccoes)
                 for xyxy, conf, tid in zip(seguidos.xyxy, seguidos.confidence, seguidos.tracker_id):
@@ -210,6 +236,7 @@ def run(job: dict[str, Any], video_path: Path, progress: Callable[[int], None]) 
                     tracks.setdefault(int(tid), []).append(
                         (ts_ms, (x1 + x2) / 2, (y1 + y2) / 2, x2 - x1, y2 - y1, float(conf)),
                     )
+                    _guardar_recorte(recortes, int(tid), lote_frames[k], ts_ms, (x1, y1, x2, y2), float(conf))
                 frames_processed += 1
             lote_frames.clear()
             lote_ts.clear()
@@ -239,10 +266,17 @@ def run(job: dict[str, Any], video_path: Path, progress: Callable[[int], None]) 
         raise RuntimeError("Nenhum frame processado — o vídeo pode estar corrompido")
 
     brutos = len(tracks)
-    tracks = _merge_fragments(tracks, meta)
+    tracks, origem = _merge_fragments(tracks, meta)
     progress(96)
 
-    result_tracks, confidences = _summarise(job, tracks, meta, progress)
+    # Só os tracks que vão ser gravados levam recortes — os de menos de dois
+    # segundos são ruído e caem no `_summarise`.
+    validos = {tid for tid, pts in tracks.items() if (pts[-1][0] - pts[0][0]) / 1000 >= MIN_TRACK_SEC}
+    recortes_finais = _juntar_recortes(recortes, origem, validos)
+    recortes.clear()
+    crops_idx, n_folhas = _upload_crops(job, recortes_finais, progress)
+
+    result_tracks, confidences = _summarise(job, tracks, meta, progress, crops_idx)
     progress(98)
 
     return {
@@ -266,6 +300,15 @@ def run(job: dict[str, Any], video_path: Path, progress: Callable[[int], None]) 
             # de juntar. É o número que diz se a cadência está a chegar.
             "rawTracks": brutos,
             "mergedTracks": len(tracks),
+            # As alavancas de recall e a medida que as julga: quantas pessoas
+            # estavam a ser seguidas, em média, em cada frame processado. Num
+            # jogo de onze são ~22 se se vê tudo; 1,8 foi o número que mostrou
+            # que o detector não via o jogo.
+            "tiles": plano["tiles"],
+            "scoreThreshold": plano["scoreThreshold"],
+            "meanConcurrentTracks": round(sum(len(p) for p in tracks.values()) / max(1, frames_processed), 2),
+            # Onde estão os recortes — o índice diz o resto.
+            "crops": {"indexKey": CROPS_INDEX_KEY, "sheets": n_folhas, "tile": list(CROP_TILE)},
         },
     }
 
@@ -282,7 +325,10 @@ def _plan(device: str, meta: videolib.VideoMeta) -> dict[str, Any]:
     de poder ser explicado meses depois sem adivinhar a configuração.
     """
     fonte = min(meta.width, meta.height) or MAX_SHORT
-    tecto = min(config.WORK_SHORT_MAX or MAX_SHORT, MAX_SHORT)
+    # O tecto por omissão é o dos pesos (800); quem pedir mais por ambiente
+    # pode ir até ao que o torchvision aguenta — é a alavanca mais simples
+    # para jogadores pequenos, e paga-se em tempo, não em precisão.
+    tecto = min(config.WORK_SHORT_MAX or MAX_SHORT, HARD_MAX_SHORT)
     short = int(min(fonte * config.MAX_UPSCALE, tecto))
     short = max(MIN_SHORT, short)
 
@@ -298,6 +344,9 @@ def _plan(device: str, meta: videolib.VideoMeta) -> dict[str, Any]:
         "batch": max(1, config.BATCH or (8 if device == "cuda" else 2)),
         # fp16 é ganho na GPU e perda na CPU (que emula meia precisão).
         "half": device == "cuda" and config.HALF,
+        # Mosaicos: 1 = frame inteiro; 2 = 2×2; 3 já é raro valer a pena.
+        "tiles": max(1, min(3, config.TILES)),
+        "scoreThreshold": config.SCORE_THRESHOLD,
     }
 
 
@@ -327,7 +376,7 @@ def _build_tracker():
 def _merge_fragments(
     tracks: dict[int, list[tuple[int, float, float, float, float, float]]],
     meta: videolib.VideoMeta,
-) -> dict[int, list[tuple[int, float, float, float, float, float]]]:
+) -> tuple[dict[int, list[tuple[int, float, float, float, float, float]]], dict[int, int]]:
     """Cola fragmentos que são, quase de certeza, o mesmo jogador.
 
     O critério é físico, não estatístico: o segundo fragmento começa **depois**
@@ -339,9 +388,13 @@ def _merge_fragments(
     Percorre-se por ordem de início e só se comparam cadeias ainda "abertas"
     (as que acabaram há pouco), por isso o custo é praticamente linear mesmo
     com dez mil fragmentos.
+
+    Devolve também **de onde veio cada cadeia** (tid bruto → número final): os
+    recortes foram guardados por tid bruto durante a detecção, e é este mapa
+    que os leva ao track a que passaram a pertencer.
     """
     if not tracks:
-        return tracks
+        return tracks, {}
 
     largura = max(1, meta.width)
     gap_ms = MERGE_GAP_SEC * 1000
@@ -352,8 +405,9 @@ def _merge_fragments(
     cadeias: list[list[tuple[int, float, float, float, float, float]]] = []
     # (índice da cadeia, ts do fim, x, y, altura) — só das que ainda podem receber.
     abertas: list[tuple[int, int, float, float, float]] = []
+    origem: dict[int, int] = {}
 
-    for _tid, pontos in ordenados:
+    for tid, pontos in ordenados:
         ts_ini, x_ini, y_ini, _w, h_ini, _c = pontos[0]
 
         # Fecha as que já não podem receber este nem nenhum dos seguintes.
@@ -382,11 +436,12 @@ def _merge_fragments(
             cadeias[idx].extend(pontos)
             abertas.pop(melhor)
 
+        origem[tid] = idx
         ts_f, x_f, y_f, _w2, h_f, _c2 = cadeias[idx][-1]
         abertas.append((idx, ts_f, x_f, y_f, h_f))
 
     # Numeração nova e estável: pela ordem em que entram em campo.
-    return {i + 1: pontos for i, pontos in enumerate(cadeias)}
+    return {i + 1: pontos for i, pontos in enumerate(cadeias)}, {tid: idx + 1 for tid, idx in origem.items()}
 
 
 def _load_detector(device: str, plano: dict[str, Any]):
@@ -398,19 +453,19 @@ def _load_detector(device: str, plano: dict[str, Any]):
         # — que num jogo são muitos. Existe para quando o tempo manda.
         model = det.ssdlite320_mobilenet_v3_large(
             weights=det.SSDLite320_MobileNet_V3_Large_Weights.DEFAULT,
-            score_thresh=SCORE_THRESHOLD,
+            score_thresh=config.SCORE_THRESHOLD,
         )
     elif device == "cuda":
         model = det.fasterrcnn_resnet50_fpn_v2(
             weights=det.FasterRCNN_ResNet50_FPN_V2_Weights.DEFAULT,
-            box_score_thresh=SCORE_THRESHOLD,
+            box_score_thresh=config.SCORE_THRESHOLD,
             min_size=plano["short"],
             max_size=plano["maxSize"],
         )
     else:
         model = det.fasterrcnn_mobilenet_v3_large_fpn(
             weights=det.FasterRCNN_MobileNet_V3_Large_FPN_Weights.DEFAULT,
-            box_score_thresh=SCORE_THRESHOLD,
+            box_score_thresh=config.SCORE_THRESHOLD,
             min_size=plano["short"],
             max_size=plano["maxSize"],
         )
@@ -435,28 +490,79 @@ def _load_detector(device: str, plano: dict[str, Any]):
     return model
 
 
+def _tile_grid(h: int, w: int, n: int, overlap: float = 0.12) -> list[tuple[int, int, int, int]]:
+    """n×n janelas com folga entre elas, em (x1, y1, x2, y2) do frame.
+
+    A folga é o que impede um jogador na fronteira de ficar cortado ao meio
+    nas duas janelas e não ser visto em nenhuma; a supressão de não-máximos a
+    seguir junta o que aparece nas duas.
+    """
+    janelas = []
+    th, tw = h / n, w / n
+    oh, ow = th * overlap, tw * overlap
+    for r in range(n):
+        for c in range(n):
+            y1, y2 = max(0, int(r * th - oh)), min(h, int((r + 1) * th + oh))
+            x1, x2 = max(0, int(c * tw - ow)), min(w, int((c + 1) * tw + ow))
+            janelas.append((x1, y1, x2, y2))
+    return janelas
+
+
 @torch.inference_mode() if _DEPS else (lambda f: f)
 def _detect_people(model, frames_bgr: list[np.ndarray], device: str, plano: dict[str, Any]) -> list["sv.Detections"]:
-    """Um lote de frames → uma lista de detecções, na mesma ordem."""
-    lote = []
-    for frame in frames_bgr:
+    """Um lote de frames → uma lista de detecções, na mesma ordem.
+
+    Com `tiles > 1` cada frame vai ao detector em mosaicos: uma janela de meio
+    frame, levada à resolução de trabalho, dá a cada jogador o dobro dos
+    píxeis — que é a diferença entre ver e não ver quem está longe da câmara.
+    As caixas voltam às coordenadas do frame e a supressão de não-máximos
+    (torchvision, BSD-3) trata das que a folga fez aparecer duas vezes.
+    """
+    n = int(plano.get("tiles") or 1)
+    lote: list[Any] = []
+    # (índice do frame, deslocamento x, deslocamento y) de cada entrada do lote.
+    origem: list[tuple[int, int, int]] = []
+    for k, frame in enumerate(frames_bgr):
         rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-        lote.append(torch.from_numpy(rgb).permute(2, 0, 1).to(device, non_blocking=True).float().div_(255))
+        if n <= 1:
+            lote.append(torch.from_numpy(rgb).permute(2, 0, 1).to(device, non_blocking=True).float().div_(255))
+            origem.append((k, 0, 0))
+            continue
+        for x1, y1, x2, y2 in _tile_grid(rgb.shape[0], rgb.shape[1], n):
+            janela = np.ascontiguousarray(rgb[y1:y2, x1:x2])
+            lote.append(torch.from_numpy(janela).permute(2, 0, 1).to(device, non_blocking=True).float().div_(255))
+            origem.append((k, x1, y1))
 
     with torch.autocast(device_type=device, dtype=torch.float16, enabled=plano["half"]):
         saidas = model(lote)
 
-    resultados: list["sv.Detections"] = []
-    for out in saidas:
+    por_frame: list[list[tuple[Any, Any]]] = [[] for _ in frames_bgr]
+    for (k, dx, dy), out in zip(origem, saidas):
         # COCO: classe 1 = pessoa. O resto (bancos, bolas de outra classe) sai já aqui.
         keep = out["labels"] == 1
-        boxes = out["boxes"][keep].float().cpu().numpy()
-        scores = out["scores"][keep].float().cpu().numpy()
+        boxes = out["boxes"][keep].float()
+        scores = out["scores"][keep].float()
+        if dx or dy:
+            boxes = boxes + torch.tensor([dx, dy, dx, dy], device=boxes.device, dtype=boxes.dtype)
+        por_frame[k].append((boxes, scores))
+
+    resultados: list["sv.Detections"] = []
+    for partes in por_frame:
+        if not partes:
+            resultados.append(sv.Detections.empty())
+            continue
+        boxes = torch.cat([b for b, _ in partes])
+        scores = torch.cat([s for _, s in partes])
+        if n > 1 and len(boxes) > 1:
+            keep = torchvision.ops.nms(boxes, scores, iou_threshold=0.5)
+            boxes, scores = boxes[keep], scores[keep]
+        b = boxes.cpu().numpy()
+        s = scores.cpu().numpy()
         resultados.append(
             sv.Detections(
-                xyxy=boxes.reshape(-1, 4),
-                confidence=scores,
-                class_id=np.zeros(len(scores), dtype=int),
+                xyxy=b.reshape(-1, 4),
+                confidence=s,
+                class_id=np.zeros(len(s), dtype=int),
             ),
         )
     return resultados
@@ -465,11 +571,173 @@ def _detect_people(model, frames_bgr: list[np.ndarray], device: str, plano: dict
 POSITIONS_KEY = "tracks/positions.json.gz"
 
 
+# ---------------------------------------------------------------------------
+# Recortes
+# ---------------------------------------------------------------------------
+
+
+def _guardar_recorte(
+    recortes: dict[int, list[tuple[float, int, tuple[int, int, int, int], bytes]]],
+    tid: int,
+    frame: np.ndarray,
+    ts_ms: int,
+    xyxy: tuple[float, float, float, float],
+    conf: float,
+) -> None:
+    """Guarda este recorte se estiver entre os melhores do track.
+
+    "Melhor" é altura da caixa × confiança: o frame em que o jogador ocupa mais
+    píxeis e o detector menos duvida — que é onde um número de camisola se lê.
+    Guardam-se os bytes JPEG e não os píxeis: dez mil tracks brutos com três
+    recortes de 128×256 em memória crua eram mais de um gigabyte.
+    """
+    x1, y1, x2, y2 = xyxy
+    altura = y2 - y1
+    if altura < CROP_MIN_HEIGHT_PX:
+        return
+    pontuacao = float(altura) * conf
+    lista = recortes.get(tid)
+    if lista is not None and len(lista) >= CROPS_PER_TRACK and pontuacao <= lista[-1][0]:
+        return  # não bate o pior dos guardados — nem vale a pena codificar
+
+    h_img, w_img = frame.shape[:2]
+    mx, my = (x2 - x1) * CROP_MARGIN, altura * CROP_MARGIN
+    ax, ay = max(0, int(x1 - mx)), max(0, int(y1 - my))
+    bx, by = min(w_img, int(x2 + mx)), min(h_img, int(y2 + my))
+    if bx - ax < 4 or by - ay < 8:
+        return
+    ok, jpeg = cv2.imencode(".jpg", frame[ay:by, ax:bx], [cv2.IMWRITE_JPEG_QUALITY, 88])
+    if not ok:
+        return
+
+    novo = (pontuacao, ts_ms, (ax, ay, bx - ax, by - ay), jpeg.tobytes())
+    if lista is None:
+        recortes[tid] = [novo]
+        return
+    lista.append(novo)
+    lista.sort(key=lambda r: r[0], reverse=True)
+    del lista[CROPS_PER_TRACK:]
+
+
+def _juntar_recortes(
+    recortes: dict[int, list[tuple[float, int, tuple[int, int, int, int], bytes]]],
+    origem: dict[int, int],
+    validos: set[int],
+) -> dict[int, list[tuple[float, int, tuple[int, int, int, int], bytes]]]:
+    """Dos tids brutos aos tracks finais: os melhores de cada cadeia, espalhados no tempo.
+
+    Três recortes do mesmo segundo dizem menos do que três de momentos
+    diferentes — um jogador de costas, de frente e de lado. Por isso escolhe-se
+    o melhor, e depois os melhores **a mais de dez segundos** dos já escolhidos,
+    voltando aos restantes se não houver espalhamento que chegue.
+    """
+    por_final: dict[int, list[tuple[float, int, tuple[int, int, int, int], bytes]]] = {}
+    for tid, lista in recortes.items():
+        final = origem.get(tid)
+        if final is None or final not in validos:
+            continue
+        por_final.setdefault(final, []).extend(lista)
+
+    for final, lista in por_final.items():
+        lista.sort(key=lambda r: r[0], reverse=True)
+        escolhidos: list[tuple[float, int, tuple[int, int, int, int], bytes]] = []
+        for r in lista:
+            if len(escolhidos) >= CROPS_PER_TRACK:
+                break
+            if all(abs(r[1] - e[1]) >= 10_000 for e in escolhidos):
+                escolhidos.append(r)
+        for r in lista:
+            if len(escolhidos) >= CROPS_PER_TRACK:
+                break
+            if r not in escolhidos:
+                escolhidos.append(r)
+        escolhidos.sort(key=lambda r: r[1])  # por ordem de tempo, para quem os lê
+        por_final[final] = escolhidos
+    return por_final
+
+
+def _encaixar(jpeg: bytes) -> np.ndarray:
+    """Um recorte no tamanho do azulejo, com a proporção guardada e fundo neutro."""
+    tw, th = CROP_TILE
+    img = cv2.imdecode(np.frombuffer(jpeg, dtype=np.uint8), cv2.IMREAD_COLOR)
+    azulejo = np.full((th, tw, 3), 38, dtype=np.uint8)  # cinzento escuro, não preto: lê-se onde acaba
+    if img is None or img.size == 0:
+        return azulejo
+    h, w = img.shape[:2]
+    escala = min(tw / w, th / h)
+    nw, nh = max(1, int(w * escala)), max(1, int(h * escala))
+    # Ampliar com interpolação suave; reduzir com área — cada uma é a certa no seu sentido.
+    interp = cv2.INTER_CUBIC if escala > 1 else cv2.INTER_AREA
+    red = cv2.resize(img, (nw, nh), interpolation=interp)
+    ox, oy = (tw - nw) // 2, (th - nh) // 2
+    azulejo[oy : oy + nh, ox : ox + nw] = red
+    return azulejo
+
+
+def _upload_crops(
+    job: dict[str, Any],
+    recortes: dict[int, list[tuple[float, int, tuple[int, int, int, int], bytes]]],
+    progress: Callable[[int], None],
+) -> tuple[dict[int, list[dict[str, Any]]], int]:
+    """Monta as folhas, sobe-as, e devolve onde ficou cada recorte.
+
+    Uma folha é uma grelha de `CROP_SHEET_COLS × CROP_SHEET_ROWS` azulejos; o
+    índice diz, para cada track, em que folha e posição estão os seus. Quem lê
+    (a consola, a etapa de identificação) pede a folha e recorta — nunca um
+    ficheiro por jogador.
+    """
+    if not recortes:
+        return {}, 0
+
+    tw, th = CROP_TILE
+    por_folha = CROP_SHEET_COLS * CROP_SHEET_ROWS
+    indice: dict[int, list[dict[str, Any]]] = {}
+    folha = np.full((th * CROP_SHEET_ROWS, tw * CROP_SHEET_COLS, 3), 38, dtype=np.uint8)
+    n_folha, pos = 0, 0
+
+    def fechar_folha() -> None:
+        nonlocal folha, n_folha, pos
+        if pos == 0:
+            return
+        ok, jpeg = cv2.imencode(".jpg", folha, [cv2.IMWRITE_JPEG_QUALITY, 86])
+        if not ok:
+            raise RuntimeError("Não foi possível codificar uma folha de recortes")
+        api.upload_bytes(job["id"], f"crops/sheet-{n_folha:03d}.jpg", jpeg.tobytes(), "image/jpeg")
+        progress(97)  # cada folha é uma ida à rede; a API não pode achar-nos mortos
+        n_folha += 1
+        pos = 0
+        folha = np.full((th * CROP_SHEET_ROWS, tw * CROP_SHEET_COLS, 3), 38, dtype=np.uint8)
+
+    for tid in sorted(recortes):
+        for _pont, ts_ms, box, jpeg in recortes[tid]:
+            r, c = divmod(pos, CROP_SHEET_COLS)
+            folha[r * th : (r + 1) * th, c * tw : (c + 1) * tw] = _encaixar(jpeg)
+            indice.setdefault(tid, []).append({"s": n_folha, "i": pos, "ts": ts_ms, "box": list(box)})
+            pos += 1
+            if pos >= por_folha:
+                fechar_folha()
+    fechar_folha()
+
+    api.upload_json_gz(
+        job["id"],
+        CROPS_INDEX_KEY,
+        {
+            "tile": [tw, th],
+            "cols": CROP_SHEET_COLS,
+            "rows": CROP_SHEET_ROWS,
+            "sheets": n_folha,
+            "tracks": {str(tid): lista for tid, lista in indice.items()},
+        },
+    )
+    return indice, n_folha
+
+
 def _summarise(
     job: dict[str, Any],
     tracks: dict[int, list[tuple[int, float, float, float, float, float]]],
     meta: videolib.VideoMeta,
     progress: Callable[[int], None] | None = None,
+    crops_idx: dict[int, list[dict[str, Any]]] | None = None,
 ) -> tuple[list[dict[str, Any]], list[float]]:
     """Dos pontos crus aos registos que a API guarda.
 
@@ -515,6 +783,9 @@ def _summarise(
                     "avgY": round(float(np.mean([p[2] for p in points])) / max(1, meta.height), 3),
                     "meanDetectionConfidence": round(float(np.mean(confs)), 3),
                     "continuity": round(continuity, 3),
+                    # Onde estão os recortes deste track nas folhas: {s: folha, i: posição, ts, box}.
+                    # No `summary` e não numa coluna — é leitura, e muda quando a etapa mudar.
+                    **({"crops": crops_idx[tid]} if crops_idx and tid in crops_idx else {}),
                 },
             },
         )

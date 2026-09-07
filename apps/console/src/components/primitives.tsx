@@ -770,6 +770,26 @@ export function SelectField<T extends string>({
           box,
         )}
       >
+        {/*
+          Um valor que não está nas opções não pode passar por outro.
+
+          O `<select>` do browser, quando o `value` não corresponde a nenhuma
+          `<option>`, mostra **a primeira** — e cala-se. É como um formulário
+          mostrava "Campo 1" com o estado a `""` e mandava vazio para o
+          servidor, que respondia em inglês que o local não podia ser vazio: o
+          ecrã dizia uma coisa e o pedido levava outra, sem nada no meio a
+          assinalar a diferença.
+
+          Esta opção fantasma faz o desalinhamento aparecer. Não corrige o valor
+          — corrigir por conta própria seria escolher pelo utilizador — mas
+          deixa de o esconder, e quem estiver a olhar vê um traço onde antes via
+          uma escolha que nunca fez.
+        */}
+        {!options.some((o) => o.value === value) && (
+          <option value={value} disabled>
+            {value === "" ? "—" : value}
+          </option>
+        )}
         {options.map((o) => (
           <option key={o.value} value={o.value}>
             {o.label}

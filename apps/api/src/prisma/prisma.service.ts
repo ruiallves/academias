@@ -217,6 +217,7 @@ const TENANT_SCOPED = new Set<string>([
   "AIVideo",
   "AIJob",
   "PlayerTrack",
+  "PlayerIdentity",
   "DetectedEvent",
   "AIInsight",
   "HumanCorrection",

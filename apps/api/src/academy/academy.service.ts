@@ -5,10 +5,11 @@ import { PrismaService, type ScopedClient } from "../prisma/prisma.service";
 import { headCoaches } from "./head-coaches";
 import { StorageService } from "../storage/storage.service";
 import { PHOTO_BUCKET, PHOTO_TTL } from "../storage/photos.service";
-import { basePermissions, can, outranks, ROLE_PERMISSIONS, type Permission, type RequestContext } from "../common/permissions";
+import { basePermissions, can, outranks, ROLE_PERMISSIONS, type Permission, type RequestContext, teamScopeForRoster } from "../common/permissions";
 import { athleteScopeFilter, athleteTeamScopeWhere, calendarScopeFilter, inTeamScope, teamScopeFilter } from "../common/permissions";
 import { gerarCobrancas, periodoActual } from "../billing/billing.service";
 import { SHORT_NAME_MAX } from "../common/short-name";
+import { matchTitle } from "../common/match-title";
 import { AMIGAVEL } from "./catalogs.service";
 
 /**
@@ -760,10 +761,18 @@ export class AcademyService {
     });
   }
 
-  /** Equipas do âmbito, com plantel e treinadores contados. */
+  /**
+   * Equipas do âmbito, com plantel e treinadores contados.
+   *
+   * O âmbito é o de quem monta plantéis (`teamScopeForRoster`), e não o
+   * estreito: quem inscreve atletas tem de ver todas as equipas do clube para
+   * lhes poder escolher uma. Ver a nota nessa função — foi a lista vazia de uma
+   * treinadora sem equipas atribuídas que fez um importador criar o clube
+   * inteiro em triplicado.
+   */
   async teams(ctx: RequestContext) {
     if (!can(ctx, "team:read")) throw new ForbiddenException("Sem acesso a equipas");
-    const scope = teamScopeFilter(ctx);
+    const scope = teamScopeForRoster(ctx);
 
     return this.prisma.runAs(ctx.academyId, async (db) => {
       const teams = await db.team.findMany({
@@ -859,10 +868,18 @@ export class AcademyService {
       const sports = await db.sport.findMany({ select: { id: true, name: true } });
       const porNome = new Map(sports.map((sp) => [sp.name.trim().toLowerCase(), sp.id]));
 
-      // Nomes já usados, para não recriar uma equipa que já lá está. Uma academia
-      // não tem dois "Sub-15 A".
+      /*
+       * Nomes já usados — por **modalidade e época**, não pela academia inteira.
+       *
+       * Era pelo nome só, e isso recusava um "Sub-11" no futsal a um clube que
+       * já tivesse um "Sub-11" no futebol — duas equipas diferentes, com
+       * treinos, jogos e plantéis diferentes. A mesma chave que o `createTeam`
+       * e o índice único da base usam.
+       */
       const existentes = new Set(
-        (await db.team.findMany({ select: { name: true } })).map((t) => t.name.trim().toLowerCase()),
+        (await db.team.findMany({ select: { name: true, sportId: true, seasonId: true } })).map(
+          (t) => `${t.seasonId}|${t.sportId}|${t.name.trim().toLowerCase()}`,
+        ),
       );
 
       /*
@@ -889,11 +906,12 @@ export class AcademyService {
           errors.push({ row: line, name, error: "Falta o nome da equipa" });
           continue;
         }
-        if (existentes.has(name.toLowerCase())) {
-          errors.push({ row: line, name, error: "Já existe uma equipa com este nome" });
-          continue;
-        }
-
+        /*
+         * A modalidade e a época resolvem-se **antes** de perguntar se já
+         * existe: sem elas não há chave para perguntar. A verificação era pelo
+         * nome só, e por isso corria primeiro; agora é por (época, modalidade,
+         * nome), que é a mesma chave do `createTeam` e do índice da base.
+         */
         const sportId = porNome.get((row.sport ?? "").trim().toLowerCase());
         if (!sportId) {
           errors.push({
@@ -914,6 +932,12 @@ export class AcademyService {
 
         try {
           const season = await this.resolveSeason(db, ctx.academyId, (row.season ?? "").trim() || epocaOmissao);
+          const chave = `${season.id}|${sportId}|${name.toLowerCase()}`;
+          if (existentes.has(chave)) {
+            errors.push({ row: line, name, error: "Já existe uma equipa com este nome nesta modalidade e época" });
+            continue;
+          }
+
           const team = await db.team.create({
             data: {
               academyId: ctx.academyId,
@@ -926,7 +950,7 @@ export class AcademyService {
             select: { id: true, name: true },
           });
           created.push(team);
-          existentes.add(name.toLowerCase());
+          existentes.add(chave);
         } catch (e) {
           errors.push({ row: line, name, error: e instanceof Error ? e.message : "Não foi possível criar" });
         }
@@ -965,6 +989,33 @@ export class AcademyService {
       }
 
       const season = await this.resolveSeason(db, ctx.academyId, dto.season);
+
+      /*
+       * Duas equipas com o mesmo nome, na mesma modalidade e na mesma época,
+       * não são duas equipas: são a mesma, duas vezes.
+       *
+       * Faltava aqui — e o `POST /api/teams` é por onde o importador de atletas
+       * cria as equipas que julga não existirem. Um clube ficou com oito
+       * equipas em triplicado por causa disto. A verificação vive também na
+       * base (índice único), porque duas importações ao mesmo tempo passariam
+       * as duas por este `findFirst`.
+       *
+       * A modalidade faz parte da chave de propósito: um "Sub-11" no futebol e
+       * outro no futsal são equipas diferentes, e um clube com as duas
+       * modalidades tem mesmo de os poder chamar assim. E a época também: o
+       * "Sub-11" do ano que vem é outra equipa.
+       */
+      const repetida = await db.team.findFirst({
+        where: {
+          seasonId: season.id,
+          sportId: dto.sportId,
+          name: { equals: dto.name.trim(), mode: "insensitive" },
+        },
+        select: { id: true },
+      });
+      if (repetida) {
+        throw new BadRequestException(`Já existe uma equipa "${dto.name.trim()}" nesta modalidade e época`);
+      }
 
       // As provas têm de ser do catálogo desta academia — um id de fora não
       // entra, e um id de outro catálogo (locais, tipos de evento) também não.
@@ -1091,21 +1142,32 @@ export class AcademyService {
     const mayReadDiagnosis = can(ctx, "clinical:read");
 
     /*
-     * O NIF do atleta só para quem **trata** de famílias, e não para quem as vê.
+     * O NIF do atleta: quem **edita a ficha** vê-o, e mais ninguém.
      *
-     * Era `family:read`, e isso funcionava enquanto o treinador não tinha essa
-     * permissão. Passou a ter — precisa da lista de encarregados das equipas dele —
-     * e sem esta mudança o número de contribuinte de uma criança começava a viajar
-     * para o telemóvel de toda a gente que treina, sem ninguém ter decidido isso.
+     * ## As duas tentativas anteriores
      *
-     * `family:write` é quem edita a ficha da família: direcção, e a secretaria a
-     * quem o clube der o cargo. Esses precisam do NIF porque é com ele que emitem
-     * recibos. Um treinador não precisa dele para escalar uma equipa.
+     * Foi `family:read` enquanto o treinador não a tinha. Passou a tê-la — precisa
+     * da lista de encarregados das equipas dele — e o número de contribuinte de
+     * uma criança começou a viajar para o telemóvel de toda a gente que treina,
+     * sem ninguém ter decidido isso. Apertou-se então para `family:write`:
+     * direcção e secretaria, que emitem os recibos.
+     *
+     * Só que **escrever** o NIF sempre exigiu `athlete:write` (ver `setTaxId` e
+     * `update` em `athletes.service.ts`). Ler pedia uma permissão, escrever pedia
+     * outra — e a que faltava era a de ler. Um treinador com edição abria a ficha,
+     * via "Por preencher" num atleta cujo NIF estava lá desde o primeiro dia, e o
+     * ecrã convidava-o a escrever um por cima do certo. A metade perigosa das duas
+     * era a que estava aberta.
+     *
+     * Alinhado com a escrita: quem pode corrigir a ficha de um atleta vê a ficha
+     * inteira, incluindo o NIF. Quem só a lê — o clínico, o scouting, o staff sem
+     * edição — continua sem ele.
      *
      * A app do pai também não o recebe: ele já o sabe, e mandá-lo para o telemóvel
-     * é espalhá-lo por mais um sítio sem nada em troca.
+     * é espalhá-lo por mais um sítio sem nada em troca. (Ali o NIF entra ao
+     * contrário: é o pai que o escreve para reclamar o educando.)
      */
-    const mayReadTaxId = can(ctx, "family:write");
+    const mayReadTaxId = can(ctx, "athlete:write");
 
     const rows = await this.prisma.runAs(ctx.academyId, async (db) => {
       const athletes = await db.athlete.findMany({
@@ -1816,6 +1878,7 @@ export class AcademyService {
           },
           select: {
             id: true, teamId: true, startsAt: true, endsAt: true, venue: true,
+            team: { select: { name: true } },
             opponent: true, isHome: true, status: true,
             coach: { select: { id: true, user: { select: { name: true } } } },
           },
@@ -1827,7 +1890,7 @@ export class AcademyService {
           id: match.id,
           teamId: match.teamId,
           kind: "MATCH" as const,
-          title: `${match.isHome ? "vs" : "@"} ${match.opponent}`,
+          title: matchTitle({ ...match, teamName: match.team.name }),
           startsAt: match.startsAt,
           endsAt: match.endsAt,
           venue: match.venue,
@@ -2030,6 +2093,7 @@ export class AcademyService {
           data: { status: cancelled ? "CANCELLED" : "SCHEDULED" },
           select: {
             id: true, teamId: true, startsAt: true, endsAt: true, venue: true,
+            team: { select: { name: true } },
             opponent: true, isHome: true, status: true,
             coach: { select: { id: true, user: { select: { name: true } } } },
           },
@@ -2041,7 +2105,7 @@ export class AcademyService {
           id: updated.id,
           teamId: updated.teamId,
           kind: "MATCH" as const,
-          title: `${updated.isHome ? "vs" : "@"} ${updated.opponent}`,
+          title: matchTitle({ ...updated, teamName: updated.team.name }),
           startsAt: updated.startsAt,
           endsAt: updated.endsAt,
           venue: updated.venue,
@@ -2912,6 +2976,7 @@ export class AcademyService {
           },
           select: {
             id: true, teamId: true, startsAt: true, endsAt: true, venue: true,
+            team: { select: { name: true } },
             opponent: true, isHome: true, status: true,
             coach: { select: { id: true, user: { select: { name: true } } } },
           },
@@ -2921,7 +2986,7 @@ export class AcademyService {
           id: updated.id,
           teamId: updated.teamId,
           kind: "MATCH" as const,
-          title: `${updated.isHome ? "vs" : "@"} ${updated.opponent}`,
+          title: matchTitle({ ...updated, teamName: updated.team.name }),
           startsAt: updated.startsAt,
           endsAt: updated.endsAt,
           venue: updated.venue,
