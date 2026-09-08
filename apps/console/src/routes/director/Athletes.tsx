@@ -14,7 +14,7 @@ import { age, shortDate, shortName } from "@/lib/format";
 import type { Athlete } from "@/data/types";
 import { availabilityOf, useClinicalRecords } from "@/lib/clinical";
 import { medicalExpiry, medicalState } from "@/lib/medical";
-import { can } from "@/lib/permissions";
+import { can, semEquipasAtribuidas } from "@/lib/permissions";
 import { useSession } from "@/session";
 
 export default function Athletes() {
@@ -309,11 +309,25 @@ export default function Athletes() {
             podeApagar ? { selected: escolhidos, onChange: setEscolhidos } : undefined
           }
           empty={
-            <Empty
-              icon={Users}
-              title="Nenhum atleta corresponde"
-              detail="Experimenta limpar os filtros ou procurar por outro nome."
-            />
+            /*
+              Duas explicações para uma lista vazia, e a errada mandava a pessoa
+              limpar filtros que nunca pôs. Um atleta vê-se pela **equipa**: sem
+              equipas atribuídas não há atletas para ver, por muitos que o clube
+              tenha, e é isso que tem de estar escrito.
+            */
+            semEquipasAtribuidas(session) ? (
+              <Empty
+                icon={Users}
+                title="Ainda não és responsável por nenhuma equipa"
+                detail="Os atletas aparecem por equipa. Quem gere o clube atribui-te as tuas no separador Staff — até lá, esta lista fica vazia mesmo que o clube já tenha atletas."
+              />
+            ) : (
+              <Empty
+                icon={Users}
+                title="Nenhum atleta corresponde"
+                detail="Experimenta limpar os filtros ou procurar por outro nome."
+              />
+            )
           }
         />
       </Panel>

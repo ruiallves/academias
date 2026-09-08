@@ -354,6 +354,8 @@ export type TrainingSession = {
   venue: string;
   /** Onde a equipa se equipa. Ausente quando a academia não os gere. */
   dressingRoom?: string;
+  /** Os balneários — nenhum, um, ou vários. Ver a migração `20260908120000`. */
+  dressingRooms?: string[];
   coachId?: string;
   /**
    * O nome de quem dá o treino, tal como o servidor o devolve.

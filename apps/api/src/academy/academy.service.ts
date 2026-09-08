@@ -25,6 +25,9 @@ const EVENT_SELECT = {
   endsAt: true,
   venue: true,
   dressingRoom: true,
+  dressingRooms: true,
+  /* O vocabulário do clube para este evento — ver `CalendarEvent.typeId`. */
+  type: { select: { id: true, label: true } },
   cancelled: true,
   coach: { select: { id: true, user: { select: { name: true } } } },
   /*
@@ -58,7 +61,18 @@ function serializeEvent(e: EventRow, porEquipa?: Map<string, { id: string; name:
     startsAt: e.startsAt,
     endsAt: e.endsAt,
     venue: e.venue,
-    dressingRoom: e.dressingRoom,
+    /**
+     * Os dois, durante a travessia.
+     *
+     * O singular fica enquanto houver clientes antigos a lê-lo (a consola em
+     * produção, até ao próximo deploy) — ver a migração `20260908120000`. Quem
+     * é novo lê a lista.
+     */
+    dressingRoom: e.dressingRooms[0] ?? e.dressingRoom,
+    dressingRooms: e.dressingRooms.length > 0 ? e.dressingRooms : e.dressingRoom ? [e.dressingRoom] : [],
+    typeId: e.type?.id ?? null,
+    /** Como o clube chama a isto. Nulo cai no rótulo do `kind`, como sempre. */
+    typeLabel: e.type?.label ?? null,
     cancelled: e.cancelled,
     coachId: e.coach?.id ?? daEquipa?.id ?? null,
     coachName: e.coach?.user.name ?? daEquipa?.name ?? null,
@@ -1502,7 +1516,8 @@ export class AcademyService {
         where: { startsAt: { gte: from, lte: to }, ...(scope ? { teamId: scope } : {}) },
         orderBy: { startsAt: "asc" },
         select: {
-          id: true, teamId: true, startsAt: true, endsAt: true, venue: true, dressingRoom: true, status: true,
+          id: true, teamId: true, startsAt: true, endsAt: true, venue: true,
+          dressingRoom: true, dressingRooms: true, status: true,
           attendanceClosedAt: true,
           coach: { select: { id: true, user: { select: { name: true } } } },
           team: { select: { name: true } },
@@ -1520,7 +1535,9 @@ export class AcademyService {
         startsAt: s.startsAt,
         endsAt: s.endsAt,
         venue: s.venue,
-        dressingRoom: s.dressingRoom,
+        // O singular fica para os clientes antigos; ver a migração `20260908120000`.
+        dressingRoom: s.dressingRooms[0] ?? s.dressingRoom,
+        dressingRooms: s.dressingRooms.length > 0 ? s.dressingRooms : s.dressingRoom ? [s.dressingRoom] : [],
         status: s.status,
         coachId: s.coach?.id ?? porEquipa.get(s.teamId)?.id ?? null,
         coachName: s.coach?.user.name ?? porEquipa.get(s.teamId)?.name ?? null,
@@ -1734,6 +1751,9 @@ export class AcademyService {
       endsAt: string;
       venue: string;
       dressingRoom?: string;
+      dressingRooms?: string[];
+      /** O tipo do catálogo do clube. Ver `CalendarEvent.typeId`. */
+      typeId?: string;
       opponent?: string;
       isHome?: boolean;
       /** A prova, só nos jogos. Ver `Match.competitionId`. */
@@ -1782,6 +1802,75 @@ export class AcademyService {
   }
 
   /** Um evento, numa data. É aqui que vive tudo o que decide em que tabela grava. */
+  /**
+   * Dois eventos não usam o mesmo balneário à mesma hora.
+   *
+   * ## Porque é que isto é do servidor
+   *
+   * Porque é uma regra sobre um **recurso partilhado**, e os eventos que
+   * competem por ele estão espalhados por três tabelas: `TrainingSession`,
+   * `Match` e `CalendarEvent`. Nenhum ecrã vê as três ao mesmo tempo no momento
+   * em que grava, e dois separadores abertos marcariam o mesmo balneário sem
+   * nunca se cruzarem. É o mesmo raciocínio do choque de horário de uma equipa,
+   * que já vivia aqui.
+   *
+   * ## O que conta como sobreposição
+   *
+   * `comeca < fimDoOutro && acaba > inicioDoOutro` — a definição de sempre. Um
+   * treino que acaba às 19:00 e outro que começa às 19:00 **não** chocam: é a
+   * troca normal de duas equipas no mesmo balneário, e recusá-la tornaria a
+   * regra inútil num clube com o pavilhão cheio.
+   *
+   * Cancelados não ocupam nada: um treino desmarcado liberta o balneário, como
+   * já libertava o horário da equipa.
+   *
+   * ## A mensagem diz com o quê
+   *
+   * "O balneário 2 já está ocupado" manda procurar. Dizer *o quê* e *a que
+   * horas* deixa a decisão tomada — mudar de balneário, mudar de hora, ou ir
+   * falar com quem marcou o outro.
+   */
+  private async assertDressingRoomsFree(
+    db: ScopedClient,
+    input: { rooms: string[]; startsAt: Date; endsAt: Date; ignoreId?: string },
+  ) {
+    if (input.rooms.length === 0) return;
+
+    const janela = { startsAt: { lt: input.endsAt }, endsAt: { gt: input.startsAt } };
+    const ocupa = { dressingRooms: { hasSome: input.rooms } };
+    const naoEste = input.ignoreId ? { id: { not: input.ignoreId } } : {};
+
+    const [treino, jogo, evento] = await Promise.all([
+      db.trainingSession.findFirst({
+        where: { ...janela, ...ocupa, ...naoEste, status: { not: "CANCELLED" } },
+        select: { dressingRooms: true, startsAt: true, endsAt: true, team: { select: { name: true } } },
+      }),
+      db.match.findFirst({
+        where: { ...janela, ...ocupa, ...naoEste, status: { not: "CANCELLED" } },
+        select: { dressingRooms: true, startsAt: true, endsAt: true, opponent: true, team: { select: { name: true } } },
+      }),
+      db.calendarEvent.findFirst({
+        where: { ...janela, ...ocupa, ...naoEste, cancelled: false },
+        select: { dressingRooms: true, startsAt: true, endsAt: true, title: true },
+      }),
+    ]);
+
+    const choque = treino
+      ? { rooms: treino.dressingRooms, startsAt: treino.startsAt, endsAt: treino.endsAt, o_que: `o treino do ${treino.team.name}` }
+      : jogo
+        ? { rooms: jogo.dressingRooms, startsAt: jogo.startsAt, endsAt: jogo.endsAt, o_que: `o jogo do ${jogo.team.name} com ${jogo.opponent}` }
+        : evento
+          ? { rooms: evento.dressingRooms, startsAt: evento.startsAt, endsAt: evento.endsAt, o_que: `"${evento.title}"` }
+          : null;
+    if (!choque) return;
+
+    const emComum = choque.rooms.filter((r) => input.rooms.includes(r));
+    const quais = emComum.length === 1 ? `O ${emComum[0]} está` : `${emComum.join(" e ")} estão`;
+    throw new BadRequestException(
+      `${quais} ocupado por ${choque.o_que}, das ${horaPt(choque.startsAt)} às ${horaPt(choque.endsAt)}.`,
+    );
+  }
+
   private async createSingleEvent(
     ctx: RequestContext,
     dto: {
@@ -1792,6 +1881,8 @@ export class AcademyService {
       endsAt: string;
       venue: string;
       dressingRoom?: string;
+      dressingRooms?: string[];
+      typeId?: string;
       opponent?: string;
       isHome?: boolean;
       competitionId?: string;
@@ -1800,6 +1891,34 @@ export class AcademyService {
     const scope = teamScopeFilter(ctx);
 
     return this.prisma.runAs(ctx.academyId, async (db) => {
+      /*
+       * Os balneários, vindos de onde vierem.
+       *
+       * Um cliente novo manda a lista; um antigo manda o singular. Aceitam-se os
+       * dois e juntam-se num só sítio, para o resto do método não ter de saber
+       * de onde veio. Ver a migração `20260908120000`.
+       */
+      const balnearios = [...new Set([...(dto.dressingRooms ?? []), ...(dto.dressingRoom ? [dto.dressingRoom] : [])]
+        .map((b) => b.trim())
+        .filter(Boolean))];
+
+      /*
+       * O tipo tem de ser mesmo um tipo de evento deste clube.
+       *
+       * Sem isto, o id de um local ou de uma competição entrava aqui e o
+       * calendário passava a mostrar "Campo 1" como tipo do evento. Arquivado
+       * também não serve: quem arquivou um tipo não o quer a aparecer em
+       * eventos novos.
+       */
+      let typeId: string | null = null;
+      if (dto.typeId) {
+        const tipo = await db.catalogItem.findFirst({
+          where: { id: dto.typeId, kind: "eventTypes", archivedAt: null },
+          select: { id: true },
+        });
+        if (!tipo) throw new BadRequestException("Tipo de evento desconhecido");
+        typeId = tipo.id;
+      }
       if (dto.teamId) {
         if (scope && !scope.in.includes(dto.teamId)) throw new ForbiddenException("Equipa fora do teu âmbito");
         const team = await db.team.findFirst({ where: { id: dto.teamId }, select: { id: true } });
@@ -1814,6 +1933,13 @@ export class AcademyService {
         throw new BadRequestException("Datas inválidas");
       }
       if (endsAt <= startsAt) throw new BadRequestException("O fim tem de ser depois do início");
+
+      /*
+       * O balneário é um recurso do clube: dois eventos não o partilham à mesma
+       * hora. Aqui, antes de qualquer escrita, e para os três tipos — o balneário
+       * não sabe se quem o ocupa é um treino, um jogo ou uma reunião.
+       */
+      await this.assertDressingRoomsFree(db, { rooms: balnearios, startsAt, endsAt });
 
       // O treinador da equipa, para o evento acabado de criar sair daqui já com
       // ele — a leitura seguinte faria o mesmo, e sem isto a consola mostrava
@@ -1872,12 +1998,16 @@ export class AcademyService {
             startsAt,
             endsAt,
             venue: dto.venue.trim(),
+            // O balneário de um jogo em casa: o diálogo oferecia-o e o servidor
+            // deitava-o fora. Ver a migração `20260908120000`.
+            dressingRooms: balnearios,
             opponent: dto.opponent.trim(),
             isHome: dto.isHome ?? true,
             competitionId: dto.competitionId,
           },
           select: {
             id: true, teamId: true, startsAt: true, endsAt: true, venue: true,
+            dressingRooms: true,
             team: { select: { name: true } },
             opponent: true, isHome: true, status: true,
             coach: { select: { id: true, user: { select: { name: true } } } },
@@ -1894,7 +2024,10 @@ export class AcademyService {
           startsAt: match.startsAt,
           endsAt: match.endsAt,
           venue: match.venue,
-          dressingRoom: null,
+          dressingRoom: match.dressingRooms[0] ?? null,
+          dressingRooms: match.dressingRooms,
+          typeId: null,
+          typeLabel: null,
           cancelled: match.status === "CANCELLED",
           coachId: match.coach?.id ?? daEquipa?.id ?? null,
           coachName: match.coach?.user.name ?? daEquipa?.name ?? null,
@@ -1939,11 +2072,13 @@ export class AcademyService {
             startsAt,
             endsAt,
             venue: dto.venue.trim(),
-            dressingRoom: dto.dressingRoom?.trim() || null,
+            // Os dois enquanto durar a travessia — ver a migração `20260908120000`.
+            dressingRoom: balnearios[0] ?? null,
+            dressingRooms: balnearios,
           },
           select: {
             id: true, teamId: true, startsAt: true, endsAt: true, venue: true,
-            dressingRoom: true, status: true,
+            dressingRoom: true, dressingRooms: true, status: true,
             coach: { select: { id: true, user: { select: { name: true } } } },
           },
         });
@@ -1959,7 +2094,10 @@ export class AcademyService {
           startsAt: session.startsAt,
           endsAt: session.endsAt,
           venue: session.venue,
-          dressingRoom: session.dressingRoom,
+          dressingRoom: session.dressingRooms[0] ?? session.dressingRoom,
+          dressingRooms: session.dressingRooms,
+          typeId: null,
+          typeLabel: null,
           cancelled: session.status === "CANCELLED",
           coachId: session.coach?.id ?? daEquipa?.id ?? null,
           coachName: session.coach?.user.name ?? daEquipa?.name ?? null,
@@ -1974,7 +2112,9 @@ export class AcademyService {
           startsAt,
           endsAt,
           venue: dto.venue.trim(),
-          dressingRoom: dto.dressingRoom?.trim() || null,
+          dressingRoom: balnearios[0] ?? null,
+          dressingRooms: balnearios,
+          typeId,
           ...(dto.teamId ? { teamId: dto.teamId } : {}),
         },
         select: EVENT_SELECT,
@@ -2093,6 +2233,7 @@ export class AcademyService {
           data: { status: cancelled ? "CANCELLED" : "SCHEDULED" },
           select: {
             id: true, teamId: true, startsAt: true, endsAt: true, venue: true,
+            dressingRooms: true,
             team: { select: { name: true } },
             opponent: true, isHome: true, status: true,
             coach: { select: { id: true, user: { select: { name: true } } } },
@@ -2109,7 +2250,10 @@ export class AcademyService {
           startsAt: updated.startsAt,
           endsAt: updated.endsAt,
           venue: updated.venue,
-          dressingRoom: null,
+          dressingRoom: updated.dressingRooms[0] ?? null,
+          dressingRooms: updated.dressingRooms,
+          typeId: null,
+          typeLabel: null,
           cancelled: updated.status === "CANCELLED",
           coachId: updated.coach?.id ?? daEquipa?.id ?? null,
           coachName: updated.coach?.user.name ?? daEquipa?.name ?? null,
@@ -2850,6 +2994,8 @@ export class AcademyService {
       endsAt?: string;
       venue?: string;
       dressingRoom?: string | null;
+      dressingRooms?: string[];
+      typeId?: string;
       opponent?: string;
       isHome?: boolean;
       competitionId?: string;
@@ -2857,6 +3003,20 @@ export class AcademyService {
   ) {
     if (!can(ctx, "calendar:write")) throw new ForbiddenException("Sem permissão para alterar eventos");
     const scope = teamScopeFilter(ctx);
+
+    /*
+     * Os balneários, quando vierem.
+     *
+     * `undefined` significa "não mexer" — a regra da casa dos `PUT` parciais.
+     * Lista vazia significa "tirar todos", que é uma escolha legítima e tem de
+     * ser distinguível de não ter vindo nada. Ver a migração `20260908120000`.
+     */
+    const balnearios =
+      dto.dressingRooms !== undefined || dto.dressingRoom !== undefined
+        ? [...new Set([...(dto.dressingRooms ?? []), ...(dto.dressingRoom ? [dto.dressingRoom] : [])]
+            .map((b) => b.trim())
+            .filter(Boolean))]
+        : undefined;
 
     /** As datas, quando vêm — e as duas juntas, porque uma sem a outra não valida. */
     const quando = (startsAtActual: Date, endsAtActual: Date) => {
@@ -2892,17 +3052,27 @@ export class AcademyService {
           if (clash) throw new BadRequestException("Esta equipa já tem um treino marcado a esta hora");
         }
 
+        // O balneário livre — a mesma regra da criação, e o mesmo motivo: mudar
+        // a hora de um treino pode pô-lo em cima de outro no mesmo balneário.
+        await this.assertDressingRoomsFree(db, {
+          rooms: balnearios ?? (await balneariosActuais(db, "training", id)),
+          startsAt,
+          endsAt,
+          ignoreId: id,
+        });
+
         const updated = await db.trainingSession.update({
           where: { id },
           data: {
             startsAt,
             endsAt,
             ...(dto.venue !== undefined ? { venue: dto.venue.trim() } : {}),
-            ...(dto.dressingRoom !== undefined ? { dressingRoom: dto.dressingRoom?.trim() || null } : {}),
+            // Os dois enquanto durar a travessia — ver a migração `20260908120000`.
+            ...(balnearios !== undefined ? { dressingRoom: balnearios[0] ?? null, dressingRooms: balnearios } : {}),
           },
           select: {
             id: true, teamId: true, startsAt: true, endsAt: true, venue: true,
-            dressingRoom: true, status: true,
+            dressingRoom: true, dressingRooms: true, status: true,
             coach: { select: { id: true, user: { select: { name: true } } } },
           },
         });
@@ -2915,7 +3085,10 @@ export class AcademyService {
           startsAt: updated.startsAt,
           endsAt: updated.endsAt,
           venue: updated.venue,
-          dressingRoom: updated.dressingRoom,
+          dressingRoom: updated.dressingRooms[0] ?? updated.dressingRoom,
+          dressingRooms: updated.dressingRooms,
+          typeId: null,
+          typeLabel: null,
           cancelled: updated.status === "CANCELLED",
           coachId: updated.coach?.id ?? daEquipa?.id ?? null,
           coachName: updated.coach?.user.name ?? daEquipa?.name ?? null,
@@ -2964,6 +3137,13 @@ export class AcademyService {
           throw new BadRequestException("Um jogo precisa de adversário");
         }
 
+        await this.assertDressingRoomsFree(db, {
+          rooms: balnearios ?? (await balneariosActuais(db, "match", id)),
+          startsAt,
+          endsAt,
+          ignoreId: id,
+        });
+
         const updated = await db.match.update({
           where: { id },
           data: {
@@ -2973,9 +3153,11 @@ export class AcademyService {
             ...(dto.opponent !== undefined ? { opponent: dto.opponent.trim() } : {}),
             ...(dto.isHome !== undefined ? { isHome: dto.isHome } : {}),
             ...(dto.competitionId !== undefined ? { competitionId: dto.competitionId } : {}),
+            ...(balnearios !== undefined ? { dressingRooms: balnearios } : {}),
           },
           select: {
             id: true, teamId: true, startsAt: true, endsAt: true, venue: true,
+            dressingRooms: true,
             team: { select: { name: true } },
             opponent: true, isHome: true, status: true,
             coach: { select: { id: true, user: { select: { name: true } } } },
@@ -3008,6 +3190,30 @@ export class AcademyService {
       }
       const { startsAt, endsAt } = quando(ev.startsAt, ev.endsAt);
 
+      /*
+       * O tipo, com a mesma verificação da criação: tem de ser um tipo de
+       * evento deste clube e por arquivar. String vazia tira-o.
+       */
+      let tipoEditado: string | null | undefined;
+      if (dto.typeId !== undefined) {
+        if (!dto.typeId) tipoEditado = null;
+        else {
+          const tipo = await db.catalogItem.findFirst({
+            where: { id: dto.typeId, kind: "eventTypes", archivedAt: null },
+            select: { id: true },
+          });
+          if (!tipo) throw new BadRequestException("Tipo de evento desconhecido");
+          tipoEditado = tipo.id;
+        }
+      }
+
+      await this.assertDressingRoomsFree(db, {
+        rooms: balnearios ?? (await balneariosActuais(db, "event", id)),
+        startsAt,
+        endsAt,
+        ignoreId: id,
+      });
+
       const updated = await db.calendarEvent.update({
         where: { id },
         data: {
@@ -3015,7 +3221,8 @@ export class AcademyService {
           endsAt,
           ...(dto.title !== undefined && dto.title.trim() ? { title: dto.title.trim() } : {}),
           ...(dto.venue !== undefined ? { venue: dto.venue.trim() } : {}),
-          ...(dto.dressingRoom !== undefined ? { dressingRoom: dto.dressingRoom?.trim() || null } : {}),
+          ...(balnearios !== undefined ? { dressingRoom: balnearios[0] ?? null, dressingRooms: balnearios } : {}),
+          ...(tipoEditado !== undefined ? { typeId: tipoEditado } : {}),
         },
         select: EVENT_SELECT,
       });
@@ -3313,6 +3520,38 @@ function statusFromKind(kind: string): AttendanceStatus {
   if (kind === "justified") return "JUSTIFIED";
   if (kind === "late") return "LATE";
   return "ABSENT";
+}
+
+/**
+ * Os balneários que um evento já tem, quando a edição não os manda.
+ *
+ * Mudar **só a hora** de um evento continua a poder pôr os balneários dele em
+ * cima dos de outro — e nesse pedido `dressingRooms` não vem. Sem isto, a
+ * verificação corria com uma lista vazia e não verificava nada.
+ */
+async function balneariosActuais(
+  db: ScopedClient,
+  tipo: "training" | "match" | "event",
+  id: string,
+): Promise<string[]> {
+  if (tipo === "training") {
+    return (await db.trainingSession.findFirst({ where: { id }, select: { dressingRooms: true } }))?.dressingRooms ?? [];
+  }
+  if (tipo === "match") {
+    return (await db.match.findFirst({ where: { id }, select: { dressingRooms: true } }))?.dressingRooms ?? [];
+  }
+  return (await db.calendarEvent.findFirst({ where: { id }, select: { dressingRooms: true } }))?.dressingRooms ?? [];
+}
+
+/**
+ * "18:30" — a hora de um choque de balneário, dita como um treinador a diz.
+ *
+ * `Europe/Lisbon` explícito e não o fuso do servidor: em produção o processo
+ * corre em UTC, e sem isto a mensagem mandava a pessoa procurar um treino às
+ * 17:30 que está marcado para as 18:30.
+ */
+function horaPt(d: Date): string {
+  return d.toLocaleTimeString("pt-PT", { hour: "2-digit", minute: "2-digit", timeZone: "Europe/Lisbon" });
 }
 
 /**

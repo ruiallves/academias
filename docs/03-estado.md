@@ -560,6 +560,34 @@ conteúdo e reencaminham (`LegacyTechnical`).
 Verificado por `npm run test:modalidades` — disciplina, adopção, isolamento
 por modalidade, contadores, relações e as recusas.
 
+### Quem escreve, vê
+
+Um treinador com `athlete:write` vê **todos** os atletas do clube, e com
+`team:write` vê todas as equipas. Antes, a leitura era pelas equipas atribuídas
+(`TeamStaff`) e a escrita já era larga: `teamsInScope` deixava inscrever e
+editar um atleta de qualquer equipa. O produto dizia duas coisas ao mesmo
+tempo.
+
+Aconteceu a sério: uma treinadora de um clube com nove equipas e trinta
+atletas, sem nenhuma equipa atribuída, podia editar qualquer um deles pelo
+endereço directo e não via nenhum na lista. Passou dias a dizer que a aplicação
+não funcionava, e estava a ler o que o ecrã lhe mostrava. Esconder a lista a
+quem pode inscrever não protege nada: só a impede de trabalhar e empurra-a a
+recriar o que já existe e não vê — este produto já teve um clube em triplicado
+por aí.
+
+O âmbito estreito continua para quem **só lê**: sem `athlete:write`, um
+treinador vê os atletas das equipas dele e mais nenhum. As famílias nunca
+passam por aqui — `athleteScopeFilter` manda por cima em todos os consumidores
+(`athletes`, `charges`, avaliações, relatórios), e é o que garante que um
+encarregado vê os filhos e mais ninguém. Para restringir um treinador em
+concreto, a direcção retira-lhe `athlete:write` na ficha de staff
+(`Membership.revokes`), e o âmbito por equipa volta.
+
+No cliente, `semEquipasAtribuidas` distingue "não existe nada" de "nada disto é
+meu": as listas vazias diziam "Ainda não há equipas, cria a primeira" a quem
+tinha `team:write` sem equipas, num clube cheio delas.
+
 ### O NIF do atleta
 
 Quem **edita a ficha** (`athlete:write`) vê o NIF; quem só a lê não. Esteve em

@@ -8,6 +8,7 @@ import { useActiveCatalog } from "@/lib/catalogs";
 import { longDate } from "@/lib/format";
 import { Settings, TriangleAlert } from "@/lib/icons";
 import { Dialog, DialogField, dialogInputClass } from "./Dialog";
+import { TokenPicker } from "./TokenPicker";
 import { cx, SelectField } from "./primitives";
 
 /**
@@ -44,7 +45,10 @@ export function EditEventDialog({ event, onClose }: { event: CalendarEvent; onCl
   const [start, setStart] = useState(toInputTime(event.start));
   const [end, setEnd] = useState(toInputTime(event.end));
   const [venue, setVenue] = useState(event.venue);
-  const [dressingRoom, setDressingRoom] = useState(event.dressingRoom ?? "");
+  /** Os balneários deste evento. Vários — ver a migração `20260908120000`. */
+  const [balnearios, setBalnearios] = useState<string[]>(
+    event.dressingRooms ?? (event.dressingRoom ? [event.dressingRoom] : []),
+  );
   const [opponent, setOpponent] = useState(event.match?.opponent ?? "");
   const [isHome, setIsHome] = useState(event.match?.home ?? true);
   const [competitionId, setCompetitionId] = useState(event.match?.competition?.id ?? competicoes[0]?.id ?? "");
@@ -76,7 +80,20 @@ export function EditEventDialog({ event, onClose }: { event: CalendarEvent; onCl
     if (startsAt.getTime() !== event.start.getTime()) mudou.startsAt = startsAt.toISOString();
     if (endsAt.getTime() !== event.end.getTime()) mudou.endsAt = endsAt.toISOString();
     if (venue !== event.venue) mudou.venue = venue.trim();
-    if (!isMatch && dressingRoom !== (event.dressingRoom ?? "")) mudou.dressingRoom = dressingRoom;
+    /*
+     * Os balneários, quando mudaram.
+     *
+     * Um jogo passou a poder ter os seus: o diálogo de criação já os oferecia
+     * num jogo em casa e o servidor deitava-os fora — agora `Match` tem-nos
+     * (migração `20260908120000`). Fora de casa continuam a não existir: o
+     * balneário é o que o adversário der.
+     */
+    const balneariosOriginais = event.dressingRooms ?? (event.dressingRoom ? [event.dressingRoom] : []);
+    const balneariosAgora = localLivre ? [] : balnearios;
+    if (balneariosAgora.join("|") !== balneariosOriginais.join("|")) {
+      mudou.dressingRooms = balneariosAgora;
+      mudou.dressingRoom = balneariosAgora[0] ?? "";
+    }
     // O título de um treino é sempre "Treino" e o de um jogo é derivado do
     // adversário — só um evento genérico tem título seu para editar.
     if (event.kind !== "training" && !isMatch && title.trim() && title !== event.title) mudou.title = title.trim();
@@ -263,33 +280,34 @@ export function EditEventDialog({ event, onClose }: { event: CalendarEvent; onCl
           </DialogField>
         )}
 
-        {/* O balneário não existe num jogo — só o treino e os eventos da casa o
-            guardam (ver `updateEvent`). */}
-        {!isMatch && dressingRooms.length > 0 && (
-          <DialogField
-            label="Balneário"
+        {/*
+          Os balneários — o mesmo campo da criação, e pela mesma razão.
+
+          Um jogo em casa passou a poder ter balneário (o `Match` ganhou-os na
+          migração `20260908120000`; antes o diálogo de criação oferecia-o e o
+          servidor deitava-o fora sem dizer nada). Fora de casa continuam a não
+          aparecer — ali o balneário é o que o adversário der.
+
+          Um balneário que já lá estava e saiu do catálogo continua na ficha,
+          marcado — riscá-lo do evento por alguém o ter arquivado nas Definições
+          seria reescrever o passado sem ninguém pedir. Ver `TokenPicker`.
+        */}
+        {!localLivre && (dressingRooms.length > 0 || balnearios.length > 0) && (
+          <TokenPicker
+            label="Balneários"
             hint={
               <Link to="/definicoes?catalogo=dressingRooms" className="inline-flex items-center gap-1 text-ink-3 hover:text-ink">
                 <Settings className="size-3" strokeWidth={1.75} />
                 gerir balneários
               </Link>
             }
-          >
-            <SelectField
-              className="w-full"
-              value={dressingRoom}
-              onChange={setDressingRoom}
-              options={[
-                { value: "", label: "Sem balneário atribuído" },
-                ...(dressingRoom && !dressingRooms.some((b) => b.label === dressingRoom)
-                  ? [{ value: dressingRoom, label: `${dressingRoom} (fora do catálogo)` }]
-                  : []),
-                ...dressingRooms.map((b) => ({ value: b.label, label: b.label })),
-              ]}
-            />
-          </DialogField>
+            options={dressingRooms.map((d) => d.label)}
+            selected={balnearios}
+            onChange={setBalnearios}
+            placeholder="Procurar balneário…"
+            emptyLabel="Nenhum atribuído — escreve ou abre a lista para escolher."
+          />
         )}
-
         {error && (
           <p className="flex items-start gap-1.5 text-meta text-risk">
             <TriangleAlert className="mt-0.5 size-3.5 shrink-0" strokeWidth={1.75} />

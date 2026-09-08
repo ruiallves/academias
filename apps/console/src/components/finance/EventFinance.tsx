@@ -31,11 +31,22 @@ export function EventFinance({
   session,
   link,
   eventLabel,
+  eventDate,
 }: {
   session: Session;
   /** Exactamente um dos dois — jogos ligam-se pelo jogo, o resto pelo evento. */
   link: { matchId?: string; calendarEventId?: string };
   eventLabel: string;
+  /**
+   * O dia do evento.
+   *
+   * Um movimento aberto daqui é **deste** evento: o autocarro do jogo de
+   * sábado vence-se com o jogo, não no dia em que a direcção se lembrou de o
+   * registar. Sem isto o formulário abria em "hoje" e as previsões de um jogo
+   * a três semanas nasciam todas com a data errada — que só se nota quando o
+   * mapa de tesouraria do mês já está enganado.
+   */
+  eventDate: Date;
 }) {
   const podeEscrever = can(session, "finance:write");
   const [rows, setRows] = useState<TransactionRow[] | null>(null);
@@ -161,7 +172,7 @@ export function EventFinance({
       {registar && (
         <TransactionDialog
           kind={registar}
-          eventLink={{ ...link, label: eventLabel }}
+          eventLink={{ ...link, label: eventLabel, date: eventDate }}
           onClose={() => setRegistar(null)}
           onDone={() => {
             setRegistar(null);

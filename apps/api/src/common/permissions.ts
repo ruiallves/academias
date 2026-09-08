@@ -531,7 +531,9 @@ export function teamScopeFilter(ctx: RequestContext): { in: string[] } | undefin
  * inscrever às cegas, e foi isso que aconteceu.
  */
 export function teamScopeForRoster(ctx: RequestContext): { in: string[] } | undefined {
-  if (can(ctx, "athlete:write")) return undefined;
+  // `team:write` conta pela mesma razão: quem cria e edita equipas não pode
+  // estar a fazê-lo sem ver as que já existem.
+  if (can(ctx, "athlete:write") || can(ctx, "team:write")) return undefined;
   return teamScopeFilter(ctx);
 }
 
@@ -601,6 +603,39 @@ export function athleteScopeFilter(ctx: RequestContext): { in: string[] } | unde
  * família continua a ver só os seus, porque o `id` manda por cima.
  */
 export function athleteTeamScopeWhere(ctx: RequestContext) {
+  /*
+   * Quem pode **escrever** atletas vê-os todos.
+   *
+   * ## A incoerência que isto fecha
+   *
+   * `teamsInScope` (em `athletes.service.ts`) já deixa quem tem `athlete:write`
+   * inscrever e editar um atleta de **qualquer** equipa do clube — usa o âmbito
+   * largo, o mesmo da lista de equipas. Só a leitura é que continuava estreita.
+   *
+   * O resultado era um produto que dizia duas coisas ao mesmo tempo. Uma
+   * treinadora de um clube com nove equipas e trinta atletas, com permissão de
+   * criar equipas e inscrever atletas mas sem nenhuma equipa atribuída, podia
+   * editar qualquer um deles pelo endereço directo e não via **nenhum** na
+   * lista. Passou dias convencida de que a aplicação estava avariada, e estava
+   * a ler o que o ecrã lhe mostrava.
+   *
+   * Dar permissão de escrita é dar mais do que ver: quem a recebe pode
+   * inscrever, mudar de equipa e dar baixa. Esconder-lhe a lista não protege
+   * nada — só a impede de trabalhar, e empurra-a para criar de novo o que já
+   * existe mas não consegue ver. Este produto já teve um clube inteiro em
+   * triplicado exactamente por aí (ver `teamScopeForRoster`).
+   *
+   * O âmbito estreito continua a valer para quem **só lê**: um treinador sem
+   * `athlete:write` continua a ver os atletas das equipas dele e mais nenhum.
+   *
+   * ## O que fica de fora
+   *
+   * As famílias. `athleteScopeFilter` continua a mandar por cima em todos os
+   * sítios onde isto é usado, e é o que garante que um encarregado vê os filhos
+   * dele e mais ninguém, tenha o âmbito de equipa que tiver.
+   */
+  if (can(ctx, "athlete:write")) return undefined;
+
   const teamScope = teamScopeFilter(ctx);
   if (!teamScope) return undefined;
 

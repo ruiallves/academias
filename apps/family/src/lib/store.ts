@@ -57,6 +57,8 @@ type ApiSession = {
   endsAt: string;
   venue: string;
   dressingRoom: string | null;
+  /** Os balneários — nenhum, um, ou vários. Ver a migração `20260908120000`. */
+  dressingRooms?: string[];
   status: string;
   coachName: string | null;
   recorded: boolean;
@@ -494,7 +496,18 @@ function build(
       start: new Date(s.startsAt),
       end: new Date(s.endsAt),
       venue: s.venue,
-      dressingRoom: s.dressingRoom ?? undefined,
+      /*
+       * Os balneários, todos.
+       *
+       * O clube passou a poder atribuir mais do que um (a migração
+       * `20260908120000`), e mostrar só o primeiro mandava metade dos pais para
+       * o balneário errado. Juntos com " · ", que é como o resto da app já
+       * separa factos de uma linha.
+       */
+      dressingRoom:
+        s.dressingRooms && s.dressingRooms.length > 0
+          ? s.dressingRooms.join(" · ")
+          : (s.dressingRoom ?? undefined),
       coach: s.coachName ?? undefined,
       cancelled: s.status === "CANCELLED",
     })),

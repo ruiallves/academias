@@ -53,15 +53,23 @@ const [director, coach, adjunto, parent] = await Promise.all([
   login("familia@lifeclub.pt"),
 ]);
 
-// O Rui treina as duas equipas; o adjunto só uma. "Fora do âmbito" define-se a
-// partir do que cada um vê, e não de nomes de equipas escritos aqui — assim o teste
-// continua a dizer a verdade se o seed mudar de escalões.
+/*
+ * "Fora do âmbito" define-se a partir do que cada um vê, e não de nomes de
+ * equipas escritos aqui — assim o teste continua a dizer a verdade se o seed
+ * mudar de escalões.
+ *
+ * Desde que **quem escreve atletas vê todos** (ver `athleteTeamScopeWhere`), um
+ * treinador com `athlete:write` — que é o treinador por omissão — deixou de ter
+ * atletas fora do âmbito dentro do clube dele. O que continua a haver, e é o
+ * que este teste passou a verificar, é a fronteira que nenhuma permissão
+ * atravessa: a **família**, que só vê os filhos.
+ */
 const meusFilhos = (await call(parent, "GET", "/api/athletes")).body;
 const filho = meusFilhos[0];
 const todos = (await call(director, "GET", "/api/athletes")).body;
 const doAdjunto = new Set((await call(adjunto, "GET", "/api/athletes")).body.map((a) => a.id));
-const foraDoAdjunto = todos.find((a) => !doAdjunto.has(a.id));
-const outro = todos.find((a) => a.id !== filho.id && doAdjunto.has(a.id)) ?? foraDoAdjunto;
+const foraDoPai = todos.find((a) => !meusFilhos.some((f) => f.id === a.id));
+const outro = todos.find((a) => a.id !== filho.id) ?? filho;
 
 console.log("=== Gravar uma avaliação ===");
 const guardada = await call(coach, "POST", "/api/evaluations", {
@@ -89,9 +97,18 @@ check(
   (await call(coach, "POST", "/api/evaluations", { athleteId: filho.id, period: PERIOD, scores: { "Técnica": 7 } })).status === 400,
 );
 check(
-  "um atleta fora do âmbito do treinador",
-  (await call(adjunto, "POST", "/api/evaluations", { athleteId: foraDoAdjunto.id, period: PERIOD, scores: { "Técnica": 3 } })).status === 404,
-  `${foraDoAdjunto?.name} (o adjunto vê ${doAdjunto.size} de ${todos.length})`,
+  "quem inscreve atletas avalia qualquer um do clube (vê todos)",
+  doAdjunto.size === todos.length,
+  `o adjunto vê ${doAdjunto.size} de ${todos.length}`,
+);
+check(
+  "mas um encarregado não avalia — nem um filho seu",
+  (await call(parent, "POST", "/api/evaluations", { athleteId: filho.id, period: PERIOD, scores: { "Técnica": 3 } })).status === 403,
+);
+check(
+  "e um atleta que não é filho não existe para o encarregado (404)",
+  (await call(parent, "GET", `/api/athletes/${foraDoPai.id}`)).status === 404,
+  `${foraDoPai?.name}`,
 );
 
 console.log("\n=== O rascunho não sai da consola ===");

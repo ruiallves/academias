@@ -74,7 +74,7 @@ export function TransactionDialog({
   /** Preenchido = corrigir este movimento, em vez de registar um novo. */
   transaction?: TransactionRow;
   /** Quando se chega pelo calendário, o movimento já nasce ligado ao evento. */
-  eventLink?: { matchId?: string; calendarEventId?: string; label: string };
+  eventLink?: { matchId?: string; calendarEventId?: string; label: string; date?: Date };
   onClose: () => void;
   onDone: () => void;
 }) {
@@ -87,7 +87,18 @@ export function TransactionDialog({
 
   const [descricao, setDescricao] = useState(editar?.description ?? "");
   const [valor, setValor] = useState(editar ? paraEuros(editar.amountCents) : "");
-  const [data, setData] = useState(editar ? diaDe(editar.occurredAt) : hoje());
+  /*
+   * A data de um movimento aberto a partir de um evento é a **do evento**.
+   *
+   * O autocarro do jogo de sábado vence-se com o jogo, não no dia em que
+   * alguém se lembrou de o registar. Abria em "hoje", e as previsões de um
+   * jogo a três semanas nasciam todas com a data errada — um engano que só se
+   * nota quando o mapa de tesouraria do mês já está torcido, e que obrigava a
+   * corrigir a data em todos os movimentos de todos os jogos.
+   */
+  const [data, setData] = useState(
+    editar ? diaDe(editar.occurredAt) : eventLink?.date ? diaLocal(eventLink.date) : hoje(),
+  );
   const [estado, setEstado] = useState<"COMPLETED" | "PLANNED">(
     editar ? (editar.status === "COMPLETED" ? "COMPLETED" : "PLANNED") : eventLink ? "PLANNED" : "COMPLETED",
   );
@@ -534,6 +545,17 @@ export function TransactionDialog({
       </form>
     </Dialog>
   );
+}
+
+/**
+ * Uma `Date` no `AAAA-MM-DD` que o `<input type="date">` entende.
+ *
+ * Pelos componentes locais e não por `toISOString()`, que converte para UTC: um
+ * jogo às 21:00 de sábado em Lisboa saía como domingo, e o movimento nascia com
+ * a data do dia seguinte ao evento a que pertence.
+ */
+function diaLocal(d: Date): string {
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 }
 
 /** Cêntimos → o que se escreve no campo. O par de `paraCentimos`, ao contrário. */

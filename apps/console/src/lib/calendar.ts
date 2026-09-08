@@ -23,6 +23,38 @@ export const KIND_LABEL: Record<EventKind, string> = {
   other: "Evento",
 };
 
+/**
+ * De um tipo do catálogo para o que o evento **é**.
+ *
+ * ## Duas coisas com o mesmo nome, e a diferença importa
+ *
+ * O `kind` é estrutura: decide em que tabela o evento vive e o que abre — um
+ * `training` dá folha de presenças, um `match` dá convocatória. O **tipo do
+ * catálogo** é o vocabulário do clube: "Estágio", "Reunião de pais", "Prova de
+ * natação". São perguntas diferentes, e é por isso que o catálogo não podia
+ * simplesmente substituir o enum.
+ *
+ * Os quatro tipos semeados (Treino, Jogo, Torneio, Evento) mapeiam para os
+ * quatro valores do enum; tudo o que o clube criar é um evento genérico com o
+ * nome que o clube lhe deu. O casamento é pelo **rótulo**, e isso é seguro
+ * porque os quatro são `isSystem` — o servidor não deixa renomeá-los nem
+ * apagá-los (ver `catalogs.service.ts`).
+ *
+ * Gémea da regra do servidor, como as permissões: aqui decide o que o
+ * formulário mostra, lá decide o que se grava.
+ */
+export function kindOfEventType(label: string): EventKind {
+  const normal = label
+    .trim()
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "");
+  if (normal === "treino") return "training";
+  if (normal === "jogo") return "match";
+  if (normal === "torneio") return "tournament";
+  return "other";
+}
+
 /** Estado de um atleta na convocatória. */
 export type CallUpStatus = "called" | "confirmed" | "declined";
 
@@ -101,8 +133,12 @@ export type CalendarEvent = {
   start: Date;
   end: Date;
   venue: string;
-  /** Onde a equipa se equipa. Ausente quando não há nenhum atribuído. */
+  /** Onde a equipa se equipa. **Substituído por `dressingRooms`.** */
   dressingRoom?: string;
+  /** Os balneários — nenhum, um, ou vários. Ver a migração `20260908120000`. */
+  dressingRooms?: string[];
+  /** O nome que o clube deu a este tipo de evento. Ausente cai no `KIND_LABEL`. */
+  typeLabel?: string;
   coachId?: string;
   /** O nome de quem o dá, tal como veio do servidor. Ver `TrainingSession.coachName`. */
   coachName?: string;
@@ -260,6 +296,8 @@ export function fromApiEvent(e: ApiEvent): CalendarEvent {
     end: new Date(e.endsAt),
     venue: e.venue,
     dressingRoom: e.dressingRoom ?? undefined,
+    dressingRooms: e.dressingRooms ?? (e.dressingRoom ? [e.dressingRoom] : []),
+    typeLabel: e.typeLabel ?? undefined,
     coachId: e.coachId ?? undefined,
     coachName: e.coachName ?? undefined,
     cancelled: e.cancelled,
@@ -430,6 +468,7 @@ export function useEvents(session: Session, from: Date, to: Date): CalendarEvent
     end: new Date(s.end),
     venue: s.venue,
     dressingRoom: s.dressingRoom,
+    dressingRooms: s.dressingRooms ?? (s.dressingRoom ? [s.dressingRoom] : []),
     coachId: s.coachId,
     coachName: s.coachName,
     cancelled: s.status === "cancelled",

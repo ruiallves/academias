@@ -1,18 +1,17 @@
 import { Link } from "react-router-dom";
 import { useState, type FormEvent } from "react";
 import { categoryColor } from "@academia/ui/tokens";
-import { KIND_LABEL, type EventKind } from "@/lib/calendar";
+import { KIND_LABEL, kindOfEventType, type EventKind } from "@/lib/calendar";
 import { listTeams, teamById } from "@/lib/api";
 import { apiPost } from "@/lib/http";
 import { reloadAcademy } from "@/lib/store";
 import { useActiveCatalog } from "@/lib/catalogs";
 import { longDate } from "@/lib/format";
-import { Settings, TriangleAlert } from "@/lib/icons";
+import { Settings } from "@/lib/icons";
 import type { Session } from "@/lib/permissions";
 import { Dialog, DialogField, dialogInputClass } from "./Dialog";
+import { TokenPicker } from "./TokenPicker";
 import { cx, SelectField } from "./primitives";
-
-const KINDS: EventKind[] = ["training", "match", "tournament", "other"];
 
 /**
  * Criar evento.
@@ -57,20 +56,57 @@ export function NewEventDialog({
   const teams = listTeams(session);
   const venues = useActiveCatalog("venues");
   const dressingRooms = useActiveCatalog("dressingRooms");
+  /*
+   * Os tipos de evento do clube.
+   *
+   * O catálogo existe nas Definições desde sempre — semeado com Treino, Jogo,
+   * Torneio e Evento — e **não era lido por ninguém**: o diálogo tinha os quatro
+   * escritos no código, e quem criasse "Estágio" ou "Reunião de pais" via-os nas
+   * Definições e não os encontrava aqui. Agora a lista é a do clube, e o que se
+   * grava é o tipo escolhido (ver `CalendarEvent.typeId`).
+   */
+  const eventTypes = useActiveCatalog("eventTypes");
   const mayTargetWholeAcademy = session.scope?.teamIds === undefined;
 
-  const [kind, setKind] = useState<EventKind>(kindInicial ?? "training");
+  /**
+   * O tipo escolhido, por id do catálogo.
+   *
+   * O `kind` deixa de ser estado próprio e passa a **derivar** do tipo — eram
+   * duas fontes para a mesma verdade, e a segunda ficava desactualizada à
+   * primeira troca. Ver `kindOfEventType`.
+   */
+  const [typeId, setTypeId] = useState("");
   // A equipa pedida, se for uma das que esta pessoa pode usar. Um id de fora do
   // âmbito cai para a primeira — o servidor recusá-lo-ia na mesma.
   const [teamId, setTeamId] = useState(
     (teamInicial && teams.some((t) => t.id === teamInicial) ? teamInicial : teams[0]?.id) ?? "",
   );
+  /*
+   * O tipo escolhido, e o `kind` que dele sai.
+   *
+   * Enquanto o catálogo não chegar (vem por HTTP depois do arranque, como os
+   * locais), `typeId` está vazio e cai-se no tipo pedido por quem abriu o
+   * diálogo — "Jogo" para quem vem da página de Jogos. Assim que a lista
+   * chegar, escolhe-se lá dentro o item que corresponde a esse pedido: é a
+   * mesma armadilha que os locais já tinham (ver `venueDoCatalogo`), e a
+   * solução é a mesma — derivar em vez de fixar no primeiro render.
+   */
+  const tipoEscolhido = eventTypes.find((t) => t.id === typeId) ?? null;
+  const kindPedido = kindInicial ?? "training";
+  const tipoEfectivo =
+    tipoEscolhido ??
+    eventTypes.find((t) => kindOfEventType(t.label) === kindPedido) ??
+    eventTypes[0] ??
+    null;
+  const kind: EventKind = tipoEfectivo ? kindOfEventType(tipoEfectivo.label) : kindPedido;
+
   const [title, setTitle] = useState("");
   const [date, setDate] = useState(toInputDate(day));
   const [start, setStart] = useState("18:00");
   const [end, setEnd] = useState("19:30");
   const [venue, setVenue] = useState(venues[0]?.label ?? "");
-  const [dressingRoom, setDressingRoom] = useState("");
+  /** Os balneários escolhidos. Vários, porque um clube leva duas equipas ao mesmo jogo. */
+  const [balnearios, setBalnearios] = useState<string[]>([]);
   const [opponent, setOpponent] = useState("");
   const [isHome, setIsHome] = useState(true);
   const [competitionId, setCompetitionId] = useState("");
@@ -165,6 +201,17 @@ export function NewEventDialog({
    * se aplica — ali o local é texto livre e o catálogo não manda.
    */
   const venueDoCatalogo = venues.some((v) => v.label === venue) ? venue : (venues[0]?.label ?? "");
+
+  /*
+   * Os balneários que valem mesmo.
+   *
+   * Filtrados pelo catálogo actual — um balneário arquivado entretanto não vai
+   * numa marcação nova — e vazios num jogo fora, onde o balneário é o que o
+   * adversário der. É a mesma rede do local, e pela mesma razão: o catálogo
+   * chega depois do primeiro render.
+   */
+  const balneariosEfectivos =
+    isMatch && !isHome ? [] : balnearios.filter((b) => dressingRooms.some((d) => d.label === b));
   const effectiveVenue = isMatch && !isHome ? venue.trim() || awayVenuePlaceholder : venueDoCatalogo;
 
   /*
@@ -211,7 +258,11 @@ export function NewEventDialog({
         startsAt: new Date(y, m - 1, d, sh, sm).toISOString(),
         endsAt: new Date(y, m - 1, d, eh, em).toISOString(),
         venue: effectiveVenue,
-        ...(dressingRoom ? { dressingRoom } : {}),
+        // A lista, e o singular por trás dela enquanto o servidor antigo
+        // estiver em serviço — ver a migração `20260908120000`.
+        dressingRooms: balneariosEfectivos,
+        ...(balneariosEfectivos[0] ? { dressingRoom: balneariosEfectivos[0] } : {}),
+        ...(tipoEfectivo ? { typeId: tipoEfectivo.id } : {}),
         ...(isMatch ? { opponent: opponent.trim(), isHome } : {}),
         ...(isMatch && competitionId ? { competitionId } : {}),
         ...(repetir && until
@@ -268,57 +319,52 @@ export function NewEventDialog({
           por isso e só descobrir nas convocatórias é caro de mais para se
           resolver com um contraste subtil.
         */}
-        <fieldset>
-          <legend className="mb-1.5 text-meta font-medium text-ink">Tipo</legend>
-          <div className="inline-flex items-center gap-1 rounded-[var(--radius-control)] bg-sunken p-1">
-            {KINDS.map((k) => (
-              <button
-                key={k}
-                type="button"
-                onClick={() => {
-                  setKind(k);
-                  // Vinha de "toda a academia" e passou a jogo ou treino: os dois
-                  // são sempre de uma equipa, por isso escolhe-se a primeira em
-                  // vez de deixar o formulário num estado que o servidor recusa.
-                  if ((k === "match" || k === "training") && !teamId) setTeamId(teams[0]?.id ?? "");
-                }}
-                aria-pressed={kind === k}
-                className={cx(
-                  "h-8 rounded-[7px] px-3 text-meta font-semibold transition-colors duration-[120ms]",
-                  kind === k ? "bg-ink text-surface" : "text-ink-3 hover:bg-surface/60 hover:text-ink-2",
-                )}
-              >
-                {KIND_LABEL[k]}
-              </button>
-            ))}
-          </div>
-        </fieldset>
-
         {/*
-          O título diz "jogo", o tipo diz outra coisa.
+          O tipo vem do catálogo do clube.
 
-          Não bloqueia — quem quiser mesmo chamar "Jogo de treino" a um treino
-          tem esse direito. Mas três eventos seguidos criados como treino com
-          "vs" no título são um sinal de que a pergunta vale a pena ser feita,
-          uma vez, com a correcção a um toque de distância.
+          Era um segmented com os quatro tipos escritos no código, e o catálogo
+          "Tipos de evento" das Definições não era lido por ninguém: quem criasse
+          "Estágio" via-o nas Definições e não o encontrava aqui. Agora a lista é
+          a do clube — e passou a `<select>` porque um segmented com nove tipos
+          não cabe, enquanto quatro botões cabiam.
+
+          O que **não** mudou: os quatro tipos de sistema continuam a decidir a
+          estrutura (um Jogo abre convocatória, um Treino abre presenças). Ver
+          `kindOfEventType`.
         */}
-        {looksLikeMatch(title) && !isMatch && (
-          <button
-            type="button"
-            onClick={() => {
-              setKind("match");
-              if (!teamId) setTeamId(teams[0]?.id ?? "");
-            }}
-            className="flex w-full items-center gap-2.5 rounded-[var(--radius-control)] border border-warn/30 bg-warn-soft px-3 py-2.5 text-left"
-          >
-            <TriangleAlert className="size-4 shrink-0 text-warn" strokeWidth={1.9} />
-            <span className="min-w-0 flex-1 text-meta text-warn">
-              Isto parece um jogo, mas o tipo é <strong className="font-semibold">{KIND_LABEL[kind]}</strong> — só
-              um <strong className="font-semibold">Jogo</strong> aparece nas convocatórias.
-            </span>
-            <span className="shrink-0 text-meta font-semibold text-warn underline">Mudar</span>
-          </button>
-        )}
+        <DialogField
+          label="Tipo"
+          hint={
+            <Link to="/definicoes?catalogo=eventTypes" className="inline-flex items-center gap-1 text-ink-3 hover:text-ink">
+              <Settings className="size-3" strokeWidth={1.75} />
+              gerir tipos
+            </Link>
+          }
+        >
+          {eventTypes.length > 0 ? (
+            <SelectField
+              className="w-full"
+              value={tipoEfectivo?.id ?? ""}
+              onChange={(id) => {
+                setTypeId(id);
+                const item = eventTypes.find((t) => t.id === id);
+                const alvo = item ? kindOfEventType(item.label) : "other";
+                // Um jogo e um treino são sempre de uma equipa: se vinha de
+                // "não aplicável", escolhe-se a primeira em vez de deixar o
+                // formulário num estado que o servidor recusa.
+                if ((alvo === "match" || alvo === "training") && !teamId) setTeamId(teams[0]?.id ?? "");
+              }}
+              options={eventTypes.map((t) => ({ value: t.id, label: t.label }))}
+            />
+          ) : (
+            <p className="rounded-[var(--radius-control)] border border-dashed border-line bg-sunken/50 px-2.5 py-2 text-meta text-ink-3">
+              Ainda não há tipos de evento.{" "}
+              <Link to="/definicoes?catalogo=eventTypes" className="font-medium text-ink underline">
+                Criar o primeiro
+              </Link>
+            </p>
+          )}
+        </DialogField>
 
         <DialogField label="Escalão">
           <div className="flex items-center gap-2">
@@ -336,10 +382,24 @@ export function NewEventDialog({
               value={teamId}
               onChange={setTeamId}
               options={[
+                /*
+                  "Não aplicável" antes das equipas, e não no fim.
+
+                  Nem todo o evento tem escalão — uma reunião de pais, um
+                  estágio da direcção, a assembleia geral. Chamava-se "Toda a
+                  academia (sem cor)", que descrevia o efeito visual em vez de
+                  responder à pergunta: o que a pessoa quer dizer é que aquele
+                  campo não se aplica ali. Vem primeiro porque, num evento
+                  destes, é a resposta certa — e escondê-la no fim de uma lista
+                  de doze escalões fazia toda a gente escolher um escalão à toa.
+
+                  Nunca para um jogo nem para um treino: quem joga e quem treina
+                  é uma equipa, e o servidor recusa-o na mesma.
+                */
+                ...(mayTargetWholeAcademy && !needsTeam
+                  ? [{ value: "", label: "Não aplicável" }]
+                  : []),
                 ...teams.map((t) => ({ value: t.id, label: t.name })),
-                // Nunca para um jogo nem para um treino — quem joga e quem treina
-                // é uma equipa.
-                ...(mayTargetWholeAcademy && !needsTeam ? [{ value: "", label: "Toda a academia (sem cor)" }] : []),
               ]}
             />
           </div>
@@ -494,9 +554,24 @@ export function NewEventDialog({
           balneários atribuídos não tem nada para escolher, e o campo desaparece
           em vez de pedir algo que não existe.
         */}
+        {/*
+          Os balneários — vários, com pesquisa.
+
+          Foi por três desenhos até chegar aqui, e vale a pena o registo: um
+          `<select>` de um só não dizia "dois balneários"; uma fila de chips
+          dizia, mas com doze balneários ocupava meio diálogo e não havia como
+          procurar; e, por estar dentro de um `DialogField` (que é um
+          `<label>`), clicar na linha activava o primeiro botão — o balneário 1
+          marcava-se sozinho. `TokenPicker` resolve os três de uma vez.
+
+          Só para o que acontece em casa: num jogo fora o balneário é o que o
+          adversário der, e um campo aqui seria uma promessa que o clube não
+          pode cumprir. Desaparece por inteiro quando a academia não os gere —
+          pedir algo que não existe é pior do que não perguntar.
+        */}
         {!(isMatch && !isHome) && dressingRooms.length > 0 && (
-          <DialogField
-            label="Balneário"
+          <TokenPicker
+            label="Balneários"
             hint={
               <Link
                 to="/definicoes?catalogo=dressingRooms"
@@ -506,17 +581,12 @@ export function NewEventDialog({
                 gerir balneários
               </Link>
             }
-          >
-            <SelectField
-              className="w-full"
-              value={dressingRoom}
-              onChange={setDressingRoom}
-              options={[
-                { value: "", label: "Sem balneário atribuído" },
-                ...dressingRooms.map((b) => ({ value: b.label, label: b.label })),
-              ]}
-            />
-          </DialogField>
+            options={dressingRooms.map((b) => b.label)}
+            selected={balnearios}
+            onChange={setBalnearios}
+            placeholder="Procurar balneário…"
+            emptyLabel="Nenhum atribuído — escreve ou abre a lista para escolher."
+          />
         )}
 
         {error && (
@@ -618,17 +688,6 @@ export function NewEventDialog({
 
 function toInputDate(d: Date) {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
-}
-
-/**
- * O título soa a jogo?
- *
- * "vs", "v.", "@" e a própria palavra "jogo" — as formas como um diretor escreve
- * um jogo à pressa. Os limites de palavra (`\b`) evitam apanhar "Revisão" por
- * causa do "vs" lá dentro.
- */
-function looksLikeMatch(title: string): boolean {
-  return /(\bvs\.?\b|\bv\.\s|@|\bjogo\b|\bderby\b|\btaça\b)/i.test(title);
 }
 
 const capitalize = (s: string) => s[0].toUpperCase() + s.slice(1);

@@ -201,12 +201,41 @@ export function EventDetail({
           {/* Factos básicos — sempre presentes, sejam quais forem o tipo e o estado. */}
           <dl className="space-y-2.5 border-b border-line px-5 py-4">
             <Fact label={capitalize(longDate(event.start))} sub={`${time(event.start)} – ${time(event.end)}`} />
-            <Fact icon={MapPin} label={event.venue} sub={event.dressingRoom ?? undefined} />
+            {/*
+              Os balneários por baixo do local — vários, quando houver.
+
+              A vírgula chega: são dois ou três nomes curtos, e uma lista com
+              marcas por baixo de uma linha de facto pesaria mais do que a
+              informação que carrega.
+            */}
             <Fact
-              icon={Whistle}
-              label={coachName ?? "Sem treinador atribuído"}
-              tone={coach ? undefined : "risk"}
+              icon={MapPin}
+              label={event.venue}
+              sub={
+                event.dressingRooms && event.dressingRooms.length > 0
+                  ? event.dressingRooms.join(" · ")
+                  : (event.dressingRoom ?? undefined)
+              }
             />
+            {/*
+              Um evento sem escalão não tem treinador — e por isso não tem
+              nada em falta.
+
+              "Sem treinador atribuído" a vermelho é um aviso, e um aviso tem de
+              apontar para trabalho por fazer: num treino ou num jogo, alguém
+              tem mesmo de o dar. Numa cedência de campo ou numa reunião de
+              pais — os eventos de "Não aplicável" — não há treinador nenhum
+              para atribuir, e o alarme mandava a direcção procurar uma coisa
+              que não existe. A linha desaparece por inteiro em vez de ficar
+              vazia: um facto que não se aplica não é um facto por preencher.
+            */}
+            {event.teamId && (
+              <Fact
+                icon={Whistle}
+                label={coachName ?? "Sem treinador atribuído"}
+                tone={coach ? undefined : "risk"}
+              />
+            )}
             {/* A prova de um jogo é um facto básico como a hora: é ela que sai
                 impressa na convocatória, e vê-la aqui poupa abrir a página. */}
             {event.match?.competition && <Fact icon={Trophy} label={event.match.competition.label} />}
@@ -278,13 +307,13 @@ export function EventDetail({
             jogo semeado no browser não tem a quem pendurar uma despesa.
           */}
           {can(session, "finance:read") && event.kind === "match" && storeMatches.some((m) => m.id === event.id) && (
-            <EventFinance session={session} link={{ matchId: event.id }} eventLabel={event.title} />
+            <EventFinance session={session} link={{ matchId: event.id }} eventLabel={event.title} eventDate={event.start} />
           )}
           {can(session, "finance:read") &&
             event.kind !== "match" &&
             event.kind !== "training" &&
             storeEvents.some((e2) => e2.id === event.id) && (
-              <EventFinance session={session} link={{ calendarEventId: event.id }} eventLabel={event.title} />
+              <EventFinance session={session} link={{ calendarEventId: event.id }} eventLabel={event.title} eventDate={event.start} />
             )}
         </div>
 

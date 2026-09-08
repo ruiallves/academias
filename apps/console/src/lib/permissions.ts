@@ -484,3 +484,27 @@ export function isAcademyWide(session: Session): boolean {
     session.role === "SCOUT"
   );
 }
+
+/**
+ * Vê por equipas, e não tem nenhuma atribuída.
+ *
+ * ## Porque é que isto precisa de nome próprio
+ *
+ * Uma lista vazia tem sempre duas explicações possíveis — *não existe nada* ou
+ * *nada disto é meu* — e os ecrãs andavam a escolher a errada. Uma treinadora
+ * de um clube com nove equipas e trinta atletas, que ninguém tinha escalado em
+ * equipa nenhuma, lia "Ainda não há equipas. Cria a primeira" e "Nenhum atleta
+ * corresponde: experimenta limpar os filtros" — sem filtros postos. Concluiu, e
+ * com razão, que a aplicação não estava a funcionar.
+ *
+ * O convite a criar era a parte perigosa: este produto já teve um clube
+ * inteiro criado em triplicado por causa de uma lista vazia que parecia dizer
+ * que não havia nada (ver `teamScopeForRoster` no servidor).
+ *
+ * Quem vê a academia toda nunca cai aqui: para essa pessoa, vazio é mesmo
+ * vazio.
+ */
+export function semEquipasAtribuidas(session: Session): boolean {
+  if (isAcademyWide(session)) return false;
+  return (session.scope?.teamIds ?? []).length === 0;
+}

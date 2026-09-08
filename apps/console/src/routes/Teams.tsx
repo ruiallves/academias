@@ -10,7 +10,7 @@ import { useTeamColors } from "@/lib/calendar";
 import type { CategoricalColor } from "@academia/ui/tokens";
 import { currentSeason } from "@/lib/store";
 import { teamAgeLabel } from "@/lib/team-age";
-import { can } from "@/lib/permissions";
+import { can, semEquipasAtribuidas } from "@/lib/permissions";
 import { useSession } from "@/session";
 import type { Team } from "@/data/types";
 
@@ -64,6 +64,15 @@ export default function Teams() {
   const athletes = listAthletes(session);
   const cores = useTeamColors(session);
   const mine = !can(session, "team:write");
+  /*
+   * Sem equipas atribuídas, o vazio não quer dizer "o clube não tem equipas".
+   *
+   * `mine` respondia a esta pergunta pela permissão de escrita, e por isso uma
+   * treinadora com `team:write` mas sem equipa nenhuma via o texto de um clube
+   * acabado de abrir: "Ainda não há equipas. Cria a primeira." Num clube com
+   * nove. É o convite que já pôs um clube inteiro em triplicado.
+   */
+  const semAmbito = semEquipasAtribuidas(session);
   const [creating, setCreating] = useState(false);
   const [importing, setImporting] = useState(false);
 
@@ -108,10 +117,12 @@ export default function Teams() {
         <Panel>
           <Empty
             icon={Shield}
-            title={mine ? "Ainda não és responsável por nenhuma equipa" : "Ainda não há equipas"}
+            title={
+              semAmbito || mine ? "Ainda não és responsável por nenhuma equipa" : "Ainda não há equipas"
+            }
             detail={
-              mine
-                ? "Quando a direção te atribuir uma equipa, ela aparece aqui."
+              semAmbito || mine
+                ? "Quem gere o clube atribui-te as equipas que treinas, no separador Staff. Até lá, esta lista fica vazia mesmo que o clube já tenha equipas."
                 : "Cria a primeira — é a partir dela que se organizam atletas, horários e convocatórias."
             }
           />

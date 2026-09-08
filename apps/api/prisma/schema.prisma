@@ -979,13 +979,20 @@ model TrainingSession {
   endsAt   DateTime
   venue    String
 
-  /// O balneário onde a equipa se equipa.
+  /// O balneário onde a equipa se equipa. **Substituída por `dressingRooms`.**
   ///
-  /// Separado de `venue` porque são duas perguntas: o local diz onde é o treino,
-  /// o balneário diz onde a equipa se muda — e num pavilhão com quatro balneários
-  /// e três equipas a treinar à mesma hora, é a segunda que causa discussões.
-  /// Nulo quando a academia não os gere ou quando não há nenhum atribuído.
+  /// Continua escrita (com o primeiro da lista) enquanto houver código antigo
+  /// em serviço a lê-la — ver a migração `20260908120000`. Larga-se quando o
+  /// deploy estiver feito, e não antes: foi largar uma coluna ainda lida que
+  /// pôs o registo de famílias em baixo a 03/09.
   dressingRoom String?
+
+  /// Os balneários deste evento — nenhum, um, ou vários.
+  ///
+  /// Lista e não texto: um clube que leve duas equipas ao mesmo jogo usa dois
+  /// balneários, e antes só podia dizer um (ou escrevê-lo no título). Vazio é
+  /// "nenhum atribuído", que é o caso normal de quem não os gere.
+  dressingRooms String[] @default([])
 
   /// Nulo é um problema visível, não um campo em branco: um treino agendado sem
   /// treinador aparece em "Precisa de atenção".
@@ -1890,6 +1897,14 @@ model Match {
   competitionId String?
   competition   CatalogItem? @relation("MatchCompetition", fields: [competitionId], references: [id], onDelete: SetNull)
 
+  /// Os balneários deste jogo — nenhum, um, ou vários.
+  ///
+  /// Nasceu com a lista, sem singular por trás: o jogo nunca teve balneário
+  /// nenhum. O diálogo do calendário **oferecia-o** num jogo em casa e o
+  /// servidor deitava-o fora sem dizer nada — escolhia-se, gravava, e não
+  /// ficava. Ver a migração `20260908120000`.
+  dressingRooms String[] @default([])
+
   ourScore   Int?
   theirScore Int?
 
@@ -2092,19 +2107,42 @@ model CalendarEvent {
   teamId String?
   team   Team?   @relation(fields: [teamId], references: [id], onDelete: Cascade)
 
+  /// O que este evento **é**, estruturalmente: decide em que tabela vive e o que
+  /// abre. TRAINING dá folha de presenças, MATCH dá convocatória, o resto fica
+  /// aqui. Não é o vocabulário do clube — esse é o `type`.
   kind     CalendarEventKind
+
+  /// O tipo escolhido no catálogo "Tipos de evento" das Definições.
+  ///
+  /// O catálogo existe desde sempre, é semeado com Treino/Jogo/Torneio/Evento e
+  /// **não era lido por ninguém**: um clube que criasse "Estágio" ou "Reunião de
+  /// pais" via-os nas Definições e não os encontrava no calendário. É isto que
+  /// liga as duas pontas — o enum diz o que o evento faz, isto diz como o clube
+  /// lhe chama.
+  ///
+  /// `SetNull`: arquivar um tipo não apaga os eventos marcados com ele.
+  typeId   String?
+  type     CatalogItem? @relation("EventType", fields: [typeId], references: [id], onDelete: SetNull)
+
   title    String
   startsAt DateTime
   endsAt   DateTime
   venue    String
 
-  /// O balneário onde a equipa se equipa.
+  /// O balneário onde a equipa se equipa. **Substituída por `dressingRooms`.**
   ///
-  /// Separado de `venue` porque são duas perguntas: o local diz onde é o treino,
-  /// o balneário diz onde a equipa se muda — e num pavilhão com quatro balneários
-  /// e três equipas a treinar à mesma hora, é a segunda que causa discussões.
-  /// Nulo quando a academia não os gere ou quando não há nenhum atribuído.
+  /// Continua escrita (com o primeiro da lista) enquanto houver código antigo
+  /// em serviço a lê-la — ver a migração `20260908120000`. Larga-se quando o
+  /// deploy estiver feito, e não antes: foi largar uma coluna ainda lida que
+  /// pôs o registo de famílias em baixo a 03/09.
   dressingRoom String?
+
+  /// Os balneários deste evento — nenhum, um, ou vários.
+  ///
+  /// Lista e não texto: um clube que leve duas equipas ao mesmo jogo usa dois
+  /// balneários, e antes só podia dizer um (ou escrevê-lo no título). Vazio é
+  /// "nenhum atribuído", que é o caso normal de quem não os gere.
+  dressingRooms String[] @default([])
 
   coachId String?
   coach   Membership? @relation("EventCoach", fields: [coachId], references: [id])
@@ -3238,6 +3276,8 @@ model CatalogItem {
   /// Só para `kind = "competitions"`: as equipas que a disputam e os jogos dela.
   teams   TeamCompetition[]
   matches Match[]           @relation("MatchCompetition")
+  /// Os eventos marcados com este tipo. Ver `CalendarEvent.typeId`.
+  events  CalendarEvent[]   @relation("EventType")
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt

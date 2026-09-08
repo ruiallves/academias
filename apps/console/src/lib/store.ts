@@ -166,7 +166,7 @@ type ApiStaff = {
 };
 
 type ApiSession = {
-  id: string; teamId: string; teamName: string; startsAt: string; endsAt: string; venue: string; dressingRoom: string | null; status: string;
+  id: string; teamId: string; teamName: string; startsAt: string; endsAt: string; venue: string; dressingRoom: string | null; dressingRooms?: string[]; status: string;
   coachId: string | null; coachName: string | null; recorded: boolean;
   /** É de uma equipa minha? Ver `inTeamScope` no servidor. */
   mine: boolean;
@@ -179,6 +179,10 @@ export type ApiEvent = {
   id: string; teamId: string | null; teamName: string | null; mine: boolean;
   kind: "TRAINING" | "MATCH" | "TOURNAMENT" | "OTHER";
   title: string; startsAt: string; endsAt: string; venue: string; dressingRoom: string | null; cancelled: boolean;
+  /** Os balneários deste evento — nenhum, um ou vários. Ver a migração `20260908120000`. */
+  dressingRooms?: string[];
+  /** Como o clube chama a este tipo de evento ("Estágio"). Nulo cai no rótulo do `kind`. */
+  typeLabel?: string | null;
   coachId: string | null; coachName: string | null;
 };
 
@@ -543,6 +547,7 @@ function build(
     end: s.endsAt,
     venue: s.venue,
     dressingRoom: s.dressingRoom ?? undefined,
+    dressingRooms: s.dressingRooms ?? (s.dressingRoom ? [s.dressingRoom] : []),
     coachId: s.coachId ?? undefined,
     coachName: s.coachName ?? undefined,
     status: s.status === "DONE" ? "done" : s.status === "CANCELLED" ? "cancelled" : "scheduled",

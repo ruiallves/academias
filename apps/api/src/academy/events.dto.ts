@@ -70,16 +70,43 @@ export class CreateEventDto {
   venue!: string;
 
   /**
-   * O balneário.
+   * O balneário. **Substituído por `dressingRooms`.**
    *
-   * Opcional: uma academia que treina num campo sem balneários atribuídos não tem
-   * nada para preencher, e obrigá-la a inventar um seria pior do que o campo
-   * vazio. Quem os gere é que ganha com ele.
+   * Fica a ser aceite enquanto houver clientes antigos em serviço a mandá-lo —
+   * o serviço junta-o à lista. Ver a migração `20260908120000`.
    */
   @IsOptional()
   @IsString()
   @Length(0, 80)
   dressingRoom?: string;
+
+  /**
+   * Os balneários — nenhum, um, ou vários.
+   *
+   * Um clube que leve duas equipas ao mesmo jogo usa dois balneários, e antes
+   * só podia dizer um. O tecto de 12 é o de um pavilhão grande; acima disso é
+   * engano de quem clicou.
+   */
+  @IsOptional()
+  @IsArray()
+  @ArrayMaxSize(12)
+  @IsString({ each: true })
+  @Length(1, 80, { each: true })
+  dressingRooms?: string[];
+
+  /**
+   * O tipo escolhido no catálogo "Tipos de evento" das Definições.
+   *
+   * O `kind` continua a decidir a **estrutura** (que tabela, que ecrãs abre);
+   * isto guarda o **vocabulário do clube** — "Estágio", "Reunião de pais". O
+   * servidor confirma que o id é mesmo de um tipo de evento por arquivar, e
+   * ignora-o num treino ou num jogo, que vivem em tabelas próprias e já dizem
+   * o que são.
+   */
+  @IsOptional()
+  @IsString()
+  @Length(1, 40)
+  typeId?: string;
 
   /**
    * Repetir. Ausente é um evento só.
@@ -184,6 +211,10 @@ export class EditEventDto {
   @IsOptional() @IsString() @Length(1, 120, { message: "Escolhe o local do evento" }) venue?: string;
   /** String vazia limpa o balneário — é como se diz "nenhum". */
   @IsOptional() @IsString() @Length(0, 80) dressingRoom?: string;
+  /** Lista vazia tira todos os balneários. Ver `CreateEventDto.dressingRooms`. */
+  @IsOptional() @IsArray() @ArrayMaxSize(12) @IsString({ each: true }) @Length(1, 80, { each: true }) dressingRooms?: string[];
+  /** String vazia tira o tipo. Ver `CreateEventDto.typeId`. */
+  @IsOptional() @IsString() @Length(0, 40) typeId?: string;
   @IsOptional() @IsString() @Length(1, 80) opponent?: string;
   @IsOptional() @IsBoolean() isHome?: boolean;
   @IsOptional() @IsString() @Length(1, 40) competitionId?: string;
