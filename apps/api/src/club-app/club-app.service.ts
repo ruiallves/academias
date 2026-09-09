@@ -2,6 +2,7 @@ import { createHash, randomBytes } from "node:crypto";
 import {
   BadRequestException,
   ConflictException,
+  ForbiddenException,
   Injectable,
   NotFoundException,
   UnauthorizedException,
@@ -13,6 +14,7 @@ import { AuthService } from "../auth/auth.service";
 import { SupabaseJwtService } from "../auth/supabase-jwt.service";
 import { SupabaseAccountsService } from "../auth/supabase-accounts.service";
 import { BillingService } from "../billing/billing.service";
+import { MemberFeesService, mesesAteFimDaEpoca, rotulo } from "../members/member-fees.service";
 
 /**
  * A app do clube — contextos e a área de sócio.
@@ -54,6 +56,7 @@ export class ClubAppService {
     private readonly auth: AuthService,
     private readonly accounts: SupabaseAccountsService,
     private readonly billing: BillingService,
+    private readonly quotas: MemberFeesService,
     private readonly config: ConfigService,
   ) {}
 
@@ -181,7 +184,9 @@ export class ClubAppService {
       const agora = new Date();
 
       const [tier, fees, jogo, noticias, sondagens, votos] = await Promise.all([
-        socio.tierId ? db.memberTier.findFirst({ where: { id: socio.tierId }, select: { name: true } }) : null,
+        socio.tierId
+          ? db.memberTier.findFirst({ where: { id: socio.tierId }, select: { name: true, feeCents: true, archivedAt: true } })
+          : null,
         db.memberFee.findMany({
           where: { memberId: socio.id },
           orderBy: [{ period: "desc" }],
@@ -232,6 +237,26 @@ export class ClubAppService {
 
       const meusVotos = new Map(votos.map((v) => [v.pollId, v.optionId]));
 
+      /*
+       * Os meses que o sócio pode pagar já: do corrente até Julho, fim da
+       * época. Os que já têm quota trazem-na; os outros são só a promessa —
+       * "Outubro, 5 €" — e a quota nasce quando ele carregar em pagar
+       * (`garantirDoSocio`). Sem categoria com preço não se promete valor
+       * nenhum: `amountCents` vem nulo e a app explica em vez de inventar.
+       */
+      const porPeriodo = new Map(fees.map((f) => [f.period, f]));
+      const precoMes = tier && !tier.archivedAt ? tier.feeCents : null;
+      const upcoming = mesesAteFimDaEpoca(agora).map((period) => {
+        const fee = porPeriodo.get(period);
+        return {
+          period,
+          label: fee?.label ?? rotulo(period),
+          feeId: fee?.id ?? null,
+          amountCents: fee?.amountCents ?? precoMes,
+          status: fee?.status ?? null,
+        };
+      });
+
       return {
         academy: {
           name: academia?.name ?? "",
@@ -240,7 +265,7 @@ export class ClubAppService {
           logoUrl: academia?.logoUrl ?? null,
           signalColor: academia?.signalColor ?? "#0f6b62",
           cardEnabled: academia?.memberCardEnabled ?? true,
-          cardQrEnabled: academia?.memberCardQrEnabled ?? true,
+          cardQrEnabled: academia?.memberCardQrEnabled ?? false,
           /*
            * Se há por onde pagar online. A chave em si nunca sai daqui — a app
            * só precisa de saber se mostra o botão.
@@ -255,6 +280,7 @@ export class ClubAppService {
           number: socio.number,
           status: socio.status,
           tierName: tier?.name ?? null,
+          tierFeeCents: precoMes,
           email: socio.email,
           phone: socio.phone ? `${socio.phoneCountry} ${socio.phone}` : null,
           memberSince: socio.approvedAt ?? socio.createdAt,
@@ -268,6 +294,7 @@ export class ClubAppService {
           ...f,
           overdue: f.status === "OPEN" && Boolean(f.dueOn && f.dueOn < agora),
         })),
+        upcoming,
         nextMatch: jogo
           ? {
               id: jogo.id,
@@ -357,6 +384,41 @@ export class ClubAppService {
       method as PaymentMethod,
       payerPhone,
     );
+  }
+
+  /**
+   * Pagar um **mês** — a quota nasce se ainda ninguém a lançou.
+   *
+   * É o caminho de "pagar até Julho": o sócio escolhe Outubro em Setembro, a
+   * direcção ainda não gerou Outubro, e o dinheiro não deve esperar por isso.
+   * Só se oferece do mês corrente até ao fim da época — pagar Março de 2024
+   * a partir da app era criar história à mão, e isso é trabalho da consola.
+   */
+  async pagarMes(
+    authorization: string | undefined,
+    slug: string,
+    period: string,
+    method: string,
+    payerPhone?: string,
+  ) {
+    const eu = await this.identidade(authorization);
+    const academyId = await this.academiaDe(slug);
+
+    if (method !== "MBWAY" && method !== "MULTIBANCO") {
+      throw new BadRequestException("Método de pagamento desconhecido");
+    }
+    if (!mesesAteFimDaEpoca().includes(period)) {
+      throw new BadRequestException("Só podes pagar do mês corrente até ao fim da época");
+    }
+
+    const { socioId, feeId } = await this.prisma.runAs(academyId, async (db) => {
+      const socio = await this.socioDe(db, eu.userId);
+      if (socio.status !== "ACTIVE") throw new ForbiddenException("Só um sócio activo paga quotas");
+      const feeId = await this.quotas.garantirDoSocio(db, academyId, socio.id, period);
+      return { socioId: socio.id, feeId };
+    });
+
+    return this.billing.startMemberFeePayment(academyId, socioId, feeId, method as PaymentMethod, payerPhone);
   }
 
   /* ------------------------------------------------------------------------ */

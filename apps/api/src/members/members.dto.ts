@@ -28,7 +28,6 @@ import { Type } from "class-transformer";
 
 const SEXES = ["FEMALE", "MALE", "UNSPECIFIED"] as const;
 const DOCS = ["CC", "PASSPORT", "RESIDENCE", "OTHER"] as const;
-const PERIODS = ["MONTHLY", "QUARTERLY", "ANNUAL", "ONCE"] as const;
 const STATUSES = ["PENDING", "ACTIVE", "SUSPENDED", "CANCELLED"] as const;
 
 export class MemberSignupDto {
@@ -141,9 +140,8 @@ export class MemberTierInputDto {
   @IsString() @Length(2, 60) name!: string;
   @IsOptional() @IsString() @Length(0, 240) description?: string;
   @IsOptional() @IsArray() @ArrayMaxSize(12) @IsString({ each: true }) benefits?: string[];
-  /** Em cêntimos, como todo o dinheiro no produto. */
+  /** Em cêntimos, **por mês** — as quotas são mensais. */
   @IsOptional() @IsInt() @Min(0) @Max(10_000_000) feeCents?: number;
-  @IsOptional() @IsIn(PERIODS as unknown as string[]) period?: string;
   @IsOptional() @IsInt() @Min(0) @Max(120) minAge?: number;
   @IsOptional() @IsInt() @Min(0) @Max(120) maxAge?: number;
   @IsOptional() @IsBoolean() isPublic?: boolean;
@@ -270,4 +268,49 @@ export class MemberCreateDto {
   @IsOptional() @IsIn(STATUSES as unknown as string[]) status?: string;
   @IsOptional() @IsBoolean() acceptedTerms?: boolean;
   @IsOptional() @IsString() @Length(0, 2000) notes?: string;
+}
+
+/**
+ * Lançar quotas a um sócio, à mão — um valor, vários meses.
+ *
+ * O formato do mês é validado aqui e não só no serviço: `AAAA-MM` é o
+ * vocabulário inteiro, e é o que o unique `(memberId, period)` protege. Um
+ * período escrito à mão fora deste formato criava uma quota que nenhuma
+ * geração futura voltaria a encontrar — e ninguém daria por isso.
+ */
+export class MemberFeeCreateDto {
+  @IsArray()
+  @ArrayMaxSize(36, { message: "No máximo 36 meses de cada vez" })
+  @Matches(/^\d{4}-(0[1-9]|1[0-2])$/, {
+    each: true,
+    message: "Mês inválido — usa AAAA-MM, por exemplo 2026-09",
+  })
+  periods!: string[];
+
+  /** Em cêntimos, como todo o dinheiro do sistema. Zero é uma quota isenta. */
+  @IsInt() @Min(0) @Max(1_000_000) amountCents!: number;
+
+  @IsOptional() @IsString() @Length(0, 500) notes?: string;
+}
+
+/** O menu "Marcar como paga / por pagar / Anular" — os três estados que se escolhem à mão. */
+export class MemberFeeStatusDto {
+  @IsIn(["OPEN", "SETTLED", "VOID"])
+  status!: "OPEN" | "SETTLED" | "VOID";
+}
+
+/**
+ * Os sócios a quem (re)enviar o convite da app.
+ *
+ * O tecto de 200 é o mesmo da importação: é o livro de um clube médio de uma
+ * vez, e acima disso é engano de quem clicou em "escolher todos" numa lista
+ * sem filtro. As recusas por ficha — sem email, já com conta — não vêm aqui:
+ * são do serviço, que as conta em vez de rebentar na primeira.
+ */
+export class MemberInviteManyDto {
+  @IsArray()
+  @ArrayMaxSize(200)
+  @IsString({ each: true })
+  @Length(1, 40, { each: true })
+  ids!: string[];
 }

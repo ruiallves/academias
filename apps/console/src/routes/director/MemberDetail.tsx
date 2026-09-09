@@ -1,14 +1,29 @@
-import { useCallback, useEffect, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
+import { createPortal } from "react-dom";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import { DialogField, dialogInputClass } from "@/components/Dialog";
 import { Empty, Loading, Monogram, Panel, PanelHead, Pill, cx, type Tone } from "@/components/primitives";
-import { ArrowLeft, Check, ChevronDown, CircleCheck, Mail, MapPin, Pencil, Phone, Trash2, Wallet } from "@/lib/icons";
+import { Segmented } from "@/components/filters";
+import { MemberFeeDialog } from "@/components/MemberFeeDialog";
+import {
+  ArrowLeft,
+  Check,
+  ChevronDown,
+  CircleCheck,
+  LayoutGrid,
+  Mail,
+  MapPin,
+  Pencil,
+  Phone,
+  Plus,
+  Trash2,
+  Wallet,
+} from "@/lib/icons";
 import { can } from "@/lib/permissions";
 import { useSession } from "@/session";
 import { money } from "@/lib/format";
 import {
   DOC_LABEL,
-  PERIOD_LABEL,
   SEX_LABEL,
   STATUS_LABEL,
   ageOf,
@@ -25,9 +40,8 @@ import {
   linkMemberAccount,
   unlinkMemberAccount,
   listMemberFees,
-  reopenFee,
-  settleFee,
-  voidFee,
+  mesPorExtenso,
+  setMemberFeeStatus,
   type MemberFeeRow,
 } from "@/lib/members";
 
@@ -58,6 +72,7 @@ export default function MemberDetail() {
   const [notFound, setNotFound] = useState(false);
   const [editing, setEditing] = useState(false);
   const [busy, setBusy] = useState(false);
+  const [tab, setTab] = useState<"overview" | "fees">("overview");
 
   const mayWrite = can(session, "member:write");
 
@@ -121,6 +136,15 @@ export default function MemberDetail() {
                 quebrar por omissão, e um só item de uma linha flexível não encolhe
                 abaixo do seu conteúdo — fica a espreitar para fora da ficha. */}
             {m.tier && <span className="max-w-full break-words text-meta text-ink-3">{m.tier.name}</span>}
+            {/*
+              O estado das quotas ao lado do estado do sócio.
+
+              A ficha dizia a categoria e mais nada — "Sócio efectivo, 5 €/mês".
+              Isso é o preço, não o estado, e quem abre a ficha ao balcão quer
+              saber se ele deve alguma coisa. A pastilha responde numa palavra e
+              leva ao separador que tem o resto.
+            */}
+            <QuotasPill fees={m.fees} onOpen={() => setTab("fees")} />
             {m.source === "site" && <span className="text-meta text-ink-4">· inscrição pelo site</span>}
           </div>
           <h1 className="break-words text-page text-ink">{m.name}</h1>
@@ -165,6 +189,28 @@ export default function MemberDetail() {
         </div>
       )}
 
+      {/*
+        Dois separadores, como na ficha do atleta.
+
+        A ficha tinha o livro de quotas encavalitado na coluna da direita, entre
+        a categoria e a app do clube — e uma pessoa que vem responder a "ele
+        pagou?" tinha de o procurar a meio de uma página de dados pessoais. As
+        quotas são um assunto com o seu próprio tempo (lançar, receber, anular),
+        e por isso ganham o seu sítio.
+      */}
+      {!editing && (
+        <div className="mb-3">
+          <Segmented
+            value={tab}
+            onChange={setTab}
+            options={[
+              { value: "overview" as const, label: "Visão geral", icon: LayoutGrid },
+              { value: "fees" as const, label: "Quotas", icon: Wallet },
+            ]}
+          />
+        </div>
+      )}
+
       {editing ? (
         <EditPanel
           member={m}
@@ -174,6 +220,8 @@ export default function MemberDetail() {
           }}
           onCancel={() => setEditing(false)}
         />
+      ) : tab === "fees" ? (
+        <QuotasTab member={m} mayWrite={mayWrite} onChanged={load} />
       ) : (
         <div className="grid gap-3 lg:grid-cols-[minmax(0,1.2fr)_minmax(0,1fr)]">
           <div className="space-y-3">
@@ -219,9 +267,7 @@ export default function MemberDetail() {
           </div>
 
           <div className="space-y-3">
-            <QuotaPanel member={m} tiers={tiers} mayWrite={mayWrite} busy={busy} onChange={set} />
-
-            <QuotasLancadasPanel memberId={m.id} mayWrite={mayWrite} />
+            <QuotaPanel member={m} tiers={tiers} mayWrite={mayWrite} busy={busy} onChange={set} onVerQuotas={() => setTab("fees")} />
 
             <AppDoClubePanel member={m} mayWrite={mayWrite} onChanged={load} />
 
@@ -275,29 +321,167 @@ export default function MemberDetail() {
 /* -------------------------------------------------------------------------- */
 
 /**
- * A quota.
+ * "Está em dia?" — numa pastilha, ao lado do estado do sócio.
  *
- * ## O que este painel diz, e o que não diz
+ * Quatro respostas, e nenhuma delas é inventada:
  *
- * Diz o que o sócio **deve pagar** — o valor e a periodicidade da categoria — e
- * quando é a próxima renovação, calculada a partir da data de aprovação. Isso sai
- * de dados reais.
- *
- * O que **não** diz é se já pagou. A plataforma ainda não emite cobranças de
- * quota: as mensalidades que existem são as dos atletas, ligadas a `Charge`, e um
- * sócio não é um atleta. Escrever aqui "em dia" sem uma cobrança por trás seria
- * inventar — e é o tipo de número que um clube usa para decidir quem vota numa
- * assembleia.
+ * - **em atraso** — há quotas por pagar cujo prazo já passou. É o único caso
+ *   vermelho, porque é o único que é um problema.
+ * - **por pagar** — há quotas em aberto ainda dentro do prazo. Amarelo: é
+ *   trabalho a acontecer, não uma falha.
+ * - **em dia** — nada em aberto e o mês corrente pago.
+ * - **por lançar** — o mês corrente não tem quota nenhuma. Não se diz que
+ *   o sócio deve: ninguém lhe cobrou. É trabalho do clube, e o texto di-lo.
  */
+function QuotasPill({ fees, onOpen }: { fees: Data["fees"]; onOpen: () => void }) {
+  const { tone, label } =
+    fees.overdueCount > 0
+      ? { tone: "risk" as Tone, label: `${money(fees.openCents)} em atraso` }
+      : fees.openCount > 0
+        ? { tone: "warn" as Tone, label: `${money(fees.openCents)} por pagar` }
+        : fees.currentStatus === "settled"
+          ? { tone: "ok" as Tone, label: "Quotas em dia" }
+          : fees.currentStatus === "missing"
+            ? { tone: "neutral" as Tone, label: "Quota do mês por lançar" }
+            : { tone: "ok" as Tone, label: "Sem quotas em aberto" };
+
+  return (
+    <button type="button" onClick={onOpen} className="rounded-full" title="Ver as quotas">
+      <Pill tone={tone}>{label}</Pill>
+    </button>
+  );
+}
+
+/**
+ * O separador das quotas — a situação em cima, o livro em baixo.
+ *
+ * A situação responde à pergunta; o livro mostra as linhas que a justificam, e
+ * é onde se recebe, se anula e se lança. Um sítio só, com o tempo todo dele.
+ */
+function QuotasTab({ member, mayWrite, onChanged }: { member: Data; mayWrite: boolean; onChanged: () => void }) {
+  const [lancar, setLancar] = useState(false);
+  /*
+   * Uma chave que muda força o livro a recarregar-se.
+   *
+   * O painel do livro busca as suas linhas sozinho (é a lista dele); depois de
+   * lançar quotas, remontá-lo é mais honesto do que passar-lhe um sinal para
+   * ele decidir o que fazer com ele — e é o gesto que o `key` do React existe
+   * para exprimir.
+   */
+  const [versao, setVersao] = useState(0);
+
+  return (
+    <div className="space-y-3">
+      <SituacaoPanel fees={member.fees} tier={member.tier} />
+
+      <QuotasLancadasPanel
+        key={versao}
+        memberId={member.id}
+        mayWrite={mayWrite}
+        onChanged={onChanged}
+        onLancar={mayWrite ? () => setLancar(true) : undefined}
+      />
+
+      {lancar && (
+        <MemberFeeDialog
+          memberId={member.id}
+          memberName={member.name}
+          onClose={() => setLancar(false)}
+          onDone={() => {
+            setLancar(false);
+            setVersao((v) => v + 1);
+            onChanged();
+          }}
+        />
+      )}
+    </div>
+  );
+}
+
+/**
+ * A situação, em números — o que a pastilha do cabeçalho diz em duas palavras.
+ *
+ * O período corrente merece linha própria: é a pergunta que se faz ao balcão
+ * ("este mês está pago?"), e é diferente do total em dívida, que pode vir de
+ * três meses atrás.
+ */
+function SituacaoPanel({ fees, tier }: { fees: Data["fees"]; tier: Data["tier"] }) {
+  return (
+    <Panel>
+      <PanelHead
+        title="Situação"
+        hint={tier ? `${tier.name}${tier.feeCents != null ? ` · ${money(tier.feeCents)}/mês` : ""}` : "sem categoria"}
+      />
+      <div className="grid gap-x-6 px-5 py-1.5 sm:grid-cols-2">
+        <Fact label={`Este mês · ${mesPorExtenso(fees.currentPeriod)}`}>
+          {fees.currentStatus === "settled" ? (
+            <span className="flex items-center gap-1.5 text-ok">
+              <CircleCheck className="size-3.5 shrink-0" strokeWidth={2} />
+              Paga
+            </span>
+          ) : fees.currentStatus === "open" ? (
+            <span className="text-warn">Por pagar</span>
+          ) : fees.currentStatus === "void" ? (
+            <span className="text-ink-3">Anulada</span>
+          ) : (
+            <span className="text-ink-3">Ainda não lançada</span>
+          )}
+        </Fact>
+
+        <Fact label="Por pagar">
+          {fees.openCount === 0 ? (
+            <span className="text-ink-3">Nada em aberto</span>
+          ) : (
+            <span className={fees.overdueCount > 0 ? "text-risk" : "text-warn"}>
+              <span className="tabular">{money(fees.openCents)}</span>
+              {" · "}
+              {fees.openCount} {fees.openCount === 1 ? "quota" : "quotas"}
+              {fees.overdueCount > 0 ? ` · ${fees.overdueCount} fora de prazo` : ""}
+            </span>
+          )}
+        </Fact>
+
+        <Fact label="Última paga" wide>
+          {fees.lastSettled ? (
+            <>
+              {fees.lastSettled.label ?? fees.lastSettled.period}
+              {fees.lastSettled.settledAt && (
+                <span className="text-ink-3">
+                  {" · "}
+                  {new Date(fees.lastSettled.settledAt).toLocaleDateString("pt-PT")}
+                </span>
+              )}
+            </>
+          ) : (
+            <PorPreencher />
+          )}
+        </Fact>
+      </div>
+    </Panel>
+  );
+}
+
 /**
  * As quotas lançadas — o livro, não a configuração.
  *
  * O painel de cima ("Quota") diz quanto a categoria custa; este diz o que foi
- * mesmo cobrado e o que falta. Liquidar aqui é o balcão — numerário ou
- * transferência; o pagamento online liquida sozinho pelo webhook, e o botão de
- * gerar vive na lista de sócios porque se gera para o clube inteiro.
+ * mesmo cobrado e o que falta. O estado muda pelo menu da pastilha — "Marcar
+ * como paga / por pagar / Anular", o mesmo gesto das mensalidades dos atletas;
+ * o pagamento online liquida sozinho pelo webhook, e o botão de gerar vive na
+ * lista de sócios porque se gera para o clube inteiro.
  */
-function QuotasLancadasPanel({ memberId, mayWrite }: { memberId: string; mayWrite: boolean }) {
+function QuotasLancadasPanel({
+  memberId,
+  mayWrite,
+  onChanged,
+  onLancar,
+}: {
+  memberId: string;
+  mayWrite: boolean;
+  /** Recebeu, anulou, reabriu: o cabeçalho tem de reler a situação. */
+  onChanged?: () => void;
+  onLancar?: () => void;
+}) {
   const [fees, setFees] = useState<MemberFeeRow[] | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
   const [erro, setErro] = useState<string | null>(null);
@@ -312,13 +496,17 @@ function QuotasLancadasPanel({ memberId, mayWrite }: { memberId: string; mayWrit
     carregar();
   }, [carregar]);
 
-  async function agir(id: string, fn: () => Promise<unknown>) {
+  async function mudar(fee: MemberFeeRow, status: MemberFeeRow["status"]) {
     if (busy) return;
-    setBusy(id);
+    setBusy(fee.id);
     setErro(null);
     try {
-      await fn();
+      await setMemberFeeStatus(fee.id, status);
       carregar();
+      // A situação lá em cima deriva destas linhas: sem isto, receber uma quota
+      // deixava a pastilha do cabeçalho a dizer "em atraso" sobre dinheiro que
+      // acabou de entrar.
+      onChanged?.();
     } catch (e) {
       setErro(e instanceof Error ? e.message : "Não foi possível.");
     } finally {
@@ -326,19 +514,24 @@ function QuotasLancadasPanel({ memberId, mayWrite }: { memberId: string; mayWrit
     }
   }
 
-  const TONE: Record<MemberFeeRow["status"], Tone> = { OPEN: "warn", SETTLED: "ok", VOID: "neutral" };
-  const LABEL: Record<MemberFeeRow["status"], string> = { OPEN: "Por pagar", SETTLED: "Paga", VOID: "Anulada" };
-
   return (
     <Panel>
-      <PanelHead title="Quotas lançadas" hint={fees ? `${fees.length}` : undefined} />
+      <PanelHead title="Quotas lançadas" hint={fees ? `${fees.length}` : undefined}>
+        {onLancar && (
+          <button type="button" className="ctl-ghost" onClick={onLancar}>
+            <Plus className="size-3.5" strokeWidth={2} />
+            Lançar quotas
+          </button>
+        )}
+      </PanelHead>
       {erro && <p className="px-5 pt-2 text-meta text-risk">{erro}</p>}
       {fees === null ? (
         <p className="px-5 py-3 text-meta text-ink-3">A carregar…</p>
       ) : fees.length === 0 ? (
         <p className="px-5 py-3 text-meta leading-relaxed text-ink-3">
-          Ainda nenhuma. Gera-se na lista de sócios — "Gerar quotas" lança a do período corrente a
-          todos os activos com categoria.
+          Ainda nenhuma. <strong className="text-ink-2">Lançar quotas</strong> cria as deste sócio — inclusive
+          períodos em atraso; "Gerar quotas", na lista, lança a do período corrente a todos os activos com
+          categoria.
         </p>
       ) : (
         <ul className="px-5 py-1.5">
@@ -348,60 +541,149 @@ function QuotasLancadasPanel({ memberId, mayWrite }: { memberId: string; mayWrit
                 <span className="block truncate text-body text-ink">{f.label ?? f.period}</span>
                 <span className="block text-meta text-ink-3">
                   {money(f.amountCents)}
-                  {f.status === "SETTLED" && f.method === "CASH" && " · numerário"}
+                  {f.status === "SETTLED" && f.method === "CASH" && " · marcada à mão"}
                   {f.status === "SETTLED" && f.method === "TRANSFER" && " · transferência"}
                   {f.status === "SETTLED" && f.method === "MBWAY" && " · MB Way"}
                   {f.status === "SETTLED" && f.method === "MULTIBANCO" && " · Multibanco"}
                 </span>
               </span>
-              <Pill tone={TONE[f.status]}>{LABEL[f.status]}</Pill>
-              {mayWrite && f.status === "OPEN" && (
-                <span className="flex shrink-0 items-center gap-1">
-                  <button
-                    type="button"
-                    disabled={busy === f.id}
-                    onClick={() => void agir(f.id, () => settleFee(f.id, "CASH"))}
-                    className="ctl-ghost"
-                    title="Recebido em numerário ao balcão"
-                  >
-                    Numerário
-                  </button>
-                  <button
-                    type="button"
-                    disabled={busy === f.id}
-                    onClick={() => void agir(f.id, () => settleFee(f.id, "TRANSFER"))}
-                    className="ctl-ghost"
-                    title="Recebido por transferência"
-                  >
-                    Transf.
-                  </button>
-                  <button
-                    type="button"
-                    disabled={busy === f.id}
-                    onClick={() => void agir(f.id, () => voidFee(f.id))}
-                    className="ctl-ghost text-risk"
-                    title="Anular — foi gerada por engano ou o sócio saiu"
-                  >
-                    Anular
-                  </button>
-                </span>
-              )}
-              {mayWrite && f.status !== "OPEN" && f.method !== "MBWAY" && f.method !== "MULTIBANCO" && (
-                <button
-                  type="button"
-                  disabled={busy === f.id}
-                  onClick={() => void agir(f.id, () => reopenFee(f.id))}
-                  className="ctl-ghost shrink-0"
-                  title="Reabrir — foi marcada por engano"
-                >
-                  Reabrir
-                </button>
+              {/* Uma quota paga online não se mexe daqui: o dinheiro está na
+                  euPago, e desfazer isso é um estorno. A pastilha fica muda. */}
+              {mayWrite && !(f.status === "SETTLED" && f.method !== null && f.method !== "CASH") ? (
+                <MemberFeeStatusControl fee={f} busy={busy === f.id} onChoose={(status) => void mudar(f, status)} />
+              ) : (
+                <Pill tone={QUOTA_TONE[f.status]}>{QUOTA_LABEL[f.status]}</Pill>
               )}
             </li>
           ))}
         </ul>
       )}
     </Panel>
+  );
+}
+
+const QUOTA_TONE: Record<MemberFeeRow["status"], Tone> = { OPEN: "warn", SETTLED: "ok", VOID: "neutral" };
+const QUOTA_LABEL: Record<MemberFeeRow["status"], string> = { OPEN: "Por pagar", SETTLED: "Paga", VOID: "Anulada" };
+const QUOTA_TONE_CLASS: Record<Tone, string> = {
+  ok: "bg-ok-soft text-ok",
+  warn: "bg-warn-soft text-warn",
+  risk: "bg-risk-soft text-risk",
+  neutral: "bg-sunken text-ink-2",
+  signal: "bg-signal-soft text-signal-ink",
+};
+
+/**
+ * As três decisões que se tomam à mão sobre uma quota — as mesmas das
+ * mensalidades dos atletas (`FeeStatusControl` em `Fees.tsx`), com o mesmo
+ * desenho: a pastilha de estado é o botão, e o menu abre num portal para não
+ * ficar cortado pelo painel.
+ */
+const QUOTA_OPTIONS: { value: MemberFeeRow["status"]; label: string }[] = [
+  { value: "SETTLED", label: "Marcar como paga" },
+  { value: "OPEN", label: "Marcar por pagar" },
+  { value: "VOID", label: "Anular" },
+];
+
+/** Altura aproximada do menu — três opções fixas, sempre o mesmo tamanho. */
+const QUOTA_MENU_HEIGHT = 120;
+
+function MemberFeeStatusControl({
+  fee,
+  busy,
+  onChoose,
+}: {
+  fee: MemberFeeRow;
+  busy: boolean;
+  onChoose: (status: MemberFeeRow["status"]) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const [pos, setPos] = useState<{ left: number; top?: number; bottom?: number } | null>(null);
+  const btnRef = useRef<HTMLButtonElement>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    // Scroll ou redimensionar fecha o menu — não vale a pena persegui-lo pela página.
+    const close = () => setOpen(false);
+    window.addEventListener("scroll", close, true);
+    window.addEventListener("resize", close);
+    return () => {
+      window.removeEventListener("scroll", close, true);
+      window.removeEventListener("resize", close);
+    };
+  }, [open]);
+
+  const toggle = () => {
+    const r = btnRef.current?.getBoundingClientRect();
+    if (r) {
+      const left = Math.max(8, r.right - 180);
+      const spaceBelow = window.innerHeight - r.bottom;
+      // Cabe por baixo? Abre por baixo. Senão, e se couber por cima, abre por cima.
+      if (spaceBelow >= QUOTA_MENU_HEIGHT + 8 || r.top < QUOTA_MENU_HEIGHT + 8) {
+        setPos({ top: r.bottom + 4, left });
+      } else {
+        setPos({ bottom: window.innerHeight - r.top + 4, left });
+      }
+    }
+    setOpen((v) => !v);
+  };
+
+  function choose(value: MemberFeeRow["status"]) {
+    setOpen(false);
+    if (value === fee.status || busy) return;
+    onChoose(value);
+  }
+
+  return (
+    <>
+      <button
+        ref={btnRef}
+        type="button"
+        onClick={toggle}
+        disabled={busy}
+        aria-haspopup="menu"
+        aria-expanded={open}
+        title="Alterar estado"
+        className={cx(
+          "inline-flex shrink-0 items-center gap-1 rounded-full px-2 py-0.5 text-[11px] leading-tight font-semibold transition-opacity duration-[120ms] hover:opacity-75 disabled:opacity-50",
+          QUOTA_TONE_CLASS[QUOTA_TONE[fee.status]],
+        )}
+      >
+        {QUOTA_LABEL[fee.status]}
+        <ChevronDown className="size-3" strokeWidth={2.5} />
+      </button>
+
+      {open &&
+        pos &&
+        createPortal(
+          <>
+            <div className="fixed inset-0 z-40" onClick={() => setOpen(false)} aria-hidden />
+            <div
+              role="menu"
+              style={{ top: pos.top, bottom: pos.bottom, left: pos.left }}
+              className="fixed z-50 w-[180px] rounded-[var(--radius-panel)] border border-line bg-surface p-1 shadow-[var(--shadow-pop)]"
+            >
+              {QUOTA_OPTIONS.map((o) => (
+                <button
+                  key={o.value}
+                  type="button"
+                  role="menuitem"
+                  onClick={() => choose(o.value)}
+                  className={cx(
+                    "flex w-full items-center gap-2 rounded-[6px] px-2.5 py-1.5 text-left text-body transition-colors duration-[120ms] hover:bg-sunken",
+                    o.value === fee.status ? "text-ink" : "text-ink-2",
+                  )}
+                >
+                  <span className="flex size-4 shrink-0 items-center justify-center text-signal-ink">
+                    {o.value === fee.status && <Check className="size-3.5" strokeWidth={2.5} />}
+                  </span>
+                  <span className="flex-1">{o.label}</span>
+                </button>
+              ))}
+            </div>
+          </>,
+          document.body,
+        )}
+    </>
   );
 }
 
@@ -492,42 +774,43 @@ function AppDoClubePanel({ member, mayWrite, onChanged }: { member: Data; mayWri
   );
 }
 
+/**
+ * A quota — o preço, não o estado.
+ *
+ * Diz o que a categoria custa por mês e deixa mudar a categoria. Se está paga
+ * é pergunta para o separador "Quotas", onde vive o livro; aqui só o que se
+ * configura.
+ */
 function QuotaPanel({
   member,
   tiers,
   mayWrite,
   busy,
   onChange,
+  onVerQuotas,
 }: {
   member: Data;
   tiers: MemberTier[];
   mayWrite: boolean;
   busy: boolean;
   onChange: (body: Record<string, unknown>) => void;
+  onVerQuotas: () => void;
 }) {
-  const renewal = nextRenewal(member);
-
   return (
     <Panel>
-      <PanelHead title="Quota" hint={member.tier ? PERIOD_LABEL[member.tier.period] : undefined} />
+      <PanelHead title="Quota" hint={member.tier ? "por mês" : undefined} />
 
       <div className="px-5 py-4">
         <div className="flex items-baseline gap-2">
           <span className="text-metric text-ink tabular">
             {member.tier?.feeCents != null ? money(member.tier.feeCents) : "—"}
           </span>
-          {member.tier && <span className="text-meta text-ink-3">{PERIOD_LABEL[member.tier.period]}</span>}
+          {member.tier && <span className="text-meta text-ink-3">por mês</span>}
         </div>
 
         {member.tier?.feeCents == null && (
           <p className="mt-1 text-meta text-ink-3">
             {member.tier ? "A categoria ainda não tem valor definido." : "Sem categoria atribuída."}
-          </p>
-        )}
-
-        {renewal && (
-          <p className="mt-1 text-meta text-ink-3">
-            Próxima renovação a <span className="text-ink-2">{renewal.toLocaleDateString("pt-PT")}</span>
           </p>
         )}
       </div>
@@ -546,7 +829,7 @@ function QuotaPanel({
               {tiers.map((t) => (
                 <option key={t.id} value={t.id}>
                   {t.name}
-                  {t.feeCents != null ? ` — ${money(t.feeCents)} ${PERIOD_LABEL[t.period]}` : ""}
+                  {t.feeCents != null ? ` — ${money(t.feeCents)}/mês` : ""}
                 </option>
               ))}
             </select>
@@ -554,37 +837,18 @@ function QuotaPanel({
         </div>
       )}
 
-      {/*
-        Dito por palavras em vez de um "em dia" verde a fingir. Ver o comentário
-        do componente.
-      */}
       <p className="flex items-start gap-2 border-t border-line px-5 py-3 text-meta leading-relaxed text-ink-3">
         <Wallet className="mt-0.5 size-3.5 shrink-0 text-ink-4" strokeWidth={1.75} />
-        As cobranças de quota ainda não são emitidas pela plataforma — o valor acima é o que a categoria
-        define, não o que está pago.
+        <span>
+          O valor é o que a categoria define. O que está pago, e o que falta, está em{" "}
+          <button type="button" onClick={onVerQuotas} className="text-signal-ink underline-offset-2 hover:underline">
+            Quotas
+          </button>
+          .
+        </span>
       </p>
     </Panel>
   );
-}
-
-/**
- * A data da próxima renovação.
- *
- * Conta a partir da aprovação, que é quando o vínculo começou — não da inscrição:
- * entre uma e outra podem passar semanas, e cobrar por um período em que ninguém
- * era ainda sócio é a forma mais rápida de perder um.
- */
-function nextRenewal(m: Data): Date | null {
-  if (!m.approvedAt || !m.tier || m.tier.period === "ONCE" || m.status !== "ACTIVE") return null;
-
-  const months = { MONTHLY: 1, QUARTERLY: 3, ANNUAL: 12, ONCE: 0 }[m.tier.period];
-  const start = new Date(m.approvedAt);
-  const next = new Date(start);
-
-  // Avança em blocos até passar de hoje: um sócio de 2019 renova este ano, não em
-  // 2020.
-  while (next <= new Date()) next.setMonth(next.getMonth() + months);
-  return next;
 }
 
 /* -------------------------------------------------------------------------- */

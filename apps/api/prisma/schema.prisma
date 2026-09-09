@@ -86,7 +86,7 @@ model Academy {
   /// causa disso seria tirar-lhes a parte que queriam.
   memberCardEnabled   Boolean @default(true)
   /// O QR identifica o sócio por um token opaco — nunca leva dados pessoais.
-  memberCardQrEnabled Boolean @default(true)
+  memberCardQrEnabled Boolean @default(false)
 
   /// ## A página de adesão a sócio, escrita pelo clube
   ///
@@ -2914,11 +2914,11 @@ model MemberTier {
   /// O que dá direito. Uma linha por benefício.
   benefits    String[] @default([])
 
-  /// Quota, em cêntimos. Nulo enquanto o clube não a fixar — um tipo sem preço
-  /// continua a poder existir e a receber inscrições.
+  /// Quota **por mês**, em cêntimos. Nulo enquanto o clube não a fixar — um
+  /// tipo sem preço continua a poder existir e a receber inscrições. A quota é
+  /// mensal e só mensal; a periodicidade por categoria foi-se embora na
+  /// migração `quotas_mensais`, e o porquê está lá.
   feeCents Int?
-  /// Com que frequência se paga.
-  period   MemberFeePeriod @default(ANNUAL)
 
   /// Idade mínima e máxima, quando a categoria as tem ("Juvenil até aos 17").
   /// Servem para explicar e para validar o formulário — não para esconder.
@@ -2939,14 +2939,6 @@ model MemberTier {
 
   @@unique([academyId, name])
   @@index([academyId])
-}
-
-enum MemberFeePeriod {
-  MONTHLY
-  QUARTERLY
-  ANNUAL
-  /// Pago uma vez. "Sócio vitalício".
-  ONCE
 }
 
 enum MemberStatus {
@@ -3123,10 +3115,12 @@ model MemberFee {
   memberId  String
   member    Member  @relation(fields: [memberId], references: [id], onDelete: Cascade)
 
-  /// "2026" (anual), "2026-09" (mensal), "2026-T3" (trimestral). Texto e não
-  /// data: é um rótulo de período, e ordena bem lexicograficamente.
+  /// O mês, `AAAA-MM` — as quotas são mensais e só mensais (ver a migração
+  /// `quotas_mensais`). Texto e não data: é um rótulo, e ordena bem
+  /// lexicograficamente. Linhas antigas podem trazer `2026` ou `2026-T3`;
+  /// ficam como história e a situação do sócio ignora-as.
   period String
-  /// O que aparece ao sócio — "Quota anual 2026". Derivado na geração.
+  /// O que aparece ao sócio — "Quota de Setembro 2026". Derivado na geração.
   label  String?
 
   amountCents Int

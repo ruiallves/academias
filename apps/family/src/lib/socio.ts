@@ -20,6 +20,21 @@ export type SocioFee = {
   overdue: boolean;
 };
 
+/**
+ * Um mês que o sócio pode pagar já — do corrente até Julho, fim da época.
+ *
+ * `feeId` nulo é um mês que ninguém lançou ainda: a quota nasce quando ele
+ * carregar em pagar, com o valor da categoria. `amountCents` nulo é o sócio
+ * sem categoria com preço — não há valor que se possa prometer.
+ */
+export type SocioMes = {
+  period: string;
+  label: string;
+  feeId: string | null;
+  amountCents: number | null;
+  status: "OPEN" | "SETTLED" | "VOID" | null;
+};
+
 export type SocioPoll = {
   id: string;
   question: string;
@@ -46,12 +61,15 @@ export type SocioInicio = {
     number: number | null;
     status: "PENDING" | "ACTIVE" | "SUSPENDED" | "CANCELLED";
     tierName: string | null;
+    /** O valor mensal da categoria — nulo sem categoria ou sem preço. */
+    tierFeeCents: number | null;
     email: string | null;
     phone: string | null;
     memberSince: string;
     cardQr: string | null;
   };
   fees: SocioFee[];
+  upcoming: SocioMes[];
   nextMatch: {
     id: string;
     startsAt: string;
@@ -109,6 +127,10 @@ export type PagamentoIniciado = {
 
 export const pagarQuota = (feeId: string, method: "MBWAY" | "MULTIBANCO", phone?: string) =>
   apiPost<PagamentoIniciado>(`/api/socio/quotas/${feeId}/pagar`, { method, ...(phone ? { phone } : {}) });
+
+/** Pagar um mês que ainda não tem quota — o servidor cria-a e inicia o pagamento. */
+export const pagarMes = (period: string, method: "MBWAY" | "MULTIBANCO", phone?: string) =>
+  apiPost<PagamentoIniciado>(`/api/socio/quotas/mes/${period}/pagar`, { method, ...(phone ? { phone } : {}) });
 
 export const votar = (pollId: string, optionId: string) =>
   apiPost<{ ok: true }>(`/api/socio/sondagens/${pollId}/votar`, { optionId });

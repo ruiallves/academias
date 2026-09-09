@@ -65,6 +65,18 @@ export class ClubAppController {
     return this.app.pagarQuota(auth, slug ?? "", id, body.method, body.phone);
   }
 
+  /** Pagar um mês (`AAAA-MM`) — cria a quota se faltar. Ver `ClubAppService.pagarMes`. */
+  @Throttle({ default: { ttl: 60_000, limit: 10 } })
+  @Post("api/socio/quotas/mes/:period/pagar")
+  pagarMes(
+    @Headers("authorization") auth: string,
+    @Headers("x-academy-slug") slug: string,
+    @Param("period") period: string,
+    @Body() body: PagarQuotaDto,
+  ) {
+    return this.app.pagarMes(auth, slug ?? "", period, body.method, body.phone);
+  }
+
   @Throttle({ default: { ttl: 60_000, limit: 20 } })
   @Post("api/socio/sondagens/:id/votar")
   votar(

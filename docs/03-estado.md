@@ -1189,6 +1189,167 @@ JavaScript). Instruções por plataforma, detectadas pelo User-Agent. No computa
 ecrã dividido com o login — é também aqui que a sessão nasce e é entregue à
 consola.
 
+## Quotas de sócio — mensais, a situação, lançá-las à mão, e pagar na app
+
+A ficha do sócio dizia a **categoria** e mais nada: "Sócio efectivo, 5 €/mês".
+Isso é o preço, não o estado — e quem abre a ficha ao balcão quer saber se ele
+deve alguma coisa. O livro de quotas existia, mas encavalitado na coluna da
+direita entre a categoria e a app do clube: quem vinha responder a *"ele
+pagou?"* tinha de o procurar a meio de uma página de dados pessoais.
+
+**Uma quota é um mês — e só um mês.** A categoria tinha uma periodicidade
+(mensal, trimestral, anual, uma vez) e a quota nascia no formato dela: `2026-09`,
+`2026-T3`, `2026`, `vitalicia`. Parecia flexível; na prática partia tudo o que se
+apoiava em "o mês": a ficha não conseguia dizer "está em dia este mês", o ecrã
+de lançar atrasos mudava de unidade conforme a categoria (e para cinco das sete
+categorias do Life Club, anuais, *só deixava escolher o ano*), e a app do sócio
+não tinha como oferecer "paga até Julho". O clube fala em mensalidades. A
+migração `quotas_mensais` apaga `MemberTier.period` e o enum; `feeCents` passa a
+ser **por mês** (as categorias anuais ficaram com o valor antigo — o clube
+revê-o na ficha da categoria), o período é sempre `AAAA-MM`, e um `2026` ou
+`2026-T3` é recusado à entrada (`MemberFeeCreateDto`). As quotas antigas com
+período anual ficam como história: o rótulo diz o que eram, e a situação do
+sócio ignora-as ao procurar o mês corrente.
+
+**Dois separadores, como na ficha do atleta** — Visão geral e Quotas. As quotas
+são um assunto com o seu próprio tempo (lançar, receber, anular) e ganham o seu
+sítio; o cabeçalho leva uma pastilha com a resposta em duas palavras, e clicá-la
+abre o separador.
+
+**Quatro estados, e nenhum inventado.** É a distinção que faz o resumo valer:
+
+| | |
+|---|---|
+| **em atraso** (vermelho) | há quotas em aberto com o prazo passado — o único caso que é um problema |
+| **por pagar** (amarelo) | em aberto, ainda dentro do prazo: trabalho a acontecer, não uma falha |
+| **em dia** (verde) | nada em aberto e o mês corrente pago |
+| **por lançar** (neutro) | o mês corrente não tem quota nenhuma |
+
+`por lançar` **não é** `por pagar`: uma quota que ninguém lançou não é dívida do
+sócio, é trabalho por fazer do clube, e a ficha não pode dizer "deve" a quem
+nunca recebeu a cobrança. O mês corrente é o mesmo para toda a gente — com ou
+sem categoria, "este mês está pago?" é uma pergunta com resposta.
+
+**O estado muda pelo menu, como nas mensalidades dos atletas.** A pastilha de
+cada quota é o botão — *Marcar como paga / Marcar por pagar / Anular* — e o
+servidor é `PATCH /api/members/fees/:id/status`, gémeo do `setChargeStatus`:
+marcar como paga deixa um `Payment` de método `CASH` e provedor `manual` (o
+histórico diz *como* se soube), voltar atrás marca-o reembolsado em vez de o
+apagar, e uma quota paga **online** não se reabre por aqui — o dinheiro está na
+euPago, e desfazer isso é um estorno. Os botões "Numerário / Transf. / Anular /
+Reabrir" foram-se: eram quatro gestos para o que é uma escolha.
+
+**Lançar quotas a um sócio** (`POST /api/members/:id/fees`) tapa três buracos que
+"Gerar quotas" deixava, por só criar o mês corrente do livro todo: o sócio
+**sem categoria com preço**, que a geração salta em silêncio; o **acerto de
+atrasos** de quem entrou a meio do ano a dever três meses, que obrigava a gerar
+para a academia inteira só para apanhar um; e o **valor à medida** acordado com
+aquele sócio.
+
+Vários meses de uma vez, porque o caso real nunca é um — é "faltam-lhe
+Setembro, Outubro e Novembro". **Escolhe-se um intervalo — de mês/ano a
+mês/ano — e não mês a mês.** Duas versões falharam nisto: a primeira oferecia
+"os doze períodos mais recentes" calculados no servidor, um tecto disfarçado (em
+Setembro de 2026 não se chegava a 2024); a segunda pedia um clique por período
+numa grelha de um ano de cada vez. Agora dois pares de selectores produzem o
+intervalo, e as pastilhas por baixo mostram o resultado — cada uma pode sair. Os
+que já têm quota ficam de fora com nota; o servidor revalida e **salta-os em vez
+de recusar tudo**, porque a intenção de quem escolheu seis é ter os seis.
+
+Do servidor vem só o que o cliente não pode saber — o valor da categoria e
+`taken`, **todos** os meses que já têm quota, para o intervalo os deixar de fora
+seja em que ano for.
+
+O **prazo** de uma quota lançada em atraso é o fim do **mês dela** (`fimDoMes`),
+e não o de hoje: dizer 31 de Dezembro a uma quota de Setembro escondia
+precisamente o atraso que se está a registar.
+
+**Na app do sócio, paga-se até ao fim da época.** `GET /api/socio/inicio` traz
+`upcoming`: os meses do corrente até **Julho** (`mesesAteFimDaEpoca`), cada um
+com a quota que já existe ou só a promessa — "Outubro, 5 €" — a partir do preço
+da categoria. Pagar um mês que ninguém lançou é `POST
+/api/socio/quotas/mes/:period/pagar`: a quota nasce nesse momento com o valor da
+categoria (`garantirDoSocio`), exactamente como "Gerar" a criaria no dia 1, e
+segue para o `startMemberFeePayment` de sempre. Só do corrente até Julho — pagar
+Março de 2024 a partir da app era criar história à mão, e isso é trabalho da
+consola; sem categoria com preço a app explica em vez de inventar um valor. Os
+pagamentos online estão ligados (a chave euPago existe); o **QR do cartão
+passou a nascer desligado** (`memberCardQrEnabled` default `false`, e desligado
+nos clubes existentes) — nenhum clube tem portaria a lê-lo, e um código que
+ninguém lê é um ecrã a mais. A opção continua nas definições.
+
+À passagem: o interruptor do cartão na consola (`setMemberCard`) chamava
+`/api/academy/member-card`, e a rota é `/api/member-card` — o diálogo "Sócios
+na app" dava 404 ao mudar qualquer dos dois interruptores. Corrigido.
+
+Verificado por `node scripts/test-quotas-socio.mjs` (48) — os estados, o menu
+com o rasto do pagamento manual e a recusa de reabrir uma paga online, o prazo
+do mês em atraso, um mês de há dois anos, o saltar dos repetidos, a recusa de
+`2026`, `2026-T3` e do mês 13, o sócio sem categoria, e a categoria sem
+`period`; e por `scripts/test-app-do-clube.mjs` — `upcoming` do corrente a
+Julho, as guardas de pagar um mês (fora da época, passado, formato, CASH, não
+sócio — nenhuma cria quota), o QR desligado por omissão e ligado nas
+definições, e o menu de estado. O caminho de pagamento a sério não corre nos
+testes: a chave euPago é de produção.
+
+---|---|
+| **em atraso** (vermelho) | há quotas em aberto com o prazo passado — o único caso que é um problema |
+| **por pagar** (amarelo) | em aberto, ainda dentro do prazo: trabalho a acontecer, não uma falha |
+| **em dia** (verde) | nada em aberto e o período corrente pago |
+| **por lançar** (neutro) | o período corrente não tem quota nenhuma |
+
+`por lançar` **não é** `por pagar`: uma quota que ninguém lançou não é dívida do
+sócio, é trabalho por fazer do clube, e a ficha não pode dizer "deve" a quem
+nunca recebeu a cobrança. E um sócio **sem categoria** não tem período corrente
+que se possa afirmar — a pastilha cala-se em vez de adivinhar.
+
+**Lançar quotas a um sócio** (`POST /api/members/:id/fees`) tapa três buracos que
+"Gerar quotas" deixava, por só criar o período corrente do livro todo: o sócio
+**sem categoria com preço**, que a geração salta em silêncio; o **acerto de
+atrasos** de quem entrou a meio do ano a dever três meses, que obrigava a gerar
+para a academia inteira só para apanhar um; e o **valor à medida** acordado com
+aquele sócio.
+
+Vários períodos de uma vez, porque o caso real nunca é um — é "faltam-lhe
+Setembro, Outubro e Novembro". Os que já têm quota aparecem riscados e não se
+escolhem; o servidor revalida e **salta-os em vez de recusar tudo**, porque a
+intenção de quem escolheu seis é ter os seis, não perder os cinco que faltavam.
+
+**Escolhe-se um intervalo — de X a Y — e não período a período.** O acerto real
+é *"deve de Setembro a Março"*. Duas versões falharam nisto: a primeira oferecia
+"os doze períodos mais recentes" calculados no servidor, um tecto disfarçado (em
+Setembro de 2026 não se chegava a 2024); a segunda pedia um clique por período
+numa grelha de um ano de cada vez, o que são sete cliques e duas mudanças de ano
+para o caso mais banal. Agora dois selectores produzem o intervalo, e as
+pastilhas por baixo mostram o resultado — cada uma pode sair, porque o intervalo
+é o gesto rápido e não uma camisa-de-forças.
+
+**A unidade é a da categoria, não o mês.** Uma categoria anual tem períodos
+`2026`; não tem meses — e no Life Club cinco das sete categorias são anuais, que
+foi como isto se descobriu. Oferecer meses a um sócio anual criaria quotas
+`2026-09` que a geração automática nunca mais voltaria a encontrar, e o clube
+ficaria com dois livros que não se falam. O selector muda de unidade: meses,
+trimestres, anos, ou a jóia que se paga uma vez e não tem intervalo nenhum.
+
+Do servidor vem só o que o cliente não pode saber — a frequência, o valor da
+categoria, e `taken`, **todos** os períodos que já têm quota, para o intervalo os
+deixar de fora seja em que ano for.
+
+O **prazo** de uma quota lançada em atraso é o fim do **período dela**
+(`fimDoPeriodo`), e não o de hoje como na geração automática: dizer 31 de
+Dezembro a uma quota de Setembro escondia precisamente o atraso que se está a
+registar.
+
+Uma quota lançada fica **por pagar**, e o diálogo di-lo: quem acaba de acertar
+três meses está a criar dívida, não a recebê-la. Receber é o gesto seguinte, na
+lista — numerário ou transferência, como já era.
+
+Verificado por `node scripts/test-quotas-socio.mjs` (34) — os quatro estados, o
+prazo do período em atraso, o lançamento de um período de há dois anos, o saltar
+dos repetidos, a validação do formato do período, e o sócio sem categoria.
+
+---
+
 ## Importação de atletas por Excel
 
 `Atletas → Importar Excel`, para quem tem `athlete:write` — o que inclui os

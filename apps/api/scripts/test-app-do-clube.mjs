@@ -111,7 +111,7 @@ try {
   /* ------------------------------------------------------------------ */
   console.log("\n=== A ficha de sócio, com categoria e quota ===");
   const tier = await call(director, "POST", "/api/members/tiers", {
-    name: "ZZ Categoria Efectivo", feeCents: 1000, period: "MONTHLY", benefits: [], isPublic: false,
+    name: "ZZ Categoria Efectivo", feeCents: 1000, benefits: [], isPublic: false,
   });
   check("a categoria cria-se", tier.status === 201 || tier.status === 200, `${tier.status}`);
 
@@ -197,8 +197,40 @@ try {
   check("o início abre", inicio.status === 200, `${inicio.status} ${JSON.stringify(inicio.body).slice(0, 140)}`);
   check("com a ficha do próprio", inicio.body?.member?.name === "ZZ Sócio de Teste");
   check("a quota em aberto", inicio.body?.fees?.some((f) => f.id === feeId && f.status === "OPEN"));
-  check("o cartão com QR opaco", String(inicio.body?.member?.cardQr ?? "").startsWith("academias:socio:"));
+  check("o QR do cartão vem desligado por omissão", inicio.body?.academy?.cardQrEnabled === false && inicio.body?.member?.cardQr === null, JSON.stringify({ qr: inicio.body?.academy?.cardQrEnabled, cardQr: inicio.body?.member?.cardQr }));
   check("sem NIF nem morada na resposta", !JSON.stringify(inicio.body?.member ?? {}).match(/taxId|address|documentNumber/));
+  check("os pagamentos online estão ligados", inicio.body?.academy?.onlinePayments === true, `${inicio.body?.academy?.onlinePayments}`);
+
+  /* Os meses que a app oferece a pagar: do corrente até Julho, fim da época. */
+  const hoje = new Date();
+  const mesCorrente = `${hoje.getFullYear()}-${String(hoje.getMonth() + 1).padStart(2, "0")}`;
+  const anoFim = hoje.getMonth() + 1 >= 8 ? hoje.getFullYear() + 1 : hoje.getFullYear();
+  const upcoming = inicio.body?.upcoming ?? [];
+  check("os próximos meses começam no corrente", upcoming[0]?.period === mesCorrente, JSON.stringify(upcoming[0]));
+  check("e acabam em Julho, fim da época", upcoming.at(-1)?.period === `${anoFim}-07`, `${upcoming.at(-1)?.period}`);
+  check("o corrente traz a quota que já existe", upcoming[0]?.feeId === feeId && upcoming[0]?.status === "OPEN", JSON.stringify(upcoming[0]));
+  check("os outros trazem o valor da categoria e ainda sem quota", upcoming.slice(1).every((m) => m.feeId === null && m.amountCents === 1000 && /^Quota de /.test(m.label)), JSON.stringify(upcoming[1]));
+
+  console.log("\n=== Pagar um mês pela app: as guardas ===");
+  const proximo = upcoming[1]?.period;
+  const foraDaEpoca = await call(socio, "POST", `/api/socio/quotas/mes/${anoFim}-08/pagar`, { method: "MULTIBANCO" });
+  check("Agosto do ano seguinte já é outra época (400)", foraDaEpoca.status === 400, `${foraDaEpoca.status}`);
+  const passado = await call(socio, "POST", `/api/socio/quotas/mes/${hoje.getFullYear() - 1}-01/pagar`, { method: "MULTIBANCO" });
+  check("um mês passado não se paga pela app (400)", passado.status === 400, `${passado.status}`);
+  const mesMau = await call(socio, "POST", `/api/socio/quotas/mes/setembro/pagar`, { method: "MULTIBANCO" });
+  check("um mês fora do formato (400)", mesMau.status === 400, `${mesMau.status}`);
+  const numerario = await call(socio, "POST", `/api/socio/quotas/mes/${proximo}/pagar`, { method: "CASH" });
+  check("CASH não é pagamento online (400)", numerario.status === 400, `${numerario.status}`);
+  const naoSocio = await call(familia, "POST", `/api/socio/quotas/mes/${proximo}/pagar`, { method: "MULTIBANCO" });
+  check("quem não é sócio não paga meses (404)", naoSocio.status === 404, `${naoSocio.status}`);
+  const semQuotaCriada = (await db.query(`SELECT count(*)::int AS n FROM "MemberFee" WHERE "memberId" = $1 AND period = $2`, [memberId, proximo])).rows[0].n;
+  check("nenhuma das guardas criou quota", semQuotaCriada === 0, `${semQuotaCriada}`);
+
+  /* O QR só existe quando o clube o liga — e a portaria só o lê então. */
+  const ligarQr = await call(director, "PATCH", "/api/member-card", { qrEnabled: true });
+  check("o clube liga o QR nas definições", ligarQr.status === 200 && ligarQr.body?.qrEnabled === true, `${ligarQr.status} ${JSON.stringify(ligarQr.body)}`);
+  const inicioComQr = await call(socio, "GET", "/api/socio/inicio");
+  check("e o cartão passa a trazer o QR opaco", String(inicioComQr.body?.member?.cardQr ?? "").startsWith("academias:socio:"));
 
   const noutroClube = await call(socio, "GET", "/api/socio/inicio", undefined, "ad-fafe");
   check("noutro clube não há ficha (404)", noutroClube.status === 404, `${noutroClube.status}`);
@@ -208,12 +240,13 @@ try {
   check("sem sessão é 401", semSessao.status === 401, `${semSessao.status}`);
 
   /* O QR valida-se na portaria — atrás de member:read, e só devolve o cartão. */
-  const tokenCartao = String(inicio.body?.member?.cardQr ?? "").replace("academias:socio:", "");
+  const tokenCartao = String(inicioComQr.body?.member?.cardQr ?? "").replace("academias:socio:", "");
   const portaria = await call(director, "GET", `/api/members/card/${tokenCartao}`);
   check("a portaria troca o QR pelo sócio", portaria.status === 200 && portaria.body?.name === "ZZ Sócio de Teste", `${portaria.status}`);
   check("só nome, número, categoria e estado", Object.keys(portaria.body ?? {}).sort().join(",") === "name,number,status,tierName");
   const portariaAnonima = await call(null, "GET", `/api/members/card/${tokenCartao}`);
   check("sem sessão, o QR não diz nada (401)", portariaAnonima.status === 401, `${portariaAnonima.status}`);
+  await call(director, "PATCH", "/api/member-card", { qrEnabled: false });
 
   /* ------------------------------------------------------------------ */
   console.log("\n=== O webhook liquida a quota ===");
@@ -367,13 +400,13 @@ try {
   const semToken = (await db.query(`SELECT "inviteTokenHash" FROM "Member" WHERE id = $1`, [outraFicha])).rows[0];
   check("e não deixa um token órfão na ficha", semToken?.inviteTokenHash === null);
 
-  console.log("\n=== Liquidar ao balcão ===");
-  const balcao = await call(director, "POST", `/api/members/fees/${feeId2}/settle`, { method: "CASH" });
-  check("numerário liquida", balcao.status === 201 || balcao.status === 200, `${balcao.status}`);
-  const reaberta = await call(director, "POST", `/api/members/fees/${feeId2}/reopen`);
-  check("e reabre-se se foi engano", reaberta.status === 201 || reaberta.status === 200, `${reaberta.status}`);
-  const anulada = await call(director, "POST", `/api/members/fees/${feeId2}/void`);
-  check("anular uma aberta passa", anulada.status === 201 || anulada.status === 200, `${anulada.status}`);
+  console.log("\n=== O menu de estado da ficha ===");
+  const balcao = await call(director, "PATCH", `/api/members/fees/${feeId2}/status`, { status: "SETTLED" });
+  check("marcar como paga", balcao.status === 200 && balcao.body?.status === "SETTLED", `${balcao.status}`);
+  const reaberta = await call(director, "PATCH", `/api/members/fees/${feeId2}/status`, { status: "OPEN" });
+  check("e volta a por pagar se foi engano", reaberta.status === 200 && reaberta.body?.status === "OPEN", `${reaberta.status}`);
+  const anulada = await call(director, "PATCH", `/api/members/fees/${feeId2}/status`, { status: "VOID" });
+  check("anular uma aberta passa", anulada.status === 200 && anulada.body?.status === "VOID", `${anulada.status}`);
   const pagarAnulada = await call(socio, "POST", `/api/socio/quotas/${feeId2}/pagar`, { method: "MULTIBANCO" });
   check("uma anulada já não se paga (400)", pagarAnulada.status === 400, `${pagarAnulada.status}`);
 } finally {

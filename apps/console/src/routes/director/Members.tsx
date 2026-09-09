@@ -4,20 +4,19 @@ import { PageHeader } from "@/components/Shell";
 import { SearchInput } from "@/components/filters";
 import { DataTable, Empty, Loading, Monogram, Panel, Pill, RowLink, cx, type Column, type Tone } from "@/components/primitives";
 import { Dialog, DialogField, dialogInputClass } from "@/components/Dialog";
-import { Download, ExternalLink, Home, Plus, Settings, Trash2, Upload } from "@/lib/icons";
+import { Download, ExternalLink, Home, Plus, Send, Settings, Trash2, Upload } from "@/lib/icons";
 import { can } from "@/lib/permissions";
 import { useSession } from "@/session";
 import { BulkBar, BulkDeleteDialog } from "@/components/BulkDelete";
 import { SociosAppDialog } from "@/components/SociosAppDialog";
+import { SendInvitesDialog } from "@/components/SendInvitesDialog";
 import { academy } from "@/lib/api";
-import { money } from "@/lib/format";
+import { money, shortDate } from "@/lib/format";
 import { apiOrigin, apiPatch } from "@/lib/http";
 import { reloadAcademy } from "@/lib/store";
 import { downloadTemplate, readMemberSheet, OPTIONAL_COLUMNS, REQUIRED_COLUMNS, type ParsedSheet } from "@/lib/member-sheet";
 import {
   DOC_LABEL,
-  PERIOD_LABEL,
-  PERIOD_SHORT,
   SEX_LABEL,
   STATUS_LABEL,
   createMember,
@@ -29,7 +28,6 @@ import {
   removeMember,
   listTiers,
   updateTier,
-  type FeePeriod,
   type MemberRow,
   type MemberStatus,
   type MemberTier,
@@ -89,6 +87,8 @@ export default function Members() {
     }
   }
   const [importOpen, setImportOpen] = useState(false);
+  /** O envio do convite da app aos sócios escolhidos na lista. */
+  const [aConvidar, setAConvidar] = useState(false);
   const [newOpen, setNewOpen] = useState(false);
 
   const mayWrite = can(session, "member:write");
@@ -156,7 +156,7 @@ export default function Members() {
             <div className="truncate text-body text-ink-2">{m.tier.name}</div>
             {m.tier.feeCents !== null && (
               <div className="text-meta text-ink-3 tabular">
-                {money(m.tier.feeCents)} {PERIOD_SHORT[m.tier.period]}
+                {money(m.tier.feeCents)} /mês
               </div>
             )}
           </div>
@@ -176,6 +176,37 @@ export default function Members() {
           </div>
         </div>
       ),
+    },
+    /*
+      A coluna "App" — quem já lá está, quem foi convidado, e quem não pode ser.
+      É o que torna o envio em massa uma decisão e não um tiro no escuro: sem
+      ela, escolher trinta linhas e carregar em "enviar convite" era esperar
+      para ver quantas tinham email.
+    */
+    {
+      key: "app",
+      header: "App",
+      hideBelow: "sm",
+      render: (m) =>
+        m.app === "account" ? (
+          <Pill tone="ok">Na app</Pill>
+        ) : m.app === "invited" ? (
+          <span
+            className="text-meta text-ink-3"
+            title={m.inviteSentAt ? `Convite enviado a ${shortDate(new Date(m.inviteSentAt))}` : undefined}
+          >
+            Convidado
+          </span>
+        ) : m.app === "noemail" ? (
+          /* Não é um estado por atingir: é um dado em falta na ficha, e a
+             ficha é onde se resolve. Dizer "sem email" aqui poupa a quem
+             seleccionou trinta linhas descobri-lo no popup. */
+          <span className="text-meta text-ink-4" title="A ficha não tem email — acrescenta-o para o poder convidar">
+            Sem email
+          </span>
+        ) : (
+          <span className="text-meta text-ink-4">—</span>
+        ),
     },
     { key: "status", header: "Estado", render: (m) => <StatusPill status={m.status} /> },
   ];
@@ -286,7 +317,27 @@ export default function Members() {
         noun={["sócio", "sócios"]}
         onClear={() => setEscolhidos(new Set())}
         onDelete={() => setAApagar(true)}
+        /* Convidar em massa é o gesto de quem acabou de importar um livro de
+           Excel. A conta de quem pode mesmo receber faz-se no diálogo, antes
+           de sair correio nenhum — ver `SendInvitesDialog`. */
+        action={
+          mayWrite
+            ? { label: "Enviar convite", icon: Send, onClick: () => setAConvidar(true) }
+            : undefined
+        }
       />
+
+      {aConvidar && (
+        <SendInvitesDialog
+          members={(data?.members ?? []).filter((m) => escolhidos.has(m.id))}
+          onClose={() => setAConvidar(false)}
+          onDone={() => {
+            setAConvidar(false);
+            setEscolhidos(new Set());
+            load();
+          }}
+        />
+      )}
 
       {aApagar && (
         <BulkDeleteDialog
@@ -555,7 +606,7 @@ function TiersList({ mayWrite }: { mayWrite: boolean }) {
                   {!t.isPublic && <Pill>não listada</Pill>}
                 </div>
                 <div className="text-meta text-ink-3">
-                  {t.feeCents !== null ? `${money(t.feeCents)} ${PERIOD_LABEL[t.period]}` : "preço por definir"}
+                  {t.feeCents !== null ? `${money(t.feeCents)} por mês` : "preço por definir"}
                   {(t.minAge != null || t.maxAge != null) &&
                     ` · ${t.minAge != null && t.maxAge != null ? `${t.minAge}–${t.maxAge} anos` : t.minAge != null ? `${t.minAge}+ anos` : `até ${t.maxAge} anos`}`}
                   {` · ${t.members} ${t.members === 1 ? "sócio" : "sócios"}`}
@@ -725,12 +776,33 @@ function NewMemberDialog({ onClose, onCreated }: { onClose: () => void; onCreate
             Cancelar
           </button>
           <button type="button" className="ctl-primary" disabled={!valid || busy} onClick={() => void save()}>
-            {busy ? "A criar…" : "Criar sócio"}
+            {busy ? "A criar…" : email.trim() ? "Criar e convidar" : "Criar sócio"}
           </button>
         </>
       }
     >
       <div className="space-y-3 px-5 py-4">
+        {/*
+          O email sai daqui, e isso diz-se antes de acontecer.
+
+          Criar a ficha manda o convite da app para o endereço escrito — é o
+          desenho decidido, e é o que a maior parte das direcções quer. Mas é
+          correio a sair em nome do clube para uma pessoa a sério, e quem
+          preenche o formulário tem de o saber **enquanto** o preenche, não
+          quando o sócio telefona a perguntar que email é aquele. O botão diz o
+          mesmo ("Criar e convidar"), para não haver dúvida no último clique.
+        */}
+        <p
+          className={cx(
+            "rounded-[var(--radius-control)] px-3 py-2 text-meta leading-relaxed",
+            email.trim() ? "bg-signal-soft text-signal-ink" : "bg-sunken text-ink-3",
+          )}
+        >
+          {email.trim()
+            ? "Ao criar, este sócio recebe um email com o convite para criar conta e instalar a app do clube."
+            : "Sem email não sai convite nenhum — a ficha fica criada e podes convidá-lo depois, a partir da lista ou da ficha."}
+        </p>
+
         <DialogField label="Nome completo">
           <input
             autoFocus
@@ -1006,7 +1078,7 @@ function ImportDialog({ onClose, onDone }: { onClose: () => void; onDone: () => 
                 : novas !== null
                   ? `Criar ${novas.length === 1 ? "a categoria" : `as ${novas.length} categorias`} e importar`
                   : good.length > 0
-                    ? `Importar ${good.length}`
+                    ? `Importar e convidar ${good.length}`
                     : "Importar"}
             </button>
           )}
@@ -1045,6 +1117,21 @@ function ImportDialog({ onClose, onDone }: { onClose: () => void; onDone: () => 
             <p className="text-meta leading-relaxed text-ink-3">
               Colunas obrigatórias: {REQUIRED_COLUMNS.join(", ")}. Opcionais: {OPTIONAL_COLUMNS.join(", ")} — entram
               se lá estiverem, ficam por preencher se não.
+            </p>
+
+            {/*
+              Uma importação manda correio, e isso não pode ser uma surpresa.
+
+              Trezentas fichas de Excel são trezentos emails a sair em nome do
+              clube, para pessoas a sério, e num só clique. Quem carrega o livro
+              tem de o saber **antes** — e saber também que quem não tiver email
+              na folha fica sem convite, que é o caso de metade dos livros
+              antigos. A lista tem a coluna "App" e o envio em massa para o
+              resolver depois, com calma.
+            */}
+            <p className="rounded-[var(--radius-control)] bg-signal-soft px-3 py-2 text-meta leading-relaxed text-signal-ink">
+              Cada sócio com email na folha recebe, ao importar, um convite para criar conta e instalar a app do
+              clube. Quem não tiver email fica sem convite — podes enviá-lo depois pela lista.
             </p>
           </>
         )}
@@ -1118,7 +1205,6 @@ function TierForm({
   const [name, setName] = useState(tier?.name ?? "");
   const [description, setDescription] = useState(tier?.description ?? "");
   const [fee, setFee] = useState(tier?.feeCents != null ? (tier.feeCents / 100).toString() : "");
-  const [period, setPeriod] = useState<FeePeriod>(tier?.period ?? "ANNUAL");
   const [minAge, setMinAge] = useState(tier?.minAge?.toString() ?? "");
   const [maxAge, setMaxAge] = useState(tier?.maxAge?.toString() ?? "");
   const [benefits, setBenefits] = useState((tier?.benefits ?? []).join("\n"));
@@ -1138,7 +1224,6 @@ function TierForm({
         description: description.trim(),
         benefits: benefits.split("\n").map((b) => b.trim()).filter(Boolean).slice(0, 12),
         ...(fee.trim() ? { feeCents: Math.round(Number(fee.replace(",", ".")) * 100) } : { feeCents: undefined }),
-        period,
         ...(minAge ? { minAge: Number(minAge) } : {}),
         ...(maxAge ? { maxAge: Number(maxAge) } : {}),
         isPublic,
@@ -1176,7 +1261,7 @@ function TierForm({
       </DialogField>
 
       <div className="grid grid-cols-4 gap-3">
-        <DialogField label="Quota" hint="€" className="col-span-2">
+        <DialogField label="Quota mensal" hint="€ por mês" className="col-span-2">
           <input
             value={fee}
             onChange={(e) => setFee(e.target.value.replace(/[^\d.,]/g, ""))}
@@ -1185,15 +1270,6 @@ function TierForm({
             className={dialogInputClass}
           />
           <CustoDoPagamento amountCents={paraCentimosDaQuota(fee)} />
-        </DialogField>
-        <DialogField label="Período">
-          <select value={period} onChange={(e) => setPeriod(e.target.value as FeePeriod)} className={dialogInputClass}>
-            {(Object.keys(PERIOD_LABEL) as FeePeriod[]).map((p) => (
-              <option key={p} value={p}>
-                {PERIOD_LABEL[p]}
-              </option>
-            ))}
-          </select>
         </DialogField>
         <DialogField label="Idade mín." hint="opcional">
           <input

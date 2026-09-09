@@ -1,6 +1,13 @@
-﻿import { useSyncExternalStore } from "react";
+﻿import { useEffect, useSyncExternalStore } from "react";
 import { categoryColor, type CategoricalColor } from "@academia/ui/tokens";
-import { useStore, type ApiEvent, type ApiMatch } from "@/lib/store";
+import {
+  calendarLoading,
+  ensureCalendarRange,
+  prefetchCalendarNeighbours,
+  useStore,
+  type ApiEvent,
+  type ApiMatch,
+} from "@/lib/store";
 import { listSessions, listTeams, sportById, teamById } from "@/lib/api";
 import type { Session } from "@/lib/permissions";
 import { matchTitle } from "@/lib/callups";
@@ -449,12 +456,42 @@ export function useCustomEvents(): CalendarEvent[] {
  * Todos os eventos de um intervalo: os treinos gerados a partir dos horários das
  * equipas mais os que foram criados à mão, já ordenados.
  */
+/**
+ * O calendário está a ir buscar alguma coisa?
+ *
+ * Separado de `useEvents` para não lhe mudar a assinatura — quem já o usa não
+ * precisa de saber disto. Passa pelo `emit` do store, por isso acende e apaga
+ * sozinho.
+ */
+export function useCalendarLoading(): boolean {
+  useStore();
+  return calendarLoading();
+}
+
 export function useEvents(session: Session, from: Date, to: Date): CalendarEvent[] {
   // `useStore` subscreve o estado: quando "Novo evento" grava e a academia é
   // recarregada, o calendário redesenha. `custom` continua a servir os jogos ricos
   // (convocatória e resultado), que não passaram para a API nesta camada.
   const store = useStore();
   const seededMatches = useSyncExternalStore(subscribe, getSnapshot, getSnapshot);
+
+  /*
+   * Ir buscar o intervalo que se está a mostrar.
+   *
+   * O arranque só traz 21 dias para cada lado (a janela por omissão de
+   * `GET /api/sessions`), e este hook limitava-se a **filtrar** o que estava em
+   * memória: mudar de mês dava um calendário vazio, mesmo com os treinos
+   * gravados na base até ao fim da época.
+   *
+   * As dependências são os **milissegundos** e não as datas: `from` e `to` são
+   * objectos novos a cada render em quem os calcule inline, e o efeito corria
+   * sem parar. `ensureCalendarRange` ignora um intervalo que já tenha trazido,
+   * por isso navegar para trás e para a frente não repete pedidos.
+   */
+  useEffect(() => {
+    void ensureCalendarRange(from, to).then(() => prefetchCalendarNeighbours(from, to));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [from.getTime(), to.getTime()]);
 
   const trainings: CalendarEvent[] = listSessions(session, from, to).map((s) => ({
     id: s.id,

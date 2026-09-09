@@ -33,13 +33,18 @@ export class MatchesService {
 
   /** Jogos do âmbito, com a convocatória e o plantel elegível de cada equipa. */
   async list(ctx: RequestContext, from?: Date, to?: Date) {
+    return this.prisma.runAs(ctx.academyId, (db) => this.listIn(db, ctx, from, to));
+  }
+
+  /** O miolo de `list`, para o calendário o correr dentro da transacção dele. */
+  async listIn(db: ScopedClient, ctx: RequestContext, from?: Date, to?: Date) {
     if (!can(ctx, "calendar:read")) throw new ForbiddenException("Sem acesso ao calendário");
     const scope = calendarScopeFilter(ctx);
 
     const start = from ?? new Date(Date.now() - 30 * 86_400_000);
     const end = to ?? new Date(Date.now() + 90 * 86_400_000);
 
-    return this.prisma.runAs(ctx.academyId, async (db) => {
+
       const matches = await db.match.findMany({
         where: { startsAt: { gte: start, lte: end }, ...(scope ? { teamId: scope } : {}) },
         orderBy: { startsAt: "asc" },
@@ -166,8 +171,8 @@ export class MatchesService {
             : [],
         };
       });
-    });
   }
+
 
   /**
    * Um jogo, inteiro — a página do jogo.

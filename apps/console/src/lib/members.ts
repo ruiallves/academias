@@ -9,7 +9,6 @@ import { apiDelete, apiGet, apiPatch, apiPost } from "@/lib/http";
  */
 
 export type MemberStatus = "PENDING" | "ACTIVE" | "SUSPENDED" | "CANCELLED";
-export type FeePeriod = "MONTHLY" | "QUARTERLY" | "ANNUAL" | "ONCE";
 export type Sex = "FEMALE" | "MALE" | "UNSPECIFIED";
 export type DocumentKind = "CC" | "PASSPORT" | "RESIDENCE" | "OTHER";
 
@@ -18,20 +17,6 @@ export const STATUS_LABEL: Record<MemberStatus, string> = {
   ACTIVE: "Activo",
   SUSPENDED: "Suspenso",
   CANCELLED: "Cancelado",
-};
-
-export const PERIOD_LABEL: Record<FeePeriod, string> = {
-  MONTHLY: "por mês",
-  QUARTERLY: "por trimestre",
-  ANNUAL: "por ano",
-  ONCE: "uma vez",
-};
-
-export const PERIOD_SHORT: Record<FeePeriod, string> = {
-  MONTHLY: "/mês",
-  QUARTERLY: "/tri",
-  ANNUAL: "/ano",
-  ONCE: "único",
 };
 
 export const SEX_LABEL: Record<Sex, string> = {
@@ -52,8 +37,8 @@ export type MemberTier = {
   name: string;
   description: string | null;
   benefits: string[];
+  /** Por mês — as quotas são mensais e só mensais (ver `member-fees.service.ts`). */
   feeCents: number | null;
-  period: FeePeriod;
   minAge: number | null;
   maxAge: number | null;
   isPublic: boolean;
@@ -82,7 +67,18 @@ export type MemberRow = {
   createdAt: string;
   approvedAt: string | null;
   source: string;
-  tier: { id: string; name: string; feeCents: number | null; period: FeePeriod } | null;
+  tier: { id: string; name: string; feeCents: number | null } | null;
+  /**
+   * O estado da app deste sócio — o que a coluna "App" mostra.
+   *
+   * Quatro, e a diferença entre eles decide o que se pode fazer:
+   * `account` já entrou, `invited` recebeu o convite e ainda não entrou,
+   * `none` pode ser convidado, `noemail` **não pode** — falta o endereço na
+   * ficha, e é o caso mais comum num livro importado de Excel.
+   */
+  app: "account" | "invited" | "none" | "noemail";
+  /** Quando o convite saiu. Nulo quando nunca saiu. */
+  inviteSentAt: string | null;
 };
 
 export type MemberDetail = MemberRow & {
@@ -102,6 +98,8 @@ export type MemberDetail = MemberRow & {
   /** A conta da app do clube: reclamada (`userId`) e o carimbo do convite. */
   userId: string | null;
   inviteSentAt: string | null;
+  /** Vem com a ficha: é uma linha do cabeçalho, não um separador que se abre. */
+  fees: MemberFeesSummary;
 };
 
 /* ---------------------------------------------------------------------------- */
@@ -110,6 +108,7 @@ export type MemberDetail = MemberRow & {
 
 export type MemberFeeRow = {
   id: string;
+  /** `AAAA-MM`. Linhas antigas podem trazer `2026` ou `2026-T3` — o rótulo diz o que eram. */
   period: string;
   label: string | null;
   amountCents: number;
@@ -120,14 +119,69 @@ export type MemberFeeRow = {
   notes: string | null;
 };
 
+/**
+ * A situação de quotas de um sócio — a resposta a "está em dia este mês?".
+ *
+ * `missing` não é `open`: uma quota que ninguém lançou não é dívida do sócio,
+ * é trabalho por fazer do clube.
+ */
+export type MemberFeesSummary = {
+  currentPeriod: string;
+  currentStatus: "settled" | "open" | "void" | "missing";
+  openCount: number;
+  openCents: number;
+  overdueCount: number;
+  lastSettled: { period: string; label: string | null; settledAt: string | null } | null;
+};
+
+/**
+ * O que o ecrã de lançar precisa de saber.
+ *
+ * Não traz lista de meses: o intervalo é do cliente, que o produz a partir de
+ * "de" e "até". Uma lista trazida do servidor era um tecto disfarçado — "os
+ * doze mais recentes" impedia acertar a época de há dois anos. `taken` são
+ * todos os meses que já têm quota, para o intervalo os deixar de fora seja em
+ * que ano for.
+ */
+export type MemberFeePeriods = {
+  hasTier: boolean;
+  defaultAmountCents: number | null;
+  taken: string[];
+};
+
 export const listMemberFees = (memberId: string) => apiGet<MemberFeeRow[]>(`/api/members/${memberId}/fees`);
+export const memberFeePeriods = (memberId: string) =>
+  apiGet<MemberFeePeriods>(`/api/members/${memberId}/fees/periods`);
+export const createMemberFees = (memberId: string, body: { periods: string[]; amountCents: number; notes?: string }) =>
+  apiPost<{ created: number; alreadyExisted: string[] }>(`/api/members/${memberId}/fees`, body);
 export const generateFees = () => apiPost<{ created: number; members: number }>("/api/members/fees/generate", {});
-export const settleFee = (id: string, method: "CASH" | "TRANSFER") =>
-  apiPost<{ ok: true }>(`/api/members/fees/${id}/settle`, { method });
-export const voidFee = (id: string) => apiPost<{ ok: true }>(`/api/members/fees/${id}/void`, {});
-export const reopenFee = (id: string) => apiPost<{ ok: true }>(`/api/members/fees/${id}/reopen`, {});
+/** O menu "Marcar como paga / por pagar / Anular" — o mesmo das mensalidades. */
+export const setMemberFeeStatus = (id: string, status: MemberFeeRow["status"]) =>
+  apiPatch<{ id: string; status: MemberFeeRow["status"] }>(`/api/members/fees/${id}/status`, { status });
+
+/** "Setembro 2026" a partir de `2026-09`; o que não for mês devolve-se como veio. */
+export function mesPorExtenso(period: string): string {
+  const m = /^(\d{4})-(\d{2})$/.exec(period);
+  if (!m) return period;
+  return `${MESES[Number(m[2]) - 1]} ${m[1]}`;
+}
+
+export const MESES = [
+  "Janeiro", "Fevereiro", "Março", "Abril", "Maio", "Junho",
+  "Julho", "Agosto", "Setembro", "Outubro", "Novembro", "Dezembro",
+];
 
 export const inviteMember = (id: string) => apiPost<{ ok: true; email: string }>(`/api/members/${id}/invite`, {});
+
+/**
+ * (Re)enviar o convite a vários — a acção em massa da lista.
+ *
+ * Devolve a contagem em vez de rebentar no primeiro que não dá: escolher trinta
+ * sócios de um livro importado e ter quinze sem email é o caso normal, não um
+ * erro. Ver `enviarMuitos` no servidor.
+ */
+export const inviteMembers = (ids: string[]) =>
+  apiPost<{ ok: true; enviados: number; falhas: { id: string; reason: string }[] }>("/api/members/invites", { ids });
 
 /** Ligar a ficha a uma conta que já existe — o caminho sem email. */
 export const linkMemberAccount = (id: string) =>
@@ -160,7 +214,7 @@ export const removePoll = (id: string) => apiDelete<{ ok: true }>(`/api/polls/${
 
 /* O cartão na app — os dois interruptores das definições do clube. */
 export const setMemberCard = (body: { cardEnabled?: boolean; qrEnabled?: boolean }) =>
-  apiPatch<{ cardEnabled: boolean; qrEnabled: boolean }>("/api/academy/member-card", body);
+  apiPatch<{ cardEnabled: boolean; qrEnabled: boolean }>("/api/member-card", body);
 
 export const listMembers = (filters: { status?: string; tierId?: string; q?: string } = {}) =>
   apiGet<{ members: MemberRow[]; counts: Partial<Record<MemberStatus, number>> }>("/api/members", filters);

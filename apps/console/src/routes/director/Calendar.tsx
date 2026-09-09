@@ -7,10 +7,19 @@ import { Segmented } from "@/components/filters";
 import { MonthGrid } from "@/components/MonthGrid";
 import { NewEventDialog } from "@/components/NewEventDialog";
 import { EventDetail } from "@/components/EventDetail";
-import { CalendarDays, ChevronLeft, ChevronRight, Plus } from "@/lib/icons";
+import { CalendarDays, ChevronLeft, ChevronRight, Loader2, Plus } from "@/lib/icons";
 import type { CategoricalColor } from "@academia/ui/tokens";
 import { coachById, listTeams, today } from "@/lib/api";
-import { KIND_LABEL, eventOutcome, groupByDay, useEvents, useTeamColors, type CalendarEvent, type EventKind } from "@/lib/calendar";
+import {
+  KIND_LABEL,
+  eventOutcome,
+  groupByDay,
+  useCalendarLoading,
+  useEvents,
+  useTeamColors,
+  type CalendarEvent,
+  type EventKind,
+} from "@/lib/calendar";
 import { dayShort, longDate, monthName, time } from "@/lib/format";
 import { can, isAcademyWide } from "@/lib/permissions";
 import { useSession } from "@/session";
@@ -120,6 +129,7 @@ export default function Calendar() {
   }, [view, cursor]);
 
   const all = useEvents(session, from, to);
+  const carregando = useCalendarLoading();
   const events = all.filter((e) => !e.teamId || !hidden.has(e.teamId));
   // Deriva-se de `all`, não de `events`: se o painel já estava aberto e o
   // utilizador esconder o escalão na legenda, o evento não desaparece debaixo dele.
@@ -228,17 +238,44 @@ export default function Calendar() {
           )}
         </div>
 
-        {view === "mes" ? (
-          <MonthGrid
-            anchor={cursor}
-            events={events}
-            colors={colors}
-            onAdd={(day) => editable && setComposing(day)}
-            onSelect={abrir}
-          />
-        ) : (
-          <AgendaList events={events} colors={colors} onSelect={abrir} />
-        )}
+        {/*
+          O disco fica **sobre o calendário**, e não ao lado do título.
+
+          É aqui que a resposta falta: o mês muda mais depressa do que o
+          servidor responde, e a grelha ficava vazia durante segundos — igual a
+          um mês sem nada marcado, e sem nada a dizer que valia a pena esperar.
+          Uma linha discreta no cabeçalho não corrigia isso: quem está a olhar
+          para os dias não olha para a contagem.
+
+          O que já está desenhado continua por baixo, esbatido: mudar de
+          Outubro para Novembro mantém a forma do calendário no sítio em vez de
+          o piscar para branco, e o que aparece a seguir entra no lugar sem
+          saltar.
+        */}
+        <div className="relative">
+          <div className={cx("transition-opacity duration-200", carregando && "pointer-events-none opacity-40")}>
+            {view === "mes" ? (
+              <MonthGrid
+                anchor={cursor}
+                events={events}
+                colors={colors}
+                onAdd={(day) => editable && setComposing(day)}
+                onSelect={abrir}
+              />
+            ) : (
+              <AgendaList events={events} colors={colors} onSelect={abrir} />
+            )}
+          </div>
+
+          {carregando && (
+            <div className="pointer-events-none absolute inset-0 flex items-start justify-center pt-16">
+              <span className="inline-flex items-center gap-2 rounded-full border border-line bg-surface/95 px-3.5 py-2 text-meta font-medium text-ink-2 shadow-[var(--shadow-pop)]">
+                <Loader2 className="size-4 animate-spin text-ink-3" strokeWidth={2} />
+                A trazer o período…
+              </span>
+            </div>
+          )}
+        </div>
       </Panel>
 
       {composing && (

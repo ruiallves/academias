@@ -328,6 +328,10 @@ export function loadAcademy(): Promise<void> {
 
   loading = (async () => {
     try {
+      // As listas vão ser substituídas: o que o calendário trouxe a mais deixa
+      // de estar lá, e tem de ser pedido outra vez. Ver `ensureCalendarRange`.
+      janelas = [];
+      emVoo = [];
       const boot = await apiGet<ApiBootstrap>("/api/bootstrap");
 
       // Em paralelo: são independentes, e em série somavam quatro idas ao servidor.
@@ -345,6 +349,24 @@ export function loadAcademy(): Promise<void> {
       ]);
 
       apply(build(boot, teams, athletes, staff, sessions, fees, matches, events, announcements));
+
+      /*
+       * A época inteira, atrás da porta.
+       *
+       * O arranque traz 21 dias — é a janela por omissão do servidor, e está
+       * certa: ninguém quer esperar pela época toda para ver o ecrã inicial.
+       * Mas quem abre o calendário quer navegar, e cada mês novo custa quase o
+       * mesmo, tenha doze treinos ou nenhum: o tempo é a autenticação e a
+       * transacção, não as linhas (medido: um mês vazio custa 1,5 s).
+       *
+       * Por isso a época vem toda, **depois** de a consola já estar a
+       * funcionar e sem ninguém à espera dela. Quando o calendário for aberto,
+       * já cá está — e mudar de mês deixa de ir ao servidor.
+       *
+       * Sem `await` de propósito: um erro aqui não pode estragar um arranque
+       * que já correu bem, e um clube com a rede má continua a ter a consola.
+       */
+      void ensureCalendarRange(...epocaDesportiva());
     } catch (error) {
       apply({ ...EMPTY, ready: true, error: error instanceof Error ? error.message : "Não foi possível carregar." });
     }
@@ -365,19 +387,226 @@ export function reloadAcademy(): Promise<void> {
  * Um 403 aqui não é uma avaria: é o âmbito a funcionar. O treinador que não vê
  * mensalidades recebe uma lista vazia, e a navegação já não lhe mostra o ecrã.
  */
-async function soft<T>(path: string): Promise<T[]> {
+async function soft<T>(path: string, params?: Record<string, string>): Promise<T[]> {
   try {
-    return (await apiGet<T[]>(path)) ?? [];
+    return (await apiGet<T[]>(path, params)) ?? [];
   } catch {
     return [];
   }
 }
 
 /* -------------------------------------------------------------------------- */
+/* O calendário fora da janela do arranque                                     */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * As janelas de calendário já trazidas.
+ *
+ * Esvazia-se a cada `loadAcademy`, porque o arranque **substitui** as listas:
+ * sem isso, o calendário julgava ter Novembro em memória e ficava com o mês
+ * vazio a seguir a gravar seja o que for.
+ */
+let janelas: { de: number; ate: number }[] = [];
+
+/**
+ * Os pedidos **a decorrer**, com a janela de cada um.
+ *
+ * Sem isto havia trabalho a dobrar no pior momento. O arranque manda vir a
+ * época inteira em segundo plano; quem abre o calendário um segundo depois
+ * pedia o mês outra vez, porque a época ainda não tinha chegado e `janelas` só
+ * regista o que **já** veio. Dois pedidos, e a espera que o segundo trazia era
+ * a que se queria evitar.
+ *
+ * Agora um pedido contido noutro que já vem a caminho **espera por ele**. Não
+ * é cache: é não pedir duas vezes a mesma coisa ao mesmo tempo.
+ */
+let emVoo: { de: number; ate: number; promessa: Promise<void> }[] = [];
+
+const cobre = (de: number, ate: number) => janelas.some((j) => j.de <= de && j.ate >= ate);
+
+const aCaminho = (de: number, ate: number) => emVoo.find((j) => j.de <= de && j.ate >= ate)?.promessa;
+
+/**
+ * Traz treinos, jogos e eventos de um intervalo, e junta-os ao que já existe.
+ *
+ * ## O que isto corrige
+ *
+ * O arranque pede `/api/sessions` sem datas, e o servidor responde com a janela
+ * dele: **21 dias para cada lado**. É a escolha certa lá — devolver a época
+ * inteira por omissão seria mandar milhares de linhas para o browser — mas o
+ * calendário nunca pedia mais nada: ao mudar de mês, apenas **filtrava** o que
+ * já tinha em memória (ver `listSessions`).
+ *
+ * O resultado: um treino marcado para a época toda, gravado na base até Junho,
+ * desaparecia do calendário a partir do fim do mês em curso. Os dados estavam
+ * lá; o ecrã é que nunca os foi buscar — e nada distinguia "não marcaste" de
+ * "não carreguei", que é a pior maneira de um calendário falhar.
+ *
+ * ## Como
+ *
+ * Junta por **id**: o que está fica, o que chega entra. Nunca substitui as
+ * listas, porque a janela do arranque é a que as Presenças e o planner usam, e
+ * trocá-la ao abrir Novembro esvaziava-lhes o ecrã.
+ *
+ * O mesmo mês não vai ao servidor duas vezes — ver `janelas`.
+ */
+/**
+ * A época desportiva que contém hoje: de 1 de Agosto a 31 de Julho.
+ *
+ * É o ano de trabalho de um clube português, e é o que o calendário mostra —
+ * quem em Setembro navega para Maio está dentro da mesma época. Um mês de
+ * folga de cada lado apanha os jogos de preparação de Julho e os torneios que
+ * se atravessam para Agosto.
+ */
+function epocaDesportiva(): [Date, Date] {
+  const hoje = new Date();
+  // Antes de Agosto ainda se está na época que começou no ano anterior.
+  const inicio = hoje.getMonth() >= 7 ? hoje.getFullYear() : hoje.getFullYear() - 1;
+  return [new Date(inicio, 6, 1), new Date(inicio + 1, 7, 31)];
+}
+
+export async function ensureCalendarRange(from: Date, to: Date): Promise<void> {
+  const de = from.getTime();
+  const ate = to.getTime();
+  if (!Number.isFinite(de) || !Number.isFinite(ate) || de >= ate || cobre(de, ate)) return;
+
+  // Já vem a caminho dentro de um pedido maior — espera por esse.
+  const jaVem = aCaminho(de, ate);
+  if (jaVem) return jaVem;
+
+  const trabalho = trazer(from, to, de, ate);
+  emVoo = [...emVoo, { de, ate, promessa: trabalho }];
+  return trabalho.finally(() => {
+    emVoo = emVoo.filter((j) => j.promessa !== trabalho);
+  });
+}
+
+async function trazer(from: Date, to: Date, de: number, ate: number): Promise<void> {
+  // Marca-se **antes** de pedir: dois meses trocados depressa disparam dois
+  // efeitos, e sem isto o segundo repetia o pedido do primeiro.
+  janelas = [...janelas, { de, ate }];
+  emCurso += 1;
+  emit();
+
+  try {
+    /*
+     * Um pedido, não três.
+     *
+     * Eram `/api/sessions`, `/api/matches` e `/api/events` em paralelo — e o
+     * paralelo enganava: cada um paga a autenticação (quatro consultas para
+     * resolver o contexto) e abre a **sua** transacção, que ao Postgres remoto
+     * são mais cinco idas e voltas. Mudar de mês custava isso três vezes, para
+     * trazer uma dúzia de treinos.
+     */
+    const pacote = await apiGet<{ sessions: ApiSession[]; matches: ApiMatch[]; events: ApiEvent[] }>(
+      "/api/calendar",
+      { from: from.toISOString(), to: to.toISOString() },
+    );
+
+    const novasSessoes = pacote?.sessions ?? [];
+    const novosJogos = pacote?.matches ?? [];
+    const novosEventos = pacote?.events ?? [];
+    if (!novasSessoes.length && !novosJogos.length && !novosEventos.length) return;
+
+    apply({
+      ...state,
+      sessions: juntar(state.sessions, novasSessoes.map(mapSession)),
+      matches: juntar(state.matches, novosJogos),
+      events: juntar(state.events, novosEventos),
+    });
+  } catch {
+    // Falhou: esquece a janela, para a próxima visita voltar a tentar em vez de
+    // mostrar um mês vazio para sempre.
+    janelas = janelas.filter((j) => !(j.de === de && j.ate === ate));
+  } finally {
+    emCurso -= 1;
+    emit();
+  }
+}
+
+/**
+ * Quantos intervalos estão a ser trazidos agora.
+ *
+ * O calendário precisa de o saber para mostrar que está a trabalhar: sem isso,
+ * mudar de mês dava um ecrã vazio durante segundos, indistinguível de um mês
+ * sem nada marcado. Vive fora do `State` de propósito — não é dado da academia,
+ * é o estado de uma ida ao servidor — mas passa pelo mesmo `emit`, que é o que
+ * faz o ecrã reagir.
+ */
+let emCurso = 0;
+
+export const calendarLoading = () => emCurso > 0;
+
+/**
+ * Traz o que está à volta, sem ninguém esperar por isso.
+ *
+ * ## Porque é isto, e não uma optimização do pedido
+ *
+ * O tempo de um pedido é quase todo **fixo**: medido nesta ligação, um mês
+ * vazio custa 1,5 s e um mês com doze treinos custa 2,2 s — a diferença são os
+ * dados, o resto é a autenticação e a transacção. Não há aqui nada a cortar do
+ * lado do calendário: o mês seguinte vai custar o mesmo, peça-se como se pedir.
+ *
+ * O que se pode evitar é **esperar por ele**. Quem abre o calendário carrega
+ * quase sempre na seta a seguir; trazer os meses de lado enquanto se olha para
+ * o do meio faz a navegação parecer instantânea, porque quando a seta é
+ * carregada já não há nada para ir buscar.
+ *
+ * ## Uma janela larga, e não duas estreitas
+ *
+ * Pedia-se o intervalo imediatamente antes e o imediatamente depois. Não
+ * chegava: as janelas do calendário **sobrepõem-se** (um mês leva uma semana
+ * de encosto de cada lado), e `cobre` só dá por trazido o que está inteiro
+ * dentro de uma janela — dois vizinhos colados nunca cobriam o pedido
+ * seguinte, que fica a cavalo dos dois.
+ *
+ * Uma janela só, com 45 dias de folga para cada lado, cobre o mês anterior e o
+ * seguinte com margem, e é **um** pedido em vez de dois.
+ */
+export function prefetchCalendarNeighbours(from: Date, to: Date): void {
+  const folga = 45 * 86_400_000;
+  void ensureCalendarRange(new Date(from.getTime() - folga), new Date(to.getTime() + folga));
+}
+
+/** Une duas listas pelo `id`, ficando com a versão mais recente de cada. */
+function juntar<T extends { id: string }>(atuais: T[], novos: T[]): T[] {
+  if (novos.length === 0) return atuais;
+  const por = new Map(atuais.map((x) => [x.id, x]));
+  for (const n of novos) por.set(n.id, n);
+  return [...por.values()];
+}
+
+/* -------------------------------------------------------------------------- */
 /* Tradução                                                                    */
 /* -------------------------------------------------------------------------- */
 
-function build(
+/** Um treino da API no formato da consola. Usado pelo arranque e por `ensureCalendarRange`. */function mapSession(s: ApiSession): TrainingSession {  return {
+    id: s.id,
+    teamId: s.teamId,
+    teamName: s.teamName,
+    mine: s.mine,
+    start: s.startsAt,
+    end: s.endsAt,
+    venue: s.venue,
+    dressingRoom: s.dressingRoom ?? undefined,
+    dressingRooms: s.dressingRooms ?? (s.dressingRoom ? [s.dressingRoom] : []),
+    coachId: s.coachId ?? undefined,
+    coachName: s.coachName ?? undefined,
+    status: s.status === "DONE" ? "done" : s.status === "CANCELLED" ? "cancelled" : "scheduled",
+    // `recorded` a falso é "ninguém verificou" e tem de continuar indistinguível de
+    // uma lista de faltas vazia — que significa "estiveram todos".
+    attendance: s.recorded
+      ? {
+          absences: s.absences.map((x) => ({
+            athleteId: x.athleteId,
+            kind: x.status === "JUSTIFIED" ? "justified" : x.status === "LATE" ? "late" : "absent",
+            // O motivo da justificada — a ficha do atleta mostra-o ao lado da
+            // falta, e sem ele o campo aparecia vazio depois de recarregar.
+            ...(x.note ? { note: x.note } : {}),
+          })),
+          recordedAt: s.endsAt,
+        }
+      : undefined,  };}function build(
   boot: ApiBootstrap,
   apiTeams: ApiTeam[],
   apiAthletes: ApiAthlete[],
@@ -538,34 +767,7 @@ function build(
     extraRoles: s.extraRoles ?? [],
   }));
 
-  const sessions: TrainingSession[] = apiSessions.map((s) => ({
-    id: s.id,
-    teamId: s.teamId,
-    teamName: s.teamName,
-    mine: s.mine,
-    start: s.startsAt,
-    end: s.endsAt,
-    venue: s.venue,
-    dressingRoom: s.dressingRoom ?? undefined,
-    dressingRooms: s.dressingRooms ?? (s.dressingRoom ? [s.dressingRoom] : []),
-    coachId: s.coachId ?? undefined,
-    coachName: s.coachName ?? undefined,
-    status: s.status === "DONE" ? "done" : s.status === "CANCELLED" ? "cancelled" : "scheduled",
-    // `recorded` a falso é "ninguém verificou" e tem de continuar indistinguível de
-    // uma lista de faltas vazia — que significa "estiveram todos".
-    attendance: s.recorded
-      ? {
-          absences: s.absences.map((x) => ({
-            athleteId: x.athleteId,
-            kind: x.status === "JUSTIFIED" ? "justified" : x.status === "LATE" ? "late" : "absent",
-            // O motivo da justificada — a ficha do atleta mostra-o ao lado da
-            // falta, e sem ele o campo aparecia vazio depois de recarregar.
-            ...(x.note ? { note: x.note } : {}),
-          })),
-          recordedAt: s.endsAt,
-        }
-      : undefined,
-  }));
+  const sessions: TrainingSession[] = apiSessions.map(mapSession);
 
   const fees: Fee[] = apiFees.map((c) => ({
     id: c.id,

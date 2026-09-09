@@ -65,7 +65,15 @@ check("a purga marca PURGED e larga o holder", wsvc.includes('status: "PURGED", 
  * com o estado errado, para sempre, porque a purga não tem um fim que a
  * devolva a COMPLETED.
  */
-check("reclamar a purga não mexe no estado da análise", /if \(job\.kind !== "purge_video"\) \{\s*await db\.aIAnalysis\.update\(\{\s*where: \{ id: analysis\.id \}/.test(wsvc));
+/*
+ * Verifica-se a intenção, não a redacção: a condição já ganhou um `&&`
+ * para as propagações, e um teste que exigisse o texto exacto dava
+ * vermelho a cada linha nova sem nada estar partido.
+ */
+check(
+  "reclamar a purga não mexe no estado da análise",
+  /job\.kind !== "purge_video"[\s\S]{0,220}?aIAnalysis\.update\(\{[\s\S]{0,120}?status: "PROCESSING"/.test(wsvc),
+);
 check("nem o heartbeat dela no progresso", wsvc.includes('dto.progress != null && job.kind !== "purge_video"'));
 
 /* O contentor do Railway: ffmpeg dentro, torch de CPU, uma réplica. */

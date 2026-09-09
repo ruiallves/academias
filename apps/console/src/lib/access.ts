@@ -225,6 +225,24 @@ export const AREAS: Area[] = [
   { label: "Sócios", hint: "lista de sócios, quotas e contactos", read: "member:read", write: "member:write" },
   { label: "Comunicação", hint: "avisos às famílias", read: "comms:read", write: "comms:write" },
   { label: "Staff", hint: "pessoas da academia", read: "staff:read", write: "staff:write" },
+  /*
+   * Inventário e Contas — as duas que faltavam, e a terceira vez que o mesmo
+   * buraco aparece.
+   *
+   * A nota dos Sócios, logo acima, já dizia o que voltou a acontecer: uma
+   * permissão que não está neste catálogo não se dá **nem se tira** por nenhum
+   * dos três editores de acesso. `inventory:*` e `finance:*` nasceram com as
+   * suas áreas (o armazém em Agosto, as contas em Setembro), com menu próprio e
+   * com o servidor a verificá-las — e nunca chegaram aqui. O resultado é o
+   * mesmo de sempre: a direção vê o menu, quer dá-lo a quem trata do material
+   * ou da tesouraria, e não encontra o interruptor.
+   *
+   * Ficam ao lado das Mensalidades por serem a mesma conversa (dinheiro e
+   * material do clube), e não com as de Administração: gerir o armazém não é
+   * administrar a academia.
+   */
+  { label: "Inventário", hint: "artigos, stock e entregas de material", read: "inventory:read", write: "inventory:write" },
+  { label: "Contas", hint: "saldo, movimentos e orçamento do clube", read: "finance:read", write: "finance:write" },
 ];
 
 /**
@@ -250,6 +268,15 @@ export const CLINICAL_AREAS: Area[] = [
 export const SCOUTING_AREAS: Area[] = [
   { label: "Scouting", hint: "prospectos, observações e shortlists", read: "scouting:read", write: "scouting:write" },
   { label: "Vídeo de scouting", hint: "ver e carregar gravações de prospectos", read: "scouting:video:read", write: "scouting:video:write" },
+  /*
+   * Pedir ao scouting, sem abrir os dossiês.
+   *
+   * É a permissão que um treinador tem e que lhe dá **só** o ecrã de Pedidos —
+   * dizer que lhe falta um lateral esquerdo e acompanhar os nomes que
+   * aparecerem. Estava a ser dada pelo mapa-base e por nenhum editor: quem a
+   * quisesse dar a mais alguém (ou tirar a um treinador) não tinha por onde.
+   */
+  { label: "Pedidos ao scouting", hint: "pedir jogadores, sem ver os dossiês", read: "scouting:request" },
 ];
 
 /**

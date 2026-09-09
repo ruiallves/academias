@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { Dialog } from "@/components/Dialog";
 import { cx } from "@/components/primitives";
-import { Check, Trash2, TriangleAlert, X } from "@/lib/icons";
+import { Check, Trash2, TriangleAlert, X, type LucideIcon } from "@/lib/icons";
 
 /**
  * Apagar várias linhas de uma lista.
@@ -32,12 +32,25 @@ export function BulkBar({
   noun,
   onClear,
   onDelete,
+  action,
 }: {
   count: number;
   /** ["sócio", "sócios"] — o singular e o plural, como no resto da consola. */
   noun: [string, string];
   onClear: () => void;
   onDelete: () => void;
+  /**
+   * Uma segunda acção, à esquerda do apagar.
+   *
+   * Opcional: as listas que só apagam continuam exactamente como estavam. Nasceu
+   * para o "enviar convite" dos sócios — escolher trinta linhas e convidá-las de
+   * uma vez é o gesto de quem acabou de importar um livro de Excel, e abrir
+   * trinta fichas para o fazer não é um gesto.
+   *
+   * Fica **antes** do apagar e sem vermelho: a acção que não se desfaz é a
+   * última da barra, e não deve poder ser acertada por quem ia carregar ao lado.
+   */
+  action?: { label: string; icon?: LucideIcon; onClick: () => void; disabled?: boolean; title?: string };
 }) {
   if (count === 0) return null;
 
@@ -54,6 +67,18 @@ export function BulkBar({
         <span className="pl-1.5 text-body font-medium tabular">
           {count} {count === 1 ? noun[0] : noun[1]}
         </span>
+        {action && (
+          <button
+            type="button"
+            onClick={action.onClick}
+            disabled={action.disabled}
+            title={action.title}
+            className="flex items-center gap-1.5 rounded-full bg-white/10 px-3 py-1.5 text-meta font-semibold text-surface hover:bg-white/20 disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:bg-white/10"
+          >
+            {action.icon && <action.icon className="size-3.5" strokeWidth={1.75} />}
+            {action.label}
+          </button>
+        )}
         <button
           type="button"
           onClick={onDelete}

@@ -114,11 +114,72 @@ export const getOverview = (horizon?: number) =>
 export const listTransactions = (f: TransactionFilters = {}) =>
   apiGet<TransactionRow[]>("/api/finance/transactions", f as Record<string, string | undefined>);
 
-export const createTransaction = (body: Record<string, unknown>) =>
-  apiPost<{ id: string; created: number; seriesId?: string }>("/api/finance/transactions", body);
+/* -------------------------------------------------------------------------- */
+/* O dinheiro de um evento, lembrado                                           */
+/* -------------------------------------------------------------------------- */
 
-export const updateTransaction = (id: string, body: Record<string, unknown>) =>
-  apiPatch<{ ok: true }>(`/api/finance/transactions/${id}`, body);
+/**
+ * Os movimentos de um evento, com memória entre aberturas da gaveta.
+ *
+ * ## Porque é que isto existe
+ *
+ * A gaveta do calendário lê tudo o resto do que já está em memória — o evento,
+ * a equipa, o treinador — e desenha-se num instante. Só o painel do dinheiro é
+ * que ia à rede, e por isso aparecia depois de todo o resto, como se tivesse
+ * sido esquecido e chegasse atrasado.
+ *
+ * Percorrer uma semana no calendário é abrir e fechar a mesma gaveta muitas
+ * vezes. Da segunda vez em diante a resposta já cá está, e o painel nasce
+ * completo com o resto.
+ *
+ * ## O que a memória **não** faz
+ *
+ * Não esconde uma alteração. Qualquer escrita (registar, confirmar, apagar)
+ * limpa o que estava guardado — ver `esquecerMovimentos`, chamado pelas três.
+ * E a memória morre com a página: é um atalho entre dois cliques, não uma
+ * cópia da base.
+ */
+const memoriaDeEventos = new Map<string, TransactionRow[]>();
+
+const chaveDoEvento = (link: { matchId?: string; calendarEventId?: string }) =>
+  `${link.matchId ?? ""}|${link.calendarEventId ?? ""}`;
+
+/** O que já se sabe deste evento, ou `undefined` se ainda não se perguntou. */
+export const movimentosLembrados = (link: { matchId?: string; calendarEventId?: string }) =>
+  memoriaDeEventos.get(chaveDoEvento(link));
+
+export async function movimentosDoEvento(link: {
+  matchId?: string;
+  calendarEventId?: string;
+}): Promise<TransactionRow[]> {
+  const rows = await listTransactions(link);
+  memoriaDeEventos.set(chaveDoEvento(link), rows);
+  return rows;
+}
+
+/**
+ * Esquecer o que se sabia — de um evento, ou de todos.
+ *
+ * Sem argumento limpa tudo: um movimento registado na página das Contas pode
+ * pertencer a um evento qualquer, e adivinhar qual seria mais frágil do que
+ * voltar a perguntar.
+ */
+export function esquecerMovimentos(link?: { matchId?: string; calendarEventId?: string }): void {
+  if (link) memoriaDeEventos.delete(chaveDoEvento(link));
+  else memoriaDeEventos.clear();
+}
+
+export const createTransaction = async (body: Record<string, unknown>) => {
+  const r = await apiPost<{ id: string; created: number; seriesId?: string }>("/api/finance/transactions", body);
+  esquecerMovimentos();
+  return r;
+};
+
+export const updateTransaction = async (id: string, body: Record<string, unknown>) => {
+  const r = await apiPatch<{ ok: true }>(`/api/finance/transactions/${id}`, body);
+  esquecerMovimentos();
+  return r;
+};
 
 /**
  * Apagar um movimento lançado à mão.
@@ -127,8 +188,14 @@ export const updateTransaction = (id: string, body: Record<string, unknown>) =>
  * a regra 3 no serviço). `scope: "series"` leva também os meses seguintes da
  * mesma série; devolve quantas linhas desapareceram, para o ecrã o poder dizer.
  */
-export const deleteTransaction = (id: string, scope?: "one" | "series") =>
-  apiDelete<{ ok: true; deleted: number }>(`/api/finance/transactions/${id}`, scope ? { scope } : {});
+export const deleteTransaction = async (id: string, scope?: "one" | "series") => {
+  const r = await apiDelete<{ ok: true; deleted: number }>(
+    `/api/finance/transactions/${id}`,
+    scope ? { scope } : {},
+  );
+  esquecerMovimentos();
+  return r;
+};
 
 export const getSettings = () => apiGet<FinanceSettings>("/api/finance/settings");
 

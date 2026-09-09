@@ -39,17 +39,10 @@ export type PublicTier = {
   name: string;
   description: string | null;
   benefits: string[];
+  /** Por mês — as quotas são mensais. */
   feeCents: number | null;
-  period: "MONTHLY" | "QUARTERLY" | "ANNUAL" | "ONCE";
   minAge: number | null;
   maxAge: number | null;
-};
-
-const PERIOD_SHORT: Record<PublicTier["period"], string> = {
-  MONTHLY: "/mês",
-  QUARTERLY: "/tri",
-  ANNUAL: "/ano",
-  ONCE: "único",
 };
 
 /** O que aparece a um clube que ainda não escreveu a sua página. */
@@ -1228,7 +1221,7 @@ function renderPlanScreen(tiers: PublicTier[]): string {
                 <div class="pr">${
                   t.feeCents === null
                     ? '<span style="font-size:17px">a definir</span>'
-                    : esc(money(t.feeCents)) + `<span>${esc(PERIOD_SHORT[t.period])}</span>`
+                    : esc(money(t.feeCents)) + "<span>/mês</span>"
                 }</div>
                 ${t.description ? `<p class="ds">${esc(t.description)}</p>` : ""}
                 ${t.benefits.length ? `<ul>${t.benefits.map((b) => `<li>${esc(b)}</li>`).join("")}</ul>` : ""}

@@ -144,7 +144,15 @@ type Layout = {
    * mesma responsabilidade que `paragraphs` já tem, dita em voz alta.
    */
   blocks?: string[];
-  cta: { label: string; url: string };
+  /**
+   * O botão. **Opcional**: nem todo o email pede uma acção.
+   *
+   * O recibo da adesão a sócio (`memberSignupReceivedEmail`) é o primeiro sem
+   * ele — diz "recebemos o teu pedido" e mais nada, porque o link só existe
+   * depois de o clube aprovar. Um botão inventado ali levaria a pessoa a uma
+   * conta que ainda não pode ter.
+   */
+  cta?: { label: string; url: string };
   /** O rodapé por baixo do link — validade, avisos. */
   notes: string[];
 };
@@ -238,7 +246,12 @@ function layout({ brand, greeting, heading, paragraphs, blocks, cta, notes }: La
       </h1>
       ${corpo}
 
-      <table role="presentation" cellpadding="0" cellspacing="0" border="0" style="margin:24px 0 18px;">
+      ${
+        /* Sem botão, sem bloco: um email que não pede acção nenhuma — o
+           recibo da adesão a sócio — não deve ter um espaço vazio nem um
+           "copia este endereço" a apontar para endereço nenhum. */
+        cta
+          ? `<table role="presentation" cellpadding="0" cellspacing="0" border="0" style="margin:24px 0 18px;">
         <tr>
           <td style="background:${color};border-radius:7px;">
             <a href="${esc(cta.url)}"
@@ -254,7 +267,9 @@ function layout({ brand, greeting, heading, paragraphs, blocks, cta, notes }: La
       <p style="margin:0 0 4px;font-size:12.5px;color:#8a8681;">Se o botão não funcionar, copia este endereço:</p>
       <p style="margin:0 0 22px;font-size:12.5px;line-height:1.5;word-break:break-all;">
         <a href="${esc(cta.url)}" style="color:${onWhite(color)};text-decoration:underline;">${esc(cta.url)}</a>
-      </p>
+      </p>`
+          : ""
+      }
 
       <div style="border-top:1px solid #eae7e3;padding-top:16px;">${rodape}</div>
     </td>
@@ -273,8 +288,13 @@ function layout({ brand, greeting, heading, paragraphs, blocks, cta, notes }: La
 }
 
 /** A versão em texto, montada das mesmas peças. */
-function plain(heading: string, paragraphs: string[], cta: { label: string; url: string }, notes: string[]): string {
-  return [heading, "", ...paragraphs, "", cta.label + ":", cta.url, "", ...notes].join("\n");
+function plain(
+  heading: string,
+  paragraphs: string[],
+  cta: { label: string; url: string } | undefined,
+  notes: string[],
+): string {
+  return [heading, "", ...paragraphs, "", ...(cta ? [cta.label + ":", cta.url, ""] : []), ...notes].join("\n");
 }
 
 /* -------------------------------------------------------------------------- */
@@ -397,6 +417,60 @@ export function memberInviteEmail(input: {
         "Abre o link, escolhe a tua palavra-passe e instala a app.",
       ],
       { label: "Criar a minha conta", url: input.link },
+      notes.map(semTags),
+    ),
+  };
+}
+
+/* -------------------------------------------------------------------------- */
+/* Adesão a sócio — o recibo de quem se inscreveu pelo site                    */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * "Recebemos o teu pedido" — e mais nada.
+ *
+ * ## Porque é que este email existe
+ *
+ * Quem preenche o formulário de adesão no site fica sem saber se aquilo chegou
+ * a algum lado. A inscrição fica `PENDING` à espera de aprovação — que pode
+ * demorar dias, porque do outro lado está uma direcção de clube a tratar disto
+ * ao serão — e o silêncio nesse intervalo é o que faz as pessoas voltarem a
+ * submeter o formulário, ou telefonar para a secretaria a perguntar.
+ *
+ * ## O que ele NÃO diz
+ *
+ * Não promete aprovação, não diz prazo, e **não traz link nenhum**. É um
+ * recibo: dá o nome do clube, diz que o pedido está a ser analisado, e avisa
+ * que virá outro email quando houver decisão. O convite da app — esse sim com
+ * link — é o `memberInviteEmail`, e só sai depois de o clube aprovar.
+ *
+ * Um recibo que prometesse "vais ser aceite" faria o clube desdizê-lo, e um
+ * clube não deve deixar de poder recusar uma adesão por causa do nosso email.
+ */
+export function memberSignupReceivedEmail(input: {
+  brand: MailBrand;
+  name: string;
+}): { subject: string; html: string; text: string } {
+  const heading = "Recebemos o teu pedido";
+  const paragraphs = [
+    "O teu pedido para te tornares sócio de <strong>" + esc(input.brand.name) + "</strong> foi submetido e está a ser analisado pelo clube.",
+    "Assim que houver uma decisão, recebes um email neste endereço. Se for aprovado, virá com o acesso à app do clube — onde tens o cartão de sócio, as quotas e as novidades.",
+  ];
+  const notes = [
+    "Não é preciso fazer mais nada por agora, nem voltar a preencher o formulário.",
+    "Se não foste tu que pediste, podes ignorar este email — nada fica em teu nome sem aprovação do clube.",
+  ];
+
+  return {
+    subject: input.brand.shortName + " · recebemos o teu pedido de sócio",
+    html: layout({ brand: input.brand, heading, paragraphs, notes }),
+    text: plain(
+      "Olá " + input.name.trim().split(/\s+/)[0] + ",",
+      [
+        "O teu pedido para te tornares sócio de " + input.brand.name + " foi submetido e está a ser analisado pelo clube.",
+        "Assim que houver uma decisão, recebes um email neste endereço.",
+      ],
+      undefined,
       notes.map(semTags),
     ),
   };

@@ -563,6 +563,20 @@ export class AcademyController {
     return this.academy.recordAttendance(req.ctx, id, body.absences);
   }
 
+  /**
+   * O calendário inteiro de um intervalo: treinos, jogos e eventos.
+   *
+   * Um pedido em vez de três — ver `calendar` no serviço para o porquê. Os três
+   * endpoints separados continuam a existir para quem só quer uma das listas.
+   */
+  @Get("calendar")
+  calendar(@Req() req: AuthedRequest, @Query("from") from?: string, @Query("to") to?: string) {
+    const now = new Date();
+    const start = from ? new Date(from) : new Date(now.getTime() - 21 * 86_400_000);
+    const end = to ? new Date(to) : new Date(now.getTime() + 21 * 86_400_000);
+    return this.academy.calendar(req.ctx, start, end);
+  }
+
   /** Eventos pontuais do calendário num intervalo (mesmo padrão de `sessions`). */
   @Get("events")
   events(@Req() req: AuthedRequest, @Query("from") from?: string, @Query("to") to?: string) {

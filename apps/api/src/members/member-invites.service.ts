@@ -3,7 +3,7 @@ import { BadRequestException, ForbiddenException, Injectable, NotFoundException 
 import { ConfigService } from "@nestjs/config";
 import { PrismaService } from "../prisma/prisma.service";
 import { MailClient } from "../mail/mail.client";
-import { memberInviteEmail } from "../mail/mail.templates";
+import { memberInviteEmail, memberSignupReceivedEmail } from "../mail/mail.templates";
 import { can, type RequestContext } from "../common/permissions";
 
 /**
@@ -100,6 +100,115 @@ export class MemberInvitesService {
       await this.mandarEmail(preparado);
     } catch {
       /* O log do MailClient conta a história; o fluxo que nos chamou não pára. */
+    }
+  }
+
+  /**
+   * O convite para muitos de uma vez — a lista de sócios, com linhas escolhidas.
+   *
+   * ## Porque é que não é o botão da ficha em ciclo
+   *
+   * Porque a resposta é outra. Um clube que carrega o livro por Excel escolhe
+   * trinta linhas e quer saber **quantos** saíram e quantos não podiam sair —
+   * quinze sem email, três com conta já ligada. Trinta erros seguidos, um por
+   * ficha, não são uma resposta: são um problema por resolver.
+   *
+   * Daí devolver a contagem por motivo em vez de rebentar no primeiro que não
+   * dá. As recusas individuais (`preparar`) continuam a ser as mesmas — só
+   * deixam de interromper as outras.
+   *
+   * ## Em série, e de propósito
+   *
+   * Trinta emails ao mesmo tempo é a forma mais rápida de um fornecedor de
+   * correio nos limitar. Um de cada vez é mais lento e chega lá — e a
+   * importação já não espera por isto.
+   */
+  async enviarMuitos(ctx: RequestContext, ids: string[]) {
+    if (!can(ctx, "member:write")) throw new ForbiddenException("Sem permissão para gerir sócios");
+    if (!this.activo) {
+      throw new BadRequestException(
+        "Os convites para a app de sócio estão desligados de momento. Fala com a Academias para os activar.",
+      );
+    }
+    if (ids.length === 0) throw new BadRequestException("Não escolheste nenhum sócio");
+
+    let enviados = 0;
+    const falhas: { id: string; reason: string }[] = [];
+
+    for (const id of [...new Set(ids)]) {
+      try {
+        const preparado = await this.preparar(ctx.academyId, id);
+        if (!preparado.ok) {
+          falhas.push({ id, reason: preparado.reason });
+          continue;
+        }
+        const enviado = await this.mandarEmail(preparado);
+        if (enviado.sent) enviados++;
+        else falhas.push({ id, reason: enviado.reason ?? "Não foi possível enviar o email." });
+      } catch {
+        falhas.push({ id, reason: "Não foi possível enviar o email." });
+      }
+    }
+
+    return { ok: true as const, enviados, falhas };
+  }
+
+  /**
+   * O recibo de quem se inscreveu pelo site.
+   *
+   * ## Porque é que não é o convite
+   *
+   * Porque não há nada para aceitar ainda: a inscrição fica `PENDING` à espera
+   * de o clube decidir, e essa decisão pode demorar dias. O que este email faz
+   * é fechar o silêncio entre "carreguei em submeter" e "recebi resposta" — o
+   * silêncio que faz as pessoas voltarem a submeter o formulário ou telefonar
+   * para a secretaria. Não leva link nenhum: o convite da app é outro email, e
+   * só sai quando a aprovação acontecer.
+   *
+   * ## Silencioso, como os outros ganchos
+   *
+   * Um email que falha não pode fazer falhar a adesão de ninguém. E não gera
+   * token: um segredo criado para um sócio que o clube ainda não aceitou seria
+   * um convite emitido antes da decisão.
+   */
+  async avisarPedidoRecebido(academyId: string, memberId: string): Promise<void> {
+    if (!this.activo) return;
+
+    try {
+      const dados = await this.prisma.runAs(academyId, async (db) => {
+        const member = await db.member.findFirst({
+          where: { id: memberId },
+          select: { name: true, email: true },
+        });
+        if (!member?.email) return null;
+
+        const academy = await db.academy.findFirst({
+          where: { id: academyId },
+          select: { name: true, shortName: true, signalColor: true, logoUrl: true },
+        });
+        return { name: member.name, email: member.email, academy };
+      });
+      if (!dados || !this.mail.ready) return;
+
+      const mail = memberSignupReceivedEmail({
+        // A mesma marca do convite — ver `mandarEmail`.
+        brand: {
+          shortName: dados.academy?.shortName ?? "Academia",
+          name: dados.academy?.name ?? "o clube",
+          signalColor: dados.academy?.signalColor,
+          logoUrl: dados.academy?.logoUrl,
+        },
+        name: dados.name,
+      });
+
+      await this.mail.send({
+        to: dados.email,
+        subject: mail.subject,
+        html: mail.html,
+        text: mail.text,
+      });
+    } catch {
+      /* O log do MailClient conta a história; a adesão não pára por causa disto. */
     }
   }
 

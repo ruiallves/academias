@@ -18,7 +18,16 @@ import {
 import { ClubMark } from "@/ClubMark";
 import { Avatar, Chip, Label, Money, cx, dateShort, dayName, greeting, money, time, whenLabel } from "@/ui";
 import { signOut } from "@/lib/session";
-import { loadSocio, pagarQuota, useSocio, votar, type PagamentoIniciado, type SocioFee, type SocioPoll } from "@/lib/socio";
+import {
+  loadSocio,
+  pagarMes,
+  pagarQuota,
+  useSocio,
+  votar,
+  type PagamentoIniciado,
+  type SocioMes,
+  type SocioPoll,
+} from "@/lib/socio";
 import { AreaSwitch } from "@/screens/socio/AreaSwitch";
 
 /**
@@ -436,14 +445,34 @@ function Cartao() {
 /* -------------------------------------------------------------------------- */
 
 
+/**
+ * O que se paga: a quota que já existe, ou um mês que ainda não tem quota.
+ *
+ * Duas rotas no servidor, uma folha de pagamento — a folha só quer saber o
+ * título, o valor e como se inicia.
+ */
+type Alvo = {
+  titulo: string;
+  amountCents: number;
+  iniciar: (method: "MBWAY" | "MULTIBANCO", phone?: string) => Promise<PagamentoIniciado>;
+};
+
 function Quotas() {
   const { data } = useSocio();
-  const [aPagar, setAPagar] = useState<SocioFee | null>(null);
+  const [aPagar, setAPagar] = useState<Alvo | null>(null);
   if (!data) return null;
 
   const abertas = data.fees.filter((f) => f.status === "OPEN");
   const historico = data.fees.filter((f) => f.status !== "OPEN");
   const emAtraso = abertas.some((f) => f.overdue);
+  /*
+   * Os meses que ainda não têm quota, até ao fim da época. Os que já têm
+   * uma em aberto estão na lista de cima; os pagos e anulados não se voltam
+   * a oferecer. Pagar adiantado é uma escolha do sócio, não uma dívida — por
+   * isso vem depois do que está mesmo por pagar, e sem cor de alarme.
+   */
+  const proximos = data.upcoming.filter((m) => m.feeId === null);
+  const podePagar = data.academy.onlinePayments && data.member.status === "ACTIVE";
 
   return (
     <div className="space-y-5 pt-3">
@@ -488,14 +517,38 @@ function Quotas() {
             </span>
             <Money cents={f.amountCents} size="md" />
           </div>
-          {data.academy.onlinePayments && (
-            <button type="button" onClick={() => setAPagar(f)} className="cta mt-3 w-full">
+          {podePagar && (
+            <button
+              type="button"
+              onClick={() =>
+                setAPagar({
+                  titulo: f.label ?? f.period,
+                  amountCents: f.amountCents,
+                  iniciar: (m, phone) => pagarQuota(f.id, m, phone),
+                })
+              }
+              className="cta mt-3 w-full"
+            >
               <CreditCard className="size-[18px]" strokeWidth={1.9} />
               Pagar quota
             </button>
           )}
         </div>
       ))}
+
+      {proximos.length > 0 && (
+        <section>
+          <Label>Próximos meses</Label>
+          <p className="mb-2 px-1 text-[13px] leading-relaxed text-ink-3">
+            Podes pagar adiantado até ao fim da época, em Julho.
+          </p>
+          <div className="overflow-hidden rounded-[20px] bg-surface shadow-[var(--shadow-soft)]">
+            {proximos.map((m) => (
+              <ProximoMes key={m.period} mes={m} podePagar={podePagar} onPagar={setAPagar} />
+            ))}
+          </div>
+        </section>
+      )}
 
       {historico.length > 0 && (
         <section>
@@ -521,13 +574,44 @@ function Quotas() {
         </section>
       )}
 
-      {data.fees.length === 0 && (
+      {data.fees.length === 0 && proximos.length === 0 && (
         <Vazio icon={Wallet} title="Ainda não há quotas">
           Quando o clube lançar a primeira quota, aparece aqui — com o histórico a crescer por baixo.
         </Vazio>
       )}
 
-      {aPagar && <PagarSheet fee={aPagar} telefone={data.member.phone} onClose={() => setAPagar(null)} />}
+      {aPagar && <PagarSheet alvo={aPagar} telefone={data.member.phone} onClose={() => setAPagar(null)} />}
+    </div>
+  );
+}
+
+/** Uma linha de "Próximos meses": o mês, o valor da categoria, e pagar. */
+function ProximoMes({ mes, podePagar, onPagar }: { mes: SocioMes; podePagar: boolean; onPagar: (a: Alvo) => void }) {
+  const cents = mes.amountCents;
+  return (
+    <div className="flex items-center gap-3 border-b border-ink/5 px-4 py-3 last:border-0">
+      <span className="min-w-0 flex-1">
+        <span className="block truncate text-[14px] font-medium text-ink">{mes.label}</span>
+        {cents === null && (
+          <span className="block text-[12px] text-ink-3">A tua categoria ainda não tem valor — fala com o clube</span>
+        )}
+      </span>
+      {cents !== null && <span className="num text-[14px] font-semibold text-ink">{money(cents)}</span>}
+      {podePagar && cents !== null && (
+        <button
+          type="button"
+          onClick={() =>
+            onPagar({
+              titulo: mes.label,
+              amountCents: cents,
+              iniciar: (m, phone) => pagarMes(mes.period, m, phone),
+            })
+          }
+          className="rounded-full bg-ink px-3 py-1.5 text-[13px] font-semibold text-white"
+        >
+          Pagar
+        </button>
+      )}
     </div>
   );
 }
@@ -539,7 +623,7 @@ function Quotas() {
  * referência para pagar com calma. Nada aqui marca a quota como paga: isso é do
  * webhook, quando o dinheiro entrar de verdade.
  */
-function PagarSheet({ fee, telefone, onClose }: { fee: SocioFee; telefone: string | null; onClose: () => void }) {
+function PagarSheet({ alvo, telefone, onClose }: { alvo: Alvo; telefone: string | null; onClose: () => void }) {
   const [metodo, setMetodo] = useState<"MBWAY" | "MULTIBANCO" | null>(null);
   const [phone, setPhone] = useState((telefone ?? "").replace(/^\+\d+\s*/, ""));
   const [busy, setBusy] = useState(false);
@@ -555,7 +639,7 @@ function PagarSheet({ fee, telefone, onClose }: { fee: SocioFee; telefone: strin
     setBusy(true);
     setErro(null);
     try {
-      setFeito(await pagarQuota(fee.id, m, m === "MBWAY" ? phone : undefined));
+      setFeito(await alvo.iniciar(m, m === "MBWAY" ? phone : undefined));
     } catch (e) {
       setErro(e instanceof Error ? e.message : "Não foi possível iniciar o pagamento.");
     } finally {
@@ -581,7 +665,7 @@ function PagarSheet({ fee, telefone, onClose }: { fee: SocioFee; telefone: strin
                 <div>
                   <p className="text-[17px] font-semibold text-ink">Confirma no MB Way</p>
                   <p className="mx-auto mt-1 max-w-[32ch] text-[13px] leading-relaxed text-ink-3">
-                    Enviámos o pedido de {money(fee.amountCents)} para o teu telemóvel. Tens 5 minutos para aceitar.
+                    Enviámos o pedido de {money(alvo.amountCents)} para o teu telemóvel. Tens 5 minutos para aceitar.
                   </p>
                 </div>
               </>
@@ -591,7 +675,7 @@ function PagarSheet({ fee, telefone, onClose }: { fee: SocioFee; telefone: strin
                 <div className="space-y-2 rounded-[16px] bg-surface p-4 text-left shadow-[var(--shadow-soft)]">
                   <LinhaRef k="Entidade" v={feito.entity ?? "—"} />
                   <LinhaRef k="Referência" v={formatarRef(feito.reference ?? "")} />
-                  <LinhaRef k="Valor" v={money(fee.amountCents)} />
+                  <LinhaRef k="Valor" v={money(alvo.amountCents)} />
                 </div>
                 <p className="mx-auto max-w-[32ch] text-[12px] leading-relaxed text-ink-3">
                   Paga no homebanking ou numa caixa. A quota fica regularizada assim que o pagamento chegar.
@@ -612,8 +696,8 @@ function PagarSheet({ fee, telefone, onClose }: { fee: SocioFee; telefone: strin
         ) : (
           <div className="space-y-3">
             <div className="px-1">
-              <p className="text-[17px] font-semibold text-ink">{fee.label ?? fee.period}</p>
-              <p className="text-[13px] text-ink-3">{money(fee.amountCents)}</p>
+              <p className="text-[17px] font-semibold text-ink">{alvo.titulo}</p>
+              <p className="text-[13px] text-ink-3">{money(alvo.amountCents)}</p>
             </div>
 
             <button
@@ -659,7 +743,7 @@ function PagarSheet({ fee, telefone, onClose }: { fee: SocioFee; telefone: strin
               onClick={() => metodo && void iniciar(metodo)}
               className="cta w-full disabled:opacity-40"
             >
-              {busy ? "A preparar…" : `Pagar ${money(fee.amountCents)}`}
+              {busy ? "A preparar…" : `Pagar ${money(alvo.amountCents)}`}
             </button>
           </div>
         )}

@@ -7,7 +7,10 @@ import { MemberFeesService } from "./member-fees.service";
 import { MemberInvitesService } from "./member-invites.service";
 import {
   MemberCreateDto,
+  MemberFeeCreateDto,
+  MemberFeeStatusDto,
   MemberImportDto,
+  MemberInviteManyDto,
   MemberSignupDto,
   MemberTierInputDto,
   MemberUpdateDto,
@@ -44,19 +47,14 @@ export class MembersController {
     return this.fees.gerar(req.ctx);
   }
 
-  @Post("fees/:id/settle")
-  settleFee(@Req() req: AuthedRequest, @Param("id") id: string, @Body() body: { method?: string }) {
-    return this.fees.liquidar(req.ctx, id, body?.method);
-  }
-
-  @Post("fees/:id/void")
-  voidFee(@Req() req: AuthedRequest, @Param("id") id: string) {
-    return this.fees.anular(req.ctx, id);
-  }
-
-  @Post("fees/:id/reopen")
-  reopenFee(@Req() req: AuthedRequest, @Param("id") id: string) {
-    return this.fees.reabrir(req.ctx, id);
+  /**
+   * Ajuste manual do estado de uma quota (paga / por pagar / anulada) — o
+   * menu da ficha, igual ao das mensalidades dos atletas. Ver
+   * `MemberFeesService.mudarEstado`.
+   */
+  @Patch("fees/:id/status")
+  setFeeStatus(@Req() req: AuthedRequest, @Param("id") id: string, @Body() body: MemberFeeStatusDto) {
+    return this.fees.mudarEstado(req.ctx, id, body.status);
   }
 
   @Get()
@@ -117,11 +115,36 @@ export class MembersController {
     return this.fees.doSocio(req.ctx, id);
   }
 
+  /** Lançar quotas a este sócio — o acerto de atrasos e o valor à medida. */
+  @Post(":id/fees")
+  createMemberFees(@Req() req: AuthedRequest, @Param("id") id: string, @Body() dto: MemberFeeCreateDto) {
+    return this.fees.lancar(req.ctx, id, dto);
+  }
+
+  /** O valor por omissão e os meses que já têm quota — o que o ecrã de lançar precisa. */
+  @Get(":id/fees/periods")
+  memberFeePeriods(@Req() req: AuthedRequest, @Param("id") id: string) {
+    return this.fees.periodosParaLancar(req.ctx, id);
+  }
+
   /** (Re)enviar o convite para a app — o botão da ficha. */
   @Throttle({ default: { ttl: 60_000, limit: 10 } })
   @Post(":id/invite")
   invite(@Req() req: AuthedRequest, @Param("id") id: string) {
     return this.invites.enviar(req.ctx, id);
+  }
+
+  /**
+   * (Re)enviar o convite a vários — a acção em massa da lista de sócios.
+   *
+   * Tecto de 3 por minuto: cada pedido pode mandar duzentos emails, e é a
+   * diferença entre uma direcção a convidar o livro todo e alguém a usar o
+   * clube como máquina de correio.
+   */
+  @Throttle({ default: { ttl: 60_000, limit: 3 } })
+  @Post("invites")
+  inviteMany(@Req() req: AuthedRequest, @Body() body: MemberInviteManyDto) {
+    return this.invites.enviarMuitos(req.ctx, body.ids);
   }
 
   /** Ligar a ficha a uma conta que já existe neste clube — sem mandar email. */

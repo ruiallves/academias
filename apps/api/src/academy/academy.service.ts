@@ -3,6 +3,7 @@ import { ConfigService } from "@nestjs/config";
 import { Prisma, type AttendanceStatus, type CalendarEventKind, type Role } from "@prisma/client";
 import { PrismaService, type ScopedClient } from "../prisma/prisma.service";
 import { headCoaches } from "./head-coaches";
+import { MatchesService } from "./matches.service";
 import { StorageService } from "../storage/storage.service";
 import { PHOTO_BUCKET, PHOTO_TTL } from "../storage/photos.service";
 import { basePermissions, can, outranks, ROLE_PERMISSIONS, type Permission, type RequestContext, teamScopeForRoster } from "../common/permissions";
@@ -115,6 +116,20 @@ const DELEGATABLE: ReadonlySet<Permission> = new Set<Permission>([
    */
   "training:read", "training:write",
   /*
+   * O armazém e a tesouraria — o mesmo esquecimento da área técnica, duas vezes.
+   *
+   * `inventory:*` e `finance:*` nasceram com menu, ecrãs e verificação no
+   * servidor, e nunca chegaram nem a este catálogo nem ao `AREAS` do cliente.
+   * O efeito era o descrito acima: quem tratasse do material ou das contas do
+   * clube não podia receber a permissão pelo painel de Acesso — o interruptor
+   * não existia, e se existisse esta lista deitava-o fora em silêncio.
+   *
+   * São exactamente o tipo de coisa que se delega a uma pessoa só: o roupeiro
+   * que entrega equipamento, o tesoureiro que lança movimentos.
+   */
+  "inventory:read", "inventory:write",
+  "finance:read", "finance:write",
+  /*
    * Delegar a criação de papéis é o ponto da funcionalidade: a presidência pode
    * passá-la à direção, ou a uma pessoa em concreto, sem lhe dar mais nada. Não
    * abre escalada nova — `filterDelegatable` continua a exigir que quem concede já
@@ -147,6 +162,12 @@ export class AcademyService {
     private readonly prisma: PrismaService,
     private readonly storage: StorageService,
     private readonly config: ConfigService,
+    /*
+     * Os jogos vivem noutro serviço, e o calendário precisa deles **na mesma
+     * transacção** — ver `calendar`. Injectar é mais barato do que abrir uma
+     * segunda ligação para os ir buscar.
+     */
+    private readonly matches: MatchesService,
   ) {}
 
   /**
@@ -1490,6 +1511,35 @@ export class AcademyService {
   }
 
   /**
+   * O calendário de um intervalo, de uma vez só.
+   *
+   * ## Porque é que isto existe
+   *
+   * A consola pedia três: `/api/sessions`, `/api/matches` e `/api/events`. Em
+   * paralelo, é certo — mas cada pedido paga o que um pedido paga: a
+   * autenticação resolve o contexto com **quatro consultas** (a academia, as
+   * memberships, o âmbito e as excepções) e o trabalho abre a **sua própria
+   * transacção**, que ao Postgres remoto são mais cinco idas e vindas entre o
+   * `BEGIN` e o `COMMIT`. Três pedidos pagavam tudo isso três vezes, e mudar de
+   * mês no calendário demorava segundos por causa da soma, não das linhas: um
+   * mês de Novembro são doze treinos.
+   *
+   * Aqui é um pedido, um contexto e **uma transacção** para os três. As três
+   * leituras correm em paralelo lá dentro, sobre a mesma ligação.
+   *
+   * Os endpoints antigos ficam: a app da família e quem só quer treinos
+   * continuam a usá-los, e este é o atalho de quem quer o calendário inteiro.
+   */
+  async calendar(ctx: RequestContext, from: Date, to: Date) {
+    const [sessions, matches, events] = await Promise.all([
+      this.sessions(ctx, from, to),
+      this.matches.list(ctx, from, to),
+      this.events(ctx, from, to),
+    ]);
+    return { sessions, matches, events };
+  }
+
+  /**
    * Treinos num intervalo.
    *
    * `attendanceClosedAt` a nulo é o que distingue "ninguém verificou" de
@@ -1498,6 +1548,11 @@ export class AcademyService {
    * plantel.
    */
   async sessions(ctx: RequestContext, from: Date, to: Date) {
+    return this.prisma.runAs(ctx.academyId, (db) => this.sessionsIn(db, ctx, from, to));
+  }
+
+  /** O miolo de `sessions`, para correr dentro de uma transacção já aberta. */
+  async sessionsIn(db: ScopedClient, ctx: RequestContext, from: Date, to: Date) {
     if (!can(ctx, "calendar:read") && !can(ctx, "attendance:read")) {
       throw new ForbiddenException("Sem acesso a treinos");
     }
@@ -1511,7 +1566,7 @@ export class AcademyService {
      */
     const scope = calendarScopeFilter(ctx);
 
-    return this.prisma.runAs(ctx.academyId, async (db) => {
+
       const rows = await db.trainingSession.findMany({
         where: { startsAt: { gte: from, lte: to }, ...(scope ? { teamId: scope } : {}) },
         orderBy: { startsAt: "asc" },
@@ -1561,8 +1616,8 @@ export class AcademyService {
               .map((a) => ({ athleteId: a.athleteId, status: a.status, note: a.note }))
           : [],
       }));
-    });
   }
+
 
   /**
    * Fechar a folha de presenças de um treino.
@@ -1680,6 +1735,11 @@ export class AcademyService {
    * de quem não tem equipa era esconder informação da casa.
    */
   async events(ctx: RequestContext, from: Date, to: Date) {
+    return this.prisma.runAs(ctx.academyId, (db) => this.eventsIn(db, ctx, from, to));
+  }
+
+  /** O miolo de `events`, para correr dentro de uma transacção já aberta. */
+  async eventsIn(db: ScopedClient, ctx: RequestContext, from: Date, to: Date) {
     if (!can(ctx, "calendar:read")) throw new ForbiddenException("Sem acesso ao calendário");
     /*
      * O calendário do clube lê-se todo. Ver `calendarScopeFilter`.
@@ -1691,7 +1751,7 @@ export class AcademyService {
      */
     const scope = calendarScopeFilter(ctx);
 
-    return this.prisma.runAs(ctx.academyId, async (db) => {
+
       const rows = await db.calendarEvent.findMany({
         where: {
           startsAt: { gte: from, lte: to },
@@ -1711,8 +1771,8 @@ export class AcademyService {
        * equipa é meu se a equipa for minha. Ver `inTeamScope`.
        */
       return rows.map((r) => ({ ...serializeEvent(r, porEquipa), mine: inTeamScope(ctx, r.teamId) }));
-    });
   }
+
 
   /**
    * Cria um evento. Exige `calendar:write` e respeita o âmbito.

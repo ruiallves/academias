@@ -1,10 +1,11 @@
 import { BadRequestException, ConflictException, ForbiddenException, Injectable, NotFoundException } from "@nestjs/common";
-import type { MemberDocumentKind, MemberFeePeriod, MemberSex, MemberStatus, Prisma } from "@prisma/client";
+import type { MemberDocumentKind, MemberSex, MemberStatus, Prisma } from "@prisma/client";
 import { PrismaService, type ScopedClient } from "../prisma/prisma.service";
 import { AuthService } from "../auth/auth.service";
 import { can, type RequestContext } from "../common/permissions";
 import { CARD_QR_PREFIX } from "../club-app/club-app.service";
 import { MemberInvitesService } from "./member-invites.service";
+import { situacaoDeQuotas } from "./member-fees.service";
 import type {
   MemberCreateDto,
   MemberImportRowDto,
@@ -51,7 +52,7 @@ export class MembersService {
         orderBy: [{ order: "asc" }, { name: "asc" }],
         select: {
           id: true, name: true, description: true, benefits: true,
-          feeCents: true, period: true, minAge: true, maxAge: true,
+          feeCents: true, minAge: true, maxAge: true,
         },
       }),
     );
@@ -149,6 +150,17 @@ export class MembersService {
           select: { id: true, name: true },
         });
 
+        /*
+         * O recibo de quem se inscreveu.
+         *
+         * Sem segurar a resposta (`void`): a página de adesão não espera pelo
+         * Resend para dizer "recebemos". E só aqui — no caminho em que a ficha
+         * **nasceu**. Nos dois ramos que respondem o mesmo sem criar nada (NIF
+         * já inscrito) não sai email nenhum, o que mantém a resposta única e
+         * não confirma a ninguém que aquele NIF já é sócio.
+         */
+        void this.invites.avisarPedidoRecebido(academyId, member.id);
+
         return { ok: true as const, name: member.name.split(" ")[0] };
       } catch (error) {
         /*
@@ -194,14 +206,36 @@ export class MembersService {
         select: {
           id: true, number: true, name: true, email: true, phone: true, phoneCountry: true,
           birthdate: true, city: true, status: true, createdAt: true, approvedAt: true, source: true,
-          tier: { select: { id: true, name: true, feeCents: true, period: true } },
+          /*
+           * O estado da app, para a coluna com o mesmo nome.
+           *
+           * Três coisas diferentes que a lista tem de saber distinguir: **tem
+           * conta** (`userId`), **foi convidado e ainda não entrou**
+           * (`inviteSentAt`), e **não tem email** — que é o motivo por que
+           * metade de um livro importado nunca poderá ser convidada até alguém
+           * lhe acrescentar o endereço. Sem esta distinção, o envio em massa
+           * seria um tiro no escuro.
+           */
+          userId: true, inviteSentAt: true,
+          tier: { select: { id: true, name: true, feeCents: true } },
         },
       });
 
       const counts = await db.member.groupBy({ by: ["status"], _count: { _all: true } });
 
       return {
-        members: rows,
+        /*
+         * `userId` não sai daqui — sai o que ele **significa**.
+         *
+         * A lista precisa de saber se o sócio já tem conta; não precisa do id
+         * da conta, e mandá-lo seria dar à consola um identificador de outra
+         * pessoa sem nenhum ecrã a usá-lo.
+         */
+        members: rows.map(({ userId, inviteSentAt, ...m }) => ({
+          ...m,
+          app: userId ? ("account" as const) : inviteSentAt ? ("invited" as const) : m.email ? ("none" as const) : ("noemail" as const),
+          inviteSentAt,
+        })),
         counts: Object.fromEntries(counts.map((c) => [c.status, c._count._all])),
       };
     });
@@ -225,13 +259,24 @@ export class MembersService {
           /* A app do clube: a ficha diz se a conta já foi reclamada e quando
              saiu o último convite — é o que decide o texto do botão. */
           userId: true, inviteSentAt: true,
-          tier: { select: { id: true, name: true, feeCents: true, period: true } },
+          tier: { select: { id: true, name: true, feeCents: true } },
           approvedBy: { select: { user: { select: { name: true } } } },
         },
       });
       if (!m) throw new NotFoundException("Sócio não encontrado");
 
-      return { ...m, approvedBy: m.approvedBy?.user.name ?? null };
+      /*
+       * A situação de quotas vem com a ficha, e não num segundo pedido.
+       *
+       * É a primeira coisa que quem abre a ficha quer saber — "está em dia?" —
+       * e é uma linha do cabeçalho, não um separador que se abre. Pedi-la à
+       * parte punha o cabeçalho a desenhar-se duas vezes, a segunda com a
+       * resposta. A lista de quotas essa sim é do separador, e continua no seu
+       * pedido (`GET :id/fees`).
+       */
+      const fees = await situacaoDeQuotas(db, m.id);
+
+      return { ...m, approvedBy: m.approvedBy?.user.name ?? null, fees };
     });
   }
 
@@ -727,6 +772,31 @@ export class MembersService {
       // dentro de uma transacção, e um `createMany` é uma instrução só.
       if (create.length > 0) await db.member.createMany({ data: create });
 
+      /*
+       * O convite dos importados.
+       *
+       * Um sócio importado é um sócio inscrito pelo clube — a mesma coisa que a
+       * criação à mão, feita cem vezes de uma vez. Faltava aqui, e a falta era
+       * do género pior: um clube que carregasse o livro inteiro por Excel
+       * ficava com trezentas fichas e zero convites, sem nada no ecrã a
+       * dizer-lho, e teria de abrir ficha a ficha para os mandar.
+       *
+       * **Depois** do `createMany` e fora da transacção de escrita, pela mesma
+       * razão dos outros ganchos: o Resend não pode segurar uma importação, e
+       * um email que falhe não desfaz o livro que acabou de entrar. Quem ficar
+       * sem email tem o botão da ficha e o envio em massa da lista.
+       *
+       * Só os que têm email — os outros nem token geram (ver `preparar`).
+       */
+      const importados = create.filter((m) => m.email);
+      if (importados.length > 0) {
+        const criados = await db.member.findMany({
+          where: { taxId: { in: importados.map((m) => m.taxId).filter((t): t is string => Boolean(t)) } },
+          select: { id: true },
+        });
+        for (const m of criados) void this.invites.enviarSePossivel(ctx.academyId, m.id);
+      }
+
       return { ok: true as const, created: create.length, duplicates, problems: [], unknownTiers: [] };
     });
   }
@@ -744,7 +814,7 @@ export class MembersService {
         orderBy: [{ order: "asc" }, { name: "asc" }],
         select: {
           id: true, name: true, description: true, benefits: true, feeCents: true,
-          period: true, minAge: true, maxAge: true, isPublic: true, order: true,
+          minAge: true, maxAge: true, isPublic: true, order: true,
           _count: { select: { members: true } },
         },
       });
@@ -767,7 +837,6 @@ export class MembersService {
             description: dto.description?.trim() || null,
             benefits: (dto.benefits ?? []).map((b) => b.trim()).filter(Boolean).slice(0, 12),
             feeCents: dto.feeCents ?? null,
-            period: (dto.period as MemberFeePeriod) ?? "ANNUAL",
             minAge: dto.minAge ?? null,
             maxAge: dto.maxAge ?? null,
             isPublic: dto.isPublic ?? true,
@@ -801,7 +870,6 @@ export class MembersService {
             ? { benefits: dto.benefits.map((b) => b.trim()).filter(Boolean).slice(0, 12) }
             : {}),
           ...(dto.feeCents !== undefined ? { feeCents: dto.feeCents ?? null } : {}),
-          ...(dto.period !== undefined ? { period: dto.period as MemberFeePeriod } : {}),
           ...(dto.minAge !== undefined ? { minAge: dto.minAge ?? null } : {}),
           ...(dto.maxAge !== undefined ? { maxAge: dto.maxAge ?? null } : {}),
           ...(dto.isPublic !== undefined ? { isPublic: dto.isPublic } : {}),

@@ -9,7 +9,9 @@ import {
   STATUS_TONE,
   euros,
   eurosComSinal,
-  listTransactions,
+  esquecerMovimentos,
+  movimentosDoEvento,
+  movimentosLembrados,
   updateTransaction,
   type FinanceKind,
   type TransactionRow,
@@ -49,14 +51,16 @@ export function EventFinance({
   eventDate: Date;
 }) {
   const podeEscrever = can(session, "finance:write");
-  const [rows, setRows] = useState<TransactionRow[] | null>(null);
+  // O que já se sabe deste evento entra no primeiro render — sem piscar, sem
+  // esperar. Ver `movimentosLembrados` em `lib/finance.ts`.
+  const [rows, setRows] = useState<TransactionRow[] | null>(() => movimentosLembrados(link) ?? null);
   const [registar, setRegistar] = useState<FinanceKind | null>(null);
   const [aMexer, setAMexer] = useState<string | null>(null);
   const [erro, setErro] = useState<string | null>(null);
 
   async function carregar() {
     try {
-      setRows(await listTransactions(link));
+      setRows(await movimentosDoEvento(link));
     } catch {
       // A gaveta é de todos; se as contas não carregam, o painel só encolhe.
       setRows([]);
@@ -64,6 +68,9 @@ export function EventFinance({
   }
 
   useEffect(() => {
+    // Trocar de evento dentro da mesma gaveta: mostra-se o que se sabe do novo
+    // (ou o esqueleto), nunca os números do anterior.
+    setRows(movimentosLembrados(link) ?? null);
     void carregar();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [link.matchId, link.calendarEventId]);
@@ -74,6 +81,7 @@ export function EventFinance({
     setErro(null);
     try {
       await updateTransaction(t.id, { status: "COMPLETED" });
+      esquecerMovimentos(link);
       await carregar();
     } catch (e) {
       setErro(e instanceof Error ? e.message : "Não foi possível confirmar.");
@@ -86,7 +94,35 @@ export function EventFinance({
   const saldo = ativos.reduce((s, t) => s + (t.kind === "INCOME" ? t.amountCents : -t.amountCents), 0);
   const porConfirmar = ativos.filter((t) => t.status === "PLANNED" || t.status === "PENDING").length;
 
-  if (rows === null) return null;
+  /*
+   * A espera mostra-se, não se esconde.
+   *
+   * Isto era `return null`: enquanto a resposta não chegava, a secção não
+   * existia — e depois aparecia de repente, por baixo de uma gaveta que já
+   * estava desenhada há um segundo. Parecia um erro a corrigir-se sozinho.
+   *
+   * Com o cabeçalho e duas linhas cinzentas, a gaveta nasce inteira e o que
+   * falta é visivelmente o conteúdo de um sítio que já lá está. Quem já viu
+   * este evento não chega sequer aqui — os números vêm da memória.
+   *
+   * Não se sabe ainda se há movimentos, por isso o esqueleto aparece a toda a
+   * gente que possa ver as Contas. Se vier vazio e a pessoa não puder
+   * escrever, aí sim a secção desaparece — mas isso é uma resposta, não uma
+   * espera.
+   */
+  if (rows === null) {
+    return (
+      <div className="border-t border-line px-5 py-4" aria-busy="true">
+        <div className="mb-3 flex items-center justify-between gap-2">
+          <h3 className="text-panel text-ink">Financeiro</h3>
+        </div>
+        <div className="space-y-1" aria-hidden>
+          <div className="h-8 animate-pulse rounded-[var(--radius-control)] bg-sunken" />
+          <div className="h-8 w-2/3 animate-pulse rounded-[var(--radius-control)] bg-sunken" />
+        </div>
+      </div>
+    );
+  }
   if (rows.length === 0 && !podeEscrever) return null;
 
   return (
