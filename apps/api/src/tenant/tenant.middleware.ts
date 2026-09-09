@@ -56,6 +56,20 @@ const REWRITES: Rewrite[] = [
 
   { pattern: /^\/convite\/([^/]+)\/?$/, to: (slug, m) => `/l/${slug}/convite/${m[1]}` },
   { pattern: /^\/familia\/([^/]+)\/?$/, to: (slug, m) => `/l/${slug}/familia/${m[1]}` },
+  /*
+   * O convite de sócio.
+   *
+   * Faltava, e o link do email dava 404 — `Cannot GET /socio/<token>`. O
+   * `linkFor` monta-o na raiz do domínio do clube (como os outros três, e pela
+   * mesma razão: é o endereço que se copia e se manda), mas sem uma linha aqui
+   * ninguém o traduzia para a rota que existe (`/l/:slug/socio/:token`).
+   *
+   * A lição já estava escrita no cabeçalho deste ficheiro para o `/ser-socio`;
+   * o convite de sócio nasceu depois e não foi acrescentado. Cada endereço
+   * público novo na raiz do clube precisa de uma linha aqui — não há como o
+   * compilador o lembrar.
+   */
+  { pattern: /^\/socio\/([^/]+)\/?$/, to: (slug, m) => `/l/${slug}/socio/${m[1]}` },
 ];
 
 export function tenantMiddleware(req: Request & TenantRequest, _res: Response, next: NextFunction): void {

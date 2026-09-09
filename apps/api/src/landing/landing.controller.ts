@@ -79,6 +79,14 @@ export class LandingController {
      * transformar um link gasto num 404 em vez de numa página que explica.
      */
     @Query("convite") convite?: string,
+    /**
+     * O convite de **sócio**, quando se chega por `/socio/:token`.
+     *
+     * Viaja pelo mesmo caminho do de família e pela mesma razão: o link do email
+     * leva à landing, a landing instala a app, e é a app que valida o token. O
+     * que muda é só o parâmetro e a chave onde fica guardado.
+     */
+    @Query("socio") socio?: string,
   ) {
     const academy = await this.landing.findBySlug(slug);
 
@@ -113,14 +121,15 @@ export class LandingController {
       // produção o subdomínio já a carrega sozinha, isto não substitui isso.
       familyUrl:
         `${familyBase}/?academia=${encodeURIComponent(slug)}` +
-        (convite ? `&convite=${encodeURIComponent(convite)}` : ""),
+        (convite ? `&convite=${encodeURIComponent(convite)}` : "") +
+        (socio ? `&socio=${encodeURIComponent(socio)}` : ""),
       // Só a presença do token importa aqui, não o valor: é o que diz à página que
       // quem chegou é um pai com um convite, e não alguém que encontrou o link do
       // clube por outra via. Sem isto, abrir o link num computador — o pai a testar
       // no portátil antes de o mandar ao telemóvel, o link colado num email — caía
       // no ecrã de login de staff, que é exactamente o beco sem saída que esta
       // página existe para evitar.
-      hasFamilyInvite: Boolean(convite),
+      hasInvite: Boolean(convite || socio),
       consoleUrl,
       // A anon key é pública por desenho — é a que o browser usa para autenticar.
       // A service-role nunca sai do servidor.

@@ -93,12 +93,12 @@ export function renderLanding(opts: {
    * email, ou só a testar. Sem esta distinção, esse pai caía no ecrã de login de
    * staff, que é o beco sem saída que esta página inteira existe para evitar.
    */
-  hasFamilyInvite?: boolean;
+  hasInvite?: boolean;
 }): string {
   const { academy, platform, pageUrl, familyUrl, consoleUrl, supabaseUrl, supabaseAnonKey } = opts;
   const inAppBrowser = opensInAppBrowser(opts.userAgent);
   const desktop = isDesktop(opts.userAgent);
-  const familyInviteOnDesktop = desktop && Boolean(opts.hasFamilyInvite);
+  const familyInviteOnDesktop = desktop && Boolean(opts.hasInvite);
   const name = esc(academy.name);
   const shortName = esc(academy.shortName);
   // A cor do clube e as que dela se derivam — ver common/contrast.ts. `clubPalette`
@@ -562,7 +562,7 @@ ${
     ? renderDesktopFamilyInvite(academy, shortName, name, pageUrl)
     : desktop
       ? renderDesktop(academy, shortName, name)
-      : renderMobile(academy, shortName, platform, inAppBrowser, familyUrl, Boolean(opts.hasFamilyInvite))
+      : renderMobile(academy, shortName, platform, inAppBrowser, familyUrl, Boolean(opts.hasInvite))
 }
 
 <script>
@@ -596,10 +596,29 @@ ${
     há localStorage partilhado, e o convite continua a viajar pelo appUrl
     absoluto, como já viajava.
   */
+  /*
+    As aspas deste bloco tinham desaparecido, e com elas o efeito todo.
+
+    O código gerado era \`get(convite)\` e \`setItem(academia.family.convite, …)\`
+    — sem strings. \`convite\` é lido antes de existir (fica \`undefined\`), a
+    procura devolve sempre \`null\`, e o \`if\` nunca corria; se corresse,
+    \`academia.family.convite\` era um ReferenceError. Ou seja: o comentário
+    acima descreve uma correcção que o código deixou de fazer, e o pai voltava
+    a cair no ecrã "cola o link do clube" depois de instalar.
+
+    Nada no ecrã denunciava isto — um \`try\` à volta engole o erro, e o caminho
+    alternativo (o token no \`appUrl\`) funciona enquanto se abre a app pelo
+    botão. Só quem fecha, instala e volta pelo ícone é que dava por ela.
+  */
   try {
-    var convite = new URLSearchParams(location.search).get(convite);
-    if (convite) localStorage.setItem(academia.family.convite, convite);
-    localStorage.setItem(academia.family.slug, slug);
+    var params = new URLSearchParams(location.search);
+    var convite = params.get("convite");
+    /* O convite de **sócio** viaja pelo mesmo caminho, com outro parâmetro e
+       outra chave — ver \`captureFromUrl\` em apps/family/src/lib/invite.ts. */
+    var socio = params.get("socio");
+    if (convite) localStorage.setItem("academia.family.convite", convite);
+    if (socio) localStorage.setItem("academia.socio.convite", socio);
+    localStorage.setItem("academia.family.slug", slug);
   } catch (e) {}
 
   // Se esta página já está a correr como app instalada (aconteceu se o telemóvel
