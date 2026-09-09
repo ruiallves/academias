@@ -223,6 +223,25 @@ export class MembersService {
 
       const counts = await db.member.groupBy({ by: ["status"], _count: { _all: true } });
 
+      /*
+       * A última quota paga de cada sócio — numa consulta, não numa por linha.
+       *
+       * `_max` sobre `period` funciona porque o período é `AAAA-MM`: ordenar
+       * texto nesse formato é ordenar tempo, e é a mesma propriedade de que as
+       * mensalidades já dependem em todo o lado. Um `MAX(period)` responde à
+       * pergunta certa — *qual foi a última que ele pagou* — sem trazer o
+       * histórico inteiro para o servidor.
+       *
+       * Só as liquidadas: uma quota `OPEN` é precisamente o contrário do que
+       * esta coluna mostra, e uma `VOID` (anulada) nunca foi paga por ninguém.
+       */
+      const pagas = await db.memberFee.groupBy({
+        by: ["memberId"],
+        where: { memberId: { in: rows.map((m) => m.id) }, status: "SETTLED" },
+        _max: { period: true },
+      });
+      const ultimaPaga = new Map(pagas.map((p) => [p.memberId, p._max.period]));
+
       return {
         /*
          * `userId` não sai daqui — sai o que ele **significa**.
@@ -235,6 +254,8 @@ export class MembersService {
           ...m,
           app: userId ? ("account" as const) : inviteSentAt ? ("invited" as const) : m.email ? ("none" as const) : ("noemail" as const),
           inviteSentAt,
+          /** O período (`AAAA-MM`) da última quota liquidada. Nulo = nunca pagou nenhuma. */
+          lastPaidPeriod: ultimaPaga.get(m.id) ?? null,
         })),
         counts: Object.fromEntries(counts.map((c) => [c.status, c._count._all])),
       };

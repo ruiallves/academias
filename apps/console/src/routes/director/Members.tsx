@@ -11,7 +11,7 @@ import { BulkBar, BulkDeleteDialog } from "@/components/BulkDelete";
 import { SociosAppDialog } from "@/components/SociosAppDialog";
 import { SendInvitesDialog } from "@/components/SendInvitesDialog";
 import { academy } from "@/lib/api";
-import { money, shortDate } from "@/lib/format";
+import { money, periodLabel, periodShort, shortDate } from "@/lib/format";
 import { apiOrigin, apiPatch } from "@/lib/http";
 import { reloadAcademy } from "@/lib/store";
 import { downloadTemplate, readMemberSheet, OPTIONAL_COLUMNS, REQUIRED_COLUMNS, type ParsedSheet } from "@/lib/member-sheet";
@@ -20,6 +20,7 @@ import {
   SEX_LABEL,
   STATUS_LABEL,
   createMember,
+  feeStanding,
   ageOf,
   archiveTier,
   createTier,
@@ -176,6 +177,39 @@ export default function Members() {
           </div>
         </div>
       ),
+    },
+    /*
+      A coluna das quotas — a última que o sócio pagou, e o quão longe isso já vai.
+
+      Um mês e um ano em vez de "em dia"/"em atraso": a direcção não quer um
+      juízo, quer o facto de onde ele sai. "Set 2026" responde à pergunta
+      seguinte (*então e Outubro?*) sem abrir a ficha, e a cor faz a lista
+      responder de relance a "quem é que tenho de chatear".
+
+      Verde é o mês corrente, amarelo até três meses atrás, vermelho a partir
+      daí — a régua está em `feeStanding`, com a nota sobre quotas anuais.
+    */
+    {
+      key: "quotas",
+      header: "Última quota",
+      hideBelow: "md",
+      render: (m) => {
+        const estado = feeStanding(m.lastPaidPeriod);
+        if (!m.lastPaidPeriod) {
+          /* Nunca pagou nenhuma não é o mesmo que estar atrasado numa: um sócio
+             acabado de aprovar cai aqui, e dizer-lhe "vermelho" sem número
+             seria acusá-lo de uma dívida que ainda não existe. A cor é a
+             mesma; a palavra é outra. */
+          return <Pill tone="risk">Sem registo</Pill>;
+        }
+        return (
+          <span title={`Última quota liquidada: ${periodLabel(m.lastPaidPeriod)}`}>
+            <Pill tone={estado === "ok" ? "ok" : estado === "warn" ? "warn" : "risk"}>
+              {periodShort(m.lastPaidPeriod)}
+            </Pill>
+          </span>
+        );
+      },
     },
     /*
       A coluna "App" — quem já lá está, quem foi convidado, e quem não pode ser.

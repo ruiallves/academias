@@ -1580,6 +1580,34 @@ enum PaymentMethod {
   CASH
 }
 
+/**
+ * Que quotas é que um pagamento liquida.
+ *
+ * ## Porque é que existe
+ *
+ * As quotas pagam-se **por ordem**, do mês mais antigo para o mais recente, e
+ * nunca pode haver Março pago com Fevereiro em aberto: um histórico com buracos
+ * não se lê, e a pergunta "então paguei ou não paguei?" fica sem resposta.
+ *
+ * Daí um sócio com três meses em atraso ter de os poder pagar **de uma vez** —
+ * uma referência, um pedido MB Way. Com um `Payment` por quota, eram três, e
+ * quem tem três por pagar não faz três pagamentos: adia.
+ *
+ * `Payment.memberFeeId` continua a apontar para a mais antiga do grupo (a
+ * âncora, para as notificações e para o histórico anterior a isto); a verdade
+ * sobre o que foi liquidado é esta tabela.
+ */
+model MemberFeePayment {
+  paymentId String
+  payment   Payment @relation(fields: [paymentId], references: [id], onDelete: Cascade)
+
+  memberFeeId String
+  memberFee   MemberFee @relation(fields: [memberFeeId], references: [id], onDelete: Cascade)
+
+  @@id([paymentId, memberFeeId])
+  @@index([memberFeeId])
+}
+
 model Payment {
   id       String @id @default(cuid())
   /// ## Exactamente um dos dois
@@ -1591,8 +1619,19 @@ model Payment {
   chargeId String?
   charge   Charge? @relation(fields: [chargeId], references: [id], onDelete: Cascade)
 
+  /// A quota **mais antiga** que este pagamento cobre — a âncora.
+  ///
+  /// Um pagamento pode cobrir vários meses (ver `MemberFeePayment`): quem está
+  /// três meses em atraso paga os três de uma vez, numa referência só. Esta
+  /// coluna aponta para o primeiro deles, e serve para as notificações abrirem
+  /// o ecrã certo e para os pagamentos anteriores a essa mudança continuarem a
+  /// fazer sentido. **O que o pagamento liquida está em `memberFees`.**
   memberFeeId String?
   memberFee   MemberFee? @relation(fields: [memberFeeId], references: [id], onDelete: Cascade)
+
+  /// Todas as quotas que este pagamento liquida, da mais antiga para a mais
+  /// recente. Ver a migração `20260910120000_quotas_varios_meses`.
+  memberFees MemberFeePayment[]
 
   amountCents Int
   method      PaymentMethod
@@ -3134,6 +3173,8 @@ model MemberFee {
   method PaymentMethod?
   notes  String?
 
+  /// Os pagamentos que cobrem esta quota — normalmente um. Ver `MemberFeePayment`.
+  paidBy   MemberFeePayment[]
   payments Payment[]
 
   createdAt DateTime @default(now())

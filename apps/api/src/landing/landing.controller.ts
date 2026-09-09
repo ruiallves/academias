@@ -129,7 +129,13 @@ export class LandingController {
       // no portátil antes de o mandar ao telemóvel, o link colado num email — caía
       // no ecrã de login de staff, que é exactamente o beco sem saída que esta
       // página existe para evitar.
-      hasInvite: Boolean(convite || socio),
+      /*
+        Qual dos dois, e não só "há um".
+        O sócio via a página do convite de família — "identifica o teu filho
+        pelo NIF" para quem não tem filho nenhum no clube. Ver `invite` em
+        `renderLanding`.
+      */
+      invite: convite ? ("family" as const) : socio ? ("member" as const) : undefined,
       consoleUrl,
       // A anon key é pública por desenho — é a que o browser usa para autenticar.
       // A service-role nunca sai do servidor.

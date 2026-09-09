@@ -65,6 +65,23 @@ export class ClubAppController {
     return this.app.pagarQuota(auth, slug ?? "", id, body.method, body.phone);
   }
 
+  /**
+   * Pagar tudo o que falta até um mês (`AAAA-MM`), numa referência só.
+   *
+   * O corpo não traz a lista de meses de propósito: traz o **limite**. É o
+   * servidor que resolve o conjunto para trás, e por isso não há forma de um
+   * cliente pedir Março sem Fevereiro. Ver `ClubAppService.quotasAte`.
+   */
+  @Post("api/socio/quotas/ate/:period/pagar")
+  pagarAte(
+    @Headers("authorization") auth: string,
+    @Headers("x-academy-slug") slug: string,
+    @Param("period") period: string,
+    @Body() body: { method: string; phone?: string },
+  ) {
+    return this.app.pagarAte(auth, slug ?? "", period, body.method, body.phone);
+  }
+
   /** Pagar um mês (`AAAA-MM`) — cria a quota se faltar. Ver `ClubAppService.pagarMes`. */
   @Throttle({ default: { ttl: 60_000, limit: 10 } })
   @Post("api/socio/quotas/mes/:period/pagar")

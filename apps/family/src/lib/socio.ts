@@ -132,5 +132,15 @@ export const pagarQuota = (feeId: string, method: "MBWAY" | "MULTIBANCO", phone?
 export const pagarMes = (period: string, method: "MBWAY" | "MULTIBANCO", phone?: string) =>
   apiPost<PagamentoIniciado>(`/api/socio/quotas/mes/${period}/pagar`, { method, ...(phone ? { phone } : {}) });
 
+/**
+ * Pagar tudo o que falta **até** um mês, numa referência só.
+ *
+ * Manda-se o limite e não a lista: as quotas pagam-se por ordem, e é o servidor
+ * que resolve o conjunto para trás. Assim não há forma de pedir Março sem
+ * Fevereiro — nem por engano, nem de propósito.
+ */
+export const pagarAte = (period: string, method: "MBWAY" | "MULTIBANCO", phone?: string) =>
+  apiPost<PagamentoIniciado>(`/api/socio/quotas/ate/${period}/pagar`, { method, ...(phone ? { phone } : {}) });
+
 export const votar = (pollId: string, optionId: string) =>
   apiPost<{ ok: true }>(`/api/socio/sondagens/${pollId}/votar`, { optionId });

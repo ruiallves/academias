@@ -355,11 +355,78 @@ export class ClubAppService {
   }
 
   /**
+   * As quotas por pagar até um mês, inclusive — da mais antiga para a mais
+   * recente, sem saltos possíveis.
+   *
+   * É aqui que a regra vive: **as quotas pagam-se por ordem**. Nunca pode haver
+   * Março pago com Fevereiro em aberto — um histórico com buracos não se lê, e a
+   * conversa "então paguei ou não paguei?" fica sem resposta que sirva a
+   * ninguém.
+   *
+   * Por isso a app não escolhe um conjunto: escolhe **até onde**. Quem carrega
+   * em Março leva Janeiro e Fevereiro atrás, e vê-o antes de pagar. O servidor
+   * resolve o conjunto para trás sozinho, e um cliente que tentasse enviar uma
+   * lista com buracos não teria por onde.
+   *
+   * Devolve as quotas na ordem em que se pagam. As que faltam nascem aqui — é o
+   * mesmo caminho do "pagar adiantado" de sempre.
+   */
+  private async quotasAte(
+    db: ScopedClient,
+    academyId: string,
+    memberId: string,
+    ate: string,
+  ): Promise<{ id: string; period: string; amountCents: number }[]> {
+    /*
+     * O que já está lançado e por pagar, até ao mês escolhido — **de todos os
+     * períodos**, incluindo os que a direcção lançou antes desta época. Uma
+     * dívida antiga não se salta por ela não caber na janela que a app oferece.
+     */
+    const abertas = await db.memberFee.findMany({
+      where: { memberId, status: "OPEN", period: { lte: ate } },
+      orderBy: { period: "asc" },
+      select: { id: true, period: true, amountCents: true },
+    });
+
+    /*
+     * E os meses da época que ainda não têm quota nenhuma, até ao escolhido.
+     * `garantirDoSocio` cria-os ao preço da categoria — e rebenta com uma
+     * explicação se a categoria não tiver preço, que é o que se quer: melhor
+     * não pagar nada do que pagar um valor inventado.
+     */
+    const jaTem = new Set(abertas.map((f) => f.period));
+    const doPeriodo = await db.memberFee.findMany({
+      where: { memberId, period: { lte: ate } },
+      select: { period: true },
+    });
+    for (const f of doPeriodo) jaTem.add(f.period);
+
+    const novas: { id: string; period: string; amountCents: number }[] = [];
+    for (const period of mesesAteFimDaEpoca()) {
+      if (period > ate) break;
+      if (jaTem.has(period)) continue;
+      const id = await this.quotas.garantirDoSocio(db, academyId, memberId, period);
+      const criada = await db.memberFee.findFirst({
+        where: { id },
+        select: { id: true, period: true, amountCents: true },
+      });
+      if (criada) novas.push(criada);
+    }
+
+    return [...abertas, ...novas].sort((a, b) => a.period.localeCompare(b.period));
+  }
+
+  /**
    * Pagar uma quota — MB Way ou Multibanco.
    *
    * A quota tem de ser **do próprio**: é a única autorização que existe deste
    * lado, e chega — ninguém paga a quota de outro por engano, e pagar a de outro
    * de propósito não é um caso que o produto queira facilitar.
+   *
+   * E tem de ser **a mais antiga por pagar**. Pagar Março com Fevereiro em
+   * aberto deixava o histórico com um buraco; quem quer pôr-se em dia usa o
+   * `pagarAte`, que leva os meses anteriores atrás e diz o total antes de
+   * cobrar.
    */
   async pagarQuota(
     authorization: string | undefined,
@@ -375,7 +442,29 @@ export class ClubAppService {
       throw new BadRequestException("Método de pagamento desconhecido");
     }
 
-    const socio = await this.prisma.runAs(academyId, (db) => this.socioDe(db, eu.userId));
+    const socio = await this.prisma.runAs(academyId, async (db) => {
+      const socio = await this.socioDe(db, eu.userId);
+
+      const esta = await db.memberFee.findFirst({
+        where: { id: feeId, memberId: socio.id },
+        select: { period: true },
+      });
+      if (!esta) throw new NotFoundException("Quota não encontrada");
+
+      // Há alguma mais antiga por pagar? Então é essa que se paga primeiro.
+      const anterior = await db.memberFee.findFirst({
+        where: { memberId: socio.id, status: "OPEN", period: { lt: esta.period } },
+        orderBy: { period: "asc" },
+        select: { period: true },
+      });
+      if (anterior) {
+        throw new BadRequestException(
+          `As quotas pagam-se por ordem: falta ${anterior.period}. Paga a partir dessa — podes levar as seguintes na mesma referência.`,
+        );
+      }
+
+      return socio;
+    });
 
     return this.billing.startMemberFeePayment(
       academyId,
@@ -384,6 +473,45 @@ export class ClubAppService {
       method as PaymentMethod,
       payerPhone,
     );
+  }
+
+  /**
+   * Pagar tudo o que falta **até** um mês, numa referência só.
+   *
+   * O gesto que isto serve: o sócio abre a app, vê três meses em atraso, e quer
+   * ficar em dia. Com uma quota por pagamento eram três pedidos MB Way — e quem
+   * tem três por pagar não faz três pagamentos: adia. Aqui é um.
+   *
+   * Ver `quotasAte` para a regra da ordem, que é o que dá sentido a tudo isto.
+   */
+  async pagarAte(
+    authorization: string | undefined,
+    slug: string,
+    ate: string,
+    method: string,
+    payerPhone?: string,
+  ) {
+    const eu = await this.identidade(authorization);
+    const academyId = await this.academiaDe(slug);
+
+    if (method !== "MBWAY" && method !== "MULTIBANCO") {
+      throw new BadRequestException("Método de pagamento desconhecido");
+    }
+    if (!mesesAteFimDaEpoca().includes(ate)) {
+      throw new BadRequestException("Só podes pagar do mês corrente até ao fim da época");
+    }
+
+    const { socioId, feeIds } = await this.prisma.runAs(academyId, async (db) => {
+      const socio = await this.socioDe(db, eu.userId);
+      if (socio.status !== "ACTIVE") throw new ForbiddenException("Só um sócio activo paga quotas");
+
+      const quotas = await this.quotasAte(db, academyId, socio.id, ate);
+      if (quotas.length === 0) throw new BadRequestException("Já não há nada por pagar até esse mês");
+
+      return { socioId: socio.id, feeIds: quotas.map((q) => q.id) };
+    });
+
+    return this.billing.startMemberFeePayment(academyId, socioId, feeIds, method as PaymentMethod, payerPhone);
   }
 
   /**
@@ -414,6 +542,24 @@ export class ClubAppService {
     const { socioId, feeId } = await this.prisma.runAs(academyId, async (db) => {
       const socio = await this.socioDe(db, eu.userId);
       if (socio.status !== "ACTIVE") throw new ForbiddenException("Só um sócio activo paga quotas");
+
+      /*
+       * A mesma regra de ordem do `pagarQuota`, e aqui era ainda mais fácil de
+       * furar: este caminho **cria** a quota do mês pedido. Sem esta verificação,
+       * pedir Março com Fevereiro em aberto criava Março, pagava-o, e deixava o
+       * histórico com um buraco — exactamente o que não pode acontecer.
+       */
+      const anterior = await db.memberFee.findFirst({
+        where: { memberId: socio.id, status: "OPEN", period: { lt: period } },
+        orderBy: { period: "asc" },
+        select: { period: true },
+      });
+      if (anterior) {
+        throw new BadRequestException(
+          `As quotas pagam-se por ordem: falta ${anterior.period}. Usa "pagar até ${period}" para levar os meses anteriores na mesma referência.`,
+        );
+      }
+
       const feeId = await this.quotas.garantirDoSocio(db, academyId, socio.id, period);
       return { socioId: socio.id, feeId };
     });

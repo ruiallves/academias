@@ -20,7 +20,7 @@ import { Avatar, Chip, Label, Money, cx, dateShort, dayName, greeting, money, ti
 import { signOut } from "@/lib/session";
 import {
   loadSocio,
-  pagarMes,
+  pagarAte,
   pagarQuota,
   useSocio,
   votar,
@@ -460,6 +460,15 @@ type Alvo = {
 function Quotas() {
   const { data } = useSocio();
   const [aPagar, setAPagar] = useState<Alvo | null>(null);
+  /*
+   * Até que mês o sócio quer ir. `null` = só o que está em dívida.
+   *
+   * Guarda-se o **limite** e não um conjunto, porque é assim que a regra
+   * funciona: as quotas pagam-se por ordem, e escolher Março quer dizer
+   * "Janeiro, Fevereiro e Março". Um conjunto com buracos não existe — nem no
+   * ecrã nem no servidor.
+   */
+  const [ate, setAte] = useState<string | null>(null);
   if (!data) return null;
 
   const abertas = data.fees.filter((f) => f.status === "OPEN");
@@ -540,13 +549,31 @@ function Quotas() {
         <section>
           <Label>Próximos meses</Label>
           <p className="mb-2 px-1 text-[13px] leading-relaxed text-ink-3">
-            Podes pagar adiantado até ao fim da época, em Julho.
+            Podes pagar adiantado até ao fim da época, em Julho. Escolhe até que mês queres ir — os
+            anteriores vão juntos, na mesma referência.
           </p>
           <div className="overflow-hidden rounded-[20px] bg-surface shadow-[var(--shadow-soft)]">
             {proximos.map((m) => (
-              <ProximoMes key={m.period} mes={m} podePagar={podePagar} onPagar={setAPagar} />
+              <ProximoMes
+                key={m.period}
+                mes={m}
+                podePagar={podePagar}
+                escolhido={ate !== null && m.period <= ate}
+                onEscolher={() => setAte(ate === m.period ? null : m.period)}
+              />
             ))}
           </div>
+
+          {ate !== null && (
+            <ResumoAte
+              ate={ate}
+              abertas={abertas}
+              proximos={proximos}
+              podePagar={podePagar}
+              onPagar={setAPagar}
+              onLimpar={() => setAte(null)}
+            />
+          )}
         </section>
       )}
 
@@ -585,11 +612,51 @@ function Quotas() {
   );
 }
 
-/** Uma linha de "Próximos meses": o mês, o valor da categoria, e pagar. */
-function ProximoMes({ mes, podePagar, onPagar }: { mes: SocioMes; podePagar: boolean; onPagar: (a: Alvo) => void }) {
+/**
+ * Uma linha de "Próximos meses".
+ *
+ * Tocar num mês escolhe **até ali** — e por isso os anteriores acendem-se
+ * também. Não é um conjunto de caixas independentes de propósito: pagar Março
+ * sem Fevereiro não é uma coisa que se possa fazer, e um ecrã que a deixasse
+ * escolher estaria a prometer o que o servidor recusa.
+ */
+function ProximoMes({
+  mes,
+  podePagar,
+  escolhido,
+  onEscolher,
+}: {
+  mes: SocioMes;
+  podePagar: boolean;
+  escolhido: boolean;
+  onEscolher: () => void;
+}) {
   const cents = mes.amountCents;
+  const podeEscolher = podePagar && cents !== null;
+
   return (
-    <div className="flex items-center gap-3 border-b border-ink/5 px-4 py-3 last:border-0">
+    <button
+      type="button"
+      disabled={!podeEscolher}
+      onClick={onEscolher}
+      aria-pressed={escolhido}
+      className={cx(
+        "flex w-full items-center gap-3 border-b border-ink/5 px-4 py-3 text-left last:border-0",
+        escolhido && "bg-signal-soft",
+        !podeEscolher && "cursor-default",
+      )}
+    >
+      {podeEscolher && (
+        <span
+          className={cx(
+            "flex size-5 shrink-0 items-center justify-center rounded-full border",
+            escolhido ? "border-transparent bg-signal-ink text-white" : "border-ink/20",
+          )}
+          aria-hidden
+        >
+          {escolhido && <Check className="size-3" strokeWidth={3} />}
+        </span>
+      )}
       <span className="min-w-0 flex-1">
         <span className="block truncate text-[14px] font-medium text-ink">{mes.label}</span>
         {cents === null && (
@@ -597,21 +664,79 @@ function ProximoMes({ mes, podePagar, onPagar }: { mes: SocioMes; podePagar: boo
         )}
       </span>
       {cents !== null && <span className="num text-[14px] font-semibold text-ink">{money(cents)}</span>}
-      {podePagar && cents !== null && (
-        <button
-          type="button"
-          onClick={() =>
-            onPagar({
-              titulo: mes.label,
-              amountCents: cents,
-              iniciar: (m, phone) => pagarMes(mes.period, m, phone),
-            })
-          }
-          className="rounded-full bg-ink px-3 py-1.5 text-[13px] font-semibold text-white"
-        >
-          Pagar
-        </button>
+    </button>
+  );
+}
+
+/**
+ * O que vai ser cobrado, antes de se cobrar.
+ *
+ * A parte que faz a regra ser justa em vez de surpreendente: quem escolhe Março
+ * lê aqui, **antes de pagar**, que vão Janeiro e Fevereiro atrás e quanto é ao
+ * todo. A ordem não é uma restrição escondida no servidor; é o que o ecrã diz.
+ */
+function ResumoAte({
+  ate,
+  abertas,
+  proximos,
+  podePagar,
+  onPagar,
+  onLimpar,
+}: {
+  ate: string;
+  abertas: { period: string; amountCents: number; label?: string | null }[];
+  proximos: SocioMes[];
+  podePagar: boolean;
+  onPagar: (a: Alvo) => void;
+  onLimpar: () => void;
+}) {
+  // Tudo o que fica para trás do limite: o que já está em dívida mais os meses
+  // adiantados até ele. É exactamente o que o servidor vai cobrar.
+  const emDivida = abertas.filter((f) => f.period <= ate);
+  const adiantados = proximos.filter((m) => m.period <= ate && m.amountCents !== null);
+  const total =
+    emDivida.reduce((n, f) => n + f.amountCents, 0) +
+    adiantados.reduce((n, m) => n + (m.amountCents ?? 0), 0);
+  const quantos = emDivida.length + adiantados.length;
+  const ultimo = adiantados[adiantados.length - 1];
+
+  return (
+    <div className="mt-3 rounded-[20px] bg-surface p-4 shadow-[var(--shadow-soft)]">
+      <div className="flex items-baseline justify-between gap-3">
+        <span className="text-[15px] font-semibold text-ink">
+          {quantos === 1 ? "1 mês" : `${quantos} meses`} até {ultimo?.label ?? ate}
+        </span>
+        <Money cents={total} size="md" />
+      </div>
+
+      {emDivida.length > 0 && (
+        <p className="mt-1 text-[13px] leading-relaxed text-ink-2">
+          Inclui {emDivida.length === 1 ? "a quota" : "as quotas"} por pagar de{" "}
+          {emDivida.map((f) => f.label ?? f.period).join(", ")} — as quotas pagam-se por ordem.
+        </p>
       )}
+
+      <div className="mt-3 flex gap-2">
+        <button type="button" onClick={onLimpar} className="rounded-full bg-sunken px-4 py-2 text-[13px] font-semibold text-ink-2">
+          Limpar
+        </button>
+        {podePagar && (
+          <button
+            type="button"
+            onClick={() =>
+              onPagar({
+                titulo: quantos === 1 ? (ultimo?.label ?? ate) : `${quantos} meses até ${ultimo?.label ?? ate}`,
+                amountCents: total,
+                iniciar: (m, phone) => pagarAte(ate, m, phone),
+              })
+            }
+            className="cta flex-1"
+          >
+            <CreditCard className="size-[18px]" strokeWidth={1.9} />
+            Pagar {quantos === 1 ? "quota" : `${quantos} meses`}
+          </button>
+        )}
+      </div>
     </div>
   );
 }

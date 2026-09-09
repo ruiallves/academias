@@ -79,6 +79,8 @@ export type MemberRow = {
   app: "account" | "invited" | "none" | "noemail";
   /** Quando o convite saiu. Nulo quando nunca saiu. */
   inviteSentAt: string | null;
+  /** O período (`AAAA-MM`) da última quota liquidada. Nulo = nunca pagou nenhuma. */
+  lastPaidPeriod: string | null;
 };
 
 export type MemberDetail = MemberRow & {
@@ -148,6 +150,38 @@ export type MemberFeePeriods = {
   defaultAmountCents: number | null;
   taken: string[];
 };
+
+/**
+ * Quão atrasado está um sócio, a partir da última quota que pagou.
+ *
+ * A regra é de leitura, não de contabilidade: **verde** se a última paga é a do
+ * mês corrente, **amarelo** se é de algum dos três meses anteriores, e
+ * **vermelho** a partir daí (ou se nunca pagou nenhuma). É a régua que uma
+ * direcção usa a olhar para a lista — quem está em dia, quem está a começar a
+ * atrasar-se, e quem já é conversa para ter.
+ *
+ * ## O que ela não sabe
+ *
+ * O período de cobrança do escalão. Uma quota **anual** paga em Janeiro é a
+ * última paga o ano inteiro, e a partir de Maio esta régua pinta-a de vermelho
+ * — o sócio está em dia e a coluna diz que não. Para clubes de quota mensal (o
+ * caso de longe mais comum) a conta está certa; para os outros, a coluna do
+ * escalão ao lado diz qual é o período, e o `title` da célula dá a data por
+ * extenso.
+ */
+export function feeStanding(lastPaidPeriod: string | null, hoje = new Date()): "ok" | "warn" | "late" {
+  if (!lastPaidPeriod) return "late";
+
+  const atual = hoje.getFullYear() * 12 + hoje.getMonth();
+  const [ano, mes] = lastPaidPeriod.split("-").map(Number);
+  if (!Number.isFinite(ano) || !Number.isFinite(mes)) return "late";
+
+  // `mes - 1` porque `getMonth()` conta de zero e o período conta de um.
+  const meses = atual - (ano * 12 + (mes - 1));
+  if (meses <= 0) return "ok";
+  if (meses <= 3) return "warn";
+  return "late";
+}
 
 export const listMemberFees = (memberId: string) => apiGet<MemberFeeRow[]>(`/api/members/${memberId}/fees`);
 export const memberFeePeriods = (memberId: string) =>

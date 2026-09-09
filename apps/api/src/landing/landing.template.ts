@@ -85,20 +85,28 @@ export function renderLanding(opts: {
   supabaseUrl: string;
   supabaseAnonKey: string;
   /**
-   * Chegou por um link de convite de família (`/familia/:token`).
+   * Chegou por um link de convite — e **qual**.
+   *
+   * `family` é o `/familia/:token` de um pai; `member` é o `/socio/:token` de um
+   * sócio. Ausente é quem encontrou a página do clube por outra via.
    *
    * Isto decide a composição de computador com mais força do que o dispositivo:
-   * um convite de família **é sempre** sobre um pai a instalar a app, mesmo que o
-   * link tenha sido aberto num portátil — a caminho do telemóvel, colado num
-   * email, ou só a testar. Sem esta distinção, esse pai caía no ecrã de login de
+   * um convite **é sempre** sobre alguém a instalar a app, mesmo que o link
+   * tenha sido aberto num portátil — a caminho do telemóvel, colado num email,
+   * ou só a testar. Sem esta distinção, essa pessoa caía no ecrã de login de
    * staff, que é o beco sem saída que esta página inteira existe para evitar.
+   *
+   * Era um booleano (`hasFamilyInvite`), e por isso o sócio via a página do
+   * convite **de família**: "identifica o teu filho pelo NIF" para quem não tem
+   * filho nenhum no clube. Saber que há convite não chega — é preciso saber de
+   * quem ele é.
    */
-  hasInvite?: boolean;
+  invite?: "family" | "member";
 }): string {
   const { academy, platform, pageUrl, familyUrl, consoleUrl, supabaseUrl, supabaseAnonKey } = opts;
   const inAppBrowser = opensInAppBrowser(opts.userAgent);
   const desktop = isDesktop(opts.userAgent);
-  const familyInviteOnDesktop = desktop && Boolean(opts.hasInvite);
+  const conviteNoComputador = desktop && Boolean(opts.invite);
   const name = esc(academy.name);
   const shortName = esc(academy.shortName);
   // A cor do clube e as que dela se derivam — ver common/contrast.ts. `clubPalette`
@@ -558,11 +566,11 @@ ${academy.logoUrl ? `<meta property="og:image" content="${esc(academy.logoUrl)}"
 </head>
 <body class="${desktop ? "desktop" : ""}">
 ${
-  familyInviteOnDesktop
-    ? renderDesktopFamilyInvite(academy, shortName, name, pageUrl)
+  conviteNoComputador
+    ? renderDesktopInvite(academy, shortName, name, pageUrl, opts.invite ?? "family")
     : desktop
       ? renderDesktop(academy, shortName, name)
-      : renderMobile(academy, shortName, platform, inAppBrowser, familyUrl, Boolean(opts.hasInvite))
+      : renderMobile(academy, shortName, platform, inAppBrowser, familyUrl, opts.invite)
 }
 
 <script>
@@ -939,15 +947,22 @@ function renderDesktop(academy: AcademyBranding, shortName: string, name: string
 }
 
 /**
- * Computador, mas com um convite de família na mão.
+ * Computador, mas com um convite na mão — de família ou de sócio.
  *
  * ## Porque é que isto não é `renderDesktop`
  *
  * `renderDesktop` parte do princípio de que quem abriu o link é staff — é a
- * aposta certa para `clube.academias.pt` sozinho. Mas um convite de família
- * (`?convite=...`) já respondeu a essa pergunta: só um pai o recebe. Mostrar-lhe
- * um formulário de login sobre isso era ignorar a única coisa que já se sabe
- * sobre quem está a olhar para o ecrã.
+ * aposta certa para `clube.academias.pt` sozinho. Mas um convite (`?convite=` ou
+ * `?socio=`) já respondeu a essa pergunta: só um pai recebe o primeiro, só um
+ * sócio recebe o segundo. Mostrar-lhes um formulário de login era ignorar a
+ * única coisa que já se sabe sobre quem está a olhar para o ecrã.
+ *
+ * ## E porque é que precisa de saber **qual** dos dois
+ *
+ * Porque o último passo é outro. Um pai identifica o filho pelo NIF; um sócio
+ * escolhe a palavra-passe e entra. Esta página chegou a dizer "identifica o teu
+ * filho" a um sócio — o que é falso e, para quem não tem filhos no clube,
+ * simplesmente não faz sentido.
  *
  * A acção aqui não é instalar — não se instala uma PWA de telemóvel num
  * computador — é **levar o link para o telemóvel**: copiar e colar numa
@@ -959,7 +974,14 @@ function renderDesktop(academy: AcademyBranding, shortName: string, name: string
  * (`show-login`, `install-panel`, `login-panel`) que a versão de telemóvel usa,
  * por isso o alternar entre os dois já funciona sem JavaScript novo.
  */
-function renderDesktopFamilyInvite(academy: AcademyBranding, shortName: string, name: string, pageUrl: string): string {
+function renderDesktopInvite(
+  academy: AcademyBranding,
+  shortName: string,
+  name: string,
+  pageUrl: string,
+  kind: "family" | "member",
+): string {
+  const socio = kind === "member";
   return `  <div class="stage">
     <!--
       Os estilhacos. Decorativos, e por isso fora da arvore de acessibilidade —
@@ -975,7 +997,7 @@ function renderDesktopFamilyInvite(academy: AcademyBranding, shortName: string, 
       <div class="mark${academy.logoUrl ? " logo" : ""}" style="margin:0 auto 22px">${academy.logoUrl ? `<img src="${esc(academy.logoUrl)}" alt="" />` : esc(academy.mark)}</div>
 
       <div id="install-panel">
-          <p class="eyebrow" style="text-align:left">Convite da família</p>
+          <p class="eyebrow" style="text-align:left">${socio ? "Convite de sócio" : "Convite da família"}</p>
           <h1>Abre isto no teu telemóvel</h1>
           <p class="subtitle" style="text-align:left">
             A aplicação da ${name} é feita para o telemóvel. Copia o link e abre-o lá.
@@ -993,13 +1015,21 @@ function renderDesktopFamilyInvite(academy: AcademyBranding, shortName: string, 
           <ol class="steps" style="margin-top:22px">
             <li>Abre o link no teu telemóvel</li>
             <li>Instala a app da <strong>${shortName}</strong> a partir daí</li>
-            <li>Dentro da app, cria conta e identifica o teu filho pelo NIF e data de nascimento</li>
+            <li>${
+              socio
+                ? "Dentro da app, escolhe a tua palavra-passe — a tua área de sócio fica pronta"
+                : "Dentro da app, cria conta e identifica o teu filho pelo NIF e data de nascimento"
+            }</li>
           </ol>
         </div>
 
       <p class="install-aside">
-        Ainda não recebeste o link? Fala com a ${shortName} — o convite é pessoal e só serve para o teu
-        educando.
+        ${
+          socio
+            ? `Este convite é pessoal: a conta fica ligada ao email para onde ele foi enviado. Alguma dúvida, fala com a ${shortName}.`
+            : `Ainda não recebeste o link? Fala com a ${shortName} — o convite é pessoal e só serve para o teu
+        educando.`
+        }
       </p>
     </section>
 
@@ -1020,37 +1050,42 @@ function renderMobile(
   inAppBrowser: boolean,
   familyUrl: string,
   /**
-   * Chegou por um link de convite de família.
+   * Chegou por um link de convite — e qual.
    *
-   * Quando é o caso, **não há login de staff nesta página** — nem escondido no
+   * Quando há um, **não há login de staff nesta página** — nem escondido no
    * fundo. O token no endereço já respondeu à pergunta "quem está a olhar para
-   * isto": só um pai o recebe. Oferecer-lhe um formulário de entrada é dar-lhe
+   * isto": só um pai recebe o de família, só um sócio recebe o dele. Oferecer-lhe
+   * um formulário de entrada é dar-lhe
    * uma porta que não é dele e que só o pode confundir a meio de uma tarefa que
    * tem um caminho só.
    *
    * O staff continua a entrar pela página do clube sem convite (`/`), que é para
    * onde a consola o manda quando não tem sessão.
    */
-  familyInvite: boolean,
+  invite?: "family" | "member",
 ): string {
   return `  <main>
     <div class="card">
       <div class="mark${academy.logoUrl ? " logo" : ""}" aria-hidden="true">${academy.logoUrl ? `<img src="${esc(academy.logoUrl)}" alt="" />` : esc(academy.mark)}</div>
       <p class="eyebrow">Instalar aplicação</p>
       <h1>${shortName}</h1>
-      <p class="subtitle">Treinos, pagamentos e o progresso do teu atleta — tudo num sítio só.</p>
+      <p class="subtitle">${
+        invite === "member"
+          ? "O teu cartão de sócio, as quotas e as novidades do clube — tudo num sítio só."
+          : "Treinos, pagamentos e o progresso do teu atleta — tudo num sítio só."
+      }</p>
 
       <div class="panel" id="install-panel">
         ${renderInstall(platform, inAppBrowser, familyUrl)}
       </div>
-${familyInvite ? "" : `
+${invite ? "" : `
       <div class="panel" id="login-panel" hidden>
         ${loginForm()}
       </div>`}
     </div>
   </main>
 ${
-  familyInvite
+  invite
     ? ""
     : `
   <footer>

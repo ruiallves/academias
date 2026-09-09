@@ -66,6 +66,20 @@ export function longDate(d: Date): string {
   return `${d.getDate()} de ${MONTH[d.getMonth()]}`;
 }
 
+/**
+ * "2026-08" → "Ago 2026". Para tabelas, onde a coluna é estreita.
+ *
+ * O par curto de `periodLabel`: a mesma informação sem a preposição, para caber
+ * numa etiqueta ao lado de outras cinco colunas. Quem precisar do nome por
+ * extenso tem-no no `title` da célula.
+ */
+export function periodShort(period: string): string {
+  const [y, m] = period.split("-").map(Number);
+  const name = MONTH[m - 1];
+  if (!name) return period;
+  return `${name[0].toUpperCase()}${name.slice(1, 3)} ${y}`;
+}
+
 /** "2026-08" → "Agosto de 2026". Para onde um período precisa de se explicar sozinho. */
 export function periodLabel(period: string): string {
   const [y, m] = period.split("-").map(Number);

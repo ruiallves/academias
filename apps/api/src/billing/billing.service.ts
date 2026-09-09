@@ -1434,31 +1434,61 @@ export class BillingService implements OnModuleInit, OnModuleDestroy {
   async startMemberFeePayment(
     academyId: string,
     memberId: string,
-    feeId: string,
+    feeIds: string | string[],
     method: PaymentMethod,
     payerPhone?: string,
   ) {
     if (method !== PaymentMethod.MBWAY && method !== PaymentMethod.MULTIBANCO) {
       throw new BadRequestException("Método de pagamento desconhecido");
     }
+    const pedidas = Array.isArray(feeIds) ? [...new Set(feeIds)] : [feeIds];
+    if (pedidas.length === 0) throw new BadRequestException("Não há nada a pagar");
 
     return this.prisma.runAs(academyId, async (db) => {
-      const fee = await db.memberFee.findFirst({
-        where: { id: feeId, memberId },
+      /*
+       * Da mais antiga para a mais recente — e é essa ordem que vale para tudo
+       * o que se segue: a âncora é a primeira, a descrição começa nela, e o
+       * histórico fica a ler-se de cima para baixo.
+       */
+      const fees = await db.memberFee.findMany({
+        where: { id: { in: pedidas }, memberId },
+        orderBy: { period: "asc" },
         include: { member: { select: { name: true, email: true } }, payments: true },
       });
 
-      if (!fee) throw new NotFoundException("Quota não encontrada");
-      if (fee.status === ChargeStatus.SETTLED) throw new BadRequestException("Já está paga");
-      if (fee.status === ChargeStatus.VOID) throw new BadRequestException("Esta quota foi anulada");
+      if (fees.length !== pedidas.length) throw new NotFoundException("Quota não encontrada");
+      for (const f of fees) {
+        if (f.status === ChargeStatus.SETTLED) throw new BadRequestException(`A quota de ${f.period} já está paga`);
+        if (f.status === ChargeStatus.VOID) throw new BadRequestException(`A quota de ${f.period} foi anulada`);
+      }
 
+      const fee = fees[0];
+      const total = fees.reduce((n, f) => n + f.amountCents, 0);
+
+      /*
+       * Uma tentativa viva de cada vez — agora contada sobre o **grupo**.
+       *
+       * Reaproveitar a referência anterior só é seguro se ela cobrir exactamente
+       * as mesmas quotas: quem pediu Janeiro e agora pede Janeiro+Fevereiro tem
+       * de receber uma referência nova, com o valor novo. Pagar a velha deixaria
+       * Fevereiro por liquidar e o sócio convencido de que estava em dia.
+       */
       const agora = Date.now();
-      for (const p of fee.payments) {
-        if (p.status !== PaymentStatus.PENDING && p.status !== PaymentStatus.PROCESSING) continue;
+      const alvo = [...pedidas].sort().join("|");
+      const vivos = await db.payment.findMany({
+        where: {
+          status: { in: [PaymentStatus.PENDING, PaymentStatus.PROCESSING] },
+          memberFees: { some: { memberFeeId: { in: pedidas } } },
+        },
+        include: { memberFees: { select: { memberFeeId: true } } },
+      });
+
+      for (const p of vivos) {
+        const cobre = p.memberFees.map((x) => x.memberFeeId).sort().join("|");
         const morto =
           (p.expiresAt && p.expiresAt.getTime() < agora) ||
           (p.method === PaymentMethod.MBWAY && agora - p.createdAt.getTime() > 10 * 60_000);
-        if (!morto && p.method === method) return p;
+        if (!morto && p.method === method && cobre === alvo) return p;
         await db.payment.update({ where: { id: p.id }, data: { status: PaymentStatus.EXPIRED } });
       }
 
@@ -1470,17 +1500,24 @@ export class BillingService implements OnModuleInit, OnModuleDestroy {
 
       const payment = await db.payment.create({
         data: {
+          // A âncora é a mais antiga; o que se liquida está em `memberFees`.
           memberFeeId: fee.id,
-          amountCents: fee.amountCents,
+          amountCents: total,
           method,
           status: PaymentStatus.PENDING,
+          memberFees: { create: fees.map((f) => ({ memberFeeId: f.id })) },
         },
       });
 
+      const descricao =
+        fees.length === 1
+          ? `${fee.label ?? `Quota ${fee.period}`} — ${fee.member.name}`
+          : `Quotas ${fee.period} a ${fees[fees.length - 1].period} (${fees.length} meses) — ${fee.member.name}`;
+
       const request = {
         reference: payment.id,
-        amountCents: fee.amountCents,
-        description: `${fee.label ?? `Quota ${fee.period}`} — ${fee.member.name}`,
+        amountCents: total,
+        description: descricao,
         payerName: fee.member.name,
         payerEmail: fee.member.email ?? "",
         apiKey,
@@ -1688,6 +1725,9 @@ export class BillingService implements OnModuleInit, OnModuleDestroy {
         include: {
           charge: { include: { athlete: { include: { guardians: { include: { membership: true } } } } } },
           memberFee: { include: { member: { select: { id: true, name: true, userId: true } } } },
+          // Tudo o que este pagamento liquida — ver `MemberFeePayment`. Vazio
+          // nos pagamentos anteriores a ela; nesse caso vale a âncora.
+          memberFees: { include: { memberFee: true }, orderBy: { memberFee: { period: "asc" } } },
         },
       });
 
@@ -1725,11 +1765,23 @@ export class BillingService implements OnModuleInit, OnModuleDestroy {
        */
       if (payment.memberFee) {
         const fee = payment.memberFee;
-        const duplicada = fee.status === ChargeStatus.SETTLED;
-        if (duplicada) {
+
+        /*
+         * Um pagamento pode cobrir vários meses — liquidam-se todos, ou o sócio
+         * pagava três e ficava com dois em dívida. A âncora entra na conta
+         * mesmo que a tabela de junção esteja vazia: os pagamentos criados
+         * antes de ela existir só têm a âncora.
+         */
+        const cobertas = payment.memberFees.length
+          ? payment.memberFees.map((x) => x.memberFee)
+          : [fee];
+
+        const jaLiquidadas = cobertas.filter((f) => f.status === ChargeStatus.SETTLED);
+        if (jaLiquidadas.length) {
           this.log.error(
-            `PAGAMENTO DUPLICADO: a quota ${fee.id} (${fee.period}) já estava liquidada e chegou outro ` +
-              `pagamento de ${(payment.amountCents / 100).toFixed(2)} € (payment ${payment.id}). Reembolsar na euPago.`,
+            `PAGAMENTO DUPLICADO: ${jaLiquidadas.length} quota(s) de ${fee.member.name ?? fee.memberId} ` +
+              `(${jaLiquidadas.map((f) => f.period).join(", ")}) já estavam liquidadas e chegou outro pagamento de ` +
+              `${(payment.amountCents / 100).toFixed(2)} € (payment ${payment.id}). Reembolsar na euPago.`,
           );
         }
 
@@ -1737,21 +1789,28 @@ export class BillingService implements OnModuleInit, OnModuleDestroy {
           where: { id: payment.id },
           data: { status: PaymentStatus.PAID, paidAt, rawPayload: rawPayload as object },
         });
-        if (!duplicada) {
-          await db.memberFee.update({
-            where: { id: fee.id },
+
+        const porLiquidar = cobertas.filter((f) => f.status !== ChargeStatus.SETTLED);
+        if (porLiquidar.length) {
+          await db.memberFee.updateMany({
+            where: { id: { in: porLiquidar.map((f) => f.id) } },
             data: { status: ChargeStatus.SETTLED, settledAt: paidAt, method: payment.method },
           });
         }
 
         if (fee.member.userId) {
+          const periodos = cobertas.map((f) => f.period).sort();
           await this.notifications.enqueue(
             {
               academyId: fee.academyId,
               userId: fee.member.userId,
               type: NotificationType.PAYMENT_RECEIVED,
-              title: "Quota paga",
-              body: `Recebemos ${(payment.amountCents / 100).toFixed(2)} € da quota ${fee.label ?? fee.period}.`,
+              title: cobertas.length === 1 ? "Quota paga" : "Quotas pagas",
+              body:
+                cobertas.length === 1
+                  ? `Recebemos ${(payment.amountCents / 100).toFixed(2)} € da quota ${fee.label ?? fee.period}.`
+                  : `Recebemos ${(payment.amountCents / 100).toFixed(2)} € de ${cobertas.length} quotas, ` +
+                    `de ${periodos[0]} a ${periodos[periodos.length - 1]}.`,
               payload: { route: "/socio/quotas", memberFeeId: fee.id },
             },
             db,
