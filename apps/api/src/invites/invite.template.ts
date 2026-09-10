@@ -336,10 +336,11 @@ function legalFields(preview: InvitePreview): string {
       const verbo = d.acceptanceKind === "ACKNOWLEDGE" ? "Li" : "Aceito";
       const artigo = /^termos/i.test(d.title) ? "os" : /^pol/i.test(d.title) ? "a" : "o";
       const alvo = d.acceptanceKind === "ACKNOWLEDGE" ? "a" : artigo;
+      // Sem a versão por baixo da caixa: quem abrir o documento vê-a no site.
       return linha(
         `legal-${esc(d.id)}`,
         `${verbo} ${alvo} <a href="${esc(d.url)}" target="_blank" rel="noreferrer">${esc(d.title)}</a>`,
-        `Versão ${esc(d.version)}${d.scope === "CLUB" ? " · em nome do clube" : ""}`,
+        d.scope === "CLUB" ? "Em nome do clube" : undefined,
       );
     })
     .join("\n");

@@ -1176,7 +1176,15 @@ export class MatchesService {
         // Concreto de propósito: uma notificação que obriga a abrir a app para
         // saber do que se trata gasta a paciência de quem a recebe.
         body: `${match.isHome ? "Em casa" : "Fora"} com ${match.opponent} · ${quando} · ${match.venue}`,
-        payload: { matchId, url: "/agenda" },
+        /*
+         * `route` e não `url`: é a chave que a app e o push leem
+         * (`routeOf` em `push.service`). Com `url`, este aviso caía em "/" no
+         * telemóvel e nem sequer era clicável na lista — desde sempre.
+         *
+         * E vai para o jogo, não para a agenda: quem recebe "está convocado"
+         * quer o ponto de encontro, que agora tem página própria.
+         */
+        payload: { matchId, route: `/evento/jogo/${matchId}` },
       });
     }
 
@@ -1274,6 +1282,106 @@ export class MatchesService {
 
       return { matchId, athleteId, ...atualizada };
     });
+  }
+
+  /**
+   * Corrigir a logística de uma convocatória **já enviada**.
+   *
+   * ## Porque é que isto não é reabrir
+   *
+   * Reabrir é desfazer a convocatória: a lista volta a rascunho, o botão de
+   * exportar desliga-se, e submeter outra vez avisa toda a gente de que foram
+   * convocados — outra vez. Mudar o ponto de encontro das 09:00 para as 09:30
+   * não é nada disso. A lista está certa, as famílias sabem que vão; o que
+   * mudou foi uma hora.
+   *
+   * Sem este caminho, a única forma de corrigir uma hora era reabrir e
+   * ressubmeter — e o preço era um segundo "estás convocado" no telemóvel de
+   * catorze famílias, que é como se ensina uma família a ignorar avisos. Era
+   * também o que deixava **todas** as convocatórias anteriores a esta
+   * funcionalidade sem logística nenhuma e sem forma de lha dar.
+   *
+   * ## Avisa-se, e diz-se o que mudou
+   *
+   * Um aviso a dizer "houve alterações" obriga a abrir a app para descobrir
+   * quais — e quem está a conduzir para o ponto de encontro não abre a app.
+   * A mensagem nomeia a mudança: *"O encontro passou para as 09:30."*
+   *
+   * Só se avisa se alguma coisa mudou de facto. Gravar o formulário sem lhe
+   * tocar não é um acontecimento, e mandar um push por causa disso é gastar a
+   * atenção que se vai precisar da próxima vez.
+   */
+  async actualizarLogistica(ctx: RequestContext, matchId: string, logistica: CallUpLogistics) {
+    this.assertCanManageCallUps(ctx);
+
+    const { match, antes, depois, avisados } = await this.prisma.runAs(ctx.academyId, async (db) => {
+      const match = await this.loadMatch(db, ctx, matchId, { allowSubmitted: true });
+
+      const actual = await db.match.findFirst({
+        where: { id: matchId },
+        select: {
+          callUpsClosedAt: true, roundLabel: true, meetingPoint: true,
+          meetingAt: true, arrivalAt: true, callUpNotes: true, confirmationRequired: true,
+        },
+      });
+      if (!actual) throw new NotFoundException("Jogo não encontrado");
+      if (!actual.callUpsClosedAt) {
+        // Antes de submeter, quem pergunta isto é o diálogo de submissão. Dois
+        // caminhos a escrever a mesma coisa acabam por divergir.
+        throw new BadRequestException("A convocatória ainda não foi enviada — os detalhes pedem-se ao submeter");
+      }
+
+      const novo = limparLogistica(logistica, match.startsAt);
+      await db.match.update({ where: { id: matchId }, data: novo });
+
+      /*
+       * Quem é avisado: as famílias dos convocados. Quem não foi convocado não
+       * tem ponto de encontro nenhum, e avisá-lo de uma mudança que não lhe diz
+       * respeito é ruído.
+       */
+      const callUps = await db.matchCallUp.findMany({
+        where: { matchId },
+        select: {
+          athlete: {
+            select: {
+              name: true,
+              guardians: { select: { membership: { select: { userId: true, isActive: true } } } },
+            },
+          },
+        },
+      });
+      const destinatarios: { userId: string; athleteName: string }[] = [];
+      for (const c of callUps) {
+        for (const g of c.athlete.guardians) {
+          if (g.membership.isActive) destinatarios.push({ userId: g.membership.userId, athleteName: c.athlete.name });
+        }
+      }
+
+      return { match, antes: actual, depois: novo, avisados: destinatarios };
+    });
+
+    /*
+     * As notificações vão **depois** da transação fechar — a mesma razão de
+     * `submitCallUps`: prendê-las lá dentro punha uma escrita à espera de um
+     * serviço externo, e uma falha de push desfazia uma correcção que já é um
+     * facto.
+     */
+    const mudancas = descreverMudancas(antes, depois);
+    if (mudancas.length > 0) {
+      const titulo = `Mudou o jogo com ${match.opponent}`;
+      for (const alvo of avisados) {
+        await this.notifications.enqueue({
+          academyId: ctx.academyId,
+          userId: alvo.userId,
+          type: "SESSION_CHANGED",
+          title: titulo,
+          body: mudancas.join(" · "),
+          payload: { matchId, route: `/evento/jogo/${matchId}` },
+        });
+      }
+    }
+
+    return { matchId, mudou: mudancas.length > 0, mudancas, familiasAvisadas: mudancas.length ? avisados.length : 0 };
   }
 
   /** Reabre uma convocatória submetida — e diz-se que foi reaberta, não se finge. */
@@ -1567,4 +1675,59 @@ function limparLogistica(l: CallUpLogistics, kickOff: Date) {
     callUpNotes: texto(l.notes),
     confirmationRequired: l.confirmationRequired === true,
   };
+}
+
+/**
+ * O que mudou, em português e em concreto.
+ *
+ * Uma notificação que diz "houve alterações" obriga a abrir a app para
+ * descobrir quais — e quem já vai a caminho do ponto de encontro não abre a
+ * app. Nomear a mudança é o que faz o aviso valer o incómodo.
+ *
+ * Devolve vazio quando nada mudou, e é isso que impede um push por cada vez que
+ * alguém abre o formulário e grava sem lhe tocar.
+ */
+function descreverMudancas(
+  antes: {
+    roundLabel: string | null; meetingPoint: string | null; meetingAt: Date | null;
+    arrivalAt: Date | null; callUpNotes: string | null; confirmationRequired: boolean;
+  },
+  depois: ReturnType<typeof limparLogistica>,
+): string[] {
+  const mudou: string[] = [];
+  const hora = (d: Date | null) =>
+    d ? d.toLocaleTimeString("pt-PT", { hour: "2-digit", minute: "2-digit" }) : null;
+  const mesmoInstante = (a: Date | null, b: Date | null) =>
+    (a?.getTime() ?? null) === (b?.getTime() ?? null);
+
+  if (!mesmoInstante(antes.meetingAt, depois.meetingAt)) {
+    mudou.push(depois.meetingAt ? `O encontro passou para as ${hora(depois.meetingAt)}` : "O encontro deixou de ter hora");
+  }
+  if ((antes.meetingPoint ?? null) !== depois.meetingPoint) {
+    mudou.push(depois.meetingPoint ? `Ponto de encontro: ${depois.meetingPoint}` : "O ponto de encontro foi retirado");
+  }
+  if (!mesmoInstante(antes.arrivalAt, depois.arrivalAt)) {
+    mudou.push(depois.arrivalAt ? `Chegada ao campo às ${hora(depois.arrivalAt)}` : "A hora de chegada foi retirada");
+  }
+  if ((antes.callUpNotes ?? null) !== depois.callUpNotes) {
+    // O recado inteiro, e não "as observações mudaram": é curto e é o que se
+    // quer ler. Cortado se for longo — uma notificação não é um documento.
+    mudou.push(depois.callUpNotes ? recortar(depois.callUpNotes, 120) : "O recado do clube foi retirado");
+  }
+  if ((antes.roundLabel ?? null) !== depois.roundLabel && depois.roundLabel) {
+    mudou.push(depois.roundLabel);
+  }
+  /*
+   * Pedir confirmação **passa** a pedir alguma coisa à família, e por isso
+   * avisa-se. Deixar de pedir não pede nada a ninguém: não vale um push.
+   */
+  if (!antes.confirmationRequired && depois.confirmationRequired) {
+    mudou.push("O clube pede que confirmes a presença");
+  }
+
+  return mudou;
+}
+
+function recortar(texto: string, max: number): string {
+  return texto.length <= max ? texto : `${texto.slice(0, max - 1).trimEnd()}…`;
 }

@@ -80,24 +80,48 @@ await db.connect();
 const coach = await login("treinador@lifeclub.pt");
 const parent = await login("familia@lifeclub.pt");
 
-/*
- * O gate legal, se estiver a bloquear, bloqueia tudo — e em silêncio.
+/**
+ * Passar o gate legal, como um utilizador passa.
  *
- * Sem esta paragem, cada asserção falhava com 403 e uma delas **passava pela
- * razão errada**: "um pai não responde por um filho que não é dele" espera 403,
- * e o gate devolve 403 a toda a gente. Um teste que passa por acidente é pior
- * do que um teste que falha.
+ * ## Porque é que um teste tem de fazer isto
+ *
+ * O `AuthGuard` recusa **todas** as rotas autenticadas a quem tenha documentos
+ * por aceitar — 403 `LEGAL_ACCEPTANCE_REQUIRED`. Um teste de API tem de
+ * atravessar os mesmos portões que a app atravessa; a alternativa era escrever
+ * na base por baixo do produto, e aí deixa de se estar a testar o produto.
+ *
+ * ## E porque é que não se salta
+ *
+ * Porque um 403 do gate é indistinguível de um 403 de autorização, e há
+ * asserções aqui que **esperam** 403 ("um pai não responde por um filho que não
+ * é dele"). Sem isto, essa passava pela razão errada — e um teste que passa por
+ * acidente é pior do que um teste que falha.
+ *
+ * Aceita-se o que estiver pendente para esta conta e mais nada. O que está
+ * pendente na base de desenvolvimento são fixtures de teste (`Teste
+ * TERMS_OF_USE`, versão `0.0.770`, "apagado no fim") deixadas por uma corrida
+ * das suites legais que não chegou à limpeza.
  */
+const passarOGateLegal = async (token, quem) => {
+  const st = await call(token, "GET", "/api/legal/status");
+  const pendentes = (st.body?.pending ?? []).map((d) => d.id);
+  if (pendentes.length === 0) return true;
+
+  const r = await call(token, "POST", "/api/legal/accept", { documentIds: pendentes });
+  if (r.status !== 200 && r.status !== 201) {
+    console.log(`  (não consegui aceitar os documentos de ${quem}: ${r.status} ${JSON.stringify(r.body).slice(0, 120)})`);
+    return false;
+  }
+  console.log(`  (${quem}: aceites ${pendentes.length} documentos legais pendentes)`);
+  return true;
+};
+
+await passarOGateLegal(coach, "treinador");
+await passarOGateLegal(parent, "encarregado");
+
 const sonda = await call(coach, "GET", "/api/matches");
-if (sonda.body?.code === "LEGAL_ACCEPTANCE_REQUIRED") {
-  console.log("PARADO — as contas de teste têm documentos legais por aceitar.");
-  console.log("         Todas as rotas autenticadas devolvem 403, e nenhuma asserção deste");
-  console.log("         ficheiro (nem das outras suites) diz nada enquanto isso não mudar.");
-  await db.end();
-  process.exit(2);
-}
-if (sonda.status !== 200) {
-  console.log(`PARADO — /api/matches devolveu ${sonda.status}: ${JSON.stringify(sonda.body).slice(0, 160)}`);
+if (sonda.body?.code === "LEGAL_ACCEPTANCE_REQUIRED" || sonda.status !== 200) {
+  console.log(`PARADO — /api/matches devolveu ${sonda.status}: ${JSON.stringify(sonda.body).slice(0, 200)}`);
   await db.end();
   process.exit(2);
 }
@@ -110,6 +134,7 @@ const limpar = async () => {
                   WHERE id = $1`, [MATCH]);
   await db.query(`DELETE FROM "MatchCallUp" WHERE "matchId" = $1`, [MATCH]);
   await db.query(`DELETE FROM "Notification" WHERE type = 'MATCH_CALLED_UP'`);
+  await db.query(`DELETE FROM "Notification" WHERE type = 'SESSION_CHANGED'`);
 };
 await limpar();
 
@@ -195,20 +220,33 @@ check(
 /*
  * Um encontro **depois** da hora do apito só pode ser da véspera: ninguém marca
  * concentração onze horas depois do jogo começar. Ver `horaNoDia`.
+ *
+ * Pelo `PATCH` e não por `submeter`: a convocatória já saiu, e `submeter`
+ * recusa-a — "reabre-a para alterar". Foi assim que este bloco passou uma vez
+ * sem provar nada: o `submeter` falhava em silêncio, a hora ficava a do passe
+ * anterior (que também era menor que a do apito) e a asserção dava OK à mesma.
+ * Daí verificar-se agora o estado da resposta.
  */
 console.log("\n=== Um encontro na véspera ===");
 const depoisDoApito = new Date(kickOff.getTime() + 3 * 3600_000);
-await call(coach, "POST", `/api/matches/${MATCH}/convocatoria/submeter`, { meetingTime: hhmm(depoisDoApito) });
+const pediuVespera = await call(coach, "PATCH", `/api/matches/${MATCH}/convocatoria/logistica`, {
+  meetingPoint: "Parque do clube",
+  meetingTime: hhmm(depoisDoApito),
+});
+check("o pedido da véspera passa (200)", pediuVespera.status === 200, `${pediuVespera.status} ${JSON.stringify(pediuVespera.body).slice(0, 140)}`);
+
 const listaVespera = (await call(coach, "GET", "/api/matches")).body;
 const vespera = Array.isArray(listaVespera) ? listaVespera.find((m) => m.id === MATCH) : null;
 check(
   "a hora maior que a do jogo cai no dia anterior",
-  Boolean(vespera?.meetingAt) && new Date(vespera.meetingAt) < new Date(vespera.startsAt),
+  Boolean(vespera?.meetingAt) &&
+    new Date(vespera.meetingAt).toDateString() !== new Date(vespera.startsAt).toDateString() &&
+    new Date(vespera.meetingAt) < new Date(vespera.startsAt),
   `${vespera?.meetingAt} vs ${vespera?.startsAt}`,
 );
 
 /* Repõe uma logística sensata para o resto do teste. */
-await call(coach, "POST", `/api/matches/${MATCH}/convocatoria/submeter`, {
+await call(coach, "PATCH", `/api/matches/${MATCH}/convocatoria/logistica`, {
   meetingPoint: "Parque do clube",
   meetingTime: hhmm(encontro),
 });
@@ -294,6 +332,94 @@ const depois = (await db.query(
 check("fica CONFIRMED", depois?.status === "CONFIRMED", `${depois?.status}`);
 check("e o motivo desaparece", depois?.declineReason === null, `${depois?.declineReason}`);
 
+/*
+ * `submeter` recusa uma convocatória já enviada, e é isso que dá sentido ao
+ * `PATCH` existir: sem ele, corrigir uma hora obrigava a reabrir.
+ */
+const resubmeter = await call(coach, "POST", `/api/matches/${MATCH}/convocatoria/submeter`, { meetingPoint: "x" });
+check("submeter outra vez é recusado (400)", resubmeter.status === 400, `${resubmeter.status}`);
+check(
+  "a dizer que é preciso reabrir",
+  /reabre/i.test(resubmeter.body?.message ?? ""),
+  `${resubmeter.body?.message}`,
+);
+
+/* ======================================= corrigir sem reabrir ===== */
+
+/*
+ * Mudar a hora do encontro não pode obrigar a reabrir a convocatória.
+ *
+ * Reabrir desfaz a lista, e ressubmeter avisa outra vez toda a gente de que foi
+ * convocada — catorze pushes por causa de meia hora. E era isso que deixava
+ * todas as convocatórias anteriores a esta funcionalidade sem logística e sem
+ * forma de lha dar.
+ */
+console.log("\n=== Corrigir os detalhes sem reabrir ===");
+await db.query(`DELETE FROM "Notification" WHERE type = 'SESSION_CHANGED'`);
+
+const novoEncontro = new Date(kickOff.getTime() - 120 * 60_000);
+const corrigiu = await call(coach, "PATCH", `/api/matches/${MATCH}/convocatoria/logistica`, {
+  meetingPoint: "Bomba de gasolina da saída",
+  meetingTime: hhmm(novoEncontro),
+  arrivalTime: hhmm(chegada),
+});
+check("a correcção passa (200)", corrigiu.status === 200, `${corrigiu.status} ${JSON.stringify(corrigiu.body).slice(0, 160)}`);
+check("e diz que mudou alguma coisa", corrigiu.body?.mudou === true, JSON.stringify(corrigiu.body?.mudancas));
+check(
+  "nomeando a mudança, não 'houve alterações'",
+  (corrigiu.body?.mudancas ?? []).some((m) => /encontro passou para as/i.test(m)),
+  JSON.stringify(corrigiu.body?.mudancas),
+);
+
+const aindaSubmetida = (await db.query(
+  `SELECT "callUpsClosedAt", "meetingPoint" FROM "Match" WHERE id = $1`, [MATCH],
+)).rows[0];
+check("a convocatória continua enviada", aindaSubmetida?.callUpsClosedAt !== null, `${aindaSubmetida?.callUpsClosedAt}`);
+check("com o ponto de encontro novo", aindaSubmetida?.meetingPoint === "Bomba de gasolina da saída", `${aindaSubmetida?.meetingPoint}`);
+
+const convocadosDepois = (await db.query(
+  `SELECT COUNT(*)::int n FROM "MatchCallUp" WHERE "matchId" = $1`, [MATCH],
+)).rows[0].n;
+check("e a lista de convocados intacta", convocadosDepois === 1, `${convocadosDepois}`);
+
+const avisos = (await db.query(
+  `SELECT title, body, payload FROM "Notification" WHERE type = 'SESSION_CHANGED'`,
+)).rows;
+check("a família foi avisada", avisos.length >= 1, `${avisos.length}`);
+check("com o que mudou no corpo", /encontro passou para as/i.test(avisos[0]?.body ?? ""), `${avisos[0]?.body}`);
+check(
+  "e a levar ao jogo, não à agenda",
+  (avisos[0]?.payload?.route ?? "") === `/evento/jogo/${MATCH}`,
+  JSON.stringify(avisos[0]?.payload),
+);
+
+/*
+ * Gravar sem mexer em nada não é um acontecimento. Um push por cada vez que
+ * alguém abre o formulário e carrega em Gravar gasta a atenção que se vai
+ * precisar da próxima vez.
+ */
+await db.query(`DELETE FROM "Notification" WHERE type = 'SESSION_CHANGED'`);
+const semMexer = await call(coach, "PATCH", `/api/matches/${MATCH}/convocatoria/logistica`, {
+  meetingPoint: "Bomba de gasolina da saída",
+  meetingTime: hhmm(novoEncontro),
+  arrivalTime: hhmm(chegada),
+});
+check("gravar sem mudar nada não avisa ninguém", semMexer.body?.mudou === false, JSON.stringify(semMexer.body));
+check(
+  "e não deixa notificação nenhuma",
+  (await db.query(`SELECT COUNT(*)::int n FROM "Notification" WHERE type = 'SESSION_CHANGED'`)).rows[0].n === 0,
+);
+
+/* Uma convocatória por enviar pede os detalhes ao submeter, não por aqui. */
+await db.query(`UPDATE "Match" SET "callUpsClosedAt" = NULL WHERE id = $1`, [MATCH]);
+const porEnviar = await call(coach, "PATCH", `/api/matches/${MATCH}/convocatoria/logistica`, { meetingPoint: "x" });
+check("não se corrige uma convocatória por enviar (400)", porEnviar.status === 400, `${porEnviar.status}`);
+await db.query(`UPDATE "Match" SET "callUpsClosedAt" = now() WHERE id = $1`, [MATCH]);
+
+/* Um pai não corrige a logística de um jogo. */
+const peloPai = await call(parent, "PATCH", `/api/matches/${MATCH}/convocatoria/logistica`, { meetingPoint: "x" });
+check("um encarregado não mexe nos detalhes (403)", peloPai.status === 403, `${peloPai.status}`);
+
 /* ============================================ a confirmação pedida ===== */
 
 /*
@@ -303,7 +429,18 @@ check("e o motivo desaparece", depois?.declineReason === null, `${depois?.declin
  * leitura que se faz dele.
  */
 console.log("\n=== A confirmação pedida ===");
-await call(coach, "POST", `/api/matches/${MATCH}/convocatoria/submeter`, { confirmationRequired: true });
+const ligou = await call(coach, "PATCH", `/api/matches/${MATCH}/convocatoria/logistica`, {
+  meetingPoint: "Bomba de gasolina da saída",
+  meetingTime: hhmm(novoEncontro),
+  arrivalTime: hhmm(chegada),
+  confirmationRequired: true,
+});
+check("ligar a confirmação passa (200)", ligou.status === 200, `${ligou.status} ${JSON.stringify(ligou.body).slice(0, 140)}`);
+check(
+  "e avisa que passou a pedir confirmação",
+  (ligou.body?.mudancas ?? []).some((m) => /confirmes a presença/i.test(m)),
+  JSON.stringify(ligou.body?.mudancas),
+);
 const comConfirmacao = (await call(coach, "GET", "/api/matches")).body;
 const jogoConf = Array.isArray(comConfirmacao) ? comConfirmacao.find((m) => m.id === MATCH) : null;
 check("o jogo diz que pede confirmação", jogoConf?.confirmationRequired === true, `${jogoConf?.confirmationRequired}`);

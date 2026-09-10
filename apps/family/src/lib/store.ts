@@ -1,5 +1,6 @@
 import { useSyncExternalStore } from "react";
 import { ApiError, apiGet, soft } from "@/lib/http";
+import { LEGAL_REQUIRED_CODE } from "@/lib/legal-signal";
 import { applyBrand } from "@/lib/brand";
 
 /**
@@ -450,6 +451,18 @@ export function load(): Promise<void> {
        * Separá-lo aqui é o que permite ao ecrã oferecer a única saída que
        * resolve: sair e entrar com a conta certa.
        */
+      /*
+       * Um 403 por termos por aceitar **não** é conta errada.
+       *
+       * Sem esta distinção, a mensagem "há documentos legais por aceitar" saía
+       * debaixo do título "Esta conta não é de encarregado" — a explicação
+       * errada, e sem forma de lá sair. O `http.ts` já avisou o gate; aqui
+       * basta não fingir que o problema é outro. Ver `legal-signal.ts`.
+       */
+      if (error instanceof ApiError && error.code === LEGAL_REQUIRED_CODE) {
+        apply({ ...EMPTY, ready: false });
+        return;
+      }
       if (error instanceof ApiError && error.status === 403) {
         apply({ ...EMPTY, ready: true, denied: error.message });
         return;

@@ -3,6 +3,7 @@ import { LegalMarkdown } from "@academia/ui/legal-markdown";
 import { Dialog } from "./Dialog";
 import { FileText } from "@/lib/icons";
 import { ApiError } from "@/lib/http";
+import { onLegalRequired } from "@/lib/legal-signal";
 import { clearSession, signOut } from "@/lib/session";
 import {
   acceptanceLabel,
@@ -55,6 +56,13 @@ export function LegalGate({ children }: { children: ReactNode }) {
   useEffect(() => {
     void carregar();
   }, [carregar]);
+
+  /*
+   * Os documentos podem ser publicados com a consola aberta. O cliente HTTP
+   * avisa quando o servidor recusar por causa disso, e aqui volta-se a
+   * perguntar o que falta — sem recarregar nada. Ver `legal-signal.ts`.
+   */
+  useEffect(() => onLegalRequired(() => void carregar()), [carregar]);
 
   if (error) return <GateError message={error} onRetry={() => { setError(null); void carregar(); }} />;
   if (!status) return <GateLoading />;
@@ -120,13 +128,14 @@ function AcceptScreen({ status, onAccepted }: { status: LegalStatus; onAccepted:
               checked={Boolean(marcados[doc.id])}
               onChange={(v) => setMarcados((m) => ({ ...m, [doc.id]: v }))}
               label={acceptanceLabel(doc)}
-              hint={
-                <>
-                  Versão {doc.version} · em vigor desde {dataPT(doc.effectiveAt)}
-                  {doc.previousVersion && <> · tinhas aceite a {doc.previousVersion}</>}
-                  {doc.scope === "CLUB" && <> · em nome do clube</>}
-                </>
-              }
+              /*
+                Debaixo da caixa fica só o que diz respeito ao gesto — se
+                vincula o clube ou não. A versão e a data em vigor vivem onde o
+                documento é lido: no diálogo de leitura e na página do site.
+                Uma linha de metadados por baixo de cada caixa enchia o ecrã de
+                números que ninguém confere ali.
+              */
+              hint={doc.scope === "CLUB" ? "Em nome do clube" : undefined}
               action={
                 <button
                   type="button"

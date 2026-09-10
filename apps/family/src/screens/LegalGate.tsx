@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react
 import { ArrowLeft, FileText } from "lucide-react";
 import { LegalMarkdown } from "@academia/ui/legal-markdown";
 import { ApiError } from "@/lib/http";
+import { onLegalRequired } from "@/lib/legal-signal";
 import { signOut } from "@/lib/session";
 import {
   acceptanceLabel,
@@ -43,6 +44,13 @@ export function LegalGate({ children }: { children: ReactNode }) {
   useEffect(() => {
     void carregar();
   }, [carregar]);
+
+  /*
+   * Os documentos podem ser publicados com a app já aberta. O cliente HTTP
+   * avisa quando o servidor recusar por causa disso, e aqui volta-se a
+   * perguntar o que falta — sem recarregar nada. Ver `legal-signal.ts`.
+   */
+  useEffect(() => onLegalRequired(() => void carregar()), [carregar]);
 
   if (error) {
     return (
@@ -117,7 +125,8 @@ function Aceitar({ status, onAccepted }: { status: LegalStatus; onAccepted: (s: 
             checked={Boolean(marcados[doc.id])}
             onChange={(v) => setMarcados((m) => ({ ...m, [doc.id]: v }))}
             label={acceptanceLabel(doc)}
-            hint={`Versão ${doc.version} · em vigor desde ${dataPT(doc.effectiveAt)}${doc.previousVersion ? ` · tinhas aceite a ${doc.previousVersion}` : ""}`}
+            // A versão fica onde o documento se lê — ver a nota no gate da consola.
+            hint={doc.scope === "CLUB" ? "Em nome do clube" : undefined}
             onRead={() => setALer(doc)}
           />
         ))}

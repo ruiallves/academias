@@ -1,4 +1,5 @@
 import { getAccessToken, readSession, refreshSession, signOut } from "@/lib/session";
+import { LEGAL_REQUIRED_CODE, legalRequired } from "@/lib/legal-signal";
 
 /**
  * O cliente HTTP da consola.
@@ -51,6 +52,8 @@ export class ApiError extends Error {
   constructor(
     readonly status: number,
     message: string,
+    /** O código que o servidor mandou, quando manda um. Ver `legal-signal.ts`. */
+    readonly code?: string,
   ) {
     super(message);
     this.name = "ApiError";
@@ -183,16 +186,13 @@ async function pedir<T>(
     /*
      * Termos novos publicados com a consola aberta.
      *
-     * O servidor passa a recusar tudo com este código até a pessoa aceitar, e
-     * a única coisa que a deixa aceitar é o gate à entrada. Recarregar leva-a
-     * lá — é o mesmo caminho da primeira entrada, sem um segundo ecrã de
-     * aceitação a manter dentro da consola.
+     * Avisa-se o gate, que volta a perguntar o que falta e mostra os
+     * documentos. Já foi um `window.location.reload()`, e uma recarga que
+     * volte a cair no mesmo erro é um ciclo. Ver `legal-signal.ts`.
      */
-    if (res.status === 403 && parsed?.code === "LEGAL_ACCEPTANCE_REQUIRED") {
-      window.location.reload();
-    }
+    if (res.status === 403 && parsed?.code === LEGAL_REQUIRED_CODE) legalRequired();
 
-    throw new ApiError(res.status, msg ?? mensagem(res.status));
+    throw new ApiError(res.status, msg ?? mensagem(res.status), parsed?.code);
   }
 
   return readBody<T>(res);

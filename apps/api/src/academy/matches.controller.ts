@@ -217,6 +217,18 @@ export class MatchesController {
     });
   }
 
+  /**
+   * Corrigir os detalhes de uma convocatória já enviada — sem a reabrir.
+   *
+   * Reabrir desfaz a convocatória e ressubmeter avisa toda a gente outra vez;
+   * mudar uma hora não é isso. As famílias dos convocados recebem um aviso que
+   * **nomeia** a mudança. Ver `MatchesService.actualizarLogistica`.
+   */
+  @Patch(":id/convocatoria/logistica")
+  updateLogistics(@Req() req: AuthedRequest, @Param("id") id: string, @Body() body: SubmitCallUpsDto) {
+    return this.matches.actualizarLogistica(req.ctx, id, body);
+  }
+
   @Post(":id/convocatoria/reabrir")
   reopen(@Req() req: AuthedRequest, @Param("id") id: string) {
     return this.matches.reopenCallUps(req.ctx, id);

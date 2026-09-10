@@ -17,7 +17,15 @@ import { fileURLToPath, URL } from "node:url";
  */
 export default defineConfig(({ command }) => ({
   plugins: [react(), tailwindcss()],
-  resolve: { alias: { "@": fileURLToPath(new URL("./src", import.meta.url)) } },
+  resolve: {
+    alias: {
+      "@": fileURLToPath(new URL("./src", import.meta.url)),
+      // Apontar o pacote partilhado à fonte (e não ao symlink em node_modules)
+      // faz o Vite tratá-lo como código do projecto — e faz o build deixar de
+      // depender de o workspace estar instalado, que é o que falhava no Vercel.
+      "@academia/ui": fileURLToPath(new URL("../../packages/ui/src", import.meta.url)),
+    },
+  },
   build: { sourcemap: false },
   esbuild: command === "build" ? { drop: ["console", "debugger"] } : {},
   server: { port: 5190 },

@@ -16,9 +16,10 @@
     "build:api": "npm run build --workspace=@academia/api",
     "start:api": "npm run start --workspace=@academia/api",
     "build": "npm run build --workspaces --if-present",
-    "typecheck": "npm run check:http && npm run check:access && npm run typecheck --workspaces --if-present",
+    "typecheck": "npm run check:deps && npm run check:http && npm run check:access && npm run typecheck --workspaces --if-present",
     "build:web": "npm run build --workspace=@academia/console && npm run build --workspace=@academia/family && node scripts/collect-web.mjs",
     "build:server": "npm run build:web && npm run build:api",
+    "check:deps": "node scripts/check-workspace-deps.mjs",
     "check:http": "node scripts/check-http-clients.mjs",
     "check:access": "node scripts/check-access-catalog.mjs"
   },

@@ -1,8 +1,8 @@
 import { useMemo, useState, type FormEvent, type ReactNode } from "react";
 import { Dialog, DialogField, dialogInputClass } from "./Dialog";
 import { cx } from "./primitives";
-import { Send } from "@/lib/icons";
-import { submitCallUps, type CallUpLogistics } from "@/lib/callups";
+import { Pencil, Send } from "@/lib/icons";
+import { submitCallUps, updateCallUpLogistics, type CallUpLogistics } from "@/lib/callups";
 import { antes, dataLonga, hora } from "@/lib/callup-sheet";
 
 /**
@@ -34,13 +34,26 @@ import { antes, dataLonga, hora } from "@/lib/callup-sheet";
  * Este diálogo não é uma confirmação disfarçada — o aviso de que as famílias vão
  * ser notificadas está no ecrã de trás, onde a lista se monta. Aqui já se
  * decidiu enviar; o que falta é dizer o resto.
+ *
+ * ## O mesmo diálogo corrige depois
+ *
+ * `modo="editar"` serve a convocatória **já enviada**: os mesmos campos, e no
+ * fim um `PATCH` em vez de uma submissão. Sem isto, corrigir uma hora obrigava
+ * a reabrir e ressubmeter — e o preço era um segundo "estás convocado" no
+ * telemóvel de catorze famílias.
+ *
+ * Um diálogo e não dois porque as perguntas são as mesmas; o que muda é o que
+ * acontece ao carregar no botão, e isso são três linhas.
  */
 export function SubmitCallUpDialog({
   match,
   convocados,
+  modo = "submeter",
   onDone,
   onClose,
 }: {
+  /** `submeter` envia a convocatória; `editar` corrige uma já enviada. */
+  modo?: "submeter" | "editar";
   match: {
     id: string;
     teamName: string;
@@ -106,35 +119,45 @@ export function SubmitCallUpDialog({
     };
 
     try {
-      await submitCallUps(match.id, logistica);
+      if (modo === "editar") await updateCallUpLogistics(match.id, logistica);
+      else await submitCallUps(match.id, logistica);
       remember(teamKeyOf(match), { meetingPoint, meetingTime, arrivalTime }, kickOff);
       onDone();
     } catch (err) {
-      setErro(err instanceof Error ? err.message : "Não foi possível submeter.");
+      setErro(err instanceof Error ? err.message : "Não foi possível gravar.");
       setBusy(false);
     }
   }
 
+  const editar = modo === "editar";
+
   return (
     <Dialog
       labelledBy="submeter-convocatoria"
-      title="Submeter convocatória"
+      title={editar ? "Detalhes da convocatória" : "Submeter convocatória"}
       subtitle={`${match.teamName} ${match.isHome ? "vs" : "@"} ${match.opponent} · ${dataLonga(kickOff)}`}
-      icon={<Send className="size-4" strokeWidth={1.75} />}
+      icon={editar ? <Pencil className="size-4" strokeWidth={1.75} /> : <Send className="size-4" strokeWidth={1.75} />}
       onClose={onClose}
       width={620}
       footer={
         <div className="flex w-full items-center justify-between gap-3">
+          {/*
+            A frase muda com o gesto, e diz a verdade nos dois casos: submeter
+            avisa sempre; corrigir só avisa se alguma coisa mudar de facto — o
+            servidor compara antes de mandar seja o que for.
+          */}
           <span className="text-meta text-ink-3">
-            {convocados} {convocados === 1 ? "família é avisada" : "famílias são avisadas"} assim que submeteres.
+            {editar
+              ? `${convocados} ${convocados === 1 ? "família é avisada" : "famílias são avisadas"} do que mudar.`
+              : `${convocados} ${convocados === 1 ? "família é avisada" : "famílias são avisadas"} assim que submeteres.`}
           </span>
           <div className="flex items-center gap-2">
             <button type="button" onClick={onClose} className="ctl-ghost">
               Cancelar
             </button>
             <button type="submit" form="form-submeter" disabled={busy} className="ctl-primary">
-              <Send className="size-3.5" strokeWidth={1.75} />
-              {busy ? "A enviar…" : "Submeter e avisar"}
+              {editar ? <Pencil className="size-3.5" strokeWidth={1.75} /> : <Send className="size-3.5" strokeWidth={1.75} />}
+              {busy ? "A gravar…" : editar ? "Gravar e avisar" : "Submeter e avisar"}
             </button>
           </div>
         </div>
@@ -144,6 +167,7 @@ export function SubmitCallUpDialog({
         <p className="rounded-[var(--radius-control)] bg-sunken px-3 py-2 text-meta leading-relaxed text-ink-2">
           O que escreveres aqui aparece na app das famílias e na folha em PDF. Deixa em branco o que não se
           aplica — o que não existe não aparece.
+          {editar && " A convocatória não é reaberta: a lista fica como está."}
         </p>
 
         <Bloco titulo="O encontro">

@@ -63,12 +63,12 @@ export function ConsentimentoLegal({
             onChange={(e) => marcar(d.id, e.target.checked)}
             className="mt-[3px] size-[18px] shrink-0 accent-[var(--color-signal)]"
           />
+          {/* Sem a versão por baixo: quem abre o documento vê-a lá, no site. */}
           <span className="text-[14px] leading-snug text-ink">
             {acceptanceLabel(d).replace(d.title, "").trim()}{" "}
             <a href={d.url} target="_blank" rel="noreferrer" className="underline underline-offset-2">
               {d.title}
             </a>
-            <span className="block text-meta text-ink-3">Versão {d.version}</span>
           </span>
         </label>
       ))}

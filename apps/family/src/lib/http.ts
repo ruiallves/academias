@@ -1,4 +1,5 @@
 import { getAccessToken, refreshSession, signOut } from "@/lib/session";
+import { LEGAL_REQUIRED_CODE, legalRequired } from "@/lib/legal-signal";
 import { academySlug } from "@/lib/invite";
 
 /**
@@ -18,6 +19,8 @@ export class ApiError extends Error {
   constructor(
     readonly status: number,
     message: string,
+    /** O código que o servidor mandou, quando manda um. Ver `legal-signal.ts`. */
+    readonly code?: string,
   ) {
     super(message);
   }
@@ -75,10 +78,16 @@ async function request<T>(method: string, path: string, body?: unknown): Promise
     const msg = Array.isArray(parsed?.message) ? parsed.message.join("; ") : parsed?.message;
     // Depois da renovação ter falhado, aí sim: a sessão acabou mesmo.
     if (res.status === 401) signOut();
-    // Termos novos publicados com a app aberta: o servidor recusa tudo até a
-    // pessoa aceitar, e é o gate à entrada que a deixa aceitar. Recarregar leva-a lá.
-    if (res.status === 403 && parsed?.code === "LEGAL_ACCEPTANCE_REQUIRED") window.location.reload();
-    throw new ApiError(res.status, msg ?? mensagem(res.status));
+    /*
+     * Termos novos publicados com a app aberta.
+     *
+     * Avisa-se o gate, que volta a perguntar o que falta e mostra os documentos.
+     * Já foi um `window.location.reload()` — e uma recarga que volte a cair no
+     * mesmo erro é um ciclo, com a agravante de o ecrã de arranque traduzir o
+     * 403 para "esta conta não é de encarregado". Ver `legal-signal.ts`.
+     */
+    if (res.status === 403 && parsed?.code === LEGAL_REQUIRED_CODE) legalRequired();
+    throw new ApiError(res.status, msg ?? mensagem(res.status), parsed?.code);
   }
 
   // 204 e afins não trazem corpo — devolver `undefined` é melhor do que rebentar

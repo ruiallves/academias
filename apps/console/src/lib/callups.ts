@@ -66,6 +66,20 @@ export const submitCallUps = (matchId: string, logistica: CallUpLogistics = {}) 
     logistica,
   );
 
+/**
+ * Corrigir os detalhes de uma convocatória já enviada — sem a reabrir.
+ *
+ * Reabrir desfaz a convocatória, e ressubmeter avisa outra vez catorze famílias
+ * de que foram convocadas. Mudar o ponto de encontro das 09:00 para as 09:30
+ * não é isso: a lista está certa, e o que mudou foi uma hora. As famílias
+ * recebem um aviso que **nomeia** a mudança.
+ */
+export const updateCallUpLogistics = (matchId: string, logistica: CallUpLogistics) =>
+  apiPatch<{ matchId: string; mudou: boolean; mudancas: string[]; familiasAvisadas: number }>(
+    `/api/matches/${matchId}/convocatoria/logistica`,
+    logistica,
+  );
+
 export const reopenCallUps = (matchId: string) =>
   apiPost<void>(`/api/matches/${matchId}/convocatoria/reabrir`, {});
 

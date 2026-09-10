@@ -11,13 +11,23 @@
  *   5. segurança: o gate não se contorna pelo cliente; o servidor valida;
  *   6. isolamento: ninguém vê aceitações de outro clube; a plataforma é só da plataforma.
  *
- * ## Não suja a base
+ * ## NÃO CORRE CONTRA UMA BASE COM DOCUMENTOS A SÉRIO
  *
- * Os documentos são criados pelo próprio teste com versões `0.0.<n>` e apagados
- * no fim, aceitações incluídas — a base de desenvolvimento é a de produção, e
- * publicar aqui os documentos a sério é uma decisão à parte (`seed:legal`).
- * Enquanto o teste corre, o gate está **ligado** para o life-club e para quem
- * mais entrar: correr fora de horas.
+ * Este teste **publica documentos legais**, e um `LegalDocument` é global: não
+ * tem `academyId`, e uma versão publicada entra em vigor para **todos os
+ * clubes** ao mesmo tempo. Enquanto o teste corre, quem abrir a consola ou a
+ * app leva o gate com documentos chamados "Teste TERMS_OF_SERVICE" e versões
+ * `0.0.512`. Aconteceu a sério, a um clube a usar o produto.
+ *
+ * Por isso o teste **recusa-se a arrancar** quando encontra na base uma versão
+ * publicada que não seja dele (ou seja: depois de o `seed:legal` ter corrido).
+ * Para o correr é preciso uma base sem documentos a sério — apontar
+ * `DATABASE_URL` e `MIGRATE_DATABASE_URL` a uma base de rascunho — ou dizer
+ * explicitamente `LEGAL_TEST_FORCE=1`, sabendo o que isso faz a quem estiver
+ * dentro do produto nesse minuto.
+ *
+ * O que o teste cria (versões `0.0.<n>`) é apagado no fim, aceitações
+ * incluídas. Isso limita o estrago; não o evita.
  *
  * Pressupõe o servidor a correr, `npm run seed` e `npm run seed:platform`.
  *
@@ -85,6 +95,21 @@ const req = async (token, method, pathname, body, { slug = "life-club", app } = 
 async function main() {
   const db = new pg.Client({ connectionString: env("MIGRATE_DATABASE_URL"), ssl: { rejectUnauthorized: false } });
   await db.connect();
+
+  /*
+   * A porta: uma base com documentos a sério é uma base de gente a trabalhar.
+   * Ver o cabeçalho — isto publica documentos que toda a gente vê.
+   */
+  const reais = await db.query(
+    `SELECT count(*)::int AS n FROM "LegalDocument" WHERE status = 'PUBLISHED' AND version NOT LIKE '0.0.%'`,
+  );
+  if (reais.rows[0].n > 0 && process.env.LEGAL_TEST_FORCE !== "1") {
+    console.log(`\n  SALTA tudo — esta base tem ${reais.rows[0].n} documentos legais publicados a sério.`);
+    console.log("  Este teste publica documentos que entram em vigor para TODOS os clubes enquanto corre.");
+    console.log("  Corre-o contra uma base de rascunho, ou com LEGAL_TEST_FORCE=1 se souberes o que fazes.\n");
+    await db.end();
+    process.exit(0);
+  }
 
   const director = await login("direcao@lifeclub.pt");
   const coach = await login("treinador@lifeclub.pt");

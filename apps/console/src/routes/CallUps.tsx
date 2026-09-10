@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { PageHeader } from "@/components/Shell";
 import { Empty, Metric, MetricRow, Monogram, Panel, PanelHead, Pill, cx } from "@/components/primitives";
-import { ArrowUpRight, Check, Download, Megaphone, Search, Trophy, Users } from "@/lib/icons";
+import { ArrowUpRight, Check, Download, Megaphone, Pencil, Search, Trophy, Users } from "@/lib/icons";
 import { athleteById, teamById } from "@/lib/api";
 import { useStore, type ApiMatch, type GuestCandidate } from "@/lib/store";
 import {
@@ -173,7 +173,7 @@ function Squad({ match }: { match: ApiMatch }) {
    * selecção e submetesse enviava a lista anterior, e a diferença só aparecia
    * quando um pai recebesse o aviso do miúdo errado.
    */
-  const [aSubmeter, setASubmeter] = useState(false);
+  const [dialogo, setDialogo] = useState<null | "submeter" | "editar">(null);
   const [error, setError] = useState<string | null>(null);
   const [saved, setSaved] = useState(false);
   const [folha, setFolha] = useState(false);
@@ -327,7 +327,7 @@ function Squad({ match }: { match: ApiMatch }) {
     setError(null);
     try {
       await saveCallUps(match.id, [...picked]);
-      setASubmeter(true);
+      setDialogo("submeter");
     } catch (e) {
       setError(e instanceof Error ? e.message : "Não foi possível guardar a lista.");
     } finally {
@@ -483,11 +483,27 @@ function Squad({ match }: { match: ApiMatch }) {
             <span className="text-meta text-ink-3">
               As famílias dos {match.calledUp.length} convocados foram avisadas.
             </span>
+            {/*
+              Corrigir a hora do encontro **sem** reabrir.
+
+              Reabrir desfaz a convocatória, e ressubmeter avisa outra vez toda a
+              gente de que foi convocada. Mudar uma hora não é isso — e enquanto
+              este botão não existiu, era a única forma de o fazer.
+            */}
+            <button
+              type="button"
+              onClick={() => setDialogo("editar")}
+              disabled={busy !== null}
+              className="ctl-outline ml-auto"
+            >
+              <Pencil className="size-3.5" strokeWidth={1.75} />
+              Editar detalhes
+            </button>
             <button
               type="button"
               onClick={() => void run("reopen")}
               disabled={busy !== null}
-              className="ctl-outline ml-auto"
+              className="ctl-ghost"
             >
               {busy === "reopen" ? "A reabrir…" : "Reabrir"}
             </button>
@@ -521,7 +537,7 @@ function Squad({ match }: { match: ApiMatch }) {
         )}
       </footer>
 
-      {aSubmeter && (
+      {dialogo && (
         <SubmitCallUpDialog
           match={{
             id: match.id,
@@ -538,12 +554,13 @@ function Squad({ match }: { match: ApiMatch }) {
             callUpNotes: match.callUpNotes,
             confirmationRequired: match.confirmationRequired,
           }}
-          convocados={picked.size}
+          convocados={dialogo === "editar" ? match.calledUp.length : picked.size}
+          modo={dialogo}
           onDone={() => {
-            setASubmeter(false);
+            setDialogo(null);
             void refresh();
           }}
-          onClose={() => setASubmeter(false)}
+          onClose={() => setDialogo(null)}
         />
       )}
     </Panel>
