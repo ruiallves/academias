@@ -15,6 +15,41 @@ import { athleteScopeFilter, athleteTeamScopeWhere, can, teamScopeFilter, type R
  */
 export type AplicarEm = "atual" | "proximo";
 
+/**
+ * Os métodos que a app oferece **hoje**.
+ *
+ * ## Porquê uma lista branca, e não a ausência de botões
+ *
+ * Porque a app não é a fronteira. Esconder o cartão do ecrã tira-o a quem usa a
+ * app e deixa-o a quem chamar o endpoint à mão — e o que está do outro lado é
+ * dinheiro a sair da conta de um pai. Uma lista aqui é a diferença entre uma
+ * escolha de produto e uma garantia.
+ *
+ * ## O que ficou de fora, e porquê
+ *
+ * `CARD`, `GOOGLE_PAY`, `APPLE_PAY` e `DIRECT_DEBIT` estão **implementados e a
+ * funcionar** — o cliente da euPago sabe criá-los, as taxas estão na tabela e o
+ * webhook liquida-os como aos outros. Não saíram por avaria: saíram porque o
+ * produto decidiu, por agora, oferecer só os dois que qualquer pai português
+ * usa sem pensar. `PAYSAFECARD` já estava fora pelo custo (12 % de comissão —
+ * ver `METODOS` em `apps/family/src/screens/Payments.tsx`).
+ *
+ * **Voltar a ligar um é acrescentá-lo aqui e à lista da app.** Nada mais foi
+ * removido, de propósito: o código que os cria continua inteiro.
+ *
+ * ## Não confundir com `EUPAGO_METHODS`
+ *
+ * Essa variável (ver `eupago-fees.ts`) decide que métodos aparecem na **tabela
+ * de taxas** que o clube consulta ao fixar preços — quanto lhe fica de cada
+ * um. Não decide o que a app aceita, e o comentário de lá já o diz por
+ * palavras próprias. São duas perguntas: *quanto custa este método ao clube* e
+ * *este método pode ser usado*. Esta lista responde à segunda.
+ */
+const METODOS_ATIVOS: ReadonlySet<PaymentMethod> = new Set<PaymentMethod>([
+  PaymentMethod.MBWAY,
+  PaymentMethod.MULTIBANCO,
+]);
+
 @Injectable()
 export class BillingService implements OnModuleInit, OnModuleDestroy {
   private readonly log = new Logger(BillingService.name);
@@ -1289,6 +1324,10 @@ export class BillingService implements OnModuleInit, OnModuleDestroy {
 
     if (method === PaymentMethod.CASH || method === PaymentMethod.TRANSFER) {
       throw new BadRequestException("Esse método não é um pagamento online");
+    }
+
+    if (!METODOS_ATIVOS.has(method)) {
+      throw new BadRequestException("Esse método de pagamento não está disponível de momento");
     }
 
     // Tudo dentro do mesmo contexto de tenant: a RLS só está activa dentro da

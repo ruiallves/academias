@@ -1,7 +1,7 @@
 import { Link } from "react-router-dom";
 import { ArrowUpRight, ChevronRight, MapPin, Megaphone, Trophy, UserRound, Wallet } from "lucide-react";
 import { useChild } from "@/App";
-import { useStore } from "@/lib/store";
+import { useStore, type Match, type Training } from "@/lib/store";
 import { cx, dayShort, greeting, money, monthShort, time, whenLabel } from "@/ui";
 
 /**
@@ -104,7 +104,7 @@ export default function Today() {
 
       {next ? (
         <div className="rise" style={{ ["--i" as string]: i++ }}>
-          <NextUp item={next} team={child.team} coach={child.coach} />
+          <NextUp item={next} team={child.team} coach={child.coach} href={hrefDe(next)} />
         </div>
       ) : (
         <div className="rise surface p-5 text-center" style={{ ["--i" as string]: i++ }}>
@@ -117,7 +117,7 @@ export default function Today() {
       {showCallUp && (
         <div className="rise" style={{ ["--i" as string]: i++ }}>
           <Link
-            to="/agenda"
+            to={`/evento/jogo/${calledUp.matchId}`}
             className="flex items-center gap-3.5 rounded-[var(--radius-lg)] bg-surface p-3.5 shadow-[var(--shadow-soft)] active:scale-[0.99]"
           >
             <span className="flex size-10 shrink-0 items-center justify-center rounded-[13px] bg-signal-soft text-signal-ink">
@@ -125,7 +125,15 @@ export default function Today() {
             </span>
             <span className="min-w-0 flex-1">
               <span className="block text-[11px] font-semibold tracking-[0.06em] text-ink-3 uppercase">
-                Convocado · {whenLabel(calledUp.start, now)}
+                {/*
+                  Uma recusa já dita tem de aparecer aqui.
+
+                  Um pai que avisou na terça e abre a app na sexta lia
+                  "Convocado" na mesma — e voltava a escrever ao treinador, que é
+                  o que isto veio evitar.
+                */}
+                {calledUp.reply && !calledUp.reply.going ? "Avisaste que não vai" : "Convocado"} ·{" "}
+                {whenLabel(calledUp.start, now)}
               </span>
               <span className="block truncate text-body font-semibold text-ink">
                 {calledUp.isHome ? "vs" : "@"} {calledUp.opponent}
@@ -248,17 +256,42 @@ function PaymentDue({
 type Upcoming = { start: Date; end: Date; venue: string; dressingRoom?: string; opponent?: string; isHome?: boolean };
 
 /**
+ * Para onde o cartão do próximo compromisso abre.
+ *
+ * O tipo vai na rota (`/evento/jogo/:id`) porque o ecrã tem de saber em que
+ * lista procurar — ver `screens/Evento`. Aqui distingue-se pelo que só um jogo
+ * tem: adversário.
+ */
+const hrefDe = (item: Training | Match): string =>
+  "opponent" in item ? `/evento/jogo/${item.matchId}` : `/evento/treino/${item.sessionId}`;
+
+/**
  * Iluminado pela cor da academia, mas do tamanho de um cartão e não de um poster.
  *
  * A hora continua a ser o maior elemento — é a única coisa que um pai a caminho
  * do carro precisa de ler de relance — só que a 36px em vez de 52, e sem o
  * retrato do filho a repetir o que o seletor lá em cima já diz.
  */
-function NextUp({ item, team, coach }: { item: Upcoming; team: string; coach: string }) {
+function NextUp({
+  item,
+  team,
+  coach,
+  href,
+}: {
+  item: Upcoming;
+  team: string;
+  coach: string;
+  /** Para onde abre. Ver `hrefDe`. */
+  href: string;
+}) {
   const isMatch = item.opponent !== undefined;
 
   return (
-    <div className="brandlit overflow-hidden rounded-[var(--radius-xl)] p-4" style={{ boxShadow: "var(--shadow-float)" }}>
+    <Link
+      to={href}
+      className="brandlit block overflow-hidden rounded-[var(--radius-xl)] p-4 active:scale-[0.99]"
+      style={{ boxShadow: "var(--shadow-float)" }}
+    >
       <div className="flex items-center justify-between gap-3">
         <span className="on-2 text-[11px] font-semibold tracking-[0.06em] uppercase">
           {isMatch ? "Próximo jogo" : "Próximo treino"}
@@ -290,8 +323,9 @@ function NextUp({ item, team, coach }: { item: Upcoming; team: string; coach: st
             <span className="truncate">{coach}</span>
           </span>
         )}
+        <ArrowUpRight className="on-3 ml-auto size-4 shrink-0" strokeWidth={2.25} aria-hidden />
       </div>
-    </div>
+    </Link>
   );
 }
 

@@ -167,7 +167,7 @@ async function main() {
   const accepted = await fetch(`${API}/api/convites/${token}/aceitar`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ password: NEW_PASSWORD, phone: "912345678" }),
+    body: JSON.stringify({ password: NEW_PASSWORD, phone: "912345678", acceptLegal: true, confirmAuthority: true }),
   });
   const acceptedBody = await accepted.json();
   check("o resgate funciona", accepted.ok, JSON.stringify(acceptedBody).slice(0, 160));
@@ -207,7 +207,7 @@ async function main() {
   const again = await fetch(`${API}/api/convites/${token}/aceitar`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ password: NEW_PASSWORD }),
+    body: JSON.stringify({ password: NEW_PASSWORD, acceptLegal: true, confirmAuthority: true }),
   });
   check("não pode ser resgatado outra vez", !again.ok, `deu ${again.status}`);
 
@@ -245,7 +245,7 @@ async function main() {
   const wrong = await fetch(`${API}/api/convites/${secondToken}/aceitar`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ password: "isto-nao-e-a-password" }),
+    body: JSON.stringify({ password: "isto-nao-e-a-password", acceptLegal: true, confirmAuthority: true }),
   });
   check("com a password errada é recusado", wrong.status === 403, `deu ${wrong.status}`);
   check("e o convite continua por usar", (await fetch(`${API}/l/${SLUG}/convite/${secondToken}`)).status === 200);
@@ -253,7 +253,7 @@ async function main() {
   const right = await fetch(`${API}/api/convites/${secondToken}/aceitar`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ password: "academia2026" }),
+    body: JSON.stringify({ password: "academia2026", acceptLegal: true, confirmAuthority: true }),
   });
   check("com a password certa é aceite", right.ok, JSON.stringify(await right.clone().json()).slice(0, 140));
 

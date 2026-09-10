@@ -8,6 +8,7 @@ import Tickets from "@/routes/Tickets";
 import Growth from "@/routes/Growth";
 import Audit from "@/routes/Audit";
 import Admins from "@/routes/Admins";
+import Legal from "@/routes/Legal";
 import type { Me } from "@/lib/types";
 
 export default function App({ me }: { me: Me }) {
@@ -24,6 +25,7 @@ export default function App({ me }: { me: Me }) {
         <Route path="crescimento" element={<Growth />} />
         <Route path="registo" element={<Audit />} />
         <Route path="administradores" element={<Admins me={me} />} />
+        <Route path="legal" element={<Legal me={me} />} />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Route>
     </Routes>

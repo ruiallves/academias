@@ -1572,7 +1572,7 @@ export class AcademyService {
         orderBy: { startsAt: "asc" },
         select: {
           id: true, teamId: true, startsAt: true, endsAt: true, venue: true,
-          dressingRoom: true, dressingRooms: true, status: true,
+          dressingRoom: true, dressingRooms: true, status: true, notes: true,
           attendanceClosedAt: true,
           coach: { select: { id: true, user: { select: { name: true } } } },
           team: { select: { name: true } },
@@ -1594,6 +1594,16 @@ export class AcademyService {
         dressingRoom: s.dressingRooms[0] ?? s.dressingRoom,
         dressingRooms: s.dressingRooms.length > 0 ? s.dressingRooms : s.dressingRoom ? [s.dressingRoom] : [],
         status: s.status,
+        /*
+         * O que o clube escreveu sobre este treino.
+         *
+         * Sai para toda a gente que vê o treino, incluindo a app da família:
+         * quem escreve uma nota num treino escreve-a para ser lida ("trazer
+         * chuteiras de piso sintético"), e até aqui ela morria na consola.
+         * Não confundir com o **plano** de treino, que é trabalho do treinador
+         * e não sai daqui.
+         */
+        notes: s.notes,
         coachId: s.coach?.id ?? porEquipa.get(s.teamId)?.id ?? null,
         coachName: s.coach?.user.name ?? porEquipa.get(s.teamId)?.name ?? null,
         recorded: s.attendanceClosedAt !== null,

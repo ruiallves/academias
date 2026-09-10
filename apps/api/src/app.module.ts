@@ -82,6 +82,9 @@ import { AiJobsService } from "./ai/ai-jobs.service";
 import { AiPresenceService } from "./ai/ai-presence.service";
 import { AiWorkerService } from "./ai/ai-worker.service";
 import { AiWorkerGuard } from "./ai/ai-worker.guard";
+import { LegalController } from "./legal/legal.controller";
+import { LegalAdminController } from "./legal/legal-admin.controller";
+import { LegalAdminService } from "./legal/legal-admin.service";
 
 /**
  * Monólito modular.
@@ -156,6 +159,9 @@ import { AiWorkerGuard } from "./ai/ai-worker.guard";
     SiteContactController,
     // O manifest da PWA com a marca do clube, na raiz da origem do clube.
     TenantAssetsController,
+    // Documentos legais: leitura pública, aceitação autenticada, gestão na plataforma.
+    LegalController,
+    LegalAdminController,
   ],
   providers: [
     // O throttler como guard global — aplica-se a todas as rotas, incluindo as
@@ -207,6 +213,7 @@ import { AiWorkerGuard } from "./ai/ai-worker.guard";
     StorageService,
     ReportsService,
     SupabaseAccountsService,
+    LegalAdminService,
   ],
   exports: [PrismaService, NotificationsService],
 })

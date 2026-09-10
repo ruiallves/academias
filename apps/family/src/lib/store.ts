@@ -61,6 +61,8 @@ type ApiSession = {
   dressingRooms?: string[];
   status: string;
   coachName: string | null;
+  /** O que o clube escreveu sobre este treino. Quase sempre nulo. */
+  notes?: string | null;
   recorded: boolean;
   absences: { athleteId: string; status: string }[];
 };
@@ -78,7 +80,20 @@ type ApiMatch = {
   ourScore: number | null;
   theirScore: number | null;
   submitted: boolean;
-  calledUp: { athleteId: string; status: string; isGuest: boolean }[];
+  /** A logística dita ao submeter a convocatória. Ver a migração `20260912120000`. */
+  roundLabel?: string | null;
+  meetingPoint?: string | null;
+  meetingAt?: string | null;
+  arrivalAt?: string | null;
+  callUpNotes?: string | null;
+  confirmationRequired?: boolean;
+  calledUp: {
+    athleteId: string;
+    status: string;
+    isGuest: boolean;
+    declineReason?: string | null;
+    respondedAt?: string | null;
+  }[];
 };
 
 type ApiCharge = {
@@ -171,6 +186,8 @@ export type Child = {
 
 export type Training = {
   id: string;
+  /** O id do treino no servidor — sem o sufixo do filho. Ver `id`. */
+  sessionId: string;
   childId: string;
   start: Date;
   end: Date;
@@ -185,11 +202,30 @@ export type Training = {
    */
   dressingRoom?: string;
   coach?: string;
+  /** O que o clube escreveu sobre este treino. Quase sempre vazio. */
+  notes?: string;
   cancelled: boolean;
 };
 
+/**
+ * Onde é que este filho está, nesta convocatória.
+ *
+ * Quatro estados, e são precisos os quatro — um pai que abre a app na
+ * quinta-feira quer saber se ainda não se sabe, se ficou de fora, ou se vai.
+ * Juntar os dois primeiros num "não convocado" era dizer-lhe que o filho ficou
+ * de fora de uma lista que ainda ninguém fez.
+ *
+ *   `pending`   a convocatória ainda não saiu — não há nada a saber ainda
+ *   `out`       saiu, e o filho não está nela
+ *   `in`        está convocado
+ *   `cancelled` o jogo foi desmarcado
+ */
+export type CallUpState = "pending" | "out" | "in" | "cancelled";
+
 export type Match = {
   id: string;
+  /** O id do jogo no servidor — sem o sufixo do filho. Ver `id`. */
+  matchId: string;
   childId: string;
   start: Date;
   end: Date;
@@ -199,6 +235,17 @@ export type Match = {
   cancelled: boolean;
   /** O filho está nesta convocatória — e ela já foi enviada às famílias. */
   calledUp: boolean;
+  callUp: CallUpState;
+  /** A resposta desta família, quando houve. `null` = ainda não respondeu. */
+  reply: { going: boolean; reason: string | null; at: Date } | null;
+  /** O clube pediu confirmação activa neste jogo? */
+  confirmationRequired: boolean;
+  /** A logística do dia. Só existe depois de a convocatória sair. */
+  round?: string;
+  meetingPoint?: string;
+  meetingAt?: Date;
+  arrivalAt?: Date;
+  notes?: string;
 };
 
 export type Payment = {
@@ -492,6 +539,7 @@ function build(
   const trainings: Training[] = sessions.flatMap((s) =>
     (byTeam.get(s.teamId) ?? []).map((childId) => ({
       id: `${s.id}-${childId}`,
+      sessionId: s.id,
       childId,
       start: new Date(s.startsAt),
       end: new Date(s.endsAt),
@@ -509,25 +557,54 @@ function build(
           ? s.dressingRooms.join(" · ")
           : (s.dressingRoom ?? undefined),
       coach: s.coachName ?? undefined,
+      notes: s.notes?.trim() || undefined,
       cancelled: s.status === "CANCELLED",
     })),
   );
 
   const asMatches: Match[] = matches.flatMap((m) =>
-    (byTeam.get(m.teamId) ?? []).map((childId) => ({
-      id: `${m.id}-${childId}`,
-      childId,
-      start: new Date(m.startsAt),
-      end: new Date(m.endsAt),
-      venue: m.venue,
-      opponent: m.opponent,
-      isHome: m.isHome,
-      cancelled: m.status === "CANCELLED",
+    (byTeam.get(m.teamId) ?? []).map((childId) => {
+      // A minha linha na convocatória, se lá estou.
+      const minha = m.calledUp.find((c) => c.athleteId === childId);
+      const cancelled = m.status === "CANCELLED";
       // Só conta se a convocatória tiver sido **submetida** — uma lista em
       // rascunho não é uma convocatória, e prometê-la ao pai é prometer o que
       // ainda pode mudar.
-      calledUp: m.submitted && m.calledUp.some((c) => c.athleteId === childId),
-    })),
+      const calledUp = m.submitted && minha !== undefined;
+
+      return {
+        id: `${m.id}-${childId}`,
+        matchId: m.id,
+        childId,
+        start: new Date(m.startsAt),
+        end: new Date(m.endsAt),
+        venue: m.venue,
+        opponent: m.opponent,
+        isHome: m.isHome,
+        cancelled,
+        calledUp,
+        callUp: cancelled ? "cancelled" : !m.submitted ? "pending" : calledUp ? "in" : "out",
+        /*
+         * `CALLED` é o estado de quem não respondeu — e não responder não é
+         * recusar. Só `CONFIRMED` e `DECLINED` são respostas; o resto é
+         * silêncio, que a app tem de saber distinguir de um "sim".
+         */
+        reply:
+          minha && (minha.status === "CONFIRMED" || minha.status === "DECLINED")
+            ? {
+                going: minha.status === "CONFIRMED",
+                reason: minha.declineReason ?? null,
+                at: new Date(minha.respondedAt ?? m.startsAt),
+              }
+            : null,
+        confirmationRequired: m.confirmationRequired === true,
+        round: m.roundLabel?.trim() || undefined,
+        meetingPoint: m.meetingPoint?.trim() || undefined,
+        meetingAt: m.meetingAt ? new Date(m.meetingAt) : undefined,
+        arrivalAt: m.arrivalAt ? new Date(m.arrivalAt) : undefined,
+        notes: m.callUpNotes?.trim() || undefined,
+      };
+    }),
   );
 
   const payments: Payment[] = charges.map((c) => ({

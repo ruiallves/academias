@@ -1,3 +1,4 @@
+import { ConsentimentoLegal } from "@/screens/ConsentimentoLegal";
 import { useEffect, useState, type FormEvent } from "react";
 import { IdCard } from "lucide-react";
 import { ClubMark } from "@/ClubMark";
@@ -35,6 +36,8 @@ export default function ConviteSocio({ token, onDone }: { token: string; onDone:
   const [password, setPassword] = useState("");
   const [busy, setBusy] = useState(false);
   const [erro, setErro] = useState<string | null>(null);
+  // Os termos, aceites ao criar a conta — ver `ConsentimentoLegal`.
+  const [legalOk, setLegalOk] = useState(true);
 
   useEffect(() => {
     fetch(`${API}/api/convite-socio/${encodeURIComponent(token)}`)
@@ -54,14 +57,14 @@ export default function ConviteSocio({ token, onDone }: { token: string; onDone:
 
   async function submeter(e: FormEvent) {
     e.preventDefault();
-    if (busy || password.length < 8) return;
+    if (busy || password.length < 8 || !legalOk) return;
     setBusy(true);
     setErro(null);
     try {
       const res = await fetch(`${API}/api/convite-socio/${encodeURIComponent(token)}/registar`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ password }),
+        body: JSON.stringify({ password, acceptLegal: true }),
       });
       const body = (await res.json().catch(() => null)) as
         | { slug?: string; accessToken?: string; refreshToken?: string | null; message?: string | string[] }
@@ -164,9 +167,13 @@ export default function ConviteSocio({ token, onDone }: { token: string; onDone:
             Esta ficha já tem conta. Se és tu, entra pelo login normal — este convite já cumpriu.
           </p>
         )}
+        <div className="rounded-[16px] bg-surface px-4 py-1 shadow-[var(--shadow-soft)]">
+          <ConsentimentoLegal audience="MEMBER" onChange={setLegalOk} />
+        </div>
+
         {erro && <p className="px-1 text-[13px] font-medium text-risk">{erro}</p>}
 
-        <button type="submit" disabled={busy || password.length < 8} className="cta w-full disabled:opacity-40">
+        <button type="submit" disabled={busy || password.length < 8 || !legalOk} className="cta w-full disabled:opacity-40">
           {busy ? "A criar a conta…" : "Criar a minha conta"}
         </button>
       </form>

@@ -4,6 +4,7 @@ import { clearInvite, readInvite, saveInvite, saveSlug, type InvitePreview } fro
 import { saveSession, signIn } from "@/lib/session";
 import { cx } from "@/ui";
 import { ClubMark } from "@/ClubMark";
+import { ConsentimentoLegal } from "@/screens/ConsentimentoLegal";
 
 /**
  * A porta da app da família.
@@ -434,13 +435,17 @@ function Dados({ token, onVoltar, onPronto }: { token: string; onVoltar: () => v
   const [relation, setRelation] = useState("Mãe");
   const [busy, setBusy] = useState(false);
   const [erro, setErro] = useState<string | null>(null);
+  // Os termos, aceites ao criar a conta. `true` enquanto não se sabe (sem
+  // documentos publicados não há o que aceitar); as caixas dizem o resto.
+  const [legalOk, setLegalOk] = useState(true);
 
   const valido =
     name.trim().length >= 2 &&
     /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim()) &&
     password.length >= 8 &&
     password === password2 &&
-    phone.trim().length >= 9;
+    phone.trim().length >= 9 &&
+    legalOk;
 
   async function criar(e: FormEvent) {
     e.preventDefault();
@@ -462,6 +467,7 @@ function Dados({ token, onVoltar, onPronto }: { token: string; onVoltar: () => v
           relation,
           taxId: filho.taxId ?? "",
           birthdate: filho.birthdate ?? "",
+          acceptLegal: true,
         }),
       });
 
@@ -542,6 +548,8 @@ function Dados({ token, onVoltar, onPronto }: { token: string; onVoltar: () => v
       {password2.length > 0 && password !== password2 && (
         <p className="text-[13px] text-[#a82a20]">As duas palavras-passe não são iguais.</p>
       )}
+
+      <ConsentimentoLegal audience="FAMILY" onChange={setLegalOk} />
 
       {erro && <p className="rounded-[var(--radius-sm)] bg-[#fae9e7] px-3.5 py-2.5 text-[13px] leading-relaxed text-[#a82a20]">{erro}</p>}
 

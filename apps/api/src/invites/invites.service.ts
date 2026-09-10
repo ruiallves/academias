@@ -7,12 +7,13 @@ import {
   NotFoundException,
 } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
-import type { Role, StaffDepartment } from "@prisma/client";
+import type { LegalAudience, Role, StaffDepartment } from "@prisma/client";
+import { LegalService } from "../legal/legal.service";
 import { PrismaService } from "../prisma/prisma.service";
 import { SupabaseAccountsService } from "../auth/supabase-accounts.service";
 import { MailClient } from "../mail/mail.client";
 import { staffInviteEmail } from "../mail/mail.templates";
-import { can, type RequestContext } from "../common/permissions";
+import { can, ROLE_PERMISSIONS, type RequestContext } from "../common/permissions";
 
 /**
  * Convites de staff.
@@ -113,7 +114,18 @@ export type InvitePreview = {
   teams: { id: string; name: string }[];
   /** Já tem conta noutra academia (ou como encarregado nesta): não se pede password nova. */
   hasAccount: boolean;
+  /**
+   * O que se aceita ao criar a conta.
+   *
+   * `bindsClub` quando o cargo do convite traz `legal:club` **e o clube ainda
+   * não foi inaugurado** — a confirmação de poderes pede-se uma vez só, a quem
+   * o inaugura. Um segundo responsável, que entre num clube já vinculado,
+   * aceita os documentos sem voltar a responder à pergunta dos poderes.
+   */
+  legal: { bindsClub: boolean; documents: { id: string; title: string; version: string; acceptanceKind: string; scope: string; url: string }[] };
 };
+
+export type AcceptInput = { password: string; phone?: string; acceptLegal?: boolean; confirmAuthority?: boolean };
 
 @Injectable()
 export class InvitesService {
@@ -122,6 +134,7 @@ export class InvitesService {
     private readonly accounts: SupabaseAccountsService,
     private readonly config: ConfigService,
     private readonly mail: MailClient,
+    private readonly legal: LegalService,
   ) {}
 
   /* ------------------------------------------------------------------------ */
@@ -372,9 +385,18 @@ export class InvitesService {
     return this.prisma.runAs(academyId, async (db) => {
       const invite = await db.staffInvite.findFirst({
         where: { tokenHash: hash(token), acceptedAt: null, revokedAt: null, expiresAt: { gt: new Date() } },
-        select: { name: true, email: true, role: true, title: true, teamIds: true },
+        select: {
+          name: true, email: true, role: true, title: true, teamIds: true,
+          academyRole: { select: { permissions: true } },
+        },
       });
       if (!invite) throw new NotFoundException("Convite inválido");
+
+      const audiences = this.audiencesOf(invite.role, invite.academyRole?.permissions ?? null);
+      const [documents, inaugurado] = await Promise.all([
+        this.legal.requiredFor(audiences),
+        this.legal.clubAlreadyBound(academyId),
+      ]);
 
       const academy = await db.academy.findFirst({
         where: { id: academyId },
@@ -397,8 +419,24 @@ export class InvitesService {
         title: invite.title,
         teams,
         hasAccount: Boolean(account),
+        legal: {
+          bindsClub: audiences.includes("CLUB_OWNER") && !inaugurado,
+          documents: documents.map((d) => ({
+            id: d.id, title: d.title, version: d.version, acceptanceKind: d.acceptanceKind, scope: d.scope, url: d.url,
+          })),
+        },
       };
     });
+  }
+
+  /**
+   * A audiência legal de quem entra por este convite — a mesma regra do
+   * `LegalService.audiencesOfContext`, antes de haver contexto: `CLUB_OWNER` se
+   * o cargo (ou, sem cargo, o papel-base) traz `legal:club`; senão `STAFF`.
+   */
+  private audiencesOf(role: Role, rolePermissions: string[] | null): LegalAudience[] {
+    const perms = rolePermissions ?? ROLE_PERMISSIONS[role];
+    return perms.includes("legal:club") ? ["CLUB_OWNER"] : ["STAFF"];
   }
 
   /**
@@ -413,7 +451,8 @@ export class InvitesService {
    *    prova que é mesmo ela. Sem essa prova, quem apanhasse o link ganhava uma
    *    membership numa conta que não controla.
    */
-  async accept(token: string, password: string, phone?: string): Promise<{ slug: string }> {
+  async accept(token: string, input: AcceptInput, meta: { ip?: string; userAgent?: string } = {}): Promise<{ slug: string }> {
+    const { password, phone } = input;
     if (!password || password.length < 8) {
       throw new BadRequestException("A palavra-passe tem de ter pelo menos 8 caracteres");
     }
@@ -427,10 +466,19 @@ export class InvitesService {
         select: {
           id: true, email: true, name: true, role: true, title: true,
           department: true, teamIds: true, academyRoleId: true, extraRoleIds: true,
+          academyRole: { select: { permissions: true } },
         },
       }),
     );
     if (!invite) throw new NotFoundException("Convite inválido");
+
+    /*
+     * Os termos, antes da conta: a conta no Supabase não entra em rollback
+     * nenhum, e criar uma conta a quem não aceitou era deixar uma conta sem
+     * termos aceites — precisamente o que o gate existe para não haver.
+     */
+    const audiences = this.audiencesOf(invite.role, invite.academyRole?.permissions ?? null);
+    const docs = await this.legal.assertSignupConsent(audiences, input, academyId);
 
     // A conta no Supabase, fora de qualquer transação: é um sistema externo e não
     // participa no rollback. Falhar aqui deixa o convite intacto para nova tentativa.
@@ -528,6 +576,11 @@ export class InvitesService {
           create: { teamId, membershipId: membership.id, title: invite.title ?? "Treinador" },
         });
       }
+
+      // As aceitações da criação de conta — contexto SIGNUP, na mesma transação.
+      await this.legal.acceptAtSignup(
+        db, { userId: user.id, academyId, membershipId: membership.id, audiences }, docs, meta,
+      );
 
       const academy = await db.academy.findFirst({ where: { id: academyId }, select: { slug: true } });
       return { slug: academy?.slug ?? "" };

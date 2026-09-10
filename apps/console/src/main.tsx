@@ -5,6 +5,7 @@ import App from "./App";
 import { SessionProvider } from "./session";
 import { LoginGate } from "./components/LoginGate";
 import { AcademyBoot } from "./components/AcademyBoot";
+import { LegalGate } from "./components/LegalGate";
 
 import "./styles.css";
 
@@ -23,11 +24,14 @@ createRoot(document.getElementById("root")!).render(
     <BrowserRouter basename={BASE || undefined}>
       {/* Nada da consola renderiza sem sessão — nem sequer a casca. */}
       <LoginGate>
-        <AcademyBoot>
-          <SessionProvider>
-            <App />
-          </SessionProvider>
-        </AcademyBoot>
+        {/* Com sessão mas antes da academia: com termos por aceitar, o servidor recusa o arranque. */}
+        <LegalGate>
+          <AcademyBoot>
+            <SessionProvider>
+              <App />
+            </SessionProvider>
+          </AcademyBoot>
+        </LegalGate>
       </LoginGate>
     </BrowserRouter>
   </StrictMode>,

@@ -2,7 +2,7 @@ import { useEffect } from "react";
 import { useApi } from "@/lib/query";
 import type { CSSProperties } from "react";
 import { NavLink, Outlet } from "react-router-dom";
-import { Building2, FileClock, Inbox, LayoutGrid, LogOut, ShieldCheck, TrendingUp, Users } from "lucide-react";
+import { Building2, FileClock, Inbox, LayoutGrid, LogOut, Scale, ShieldCheck, TrendingUp, Users } from "lucide-react";
 import { TICKETS_MUDARAM } from "@/lib/tickets";
 import { signOut } from "@/lib/session";
 import { cx } from "./primitives";
@@ -36,6 +36,8 @@ const NAV: NavItem[] = [
   { to: "/contactos", label: "Contactos", icon: Users },
   { to: "/crescimento", label: "Crescimento", icon: TrendingUp },
   { to: "/registo", label: "Registo", icon: FileClock },
+  // Termos, políticas e DPA — versões, publicação e quem já aceitou.
+  { to: "/legal", label: "Legal", icon: Scale },
 ];
 
 /**

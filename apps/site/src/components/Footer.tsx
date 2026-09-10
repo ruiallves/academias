@@ -23,10 +23,12 @@ const COLUMNS: { title: string; links: { to: string; label: string }[] }[] = [
   {
     title: "Legal",
     links: [
-      { to: "/termos", label: "Termos e Condições" },
-      { to: "/privacidade", label: "Política de Privacidade" },
-      { to: "/cookies", label: "Política de Cookies" },
-      { to: "/dpa", label: "Tratamento de dados (DPA)" },
+      { to: "/legal/termos-de-servico", label: "Termos de Serviço" },
+      { to: "/legal/termos-de-utilizacao", label: "Termos de Utilização" },
+      { to: "/legal/privacidade", label: "Política de Privacidade" },
+      { to: "/legal/cookies", label: "Política de Cookies" },
+      { to: "/legal/dpa", label: "Acordo de Tratamento de Dados" },
+      { to: "/legal/utilizacao-aceitavel", label: "Utilização Aceitável" },
     ],
   },
 ];

@@ -12,10 +12,10 @@ import {
   reopenCallUps,
   saveCallUps,
   setMaxCallUps,
-  submitCallUps,
   upcomingMatches,
 } from "@/lib/callups";
-import { CallUpSheetDialog, type SheetMatch } from "@/components/CallUpSheetDialog";
+import { SubmitCallUpDialog } from "@/components/SubmitCallUpDialog";
+import { descarregarFolha, type SheetMatch } from "@/lib/callup-export";
 import type { SheetRow } from "@/lib/callup-sheet";
 import { longDate, time } from "@/lib/format";
 import { can } from "@/lib/permissions";
@@ -144,11 +144,7 @@ function MatchList({
                   </div>
                 </div>
 
-                {m.submitted ? (
-                  <Pill tone="ok">enviada</Pill>
-                ) : (
-                  <Pill tone="warn">{m.calledUp.length || "—"}</Pill>
-                )}
+                <EstadoNaLista match={m} />
               </button>
             </li>
           );
@@ -162,11 +158,22 @@ function MatchList({
 
 function Squad({ match }: { match: ApiMatch }) {
   const { session } = useSession();
+  // O emblema e a época, para a folha em PDF.
+  const { academy, season } = useStore();
   const roster = useMemo(() => eligibleFor(session, match), [session, match]);
   const ownIds = useMemo(() => new Set(roster.map((r) => r.athlete.id)), [roster]);
 
   const [picked, setPicked] = useState<Set<string>>(() => new Set(match.calledUp.map((c) => c.athleteId)));
   const [busy, setBusy] = useState<null | "save" | "submit" | "reopen">(null);
+  /*
+   * Submeter passa por um diálogo — o que pergunta a logística do dia (ponto de
+   * encontro, horas) que a app da família vai mostrar. Ver `SubmitCallUpDialog`.
+   *
+   * A lista é **guardada antes** de o diálogo abrir: sem isso, quem mexesse na
+   * selecção e submetesse enviava a lista anterior, e a diferença só aparecia
+   * quando um pai recebesse o aviso do miúdo errado.
+   */
+  const [aSubmeter, setASubmeter] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [saved, setSaved] = useState(false);
   const [folha, setFolha] = useState(false);
@@ -246,12 +253,18 @@ function Squad({ match }: { match: ApiMatch }) {
     opponent: match.opponent,
     isHome: match.isHome,
     venue: match.venue,
-    // A prova do jogo — a folha pré-preenche-se com ela em vez de a pedir.
+    // A prova do jogo — a folha não a pede a ninguém.
     competition: match.competition ?? null,
     startsAt: match.startsAt,
     submitted: match.submitted,
     coachName: null,
     staff: [],
+    // A logística dita ao submeter. Ver `descarregarFolha`.
+    roundLabel: match.roundLabel,
+    meetingPoint: match.meetingPoint,
+    meetingAt: match.meetingAt,
+    arrivalAt: match.arrivalAt,
+    callUpNotes: match.callUpNotes,
   };
 
   function toggle(id: string, blocked: boolean) {
@@ -265,16 +278,13 @@ function Squad({ match }: { match: ApiMatch }) {
     });
   }
 
-  async function run(what: "save" | "submit" | "reopen") {
+  async function run(what: "save" | "reopen") {
     setBusy(what);
     setError(null);
     try {
       if (what === "save") {
         await saveCallUps(match.id, [...picked]);
         setSaved(true);
-      } else if (what === "submit") {
-        await saveCallUps(match.id, [...picked]);
-        await submitCallUps(match.id);
       } else {
         await reopenCallUps(match.id);
       }
@@ -286,7 +296,67 @@ function Squad({ match }: { match: ApiMatch }) {
     }
   }
 
+  /**
+   * Guardar a lista e abrir o diálogo da logística.
+   *
+   * A ordem importa: guarda-se **primeiro**. Quem tirou um lesionado e carregou
+   * logo em Submeter estaria a enviar a lista anterior — e a diferença só
+   * aparecia no telemóvel do pai errado.
+   */
+  /**
+   * A folha, sem perguntar nada.
+   *
+   * O que o diálogo antigo perguntava vive agora no jogo, dito ao submeter — e
+   * é o mesmo que a app da família mostra. Ver `descarregarFolha`.
+   */
+  async function exportar() {
+    if (folha) return;
+    setFolha(true);
+    setError(null);
+    try {
+      await descarregarFolha({ match: sheetMatch, rows: sheetRows, academy, season });
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Não foi possível gerar o PDF.");
+    } finally {
+      setFolha(false);
+    }
+  }
+
+  async function abrirSubmissao() {
+    setBusy("submit");
+    setError(null);
+    try {
+      await saveCallUps(match.id, [...picked]);
+      setASubmeter(true);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Não foi possível guardar a lista.");
+    } finally {
+      setBusy(null);
+    }
+  }
+
   const d = new Date(match.startsAt);
+
+  /*
+   * As respostas das famílias.
+   *
+   * `CALLED` é o estado de quem **não** respondeu, e não responder não é
+   * recusar: quem foi convocado e nada disse conta como quem vai. Por isso
+   * "por responder" só se conta como falta quando o clube pediu confirmação
+   * neste jogo — nos outros é o estado normal, e apresentá-lo como buraco na
+   * equipa era inventar um problema.
+   */
+  const respostas = useMemo(() => {
+    const porAtleta = new Map(match.calledUp.map((c) => [c.athleteId, c]));
+    const recusaram = match.calledUp.filter((c) => c.status === "DECLINED");
+    const confirmaram = match.calledUp.filter((c) => c.status === "CONFIRMED");
+    return {
+      porAtleta,
+      confirmaram: confirmaram.length,
+      recusaram,
+      porResponder: match.calledUp.length - confirmaram.length - recusaram.length,
+    };
+  }, [match.calledUp]);
 
   return (
     <Panel>
@@ -306,8 +376,8 @@ function Squad({ match }: { match: ApiMatch }) {
         */}
         <button
           type="button"
-          onClick={() => setFolha(true)}
-          disabled={!match.submitted}
+          onClick={() => void exportar()}
+          disabled={!match.submitted || folha}
           className="ctl-outline"
           title={
             match.submitted
@@ -316,7 +386,7 @@ function Squad({ match }: { match: ApiMatch }) {
           }
         >
           <Download className="size-3.5" strokeWidth={1.75} />
-          Exportar PDF
+          {folha ? "A gerar…" : "Exportar PDF"}
         </button>
       </PanelHead>
 
@@ -341,6 +411,8 @@ function Squad({ match }: { match: ApiMatch }) {
           <MaxPicker teamId={match.teamId} current={match.maxCallUps} teamName={team?.name ?? match.teamName} />
         )}
       </div>
+
+      {locked && <Respostas match={match} respostas={respostas} />}
 
       <ul className="max-h-[440px] overflow-y-auto">
         {roster.map(({ athlete, blockedBy }) => {
@@ -384,6 +456,7 @@ function Squad({ match }: { match: ApiMatch }) {
                 </span>
 
                 {blockedBy && <Pill tone="risk">{blockedBy}</Pill>}
+                {locked && <Resposta linha={respostas.porAtleta.get(athlete.id)} pediuConfirmacao={match.confirmationRequired} />}
               </button>
             </li>
           );
@@ -435,23 +508,185 @@ function Squad({ match }: { match: ApiMatch }) {
               </button>
               <button
                 type="button"
-                onClick={() => void run("submit")}
+                onClick={() => void abrirSubmissao()}
                 disabled={busy !== null || picked.size === 0}
                 className="ctl-primary"
                 title={picked.size === 0 ? "Escolhe pelo menos um atleta" : undefined}
               >
                 <Megaphone className="size-3.5" strokeWidth={1.75} />
-                {busy === "submit" ? "A enviar…" : `Submeter e avisar ${picked.size}`}
+                {busy === "submit" ? "A guardar…" : `Submeter e avisar ${picked.size}`}
               </button>
             </div>
           </>
         )}
       </footer>
 
-      {folha && <CallUpSheetDialog match={sheetMatch} rows={sheetRows} onClose={() => setFolha(false)} />}
+      {aSubmeter && (
+        <SubmitCallUpDialog
+          match={{
+            id: match.id,
+            teamName: match.teamName,
+            opponent: match.opponent,
+            isHome: match.isHome,
+            venue: match.venue,
+            startsAt: match.startsAt,
+            // O que já foi dito, para re-submeter não apagar nada.
+            roundLabel: match.roundLabel,
+            meetingPoint: match.meetingPoint,
+            meetingAt: match.meetingAt,
+            arrivalAt: match.arrivalAt,
+            callUpNotes: match.callUpNotes,
+            confirmationRequired: match.confirmationRequired,
+          }}
+          convocados={picked.size}
+          onDone={() => {
+            setASubmeter(false);
+            void refresh();
+          }}
+          onClose={() => setASubmeter(false)}
+        />
+      )}
     </Panel>
   );
 }
+
+/**
+ * O que a lista da esquerda diz de cada jogo.
+ *
+ * Antes dizia "enviada" e ficava por aí — e uma recusa, que é um buraco na
+ * equipa, só se descobria abrindo o jogo. Quem tem seis convocatórias enviadas
+ * não abre as seis à procura de problemas; precisa de as ver daqui.
+ *
+ * A ordem das leituras é a da urgência: uma recusa ganha a tudo, porque obriga
+ * a chamar outro; a seguir vem a espera por confirmações, que é uma pergunta em
+ * aberto; e só depois o "está tudo bem".
+ */
+function EstadoNaLista({ match }: { match: ApiMatch }) {
+  if (!match.submitted) return <Pill tone="warn">{match.calledUp.length || "—"}</Pill>;
+
+  const recusaram = match.calledUp.filter((c) => c.status === "DECLINED").length;
+  if (recusaram > 0) return <Pill tone="risk">{recusaram} não {recusaram === 1 ? "vai" : "vão"}</Pill>;
+
+  if (match.confirmationRequired) {
+    const confirmaram = match.calledUp.filter((c) => c.status === "CONFIRMED").length;
+    const tudo = confirmaram === match.calledUp.length;
+    return (
+      <Pill tone={tudo ? "ok" : "warn"}>
+        {confirmaram}/{match.calledUp.length}
+      </Pill>
+    );
+  }
+
+  return <Pill tone="ok">enviada</Pill>;
+}
+
+/* -------------------------------------------------------------------------- */
+/* As respostas das famílias                                                   */
+/* -------------------------------------------------------------------------- */
+
+type Respostas = {
+  porAtleta: Map<string, ApiMatch["calledUp"][number]>;
+  confirmaram: number;
+  recusaram: ApiMatch["calledUp"];
+  porResponder: number;
+};
+
+/**
+ * Quem confirmou, quem não vai, e quem ainda não disse nada.
+ *
+ * ## Porque é que isto só aparece depois de submeter
+ *
+ * Porque antes disso não há nada para responder: a lista ainda está a ser
+ * montada e as famílias não sabem dela. Mostrar "0 de 14 confirmaram" numa
+ * convocatória por enviar era inventar uma espera que ainda não começou.
+ *
+ * ## Duas leituras diferentes do mesmo silêncio
+ *
+ * Quando o clube **pediu confirmação**, quem não respondeu é uma pergunta em
+ * aberto e conta-se como tal — é justamente para isso que se liga o
+ * interruptor. Quando não pediu, o silêncio é a resposta normal e quer dizer
+ * "vai": aí a contagem some, e sobra o que interessa mesmo, que são as
+ * recusas.
+ *
+ * ## As recusas trazem o motivo
+ *
+ * É por isso que o motivo é obrigatório do lado da família. Um treinador que lê
+ * "o Tomás não vai" e tem de telefonar para saber porquê ficou com o mesmo
+ * trabalho que tinha antes disto existir.
+ */
+function Respostas({ match, respostas }: { match: ApiMatch; respostas: Respostas }) {
+  const { confirmaram, recusaram, porResponder } = respostas;
+  const pediu = match.confirmationRequired;
+
+  return (
+    <div className="border-b border-line bg-sunken/40 px-5 py-3">
+      <div className="flex flex-wrap items-center gap-x-5 gap-y-1.5">
+        {pediu && (
+          <Conta n={confirmaram} de={match.calledUp.length} label="confirmaram" tone={confirmaram > 0 ? "ok" : undefined} />
+        )}
+        <Conta n={recusaram.length} label={recusaram.length === 1 ? "não vai" : "não vão"} tone={recusaram.length > 0 ? "risk" : undefined} />
+        {pediu && <Conta n={porResponder} label="sem resposta" />}
+
+        {!pediu && (
+          <span className="text-meta text-ink-3">
+            Não pediste confirmação — quem não respondeu vai.
+          </span>
+        )}
+      </div>
+
+      {recusaram.length > 0 && (
+        <ul className="mt-2.5 space-y-1">
+          {recusaram.map((c) => (
+            <li key={c.athleteId} className="flex flex-wrap items-baseline gap-x-2 text-meta">
+              <span className="font-medium text-ink">{athleteById(c.athleteId)?.name ?? "Atleta"}</span>
+              <span className="text-ink-2">{c.declineReason}</span>
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+  );
+}
+
+function Conta({ n, de, label, tone }: { n: number; de?: number; label: string; tone?: "ok" | "risk" }) {
+  return (
+    <span className="flex items-baseline gap-1.5">
+      <span
+        className={cx(
+          "text-[18px] leading-none font-semibold tabular",
+          tone === "ok" ? "text-ok" : tone === "risk" ? "text-risk" : "text-ink",
+        )}
+      >
+        {n}
+        {de !== undefined && <span className="text-meta font-normal text-ink-3"> de {de}</span>}
+      </span>
+      <span className="text-meta text-ink-3">{label}</span>
+    </span>
+  );
+}
+
+/**
+ * O estado de uma linha do plantel, depois de a convocatória sair.
+ *
+ * Nada para quem não foi convocado — a linha já se lê pela caixa por marcar. E
+ * nada para quem não respondeu num jogo sem confirmação pedida: aí o silêncio é
+ * o estado normal, e um rótulo "sem resposta" em catorze linhas seguidas é
+ * ruído que ensina a não olhar para nenhum.
+ */
+function Resposta({
+  linha,
+  pediuConfirmacao,
+}: {
+  linha: ApiMatch["calledUp"][number] | undefined;
+  pediuConfirmacao: boolean;
+}) {
+  if (!linha) return null;
+  if (linha.status === "DECLINED") return <Pill tone="risk">não vai</Pill>;
+  if (linha.status === "CONFIRMED") return <Pill tone="ok">confirmou</Pill>;
+  return pediuConfirmacao ? <Pill tone="warn">sem resposta</Pill> : null;
+}
+
+/* -------------------------------------------------------------------------- */
 
 /**
  * Convidar de outro escalão.

@@ -117,7 +117,9 @@ export class InvitePageController {
    */
   @Throttle({ default: { ttl: 60_000, limit: 5 } })
   @Post("api/convites/:token/aceitar")
-  async accept(@Param("token") token: string, @Body() body: AcceptInviteDto) {
-    return this.invites.accept(token, body.password, body.phone);
+  async accept(@Param("token") token: string, @Body() body: AcceptInviteDto, @Req() req: Request) {
+    const ua = req.headers["user-agent"];
+    // O IP e o navegador seguem para o registo da aceitação dos termos.
+    return this.invites.accept(token, body, { ip: req.ip, userAgent: typeof ua === "string" ? ua : undefined });
   }
 }

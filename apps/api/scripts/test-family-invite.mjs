@@ -149,7 +149,7 @@ check("e não devolve o nome completo", !JSON.stringify(encontrado.body).include
 console.log("\n=== Criar a conta ===");
 const registo = await anon("POST", `/api/convite-familia/${vivo}/registar`, {
   name: "Pai De Teste", email: EMAIL, phone: "912 000 000", password: "academia2026",
-  relation: "Pai", taxId: NIF, birthdate: nasc,
+  relation: "Pai", taxId: NIF, birthdate: nasc, acceptLegal: true,
 });
 check("cria a conta e liga ao educando", registo.status === 200 || registo.status === 201, JSON.stringify(registo.body).slice(0, 140));
 check("devolve a sessão — a app entra já dentro", typeof registo.body?.accessToken === "string");

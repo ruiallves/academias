@@ -20,11 +20,19 @@ import { academySlug } from "@/lib/invite";
  * miniatura seria ter duas consolas para manter, e a de telemóvel ficaria
  * sempre um passo atrás.
  *
- * ## A escolha fica guardada por clube
+ * ## A pergunta faz-se a cada arranque
  *
- * Quem entrou como Sócio ontem abre como Sócio hoje — a app não repete a
- * pergunta a cada arranque. A chave leva o slug porque a mesma instalação pode
- * um dia servir mais do que um clube, e a escolha de um não é a escolha do outro.
+ * Quem tem mais do que um contexto escolhe **sempre** que abre a app. Uma
+ * escolha guardada de ontem punha o pai que também é treinador a cair na
+ * vista de família quando vinha ver a equipa — e a trocar às escuras, porque
+ * o ecrã de escolha é o único sítio onde os contextos se vêem lado a lado.
+ * Com um contexto só não há pergunta: entra-se.
+ *
+ * A escolha vive em memória e mais nada. A chave no `localStorage` é outra
+ * coisa: uma **entrega** — a consola escreve lá a área ao devolver a sessão
+ * ("volta à família"), e a app lê-a e apaga-a no arranque seguinte. Serve
+ * uma vez; não sobrevive a um segundo arranque. Leva o slug porque a mesma
+ * instalação pode um dia servir mais do que um clube.
  */
 
 export type ContextType = "FAMILY" | "MEMBER" | "STAFF";
@@ -43,18 +51,23 @@ type State = {
   error: string | null;
 };
 
-const escolhaKey = () => `academia.app.contexto:${academySlug()}`;
+const entregaKey = () => `academia.app.contexto:${academySlug()}`;
 
-function lerEscolha(): ContextType | null {
+/**
+ * A entrega da consola (ou do `?area=` em desenvolvimento) — lida **e apagada**
+ * no mesmo gesto. É o que faz a pergunta voltar no arranque seguinte.
+ */
+function consumirEntrega(): ContextType | null {
   try {
-    const v = localStorage.getItem(escolhaKey());
+    const v = localStorage.getItem(entregaKey());
+    if (v !== null) localStorage.removeItem(entregaKey());
     return v === "FAMILY" || v === "MEMBER" || v === "STAFF" ? v : null;
   } catch {
     return null;
   }
 }
 
-let state: State = { contexts: null, active: lerEscolha(), error: null };
+let state: State = { contexts: null, active: null, error: null };
 const listeners = new Set<() => void>();
 const emit = () => listeners.forEach((l) => l());
 const subscribe = (l: () => void) => {
@@ -70,16 +83,17 @@ export function useContexts(): State {
 /**
  * Pergunta ao servidor e resolve o que se resolve sozinho.
  *
- * Um contexto só → é esse, sem perguntar nada a ninguém. Dois → vale a escolha
- * guardada se ainda existir; senão fica por escolher e o `App` mostra o ecrã
- * "como queres continuar?".
+ * Um contexto só → é esse, sem perguntar nada a ninguém. Dois → vale a área
+ * que a consola entregou, se a houver; senão fica por escolher e o `App`
+ * mostra o ecrã "como queres continuar?". A escolha feita nesta sessão
+ * (`state.active`) mantém-se entre recargas de dados — não entre arranques.
  */
 export async function loadContexts(): Promise<void> {
   try {
     const r = await apiGet<{ contexts: AppContext[] }>("/api/app/contexts");
     const tipos = r.contexts.map((c) => c.type);
 
-    let active = state.active ?? lerEscolha();
+    let active = state.active ?? consumirEntrega();
     if (active && !tipos.includes(active)) active = null;
     if (!active && tipos.length === 1) active = tipos[0];
 
@@ -90,13 +104,11 @@ export async function loadContexts(): Promise<void> {
   emit();
 }
 
-/** Vestir um contexto — do seletor pós-login ou do switcher. Sem logout, sem recarregar. */
+/**
+ * Vestir um contexto — do seletor pós-login ou do switcher. Sem logout, sem
+ * recarregar, e **sem guardar**: a escolha é desta abertura da app.
+ */
 export function chooseContext(type: ContextType): void {
-  try {
-    localStorage.setItem(escolhaKey(), type);
-  } catch {
-    /* sem armazenamento: a escolha vale esta sessão */
-  }
   state = { ...state, active: type };
   emit();
 }
@@ -104,10 +116,11 @@ export function chooseContext(type: ContextType): void {
 /**
  * A área que a consola pediu ao devolver a sessão (`?area=FAMILY`).
  *
- * Em produção a consola escreve a escolha directamente na chave desta app —
- * mesma origem, mesmo `localStorage`. Em desenvolvimento não pode, e manda-a
- * na query, ao lado da sessão que vai no fragmento (ver `adoptSessionFromUrl`).
- * Corre antes do primeiro render, no `main.tsx`, e limpa o que leu.
+ * Em produção a consola escreve a entrega directamente na chave desta app —
+ * mesma origem, mesmo `localStorage` — e o `loadContexts` consome-a. Em
+ * desenvolvimento não pode, e manda-a na query, ao lado da sessão que vai no
+ * fragmento (ver `adoptSessionFromUrl`). Corre antes do primeiro render, no
+ * `main.tsx`, e limpa o que leu.
  */
 export function captureAreaFromUrl(): void {
   const params = new URLSearchParams(window.location.search);
@@ -119,10 +132,10 @@ export function captureAreaFromUrl(): void {
   window.history.replaceState(null, "", window.location.pathname + (resto ? `?${resto}` : "") + window.location.hash);
 }
 
-/** No fim da sessão — a conta seguinte não herda a escolha desta. */
+/** No fim da sessão — a conta seguinte não herda nada desta, nem uma entrega por consumir. */
 export function clearContextChoice(): void {
   try {
-    localStorage.removeItem(escolhaKey());
+    localStorage.removeItem(entregaKey());
   } catch {
     /* idem */
   }

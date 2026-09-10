@@ -21,9 +21,9 @@ import { useSession } from "@/session";
 import { can } from "@/lib/permissions";
 import { athleteById, sportById, teamById } from "@/lib/api";
 import { tallyNoun } from "@/lib/calendar";
-import { reloadAcademy } from "@/lib/store";
+import { reloadAcademy, useStore } from "@/lib/store";
 import { SaveVeil, Spinner, useSaving } from "@/components/Busy";
-import { CallUpSheetDialog, type SheetMatch } from "@/components/CallUpSheetDialog";
+import { descarregarFolha, type SheetMatch } from "@/lib/callup-export";
 import type { SheetRow } from "@/lib/callup-sheet";
 import {
   OUTCOME_LABEL,
@@ -580,6 +580,8 @@ function ScoreField({
  */
 function CallUpPanel({ match }: { match: Match }) {
   const [folha, setFolha] = useState(false);
+  // O emblema e a época, para a folha em PDF.
+  const { academy, season } = useStore();
 
   const confirmados = match.squad.filter((s) => s.callUpStatus === "CONFIRMED").length;
   const recusaram = match.squad.filter((s) => s.callUpStatus === "DECLINED").length;
@@ -606,7 +608,7 @@ function CallUpPanel({ match }: { match: Match }) {
     opponent: match.opponent,
     isHome: match.isHome,
     venue: match.venue,
-    // A prova do jogo — a folha pré-preenche-se com ela em vez de a pedir.
+    // A prova do jogo — a folha não a pede a ninguém.
     competition: match.competition ?? null,
     startsAt: match.startsAt,
     submitted: match.submitted,
@@ -614,7 +616,32 @@ function CallUpPanel({ match }: { match: Match }) {
     // consta do jogo.
     coachName: match.staff.find((m) => m.role === "Treinador principal")?.name ?? match.coachName,
     staff: match.staff.map((m) => ({ name: m.name, role: m.role })),
+    // A logística dita ao submeter a convocatória. Ver `descarregarFolha`.
+    roundLabel: match.roundLabel,
+    meetingPoint: match.meetingPoint,
+    meetingAt: match.meetingAt,
+    arrivalAt: match.arrivalAt,
+    callUpNotes: match.callUpNotes,
   };
+
+  /**
+   * A folha, sem perguntar nada.
+   *
+   * O diálogo que perguntava a prova, o ponto de encontro e as horas
+   * desapareceu: essas coisas são ditas ao **submeter** a convocatória e vivem
+   * no jogo, que é também de onde a app da família as lê. Perguntá-las outra
+   * vez aqui era arriscar que o papel dissesse uma coisa e o telemóvel do pai
+   * outra.
+   */
+  async function exportar() {
+    if (folha) return;
+    setFolha(true);
+    try {
+      await descarregarFolha({ match: sheetMatch, rows: sheetRows, academy, season });
+    } finally {
+      setFolha(false);
+    }
+  }
 
   return (
     <Panel>
@@ -624,12 +651,13 @@ function CallUpPanel({ match }: { match: Match }) {
         {match.submitted && (
           <button
             type="button"
-            onClick={() => setFolha(true)}
+            onClick={() => void exportar()}
+            disabled={folha}
             className="ctl-outline"
             title="PDF da convocatória, para assinar no ponto de encontro"
           >
             <Download className="size-3.5" strokeWidth={1.75} />
-            Exportar PDF
+            {folha ? "A gerar…" : "Exportar PDF"}
           </button>
         )}
         <Link to="/convocatorias" className="ctl-primary">
@@ -638,7 +666,6 @@ function CallUpPanel({ match }: { match: Match }) {
         </Link>
       </PanelHead>
 
-      {folha && <CallUpSheetDialog match={sheetMatch} rows={sheetRows} onClose={() => setFolha(false)} />}
 
       {match.squad.length === 0 ? (
         <Empty

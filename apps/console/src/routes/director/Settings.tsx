@@ -2,9 +2,11 @@ import { useEffect, useRef, useState } from "react";
 import { useMobile } from "@/lib/viewport";
 import { Link, useSearchParams } from "react-router-dom";
 import { PageHeader } from "@/components/Shell";
+import { CartaoDeSocioPanel } from "@/components/CartaoDeSocio";
 import { DepartmentDialog } from "@/components/DepartmentDialog";
 import { DeleteAcademyPanel } from "@/components/DeleteAcademyPanel";
 import { IdentityPanel } from "@/components/IdentityPanel";
+import { LegalPanel } from "@/components/LegalPanel";
 import { SportsPanel } from "@/components/SportsPanel";
 /*
  * A importação de jogos (zerozero) saiu daqui por agora.
@@ -86,6 +88,15 @@ export default function Settings() {
 
         <div className="space-y-3">
           <PwaPreview />
+
+          {/*
+            O cartão de sócio: `settings:write`, como tudo o resto desta coluna.
+            Estava num diálogo da página dos sócios — ver `CartaoDeSocioPanel`.
+          */}
+          <CartaoDeSocioPanel mayWrite={maySettings} />
+
+          {/* O que está em vigor e o que esta conta (e o clube) já aceitou. Só leitura. */}
+          <LegalPanel />
 
           <Panel>
             <PanelHead title="Pagamentos" />

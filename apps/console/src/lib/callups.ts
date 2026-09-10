@@ -43,8 +43,28 @@ import type { Athlete } from "@/data/types";
 export const saveCallUps = (matchId: string, athleteIds: string[]) =>
   apiPost<void>(`/api/matches/${matchId}/convocatoria`, { athleteIds });
 
-export const submitCallUps = (matchId: string) =>
-  apiPost<void>(`/api/matches/${matchId}/convocatoria/submeter`, {});
+/**
+ * A logística que se pergunta ao submeter — e que passa a viver no jogo.
+ *
+ * Tudo opcional: um amigável ao lado não tem ponto de encontro, e exigi-lo
+ * fazia escrever "—" em novecentos jogos por época. As horas vão como `HH:MM`;
+ * a data é a do jogo, e o servidor resolve-a (ver `horaNoDia`).
+ */
+export type CallUpLogistics = {
+  roundLabel?: string;
+  meetingPoint?: string;
+  meetingTime?: string;
+  arrivalTime?: string;
+  notes?: string;
+  /** Pedir confirmação activa à família. Desligado por omissão — ver o diálogo. */
+  confirmationRequired?: boolean;
+};
+
+export const submitCallUps = (matchId: string, logistica: CallUpLogistics = {}) =>
+  apiPost<{ submitted: true; convocados: number; familiasAvisadas: number }>(
+    `/api/matches/${matchId}/convocatoria/submeter`,
+    logistica,
+  );
 
 export const reopenCallUps = (matchId: string) =>
   apiPost<void>(`/api/matches/${matchId}/convocatoria/reabrir`, {});

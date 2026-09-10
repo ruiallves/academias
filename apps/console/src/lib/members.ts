@@ -188,7 +188,6 @@ export const memberFeePeriods = (memberId: string) =>
   apiGet<MemberFeePeriods>(`/api/members/${memberId}/fees/periods`);
 export const createMemberFees = (memberId: string, body: { periods: string[]; amountCents: number; notes?: string }) =>
   apiPost<{ created: number; alreadyExisted: string[] }>(`/api/members/${memberId}/fees`, body);
-export const generateFees = () => apiPost<{ created: number; members: number }>("/api/members/fees/generate", {});
 /** O menu "Marcar como paga / por pagar / Anular" — o mesmo das mensalidades. */
 export const setMemberFeeStatus = (id: string, status: MemberFeeRow["status"]) =>
   apiPatch<{ id: string; status: MemberFeeRow["status"] }>(`/api/members/fees/${id}/status`, { status });
@@ -217,10 +216,10 @@ export const inviteMember = (id: string) => apiPost<{ ok: true; email: string }>
 export const inviteMembers = (ids: string[]) =>
   apiPost<{ ok: true; enviados: number; falhas: { id: string; reason: string }[] }>("/api/members/invites", { ids });
 
-/** Ligar a ficha a uma conta que já existe — o caminho sem email. */
-export const linkMemberAccount = (id: string) =>
-  apiPost<{ ok: true; email: string; name: string }>(`/api/members/${id}/link-account`, {});
-
+/**
+ * Desligar a ficha da conta. Ligar não tem função: acontece sozinho, pelo email
+ * da ficha, na consola (ao gravar) e na app (ao abrir).
+ */
 export const unlinkMemberAccount = (id: string) => apiDelete<{ ok: true }>(`/api/members/${id}/link-account`);
 
 /* ---------------------------------------------------------------------------- */

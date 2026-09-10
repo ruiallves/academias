@@ -37,7 +37,6 @@ import {
   type MemberTier,
   type Sex,
   inviteMember,
-  linkMemberAccount,
   unlinkMemberAccount,
   listMemberFees,
   mesPorExtenso,
@@ -529,9 +528,9 @@ function QuotasLancadasPanel({
         <p className="px-5 py-3 text-meta text-ink-3">A carregar…</p>
       ) : fees.length === 0 ? (
         <p className="px-5 py-3 text-meta leading-relaxed text-ink-3">
-          Ainda nenhuma. <strong className="text-ink-2">Lançar quotas</strong> cria as deste sócio — inclusive
-          períodos em atraso; "Gerar quotas", na lista, lança a do período corrente a todos os activos com
-          categoria.
+          Ainda nenhuma. A do mês corrente nasce sozinha no dia 1, ao preço da categoria — este sócio ou
+          ainda não tem categoria com preço, ou entrou depois.{" "}
+          <strong className="text-ink-2">Lançar quotas</strong> cria as que faltam, inclusive em atraso.
         </p>
       ) : (
         <ul className="px-5 py-1.5">
@@ -694,6 +693,11 @@ function MemberFeeStatusControl({
  * (a ficha foi reclamada), convite enviado à espera, ou nada ainda. O convite
  * sai sozinho na criação manual e na aprovação; este botão é para os sócios
  * que já existiam antes da app, e para reenviar quando o email se perdeu.
+ *
+ * Não há botão de "ligar": uma ficha cujo email é o de uma conta deste clube
+ * (o treinador, o pai de um atleta) liga-se sozinha — ao gravar aqui, ou
+ * quando a pessoa abre a app. O único gesto manual é desfazer uma ligação
+ * errada, e esse só serve com o email corrigido.
  */
 function AppDoClubePanel({ member, mayWrite, onChanged }: { member: Data; mayWrite: boolean; onChanged: () => void }) {
   const [busy, setBusy] = useState(false);
@@ -716,14 +720,9 @@ function AppDoClubePanel({ member, mayWrite, onChanged }: { member: Data; mayWri
 
   const convidar = async () => `Convite enviado para ${(await inviteMember(member.id)).email}.`;
 
-  const ligar = async () => {
-    const r = await linkMemberAccount(member.id);
-    return `Ligado à conta de ${r.name} (${r.email}). Já pode trocar para a área de sócio na app.`;
-  };
-
   const unlink = async () => {
     await unlinkMemberAccount(member.id);
-    return "Conta desligada — o sócio deixa de ver a área de sócio na app.";
+    return "Conta desligada. Corrige o email da ficha — com o mesmo email, a conta volta a ligar-se sozinha quando a pessoa abrir a app.";
   };
 
   return (
@@ -747,19 +746,10 @@ function AppDoClubePanel({ member, mayWrite, onChanged }: { member: Data; mayWri
             <p className="text-meta leading-relaxed text-ink-3">
               {member.inviteSentAt
                 ? "Convite enviado, à espera que crie a conta."
-                : "Ainda sem conta na app do clube."}
+                : "Ainda sem conta na app do clube. Se já tiver conta com este email (família ou equipa técnica), liga-se sozinha quando abrir a app."}
             </p>
             {mayWrite && (
               <div className="flex flex-wrap items-center gap-2">
-                {/*
-                  Duas coisas diferentes, e por isso dois botões.
-                  "Ligar" reconhece uma conta que já existe (o pai que também é
-                  sócio, e que já tem a app instalada); "convite" **cria** a
-                  conta de quem ainda não a tem, e por isso manda email.
-                */}
-                <button type="button" className="ctl-outline" disabled={busy} onClick={() => void agir(ligar)}>
-                  Ligar a conta existente
-                </button>
                 <button type="button" className="ctl-ghost" disabled={busy} onClick={() => void agir(convidar)}>
                   <Mail className="size-3.5" strokeWidth={1.75} />
                   {member.inviteSentAt ? "Reenviar convite" : "Enviar convite"}

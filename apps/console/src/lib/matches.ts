@@ -78,6 +78,18 @@ export type MatchDetail = {
   coachName: string | null;
   submitted: boolean;
   submittedAt: string | null;
+  /**
+   * ---- A logística da convocatória ---------------------------------------
+   *
+   * Dita ao **submeter** (ver `SubmitCallUpDialog`), guardada no jogo, e lida
+   * pela folha em PDF, por esta página e pela app da família.
+   */
+  roundLabel: string | null;
+  meetingPoint: string | null;
+  meetingAt: string | null;
+  arrivalAt: string | null;
+  callUpNotes: string | null;
+  confirmationRequired: boolean;
   /** Quando alguém preencheu a ficha à mão. Ver a nota no topo. */
   statsEnteredAt: string | null;
   /** Preenchido quando o jogo veio de fora. Nulo quando foi marcado à mão. */

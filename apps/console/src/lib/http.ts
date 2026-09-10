@@ -180,6 +180,18 @@ async function pedir<T>(
      */
     if (res.status === 401 && token) signOut();
 
+    /*
+     * Termos novos publicados com a consola aberta.
+     *
+     * O servidor passa a recusar tudo com este código até a pessoa aceitar, e
+     * a única coisa que a deixa aceitar é o gate à entrada. Recarregar leva-a
+     * lá — é o mesmo caminho da primeira entrada, sem um segundo ecrã de
+     * aceitação a manter dentro da consola.
+     */
+    if (res.status === 403 && parsed?.code === "LEGAL_ACCEPTANCE_REQUIRED") {
+      window.location.reload();
+    }
+
     throw new ApiError(res.status, msg ?? mensagem(res.status));
   }
 

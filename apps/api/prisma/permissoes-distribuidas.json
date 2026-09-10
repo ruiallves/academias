@@ -61,5 +61,6 @@
   "finance:read": "20260901100000_contas",
   "finance:write": "20260901100000_contas",
   "ai:read": "20260902200000_academias_ai",
-  "ai:write": "20260902200000_academias_ai"
+  "ai:write": "20260902200000_academias_ai",
+  "legal:club": "20260911120000_documentos_legais"
 }

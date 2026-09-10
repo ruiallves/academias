@@ -13,8 +13,10 @@ import { ClubMark } from "@/ClubMark";
  * que um** contexto — quem só é pai entra direto na Família, quem só é sócio
  * entra direto no Sócio, e nenhum dos dois vê este ecrã (ver `loadContexts`).
  *
- * A escolha fica guardada: amanhã a app abre onde se ficou, e troca-se pelo
- * switcher sem voltar aqui.
+ * A escolha vale esta abertura da app: amanhã volta-se a passar por aqui. É
+ * de propósito — este é o único ecrã onde as áreas se vêem lado a lado, e
+ * quem é pai e treinador não deve cair na Família quando vinha para a equipa.
+ * Dentro da sessão troca-se pelo switcher sem voltar aqui.
  *
  * ## Só as áreas que a pessoa tem
  *

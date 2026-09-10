@@ -154,6 +154,22 @@ export class AnnouncementsService {
       throw new ForbiddenException("Só podes comunicar com os pais das tuas equipas");
     }
 
+    /*
+     * Falar aos sócios exige **ver** os sócios.
+     *
+     * `comms:write` diz que a pessoa comunica em nome do clube; não diz que o
+     * livro de sócios lhe diz respeito. Um director desportivo escreve às
+     * famílias e à equipa técnica todos os dias e pode não ter nada que ver com
+     * a massa associativa — e um aviso aos sócios é uma comunicação
+     * institucional, do género que se lê numa assembleia geral.
+     *
+     * `member:read` é a fronteira certa porque é a mesma que decide quem vê o
+     * livro: quem pode saber quem são os sócios pode dirigir-se-lhes.
+     */
+    if (dto.audience === "members" && !can(ctx, "member:read")) {
+      throw new ForbiddenException("Sem acesso aos sócios — não podes comunicar com eles");
+    }
+
     const escolhidos = unique(dto.teamIds ?? []);
     if (escolhidos.length > 0 && dto.audience !== "guardians") {
       throw new BadRequestException("Só se escolhe escalão quando o aviso é para os pais");

@@ -18,7 +18,7 @@ export function PanelHead({ title, hint, children }: { title: string; hint?: str
   );
 }
 
-type Tone = "neutral" | "ok" | "warn" | "risk" | "signal";
+export type Tone = "neutral" | "ok" | "warn" | "risk" | "signal";
 
 const TONE: Record<Tone, string> = {
   neutral: "bg-sunken text-ink-2",

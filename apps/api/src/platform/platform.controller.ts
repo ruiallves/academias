@@ -6,6 +6,7 @@ import { PlatformGuard, PlatformRoles, type PlatformRequest } from "./platform.g
 import { PlatformService } from "./platform.service";
 import { ClubLogoService } from "../storage/club-logo.service";
 import { BillingService } from "../billing/billing.service";
+import { MemberFeesService } from "../members/member-fees.service";
 
 /**
  * O corpo de "criar academia", validado. Classe e não interface — ver
@@ -132,6 +133,7 @@ export class PlatformController {
     private readonly platform: PlatformService,
     private readonly logo: ClubLogoService,
     private readonly billing: BillingService,
+    private readonly memberFees: MemberFeesService,
   ) {}
 
   /** Quem sou eu, do lado da plataforma. A app usa-o para arrancar. */
@@ -242,21 +244,30 @@ export class PlatformController {
   }
 
   /**
-   * Emitir as mensalidades do mês corrente em todos os clubes, agora.
+   * Emitir as cobranças do mês corrente em todos os clubes, agora.
    *
    * O mesmo passe que corre sozinho de hora a hora — aqui para quem não quer
    * esperar, ou para conferir o que ele faria. É idempotente: correr duas vezes
    * seguidas não emite nada na segunda.
+   *
+   * **As duas emissões, e não só as mensalidades.** Mensalidades de atletas e
+   * quotas de sócios correm em relógios separados (serviços diferentes, falhas
+   * independentes), mas quem carrega neste botão quer o mês emitido — e
+   * descobrir que o botão só fazia metade seria descobri-lo pelo telefone de um
+   * clube.
    */
   @Post("billing/emitir")
   @PlatformRoles("OWNER", "ADMIN")
-  issueMonthlyCharges(@Query("academia") academia?: string) {
+  async issueMonthlyCharges(@Query("academia") academia?: string) {
     /*
      * `?academia=` estreita a um clube. Serve o apoio — "emite já as deste
      * clube" sem mexer nos outros dezoito — e é o que torna isto exercitável
      * num teste sem emitir cobranças reais em toda a plataforma.
      */
-    return this.billing.issueMonthlyCharges(academia?.trim() || undefined);
+    const alvo = academia?.trim() || undefined;
+    const mensalidades = await this.billing.issueMonthlyCharges(alvo);
+    const quotas = await this.memberFees.emitirQuotasDoMes(alvo);
+    return { ...mensalidades, quotas };
   }
 
   @Get("audit")

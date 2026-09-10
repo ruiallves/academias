@@ -1,7 +1,14 @@
 import { BadRequestException, ForbiddenException, Injectable, NotFoundException } from "@nestjs/common";
 import { PrismaService, type ScopedClient } from "../prisma/prisma.service";
 import { NotificationsService } from "../notifications/notifications.service";
-import { calendarScopeFilter, can, inTeamScope, teamScopeFilter, type RequestContext } from "../common/permissions";
+import {
+  athleteScopeFilter,
+  calendarScopeFilter,
+  can,
+  inTeamScope,
+  teamScopeFilter,
+  type RequestContext,
+} from "../common/permissions";
 import { headCoaches } from "./head-coaches";
 
 /**
@@ -52,6 +59,10 @@ export class MatchesService {
           id: true, teamId: true, startsAt: true, endsAt: true, venue: true,
           opponent: true, isHome: true, status: true, ourScore: true, theirScore: true,
           callUpsClosedAt: true,
+          // A logística do dia — o que a app da família mostra ao pai e o que o
+          // PDF imprime. Ver a migração `20260912120000`.
+          roundLabel: true, meetingPoint: true, meetingAt: true, arrivalAt: true,
+          callUpNotes: true, confirmationRequired: true,
           // A prova, para a convocatória a poder imprimir sem ninguém a escrever.
           competition: { select: { id: true, label: true } },
           team: { select: { name: true, maxCallUps: true } },
@@ -65,6 +76,7 @@ export class MatchesService {
           callUps: {
             select: {
               athleteId: true, status: true, isGuest: true,
+              declineReason: true, respondedAt: true,
               athlete: { select: { name: true, teams: { select: { team: { select: { name: true } } }, take: 1 } } },
             },
           },
@@ -146,6 +158,21 @@ export class MatchesService {
           coachName: m.coach?.user.name ?? porEquipa.get(m.teamId)?.name ?? null,
           submitted: m.callUpsClosedAt !== null,
           submittedAt: m.callUpsClosedAt,
+          /*
+           * A logística sai a **toda a gente** que vê o jogo, e não só a quem é
+           * da equipa.
+           *
+           * Ao contrário dos convocados e da ficha — que têm nomes de miúdos lá
+           * dentro e por isso ficam presos ao escalão —, o ponto de encontro é
+           * uma informação de organização do dia. Escondê-la de um treinador de
+           * outro escalão que vai dar boleia não protege ninguém.
+           */
+          roundLabel: m.roundLabel,
+          meetingPoint: m.meetingPoint,
+          meetingAt: m.meetingAt,
+          arrivalAt: m.arrivalAt,
+          callUpNotes: m.callUpNotes,
+          confirmationRequired: m.confirmationRequired,
           /** É de uma equipa minha? Decide o que vem preenchido, e o que a consola deixa abrir. */
           mine: meu,
           /** A função com que **eu** estou escalado neste jogo. `null` se não estou. */
@@ -167,6 +194,9 @@ export class MatchesService {
                 // deixar parecer que ele sempre jogou aqui.
                 isGuest: c.isGuest,
                 guestFromTeam: c.isGuest ? c.athlete.teams[0]?.team.name : undefined,
+                /* A resposta da família — ver `responderConvocatoria`. */
+                declineReason: c.declineReason,
+                respondedAt: c.respondedAt,
               }))
             : [],
         };
@@ -224,6 +254,9 @@ export class MatchesService {
           id: true, teamId: true, startsAt: true, endsAt: true, venue: true,
           opponent: true, isHome: true, status: true, ourScore: true, theirScore: true,
           callUpsClosedAt: true, statsEnteredAt: true,
+          // A logística dita ao submeter — a folha em PDF lê-a daqui.
+          roundLabel: true, meetingPoint: true, meetingAt: true, arrivalAt: true,
+          callUpNotes: true, confirmationRequired: true,
           competition: { select: { id: true, label: true } },
           sourceProvider: true, sourceUrl: true, importedAt: true,
           team: { select: { name: true, maxAge: true, sportId: true, maxCallUps: true } },
@@ -293,6 +326,12 @@ export class MatchesService {
         coachName: m.coach?.user.name ?? (await headCoaches(db, [m.teamId])).get(m.teamId)?.name ?? null,
         submitted: m.callUpsClosedAt !== null,
         submittedAt: m.callUpsClosedAt,
+        roundLabel: m.roundLabel,
+        meetingPoint: m.meetingPoint,
+        meetingAt: m.meetingAt,
+        arrivalAt: m.arrivalAt,
+        callUpNotes: m.callUpNotes,
+        confirmationRequired: m.confirmationRequired,
         statsEnteredAt: m.statsEnteredAt,
         /*
          * De onde veio o jogo. Vazio quando foi marcado à mão.
@@ -1064,7 +1103,7 @@ export class MatchesService {
    * O aviso vai a cada encarregado do atleta convocado — não a toda a academia. É
    * a diferença entre uma notificação que se lê e uma que se ignora.
    */
-  async submitCallUps(ctx: RequestContext, matchId: string) {
+  async submitCallUps(ctx: RequestContext, matchId: string, logistica: CallUpLogistics = {}) {
     this.assertCanManageCallUps(ctx);
 
     const { match, avisados, convocados } = await this.prisma.runAs(ctx.academyId, async (db) => {
@@ -1084,7 +1123,23 @@ export class MatchesService {
 
       if (callUps.length === 0) throw new BadRequestException("Não há ninguém convocado");
 
-      await db.match.update({ where: { id: matchId }, data: { callUpsClosedAt: new Date() } });
+      /*
+       * A logística entra **com** a submissão, na mesma escrita.
+       *
+       * É o momento em que alguém está de facto a decidir a que horas a malta
+       * se junta e onde — e é o momento em que as famílias vão ser avisadas.
+       * Separá-los deixava um jogo submetido sem ponto de encontro à espera de
+       * um segundo gesto que ninguém se lembraria de fazer.
+       *
+       * Ver `CallUpLogistics` para o porquê de cada campo ser opcional.
+       */
+      await db.match.update({
+        where: { id: matchId },
+        data: {
+          callUpsClosedAt: new Date(),
+          ...limparLogistica(logistica, match.startsAt),
+        },
+      });
 
       // Um pai com dois filhos convocados recebe dois avisos — um por atleta, e é
       // o que ele quer: são duas convocatórias diferentes, com dois nomes.
@@ -1126,6 +1181,99 @@ export class MatchesService {
     }
 
     return { submitted: true, convocados, familiasAvisadas: avisados.length };
+  }
+
+  /**
+   * A resposta da família a uma convocatória.
+   *
+   * ## O gesto que isto serve
+   *
+   * O pai abre a app, vê que o filho está convocado para sábado, e sabe que ele
+   * não vai — tem uma prova, está doente, está fora. Até aqui a única forma de o
+   * dizer era o WhatsApp do treinador, que é exactamente o que este produto
+   * existe para acabar. O treinador descobria no sábado de manhã, com um lugar a
+   * menos e sem tempo de chamar outro.
+   *
+   * ## Assume-se que vai
+   *
+   * Não responder **não é recusar**. Um convocado que nunca abriu a app conta
+   * como quem vai, porque é o que acontece em quase todos os casos, e porque a
+   * alternativa — tratar o silêncio como ausência — punha o treinador a ligar a
+   * doze famílias por jogo.
+   *
+   * Só a recusa é um acto, e por isso exige motivo: "não vai" sem mais nada
+   * deixa quem monta a equipa sem saber se procura substituto ou se telefona a
+   * perguntar se está tudo bem. A base impõe a mesma regra (ver o CHECK na
+   * migração `20260912120000`), porque uma regra que só vive no serviço é uma
+   * regra que a próxima rota esquece.
+   *
+   * ## Quem pode responder
+   *
+   * Quem tem o atleta no âmbito — hoje o encarregado de educação, amanhã o
+   * próprio atleta na app dele. Não se verifica a equipa: o âmbito de um
+   * encarregado é a lista de filhos, e é essa a autorização certa. Um pai que
+   * troque um `athleteId` no pedido bate aqui.
+   *
+   * ## Depois do jogo, não
+   *
+   * Um jogo que já começou não se responde. Não é rigidez — é que a resposta
+   * serve para o treinador decidir, e depois do apito não há nada a decidir; o
+   * que houver a registar é presença, e isso é outra tabela.
+   */
+  async responderConvocatoria(
+    ctx: RequestContext,
+    matchId: string,
+    athleteId: string,
+    resposta: { going: boolean; reason?: string | null },
+  ) {
+    const meus = athleteScopeFilter(ctx);
+    if (meus && !meus.in.includes(athleteId)) {
+      throw new ForbiddenException("Este atleta não é teu");
+    }
+
+    const motivo = (resposta.reason ?? "").trim();
+    if (!resposta.going && !motivo) {
+      throw new BadRequestException("Diz porque é que não vai — o treinador precisa de saber para decidir");
+    }
+    if (motivo.length > 300) throw new BadRequestException("O motivo é demasiado longo");
+
+    return this.prisma.runAs(ctx.academyId, async (db) => {
+      const match = await db.match.findFirst({
+        where: { id: matchId },
+        select: { id: true, startsAt: true, status: true, callUpsClosedAt: true },
+      });
+      if (!match) throw new NotFoundException("Jogo não encontrado");
+      if (!match.callUpsClosedAt) {
+        // Uma convocatória por submeter não é pública — responder a ela seria
+        // responder a uma lista que ainda pode mudar.
+        throw new NotFoundException("Jogo não encontrado");
+      }
+      if (match.status === "CANCELLED") throw new BadRequestException("Este jogo foi cancelado");
+      if (match.startsAt.getTime() <= Date.now()) {
+        throw new BadRequestException("Este jogo já começou");
+      }
+
+      const linha = await db.matchCallUp.findFirst({
+        where: { matchId, athleteId },
+        select: { id: true },
+      });
+      if (!linha) throw new NotFoundException("Este atleta não está convocado para este jogo");
+
+      const atualizada = await db.matchCallUp.update({
+        where: { id: linha.id },
+        data: {
+          status: resposta.going ? "CONFIRMED" : "DECLINED",
+          // A recusa guarda o motivo; voltar atrás limpa-o, ou ficava a explicar
+          // uma ausência que deixou de existir.
+          declineReason: resposta.going ? null : motivo,
+          respondedAt: new Date(),
+          respondedById: ctx.membershipId,
+        },
+        select: { status: true, declineReason: true, respondedAt: true },
+      });
+
+      return { matchId, athleteId, ...atualizada };
+    });
   }
 
   /** Reabre uma convocatória submetida — e diz-se que foi reaberta, não se finge. */
@@ -1331,4 +1479,92 @@ function foraDeCampo(r: ComMinutos): string | null {
 export function birthdateFloor(maxAge: number, matchDate: Date): Date {
   const seasonYear = matchDate.getUTCFullYear() - (matchDate.getUTCMonth() < 7 ? 1 : 0);
   return new Date(Date.UTC(seasonYear - maxAge, 0, 1));
+}
+
+/* -------------------------------------------------------------------------- */
+/* A logística de uma convocatória                                             */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * O que se pergunta a quem submete uma convocatória.
+ *
+ * ## Porque é que é tudo opcional
+ *
+ * Porque um amigável ao lado não tem ponto de encontro, e obrigar a inventar um
+ * para poder submeter faria com que se escrevesse "—" em novecentos jogos por
+ * época. O que existe mostra-se; o que não existe não ocupa espaço no ecrã do
+ * pai. Isto é o oposto de um formulário que exige tudo e recebe lixo.
+ *
+ * ## As horas chegam como `HH:MM`, e saem como instantes
+ *
+ * Quem preenche o diálogo escreve "09:30", não uma data com fuso. A data é a do
+ * jogo — e quando a hora do encontro é **maior** que a do apito, é do dia
+ * anterior: uma concentração na véspera. Ver `horaNoDia`.
+ */
+export type CallUpLogistics = {
+  roundLabel?: string | null;
+  meetingPoint?: string | null;
+  /** `HH:MM`, no dia do jogo (ou na véspera — ver `horaNoDia`). */
+  meetingTime?: string | null;
+  /** `HH:MM`, idem. */
+  arrivalTime?: string | null;
+  notes?: string | null;
+  confirmationRequired?: boolean;
+};
+
+/** Texto que só conta se tiver alguma coisa escrita. Vazio é nulo, não `""`. */
+const texto = (v: string | null | undefined): string | null => {
+  if (v === undefined) return null;
+  return (v ?? "").trim() || null;
+};
+
+/**
+ * `"09:30"` no dia de `referencia` — e na véspera quando passa da hora dela.
+ *
+ * Uma equipa que se junta às 07:00 para um jogo às 11:00 encontra-se no próprio
+ * dia. Uma que se junta às 22:00 para um jogo às 11:00 encontra-se **na
+ * véspera**, e é a única leitura que faz sentido: ninguém marca um encontro
+ * onze horas depois do apito inicial.
+ *
+ * Não é adivinhação por gosto — é o que evita pedir a data do encontro num
+ * formulário onde ela é a mesma do jogo em 99% dos casos.
+ */
+function horaNoDia(hhmm: string, referencia: Date): Date | null {
+  const m = /^(\d{1,2}):(\d{2})$/.exec(hhmm.trim());
+  if (!m) return null;
+  const h = Number(m[1]);
+  const min = Number(m[2]);
+  if (h > 23 || min > 59) return null;
+
+  const d = new Date(referencia);
+  d.setHours(h, min, 0, 0);
+  if (d.getTime() > referencia.getTime()) d.setDate(d.getDate() - 1);
+  return d;
+}
+
+/**
+ * Do que o diálogo mandou para o que a coluna guarda.
+ *
+ * Um campo que não vem é **limpo**, e não ignorado: cada submissão é o estado
+ * completo da logística naquele momento, tal como a lista de convocados é a
+ * lista completa. Apagar o ponto de encontro tem de ser possível, e a única
+ * forma de o exprimir num formulário é deixá-lo vazio.
+ *
+ * É por isso que o diálogo abre preenchido com o que o jogo já sabe (ver
+ * `SubmitCallUpDialog`): sem isso, reabrir uma convocatória para trocar um
+ * atleta apagava o encontro que as famílias já tinham lido.
+ */
+function limparLogistica(l: CallUpLogistics, kickOff: Date) {
+  const hora = (v: string | null | undefined) => {
+    const t = texto(v);
+    return t ? horaNoDia(t, kickOff) : null;
+  };
+  return {
+    roundLabel: texto(l.roundLabel),
+    meetingPoint: texto(l.meetingPoint),
+    meetingAt: hora(l.meetingTime),
+    arrivalAt: hora(l.arrivalTime),
+    callUpNotes: texto(l.notes),
+    confirmationRequired: l.confirmationRequired === true,
+  };
 }

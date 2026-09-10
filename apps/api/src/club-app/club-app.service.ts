@@ -15,6 +15,8 @@ import { SupabaseJwtService } from "../auth/supabase-jwt.service";
 import { SupabaseAccountsService } from "../auth/supabase-accounts.service";
 import { BillingService } from "../billing/billing.service";
 import { MemberFeesService, mesesAteFimDaEpoca, rotulo } from "../members/member-fees.service";
+import { reclamarFichaPelaConta } from "../members/member-account-link";
+import { LegalService } from "../legal/legal.service";
 
 /**
  * A app do clube — contextos e a área de sócio.
@@ -58,6 +60,7 @@ export class ClubAppService {
     private readonly billing: BillingService,
     private readonly quotas: MemberFeesService,
     private readonly config: ConfigService,
+    private readonly legal: LegalService,
   ) {}
 
   /* ------------------------------------------------------------------------ */
@@ -88,11 +91,19 @@ export class ClubAppService {
     return academyId;
   }
 
-  /** A ficha de sócio reclamada por esta conta neste clube — ou 404. */
-  private async socioDe(db: ScopedClient, userId: string | null) {
+  /**
+   * A ficha de sócio reclamada por esta conta neste clube — ou 404.
+   *
+   * É também a porta do gate legal para a área de sócio: estas rotas não passam
+   * pelo guard global, e um sócio com documentos por aceitar tem de ficar de
+   * fora aqui, como o pessoal e as famílias ficam lá. `contexts` não passa por
+   * aqui de propósito — é a pergunta que a app faz para saber que gate mostrar.
+   */
+  private async socioDe(db: ScopedClient, userId: string | null, academyId: string) {
     if (!userId) throw new NotFoundException("Esta conta não é de sócio neste clube");
     const member = await db.member.findFirst({ where: { userId } });
     if (!member) throw new NotFoundException("Esta conta não é de sócio neste clube");
+    await this.legal.assertClearMember(db, userId, academyId);
     return member;
   }
 
@@ -126,7 +137,19 @@ export class ClubAppService {
     const staff = daAcademia.find((m) => !deFamilia(m.role));
 
     return this.prisma.runAs(academyId, async (db) => {
-      const member = eu.userId ? await db.member.findFirst({ where: { userId: eu.userId } }) : null;
+      let member = eu.userId ? await db.member.findFirst({ where: { userId: eu.userId } }) : null;
+
+      /*
+       * Sem ficha ligada, mas com vínculo aqui (família ou staff)? Talvez a
+       * direcção tenha inscrito esta pessoa como sócio com o email da conta.
+       * Reclama-se a ficha agora — é este o momento em que "abro a app e a
+       * área de sócio está lá" acontece. Ver `member-account-link.ts`.
+       */
+      if (!member && eu.userId && (familia || staff)) {
+        if (await reclamarFichaPelaConta(db, eu.userId)) {
+          member = await db.member.findFirst({ where: { userId: eu.userId } });
+        }
+      }
 
       const contexts: Record<string, unknown>[] = [];
       if (familia) contexts.push({ type: "FAMILY" });
@@ -160,7 +183,7 @@ export class ClubAppService {
     const academyId = await this.academiaDe(slug);
 
     return this.prisma.runAs(academyId, async (db) => {
-      const socio = await this.socioDe(db, eu.userId);
+      const socio = await this.socioDe(db, eu.userId, academyId);
 
       const academia = await db.academy.findFirst({
         where: { id: academyId },
@@ -328,7 +351,7 @@ export class ClubAppService {
     const academyId = await this.academiaDe(slug);
 
     return this.prisma.runAs(academyId, async (db) => {
-      const socio = await this.socioDe(db, eu.userId);
+      const socio = await this.socioDe(db, eu.userId, academyId);
       if (socio.status !== "ACTIVE") {
         throw new BadRequestException("Só sócios activos podem votar");
       }
@@ -443,7 +466,7 @@ export class ClubAppService {
     }
 
     const socio = await this.prisma.runAs(academyId, async (db) => {
-      const socio = await this.socioDe(db, eu.userId);
+      const socio = await this.socioDe(db, eu.userId, academyId);
 
       const esta = await db.memberFee.findFirst({
         where: { id: feeId, memberId: socio.id },
@@ -502,7 +525,7 @@ export class ClubAppService {
     }
 
     const { socioId, feeIds } = await this.prisma.runAs(academyId, async (db) => {
-      const socio = await this.socioDe(db, eu.userId);
+      const socio = await this.socioDe(db, eu.userId, academyId);
       if (socio.status !== "ACTIVE") throw new ForbiddenException("Só um sócio activo paga quotas");
 
       const quotas = await this.quotasAte(db, academyId, socio.id, ate);
@@ -540,7 +563,7 @@ export class ClubAppService {
     }
 
     const { socioId, feeId } = await this.prisma.runAs(academyId, async (db) => {
-      const socio = await this.socioDe(db, eu.userId);
+      const socio = await this.socioDe(db, eu.userId, academyId);
       if (socio.status !== "ACTIVE") throw new ForbiddenException("Só um sócio activo paga quotas");
 
       /*
@@ -610,7 +633,12 @@ export class ClubAppService {
    * quem convidou; deixar o convidado escolher o email era deixar qualquer
    * portador do link ligar a ficha a uma conta qualquer.
    */
-  async conviteRegistar(token: string, password: string) {
+  async conviteRegistar(
+    token: string,
+    password: string,
+    acceptLegal?: boolean,
+    meta: { ip?: string; userAgent?: string } = {},
+  ) {
     if (!password || password.length < 8) {
       throw new BadRequestException("A palavra-passe tem de ter pelo menos 8 caracteres");
     }
@@ -627,6 +655,9 @@ export class ClubAppService {
       if (!member.email) throw new BadRequestException("Esta ficha não tem email — fala com o clube");
       return { member: { ...member, email: member.email }, academy };
     });
+
+    // Os termos antes da conta — a conta no Supabase não entra em rollback nenhum.
+    const docs = await this.legal.assertSignupConsent(["MEMBER"], { acceptLegal }, alvo.academyId);
 
     const email = dados.member.email.trim().toLowerCase();
     const account = await this.accounts.createOrSignIn(email, password, dados.member.name);
@@ -649,6 +680,11 @@ export class ClubAppService {
           inviteTokenHash: null,
         },
       });
+
+      // As aceitações da criação de conta — contexto SIGNUP, na mesma transação.
+      await this.legal.acceptAtSignup(
+        db, { userId: created[0].id, academyId: alvo.academyId, membershipId: null, audiences: ["MEMBER"] }, docs, meta,
+      );
     });
 
     const session = account.accessToken ? account : await this.accounts.signIn(email, password);

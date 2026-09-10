@@ -116,6 +116,7 @@ ${styles(paleta)}
 
       <form id="accept-form" novalidate>
         ${preview.hasAccount ? existingAccountFields() : newAccountFields()}
+        ${legalFields(preview)}
         <button class="btn" type="submit" id="accept-submit">
           ${preview.hasAccount ? "Confirmar e entrar" : "Criar conta"}
         </button>
@@ -156,6 +157,8 @@ ${styles(paleta)}
   var slug = ${jsonForScript(academy.slug)};
   var consoleUrl = ${jsonForScript(consoleUrl)};
   var hasAccount = ${jsonForScript(preview.hasAccount)};
+  var bindsClub = ${jsonForScript(preview.legal.bindsClub)};
+  var legalCount = ${jsonForScript(preview.legal.documents.length)};
 
   var form = document.getElementById('accept-form');
   var submit = document.getElementById('accept-submit');
@@ -193,13 +196,30 @@ ${styles(paleta)}
     var phoneField = document.getElementById('phone');
     var phone = phoneField ? phoneField.value.trim() : '';
 
+    // Os termos: todas as caixas marcadas. O servidor volta a exigi-lo.
+    var boxes = form.querySelectorAll('input[data-legal]');
+    for (var i = 0; i < boxes.length; i++) {
+      if (!boxes[i].checked) {
+        fail(errorBox, null, null, bindsClub && boxes[i].id === 'legal-authority'
+          ? 'Confirma que estás autorizado a representar o clube.'
+          : 'Para criar a conta tens de aceitar os documentos indicados.');
+        return;
+      }
+    }
+    var authorityBox = document.getElementById('legal-authority');
+
     submit.disabled = true;
     submit.textContent = 'Um momento…';
 
     fetch('/api/convites/' + encodeURIComponent(token) + '/aceitar', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ password: password, phone: phone || undefined }),
+      body: JSON.stringify({
+        password: password,
+        phone: phone || undefined,
+        acceptLegal: legalCount > 0 ? true : undefined,
+        confirmAuthority: authorityBox ? authorityBox.checked : undefined,
+      }),
     })
       .then(function (r) { return r.json().then(function (b) { return { ok: r.ok, body: b }; }); })
       .then(function (res) {
@@ -289,6 +309,45 @@ function existingAccountFields(): string {
           <span>A tua palavra-passe</span>
           <input type="password" id="password" autocomplete="current-password" required />
         </label>`;
+}
+
+/**
+ * Os termos, ao lado da password.
+ *
+ * Quem cria a conta aceita-os ao criá-la — é o momento certo, e é o que evita
+ * que a primeira coisa que a pessoa veja na consola seja um gate. Cada
+ * documento abre no site, numa janela nova, com a versão em vigor. Quem entra
+ * com um cargo que vincula o clube (o primeiro responsável) confirma também que
+ * o pode representar: os Termos de Serviço e o DPA são do clube, não dele.
+ *
+ * Sem documentos publicados o bloco não aparece, e o servidor não exige nada.
+ */
+function legalFields(preview: InvitePreview): string {
+  const { documents, bindsClub } = preview.legal;
+  if (documents.length === 0) return "";
+
+  const linha = (id: string, texto: string, sub?: string) => `<label class="consent">
+          <input type="checkbox" id="${id}" data-legal="1" />
+          <span class="consent-text">${texto}${sub ? `<small>${sub}</small>` : ""}</span>
+        </label>`;
+
+  const docs = documents
+    .map((d) => {
+      const verbo = d.acceptanceKind === "ACKNOWLEDGE" ? "Li" : "Aceito";
+      const artigo = /^termos/i.test(d.title) ? "os" : /^pol/i.test(d.title) ? "a" : "o";
+      const alvo = d.acceptanceKind === "ACKNOWLEDGE" ? "a" : artigo;
+      return linha(
+        `legal-${esc(d.id)}`,
+        `${verbo} ${alvo} <a href="${esc(d.url)}" target="_blank" rel="noreferrer">${esc(d.title)}</a>`,
+        `Versão ${esc(d.version)}${d.scope === "CLUB" ? " · em nome do clube" : ""}`,
+      );
+    })
+    .join("\n");
+
+  return `<div class="consents">
+        ${bindsClub ? linha("legal-authority", "Confirmo que estou autorizado a representar o clube e a utilizar o Academias em nome dele.") : ""}
+        ${docs}
+      </div>`;
 }
 
 function renderTeams(preview: InvitePreview): string {
@@ -477,6 +536,12 @@ function styles(paleta: ClubPalette): string {
   .btn:active { opacity: 0.85; }
   .btn:disabled { background: var(--ink-3); cursor: default; opacity: 0.6; }
 
+  .consents { margin: 14px 0 16px; border-top: 1px solid var(--line); padding-top: 12px; }
+  .consent { display: flex; gap: 10px; align-items: flex-start; padding: 6px 0; cursor: pointer; }
+  .consent input { margin-top: 3px; width: 16px; height: 16px; flex: none; accent-color: var(--signal); }
+  .consent-text { font-size: 13px; line-height: 1.45; color: var(--ink); }
+  .consent-text a { color: var(--ink); text-decoration: underline; text-underline-offset: 2px; }
+  .consent-text small { display: block; font-size: 11.5px; color: var(--ink-3); margin-top: 1px; }
   .notice {
     margin: 0 0 16px; padding: 10px 12px; background: var(--sunken);
     border-radius: 10px; font-size: 12.5px; line-height: 1.5; color: var(--ink-2);

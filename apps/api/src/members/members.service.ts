@@ -5,6 +5,7 @@ import { AuthService } from "../auth/auth.service";
 import { can, type RequestContext } from "../common/permissions";
 import { CARD_QR_PREFIX } from "../club-app/club-app.service";
 import { MemberInvitesService } from "./member-invites.service";
+import { ligarFichaAConta } from "./member-account-link";
 import { situacaoDeQuotas } from "./member-fees.service";
 import type {
   MemberCreateDto,
@@ -385,7 +386,13 @@ export class MembersService {
       if (dto.number !== undefined) data.number = dto.number ?? null;
 
       try {
-        await db.member.update({ where: { id }, data });
+        const gravado = await db.member.update({
+          where: { id },
+          data,
+          select: { id: true, email: true, userId: true },
+        });
+        /* Um email novo pode ser o de uma conta deste clube — ver `create`. */
+        if (dto.email !== undefined) await ligarFichaAConta(db, gravado);
       } catch (error) {
         if (isUniqueViolation(error, "number")) {
           throw new BadRequestException("Já existe um sócio com esse número");
@@ -593,10 +600,18 @@ export class MembersService {
             notes: dto.notes?.trim() || null,
             updatedAt: now,
           },
-          select: { id: true, name: true, number: true },
+          select: { id: true, name: true, number: true, email: true, userId: true },
         });
 
-        return member;
+        /*
+         * O email é de alguém que já tem conta neste clube — o treinador, o
+         * pai de um atleta? Então a ficha é dele desde já, e o convite que sai
+         * a seguir não sai (`preparar` recusa fichas com dono): não se manda
+         * "cria a tua conta" a quem já a tem.
+         */
+        await ligarFichaAConta(db, member);
+
+        return { id: member.id, name: member.name, number: member.number };
       } catch (error) {
         if (isUniqueViolation(error, "taxId")) {
           throw new BadRequestException("Já existe um sócio com este NIF");
@@ -813,8 +828,14 @@ export class MembersService {
       if (importados.length > 0) {
         const criados = await db.member.findMany({
           where: { taxId: { in: importados.map((m) => m.taxId).filter((t): t is string => Boolean(t)) } },
-          select: { id: true },
+          select: { id: true, email: true, userId: true },
         });
+        /*
+         * Primeiro as contas que já existem (o treinador que vem no livro de
+         * sócios), **depois** os convites: uma ficha com dono não gera convite,
+         * e é assim que ninguém recebe "cria a tua conta" tendo-a já.
+         */
+        for (const m of criados) await ligarFichaAConta(db, m);
         for (const m of criados) void this.invites.enviarSePossivel(ctx.academyId, m.id);
       }
 

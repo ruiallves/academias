@@ -75,6 +75,9 @@ async function request<T>(method: string, path: string, body?: unknown): Promise
     const msg = Array.isArray(parsed?.message) ? parsed.message.join("; ") : parsed?.message;
     // Depois da renovação ter falhado, aí sim: a sessão acabou mesmo.
     if (res.status === 401) signOut();
+    // Termos novos publicados com a app aberta: o servidor recusa tudo até a
+    // pessoa aceitar, e é o gate à entrada que a deixa aceitar. Recarregar leva-a lá.
+    if (res.status === 403 && parsed?.code === "LEGAL_ACCEPTANCE_REQUIRED") window.location.reload();
     throw new ApiError(res.status, msg ?? mensagem(res.status));
   }
 

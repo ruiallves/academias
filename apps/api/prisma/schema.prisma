@@ -119,10 +119,10 @@ model Academy {
   prospectVideos ProspectVideo[]
   memberTiers    MemberTier[]
   members        Member[]
-  memberFees  MemberFee[]
-  polls       Poll[]
-  pollOptions PollOption[]
-  pollVotes   PollVote[]
+  memberFees     MemberFee[]
+  polls          Poll[]
+  pollOptions    PollOption[]
+  pollVotes      PollVote[]
   catalog        CatalogItem[]
   athletes       Athlete[]
   teams          Team[]
@@ -173,6 +173,9 @@ model Academy {
   aiInsights         AIInsight[]
   aiCorrections      HumanCorrection[]
   aiIdentityProfiles PlayerIdentityProfile[]
+
+  /// As aceitações feitas neste clube — incluindo as que o vinculam.
+  legalAcceptances LegalAcceptance[]
 }
 
 /// O ciclo de vida de um cliente. Derivado do onboarding e da subscrição — o
@@ -288,6 +291,9 @@ model User {
   /// sócia de dois clubes, e são duas fichas.
   memberLinks Member[] @relation("MemberAccount")
 
+  /// O que esta pessoa aceitou, e quando. Ver `LegalAcceptance`.
+  legalAcceptances LegalAcceptance[]
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 }
@@ -368,7 +374,7 @@ model Membership {
   lastSeenAt DateTime?
 
   /// Os cargos **secundários** desta pessoa. Ver `MembershipRole`.
-  extraRoles      MembershipRole[]
+  extraRoles MembershipRole[]
 
   coachOf         TeamStaff[]
   guardianOf      GuardianLink[]
@@ -418,6 +424,9 @@ model Membership {
   aiAnalysesMade AIAnalysis[]      @relation("AIAnalysisAuthor")
   aiVideosSent   AIVideo[]         @relation("AIVideoUploader")
   aiCorrections  HumanCorrection[] @relation("AICorrectionAuthor")
+
+  /// As convocatórias a que este vínculo respondeu — ver `MatchCallUp`.
+  callUpResponses MatchCallUp[] @relation("CallUpResponse")
 
   @@unique([academyId, userId, role])
   @@index([academyId])
@@ -1012,6 +1021,7 @@ model TrainingSession {
   /**
    * /**
    * /**
+   * /**
    * /*
    * O plano vive **na sessão**, não numa tabela paralela.
    * Um treino planeado e um treino do calendário são o mesmo treino: o que as
@@ -1582,17 +1592,13 @@ enum PaymentMethod {
 
 /**
  * Que quotas é que um pagamento liquida.
- *
  * ## Porque é que existe
- *
  * As quotas pagam-se **por ordem**, do mês mais antigo para o mais recente, e
  * nunca pode haver Março pago com Fevereiro em aberto: um histórico com buracos
  * não se lê, e a pergunta "então paguei ou não paguei?" fica sem resposta.
- *
  * Daí um sócio com três meses em atraso ter de os poder pagar **de uma vez** —
  * uma referência, um pedido MB Way. Com um `Payment` por quota, eram três, e
  * quem tem três por pagar não faz três pagamentos: adia.
- *
  * `Payment.memberFeeId` continua a apontar para a mais antiga do grupo (a
  * âncora, para as notificações e para o histórico anterior a isto); a verdade
  * sobre o que foi liquidado é esta tabela.
@@ -1609,7 +1615,7 @@ model MemberFeePayment {
 }
 
 model Payment {
-  id       String @id @default(cuid())
+  id       String  @id @default(cuid())
   /// ## Exactamente um dos dois
   ///
   /// Um pagamento é de uma mensalidade de atleta (`chargeId`) **ou** de uma
@@ -1925,6 +1931,7 @@ model Match {
   /**
    * /**
    * /**
+   * /**
    * /*
    * Em que competição se joga isto.
    * Aponta para o catálogo (`CatalogItem` de `kind = "competitions"`) e é
@@ -1954,6 +1961,39 @@ model Match {
   /// avisava as famílias — e um pai que recebe cinco avisos contraditórios numa
   /// tarde desliga as notificações para sempre.
   callUpsClosedAt DateTime?
+
+  /**
+   * ---- A logística do dia ------------------------------------------------
+   *
+   * Perguntada ao **submeter** a convocatória, que é quando alguém está de
+   * facto a decidir estas coisas. Vivia no `localStorage` de quem exportava o
+   * PDF — por equipa, por computador —, e por isso o pai nunca a via: a única
+   * forma de sair do produto era papel impresso. Ver a migração
+   * `20260912120000_convocatoria_com_logistica_e_resposta`.
+   *
+   * Tudo nulo enquanto a convocatória não sair, e tudo opcional depois: um
+   * amigável ao lado não precisa de ponto de encontro.
+   */
+  /// "Jornada 12", "Meias-finais" — o que a prova não diz sozinha.
+  roundLabel String?
+  /// Onde a equipa se junta: o clube, o parque, a bomba de gasolina da saída.
+  meetingPoint String?
+  /// A hora do encontro. Absoluta e não "30 minutos antes": um encontro na
+  /// véspera (deslocação longa, concentração) tem de caber aqui.
+  meetingAt DateTime?
+  /// A hora a que se chega ao recinto — a que o árbitro conta, não a do apito.
+  arrivalAt DateTime?
+  /// O que mais é preciso dizer às famílias: equipamento, almoço, transporte.
+  callUpNotes String?
+
+  /// O clube quer que a família **confirme**, ou basta o silêncio?
+  ///
+  /// Desligado por omissão, de propósito. Assumir que quem foi convocado vai é
+  /// o que corresponde à realidade em quase todos os jogos, e obrigar toda a
+  /// gente a carregar num botão sempre é a forma mais rápida de ensinar as
+  /// famílias a ignorar a app. Liga-se no jogo em que a resposta importa a
+  /// sério — o autocarro alugado, a final.
+  confirmationRequired Boolean @default(false)
 
   /// Proveniência, quando importado de uma fonte externa (ZeroZero).
   sourceProvider String?
@@ -1997,6 +2037,14 @@ model Match {
   @@index([competitionId])
 }
 
+/// O estado de um convocado — do ponto de vista da **resposta da família**.
+///
+/// `CALLED` é o estado natural e quer dizer "convocado, e nada disse em
+/// contrário" — que é o mesmo que vai. `CONFIRMED` só aparece nos jogos em que
+/// o clube pediu confirmação (`Match.confirmationRequired`) e distingue quem
+/// respondeu de quem ainda não abriu a app. `DECLINED` é o único que exige um
+/// acto: leva sempre motivo (ver o CHECK na migração
+/// `20260912120000_convocatoria_com_logistica_e_resposta`).
 enum CallUpStatus {
   CALLED
   CONFIRMED
@@ -2016,6 +2064,18 @@ model MatchCallUp {
   /// pertence à equipa de quem foi emprestado — e o que a ficha do atleta usa
   /// para dizer "emprestado ao Sub-13" em vez de parecer que mudou de equipa.
   isGuest Boolean @default(false)
+
+  /// Porque é que não vai. Obrigatório quando `status = DECLINED`, e a base
+  /// impõe-no: uma recusa sem motivo deixa o treinador sem saber se o miúdo
+  /// está doente ou de castigo, e as duas coisas decidem jogos diferentes.
+  declineReason String?
+  /// Quando a família respondeu. Nulo = não respondeu (o que não é recusar).
+  respondedAt DateTime?
+  /// Quem respondeu — o vínculo, não a pessoa: a mesma pessoa pode ser
+  /// encarregada de um e treinadora de outro, e interessa em que qualidade
+  /// respondeu. Um dia é aqui que entra o próprio atleta, pela app dele.
+  respondedById String?
+  respondedBy   Membership? @relation("CallUpResponse", fields: [respondedById], references: [id], onDelete: SetNull)
 
   @@unique([matchId, athleteId])
   @@index([athleteId])
@@ -2149,7 +2209,7 @@ model CalendarEvent {
   /// O que este evento **é**, estruturalmente: decide em que tabela vive e o que
   /// abre. TRAINING dá folha de presenças, MATCH dá convocatória, o resto fica
   /// aqui. Não é o vocabulário do clube — esse é o `type`.
-  kind     CalendarEventKind
+  kind CalendarEventKind
 
   /// O tipo escolhido no catálogo "Tipos de evento" das Definições.
   ///
@@ -2160,8 +2220,8 @@ model CalendarEvent {
   /// lhe chama.
   ///
   /// `SetNull`: arquivar um tipo não apaga os eventos marcados com ele.
-  typeId   String?
-  type     CatalogItem? @relation("EventType", fields: [typeId], references: [id], onDelete: SetNull)
+  typeId String?
+  type   CatalogItem? @relation("EventType", fields: [typeId], references: [id], onDelete: SetNull)
 
   title    String
   startsAt DateTime
@@ -3164,14 +3224,14 @@ model MemberFee {
 
   amountCents Int
   /// Até quando. Nulo = sem prazo formal.
-  dueOn DateTime? @db.Date
+  dueOn       DateTime? @db.Date
 
-  status    ChargeStatus @default(OPEN)
+  status    ChargeStatus   @default(OPEN)
   settledAt DateTime?
   /// Como entrou o dinheiro quando foi registado à mão (numerário, transferência).
   /// Nulo num pagamento online — aí a verdade está no `Payment`.
-  method PaymentMethod?
-  notes  String?
+  method    PaymentMethod?
+  notes     String?
 
   /// Os pagamentos que cobrem esta quota — normalmente um. Ver `MemberFeePayment`.
   paidBy   MemberFeePayment[]
@@ -4300,9 +4360,9 @@ model AIAnalysis {
   competition String?
   playedOn    DateTime? @db.Date
 
-  status AIAnalysisStatus @default(DRAFT)
+  status   AIAnalysisStatus @default(DRAFT)
   /// 0–100. Cache de leitura para listas e dashboard — a verdade são os jobs.
-  progress Int @default(0)
+  progress Int              @default(0)
 
   /// Confidence agregada por dimensão, escrita pelo worker no fim de cada etapa:
   /// { "player_tracking": 0.91, "field_detection": 0.96, "ball_tracking": 0.72 }.
@@ -4609,7 +4669,7 @@ model PlayerIdentity {
   /// Chave do embedding médio de aparência no Storage — apagar é apagar um ficheiro.
   embeddingKey String?
   /// Resumo para leitura: recortes representativos, grupo de cor, sinais usados na proposta.
-  summary Json?
+  summary      Json?
 
   tracks PlayerTrack[]
 
@@ -4784,13 +4844,13 @@ model PlayerIdentityProfile {
 /// verificação de compatibilidade comercial é um facto do modelo, não uma
 /// lembrança de quem o integrou.
 model AIModelVersion {
-  id      String @id @default(cuid())
+  id         String  @id @default(cuid())
   /// "detection" | "tracking" | "reid" | "field" | "ball" | "quality".
-  task    String
-  name    String
-  version String
-  license String
-  source  String?
+  task       String
+  name       String
+  version    String
+  license    String
+  source     String?
   /// Pesos afinados nossos, quando existirem. Nulo = pesos públicos de origem.
   weightsKey String?
   active     Boolean @default(true)
@@ -4799,4 +4859,204 @@ model AIModelVersion {
   createdAt DateTime @default(now())
 
   @@unique([task, name, version])
+}
+
+/**
+ * --------------------------------------------------------------------------
+ */
+/**
+ * Documentos legais e aceitações
+ */
+/**
+ * --------------------------------------------------------------------------
+ */
+
+/// Que documento é. É um enum e não texto livre porque cada tipo tem um lugar
+/// fixo no produto — um link no rodapé, uma linha no gate — e o código precisa
+/// de os nomear. O que é **dado** (audiências, texto, versão) vive na linha.
+enum LegalDocumentType {
+  /// Termos de Serviço — o contrato com o clube.
+  TERMS_OF_SERVICE
+  /// Termos de Utilização — o que cada pessoa aceita para usar a plataforma.
+  TERMS_OF_USE
+  PRIVACY_POLICY
+  COOKIE_POLICY
+  /// Acordo de Tratamento de Dados — o clube é responsável, nós subcontratante.
+  DPA
+  ACCEPTABLE_USE
+  /// Termos da Academias AI — vídeo, imagem, identificação de jogadores.
+  /// Existe como tipo desde já; publica-se quando o produto jurídico existir.
+  ACADEMIAS_AI_TERMS
+  DATA_RETENTION_POLICY
+}
+
+enum LegalDocumentStatus {
+  /// Em escrita. Ninguém de fora o vê.
+  DRAFT
+  /// Publicado. Passa a ser **a versão em vigor** do seu tipo a partir de `effectiveAt`.
+  PUBLISHED
+  /// Retirado sem apagar: as aceitações continuam a apontar para ele.
+  RETIRED
+}
+
+/// A quem vincula a aceitação.
+enum LegalScope {
+  /// Ao clube, por quem o pode representar. Uma aceitação por clube chega.
+  CLUB
+  /// À pessoa. Vale em todos os clubes onde ela esteja.
+  USER
+}
+
+/// Quem tem de aceitar. Uma pessoa está numa audiência de cada vez, por clube —
+/// ver `audienceOf` em `legal.service.ts`.
+enum LegalAudience {
+  /// Quem tem `legal:club` — pode vincular o clube.
+  CLUB_OWNER
+  /// O resto do pessoal com acesso à consola.
+  STAFF
+  /// Encarregados de educação e atletas, na app do clube.
+  FAMILY
+  /// Sócios com ficha reclamada, na app do clube.
+  MEMBER
+}
+
+/// Que gesto se pede. Uma política de cookies não se "aceita" numa checkbox —
+/// o consentimento de cookies, quando for preciso, é outro mecanismo.
+enum LegalAcceptanceKind {
+  /// "Aceito" — vincula.
+  ACCEPT
+  /// "Li" — toma conhecimento.
+  ACKNOWLEDGE
+  /// Só se publica. Sem checkbox, sem gate.
+  NONE
+}
+
+enum LegalAcceptanceContext {
+  /// A primeira entrada de uma conta acabada de criar.
+  SIGNUP
+  /// Uma conta que já existia e nunca tinha aceitado este tipo.
+  LOGIN_GATE
+  /// Já tinha aceitado uma versão anterior.
+  TERMS_UPDATE
+  /// Aceitou pelas definições, sem gate.
+  SETTINGS
+}
+
+/// Uma versão de um documento legal.
+///
+/// ## Uma linha por versão
+///
+/// "Termos de Serviço v1.0" e "v1.1" são duas linhas. Nunca se edita o texto de
+/// uma versão publicada: quem aceitou v1.0 aceitou **aquele** texto, e o
+/// `contentHash` guardado na aceitação tem de continuar a bater. Corrigir uma
+/// gralha numa versão em vigor é publicar outra.
+///
+/// ## A versão em vigor
+///
+/// Não há coluna `isCurrent`. A versão em vigor de um tipo é a `PUBLISHED` com o
+/// `effectiveAt` mais recente que já passou — derivada a cada leitura (com cache
+/// curta no serviço). Uma coluna guardada divergia no dia em que alguém
+/// publicasse duas versões com datas futuras.
+///
+/// ## Global, e só de leitura para as academias
+///
+/// Os documentos são os mesmos para todos os clubes. A RLS deixa o papel
+/// `academia_app` ler só o que está publicado; escrever é da plataforma, pela
+/// ligação dela. Ver a migração `20260911120000_documentos_legais`.
+model LegalDocument {
+  id          String            @id @default(cuid())
+  type        LegalDocumentType
+  /// "1.0", "1.1", "2.0". Texto, ordenado por `effectiveAt` e não por si.
+  version     String
+  title       String
+  /// Uma frase para o gate e para o índice: o que este documento é.
+  summary     String?
+  /// Markdown. Ver `legal-markdown.ts` — subconjunto sem HTML.
+  content     String
+  /// SHA-256 do `content`, em hexadecimal. Copiado para cada aceitação.
+  contentHash String
+
+  status         LegalDocumentStatus @default(DRAFT)
+  scope          LegalScope
+  /// Quem tem de aceitar esta versão. Vazio = ninguém é obrigado (só se publica).
+  audiences      LegalAudience[]     @default([])
+  acceptanceKind LegalAcceptanceKind @default(ACCEPT)
+
+  /// A partir de quando vale. Pode ser futura: publica-se hoje, entra em vigor
+  /// daqui a 30 dias, e até lá a anterior continua a valer.
+  effectiveAt DateTime
+  publishedAt DateTime?
+  retiredAt   DateTime?
+
+  /// Quem a escreveu e quem a publicou. Sem FK à `PlatformAdmin` de propósito:
+  /// a tabela é lida pelo papel das academias, e uma FK obrigava-o a ver a dos
+  /// administradores. Guarda-se o id como texto.
+  createdById   String?
+  publishedById String?
+
+  /// O que mudou face à anterior — para o gate poder dizer "o que é novo".
+  changeNote String?
+
+  acceptances LegalAcceptance[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([type, version])
+  @@index([type, status, effectiveAt])
+}
+
+/// Uma aceitação. **Append-only**: nunca se edita nem apaga. O histórico de uma
+/// pessoa é a lista das linhas dela.
+///
+/// ## Porque não está na `Membership`
+///
+/// Uma aceitação de âmbito `USER` é da pessoa e vale em todos os clubes onde ela
+/// esteja — um encarregado com filhos em dois clubes lê a Política de Privacidade
+/// uma vez. E o histórico de versões não cabe numa coluna.
+///
+/// ## Isolamento
+///
+/// Fica de fora de `TENANT_SCOPED` de propósito. A política de RLS deixa ver as
+/// linhas do clube corrente **ou** as do próprio utilizador (`app.user_id`, posto
+/// pelo serviço dentro de `runAs`) — e mais nenhuma. Ver a migração.
+model LegalAcceptance {
+  id     String @id @default(cuid())
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  /// O clube em cujo contexto se aceitou. Nulo só se algum dia houver aceitação
+  /// fora de qualquer clube; hoje é sempre preenchido.
+  academyId String?
+  academy   Academy? @relation(fields: [academyId], references: [id], onDelete: SetNull)
+
+  /// A membership com que se aceitou, quando havia uma. Sem FK: uma membership
+  /// apagada não pode levar a aceitação atrás.
+  membershipId String?
+
+  documentId String
+  document   LegalDocument @relation(fields: [documentId], references: [id])
+
+  /// Desnormalizados de propósito: a prova tem de sobreviver a tudo, incluindo
+  /// a uma migração de dados dos documentos.
+  documentType    LegalDocumentType
+  documentVersion String
+  contentHash     String
+  scope           LegalScope
+
+  /// `true` quando vincula o clube — exige `legal:club` e a confirmação
+  /// explícita de que a pessoa o pode representar.
+  onBehalfOfClub Boolean @default(false)
+
+  context LegalAcceptanceContext
+
+  acceptedAt DateTime @default(now())
+  ip         String?
+  userAgent  String?
+
+  createdAt DateTime @default(now())
+
+  @@index([userId, documentType])
+  @@index([academyId, documentType])
+  @@index([documentId])
 }

@@ -27,6 +27,8 @@ export {
   Eye,
   /* Sócios: o cartão é o que o clube emite e o sócio guarda. */
   IdCard,
+  /* A categoria de sócio — a etiqueta que lhe diz o preço da quota. */
+  Tags as Tag,
   Clapperboard as Film,
   Bell,
   Plus,

@@ -1,7 +1,7 @@
-import { Body, Controller, Get, Headers, Param, Post, Res } from "@nestjs/common";
+import { Body, Controller, Get, Headers, Param, Post, Req, Res } from "@nestjs/common";
 import { Throttle } from "@nestjs/throttler";
-import { IsIn, IsOptional, IsString, Length } from "class-validator";
-import type { Response } from "express";
+import { IsBoolean, IsIn, IsOptional, IsString, Length } from "class-validator";
+import type { Request, Response } from "express";
 import { Public } from "../auth/auth.guard";
 import { ClubAppService } from "./club-app.service";
 
@@ -23,6 +23,10 @@ class VotarDto {
 class RegistarSocioDto {
   @IsString() @Length(8, 200)
   password!: string;
+
+  /** Aceita os documentos legais em vigor para os sócios. */
+  @IsOptional() @IsBoolean()
+  acceptLegal?: boolean;
 }
 
 /**
@@ -127,7 +131,10 @@ export class ClubAppController {
   /** Escolher a password e reclamar a ficha. Devolve a sessão — entra já dentro. */
   @Throttle({ default: { ttl: 60_000, limit: 5 } })
   @Post("api/convite-socio/:token/registar")
-  registar(@Param("token") token: string, @Body() body: RegistarSocioDto) {
-    return this.app.conviteRegistar(token, body.password);
+  registar(@Param("token") token: string, @Body() body: RegistarSocioDto, @Req() req: Request) {
+    const ua = req.headers["user-agent"];
+    return this.app.conviteRegistar(token, body.password, body.acceptLegal, {
+      ip: req.ip, userAgent: typeof ua === "string" ? ua : undefined,
+    });
   }
 }

@@ -56,6 +56,37 @@
 
   /* Cabeçalho de painel: título à esquerda, controlos à direita, hairline por
      baixo. Repetido em todos os painéis — é o que dá ritmo à página. */
+  /* Um documento legal em leitura — o gate, as Definições. A estrutura vem do
+     `LegalMarkdown` partilhado; a tipografia é daqui, para ler como o resto. */
+  .legal-prose {
+    @apply text-body leading-[1.6] text-ink-2;
+  }
+  .legal-prose h2 {
+    @apply mt-7 text-panel text-ink first:mt-0;
+  }
+  .legal-prose h3 {
+    @apply mt-5 text-body font-semibold text-ink;
+  }
+  .legal-prose p {
+    @apply mt-3;
+  }
+  .legal-prose ul,
+  .legal-prose ol {
+    @apply mt-3 space-y-1.5 pl-5;
+  }
+  .legal-prose ul {
+    @apply list-disc;
+  }
+  .legal-prose ol {
+    @apply list-decimal;
+  }
+  .legal-prose strong {
+    @apply font-semibold text-ink;
+  }
+  .legal-prose a {
+    @apply text-ink underline underline-offset-2;
+  }
+
   .panel-head {
     @apply flex items-center justify-between gap-3 border-b border-line px-5 py-3.5;
   }

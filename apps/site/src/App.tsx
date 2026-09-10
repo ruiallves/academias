@@ -6,7 +6,7 @@ import Home from "@/routes/Home";
 import Software from "@/routes/Software";
 import Planos from "@/routes/Planos";
 import Contactos from "@/routes/Contactos";
-import Legal from "@/routes/Legal";
+import Legal, { LegacyLegal } from "@/routes/Legal";
 
 /**
  * Mudar de página põe a leitura no topo — excepto quando há uma âncora, que é
@@ -37,11 +37,14 @@ export default function App() {
           <Route path="/software" element={<Software />} />
           <Route path="/planos" element={<Planos />} />
           <Route path="/contactos" element={<Contactos />} />
-          {/* Os quatro documentos partilham a mesma página. */}
-          <Route path="/termos" element={<Legal />} />
-          <Route path="/privacidade" element={<Legal />} />
-          <Route path="/cookies" element={<Legal />} />
-          <Route path="/dpa" element={<Legal />} />
+          {/* Os documentos legais vêm da API, com versão. Os caminhos antigos redireccionam. */}
+          <Route path="/legal" element={<Legal />} />
+          <Route path="/legal/:slug" element={<Legal />} />
+          <Route path="/legal/:slug/:version" element={<Legal />} />
+          <Route path="/termos" element={<LegacyLegal to="termos-de-servico" />} />
+          <Route path="/privacidade" element={<LegacyLegal to="privacidade" />} />
+          <Route path="/cookies" element={<LegacyLegal to="cookies" />} />
+          <Route path="/dpa" element={<LegacyLegal to="dpa" />} />
           <Route path="*" element={<Home />} />
         </Routes>
       </main>

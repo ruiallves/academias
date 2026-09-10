@@ -41,12 +41,6 @@ export class MembersController {
     return this.members.cardInfo(req.ctx, token);
   }
 
-  /** Gerar as quotas do período corrente — idempotente, diz quantas criou. */
-  @Post("fees/generate")
-  generateFees(@Req() req: AuthedRequest) {
-    return this.fees.gerar(req.ctx);
-  }
-
   /**
    * Ajuste manual do estado de uma quota (paga / por pagar / anulada) — o
    * menu da ficha, igual ao das mensalidades dos atletas. Ver
@@ -147,12 +141,10 @@ export class MembersController {
     return this.invites.enviarMuitos(req.ctx, body.ids);
   }
 
-  /** Ligar a ficha a uma conta que já existe neste clube — sem mandar email. */
-  @Post(":id/link-account")
-  linkAccount(@Req() req: AuthedRequest, @Param("id") id: string) {
-    return this.invites.ligarConta(req.ctx, id);
-  }
-
+  /**
+   * Desligar a ficha da conta. Não há `POST` simétrico: a ligação é automática,
+   * pelo email da ficha — ver `member-account-link.ts`.
+   */
   @Delete(":id/link-account")
   unlinkAccount(@Req() req: AuthedRequest, @Param("id") id: string) {
     return this.invites.desligarConta(req.ctx, id);

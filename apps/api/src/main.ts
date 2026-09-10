@@ -134,7 +134,9 @@ async function bootstrap() {
       process.env.CONSOLE_ORIGIN ?? "http://localhost:5173",
       process.env.FAMILY_ORIGIN ?? "http://localhost:5174",
       process.env.PLATFORM_ORIGIN ?? "http://localhost:5180",
-      ...(process.env.SITE_ORIGIN ?? "").split(","),
+      // O site também fala com a API — o formulário de contacto e os documentos
+      // legais. Em desenvolvimento corre em :5190 (ver `apps/site/vite.config.ts`).
+      ...(process.env.SITE_ORIGIN ?? "http://localhost:5190").split(","),
       ...(process.env.DEV_LAN_ORIGINS ?? "").split(","),
     ]
       .map((o) => o?.trim())

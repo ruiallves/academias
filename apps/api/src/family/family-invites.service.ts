@@ -1,6 +1,7 @@
 import { randomBytes } from "node:crypto";
 import { BadRequestException, ForbiddenException, Injectable, NotFoundException } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
+import { LegalService } from "../legal/legal.service";
 import { PrismaService } from "../prisma/prisma.service";
 import { SupabaseAccountsService } from "../auth/supabase-accounts.service";
 import { MailClient } from "../mail/mail.client";
@@ -62,7 +63,11 @@ export type RegisterInput = {
   relation: string;
   taxId: string;
   birthdate: string;
+  /** Aceita os documentos legais em vigor para as famílias. */
+  acceptLegal?: boolean;
 };
+
+export type RequestMeta = { ip?: string; userAgent?: string };
 
 @Injectable()
 export class FamilyInvitesService {
@@ -71,6 +76,7 @@ export class FamilyInvitesService {
     private readonly accounts: SupabaseAccountsService,
     private readonly config: ConfigService,
     private readonly mail: MailClient,
+    private readonly legal: LegalService,
   ) {}
 
   /* ------------------------------------------------------------------------ */
@@ -295,7 +301,7 @@ export class FamilyInvitesService {
    * segunda membership, e voltar a registar o mesmo educando não parte nada — é o
    * que acontece quando alguém carrega duas vezes num telemóvel com rede fraca.
    */
-  async register(token: string, dto: RegisterInput) {
+  async register(token: string, dto: RegisterInput, meta: RequestMeta = {}) {
     const academyId = await this.academyOf(token);
 
     const email = dto.email.trim().toLowerCase();
@@ -307,6 +313,9 @@ export class FamilyInvitesService {
     if (name.length < 2) throw new BadRequestException("Falta o teu nome");
 
     const athleteId = await this.matchAthlete(academyId, dto.taxId, dto.birthdate);
+
+    // Os termos antes da conta — a conta no Supabase não entra em rollback nenhum.
+    const docs = await this.legal.assertSignupConsent(["FAMILY"], dto, academyId);
 
     const account = await this.accounts.createOrSignIn(email, dto.password, name);
 
@@ -354,6 +363,11 @@ export class FamilyInvitesService {
         where: { token },
         data: { usedCount: { increment: 1 }, lastUsedAt: new Date() },
       });
+
+      // As aceitações da criação de conta — contexto SIGNUP, na mesma transação.
+      await this.legal.acceptAtSignup(
+        db, { userId: created[0].id, academyId, membershipId: membership.id, audiences: ["FAMILY"] }, docs, meta,
+      );
 
       const academy = await db.academy.findFirst({ where: { id: academyId }, select: { slug: true, name: true } });
       const athlete = await db.athlete.findFirst({ where: { id: athleteId }, select: { name: true } });

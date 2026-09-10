@@ -10,13 +10,13 @@ import { MESES, createMemberFees, memberFeePeriods, type MemberFeePeriods } from
  *
  * ## O que isto resolve
  *
- * "Gerar quotas", na lista, trabalha sobre o livro todo e tira o valor da
- * categoria. É o dia a dia, e deixa três buracos que só se tapavam com
- * ginástica:
+ * No dia 1 de cada mês nascem sozinhas as quotas do mês corrente, ao preço da
+ * categoria de cada sócio. É o dia a dia, e deixa três buracos que só se
+ * tapavam com ginástica:
  *
- * - o sócio **sem categoria com preço**, que a geração salta em silêncio;
+ * - o sócio **sem categoria com preço**, que a emissão salta em silêncio;
  * - o **acerto de atrasos** de quem entrou a meio do ano e deve três meses,
- *   que obrigava a gerar para a academia inteira só para apanhar um;
+ *   que a emissão do mês corrente nunca vai apanhar;
  * - o **valor diferente do da categoria** — a quota reduzida acordada com
  *   aquele sócio —, que não tinha onde ser escrito.
  *

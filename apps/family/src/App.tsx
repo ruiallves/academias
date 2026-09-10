@@ -17,11 +17,13 @@ import { Avatar, cx } from "@/ui";
 import { ClubMark } from "@/ClubMark";
 import Today from "@/screens/Today";
 import Agenda from "@/screens/Agenda";
+import Evento from "@/screens/Evento";
 import Payments from "@/screens/Payments";
 import Athlete from "@/screens/Athlete";
 import Notifications from "@/screens/Notifications";
 import Onboarding from "@/screens/Onboarding";
 import Profile from "@/screens/Profile";
+import { LegalGate } from "@/screens/LegalGate";
 
 /* -------------------------------------------------------------------------- */
 /* Educando activo                                                             */
@@ -94,10 +96,6 @@ export default function App() {
     if (readToken()) void loadContexts();
   }, [session]);
 
-  useEffect(() => {
-    if (areaActiva === "FAMILY" && readToken()) void load();
-  }, [areaActiva]);
-
   // O primeiro filho, até alguém escolher outro. Segue os dados: antes de a
   // academia chegar não há filho nenhum para escolher.
   const child = store.children.find((c) => c.id === childId) ?? store.children[0];
@@ -122,6 +120,59 @@ export default function App() {
     if (contextsError) return <Failed message={contextsError} />;
     return <Splash />;
   }
+
+  /*
+   * A porta legal, antes de qualquer vista.
+   *
+   * Depois dos contextos (é a única pergunta que o servidor responde a quem
+   * tem termos por aceitar) e antes de escolher área: com documentos pendentes
+   * o servidor recusa tudo o resto, e a app ficava num ecrã de erro sem saber
+   * porquê. Ver `screens/LegalGate.tsx`.
+   */
+  return (
+    <LegalGate>
+      <Dentro
+        areaActiva={areaActiva}
+        contexts={contexts}
+        session={session}
+        store={store}
+        value={value}
+        onboarded={onboarded}
+        setOnboarded={setOnboarded}
+        pathname={pathname}
+      />
+    </LegalGate>
+  );
+}
+
+/** A app depois das portas — sessão, contextos e termos. */
+function Dentro({
+  areaActiva,
+  contexts,
+  session,
+  store,
+  value,
+  onboarded,
+  setOnboarded,
+  pathname,
+}: {
+  areaActiva: "FAMILY" | "MEMBER" | "STAFF" | null;
+  contexts: NonNullable<ReturnType<typeof useContexts>["contexts"]>;
+  session: NonNullable<ReturnType<typeof useSession>>;
+  store: ReturnType<typeof useStore>;
+  value: { child: Child; setChild: (id: string | null) => void } | null;
+  onboarded: boolean;
+  setOnboarded: (v: boolean) => void;
+  pathname: string;
+}) {
+  /*
+   * O arranque da família só depois da porta legal: com termos por aceitar o
+   * servidor recusa o `/api/bootstrap`, e pedi-lo antes era um erro garantido
+   * — e, pior, um recarregamento em ciclo (ver `lib/http.ts`).
+   */
+  useEffect(() => {
+    if (areaActiva === "FAMILY" && readToken()) void load();
+  }, [areaActiva]);
 
   /* Mais do que um contexto e nenhum vestido: "como queres continuar?" */
   if (areaActiva === null) return <EscolherArea name={session.name ?? ""} />;
@@ -177,6 +228,8 @@ export default function App() {
           <Routes>
             <Route path="/" element={<Today />} />
             <Route path="/agenda" element={<Agenda />} />
+            {/* O treino ou o jogo, por dentro — ver `screens/Evento`. */}
+            <Route path="/evento/:kind/:id" element={<Evento />} />
             <Route path="/pagamentos" element={<Payments />} />
             <Route path="/atleta" element={<Athlete />} />
             <Route path="/notificacoes" element={<Notifications />} />

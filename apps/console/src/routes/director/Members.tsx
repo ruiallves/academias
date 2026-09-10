@@ -4,11 +4,10 @@ import { PageHeader } from "@/components/Shell";
 import { SearchInput } from "@/components/filters";
 import { DataTable, Empty, Loading, Monogram, Panel, Pill, RowLink, cx, type Column, type Tone } from "@/components/primitives";
 import { Dialog, DialogField, dialogInputClass } from "@/components/Dialog";
-import { Download, ExternalLink, Home, Plus, Send, Settings, Trash2, Upload } from "@/lib/icons";
+import { Download, ExternalLink, Home, Plus, Send, Settings, Tag, Trash2, Upload } from "@/lib/icons";
 import { can } from "@/lib/permissions";
 import { useSession } from "@/session";
 import { BulkBar, BulkDeleteDialog } from "@/components/BulkDelete";
-import { SociosAppDialog } from "@/components/SociosAppDialog";
 import { SendInvitesDialog } from "@/components/SendInvitesDialog";
 import { academy } from "@/lib/api";
 import { money, periodLabel, periodShort, shortDate } from "@/lib/format";
@@ -34,7 +33,6 @@ import {
   type MemberTier,
   type DocumentKind,
   type Sex,
-  generateFees,
 } from "@/lib/members";
 
 /**
@@ -62,31 +60,7 @@ export default function Members() {
   const [data, setData] = useState<{ members: MemberRow[]; counts: Partial<Record<MemberStatus, number>> } | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [pageOpen, setPageOpen] = useState(false);
-  const [appOpen, setAppOpen] = useState(false);
-  /*
-   * "Gerar quotas" responde no próprio botão — quantas criou, ou que já estava
-   * tudo. É idempotente no servidor, por isso carregar duas vezes não assusta.
-   */
-  const [quotas, setQuotas] = useState<string | null>(null);
-  const [aGerar, setAGerar] = useState(false);
-
-  async function gerarQuotas() {
-    if (aGerar) return;
-    setAGerar(true);
-    setQuotas(null);
-    try {
-      const r = await generateFees();
-      setQuotas(
-        r.created === 0
-          ? "As quotas do período já estavam todas lançadas."
-          : `${r.created} ${r.created === 1 ? "quota lançada" : "quotas lançadas"} (${r.members} sócios activos com categoria).`,
-      );
-    } catch (e) {
-      setQuotas(e instanceof Error ? e.message : "Não foi possível gerar as quotas.");
-    } finally {
-      setAGerar(false);
-    }
-  }
+  const [tiersOpen, setTiersOpen] = useState(false);
   const [importOpen, setImportOpen] = useState(false);
   /** O envio do convite da app aos sócios escolhidos na lista. */
   const [aConvidar, setAConvidar] = useState(false);
@@ -270,17 +244,15 @@ export default function Members() {
           Ver a página
         </a>
         {mayWrite && (
+          <button type="button" className="ctl-outline" onClick={() => setTiersOpen(true)}>
+            <Tag className="size-3.5" strokeWidth={1.75} />
+            Categorias
+          </button>
+        )}
+        {mayWrite && (
           <button type="button" className="ctl-outline" onClick={() => setPageOpen(true)}>
             <Settings className="size-3.5" strokeWidth={1.75} />
             Gerir página de inscrição
-          </button>
-        )}
-        <button type="button" className="ctl-outline" onClick={() => setAppOpen(true)}>
-          App do clube
-        </button>
-        {mayWrite && (
-          <button type="button" className="ctl-outline" onClick={() => void gerarQuotas()} disabled={aGerar}>
-            {aGerar ? "A gerar…" : "Gerar quotas"}
           </button>
         )}
         {mayWrite && (
@@ -290,10 +262,6 @@ export default function Members() {
           </button>
         )}
       </PageHeader>
-
-      {quotas && (
-        <p className="mb-3 rounded-[var(--radius-control)] bg-sunken px-3 py-2 text-meta text-ink-2">{quotas}</p>
-      )}
 
       {/*
         Os pendentes primeiro e com contador: uma inscrição feita no site e
@@ -388,7 +356,7 @@ export default function Members() {
         />
       )}
 
-      {appOpen && <SociosAppDialog mayWrite={mayWrite} onClose={() => setAppOpen(false)} />}
+      {tiersOpen && <TiersDialog mayWrite={mayWrite} onClose={() => setTiersOpen(false)} />}
       {pageOpen && <PageDialog mayWrite={mayWrite} onClose={() => setPageOpen(false)} />}
       {importOpen && <ImportDialog onClose={() => setImportOpen(false)} onDone={load} />}
       {newOpen && <NewMemberDialog onClose={() => setNewOpen(false)} onCreated={load} />}
@@ -462,13 +430,23 @@ function Chip({
  * definições, as categorias aqui — e ninguém que quisesse mudar a página adivinhava
  * que tinha de ir a dois sítios.
  */
+/**
+ * A página pública de inscrição — a frase, a explicação e os pontos.
+ *
+ * ## As categorias saíram daqui
+ *
+ * Eram o segundo separador, e o sítio estava errado. Uma categoria não é
+ * apresentação: é quanto é que um sócio paga por mês, é o que a emissão
+ * automática lê no dia 1, e é o que a ficha de cada sócio aponta. Metade das
+ * vezes que alguém as procura não tem nada que ver com a página pública —
+ * tinha de saber que estavam escondidas atrás de "Gerir página de inscrição"
+ * para lá chegar. Agora têm botão próprio, ao lado.
+ */
 function PageDialog({ mayWrite, onClose }: { mayWrite: boolean; onClose: () => void }) {
-  const [tab, setTab] = useState<"copy" | "tiers">("copy");
-
   return (
     <Dialog
       title="Gerir página de inscrição"
-      subtitle="O que quem chega ao clube lê e escolhe"
+      subtitle="O que quem chega ao clube lê"
       icon={<Settings className="size-4" strokeWidth={1.75} />}
       onClose={onClose}
       width={640}
@@ -479,16 +457,35 @@ function PageDialog({ mayWrite, onClose }: { mayWrite: boolean; onClose: () => v
         </button>
       }
     >
-      <div className="flex gap-1.5 border-b border-line px-5 py-3">
-        <Chip active={tab === "copy"} onClick={() => setTab("copy")}>
-          Apresentação
-        </Chip>
-        <Chip active={tab === "tiers"} onClick={() => setTab("tiers")}>
-          Categorias
-        </Chip>
-      </div>
+      <CopyForm mayWrite={mayWrite} />
+    </Dialog>
+  );
+}
 
-      {tab === "copy" ? <CopyForm mayWrite={mayWrite} /> : <TiersList mayWrite={mayWrite} />}
+/**
+ * As categorias de sócio — o preço por mês de cada uma.
+ *
+ * Diálogo próprio, e não um separador da página de inscrição: é daqui que sai
+ * o valor de todas as quotas que nascem no dia 1 de cada mês. Uma categoria
+ * sem preço é um sócio sem quota — em silêncio, porque a emissão salta quem
+ * não tem valor que se possa afirmar.
+ */
+function TiersDialog({ mayWrite, onClose }: { mayWrite: boolean; onClose: () => void }) {
+  return (
+    <Dialog
+      title="Categorias de sócio"
+      subtitle="O valor da quota mensal de cada categoria"
+      icon={<Tag className="size-4" strokeWidth={1.75} />}
+      onClose={onClose}
+      width={640}
+      labelledBy="tiers"
+      footer={
+        <button type="button" className="ctl-ghost" onClick={onClose}>
+          Fechar
+        </button>
+      }
+    >
+      <TiersList mayWrite={mayWrite} />
     </Dialog>
   );
 }

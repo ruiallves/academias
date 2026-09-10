@@ -153,6 +153,19 @@ export type Permission =
    * correções; `read` vê relatórios e insights. Gémea do servidor.
    */
   | "ai:read" | "ai:write"
+  /**
+   * Aceitar os termos em nome do clube.
+   *
+   * Termos de Serviço e Acordo de Tratamento de Dados vinculam o **clube**, não
+   * a pessoa que carrega no botão. Um treinador não representa o clube, e por
+   * isso não pode ser ele a aceitar um contrato por ele — mesmo que seja o
+   * único que entra na consola naquela semana. Quem tem isto vê, no gate, os
+   * documentos contratuais por aceitar; quem não tem vê só os pessoais.
+   *
+   * Por omissão: presidência e direção, como `settings:write`. Decide-se num
+   * cargo, não pessoa a pessoa — ver `ADMIN_AREAS` no cliente.
+   */
+  | "legal:club"
   | "clinical:write";
 
 export type Role =
@@ -217,6 +230,8 @@ const WRITE_ALL: Permission[] = [
   "inventory:write",
   "finance:write",
   "ai:write",
+  // Vincular o clube aos termos: presidência e direção, como `settings:write`.
+  "legal:club",
 ];
 
 export const ROLE_PERMISSIONS: Record<Role, Permission[]> = {

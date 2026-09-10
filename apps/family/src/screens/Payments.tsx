@@ -1,19 +1,16 @@
 import { useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import {
-  Apple,
   Banknote,
   Check,
   CheckCircle2,
   ChevronRight,
   Copy,
-  CreditCard,
   Landmark,
   Loader,
   ShieldCheck,
   Smartphone,
   TriangleAlert,
-  Wallet,
 } from "lucide-react";
 import { apiGet, apiPost } from "@/lib/http";
 import { reload, useStore, type Payment } from "@/lib/store";
@@ -402,14 +399,58 @@ type StartedPayment = {
 
 type Mandate = { id: string; debtorName: string; ibanTail: string; status: "PENDING" | "ACTIVE" } | null;
 
+/**
+ * As chaves de todos os métodos — inclusive os que hoje não se oferecem.
+ *
+ * O tipo é o do produto inteiro e não o da lista de hoje, de propósito: sem
+ * isto, tirar o cartão da lista fazia o TypeScript estreitar `key` para dois
+ * valores e declarar **morto** todo o código que trata dos outros — o mandato
+ * de débito directo, o regresso do formulário, o ecrã do redireccionamento.
+ * Esse código não morreu; está à espera. Ver a nota em `METODOS`.
+ */
+type MetodoKey = "MBWAY" | "MULTIBANCO" | "CARD" | "GOOGLE_PAY" | "APPLE_PAY" | "DIRECT_DEBIT" | "PAYSAFECARD";
+
+/** Como o método se comporta depois do toque: paga ali, sai para fora, ou debita. */
+type MetodoKind = "direct" | "redirect" | "debit";
+
+type Metodo = {
+  key: MetodoKey;
+  label: string;
+  hint: string | null;
+  icon: typeof Smartphone;
+  kind: MetodoKind;
+};
+
 /** Um método por linha — nome, ícone, e como se comporta. */
-const METODOS = [
+const METODOS: Metodo[] = [
   { key: "MBWAY", label: "MB Way", hint: "Confirmas no telemóvel", icon: Smartphone, kind: "direct" },
   { key: "MULTIBANCO", label: "Referência Multibanco", hint: "Pagas na caixa ou no homebanking", icon: Landmark, kind: "direct" },
-  { key: "CARD", label: "Cartão", hint: "Visa e Mastercard", icon: CreditCard, kind: "redirect" },
-  { key: "GOOGLE_PAY", label: "Google Pay", hint: null, icon: Wallet, kind: "redirect" },
-  { key: "APPLE_PAY", label: "Apple Pay", hint: null, icon: Apple, kind: "redirect" },
-  { key: "DIRECT_DEBIT", label: "Débito direto", hint: "Autorizas uma vez, debita da conta", icon: Banknote, kind: "debit" },
+  /*
+   * Cartão, Google Pay, Apple Pay e débito directo — fora, por enquanto.
+   *
+   * Decisão de produto, não avaria: os quatro estão implementados e a funcionar
+   * (o cliente da euPago sabe criá-los, as taxas estão na tabela, o webhook
+   * liquida-os como aos outros). A app oferece, para já, só os dois que
+   * qualquer pai português usa sem pensar — e menos escolhas num ecrã de
+   * pagamento é menos gente a desistir a meio.
+   *
+   * **A lista que manda é a do servidor** (`METODOS_ATIVOS`, em
+   * `billing.service.ts`): esconder um botão não impede ninguém de chamar o
+   * endpoint à mão, e do outro lado está dinheiro a sair da conta de um pai.
+   * Esta lista decide o que se vê; aquela decide o que se pode.
+   *
+   * Voltar a ligar um é repor a linha aqui **e** acrescentá-lo lá. O resto do
+   * ecrã continua a saber lidar com eles — o mandato de débito directo, o
+   * regresso do formulário do cartão, tudo de pé.
+   *
+   *   { key: "CARD", label: "Cartão", hint: "Visa e Mastercard", icon: CreditCard, kind: "redirect" },
+   *   { key: "GOOGLE_PAY", label: "Google Pay", hint: null, icon: Wallet, kind: "redirect" },
+   *   { key: "APPLE_PAY", label: "Apple Pay", hint: null, icon: Apple, kind: "redirect" },
+   *   { key: "DIRECT_DEBIT", label: "Débito direto", hint: "Autorizas uma vez, debita da conta", icon: Banknote, kind: "debit" },
+   *
+   * Os ícones deles saíram do `import` com as linhas (`Apple`, `CreditCard`,
+   * `Wallet`) — voltam com elas.
+   */
   /*
    * PaySafeCard fora, por enquanto.
    *
@@ -420,7 +461,7 @@ const METODOS = [
    * marcada como não oferecida — voltar a ligá-lo é acrescentar esta linha e
    * pôr `offered: true`.
    */
-] as const;
+];
 
 function MethodSheet({
   charges,

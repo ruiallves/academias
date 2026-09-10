@@ -156,7 +156,7 @@ try {
   const fraca = await call(null, "POST", `/api/convite-socio/${tokenConvite}/registar`, { password: "curta" });
   check("uma password curta é recusada (400)", fraca.status === 400, `${fraca.status}`);
 
-  const registo = await call(null, "POST", `/api/convite-socio/${tokenConvite}/registar`, { password: "academia2026" });
+  const registo = await call(null, "POST", `/api/convite-socio/${tokenConvite}/registar`, { password: "academia2026", acceptLegal: true });
   check("o registo cria a conta e devolve a sessão", registo.status === 201 || registo.status === 200, `${registo.status} ${JSON.stringify(registo.body).slice(0, 140)}`);
   check("com o slug do clube", registo.body?.slug === "life-club");
 
@@ -167,7 +167,7 @@ try {
     ? ((await db.query(`SELECT "authId" FROM "User" WHERE id = $1`, [ligado.userId])).rows[0]?.authId ?? null)
     : null;
 
-  const outraVez = await call(null, "POST", `/api/convite-socio/${tokenConvite}/registar`, { password: "academia2026" });
+  const outraVez = await call(null, "POST", `/api/convite-socio/${tokenConvite}/registar`, { password: "academia2026", acceptLegal: true });
   check("o mesmo link outra vez já não entra (404)", outraVez.status === 404, `${outraVez.status}`);
 
   /* ------------------------------------------------------------------ */
@@ -179,12 +179,27 @@ try {
   check("com o número no contexto", Boolean(soSocio.body?.contexts?.[0]?.number));
 
   /* ------------------------------------------------------------------ */
-  console.log("\n=== Quotas: geradas da categoria ===");
-  const g1 = await call(director, "POST", "/api/members/fees/generate");
-  check("gerar responde", g1.status === 201 || g1.status === 200, `${g1.status} ${JSON.stringify(g1.body)}`);
-  check("criou pelo menos a do ZZ", (g1.body?.created ?? 0) >= 1, `${g1.body?.created}`);
-  const g2 = await call(director, "POST", "/api/members/fees/generate");
-  check("gerar outra vez não duplica", g2.body?.created === 0, `${g2.body?.created}`);
+  console.log("\n=== Quotas: lançadas da categoria ===");
+  /*
+   * A quota do mês nasce sozinha, no dia 1 — o botão "Gerar quotas" deixou de
+   * existir e a rota com ele. A emissão prova-se em `test-quotas-automaticas.mjs`,
+   * num clube descartável; aqui lança-se à mão a do sócio de teste, que é a
+   * outra porta e a que o resto deste ficheiro precisa.
+   */
+  const foiRota = await call(director, "POST", "/api/members/fees/generate");
+  check("o botão de gerar quotas já não existe (404)", foiRota.status === 404, `${foiRota.status}`);
+
+  const PERIODO = new Date().toISOString().slice(0, 7);
+  const lancou = await call(director, "POST", `/api/members/${memberId}/fees`, {
+    periods: [PERIODO],
+    amountCents: 1000,
+  });
+  check("a direcção lança a quota do mês na ficha", lancou.body?.created === 1, `${lancou.status} ${JSON.stringify(lancou.body)}`);
+  const repetida = await call(director, "POST", `/api/members/${memberId}/fees`, {
+    periods: [PERIODO],
+    amountCents: 1000,
+  });
+  check("lançar o mesmo mês outra vez não duplica", repetida.body?.created === 0, JSON.stringify(repetida.body));
 
   const doZZ = await call(director, "GET", `/api/members/${memberId}/fees`);
   check("a ficha lista a quota", doZZ.body?.length === 1, `${doZZ.body?.length}`);
@@ -345,12 +360,13 @@ try {
   check("o sócio vê o comunicado", noticias.some((n) => n.title === "ZZ Comunicado aos sócios"));
 
   /* ------------------------------------------------------------------ */
-  console.log("\n=== Ligar uma conta que já existe (sem email) ===");
+  console.log("\n=== A ficha liga-se sozinha à conta que já existe ===");
   /*
-   * O caminho que faltava no dia em que os convites foram desligados: uma ficha
-   * de sócio cujo email é o de uma conta que já existe neste clube — o pai que
-   * também é sócio. Ligar é um gesto da direcção, não um emparelhamento
-   * automático, e não manda nada a ninguém.
+   * O pai que também é sócio: a direcção inscreve-o com o email da conta que
+   * ele já tem na app. Não há botão nenhum — a ficha é dele na primeira
+   * ocasião: ao gravar na consola, ou quando ele abre a app. Aqui a ficha
+   * nasce na base (sem passar pela consola, para o teste provar o caminho da
+   * app) e é o `/api/app/contexts` que a reclama.
    */
   const idLigar = `zz_lig_${Date.now().toString(36)}`;
   await db.query(
@@ -359,13 +375,11 @@ try {
     [idLigar, AC],
   );
 
-  const ligou = await call(director, "POST", `/api/members/${idLigar}/link-account`);
-  check("a direcção liga a ficha à conta", ligou.status === 201 || ligou.status === 200, `${ligou.status} ${JSON.stringify(ligou.body).slice(0, 120)}`);
-  check("e diz de quem é a conta", ligou.body?.email === "familia@lifeclub.pt", `${ligou.body?.email}`);
-
   const doisContextos = await call(familia, "GET", "/api/app/contexts");
-  check("o pai passa a ter os dois contextos", doisContextos.body?.contexts?.length === 2, JSON.stringify(doisContextos.body?.contexts));
-  check("família e sócio", ["FAMILY", "MEMBER"].every((t) => doisContextos.body.contexts.some((c) => c.type === t)));
+  check("o pai abre a app e tem os dois contextos", doisContextos.body?.contexts?.length === 2, JSON.stringify(doisContextos.body?.contexts));
+  check("família e sócio", ["FAMILY", "MEMBER"].every((t) => doisContextos.body?.contexts?.some((c) => c.type === t)));
+  const ligada = (await db.query(`SELECT "userId" FROM "Member" WHERE id = $1`, [idLigar])).rows[0];
+  check("e a ficha ficou com dono", Boolean(ligada?.userId), JSON.stringify(ligada));
 
   const outraFicha = `zz_lig2_${Date.now().toString(36)}`;
   await db.query(
@@ -373,32 +387,77 @@ try {
      VALUES ($1, $2, 'ZZ Segunda Ficha', 'familia@lifeclub.pt', 98766, 'ACTIVE', 'secretaria', now())`,
     [outraFicha, AC],
   );
-  const duplicada = await call(director, "POST", `/api/members/${outraFicha}/link-account`);
-  check("uma conta não fica com duas fichas do mesmo clube (400)", duplicada.status === 400, `${duplicada.status}`);
+  const aindaDois = await call(familia, "GET", "/api/app/contexts");
+  check("uma conta não fica com duas fichas do mesmo clube", aindaDois.body?.contexts?.length === 2, JSON.stringify(aindaDois.body?.contexts));
+  const segunda = (await db.query(`SELECT "userId" FROM "Member" WHERE id = $1`, [outraFicha])).rows[0];
+  check("a segunda ficha fica sem dono", segunda?.userId === null, JSON.stringify(segunda));
 
-  const jaLigada = await call(director, "POST", `/api/members/${idLigar}/link-account`);
-  check("ligar a mesma ficha outra vez é recusado (400)", jaLigada.status === 400, `${jaLigada.status}`);
+  /* Uma conta de outro clube com o mesmo email não se cola: só quem tem vínculo aqui. */
+  const idForasteiro = `zz_lig3_${Date.now().toString(36)}`;
+  const forasteiro = (await db.query(
+    `SELECT u.email FROM "User" u
+      WHERE NOT EXISTS (SELECT 1 FROM "Membership" m WHERE m."userId" = u.id AND m."academyId" = $1)
+        AND NOT EXISTS (SELECT 1 FROM "Member" mb WHERE mb."userId" = u.id AND mb."academyId" = $1)
+      LIMIT 1`, [AC])).rows[0];
+  if (forasteiro) {
+    await db.query(
+      `INSERT INTO "Member" (id, "academyId", name, email, number, status, source, "updatedAt")
+       VALUES ($1, $2, 'ZZ Forasteiro', $3, 98767, 'ACTIVE', 'secretaria', now())`,
+      [idForasteiro, AC, forasteiro.email],
+    );
+    const editada = await call(director, "PATCH", `/api/members/${idForasteiro}`, { email: forasteiro.email });
+    const semDono = (await db.query(`SELECT "userId" FROM "Member" WHERE id = $1`, [idForasteiro])).rows[0];
+    check("uma conta sem vínculo neste clube não é ligada pela consola", editada.status === 200 && semDono?.userId === null, `${editada.status} ${JSON.stringify(semDono)}`);
+    await db.query(`DELETE FROM "Member" WHERE id = $1`, [idForasteiro]);
+  } else {
+    console.log("  SALTO — não há nenhuma conta sem vínculo neste clube para o caso do forasteiro");
+  }
 
-  const porTreinador = await call(await login("treinador@lifeclub.pt"), "POST", `/api/members/${idLigar}/link-account`);
-  check("um treinador não liga contas (403)", porTreinador.status === 403, `${porTreinador.status}`);
+  const ligarAntigo = await call(director, "POST", `/api/members/${idLigar}/link-account`);
+  check("o botão antigo de ligar já não existe (404)", ligarAntigo.status === 404, `${ligarAntigo.status}`);
+
+  const porTreinador = await call(await login("treinador@lifeclub.pt"), "DELETE", `/api/members/${idLigar}/link-account`);
+  check("um treinador não desliga contas (403)", porTreinador.status === 403, `${porTreinador.status}`);
 
   const desligou = await call(director, "DELETE", `/api/members/${idLigar}/link-account`);
-  check("e desliga-se se foi engano", desligou.status === 200, `${desligou.status}`);
+  check("a direcção desliga se foi engano", desligou.status === 200, `${desligou.status}`);
+  await db.query(`UPDATE "Member" SET email = 'zz.outro@exemplo.pt' WHERE id = $1`, [idLigar]);
+  await db.query(`DELETE FROM "Member" WHERE id = $1`, [outraFicha]);
   const voltouAUm = await call(familia, "GET", "/api/app/contexts");
-  check("o contexto de sócio desaparece", voltouAUm.body?.contexts?.length === 1, JSON.stringify(voltouAUm.body?.contexts));
+  check("com o email corrigido, o contexto de sócio desaparece", voltouAUm.body?.contexts?.length === 1, JSON.stringify(voltouAUm.body?.contexts));
 
-  console.log("\n=== Os convites de sócio estão desligados ===");
+  /* O caminho da consola: a ficha muda pela API e liga-se ao gravar. */
+  const corrigida = await call(director, "PATCH", `/api/members/${idLigar}`, { email: "familia@lifeclub.pt" });
+  const ligadaAoGravar = (await db.query(`SELECT "userId" FROM "Member" WHERE id = $1`, [idLigar])).rows[0];
+  check("ao gravar o email na consola, a ficha liga-se logo", corrigida.status === 200 && Boolean(ligadaAoGravar?.userId), `${corrigida.status} ${JSON.stringify(ligadaAoGravar)}`);
+  await db.query(`UPDATE "Member" SET "userId" = NULL, email = 'zz.outro@exemplo.pt' WHERE id = $1`, [idLigar]);
+
+  /* Uma ficha sem dono e com email, para o bloco dos convites. */
+  await db.query(
+    `INSERT INTO "Member" (id, "academyId", name, email, number, status, source, "updatedAt")
+     VALUES ($1, $2, 'ZZ Segunda Ficha', 'zz.convite@exemplo.pt', 98766, 'ACTIVE', 'secretaria', now())`,
+    [outraFicha, AC],
+  );
+
+  console.log("\n=== Os convites de sócio ===");
   /*
    * O interruptor é `MEMBER_INVITES_ENABLED` e nasce desligado (ver
-   * `MemberInvitesService.activo`). Enquanto assim for, esta é a asserção certa;
-   * no dia em que os convites forem ligados é este bloco que passa a esperar
-   * 200 — e a falha aqui é o lembrete de que alguém mexeu no interruptor.
+   * `MemberInvitesService.activo`). Desligado, o botão recusa com uma frase.
+   * **Ligado, este bloco salta**: o botão mandava um email a sério pelo
+   * Resend, e um teste não manda correio a ninguém.
    */
-  const conviteOff = await call(director, "POST", `/api/members/${outraFicha}/invite`);
-  check("o botão de convite recusa com uma frase (400)", conviteOff.status === 400, `${conviteOff.status}`);
-  check("e diz que estão desligados", String(conviteOff.body?.message ?? "").includes("desligados"), `${conviteOff.body?.message}`);
-  const semToken = (await db.query(`SELECT "inviteTokenHash" FROM "Member" WHERE id = $1`, [outraFicha])).rows[0];
-  check("e não deixa um token órfão na ficha", semToken?.inviteTokenHash === null);
+  const convitesLigados = (() => {
+    try { return env("MEMBER_INVITES_ENABLED").toLowerCase() === "true"; } catch { return false; }
+  })();
+  if (convitesLigados) {
+    console.log("  SALTO — MEMBER_INVITES_ENABLED=true no .env: não se carrega no botão para não mandar email");
+  } else {
+    const conviteOff = await call(director, "POST", `/api/members/${outraFicha}/invite`);
+    check("o botão de convite recusa com uma frase (400)", conviteOff.status === 400, `${conviteOff.status}`);
+    check("e diz que estão desligados", String(conviteOff.body?.message ?? "").includes("desligados"), `${conviteOff.body?.message}`);
+    const semToken = (await db.query(`SELECT "inviteTokenHash" FROM "Member" WHERE id = $1`, [outraFicha])).rows[0];
+    check("e não deixa um token órfão na ficha", semToken?.inviteTokenHash === null);
+  }
 
   console.log("\n=== O menu de estado da ficha ===");
   const balcao = await call(director, "PATCH", `/api/members/fees/${feeId2}/status`, { status: "SETTLED" });

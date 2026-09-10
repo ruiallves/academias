@@ -2,6 +2,8 @@ import { useState } from "react";
 import { PageHeader } from "@/components/Shell";
 import { Bar, Empty, Metric, MetricRow, Monogram, Panel, PanelHead, Pill, cx } from "@/components/primitives";
 import { NewAnnouncementDialog } from "@/components/NewAnnouncementDialog";
+import { SondagensPanel } from "@/components/Sondagens";
+import { can } from "@/lib/permissions";
 import { Megaphone, Pencil, Send, Trash2 } from "@/lib/icons";
 import { coachById, listAnnouncements, listGuardians, today } from "@/lib/api";
 import { apiDelete } from "@/lib/http";
@@ -20,6 +22,13 @@ import { useSession } from "@/session";
  * O mesmo ecrã serve a direção e o treinador: o que muda é o público que cada um
  * pode escolher ao escrever (`NewAnnouncementDialog`), e a lista já vem no âmbito de
  * quem entra. Não há duas cópias a divergirem.
+ *
+ * ## E as sondagens, porque perguntar também é comunicar
+ *
+ * Um aviso diz, uma sondagem pergunta — e as duas coisas são o mesmo trabalho
+ * da direcção, feito na mesma tarde. As sondagens viviam num diálogo na página
+ * dos sócios, onde ninguém as procurava; aqui aparecem a quem pode ver o livro
+ * de sócios, que é a mesma fronteira que decide quem lhes pode escrever.
  */
 export default function Comms() {
   const { session } = useSession();
@@ -42,7 +51,10 @@ export default function Comms() {
 
   return (
     <>
-      <PageHeader title="Comunicação" subtitle="Avisos enviados às famílias pela app, sem grupos de WhatsApp.">
+      <PageHeader
+        title="Comunicação"
+        subtitle="Avisos e sondagens pela app — a famílias, equipa técnica e sócios, sem grupos de WhatsApp."
+      >
         <button type="button" className="ctl-primary" onClick={() => setComposing(true)}>
           <Send className="size-3.5" strokeWidth={1.75} />
           Novo aviso
@@ -119,6 +131,12 @@ export default function Comms() {
             </ul>
           )}
         </Panel>
+
+        {/*
+          Só a quem vê o livro de sócios — a mesma fronteira que o servidor usa
+          para o público "Sócios" de um aviso. Ver `AnnouncementsService.create`.
+        */}
+        {can(session, "member:read") && <SondagensPanel mayWrite={can(session, "member:write")} />}
       </div>
 
       {(composing || editing) && (

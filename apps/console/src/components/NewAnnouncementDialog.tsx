@@ -3,7 +3,7 @@ import { apiPatch, apiPost } from "@/lib/http";
 import { reloadAcademy } from "@/lib/store";
 import { listAthletes, listGuardians, listTeams } from "@/lib/api";
 import { guessMaxAge, teamAgeLabel } from "@/lib/team-age";
-import type { Session } from "@/lib/permissions";
+import { can, type Session } from "@/lib/permissions";
 import type { Announcement } from "@/data/types";
 import { Dialog, DialogField, dialogInputClass } from "./Dialog";
 import { cx } from "./primitives";
@@ -42,6 +42,20 @@ const AUDIENCE_META: { value: Audience; label: string; hint: string }[] = [
   { value: "members", label: "Sócios", hint: "quem tem a app recebe aviso" },
 ];
 
+/**
+ * Falar aos sócios exige **ver** os sócios.
+ *
+ * `comms:write` diz que a pessoa comunica em nome do clube; não diz que a massa
+ * associativa lhe diz respeito. Um director desportivo escreve às famílias e à
+ * equipa técnica todos os dias e pode não ter nada que ver com os sócios — e um
+ * aviso aos sócios é uma comunicação institucional.
+ *
+ * O servidor recusa na mesma (ver `AnnouncementsService.create`); isto é só não
+ * oferecer o botão que ia dar 403.
+ */
+const publicosDe = (session: Session) =>
+  AUDIENCE_META.filter((a) => a.value !== "members" || can(session, "member:read"));
+
 export function NewAnnouncementDialog({
   session,
   editing,
@@ -67,6 +81,7 @@ export function NewAnnouncementDialog({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  const publicos = publicosDe(session);
   const teams = listTeams(session);
   const mayPickTeams = !isEditing && audience === "guardians" && teams.length > 0;
 
@@ -149,7 +164,7 @@ export function NewAnnouncementDialog({
             </p>
           ) : mayChooseAudience ? (
             <div className="grid grid-cols-3 gap-1.5">
-              {AUDIENCE_META.map((a) => (
+              {publicos.map((a) => (
                 <button
                   key={a.value}
                   type="button"

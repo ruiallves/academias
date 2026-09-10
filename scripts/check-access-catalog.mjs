@@ -74,6 +74,8 @@ const NAO_DELEGAVEIS = {
     "Destrutiva — leva treinos e jogos atrás. Vive num cargo, decidida uma vez, não numa excepção por pessoa.",
   "academy:delete":
     "A mais destrutiva que existe: apaga o clube inteiro. Nunca por excepção pontual.",
+  "legal:club":
+    "Vincula o clube a um contrato. É decisão de quem representa a academia, escrita num cargo — não uma excepção dada a meio da ficha de alguém.",
 };
 
 /* -------------------------------------------------------------------------- */

@@ -59,6 +59,18 @@
 }
 
 @layer components {
+  /* Um documento legal em leitura (o gate). Estrutura do `LegalMarkdown`
+     partilhado; tipografia daqui, para ler como o resto da app. */
+  .legal-prose { @apply text-[15px] leading-[1.6] text-ink-2; }
+  .legal-prose h2 { @apply mt-7 text-[17px] font-semibold leading-snug text-ink first:mt-0; }
+  .legal-prose h3 { @apply mt-5 text-[15px] font-semibold text-ink; }
+  .legal-prose p { @apply mt-3; }
+  .legal-prose ul, .legal-prose ol { @apply mt-3 space-y-1.5 pl-5; }
+  .legal-prose ul { @apply list-disc; }
+  .legal-prose ol { @apply list-decimal; }
+  .legal-prose strong { @apply font-semibold text-ink; }
+  .legal-prose a { @apply text-ink underline underline-offset-2; }
+
   /* ---- Superfícies ------------------------------------------------------- */
 
   /* O que se pega: fundo claro, cantos generosos, elevação subtil. Sem borda —

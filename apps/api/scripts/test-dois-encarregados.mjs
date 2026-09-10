@@ -68,7 +68,7 @@ const registar = (email, nome, relacao) =>
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
       name: nome, email, phone: "911111111", password: "academia2026",
-      relation: relacao, taxId: NIF, birthdate: NASC,
+      relation: relacao, taxId: NIF, birthdate: NASC, acceptLegal: true,
     }),
   }).then(async (r) => ({ status: r.status, body: await r.json().catch(() => null) }));
 

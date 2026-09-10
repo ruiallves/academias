@@ -1,4 +1,5 @@
 import { useState, type FormEvent, type ReactNode } from "react";
+import { API } from "@/lib/api";
 import { Reveal, cx } from "@/components/primitives";
 import { CONTACT_EMAIL } from "@/lib/content";
 
@@ -26,7 +27,6 @@ import { CONTACT_EMAIL } from "@/lib/content";
  * quando a API falha; nunca dispara sozinho (ver o `catch`).
  */
 
-const API = (import.meta.env.VITE_API_URL as string | undefined) ?? "http://localhost:3000";
 
 type Subject = {
   id: string;

@@ -48,6 +48,17 @@
   .ctl-risk:disabled { @apply cursor-not-allowed opacity-50 hover:brightness-100; }
 
   .panel { @apply rounded-[var(--radius-panel)] border border-line bg-surface; }
+
+  /* Um documento legal em pré-visualização. Estrutura do `LegalMarkdown` partilhado. */
+  .legal-prose { @apply text-body leading-[1.6] text-ink-2; }
+  .legal-prose h2 { @apply mt-6 text-panel text-ink first:mt-0; }
+  .legal-prose h3 { @apply mt-4 text-body font-semibold text-ink; }
+  .legal-prose p { @apply mt-2.5; }
+  .legal-prose ul, .legal-prose ol { @apply mt-2.5 space-y-1 pl-5; }
+  .legal-prose ul { @apply list-disc; }
+  .legal-prose ol { @apply list-decimal; }
+  .legal-prose strong { @apply font-semibold text-ink; }
+  .legal-prose a { @apply text-ink underline underline-offset-2; }
   .panel-head { @apply flex items-center justify-between gap-3 border-b border-line px-5 py-3.5; }
 }
 

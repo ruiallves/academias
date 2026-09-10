@@ -1,6 +1,7 @@
-import { CalendarOff, MapPin } from "lucide-react";
+import { CalendarOff, ChevronRight, MapPin } from "lucide-react";
+import { Link } from "react-router-dom";
 import { useChild } from "@/App";
-import { useStore } from "@/lib/store";
+import { useStore, type CallUpState } from "@/lib/store";
 import { cx, dayName, dayShort, monthShort, time, whenLabel } from "@/ui";
 
 /**
@@ -13,6 +14,8 @@ import { cx, dayName, dayShort, monthShort, time, whenLabel } from "@/ui";
 
 type Item = {
   id: string;
+  /** Para onde a linha abre: `/evento/treino/:id` ou `/evento/jogo/:id`. */
+  href: string;
   start: Date;
   end: Date;
   kind: "training" | "match";
@@ -21,7 +24,8 @@ type Item = {
   /** Balneário. Só os treinos o têm, e só quando a academia o atribui. */
   room?: string;
   cancelled: boolean;
-  calledUp?: boolean;
+  /** Onde é que este filho está na convocatória. Só nos jogos. */
+  callUp?: CallUpState;
 };
 
 export default function Agenda() {
@@ -34,6 +38,7 @@ export default function Agenda() {
       .filter((t) => t.childId === child.id && t.end >= now)
       .map<Item>((t) => ({
         id: t.id,
+        href: `/evento/treino/${t.sessionId}`,
         start: t.start,
         end: t.end,
         kind: "training",
@@ -46,13 +51,14 @@ export default function Agenda() {
       .filter((m) => m.childId === child.id && m.end >= now)
       .map<Item>((m) => ({
         id: m.id,
+        href: `/evento/jogo/${m.matchId}`,
         start: m.start,
         end: m.end,
         kind: "match",
         title: `${m.isHome ? "vs" : "@"} ${m.opponent}`,
         place: m.venue,
         cancelled: m.cancelled,
-        calledUp: m.calledUp,
+        callUp: m.callUp,
       })),
   ].sort((a, b) => a.start.getTime() - b.start.getTime());
 
@@ -120,8 +126,24 @@ export default function Agenda() {
 
 /* -------------------------------------------------------------------------- */
 
+/** O que o cartão diz de um jogo, num rótulo só. Ver `CallUpState`. */
+const CALLUP_CHIP: Record<CallUpState, { label: string; className: string }> = {
+  pending: { label: "Convocatória por lançar", className: "bg-sunken text-ink-3" },
+  out: { label: "Não convocado", className: "bg-warn-soft text-warn" },
+  in: { label: "Convocado", className: "bg-ok-soft text-ok" },
+  cancelled: { label: "Cancelado", className: "bg-risk-soft text-risk" },
+};
+
+/**
+ * Uma linha da agenda — e agora uma porta.
+ *
+ * Era um `div`, e tocar nele não fazia nada. Um cartão que mostra "Pavilhão
+ * Municipal · 19:00" e não abre deixa o pai sem saber a que porta se entra nem
+ * se o filho está mesmo convocado — e não ter para onde ir parece avaria.
+ */
 function EventRow({ item }: { item: Item }) {
   const accent = item.kind === "match" ? "var(--color-ink)" : "var(--color-signal)";
+  const estado = item.kind === "match" ? CALLUP_CHIP[item.callUp ?? "pending"] : null;
 
   return (
     <li className={cx("flex gap-3", item.cancelled && "opacity-55")}>
@@ -131,18 +153,23 @@ function EventRow({ item }: { item: Item }) {
         <span className="num text-[12px] text-ink-4">{time(item.end)}</span>
       </div>
 
-      <div className="relative flex-1 overflow-hidden rounded-[var(--radius-lg)] bg-surface p-4 shadow-[var(--shadow-soft)]">
+      <Link
+        to={item.href}
+        className="relative block flex-1 overflow-hidden rounded-[var(--radius-lg)] bg-surface p-4 text-left shadow-[var(--shadow-soft)] active:opacity-80"
+      >
         <span className="absolute inset-y-0 left-0 w-1" style={{ background: accent }} aria-hidden />
         <div className="mb-1 flex flex-wrap items-center gap-2">
-          {item.cancelled && <span className="chip bg-risk-soft text-risk">Cancelado</span>}
-          {item.kind === "match" && !item.cancelled && (
-            <span className={cx("chip", item.calledUp ? "bg-ok-soft text-ok" : "bg-sunken text-ink-3")}>
-              {item.calledUp ? "Convocado" : "Jogo"}
-            </span>
+          {item.cancelled ? (
+            <span className="chip bg-risk-soft text-risk">Cancelado</span>
+          ) : (
+            estado && <span className={cx("chip", estado.className)}>{estado.label}</span>
           )}
           <span className="ml-auto text-[12px] font-medium text-ink-4">{whenLabel(item.start, new Date())}</span>
         </div>
-        <p className="text-body font-semibold text-ink">{item.title}</p>
+        <p className="flex items-center gap-1 text-body font-semibold text-ink">
+          <span className="min-w-0 flex-1 truncate">{item.title}</span>
+          <ChevronRight className="size-4 shrink-0 text-ink-4" strokeWidth={2} />
+        </p>
         <p className="mt-1 inline-flex items-center gap-1.5 text-meta text-ink-2">
           <MapPin className="size-3.5 shrink-0 text-ink-4" strokeWidth={1.9} />
           {item.place}
@@ -150,7 +177,7 @@ function EventRow({ item }: { item: Item }) {
               detalhe que só interessa depois de se saber onde é. */}
           {item.room && <span className="text-ink-4">· {item.room}</span>}
         </p>
-      </div>
+      </Link>
     </li>
   );
 }

@@ -1,6 +1,6 @@
 import { Controller, HttpCode, Post, Req } from "@nestjs/common";
 import { Throttle } from "@nestjs/throttler";
-import type { AuthedRequest } from "../auth/auth.guard";
+import { LegalExempt, type AuthedRequest } from "../auth/auth.guard";
 import { PresenceService } from "./presence.service";
 
 /**
@@ -24,6 +24,8 @@ import { PresenceService } from "./presence.service";
  * larga para reentrâncias — várias abas, um `visibilitychange` a disparar junto
  * com o intervalo — e continua a travar um cliente avariado em ciclo apertado.
  */
+// Fora do gate legal: não lê nem escreve domínio, e o gate em si mantém o separador vivo.
+@LegalExempt()
 @Controller("api/presence")
 export class PresenceController {
   constructor(private readonly presence: PresenceService) {}

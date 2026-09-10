@@ -84,6 +84,7 @@ export function irParaApp(area: Exclude<AppContextType, "STAFF">): void {
   if (base.startsWith(`${window.location.origin}/`)) {
     try {
       // A chave e o formato da app: ver `apps/family/src/lib/session.ts` e `lib/contexts.ts`.
+      // A área é uma entrega de uma vez: a app lê-a e apaga-a ao arrancar.
       const anterior = JSON.parse(localStorage.getItem("academia.family.session") ?? "null") as { name?: string } | null;
       localStorage.setItem(
         "academia.family.session",

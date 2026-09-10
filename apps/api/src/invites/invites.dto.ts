@@ -1,4 +1,4 @@
-import { ArrayMaxSize, IsArray, IsEmail, IsOptional, IsString, Length, MaxLength } from "class-validator";
+import { ArrayMaxSize, IsArray, IsEmail, IsOptional, IsString, Length, MaxLength, IsBoolean } from "class-validator";
 
 /**
  * Os corpos dos pedidos de convite, como **classes** e não interfaces.
@@ -61,4 +61,14 @@ export class AcceptInviteDto {
   @IsString()
   @MaxLength(20)
   phone?: string;
+
+  /** Aceita os documentos legais em vigor para quem entra por este convite. */
+  @IsOptional()
+  @IsBoolean()
+  acceptLegal?: boolean;
+
+  /** "Confirmo que estou autorizado a representar o clube" — só quando o cargo vincula o clube. */
+  @IsOptional()
+  @IsBoolean()
+  confirmAuthority?: boolean;
 }

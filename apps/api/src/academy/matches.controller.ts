@@ -8,6 +8,7 @@ import {
   IsOptional,
   IsString,
   Length,
+  Matches,
   Max,
   Min,
   ValidateNested,
@@ -23,6 +24,43 @@ class SaveCallUpsDto {
   @ArrayMaxSize(60)
   @IsString({ each: true })
   athleteIds!: string[];
+}
+
+/**
+ * A logística perguntada ao submeter. Tudo opcional — ver `CallUpLogistics`.
+ */
+class SubmitCallUpsDto {
+  @IsOptional() @IsString() @Length(0, 80)
+  roundLabel?: string;
+
+  @IsOptional() @IsString() @Length(0, 160)
+  meetingPoint?: string;
+
+  /** `HH:MM`. A data é a do jogo — ver `horaNoDia` no serviço. */
+  @IsOptional() @IsString() @Matches(/^([01]?\d|2[0-3]):[0-5]\d$/, { message: "Hora inválida (HH:MM)" })
+  meetingTime?: string;
+
+  @IsOptional() @IsString() @Matches(/^([01]?\d|2[0-3]):[0-5]\d$/, { message: "Hora inválida (HH:MM)" })
+  arrivalTime?: string;
+
+  @IsOptional() @IsString() @Length(0, 600)
+  notes?: string;
+
+  @IsOptional() @IsBoolean()
+  confirmationRequired?: boolean;
+}
+
+/** A resposta de uma família a uma convocatória. */
+class CallUpReplyDto {
+  @IsString()
+  athleteId!: string;
+
+  /** Verdadeiro = vai (confirma). Falso = não vai, e aí o motivo é obrigatório. */
+  @IsBoolean()
+  going!: boolean;
+
+  @IsOptional() @IsString() @Length(0, 300)
+  reason?: string;
 }
 
 class SetMaxDto {
@@ -151,9 +189,32 @@ export class MatchesController {
     return this.matches.saveCallUps(req.ctx, id, body.athleteIds);
   }
 
+  /**
+   * Submeter — e, no mesmo gesto, dizer a logística do dia.
+   *
+   * As perguntas eram do diálogo de exportar o PDF e viviam no `localStorage` de
+   * quem exportava; agora entram aqui, porque é este o momento em que alguém
+   * decide a que horas a malta se junta — e é este o momento em que as famílias
+   * são avisadas. Ver `MatchesService.submitCallUps`.
+   */
   @Post(":id/convocatoria/submeter")
-  submit(@Req() req: AuthedRequest, @Param("id") id: string) {
-    return this.matches.submitCallUps(req.ctx, id);
+  submit(@Req() req: AuthedRequest, @Param("id") id: string, @Body() body?: SubmitCallUpsDto) {
+    return this.matches.submitCallUps(req.ctx, id, body ?? {});
+  }
+
+  /**
+   * A resposta da família: vai, ou não vai e porquê.
+   *
+   * Vive no controlador dos jogos e não num de família à parte porque é a mesma
+   * convocatória — e a autorização não é "sou do clube", é "este atleta é meu"
+   * (`athleteScopeFilter`). Ver `MatchesService.responderConvocatoria`.
+   */
+  @Post(":id/convocatoria/resposta")
+  reply(@Req() req: AuthedRequest, @Param("id") id: string, @Body() body: CallUpReplyDto) {
+    return this.matches.responderConvocatoria(req.ctx, id, body.athleteId, {
+      going: body.going,
+      reason: body.reason ?? null,
+    });
   }
 
   @Post(":id/convocatoria/reabrir")

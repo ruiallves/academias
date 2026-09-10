@@ -299,6 +299,12 @@ export const ADMIN_AREAS: Area[] = [
    */
   { label: "Apagar equipas", hint: "elimina um escalão, com os treinos e jogos dele", read: "team:delete" },
   { label: "Apagar o clube", hint: "elimina a academia e todos os dados — não tem volta", read: "academy:delete" },
+  /*
+   * Aceitar os termos em nome do clube. Contratual: vincula a academia aos
+   * Termos de Serviço e ao Acordo de Tratamento de Dados. Fica com quem
+   * administra — e decide-se num cargo, a olhar para a lista de papéis.
+   */
+  { label: "Termos em nome do clube", hint: "aceitar os Termos de Serviço e o DPA pela academia", read: "legal:club" },
 ];
 
 /** O nível de uma área para um dado conjunto de permissões. */

@@ -200,11 +200,35 @@ export type ApiMatch = {
   /** A prova em que se joga. `null` num amigável. */
   competition: { id: string; label: string } | null;
   submitted: boolean; submittedAt: string | null;
+  /**
+   * ---- A logística da convocatória ---------------------------------------
+   *
+   * Dita ao **submeter** (ver `SubmitCallUpDialog`), guardada no jogo, e lida
+   * por três sítios: a folha em PDF, a página do jogo e a app da família. Nula
+   * enquanto a convocatória não sair.
+   */
+  roundLabel: string | null;
+  meetingPoint: string | null;
+  /** ISO. A hora do encontro — pode ser na véspera numa deslocação longa. */
+  meetingAt: string | null;
+  arrivalAt: string | null;
+  callUpNotes: string | null;
+  /** O clube pediu confirmação activa às famílias neste jogo? */
+  confirmationRequired: boolean;
+
   /** É de uma equipa minha? Decide o que vem preenchido e o que se pode abrir. */
   mine: boolean;
   /** A função com que quem pergunta está escalado neste jogo. Ver `MatchesService.list`. */
   myStaffRole: string | null;
-  calledUp: { athleteId: string; status: string; isGuest: boolean; guestFromTeam?: string }[];
+  calledUp: {
+    athleteId: string;
+    status: string;
+    isGuest: boolean;
+    guestFromTeam?: string;
+    /** A resposta da família, quando houve — ver `responderConvocatoria`. */
+    declineReason?: string | null;
+    respondedAt?: string | null;
+  }[];
   /**
    * A ficha do jogo, quando já está preenchida.
    *

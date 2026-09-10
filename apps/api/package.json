@@ -20,6 +20,8 @@
     "test:platform-api": "node scripts/test-platform-api.mjs",
     "test:contacts": "node scripts/test-contacts.mjs",
     "seed:platform": "node prisma/seed-platform.mjs",
+    "seed:legal": "node prisma/seed-legal.mjs",
+    "test:legal": "node scripts/test-legal.mjs",
     "test:guest-callups": "node scripts/test-guest-callups.mjs",
     "test:callups": "node scripts/test-callups.mjs",
     "test:callup-blocks": "node scripts/test-callup-blocks.mjs",

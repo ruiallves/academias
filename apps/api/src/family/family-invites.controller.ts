@@ -5,6 +5,7 @@ import {
   ArrayMaxSize,
   ArrayMinSize,
   IsArray,
+  IsBoolean,
   IsEmail,
   IsIn,
   IsISO8601,
@@ -14,7 +15,7 @@ import {
   Matches,
   ValidateNested,
 } from "class-validator";
-import type { Response } from "express";
+import type { Request, Response } from "express";
 import { Public, type AuthedRequest } from "../auth/auth.guard";
 import { FamilyInvitesService } from "./family-invites.service";
 
@@ -85,6 +86,10 @@ class RegisterFamilyDto extends IdentifyChildDto {
   /** "Mãe", "Pai", "Encarregado" — texto livre, como no `GuardianLink`. */
   @IsString() @Length(0, 40)
   relation!: string;
+
+  /** Aceita os documentos legais em vigor para as famílias. */
+  @IsOptional() @IsBoolean()
+  acceptLegal?: boolean;
 }
 
 /* -------------------------------------------------------------------------- */
@@ -208,7 +213,9 @@ export class FamilySignupController {
   /** Criar a conta e ligá-la ao educando. Devolve a sessão — a app entra já dentro. */
   @Throttle({ default: { ttl: 60_000, limit: 5 } })
   @Post("api/convite-familia/:token/registar")
-  register(@Param("token") token: string, @Body() body: RegisterFamilyDto) {
-    return this.invites.register(token, body);
+  register(@Param("token") token: string, @Body() body: RegisterFamilyDto, @Req() req: Request) {
+    const ua = req.headers["user-agent"];
+    // O IP e o navegador seguem para o registo da aceitação dos termos.
+    return this.invites.register(token, body, { ip: req.ip, userAgent: typeof ua === "string" ? ua : undefined });
   }
 }
