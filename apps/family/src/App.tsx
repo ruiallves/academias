@@ -1,10 +1,12 @@
 import { createContext, useContext, useEffect, useMemo, useState, type ReactNode } from "react";
 import { NavLink, Navigate, Route, Routes, useLocation, useNavigate } from "react-router-dom";
 import { Bell, CalendarDays, Home, RefreshCw, User, Wallet } from "lucide-react";
-import { load, resetAndLoad, useStore, type Child } from "@/lib/store";
+import { load, reload, resetAndLoad, useStore, type Child } from "@/lib/store";
 import { hasOnboarded } from "@/lib/onboarding";
 import { readToken, signOut, useSession } from "@/lib/session";
 import { usePresence } from "@/lib/presence";
+import { refreshPush } from "@/lib/push";
+import { useFresco } from "@/lib/fresco";
 import { chooseContext, loadContexts, useContexts } from "@/lib/contexts";
 import { consoleUrl, irParaConsola } from "@/lib/handoff";
 import { readMemberInvite } from "@/lib/invite";
@@ -93,7 +95,15 @@ export default function App() {
   usePresence(Boolean(session) && areaActiva === "FAMILY");
 
   useEffect(() => {
-    if (readToken()) void loadContexts();
+    if (!readToken()) return;
+    void loadContexts();
+    /*
+     * E confirma-se a subscrição de push ao servidor — calada, sem pedir
+     * permissão nenhuma. É o que repara os telemóveis a quem o browser trocou a
+     * subscrição por trás das costas e que por isso tinham deixado de receber
+     * avisos. Ver `refreshPush`.
+     */
+    void refreshPush();
   }, [session]);
 
   // O primeiro filho, até alguém escolher outro. Segue os dados: antes de a
@@ -173,6 +183,16 @@ function Dentro({
   useEffect(() => {
     if (areaActiva === "FAMILY" && readToken()) void load();
   }, [areaActiva]);
+
+  /*
+   * E a partir daí mantém-se viva sozinha: ao voltar ao ecrã, de minuto a
+   * minuto, e no instante em que chega um push. Ver `lib/fresco`.
+   *
+   * Só na família — a área de sócio tem o seu (em `SocioApp`), e a de staff é
+   * a consola. Passar `null` desliga o mecanismo sem partir a regra dos hooks,
+   * que é o que obriga a chamá-lo aqui em cima, antes das saídas.
+   */
+  useFresco(areaActiva === "FAMILY" ? reload : null);
 
   /* Mais do que um contexto e nenhum vestido: "como queres continuar?" */
   if (areaActiva === null) return <EscolherArea name={session.name ?? ""} />;
@@ -464,8 +484,16 @@ function Header() {
   const navigate = useNavigate();
   const unread = store.notifications.filter((n) => !n.readAt).length;
 
+  /*
+   * `backdrop-blur-md` e não `-xl`: o header está fixo por cima de tudo o que
+   * passa, e o desfoque é recalculado a cada fotograma de scroll. Com o fundo a
+   * 85% de opacidade só 15% do que está por baixo atravessa — metade do raio
+   * não se distingue a olho e poupa metade do trabalho.
+   *
+   * O filtro **fica**: é dele que depende o portal do `AreaSwitch`.
+   */
   return (
-    <header className="sticky top-0 z-30 bg-canvas/85 px-4 pt-[calc(10px+env(safe-area-inset-top))] pb-2 backdrop-blur-xl">
+    <header className="sticky top-0 z-30 bg-canvas/85 px-4 pt-[calc(10px+env(safe-area-inset-top))] pb-2 backdrop-blur-md">
       <div className="flex items-center gap-3">
         <ClubMark
           logoUrl={store.academy.logoUrl}
@@ -598,8 +626,18 @@ function TabBar() {
 
   return (
     <nav className="pointer-events-none fixed inset-x-0 bottom-0 z-30 flex justify-center pb-[calc(14px+env(safe-area-inset-bottom))]">
+/*
+ * Sem `backdrop-blur` nesta barra — e não é um esquecimento.
+ *
+ * O fundo é `bg-ink/95`: cinco por cento de transparência, onde um desfoque não
+ * se vê. Mas via-se no desempenho. Um `backdrop-filter` obriga o telemóvel a
+ * ler o que está por trás e a desfocá-lo **a cada fotograma**, e esta barra
+ * está fixa por cima de tudo o que passa: cada scroll e cada troca de
+ * separador pagavam um desfoque que ninguém chega a ver. É a definição de
+ * trabalho a mais.
+ */
       <ul
-        className="pointer-events-auto flex items-center gap-1 rounded-full bg-ink/95 p-1.5 backdrop-blur-xl"
+        className="pointer-events-auto flex items-center gap-1 rounded-full bg-ink/95 p-1.5"
         style={{ boxShadow: "var(--shadow-float)" }}
       >
         {TABS.map(({ to, label, icon: Icon }) => (

@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
-import { Link } from "react-router-dom";
-import { rotaDaNotificacao } from "@/lib/rotas";
+import { Link, useLocation, useNavigate } from "react-router-dom";
+import { destinoDaNotificacao } from "@/lib/rotas";
+import { chooseContext } from "@/lib/contexts";
 import { Bell, CalendarClock, FileText, Gauge, Megaphone, Trophy, Wallet, type LucideIcon } from "lucide-react";
 import { apiPatch } from "@/lib/http";
 import { reload, useStore, type ApiNotification } from "@/lib/store";
@@ -138,12 +139,23 @@ function NotifRow({ n, i }: { n: ApiNotification; i: number }) {
   const style = STYLE[n.type] ?? FALLBACK;
   const Icon = style.icon;
   const unread = !n.readAt;
+  const navigate = useNavigate();
+  const { pathname } = useLocation();
   /*
    * Nem toda a rota gravada corresponde a uma página desta app — ver
-   * `rotaDaNotificacao`. O que não se reconhece fica sem ligação, em vez de
+   * `destinoDaNotificacao`. O que não se reconhece fica sem ligação, em vez de
    * levar à inicial a fingir que se navegou.
    */
-  const route = rotaDaNotificacao(n.payload);
+  const achado = destinoDaNotificacao(n.route);
+  /*
+   * E um destino que é esta mesma página não é destino nenhum.
+   *
+   * Um aviso da academia aponta para `/notificacoes`, que é onde ele já está a
+   * ser lido: o cartão parecia clicável, tocava-se, e não acontecia nada — a
+   * mesma sensação de "não leva a lado nenhum" que um cartão morto, com o
+   * agravante de ter prometido. Aqui não promete.
+   */
+  const destino = achado && achado.area === "FAMILY" && achado.rota === pathname ? null : achado;
 
   const body = (
     <>
@@ -171,15 +183,44 @@ function NotifRow({ n, i }: { n: ApiNotification; i: number }) {
     style.urgent && unread ? "bg-surface ring-1 ring-risk/20 shadow-[var(--shadow-soft)]" : "bg-surface shadow-[var(--shadow-soft)]",
   );
 
+  if (!destino) {
+    return (
+      <li className="rise" style={{ ["--i" as string]: i }}>
+        <div className={className}>{body}</div>
+      </li>
+    );
+  }
+
+  /*
+   * Uma quota de sócio vive na outra vista da app.
+   *
+   * O `<Link>` sozinho não chegava: as rotas de sócio só existem enquanto a
+   * área de sócio estiver vestida, e de dentro da família caíam no `*` do
+   * router — de volta à inicial, que é exactamente o "não leva a lado nenhum"
+   * que isto veio resolver. Veste-se a área primeiro, e só depois se navega.
+   */
+  if (destino.area === "MEMBER") {
+    return (
+      <li className="rise" style={{ ["--i" as string]: i }}>
+        <button
+          type="button"
+          onClick={() => {
+            chooseContext("MEMBER");
+            navigate(destino.rota);
+          }}
+          className={cx(className, "active:scale-[0.99]")}
+        >
+          {body}
+        </button>
+      </li>
+    );
+  }
+
   return (
     <li className="rise" style={{ ["--i" as string]: i }}>
-      {route ? (
-        <Link to={route} className={cx(className, "active:scale-[0.99]")}>
-          {body}
-        </Link>
-      ) : (
-        <div className={className}>{body}</div>
-      )}
+      <Link to={destino.rota} className={cx(className, "active:scale-[0.99]")}>
+        {body}
+      </Link>
     </li>
   );
 }

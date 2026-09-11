@@ -94,6 +94,48 @@ export class PushService implements OnModuleInit {
     await this.prisma.pushSubscription.deleteMany({ where: { endpoint } });
   }
 
+  /**
+   * O browser trocou a subscrição por outra — passa-se a linha para o endereço novo.
+   *
+   * ## Porque é que isto existe
+   *
+   * Porque uma subscrição push **não é para sempre**. O browser rejeita-a e
+   * emite outra por sua conta: numa actualização do sistema, ao fim de semanas
+   * sem a usar, quando o serviço de mensagens do telemóvel se volta a
+   * registar. Quando isso acontece dispara o evento `pushsubscriptionchange`
+   * no service worker — e se ninguém o ouvir, o que fica é isto: o servidor
+   * continua a empurrar para o endereço velho, leva `410 Gone`, apaga a linha,
+   * e **o telemóvel deixa de receber seja o que for**. Em silêncio, sem erro
+   * nenhum, até alguém abrir a app e voltar a carregar no interruptor.
+   *
+   * Era o sintoma descrito: "só recebo as notificações quando abro a app".
+   * Abrir a app é o único momento em que a subscrição se refazia.
+   *
+   * ## Porque é que é público
+   *
+   * O service worker corre sem sessão — não tem token nenhum para pôr no
+   * cabeçalho, e acorda em momentos em que a app nem está aberta. A prova é o
+   * **endereço antigo**: só o browser que tinha aquela subscrição o conhece, e
+   * é isso que esta troca exige. Não cria linhas nem muda de dono: se o
+   * endereço antigo não estiver cá, não acontece nada.
+   */
+  async rotateSubscription(oldEndpoint: string, sub: PushSubscriptionInput): Promise<boolean> {
+    const actual = await this.prisma.pushSubscription.findUnique({ where: { endpoint: oldEndpoint } });
+    if (!actual) return false;
+
+    /* O endereço novo pode já cá estar (o browser reemitiu o mesmo, ou a app
+       chegou lá primeiro). Nesse caso a linha velha é que sobra. */
+    if (sub.endpoint !== oldEndpoint) {
+      await this.prisma.pushSubscription.deleteMany({ where: { endpoint: sub.endpoint } });
+    }
+
+    await this.prisma.pushSubscription.update({
+      where: { id: actual.id },
+      data: { endpoint: sub.endpoint, p256dh: sub.keys.p256dh, auth: sub.keys.auth },
+    });
+    return true;
+  }
+
   /** Empurra para todos os dispositivos de um utilizador. */
   async pushToUser(userId: string, payload: PushPayload): Promise<void> {
     const subs = await this.prisma.pushSubscription.findMany({ where: { userId } });

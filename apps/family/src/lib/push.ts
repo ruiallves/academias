@@ -122,6 +122,63 @@ function withTimeout<T>(promise: Promise<T>, ms: number, message: string): Promi
   ]);
 }
 
+/**
+ * Confirmar a subscrição ao servidor, a cada arranque. Sem perguntar nada.
+ *
+ * ## Porque é que é preciso
+ *
+ * O service worker já repõe a subscrição quando o browser a troca (ver
+ * `pushsubscriptionchange` em `push-sw.js`), mas esse evento não é uma garantia:
+ * há browsers que o não disparam, há telemóveis onde o service worker foi
+ * apagado com os dados do site, e há todas as subscrições que se perderam
+ * **antes** de esse ouvinte existir. O resultado é sempre o mesmo — o servidor
+ * guarda um endereço que já não recebe nada, e o telemóvel fica mudo sem que
+ * ninguém perceba.
+ *
+ * Abrir a app é o momento em que isso se pode verificar de graça. Se a
+ * permissão já está dada e há subscrição, reenvia-se (o servidor faz `upsert`,
+ * por isso é barato e idempotente); se a permissão está dada e a subscrição
+ * desapareceu, subscreve-se outra vez — o browser não pergunta nada a quem já
+ * disse que sim.
+ *
+ * **Nunca pede permissão.** Sem `granted`, sai sem tocar em nada: um pedido
+ * automático é ignorado pelos browsers, e com razão. Ligar continua a ser um
+ * gesto de quem usa a app, no perfil.
+ */
+let jaConfirmado = false;
+
+export async function refreshPush(): Promise<void> {
+  /* Uma vez por arranque. A sessão renova-se sozinha (ver `lib/session`), e sem
+     isto cada renovação era mais um `POST` a dizer o que o servidor já sabia. */
+  if (jaConfirmado) return;
+  if (!pushSupported() || Notification.permission !== "granted") return;
+  jaConfirmado = true;
+
+  try {
+    const reg = await withTimeout(navigator.serviceWorker.ready, 8000, "O service worker não ficou pronto.");
+    let sub = await reg.pushManager.getSubscription();
+
+    if (!sub) {
+      const keyResponse = await fetch(`${API}/api/push/key`);
+      if (!keyResponse.ok) return;
+      const { publicKey } = (await keyResponse.json()) as { publicKey: string };
+      if (!publicKey) return;
+      sub = await reg.pushManager.subscribe({
+        userVisibleOnly: true,
+        applicationServerKey: urlBase64ToUint8Array(publicKey),
+      });
+    }
+
+    await authed("/api/push/subscribe", sub);
+  } catch {
+    /*
+     * Silêncio de propósito: isto corre em todos os arranques e não é
+     * informação para o pai. Quem quiser saber tem o estado no perfil, e o
+     * caminho com mensagens de erro é o `enablePush`, que é o que ele toca.
+     */
+  }
+}
+
 export async function disablePush(): Promise<void> {
   const sub = await currentSubscription();
   if (!sub) return;

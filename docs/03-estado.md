@@ -170,6 +170,56 @@ pessoa — sempre o mesmo comportamento, um sítio só a manter.
 
 ---
 
+## A família avisa que não vai ao treino
+
+O jogo já se podia recusar — a convocatória tem resposta com motivo, autor e
+hora. O treino não, e é o treino que acontece três vezes por semana: o pai que
+sabe na segunda que o filho tem consulta na quarta não tinha por onde o dizer, e
+o treinador descobria a contar cabeças no relvado.
+
+No ecrã do treino da app do clube há agora **"Não vai poder ir"**, com a caixa
+para escrever o motivo. Sem atalhos, ao contrário da recusa de convocatória: um
+jogo é uma vez por semana e um treino são três, e uma lista de motivos à mão
+acaba a ser sempre o primeiro botão. Depois de avisar, o ecrã
+mostra o que foi dito e quando, e deixa **mudar o motivo** ou dizer **"afinal
+vai"** — que apaga o aviso.
+
+**O aviso não é uma falta.** `AbsenceNotice` é uma tabela à parte de
+`AttendanceRecord`, e a razão são duas armadilhas concretas do código que já
+existia: `saveAttendance` **apaga a folha inteira** e reescreve-a a cada
+gravação (o aviso desaparecia no instante em que o treinador fechasse o
+registo), e `snapshotFor`, nos relatórios, conta **todos** os registos do atleta
+para a assiduidade (um aviso para a semana seguinte baixava a assiduidade por um
+treino que ainda não tinha acontecido, num número impresso que vai para a
+família). Separadas, cada tabela afirma uma coisa só: uma o que vai acontecer, a
+outra o que aconteceu.
+
+**Onde as duas se encontram** é no registo de presenças: ao abrir a folha, quem
+avisou já vem marcado como **falta justificada com o motivo escrito**, e o
+treinador confirma em vez de escrever. Continua tudo a ser decisão dele — o
+miúdo pode ter aparecido na mesma, e basta pôr "presente". A folha gravada ganha
+sempre ao aviso. A lista de treinos por registar mostra quantos avisos tem cada
+um, porque é por aí que se decide qual registar primeiro.
+
+**As fronteiras**, todas verificadas em `npm run test:aviso` (24 casos): avisa
+quem tem o atleta no âmbito (`athleteScopeFilter`, a mesma autorização da
+resposta à convocatória) e mais ninguém; o motivo é obrigatório no serviço **e
+na base** (`CHECK`, como na recusa); só antes do treino começar e antes de a
+folha estar fechada; avisar outra vez corrige o motivo em vez de acumular
+linhas.
+
+**Um motivo não atravessa famílias.** `GET /api/sessions` devolvia as faltas de
+todo o plantel — com o `note` — a qualquer família do escalão, porque
+`inTeamScope` deixa passar toda a gente da equipa. Um motivo é quase sempre de
+saúde, e este trabalho ia multiplicá-los. O `note` e os avisos passam a sair só
+para os educandos de quem pergunta; para o staff, que tem de fechar a folha,
+continuam a sair todos. É o servidor a decidi-lo, não a interface.
+
+O que **não** se fez, de propósito: notificar o treinador. Não existe hoje
+nenhuma notificação no sentido família→clube — a resposta à convocatória também
+não tem, e o treinador vê-a quando abre o ecrã. Abrir esse caminho é uma decisão
+à parte, e não se toma de passagem.
+
 ## Convocatórias
 
 `Presenças` deixou de se chamar `Treinos` — o menu diz o que se faz lá, não o que

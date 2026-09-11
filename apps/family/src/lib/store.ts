@@ -159,12 +159,25 @@ type ApiReport = {
   snapshot: { attendance?: { attended: number; total: number }; matches?: number } | null;
 };
 
+/**
+ * Uma notificação, **como o servidor a manda** — ver `listForUser`.
+ *
+ * Esta forma esteve errada desde que existe: declarava `payload.route`, e o
+ * endpoint nunca devolveu `payload` nenhum. Como a resposta é lida com um
+ * `soft<T>()`, que é uma conversão e não uma verificação, o TypeScript nada
+ * disse — e o resultado era uma lista onde nenhuma notificação era clicável e
+ * todas tinham o mesmo ícone de sino.
+ *
+ * `route` é o destino nesta app; `link` é o da consola e vem na mesma resposta,
+ * porque a lista é a mesma pessoa nos dois produtos. Aqui ignora-se.
+ */
 export type ApiNotification = {
   id: string;
   type: string;
   title: string;
   body: string;
-  payload: { route?: string; chargeId?: string; announcementId?: string; matchId?: string } | null;
+  /** O destino nesta app. `null` quando não há página para onde ir. */
+  route: string | null;
   readAt: string | null;
   createdAt: string;
 };
@@ -478,6 +491,21 @@ export function load(): Promise<void> {
         apply({ ...EMPTY, ready: true, denied: error.message });
         return;
       }
+      /*
+       * Uma releitura que falha não apaga o que está no ecrã.
+       *
+       * Desde que a app relê sozinha — ao voltar do fundo, de minuto a minuto,
+       * quando chega um push (ver `lib/fresco.ts`) —, esta linha passou a poder
+       * disparar com a agenda inteira à vista. E `...EMPTY` apagava-a: um túnel,
+       * um segundo de rede má, e o pai via a app substituída por "Não foi
+       * possível carregar" sem ter tocado em nada.
+       *
+       * Com dados bons no ecrã, um erro de fundo é silêncio — a próxima volta
+       * corrige. O ecrã de avaria fica para o arranque, onde não há alternativa
+       * a mostrar.
+       */
+      if (state.ready && !state.error && !state.denied) return;
+
       apply({
         ...EMPTY,
         ready: true,

@@ -378,12 +378,15 @@ function Responder({ jogo, going, label, destaque }: { jogo: Match; going: boole
 }
 
 /**
- * Os motivos que se repetem, num toque.
+ * Os motivos que se repetem, num toque — **só na recusa de convocatória**.
  *
- * Escrever num telemóvel é o passo onde as pessoas desistem — e um pai apressado
- * escreve "n vai" ou nada. Quatro botões cobrem quase tudo o que acontece a
- * sério, e o que sai do outro lado é uma frase que o treinador percebe. Continua
- * a dar para escrever: os botões preenchem a caixa, não a substituem.
+ * Escrever num telemóvel é o passo onde as pessoas desistem, e faltar a um jogo
+ * é a ausência que custa ao treinador: quatro botões cobrem quase tudo o que
+ * acontece a sério e poupam o "n vai" que não explica nada. Continua a dar para
+ * escrever — os botões preenchem a caixa, não a substituem.
+ *
+ * No aviso de falta a um **treino** não há sugestões nenhumas: são dezenas por
+ * época, e uma lista de motivos à mão convida a carregar sempre no primeiro.
  */
 const MOTIVOS = ["Está doente", "Tem prova na escola", "Está fora com a família", "Lesionado"];
 
@@ -542,10 +545,9 @@ function Ausencia({ treino }: { treino: Training }) {
 /**
  * Dizer que não vai a um treino — e porquê.
  *
- * Mesmo diálogo da recusa de convocatória, com os mesmos atalhos: escrever num
- * telemóvel é onde as pessoas desistem, e quatro botões cobrem quase tudo o que
- * acontece a sério. Continua a dar para escrever — os botões preenchem a caixa,
- * não a substituem.
+ * Sem os atalhos da recusa de convocatória, de propósito: um jogo é uma vez por
+ * semana e um treino são três, e uma lista de motivos à mão acaba a ser sempre
+ * o primeiro botão. Escrito à mão, o treinador lê uma coisa que é verdade.
  */
 function Avisar({ treino, onFechar }: { treino: Training; onFechar: () => void }) {
   const [motivo, setMotivo] = useState(treino.notice?.reason ?? "");
@@ -574,29 +576,12 @@ function Avisar({ treino, onFechar }: { treino: Training; onFechar: () => void }
         O treinador precisa de saber para contar com ele ou não.
       </p>
 
-      <div className="mt-2.5 flex flex-wrap gap-1.5">
-        {MOTIVOS.map((m) => (
-          <button
-            key={m}
-            type="button"
-            onClick={() => setMotivo(m)}
-            aria-pressed={motivo === m}
-            className={cx(
-              "rounded-full px-3 py-1.5 text-[13px] font-medium",
-              motivo === m ? "bg-ink text-surface" : "bg-surface text-ink-2",
-            )}
-          >
-            {m}
-          </button>
-        ))}
-      </div>
-
       <textarea
         rows={2}
         value={motivo}
         onChange={(e) => setMotivo(e.target.value)}
         maxLength={200}
-        placeholder="Ou escreve o motivo"
+        placeholder="Escreve o motivo"
         aria-label="Motivo da ausência ao treino"
         className="mt-2 w-full resize-y rounded-[var(--radius-md)] border border-ink/10 bg-surface px-3 py-2.5 text-[14px] leading-relaxed text-ink outline-none placeholder:text-ink-4 focus:border-ink/25"
       />

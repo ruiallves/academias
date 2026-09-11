@@ -34,6 +34,18 @@ class SubscribeDto {
   keys!: KeysDto;
 }
 
+/**
+ * A troca de subscrição feita pelo próprio browser. Ver `rotateSubscription`.
+ *
+ * Herda o corpo da subscrição e acrescenta o endereço que ela vem substituir —
+ * que é a única credencial deste pedido, por ele correr sem sessão.
+ */
+class RotateDto extends SubscribeDto {
+  @IsString()
+  @Length(1, 1000)
+  oldEndpoint!: string;
+}
+
 class EndpointDto {
   @IsString()
   @Length(1, 1000)
@@ -76,6 +88,20 @@ export class PushController {
       req.headers["user-agent"],
     );
     return { ok: true };
+  }
+
+  /*
+   * Público como o `key`: quem o chama é o service worker, que não tem sessão.
+   * A prova é conhecer o endereço antigo — ver `rotateSubscription`.
+   */
+  @Public()
+  @Post("rotate")
+  async rotate(@Body() body: RotateDto) {
+    const moved = await this.push.rotateSubscription(body.oldEndpoint, {
+      endpoint: body.endpoint,
+      keys: { p256dh: body.keys.p256dh, auth: body.keys.auth },
+    });
+    return { ok: moved };
   }
 
   @Post("unsubscribe")

@@ -18,6 +18,7 @@ import {
 import { ClubMark } from "@/ClubMark";
 import { Avatar, Chip, Label, Money, cx, dateShort, dayName, greeting, money, time, whenLabel } from "@/ui";
 import { signOut } from "@/lib/session";
+import { useFresco } from "@/lib/fresco";
 import {
   loadSocio,
   pagarAte,
@@ -52,6 +53,9 @@ export default function SocioApp() {
   useEffect(() => {
     if (!data) void loadSocio();
   }, [data]);
+
+  /* Ao voltar ao ecrã, de minuto a minuto, e quando chega um push — ver `lib/fresco`. */
+  useFresco(loadSocio);
 
   if (error && !data) {
     return (
@@ -109,8 +113,16 @@ function SocioHeader() {
   const navigate = useNavigate();
   if (!data) return null;
 
+  /*
+   * `backdrop-blur-md` e não `-xl`: o header está fixo por cima de tudo o que
+   * passa, e o desfoque é recalculado a cada fotograma de scroll. Com o fundo a
+   * 85% de opacidade só 15% do que está por baixo atravessa — metade do raio
+   * não se distingue a olho e poupa metade do trabalho.
+   *
+   * O filtro **fica**: é dele que depende o portal do `AreaSwitch`.
+   */
   return (
-    <header className="sticky top-0 z-30 bg-canvas/85 px-4 pt-[calc(10px+env(safe-area-inset-top))] pb-2 backdrop-blur-xl">
+    <header className="sticky top-0 z-30 bg-canvas/85 px-4 pt-[calc(10px+env(safe-area-inset-top))] pb-2 backdrop-blur-md">
       <div className="flex items-center gap-3">
         <ClubMark logoUrl={data.academy.logoUrl} mark={marca(data.academy.shortName)} size={36} radius={11} className="shadow-[var(--shadow-soft)]" />
         <span className="min-w-0 flex-1 leading-tight">
@@ -148,7 +160,8 @@ function SocioTabBar() {
 
   return (
     <nav className="pointer-events-none fixed inset-x-0 bottom-0 z-30 flex justify-center pb-[calc(14px+env(safe-area-inset-bottom))]">
-      <ul className="pointer-events-auto flex items-center gap-1 rounded-full bg-ink/95 p-1.5 backdrop-blur-xl" style={{ boxShadow: "var(--shadow-float)" }}>
+      {/* Sem desfoque, como na barra da família — ver a nota em `App.tsx`. */}
+      <ul className="pointer-events-auto flex items-center gap-1 rounded-full bg-ink/95 p-1.5" style={{ boxShadow: "var(--shadow-float)" }}>
         {TABS.map(({ to, label, icon: Icon }) => (
           <li key={to}>
             <NavLink

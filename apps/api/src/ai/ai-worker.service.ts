@@ -868,7 +868,10 @@ export class AiWorkerService {
           type: "AI_ANALYSIS_COMPLETED",
           title: "Análise concluída",
           body: `A análise "${analysis.title}" terminou.`,
-          payload: { route: `/ai/analises/${job.analysisId}` },
+          /* `link` e não `route`: a análise abre-se na consola, e `route` é a
+             chave da app da família — onde este endereço não existe. Ver
+             `listForUser`. */
+          payload: { link: `/ai/analises/${job.analysisId}` },
         },
         db,
       );

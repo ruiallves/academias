@@ -116,13 +116,24 @@ export class NotificationsService {
    * dentro do `payload`. O resultado era um painel onde **nenhuma** notificação
    * era clicável, sem erro nenhum a dizer porquê.
    *
-   * ## Só `payload.link`
+   * ## Dois destinos, porque são dois produtos
    *
-   * Há três nomes no código para a mesma ideia — `link`, `route` e `url` — porque
-   * foram escritos em alturas diferentes. Os dois últimos apontam para rotas da
-   * **app da família** (`/agenda`, `/avisos`), que não existem na consola;
-   * aceitá-los aqui seria mandar um director para um endereço que não abre.
-   * `link` é a chave da consola, e é a que se usa daqui para a frente.
+   * A mesma notificação é lida em dois sítios que não têm as mesmas páginas: a
+   * consola abre `/jogos/:id`, a app abre `/evento/jogo/:id`. Por isso o
+   * `payload` guarda **dois** endereços com nomes próprios — `link` para a
+   * consola, `route` para a app — e este método devolve os dois. Cada cliente
+   * usa o seu e ignora o outro.
+   *
+   * Devolver só um era o bug: a app pedia esta mesma lista, procurava
+   * `payload.route` num objecto que nunca vinha, e **nenhuma** notificação era
+   * clicável — nem a de uma convocatória, que tem página desde sempre. Pelo
+   * mesmo caminho ia `type`: a app lê-o para escolher o ícone, aqui chamava-se
+   * `kind`, e todas apareciam com o sino genérico.
+   *
+   * Um destino em falta é `null` e não uma string vazia: é a diferença entre
+   * "não há para onde ir" e "há, e enganei-me a escrevê-lo". Os dois clientes
+   * desenham o cartão sem ligação quando é `null`, em vez de fingir que
+   * navegaram.
    */
   async listForUser(userId: string, academyId: string) {
     const rows = await this.prisma.runAs(academyId, (db) =>
@@ -135,13 +146,21 @@ export class NotificationsService {
 
     return rows.map((n) => {
       const payload = (n.payload ?? {}) as Record<string, unknown>;
-      const link = typeof payload.link === "string" ? payload.link : null;
+      const endereco = (chave: string) => {
+        const v = payload[chave];
+        return typeof v === "string" && v.trim() !== "" ? v : null;
+      };
       return {
         id: n.id,
+        /** `kind` é o nome que a consola usa; `type` o que a app usa. O mesmo valor. */
         kind: n.type,
+        type: n.type,
         title: n.title,
         body: n.body,
-        link,
+        /** Destino na consola. */
+        link: endereco("link"),
+        /** Destino na app da família. */
+        route: endereco("route"),
         readAt: n.readAt,
         createdAt: n.createdAt,
       };
