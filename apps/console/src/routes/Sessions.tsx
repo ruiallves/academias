@@ -165,6 +165,17 @@ function Pending({
                 <div className="truncate text-meta text-ink-3">
                   <span className="font-mono tabular">{time(d)}</span> · {s.venue}
                   {coachName && ` · ${coachName.split(" ")[0]}`}
+                  {/*
+                    O que as famílias já disseram sobre este treino. Aparece aqui
+                    porque é aqui que se decide por qual começar — e um treino com
+                    três avisos regista-se em metade do tempo.
+                  */}
+                  {(s.notices?.length ?? 0) > 0 && (
+                    <span className="text-ink-2">
+                      {" · "}
+                      {s.notices!.length === 1 ? "1 aviso de falta" : `${s.notices!.length} avisos de falta`}
+                    </span>
+                  )}
                 </div>
               </div>
 

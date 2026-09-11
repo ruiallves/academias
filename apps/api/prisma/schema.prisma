@@ -379,6 +379,7 @@ model Membership {
   coachOf         TeamStaff[]
   guardianOf      GuardianLink[]
   ledSessions     TrainingSession[]          @relation("SessionCoach")
+  absenceNotices  AbsenceNotice[]            @relation("AbsenceNotice")
   ledMatches      Match[]                    @relation("MatchCoach")
   matchStaff      MatchStaff[]               @relation("MatchStaff")
   ledEvents       CalendarEvent[]            @relation("EventCoach")
@@ -817,16 +818,17 @@ model Athlete {
   /// das origens da lista "Precisa de atenção".
   medicalValidUntil DateTime? @db.Date
 
-  guardians   GuardianLink[]
-  teams       TeamMembership[]
-  attendance  AttendanceRecord[]
-  enrollments Enrollment[]
-  charges     Charge[]
-  evaluations Evaluation[]
-  reports     AthleteReport[]
-  clinical    ClinicalEntry[]
-  callUps     MatchCallUp[]
-  appearances MatchAppearance[]
+  guardians      GuardianLink[]
+  teams          TeamMembership[]
+  attendance     AttendanceRecord[]
+  enrollments    Enrollment[]
+  charges        Charge[]
+  evaluations    Evaluation[]
+  reports        AthleteReport[]
+  clinical       ClinicalEntry[]
+  callUps        MatchCallUp[]
+  absenceNotices AbsenceNotice[]
+  appearances    MatchAppearance[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -1014,11 +1016,14 @@ model TrainingSession {
   /// Quando as presenças foram fechadas. Nulo = por registar.
   attendanceClosedAt DateTime?
   attendance         AttendanceRecord[]
+  /// Quem avisou que não vem — antes do treino. Ver `AbsenceNotice`.
+  absenceNotices     AbsenceNotice[]
 
   /**
    * ---- Plano de treino (Área técnica) -----------------------------------
    */
   /**
+   * /**
    * /**
    * /**
    * /**
@@ -1430,6 +1435,99 @@ model AttendanceRecord {
   note      String?
 
   recordedAt DateTime @default(now())
+
+  @@unique([sessionId, athleteId])
+  @@index([athleteId])
+}
+
+/// O aviso de que um atleta não vai a um treino.
+
+///
+
+/// ## Porque é que isto não é um `AttendanceRecord`
+
+///
+
+/// Porque são factos de tempos diferentes. O registo de presenças é o que
+
+/// **aconteceu**, escrito pelo treinador depois do treino; isto é o que a
+
+/// família diz que **vai** acontecer, escrito antes. Metê-los na mesma tabela
+
+/// partia as duas pontas:
+
+///
+
+///  1. `saveAttendance` apaga a folha e reescreve-a (*"a folha desta gravação é
+
+///     a folha do treino"*). O aviso do pai desaparecia no instante em que o
+
+///     treinador fechasse o registo.
+
+///  2. `snapshotFor` (relatórios) conta **todos** os registos do atleta para a
+
+///     assiduidade. Um aviso para a semana que vem baixava a assiduidade de um
+
+///     miúdo por um treino que ainda não tinha acontecido — num número que vai
+
+///     para a família.
+
+///
+
+/// Separados, cada um diz uma coisa só. E encontram-se onde interessa: ao abrir
+
+/// o registo de presenças, quem avisou vem já marcado como falta justificada com
+
+/// o motivo escrito, e o treinador confirma em vez de escrever.
+
+///
+
+/// ## Porque é que não tem estado
+
+///
+
+/// Um `MatchCallUp` existe antes da resposta — o treinador convocou, e a família
+
+/// confirma ou recusa. Num treino não há convocatória: vai toda a gente do
+
+/// plantel, e o silêncio é presença. Por isso a linha só nasce quando há o que
+
+/// dizer, e desaparece se a família desmarcar. Uma linha "afinal vai" seria um
+
+/// aviso que não avisa nada.
+
+model AbsenceNotice {
+  id String @id @default(cuid())
+
+  sessionId String
+
+  session TrainingSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+
+  athleteId String
+
+  athlete Athlete @relation(fields: [athleteId], references: [id], onDelete: Cascade)
+
+  /// Porquê. Obrigatório, e a base impõe-o: um aviso sem motivo deixa o
+
+  /// treinador a saber menos do que sabia — "não vem" sem mais nada não diz se
+
+  /// é uma consulta, uma viagem ou uma lesão que ninguém registou.
+
+  reason String
+
+  noticedAt DateTime @default(now())
+
+  /// Quem avisou — o vínculo, não a pessoa. A mesma pessoa pode ser encarregada
+
+  /// de um atleta e treinadora de outro, e interessa em que qualidade avisou.
+
+  /// Um dia é aqui que entra o próprio atleta, pela app dele. Mesmo desenho de
+
+  /// `MatchCallUp.respondedById`.
+
+  noticedById String?
+
+  noticedBy Membership? @relation("AbsenceNotice", fields: [noticedById], references: [id], onDelete: SetNull)
 
   @@unique([sessionId, athleteId])
   @@index([athleteId])
@@ -1932,6 +2030,7 @@ model Match {
    * /**
    * /**
    * /**
+   * /**
    * /*
    * Em que competição se joga isto.
    * Aponta para o catálogo (`CatalogItem` de `kind = "competitions"`) e é
@@ -1964,27 +2063,25 @@ model Match {
 
   /**
    * ---- A logística do dia ------------------------------------------------
-   *
    * Perguntada ao **submeter** a convocatória, que é quando alguém está de
    * facto a decidir estas coisas. Vivia no `localStorage` de quem exportava o
    * PDF — por equipa, por computador —, e por isso o pai nunca a via: a única
    * forma de sair do produto era papel impresso. Ver a migração
    * `20260912120000_convocatoria_com_logistica_e_resposta`.
-   *
    * Tudo nulo enquanto a convocatória não sair, e tudo opcional depois: um
    * amigável ao lado não precisa de ponto de encontro.
    */
   /// "Jornada 12", "Meias-finais" — o que a prova não diz sozinha.
-  roundLabel String?
+  roundLabel   String?
   /// Onde a equipa se junta: o clube, o parque, a bomba de gasolina da saída.
   meetingPoint String?
   /// A hora do encontro. Absoluta e não "30 minutos antes": um encontro na
   /// véspera (deslocação longa, concentração) tem de caber aqui.
-  meetingAt DateTime?
+  meetingAt    DateTime?
   /// A hora a que se chega ao recinto — a que o árbitro conta, não a do apito.
-  arrivalAt DateTime?
+  arrivalAt    DateTime?
   /// O que mais é preciso dizer às famílias: equipamento, almoço, transporte.
-  callUpNotes String?
+  callUpNotes  String?
 
   /// O clube quer que a família **confirme**, ou basta o silêncio?
   ///
@@ -2070,7 +2167,7 @@ model MatchCallUp {
   /// está doente ou de castigo, e as duas coisas decidem jogos diferentes.
   declineReason String?
   /// Quando a família respondeu. Nulo = não respondeu (o que não é recusar).
-  respondedAt DateTime?
+  respondedAt   DateTime?
   /// Quem respondeu — o vínculo, não a pessoa: a mesma pessoa pode ser
   /// encarregada de um e treinadora de outro, e interessa em que qualidade
   /// respondeu. Um dia é aqui que entra o próprio atleta, pela app dele.

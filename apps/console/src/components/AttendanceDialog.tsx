@@ -55,17 +55,34 @@ export function AttendanceDialog({
     .filter((a) => a.teamId === training.teamId && a.status === "active")
     .sort((a, b) => a.name.localeCompare(b.name, "pt"));
 
+  /*
+   * Os avisos das famílias — o que já se sabia antes de abrir isto.
+   *
+   * Quem avisou que não vinha entra já marcado como falta justificada, com o
+   * motivo escrito. É o que faz o aviso valer alguma coisa: sem isto, a família
+   * escrevia numa caixa que ninguém abria e o treinador escrevia o mesmo motivo
+   * outra vez. Continua tudo a ser decisão dele — o miúdo pode ter aparecido na
+   * mesma, e basta pôr "presente".
+   *
+   * A folha gravada ganha ao aviso: uma vez registada, é ela que manda.
+   */
+  const avisos = training.notices ?? [];
+
   // Só quem falta entra neste mapa. A ausência de entrada é a presença.
   const [absences, setAbsences] = useState<Record<string, AbsenceKind>>(() =>
-    Object.fromEntries((training.attendance?.absences ?? []).map((x) => [x.athleteId, x.kind])),
+    training.attendance
+      ? Object.fromEntries(training.attendance.absences.map((x) => [x.athleteId, x.kind]))
+      : Object.fromEntries(avisos.map((a) => [a.athleteId, "justified" as AbsenceKind])),
   );
   // O motivo de cada falta justificada, à parte do estado. Restaurado ao reabrir.
   const [notes, setNotes] = useState<Record<string, string>>(() =>
-    Object.fromEntries(
-      (training.attendance?.absences ?? [])
-        .filter((x) => x.kind === "justified" && x.note)
-        .map((x) => [x.athleteId, x.note as string]),
-    ),
+    training.attendance
+      ? Object.fromEntries(
+          training.attendance.absences
+            .filter((x) => x.kind === "justified" && x.note)
+            .map((x) => [x.athleteId, x.note as string]),
+        )
+      : Object.fromEntries(avisos.map((a) => [a.athleteId, a.reason])),
   );
 
   const setStatus = (athleteId: string, value: "present" | AbsenceKind) => {
@@ -159,6 +176,14 @@ export function AttendanceDialog({
         <p className="border-b border-line bg-sunken/40 px-5 py-2.5 text-meta text-ink-3">
           Escolhe o estado de cada atleta. Por omissão estão todos{" "}
           <strong className="font-medium text-ink">presentes</strong>.
+          {!training.attendance && avisos.length > 0 && (
+            <>
+              {" "}
+              {avisos.length === 1 ? "Uma família avisou" : `${avisos.length} famílias avisaram`} que não vinha
+              {avisos.length === 1 ? "" : "m"} — já {avisos.length === 1 ? "está marcada" : "estão marcadas"} como
+              falta justificada.
+            </>
+          )}
         </p>
       )}
 

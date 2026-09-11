@@ -229,6 +229,19 @@ export class MatchesController {
     return this.matches.actualizarLogistica(req.ctx, id, body);
   }
 
+  /**
+   * As respostas das famílias, e mais nada.
+   *
+   * A consola sonda isto enquanto tem a convocatória aberta — é o que faz a
+   * confirmação de um pai aparecer sem recarregar a página. Estreito de
+   * propósito: recarregar a academia para o saber são nove pedidos. Ver
+   * `MatchesService.respostasDaConvocatoria`.
+   */
+  @Get(":id/convocatoria/respostas")
+  callUpReplies(@Req() req: AuthedRequest, @Param("id") id: string) {
+    return this.matches.respostasDaConvocatoria(req.ctx, id);
+  }
+
   @Post(":id/convocatoria/reabrir")
   reopen(@Req() req: AuthedRequest, @Param("id") id: string) {
     return this.matches.reopenCallUps(req.ctx, id);

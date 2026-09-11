@@ -345,6 +345,23 @@ export type SessionAttendance = {
   recordedAt: string;
 };
 
+
+
+/**
+ * O aviso que uma família deu antes do treino: "não vai, e é por isto".
+ *
+ * Não é uma falta — é o que se sabe **antes** de o treino acontecer. Ao registar
+ * presenças aparece já marcado como falta justificada com o motivo escrito, e o
+ * treinador confirma em vez de escrever. Ver `AbsenceNotice`, do lado do servidor.
+ */
+export type AbsenceNotice = {
+  athleteId: string;
+  reason: string;
+  noticedAt: string;
+  /** Quem avisou. Nulo quando o vínculo foi entretanto apagado. */
+  noticedBy: string | null;
+};
+
 export type TrainingSession = {
   id: string;
   teamId: string;
@@ -367,6 +384,13 @@ export type TrainingSession = {
   coachName?: string;
   /** O nome da equipa, vindo com o treino. Ver `teamName` no evento. */
   teamName?: string;
+  /**
+   * Os avisos das famílias para este treino — quem disse que não vinha, e porquê.
+   *
+   * Vazio quase sempre. Chega fechada ou não a folha: antes serve para contar
+   * com menos um, depois para saber quem tinha avisado.
+   */
+  notices?: AbsenceNotice[];
   /**
    * Este treino é de uma equipa minha?
    *

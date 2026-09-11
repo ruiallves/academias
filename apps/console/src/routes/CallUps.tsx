@@ -15,6 +15,7 @@ import {
   upcomingMatches,
 } from "@/lib/callups";
 import { SubmitCallUpDialog } from "@/components/SubmitCallUpDialog";
+import { callUpReplies } from "@/lib/callups";
 import { descarregarFolha, type SheetMatch } from "@/lib/callup-export";
 import type { SheetRow } from "@/lib/callup-sheet";
 import { longDate, time } from "@/lib/format";
@@ -346,17 +347,27 @@ function Squad({ match }: { match: ApiMatch }) {
    * neste jogo — nos outros é o estado normal, e apresentá-lo como buraco na
    * equipa era inventar um problema.
    */
+  /*
+   * As respostas vivas — sondadas enquanto esta convocatória está aberta.
+   *
+   * O que vem no `match` é do último carregamento da academia, e um pai que
+   * confirme a seguir só aparecia se alguém recarregasse a página. Ver
+   * `useRespostasVivas`.
+   */
+  const vivas = useRespostasVivas(match.id, locked);
+  const linhas = vivas ?? match.calledUp;
+
   const respostas = useMemo(() => {
-    const porAtleta = new Map(match.calledUp.map((c) => [c.athleteId, c]));
-    const recusaram = match.calledUp.filter((c) => c.status === "DECLINED");
-    const confirmaram = match.calledUp.filter((c) => c.status === "CONFIRMED");
+    const porAtleta = new Map(linhas.map((c) => [c.athleteId, c]));
+    const recusaram = linhas.filter((c) => c.status === "DECLINED");
+    const confirmaram = linhas.filter((c) => c.status === "CONFIRMED");
     return {
       porAtleta,
       confirmaram: confirmaram.length,
       recusaram,
-      porResponder: match.calledUp.length - confirmaram.length - recusaram.length,
+      porResponder: linhas.length - confirmaram.length - recusaram.length,
     };
-  }, [match.calledUp]);
+  }, [linhas]);
 
   return (
     <Panel>
@@ -412,7 +423,7 @@ function Squad({ match }: { match: ApiMatch }) {
         )}
       </div>
 
-      {locked && <Respostas match={match} respostas={respostas} />}
+      {locked && <Respostas match={match} respostas={respostas} aoVivo={vivas !== null} />}
 
       <ul className="max-h-[440px] overflow-y-auto">
         {roster.map(({ athlete, blockedBy }) => {
@@ -602,11 +613,91 @@ function EstadoNaLista({ match }: { match: ApiMatch }) {
 /* -------------------------------------------------------------------------- */
 
 type Respostas = {
-  porAtleta: Map<string, ApiMatch["calledUp"][number]>;
+  porAtleta: Map<string, LinhaResposta>;
   confirmaram: number;
-  recusaram: ApiMatch["calledUp"];
+  recusaram: LinhaResposta[];
   porResponder: number;
 };
+
+/**
+ * Uma linha de convocado, venha ela do carregamento da academia ou da sondagem.
+ *
+ * As duas fontes dizem o mesmo sobre a resposta — estado, motivo, hora — e só a
+ * primeira traz o resto (convidado, equipa de origem). O que este ecrã precisa
+ * é da parte comum.
+ */
+type LinhaResposta = {
+  athleteId: string;
+  status: string;
+  declineReason?: string | null;
+  respondedAt?: string | null;
+};
+
+/**
+ * As respostas das famílias, sondadas enquanto a convocatória está aberta.
+ *
+ * ## Porquê sondar, e não esperar
+ *
+ * O pai confirma no telemóvel e o treinador está a olhar para a lista no
+ * computador. Sem isto, a confirmação só aparecia quando alguém carregasse em
+ * F5 — e ninguém carrega em F5 numa página que já está aberta: fica a olhar
+ * para uma lista que diz "sem resposta" sobre alguém que já respondeu.
+ *
+ * ## Doze segundos, e só com a página à frente
+ *
+ * `document.hidden` pára a sondagem quando o separador vai para trás: uma
+ * consola esquecida aberta numa secretaria durante o fim-de-semana não tem de
+ * estar a falar com o servidor. Volta a sondar — e sonda logo — quando a página
+ * volta à frente, que é o momento em que alguém vai olhar para ela.
+ *
+ * Só corre com a convocatória **submetida**: antes disso não há respostas para
+ * haver.
+ *
+ * Devolve `null` até à primeira resposta chegar, para quem chama poder usar o
+ * que já tinha em vez de piscar uma lista vazia.
+ */
+function useRespostasVivas(matchId: string, activo: boolean): LinhaResposta[] | null {
+  const [linhas, setLinhas] = useState<LinhaResposta[] | null>(null);
+
+  useEffect(() => {
+    if (!activo) {
+      setLinhas(null);
+      return;
+    }
+
+    let vivo = true;
+    const sondar = async () => {
+      if (document.hidden) return;
+      try {
+        const r = await callUpReplies(matchId);
+        if (vivo) setLinhas(r.rows);
+      } catch {
+        /*
+         * Uma sondagem que falha não diz nada ao utilizador: a página continua
+         * a mostrar o que tinha, e a próxima volta daqui a doze segundos. Um
+         * erro no ecrã por causa de um pedido de fundo é pior do que o atraso
+         * que ele estava a evitar.
+         */
+      }
+    };
+
+    void sondar();
+    const t = setInterval(() => void sondar(), 12_000);
+    // Voltar ao separador não espera pela volta seguinte.
+    const aoVoltar = () => {
+      if (!document.hidden) void sondar();
+    };
+    document.addEventListener("visibilitychange", aoVoltar);
+
+    return () => {
+      vivo = false;
+      clearInterval(t);
+      document.removeEventListener("visibilitychange", aoVoltar);
+    };
+  }, [matchId, activo]);
+
+  return linhas;
+}
 
 /**
  * Quem confirmou, quem não vai, e quem ainda não disse nada.
@@ -631,7 +722,16 @@ type Respostas = {
  * "o Tomás não vai" e tem de telefonar para saber porquê ficou com o mesmo
  * trabalho que tinha antes disto existir.
  */
-function Respostas({ match, respostas }: { match: ApiMatch; respostas: Respostas }) {
+function Respostas({
+  match,
+  respostas,
+  aoVivo,
+}: {
+  match: ApiMatch;
+  respostas: Respostas;
+  /** A sondagem já respondeu ao menos uma vez. Ver `useRespostasVivas`. */
+  aoVivo: boolean;
+}) {
   const { confirmaram, recusaram, porResponder } = respostas;
   const pediu = match.confirmationRequired;
 
@@ -647,6 +747,17 @@ function Respostas({ match, respostas }: { match: ApiMatch; respostas: Respostas
         {!pediu && (
           <span className="text-meta text-ink-3">
             Não pediste confirmação — quem não respondeu vai.
+          </span>
+        )}
+
+        {/*
+          Dizer que isto se actualiza sozinho evita a pergunta seguinte — "isto
+          está actualizado?" — e evita o F5 que ela provoca.
+        */}
+        {aoVivo && (
+          <span className="ml-auto inline-flex items-center gap-1.5 text-meta text-ink-4">
+            <span className="size-1.5 rounded-full bg-ok" aria-hidden />
+            ao vivo
           </span>
         )}
       </div>
@@ -694,7 +805,7 @@ function Resposta({
   linha,
   pediuConfirmacao,
 }: {
-  linha: ApiMatch["calledUp"][number] | undefined;
+  linha: LinhaResposta | undefined;
   pediuConfirmacao: boolean;
 }) {
   if (!linha) return null;

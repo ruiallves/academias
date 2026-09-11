@@ -66,6 +66,8 @@ type ApiSession = {
   notes?: string | null;
   recorded: boolean;
   absences: { athleteId: string; status: string }[];
+  /** Quem avisou que não vem. O servidor só manda os dos meus educandos. */
+  notices?: { athleteId: string; reason: string; noticedAt: string; noticedBy: string | null }[];
 };
 
 type ApiMatch = {
@@ -206,6 +208,15 @@ export type Training = {
   /** O que o clube escreveu sobre este treino. Quase sempre vazio. */
   notes?: string;
   cancelled: boolean;
+  /**
+   * O aviso que esta família já deu sobre este treino — nulo se não deu nenhum.
+   *
+   * É o equivalente do `reply` de um jogo, e existe pela mesma razão: sem ele o
+   * ecrã não sabe se há de oferecer "avisar" ou mostrar o que já foi dito.
+   */
+  notice?: { reason: string; at: Date };
+  /** A folha já está fechada — a partir daqui o aviso não muda nada. */
+  recorded: boolean;
 };
 
 /**
@@ -572,6 +583,11 @@ function build(
       coach: s.coachName ?? undefined,
       notes: s.notes?.trim() || undefined,
       cancelled: s.status === "CANCELLED",
+      notice: (() => {
+        const meu = s.notices?.find((n) => n.athleteId === childId);
+        return meu ? { reason: meu.reason, at: new Date(meu.noticedAt) } : undefined;
+      })(),
+      recorded: s.recorded,
     })),
   );
 

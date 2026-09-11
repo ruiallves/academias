@@ -232,7 +232,13 @@ export class AnnouncementsService {
         type: NotificationType.ANNOUNCEMENT_PUBLISHED,
         title,
         body,
-        payload: { announcementId: announcement.id, route: "/avisos" },
+        /*
+         * `/notificacoes` e não `/avisos`: a app da família nunca teve rota
+         * `/avisos`, e o router mandava-a para a página inicial. Tocar num
+         * aviso levava a lado nenhum — e é lá, na lista de notificações, que o
+         * texto do aviso está por inteiro.
+         */
+        payload: { announcementId: announcement.id, route: "/notificacoes" },
       });
     }
 

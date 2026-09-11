@@ -169,6 +169,43 @@ await db.query(
 const kickOff = (await db.query(`SELECT "startsAt" FROM "Match" WHERE id = $1`, [MATCH])).rows[0]?.startsAt;
 check("e está no futuro", kickOff && kickOff.getTime() > Date.now(), `${kickOff}`);
 
+/* ============================ o aviso diz o que é preciso fazer ===== */
+
+/*
+ * "O Rui está convocado" é uma informação: lê-se e arruma-se. Se o clube precisa
+ * de resposta e o aviso não o disser, o pai lê, fecha, e o treinador fica à
+ * espera de uma confirmação que ninguém sabe que tem de dar.
+ */
+console.log("\n=== O aviso pede, quando há que pedir ===");
+await db.query(`DELETE FROM "Notification" WHERE type = 'MATCH_CALLED_UP'`);
+await call(coach, "POST", `/api/matches/${MATCH}/convocatoria`, { athleteIds: filhos.slice(0, 1) });
+await call(coach, "POST", `/api/matches/${MATCH}/convocatoria/submeter`, { confirmationRequired: true });
+
+const comPedido = (await db.query(
+  `SELECT title, body, payload FROM "Notification" WHERE type = 'MATCH_CALLED_UP' ORDER BY "createdAt" DESC LIMIT 1`,
+)).rows[0];
+check("o título pede em vez de informar", /confirma a presença/i.test(comPedido?.title ?? ""), `${comPedido?.title}`);
+check("e o corpo diz o que fazer", /abre para dizer se vai/i.test(comPedido?.body ?? ""), `${comPedido?.body}`);
+check(
+  "e leva ao jogo",
+  (comPedido?.payload?.route ?? "") === `/evento/jogo/${MATCH}`,
+  JSON.stringify(comPedido?.payload),
+);
+
+/* Sem pedido de confirmação, o aviso volta a ser uma informação. */
+await db.query(`DELETE FROM "Notification" WHERE type = 'MATCH_CALLED_UP'`);
+await db.query(`UPDATE "Match" SET "callUpsClosedAt" = NULL WHERE id = $1`, [MATCH]);
+await call(coach, "POST", `/api/matches/${MATCH}/convocatoria/submeter`, {});
+const semPedido = (await db.query(
+  `SELECT title FROM "Notification" WHERE type = 'MATCH_CALLED_UP' ORDER BY "createdAt" DESC LIMIT 1`,
+)).rows[0];
+check("sem confirmação pedida, informa", /está convocado/i.test(semPedido?.title ?? ""), `${semPedido?.title}`);
+
+/* Reposto para o resto do ficheiro montar a convocatória de raiz. */
+await db.query(`UPDATE "Match" SET "callUpsClosedAt" = NULL WHERE id = $1`, [MATCH]);
+await db.query(`DELETE FROM "MatchCallUp" WHERE "matchId" = $1`, [MATCH]);
+await db.query(`DELETE FROM "Notification" WHERE type = 'MATCH_CALLED_UP'`);
+
 /* ====================================================== a logística ===== */
 
 console.log("\n=== Submeter guarda a logística ===");
@@ -449,6 +486,39 @@ check(
   jogoConf?.calledUp?.find((c) => c.athleteId === filho)?.status === "CONFIRMED",
   JSON.stringify(jogoConf?.calledUp?.find((c) => c.athleteId === filho)),
 );
+
+/* ================================= o que a consola sonda ao vivo ===== */
+
+/*
+ * A consola pergunta isto de doze em doze segundos enquanto tem a convocatória
+ * aberta — é o que faz a confirmação de um pai aparecer sem ninguém carregar em
+ * F5. Recarregar a academia para o saber seriam nove pedidos.
+ */
+console.log("\n=== As respostas ao vivo ===");
+const vivas = await call(coach, "GET", `/api/matches/${MATCH}/convocatoria/respostas`);
+check("o endpoint responde (200)", vivas.status === 200, `${vivas.status}`);
+check("diz que a convocatória está submetida", vivas.body?.submitted === true, JSON.stringify(vivas.body?.submitted));
+check("e se pede confirmação", vivas.body?.confirmationRequired === true, `${vivas.body?.confirmationRequired}`);
+const linhaViva = (vivas.body?.rows ?? []).find((r) => r.athleteId === filho);
+check("traz o estado de cada convocado", linhaViva?.status === "CONFIRMED", JSON.stringify(linhaViva));
+
+/*
+ * E não traz nomes: quem tem a página aberta já tem o plantel carregado. Mandar
+ * os nomes em cada sondagem era repetir a mesma coisa vinte vezes por hora.
+ */
+check(
+  "sem nomes — só o que muda",
+  Object.keys(linhaViva ?? {}).sort().join(",") === "athleteId,declineReason,respondedAt,status",
+  Object.keys(linhaViva ?? {}).join(","),
+);
+
+/*
+ * Um encarregado não lê isto. Tem `calendar:read` e a equipa do filho no
+ * âmbito — sem a recusa explícita, lia quem recusou e porquê, com nomes de
+ * miúdos e motivos de saúde lá dentro.
+ */
+const vivasPeloPai = await call(parent, "GET", `/api/matches/${MATCH}/convocatoria/respostas`);
+check("um encarregado não lê as respostas dos outros (403)", vivasPeloPai.status === 403, `${vivasPeloPai.status}`);
 
 /* ==================================================== as fronteiras ===== */
 

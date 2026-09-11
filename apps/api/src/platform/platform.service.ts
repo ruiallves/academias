@@ -497,14 +497,25 @@ export class PlatformService {
         });
       }
 
-      // Assinou e não arrancou — o preditor de churn mais forte que há.
-      if (a.status === "SETUP" && now - new Date(a.createdAt).getTime() > 7 * DAY) {
-        alerts.push({
-          ...base, id: `${a.id}:onboarding`, severity: "warn",
-          title: `Onboarding parado em ${a.onboarding.percent}%`,
-          detail: `Entrou há ${Math.floor((now - new Date(a.createdAt).getTime()) / DAY)} dias e ainda não montou a academia.`,
-        });
-      }
+      /*
+       * O onboarding parado **não** é alerta — foi retirado a 11/09/2026.
+       *
+       * A ideia era boa no papel (assinar e não arrancar prevê cancelamento),
+       * mas a condição é "está em SETUP há mais de 7 dias" e o SETUP não tem
+       * saída automática: uma academia de demonstração, um clube que se criou
+       * para experimentar, qualquer coisa que nunca chegou a arrancar fica ali
+       * **para sempre**, a repetir o mesmo aviso todos os dias.
+       *
+       * O resultado é o contrário do que a regra desta lista pede: quando a
+       * maior parte do que está aqui não se vai resolver, deixa-se de ler a
+       * lista — e os avisos que valem mesmo (trial a acabar, pagamento
+       * falhado) desaparecem no meio.
+       *
+       * O progresso continua a ser calculado e a ver-se onde tem contexto: a
+       * coluna de onboarding na lista de Academias, por clube e com a
+       * percentagem à vista. É o sítio onde a informação responde a uma
+       * pergunta em vez de interromper.
+       */
 
       if (a.status !== "SETUP" && a.lastActivity && now - new Date(a.lastActivity).getTime() > 14 * DAY) {
         alerts.push({

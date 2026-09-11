@@ -1,10 +1,24 @@
-import { useState } from "react";
+import { useState, type ReactNode } from "react";
 import { useNavigate, useParams } from "react-router-dom";
-import { CalendarOff, ChevronLeft, Clock, DoorOpen, MapPin, StickyNote, UserRound } from "lucide-react";
+import {
+  CalendarOff,
+  Check,
+  ChevronLeft,
+  Clock,
+  DoorOpen,
+  Hourglass,
+  MapPin,
+  Minus,
+  StickyNote,
+  Trophy,
+  UserRound,
+  X,
+} from "lucide-react";
 import { useChild } from "@/App";
-import { reload, useStore, type CallUpState, type Match } from "@/lib/store";
+import { reload, useStore, type CallUpState, type Match, type Training } from "@/lib/store";
 import { responderConvocatoria } from "@/lib/convocatoria";
-import { Chip, cx, dayName, dateShort, time } from "@/ui";
+import { avisarAusencia, retirarAviso } from "@/lib/ausencia";
+import { cx, dayName, dateShort, time } from "@/ui";
 
 /**
  * A página de um evento — o treino ou o jogo, por dentro.
@@ -75,6 +89,7 @@ export default function Evento() {
       </header>
 
       {jogo && !cancelado && <Convocatoria jogo={jogo} />}
+      {treino && !cancelado && <Ausencia treino={treino} />}
 
       <section className="mt-4 overflow-hidden rounded-[var(--radius-xl)] bg-surface shadow-[var(--shadow-soft)]">
         <Facto icone={MapPin} rotulo="Onde" valor={treino?.venue ?? jogo!.venue} />
@@ -157,110 +172,179 @@ function Facto({
 /* A convocatória                                                              */
 /* -------------------------------------------------------------------------- */
 
-const ESTADO: Record<CallUpState, { rotulo: string; explicacao: string; tom: "ok" | "warn" | "neutral" | "risk" }> = {
+/**
+ * Onde é que este filho está, nesta convocatória.
+ *
+ * Quatro estados, e são precisos os quatro: "ainda não se sabe" e "ficou de
+ * fora" são coisas diferentes para quem lê, e juntá-las dizia a um pai que o
+ * filho tinha sido cortado de uma lista que ainda ninguém fez.
+ */
+const ESTADO: Record<
+  CallUpState,
+  { rotulo: string; explicacao: string; icone: typeof Check; cor: string; fundo: string }
+> = {
   pending: {
     rotulo: "Convocatória por lançar",
     explicacao: "O clube ainda não fechou a lista. Recebes uma notificação assim que fechar.",
-    tom: "neutral",
+    icone: Hourglass,
+    cor: "text-ink-3",
+    fundo: "bg-sunken",
   },
   out: {
     rotulo: "Não convocado",
     explicacao: "A lista deste jogo já saiu, e desta vez não ficou nela.",
-    tom: "warn",
+    icone: Minus,
+    cor: "text-warn",
+    fundo: "bg-warn-soft",
   },
-  in: { rotulo: "Convocado", explicacao: "", tom: "ok" },
-  cancelled: { rotulo: "Jogo cancelado", explicacao: "Este jogo foi desmarcado.", tom: "risk" },
+  in: {
+    rotulo: "Convocado",
+    explicacao: "",
+    icone: Trophy,
+    cor: "text-ok",
+    fundo: "bg-ok-soft",
+  },
+  cancelled: {
+    rotulo: "Jogo cancelado",
+    explicacao: "Este jogo foi desmarcado.",
+    icone: CalendarOff,
+    cor: "text-risk",
+    fundo: "bg-risk-soft",
+  },
 };
 
 /**
  * O estado da convocatória, e a resposta da família.
  *
- * ## Os quatro estados são precisos
- *
- * "Ainda não se sabe" e "ficou de fora" são coisas diferentes para quem lê, e
- * juntá-las num "não convocado" dizia a um pai que o filho tinha sido cortado
- * de uma lista que ainda ninguém fez.
- *
  * ## Assume-se que vai
  *
- * O botão de baixo diz "Não vou poder ir", e não há botão de "vou" a não ser
- * que o clube tenha pedido confirmação. É de propósito: obrigar toda a gente a
- * carregar num botão em todos os jogos ensina as famílias a carregar sem ler, e
- * aí a confirmação deixa de valer nada justamente no jogo em que era precisa.
+ * Sem confirmação pedida há **um** botão, discreto, a dizer "Não vai poder ir".
+ * Obrigar toda a gente a carregar em "vou" em todos os jogos ensina as famílias
+ * a carregar sem ler — e aí a confirmação deixa de valer nada justamente no
+ * jogo em que era precisa.
+ *
+ * Com confirmação pedida há dois, e o "Vai jogar" é o principal: nesse jogo o
+ * clube está à espera de uma resposta, e o ecrã tem de o dizer em vez de o
+ * esconder numa frase.
+ *
+ * ## Uma resposta dada fica à vista
+ *
+ * Um pai que avisou na terça e abre a app na sexta tem de ver o que disse —
+ * senão fica na dúvida se chegou a carregar e volta a escrever ao treinador,
+ * que é o que isto veio evitar. Daí o cartão de estado com a hora da resposta e
+ * uma saída discreta para a mudar.
  */
 function Convocatoria({ jogo }: { jogo: Match }) {
   const meta = ESTADO[jogo.callUp];
+  const Icone = meta.icone;
   const [aRecusar, setARecusar] = useState(false);
 
+  const respondeu = jogo.reply;
+  const porResponder = jogo.callUp === "in" && !respondeu;
+
   return (
-    <section className="mt-4 rounded-[var(--radius-xl)] bg-surface p-4 shadow-[var(--shadow-soft)]">
-      <div className="flex flex-wrap items-center gap-2">
-        <Chip tone={meta.tom}>{meta.rotulo}</Chip>
-        {jogo.callUp === "in" && jogo.confirmationRequired && !jogo.reply && (
-          <Chip tone="warn">Confirmação pedida</Chip>
-        )}
+    <section className="mt-4 overflow-hidden rounded-[var(--radius-xl)] bg-surface shadow-[var(--shadow-soft)]">
+      {/* A faixa de estado: um facto, lido de relance, com o peso de um título. */}
+      <div className="flex items-start gap-3 p-4">
+        <span className={cx("flex size-11 shrink-0 items-center justify-center rounded-[14px]", meta.fundo, meta.cor)}>
+          <Icone className="size-[21px]" strokeWidth={1.9} />
+        </span>
+        <span className="min-w-0 flex-1">
+          <span className="block text-[17px] leading-tight font-semibold tracking-[-0.01em] text-ink">
+            {meta.rotulo}
+          </span>
+          <span className="mt-0.5 block text-[13px] leading-relaxed text-ink-2">
+            {meta.explicacao ||
+              (respondeu
+                ? respondeu.going
+                  ? "Disseste que vai."
+                  : "Disseste que não vai."
+                : jogo.confirmationRequired
+                  ? "O clube pede que confirmes a presença."
+                  : "Contamos com ele. Só precisas de responder se não puder ir.")}
+          </span>
+        </span>
       </div>
 
-      {meta.explicacao && <p className="mt-2 text-[14px] leading-relaxed text-ink-2">{meta.explicacao}</p>}
-
       {jogo.callUp === "in" && (
-        <>
-          {jogo.reply && !jogo.reply.going ? (
-            /*
-             * A recusa fica escrita, e com o motivo à vista.
-             *
-             * Um pai que disse "não vai" na terça e abre a app na sexta tem de
-             * ver o que disse — sem isso, fica na dúvida se chegou a carregar, e
-             * volta a escrever ao treinador, que é o que isto veio evitar.
-             */
-            <div className="mt-3 rounded-[var(--radius-lg)] bg-risk-soft p-3.5">
-              <p className="text-[14px] font-semibold text-risk">Disseste que não vai</p>
-              <p className="mt-1 text-[13px] leading-relaxed text-ink-2">{jogo.reply.reason}</p>
-              <Responder jogo={jogo} going label="Afinal vai" ghost />
-            </div>
-          ) : jogo.reply?.going ? (
-            <div className="mt-3 rounded-[var(--radius-lg)] bg-ok-soft p-3.5">
-              <p className="text-[14px] font-semibold text-ok">Confirmaste a presença</p>
+        <div className="border-t border-ink/5 p-4">
+          {respondeu && !respondeu.going && (
+            <RespostaDada
+              tom="risk"
+              icone={X}
+              titulo="Não vai a este jogo"
+              detalhe={respondeu.reason ?? ""}
+              quando={respondeu.at}
+            >
+              <Responder jogo={jogo} going label="Afinal vai" />
+            </RespostaDada>
+          )}
+
+          {respondeu?.going && (
+            <RespostaDada tom="ok" icone={Check} titulo="Presença confirmada" quando={respondeu.at}>
               <button
                 type="button"
                 onClick={() => setARecusar(true)}
-                className="mt-1 text-[13px] font-medium text-ink-2 underline underline-offset-2"
+                className="text-[13px] font-semibold text-ink-2 underline underline-offset-2"
               >
                 Afinal não vai poder ir
               </button>
+            </RespostaDada>
+          )}
+
+          {porResponder && !aRecusar && (
+            <div className={cx("grid gap-2", jogo.confirmationRequired && "grid-cols-2")}>
+              {jogo.confirmationRequired && <Responder jogo={jogo} going label="Vai jogar" destaque />}
+              <button
+                type="button"
+                onClick={() => setARecusar(true)}
+                className={jogo.confirmationRequired ? "cta-quiet" : "cta-quiet w-full"}
+              >
+                Não vai poder ir
+              </button>
             </div>
-          ) : (
-            <>
-              <p className="mt-2 text-[14px] leading-relaxed text-ink-2">
-                {jogo.confirmationRequired
-                  ? "O clube pede que confirmes a presença."
-                  : "Contamos com ele. Só precisas de responder se não puder ir."}
-              </p>
-              <div className="mt-3 flex flex-wrap gap-2">
-                {jogo.confirmationRequired && <Responder jogo={jogo} going label="Vai" />}
-                <button
-                  type="button"
-                  onClick={() => setARecusar(true)}
-                  className={cx(
-                    "rounded-full px-4 py-2 text-[14px] font-semibold",
-                    jogo.confirmationRequired ? "bg-sunken text-ink-2" : "bg-ink text-white",
-                  )}
-                >
-                  Não vai poder ir
-                </button>
-              </div>
-            </>
           )}
 
           {aRecusar && <Recusar jogo={jogo} onFechar={() => setARecusar(false)} />}
-        </>
+        </div>
       )}
     </section>
   );
 }
 
+/** O cartão de uma resposta já dada — o que se disse, quando, e como mudar. */
+function RespostaDada({
+  tom,
+  icone: Icone,
+  titulo,
+  detalhe,
+  quando,
+  children,
+}: {
+  tom: "ok" | "risk";
+  icone: typeof Check;
+  titulo: string;
+  detalhe?: string;
+  quando: Date;
+  children: ReactNode;
+}) {
+  return (
+    <div className={cx("rounded-[var(--radius-lg)] p-3.5", tom === "ok" ? "bg-ok-soft" : "bg-risk-soft")}>
+      <p className={cx("flex items-center gap-1.5 text-[14px] font-semibold", tom === "ok" ? "text-ok" : "text-risk")}>
+        <Icone className="size-4 shrink-0" strokeWidth={2.5} />
+        {titulo}
+      </p>
+      {detalhe && <p className="mt-1 text-[13px] leading-relaxed text-ink-2">{detalhe}</p>}
+      <p className="mt-1 text-[12px] text-ink-3">
+        Respondeste {dayName(quando).toLowerCase()}, {dateShort(quando)} às {time(quando)}
+      </p>
+      <div className="mt-2">{children}</div>
+    </div>
+  );
+}
+
 /** Um botão que responde "vai" — a confirmação, ou o desfazer de uma recusa. */
-function Responder({ jogo, going, label, ghost }: { jogo: Match; going: boolean; label: string; ghost?: boolean }) {
+function Responder({ jogo, going, label, destaque }: { jogo: Match; going: boolean; label: string; destaque?: boolean }) {
   const [busy, setBusy] = useState(false);
   const [erro, setErro] = useState<string | null>(null);
 
@@ -283,12 +367,9 @@ function Responder({ jogo, going, label, ghost }: { jogo: Match; going: boolean;
         type="button"
         disabled={busy}
         onClick={() => void responder()}
-        className={cx(
-          ghost
-            ? "mt-2 text-[13px] font-medium text-ink-2 underline underline-offset-2"
-            : "rounded-full bg-ink px-4 py-2 text-[14px] font-semibold text-white",
-        )}
+        className={destaque ? "cta w-full" : "text-[13px] font-semibold text-ink-2 underline underline-offset-2"}
       >
+        {destaque && !busy && <Check className="size-[18px]" strokeWidth={2.4} />}
         {busy ? "A enviar…" : label}
       </button>
       {erro && <p className="mt-1.5 text-[13px] text-risk">{erro}</p>}
@@ -297,12 +378,22 @@ function Responder({ jogo, going, label, ghost }: { jogo: Match; going: boolean;
 }
 
 /**
+ * Os motivos que se repetem, num toque.
+ *
+ * Escrever num telemóvel é o passo onde as pessoas desistem — e um pai apressado
+ * escreve "n vai" ou nada. Quatro botões cobrem quase tudo o que acontece a
+ * sério, e o que sai do outro lado é uma frase que o treinador percebe. Continua
+ * a dar para escrever: os botões preenchem a caixa, não a substituem.
+ */
+const MOTIVOS = ["Está doente", "Tem prova na escola", "Está fora com a família", "Lesionado"];
+
+/**
  * Dizer que não vai — e porquê.
  *
- * O motivo é obrigatório, e a explicação de porquê está no ecrã: um treinador
- * que lê "não vai" sem mais nada não sabe se procura substituto ou se telefona
- * a perguntar se está tudo bem. Não é burocracia — é a diferença entre uma
- * ausência tratada e um telefonema no sábado de manhã.
+ * O motivo é obrigatório, e a razão está no ecrã: um treinador que lê "não vai"
+ * sem mais nada não sabe se procura substituto ou se telefona a perguntar se
+ * está tudo bem. Não é burocracia — é a diferença entre uma ausência tratada e
+ * um telefonema no sábado de manhã.
  */
 function Recusar({ jogo, onFechar }: { jogo: Match; onFechar: () => void }) {
   const [motivo, setMotivo] = useState(jogo.reply?.reason ?? "");
@@ -325,40 +416,230 @@ function Recusar({ jogo, onFechar }: { jogo: Match; onFechar: () => void }) {
   }
 
   return (
-    <div className="mt-3 rounded-[var(--radius-lg)] bg-sunken p-3.5">
-      <label className="block text-[13px] font-semibold text-ink" htmlFor="motivo-falta">
-        Porque é que não vai?
-      </label>
+    <div className="rounded-[var(--radius-lg)] bg-sunken p-3.5">
+      <p className="text-[14px] font-semibold text-ink">Porque é que não vai?</p>
       <p className="mt-0.5 text-[12px] leading-relaxed text-ink-3">
-        O treinador precisa de saber para decidir a equipa. Uma linha chega.
+        O treinador precisa de saber para decidir a equipa.
       </p>
+
+      <div className="mt-2.5 flex flex-wrap gap-1.5">
+        {MOTIVOS.map((m) => (
+          <button
+            key={m}
+            type="button"
+            onClick={() => setMotivo(m)}
+            aria-pressed={motivo === m}
+            className={cx(
+              "rounded-full px-3 py-1.5 text-[13px] font-medium",
+              motivo === m ? "bg-ink text-surface" : "bg-surface text-ink-2",
+            )}
+          >
+            {m}
+          </button>
+        ))}
+      </div>
+
       <textarea
         id="motivo-falta"
-        autoFocus
         rows={2}
         value={motivo}
         onChange={(e) => setMotivo(e.target.value)}
         maxLength={300}
-        placeholder="Está doente. / Tem prova na escola. / Está fora com a família."
-        className="mt-2 w-full resize-y rounded-[var(--radius-lg)] border border-ink/10 bg-surface px-3 py-2 text-[14px] leading-relaxed text-ink outline-none focus:border-ink/25"
+        placeholder="Ou escreve o motivo"
+        aria-label="Motivo da ausência"
+        className="mt-2 w-full resize-y rounded-[var(--radius-md)] border border-ink/10 bg-surface px-3 py-2.5 text-[14px] leading-relaxed text-ink outline-none placeholder:text-ink-4 focus:border-ink/25"
       />
 
       {erro && <p className="mt-1.5 text-[13px] text-risk">{erro}</p>}
 
-      <div className="mt-2.5 flex gap-2">
-        <button type="button" onClick={onFechar} className="rounded-full bg-surface px-4 py-2 text-[13px] font-semibold text-ink-2">
+      <div className="mt-2.5 grid grid-cols-[auto_1fr] gap-2">
+        <button type="button" onClick={onFechar} className="cta-quiet px-5">
           Cancelar
         </button>
-        <button
-          type="button"
-          disabled={!pronto || busy}
-          onClick={() => void enviar()}
-          className="flex-1 rounded-full bg-ink px-4 py-2 text-[13px] font-semibold text-white disabled:opacity-40"
-        >
+        <button type="button" disabled={!pronto || busy} onClick={() => void enviar()} className="cta">
           {busy ? "A enviar…" : "Avisar o clube"}
         </button>
       </div>
     </div>
+  );
+}
+
+
+/* -------------------------------------------------------------------------- */
+/* O treino: avisar que não vai                                                */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * O irmão da `Convocatoria`, para os treinos.
+ *
+ * ## Porque é mais simples do que um jogo
+ *
+ * Num jogo há uma convocatória: estar na lista é um facto que se mostra, e a
+ * resposta pode ser "vai" ou "não vai". Num treino vai o plantel todo — não há
+ * lista, não há nada a confirmar, e **o silêncio é presença**. Por isso aqui não
+ * há dois botões nem estado nenhum a desenhar: há um aviso, que se dá e se
+ * retira.
+ *
+ * ## Depois de a folha estar fechada, não
+ *
+ * O treinador já registou quem faltou; um aviso a chegar depois disso não avisa
+ * ninguém e só serviria para discutir uma falta já lançada. O servidor recusa-o,
+ * e o ecrã não o oferece — em vez de um botão que dá erro.
+ */
+function Ausencia({ treino }: { treino: Training }) {
+  const [aAvisar, setAAvisar] = useState(false);
+  const jaPassou = treino.end <= new Date();
+
+  if (treino.recorded || (jaPassou && !treino.notice)) return null;
+
+  return (
+    <section className="mt-4 overflow-hidden rounded-[var(--radius-xl)] bg-surface p-4 shadow-[var(--shadow-soft)]">
+      {treino.notice ? (
+        <>
+          {/*
+            Cartão próprio, e não o `RespostaDada` dos jogos: aquele diz
+            "Respondeste", que é verdade para quem respondeu a uma convocatória e
+            falso para quem avisou sem ninguém ter perguntado.
+          */}
+          <div className="rounded-[var(--radius-lg)] bg-risk-soft p-3.5">
+            <p className="flex items-center gap-1.5 text-[14px] font-semibold text-risk">
+              <X className="size-4 shrink-0" strokeWidth={2.5} />
+              Avisaste que não vai
+            </p>
+            <p className="mt-1 text-[13px] leading-relaxed text-ink-2">{treino.notice.reason}</p>
+            <p className="mt-1 text-[12px] text-ink-3">
+              Avisaste {dayName(treino.notice.at).toLowerCase()}, {dateShort(treino.notice.at)} às{" "}
+              {time(treino.notice.at)}
+            </p>
+          </div>
+          {!jaPassou && !aAvisar && (
+            <div className="mt-3 grid grid-cols-2 gap-2">
+              <button type="button" onClick={() => setAAvisar(true)} className="cta-quiet">
+                Mudar o motivo
+              </button>
+              <Retirar treino={treino} />
+            </div>
+          )}
+        </>
+      ) : (
+        !aAvisar && (
+          <>
+            <p className="text-[15px] leading-relaxed text-ink-2">
+              Não vai poder ir a este treino? Avisa o treinador por aqui.
+            </p>
+            <button type="button" onClick={() => setAAvisar(true)} className="cta-quiet mt-3 w-full">
+              Não vai poder ir
+            </button>
+          </>
+        )
+      )}
+
+      {aAvisar && <Avisar treino={treino} onFechar={() => setAAvisar(false)} />}
+    </section>
+  );
+}
+
+/**
+ * Dizer que não vai a um treino — e porquê.
+ *
+ * Mesmo diálogo da recusa de convocatória, com os mesmos atalhos: escrever num
+ * telemóvel é onde as pessoas desistem, e quatro botões cobrem quase tudo o que
+ * acontece a sério. Continua a dar para escrever — os botões preenchem a caixa,
+ * não a substituem.
+ */
+function Avisar({ treino, onFechar }: { treino: Training; onFechar: () => void }) {
+  const [motivo, setMotivo] = useState(treino.notice?.reason ?? "");
+  const [busy, setBusy] = useState(false);
+  const [erro, setErro] = useState<string | null>(null);
+  const pronto = motivo.trim().length >= 3;
+
+  async function enviar() {
+    if (!pronto || busy) return;
+    setBusy(true);
+    setErro(null);
+    try {
+      await avisarAusencia(treino.sessionId, treino.childId, motivo.trim());
+      await reload();
+      onFechar();
+    } catch (e) {
+      setErro(e instanceof Error ? e.message : "Não foi possível enviar.");
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div className="mt-3 rounded-[var(--radius-lg)] bg-sunken p-3.5">
+      <p className="text-[14px] font-semibold text-ink">Porque é que não vai?</p>
+      <p className="mt-0.5 text-[12px] leading-relaxed text-ink-3">
+        O treinador precisa de saber para contar com ele ou não.
+      </p>
+
+      <div className="mt-2.5 flex flex-wrap gap-1.5">
+        {MOTIVOS.map((m) => (
+          <button
+            key={m}
+            type="button"
+            onClick={() => setMotivo(m)}
+            aria-pressed={motivo === m}
+            className={cx(
+              "rounded-full px-3 py-1.5 text-[13px] font-medium",
+              motivo === m ? "bg-ink text-surface" : "bg-surface text-ink-2",
+            )}
+          >
+            {m}
+          </button>
+        ))}
+      </div>
+
+      <textarea
+        rows={2}
+        value={motivo}
+        onChange={(e) => setMotivo(e.target.value)}
+        maxLength={200}
+        placeholder="Ou escreve o motivo"
+        aria-label="Motivo da ausência ao treino"
+        className="mt-2 w-full resize-y rounded-[var(--radius-md)] border border-ink/10 bg-surface px-3 py-2.5 text-[14px] leading-relaxed text-ink outline-none placeholder:text-ink-4 focus:border-ink/25"
+      />
+
+      {erro && <p className="mt-1.5 text-[13px] text-risk">{erro}</p>}
+
+      <div className="mt-2.5 grid grid-cols-[auto_1fr] gap-2">
+        <button type="button" onClick={onFechar} className="cta-quiet px-5">
+          Cancelar
+        </button>
+        <button type="button" disabled={!pronto || busy} onClick={() => void enviar()} className="cta">
+          {busy ? "A enviar…" : "Avisar o clube"}
+        </button>
+      </div>
+    </div>
+  );
+}
+
+/** Afinal vai. O aviso desaparece — ver `AbsenceNotice`, do lado do servidor. */
+function Retirar({ treino }: { treino: Training }) {
+  const [busy, setBusy] = useState(false);
+  const [erro, setErro] = useState<string | null>(null);
+
+  async function enviar() {
+    if (busy) return;
+    setBusy(true);
+    setErro(null);
+    try {
+      await retirarAviso(treino.sessionId, treino.childId);
+      await reload();
+    } catch (e) {
+      setErro(e instanceof Error ? e.message : "Não foi possível retirar o aviso.");
+      setBusy(false);
+    }
+  }
+
+  return (
+    <>
+      <button type="button" disabled={busy} onClick={() => void enviar()} className="cta">
+        {busy ? "Um momento…" : "Afinal vai"}
+      </button>
+      {erro && <p className="col-span-2 mt-1.5 text-[13px] text-risk">{erro}</p>}
+    </>
   );
 }
 

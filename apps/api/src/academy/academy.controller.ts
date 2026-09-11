@@ -7,7 +7,7 @@ import { SHORT_NAME_MAX } from "../common/short-name";
 import { AthletesService } from "./athletes.service";
 import { AthleteInputDto, AthleteTaxIdDto, AthleteUpdateDto, ImportAthletesDto } from "./athletes.dto";
 import { CreateTeamDto, ImportTeamsDto } from "./teams.dto";
-import { AttendanceDto, CreateEventDto, EditEventDto, UpdateEventDto } from "./events.dto";
+import { AttendanceDto, CreateEventDto, EditEventDto, UpdateEventDto, AbsenceNoticeDto } from "./events.dto";
 import { BillingService, periodoActual, type AplicarEm } from "../billing/billing.service";
 
 /**
@@ -561,6 +561,25 @@ export class AcademyController {
   @Put("sessions/:id/attendance")
   recordAttendance(@Req() req: AuthedRequest, @Param("id") id: string, @Body() body: AttendanceDto) {
     return this.academy.recordAttendance(req.ctx, id, body.absences);
+  }
+
+  /**
+   * A família avisa que o atleta não vai a este treino.
+   *
+   * Vive aqui, ao lado dos treinos, e não num controlador de família — pela
+   * mesma razão que a resposta à convocatória vive no dos jogos: a autorização
+   * não é "sou do clube", é **este atleta é meu**, e quem a dá é o
+   * `athleteScopeFilter` dentro do serviço.
+   */
+  @Post("sessions/:id/ausencia")
+  avisarAusencia(@Req() req: AuthedRequest, @Param("id") id: string, @Body() body: AbsenceNoticeDto) {
+    return this.academy.avisarAusencia(req.ctx, id, body.athleteId, body.reason);
+  }
+
+  /** Afinal vai — o aviso desaparece. */
+  @Delete("sessions/:id/ausencia/:athleteId")
+  retirarAviso(@Req() req: AuthedRequest, @Param("id") id: string, @Param("athleteId") athleteId: string) {
+    return this.academy.retirarAviso(req.ctx, id, athleteId);
   }
 
   /**

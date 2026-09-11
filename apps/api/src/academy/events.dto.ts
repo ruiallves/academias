@@ -185,6 +185,24 @@ export class AbsenceDto {
  * O tecto de 60 é o plantel mais generoso que faz sentido num treino; acima
  * disso é engano ou abuso, e recusa-se aqui em vez de escrever sessenta linhas.
  */
+/**
+ * O aviso da família de que um atleta não vai a um treino.
+ *
+ * O motivo é obrigatório pela mesma razão da recusa de convocatória: sem ele o
+ * treinador fica a saber menos do que sabia. 200 caracteres é o tamanho do
+ * `note` da falta justificada, que é onde isto acaba por aterrar quando o
+ * treinador fecha a folha.
+ */
+export class AbsenceNoticeDto {
+  @IsString()
+  @Length(1, 40)
+  athleteId!: string;
+
+  @IsString()
+  @Length(3, 200)
+  reason!: string;
+}
+
 export class AttendanceDto {
   @IsArray()
   @ArrayMaxSize(60)

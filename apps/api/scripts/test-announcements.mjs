@@ -83,9 +83,19 @@ console.log("\n=== O escalão estreita os pais ===");
  * A equipa com mais famílias — para o recorte ter a quem chegar. Sai da base e
  * não de um id escrito à mão: o seed muda, e um teste preso a um id morre com ele.
  */
+/*
+ * A equipa tem de ser **desta** academia.
+ *
+ * A consulta não filtrava por academia, e escolhia a equipa com mais famílias de
+ * toda a base. Enquanto só havia o seed isso dava sempre uma equipa do
+ * life-club; com clubes a sério na base de desenvolvimento passou a dar a
+ * equipa de outro clube — e a direcção do life-club levava 400 "Escalão
+ * desconhecido", com toda a razão. O teste é que estava errado.
+ */
 const alvo = (await db.query(`
   SELECT t.id, t.name, count(DISTINCT gl."membershipId")::int AS n
   FROM "Team" t
+  JOIN "Academy" a ON a.id = t."academyId" AND a.slug = 'life-club'
   JOIN "TeamMembership" tm ON tm."teamId" = t.id
   JOIN "GuardianLink" gl ON gl."athleteId" = tm."athleteId"
   JOIN "Membership" m ON m.id = gl."membershipId" AND m."isActive"

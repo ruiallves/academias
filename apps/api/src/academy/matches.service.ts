@@ -1106,7 +1106,7 @@ export class MatchesService {
   async submitCallUps(ctx: RequestContext, matchId: string, logistica: CallUpLogistics = {}) {
     this.assertCanManageCallUps(ctx);
 
-    const { match, avisados, convocados } = await this.prisma.runAs(ctx.academyId, async (db) => {
+    const { match, avisados, convocados, pedeConfirmacao } = await this.prisma.runAs(ctx.academyId, async (db) => {
       const match = await this.loadMatch(db, ctx, matchId);
       const callUps = await db.matchCallUp.findMany({
         where: { matchId },
@@ -1149,7 +1149,12 @@ export class MatchesService {
           if (g.membership.isActive) destinatarios.push({ userId: g.membership.userId, athleteName: c.athlete.name });
         }
       }
-      return { match, avisados: destinatarios, convocados: callUps.length };
+      return {
+        match,
+        avisados: destinatarios,
+        convocados: callUps.length,
+        pedeConfirmacao: logistica.confirmationRequired === true,
+      };
     });
 
     /*
@@ -1167,15 +1172,29 @@ export class MatchesService {
       weekday: "long", day: "numeric", month: "long", hour: "2-digit", minute: "2-digit",
     });
 
+    /*
+     * A mensagem muda quando o clube **pede resposta**.
+     *
+     * "O Rui está convocado" é uma informação: lê-se e arruma-se. Se o clube
+     * precisa de uma confirmação e a notificação não o disser, o pai lê, fecha,
+     * e o treinador fica à espera de uma resposta que ninguém sabe que tem de
+     * dar — e telefona na sexta-feira, que é o que isto existe para acabar.
+     *
+     * Por isso o título pede, em vez de informar, e o corpo diz o que fazer.
+     */
     for (const alvo of avisados) {
       await this.notifications.enqueue({
         academyId: ctx.academyId,
         userId: alvo.userId,
         type: "MATCH_CALLED_UP",
-        title: `${alvo.athleteName} está convocado`,
+        title: pedeConfirmacao
+          ? `Confirma a presença do ${alvo.athleteName.split(/\s+/)[0]}`
+          : `${alvo.athleteName} está convocado`,
         // Concreto de propósito: uma notificação que obriga a abrir a app para
         // saber do que se trata gasta a paciência de quem a recebe.
-        body: `${match.isHome ? "Em casa" : "Fora"} com ${match.opponent} · ${quando} · ${match.venue}`,
+        body: pedeConfirmacao
+          ? `${alvo.athleteName} está convocado · ${match.isHome ? "Em casa" : "Fora"} com ${match.opponent} · ${quando} · ${match.venue}. Abre para dizer se vai.`
+          : `${match.isHome ? "Em casa" : "Fora"} com ${match.opponent} · ${quando} · ${match.venue}`,
         /*
          * `route` e não `url`: é a chave que a app e o push leem
          * (`routeOf` em `push.service`). Com `url`, este aviso caía em "/" no
@@ -1382,6 +1401,63 @@ export class MatchesService {
     }
 
     return { matchId, mudou: mudancas.length > 0, mudancas, familiasAvisadas: mudancas.length ? avisados.length : 0 };
+  }
+
+  /**
+   * Só as respostas das famílias a uma convocatória.
+   *
+   * ## Porque é que isto é um endpoint próprio
+   *
+   * Porque é o que a consola pergunta de quinze em quinze segundos enquanto o
+   * treinador tem a convocatória aberta — e a alternativa era recarregar a
+   * academia inteira, que são **nove** pedidos (equipas, atletas, staff,
+   * sessões, cobranças, jogos, eventos, avisos, bootstrap). Sondar isso seria
+   * pôr cada consola aberta a fazer nove pedidos por minuto para saber se um
+   * pai carregou num botão.
+   *
+   * Aqui é uma consulta a uma tabela, com o âmbito do costume. É barato o
+   * suficiente para se poder perguntar muitas vezes — e é isso que faz a
+   * confirmação do pai aparecer sem ninguém recarregar a página.
+   *
+   * ## O que **não** devolve
+   *
+   * Nomes. Quem tem a página aberta já tem o plantel carregado e sabe a quem
+   * pertence cada `athleteId`; repetir os nomes em cada sondagem era mandar a
+   * mesma coisa vinte vezes por hora sem razão.
+   */
+  async respostasDaConvocatoria(ctx: RequestContext, matchId: string) {
+    if (!can(ctx, "calendar:read")) throw new ForbiddenException("Sem acesso ao calendário");
+    /*
+     * As famílias não entram aqui — pela mesma razão da ficha de jogo: um
+     * encarregado tem `calendar:read` e a equipa do filho no âmbito, e sem esta
+     * linha lia quem recusou e porquê, com nomes de miúdos e motivos de saúde
+     * lá dentro.
+     */
+    if (ctx.role === "GUARDIAN" || ctx.role === "ATHLETE") {
+      throw new ForbiddenException("Sem acesso à convocatória");
+    }
+
+    const scope = teamScopeFilter(ctx);
+
+    return this.prisma.runAs(ctx.academyId, async (db) => {
+      const match = await db.match.findFirst({
+        where: { id: matchId, ...(scope ? { teamId: scope } : {}) },
+        select: { id: true, callUpsClosedAt: true, confirmationRequired: true },
+      });
+      if (!match) throw new NotFoundException("Jogo não encontrado ou fora do teu âmbito");
+
+      const rows = await db.matchCallUp.findMany({
+        where: { matchId },
+        select: { athleteId: true, status: true, declineReason: true, respondedAt: true },
+      });
+
+      return {
+        matchId,
+        submitted: match.callUpsClosedAt !== null,
+        confirmationRequired: match.confirmationRequired,
+        rows,
+      };
+    });
   }
 
   /** Reabre uma convocatória submetida — e diz-se que foi reaberta, não se finge. */

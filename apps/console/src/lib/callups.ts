@@ -80,6 +80,28 @@ export const updateCallUpLogistics = (matchId: string, logistica: CallUpLogistic
     logistica,
   );
 
+/** Uma resposta de família, como a consola a lê. */
+export type CallUpReply = {
+  athleteId: string;
+  status: "CALLED" | "CONFIRMED" | "DECLINED";
+  declineReason: string | null;
+  respondedAt: string | null;
+};
+
+/**
+ * Só as respostas de uma convocatória — o pedido que se sonda.
+ *
+ * Estreito de propósito: recarregar a academia para saber se um pai confirmou
+ * são **nove** pedidos. Ver `MatchesService.respostasDaConvocatoria`.
+ */
+export const callUpReplies = (matchId: string) =>
+  apiGet<{
+    matchId: string;
+    submitted: boolean;
+    confirmationRequired: boolean;
+    rows: CallUpReply[];
+  }>(`/api/matches/${matchId}/convocatoria/respostas`);
+
 export const reopenCallUps = (matchId: string) =>
   apiPost<void>(`/api/matches/${matchId}/convocatoria/reabrir`, {});
 

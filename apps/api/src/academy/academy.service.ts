@@ -1565,6 +1565,12 @@ export class AcademyService {
      * nisso, linha a linha, mais abaixo.
      */
     const scope = calendarScopeFilter(ctx);
+    /*
+     * Os atletas desta pessoa, quando ela é família. Nulo para o staff, que é o
+     * mesmo que "todos" — ver o uso mais abaixo, no motivo da falta e nos avisos.
+     */
+    const ambito = athleteScopeFilter(ctx);
+    const meus = ambito ? new Set(ambito.in) : null;
 
 
       const rows = await db.trainingSession.findMany({
@@ -1573,6 +1579,12 @@ export class AcademyService {
         select: {
           id: true, teamId: true, startsAt: true, endsAt: true, venue: true,
           dressingRoom: true, dressingRooms: true, status: true, notes: true,
+          absenceNotices: {
+            select: {
+              athleteId: true, reason: true, noticedAt: true,
+              noticedBy: { select: { user: { select: { name: true } } } },
+            },
+          },
           attendanceClosedAt: true,
           coach: { select: { id: true, user: { select: { name: true } } } },
           team: { select: { name: true } },
@@ -1620,14 +1632,151 @@ export class AcademyService {
         absences: inTeamScope(ctx, s.teamId)
           ? s.attendance
               .filter((a) => a.status !== "PRESENT")
-              // O motivo acompanha a falta justificada — é o que a ficha do
-              // atleta mostra ao lado dela, e sem ele o registo perdia-se ao
-              // recarregar mesmo depois de gravado.
-              .map((a) => ({ athleteId: a.athleteId, status: a.status, note: a.note }))
+              /*
+               * O motivo acompanha a falta justificada — é o que a ficha do
+               * atleta mostra ao lado dela, e sem ele o registo perdia-se ao
+               * recarregar mesmo depois de gravado. **Mas só a quem é dele.**
+               *
+               * `inTeamScope` deixa passar qualquer família do escalão, e um
+               * motivo é quase sempre de saúde: "consulta no oncologista" do
+               * filho de outra pessoa não tem que aparecer no telemóvel de
+               * ninguém. Para o staff `meus` é nulo e vê tudo, que é o que
+               * precisa para fechar a folha.
+               */
+              .map((a) => ({
+                athleteId: a.athleteId,
+                status: a.status,
+                note: !meus || meus.has(a.athleteId) ? a.note : null,
+              }))
+          : [],
+        /*
+         * Quem avisou que não vem — antes do treino. Ver `AbsenceNotice`.
+         *
+         * Mesma regra do motivo da falta: a família vê os avisos que deu, o
+         * staff vê os do escalão. É o que faz o aviso valer alguma coisa — sem
+         * o treinador o ler, é um botão que não avisa ninguém.
+         */
+        notices: inTeamScope(ctx, s.teamId)
+          ? s.absenceNotices
+              .filter((n) => !meus || meus.has(n.athleteId))
+              .map((n) => ({
+                athleteId: n.athleteId,
+                reason: n.reason,
+                noticedAt: n.noticedAt,
+                noticedBy: n.noticedBy?.user.name ?? null,
+              }))
           : [],
       }));
   }
 
+
+
+  /* ------------------------------------------------------------------------ */
+  /* O aviso da família: "não vai ao treino"                                   */
+  /* ------------------------------------------------------------------------ */
+
+  /**
+   * A família avisa que o atleta não vai a um treino.
+   *
+   * ## O mesmo desenho da recusa de convocatória, com uma diferença
+   *
+   * Num jogo há convocatória, e a resposta muda o estado de uma linha que já
+   * existe. Num treino vai todo o plantel e não há linha nenhuma: o silêncio é
+   * presença. Por isso o aviso **cria** a linha, e desmarcá-lo apaga-a — ver
+   * `AbsenceNotice`, que explica porque é que isto não é um `AttendanceRecord`.
+   *
+   * ## Quem pode avisar
+   *
+   * A autorização não é "sou do clube": é **este atleta é meu**. É o
+   * `athleteScopeFilter` que a dá, como na resposta à convocatória — um
+   * encarregado tem os educandos no âmbito, e mais ninguém tem.
+   *
+   * O staff não avisa por aqui. Quem tem `attendance:write` regista a falta na
+   * folha, que é o instrumento dele; um treinador a "avisar" em nome de uma
+   * família seria pôr na boca dela uma coisa que ela não disse.
+   *
+   * ## Quando
+   *
+   * Antes do treino começar, e antes de a folha estar fechada. Depois disso o
+   * que houver a dizer diz-se ao treinador, e é ele que corrige o registo — um
+   * aviso a chegar depois do facto não avisa nada e só serviria para discutir
+   * uma falta já lançada.
+   */
+  async avisarAusencia(
+    ctx: RequestContext,
+    sessionId: string,
+    athleteId: string,
+    motivo: string,
+  ) {
+    const ambito = athleteScopeFilter(ctx);
+    if (ambito && !ambito.in.includes(athleteId)) {
+      throw new ForbiddenException("Este atleta não é teu");
+    }
+
+    const razao = (motivo ?? "").trim();
+    if (razao.length < 3) {
+      throw new BadRequestException("Diz porque é que não vai — o treinador precisa de saber para contar com ele ou não");
+    }
+
+    return this.prisma.runAs(ctx.academyId, async (db) => {
+      const treino = await this.treinoParaAviso(db, sessionId, athleteId);
+
+      const aviso = await db.absenceNotice.upsert({
+        where: { sessionId_athleteId: { sessionId, athleteId } },
+        update: { reason: razao.slice(0, 200), noticedAt: new Date(), noticedById: ctx.membershipId },
+        create: {
+          sessionId,
+          athleteId,
+          reason: razao.slice(0, 200),
+          noticedById: ctx.membershipId,
+        },
+        select: { athleteId: true, reason: true, noticedAt: true },
+      });
+
+      return { sessionId: treino.id, ...aviso };
+    });
+  }
+
+  /** A família desmarca o aviso — afinal vai. A linha desaparece; ver `AbsenceNotice`. */
+  async retirarAviso(ctx: RequestContext, sessionId: string, athleteId: string) {
+    const ambito = athleteScopeFilter(ctx);
+    if (ambito && !ambito.in.includes(athleteId)) {
+      throw new ForbiddenException("Este atleta não é teu");
+    }
+
+    return this.prisma.runAs(ctx.academyId, async (db) => {
+      await this.treinoParaAviso(db, sessionId, athleteId);
+      await db.absenceNotice.deleteMany({ where: { sessionId, athleteId } });
+      return { sessionId, athleteId, removed: true };
+    });
+  }
+
+  /**
+   * O treino existe, ainda não aconteceu, e este atleta treina nele.
+   *
+   * As quatro recusas que isto devolve são as mesmas da resposta à convocatória,
+   * traduzidas para um treino. A do plantel não é zelo: um educando que mudou de
+   * escalão continua no âmbito da família, e sem esta verificação um pai podia
+   * avisar de um treino de uma equipa onde o filho já não anda.
+   */
+  private async treinoParaAviso(db: ScopedClient, sessionId: string, athleteId: string) {
+    const treino = await db.trainingSession.findFirst({
+      where: { id: sessionId },
+      select: { id: true, teamId: true, status: true, startsAt: true, attendanceClosedAt: true },
+    });
+    if (!treino) throw new NotFoundException("Treino não encontrado");
+    if (treino.status === "CANCELLED") throw new BadRequestException("Este treino está desmarcado");
+    if (treino.attendanceClosedAt) throw new BadRequestException("As presenças deste treino já foram registadas — fala com o treinador");
+    if (treino.startsAt <= new Date()) throw new BadRequestException("Este treino já começou");
+
+    const noPlantel = await db.athlete.findFirst({
+      where: { id: athleteId, teams: { some: { teamId: treino.teamId } } },
+      select: { id: true },
+    });
+    if (!noPlantel) throw new BadRequestException("Este atleta não treina nesta equipa");
+
+    return treino;
+  }
 
   /**
    * Fechar a folha de presenças de um treino.

@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
+import { rotaDaNotificacao } from "@/lib/rotas";
 import { Bell, CalendarClock, FileText, Gauge, Megaphone, Trophy, Wallet, type LucideIcon } from "lucide-react";
 import { apiPatch } from "@/lib/http";
 import { reload, useStore, type ApiNotification } from "@/lib/store";
@@ -137,7 +138,12 @@ function NotifRow({ n, i }: { n: ApiNotification; i: number }) {
   const style = STYLE[n.type] ?? FALLBACK;
   const Icon = style.icon;
   const unread = !n.readAt;
-  const route = n.payload?.route;
+  /*
+   * Nem toda a rota gravada corresponde a uma página desta app — ver
+   * `rotaDaNotificacao`. O que não se reconhece fica sem ligação, em vez de
+   * levar à inicial a fingir que se navegou.
+   */
+  const route = rotaDaNotificacao(n.payload);
 
   const body = (
     <>

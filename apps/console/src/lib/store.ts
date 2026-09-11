@@ -172,6 +172,8 @@ type ApiSession = {
   mine: boolean;
   /** Vazio quando o treino não é meu — quem faltou é do escalão. */
   absences: { athleteId: string; status: string; note?: string | null }[];
+  /** Quem avisou que não vem, antes do treino. Ver `AbsenceNotice`. */
+  notices?: { athleteId: string; reason: string; noticedAt: string; noticedBy: string | null }[];
 };
 
 /** Um evento pontual do calendário — o que "Novo evento" cria. Ver `GET /api/events`. */
@@ -630,7 +632,14 @@ function juntar<T extends { id: string }>(atuais: T[], novos: T[]): T[] {
           })),
           recordedAt: s.endsAt,
         }
-      : undefined,  };}function build(
+      : undefined,
+    /*
+     * Os avisos das famílias — independentes da folha.
+     *
+     * Chegam esteja ela fechada ou não: antes servem para o treinador contar com
+     * menos um, e depois para ele ver quem tinha avisado. Ver `AbsenceNotice`.
+     */
+    notices: s.notices ?? [],  };}function build(
   boot: ApiBootstrap,
   apiTeams: ApiTeam[],
   apiAthletes: ApiAthlete[],
