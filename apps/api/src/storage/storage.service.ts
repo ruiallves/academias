@@ -221,13 +221,27 @@ export class StorageService {
     return out;
   }
 
-  /** Apagar. Silencioso: um ficheiro que já não existe é o resultado que se queria. */
+  /**
+   * Apagar. Silencioso quanto ao 404: um ficheiro que já não existe é o
+   * resultado que se queria.
+   *
+   * ## Sem `Content-Type` — a lição
+   *
+   * Isto mandava os cabeçalhos de sempre, com `Content-Type: application/json`
+   * e corpo nenhum — e o Supabase (Fastify) responde 400 *"Body cannot be
+   * empty when content-type is set to application/json"*. Como o estado não
+   * era lido e o `catch` só apanhava falhas de rede, **nenhuma fotografia foi
+   * alguma vez apagada do bucket**: trocar a foto de um atleta deixava a
+   * anterior lá para sempre, sem uma linha de log. Descoberto pelo teste das
+   * fotografias de sócio, que confirma que a anterior desaparece.
+   */
   async remove(bucket: string, key: string): Promise<void> {
     try {
-      await fetch(`${this.url}/storage/v1/object/${bucket}/${key}`, {
-        method: "DELETE",
-        headers: this.headers(),
-      });
+      const { "Content-Type": _json, ...headers } = this.headers();
+      const res = await fetch(`${this.url}/storage/v1/object/${bucket}/${key}`, { method: "DELETE", headers });
+      if (!res.ok && res.status !== 404) {
+        this.log.warn(`Não foi possível apagar ${bucket}/${key}: HTTP ${res.status} ${(await res.text()).slice(0, 200)}`);
+      }
     } catch (error) {
       this.log.warn(`Não foi possível apagar ${bucket}/${key}: ${error}`);
     }

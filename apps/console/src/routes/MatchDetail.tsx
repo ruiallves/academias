@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { Link, useParams } from "react-router-dom";
 import { PageHeader } from "@/components/Shell";
 import { Empty, Loading, Panel, PanelHead, Pill, cx } from "@/components/primitives";
@@ -10,9 +10,7 @@ import {
   Clock,
   ExternalLink,
   MapPin,
-  Plus,
   Download,
-  Trash2,
   Trophy,
   Users,
   Whistle,
@@ -23,19 +21,17 @@ import { athleteById, sportById, teamById } from "@/lib/api";
 import { tallyNoun } from "@/lib/calendar";
 import { reloadAcademy, useStore } from "@/lib/store";
 import { SaveVeil, Spinner, useSaving } from "@/components/Busy";
-import { descarregarFolha, type SheetMatch } from "@/lib/callup-export";
+import { descarregarFolha, folhaDoJogo } from "@/lib/callup-export";
+import { MatchStaffEditor } from "@/components/MatchStaff";
 import type { SheetRow } from "@/lib/callup-sheet";
 import {
   OUTCOME_LABEL,
-  STAFF_ROLES,
   getMatch,
   outcome,
   retroPool,
   saveAppearances,
-  saveMatchStaff,
   saveResult,
   saveRetroSquad,
-  staffPool,
   type MatchDetail as Match,
   type SquadRow,
 } from "@/lib/matches";
@@ -602,27 +598,8 @@ function CallUpPanel({ match }: { match: Match }) {
     guestFrom: s.isGuest ? (s.guestFromTeam ?? "outro escalão") : null,
   }));
 
-  const sheetMatch: SheetMatch = {
-    teamId: match.teamId,
-    teamName: match.teamName,
-    opponent: match.opponent,
-    isHome: match.isHome,
-    venue: match.venue,
-    // A prova do jogo — a folha não a pede a ninguém.
-    competition: match.competition ?? null,
-    startsAt: match.startsAt,
-    submitted: match.submitted,
-    // O treinador principal do jogo assina a folha; sem ficha técnica, quem
-    // consta do jogo.
-    coachName: match.staff.find((m) => m.role === "Treinador principal")?.name ?? match.coachName,
-    staff: match.staff.map((m) => ({ name: m.name, role: m.role })),
-    // A logística dita ao submeter a convocatória. Ver `descarregarFolha`.
-    roundLabel: match.roundLabel,
-    meetingPoint: match.meetingPoint,
-    meetingAt: match.meetingAt,
-    arrivalAt: match.arrivalAt,
-    callUpNotes: match.callUpNotes,
-  };
+  // O jogo como a folha o lê — com a equipa de trabalho. Ver `folhaDoJogo`.
+  const sheetMatch = folhaDoJogo(match);
 
   /**
    * A folha, sem perguntar nada.
@@ -1802,17 +1779,9 @@ function SmallToggle({
 /* ========================================================================== */
 
 /**
- * A equipa de trabalho do jogo.
+ * A equipa de trabalho, com a moldura desta página.
  *
- * ## O texto muda com o relógio
- *
- * Dizia "Junta quem **esteve** no jogo" — num jogo marcado para sábado, a quem
- * está a escalar a equipa de trabalho com dias de antecedência. Escalar é quase
- * sempre um acto anterior ao jogo: o pretérito só é verdade na metade das vezes,
- * e na outra metade lê-se como se o produto não soubesse em que dia estamos.
- *
- * Antes do apito é "vai estar", depois é "esteve". A mesma regra que já decide se
- * a página mostra a convocatória ou a ficha.
+ * O editor é partilhado com as Convocatórias — ver `components/MatchStaff`.
  */
 function StaffPanel({
   match,
@@ -1825,269 +1794,21 @@ function StaffPanel({
   mayRecord: boolean;
   onSaved: () => void;
 }) {
-  const [pool, setPool] = useState<{ membershipId: string; name: string; role: string | null }[]>([]);
-  const [rows, setRows] = useState(match.staff.map((s) => ({ membershipId: s.membershipId, role: s.role })));
-  const [aAdicionar, setAAdicionar] = useState(false);
-  const [busy, setBusy] = useState(false);
-  const [erro, setErro] = useState<string | null>(null);
-
-  /*
-   * Quem acabou de ser juntado, por dois segundos.
-   *
-   * Sem isto, juntar alguém era mudo: o formulário fechava-se e aparecia mais uma
-   * linha numa lista — e uma linha a mais numa lista de três não é um sinal, é uma
-   * coisa que se descobre a contar. Quem carrega num botão precisa de saber se ele
-   * fez alguma coisa, e a resposta tem de chegar onde o olho já está: na linha da
-   * pessoa que acabou de escolher.
-   *
-   * Dois segundos e volta ao botão de apagar. Um visto permanente seria uma
-   * segunda coluna de ruído em cada linha, e ao fim de um minuto ninguém saberia
-   * o que ele quer dizer.
-   */
-  const [acabado, setAcabado] = useState<string | null>(null);
-  const relogio = useRef<ReturnType<typeof setTimeout> | null>(null);
-
-  useEffect(() => {
-    setRows(match.staff.map((s) => ({ membershipId: s.membershipId, role: s.role })));
-  }, [match.staff]);
-
-  // Um temporizador pendente quando o painel desaparece deixava um `setState` a
-  // apontar para um componente que já não existe.
-  useEffect(
-    () => () => {
-      if (relogio.current) clearTimeout(relogio.current);
-    },
-    [],
-  );
-
-  useEffect(() => {
-    if (!mayRecord) return;
-    staffPool()
-      .then(setPool)
-      .catch(() => {
-        /* sem pool: o painel mostra o que está e não deixa acrescentar */
-      });
-  }, [mayRecord]);
-
-  const nome = (id: string) =>
-    pool.find((p) => p.membershipId === id)?.name ?? match.staff.find((s) => s.membershipId === id)?.name ?? "—";
-  const disponivel = pool.filter((p) => !rows.some((r) => r.membershipId === p.membershipId));
-
-  /**
-   * Grava a lista inteira.
-   *
-   * `juntou` é o id de quem entrou agora, quando foi uma adição — é ele que
-   * acende o visto. Numa remoção fica em branco: a linha desaparece, e o
-   * desaparecimento **é** a confirmação.
-   */
-  async function gravar(next: { membershipId: string; role: string }[], juntou?: string) {
-    setRows(next);
-    setBusy(true);
-    setErro(null);
-    try {
-      await saveMatchStaff(match.id, next);
-
-      /*
-       * O visto só acende **depois** de o servidor confirmar.
-       *
-       * Acendê-lo ao carregar seria mentir metade das vezes: se a gravação
-       * falhasse, a pessoa tinha visto um certo e a linha desaparecia a seguir.
-       */
-      if (juntou) {
-        if (relogio.current) clearTimeout(relogio.current);
-        setAcabado(juntou);
-        relogio.current = setTimeout(() => setAcabado(null), 2000);
-      }
-
-      onSaved();
-    } catch (e) {
-      setErro(e instanceof Error ? e.message : "Não foi possível gravar.");
-      setRows(match.staff.map((s) => ({ membershipId: s.membershipId, role: s.role })));
-    } finally {
-      setBusy(false);
-    }
-  }
-
   return (
     <Panel>
-      <PanelHead title="Equipa de trabalho" hint={rows.length > 0 ? `${rows.length}` : undefined}>
-        {mayRecord && disponivel.length > 0 && !aAdicionar && (
-          <button type="button" className="ctl-ghost" onClick={() => setAAdicionar(true)}>
-            <Plus className="size-3.5" strokeWidth={2} />
-            Juntar
-          </button>
+      <MatchStaffEditor
+        matchId={match.id}
+        staff={match.staff}
+        passou={passou}
+        mayRecord={mayRecord}
+        onSaved={onSaved}
+        cabecalho={(juntar, n) => (
+          <PanelHead title="Equipa de trabalho" hint={n > 0 ? `${n}` : undefined}>
+            {juntar}
+          </PanelHead>
         )}
-      </PanelHead>
-
-      {rows.length === 0 && !aAdicionar ? (
-        <p className="px-5 py-4 text-meta leading-relaxed text-ink-3">
-          Ninguém atribuído. Junta quem {passou ? "esteve" : "vai estar"} no jogo — treinadores,
-          massagista, delegado.
-        </p>
-      ) : (
-        <ul>
-          {rows.map((r) => {
-            const novo = acabado === r.membershipId;
-            return (
-              <li
-                key={r.membershipId}
-                className={cx(
-                  "flex min-h-12 items-center gap-3 border-b border-line px-5 py-2 transition-colors duration-300 last:border-b-0 motion-reduce:transition-none",
-                  // A linha inteira acende, e não só o canto: é o que faz o olho
-                  // aterrar na pessoa certa sem a procurar.
-                  novo && "bg-ok-soft",
-                )}
-              >
-                <Monograma nome={nome(r.membershipId)} />
-                <div className="min-w-0 flex-1">
-                  <div className="truncate text-body text-ink">{nome(r.membershipId)}</div>
-                  <div className="text-meta text-ink-3">{r.role}</div>
-                </div>
-
-                {novo ? (
-                  /*
-                   * Ocupa o mesmo lugar do botão de apagar, com a mesma medida.
-                   * Se fosse um elemento a mais, a linha mexia-se ao acender e
-                   * outra vez ao apagar — e o salto rouba a atenção ao sinal.
-                   */
-                  <span
-                    role="status"
-                    className="flex size-8 shrink-0 items-center justify-center text-ok"
-                    aria-label={`${nome(r.membershipId)} juntado ao jogo`}
-                  >
-                    <Check className="size-4" strokeWidth={2.5} />
-                  </span>
-                ) : (
-                  mayRecord && (
-                    <button
-                      type="button"
-                      disabled={busy}
-                      onClick={() => void gravar(rows.filter((x) => x.membershipId !== r.membershipId))}
-                      className="ctl-ghost shrink-0 text-ink-3 hover:text-risk"
-                      aria-label={`Tirar ${nome(r.membershipId)}`}
-                    >
-                      <Trash2 className="size-3.5" strokeWidth={1.75} />
-                    </button>
-                  )
-                )}
-              </li>
-            );
-          })}
-        </ul>
-      )}
-
-      {aAdicionar && (
-        <AddStaff
-          pool={disponivel}
-          passou={passou}
-          onCancel={() => setAAdicionar(false)}
-          onAdd={(membershipId, role) => {
-            setAAdicionar(false);
-            void gravar([...rows, { membershipId, role }], membershipId);
-          }}
-        />
-      )}
-
-      {erro && (
-        <p role="alert" className="border-t border-line px-5 py-2.5 text-meta text-risk">
-          {erro}
-        </p>
-      )}
+      />
     </Panel>
-  );
-}
-
-/** As iniciais num círculo da cor do clube. Um rosto sem precisar de fotografia. */
-function Monograma({ nome }: { nome: string }) {
-  const iniciais = nome
-    .split(/\s+/)
-    .filter(Boolean)
-    .slice(0, 2)
-    .map((p) => p[0]?.toUpperCase())
-    .join("");
-  return (
-    <span
-      aria-hidden
-      className="flex size-8 shrink-0 items-center justify-center rounded-full text-[11px] font-semibold text-signal-on"
-      style={{ background: "var(--color-signal-strong)" }}
-    >
-      {iniciais || "?"}
-    </span>
-  );
-}
-
-function AddStaff({
-  pool,
-  passou,
-  onAdd,
-  onCancel,
-}: {
-  pool: { membershipId: string; name: string; role: string | null }[];
-  passou: boolean;
-  onAdd: (membershipId: string, role: string) => void;
-  onCancel: () => void;
-}) {
-  const [quem, setQuem] = useState("");
-  const [role, setRole] = useState("");
-
-  const escolhido = pool.find((p) => p.membershipId === quem);
-
-  return (
-    <div className="space-y-2 border-t border-line bg-sunken/40 px-5 py-3">
-      <label className="block">
-        <span className="mb-1 block text-meta font-medium text-ink-2">
-          {passou ? "Quem esteve no jogo?" : "Quem vai estar no jogo?"}
-        </span>
-        <select
-          autoFocus
-          value={quem}
-          onChange={(e) => {
-            setQuem(e.target.value);
-            const p = pool.find((x) => x.membershipId === e.target.value);
-            if (p?.role) setRole(p.role);
-          }}
-          className="h-11 w-full rounded-[var(--radius-control)] border border-line bg-surface px-2 text-body text-ink outline-none focus:border-line-strong"
-        >
-          <option value="">Escolher…</option>
-          {pool.map((p) => (
-            <option key={p.membershipId} value={p.membershipId}>
-              {p.name}
-              {p.role ? ` — ${p.role}` : ""}
-            </option>
-          ))}
-        </select>
-      </label>
-
-      <label className="block">
-        <span className="mb-1 block text-meta font-medium text-ink-2">A fazer o quê?</span>
-        <input
-          value={role}
-          onChange={(e) => setRole(e.target.value)}
-          list="funcoes-jogo"
-          placeholder="Massagista, delegado ao jogo…"
-          className="h-11 w-full rounded-[var(--radius-control)] border border-line bg-surface px-2 text-body text-ink outline-none placeholder:text-ink-4 focus:border-line-strong"
-        />
-      </label>
-      <datalist id="funcoes-jogo">
-        {STAFF_ROLES.map((r) => (
-          <option key={r} value={r} />
-        ))}
-      </datalist>
-
-      <div className="flex gap-2 pt-1">
-        <button type="button" className="ctl-ghost h-10" onClick={onCancel}>
-          Cancelar
-        </button>
-        <button
-          type="button"
-          className="ctl-primary h-10"
-          disabled={!escolhido || role.trim().length === 0}
-          onClick={() => onAdd(quem, role.trim())}
-        >
-          Juntar ao jogo
-        </button>
-      </div>
-    </div>
   );
 }
 

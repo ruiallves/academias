@@ -1,5 +1,6 @@
 import { teamById } from "@/lib/api";
-import { exportCallUpSheet, hora, type SheetOrder, type SheetRow } from "@/lib/callup-sheet";
+import { exportCallUpSheet, hora, type CallUpSheet, type SheetOrder, type SheetRow } from "@/lib/callup-sheet";
+import type { MatchDetail } from "@/lib/matches";
 
 /**
  * Descarregar a folha da convocatória — sem perguntar nada.
@@ -39,15 +40,75 @@ export type SheetMatch = {
   callUpNotes?: string | null;
 };
 
-export async function descarregarFolha(p: {
+/**
+ * O jogo inteiro, como a folha o lê.
+ *
+ * ## Porque é que isto é uma função
+ *
+ * Porque havia duas maneiras de montar este objecto, e só uma estava certa. A
+ * página do jogo passava a equipa de trabalho e o treinador principal; o ecrã
+ * das Convocatórias passava `staff: []` e `coachName: null`, porque a lista de
+ * jogos que ele tem não traz a equipa. O mesmo botão "Exportar PDF" dava duas
+ * folhas diferentes consoante o sítio onde se carregava — e a das Convocatórias
+ * saía sem massagista, sem delegado e sem ninguém a assinar.
+ *
+ * Quem exporta passa o jogo completo (`GET /api/matches/:id`), e isto decide o
+ * resto num sítio só.
+ */
+export function folhaDoJogo(match: MatchDetail): SheetMatch {
+  return {
+    teamId: match.teamId,
+    teamName: match.teamName,
+    opponent: match.opponent,
+    isHome: match.isHome,
+    venue: match.venue,
+    // A prova do jogo — a folha não a pede a ninguém.
+    competition: match.competition ?? null,
+    startsAt: match.startsAt,
+    submitted: match.submitted,
+    // Assina a folha o treinador principal escalado para o jogo; sem ele, o
+    // treinador do jogo ou da equipa — que o servidor já escolheu com a regra
+    // certa (`escolherTreinador`), e não "o primeiro da lista".
+    coachName: match.staff.find((m) => m.role === "Treinador principal")?.name ?? match.coachName,
+    /*
+     * A equipa de trabalho do jogo, se alguém a escalou; senão, a equipa técnica
+     * da ficha da equipa.
+     *
+     * Um clube preencheu a equipa técnica na equipa e esperava vê-la na
+     * convocatória — a folha só lia a do jogo, que estava vazia, e saía sem
+     * ninguém. Escalar para o jogo continua a mandar: quem vai a este jogo pode
+     * não ser a equipa técnica toda.
+     */
+    staff: (match.staff.length > 0 ? match.staff : (match.teamStaff ?? [])).map((m) => ({ name: m.name, role: m.role })),
+    roundLabel: match.roundLabel,
+    meetingPoint: match.meetingPoint,
+    meetingAt: match.meetingAt,
+    arrivalAt: match.arrivalAt,
+    callUpNotes: match.callUpNotes,
+  };
+}
+
+type Exportar = {
   match: SheetMatch;
   rows: SheetRow[];
   academy: { name: string; logoUrl: string; signalColor: string };
   season: string;
-}): Promise<void> {
+};
+
+/**
+ * A folha pronta a desenhar — tudo menos o `save()`.
+ *
+ * Separada de `descarregarFolha` pela mesma razão que `buildCallUpPdf` está
+ * separada de `exportCallUpSheet`: gravar o ficheiro é a única coisa que precisa
+ * de um navegador. Sem esta costura, um teste só conseguia verificar a folha
+ * montando o objecto à mão — e aí estava a verificar a sua própria cópia, não a
+ * que os ecrãs usam. Foi exactamente numa cópia destas que a equipa de trabalho
+ * se perdeu.
+ */
+export function folhaParaExportar(p: Exportar): CallUpSheet {
   const kickOff = new Date(p.match.startsAt);
 
-  await exportCallUpSheet({
+  return {
     competition: p.match.competition?.label ?? "",
     round: p.match.roundLabel ?? "",
     /*
@@ -68,10 +129,16 @@ export async function descarregarFolha(p: {
     venue: p.match.venue,
     kickOff,
     submitted: p.match.submitted,
-    coachName: p.match.coachName ?? teamById(p.match.teamId)?.coaches[0]?.name ?? null,
+    // `headCoach`, e não `coaches[0]`: a lista vem sem ordem, e num clube o
+    // primeiro era o treinador de guarda-redes.
+    coachName: p.match.coachName ?? teamById(p.match.teamId)?.headCoach?.name ?? null,
     staff: p.match.staff,
     rows: p.rows,
-  });
+  };
+}
+
+export async function descarregarFolha(p: Exportar): Promise<void> {
+  await exportCallUpSheet(folhaParaExportar(p));
 }
 
 const chave = (teamId: string) => `academia.convocatoria.ordem.${teamId}`;

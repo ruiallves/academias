@@ -120,6 +120,10 @@ export default defineConfig(({ command, mode }) => {
         //      reconhecer o domínio do túnel, que muda a cada arranque.
         "/api": { target: "http://localhost:3000", changeOrigin: true },
 
+        // `/auth/*` pelo mesmo caminho: sem subdomínio, é o `/auth/memberships`
+        // que diz de que clube é a conta que entrou (ver `loadContexts`).
+        "/auth": { target: "http://localhost:3000", changeOrigin: true },
+
         /*
          * O manifest, em desenvolvimento.
          *

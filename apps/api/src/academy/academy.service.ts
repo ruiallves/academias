@@ -2,7 +2,7 @@ import { BadRequestException, ConflictException, ForbiddenException, Injectable,
 import { ConfigService } from "@nestjs/config";
 import { Prisma, type AttendanceStatus, type CalendarEventKind, type Role } from "@prisma/client";
 import { PrismaService, type ScopedClient } from "../prisma/prisma.service";
-import { headCoaches } from "./head-coaches";
+import { escolherTreinador, headCoaches } from "./head-coaches";
 import { MatchesService } from "./matches.service";
 import { StorageService } from "../storage/storage.service";
 import { PHOTO_BUCKET, PHOTO_TTL } from "../storage/photos.service";
@@ -816,7 +816,14 @@ export class AcademyService {
         select: {
           id: true, name: true, maxAge: true, schedule: true, sportId: true,
           season: { select: { id: true, label: true } },
-          staff: { select: { title: true, membership: { select: { id: true, user: { select: { name: true } } } } } },
+          staff: {
+            // Por título, para o empate na escolha do treinador dar sempre o mesmo.
+            orderBy: { title: "asc" },
+            select: {
+              title: true,
+              membership: { select: { id: true, isActive: true, user: { select: { name: true } } } },
+            },
+          },
           _count: { select: { athletes: true } },
           // As provas que a equipa disputa — é o que o calendário oferece ao
           // marcar um jogo, e o que a folha de convocatória acaba por imprimir.
@@ -851,6 +858,18 @@ export class AcademyService {
         schedule: t.schedule,
         athleteCount: t._count.athletes,
         coaches: t.staff.map((s) => ({ id: s.membership.id, name: s.membership.user.name, title: s.title })),
+        /*
+         * Quem treina a equipa, dito por quem sabe a regra.
+         *
+         * Os clientes usavam `coaches[0]` — o primeiro da lista, que vem da base
+         * sem ordem nenhuma. Num clube calhou ao treinador de guarda-redes, e a
+         * folha da convocatória e a app dos pais puseram-no como treinador. A
+         * regra é a do resto do calendário: ver `escolherTreinador`.
+         */
+        headCoach: (() => {
+          const principal = escolherTreinador(activos(t.staff));
+          return principal ? { id: principal.membership.id, name: principal.membership.user.name } : null;
+        })(),
         /*
          * Sem as arquivadas.
          *
@@ -3788,4 +3807,9 @@ function listarHistoria(itens: { n: number; um: string; muitos: string }[]): str
   /* ------------------------------------------------------------------------ */
   /* Apagar o clube                                                            */
 
+}
+
+/** A equipa técnica sem os vínculos desactivados — quem saiu do clube não treina. */
+function activos<T extends { membership: { isActive: boolean } }>(staff: T[]): T[] {
+  return staff.filter((s) => s.membership.isActive);
 }

@@ -699,6 +699,41 @@ export function ticketAlertEmail(input: {
 }
 
 /* -------------------------------------------------------------------------- */
+/* Repor a palavra-passe — quem se esqueceu dela                               */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * O link para escolher uma palavra-passe nova.
+ *
+ * Com a marca do clube onde foi pedido. Quem se esqueceu da palavra-passe estava
+ * na página do clube ou na app do clube; um email de um remetente genérico, com
+ * um assunto em inglês, é o que se apaga sem abrir.
+ *
+ * Sem saudação com nome: o pedido chega só com um endereço de email.
+ */
+export function passwordResetEmail(input: {
+  brand: MailBrand;
+  link: string;
+}): { subject: string; html: string; text: string } {
+  const heading = "Repor a palavra-passe";
+  const paragraphs = [
+    "Recebemos um pedido para repor a palavra-passe da tua conta.",
+    "Carrega no botão para escolheres uma nova. Até lá, a atual continua a funcionar.",
+  ];
+  const notes = [
+    "O link vale durante uma hora e só pode ser usado uma vez.",
+    "Se não foste tu a pedir, ignora este email — a tua palavra-passe não muda.",
+  ];
+  const cta = { label: "Escolher palavra-passe nova", url: input.link };
+
+  return {
+    subject: input.brand.shortName + " · repor a palavra-passe",
+    html: layout({ brand: input.brand, heading, paragraphs, cta, notes }),
+    text: plain(heading, paragraphs, cta, notes),
+  };
+}
+
+/* -------------------------------------------------------------------------- */
 
 function semTags(value: string): string {
   return value.replace(/<[^>]+>/g, "");

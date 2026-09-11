@@ -48,6 +48,11 @@ type ApiTeam = {
   sportId: string;
   schedule: unknown;
   coaches: { id: string; name: string; title: string }[];
+  /**
+   * Quem treina a equipa — decidido no servidor, com a regra do calendário.
+   * Nulo quando ninguém na equipa técnica treina (só uma médica, um delegado).
+   */
+  headCoach?: { id: string; name: string } | null;
   feeCents: number | null;
 };
 
@@ -439,7 +444,16 @@ export function load(): Promise<void> {
 
       const [athletes, teams, sessions, matches, charges, announcements, notifications, evaluations, reports] =
         await Promise.all([
-          soft<ApiAthlete>("/api/athletes"),
+          /*
+           * Os atletas **não** são `soft`.
+           *
+           * São eles que decidem se a app abre ou se diz "Ainda não há atletas
+           * associados". Com `soft`, qualquer falha — o limite de pedidos, um
+           * túnel que caiu, um 500 — virava lista vazia, e o pai lia "a academia
+           * ainda não ligou nenhum educando" com os educandos ligados. Uma falha
+           * aqui tem de ser uma falha: cai no `catch` abaixo, com saída.
+           */
+          apiGet<ApiAthlete[]>("/api/athletes"),
           soft<ApiTeam>("/api/teams"),
           soft<ApiSession>(`/api/sessions?from=${from}&to=${to}`),
           soft<ApiMatch>("/api/matches"),
@@ -574,7 +588,14 @@ function build(
       team: team?.name ?? "Sem equipa",
       teamId: a.teamId ?? "",
       sport: team ? (sportById.get(team.sportId) ?? "") : "",
-      coach: team?.coaches[0]?.name ?? "Sem treinador atribuído",
+      /*
+       * O treinador que o servidor escolheu, e não "o primeiro da lista".
+       *
+       * A lista vem da base sem ordem nenhuma, e num clube o primeiro era o
+       * treinador de guarda-redes — o cartão do próximo treino punha-o como o
+       * treinador da equipa. Ver `escolherTreinador` na API.
+       */
+      coach: team?.headCoach?.name ?? "Sem treinador atribuído",
       feeCents: fees.get(a.id) ?? null,
       photoUrl: a.photoUrl ?? undefined,
       availability: a.availability,

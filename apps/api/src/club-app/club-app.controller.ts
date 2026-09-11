@@ -1,9 +1,10 @@
-import { Body, Controller, Get, Headers, Param, Post, Req, Res } from "@nestjs/common";
+import { Body, Controller, Delete, Get, Headers, Param, Post, Req, Res } from "@nestjs/common";
 import { Throttle } from "@nestjs/throttler";
 import { IsBoolean, IsIn, IsOptional, IsString, Length } from "class-validator";
 import type { Request, Response } from "express";
 import { Public } from "../auth/auth.guard";
 import { ClubAppService } from "./club-app.service";
+import { ConfirmPhotoDto, UploadPhotoDto } from "../storage/photos.controller";
 
 class PagarQuotaDto {
   @IsIn(["MBWAY", "MULTIBANCO"])
@@ -56,6 +57,23 @@ export class ClubAppController {
   @Get("api/socio/inicio")
   inicio(@Headers("authorization") auth: string, @Headers("x-academy-slug") slug: string) {
     return this.app.inicio(auth, slug ?? "");
+  }
+
+  /* A fotografia do próprio — a cara no cartão. Ver `ClubAppService.fotoUpload`. */
+  @Throttle({ default: { ttl: 60_000, limit: 10 } })
+  @Post("api/socio/foto/upload")
+  fotoUpload(@Headers("authorization") auth: string, @Headers("x-academy-slug") slug: string, @Body() body: UploadPhotoDto) {
+    return this.app.fotoUpload(auth, slug ?? "", body.contentType);
+  }
+
+  @Post("api/socio/foto")
+  fotoConfirmar(@Headers("authorization") auth: string, @Headers("x-academy-slug") slug: string, @Body() body: ConfirmPhotoDto) {
+    return this.app.fotoConfirmar(auth, slug ?? "", body.key);
+  }
+
+  @Delete("api/socio/foto")
+  fotoRemover(@Headers("authorization") auth: string, @Headers("x-academy-slug") slug: string) {
+    return this.app.fotoRemover(auth, slug ?? "");
   }
 
   @Throttle({ default: { ttl: 60_000, limit: 10 } })

@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { PageHeader } from "@/components/Shell";
 import { Empty, Metric, MetricRow, Monogram, Panel, PanelHead, Pill, cx } from "@/components/primitives";
-import { ArrowUpRight, Check, Download, Megaphone, Pencil, Search, Trophy, Users } from "@/lib/icons";
+import { ArrowUpRight, Check, Download, Megaphone, Pencil, Plus, Search, Trophy, Users } from "@/lib/icons";
 import { athleteById, teamById } from "@/lib/api";
 import { useStore, type ApiMatch, type GuestCandidate } from "@/lib/store";
 import {
@@ -16,7 +16,9 @@ import {
 } from "@/lib/callups";
 import { SubmitCallUpDialog } from "@/components/SubmitCallUpDialog";
 import { callUpReplies } from "@/lib/callups";
-import { descarregarFolha, type SheetMatch } from "@/lib/callup-export";
+import { descarregarFolha, folhaDoJogo } from "@/lib/callup-export";
+import { MatchStaffDialog } from "@/components/MatchStaff";
+import { getMatch } from "@/lib/matches";
 import type { SheetRow } from "@/lib/callup-sheet";
 import { longDate, time } from "@/lib/format";
 import { can } from "@/lib/permissions";
@@ -175,6 +177,15 @@ function Squad({ match }: { match: ApiMatch }) {
    * quando um pai recebesse o aviso do miúdo errado.
    */
   const [dialogo, setDialogo] = useState<null | "submeter" | "editar">(null);
+  /* A equipa de trabalho do jogo — ver `MatchStaffDialog`. */
+  const [equipa, setEquipa] = useState(false);
+  /*
+   * Escalar a equipa de trabalho é `attendance:write`, e não o que chega para
+   * montar a convocatória (`calendar:write` também serve). O botão só aparece a
+   * quem o servidor deixa gravar — um botão que abre e depois recusa é pior do
+   * que não haver botão.
+   */
+  const mayStaff = can(session, "attendance:write");
   const [error, setError] = useState<string | null>(null);
   const [saved, setSaved] = useState(false);
   const [folha, setFolha] = useState(false);
@@ -248,25 +259,6 @@ function Squad({ match }: { match: ApiMatch }) {
     [match.calledUp, guests],
   );
 
-  const sheetMatch: SheetMatch = {
-    teamId: match.teamId,
-    teamName: match.teamName,
-    opponent: match.opponent,
-    isHome: match.isHome,
-    venue: match.venue,
-    // A prova do jogo — a folha não a pede a ninguém.
-    competition: match.competition ?? null,
-    startsAt: match.startsAt,
-    submitted: match.submitted,
-    coachName: null,
-    staff: [],
-    // A logística dita ao submeter. Ver `descarregarFolha`.
-    roundLabel: match.roundLabel,
-    meetingPoint: match.meetingPoint,
-    meetingAt: match.meetingAt,
-    arrivalAt: match.arrivalAt,
-    callUpNotes: match.callUpNotes,
-  };
 
   function toggle(id: string, blocked: boolean) {
     if (locked || blocked) return;
@@ -315,7 +307,17 @@ function Squad({ match }: { match: ApiMatch }) {
     setFolha(true);
     setError(null);
     try {
-      await descarregarFolha({ match: sheetMatch, rows: sheetRows, academy, season });
+      /*
+       * O jogo completo, e não o da lista.
+       *
+       * A lista de jogos não traz a equipa de trabalho (de propósito — ver
+       * `listIn` no servidor), e a folha saía daqui sem massagista, sem
+       * delegado e sem treinador a assinar, enquanto a mesma folha exportada da
+       * página do jogo vinha completa. Um pedido a mais ao exportar, que é um
+       * gesto de uma vez por jogo.
+       */
+      const detalhe = await getMatch(match.id);
+      await descarregarFolha({ match: folhaDoJogo(detalhe), rows: sheetRows, academy, season });
     } catch (e) {
       setError(e instanceof Error ? e.message : "Não foi possível gerar o PDF.");
     } finally {
@@ -501,11 +503,29 @@ function Squad({ match }: { match: ApiMatch }) {
               gente de que foi convocada. Mudar uma hora não é isso — e enquanto
               este botão não existiu, era a única forma de o fazer.
             */}
+            {/*
+              A equipa de trabalho, ao lado dos detalhes.
+
+              É o passo que vem a seguir a fechar a lista — quem vai de
+              massagista, quem é o delegado — e sai na folha em PDF. Antes só se
+              fazia na página do jogo, e ninguém ia lá depois de convocar.
+            */}
+            {mayStaff && (
+              <button
+                type="button"
+                onClick={() => setEquipa(true)}
+                disabled={busy !== null}
+                className="ctl-outline ml-auto"
+              >
+                <Plus className="size-3.5" strokeWidth={2} />
+                Equipa de trabalho
+              </button>
+            )}
             <button
               type="button"
               onClick={() => setDialogo("editar")}
               disabled={busy !== null}
-              className="ctl-outline ml-auto"
+              className={cx("ctl-outline", !mayStaff && "ml-auto")}
             >
               <Pencil className="size-3.5" strokeWidth={1.75} />
               Editar detalhes
@@ -547,6 +567,14 @@ function Squad({ match }: { match: ApiMatch }) {
           </>
         )}
       </footer>
+
+      {equipa && (
+        <MatchStaffDialog
+          matchId={match.id}
+          subtitulo={`${match.teamName} ${matchLabel(match)} · ${longDate(d)}`}
+          onClose={() => setEquipa(false)}
+        />
+      )}
 
       {dialogo && (
         <SubmitCallUpDialog

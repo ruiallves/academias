@@ -9,7 +9,7 @@ import {
   teamScopeFilter,
   type RequestContext,
 } from "../common/permissions";
-import { headCoaches } from "./head-coaches";
+import { headCoaches, pesoDoTitulo } from "./head-coaches";
 
 /**
  * Jogos e convocatórias.
@@ -259,7 +259,18 @@ export class MatchesService {
           callUpNotes: true, confirmationRequired: true,
           competition: { select: { id: true, label: true } },
           sourceProvider: true, sourceUrl: true, importedAt: true,
-          team: { select: { name: true, maxAge: true, sportId: true, maxCallUps: true } },
+          team: {
+            select: {
+              name: true, maxAge: true, sportId: true, maxCallUps: true,
+              // A equipa técnica da ficha da equipa — o que a folha usa quando
+              // ninguém escalou uma equipa de trabalho para este jogo.
+              staff: {
+                where: { membership: { isActive: true } },
+                orderBy: { title: "asc" },
+                select: { title: true, membership: { select: { user: { select: { name: true } } } } },
+              },
+            },
+          },
           coach: { select: { id: true, user: { select: { name: true } } } },
           callUps: {
             orderBy: { athlete: { name: "asc" } },
@@ -372,6 +383,18 @@ export class MatchesService {
           name: x.membership.user.name,
           role: x.role,
         })),
+        /*
+         * A equipa técnica **da equipa**, e não a deste jogo.
+         *
+         * Um clube preencheu a equipa técnica na ficha da equipa — principal,
+         * adjunta, treinador de GR — e esperava vê-la na convocatória. A folha
+         * só lia a equipa escalada para o jogo (`staff`, acima), que ninguém
+         * tinha escalado, e saía sem equipa técnica nenhuma. Quem monta a folha
+         * usa esta quando a do jogo está vazia. O principal vem primeiro.
+         */
+        teamStaff: [...m.team.staff]
+          .sort((a, b) => pesoDoTitulo(b.title) - pesoDoTitulo(a.title))
+          .map((x) => ({ name: x.membership.user.name, role: x.title })),
       };
     });
   }

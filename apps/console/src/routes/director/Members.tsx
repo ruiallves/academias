@@ -100,7 +100,7 @@ export default function Members() {
       header: "Sócio",
       render: (m) => (
         <div className="flex items-center gap-2.5">
-          <Monogram name={m.name} />
+          <Monogram name={m.name} photoUrl={m.photoUrl} />
           {/*
             `max-w` e não só `min-w-0`: dentro de uma célula de tabela não há
             flexbox nenhum a forçar a coluna a encolher — sem um limite explícito,

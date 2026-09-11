@@ -110,8 +110,16 @@ export function academySlug(): string {
     /* segue para o subdomínio */
   }
 
-  const parts = window.location.hostname.split(".");
-  if (parts.length >= 3 && parts[0] !== "www") return parts[0];
+  /*
+   * O subdomínio é o clube — em produção, onde a app vive em
+   * `{slug}.academias.pt`. Em desenvolvimento nunca: o host é `localhost` ou um
+   * túnel (`ddfb8c….lhr.life`), e ler-lhe o primeiro pedaço mandava a app pedir
+   * uma academia chamada "ddfb8c…" depois do login.
+   */
+  if (!import.meta.env.DEV) {
+    const parts = window.location.hostname.split(".");
+    if (parts.length >= 3 && parts[0] !== "www") return parts[0];
+  }
 
   return (import.meta.env.VITE_ACADEMY_SLUG as string | undefined) ?? "life-club";
 }

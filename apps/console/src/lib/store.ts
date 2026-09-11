@@ -107,6 +107,12 @@ type ApiTeam = {
   id: string; name: string; maxAge: number; sportId: string; season: string;
   schedule: unknown; athleteCount: number;
   coaches: { id: string; name: string; title: string }[];
+  /**
+   * Quem treina a equipa — decidido no servidor (`escolherTreinador`), e não o
+   * primeiro de `coaches`, que vem sem ordem nenhuma. Nulo quando ninguém na
+   * equipa técnica treina.
+   */
+  headCoach?: { id: string; name: string } | null;
   /** As provas que a equipa disputa — sem as arquivadas. Ver `teams()` na API. */
   competitions: { id: string; label: string }[];
   /** O preço por omissão da equipa, em cêntimos. `null` sem `billing:read` ou por configurar. */
@@ -658,6 +664,7 @@ function juntar<T extends { id: string }>(atuais: T[], novos: T[]): T[] {
     season: t.season,
     coachIds: t.coaches.map((c) => c.id),
     coaches: t.coaches,
+    headCoach: t.headCoach ?? null,
     athleteIds: apiAthletes.filter((a) => a.teamId === t.id).map((a) => a.id),
     schedule: Array.isArray(t.schedule) ? (t.schedule as Team["schedule"]) : [],
     competitions: t.competitions ?? [],

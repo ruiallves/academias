@@ -15,6 +15,8 @@ import { SupabaseJwtService } from "../auth/supabase-jwt.service";
 import { SupabaseAccountsService } from "../auth/supabase-accounts.service";
 import { BillingService } from "../billing/billing.service";
 import { MemberFeesService, mesesAteFimDaEpoca, rotulo } from "../members/member-fees.service";
+import { PHOTO_BUCKET, PHOTO_TTL, PhotosService } from "../storage/photos.service";
+import { StorageService } from "../storage/storage.service";
 import { reclamarFichaPelaConta } from "../members/member-account-link";
 import { LegalService } from "../legal/legal.service";
 
@@ -59,6 +61,8 @@ export class ClubAppService {
     private readonly accounts: SupabaseAccountsService,
     private readonly billing: BillingService,
     private readonly quotas: MemberFeesService,
+    private readonly photos: PhotosService,
+    private readonly storage: StorageService,
     private readonly config: ConfigService,
     private readonly legal: LegalService,
   ) {}
@@ -182,7 +186,7 @@ export class ClubAppService {
     const eu = await this.identidade(authorization);
     const academyId = await this.academiaDe(slug);
 
-    return this.prisma.runAs(academyId, async (db) => {
+    const inicio = await this.prisma.runAs(academyId, async (db) => {
       const socio = await this.socioDe(db, eu.userId, academyId);
 
       const academia = await db.academy.findFirst({
@@ -307,6 +311,9 @@ export class ClubAppService {
           email: socio.email,
           phone: socio.phone ? `${socio.phoneCountry} ${socio.phone}` : null,
           memberSince: socio.approvedAt ?? socio.createdAt,
+          /* A chave sai daqui só para ser assinada lá fora — rede fora da
+             transação, como em todo o lado. Não chega à app. */
+          photoKey: socio.photoKey,
           /* O QR é `CARD_QR_PREFIX + token` — opaco, revogável, sem um único
              dado pessoal lá dentro. */
           cardQr: academia?.memberCardEnabled && academia.memberCardQrEnabled && cardToken
@@ -340,6 +347,51 @@ export class ClubAppService {
         })),
       };
     });
+
+    /*
+     * A fotografia assina-se depois de a transação fechar — uma ida ao Supabase
+     * dentro do `runAs` segurava uma das cinco ligações do pool durante toda a
+     * viagem, e o sintoma aparecia na app inteira (ver `setAthletePhoto`).
+     */
+    const { photoKey, ...member } = inicio.member;
+    const photoUrl = photoKey ? await this.storage.signDownload(PHOTO_BUCKET, photoKey, PHOTO_TTL) : null;
+    return { ...inicio, member: { ...member, photoUrl } };
+  }
+
+  /* ------------------------------------------------------------------------ */
+  /* A fotografia — a cara no cartão                                           */
+  /* ------------------------------------------------------------------------ */
+
+  /**
+   * O sócio põe a sua própria fotografia, pela app.
+   *
+   * A autorização é a de sempre nesta área: a ficha reclamada pela conta que
+   * pediu. Resolvida a ficha, o resto é o mesmo caminho da secretaria
+   * (`PhotosService`) — endereço assinado, o ficheiro vai directo ao
+   * armazenamento, e a confirmação verifica que chegou. Uma conta de sócio
+   * não consegue mexer na fotografia de mais ninguém porque nunca escolhe o
+   * `memberId`: ele vem da ficha dela.
+   */
+  async fotoUpload(authorization: string | undefined, slug: string, contentType: string) {
+    const { socioId } = await this.proprio(authorization, slug);
+    return this.photos.memberUploadUrlProprio(socioId, contentType);
+  }
+
+  async fotoConfirmar(authorization: string | undefined, slug: string, key: string) {
+    const { academyId, socioId } = await this.proprio(authorization, slug);
+    return this.photos.setMemberPhotoProprio(academyId, socioId, key);
+  }
+
+  async fotoRemover(authorization: string | undefined, slug: string) {
+    const { academyId, socioId } = await this.proprio(authorization, slug);
+    return this.photos.removeMemberPhotoProprio(academyId, socioId);
+  }
+
+  private async proprio(authorization: string | undefined, slug: string) {
+    const eu = await this.identidade(authorization);
+    const academyId = await this.academiaDe(slug);
+    const socio = await this.prisma.runAs(academyId, (db) => this.socioDe(db, eu.userId, academyId));
+    return { academyId, socioId: socio.id };
   }
 
   /**

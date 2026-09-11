@@ -239,6 +239,43 @@ ${styles(paleta)}
       });
   });
 
+  /*
+    Esqueceu-se da palavra-passe da conta que ja tem.
+
+    O link volta com origem "invite": a pagina do link muda a palavra-passe e
+    manda a pessoa de volta a este convite, sem entrar em lado nenhum. E aqui que
+    o cargo fica ligado a conta, e entrar pela pagina do link saltava isso.
+  */
+  var forgot = document.getElementById('forgot');
+  var forgotNote = document.getElementById('forgot-note');
+  if (forgot && forgotNote) {
+    forgot.addEventListener('click', function () {
+      forgot.disabled = true;
+      forgot.textContent = 'A enviar…';
+      fetch('/api/palavra-passe/recuperar', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: email, slug: slug, from: 'invite' }),
+      })
+        .then(function (r) {
+          forgotNote.textContent = r.ok
+            ? 'Enviámos um link para ' + email + '. Escolhe lá a palavra-passe nova e volta a este convite para a usar.'
+            : r.status === 429
+              ? 'Demasiados pedidos seguidos. Espera um minuto e tenta outra vez.'
+              : 'Não foi possível enviar o link. Tenta outra vez.';
+          forgotNote.hidden = false;
+          forgot.disabled = false;
+          forgot.textContent = r.ok ? 'Enviar outra vez' : 'Esqueci-me da palavra-passe';
+        })
+        .catch(function () {
+          forgotNote.textContent = 'Não foi possível contactar o servidor.';
+          forgotNote.hidden = false;
+          forgot.disabled = false;
+          forgot.textContent = 'Esqueci-me da palavra-passe';
+        });
+    });
+  }
+
   // Entrar reaproveita a password que a pessoa acabou de escolher — pedi-la outra
   // vez dois segundos depois seria cerimónia, não segurança.
   var enter = document.getElementById('enter');
@@ -308,7 +345,9 @@ function existingAccountFields(): string {
         <label class="field">
           <span>A tua palavra-passe</span>
           <input type="password" id="password" autocomplete="current-password" required />
-        </label>`;
+        </label>
+        <button type="button" class="forgot-link" id="forgot">Esqueci-me da palavra-passe</button>
+        <p class="notice" id="forgot-note" hidden></p>`;
 }
 
 /**
@@ -551,6 +590,13 @@ function styles(paleta: ClubPalette): string {
     margin-top: 10px; padding: 9px 11px; background: #fae9e7; color: #a82a20;
     border-radius: 9px; font-size: 12.5px; line-height: 1.45;
   }
+  .forgot-link {
+    appearance: none; background: none; border: 0; padding: 2px 0; margin: -2px 0 12px;
+    font: inherit; font-size: 12.5px; color: var(--ink-3); cursor: pointer;
+    text-decoration: underline; text-underline-offset: 2px;
+  }
+  .forgot-link:hover { color: var(--ink); }
+  .forgot-link:disabled { opacity: .6; cursor: default; }
 
   .done-mark {
     width: 40px; height: 40px; border-radius: 999px; background: #e6f2e9; color: #1f7a45;

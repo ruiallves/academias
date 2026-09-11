@@ -7,6 +7,8 @@ import { CARD_QR_PREFIX } from "../club-app/club-app.service";
 import { MemberInvitesService } from "./member-invites.service";
 import { ligarFichaAConta } from "./member-account-link";
 import { situacaoDeQuotas } from "./member-fees.service";
+import { PHOTO_BUCKET, PHOTO_TTL } from "../storage/photos.service";
+import { StorageService } from "../storage/storage.service";
 import type {
   MemberCreateDto,
   MemberImportRowDto,
@@ -32,6 +34,7 @@ export class MembersService {
     private readonly prisma: PrismaService,
     private readonly auth: AuthService,
     private readonly invites: MemberInvitesService,
+    private readonly storage: StorageService,
   ) {}
 
   /* ---------------------------------------------------------------------- */
@@ -188,7 +191,7 @@ export class MembersService {
   async list(ctx: RequestContext, filters: { status?: string; tierId?: string; q?: string }) {
     this.mustRead(ctx);
 
-    return this.prisma.runAs(ctx.academyId, async (db) => {
+    const lista = await this.prisma.runAs(ctx.academyId, async (db) => {
       const rows = await db.member.findMany({
         where: {
           ...(filters.status ? { status: filters.status as MemberStatus } : {}),
@@ -217,7 +220,7 @@ export class MembersService {
            * lhe acrescentar o endereço. Sem esta distinção, o envio em massa
            * seria um tiro no escuro.
            */
-          userId: true, inviteSentAt: true,
+          userId: true, inviteSentAt: true, photoKey: true,
           tier: { select: { id: true, name: true, feeCents: true } },
         },
       });
@@ -261,13 +264,31 @@ export class MembersService {
         counts: Object.fromEntries(counts.map((c) => [c.status, c._count._all])),
       };
     });
+
+    /*
+     * As fotografias assinam-se **depois** de a transação fechar — rede dentro
+     * do `runAs` segurava uma ligação do pool durante a viagem ao Supabase, e o
+     * sintoma aparecia na consola inteira (ver `AcademyService.withPhotos`).
+     */
+    const assinadas = await this.storage.signMany(
+      PHOTO_BUCKET,
+      lista.members.map((m) => m.photoKey).filter((k): k is string => Boolean(k)),
+      PHOTO_TTL,
+    );
+    return {
+      ...lista,
+      members: lista.members.map(({ photoKey, ...m }) => ({
+        ...m,
+        photoUrl: photoKey ? (assinadas.get(photoKey) ?? null) : null,
+      })),
+    };
   }
 
   /** A ficha completa. Documento e morada só se leem aqui, não na lista. */
   async detail(ctx: RequestContext, id: string) {
     this.mustRead(ctx);
 
-    return this.prisma.runAs(ctx.academyId, async (db) => {
+    const ficha = await this.prisma.runAs(ctx.academyId, async (db) => {
       const m = await db.member.findFirst({
         where: { id },
         select: {
@@ -280,7 +301,7 @@ export class MembersService {
           createdAt: true, approvedAt: true,
           /* A app do clube: a ficha diz se a conta já foi reclamada e quando
              saiu o último convite — é o que decide o texto do botão. */
-          userId: true, inviteSentAt: true,
+          userId: true, inviteSentAt: true, photoKey: true,
           tier: { select: { id: true, name: true, feeCents: true } },
           approvedBy: { select: { user: { select: { name: true } } } },
         },
@@ -300,6 +321,11 @@ export class MembersService {
 
       return { ...m, approvedBy: m.approvedBy?.user.name ?? null, fees };
     });
+
+    // Rede fora da transação — ver `list`.
+    const { photoKey, ...resto } = ficha;
+    const photoUrl = photoKey ? await this.storage.signDownload(PHOTO_BUCKET, photoKey, PHOTO_TTL) : null;
+    return { ...resto, photoUrl };
   }
 
   /**
@@ -428,23 +454,25 @@ export class MembersService {
     const token = raw.startsWith(CARD_QR_PREFIX) ? raw.slice(CARD_QR_PREFIX.length) : raw;
     if (!token || token.length < 16) throw new NotFoundException("Cartão não reconhecido");
 
-    return this.prisma.runAs(ctx.academyId, async (db) => {
-      const member = await db.member.findFirst({
+    const member = await this.prisma.runAs(ctx.academyId, (db) =>
+      db.member.findFirst({
         where: { cardToken: token },
         select: {
-          name: true, number: true, status: true,
+          name: true, number: true, status: true, photoKey: true,
           tier: { select: { name: true } },
         },
-      });
-      if (!member) throw new NotFoundException("Cartão não reconhecido");
+      }),
+    );
+    if (!member) throw new NotFoundException("Cartão não reconhecido");
 
-      return {
-        name: member.name,
-        number: member.number,
-        status: member.status,
-        tierName: member.tier?.name ?? null,
-      };
-    });
+    /* A cara ao lado do nome: é para isso que a portaria lê o cartão. */
+    return {
+      name: member.name,
+      number: member.number,
+      status: member.status,
+      tierName: member.tier?.name ?? null,
+      photoUrl: member.photoKey ? await this.storage.signDownload(PHOTO_BUCKET, member.photoKey, PHOTO_TTL) : null,
+    };
   }
 
   /**
@@ -480,10 +508,10 @@ export class MembersService {
   async remove(ctx: RequestContext, id: string) {
     this.mustWrite(ctx);
 
-    return this.prisma.runAs(ctx.academyId, async (db) => {
+    const photoKey = await this.prisma.runAs(ctx.academyId, async (db) => {
       const member = await db.member.findFirst({
         where: { id },
-        select: { id: true, name: true, number: true },
+        select: { id: true, name: true, number: true, photoKey: true },
       });
       if (!member) throw new NotFoundException("Sócio não encontrado");
 
@@ -494,8 +522,13 @@ export class MembersService {
       }
 
       await db.member.delete({ where: { id } });
-      return { ok: true };
+      return member.photoKey;
     });
+
+    // A fotografia deixa de ter dono — sai com a ficha, senão fica no bucket
+    // sem ninguém saber que está lá.
+    if (photoKey) await this.storage.remove(PHOTO_BUCKET, photoKey).catch(() => undefined);
+    return { ok: true };
   }
 
   /**

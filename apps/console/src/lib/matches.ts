@@ -96,6 +96,11 @@ export type MatchDetail = {
   source: { provider: string; url: string | null; at: string | null } | null;
   squad: SquadRow[];
   staff: MatchStaffRow[];
+  /**
+   * A equipa técnica **da equipa** (ficha da equipa), o principal primeiro.
+   * A folha usa-a quando ninguém escalou uma equipa de trabalho para o jogo.
+   */
+  teamStaff: { name: string; role: string }[];
 };
 
 export type MatchListRow = {

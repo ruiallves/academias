@@ -562,6 +562,16 @@ ${academy.logoUrl ? `<meta property="og:image" content="${esc(academy.logoUrl)}"
   }
   .staff-link:hover { color: var(--ink); background: var(--sunken); }
   .staff-link:focus-visible { outline: 2px solid var(--signal); outline-offset: 2px; }
+
+  /* O "esqueci-me": texto e nao botao cheio — e a saida de recurso, nao a porta. */
+  .forgot-link {
+    appearance: none; background: none; border: 0; padding: 6px 8px;
+    display: block; margin: 12px auto 0;
+    font: inherit; font-size: 13px; color: var(--ink-3); cursor: pointer; border-radius: 8px;
+  }
+  .forgot-link:hover { color: var(--ink); }
+  .forgot-link:focus-visible { outline: 2px solid var(--signal); outline-offset: 2px; }
+  .forgot-intro { margin: 0 0 16px; font-size: 13.5px; line-height: 1.5; color: var(--ink-2); text-align: left; }
 </style>
 </head>
 <body class="${desktop ? "desktop" : ""}">
@@ -777,6 +787,88 @@ ${
     return url.charAt(url.length - 1) === '/' ? url.slice(0, -1) : url;
   }
 
+  /* ---------------------------------------------------------------------- */
+  /* Esqueci-me da palavra-passe                                             */
+  /* ---------------------------------------------------------------------- */
+
+  /*
+    O formulario de pedir o link troca de lugar com o de entrar, e traz o email
+    que ja estava escrito. A resposta e sempre a mesma, haja conta ou nao: dizer
+    "esse email nao tem conta" era responder a qualquer pessoa quem trabalha no
+    clube. Ver PasswordResetService na API.
+  */
+  var forgotForm = document.getElementById('forgot-form');
+  var forgotOpen = document.getElementById('forgot-open');
+  var forgotClose = document.getElementById('forgot-close');
+  if (form && forgotForm && forgotOpen && forgotClose) {
+    var loginTitle = document.getElementById('login-title');
+    var forgotEmail = document.getElementById('forgot-email');
+    var forgotSubmit = document.getElementById('forgot-submit');
+    var forgotError = document.getElementById('forgot-error');
+    var forgotDone = document.getElementById('forgot-done');
+
+    var trocar = function (recuperar) {
+      form.hidden = recuperar;
+      forgotForm.hidden = !recuperar;
+      if (loginTitle) loginTitle.textContent = recuperar ? 'Repor palavra-passe' : 'Entrar';
+      if (recuperar) {
+        forgotEmail.value = document.getElementById('email').value.trim();
+        forgotError.hidden = true;
+        forgotDone.hidden = true;
+        forgotSubmit.disabled = false;
+        forgotSubmit.textContent = 'Enviar link';
+        forgotEmail.focus();
+      } else {
+        document.getElementById('email').focus();
+      }
+    };
+    forgotOpen.addEventListener('click', function () { trocar(true); });
+    forgotClose.addEventListener('click', function () { trocar(false); });
+
+    forgotForm.addEventListener('submit', function (e) {
+      e.preventDefault();
+      forgotError.hidden = true;
+      forgotDone.hidden = true;
+
+      var valor = forgotEmail.value.trim();
+      if (valor.indexOf('@') < 1 || valor.lastIndexOf('.') < valor.indexOf('@')) {
+        forgotError.textContent = 'Escreve o email da tua conta.';
+        forgotError.hidden = false;
+        return;
+      }
+
+      forgotSubmit.disabled = true;
+      forgotSubmit.textContent = 'A enviar…';
+
+      fetch('/api/palavra-passe/recuperar', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: valor, slug: slug, from: 'console' }),
+      })
+        .then(function (r) {
+          forgotSubmit.disabled = false;
+          if (!r.ok) {
+            forgotSubmit.textContent = 'Enviar link';
+            forgotError.textContent = r.status === 429
+              ? 'Demasiados pedidos seguidos. Espera um minuto e tenta outra vez.'
+              : 'Não foi possível enviar o link. Confirma o email e tenta outra vez.';
+            forgotError.hidden = false;
+            return;
+          }
+          forgotSubmit.textContent = 'Enviar outra vez';
+          forgotDone.textContent = 'Se houver uma conta com ' + valor +
+            ', vai lá ter um link para escolheres uma palavra-passe nova. Pode demorar um minuto — vê também o spam.';
+          forgotDone.hidden = false;
+        })
+        .catch(function () {
+          forgotSubmit.disabled = false;
+          forgotSubmit.textContent = 'Enviar link';
+          forgotError.textContent = 'Não foi possível contactar o servidor. Tenta outra vez.';
+          forgotError.hidden = false;
+        });
+    });
+  }
+
   function fail(message) {
     errorBox.textContent = message;
     errorBox.hidden = false;
@@ -918,7 +1010,7 @@ function renderDesktop(academy: AcademyBranding, shortName: string, name: string
 
     <section class="card-login">
       <div class="mark${academy.logoUrl ? " logo" : ""}" style="margin:0 auto 22px">${academy.logoUrl ? `<img src="${esc(academy.logoUrl)}" alt="" />` : esc(academy.mark)}</div>
-      <h1>Entrar</h1>
+      <h1 id="login-title">Entrar</h1>
       <p class="subtitle">Consola da ${name}</p>
 
       ${loginForm()}
@@ -1096,7 +1188,13 @@ ${
 }`;
 }
 
-/** O mesmo formulário nas duas composições — uma só implementação a manter. */
+/**
+ * O mesmo formulário nas duas composições — uma só implementação a manter.
+ *
+ * Com o "esqueci-me" ao lado: um segundo formulário, escondido, que troca de lugar
+ * com o de entrar. Não é uma página à parte porque quem se esqueceu está aqui, a
+ * meio de tentar entrar, e mandá-lo para outro endereço era perdê-lo pelo caminho.
+ */
 function loginForm(): string {
   return `<form id="login-form" novalidate>
           <label class="field">
@@ -1109,6 +1207,18 @@ function loginForm(): string {
           </label>
           <button class="btn" type="submit" id="login-submit" style="margin-top:14px">Entrar</button>
           <div id="login-error" class="error" hidden></div>
+          <button type="button" class="forgot-link" id="forgot-open">Esqueceste-te da palavra-passe?</button>
+        </form>
+        <form id="forgot-form" novalidate hidden>
+          <p class="forgot-intro">Escreve o email da tua conta. Enviamos-te um link para escolheres uma palavra-passe nova.</p>
+          <label class="field">
+            <span>E-mail</span>
+            <input type="email" id="forgot-email" autocomplete="username" required />
+          </label>
+          <button class="btn" type="submit" id="forgot-submit" style="margin-top:14px">Enviar link</button>
+          <div id="forgot-error" class="error" hidden></div>
+          <div id="forgot-done" class="notice" hidden></div>
+          <button type="button" class="forgot-link" id="forgot-close">Voltar a entrar</button>
         </form>`;
 }
 

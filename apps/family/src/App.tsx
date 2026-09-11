@@ -626,7 +626,7 @@ function TabBar() {
 
   return (
     <nav className="pointer-events-none fixed inset-x-0 bottom-0 z-30 flex justify-center pb-[calc(14px+env(safe-area-inset-bottom))]">
-/*
+      {/*
  * Sem `backdrop-blur` nesta barra — e não é um esquecimento.
  *
  * O fundo é `bg-ink/95`: cinco por cento de transparência, onde um desfoque não
@@ -635,7 +635,7 @@ function TabBar() {
  * está fixa por cima de tudo o que passa: cada scroll e cada troca de
  * separador pagavam um desfoque que ninguém chega a ver. É a definição de
  * trabalho a mais.
- */
+ */}
       <ul
         className="pointer-events-auto flex items-center gap-1 rounded-full bg-ink/95 p-1.5"
         style={{ boxShadow: "var(--shadow-float)" }}

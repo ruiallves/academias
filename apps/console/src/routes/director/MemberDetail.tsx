@@ -2,9 +2,11 @@ import { useCallback, useEffect, useRef, useState, type ReactNode } from "react"
 import { createPortal } from "react-dom";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import { DialogField, dialogInputClass } from "@/components/Dialog";
-import { Empty, Loading, Monogram, Panel, PanelHead, Pill, cx, type Tone } from "@/components/primitives";
+import { Empty, Loading, Panel, PanelHead, Pill, cx, type Tone } from "@/components/primitives";
 import { Segmented } from "@/components/filters";
 import { MemberFeeDialog } from "@/components/MemberFeeDialog";
+import { PhotoPicker } from "@/components/PhotoPicker";
+import { removeMemberPhoto, uploadMemberPhoto } from "@/lib/photos";
 import {
   ArrowLeft,
   Check,
@@ -126,7 +128,26 @@ export default function MemberDetail() {
       <Back />
 
       <header className="mb-5 flex flex-wrap items-center gap-4">
-        <Monogram name={m.name} size="lg" />
+        {/*
+          A fotografia é a cara no cartão de sócio digital — é por isso que se
+          pede aqui e não só na app. O próprio também a pode pôr pela app; as
+          duas portas escrevem a mesma coluna, e a ficha recarrega para mostrar
+          a que ficou.
+        */}
+        <PhotoPicker
+          name={m.name}
+          photoUrl={m.photoUrl}
+          size={64}
+          editable={mayWrite}
+          onUpload={async (file) => {
+            await uploadMemberPhoto(m.id, file);
+            await load();
+          }}
+          onRemove={async () => {
+            await removeMemberPhoto(m.id);
+            await load();
+          }}
+        />
 
         <div className="min-w-0 flex-1">
           <div className="mb-1 flex flex-wrap items-center gap-1.5">

@@ -70,6 +70,12 @@ const REWRITES: Rewrite[] = [
    * compilador o lembrar.
    */
   { pattern: /^\/socio\/([^/]+)\/?$/, to: (slug, m) => `/l/${slug}/socio/${m[1]}` },
+
+  /*
+   * O link do email de repor a palavra-passe. Só há caminho: o token vai no
+   * fragmento (`#t=`), que o browser nunca manda ao servidor.
+   */
+  { pattern: /^\/repor-palavra-passe\/?$/, to: (slug) => `/l/${slug}/repor-palavra-passe` },
 ];
 
 export function tenantMiddleware(req: Request & TenantRequest, _res: Response, next: NextFunction): void {

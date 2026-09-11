@@ -6,6 +6,7 @@ import { applyBrand } from "@/lib/brand";
 import { chooseContext } from "@/lib/contexts";
 import { saveSession } from "@/lib/session";
 import { clearMemberInvite, saveSlug } from "@/lib/invite";
+import { RecuperarPalavraPasse } from "@/screens/RecuperarPalavraPasse";
 
 const API = (import.meta.env.VITE_API_URL as string | undefined) ?? "";
 
@@ -38,6 +39,13 @@ export default function ConviteSocio({ token, onDone }: { token: string; onDone:
   const [erro, setErro] = useState<string | null>(null);
   // Os termos, aceites ao criar a conta — ver `ConsentimentoLegal`.
   const [legalOk, setLegalOk] = useState(true);
+  /*
+   * O email já tinha conta e a palavra-passe não bateu (403). Aí não há outra
+   * saída que não seja repor a da conta que existe — por isso a oferta só aparece
+   * nesse erro, e não como mais uma linha por baixo de um formulário de uma linha.
+   */
+  const [contaExiste, setContaExiste] = useState(false);
+  const [recuperar, setRecuperar] = useState(false);
 
   useEffect(() => {
     fetch(`${API}/api/convite-socio/${encodeURIComponent(token)}`)
@@ -60,6 +68,7 @@ export default function ConviteSocio({ token, onDone }: { token: string; onDone:
     if (busy || password.length < 8 || !legalOk) return;
     setBusy(true);
     setErro(null);
+    setContaExiste(false);
     try {
       const res = await fetch(`${API}/api/convite-socio/${encodeURIComponent(token)}/registar`, {
         method: "POST",
@@ -71,6 +80,11 @@ export default function ConviteSocio({ token, onDone }: { token: string; onDone:
         | null;
 
       if (!res.ok || !body?.accessToken) {
+        // 403 é só um caso: o email já tinha conta e a palavra-passe não é a dela.
+        if (res.status === 403) {
+          setContaExiste(true);
+          throw new Error("Este email já tem conta, e essa palavra-passe não é a dela.");
+        }
         const msg = Array.isArray(body?.message) ? body?.message[0] : body?.message;
         throw new Error(msg ?? "Não foi possível criar a conta.");
       }
@@ -142,41 +156,59 @@ export default function ConviteSocio({ token, onDone }: { token: string; onDone:
         </div>
       </header>
 
-      <form onSubmit={submeter} className="space-y-3">
-        <div className="flex items-center gap-3 rounded-[16px] bg-surface p-4 shadow-[var(--shadow-soft)]">
-          <span className="flex size-10 items-center justify-center rounded-[12px] bg-signal-soft text-signal-ink">
-            <IdCard className="size-5" strokeWidth={1.9} />
-          </span>
-          <span className="min-w-0 flex-1">
-            <span className="block text-[12px] text-ink-3">A tua conta</span>
-            <span className="block truncate text-[14px] font-semibold text-ink">{preview.emailHint}</span>
-          </span>
-        </div>
-
-        <input
-          type="password"
-          autoComplete="new-password"
-          value={password}
-          onChange={(e) => setPassword(e.target.value)}
-          placeholder="Palavra-passe (mínimo 8 caracteres)"
-          className="w-full rounded-[16px] bg-surface px-4 py-3.5 text-[15px] text-ink shadow-[var(--shadow-soft)] outline-none placeholder:text-ink-4"
+      {recuperar ? (
+        <RecuperarPalavraPasse
+          slug={preview.academy.slug}
+          origem="invite"
+          voltarLabel="Voltar ao convite"
+          onVoltar={() => setRecuperar(false)}
         />
+      ) : (
+        <form onSubmit={submeter} className="space-y-3">
+          <div className="flex items-center gap-3 rounded-[16px] bg-surface p-4 shadow-[var(--shadow-soft)]">
+            <span className="flex size-10 items-center justify-center rounded-[12px] bg-signal-soft text-signal-ink">
+              <IdCard className="size-5" strokeWidth={1.9} />
+            </span>
+            <span className="min-w-0 flex-1">
+              <span className="block text-[12px] text-ink-3">A tua conta</span>
+              <span className="block truncate text-[14px] font-semibold text-ink">{preview.emailHint}</span>
+            </span>
+          </div>
 
-        {preview.alreadyLinked && (
-          <p className="px-1 text-[12px] leading-relaxed text-ink-3">
-            Esta ficha já tem conta. Se és tu, entra pelo login normal — este convite já cumpriu.
-          </p>
-        )}
-        <div className="rounded-[16px] bg-surface px-4 py-1 shadow-[var(--shadow-soft)]">
-          <ConsentimentoLegal audience="MEMBER" onChange={setLegalOk} />
-        </div>
+          <input
+            type="password"
+            autoComplete="new-password"
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+            placeholder="Palavra-passe (mínimo 8 caracteres)"
+            className="w-full rounded-[16px] bg-surface px-4 py-3.5 text-[15px] text-ink shadow-[var(--shadow-soft)] outline-none placeholder:text-ink-4"
+          />
 
-        {erro && <p className="px-1 text-[13px] font-medium text-risk">{erro}</p>}
+          {preview.alreadyLinked && (
+            <p className="px-1 text-[12px] leading-relaxed text-ink-3">
+              Esta ficha já tem conta. Se és tu, entra pelo login normal — este convite já cumpriu.
+            </p>
+          )}
+          <div className="rounded-[16px] bg-surface px-4 py-1 shadow-[var(--shadow-soft)]">
+            <ConsentimentoLegal audience="MEMBER" onChange={setLegalOk} />
+          </div>
 
-        <button type="submit" disabled={busy || password.length < 8 || !legalOk} className="cta w-full disabled:opacity-40">
-          {busy ? "A criar a conta…" : "Criar a minha conta"}
-        </button>
-      </form>
+          {erro && <p className="px-1 text-[13px] font-medium text-risk">{erro}</p>}
+          {contaExiste && (
+            <button
+              type="button"
+              onClick={() => setRecuperar(true)}
+              className="w-full py-1 text-center text-[13.5px] font-semibold text-ink underline underline-offset-[3px]"
+            >
+              Esqueci-me da palavra-passe desta conta
+            </button>
+          )}
+
+          <button type="submit" disabled={busy || password.length < 8 || !legalOk} className="cta w-full disabled:opacity-40">
+            {busy ? "A criar a conta…" : "Criar a minha conta"}
+          </button>
+        </form>
+      )}
 
       <p className="text-center text-[12px] leading-relaxed text-ink-4">
         Se este email já tiver conta na app, a palavra-passe tem de ser a dessa conta — é assim que provamos que és tu.

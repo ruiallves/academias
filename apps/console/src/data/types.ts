@@ -105,6 +105,12 @@ export type Team = {
    * família já o mostra pela mesma razão.
    */
   coaches: { id: string; name: string; title: string }[];
+  /**
+   * Quem treina a equipa — decidido no servidor (`escolherTreinador`), e não o
+   * primeiro de `coaches`, que vem sem ordem nenhuma. Nulo quando ninguém na
+   * equipa técnica treina.
+   */
+  headCoach: { id: string; name: string } | null;
   athleteIds: string[];
   /** Dias da semana (0 = domingo) e hora do treino regular. */
   schedule: { weekday: number; start: string; end: string; venue: string }[];

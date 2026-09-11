@@ -81,9 +81,12 @@ function academySlug(): string {
   const stored = readSession()?.academySlug;
   if (stored) return stored;
 
-  const { hostname } = window.location;
-  const parts = hostname.split(".");
-  if (parts.length >= 3 && parts[0] !== "www") return parts[0];
+  // Só em produção o subdomínio é o clube. Em desenvolvimento o host é
+  // `localhost` ou um túnel, e o primeiro pedaço não é slug nenhum.
+  if (!import.meta.env.DEV) {
+    const parts = window.location.hostname.split(".");
+    if (parts.length >= 3 && parts[0] !== "www") return parts[0];
+  }
 
   return (import.meta.env.VITE_ACADEMY_SLUG as string | undefined) ?? "life-club";
 }

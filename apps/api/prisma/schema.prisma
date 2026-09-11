@@ -3243,6 +3243,14 @@ model Member {
   /// ele: nunca NIF, email, morada ou qualquer outro dado da ficha.
   cardToken String? @unique
 
+  /// A fotografia do sócio — a cara no cartão.
+  ///
+  /// Chave no bucket privado `fotos` (`socios/<id>/…`), como a dos atletas e do
+  /// staff: o que sai da API é um link assinado com prazo, nunca a chave. Tanto
+  /// a secretaria (na ficha) como o próprio (na app) a podem pôr e tirar — é a
+  /// fotografia dele, e a portaria quer vê-la ao lado do nome.
+  photoKey String?
+
   /// ## O convite para criar conta
   ///
   /// Guarda-se o **hash** do token, como nos convites de staff: quem leia a base

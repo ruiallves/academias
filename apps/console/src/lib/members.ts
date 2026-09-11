@@ -68,6 +68,8 @@ export type MemberRow = {
   approvedAt: string | null;
   source: string;
   tier: { id: string; name: string; feeCents: number | null } | null;
+  /** Link assinado com prazo para a fotografia; nulo sem fotografia. Ver `photos.ts`. */
+  photoUrl: string | null;
   /**
    * O estado da app deste sócio — o que a coluna "App" mostra.
    *

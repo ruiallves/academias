@@ -1,5 +1,5 @@
 import { useSyncExternalStore } from "react";
-import { apiGet, apiPost } from "@/lib/http";
+import { apiDelete, apiGet, apiPost } from "@/lib/http";
 
 /**
  * A área de sócio — dados e chamadas.
@@ -66,6 +66,8 @@ export type SocioInicio = {
     email: string | null;
     phone: string | null;
     memberSince: string;
+    /** Link assinado com prazo para a fotografia — a cara no cartão. Nulo sem fotografia. */
+    photoUrl: string | null;
     cardQr: string | null;
   };
   fees: SocioFee[];
@@ -83,7 +85,11 @@ export type SocioInicio = {
   polls: SocioPoll[];
 };
 
-type State = { data: SocioInicio | null; error: string | null; loading: boolean };
+type State = {
+  data: SocioInicio | null;
+  error: string | null;
+  loading: boolean;
+};
 
 let state: State = { data: null, error: null, loading: false };
 const listeners = new Set<() => void>();
@@ -105,7 +111,11 @@ export async function loadSocio(): Promise<void> {
     const data = await apiGet<SocioInicio>("/api/socio/inicio");
     state = { data, error: null, loading: false };
   } catch (e) {
-    state = { ...state, error: e instanceof Error ? e.message : "Não foi possível carregar.", loading: false };
+    state = {
+      ...state,
+      error: e instanceof Error ? e.message : "Não foi possível carregar.",
+      loading: false,
+    };
   }
   emit();
 }
@@ -125,12 +135,26 @@ export type PagamentoIniciado = {
   expiresAt: string | null;
 };
 
-export const pagarQuota = (feeId: string, method: "MBWAY" | "MULTIBANCO", phone?: string) =>
-  apiPost<PagamentoIniciado>(`/api/socio/quotas/${feeId}/pagar`, { method, ...(phone ? { phone } : {}) });
+export const pagarQuota = (
+  feeId: string,
+  method: "MBWAY" | "MULTIBANCO",
+  phone?: string,
+) =>
+  apiPost<PagamentoIniciado>(`/api/socio/quotas/${feeId}/pagar`, {
+    method,
+    ...(phone ? { phone } : {}),
+  });
 
 /** Pagar um mês que ainda não tem quota — o servidor cria-a e inicia o pagamento. */
-export const pagarMes = (period: string, method: "MBWAY" | "MULTIBANCO", phone?: string) =>
-  apiPost<PagamentoIniciado>(`/api/socio/quotas/mes/${period}/pagar`, { method, ...(phone ? { phone } : {}) });
+export const pagarMes = (
+  period: string,
+  method: "MBWAY" | "MULTIBANCO",
+  phone?: string,
+) =>
+  apiPost<PagamentoIniciado>(`/api/socio/quotas/mes/${period}/pagar`, {
+    method,
+    ...(phone ? { phone } : {}),
+  });
 
 /**
  * Pagar tudo o que falta **até** um mês, numa referência só.
@@ -139,8 +163,73 @@ export const pagarMes = (period: string, method: "MBWAY" | "MULTIBANCO", phone?:
  * que resolve o conjunto para trás. Assim não há forma de pedir Março sem
  * Fevereiro — nem por engano, nem de propósito.
  */
-export const pagarAte = (period: string, method: "MBWAY" | "MULTIBANCO", phone?: string) =>
-  apiPost<PagamentoIniciado>(`/api/socio/quotas/ate/${period}/pagar`, { method, ...(phone ? { phone } : {}) });
+export const pagarAte = (
+  period: string,
+  method: "MBWAY" | "MULTIBANCO",
+  phone?: string,
+) =>
+  apiPost<PagamentoIniciado>(`/api/socio/quotas/ate/${period}/pagar`, {
+    method,
+    ...(phone ? { phone } : {}),
+  });
+
+/* -------------------------------------------------------------------------- */
+/* A fotografia — a cara no cartão                                             */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * O sócio põe a sua fotografia, pela app.
+ *
+ * O mesmo caminho em três passos da consola (ver `lib/photos.ts` lá): pedir
+ * autorização, carregar **directamente** para o armazenamento, confirmar. O
+ * ficheiro não passa pela API, e a API só grava a chave depois de verificar
+ * que o ficheiro chegou. Sem `memberId` no pedido: é sempre a ficha do próprio,
+ * resolvida no servidor a partir da sessão.
+ */
+const TIPOS = ["image/jpeg", "image/png", "image/webp"];
+/** 8 MB — o tecto do servidor (`MAX_BYTES` em `photos.service.ts`). */
+const MAX_BYTES = 8 * 1024 * 1024;
+
+export class FotoError extends Error {}
+
+/** A mensagem do problema, ou `null` quando o ficheiro está em condições. */
+export function checkFoto(file: File): string | null {
+  if (!TIPOS.includes(file.type))
+    return "A fotografia tem de ser JPEG, PNG ou WebP.";
+  if (file.size > MAX_BYTES)
+    return "A fotografia é grande de mais — o máximo são 8 MB.";
+  return null;
+}
+
+export async function uploadFotoSocio(file: File): Promise<string | null> {
+  const problema = checkFoto(file);
+  if (problema) throw new FotoError(problema);
+
+  const signed = await apiPost<{ url: string; token: string; key: string }>(
+    "/api/socio/foto/upload",
+    {
+      contentType: file.type,
+    },
+  );
+  const res = await fetch(signed.url, {
+    method: "PUT",
+    headers: {
+      "Content-Type": file.type,
+      ...(signed.token ? { Authorization: `Bearer ${signed.token}` } : {}),
+    },
+    body: file,
+  });
+  if (!res.ok) throw new FotoError("Não foi possível carregar a fotografia.");
+
+  const { photoUrl } = await apiPost<{ photoUrl: string | null }>(
+    "/api/socio/foto",
+    { key: signed.key },
+  );
+  return photoUrl;
+}
+
+export const removerFotoSocio = () =>
+  apiDelete<{ ok: true }>("/api/socio/foto");
 
 export const votar = (pollId: string, optionId: string) =>
   apiPost<{ ok: true }>(`/api/socio/sondagens/${pollId}/votar`, { optionId });

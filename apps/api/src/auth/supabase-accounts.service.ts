@@ -98,6 +98,34 @@ export class SupabaseAccountsService {
   }
 
   /**
+   * Um token para repor a palavra-passe, sem o Supabase enviar email nenhum.
+   *
+   * O `generate_link` do admin devolve o token em vez de o mandar: é o que deixa o
+   * email sair por nós, com a marca do clube onde foi pedido, em vez do modelo
+   * genérico do Supabase — que não sabe de que clube se trata e sai por um SMTP
+   * com um limite de envios por hora pensado para testes.
+   *
+   * `null` quando a conta não existe. Quem chama não distingue isso de ter
+   * enviado, e não pode: responder diferente dizia a qualquer pessoa que emails
+   * têm conta.
+   */
+  async recoveryToken(email: string): Promise<string | null> {
+    const key = this.config.getOrThrow<string>("SUPABASE_SERVICE_ROLE_KEY");
+
+    const res = await fetch(`${this.url}/auth/v1/admin/generate_link`, {
+      method: "POST",
+      headers: { apikey: key, Authorization: `Bearer ${key}`, "Content-Type": "application/json" },
+      body: JSON.stringify({ type: "recovery", email }),
+    });
+    if (!res.ok) return null;
+
+    // A forma mudou entre versões do GoTrue: o token vinha no topo e passou para
+    // `properties`. Lêem-se as duas para uma actualização do Supabase não calar isto.
+    const body = (await res.json()) as { hashed_token?: string; properties?: { hashed_token?: string } };
+    return body.properties?.hashed_token ?? body.hashed_token ?? null;
+  }
+
+  /**
    * Criar, ou entrar se já existir.
    *
    * O caminho da família: quem se regista pode já ter conta — o pai que tem um

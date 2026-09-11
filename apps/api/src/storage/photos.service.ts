@@ -5,7 +5,7 @@ import { StorageService } from "./storage.service";
 import { can, teamScopeFilter, type RequestContext } from "../common/permissions";
 
 /**
- * Fotografias de atletas e de staff.
+ * Fotografias de atletas, de staff e de sócios.
  *
  * ## O caminho, em três passos
  *
@@ -187,6 +187,97 @@ export class PhotosService {
     if (before) await this.storage.remove(PHOTO_BUCKET, before);
 
     return { ok: true };
+  }
+
+  /* ------------------------------------------------------------------------ */
+  /* Sócios                                                                    */
+  /* ------------------------------------------------------------------------ */
+
+  /**
+   * A fotografia do sócio — a cara no cartão.
+   *
+   * Duas portas para a mesma coluna: a secretaria, com `member:write`, na ficha;
+   * e o **próprio**, pela app do clube, sem permissão nenhuma — é a fotografia
+   * dele. A autorização do próprio não passa por aqui: quem a garante é o
+   * `ClubAppService`, que só chega às variantes `*Proprio` depois de resolver a
+   * ficha reclamada pela conta que pediu. As duas portas convergem nos três
+   * privados abaixo, para o que se grava ser exactamente o mesmo.
+   */
+  async memberUploadUrl(ctx: RequestContext, memberId: string, contentType: string) {
+    if (!can(ctx, "member:write")) throw new ForbiddenException("Sem permissão para gerir sócios");
+    await this.assertMember(ctx.academyId, memberId);
+    return this.memberUpload(memberId, contentType);
+  }
+
+  async setMemberPhoto(ctx: RequestContext, memberId: string, key: string) {
+    if (!can(ctx, "member:write")) throw new ForbiddenException("Sem permissão para gerir sócios");
+    await this.assertMember(ctx.academyId, memberId);
+    return this.memberSet(ctx.academyId, memberId, key);
+  }
+
+  async removeMemberPhoto(ctx: RequestContext, memberId: string) {
+    if (!can(ctx, "member:write")) throw new ForbiddenException("Sem permissão para gerir sócios");
+    await this.assertMember(ctx.academyId, memberId);
+    return this.memberRemove(ctx.academyId, memberId);
+  }
+
+  /** A app do sócio. `memberId` já é o do próprio — ver `ClubAppService`. */
+  memberUploadUrlProprio(memberId: string, contentType: string) {
+    return this.memberUpload(memberId, contentType);
+  }
+
+  setMemberPhotoProprio(academyId: string, memberId: string, key: string) {
+    return this.memberSet(academyId, memberId, key);
+  }
+
+  removeMemberPhotoProprio(academyId: string, memberId: string) {
+    return this.memberRemove(academyId, memberId);
+  }
+
+  private async memberUpload(memberId: string, contentType: string) {
+    this.checkType(contentType);
+    await this.ensureBucket();
+
+    const key = `socios/${memberId}/${randomBytes(8).toString("hex")}${extensionFor(contentType)}`;
+    const signed = await this.storage.signUpload(PHOTO_BUCKET, key);
+    return { ...signed, key, maxBytes: MAX_BYTES };
+  }
+
+  private async memberSet(academyId: string, memberId: string, key: string) {
+    if (!key.startsWith(`socios/${memberId}/`)) throw new BadRequestException("Chave inválida");
+    if (!(await this.storage.exists(PHOTO_BUCKET, key))) {
+      throw new BadRequestException("O ficheiro não chegou ao armazenamento");
+    }
+
+    // Rede fora da transação — ver a explicação em `setAthletePhoto`.
+    const before = await this.prisma.runAs(academyId, async (db) => {
+      const previous = await db.member.findFirst({ where: { id: memberId }, select: { photoKey: true } });
+      await db.member.update({ where: { id: memberId }, data: { photoKey: key } });
+      return previous?.photoKey ?? null;
+    });
+
+    if (before && before !== key) await this.storage.remove(PHOTO_BUCKET, before);
+
+    return { photoUrl: await this.storage.signDownload(PHOTO_BUCKET, key, PHOTO_TTL) };
+  }
+
+  private async memberRemove(academyId: string, memberId: string) {
+    const before = await this.prisma.runAs(academyId, async (db) => {
+      const previous = await db.member.findFirst({ where: { id: memberId }, select: { photoKey: true } });
+      await db.member.update({ where: { id: memberId }, data: { photoKey: null } });
+      return previous?.photoKey ?? null;
+    });
+
+    if (before) await this.storage.remove(PHOTO_BUCKET, before);
+
+    return { ok: true };
+  }
+
+  private async assertMember(academyId: string, memberId: string) {
+    const found = await this.prisma.runAs(academyId, (db) =>
+      db.member.findFirst({ where: { id: memberId }, select: { id: true } }),
+    );
+    if (!found) throw new NotFoundException("Sócio não encontrado");
   }
 
   /* ------------------------------------------------------------------------ */

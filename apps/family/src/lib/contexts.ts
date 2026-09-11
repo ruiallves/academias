@@ -1,6 +1,6 @@
 import { useSyncExternalStore } from "react";
 import { apiGet } from "@/lib/http";
-import { academySlug } from "@/lib/invite";
+import { academySlug, saveSlug } from "@/lib/invite";
 
 /**
  * Os contextos desta conta neste clube — e qual está vestido.
@@ -89,6 +89,7 @@ export function useContexts(): State {
  * (`state.active`) mantém-se entre recargas de dados — não entre arranques.
  */
 export async function loadContexts(): Promise<void> {
+  if (import.meta.env.DEV) await resolverClubeDaConta();
   try {
     const r = await apiGet<{ contexts: AppContext[] }>("/api/app/contexts");
     const tipos = r.contexts.map((c) => c.type);
@@ -102,6 +103,31 @@ export async function loadContexts(): Promise<void> {
     state = { ...state, error: e instanceof Error ? e.message : "Não foi possível carregar." };
   }
   emit();
+}
+
+/**
+ * Em desenvolvimento, o clube vem da conta.
+ *
+ * Em produção a app vive em `{slug}.academias.pt` e o subdomínio diz de que
+ * clube é. Em `localhost` ou atrás de um túnel não há subdomínio nenhum, e um
+ * clube fixo no `.env` só acerta para as contas desse clube: entrar com uma
+ * conta de outro clube dava "esta conta não é de encarregado" a quem o é —
+ * só que noutro clube.
+ *
+ * Pergunta-se então à API onde é que esta conta tem vínculo. Se o clube em uso
+ * não for um deles, passa a ser o primeiro — de família, se houver, porque esta
+ * é a app da família. Só em desenvolvimento: em produção manda o subdomínio, e
+ * trocá-lo às escondidas seria abrir outro clube.
+ */
+async function resolverClubeDaConta(): Promise<void> {
+  try {
+    const r = await apiGet<{ academies: { slug: string; role: string }[] }>("/auth/memberships");
+    if (r.academies.length === 0 || r.academies.some((a) => a.slug === academySlug())) return;
+    const daFamilia = r.academies.find((a) => a.role === "GUARDIAN" || a.role === "ATHLETE");
+    saveSlug((daFamilia ?? r.academies[0]).slug);
+  } catch {
+    /* sem resposta fica o clube que já havia — o resto do arranque explica o que falhar */
+  }
 }
 
 /**

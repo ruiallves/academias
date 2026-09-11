@@ -94,4 +94,19 @@ export function removeStaffPhoto(membershipId: string) {
   return apiDelete(`/api/staff/${membershipId}/foto`);
 }
 
+/** A de um sócio — a cara no cartão. O próprio também a pode pôr, pela app. */
+export async function uploadMemberPhoto(memberId: string, file: File): Promise<string | null> {
+  const problema = checkPhoto(file);
+  if (problema) throw new PhotoError(problema);
+
+  const signed = await apiPost<Signed>(`/api/members/${memberId}/foto/upload`, { contentType: file.type });
+  await put(signed, file);
+  const { photoUrl } = await apiPost<{ photoUrl: string | null }>(`/api/members/${memberId}/foto`, { key: signed.key });
+  return photoUrl;
+}
+
+export function removeMemberPhoto(memberId: string) {
+  return apiDelete(`/api/members/${memberId}/foto`);
+}
+
 const mb = (bytes: number) => (bytes / 1024 / 1024).toFixed(1).replace(".", ",");

@@ -45,6 +45,7 @@
     "test:delete-academy": "node scripts/test-delete-academy.mjs",
     "test:delete-team": "node scripts/test-delete-team.mjs",
     "test:refresh": "node scripts/test-refresh.mjs",
+    "test:password-reset": "node scripts/test-password-reset.mjs",
     "test:match-events": "node scripts/test-match-events.mjs",
     "test:match-sheet": "node scripts/test-match-sheet.mjs",
     "test:announcements": "node scripts/test-announcements.mjs",

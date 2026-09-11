@@ -214,6 +214,28 @@ try {
   check("a quota em aberto", inicio.body?.fees?.some((f) => f.id === feeId && f.status === "OPEN"));
   check("o QR do cartão vem desligado por omissão", inicio.body?.academy?.cardQrEnabled === false && inicio.body?.member?.cardQr === null, JSON.stringify({ qr: inicio.body?.academy?.cardQrEnabled, cardQr: inicio.body?.member?.cardQr }));
   check("sem NIF nem morada na resposta", !JSON.stringify(inicio.body?.member ?? {}).match(/taxId|address|documentNumber/));
+  check("sem fotografia: `photoUrl` nulo, e a chave não sai", inicio.body?.member?.photoUrl === null && !("photoKey" in (inicio.body?.member ?? {})), JSON.stringify(inicio.body?.member?.photoUrl));
+
+  /* ------------------------------------------------------------------ */
+  console.log("\n=== A fotografia, pelo próprio ===");
+  const PNG = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==", "base64");
+  const fotoAlheia = await call(familia, "POST", "/api/socio/foto/upload", { contentType: "image/png" });
+  check("quem não é sócio não tem fotografia de sócio (404)", fotoAlheia.status === 404, `${fotoAlheia.status}`);
+  const fotoAuth = await call(socio, "POST", "/api/socio/foto/upload", { contentType: "image/png" });
+  check("o sócio recebe endereço assinado com a chave da sua ficha", fotoAuth.status === 201 && String(fotoAuth.body?.key ?? "").startsWith(`socios/${memberId}/`), `${fotoAuth.status} ${fotoAuth.body?.key}`);
+  const subiu = await fetch(fotoAuth.body.url, { method: "PUT", headers: { "Content-Type": "image/png", Authorization: `Bearer ${fotoAuth.body.token}` }, body: PNG });
+  check("o ficheiro sobe direito ao armazenamento", subiu.status === 200, `${subiu.status}`);
+  const chaveForjada = await call(socio, "POST", "/api/socio/foto", { key: "socios/nao-e-esta-ficha/x.png" });
+  check("uma chave que não é da sua ficha é recusada (400)", chaveForjada.status === 400, `${chaveForjada.status}`);
+  const fotoOk = await call(socio, "POST", "/api/socio/foto", { key: fotoAuth.body.key });
+  check("confirma e recebe o link", fotoOk.status === 201 && typeof fotoOk.body?.photoUrl === "string", `${fotoOk.status}`);
+  const comFoto = await call(socio, "GET", "/api/socio/inicio");
+  check("o início passa a trazer a fotografia — a cara no cartão", typeof comFoto.body?.member?.photoUrl === "string");
+  const naFicha = await call(director, "GET", `/api/members/${memberId}`);
+  check("e a secretaria vê a mesma na ficha", typeof naFicha.body?.photoUrl === "string");
+  const tirou = await call(socio, "DELETE", "/api/socio/foto");
+  check("o próprio remove", tirou.status === 200 && tirou.body?.ok === true, `${tirou.status}`);
+  check("e fica nulo outra vez", (await call(socio, "GET", "/api/socio/inicio")).body?.member?.photoUrl === null);
   check("os pagamentos online estão ligados", inicio.body?.academy?.onlinePayments === true, `${inicio.body?.academy?.onlinePayments}`);
 
   /* Os meses que a app oferece a pagar: do corrente até Julho, fim da época. */
@@ -258,7 +280,7 @@ try {
   const tokenCartao = String(inicioComQr.body?.member?.cardQr ?? "").replace("academias:socio:", "");
   const portaria = await call(director, "GET", `/api/members/card/${tokenCartao}`);
   check("a portaria troca o QR pelo sócio", portaria.status === 200 && portaria.body?.name === "ZZ Sócio de Teste", `${portaria.status}`);
-  check("só nome, número, categoria e estado", Object.keys(portaria.body ?? {}).sort().join(",") === "name,number,status,tierName");
+  check("só nome, número, categoria, estado e a cara", Object.keys(portaria.body ?? {}).sort().join(",") === "name,number,photoUrl,status,tierName", Object.keys(portaria.body ?? {}).sort().join(","));
   const portariaAnonima = await call(null, "GET", `/api/members/card/${tokenCartao}`);
   check("sem sessão, o QR não diz nada (401)", portariaAnonima.status === 401, `${portariaAnonima.status}`);
   await call(director, "PATCH", "/api/member-card", { qrEnabled: false });

@@ -74,6 +74,8 @@ import { ClubLogoService } from "./storage/club-logo.service";
 import { StorageService } from "./storage/storage.service";
 import { ReportsService } from "./development/reports.service";
 import { SupabaseAccountsService } from "./auth/supabase-accounts.service";
+import { PasswordResetController } from "./auth/password-reset.controller";
+import { PasswordResetService } from "./auth/password-reset.service";
 import { TenantAssetsController } from "./tenant/tenant-assets.controller";
 import { AiController, AiWorkerController } from "./ai/ai.controller";
 import { AiService } from "./ai/ai.service";
@@ -118,6 +120,8 @@ import { LegalAdminService } from "./legal/legal-admin.service";
     LandingController,
     InvitesController,
     InvitePageController,
+    // Público: pedir o link de repor a palavra-passe, e a página onde se usa.
+    PasswordResetController,
     AcademyController,
     ClinicalController,
     CatalogsController,
@@ -213,6 +217,7 @@ import { LegalAdminService } from "./legal/legal-admin.service";
     StorageService,
     ReportsService,
     SupabaseAccountsService,
+    PasswordResetService,
     LegalAdminService,
   ],
   exports: [PrismaService, NotificationsService],

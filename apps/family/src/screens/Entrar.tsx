@@ -1,10 +1,11 @@
 import { useEffect, useState, type FormEvent, type ReactNode } from "react";
 import { applyBrand } from "@/lib/brand";
-import { clearInvite, readInvite, saveInvite, saveSlug, type InvitePreview } from "@/lib/invite";
+import { academySlug, clearInvite, readInvite, saveInvite, saveSlug, type InvitePreview } from "@/lib/invite";
 import { saveSession, signIn } from "@/lib/session";
 import { cx } from "@/ui";
 import { ClubMark } from "@/ClubMark";
 import { ConsentimentoLegal } from "@/screens/ConsentimentoLegal";
+import { RecuperarPalavraPasse } from "@/screens/RecuperarPalavraPasse";
 
 /**
  * A porta da app da família.
@@ -43,7 +44,7 @@ import { ConsentimentoLegal } from "@/screens/ConsentimentoLegal";
 
 const API = (import.meta.env.VITE_API_URL as string | undefined) ?? "";
 
-type Step = "escolha" | "filho" | "dados" | "login";
+type Step = "escolha" | "filho" | "dados" | "login" | "recuperar";
 
 type Matched = { firstName: string; team: string | null };
 
@@ -52,6 +53,21 @@ export default function Entrar({ onEntered }: { onEntered: () => void }) {
   const [clube, setClube] = useState<InvitePreview | null>(null);
   const [step, setStep] = useState<Step>("escolha");
   const [erro, setErro] = useState<string | null>(null);
+  /*
+   * Repor a palavra-passe: com que email, e de onde se veio.
+   *
+   * De onde se veio decide o regresso. Do login volta-se ao login; do registo
+   * (a conta já existia e a palavra-passe não bateu) volta-se ao registo, porque
+   * é lá que a conta fica ligada ao filho — ver `RecuperarPalavraPasse`.
+   */
+  const [recuperar, setRecuperar] = useState<{ email: string; origem: "family" | "invite" }>({
+    email: "",
+    origem: "family",
+  });
+  const abrirRecuperar = (email: string, origem: "family" | "invite") => {
+    setRecuperar({ email, origem });
+    setStep("recuperar");
+  };
 
   // Quem é o clube deste convite. Sem isto, o primeiro ecrã dizia "a academia" —
   // e um pai que instalou a app do clube do filho quer ver o nome do clube.
@@ -175,6 +191,8 @@ export default function Entrar({ onEntered }: { onEntered: () => void }) {
           <p className="mt-2.5 max-w-[30ch] text-[15px] leading-relaxed text-ink-2">
             {step === "login"
               ? "Entra com a conta que já tens."
+              : step === "recuperar"
+                ? "Vamos pôr-te a entrar outra vez."
               : step === "filho"
                 ? "Vamos confirmar de quem és encarregado."
                 : step === "dados"
@@ -220,10 +238,31 @@ export default function Entrar({ onEntered }: { onEntered: () => void }) {
       )}
 
       {step === "dados" && token && (
-        <Dados token={token} onVoltar={() => setStep("filho")} onPronto={onEntered} />
+        <Dados
+          token={token}
+          onVoltar={() => setStep("filho")}
+          onPronto={onEntered}
+          onRecuperar={(email) => abrirRecuperar(email, "invite")}
+        />
       )}
 
-        {step === "login" && <Login onVoltar={() => setStep("escolha")} onPronto={onEntered} />}
+        {step === "login" && (
+          <Login
+            onVoltar={() => setStep("escolha")}
+            onPronto={onEntered}
+            onRecuperar={(email) => abrirRecuperar(email, "family")}
+          />
+        )}
+
+        {step === "recuperar" && (
+          <RecuperarPalavraPasse
+            slug={clube?.academy.slug ?? academySlug()}
+            origem={recuperar.origem}
+            emailInicial={recuperar.email}
+            voltarLabel={recuperar.origem === "invite" ? "Voltar à criação da conta" : "Voltar a entrar"}
+            onVoltar={() => setStep(recuperar.origem === "invite" ? "dados" : "login")}
+          />
+        )}
       </div>
     </div>
   );
@@ -415,7 +454,18 @@ function Filho({ token, onVoltar, onEncontrado }: { token: string; onVoltar: () 
 }
 
 /** Passo 2: quem és tu. */
-function Dados({ token, onVoltar, onPronto }: { token: string; onVoltar: () => void; onPronto: () => void }) {
+function Dados({
+  token,
+  onVoltar,
+  onPronto,
+  onRecuperar,
+}: {
+  token: string;
+  onVoltar: () => void;
+  onPronto: () => void;
+  /** O email já tinha conta e a palavra-passe não bateu — ir repor a dessa conta. */
+  onRecuperar: (email: string) => void;
+}) {
   const [name, setName] = useState("");
   const [phone, setPhone] = useState("");
   const [email, setEmail] = useState("");
@@ -435,6 +485,7 @@ function Dados({ token, onVoltar, onPronto }: { token: string; onVoltar: () => v
   const [relation, setRelation] = useState("Mãe");
   const [busy, setBusy] = useState(false);
   const [erro, setErro] = useState<string | null>(null);
+  const [contaExiste, setContaExiste] = useState(false);
   // Os termos, aceites ao criar a conta. `true` enquanto não se sabe (sem
   // documentos publicados não há o que aceitar); as caixas dizem o resto.
   const [legalOk, setLegalOk] = useState(true);
@@ -452,6 +503,7 @@ function Dados({ token, onVoltar, onPronto }: { token: string; onVoltar: () => v
     if (!valido || busy) return;
     setBusy(true);
     setErro(null);
+    setContaExiste(false);
 
     const filho = JSON.parse(sessionStorage.getItem(RASCUNHO) ?? "{}") as { taxId?: string; birthdate?: string };
 
@@ -474,7 +526,19 @@ function Dados({ token, onVoltar, onPronto }: { token: string; onVoltar: () => v
       const body = (await res.json().catch(() => null)) as
         | { accessToken: string; refreshToken: string | null; slug: string; message?: string }
         | null;
-      if (!res.ok || !body?.accessToken) throw new Error(body?.message ?? "Não foi possível criar a conta.");
+      if (!res.ok || !body?.accessToken) {
+        /*
+         * 403 aqui é um caso só: o email já tinha conta (um filho noutro clube, um
+         * registo abandonado a meio) e a palavra-passe escrita não é a dela. Sem
+         * saída, a pessoa ficava a inventar palavras-passe num campo que só aceita
+         * a antiga.
+         */
+        if (res.status === 403) {
+          setContaExiste(true);
+          throw new Error("Este email já tem conta, e essa palavra-passe não é a dela. Usa a da conta — ou repõe-na.");
+        }
+        throw new Error(body?.message ?? "Não foi possível criar a conta.");
+      }
 
       // A sessão vem com a resposta — quem acabou de escrever a palavra-passe não a
       // escreve outra vez num ecrã de login. É onde se perderia metade das pessoas.
@@ -553,6 +617,12 @@ function Dados({ token, onVoltar, onPronto }: { token: string; onVoltar: () => v
 
       {erro && <p className="rounded-[var(--radius-sm)] bg-[#fae9e7] px-3.5 py-2.5 text-[13px] leading-relaxed text-[#a82a20]">{erro}</p>}
 
+      {contaExiste && (
+        <button type="button" onClick={() => onRecuperar(email.trim())} className="cta-quiet w-full">
+          Esqueci-me da palavra-passe desta conta
+        </button>
+      )}
+
       <button type="submit" disabled={!valido || busy} className="cta w-full">
         {busy ? "A criar…" : "Criar conta"}
       </button>
@@ -564,7 +634,15 @@ function Dados({ token, onVoltar, onPronto }: { token: string; onVoltar: () => v
 }
 
 /** O outro caminho: já tem conta. */
-function Login({ onVoltar, onPronto }: { onVoltar: () => void; onPronto: () => void }) {
+function Login({
+  onVoltar,
+  onPronto,
+  onRecuperar,
+}: {
+  onVoltar: () => void;
+  onPronto: () => void;
+  onRecuperar: (email: string) => void;
+}) {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [busy, setBusy] = useState(false);
@@ -604,6 +682,14 @@ function Login({ onVoltar, onPronto }: { onVoltar: () => void; onPronto: () => v
 
       <button type="submit" disabled={busy} className="cta w-full">
         {busy ? "A entrar…" : "Entrar"}
+      </button>
+      {/* Leva o email já escrito: quem se esqueceu não tem de o escrever duas vezes. */}
+      <button
+        type="button"
+        onClick={() => onRecuperar(email.trim())}
+        className="w-full py-1.5 text-center text-[13.5px] text-ink-3 transition-colors active:text-ink"
+      >
+        Esqueci-me da palavra-passe
       </button>
       <button type="button" onClick={onVoltar} className="cta-quiet w-full">
         Voltar

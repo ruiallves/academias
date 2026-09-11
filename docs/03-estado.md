@@ -1239,6 +1239,33 @@ JavaScript). Instruções por plataforma, detectadas pelo User-Agent. No computa
 ecrã dividido com o login — é também aqui que a sessão nasce e é entregue à
 consola.
 
+## Repor a palavra-passe
+
+- **Pedir:** `POST /api/palavra-passe/recuperar` `{ email, slug, from }`. Público,
+  5 por minuto por IP e um email por endereço por minuto. Responde **sempre** 202
+  com o mesmo corpo, e o trabalho corre depois da resposta — nem o texto nem o
+  tempo dizem se a conta existe.
+- **Enviar:** o token sai de `admin/generate_link` (o Supabase não envia nada) e o
+  email sai pelo `MailClient` com a marca do clube (`passwordResetEmail`). Não se
+  confirma se a conta é do clube: o `/recover` do Supabase já é público, e a
+  confirmação partia o treinador de outro clube convidado para este.
+- **O link:** `{clube}/repor-palavra-passe#t=…&a=console|family|invite` →
+  `GET /l/:slug/repor-palavra-passe` (reescrito no `tenant.middleware`). O token
+  vai no fragmento e só se gasta ao guardar (`verify` com `token_hash`, depois
+  `PUT /user`, tudo no browser) — os filtros de correio que abrem links não o
+  queimam.
+- **Depois:** `console` entra na consola se a conta for de staff do clube;
+  `family` abre a app já com sessão; `invite` **não entra** e manda voltar ao
+  convite, porque é lá que a conta fica ligada ao cargo, ao educando ou à ficha.
+- **Onde se pede:** login da página do clube (computador e telemóvel), login da
+  app, registo da família e convite de sócio quando o email já tem conta (403), e
+  convite de staff com conta existente.
+- **Validade:** a do OTP de email do projecto Supabase — uma hora por omissão. O
+  email e a página dizem "uma hora"; se se mudar no Supabase, mudar os textos.
+- **Teste:** `npm run test:password-reset` (24 verificações). Precisa da API com
+  `MAIL_API_URL=http://127.0.0.1:3999/` (o recolector do teste); com a :3000
+  ocupada, `PORT=3001` e `API_URL=http://localhost:3001` no teste.
+
 ## Quotas de sócio — mensais, a situação, lançá-las à mão, e pagar na app
 
 A ficha do sócio dizia a **categoria** e mais nada: "Sócio efectivo, 5 €/mês".
@@ -1327,6 +1354,33 @@ pagamentos online estão ligados (a chave euPago existe); o **QR do cartão
 passou a nascer desligado** (`memberCardQrEnabled` default `false`, e desligado
 nos clubes existentes) — nenhum clube tem portaria a lê-lo, e um código que
 ninguém lê é um ecrã a mais. A opção continua nas definições.
+
+**A fotografia do sócio — a cara no cartão.** O cartão digital tinha nome,
+número e categoria, e nenhuma cara: identificava um número, não uma pessoa.
+`Member.photoKey` (migração `foto_do_socio`) segue o desenho das fotografias de
+atletas e staff — chave no bucket privado `fotos` (`socios/<id>/…`), endereço
+assinado para o browser carregar **directamente**, confirmação que verifica que
+o ficheiro chegou, e um link assinado com prazo em tudo o que sai (ficha, lista,
+`GET card/:token` da portaria, `/api/socio/inicio`). Duas portas para a mesma
+coluna: a secretaria, na ficha (`PhotoPicker` no cabeçalho, `member:write`,
+rotas `api/members/:id/foto*`); e o **próprio**, pela app (`api/socio/foto*`),
+sem `memberId` no pedido — a ficha vem da sessão, e uma conta de sócio não
+consegue mexer na fotografia de mais ninguém porque nunca escolhe de quem é. Na
+app a cara aparece no cartão, no perfil (trocar / remover) e no cabeçalho; à
+**primeira abertura** sem fotografia, com o cartão ligado, uma folha sugere
+pô-la ("é o que a portaria vê ao lado do nome") — uma vez por sócio por
+telemóvel, dispensada fica em `localStorage`. As idas ao Supabase ficam fora
+do `runAs`, como em `AcademyService.withPhotos`. Verificado por
+`scripts/test-foto-socio.mjs` (consola: tipo, chave alheia, confirmar sem
+ficheiro, trocar apaga a anterior, remover, apagar a ficha leva o ficheiro) e
+pelo bloco "A fotografia, pelo próprio" em `test-app-do-clube.mjs`.
+
+À passagem, e este é sério: `StorageService.remove` mandava `Content-Type:
+application/json` sem corpo, o Supabase respondia 400, e o `catch` só apanhava
+falhas de rede — **nenhuma fotografia de atleta ou de staff foi alguma vez
+apagada do bucket** ao trocar ou remover. Corrigido (sem o cabeçalho, e um
+aviso no log para qualquer estado que não seja 2xx/404). As órfãs anteriores
+ficaram no bucket; não há índice para as encontrar sem percorrer as pastas.
 
 À passagem: o interruptor do cartão na consola (`setMemberCard`) chamava
 `/api/academy/member-card`, e a rota é `/api/member-card` — o diálogo "Sócios
