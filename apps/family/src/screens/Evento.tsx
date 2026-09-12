@@ -92,7 +92,13 @@ export default function Evento() {
       {treino && !cancelado && <Ausencia treino={treino} />}
 
       <section className="mt-4 overflow-hidden rounded-[var(--radius-xl)] bg-surface shadow-[var(--shadow-soft)]">
-        <Facto icone={MapPin} rotulo="Onde" valor={treino?.venue ?? jogo!.venue} />
+        {/*
+          "Local do jogo" e não "Onde": num jogo há três sítios no mesmo ecrã —
+          onde se joga, onde a equipa se junta, e a que horas cada um deles é.
+          Um rótulo genérico obrigava a ler as três linhas para saber qual é qual.
+          Num treino há um sítio só, e "Onde" chega.
+        */}
+        <Facto icone={MapPin} rotulo={jogo ? "Local do jogo" : "Onde"} valor={treino?.venue ?? jogo!.venue} />
 
         {/* O balneário: o que um pai à porta de um pavilhão com quatro portas procura. */}
         {treino?.dressingRoom && <Facto icone={DoorOpen} rotulo="Balneário" valor={treino.dressingRoom} />}
@@ -103,11 +109,20 @@ export default function Evento() {
           A logística do jogo — dita pelo clube ao submeter a convocatória.
           Só aparece a quem está convocado: quem ficou de fora não tem ponto de
           encontro nenhum, e mostrar-lho seria mandá-lo para lá.
+
+          A ordem é a do dia e não a da base de dados: onde se joga, onde a
+          equipa se junta, a que horas se junta, e a que horas se chega ao
+          campo. É por esta ordem que um pai faz as contas ao sábado de manhã —
+          e a hora do encontro antes do sítio do encontro obrigava a saltar para
+          trás para perceber a que sítio a hora dizia respeito.
         */}
+        {jogo?.callUp === "in" && jogo.meetingPoint && (
+          <Facto icone={MapPin} rotulo="Ponto de encontro" valor={jogo.meetingPoint} />
+        )}
         {jogo?.callUp === "in" && jogo.meetingAt && (
           <Facto
             icone={Clock}
-            rotulo="Encontro"
+            rotulo="Horas do ponto de encontro"
             valor={time(jogo.meetingAt)}
             nota={
               // Uma concentração na véspera é um facto diferente de "uma hora
@@ -117,9 +132,6 @@ export default function Evento() {
                 : undefined
             }
           />
-        )}
-        {jogo?.callUp === "in" && jogo.meetingPoint && (
-          <Facto icone={MapPin} rotulo="Ponto de encontro" valor={jogo.meetingPoint} />
         )}
         {jogo?.callUp === "in" && jogo.arrivalAt && (
           <Facto icone={Clock} rotulo="Chegada ao campo" valor={time(jogo.arrivalAt)} />

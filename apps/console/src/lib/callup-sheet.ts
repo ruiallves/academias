@@ -612,7 +612,7 @@ function regua(doc: Doc, y: number, cor: RGB, espessura: number): void {
   doc.line(MARGEM, y, MARGEM + LARGURA, y);
 }
 
-type Emblema = { dados: string; formato: "PNG" | "JPEG" | "WEBP"; largura: number; altura: number };
+export type Emblema = { dados: string; formato: "PNG" | "JPEG" | "WEBP"; largura: number; altura: number };
 
 /**
  * O emblema do clube, em dados embutidos.
@@ -621,7 +621,7 @@ type Emblema = { dados: string; formato: "PNG" | "JPEG" | "WEBP"; largura: numbe
  * formato que o motor não desenha. Uma exportação que rebenta porque o emblema
  * não veio seria trocar o documento por uma imagem, e o documento é que importa.
  */
-async function carregarEmblema(url: string): Promise<Emblema | null> {
+export async function carregarEmblema(url: string): Promise<Emblema | null> {
   if (!url) return null;
   try {
     const resposta = await Promise.race([

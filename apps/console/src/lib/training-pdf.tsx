@@ -1,7 +1,8 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import { signalOnSurface } from "@academia/ui/tokens";
 import { FieldView, Pitch, baseView, itemScale, pitchBackground } from "@/components/FieldEditor";
-import { academy } from "@/lib/store";
+import { academy, currentSeason } from "@/lib/store";
+import { carregarEmblema } from "@/lib/callup-sheet";
 import { longDate, time } from "@/lib/format";
 import { SPORT_PROFILES, kindLabel, sportAreaById } from "@/lib/sports";
 import {
@@ -575,149 +576,428 @@ export async function exportarBolaParada(sp: SetPieceRow): Promise<void> {
 /* -------------------------------------------------------------------------- */
 
 /**
- * O plano de treino, com os exercícios lá dentro.
+ * O plano de treino — a folha densa.
  *
- * ## O que sai, e o que se foi buscar
+ * ## Uma folha, não um dossier
  *
- * A primeira página é o plano: a equipa, a hora, o objectivo, e a lista de
- * blocos com a duração de cada um. É a folha que se leva para o campo.
+ * A primeira versão disto era uma página de plano e depois **uma ficha por
+ * exercício**, cada frame na sua página. Saía um dossier de doze folhas para um
+ * treino de noventa minutos, e o treinador queria o contrário: a folha de
+ * treino que se leva para o campo numa mão, com tudo à vista — o mesmo desenho
+ * que os planos de treino têm em papel há trinta anos.
  *
- * A seguir vem **a ficha de cada exercício usado**, com os desenhos e os frames.
- * O plano diz "15 min · Posse 4v4"; sem a ficha, o treinador tem de a ter na
- * cabeça ou voltar ao telemóvel — que é exactamente o que um PDF existe para
- * evitar.
+ * O desenho é esse: um cabeçalho com o emblema e o clube; uma grelha com os
+ * factos do treino (data, hora, duração, local, material, objectivos); e, por
+ * fase, um painel por exercício com o **campo à esquerda, a descrição ao meio e
+ * o tempo/atletas/espaço numa coluna estreita à direita**, fechado por uma
+ * linha de observações com o tempo acumulado. Tudo dentro de molduras, com
+ * pouco ar: o espaço em branco que uma ficha bonita gosta de ter é o espaço
+ * que aqui falta para a folha caber numa página.
  *
- * Os exercícios vêm da API (`carregarExercicio`) porque o bloco só guarda o id e
- * o nome: a ficha completa, com o diagrama, não está na página do plano.
+ * ## O que se foi buscar
  *
- * ## Um exercício repetido imprime-se uma vez
+ * O bloco só guarda o id e o nome do exercício; a descrição, o desenho, o
+ * espaço e a fase vêm da ficha (`carregarExercicio`). Um exercício que já não
+ * abre — arquivado, ou privado de outro treinador — não trava a folha: o painel
+ * sai com o que o bloco tem.
  *
- * Um plano pode usar o mesmo jogo em dois momentos. A ficha vai uma vez, e os
- * dois blocos apontam para ela.
+ * ## As fases
+ *
+ * Os blocos saem pela ordem do plano. A fase é a do exercício, e escreve-se
+ * como título sempre que muda — "Fase inicial", "Fase fundamental" — sem
+ * reordenar nada: a ordem do plano é a ordem do treino.
  */
+
+/** As molduras da folha, todas iguais. */
+const MOLDURA = { cor: 170, grossura: 0.25 };
+/** O cinzento das células de rótulo e das barras de título. */
+const CINZA = 232;
+
+type Bloco = {
+  b: SessionPlan["blocks"][number];
+  ex: ExercicioImprimivel | null;
+  /** O campo do exercício em PNG, já no tamanho da coluna — nulo sem desenho. */
+  imagem: { dados: string; formato: "PNG" | "JPEG" | "WEBP"; w: number; h: number } | null;
+};
+
 export async function exportarPlano(
   plan: SessionPlan,
   carregarExercicio: (id: string) => Promise<ExercicioImprimivel>,
 ): Promise<void> {
   const folha = await novaFolha();
+  const d = folha.doc;
   const inicio = new Date(plan.startsAt);
+  const fim = new Date(plan.endsAt);
 
-  folha.cabecalho("", "Plano de treino");
-  folha.titulo(`${plan.teamName} · ${time(inicio)}`);
-  folha.subtitulo(
-    [longDate(inicio), plan.venue, plan.coachName].filter(Boolean).join(" · "),
-  );
+  /* ---- O que se vai buscar antes de desenhar ------------------------------ */
 
-  const total = plan.blocks.reduce((n, b) => n + (b.durationMin || 0), 0);
-  folha.factos([
-    ["Duração", total ? `${total} min` : null],
-    ["Tipo de sessão", plan.sessionType],
-    ["Intensidade", plan.intensity ? `${plan.intensity}/5` : null],
-    ["Atletas previstos", plan.expectedAthletes ? String(plan.expectedAthletes) : null],
-    ["Objectivo", plan.objective],
-    ["Objectivos", plan.objectives.length ? plan.objectives.join(", ") : null],
-    ["Material", plan.material],
+  const emblema = await carregarEmblema(academy.logoUrl ?? "");
+
+  const fichas = new Map<string, ExercicioImprimivel | null>();
+  for (const id of new Set(plan.blocks.map((b) => b.exerciseId).filter((x): x is string => Boolean(x)))) {
+    try {
+      fichas.set(id, await carregarExercicio(id));
+    } catch {
+      fichas.set(id, null);
+    }
+  }
+
+  const LARG_IMG = 62;
+  const blocos: Bloco[] = [];
+  for (const b of plan.blocks) {
+    const ex = b.exerciseId ? (fichas.get(b.exerciseId) ?? null) : null;
+    blocos.push({ b, ex, imagem: ex ? await imagemDoExercicio(ex, LARG_IMG) : null });
+  }
+
+  /* ---- Cabeçalho ---------------------------------------------------------- */
+
+  let y = PAG.m;
+  const ALTO_EMBLEMA = 18;
+  let xTexto = PAG.m;
+  if (emblema) {
+    const k = Math.min(ALTO_EMBLEMA / emblema.largura, ALTO_EMBLEMA / emblema.altura);
+    const w = emblema.largura * k;
+    const h = emblema.altura * k;
+    d.addImage(emblema.dados, emblema.formato, PAG.m + (ALTO_EMBLEMA - w) / 2, y + (ALTO_EMBLEMA - h) / 2, w, h);
+    xTexto = PAG.m + ALTO_EMBLEMA + 5;
+  }
+  d.setFont("helvetica", "normal");
+  d.setFontSize(16);
+  d.setTextColor(35);
+  d.text(academy.name || academy.shortName || "Academia", xTexto, y + 7);
+  d.setFontSize(11);
+  d.setTextColor(110);
+  d.text(plan.teamName, xTexto, y + 13.5);
+
+  d.setFontSize(12);
+  d.setTextColor(35);
+  d.text("Plano de treino", PAG.w - PAG.m, y + 7, { align: "right" });
+  if (currentSeason) {
+    d.setFont("helvetica", "bold");
+    d.setFontSize(10);
+    d.text(`Época ${currentSeason}`, PAG.w - PAG.m, y + 13.5, { align: "right" });
+    d.setFont("helvetica", "normal");
+  }
+  y += ALTO_EMBLEMA + 8;
+
+  /* ---- A grelha dos factos ------------------------------------------------ */
+
+  const minutos = Math.max(0, Math.round((fim.getTime() - inicio.getTime()) / 60_000));
+  const semana = inicio.toLocaleDateString("pt-PT", { weekday: "long" });
+  const objectivos = [plan.objective, ...plan.objectives].filter((x): x is string => Boolean(x?.trim()));
+
+  y = grelha(d, y, [
+    [
+      { rotulo: "Data", valor: `${dataNumerica(inicio)} (${semana[0].toUpperCase()}${semana.slice(1)})` },
+      { rotulo: "Hora", valor: `${time(inicio)} às ${time(fim)}` },
+      { rotulo: "Duração", valor: `${minutos}'` },
+    ],
+    [
+      { rotulo: "Local", valor: plan.venue || "—" },
+      { rotulo: "Treinador", valor: plan.coachName || "—" },
+      {
+        rotulo: "Sessão",
+        valor: [plan.sessionType, plan.intensity ? `intensidade ${plan.intensity}/5` : null].filter(Boolean).join(" · ") || "—",
+      },
+    ],
+    [
+      { rotulo: "Material", valor: plan.material || "—", span: 2 },
+      { rotulo: "Atletas previstos", valor: plan.expectedAthletes ? String(plan.expectedAthletes) : "—" },
+    ],
+    plan.planNotes?.trim()
+      ? [
+          { rotulo: "Principais objectivos", valor: objectivos.join("; ") || "—", cabeca: true, span: 2 },
+          { rotulo: "Notas do plano", valor: plan.planNotes.trim(), cabeca: true },
+        ]
+      : [{ rotulo: "Principais objectivos", valor: objectivos.join("; ") || "—", cabeca: true, span: 3 }],
   ]);
 
-  if (plan.planNotes?.trim()) {
-    folha.seccao("Notas do plano");
-    folha.paragrafo(plan.planNotes);
+  /* ---- Os painéis, por fase ----------------------------------------------- */
+
+  let acumulado = 0;
+  let faseActual: string | null = null;
+
+  for (const bloco of blocos) {
+    const fase = bloco.ex?.phase?.trim() || null;
+    if (fase && fase !== faseActual) {
+      faseActual = fase;
+      y = tituloDeFase(d, y, fase);
+    }
+
+    acumulado += bloco.b.durationMin || 0;
+    y = painel(d, y, bloco, acumulado, LARG_IMG);
   }
 
-  /*
-   * Os blocos como uma tabela desenhada à mão.
-   *
-   * O `jspdf-autotable` está no projecto e daria isto em três linhas — mas com a
-   * sua própria tipografia e as suas próprias molduras, ao lado de um documento
-   * que não as tem. Cinco linhas de `text()` mantêm a folha com uma voz só.
-   */
-  if (plan.blocks.length > 0) {
-    folha.seccao("Blocos");
-    const d = folha.doc;
-    let minuto = 0;
+  if (plan.postNotes?.trim()) {
+    y = tituloDeFase(d, y, "Depois do treino");
+    y = caixaDeTexto(d, y, "Notas", plan.postNotes.trim());
+  }
 
-    for (const [i, b] of plan.blocks.entries()) {
-      folha.garante(14);
-      const y = folha.topo;
-      const fim = minuto + (b.durationMin || 0);
+  folha.fechar();
+  d.save(nomeDoFicheiro("treino", `${plan.teamName}-${plan.startsAt.slice(0, 10)}`));
+}
 
-      d.setDrawColor(232);
-      d.setLineWidth(0.3);
-      if (i > 0) d.line(PAG.m, y - 1, PAG.w - PAG.m, y - 1);
+/* ---- As peças da folha --------------------------------------------------- */
 
-      // A janela de tempo à esquerda: é por ela que se segue o treino.
-      d.setFont("helvetica", "bold");
-      d.setFontSize(9);
-      d.setTextColor(90);
-      d.text(`${minuto}'–${fim}'`, PAG.m, y + 4.5);
+type Celula = { rotulo: string; valor: string; span?: number; cabeca?: boolean };
 
-      d.setFontSize(10.5);
-      d.setTextColor(20);
-      d.text((d.splitTextToSize(b.name, LARGURA - 40) as string[])[0], PAG.m + 20, y + 4.5);
+/**
+ * A grelha dos factos: três colunas, rótulo a negrito e valor a seguir na
+ * mesma célula. Uma célula "cabeça" põe o rótulo numa linha própria e o valor
+ * por baixo — para os objectivos, que são frases e não pares.
+ */
+function grelha(d: Doc, y0: number, linhas: Celula[][]): number {
+  const colW = LARGURA / 3;
+  const PAD = 2;
+  let y = y0;
 
-      d.setFont("helvetica", "normal");
-      d.setFontSize(9);
-      d.setTextColor(120);
-      const detalhe = [
-        b.category,
-        b.players ? `${b.players} jogadores` : null,
-        b.intensity ? `intensidade ${b.intensity}/5` : null,
-        b.objective,
-      ]
-        .filter(Boolean)
-        .join(" · ");
-      if (detalhe) {
-        d.text((d.splitTextToSize(detalhe, LARGURA - 22) as string[])[0], PAG.m + 20, y + 9);
-        folha.espaco(13);
+  for (const linha of linhas) {
+    // A altura da linha é a da célula mais alta.
+    const alturas = linha.map((c) => {
+      const w = colW * (c.span ?? 1) - PAD * 2;
+      const linhasTexto = textoDaCelula(d, c, w);
+      return (c.cabeca ? 4.5 : 0) + linhasTexto.length * 3.6 + PAD * 2;
+    });
+    const h = Math.max(6.5, ...alturas);
+
+    let x = PAG.m;
+    linha.forEach((c, i) => {
+      const w = colW * (c.span ?? 1);
+      d.setFillColor(c.cabeca ? 255 : CINZA, c.cabeca ? 255 : CINZA, c.cabeca ? 255 : CINZA);
+      d.setDrawColor(MOLDURA.cor);
+      d.setLineWidth(MOLDURA.grossura);
+      d.rect(x, y, w, h, "FD");
+
+      d.setFontSize(8);
+      d.setTextColor(30);
+      if (c.cabeca) {
+        d.setFont("helvetica", "bold");
+        d.text(`${c.rotulo}:`, x + PAD, y + PAD + 2.8);
+        d.setFont("helvetica", "normal");
+        d.setTextColor(50);
+        const ls = textoDaCelula(d, c, w - PAD * 2);
+        d.text(ls, x + PAD, y + PAD + 2.8 + 4.5);
       } else {
-        folha.espaco(8.5);
+        d.setFont("helvetica", "bold");
+        const rot = `${c.rotulo}: `;
+        d.text(rot, x + PAD, y + PAD + 2.8);
+        const larguraRotulo = d.getTextWidth(rot);
+        d.setFont("helvetica", "normal");
+        const ls = d.splitTextToSize(c.valor, w - PAD * 2 - larguraRotulo) as string[];
+        // A primeira linha a seguir ao rótulo; as restantes alinhadas com ele.
+        d.text(ls[0] ?? "", x + PAD + larguraRotulo, y + PAD + 2.8);
+        if (ls.length > 1) d.text(ls.slice(1), x + PAD + larguraRotulo, y + PAD + 2.8 + 3.6);
       }
+      x += w;
+      void i;
+    });
+    y += h;
+  }
+  d.setTextColor(0);
+  return y + 6;
+}
 
-      if (b.notes?.trim()) folha.paragrafo(b.notes);
-      minuto = fim;
-    }
-    d.setTextColor(0);
+function textoDaCelula(d: Doc, c: Celula, largura: number): string[] {
+  d.setFontSize(8);
+  if (c.cabeca) return c.valor ? (d.splitTextToSize(c.valor, largura) as string[]) : [];
+  d.setFont("helvetica", "bold");
+  const larguraRotulo = d.getTextWidth(`${c.rotulo}: `);
+  d.setFont("helvetica", "normal");
+  return d.splitTextToSize(c.valor, largura - larguraRotulo) as string[];
+}
+
+/** `21/09/2023` — a data como se escreve numa folha de treino. */
+function dataNumerica(d: Date): string {
+  const p = (n: number) => String(n).padStart(2, "0");
+  return `${p(d.getDate())}/${p(d.getMonth() + 1)}/${d.getFullYear()}`;
+}
+
+/** "Fase inicial" — um título, com o filete por baixo. */
+function tituloDeFase(d: Doc, y: number, texto: string): number {
+  if (PAG.h - PAG.m - y < 40) {
+    d.addPage();
+    y = PAG.m;
+  }
+  d.setFont("helvetica", "bold");
+  d.setFontSize(11);
+  d.setTextColor(30);
+  const t = texto[0].toUpperCase() + texto.slice(1);
+  d.text(/^fase\b/i.test(t) ? t : `Fase: ${t}`, PAG.m, y + 4);
+  d.setFont("helvetica", "normal");
+  return y + 9;
+}
+
+/**
+ * O painel de um bloco: barra de título, corpo em três colunas, e a linha das
+ * observações com o tempo acumulado. Não se parte a meio — se não couber no
+ * que resta da página, vai inteiro para a seguinte.
+ */
+function painel(d: Doc, y0: number, { b, ex, imagem }: Bloco, acumulado: number, largImg: number): number {
+  const PAD = 2.2;
+  const LARG_DIR = 26;
+  const temImagem = Boolean(imagem);
+  const xImg = PAG.m;
+  const xMeio = temImagem ? PAG.m + largImg : PAG.m;
+  const xDir = PAG.w - PAG.m - LARG_DIR;
+  const largMeio = xDir - xMeio;
+
+  /* O texto do meio: descrição e objectivos específicos. */
+  const descricao = (ex?.description?.trim() || b.notes?.trim() || "").trim();
+  const objectivos = [...new Set([b.objective?.trim() || null, ...(ex?.objectives ?? [])].filter((x): x is string => Boolean(x)))];
+  const extras = [
+    ex?.rules?.trim() ? ["Regras", ex.rules.trim()] : null,
+    ex?.coachingPoints?.trim() ? ["Pontos de treino", ex.coachingPoints.trim()] : null,
+  ].filter((x): x is [string, string] => Boolean(x));
+
+  d.setFontSize(8);
+  const corpo: { rotulo: string; linhas: string[] }[] = [];
+  corpo.push({ rotulo: "Descrição", linhas: d.splitTextToSize(descricao, largMeio - PAD * 2) as string[] });
+  corpo.push({ rotulo: "Objectivos específicos", linhas: d.splitTextToSize(objectivos.join("; "), largMeio - PAD * 2) as string[] });
+  for (const [r, t] of extras) corpo.push({ rotulo: r, linhas: d.splitTextToSize(t, largMeio - PAD * 2) as string[] });
+
+  const alturaMeio = corpo.reduce((h, s) => h + 4.2 + s.linhas.length * 3.5 + 1.5, PAD * 2);
+
+  /* A coluna da direita: tempo, atletas, espaço, intensidade. */
+  const direita: [string, string][] = [
+    ["Tempo", `${b.durationMin || 0}'`],
+    ["Atletas", b.players?.trim() || ex?.players?.trim() || "—"],
+    ["Espaço", ex?.space?.trim() || "—"],
+  ];
+  if (b.intensity || ex?.intensity) direita.push(["Intensidade", `${b.intensity ?? ex?.intensity}/5`]);
+  const alturaDir = PAD * 2 + direita.length * 8.5;
+
+  const alturaImg = imagem ? imagem.h + PAD * 2 : 0;
+  const alturaCorpo = Math.max(alturaMeio, alturaDir, alturaImg, 24);
+
+  /* As observações — só do bloco, que a descrição já levou o exercício. */
+  const obs = ex ? b.notes?.trim() || "" : "";
+  const linhasObs = d.splitTextToSize(obs, LARGURA - LARG_DIR - PAD * 2 - 24) as string[];
+  const alturaObs = Math.max(6.5, linhasObs.length * 3.5 + PAD * 2);
+
+  const ALTURA_TITULO = 6.5;
+  const total = ALTURA_TITULO + alturaCorpo + alturaObs;
+
+  let y = y0;
+  if (PAG.h - PAG.m - y < total) {
+    d.addPage();
+    y = PAG.m;
   }
 
-  /* As fichas dos exercícios usados — uma vez cada, pela ordem do plano. */
-  const ids = [...new Set(plan.blocks.map((b) => b.exerciseId).filter((x): x is string => Boolean(x)))];
+  d.setDrawColor(MOLDURA.cor);
+  d.setLineWidth(MOLDURA.grossura);
 
-  for (const id of ids) {
-    let ex: ExercicioImprimivel;
-    try {
-      ex = await carregarExercicio(id);
-    } catch {
-      /*
-       * Um exercício que já não abre não trava o plano.
-       *
-       * Pode ter sido arquivado, ou ser de outro treinador com visibilidade
-       * privada. A folha do treino é a parte que interessa; sai à mesma, e o
-       * bloco continua lá com o nome.
-       */
-      continue;
-    }
+  /* Barra de título. */
+  d.setFillColor(CINZA, CINZA, CINZA);
+  d.rect(PAG.m, y, LARGURA, ALTURA_TITULO, "FD");
+  d.setFont("helvetica", "bold");
+  d.setFontSize(9);
+  d.setTextColor(30);
+  const titulo = b.name || ex?.name || "Bloco";
+  d.text((d.splitTextToSize(titulo, LARGURA - PAD * 2) as string[])[0], PAG.m + PAD, y + 4.4);
+  y += ALTURA_TITULO;
 
-    folha.novaPagina();
-    folha.cabecalho("", "Exercício do plano");
-    folha.titulo(ex.name);
-    folha.subtitulo([ex.category, ex.phase, ex.type].filter(Boolean).join(" · "));
-    folha.factos([
-      ["Duração", ex.durationMin ? `${ex.durationMin} min` : null],
-      ["Jogadores", ex.players],
-      ["Espaço", ex.space],
-      ["Material", ex.material],
-    ]);
-    if (ex.description?.trim()) folha.paragrafo(ex.description);
-    await frames(folha, ex.diagram, ex.name);
-    for (const [rotulo, texto] of [
-      ["Regras", ex.rules],
-      ["Pontos de treino", ex.coachingPoints],
-    ] as const) {
-      if (!texto?.trim()) continue;
-      folha.seccao(rotulo);
-      folha.paragrafo(texto);
-    }
+  /* Corpo: molduras das três colunas. */
+  const yCorpo = y;
+  if (temImagem) d.rect(xImg, yCorpo, largImg, alturaCorpo);
+  d.rect(xMeio, yCorpo, largMeio, alturaCorpo);
+  d.rect(xDir, yCorpo, LARG_DIR, alturaCorpo);
+
+  if (imagem) {
+    const xi = xImg + (largImg - imagem.w) / 2;
+    d.addImage(imagem.dados, imagem.formato, xi, yCorpo + PAD, imagem.w, imagem.h);
   }
 
-  guardar(folha, nomeDoFicheiro("treino", `${plan.teamName}-${plan.startsAt.slice(0, 10)}`));
+  let yy = yCorpo + PAD;
+  for (const s of corpo) {
+    d.setFont("helvetica", "bold");
+    d.setFontSize(8);
+    d.setTextColor(30);
+    d.text(`${s.rotulo}:`, xMeio + PAD, yy + 2.8);
+    d.setFont("helvetica", "normal");
+    d.setTextColor(45);
+    if (s.linhas.length) d.text(s.linhas, xMeio + PAD, yy + 2.8 + 4.2);
+    yy += 4.2 + s.linhas.length * 3.5 + 1.5;
+  }
+
+  let yd = yCorpo + PAD;
+  for (const [rot, val] of direita) {
+    d.setFont("helvetica", "bold");
+    d.setFontSize(8);
+    d.setTextColor(30);
+    d.text(rot, xDir + LARG_DIR - PAD, yd + 2.8, { align: "right" });
+    d.setFont("helvetica", "normal");
+    d.setTextColor(45);
+    d.text((d.splitTextToSize(val, LARG_DIR - PAD * 2) as string[])[0] ?? "", xDir + LARG_DIR - PAD, yd + 6.6, { align: "right" });
+    yd += 8.5;
+  }
+  y += alturaCorpo;
+
+  /* Observações + tempo acumulado. */
+  d.rect(PAG.m, y, LARGURA - LARG_DIR, alturaObs);
+  d.rect(xDir, y, LARG_DIR, alturaObs);
+  d.setFont("helvetica", "bold");
+  d.setFontSize(8);
+  d.setTextColor(30);
+  d.text("Observações:", PAG.m + PAD, y + PAD + 2.8);
+  d.setFont("helvetica", "normal");
+  d.setTextColor(45);
+  if (linhasObs.length) d.text(linhasObs, PAG.m + PAD + 24, y + PAD + 2.8);
+  d.setFont("helvetica", "bold");
+  d.setTextColor(30);
+  d.text("TA:", xDir + PAD, y + PAD + 2.8);
+  d.setFont("helvetica", "normal");
+  d.text(`${acumulado}'`, xDir + PAD + 7, y + PAD + 2.8);
+  y += alturaObs;
+
+  d.setTextColor(0);
+  return y + 5;
+}
+
+/** Uma caixa com rótulo e texto corrido — as notas de depois do treino. */
+function caixaDeTexto(d: Doc, y: number, rotulo: string, texto: string): number {
+  const PAD = 2.2;
+  d.setFontSize(8);
+  const linhas = d.splitTextToSize(texto, LARGURA - PAD * 2) as string[];
+  const h = 4.5 + linhas.length * 3.5 + PAD * 2;
+  if (PAG.h - PAG.m - y < h) {
+    d.addPage();
+    y = PAG.m;
+  }
+  d.setDrawColor(MOLDURA.cor);
+  d.setLineWidth(MOLDURA.grossura);
+  d.rect(PAG.m, y, LARGURA, h);
+  d.setFont("helvetica", "bold");
+  d.setTextColor(30);
+  d.text(`${rotulo}:`, PAG.m + PAD, y + PAD + 2.8);
+  d.setFont("helvetica", "normal");
+  d.setTextColor(45);
+  d.text(linhas, PAG.m + PAD, y + PAD + 2.8 + 4.5);
+  d.setTextColor(0);
+  return y + h + 5;
+}
+
+/**
+ * A imagem de um exercício para o painel: o primeiro frame do desenho ou, sem
+ * desenho, a primeira fotografia. Nula quando não há nenhum dos dois — o painel
+ * dá o espaço à descrição.
+ */
+async function imagemDoExercicio(ex: ExercicioImprimivel, largura: number): Promise<Bloco["imagem"]> {
+  const diag = asDiagram(ex.diagram);
+  if (diag && diag.frames.length > 0) {
+    const v = baseView(diag.field);
+    const ratio = v.w / v.h;
+    const w = largura - 4.4;
+    const h = w / ratio;
+    return { dados: await svgParaPng(svgDoFrame(ex.diagram, 0, ratio), w, h), formato: "PNG", w, h };
+  }
+  const foto = ex.images?.[0]?.url;
+  if (foto) {
+    const e = await carregarEmblema(foto);
+    if (e) {
+      const w = largura - 4.4;
+      const h = Math.min(w * (e.altura / e.largura), 60);
+      return { dados: e.dados, formato: e.formato, w: h * (e.largura / e.altura), h };
+    }
+  }
+  return null;
 }

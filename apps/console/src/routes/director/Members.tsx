@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { CustoDoPagamento } from "@/components/finance/CustoDoPagamento";
 import { PageHeader } from "@/components/Shell";
-import { SearchInput } from "@/components/filters";
+import { SearchInput, Segmented } from "@/components/filters";
 import { DataTable, Empty, Loading, Monogram, Panel, Pill, RowLink, cx, type Column, type Tone } from "@/components/primitives";
 import { Dialog, DialogField, dialogInputClass } from "@/components/Dialog";
 import { Download, ExternalLink, Home, Plus, Send, Settings, Tag, Trash2, Upload } from "@/lib/icons";
@@ -131,7 +131,7 @@ export default function Members() {
             <div className="truncate text-body text-ink-2">{m.tier.name}</div>
             {m.tier.feeCents !== null && (
               <div className="text-meta text-ink-3 tabular">
-                {money(m.tier.feeCents)} /mês
+                {money(m.tier.feeCents)} {m.tier.billing === "ANNUAL" ? "/ano" : "/mês"}
               </div>
             )}
           </div>
@@ -637,7 +637,9 @@ function TiersList({ mayWrite }: { mayWrite: boolean }) {
                   {!t.isPublic && <Pill>não listada</Pill>}
                 </div>
                 <div className="text-meta text-ink-3">
-                  {t.feeCents !== null ? `${money(t.feeCents)} por mês` : "preço por definir"}
+                  {t.feeCents !== null
+                    ? `${money(t.feeCents)} ${t.billing === "ANNUAL" ? "por ano" : "por mês"}`
+                    : "preço por definir"}
                   {(t.minAge != null || t.maxAge != null) &&
                     ` · ${t.minAge != null && t.maxAge != null ? `${t.minAge}–${t.maxAge} anos` : t.minAge != null ? `${t.minAge}+ anos` : `até ${t.maxAge} anos`}`}
                   {` · ${t.members} ${t.members === 1 ? "sócio" : "sócios"}`}
@@ -1234,6 +1236,15 @@ function TierForm({
   onSaved: () => void;
 }) {
   const [name, setName] = useState(tier?.name ?? "");
+  /*
+   * Mensal ou anual.
+   *
+   * Muda o que o clube escreve a seguir — 30 € quer dizer coisas muito
+   * diferentes nos dois casos — e muda quantas quotas nascem por época: uma por
+   * mês, ou uma só. O resto do produto não muda de unidade; o período de uma
+   * quota continua a ser um mês. Ver a migração `quota_mensal_ou_anual`.
+   */
+  const [billing, setBilling] = useState<"MONTHLY" | "ANNUAL">(tier?.billing === "ANNUAL" ? "ANNUAL" : "MONTHLY");
   const [description, setDescription] = useState(tier?.description ?? "");
   const [fee, setFee] = useState(tier?.feeCents != null ? (tier.feeCents / 100).toString() : "");
   const [minAge, setMinAge] = useState(tier?.minAge?.toString() ?? "");
@@ -1254,6 +1265,7 @@ function TierForm({
         name: name.trim(),
         description: description.trim(),
         benefits: benefits.split("\n").map((b) => b.trim()).filter(Boolean).slice(0, 12),
+        billing,
         ...(fee.trim() ? { feeCents: Math.round(Number(fee.replace(",", ".")) * 100) } : { feeCents: undefined }),
         ...(minAge ? { minAge: Number(minAge) } : {}),
         ...(maxAge ? { maxAge: Number(maxAge) } : {}),
@@ -1291,8 +1303,24 @@ function TierForm({
         />
       </DialogField>
 
+      <DialogField label="Cobrança" hint="muda quantas quotas nascem por época">
+        <Segmented
+          label="Periodicidade da quota"
+          value={billing}
+          onChange={setBilling}
+          options={[
+            { value: "MONTHLY", label: "Mensal", hint: "uma quota por mês" },
+            { value: "ANNUAL", label: "Anual", hint: "uma quota por época" },
+          ]}
+        />
+      </DialogField>
+
       <div className="grid grid-cols-4 gap-3">
-        <DialogField label="Quota mensal" hint="€ por mês" className="col-span-2">
+        <DialogField
+          label={billing === "ANNUAL" ? "Quota anual" : "Quota mensal"}
+          hint={billing === "ANNUAL" ? "€ por época" : "€ por mês"}
+          className="col-span-2"
+        >
           <input
             value={fee}
             onChange={(e) => setFee(e.target.value.replace(/[^\d.,]/g, ""))}

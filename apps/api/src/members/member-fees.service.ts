@@ -8,7 +8,13 @@ import {
   type OnModuleInit,
 } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
-import { ChargeStatus, NotificationType, PaymentMethod, PaymentStatus } from "@prisma/client";
+import {
+  ChargeStatus,
+  NotificationType,
+  PaymentMethod,
+  PaymentStatus,
+  type MemberFeeBilling,
+} from "@prisma/client";
 import { PrismaService, type ScopedClient } from "../prisma/prisma.service";
 import { NotificationsService } from "../notifications/notifications.service";
 import { can, type RequestContext } from "../common/permissions";
@@ -238,7 +244,7 @@ export class MemberFeesService implements OnModuleInit, OnModuleDestroy {
     return this.prisma.runAs(ctx.academyId, async (db) => {
       const member = await db.member.findFirst({
         where: { id: memberId },
-        select: { id: true, tier: { select: { feeCents: true } } },
+        select: { id: true, tier: { select: { feeCents: true, billing: true, archivedAt: true } } },
       });
       if (!member) throw new NotFoundException("Sócio não encontrado");
 
@@ -249,6 +255,12 @@ export class MemberFeesService implements OnModuleInit, OnModuleDestroy {
       return {
         hasTier: member.tier != null,
         defaultAmountCents: member.tier?.feeCents ?? null,
+        /*
+         * Mensal ou anual — o ecrã de lançar muda de unidade com isto: numa
+         * categoria anual não se escolhem meses, escolhem-se épocas. Ver
+         * `MemberFeeDialog` na consola.
+         */
+        billing: member.tier && !member.tier.archivedAt ? member.tier.billing : ("MONTHLY" as const),
         taken,
       };
     });
@@ -296,8 +308,27 @@ export class MemberFeesService implements OnModuleInit, OnModuleDestroy {
     if (invalido) throw new BadRequestException(`"${invalido}" não é um mês (AAAA-MM)`);
 
     return this.prisma.runAs(ctx.academyId, async (db) => {
-      const member = await db.member.findFirst({ where: { id: memberId }, select: { id: true } });
+      const member = await db.member.findFirst({
+        where: { id: memberId },
+        select: { id: true, tier: { select: { billing: true, archivedAt: true } } },
+      });
       if (!member) throw new NotFoundException("Sócio não encontrado");
+
+      /*
+       * Numa categoria anual cada quota é de uma época, e o período dela é o mês
+       * em que a época abre. Lançar "Março" a um sócio anual criava uma segunda
+       * quota do mesmo ano, com rótulo de mês, ao lado da da época.
+       */
+      const billing =
+        member.tier && !member.tier.archivedAt && member.tier.billing === "ANNUAL" ? "ANNUAL" : "MONTHLY";
+      if (billing === "ANNUAL") {
+        const foraDaEpoca = periodos.find((p) => p !== inicioDaEpocaDoMes(p));
+        if (foraDaEpoca) {
+          throw new BadRequestException(
+            "A categoria deste sócio é anual: lançam-se épocas, não meses",
+          );
+        }
+      }
 
       const jaExistiam = (
         await db.memberFee.findMany({
@@ -312,7 +343,7 @@ export class MemberFeesService implements OnModuleInit, OnModuleDestroy {
         if (existentes.has(period)) continue;
         await db.memberFee.create({
           data: {
-            ...novaQuota(ctx.academyId, memberId, period, input.amountCents),
+            ...novaQuota(ctx.academyId, memberId, period, input.amountCents, billing),
             ...(input.notes?.trim() ? { notes: input.notes.trim() } : {}),
           },
         });
@@ -411,13 +442,26 @@ export class MemberFeesService implements OnModuleInit, OnModuleDestroy {
 
     const member = await db.member.findFirst({
       where: { id: memberId },
-      select: { tier: { select: { feeCents: true, archivedAt: true } } },
+      select: { tier: { select: { feeCents: true, archivedAt: true, billing: true } } },
     });
-    const preco = member?.tier && !member.tier.archivedAt ? member.tier.feeCents : null;
-    if (!preco) throw new BadRequestException("A tua categoria ainda não tem valor de quota — fala com o clube");
+    const tier = member?.tier && !member.tier.archivedAt ? member.tier : null;
+    if (!tier?.feeCents) {
+      throw new BadRequestException("A tua categoria ainda não tem valor de quota — fala com o clube");
+    }
+    const preco = tier.feeCents;
+
+    /*
+     * Numa categoria anual só existe **um** período: o mês em que a época abre.
+     * Pedir "Outubro" numa quota anual não é meia época — é um mês que não
+     * existe nesta categoria, e criá-lo dava ao sócio uma segunda quota do
+     * mesmo ano.
+     */
+    if (tier.billing === "ANNUAL" && period !== inicioDaEpocaDoMes(period)) {
+      throw new BadRequestException("A tua quota é anual: paga-se uma vez por época, não por meses");
+    }
 
     const criada = await db.memberFee.create({
-      data: novaQuota(academyId, memberId, period, preco),
+      data: novaQuota(academyId, memberId, period, preco, tier.billing),
       select: { id: true },
     });
     return criada.id;
@@ -454,22 +498,31 @@ export async function gerarQuotas(
 ): Promise<{ criadas: number; sociosNovos: string[]; socios: number }> {
   const socios = await db.member.findMany({
     where: { status: "ACTIVE", tier: { feeCents: { not: null }, archivedAt: null } },
-    select: { id: true, tier: { select: { feeCents: true } } },
+    select: { id: true, tier: { select: { feeCents: true, billing: true } } },
   });
   if (socios.length === 0) return { criadas: 0, sociosNovos: [], socios: 0 };
+
+  /*
+   * Cada sócio tem o seu período: o mês corrente numa categoria mensal, o mês
+   * em que a época abriu numa anual. Por isso a pergunta "quem já tem?" é feita
+   * sobre os dois — sobre um só, um sócio de categoria anual recebia uma quota
+   * nova todos os meses.
+   */
+  const daEpoca = inicioDaEpocaDoMes(period);
+  const periodoDe = (billing: MemberFeeBilling) => (billing === "ANNUAL" ? daEpoca : period);
 
   const existentes = new Set(
     (
       await db.memberFee.findMany({
-        where: { memberId: { in: socios.map((s) => s.id) }, period },
-        select: { memberId: true },
+        where: { memberId: { in: socios.map((s) => s.id) }, period: { in: [period, daEpoca] } },
+        select: { memberId: true, period: true },
       })
-    ).map((f) => f.memberId),
+    ).map((f) => `${f.memberId}|${f.period}`),
   );
 
   const novas = socios
-    .filter((s) => s.tier?.feeCents && !existentes.has(s.id))
-    .map((s) => novaQuota(academyId, s.id, period, s.tier!.feeCents!));
+    .filter((s) => s.tier?.feeCents && !existentes.has(`${s.id}|${periodoDe(s.tier.billing)}`))
+    .map((s) => novaQuota(academyId, s.id, periodoDe(s.tier!.billing), s.tier!.feeCents!, s.tier!.billing));
 
   if (novas.length > 0) await db.memberFee.createMany({ data: novas, skipDuplicates: true });
 
@@ -477,12 +530,18 @@ export async function gerarQuotas(
 }
 
 /** Os campos de uma quota nova — o único sítio que sabe escrevê-la. */
-function novaQuota(academyId: string, memberId: string, period: string, amountCents: number) {
+function novaQuota(
+  academyId: string,
+  memberId: string,
+  period: string,
+  amountCents: number,
+  billing: MemberFeeBilling = "MONTHLY",
+) {
   return {
     academyId,
     memberId,
     period,
-    label: rotulo(period),
+    label: billing === "ANNUAL" ? `Quota anual ${rotuloDaEpoca(period)}` : rotulo(period),
     amountCents,
     dueOn: fimDoMes(period),
     updatedAt: new Date(),
@@ -508,6 +567,10 @@ function novaQuota(academyId: string, memberId: string, period: string, amountCe
  */
 export type SituacaoQuotas = {
   currentPeriod: string;
+  /** Como se chama o período corrente: "Setembro 2026" ou "Época 2026/27". */
+  currentLabel: string;
+  /** Quem desenha isto tem de saber se fala em "mês" ou em "época". */
+  currentKind: "month" | "season";
   currentStatus: "settled" | "open" | "void" | "missing";
   openCount: number;
   openCents: number;
@@ -528,11 +591,31 @@ export async function situacaoDeQuotas(
 
   const abertas = fees.filter((f) => f.status === "OPEN");
   const pagas = fees.filter((f) => f.status === "SETTLED");
-  const currentPeriod = periodoCorrente(agora);
+
+  /*
+   * Qual é "o período corrente" depende da categoria: o mês, ou a época.
+   *
+   * Sem isto, um sócio de categoria anual aparecia para sempre com "a quota
+   * deste mês por lançar" — a quota dele é de Agosto, e ninguém lhe vai lançar
+   * uma de Setembro.
+   */
+  const socio = await db.member.findFirst({
+    where: { id: memberId },
+    select: { tier: { select: { billing: true, archivedAt: true } } },
+  });
+  const billing: MemberFeeBilling =
+    socio?.tier && !socio.tier.archivedAt && socio.tier.billing === "ANNUAL" ? "ANNUAL" : "MONTHLY";
+
+  const currentPeriod = periodoDaQuota(billing, agora);
   const corrente = fees.find((f) => f.period === currentPeriod);
 
   return {
     currentPeriod,
+    currentLabel:
+      billing === "ANNUAL"
+        ? `Época ${rotuloDaEpoca(currentPeriod)}`
+        : `${MESES[Number(currentPeriod.split("-")[1]) - 1]} ${currentPeriod.split("-")[0]}`,
+    currentKind: billing === "ANNUAL" ? "season" : "month",
     currentStatus: !corrente
       ? "missing"
       : corrente.status === "SETTLED"
@@ -547,6 +630,41 @@ export async function situacaoDeQuotas(
       ? { period: pagas[0].period, label: pagas[0].label, settledAt: pagas[0].settledAt }
       : null,
   };
+}
+
+/**
+ * O mês em que abre a época a que `agora` pertence — `AAAA-08`.
+ *
+ * A época vai de Agosto a Julho, a mesma janela que `mesesAteFimDaEpoca` já
+ * usava para oferecer "paga até Julho". Uma quota anual nasce neste mês: é o
+ * princípio da época, e é onde ela se lê no histórico.
+ */
+export function inicioDaEpoca(agora: Date): string {
+  const ano = agora.getMonth() + 1 >= 8 ? agora.getFullYear() : agora.getFullYear() - 1;
+  return `${ano}-08`;
+}
+
+/** O mesmo, a partir de um mês qualquer: `2026-10` e `2027-03` dão `2026-08`. */
+export function inicioDaEpocaDoMes(period: string): string {
+  const [ano, mes] = period.split("-").map(Number);
+  return `${mes >= 8 ? ano : ano - 1}-08`;
+}
+
+/** `2026-08` para `2026/27`. */
+export function rotuloDaEpoca(period: string): string {
+  const ano = Number(period.split("-")[0]);
+  return `${ano}/${String((ano + 1) % 100).padStart(2, "0")}`;
+}
+
+/**
+ * Em que período nasce a quota desta categoria, agora.
+ *
+ * Mensal: o mês corrente. Anual: o mês em que a época abriu. É a unica
+ * diferenca entre as duas — o formato do periodo e o mesmo, e por isso nada no
+ * resto do produto muda de unidade. Ver a migracao `quota_mensal_ou_anual`.
+ */
+export function periodoDaQuota(billing: MemberFeeBilling, agora = new Date()): string {
+  return billing === "ANNUAL" ? inicioDaEpoca(agora) : periodoCorrente(agora);
 }
 
 /** `AAAA-MM` do mês em que `agora` cai. */

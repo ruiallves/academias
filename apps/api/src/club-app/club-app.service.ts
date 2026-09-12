@@ -14,7 +14,13 @@ import { AuthService } from "../auth/auth.service";
 import { SupabaseJwtService } from "../auth/supabase-jwt.service";
 import { SupabaseAccountsService } from "../auth/supabase-accounts.service";
 import { BillingService } from "../billing/billing.service";
-import { MemberFeesService, mesesAteFimDaEpoca, rotulo } from "../members/member-fees.service";
+import {
+  MemberFeesService,
+  inicioDaEpoca,
+  mesesAteFimDaEpoca,
+  rotulo,
+  rotuloDaEpoca,
+} from "../members/member-fees.service";
 import { PHOTO_BUCKET, PHOTO_TTL, PhotosService } from "../storage/photos.service";
 import { StorageService } from "../storage/storage.service";
 import { reclamarFichaPelaConta } from "../members/member-account-link";
@@ -212,7 +218,10 @@ export class ClubAppService {
 
       const [tier, fees, jogo, noticias, sondagens, votos] = await Promise.all([
         socio.tierId
-          ? db.memberTier.findFirst({ where: { id: socio.tierId }, select: { name: true, feeCents: true, archivedAt: true } })
+          ? db.memberTier.findFirst({
+              where: { id: socio.tierId },
+              select: { name: true, feeCents: true, archivedAt: true, billing: true },
+            })
           : null,
         db.memberFee.findMany({
           where: { memberId: socio.id },
@@ -273,11 +282,18 @@ export class ClubAppService {
        */
       const porPeriodo = new Map(fees.map((f) => [f.period, f]));
       const precoMes = tier && !tier.archivedAt ? tier.feeCents : null;
-      const upcoming = mesesAteFimDaEpoca(agora).map((period) => {
+      /*
+       * Numa categoria anual não há meses adiantados para oferecer: há **uma**
+       * quota por época. A lista passa a ter um elemento só — o da época — e a
+       * app mostra-o em vez de doze meses que não existem.
+       */
+      const anual = Boolean(tier && !tier.archivedAt && tier.billing === "ANNUAL");
+      const periodos = anual ? [inicioDaEpoca(agora)] : mesesAteFimDaEpoca(agora);
+      const upcoming = periodos.map((period) => {
         const fee = porPeriodo.get(period);
         return {
           period,
-          label: fee?.label ?? rotulo(period),
+          label: fee?.label ?? (anual ? `Quota anual ${rotuloDaEpoca(period)}` : rotulo(period)),
           feeId: fee?.id ?? null,
           amountCents: fee?.amountCents ?? precoMes,
           status: fee?.status ?? null,
@@ -308,6 +324,7 @@ export class ClubAppService {
           status: socio.status,
           tierName: tier?.name ?? null,
           tierFeeCents: precoMes,
+          tierBilling: anual ? ("ANNUAL" as const) : ("MONTHLY" as const),
           email: socio.email,
           phone: socio.phone ? `${socio.phoneCountry} ${socio.phone}` : null,
           memberSince: socio.approvedAt ?? socio.createdAt,
@@ -579,6 +596,19 @@ export class ClubAppService {
     const { socioId, feeIds } = await this.prisma.runAs(academyId, async (db) => {
       const socio = await this.socioDe(db, eu.userId, academyId);
       if (socio.status !== "ACTIVE") throw new ForbiddenException("Só um sócio activo paga quotas");
+
+      /*
+       * "Pagar até Março" é um gesto de quem tem quotas mensais. Numa categoria
+       * anual há uma quota por época — não há meses para juntar numa
+       * referência, e resolver o pedido para trás daria sempre a mesma quota.
+       */
+      const categoria = await db.memberTier.findFirst({
+        where: { id: socio.tierId ?? "" },
+        select: { billing: true, archivedAt: true },
+      });
+      if (categoria && !categoria.archivedAt && categoria.billing === "ANNUAL") {
+        throw new BadRequestException("A tua quota é anual: paga-se de uma vez, não por meses");
+      }
 
       const quotas = await this.quotasAte(db, academyId, socio.id, ate);
       if (quotas.length === 0) throw new BadRequestException("Já não há nada por pagar até esse mês");

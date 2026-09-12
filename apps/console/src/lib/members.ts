@@ -37,8 +37,13 @@ export type MemberTier = {
   name: string;
   description: string | null;
   benefits: string[];
-  /** Por mês — as quotas são mensais e só mensais (ver `member-fees.service.ts`). */
+  /** O valor no período de `billing`: por mês, ou por época numa categoria anual. */
   feeCents: number | null;
+  /**
+   * Mensal ou anual. Numa anual nasce **uma** quota por época — ver a migração
+   * `quota_mensal_ou_anual`. Ausente num servidor antigo: lê-se como mensal.
+   */
+  billing: "MONTHLY" | "ANNUAL";
   minAge: number | null;
   maxAge: number | null;
   isPublic: boolean;
@@ -67,7 +72,7 @@ export type MemberRow = {
   createdAt: string;
   approvedAt: string | null;
   source: string;
-  tier: { id: string; name: string; feeCents: number | null } | null;
+  tier: { id: string; name: string; feeCents: number | null; billing: "MONTHLY" | "ANNUAL" } | null;
   /** Link assinado com prazo para a fotografia; nulo sem fotografia. Ver `photos.ts`. */
   photoUrl: string | null;
   /**
@@ -131,6 +136,14 @@ export type MemberFeeRow = {
  */
 export type MemberFeesSummary = {
   currentPeriod: string;
+  /**
+   * Como se chama o período corrente — "Setembro 2026" ou "Época 2026/27".
+   *
+   * Vem do servidor porque é lá que se sabe se a categoria é mensal ou anual.
+   * Sem isto, a ficha de um sócio anual dizia "Este mês · Agosto" em Março.
+   */
+  currentLabel: string;
+  currentKind: "month" | "season";
   currentStatus: "settled" | "open" | "void" | "missing";
   openCount: number;
   openCents: number;
@@ -150,6 +163,12 @@ export type MemberFeesSummary = {
 export type MemberFeePeriods = {
   hasTier: boolean;
   defaultAmountCents: number | null;
+  /**
+   * Mensal ou anual. O ecrã de lançar muda de unidade com isto: numa categoria
+   * anual escolhem-se épocas, e o período de cada quota é o mês em que a época
+   * abre. Ausente num servidor antigo: lê-se como mensal.
+   */
+  billing: "MONTHLY" | "ANNUAL";
   taken: string[];
 };
 

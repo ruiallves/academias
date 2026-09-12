@@ -13,9 +13,10 @@ import { academy } from "@/lib/api";
  * voltar à área de Família sem sair da conta, a consola tem de saber que essa
  * área existe e devolver-lhe a sessão. É o que vive aqui.
  *
- * Só se pergunta ao servidor quando alguém abre o menu do telemóvel — é o
- * único sítio que mostra isto. No computador não faz sentido: a app da família
- * é para instalar num telemóvel, e um diretor à secretária não a tem.
+ * Só se pergunta ao servidor no telemóvel, que é onde vivem as duas peças que
+ * mostram isto: o chip na barra de cima e a lista na folha do menu (ver
+ * `components/AreaSwitch.tsx`). No computador não faz sentido: a app do clube é
+ * para instalar num telemóvel, e um diretor à secretária não a tem.
  *
  * ## A sessão vai com o par mais recente
  *
@@ -50,12 +51,21 @@ async function carregar(): Promise<void> {
   emit();
 }
 
-/** As áreas da app que esta conta tem além da consola. `null` enquanto não se sabe. */
-export function useAppAreas(): Exclude<AppContextType, "STAFF">[] | null {
+/**
+ * As áreas da app que esta conta tem além da consola. `null` enquanto não se sabe.
+ *
+ * `activo` a falso não pergunta nada. É o que mantém a promessa de cima agora
+ * que um dos sítios que isto desenha — a barra de cima — existe no DOM em
+ * qualquer largura e só está escondida por CSS: sem o parâmetro, cada consola
+ * aberta num computador pagava um pedido para não mostrar nada. Passa a
+ * verdadeiro (o ecrã encolheu) e o pedido parte nessa altura.
+ */
+export function useAppAreas(activo = true): Exclude<AppContextType, "STAFF">[] | null {
   const { contexts } = useSyncExternalStore(subscribe, snapshot, snapshot);
   useEffect(() => {
+    if (!activo) return;
     if (state.contexts === null && !pedido) pedido = carregar().finally(() => (pedido = null));
-  }, []);
+  }, [activo]);
   if (contexts === null) return null;
   return contexts.filter((c): c is Exclude<AppContextType, "STAFF"> => c !== "STAFF");
 }

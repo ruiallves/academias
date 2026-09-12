@@ -41,7 +41,6 @@ import {
   inviteMember,
   unlinkMemberAccount,
   listMemberFees,
-  mesPorExtenso,
   setMemberFeeStatus,
   type MemberFeeRow,
 } from "@/lib/members";
@@ -362,7 +361,10 @@ function QuotasPill({ fees, onOpen }: { fees: Data["fees"]; onOpen: () => void }
         : fees.currentStatus === "settled"
           ? { tone: "ok" as Tone, label: "Quotas em dia" }
           : fees.currentStatus === "missing"
-            ? { tone: "neutral" as Tone, label: "Quota do mês por lançar" }
+            ? {
+                tone: "neutral" as Tone,
+                label: fees.currentKind === "season" ? "Quota da época por lançar" : "Quota do mês por lançar",
+              }
             : { tone: "ok" as Tone, label: "Sem quotas em aberto" };
 
   return (
@@ -430,10 +432,19 @@ function SituacaoPanel({ fees, tier }: { fees: Data["fees"]; tier: Data["tier"] 
     <Panel>
       <PanelHead
         title="Situação"
-        hint={tier ? `${tier.name}${tier.feeCents != null ? ` · ${money(tier.feeCents)}/mês` : ""}` : "sem categoria"}
+        hint={
+          tier
+            ? `${tier.name}${tier.feeCents != null ? ` · ${money(tier.feeCents)}${tier.billing === "ANNUAL" ? "/ano" : "/mês"}` : ""}`
+            : "sem categoria"
+        }
       />
       <div className="grid gap-x-6 px-5 py-1.5 sm:grid-cols-2">
-        <Fact label={`Este mês · ${mesPorExtenso(fees.currentPeriod)}`}>
+        {/*
+          O período corrente tem nome vindo do servidor: "Setembro 2026" numa
+          categoria mensal, "Época 2026/27" numa anual. Escrevê-lo aqui a partir
+          do mês dava "Este mês · Agosto" a um sócio anual, o ano inteiro.
+        */}
+        <Fact label={`${fees.currentKind === "season" ? "Esta época" : "Este mês"} · ${fees.currentLabel}`}>
           {fees.currentStatus === "settled" ? (
             <span className="flex items-center gap-1.5 text-ok">
               <CircleCheck className="size-3.5 shrink-0" strokeWidth={2} />
@@ -809,14 +820,21 @@ function QuotaPanel({
 }) {
   return (
     <Panel>
-      <PanelHead title="Quota" hint={member.tier ? "por mês" : undefined} />
+      <PanelHead
+        title="Quota"
+        hint={member.tier ? (member.tier.billing === "ANNUAL" ? "por época" : "por mês") : undefined}
+      />
 
       <div className="px-5 py-4">
         <div className="flex items-baseline gap-2">
           <span className="text-metric text-ink tabular">
             {member.tier?.feeCents != null ? money(member.tier.feeCents) : "—"}
           </span>
-          {member.tier && <span className="text-meta text-ink-3">por mês</span>}
+          {member.tier && (
+            <span className="text-meta text-ink-3">
+              {member.tier.billing === "ANNUAL" ? "por época" : "por mês"}
+            </span>
+          )}
         </div>
 
         {member.tier?.feeCents == null && (
@@ -840,7 +858,7 @@ function QuotaPanel({
               {tiers.map((t) => (
                 <option key={t.id} value={t.id}>
                   {t.name}
-                  {t.feeCents != null ? ` — ${money(t.feeCents)}/mês` : ""}
+                  {t.feeCents != null ? ` — ${money(t.feeCents)}${t.billing === "ANNUAL" ? "/ano" : "/mês"}` : ""}
                 </option>
               ))}
             </select>

@@ -56,7 +56,7 @@ export class MembersService {
         orderBy: [{ order: "asc" }, { name: "asc" }],
         select: {
           id: true, name: true, description: true, benefits: true,
-          feeCents: true, minAge: true, maxAge: true,
+          feeCents: true, billing: true, minAge: true, maxAge: true,
         },
       }),
     );
@@ -221,7 +221,7 @@ export class MembersService {
            * seria um tiro no escuro.
            */
           userId: true, inviteSentAt: true, photoKey: true,
-          tier: { select: { id: true, name: true, feeCents: true } },
+          tier: { select: { id: true, name: true, feeCents: true, billing: true } },
         },
       });
 
@@ -302,7 +302,7 @@ export class MembersService {
           /* A app do clube: a ficha diz se a conta já foi reclamada e quando
              saiu o último convite — é o que decide o texto do botão. */
           userId: true, inviteSentAt: true, photoKey: true,
-          tier: { select: { id: true, name: true, feeCents: true } },
+          tier: { select: { id: true, name: true, feeCents: true, billing: true } },
           approvedBy: { select: { user: { select: { name: true } } } },
         },
       });
@@ -889,7 +889,7 @@ export class MembersService {
         orderBy: [{ order: "asc" }, { name: "asc" }],
         select: {
           id: true, name: true, description: true, benefits: true, feeCents: true,
-          minAge: true, maxAge: true, isPublic: true, order: true,
+          billing: true, minAge: true, maxAge: true, isPublic: true, order: true,
           _count: { select: { members: true } },
         },
       });
@@ -912,6 +912,7 @@ export class MembersService {
             description: dto.description?.trim() || null,
             benefits: (dto.benefits ?? []).map((b) => b.trim()).filter(Boolean).slice(0, 12),
             feeCents: dto.feeCents ?? null,
+            billing: dto.billing ?? "MONTHLY",
             minAge: dto.minAge ?? null,
             maxAge: dto.maxAge ?? null,
             isPublic: dto.isPublic ?? true,
@@ -945,6 +946,14 @@ export class MembersService {
             ? { benefits: dto.benefits.map((b) => b.trim()).filter(Boolean).slice(0, 12) }
             : {}),
           ...(dto.feeCents !== undefined ? { feeCents: dto.feeCents ?? null } : {}),
+          /*
+           * Mudar de mensal para anual (ou ao contrário) não mexe nas quotas já
+           * lançadas — essas são história, e reescrevê-las apagaria o que o
+           * sócio já pagou. Muda o que nasce a partir de agora. O clube revê o
+           * valor no mesmo formulário, que é onde se dá conta de que 30 por mês
+           * não é 30 por ano.
+           */
+          ...(dto.billing !== undefined ? { billing: dto.billing } : {}),
           ...(dto.minAge !== undefined ? { minAge: dto.minAge ?? null } : {}),
           ...(dto.maxAge !== undefined ? { maxAge: dto.maxAge ?? null } : {}),
           ...(dto.isPublic !== undefined ? { isPublic: dto.isPublic } : {}),

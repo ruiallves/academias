@@ -39,8 +39,10 @@ export type PublicTier = {
   name: string;
   description: string | null;
   benefits: string[];
-  /** Por mês — as quotas são mensais. */
+  /** No período de `billing`: por mês, ou por época. */
   feeCents: number | null;
+  /** Mensal ou anual — muda o que se escreve a seguir ao preço. */
+  billing?: "MONTHLY" | "ANNUAL";
   minAge: number | null;
   maxAge: number | null;
 };
@@ -650,7 +652,9 @@ export function renderMembershipPage(opts: {
           <ul class="points">${points.map((p) => `<li>${esc(p)}</li>`).join("")}</ul>
 
           <div class="actions">
-            <button type="button" class="go" data-next>Começar${from !== null ? " · desde " + esc(money(from)) : ""}</button>
+            <button type="button" class="go" data-next>Começar${
+              from !== null ? " · desde " + esc(money(from.cents)) + (from.annual ? "/ano" : "/mês") : ""
+            }</button>
           </div>
         </section>
 
@@ -1221,7 +1225,8 @@ function renderPlanScreen(tiers: PublicTier[]): string {
                 <div class="pr">${
                   t.feeCents === null
                     ? '<span style="font-size:17px">a definir</span>'
-                    : esc(money(t.feeCents)) + "<span>/mês</span>"
+                    : esc(money(t.feeCents)) +
+                      (t.billing === "ANNUAL" ? "<span>/ano</span>" : "<span>/mês</span>")
                 }</div>
                 ${t.description ? `<p class="ds">${esc(t.description)}</p>` : ""}
                 ${t.benefits.length ? `<ul>${t.benefits.map((b) => `<li>${esc(b)}</li>`).join("")}</ul>` : ""}
@@ -1259,9 +1264,27 @@ function cardMarkup(academy: AcademyBranding): string {
         </div>`;
 }
 
-function cheapest(tiers: PublicTier[]): number | null {
-  const prices = tiers.map((t) => t.feeCents).filter((c): c is number => c !== null);
-  return prices.length ? Math.min(...prices) : null;
+/**
+ * O mais barato — e em que unidade.
+ *
+ * Comparar 5 euros por mes com 60 por epoca e comparar coisas diferentes: o
+ * minimo dava sempre a mensal, e o botao dizia "desde 5" a quem so tinha
+ * categorias anuais. Compara-se dentro de cada periodicidade, e prefere-se a
+ * mensal quando existe — e o rotulo diz qual e.
+ */
+function cheapest(tiers: PublicTier[]): { cents: number; annual: boolean } | null {
+  const menor = (anual: boolean) => {
+    const precos = tiers
+      .filter((t) => (t.billing === "ANNUAL") === anual)
+      .map((t) => t.feeCents)
+      .filter((c): c is number => c !== null);
+    return precos.length ? Math.min(...precos) : null;
+  };
+
+  const mensal = menor(false);
+  if (mensal !== null) return { cents: mensal, annual: false };
+  const anual = menor(true);
+  return anual !== null ? { cents: anual, annual: true } : null;
 }
 
 function ageLabel(t: PublicTier): string | null {

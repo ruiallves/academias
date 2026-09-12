@@ -3100,6 +3100,12 @@ model VideoMoment {
 /// deploy. O que o clube escreve aqui é literalmente o que aparece no formulário
 /// público, por isso `description` e `benefits` valem tanto como o preço: é com
 /// eles que alguém decide qual escolher.
+/// Mensal ou anual — a periodicidade da quota de uma categoria de sócio.
+enum MemberFeeBilling {
+  MONTHLY
+  ANNUAL
+}
+
 model MemberTier {
   id        String  @id @default(cuid())
   academyId String
@@ -3110,11 +3116,21 @@ model MemberTier {
   /// O que dá direito. Uma linha por benefício.
   benefits    String[] @default([])
 
-  /// Quota **por mês**, em cêntimos. Nulo enquanto o clube não a fixar — um
-  /// tipo sem preço continua a poder existir e a receber inscrições. A quota é
-  /// mensal e só mensal; a periodicidade por categoria foi-se embora na
-  /// migração `quotas_mensais`, e o porquê está lá.
+  /// O valor da quota em cêntimos, no período de `billing`: por mês numa
+  /// categoria mensal, por época numa anual. Nulo enquanto o clube não o fixar —
+  /// uma categoria sem preço continua a poder existir e a receber inscrições.
   feeCents Int?
+
+  /// De quanto em quanto tempo se cobra esta categoria.
+  ///
+  /// A periodicidade já existiu por categoria (mensal, trimestral, anual, uma
+  /// vez) e foi removida na migração `quotas_mensais` — o que ela partia está
+  /// escrito lá, e vale a pena lê-lo antes de a alargar outra vez. O que volta
+  /// é **só** mensal ou anual, e com a diferença que interessa: o período de uma
+  /// quota continua a ser sempre `AAAA-MM`. Numa categoria anual nasce uma quota
+  /// por época, no mês em que a época abre; não há um formato novo, nem um ecrã
+  /// que mude de unidade. Ver `periodoDaQuota` em `member-fees.service.ts`.
+  billing MemberFeeBilling @default(MONTHLY)
 
   /// Idade mínima e máxima, quando a categoria as tem ("Juvenil até aos 17").
   /// Servem para explicar e para validar o formulário — não para esconder.

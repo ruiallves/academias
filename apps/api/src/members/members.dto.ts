@@ -140,8 +140,10 @@ export class MemberTierInputDto {
   @IsString() @Length(2, 60) name!: string;
   @IsOptional() @IsString() @Length(0, 240) description?: string;
   @IsOptional() @IsArray() @ArrayMaxSize(12) @IsString({ each: true }) benefits?: string[];
-  /** Em cêntimos, **por mês** — as quotas são mensais. */
+  /** Em cêntimos, no período de `billing`: por mês, ou por época. */
   @IsOptional() @IsInt() @Min(0) @Max(10_000_000) feeCents?: number;
+  /** Mensal (omissão) ou anual. Ver a migração `quota_mensal_ou_anual`. */
+  @IsOptional() @IsIn(["MONTHLY", "ANNUAL"]) billing?: "MONTHLY" | "ANNUAL";
   @IsOptional() @IsInt() @Min(0) @Max(120) minAge?: number;
   @IsOptional() @IsInt() @Min(0) @Max(120) maxAge?: number;
   @IsOptional() @IsBoolean() isPublic?: boolean;

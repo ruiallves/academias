@@ -639,9 +639,24 @@ function Quotas() {
   const podePagar =
     data.academy.onlinePayments && data.member.status === "ACTIVE";
 
+  const anual = data.member.tierBilling === "ANNUAL";
+
   return (
     <div className="space-y-5 pt-3">
       <Label>Quotas</Label>
+
+      {/*
+        Numa categoria anual há uma quota por época, e mais nada.
+
+        Dizê-lo aqui evita a pergunta que vinha a seguir — "e os outros meses?" —
+        num ecrã que, para toda a gente menos estes sócios, é uma lista de meses.
+      */}
+      {anual && (
+        <p className="px-1 text-[13px] leading-relaxed text-ink-3">
+          A tua categoria paga-se uma vez por época.
+          {data.member.tierFeeCents !== null && ` São ${money(data.member.tierFeeCents)} por época.`}
+        </p>
+      )}
 
       {/* O estado, dito numa linha — regularizado, pendente ou em atraso. */}
       <div
@@ -1626,7 +1641,14 @@ function Perfil() {
       "Número de sócio",
       data.member.number ? `#${data.member.number}` : "Por atribuir",
     ],
-    ["Categoria", data.member.tierName],
+    [
+      "Categoria",
+      data.member.tierName
+        ? data.member.tierFeeCents !== null
+          ? `${data.member.tierName} · ${money(data.member.tierFeeCents)}${data.member.tierBilling === "ANNUAL" ? "/ano" : "/mês"}`
+          : data.member.tierName
+        : null,
+    ],
     ["Email", data.member.email],
     ["Telemóvel", data.member.phone],
   ];

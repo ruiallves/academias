@@ -61,8 +61,14 @@ export type SocioInicio = {
     number: number | null;
     status: "PENDING" | "ACTIVE" | "SUSPENDED" | "CANCELLED";
     tierName: string | null;
-    /** O valor mensal da categoria — nulo sem categoria ou sem preço. */
+    /** O valor da categoria no período de `tierBilling` — nulo sem categoria ou sem preço. */
     tierFeeCents: number | null;
+    /**
+     * Mensal ou anual. Numa categoria anual há **uma** quota por época, e a app
+     * não oferece meses adiantados — não há meses para adiantar. Ausente num
+     * servidor antigo: lê-se como mensal.
+     */
+    tierBilling?: "MONTHLY" | "ANNUAL";
     email: string | null;
     phone: string | null;
     memberSince: string;
