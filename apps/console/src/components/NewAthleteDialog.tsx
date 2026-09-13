@@ -4,7 +4,7 @@ import { apiPost } from "@/lib/http";
 import { reloadAcademy } from "@/lib/store";
 import type { Session } from "@/lib/permissions";
 import { Dialog, DialogField, dialogInputClass } from "./Dialog";
-import { SelectField } from "./primitives";
+import { cx, SelectField } from "./primitives";
 
 /**
  * Criar atleta.
@@ -26,6 +26,8 @@ export function NewAthleteDialog({ session, onClose }: { session: Session; onClo
   const [teamId, setTeamId] = useState(teams[0]?.id ?? "");
   const [position, setPosition] = useState("");
   const [squadNumber, setSquadNumber] = useState("");
+  /** O email do próprio atleta — opcional; com ele, o convite da app sai ao inscrever. */
+  const [email, setEmail] = useState("");
 
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -36,7 +38,8 @@ export function NewAthleteDialog({ session, onClose }: { session: Session; onClo
   // app, e a academia só dá por isso quando o pai telefona. Nove dígitos, e meio
   // escritos não servem — ficam na base e nunca batem certo com o que ele escreve.
   const nifOk = /^\d{9}$/.test(taxId.replace(/\s/g, ""));
-  const valid = name.trim().length >= 2 && birthdate !== "" && teamId !== "" && nifOk;
+  const emailOk = email.trim() === "" || /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim());
+  const valid = name.trim().length >= 2 && birthdate !== "" && teamId !== "" && nifOk && emailOk;
 
   async function submit(e: FormEvent) {
     e.preventDefault();
@@ -49,6 +52,7 @@ export function NewAthleteDialog({ session, onClose }: { session: Session; onClo
         birthdate,
         teamId,
         taxId: taxId.replace(/\s/g, ""),
+        ...(email.trim() ? { email: email.trim().toLowerCase() } : {}),
         ...(position ? { position } : {}),
         ...(squadNumber ? { squadNumber: Number(squadNumber) } : {}),
       });
@@ -73,7 +77,7 @@ export function NewAthleteDialog({ session, onClose }: { session: Session; onClo
             Cancelar
           </button>
           <button type="submit" form="form-novo-atleta" className="ctl-primary" disabled={!valid || busy || teams.length === 0}>
-            {busy ? "A inscrever…" : "Inscrever"}
+            {busy ? "A inscrever…" : email.trim() ? "Inscrever e convidar" : "Inscrever"}
           </button>
         </>
       }
@@ -119,6 +123,35 @@ export function NewAthleteDialog({ session, onClose }: { session: Session; onClo
             {!nifOk && <p className="mt-1 text-[11px] text-[#a82a20]">O NIF tem nove dígitos.</p>}
           </DialogField>
 
+          {/*
+            O email é o **do atleta** — e é opcional. Com ele, sai o convite para
+            a área de atleta da app; sem ele, a ficha fica na mesma e convida-se
+            depois. Como nos sócios, diz-se antes de acontecer: é correio a sair
+            em nome do clube, e quem preenche tem de o saber enquanto preenche.
+          */}
+          <DialogField label="Email do atleta" hint="opcional — o dele, não o do encarregado">
+            <input
+              type="email"
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              placeholder="atleta@mail.pt"
+              className={dialogInputClass}
+              aria-invalid={!emailOk}
+            />
+            {!emailOk && <p className="mt-1 text-[11px] text-[#a82a20]">Escreve um email válido.</p>}
+          </DialogField>
+
+          <p
+            className={cx(
+              "rounded-[var(--radius-control)] px-3 py-2 text-meta leading-relaxed",
+              email.trim() ? "bg-signal-soft text-signal-ink" : "bg-sunken text-ink-3",
+            )}
+          >
+            {email.trim()
+              ? "Ao inscrever, este atleta recebe um email com o convite para criar conta e instalar a app do clube."
+              : "Sem email não sai convite nenhum — a ficha fica criada e podes convidá-lo depois, a partir da lista ou da ficha."}
+          </p>
+
           <div className="grid grid-cols-[minmax(0,1fr)_auto] gap-3">
             <DialogField label="Equipa">
               <SelectField
@@ -151,11 +184,6 @@ export function NewAthleteDialog({ session, onClose }: { session: Session; onClo
               />
             </DialogField>
           )}
-
-          <p className="rounded-[var(--radius-control)] bg-sunken px-3 py-2.5 text-meta leading-relaxed text-ink-3">
-            O encarregado de educação liga-se em <strong className="font-medium text-ink-2">Famílias</strong>, com
-            convite para a app — é lá que recebe avisos e mensalidades.
-          </p>
 
           {error && (
             <p className="rounded-[var(--radius-control)] bg-risk-soft px-3 py-2 text-meta text-risk">{error}</p>

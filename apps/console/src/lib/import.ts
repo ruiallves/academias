@@ -32,6 +32,9 @@ export const COLUMNS = [
   // ligar-se a este atleta. Vem logo a seguir às obrigatórias por isso mesmo:
   // quem preenche o ficheiro tem de a ver antes de decidir saltá-la.
   { key: "taxId", header: "NIF", required: true, example: "123456789" },
+  // O email do próprio atleta. Opcional — e é a coluna que faz sair o convite
+  // da app ao importar: quem a tem preenchida recebe o email a seguir.
+  { key: "email", header: "Email", required: false, example: "martim@mail.pt" },
   { key: "position", header: "Posição", required: false, example: "Médio" },
   { key: "squadNumber", header: "Número", required: false, example: "7" },
   { key: "medicalValidUntil", header: "Ficha médica válida até", required: false, example: "2027-01-20" },
@@ -56,6 +59,7 @@ export type ParsedRow = {
    */
   teamId?: string;
   taxId?: string;
+  email?: string;
   position?: string;
   squadNumber?: number;
   medicalValidUntil?: string;
@@ -200,6 +204,14 @@ export async function parseFile(file: File): Promise<ParseResult> {
     if (!taxId) return void errors.push({ line, name, error: "NIF em falta" });
     if (!/^\d{9}$/.test(taxId)) return void errors.push({ line, name, error: "NIF inválido — são nove dígitos" });
     row.taxId = taxId;
+
+    // O email, quando vem. Um endereço mal escrito não entra: o convite ia
+    // sair para lado nenhum e a ficha ficava a dizer que foi enviado.
+    const email = get("Email").trim().toLowerCase();
+    if (email) {
+      if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return void errors.push({ line, name, error: "Email inválido" });
+      row.email = email;
+    }
 
     /*
      * Uma posição desconhecida deixou de derrubar a linha.

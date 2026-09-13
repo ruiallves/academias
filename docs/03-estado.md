@@ -1454,6 +1454,40 @@ dos repetidos, a validação do formato do período, e o sócio sem categoria.
 
 ---
 
+## O QR da página de adesão a sócio
+
+`Sócios → Gerir página de inscrição` passou a mostrar, por cima da frase de
+abertura, **como é que as pessoas chegam lá**: o endereço (com botão de copiar),
+o código QR desenhado, e dois ficheiros.
+
+| | |
+|---|---|
+| **Cartaz A4** (PDF) | emblema, nome do clube, **ADESÃO A SÓCIO** na cor do clube, o código a 104 mm, e por baixo dele o que fazer com ele e o endereço por extenso. Mais nada: é uma parede, não uma página — a frase de abertura e a explicação ficam na página que abre a seguir |
+| **Só o código** (PNG) | para o story, a publicação, o email |
+
+O link serve o WhatsApp; não serve a bancada, o bar nem o balcão de um
+patrocinador — aí não há onde carregar, há uma parede. E ninguém escreve
+`clube.academias.pt/l/…/sersocio` à mão a partir de um cartaz. Por isso o
+cartaz leva **as duas** entradas: o código para quem aponta a câmara, e o
+endereço escrito para quem a tem a falhar.
+
+Três detalhes que custaram a apanhar:
+
+- **O endereço tem de ser absoluto.** `apiOrigin()` é **vazio** em produção (a
+  consola é servida pela própria API, mesma origem) — num `<a href>` resolve
+  sozinho, num QR não resolve nada. `linkDeAdesao()` cai em
+  `window.location.origin`. O erro só apareceria com o cartaz já na parede.
+- **O texto não leva a cor crua do clube.** Um clube de amarelo escrevia
+  "ADESÃO A SÓCIO" em amarelo sobre papel branco. Usa-se `signalVars` de
+  `@academia/ui/tokens` — `--color-signal-ink` para texto, `--color-signal-line`
+  para o filete.
+- **`align: "center"` do jsPDF mente com `charSpace`**: mede a linha sem o
+  espaçamento e desenha-a com ele, empurrando-a para a direita em metade do que
+  se acrescentou. Com dezoito letras a 1,2 mm são onze milímetros de desvio. O
+  helper `centrado()` mede e desenha a partir da esquerda.
+
+O código nunca passa pelo servidor: é o endereço, e o endereço já é público.
+
 ## Importação de atletas por Excel
 
 `Atletas → Importar Excel`, para quem tem `athlete:write` — o que inclui os
@@ -1633,6 +1667,79 @@ ligações são reaproveitadas contra o pooler do Supabase — questão de confi
 de infraestrutura, não de código da aplicação.
 
 ---
+
+## Área de atleta
+
+A quarta área da app do clube — a par de Família, Sócio e Staff. O papel
+`ATHLETE` existia desde o primeiro dia (permissões, âmbito, termos) mas nenhuma
+conta o vestia: não havia ligação entre uma conta e uma ficha de atleta, nem
+caminho para a criar. Migração `20260915120000_area_de_atleta`.
+
+### A ligação é a `Membership`, não um `userId`
+
+`Athlete.accountMembershipId` aponta para a membership de papel `ATHLETE`. O
+sócio liga-se por `Member.userId` porque não passa pelo guard; o atleta passa —
+`scopeFor` lê a ficha de que a membership é dona e devolve `athleteIds: [ele]`
+mais as equipas dele, e **todo o resto do produto não muda**: `/api/athletes`,
+treinos, jogos, avaliações e relatórios chegam-lhe pelos mesmos endpoints,
+estreitados ao próprio. É uma família de um. Quem é atleta **e** encarregado
+tem duas memberships de família, e o cabeçalho `x-app: athlete` diz qual veste
+(`escolherMembership`); `x-app: family` continua a preferir o encarregado.
+
+Permissões do atleta: as da família **menos** `billing:read` (as mensalidades
+são da família — a app nem as pede) e **mais** `athlete:read` (a própria ficha)
+e `comms:read` (os avisos).
+
+### O convite é o dos sócios
+
+`Athlete.email` — o **do próprio**, não o do encarregado — e o mesmo desenho
+de `MemberInvitesService`: 32 bytes de token de que só fica o hash, um
+convite de cada vez, o link morre ao ser usado, o email da conta é sempre o da
+ficha. Sai sozinho ao inscrever com email e ao importar (coluna **Email**,
+opcional), e pelo botão da ficha (painel *App do clube*, separador
+Encarregado) ou em massa na lista de atletas. Quem convida tem `family:write`.
+`ATHLETE_INVITES_ENABLED=false` desliga o correio.
+
+**Sem ligação automática pelo email**, ao contrário dos sócios: muitos clubes
+escrevem o email do pai na ficha do filho, e a conta do pai ganharia uma área
+"Atleta" com a ficha do miúdo. A conta de atleta nasce só do convite.
+
+O link `/l/{slug}/atleta/{token}` cai na landing com `?atleta=`, a app guarda
+o token (`lib/invite.ts`) e o ecrã `ConviteAtleta` pede **uma** coisa — a
+palavra-passe. Os termos são os das famílias (`LegalAudience.FAMILY` já
+nomeava os atletas).
+
+### O que o treinador decide partilhar
+
+| | Onde se decide | O que o atleta vê |
+|---|---|---|
+| Plano de treino | janela a seguir a **gravar** o plano, uma vez por visita (`TrainingSession.planSharedAt`) | o objectivo, o tipo, os blocos com minutos e observações — sem os desenhos nem o pós-treino; só na área de atleta, dentro do treino |
+| Avaliação | caixa *O próprio atleta vê esta avaliação* (`athleteVisible`, nasce ligada) | quando publicada |
+| Relatório | caixa *O próprio atleta pode ler* (`athleteVisible`, nasce desligada) | quando publicado — **independente** da visibilidade de família: um interno pode ser do atleta |
+| Plano de nutrição | tabela nova `NutritionPlan`, painel no separador Clínico (`clinical:write`) | quando publicado e aberto a ele; a família idem, por bandeira própria |
+
+Cada partilha avisa o próprio (`TRAINING_PLAN_SHARED`, `EVALUATION_PUBLISHED`,
+`REPORT_SHARED`, `NUTRITION_PLAN_SHARED`), e as convocatórias passaram a
+chegar também à conta do atleta — `athlete-accounts.ts` é o sítio único que
+responde "quem mais avisar além dos encarregados".
+
+### Avisos aos atletas
+
+Público novo **Atletas** nos avisos, por escalão como o dos pais; o treinador
+escolhe entre os dois. Quem lê: o encarregado não lê o que é para os atletas,
+o atleta não lê o que é para os pais, sócios ou treinadores; "Geral" chega a
+todos. O alcance mostrado na consola conta só atletas **com conta**.
+
+### Na app
+
+A mesma árvore da família com `store.atleta`: sem separador *Pagar* (o
+endereço cai no início), *Atleta* passa a *Percurso*, "vais" em vez de "vai"
+nos treinos e jogos, a fotografia da ficha é do próprio (`/api/atleta/foto*`,
+o padrão `*Proprio` da foto de sócio), e o plano partilhado aparece dentro do
+treino. A secção *Nutrição* vive no ecrã do educando/percurso para as duas
+áreas.
+
+Verificado por `npm run test:atleta`.
 
 ## Por fazer
 

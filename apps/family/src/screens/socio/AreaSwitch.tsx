@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { createPortal } from "react-dom";
-import { Briefcase, ChevronDown, Check, IdCard, Users } from "lucide-react";
+import { Briefcase, ChevronDown, Check, IdCard, Users, Dumbbell } from "lucide-react";
 import { chooseContext, useContexts, type ContextType } from "@/lib/contexts";
 import { resetSocio } from "@/lib/socio";
 import { cx } from "@/ui";
@@ -46,6 +46,7 @@ import { cx } from "@/ui";
 const AREAS: { type: ContextType; label: string; hint: string; icon: typeof Users }[] = [
   { type: "STAFF", label: "Staff", hint: "A consola do clube, no telemóvel", icon: Briefcase },
   { type: "FAMILY", label: "Família", hint: "Acompanha os teus atletas, treinos e pagamentos", icon: Users },
+  { type: "ATHLETE", label: "Atleta", hint: "Os teus treinos, jogos e avaliações", icon: Dumbbell },
   { type: "MEMBER", label: "Sócio", hint: "O teu cartão, quotas e novidades do clube", icon: IdCard },
 ];
 

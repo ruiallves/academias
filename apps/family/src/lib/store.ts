@@ -58,6 +58,8 @@ type ApiTeam = {
 
 type ApiSession = {
   id: string;
+  /** O treinador partilhou o plano com os atletas — a área de atleta mostra-o. */
+  planShared?: boolean;
   teamId: string;
   startsAt: string;
   endsAt: string;
@@ -206,6 +208,8 @@ export type Child = {
 };
 
 export type Training = {
+  /** O plano está partilhado — ver `PlanoPartilhado` no ecrã do treino. */
+  planShared: boolean;
   id: string;
   /** O id do treino no servidor — sem o sufixo do filho. Ver `id`. */
   sessionId: string;
@@ -339,6 +343,22 @@ export type Evaluation = {
   publishedAt: Date | null;
 };
 
+/**
+ * Um plano de nutrição publicado — e aberto a quem está a ler: o servidor só
+ * manda os de família a um encarregado e os de atleta ao próprio. A mesma forma
+ * do relatório, de propósito: lê-se na mesma folha.
+ */
+export type NutritionPlan = Report;
+
+type ApiNutritionPlan = {
+  id: string;
+  athleteId: string;
+  title: string;
+  body: string;
+  authorName: string;
+  publishedAt: string | null;
+};
+
 /** Um relatório partilhado. Os internos nunca saem da academia — ver `reports.service.ts`. */
 export type Report = {
   id: string;
@@ -378,6 +398,14 @@ type State = {
    * `App.tsx`.
    */
   role: string;
+  /**
+   * A área de atleta: quem entrou é o próprio, não um encarregado.
+   *
+   * A mesma app, com o que muda dito num sítio só — sem mensalidades, "tu" em
+   * vez de "o teu educando", a fotografia é a dele. Derivado do papel que o
+   * servidor devolveu, nunca de uma escolha do cliente.
+   */
+  atleta: boolean;
   children: Child[];
   trainings: Training[];
   matches: Match[];
@@ -386,6 +414,8 @@ type State = {
   notifications: ApiNotification[];
   evaluations: Evaluation[];
   reports: Report[];
+  /** Os planos de nutrição abertos a quem lê — ver `nutrition.service.ts`. */
+  nutrition: NutritionPlan[];
   /** Assiduidade por atleta, derivada dos treinos com registo. */
   attendance: Record<string, Attendance>;
 };
@@ -397,6 +427,7 @@ const EMPTY: State = {
   academy: { name: "", shortName: "", mark: "", signalColor: "#0f6b62", logoUrl: null },
   guardian: { name: "", firstName: "", email: "" },
   role: "",
+  atleta: false,
   children: [],
   trainings: [],
   matches: [],
@@ -405,6 +436,7 @@ const EMPTY: State = {
   notifications: [],
   evaluations: [],
   reports: [],
+  nutrition: [],
   attendance: {},
 };
 
@@ -442,7 +474,14 @@ export function load(): Promise<void> {
       const from = new Date(Date.now() - 120 * 86_400_000).toISOString();
       const to = new Date(Date.now() + 60 * 86_400_000).toISOString();
 
-      const [athletes, teams, sessions, matches, charges, announcements, notifications, evaluations, reports] =
+      /*
+       * A área de atleta não tem mensalidades — nem as pede. O servidor
+       * recusava-as na mesma (o atleta não tem `billing:read`), mas pedir para
+       * ser recusado é ruído no registo e no limite de pedidos.
+       */
+      const atleta = boot.me.role === "ATHLETE";
+
+      const [athletes, teams, sessions, matches, charges, announcements, notifications, evaluations, reports, nutrition] =
         await Promise.all([
           /*
            * Os atletas **não** são `soft`.
@@ -457,7 +496,7 @@ export function load(): Promise<void> {
           soft<ApiTeam>("/api/teams"),
           soft<ApiSession>(`/api/sessions?from=${from}&to=${to}`),
           soft<ApiMatch>("/api/matches"),
-          soft<ApiCharge>("/api/charges"),
+          atleta ? Promise.resolve([] as ApiCharge[]) : soft<ApiCharge>("/api/charges"),
           soft<ApiAnnouncement>("/api/announcements"),
           soft<ApiNotification>("/api/notifications"),
           // `soft`: uma academia sem avaliações publicadas devolve lista vazia, e a
@@ -465,12 +504,13 @@ export function load(): Promise<void> {
           // uma vez por período.
           soft<ApiEvaluation>("/api/evaluations"),
           soft<ApiReport>("/api/reports"),
+          soft<ApiNutritionPlan>("/api/nutricao"),
         ]);
 
       // O preço é por atleta e pode ter ajuste individual — um pedido por filho,
       // que numa família são um ou dois.
       const fees = await Promise.all(
-        athletes.map((a) =>
+        (atleta ? [] : athletes).map((a) =>
           apiGet<{ effectiveAmountCents: number | null }>(`/api/athletes/${a.id}/fee`)
             .then((f) => [a.id, f.effectiveAmountCents] as const)
             .catch(() => [a.id, null] as const),
@@ -478,7 +518,7 @@ export function load(): Promise<void> {
       );
 
       apply(
-        build(boot, athletes, teams, sessions, matches, charges, announcements, notifications, new Map(fees), evaluations, reports),
+        build(boot, athletes, teams, sessions, matches, charges, announcements, notifications, new Map(fees), evaluations, reports, nutrition),
       );
     } catch (error) {
       /*
@@ -575,6 +615,7 @@ function build(
   fees: Map<string, number | null>,
   evaluations: ApiEvaluation[],
   reports: ApiReport[],
+  nutrition: ApiNutritionPlan[],
 ): State {
   const teamById = new Map(teams.map((t) => [t.id, t]));
   const sportById = new Map(boot.sports.map((s) => [s.id, s.name]));
@@ -614,6 +655,7 @@ function build(
       id: `${s.id}-${childId}`,
       sessionId: s.id,
       childId,
+      planShared: s.planShared === true,
       start: new Date(s.startsAt),
       end: new Date(s.endsAt),
       venue: s.venue,
@@ -755,6 +797,19 @@ function build(
     }))
     .sort((a, b) => (b.publishedAt?.getTime() ?? 0) - (a.publishedAt?.getTime() ?? 0));
 
+  const nutritionOut: NutritionPlan[] = nutrition
+    .map((n) => ({
+      id: n.id,
+      childId: n.athleteId,
+      title: n.title,
+      period: null,
+      body: n.body,
+      authorName: n.authorName,
+      publishedAt: n.publishedAt ? new Date(n.publishedAt) : null,
+      snapshot: null,
+    }))
+    .sort((a, b) => (b.publishedAt?.getTime() ?? 0) - (a.publishedAt?.getTime() ?? 0));
+
   const reportsOut: Report[] = reports
     .map((r) => ({
       id: r.id,
@@ -774,6 +829,7 @@ function build(
     denied: null,
     evaluations: evaluationsOut,
     reports: reportsOut,
+    nutrition: nutritionOut,
     academy: {
       name: boot.academy.name,
       shortName: boot.academy.shortName,
@@ -783,6 +839,7 @@ function build(
     },
     guardian: { name: boot.me.name, firstName: boot.me.name.split(/\s+/)[0], email: boot.me.email },
     role: boot.me.role,
+    atleta: boot.me.role === "ATHLETE",
     children,
     trainings,
     matches: asMatches,

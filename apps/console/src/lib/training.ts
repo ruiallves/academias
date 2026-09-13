@@ -1010,6 +1010,8 @@ export type SessionPlan = {
   material: string | null;
   planNotes: string | null;
   postNotes: string | null;
+  /** Desde quando os atletas o vêem na app — nulo é "não partilhado". */
+  sharedAt: string | null;
   blocks: PlanBlock[];
 };
 
@@ -1216,6 +1218,10 @@ export const savePlan = (
     blocks?: Omit<PlanBlock, "id" | "exerciseName" | "exerciseThumb">[];
   },
 ) => apiPut<{ ok: true }>(`/api/training/sessions/${sessionId}/plan`, body);
+
+/** Abrir (ou fechar) o plano aos atletas da equipa, na app do clube. */
+export const sharePlan = (sessionId: string, shared: boolean) =>
+  apiPatch<{ sessionId: string; shared: boolean; sharedAt: string | null }>(`/api/training/sessions/${sessionId}/plan/partilha`, { shared });
 
 export const listGameModels = (sportId?: string) => apiGet<GameModelRow[]>("/api/training/game-models", { sport: sportId });
 export const createGameModel = (body: Partial<GameModelRow>) =>

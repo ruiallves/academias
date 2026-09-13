@@ -80,26 +80,37 @@ export default function Onboarding({ onDone }: { onDone: () => void }) {
         </span>
       ),
       title: `Bem-vindo à ${store.academy.shortName}`,
-      body: `Olá, ${store.guardian.firstName}. Aqui tens tudo o que a academia sabe sobre ${childList(
-        store.children.map((c) => c.firstName),
-      )} — treinos, jogos e mensalidades — num sítio só.`,
+      body: store.atleta
+        ? `Olá, ${store.guardian.firstName}. Aqui tens os teus treinos, os jogos, as convocatórias e as avaliações — num sítio só.`
+        : `Olá, ${store.guardian.firstName}. Aqui tens tudo o que a academia sabe sobre ${childList(
+            store.children.map((c) => c.firstName),
+          )} — treinos, jogos e mensalidades — num sítio só.`,
     },
     {
       art: <Glyph icon={CalendarDays} />,
       title: "Nunca mais perguntas a que horas é o treino",
       body: "A agenda vem da academia. Um treino que muda de hora, ou um jogo com convocatória, aparece aqui no momento em que o treinador o marca.",
     },
-    {
-      art: <Glyph icon={Wallet} />,
-      title: "As mensalidades pagas pelo telemóvel",
-      body: "Vês o que está por pagar e pagas por MB WAY, cartão ou referência multibanco. Fica registado — sem transferências às escuras nem prints no WhatsApp.",
-    },
+    // O atleta não paga mensalidades — o slide não existe para ele.
+    ...(store.atleta
+      ? []
+      : [
+          {
+            art: <Glyph icon={Wallet} />,
+            title: "As mensalidades pagas pelo telemóvel",
+            body: "Vês o que está por pagar e pagas por MB WAY, cartão ou referência multibanco. Fica registado — sem transferências às escuras nem prints no WhatsApp.",
+          },
+        ]),
     {
       art: <Glyph icon={enabled ? Check : BellRing} />,
       title: enabled ? "Está tudo pronto" : "Queres ser avisado?",
       body: enabled
-        ? "Avisamos-te quando houver uma convocatória, uma alteração de treino ou uma mensalidade a chegar ao fim do prazo."
-        : "Convocatórias, treinos alterados e mensalidades a vencer chegam ao teu telemóvel. Podes desligar quando quiseres, no teu perfil.",
+        ? store.atleta
+          ? "Avisamos-te quando fores convocado, quando um treino mudar, ou quando o treinador partilhar um plano contigo."
+          : "Avisamos-te quando houver uma convocatória, uma alteração de treino ou uma mensalidade a chegar ao fim do prazo."
+        : store.atleta
+          ? "Convocatórias, treinos alterados e planos partilhados chegam ao teu telemóvel. Podes desligar quando quiseres, no teu perfil."
+          : "Convocatórias, treinos alterados e mensalidades a vencer chegam ao teu telemóvel. Podes desligar quando quiseres, no teu perfil.",
     },
   ];
 

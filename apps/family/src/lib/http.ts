@@ -1,5 +1,6 @@
 import { getAccessToken, refreshSession, signOut } from "@/lib/session";
 import { LEGAL_REQUIRED_CODE, legalRequired } from "@/lib/legal-signal";
+import { appHeader } from "@/lib/area";
 import { academySlug } from "@/lib/invite";
 
 /**
@@ -44,7 +45,7 @@ function send(path: string, method: string, token: string | null, body?: unknown
        * app mostrava o plantel inteiro como sendo os filhos dele. Ver
        * `escolherMembership` na API.
        */
-      "x-app": "family",
+      "x-app": appHeader(),
       ...(body !== undefined ? { "Content-Type": "application/json" } : {}),
     },
     body: body !== undefined ? JSON.stringify(body) : undefined,

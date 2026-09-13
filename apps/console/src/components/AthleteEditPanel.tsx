@@ -43,6 +43,7 @@ export function AthleteEditPanel({
   const [name, setName] = useState(athlete.name);
   const [birthdate, setBirthdate] = useState(athlete.birthdate.slice(0, 10));
   const [taxId, setTaxId] = useState(athlete.taxId ?? "");
+  const [email, setEmail] = useState(athlete.email ?? "");
   const [teamId, setTeamId] = useState(athlete.teamId);
   const [position, setPosition] = useState(athlete.position ?? "");
   const [squadNumber, setSquadNumber] = useState(athlete.squadNumber?.toString() ?? "");
@@ -101,6 +102,8 @@ export function AthleteEditPanel({
         birthdate,
         teamId,
         ...(vejoNif ? { taxId: taxId.replace(/\s/g, "") } : {}),
+        // Vazio apaga: o que se vê é o que fica.
+        email: email.trim().toLowerCase(),
         position: position.trim(),
         ...(squadNumber ? { squadNumber: Number(squadNumber) } : {}),
         ...(heightCm ? { heightCm: Number(heightCm) } : {}),
@@ -141,6 +144,11 @@ export function AthleteEditPanel({
           <div className="space-y-3 px-5 py-4">
             <Field label="Nome">
               <input value={name} onChange={(e) => setName(e.target.value)} className={dialogInputClass} />
+            </Field>
+
+            {/* O email do próprio atleta — é para lá que sai o convite da app. Ver `AppDoAtletaPanel`. */}
+            <Field label="Email do atleta" hint="opcional — o dele, não o do encarregado">
+              <input type="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="atleta@mail.pt" className={dialogInputClass} />
             </Field>
 
             <div className="grid grid-cols-2 gap-3">

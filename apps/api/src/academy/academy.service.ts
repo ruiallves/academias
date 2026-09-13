@@ -1243,6 +1243,9 @@ export class AcademyService {
         select: {
           id: true, name: true, birthdate: true, photoUrl: true, photoKey: true, status: true, joinedAt: true, taxId: true,
           heightCm: true, weightKg: true, dominantSide: true, squadNumber: true, medicalValidUntil: true,
+          // A conta do próprio na app — ver `AthleteInvitesService`.
+          email: true, inviteSentAt: true,
+          account: { select: { id: true, isActive: true, userId: true, lastSeenAt: true } },
           teams: { select: { teamId: true, position: true }, take: 1 },
           guardians: {
             select: {
@@ -1316,7 +1319,12 @@ export class AcademyService {
        * duas academias com um telemóvel só. Por isso pergunta-se **pelos
        * `userId` desta academia** e nunca pela tabela toda.
        */
-      const guardianUserIds = [...new Set(athletes.flatMap((a) => a.guardians.map((g) => g.membership.userId)))];
+      const guardianUserIds = [
+        ...new Set([
+          ...athletes.flatMap((a) => a.guardians.map((g) => g.membership.userId)),
+          ...athletes.flatMap((a) => (a.account ? [a.account.userId] : [])),
+        ]),
+      ];
       const comApp = new Set(
         guardianUserIds.length === 0
           ? []
@@ -1347,6 +1355,21 @@ export class AcademyService {
           name: a.name,
           birthdate: a.birthdate,
           taxId: mayReadTaxId ? a.taxId : null,
+          email: a.email,
+          /*
+           * A conta do próprio atleta na app, num estado só — o mesmo vocabulário
+           * da lista de sócios: `account` (ligada), `invited` (convite à espera),
+           * `none` (tem email, ninguém convidou), `noemail`.
+           */
+          app: a.account?.isActive
+            ? ("account" as const)
+            : a.inviteSentAt
+              ? ("invited" as const)
+              : a.email
+                ? ("none" as const)
+                : ("noemail" as const),
+          inviteSentAt: a.inviteSentAt,
+          appInstalled: Boolean(a.account && (a.account.lastSeenAt !== null || comApp.has(a.account.userId))),
           photoKey: a.photoKey,
           photoUrl: a.photoUrl,
           status: a.status,
@@ -1598,6 +1621,8 @@ export class AcademyService {
         select: {
           id: true, teamId: true, startsAt: true, endsAt: true, venue: true,
           dressingRoom: true, dressingRooms: true, status: true, notes: true,
+          // Só a bandeira: o plano em si sai por `/api/training/sessions/:id/plano-partilhado`.
+          planSharedAt: true,
           absenceNotices: {
             select: {
               athleteId: true, reason: true, noticedAt: true,
@@ -1640,6 +1665,8 @@ export class AcademyService {
         recorded: s.attendanceClosedAt !== null,
         /** Se este treino é de uma equipa minha — decide o que se mostra dele, e o que se pode fazer. */
         mine: inTeamScope(ctx, s.teamId),
+        /** O treinador partilhou o plano com os atletas — a app mostra a secção. */
+        planShared: s.planSharedAt !== null,
         /*
          * As faltas só do meu escalão.
          *

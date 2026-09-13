@@ -1,5 +1,6 @@
 import { useState, type ReactNode } from "react";
 import { useNavigate, useParams } from "react-router-dom";
+import { PlanoPartilhado } from "@/screens/PlanoPartilhado";
 import {
   CalendarOff,
   Check,
@@ -90,6 +91,8 @@ export default function Evento() {
 
       {jogo && !cancelado && <Convocatoria jogo={jogo} />}
       {treino && !cancelado && <Ausencia treino={treino} />}
+      {/* O plano do treinador — só na área de atleta, e só quando ele o abriu. */}
+      {treino && !cancelado && store.atleta && treino.planShared && <PlanoPartilhado sessionId={treino.sessionId} />}
 
       <section className="mt-4 overflow-hidden rounded-[var(--radius-xl)] bg-surface shadow-[var(--shadow-soft)]">
         {/*
@@ -247,6 +250,8 @@ const ESTADO: Record<
  * uma saída discreta para a mudar.
  */
 function Convocatoria({ jogo }: { jogo: Match }) {
+  // "Vais" e não "vai": quem lê pode ser o próprio.
+  const { atleta } = useStore();
   const meta = ESTADO[jogo.callUp];
   const Icone = meta.icone;
   const [aRecusar, setARecusar] = useState(false);
@@ -269,8 +274,8 @@ function Convocatoria({ jogo }: { jogo: Match }) {
             {meta.explicacao ||
               (respondeu
                 ? respondeu.going
-                  ? "Disseste que vai."
-                  : "Disseste que não vai."
+                  ? (atleta ? "Disseste que vais." : "Disseste que vai.")
+                  : (atleta ? "Disseste que não vais." : "Disseste que não vai.")
                 : jogo.confirmationRequired
                   ? "O clube pede que confirmes a presença."
                   : "Contamos com ele. Só precisas de responder se não puder ir.")}
@@ -284,11 +289,11 @@ function Convocatoria({ jogo }: { jogo: Match }) {
             <RespostaDada
               tom="risk"
               icone={X}
-              titulo="Não vai a este jogo"
+              titulo={atleta ? "Não vais a este jogo" : "Não vai a este jogo"}
               detalhe={respondeu.reason ?? ""}
               quando={respondeu.at}
             >
-              <Responder jogo={jogo} going label="Afinal vai" />
+              <Responder jogo={jogo} going label={atleta ? "Afinal vou" : "Afinal vai"} />
             </RespostaDada>
           )}
 
@@ -299,20 +304,20 @@ function Convocatoria({ jogo }: { jogo: Match }) {
                 onClick={() => setARecusar(true)}
                 className="text-[13px] font-semibold text-ink-2 underline underline-offset-2"
               >
-                Afinal não vai poder ir
+                {atleta ? "Afinal não vou poder ir" : "Afinal não vai poder ir"}
               </button>
             </RespostaDada>
           )}
 
           {porResponder && !aRecusar && (
             <div className={cx("grid gap-2", jogo.confirmationRequired && "grid-cols-2")}>
-              {jogo.confirmationRequired && <Responder jogo={jogo} going label="Vai jogar" destaque />}
+              {jogo.confirmationRequired && <Responder jogo={jogo} going label={atleta ? "Vou jogar" : "Vai jogar"} destaque />}
               <button
                 type="button"
                 onClick={() => setARecusar(true)}
                 className={jogo.confirmationRequired ? "cta-quiet" : "cta-quiet w-full"}
               >
-                Não vai poder ir
+                {atleta ? "Não vou poder ir" : "Não vai poder ir"}
               </button>
             </div>
           )}
@@ -502,6 +507,7 @@ function Recusar({ jogo, onFechar }: { jogo: Match; onFechar: () => void }) {
  * e o ecrã não o oferece — em vez de um botão que dá erro.
  */
 function Ausencia({ treino }: { treino: Training }) {
+  const { atleta } = useStore();
   const [aAvisar, setAAvisar] = useState(false);
   const jaPassou = treino.end <= new Date();
 
@@ -519,7 +525,7 @@ function Ausencia({ treino }: { treino: Training }) {
           <div className="rounded-[var(--radius-lg)] bg-risk-soft p-3.5">
             <p className="flex items-center gap-1.5 text-[14px] font-semibold text-risk">
               <X className="size-4 shrink-0" strokeWidth={2.5} />
-              Avisaste que não vai
+              {atleta ? "Avisaste que não vais" : "Avisaste que não vai"}
             </p>
             <p className="mt-1 text-[13px] leading-relaxed text-ink-2">{treino.notice.reason}</p>
             <p className="mt-1 text-[12px] text-ink-3">
@@ -540,10 +546,10 @@ function Ausencia({ treino }: { treino: Training }) {
         !aAvisar && (
           <>
             <p className="text-[15px] leading-relaxed text-ink-2">
-              Não vai poder ir a este treino? Avisa o treinador por aqui.
+              {atleta ? "Não vais poder ir a este treino? Avisa o treinador por aqui." : "Não vai poder ir a este treino? Avisa o treinador por aqui."}
             </p>
             <button type="button" onClick={() => setAAvisar(true)} className="cta-quiet mt-3 w-full">
-              Não vai poder ir
+              {atleta ? "Não vou poder ir" : "Não vai poder ir"}
             </button>
           </>
         )
@@ -562,6 +568,7 @@ function Ausencia({ treino }: { treino: Training }) {
  * o primeiro botão. Escrito à mão, o treinador lê uma coisa que é verdade.
  */
 function Avisar({ treino, onFechar }: { treino: Training; onFechar: () => void }) {
+  const { atleta } = useStore();
   const [motivo, setMotivo] = useState(treino.notice?.reason ?? "");
   const [busy, setBusy] = useState(false);
   const [erro, setErro] = useState<string | null>(null);
@@ -583,9 +590,9 @@ function Avisar({ treino, onFechar }: { treino: Training; onFechar: () => void }
 
   return (
     <div className="mt-3 rounded-[var(--radius-lg)] bg-sunken p-3.5">
-      <p className="text-[14px] font-semibold text-ink">Porque é que não vai?</p>
+      <p className="text-[14px] font-semibold text-ink">{atleta ? "Porque é que não vais?" : "Porque é que não vai?"}</p>
       <p className="mt-0.5 text-[12px] leading-relaxed text-ink-3">
-        O treinador precisa de saber para contar com ele ou não.
+        {atleta ? "O treinador precisa de saber para contar contigo ou não." : "O treinador precisa de saber para contar com ele ou não."}
       </p>
 
       <textarea
@@ -614,6 +621,7 @@ function Avisar({ treino, onFechar }: { treino: Training; onFechar: () => void }
 
 /** Afinal vai. O aviso desaparece — ver `AbsenceNotice`, do lado do servidor. */
 function Retirar({ treino }: { treino: Training }) {
+  const { atleta } = useStore();
   const [busy, setBusy] = useState(false);
   const [erro, setErro] = useState<string | null>(null);
 
@@ -633,7 +641,7 @@ function Retirar({ treino }: { treino: Training }) {
   return (
     <>
       <button type="button" disabled={busy} onClick={() => void enviar()} className="cta">
-        {busy ? "Um momento…" : "Afinal vai"}
+        {busy ? "Um momento…" : atleta ? "Afinal vou" : "Afinal vai"}
       </button>
       {erro && <p className="col-span-2 mt-1.5 text-[13px] text-risk">{erro}</p>}
     </>

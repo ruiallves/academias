@@ -17,7 +17,7 @@ export class CreateAnnouncementDto {
   @Length(1, 2000)
   body!: string;
 
-  @IsIn(["all", "guardians", "coaches", "members"])
+  @IsIn(["all", "guardians", "athletes", "coaches", "members"])
   audience!: "all" | "guardians" | "coaches" | "members";
 
   /**

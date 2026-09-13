@@ -43,6 +43,8 @@ export function ReportDialog({
   const [period, setPeriod] = useState(report?.period ?? "");
   const [body, setBody] = useState(report?.body ?? "");
   const [visibility, setVisibility] = useState<"INTERNAL" | "FAMILY">(report?.visibility ?? "INTERNAL");
+  /** O próprio atleta, na área dele da app. Nasce fechado, como a família. */
+  const [athleteVisible, setAthleteVisible] = useState(report?.athleteVisible ?? false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -55,7 +57,7 @@ export function ReportDialog({
     setBusy(true);
     setError(null);
 
-    const payload = { title: title.trim(), period: period || undefined, body: body.trim(), visibility };
+    const payload = { title: title.trim(), period: period || undefined, body: body.trim(), visibility, athleteVisible };
 
     try {
       if (report) await apiPatch(`/api/reports/${report.id}`, payload);
@@ -86,7 +88,7 @@ export function ReportDialog({
     setBusy(true);
     setError(null);
     try {
-      const payload = { title: title.trim(), period: period || undefined, body: body.trim(), visibility };
+      const payload = { title: title.trim(), period: period || undefined, body: body.trim(), visibility, athleteVisible };
       const id = report
         ? (await apiPatch<{ ok: true }>(`/api/reports/${report.id}`, payload), report.id)
         : (await apiPost<{ id: string }>("/api/reports", { athleteId, ...payload })).id;
@@ -283,6 +285,27 @@ export function ReportDialog({
             />
           </div>
         </fieldset>
+
+        {/*
+          O próprio atleta, à parte da família. É uma decisão diferente: há o
+          que se escreve para os pais lerem e não para o miúdo, e o contrário.
+          Uma caixa e não um terceiro cartão, para não competir com a escolha
+          de cima — que é a que não se desfaz.
+        */}
+        <label className="flex cursor-pointer items-start gap-2.5 rounded-[var(--radius-control)] border border-line px-3 py-2.5">
+          <input
+            type="checkbox"
+            checked={athleteVisible}
+            onChange={(e) => setAthleteVisible(e.target.checked)}
+            className="mt-0.5 size-4 accent-[var(--color-signal)]"
+          />
+          <span className="min-w-0">
+            <span className="block text-body font-medium text-ink">O próprio atleta pode ler</span>
+            <span className="block text-[11px] leading-snug text-ink-3">
+              Na área de atleta da app, quando tiver conta — e recebe um aviso ao publicar.
+            </span>
+          </span>
+        </label>
 
         {athlete && !report && visibility === "FAMILY" && (
           <p className="flex items-start gap-1.5 text-meta leading-relaxed text-ink-3">

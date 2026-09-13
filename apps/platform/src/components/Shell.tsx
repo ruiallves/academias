@@ -103,13 +103,22 @@ export function Shell({ me }: { me: Me }) {
       {/* Telemóvel: a barra lateral dá lugar a `MobileNav`. Ver esse ficheiro. */}
       <aside className="flex w-[212px] shrink-0 flex-col border-r border-line bg-surface max-md:hidden">
         <div className="flex h-14 items-center gap-2.5 border-b border-line px-3">
-          <span
-            className="flex size-7 shrink-0 items-center justify-center rounded-[7px] text-[11px] font-bold text-white"
-            style={{ background: "var(--color-signal)" }}
+          {/*
+            O logótipo, e não um quadrado com a inicial.
+
+            O quadrado existia por não haver ficheiro; agora há, e é o mesmo que
+            está na porta (`LoginGate`) — entrar e estar cá dentro passam a ser o
+            mesmo sítio. `aria-hidden` porque o nome vem escrito já a seguir.
+          */}
+          <img
+            src="/academias-logo.png"
+            alt=""
             aria-hidden
-          >
-            A
-          </span>
+            width={28}
+            height={28}
+            draggable={false}
+            className="size-7 shrink-0 select-none"
+          />
           <div className="min-w-0">
             <div className="truncate text-body font-semibold text-ink">Academias</div>
             {/* Dizer "Plataforma" em todos os ecrãs é o que evita confundir este

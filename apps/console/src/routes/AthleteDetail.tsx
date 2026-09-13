@@ -18,6 +18,8 @@ import {
 import { Segmented } from "@/components/filters";
 import { AthleteKitPanel } from "@/components/inventory/AthleteKitPanel";
 import { ClinicalPanel } from "@/components/ClinicalPanel";
+import { NutritionPanel } from "@/components/NutritionPanel";
+import { AppDoAtletaPanel } from "@/components/AppDoAtletaPanel";
 import {
   ArrowLeft,
   Cake,
@@ -855,7 +857,13 @@ function Attendance({ athleteId }: { athleteId: string }) {
  */
 function Clinical({ athlete }: { athlete: Athlete }) {
   const { session } = useSession();
-  return <ClinicalPanel athlete={athlete} session={session} />;
+  return (
+    <div className="space-y-3">
+      <ClinicalPanel athlete={athlete} session={session} />
+      {/* O plano de nutrição vive ao pé do boletim: é o mesmo departamento a escrevê-lo. */}
+      <NutritionPanel athlete={athlete} session={session} />
+    </div>
+  );
 }
 
 /* -------------------------------------------------------------------------- */
@@ -866,6 +874,7 @@ function Family({ athlete }: { athlete: Athlete }) {
   return (
     <div className="space-y-3">
       <TaxIdPanel athlete={athlete} />
+      <AppDoAtletaPanel athlete={athlete} />
 
     <Panel>
       <PanelHead title="Encarregado de educação" hint={`${guardians.length}`} />

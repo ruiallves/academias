@@ -51,6 +51,8 @@ export type ApiEvaluation = {
   teamId: string | null;
   period: string;
   status: "DRAFT" | "PUBLISHED";
+  /** O próprio atleta vê-a na app quando publicada. */
+  athleteVisible: boolean;
   scores: Record<string, number>;
   note: string | null;
   strengths: string | null;
@@ -72,6 +74,8 @@ export type ApiReport = {
   body: string;
   visibility: "INTERNAL" | "FAMILY";
   status: "DRAFT" | "PUBLISHED";
+  /** O próprio atleta pode lê-lo na app — independente da `visibility`. */
+  athleteVisible: boolean;
   snapshot: {
     attendance?: { attended: number; total: number };
     matches?: number;

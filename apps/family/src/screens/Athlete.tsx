@@ -1,7 +1,8 @@
-import { useState } from "react";
-import { ChevronRight, FileText, MessageSquare, X } from "lucide-react";
+import { useRef, useState } from "react";
+import { Apple, Camera, ChevronRight, FileText, MessageSquare, X } from "lucide-react";
 import { useChild } from "@/App";
-import { useStore, type Evaluation, type Report } from "@/lib/store";
+import { reload, useStore, type Evaluation, type Report } from "@/lib/store";
+import { removerFotoAtleta, uploadFotoAtleta } from "@/lib/atleta";
 import { Avatar, Bar, Money, cx } from "@/ui";
 
 /**
@@ -27,6 +28,8 @@ export default function Athlete() {
   const evaluation = evaluations[0];
   const previous = evaluations[1];
   const reports = store.reports.filter((r) => r.childId === child.id);
+  // Os planos de nutrição abertos a quem lê — o servidor já filtrou por chapéu.
+  const nutrition = store.nutrition.filter((n) => n.childId === child.id);
 
   const att = store.attendance[child.id] ?? { attended: 0, total: 0 };
   const rate = att.total > 0 ? att.attended / att.total : null;
@@ -53,6 +56,8 @@ export default function Athlete() {
             {child.availability === "out" ? "De baixa clínica" : "Com limitações"}
           </span>
         )}
+        {/* A fotografia é do próprio: só o atleta a muda daqui. A da família muda-a o clube. */}
+        {store.atleta && <FotoDoAtleta temFoto={Boolean(child.photoUrl)} />}
       </header>
 
       {/* Dois números lado a lado: presença e convocatórias. */}
@@ -134,6 +139,41 @@ export default function Athlete() {
         </section>
       )}
 
+      {/*
+        Nutrição — o plano da nutricionista, quando ela o abriu a quem está a
+        ler. Lê-se na mesma folha dos relatórios: é texto em parágrafos, e o
+        gesto é o mesmo.
+      */}
+      {nutrition.length > 0 && (
+        <section>
+          <h2 className="mb-1 px-1 text-[13px] font-semibold tracking-[0.04em] text-ink-3 uppercase">Nutrição</h2>
+          <ul className="overflow-hidden rounded-[var(--radius-lg)] bg-surface shadow-[var(--shadow-soft)]">
+            {nutrition.map((n) => (
+              <li key={n.id}>
+                <button
+                  type="button"
+                  onClick={() => setReading(n)}
+                  className="flex w-full items-center gap-3 border-b border-line p-4 text-left last:border-0 active:bg-sunken"
+                >
+                  <span className="flex size-9 shrink-0 items-center justify-center rounded-full bg-ok-soft text-ok">
+                    <Apple className="size-[18px]" strokeWidth={1.9} />
+                  </span>
+                  <span className="min-w-0 flex-1">
+                    <span className="block truncate text-body font-semibold text-ink">{n.title}</span>
+                    <span className="block truncate text-meta text-ink-3">
+                      {[n.authorName, n.publishedAt?.toLocaleDateString("pt-PT", { day: "numeric", month: "short" })]
+                        .filter(Boolean)
+                        .join(" · ")}
+                    </span>
+                  </span>
+                  <ChevronRight className="size-5 shrink-0 text-ink-4" strokeWidth={2} />
+                </button>
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
+
       {reading && <ReportSheet report={reading} onClose={() => setReading(null)} />}
 
       {/* Inscrição — linhas soltas, sem caixa. */}
@@ -143,11 +183,14 @@ export default function Athlete() {
           {child.sport && <Row label="Modalidade" value={child.sport} />}
           <Row label="Escalão" value={child.team} />
           <Row label="Treinador" value={child.coach} />
-          <Row
-            label="Mensalidade"
-            value={child.feeCents !== null ? <Money cents={child.feeCents} size="md" /> : <span className="text-ink-4">por configurar</span>}
-            sub={child.feeCents !== null ? "/ mês" : undefined}
-          />
+          {/* A mensalidade é da família — o atleta não a vê nem a paga. */}
+          {!store.atleta && (
+            <Row
+              label="Mensalidade"
+              value={child.feeCents !== null ? <Money cents={child.feeCents} size="md" /> : <span className="text-ink-4">por configurar</span>}
+              sub={child.feeCents !== null ? "/ mês" : undefined}
+            />
+          )}
           <Row label="Academia" value={store.academy.name} />
         </dl>
       </section>
@@ -165,6 +208,76 @@ export default function Athlete() {
 }
 
 /* -------------------------------------------------------------------------- */
+
+/**
+ * A fotografia do próprio atleta — pôr, trocar, tirar.
+ *
+ * O mesmo gesto da fotografia do sócio: um `<input type="file">` escondido
+ * atrás de um botão, com `capture` de utilizador para o telemóvel oferecer a
+ * câmara da frente. A app relê-se a seguir e a fotografia nova aparece onde
+ * aparecem todas — no cabeçalho, na consola, na folha da convocatória.
+ */
+function FotoDoAtleta({ temFoto }: { temFoto: boolean }) {
+  const input = useRef<HTMLInputElement>(null);
+  const [busy, setBusy] = useState(false);
+  const [erro, setErro] = useState<string | null>(null);
+
+  async function escolher(file: File | undefined) {
+    if (!file || busy) return;
+    setErro(null);
+    setBusy(true);
+    try {
+      await uploadFotoAtleta(file);
+      await reload();
+    } catch (e) {
+      setErro(e instanceof Error ? e.message : "Não foi possível carregar a fotografia.");
+    } finally {
+      setBusy(false);
+      if (input.current) input.current.value = "";
+    }
+  }
+
+  async function remover() {
+    if (busy) return;
+    setBusy(true);
+    try {
+      await removerFotoAtleta();
+      await reload();
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div className="mt-2 flex flex-col items-center gap-1">
+      <div className="flex items-center gap-3">
+        <button
+          type="button"
+          onClick={() => input.current?.click()}
+          disabled={busy}
+          className="flex items-center gap-1.5 text-[14px] font-semibold text-signal-ink disabled:opacity-50"
+        >
+          <Camera className="size-4" strokeWidth={2} />
+          {busy ? "A carregar…" : temFoto ? "Trocar fotografia" : "Adicionar fotografia"}
+        </button>
+        {temFoto && (
+          <button type="button" onClick={() => void remover()} disabled={busy} className="text-[14px] font-medium text-ink-3 disabled:opacity-50">
+            Remover
+          </button>
+        )}
+      </div>
+      {erro && <p className="text-[12px] font-medium text-risk">{erro}</p>}
+      <input
+        ref={input}
+        type="file"
+        accept="image/jpeg,image/png,image/webp"
+        capture="user"
+        onChange={(e) => void escolher(e.target.files?.[0])}
+        className="hidden"
+      />
+    </div>
+  );
+}
 
 function Row({ label, value, sub }: { label: string; value: React.ReactNode; sub?: string }) {
   return (

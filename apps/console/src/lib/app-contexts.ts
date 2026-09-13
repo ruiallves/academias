@@ -26,7 +26,7 @@ import { academy } from "@/lib/api";
  * outra vez, sem perceber porquê.
  */
 
-export type AppContextType = "FAMILY" | "MEMBER" | "STAFF";
+export type AppContextType = "FAMILY" | "ATHLETE" | "MEMBER" | "STAFF";
 
 type State = { contexts: AppContextType[] | null };
 
@@ -72,6 +72,7 @@ export function useAppAreas(activo = true): Exclude<AppContextType, "STAFF">[] |
 
 export const AREA_LABEL: Record<Exclude<AppContextType, "STAFF">, { label: string; hint: string }> = {
   FAMILY: { label: "Família", hint: "Os teus atletas: treinos, convocatórias e pagamentos" },
+  ATHLETE: { label: "Atleta", hint: "Os teus treinos, jogos, planos e avaliações" },
   MEMBER: { label: "Sócio", hint: "O teu cartão, as quotas e as novidades do clube" },
 };
 

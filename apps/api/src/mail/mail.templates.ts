@@ -423,6 +423,57 @@ export function memberInviteEmail(input: {
 }
 
 /* -------------------------------------------------------------------------- */
+/* Convite de atleta — a ficha ganha uma conta na app                          */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * O convite que sai para o email do próprio atleta.
+ *
+ * A mesma forma do de sócio — é o mesmo gesto do outro lado: abrir o link,
+ * escolher a palavra-passe, instalar. Diz o que a área lhe dá (treinos, jogos,
+ * convocatórias, avaliações, o que o treinador partilhar) para o email não
+ * parecer um convite genérico, e diz que é pessoal, porque é: a conta fica
+ * ligada ao endereço para onde isto foi.
+ */
+export function athleteInviteEmail(input: {
+  brand: MailBrand;
+  name: string;
+  link: string;
+}): { subject: string; html: string; text: string } {
+  const primeiro = input.name.trim().split(/\s+/)[0] || input.name;
+  const heading = "A tua área de atleta";
+  const paragraphs = [
+    "És atleta de <strong>" + esc(input.brand.name) + "</strong> — e o clube tem uma app onde vês os teus treinos e jogos, as convocatórias, as avaliações do treinador e os planos que ele partilhar contigo.",
+    "Abre o link, escolhe a tua palavra-passe e instala a app. Fica pronto em menos de um minuto.",
+  ];
+  const notes = [
+    "Este convite é só teu — a conta fica ligada ao email para onde ele foi enviado.",
+    "Se não pediste isto, podes ignorar este email.",
+  ];
+
+  return {
+    subject: input.brand.shortName + " · a tua área de atleta",
+    html: layout({
+      brand: input.brand,
+      greeting: "Olá " + esc(primeiro) + ",",
+      heading,
+      paragraphs,
+      cta: { label: "Criar a minha conta", url: input.link },
+      notes,
+    }),
+    text: plain(
+      "Olá " + primeiro + ",",
+      [
+        "És atleta de " + input.brand.name + " — e o clube tem uma app onde vês os teus treinos e jogos, as convocatórias, as avaliações do treinador e os planos que ele partilhar contigo.",
+        "Abre o link, escolhe a tua palavra-passe e instala a app.",
+      ],
+      { label: "Criar a minha conta", url: input.link },
+      notes.map(semTags),
+    ),
+  };
+}
+
+/* -------------------------------------------------------------------------- */
 /* Adesão a sócio — o recibo de quem se inscreveu pelo site                    */
 /* -------------------------------------------------------------------------- */
 
@@ -734,6 +785,138 @@ export function passwordResetEmail(input: {
 }
 
 /* -------------------------------------------------------------------------- */
+
+/* -------------------------------------------------------------------------- */
+/* Ordem de adesão — o que o clube contratou, e o pedido de assinatura         */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * As condições comerciais de um clube, para quem as assina.
+ *
+ * ## Porque é que isto é uma tabela e não um parágrafo
+ *
+ * Porque é um contrato. Quem o lê procura um número — o preço, a data, o
+ * período mínimo — e procura-o com o olho, não com a leitura. Uma frase com
+ * "19,99 € por mês a partir de 12 de Setembro por um mínimo de 12 meses" obriga
+ * a lê-la inteira para encontrar um campo, e é a forma mais rápida de alguém
+ * assinar sem ver o que assinou.
+ *
+ * ## O que o email **não** faz
+ *
+ * Não assina. O botão leva à consola, onde a pessoa entra com a conta dela e
+ * assina lá — é a mesma porta por onde já aceita os Termos de Serviço, e é o
+ * que garante que quem assinou é quem diz ser. Um link que assinasse ao ser
+ * aberto punha um contrato à mercê de um reencaminhamento de correio.
+ */
+export function subscriptionOrderEmail(input: {
+  brand: MailBrand;
+  /** Quem recebe — o responsável do clube. */
+  name: string;
+  /** O cargo com que consta: "Presidente". */
+  title: string;
+  /** O nome do cliente no contrato — o clube, por extenso. */
+  clientName: string;
+  planName: string;
+  annual: boolean;
+  /** O que paga por período, em cêntimos, já com desconto. */
+  amountCents: number;
+  /** O preço de tabela por mês, para se ver de onde vem o desconto. */
+  listMonthlyCents: number;
+  discountPct: number;
+  startsOn: Date;
+  minimumMonths: number;
+  renewalNote: string;
+  notes?: string | null;
+  termsVersion?: string | null;
+  link: string;
+  /** Já houve uma ordem antes desta — muda a primeira frase. */
+  isUpdate?: boolean;
+}): { subject: string; html: string; text: string } {
+  const primeiro = input.name.trim().split(/\s+/)[0] || input.name;
+  const porPeriodo = input.annual ? "por ano" : "por mês";
+
+  /*
+   * O preço de tabela só aparece quando há desconto.
+   *
+   * Sem desconto seriam dois números iguais um por cima do outro, e dois números
+   * iguais num contrato fazem quem lê parar para perceber a diferença que não há.
+   */
+  const preco = input.discountPct > 0
+    ? euros(input.amountCents) + " " + porPeriodo +
+      " <span style=\"color:#8a867c\">(" + euros(input.listMonthlyCents) + "/mês de tabela, menos " +
+      input.discountPct + "%)</span>"
+    : euros(input.amountCents) + " " + porPeriodo;
+
+  const linhas: [string, string][] = [
+    ["Cliente", esc(input.clientName)],
+    ["Plano", esc(input.planName)],
+    ["Preço", preco],
+    ["Periodicidade", input.annual ? "Anual" : "Mensal"],
+    ["Data de início", dia(input.startsOn)],
+    ["Período contratual mínimo", input.minimumMonths + (input.minimumMonths === 1 ? " mês" : " meses")],
+    ["Renovação", esc(input.renewalNote)],
+  ];
+  if (input.notes?.trim()) linhas.push(["Observações", esc(input.notes.trim())]);
+
+  const tabela =
+    '<table role="presentation" cellpadding="0" cellspacing="0" style="width:100%;border-collapse:collapse;' +
+    'border:1px solid #e5e2dc;border-radius:10px;overflow:hidden;">' +
+    linhas
+      .map(
+        ([rotulo, valor], i) =>
+          '<tr style="' + (i % 2 === 0 ? "background:#faf9f7;" : "") + '">' +
+          '<td style="padding:9px 12px;font-size:13px;color:#52504c;white-space:nowrap;">' + esc(rotulo) + "</td>" +
+          '<td style="padding:9px 12px;font-size:13px;color:#1a1917;font-weight:600;text-align:right;">' + valor + "</td>" +
+          "</tr>",
+      )
+      .join("") +
+    "</table>";
+
+  const abertura = input.isUpdate
+    ? "As condições da subscrição de " + esc(input.brand.name) + " foram actualizadas."
+    : "Aqui ficam as condições da subscrição de " + esc(input.brand.name) + " na plataforma Academias.";
+
+  const paragraphs = [
+    abertura + " Chegam a ti como <strong>" + esc(input.title) + "</strong>, que é quem representa o clube.",
+  ];
+
+  const notes = [
+    input.termsVersion
+      ? "Aplicam-se os Termos de Serviço em vigor (versão " + esc(input.termsVersion) + "), incluindo a cláusula de cancelamento antecipado."
+      : "Aplicam-se os Termos de Serviço em vigor, incluindo a cláusula de cancelamento antecipado.",
+    "A assinatura é feita na consola, com a tua conta — este email não assina nada.",
+    "Se alguma destas condições não é a que combinaste, responde a este email antes de assinar.",
+  ];
+
+  return {
+    subject: "Academias · condições da subscrição de " + input.brand.shortName,
+    html: layout({
+      brand: input.brand,
+      greeting: "Olá " + primeiro + ",",
+      heading: input.isUpdate ? "Condições actualizadas" : "Condições da subscrição",
+      paragraphs,
+      // `blocks` e não `paragraphs`: uma `<table>` dentro de um `<p>` é HTML
+      // inválido, e o Outlook desenha-a como lhe apetece. Ver `Layout.blocks`.
+      blocks: [tabela],
+      cta: { label: "Rever e assinar", url: input.link },
+      notes,
+    }),
+    text: plain(
+      "Olá " + primeiro + ",",
+      [
+        semTags(abertura) + " Chegam a ti como " + input.title + ", que é quem representa o clube.",
+        ...linhas.map(([rotulo, valor]) => rotulo + ": " + semTags(valor)),
+      ],
+      { label: "Rever e assinar", url: input.link },
+      notes.map(semTags),
+    ),
+  };
+}
+
+/** "19,99 €" — o formato que o resto do produto usa. */
+function euros(cents: number): string {
+  return new Intl.NumberFormat("pt-PT", { style: "currency", currency: "EUR" }).format(cents / 100);
+}
 
 function semTags(value: string): string {
   return value.replace(/<[^>]+>/g, "");

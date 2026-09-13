@@ -64,9 +64,54 @@ export class PhotosService {
 
   async athleteUploadUrl(ctx: RequestContext, athleteId: string, contentType: string) {
     if (!can(ctx, "athlete:write")) throw new ForbiddenException("Sem permissão");
-    this.checkType(contentType);
-
     await this.assertAthleteInScope(ctx, athleteId);
+    return this.athleteUpload(athleteId, contentType);
+  }
+
+  async setAthletePhoto(ctx: RequestContext, athleteId: string, key: string) {
+    if (!can(ctx, "athlete:write")) throw new ForbiddenException("Sem permissão");
+    await this.assertAthleteInScope(ctx, athleteId);
+
+    return this.athleteSet(ctx.academyId, athleteId, key);
+  }
+
+  async removeAthletePhoto(ctx: RequestContext, athleteId: string) {
+    if (!can(ctx, "athlete:write")) throw new ForbiddenException("Sem permissão");
+    await this.assertAthleteInScope(ctx, athleteId);
+
+    return this.athleteRemove(ctx.academyId, athleteId);
+  }
+
+  /*
+   * O próprio atleta, pela app do clube.
+   *
+   * Sem `athlete:write` — mexer na própria fotografia nunca foi um privilégio,
+   * a mesma regra de `assertStaffAllowed` para quem trabalha no clube. Quem
+   * garante que é o próprio é o âmbito: uma conta de atleta tem exactamente
+   * uma ficha em `scope.athleteIds`, e é essa que se toca. As três portas
+   * convergem nos privados abaixo, para o que se grava ser o mesmo.
+   */
+
+  athleteUploadUrlProprio(ctx: RequestContext, contentType: string) {
+    return this.athleteUpload(this.proprio(ctx), contentType);
+  }
+
+  setAthletePhotoProprio(ctx: RequestContext, key: string) {
+    return this.athleteSet(ctx.academyId, this.proprio(ctx), key);
+  }
+
+  removeAthletePhotoProprio(ctx: RequestContext) {
+    return this.athleteRemove(ctx.academyId, this.proprio(ctx));
+  }
+
+  private proprio(ctx: RequestContext): string {
+    const id = ctx.role === "ATHLETE" ? ctx.scope.athleteIds?.[0] : undefined;
+    if (!id) throw new ForbiddenException("Só o próprio atleta, na app do clube");
+    return id;
+  }
+
+  private async athleteUpload(athleteId: string, contentType: string) {
+    this.checkType(contentType);
     await this.ensureBucket();
 
     // A chave leva o id do atleta e um sufixo aleatório: o id para se saber de quem
@@ -78,10 +123,7 @@ export class PhotosService {
     return { ...signed, key, maxBytes: MAX_BYTES };
   }
 
-  async setAthletePhoto(ctx: RequestContext, athleteId: string, key: string) {
-    if (!can(ctx, "athlete:write")) throw new ForbiddenException("Sem permissão");
-    await this.assertAthleteInScope(ctx, athleteId);
-
+  private async athleteSet(academyId: string, athleteId: string, key: string) {
     // A chave tem de ser deste atleta. Sem isto, quem obtivesse uma autorização
     // para o seu próprio atleta apontava a ficha de outro para a mesma fotografia.
     if (!key.startsWith(`atletas/${athleteId}/`)) throw new BadRequestException("Chave inválida");
@@ -99,7 +141,7 @@ export class PhotosService {
      * montar o contexto de **cada** pedido. O sintoma não aparecia aqui: aparecia na
      * app inteira a ficar pendurada.
      */
-    const before = await this.prisma.runAs(ctx.academyId, async (db) => {
+    const before = await this.prisma.runAs(academyId, async (db) => {
       const previous = await db.athlete.findFirst({ where: { id: athleteId }, select: { photoKey: true } });
       await db.athlete.update({ where: { id: athleteId }, data: { photoKey: key } });
       return previous?.photoKey ?? null;
@@ -112,11 +154,8 @@ export class PhotosService {
     return { photoUrl: await this.storage.signDownload(PHOTO_BUCKET, key, PHOTO_TTL) };
   }
 
-  async removeAthletePhoto(ctx: RequestContext, athleteId: string) {
-    if (!can(ctx, "athlete:write")) throw new ForbiddenException("Sem permissão");
-    await this.assertAthleteInScope(ctx, athleteId);
-
-    const before = await this.prisma.runAs(ctx.academyId, async (db) => {
+  private async athleteRemove(academyId: string, athleteId: string) {
+    const before = await this.prisma.runAs(academyId, async (db) => {
       const previous = await db.athlete.findFirst({ where: { id: athleteId }, select: { photoKey: true } });
       await db.athlete.update({ where: { id: athleteId }, data: { photoKey: null } });
       return previous?.photoKey ?? null;

@@ -125,6 +125,11 @@ type ApiAthlete = {
   taxId: string | null;
   heightCm: number | null; weightKg: number | null; dominantSide: string | null; squadNumber: number | null;
   medicalValidUntil: string | null; teamId: string | null; position: string | null;
+  /** A conta do próprio atleta na app — ver `AthleteInvitesService` na API. */
+  email: string | null;
+  app: "account" | "invited" | "none" | "noemail";
+  inviteSentAt: string | null;
+  appInstalled: boolean;
   guardians: {
     membershipId: string; name: string; email: string; phone: string | null; relation: string;
     isActive: boolean;
@@ -413,6 +418,47 @@ export function reloadAcademy(): Promise<void> {
   return loadAcademy();
 }
 
+/** As colunas do jogo que a convocatória escreve — ver `aplicarLogistica`. */
+export type MatchLogistics = Pick<
+  ApiMatch,
+  "roundLabel" | "meetingPoint" | "meetingAt" | "arrivalAt" | "callUpNotes" | "confirmationRequired"
+>;
+
+/**
+ * Escreve num jogo o que o servidor acabou de gravar — sem recarregar nada.
+ *
+ * ## Porque é que isto existe
+ *
+ * Corrigir a hora de encontro de uma convocatória chamava `reloadAcademy()`:
+ * o bootstrap **e** mais oito listas (equipas, atletas, staff, treinos,
+ * cobranças, jogos, eventos, comunicados), seguidos da época inteira do
+ * calendário. Medido nesta ligação, são perto de dez segundos — e durante esses
+ * segundos a página continua a mostrar a hora antiga, porque o jogo em memória
+ * ainda é o de antes de gravar.
+ *
+ * Quem reabria o diálogo nesse intervalo via a hora velha e concluía, com toda
+ * a razão, que a gravação se tinha perdido. Não se tinha: estava no servidor
+ * desde o primeiro instante — o que faltava era o ecrã saber.
+ *
+ * Recarregar a academia para escrever seis colunas de um jogo é o exagero que
+ * causa isso. O servidor já devolve o que gravou (ver `actualizarLogistica`),
+ * portanto o que falta é escrevê-lo aqui: uma substituição em memória, um
+ * `emit`, e o ecrã acompanha o gesto no mesmo fotograma.
+ *
+ * Não dispensa o resto: o que muda **mais** do que a logística — submeter, que
+ * fecha a lista — continua a pedir uma recarga, feita em segundo plano.
+ */
+export function aplicarLogistica(
+  matchId: string,
+  campos: Partial<Pick<ApiMatch, keyof MatchLogistics | "submitted" | "submittedAt">>,
+): void {
+  const i = state.matches.findIndex((m) => m.id === matchId);
+  if (i === -1) return;
+  const matches = [...state.matches];
+  matches[i] = { ...matches[i], ...campos };
+  apply({ ...state, matches });
+}
+
 /**
  * Um pedido que pode ser recusado sem ser um erro.
  *
@@ -684,6 +730,10 @@ function juntar<T extends { id: string }>(atuais: T[], novos: T[]): T[] {
     // Sem `?? ""`: a ausência passa intacta. Ver `medicalValidUntil` em `types.ts`.
     medicalValidUntil: a.medicalValidUntil,
     photoUrl: a.photoUrl ?? undefined,
+    email: a.email ?? undefined,
+    app: a.app,
+    inviteSentAt: a.inviteSentAt,
+    appInstalled: a.appInstalled,
     heightCm: a.heightCm ?? undefined,
     weightKg: a.weightKg ?? undefined,
     dominantSide: (a.dominantSide?.toLowerCase() as Athlete["dominantSide"]) ?? undefined,

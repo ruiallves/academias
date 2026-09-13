@@ -1,6 +1,7 @@
 import { useSyncExternalStore } from "react";
 import { apiGet } from "@/lib/http";
 import { academySlug, saveSlug } from "@/lib/invite";
+import { setActiveArea } from "@/lib/area";
 
 /**
  * Os contextos desta conta neste clube — e qual está vestido.
@@ -35,10 +36,12 @@ import { academySlug, saveSlug } from "@/lib/invite";
  * instalação pode um dia servir mais do que um clube.
  */
 
-export type ContextType = "FAMILY" | "MEMBER" | "STAFF";
+export type ContextType = "FAMILY" | "ATHLETE" | "MEMBER" | "STAFF";
 
 export type AppContext =
   | { type: "FAMILY" }
+  /** O próprio atleta — a mesma app da família, com outro chapéu (`x-app: athlete`). */
+  | { type: "ATHLETE" }
   | { type: "MEMBER"; memberId: string; number: number | null; status: string }
   /** O papel na consola (COACH, DIRECTOR…) — só para o nomear no ecrã de escolha. */
   | { type: "STAFF"; role: string };
@@ -61,7 +64,7 @@ function consumirEntrega(): ContextType | null {
   try {
     const v = localStorage.getItem(entregaKey());
     if (v !== null) localStorage.removeItem(entregaKey());
-    return v === "FAMILY" || v === "MEMBER" || v === "STAFF" ? v : null;
+    return v === "FAMILY" || v === "ATHLETE" || v === "MEMBER" || v === "STAFF" ? v : null;
   } catch {
     return null;
   }
@@ -99,6 +102,7 @@ export async function loadContexts(): Promise<void> {
     if (!active && tipos.length === 1) active = tipos[0];
 
     state = { contexts: r.contexts, active, error: null };
+    setActiveArea(active);
   } catch (e) {
     state = { ...state, error: e instanceof Error ? e.message : "Não foi possível carregar." };
   }
@@ -136,6 +140,7 @@ async function resolverClubeDaConta(): Promise<void> {
  */
 export function chooseContext(type: ContextType): void {
   state = { ...state, active: type };
+  setActiveArea(type);
   emit();
 }
 
@@ -152,7 +157,7 @@ export function captureAreaFromUrl(): void {
   const params = new URLSearchParams(window.location.search);
   const area = params.get("area");
   if (!area) return;
-  if (area === "FAMILY" || area === "MEMBER" || area === "STAFF") chooseContext(area);
+  if (area === "FAMILY" || area === "ATHLETE" || area === "MEMBER" || area === "STAFF") chooseContext(area);
   params.delete("area");
   const resto = params.toString();
   window.history.replaceState(null, "", window.location.pathname + (resto ? `?${resto}` : "") + window.location.hash);
@@ -166,5 +171,6 @@ export function clearContextChoice(): void {
     /* idem */
   }
   state = { contexts: null, active: null, error: null };
+  setActiveArea(null);
   emit();
 }

@@ -33,11 +33,12 @@ import { cx } from "./primitives";
  * pergunta.
  */
 
-type Audience = "all" | "guardians" | "coaches" | "members";
+type Audience = "all" | "guardians" | "athletes" | "coaches" | "members";
 
 const AUDIENCE_META: { value: Audience; label: string; hint: string }[] = [
   { value: "all", label: "Geral", hint: "toda a academia" },
   { value: "guardians", label: "Pais", hint: "encarregados de educação" },
+  { value: "athletes", label: "Atletas", hint: "os atletas com conta na app" },
   { value: "coaches", label: "Treinadores", hint: "equipa técnica" },
   { value: "members", label: "Sócios", hint: "quem tem a app recebe aviso" },
 ];
@@ -81,9 +82,16 @@ export function NewAnnouncementDialog({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const publicos = publicosDe(session);
+  /*
+   * O treinador escolhe entre os pais e os atletas das suas equipas — os dois
+   * públicos que vivem numa equipa. O resto é da direcção.
+   */
+  const porEscalao = audience === "guardians" || audience === "athletes";
+  const publicos = mayChooseAudience
+    ? publicosDe(session)
+    : AUDIENCE_META.filter((a) => a.value === "guardians" || a.value === "athletes");
   const teams = listTeams(session);
-  const mayPickTeams = !isEditing && audience === "guardians" && teams.length > 0;
+  const mayPickTeams = !isEditing && porEscalao && teams.length > 0;
 
   /*
    * Quantas famílias isto vai acordar.
@@ -96,9 +104,12 @@ export function NewAnnouncementDialog({
   const athletes = listAthletes(session);
   const reach = useMemo(() => {
     const recorte = teamIds.length > 0 ? new Set(teamIds) : null;
-    const alvo = new Set(athletes.filter((a) => !recorte || recorte.has(a.teamId)).map((a) => a.id));
+    const visados = athletes.filter((a) => !recorte || recorte.has(a.teamId));
+    // Aos atletas só chega quem tem conta na app — é o que o servidor conta também.
+    if (audience === "athletes") return visados.filter((a) => a.app === "account").length;
+    const alvo = new Set(visados.map((a) => a.id));
     return guardians.filter((g) => g.athleteIds.some((id) => alvo.has(id))).length;
-  }, [athletes, guardians, teamIds]);
+  }, [athletes, guardians, teamIds, audience]);
 
   const valid = title.trim().length >= 2 && body.trim().length >= 1;
 
@@ -121,7 +132,7 @@ export function NewAnnouncementDialog({
           audience,
           // Só quando há recorte, e só quando o recorte se aplica: mandar
           // `teamIds` com "Treinadores" é um pedido que o servidor recusa.
-          ...(audience === "guardians" && teamIds.length > 0 ? { teamIds } : {}),
+          ...(porEscalao && teamIds.length > 0 ? { teamIds } : {}),
         });
       }
       await reloadAcademy();
@@ -162,7 +173,7 @@ export function NewAnnouncementDialog({
               Foi enviado para <strong className="font-medium text-ink">{editing.audience}</strong> — o público
               não muda ao editar.
             </p>
-          ) : mayChooseAudience ? (
+          ) : (
             <div className="grid grid-cols-3 gap-1.5">
               {publicos.map((a) => (
                 <button
@@ -184,11 +195,6 @@ export function NewAnnouncementDialog({
                 </button>
               ))}
             </div>
-          ) : (
-            <p className="rounded-[var(--radius-control)] border border-dashed border-line bg-sunken/50 px-3 py-2.5 text-meta text-ink-3">
-              Vai para os <strong className="font-medium text-ink">pais dos teus atletas</strong> — os
-              encarregados das tuas equipas.
-            </p>
           )}
         </DialogField>
 
@@ -214,9 +220,13 @@ export function NewAnnouncementDialog({
               ))}
             </div>
             <p className="mt-2 text-[11px] leading-relaxed text-ink-3">
-              {teamIds.length === 0
-                ? `Vai para os pais de todos os escalões — ${reach} ${reach === 1 ? "família" : "famílias"}.`
-                : `Só os pais ${teamIds.length === 1 ? "deste escalão" : "destes escalões"} — ${reach} ${reach === 1 ? "família" : "famílias"}.`}
+              {audience === "athletes"
+                ? teamIds.length === 0
+                  ? `Vai para os atletas de todos os escalões — ${reach} ${reach === 1 ? "com conta na app" : "com conta na app"}.`
+                  : `Só os atletas ${teamIds.length === 1 ? "deste escalão" : "destes escalões"} — ${reach} ${reach === 1 ? "com conta na app" : "com conta na app"}.`
+                : teamIds.length === 0
+                  ? `Vai para os pais de todos os escalões — ${reach} ${reach === 1 ? "família" : "famílias"}.`
+                  : `Só os pais ${teamIds.length === 1 ? "deste escalão" : "destes escalões"} — ${reach} ${reach === 1 ? "família" : "famílias"}.`}
             </p>
           </DialogField>
         )}

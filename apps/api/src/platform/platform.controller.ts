@@ -99,6 +99,21 @@ class SetAcademyActiveDto {
 class SetAcademyPlanDto {
   @IsString() @Length(1, 40) planId!: string;
 
+  /*
+   * As condições comerciais.
+   *
+   * Opcionais porque uma correcção de estado — pôr em `PAST_DUE`, cancelar — não
+   * é uma renegociação, e não devia obrigar a reescrever o contrato. Quando
+   * vêm, emite-se uma ordem de adesão nova e o responsável do clube recebe-a
+   * para assinar. Ver `SubscriptionOrdersService.emitir`.
+   */
+  @IsOptional() @IsIn(["MONTHLY", "ANNUAL"]) billingPeriod?: "MONTHLY" | "ANNUAL";
+  /** `AAAA-MM-DD`. Omisso: hoje. */
+  @IsOptional() @IsString() @Matches(/^\d{4}-\d{2}-\d{2}$/) startsOn?: string;
+  @IsOptional() @IsInt() @Min(1) @Max(60) minimumMonths?: number;
+  @IsOptional() @IsString() @Length(0, 300) renewalNote?: string;
+  @IsOptional() @IsString() @Length(0, 600) notes?: string;
+
   @IsOptional()
   @IsIn(["TRIALING", "ACTIVE", "PAST_DUE", "CANCELLED"])
   status?: "TRIALING" | "ACTIVE" | "PAST_DUE" | "CANCELLED";
@@ -210,7 +225,13 @@ export class PlatformController {
     @Param("id") id: string,
     @Body() body: SetAcademyPlanDto,
   ) {
-    return this.platform.setAcademyPlan(req.admin, id, body.planId, body.status, ip);
+    return this.platform.setAcademyPlan(req.admin, id, body.planId, body.status, ip, {
+      billingPeriod: body.billingPeriod,
+      startsOn: body.startsOn,
+      minimumMonths: body.minimumMonths,
+      renewalNote: body.renewalNote,
+      notes: body.notes,
+    });
   }
 
   /**
@@ -219,6 +240,20 @@ export class PlatformController {
    * Leva tudo atrás — atletas, presenças, boletins clínicos, mensalidades. É a
    * operação mais destrutiva do produto, e é a única que exige o `OWNER`.
    */
+  /**
+   * Reemitir as condições e voltar a enviá-las.
+   *
+   * O email perdeu-se, foi para o spam, ou o clube mudou de presidente. Emite
+   * uma ordem nova com as mesmas condições da actual — e a anterior por assinar
+   * passa a substituída, porque duas ordens vivas eram duas versões do mesmo
+   * contrato à espera do mesmo clique.
+   */
+  @Post("academies/:id/condicoes/reenviar")
+  @PlatformRoles("OWNER", "ADMIN")
+  resendOrder(@Req() req: PlatformRequest, @Ip() ip: string, @Param("id") id: string) {
+    return this.platform.resendSubscriptionOrder(req.admin, id, ip);
+  }
+
   @Delete("academies/:id")
   @PlatformRoles("OWNER")
   deleteAcademy(

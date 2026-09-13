@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
 import { destinoDaNotificacao } from "@/lib/rotas";
 import { chooseContext } from "@/lib/contexts";
-import { Bell, CalendarClock, FileText, Gauge, Megaphone, Trophy, Wallet, type LucideIcon } from "lucide-react";
+import { Bell, CalendarClock, FileText, Gauge, Megaphone, Trophy, Wallet, type LucideIcon, Dumbbell, Apple } from "lucide-react";
 import { apiPatch } from "@/lib/http";
 import { reload, useStore, type ApiNotification } from "@/lib/store";
 import { cx, whenLabel } from "@/ui";
@@ -36,6 +36,8 @@ const STYLE: Record<string, { icon: LucideIcon; cls: string; urgent?: boolean }>
   EVALUATION_PUBLISHED: { icon: Gauge, cls: "bg-signal-soft text-signal-ink" },
   REPORT_SHARED: { icon: FileText, cls: "bg-signal-soft text-signal-ink" },
   ANNOUNCEMENT_PUBLISHED: { icon: Megaphone, cls: "bg-sunken text-ink-2" },
+  TRAINING_PLAN_SHARED: { icon: Dumbbell, cls: "bg-signal-soft text-signal-ink" },
+  NUTRITION_PLAN_SHARED: { icon: Apple, cls: "bg-ok-soft text-ok" },
 };
 
 const FALLBACK = { icon: Bell, cls: "bg-sunken text-ink-2" };

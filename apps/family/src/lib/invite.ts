@@ -23,6 +23,8 @@ const KEY = "academia.family.convite";
 const SLUG_KEY = "academia.family.slug";
 /** O convite de **sócio** viaja pelo mesmo caminho, com outro parâmetro. */
 const SOCIO_KEY = "academia.socio.convite";
+/** E o de **atleta** — o link que sai para o email da ficha do atleta. */
+const ATLETA_KEY = "academia.atleta.convite";
 
 export type InvitePreview = {
   academy: { slug: string; name: string; shortName: string; signalColor: string; logoUrl: string | null; mark: string };
@@ -40,15 +42,18 @@ export function captureFromUrl(): void {
     const params = new URLSearchParams(window.location.search);
     const convite = params.get("convite");
     const socio = params.get("socio");
+    const atleta = params.get("atleta");
     const academia = params.get("academia");
 
     if (convite) localStorage.setItem(KEY, convite);
     if (socio) localStorage.setItem(SOCIO_KEY, socio);
+    if (atleta) localStorage.setItem(ATLETA_KEY, atleta);
     if (academia) localStorage.setItem(SLUG_KEY, academia);
 
-    if (convite || socio || academia) {
+    if (convite || socio || atleta || academia) {
       params.delete("convite");
       params.delete("socio");
+      params.delete("atleta");
       params.delete("academia");
       const rest = params.toString();
       window.history.replaceState({}, "", window.location.pathname + (rest ? `?${rest}` : ""));
@@ -88,6 +93,22 @@ export function readMemberInvite(): string | null {
 export function clearMemberInvite(): void {
   try {
     localStorage.removeItem(SOCIO_KEY);
+  } catch {
+    /* idem */
+  }
+}
+
+export function readAthleteInvite(): string | null {
+  try {
+    return localStorage.getItem(ATLETA_KEY);
+  } catch {
+    return null;
+  }
+}
+
+export function clearAthleteInvite(): void {
+  try {
+    localStorage.removeItem(ATLETA_KEY);
   } catch {
     /* idem */
   }

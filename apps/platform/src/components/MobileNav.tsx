@@ -21,13 +21,15 @@ export type MobileNavItem = { to: string; label: string; icon: LucideIcon; end?:
 export function MobileTopBar() {
   return (
     <header className="mobile-top flex h-[52px] shrink-0 items-center gap-2.5 border-b border-line bg-surface px-3 md:hidden">
-      <span
-        className="flex size-7 shrink-0 items-center justify-center rounded-[7px] text-[11px] font-bold text-white"
-        style={{ background: "var(--color-signal)" }}
+      <img
+        src="/academias-logo.png"
+        alt=""
         aria-hidden
-      >
-        A
-      </span>
+        width={26}
+        height={26}
+        draggable={false}
+        className="size-[26px] shrink-0 select-none"
+      />
       <div className="min-w-0">
         <div className="truncate text-body font-semibold text-ink">Academias</div>
         <div className="truncate text-[11px] text-ink-3">Plataforma</div>

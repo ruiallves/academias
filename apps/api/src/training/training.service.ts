@@ -4,6 +4,8 @@ import { Prisma, type LibraryVisibility } from "@prisma/client";
 import { PrismaService, type ScopedClient } from "../prisma/prisma.service";
 import { StorageService } from "../storage/storage.service";
 import { can, inTeamScope, teamScopeFilter, type RequestContext } from "../common/permissions";
+import { NotificationsService } from "../notifications/notifications.service";
+import { contasDasEquipas } from "../academy/athlete-accounts";
 
 /**
  * Imagens de exercícios — montagens no campo, prancheta, quadro branco.
@@ -46,6 +48,7 @@ export class TrainingService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly storage: StorageService,
+    private readonly notifications: NotificationsService,
   ) {}
 
   /* ------------------------------------------------------------------------ */
@@ -433,6 +436,7 @@ export class TrainingService {
         id: true, teamId: true, startsAt: true, endsAt: true, venue: true, status: true,
         objective: true, objectives: true, sessionType: true, intensity: true,
         expectedAthletes: true, material: true, planNotes: true, postNotes: true,
+        planSharedAt: true,
         team: { select: { name: true } },
         coach: { select: { user: { select: { name: true } } } },
         blocks: {
@@ -466,6 +470,8 @@ export class TrainingService {
       material: s.material,
       planNotes: s.planNotes,
       postNotes: s.postNotes,
+      /** Desde quando os atletas o vêem na app — nulo é "não partilhado". */
+      sharedAt: s.planSharedAt,
       blocks: s.blocks.map((b) => ({
         id: b.id,
         order: b.order,
@@ -485,6 +491,117 @@ export class TrainingService {
         exerciseThumb: b.exercise && exerciseVisible(ctx, b.exercise) ? thumbnailOf(b.exercise.diagram) : null,
       })),
     };
+  }
+
+  /**
+   * Partilhar o plano com os atletas — ou voltar a guardá-lo.
+   *
+   * É o treinador que decide, treino a treino: o plano é trabalho dele, e há
+   * sessões que não quer mostrar antes de as dar. Partilhar avisa os atletas da
+   * equipa que têm conta na app; voltar a esconder não avisa ninguém — não se
+   * manda um push a dizer "já não podes ler".
+   */
+  async partilharPlano(ctx: RequestContext, sessionId: string, shared: boolean) {
+    if (!can(ctx, "training:write")) throw new ForbiddenException("Sem permissão para planear treinos");
+
+    const { session, contas } = await this.prisma.runAs(ctx.academyId, async (db) => {
+      const s = await db.trainingSession.findFirst({
+        where: { id: sessionId },
+        select: { id: true, teamId: true, startsAt: true, planSharedAt: true, team: { select: { name: true } } },
+      });
+      if (!s) throw new NotFoundException("Treino não encontrado");
+      if (!inTeamScope(ctx, s.teamId)) throw new ForbiddenException("Este treino é de uma equipa fora do teu âmbito");
+
+      const jaEstava = s.planSharedAt !== null;
+      const sharedAt = shared ? (s.planSharedAt ?? new Date()) : null;
+      await db.trainingSession.update({ where: { id: s.id }, data: { planSharedAt: sharedAt } });
+
+      // Só ao passar de guardado a partilhado — voltar a carregar no botão não repete o aviso.
+      const contas = shared && !jaEstava ? await contasDasEquipas(db, [s.teamId]) : [];
+      return { session: { ...s, planSharedAt: sharedAt }, contas };
+    });
+
+    // Fora da transação — cada `enqueue` abre a sua, curta.
+    const quando = session.startsAt.toLocaleString("pt-PT", {
+      weekday: "long", day: "numeric", month: "long", hour: "2-digit", minute: "2-digit",
+    });
+    for (const userId of contas) {
+      await this.notifications.enqueue({
+        academyId: ctx.academyId,
+        userId,
+        type: "TRAINING_PLAN_SHARED",
+        title: "Plano de treino disponível",
+        body: `O treinador partilhou o plano do treino de ${quando} · ${session.team.name}.`,
+        payload: { sessionId, route: `/evento/treino/${sessionId}` },
+      });
+    }
+
+    return { sessionId, shared, sharedAt: session.planSharedAt };
+  }
+
+  /**
+   * O plano como o atleta o lê na app — só se o treinador o partilhou.
+   *
+   * Sem `training:read`: o atleta não é da área técnica. O que o autoriza é
+   * ser da equipa do treino (o âmbito) e o treinador ter aberto o plano. O que
+   * chega é o que se lê num campo: objectivo, tipo, blocos com nome, minutos e
+   * observações — sem o `postNotes`, que é o balanço do treinador para si.
+   */
+  async planoPartilhado(ctx: RequestContext, sessionId: string) {
+    if (ctx.role !== "ATHLETE") throw new ForbiddenException("Só para a área de atleta");
+
+    return this.prisma.runAs(ctx.academyId, async (db) => {
+      const s = await db.trainingSession.findFirst({
+        where: { id: sessionId },
+        select: {
+          id: true, teamId: true, startsAt: true, endsAt: true, venue: true, status: true, planSharedAt: true,
+          objective: true, objectives: true, sessionType: true, intensity: true, material: true, planNotes: true,
+          team: { select: { name: true } },
+          coach: { select: { user: { select: { name: true } } } },
+          blocks: {
+            orderBy: { order: "asc" },
+            select: {
+              id: true, order: true, name: true, durationMin: true, category: true, objective: true,
+              intensity: true, players: true, space: true, material: true, notes: true,
+              exercise: { select: { name: true } },
+            },
+          },
+        },
+      });
+      if (!s || !inTeamScope(ctx, s.teamId)) throw new NotFoundException("Treino não encontrado");
+      if (!s.planSharedAt) throw new NotFoundException("O plano deste treino não está partilhado");
+
+      return {
+        sessionId: s.id,
+        teamName: s.team.name,
+        startsAt: s.startsAt,
+        endsAt: s.endsAt,
+        venue: s.venue,
+        status: s.status,
+        coachName: s.coach?.user.name ?? null,
+        sharedAt: s.planSharedAt,
+        objective: s.objective,
+        objectives: s.objectives,
+        sessionType: s.sessionType,
+        intensity: s.intensity,
+        material: s.material,
+        planNotes: s.planNotes,
+        blocks: s.blocks.map((b) => ({
+          id: b.id,
+          order: b.order,
+          name: b.name,
+          durationMin: b.durationMin,
+          category: b.category,
+          objective: b.objective,
+          intensity: b.intensity,
+          players: b.players,
+          space: b.space,
+          material: b.material,
+          notes: b.notes,
+          exerciseName: b.exercise?.name ?? null,
+        })),
+      };
+    });
   }
 
   /**

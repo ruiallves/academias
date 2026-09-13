@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { createPortal } from "react-dom";
-import { Briefcase, Check, ChevronDown, IdCard, Users } from "@/lib/icons";
+import { Briefcase, Check, ChevronDown, Dumbbell, IdCard, Users } from "@/lib/icons";
 import { AREA_LABEL, irParaApp, useAppAreas } from "@/lib/app-contexts";
 import { useMobile } from "@/lib/viewport";
 import { cx } from "./primitives";
@@ -46,6 +46,7 @@ import { cx } from "./primitives";
 /** Para onde se pode ir. O Staff é onde já se está; entra na folha como o item aceso. */
 const DESTINOS = [
   { type: "FAMILY", icon: Users },
+  { type: "ATHLETE", icon: Dumbbell },
   { type: "MEMBER", icon: IdCard },
 ] as const;
 

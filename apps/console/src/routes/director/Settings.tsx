@@ -6,6 +6,7 @@ import { CartaoDeSocioPanel } from "@/components/CartaoDeSocio";
 import { DepartmentDialog } from "@/components/DepartmentDialog";
 import { DeleteAcademyPanel } from "@/components/DeleteAcademyPanel";
 import { IdentityPanel } from "@/components/IdentityPanel";
+import { ContratoPanel } from "@/components/ContratoPanel";
 import { LegalPanel } from "@/components/LegalPanel";
 import { SportsPanel } from "@/components/SportsPanel";
 /*
@@ -94,6 +95,9 @@ export default function Settings() {
             Estava num diálogo da página dos sócios — ver `CartaoDeSocioPanel`.
           */}
           <CartaoDeSocioPanel mayWrite={maySettings} />
+
+          {/* O que o clube contratou — e o botão de assinar, para quem o representa. */}
+          <ContratoPanel />
 
           {/* O que está em vigor e o que esta conta (e o clube) já aceitou. Só leitura. */}
           <LegalPanel />

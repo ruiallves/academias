@@ -18,7 +18,16 @@ const TONE: Record<AcademyStatus, "neutral" | "ok" | "warn" | "risk" | "signal">
   CANCELLED: "neutral",
 };
 
-type Filter = "todas" | AcademyStatus;
+/**
+ * Os três estados por que se olha para esta lista.
+ *
+ * Eram seis, um por estado do ciclo de vida, e cinco deles respondiam a uma
+ * pergunta que ninguém faz aqui: a diferença entre "a montar", "em avaliação" e
+ * "em falta" lê-se na coluna Estado, linha a linha, e quem precisa mesmo de
+ * separar por aí procura pelo nome. O que se faz todos os dias é outra coisa —
+ * ver a carteira viva, e de vez em quando ir ver quem saiu.
+ */
+type Filter = "todas" | "sem-canceladas" | "canceladas";
 
 /**
  * A lista de clientes.
@@ -33,7 +42,14 @@ type Filter = "todas" | AcademyStatus;
 export default function Academies({ me }: { me: Me }) {
   const { data, loading, error, reload } = useApi<Academy[]>("/academies");
   const [params, setParams] = useSearchParams();
-  const [filter, setFilter] = useState<Filter>("todas");
+  /*
+   * Por omissão, sem as canceladas.
+   *
+   * Uma academia cancelada não é um cliente — é histórico. Com ela na lista por
+   * omissão, a contagem do topo mentia e as canceladas ficavam a ocupar linhas
+   * na tabela que se usa para decidir o dia. Continuam a um clique.
+   */
+  const [filter, setFilter] = useState<Filter>("sem-canceladas");
   const [query, setQuery] = useState("");
   const [creating, setCreating] = useState(false);
   const [gerir, setGerir] = useState<Academy | null>(null);
@@ -64,9 +80,20 @@ export default function Academies({ me }: { me: Me }) {
   const rows = useMemo(() => {
     const q = query.trim().toLowerCase();
     return (data ?? [])
-      .filter((a) => (filter === "todas" ? true : a.status === filter))
+      .filter((a) => {
+        /*
+         * A academia destacada passa sempre.
+         *
+         * Vem de um alerta clicado na Visão geral; se o filtro a escondesse, o
+         * alerta levava a uma lista onde a linha não estava — e o problema
+         * parecia da aplicação, não do filtro.
+         */
+        if (highlight === a.id) return true;
+        if (filter === "todas") return true;
+        return filter === "canceladas" ? a.status === "CANCELLED" : a.status !== "CANCELLED";
+      })
       .filter((a) => (q ? a.name.toLowerCase().includes(q) || a.slug.includes(q) : true));
-  }, [data, filter, query]);
+  }, [data, filter, query, highlight]);
 
   /*
    * O esqueleto é para a **primeira** leitura, não para as seguintes.
@@ -79,13 +106,24 @@ export default function Academies({ me }: { me: Me }) {
   if (loading && !data) return <Skeleton />;
   if (error && !data) return <Failed message={error} onRetry={reload} />;
 
-  const counts = (s: AcademyStatus) => (data ?? []).filter((a) => a.status === s).length;
+  const canceladas = (data ?? []).filter((a) => a.status === "CANCELLED").length;
+  const vivas = (data ?? []).length - canceladas;
+  const contagem: Record<Filter, number> = {
+    todas: data?.length ?? 0,
+    "sem-canceladas": vivas,
+    canceladas,
+  };
   // `SUPPORT` acompanha clientes; não os cria. A diferença entre ajudar e decidir.
   const mayCreate = me.role === "OWNER" || me.role === "ADMIN";
 
   return (
     <>
-      <PageHeader title="Academias" subtitle={`${data?.length ?? 0} clientes`}>
+      {/* A contagem do topo é a carteira viva; as canceladas ficam ao lado, sem
+          entrar na conta — somá-las inflacionava o número que se olha primeiro. */}
+      <PageHeader
+        title="Academias"
+        subtitle={`${vivas} ${vivas === 1 ? "cliente" : "clientes"}${canceladas > 0 ? ` · ${canceladas} canceladas` : ""}`}
+      >
         {mayCreate && (
           <button type="button" onClick={() => setCreating(true)} className="ctl-primary">
             <Plus className="size-3.5" strokeWidth={2} />
@@ -119,12 +157,12 @@ export default function Academies({ me }: { me: Me }) {
       <Panel>
         <div className="flex flex-wrap items-center gap-2 border-b border-line px-4 py-2.5">
           <div className="flex rounded-[var(--radius-control)] border border-line p-0.5">
-            {([["todas", "Todas"], ["ACTIVE", "Ativas"], ["TRIAL", "Avaliação"], ["SETUP", "A montar"], ["PAST_DUE", "Em falta"], ["CANCELLED", "Canceladas"]] as const).map(
+            {([["todas", "Todas"], ["sem-canceladas", "Sem canceladas"], ["canceladas", "Canceladas"]] as const).map(
               ([value, label]) => (
                 <button
                   key={value}
                   type="button"
-                  onClick={() => setFilter(value as Filter)}
+                  onClick={() => setFilter(value)}
                   aria-pressed={filter === value}
                   className={cx(
                     "rounded-[calc(var(--radius-control)-2px)] px-2.5 py-1 text-meta font-medium transition-colors duration-[120ms]",
@@ -132,9 +170,7 @@ export default function Academies({ me }: { me: Me }) {
                   )}
                 >
                   {label}
-                  {value !== "todas" && counts(value as AcademyStatus) > 0 && (
-                    <span className="ml-1.5 tabular opacity-60">{counts(value as AcademyStatus)}</span>
-                  )}
+                  {contagem[value] > 0 && <span className="ml-1.5 tabular opacity-60">{contagem[value]}</span>}
                 </button>
               ),
             )}

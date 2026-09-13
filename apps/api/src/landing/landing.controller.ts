@@ -87,6 +87,8 @@ export class LandingController {
      * que muda é só o parâmetro e a chave onde fica guardado.
      */
     @Query("socio") socio?: string,
+    /** O convite de **atleta**, quando se chega por `/atleta/:token`. */
+    @Query("atleta") atleta?: string,
   ) {
     const academy = await this.landing.findBySlug(slug);
 
@@ -122,7 +124,8 @@ export class LandingController {
       familyUrl:
         `${familyBase}/?academia=${encodeURIComponent(slug)}` +
         (convite ? `&convite=${encodeURIComponent(convite)}` : "") +
-        (socio ? `&socio=${encodeURIComponent(socio)}` : ""),
+        (socio ? `&socio=${encodeURIComponent(socio)}` : "") +
+        (atleta ? `&atleta=${encodeURIComponent(atleta)}` : ""),
       // Só a presença do token importa aqui, não o valor: é o que diz à página que
       // quem chegou é um pai com um convite, e não alguém que encontrou o link do
       // clube por outra via. Sem isto, abrir o link num computador — o pai a testar
@@ -135,7 +138,7 @@ export class LandingController {
         pelo NIF" para quem não tem filho nenhum no clube. Ver `invite` em
         `renderLanding`.
       */
-      invite: convite ? ("family" as const) : socio ? ("member" as const) : undefined,
+      invite: convite ? ("family" as const) : socio ? ("member" as const) : atleta ? ("athlete" as const) : undefined,
       consoleUrl,
       // A anon key é pública por desenho — é a que o browser usa para autenticar.
       // A service-role nunca sai do servidor.

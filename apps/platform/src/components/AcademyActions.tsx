@@ -61,6 +61,21 @@ export function AcademyActions({
   const [subStatus, setSubStatus] = useState<SubStatus>((academy.subscriptionStatus as SubStatus) ?? "TRIALING");
   const [planoGravado, setPlanoGravado] = useState(false);
 
+  /*
+   * As condições comerciais — o que o clube vai assinar.
+   *
+   * Mudar o plano passou a ser contratar: o responsável do clube recebe as
+   * condições por email e assina-as na consola. Por isso estão aqui, ao lado da
+   * escolha do plano, e não num ecrã à parte — são a mesma decisão.
+   */
+  const [anual, setAnual] = useState(false);
+  const [inicio, setInicio] = useState(() => new Date().toISOString().slice(0, 10));
+  const [minimo, setMinimo] = useState("12");
+  const [renovacao, setRenovacao] = useState("");
+  const [notas, setNotas] = useState("");
+  const [emitir, setEmitir] = useState(true);
+  const [ordem, setOrdem] = useState<{ enviado: boolean; motivo: string | null } | null>(null);
+
   useEffect(() => {
     apiGet<Plan[]>("/plans")
       .then(setPlans)
@@ -73,6 +88,7 @@ export function AcademyActions({
     return () => document.removeEventListener("keydown", onKey);
   }, [onClose]);
 
+  const planoEscolhido = plans.find((p) => p.id === planId) ?? null;
   const cancelada = academy.status === "CANCELLED";
   const mayDelete = me.role === "OWNER";
 
@@ -88,7 +104,30 @@ export function AcademyActions({
     setError(null);
     setPlanoGravado(false);
     try {
-      await apiPatch(`/academies/${academy.id}/plano`, { planId, status: subStatus });
+      /*
+       * As condições só vão quando se quer emitir contrato.
+       *
+       * Corrigir um estado — pôr em atraso, cancelar — não é uma renegociação, e
+       * não devia pôr um email de assinatura no telemóvel do presidente. Sem
+       * `billingPeriod`, o servidor grava o plano e não emite nada.
+       */
+      const r = await apiPatch<{ ordem: { enviado: boolean; motivo: string | null } | null }>(
+        `/academies/${academy.id}/plano`,
+        {
+          planId,
+          status: subStatus,
+          ...(emitir
+            ? {
+                billingPeriod: anual ? "ANNUAL" : "MONTHLY",
+                startsOn: inicio,
+                minimumMonths: Number(minimo) || 12,
+                ...(renovacao.trim() ? { renewalNote: renovacao.trim() } : {}),
+                ...(notas.trim() ? { notes: notas.trim() } : {}),
+              }
+            : {}),
+        },
+      );
+      setOrdem(r?.ordem ?? null);
       setPlanoGravado(true);
       onDone();
     } catch (e) {
@@ -131,16 +170,27 @@ export function AcademyActions({
       <div
         role="dialog"
         aria-modal="true"
-        className="w-full max-w-[440px] overflow-hidden rounded-[var(--radius-panel)] border border-line bg-surface shadow-[var(--shadow-pop)]"
+        /*
+          Tecto e coluna.
+
+          Sem altura máxima, um diálogo mais alto do que o ecrã cresce para fora
+          dele nos dois sentidos — e o fundo é `fixed`, por isso não há nada que
+          role. Foi o que aconteceu quando as condições comerciais se juntaram ao
+          plano. Agora o cabeçalho fica, e o corpo rola por dentro.
+
+          `dvh` e não `vh`: no telemóvel a barra do browser entra e sai, e `vh`
+          conta com ela sempre escondida — o rodapé ficava por baixo dela.
+        */
+        className="flex max-h-[calc(100dvh-2rem)] w-full max-w-[440px] flex-col overflow-hidden rounded-[var(--radius-panel)] border border-line bg-surface shadow-[var(--shadow-pop)] max-md:max-h-[90dvh]"
       >
-        <header className="flex items-center justify-between gap-3 border-b border-line px-5 py-3.5">
+        <header className="flex shrink-0 items-center justify-between gap-3 border-b border-line px-5 py-3.5">
           <h2 className="text-panel text-ink">{academy.name}</h2>
           <button type="button" onClick={onClose} className="ctl-ghost size-8 justify-center px-0" aria-label="Fechar">
             <X className="size-4" strokeWidth={1.75} />
           </button>
         </header>
 
-        <div className="space-y-4 p-5">
+        <div className="min-h-0 flex-1 space-y-4 overflow-y-auto p-5">
           {/* --- Plano e subscrição --------------------------------------- */}
           <div className="rounded-[var(--radius-control)] border border-line p-3.5">
             <div className="flex items-baseline justify-between gap-3">
@@ -193,6 +243,112 @@ export function AcademyActions({
                   </p>
                 )}
 
+                {/* --- As condições comerciais ---------------------------- */}
+                <div className="mt-3 rounded-[var(--radius-control)] border border-line bg-sunken/40 p-3">
+                  <label className="flex items-start gap-2.5">
+                    <input
+                      type="checkbox"
+                      checked={emitir}
+                      onChange={(e) => setEmitir(e.target.checked)}
+                      className="mt-0.5 size-3.5 shrink-0 accent-[var(--color-signal)]"
+                    />
+                    <span className="min-w-0">
+                      <span className="block text-body font-medium text-ink">Emitir condições e pedir assinatura</span>
+                      <span className="block text-[11px] leading-relaxed text-ink-3">
+                        O responsável do clube recebe as condições por email e assina-as na consola. Desliga para
+                        corrigir só o estado da subscrição.
+                      </span>
+                    </span>
+                  </label>
+
+                  {emitir && (
+                    <>
+                      <div className="mt-3 flex flex-wrap gap-1.5">
+                        {[
+                          { v: false, label: "Mensal", hint: "preço de tabela" },
+                          { v: true, label: "Anual", hint: "menos 10%" },
+                        ].map((o) => (
+                          <button
+                            key={o.label}
+                            type="button"
+                            onClick={() => setAnual(o.v)}
+                            className={cx(
+                              "rounded-[var(--radius-control)] border px-2.5 py-1.5 text-left transition-colors duration-[120ms]",
+                              anual === o.v ? "border-signal bg-signal-soft/40" : "border-line hover:bg-sunken",
+                            )}
+                          >
+                            <span className="block text-body text-ink">{o.label}</span>
+                            <span className="block text-[11px] text-ink-3">{o.hint}</span>
+                          </button>
+                        ))}
+                      </div>
+
+                      {/*
+                        O preço que vai no contrato, à vista antes de gravar.
+
+                        O desconto anual é uma regra do servidor; isto é a mesma
+                        conta feita aqui para se ver o número — e é por isso que
+                        o rótulo diz de onde vem.
+                      */}
+                      {planoEscolhido && (
+                        <p className="mt-2 text-meta text-ink-2">
+                          O clube paga{" "}
+                          <strong className="font-semibold text-ink tabular">
+                            {euros(anual ? Math.round(planoEscolhido.amountCents * 12 * 0.9) : planoEscolhido.amountCents)}
+                          </strong>{" "}
+                          {anual ? "por ano" : "por mês"}
+                          {anual && <span className="text-ink-3"> ({euros(planoEscolhido.amountCents)}/mês de tabela)</span>}
+                        </p>
+                      )}
+
+                      <div className="mt-3 grid grid-cols-2 gap-2">
+                        <label className="block">
+                          <span className="mb-1 block text-meta font-medium text-ink">Data de início</span>
+                          <input
+                            type="date"
+                            value={inicio}
+                            onChange={(e) => setInicio(e.target.value)}
+                            className="h-9 w-full rounded-[var(--radius-control)] border border-line bg-surface px-2 text-body text-ink outline-none focus:border-line-strong"
+                          />
+                        </label>
+                        <label className="block">
+                          <span className="mb-1 block text-meta font-medium text-ink">Período mínimo (meses)</span>
+                          <input
+                            inputMode="numeric"
+                            value={minimo}
+                            onChange={(e) => setMinimo(e.target.value.replace(/\D/g, "").slice(0, 2))}
+                            className="h-9 w-full rounded-[var(--radius-control)] border border-line bg-surface px-2 text-body text-ink outline-none focus:border-line-strong tabular"
+                          />
+                        </label>
+                      </div>
+
+                      <label className="mt-2 block">
+                        <span className="mb-1 block text-meta font-medium text-ink">
+                          Renovação <span className="font-normal text-ink-4">— vazio escreve a frase por omissão</span>
+                        </span>
+                        <input
+                          value={renovacao}
+                          onChange={(e) => setRenovacao(e.target.value)}
+                          placeholder={`Renova ${anual ? "anualmente" : "mensalmente"} após o período mínimo.`}
+                          className="h-9 w-full rounded-[var(--radius-control)] border border-line bg-surface px-2 text-body text-ink outline-none placeholder:text-ink-4 focus:border-line-strong"
+                        />
+                      </label>
+
+                      <label className="mt-2 block">
+                        <span className="mb-1 block text-meta font-medium text-ink">
+                          Observações <span className="font-normal text-ink-4">— opcional</span>
+                        </span>
+                        <input
+                          value={notas}
+                          onChange={(e) => setNotas(e.target.value)}
+                          placeholder="Desconto de lançamento acordado com a direcção."
+                          className="h-9 w-full rounded-[var(--radius-control)] border border-line bg-surface px-2 text-body text-ink outline-none placeholder:text-ink-4 focus:border-line-strong"
+                        />
+                      </label>
+                    </>
+                  )}
+                </div>
+
                 <div className="mt-3">
                   <span className="mb-1.5 block text-meta font-medium text-ink">Estado da subscrição</span>
                   <div className="flex flex-wrap gap-1.5">
@@ -228,7 +384,25 @@ export function AcademyActions({
                   >
                     {busy ? "A gravar…" : "Guardar plano"}
                   </button>
-                  {planoGravado && <span className="text-meta text-[#1f7a45]">Gravado.</span>}
+                  {planoGravado && (
+                    <span
+                      className={
+                        ordem && !ordem.enviado ? "text-meta text-[#a3521a]" : "text-meta text-[#1f7a45]"
+                      }
+                    >
+                      {/*
+                        Gravar o plano e enviar as condições são duas coisas, e o
+                        aviso diz as duas. Um "Gravado." sozinho deixava quem
+                        carregou sem saber se o presidente foi notificado — e a
+                        pergunta seguinte era um telefonema.
+                      */}
+                      {!ordem
+                        ? "Gravado."
+                        : ordem.enviado
+                          ? "Gravado. Condições enviadas para assinatura."
+                          : `Gravado. Condições emitidas, mas por enviar${ordem.motivo ? ` — ${ordem.motivo}` : ""}`}
+                    </span>
+                  )}
                 </div>
               </>
             )}

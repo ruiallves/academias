@@ -9,11 +9,12 @@ import { refreshPush } from "@/lib/push";
 import { useFresco } from "@/lib/fresco";
 import { chooseContext, loadContexts, useContexts } from "@/lib/contexts";
 import { consoleUrl, irParaConsola } from "@/lib/handoff";
-import { readMemberInvite } from "@/lib/invite";
+import { readAthleteInvite, readMemberInvite } from "@/lib/invite";
 import Entrar from "@/screens/Entrar";
 import SocioApp from "@/screens/socio/SocioApp";
 import EscolherArea from "@/screens/socio/EscolherArea";
 import ConviteSocio from "@/screens/socio/ConviteSocio";
+import ConviteAtleta from "@/screens/ConviteAtleta";
 import { AreaSwitch } from "@/screens/socio/AreaSwitch";
 import { Avatar, cx } from "@/ui";
 import { ClubMark } from "@/ClubMark";
@@ -92,7 +93,7 @@ export default function App() {
    * Presença só no contexto de família: o endpoint passa pelo guard, e uma
    * conta só-de-sócio não tem membership — cada batida seria um 403 de ruído.
    */
-  usePresence(Boolean(session) && areaActiva === "FAMILY");
+  usePresence(Boolean(session) && (areaActiva === "FAMILY" || areaActiva === "ATHLETE"));
 
   useEffect(() => {
     if (!readToken()) return;
@@ -123,6 +124,9 @@ export default function App() {
        da app só existe depois de haver conta. */
     const conviteSocio = readMemberInvite();
     if (conviteSocio) return <ConviteSocio token={conviteSocio} onDone={() => void loadContexts()} />;
+    /* E quem chegou pelo convite de atleta — o email da ficha, a palavra-passe, e entra. */
+    const conviteAtleta = readAthleteInvite();
+    if (conviteAtleta) return <ConviteAtleta token={conviteAtleta} onDone={() => void loadContexts()} />;
     return <Entrar onEntered={() => void resetAndLoad()} />;
   }
 
@@ -166,7 +170,7 @@ function Dentro({
   setOnboarded,
   pathname,
 }: {
-  areaActiva: "FAMILY" | "MEMBER" | "STAFF" | null;
+  areaActiva: "FAMILY" | "ATHLETE" | "MEMBER" | "STAFF" | null;
   contexts: NonNullable<ReturnType<typeof useContexts>["contexts"]>;
   session: NonNullable<ReturnType<typeof useSession>>;
   store: ReturnType<typeof useStore>;
@@ -181,7 +185,12 @@ function Dentro({
    * — e, pior, um recarregamento em ciclo (ver `lib/http.ts`).
    */
   useEffect(() => {
-    if (areaActiva === "FAMILY" && readToken()) void load();
+    /*
+     * A área de atleta é a mesma árvore com outro chapéu: o `x-app: athlete`
+     * (ver `lib/area.ts`) faz o servidor estreitar tudo ao próprio, e o resto
+     * da app lê `store.atleta` onde o texto ou uma secção mudam.
+     */
+    if ((areaActiva === "FAMILY" || areaActiva === "ATHLETE") && readToken()) void load();
   }, [areaActiva]);
 
   /*
@@ -192,7 +201,7 @@ function Dentro({
    * a consola. Passar `null` desliga o mecanismo sem partir a regra dos hooks,
    * que é o que obriga a chamá-lo aqui em cima, antes das saídas.
    */
-  useFresco(areaActiva === "FAMILY" ? reload : null);
+  useFresco(areaActiva === "FAMILY" || areaActiva === "ATHLETE" ? reload : null);
 
   /* Mais do que um contexto e nenhum vestido: "como queres continuar?" */
   if (areaActiva === null) return <EscolherArea name={session.name ?? ""} />;
@@ -223,7 +232,7 @@ function Dentro({
    * um ecrã de avaria por causa de uma coisa que não é avaria nenhuma.
    */
   if (!ehFamilia(store.role)) return <ContaErrada />;
-  if (!value) return <NoChildren />;
+  if (!value) return <NoChildren atleta={areaActiva === "ATHLETE"} />;
 
   /*
    * A apresentação corre **depois** do bootstrap, não antes: fala pelo nome da
@@ -250,7 +259,8 @@ function Dentro({
             <Route path="/agenda" element={<Agenda />} />
             {/* O treino ou o jogo, por dentro — ver `screens/Evento`. */}
             <Route path="/evento/:kind/:id" element={<Evento />} />
-            <Route path="/pagamentos" element={<Payments />} />
+            {/* A área de atleta não tem pagamentos: o endereço cai no início. */}
+            <Route path="/pagamentos" element={store.atleta ? <Navigate to="/" replace /> : <Payments />} />
             <Route path="/atleta" element={<Athlete />} />
             <Route path="/notificacoes" element={<Notifications />} />
             <Route path="/perfil" element={<Profile />} />
@@ -453,8 +463,23 @@ function ContaErrada({ motivo }: { motivo?: string }) {
  * ver. "Entrar com outra conta" serve quem entrou na conta errada, que é o caso
  * em que se ficava preso.
  */
-function NoChildren() {
+function NoChildren({ atleta = false }: { atleta?: boolean }) {
   const { guardian } = useStore();
+
+  /* Uma conta de atleta sem ficha: o clube desligou-a, ou a ficha saiu. */
+  if (atleta) {
+    return (
+      <Gate title="Esta conta não está ligada a nenhuma ficha" action={<Retry label="Verificar outra vez" />}>
+        O clube desligou a tua conta da ficha de atleta, ou a ficha deixou de existir. Fala com a secretaria — um convite
+        novo volta a ligá-la.
+        {guardian.email && (
+          <span className="block pt-2 text-ink-2">
+            Sessão iniciada como <span className="font-semibold">{guardian.email}</span>.
+          </span>
+        )}
+      </Gate>
+    );
+  }
 
   return (
     <Gate title="Ainda não há atletas associados" action={<Retry label="Verificar outra vez" />}>
@@ -623,6 +648,13 @@ const TABS = [
 function TabBar() {
   const store = useStore();
   const owing = store.payments.some((p) => p.status === "overdue" || p.status === "pending");
+  /*
+   * O atleta não paga: sem o separador "Pagar", e o do percurso deixa de se
+   * chamar "Atleta" — para o próprio, é o seu percurso, não "o atleta".
+   */
+  const tabs = store.atleta
+    ? TABS.filter((t) => t.to !== "/pagamentos").map((t) => (t.to === "/atleta" ? { ...t, label: "Percurso" } : t))
+    : TABS;
 
   return (
     <nav className="pointer-events-none fixed inset-x-0 bottom-0 z-30 flex justify-center pb-[calc(14px+env(safe-area-inset-bottom))]">
@@ -640,7 +672,7 @@ function TabBar() {
         className="pointer-events-auto flex items-center gap-1 rounded-full bg-ink/95 p-1.5"
         style={{ boxShadow: "var(--shadow-float)" }}
       >
-        {TABS.map(({ to, label, icon: Icon }) => (
+        {tabs.map(({ to, label, icon: Icon }) => (
           <li key={to}>
             <NavLink
               to={to}

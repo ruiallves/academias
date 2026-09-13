@@ -4,7 +4,8 @@ import { PageHeader } from "@/components/Shell";
 import { SearchInput, Segmented } from "@/components/filters";
 import { DataTable, Empty, Loading, Monogram, Panel, Pill, RowLink, cx, type Column, type Tone } from "@/components/primitives";
 import { Dialog, DialogField, dialogInputClass } from "@/components/Dialog";
-import { Download, ExternalLink, Home, Plus, Send, Settings, Tag, Trash2, Upload } from "@/lib/icons";
+import { Check, Copy, Download, ExternalLink, Home, Plus, QrCode, Send, Settings, Tag, Trash2, Upload } from "@/lib/icons";
+import { descarregarCartazDeAdesao, descarregarQrDeAdesao, linkDeAdesao, qrDeAdesao } from "@/lib/adesao";
 import { can } from "@/lib/permissions";
 import { useSession } from "@/session";
 import { BulkBar, BulkDeleteDialog } from "@/components/BulkDelete";
@@ -457,8 +458,117 @@ function PageDialog({ mayWrite, onClose }: { mayWrite: boolean; onClose: () => v
         </button>
       }
     >
+      <EnderecoDaPagina />
       <CopyForm mayWrite={mayWrite} />
     </Dialog>
+  );
+}
+
+/**
+ * Como é que as pessoas chegam à página — o link e o código.
+ *
+ * ## Porque é que isto vive aqui
+ *
+ * Porque é a mesma pergunta que o resto do diálogo responde: *o que quem chega
+ * ao clube lê*. O cabeçalho da página já leva seis acções e não levava uma
+ * sétima; e um código escondido num menu é um código que ninguém sabe que
+ * existe. Aqui está ao lado da frase que ele vai levar as pessoas a ler.
+ *
+ * O código aparece **desenhado**, e não atrás de um botão "gerar": quem abre
+ * isto quer ver se ele existe antes de decidir imprimi-lo. Ver `lib/adesao.ts`
+ * para o porquê dos dois formatos.
+ */
+function EnderecoDaPagina() {
+  const link = linkDeAdesao();
+  const [qr, setQr] = useState<string | null>(null);
+  const [copiado, setCopiado] = useState(false);
+  const [aGerar, setAGerar] = useState<null | "png" | "pdf">(null);
+  const [erro, setErro] = useState<string | null>(null);
+
+  useEffect(() => {
+    let vivo = true;
+    // Pequeno: é uma pré-visualização. O que se descarrega é gerado de novo, grande.
+    qrDeAdesao(320)
+      .then((d) => vivo && setQr(d))
+      .catch(() => vivo && setQr(null));
+    return () => {
+      vivo = false;
+    };
+  }, []);
+
+  async function copiar() {
+    try {
+      await navigator.clipboard.writeText(link);
+      setCopiado(true);
+      setTimeout(() => setCopiado(false), 2000);
+    } catch {
+      /* sem permissão da área de transferência: o endereço está à vista para copiar à mão */
+    }
+  }
+
+  async function descarregar(qual: "png" | "pdf") {
+    if (aGerar) return;
+    setAGerar(qual);
+    setErro(null);
+    try {
+      await (qual === "png" ? descarregarQrDeAdesao() : descarregarCartazDeAdesao());
+    } catch (e) {
+      setErro(e instanceof Error ? e.message : "Não foi possível gerar o ficheiro.");
+    } finally {
+      setAGerar(null);
+    }
+  }
+
+  return (
+    <div className="space-y-3 border-b border-line px-5 py-4">
+      <DialogField label="O endereço da página" hint="público — para partilhar">
+        <div className="flex gap-2">
+          <input readOnly value={link} className={cx(dialogInputClass, "flex-1 font-mono text-meta")} />
+          <button type="button" className="ctl-outline shrink-0" onClick={() => void copiar()}>
+            {copiado ? (
+              <>
+                <Check className="size-3.5" strokeWidth={2} /> Copiado
+              </>
+            ) : (
+              <>
+                <Copy className="size-3.5" strokeWidth={1.75} /> Copiar
+              </>
+            )}
+          </button>
+        </div>
+      </DialogField>
+
+      <div className="flex items-start gap-4 rounded-[var(--radius-control)] border border-line p-3">
+        {/* Fundo branco sempre: um QR desenhado sobre o creme da consola perde
+            contraste, e é a mesma imagem que vai para o cartaz. */}
+        <div className="flex size-[104px] shrink-0 items-center justify-center rounded-[8px] bg-white p-1">
+          {qr ? (
+            <img src={qr} alt={`Código QR da página de inscrição de ${academy.shortName}`} className="size-full" />
+          ) : (
+            <QrCode className="size-8 text-ink-4" strokeWidth={1.5} />
+          )}
+        </div>
+
+        <div className="min-w-0 flex-1">
+          <p className="text-body font-medium text-ink">Código QR</p>
+          <p className="mt-0.5 text-meta leading-relaxed text-ink-3">
+            Leva quem o apontar directamente a esta página. O cartaz sai em A4 — o emblema, o assunto e o código,
+            para imprimir e pendurar no clube.
+          </p>
+          <div className="mt-2.5 flex flex-wrap gap-2">
+            <button type="button" className="ctl-outline" disabled={aGerar !== null} onClick={() => void descarregar("pdf")}>
+              <Download className="size-3.5" strokeWidth={1.75} />
+              {aGerar === "pdf" ? "A gerar…" : "Cartaz A4"}
+            </button>
+            <button type="button" className="ctl-outline" disabled={aGerar !== null} onClick={() => void descarregar("png")}>
+              <QrCode className="size-3.5" strokeWidth={1.75} />
+              {aGerar === "png" ? "A gerar…" : "Só o código (PNG)"}
+            </button>
+          </div>
+          {erro && <p className="mt-2 text-meta text-risk">{erro}</p>}
+        </div>
+      </div>
+    </div>
   );
 }
 

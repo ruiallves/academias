@@ -396,7 +396,12 @@ export const ROLE_PERMISSIONS: Record<Role, Permission[]> = {
    * publicado, nunca um rascunho do treinador).
    */
   GUARDIAN: ["athlete:read", "team:read", "calendar:read", "billing:read", "comms:read", "evaluation:read", "report:read", "clinical:status", "clinical:read"],
-  ATHLETE: ["team:read", "calendar:read", "evaluation:read", "report:read", "clinical:status", "clinical:read"],
+  /*
+   * O atleta lê a própria ficha (`athlete:read`, estreitado ao próprio pelo
+   * âmbito) e os avisos do clube (`comms:read`). Sem `billing:read`, de
+   * propósito: as mensalidades são da família.
+   */
+  ATHLETE: ["athlete:read", "team:read", "calendar:read", "comms:read", "evaluation:read", "report:read", "clinical:status", "clinical:read"],
 };
 
 /**

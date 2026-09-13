@@ -27,6 +27,8 @@ export {
   Eye,
   /* Sócios: o cartão é o que o clube emite e o sócio guarda. */
   IdCard,
+  /* O código que leva à página de inscrição — ver `lib/adesao.ts`. */
+  QrCode,
   /* As áreas da app do clube: a pasta é o staff, ao lado de `Users` (família) e
      `IdCard` (sócio) — os mesmos três ícones que a app usa no seu switcher. */
   Briefcase,

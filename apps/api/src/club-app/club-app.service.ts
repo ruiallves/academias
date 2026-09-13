@@ -136,7 +136,9 @@ export class ClubAppService {
     const memberships = await this.auth.membershipsOf(eu.authId);
     const daAcademia = memberships.filter((m) => m.academy_id === academyId);
     const deFamilia = (role: string) => role === "GUARDIAN" || role === "ATHLETE";
-    const familia = daAcademia.some((m) => deFamilia(m.role));
+    const familia = daAcademia.some((m) => m.role === "GUARDIAN");
+    /* O próprio atleta — a quarta área. Uma membership de atleta, uma ficha. */
+    const atleta = daAcademia.some((m) => m.role === "ATHLETE");
     /*
      * Staff é qualquer membership que não seja de família — presidente,
      * treinador, médico, observador. A app não desenha essa vista: entrega a
@@ -155,7 +157,7 @@ export class ClubAppService {
        * Reclama-se a ficha agora — é este o momento em que "abro a app e a
        * área de sócio está lá" acontece. Ver `member-account-link.ts`.
        */
-      if (!member && eu.userId && (familia || staff)) {
+      if (!member && eu.userId && (familia || atleta || staff)) {
         if (await reclamarFichaPelaConta(db, eu.userId)) {
           member = await db.member.findFirst({ where: { userId: eu.userId } });
         }
@@ -163,6 +165,7 @@ export class ClubAppService {
 
       const contexts: Record<string, unknown>[] = [];
       if (familia) contexts.push({ type: "FAMILY" });
+      if (atleta) contexts.push({ type: "ATHLETE" });
       if (member) {
         contexts.push({
           type: "MEMBER",

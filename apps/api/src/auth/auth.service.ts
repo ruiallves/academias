@@ -35,7 +35,7 @@ type MembershipRow = {
  * precisar de uma membership; o cabeçalho só diz qual das que já tem é que se
  * aplica agora. Ver `escolherMembership`.
  */
-export type AppKind = "family" | "console";
+export type AppKind = "family" | "athlete" | "console";
 
 /**
  * Qual das memberships desta pessoa nesta academia é que vale para este pedido.
@@ -65,11 +65,23 @@ function escolherMembership(memberships: MembershipRow[], app?: AppKind): Member
   const familia = (role: Role) => role === "GUARDIAN" || role === "ATHLETE";
 
   if (app === "family") {
-    const daFamilia = memberships.find((m) => familia(m.role));
+    /*
+     * Encarregado primeiro, atleta como recurso: a área de família de um
+     * adulto que é as duas coisas mostra-lhe os filhos, não a própria ficha.
+     * A área de atleta pede `athlete` e não cai aqui.
+     */
+    const daFamilia =
+      memberships.find((m) => m.role === "GUARDIAN") ?? memberships.find((m) => m.role === "ATHLETE");
     if (!daFamilia) {
       throw new ForbiddenException("Esta conta não é de encarregado nesta academia.");
     }
     return daFamilia;
+  }
+
+  if (app === "athlete") {
+    const deAtleta = memberships.find((m) => m.role === "ATHLETE");
+    if (!deAtleta) throw new ForbiddenException("Esta conta não é de atleta nesta academia.");
+    return deAtleta;
   }
 
   if (app === "console") return memberships.find((m) => !familia(m.role)) ?? memberships[0];
@@ -283,11 +295,16 @@ export class AuthService {
       }
 
       if (role === "GUARDIAN" || role === "ATHLETE") {
-        const links = await db.guardianLink.findMany({
-          where: { membershipId },
-          select: { athleteId: true },
-        });
-        const athleteIds = links.map((l) => l.athleteId);
+        /*
+         * Os filhos, pelo vínculo de encarregado — ou o próprio, pela ficha de
+         * que esta conta é dona (`Athlete.accountMembershipId`). O resto do
+         * âmbito é o mesmo: um atleta é, para todos os efeitos de leitura, uma
+         * família de um só.
+         */
+        const athleteIds =
+          role === "ATHLETE"
+            ? (await db.athlete.findMany({ where: { accountMembershipId: membershipId }, select: { id: true } })).map((a) => a.id)
+            : (await db.guardianLink.findMany({ where: { membershipId }, select: { athleteId: true } })).map((l) => l.athleteId);
 
         /*
          * Uma família tem **dois** âmbitos, e são coisas diferentes.

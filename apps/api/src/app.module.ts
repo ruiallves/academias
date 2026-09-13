@@ -24,6 +24,8 @@ import { InvitesService } from "./invites/invites.service";
 import { MembersController, PublicMembersController } from "./members/members.controller";
 import { MembersService } from "./members/members.service";
 import { MemberFeesService } from "./members/member-fees.service";
+import { SubscriptionOrdersService } from "./subscription/subscription-orders.service";
+import { SubscriptionController } from "./subscription/subscription.controller";
 import { MemberInvitesService } from "./members/member-invites.service";
 import { PollsService } from "./members/polls.service";
 import { PollsController } from "./members/polls.controller";
@@ -58,6 +60,8 @@ import { ContactsService } from "./platform/contacts.service";
 import { AdminsController, AdminInvitePageController } from "./platform/admin-invites.controller";
 import { AdminInvitesService } from "./platform/admin-invites.service";
 import { FamilyInviteController, FamilySignupController } from "./family/family-invites.controller";
+import { AthleteInvitesController, AthleteSignupController } from "./academy/athlete-invites.controller";
+import { AthleteInvitesService } from "./academy/athlete-invites.service";
 import { FamilyInvitesService } from "./family/family-invites.service";
 import { FinanceController } from "./finance/finance.controller";
 import { InventoryController } from "./inventory/inventory.controller";
@@ -73,6 +77,7 @@ import { ClubLogoController } from "./storage/club-logo.controller";
 import { ClubLogoService } from "./storage/club-logo.service";
 import { StorageService } from "./storage/storage.service";
 import { ReportsService } from "./development/reports.service";
+import { NutritionService } from "./development/nutrition.service";
 import { SupabaseAccountsService } from "./auth/supabase-accounts.service";
 import { PasswordResetController } from "./auth/password-reset.controller";
 import { PasswordResetService } from "./auth/password-reset.service";
@@ -114,6 +119,7 @@ import { LegalAdminService } from "./legal/legal-admin.service";
     MailModule,
   ],
   controllers: [
+    SubscriptionController,
     BillingController,
     ClubAppController,
     EupagoWebhookController,
@@ -156,6 +162,8 @@ import { LegalAdminService } from "./legal/legal-admin.service";
     PhotosController,
     ClubLogoController,
     FamilySignupController,
+    AthleteInvitesController,
+    AthleteSignupController,
     // Público por construção — o token no URL é que autentica. Ver o ficheiro.
     ContactsCalendarController,
     // Público por construção — é o formulário de contacto do site de marketing.
@@ -188,6 +196,7 @@ import { LegalAdminService } from "./legal/legal-admin.service";
     ScoutingService,
     MembersService,
     MemberFeesService,
+    SubscriptionOrdersService,
     MemberInvitesService,
     PollsService,
     ScoutingVideoService,
@@ -211,11 +220,13 @@ import { LegalAdminService } from "./legal/legal-admin.service";
     ContactsService,
     AdminInvitesService,
     FamilyInvitesService,
+    AthleteInvitesService,
     EvaluationsService,
     PhotosService,
     ClubLogoService,
     StorageService,
     ReportsService,
+    NutritionService,
     SupabaseAccountsService,
     PasswordResetService,
     LegalAdminService,

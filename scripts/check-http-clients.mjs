@@ -62,6 +62,7 @@ const EXCEPCOES = [
   ["apps/family/src/lib/push.ts", "usa `getAccessToken()` e o slug da app; é o caminho da subscrição push"],
   ["apps/family/src/screens/Entrar.tsx", "convite de família: endpoints públicos, de quem ainda não tem conta"],
   ["apps/family/src/screens/socio/ConviteSocio.tsx", "convite de sócio: endpoints públicos, de quem ainda não tem conta — o mesmo caso do Entrar.tsx"],
+  ["apps/family/src/screens/ConviteAtleta.tsx", "convite de atleta: endpoints públicos, de quem ainda não tem conta — o mesmo caso do ConviteSocio.tsx"],
   [
     "apps/console/src/lib/app-contexts.ts",
     "handoff da consola para a app do clube: escreve a sessão **da outra app** na mesma origem. O `session.ts` da consola não sabe ler a chave da família, e é esse o ponto — são duas sessões, não uma lida por fora",

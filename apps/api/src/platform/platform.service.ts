@@ -6,6 +6,7 @@ import { PlatformPrisma } from "./platform.prisma";
 import { initialRoles, isPresidente } from "../roles/roles.service";
 import { shortNameOf } from "../common/short-name";
 import { MailClient } from "../mail/mail.client";
+import { SubscriptionOrdersService } from "../subscription/subscription-orders.service";
 import { academyOwnerInviteEmail } from "../mail/mail.templates";
 import type { StaffDepartment, SubscriptionStatus } from "@prisma/client";
 import type { PlatformAdminContext } from "./platform.guard";
@@ -74,6 +75,12 @@ export class PlatformService {
     private readonly config: ConfigService,
     private readonly mail: MailClient,
     private readonly presence: PresenceService,
+    /*
+     * As condições comerciais vivem noutro serviço porque têm dois donos: é a
+     * plataforma que as emite e é o clube que as assina, e o lado do clube não
+     * pode depender de nada que esteja atrás do `PlatformGuard`.
+     */
+    private readonly orders: SubscriptionOrdersService,
   ) {}
 
   /* ------------------------------------------------------------------------ */
@@ -242,6 +249,9 @@ export class PlatformService {
       },
     });
     if (!academy) throw new NotFoundException("Academia não encontrada");
+
+    /* As condições comerciais — o que foi emitido, e se já foi assinado. */
+    const ordens = await this.orders.doClube(id);
 
     const inicioDoMes = new Date();
     inicioDoMes.setDate(1);
@@ -431,6 +441,15 @@ export class PlatformService {
         /** Quantos períodos já emitiram — diz se cobram todos os meses ou nunca. */
         periods: new Set(charges.map((c) => c.period)).size,
       },
+      /**
+       * As condições comerciais: a que está por assinar e a última assinada.
+       *
+       * As duas, e não só a viva: quem abre a ficha de um clube quer saber o que
+       * ele tem contratado **e** se há um papel à espera de assinatura. Com uma
+       * só, um clube que já assinou e a quem se emitiu uma alteração parecia não
+       * ter contrato nenhum.
+       */
+      orders: ordens,
     };
   }
 
@@ -922,6 +941,13 @@ export class PlatformService {
     planId: string,
     status: SubscriptionStatus | undefined,
     ip?: string,
+    condicoes?: {
+      billingPeriod?: "MONTHLY" | "ANNUAL";
+      startsOn?: string;
+      minimumMonths?: number;
+      renewalNote?: string;
+      notes?: string;
+    },
   ) {
     const academy = await this.prisma.academy.findUnique({
       where: { id },
@@ -929,7 +955,10 @@ export class PlatformService {
     });
     if (!academy) throw new BadRequestException("Academia não encontrada");
 
-    const plan = await this.prisma.plan.findFirst({ where: { id: planId }, select: { id: true, name: true, isActive: true } });
+    const plan = await this.prisma.plan.findFirst({
+      where: { id: planId },
+      select: { id: true, name: true, isActive: true, amountCents: true },
+    });
     if (!plan) throw new BadRequestException("Plano desconhecido");
     /*
      * Um plano arquivado aceita-se se o clube **já** o tinha.
@@ -970,7 +999,66 @@ export class PlatformService {
       ip,
     );
 
-    return { ok: true, planId: subscription.planId, status: subscription.status };
+    /*
+     * As condições comerciais, quando vieram.
+     *
+     * Uma correcção de estado — pôr em atraso, cancelar — não é uma
+     * renegociação, e não emite contrato nenhum. Emite-se quando quem mexeu no
+     * plano disse as condições, que é o gesto de contratar.
+     *
+     * Falhar aqui **não** desfaz o plano: o plano é o facto, e a ordem é o
+     * papel que o acompanha. Um plano que não se gravava porque o email estava
+     * em baixo seria o pior dos dois mundos.
+     */
+    let ordem: { id: string; enviado: boolean; motivo: string | null } | null = null;
+    if (condicoes?.billingPeriod) {
+      try {
+        const r = await this.orders.emitir(id, { id: plan.id, name: plan.name, amountCents: plan.amountCents }, {
+          billingPeriod: condicoes.billingPeriod,
+          startsOn: condicoes.startsOn ? new Date(condicoes.startsOn) : new Date(),
+          minimumMonths: condicoes.minimumMonths ?? 12,
+          renewalNote: condicoes.renewalNote,
+          notes: condicoes.notes,
+        });
+        ordem = { id: r.ordem.id, enviado: r.enviado, motivo: r.motivo ?? null };
+      } catch (e) {
+        ordem = { id: "", enviado: false, motivo: e instanceof Error ? e.message : "Não foi possível emitir." };
+      }
+    }
+
+    return { ok: true, planId: subscription.planId, status: subscription.status, ordem };
+  }
+
+  /**
+   * Reemitir as condições actuais e voltar a enviá-las.
+   *
+   * O email perdeu-se, ou o clube mudou de presidente. Repete-se a ordem viva
+   * (ou a última assinada) tal e qual — reenviar não é renegociar.
+   */
+  async resendSubscriptionOrder(admin: PlatformAdminContext, id: string, ip?: string) {
+    const { pendente, assinada } = await this.orders.doClube(id);
+    const base = pendente ?? assinada;
+    if (!base) throw new BadRequestException("Este clube ainda não tem condições emitidas");
+
+    /*
+     * O plano do **instantâneo**, e não o de hoje: reenviar repete o papel que
+     * esteve em cima da mesa. Se o preço de tabela subiu entretanto, quem quer
+     * cobrar o novo renegocia — não reenvia.
+     */
+    const r = await this.orders.emitir(
+      id,
+      { id: base.planId, name: base.planName, amountCents: base.listMonthlyCents },
+      {
+        billingPeriod: base.billingPeriod,
+        startsOn: base.startsOn,
+        minimumMonths: base.minimumMonths,
+        renewalNote: base.renewalNote,
+        notes: base.notes,
+      },
+    );
+
+    await this.audit(admin, "academy.order.resend", "academy", id, { para: r.ordem.sentToEmail ?? "sem destinatário" }, ip);
+    return { ok: true, enviado: r.enviado, motivo: r.motivo };
   }
 
   async setAcademyActive(admin: PlatformAdminContext, id: string, active: boolean, ip?: string) {

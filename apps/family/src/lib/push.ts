@@ -18,6 +18,7 @@
  */
 
 import { getAccessToken } from "@/lib/session";
+import { appHeader } from "@/lib/area";
 import { academySlug } from "@/lib/invite";
 
 // Em produção a app e a API vivem na mesma origem, e a base fica vazia. Em
@@ -42,7 +43,7 @@ async function authed(path: string, body: unknown): Promise<Response> {
          `academySlug()` que o resto da app usa.
       */
       "x-academy-slug": academySlug(),
-      "x-app": "family",
+      "x-app": appHeader(),
     },
     body: JSON.stringify(body),
   });

@@ -3,6 +3,7 @@ import { Dialog, DialogField, dialogInputClass } from "./Dialog";
 import { cx } from "./primitives";
 import { Pencil, Send } from "@/lib/icons";
 import { submitCallUps, updateCallUpLogistics, type CallUpLogistics } from "@/lib/callups";
+import type { MatchLogistics } from "@/lib/store";
 import { antes, dataLonga, hora } from "@/lib/callup-sheet";
 
 /**
@@ -77,7 +78,14 @@ export function SubmitCallUpDialog({
     confirmationRequired?: boolean;
   };
   convocados: number;
-  onDone: () => void;
+  /**
+   * Feito — e com o que o servidor **gravou**.
+   *
+   * Vai no argumento para quem chama poder actualizar o jogo em memória no
+   * instante em que se grava, em vez de recarregar a academia inteira e mostrar
+   * a hora antiga durante os segundos que isso demora. Ver `aplicarLogistica`.
+   */
+  onDone: (gravada: MatchLogistics) => void;
   onClose: () => void;
 }) {
   const kickOff = useMemo(() => new Date(match.startsAt), [match.startsAt]);
@@ -119,10 +127,12 @@ export function SubmitCallUpDialog({
     };
 
     try {
-      if (modo === "editar") await updateCallUpLogistics(match.id, logistica);
-      else await submitCallUps(match.id, logistica);
+      const gravado =
+        modo === "editar"
+          ? await updateCallUpLogistics(match.id, logistica)
+          : await submitCallUps(match.id, logistica);
       remember(teamKeyOf(match), { meetingPoint, meetingTime, arrivalTime }, kickOff);
-      onDone();
+      onDone(gravado.logistica);
     } catch (err) {
       setErro(err instanceof Error ? err.message : "Não foi possível gravar.");
       setBusy(false);

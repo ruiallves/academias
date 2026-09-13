@@ -124,7 +124,11 @@ function bearer(req: Request): string | null {
  * isso que o `AuthService` verifica. Sem essa verificação, seria uma porta aberta.
  */
 /**
- * De que app vem o pedido — `x-app: family` ou `x-app: console`.
+ * De que app vem o pedido — `x-app: family`, `x-app: athlete` ou `x-app: console`.
+ *
+ * `athlete` é a área de atleta da app do clube: a mesma app, outro chapéu.
+ * Quem é atleta **e** encarregado (um adulto com filhos no clube) tem duas
+ * memberships de família, e só o cabeçalho diz qual delas veste.
  *
  * Serve para escolher entre as memberships que a pessoa **já tem** nesta
  * academia, quando tem mais do que uma: o treinador que também é pai precisa de
@@ -138,7 +142,7 @@ function bearer(req: Request): string | null {
 function appKind(req: Request): AppKind | undefined {
   const header = req.headers["x-app"];
   const valor = typeof header === "string" ? header.trim().toLowerCase() : "";
-  return valor === "family" || valor === "console" ? valor : undefined;
+  return valor === "family" || valor === "athlete" || valor === "console" ? valor : undefined;
 }
 
 function tenantSlug(req: Request): string | null {

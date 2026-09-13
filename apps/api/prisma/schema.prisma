@@ -140,6 +140,7 @@ model Academy {
   evaluations    Evaluation[]
   clinical       ClinicalEntry[]
   reports        AthleteReport[]
+  nutritionPlans NutritionPlan[]
   matches        Match[]
   events         CalendarEvent[]
   invites        StaffInvite[]
@@ -176,6 +177,9 @@ model Academy {
 
   /// As aceitações feitas neste clube — incluindo as que o vinculam.
   legalAcceptances LegalAcceptance[]
+
+  /// As ordens de adesão deste clube — ver `SubscriptionOrder`.
+  subscriptionOrders SubscriptionOrder[]
 }
 
 /// O ciclo de vida de um cliente. Derivado do onboarding e da subscrição — o
@@ -296,6 +300,9 @@ model User {
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+
+  /// As ordens de adesão que esta pessoa assinou pelo clube.
+  signedOrders SubscriptionOrder[] @relation("OrderSignedBy")
 }
 
 enum Role {
@@ -378,6 +385,9 @@ model Membership {
 
   coachOf         TeamStaff[]
   guardianOf      GuardianLink[]
+  /// A ficha de atleta de que esta conta é dona — o contexto "Atleta" da app.
+  athleteAccount  Athlete?                   @relation("AthleteAccount")
+  nutritionPlans  NutritionPlan[]            @relation("NutritionPlanAuthor")
   ledSessions     TrainingSession[]          @relation("SessionCoach")
   absenceNotices  AbsenceNotice[]            @relation("AbsenceNotice")
   ledMatches      Match[]                    @relation("MatchCoach")
@@ -818,9 +828,29 @@ model Athlete {
   /// das origens da lista "Precisa de atenção".
   medicalValidUntil DateTime? @db.Date
 
+  /**
+   * ---- A conta do próprio atleta na app do clube ---------------------------
+   *
+   * O email é o **do atleta**, não o do encarregado: é para este endereço que
+   * sai o convite, e é com ele que a conta fica ligada. Opcional, porque um
+   * Sub-8 não tem email — e a ficha não pode depender disso.
+   *
+   * O convite segue o desenho dos sócios: 32 bytes aleatórios, na base fica o
+   * hash, um convite de cada vez, e o link morre ao ser usado. A ligação é a
+   * `Membership` com papel `ATHLETE` — e não um `userId` como no sócio, porque
+   * o atleta entra pelo guard como a família (âmbito, permissões, termos), e
+   * o que o guard resolve é a membership.
+   */
+  email               String?
+  accountMembershipId String?     @unique
+  account             Membership? @relation("AthleteAccount", fields: [accountMembershipId], references: [id], onDelete: SetNull)
+  inviteTokenHash     String?     @unique
+  inviteSentAt        DateTime?
+
   guardians      GuardianLink[]
   teams          TeamMembership[]
   attendance     AttendanceRecord[]
+  nutritionPlans NutritionPlan[]
   enrollments    Enrollment[]
   charges        Charge[]
   evaluations    Evaluation[]
@@ -1052,6 +1082,14 @@ model TrainingSession {
   planNotes        String?
   /// Observações pós-treino — o que ficou, escrito depois de apitar.
   postNotes        String?
+  /**
+   * Quando o treinador partilhou o plano com os atletas — nulo é "não partilhado".
+   *
+   * É o treinador que decide, treino a treino: o plano é trabalho dele e há
+   * sessões que não quer mostrar antes de as dar. Uma data e não um booleano
+   * porque a pergunta que se faz depois é "desde quando é que eles o vêem".
+   */
+  planSharedAt     DateTime?
 
   /// Os blocos da sessão: ativação → técnica → posse → jogo. Ver `SessionBlock`.
   blocks SessionBlock[]
@@ -1874,6 +1912,10 @@ enum NotificationType {
   /// Esta é para quem trabalha lá e diz "és preciso". Quem recebe e o que faz a
   /// seguir são diferentes.
   MATCH_STAFF_ASSIGNED
+  /// O treinador partilhou o plano de um treino com os atletas.
+  TRAINING_PLAN_SHARED
+  /// Um plano de nutrição publicado para o atleta ou para a família.
+  NUTRITION_PLAN_SHARED
   /// A análise de vídeo terminou. O processamento é assíncrono de propósito —
   /// o treinador fecha a consola e é isto que lhe diz que pode voltar.
   AI_ANALYSIS_COMPLETED
@@ -2444,6 +2486,12 @@ model Evaluation {
   /// "2026/27 · 1.º período"
   period String
   status EvaluationStatus @default(DRAFT)
+  /**
+   * O próprio atleta vê a avaliação na app quando publicada. Nasce ligado — o
+   * boletim é sobre ele e para ele —, e o treinador desliga-o na avaliação que
+   * preferir guardar para os pais.
+   */
+  athleteVisible Boolean @default(true)
 
   /// { "Técnica": 4, "Atitude": 5 } — as chaves vêm de `Sport.skills`.
   scores Json
@@ -2514,6 +2562,14 @@ model AthleteReport {
 
   visibility ReportVisibility @default(INTERNAL)
   status     ReportStatus     @default(DRAFT)
+  /**
+   * O próprio atleta pode lê-lo na app — independente da `visibility`.
+   *
+   * Nasce desligado, como o partilhar com a família: metade do que se escreve
+   * sobre um miúdo é para os adultos, e um relatório que o atleta lê sem o
+   * treinador ter decidido isso não tem volta. Só conta com `status` PUBLISHED.
+   */
+  athleteVisible Boolean @default(false)
 
   /**
    * Os números no dia em que foi publicado.
@@ -2543,6 +2599,43 @@ enum ReportVisibility {
 enum ReportStatus {
   DRAFT
   PUBLISHED
+}
+
+/// Um plano de nutrição para um atleta.
+///
+/// ## Porque é uma tabela e não uma `ClinicalEntry`
+///
+/// A consulta de nutrição já cabe no boletim (`ClinicalKind.NUTRITION`): é um
+/// acontecimento, com data e impacto. O **plano** é outra coisa — um texto que
+/// vale durante semanas, que o atleta abre na app antes do jantar, e que a
+/// nutricionista substitui quando muda. Tem autor, publica-se, e partilha-se com
+/// quem se decide: o atleta, a família, ou os dois.
+///
+/// Texto livre em parágrafos, como os relatórios: o que faz falta aqui é a
+/// nutricionista escrever depressa, não um editor de refeições estruturado.
+model NutritionPlan {
+  id        String  @id @default(cuid())
+  academyId String
+  academy   Academy @relation(fields: [academyId], references: [id], onDelete: Cascade)
+  athleteId String
+  athlete   Athlete @relation(fields: [athleteId], references: [id], onDelete: Cascade)
+
+  /// Quem escreveu — a nutricionista, o médico, o treinador com `clinical:write`.
+  authorId String
+  author   Membership @relation("NutritionPlanAuthor", fields: [authorId], references: [id])
+
+  title String
+  body  String
+
+  /// Para quem é, decidido por quem escreve. Só contam depois de publicado.
+  familyVisible  Boolean @default(true)
+  athleteVisible Boolean @default(true)
+
+  publishedAt DateTime?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  @@index([academyId, athleteId, createdAt])
 }
 
 /**
@@ -3663,6 +3756,9 @@ model Plan {
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+
+  /// As ordens de adesão emitidas com este plano.
+  orders SubscriptionOrder[]
 }
 
 model Subscription {
@@ -3684,6 +3780,105 @@ model Subscription {
   updatedAt DateTime @updatedAt
 
   @@index([status])
+}
+
+/// Mensal ou anual — como o clube paga a subscrição da plataforma.
+enum SubscriptionBillingPeriod {
+  MONTHLY
+  ANNUAL
+}
+
+/// O estado de uma ordem de adesão.
+enum SubscriptionOrderStatus {
+  /// Emitida e enviada ao responsável. À espera de assinatura.
+  PENDING
+  SIGNED
+  /// Substituída por uma ordem mais recente — o plano mudou antes de assinar,
+  /// ou depois. Fica como história: foi o que esteve em cima da mesa naquele dia.
+  SUPERSEDED
+}
+
+/// As condições comerciais de um clube, num dia — a "Ordem de Adesão".
+///
+/// ## Porque é que não é um `LegalDocument`
+///
+/// Os documentos legais são **versões** iguais para toda a gente: os Termos de
+/// Serviço 1.1 são os mesmos para os dezoito clubes, e por isso uma aceitação é
+/// só "aceitei a versão X". Isto é o contrário: o plano, o preço, a data de
+/// início e o período mínimo são **deste** clube. Guardá-lo como versão de um
+/// documento dava uma versão por clube e por mudança de preço, e o catálogo
+/// legal deixava de se poder ler.
+///
+/// A ligação entre os dois está em `termsDocumentId`: a ordem diz a que versão
+/// dos Termos de Serviço se agarra, que é o que dá sentido a "conforme a
+/// cláusula X dos Termos".
+///
+/// ## Porque é que os valores estão copiados
+///
+/// `planName`, `listMonthlyCents` e `amountCents` são um instantâneo. O `Plan`
+/// muda de preço e de nome — e uma ordem assinada que fosse lê-los ao plano
+/// passava a dizer outra coisa no dia seguinte. O que se assinou fica escrito.
+///
+/// ## Uma de cada vez
+///
+/// Uma ordem nova põe a anterior em `SUPERSEDED`. O histórico fica todo, porque
+/// a pergunta "o que é que este clube assinou em Setembro?" tem de ter resposta.
+model SubscriptionOrder {
+  id        String  @id @default(cuid())
+  academyId String
+  academy   Academy @relation(fields: [academyId], references: [id], onDelete: Cascade)
+  planId    String
+  plan      Plan    @relation(fields: [planId], references: [id])
+
+  /// O nome do plano no dia — ver a nota acima.
+  planName      String
+  billingPeriod SubscriptionBillingPeriod @default(MONTHLY)
+
+  /// O preço de tabela **por mês**, em cêntimos, no dia da ordem.
+  listMonthlyCents Int
+  /// O desconto aplicado, em pontos percentuais. 10 no anual, 0 no mensal.
+  discountPct      Int @default(0)
+  /// O que o clube paga **por período de facturação**, já com desconto: o valor
+  /// do mês numa ordem mensal, o do ano numa anual.
+  amountCents      Int
+
+  startsOn      DateTime @db.Date
+  /// O período contratual mínimo, em meses.
+  minimumMonths Int      @default(12)
+  /// "Renova mensalmente após o período mínimo" — condição comercial, em texto,
+  /// porque é isso que o clube assina e o que muda de negociação para negociação.
+  renewalNote   String?
+  /// O que mais foi acordado. Vazio quase sempre.
+  notes         String?
+
+  /// A versão dos Termos de Serviço a que esta ordem se agarra.
+  termsDocumentId String?
+  termsDocument   LegalDocument? @relation("OrderTerms", fields: [termsDocumentId], references: [id], onDelete: SetNull)
+  termsVersion    String?
+
+  status SubscriptionOrderStatus @default(PENDING)
+
+  /// Para quem foi enviada, e quando. O nome fica copiado: quem assina hoje
+  /// pode já não estar no clube quando alguém for ler isto.
+  sentToEmail String?
+  sentToName  String?
+  sentAt      DateTime?
+
+  signedAt       DateTime?
+  signedByUserId String?
+  signedBy       User?     @relation("OrderSignedBy", fields: [signedByUserId], references: [id], onDelete: SetNull)
+  signerName     String?
+  signerEmail    String?
+  /// O cargo com que assinou — "Presidente". Copiado, pela mesma razão.
+  signerTitle    String?
+  signerIp       String?
+  signerAgent    String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([academyId, status])
+  @@index([academyId, createdAt])
 }
 
 enum SubscriptionStatus {
@@ -5125,6 +5320,9 @@ model LegalDocument {
 
   @@unique([type, version])
   @@index([type, status, effectiveAt])
+
+  /// As ordens de adesão que se agarram a esta versão dos Termos.
+  orders SubscriptionOrder[] @relation("OrderTerms")
 }
 
 /// Uma aceitação. **Append-only**: nunca se edita nem apaga. O histórico de uma

@@ -4,6 +4,7 @@ import { PrismaService, type ScopedClient } from "../prisma/prisma.service";
 import { NotificationsService } from "../notifications/notifications.service";
 import { athleteScopeFilter, athleteTeamScopeWhere, can, teamScopeFilter, type RequestContext } from "../common/permissions";
 import { firstName, isFamily } from "./evaluations.service";
+import { contaDoAtleta } from "../academy/athlete-accounts";
 
 /**
  * Relatórios de atleta.
@@ -42,6 +43,8 @@ export type ReportInput = {
   period?: string | null;
   body: string;
   visibility?: ReportVisibility;
+  /** O próprio atleta pode lê-lo na app quando publicado. Omissão: não. */
+  athleteVisible?: boolean;
 };
 
 @Injectable()
@@ -71,13 +74,22 @@ export class ReportsService {
       const rows = await db.athleteReport.findMany({
         where: {
           ...(athleteId ? { athleteId } : {}),
-          ...(family ? { status: "PUBLISHED" as const, visibility: "FAMILY" as const } : {}),
+          /*
+           * Três leituras. O próprio atleta: publicado e aberto a ele — a
+           * `visibility` (família) não lhe diz respeito. A família: publicado
+           * e de família. O clube: tudo.
+           */
+          ...(ctx.role === "ATHLETE"
+            ? { status: "PUBLISHED" as const, athleteVisible: true }
+            : family
+              ? { status: "PUBLISHED" as const, visibility: "FAMILY" as const }
+              : {}),
           athlete: this.athleteWhere(ctx),
         },
         orderBy: [{ createdAt: "desc" }],
         select: {
           id: true, athleteId: true, title: true, period: true, body: true,
-          visibility: true, status: true, snapshot: true,
+          visibility: true, status: true, snapshot: true, athleteVisible: true,
           publishedAt: true, createdAt: true, updatedAt: true,
           author: { select: { id: true, user: { select: { name: true } } } },
           athlete: { select: { name: true, teams: { select: { teamId: true }, take: 1 } } },
@@ -94,6 +106,7 @@ export class ReportsService {
         body: r.body,
         visibility: r.visibility,
         status: r.status,
+        athleteVisible: r.athleteVisible,
         snapshot: r.snapshot,
         authorId: r.author.id,
         authorName: r.author.user.name,
@@ -128,6 +141,7 @@ export class ReportsService {
           body,
           period: dto.period?.trim() || null,
           visibility: dto.visibility ?? "INTERNAL",
+          athleteVisible: dto.athleteVisible ?? false,
         },
         select: { id: true },
       });
@@ -162,8 +176,14 @@ export class ReportsService {
           ...(body !== undefined ? { body } : {}),
           ...(dto.period !== undefined ? { period: dto.period?.trim() || null } : {}),
           ...(dto.visibility !== undefined ? { visibility: dto.visibility } : {}),
+          ...(dto.athleteVisible !== undefined ? { athleteVisible: dto.athleteVisible } : {}),
         },
       });
+
+      // Abrir ao próprio um relatório já publicado avisa-o agora — como partilhar com a família.
+      if (dto.athleteVisible === true && !row.athleteVisible && row.status === "PUBLISHED") {
+        await this.notifyAthlete(db, ctx, row.athleteId, id, row.title);
+      }
 
       /*
        * Passar a de família **depois** de publicado é uma partilha, e notifica.
@@ -205,8 +225,11 @@ export class ReportsService {
       if (row.visibility === "FAMILY") {
         await this.notifyFamily(db, ctx, row.athleteId, id, row.title);
       }
+      if (row.athleteVisible) {
+        await this.notifyAthlete(db, ctx, row.athleteId, id, row.title);
+      }
 
-      return { ok: true, shared: row.visibility === "FAMILY" };
+      return { ok: true, shared: row.visibility === "FAMILY", athlete: row.athleteVisible };
     });
   }
 
@@ -259,7 +282,7 @@ export class ReportsService {
   private async reportInScope(db: ScopedClient, ctx: RequestContext, id: string) {
     const row = await db.athleteReport.findFirst({
       where: { id, athlete: this.athleteWhere(ctx) },
-      select: { id: true, athleteId: true, title: true, period: true, status: true, visibility: true },
+      select: { id: true, athleteId: true, title: true, period: true, status: true, visibility: true, athleteVisible: true },
     });
     if (!row) throw new NotFoundException("Relatório não encontrado");
     return row;
@@ -327,5 +350,22 @@ export class ReportsService {
         db,
       );
     }
+  }
+
+  /** O próprio atleta — na segunda pessoa, e só se tiver conta. */
+  private async notifyAthlete(db: ScopedClient, ctx: RequestContext, athleteId: string, reportId: string, title: string) {
+    const userId = await contaDoAtleta(db, athleteId);
+    if (!userId) return;
+    await this.notifications.enqueue(
+      {
+        academyId: ctx.academyId,
+        userId,
+        type: "REPORT_SHARED",
+        title: "Novo relatório",
+        body: `${title} — o treinador partilhou contigo.`,
+        payload: { reportId, athleteId, route: "/atleta" },
+      },
+      db,
+    );
   }
 }

@@ -1,5 +1,6 @@
 import { Type } from "class-transformer";
 import {
+  IsEmail,
   ArrayMaxSize,
   IsArray,
   IsInt,
@@ -45,6 +46,16 @@ export class AthleteInputDto {
   @IsString()
   @Length(1, 40)
   position?: string;
+
+  /**
+   * O email do próprio atleta — para onde sai o convite da app. Opcional: um
+   * Sub-8 não tem email, e a ficha não pode depender disso. Ver
+   * `AthleteInvitesService`.
+   */
+  @IsOptional()
+  @IsEmail({}, { message: "Email do atleta inválido" })
+  @Length(3, 254)
+  email?: string;
 
   /**
    * NIF do atleta — nove dígitos. **Obrigatório.**
@@ -138,6 +149,12 @@ export class AthleteUpdateDto {
   @IsString()
   @Length(0, 40)
   position?: string;
+
+  /** Vazio apaga — uma ficha pode deixar de ter email. */
+  @IsOptional()
+  @IsString()
+  @Length(0, 254)
+  email?: string;
 
   @IsOptional()
   @Matches(/^\d{9}$/, { message: "O NIF tem nove dígitos" })

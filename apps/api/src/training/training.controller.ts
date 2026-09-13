@@ -18,6 +18,12 @@ import {
 import type { AuthedRequest } from "../auth/auth.guard";
 import { TrainingService } from "./training.service";
 
+/** Partilhar (ou voltar a guardar) o plano de um treino com os atletas. */
+class SharePlanDto {
+  @IsBoolean()
+  shared!: boolean;
+}
+
 /**
  * Corpos validados. Os limites daqui são a primeira rede — recusam o disparate
  * com uma mensagem legível; o serviço repete os que importam (`clamp`, âmbito,
@@ -239,6 +245,18 @@ export class TrainingController {
   @Put("sessions/:id/plan")
   savePlan(@Req() req: AuthedRequest, @Param("id") id: string, @Body() dto: PlanDto) {
     return this.training.savePlan(req.ctx, id, dto);
+  }
+
+  /** O treinador abre (ou fecha) o plano aos atletas da equipa. */
+  @Patch("sessions/:id/plan/partilha")
+  sharePlan(@Req() req: AuthedRequest, @Param("id") id: string, @Body() dto: SharePlanDto) {
+    return this.training.partilharPlano(req.ctx, id, dto.shared);
+  }
+
+  /** O plano como o atleta o lê — a app do clube, área de atleta. */
+  @Get("sessions/:id/plano-partilhado")
+  sharedPlan(@Req() req: AuthedRequest, @Param("id") id: string) {
+    return this.training.planoPartilhado(req.ctx, id);
   }
 
   /* Modelos de jogo --------------------------------------------------------- */

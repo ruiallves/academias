@@ -5,6 +5,8 @@ import { NewAthleteDialog } from "@/components/NewAthleteDialog";
 import { ImportAthletesDialog } from "@/components/ImportAthletesDialog";
 import { AvailabilityTag, cx, DataTable, Empty, Monogram, Panel, Pill, RowLink, type Column } from "@/components/primitives";
 import { BulkBar, BulkDeleteDialog } from "@/components/BulkDelete";
+import { SendAthleteInvitesDialog } from "@/components/SendAthleteInvitesDialog";
+import { Send } from "@/lib/icons";
 import { apiDelete } from "@/lib/http";
 import { reloadAcademy } from "@/lib/store";
 import { ResultCount, SearchInput, Segmented, Select, Toolbar } from "@/components/filters";
@@ -114,6 +116,9 @@ export default function Athletes() {
    */
   const [escolhidos, setEscolhidos] = useState<Set<string>>(new Set());
   const [aApagar, setAApagar] = useState(false);
+  /** O envio do convite da app aos atletas escolhidos na lista. */
+  const [aConvidar, setAConvidar] = useState(false);
+  const mayInvite = can(session, "family:write");
 
   const showGuardian = can(session, "family:read");
 
@@ -189,6 +194,21 @@ export default function Athletes() {
       },
     },
     {
+      key: "app",
+      header: "App do atleta",
+      hideBelow: "lg",
+      render: (a) =>
+        a.app === "account" ? (
+          <Pill tone="ok">{a.appInstalled ? "Instalada" : "Conta ligada"}</Pill>
+        ) : a.app === "invited" ? (
+          <Pill tone="warn">Convidado</Pill>
+        ) : a.app === "none" ? (
+          <span className="text-meta text-ink-3">Por convidar</span>
+        ) : (
+          <span className="text-meta text-ink-4">Sem email</span>
+        ),
+    },
+    {
       key: "medical",
       header: "Ficha médica",
       hideBelow: "sm",
@@ -221,6 +241,7 @@ export default function Athletes() {
   const columns = allColumns.filter((c) => {
     if (c.key === "fee") return showBilling;
     if (c.key === "guardian") return showGuardian;
+    if (c.key === "app") return showGuardian;
     return true;
   });
 
@@ -337,7 +358,23 @@ export default function Athletes() {
         noun={["atleta", "atletas"]}
         onClear={() => setEscolhidos(new Set())}
         onDelete={() => setAApagar(true)}
+        /* Convidar em massa é o gesto de quem acabou de importar o plantel. A
+           conta de quem pode mesmo receber faz-se no diálogo, antes de sair
+           correio nenhum — ver `SendAthleteInvitesDialog`. */
+        action={mayInvite ? { label: "Enviar convite", icon: Send, onClick: () => setAConvidar(true) } : undefined}
       />
+
+      {aConvidar && (
+        <SendAthleteInvitesDialog
+          athletes={rows.filter((a) => escolhidos.has(a.id))}
+          onClose={() => setAConvidar(false)}
+          onDone={async () => {
+            setAConvidar(false);
+            setEscolhidos(new Set());
+            await reloadAcademy();
+          }}
+        />
+      )}
 
       {aApagar && (
         <BulkDeleteDialog

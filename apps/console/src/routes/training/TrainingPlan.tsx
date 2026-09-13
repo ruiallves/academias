@@ -28,6 +28,8 @@ import {
   type SessionPlan,
 } from "@/lib/training";
 import { useSession } from "@/session";
+import { sharePlan } from "@/lib/training";
+import { Users } from "@/lib/icons";
 
 /**
  * O vocabulário do plano — as categorias de objectivo da modalidade da equipa
@@ -128,6 +130,23 @@ export default function TrainingPlan() {
 
   const [picking, setPicking] = useState<"new" | number | null>(null);
   const [open, setOpen] = useState<number | null>(null);
+  /* A janela da partilha — abre a seguir a gravar. Ver `PartilharComAtletasDialog`. */
+  const [aPartilhar, setAPartilhar] = useState(false);
+  /* Uma vez por visita, pela mesma razão da do modelo: um plano grava-se cinco
+     ou seis vezes enquanto se monta. */
+  const respondeuPartilha = useRef(false);
+
+  /**
+   * A pergunta do modelo — sozinha, ou a seguir à da partilha.
+   *
+   * As duas são do fim, e nenhuma pode tapar a outra: empilhadas, a segunda era
+   * fechada sem ler. Esta abre quando a da partilha se fechar.
+   */
+  function perguntarModelo() {
+    if (!plan || plan.blocks.length === 0 || veioDeModelo || jaPerguntou.current) return;
+    jaPerguntou.current = true;
+    setAPerguntar(true);
+  }
 
   useEffect(() => {
     setPlan(null);
@@ -287,9 +306,18 @@ export default function TrainingPlan() {
        * modelo já lá está. Perguntar nesses dois casos era ruído a seguir a
        * cada gravação.
        */
-      if (plan.blocks.length > 0 && !veioDeModelo && !jaPerguntou.current) {
-        jaPerguntou.current = true;
-        setAPerguntar(true);
+      /*
+       * As perguntas do fim, por ordem.
+       *
+       * Partilhar é sobre **este** treino, e é a que interessa a quem acabou de
+       * o montar; guardar como modelo é sobre os treinos seguintes. A do modelo
+       * fica para quando a da partilha se fechar — ver `perguntarModelo`.
+       */
+      if (plan.blocks.length > 0 && !respondeuPartilha.current) {
+        respondeuPartilha.current = true;
+        setAPartilhar(true);
+      } else {
+        perguntarModelo();
       }
     } catch (e) {
       alert(e instanceof Error ? e.message : "Não foi possível gravar o plano.");
@@ -324,7 +352,9 @@ export default function TrainingPlan() {
       <PageHeader
         eyebrow="Plano de treino"
         title={`${plan.teamName} · ${time(start)}`}
-        subtitle={`${longDate(start)} · ${plan.venue}${plan.coachName ? ` · ${plan.coachName}` : ""}`}
+        subtitle={`${longDate(start)} · ${plan.venue}${plan.coachName ? ` · ${plan.coachName}` : ""}${
+          plan.sharedAt ? " · Partilhado com os atletas" : ""
+        }`}
       >
         <Link to="/treinos" className="ctl-ghost">
           Todos os treinos
@@ -656,6 +686,17 @@ export default function TrainingPlan() {
               });
             }
             setPicking(null);
+          }}
+        />
+      )}
+
+      {aPartilhar && plan && (
+        <PartilharComAtletasDialog
+          plan={plan}
+          onMudou={(sharedAt) => setPlan((cur) => (cur ? { ...cur, sharedAt } : cur))}
+          onClose={() => {
+            setAPartilhar(false);
+            perguntarModelo();
           }}
         />
       )}
@@ -1145,6 +1186,114 @@ function ObjectiveChips({
         </select>
       )}
     </div>
+  );
+}
+
+/* -------------------------------------------------------------------------- */
+/* Partilhar o plano com os atletas                                           */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * "Partilhar este plano com os atletas?", a seguir a gravar.
+ *
+ * ## Porque é que a pergunta não é um botão
+ *
+ * Pela mesma razão da do modelo, e por mais duas. Um botão "partilhar" está
+ * sempre lá — incluindo com o plano a meio, e o que os atletas leriam era um
+ * treino por acabar. E o cabeçalho já levava cinco acções: a sexta empurrava a
+ * linha para fora no telemóvel, que é onde o treinador monta o treino à beira
+ * do campo.
+ *
+ * A seguir a gravar, o que está no ecrã é o que está no sistema — e é isso que
+ * eles vão ler.
+ *
+ * ## Uma vez por visita, e nos dois sentidos
+ *
+ * Abre-se uma vez por visita: a mesma janela a cada gravação deixava de ser uma
+ * pergunta e passava a ser um obstáculo, do tipo que se fecha sem ler. Traz
+ * sempre as duas direcções — quem partilhou e se arrependeu fecha-o aqui, sem
+ * procurar o gesto noutro sítio.
+ *
+ * O estado fica dito no subtítulo da página ("· Partilhado com os atletas"),
+ * que é informação e não acção: nunca é preciso abrir isto só para saber.
+ */
+function PartilharComAtletasDialog({
+  plan,
+  onMudou,
+  onClose,
+}: {
+  plan: SessionPlan;
+  onMudou: (sharedAt: string | null) => void;
+  onClose: () => void;
+}) {
+  const [busy, setBusy] = useState(false);
+  const [erro, setErro] = useState<string | null>(null);
+  const partilhado = Boolean(plan.sharedAt);
+  const total = plan.blocks.reduce((n, b) => n + (b.durationMin || 0), 0);
+
+  async function alternar() {
+    if (busy) return;
+    setBusy(true);
+    setErro(null);
+    try {
+      const r = await sharePlan(plan.sessionId, !partilhado);
+      onMudou(r.sharedAt);
+      onClose();
+    } catch (e) {
+      setErro(e instanceof Error ? e.message : "Não foi possível partilhar.");
+      setBusy(false);
+    }
+  }
+
+  return (
+    <Dialog
+      title={partilhado ? "Os atletas vêem este plano" : "Partilhar com os atletas?"}
+      subtitle={`${plan.blocks.length} ${plan.blocks.length === 1 ? "bloco" : "blocos"} · ${total} min`}
+      onClose={onClose}
+      width={440}
+      footer={
+        <>
+          <button type="button" className="ctl-ghost" onClick={onClose}>
+            {partilhado ? "Manter partilhado" : "Agora não"}
+          </button>
+          <button
+            type="button"
+            className={partilhado ? "ctl-outline" : "ctl-primary"}
+            onClick={() => void alternar()}
+            disabled={busy}
+          >
+            {busy ? (
+              "Um momento…"
+            ) : partilhado ? (
+              "Deixar de partilhar"
+            ) : (
+              <>
+                <Users className="size-3.5" strokeWidth={1.75} />
+                Partilhar
+              </>
+            )}
+          </button>
+        </>
+      }
+    >
+      <div className="space-y-3 px-5 py-4">
+        <p className="text-body leading-relaxed text-ink-2">
+          {partilhado
+            ? "Os atletas da equipa abrem este plano na app do clube, dentro do treino. O que acabaste de gravar é o que eles passam a ler."
+            : "Os atletas da equipa passam a ver este plano na app do clube, dentro do treino — e recebem um aviso."}
+        </p>
+
+        {/* O que eles vêem, e o que não vêem. Dito antes de decidir, e não
+            descoberto depois: `postNotes` é o balanço do treinador para si. */}
+        <ul className="space-y-1.5 rounded-[var(--radius-control)] bg-sunken px-3 py-2.5 text-meta leading-relaxed text-ink-3">
+          <li>Vêem o objetivo, o tipo de sessão e os blocos — com minutos e observações.</li>
+          <li>Não vêem os desenhos dos exercícios nem as tuas notas do pós-treino.</li>
+          <li>As famílias não vêem o plano: é para quem treina.</li>
+        </ul>
+
+        {erro && <p className="rounded-[var(--radius-control)] bg-risk-soft px-3 py-2 text-meta text-risk">{erro}</p>}
+      </div>
+    </Dialog>
   );
 }
 

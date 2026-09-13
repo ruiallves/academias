@@ -58,6 +58,8 @@ export function EvaluationEditor({
   const [note, setNote] = useState("");
   const [strengths, setStrengths] = useState("");
   const [focus, setFocus] = useState("");
+  /** O próprio atleta vê a avaliação na app. Nasce ligado — o boletim é sobre ele. */
+  const [athleteVisible, setAthleteVisible] = useState(true);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [savedFlash, setSavedFlash] = useState(false);
@@ -70,6 +72,7 @@ export function EvaluationEditor({
     setNote(e?.note ?? "");
     setStrengths(e?.strengths ?? "");
     setFocus(e?.focus ?? "");
+    setAthleteVisible(e?.athleteVisible ?? true);
     setError(null);
   }, [entry?.evaluation, entry?.athlete.id]);
 
@@ -91,6 +94,7 @@ export function EvaluationEditor({
         note: note.trim(),
         strengths: strengths.trim(),
         focus: focus.trim(),
+        athleteVisible,
       });
       onSaved();
 
@@ -226,6 +230,21 @@ export function EvaluationEditor({
             className={cx(dialogInputClass, "h-auto resize-y py-2")}
           />
         </DialogField>
+
+        <label className="flex cursor-pointer items-start gap-2.5 rounded-[var(--radius-control)] border border-line px-3 py-2.5">
+          <input
+            type="checkbox"
+            checked={athleteVisible}
+            onChange={(e) => setAthleteVisible(e.target.checked)}
+            className="mt-0.5 size-4 accent-[var(--color-signal)]"
+          />
+          <span className="min-w-0">
+            <span className="block text-body font-medium text-ink">O próprio atleta vê esta avaliação</span>
+            <span className="block text-[11px] leading-snug text-ink-3">
+              Na área de atleta da app, quando publicada. Desliga se esta for só para os pais.
+            </span>
+          </span>
+        </label>
 
         <DialogField label="Nota do treinador" hint="opcional">
           <textarea

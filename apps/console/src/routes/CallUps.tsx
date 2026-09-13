@@ -3,7 +3,7 @@ import { PageHeader } from "@/components/Shell";
 import { Empty, Metric, MetricRow, Monogram, Panel, PanelHead, Pill, cx } from "@/components/primitives";
 import { ArrowUpRight, Check, Download, Megaphone, Pencil, Plus, Search, Trophy, Users } from "@/lib/icons";
 import { athleteById, teamById } from "@/lib/api";
-import { useStore, type ApiMatch, type GuestCandidate } from "@/lib/store";
+import { aplicarLogistica, useStore, type ApiMatch, type GuestCandidate } from "@/lib/store";
 import {
   eligibleFor,
   fetchGuestPool,
@@ -595,9 +595,26 @@ function Squad({ match }: { match: ApiMatch }) {
           }}
           convocados={dialogo === "editar" ? match.calledUp.length : picked.size}
           modo={dialogo}
-          onDone={() => {
+          onDone={(gravada) => {
+            const submeteu = dialogo === "submeter";
             setDialogo(null);
-            void refresh();
+            /*
+              A hora nova entra no jogo em memória **agora**.
+
+              Isto chamava `refresh()` e mais nada — uma recarga da academia
+              inteira, que nesta ligação leva perto de dez segundos. Até ela
+              chegar, o ecrã continuava a mostrar o que estava lá antes: quem
+              reabria os detalhes via a hora velha e concluía que não tinha
+              gravado. Tinha — faltava o ecrã saber. Ver `aplicarLogistica`.
+            */
+            aplicarLogistica(match.id, submeteu ? { ...gravada, submitted: true } : gravada);
+            /*
+              Submeter muda mais do que a logística: fecha a lista e passa a
+              haver respostas de famílias para ler. Isso continua a vir do
+              servidor — mas em segundo plano, porque o que o gesto acabou de
+              mudar já está no ecrã.
+            */
+            if (submeteu) void refresh();
           }}
           onClose={() => setDialogo(null)}
         />

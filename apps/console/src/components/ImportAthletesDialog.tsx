@@ -297,7 +297,9 @@ function Pick({
         <div className="min-w-0 flex-1">
           <div className="text-body font-medium text-ink">Começa pelo modelo</div>
           <p className="mt-0.5 text-meta leading-relaxed text-ink-3">
-            Tem as colunas certas, uma linha de exemplo e a lista das tuas equipas. Preenche-o e volta aqui.
+            Tem as colunas certas, uma linha de exemplo e a lista das tuas equipas. Preenche-o e volta aqui. A coluna
+            <strong className="font-medium text-ink-2"> Email</strong> é opcional — cada atleta com email recebe, ao importar, o
+            convite para criar conta e instalar a app do clube.
           </p>
           <button type="button" onClick={() => void downloadTemplate()} className="ctl-outline mt-2.5">
             <Download className="size-3.5" strokeWidth={1.75} />

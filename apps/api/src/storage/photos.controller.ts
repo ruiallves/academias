@@ -48,6 +48,23 @@ export class PhotosController {
     return this.photos.removeAthletePhoto(req.ctx, id);
   }
 
+  /* ---- O próprio atleta, na app do clube --------------------------------- */
+
+  @Post("atleta/foto/upload")
+  ownUpload(@Req() req: AuthedRequest, @Body() body: UploadPhotoDto) {
+    return this.photos.athleteUploadUrlProprio(req.ctx, body.contentType);
+  }
+
+  @Post("atleta/foto")
+  ownConfirm(@Req() req: AuthedRequest, @Body() body: ConfirmPhotoDto) {
+    return this.photos.setAthletePhotoProprio(req.ctx, body.key);
+  }
+
+  @Delete("atleta/foto")
+  ownRemove(@Req() req: AuthedRequest) {
+    return this.photos.removeAthletePhotoProprio(req.ctx);
+  }
+
   /* ---- Staff ------------------------------------------------------------- */
 
   @Post("staff/:id/foto/upload")

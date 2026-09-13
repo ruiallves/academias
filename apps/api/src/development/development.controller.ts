@@ -1,8 +1,9 @@
 import { Body, Controller, Delete, Get, Param, Patch, Post, Query, Req } from "@nestjs/common";
-import { ArrayMaxSize, IsArray, IsIn, IsObject, IsOptional, IsString, Length } from "class-validator";
+import { ArrayMaxSize, IsArray, IsBoolean, IsIn, IsObject, IsOptional, IsString, Length } from "class-validator";
 import type { AuthedRequest } from "../auth/auth.guard";
 import { EvaluationsService } from "./evaluations.service";
 import { ReportsService } from "./reports.service";
+import { NutritionService } from "./nutrition.service";
 
 /* -------------------------------------------------------------------------- */
 /* Corpos                                                                      */
@@ -35,6 +36,10 @@ class SaveEvaluationDto {
 
   @IsOptional() @IsString() @Length(0, 1000)
   focus?: string;
+
+  /** O próprio atleta vê a avaliação na app quando publicada. */
+  @IsOptional() @IsBoolean()
+  athleteVisible?: boolean;
 }
 
 class PublishDto {
@@ -59,6 +64,10 @@ class ReportDto {
 
   @IsOptional() @IsIn(["INTERNAL", "FAMILY"])
   visibility?: "INTERNAL" | "FAMILY";
+
+  /** O próprio atleta pode lê-lo na app — independente da `visibility`. */
+  @IsOptional() @IsBoolean()
+  athleteVisible?: boolean;
 }
 
 class ReportPatchDto {
@@ -73,6 +82,10 @@ class ReportPatchDto {
 
   @IsOptional() @IsIn(["INTERNAL", "FAMILY"])
   visibility?: "INTERNAL" | "FAMILY";
+
+  /** O próprio atleta pode lê-lo na app — independente da `visibility`. */
+  @IsOptional() @IsBoolean()
+  athleteVisible?: boolean;
 }
 
 /* -------------------------------------------------------------------------- */
@@ -92,11 +105,41 @@ class ReportPatchDto {
  *
  * Controlador fino, como o resto: quem pode o quê decide-se com `can()` lá dentro.
  */
+/** Um plano de nutrição — texto livre, como os relatórios. */
+class NutritionPlanDto {
+  @IsString() @Length(2, 160)
+  title!: string;
+
+  @IsString() @Length(5, 20000)
+  body!: string;
+
+  @IsOptional() @IsBoolean()
+  familyVisible?: boolean;
+
+  @IsOptional() @IsBoolean()
+  athleteVisible?: boolean;
+}
+
+class NutritionPlanPatchDto {
+  @IsOptional() @IsString() @Length(2, 160)
+  title?: string;
+
+  @IsOptional() @IsString() @Length(5, 20000)
+  body?: string;
+
+  @IsOptional() @IsBoolean()
+  familyVisible?: boolean;
+
+  @IsOptional() @IsBoolean()
+  athleteVisible?: boolean;
+}
+
 @Controller("api")
 export class DevelopmentController {
   constructor(
     private readonly evaluations: EvaluationsService,
     private readonly reports: ReportsService,
+    private readonly nutrition: NutritionService,
   ) {}
 
   /* ---- Avaliações -------------------------------------------------------- */
@@ -149,5 +192,40 @@ export class DevelopmentController {
   @Delete("reports/:id")
   removeReport(@Req() req: AuthedRequest, @Param("id") id: string) {
     return this.reports.remove(req.ctx, id);
+  }
+
+  /* ---- Nutrição ---------------------------------------------------------- */
+
+  /** Os planos de quem pergunta — a app do clube (família e atleta). */
+  @Get("nutricao")
+  listMyNutrition(@Req() req: AuthedRequest) {
+    return this.nutrition.listMine(req.ctx);
+  }
+
+  /** Os planos de um atleta — a ficha, na consola. */
+  @Get("athletes/:id/nutricao")
+  listNutrition(@Req() req: AuthedRequest, @Param("id") id: string) {
+    return this.nutrition.listForAthlete(req.ctx, id);
+  }
+
+  @Post("athletes/:id/nutricao")
+  createNutrition(@Req() req: AuthedRequest, @Param("id") id: string, @Body() body: NutritionPlanDto) {
+    return this.nutrition.create(req.ctx, { athleteId: id, ...body });
+  }
+
+  @Patch("nutricao/:id")
+  updateNutrition(@Req() req: AuthedRequest, @Param("id") id: string, @Body() body: NutritionPlanPatchDto) {
+    return this.nutrition.update(req.ctx, id, body);
+  }
+
+  /** Publicar — e avisar quem o vai ler, conforme a quem foi aberto. */
+  @Post("nutricao/:id/publicar")
+  publishNutrition(@Req() req: AuthedRequest, @Param("id") id: string) {
+    return this.nutrition.publish(req.ctx, id);
+  }
+
+  @Delete("nutricao/:id")
+  removeNutrition(@Req() req: AuthedRequest, @Param("id") id: string) {
+    return this.nutrition.remove(req.ctx, id);
   }
 }

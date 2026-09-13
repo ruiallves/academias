@@ -2,32 +2,50 @@
 @import "@academia/ui/theme.css";
 
 /*
- * A cor da plataforma.
+ * A cor da plataforma: a do logótipo.
  *
- * Fixa, e deliberadamente distinta de qualquer academia. Quem trabalha nos dois
- * produtos ao mesmo tempo tem de saber onde está pelo canto do olho, sem ler o
- * cabeçalho — e a cor de uma academia é escolhida por ela, portanto não serve de
- * sinal. Um índigo profundo: nada no lado das academias lhe chega perto.
+ * Era um índigo, escolhido para ser distinto de qualquer academia — a cor de um
+ * clube é escolhida por ele, portanto não serve de sinal, e um roxo garantia que
+ * ninguém confundia os dois painéis. Garantia, e à custa disto: o painel não se
+ * parecia com a marca de que é o painel.
+ *
+ * Agora é o verde do logótipo. Os valores não são inventados aqui — são os do
+ * site (`apps/site/src/brand.css`), que saíram do próprio ficheiro do logótipo:
+ * verde-campo a apontar as acções, pinheiro no fundo.
+ *
+ * O que se perdeu com a troca, dito por inteiro: um clube que escolha um verde
+ * parecido passa a ter uma consola parecida com este painel. É menos grave do
+ * que parece — os dois produtos não se abrem no mesmo sítio nem com a mesma
+ * conta —, e quem quiser o sinal de volta muda estas seis linhas.
  */
 :root {
-  --color-signal: #4338ca;
-  --color-signal-soft: #eef0fd;
-  --color-signal-ink: #312e9c;
+  --color-signal: #0f6b62;
+  --color-signal-soft: #e4ece7;
+  --color-signal-ink: #0a4c45;
 
   /*
    * Os derivados, escritos à mão porque aqui a cor é fixa.
    *
    * Nas academias é o `signalVars` que os calcula em runtime a partir da cor do
    * clube (ver `packages/ui/src/tokens.ts`); aqui a cor não muda, e por isso os
-   * valores estão escritos. São exactamente os que a mesma função devolve para
-   * este índigo — sem eles, uma utilitária `bg-signal-strong` neste painel
-   * pintava do verde-azulado por omissão do tema, e ninguém ia perceber porquê.
+   * valores estão escritos. Sem eles, uma utilitária `bg-signal-strong` neste
+   * painel pintava da cor por omissão do tema, e ninguém ia perceber porquê.
    */
-  --color-signal-strong: #4338ca;
+  --color-signal-strong: #0f6b62;
   --color-signal-on: #ffffff;
   --signal-on-rgb: 255 255 255;
-  --signal-lift: #5a50d0;
-  --signal-deep: #302891;
+  --signal-lift: #14837a;
+  --signal-deep: #0a4c45;
+
+  /*
+   * O escuro da marca, para quando é o fundo e não o apontador.
+   *
+   * Hoje só a porta (`LoginGate`) o usa — o botão de entrar e a sombra do
+   * cartão. Está aqui, e não lá dentro, porque uma cor de marca escrita dentro
+   * de um componente é uma cor de marca que o próximo componente reinventa.
+   */
+  --color-pine: #0e332d;
+  --color-pine-2: #14403a;
 }
 
 @layer components {
@@ -60,6 +78,29 @@
   .legal-prose strong { @apply font-semibold text-ink; }
   .legal-prose a { @apply text-ink underline underline-offset-2; }
   .panel-head { @apply flex items-center justify-between gap-3 border-b border-line px-5 py-3.5; }
+}
+
+/* ---------------------------------------------------------------------------
+ * A entrada do cartão de login
+ * ---------------------------------------------------------------------------
+ *
+ * Sobe oito pixéis e aparece. Uma vez, ao abrir — não é um efeito, é o que faz
+ * a página parecer que chegou em vez de já lá estar. Curto de propósito: quem
+ * entra aqui todos os dias não quer esperar por uma animação para escrever o
+ * email.
+ */
+.login-rise {
+  animation: login-rise 320ms cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+@keyframes login-rise {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: none; }
+}
+
+/* Quem pediu menos movimento vê o cartão já no sítio. */
+@media (prefers-reduced-motion: reduce) {
+  .login-rise { animation: none; }
 }
 
 /* O ponto verde da coluna "Online" pulsa para dizer que o número é de agora e

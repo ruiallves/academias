@@ -1,5 +1,5 @@
 import { apiGet, apiPatch, apiPost } from "@/lib/http";
-import { matches, reloadAcademy, type ApiMatch, type GuestCandidate } from "@/lib/store";
+import { matches, reloadAcademy, type ApiMatch, type GuestCandidate, type MatchLogistics } from "@/lib/store";
 import { activeRestriction, isUnavailable, isoToday } from "@/lib/clinical";
 import { athleteById, listAthletes } from "@/lib/api";
 import { shortDate } from "@/lib/format";
@@ -61,7 +61,9 @@ export type CallUpLogistics = {
 };
 
 export const submitCallUps = (matchId: string, logistica: CallUpLogistics = {}) =>
-  apiPost<{ submitted: true; convocados: number; familiasAvisadas: number }>(
+  /* `logistica` na resposta: o que ficou gravado, para o ecrã não esperar por
+     uma recarga da academia para o mostrar. Ver `aplicarLogistica`. */
+  apiPost<{ submitted: true; convocados: number; familiasAvisadas: number; logistica: MatchLogistics }>(
     `/api/matches/${matchId}/convocatoria/submeter`,
     logistica,
   );
@@ -75,7 +77,14 @@ export const submitCallUps = (matchId: string, logistica: CallUpLogistics = {}) 
  * recebem um aviso que **nomeia** a mudança.
  */
 export const updateCallUpLogistics = (matchId: string, logistica: CallUpLogistics) =>
-  apiPatch<{ matchId: string; mudou: boolean; mudancas: string[]; familiasAvisadas: number }>(
+  apiPatch<{
+    matchId: string;
+    mudou: boolean;
+    mudancas: string[];
+    familiasAvisadas: number;
+    /** O que ficou gravado — a consola escreve-o no jogo em memória de imediato. */
+    logistica: MatchLogistics;
+  }>(
     `/api/matches/${matchId}/convocatoria/logistica`,
     logistica,
   );

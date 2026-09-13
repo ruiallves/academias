@@ -101,7 +101,7 @@ export function renderLanding(opts: {
    * filho nenhum no clube. Saber que há convite não chega — é preciso saber de
    * quem ele é.
    */
-  invite?: "family" | "member";
+  invite?: "family" | "member" | "athlete";
 }): string {
   const { academy, platform, pageUrl, familyUrl, consoleUrl, supabaseUrl, supabaseAnonKey } = opts;
   const inAppBrowser = opensInAppBrowser(opts.userAgent);
@@ -1071,9 +1071,10 @@ function renderDesktopInvite(
   shortName: string,
   name: string,
   pageUrl: string,
-  kind: "family" | "member",
+  kind: "family" | "member" | "athlete",
 ): string {
   const socio = kind === "member";
+  const atleta = kind === "athlete";
   return `  <div class="stage">
     <!--
       Os estilhacos. Decorativos, e por isso fora da arvore de acessibilidade —
@@ -1089,7 +1090,7 @@ function renderDesktopInvite(
       <div class="mark${academy.logoUrl ? " logo" : ""}" style="margin:0 auto 22px">${academy.logoUrl ? `<img src="${esc(academy.logoUrl)}" alt="" />` : esc(academy.mark)}</div>
 
       <div id="install-panel">
-          <p class="eyebrow" style="text-align:left">${socio ? "Convite de sócio" : "Convite da família"}</p>
+          <p class="eyebrow" style="text-align:left">${socio ? "Convite de sócio" : atleta ? "Convite de atleta" : "Convite da família"}</p>
           <h1>Abre isto no teu telemóvel</h1>
           <p class="subtitle" style="text-align:left">
             A aplicação da ${name} é feita para o telemóvel. Copia o link e abre-o lá.
@@ -1110,14 +1111,16 @@ function renderDesktopInvite(
             <li>${
               socio
                 ? "Dentro da app, escolhe a tua palavra-passe — a tua área de sócio fica pronta"
-                : "Dentro da app, cria conta e identifica o teu filho pelo NIF e data de nascimento"
+                : atleta
+                  ? "Dentro da app, escolhe a tua palavra-passe — a tua área de atleta fica pronta"
+                  : "Dentro da app, cria conta e identifica o teu filho pelo NIF e data de nascimento"
             }</li>
           </ol>
         </div>
 
       <p class="install-aside">
         ${
-          socio
+          socio || atleta
             ? `Este convite é pessoal: a conta fica ligada ao email para onde ele foi enviado. Alguma dúvida, fala com a ${shortName}.`
             : `Ainda não recebeste o link? Fala com a ${shortName} — o convite é pessoal e só serve para o teu
         educando.`
@@ -1154,7 +1157,7 @@ function renderMobile(
    * O staff continua a entrar pela página do clube sem convite (`/`), que é para
    * onde a consola o manda quando não tem sessão.
    */
-  invite?: "family" | "member",
+  invite?: "family" | "member" | "athlete",
 ): string {
   return `  <main>
     <div class="card">
@@ -1164,7 +1167,9 @@ function renderMobile(
       <p class="subtitle">${
         invite === "member"
           ? "O teu cartão de sócio, as quotas e as novidades do clube — tudo num sítio só."
-          : "Treinos, pagamentos e o progresso do teu atleta — tudo num sítio só."
+          : invite === "athlete"
+            ? "Os teus treinos, jogos, convocatórias e avaliações — tudo num sítio só."
+            : "Treinos, pagamentos e o progresso do teu atleta — tudo num sítio só."
       }</p>
 
       <div class="panel" id="install-panel">

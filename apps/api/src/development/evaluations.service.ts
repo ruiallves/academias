@@ -1,6 +1,7 @@
 import { BadRequestException, ForbiddenException, Injectable, NotFoundException } from "@nestjs/common";
 import { PrismaService, type ScopedClient } from "../prisma/prisma.service";
 import { NotificationsService } from "../notifications/notifications.service";
+import { contaDoAtleta } from "../academy/athlete-accounts";
 import { athleteScopeFilter, athleteTeamScopeWhere, can, teamScopeFilter, type RequestContext } from "../common/permissions";
 
 /**
@@ -41,6 +42,8 @@ export type EvaluationInput = {
   note?: string | null;
   strengths?: string | null;
   focus?: string | null;
+  /** O próprio atleta vê-a na app quando publicada. Omissão: sim. */
+  athleteVisible?: boolean;
 };
 
 @Injectable()
@@ -77,12 +80,14 @@ export class EvaluationsService {
         where: {
           ...(period ? { period } : {}),
           ...(family ? { status: "PUBLISHED" as const } : {}),
+          // O próprio atleta só vê o que o treinador lhe abriu.
+          ...(ctx.role === "ATHLETE" ? { athleteVisible: true } : {}),
           athlete: this.athleteWhere(ctx),
         },
         orderBy: [{ period: "desc" }, { updatedAt: "desc" }],
         select: {
           id: true, athleteId: true, period: true, status: true, scores: true,
-          note: true, strengths: true, focus: true,
+          note: true, strengths: true, focus: true, athleteVisible: true,
           publishedAt: true, createdAt: true, updatedAt: true,
           coach: { select: { id: true, user: { select: { name: true } } } },
           athlete: { select: { name: true, teams: { select: { teamId: true }, take: 1 } } },
@@ -100,6 +105,7 @@ export class EvaluationsService {
         note: r.note,
         strengths: r.strengths,
         focus: r.focus,
+        athleteVisible: r.athleteVisible,
         coachId: r.coach.id,
         coachName: r.coach.user.name,
         publishedAt: r.publishedAt,
@@ -144,6 +150,7 @@ export class EvaluationsService {
         strengths: text(dto.strengths),
         focus: text(dto.focus),
         coachId: ctx.membershipId,
+        ...(dto.athleteVisible !== undefined ? { athleteVisible: dto.athleteVisible } : {}),
       };
 
       const saved = existing
@@ -176,7 +183,7 @@ export class EvaluationsService {
       const rows = await db.evaluation.findMany({
         where: { id: { in: ids }, athlete: this.athleteWhere(ctx) },
         select: {
-          id: true, status: true, scores: true, period: true,
+          id: true, status: true, scores: true, period: true, athleteVisible: true,
           athlete: { select: { id: true, name: true } },
         },
       });
@@ -211,6 +218,8 @@ export class EvaluationsService {
             // `route` é o que faz a notificação abrir no sítio certo em vez de
             // ficar a ser um texto que obriga a procurar. Ver `NotifRow` na PWA.
             payload: { evaluationId: row.id, athleteId: row.athlete.id, route: "/atleta" },
+            // E o próprio, se o treinador lha abriu — na segunda pessoa.
+            atleta: row.athleteVisible ? `A tua avaliação — ${row.period} — já está na app.` : null,
           });
         }
       }
@@ -314,7 +323,13 @@ export class EvaluationsService {
     db: ScopedClient,
     ctx: RequestContext,
     athleteId: string,
-    message: { title: string; body: string; payload: Record<string, unknown> },
+    message: {
+      title: string;
+      body: string;
+      payload: Record<string, unknown>;
+      /** O texto para o próprio atleta — nulo quando ele não a vê. */
+      atleta?: string | null;
+    },
   ) {
     const guardians = await db.guardianLink.findMany({
       where: { athleteId, membership: { isActive: true } },
@@ -333,6 +348,16 @@ export class EvaluationsService {
         },
         db,
       );
+    }
+
+    if (message.atleta) {
+      const userId = await contaDoAtleta(db, athleteId);
+      if (userId) {
+        await this.notifications.enqueue(
+          { academyId: ctx.academyId, userId, type: "EVALUATION_PUBLISHED", title: message.title, body: message.atleta, payload: message.payload },
+          db,
+        );
+      }
     }
   }
 }

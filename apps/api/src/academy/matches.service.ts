@@ -1129,7 +1129,7 @@ export class MatchesService {
   async submitCallUps(ctx: RequestContext, matchId: string, logistica: CallUpLogistics = {}) {
     this.assertCanManageCallUps(ctx);
 
-    const { match, avisados, convocados, pedeConfirmacao } = await this.prisma.runAs(ctx.academyId, async (db) => {
+    const { match, avisados, convocados, pedeConfirmacao, gravada } = await this.prisma.runAs(ctx.academyId, async (db) => {
       const match = await this.loadMatch(db, ctx, matchId);
       const callUps = await db.matchCallUp.findMany({
         where: { matchId },
@@ -1139,6 +1139,7 @@ export class MatchesService {
             select: {
               name: true,
               guardians: { select: { membership: { select: { userId: true, isActive: true } } } },
+              account: { select: { userId: true, isActive: true } },
             },
           },
         },
@@ -1156,11 +1157,12 @@ export class MatchesService {
        *
        * Ver `CallUpLogistics` para o porquê de cada campo ser opcional.
        */
+      const gravada = limparLogistica(logistica, match.startsAt);
       await db.match.update({
         where: { id: matchId },
         data: {
           callUpsClosedAt: new Date(),
-          ...limparLogistica(logistica, match.startsAt),
+          ...gravada,
         },
       });
 
@@ -1171,12 +1173,15 @@ export class MatchesService {
         for (const g of c.athlete.guardians) {
           if (g.membership.isActive) destinatarios.push({ userId: g.membership.userId, athleteName: c.athlete.name });
         }
+        // E o próprio, quando tem conta na app.
+        if (c.athlete.account?.isActive) destinatarios.push({ userId: c.athlete.account.userId, athleteName: c.athlete.name });
       }
       return {
         match,
         avisados: destinatarios,
         convocados: callUps.length,
         pedeConfirmacao: logistica.confirmationRequired === true,
+        gravada,
       };
     });
 
@@ -1230,7 +1235,7 @@ export class MatchesService {
       });
     }
 
-    return { submitted: true, convocados, familiasAvisadas: avisados.length };
+    return { submitted: true, convocados, familiasAvisadas: avisados.length, logistica: gravada };
   }
 
   /**
@@ -1388,6 +1393,7 @@ export class MatchesService {
             select: {
               name: true,
               guardians: { select: { membership: { select: { userId: true, isActive: true } } } },
+              account: { select: { userId: true, isActive: true } },
             },
           },
         },
@@ -1397,6 +1403,8 @@ export class MatchesService {
         for (const g of c.athlete.guardians) {
           if (g.membership.isActive) destinatarios.push({ userId: g.membership.userId, athleteName: c.athlete.name });
         }
+        // E o próprio, quando tem conta na app.
+        if (c.athlete.account?.isActive) destinatarios.push({ userId: c.athlete.account.userId, athleteName: c.athlete.name });
       }
 
       return { match, antes: actual, depois: novo, avisados: destinatarios };
@@ -1423,7 +1431,23 @@ export class MatchesService {
       }
     }
 
-    return { matchId, mudou: mudancas.length > 0, mudancas, familiasAvisadas: mudancas.length ? avisados.length : 0 };
+    return {
+      matchId,
+      mudou: mudancas.length > 0,
+      mudancas,
+      familiasAvisadas: mudancas.length ? avisados.length : 0,
+      /*
+       * O que ficou gravado — para quem chamou não ter de ir perguntar.
+       *
+       * A consola mostrava a correcção recarregando a academia inteira (o
+       * bootstrap e mais oito listas, segundos numa ligação normal), e até isso
+       * chegar continuava a mostrar a hora antiga: quem reabria o diálogo via o
+       * valor de antes e concluía que a gravação se tinha perdido. Devolver as
+       * seis colunas que mudaram deixa a consola actualizar o jogo em memória no
+       * instante em que grava. Ver `aplicarLogistica` no store da consola.
+       */
+      logistica: depois,
+    };
   }
 
   /**

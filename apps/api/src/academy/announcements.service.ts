@@ -3,16 +3,21 @@ import { NotificationType, type Prisma } from "@prisma/client";
 import { PrismaService, type ScopedClient } from "../prisma/prisma.service";
 import { NotificationsService } from "../notifications/notifications.service";
 import { can, teamScopeFilter, type RequestContext } from "../common/permissions";
+import { contasDasEquipas } from "./athlete-accounts";
 
-type AudienceKind = "all" | "guardians" | "coaches" | "members";
+type AudienceKind = "all" | "guardians" | "athletes" | "coaches" | "members";
 
 /** O rótulo que a consola mostra — a direção lê "Pais", não `{ kind: "guardians" }`. */
 const AUDIENCE_LABEL: Record<AudienceKind, string> = {
   all: "Geral",
   guardians: "Pais",
+  athletes: "Atletas",
   coaches: "Treinadores",
   members: "Sócios",
 };
+
+/** Os públicos que se estreitam por escalão — os dois que vivem numa equipa. */
+const POR_ESCALAO = new Set<AudienceKind>(["guardians", "athletes"]);
 
 /**
  * Comunicações às famílias e ao staff.
@@ -78,10 +83,19 @@ export class AnnouncementsService {
        */
       const isFamily = ctx.role === "GUARDIAN" || ctx.role === "ATHLETE";
       const myTeams = new Set(ctx.scope.teamIds ?? []);
+      /*
+       * O que cada chapéu lê. O encarregado não lê o que é só para os atletas
+       * nem o que é para os treinadores; o atleta não lê o que é para os pais,
+       * para os sócios nem para os treinadores. "Geral" chega a todos.
+       */
+      const escondidos: Record<string, Set<string>> = {
+        GUARDIAN: new Set(["coaches", "athletes"]),
+        ATHLETE: new Set(["coaches", "guardians", "members"]),
+      };
       const visible = isFamily
         ? rows.filter((a) => {
             const aud = a.audience as { kind?: string; teamIds?: string[] } | null;
-            if (aud?.kind === "coaches") return false;
+            if (aud?.kind && escondidos[ctx.role]?.has(aud.kind)) return false;
             if (aud?.teamIds?.length) return aud.teamIds.some((t) => myTeams.has(t));
             return true;
           })
@@ -150,8 +164,8 @@ export class AnnouncementsService {
     const scope = teamScopeFilter(ctx);
     // O treinador (com âmbito) só fala com os pais das suas equipas. Qualquer outro
     // público é recusado aqui, não escondido na UI.
-    if (scope && dto.audience !== "guardians") {
-      throw new ForbiddenException("Só podes comunicar com os pais das tuas equipas");
+    if (scope && !POR_ESCALAO.has(dto.audience)) {
+      throw new ForbiddenException("Só podes comunicar com os pais ou os atletas das tuas equipas");
     }
 
     /*
@@ -171,8 +185,8 @@ export class AnnouncementsService {
     }
 
     const escolhidos = unique(dto.teamIds ?? []);
-    if (escolhidos.length > 0 && dto.audience !== "guardians") {
-      throw new BadRequestException("Só se escolhe escalão quando o aviso é para os pais");
+    if (escolhidos.length > 0 && !POR_ESCALAO.has(dto.audience)) {
+      throw new BadRequestException("Só se escolhe escalão quando o aviso é para os pais ou para os atletas");
     }
     // Um treinador não estreita para fora do que já é o âmbito dele. A UI só lhe
     // mostra as equipas dele; isto é o que recusa um pedido feito por fora.
@@ -357,6 +371,16 @@ export class AnnouncementsService {
      * conta para onde o mandar. O aviso em si fica visível a todos os sócios
      * na app, quando entrarem.
      */
+    if (kind === "athletes") {
+      if (teamIds) return contasDasEquipas(db, teamIds);
+      // Direção: todos os atletas com conta.
+      const atletas = await db.membership.findMany({
+        where: { role: "ATHLETE", isActive: true },
+        select: { userId: true },
+      });
+      return unique(atletas.map((m) => m.userId));
+    }
+
     if (kind === "members") {
       const socios = await db.member.findMany({
         where: { userId: { not: null }, status: "ACTIVE" },
@@ -397,8 +421,11 @@ function unique(ids: string[]): string[] {
 function audienceLabelOf(audience: unknown, teamNames?: Map<string, string>): string {
   const aud = audience as { kind?: string; teamIds?: string[] } | null;
   const kind = aud?.kind;
-  const base = kind === "all" || kind === "guardians" || kind === "coaches" ? AUDIENCE_LABEL[kind] : "Geral";
-  if (base !== AUDIENCE_LABEL.guardians) return base;
+  const base =
+    kind === "all" || kind === "guardians" || kind === "athletes" || kind === "coaches" || kind === "members"
+      ? AUDIENCE_LABEL[kind]
+      : "Geral";
+  if (base !== AUDIENCE_LABEL.guardians && base !== AUDIENCE_LABEL.athletes) return base;
 
   const nomes = (aud?.teamIds ?? []).map((id) => teamNames?.get(id)).filter((n): n is string => Boolean(n));
   if (nomes.length === 0) return base;

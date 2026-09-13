@@ -31,7 +31,7 @@ export default function Profile() {
             {store.guardian.firstName}
           </h1>
           <p className="mt-0.5 truncate text-meta text-ink-3">
-            Encarregado de educação · {store.academy.shortName}
+            {store.atleta ? "Atleta" : "Encarregado de educação"} · {store.academy.shortName}
           </p>
         </div>
       </header>
@@ -43,6 +43,7 @@ export default function Profile() {
 
       {/* Quem está associado a esta conta. Responde a "a app está a mostrar-me
           tudo o que devia?" sem obrigar a passear pelo seletor lá em cima. */}
+      {!store.atleta && (
       <section>
         <Label>Educandos</Label>
         <ul className="overflow-hidden rounded-[var(--radius-lg)] bg-surface shadow-[var(--shadow-soft)]">
@@ -84,6 +85,7 @@ export default function Profile() {
           </li>
         </ul>
       </section>
+      )}
 
       <section>
         <Label>Conta</Label>
@@ -114,7 +116,7 @@ export default function Profile() {
 
       <p className="flex items-center justify-center gap-1.5 pb-1 text-[12px] text-ink-4">
         <ShieldCheck className="size-3.5" strokeWidth={1.75} />
-        Vês apenas os teus educandos.
+        {store.atleta ? "Vês apenas o que é teu." : "Vês apenas os teus educandos."}
       </p>
     </div>
   );

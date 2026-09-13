@@ -248,6 +248,20 @@ export type Athlete = {
    */
   medicalValidUntil: string | null;
 
+  /**
+   * ---- A conta do próprio atleta na app do clube --------------------------
+   *
+   * `email` é o do atleta (não o do encarregado) — é para lá que sai o convite.
+   * `app` é o estado, no vocabulário da lista de sócios: `account` (ligada),
+   * `invited` (convite à espera), `none` (tem email, ninguém convidou),
+   * `noemail`. Ver `AppDoAtletaPanel`.
+   */
+  email?: string;
+  app: "account" | "invited" | "none" | "noemail";
+  inviteSentAt: string | null;
+  /** A conta ligada já abriu a app (ou tem push). */
+  appInstalled: boolean;
+
   /** Ausente na maioria — as academias não têm fotografia de toda a gente. */
   photoUrl?: string;
   heightCm?: number;

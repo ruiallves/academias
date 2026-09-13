@@ -6,6 +6,7 @@ import { PHOTO_BUCKET } from "../storage/photos.service";
 import { can, teamScopeFilter, type RequestContext, teamScopeForRoster } from "../common/permissions";
 import { gerarCobrancas, periodoActual } from "../billing/billing.service";
 import type { AthleteInputDto, AthleteUpdateDto } from "./athletes.dto";
+import { AthleteInvitesService } from "./athlete-invites.service";
 
 /**
  * Criação de atletas — um a um ou em lote a partir de um ficheiro.
@@ -34,13 +35,14 @@ export class AthletesService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly storage: StorageService,
+    private readonly invites: AthleteInvitesService,
   ) {}
 
   /** Cria um atleta. Devolve o registo criado. */
   async create(ctx: RequestContext, dto: AthleteInputDto) {
     if (!can(ctx, "athlete:write")) throw new ForbiddenException("Sem permissão para inscrever atletas");
 
-    return this.prisma.runAs(ctx.academyId, async (db) => {
+    const athlete = await this.prisma.runAs(ctx.academyId, async (db) => {
       const teams = await this.teamsInScope(ctx, db);
       const result = await this.insertOne(db, ctx.academyId, dto, teams);
       if ("error" in result) throw new BadRequestException(result.error);
@@ -62,6 +64,16 @@ export class AthletesService {
 
       return result.athlete;
     });
+
+    /*
+     * O convite para a app, logo a seguir — como nos sócios: quem é inscrito
+     * com email recebe o convite sem ninguém ter de se lembrar de um segundo
+     * gesto. Fora da transação (é correio, não base de dados) e sem esperar:
+     * a inscrição já é um facto, e um email que falhe tem o botão da ficha.
+     */
+    void this.invites.enviarSePossivel(ctx.academyId, athlete.id);
+
+    return athlete;
   }
 
   /**
@@ -115,6 +127,11 @@ export class AthletesService {
       const data: Prisma.AthleteUpdateInput = {};
 
       if (dto.name !== undefined) data.name = dto.name.trim();
+      if (dto.email !== undefined) {
+        const email = dto.email.trim().toLowerCase();
+        if (email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) throw new BadRequestException("Email do atleta inválido");
+        data.email = email || null;
+      }
 
       if (dto.birthdate !== undefined) {
         const birth = new Date(dto.birthdate);
@@ -398,7 +415,7 @@ export class AthletesService {
      */
     const tectoMs = Math.min(Math.max(30_000, rows.length * 1_000), 420_000);
 
-    return this.prisma.runAs(ctx.academyId, async (db) => {
+    const resultado = await this.prisma.runAs(ctx.academyId, async (db) => {
       const teams = await this.teamsInScope(ctx, db);
 
       // Nomes já existentes na academia — para não recriar quem já lá está. A
@@ -463,6 +480,15 @@ export class AthletesService {
 
       return { created: created.length, errors, athletes: created };
     }, { timeoutMs: tectoMs });
+
+    /*
+     * Os convites dos importados — depois da transação, em série, sem esperar.
+     * Quem não tem email na folha fica sem convite e sem erro: é o caso normal
+     * dos escalões mais novos, e a lista de atletas deixa enviá-lo depois.
+     */
+    for (const a of resultado.athletes) void this.invites.enviarSePossivel(ctx.academyId, a.id);
+
+    return resultado;
   }
 
   /* ------------------------------------------------------------------------ */
@@ -544,6 +570,7 @@ export class AthletesService {
       status: "ACTIVE" as AthleteStatus,
       // Sempre presente: o DTO recusa a inscrição sem ele.
       taxId: nif,
+      ...(dto.email?.trim() ? { email: dto.email.trim().toLowerCase() } : {}),
       ...(dto.medicalValidUntil ? { medicalValidUntil: new Date(dto.medicalValidUntil) } : {}),
       ...(dto.heightCm != null ? { heightCm: dto.heightCm } : {}),
       ...(dto.weightDg != null ? { weightKg: dto.weightDg / 10 } : {}),

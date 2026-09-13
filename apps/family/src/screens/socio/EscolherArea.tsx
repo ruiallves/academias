@@ -1,4 +1,4 @@
-import { Briefcase, IdCard, Users } from "lucide-react";
+import { Briefcase, IdCard, Users, Dumbbell } from "lucide-react";
 import { readBrand } from "@/lib/brand";
 import { chooseContext, useContexts, type ContextType } from "@/lib/contexts";
 import { ROLE_LABEL } from "@/lib/handoff";
@@ -45,6 +45,7 @@ export default function EscolherArea({ name }: { name: string }) {
       icon: Briefcase,
     },
     { type: "FAMILY", label: "Família", hint: "Acompanha os teus atletas: treinos, convocatórias, avaliações e pagamentos.", icon: Users },
+    { type: "ATHLETE", label: "Atleta", hint: "Os teus treinos, jogos, convocatórias, avaliações e o que o treinador partilhar contigo.", icon: Dumbbell },
     { type: "MEMBER", label: "Sócio", hint: "O teu cartão, as quotas, os jogos e as novidades do clube.", icon: IdCard },
   ];
   const opcoes = todas.filter((o) => contexts?.some((c) => c.type === o.type));
