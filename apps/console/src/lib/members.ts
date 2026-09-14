@@ -281,12 +281,15 @@ export const getMember = (id: string) => apiGet<MemberDetail>(`/api/members/${id
 export const updateMember = (id: string, body: Record<string, unknown>) => apiPatch(`/api/members/${id}`, body);
 
 /**
- * Apagar de vez — só serve para o que nunca chegou a ser sócio.
+ * Apagar de vez — a ficha, as quotas e os pagamentos dela.
  *
- * O servidor recusa assim que houver um número atribuído e diz porquê; ver
- * `MembersService.remove`. Quem tem número cancela-se, não se apaga.
+ * Já era recusado a quem tivesse número; deixou de ser, porque o problema que o
+ * travão queria resolver (o número voltar à fila) resolveu-se na numeração e não
+ * na porta — ver `MembersService.remove`. `freedNumber` é o número que ficou
+ * aberto, para o ecrã o poder dizer; nulo quando a ficha nunca teve número.
  */
-export const removeMember = (id: string) => apiDelete<{ ok: boolean }>(`/api/members/${id}`);
+export const removeMember = (id: string) =>
+  apiDelete<{ ok: boolean; freedNumber: number | null }>(`/api/members/${id}`);
 
 export const listTiers = () => apiGet<MemberTier[]>("/api/members/tiers");
 

@@ -1,0 +1,1408 @@
+{
+  "clube": "AD Márcia Miranda Felgueiras",
+  "equipa": {
+    "id": "cmth5nl4200c9ly151179pfmh",
+    "name": "Benjamins - ADMMF",
+    "seasonId": "cmth52r0s00bsly15o2quz03t"
+  },
+  "apagados": [
+    {
+      "id": "cmth6q4uv00i7ly15eia0gial",
+      "startsAt": "2026-09-14T16:30:00.000Z",
+      "endsAt": "2026-09-14T17:30:00.000Z",
+      "venue": "Pav. Centro Educativo de Trovela",
+      "status": "SCHEDULED",
+      "notes": null,
+      "coachId": null,
+      "dressingRooms": [],
+      "inicio": "2026-09-14T16:30:00.000Z",
+      "fimS": "2026-09-14T17:30:00.000Z"
+    },
+    {
+      "id": "cmth6qvu700knly15bj4itjqj",
+      "startsAt": "2026-09-16T16:30:00.000Z",
+      "endsAt": "2026-09-16T18:00:00.000Z",
+      "venue": "Pav. Centro Educativo de Trovela",
+      "status": "SCHEDULED",
+      "notes": null,
+      "coachId": null,
+      "dressingRooms": [],
+      "inicio": "2026-09-16T16:30:00.000Z",
+      "fimS": "2026-09-16T18:00:00.000Z"
+    },
+    {
+      "id": "cmth6q51100i9ly15l7jmvl5s",
+      "startsAt": "2026-09-21T16:30:00.000Z",
+      "endsAt": "2026-09-21T17:30:00.000Z",
+      "venue": "Pav. Centro Educativo de Trovela",
+      "status": "SCHEDULED",
+      "notes": null,
+      "coachId": null,
+      "dressingRooms": [],
+      "inicio": "2026-09-21T16:30:00.000Z",
+      "fimS": "2026-09-21T17:30:00.000Z"
+    },
+    {
+      "id": "cmth6qw0i00kply15eu9mdu7q",
+      "startsAt": "2026-09-23T16:30:00.000Z",
+      "endsAt": "2026-09-23T18:00:00.000Z",
+      "venue": "Pav. Centro Educativo de Trovela",
+      "status": "SCHEDULED",
+      "notes": null,
+      "coachId": null,
+      "dressingRooms": [],
+      "inicio": "2026-09-23T16:30:00.000Z",
+      "fimS": "2026-09-23T18:00:00.000Z"
+    },
+    {
+      "id": "cmth6q57200ibly150u5oqh22",
+      "startsAt": "2026-09-28T16:30:00.000Z",
+      "endsAt": "2026-09-28T17:30:00.000Z",
+      "venue": "Pav. Centro Educativo de Trovela",
+      "status": "SCHEDULED",
+      "notes": null,
+      "coachId": null,
+      "dressingRooms": [],
+      "inicio": "2026-09-28T16:30:00.000Z",
+      "fimS": "2026-09-28T17:30:00.000Z"
+    },
+    {
+      "id": "cmth6qw6y00krly151xmh5zq0",
+      "startsAt": "2026-09-30T16:30:00.000Z",
+      "endsAt": "2026-09-30T18:00:00.000Z",
+      "venue": "Pav. Centro Educativo de Trovela",
+      "status": "SCHEDULED",
+      "notes": null,
+      "coachId": null,
+      "dressingRooms": [],
+      "inicio": "2026-09-30T16:30:00.000Z",
+      "fimS": "2026-09-30T18:00:00.000Z"
+    },
+    {
+      "id": "cmth6q5d500idly15utas52wn",
+      "startsAt": "2026-10-05T16:30:00.000Z",
+      "endsAt": "2026-10-05T17:30:00.000Z",
+      "venue": "Pav. Centro Educativo de Trovela",
+      "status": "SCHEDULED",
+      "notes": null,
+      "coachId": null,
+      "dressingRooms": [],
+      "inicio": "2026-10-05T16:30:00.000Z",
+      "fimS": "2026-10-05T17:30:00.000Z"
+    },
+    {
+      "id": "cmth6qwd900ktly15hhsz4o7j",
+      "startsAt": "2026-10-07T16:30:00.000Z",
+      "endsAt": "2026-10-07T18:00:00.000Z",
+      "venue": "Pav. Centro Educativo de Trovela",
+      "status": "SCHEDULED",
+      "notes": null,
+      "coachId": null,
+      "dressingRooms": [],
+      "inicio": "2026-10-07T16:30:00.000Z",
+      "fimS": "2026-10-07T18:00:00.000Z"
+    },
+    {
+      "id": "cmth6q5j500ifly15tqlevt9i",
+      "startsAt": "2026-10-12T16:30:00.000Z",
+      "endsAt": "2026-10-12T17:30:00.000Z",
+      "venue": "Pav. Centro Educativo de Trovela",
+      "status": "SCHEDULED",
+      "notes": null,
+      "coachId": null,
+      "dressingRooms": [],
+      "inicio": "2026-10-12T16:30:00.000Z",
+      "fimS": "2026-10-12T17:30:00.000Z"
+    },
+    {
+      "id": "cmth6qwjl00kvly15ac2431kg",
+      "startsAt": "2026-10-14T16:30:00.000Z",
+      "endsAt": "2026-10-14T18:00:00.000Z",
+      "venue": "Pav. Centro Educativo de Trovela",
+      "status": "SCHEDULED",
+      "notes": null,
+      "coachId": null,
+      "dressingRooms": [],
+      "inicio": "2026-10-14T16:30:00.000Z",
+      "fimS": "2026-10-14T18:00:00.000Z"
+    },
+    {
+      "id": "cmth6q5p700ihly15vq6ws92o",
+      "startsAt": "2026-10-19T16:30:00.000Z",
+      "endsAt": "2026-10-19T17:30:00.000Z",
+      "venue": "Pav. Centro Educativo de Trovela",
+      "status": "SCHEDULED",
+      "notes": null,
+      "coachId": null,
+      "dressingRooms": [],
+      "inicio": "2026-10-19T16:30:00.000Z",
+      "fimS": "2026-10-19T17:30:00.000Z"
+    },
+    {
+      "id": "cmth6qwq000kxly15e025cbpc",
+      "startsAt": "2026-10-21T16:30:00.000Z",
+      "endsAt": "2026-10-21T18:00:00.000Z",
+      "venue": "Pav. Centro Educativo de Trovela",
+      "status": "SCHEDULED",
+      "notes": null,
+      "coachId": null,
+      "dressingRooms": [],
+      "inicio": "2026-10-21T16:30:00.000Z",
+      "fimS": "2026-10-21T18:00:00.000Z"
+    },
+    {
+      "id": "cmth6q5v700ijly151a1bdjdp",
+      "startsAt": "2026-10-26T17:30:00.000Z",
+      "endsAt": "2026-10-26T18:30:00.000Z",
+      "venue": "Pav. Centro Educativo de Trovela",
+      "status": "SCHEDULED",
+      "notes": null,
+      "coachId": null,
+      "dressingRooms": [],
+      "inicio": "2026-10-26T17:30:00.000Z",
+      "fimS": "2026-10-26T18:30:00.000Z"
+    },
+    {
+      "id": "cmth6qwwe00kzly15q7u5u2fn",
+      "startsAt": "2026-10-28T17:30:00.000Z",
+      "endsAt": "2026-10-28T19:00:00.000Z",
+      "venue": "Pav. Centro Educativo de Trovela",
+      "status": "SCHEDULED",
+      "notes": null,
+      "coachId": null,
+      "dressingRooms": [],
+      "inicio": "2026-10-28T17:30:00.000Z",
+      "fimS": "2026-10-28T19:00:00.000Z"
+    },
+    {
+      "id": "cmth6q61900illy15zrz5hsde",
+      "startsAt": "2026-11-02T17:30:00.000Z",
+      "endsAt": "2026-11-02T18:30:00.000Z",
+      "venue": "Pav. Centro Educativo de Trovela",
+      "status": "SCHEDULED",
+      "notes": null,
+      "coachId": null,
+      "dressingRooms": [],
+      "inicio": "2026-11-02T17:30:00.000Z",
+      "fimS": "2026-11-02T18:30:00.000Z"
+    },
+    {
+      "id": "cmth6qx2r00l1ly15r22yv02x",
+      "startsAt": "2026-11-04T17:30:00.000Z",
+      "endsAt": "2026-11-04T19:00:00.000Z",
+      "venue": "Pav. Centro Educativo de Trovela",
+      "status": "SCHEDULED",
+      "notes": null,
+      "coachId": null,
+      "dressingRooms": [],
+      "inicio": "2026-11-04T17:30:00.000Z",
+      "fimS": "2026-11-04T19:00:00.000Z"
+    },
+    {
+      "id": "cmth6q67e00inly15yutz5ixv",
+      "startsAt": "2026-11-09T17:30:00.000Z",
+      "endsAt": "2026-11-09T18:30:00.000Z",
+      "venue": "Pav. Centro Educativo de Trovela",
+      "status": "SCHEDULED",
+      "notes": null,
+      "coachId": null,
+      "dressingRooms": [],
+      "inicio": "2026-11-09T17:30:00.000Z",
+      "fimS": "2026-11-09T18:30:00.000Z"
+    },
+    {
+      "id": "cmth6qx9c00l3ly15nqp0ete6",
+      "startsAt": "2026-11-11T17:30:00.000Z",
+      "endsAt": "2026-11-11T19:00:00.000Z",
+      "venue": "Pav. Centro Educativo de Trovela",
+      "status": "SCHEDULED",
+      "notes": null,
+      "coachId": null,
+      "dressingRooms": [],
+      "inicio": "2026-11-11T17:30:00.000Z",
+      "fimS": "2026-11-11T19:00:00.000Z"
+    },
+    {
+      "id": "cmth6q6df00iply15waxez09h",
+      "startsAt": "2026-11-16T17:30:00.000Z",
+      "endsAt": "2026-11-16T18:30:00.000Z",
+      "venue": "Pav. Centro Educativo de Trovela",
+      "status": "SCHEDULED",
+      "notes": null,
+      "coachId": null,
+      "dressingRooms": [],
+      "inicio": "2026-11-16T17:30:00.000Z",
+      "fimS": "2026-11-16T18:30:00.000Z"
+    },
+    {
+      "id": "cmth6qxfy00l5ly15ydzi96zc",
+      "startsAt": "2026-11-18T17:30:00.000Z",
+      "endsAt": "2026-11-18T19:00:00.000Z",
+      "venue": "Pav. Centro Educativo de Trovela",
+      "status": "SCHEDULED",
+      "notes": null,
+      "coachId": null,
+      "dressingRooms": [],
+      "inicio": "2026-11-18T17:30:00.000Z",
+      "fimS": "2026-11-18T19:00:00.000Z"
+    },
+    {
+      "id": "cmth6q6jk00irly15bl6nr5rw",
+      "startsAt": "2026-11-23T17:30:00.000Z",
+      "endsAt": "2026-11-23T18:30:00.000Z",
+      "venue": "Pav. Centro Educativo de Trovela",
+      "status": "SCHEDULED",
+      "notes": null,
+      "coachId": null,
+      "dressingRooms": [],
+      "inicio": "2026-11-23T17:30:00.000Z",
+      "fimS": "2026-11-23T18:30:00.000Z"
+    },
+    {
+      "id": "cmth6qxm800l7ly15678j16b0",
+      "startsAt": "2026-11-25T17:30:00.000Z",
+      "endsAt": "2026-11-25T19:00:00.000Z",
+      "venue": "Pav. Centro Educativo de Trovela",
+      "status": "SCHEDULED",
+      "notes": null,
+      "coachId": null,
+      "dressingRooms": [],
+      "inicio": "2026-11-25T17:30:00.000Z",
+      "fimS": "2026-11-25T19:00:00.000Z"
+    },
+    {
+      "id": "cmth6q6pn00itly15zxju2nac",
+      "startsAt": "2026-11-30T17:30:00.000Z",
+      "endsAt": "2026-11-30T18:30:00.000Z",
+      "venue": "Pav. Centro Educativo de Trovela",
+      "status": "SCHEDULED",
+      "notes": null,
+      "coachId": null,
+      "dressingRooms": [],
+      "inicio": "2026-11-30T17:30:00.000Z",
+      "fimS": "2026-11-30T18:30:00.000Z"
+    },
+    {
+      "id": "cmth6qxsk00l9ly15xp196d6p",
+      "startsAt": "2026-12-02T17:30:00.000Z",
+      "endsAt": "2026-12-02T19:00:00.000Z",
+      "venue": "Pav. Centro Educativo de Trovela",
+      "status": "SCHEDULED",
+      "notes": null,
+      "coachId": null,
+      "dressingRooms": [],
+      "inicio": "2026-12-02T17:30:00.000Z",
+      "fimS": "2026-12-02T19:00:00.000Z"
+    },
+    {
+      "id": "cmth6q6vn00ivly15zmj4xyie",
+      "startsAt": "2026-12-07T17:30:00.000Z",
+      "endsAt": "2026-12-07T18:30:00.000Z",
+      "venue": "Pav. Centro Educativo de Trovela",
+      "status": "SCHEDULED",
+      "notes": null,
+      "coachId": null,
+      "dressingRooms": [],
+      "inicio": "2026-12-07T17:30:00.000Z",
+      "fimS": "2026-12-07T18:30:00.000Z"
+    },
+    {
+      "id": "cmth6qxyt00lbly150svs1x1x",
+      "startsAt": "2026-12-09T17:30:00.000Z",
+      "endsAt": "2026-12-09T19:00:00.000Z",
+      "venue": "Pav. Centro Educativo de Trovela",
+      "status": "SCHEDULED",
+      "notes": null,
+      "coachId": null,
+      "dressingRooms": [],
+      "inicio": "2026-12-09T17:30:00.000Z",
+      "fimS": "2026-12-09T19:00:00.000Z"
+    },
+    {
+      "id": "cmth6q71p00ixly15b028pprf",
+      "startsAt": "2026-12-14T17:30:00.000Z",
+      "endsAt": "2026-12-14T18:30:00.000Z",
+      "venue": "Pav. Centro Educativo de Trovela",
+      "status": "SCHEDULED",
+      "notes": null,
+      "coachId": null,
+      "dressingRooms": [],
+      "inicio": "2026-12-14T17:30:00.000Z",
+      "fimS": "2026-12-14T18:30:00.000Z"
+    },
+    {
+      "id": "cmth6qy5500ldly155h43lw9f",
+      "startsAt": "2026-12-16T17:30:00.000Z",
+      "endsAt": "2026-12-16T19:00:00.000Z",
+      "venue": "Pav. Centro Educativo de Trovela",
+      "status": "SCHEDULED",
+      "notes": null,
+      "coachId": null,
+      "dressingRooms": [],
+      "inicio": "2026-12-16T17:30:00.000Z",
+      "fimS": "2026-12-16T19:00:00.000Z"
+    },
+    {
+      "id": "cmth6q77r00izly15hfa109ny",
+      "startsAt": "2026-12-21T17:30:00.000Z",
+      "endsAt": "2026-12-21T18:30:00.000Z",
+      "venue": "Pav. Centro Educativo de Trovela",
+      "status": "SCHEDULED",
+      "notes": null,
+      "coachId": null,
+      "dressingRooms": [],
+      "inicio": "2026-12-21T17:30:00.000Z",
+      "fimS": "2026-12-21T18:30:00.000Z"
+    },
+    {
+      "id": "cmth6qybk00lfly15jlo8ok2k",
+      "startsAt": "2026-12-23T17:30:00.000Z",
+      "endsAt": "2026-12-23T19:00:00.000Z",
+      "venue": "Pav. Centro Educativo de Trovela",
+      "status": "SCHEDULED",
+      "notes": null,
+      "coachId": null,
+      "dressingRooms": [],
+      "inicio": "2026-12-23T17:30:00.000Z",
+      "fimS": "2026-12-23T19:00:00.000Z"
+    },
+    {
+      "id": "cmth6q7dt00j1ly153vvuh107",
+      "startsAt": "2026-12-28T17:30:00.000Z",
+      "endsAt": "2026-12-28T18:30:00.000Z",
+      "venue": "Pav. Centro Educativo de Trovela",
+      "status": "SCHEDULED",
+      "notes": null,
+      "coachId": null,
+      "dressingRooms": [],
+      "inicio": "2026-12-28T17:30:00.000Z",
+      "fimS": "2026-12-28T18:30:00.000Z"
+    },
+    {
+      "id": "cmth6qyi200lhly15jkoifn41",
+      "startsAt": "2026-12-30T17:30:00.000Z",
+      "endsAt": "2026-12-30T19:00:00.000Z",
+      "venue": "Pav. Centro Educativo de Trovela",
+      "status": "SCHEDULED",
+      "notes": null,
+      "coachId": null,
+      "dressingRooms": [],
+      "inicio": "2026-12-30T17:30:00.000Z",
+      "fimS": "2026-12-30T19:00:00.000Z"
+    },
+    {
+      "id": "cmth6q7jv00j3ly151zbihbqm",
+      "startsAt": "2027-01-04T17:30:00.000Z",
+      "endsAt": "2027-01-04T18:30:00.000Z",
+      "venue": "Pav. Centro Educativo de Trovela",
+      "status": "SCHEDULED",
+      "notes": null,
+      "coachId": null,
+      "dressingRooms": [],
+      "inicio": "2027-01-04T17:30:00.000Z",
+      "fimS": "2027-01-04T18:30:00.000Z"
+    },
+    {
+      "id": "cmth6qyol00ljly158kjejo32",
+      "startsAt": "2027-01-06T17:30:00.000Z",
+      "endsAt": "2027-01-06T19:00:00.000Z",
+      "venue": "Pav. Centro Educativo de Trovela",
+      "status": "SCHEDULED",
+      "notes": null,
+      "coachId": null,
+      "dressingRooms": [],
+      "inicio": "2027-01-06T17:30:00.000Z",
+      "fimS": "2027-01-06T19:00:00.000Z"
+    },
+    {
+      "id": "cmth6q7pv00j5ly15l8ub8qmm",
+      "startsAt": "2027-01-11T17:30:00.000Z",
+      "endsAt": "2027-01-11T18:30:00.000Z",
+      "venue": "Pav. Centro Educativo de Trovela",
+      "status": "SCHEDULED",
+      "notes": null,
+      "coachId": null,
+      "dressingRooms": [],
+      "inicio": "2027-01-11T17:30:00.000Z",
+      "fimS": "2027-01-11T18:30:00.000Z"
+    },
+    {
+      "id": "cmth6qyuv00llly15yhznkrwj",
+      "startsAt": "2027-01-13T17:30:00.000Z",
+      "endsAt": "2027-01-13T19:00:00.000Z",
+      "venue": "Pav. Centro Educativo de Trovela",
+      "status": "SCHEDULED",
+      "notes": null,
+      "coachId": null,
+      "dressingRooms": [],
+      "inicio": "2027-01-13T17:30:00.000Z",
+      "fimS": "2027-01-13T19:00:00.000Z"
+    },
+    {
+      "id": "cmth6q7vw00j7ly15x7bojvpp",
+      "startsAt": "2027-01-18T17:30:00.000Z",
+      "endsAt": "2027-01-18T18:30:00.000Z",
+      "venue": "Pav. Centro Educativo de Trovela",
+      "status": "SCHEDULED",
+      "notes": null,
+      "coachId": null,
+      "dressingRooms": [],
+      "inicio": "2027-01-18T17:30:00.000Z",
+      "fimS": "2027-01-18T18:30:00.000Z"
+    },
+    {
+      "id": "cmth6qz1400lnly15fq6ay43b",
+      "startsAt": "2027-01-20T17:30:00.000Z",
+      "endsAt": "2027-01-20T19:00:00.000Z",
+      "venue": "Pav. Centro Educativo de Trovela",
+      "status": "SCHEDULED",
+      "notes": null,
+      "coachId": null,
+      "dressingRooms": [],
+      "inicio": "2027-01-20T17:30:00.000Z",
+      "fimS": "2027-01-20T19:00:00.000Z"
+    },
+    {
+      "id": "cmth6q81y00j9ly152seexhfu",
+      "startsAt": "2027-01-25T17:30:00.000Z",
+      "endsAt": "2027-01-25T18:30:00.000Z",
+      "venue": "Pav. Centro Educativo de Trovela",
+      "status": "SCHEDULED",
+      "notes": null,
+      "coachId": null,
+      "dressingRooms": [],
+      "inicio": "2027-01-25T17:30:00.000Z",
+      "fimS": "2027-01-25T18:30:00.000Z"
+    },
+    {
+      "id": "cmth6qz7d00lply15za01ly9i",
+      "startsAt": "2027-01-27T17:30:00.000Z",
+      "endsAt": "2027-01-27T19:00:00.000Z",
+      "venue": "Pav. Centro Educativo de Trovela",
+      "status": "SCHEDULED",
+      "notes": null,
+      "coachId": null,
+      "dressingRooms": [],
+      "inicio": "2027-01-27T17:30:00.000Z",
+      "fimS": "2027-01-27T19:00:00.000Z"
+    },
+    {
+      "id": "cmth6q87y00jbly15a1lku2fj",
+      "startsAt": "2027-02-01T17:30:00.000Z",
+      "endsAt": "2027-02-01T18:30:00.000Z",
+      "venue": "Pav. Centro Educativo de Trovela",
+      "status": "SCHEDULED",
+      "notes": null,
+      "coachId": null,
+      "dressingRooms": [],
+      "inicio": "2027-02-01T17:30:00.000Z",
+      "fimS": "2027-02-01T18:30:00.000Z"
+    },
+    {
+      "id": "cmth6qzdn00lrly159ey9fysq",
+      "startsAt": "2027-02-03T17:30:00.000Z",
+      "endsAt": "2027-02-03T19:00:00.000Z",
+      "venue": "Pav. Centro Educativo de Trovela",
+      "status": "SCHEDULED",
+      "notes": null,
+      "coachId": null,
+      "dressingRooms": [],
+      "inicio": "2027-02-03T17:30:00.000Z",
+      "fimS": "2027-02-03T19:00:00.000Z"
+    },
+    {
+      "id": "cmth6q8e200jdly15mobpeyz7",
+      "startsAt": "2027-02-08T17:30:00.000Z",
+      "endsAt": "2027-02-08T18:30:00.000Z",
+      "venue": "Pav. Centro Educativo de Trovela",
+      "status": "SCHEDULED",
+      "notes": null,
+      "coachId": null,
+      "dressingRooms": [],
+      "inicio": "2027-02-08T17:30:00.000Z",
+      "fimS": "2027-02-08T18:30:00.000Z"
+    },
+    {
+      "id": "cmth6qzjx00ltly15ax1t0djz",
+      "startsAt": "2027-02-10T17:30:00.000Z",
+      "endsAt": "2027-02-10T19:00:00.000Z",
+      "venue": "Pav. Centro Educativo de Trovela",
+      "status": "SCHEDULED",
+      "notes": null,
+      "coachId": null,
+      "dressingRooms": [],
+      "inicio": "2027-02-10T17:30:00.000Z",
+      "fimS": "2027-02-10T19:00:00.000Z"
+    },
+    {
+      "id": "cmth6q8nc00jfly15h7s2ibdu",
+      "startsAt": "2027-02-15T17:30:00.000Z",
+      "endsAt": "2027-02-15T18:30:00.000Z",
+      "venue": "Pav. Centro Educativo de Trovela",
+      "status": "SCHEDULED",
+      "notes": null,
+      "coachId": null,
+      "dressingRooms": [],
+      "inicio": "2027-02-15T17:30:00.000Z",
+      "fimS": "2027-02-15T18:30:00.000Z"
+    },
+    {
+      "id": "cmth6qzqd00lvly15dbaj1563",
+      "startsAt": "2027-02-17T17:30:00.000Z",
+      "endsAt": "2027-02-17T19:00:00.000Z",
+      "venue": "Pav. Centro Educativo de Trovela",
+      "status": "SCHEDULED",
+      "notes": null,
+      "coachId": null,
+      "dressingRooms": [],
+      "inicio": "2027-02-17T17:30:00.000Z",
+      "fimS": "2027-02-17T19:00:00.000Z"
+    },
+    {
+      "id": "cmth6q8u300jhly157pldadkn",
+      "startsAt": "2027-02-22T17:30:00.000Z",
+      "endsAt": "2027-02-22T18:30:00.000Z",
+      "venue": "Pav. Centro Educativo de Trovela",
+      "status": "SCHEDULED",
+      "notes": null,
+      "coachId": null,
+      "dressingRooms": [],
+      "inicio": "2027-02-22T17:30:00.000Z",
+      "fimS": "2027-02-22T18:30:00.000Z"
+    },
+    {
+      "id": "cmth6qzws00lxly15ntqosu89",
+      "startsAt": "2027-02-24T17:30:00.000Z",
+      "endsAt": "2027-02-24T19:00:00.000Z",
+      "venue": "Pav. Centro Educativo de Trovela",
+      "status": "SCHEDULED",
+      "notes": null,
+      "coachId": null,
+      "dressingRooms": [],
+      "inicio": "2027-02-24T17:30:00.000Z",
+      "fimS": "2027-02-24T19:00:00.000Z"
+    },
+    {
+      "id": "cmth6q90j00jjly15ux272dti",
+      "startsAt": "2027-03-01T17:30:00.000Z",
+      "endsAt": "2027-03-01T18:30:00.000Z",
+      "venue": "Pav. Centro Educativo de Trovela",
+      "status": "SCHEDULED",
+      "notes": null,
+      "coachId": null,
+      "dressingRooms": [],
+      "inicio": "2027-03-01T17:30:00.000Z",
+      "fimS": "2027-03-01T18:30:00.000Z"
+    },
+    {
+      "id": "cmth6r03100lzly15wuwg2udn",
+      "startsAt": "2027-03-03T17:30:00.000Z",
+      "endsAt": "2027-03-03T19:00:00.000Z",
+      "venue": "Pav. Centro Educativo de Trovela",
+      "status": "SCHEDULED",
+      "notes": null,
+      "coachId": null,
+      "dressingRooms": [],
+      "inicio": "2027-03-03T17:30:00.000Z",
+      "fimS": "2027-03-03T19:00:00.000Z"
+    },
+    {
+      "id": "cmth6q97200jlly15qezoys27",
+      "startsAt": "2027-03-08T17:30:00.000Z",
+      "endsAt": "2027-03-08T18:30:00.000Z",
+      "venue": "Pav. Centro Educativo de Trovela",
+      "status": "SCHEDULED",
+      "notes": null,
+      "coachId": null,
+      "dressingRooms": [],
+      "inicio": "2027-03-08T17:30:00.000Z",
+      "fimS": "2027-03-08T18:30:00.000Z"
+    },
+    {
+      "id": "cmth6r09d00m1ly15g5j84yvs",
+      "startsAt": "2027-03-10T17:30:00.000Z",
+      "endsAt": "2027-03-10T19:00:00.000Z",
+      "venue": "Pav. Centro Educativo de Trovela",
+      "status": "SCHEDULED",
+      "notes": null,
+      "coachId": null,
+      "dressingRooms": [],
+      "inicio": "2027-03-10T17:30:00.000Z",
+      "fimS": "2027-03-10T19:00:00.000Z"
+    },
+    {
+      "id": "cmth6q9dh00jnly15akdw9e0u",
+      "startsAt": "2027-03-15T17:30:00.000Z",
+      "endsAt": "2027-03-15T18:30:00.000Z",
+      "venue": "Pav. Centro Educativo de Trovela",
+      "status": "SCHEDULED",
+      "notes": null,
+      "coachId": null,
+      "dressingRooms": [],
+      "inicio": "2027-03-15T17:30:00.000Z",
+      "fimS": "2027-03-15T18:30:00.000Z"
+    },
+    {
+      "id": "cmth6r0fm00m3ly15sye9a96g",
+      "startsAt": "2027-03-17T17:30:00.000Z",
+      "endsAt": "2027-03-17T19:00:00.000Z",
+      "venue": "Pav. Centro Educativo de Trovela",
+      "status": "SCHEDULED",
+      "notes": null,
+      "coachId": null,
+      "dressingRooms": [],
+      "inicio": "2027-03-17T17:30:00.000Z",
+      "fimS": "2027-03-17T19:00:00.000Z"
+    },
+    {
+      "id": "cmth6q9jv00jply15bd2mx4oj",
+      "startsAt": "2027-03-22T17:30:00.000Z",
+      "endsAt": "2027-03-22T18:30:00.000Z",
+      "venue": "Pav. Centro Educativo de Trovela",
+      "status": "SCHEDULED",
+      "notes": null,
+      "coachId": null,
+      "dressingRooms": [],
+      "inicio": "2027-03-22T17:30:00.000Z",
+      "fimS": "2027-03-22T18:30:00.000Z"
+    },
+    {
+      "id": "cmth6r0lz00m5ly159twfxgqm",
+      "startsAt": "2027-03-24T17:30:00.000Z",
+      "endsAt": "2027-03-24T19:00:00.000Z",
+      "venue": "Pav. Centro Educativo de Trovela",
+      "status": "SCHEDULED",
+      "notes": null,
+      "coachId": null,
+      "dressingRooms": [],
+      "inicio": "2027-03-24T17:30:00.000Z",
+      "fimS": "2027-03-24T19:00:00.000Z"
+    },
+    {
+      "id": "cmth6q9qe00jrly15ghn4i45r",
+      "startsAt": "2027-03-29T16:30:00.000Z",
+      "endsAt": "2027-03-29T17:30:00.000Z",
+      "venue": "Pav. Centro Educativo de Trovela",
+      "status": "SCHEDULED",
+      "notes": null,
+      "coachId": null,
+      "dressingRooms": [],
+      "inicio": "2027-03-29T16:30:00.000Z",
+      "fimS": "2027-03-29T17:30:00.000Z"
+    },
+    {
+      "id": "cmth6r0s900m7ly15rra7aciw",
+      "startsAt": "2027-03-31T16:30:00.000Z",
+      "endsAt": "2027-03-31T18:00:00.000Z",
+      "venue": "Pav. Centro Educativo de Trovela",
+      "status": "SCHEDULED",
+      "notes": null,
+      "coachId": null,
+      "dressingRooms": [],
+      "inicio": "2027-03-31T16:30:00.000Z",
+      "fimS": "2027-03-31T18:00:00.000Z"
+    },
+    {
+      "id": "cmth6q9ws00jtly15bl5jt6h2",
+      "startsAt": "2027-04-05T16:30:00.000Z",
+      "endsAt": "2027-04-05T17:30:00.000Z",
+      "venue": "Pav. Centro Educativo de Trovela",
+      "status": "SCHEDULED",
+      "notes": null,
+      "coachId": null,
+      "dressingRooms": [],
+      "inicio": "2027-04-05T16:30:00.000Z",
+      "fimS": "2027-04-05T17:30:00.000Z"
+    },
+    {
+      "id": "cmth6r0yj00m9ly15bvgt7ybu",
+      "startsAt": "2027-04-07T16:30:00.000Z",
+      "endsAt": "2027-04-07T18:00:00.000Z",
+      "venue": "Pav. Centro Educativo de Trovela",
+      "status": "SCHEDULED",
+      "notes": null,
+      "coachId": null,
+      "dressingRooms": [],
+      "inicio": "2027-04-07T16:30:00.000Z",
+      "fimS": "2027-04-07T18:00:00.000Z"
+    },
+    {
+      "id": "cmth6qa3a00jvly15m3i6gvpo",
+      "startsAt": "2027-04-12T16:30:00.000Z",
+      "endsAt": "2027-04-12T17:30:00.000Z",
+      "venue": "Pav. Centro Educativo de Trovela",
+      "status": "SCHEDULED",
+      "notes": null,
+      "coachId": null,
+      "dressingRooms": [],
+      "inicio": "2027-04-12T16:30:00.000Z",
+      "fimS": "2027-04-12T17:30:00.000Z"
+    },
+    {
+      "id": "cmth6r14v00mbly15sw9e7oyz",
+      "startsAt": "2027-04-14T16:30:00.000Z",
+      "endsAt": "2027-04-14T18:00:00.000Z",
+      "venue": "Pav. Centro Educativo de Trovela",
+      "status": "SCHEDULED",
+      "notes": null,
+      "coachId": null,
+      "dressingRooms": [],
+      "inicio": "2027-04-14T16:30:00.000Z",
+      "fimS": "2027-04-14T18:00:00.000Z"
+    },
+    {
+      "id": "cmth6qa9p00jxly15su08t4ba",
+      "startsAt": "2027-04-19T16:30:00.000Z",
+      "endsAt": "2027-04-19T17:30:00.000Z",
+      "venue": "Pav. Centro Educativo de Trovela",
+      "status": "SCHEDULED",
+      "notes": null,
+      "coachId": null,
+      "dressingRooms": [],
+      "inicio": "2027-04-19T16:30:00.000Z",
+      "fimS": "2027-04-19T17:30:00.000Z"
+    },
+    {
+      "id": "cmth6r1b800mdly15q0z6vo6j",
+      "startsAt": "2027-04-21T16:30:00.000Z",
+      "endsAt": "2027-04-21T18:00:00.000Z",
+      "venue": "Pav. Centro Educativo de Trovela",
+      "status": "SCHEDULED",
+      "notes": null,
+      "coachId": null,
+      "dressingRooms": [],
+      "inicio": "2027-04-21T16:30:00.000Z",
+      "fimS": "2027-04-21T18:00:00.000Z"
+    },
+    {
+      "id": "cmth6qag500jzly151549z1j1",
+      "startsAt": "2027-04-26T16:30:00.000Z",
+      "endsAt": "2027-04-26T17:30:00.000Z",
+      "venue": "Pav. Centro Educativo de Trovela",
+      "status": "SCHEDULED",
+      "notes": null,
+      "coachId": null,
+      "dressingRooms": [],
+      "inicio": "2027-04-26T16:30:00.000Z",
+      "fimS": "2027-04-26T17:30:00.000Z"
+    },
+    {
+      "id": "cmth6r1hl00mfly15ccjthn9e",
+      "startsAt": "2027-04-28T16:30:00.000Z",
+      "endsAt": "2027-04-28T18:00:00.000Z",
+      "venue": "Pav. Centro Educativo de Trovela",
+      "status": "SCHEDULED",
+      "notes": null,
+      "coachId": null,
+      "dressingRooms": [],
+      "inicio": "2027-04-28T16:30:00.000Z",
+      "fimS": "2027-04-28T18:00:00.000Z"
+    },
+    {
+      "id": "cmth6qamq00k1ly15g62ouasn",
+      "startsAt": "2027-05-03T16:30:00.000Z",
+      "endsAt": "2027-05-03T17:30:00.000Z",
+      "venue": "Pav. Centro Educativo de Trovela",
+      "status": "SCHEDULED",
+      "notes": null,
+      "coachId": null,
+      "dressingRooms": [],
+      "inicio": "2027-05-03T16:30:00.000Z",
+      "fimS": "2027-05-03T17:30:00.000Z"
+    },
+    {
+      "id": "cmth6r1nv00mhly1523qou87h",
+      "startsAt": "2027-05-05T16:30:00.000Z",
+      "endsAt": "2027-05-05T18:00:00.000Z",
+      "venue": "Pav. Centro Educativo de Trovela",
+      "status": "SCHEDULED",
+      "notes": null,
+      "coachId": null,
+      "dressingRooms": [],
+      "inicio": "2027-05-05T16:30:00.000Z",
+      "fimS": "2027-05-05T18:00:00.000Z"
+    },
+    {
+      "id": "cmth6qat700k3ly152cbkw50f",
+      "startsAt": "2027-05-10T16:30:00.000Z",
+      "endsAt": "2027-05-10T17:30:00.000Z",
+      "venue": "Pav. Centro Educativo de Trovela",
+      "status": "SCHEDULED",
+      "notes": null,
+      "coachId": null,
+      "dressingRooms": [],
+      "inicio": "2027-05-10T16:30:00.000Z",
+      "fimS": "2027-05-10T17:30:00.000Z"
+    },
+    {
+      "id": "cmth6r1u900mjly15mrws1213",
+      "startsAt": "2027-05-12T16:30:00.000Z",
+      "endsAt": "2027-05-12T18:00:00.000Z",
+      "venue": "Pav. Centro Educativo de Trovela",
+      "status": "SCHEDULED",
+      "notes": null,
+      "coachId": null,
+      "dressingRooms": [],
+      "inicio": "2027-05-12T16:30:00.000Z",
+      "fimS": "2027-05-12T18:00:00.000Z"
+    },
+    {
+      "id": "cmth6qazr00k5ly15ay0i8lkw",
+      "startsAt": "2027-05-17T16:30:00.000Z",
+      "endsAt": "2027-05-17T17:30:00.000Z",
+      "venue": "Pav. Centro Educativo de Trovela",
+      "status": "SCHEDULED",
+      "notes": null,
+      "coachId": null,
+      "dressingRooms": [],
+      "inicio": "2027-05-17T16:30:00.000Z",
+      "fimS": "2027-05-17T17:30:00.000Z"
+    },
+    {
+      "id": "cmth6r20o00mlly15bgeh4jhl",
+      "startsAt": "2027-05-19T16:30:00.000Z",
+      "endsAt": "2027-05-19T18:00:00.000Z",
+      "venue": "Pav. Centro Educativo de Trovela",
+      "status": "SCHEDULED",
+      "notes": null,
+      "coachId": null,
+      "dressingRooms": [],
+      "inicio": "2027-05-19T16:30:00.000Z",
+      "fimS": "2027-05-19T18:00:00.000Z"
+    },
+    {
+      "id": "cmth6qb6500k7ly150gi2c0df",
+      "startsAt": "2027-05-24T16:30:00.000Z",
+      "endsAt": "2027-05-24T17:30:00.000Z",
+      "venue": "Pav. Centro Educativo de Trovela",
+      "status": "SCHEDULED",
+      "notes": null,
+      "coachId": null,
+      "dressingRooms": [],
+      "inicio": "2027-05-24T16:30:00.000Z",
+      "fimS": "2027-05-24T17:30:00.000Z"
+    },
+    {
+      "id": "cmth6r27000mnly15ly7pvf0m",
+      "startsAt": "2027-05-26T16:30:00.000Z",
+      "endsAt": "2027-05-26T18:00:00.000Z",
+      "venue": "Pav. Centro Educativo de Trovela",
+      "status": "SCHEDULED",
+      "notes": null,
+      "coachId": null,
+      "dressingRooms": [],
+      "inicio": "2027-05-26T16:30:00.000Z",
+      "fimS": "2027-05-26T18:00:00.000Z"
+    },
+    {
+      "id": "cmth6qbcm00k9ly15ipls6vh6",
+      "startsAt": "2027-05-31T16:30:00.000Z",
+      "endsAt": "2027-05-31T17:30:00.000Z",
+      "venue": "Pav. Centro Educativo de Trovela",
+      "status": "SCHEDULED",
+      "notes": null,
+      "coachId": null,
+      "dressingRooms": [],
+      "inicio": "2027-05-31T16:30:00.000Z",
+      "fimS": "2027-05-31T17:30:00.000Z"
+    },
+    {
+      "id": "cmth6r2db00mply15jadmkxl7",
+      "startsAt": "2027-06-02T16:30:00.000Z",
+      "endsAt": "2027-06-02T18:00:00.000Z",
+      "venue": "Pav. Centro Educativo de Trovela",
+      "status": "SCHEDULED",
+      "notes": null,
+      "coachId": null,
+      "dressingRooms": [],
+      "inicio": "2027-06-02T16:30:00.000Z",
+      "fimS": "2027-06-02T18:00:00.000Z"
+    },
+    {
+      "id": "cmth6qbjj00kbly15c9ywsait",
+      "startsAt": "2027-06-07T16:30:00.000Z",
+      "endsAt": "2027-06-07T17:30:00.000Z",
+      "venue": "Pav. Centro Educativo de Trovela",
+      "status": "SCHEDULED",
+      "notes": null,
+      "coachId": null,
+      "dressingRooms": [],
+      "inicio": "2027-06-07T16:30:00.000Z",
+      "fimS": "2027-06-07T17:30:00.000Z"
+    },
+    {
+      "id": "cmth6r2jm00mrly15dw9gp8ys",
+      "startsAt": "2027-06-09T16:30:00.000Z",
+      "endsAt": "2027-06-09T18:00:00.000Z",
+      "venue": "Pav. Centro Educativo de Trovela",
+      "status": "SCHEDULED",
+      "notes": null,
+      "coachId": null,
+      "dressingRooms": [],
+      "inicio": "2027-06-09T16:30:00.000Z",
+      "fimS": "2027-06-09T18:00:00.000Z"
+    },
+    {
+      "id": "cmth6qbq300kdly15lcmg9rfz",
+      "startsAt": "2027-06-14T16:30:00.000Z",
+      "endsAt": "2027-06-14T17:30:00.000Z",
+      "venue": "Pav. Centro Educativo de Trovela",
+      "status": "SCHEDULED",
+      "notes": null,
+      "coachId": null,
+      "dressingRooms": [],
+      "inicio": "2027-06-14T16:30:00.000Z",
+      "fimS": "2027-06-14T17:30:00.000Z"
+    },
+    {
+      "id": "cmth6r2pw00mtly15isamtchb",
+      "startsAt": "2027-06-16T16:30:00.000Z",
+      "endsAt": "2027-06-16T18:00:00.000Z",
+      "venue": "Pav. Centro Educativo de Trovela",
+      "status": "SCHEDULED",
+      "notes": null,
+      "coachId": null,
+      "dressingRooms": [],
+      "inicio": "2027-06-16T16:30:00.000Z",
+      "fimS": "2027-06-16T18:00:00.000Z"
+    },
+    {
+      "id": "cmth6qbwi00kfly15x3g5a7va",
+      "startsAt": "2027-06-21T16:30:00.000Z",
+      "endsAt": "2027-06-21T17:30:00.000Z",
+      "venue": "Pav. Centro Educativo de Trovela",
+      "status": "SCHEDULED",
+      "notes": null,
+      "coachId": null,
+      "dressingRooms": [],
+      "inicio": "2027-06-21T16:30:00.000Z",
+      "fimS": "2027-06-21T17:30:00.000Z"
+    },
+    {
+      "id": "cmth6r2w900mvly15i86u868m",
+      "startsAt": "2027-06-23T16:30:00.000Z",
+      "endsAt": "2027-06-23T18:00:00.000Z",
+      "venue": "Pav. Centro Educativo de Trovela",
+      "status": "SCHEDULED",
+      "notes": null,
+      "coachId": null,
+      "dressingRooms": [],
+      "inicio": "2027-06-23T16:30:00.000Z",
+      "fimS": "2027-06-23T18:00:00.000Z"
+    },
+    {
+      "id": "cmth6qc2y00khly15qn7h9urj",
+      "startsAt": "2027-06-28T16:30:00.000Z",
+      "endsAt": "2027-06-28T17:30:00.000Z",
+      "venue": "Pav. Centro Educativo de Trovela",
+      "status": "SCHEDULED",
+      "notes": null,
+      "coachId": null,
+      "dressingRooms": [],
+      "inicio": "2027-06-28T16:30:00.000Z",
+      "fimS": "2027-06-28T17:30:00.000Z"
+    },
+    {
+      "id": "cmth6r32l00mxly15iuv2vsqs",
+      "startsAt": "2027-06-30T16:30:00.000Z",
+      "endsAt": "2027-06-30T18:00:00.000Z",
+      "venue": "Pav. Centro Educativo de Trovela",
+      "status": "SCHEDULED",
+      "notes": null,
+      "coachId": null,
+      "dressingRooms": [],
+      "inicio": "2027-06-30T16:30:00.000Z",
+      "fimS": "2027-06-30T18:00:00.000Z"
+    }
+  ],
+  "criados": [
+    {
+      "inicio": "2026-09-14T17:30:00.000Z",
+      "fim": "2026-09-14T18:30:00.000Z"
+    },
+    {
+      "inicio": "2026-09-16T17:30:00.000Z",
+      "fim": "2026-09-16T19:00:00.000Z"
+    },
+    {
+      "inicio": "2026-09-21T17:30:00.000Z",
+      "fim": "2026-09-21T18:30:00.000Z"
+    },
+    {
+      "inicio": "2026-09-23T17:30:00.000Z",
+      "fim": "2026-09-23T19:00:00.000Z"
+    },
+    {
+      "inicio": "2026-09-28T17:30:00.000Z",
+      "fim": "2026-09-28T18:30:00.000Z"
+    },
+    {
+      "inicio": "2026-09-30T17:30:00.000Z",
+      "fim": "2026-09-30T19:00:00.000Z"
+    },
+    {
+      "inicio": "2026-10-05T17:30:00.000Z",
+      "fim": "2026-10-05T18:30:00.000Z"
+    },
+    {
+      "inicio": "2026-10-07T17:30:00.000Z",
+      "fim": "2026-10-07T19:00:00.000Z"
+    },
+    {
+      "inicio": "2026-10-12T17:30:00.000Z",
+      "fim": "2026-10-12T18:30:00.000Z"
+    },
+    {
+      "inicio": "2026-10-14T17:30:00.000Z",
+      "fim": "2026-10-14T19:00:00.000Z"
+    },
+    {
+      "inicio": "2026-10-19T17:30:00.000Z",
+      "fim": "2026-10-19T18:30:00.000Z"
+    },
+    {
+      "inicio": "2026-10-21T17:30:00.000Z",
+      "fim": "2026-10-21T19:00:00.000Z"
+    },
+    {
+      "inicio": "2026-10-26T18:30:00.000Z",
+      "fim": "2026-10-26T19:30:00.000Z"
+    },
+    {
+      "inicio": "2026-10-28T18:30:00.000Z",
+      "fim": "2026-10-28T20:00:00.000Z"
+    },
+    {
+      "inicio": "2026-11-02T18:30:00.000Z",
+      "fim": "2026-11-02T19:30:00.000Z"
+    },
+    {
+      "inicio": "2026-11-04T18:30:00.000Z",
+      "fim": "2026-11-04T20:00:00.000Z"
+    },
+    {
+      "inicio": "2026-11-09T18:30:00.000Z",
+      "fim": "2026-11-09T19:30:00.000Z"
+    },
+    {
+      "inicio": "2026-11-11T18:30:00.000Z",
+      "fim": "2026-11-11T20:00:00.000Z"
+    },
+    {
+      "inicio": "2026-11-16T18:30:00.000Z",
+      "fim": "2026-11-16T19:30:00.000Z"
+    },
+    {
+      "inicio": "2026-11-18T18:30:00.000Z",
+      "fim": "2026-11-18T20:00:00.000Z"
+    },
+    {
+      "inicio": "2026-11-23T18:30:00.000Z",
+      "fim": "2026-11-23T19:30:00.000Z"
+    },
+    {
+      "inicio": "2026-11-25T18:30:00.000Z",
+      "fim": "2026-11-25T20:00:00.000Z"
+    },
+    {
+      "inicio": "2026-11-30T18:30:00.000Z",
+      "fim": "2026-11-30T19:30:00.000Z"
+    },
+    {
+      "inicio": "2026-12-02T18:30:00.000Z",
+      "fim": "2026-12-02T20:00:00.000Z"
+    },
+    {
+      "inicio": "2026-12-07T18:30:00.000Z",
+      "fim": "2026-12-07T19:30:00.000Z"
+    },
+    {
+      "inicio": "2026-12-09T18:30:00.000Z",
+      "fim": "2026-12-09T20:00:00.000Z"
+    },
+    {
+      "inicio": "2026-12-14T18:30:00.000Z",
+      "fim": "2026-12-14T19:30:00.000Z"
+    },
+    {
+      "inicio": "2026-12-16T18:30:00.000Z",
+      "fim": "2026-12-16T20:00:00.000Z"
+    },
+    {
+      "inicio": "2026-12-21T18:30:00.000Z",
+      "fim": "2026-12-21T19:30:00.000Z"
+    },
+    {
+      "inicio": "2026-12-23T18:30:00.000Z",
+      "fim": "2026-12-23T20:00:00.000Z"
+    },
+    {
+      "inicio": "2026-12-28T18:30:00.000Z",
+      "fim": "2026-12-28T19:30:00.000Z"
+    },
+    {
+      "inicio": "2026-12-30T18:30:00.000Z",
+      "fim": "2026-12-30T20:00:00.000Z"
+    },
+    {
+      "inicio": "2027-01-04T18:30:00.000Z",
+      "fim": "2027-01-04T19:30:00.000Z"
+    },
+    {
+      "inicio": "2027-01-06T18:30:00.000Z",
+      "fim": "2027-01-06T20:00:00.000Z"
+    },
+    {
+      "inicio": "2027-01-11T18:30:00.000Z",
+      "fim": "2027-01-11T19:30:00.000Z"
+    },
+    {
+      "inicio": "2027-01-13T18:30:00.000Z",
+      "fim": "2027-01-13T20:00:00.000Z"
+    },
+    {
+      "inicio": "2027-01-18T18:30:00.000Z",
+      "fim": "2027-01-18T19:30:00.000Z"
+    },
+    {
+      "inicio": "2027-01-20T18:30:00.000Z",
+      "fim": "2027-01-20T20:00:00.000Z"
+    },
+    {
+      "inicio": "2027-01-25T18:30:00.000Z",
+      "fim": "2027-01-25T19:30:00.000Z"
+    },
+    {
+      "inicio": "2027-01-27T18:30:00.000Z",
+      "fim": "2027-01-27T20:00:00.000Z"
+    },
+    {
+      "inicio": "2027-02-01T18:30:00.000Z",
+      "fim": "2027-02-01T19:30:00.000Z"
+    },
+    {
+      "inicio": "2027-02-03T18:30:00.000Z",
+      "fim": "2027-02-03T20:00:00.000Z"
+    },
+    {
+      "inicio": "2027-02-08T18:30:00.000Z",
+      "fim": "2027-02-08T19:30:00.000Z"
+    },
+    {
+      "inicio": "2027-02-10T18:30:00.000Z",
+      "fim": "2027-02-10T20:00:00.000Z"
+    },
+    {
+      "inicio": "2027-02-15T18:30:00.000Z",
+      "fim": "2027-02-15T19:30:00.000Z"
+    },
+    {
+      "inicio": "2027-02-17T18:30:00.000Z",
+      "fim": "2027-02-17T20:00:00.000Z"
+    },
+    {
+      "inicio": "2027-02-22T18:30:00.000Z",
+      "fim": "2027-02-22T19:30:00.000Z"
+    },
+    {
+      "inicio": "2027-02-24T18:30:00.000Z",
+      "fim": "2027-02-24T20:00:00.000Z"
+    },
+    {
+      "inicio": "2027-03-01T18:30:00.000Z",
+      "fim": "2027-03-01T19:30:00.000Z"
+    },
+    {
+      "inicio": "2027-03-03T18:30:00.000Z",
+      "fim": "2027-03-03T20:00:00.000Z"
+    },
+    {
+      "inicio": "2027-03-08T18:30:00.000Z",
+      "fim": "2027-03-08T19:30:00.000Z"
+    },
+    {
+      "inicio": "2027-03-10T18:30:00.000Z",
+      "fim": "2027-03-10T20:00:00.000Z"
+    },
+    {
+      "inicio": "2027-03-15T18:30:00.000Z",
+      "fim": "2027-03-15T19:30:00.000Z"
+    },
+    {
+      "inicio": "2027-03-17T18:30:00.000Z",
+      "fim": "2027-03-17T20:00:00.000Z"
+    },
+    {
+      "inicio": "2027-03-22T18:30:00.000Z",
+      "fim": "2027-03-22T19:30:00.000Z"
+    },
+    {
+      "inicio": "2027-03-24T18:30:00.000Z",
+      "fim": "2027-03-24T20:00:00.000Z"
+    },
+    {
+      "inicio": "2027-03-29T17:30:00.000Z",
+      "fim": "2027-03-29T18:30:00.000Z"
+    },
+    {
+      "inicio": "2027-03-31T17:30:00.000Z",
+      "fim": "2027-03-31T19:00:00.000Z"
+    },
+    {
+      "inicio": "2027-04-05T17:30:00.000Z",
+      "fim": "2027-04-05T18:30:00.000Z"
+    },
+    {
+      "inicio": "2027-04-07T17:30:00.000Z",
+      "fim": "2027-04-07T19:00:00.000Z"
+    },
+    {
+      "inicio": "2027-04-12T17:30:00.000Z",
+      "fim": "2027-04-12T18:30:00.000Z"
+    },
+    {
+      "inicio": "2027-04-14T17:30:00.000Z",
+      "fim": "2027-04-14T19:00:00.000Z"
+    },
+    {
+      "inicio": "2027-04-19T17:30:00.000Z",
+      "fim": "2027-04-19T18:30:00.000Z"
+    },
+    {
+      "inicio": "2027-04-21T17:30:00.000Z",
+      "fim": "2027-04-21T19:00:00.000Z"
+    },
+    {
+      "inicio": "2027-04-26T17:30:00.000Z",
+      "fim": "2027-04-26T18:30:00.000Z"
+    },
+    {
+      "inicio": "2027-04-28T17:30:00.000Z",
+      "fim": "2027-04-28T19:00:00.000Z"
+    },
+    {
+      "inicio": "2027-05-03T17:30:00.000Z",
+      "fim": "2027-05-03T18:30:00.000Z"
+    },
+    {
+      "inicio": "2027-05-05T17:30:00.000Z",
+      "fim": "2027-05-05T19:00:00.000Z"
+    },
+    {
+      "inicio": "2027-05-10T17:30:00.000Z",
+      "fim": "2027-05-10T18:30:00.000Z"
+    },
+    {
+      "inicio": "2027-05-12T17:30:00.000Z",
+      "fim": "2027-05-12T19:00:00.000Z"
+    },
+    {
+      "inicio": "2027-05-17T17:30:00.000Z",
+      "fim": "2027-05-17T18:30:00.000Z"
+    },
+    {
+      "inicio": "2027-05-19T17:30:00.000Z",
+      "fim": "2027-05-19T19:00:00.000Z"
+    },
+    {
+      "inicio": "2027-05-24T17:30:00.000Z",
+      "fim": "2027-05-24T18:30:00.000Z"
+    },
+    {
+      "inicio": "2027-05-26T17:30:00.000Z",
+      "fim": "2027-05-26T19:00:00.000Z"
+    },
+    {
+      "inicio": "2027-05-31T17:30:00.000Z",
+      "fim": "2027-05-31T18:30:00.000Z"
+    },
+    {
+      "inicio": "2027-06-02T17:30:00.000Z",
+      "fim": "2027-06-02T19:00:00.000Z"
+    },
+    {
+      "inicio": "2027-06-07T17:30:00.000Z",
+      "fim": "2027-06-07T18:30:00.000Z"
+    },
+    {
+      "inicio": "2027-06-09T17:30:00.000Z",
+      "fim": "2027-06-09T19:00:00.000Z"
+    },
+    {
+      "inicio": "2027-06-14T17:30:00.000Z",
+      "fim": "2027-06-14T18:30:00.000Z"
+    },
+    {
+      "inicio": "2027-06-16T17:30:00.000Z",
+      "fim": "2027-06-16T19:00:00.000Z"
+    },
+    {
+      "inicio": "2027-06-21T17:30:00.000Z",
+      "fim": "2027-06-21T18:30:00.000Z"
+    },
+    {
+      "inicio": "2027-06-23T17:30:00.000Z",
+      "fim": "2027-06-23T19:00:00.000Z"
+    },
+    {
+      "inicio": "2027-06-28T17:30:00.000Z",
+      "fim": "2027-06-28T18:30:00.000Z"
+    },
+    {
+      "inicio": "2027-06-30T17:30:00.000Z",
+      "fim": "2027-06-30T19:00:00.000Z"
+    },
+    {
+      "inicio": "2027-07-05T17:30:00.000Z",
+      "fim": "2027-07-05T18:30:00.000Z"
+    },
+    {
+      "inicio": "2027-07-07T17:30:00.000Z",
+      "fim": "2027-07-07T19:00:00.000Z"
+    },
+    {
+      "inicio": "2027-07-12T17:30:00.000Z",
+      "fim": "2027-07-12T18:30:00.000Z"
+    },
+    {
+      "inicio": "2027-07-14T17:30:00.000Z",
+      "fim": "2027-07-14T19:00:00.000Z"
+    },
+    {
+      "inicio": "2027-07-19T17:30:00.000Z",
+      "fim": "2027-07-19T18:30:00.000Z"
+    },
+    {
+      "inicio": "2027-07-21T17:30:00.000Z",
+      "fim": "2027-07-21T19:00:00.000Z"
+    },
+    {
+      "inicio": "2027-07-26T17:30:00.000Z",
+      "fim": "2027-07-26T18:30:00.000Z"
+    },
+    {
+      "inicio": "2027-07-28T17:30:00.000Z",
+      "fim": "2027-07-28T19:00:00.000Z"
+    }
+  ],
+  "slots": [
+    {
+      "weekday": 1,
+      "start": "18:30",
+      "end": "19:30",
+      "h1": 18,
+      "m1": 30,
+      "h2": 19,
+      "m2": 30
+    },
+    {
+      "weekday": 3,
+      "start": "18:30",
+      "end": "20:00",
+      "h1": 18,
+      "m1": 30,
+      "h2": 20,
+      "m2": 0
+    }
+  ]
+}

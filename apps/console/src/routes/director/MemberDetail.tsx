@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import { Link, useNavigate, useParams } from "react-router-dom";
-import { DialogField, dialogInputClass } from "@/components/Dialog";
+import { Dialog, DialogField, dialogInputClass } from "@/components/Dialog";
 import { Empty, Loading, Panel, PanelHead, Pill, cx, type Tone } from "@/components/primitives";
 import { Segmented } from "@/components/filters";
 import { MemberFeeDialog } from "@/components/MemberFeeDialog";
@@ -921,12 +921,15 @@ function StatusPill({ status }: { status: MemberStatus }) {
  * pública produz lixo — a mesma pessoa duas vezes, um formulário preenchido a
  * brincar — e sem isto a única saída era deixá-lo no livro para sempre.
  *
- * O servidor recusa assim que houver número atribuído e diz porquê (ver
- * `MembersService.remove`). Não se esconde a opção antes de perguntar: um botão
- * que desaparece obriga a adivinhar, um botão que explica ensina a regra.
+ * O servidor recusava assim que houvesse número atribuído. Deixou de recusar:
+ * o que não podia acontecer era o número voltar sozinho à fila, e isso resolveu-
+ * se na numeração (ver `MembersService.remove`). O que ficou é a pergunta, e
+ * essa deixou de ser um `confirm()` do browser: apagar leva as quotas e os
+ * pagamentos, e quem decide isso tem de ver os números primeiro.
  */
 function MemberStatusMenu({ member, onChanged }: { member: Data; onChanged: () => void }) {
   const [open, setOpen] = useState(false);
+  const [aApagar, setAApagar] = useState(false);
   const [busy, setBusy] = useState(false);
   const [erro, setErro] = useState<string | null>(null);
   const navigate = useNavigate();
@@ -957,9 +960,7 @@ function MemberStatusMenu({ member, onChanged }: { member: Data; onChanged: () =
   }
 
   async function apagar() {
-    setOpen(false);
     if (busy) return;
-    if (!confirm(`Apagar ${member.name} definitivamente? Se já tiver número de sócio, o servidor recusa e explica porquê.`)) return;
     setBusy(true);
     setErro(null);
     try {
@@ -968,6 +969,7 @@ function MemberStatusMenu({ member, onChanged }: { member: Data; onChanged: () =
     } catch (e) {
       setErro(e instanceof Error ? e.message : "Não foi possível apagar.");
       setBusy(false);
+      setAApagar(false);
     }
   }
 
@@ -1015,7 +1017,10 @@ function MemberStatusMenu({ member, onChanged }: { member: Data; onChanged: () =
             <button
               type="button"
               role="menuitem"
-              onClick={() => void apagar()}
+              onClick={() => {
+                setOpen(false);
+                setAApagar(true);
+              }}
               className="flex w-full items-start gap-2 rounded-[6px] px-2.5 py-1.5 text-left transition-colors duration-[120ms] hover:bg-risk-soft"
             >
               <span className="mt-0.5 flex size-4 shrink-0 items-center justify-center text-risk">
@@ -1023,11 +1028,20 @@ function MemberStatusMenu({ member, onChanged }: { member: Data; onChanged: () =
               </span>
               <span className="min-w-0 flex-1">
                 <span className="block text-body text-risk">Apagar sócio</span>
-                <span className="block text-meta text-ink-3">só se nunca tiver tido número</span>
+                <span className="block text-meta text-ink-3">leva as quotas com ela</span>
               </span>
             </button>
           </div>
         </>
+      )}
+
+      {aApagar && (
+        <ApagarSocioDialog
+          member={member}
+          busy={busy}
+          onConfirmar={() => void apagar()}
+          onClose={() => setAApagar(false)}
+        />
       )}
 
       {erro && (
@@ -1039,6 +1053,57 @@ function MemberStatusMenu({ member, onChanged }: { member: Data; onChanged: () =
         </p>
       )}
     </div>
+  );
+}
+
+/**
+ * A pergunta antes de apagar.
+ *
+ * Uma linha, e o número, que é como o clube chama um sócio. Chegou a listar o
+ * que sai com a ficha e o que fica — as quotas, os pagamentos, a conta da app,
+ * os lançamentos de tesouraria — e era demasiado: quem carrega em "Apagar
+ * sócio" no menu já decidiu, e um diálogo com dois quadros e nove linhas não o
+ * faz decidir melhor, faz-lhe saltar o texto. O que ele precisa de ver é a
+ * quem pertence o gesto, para não apagar a ficha errada.
+ *
+ * O que sai e o que fica está escrito onde se consulta e não onde se aperta:
+ * `MembersService.remove` e a secção "Apagar um sócio" em `docs/03-estado.md`.
+ */
+function ApagarSocioDialog({
+  member,
+  busy,
+  onConfirmar,
+  onClose,
+}: {
+  member: Data;
+  busy: boolean;
+  onConfirmar: () => void;
+  onClose: () => void;
+}) {
+  return (
+    <Dialog
+      title="Apagar sócio?"
+      icon={<Trash2 className="size-4" strokeWidth={1.75} />}
+      onClose={onClose}
+      width={420}
+      labelledBy="apagar-socio"
+      footer={
+        <div className="flex w-full items-center justify-end gap-2">
+          <button type="button" className="ctl-ghost" onClick={onClose} disabled={busy}>
+            Cancelar
+          </button>
+          <button type="button" className="ctl-risk" onClick={onConfirmar} disabled={busy}>
+            <Trash2 className="size-3.5" strokeWidth={1.9} />
+            {busy ? "A apagar…" : "Apagar"}
+          </button>
+        </div>
+      }
+    >
+      <p className="p-5 text-body leading-relaxed text-ink-2">
+        Apagar {member.number !== null ? <>o sócio n.º {member.number}, </> : null}
+        <strong className="font-medium text-ink">{member.name}</strong>? Não há como voltar atrás.
+      </p>
+    </Dialog>
   );
 }
 

@@ -88,6 +88,20 @@ model Academy {
   /// O QR identifica o sócio por um token opaco — nunca leva dados pessoais.
   memberCardQrEnabled Boolean @default(false)
 
+  /// ## O maior número de sócio já dado neste clube
+  ///
+  /// Só sobe. É o que faz um número apagado **ficar aberto** em vez de voltar à
+  /// fila: `MAX(number)` sobre as fichas vivas respondia bem a um buraco no meio
+  /// (apagar o 2 de 1-2-3 deixa o máximo em 3, e a adesão seguinte é a 4), mas
+  /// enganava-se no topo — apagar o 3 punha o máximo em 2, e a adesão seguinte
+  /// herdava o 3 de quem tinha acabado de sair. Com a marca de água, o 3 fica
+  /// aberto como o 2.
+  ///
+  /// Um buraco enche-se **à mão**, escrevendo o número na ficha: é uma decisão
+  /// do clube, e a única que sabe se aquele número pode voltar a ser de alguém.
+  /// Ver `reservarNumero` em `members.service.ts`.
+  lastMemberNumber Int @default(0)
+
   /// ## A página de adesão a sócio, escrita pelo clube
   ///
   /// A frase que abre, a que explica, e os pontos que dizem o que se ganha. São

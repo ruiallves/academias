@@ -254,9 +254,11 @@ async function main() {
   console.log("Famílias…");
   for (const g of GUARDIANS) {
     await db.query(
-      `INSERT INTO "GuardianLink" (id,"athleteId","membershipId",relation,"isPayer")
-       VALUES ($1,$2,$3,$4,$5) ON CONFLICT ("athleteId","membershipId") DO NOTHING`,
-      [`gl_${g.athlete}_${g.member}`, g.athlete, memId[g.member], g.relation, g.payer],
+      // `isPayer` saiu do modelo: quem paga passou a ser decidido noutro sítio.
+      // A seed ainda o escrevia, e um `npm run seed` numa base limpa morria aqui.
+      `INSERT INTO "GuardianLink" (id,"athleteId","membershipId",relation)
+       VALUES ($1,$2,$3,$4) ON CONFLICT ("athleteId","membershipId") DO NOTHING`,
+      [`gl_${g.athlete}_${g.member}`, g.athlete, memId[g.member], g.relation],
     );
   }
 

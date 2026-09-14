@@ -1,7 +1,7 @@
 import { Link } from "react-router-dom";
-import { CONTACT_EMAIL } from "@/lib/content";
+import { CONTACT_EMAIL, INSTAGRAM_URL } from "@/lib/content";
 import { PAYMENT_METHODS, PaymentMark } from "./PaymentIcons";
-import { Mark } from "./primitives";
+import { InstagramIcon, Mark } from "./primitives";
 
 const COLUMNS: { title: string; links: { to: string; label: string }[] }[] = [
   {
@@ -55,15 +55,29 @@ export function Footer() {
 
         <div className="mt-12 grid gap-10 sm:grid-cols-2 lg:grid-cols-[1.4fr_repeat(3,1fr)]">
           <div>
-            <span className="inline-flex items-center gap-2.5">
-              <Mark size={20} className="text-mint" />
-              <span
-                className="text-[18px] leading-none font-[560] tracking-[-0.02em]"
-                style={{ fontFamily: "var(--font-display)", fontVariationSettings: '"SOFT" 0, "WONK" 0' }}
-              >
-                academias
+            <div className="flex items-center justify-between gap-3">
+              <span className="inline-flex items-center gap-2.5">
+                <Mark size={20} className="text-mint" />
+                <span
+                  className="text-[18px] leading-none font-[560] tracking-[-0.02em]"
+                  style={{ fontFamily: "var(--font-display)", fontVariationSettings: '"SOFT" 0, "WONK" 0' }}
+                >
+                  academias
+                </span>
               </span>
-            </span>
+
+              {/* @getacademias — sozinho, ao lado da assinatura: uma rede não pede
+                  uma coluna própria, mas merece mais do que ficar escondida no fim. */}
+              <a
+                href={INSTAGRAM_URL}
+                target="_blank"
+                rel="noreferrer"
+                aria-label="Segue a Academias no Instagram — @getacademias"
+                className="flex size-8 shrink-0 items-center justify-center rounded-full text-ink-3 transition-colors hover:text-mint"
+              >
+                <InstagramIcon size={18} />
+              </a>
+            </div>
             <p className="mt-4 max-w-[30ch] text-[14.5px] leading-relaxed text-ink-3">
               Feito em Portugal, para clubes e academias desportivas portuguesas.
             </p>

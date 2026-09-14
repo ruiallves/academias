@@ -155,7 +155,7 @@ export class MembersController {
     return this.members.update(req.ctx, id, dto);
   }
 
-  /** Ver `MembersService.remove`: só sai quem nunca chegou a ter número. */
+  /** Ver `MembersService.remove`: sai a ficha, as quotas e os pagamentos; o número fica aberto. */
   @Delete(":id")
   remove(@Req() req: AuthedRequest, @Param("id") id: string) {
     return this.members.remove(req.ctx, id);

@@ -1,4 +1,4 @@
-import { BadRequestException, ConflictException, ForbiddenException, Injectable, NotFoundException } from "@nestjs/common";
+import { BadRequestException, ForbiddenException, Injectable, NotFoundException } from "@nestjs/common";
 import type { MemberDocumentKind, MemberSex, MemberStatus, Prisma } from "@prisma/client";
 import { PrismaService, type ScopedClient } from "../prisma/prisma.service";
 import { AuthService } from "../auth/auth.service";
@@ -400,7 +400,7 @@ export class MembersService {
         data.status = dto.status as MemberStatus;
 
         if (dto.status === "ACTIVE" && !member.number) {
-          data.number = await this.nextNumber(db);
+          data.number = await this.reservarNumero(db, ctx.academyId);
           data.approvedAt = new Date();
           data.approvedById = ctx.membershipId;
           aprovadoAgora = true;
@@ -408,8 +408,12 @@ export class MembersService {
       }
 
       // Um número escrito à mão ganha ao automático: clubes antigos têm livros de
-      // sócios que já existiam antes deste produto, e a numeração é deles.
-      if (dto.number !== undefined) data.number = dto.number ?? null;
+      // sócios que já existiam antes deste produto, e a numeração é deles. É
+      // também como se enche um buraco deixado por uma ficha apagada.
+      if (dto.number !== undefined) {
+        data.number = dto.number ?? null;
+        await this.marcarNumero(db, ctx.academyId, dto.number);
+      }
 
       try {
         const gravado = await db.member.update({
@@ -489,46 +493,56 @@ export class MembersService {
    * vezes pela página do clube, um formulário preenchido a brincar, uma data
    * trocada que criou a pessoa errada.
    *
-   * ## O travão é o número, não o estado
+   * ## Já houve um travão no número, e estava no sítio errado
    *
-   * Ao contrário de um atleta — cujo histórico vive em sete tabelas — um sócio não
-   * tem nada pendurado: nada em todo o schema aponta para `Member`. Contar linhas
-   * noutras tabelas, como faz `AthletesService.remove`, não daria aqui resposta
-   * nenhuma.
+   * Com número atribuído, isto recusava e mandava cancelar. O argumento era que
+   * apagar liberta um número que já foi de alguém, e um livro com o 34 a
+   * pertencer a duas pessoas ao longo do tempo deixa de servir. O problema é
+   * real; o travão estava no gesto errado.
    *
-   * O que faz de alguém sócio é o **número**. Atribuí-lo é o acto de admissão, e é
-   * único por clube: apagar a linha abre um buraco na numeração e liberta um
-   * número que já foi de uma pessoa, para ser dado a outra. Um livro de sócios com
-   * o número 34 a pertencer a duas pessoas diferentes ao longo do tempo é um livro
-   * que deixou de servir para o que existe.
+   * Quem apaga é a direcção, com a ficha à frente, e sabe o que está a fazer —
+   * o que não se podia era **o número voltar sozinho à fila**. Isso resolve-se
+   * na numeração e não na porta: o número apagado fica aberto e só se enche à
+   * mão (ver `reservarNumero`). E o travão fechava o caso que o motivou: fichas
+   * de teste, e inscrições repetidas já aprovadas, que ficavam no livro para
+   * sempre porque tinham ganho um número.
    *
-   * Por isso: com número atribuído, não se apaga — cancela-se. Sem número, nunca
-   * chegou a ser sócio, e sai sem deixar rasto nenhum por perder.
+   * ## O que sai com a ficha, e o que fica
+   *
+   * **Sai:** as quotas e os pagamentos delas (`MemberFee`, em cascata,
+   * **incluindo as pagas**), os votos em sondagens, a fotografia, e o número —
+   * que fica aberto.
+   *
+   * **Fica:** os lançamentos de tesouraria, que referem o sócio com `SetNull` —
+   * o dinheiro do clube não muda porque uma ficha saiu. E fica a **conta** de
+   * quem tinha app: `Member.userId` é a ponte, não a conta, e a mesma pessoa
+   * pode ser encarregado de educação no mesmo clube. O que essa conta perde é o
+   * contexto de sócio.
+   *
+   * Nada disto é reversível, e é por isso que quem pergunta tem de ver os
+   * números antes — a ficha traz `fees.total` e `fees.settledCount` para o
+   * diálogo os poder dizer.
    */
   async remove(ctx: RequestContext, id: string) {
     this.mustWrite(ctx);
 
-    const photoKey = await this.prisma.runAs(ctx.academyId, async (db) => {
+    const apagado = await this.prisma.runAs(ctx.academyId, async (db) => {
       const member = await db.member.findFirst({
         where: { id },
         select: { id: true, name: true, number: true, photoKey: true },
       });
       if (!member) throw new NotFoundException("Sócio não encontrado");
 
-      if (member.number !== null) {
-        throw new ConflictException(
-          `${member.name} tem o número de sócio ${member.number} atribuído. Apagá-lo abria um buraco no livro e libertava um número que já foi de alguém — cancela-o em vez disso, que o tira das listas activas sem perder o registo.`,
-        );
-      }
-
       await db.member.delete({ where: { id } });
-      return member.photoKey;
+      return member;
     });
 
     // A fotografia deixa de ter dono — sai com a ficha, senão fica no bucket
     // sem ninguém saber que está lá.
-    if (photoKey) await this.storage.remove(PHOTO_BUCKET, photoKey).catch(() => undefined);
-    return { ok: true };
+    if (apagado.photoKey) await this.storage.remove(PHOTO_BUCKET, apagado.photoKey).catch(() => undefined);
+
+    /* O número devolvido é o que a consola diz ter ficado aberto. */
+    return { ok: true, freedNumber: apagado.number };
   }
 
   /**
@@ -601,7 +615,8 @@ export class MembersService {
       const status = (dto.status as MemberStatus) ?? "ACTIVE";
       // Sem número para quem fica por aprovar: um número dado a quem ainda não
       // foi aceite queima um lugar na sequência do livro.
-      const number = dto.number ?? (status === "PENDING" ? null : await this.nextNumber(db));
+      const number = dto.number ?? (status === "PENDING" ? null : await this.reservarNumero(db, ctx.academyId));
+      if (dto.number != null) await this.marcarNumero(db, ctx.academyId, dto.number);
 
       try {
         const member = await db.member.create({
@@ -842,6 +857,14 @@ export class MembersService {
       if (create.length > 0) await db.member.createMany({ data: create });
 
       /*
+       * A marca de água sobe até ao maior número da folha.
+       *
+       * Um livro importado traz a numeração do clube — costuma ir nas centenas
+       * — e sem isto a adesão seguinte recebia o 1. Ver `reservarNumero`.
+       */
+      await this.marcarNumero(db, ctx.academyId, Math.max(...create.map((m) => m.number ?? 0), 0));
+
+      /*
        * O convite dos importados.
        *
        * Um sócio importado é um sócio inscrito pelo clube — a mesma coisa que a
@@ -1015,14 +1038,55 @@ export class MembersService {
     return academyId;
   }
 
-  /** O próximo número livre. Simples de propósito: um livro de sócios é uma fila. */
-  private async nextNumber(db: ScopedClient): Promise<number> {
-    const last = await db.member.findFirst({
-      where: { number: { not: null } },
-      orderBy: { number: "desc" },
-      select: { number: true },
+  /**
+   * O próximo número, e a marca de água a subir com ele.
+   *
+   * ## Um buraco não volta à fila
+   *
+   * Isto era `MAX(number) + 1` sobre as fichas vivas, e respondia bem a um
+   * buraco no meio: apagado o 2 de 1-2-3, o máximo continua 3 e a adesão
+   * seguinte é a 4. Enganava-se no topo — apagado o 3, o máximo caía para 2 e a
+   * adesão seguinte herdava o número de quem tinha acabado de sair. E é o caso
+   * mais fácil de provocar sem dar por isso: uma ficha de teste fica sempre com
+   * o número mais alto, e apaga-se.
+   *
+   * `Academy.lastMemberNumber` é o maior número já dado no clube e **só sobe**.
+   * O máximo vivo continua na conta como rede: para números escritos à mão
+   * acima da marca, e para o dia em que alguém mexa nisto por SQL.
+   *
+   * Encher um buraco continua a ser possível — mas só à mão, escrevendo o
+   * número na ficha. Quem decide se o 2 pode voltar a ser de outra pessoa é o
+   * clube.
+   */
+  private async reservarNumero(db: ScopedClient, academyId: string): Promise<number> {
+    const [academia, ultimo] = await Promise.all([
+      db.academy.findFirst({ where: { id: academyId }, select: { lastMemberNumber: true } }),
+      db.member.findFirst({
+        where: { number: { not: null } },
+        orderBy: { number: "desc" },
+        select: { number: true },
+      }),
+    ]);
+
+    const proximo = Math.max(academia?.lastMemberNumber ?? 0, ultimo?.number ?? 0) + 1;
+    await db.academy.update({ where: { id: academyId }, data: { lastMemberNumber: proximo } });
+    return proximo;
+  }
+
+  /**
+   * Um número escrito à mão também levanta a marca de água — se for acima dela.
+   *
+   * Sem isto, um clube que escreve o 500 numa ficha (porque o livro de papel ia
+   * nesse) recebia o 4 na adesão seguinte, e a numeração automática caminhava
+   * anos até bater no 500 já ocupado. `updateMany` com a guarda no `where` faz a
+   * comparação do lado da base: duas inscrições ao mesmo tempo não se atropelam.
+   */
+  private async marcarNumero(db: ScopedClient, academyId: string, numero: number | null | undefined) {
+    if (typeof numero !== "number") return;
+    await db.academy.updateMany({
+      where: { id: academyId, lastMemberNumber: { lt: numero } },
+      data: { lastMemberNumber: numero },
     });
-    return (last?.number ?? 0) + 1;
   }
 
   private plausibleBirthdate(value: string): Date {

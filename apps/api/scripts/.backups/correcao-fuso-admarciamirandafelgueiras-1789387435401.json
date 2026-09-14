@@ -1,0 +1,326 @@
+[
+  {
+    "id": "ses_22b68852a818b00b82b508d6",
+    "equipa": "Benjamins - ADMMF",
+    "ini": "2026-09-14 18:30:00",
+    "fim": "2026-09-14 19:30:00"
+  },
+  {
+    "id": "ses_d387cec3e5f3380dee7a505b",
+    "equipa": "Petizes/Traquinas - ADMMF",
+    "ini": "2026-09-14 18:30:00",
+    "fim": "2026-09-14 19:30:00"
+  },
+  {
+    "id": "ses_66db9f7300a8b6fb97083f99",
+    "equipa": "Iniciados - ADMMF",
+    "ini": "2026-09-14 19:30:00",
+    "fim": "2026-09-14 20:30:00"
+  },
+  {
+    "id": "ses_7dfdc0be6468cdd6a3cb4b13",
+    "equipa": "Seniores Fem. - ADMMF",
+    "ini": "2026-09-15 20:00:00",
+    "fim": "2026-09-15 21:30:00"
+  },
+  {
+    "id": "ses_6bc15573e1bc0ac875460b9a",
+    "equipa": "Benjamins - ADMMF",
+    "ini": "2026-09-16 18:30:00",
+    "fim": "2026-09-16 20:00:00"
+  },
+  {
+    "id": "ses_a5fc40885c58f8796ee6a762",
+    "equipa": "Infantis - ADMMF",
+    "ini": "2026-09-16 18:30:00",
+    "fim": "2026-09-16 20:00:00"
+  },
+  {
+    "id": "ses_bdb0cc7604def2160b2dc34a",
+    "equipa": "Iniciados - ADMMF",
+    "ini": "2026-09-17 18:45:00",
+    "fim": "2026-09-17 20:15:00"
+  },
+  {
+    "id": "ses_7a53a344ed8932d940979223",
+    "equipa": "Seniores Fem. - ADMMF",
+    "ini": "2026-09-17 20:00:00",
+    "fim": "2026-09-17 21:30:00"
+  },
+  {
+    "id": "ses_60dbfdc51751a61d5f26592e",
+    "equipa": "Infantis - ADMMF",
+    "ini": "2026-09-18 19:15:00",
+    "fim": "2026-09-18 20:30:00"
+  },
+  {
+    "id": "ses_4d1b03726018fdfd825acee9",
+    "equipa": "Benjamins - ADMMF",
+    "ini": "2026-09-21 18:30:00",
+    "fim": "2026-09-21 19:30:00"
+  },
+  {
+    "id": "ses_0814f7356d22c575571cd120",
+    "equipa": "Petizes/Traquinas - ADMMF",
+    "ini": "2026-09-21 18:30:00",
+    "fim": "2026-09-21 19:30:00"
+  },
+  {
+    "id": "ses_a4c583ab77621cc89cc0c09b",
+    "equipa": "Iniciados - ADMMF",
+    "ini": "2026-09-21 19:30:00",
+    "fim": "2026-09-21 20:30:00"
+  },
+  {
+    "id": "ses_d703f17f09a00f7654b4f676",
+    "equipa": "Seniores Fem. - ADMMF",
+    "ini": "2026-09-22 20:00:00",
+    "fim": "2026-09-22 21:30:00"
+  },
+  {
+    "id": "ses_38c348240ddddb34f4eae7cf",
+    "equipa": "Benjamins - ADMMF",
+    "ini": "2026-09-23 18:30:00",
+    "fim": "2026-09-23 20:00:00"
+  },
+  {
+    "id": "ses_4356da65bcf2c5e4a78802dd",
+    "equipa": "Infantis - ADMMF",
+    "ini": "2026-09-23 18:30:00",
+    "fim": "2026-09-23 20:00:00"
+  },
+  {
+    "id": "ses_9b1d19cfd1895257fdbd9183",
+    "equipa": "Iniciados - ADMMF",
+    "ini": "2026-09-24 18:45:00",
+    "fim": "2026-09-24 20:15:00"
+  },
+  {
+    "id": "ses_2ef01f67cc15168cfe4d5fa8",
+    "equipa": "Seniores Fem. - ADMMF",
+    "ini": "2026-09-24 20:00:00",
+    "fim": "2026-09-24 21:30:00"
+  },
+  {
+    "id": "ses_634407452b5422d06b4ebfc7",
+    "equipa": "Infantis - ADMMF",
+    "ini": "2026-09-25 19:15:00",
+    "fim": "2026-09-25 20:30:00"
+  },
+  {
+    "id": "ses_26d35ae2d622159125233ae2",
+    "equipa": "Benjamins - ADMMF",
+    "ini": "2026-09-28 18:30:00",
+    "fim": "2026-09-28 19:30:00"
+  },
+  {
+    "id": "ses_aa491c65d2f43eae207a1c97",
+    "equipa": "Petizes/Traquinas - ADMMF",
+    "ini": "2026-09-28 18:30:00",
+    "fim": "2026-09-28 19:30:00"
+  },
+  {
+    "id": "ses_cf6af01986a878f7de1f01d3",
+    "equipa": "Iniciados - ADMMF",
+    "ini": "2026-09-28 19:30:00",
+    "fim": "2026-09-28 20:30:00"
+  },
+  {
+    "id": "ses_f48ffc3cf00380b5b56b607a",
+    "equipa": "Seniores Fem. - ADMMF",
+    "ini": "2026-09-29 20:00:00",
+    "fim": "2026-09-29 21:30:00"
+  },
+  {
+    "id": "ses_d92b04f750f430ddf670627c",
+    "equipa": "Benjamins - ADMMF",
+    "ini": "2026-09-30 18:30:00",
+    "fim": "2026-09-30 20:00:00"
+  },
+  {
+    "id": "ses_54d2da4bc6b8359aa6e8e150",
+    "equipa": "Infantis - ADMMF",
+    "ini": "2026-09-30 18:30:00",
+    "fim": "2026-09-30 20:00:00"
+  },
+  {
+    "id": "ses_eea418db48553f265cfddfff",
+    "equipa": "Iniciados - ADMMF",
+    "ini": "2026-10-01 18:45:00",
+    "fim": "2026-10-01 20:15:00"
+  },
+  {
+    "id": "ses_ce63a111258d140474a78e1c",
+    "equipa": "Seniores Fem. - ADMMF",
+    "ini": "2026-10-01 20:00:00",
+    "fim": "2026-10-01 21:30:00"
+  },
+  {
+    "id": "ses_7c7a6c21d68416d5fa478bad",
+    "equipa": "Infantis - ADMMF",
+    "ini": "2026-10-02 19:15:00",
+    "fim": "2026-10-02 20:30:00"
+  },
+  {
+    "id": "ses_719639504af111b5ec2dff96",
+    "equipa": "Benjamins - ADMMF",
+    "ini": "2026-10-05 18:30:00",
+    "fim": "2026-10-05 19:30:00"
+  },
+  {
+    "id": "ses_7e126f795d22eb5f866d7318",
+    "equipa": "Petizes/Traquinas - ADMMF",
+    "ini": "2026-10-05 18:30:00",
+    "fim": "2026-10-05 19:30:00"
+  },
+  {
+    "id": "ses_173bf9bf1a8d8155984cd0f2",
+    "equipa": "Iniciados - ADMMF",
+    "ini": "2026-10-05 19:30:00",
+    "fim": "2026-10-05 20:30:00"
+  },
+  {
+    "id": "ses_98d14ce328520ab5785116ec",
+    "equipa": "Seniores Fem. - ADMMF",
+    "ini": "2026-10-06 20:00:00",
+    "fim": "2026-10-06 21:30:00"
+  },
+  {
+    "id": "ses_96cd109e1aecc83338dfdf00",
+    "equipa": "Benjamins - ADMMF",
+    "ini": "2026-10-07 18:30:00",
+    "fim": "2026-10-07 20:00:00"
+  },
+  {
+    "id": "ses_b915d084aeee9e067588e146",
+    "equipa": "Infantis - ADMMF",
+    "ini": "2026-10-07 18:30:00",
+    "fim": "2026-10-07 20:00:00"
+  },
+  {
+    "id": "ses_9fdfdf702b8fd7983f551b28",
+    "equipa": "Iniciados - ADMMF",
+    "ini": "2026-10-08 18:45:00",
+    "fim": "2026-10-08 20:15:00"
+  },
+  {
+    "id": "ses_6860e95281c17ce46686da92",
+    "equipa": "Seniores Fem. - ADMMF",
+    "ini": "2026-10-08 20:00:00",
+    "fim": "2026-10-08 21:30:00"
+  },
+  {
+    "id": "ses_0805fd8592066a6466131ba5",
+    "equipa": "Infantis - ADMMF",
+    "ini": "2026-10-09 19:15:00",
+    "fim": "2026-10-09 20:30:00"
+  },
+  {
+    "id": "ses_dfb078057f47497245c9d46d",
+    "equipa": "Benjamins - ADMMF",
+    "ini": "2026-10-12 18:30:00",
+    "fim": "2026-10-12 19:30:00"
+  },
+  {
+    "id": "ses_b295d671c32d58c21fe8262e",
+    "equipa": "Petizes/Traquinas - ADMMF",
+    "ini": "2026-10-12 18:30:00",
+    "fim": "2026-10-12 19:30:00"
+  },
+  {
+    "id": "ses_3daa650efee2a0887f6f7de9",
+    "equipa": "Iniciados - ADMMF",
+    "ini": "2026-10-12 19:30:00",
+    "fim": "2026-10-12 20:30:00"
+  },
+  {
+    "id": "ses_29e369c35ea46622f42169ef",
+    "equipa": "Seniores Fem. - ADMMF",
+    "ini": "2026-10-13 20:00:00",
+    "fim": "2026-10-13 21:30:00"
+  },
+  {
+    "id": "ses_63c37a02c65a0e9581d22f1b",
+    "equipa": "Benjamins - ADMMF",
+    "ini": "2026-10-14 18:30:00",
+    "fim": "2026-10-14 20:00:00"
+  },
+  {
+    "id": "ses_d1ee70bd2800c62f6efadffc",
+    "equipa": "Infantis - ADMMF",
+    "ini": "2026-10-14 18:30:00",
+    "fim": "2026-10-14 20:00:00"
+  },
+  {
+    "id": "ses_f7d2e87def971512d05eb6a7",
+    "equipa": "Iniciados - ADMMF",
+    "ini": "2026-10-15 18:45:00",
+    "fim": "2026-10-15 20:15:00"
+  },
+  {
+    "id": "ses_3898a91feb62c442a54b8ad3",
+    "equipa": "Seniores Fem. - ADMMF",
+    "ini": "2026-10-15 20:00:00",
+    "fim": "2026-10-15 21:30:00"
+  },
+  {
+    "id": "ses_83cf195c6b0b77d34412506c",
+    "equipa": "Infantis - ADMMF",
+    "ini": "2026-10-16 19:15:00",
+    "fim": "2026-10-16 20:30:00"
+  },
+  {
+    "id": "ses_97dd125f098c0bba167f4883",
+    "equipa": "Benjamins - ADMMF",
+    "ini": "2026-10-19 18:30:00",
+    "fim": "2026-10-19 19:30:00"
+  },
+  {
+    "id": "ses_aaf67e0db2e90b08d299c670",
+    "equipa": "Petizes/Traquinas - ADMMF",
+    "ini": "2026-10-19 18:30:00",
+    "fim": "2026-10-19 19:30:00"
+  },
+  {
+    "id": "ses_4e51a61fbd7bb55f76795219",
+    "equipa": "Iniciados - ADMMF",
+    "ini": "2026-10-19 19:30:00",
+    "fim": "2026-10-19 20:30:00"
+  },
+  {
+    "id": "ses_6c2b65fb579059a7665cf07f",
+    "equipa": "Seniores Fem. - ADMMF",
+    "ini": "2026-10-20 20:00:00",
+    "fim": "2026-10-20 21:30:00"
+  },
+  {
+    "id": "ses_5870cf8ecaddf3efd101cad4",
+    "equipa": "Benjamins - ADMMF",
+    "ini": "2026-10-21 18:30:00",
+    "fim": "2026-10-21 20:00:00"
+  },
+  {
+    "id": "ses_357d12bfe1f4097f512b5e15",
+    "equipa": "Infantis - ADMMF",
+    "ini": "2026-10-21 18:30:00",
+    "fim": "2026-10-21 20:00:00"
+  },
+  {
+    "id": "ses_e835b6437e3de1be6fbc9715",
+    "equipa": "Iniciados - ADMMF",
+    "ini": "2026-10-22 18:45:00",
+    "fim": "2026-10-22 20:15:00"
+  },
+  {
+    "id": "ses_6ca284866e740d7aaab163cd",
+    "equipa": "Seniores Fem. - ADMMF",
+    "ini": "2026-10-22 20:00:00",
+    "fim": "2026-10-22 21:30:00"
+  },
+  {
+    "id": "ses_ace9dfd86cbc568e40ac63bf",
+    "equipa": "Infantis - ADMMF",
+    "ini": "2026-10-23 19:15:00",
+    "fim": "2026-10-23 20:30:00"
+  }
+]

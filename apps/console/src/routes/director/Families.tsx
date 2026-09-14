@@ -5,7 +5,8 @@ import { DataTable, Empty, Metric, MetricRow, Monogram, Panel, Pill, type Column
 import { BulkBar, BulkDeleteDialog } from "@/components/BulkDelete";
 import { ResultCount, SearchInput, Segmented, Toolbar } from "@/components/filters";
 import { FamilyInviteDialog } from "@/components/FamilyInviteDialog";
-import { Check, Copy, Home, Link2, Send, Trash2 } from "@/lib/icons";
+import { FamilyQrDialog } from "@/components/FamilyQrDialog";
+import { Check, Copy, Home, Link2, QrCode, Send, Trash2 } from "@/lib/icons";
 import { athleteById, listGuardians, teamById } from "@/lib/api";
 import { percent, shortName } from "@/lib/format";
 import { apiDelete, apiGet, apiPatch } from "@/lib/http";
@@ -27,6 +28,7 @@ export default function Families() {
   const [params, setParams] = useSearchParams();
   const [query, setQuery] = useState("");
   const [convidar, setConvidar] = useState(false);
+  const [qr, setQr] = useState(false);
 
   const filter = params.get("filtro") ?? "todas";
   const setFilter = (v: string) => setParams(v === "todas" ? {} : { filtro: v });
@@ -216,12 +218,46 @@ export default function Families() {
           é só a interface a dizer a mesma coisa.
         */}
         {mayWrite && (
-          <button type="button" onClick={() => setConvidar(true)} className="ctl-primary">
-            <Send className="size-3.5" strokeWidth={1.75} />
-            Convidar para a app
-          </button>
+          <>
+            {/*
+              O código QR ao lado do convite, e não dentro dele.
+
+              O link e o código respondem à mesma pergunta — como é que as
+              famílias entram — mas em sítios diferentes: o link vai para o
+              WhatsApp, o código vai para a reunião de pais e para a parede.
+              Escondido dentro do diálogo do link, era um código que ninguém
+              sabia que existia; é a lição do QR de adesão a sócio.
+
+              Em contorno e não cheio: o caminho mais provável continua a ser
+              mandar o link a uma família, e dois botões cheios lado a lado
+              fazem escolher entre duas coisas que não são igualmente
+              prováveis.
+            */}
+            <button type="button" onClick={() => setQr(true)} className="ctl-outline">
+              <QrCode className="size-3.5" strokeWidth={1.75} />
+              Código QR
+            </button>
+            <button type="button" onClick={() => setConvidar(true)} className="ctl-primary">
+              <Send className="size-3.5" strokeWidth={1.75} />
+              Convidar para a app
+            </button>
+          </>
         )}
       </PageHeader>
+
+      {qr && mayWrite && (
+        <FamilyQrDialog
+          invite={link}
+          mayWrite={mayWrite}
+          onGerar={() => {
+            // Uma porta só cria links (ver `FamilyQrDialog`): passa-se o
+            // trabalho ao diálogo do convite, que pergunta a duração.
+            setQr(false);
+            setConvidar(true);
+          }}
+          onClose={() => setQr(false)}
+        />
+      )}
 
       {convidar && mayWrite && (
         <FamilyInviteDialog

@@ -117,12 +117,20 @@ s = await estado(a);
 check("volta a activo", s.status === "ACTIVE", s.status);
 check("e não lhe dão um número novo", s.number === depois.number, `${s.number}`);
 
-console.log("\n=== Apagar: só quem nunca teve número ===");
-const recusa = await call(director, "DELETE", `/api/members/${a}`);
-check("recusa apagar um sócio numerado (409)", recusa.status === 409, `${recusa.status}`);
-check("e diz o número na explicação", String(recusa.body?.message ?? "").includes(String(depois.number)), String(recusa.body?.message).slice(0, 90));
-check("e manda cancelar em vez disso", String(recusa.body?.message ?? "").includes("cancela"), "");
-check("o sócio continua lá", (await estado(a)) !== null, "");
+/*
+ * Apagar deixou de olhar para o número.
+ *
+ * Recusava com 409 a quem tivesse número e mandava cancelar — e como o número
+ * sai na aprovação, isso era todo o sócio que chegou a ser sócio. O que o
+ * travão protegia (o número voltar à fila) passou para a numeração: o buraco
+ * fica aberto e só se enche à mão. Ver `test-numero-de-socio.mjs`, que é onde
+ * essa regra se prova.
+ */
+console.log("\n=== Apagar: o número já não é travão ===");
+const apagaNumerado = await call(director, "DELETE", `/api/members/${a}`);
+check("apaga um sócio numerado", apagaNumerado.status === 200, `${apagaNumerado.status}`);
+check("e devolve o número que ficou aberto", apagaNumerado.body?.freedNumber === depois.number, `${apagaNumerado.body?.freedNumber} != ${depois.number}`);
+check("o sócio desapareceu", (await estado(a)) === null, "");
 
 const b = await semear("ZZ Socio Dois", "299000002");
 const apagado = await call(director, "DELETE", `/api/members/${b}`);

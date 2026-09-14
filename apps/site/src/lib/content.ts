@@ -407,3 +407,4 @@ export const COMPANY = {
 /** O endereço da consola. Em produção, cada clube tem o seu subdomínio. */
 export const CONSOLE_URL = "https://app.academias.pt";
 export const CONTACT_EMAIL = "geral@academias.pt";
+export const INSTAGRAM_URL = "https://instagram.com/getacademias";

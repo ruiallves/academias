@@ -56,6 +56,26 @@ export function Wordmark({ className }: { className?: string }) {
 }
 
 /**
+ * O pictograma do Instagram — a câmara arredondada, não o logótipo.
+ *
+ * Desenhado à mão, na mesma gramática do resto do sistema (`currentColor`,
+ * viewBox 24, traço 1.7): é a forma genérica com que qualquer ícone de rede
+ * social se representa — a mesma que se encontra, com este desenho, em
+ * praticamente todos os conjuntos de ícones de interface. Não é a wordmark nem
+ * o gradiente da marca registada; é um link "segue-nos", e é isso que precisa
+ * de dizer.
+ */
+export function InstagramIcon({ size = 18, className }: { size?: number; className?: string }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" aria-hidden className={className}>
+      <rect x="3" y="3" width="18" height="18" rx="5.5" stroke="currentColor" strokeWidth="1.7" />
+      <circle cx="12" cy="12" r="4.2" stroke="currentColor" strokeWidth="1.7" />
+      <circle cx="17.1" cy="6.9" r="1.1" fill="currentColor" />
+    </svg>
+  );
+}
+
+/**
  * O marcador de secção.
  *
  * Versaletes na cor do campo, com um traço curto à frente. O número é herança

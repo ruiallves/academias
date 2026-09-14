@@ -1454,7 +1454,59 @@ dos repetidos, a validação do formato do período, e o sócio sem categoria.
 
 ---
 
-## O QR da página de adesão a sócio
+## Apagar um sócio, e o número que ele deixa
+
+Apagar recusava assim que houvesse número atribuído, e mandava cancelar. O
+argumento era bom: apagar a linha libertava o número, e um livro com o 34 a
+pertencer a duas pessoas ao longo do tempo deixa de servir. O travão estava no
+gesto errado — e fechava exactamente o caso que o motivou: fichas de teste e
+inscrições repetidas **já aprovadas**, que ficavam no livro para sempre porque
+tinham ganho um número (o número sai na aprovação, portanto em todas as que
+chegaram a ser sócios).
+
+Agora apaga-se, com `member:write`, mesmo com conta na app. O que não podia
+acontecer era o número voltar sozinho à fila, e isso resolveu-se na numeração.
+
+**O buraco fica aberto, e só se enche à mão.** `Academy.lastMemberNumber`
+(migração `numero_de_socio_nao_volta`) é a marca de água: o maior número já dado
+no clube, e **só sobe**. O próximo é `MAX(marca, maior número vivo) + 1`.
+
+| | |
+|---|---|
+| sócios 1, 2, 3 · apago o **2** | a adesão seguinte é a **4** |
+| sócios 1, 2, 3 · apago o **3** | a adesão seguinte é a **4** — e era aqui que estava avariado |
+| quero dar o 2 a alguém | escreve-se **à mão** na ficha, que é uma decisão do clube |
+
+O segundo caso era o que `MAX(number) + 1` não sabia fazer: apagado o número
+mais alto, o máximo descia e a adesão seguinte herdava o número de quem tinha
+acabado de sair. É o mais fácil de provocar sem dar por isso, porque uma ficha
+de teste fica sempre com o número mais alto. Um número escrito à mão **acima** da
+marca levanta-a — um clube que escreve o 500 (porque o livro de papel ia nesse)
+não recebe o 4 na adesão seguinte.
+
+**O que sai com a ficha:** as quotas e os pagamentos delas, **incluindo as
+pagas** (cascata), os votos em sondagens, a fotografia, e o número. **O que
+fica:** os lançamentos de tesouraria (`SetNull` — o dinheiro do clube não muda
+porque uma ficha saiu) e a **conta** de quem tinha app: `Member.userId` é a
+ponte, não a conta, e a mesma pessoa pode ser encarregado de educação no mesmo
+clube. Essa conta perde o contexto de sócio, e é tudo.
+
+O `confirm()` do browser deu lugar a um diálogo, mas de **uma linha**: *"Apagar
+o sócio n.º 603, Maria Silva? Não há como voltar atrás."* Chegou a listar tudo o
+que sai e o que fica, e era demasiado — quem carrega em "Apagar sócio" no menu
+já decidiu, e nove linhas em dois quadros não o fazem decidir melhor, fazem-lhe
+saltar o texto. O que ele precisa de ver é **a quem pertence o gesto**, para não
+apagar a ficha errada; as consequências ficam escritas onde se consultam, aqui e
+em `MembersService.remove`.
+
+Verificado por `node scripts/test-numero-de-socio.mjs` (23): os dois buracos, o
+enchimento à mão, o número recusado por estar ocupado, a marca a subir com um
+número alto escrito à mão, e apagar um sócio com número, conta e quota paga — com
+as quotas e os pagamentos a saírem e a conta a ficar. O teste repõe a marca de
+água do clube no fim: um teste que empurra a numeração do Life Club a cada
+corrida é um teste que só se corre uma vez.
+
+## Os códigos QR — adesão a sócio, e o convite das famílias
 
 `Sócios → Gerir página de inscrição` passou a mostrar, por cima da frase de
 abertura, **como é que as pessoas chegam lá**: o endereço (com botão de copiar),
@@ -1487,6 +1539,51 @@ Três detalhes que custaram a apanhar:
   helper `centrado()` mede e desenha a partir da esquerda.
 
 O código nunca passa pelo servidor: é o endereço, e o endereço já é público.
+
+### O mesmo, para as famílias
+
+`Famílias` tem agora **Código QR** ao lado de "Convidar para a app" — em
+contorno, não cheio: o caminho mais provável continua a ser mandar o link a uma
+família, e dois botões cheios lado a lado fazem escolher entre duas coisas que
+não são igualmente prováveis. Abre um diálogo com o código desenhado e os
+mesmos dois ficheiros (cartaz A4 com **APP DO CLUBE**, ou só o PNG). O link
+serve o WhatsApp; o código serve a reunião de pais, o balcão e a folha que vai
+na mochila.
+
+**O código carrega o convite, e não só o endereço do clube.** É a decisão que
+sustenta isto e não é evidente — um QR que levasse só a `clube.academias.pt`
+instalava a app do mesmo modo e parecia equivalente. Era uma armadilha: a app
+**só oferece "Criar conta" a quem chega com um convite** (ver `Entrar.tsx`), e
+sem o token a família instalava-a, encontrava um ecrã de "Entrar" para uma conta
+que não tem, e ligava para a secretaria. Por isso o código é o link de convite
+que já anda a circular — o mesmo que se copia para o WhatsApp. Pode ser afixado
+à vista pela mesma razão que pode ser partilhado num grupo: sozinho não liga
+criança nenhuma, porque a ligação exige o NIF e a data de nascimento do
+educando.
+
+**E por isso o prazo passou a ser um aviso.** Um convite de sete dias impresso
+num cartaz é um cartaz que deixa de funcionar na parede, em silêncio — quem
+aponta a câmara e não acontece nada não liga a reclamar, desiste. O diálogo
+di-lo antes de imprimir: sem prazo, confirma que o código dura; com prazo, em
+âmbar, quantos dias faltam e a recomendação de gerar um sem prazo. Sem convite
+vivo não se gera um ali — a duração escolhe-se num sítio só, o
+`FamilyInviteDialog`, e o botão leva para lá.
+
+### Um gerador, dois assuntos
+
+O cartaz A4 são cem linhas de milímetros contados, e copiá-las era garantir que
+divergiam. Passaram para `lib/qr-cartaz.ts`, que não sabe de sócios nem de
+famílias: recebe `{ link, assunto, chamada, ficheiro }`. `lib/adesao.ts` ficou
+com o que é seu — derivar o endereço e escolher as palavras — e o diálogo das
+famílias passa o link que veio da API.
+
+`construirCartaz` devolve o documento e `descarregarCartaz` é que o grava — a
+separação do `buildCallUpPdf`/`exportCallUpSheet`, e pela mesma razão: o que se
+grava não se consegue inspeccionar. Verificado por `npm run test:qr --workspace
+@academia/console` (15), que lê o texto de dentro dos fluxos comprimidos do PDF
+e confirma o assunto, a chamada, o endereço por extenso sem `https://`, e que o
+cartaz das famílias **leva o token** — o endereço impresso e o QR saem do mesmo
+argumento, e imprimir um e codificar outro seria mentir em papel.
 
 ## Importação de atletas por Excel
 
