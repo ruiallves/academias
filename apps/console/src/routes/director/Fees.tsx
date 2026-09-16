@@ -7,7 +7,7 @@ import { Dialog, DialogField } from "@/components/Dialog";
 import { DataTable, Empty, Metric, MetricRow, Monogram, Panel, PanelHead, Pill, SelectField, cx, type Column } from "@/components/primitives";
 import { ResultCount, SearchInput, Segmented, Select, Toolbar } from "@/components/filters";
 import { NewFeeDialog } from "@/components/finance/NewFeeDialog";
-import { CalendarDays, Check, ChevronDown, CircleCheck, Download, Loader2, Plus, Search, Send, Settings, TriangleAlert, Users, Wallet } from "@/lib/icons";
+import { CalendarDays, Check, ChevronDown, CircleCheck, Download, Loader2, Plus, Search, Send, Settings, Trash2, TriangleAlert, Users, Wallet } from "@/lib/icons";
 import {
   arrears,
   athleteById,
@@ -21,7 +21,7 @@ import {
   teamById,
   today,
 } from "@/lib/api";
-import { apiGet, apiPatch, apiPost, apiPut } from "@/lib/http";
+import { apiDelete, apiGet, apiPatch, apiPost, apiPut } from "@/lib/http";
 import { reloadAcademy, useStore } from "@/lib/store";
 import { money, percent, periodLabel, relativeDays, shortName } from "@/lib/format";
 import { exportFees, nomeDoFicheiro } from "@/lib/fees-export";
@@ -1369,11 +1369,20 @@ function AthleteFeesDialog({
  * aberto na última linha ficava cortado por baixo.
  */
 /** Altura aproximada do menu — três opções fixas, sempre o mesmo tamanho. */
-const STATUS_MENU_HEIGHT = 120;
+const STATUS_MENU_HEIGHT = 160;
 
 function FeeStatusControl({ fee }: { fee: Fee }) {
   const [open, setOpen] = useState(false);
   const [busy, setBusy] = useState(false);
+  /*
+   * Apagar, e o que correu mal.
+   *
+   * O erro não existia: uma mudança de estado que falhasse ficava calada. Com
+   * apagar isso não serve — o servidor recusa as pagas online e as que têm uma
+   * referência viva, e a razão tem de chegar a quem carregou.
+   */
+  const [aApagar, setAApagar] = useState(false);
+  const [erro, setErro] = useState<string | null>(null);
   const [pos, setPos] = useState<{ left: number; top?: number; bottom?: number } | null>(null);
   const btnRef = useRef<HTMLButtonElement>(null);
   const target = currentTarget(fee.status);
@@ -1420,9 +1429,28 @@ function FeeStatusControl({ fee }: { fee: Fee }) {
     setOpen(false);
     if (value === target || busy) return;
     setBusy(true);
+    setErro(null);
     try {
       await apiPatch(`/api/charges/${fee.id}/status`, { status: value });
       await reloadAcademy();
+    } catch (err) {
+      setErro(err instanceof Error ? err.message : "Não foi possível mudar o estado.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function apagar() {
+    if (busy) return;
+    setBusy(true);
+    setErro(null);
+    try {
+      await apiDelete(`/api/charges/${fee.id}`);
+      setAApagar(false);
+      await reloadAcademy();
+    } catch (err) {
+      setAApagar(false);
+      setErro(err instanceof Error ? err.message : "Não foi possível apagar.");
     } finally {
       setBusy(false);
     }
@@ -1482,8 +1510,82 @@ function FeeStatusControl({ fee }: { fee: Fee }) {
                   <span className="flex-1">{o.label}</span>
                 </button>
               ))}
+              <div className="my-1 border-t border-line" />
+              <button
+                type="button"
+                role="menuitem"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setOpen(false);
+                  setAApagar(true);
+                }}
+                className="flex w-full items-center gap-2 rounded-[6px] px-2.5 py-1.5 text-left text-body text-risk transition-colors duration-[120ms] hover:bg-risk-soft"
+              >
+                <span className="flex size-4 shrink-0 items-center justify-center">
+                  <Trash2 className="size-3.5" strokeWidth={1.9} />
+                </span>
+                <span className="flex-1">Apagar</span>
+              </button>
             </div>
           </>,
+          document.body,
+        )}
+
+      {/*
+        A pergunta e o erro, num portal e com a propagação parada.
+
+        O controlo vive dentro de uma linha que navega para a ficha do atleta ao
+        clicar; um portal continua a ser filho dela na árvore React, e um clique
+        em "Cancelar" levava também para lá. O `div` de fora pára isso.
+      */}
+      {(aApagar || erro) &&
+        createPortal(
+          <div onClick={(e) => e.stopPropagation()} onMouseDown={(e) => e.stopPropagation()}>
+            {aApagar && (
+              <Dialog
+                title="Apagar mensalidade?"
+                icon={<Trash2 className="size-4" strokeWidth={1.75} />}
+                onClose={() => setAApagar(false)}
+                width={420}
+                labelledBy="apagar-mensalidade"
+                footer={
+                  <div className="flex w-full items-center justify-end gap-2">
+                    <button type="button" className="ctl-ghost" onClick={() => setAApagar(false)} disabled={busy}>
+                      Cancelar
+                    </button>
+                    <button type="button" className="ctl-risk" onClick={() => void apagar()} disabled={busy}>
+                      <Trash2 className="size-3.5" strokeWidth={1.9} />
+                      {busy ? "A apagar…" : "Apagar"}
+                    </button>
+                  </div>
+                }
+              >
+                <p className="p-5 text-body leading-relaxed text-ink-2">
+                  Apagar{" "}
+                  <strong className="font-medium text-ink">
+                    {fee.extra ? (fee.title ?? "esta cobrança") : `a mensalidade de ${periodLabel(fee.period)}`}
+                  </strong>{" "}
+                  ({money(fee.amountCents)})? Não há como voltar atrás.
+                </p>
+              </Dialog>
+            )}
+            {erro && !aApagar && (
+              <Dialog
+                title="Não foi possível"
+                icon={<TriangleAlert className="size-4" strokeWidth={1.75} />}
+                onClose={() => setErro(null)}
+                width={420}
+                labelledBy="erro-mensalidade"
+                footer={
+                  <button type="button" className="ctl-outline" onClick={() => setErro(null)}>
+                    Fechar
+                  </button>
+                }
+              >
+                <p className="p-5 text-body leading-relaxed text-ink-2">{erro}</p>
+              </Dialog>
+            )}
+          </div>,
           document.body,
         )}
     </>

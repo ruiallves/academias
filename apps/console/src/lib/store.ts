@@ -59,6 +59,9 @@ type ApiBootstrap = {
     membershipHeadline: string | null;
     membershipIntro: string | null;
     membershipPoints: string[];
+    /** Quando abre o ano das quotas anuais de sócio: o mês (1–12) e o dia. */
+    memberAnnualStartMonth: number;
+    memberAnnualStartDay: number;
   };
   sports: {
     id: string;
@@ -323,6 +326,7 @@ const EMPTY: State = {
     status: "ACTIVE", trialEndsAt: null, createdAt: "",
     billingDueDay: 8, billingMonths: [],
     membershipHeadline: "", membershipIntro: "", membershipPoints: [],
+    memberAnnualStartMonth: 8, memberAnnualStartDay: 1,
     sports: [],
   },
   season: "",
@@ -893,6 +897,8 @@ function juntar<T extends { id: string }>(atuais: T[], novos: T[]): T[] {
       membershipHeadline: boot.academy.membershipHeadline ?? "",
       membershipIntro: boot.academy.membershipIntro ?? "",
       membershipPoints: boot.academy.membershipPoints ?? [],
+      memberAnnualStartMonth: boot.academy.memberAnnualStartMonth ?? 8,
+      memberAnnualStartDay: boot.academy.memberAnnualStartDay ?? 1,
       /*
        * Campo a campo, e por isso é preciso cuidado: o que não estiver aqui
        * **não chega ao ecrã**, mesmo estando certo na base de dados. Foi o que

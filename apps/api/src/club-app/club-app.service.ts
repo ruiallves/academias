@@ -190,12 +190,30 @@ export class ClubAppService {
    * O mesmo desenho do `/api/bootstrap` da família: a app abre com um pedido e
    * desenha tudo — num telemóvel com rede fraca, cinco pedidos são cinco
    * oportunidades de ficar meio ecrã em branco.
+   *
+   * ## Um pedido, duas transações
+   *
+   * Era uma transação só, com uma dúzia de idas à base lá dentro: a ficha e a
+   * verificação legal, o clube, a categoria, as quotas, os meses apagados, o
+   * jogo, as notícias, as sondagens, os votos. Dentro de uma transação
+   * interactiva as consultas correm em série na mesma ligação — o `Promise.all`
+   * não as paraleliza —, e a transação fecha aos cinco segundos. Com a base
+   * remota, de vez em quando passava: `P2028`, e a app do sócio abria com um
+   * erro. Apanhado a correr a suite das quotas anuais, que falhava uma vez em
+   * cada três sem mudança nenhuma de código.
+   *
+   * Agora são duas, cada uma com metade do trabalho. A primeira é a que decide
+   * — quem é, se pode entrar (o gate legal está em `socioDe`), o que deve. A
+   * segunda é o clube — jogo, notícias, sondagens — e corre em paralelo com a
+   * assinatura da fotografia, que é rede e fica sempre fora de transações.
    */
   async inicio(authorization: string | undefined, slug: string) {
     const eu = await this.identidade(authorization);
     const academyId = await this.academiaDe(slug);
+    const agora = new Date();
 
-    const inicio = await this.prisma.runAs(academyId, async (db) => {
+    /* ---- 1. O sócio e as quotas ------------------------------------------ */
+    const quotas = await this.prisma.runAs(academyId, async (db) => {
       const socio = await this.socioDe(db, eu.userId, academyId);
 
       const academia = await db.academy.findFirst({
@@ -203,6 +221,7 @@ export class ClubAppService {
         select: {
           name: true, shortName: true, slug: true, logoUrl: true, signalColor: true,
           memberCardEnabled: true, memberCardQrEnabled: true, eupagoApiKey: true,
+          memberAnnualStartMonth: true, memberAnnualStartDay: true,
         },
       });
 
@@ -217,9 +236,7 @@ export class ClubAppService {
         await db.member.update({ where: { id: socio.id }, data: { cardToken } });
       }
 
-      const agora = new Date();
-
-      const [tier, fees, jogo, noticias, sondagens, votos] = await Promise.all([
+      const [tier, fees, apagados] = await Promise.all([
         socio.tierId
           ? db.memberTier.findFirst({
               where: { id: socio.tierId },
@@ -234,47 +251,9 @@ export class ClubAppService {
             status: true, settledAt: true,
           },
         }),
-        db.match.findFirst({
-          where: { startsAt: { gte: agora }, status: "SCHEDULED" },
-          orderBy: { startsAt: "asc" },
-          select: {
-            id: true, startsAt: true, venue: true, opponent: true, isHome: true,
-            team: { select: { name: true } },
-            competition: { select: { label: true } },
-          },
-        }),
-        db.announcement.findMany({
-          where: { publishedAt: { not: null } },
-          orderBy: { publishedAt: "desc" },
-          take: 20,
-          select: { id: true, title: true, body: true, publishedAt: true, audience: true },
-        }),
-        db.poll.findMany({
-          where: { status: "OPEN" },
-          orderBy: { publishedAt: "desc" },
-          select: {
-            id: true, question: true, details: true, publishedAt: true,
-            options: { orderBy: { order: "asc" }, select: { id: true, label: true, _count: { select: { votes: true } } } },
-          },
-        }),
-        db.pollVote.findMany({ where: { memberId: socio.id }, select: { pollId: true, optionId: true } }),
+        /* Os meses que o clube apagou não se oferecem a pagar. Ver `MemberFeeSkip`. */
+        db.memberFeeSkip.findMany({ where: { memberId: socio.id }, select: { period: true } }),
       ]);
-
-      /*
-       * As notícias do sócio são as de audiência `all` e `members`. As de
-       * `guardians` e `coaches` são doutros contextos — o filtro é aqui e não
-       * no SQL porque a audiência é JSON e este é o único leitor com regra
-       * própria.
-       */
-      const visiveis = noticias
-        .filter((a) => {
-          const kind = (a.audience as { kind?: string } | null)?.kind ?? "all";
-          return kind === "all" || kind === "members";
-        })
-        .slice(0, 10)
-        .map(({ audience: _audience, ...resto }) => resto);
-
-      const meusVotos = new Map(votos.map((v) => [v.pollId, v.optionId]));
 
       /*
        * Os meses que o sócio pode pagar já: do corrente até Julho, fim da
@@ -284,15 +263,18 @@ export class ClubAppService {
        * nenhum: `amountCents` vem nulo e a app explica em vez de inventar.
        */
       const porPeriodo = new Map(fees.map((f) => [f.period, f]));
+      const dispensados = new Set(apagados.map((d) => d.period));
       const precoMes = tier && !tier.archivedAt ? tier.feeCents : null;
       /*
        * Numa categoria anual não há meses adiantados para oferecer: há **uma**
-       * quota por época. A lista passa a ter um elemento só — o da época — e a
-       * app mostra-o em vez de doze meses que não existem.
+       * quota por período. A lista passa a ter um elemento só — o do período —
+       * e a app mostra-o em vez de doze meses que não existem.
        */
       const anual = Boolean(tier && !tier.archivedAt && tier.billing === "ANNUAL");
-      const periodos = anual ? [inicioDaEpoca(agora)] : mesesAteFimDaEpoca(agora);
-      const upcoming = periodos.map((period) => {
+      const periodos = anual
+        ? [inicioDaEpoca(agora, academia?.memberAnnualStartMonth ?? 8, academia?.memberAnnualStartDay ?? 1)]
+        : mesesAteFimDaEpoca(agora);
+      const upcoming = periodos.filter((period) => !dispensados.has(period)).map((period) => {
         const fee = porPeriodo.get(period);
         return {
           period,
@@ -345,37 +327,89 @@ export class ClubAppService {
           overdue: f.status === "OPEN" && Boolean(f.dueOn && f.dueOn < agora),
         })),
         upcoming,
-        nextMatch: jogo
-          ? {
-              id: jogo.id,
-              startsAt: jogo.startsAt,
-              venue: jogo.venue,
-              opponent: jogo.opponent,
-              isHome: jogo.isHome,
-              teamName: jogo.team.name,
-              competition: jogo.competition?.label ?? null,
-            }
-          : null,
-        news: visiveis,
-        polls: sondagens.map((p) => ({
-          id: p.id,
-          question: p.question,
-          details: p.details,
-          publishedAt: p.publishedAt,
-          myOptionId: meusVotos.get(p.id) ?? null,
-          options: p.options.map((o) => ({ id: o.id, label: o.label, votes: o._count.votes })),
-        })),
       };
     });
 
-    /*
-     * A fotografia assina-se depois de a transação fechar — uma ida ao Supabase
-     * dentro do `runAs` segurava uma das cinco ligações do pool durante toda a
-     * viagem, e o sintoma aparecia na app inteira (ver `setAthletePhoto`).
-     */
-    const { photoKey, ...member } = inicio.member;
-    const photoUrl = photoKey ? await this.storage.signDownload(PHOTO_BUCKET, photoKey, PHOTO_TTL) : null;
-    return { ...inicio, member: { ...member, photoUrl } };
+    const { photoKey, ...member } = quotas.member;
+
+    /* ---- 2. O clube, e a fotografia em paralelo -------------------------- */
+    const [clube, photoUrl] = await Promise.all([
+      this.prisma.runAs(academyId, async (db) => {
+        const [jogo, noticias, sondagens, votos] = await Promise.all([
+          db.match.findFirst({
+            where: { startsAt: { gte: agora }, status: "SCHEDULED" },
+            orderBy: { startsAt: "asc" },
+            select: {
+              id: true, startsAt: true, venue: true, opponent: true, isHome: true,
+              team: { select: { name: true } },
+              competition: { select: { label: true } },
+            },
+          }),
+          db.announcement.findMany({
+            where: { publishedAt: { not: null } },
+            orderBy: { publishedAt: "desc" },
+            take: 20,
+            select: { id: true, title: true, body: true, publishedAt: true, audience: true },
+          }),
+          db.poll.findMany({
+            where: { status: "OPEN" },
+            orderBy: { publishedAt: "desc" },
+            select: {
+              id: true, question: true, details: true, publishedAt: true,
+              options: { orderBy: { order: "asc" }, select: { id: true, label: true, _count: { select: { votes: true } } } },
+            },
+          }),
+          db.pollVote.findMany({ where: { memberId: member.id }, select: { pollId: true, optionId: true } }),
+        ]);
+
+        /*
+         * As notícias do sócio são as de audiência `all` e `members`. As de
+         * `guardians` e `coaches` são doutros contextos — o filtro é aqui e não
+         * no SQL porque a audiência é JSON e este é o único leitor com regra
+         * própria.
+         */
+        const visiveis = noticias
+          .filter((a) => {
+            const kind = (a.audience as { kind?: string } | null)?.kind ?? "all";
+            return kind === "all" || kind === "members";
+          })
+          .slice(0, 10)
+          .map(({ audience: _audience, ...resto }) => resto);
+
+        const meusVotos = new Map(votos.map((v) => [v.pollId, v.optionId]));
+
+        return {
+          nextMatch: jogo
+            ? {
+                id: jogo.id,
+                startsAt: jogo.startsAt,
+                venue: jogo.venue,
+                opponent: jogo.opponent,
+                isHome: jogo.isHome,
+                teamName: jogo.team.name,
+                competition: jogo.competition?.label ?? null,
+              }
+            : null,
+          news: visiveis,
+          polls: sondagens.map((p) => ({
+            id: p.id,
+            question: p.question,
+            details: p.details,
+            publishedAt: p.publishedAt,
+            myOptionId: meusVotos.get(p.id) ?? null,
+            options: p.options.map((o) => ({ id: o.id, label: o.label, votes: o._count.votes })),
+          })),
+        };
+      }),
+      /*
+       * A fotografia assina-se fora de transações — uma ida ao Supabase dentro
+       * do `runAs` segurava uma das cinco ligações do pool durante toda a
+       * viagem, e o sintoma aparecia na app inteira (ver `setAthletePhoto`).
+       */
+      photoKey ? this.storage.signDownload(PHOTO_BUCKET, photoKey, PHOTO_TTL) : Promise.resolve(null),
+    ]);
+
+    return { ...quotas, ...clube, member: { ...member, photoUrl } };
   }
 
   /* ------------------------------------------------------------------------ */
@@ -495,6 +529,10 @@ export class ClubAppService {
       select: { period: true },
     });
     for (const f of doPeriodo) jaTem.add(f.period);
+    /* Os que o clube apagou contam como resolvidos: nem se criam, nem se pagam. */
+    for (const d of await db.memberFeeSkip.findMany({ where: { memberId, period: { lte: ate } }, select: { period: true } })) {
+      jaTem.add(d.period);
+    }
 
     const novas: { id: string; period: string; amountCents: number }[] = [];
     for (const period of mesesAteFimDaEpoca()) {
@@ -643,13 +681,25 @@ export class ClubAppService {
     if (method !== "MBWAY" && method !== "MULTIBANCO") {
       throw new BadRequestException("Método de pagamento desconhecido");
     }
-    if (!mesesAteFimDaEpoca().includes(period)) {
-      throw new BadRequestException("Só podes pagar do mês corrente até ao fim da época");
-    }
 
     const { socioId, feeId } = await this.prisma.runAs(academyId, async (db) => {
       const socio = await this.socioDe(db, eu.userId, academyId);
       if (socio.status !== "ACTIVE") throw new ForbiddenException("Só um sócio activo paga quotas");
+
+      /*
+       * A janela "do mês corrente até Julho" é das quotas **mensais**. Numa
+       * categoria anual o período pode abrir em Janeiro — e Janeiro não está
+       * na janela de Agosto a Julho vista de Setembro. Aí quem decide o que se
+       * pode pagar é `garantirDoSocio`: o período corrente da categoria, e só.
+       */
+      const categoria = await db.memberTier.findFirst({
+        where: { id: socio.tierId ?? "" },
+        select: { billing: true, archivedAt: true },
+      });
+      const anual = Boolean(categoria && !categoria.archivedAt && categoria.billing === "ANNUAL");
+      if (!anual && !mesesAteFimDaEpoca().includes(period)) {
+        throw new BadRequestException("Só podes pagar do mês corrente até ao fim da época");
+      }
 
       /*
        * A mesma regra de ordem do `pagarQuota`, e aqui era ainda mais fácil de

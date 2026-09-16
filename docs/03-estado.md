@@ -1454,6 +1454,161 @@ dos repetidos, a validação do formato do período, e o sócio sem categoria.
 
 ---
 
+## Quotas anuais: o clube diz quando abre o ano de quotas
+
+A categoria anual (`MemberTier.billing = ANNUAL`, migração
+`quota_mensal_ou_anual`) nasce com uma quota por período, no mês em que ele
+abre. Esse mês estava **fixo no código, Agosto, para todos os clubes**: a época
+desportiva, de Agosto a Julho. Parecia a escolha óbvia num produto de clubes e é
+a que não serve. Uns clubes cobram ao ano civil, de 1 de Janeiro a 31 de
+Dezembro; outros à época; outros a partir do dia em que a assembleia o decidiu.
+E não é "um ano a contar do dia em que o sócio paga": é uma janela fixa do
+clube, igual para todos os sócios.
+
+**É do clube, não da categoria.** `Academy.memberAnnualStartMonth` e
+`memberAnnualStartDay` (migrações `inicio_do_periodo_anual`,
+`periodo_anual_do_clube` e `dia_de_abertura_do_periodo_anual`). Chegou a estar
+na categoria, e era perguntar cinco vezes uma coisa que um clube decide uma vez,
+em assembleia: duas categorias anuais em janelas diferentes eram um convite a
+dois livros. Vive no **topo do popup das categorias de sócio**, antes da lista:
+um dia, um mês, e o fim escrito com datas a sério — *"Período corrente: 15 de
+Setembro de 2026 a 14 de Setembro de 2027. O seguinte abre a 15 de Setembro de
+2027."* Com datas e não com a regra ("+1 ano −1 dia"), porque Fevereiro tem 28
+ou 29 e "Agosto a Julho" faz perguntar se é do mesmo ano. **Não grava ao
+escolher.** Gravava, e era traição: mexer no mês para ver o que acontecia já
+tinha mexido no clube, e "Fechar" fechava sem desfazer. O popup passou a ter um
+**Guardar** no rodapé que grava tudo o que estiver por guardar — o ano das
+anuais e a categoria aberta a editar, que deixou de ter Guardar próprio — e um
+Cancelar que deita as duas coisas fora; enquanto o ano estiver diferente do que
+o clube tem, uma pastilha diz "por guardar". O dia é validado contra o mês
+num ano comum — 30 de Fevereiro não abre período nenhum, e 29 só de quatro em
+quatro anos, por isso também não se aceita. Atrás de `member:write`, que é quem
+gere sócios; a rota é `PATCH /api/member-annual-period`.
+
+Nada muda no formato das quotas: o período de uma quota anual continua a ser
+`AAAA-MM`, o mês em que abre. O que muda é qual, e **quando**: antes do dia de
+abertura, o mês de abertura ainda pertence ao período anterior (a 10 de
+Setembro, num clube que abre a 15, o período é o que abriu há um ano), e a
+emissão automática só traz a quota nova a partir desse dia. O rótulo acompanha:
+um período que atravessa dois anos chama-se "2026/27"; o ano civil chama-se
+"2026", e a ficha diz "Ano 2026" em vez de "Época 2026/27". Lançar um mês que
+não é o de abertura é recusado com o mês certo na mensagem; a app do sócio
+oferece a quota do período que o clube dita.
+
+**O prazo, que estava errado e a janela fixa escondia.** O prazo de uma quota
+anual era o fim do mês em que o período abria. Quem entrava em Março numa
+categoria de Agosto ficava "fora de prazo desde Agosto" no dia em que a quota
+nascia. Agora (`prazoDaQuota`): período já acabado, o prazo é o último dia dele,
+para contar como atraso; período corrente, o fim do mês em que a quota nasce;
+período ainda por abrir, o fim do mês em que abrir.
+
+**Na app, a quota nova só aparece quando o período vira.** Um sócio anual que
+pagou não vê nada para pagar até o período acabar: `upcoming` traz o período
+corrente, marcado como pago, e mais nenhum. Quando vira, a emissão automática
+traz a quota nova, ela aparece em aberto e o sócio é avisado uma vez. Dois
+buracos fechados ao testar isto: a notificação "Nova quota" procurava a quota
+pelo **mês da varredura**, e uma quota anual só coincide com ele no mês de
+abertura, por isso quem entrava em Março nunca era avisado (`gerarQuotas`
+devolve agora os pares sócio/período criados e é sobre eles que se avisa, com
+o rótulo da própria quota); e `pagarMes` aceitava o período **seguinte** antes
+do corrente acabar, e recusava o corrente de um clube de Janeiro por ele não
+caber na janela Agosto–Julho das mensais. Agora, numa anual, a app só faz
+nascer o período corrente; os passados pagam-se pelo id, e o seguinte espera.
+
+**Mudar o preço de uma categoria pergunta quando entra.** Um Sócio Gold estava a
+1 € de anualidade; a direcção pôs a categoria a 0,01 € e a ficha e a app
+continuaram a dizer 1 €, porque mudar a categoria nunca tocava no que já estava
+lançado. Certo para o passado, errado para o ano em curso. Ao guardar um preço
+diferente numa categoria que já existe, o formulário pergunta — *"Já neste
+ano/mês"* ou *"Só a partir do próximo"* — e não grava sem resposta, porque é
+uma decisão sobre dinheiro. Com "já" (`applyToCurrent`), as quotas **por pagar**
+do período corrente dos sócios activos da categoria passam ao valor novo; as
+pagas não se tocam (dinheiro recebido), os atrasos de períodos anteriores não
+se tocam (são de outros preços), e uma tentativa de pagamento em voo sobre uma
+quota repreçada expira, porque a referência Multibanco tem o valor antigo e o
+webhook recusá-la-ia. Ver `MembersService.updateTier`.
+
+Verificado por três testes. `node scripts/test-quotas-anuais.mjs` (54): põe o
+clube em Agosto (não assume — a direcção pode tê-lo mudado pela consola, e
+aconteceu), prova a emissão de uma quota por época, a ficha a falar em época, a
+mudança para Janeiro com `AAAA-01`, "Ano 2026" e "Quota anual 2026", Agosto
+recusado com "Janeiro" na mensagem, os prazos, e repõe a abertura que
+encontrou. `test-quotas-anuais-app.mjs` (53): três cenários sem mexer no
+relógio — o ano a abrir no dia 1 do mês corrente (o período acabou: quota nova,
+aviso, app), no mês seguinte (ainda não: nada nasce, nada se oferece, o
+seguinte não se paga), e amanhã (o dia conta: hoje ainda é o período do ano
+passado) — mais as guardas do pagamento antes da euPago e os disparates
+recusados (mês 13, dia 0, 30 de Fevereiro, 31 de Abril, 29 de Fevereiro,
+treinador). Como mudar a abertura muda o período de todos os sócios anuais do
+Life Club, o teste fotografa as quotas antes e apaga o que nasceu a sócios a
+sério. `test-preco-da-categoria.mjs` (19): o preço só a seguir não mexe em
+nada; já agora repreça a corrente por pagar, deixa a paga, expira a referência
+em voo, e o suspenso não é tocado.
+
+Sobre a euPago e os sócios: o caminho de volta, o webhook que liquida uma quota
+de sócio e recusa um valor divergente, está em `test-app-do-clube.mjs`; as
+guardas antes do provedor estão nos testes acima e em
+`test-eupago-seguranca.mjs`. O que nenhum teste faz, de propósito e como os
+outros testes de euPago já dizem, é criar uma referência a sério: a chave em
+`.env` é de produção. Essa confirmação faz-se uma vez, à mão, pela app.
+
+## Apagar quotas e mensalidades
+
+Quotas de sócio e mensalidades de atleta mudavam de estado (paga, por pagar,
+anulada) mas não se apagavam, e uma anulada continua no livro e na app. Os dois
+menus de estado ganharam **Apagar**, a seguir a uma linha e em vermelho — o das
+quotas lançadas na ficha do sócio, e o da página de Mensalidades — com uma
+pergunta de uma linha antes: *"Apagar a Quota de Setembro 2026 (10,00 €)? Não
+há como voltar atrás."* Rotas: `DELETE /api/members/fees/:id` (`member:write`)
+e `DELETE /api/charges/:id` (`billing:write`, com o âmbito do atleta).
+
+**Duas coisas travam, e só estas** (`razaoParaNaoApagar`, partilhada):
+
+- **paga online** — o pagamento euPago é o registo de dinheiro que entrou, e
+  apagá-la levava-o em cascata. Uma marcada paga à mão não trava: é a direcção a
+  desfazer o que ela própria escreveu, e o pagamento manual sai com ela;
+- **uma tentativa online viva** — referência Multibanco dentro do prazo, ou MB
+  Way com menos de dez minutos. O webhook, quando não encontra o pagamento,
+  regista um aviso e mais nada: se a família pagasse depois, o dinheiro entrava
+  sem rasto. Um pagamento de grupo ("pagar até") conta para todas as quotas que
+  cobre, não só para a âncora.
+
+A razão chega a quem carregou: na ficha do sócio no painel, nas Mensalidades num
+diálogo. (Nas Mensalidades, as mudanças de estado que falhavam ficavam caladas;
+passaram a dizer porquê também.)
+
+**O que se apaga não volta.** A emissão automática corre de hora a hora e cria
+o que falta — a quota do período de cada sócio activo com preço, a mensalidade
+do mês de cada atleta activo com preço. Uma apagada é, para ela, uma que falta,
+e voltava na passagem seguinte. `MemberFeeSkip` e `ChargeSkip` (migração
+`apagar_quotas_e_mensalidades`, com RLS) são a memória de que a direcção a
+tirou: a emissão salta o par (pessoa, período), o botão "Gerar mensalidades"
+também, e a app do sócio não oferece esse mês a pagar nem o deixa nascer.
+**Lançar à mão é voltar atrás** — `lancar` e `createManualFees` apagam a marca.
+As avulsas não se emitem e não deixam marca. A ficha do sócio distingue a quota
+corrente apagada ("Apagada — não volta a ser lançada") da que ainda não foi
+lançada.
+
+Verificado por `node scripts/test-apagar-quotas-e-mensalidades.mjs` (45): as
+quotas no Life Club, com sócios de teste criados pela base; as mensalidades num
+clube descartável com um atleta sem encarregado, porque a emissão de
+mensalidades avisa as famílias e no Life Club eram avisos (e pushes) a contas
+reais. A direcção empresta a conta com uma membership de dono, que é quem aceita
+os termos de âmbito de clube.
+
+### À passagem: a app do sócio abria com erro, de vez em quando
+
+A suite das quotas anuais falhava uma vez em cada três sem mudança de código.
+Numa API de teste na :3001, com log próprio e sem as varreduras automáticas, o
+erro apareceu: `P2028` em `ClubAppService.inicio`, o ecrã inicial da app do
+sócio. Fazia uma dúzia de idas à base numa só transação — ficha e gate legal,
+clube, categoria, quotas, meses apagados, jogo, notícias, sondagens, votos —, e
+dentro de uma transação interactiva as consultas correm em série na mesma
+ligação (o `Promise.all` não as paraleliza). Com a base remota, de vez em quando
+passava dos cinco segundos. Passou a duas transações, cada uma com metade: a
+primeira decide (quem é, se pode entrar, o que deve), a segunda é o clube e corre
+em paralelo com a assinatura da fotografia.
+
 ## Apagar um sócio, e o número que ele deixa
 
 Apagar recusava assim que houvesse número atribuído, e mandava cancelar. O

@@ -253,8 +253,9 @@ function BillingCalendar({ mayWrite }: { mayWrite: boolean }) {
         </div>
 
         <p className="mt-1.5 text-[11px] leading-relaxed text-ink-3">
-          Um mês desligado não gera mensalidades — não é dívida por pagar, é um mês em que o clube não cobra.
-          Ligar um mês emite já as mensalidades em falta desse mês; desligar não apaga as que já foram emitidas.
+          Um mês desligado não gera mensalidades: é um mês em que o clube não cobra, e deixa de ser pedido
+          às famílias. Ligar um mês emite já as que faltam nesse mês. Desligar retira as desse mês que ainda
+          estavam por pagar; as pagas ficam como estão.
         </p>
       </div>
 

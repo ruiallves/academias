@@ -19,6 +19,15 @@
  *  3. A categoria guarda e muda a periodicidade pela API.
  *  4. A página pública de adesão escreve "/ano" no preço.
  *  5. A app do sócio recebe uma quota (não doze) e recusa "pagar até ao mês X".
+ *  6. **O clube diz em que mês o ano de quotas abre**
+ *     (`Academy.memberAnnualStartMonth`, para todas as categorias anuais). Era
+ *     Agosto para toda a gente, fixo no código; com o clube em Janeiro as
+ *     quotas anuais são `AAAA-01`, rótulo "Quota anual 2026" (um ano só, não
+ *     "2026/27"), a ficha diz "Ano 2026", e lançar Agosto é recusado.
+ *  7. O prazo de uma quota anual do período corrente é o fim do mês em que ela
+ *     nasce — e não o fim do mês em que o período abriu, que punha quem entrava
+ *     em Março "fora de prazo" desde Agosto. Um período já acabado leva o prazo
+ *     no último dia dele, para contar como atraso.
  *
  * Uso: node scripts/test-quotas-anuais.mjs
  */
@@ -94,15 +103,42 @@ const limparClube = async () => {
 /* ======================================================= no life-club ===== */
 
 const LC = (await db.query(`SELECT id FROM "Academy" WHERE slug = 'life-club'`)).rows[0].id;
+/*
+ * A abertura do ano de quotas é do clube, e o clube pode estar em qualquer dia
+ * — a direcção mexe nela pela consola, e um teste que assumisse Agosto falhava
+ * no dia em que alguém escolhesse Janeiro (aconteceu). Por isso guarda-se a que
+ * lá está, põe-se a que este teste precisa (1 de Agosto, a época de sempre), e
+ * repõe-se a original no fim.
+ *
+ * Enquanto a abertura está mudada, a varredura horária pode nascer quotas a
+ * sócios anuais a sério no período errado — tira-se uma fotografia antes e
+ * apaga-se o que aparecer.
+ */
+const ABERTURA_ORIGINAL = (await db.query(
+  `SELECT "memberAnnualStartMonth" AS m, "memberAnnualStartDay" AS d FROM "Academy" WHERE id = $1`, [LC])).rows[0];
+const quotasAntes = new Set((await db.query(`SELECT id FROM "MemberFee" WHERE "academyId" = $1`, [LC])).rows.map((r) => r.id));
 const limparLifeClub = async () => {
+  const alheias = (await db.query(`SELECT id FROM "MemberFee" WHERE "academyId" = $1 AND "memberId" NOT LIKE 'za_%'`, [LC]))
+    .rows.map((r) => r.id).filter((id) => !quotasAntes.has(id));
+  if (alheias.length) {
+    await db.query(`DELETE FROM "Notification" WHERE "academyId" = $1 AND payload->>'memberFeeId' = ANY($2)`, [LC, alheias]);
+    await db.query(`DELETE FROM "MemberFee" WHERE id = ANY($1)`, [alheias]);
+  }
   await db.query(`DELETE FROM "MemberFee" WHERE "memberId" LIKE 'za_%'`);
   await db.query(`DELETE FROM "Member" WHERE id LIKE 'za_%'`);
   await db.query(`DELETE FROM "MemberTier" WHERE "academyId" = $1 AND name LIKE 'ZA %'`, [LC]);
+  await db.query(
+    `UPDATE "Academy" SET "memberAnnualStartMonth" = $2, "memberAnnualStartDay" = $3 WHERE id = $1`,
+    [LC, ABERTURA_ORIGINAL.m, ABERTURA_ORIGINAL.d],
+  );
 };
 
 try {
   await limparClube();
   await limparLifeClub();
+  /* A época de sempre, para os blocos que falam em "Época 2026/27" fazerem sentido. */
+  const emAgosto = await call(director, "PATCH", "/api/member-annual-period", { startMonth: 8, startDay: 1 });
+  check("(preparação) o clube fica a abrir o ano de quotas a 1 de Agosto", emAgosto.status === 200, `${emAgosto.status} ${JSON.stringify(emAgosto.body)}`);
 
   /* ------------------------------------------------- a emissão ---------- */
   console.log("=== Uma quota por época, e não uma por mês ===");
@@ -217,7 +253,7 @@ try {
     periods: [uMes], amountCents: 6000,
   });
   check("lançar um mês é recusado (400)", recusou.status === 400, `${recusou.status}`);
-  check("e a mensagem fala em épocas", /época/i.test(recusou.body?.message ?? ""), `${recusou.body?.message}`);
+  check("e a mensagem explica que é anual", /anual|época/i.test(recusou.body?.message ?? ""), `${recusou.body?.message}`);
   check(
     "e não ficou nada na base",
     (await db.query(`SELECT COUNT(*)::int n FROM "MemberFee" WHERE "memberId" = 'za_lc_socio' AND period = $1`, [uMes])).rows[0].n === 0,
@@ -236,6 +272,85 @@ try {
     lancada?.label === `Quota anual ${ANO_EPOCA - 1}/${String(ANO_EPOCA % 100).padStart(2, "0")}`,
     `${lancada?.label}`,
   );
+
+  /* --------------------------------- o prazo da quota anual ------------- */
+  console.log("\n=== O prazo é o fim do mês em que a quota nasce, não o de Agosto ===");
+  /*
+   * A quota do `za_anual` nasceu na emissão de hoje, para o período corrente.
+   * Com o prazo no fim do mês em que o período abriu, quem estivesse em Março
+   * estava "fora de prazo desde Agosto" no dia em que a quota nascia.
+   */
+  const fimDoMesCorrente = new Date(Date.UTC(agora.getFullYear(), agora.getMonth() + 1, 0)).toISOString().slice(0, 10);
+  const prazoAnual = (await db.query(
+    `SELECT to_char("dueOn", 'YYYY-MM-DD') AS d FROM "MemberFee" WHERE "memberId" = 'za_anual'`)).rows[0]?.d;
+  check("a quota da época corrente vence no fim deste mês", prazoAnual === fimDoMesCorrente, `${prazoAnual} (esperava ${fimDoMesCorrente})`);
+
+  const prazoAnterior = (await db.query(
+    `SELECT to_char("dueOn", 'YYYY-MM-DD') AS d FROM "MemberFee" WHERE "memberId" = 'za_lc_socio' AND period = $1`, [epocaAnterior])).rows[0]?.d;
+  check(`a época anterior vence no último dia dela (31 de Julho de ${ANO_EPOCA})`, prazoAnterior === `${ANO_EPOCA}-07-31`, `${prazoAnterior}`);
+
+  /* ------------------------------ o clube escolhe o mês de abertura ----- */
+  console.log("\n=== O clube passa o ano de quotas para Janeiro a Dezembro ===");
+  const ANO = agora.getFullYear();
+  /*
+   * O mês é do **clube**, não da categoria: muda-se uma vez e vale para todas
+   * as anuais. Daqui até ao fim deste bloco o Life Club está em Janeiro; volta
+   * a Agosto antes do bloco da app, que espera a época de sempre.
+   */
+  const paraJaneiro = await call(director, "PATCH", "/api/member-annual-period", { startMonth: 1 });
+  check("a direcção põe o ano de quotas do clube a abrir em Janeiro", paraJaneiro.status === 200 && paraJaneiro.body?.startMonth === 1, `${paraJaneiro.status} ${JSON.stringify(paraJaneiro.body)}`);
+  const naCategoria = await call(director, "POST", "/api/members/tiers", {
+    name: "ZA Mês na categoria", feeCents: 4000, billing: "ANNUAL", annualStartMonth: 1, isPublic: false,
+  });
+  check("o mês já não se aceita na categoria (400) — é do clube", naCategoria.status === 400, `${naCategoria.status}`);
+  const criadaJan = await call(director, "POST", "/api/members/tiers", {
+    name: "ZA Anual Janeiro", feeCents: 4000, billing: "ANNUAL", isPublic: false,
+  });
+  check("cria-se uma categoria anual", criadaJan.status === 201, `${criadaJan.status} ${JSON.stringify(criadaJan.body).slice(0, 120)}`);
+  const tierJan = ((await call(director, "GET", "/api/members/tiers")).body ?? []).find((t) => t.name === "ZA Anual Janeiro");
+  check("e existe", Boolean(tierJan?.id));
+
+  check("um mês 13 é recusado (400)", (await call(director, "PATCH", "/api/member-annual-period", { startMonth: 13 })).status === 400);
+
+  await db.query(
+    `INSERT INTO "Member" (id, "academyId", "tierId", name, number, status, source, "updatedAt")
+     VALUES ('za_lc_jan', $1, $2, 'ZA Sócio de Janeiro', 98802, 'ACTIVE', 'secretaria', now())`, [LC, tierJan.id],
+  );
+
+  const fichaJan = await call(director, "GET", "/api/members/za_lc_jan");
+  check("o período corrente abre em Janeiro", fichaJan.body?.fees?.currentPeriod === `${ANO}-01`, `${fichaJan.body?.fees?.currentPeriod}`);
+  check("e chama-se pelo ano, não por dois", fichaJan.body?.fees?.currentLabel === `Ano ${ANO}`, `${fichaJan.body?.fees?.currentLabel}`);
+
+  const periodosJan = await call(director, "GET", "/api/members/za_lc_jan/fees/periods");
+  check("o ecrã de lançar sabe em que mês o período abre", periodosJan.body?.annualStartMonth === 1, `${periodosJan.body?.annualStartMonth}`);
+
+  /* Agosto é o mês de abertura do clube ao lado — não deste. */
+  const agostoJan = await call(director, "POST", "/api/members/za_lc_jan/fees", { periods: [`${ANO}-08`], amountCents: 4000 });
+  check("lançar Agosto a um sócio de Janeiro é recusado (400)", agostoJan.status === 400, `${agostoJan.status}`);
+  check("e a mensagem diz em que mês abre", /Janeiro/.test(agostoJan.body?.message ?? ""), `${agostoJan.body?.message}`);
+
+  const anoAnterior = await call(director, "POST", "/api/members/za_lc_jan/fees", { periods: [`${ANO - 1}-01`], amountCents: 4000 });
+  check("lançar o ano anterior passa", anoAnterior.body?.created === 1, `${anoAnterior.status} ${JSON.stringify(anoAnterior.body)}`);
+  const quotaAnoAnterior = (await db.query(
+    `SELECT label, to_char("dueOn", 'YYYY-MM-DD') AS d FROM "MemberFee" WHERE "memberId" = 'za_lc_jan' AND period = $1`, [`${ANO - 1}-01`])).rows[0];
+  check(`com o rótulo de um ano só — "Quota anual ${ANO - 1}"`, quotaAnoAnterior?.label === `Quota anual ${ANO - 1}`, `${quotaAnoAnterior?.label}`);
+  check(`e o prazo a 31 de Dezembro de ${ANO - 1}, o último dia do período`, quotaAnoAnterior?.d === `${ANO - 1}-12-31`, `${quotaAnoAnterior?.d}`);
+
+  const anoCorrente = await call(director, "POST", "/api/members/za_lc_jan/fees", { periods: [`${ANO}-01`], amountCents: 4000 });
+  check("lançar o ano corrente passa", anoCorrente.body?.created === 1, `${anoCorrente.status} ${JSON.stringify(anoCorrente.body)}`);
+  const quotaAnoCorrente = (await db.query(
+    `SELECT to_char("dueOn", 'YYYY-MM-DD') AS d FROM "MemberFee" WHERE "memberId" = 'za_lc_jan' AND period = $1`, [`${ANO}-01`])).rows[0];
+  check("com o prazo no fim deste mês, e não a 31 de Janeiro", quotaAnoCorrente?.d === fimDoMesCorrente, `${quotaAnoCorrente?.d} (esperava ${fimDoMesCorrente})`);
+
+  const fichaJanDepois = await call(director, "GET", "/api/members/za_lc_jan");
+  check("a ficha passa a dizer que o ano corrente está por pagar", fichaJanDepois.body?.fees?.currentStatus === "open", `${fichaJanDepois.body?.fees?.currentStatus}`);
+
+  /* E o sócio de Agosto de há bocado passou a ser de Janeiro também — o mês é do clube. */
+  const fichaLcJan = await call(director, "GET", "/api/members/za_lc_socio");
+  check("o outro sócio anual mudou de ano com o clube", fichaLcJan.body?.fees?.currentPeriod === `${ANO}-01`, `${fichaLcJan.body?.fees?.currentPeriod}`);
+
+  const paraAgosto = await call(director, "PATCH", "/api/member-annual-period", { startMonth: 8 });
+  check("e volta a Agosto", paraAgosto.status === 200 && paraAgosto.body?.startMonth === 8, `${paraAgosto.status}`);
 
   /* ------------------------------------- a página pública de adesão ----- */
   console.log("\n=== A página de adesão escreve /ano ===");

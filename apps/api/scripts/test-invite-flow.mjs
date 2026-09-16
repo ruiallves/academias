@@ -266,6 +266,60 @@ async function main() {
   check("fica com os dois papéis, na mesma conta", roles.includes("GUARDIAN") && roles.includes("COACH"),
     `tem ${roles.join(", ")}`);
 
+  /*
+   * O caso que um clube trouxe: convidou um treinador, o convite expirou, e a
+   * consola recusava emitir outro ("já existe um convite por aceitar") ao mesmo
+   * tempo que escondia o expirado da lista. Nem se via, nem se revogava, nem se
+   * reemitia. Expira-se o convite à mão, directamente na base de dados, e
+   * prova-se que reemitir passa a funcionar e que o antigo fica fechado.
+   *
+   * `now() - interval '2 days'`, e não um minuto: `expiresAt` é `timestamp`
+   * sem fuso, e uma diferença de minutos podia virar uma hora para o outro lado
+   * conforme o fuso da sessão. Dois dias não deixam dúvida.
+   */
+  console.log("\n=== Convite expirado ===");
+  const EXPIRED_EMAIL = `teste-fluxo-expirado-${Date.now()}@exemplo.pt`;
+  const primeiro = await fetch(`${API}/api/invites`, {
+    method: "POST",
+    headers: headers(director),
+    body: JSON.stringify({ name: "Treinador Três", email: EXPIRED_EMAIL, academyRoleId: cargoId, teamIds: [teamId] }),
+  });
+  const primeiroConvite = await primeiro.json();
+  check("o primeiro convite sai", primeiro.ok, JSON.stringify(primeiroConvite).slice(0, 140));
+
+  await db.query(`UPDATE "StaffInvite" SET "expiresAt" = now() - interval '2 days' WHERE id = $1`, [primeiroConvite.id]);
+
+  const listaComExpirado = await (await fetch(`${API}/api/invites`, { headers: headers(director) })).json();
+  check(
+    "o expirado desaparece da lista de pendentes",
+    Array.isArray(listaComExpirado) && !listaComExpirado.some((i) => i.id === primeiroConvite.id),
+  );
+
+  const segundo = await fetch(`${API}/api/invites`, {
+    method: "POST",
+    headers: headers(director),
+    body: JSON.stringify({ name: "Treinador Três", email: EXPIRED_EMAIL, academyRoleId: cargoId, teamIds: [teamId] }),
+  });
+  const segundoConvite = await segundo.json();
+  check("depois de expirar, pode convidar-se outra vez", segundo.ok, `deu ${segundo.status}: ${JSON.stringify(segundoConvite).slice(0, 140)}`);
+
+  const estado = await db.query(
+    `SELECT id, "revokedAt" IS NOT NULL AS fechado FROM "StaffInvite" WHERE email = $1 ORDER BY "createdAt"`,
+    [EXPIRED_EMAIL],
+  );
+  check("o antigo ficou fechado", estado.rows[0]?.fechado === true);
+  check("o novo está vivo", estado.rows[1]?.fechado === false && estado.rows[1]?.id === segundoConvite.id);
+  check("e só o novo aparece na lista", (await (await fetch(`${API}/api/invites`, { headers: headers(director) })).json())
+    .filter((i) => i.email === EXPIRED_EMAIL).map((i) => i.id).join() === segundoConvite.id);
+
+  // Por cima de um convite vivo continua a não se reemitir: esse ainda abre.
+  const terceiro = await fetch(`${API}/api/invites`, {
+    method: "POST",
+    headers: headers(director),
+    body: JSON.stringify({ name: "Treinador Três", email: EXPIRED_EMAIL, academyRoleId: cargoId, teamIds: [teamId] }),
+  });
+  check("mas não por cima de um convite ainda válido", terceiro.status === 409, `deu ${terceiro.status}`);
+
   console.log("\n=== Quem não pode convidar ===");
   const coach = await signIn("treinador@lifeclub.pt", "academia2026");
   const forbidden = await fetch(`${API}/api/invites`, {

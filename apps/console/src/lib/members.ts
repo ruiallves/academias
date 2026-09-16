@@ -144,7 +144,8 @@ export type MemberFeesSummary = {
    */
   currentLabel: string;
   currentKind: "month" | "season";
-  currentStatus: "settled" | "open" | "void" | "missing";
+  /** `dismissed`: não há quota deste período porque a direcção a apagou. */
+  currentStatus: "settled" | "open" | "void" | "missing" | "dismissed";
   openCount: number;
   openCents: number;
   overdueCount: number;
@@ -169,8 +170,22 @@ export type MemberFeePeriods = {
    * abre. Ausente num servidor antigo: lê-se como mensal.
    */
   billing: "MONTHLY" | "ANNUAL";
+  /** Quando o período anual do clube abre — decide que épocas o ecrã oferece. */
+  annualStartMonth: number;
+  annualStartDay: number;
   taken: string[];
 };
+
+/**
+ * Em que mês abre o período das quotas anuais — do clube, para todas as
+ * categorias anuais. Vive no topo do popup das categorias; lê-se de
+ * `academy.memberAnnualStartMonth` e muda-se aqui.
+ */
+export const setMemberAnnualStart = (startMonth: number, startDay: number) =>
+  apiPatch<{ startMonth: number; startDay: number }>("/api/member-annual-period", { startMonth, startDay });
+
+/** Quantos dias tem cada mês, num ano comum — o mesmo tecto do servidor. */
+export const DIAS_DO_MES = [31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
 
 /**
  * Quão atrasado está um sócio, a partir da última quota que pagou.
@@ -209,6 +224,13 @@ export const memberFeePeriods = (memberId: string) =>
   apiGet<MemberFeePeriods>(`/api/members/${memberId}/fees/periods`);
 export const createMemberFees = (memberId: string, body: { periods: string[]; amountCents: number; notes?: string }) =>
   apiPost<{ created: number; alreadyExisted: string[] }>(`/api/members/${memberId}/fees`, body);
+/**
+ * Apagar uma quota. O servidor recusa as pagas online e as que têm um pagamento
+ * online em curso, e diz porquê; a apagada não volta pela emissão automática.
+ */
+export const deleteMemberFee = (id: string) =>
+  apiDelete<{ ok: true; period: string; label: string | null }>(`/api/members/fees/${id}`);
+
 /** O menu "Marcar como paga / por pagar / Anular" — o mesmo das mensalidades. */
 export const setMemberFeeStatus = (id: string, status: MemberFeeRow["status"]) =>
   apiPatch<{ id: string; status: MemberFeeRow["status"] }>(`/api/members/fees/${id}/status`, { status });
@@ -224,6 +246,58 @@ export const MESES = [
   "Janeiro", "Fevereiro", "Março", "Abril", "Maio", "Junho",
   "Julho", "Agosto", "Setembro", "Outubro", "Novembro", "Dezembro",
 ];
+
+/* ---------------------------------------------------------------------------- */
+/* O período anual                                                               */
+/* ---------------------------------------------------------------------------- */
+
+/**
+ * Em que ano abre o período anual (com início em `inicio`) a que `d` pertence.
+ *
+ * Com início em Agosto, Março de 2027 pertence ao período que abriu em 2026;
+ * com início em Janeiro, pertence ao de 2027. Gémeo do `inicioDaEpoca` do
+ * servidor — o mesmo cálculo dos dois lados, senão o ecrã de lançar abria na
+ * época errada.
+ */
+export function anoDoPeriodoAnual(inicio: number, d: Date, dia = 1): number {
+  const m = d.getMonth() + 1;
+  const jaAbriu = m > inicio || (m === inicio && d.getDate() >= dia);
+  return jaAbriu ? d.getFullYear() : d.getFullYear() - 1;
+}
+
+/**
+ * O período anual que abre em `inicio` de `ano`: do dia 1 desse mês até um ano
+ * depois menos um dia. Janeiro de 2026 dá 1 de Janeiro a 31 de Dezembro de
+ * 2026; Agosto dá 1 de Agosto de 2026 a 31 de Julho de 2027; Março dá 1 de
+ * Março a 28 de Fevereiro de 2027 — o `Date` trata dos bissextos.
+ */
+export function periodoAnual(inicio: number, ano: number, dia = 1): { de: Date; ate: Date } {
+  return {
+    de: new Date(Date.UTC(ano, inicio - 1, dia)),
+    // O dia anterior ao de abertura, no ano seguinte. Com `dia` 1 cai no dia 0,
+    // que o `Date` lê como o último dia do mês anterior.
+    ate: new Date(Date.UTC(ano + 1, inicio - 1, dia - 1)),
+  };
+}
+
+/** "2026" quando é o ano civil, "2026/27" quando atravessa dois — o mesmo do servidor. */
+export function rotuloDoPeriodoAnual(inicio: number, ano: number): string {
+  return inicio === 1 ? String(ano) : `${ano}/${String((ano + 1) % 100).padStart(2, "0")}`;
+}
+
+/** "1 de Agosto de 2026 a 31 de Julho de 2027" — como se lê na ficha da categoria. */
+export function descreverPeriodoAnual(inicio: number, ano: number, dia = 1): string {
+  const { de, ate } = periodoAnual(inicio, ano, dia);
+  const porExtenso = (d: Date) => `${d.getUTCDate()} de ${MESES[d.getUTCMonth()]} de ${d.getUTCFullYear()}`;
+  return `${porExtenso(de)} a ${porExtenso(ate)}`;
+}
+
+/** "Jan–Dez", "Ago–Jul" — para uma linha de lista. */
+export function janelaDoPeriodoAnual(inicio: number): string {
+  const curto = (m: number) => MESES[m - 1].slice(0, 3);
+  const fim = inicio === 1 ? 12 : inicio - 1;
+  return `${curto(inicio)}–${curto(fim)}`;
+}
 
 export const inviteMember = (id: string) => apiPost<{ ok: true; email: string }>(`/api/members/${id}/invite`, {});
 
@@ -296,7 +370,13 @@ export const listTiers = () => apiGet<MemberTier[]>("/api/members/tiers");
 export const createTier = (body: Record<string, unknown>) =>
   apiPost<{ id: string; name: string }>("/api/members/tiers", body);
 
-export const updateTier = (id: string, body: Record<string, unknown>) => apiPatch(`/api/members/tiers/${id}`, body);
+/**
+ * `applyToCurrent` é a resposta à pergunta que o formulário faz quando o preço
+ * muda: já neste período (as quotas por pagar passam ao valor novo) ou só a
+ * partir do próximo. `repriced` diz quantas mudaram.
+ */
+export const updateTier = (id: string, body: Record<string, unknown>) =>
+  apiPatch<{ ok: true; repriced: number }>(`/api/members/tiers/${id}`, body);
 
 export const archiveTier = (id: string) => apiDelete<{ ok: boolean; members: number }>(`/api/members/tiers/${id}`);
 

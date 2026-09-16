@@ -97,13 +97,19 @@ export async function createInvite(input: {
   extraRoleIds?: string[];
   teamIds: string[];
 }): Promise<Invite> {
-  const created = await apiPost<{
-    id: string;
-    link: string;
-    expiresAt: string;
-    emailed: boolean;
-    emailError?: string;
-  }>("/api/invites", input);
+  let created: { id: string; link: string; expiresAt: string; emailed: boolean; emailError?: string };
+  try {
+    created = await apiPost<typeof created>("/api/invites", input);
+  } catch (error) {
+    /*
+     * Falhou. Quase sempre é porque já há um convite vivo para esta pessoa, e a
+     * saída é revogá-lo na lista. Recarregar a lista aqui é o que garante que
+     * esse convite está mesmo à frente de quem o pode fechar: sem isto, uma
+     * lista carregada há uma hora podia não o ter, e o erro ficava sem saída.
+     */
+    await loadInvites();
+    throw error;
+  }
   await loadInvites();
   return {
     id: created.id,

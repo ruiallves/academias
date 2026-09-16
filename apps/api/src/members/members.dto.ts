@@ -147,6 +147,15 @@ export class MemberTierInputDto {
   @IsOptional() @IsInt() @Min(0) @Max(120) minAge?: number;
   @IsOptional() @IsInt() @Min(0) @Max(120) maxAge?: number;
   @IsOptional() @IsBoolean() isPublic?: boolean;
+  /**
+   * Um preço novo entra já neste período, ou só a partir do próximo?
+   *
+   * `true`: as quotas **por pagar** do período corrente dos sócios desta
+   * categoria passam ao valor novo. As pagas nunca se tocam — é dinheiro
+   * recebido. Omitido ou `false`: só as próximas nascem com o valor novo, e o
+   * que está lançado fica como está. Ver `MembersService.updateTier`.
+   */
+  @IsOptional() @IsBoolean() applyToCurrent?: boolean;
 }
 
 /**

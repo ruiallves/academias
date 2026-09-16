@@ -88,6 +88,25 @@ model Academy {
   /// O QR identifica o sócio por um token opaco — nunca leva dados pessoais.
   memberCardQrEnabled Boolean @default(false)
 
+  /// ## Em que mês abre o período das quotas anuais (1–12)
+  ///
+  /// É do clube e vale para todas as categorias anuais. Chegou a estar na
+  /// categoria (`MemberTier.annualStartMonth`), e era flexibilidade a mais para
+  /// uma coisa que um clube decide uma vez, em assembleia: o ano de quotas
+  /// começa a 1 de Janeiro, ou a 1 de Agosto, para toda a gente. Duas
+  /// categorias anuais em janelas diferentes eram um convite a dois livros.
+  ///
+  /// O período começa em `memberAnnualStartDay` deste mês e acaba um ano
+  /// depois menos um dia. Continua a caber no formato `AAAA-MM` das quotas: o
+  /// período de uma quota anual é o mês em que abre. Ver `inicioDaEpoca` em
+  /// `member-fees.service.ts`.
+  memberAnnualStartMonth Int @default(8)
+  /// E em que dia desse mês (1–31, validado contra o mês). Um clube que fecha
+  /// contas a 15 de Setembro abre o ano de quotas a 15 de Setembro, e o período
+  /// acaba a 14 de Setembro do ano seguinte. O dia só decide **quando** o
+  /// período abre; a quota continua a ter por período o mês (`AAAA-MM`).
+  memberAnnualStartDay Int @default(1)
+
   /// ## O maior número de sócio já dado neste clube
   ///
   /// Só sobe. É o que faz um número apagado **ficar aberto** em vez de voltar à
@@ -134,6 +153,7 @@ model Academy {
   memberTiers    MemberTier[]
   members        Member[]
   memberFees     MemberFee[]
+  memberFeeSkips MemberFeeSkip[]
   polls          Poll[]
   pollOptions    PollOption[]
   pollVotes      PollVote[]
@@ -149,6 +169,7 @@ model Academy {
   setPieces      SetPiece[]
   plans          SubscriptionPlan[]
   charges        Charge[]
+  chargeSkips    ChargeSkip[]
   announcements  Announcement[]
   notifications  Notification[]
   evaluations    Evaluation[]
@@ -867,6 +888,7 @@ model Athlete {
   nutritionPlans NutritionPlan[]
   enrollments    Enrollment[]
   charges        Charge[]
+  chargeSkips    ChargeSkip[]
   evaluations    Evaluation[]
   reports        AthleteReport[]
   clinical       ClinicalEntry[]
@@ -1651,6 +1673,27 @@ enum ChargeStatus {
 enum ChargeKind {
   FEE
   EXTRA
+}
+
+/// Uma mensalidade apagada, que a emissão não volta a criar.
+///
+/// A emissão (`gerarCobrancas`, de hora a hora e no botão "Gerar mensalidades")
+/// cria o que falta. Apagar a mensalidade do mês de um atleta activo fazia-a
+/// voltar na passagem seguinte, e "apaguei e voltou" é pior do que não deixar
+/// apagar. Esta linha é a memória de que a direcção a tirou: a emissão salta-a,
+/// e lançar essa mensalidade à mão (`createManualFees`) apaga a marca.
+///
+/// Só para mensalidades (`kind = FEE`, `slot = ""`); as avulsas não se emitem.
+model ChargeSkip {
+  academyId String
+  academy   Academy  @relation(fields: [academyId], references: [id], onDelete: Cascade)
+  athleteId String
+  athlete   Athlete  @relation(fields: [athleteId], references: [id], onDelete: Cascade)
+  period    String
+  createdAt DateTime @default(now())
+
+  @@id([athleteId, period])
+  @@index([academyId, period])
 }
 
 model Charge {
@@ -3239,6 +3282,10 @@ model MemberTier {
   /// que mude de unidade. Ver `periodoDaQuota` em `member-fees.service.ts`.
   billing MemberFeeBilling @default(MONTHLY)
 
+  /// O mês em que o período anual abre é do **clube**, não da categoria — ver
+  /// `Academy.memberAnnualStartMonth`. Chegou a estar aqui; um clube não cobra
+  /// duas categorias anuais em janelas diferentes.
+
   /// Idade mínima e máxima, quando a categoria as tem ("Juvenil até aos 17").
   /// Servem para explicar e para validar o formulário — não para esconder.
   minAge Int?
@@ -3383,6 +3430,7 @@ model Member {
   inviteSentAt    DateTime?
 
   fees      MemberFee[]
+  feeSkips  MemberFeeSkip[]
   pollVotes PollVote[]
 
   /// ## O consentimento é um carimbo, não uma caixa
@@ -3435,6 +3483,24 @@ model Member {
 ///
 /// O estado reutiliza `ChargeStatus` (OPEN/SETTLED/VOID): é o mesmo ciclo de
 /// vida, e inventar um segundo enum igual só criava conversões.
+/// Uma quota apagada, que a emissão não volta a criar.
+///
+/// O mesmo problema das mensalidades (ver `ChargeSkip`): a emissão de quotas
+/// cria a do período corrente a cada sócio activo com preço, e apagá-la fazia-a
+/// voltar dentro de uma hora. A emissão salta estas, a app do sócio não as
+/// oferece a pagar, e lançar a quota à mão (`lancar`) apaga a marca.
+model MemberFeeSkip {
+  academyId String
+  academy   Academy  @relation(fields: [academyId], references: [id], onDelete: Cascade)
+  memberId  String
+  member    Member   @relation(fields: [memberId], references: [id], onDelete: Cascade)
+  period    String
+  createdAt DateTime @default(now())
+
+  @@id([memberId, period])
+  @@index([academyId, period])
+}
+
 model MemberFee {
   id        String  @id @default(cuid())
   academyId String

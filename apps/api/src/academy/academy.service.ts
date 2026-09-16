@@ -6,9 +6,10 @@ import { escolherTreinador, headCoaches } from "./head-coaches";
 import { MatchesService } from "./matches.service";
 import { StorageService } from "../storage/storage.service";
 import { PHOTO_BUCKET, PHOTO_TTL } from "../storage/photos.service";
+import { DIAS_DO_MES } from "../members/member-fees.service";
 import { basePermissions, can, outranks, ROLE_PERMISSIONS, type Permission, type RequestContext, teamScopeForRoster } from "../common/permissions";
 import { athleteScopeFilter, athleteTeamScopeWhere, calendarScopeFilter, inTeamScope, teamScopeFilter } from "../common/permissions";
-import { gerarCobrancas, periodoActual } from "../billing/billing.service";
+import { gerarCobrancas, retirarForaDoCalendario, periodoActual } from "../billing/billing.service";
 import { SHORT_NAME_MAX } from "../common/short-name";
 import { matchTitle } from "../common/match-title";
 import { AMIGAVEL } from "./catalogs.service";
@@ -193,6 +194,9 @@ export class AcademyService {
           status: true, trialEndsAt: true, createdAt: true,
           // A página pública de adesão, escrita pelo clube.
           membershipHeadline: true, membershipIntro: true, membershipPoints: true,
+          // Quando abre o ano das quotas anuais (dia e mês) — a consola mostra-o
+          // no topo das categorias de sócio.
+          memberAnnualStartMonth: true, memberAnnualStartDay: true,
         },
       });
 
@@ -382,6 +386,39 @@ export class AcademyService {
   }
 
   /**
+   * Em que mês abre o período das quotas anuais de sócio.
+   *
+   * Uma definição do clube, para todas as categorias anuais: o ano de quotas
+   * começa a 1 de Janeiro, ou a 1 de Agosto, para toda a gente — decide-se uma
+   * vez, em assembleia. Atrás de `member:write` e não de `settings:write`: vive
+   * no popup das categorias de sócio, e é quem gere sócios que a mexe. Mudar
+   * não toca nas quotas já lançadas; muda o mês em que as próximas nascem.
+   */
+  async setMemberAnnualStart(ctx: RequestContext, startMonth: number, startDay = 1) {
+    if (!can(ctx, "member:write")) throw new ForbiddenException("Sem permissão para gerir sócios");
+    if (!Number.isInteger(startMonth) || startMonth < 1 || startMonth > 12) {
+      throw new BadRequestException("O mês tem de estar entre 1 e 12");
+    }
+    /*
+     * O dia tem de existir nesse mês, num ano comum: 30 de Fevereiro não abre
+     * período nenhum, e 29 só de quatro em quatro anos — não se aceita, para o
+     * clube não ficar com um ano em que a quota nunca nasce.
+     */
+    const tecto = DIAS_DO_MES[startMonth - 1];
+    if (!Number.isInteger(startDay) || startDay < 1 || startDay > tecto) {
+      throw new BadRequestException(`O dia tem de estar entre 1 e ${tecto} nesse mês`);
+    }
+
+    return this.prisma.runAs(ctx.academyId, async (db) => {
+      await db.academy.update({
+        where: { id: ctx.academyId },
+        data: { memberAnnualStartMonth: startMonth, memberAnnualStartDay: startDay },
+      });
+      return { startMonth, startDay };
+    });
+  }
+
+  /**
    * A identidade do clube: a cor e o símbolo.
    *
    * ## Porque é que isto tinha de existir
@@ -491,7 +528,10 @@ export class AcademyService {
       if (meses.length === 0) throw new BadRequestException("Escolhe pelo menos um mês de cobrança");
     }
 
-    await this.prisma.runAs(ctx.academyId, async (db) => {
+    const retiradas = await this.prisma.runAs(ctx.academyId, async (db) => {
+      // O calendário de antes, para saber que meses se desligaram agora.
+      const antes = await db.academy.findFirst({ where: { id: ctx.academyId }, select: { billingMonths: true } });
+
       await db.academy.update({
         where: { id: ctx.academyId },
         data: {
@@ -499,6 +539,18 @@ export class AcademyService {
           ...(meses !== undefined ? { billingMonths: meses } : {}),
         },
       });
+
+      /*
+       * Desligar um mês retira o que estava por pagar nesse mês.
+       *
+       * Na mesma transacção da gravação, de propósito: o calendário e o que ele
+       * implica mudam juntos ou não mudam. Só os meses que passaram de ligados
+       * a desligados neste pedido, e não todos os fechados: ver a nota em
+       * `retirarForaDoCalendario` sobre as mensalidades lançadas à mão.
+       */
+      if (meses === undefined) return { apagadas: 0, anuladas: 0 };
+      const desligados = (antes?.billingMonths ?? []).filter((m) => !meses.includes(m));
+      return retirarForaDoCalendario(db, ctx.academyId, desligados);
     });
 
     // Fora da transação de cima de propósito: `gerarCobrancas` abre a sua, e o
@@ -507,7 +559,7 @@ export class AcademyService {
       gerarCobrancas(db, ctx.academyId, periodoActual()),
     );
 
-    return { ok: true, cobrancas };
+    return { ok: true, cobrancas, ...retiradas };
   }
 
   /* ------------------------------------------------------------------------ */

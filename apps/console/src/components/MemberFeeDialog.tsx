@@ -3,7 +3,14 @@ import { Dialog, DialogField, dialogInputClass } from "@/components/Dialog";
 import { cx } from "@/components/primitives";
 import { Receipt, Send, TriangleAlert, X } from "@/lib/icons";
 import { money } from "@/lib/format";
-import { MESES, createMemberFees, memberFeePeriods, type MemberFeePeriods } from "@/lib/members";
+import {
+  MESES,
+  anoDoPeriodoAnual,
+  createMemberFees,
+  memberFeePeriods,
+  rotuloDoPeriodoAnual,
+  type MemberFeePeriods,
+} from "@/lib/members";
 
 /**
  * Lançar quotas a um sócio, à mão.
@@ -88,7 +95,8 @@ export function MemberFeeDialog({
          * sítio errado e obrigar a corrigir antes de fazer seja o que for.
          */
         if (d.billing === "ANNUAL") {
-          const epoca = { mes: 8, ano: anoDaEpoca(hoje) };
+          const inicio = d.annualStartMonth ?? 8;
+          const epoca = { mes: inicio, ano: anoDoPeriodoAnual(inicio, hoje, d.annualStartDay ?? 1) };
           setDe(epoca);
           setAte(epoca);
         }
@@ -98,15 +106,17 @@ export function MemberFeeDialog({
 
   const jaTem = useMemo(() => new Set(dados?.taken ?? []), [dados]);
 
-  /* A unidade desta ficha: meses, ou épocas. Ver o cabeçalho. */
+  /* A unidade desta ficha: meses, ou períodos anuais. Ver o cabeçalho. */
   const anual = dados?.billing === "ANNUAL";
-  const unidade = anual ? "época" : "mês";
-  const unidades = anual ? "épocas" : "meses";
+  /* O mês em que o período anual abre — o da categoria, não Agosto por decreto. */
+  const inicio = dados?.annualStartMonth ?? 8;
+  const unidade = anual ? (inicio === 1 ? "ano" : "época") : "mês";
+  const unidades = anual ? (inicio === 1 ? "anos" : "épocas") : "meses";
 
   /* O intervalo inteiro, antes de tirar seja o que for. */
   const intervalo = useMemo(
-    () => (anual ? epocasNoIntervalo(de, ate) : mesesNoIntervalo(de, ate)),
-    [anual, de, ate],
+    () => (anual ? epocasNoIntervalo(de, ate, inicio) : mesesNoIntervalo(de, ate)),
+    [anual, de, ate, inicio],
   );
   const invertido = intervalo === null;
   const doIntervalo = intervalo ?? [];
@@ -212,7 +222,7 @@ export function MemberFeeDialog({
 
             <fieldset>
               <legend className="mb-1.5 text-meta font-medium text-ink">
-                {anual ? "Épocas" : "Meses"}
+                {anual ? (inicio === 1 ? "Anos" : "Épocas") : "Meses"}
                 <span className="ml-2 font-normal text-ink-4">de … até, inclusive</span>
               </legend>
 
@@ -220,6 +230,7 @@ export function MemberFeeDialog({
                 <ExtremoDoIntervalo
                   rotulo="De"
                   anual={anual}
+                  inicio={inicio}
                   valor={de}
                   onChange={(v) => {
                     setDe(v);
@@ -229,6 +240,7 @@ export function MemberFeeDialog({
                 <ExtremoDoIntervalo
                   rotulo="Até"
                   anual={anual}
+                  inicio={inicio}
                   valor={ate}
                   onChange={(v) => {
                     setAte(v);
@@ -272,7 +284,7 @@ export function MemberFeeDialog({
                       title="Tirar do lançamento"
                       className="group flex items-center gap-1 rounded-[var(--radius-control)] border border-ink bg-ink px-2 py-1 text-meta font-semibold text-surface"
                     >
-                      {etiqueta(p, anual)}
+                      {etiqueta(p, anual, inicio)}
                       <X className="size-3 opacity-50 group-hover:opacity-100" strokeWidth={2.5} />
                     </button>
                   ))}
@@ -336,11 +348,14 @@ function ExtremoDoIntervalo({
   rotulo,
   valor,
   anual,
+  inicio,
   onChange,
 }: {
   rotulo: string;
   valor: Extremo;
   anual: boolean;
+  /** O mês em que o período anual abre — o que uma época "é", em `AAAA-MM`. */
+  inicio: number;
   onChange: (v: Extremo) => void;
 }) {
   const atual = new Date().getFullYear();
@@ -367,12 +382,12 @@ function ExtremoDoIntervalo({
       <select
         aria-label={`${rotulo} — ${anual ? "época" : "ano"}`}
         value={valor.ano}
-        onChange={(e) => onChange({ ...valor, ano: Number(e.target.value), ...(anual ? { mes: 8 } : {}) })}
+        onChange={(e) => onChange({ ...valor, ano: Number(e.target.value), ...(anual ? { mes: inicio } : {}) })}
         className={cx(selectClass, "tabular")}
       >
         {anos.map((a) => (
           <option key={a} value={a}>
-            {anual ? rotuloDaEpoca(a) : a}
+            {anual ? rotuloDoPeriodoAnual(inicio, a) : a}
           </option>
         ))}
       </select>
@@ -400,32 +415,23 @@ function mesesNoIntervalo(de: Extremo, ate: Extremo): string[] | null {
 }
 
 /**
- * As épocas entre dois extremos, inclusive — uma por ano, no mês em que abre.
+ * Os períodos anuais entre dois extremos, inclusive — um por ano, no mês em que
+ * abrem (o da categoria).
  *
- * O período guardado continua a ser `AAAA-MM`: uma época **é** `AAAA-08`. Ver a
- * migração `quota_mensal_ou_anual`.
+ * O período guardado continua a ser `AAAA-MM`: uma época **é** o mês em que
+ * abre. Ver as migrações `quota_mensal_ou_anual` e `inicio_do_periodo_anual`.
  */
-function epocasNoIntervalo(de: Extremo, ate: Extremo): string[] | null {
+function epocasNoIntervalo(de: Extremo, ate: Extremo, inicio: number): string[] | null {
   if (ate.ano < de.ano) return null;
   const epocas: string[] = [];
-  for (let a = de.ano; a <= ate.ano; a++) epocas.push(`${a}-08`);
+  for (let a = de.ano; a <= ate.ano; a++) epocas.push(`${a}-${String(inicio).padStart(2, "0")}`);
   return epocas;
 }
 
-/** O ano em que abriu a época a que uma data pertence — a época vai de Agosto a Julho. */
-function anoDaEpoca(d: Date): number {
-  return d.getMonth() + 1 >= 8 ? d.getFullYear() : d.getFullYear() - 1;
-}
-
-/** `2026` para `2026/27` — como o clube chama a época. */
-function rotuloDaEpoca(ano: number): string {
-  return `${ano}/${String((ano + 1) % 100).padStart(2, "0")}`;
-}
-
-/** "Set 25" numa quota mensal, "2026/27" numa anual — curto, para a pastilha. */
-function etiqueta(period: string, anual: boolean): string {
+/** "Set 25" numa quota mensal, "2026/27" (ou "2026", no ano civil) numa anual — curto, para a pastilha. */
+function etiqueta(period: string, anual: boolean, inicio: number): string {
   const [ano, mes] = period.split("-");
-  if (anual) return rotuloDaEpoca(Number(ano));
+  if (anual) return rotuloDoPeriodoAnual(inicio, Number(ano));
   return `${MESES_CURTOS[Number(mes) - 1] ?? mes} ${ano.slice(2)}`;
 }
 

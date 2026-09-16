@@ -46,6 +46,12 @@ export class MembersController {
    * menu da ficha, igual ao das mensalidades dos atletas. Ver
    * `MemberFeesService.mudarEstado`.
    */
+  /** Apagar uma quota. Ver `MemberFeesService.apagar` — o que trava, e porque é que não volta. */
+  @Delete("fees/:id")
+  deleteFee(@Req() req: AuthedRequest, @Param("id") id: string) {
+    return this.fees.apagar(req.ctx, id);
+  }
+
   @Patch("fees/:id/status")
   setFeeStatus(@Req() req: AuthedRequest, @Param("id") id: string, @Body() body: MemberFeeStatusDto) {
     return this.fees.mudarEstado(req.ctx, id, body.status);

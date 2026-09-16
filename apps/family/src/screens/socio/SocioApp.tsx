@@ -653,8 +653,8 @@ function Quotas() {
       */}
       {anual && (
         <p className="px-1 text-[13px] leading-relaxed text-ink-3">
-          A tua categoria paga-se uma vez por época.
-          {data.member.tierFeeCents !== null && ` São ${money(data.member.tierFeeCents)} por época.`}
+          A tua categoria paga-se uma vez por ano.
+          {data.member.tierFeeCents !== null && ` São ${money(data.member.tierFeeCents)} por ano.`}
         </p>
       )}
 

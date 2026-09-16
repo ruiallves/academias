@@ -1,8 +1,10 @@
+import { inicioDaEpoca } from "../members/member-fees.service";
 import { randomUUID } from "node:crypto";
 import { BadRequestException, ForbiddenException, Injectable, Logger, NotFoundException, type OnModuleDestroy, type OnModuleInit } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
 import { PaymentMethod, PaymentStatus, ChargeStatus, NotificationType, type Payment } from "@prisma/client";
 import { PrismaService, type ScopedClient } from "../prisma/prisma.service";
+import { razaoParaNaoApagar } from "../members/member-fees.service";
 import { NotificationsService } from "../notifications/notifications.service";
 import { EupagoClient, type ChargeResult, type RedirectUrls } from "./eupago.client";
 import { athleteScopeFilter, athleteTeamScopeWhere, can, teamScopeFilter, type RequestContext } from "../common/permissions";
@@ -297,6 +299,13 @@ export class BillingService implements OnModuleInit, OnModuleDestroy {
       if (!apenasAcademia && this.emitido.get(academyId) === period) continue;
 
       try {
+        /*
+         * Só cria. Retirar mensalidades de meses fechados fica para quando o
+         * clube desliga o mês (ver `retirarForaDoCalendario`), e não para aqui:
+         * a direcção pode lançar à mão uma mensalidade num mês fora do
+         * calendário (`createManualFees`), e um passe de hora a hora que as
+         * apagasse desfazia esse lançamento sem ninguém dar por isso.
+         */
         const criadas = await this.prisma.runAs(academyId, async (db) => {
           const resultado = await gerarCobrancas(db, academyId, period);
           await this.avisarMensalidadesNovas(db, period, resultado.atletasNovos);
@@ -737,6 +746,9 @@ export class BillingService implements OnModuleInit, OnModuleDestroy {
         ).map((c) => c.period),
       );
 
+      /* Lançar à mão um mês que tinha sido apagado é voltar atrás: a marca sai. Ver `ChargeSkip`. */
+      await db.chargeSkip.deleteMany({ where: { athleteId: athlete.id, period: { in: periodos } } });
+
       const criadas: { id: string; period: string; amountCents: number; dueDate: Date }[] = [];
       for (const period of periodos) {
         if (existentes.has(period)) continue;
@@ -852,6 +864,48 @@ export class BillingService implements OnModuleInit, OnModuleDestroy {
       }
 
       return { id: charge.id, status };
+    });
+  }
+
+  /**
+   * Apagar uma mensalidade ou uma cobrança avulsa.
+   *
+   * Mudar o estado não chegava: uma anulada continua na lista e na app da
+   * família, e às vezes foi lançada por engano. Travam as mesmas duas coisas
+   * das quotas (ver `razaoParaNaoApagar`): paga online, ou com uma tentativa
+   * online ainda viva.
+   *
+   * Numa mensalidade fica a marca `ChargeSkip`, para a emissão de hora a hora
+   * (e o botão "Gerar mensalidades") não a recriar — o mês de um atleta activo
+   * com preço é exactamente o que ela cria. Uma avulsa não se emite, e não
+   * precisa de marca. Lançar a mensalidade à mão apaga a marca.
+   */
+  async deleteCharge(ctx: RequestContext, chargeId: string) {
+    if (!can(ctx, "billing:write")) throw new ForbiddenException("Sem permissão para apagar mensalidades");
+
+    return this.prisma.runAs(ctx.academyId, async (db) => {
+      const charge = await db.charge.findFirst({
+        where: { id: chargeId, athleteId: athleteScopeFilter(ctx) },
+        select: {
+          id: true, athleteId: true, period: true, kind: true, slot: true,
+          payments: { select: { status: true, provider: true, method: true, expiresAt: true, createdAt: true } },
+        },
+      });
+      if (!charge) throw new NotFoundException("Mensalidade não encontrada");
+
+      const razao = razaoParaNaoApagar(charge.payments);
+      if (razao) throw new BadRequestException(razao);
+
+      if (charge.kind === "FEE" && charge.slot === "") {
+        await db.chargeSkip.upsert({
+          where: { athleteId_period: { athleteId: charge.athleteId, period: charge.period } },
+          create: { academyId: ctx.academyId, athleteId: charge.athleteId, period: charge.period },
+          update: {},
+        });
+      }
+      await db.charge.delete({ where: { id: charge.id } });
+
+      return { ok: true as const, period: charge.period };
     });
   }
 
@@ -982,13 +1036,6 @@ export class BillingService implements OnModuleInit, OnModuleDestroy {
       });
       const cobraEsteMes = (academia?.billingMonths ?? MESES_POR_OMISSAO).includes(mes);
 
-      // A mesma excepção de `gerarCobrancas`: quem entrou neste mês é cobrado
-      // neste mês, calendário ou não. Se o relatório não a soubesse, dizia "o
-      // clube não cobra agosto" a um atleta que tem mesmo mensalidade de agosto.
-      const inicioDoPeriodo = new Date(Date.UTC(Number(period.slice(0, 4)), mes - 1, 1));
-      const fimDoPeriodo = new Date(Date.UTC(Number(period.slice(0, 4)), mes, 1));
-      const entrouNesteMes = (joinedAt: Date) => joinedAt >= inicioDoPeriodo && joinedAt < fimDoPeriodo;
-
       // Quem tem preço — individual ou da equipa. A mesma resolução de
       // `gerarCobrancas`, aqui só para saber se existe, não quanto é.
       const hoje = new Date();
@@ -1016,7 +1063,7 @@ export class BillingService implements OnModuleInit, OnModuleDestroy {
         atletas: semCobranca.map((a) => {
           const teamId = a.teams[0]?.teamId ?? null;
           const temPreco = comIndividual.has(a.id) || (teamId !== null && equipasComPreco.has(teamId));
-          const cobra = cobraEsteMes || entrouNesteMes(a.joinedAt);
+          const cobra = cobraEsteMes;
           return {
             athleteId: a.id,
             name: a.name,
@@ -2077,6 +2124,93 @@ function ibanValido(iban: string): boolean {
  */
 export const MESES_POR_OMISSAO = [1, 2, 3, 4, 5, 6, 7, 9, 10, 11, 12];
 
+/**
+ * Retira as mensalidades por pagar de meses que o clube acabou de desligar.
+ *
+ * ## Porque é que isto existe
+ *
+ * Um mês desligado deixa de ser pedido às famílias, e deixa de aparecer, na app
+ * dos pais e na aba das mensalidades. Mas `gerarCobrancas` só cria, nunca
+ * retira: desligar agosto com agosto já emitido deixava as mensalidades lá. Por
+ * isso as linhas são **apagadas**, e não anuladas: uma anulada continua a
+ * aparecer como "anulada", e o pedido foi que não apareça nada.
+ *
+ * Apagar sem `ChargeSkip`, de propósito: se o clube voltar a ligar o mês, a
+ * emissão volta a criá-las, que é o que "ligar um mês emite as que faltam"
+ * promete. Um `ChargeSkip` é para uma mensalidade que a direcção apagou a
+ * olhar para o atleta; isto é o calendário, e o calendário pode mudar outra vez.
+ *
+ * ## Só os meses que se desligaram agora
+ *
+ * Recebe os meses, em vez de os deduzir do calendário. A direcção pode lançar à
+ * mão uma mensalidade num mês fora do calendário (`createManualFees`), e isso
+ * é uma decisão tomada a olhar para uma pessoa. Deduzir "todos os meses
+ * fechados" apagava esses lançamentos da próxima vez que alguém mexesse em
+ * qualquer mês. Quem desliga setembro retira setembro, e só setembro.
+ *
+ * ## O que fica de fora, e porquê
+ *
+ * - **As pagas, e as que estão a ser pagas.** Um pagamento `PAID` ou
+ *   `PROCESSING` é dinheiro que existe ou está a caminho.
+ * - **As que têm uma tentativa a meio.** Uma referência Multibanco `PENDING`
+ *   ainda se pode pagar na caixa amanhã; se a mensalidade desaparecer, o
+ *   webhook não tem onde pousar esse dinheiro. Essas ficam anuladas em vez de
+ *   apagadas, e o pagamento, se vier, bate numa cobrança que existe. São raras.
+ * - **As avulsas (`EXTRA`).** Não são mensalidades.
+ * - **Épocas passadas.** Uma mensalidade de há dois anos num mês que o clube
+ *   fechou este ano é história.
+ *
+ * Um mês que ainda está no calendário é ignorado mesmo que venha na lista: esta
+ * função nunca apaga uma mensalidade de um mês em que o clube cobra.
+ */
+export async function retirarForaDoCalendario(
+  db: ScopedClient,
+  academyId: string,
+  desligados: number[],
+  agora = new Date(),
+): Promise<{ apagadas: number; anuladas: number }> {
+  if (desligados.length === 0) return { apagadas: 0, anuladas: 0 };
+  const academia = await db.academy.findFirst({ where: { id: academyId }, select: { billingMonths: true } });
+  const mesesDoClube = academia?.billingMonths ?? MESES_POR_OMISSAO;
+  const fechados = new Set(desligados.filter((m) => !mesesDoClube.includes(m)));
+  if (fechados.size === 0) return { apagadas: 0, anuladas: 0 };
+
+  /*
+   * Por pagar **e** anuladas. Uma anulada num mês fechado é uma linha "Anulada"
+   * que continua a aparecer à família e na aba das mensalidades, e num mês em
+   * que o clube não cobra não há nada a mostrar.
+   */
+  const candidatas = await db.charge.findMany({
+    where: {
+      kind: "FEE",
+      status: { in: [ChargeStatus.OPEN, ChargeStatus.VOID] },
+      period: { gte: inicioDaEpoca(agora) },
+      // Dinheiro que entrou, que está a entrar, ou que entrou e foi devolvido.
+      payments: { none: { status: { in: [PaymentStatus.PAID, PaymentStatus.PROCESSING, PaymentStatus.REFUNDED] } } },
+    },
+    select: {
+      id: true,
+      period: true,
+      status: true,
+      // Só uma tentativa `PENDING` ainda se pode pagar. `FAILED` e `EXPIRED`
+      // já não levam dinheiro a lado nenhum, e não são razão para a mensalidade
+      // ficar à vista como "anulada".
+      _count: { select: { payments: { where: { status: PaymentStatus.PENDING } } } },
+    },
+  });
+  const alvo = candidatas.filter((c) => fechados.has(Number(c.period.slice(5, 7))));
+  const semTentativas = alvo.filter((c) => c._count.payments === 0).map((c) => c.id);
+  const comTentativas = alvo
+    .filter((c) => c._count.payments > 0 && c.status === ChargeStatus.OPEN)
+    .map((c) => c.id);
+
+  const apagadas = semTentativas.length ? (await db.charge.deleteMany({ where: { id: { in: semTentativas } } })).count : 0;
+  const anuladas = comTentativas.length
+    ? (await db.charge.updateMany({ where: { id: { in: comTentativas } }, data: { status: ChargeStatus.VOID } })).count
+    : 0;
+  return { apagadas, anuladas };
+}
+
 const MONTHS_PT = [
   "janeiro", "fevereiro", "março", "abril", "maio", "junho",
   "julho", "agosto", "setembro", "outubro", "novembro", "dezembro",
@@ -2280,6 +2414,17 @@ export async function gerarCobrancas(
   );
 
   /*
+   * E quem a teve e a direcção apagou. Para a emissão, uma apagada é uma que
+   * falta — e recriá-la na passagem seguinte era desfazer o que alguém acabou
+   * de fazer. Ver `ChargeSkip`.
+   */
+  const dispensados = new Set(
+    (await db.chargeSkip.findMany({ where: { period, athleteId: { in: ids } }, select: { athleteId: true } })).map(
+      (d) => d.athleteId,
+    ),
+  );
+
+  /*
    * As inscrições individuais activas — o ajuste que se sobrepõe ao preço da
    * equipa. Mesma regra de `activeIndividualEnrollment`, mas em bloco: uma
    * leitura para todos, em vez de uma por atleta.
@@ -2347,21 +2492,21 @@ export async function gerarCobrancas(
   const cobraEsteMes = mesesDoClube.includes(mes);
 
   /*
-   * Quem se inscreve num mês paga esse mês, esteja ele no calendário ou não.
+   * O calendário manda para toda a gente, incluindo quem acabou de entrar.
    *
-   * O calendário responde a "que meses é que este clube cobra a quem já cá
-   * está". Não responde à inscrição: um miúdo que entra a 27 de Agosto treina
-   * em Agosto, e a direcção quer a linha lá — mesmo num clube que não cobra
-   * Agosto ao resto do plantel. Sem esta excepção, inscrevê-lo era uma
-   * mensalidade que nunca chegava a existir e ninguém dava por ela.
+   * Havia aqui uma excepção: quem se inscrevia num mês fechado era cobrado
+   * nesse mês, "calendário ou não". A intenção era o miúdo que entra a 27 de
+   * agosto e treina em agosto. Na prática apanhou clubes inteiros: `joinedAt`
+   * nasce como a data em que o atleta é criado na plataforma, e um clube que
+   * carrega o plantel em agosto entra todo em agosto. Três clubes ficaram com
+   * 62 mensalidades de um mês que não cobram, e o ecrã das definições a
+   * prometer o contrário ("um mês desligado não gera mensalidades"). O ecrã
+   * tinha razão; a excepção não.
    *
-   * Nasce por pagar, como todas. Se o presidente decidir não a cobrar, anula-a
-   * — e isso fica registado, que é o oposto de nunca ter sido emitida.
+   * Um clube que queira cobrar a um recém-chegado um mês que fechou ao resto
+   * do plantel tem a cobrança avulsa (`EXTRA`) para isso, e essa é uma decisão
+   * que se toma a olhar para a pessoa, não uma regra escondida na emissão.
    */
-  const inicioDoPeriodo = new Date(Date.UTC(Number(period.slice(0, 4)), mes - 1, 1));
-  const fimDoPeriodo = new Date(Date.UTC(Number(period.slice(0, 4)), mes, 1));
-  const entrouNesteMes = (joinedAt: Date) => joinedAt >= inicioDoPeriodo && joinedAt < fimDoPeriodo;
-
   const novas: { academyId: string; athleteId: string; enrollmentId?: string; period: string; amountCents: number; dueDate: Date }[] = [];
   let jaExistiam = 0;
   let semPreco = 0;
@@ -2372,6 +2517,7 @@ export async function gerarCobrancas(
       jaExistiam++;
       continue;
     }
+    if (dispensados.has(a.id)) continue;
 
     const individual = individuais.get(a.id);
     const daEquipa = a.teams[0] ? planosPorEquipa.get(a.teams[0].teamId) : undefined;
@@ -2381,7 +2527,7 @@ export async function gerarCobrancas(
       semPreco++;
       continue;
     }
-    if (!cobraEsteMes && !entrouNesteMes(a.joinedAt)) {
+    if (!cobraEsteMes) {
       foraDoMes++;
       continue;
     }

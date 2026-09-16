@@ -78,6 +78,9 @@ export type Academy = {
   membershipHeadline: string;
   membershipIntro: string;
   membershipPoints: string[];
+  /** Quando abre o ano das quotas anuais de sócio — do clube, para todas as categorias anuais. */
+  memberAnnualStartMonth: number;
+  memberAnnualStartDay: number;
 };
 
 export type Team = {

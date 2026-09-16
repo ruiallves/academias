@@ -42,6 +42,7 @@ import {
   unlinkMemberAccount,
   listMemberFees,
   setMemberFeeStatus,
+  deleteMemberFee,
   type MemberFeeRow,
 } from "@/lib/members";
 
@@ -366,6 +367,7 @@ function QuotasPill({ fees, onOpen }: { fees: Data["fees"]; onOpen: () => void }
                 label: fees.currentKind === "season" ? "Quota da época por lançar" : "Quota do mês por lançar",
               }
             : { tone: "ok" as Tone, label: "Sem quotas em aberto" };
+  /* `dismissed` cai no último ramo: a direcção apagou a quota corrente, não há nada em aberto. */
 
   return (
     <button type="button" onClick={onOpen} className="rounded-full" title="Ver as quotas">
@@ -454,6 +456,8 @@ function SituacaoPanel({ fees, tier }: { fees: Data["fees"]; tier: Data["tier"] 
             <span className="text-warn">Por pagar</span>
           ) : fees.currentStatus === "void" ? (
             <span className="text-ink-3">Anulada</span>
+          ) : fees.currentStatus === "dismissed" ? (
+            <span className="text-ink-3">Apagada — não volta a ser lançada</span>
           ) : (
             <span className="text-ink-3">Ainda não lançada</span>
           )}
@@ -527,6 +531,26 @@ function QuotasLancadasPanel({
     carregar();
   }, [carregar]);
 
+  /* A quota que se está a perguntar se se apaga — o diálogo de uma linha. */
+  const [aApagar, setAApagar] = useState<MemberFeeRow | null>(null);
+
+  async function apagar(fee: MemberFeeRow) {
+    if (busy) return;
+    setBusy(fee.id);
+    setErro(null);
+    try {
+      await deleteMemberFee(fee.id);
+      setAApagar(null);
+      carregar();
+      onChanged?.();
+    } catch (e) {
+      setAApagar(null);
+      setErro(e instanceof Error ? e.message : "Não foi possível apagar.");
+    } finally {
+      setBusy(null);
+    }
+  }
+
   async function mudar(fee: MemberFeeRow, status: MemberFeeRow["status"]) {
     if (busy) return;
     setBusy(fee.id);
@@ -581,7 +605,12 @@ function QuotasLancadasPanel({
               {/* Uma quota paga online não se mexe daqui: o dinheiro está na
                   euPago, e desfazer isso é um estorno. A pastilha fica muda. */}
               {mayWrite && !(f.status === "SETTLED" && f.method !== null && f.method !== "CASH") ? (
-                <MemberFeeStatusControl fee={f} busy={busy === f.id} onChoose={(status) => void mudar(f, status)} />
+                <MemberFeeStatusControl
+                  fee={f}
+                  busy={busy === f.id}
+                  onChoose={(status) => void mudar(f, status)}
+                  onApagar={() => setAApagar(f)}
+                />
               ) : (
                 <Pill tone={QUOTA_TONE[f.status]}>{QUOTA_LABEL[f.status]}</Pill>
               )}
@@ -589,7 +618,67 @@ function QuotasLancadasPanel({
           ))}
         </ul>
       )}
+
+      {aApagar && (
+        <ConfirmarApagar
+          titulo="Apagar quota?"
+          texto={
+            <>
+              Apagar a <strong className="font-medium text-ink">{aApagar.label ?? aApagar.period}</strong> (
+              {money(aApagar.amountCents)})? Não há como voltar atrás.
+            </>
+          }
+          busy={busy === aApagar.id}
+          onConfirmar={() => void apagar(aApagar)}
+          onClose={() => setAApagar(null)}
+        />
+      )}
     </Panel>
+  );
+}
+
+/**
+ * A pergunta antes de apagar uma quota: uma linha, e o botão vermelho.
+ *
+ * O que trava (paga online, pagamento em curso) é o servidor a dizer, com a
+ * razão, e aparece no painel se acontecer. O que acontece a seguir também não
+ * precisa de explicação aqui: a quota apagada não volta pela emissão automática,
+ * que é o que qualquer pessoa espera de "apagar".
+ */
+function ConfirmarApagar({
+  titulo,
+  texto,
+  busy,
+  onConfirmar,
+  onClose,
+}: {
+  titulo: string;
+  texto: ReactNode;
+  busy: boolean;
+  onConfirmar: () => void;
+  onClose: () => void;
+}) {
+  return (
+    <Dialog
+      title={titulo}
+      icon={<Trash2 className="size-4" strokeWidth={1.75} />}
+      onClose={onClose}
+      width={420}
+      labelledBy="apagar-quota"
+      footer={
+        <div className="flex w-full items-center justify-end gap-2">
+          <button type="button" className="ctl-ghost" onClick={onClose} disabled={busy}>
+            Cancelar
+          </button>
+          <button type="button" className="ctl-risk" onClick={onConfirmar} disabled={busy}>
+            <Trash2 className="size-3.5" strokeWidth={1.9} />
+            {busy ? "A apagar…" : "Apagar"}
+          </button>
+        </div>
+      }
+    >
+      <p className="p-5 text-body leading-relaxed text-ink-2">{texto}</p>
+    </Dialog>
   );
 }
 
@@ -616,16 +705,19 @@ const QUOTA_OPTIONS: { value: MemberFeeRow["status"]; label: string }[] = [
 ];
 
 /** Altura aproximada do menu — três opções fixas, sempre o mesmo tamanho. */
-const QUOTA_MENU_HEIGHT = 120;
+const QUOTA_MENU_HEIGHT = 160;
 
 function MemberFeeStatusControl({
   fee,
   busy,
   onChoose,
+  onApagar,
 }: {
   fee: MemberFeeRow;
   busy: boolean;
   onChoose: (status: MemberFeeRow["status"]) => void;
+  /** Abre a pergunta de apagar. Separado dos estados por uma linha, em vermelho. */
+  onApagar: () => void;
 }) {
   const [open, setOpen] = useState(false);
   const [pos, setPos] = useState<{ left: number; top?: number; bottom?: number } | null>(null);
@@ -710,6 +802,21 @@ function MemberFeeStatusControl({
                   <span className="flex-1">{o.label}</span>
                 </button>
               ))}
+              <div className="my-1 border-t border-line" />
+              <button
+                type="button"
+                role="menuitem"
+                onClick={() => {
+                  setOpen(false);
+                  onApagar();
+                }}
+                className="flex w-full items-center gap-2 rounded-[6px] px-2.5 py-1.5 text-left text-body text-risk transition-colors duration-[120ms] hover:bg-risk-soft"
+              >
+                <span className="flex size-4 shrink-0 items-center justify-center">
+                  <Trash2 className="size-3.5" strokeWidth={1.9} />
+                </span>
+                <span className="flex-1">Apagar</span>
+              </button>
             </div>
           </>,
           document.body,

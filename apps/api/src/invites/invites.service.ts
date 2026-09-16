@@ -233,6 +233,39 @@ export class InvitesService {
       });
       if (existing) throw new ConflictException("Esta pessoa já tem este cargo na academia");
 
+      /*
+       * O convite anterior, se já expirou, fecha-se aqui.
+       *
+       * O índice parcial `StaffInvite_pending_unique` só olha a `acceptedAt` e a
+       * `revokedAt`. Não pode olhar a `expiresAt`: o predicado de um índice tem
+       * de ser imutável, e `now()` não é. Um convite fora de prazo continuava
+       * portanto a ocupar o lugar, e como a `listPending` já o escondia, o clube
+       * não o via, não o podia revogar e não podia convidar outra vez. Um
+       * treinador ficou preso nisto, e o clube só conseguia dizer "diz que
+       * expirou mas não me deixa mandar novamente".
+       *
+       * Fechar o expirado no momento em que se reemite liberta o lugar sem
+       * inventar um estado novo: um convite fora de prazo já não abria nada, e
+       * `revokedAt` é exactamente "este link deixou de valer". O que continua a
+       * ser recusado, mais abaixo, é reemitir por cima de um convite **vivo**:
+       * esse ainda abre, e dois links a funcionar para a mesma pessoa é o órfão
+       * que ninguém se lembra de fechar.
+       *
+       * `insensitive` porque o índice compara `lower(email)`: o que interessa é
+       * bater com o que o índice vê, não com o que se guardou.
+       */
+      await db.staffInvite.updateMany({
+        where: {
+          academyId: ctx.academyId,
+          email: { equals: email, mode: "insensitive" },
+          role: cargo.baseRole,
+          acceptedAt: null,
+          revokedAt: null,
+          expiresAt: { lte: new Date() },
+        },
+        data: { revokedAt: new Date() },
+      });
+
       const token = randomBytes(32).toString("base64url");
       const expiresAt = new Date(Date.now() + VALID_DAYS * 24 * 60 * 60 * 1000);
 

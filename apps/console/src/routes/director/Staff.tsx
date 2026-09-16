@@ -73,7 +73,14 @@ export default function Staff() {
   }, []);
 
   const all = listStaff();
-  const invites = usePendingInvites();
+  /*
+   * Só os que ainda abrem. O servidor já não lista convites fora de prazo, mas
+   * a lista vive em memória desde que a página abriu: um convite que expira com
+   * a página aberta ficava aqui, com um botão "Revogar" para um link que já não
+   * valia. A data vem na resposta, por isso filtra-se ao desenhar.
+   */
+  const agora = Date.now();
+  const invites = usePendingInvites().filter((inv) => new Date(inv.expiresAt).getTime() > agora);
 
   // Registos de presenças em atraso, por pessoa. É a única métrica de staff que
   // interessa a um diretor — e é sobre processo, não sobre desempenho.

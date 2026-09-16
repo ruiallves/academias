@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { CustoDoPagamento } from "@/components/finance/CustoDoPagamento";
 import { PageHeader } from "@/components/Shell";
 import { SearchInput, Segmented } from "@/components/filters";
@@ -6,6 +6,15 @@ import { DataTable, Empty, Loading, Monogram, Panel, Pill, RowLink, cx, type Col
 import { Dialog, DialogField, dialogInputClass } from "@/components/Dialog";
 import { Check, Copy, Download, ExternalLink, Home, Plus, QrCode, Send, Settings, Tag, Trash2, Upload } from "@/lib/icons";
 import { descarregarCartazDeAdesao, descarregarQrDeAdesao, linkDeAdesao, qrDeAdesao } from "@/lib/adesao";
+import {
+  DIAS_DO_MES,
+  MESES,
+  anoDoPeriodoAnual,
+  descreverPeriodoAnual,
+  janelaDoPeriodoAnual,
+  periodoAnual,
+  setMemberAnnualStart,
+} from "@/lib/members";
 import { can } from "@/lib/permissions";
 import { useSession } from "@/session";
 import { BulkBar, BulkDeleteDialog } from "@/components/BulkDelete";
@@ -580,22 +589,60 @@ function EnderecoDaPagina() {
  * sem preço é um sócio sem quota — em silêncio, porque a emissão salta quem
  * não tem valor que se possa afirmar.
  */
+/**
+ * Um "Guardar" para o popup inteiro.
+ *
+ * O ano das quotas anuais gravava ao mudar o selector. Parecia cómodo e era
+ * traição: mexer no mês para ver o que acontecia já tinha mexido no clube, e
+ * quem carrega em "Fechar" espera que fechar não faça nada. Agora nada se grava
+ * até ao Guardar do rodapé — e ele grava **tudo** o que estiver por guardar no
+ * popup: o ano das anuais, e a categoria que estiver aberta a editar. Cancelar
+ * deita fora as duas coisas.
+ *
+ * A lista regista aqui a função que sabe guardar (`registar`); o diálogo só a
+ * chama e fecha se ela disser que correu tudo.
+ */
 function TiersDialog({ mayWrite, onClose }: { mayWrite: boolean; onClose: () => void }) {
+  const guardar = useRef<(() => Promise<boolean>) | null>(null);
+  const [busy, setBusy] = useState(false);
+
+  async function guardarEFechar() {
+    if (busy) return;
+    setBusy(true);
+    try {
+      const ok = guardar.current ? await guardar.current() : true;
+      if (ok) onClose();
+    } finally {
+      setBusy(false);
+    }
+  }
+
   return (
     <Dialog
       title="Categorias de sócio"
-      subtitle="O valor da quota mensal de cada categoria"
+      subtitle="O valor da quota de cada categoria, e o ano das anuais"
       icon={<Tag className="size-4" strokeWidth={1.75} />}
       onClose={onClose}
       width={640}
       labelledBy="tiers"
       footer={
-        <button type="button" className="ctl-ghost" onClick={onClose}>
-          Fechar
-        </button>
+        <div className="flex w-full items-center justify-end gap-2">
+          <button type="button" className="ctl-ghost" onClick={onClose} disabled={busy}>
+            Cancelar
+          </button>
+          {mayWrite ? (
+            <button type="button" className="ctl-primary" onClick={() => void guardarEFechar()} disabled={busy}>
+              {busy ? "A guardar…" : "Guardar"}
+            </button>
+          ) : (
+            <button type="button" className="ctl-outline" onClick={onClose}>
+              Fechar
+            </button>
+          )}
+        </div>
       }
     >
-      <TiersList mayWrite={mayWrite} />
+      <TiersList mayWrite={mayWrite} registar={(fn) => (guardar.current = fn)} />
     </Dialog>
   );
 }
@@ -704,10 +751,32 @@ function CopyForm({ mayWrite }: { mayWrite: boolean }) {
  * por isso a descrição e os benefícios valem tanto como o preço: é com eles que
  * alguém decide qual escolher.
  */
-function TiersList({ mayWrite }: { mayWrite: boolean }) {
+function TiersList({
+  mayWrite,
+  registar,
+}: {
+  mayWrite: boolean;
+  /** Recebe a função que guarda o que estiver por guardar aqui dentro. Ver `TiersDialog`. */
+  registar: (fn: () => Promise<boolean>) => void;
+}) {
   const [tiers, setTiers] = useState<MemberTier[] | null>(null);
   const [editing, setEditing] = useState<MemberTier | "new" | null>(null);
   const [error, setError] = useState<string | null>(null);
+
+  /*
+   * O ano das quotas anuais, em rascunho até ao Guardar do rodapé.
+   *
+   * É do clube e vale para todas as categorias anuais — chegou a estar em cada
+   * categoria, e era perguntar cinco vezes uma coisa que se decide uma vez, em
+   * assembleia. Fica aqui em cima, antes das categorias, e as linhas por baixo
+   * dizem "por ano · Jan–Dez" sem cada uma ter de o explicar.
+   */
+  const [abertura, setAbertura] = useState({ mes: academy.memberAnnualStartMonth, dia: academy.memberAnnualStartDay });
+  const aberturaAlterada =
+    abertura.mes !== academy.memberAnnualStartMonth || abertura.dia !== academy.memberAnnualStartDay;
+
+  /* A categoria aberta a editar regista aqui o seu próprio guardar. */
+  const guardarForm = useRef<(() => Promise<boolean>) | null>(null);
 
   const load = useCallback(() => {
     listTiers()
@@ -717,13 +786,55 @@ function TiersList({ mayWrite }: { mayWrite: boolean }) {
 
   useEffect(load, [load]);
 
+  /*
+   * O que o Guardar do rodapé faz: primeiro a categoria aberta (se a houver e
+   * se estiver em condições — senão pára aqui e o formulário diz o que falta),
+   * depois o ano das anuais, se mudou. Devolve `false` para o diálogo ficar
+   * aberto com o erro à vista.
+   */
+  useEffect(() => {
+    registar(async () => {
+      if (guardarForm.current && !(await guardarForm.current())) return false;
+      if (aberturaAlterada) {
+        try {
+          await setMemberAnnualStart(abertura.mes, abertura.dia);
+          await reloadAcademy();
+        } catch (e) {
+          setError(e instanceof Error ? e.message : "Não foi possível guardar o ano das quotas.");
+          return false;
+        }
+      }
+      return true;
+    });
+  });
+
   return (
     <>
+      {!editing && (
+        <AberturaDoAno
+          value={abertura}
+          onChange={(v) => {
+            setError(null);
+            setAbertura(v);
+          }}
+          alterada={aberturaAlterada}
+          mayWrite={mayWrite}
+        />
+      )}
+
+      {/* O Guardar do rodapé falhou aqui dentro: a razão fica à vista, não num clique que não fez nada. */}
+      {error && <p className="mx-5 mt-3 rounded-[var(--radius-control)] bg-risk-soft px-3 py-2 text-meta text-risk">{error}</p>}
+
       {editing ? (
         <TierForm
           tier={editing === "new" ? null : editing}
-          onCancel={() => setEditing(null)}
+          registarGuardar={(fn) => (guardarForm.current = fn)}
+          onCancel={() => {
+            guardarForm.current = null;
+            setEditing(null);
+          }}
           onSaved={() => {
+            guardarForm.current = null;
             setEditing(null);
             load();
           }}
@@ -748,7 +859,7 @@ function TiersList({ mayWrite }: { mayWrite: boolean }) {
                 </div>
                 <div className="text-meta text-ink-3">
                   {t.feeCents !== null
-                    ? `${money(t.feeCents)} ${t.billing === "ANNUAL" ? "por ano" : "por mês"}`
+                    ? `${money(t.feeCents)} ${t.billing === "ANNUAL" ? `por ano · ${janelaDoPeriodoAnual(academy.memberAnnualStartMonth)}` : "por mês"}`
                     : "preço por definir"}
                   {(t.minAge != null || t.maxAge != null) &&
                     ` · ${t.minAge != null && t.maxAge != null ? `${t.minAge}–${t.maxAge} anos` : t.minAge != null ? `${t.minAge}+ anos` : `até ${t.maxAge} anos`}`}
@@ -1338,10 +1449,13 @@ function ImportDialog({ onClose, onDone }: { onClose: () => void; onDone: () => 
 
 function TierForm({
   tier,
+  registarGuardar,
   onCancel,
   onSaved,
 }: {
   tier: MemberTier | null;
+  /** O Guardar é o do rodapé do popup: o formulário entrega-lhe a sua função. Ver `TiersDialog`. */
+  registarGuardar: (fn: () => Promise<boolean>) => void;
   onCancel: () => void;
   onSaved: () => void;
 }) {
@@ -1363,11 +1477,37 @@ function TierForm({
   const [isPublic, setIsPublic] = useState(tier?.isPublic ?? true);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  /*
+   * O preço mudou numa categoria que já existe: entra já, ou só a seguir?
+   *
+   * Um Sócio Gold a 1 € passou a 0,01 € na categoria e continuou a 1 € na ficha
+   * e na app, porque mudar a categoria nunca tocava no que já estava lançado.
+   * Certo para o passado, e errado para o ano em curso — e a direcção não tinha
+   * onde o dizer. Pergunta-se, e só quando a pergunta existe: numa categoria
+   * nova não há quotas lançadas, e sem mudança de preço não há o que decidir.
+   * Sem resposta não se grava — é uma decisão sobre dinheiro, não um detalhe.
+   */
+  const [vigor, setVigor] = useState<"agora" | "proxima" | null>(null);
 
-  const valid = name.trim().length >= 2;
+  const novoCents = fee.trim() ? Math.round(Number(fee.replace(",", ".")) * 100) : null;
+  const precoMudou = tier !== null && novoCents !== null && novoCents !== tier.feeCents;
+  const valid = name.trim().length >= 2 && (!precoMudou || vigor !== null);
 
-  async function save() {
-    if (!valid || busy) return;
+  /*
+   * Devolve se gravou. Quando não está em condições diz porquê aqui dentro, em
+   * vez de deixar o botão do rodapé sem resposta — quem carregou em Guardar
+   * com o nome vazio tem de ver "falta o nome", não um clique que não faz nada.
+   */
+  async function save(): Promise<boolean> {
+    if (busy) return false;
+    if (name.trim().length < 2) {
+      setError("Falta o nome da categoria.");
+      return false;
+    }
+    if (precoMudou && vigor === null) {
+      setError("Diz quando entra o preço novo — já neste período, ou só a partir do próximo.");
+      return false;
+    }
     setBusy(true);
     setError(null);
     try {
@@ -1380,16 +1520,24 @@ function TierForm({
         ...(minAge ? { minAge: Number(minAge) } : {}),
         ...(maxAge ? { maxAge: Number(maxAge) } : {}),
         isPublic,
+        ...(precoMudou ? { applyToCurrent: vigor === "agora" } : {}),
       };
       if (tier) await updateTier(tier.id, body);
       else await createTier(body);
       onSaved();
+      return true;
     } catch (e) {
       setError(e instanceof Error ? e.message : "Não foi possível guardar.");
+      return false;
     } finally {
       setBusy(false);
     }
   }
+
+  /* Sempre a versão mais recente do `save`, com o estado de agora dentro. */
+  useEffect(() => {
+    registarGuardar(save);
+  });
 
   return (
     <div className="space-y-3 px-5 py-4">
@@ -1420,10 +1568,20 @@ function TierForm({
           onChange={setBilling}
           options={[
             { value: "MONTHLY", label: "Mensal", hint: "uma quota por mês" },
-            { value: "ANNUAL", label: "Anual", hint: "uma quota por época" },
+            { value: "ANNUAL", label: "Anual", hint: "uma quota por período" },
           ]}
         />
       </DialogField>
+
+      {billing === "ANNUAL" && (
+        <p className="text-meta leading-relaxed text-ink-3">
+          O ano desta quota abre a{" "}
+          <span className="text-ink-2">
+            {academy.memberAnnualStartDay} de {MESES[academy.memberAnnualStartMonth - 1]}
+          </span>
+          , como em todas as categorias anuais — muda-se no topo da lista de categorias.
+        </p>
+      )}
 
       <div className="grid grid-cols-4 gap-3">
         <DialogField
@@ -1440,6 +1598,32 @@ function TierForm({
           />
           <CustoDoPagamento amountCents={paraCentimosDaQuota(fee)} />
         </DialogField>
+        {precoMudou && (
+          <DialogField
+            label="O preço novo entra"
+            hint={billing === "ANNUAL" ? "as quotas pagas não mudam" : "as mensalidades pagas não mudam"}
+            className="col-span-4"
+          >
+            <Segmented
+              label="Quando entra em vigor o preço novo"
+              value={vigor ?? ""}
+              onChange={(v) => setVigor(v === "agora" ? "agora" : v === "proxima" ? "proxima" : null)}
+              options={[
+                {
+                  value: "agora",
+                  label: billing === "ANNUAL" ? "Já neste ano" : "Já neste mês",
+                  hint: "as quotas por pagar passam ao valor novo",
+                },
+                {
+                  value: "proxima",
+                  label: billing === "ANNUAL" ? "Só a partir do próximo ano" : "Só a partir do próximo mês",
+                  hint: "o que está lançado fica como está",
+                },
+              ]}
+            />
+            {vigor === null && <p className="mt-1 text-meta text-warn">Escolhe uma das duas para poder guardar.</p>}
+          </DialogField>
+        )}
         <DialogField label="Idade mín." hint="opcional">
           <input
             value={minAge}
@@ -1483,15 +1667,20 @@ function TierForm({
         </span>
       </label>
 
-      {error && <p className="text-meta text-risk">{error}</p>}
+      {error && <p className="rounded-[var(--radius-control)] bg-risk-soft px-3 py-2 text-meta text-risk">{error}</p>}
 
-      <div className="flex justify-end gap-1.5 pt-1">
-        <button type="button" className="ctl-ghost" onClick={onCancel}>
-          Cancelar
+      {/*
+        Sem Guardar próprio: o do rodapé do popup grava isto e o ano das anuais
+        de uma vez. Aqui fica só o caminho de volta, para quem abriu por engano
+        ou mudou de ideias.
+      */}
+      <div className="flex items-center justify-between gap-2 pt-1">
+        <button type="button" className="ctl-ghost" onClick={onCancel} disabled={busy}>
+          Voltar às categorias sem guardar
         </button>
-        <button type="button" className="ctl-primary" disabled={!valid || busy} onClick={() => void save()}>
-          {busy ? "A guardar…" : tier ? "Guardar" : "Criar categoria"}
-        </button>
+        <span className="text-meta text-ink-4">
+          {busy ? "A guardar…" : valid ? `Guardar em baixo ${tier ? "grava as alterações" : "cria a categoria"}` : ""}
+        </span>
       </div>
     </div>
   );
@@ -1506,4 +1695,90 @@ function TierForm({
 function paraCentimosDaQuota(v: string): number | null {
   const n = Number(v.trim().replace(/\s/g, "").replace("€", "").replace(",", "."));
   return Number.isFinite(n) && n > 0 ? Math.round(n * 100) : null;
+}
+
+/**
+ * O ano das quotas anuais do clube: dia e mês, lado a lado.
+ *
+ * Dois campos normais, cada um com a largura do que leva: o dia chega para
+ * "31", o mês para "Fevereiro". Por baixo, em cinzento, o período que isso dá,
+ * com datas a sério: "15 de Setembro de 2026 a 14 de Setembro de 2027" — é o
+ * que evita a dúvida de Fevereiro (28 ou 29) e a de "Agosto a Julho é do mesmo
+ * ano?".
+ *
+ * As larguras são fixas e não `w-auto`: o `dialogInputClass` traz `w-full`, e
+ * juntar os dois deixava o Tailwind escolher — escolhia o `w-full`, e cada
+ * select esticava à largura do popup. Por isso a classe aqui é montada sem ele.
+ *
+ * Não grava. É um rascunho que o Guardar do rodapé leva; enquanto estiver
+ * diferente do que o clube tem, uma pastilha diz "por guardar". Mudar o mês
+ * com o dia a 30 puxa o dia para o máximo do mês novo, para nunca se oferecer
+ * um 30 de Fevereiro.
+ */
+function AberturaDoAno({
+  value,
+  onChange,
+  alterada,
+  mayWrite,
+}: {
+  value: { mes: number; dia: number };
+  onChange: (v: { mes: number; dia: number }) => void;
+  alterada: boolean;
+  mayWrite: boolean;
+}) {
+  const ano = anoDoPeriodoAnual(value.mes, new Date(), value.dia);
+  const seguinte = periodoAnual(value.mes, ano + 1, value.dia).de;
+  const dias = Array.from({ length: DIAS_DO_MES[value.mes - 1] }, (_, i) => i + 1);
+  const campo =
+    "h-9 rounded-[var(--radius-control)] border border-line bg-surface pl-2.5 pr-7 text-body text-ink focus:border-line-strong focus:outline-none disabled:opacity-60";
+
+  return (
+    <div className="border-b border-line px-5 py-4">
+      <div className="flex items-center justify-between gap-3">
+        <p className="text-body font-medium text-ink">Ano das quotas anuais</p>
+        {alterada && <Pill tone="warn">por guardar</Pill>}
+      </div>
+
+      <div className="mt-2.5 flex items-end gap-2">
+        <label className="flex flex-col gap-1">
+          <span className="text-meta text-ink-3">Dia</span>
+          <select
+            value={value.dia}
+            disabled={!mayWrite}
+            onChange={(e) => onChange({ ...value, dia: Number(e.target.value) })}
+            className={cx(campo, "w-[4.5rem] tabular")}
+          >
+            {dias.map((d) => (
+              <option key={d} value={d}>
+                {d}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label className="flex flex-col gap-1">
+          <span className="text-meta text-ink-3">Mês</span>
+          <select
+            value={value.mes}
+            disabled={!mayWrite}
+            onChange={(e) => {
+              const mes = Number(e.target.value);
+              onChange({ mes, dia: Math.min(value.dia, DIAS_DO_MES[mes - 1]) });
+            }}
+            className={cx(campo, "w-[8.5rem]")}
+          >
+            {MESES.map((nome, i) => (
+              <option key={nome} value={i + 1}>
+                {nome}
+              </option>
+            ))}
+          </select>
+        </label>
+      </div>
+
+      <p className="mt-2 text-meta text-ink-3">
+        {descreverPeriodoAnual(value.mes, ano, value.dia)} · o seguinte abre a {seguinte.getUTCDate()} de{" "}
+        {MESES[seguinte.getUTCMonth()]} de {seguinte.getUTCFullYear()}
+      </p>
+    </div>
+  );
 }

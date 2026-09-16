@@ -323,15 +323,17 @@ const nadaEmJulho = (await db.query(
 check("um mês fora do calendário do clube não gera nada", nadaEmJulho === 0, `${nadaEmJulho}`);
 check("e diz quantos ficaram de fora por isso", (gFora.body?.foraDoMes ?? 0) >= 1, JSON.stringify(gFora.body));
 
-console.log("\n=== Quem entra num mês fechado é cobrado à mesma ===");
+console.log("\n=== Quem entra num mês fechado não é cobrado nesse mês ===");
 /*
- * A excepção que a direcção pediu, e a razão dela.
+ * Havia aqui uma excepção: quem se inscrevia num mês fechado era cobrado nesse
+ * mês, "calendário ou não". A intenção era o miúdo que entra a 27 de agosto.
+ * Na prática apanhou três clubes inteiros: `joinedAt` nasce como a data em que
+ * o atleta é criado na plataforma, e um clube que carrega o plantel em agosto
+ * entra todo em agosto. Ficaram 62 mensalidades de um mês que esses clubes
+ * não cobram, com o ecrã das definições a prometer que "um mês desligado não
+ * gera mensalidades". O ecrã tinha razão.
  *
- * O calendário responde a "que meses é que o clube cobra a quem já cá está".
- * Não responde à inscrição: um miúdo que entra a 27 de Agosto treina em Agosto,
- * e a mensalidade tem de aparecer — mesmo num clube que não cobra Agosto ao
- * resto do plantel. Se não for para cobrar, anula-se; uma anulação registada
- * vale mais do que uma cobrança que nunca existiu.
+ * Quem quiser cobrar a um recém-chegado um mês fechado tem a cobrança avulsa.
  */
 await porCalendario([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12].filter((m) => m !== MES));
 
@@ -343,30 +345,87 @@ const tardio = await call(direcao, "POST", "/api/athletes", {
 });
 check("inscreve num mês que o clube não cobra", tardio.status === 201 || tardio.status === 200, `${tardio.status}`);
 
+const contarDoTardio = async () => (await db.query(
+  `SELECT count(*)::int n FROM "Charge" WHERE "athleteId" = $1 AND period = $2`,
+  [tardio.body?.id, PERIODO],
+)).rows[0].n;
+check("e não nasce mensalidade nenhuma desse mês", (await contarDoTardio()) === 0);
+
+// Nem pela geração explícita: o calendário manda para toda a gente.
+const gerarFechado = await call(direcao, "POST", `/api/charges/gerar?periodo=${PERIODO}`);
+const calendarioNaAltura = (await db.query(`SELECT "billingMonths" FROM "Academy" WHERE id = $1`, [academyId])).rows[0].billingMonths;
+check(
+  "nem ao gerar o mês à mão",
+  (await contarDoTardio()) === 0,
+  `resposta ${JSON.stringify(gerarFechado.body)} · calendário ${JSON.stringify(calendarioNaAltura)} · atleta ${tardio.body?.id}`,
+);
+
+/*
+ * Com o mês aberto, a mensalidade nasce, e não nasce vencida.
+ *
+ * Inscrever alguém depois do dia de vencimento e emitir-lhe uma mensalidade já
+ * fora do prazo era pô-la a vermelho no segundo em que nasce, e a caminho de
+ * um lembrete automático à família nessa mesma noite. Quem chega tarde paga no
+ * vencimento seguinte, sem deixar de ser a mensalidade deste mês.
+ */
+await porCalendario(MESES_DO_TESTE);
+await call(direcao, "POST", `/api/charges/gerar?periodo=${PERIODO}`);
 const cobrancaTardia = (await db.query(
   `SELECT "amountCents", status, "dueDate"::date::text AS due FROM "Charge"
     WHERE "athleteId" = $1 AND period = $2`,
   [tardio.body?.id, PERIODO],
 )).rows[0];
 check(
-  "e a mensalidade do mês nasce à mesma, por pagar",
+  "com o mês aberto, a mensalidade nasce por pagar",
   cobrancaTardia?.amountCents === 3500 && cobrancaTardia?.status === "OPEN",
   JSON.stringify(cobrancaTardia),
 );
-
-/*
- * E não nasce vencida.
- *
- * Inscrever alguém depois do dia de vencimento e emitir-lhe uma mensalidade já
- * fora do prazo era pô-la a vermelho no segundo em que nasce — e a caminho de
- * um lembrete automático à família nessa mesma noite. Quem chega tarde paga no
- * vencimento seguinte, sem deixar de ser a mensalidade deste mês.
- */
 const venceHoje = new Date(cobrancaTardia?.due ?? 0) >= new Date(new Date().toISOString().slice(0, 10));
 check("e não nasce vencida", venceHoje, `vence a ${cobrancaTardia?.due}`);
 
-// Que o calendário continua a valer para quem **não** entrou neste mês está
-// provado no bloco de Julho, acima: lá ninguém se inscreveu, e não nasceu nada.
+console.log("\n=== Desligar um mês retira o que estava por pagar ===");
+/*
+ * O outro lado da mesma regra. As mensalidades de um mês que o clube deixa de
+ * cobrar deixam de existir: não aparecem na app dos pais nem na aba das
+ * mensalidades, nem como anuladas. As pagas ficam, porque o dinheiro entrou.
+ * E é pelo endpoint das definições, que é por onde o clube o faz.
+ *
+ * Isto toca o clube de demonstração inteiro, não só os atletas ZZ: as
+ * mensalidades reais do mês que estavam por pagar também desaparecem. Por
+ * isso guardam-se as linhas inteiras antes (em JSON feito pelo Postgres, para
+ * as datas não passarem pelo fuso do node) e repõem-se no fim, para o Life
+ * Club ficar exactamente como estava.
+ */
+const guardadas = (await db.query(
+  `SELECT row_to_json(c) AS linha FROM "Charge" c
+    WHERE c."academyId" = $1 AND c.period = $2 AND c.status = 'OPEN'`,
+  [academyId, PERIODO],
+)).rows.map((r) => r.linha);
+const estadosZZ = async () => Object.fromEntries((await db.query(
+  `SELECT c.status, count(*)::int n FROM "Charge" c JOIN "Athlete" a ON a.id = c."athleteId"
+    WHERE a.name LIKE 'ZZ %' AND c.period = $1 GROUP BY c.status`,
+  [PERIODO],
+)).rows.map((r) => [r.status, r.n]));
+const antes = await estadosZZ();
+check("há mensalidades por pagar para retirar", (antes.OPEN ?? 0) >= 1, JSON.stringify(antes));
+
+const fechar = await call(direcao, "PATCH", "/api/pagamentos", { months: MESES_DO_TESTE.filter((m) => m !== MES) });
+check("desligar o mês corrente responde", fechar.status === 200, `${fechar.status} ${JSON.stringify(fechar.body)}`);
+check("e diz quantas apagou", fechar.body?.apagadas === guardadas.length, `${fechar.body?.apagadas} vs ${guardadas.length}`);
+
+const depois = await estadosZZ();
+check("nenhuma ficou por pagar", (depois.OPEN ?? 0) === 0, JSON.stringify(depois));
+check("e nenhuma ficou como anulada: desapareceram", (depois.VOID ?? 0) === 0, JSON.stringify(depois));
+check("as pagas ficam pagas", (depois.SETTLED ?? 0) === (antes.SETTLED ?? 0), JSON.stringify(depois));
+
+// Voltar a ligar o mês emite-as outra vez: o calendário mudou, as mensalidades seguem-no.
+const reabrir = await call(direcao, "PATCH", "/api/pagamentos", { months: MESES_DO_TESTE });
+check("ligar o mês outra vez volta a emitir", (reabrir.body?.cobrancas?.criadas ?? 0) >= (antes.OPEN ?? 0), JSON.stringify(reabrir.body));
+
+// O Life Club volta exactamente ao que era: fora o que a reemissão criou, entram as linhas guardadas.
+await db.query(`DELETE FROM "Charge" WHERE "academyId" = $1 AND period = $2 AND status = 'OPEN'`, [academyId, PERIODO]);
+await db.query(`INSERT INTO "Charge" SELECT * FROM json_populate_recordset(NULL::"Charge", $1::json)`, [JSON.stringify(guardadas)]);
+await porCalendario(MESES_DO_TESTE);
 
 /*
  * Reabrir o calendário antes de seguir.

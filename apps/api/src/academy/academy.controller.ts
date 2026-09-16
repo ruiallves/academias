@@ -145,6 +145,12 @@ class MemberCardDto {
   @IsOptional() @IsBoolean() qrEnabled?: boolean;
 }
 
+/** Quando abre o ano das quotas anuais de sócio: o mês (1–12) e o dia (1–31, validado contra o mês). */
+class MemberAnnualPeriodDto {
+  @IsInt() @Min(1) @Max(12) startMonth!: number;
+  @IsOptional() @IsInt() @Min(1) @Max(31) startDay?: number;
+}
+
 class MembershipCopyDto {
   @IsOptional() @IsString() @Length(0, 90) headline?: string;
   @IsOptional() @IsString() @Length(0, 240) intro?: string;
@@ -369,6 +375,12 @@ export class AcademyController {
   @Patch("member-card")
   setMemberCard(@Req() req: AuthedRequest, @Body() body: MemberCardDto) {
     return this.academy.setMemberCard(req.ctx, body);
+  }
+
+  /** Em que mês abre o período das quotas anuais de sócio — do clube, para todas as categorias. */
+  @Patch("member-annual-period")
+  setMemberAnnualStart(@Req() req: AuthedRequest, @Body() body: MemberAnnualPeriodDto) {
+    return this.academy.setMemberAnnualStart(req.ctx, body.startMonth, body.startDay ?? 1);
   }
 
   /**
@@ -651,6 +663,12 @@ export class AcademyController {
    * euPago continua a ser o único que liquida um pagamento online. Ver
    * `BillingService.setChargeStatus`.
    */
+  /** Apagar uma mensalidade ou avulsa. Ver `BillingService.deleteCharge`. */
+  @Delete("charges/:id")
+  deleteCharge(@Req() req: AuthedRequest, @Param("id") id: string) {
+    return this.billing.deleteCharge(req.ctx, id);
+  }
+
   @Patch("charges/:id/status")
   setChargeStatus(@Req() req: AuthedRequest, @Param("id") id: string, @Body() body: SetChargeStatusDto) {
     return this.billing.setChargeStatus(req.ctx, id, body.status as ChargeStatus);

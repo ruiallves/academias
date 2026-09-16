@@ -6,7 +6,7 @@ import { can, type RequestContext } from "../common/permissions";
 import { CARD_QR_PREFIX } from "../club-app/club-app.service";
 import { MemberInvitesService } from "./member-invites.service";
 import { ligarFichaAConta } from "./member-account-link";
-import { situacaoDeQuotas } from "./member-fees.service";
+import { aberturaAnual, periodoDaQuota, situacaoDeQuotas } from "./member-fees.service";
 import { PHOTO_BUCKET, PHOTO_TTL } from "../storage/photos.service";
 import { StorageService } from "../storage/storage.service";
 import type {
@@ -317,7 +317,7 @@ export class MembersService {
        * resposta. A lista de quotas essa sim é do separador, e continua no seu
        * pedido (`GET :id/fees`).
        */
-      const fees = await situacaoDeQuotas(db, m.id);
+      const fees = await situacaoDeQuotas(db, ctx.academyId, m.id);
 
       return { ...m, approvedBy: m.approvedBy?.user.name ?? null, fees };
     });
@@ -957,7 +957,7 @@ export class MembersService {
     this.mustWrite(ctx);
 
     return this.prisma.runAs(ctx.academyId, async (db) => {
-      const tier = await db.memberTier.findFirst({ where: { id }, select: { id: true } });
+      const tier = await db.memberTier.findFirst({ where: { id }, select: { id: true, feeCents: true, billing: true } });
       if (!tier) throw new NotFoundException("Categoria não encontrada");
 
       await db.memberTier.update({
@@ -984,7 +984,52 @@ export class MembersService {
         },
       });
 
-      return { ok: true };
+      /*
+       * O preço novo, e as quotas que já estão lançadas.
+       *
+       * Mudar o valor da categoria nunca tocava no que já existia: um Sócio
+       * Gold a 1 € passava a 0,01 € na categoria e continuava com a quota do
+       * ano a 1 € na ficha e na app. Certo para o passado, errado para o
+       * corrente — a direcção que baixa o preço em Setembro quer que o ano em
+       * curso o reflicta, e não tinha como o dizer.
+       *
+       * Por isso pergunta-se (`applyToCurrent`). Com sim, as quotas **por
+       * pagar** do período corrente dos sócios activos desta categoria passam
+       * ao valor novo. Só as por pagar: uma paga é dinheiro que entrou, e
+       * reescrevê-la era mentir sobre o que se recebeu. E só o período
+       * corrente: os atrasos são de outros preços, de outros anos.
+       *
+       * Uma tentativa de pagamento em voo sobre uma dessas quotas expira: a
+       * referência Multibanco tem o valor antigo, e o webhook recusaria o
+       * pagamento por divergência. Expirada, a app pede uma nova ao valor certo.
+       */
+      const novoValor = dto.feeCents ?? null;
+      let repriced = 0;
+      if (dto.applyToCurrent && dto.feeCents !== undefined && novoValor !== null && novoValor !== tier.feeCents) {
+        const billing = dto.billing ?? tier.billing;
+        const { mes, dia } = await aberturaAnual(db, ctx.academyId);
+        const period = periodoDaQuota(billing, new Date(), mes, dia);
+        const abertas = (
+          await db.memberFee.findMany({
+            where: { period, status: "OPEN", member: { tierId: id, status: "ACTIVE" } },
+            select: { id: true },
+          })
+        ).map((f) => f.id);
+
+        if (abertas.length > 0) {
+          await db.payment.updateMany({
+            where: {
+              status: { in: ["PENDING", "PROCESSING"] },
+              OR: [{ memberFeeId: { in: abertas } }, { memberFees: { some: { memberFeeId: { in: abertas } } } }],
+            },
+            data: { status: "EXPIRED" },
+          });
+          const r = await db.memberFee.updateMany({ where: { id: { in: abertas } }, data: { amountCents: novoValor } });
+          repriced = r.count;
+        }
+      }
+
+      return { ok: true, repriced };
     });
   }
 

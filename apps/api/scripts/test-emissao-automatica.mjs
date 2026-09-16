@@ -240,6 +240,24 @@ const foraDoMes = await call(admin, "POST", `/api/platform/billing/emitir?academ
 check("um mês fora do calendário não emite", foraDoMes.body?.criadas === 0, JSON.stringify(foraDoMes.body));
 check("e não há linha nenhuma", (await naBase()).length === 0);
 
+/*
+ * E o passe não apaga nada num mês fechado.
+ *
+ * A direcção pode lançar à mão uma mensalidade num mês fora do calendário
+ * (`charges/mensalidade`). Retirar mensalidades é do momento em que o clube
+ * desliga o mês, nas definições; um passe de hora a hora que o fizesse
+ * desfazia esse lançamento sem ninguém dar por isso.
+ */
+await db.query(
+  `INSERT INTO "Charge" (id, "academyId", "athleteId", period, "amountCents", "dueDate", status, kind, notes, "updatedAt")
+   VALUES ('zb_charge_manual', $1, 'zb_atleta', $2, 4500, ($2 || '-12')::date, 'OPEN', 'FEE', 'lançada à mão', now())`,
+  [ID, PERIODO],
+);
+await call(admin, "POST", `/api/platform/billing/emitir?academia=${ID}`);
+const manual = (await db.query(`SELECT status FROM "Charge" WHERE id = 'zb_charge_manual'`)).rows[0]?.status;
+check("uma mensalidade lançada à mão num mês fechado sobrevive ao passe", manual === "OPEN", `${manual}`);
+await db.query(`DELETE FROM "Charge" WHERE id = 'zb_charge_manual'`);
+
 /* ================================================== clube cancelado ===== */
 
 console.log("\n=== Um clube cancelado fica de fora ===");
