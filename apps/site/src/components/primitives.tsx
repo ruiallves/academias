@@ -44,7 +44,21 @@ export function Mark({ size = 26, className }: { size?: number; className?: stri
 export function Wordmark({ className }: { className?: string }) {
   return (
     <span className={cx("inline-flex items-center gap-2.5", className)}>
-      <Mark size={21} className="text-field" />
+      {/*
+        O logótipo a sério, e não a bandeirola desenhada em SVG. `alt` vazio:
+        o nome vem escrito ao lado, e um leitor de ecrã não precisa de o ouvir
+        duas vezes. O ficheiro tem 128px para ficar nítido em ecrãs de alta
+        densidade.
+      */}
+      <img
+        src="/academias-logo.png"
+        alt=""
+        aria-hidden
+        width={30}
+        height={30}
+        draggable={false}
+        className="size-[30px] shrink-0 select-none"
+      />
       <span
         className="text-[19px] leading-none font-[560] tracking-[-0.02em]"
         style={{ fontFamily: "var(--font-display)", fontVariationSettings: '"SOFT" 0, "WONK" 0' }}
