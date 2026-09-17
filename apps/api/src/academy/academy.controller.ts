@@ -99,6 +99,9 @@ class CreateManualFeesDto {
   @IsString()
   @Length(0, 500)
   notes?: string;
+
+  /** Por pagar num mês já pago: `true` sobrescreve, `false` mantém. Ver `createManualFees`. */
+  @IsOptional() @IsBoolean() sobrescreverPagas?: boolean;
 }
 
 /** O estado a atribuir manualmente a uma mensalidade. Validado — só os três reais. */

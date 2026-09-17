@@ -737,6 +737,12 @@ export class BillingService implements OnModuleInit, OnModuleDestroy {
       metodo?: MetodoManual;
       periods: string[];
       notes?: string;
+      /**
+       * Por pagar, num mês em que alguém já pagou: `true` volta a pô-las por
+       * pagar, `false` deixa-as pagas. Omitido, e havendo alguma, nada se grava
+       * e a resposta traz `porConfirmar` para a consola perguntar.
+       */
+      sobrescreverPagas?: boolean;
     },
   ) {
     if (!can(ctx, "billing:write")) throw new ForbiddenException("Sem permissão para cobrar");
@@ -759,7 +765,7 @@ export class BillingService implements OnModuleInit, OnModuleDestroy {
     if (alvo === "atletas" && idsDeAtletas.length === 0) throw new BadRequestException("Escolhe pelo menos um atleta");
     if (alvo === "equipas" && idsDeEquipas.length === 0) throw new BadRequestException("Escolhe pelo menos uma equipa");
 
-    const { criadas, marcadas, jaExistiam, jaPagas, emPagamento, semPreco, atletasComNovas, avisos } = await this.prisma.runAs(
+    const resultado = await this.prisma.runAs(
       ctx.academyId,
       async (db) => {
         /*
@@ -827,7 +833,7 @@ export class BillingService implements OnModuleInit, OnModuleDestroy {
                 period: true,
                 status: true,
                 amountCents: true,
-                payments: { where: { status: { in: [PaymentStatus.PENDING, PaymentStatus.PROCESSING] } }, select: { id: true } },
+                payments: { select: { status: true, provider: true } },
               },
             })
           ).map((c) => [`${c.athleteId}|${c.period}`, c]),
@@ -856,16 +862,47 @@ export class BillingService implements OnModuleInit, OnModuleDestroy {
         const jaPagas = new Set<string>();
         let emPagamento = 0;
 
+        /*
+         * Por pagar num mês em que alguém já pagou.
+         *
+         * Lançar Outubro por pagar ao clube todo, com três atletas que já
+         * pagaram Outubro, saltava esses três em silêncio. O clube pode querer
+         * isso (pagaram, está certo) ou não (o pagamento foi registado por
+         * engano, ou o valor mudou). Não se decide por ele: a primeira ida
+         * devolve a lista (`porConfirmar`) sem gravar nada, e a consola
+         * pergunta. Pagas online (euPago) não entram na pergunta nem se
+         * sobrescrevem: é dinheiro que entrou.
+         */
+        const porConfirmar: { athleteId: string; name: string; period: string; amountCents: number }[] = [];
+        const aReabrir: { id: string; athleteId: string; period: string; amountCents: number }[] = [];
+        const pagaOnline = (c: { payments: { status: PaymentStatus; provider: string }[] }) =>
+          c.payments.some(
+            (p) =>
+              p.provider !== "manual" &&
+              (p.status === PaymentStatus.PAID || p.status === PaymentStatus.PROCESSING || p.status === PaymentStatus.REFUNDED),
+          );
+
         for (const a of atletas) {
           const valor = input.amountCents ?? precoDe?.(a)?.amountCents;
           let semPrecoContado = false;
           for (const period of periodos) {
             const existente = existentes.get(`${a.id}|${period}`);
             if (existente) {
-              if (!pagas) jaExistiam.add(period);
-              else if (existente.status === ChargeStatus.SETTLED) jaPagas.add(period);
+              const emVoo = existente.payments.some(
+                (p) => p.status === PaymentStatus.PENDING || p.status === PaymentStatus.PROCESSING,
+              );
+              if (!pagas) {
+                if (existente.status !== ChargeStatus.SETTLED) jaExistiam.add(period);
+                else if (pagaOnline(existente) || input.sobrescreverPagas === false) jaPagas.add(period);
+                else if (input.sobrescreverPagas === true) {
+                  aReabrir.push({ id: existente.id, athleteId: a.id, period, amountCents: valor ?? existente.amountCents });
+                } else {
+                  porConfirmar.push({ athleteId: a.id, name: a.name, period, amountCents: existente.amountCents });
+                  jaPagas.add(period);
+                }
+              } else if (existente.status === ChargeStatus.SETTLED) jaPagas.add(period);
               else if (existente.status !== ChargeStatus.OPEN) jaExistiam.add(period);
-              else if (existente.payments.length > 0) emPagamento++;
+              else if (emVoo) emPagamento++;
               else aMarcar.push({ id: existente.id, athleteId: a.id, amountCents: existente.amountCents });
               continue;
             }
@@ -897,6 +934,9 @@ export class BillingService implements OnModuleInit, OnModuleDestroy {
           }
         }
 
+        /* Há pagas por decidir: não se grava nada, e a consola pergunta. */
+        if (porConfirmar.length > 0) return { porConfirmar };
+
         /* Lançar à mão um mês que tinha sido apagado é voltar atrás: a marca sai. Ver `ChargeSkip`. */
         const quemRecebe = [...new Set(aCriar.map((c) => c.athleteId))];
         if (quemRecebe.length > 0) {
@@ -924,6 +964,38 @@ export class BillingService implements OnModuleInit, OnModuleDestroy {
             data: { status: ChargeStatus.SETTLED, settledAt: agora },
           });
         }
+        /*
+         * Sobrescrever: voltam a estar por pagar, como "Marcar como por pagar".
+         *
+         * O pagamento manual fica `REFUNDED` (o histórico diz que houve um e
+         * foi desfeito), e a mensalidade leva o valor e o prazo deste
+         * lançamento. Agrupado por valor e mês, para não ser uma escrita por
+         * linha num lançamento ao clube todo.
+         */
+        if (aReabrir.length > 0) {
+          await db.payment.updateMany({
+            where: { chargeId: { in: aReabrir.map((c) => c.id) }, provider: "manual", status: PaymentStatus.PAID },
+            data: { status: PaymentStatus.REFUNDED },
+          });
+          const grupos = new Map<string, typeof aReabrir>();
+          for (const c of aReabrir) {
+            const chave = `${c.period}|${c.amountCents}`;
+            grupos.set(chave, [...(grupos.get(chave) ?? []), c]);
+          }
+          for (const grupo of grupos.values()) {
+            await db.charge.updateMany({
+              where: { id: { in: grupo.map((c) => c.id) }, status: ChargeStatus.SETTLED },
+              data: {
+                status: ChargeStatus.OPEN,
+                settledAt: null,
+                amountCents: grupo[0].amountCents,
+                dueDate: diaDeVencimento(grupo[0].period, calendario(grupo[0].period).dia),
+                ...(input.notes?.trim() ? { notes: input.notes.trim() } : {}),
+              },
+            });
+          }
+        }
+
         const pagasAgora = pagas ? [...criadas, ...aMarcar] : [];
         if (pagasAgora.length > 0) {
           await db.payment.createMany({
@@ -948,7 +1020,14 @@ export class BillingService implements OnModuleInit, OnModuleDestroy {
          */
         const porAtleta = new Map(atletas.map((a) => [a.id, a]));
         // Uma mensalidade que nasce paga não pede nada a ninguém: não há aviso.
-        const avisos = (pagas ? [] : criadas).flatMap((c) => {
+        const reabertas = aReabrir.map((c) => ({
+          id: c.id,
+          athleteId: c.athleteId,
+          period: c.period,
+          amountCents: c.amountCents,
+          dueDate: diaDeVencimento(c.period, calendario(c.period).dia),
+        }));
+        const avisos = (pagas ? [] : [...criadas, ...reabertas]).flatMap((c) => {
           const a = porAtleta.get(c.athleteId)!;
           return a.guardians
             .filter((g) => g.membership.isActive)
@@ -964,17 +1043,21 @@ export class BillingService implements OnModuleInit, OnModuleDestroy {
 
         return {
           criadas,
+          reabertas: aReabrir.length,
           marcadas: aMarcar.length,
           jaExistiam: [...jaExistiam].sort(),
           jaPagas: [...jaPagas].sort(),
           emPagamento,
           semPreco,
-          atletasComNovas: new Set([...criadas, ...aMarcar].map((c) => c.athleteId)).size,
+          atletasComNovas: new Set([...criadas, ...aMarcar, ...aReabrir].map((c) => c.athleteId)).size,
           avisos,
         };
       },
       { timeoutMs: 60_000 },
     );
+
+    if ("porConfirmar" in resultado) return { porConfirmar: resultado.porConfirmar };
+    const { criadas, reabertas, marcadas, jaExistiam, jaPagas, emPagamento, semPreco, atletasComNovas, avisos } = resultado;
 
     /*
      * O aviso à família, uma vez por mensalidade nova.
@@ -992,6 +1075,8 @@ export class BillingService implements OnModuleInit, OnModuleDestroy {
 
     return {
       criadas: criadas.length,
+      /** Estavam pagas e voltaram a estar por pagar, porque se escolheu sobrescrever. */
+      reabertas,
       /** Já existiam por pagar e passaram a pagas. Só ao lançar como pagas. */
       marcadas,
       atletas: atletasComNovas,

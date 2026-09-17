@@ -1,9 +1,9 @@
 ---
 type: TERMS_OF_SERVICE
-version: 1.1
+version: 1.2
 title: Termos de Serviço
 summary: O contrato entre o clube e a Academias — o que inclui cada plano, pagamento, suspensão, cancelamento e as responsabilidades de cada parte.
-changeNote: O que cada plano inclui (a app do clube e as suas áreas) e o preço de cada um, mudança de plano até ao dia 15 do mês anterior, o que acontece aos 30 e aos 60 dias sem pagamento, sem reembolsos (há 30 dias de teste), suporte por email ou WhatsApp, utilização razoável, confidencialidade e limitação de responsabilidade.
+changeNote: Fidelização. Com um período de fidelização em vigor, o clube só pode subir de plano, e se cancelar paga as mensalidades que faltam até ao fim desse período.
 ---
 
 Estes termos regulam a utilização da plataforma Academias por clubes e academias desportivas. Estão escritos para serem lidos por quem dirige um clube, não por juristas. Ao aceitá-los em nome do clube, a pessoa que os aceita declara que está autorizada a representá-lo para este efeito. O Acordo de Tratamento de Dados e a Política de Utilização Aceitável fazem parte deste contrato.
@@ -85,7 +85,7 @@ A subscrição é **mensal**. Os preços em vigor à data desta versão são:
 - **Plano Consola**: 14,99 € por mês, IVA incluído.
 - **Plano Connect**: 19,99 € por mês, IVA incluído.
 
-Os preços são por clube e não variam com o número de atletas. Prevalecem, quando existam, as condições da proposta aceite pelo clube. A mensalidade é devida na data indicada na factura.
+Os preços são por clube e não variam com o número de atletas. Prevalecem, quando existam, as condições da proposta aceite pelo clube, incluindo um **período de fidelização** (o período contratual mínimo que a proposta indique). A mensalidade é devida na data indicada na factura.
 
 O pagamento faz-se por **transferência bancária** ou por **MB WAY**, com os dados indicados na factura ou na área de subscrição. Poderá vir a ser disponibilizado o pagamento por **débito directo**; quando o for, a adesão é opcional e exige autorização expressa do clube.
 
@@ -96,6 +96,8 @@ O clube é responsável por quaisquer encargos bancários do seu lado e por impo
 ## 8. Mudança de plano
 
 O clube pode subir de plano (*upgrade*) ou descer de plano (*downgrade*) a qualquer momento, pedindo-o por escrito ou pela plataforma.
+
+**Com fidelização.** Enquanto estiver em vigor um período de fidelização, o clube só pode **subir** de plano. Descer de plano não é possível até esse período terminar.
 
 O pedido tem de ser feito até ao **dia 15 do mês anterior** àquele em que a mudança deve produzir efeitos. Pedidos feitos depois do dia 15 só se reflectem no mês seguinte a esse.
 
@@ -123,7 +125,9 @@ O estado de um pagamento na plataforma reflecte a confirmação recebida do pres
 
 ## 11. Cancelamento
 
-O clube pode cancelar a subscrição a qualquer momento, sem período mínimo de permanência, por escrito ou pela plataforma. O cancelamento produz efeitos no fim do período já pago.
+O clube pode cancelar a subscrição a qualquer momento, por escrito ou pela plataforma. O cancelamento produz efeitos no fim do período já pago.
+
+**Com fidelização.** Se estiver em vigor um período de fidelização, o clube pode cancelar na mesma, mas continua obrigado a pagar as mensalidades que faltam até ao fim desse período.
 
 **Não há reembolso** de mensalidades pagas, no todo ou em parte: o período experimental de 30 dias existe precisamente para o clube avaliar o serviço antes de pagar. A única excepção é a que a lei imponha.
 

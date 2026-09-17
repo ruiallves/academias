@@ -1610,6 +1610,24 @@ passava dos cinco segundos. Passou a duas transações, cada uma com metade: a
 primeira decide (quem é, se pode entrar, o que deve), a segunda é o clube e corre
 em paralelo com a assinatura da fotografia.
 
+## Lançar por pagar num mês já pago pergunta antes
+
+Lançar mensalidades **por pagar** (a um atleta, a equipas ou a todos) num mês em
+que alguém já pagou à mão abre uma segunda pergunta depois de carregar em
+Lançar: "Já há mensalidades pagas", com a lista de quem pagou, o mês e o valor,
+e três saídas. **Voltar** não lança nada. **Manter pagas** lança só aos outros.
+**Sobrescrever** põe as pagas outra vez por pagar, com o valor e o prazo deste
+lançamento: o pagamento manual fica `REFUNDED`, como em "Marcar como por pagar",
+e a família é avisada.
+
+Quem pergunta é o servidor. `POST /api/charges/mensalidade` sem
+`sobrescreverPagas` devolve `{ porConfirmar: [...] }` e não grava nada; a
+consola volta a enviar com `sobrescreverPagas: true | false`. As pagas online
+(euPago) nunca entram na pergunta nem se sobrescrevem. Lançar **como pagas**
+continua sem pergunta. Com um atleta só, os meses já pagos deixaram de estar
+riscados: escolhem-se, e a pergunta aparece. Teste:
+`scripts/test-sobrescrever-pagas.mjs` (24, num clube descartável).
+
 ## Um mês desligado não existe
 
 O clube escolhe o dia de vencimento e os meses em que cobra

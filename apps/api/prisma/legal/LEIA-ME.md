@@ -37,6 +37,9 @@ Antes de considerar qualquer versão final:
   clube (secção 5); limitação de responsabilidade ao valor de 12 meses
   (secção 20); referência de cliente salvo oposição (secção 16); preços com
   IVA incluído (secção 7).
+- nos Termos de Serviço v1.2: com fidelização em vigor só se sobe de plano
+  (secção 8), e cancelar obriga a pagar as mensalidades até ao fim da
+  fidelização (secção 11), sem dizer quando esse valor é cobrado.
 
 ## Como se corrige um texto antes de haver aceitações a sério
 

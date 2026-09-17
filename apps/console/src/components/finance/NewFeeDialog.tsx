@@ -1,4 +1,5 @@
 import { useMemo, useRef, useState, type FormEvent } from "react";
+import { createPortal } from "react-dom";
 import { Dialog, DialogField, dialogInputClass } from "@/components/Dialog";
 import { Segmented } from "@/components/filters";
 import { Monogram, cx } from "@/components/primitives";
@@ -20,6 +21,8 @@ type Estado = "OPEN" | "SETTLED";
 
 type Resultado = {
   criadas: number;
+  /** Estavam pagas e voltaram a estar por pagar, porque se escolheu sobrescrever. */
+  reabertas?: number;
   /** Já existiam por pagar e passaram a pagas. Só ao lançar como pagas. */
   marcadas: number;
   atletas: number;
@@ -31,6 +34,9 @@ type Resultado = {
   semPreco: { id: string; name: string }[];
   avisados: number;
 };
+
+/** Quem já pagou um dos meses de um lançamento por pagar. Nada foi gravado. */
+type PorConfirmar = { athleteId: string; name: string; period: string; amountCents: number }[];
 
 /**
  * Lançar mensalidades à mão: a atletas, a equipas, ou ao clube todo.
@@ -85,6 +91,13 @@ export function NewFeeDialog({ onClose, onDone }: { onClose: () => void; onDone:
   const [busy, setBusy] = useState(false);
   const [erro, setErro] = useState<string | null>(null);
   const [resultado, setResultado] = useState<Resultado | null>(null);
+  /*
+   * Lançar por pagar num mês que alguém já pagou pergunta antes.
+   *
+   * O servidor responde `porConfirmar` sem gravar nada; a pergunta abre por
+   * cima, e a resposta volta a lançar com `sobrescreverPagas`.
+   */
+  const [porConfirmar, setPorConfirmar] = useState<PorConfirmar | null>(null);
 
   /* Os atletas que o pedido vai abranger, pelo que a consola já sabe. */
   const abrangidos: Athlete[] = useMemo(() => {
@@ -94,7 +107,15 @@ export function NewFeeDialog({ onClose, onDone }: { onClose: () => void; onDone:
   }, [alvo, activos, escolhidos, equipasEscolhidas]);
 
   const umSo = alvo === "atletas" && abrangidos.length === 1 ? abrangidos[0] : null;
-  const jaTem = useMemo(() => new Set(umSo ? feeHistory(umSo.id).map((f) => f.period) : []), [umSo]);
+  /*
+   * Os meses que este atleta já tem por pagar ou anulados: esses não se lançam
+   * outra vez. Os pagos escolhem-se: ao lançar por pagar, pergunta-se se é para
+   * sobrescrever o pagamento (ver `SobrescreverPagas`).
+   */
+  const jaTem = useMemo(
+    () => new Set(umSo ? feeHistory(umSo.id).filter((f) => !f.extra && f.status !== "paid").map((f) => f.period) : []),
+    [umSo],
+  );
 
   const cents = modo === "fixo" ? paraCentimos(valor) : null;
   const valorValido = modo === "preco" || (cents !== null && cents >= 100);
@@ -150,13 +171,17 @@ export function NewFeeDialog({ onClose, onDone }: { onClose: () => void; onDone:
     });
   }
 
-  async function submeter(e: FormEvent) {
+  function submeter(e: FormEvent) {
     e.preventDefault();
+    void lancar();
+  }
+
+  async function lancar(sobrescreverPagas?: boolean) {
     if (!valido || busy) return;
     setBusy(true);
     setErro(null);
     try {
-      const r = await apiPost<Resultado>("/api/charges/mensalidade", {
+      const resposta = await apiPost<Resultado | { porConfirmar: PorConfirmar }>("/api/charges/mensalidade", {
         alvo,
         ...(alvo === "atletas" ? { athleteIds: [...escolhidos] } : {}),
         ...(alvo === "equipas" ? { teamIds: [...equipasEscolhidas] } : {}),
@@ -165,7 +190,14 @@ export function NewFeeDialog({ onClose, onDone }: { onClose: () => void; onDone:
         ...(estado === "SETTLED" && metodo ? { metodo } : {}),
         periods: [...meses].sort(),
         notes: nota.trim() || undefined,
+        ...(sobrescreverPagas !== undefined ? { sobrescreverPagas } : {}),
       });
+      setPorConfirmar(null);
+      if ("porConfirmar" in resposta) {
+        setPorConfirmar(resposta.porConfirmar);
+        return;
+      }
+      const r = resposta;
       /*
        * Reler a academia antes de fechar, e **sempre**, não só no caminho feliz:
        * as mensalidades vivem no `store`, e sem isto o que se acabou de lançar
@@ -176,7 +208,7 @@ export function NewFeeDialog({ onClose, onDone }: { onClose: () => void; onDone:
       /* Correu tudo como pedido: fecha. Senão, diz-se o que ficou de fora. */
       const ficouAlgoDeFora =
         r.jaExistiam.length > 0 || r.jaPagas.length > 0 || r.emPagamento > 0 || r.semPreco.length > 0;
-      if (!ficouAlgoDeFora && r.criadas + r.marcadas > 0) {
+      if (!ficouAlgoDeFora && r.criadas + r.marcadas + (r.reabertas ?? 0) > 0) {
         onDone();
         return;
       }
@@ -218,7 +250,7 @@ export function NewFeeDialog({ onClose, onDone }: { onClose: () => void; onDone:
       title="Lançar mensalidade"
       subtitle="A atletas, equipas ou ao clube todo, nos meses que escolheres."
       icon={<Receipt className="size-4" strokeWidth={1.75} />}
-      onClose={onClose}
+      onClose={() => !porConfirmar && onClose()}
       width={580}
       footer={
         <div className="flex w-full items-center justify-between gap-3">
@@ -425,8 +457,8 @@ export function NewFeeDialog({ onClose, onDone }: { onClose: () => void; onDone:
             {estado === "SETTLED"
               ? "Um mês que já tenha mensalidade por pagar fica marcado como pago. A tracejado é mês em que o clube não cobra."
               : umSo
-                ? "Riscado é mês que este atleta já tem. A tracejado é mês em que o clube não cobra."
-                : "Quem já tiver mensalidade num mês fica de fora nesse mês. A tracejado é mês em que o clube não cobra."}{" "}
+                ? "Riscado é mês que este atleta já tem por pagar. Um mês já pago pergunta se queres sobrescrever. A tracejado é mês em que o clube não cobra."
+                : "Quem já tiver mensalidade por pagar num mês fica de fora nesse mês; se alguém já pagou, pergunta-se se queres sobrescrever. A tracejado é mês em que o clube não cobra."}{" "}
             {estado === "OPEN" && "Vence no dia de cobrança do clube, e um mês que já passou nasce vencido."}
           </p>
         </fieldset>
@@ -451,8 +483,109 @@ export function NewFeeDialog({ onClose, onDone }: { onClose: () => void; onDone:
           )}
         </div>
       </form>
+
+      {porConfirmar &&
+        createPortal(
+          <SobrescreverPagas
+            lista={porConfirmar}
+            busy={busy}
+            onManter={() => void lancar(false)}
+            onSobrescrever={() => void lancar(true)}
+            onCancelar={() => setPorConfirmar(null)}
+          />,
+          document.body,
+        )}
     </Dialog>
   );
+}
+
+/**
+ * "Estes atletas já pagaram. Sobrescrever?"
+ *
+ * Aparece depois de carregar em Lançar, quando o lançamento é por pagar e há
+ * quem já tenha pago algum dos meses (à mão; os pagos online nunca chegam
+ * aqui). Três saídas: manter as pagas e lançar ao resto, sobrescrever (voltam a
+ * ficar por pagar, com o valor deste lançamento, e a família é avisada), ou
+ * voltar ao formulário sem lançar nada.
+ */
+function SobrescreverPagas({
+  lista,
+  busy,
+  onManter,
+  onSobrescrever,
+  onCancelar,
+}: {
+  lista: PorConfirmar;
+  busy: boolean;
+  onManter: () => void;
+  onSobrescrever: () => void;
+  onCancelar: () => void;
+}) {
+  const porAtleta = new Map<string, { name: string; meses: PorConfirmar }>();
+  for (const l of lista) {
+    const atual = porAtleta.get(l.athleteId) ?? { name: l.name, meses: [] };
+    atual.meses.push(l);
+    porAtleta.set(l.athleteId, atual);
+  }
+  const atletas = [...porAtleta.values()].sort((a, b) => a.name.localeCompare(b.name));
+  const mesesDistintos = [...new Set(lista.map((l) => l.period))].sort();
+  const titulo =
+    atletas.length === 1
+      ? `${atletas[0].name} já pagou ${juntarMeses(mesesDistintos)}`
+      : `${atletas.length} atletas já pagaram ${juntarMeses(mesesDistintos)}`;
+
+  return (
+    <Dialog
+      title="Já há mensalidades pagas"
+      subtitle={titulo}
+      icon={<TriangleAlert className="size-4" strokeWidth={1.75} />}
+      onClose={() => !busy && onCancelar()}
+      width={480}
+      footer={
+        <div className="flex w-full flex-wrap items-center justify-end gap-2">
+          <button type="button" className="ctl-ghost mr-auto" onClick={onCancelar} disabled={busy}>
+            Voltar
+          </button>
+          <button type="button" className="ctl-outline" onClick={onManter} disabled={busy}>
+            Manter pagas
+          </button>
+          <button type="button" className="ctl-risk" onClick={onSobrescrever} disabled={busy}>
+            {busy ? "A lançar…" : "Sobrescrever"}
+          </button>
+        </div>
+      }
+    >
+      <div className="space-y-3 p-5">
+        <p className="text-meta leading-relaxed text-ink-2">
+          {atletas.length === 1 ? "Este atleta já tem" : "Estes atletas já têm"} a mensalidade paga. Queres sobrescrever o
+          pagamento?
+        </p>
+        <ul className="max-h-60 divide-y divide-line overflow-y-auto rounded-[var(--radius-control)] border border-line">
+          {atletas.map((a) => (
+            <li key={a.name + a.meses[0].athleteId} className="flex items-baseline justify-between gap-3 px-3 py-2">
+              <span className="min-w-0 truncate text-body text-ink">{a.name}</span>
+              <span className="shrink-0 text-meta text-ink-3">
+                {a.meses
+                  .sort((x, y) => x.period.localeCompare(y.period))
+                  .map((m) => `${periodLabel(m.period)} · ${money(m.amountCents)}`)
+                  .join(", ")}
+              </span>
+            </li>
+          ))}
+        </ul>
+        <p className="text-[11px] leading-relaxed text-ink-3">
+          <strong className="font-medium text-ink-2">Sobrescrever</strong>: voltam a ficar por pagar, com o valor deste
+          lançamento, e a família é avisada. <strong className="font-medium text-ink-2">Manter pagas</strong>: ficam como
+          estão e lança-se só aos outros. As pagas online não aparecem aqui e nunca se mexem.
+        </p>
+      </div>
+    </Dialog>
+  );
+}
+
+function juntarMeses(periodos: string[]): string {
+  const nomes = periodos.map(periodLabel);
+  return nomes.length <= 1 ? (nomes[0] ?? "") : `${nomes.slice(0, -1).join(", ")} e ${nomes[nomes.length - 1]}`;
 }
 
 /* -------------------------------------------------------------------------- */
@@ -569,6 +702,9 @@ function ResultadoDoLancamento({ r }: { r: Resultado }) {
   const resto = r.semPreco.length - nomes.length;
   const feito: string[] = [];
   if (r.criadas > 0) feito.push(`Lançadas ${r.criadas} ${r.criadas === 1 ? "mensalidade" : "mensalidades"}.`);
+  if (r.reabertas) {
+    feito.push(`${r.reabertas} que estavam ${r.reabertas === 1 ? "paga voltou a estar por pagar" : "pagas voltaram a estar por pagar"}.`);
+  }
   if (r.marcadas > 0) {
     feito.push(`${r.marcadas} que já existiam ${r.marcadas === 1 ? "ficou marcada como paga" : "ficaram marcadas como pagas"}.`);
   }
