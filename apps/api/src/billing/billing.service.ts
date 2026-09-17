@@ -350,8 +350,15 @@ export class BillingService implements OnModuleInit, OnModuleDestroy {
   private async avisarMensalidadesNovas(db: ScopedClient, period: string, atletasNovos: string[]) {
     if (atletasNovos.length === 0) return;
 
+    /*
+     * Só o que ficou por pagar.
+     *
+     * Uma mensalidade de 0 € nasce paga (ver `nasceIsenta`), e avisar a família
+     * de que tem uma mensalidade "disponível" de zero euros era mandá-la a um
+     * ecrã de pagamento sem nada para pagar.
+     */
     const cobrancas = await db.charge.findMany({
-      where: { period, athleteId: { in: atletasNovos } },
+      where: { period, athleteId: { in: atletasNovos }, status: ChargeStatus.OPEN },
       include: { athlete: { include: { guardians: { include: { membership: true } } } } },
     });
 
@@ -746,7 +753,7 @@ export class BillingService implements OnModuleInit, OnModuleDestroy {
     },
   ) {
     if (!can(ctx, "billing:write")) throw new ForbiddenException("Sem permissão para cobrar");
-    if (input.amountCents !== undefined) assertValidAmount(input.amountCents);
+    if (input.amountCents !== undefined) assertValidAmount(input.amountCents, true);
 
     const periodos = [...new Set(input.periods)].sort();
     if (periodos.length === 0) throw new BadRequestException("Escolhe pelo menos um mês");
@@ -919,7 +926,7 @@ export class BillingService implements OnModuleInit, OnModuleDestroy {
               slot: "",
               notes: input.notes?.trim() || null,
               amountCents: valor,
-              ...(pagas ? { status: ChargeStatus.SETTLED, settledAt: agora } : {}),
+              ...(pagas || nasceIsenta(valor) ? { status: ChargeStatus.SETTLED, settledAt: agora } : {}),
               ...(input.amountCents === undefined && precoDe?.(a)?.enrollmentId
                 ? { enrollmentId: precoDe(a)!.enrollmentId }
                 : {}),
@@ -996,7 +1003,8 @@ export class BillingService implements OnModuleInit, OnModuleDestroy {
           }
         }
 
-        const pagasAgora = pagas ? [...criadas, ...aMarcar] : [];
+        /* O registo de pagamento é só do que tem valor: ver `nasceIsenta`. */
+        const pagasAgora = (pagas ? [...criadas, ...aMarcar] : []).filter((c) => !nasceIsenta(c.amountCents));
         if (pagasAgora.length > 0) {
           await db.payment.createMany({
             data: pagasAgora.map((c) => ({
@@ -1027,7 +1035,7 @@ export class BillingService implements OnModuleInit, OnModuleDestroy {
           amountCents: c.amountCents,
           dueDate: diaDeVencimento(c.period, calendario(c.period).dia),
         }));
-        const avisos = (pagas ? [] : [...criadas, ...reabertas]).flatMap((c) => {
+        const avisos = (pagas ? [] : [...criadas, ...reabertas]).filter((c) => !nasceIsenta(c.amountCents)).flatMap((c) => {
           const a = porAtleta.get(c.athleteId)!;
           return a.guardians
             .filter((g) => g.membership.isActive)
@@ -1132,7 +1140,8 @@ export class BillingService implements OnModuleInit, OnModuleDestroy {
       if (status === ChargeStatus.SETTLED) {
         // Regista *como* foi paga — só se ainda não estava, para cliques repetidos
         // não empilharem pagamentos manuais.
-        if (charge.status !== ChargeStatus.SETTLED) {
+        /* Uma isenta não recebe registo de pagamento — ver `nasceIsenta`. */
+        if (charge.status !== ChargeStatus.SETTLED && !nasceIsenta(charge.amountCents)) {
           await db.payment.create({
             data: {
               chargeId: charge.id,
@@ -1413,7 +1422,7 @@ export class BillingService implements OnModuleInit, OnModuleDestroy {
   /** O preço da equipa — por omissão, para todos os atletas sem ajuste individual. */
   async setTeamFee(ctx: RequestContext, teamId: string, amountCents: number, aplicarEm?: AplicarEm) {
     if (!can(ctx, "billing:write")) throw new ForbiddenException("Sem permissão para configurar mensalidades");
-    assertValidAmount(amountCents);
+    assertValidAmount(amountCents, true);
 
     const scope = teamScopeFilter(ctx);
     if (scope && !scope.in.includes(teamId)) throw new ForbiddenException("Esta equipa não é tua");
@@ -1530,7 +1539,7 @@ export class BillingService implements OnModuleInit, OnModuleDestroy {
   /** Ajuste individual — sobrepõe-se ao preço da equipa para este atleta em concreto. */
   async setAthleteFee(ctx: RequestContext, athleteId: string, amountCents: number, aplicarEm?: AplicarEm) {
     if (!can(ctx, "billing:write")) throw new ForbiddenException("Sem permissão para configurar mensalidades");
-    assertValidAmount(amountCents);
+    assertValidAmount(amountCents, true);
 
     return this.prisma.runAs(ctx.academyId, async (db) => {
       const athlete = await db.athlete.findFirst({ where: { id: athleteId }, select: { id: true, name: true } });
@@ -1565,7 +1574,7 @@ export class BillingService implements OnModuleInit, OnModuleDestroy {
    */
   async setAthleteFeeBulk(ctx: RequestContext, athleteIds: string[], amountCents: number, aplicarEm?: AplicarEm) {
     if (!can(ctx, "billing:write")) throw new ForbiddenException("Sem permissão para configurar mensalidades");
-    assertValidAmount(amountCents);
+    assertValidAmount(amountCents, true);
     if (athleteIds.length === 0) throw new BadRequestException("Escolhe pelo menos um atleta");
 
     return this.prisma.runAs(ctx.academyId, async (db) => {
@@ -2641,12 +2650,31 @@ function dateLabelPt(d: Date): string {
   return `${d.getDate()} de ${MONTHS_PT[d.getMonth()]}`;
 }
 
-/** Um euro no mínimo, mil no máximo — trava um "0" ou um zero a mais por engano. */
-function assertValidAmount(amountCents: number): void {
+/**
+ * Um euro no mínimo, mil no máximo — trava um "0" ou um zero a mais por engano.
+ *
+ * Com `permitirZero`, o zero passa. É para os **preços** de mensalidade: um
+ * atleta com bolsa, o filho de um treinador, um acordo com a escola. Não é para
+ * uma cobrança avulsa, onde 0 € seria pedir dinheiro nenhum a uma família e a
+ * linha não teria razão de existir. Ver `nasceIsenta`.
+ */
+function assertValidAmount(amountCents: number, permitirZero = false): void {
+  if (permitirZero && amountCents === 0) return;
   if (!Number.isInteger(amountCents) || amountCents < 100 || amountCents > 100_000) {
-    throw new BadRequestException("Valor entre 1 € e 1000 €");
+    throw new BadRequestException(permitirZero ? "Valor 0 €, ou entre 1 € e 1000 €" : "Valor entre 1 € e 1000 €");
   }
 }
+
+/**
+ * Uma mensalidade de 0 € nasce paga.
+ *
+ * Não há nada a pedir à família, e deixá-la "por pagar" punha um atleta isento
+ * na lista das dívidas, num lembrete automático e num ecrã de pagamento que
+ * não tem o que pagar. Fica `SETTLED`, sem registo de pagamento: não entrou
+ * dinheiro, e inventar um pagamento de zero euros era escrever no livro uma
+ * coisa que não aconteceu.
+ */
+export const nasceIsenta = (amountCents: number): boolean => amountCents === 0;
 
 /** A inscrição individual activa de um atleta — a que sobrepõe o preço da equipa. */
 /**
@@ -2780,7 +2808,8 @@ export async function reprecificarCobrancas(
   if (paraMudar.length > 0) {
     await db.charge.updateMany({
       where: { id: { in: paraMudar.map((c) => c.id) } },
-      data: { amountCents },
+      /* Baixar o preço a 0 € liquida a mensalidade: já não há nada a pedir. */
+      data: { amountCents, ...(nasceIsenta(amountCents) ? { status: ChargeStatus.SETTLED, settledAt: new Date() } : {}) },
     });
   }
 
@@ -2887,7 +2916,16 @@ export async function gerarCobrancas(
    * do plantel tem a cobrança avulsa (`EXTRA`) para isso, e essa é uma decisão
    * que se toma a olhar para a pessoa, não uma regra escondida na emissão.
    */
-  const novas: { academyId: string; athleteId: string; enrollmentId?: string; period: string; amountCents: number; dueDate: Date }[] = [];
+  const novas: {
+    academyId: string;
+    athleteId: string;
+    enrollmentId?: string;
+    period: string;
+    amountCents: number;
+    dueDate: Date;
+    status?: ChargeStatus;
+    settledAt?: Date;
+  }[] = [];
   let jaExistiam = 0;
   let semPreco = 0;
   let foraDoMes = 0;
@@ -2918,6 +2956,8 @@ export async function gerarCobrancas(
       ...(preco.enrollmentId ? { enrollmentId: preco.enrollmentId } : {}),
       period,
       amountCents: preco.amountCents,
+      // Um preço de 0 € nasce pago — ver `nasceIsenta`.
+      ...(nasceIsenta(preco.amountCents) ? { status: ChargeStatus.SETTLED, settledAt: new Date() } : {}),
       // Quem chegou depois do prazo deste mês paga no prazo seguinte, sem
       // deixar de ser a mensalidade deste mês. Ver `proximoVencimento`.
       dueDate: a.joinedAt > dueDate ? proximoVencimento : dueDate,

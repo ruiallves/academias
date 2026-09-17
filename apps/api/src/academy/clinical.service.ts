@@ -1,6 +1,7 @@
-import { BadRequestException, ForbiddenException, Injectable, NotFoundException } from "@nestjs/common";
+import { BadRequestException, ForbiddenException, Injectable, Logger, NotFoundException } from "@nestjs/common";
 import type { ClinicalImpact, ClinicalKind, ClinicalStatus, Prisma } from "@prisma/client";
 import { PrismaService, type ScopedClient } from "../prisma/prisma.service";
+import { NotificationsService } from "../notifications/notifications.service";
 import { can, type RequestContext } from "../common/permissions";
 
 /**
@@ -36,7 +37,66 @@ import { can, type RequestContext } from "../common/permissions";
  */
 @Injectable()
 export class ClinicalService {
-  constructor(private readonly prisma: PrismaService) {}
+  private readonly log = new Logger(ClinicalService.name);
+
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly notifications: NotificationsService,
+  ) {}
+
+  /**
+   * Quem tem de saber que há consulta marcada: a família e o próprio atleta.
+   *
+   * Uma consulta agendada era um gesto interno — a médica marcava, a base
+   * gravava, e do outro lado ninguém sabia de nada até alguém telefonar. Vai à
+   * conta de cada encarregado activo e, quando o atleta tem conta própria, a ele
+   * também: o miúdo de dezassete anos é quem lá tem de estar.
+   */
+  private async quemAvisar(db: ScopedClient, athleteId: string): Promise<{ nome: string; userIds: string[] }> {
+    const atleta = await db.athlete.findFirst({
+      where: { id: athleteId },
+      select: {
+        name: true,
+        account: { select: { userId: true, isActive: true } },
+        guardians: { select: { membership: { select: { userId: true, isActive: true } } } },
+      },
+    });
+    const userIds = [
+      ...(atleta?.account?.isActive ? [atleta.account.userId] : []),
+      ...(atleta?.guardians ?? []).filter((g) => g.membership.isActive).map((g) => g.membership.userId),
+    ];
+    return { nome: atleta?.name ?? "", userIds: [...new Set(userIds)] };
+  }
+
+  /**
+   * O aviso, escrito como quem o lê no telemóvel.
+   *
+   * Corre **fora** da transacção de quem chama, e um aviso que falhe não desfaz
+   * a marcação: a consulta é o facto, o aviso é a cortesia. Ver a mesma regra na
+   * partilha do plano de treino.
+   */
+  private async avisarDaConsulta(
+    academyId: string,
+    entryId: string,
+    consulta: { nome: string; userIds: string[]; titulo: string; date: Date; time: string | null; location: string | null },
+    remarcada: boolean,
+  ) {
+    const quando = consulta.date.toLocaleDateString("pt-PT", { day: "numeric", month: "long" });
+    const horas = consulta.time ? ` às ${consulta.time}` : "";
+    const onde = consulta.location ? `, em ${consulta.location}` : "";
+    for (const userId of consulta.userIds) {
+      await this.notifications
+        .enqueue({
+          academyId,
+          userId,
+          type: "CLINICAL_APPOINTMENT",
+          title: remarcada ? "Consulta com data nova" : "Consulta marcada",
+          body: `${consulta.titulo} de ${consulta.nome}${remarcada ? " passou para" : ":"} ${quando}${horas}${onde}.`,
+          payload: { route: "/atleta", clinicalEntryId: entryId },
+        })
+        .catch((e) => this.log.warn(`Aviso de consulta ${entryId} por enviar a ${userId}: ${e}`));
+    }
+  }
 
   /* ------------------------------------------------------------------------ */
 
@@ -92,7 +152,7 @@ export class ClinicalService {
   async criar(ctx: RequestContext, athleteId: string, dto: ClinicalInput) {
     this.mustWrite(ctx);
 
-    return this.prisma.runAs(ctx.academyId, async (db) => {
+    const { entry, agendado, destinatarios } = await this.prisma.runAs(ctx.academyId, async (db) => {
       await this.atletaNoAmbito(db, ctx, athleteId);
 
       /* Sem data é hoje — registar o que acabou de acontecer é o caso comum. */
@@ -124,7 +184,7 @@ export class ClinicalService {
               ? Math.max(0, Math.round((expectedReturn.getTime() - date.getTime()) / 86_400_000))
               : null,
         },
-        select: { id: true },
+        select: { id: true, title: true, date: true, time: true, location: true },
       });
 
       /*
@@ -145,15 +205,28 @@ export class ClinicalService {
         });
       }
 
-      return { id: entry.id };
+      /* Quem avisar, ainda dentro da transacção: o envio é que fica para fora. */
+      const destinatarios = agendado ? await this.quemAvisar(db, athleteId) : { nome: "", userIds: [] };
+      return { entry, agendado, destinatarios };
     });
+
+    if (agendado && destinatarios.userIds.length > 0) {
+      await this.avisarDaConsulta(
+        ctx.academyId,
+        entry.id,
+        { ...destinatarios, titulo: entry.title, date: entry.date, time: entry.time, location: entry.location },
+        false,
+      );
+    }
+
+    return { id: entry.id, avisados: agendado ? destinatarios.userIds.length : 0 };
   }
 
   /** Corrigir um registo. O que não vier fica como está. */
   async actualizar(ctx: RequestContext, id: string, dto: ClinicalInput) {
     this.mustWrite(ctx);
 
-    return this.prisma.runAs(ctx.academyId, async (db) => {
+    const { depois, mudouAMarcacao, destinatarios } = await this.prisma.runAs(ctx.academyId, async (db) => {
       const entry = await this.entradaNoAmbito(db, ctx, id);
 
       const data: Prisma.ClinicalEntryUpdateInput = {};
@@ -168,7 +241,11 @@ export class ClinicalService {
         data.expectedReturn = dto.expectedReturn ? dia(dto.expectedReturn, "A data de retoma é inválida") : null;
       }
 
-      await db.clinicalEntry.update({ where: { id }, data });
+      const depois = await db.clinicalEntry.update({
+        where: { id },
+        data,
+        select: { id: true, status: true, title: true, date: true, time: true, location: true },
+      });
 
       if (dto.kind === "EXAM" && dto.validUntil) {
         await db.athlete.update({
@@ -177,8 +254,32 @@ export class ClinicalService {
         });
       }
 
-      return { ok: true as const };
+      /*
+       * Remarcar avisa outra vez.
+       *
+       * Só quando continua agendada e mudou o **quando** ou o **onde** — corrigir
+       * uma gralha no título não é motivo para o telemóvel de ninguém apitar.
+       */
+      const mudouAMarcacao =
+        depois.status === "SCHEDULED" &&
+        (data.date !== undefined || data.time !== undefined || data.location !== undefined);
+      const destinatarios = mudouAMarcacao
+        ? await this.quemAvisar(db, entry.athleteId)
+        : { nome: "", userIds: [] };
+
+      return { depois, mudouAMarcacao, destinatarios };
     });
+
+    if (mudouAMarcacao && destinatarios.userIds.length > 0) {
+      await this.avisarDaConsulta(
+        ctx.academyId,
+        depois.id,
+        { ...destinatarios, titulo: depois.title, date: depois.date, time: depois.time, location: depois.location },
+        true,
+      );
+    }
+
+    return { ok: true as const, avisados: mudouAMarcacao ? destinatarios.userIds.length : 0 };
   }
 
   /**

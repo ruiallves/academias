@@ -270,14 +270,16 @@ const linhas = (await db.query(
  * de quem faz o pedido: bastava um ecrã desactualizado para um atleta ficar com
  * noventa minutos num jogo em que entrou ao 80.
  */
+// A duração é da equipa (do escalão); a da modalidade só enquanto a equipa
+// não tiver a sua. Ver `duracaoDoJogo` no serviço.
 const duracao = (await db.query(
-  `SELECT s."matchMinutes" FROM "Match" m
+  `SELECT COALESCE(t."matchMinutes", s."matchMinutes") AS "matchMinutes" FROM "Match" m
      JOIN "Team" t ON t.id = m."teamId"
      JOIN "Sport" s ON s.id = t."sportId"
     WHERE m.id = $1`,
   [meuJogo],
 )).rows[0]?.matchMinutes;
-check("a modalidade tem duração declarada", typeof duracao === "number" && duracao > 0, `${duracao}`);
+check("a equipa tem duração de jogo declarada", typeof duracao === "number" && duracao > 0, `${duracao}`);
 check(
   `o titular ficou com os ${duracao}′ do jogo e 2 golos`,
   linhas[0]?.minutes === duracao && linhas[0]?.tally === 2,

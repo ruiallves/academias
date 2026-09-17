@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Param, Patch, Post, Query, Req } from "@nestjs/common";
+import { Body, Controller, Get, Param, Patch, Post, Put, Query, Req } from "@nestjs/common";
 import { Type } from "class-transformer";
 import {
   ArrayMaxSize,
@@ -7,9 +7,11 @@ import {
   IsInt,
   IsOptional,
   IsString,
+  IsUrl,
   Length,
   Matches,
   Max,
+  MaxLength,
   Min,
   ValidateNested,
 } from "class-validator";
@@ -144,6 +146,47 @@ class SaveStaffDto {
   rows!: MatchStaffRowDto[];
 }
 
+/** Uma ligação de vídeo do relatório: o endereço e, se quiserem, um nome. */
+class VideoLinkDto {
+  @IsString()
+  @IsUrl(
+    { protocols: ["http", "https"], require_protocol: true },
+    { message: "Uma das ligações de vídeo não é um endereço válido (tem de começar por https://)" },
+  )
+  @MaxLength(600)
+  url!: string;
+
+  @IsOptional() @IsString() @Length(0, 80)
+  label?: string | null;
+}
+
+/**
+ * O relatório do jogo. Tudo opcional e tudo texto livre: o treinador escreve o
+ * que tem a dizer, e um campo vazio não é um erro. Quatro mil caracteres por
+ * campo é uma página inteira — mais do que isso é outro documento.
+ */
+class SaveReportDto {
+  @IsOptional() @IsString() @Length(0, 4000) summary?: string | null;
+  @IsOptional() @IsString() @Length(0, 4000) positives?: string | null;
+  @IsOptional() @IsString() @Length(0, 4000) negatives?: string | null;
+  @IsOptional() @IsString() @Length(0, 4000) toImprove?: string | null;
+  @IsOptional() @IsString() @Length(0, 4000) difficulties?: string | null;
+
+  @IsOptional() @IsArray() @ArrayMaxSize(10) @ValidateNested({ each: true }) @Type(() => VideoLinkDto)
+  videos?: VideoLinkDto[];
+}
+
+/** O que se viu do adversário. As mesmas regras do relatório do jogo. */
+class SaveOpponentReportDto {
+  @IsOptional() @IsString() @Length(0, 40) formation?: string | null;
+  @IsOptional() @IsString() @Length(0, 4000) style?: string | null;
+  @IsOptional() @IsString() @Length(0, 4000) strengths?: string | null;
+  @IsOptional() @IsString() @Length(0, 4000) weaknesses?: string | null;
+  @IsOptional() @IsString() @Length(0, 4000) keyPlayers?: string | null;
+  @IsOptional() @IsString() @Length(0, 4000) setPieces?: string | null;
+  @IsOptional() @IsString() @Length(0, 4000) notes?: string | null;
+}
+
 /**
  * Jogos e convocatórias.
  *
@@ -169,6 +212,15 @@ export class MatchesController {
   @Get("equipa-tecnica")
   staffPool(@Req() req: AuthedRequest) {
     return this.matches.staffPool(req.ctx);
+  }
+
+  /**
+   * Os adversários do clube e o que se sabe de cada um. Antes do `:id` pela
+   * mesma razão de `equipa-tecnica`. Ver `MatchesService.adversarios`.
+   */
+  @Get("adversarios")
+  opponents(@Req() req: AuthedRequest) {
+    return this.matches.adversarios(req.ctx);
   }
 
   /** A página do jogo: detalhes, convocados, ficha e staff, de uma vez. */
@@ -280,6 +332,18 @@ export class MatchesController {
   @Post(":id/staff")
   saveStaff(@Req() req: AuthedRequest, @Param("id") id: string, @Body() body: SaveStaffDto) {
     return this.matches.saveStaff(req.ctx, id, body.rows);
+  }
+
+  /** O relatório do jogo, inteiro de cada vez. Ver `MatchesService.saveReport`. */
+  @Put(":id/relatorio")
+  saveReport(@Req() req: AuthedRequest, @Param("id") id: string, @Body() body: SaveReportDto) {
+    return this.matches.saveReport(req.ctx, id, body);
+  }
+
+  /** O que se viu do adversário neste jogo. */
+  @Put(":id/adversario")
+  saveOpponentReport(@Req() req: AuthedRequest, @Param("id") id: string, @Body() body: SaveOpponentReportDto) {
+    return this.matches.saveOpponentReport(req.ctx, id, body);
   }
 
   @Patch("equipas/:teamId/max-convocados")

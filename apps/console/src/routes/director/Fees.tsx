@@ -1092,8 +1092,9 @@ function AthleteFeesDialog({
       setError("Escolhe pelo menos um atleta.");
       return;
     }
-    if (!Number.isFinite(cents) || cents < 100) {
-      setError("Indica um valor válido, de pelo menos 1 €.");
+    // 0 € é válido: é o atleta isento, e a mensalidade dele nasce paga.
+    if (!Number.isFinite(cents) || cents < 0 || (cents > 0 && cents < 100)) {
+      setError("Indica 0 €, ou um valor de pelo menos 1 €.");
       return;
     }
 

@@ -648,7 +648,12 @@ export class AcademyService {
           positions: clean(dto.positions),
           skills: clean(dto.skills),
           dominantSideLabel: dto.dominantSideLabel?.trim() || null,
-          matchMinutes: dto.matchMinutes ?? null,
+          /*
+           * A duração do jogo já não se pergunta aqui: é da equipa
+           * (`Team.matchMinutes`). O que fica na modalidade é o ponto de
+           * partida das equipas novas, e sai do perfil da disciplina.
+           */
+          matchMinutes: DURACAO_POR_DISCIPLINA[code ?? ""] ?? null,
         },
         select: SPORT_SELECT,
       });
@@ -693,7 +698,6 @@ export class AcademyService {
           ...(dto.positions !== undefined ? { positions: clean(dto.positions) } : {}),
           ...(dto.skills !== undefined ? { skills: clean(dto.skills) } : {}),
           ...(dto.dominantSideLabel !== undefined ? { dominantSideLabel: dto.dominantSideLabel.trim() || null } : {}),
-          ...(dto.matchMinutes !== undefined ? { matchMinutes: dto.matchMinutes } : {}),
         },
         select: SPORT_SELECT,
       });
@@ -914,7 +918,8 @@ export class AcademyService {
         where: scope ? { id: scope } : {},
         orderBy: { name: "asc" },
         select: {
-          id: true, name: true, maxAge: true, schedule: true, sportId: true,
+          id: true, name: true, maxAge: true, schedule: true, sportId: true, matchMinutes: true,
+          sport: { select: { matchMinutes: true } },
           season: { select: { id: true, label: true } },
           staff: {
             // Por título, para o empate na escolha do treinador dar sempre o mesmo.
@@ -954,6 +959,9 @@ export class AcademyService {
         name: t.name,
         maxAge: t.maxAge,
         sportId: t.sportId,
+        // A duração de jogo desta equipa; a da modalidade só enquanto a equipa
+        // não tiver a sua. Ver `Team.matchMinutes`.
+        matchMinutes: t.matchMinutes ?? t.sport.matchMinutes ?? null,
         season: t.season.label,
         schedule: t.schedule,
         athleteCount: t._count.athletes,
@@ -1125,6 +1133,8 @@ export class AcademyService {
       schedule: { weekday: number; start: string; end: string; venue: string }[];
       /** Provas do catálogo que esta equipa disputa. Ver `setTeamCompetitions`. */
       competitionIds?: string[];
+      /** Quanto dura um jogo deste escalão. Sem ele, o valor da modalidade. */
+      matchMinutes?: number;
     },
   ) {
     if (!can(ctx, "team:write")) throw new ForbiddenException("Sem permissão para criar equipas");
@@ -1132,7 +1142,7 @@ export class AcademyService {
     return this.prisma.runAs(ctx.academyId, async (db) => {
       // A modalidade tem de existir nesta academia. O `findFirst` já vem filtrado
       // por tenant pela extensão — um `sportId` de outra academia dá "não encontrado".
-      const sport = await db.sport.findFirst({ where: { id: dto.sportId }, select: { id: true } });
+      const sport = await db.sport.findFirst({ where: { id: dto.sportId }, select: { id: true, matchMinutes: true } });
       if (!sport) throw new BadRequestException("Modalidade desconhecida");
 
       // O treinador principal, quando indicado, tem de ser desta academia. Sem esta
@@ -1194,6 +1204,9 @@ export class AcademyService {
           name: dto.name.trim(),
           maxAge: dto.maxAge,
           schedule: dto.schedule,
+          // A duração fica gravada na equipa desde o primeiro dia, mesmo quando
+          // veio da modalidade: é a equipa que a vai editar daqui em diante.
+          matchMinutes: dto.matchMinutes ?? sport.matchMinutes ?? null,
           ...(dto.coachId
             ? { staff: { create: { membershipId: dto.coachId, title: "Treinador principal" } } }
             : {}),
@@ -1202,7 +1215,7 @@ export class AcademyService {
             : {}),
         },
         select: {
-          id: true, name: true, maxAge: true, schedule: true, sportId: true,
+          id: true, name: true, maxAge: true, schedule: true, sportId: true, matchMinutes: true,
           season: { select: { label: true } },
           staff: { select: { title: true, membership: { select: { id: true, user: { select: { name: true } } } } } },
           _count: { select: { athletes: true } },
@@ -1215,6 +1228,7 @@ export class AcademyService {
         name: team.name,
         maxAge: team.maxAge,
         sportId: team.sportId,
+        matchMinutes: team.matchMinutes,
         season: team.season.label,
         schedule: team.schedule,
         athleteCount: team._count.athletes,
@@ -1223,6 +1237,25 @@ export class AcademyService {
         // Sem preço à nascença — configura-se depois, em `PATCH /api/teams/:id/fee`.
         feeCents: null as number | null,
       };
+    });
+  }
+
+  /**
+   * A duração de jogo de uma equipa.
+   *
+   * `team:write`, como mudar quem a treina: é uma decisão desportiva sobre o
+   * escalão, não uma definição do clube. Muda a conta dos minutos de quem jogar
+   * até ao fim **daqui para a frente**; as fichas já gravadas ficam como estão,
+   * porque foram gravadas com a duração que valia nesse dia.
+   */
+  async setTeamMatchMinutes(ctx: RequestContext, teamId: string, minutes: number) {
+    if (!can(ctx, "team:write")) throw new ForbiddenException("Sem permissão para editar equipas");
+
+    return this.prisma.runAs(ctx.academyId, async (db) => {
+      const team = await db.team.findFirst({ where: { id: teamId }, select: { id: true } });
+      if (!team) throw new NotFoundException("Equipa não encontrada");
+      await db.team.update({ where: { id: teamId }, data: { matchMinutes: minutes } });
+      return { teamId, matchMinutes: minutes };
     });
   }
 
@@ -3719,8 +3752,16 @@ type SportInput = {
   positions?: string[];
   skills?: string[];
   dominantSideLabel?: string;
-  matchMinutes?: number;
 };
+
+/**
+ * A duração de jogo que uma equipa nova herda, por disciplina.
+ *
+ * É o mesmo número de `SPORT_PROFILES[…].defaults.matchMinutes` na consola.
+ * Vive aqui porque a modalidade deixou de perguntar a duração ao ser criada,
+ * mas as equipas dela continuam a precisar de um ponto de partida sensato.
+ */
+const DURACAO_POR_DISCIPLINA: Record<string, number> = { football: 90, futsal: 40, basketball: 40 };
 
 const SPORT_SELECT = {
   id: true, name: true, code: true, positions: true, skills: true, dominantSideLabel: true, matchMinutes: true,

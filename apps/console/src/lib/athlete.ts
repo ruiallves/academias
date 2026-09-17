@@ -68,8 +68,10 @@ export type AthleteSeason = {
 
 export function summariseSeason(athleteId: string, matches: AthleteMatch[]): AthleteSeason {
   const athlete = athleteById(athleteId);
-  const sport = athlete ? sportById(teamById(athlete.teamId)?.sportId ?? "") : undefined;
-  const fullTime = sport?.matchMinutes ?? 0;
+  const team = athlete ? teamById(athlete.teamId) : undefined;
+  const sport = team ? sportById(team.sportId) : undefined;
+  // A duração é do escalão; a da modalidade só enquanto a equipa não tiver a sua.
+  const fullTime = team?.matchMinutes ?? sport?.matchMinutes ?? 0;
 
   const rated = matches.filter((m) => m.appearance.rating !== undefined);
   const minutes = matches.reduce((n, m) => n + m.appearance.minutes, 0);

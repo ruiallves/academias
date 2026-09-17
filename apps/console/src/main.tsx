@@ -6,6 +6,7 @@ import { SessionProvider } from "./session";
 import { LoginGate } from "./components/LoginGate";
 import { AcademyBoot } from "./components/AcademyBoot";
 import { LegalGate } from "./components/LegalGate";
+import { vigiarVersao } from "@academia/ui/versao";
 
 import "./styles.css";
 
@@ -18,6 +19,16 @@ import "./styles.css";
  * nada. Vem do build para não haver dois sítios a dizer onde a consola está.
  */
 const BASE = import.meta.env.BASE_URL.replace(/\/$/, "");
+
+/*
+ * A consola nunca fica numa versão antiga.
+ *
+ * Um separador aberto há dias — ou a consola aberta no telemóvel pela área de
+ * Staff — mantinha em memória o JavaScript com que arrancou. Duas pessoas do
+ * mesmo clube viam ecrãs diferentes, e do lado de quem dá apoio isso é uma
+ * avaria impossível de reproduzir. Ver `packages/ui/src/versao.ts`.
+ */
+vigiarVersao({ atual: __BUILD_ID__, base: import.meta.env.BASE_URL });
 
 createRoot(document.getElementById("root")!).render(
   <StrictMode>

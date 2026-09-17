@@ -32,6 +32,7 @@ import InventoryItems from "@/routes/inventory/Items";
 import InventoryItemDetail from "@/routes/inventory/ItemDetail";
 import InventoryDeliveries from "@/routes/inventory/Deliveries";
 import MatchDetail from "@/routes/MatchDetail";
+import Opponents from "@/routes/Opponents";
 import Evaluations from "@/routes/Evaluations";
 import Reports from "@/routes/Reports";
 import ScoutingOverview from "@/routes/scouting/Overview";
@@ -128,6 +129,8 @@ export default function App() {
         <Route path="bolas-paradas" element={<Allow p="training:read"><LegacyTechnical module="situations" /></Allow>} />
         <Route path="bolas-paradas/:id" element={<Allow p="training:read"><LegacyTechnical module="situations" /></Allow>} />
         <Route path="jogos" element={<Allow p="calendar:read"><Matches /></Allow>} />
+        {/* Os adversários vivem dentro dos Jogos: é de lá que se chega, sem menu próprio. */}
+        <Route path="jogos/adversarios" element={<Allow p="calendar:read"><Opponents /></Allow>} />
         <Route path="jogos/:id" element={<Allow p="calendar:read"><MatchDetail /></Allow>} />
 
         {/*

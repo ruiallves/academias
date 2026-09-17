@@ -6,6 +6,7 @@ import { reloadAcademy, seasons as knownSeasons } from "@/lib/store";
 import { useActiveCatalog } from "@/lib/catalogs";
 import { defaultSeason, seasonOptions } from "@/lib/seasons";
 import { SEM_LIMITE, teamAgeLabel } from "@/lib/team-age";
+import { profileOf } from "@/lib/sports";
 import { Plus, Trash2 } from "@/lib/icons";
 import { CompetitionPicker } from "@/components/CompetitionPicker";
 import { Dialog, DialogField, dialogInputClass } from "./Dialog";
@@ -59,11 +60,20 @@ export function NewTeamDialog({ onClose }: { onClose: () => void }) {
    * a quem já o sabe, e na ficha da equipa a quem ainda não.
    */
   const [slots, setSlots] = useState<Slot[]>([]);
+  /*
+   * A duração do jogo, em texto e vazia por omissão — como a idade.
+   *
+   * O que se sugere vem da modalidade (90 no futebol, 40 no futsal), e é o
+   * que fica se ninguém escrever. Vazio não é zero: é "o da modalidade".
+   */
+  const [minutos, setMinutos] = useState("");
 
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const sport = academy.sports.find((s) => s.id === sportId);
+  const minutosSugeridos = profileOf(sport)?.defaults.matchMinutes ?? sport?.matchMinutes ?? null;
+  const minutosOk = minutos === "" || (/^\d{1,3}$/.test(minutos) && Number(minutos) >= 1 && Number(minutos) <= 300);
   const maxAge = Number(age);
   const ageOk = /^\d{1,2}$/.test(age) && maxAge >= 4 && maxAge <= SEM_LIMITE;
   const suggested = ageOk && sport ? `${teamAgeLabel(maxAge)} ${sport.name}` : "";
@@ -84,6 +94,7 @@ export function NewTeamDialog({ onClose }: { onClose: () => void }) {
         season: season.trim(),
         ...(coachId ? { coachId } : {}),
         ...(competitionIds.length ? { competitionIds } : {}),
+        ...(minutos ? { matchMinutes: Number(minutos) } : {}),
         schedule: slots.filter((s) => s.venue),
       });
       await reloadAcademy();
@@ -106,7 +117,7 @@ export function NewTeamDialog({ onClose }: { onClose: () => void }) {
           <button type="button" onClick={onClose} className="ctl-ghost">
             Cancelar
           </button>
-          <button type="submit" form="form-nova-equipa" className="ctl-primary" disabled={!ageOk || busy}>
+          <button type="submit" form="form-nova-equipa" className="ctl-primary" disabled={!ageOk || !minutosOk || busy}>
             {busy ? "A criar…" : "Criar equipa"}
           </button>
         </>
@@ -166,9 +177,29 @@ export function NewTeamDialog({ onClose }: { onClose: () => void }) {
           </p>
         )}
 
-        <DialogField label="Nome" hint="opcional">
-          <input value={name} onChange={(e) => setName(e.target.value)} placeholder={suggested || "Nome da equipa"} className={dialogInputClass} />
-        </DialogField>
+        <div className="grid grid-cols-2 gap-3">
+          <DialogField label="Nome" hint="opcional">
+            <input value={name} onChange={(e) => setName(e.target.value)} placeholder={suggested || "Nome da equipa"} className={dialogInputClass} />
+          </DialogField>
+
+          {/*
+            Quanto dura um jogo deste escalão.
+
+            É aqui e não na modalidade: um Sub-11 e um Sub-19 de futebol não
+            jogam o mesmo tempo, e é deste número que saem os minutos de quem
+            jogou até ao fim. O sugerido é o da modalidade; escreve-se por cima.
+          */}
+          <DialogField label="Duração do jogo" hint="minutos">
+            <input
+              value={minutos}
+              onChange={(e) => setMinutos(e.target.value.replace(/\D/g, "").slice(0, 3))}
+              inputMode="numeric"
+              placeholder={minutosSugeridos ? String(minutosSugeridos) : "90"}
+              aria-label="Duração do jogo em minutos"
+              className={cx(dialogInputClass, !minutosOk && "border-risk")}
+            />
+          </DialogField>
+        </div>
 
         <div className="grid grid-cols-2 gap-3">
           {/*

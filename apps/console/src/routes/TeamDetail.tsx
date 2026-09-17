@@ -7,6 +7,7 @@ import { TeamStaffDialog } from "@/components/TeamStaffDialog";
 import { isHeadCoach, roleOptions } from "@/lib/team-role";
 import { apiPatch } from "@/lib/http";
 import { reloadAcademy } from "@/lib/store";
+import { setTeamMatchMinutes } from "@/lib/matches";
 import { Attention } from "@/components/Attention";
 import { EventDetail } from "@/components/EventDetail";
 import { PersonLink } from "@/components/PersonLink";
@@ -392,6 +393,8 @@ function OverviewTab({
           número. */}
       <TeamCompetitionsPanel team={team} editable={can(session, "team:write")} />
 
+      <MatchMinutesPanel team={team} editable={can(session, "team:write")} />
+
       <div className="grid gap-3 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
         {nextEvent && (
           <Panel>
@@ -447,6 +450,84 @@ function OverviewTab({
         </Panel>
       </div>
     </div>
+  );
+}
+
+/**
+ * Quanto dura um jogo deste escalão.
+ *
+ * Vivia nas Definições, por modalidade, e era o mesmo 90 para o Sub-11 e para
+ * o Sub-19. É do escalão: um Sub-11 de futebol joga 60, e os minutos de quem
+ * jogou até ao fim saem daqui. Grava ao sair do campo, como o máximo de
+ * convocados; muda as fichas daqui para a frente, não as já gravadas.
+ */
+function MatchMinutesPanel({ team, editable }: { team: NonNullable<ReturnType<typeof teamById>>; editable: boolean }) {
+  const [texto, setTexto] = useState(team.matchMinutes == null ? "" : String(team.matchMinutes));
+  const [busy, setBusy] = useState(false);
+  const [erro, setErro] = useState<string | null>(null);
+
+  useEffect(() => {
+    setTexto(team.matchMinutes == null ? "" : String(team.matchMinutes));
+  }, [team.matchMinutes]);
+
+  async function commit() {
+    const n = Number(texto);
+    if (!texto.trim() || !Number.isInteger(n) || n < 1 || n > 300) {
+      setTexto(team.matchMinutes == null ? "" : String(team.matchMinutes));
+      return;
+    }
+    if (n === team.matchMinutes) return;
+    setBusy(true);
+    setErro(null);
+    try {
+      await setTeamMatchMinutes(team.id, n);
+      await reloadAcademy();
+    } catch (e) {
+      setErro(e instanceof Error ? e.message : "Não foi possível gravar.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <Panel>
+      <div className="flex flex-wrap items-center gap-x-4 gap-y-2 px-5 py-3">
+        <span className="inline-flex items-center gap-2 text-body text-ink">
+          <Clock className="size-4 text-ink-4" strokeWidth={1.75} />
+          Duração do jogo
+        </span>
+        <span className="text-meta text-ink-3">
+          É deste número que saem os minutos de quem jogou até ao fim.
+        </span>
+        <label className="ml-auto flex items-center gap-2 text-meta text-ink-3">
+          {editable ? (
+            <input
+              type="text"
+              inputMode="numeric"
+              pattern="[0-9]*"
+              maxLength={3}
+              value={texto}
+              disabled={busy}
+              aria-label="Duração do jogo em minutos"
+              onChange={(e) => setTexto(e.target.value.replace(/\D/g, ""))}
+              onBlur={() => void commit()}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") (e.target as HTMLInputElement).blur();
+              }}
+              className="h-8 w-16 rounded-[var(--radius-control)] border border-line bg-surface px-2 text-center text-body text-ink tabular focus:border-line-strong focus:outline-none"
+            />
+          ) : (
+            <span className="text-body font-medium tabular text-ink">{team.matchMinutes ?? "—"}</span>
+          )}
+          min
+        </label>
+        {erro && (
+          <span role="alert" className="w-full text-meta text-risk">
+            {erro}
+          </span>
+        )}
+      </div>
+    </Panel>
   );
 }
 

@@ -130,7 +130,12 @@ class SetFeeDto {
    * acima disso é quase sempre um número que ficou colado a outro.
    */
   @IsInt({ message: "O valor tem de ser em euros e cêntimos, sem outros caracteres" })
-  @Min(100, { message: "A mensalidade mais baixa que se pode registar é 1 €" })
+  /*
+   * Zero é um preço: o atleta isento (bolsa, filho de treinador, acordo com a
+   * escola). A mensalidade dele nasce paga — ver `nasceIsenta` no serviço, que
+   * é também quem recusa os valores entre zero e um euro.
+   */
+  @Min(0, { message: "O valor não pode ser negativo" })
   @Max(100_000, { message: "A mensalidade mais alta que se pode registar é 1000 € — confirma o valor que escreveste" })
   amountCents!: number;
 
@@ -163,7 +168,12 @@ class SetAthleteFeeBulkDto {
    * acima disso é quase sempre um número que ficou colado a outro.
    */
   @IsInt({ message: "O valor tem de ser em euros e cêntimos, sem outros caracteres" })
-  @Min(100, { message: "A mensalidade mais baixa que se pode registar é 1 €" })
+  /*
+   * Zero é um preço: o atleta isento (bolsa, filho de treinador, acordo com a
+   * escola). A mensalidade dele nasce paga — ver `nasceIsenta` no serviço, que
+   * é também quem recusa os valores entre zero e um euro.
+   */
+  @Min(0, { message: "O valor não pode ser negativo" })
   @Max(100_000, { message: "A mensalidade mais alta que se pode registar é 1000 € — confirma o valor que escreveste" })
   amountCents!: number;
 
@@ -237,7 +247,11 @@ class SportDto {
   @IsOptional() @IsArray() @ArrayMaxSize(40) @IsString({ each: true }) positions?: string[];
   @IsOptional() @IsArray() @ArrayMaxSize(40) @IsString({ each: true }) skills?: string[];
   @IsOptional() @IsString() @Length(0, 40) dominantSideLabel?: string;
-  @IsOptional() @IsInt() @Min(1) @Max(300) matchMinutes?: number;
+}
+
+/** A duração de jogo de uma equipa, em minutos. Ver `Team.matchMinutes`. */
+class SetMatchMinutesDto {
+  @IsInt() @Min(1) @Max(300) minutes!: number;
 }
 
 class SetAccessDto {
@@ -474,6 +488,12 @@ export class AcademyController {
   @Patch("teams/:id/fee")
   setTeamFee(@Req() req: AuthedRequest, @Param("id") id: string, @Body() body: SetFeeDto) {
     return this.billing.setTeamFee(req.ctx, id, body.amountCents, body.aplicarEm);
+  }
+
+  /** Quanto dura um jogo desta equipa. É daqui que saem os minutos da ficha. */
+  @Patch("teams/:id/duracao-jogo")
+  setTeamMatchMinutes(@Req() req: AuthedRequest, @Param("id") id: string, @Body() body: SetMatchMinutesDto) {
+    return this.academy.setTeamMatchMinutes(req.ctx, id, body.minutes);
   }
 
   @Get("athletes")

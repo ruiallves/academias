@@ -17,12 +17,13 @@ import {
 } from "@/lib/icons";
 import { useSession } from "@/session";
 import { can } from "@/lib/permissions";
-import { athleteById, sportById, teamById } from "@/lib/api";
+import { athleteById } from "@/lib/api";
 import { tallyNoun } from "@/lib/calendar";
 import { reloadAcademy, useStore } from "@/lib/store";
 import { SaveVeil, Spinner, useSaving } from "@/components/Busy";
 import { descarregarFolha, folhaDoJogo } from "@/lib/callup-export";
 import { MatchStaffEditor } from "@/components/MatchStaff";
+import { MatchReportPanel, OpponentHistoryPanel, OpponentReportPanel } from "@/components/MatchReports";
 import type { SheetRow } from "@/lib/callup-sheet";
 import {
   OUTCOME_LABEL,
@@ -155,9 +156,26 @@ export default function MatchDetail() {
           {passou && temPlantel && mayRecord && (
             <RetroSquadPanel match={match} mayRecord={mayRecord} onSaved={guardado} collapsed />
           )}
+
+          {/*
+            Depois do apito: o que se escreve sobre o jogo e sobre o adversário.
+            Só depois — um relatório de um jogo por jogar é um palpite, e o
+            servidor recusa-o também.
+          */}
+          {passou && (
+            <>
+              <MatchReportPanel match={match} mayRecord={mayRecord} onSaved={guardado} />
+              <OpponentReportPanel match={match} mayRecord={mayRecord} onSaved={guardado} />
+            </>
+          )}
         </div>
 
         <div className="space-y-3">
+          {/*
+            O que já se sabe deste adversário, antes e depois do jogo. Antes é
+            quando mais vale: é a preparação do jogo sem sair da página dele.
+          */}
+          <OpponentHistoryPanel match={match} />
           <StaffPanel match={match} passou={passou} mayRecord={mayRecord} onSaved={guardado} />
           <FactsPanel match={match} passou={passou} />
         </div>
@@ -906,20 +924,16 @@ type Linha = Pick<
 /** Titular e suplente utilizado entram na ficha; quem não jogou não tem linha. */
 const jogou = (l: Linha) => l.papel !== "nao";
 
-const FALTA_ENTRADA = "Falta dizer ao minuto que entrou — é daí que saem os minutos jogados.";
-
 /**
- * A única pergunta que a ficha passou a fazer a sério.
+ * Um suplente de quem ninguém registou o minuto de entrada.
  *
- * Desde que os minutos são calculados e não escritos, um suplente sem minuto de
- * entrada é uma linha sem minutos — e gravá-la assim punha um zero no currículo
- * de um miúdo que jogou. Só se pede a quem foi lançado do banco, e só depois de
- * o treinador dizer que ele entrou.
- *
- * Vive à parte de `incoerencias` porque o campo que a resolve não está no painel
- * de detalhe, e é isso que decide se vale a pena abri-lo sozinho.
+ * Já foi obrigatório: sem ele não havia minutos, e a ficha não gravava. Deixou
+ * de ser — obrigar o treinador a lembrar-se do minuto exacto de cada
+ * substituição, em vinte atletas, era o que fazia a ficha ficar por preencher.
+ * Quem entrou sem minuto fica com os minutos por saber (zero na conta da época,
+ * "—" no ecrã), e quem quiser o detalhe continua a ter onde o escrever.
  */
-function faltaEntrada(l: Linha): boolean {
+function semEntrada(l: Linha): boolean {
   return l.papel === "entrou" && l.onMinute == null;
 }
 
@@ -942,8 +956,6 @@ function incoerencias(l: Linha): string[] {
     fora.push(`Saiu ao ${l.offMinute}′, antes de ter entrado (${l.onMinute}′).`);
   }
 
-  if (faltaEntrada(l)) fora.push(FALTA_ENTRADA);
-
   for (const [nome, minutos] of [
     ["golo", l.tallyAt],
     ["assistência", l.assistsAt],
@@ -957,6 +969,36 @@ function incoerencias(l: Linha): string[] {
   }
 
   return fora;
+}
+
+/**
+ * A linha da ficha de um convocado que ainda não tem linha no estado.
+ *
+ * Acontece de cada vez que o plantel muda debaixo da ficha: corrigir o plantel
+ * retroactivo mete um convocado novo em `match.squad`, e a página desenha as
+ * linhas **antes** de o `useEffect` refazer o estado. Ler `linhas[id]` nesse
+ * instante dava `undefined`, e a página caía inteira ("Cannot read properties
+ * of undefined (reading 'papel')") até a alguém carregar em F5. A linha nasce
+ * do que o servidor sabe do atleta — que, num convocado acabado de juntar, é
+ * "não jogou".
+ */
+function linhaDe(s: SquadRow): Linha {
+  return {
+    athleteId: s.athleteId,
+    // Os dois campos antigos colapsam num: não jogou / entrou / titular.
+    papel: !s.played ? "nao" : s.started ? "titular" : "entrou",
+    minutes: s.minutes,
+    tally: s.tally,
+    assists: s.assists,
+    yellowCards: s.yellowCards,
+    redCard: s.redCard,
+    onMinute: s.onMinute,
+    offMinute: s.offMinute,
+    yellowAt: s.yellowAt,
+    redAt: s.redAt,
+    tallyAt: s.tallyAt,
+    assistsAt: s.assistsAt,
+  };
 }
 
 /**
@@ -979,8 +1021,8 @@ function incoerencias(l: Linha): string[] {
  *
  * Um suplente sem minuto de entrada. Aí o sistema não sabe — pode ter entrado
  * ao 10 ou ao 80 — e a resposta honesta é dizer que não sabe, em vez de somar
- * um número plausível. É a única pergunta que a ficha passa a fazer a sério, e
- * só a quem foi lançado do banco.
+ * um número plausível. Grava-se zero (o servidor faz a mesma conta) e o ecrã
+ * mostra "—". Não trava nada: ver `semEntrada`.
  */
 function minutosDerivados(l: Linha, duracao: number): number | null {
   const entrada = l.papel === "titular" ? 0 : l.onMinute;
@@ -1015,13 +1057,13 @@ function minutosDerivados(l: Linha, duracao: number): number | null {
 function SheetPanel({ match, mayRecord, onSaved }: { match: Match; mayRecord: boolean; onSaved: () => void }) {
   const golo = tallyNoun(match.teamId);
   /*
-   * Quanto dura um jogo desta modalidade.
+   * Quanto dura um jogo desta equipa.
    *
-   * Vem de `Sport.matchMinutes` — o futebol de formação não joga 90, e o produto
-   * já sabe isso. Serve para calcular os minutos de quem entrou e não saiu, e
-   * para não sugerir "90" a um Sub-11 que joga 60.
+   * Vem de `Team.matchMinutes` — é do escalão, não da modalidade: um Sub-11 de
+   * futebol joga 60 e um Sub-19 joga 90. Serve para calcular os minutos de quem
+   * entrou e não saiu. O 90 é só para uma modalidade sem duração declarada.
    */
-  const duracao = sportById(teamById(match.teamId)?.sportId ?? "")?.matchMinutes ?? 90;
+  const duracao = match.matchMinutes ?? 90;
 
   const [linhas, setLinhas] = useState<Record<string, Linha>>(() => daFicha(match));
   const [erro, setErro] = useState<string | null>(null);
@@ -1031,9 +1073,23 @@ function SheetPanel({ match, mayRecord, onSaved }: { match: Match; mayRecord: bo
     setLinhas(daFicha(match));
   }, [match]);
 
-  const set = (id: string, patch: Partial<Linha>) => setLinhas((x) => ({ ...x, [id]: { ...x[id], ...patch } }));
+  /*
+   * A linha de cada convocado, com rede.
+   *
+   * `linhas` é estado e `match.squad` é a verdade do servidor; entre uma
+   * gravação do plantel e o `useEffect` acima, a segunda pode ter um convocado
+   * que a primeira ainda não tem. Ler pelo `squad` e cair em `linhaDe` é o que
+   * faz a página aguentar esse instante — e é também o que deixa um convocado
+   * retirado do plantel desaparecer da ficha sem esperar pelo efeito.
+   */
+  const linhaDo = (s: SquadRow): Linha => linhas[s.athleteId] ?? linhaDe(s);
+  const set = (id: string, patch: Partial<Linha>) =>
+    setLinhas((x) => {
+      const base = x[id] ?? linhaDe(match.squad.find((s) => s.athleteId === id)!);
+      return { ...x, [id]: { ...base, ...patch } };
+    });
 
-  const emCampo = Object.values(linhas).filter(jogou);
+  const emCampo = match.squad.map(linhaDo).filter(jogou);
   const golos = emCampo.reduce((n, l) => n + l.tally, 0);
   const titulares = emCampo.filter((l) => l.papel === "titular").length;
   /*
@@ -1042,12 +1098,11 @@ function SheetPanel({ match, mayRecord, onSaved }: { match: Match; mayRecord: bo
    * Trava o Gravar. O servidor recusa as contradições de qualquer maneira, mas
    * descobrir isso depois de carregar no botão — com um erro genérico no fundo
    * do painel — era mandar o treinador procurar em vinte linhas qual delas
-   * estava errada. Contam-se à parte os suplentes a quem falta o minuto de
-   * entrada, porque a frase que os resolve é outra.
+   * estava errada. Um suplente sem minuto de entrada **não** conta: já não é um
+   * erro, é um detalhe por preencher. Ver `semEntrada`.
    */
-  const contraditorias = emCampo.filter((l) => incoerencias(l).some((p) => p !== FALTA_ENTRADA)).length;
-  const semEntrada = emCampo.filter(faltaEntrada).length;
-  const porCorrigir = contraditorias + semEntrada;
+  const porCorrigir = emCampo.filter((l) => incoerencias(l).length > 0).length;
+  const semMinutos = emCampo.filter(semEntrada).length;
 
   /*
    * A ficha contra o marcador.
@@ -1075,8 +1130,7 @@ function SheetPanel({ match, mayRecord, onSaved }: { match: Match; mayRecord: bo
   const mudou = useMemo(
     () =>
       match.squad.some((s) => {
-        const l = linhas[s.athleteId];
-        if (!l) return true;
+        const l = linhaDo(s);
         const papelAntes: Papel = !s.played ? "nao" : s.started ? "titular" : "entrou";
         if (l.papel !== papelAntes) return true;
 
@@ -1100,8 +1154,9 @@ function SheetPanel({ match, mayRecord, onSaved }: { match: Match; mayRecord: bo
         return (
           // Os minutos já não se escrevem, comparam-se calculados: assim uma
           // ficha antiga com um número à mão que discorda da entrada e da saída
-          // acende o Gravar, em vez de ficar por corrigir para sempre.
-          minutosDerivados(l, duracao) !== s.minutes ||
+          // acende o Gravar, em vez de ficar por corrigir para sempre. Um
+          // suplente sem entrada vale zero dos dois lados — ver `semEntrada`.
+          (minutosDerivados(l, duracao) ?? 0) !== s.minutes ||
           l.tally !== s.tally ||
           l.assists !== s.assists ||
           l.yellowCards !== s.yellowCards ||
@@ -1116,7 +1171,7 @@ function SheetPanel({ match, mayRecord, onSaved }: { match: Match; mayRecord: bo
           l.assistsAt.join() !== s.assistsAt.join()
         );
       }),
-    [linhas, match.squad],
+    [linhas, match.squad, duracao],
   );
 
   async function gravar() {
@@ -1127,10 +1182,8 @@ function SheetPanel({ match, mayRecord, onSaved }: { match: Match; mayRecord: bo
           match.id,
           emCampo.map((l) => ({
             athleteId: l.athleteId,
-            // Os minutos vêm sempre da conta. O `?? 0` nunca chega a acontecer —
-            // `porCorrigir` trava o botão enquanto houver um suplente sem minuto
-            // de entrada — mas é o valor certo se alguma vez chegar: zero e não um
-            // palpite.
+            // Os minutos vêm sempre da conta. Um suplente sem minuto de entrada
+            // vai a zero, e não a um palpite — o servidor faz a mesma conta.
             minutes: minutosDerivados(l, duracao) ?? 0,
             started: l.papel === "titular",
             tally: l.tally,
@@ -1178,8 +1231,8 @@ function SheetPanel({ match, mayRecord, onSaved }: { match: Match; mayRecord: bo
           <p className="border-b border-line px-5 py-2.5 text-meta leading-relaxed text-ink-3">
             Diz de cada um se foi <span className="font-medium text-ink-2">titular</span>, se{" "}
             <span className="font-medium text-ink-2">entrou</span> do banco, ou se{" "}
-            <span className="font-medium text-ink-2">não jogou</span>. Só isso já fecha a ficha — os minutos de
-            substituição e de cartões ficam em "Substituição e cartões", para quem os quiser registar.
+            <span className="font-medium text-ink-2">não jogou</span>. Só isso já fecha a ficha. Os minutos de
+            entrada e de saída e os dos cartões são opcionais, para quem os quiser registar.
           </p>
         )}
 
@@ -1188,7 +1241,7 @@ function SheetPanel({ match, mayRecord, onSaved }: { match: Match; mayRecord: bo
             <SheetRow
               key={s.athleteId}
               atleta={s}
-              linha={linhas[s.athleteId]}
+              linha={linhaDo(s)}
               golo={golo}
               duracao={duracao}
               mayRecord={mayRecord}
@@ -1209,20 +1262,26 @@ function SheetPanel({ match, mayRecord, onSaved }: { match: Match; mayRecord: bo
             </button>
             {excedeMarcador ? (
               <span className="text-meta font-medium text-risk">{excedeMarcador}</span>
-            ) : contraditorias > 0 ? (
+            ) : porCorrigir > 0 ? (
               <span className="text-meta font-medium text-risk">
-                {contraditorias === 1
+                {porCorrigir === 1
                   ? "Há uma linha com minutos impossíveis — corrige-a para gravar."
-                  : `Há ${contraditorias} linhas com minutos impossíveis — corrige-as para gravar.`}
+                  : `Há ${porCorrigir} linhas com minutos impossíveis — corrige-as para gravar.`}
               </span>
-            ) : semEntrada > 0 ? (
-              <span className="text-meta font-medium text-risk">
-                {semEntrada === 1
-                  ? "Falta o minuto de entrada de um suplente — sem ele não há minutos para gravar."
-                  : `Faltam os minutos de entrada de ${semEntrada} suplentes — sem eles não há minutos para gravar.`}
-              </span>
+            ) : mudou && !busy ? (
+              <span className="text-meta font-medium text-warn">Há alterações por gravar.</span>
             ) : (
-              mudou && !busy && <span className="text-meta font-medium text-warn">Há alterações por gravar.</span>
+              /*
+                Um aviso e não um travão: quem quiser os minutos dos suplentes
+                escreve a entrada; quem não quiser grava na mesma.
+              */
+              semMinutos > 0 && (
+                <span className="text-meta text-ink-3">
+                  {semMinutos === 1
+                    ? "Um suplente sem minuto de entrada fica sem minutos contados."
+                    : `${semMinutos} suplentes sem minuto de entrada ficam sem minutos contados.`}
+                </span>
+              )
             )}
             {erro && (
               <span role="alert" className="text-meta text-risk">
@@ -1237,27 +1296,7 @@ function SheetPanel({ match, mayRecord, onSaved }: { match: Match; mayRecord: bo
 }
 
 function daFicha(match: Match): Record<string, Linha> {
-  return Object.fromEntries(
-    match.squad.map((s) => [
-      s.athleteId,
-      {
-        athleteId: s.athleteId,
-        // Os dois campos antigos colapsam num: não jogou / entrou / titular.
-        papel: !s.played ? "nao" : s.started ? "titular" : "entrou",
-        minutes: s.minutes,
-        tally: s.tally,
-        assists: s.assists,
-        yellowCards: s.yellowCards,
-        redCard: s.redCard,
-        onMinute: s.onMinute,
-        offMinute: s.offMinute,
-        yellowAt: s.yellowAt,
-        redAt: s.redAt,
-        tallyAt: s.tallyAt,
-        assistsAt: s.assistsAt,
-      } satisfies Linha,
-    ]),
-  );
+  return Object.fromEntries(match.squad.map((s) => [s.athleteId, linhaDe(s)]));
 }
 
 const PAPEIS: { value: Papel; label: string; hint: string }[] = [
@@ -1287,10 +1326,8 @@ function SheetRow({
   const problemas = incoerencias(linha);
 
   // Uma contradição escondida atrás de um painel fechado é uma contradição que
-  // ninguém corrige: abre-se o detalhe, que é onde estão os campos em causa. O
-  // minuto de entrada em falta não conta — resolve-se na linha de cima, e abrir
-  // o painel a cada suplente marcado só dava ruído.
-  const noDetalhe = problemas.filter((p) => p !== FALTA_ENTRADA).length;
+  // ninguém corrige: abre-se o detalhe, que é onde estão os campos em causa.
+  const noDetalhe = problemas.length;
   useEffect(() => {
     if (noDetalhe > 0) setDetalhe(true);
   }, [noDetalhe]);
@@ -1399,19 +1436,17 @@ function SheetRow({
             <NumField label="Assist." value={linha.assists} max={99} onCommit={(n) => onChange({ assists: n })} />
 
             {/*
-              Quem entrou do banco diz quando, aqui e não escondido no detalhe.
-
-              É a única conta que o sistema não consegue fazer sozinho — um
-              suplente tanto pode ter entrado ao 10 como ao 80 — e desde que os
-              minutos deixaram de se escrever à mão, é este número que os
-              determina. Escondê-lo atrás de "Mais detalhes" era esconder a
-              pergunta e deixar a linha por saber.
+              Quem entrou do banco pode dizer quando, aqui e não escondido no
+              detalhe — é este número que determina os minutos dele. Pode ficar
+              vazio: obrigar a lembrar o minuto exacto de cada substituição era
+              o que deixava fichas inteiras por gravar.
             */}
             {linha.papel === "entrou" && (
               <MinuteField
                 label="Entrou ao"
                 value={linha.onMinute}
                 max={duracao + 30}
+                hint={linha.onMinute == null ? "opcional" : undefined}
                 onCommit={(n) => onChange({ onMinute: n })}
               />
             )}
@@ -1430,7 +1465,7 @@ function SheetRow({
                   "inline-flex h-10 min-w-14 items-center justify-center rounded-[8px] bg-sunken px-2 text-body font-medium tabular",
                   derivados === null ? "text-ink-4" : "text-ink",
                 )}
-                title={derivados === null ? "Falta o minuto de entrada" : "Calculado a partir da entrada e da saída"}
+                title={derivados === null ? "Sem minuto de entrada, os minutos ficam por contar" : "Calculado a partir da entrada e da saída"}
               >
                 {derivados === null ? "—" : derivados}
               </span>

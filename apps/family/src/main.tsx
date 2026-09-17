@@ -3,6 +3,7 @@ import { createRoot } from "react-dom/client";
 import { BrowserRouter } from "react-router-dom";
 import App from "./App";
 import { StandaloneGate } from "./StandaloneGate";
+import { vigiarVersao } from "@academia/ui/versao";
 import { applyBrand } from "./lib/brand";
 import { captureFromUrl } from "./lib/invite";
 import { adoptSessionFromUrl } from "./lib/session";
@@ -31,6 +32,15 @@ adoptSessionFromUrl();
 captureAreaFromUrl();
 
 applyBrand();
+
+/*
+ * A app instalada no telemóvel fica viva semanas. O service worker do
+ * vite-plugin-pwa (`autoUpdate`) só vai ver se há versão nova quando a app
+ * navega; isto pergunta também quando ela volta à frente, quando a rede volta e
+ * de quinze em quinze minutos, e recarrega quando o servidor tem outra. Ver
+ * `packages/ui/src/versao.ts`.
+ */
+vigiarVersao({ atual: __BUILD_ID__, base: import.meta.env.BASE_URL });
 
 /**
  * O prefixo onde a app vive: `/app/` em produção, `/` em desenvolvimento.

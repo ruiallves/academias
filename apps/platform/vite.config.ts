@@ -1,10 +1,12 @@
 import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
 import tailwindcss from "@tailwindcss/vite";
+import { versaoDoBuild } from "../../scripts/vite-versao.mjs";
 import { fileURLToPath, URL } from "node:url";
 
 export default defineConfig({
-  plugins: [react(), tailwindcss()],
+  // Assina o bundle e escreve `version.json`. Ver `packages/ui/src/versao.ts`.
+  plugins: [react(), tailwindcss(), versaoDoBuild()],
   resolve: {
     alias: {
       "@": fileURLToPath(new URL("./src", import.meta.url)),

@@ -1,5 +1,5 @@
 import { useRef, useState } from "react";
-import { Apple, Camera, ChevronRight, FileText, MessageSquare, X } from "lucide-react";
+import { Apple, Camera, ChevronRight, FileText, MessageSquare, Stethoscope, X } from "lucide-react";
 import { useChild } from "@/App";
 import { reload, useStore, type Evaluation, type Report } from "@/lib/store";
 import { removerFotoAtleta, uploadFotoAtleta } from "@/lib/atleta";
@@ -133,6 +133,39 @@ export default function Athlete() {
                   </span>
                   <ChevronRight className="size-5 shrink-0 text-ink-4" strokeWidth={2} />
                 </button>
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
+
+      {/*
+        As consultas marcadas.
+        Nutrição, psicologia, fisioterapia, exame médico: o que o departamento
+        clínico agendou e ainda está para vir. Sem historial nem diagnósticos —
+        aqui a pergunta é "quando e onde tenho de estar".
+      */}
+      {child.appointments.length > 0 && (
+        <section>
+          <h2 className="mb-1 px-1 text-[13px] font-semibold tracking-[0.04em] text-ink-3 uppercase">Consultas</h2>
+          <ul className="overflow-hidden rounded-[var(--radius-lg)] bg-surface shadow-[var(--shadow-soft)]">
+            {child.appointments.map((c) => (
+              <li key={c.id} className="flex items-center gap-3 border-b border-line p-4 last:border-0">
+                <span className="flex size-9 shrink-0 items-center justify-center rounded-full bg-signal-soft text-signal-ink">
+                  <Stethoscope className="size-[18px]" strokeWidth={1.9} />
+                </span>
+                <span className="min-w-0 flex-1">
+                  <span className="block truncate text-body font-semibold text-ink">{c.title}</span>
+                  <span className="block truncate text-meta text-ink-3">
+                    {[
+                      c.date.toLocaleDateString("pt-PT", { weekday: "short", day: "numeric", month: "long" }),
+                      c.time,
+                      c.location,
+                    ]
+                      .filter(Boolean)
+                      .join(" · ")}
+                  </span>
+                </span>
               </li>
             ))}
           </ul>

@@ -1610,6 +1610,103 @@ passava dos cinco segundos. Passou a duas transações, cada uma com metade: a
 primeira decide (quem é, se pode entrar, o que deve), a segunda é o clube e corre
 em paralelo com a assinatura da fotografia.
 
+## A app está sempre na versão servida
+
+Duas pessoas do mesmo clube, o mesmo ecrã, comportamentos diferentes: uma estava
+na versão de hoje, a outra na que abriu há dias e nunca fechou. Um separador
+aberto (ou a app instalada no telemóvel, que no iOS fica viva semanas) mantém em
+memória o JavaScript com que arrancou, e nada o obrigava a ir ver se havia
+outro. Quem dá apoio andava a caçar fantasmas.
+
+Como se garante, nas três apps (consola, app do clube, plataforma):
+
+- **cada build assina-se**: `scripts/vite-versao.mjs` põe `__BUILD_ID__` no
+  bundle (commit curto + hora do build) e escreve o mesmo identificador em
+  `version.json`, ao lado do `index.html`;
+- **a app pergunta**: `vigiarVersao` (`packages/ui/src/versao.ts`) lê o
+  `version.json` sem cache ao arrancar, quando o ecrã volta à frente, quando a
+  rede volta e de quinze em quinze minutos. Versão diferente: actualiza o
+  service worker e recarrega;
+- **não entra em ciclo**: a versão pela qual já se recarregou fica no
+  `sessionStorage`. Se, já recarregada, continuar a ver outra (um proxy a servir
+  HTML velho, um service worker preso), não insiste — mostra uma faixa com
+  "Actualizar" que limpa as caches, desregista o service worker e recarrega;
+- **os cabeçalhos ajudam**: `index.html`, `sw.js` e `version.json` passaram a
+  `no-store` (o `no-cache` do HTML deixava servir uma cópia velha sem rede); os
+  ficheiros com hash continuam `immutable`.
+
+Provado de ponta a ponta: servido o build da plataforma, mudar o `version.json`
+faz a página recarregar sozinha; mudá-lo outra vez sem o bundle mudar mostra a
+faixa em vez de recarregar em ciclo.
+
+## Âmbito largo: a consola tinha de concordar com o servidor
+
+Relato de um clube: duas pessoas com permissão de inventário, e "Entregar
+equipamento" só deixava uma escolher a pessoa. Não era permissão: era âmbito.
+
+Quem vê o clube todo é OWNER, DIRECTOR, **COORDINATOR**, MEDICAL e SCOUT — é o
+que o servidor faz em `teamScopeFilter`, e o que o produto promete por escrito
+("Vê a academia toda", nos cargos e nos departamentos). A consola tinha a mesma
+lista **sem COORDINATOR** (`isAcademyWide`), e como o servidor só monta
+`scope.teamIds` para COACH e STAFF, uma coordenadora ficava com âmbito vazio: o
+servidor mandava-lhe o clube inteiro e o ecrã filtrava-o até ao nada. Nenhuma
+lista de pessoas lhe aparecia, sem erro nem 403.
+
+- `isAcademyWide` passou a incluir COORDINATOR.
+- `scripts/check-access-catalog.mjs` (dentro do `npm run typecheck`) passou a
+  comparar os dois lados e a falhar quando divergirem, nos dois sentidos.
+- O diálogo de entregar equipamento explica a lista vazia: sem equipas
+  atribuídas, diz que os atletas aparecem por equipa e quem as atribui. Um
+  COACH ou STAFF sem equipas vê zero atletas, e isso é o desenho.
+
+## Consulta marcada: a família e o atleta ficam a saber
+
+Agendar uma consulta (nutrição, psicologia, fisioterapia, exame) gravava e mais
+nada: o ecrã de Consultas filtrava por **tipo** e o botão "Agendar consulta"
+abre no exame médico, por isso a linha só aparecia na ficha do atleta — daí a
+queixa de que "não marca". E do lado da app não havia nada.
+
+- **Consola:** a página de Consultas passa a mostrar tudo o que está agendado,
+  seja de que tipo for, com um filtro "Agendadas", a pastilha "Agendada" e a
+  hora e o sítio na coluna da data.
+- **Aviso:** `ClinicalService.criar` avisa, quando o registo é `SCHEDULED`, cada
+  encarregado activo e o atleta com conta própria — `CLINICAL_APPOINTMENT`
+  (migração `aviso_de_consulta`), com o dia, a hora e o local no corpo e a rota
+  `/atleta`. Remarcar (data, hora ou local) avisa outra vez; corrigir o título
+  não avisa, e dar a consulta como feita também não. O envio corre fora da
+  transacção: a consulta é o facto, o aviso é a cortesia.
+- **App do clube:** o boletim já vinha na resposta de `/api/athletes` a quem tem
+  `clinical:read` (a família e o atleta têm-no, dos seus); a app é que não o
+  lia. `Child.appointments` guarda as consultas marcadas de hoje para a frente,
+  e aparecem no ecrã de Hoje (um cartão com a próxima) e na área do atleta
+  (secção "Consultas"). Sem historial nem diagnósticos: a pergunta ali é "quando
+  e onde tenho de estar".
+
+Teste: `scripts/test-consulta-agendada.mjs` (34, clube descartável com um
+encarregado e um atleta de contas criadas na base, para nenhum push sair).
+
+## Mensalidades de 0 €
+
+Um atleta pode ter mensalidade de **0 €**: a bolsa, o filho de um treinador, o
+acordo com a escola. Antes era recusado ("Valor entre 1 € e 1000 €") e a
+alternativa era não lhe pôr preço, o que o deixava para sempre na lista de quem
+"falta configurar". O zero passa a valer como preço de equipa, como ajuste
+individual e a lançar à mão (`assertValidAmount(valor, true)`, e `@Min(0)` nos
+DTOs); valores entre zero e um euro continuam recusados, com a mensagem a dizer
+o que se aceita.
+
+**Uma mensalidade de 0 € nasce paga** (`nasceIsenta`), venha da emissão
+automática, de um lançamento "por pagar" ou de baixar o preço a zero a meio do
+mês (`reprecificarCobrancas` liquida-a). Fica `SETTLED` e **sem registo de
+pagamento**: não entrou dinheiro, e um pagamento de zero euros no livro era
+escrever uma coisa que não aconteceu. Por isso também não há aviso à família:
+a emissão só avisa o que ficou `OPEN`, e marcar uma isenta como paga à mão não
+cria pagamento nenhum.
+
+Uma **cobrança avulsa** de 0 € continua recusada: é dinheiro que não se pede, e
+a linha não teria razão de existir. Teste:
+`scripts/test-mensalidade-zero.mjs` (28).
+
 ## Fidelização: mensal não tem, anual conta-se em anos
 
 Nas condições comerciais que a plataforma emite a um clube (`SubscriptionOrder`,
@@ -1834,6 +1931,47 @@ grava não se consegue inspeccionar. Verificado por `npm run test:qr --workspace
 e confirma o assunto, a chamada, o endereço por extenso sem `https://`, e que o
 cartaz das famílias **leva o token** — o endereço impresso e o QR saem do mesmo
 argumento, e imprimir um e codificar outro seria mentir em papel.
+
+## Duração do jogo por equipa, relatórios e adversários
+
+**A duração do jogo é do escalão.** `Sport.matchMinutes` dizia que o futebol
+dura 90, e um Sub-11 que joga 60 ficava com titulares de 90 minutos na ficha. A
+coluna passou para `Team.matchMinutes` (migração `20260918120000`): pergunta-se
+ao criar a equipa, com o valor da modalidade sugerido, e muda-se na ficha da
+equipa (`PATCH /api/teams/:id/duracao-jogo`, `team:write`). As equipas que já
+existiam herdaram o da modalidade. A modalidade deixou de perguntar a duração
+nas Definições; o que lá fica é só o ponto de partida das equipas novas.
+
+**O minuto de entrada deixou de ser obrigatório.** Um suplente sem "entrou ao"
+travava a ficha inteira; obrigar o treinador a lembrar o minuto de cada
+substituição em vinte atletas era o que deixava fichas por gravar. Grava-se na
+mesma: os minutos ficam a zero na conta da época e "—" no ecrã, e um aviso
+discreto diz quantos suplentes ficaram sem minutos contados.
+
+**Corrigir o plantel de um jogo jogado deixou de partir a página.** A ficha lia
+`linhas[id]` de um estado que ainda não tinha o convocado acabado de juntar, e
+caía com `Cannot read properties of undefined (reading 'papel')` até um F5. As
+linhas passam a nascer do `squad` do servidor com o estado por cima, e a
+correcção aparece logo.
+
+**O relatório do jogo** (`MatchReport`, um por jogo, `PUT /api/matches/:id/relatorio`)
+tem cinco textos livres — como correu, pontos positivos, negativos, a melhorar,
+dificuldades — e ligações de vídeo (YouTube, Veo, Drive; só `https`, dez no
+máximo). Ligações e não ficheiros: um jogo inteiro são gigabytes e o
+armazenamento aceita 50 MB. Só depois do apito, só com `attendance:write`.
+
+**O relatório do adversário** (`OpponentReport`, `PUT /api/matches/:id/adversario`)
+guarda formação, como jogam, pontos fortes e fracos, jogadores em destaque,
+bolas paradas e notas. É a memória do clube sobre os outros: a página de um
+jogo contra o Fafe traz `opponentHistory` — os outros jogos contra o mesmo nome
+(sem maiúsculas nem espaços a mais) com o relatório de cada um — **antes** do
+jogo, que é quando interessa. `GET /api/matches/adversarios` agrupa-os por
+nome com o registo V-E-D, e a consola tem `/jogos/adversarios` (ligação nos
+Jogos e na página do jogo, sem menu próprio). Sem tabela de adversários à
+parte, de propósito: obrigava a escolher de uma lista ao marcar cada jogo.
+
+Verificado por `npm run test:match-reports` (51); `test:match-sheet` (109) e
+`test:teams` (18) continuam a passar.
 
 ## Os jogos, na app do sócio
 

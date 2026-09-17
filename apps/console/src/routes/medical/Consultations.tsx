@@ -12,7 +12,10 @@ import { useSession } from "@/session";
 import type { ClinicalEntry, ClinicalKind } from "@/data/types";
 
 type Row = { athleteId: string; athleteName: string; teamName: string; entry: ClinicalEntry };
-type Filter = "todas" | "nutrition" | "psychology" | "physio";
+type Filter = "todas" | "agendadas" | "nutrition" | "psychology" | "physio";
+
+/** Uma consulta por acontecer — é o que "Agendar consulta" cria. */
+const agendada = (e: ClinicalEntry) => e.status === "scheduled";
 
 /**
  * Consultas — nutrição, psicologia e fisioterapia.
@@ -34,7 +37,15 @@ export default function MedicalConsultations() {
     const out: Row[] = [];
     for (const a of listAthletes(session)) {
       for (const entry of clinicalOf(a.id)) {
-        if (entry.kind === "nutrition" || entry.kind === "psychology" || entry.kind === "physio") {
+        /*
+         * As três áreas, e **tudo o que está agendado**.
+         *
+         * A página filtrava por tipo, e o botão "Agendar consulta" abre no exame
+         * médico: marcava-se, a base gravava, e a linha não aparecia em lado
+         * nenhum a não ser na ficha do atleta. Quem agenda daqui tem de ver o
+         * que agendou, seja de que tipo for.
+         */
+        if (agendada(entry) || entry.kind === "nutrition" || entry.kind === "psychology" || entry.kind === "physio") {
           out.push({
             athleteId: a.id,
             athleteName: a.name,
@@ -49,6 +60,7 @@ export default function MedicalConsultations() {
 
   const counts = {
     todas: all.length,
+    agendadas: all.filter((r) => agendada(r.entry)).length,
     nutrition: all.filter((r) => r.entry.kind === "nutrition").length,
     psychology: all.filter((r) => r.entry.kind === "psychology").length,
     physio: all.filter((r) => r.entry.kind === "physio").length,
@@ -57,7 +69,7 @@ export default function MedicalConsultations() {
   const rows = useMemo(() => {
     const q = query.trim().toLowerCase();
     return all
-      .filter((r) => (filter === "todas" ? true : r.entry.kind === filter))
+      .filter((r) => (filter === "todas" ? true : filter === "agendadas" ? agendada(r.entry) : r.entry.kind === filter))
       .filter((r) => (q ? r.athleteName.toLowerCase().includes(q) : true));
   }, [all, filter, query]);
 
@@ -109,7 +121,9 @@ export default function MedicalConsultations() {
       header: "Impacto",
       hideBelow: "md",
       render: (r) =>
-        r.entry.impact === "none" ? (
+        agendada(r.entry) ? (
+          <Pill tone="signal">Agendada</Pill>
+        ) : r.entry.impact === "none" ? (
           <span className="text-meta text-ink-4">nenhum</span>
         ) : (
           <Pill tone={r.entry.impact === "out" ? "risk" : "warn"}>
@@ -123,8 +137,15 @@ export default function MedicalConsultations() {
       align: "right",
       render: (r) => (
         <div>
-          <div className="text-meta text-ink-2 tabular">{shortDate(new Date(r.entry.date))}</div>
-          <div className="text-[11px] text-ink-4">{relativeDays(new Date(r.entry.date), today)}</div>
+          <div className="text-meta text-ink-2 tabular">
+            {shortDate(new Date(r.entry.date))}
+            {agendada(r.entry) && r.entry.time ? ` · ${r.entry.time}` : ""}
+          </div>
+          <div className="text-[11px] text-ink-4">
+            {agendada(r.entry) && r.entry.location
+              ? r.entry.location
+              : relativeDays(new Date(r.entry.date), today)}
+          </div>
         </div>
       ),
     },
@@ -136,8 +157,8 @@ export default function MedicalConsultations() {
         title="Consultas"
         subtitle={
           isAcademyWide(session)
-            ? "Nutrição, psicologia e fisioterapia — toda a academia."
-            : "Nutrição, psicologia e fisioterapia dos teus atletas."
+            ? "Nutrição, psicologia, fisioterapia e o que está agendado — toda a academia."
+            : "Nutrição, psicologia, fisioterapia e o que está agendado, dos teus atletas."
         }
       >
         {can(session, "clinical:write") && (
@@ -163,6 +184,7 @@ export default function MedicalConsultations() {
               onChange={setFilter}
               options={[
                 { value: "todas", label: "Todas", count: counts.todas },
+                { value: "agendadas", label: "Agendadas", count: counts.agendadas },
                 { value: "nutrition", label: "Nutrição", count: counts.nutrition },
                 { value: "psychology", label: "Psicologia", count: counts.psychology },
                 { value: "physio", label: "Fisioterapia", count: counts.physio },

@@ -109,6 +109,59 @@ const delegaveis = new Set(
 
 const problemas = [];
 
+/* -------------------------------------------------------------------------- */
+/* Quem vê o clube todo: a consola tem de concordar com o servidor            */
+/* -------------------------------------------------------------------------- */
+/*
+ * O quarto buraco da mesma família, e este não era de permissões: era de
+ * **âmbito**. O servidor dá a academia toda a OWNER, DIRECTOR, COORDINATOR,
+ * MEDICAL e SCOUT (`teamScopeFilter`); a consola tinha a mesma lista sem
+ * COORDINATOR (`isAcademyWide`). E como o servidor só monta `scope.teamIds`
+ * para COACH e STAFF, uma coordenadora ficava com âmbito vazio: o servidor
+ * mandava-lhe o clube inteiro e o ecrã filtrava-o até ao nada. Nenhuma lista de
+ * pessoas lhe aparecia — atletas, equipas, e o selector de "Entregar
+ * equipamento", que foi onde a queixa apareceu.
+ *
+ * Nada falhava: nem erro, nem 403. Só listas vazias, que é a pior maneira de um
+ * produto estar avariado. Por isso as duas listas passam a ser comparadas aqui.
+ */
+const papeisDe = (texto, funcao) => {
+  const i = texto.indexOf(funcao);
+  if (i < 0) return null;
+  const fim = texto.indexOf("\n}", i);
+  return new Set([...texto.slice(i, fim).matchAll(/(?:ctx|session)\.role === "([A-Z_]+)"/g)].map((m) => m[1]));
+};
+
+const noServidor = papeisDe(ler("apps/api/src/common/permissions.ts"), "export function teamScopeFilter");
+const naConsola = papeisDe(ler("apps/console/src/lib/permissions.ts"), "export function isAcademyWide");
+
+if (!noServidor || !naConsola) {
+  problemas.push(
+    "não encontrei `teamScopeFilter` (API) ou `isAcademyWide` (consola) para comparar os papéis de âmbito largo.",
+  );
+} else {
+  for (const papel of noServidor) {
+    if (!naConsola.has(papel)) {
+      problemas.push(
+        `${papel} — vê a academia toda no servidor (teamScopeFilter) e não na consola (isAcademyWide).
+` +
+          `      O servidor manda tudo e o ecrã filtra até ao nada: as listas de pessoas ficam vazias,
+` +
+          `      sem erro nenhum. Foi o que aconteceu com COORDINATOR em "Entregar equipamento".`,
+      );
+    }
+  }
+  for (const papel of naConsola) {
+    if (!noServidor.has(papel)) {
+      problemas.push(
+        `${papel} — vê a academia toda na consola (isAcademyWide) e não no servidor (teamScopeFilter).
+` +
+          `      O ecrã promete o clube inteiro e o servidor devolve só as equipas dela: a lista mente por defeito.`,
+      );
+    }
+  }
+}
+
 for (const p of declaradas) {
   if (!noCatalogo.has(p) && !(p in FORA_DO_CATALOGO)) {
     problemas.push(
@@ -138,7 +191,10 @@ for (const [p, _porque] of Object.entries(NAO_DELEGAVEIS)) {
 }
 
 if (problemas.length === 0) {
-  console.log(`  OK  ${declaradas.length} permissões — todas com interruptor, ou com a excepção escrita.`);
+  console.log(
+    `  OK  ${declaradas.length} permissões — todas com interruptor, ou com a excepção escrita.` +
+      ` Âmbito largo igual nos dois lados (${[...(noServidor ?? [])].sort().join(", ")}).`,
+  );
   process.exit(0);
 }
 

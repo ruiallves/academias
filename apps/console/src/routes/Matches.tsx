@@ -4,7 +4,7 @@ import { PageHeader } from "@/components/Shell";
 import { Attention } from "@/components/Attention";
 import { Empty, Loading, Panel, Pill, cx } from "@/components/primitives";
 import { Segmented } from "@/components/filters";
-import { ChevronRight, CircleCheck, MapPin, Plus, Trophy } from "@/lib/icons";
+import { ChevronRight, CircleCheck, MapPin, Plus, Shield, Trophy } from "@/lib/icons";
 import { useStore } from "@/lib/store";
 import { listMatches, matchAttention, myMatchDuty, outcome, type MatchListRow } from "@/lib/matches";
 import { useSession } from "@/session";
@@ -184,6 +184,15 @@ export default function Matches() {
           como nascem dois jogos à mesma hora no mesmo campo — no calendário, o
           que já está ocupado está à vista antes de se escolher a data.
         */}
+        {/*
+          Os adversários: o que o clube já sabe de cada um. Vive aqui dentro
+          dos Jogos e não num menu próprio — é uma leitura dos jogos, e é a
+          caminho de um jogo que se procura.
+        */}
+        <Link to="/jogos/adversarios" className="ctl-ghost">
+          <Shield className="size-3.5" strokeWidth={1.75} />
+          Adversários
+        </Link>
         {podeMarcar && (
           <Link to="/calendario?novo=jogo" className="ctl-primary">
             <Plus className="size-3.5" strokeWidth={2} />

@@ -124,6 +124,8 @@ type ApiTeam = {
   competitions: { id: string; label: string }[];
   /** O preço por omissão da equipa, em cêntimos. `null` sem `billing:read` ou por configurar. */
   feeCents: number | null;
+  /** A duração de jogo do escalão. Ver `Team.matchMinutes` em `data/types.ts`. */
+  matchMinutes?: number | null;
 };
 
 type ApiAthlete = {
@@ -760,6 +762,7 @@ function juntar<T extends { id: string }>(atuais: T[], novos: T[]): T[] {
     schedule: Array.isArray(t.schedule) ? (t.schedule as Team["schedule"]) : [],
     competitions: t.competitions ?? [],
     feeCents: t.feeCents,
+    matchMinutes: t.matchMinutes ?? null,
   }));
 
   const athletes: Athlete[] = apiAthletes.map((a) => ({

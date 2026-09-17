@@ -4,7 +4,11 @@ import { BrowserRouter } from "react-router-dom";
 import App from "./App";
 import { LoginGate } from "./components/LoginGate";
 import { AdminInvite } from "./components/AdminInvite";
+import { vigiarVersao } from "@academia/ui/versao";
 import "./styles.css";
+
+/* A plataforma também se actualiza sozinha. Ver `packages/ui/src/versao.ts`. */
+vigiarVersao({ atual: __BUILD_ID__, base: import.meta.env.BASE_URL });
 
 /**
  * A única porta que não passa pelo `LoginGate`.

@@ -28,7 +28,12 @@ export type Sport = {
    * um campo que não faz sentido nenhum.
    */
   dominantSideLabel?: string;
-  /** Duração normal de um jogo, em minutos. Serve para ler "62 de 90" na ficha. */
+  /**
+   * A duração de jogo que uma equipa nova desta modalidade herda.
+   *
+   * A que conta é a da equipa (`Team.matchMinutes`): um Sub-11 e um Sub-19 da
+   * mesma modalidade não jogam o mesmo tempo. Isto já não se edita.
+   */
   matchMinutes?: number;
   /**
    * Competências avaliadas nesta modalidade. Configuração e não uma lista fixa no
@@ -134,6 +139,14 @@ export type Team = {
   competitions: { id: string; label: string }[];
   /** O preço por omissão da equipa, em cêntimos. `null` sem `billing:read` ou por configurar. */
   feeCents: number | null;
+  /**
+   * Quanto dura um jogo desta equipa, em minutos.
+   *
+   * É do escalão e não da modalidade: um Sub-11 joga 60, um Sub-19 joga 90. É
+   * este número que fecha os minutos de quem jogou até ao fim e que lê "62 de
+   * 90" na ficha do atleta. Nulo numa modalidade sem jogos.
+   */
+  matchMinutes: number | null;
 };
 
 /**

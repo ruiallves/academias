@@ -262,6 +262,10 @@ export class MatchesService {
           team: {
             select: {
               name: true, maxAge: true, sportId: true, maxCallUps: true,
+              // A duração de jogo deste escalão — é o que fecha os minutos de
+              // quem jogou até ao fim. A da modalidade só como recurso.
+              matchMinutes: true,
+              sport: { select: { matchMinutes: true } },
               // A equipa técnica da ficha da equipa — o que a folha usa quando
               // ninguém escalou uma equipa de trabalho para este jogo.
               staff: {
@@ -308,12 +312,42 @@ export class MatchesService {
               membership: { select: { user: { select: { name: true } } } },
             },
           },
+          report: { select: RELATORIO_SELECT },
+          opponentReport: { select: ADVERSARIO_SELECT },
         },
       });
 
       if (!m) throw new NotFoundException("Jogo não encontrado ou fora do teu âmbito");
 
       const ficha = new Map(m.appearances.map((a) => [a.athleteId, a]));
+
+      /*
+       * O que já se sabe deste adversário.
+       *
+       * Os outros jogos contra o mesmo nome, com o relatório de cada um. Vai na
+       * página do jogo porque é **antes** do jogo que interessa: quem prepara o
+       * Fafe quer ler o que se escreveu sobre o Fafe da última vez, sem sair
+       * daqui. Só jogos no âmbito de quem pergunta, e só os que têm alguma coisa
+       * escrita ou um resultado — um jogo marcado para daqui a um mês não é
+       * história.
+       */
+      const historico = await db.match.findMany({
+        where: {
+          id: { not: m.id },
+          status: { not: "CANCELLED" },
+          opponent: { equals: m.opponent.trim(), mode: "insensitive" },
+          ...(scope ? { teamId: scope } : {}),
+          OR: [{ ourScore: { not: null } }, { opponentReport: { isNot: null } }],
+        },
+        orderBy: { startsAt: "desc" },
+        take: 12,
+        select: {
+          id: true, startsAt: true, isHome: true, ourScore: true, theirScore: true,
+          team: { select: { name: true } },
+          competition: { select: { label: true } },
+          opponentReport: { select: ADVERSARIO_SELECT },
+        },
+      });
 
       return {
         id: m.id,
@@ -322,6 +356,7 @@ export class MatchesService {
         maxAge: m.team.maxAge,
         sportId: m.team.sportId,
         maxCallUps: m.team.maxCallUps,
+        matchMinutes: duracaoDoJogo(m.team),
         startsAt: m.startsAt,
         endsAt: m.endsAt,
         venue: m.venue,
@@ -395,7 +430,186 @@ export class MatchesService {
         teamStaff: [...m.team.staff]
           .sort((a, b) => pesoDoTitulo(b.title) - pesoDoTitulo(a.title))
           .map((x) => ({ name: x.membership.user.name, role: x.title })),
+        /** O relatório do jogo. Nulo enquanto ninguém o escrever. */
+        report: m.report ? relatorioParaFora(m.report) : null,
+        /** O que se viu do adversário neste jogo. */
+        opponentReport: m.opponentReport ? adversarioParaFora(m.opponentReport) : null,
+        /** Os outros jogos contra este adversário, do mais recente para trás. */
+        opponentHistory: historico.map((h) => ({
+          matchId: h.id,
+          startsAt: h.startsAt,
+          teamName: h.team.name,
+          competition: h.competition?.label ?? null,
+          isHome: h.isHome,
+          ourScore: h.ourScore,
+          theirScore: h.theirScore,
+          report: h.opponentReport ? adversarioParaFora(h.opponentReport) : null,
+        })),
       };
+    });
+  }
+
+  /**
+   * O relatório do jogo — gravado inteiro, como a ficha.
+   *
+   * `attendance:write`, a mesma permissão de preencher a ficha: escrever o que
+   * correu bem e mal é da mesma família que dizer quem marcou. Só depois do
+   * apito — um relatório de um jogo por jogar é um palpite. Um `PUT` e não um
+   * `PATCH`: cada gravação é o documento completo, e apagar um campo é mandá-lo
+   * vazio, como na logística da convocatória.
+   */
+  async saveReport(ctx: RequestContext, matchId: string, dto: RelatorioInput) {
+    this.assertCanRecord(ctx);
+
+    return this.prisma.runAs(ctx.academyId, async (db) => {
+      const match = await this.mustReach(db, ctx, matchId);
+      if (match.startsAt.getTime() > Date.now()) {
+        throw new BadRequestException("O relatório escreve-se depois do jogo");
+      }
+
+      const data = {
+        authorId: ctx.membershipId,
+        summary: texto(dto.summary),
+        positives: texto(dto.positives),
+        negatives: texto(dto.negatives),
+        toImprove: texto(dto.toImprove),
+        difficulties: texto(dto.difficulties),
+        videos: limparVideos(dto.videos),
+      };
+
+      const saved = await db.matchReport.upsert({
+        where: { matchId },
+        create: { matchId, ...data },
+        update: data,
+        select: RELATORIO_SELECT,
+      });
+
+      return relatorioParaFora(saved);
+    });
+  }
+
+  /** O que se viu do adversário. As mesmas regras de `saveReport`. */
+  async saveOpponentReport(ctx: RequestContext, matchId: string, dto: AdversarioInput) {
+    this.assertCanRecord(ctx);
+
+    return this.prisma.runAs(ctx.academyId, async (db) => {
+      const match = await this.mustReach(db, ctx, matchId);
+      if (match.startsAt.getTime() > Date.now()) {
+        throw new BadRequestException("O relatório do adversário escreve-se depois do jogo");
+      }
+
+      const data = {
+        authorId: ctx.membershipId,
+        formation: texto(dto.formation),
+        style: texto(dto.style),
+        strengths: texto(dto.strengths),
+        weaknesses: texto(dto.weaknesses),
+        keyPlayers: texto(dto.keyPlayers),
+        setPieces: texto(dto.setPieces),
+        notes: texto(dto.notes),
+      };
+
+      const saved = await db.opponentReport.upsert({
+        where: { matchId },
+        create: { matchId, ...data },
+        update: data,
+        select: ADVERSARIO_SELECT,
+      });
+
+      return adversarioParaFora(saved);
+    });
+  }
+
+  /**
+   * Os adversários do clube, com o que se sabe de cada um.
+   *
+   * ## Agrupado pelo nome, e não por uma tabela à parte
+   *
+   * O adversário é o nome que ficou escrito no jogo. Uma tabela de adversários
+   * obrigava a escolher de uma lista ao marcar cada jogo — e a gerir duplicados
+   * quando alguém escrevesse "Fafe" e "AD Fafe". Agrupar pelo nome (sem
+   * maiúsculas nem espaços a mais) dá o mesmo histórico sem pedir nada a
+   * ninguém; se um clube escreveu o nome de duas maneiras, vê dois adversários,
+   * e é a lista dele que lho mostra.
+   *
+   * ## O que entra
+   *
+   * Jogos já disputados ou com relatório, no âmbito de quem lê. Um treinador
+   * vê os adversários das equipas dele; a direção vê os de todas. As famílias
+   * não chegam aqui — é a mesma linha de `get()`.
+   */
+  async adversarios(ctx: RequestContext) {
+    if (!can(ctx, "calendar:read")) throw new ForbiddenException("Sem acesso ao calendário");
+    if (ctx.role === "GUARDIAN" || ctx.role === "ATHLETE") {
+      throw new ForbiddenException("Sem acesso aos adversários");
+    }
+    const scope = teamScopeFilter(ctx);
+
+    return this.prisma.runAs(ctx.academyId, async (db) => {
+      const jogos = await db.match.findMany({
+        where: {
+          status: { not: "CANCELLED" },
+          ...(scope ? { teamId: scope } : {}),
+          OR: [{ ourScore: { not: null } }, { opponentReport: { isNot: null } }, { startsAt: { lt: new Date() } }],
+        },
+        orderBy: { startsAt: "desc" },
+        take: 600,
+        select: {
+          id: true, teamId: true, startsAt: true, isHome: true, opponent: true,
+          ourScore: true, theirScore: true,
+          team: { select: { name: true } },
+          competition: { select: { label: true } },
+          opponentReport: { select: ADVERSARIO_SELECT },
+        },
+      });
+
+      type Linha = {
+        name: string;
+        matches: {
+          matchId: string; teamId: string; teamName: string; startsAt: Date; isHome: boolean;
+          competition: string | null; ourScore: number | null; theirScore: number | null;
+          report: ReturnType<typeof adversarioParaFora> | null;
+        }[];
+      };
+      const porNome = new Map<string, Linha>();
+
+      for (const j of jogos) {
+        const chave = j.opponent.trim().toLowerCase();
+        if (!chave) continue;
+        const linha = porNome.get(chave) ?? { name: j.opponent.trim(), matches: [] };
+        linha.matches.push({
+          matchId: j.id,
+          teamId: j.teamId,
+          teamName: j.team.name,
+          startsAt: j.startsAt,
+          isHome: j.isHome,
+          competition: j.competition?.label ?? null,
+          ourScore: j.ourScore,
+          theirScore: j.theirScore,
+          report: j.opponentReport ? adversarioParaFora(j.opponentReport) : null,
+        });
+        porNome.set(chave, linha);
+      }
+
+      return [...porNome.values()]
+        .map((l) => {
+          const jogados = l.matches.filter((m) => m.ourScore !== null && m.theirScore !== null);
+          const ultimo = l.matches.find((m) => m.report) ?? null;
+          return {
+            name: l.name,
+            played: jogados.length,
+            wins: jogados.filter((m) => m.ourScore! > m.theirScore!).length,
+            draws: jogados.filter((m) => m.ourScore === m.theirScore).length,
+            losses: jogados.filter((m) => m.ourScore! < m.theirScore!).length,
+            reports: l.matches.filter((m) => m.report).length,
+            /** A formação vista da última vez — o que mais se quer saber antes de os enfrentar. */
+            lastFormation: ultimo?.report?.formation ?? null,
+            lastPlayedAt: l.matches[0]?.startsAt ?? null,
+            teams: [...new Set(l.matches.map((m) => m.teamName))],
+            matches: l.matches,
+          };
+        })
+        .sort((a, b) => (b.lastPlayedAt?.getTime() ?? 0) - (a.lastPlayedAt?.getTime() ?? 0));
     });
   }
 
@@ -527,7 +741,7 @@ export class MatchesService {
         ),
       );
 
-      const duracao = match.team.sport.matchMinutes ?? 0;
+      const duracao = duracaoDoJogo(match.team);
 
       const limpas = rows
         .filter((r) => convocados.has(r.athleteId))
@@ -942,9 +1156,9 @@ export class MatchesService {
         startsAt: true,
         ourScore: true,
         theirScore: true,
-        // A duração da modalidade: é o que fecha a conta dos minutos de quem
-        // jogou até ao fim. Ver `minutosEmCampo`.
-        team: { select: { sport: { select: { matchMinutes: true } } } },
+        // A duração de jogo do escalão: é o que fecha a conta dos minutos de
+        // quem jogou até ao fim. Ver `minutosEmCampo` e `duracaoDoJogo`.
+        team: { select: { matchMinutes: true, sport: { select: { matchMinutes: true } } } },
       },
     });
     if (!match) throw new NotFoundException("Jogo não encontrado ou fora do teu âmbito");
@@ -1590,6 +1804,108 @@ export class MatchesService {
 /** Segura um número dentro do razoável. Um 999 na ficha é um dedo escorregado. */
 function clamp(n: number, lo: number, hi: number): number {
   return Math.max(lo, Math.min(hi, Math.round(Number(n) || 0)));
+}
+
+/**
+ * Quanto dura um jogo desta equipa.
+ *
+ * A da equipa primeiro — é do escalão que a duração depende. A da modalidade
+ * só para equipas criadas antes de a coluna existir na equipa. Zero quando não
+ * há nenhuma: uma modalidade sem duração declarada, onde o que se souber por
+ * diferença é tudo o que há.
+ */
+function duracaoDoJogo(team: { matchMinutes: number | null; sport: { matchMinutes: number | null } }): number {
+  return team.matchMinutes ?? team.sport.matchMinutes ?? 0;
+}
+
+/* -------------------------------------------------------------------------- */
+/* Os relatórios                                                               */
+/* -------------------------------------------------------------------------- */
+
+export type RelatorioInput = {
+  summary?: string | null;
+  positives?: string | null;
+  negatives?: string | null;
+  toImprove?: string | null;
+  difficulties?: string | null;
+  videos?: { url: string; label?: string | null }[];
+};
+
+export type AdversarioInput = {
+  formation?: string | null;
+  style?: string | null;
+  strengths?: string | null;
+  weaknesses?: string | null;
+  keyPlayers?: string | null;
+  setPieces?: string | null;
+  notes?: string | null;
+};
+
+const RELATORIO_SELECT = {
+  summary: true, positives: true, negatives: true, toImprove: true, difficulties: true,
+  videos: true, updatedAt: true,
+  author: { select: { user: { select: { name: true } } } },
+} as const;
+
+const ADVERSARIO_SELECT = {
+  formation: true, style: true, strengths: true, weaknesses: true, keyPlayers: true,
+  setPieces: true, notes: true, updatedAt: true,
+  author: { select: { user: { select: { name: true } } } },
+} as const;
+
+type VideoLink = { url: string; label: string | null };
+
+/**
+ * As ligações de vídeo, limpas.
+ *
+ * Só `http(s)`: um `javascript:` guardado aqui voltava a sair como ligação
+ * clicável na página do jogo. Dez no máximo — um jogo tem duas partes e uns
+ * quantos cortes, não uma videoteca.
+ */
+function limparVideos(videos: RelatorioInput["videos"]): VideoLink[] {
+  const saida: VideoLink[] = [];
+  for (const v of videos ?? []) {
+    const url = (v?.url ?? "").trim();
+    if (!/^https?:\/\/\S+$/i.test(url) || url.length > 600) continue;
+    saida.push({ url, label: texto(v.label)?.slice(0, 80) ?? null });
+    if (saida.length === 10) break;
+  }
+  return saida;
+}
+
+function relatorioParaFora(r: {
+  summary: string | null; positives: string | null; negatives: string | null;
+  toImprove: string | null; difficulties: string | null; videos: unknown; updatedAt: Date;
+  author: { user: { name: string } } | null;
+}) {
+  return {
+    summary: r.summary,
+    positives: r.positives,
+    negatives: r.negatives,
+    toImprove: r.toImprove,
+    difficulties: r.difficulties,
+    videos: Array.isArray(r.videos) ? (r.videos as VideoLink[]) : [],
+    updatedAt: r.updatedAt,
+    authorName: r.author?.user.name ?? null,
+  };
+}
+
+function adversarioParaFora(r: {
+  formation: string | null; style: string | null; strengths: string | null; weaknesses: string | null;
+  keyPlayers: string | null; setPieces: string | null; notes: string | null; updatedAt: Date;
+  author: { user: { name: string } } | null;
+}) {
+  return {
+    formation: r.formation,
+    style: r.style,
+    strengths: r.strengths,
+    weaknesses: r.weaknesses,
+    keyPlayers: r.keyPlayers,
+    setPieces: r.setPieces,
+    notes: r.notes,
+    updatedAt: r.updatedAt,
+    authorName: r.author?.user.name ?? null,
+  };
 }
 
 /** Minutos de uma lista, presos ao intervalo de um jogo e por ordem. */

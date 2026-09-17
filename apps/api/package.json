@@ -50,6 +50,7 @@
     "test:password-reset": "node scripts/test-password-reset.mjs",
     "test:match-events": "node scripts/test-match-events.mjs",
     "test:match-sheet": "node scripts/test-match-sheet.mjs",
+    "test:match-reports": "node scripts/test-match-reports.mjs",
     "test:announcements": "node scripts/test-announcements.mjs",
     "test:hierarquia": "node scripts/test-hierarquia.mjs",
     "test:emissao": "node scripts/test-emissao-automatica.mjs",

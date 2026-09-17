@@ -1,5 +1,5 @@
 import { Link } from "react-router-dom";
-import { ArrowUpRight, ChevronRight, MapPin, Megaphone, Trophy, UserRound, Wallet } from "lucide-react";
+import { ArrowUpRight, ChevronRight, MapPin, Megaphone, Stethoscope, Trophy, UserRound, Wallet } from "lucide-react";
 import { useChild } from "@/App";
 import { useStore, type Match, type Training } from "@/lib/store";
 import { cx, dayShort, greeting, money, monthShort, time, whenLabel } from "@/ui";
@@ -110,6 +110,36 @@ export default function Today() {
         <div className="rise surface p-5 text-center" style={{ ["--i" as string]: i++ }}>
           <p className="text-body font-semibold text-ink">Nada agendado</p>
           <p className="mt-1 text-meta text-ink-3">Avisamos-te assim que a academia marcar o próximo.</p>
+        </div>
+      )}
+
+      {/*
+        A próxima consulta marcada.
+        Vem do boletim (`Child.appointments`): a médica marca na consola, a
+        família recebe notificação e vê aqui a data, a hora e o sítio. Antes não
+        havia nada disto do lado de quem tem de lá levar o filho.
+      */}
+      {child.appointments[0] && (
+        <div className="rise" style={{ ["--i" as string]: i++ }}>
+          <Link
+            to="/atleta"
+            className="flex items-center gap-3.5 rounded-[var(--radius-lg)] bg-surface p-3.5 shadow-[var(--shadow-soft)] active:scale-[0.99]"
+          >
+            <span className="flex size-10 shrink-0 items-center justify-center rounded-[13px] bg-signal-soft text-signal-ink">
+              <Stethoscope className="size-[19px]" strokeWidth={1.9} />
+            </span>
+            <span className="min-w-0 flex-1">
+              <span className="block text-[11px] font-semibold tracking-[0.06em] text-ink-3 uppercase">
+                Consulta · {whenLabel(child.appointments[0].date, now)}
+                {child.appointments[0].time ? ` às ${child.appointments[0].time}` : ""}
+              </span>
+              <span className="block truncate text-body font-semibold text-ink">{child.appointments[0].title}</span>
+              {child.appointments[0].location && (
+                <span className="block truncate text-meta text-ink-3">{child.appointments[0].location}</span>
+              )}
+            </span>
+            <ArrowUpRight className="size-4 shrink-0 text-ink-4" strokeWidth={2.25} />
+          </Link>
         </div>
       )}
 

@@ -1,4 +1,4 @@
-import { apiGet, apiPost } from "@/lib/http";
+import { apiGet, apiPatch, apiPost, apiPut } from "@/lib/http";
 import type { AttentionItem } from "@/data/types";
 
 /**
@@ -58,6 +58,65 @@ export type SquadRow = {
 
 export type MatchStaffRow = { id: string; membershipId: string; name: string; role: string };
 
+/** Uma ligação de vídeo do relatório. O vídeo vive lá fora; aqui fica o caminho. */
+export type VideoLink = { url: string; label: string | null };
+
+/**
+ * O relatório do jogo — o que o treinador escreve depois do apito.
+ *
+ * Cinco textos livres e não um: "o que correu mal" responde-se; "escreve um
+ * relatório" adia-se. Qualquer um pode ficar vazio.
+ */
+export type MatchReport = {
+  summary: string | null;
+  positives: string | null;
+  negatives: string | null;
+  toImprove: string | null;
+  difficulties: string | null;
+  videos: VideoLink[];
+  updatedAt: string;
+  authorName: string | null;
+};
+
+/** O que se viu do adversário num jogo. É a memória do clube sobre os outros. */
+export type OpponentReport = {
+  formation: string | null;
+  style: string | null;
+  strengths: string | null;
+  weaknesses: string | null;
+  keyPlayers: string | null;
+  setPieces: string | null;
+  notes: string | null;
+  updatedAt: string;
+  authorName: string | null;
+};
+
+/** Um jogo contra o mesmo adversário, com o que se escreveu dele nessa altura. */
+export type OpponentHistoryRow = {
+  matchId: string;
+  startsAt: string;
+  teamName: string;
+  competition: string | null;
+  isHome: boolean;
+  ourScore: number | null;
+  theirScore: number | null;
+  report: OpponentReport | null;
+};
+
+/** Um adversário do clube: o nome, o registo contra ele e os jogos. */
+export type OpponentSummary = {
+  name: string;
+  played: number;
+  wins: number;
+  draws: number;
+  losses: number;
+  reports: number;
+  lastFormation: string | null;
+  lastPlayedAt: string | null;
+  teams: string[];
+  matches: (OpponentHistoryRow & { teamId: string })[];
+};
+
 export type MatchDetail = {
   id: string;
   teamId: string;
@@ -65,6 +124,11 @@ export type MatchDetail = {
   maxAge: number;
   sportId: string;
   maxCallUps: number;
+  /**
+   * Quanto dura um jogo desta equipa. É do escalão (`Team.matchMinutes`) e não
+   * da modalidade. Nulo numa modalidade sem duração declarada.
+   */
+  matchMinutes: number | null;
   startsAt: string;
   endsAt: string;
   venue: string;
@@ -101,6 +165,12 @@ export type MatchDetail = {
    * A folha usa-a quando ninguém escalou uma equipa de trabalho para o jogo.
    */
   teamStaff: { name: string; role: string }[];
+  /** O relatório do jogo. Nulo enquanto ninguém o escrever. */
+  report: MatchReport | null;
+  /** O que se viu do adversário neste jogo. */
+  opponentReport: OpponentReport | null;
+  /** Os outros jogos contra este adversário, do mais recente para trás. */
+  opponentHistory: OpponentHistoryRow[];
 };
 
 export type MatchListRow = {
@@ -196,6 +266,27 @@ export const saveRetroSquad = (id: string, athleteIds: string[]) =>
 
 export const saveMatchStaff = (id: string, rows: { membershipId: string; role: string }[]) =>
   apiPost<{ ok: true; saved: number }>(`/api/matches/${id}/staff`, { rows });
+
+/**
+ * O relatório do jogo, inteiro de cada vez.
+ *
+ * Um `PUT`: cada gravação é o documento completo, e apagar um campo é mandá-lo
+ * vazio. É a mesma regra da ficha e da logística da convocatória.
+ */
+export const saveMatchReport = (
+  id: string,
+  body: Omit<MatchReport, "updatedAt" | "authorName" | "videos"> & { videos: { url: string; label?: string | null }[] },
+) => apiPut<MatchReport>(`/api/matches/${id}/relatorio`, body);
+
+export const saveOpponentReport = (id: string, body: Omit<OpponentReport, "updatedAt" | "authorName">) =>
+  apiPut<OpponentReport>(`/api/matches/${id}/adversario`, body);
+
+/** Os adversários do clube, com o registo e os relatórios de cada um. */
+export const listOpponents = () => apiGet<OpponentSummary[]>("/api/matches/adversarios");
+
+/** Quanto dura um jogo desta equipa. Ver `Team.matchMinutes`. */
+export const setTeamMatchMinutes = (teamId: string, minutes: number) =>
+  apiPatch<{ teamId: string; matchMinutes: number }>(`/api/teams/${teamId}/duracao-jogo`, { minutes });
 
 /* -------------------------------------------------------------------------- */
 

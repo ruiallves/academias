@@ -249,8 +249,20 @@ function mountSpa(app: INestApplication, prefix: string, dir: string): void {
          * e a landing que oferece a instalação.
          */
         if (path.endsWith("sw.js")) {
-          res.setHeader("Cache-Control", "no-cache");
+          res.setHeader("Cache-Control", "no-store");
           res.setHeader("Service-Worker-Allowed", "/");
+          return;
+        }
+        /*
+         * A versão servida também não se guarda.
+         *
+         * É o ficheiro que diz à app se ela está velha (ver
+         * `packages/ui/src/versao.ts`). Guardado em cache responderia com a
+         * versão de ontem e a app nunca descobria nada — seria pior do que não
+         * ter vigilância nenhuma, porque parece que há.
+         */
+        if (path.endsWith("version.json")) {
+          res.setHeader("Cache-Control", "no-store");
           return;
         }
         /*
@@ -280,7 +292,16 @@ function mountSpa(app: INestApplication, prefix: string, dir: string): void {
    */
   app.use(prefix, (req: Request, res: Response, next: NextFunction) => {
     if (req.method !== "GET" && req.method !== "HEAD") return next();
-    res.setHeader("Cache-Control", "no-cache");
+    /*
+     * `no-store`, e não `no-cache`.
+     *
+     * `no-cache` deixa guardar desde que se revalide — e um browser sem rede (ou
+     * um proxy pelo meio) serve o que tem. Este HTML é o que aponta para os
+     * bundles com hash: uma cópia velha traz a app velha inteira atrás, que foi
+     * exactamente a avaria que se viu no clube. O HTML pesa menos de um
+     * kilobyte; guardá-lo não poupa nada que se sinta.
+     */
+    res.setHeader("Cache-Control", "no-store");
     res.sendFile(join(dir, "index.html"), (err) => {
       if (err) next();
     });

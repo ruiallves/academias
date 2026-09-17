@@ -2,6 +2,7 @@ import { defineConfig, loadEnv } from "vite";
 import react from "@vitejs/plugin-react";
 import tailwindcss from "@tailwindcss/vite";
 import { VitePWA } from "vite-plugin-pwa";
+import { versaoDoBuild } from "../../scripts/vite-versao.mjs";
 import { fileURLToPath, URL } from "node:url";
 
 /**
@@ -66,6 +67,8 @@ export default defineConfig(({ command, mode }) => {
     plugins: [
       react(),
       tailwindcss(),
+      // Assina o bundle e escreve `version.json`. Ver `packages/ui/src/versao.ts`.
+      versaoDoBuild(),
       VitePWA({
         registerType: "autoUpdate",
         // O âmbito do registo, não o do ficheiro. Ver o cabeçalho acima.

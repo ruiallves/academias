@@ -499,6 +499,19 @@ export function isAcademyWide(session: Session): boolean {
   return (
     session.role === "OWNER" ||
     session.role === "DIRECTOR" ||
+    /*
+     * A coordenação também, e faltava aqui.
+     *
+     * O servidor sempre lhe deu a academia toda (`teamScopeFilter`, com
+     * COORDINATOR na mesma lista) e o produto promete-o por escrito: "Vê a
+     * academia toda", em `lib/departments.ts` e em `lib/roles.ts`. A consola é
+     * que a tratava por equipas, e como o âmbito de uma coordenadora vem vazio
+     * (o servidor só monta `teamIds` para COACH e STAFF), **todas** as listas de
+     * pessoas lhe apareciam vazias: atletas, equipas, e o selector de "Entregar
+     * equipamento", onde a queixa apareceu. O servidor mandava o clube inteiro e
+     * o ecrã filtrava-o até ao nada.
+     */
+    session.role === "COORDINATOR" ||
     session.role === "MEDICAL" ||
     // O scouting também: um prospecto não pertence a equipa nenhuma.
     session.role === "SCOUT"

@@ -38,6 +38,22 @@ type ApiAthlete = {
   squadNumber: number | null;
   availability: "available" | "limited" | "out";
   restriction: { id: string; title: string | null; since: string; expectedReturn: string | null } | null;
+  /**
+   * O boletim clínico do educando, como o servidor o manda a quem tem
+   * `clinical:read` — e a família e o atleta têm-no, dos seus.
+   *
+   * A app usa-o para uma coisa só: as **consultas marcadas**. O resto do
+   * historial clínico não tem ecrã aqui, e não se inventa um.
+   */
+  clinical?: {
+    id: string;
+    kind: string;
+    status: string;
+    date: string;
+    time: string | null;
+    location: string | null;
+    title: string | null;
+  }[];
 };
 
 type ApiTeam = {
@@ -193,6 +209,53 @@ export type ApiNotification = {
 /* O que os ecrãs consomem                                                     */
 /* -------------------------------------------------------------------------- */
 
+/** Uma consulta marcada: nutrição, psicologia, fisioterapia, exame médico. */
+export type Appointment = {
+  id: string;
+  childId: string;
+  kind: string;
+  /** O dia, sem hora — a hora vem em `time`, como a academia a escreveu. */
+  date: Date;
+  time?: string;
+  location?: string;
+  title: string;
+};
+
+/**
+ * As consultas marcadas de um educando, hoje ou depois.
+ *
+ * Compara-se em texto `AAAA-MM-DD` de propósito: o servidor manda o dia sem
+ * hora, e passá-lo por `new Date()` fazia uma consulta marcada para hoje cair
+ * para ontem no fuso de Lisboa — desaparecia da app no dia em que mais
+ * interessa.
+ */
+function consultasMarcadas(a: ApiAthlete): Appointment[] {
+  const hoje = new Date();
+  const iso = `${hoje.getFullYear()}-${String(hoje.getMonth() + 1).padStart(2, "0")}-${String(hoje.getDate()).padStart(2, "0")}`;
+  return (a.clinical ?? [])
+    .filter((c) => c.status === "scheduled" && c.date.slice(0, 10) >= iso)
+    .sort((x, y) => x.date.localeCompare(y.date) || (x.time ?? "").localeCompare(y.time ?? ""))
+    .map((c) => ({
+      id: c.id,
+      childId: a.id,
+      kind: c.kind,
+      date: new Date(`${c.date.slice(0, 10)}T12:00:00`),
+      ...(c.time ? { time: c.time } : {}),
+      ...(c.location ? { location: c.location } : {}),
+      title: c.title ?? ROTULO_CONSULTA[c.kind] ?? "Consulta",
+    }));
+}
+
+/** O que cada tipo de registo clínico se chama, quando o título não vem. */
+export const ROTULO_CONSULTA: Record<string, string> = {
+  nutrition: "Consulta de nutrição",
+  psychology: "Consulta de psicologia",
+  physio: "Fisioterapia",
+  exam: "Exame médico",
+  injury: "Consulta",
+  note: "Consulta",
+};
+
 export type Child = {
   id: string;
   name: string;
@@ -205,6 +268,15 @@ export type Child = {
   feeCents: number | null;
   photoUrl?: string;
   availability: "available" | "limited" | "out";
+  /**
+   * As consultas marcadas que ainda estão para vir, da mais próxima para a mais
+   * distante.
+   *
+   * A médica marca na consola e ninguém do lado da família sabia: a app não lia
+   * o boletim, e o aviso não existia. Agora marca-se, chega notificação
+   * (`CLINICAL_APPOINTMENT`) e fica aqui à vista.
+   */
+  appointments: Appointment[];
 };
 
 export type Training = {
@@ -640,6 +712,7 @@ function build(
       feeCents: fees.get(a.id) ?? null,
       photoUrl: a.photoUrl ?? undefined,
       availability: a.availability,
+      appointments: consultasMarcadas(a),
     };
   });
 

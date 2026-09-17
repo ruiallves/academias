@@ -259,7 +259,6 @@ function SportDialog({ sport, onClose }: { sport?: Sport; onClose: () => void })
   const [positions, setPositions] = useState((sport?.positions ?? []).join(", "));
   const [skills, setSkills] = useState((sport?.skills ?? []).join(", "));
   const [dominantSideLabel, setDominantSideLabel] = useState(sport?.dominantSideLabel ?? "");
-  const [matchMinutes, setMatchMinutes] = useState(sport?.matchMinutes ? String(sport.matchMinutes) : "");
   const [busy, setBusy] = useState(false);
   const [erro, setErro] = useState<string | null>(null);
 
@@ -295,7 +294,6 @@ function SportDialog({ sport, onClose }: { sport?: Sport; onClose: () => void })
     if (!positions.trim()) setPositions(p.defaults.positions.join(", "));
     if (!skills.trim()) setSkills(p.defaults.skills.join(", "));
     if (!dominantSideLabel.trim()) setDominantSideLabel(p.defaults.dominantSideLabel);
-    if (!matchMinutes.trim()) setMatchMinutes(String(p.defaults.matchMinutes));
   };
 
   async function submit(e: FormEvent) {
@@ -310,7 +308,6 @@ function SportDialog({ sport, onClose }: { sport?: Sport; onClose: () => void })
       positions: split(positions),
       skills: split(skills),
       dominantSideLabel: dominantSideLabel.trim(),
-      ...(matchMinutes.trim() ? { matchMinutes: Number(matchMinutes) } : {}),
     };
 
     try {
@@ -440,25 +437,19 @@ function SportDialog({ sport, onClose }: { sport?: Sport; onClose: () => void })
           />
         </DialogField>
 
-        <div className="grid grid-cols-2 gap-3">
-          <DialogField label="Lado dominante" hint='Pé, Mão, etc'>
-            <input
-              className={dialogInputClass}
-              value={dominantSideLabel}
-              onChange={(e) => setDominantSideLabel(e.target.value)}
-              placeholder="Pé dominante"
-            />
-          </DialogField>
-          <DialogField label="Duração do jogo" hint="minutos">
-            <input
-              className={dialogInputClass}
-              value={matchMinutes}
-              onChange={(e) => setMatchMinutes(e.target.value.replace(/\D/g, ""))}
-              inputMode="numeric"
-              placeholder="90"
-            />
-          </DialogField>
-        </div>
+        {/*
+          A duração do jogo saiu daqui. É do escalão, não da modalidade: um
+          Sub-11 de futebol joga 60 e um Sub-19 joga 90. Define-se ao criar a
+          equipa e na ficha dela.
+        */}
+        <DialogField label="Lado dominante" hint='Pé, Mão, etc'>
+          <input
+            className={dialogInputClass}
+            value={dominantSideLabel}
+            onChange={(e) => setDominantSideLabel(e.target.value)}
+            placeholder="Pé dominante"
+          />
+        </DialogField>
 
         {erro && (
           <p className="rounded-[var(--radius-control)] bg-risk-soft px-3 py-2.5 text-meta leading-relaxed text-risk">

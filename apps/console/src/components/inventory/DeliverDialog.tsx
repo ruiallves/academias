@@ -3,6 +3,7 @@ import { Dialog, DialogField, dialogInputClass } from "@/components/Dialog";
 import { Monogram, SelectField, cx } from "@/components/primitives";
 import { Check, PackageOpen, Search, TriangleAlert } from "@/lib/icons";
 import { listAthletes, teamById } from "@/lib/api";
+import { semEquipasAtribuidas } from "@/lib/permissions";
 import { useSession } from "@/session";
 import { assign, listItems, type Item } from "@/lib/inventory";
 
@@ -192,8 +193,21 @@ export function DeliverDialog({
                     ))}
                   </ul>
                 )}
-                {procura.trim() && encontrados.length === 0 && (
+                {procura.trim() && encontrados.length === 0 && atletas.length > 0 && (
                   <p className="mt-1.5 text-meta text-ink-3">Nenhum atleta com esse nome.</p>
+                )}
+                {/*
+                  Sem ninguém para escolher, a razão tem de estar escrita.
+                  Foi assim que isto apareceu: uma pessoa com permissão de
+                  inventário abria o diálogo e não conseguia escolher o atleta,
+                  sem nada no ecrã a dizer porquê. Um atleta vê-se pela equipa.
+                */}
+                {atletas.length === 0 && (
+                  <p className="mt-1.5 text-meta leading-relaxed text-ink-3">
+                    {semEquipasAtribuidas(session)
+                      ? "Ainda não és responsável por nenhuma equipa, e os atletas aparecem por equipa. Quem gere o clube atribui-te as tuas no separador Staff."
+                      : "Este clube ainda não tem atletas activos."}
+                  </p>
                 )}
               </>
             )}

@@ -2,6 +2,7 @@ import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
 import tailwindcss from "@tailwindcss/vite";
 import { fileURLToPath, URL } from "node:url";
+import { versaoDoBuild } from "../../scripts/vite-versao.mjs";
 
 export default defineConfig(({ command }) => ({
   /**
@@ -14,7 +15,9 @@ export default defineConfig(({ command }) => ({
    * prefixo nenhum, como sempre esteve.
    */
   base: command === "build" ? "/consola/" : "/",
-  plugins: [react(), tailwindcss()],
+  // `versaoDoBuild` assina o bundle e escreve `version.json` — é o que permite à
+  // consola descobrir que está velha e recarregar-se. Ver `packages/ui/src/versao.ts`.
+  plugins: [react(), tailwindcss(), versaoDoBuild()],
   resolve: {
     alias: {
       "@": fileURLToPath(new URL("./src", import.meta.url)),

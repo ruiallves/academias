@@ -266,7 +266,12 @@ model Sport {
   skills            String[] @default([])
   /// "Pé dominante" no futebol, "Mão dominante" no basquetebol, nulo na natação.
   dominantSideLabel String?
-  /// Duração normal de um jogo, em minutos. Nulo em desportos individuais.
+  /// O que uma equipa nova desta modalidade herda como duração de jogo.
+  ///
+  /// A duração a sério vive em `Team.matchMinutes`: um Sub-11 joga 60, um
+  /// Sub-19 joga 90, na mesma modalidade. Isto deixou de se editar nas
+  /// Definições e fica só como ponto de partida para quem cria uma equipa sem
+  /// dizer a duração. Nulo em desportos individuais.
   matchMinutes      Int?
 
   teams      Team[]
@@ -437,6 +442,8 @@ model Membership {
   absenceNotices  AbsenceNotice[]            @relation("AbsenceNotice")
   ledMatches      Match[]                    @relation("MatchCoach")
   matchStaff      MatchStaff[]               @relation("MatchStaff")
+  matchReports    MatchReport[]              @relation("MatchReportAuthor")
+  opponentReports OpponentReport[]           @relation("OpponentReportAuthor")
   ledEvents       CalendarEvent[]            @relation("EventCoach")
   clinicalWrites  ClinicalEntry[]            @relation("ClinicalAuthor")
   evaluations     Evaluation[]
@@ -981,6 +988,15 @@ model Team {
   /// convoca 18, e a natação não convoca ninguém. O valor por omissão é o do
   /// futebol de formação, que é o caso mais comum — e muda-se na ficha da equipa.
   maxCallUps Int @default(14)
+
+  /// Quanto dura um jogo desta equipa, em minutos.
+  ///
+  /// Por equipa e não por modalidade, pela mesma razão de `maxCallUps`: a
+  /// duração é do escalão. No futebol de formação um Sub-11 joga 60 e um Sub-19
+  /// joga 90, e é esta conta que fecha os minutos de quem jogou até ao fim.
+  /// Nulo numa equipa criada antes de isto existir ou numa modalidade sem
+  /// jogos; aí o servidor cai no valor da modalidade (`Sport.matchMinutes`).
+  matchMinutes Int?
 
   /// Não há duas equipas com o mesmo nome na mesma modalidade e época — o
   /// índice único vive na migração `20260907140000_equipa_sem_nome_repetido`,
@@ -1983,6 +1999,12 @@ enum NotificationType {
   TRAINING_PLAN_SHARED
   /// Um plano de nutrição publicado para o atleta ou para a família.
   NUTRITION_PLAN_SHARED
+  /// Uma consulta marcada — nutrição, psicologia, fisioterapia, exame médico.
+  ///
+  /// Tipo próprio porque tem data, hora e sítio, e quem o recebe tem de estar
+  /// lá: o ícone, a urgência e o ecrã onde o toque aterra são outros. Vai à
+  /// família e ao atleta. Ver `ClinicalService.criar`.
+  CLINICAL_APPOINTMENT
   /// A análise de vídeo terminou. O processamento é assíncrono de propósito —
   /// o treinador fecha a consola e é isto que lhe diz que pode voltar.
   AI_ANALYSIS_COMPLETED
@@ -2220,6 +2242,9 @@ model Match {
   callUps     MatchCallUp[]
   appearances MatchAppearance[]
   staff       MatchStaff[]
+  /// O relatório do jogo e o do adversário — um de cada, escritos depois do apito.
+  report         MatchReport?
+  opponentReport OpponentReport?
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -2374,6 +2399,75 @@ model MatchStaff {
 
   @@unique([matchId, membershipId])
   @@index([membershipId])
+}
+
+/// O relatório de um jogo — o que o treinador escreve depois do apito.
+///
+/// Um por jogo e não uma lista: é um documento que se corrige, não um diário.
+/// Cinco textos livres em vez de um só porque as perguntas são diferentes e é
+/// mais fácil responder a "o que correu mal" do que a "escreve um relatório".
+/// Qualquer um pode ficar vazio.
+///
+/// Sem `academyId` — chega ao seu por `Match`, como `MatchStaff`. A política RLS
+/// vive na migração `20260918120000_relatorios_de_jogo`.
+model MatchReport {
+  id      String @id @default(cuid())
+  matchId String @unique
+  match   Match  @relation(fields: [matchId], references: [id], onDelete: Cascade)
+
+  /// Quem escreveu por último. `SetNull`: um relatório sobrevive a quem sai do clube.
+  authorId String?
+  author   Membership? @relation("MatchReportAuthor", fields: [authorId], references: [id], onDelete: SetNull)
+
+  /// A leitura geral do jogo.
+  summary      String?
+  positives    String?
+  negatives    String?
+  /// O que se vai trabalhar no treino a seguir.
+  toImprove    String?
+  /// O que custou: o relvado, o árbitro, o calor, a falta de banco.
+  difficulties String?
+
+  /// Ligações de vídeo: `[{ "url": "https://…", "label": "1.ª parte" }]`.
+  ///
+  /// Ligações e não ficheiros. Um jogo inteiro são gigabytes, e o armazenamento
+  /// do projecto aceita 50 MB por ficheiro; o vídeo vive no YouTube, no Veo ou
+  /// no Drive do clube, e aqui fica o caminho até lá.
+  videos Json @default("[]")
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+/// O que se viu do adversário neste jogo.
+///
+/// É por aqui que o clube passa a ter memória dos outros: o Fafe Sub-19 joga em
+/// 4-3-3, sobe as linhas, é fraco nas bolas paradas. Um por jogo, ligado ao
+/// jogo e não a uma entidade "adversário" à parte: o adversário é o nome que
+/// está no jogo, e o histórico agrupa-se por esse nome. Ver `adversarios` no
+/// serviço dos jogos.
+model OpponentReport {
+  id      String @id @default(cuid())
+  matchId String @unique
+  match   Match  @relation(fields: [matchId], references: [id], onDelete: Cascade)
+
+  authorId String?
+  author   Membership? @relation("OpponentReportAuthor", fields: [authorId], references: [id], onDelete: SetNull)
+
+  /// "4-3-3", "1-2-1" — texto livre, cada modalidade escreve o seu.
+  formation  String?
+  /// Como jogaram: pressão alta, jogo directo, posse.
+  style      String?
+  strengths  String?
+  weaknesses String?
+  /// Quem se destacou do lado deles — número, nome, o que fez.
+  keyPlayers String?
+  /// Bolas paradas, situações especiais.
+  setPieces  String?
+  notes      String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 }
 
 /**

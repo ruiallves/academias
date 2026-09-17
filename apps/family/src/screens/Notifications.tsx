@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
 import { destinoDaNotificacao } from "@/lib/rotas";
 import { chooseContext } from "@/lib/contexts";
-import { Bell, CalendarClock, FileText, Gauge, Megaphone, Trophy, Wallet, type LucideIcon, Dumbbell, Apple } from "lucide-react";
+import { Bell, CalendarClock, FileText, Gauge, Megaphone, Trophy, Wallet, type LucideIcon, Dumbbell, Apple , Stethoscope } from "lucide-react";
 import { apiPatch } from "@/lib/http";
 import { reload, useStore, type ApiNotification } from "@/lib/store";
 import { cx, whenLabel } from "@/ui";
@@ -38,6 +38,8 @@ const STYLE: Record<string, { icon: LucideIcon; cls: string; urgent?: boolean }>
   ANNOUNCEMENT_PUBLISHED: { icon: Megaphone, cls: "bg-sunken text-ink-2" },
   TRAINING_PLAN_SHARED: { icon: Dumbbell, cls: "bg-signal-soft text-signal-ink" },
   NUTRITION_PLAN_SHARED: { icon: Apple, cls: "bg-ok-soft text-ok" },
+  /* Uma consulta marcada tem hora e sítio: quem a recebe tem de estar lá. */
+  CLINICAL_APPOINTMENT: { icon: Stethoscope, cls: "bg-signal-soft text-signal-ink", urgent: true },
 };
 
 const FALLBACK = { icon: Bell, cls: "bg-sunken text-ink-2" };

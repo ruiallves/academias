@@ -96,6 +96,18 @@ export class CreateTeamDto {
   @ValidateNested({ each: true })
   @Type(() => ScheduleSlotDto)
   schedule!: ScheduleSlotDto[];
+
+  /**
+   * Quanto dura um jogo deste escalão, em minutos.
+   *
+   * Opcional: sem ele a equipa herda o da modalidade. É o número que fecha a
+   * conta dos minutos de quem jogou até ao fim — ver `Team.matchMinutes`.
+   */
+  @IsOptional()
+  @IsInt()
+  @Min(1)
+  @Max(300)
+  matchMinutes?: number;
 }
 
 

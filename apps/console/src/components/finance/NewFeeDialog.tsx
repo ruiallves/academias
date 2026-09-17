@@ -118,7 +118,14 @@ export function NewFeeDialog({ onClose, onDone }: { onClose: () => void; onDone:
   );
 
   const cents = modo === "fixo" ? paraCentimos(valor) : null;
-  const valorValido = modo === "preco" || (cents !== null && cents >= 100);
+  /*
+   * Zero euros é um valor.
+   *
+   * Um atleta com bolsa, o filho de um treinador, um acordo com a escola: a
+   * mensalidade existe, vale 0 € e nasce paga (o servidor trata disso). O que
+   * não passa é o campo vazio ou um valor entre zero e um euro.
+   */
+  const valorValido = modo === "preco" || (cents !== null && (cents === 0 || cents >= 100));
   // Lançadas como pagas, tem de se dizer como: não há método por omissão.
   const valido = abrangidos.length > 0 && meses.size > 0 && valorValido && (estado === "OPEN" || metodo !== null);
 
@@ -350,7 +357,12 @@ export function NewFeeDialog({ onClose, onDone }: { onClose: () => void; onDone:
                 placeholder="35,00"
                 className={cx(dialogInputClass, "text-right tabular", valor && !valorValido && "border-risk")}
               />
-              {estado === "OPEN" && <CustoDoPagamento amountCents={cents} />}
+              {estado === "OPEN" && cents !== 0 && <CustoDoPagamento amountCents={cents} />}
+              {cents === 0 && (
+                <p className="mt-1.5 text-meta leading-relaxed text-ink-3">
+                  A 0 € a mensalidade nasce paga: fica registada, e a família não recebe nada para pagar.
+                </p>
+              )}
             </DialogField>
           )}
         </fieldset>
