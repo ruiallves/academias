@@ -9,7 +9,13 @@ import { PHOTO_BUCKET, PHOTO_TTL } from "../storage/photos.service";
 import { DIAS_DO_MES } from "../members/member-fees.service";
 import { basePermissions, can, outranks, ROLE_PERMISSIONS, type Permission, type RequestContext, teamScopeForRoster } from "../common/permissions";
 import { athleteScopeFilter, athleteTeamScopeWhere, calendarScopeFilter, inTeamScope, teamScopeFilter } from "../common/permissions";
-import { gerarCobrancas, retirarForaDoCalendario, periodoActual } from "../billing/billing.service";
+import {
+  gerarCobrancas,
+  inicioDaProximaEpoca,
+  periodoActual,
+  retirarForaDoCalendario,
+  SELECT_CALENDARIO,
+} from "../billing/billing.service";
 import { SHORT_NAME_MAX } from "../common/short-name";
 import { matchTitle } from "../common/match-title";
 import { AMIGAVEL } from "./catalogs.service";
@@ -187,6 +193,8 @@ export class AcademyService {
           signalColor: true, logoUrl: true,
           // O calendário de cobrança: a consola mostra-o e edita-o em Definições.
           billingDueDay: true, billingMonths: true,
+          // O calendário agendado para a próxima época, se houver.
+          billingNextFrom: true, billingNextMonths: true, billingNextDueDay: true,
           // O período experimental. Sem contrato nenhum activo, a consola
           // mostra quanto falta — ver o cartão no rodapé do menu lateral.
           // `createdAt` é o proxy do início do período: não há um campo próprio
@@ -510,7 +518,10 @@ export class AcademyService {
    * mensalidade emitida é um facto, e anular uma é uma decisão à parte, que fica
    * registada.
    */
-  async setBillingSettings(ctx: RequestContext, dto: { dueDay?: number; months?: number[] }) {
+  async setBillingSettings(
+    ctx: RequestContext,
+    dto: { dueDay?: number; months?: number[]; aplicarEm?: "atual" | "proxima" },
+  ) {
     if (!can(ctx, "settings:write")) throw new ForbiddenException("Sem permissão para mudar as definições");
 
     if (dto.dueDay !== undefined && (!Number.isInteger(dto.dueDay) || dto.dueDay < 1 || dto.dueDay > 28)) {
@@ -528,6 +539,40 @@ export class AcademyService {
       if (meses.length === 0) throw new BadRequestException("Escolhe pelo menos um mês de cobrança");
     }
 
+    /*
+     * Só a partir da próxima época.
+     *
+     * Nada muda nesta época: o calendário fica agendado em `billingNext*` e
+     * passa a valer no primeiro período da próxima (`calendarioPara`). O que a
+     * limpeza pode apagar são só linhas já lançadas dessa época em meses que o
+     * novo calendário desliga, que quase nunca existem. Agendar o mesmo que já
+     * vale hoje é desfazer o agendamento.
+     */
+    if (dto.aplicarEm === "proxima") {
+      const desde = inicioDaProximaEpoca();
+      const resultado = await this.prisma.runAs(ctx.academyId, async (db) => {
+        const academia = await db.academy.findFirst({ where: { id: ctx.academyId }, select: SELECT_CALENDARIO });
+        if (!academia) throw new NotFoundException("Academia não encontrada");
+        const agendado = academia.billingNextFrom === desde;
+        const novosMeses = meses ?? (agendado && academia.billingNextMonths.length ? academia.billingNextMonths : academia.billingMonths);
+        const novoDia = dto.dueDay ?? (agendado ? (academia.billingNextDueDay ?? academia.billingDueDay) : academia.billingDueDay);
+        const igualAoDeHoje =
+          novoDia === academia.billingDueDay &&
+          novosMeses.length === academia.billingMonths.length &&
+          novosMeses.every((m) => academia.billingMonths.includes(m));
+
+        await db.academy.update({
+          where: { id: ctx.academyId },
+          data: igualAoDeHoje
+            ? { billingNextFrom: null, billingNextMonths: [], billingNextDueDay: null }
+            : { billingNextFrom: desde, billingNextMonths: novosMeses, billingNextDueDay: novoDia },
+        });
+        const retiradas = await retirarForaDoCalendario(db, ctx.academyId);
+        return { agendadoDesde: igualAoDeHoje ? null : desde, ...retiradas };
+      });
+      return { ok: true, ...resultado };
+    }
+
     const retiradas = await this.prisma.runAs(ctx.academyId, async (db) => {
       // O calendário de antes, para saber que meses se desligaram agora.
       const antes = await db.academy.findFirst({ where: { id: ctx.academyId }, select: { billingMonths: true } });
@@ -541,16 +586,19 @@ export class AcademyService {
       });
 
       /*
-       * Desligar um mês retira o que estava por pagar nesse mês.
+       * Um mês desligado fica vazio — e não só os que se desligaram agora.
        *
        * Na mesma transacção da gravação, de propósito: o calendário e o que ele
-       * implica mudam juntos ou não mudam. Só os meses que passaram de ligados
-       * a desligados neste pedido, e não todos os fechados: ver a nota em
-       * `retirarForaDoCalendario` sobre as mensalidades lançadas à mão.
+       * implica mudam juntos ou não mudam. Passou a limpar **todos** os meses
+       * fechados da época, e não apenas os que mudaram neste pedido: era essa a
+       * razão de Agosto continuar à vista depois de desligado (as pagas ficavam,
+       * e as lançadas à mão depois também). Agora nada nasce num mês fechado —
+       * `assertMesesCobrados` fecha as duas portas de criação —, por isso
+       * deduzir o calendário já não apaga decisões de ninguém: apaga o que o
+       * calendário diz que não devia existir.
        */
-      if (meses === undefined) return { apagadas: 0, anuladas: 0 };
-      const desligados = (antes?.billingMonths ?? []).filter((m) => !meses.includes(m));
-      return retirarForaDoCalendario(db, ctx.academyId, desligados);
+      void antes;
+      return retirarForaDoCalendario(db, ctx.academyId);
     });
 
     // Fora da transação de cima de propósito: `gerarCobrancas` abre a sua, e o

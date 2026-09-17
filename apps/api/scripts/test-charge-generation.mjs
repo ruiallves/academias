@@ -32,7 +32,7 @@ const env = (k) => {
 
 const S = env("SUPABASE_URL").replace(/\/$/, "");
 const A = env("SUPABASE_ANON_KEY");
-const API = "http://localhost:3000";
+const API = process.env.API_URL ?? "http://localhost:3000";
 
 let ok = 0, bad = 0;
 const check = (l, c, d = "") => {
@@ -46,16 +46,41 @@ const login = async (email) =>
     body: JSON.stringify({ email, password: "academia2026" }),
   })).json()).access_token;
 
+/*
+ * O que tem de ser reposto mesmo que o teste rebente a meio.
+ *
+ * Um `fetch` que falha (a API a reiniciar, por exemplo) deitava o processo
+ * abaixo entre "fechar um mês" e "repor o calendário", e o Life Club ficava com
+ * o calendário de teste. A corrida seguinte lia esse estado como o original e
+ * "repunha-o". Agora cada passo que mexe no clube regista aqui como se desfaz,
+ * e um pedido que falha desfaz tudo antes de sair.
+ */
+const reposicoes = [];
+const reporTudo = async () => {
+  for (const f of reposicoes.splice(0).reverse()) await f().catch((e) => console.error("  (reposição falhou)", e.message));
+};
+const abortar = async (e) => {
+  console.error("\n  O teste rebentou a meio — a repor o Life Club antes de sair.", e?.message ?? e);
+  await reporTudo();
+  await db.end().catch(() => undefined);
+  process.exit(1);
+};
+
 const call = async (token, method, p, body) => {
-  const r = await fetch(API + p, {
-    method,
-    headers: {
-      Authorization: `Bearer ${token}`,
-      "x-academy-slug": "life-club",
-      ...(body ? { "Content-Type": "application/json" } : {}),
-    },
-    body: body ? JSON.stringify(body) : undefined,
-  });
+  let r;
+  try {
+    r = await fetch(API + p, {
+      method,
+      headers: {
+        Authorization: `Bearer ${token}`,
+        "x-academy-slug": "life-club",
+        ...(body ? { "Content-Type": "application/json" } : {}),
+      },
+      body: body ? JSON.stringify(body) : undefined,
+    });
+  } catch (e) {
+    return abortar(e);
+  }
   return { status: r.status, body: await r.json().catch(() => null) };
 };
 
@@ -108,6 +133,7 @@ const calendarioOriginal = (await db.query(
 const porCalendario = (meses) =>
   db.query(`UPDATE "Academy" SET "billingMonths" = $1 WHERE id = $2`, [meses, academyId]);
 const reporCalendario = () => porCalendario(calendarioOriginal);
+reposicoes.push(reporCalendario);
 
 await porCalendario(MESES_DO_TESTE);
 
@@ -383,24 +409,47 @@ check(
 const venceHoje = new Date(cobrancaTardia?.due ?? 0) >= new Date(new Date().toISOString().slice(0, 10));
 check("e não nasce vencida", venceHoje, `vence a ${cobrancaTardia?.due}`);
 
-console.log("\n=== Desligar um mês retira o que estava por pagar ===");
+console.log("\n=== Desligar um mês esvazia-o ===");
 /*
- * O outro lado da mesma regra. As mensalidades de um mês que o clube deixa de
- * cobrar deixam de existir: não aparecem na app dos pais nem na aba das
- * mensalidades, nem como anuladas. As pagas ficam, porque o dinheiro entrou.
- * E é pelo endpoint das definições, que é por onde o clube o faz.
+ * O outro lado da mesma regra. Um mês que o clube deixa de cobrar deixa de
+ * existir: as mensalidades desaparecem — por pagar, anuladas, e marcadas como
+ * pagas à mão. Só ficam as que têm dinheiro que passou pela euPago. E é pelo
+ * endpoint das definições, que é por onde o clube o faz.
  *
- * Isto toca o clube de demonstração inteiro, não só os atletas ZZ: as
- * mensalidades reais do mês que estavam por pagar também desaparecem. Por
- * isso guardam-se as linhas inteiras antes (em JSON feito pelo Postgres, para
- * as datas não passarem pelo fuso do node) e repõem-se no fim, para o Life
- * Club ficar exactamente como estava.
+ * Isto toca o clube de demonstração, não só os atletas ZZ. Por isso:
+ * - desliga-se **só** o mês corrente, e liga-se tudo o resto — gravar o
+ *   calendário esvazia todos os meses desligados da época, e com meia dúzia
+ *   deles fechados apagava a época inteira do Life Club;
+ * - guardam-se as linhas inteiras do mês, em todos os estados, e os pagamentos
+ *   delas (em JSON feito pelo Postgres, para as datas não passarem pelo fuso do
+ *   node), e repõem-se no fim — ou a meio, se o teste rebentar.
  */
+const TODOS = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12];
 const guardadas = (await db.query(
   `SELECT row_to_json(c) AS linha FROM "Charge" c
-    WHERE c."academyId" = $1 AND c.period = $2 AND c.status = 'OPEN'`,
+    WHERE c."academyId" = $1 AND c.period = $2 AND c.kind = 'FEE'`,
   [academyId, PERIODO],
 )).rows.map((r) => r.linha);
+const pagamentosGuardados = (await db.query(
+  `SELECT row_to_json(p) AS linha FROM "Payment" p JOIN "Charge" c ON c.id = p."chargeId"
+    WHERE c."academyId" = $1 AND c.period = $2 AND c.kind = 'FEE'`,
+  [academyId, PERIODO],
+)).rows.map((r) => r.linha);
+const reporMes = async () => {
+  await db.query(`DELETE FROM "Charge" WHERE "academyId" = $1 AND period = $2 AND kind = 'FEE'`, [academyId, PERIODO]);
+  await db.query(`INSERT INTO "Charge" SELECT * FROM json_populate_recordset(NULL::"Charge", $1::json)`, [JSON.stringify(guardadas)]);
+  await db.query(`INSERT INTO "Payment" SELECT * FROM json_populate_recordset(NULL::"Payment", $1::json)`, [JSON.stringify(pagamentosGuardados)]);
+};
+reposicoes.push(reporMes);
+
+/* O que a regra manda ficar: dinheiro online, ou uma referência ainda por pagar. */
+const ficam = (await db.query(
+  `SELECT count(*)::int n FROM "Charge" c
+    WHERE c."academyId" = $1 AND c.period = $2 AND c.kind = 'FEE'
+      AND EXISTS (SELECT 1 FROM "Payment" p WHERE p."chargeId" = c.id AND (
+        p.status = 'PENDING' OR (p.provider <> 'manual' AND p.status IN ('PAID', 'PROCESSING', 'REFUNDED'))))`,
+  [academyId, PERIODO],
+)).rows[0].n;
 const estadosZZ = async () => Object.fromEntries((await db.query(
   `SELECT c.status, count(*)::int n FROM "Charge" c JOIN "Athlete" a ON a.id = c."athleteId"
     WHERE a.name LIKE 'ZZ %' AND c.period = $1 GROUP BY c.status`,
@@ -409,22 +458,22 @@ const estadosZZ = async () => Object.fromEntries((await db.query(
 const antes = await estadosZZ();
 check("há mensalidades por pagar para retirar", (antes.OPEN ?? 0) >= 1, JSON.stringify(antes));
 
-const fechar = await call(direcao, "PATCH", "/api/pagamentos", { months: MESES_DO_TESTE.filter((m) => m !== MES) });
+const fechar = await call(direcao, "PATCH", "/api/pagamentos", { months: TODOS.filter((m) => m !== MES) });
 check("desligar o mês corrente responde", fechar.status === 200, `${fechar.status} ${JSON.stringify(fechar.body)}`);
-check("e diz quantas apagou", fechar.body?.apagadas === guardadas.length, `${fechar.body?.apagadas} vs ${guardadas.length}`);
+check("e diz quantas retirou", fechar.body?.apagadas === guardadas.length - ficam, `${fechar.body?.apagadas} vs ${guardadas.length - ficam}`);
 
 const depois = await estadosZZ();
 check("nenhuma ficou por pagar", (depois.OPEN ?? 0) === 0, JSON.stringify(depois));
 check("e nenhuma ficou como anulada: desapareceram", (depois.VOID ?? 0) === 0, JSON.stringify(depois));
-check("as pagas ficam pagas", (depois.SETTLED ?? 0) === (antes.SETTLED ?? 0), JSON.stringify(depois));
+check("as marcadas como pagas à mão também saem", (depois.SETTLED ?? 0) === 0, JSON.stringify(depois));
 
 // Voltar a ligar o mês emite-as outra vez: o calendário mudou, as mensalidades seguem-no.
-const reabrir = await call(direcao, "PATCH", "/api/pagamentos", { months: MESES_DO_TESTE });
+const reabrir = await call(direcao, "PATCH", "/api/pagamentos", { months: TODOS });
 check("ligar o mês outra vez volta a emitir", (reabrir.body?.cobrancas?.criadas ?? 0) >= (antes.OPEN ?? 0), JSON.stringify(reabrir.body));
 
-// O Life Club volta exactamente ao que era: fora o que a reemissão criou, entram as linhas guardadas.
-await db.query(`DELETE FROM "Charge" WHERE "academyId" = $1 AND period = $2 AND status = 'OPEN'`, [academyId, PERIODO]);
-await db.query(`INSERT INTO "Charge" SELECT * FROM json_populate_recordset(NULL::"Charge", $1::json)`, [JSON.stringify(guardadas)]);
+// O Life Club volta exactamente ao que era: o mês reposto linha a linha, e o calendário do teste.
+reposicoes.splice(reposicoes.indexOf(reporMes), 1);
+await reporMes();
 await porCalendario(MESES_DO_TESTE);
 
 /*

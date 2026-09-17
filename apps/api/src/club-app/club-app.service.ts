@@ -335,13 +335,21 @@ export class ClubAppService {
     /* ---- 2. O clube, e a fotografia em paralelo -------------------------- */
     const [clube, photoUrl] = await Promise.all([
       this.prisma.runAs(academyId, async (db) => {
-        const [jogo, noticias, sondagens, votos] = await Promise.all([
-          db.match.findFirst({
+        const [jogosMarcados, noticias, sondagens, votos] = await Promise.all([
+          /*
+           * Todos os jogos por disputar, de todos os escalões — o sócio segue o
+           * clube inteiro, não só a equipa do filho (essa é a app da família).
+           * Sem `teamId`: não há âmbito de equipa aqui, como não há em nada
+           * nesta área. O tecto é uma rede de segurança, não uma escolha de
+           * produto — nenhum clube real chega lá.
+           */
+          db.match.findMany({
             where: { startsAt: { gte: agora }, status: "SCHEDULED" },
             orderBy: { startsAt: "asc" },
+            take: 300,
             select: {
               id: true, startsAt: true, venue: true, opponent: true, isHome: true,
-              team: { select: { name: true } },
+              team: { select: { name: true, maxAge: true } },
               competition: { select: { label: true } },
             },
           }),
@@ -378,18 +386,35 @@ export class ClubAppService {
 
         const meusVotos = new Map(votos.map((v) => [v.pollId, v.optionId]));
 
+        /*
+         * Dos mais velhos para os mais novos — pedido explícito, e não a ordem
+         * por que a base os devolve (essa é por data). Seniores primeiro,
+         * Sub-19 a seguir, até ao escalão mais novo; dentro do mesmo escalão,
+         * o jogo mais próximo primeiro. `teamName` como critério do meio, e não
+         * só por decisão: sem ele, duas equipas da mesma idade — dois Sub-15,
+         * um "A" e um "B" — intercalavam os jogos por data em vez de ficarem
+         * juntas, e a app agrupa por equipa a seguir (`JogosDoClube`).
+         */
+        const jogos = [...jogosMarcados]
+          .sort(
+            (a, b) =>
+              b.team.maxAge - a.team.maxAge ||
+              a.team.name.localeCompare(b.team.name) ||
+              a.startsAt.getTime() - b.startsAt.getTime(),
+          )
+          .map((m) => ({
+            id: m.id,
+            startsAt: m.startsAt,
+            venue: m.venue,
+            opponent: m.opponent,
+            isHome: m.isHome,
+            teamName: m.team.name,
+            teamMaxAge: m.team.maxAge,
+            competition: m.competition?.label ?? null,
+          }));
+
         return {
-          nextMatch: jogo
-            ? {
-                id: jogo.id,
-                startsAt: jogo.startsAt,
-                venue: jogo.venue,
-                opponent: jogo.opponent,
-                isHome: jogo.isHome,
-                teamName: jogo.team.name,
-                competition: jogo.competition?.label ?? null,
-              }
-            : null,
+          matches: jogos,
           news: visiveis,
           polls: sondagens.map((p) => ({
             id: p.id,

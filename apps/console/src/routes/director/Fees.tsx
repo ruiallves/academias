@@ -7,6 +7,7 @@ import { Dialog, DialogField } from "@/components/Dialog";
 import { DataTable, Empty, Metric, MetricRow, Monogram, Panel, PanelHead, Pill, SelectField, cx, type Column } from "@/components/primitives";
 import { ResultCount, SearchInput, Segmented, Select, Toolbar } from "@/components/filters";
 import { NewFeeDialog } from "@/components/finance/NewFeeDialog";
+import { BillingCalendarDialog } from "@/components/finance/BillingCalendarDialog";
 import { CalendarDays, Check, ChevronDown, CircleCheck, Download, Loader2, Plus, Search, Send, Settings, Trash2, TriangleAlert, Users, Wallet } from "@/lib/icons";
 import {
   arrears,
@@ -14,6 +15,8 @@ import {
   availablePeriods,
   guardiansOf,
   currentPeriod,
+  mesCobrado,
+  proximoPeriodoCobrado,
   listAllFees,
   listAthletes,
   listFees,
@@ -126,7 +129,16 @@ export default function Fees() {
   // A dívida vencida vem de "?estado=overdue" a partir de "Precisa de atenção" —
   // e uma dívida antiga pode estar num mês que já não é o corrente. Por isso, se
   // se chega aqui a filtrar vencidas, o período abre em "Todos" para não escondê-la.
-  const [period, setPeriod] = useState<string>(estado === "overdue" ? ALL : currentPeriod);
+  /*
+   * Num mês que o clube não cobra, a página abre em "Todos os períodos".
+   *
+   * Abria sempre no mês corrente — e em Agosto, num clube que desligou Agosto,
+   * abria numa tabela vazia com "Agosto de 2026" escrito no selector, que é
+   * exactamente o mês que não devia aparecer.
+   */
+  const [period, setPeriod] = useState<string>(
+    estado === "overdue" || !mesCobrado(currentPeriod) ? ALL : currentPeriod,
+  );
 
   const periods = availablePeriods();
   const debt = arrears(session);
@@ -175,6 +187,13 @@ export default function Fees() {
   // A direção acerta o estado à mão — dinheiro em mão, uma bolsa, uma correção.
   const mayEditFees = can(session, "billing:write");
   const [pricesOpen, setPricesOpen] = useState(false);
+  /*
+   * O período de cobrança (dia de vencimento e meses cobrados). Vivia nas
+   * Definições; está aqui porque é aqui que se vê o efeito. Grava na base as
+   * definições do clube, por isso pede `settings:write`, como o servidor.
+   */
+  const [calendarioOpen, setCalendarioOpen] = useState(false);
+  const mayCalendar = can(session, "settings:write");
   const [athletePricesOpen, setAthletePricesOpen] = useState(false);
   const [exportOpen, setExportOpen] = useState(false);
   /*
@@ -325,6 +344,12 @@ export default function Fees() {
           <Download className="size-3.5" strokeWidth={1.75} />
           Exportar
         </button>
+        {mayCalendar && (
+          <button type="button" className="ctl-outline" onClick={() => setCalendarioOpen(true)}>
+            <CalendarDays className="size-3.5" strokeWidth={1.75} />
+            Período de cobrança
+          </button>
+        )}
         {mayEditFees && (
           <>
             <button type="button" className="ctl-outline" onClick={() => setLancarOpen(true)}>
@@ -487,6 +512,10 @@ export default function Fees() {
         />
       )}
 
+      {calendarioOpen && (
+        <BillingCalendarDialog onSaved={onFeeSaved} onClose={() => setCalendarioOpen(false)} />
+      )}
+
       {pricesOpen && (
         <TeamFeesDialog session={session} onSaved={onFeeSaved} onClose={() => setPricesOpen(false)} />
       )}
@@ -544,6 +573,12 @@ function MissingCharges({
   version: number;
 }) {
   const alvo = period === ALL ? currentPeriod : period;
+  /*
+   * Num mês desligado não falta ninguém: o clube não cobra. O painel ficava a
+   * listar o plantel inteiro como "fora do mês", o que é pôr o mês à vista
+   * outra vez — por baixo da tabela.
+   */
+  const alvoCobrado = mesCobrado(alvo);
   const [data, setData] = useState<MissingCharges | null>(null);
   const [busy, setBusy] = useState(false);
   const [erro, setErro] = useState<string | null>(null);
@@ -624,6 +659,8 @@ function MissingCharges({
       </Panel>
     );
   }
+
+  if (!alvoCobrado) return null;
 
   return (
     <Panel>
@@ -708,9 +745,23 @@ function ApplyFromChoice({
   value: AplicarEm;
   onChange: (v: AplicarEm) => void;
 }) {
+  /*
+   * Nunca um mês que o clube não cobra.
+   *
+   * "Já em Agosto" num clube que desligou Agosto não emite nada, e dizê-lo
+   * como opção é pôr o mês à vista. Nesse caso só há uma resposta, e diz-se
+   * qual é o próximo mês cobrado — que pode não ser o seguinte.
+   */
+  const correnteCobrado = mesCobrado(currentPeriod);
   const opcoes: { value: AplicarEm; label: string; hint: string }[] = [
-    { value: "atual", label: `Já em ${periodLabel(currentPeriod)}`, hint: "emite as mensalidades deste mês" },
-    { value: "proximo", label: `Só a partir de ${periodLabel(nextPeriod(currentPeriod))}`, hint: "este mês não é cobrado" },
+    ...(correnteCobrado
+      ? [{ value: "atual" as const, label: `Já em ${periodLabel(currentPeriod)}`, hint: "emite as mensalidades deste mês" }]
+      : []),
+    {
+      value: "proximo",
+      label: `${correnteCobrado ? "Só a partir de" : "A partir de"} ${periodLabel(proximoPeriodoCobrado(currentPeriod))}`,
+      hint: correnteCobrado ? "este mês não é cobrado" : "o próximo mês em que o clube cobra",
+    },
   ];
 
   return (
@@ -743,12 +794,6 @@ function ApplyFromChoice({
   );
 }
 
-/** O mês a seguir a este. Dezembro passa a Janeiro — gémeo de `periodoSeguinte` no servidor. */
-function nextPeriod(period: string): string {
-  const ano = Number(period.slice(0, 4));
-  const mes = Number(period.slice(5, 7));
-  return mes === 12 ? `${ano + 1}-01` : `${ano}-${String(mes + 1).padStart(2, "0")}`;
-}
 
 /* -------------------------------------------------------------------------- */
 
@@ -957,7 +1002,7 @@ function TeamFeesDialog({
   onClose: () => void;
 }) {
   const teams = listTeams(session);
-  const [aplicarEm, setAplicarEm] = useState<AplicarEm>("atual");
+  const [aplicarEm, setAplicarEm] = useState<AplicarEm>(mesCobrado(currentPeriod) ? "atual" : "proximo");
 
   /*
    * O "Concluído" espera pelo que ficou a meio.
@@ -1259,7 +1304,7 @@ function AthleteFeesDialog({
         `Ajustados ${selected.size} ${selected.size === 1 ? "atleta" : "atletas"}` +
           (aplicarEm === "atual"
             ? `, com a mensalidade de ${periodLabel(currentPeriod)} emitida.`
-            : `. A cobrança começa em ${periodLabel(nextPeriod(currentPeriod))}.`),
+            : `. A cobrança começa em ${periodLabel(proximoPeriodoCobrado(currentPeriod))}.`),
       );
       setSelected(new Set());
     } catch (err) {

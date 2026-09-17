@@ -66,6 +66,12 @@ export type Academy = {
   billingDueDay: number;
   /** Os meses (1–12) em que o clube cobra. Vazio antes de carregar. */
   billingMonths: number[];
+  /**
+   * O calendário agendado para a próxima época, se o clube mudou o período de
+   * cobrança "só a partir da próxima". `from` é o primeiro período dessa época
+   * (`AAAA-08`); a partir dele valem `months` e `dueDay`.
+   */
+  billingNext: { from: string; months: number[]; dueDay: number } | null;
   /** Quando a academia nasceu — o proxy do início do período experimental. */
   createdAt: string;
   sports: Sport[];

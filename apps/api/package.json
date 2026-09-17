@@ -24,6 +24,7 @@
     "test:legal": "node scripts/test-legal.mjs",
     "test:aviso": "node scripts/test-aviso-de-falta.mjs",
     "test:atleta": "node scripts/test-atleta.mjs",
+    "test:jogos-socio": "node scripts/test-jogos-socio.mjs",
     "test:guest-callups": "node scripts/test-guest-callups.mjs",
     "test:callups": "node scripts/test-callups.mjs",
     "test:callup-blocks": "node scripts/test-callup-blocks.mjs",

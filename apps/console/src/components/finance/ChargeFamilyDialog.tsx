@@ -3,6 +3,7 @@ import { CustoDoPagamento } from "./CustoDoPagamento";
 import { Dialog, DialogField, dialogInputClass } from "@/components/Dialog";
 import { Monogram, SelectField, cx } from "@/components/primitives";
 import { Check, Home, Search, Send, TriangleAlert, Wallet } from "@/lib/icons";
+import { mesCobrado } from "@/lib/api";
 import { useActiveCatalog } from "@/lib/catalogs";
 import { guardiansOf, listAthletes, teamById } from "@/lib/api";
 import { apiPost } from "@/lib/http";
@@ -60,7 +61,16 @@ export function ChargeFamilyDialog({ onClose, onDone }: { onClose: () => void; o
   const [erro, setErro] = useState<string | null>(null);
 
   const cents = paraCentimos(valor);
-  const valido = Boolean(atleta) && titulo.trim().length >= 2 && cents !== null && cents >= 100 && Boolean(vencimento);
+  /*
+   * O mês do vencimento tem de ser um mês cobrado.
+   *
+   * Uma avulsa vive no mês do vencimento, e num mês que o clube desligou seria
+   * dinheiro a pedir num mês que não existe. O servidor recusa
+   * (`assertMesesCobrados`); aqui diz-se antes de carregar, e o botão espera.
+   */
+  const mesFechado = Boolean(vencimento) && !mesCobrado(vencimento);
+  const valido =
+    Boolean(atleta) && titulo.trim().length >= 2 && cents !== null && cents >= 100 && Boolean(vencimento) && !mesFechado;
 
   const encarregados = atleta ? guardiansOf(atleta.id).filter((g) => g.isActive) : [];
 
@@ -207,7 +217,13 @@ export function ChargeFamilyDialog({ onClose, onDone }: { onClose: () => void; o
                   onChange={(e) => setVencimento(e.target.value)}
                   className={dialogInputClass}
                 />
-              </DialogField>
+                              {mesFechado && (
+                  <p className="mt-1 text-meta leading-relaxed text-warn">
+                    O clube não cobra em {MES_DO_VENCIMENTO(vencimento)}. Escolhe uma data noutro mês, ou liga
+                    esse mês nas Definições.
+                  </p>
+                )}
+</DialogField>
             </div>
 
             <DialogField label="Nota para a família" hint="opcional — vai na notificação">
@@ -384,3 +400,12 @@ function daquiA(dias: number): string {
 }
 
 export const primeiroNome = (nome: string) => nome.trim().split(/\s+/)[0];
+
+/** "2026-08-20" → "Agosto" — o nome do mês, para a frase se ler. */
+function MES_DO_VENCIMENTO(iso: string): string {
+  const nomes = [
+    "Janeiro", "Fevereiro", "Março", "Abril", "Maio", "Junho",
+    "Julho", "Agosto", "Setembro", "Outubro", "Novembro", "Dezembro",
+  ];
+  return nomes[Number(iso.slice(5, 7)) - 1] ?? iso;
+}

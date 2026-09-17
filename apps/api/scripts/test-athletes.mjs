@@ -188,7 +188,95 @@ check(
   `${demorou}ms — se a base ficou rápida, sobe o número de linhas`,
 );
 
+console.log("\n=== Apagar um atleta com histórico ===");
+/*
+ * Recusa à primeira, apaga ao segundo pedido.
+ *
+ * Um clube queixou-se de não conseguir apagar um atleta com duas mensalidades:
+ * a consola dizia "dá-lhe baixa em vez disso" e não havia mais nada a fazer.
+ * Recusar sempre era decidir pelo clube — há duplicados que já apanharam a
+ * emissão do mês em cima, e há pedidos de apagamento de dados a que o clube tem
+ * de responder. O primeiro pedido continua a recusar, para ninguém apagar meio
+ * ano de histórico sem saber; o segundo, explícito, apaga e fica registado.
+ */
+const comHistoria = await call(director, "POST", "/api/athletes", {
+  name: "ZZ Teste Histórico", taxId: nif(), birthdate: "2014-03-03", teamId: "t_sub11",
+});
+const idComHistoria = comHistoria.body?.id;
+check("inscreve o atleta do teste", Boolean(idComHistoria), `${comHistoria.status}`);
+
+// Duas mensalidades à mão, que é exactamente o caso do clube que se queixou.
+await db.query(
+  `INSERT INTO "Charge" (id, "academyId", "athleteId", period, "amountCents", "dueDate", status, kind, "settledAt", "updatedAt")
+   VALUES ('zz_ch_a', 'acd_lifeclub', $1, '2026-05', 3500, '2026-05-08', 'SETTLED', 'FEE', '2026-05-10', now()),
+          ('zz_ch_b', 'acd_lifeclub', $1, '2026-06', 3500, '2026-06-08', 'OPEN', 'FEE', NULL, now())`,
+  [idComHistoria],
+);
+
+/*
+ * Três, e não duas: inscrever um atleta numa equipa com preço emite a
+ * mensalidade do mês nesse instante. É por isso que a queixa do clube é tão
+ * fácil de apanhar — um atleta tem histórico segundos depois de existir.
+ */
+const quantasMensalidades = (await db.query(
+  `SELECT count(*)::int n FROM "Charge" WHERE "athleteId" = $1`, [idComHistoria],
+)).rows[0].n;
+check("o atleta tem mensalidades agarradas", quantasMensalidades >= 2, `${quantasMensalidades}`);
+
+const recusa = await call(director, "DELETE", `/api/athletes/${idComHistoria}`);
+check("apagar à primeira é recusado (409)", recusa.status === 409, `${recusa.status}`);
+check("com um código que a consola reconhece", recusa.body?.code === "ATHLETE_HAS_HISTORY", JSON.stringify(recusa.body).slice(0, 140));
+check(
+  "e diz o que está agarrado",
+  new RegExp(`${quantasMensalidades} mensalidades`).test(recusa.body?.message ?? ""),
+  recusa.body?.message,
+);
+check("e sabe o que já foi pago", recusa.body?.pagas?.n === 1 && recusa.body?.pagas?.cents === 3500, JSON.stringify(recusa.body?.pagas));
+check("o atleta continua lá", (await db.query(`SELECT count(*)::int n FROM "Athlete" WHERE id = $1`, [idComHistoria])).rows[0].n === 1);
+
+/*
+ * As contas, antes. As Finanças calculam as mensalidades pagas na hora a partir
+ * das cobranças; se apagar o atleta as levasse, o saldo mudava e a linha saía
+ * dos Movimentos. É isso que se compara antes e depois.
+ */
+const saldoAntes = (await call(director, "GET", "/api/finance/overview")).body?.saldo;
+const linhaDaMensalidade = (lista) =>
+  (lista ?? []).filter((t) => t.kind === "INCOME" && t.description === "Mensalidade 2026-05 · ZZ Teste Histórico");
+const movimentosAntes = linhaDaMensalidade((await call(director, "GET", "/api/finance/transactions")).body);
+check("a mensalidade paga aparece nos Movimentos", movimentosAntes.length === 1 && movimentosAntes[0].amountCents === 3500, JSON.stringify(movimentosAntes));
+
+const forcado = await call(director, "DELETE", `/api/athletes/${idComHistoria}?forcar=1`);
+check("com ?forcar=1 apaga", forcado.status === 200 || forcado.status === 204, `${forcado.status} ${JSON.stringify(forcado.body).slice(0, 120)}`);
+check("o atleta desapareceu", (await db.query(`SELECT count(*)::int n FROM "Athlete" WHERE id = $1`, [idComHistoria])).rows[0].n === 0);
+check("e as mensalidades foram com ele", (await db.query(`SELECT count(*)::int n FROM "Charge" WHERE "athleteId" = $1`, [idComHistoria])).rows[0].n === 0);
+
+const saldoDepois = (await call(director, "GET", "/api/finance/overview")).body?.saldo;
+check("o saldo do clube não mudou", typeof saldoAntes === "number" && saldoDepois === saldoAntes, `${saldoAntes} → ${saldoDepois}`);
+const movimentosDepois = linhaDaMensalidade((await call(director, "GET", "/api/finance/transactions")).body);
+check("a mensalidade paga continua nos Movimentos, uma vez só", movimentosDepois.length === 1, JSON.stringify(movimentosDepois));
+check("com o mesmo valor e a mesma data", movimentosDepois[0]?.amountCents === 3500 && String(movimentosDepois[0]?.occurredAt).startsWith("2026-05-10"), JSON.stringify(movimentosDepois[0]));
+check("e a que estava por pagar não entrou nas contas", linhaDaMensalidade((await call(director, "GET", "/api/finance/transactions")).body).length === 1);
+
+const registo = (await db.query(
+  `SELECT detail FROM "AuditLog" WHERE action = 'athlete.deleted.forced' AND "targetId" = $1`, [idComHistoria],
+)).rows[0];
+check("ficou registado quem apagou e o quê", Boolean(registo), "sem linha em AuditLog");
+check("com a contagem do histórico", registo?.detail?.historia?.mensalidades === quantasMensalidades, JSON.stringify(registo?.detail ?? {}).slice(0, 160));
+check("e com o que estava pago", registo?.detail?.centimosPagos === 3500, JSON.stringify(registo?.detail ?? {}).slice(0, 160));
+
+// Sem histórico continua a apagar à primeira, sem perguntar nada. A mensalidade
+// que a inscrição emitiu sai à mão, para o atleta ficar mesmo sem nada agarrado.
+const limpo = await call(director, "POST", "/api/athletes", {
+  name: "ZZ Teste Sem História", taxId: nif(), birthdate: "2014-04-04", teamId: "t_sub11",
+});
+await db.query(`DELETE FROM "Charge" WHERE "athleteId" = $1`, [limpo.body?.id]);
+const semHistoria = await call(director, "DELETE", `/api/athletes/${limpo.body?.id}`);
+check("um atleta sem histórico apaga à primeira", semHistoria.status === 200 || semHistoria.status === 204, `${semHistoria.status}`);
+
 console.log("\n=== Limpeza ===");
+await db.query(`DELETE FROM "Charge" WHERE id IN ('zz_ch_a', 'zz_ch_b')`);
+await db.query(`DELETE FROM "FinancialTransaction" WHERE "academyId" = 'acd_lifeclub' AND description LIKE 'Mensalidade % · ZZ Teste%'`);
+await db.query(`DELETE FROM "AuditLog" WHERE action = 'athlete.deleted.forced' AND detail->>'nome' LIKE 'ZZ Teste%'`);
 await db.query(`DELETE FROM "Athlete" WHERE name LIKE 'ZZ Teste%'`);
 await db.end();
 console.log("  feito");

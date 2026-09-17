@@ -6,6 +6,7 @@ import { feeHistory, guardiansOf, listAthletes } from "@/lib/api";
 import { apiPost } from "@/lib/http";
 import { reloadAcademy } from "@/lib/store";
 import { money, periodLabel } from "@/lib/format";
+import { mesCobrado } from "@/lib/api";
 import { useSession } from "@/session";
 import type { Athlete } from "@/data/types";
 import { Escolhido, ListaDeAtletas, paraCentimos, primeiroNome } from "./ChargeFamilyDialog";
@@ -61,6 +62,14 @@ export function NewFeeDialog({ onClose, onDone }: { onClose: () => void; onDone:
   const valido = Boolean(atleta) && cents !== null && cents >= 100 && meses.size > 0;
   const encarregados = atleta ? guardiansOf(atleta.id).filter((g) => g.isActive) : [];
 
+  /*
+   * Os meses que o clube não cobra não se escolhem.
+   *
+   * O servidor recusa-os (`assertMesesCobrados`), e um mês que se pode carregar
+   * para receber um erro é um mês que não devia estar clicável. Ficam a cinzento
+   * com a razão no `title` — escondê-los deixava buracos na grelha e ninguém
+   * percebia porque é que Agosto tinha desaparecido.
+   */
   /** Os meses que este atleta já tem — para não se poderem escolher duas vezes. */
   const jaTem = useMemo(() => new Set(atleta ? feeHistory(atleta.id).map((f) => f.period) : []), [atleta]);
 
@@ -79,7 +88,7 @@ export function NewFeeDialog({ onClose, onDone }: { onClose: () => void; onDone:
   }
 
   function alternar(period: string) {
-    if (jaTem.has(period)) return;
+    if (jaTem.has(period) || !mesCobrado(period)) return;
     setMeses((actuais) => {
       const proximos = new Set(actuais);
       if (proximos.has(period)) proximos.delete(period);
@@ -249,22 +258,31 @@ export function NewFeeDialog({ onClose, onDone }: { onClose: () => void; onDone:
                 {MESES.map((nome, i) => {
                   const period = `${ano}-${String(i + 1).padStart(2, "0")}`;
                   const tem = jaTem.has(period);
+                  const fechado = !mesCobrado(period);
                   const on = meses.has(period);
                   return (
                     <button
                       key={period}
                       type="button"
                       onClick={() => alternar(period)}
-                      disabled={tem}
+                      disabled={tem || fechado}
                       aria-pressed={on}
-                      title={tem ? "Este mês já tem mensalidade" : undefined}
+                      title={
+                        fechado
+                          ? "O clube não cobra neste mês — liga-o nas Definições"
+                          : tem
+                            ? "Este mês já tem mensalidade"
+                            : undefined
+                      }
                       className={cx(
                         "h-9 rounded-[var(--radius-control)] border text-meta font-semibold transition-colors duration-[120ms]",
-                        tem
-                          ? "cursor-not-allowed border-line bg-sunken text-ink-4 line-through"
-                          : on
-                            ? "border-ink bg-ink text-surface"
-                            : "border-line text-ink-2 hover:border-line-strong hover:bg-sunken",
+                        fechado
+                          ? "cursor-not-allowed border-dashed border-line bg-transparent text-ink-4"
+                          : tem
+                            ? "cursor-not-allowed border-line bg-sunken text-ink-4 line-through"
+                            : on
+                              ? "border-ink bg-ink text-surface"
+                              : "border-line text-ink-2 hover:border-line-strong hover:bg-sunken",
                       )}
                     >
                       {nome}
@@ -272,9 +290,10 @@ export function NewFeeDialog({ onClose, onDone }: { onClose: () => void; onDone:
                   );
                 })}
               </div>
-              <p className="mt-1.5 text-meta text-ink-3">
-                Riscado é mês que já tem mensalidade. O vencimento é o dia do clube, como nas
-                automáticas — um mês em atraso nasce vencido, que é o que ele é.
+              <p className="mt-1.5 text-meta leading-relaxed text-ink-3">
+                Riscado é mês que já tem mensalidade; a tracejado é mês em que o clube não cobra (ver
+                Definições). O vencimento é o dia do clube, como nas automáticas — um mês em atraso nasce
+                vencido, que é o que ele é.
               </p>
             </fieldset>
 

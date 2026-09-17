@@ -284,31 +284,40 @@ export class AthletesService {
   }
 
   /**
-   * Apagar — e só quando não há nada para perder.
+   * Apagar.
    *
-   * ## Porque é que isto não apaga sempre
+   * ## Porque é que não apaga à primeira
    *
    * Porque um atleta com meio ano de presenças, mensalidades pagas e uma entrada
    * clínica não é uma linha numa tabela: é o registo do que aconteceu. Apagá-lo
-   * reescreve o passado de toda a gente à volta — as presenças de um treino
+   * reescreve o passado de toda a gente à volta. As presenças de um treino
    * passam a não bater certo, uma mensalidade paga desaparece da contabilidade, e
    * a academia perde prova de coisas que pode precisar de mostrar.
    *
-   * Por isso a regra é: **apagar é para o que nunca chegou a existir a sério** —
-   * um duplicado, um nome mal escrito, uma inscrição de teste. Assim que houver
-   * história agarrada, o caminho é dar baixa (`setStatus`), que é reversível e
-   * não mente sobre o passado.
+   * Por isso o primeiro pedido recusa e **diz o que está agarrado**, com a
+   * alternativa à frente: dar baixa (`setStatus`) tira das listas sem perder
+   * nada, e é reversível.
    *
-   * Quando se recusa, diz-se **o que** está agarrado. "Não é possível apagar" sem
-   * mais nada põe quem lá está a tentar adivinhar, ou a carregar outra vez.
+   * ## Mas apaga, se for mesmo isso que se quer
+   *
+   * Recusar sempre era decidir pelo clube. Há casos legítimos que nenhuma
+   * contagem distingue de história a sério: o atleta criado por engano que já
+   * levou com a emissão automática do mês em cima, o duplicado que alguém
+   * convocou antes de reparar, o pedido de apagamento de dados de um menor a
+   * que o clube tem de responder. Em todos eles a pessoa à frente do ecrã sabe
+   * o que está a fazer, e o servidor não.
+   *
+   * `forcar` é esse segundo pedido, e a consola só o manda depois de mostrar a
+   * lista do que se perde. O que fica registado em `AuditLog` é isso mesmo: quem
+   * apagou, o quê, e quanto histórico levou atrás.
    */
-  async remove(ctx: RequestContext, id: string) {
+  async remove(ctx: RequestContext, id: string, forcar = false) {
     if (!can(ctx, "athlete:write")) throw new ForbiddenException("Sem permissão para apagar atletas");
 
     return this.prisma.runAs(ctx.academyId, async (db) => {
       const athlete = await this.inScope(ctx, db, id);
 
-      const [charges, attendance, clinical, evaluations, reports, callUps, appearances] = await Promise.all([
+      const [charges, attendance, clinical, evaluations, reports, callUps, appearances, pagas] = await Promise.all([
         db.charge.count({ where: { athleteId: id } }),
         db.attendanceRecord.count({ where: { athleteId: id } }),
         db.clinicalEntry.count({ where: { athleteId: id } }),
@@ -316,6 +325,14 @@ export class AthletesService {
         db.athleteReport.count({ where: { athleteId: id } }),
         db.matchCallUp.count({ where: { athleteId: id } }),
         db.matchAppearance.count({ where: { athleteId: id } }),
+        // O dinheiro que já entrou por este atleta. É a única parte do histórico
+        // que a contabilidade do clube pode precisar de mostrar a terceiros, e
+        // por isso é dita à parte, com o valor.
+        db.charge.aggregate({
+          where: { athleteId: id, status: "SETTLED" },
+          _count: true,
+          _sum: { amountCents: true },
+        }),
       ]);
 
       const historia = [
@@ -328,9 +345,107 @@ export class AthletesService {
         { n: appearances, um: "participação em jogo", muitos: "participações em jogo" },
       ].filter((h) => h.n > 0);
 
-      if (historia.length > 0) {
-        throw new ConflictException(
-          `Este atleta já tem ${listar(historia)}. Apagá-lo levaria isso tudo atrás — dá-lhe baixa em vez disso, que o tira das listas sem perder o histórico.`,
+      const pagasN = pagas._count;
+      const pagasCents = pagas._sum.amountCents ?? 0;
+
+      if (historia.length > 0 && !forcar) {
+        /*
+         * Um corpo com estrutura, e não só uma frase.
+         *
+         * A consola precisa de distinguir esta recusa de qualquer outra para
+         * abrir a confirmação em vez de mostrar um erro — daí o `code`. A frase
+         * fica na mesma para quem só a lê (a app, um teste, um pedido à mão).
+         */
+        throw new ConflictException({
+          code: "ATHLETE_HAS_HISTORY",
+          message: `Este atleta tem ${listar(historia)}. Ao apagar, estes dados também são apagados e não podem ser recuperados.`,
+          historia: historia.map((h) => ({ n: h.n, rotulo: h.n === 1 ? h.um : h.muitos })),
+          pagas: { n: pagasN, cents: pagasCents },
+        });
+      }
+
+      /*
+       * O dinheiro que entrou fica nas contas.
+       *
+       * As Finanças não guardam cópia das mensalidades pagas: os Movimentos e o
+       * saldo calculam-nas na hora a partir de `Charge` (ver `FinanceService`,
+       * a fonte "fees"). Apagar o atleta apaga as cobranças em cascata, e com
+       * elas desaparecia receita já recebida, meses para trás, e o saldo do
+       * clube mudava sozinho.
+       *
+       * Por isso cada mensalidade paga passa primeiro a um movimento registado,
+       * com a mesma descrição, o mesmo valor e a mesma data com que aparecia.
+       * Depois de a cobrança sair, não há duas contas a somar: a linha
+       * automática deixa de existir e fica a registada.
+       *
+       * Só quando o clube soma as mensalidades nas Finanças (`includeFees`).
+       * Um clube que as desligou regista a receita à mão, e acrescentar estas
+       * linhas era contar o mesmo dinheiro duas vezes.
+       */
+      let movimentosPreservados = 0;
+      if (pagasN > 0) {
+        const definicoes = await db.financeSettings.findFirst({
+          where: { academyId: ctx.academyId },
+          select: { includeFees: true },
+        });
+        if (definicoes?.includeFees ?? true) {
+          const pagasComDetalhe = await db.charge.findMany({
+            where: { athleteId: id, status: "SETTLED" },
+            select: {
+              period: true,
+              amountCents: true,
+              settledAt: true,
+              updatedAt: true,
+              payments: { where: { status: "PAID" }, select: { method: true }, take: 1 },
+            },
+          });
+          const criados = await db.financialTransaction.createMany({
+            data: pagasComDetalhe.map((c) => ({
+              academyId: ctx.academyId,
+              kind: "INCOME" as const,
+              status: "COMPLETED" as const,
+              description: `Mensalidade ${c.period} · ${athlete.name}`,
+              amountCents: c.amountCents,
+              occurredAt: c.settledAt ?? c.updatedAt,
+              method: c.payments[0]?.method ?? null,
+              notes: "Mensalidade paga de um atleta que foi apagado.",
+              createdById: ctx.membershipId,
+            })),
+          });
+          movimentosPreservados = criados.count;
+        }
+      }
+
+      /*
+       * Apagar com histórico fica escrito, e fora do contexto do tenant.
+       *
+       * `AuditLog` é da plataforma, não tem `academyId` e sobrevive à cascata —
+       * a mesma manobra de `academy.deleted`. É o que permite responder, meses
+       * depois, a "para onde é que foram as mensalidades deste atleta".
+       */
+      if (forcar && historia.length > 0) {
+        await this.prisma.$executeRaw`
+          INSERT INTO "AuditLog" ("id", "action", "targetType", "targetId", "detail", "createdAt")
+          VALUES (
+            ${`ath_${Date.now().toString(36)}${Math.random().toString(36).slice(2, 8)}`},
+            'athlete.deleted.forced',
+            'athlete',
+            ${id},
+            ${JSON.stringify({
+              nome: athlete.name,
+              academyId: ctx.academyId,
+              porMembershipId: ctx.membershipId,
+              porUserId: ctx.userId,
+              historia: Object.fromEntries(historia.map((h) => [h.muitos, h.n])),
+              mensalidadesPagas: pagasN,
+              centimosPagos: pagasCents,
+              movimentosPreservados,
+            })}::jsonb,
+            now()
+          )
+        `;
+        this.log.warn(
+          `Atleta ${id} (${athlete.name}) apagado com histórico por ${ctx.userId}: ${listar(historia)}.`,
         );
       }
 

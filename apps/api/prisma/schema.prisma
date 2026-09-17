@@ -67,6 +67,16 @@ model Academy {
   /// Ver `gerarCobrancas` e `docs/03-estado.md`.
   billingMonths Int[] @default([1, 2, 3, 4, 5, 6, 7, 9, 10, 11, 12])
 
+  /// O calendário de cobrança agendado para a próxima época.
+  ///
+  /// O clube pode mudar o período de cobrança só a partir da época seguinte.
+  /// `billingNextFrom` é o primeiro período dessa época (`AAAA-08`); a partir
+  /// dele valem `billingNextMonths` e `billingNextDueDay` (nulo = o dia de
+  /// agora). Nulo = nada agendado. Ver `calendarioPara` e `promoverCalendario`.
+  billingNextFrom   String?
+  billingNextMonths Int[]   @default([])
+  billingNextDueDay Int?
+
   /// ## O canal euPago do clube — a arquitectura do "split"
   ///
   /// O dinheiro das mensalidades é **do clube**, a plataforma não fica com

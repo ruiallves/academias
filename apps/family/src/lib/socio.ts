@@ -35,6 +35,24 @@ export type SocioMes = {
   status: "OPEN" | "SETTLED" | "VOID" | null;
 };
 
+/**
+ * Um jogo por disputar, de qualquer escalão do clube.
+ *
+ * `teamMaxAge` é o que decide a ordem em que os jogos aparecem — dos mais
+ * velhos para os mais novos, pedido explícito — e a forma como se agrupam no
+ * separador Clube. Ver `JogosDoClube`.
+ */
+export type SocioMatch = {
+  id: string;
+  startsAt: string;
+  venue: string;
+  opponent: string;
+  isHome: boolean;
+  teamName: string;
+  teamMaxAge: number;
+  competition: string | null;
+};
+
 export type SocioPoll = {
   id: string;
   question: string;
@@ -78,15 +96,8 @@ export type SocioInicio = {
   };
   fees: SocioFee[];
   upcoming: SocioMes[];
-  nextMatch: {
-    id: string;
-    startsAt: string;
-    venue: string;
-    opponent: string;
-    isHome: boolean;
-    teamName: string;
-    competition: string | null;
-  } | null;
+  /** Todos os jogos por disputar, de todos os escalões — dos mais velhos para os mais novos. */
+  matches: SocioMatch[];
   news: { id: string; title: string; body: string; publishedAt: string }[];
   polls: SocioPoll[];
 };

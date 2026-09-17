@@ -55,6 +55,9 @@ type ApiBootstrap = {
     /** O calendário de cobrança do clube. Ver `setBillingSettings` na API. */
     billingDueDay: number;
     billingMonths: number[];
+    billingNextFrom?: string | null;
+    billingNextMonths?: number[];
+    billingNextDueDay?: number | null;
     /** O que o clube escreveu na página pública de adesão a sócio. */
     membershipHeadline: string | null;
     membershipIntro: string | null;
@@ -324,7 +327,7 @@ const EMPTY: State = {
   academy: {
     id: "", slug: "", name: "", shortName: "", signalColor: "#0f6b62", logoUrl: "", city: "",
     status: "ACTIVE", trialEndsAt: null, createdAt: "",
-    billingDueDay: 8, billingMonths: [],
+    billingDueDay: 8, billingMonths: [], billingNext: null,
     membershipHeadline: "", membershipIntro: "", membershipPoints: [],
     memberAnnualStartMonth: 8, memberAnnualStartDay: 1,
     sports: [],
@@ -893,6 +896,15 @@ function juntar<T extends { id: string }>(atuais: T[], novos: T[]): T[] {
       trialEndsAt: boot.academy.trialEndsAt,
       billingDueDay: boot.academy.billingDueDay ?? 8,
       billingMonths: boot.academy.billingMonths ?? [],
+      billingNext: boot.academy.billingNextFrom
+        ? {
+            from: boot.academy.billingNextFrom,
+            months: boot.academy.billingNextMonths?.length
+              ? boot.academy.billingNextMonths
+              : (boot.academy.billingMonths ?? []),
+            dueDay: boot.academy.billingNextDueDay ?? boot.academy.billingDueDay ?? 8,
+          }
+        : null,
       createdAt: boot.academy.createdAt,
       membershipHeadline: boot.academy.membershipHeadline ?? "",
       membershipIntro: boot.academy.membershipIntro ?? "",

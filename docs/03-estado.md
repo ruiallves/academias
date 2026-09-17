@@ -1609,6 +1609,60 @@ passava dos cinco segundos. Passou a duas transações, cada uma com metade: a
 primeira decide (quem é, se pode entrar, o que deve), a segunda é o clube e corre
 em paralelo com a assinatura da fotografia.
 
+## Um mês desligado não existe
+
+O clube escolhe o dia de vencimento e os meses em que cobra
+(`Academy.billingMonths`) no botão **Período de cobrança** das Mensalidades
+(`BillingCalendarDialog`, pede `settings:write`). Estava nas Definições e gravava
+a cada toque; agora só grava no Guardar, e quando o rascunho desliga meses com
+mensalidades pede confirmação a dizer quantas se apagam. As Definições só
+apontam para lá.
+
+**Esta época ou a próxima.** O diálogo pergunta quando entra em vigor. "Já
+nesta época" é o que está descrito abaixo. "Só a partir da próxima" não mexe em
+nada agora: guarda o calendário em `Academy.billingNextFrom` (primeiro período
+da próxima época, `AAAA-08`), `billingNextMonths` e `billingNextDueDay` (migração
+`calendario_da_proxima_epoca`). Toda a pergunta "cobra-se neste mês?" e "quando
+vence?" passa por `calendarioPara(academia, period)`, por isso uma mensalidade de
+Outubro da próxima época já segue o agendado (recusa, dia de vencimento, painel
+de quem falta, limpeza). Agendar o calendário de hoje anula o agendamento
+(botão "Anular o agendamento" no diálogo). Quando a época vira, `gerarCobrancas`
+chama `promoverCalendario`, que copia o agendado para `billingMonths`/
+`billingDueDay` e limpa as colunas. Na consola, `mesCobrado(period)` usa
+`academy.billingNext` para os períodos dessa época. Testado em
+`test-mes-desligado.mjs` (49).
+A emissão automática já os respeitava, mas Agosto desligado continuava à vista:
+nas Mensalidades, na ficha do atleta, e no diálogo de lançar à mão. Três portas
+estavam abertas, e fecharam-se:
+
+- **Criar.** `assertMesesCobrados` recusa (400, com o nome do mês) lançar
+  mensalidades à mão num mês desligado, e criar uma avulsa com vencimento nele.
+  Um pedido com um mês ligado e um desligado é recusado inteiro.
+- **Limpar.** Gravar o calendário (`PATCH /api/pagamentos`) esvazia **todos** os
+  meses desligados da época corrente, não só os que mudaram nesse pedido
+  (`retirarForaDoCalendario`). Saem as por pagar, as anuladas e as marcadas como
+  pagas à mão (o pagamento manual vai com elas). Duas excepções: a que tem
+  pagamento online (PAID/PROCESSING/REFUNDED pela euPago) fica, porque é dinheiro
+  a sério; a que tem referência Multibanco viva fica **anulada**, para o webhook
+  ter onde pousar o pagamento. A resposta traz `apagadas`, `anuladas` e
+  `comDinheiro`, e o diálogo mostra-o depois de guardar. Épocas passadas e
+  avulsas não se tocam.
+- **Mostrar.** Na consola, `mesCobrado`/`proximoPeriodoCobrado` (`lib/api.ts`):
+  as Mensalidades abrem em "Todos os períodos" quando o mês corrente está
+  desligado, o painel "quem não tem mensalidade" some nesse mês, "a partir de
+  quando se cobra" nunca oferece um mês desligado; em "Lançar mensalidade" os
+  meses desligados estão a tracejado e não se escolhem; na avulsa, uma data num
+  mês desligado mostra o aviso e o botão espera.
+
+O selector de períodos e a ficha do atleta vêm das mensalidades que existem, por
+isso esvaziar o mês chega para ele desaparecer dali.
+
+Teste: `scripts/test-mes-desligado.mjs` (31, num clube descartável).
+`test-charge-generation.mjs` passou a esperar a regra nova, desliga só o mês
+corrente (com meia dúzia de meses desligados, gravar apagava a época do Life
+Club), guarda e repõe o mês inteiro com os pagamentos, e repõe o clube também
+quando um pedido à API falha a meio. Aceita `API_URL`.
+
 ## Apagar um sócio, e o número que ele deixa
 
 Apagar recusava assim que houvesse número atribuído, e mandava cancelar. O
@@ -1739,6 +1793,31 @@ grava não se consegue inspeccionar. Verificado por `npm run test:qr --workspace
 e confirma o assunto, a chamada, o endereço por extenso sem `https://`, e que o
 cartaz das famílias **leva o token** — o endereço impresso e o QR saem do mesmo
 argumento, e imprimir um e codificar outro seria mentir em papel.
+
+## Os jogos, na app do sócio
+
+`GET /api/socio/inicio` mostrava **um** jogo — o mais próximo, de qualquer
+equipa, sem mais critério. Passou a mostrar **todos** os jogos por disputar, de
+todos os escalões, numa ordem que deixou de ser a da data: dos mais velhos para
+os mais novos primeiro, pedido explícito. `matches: SocioMatch[]` no lugar de
+`nextMatch`.
+
+A ordem é `teamMaxAge` decrescente, depois o nome da equipa, depois a data. O
+nome da equipa como critério do meio não é só desempate — é o que garante que
+duas equipas da mesma idade (dois Sub-15, um "A" e um "B") não intercalam os
+jogos por data: ficam cada uma no seu bloco, que é como `JogosDoClube` as
+agrupa a seguir, sem reordenar nada.
+
+No Início entram os dois primeiros da lista — os de maior prioridade — com
+"Ver tudo" quando há mais, o mesmo desenho das notícias. Em Clube entra a lista
+inteira, um título por equipa. O sócio segue o clube, não só o escalão de um
+educando — essa é a área de família.
+
+Verificado por `npm run test:jogos-socio` (8): a forma da resposta (`matches`,
+não `nextMatch`), a ordem entre um Sub-19, um Sub-13, e uma equipa temporária
+com a **mesma idade** do Sub-13 mas a jogar **primeiro** no calendário — que
+mesmo assim tem de aparecer depois, porque o desempate é pelo nome e não pela
+data. Cria a equipa e os jogos, e apaga-os no fim.
 
 ## Importação de atletas por Excel
 

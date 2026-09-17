@@ -381,6 +381,7 @@ export default function Athletes() {
           noun={["atleta", "atletas"]}
           targets={rows.filter((a) => escolhidos.has(a.id)).map((a) => ({ id: a.id, name: a.name }))}
           remove={(id) => apiDelete(`/api/athletes/${id}`)}
+          removeForced={(id) => apiDelete(`/api/athletes/${id}?forcar=1`)}
           onClose={() => setAApagar(false)}
           onDone={async () => {
             setEscolhidos(new Set());

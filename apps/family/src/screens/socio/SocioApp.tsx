@@ -48,6 +48,7 @@ import {
   useSocio,
   votar,
   type PagamentoIniciado,
+  type SocioMatch,
   type SocioMes,
   type SocioPoll,
 } from "@/lib/socio";
@@ -380,10 +381,35 @@ function Inicio() {
         </div>
       )}
 
-      {data.nextMatch && (
+      {/*
+        Os jogos de maior prioridade — não "o próximo", agora que há jogos de
+        todos os escalões. A prioridade é a ordem da app inteira: dos mais
+        velhos para os mais novos primeiro, e dentro do mesmo escalão o mais
+        próximo. Dois cabem no Início sem o afogar; o resto está a um toque,
+        em Clube, já agrupado por equipa — ver `JogosDoClube`.
+      */}
+      {data.matches.length > 0 && (
         <section className="rise" style={{ ["--i" as string]: i++ }}>
-          <Label>Próximo jogo</Label>
-          <ProximoJogo />
+          <Label
+            action={
+              data.matches.length > 2 ? (
+                <button
+                  type="button"
+                  onClick={() => navigate("/socio/clube")}
+                  className="text-[13px] font-semibold text-signal-ink"
+                >
+                  Ver tudo
+                </button>
+              ) : undefined
+            }
+          >
+            Jogos
+          </Label>
+          <div className="space-y-2">
+            {data.matches.slice(0, 2).map((jogo) => (
+              <JogoCard key={jogo.id} jogo={jogo} />
+            ))}
+          </div>
         </section>
       )}
 
@@ -1186,15 +1212,12 @@ function Clube() {
 
   return (
     <div className="space-y-5 pt-3">
-      {data.nextMatch ? (
-        <section>
-          <Label>Próximo jogo</Label>
-          <ProximoJogo />
-        </section>
+      {data.matches.length > 0 ? (
+        <JogosDoClube matches={data.matches} />
       ) : (
         <Vazio icon={CalendarDays} title="Sem jogos marcados">
-          Quando o clube marcar o próximo jogo, aparece aqui — com a hora e o
-          campo.
+          Quando o clube marcar jogos, aparecem aqui — de todos os escalões,
+          dos mais velhos para os mais novos.
         </Vazio>
       )}
 
@@ -1232,10 +1255,9 @@ function Clube() {
   );
 }
 
-function ProximoJogo() {
+function JogoCard({ jogo }: { jogo: SocioMatch }) {
   const { data } = useSocio();
-  const jogo = data?.nextMatch;
-  if (!data || !jogo) return null;
+  if (!data) return null;
 
   const inicio = new Date(jogo.startsAt);
   const casa = jogo.isHome;
@@ -1270,6 +1292,44 @@ function ProximoJogo() {
         </p>
       </div>
     </div>
+  );
+}
+
+/**
+ * Todos os jogos do clube, por equipa — dos mais velhos para os mais novos.
+ *
+ * A lista já chega ordenada do servidor (`teamMaxAge` desc, depois a data); o
+ * que este componente faz é só desenhar essa ordem com um título por cima de
+ * cada equipa, para se ver de onde para onde se está a passar. Agrupar por
+ * linhas consecutivas chega: o servidor garante que os jogos da mesma equipa
+ * vêm sempre juntos.
+ */
+function JogosDoClube({ matches }: { matches: SocioMatch[] }) {
+  const grupos: { teamName: string; jogos: SocioMatch[] }[] = [];
+  for (const jogo of matches) {
+    const actual = grupos.at(-1);
+    if (actual?.teamName === jogo.teamName) actual.jogos.push(jogo);
+    else grupos.push({ teamName: jogo.teamName, jogos: [jogo] });
+  }
+
+  return (
+    <section>
+      <Label>Jogos</Label>
+      <div className="space-y-4">
+        {grupos.map((grupo) => (
+          <div key={grupo.teamName}>
+            <p className="mb-2 px-1 text-[12px] font-semibold tracking-[0.05em] text-ink-3 uppercase">
+              {grupo.teamName}
+            </p>
+            <div className="space-y-2">
+              {grupo.jogos.map((jogo) => (
+                <JogoCard key={jogo.id} jogo={jogo} />
+              ))}
+            </div>
+          </div>
+        ))}
+      </div>
+    </section>
   );
 }
 

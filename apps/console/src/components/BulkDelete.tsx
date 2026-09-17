@@ -2,6 +2,7 @@ import { useState } from "react";
 import { Dialog } from "@/components/Dialog";
 import { cx } from "@/components/primitives";
 import { Check, Trash2, TriangleAlert, X, type LucideIcon } from "@/lib/icons";
+import { ApiError } from "@/lib/http";
 
 /**
  * Apagar várias linhas de uma lista.
@@ -25,7 +26,7 @@ import { Check, Trash2, TriangleAlert, X, type LucideIcon } from "@/lib/icons";
  */
 export type BulkTarget = { id: string; name: string };
 
-export type BulkResult = { name: string; error: string };
+export type BulkResult = { id: string; name: string; error: string; forcavel?: boolean };
 
 export function BulkBar({
   count,
@@ -111,6 +112,7 @@ export function BulkDeleteDialog({
   targets,
   noun,
   remove,
+  removeForced,
   onClose,
   onDone,
 }: {
@@ -118,6 +120,14 @@ export function BulkDeleteDialog({
   noun: [string, string];
   /** O apagar de sempre desta entidade. Lança quando o servidor recusa. */
   remove: (id: string) => Promise<unknown>;
+  /**
+   * O segundo pedido, para as recusas que se podem forçar.
+   *
+   * Sem isto, uma recusa por histórico ficava sem saída a partir da lista: a
+   * pessoa tinha de abrir cada ficha, uma a uma, para chegar ao mesmo sítio.
+   * Quem não o passa continua a ver só o relatório das falhas.
+   */
+  removeForced?: (id: string) => Promise<unknown>;
   onClose: () => void;
   /** Chamado no fim, mesmo com falhas parciais: a lista tem de reler. */
   onDone: (apagados: number) => void;
@@ -126,9 +136,13 @@ export function BulkDeleteDialog({
   const [falhas, setFalhas] = useState<BulkResult[] | null>(null);
   const [apagados, setApagados] = useState(0);
 
-  async function apagar() {
+  async function apagar(comForca = false) {
     if (busy) return;
     setBusy(true);
+
+    /* Ao forçar, só se repetem as que falharam por uma razão que se pode forçar. */
+    const lista: BulkTarget[] = comForca ? (falhas ?? []).filter((f) => f.forcavel) : targets;
+    const apagarUm = comForca && removeForced ? removeForced : remove;
 
     const erros: BulkResult[] = [];
     let feitos = 0;
@@ -141,16 +155,23 @@ export function BulkDeleteDialog({
      * legível e dez erros de concorrência. Ninguém apaga duzentos registos por
      * dia numa ferramenta destas.
      */
-    for (const t of targets) {
+    for (const t of lista) {
       try {
-        await remove(t.id);
+        await apagarUm(t.id);
         feitos++;
       } catch (e) {
-        erros.push({ name: t.name, error: e instanceof Error ? e.message : "Não foi possível apagar." });
+        erros.push({
+          id: t.id,
+          name: t.name,
+          error: e instanceof Error ? e.message : "Não foi possível apagar.",
+          // Uma recusa com `code` é uma regra que o servidor sabe explicar, e
+          // que um segundo pedido pode passar por cima. Um 500 não.
+          forcavel: Boolean(removeForced) && e instanceof ApiError && Boolean(e.code),
+        });
       }
     }
 
-    setApagados(feitos);
+    setApagados((n) => n + feitos);
     setFalhas(erros);
     setBusy(false);
     onDone(feitos);
@@ -171,9 +192,21 @@ export function BulkDeleteDialog({
       width={520}
       footer={
         falhas ? (
-          <button type="button" onClick={onClose} className="ctl-primary">
-            Fechar
-          </button>
+          <>
+            <button type="button" onClick={onClose} className="ctl-ghost" disabled={busy}>
+              Fechar
+            </button>
+            {falhas.some((f) => f.forcavel) && (
+              <button
+                type="button"
+                onClick={() => void apagar(true)}
+                disabled={busy}
+                className={cx("ctl-primary", "bg-risk hover:bg-risk")}
+              >
+                {busy ? "A apagar…" : "Apagar mesmo assim"}
+              </button>
+            )}
+          </>
         ) : (
           <>
             <button type="button" onClick={onClose} className="ctl-ghost" disabled={busy}>

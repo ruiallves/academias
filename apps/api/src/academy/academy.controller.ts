@@ -259,6 +259,9 @@ class BillingSettingsDto {
   @Min(1, { each: true })
   @Max(12, { each: true })
   months?: number[];
+
+  /** "atual" (por omissão): já nesta época. "proxima": agenda para a época seguinte. */
+  @IsOptional() @IsIn(["atual", "proxima"]) aplicarEm?: "atual" | "proxima";
 }
 
 /**
@@ -489,12 +492,13 @@ export class AcademyController {
   /**
    * Apagar um atleta.
    *
-   * Recusa com 409 assim que houver histórico agarrado — aí o caminho é dar
-   * baixa. Ver `AthletesService.remove`.
+   * Recusa com 409 quando há histórico agarrado, e diz qual. `?forcar=1` é o
+   * segundo pedido, o que a consola manda depois de mostrar o que se perde —
+   * esse apaga e fica registado. Ver `AthletesService.remove`.
    */
   @Delete("athletes/:id")
-  removeAthlete(@Req() req: AuthedRequest, @Param("id") id: string) {
-    return this.athletes.remove(req.ctx, id);
+  removeAthlete(@Req() req: AuthedRequest, @Param("id") id: string, @Query("forcar") forcar?: string) {
+    return this.athletes.remove(req.ctx, id, forcar === "1" || forcar === "true");
   }
 
   @Get("staff")

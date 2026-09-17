@@ -604,6 +604,19 @@ export class BillingService implements OnModuleInit, OnModuleDestroy {
       });
       if (!athlete) throw new NotFoundException("Atleta não encontrado");
 
+      /*
+       * O mês do vencimento tem de ser um mês cobrado.
+       *
+       * Uma avulsa não é uma mensalidade, mas vive no mesmo mês e na mesma
+       * lista. Aceitá-la num mês desligado punha dinheiro num mês que o clube
+       * diz que não existe: ou o mês reaparecia nas Mensalidades por causa
+       * dela, ou ficava escondido e ninguém o cobrava. O clube tem duas saídas,
+       * e a mensagem di-las: datar para um mês cobrado, ou ligar o mês.
+       */
+      await assertMesesCobrados(db, ctx.academyId, [
+        `${dueDate.getUTCFullYear()}-${String(dueDate.getUTCMonth() + 1).padStart(2, "0")}`,
+      ]);
+
       // A categoria tem de ser de receita: cobrar a uma família por "Autocarro"
       // (despesa) faria o painel de Contas somar a mesma coisa nos dois lados.
       if (input.categoryId) {
@@ -719,6 +732,16 @@ export class BillingService implements OnModuleInit, OnModuleDestroy {
     }
 
     return this.prisma.runAs(ctx.academyId, async (db) => {
+      /*
+       * Um mês desligado não se lança à mão.
+       *
+       * A emissão já o respeitava, e o ecrã das definições promete que um mês
+       * desligado não existe. Faltava esta porta: lançar Agosto à mão num clube
+       * que fechou Agosto punha de volta exactamente o que desligar o mês tira,
+       * e o mês voltava a aparecer nas Mensalidades e na ficha do atleta.
+       */
+      await assertMesesCobrados(db, ctx.academyId, periodos);
+
       // O âmbito, e não só a academia — como na cobrança avulsa.
       const athlete = await db.athlete.findFirst({
         where: { id: input.athleteId, ...(athleteScopeFilter(ctx) ? { id: athleteScopeFilter(ctx) } : {}) },
@@ -730,11 +753,7 @@ export class BillingService implements OnModuleInit, OnModuleDestroy {
       });
       if (!athlete) throw new NotFoundException("Atleta não encontrado");
 
-      const academia = await db.academy.findFirst({
-        where: { id: ctx.academyId },
-        select: { billingDueDay: true },
-      });
-      const diaDoClube = academia?.billingDueDay ?? 8;
+      const calendario = await lerCalendario(db, ctx.academyId);
 
       // Quem já tem mensalidade nestes meses. Uma leitura, não uma por mês.
       const existentes = new Set(
@@ -768,7 +787,7 @@ export class BillingService implements OnModuleInit, OnModuleDestroy {
              * sido lançada à mão. Um mês em atraso nasce vencido, e é o que
              * se quer: é exactamente o que ele é.
              */
-            dueDate: diaDeVencimento(period, diaDoClube),
+            dueDate: diaDeVencimento(period, calendario(period).dia),
           },
           select: { id: true, period: true, amountCents: true, dueDate: true },
         });
@@ -1030,11 +1049,7 @@ export class BillingService implements OnModuleInit, OnModuleDestroy {
           .map((c) => c.athleteId),
       );
 
-      const academia = await db.academy.findFirst({
-        where: { id: ctx.academyId },
-        select: { billingMonths: true },
-      });
-      const cobraEsteMes = (academia?.billingMonths ?? MESES_POR_OMISSAO).includes(mes);
+      const cobraEsteMes = (await lerCalendario(db, ctx.academyId))(period).meses.includes(mes);
 
       // Quem tem preço — individual ou da equipa. A mesma resolução de
       // `gerarCobrancas`, aqui só para saber se existe, não quanto é.
@@ -2124,6 +2139,80 @@ function ibanValido(iban: string): boolean {
  */
 export const MESES_POR_OMISSAO = [1, 2, 3, 4, 5, 6, 7, 9, 10, 11, 12];
 
+/** O calendário de cobrança que vale num período: os meses cobrados e o dia de vencimento. */
+export type Calendario = { meses: number[]; dia: number };
+
+/** As colunas da academia de que o calendário precisa. */
+export const SELECT_CALENDARIO = {
+  billingMonths: true,
+  billingDueDay: true,
+  billingNextFrom: true,
+  billingNextMonths: true,
+  billingNextDueDay: true,
+} as const;
+
+type AcademiaComCalendario = {
+  billingMonths: number[];
+  billingDueDay: number;
+  billingNextFrom: string | null;
+  billingNextMonths: number[];
+  billingNextDueDay: number | null;
+};
+
+/**
+ * O calendário que vale para `period`.
+ *
+ * O clube pode mudar o período de cobrança só a partir da próxima época: fica
+ * agendado em `billingNext*`, e a partir de `billingNextFrom` é esse que manda.
+ * Toda a gente que pergunta "o clube cobra neste mês?" ou "quando vence?"
+ * pergunta aqui, com o período em causa, para uma mensalidade de Agosto de 2027
+ * seguir o calendário da época 2027/28 mesmo antes de a época virar.
+ */
+export function calendarioPara(academia: AcademiaComCalendario | null, period: string): Calendario {
+  if (!academia) return { meses: MESES_POR_OMISSAO, dia: 8 };
+  const atual = { meses: academia.billingMonths, dia: academia.billingDueDay };
+  if (!academia.billingNextFrom || period < academia.billingNextFrom) return atual;
+  return {
+    meses: academia.billingNextMonths.length ? academia.billingNextMonths : atual.meses,
+    dia: academia.billingNextDueDay ?? atual.dia,
+  };
+}
+
+/** Lê a academia uma vez e devolve o calendário de qualquer período. */
+export async function lerCalendario(db: ScopedClient, academyId: string): Promise<(period: string) => Calendario> {
+  const academia = await db.academy.findFirst({ where: { id: academyId }, select: SELECT_CALENDARIO });
+  return (period) => calendarioPara(academia, period);
+}
+
+/** O primeiro período da próxima época: com a época a abrir em Agosto, `2027-08` durante 2026/27. */
+export function inicioDaProximaEpoca(agora = new Date()): string {
+  const inicio = inicioDaEpoca(agora);
+  return `${Number(inicio.slice(0, 4)) + 1}${inicio.slice(4)}`;
+}
+
+/**
+ * Quando a época vira, o calendário agendado passa a ser o calendário.
+ *
+ * `calendarioPara` já o aplica sem isto; isto arruma: copia o agendado para
+ * `billingMonths`/`billingDueDay` e limpa o agendamento, para as Definições e
+ * o diálogo mostrarem o que vale hoje. Corre no início de cada emissão.
+ */
+export async function promoverCalendario(db: ScopedClient, academyId: string, agora = new Date()): Promise<boolean> {
+  const academia = await db.academy.findFirst({ where: { id: academyId }, select: SELECT_CALENDARIO });
+  if (!academia?.billingNextFrom || periodoActual(agora) < academia.billingNextFrom) return false;
+  await db.academy.update({
+    where: { id: academyId },
+    data: {
+      ...(academia.billingNextMonths.length ? { billingMonths: academia.billingNextMonths } : {}),
+      ...(academia.billingNextDueDay !== null ? { billingDueDay: academia.billingNextDueDay } : {}),
+      billingNextFrom: null,
+      billingNextMonths: [],
+      billingNextDueDay: null,
+    },
+  });
+  return true;
+}
+
 /**
  * Retira as mensalidades por pagar de meses que o clube acabou de desligar.
  *
@@ -2166,49 +2255,90 @@ export const MESES_POR_OMISSAO = [1, 2, 3, 4, 5, 6, 7, 9, 10, 11, 12];
 export async function retirarForaDoCalendario(
   db: ScopedClient,
   academyId: string,
-  desligados: number[],
   agora = new Date(),
-): Promise<{ apagadas: number; anuladas: number }> {
-  if (desligados.length === 0) return { apagadas: 0, anuladas: 0 };
-  const academia = await db.academy.findFirst({ where: { id: academyId }, select: { billingMonths: true } });
-  const mesesDoClube = academia?.billingMonths ?? MESES_POR_OMISSAO;
-  const fechados = new Set(desligados.filter((m) => !mesesDoClube.includes(m)));
-  if (fechados.size === 0) return { apagadas: 0, anuladas: 0 };
+): Promise<{ apagadas: number; anuladas: number; comDinheiro: number }> {
+  /*
+   * Cada linha pelo calendário do seu período: uma de Agosto de 2027 segue o
+   * calendário agendado para 2027/28, se houver um.
+   */
+  const calendario = await lerCalendario(db, academyId);
+  const fechado = (period: string) => !calendario(period).meses.includes(Number(period.slice(5, 7)));
 
   /*
-   * Por pagar **e** anuladas. Uma anulada num mês fechado é uma linha "Anulada"
-   * que continua a aparecer à família e na aba das mensalidades, e num mês em
-   * que o clube não cobra não há nada a mostrar.
+   * Todos os estados, incluindo as pagas.
+   *
+   * Poupava as `SETTLED`, e era a razão de o mês continuar à vista depois de
+   * desligado: seis mensalidades de Agosto marcadas como pagas ficavam na
+   * ficha dos atletas e punham Agosto de volta no selector das Mensalidades.
+   * Uma marcada como paga à mão é uma nota que o clube escreveu; se ele agora
+   * diz que o mês não existe, a nota vai com o mês. O que não vai é dinheiro
+   * que passou pela euPago — ver `comDinheiro` abaixo.
    */
   const candidatas = await db.charge.findMany({
     where: {
       kind: "FEE",
-      status: { in: [ChargeStatus.OPEN, ChargeStatus.VOID] },
       period: { gte: inicioDaEpoca(agora) },
-      // Dinheiro que entrou, que está a entrar, ou que entrou e foi devolvido.
-      payments: { none: { status: { in: [PaymentStatus.PAID, PaymentStatus.PROCESSING, PaymentStatus.REFUNDED] } } },
     },
     select: {
       id: true,
       period: true,
       status: true,
-      // Só uma tentativa `PENDING` ainda se pode pagar. `FAILED` e `EXPIRED`
-      // já não levam dinheiro a lado nenhum, e não são razão para a mensalidade
-      // ficar à vista como "anulada".
-      _count: { select: { payments: { where: { status: PaymentStatus.PENDING } } } },
+      /*
+       * `PENDING` é uma tentativa que ainda se pode pagar na caixa amanhã: a
+       * mensalidade fica anulada em vez de apagada, para o webhook ter onde
+       * pousar o dinheiro. Os outros três estados são dinheiro que passou pelo
+       * provedor, e aí a linha fica como está.
+       */
+      payments: { select: { status: true, provider: true } },
     },
   });
-  const alvo = candidatas.filter((c) => fechados.has(Number(c.period.slice(5, 7))));
-  const semTentativas = alvo.filter((c) => c._count.payments === 0).map((c) => c.id);
-  const comTentativas = alvo
-    .filter((c) => c._count.payments > 0 && c.status === ChargeStatus.OPEN)
-    .map((c) => c.id);
+  const alvo = candidatas.filter((c) => fechado(c.period));
 
-  const apagadas = semTentativas.length ? (await db.charge.deleteMany({ where: { id: { in: semTentativas } } })).count : 0;
+  /* Dinheiro que passou pela euPago: a linha fica, e diz-se quantas são. */
+  const dinheiroReal = (c: (typeof alvo)[number]) =>
+    c.payments.some(
+      (p) =>
+        p.provider !== "manual" &&
+        (p.status === PaymentStatus.PAID || p.status === PaymentStatus.PROCESSING || p.status === PaymentStatus.REFUNDED),
+    );
+  const emVoo = (c: (typeof alvo)[number]) => c.payments.some((p) => p.status === PaymentStatus.PENDING);
+
+  const comDinheiro = alvo.filter(dinheiroReal);
+  const restantes = alvo.filter((c) => !dinheiroReal(c));
+  const comTentativas = restantes.filter((c) => emVoo(c) && c.status === ChargeStatus.OPEN).map((c) => c.id);
+  // Uma já anulada com tentativa viva fica como está: é ela que o webhook procura.
+  const aApagar = restantes.filter((c) => !emVoo(c)).map((c) => c.id);
+
+  const apagadas = aApagar.length ? (await db.charge.deleteMany({ where: { id: { in: aApagar } } })).count : 0;
   const anuladas = comTentativas.length
     ? (await db.charge.updateMany({ where: { id: { in: comTentativas } }, data: { status: ChargeStatus.VOID } })).count
     : 0;
-  return { apagadas, anuladas };
+  return { apagadas, anuladas, comDinheiro: comDinheiro.length };
+}
+
+/**
+ * Os meses em que o clube cobra, e a recusa quando um período cai fora.
+ *
+ * Um só sítio a dizer a frase: ela aparece quando se lança uma mensalidade à
+ * mão e quando se cria uma avulsa, e as duas têm de dizer o mesmo. O nome do
+ * mês vai na mensagem — "Agosto está desligado" diz-se de uma vez, "período
+ * fora do calendário" obriga a ir ver qual.
+ */
+export async function assertMesesCobrados(db: ScopedClient, academyId: string, periodos: string[]): Promise<void> {
+  const calendario = await lerCalendario(db, academyId);
+  const fora = [
+    ...new Set(
+      periodos.filter((p) => !calendario(p).meses.includes(Number(p.slice(5, 7)))).map((p) => Number(p.slice(5, 7))),
+    ),
+  ].sort((a, b) => a - b);
+  if (fora.length === 0) return;
+
+  const nomes = fora.map((m) => MONTHS_PT[m - 1]).map((n) => n[0].toUpperCase() + n.slice(1));
+  throw new BadRequestException(
+    fora.length === 1
+      ? `${nomes[0]} está desligado nos meses cobrados: o clube não cobra nesse mês. Escolhe outro mês, ou liga-o no Período de cobrança.`
+      : `${nomes.join(", ")} estão desligados nos meses cobrados. Escolhe outros meses, ou liga-os no Período de cobrança.`,
+  );
 }
 
 const MONTHS_PT = [
@@ -2389,6 +2519,7 @@ export async function gerarCobrancas(
   atletasNovos: string[];
 }> {
   const mes = Number(period.slice(5, 7));
+  await promoverCalendario(db, academyId);
 
   const atletas = await db.athlete.findMany({
     where: {
@@ -2457,11 +2588,8 @@ export async function gerarCobrancas(
     }
   }
 
-  const academia = await db.academy.findFirst({
-    where: { id: academyId },
-    select: { billingDueDay: true, billingMonths: true },
-  });
-  const diaDoClube = academia?.billingDueDay ?? 8;
+  const calendario = await lerCalendario(db, academyId);
+  const diaDoClube = calendario(period).dia;
   const dueDate = diaDeVencimento(period, diaDoClube);
 
   /*
@@ -2488,8 +2616,7 @@ export async function gerarCobrancas(
    * se responde num ecrã. A coluna do plano fica para o dia em que um plano
    * precisar mesmo de calendário próprio; hoje não é lida.
    */
-  const mesesDoClube = academia?.billingMonths ?? MESES_POR_OMISSAO;
-  const cobraEsteMes = mesesDoClube.includes(mes);
+  const cobraEsteMes = calendario(period).meses.includes(mes);
 
   /*
    * O calendário manda para toda a gente, incluindo quem acabou de entrar.

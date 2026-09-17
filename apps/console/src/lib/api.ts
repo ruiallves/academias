@@ -178,6 +178,54 @@ export function availablePeriods(): string[] {
   return [...new Set(fees.map((f) => f.period))].sort().reverse();
 }
 
+/**
+ * O clube cobra neste mês?
+ *
+ * `Academy.billingMonths` é o calendário de cobrança, e um mês desligado não
+ * existe: não gera mensalidades, não se lança à mão, não recebe avulsas. Esta é
+ * a pergunta que os ecrãs fazem antes de oferecer um mês — o servidor recusa na
+ * mesma (`assertMesesCobrados`), e isto é para não se oferecer o que vai ser
+ * recusado.
+ *
+ * Aceita um mês (1–12) ou um período `AAAA-MM`.
+ */
+export function mesCobrado(mesOuPeriodo: number | string): boolean {
+  if (typeof mesOuPeriodo === "number") return academy.billingMonths.includes(mesOuPeriodo);
+  return mesesCobradosEm(mesOuPeriodo).includes(Number(mesOuPeriodo.slice(5, 7)));
+}
+
+/**
+ * Os meses cobrados no calendário que vale para `period`.
+ *
+ * Com um calendário agendado para a próxima época, os períodos dessa época
+ * seguem-no — como `calendarioPara` na API.
+ */
+export function mesesCobradosEm(period: string): number[] {
+  const proxima = academy.billingNext;
+  return proxima && period >= proxima.from ? proxima.months : academy.billingMonths;
+}
+
+/**
+ * O primeiro período cobrado **depois** deste (`AAAA-MM`).
+ *
+ * "Só a partir do mês seguinte" num clube que não cobra o mês seguinte é uma
+ * promessa sobre um mês que não existe. Salta os desligados; doze passos chegam
+ * sempre, porque o servidor nunca deixa o calendário vazio.
+ */
+export function proximoPeriodoCobrado(period: string): string {
+  let ano = Number(period.slice(0, 4));
+  let mes = Number(period.slice(5, 7));
+  for (let i = 0; i < 12; i++) {
+    mes += 1;
+    if (mes > 12) {
+      mes = 1;
+      ano += 1;
+    }
+    if (mesCobrado(`${ano}-${String(mes).padStart(2, "0")}`)) break;
+  }
+  return `${ano}-${String(mes).padStart(2, "0")}`;
+}
+
 export function feeHistory(athleteId: string) {
   return fees.filter((f) => f.athleteId === athleteId).sort((a, b) => b.period.localeCompare(a.period));
 }

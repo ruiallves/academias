@@ -39,6 +39,7 @@ import {
   Star,
   Timer,
   Trash2,
+  TriangleAlert,
   Trophy,
   Wallet,
   Weight,
@@ -55,7 +56,8 @@ import {
   today,
   type AthleteSessionRecord,
 } from "@/lib/api";
-import { apiDelete, apiGet, apiPatch, apiPut } from "@/lib/http";
+import { ApiError, apiDelete, apiGet, apiPatch, apiPut } from "@/lib/http";
+import { Dialog } from "@/components/Dialog";
 import { useApi } from "@/lib/query";
 import { average, type ApiEvaluation, type ApiReport } from "@/lib/development";
 import { ReportDialog, VisibilityPill } from "@/components/ReportDialog";
@@ -333,6 +335,8 @@ function AthleteStatusMenu({ athlete }: { athlete: Athlete }) {
   const [open, setOpen] = useState(false);
   const [busy, setBusy] = useState(false);
   const [erro, setErro] = useState<string | null>(null);
+  /** A recusa do servidor, à espera de confirmação. É ela própria o texto do aviso. */
+  const [aConfirmar, setAConfirmar] = useState<string | null>(null);
   const navigate = useNavigate();
 
   const estados: { value: "ACTIVE" | "PAUSED" | "LEFT"; label: string; hint: string; actual: boolean }[] = [
@@ -356,18 +360,33 @@ function AthleteStatusMenu({ athlete }: { athlete: Athlete }) {
     }
   }
 
-  async function apagar() {
+  /**
+   * Apagar, em dois tempos.
+   *
+   * O primeiro pedido vai sem forçar. Se o atleta tiver histórico, o servidor
+   * recusa com `ATHLETE_HAS_HISTORY` e diz o que está agarrado — e aí abre-se a
+   * confirmação com essa lista à frente, em vez de se mostrar um erro. Quem
+   * confirmar manda o segundo pedido, que apaga.
+   *
+   * O `confirm()` do browser saiu: uma frase que avisa que "o servidor pode
+   * recusar" não é uma decisão informada, e era a única coisa que aparecia antes
+   * de se saber o que se ia perder.
+   */
+  async function apagar(forcar = false) {
     setOpen(false);
     if (busy) return;
-    if (!confirm(`Apagar ${athlete.name} definitivamente? Se já tiver histórico, o servidor recusa e diz o que está agarrado.`)) return;
     setBusy(true);
     setErro(null);
     try {
-      await apiDelete(`/api/athletes/${athlete.id}`);
+      await apiDelete(`/api/athletes/${athlete.id}${forcar ? "?forcar=1" : ""}`);
       await reloadAcademy();
       navigate("/atletas");
     } catch (e) {
-      setErro(e instanceof Error ? e.message : "Não foi possível apagar.");
+      if (e instanceof ApiError && e.code === "ATHLETE_HAS_HISTORY") {
+        setAConfirmar(e.message);
+      } else {
+        setErro(e instanceof Error ? e.message : "Não foi possível apagar.");
+      }
       setBusy(false);
     }
   }
@@ -424,11 +443,59 @@ function AthleteStatusMenu({ athlete }: { athlete: Athlete }) {
               </span>
               <span className="min-w-0 flex-1">
                 <span className="block text-body text-risk">Apagar atleta</span>
-                <span className="block text-meta text-ink-3">só se não tiver histórico</span>
+                <span className="block text-meta text-ink-3">apaga o histórico também</span>
               </span>
             </button>
           </div>
         </>
+      )}
+
+      {aConfirmar && (
+        <Dialog
+          labelledBy="apagar-atleta"
+          title={`Apagar ${athlete.name}?`}
+          icon={<Trash2 className="size-4" strokeWidth={1.75} />}
+          onClose={() => setAConfirmar(null)}
+          width={470}
+          footer={
+            <>
+              <button type="button" onClick={() => setAConfirmar(null)} className="ctl-ghost" disabled={busy}>
+                Cancelar
+              </button>
+              {/* Dar baixa fica ao lado de apagar, e não escondido noutro menu:
+                  é quase sempre o que a pessoa queria. */}
+              <button
+                type="button"
+                onClick={() => {
+                  setAConfirmar(null);
+                  void mudar("LEFT");
+                }}
+                className="ctl-outline"
+                disabled={busy}
+              >
+                Dar baixa
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setAConfirmar(null);
+                  void apagar(true);
+                }}
+                disabled={busy}
+                className={cx("ctl-primary", "bg-risk hover:bg-risk")}
+              >
+                Apagar mesmo assim
+              </button>
+            </>
+          }
+        >
+          <div className="p-5">
+            <p className="flex items-start gap-2 rounded-[var(--radius-control)] bg-risk-soft px-3 py-2.5 text-meta leading-relaxed text-risk">
+              <TriangleAlert className="mt-0.5 size-3.5 shrink-0" strokeWidth={1.75} />
+              {aConfirmar}
+            </p>
+          </div>
+        </Dialog>
       )}
 
       {erro && (
