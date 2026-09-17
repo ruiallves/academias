@@ -22,6 +22,8 @@
  * abaixo**, pela mesma razão que na pagina de socios.
  */
 
+import { periodoMinimoPorExtenso } from "../subscription/condicoes";
+
 export type MailBrand = {
   /** O nome curto, para o cabeçalho e para o assunto. */
   shortName: string;
@@ -853,7 +855,7 @@ export function subscriptionOrderEmail(input: {
     ["Preço", preco],
     ["Periodicidade", input.annual ? "Anual" : "Mensal"],
     ["Data de início", dia(input.startsOn)],
-    ["Período contratual mínimo", input.minimumMonths + (input.minimumMonths === 1 ? " mês" : " meses")],
+    ["Período contratual mínimo", esc(periodoMinimoPorExtenso(input.minimumMonths))],
     ["Renovação", esc(input.renewalNote)],
   ];
   if (input.notes?.trim()) linhas.push(["Observações", esc(input.notes.trim())]);

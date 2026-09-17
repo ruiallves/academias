@@ -88,10 +88,7 @@ export function ContratoPanel() {
             />
             <Linha rotulo="Periodicidade" valor={ordem.billingPeriod === "ANNUAL" ? "Anual" : "Mensal"} />
             <Linha rotulo="Data de início" valor={dataPT(ordem.startsOn)} />
-            <Linha
-              rotulo="Período contratual mínimo"
-              valor={`${ordem.minimumMonths} ${ordem.minimumMonths === 1 ? "mês" : "meses"}`}
-            />
+            <Linha rotulo="Período contratual mínimo" valor={periodoMinimo(ordem.minimumMonths)} />
             {ordem.renewalNote && <Linha rotulo="Renovação" valor={ordem.renewalNote} />}
             {ordem.notes && <Linha rotulo="Observações" valor={ordem.notes} />}
           </dl>
@@ -139,4 +136,20 @@ function Linha({ rotulo, valor }: { rotulo: string; valor: React.ReactNode }) {
       <dd className="text-body text-ink">{valor}</dd>
     </div>
   );
+}
+
+/**
+ * "Sem período mínimo", "2 anos", "18 meses".
+ *
+ * A mesma frase do email e da plataforma (ver `condicoes.ts` na API): um mínimo
+ * de um mês é o próprio mês, e escrevê-lo como "1 mês" fazia parecer fidelização
+ * onde não há nenhuma.
+ */
+function periodoMinimo(meses: number): string {
+  if (meses <= 1) return "Sem período mínimo";
+  if (meses % 12 === 0) {
+    const anos = meses / 12;
+    return `${anos} ${anos === 1 ? "ano" : "anos"}`;
+  }
+  return `${meses} meses`;
 }

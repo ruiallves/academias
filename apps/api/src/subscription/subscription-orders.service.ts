@@ -5,6 +5,7 @@ import { PrismaService, type ScopedClient } from "../prisma/prisma.service";
 import { MailClient } from "../mail/mail.client";
 import { subscriptionOrderEmail } from "../mail/mail.templates";
 import { ROLE_PERMISSIONS, can, type RequestContext } from "../common/permissions";
+import { renovacaoPorOmissao, semFidelizacao } from "./condicoes";
 
 /**
  * O desconto de quem paga o ano à cabeça, em pontos percentuais.
@@ -30,10 +31,21 @@ export function precoDaOrdem(listMonthlyCents: number, periodo: SubscriptionBill
   };
 }
 
-/** "Renova mensalmente após os 12 meses" — o que se escreve quando ninguém escreveu nada. */
-export function renovacaoPorOmissao(periodo: SubscriptionBillingPeriod, minimumMonths: number): string {
-  const cadencia = periodo === "ANNUAL" ? "anualmente" : "mensalmente";
-  return `Renova ${cadencia} após o período mínimo de ${minimumMonths} ${minimumMonths === 1 ? "mês" : "meses"}.`;
+/**
+ * O período mínimo que a periodicidade permite.
+ *
+ * Regra do produto: **mensal não tem fidelização** — quem paga mês a mês sai
+ * quando quiser, e o mínimo é o próprio mês. **Anual conta-se em anos**, e quem
+ * emite escolhe quantos. Um pedido com 7 meses num contrato anual é um erro de
+ * quem o escreveu, e aqui arredonda-se ao ano em vez de guardar uma condição
+ * que ninguém sabe explicar ao clube.
+ *
+ * Vive aqui, e não na plataforma: o contrato é o mesmo seja quem for a emiti-lo.
+ */
+export function minimoDaPeriodicidade(periodo: SubscriptionBillingPeriod, pedido: number | undefined): number {
+  if (periodo !== "ANNUAL") return 1;
+  const anos = Math.max(1, Math.round((pedido ?? 12) / 12));
+  return Math.min(anos, 5) * 12;
 }
 
 /**
@@ -120,8 +132,9 @@ export class SubscriptionOrdersService {
     if (!academy) throw new BadRequestException("Academia não encontrada");
 
     const preco = precoDaOrdem(plan.amountCents, condicoes.billingPeriod);
+    const minimumMonths = minimoDaPeriodicidade(condicoes.billingPeriod, condicoes.minimumMonths);
     const renewalNote =
-      condicoes.renewalNote?.trim() || renovacaoPorOmissao(condicoes.billingPeriod, condicoes.minimumMonths);
+      condicoes.renewalNote?.trim() || renovacaoPorOmissao(condicoes.billingPeriod, minimumMonths);
 
     const [responsavel, anteriores] = await this.prisma.runAs(academyId, async (db) => [
       await this.responsavelDoClube(db, academyId),
@@ -144,7 +157,7 @@ export class SubscriptionOrdersService {
           discountPct: preco.discountPct,
           amountCents: preco.amountCents,
           startsOn: condicoes.startsOn,
-          minimumMonths: condicoes.minimumMonths,
+          minimumMonths,
           renewalNote,
           notes: condicoes.notes?.trim() || null,
           termsDocumentId: termos?.id ?? null,
@@ -184,7 +197,7 @@ export class SubscriptionOrdersService {
         listMonthlyCents: preco.listMonthlyCents,
         discountPct: preco.discountPct,
         startsOn: condicoes.startsOn,
-        minimumMonths: condicoes.minimumMonths,
+        minimumMonths,
         renewalNote,
         notes: condicoes.notes ?? null,
         termsVersion: termos?.version ?? null,

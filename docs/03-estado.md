@@ -1610,6 +1610,28 @@ passava dos cinco segundos. Passou a duas transações, cada uma com metade: a
 primeira decide (quem é, se pode entrar, o que deve), a segunda é o clube e corre
 em paralelo com a assinatura da fotografia.
 
+## Fidelização: mensal não tem, anual conta-se em anos
+
+Nas condições comerciais que a plataforma emite a um clube (`SubscriptionOrder`,
+o "contrato" que o responsável assina na consola), o período contratual mínimo
+deixou de ser um campo livre de meses com 12 escrito por omissão: um contrato
+mensal saía com um ano de fidelização por distracção, o contrário do que se
+vende. Agora **a periodicidade decide**: mensal fica com o mínimo de um mês, que
+é não ter fidelização, e anual leva os anos escolhidos no diálogo (1 a 5).
+
+A regra vive na API (`minimoDaPeriodicidade`, em
+`subscription-orders.service.ts`) e não no ecrã: o contrato é o mesmo seja quem
+for a emiti-lo, e um pedido de 18 meses num contrato anual arredonda ao ano.
+As frases estão em `subscription/condicoes.ts` (`periodoMinimoPorExtenso`,
+`renovacaoPorOmissao`), que o email da ordem usa; a consola tem a mesma no
+`ContratoPanel`. Sem fidelização, a renovação escreve-se *"Renova mensalmente,
+sem período contratual mínimo. O clube pode cancelar a qualquer momento."*
+
+O diálogo da plataforma diz o que a escolha implica, que é o que os Termos de
+Serviço v1.2 passaram a dizer: com fidelização o clube só sobe de plano
+(secção 8) e cancelar não o desobriga do que falta pagar (secção 11).
+Teste: `scripts/test-ordem-de-adesao.mjs` (45).
+
 ## Lançar por pagar num mês já pago pergunta antes
 
 Lançar mensalidades **por pagar** (a um atleta, a equipas ou a todos) num mês em

@@ -70,7 +70,17 @@ export function AcademyActions({
    */
   const [anual, setAnual] = useState(false);
   const [inicio, setInicio] = useState(() => new Date().toISOString().slice(0, 10));
-  const [minimo, setMinimo] = useState("12");
+  /*
+   * A fidelização, em anos, e só no anual.
+   *
+   * Era um campo de meses, com 12 escrito por omissão em qualquer
+   * periodicidade: um contrato mensal saía com um ano de fidelização por
+   * distracção, o que é o contrário do que se vende ("mensal, cancela quando
+   * quiser"). Agora a periodicidade decide: mensal não tem, anual tem os anos
+   * que aqui se escolherem. O servidor aplica a mesma regra
+   * (`minimoDaPeriodicidade`).
+   */
+  const [anos, setAnos] = useState(1);
   const [renovacao, setRenovacao] = useState("");
   const [notas, setNotas] = useState("");
   const [emitir, setEmitir] = useState(true);
@@ -120,7 +130,7 @@ export function AcademyActions({
             ? {
                 billingPeriod: anual ? "ANNUAL" : "MONTHLY",
                 startsOn: inicio,
-                minimumMonths: Number(minimo) || 12,
+                minimumMonths: anual ? anos * 12 : 1,
                 ...(renovacao.trim() ? { renewalNote: renovacao.trim() } : {}),
                 ...(notas.trim() ? { notes: notas.trim() } : {}),
               }
@@ -311,16 +321,43 @@ export function AcademyActions({
                             className="h-9 w-full rounded-[var(--radius-control)] border border-line bg-surface px-2 text-body text-ink outline-none focus:border-line-strong"
                           />
                         </label>
-                        <label className="block">
-                          <span className="mb-1 block text-meta font-medium text-ink">Período mínimo (meses)</span>
-                          <input
-                            inputMode="numeric"
-                            value={minimo}
-                            onChange={(e) => setMinimo(e.target.value.replace(/\D/g, "").slice(0, 2))}
-                            className="h-9 w-full rounded-[var(--radius-control)] border border-line bg-surface px-2 text-body text-ink outline-none focus:border-line-strong tabular"
-                          />
-                        </label>
+                        {anual ? (
+                          <label className="block">
+                            <span className="mb-1 block text-meta font-medium text-ink">Fidelização</span>
+                            <select
+                              value={anos}
+                              onChange={(e) => setAnos(Number(e.target.value))}
+                              className="h-9 w-full rounded-[var(--radius-control)] border border-line bg-surface px-2 text-body text-ink outline-none focus:border-line-strong"
+                            >
+                              {[1, 2, 3, 4, 5].map((n) => (
+                                <option key={n} value={n}>
+                                  {n} {n === 1 ? "ano" : "anos"}
+                                </option>
+                              ))}
+                            </select>
+                          </label>
+                        ) : (
+                          <div className="block">
+                            <span className="mb-1 block text-meta font-medium text-ink">Fidelização</span>
+                            <p className="flex h-9 items-center text-meta text-ink-3">
+                              Sem período mínimo
+                            </p>
+                          </div>
+                        )}
                       </div>
+
+                      {/*
+                        O que a fidelização implica, dito antes de emitir.
+
+                        É o que os Termos de Serviço passaram a dizer (v1.2,
+                        secções 8 e 11): com fidelização o clube só sobe de
+                        plano, e cancelar não o desobriga do que falta pagar.
+                      */}
+                      <p className="mt-2 text-[11px] leading-relaxed text-ink-3">
+                        {anual
+                          ? `Com fidelização de ${anos} ${anos === 1 ? "ano" : "anos"}, o clube só pode subir de plano e, se cancelar, paga as mensalidades que faltam até ao fim.`
+                          : "Sem fidelização: o clube pode descer de plano ou cancelar, com efeito no fim do período pago."}
+                      </p>
 
                       <label className="mt-2 block">
                         <span className="mb-1 block text-meta font-medium text-ink">

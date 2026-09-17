@@ -148,11 +148,18 @@ try {
   check("mensal paga o preço de tabela", m?.amountCents === plano.amountCents, `${m?.amountCents} vs ${plano.amountCents}`);
   check("sem desconto", m?.discountPct === 0, `${m?.discountPct}`);
   check("com o nome do plano copiado", m?.planName === plano.name, `${m?.planName}`);
-  check("e o período mínimo", m?.minimumMonths === 12, `${m?.minimumMonths}`);
+  /*
+   * Mensal não tem fidelização, nem quando quem emite pede 12 meses.
+   *
+   * A regra é do contrato e não do ecrã da plataforma: quem paga mês a mês sai
+   * quando quiser, e o mínimo é o próprio mês. Ver `minimoDaPeriodicidade`.
+   */
+  check("mensal não tem fidelização", m?.minimumMonths === 1, `${m?.minimumMonths}`);
   check("a renovação escreve-se sozinha", /renova mensalmente/i.test(m?.renewalNote ?? ""), `${m?.renewalNote}`);
+  check("e diz que não há período mínimo", /sem período contratual mínimo/i.test(m?.renewalNote ?? ""), `${m?.renewalNote}`);
 
   const anual = await call(admin, "PATCH", `/api/platform/academies/${AC}/plano`, {
-    planId: plano.id, status: "ACTIVE", billingPeriod: "ANNUAL", startsOn: hoje, minimumMonths: 12,
+    planId: plano.id, status: "ACTIVE", billingPeriod: "ANNUAL", startsOn: hoje, minimumMonths: 24,
   });
   check("muda para anual (2xx)", anual.status === 200 || anual.status === 201, `${anual.status}`);
 
@@ -162,6 +169,14 @@ try {
   check("anual é o ano com menos 10%", a?.amountCents === esperado, `${a?.amountCents} (esperava ${esperado})`);
   check("e diz o desconto", a?.discountPct === 10, `${a?.discountPct}`);
   check("guarda o preço de tabela por mês", a?.listMonthlyCents === plano.amountCents, `${a?.listMonthlyCents}`);
+  check("anual guarda a fidelização em anos", a?.minimumMonths === 24, `${a?.minimumMonths}`);
+  check("e a renovação di-la em anos", /período mínimo de 2 anos/i.test(a?.renewalNote ?? ""), `${a?.renewalNote}`);
+
+  /* Meses a meio de um contrato anual arredondam ao ano: 18 meses é um engano de quem escreve. */
+  const redondo = await call(admin, "PATCH", `/api/platform/academies/${AC}/plano`, {
+    planId: plano.id, status: "ACTIVE", billingPeriod: "ANNUAL", startsOn: hoje, minimumMonths: 18,
+  });
+  check("18 meses num anual passam a 2 anos", (await ordens())[0]?.minimumMonths === 24, `${(await ordens())[0]?.minimumMonths} (${redondo.status})`);
 
   /* --------------------------------------------------- só uma viva ------ */
   console.log("\n=== Só há uma ordem por assinar ===");
@@ -213,7 +228,8 @@ try {
   });
   check("grava o estado", soEstado.status === 200 || soEstado.status === 201, `${soEstado.status}`);
   check("e não emite ordem nenhuma", soEstado.body?.ordem === null, JSON.stringify(soEstado.body?.ordem));
-  check("continua a haver três", (await ordens()).length === 3, `${(await ordens()).length}`);
+  const antesDoEstado = (await ordens()).length;
+  check("o histórico fica como estava", antesDoEstado === 4, `${antesDoEstado}`);
 
   /* ---------------------------------------- o lado do clube ------------- */
   console.log("\n=== Ver e assinar, na consola ===");
