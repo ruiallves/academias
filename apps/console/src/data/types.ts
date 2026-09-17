@@ -351,8 +351,10 @@ export type Fee = {
   amountCents: number;
   dueDate: string;
   status: FeeStatus;
+  /** O dia em que foi paga: o do pagamento, ou o dia em que foi marcada como paga. */
   paidAt?: string;
-  method?: "MB Way" | "Multibanco" | "Cartão" | "Transferência";
+  /** Como foi paga, já em palavras ("MB WAY", "Numerário"). Só nas pagas. */
+  method?: string;
   /** Referência euPago, quando gerada. */
   reference?: string;
 };

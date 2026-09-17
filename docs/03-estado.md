@@ -1470,17 +1470,18 @@ clube, igual para todos os sócios.
 `periodo_anual_do_clube` e `dia_de_abertura_do_periodo_anual`). Chegou a estar
 na categoria, e era perguntar cinco vezes uma coisa que um clube decide uma vez,
 em assembleia: duas categorias anuais em janelas diferentes eram um convite a
-dois livros. Vive no **topo do popup das categorias de sócio**, antes da lista:
+dois livros. Tem botão próprio, **Período das quotas**, ao lado de Categorias na
+página de Sócios (`PeriodoDasQuotasDialog`; esteve no topo do popup das
+categorias, e saiu como o Período de cobrança das Mensalidades):
 um dia, um mês, e o fim escrito com datas a sério — *"Período corrente: 15 de
 Setembro de 2026 a 14 de Setembro de 2027. O seguinte abre a 15 de Setembro de
 2027."* Com datas e não com a regra ("+1 ano −1 dia"), porque Fevereiro tem 28
 ou 29 e "Agosto a Julho" faz perguntar se é do mesmo ano. **Não grava ao
 escolher.** Gravava, e era traição: mexer no mês para ver o que acontecia já
-tinha mexido no clube, e "Fechar" fechava sem desfazer. O popup passou a ter um
-**Guardar** no rodapé que grava tudo o que estiver por guardar — o ano das
-anuais e a categoria aberta a editar, que deixou de ter Guardar próprio — e um
-Cancelar que deita as duas coisas fora; enquanto o ano estiver diferente do que
-o clube tem, uma pastilha diz "por guardar". O dia é validado contra o mês
+tinha mexido no clube, e "Fechar" fechava sem desfazer. O diálogo só grava no
+**Guardar**, e Cancelar deita fora; enquanto o ano estiver diferente do que o
+clube tem, uma pastilha diz "por guardar". (O Guardar do popup das categorias
+continua a gravar a categoria aberta a editar.) O dia é validado contra o mês
 num ano comum — 30 de Fevereiro não abre período nenhum, e 29 só de quatro em
 quatro anos, por isso também não se aceita. Atrás de `member:write`, que é quem
 gere sócios; a rota é `PATCH /api/member-annual-period`.
@@ -1649,7 +1650,7 @@ estavam abertas, e fecharam-se:
   avulsas não se tocam.
 - **Mostrar.** Na consola, `mesCobrado`/`proximoPeriodoCobrado` (`lib/api.ts`):
   as Mensalidades abrem em "Todos os períodos" quando o mês corrente está
-  desligado, o painel "quem não tem mensalidade" some nesse mês, "a partir de
+  desligado, "a partir de
   quando se cobra" nunca oferece um mês desligado; em "Lançar mensalidade" os
   meses desligados estão a tracejado e não se escolhem; na avulsa, uma data num
   mês desligado mostra o aviso e o botão espera.
@@ -2176,6 +2177,10 @@ Verificado por `npm run test:atleta`.
   cada caso. Antes eram três coisas diferentes debaixo da mesma frase, "Sem
   mensalidades neste filtro". O botão que emite chama `POST /api/charges/gerar`,
   que já existia e que nada na consola chegava a chamar.
+  **Retirado da consola (2026-09-17):** o painel por baixo da tabela ("Sem
+  mensalidade em …", "Emitir N") saiu a pedido do clube, em todos os meses, e
+  não é para voltar. O endpoint fica na API; lançar meses à mão faz-se em
+  "Lançar mensalidade".
 - **Mensalidades exportam-se para Excel.** O botão existia e não fazia nada.
   Agora abre um diálogo com o intervalo em **meses** (uma mensalidade não tem
   dia: tem um período), atalhos para "Este mês", "Últimos 3 meses", "Época"

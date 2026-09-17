@@ -476,6 +476,255 @@ reposicoes.splice(reposicoes.indexOf(reporMes), 1);
 await reporMes();
 await porCalendario(MESES_DO_TESTE);
 
+console.log("\n=== Ligar um mês que já passou não o emite ===");
+/*
+ * O caso de produção: um clube tinha Agosto desligado (é o calendário por
+ * omissão) e ligou-o a meio de Setembro. Gravar o calendário emite o mês
+ * corrente e não emite meses que já passaram, e é de propósito: cobrar um mês
+ * que passou é uma decisão, e toma-se no "Lançar mensalidade", a quem se quer.
+ *
+ * O mês que já passou é o primeiro da época (Agosto). Em Agosto não há mês
+ * passado na época, e o bloco não tem o que provar.
+ *
+ * Toca o Life Club: lançar "a todos" cria mensalidades e avisos ao plantel
+ * inteiro. Guarda-se Agosto antes e repõe-se no fim; o que o teste criar noutros
+ * meses sai pela data de criação, e os avisos também. Nenhuma conta do Life
+ * Club tem push, por isso os avisos ficam só na base.
+ */
+if (MES === 8) {
+  console.log("  (Agosto: não há mês passado nesta época para testar)");
+} else {
+  const anoDaEpoca = MES >= 8 ? hoje.getFullYear() : hoje.getFullYear() - 1;
+  const PASSADO = `${anoDaEpoca}-08`;
+  const MAIO = `${anoDaEpoca + 1}-05`;
+  const JUNHO = `${anoDaEpoca + 1}-06`;
+  const ABRIL = `${anoDaEpoca + 1}-04`;
+  /*
+   * O marco em texto, em UTC, e comparado como `timestamp`.
+   *
+   * `createdAt` é `timestamp` sem fuso. Um `Date` do node-pg vai com o fuso de
+   * Lisboa, o Postgres descarta-o, e o marco ficava uma hora à frente: o
+   * restauro por data não apagava nada e as linhas do teste ficavam no clube.
+   */
+  const marco = (await db.query(`SELECT to_char(now() AT TIME ZONE 'UTC', 'YYYY-MM-DD HH24:MI:SS.MS') AS t`)).rows[0].t;
+  const agostoGuardado = (await db.query(
+    `SELECT row_to_json(c) AS linha FROM "Charge" c WHERE c."academyId" = $1 AND c.period = $2 AND c.kind = 'FEE'`,
+    [academyId, PASSADO],
+  )).rows.map((r) => r.linha);
+  const pagamentosDeAgosto = (await db.query(
+    `SELECT row_to_json(p) AS linha FROM "Payment" p JOIN "Charge" c ON c.id = p."chargeId"
+      WHERE c."academyId" = $1 AND c.period = $2 AND c.kind = 'FEE'`,
+    [academyId, PASSADO],
+  )).rows.map((r) => r.linha);
+  const reporAgosto = async () => {
+    await db.query(`DELETE FROM "Charge" WHERE "academyId" = $1 AND period = $2 AND kind = 'FEE'`, [academyId, PASSADO]);
+    await db.query(
+      `DELETE FROM "Charge" WHERE "academyId" = $1 AND period = ANY($2::text[]) AND kind = 'FEE' AND "createdAt" >= $3::timestamp`,
+      [academyId, [PERIODO, ABRIL, MAIO, JUNHO], marco],
+    );
+    await db.query(`INSERT INTO "Charge" SELECT * FROM json_populate_recordset(NULL::"Charge", $1::json)`, [JSON.stringify(agostoGuardado)]);
+    await db.query(`INSERT INTO "Payment" SELECT * FROM json_populate_recordset(NULL::"Payment", $1::json)`, [JSON.stringify(pagamentosDeAgosto)]);
+    await db.query(
+      `DELETE FROM "Notification" WHERE "academyId" = $1 AND "createdAt" >= $2::timestamp AND title = 'Nova mensalidade'`,
+      [academyId, marco],
+    );
+    await porCalendario(MESES_DO_TESTE);
+  };
+  reposicoes.push(reporAgosto);
+
+  // Agosto desligado, directamente na base: é o estado de partida, não o que se testa.
+  await porCalendario([1, 2, 3, 4, 5, 6, 7, 9, 10, 11, 12]);
+  await db.query(
+    `DELETE FROM "Charge" c USING "Athlete" a WHERE a.id = c."athleteId" AND a.name LIKE 'ZZ %' AND c.period = $1`,
+    [PASSADO],
+  );
+  const doMesDosZZ = async (period) => (await db.query(
+    `SELECT a.id, c.status, c."amountCents" FROM "Charge" c JOIN "Athlete" a ON a.id = c."athleteId"
+      WHERE a.name LIKE 'ZZ %' AND c.period = $1`,
+    [period],
+  )).rows;
+
+  const ligar = await call(direcao, "PATCH", "/api/pagamentos", { months: TODOS, aplicarEm: "atual" });
+  check("ligar Agosto já nesta época responde", ligar.status === 200, `${ligar.status} ${JSON.stringify(ligar.body).slice(0, 160)}`);
+  check("e não emite Agosto, que já passou", (await doMesDosZZ(PASSADO)).length === 0, JSON.stringify(await doMesDosZZ(PASSADO)));
+
+  console.log("\n=== Lançar mensalidade: atletas, equipas ou todos ===");
+  /* Os atletas activos da equipa ZZ com preço (3500), que é o que "por equipa" deve apanhar. */
+  const daEquipa = (await db.query(
+    `SELECT a.id FROM "Athlete" a JOIN "TeamMembership" tm ON tm."athleteId" = a.id
+      WHERE tm."teamId" = 'zz_t_sem_preco' AND a.status = 'ACTIVE'`,
+  )).rows.map((r) => r.id);
+  check("a equipa ZZ tem atletas activos", daEquipa.length >= 1, `${daEquipa.length}`);
+
+  const porEquipa = await call(direcao, "POST", "/api/charges/mensalidade", {
+    alvo: "equipas", teamIds: ["zz_t_sem_preco"], periods: [PASSADO],
+  });
+  check("lançar Agosto a uma equipa responde", porEquipa.status === 200 || porEquipa.status === 201, `${porEquipa.status} ${JSON.stringify(porEquipa.body).slice(0, 160)}`);
+  const agostoDaEquipa = (await doMesDosZZ(PASSADO)).filter((c) => daEquipa.includes(c.id));
+  check("cada atleta da equipa fica com Agosto", agostoDaEquipa.length === daEquipa.length, `${agostoDaEquipa.length} de ${daEquipa.length}`);
+  /*
+   * Ao preço de cada um: o da equipa (3500), ou o ajuste individual de quem o
+   * tem — o bloco "O ajuste individual manda" deixou um atleta a 1000.
+   */
+  const individuais = Object.fromEntries((await db.query(
+    `SELECT DISTINCT ON (e."athleteId") e."athleteId", p."amountCents" - e."discountCents" AS valor
+       FROM "Enrollment" e JOIN "SubscriptionPlan" p ON p.id = e."planId"
+      WHERE e."athleteId" = ANY($1::text[]) AND p."teamId" IS NULL AND p."isActive"
+        AND (e."endsOn" IS NULL OR e."endsOn" >= now())
+      ORDER BY e."athleteId", e."startsOn" DESC`,
+    [daEquipa],
+  )).rows.map((r) => [r.athleteId, r.valor]));
+  check(
+    "ao preço de cada atleta, por pagar",
+    agostoDaEquipa.every((c) => c.status === "OPEN" && c.amountCents === (individuais[c.id] ?? 3500)),
+    JSON.stringify({ agostoDaEquipa, individuais }),
+  );
+  check("e a resposta conta-os", porEquipa.body?.criadas === daEquipa.length && porEquipa.body?.atletas === daEquipa.length, JSON.stringify(porEquipa.body));
+
+  const outraVez = await call(direcao, "POST", "/api/charges/mensalidade", {
+    alvo: "equipas", teamIds: ["zz_t_sem_preco"], periods: [PASSADO],
+  });
+  check("repetir não duplica", outraVez.body?.criadas === 0, JSON.stringify(outraVez.body));
+  check("e diz em que mês já havia", outraVez.body?.jaExistiam?.includes(PASSADO), JSON.stringify(outraVez.body));
+
+  /*
+   * Lançar como pagas um mês que já existe por pagar marca-o como pago.
+   *
+   * O caso de produção: a emissão automática tinha lançado Setembro a todos, e
+   * "lançar Setembro como pago" respondia "Não foi lançada nenhuma mensalidade".
+   * Uma das mensalidades tem uma referência Multibanco por pagar: essa não se
+   * mexe, que o dinheiro ainda pode chegar pela euPago.
+   */
+  const agostoAntes = (await db.query(
+    `SELECT c.id, c."amountCents" FROM "Charge" c WHERE c."athleteId" = ANY($1::text[]) AND c.period = $2 ORDER BY c.id`,
+    [daEquipa, PASSADO],
+  )).rows;
+  const comReferencia = agostoAntes[0].id;
+  await db.query(
+    `INSERT INTO "Payment" (id, "chargeId", "amountCents", method, status, provider, reference, "expiresAt", "updatedAt")
+     VALUES ('zz_pay_ref', $1, 3500, 'MULTIBANCO', 'PENDING', 'eupago', '999999999', now() + interval '3 days', now())`,
+    [comReferencia],
+  );
+  const marcarExistentes = await call(direcao, "POST", "/api/charges/mensalidade", {
+    alvo: "equipas", teamIds: ["zz_t_sem_preco"], periods: [PASSADO], estado: "SETTLED", metodo: "CASH",
+  });
+  check("lançar como pagas um mês que já existe responde", marcarExistentes.status === 200 || marcarExistentes.status === 201, `${marcarExistentes.status}`);
+  check(
+    "marca como pagas as que estavam por pagar",
+    marcarExistentes.body?.marcadas === daEquipa.length - 1 && marcarExistentes.body?.criadas === 0,
+    JSON.stringify(marcarExistentes.body),
+  );
+  check("e deixa de fora a que tem um pagamento online a decorrer", marcarExistentes.body?.emPagamento === 1, JSON.stringify(marcarExistentes.body));
+  const agostoDepois = (await db.query(
+    `SELECT c.id, c.status, c."amountCents",
+            (SELECT count(*)::int FROM "Payment" p WHERE p."chargeId" = c.id AND p.provider = 'manual' AND p.method = 'CASH' AND p.status = 'PAID') AS manuais
+       FROM "Charge" c WHERE c."athleteId" = ANY($1::text[]) AND c.period = $2 ORDER BY c.id`,
+    [daEquipa, PASSADO],
+  )).rows;
+  check(
+    "ficam pagas, com o pagamento manual e o mesmo valor",
+    agostoDepois.filter((c) => c.id !== comReferencia).every((c, i) =>
+      c.status === "SETTLED" && c.manuais === 1 && c.amountCents === agostoAntes.filter((x) => x.id !== comReferencia)[i].amountCents),
+    JSON.stringify(agostoDepois),
+  );
+  check("a da referência continua por pagar", agostoDepois.find((c) => c.id === comReferencia)?.status === "OPEN", JSON.stringify(agostoDepois));
+  await db.query(`DELETE FROM "Payment" WHERE id = 'zz_pay_ref'`);
+
+  const denovoPagas = await call(direcao, "POST", "/api/charges/mensalidade", {
+    alvo: "equipas", teamIds: ["zz_t_sem_preco"], periods: [PASSADO], estado: "SETTLED", metodo: "CASH",
+  });
+  check(
+    "repetir não duplica pagamentos e diz em que mês já estavam pagas",
+    denovoPagas.body?.jaPagas?.includes(PASSADO) && denovoPagas.body?.marcadas === 1,
+    JSON.stringify(denovoPagas.body),
+  );
+
+  /* Atletas escolhidos, com valor fixo. */
+  const escolhidos = daEquipa.slice(0, 2);
+  const fixo = await call(direcao, "POST", "/api/charges/mensalidade", {
+    alvo: "atletas", athleteIds: escolhidos, amountCents: 2000, periods: [MAIO],
+  });
+  check("lançar a atletas escolhidos com valor fixo responde", fixo.status === 200 || fixo.status === 201, `${fixo.status} ${JSON.stringify(fixo.body).slice(0, 160)}`);
+  const deMaio = (await doMesDosZZ(MAIO)).filter((c) => escolhidos.includes(c.id));
+  check("só os escolhidos, pelo valor fixo", deMaio.length === escolhidos.length && deMaio.every((c) => c.amountCents === 2000), JSON.stringify(deMaio));
+
+  /* Uma equipa sem preço: ninguém é cobrado, e a resposta diz quem ficou de fora. */
+  await db.query(
+    `INSERT INTO "Team" (id, "academyId", "sportId", "seasonId", name, "maxAge", "updatedAt")
+     VALUES ('zz_t_nada', $1, $2, $3, 'ZZ Equipa Nada', 13, NOW())`,
+    [academyId, modelo.sportId, modelo.seasonId],
+  );
+  await db.query(
+    `INSERT INTO "Athlete" (id, "academyId", name, birthdate, status, "joinedAt", "updatedAt")
+     VALUES ('zz_a_nada', $1, 'ZZ Atleta Nada', '2013-01-01', 'ACTIVE', now(), now())`,
+    [academyId],
+  );
+  await db.query(`INSERT INTO "TeamMembership" (id, "teamId", "athleteId") VALUES ('zz_tm_nada', 'zz_t_nada', 'zz_a_nada')`);
+  const semPrecoNenhum = await call(direcao, "POST", "/api/charges/mensalidade", {
+    alvo: "equipas", teamIds: ["zz_t_nada"], periods: [MAIO],
+  });
+  check("uma equipa sem preço não é cobrada", semPrecoNenhum.body?.criadas === 0, JSON.stringify(semPrecoNenhum.body));
+  check("e diz quem ficou de fora", semPrecoNenhum.body?.semPreco?.some((a) => a.id === "zz_a_nada"), JSON.stringify(semPrecoNenhum.body));
+  await db.query(`DELETE FROM "TeamMembership" WHERE id = 'zz_tm_nada'`);
+
+  /* Todos: o plantel activo inteiro, ao preço de cada um. */
+  const activosComPreco = daEquipa.length;
+  const todos = await call(direcao, "POST", "/api/charges/mensalidade", { alvo: "todos", periods: [JUNHO] });
+  check("lançar a todos responde", todos.status === 200 || todos.status === 201, `${todos.status} ${JSON.stringify(todos.body).slice(0, 160)}`);
+  const deJunho = (await doMesDosZZ(JUNHO)).filter((c) => daEquipa.includes(c.id));
+  check("apanha os atletas da equipa ZZ", deJunho.length === activosComPreco, `${deJunho.length} de ${activosComPreco}`);
+  check("e o atleta sem preço aparece em semPreco", todos.body?.semPreco?.some((a) => a.id === "zz_a_nada"), JSON.stringify(todos.body?.semPreco ?? []).slice(0, 160));
+
+  /* Lançadas como pagas: para registar, sem pedir nada à família. */
+  const avisosDoMes = async (mes) => (await db.query(
+    `SELECT count(*)::int n FROM "Notification" n JOIN "Charge" c ON c.id = n.payload->>'chargeId'
+      WHERE n."academyId" = $1 AND n."createdAt" >= $2::timestamp AND c.period = $3`,
+    [academyId, marco, mes],
+  )).rows[0].n;
+  check("lançar por pagar avisa as famílias (Junho)", (await avisosDoMes(JUNHO)) >= 1, `${await avisosDoMes(JUNHO)}`);
+
+  const pagasATodos = await call(direcao, "POST", "/api/charges/mensalidade", {
+    alvo: "todos", periods: [ABRIL], estado: "SETTLED", metodo: "MBWAY",
+  });
+  check("lançar pagas a todos responde", pagasATodos.status === 200 || pagasATodos.status === 201, `${pagasATodos.status} ${JSON.stringify(pagasATodos.body).slice(0, 160)}`);
+  const deAbril = (await db.query(
+    `SELECT c.id, c.status, c."settledAt" IS NOT NULL AS liquidada,
+            (SELECT count(*)::int FROM "Payment" p WHERE p."chargeId" = c.id AND p.provider = 'manual' AND p.status = 'PAID' AND p.method = 'MBWAY') AS manuais
+       FROM "Charge" c WHERE c."academyId" = $1 AND c.period = $2 AND c."createdAt" >= $3::timestamp`,
+    [academyId, ABRIL, marco],
+  )).rows;
+  check("nascem pagas", deAbril.length >= 1 && deAbril.every((c) => c.status === "SETTLED" && c.liquidada), JSON.stringify(deAbril.slice(0, 3)));
+  check("com o registo de pagamento manual por MB WAY, um por mensalidade", deAbril.every((c) => c.manuais === 1), JSON.stringify(deAbril.slice(0, 3)));
+  check("e a família não é avisada", (await avisosDoMes(ABRIL)) === 0 && pagasATodos.body?.avisados === 0, `${await avisosDoMes(ABRIL)} avisos, avisados=${pagasATodos.body?.avisados}`);
+
+  /* Marcar como paga na tabela, dizendo como: o método fica no pagamento e chega à lista. */
+  const umaDeMaio = (await db.query(
+    `SELECT c.id FROM "Charge" c WHERE c."athleteId" = $1 AND c.period = $2`,
+    [escolhidos[0], MAIO],
+  )).rows[0]?.id;
+  const marcar = await call(direcao, "PATCH", `/api/charges/${umaDeMaio}/status`, { status: "SETTLED", method: "CARD" });
+  check("marcar como paga com o método responde", marcar.status === 200, `${marcar.status} ${JSON.stringify(marcar.body).slice(0, 120)}`);
+  const pagamentoDaTabela = (await db.query(
+    `SELECT method, provider, status FROM "Payment" WHERE "chargeId" = $1`, [umaDeMaio],
+  )).rows;
+  check(
+    "fica um pagamento manual por cartão",
+    pagamentoDaTabela.length === 1 && pagamentoDaTabela[0].method === "CARD" && pagamentoDaTabela[0].provider === "manual",
+    JSON.stringify(pagamentoDaTabela),
+  );
+  const naLista = ((await call(direcao, "GET", "/api/charges")).body ?? []).find((c) => c.id === umaDeMaio);
+  check("a lista traz o método e o dia do pagamento", naLista?.paidMethod === "CARD" && Boolean(naLista?.paidAt), JSON.stringify(naLista ?? {}).slice(0, 200));
+
+  const metodoOnline = await call(direcao, "PATCH", `/api/charges/${umaDeMaio}/status`, { status: "SETTLED", method: "MULTIBANCO" });
+  check("um método que só chega pela euPago é recusado (400)", metodoOnline.status === 400, `${metodoOnline.status}`);
+
+  const semAlvo = await call(direcao, "POST", "/api/charges/mensalidade", { alvo: "equipas", teamIds: [], periods: [JUNHO] });
+  check("equipas sem nenhuma escolhida é recusado (400)", semAlvo.status === 400, `${semAlvo.status}`);
+
+  reposicoes.splice(reposicoes.indexOf(reporAgosto), 1);
+  await reporAgosto();
+}
+
 /*
  * Reabrir o calendário antes de seguir.
  *

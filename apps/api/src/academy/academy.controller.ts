@@ -8,7 +8,7 @@ import { AthletesService } from "./athletes.service";
 import { AthleteInputDto, AthleteTaxIdDto, AthleteUpdateDto, ImportAthletesDto } from "./athletes.dto";
 import { CreateTeamDto, ImportTeamsDto } from "./teams.dto";
 import { AttendanceDto, CreateEventDto, EditEventDto, UpdateEventDto, AbsenceNoticeDto } from "./events.dto";
-import { BillingService, periodoActual, type AplicarEm } from "../billing/billing.service";
+import { BillingService, METODOS_MANUAIS, periodoActual, type AplicarEm, type MetodoManual } from "../billing/billing.service";
 
 /**
  * Cobrar uma coisa avulsa a uma família — o equipamento, o torneio, o autocarro.
@@ -53,11 +53,42 @@ class CreateExtraChargeDto {
  * e recusa-se aqui em vez de escrever vinte e cinco linhas na conta de alguém.
  */
 class CreateManualFeesDto {
+  /** Um atleta só — a forma antiga, que continua a valer. */
+  @IsOptional()
   @IsString()
-  athleteId!: string;
+  athleteId?: string;
 
+  /** A quem: atletas escolhidos, os activos de equipas escolhidas, ou o clube todo. */
+  @IsOptional()
+  @IsIn(["atletas", "equipas", "todos"])
+  alvo?: "atletas" | "equipas" | "todos";
+
+  @IsOptional()
+  @IsArray()
+  @ArrayMaxSize(500)
+  @IsString({ each: true })
+  athleteIds?: string[];
+
+  @IsOptional()
+  @IsArray()
+  @ArrayMaxSize(100)
+  @IsString({ each: true })
+  teamIds?: string[];
+
+  /** Omitido, cada atleta paga o preço dele (individual ou da equipa). */
+  @IsOptional()
   @IsInt()
-  amountCents!: number;
+  amountCents?: number;
+
+  /** Por pagar (a família é avisada) ou já pagas, só para ficar registado. */
+  @IsOptional()
+  @IsIn(["OPEN", "SETTLED"])
+  estado?: "OPEN" | "SETTLED";
+
+  /** Como foram pagas, quando se lançam pagas. */
+  @IsOptional()
+  @IsIn([...METODOS_MANUAIS])
+  metodo?: MetodoManual;
 
   @IsArray()
   @ArrayMaxSize(24)
@@ -74,6 +105,11 @@ class CreateManualFeesDto {
 class SetChargeStatusDto {
   @IsIn(["OPEN", "SETTLED", "VOID"])
   status!: "OPEN" | "SETTLED" | "VOID";
+
+  /** Como foi paga, ao marcar como paga. Só os métodos de fora da plataforma. */
+  @IsOptional()
+  @IsIn([...METODOS_MANUAIS])
+  method?: MetodoManual;
 }
 
 /** O preço, em cêntimos — entre 1 € e 1000 €, validado outra vez no serviço. */
@@ -675,7 +711,7 @@ export class AcademyController {
 
   @Patch("charges/:id/status")
   setChargeStatus(@Req() req: AuthedRequest, @Param("id") id: string, @Body() body: SetChargeStatusDto) {
-    return this.billing.setChargeStatus(req.ctx, id, body.status as ChargeStatus);
+    return this.billing.setChargeStatus(req.ctx, id, body.status as ChargeStatus, body.method);
   }
 
   /**

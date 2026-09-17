@@ -4,7 +4,7 @@ import { PageHeader } from "@/components/Shell";
 import { SearchInput, Segmented } from "@/components/filters";
 import { DataTable, Empty, Loading, Monogram, Panel, Pill, RowLink, cx, type Column, type Tone } from "@/components/primitives";
 import { Dialog, DialogField, dialogInputClass } from "@/components/Dialog";
-import { Check, Copy, Download, ExternalLink, Home, Plus, QrCode, Send, Settings, Tag, Trash2, Upload } from "@/lib/icons";
+import { CalendarDays, Check, Copy, Download, ExternalLink, Home, Plus, QrCode, Send, Settings, Tag, Trash2, Upload } from "@/lib/icons";
 import { descarregarCartazDeAdesao, descarregarQrDeAdesao, linkDeAdesao, qrDeAdesao } from "@/lib/adesao";
 import {
   DIAS_DO_MES,
@@ -71,6 +71,7 @@ export default function Members() {
   const [error, setError] = useState<string | null>(null);
   const [pageOpen, setPageOpen] = useState(false);
   const [tiersOpen, setTiersOpen] = useState(false);
+  const [periodoOpen, setPeriodoOpen] = useState(false);
   const [importOpen, setImportOpen] = useState(false);
   /** O envio do convite da app aos sócios escolhidos na lista. */
   const [aConvidar, setAConvidar] = useState(false);
@@ -260,6 +261,12 @@ export default function Members() {
           </button>
         )}
         {mayWrite && (
+          <button type="button" className="ctl-outline" onClick={() => setPeriodoOpen(true)}>
+            <CalendarDays className="size-3.5" strokeWidth={1.75} />
+            Período das quotas
+          </button>
+        )}
+        {mayWrite && (
           <button type="button" className="ctl-outline" onClick={() => setPageOpen(true)}>
             <Settings className="size-3.5" strokeWidth={1.75} />
             Gerir página de inscrição
@@ -367,6 +374,7 @@ export default function Members() {
       )}
 
       {tiersOpen && <TiersDialog mayWrite={mayWrite} onClose={() => setTiersOpen(false)} />}
+      {periodoOpen && <PeriodoDasQuotasDialog onClose={() => setPeriodoOpen(false)} />}
       {pageOpen && <PageDialog mayWrite={mayWrite} onClose={() => setPageOpen(false)} />}
       {importOpen && <ImportDialog onClose={() => setImportOpen(false)} onDone={load} />}
       {newOpen && <NewMemberDialog onClose={() => setNewOpen(false)} onCreated={load} />}
@@ -620,7 +628,7 @@ function TiersDialog({ mayWrite, onClose }: { mayWrite: boolean; onClose: () => 
   return (
     <Dialog
       title="Categorias de sócio"
-      subtitle="O valor da quota de cada categoria, e o ano das anuais"
+      subtitle="O valor da quota de cada categoria"
       icon={<Tag className="size-4" strokeWidth={1.75} />}
       onClose={onClose}
       width={640}
@@ -763,18 +771,6 @@ function TiersList({
   const [editing, setEditing] = useState<MemberTier | "new" | null>(null);
   const [error, setError] = useState<string | null>(null);
 
-  /*
-   * O ano das quotas anuais, em rascunho até ao Guardar do rodapé.
-   *
-   * É do clube e vale para todas as categorias anuais — chegou a estar em cada
-   * categoria, e era perguntar cinco vezes uma coisa que se decide uma vez, em
-   * assembleia. Fica aqui em cima, antes das categorias, e as linhas por baixo
-   * dizem "por ano · Jan–Dez" sem cada uma ter de o explicar.
-   */
-  const [abertura, setAbertura] = useState({ mes: academy.memberAnnualStartMonth, dia: academy.memberAnnualStartDay });
-  const aberturaAlterada =
-    abertura.mes !== academy.memberAnnualStartMonth || abertura.dia !== academy.memberAnnualStartDay;
-
   /* A categoria aberta a editar regista aqui o seu próprio guardar. */
   const guardarForm = useRef<(() => Promise<boolean>) | null>(null);
 
@@ -787,41 +783,16 @@ function TiersList({
   useEffect(load, [load]);
 
   /*
-   * O que o Guardar do rodapé faz: primeiro a categoria aberta (se a houver e
-   * se estiver em condições — senão pára aqui e o formulário diz o que falta),
-   * depois o ano das anuais, se mudou. Devolve `false` para o diálogo ficar
-   * aberto com o erro à vista.
+   * O que o Guardar do rodapé faz: guarda a categoria aberta, se a houver e se
+   * estiver em condições — senão pára aqui e o formulário diz o que falta.
+   * Devolve `false` para o diálogo ficar aberto com o erro à vista.
    */
   useEffect(() => {
-    registar(async () => {
-      if (guardarForm.current && !(await guardarForm.current())) return false;
-      if (aberturaAlterada) {
-        try {
-          await setMemberAnnualStart(abertura.mes, abertura.dia);
-          await reloadAcademy();
-        } catch (e) {
-          setError(e instanceof Error ? e.message : "Não foi possível guardar o ano das quotas.");
-          return false;
-        }
-      }
-      return true;
-    });
+    registar(async () => !guardarForm.current || (await guardarForm.current()));
   });
 
   return (
     <>
-      {!editing && (
-        <AberturaDoAno
-          value={abertura}
-          onChange={(v) => {
-            setError(null);
-            setAbertura(v);
-          }}
-          alterada={aberturaAlterada}
-          mayWrite={mayWrite}
-        />
-      )}
-
       {/* O Guardar do rodapé falhou aqui dentro: a razão fica à vista, não num clique que não fez nada. */}
       {error && <p className="mx-5 mt-3 rounded-[var(--radius-control)] bg-risk-soft px-3 py-2 text-meta text-risk">{error}</p>}
 
@@ -1698,6 +1669,70 @@ function paraCentimosDaQuota(v: string): number | null {
 }
 
 /**
+ * O período das quotas anuais, num diálogo à parte.
+ *
+ * Estava no topo do diálogo das Categorias. É uma decisão do clube, que vale
+ * para todas as categorias anuais e se toma uma vez, e passou a ter botão
+ * próprio ao lado de "Categorias", como o Período de cobrança nas
+ * Mensalidades. Só grava no Guardar.
+ */
+function PeriodoDasQuotasDialog({ onClose }: { onClose: () => void }) {
+  const [abertura, setAbertura] = useState({ mes: academy.memberAnnualStartMonth, dia: academy.memberAnnualStartDay });
+  const [busy, setBusy] = useState(false);
+  const [erro, setErro] = useState<string | null>(null);
+  const alterada = abertura.mes !== academy.memberAnnualStartMonth || abertura.dia !== academy.memberAnnualStartDay;
+
+  async function guardar() {
+    if (!alterada || busy) return;
+    setBusy(true);
+    setErro(null);
+    try {
+      await setMemberAnnualStart(abertura.mes, abertura.dia);
+      await reloadAcademy();
+      onClose();
+    } catch (e) {
+      setErro(e instanceof Error ? e.message : "Não foi possível guardar o período das quotas.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <Dialog
+      title="Período das quotas"
+      subtitle="Quando abre o ano das quotas anuais, para todas as categorias"
+      icon={<CalendarDays className="size-4" strokeWidth={1.75} />}
+      onClose={onClose}
+      footer={
+        <>
+          <button type="button" className="ctl-ghost" onClick={onClose} disabled={busy}>
+            Cancelar
+          </button>
+          <button type="button" className="ctl-primary" onClick={() => void guardar()} disabled={!alterada || busy}>
+            {busy ? "A guardar…" : "Guardar"}
+          </button>
+        </>
+      }
+    >
+      <AberturaDoAno
+        value={abertura}
+        onChange={(v) => {
+          setErro(null);
+          setAbertura(v);
+        }}
+        alterada={alterada}
+        mayWrite={!busy}
+      />
+      <p className="px-5 py-3 text-meta leading-relaxed text-ink-3">
+        As quotas das categorias anuais cobrem este período, seja qual for o dia em que o sócio paga. As
+        mensais não mudam.
+      </p>
+      {erro && <p className="mx-5 mb-3 rounded-[var(--radius-control)] bg-risk-soft px-3 py-2 text-meta text-risk">{erro}</p>}
+    </Dialog>
+  );
+}
+
+/**
  * O ano das quotas anuais do clube: dia e mês, lado a lado.
  *
  * Dois campos normais, cada um com a largura do que leva: o dia chega para
@@ -1710,7 +1745,7 @@ function paraCentimosDaQuota(v: string): number | null {
  * juntar os dois deixava o Tailwind escolher — escolhia o `w-full`, e cada
  * select esticava à largura do popup. Por isso a classe aqui é montada sem ele.
  *
- * Não grava. É um rascunho que o Guardar do rodapé leva; enquanto estiver
+ * Não grava. É um rascunho que o Guardar do `PeriodoDasQuotasDialog` leva; enquanto estiver
  * diferente do que o clube tem, uma pastilha diz "por guardar". Mudar o mês
  * com o dia a 30 puxa o dia para o máximo do mês novo, para nunca se oferecer
  * um 30 de Fevereiro.

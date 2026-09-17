@@ -2662,18 +2662,26 @@ export class AcademyService {
           // A tentativa de pagamento viva, se houver — é o que deixa a app do
           // pai voltar a mostrar a referência Multibanco ou reabrir o
           // formulário, em vez de criar outra cobrança na euPago.
+          //
+          // E o pagamento que a liquidou, quando está paga: é dele que vêm o
+          // método e o dia que a tabela das Mensalidades mostra.
           payments: {
-            where: { status: { in: ["PENDING", "PROCESSING"] } },
+            where: { status: { in: ["PENDING", "PROCESSING", "PAID"] } },
             orderBy: { createdAt: "desc" },
-            take: 1,
-            select: { method: true, status: true, entity: true, reference: true, redirectUrl: true, expiresAt: true },
+            take: 5,
+            select: {
+              method: true, status: true, entity: true, reference: true, redirectUrl: true, expiresAt: true,
+              paidAt: true,
+            },
           },
+          settledAt: true,
         },
       });
 
       const today = new Date();
       return rows.map((c) => {
-        const aberto = c.payments[0];
+        const aberto = c.payments.find((p) => p.status === "PENDING" || p.status === "PROCESSING");
+        const pago = c.status === "SETTLED" ? c.payments.find((p) => p.status === "PAID") : undefined;
         const vivo = aberto && (!aberto.expiresAt || aberto.expiresAt.getTime() > today.getTime());
         return {
           id: c.id,
@@ -2706,6 +2714,13 @@ export class AcademyService {
                 redirectUrl: aberto.redirectUrl,
               }
             : null,
+          /*
+           * Como e quando foi paga. Uma paga sem pagamento registado (marcada
+           * antes de se guardar o pagamento manual) fica sem método, e com o
+           * dia em que foi liquidada.
+           */
+          paidMethod: pago?.method ?? null,
+          paidAt: c.status === "SETTLED" ? (pago?.paidAt ?? c.settledAt) : null,
         };
       });
     });

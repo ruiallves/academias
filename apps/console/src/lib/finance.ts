@@ -29,8 +29,12 @@ export const METHOD_LABEL: Record<string, string> = {
   MBWAY: "MB WAY",
   MULTIBANCO: "Multibanco",
   CARD: "Cartão",
+  GOOGLE_PAY: "Google Pay",
+  APPLE_PAY: "Apple Pay",
+  PAYSAFECARD: "Paysafecard",
+  DIRECT_DEBIT: "Débito directo",
   TRANSFER: "Transferência",
-  CASH: "Dinheiro",
+  CASH: "Numerário",
 };
 
 export type TransactionRow = {

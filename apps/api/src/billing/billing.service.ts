@@ -2,7 +2,7 @@ import { inicioDaEpoca } from "../members/member-fees.service";
 import { randomUUID } from "node:crypto";
 import { BadRequestException, ForbiddenException, Injectable, Logger, NotFoundException, type OnModuleDestroy, type OnModuleInit } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
-import { PaymentMethod, PaymentStatus, ChargeStatus, NotificationType, type Payment } from "@prisma/client";
+import { PaymentMethod, PaymentStatus, ChargeStatus, NotificationType, type Payment, type Prisma } from "@prisma/client";
 import { PrismaService, type ScopedClient } from "../prisma/prisma.service";
 import { razaoParaNaoApagar } from "../members/member-fees.service";
 import { NotificationsService } from "../notifications/notifications.service";
@@ -717,10 +717,30 @@ export class BillingService implements OnModuleInit, OnModuleDestroy {
    */
   async createManualFees(
     ctx: RequestContext,
-    input: { athleteId: string; amountCents: number; periods: string[]; notes?: string },
+    input: {
+      /** Um atleta só. É a forma antiga, e continua a valer: equivale a `alvo: "atletas"` com um id. */
+      athleteId?: string;
+      /** A quem: atletas escolhidos, os atletas activos de equipas escolhidas, ou o clube todo. */
+      alvo?: "atletas" | "equipas" | "todos";
+      athleteIds?: string[];
+      teamIds?: string[];
+      /** Um valor para todos. Omitido, cada atleta paga o preço dele (individual ou da equipa). */
+      amountCents?: number;
+      /**
+       * Em que estado nascem. `OPEN` (por omissão) é a cobrança normal, e a
+       * família é avisada. `SETTLED` é para registar mensalidades que já foram
+       * pagas por fora da plataforma: nascem pagas, com o mesmo registo de
+       * pagamento manual de "Marcar como paga", e ninguém é avisado de nada.
+       */
+      estado?: "OPEN" | "SETTLED";
+      /** Como foram pagas, quando nascem pagas. Omitido fica numerário. */
+      metodo?: MetodoManual;
+      periods: string[];
+      notes?: string;
+    },
   ) {
     if (!can(ctx, "billing:write")) throw new ForbiddenException("Sem permissão para cobrar");
-    assertValidAmount(input.amountCents);
+    if (input.amountCents !== undefined) assertValidAmount(input.amountCents);
 
     const periodos = [...new Set(input.periods)].sort();
     if (periodos.length === 0) throw new BadRequestException("Escolhe pelo menos um mês");
@@ -731,100 +751,258 @@ export class BillingService implements OnModuleInit, OnModuleDestroy {
       if (mes < 1 || mes > 12) throw new BadRequestException(`Mês inválido: ${p}`);
     }
 
-    return this.prisma.runAs(ctx.academyId, async (db) => {
-      /*
-       * Um mês desligado não se lança à mão.
-       *
-       * A emissão já o respeitava, e o ecrã das definições promete que um mês
-       * desligado não existe. Faltava esta porta: lançar Agosto à mão num clube
-       * que fechou Agosto punha de volta exactamente o que desligar o mês tira,
-       * e o mês voltava a aparecer nas Mensalidades e na ficha do atleta.
-       */
-      await assertMesesCobrados(db, ctx.academyId, periodos);
+    const alvo = input.alvo ?? "atletas";
+    const pagas = input.estado === "SETTLED";
+    const agora = new Date();
+    const idsDeAtletas = [...new Set(input.athleteIds ?? (input.athleteId ? [input.athleteId] : []))];
+    const idsDeEquipas = [...new Set(input.teamIds ?? [])];
+    if (alvo === "atletas" && idsDeAtletas.length === 0) throw new BadRequestException("Escolhe pelo menos um atleta");
+    if (alvo === "equipas" && idsDeEquipas.length === 0) throw new BadRequestException("Escolhe pelo menos uma equipa");
 
-      // O âmbito, e não só a academia — como na cobrança avulsa.
-      const athlete = await db.athlete.findFirst({
-        where: { id: input.athleteId, ...(athleteScopeFilter(ctx) ? { id: athleteScopeFilter(ctx) } : {}) },
-        select: {
-          id: true,
-          name: true,
-          guardians: { select: { membership: { select: { userId: true, isActive: true } } } },
-        },
-      });
-      if (!athlete) throw new NotFoundException("Atleta não encontrado");
+    const { criadas, marcadas, jaExistiam, jaPagas, emPagamento, semPreco, atletasComNovas, avisos } = await this.prisma.runAs(
+      ctx.academyId,
+      async (db) => {
+        /*
+         * Um mês desligado não se lança à mão.
+         *
+         * A emissão já o respeitava, e o ecrã das definições promete que um mês
+         * desligado não existe. Faltava esta porta: lançar Agosto à mão num clube
+         * que fechou Agosto punha de volta exactamente o que desligar o mês tira,
+         * e o mês voltava a aparecer nas Mensalidades e na ficha do atleta.
+         */
+        await assertMesesCobrados(db, ctx.academyId, periodos);
 
-      const calendario = await lerCalendario(db, ctx.academyId);
-
-      // Quem já tem mensalidade nestes meses. Uma leitura, não uma por mês.
-      const existentes = new Set(
-        (
-          await db.charge.findMany({
-            where: { athleteId: athlete.id, period: { in: periodos }, slot: "" },
-            select: { period: true },
-          })
-        ).map((c) => c.period),
-      );
-
-      /* Lançar à mão um mês que tinha sido apagado é voltar atrás: a marca sai. Ver `ChargeSkip`. */
-      await db.chargeSkip.deleteMany({ where: { athleteId: athlete.id, period: { in: periodos } } });
-
-      const criadas: { id: string; period: string; amountCents: number; dueDate: Date }[] = [];
-      for (const period of periodos) {
-        if (existentes.has(period)) continue;
-
-        const charge = await db.charge.create({
-          data: {
-            academyId: ctx.academyId,
-            athleteId: athlete.id,
-            kind: "FEE",
-            period,
-            slot: "",
-            notes: input.notes?.trim() || null,
-            amountCents: input.amountCents,
-            /*
-             * O dia de vencimento é o do clube, como nas geradas — a família
-             * não tem de aprender um prazo diferente por a mensalidade ter
-             * sido lançada à mão. Um mês em atraso nasce vencido, e é o que
-             * se quer: é exactamente o que ele é.
-             */
-            dueDate: diaDeVencimento(period, calendario(period).dia),
+        /*
+         * Quem recebe.
+         *
+         * Atletas escolhidos um a um entram seja qual for o estado: se a
+         * direcção o escolheu pelo nome, é a ele que quer cobrar. Por equipa e
+         * "todos" só entram os activos, como na emissão do mês: um atleta em
+         * pausa ou que saiu não é cobrado por arrasto.
+         *
+         * O âmbito junta-se com `AND`, e não por cima do `id`: espalhar o filtro
+         * de âmbito no mesmo objecto substituía a condição do atleta escolhido.
+         */
+        const ambito = athleteScopeFilter(ctx);
+        const onde: Prisma.AthleteWhereInput =
+          alvo === "atletas"
+            ? { id: { in: idsDeAtletas } }
+            : alvo === "equipas"
+              ? { status: "ACTIVE", teams: { some: { teamId: { in: idsDeEquipas } } } }
+              : { status: "ACTIVE" };
+        const atletas = await db.athlete.findMany({
+          where: { AND: [onde, ...(ambito ? [{ id: ambito }] : [])] },
+          orderBy: { name: "asc" },
+          select: {
+            id: true,
+            name: true,
+            teams: { select: { teamId: true }, take: 1 },
+            guardians: { select: { membership: { select: { userId: true, isActive: true } } } },
           },
-          select: { id: true, period: true, amountCents: true, dueDate: true },
         });
-        criadas.push(charge);
-      }
 
-      /*
-       * O aviso à família, uma vez por mensalidade nova.
-       *
-       * A mesma mensagem da emissão automática (ver `ensureCharges`): dizer o
-       * mês, o valor e o prazo no corpo, para se ler no ecrã bloqueado sem
-       * abrir a app. Só as **novas** — os meses que já existiam não voltam a
-       * incomodar ninguém.
-       */
-      const destinatarios = athlete.guardians.filter((g) => g.membership.isActive);
-      for (const c of criadas) {
-        for (const g of destinatarios) {
-          await this.notifications.enqueue(
-            {
+        if (alvo === "atletas" && atletas.length < idsDeAtletas.length) {
+          throw new NotFoundException(idsDeAtletas.length === 1 ? "Atleta não encontrado" : "Há atletas que não encontrei");
+        }
+        if (alvo === "equipas") {
+          const equipas = await db.team.count({ where: { id: { in: idsDeEquipas } } });
+          if (equipas < idsDeEquipas.length) throw new NotFoundException("Há equipas que não encontrei");
+        }
+        if (atletas.length * periodos.length > 5_000) {
+          throw new BadRequestException("São demasiadas mensalidades de uma vez. Escolhe menos meses ou menos atletas.");
+        }
+
+        const ids = atletas.map((a) => a.id);
+        const calendario = await lerCalendario(db, ctx.academyId);
+        const precoDe = input.amountCents === undefined ? await lerPrecosDosAtletas(db, ids) : null;
+
+        // Quem já tem mensalidade nestes meses. Uma leitura para todos.
+        const existentes = new Map(
+          (
+            await db.charge.findMany({
+              where: { athleteId: { in: ids }, period: { in: periodos }, slot: "" },
+              select: {
+                id: true,
+                athleteId: true,
+                period: true,
+                status: true,
+                amountCents: true,
+                payments: { where: { status: { in: [PaymentStatus.PENDING, PaymentStatus.PROCESSING] } }, select: { id: true } },
+              },
+            })
+          ).map((c) => [`${c.athleteId}|${c.period}`, c]),
+        );
+
+        const aCriar: Prisma.ChargeCreateManyInput[] = [];
+        const semPreco: { id: string; name: string }[] = [];
+        const jaExistiam = new Set<string>();
+
+        /*
+         * Lançar como pagas um mês que já existe marca-o como pago.
+         *
+         * O caso que o pedia: a emissão automática já tinha lançado Setembro a
+         * toda a gente, por pagar, e o clube quis registar que Setembro estava
+         * pago. Saltar as existentes dava "Não foi lançada nenhuma mensalidade",
+         * que é verdade e não serve a ninguém. Quem lança como pagas quer que o
+         * mês fique pago, exista a linha ou não.
+         *
+         * Só as que estão por pagar e sem pagamento online a decorrer. Uma
+         * referência Multibanco por pagar ou um MB WAY em curso ainda podem
+         * trazer dinheiro: marcá-la paga à mão era arriscar cobrar duas vezes.
+         * As que já estavam pagas ou anuladas ficam como estão. O valor é o da
+         * mensalidade existente, e não o do lançamento: é o que a família deve.
+         */
+        const aMarcar: { id: string; athleteId: string; amountCents: number }[] = [];
+        const jaPagas = new Set<string>();
+        let emPagamento = 0;
+
+        for (const a of atletas) {
+          const valor = input.amountCents ?? precoDe?.(a)?.amountCents;
+          let semPrecoContado = false;
+          for (const period of periodos) {
+            const existente = existentes.get(`${a.id}|${period}`);
+            if (existente) {
+              if (!pagas) jaExistiam.add(period);
+              else if (existente.status === ChargeStatus.SETTLED) jaPagas.add(period);
+              else if (existente.status !== ChargeStatus.OPEN) jaExistiam.add(period);
+              else if (existente.payments.length > 0) emPagamento++;
+              else aMarcar.push({ id: existente.id, athleteId: a.id, amountCents: existente.amountCents });
+              continue;
+            }
+            if (valor === undefined) {
+              if (!semPrecoContado) semPreco.push({ id: a.id, name: a.name });
+              semPrecoContado = true;
+              continue;
+            }
+            aCriar.push({
+              academyId: ctx.academyId,
+              athleteId: a.id,
+              kind: "FEE",
+              period,
+              slot: "",
+              notes: input.notes?.trim() || null,
+              amountCents: valor,
+              ...(pagas ? { status: ChargeStatus.SETTLED, settledAt: agora } : {}),
+              ...(input.amountCents === undefined && precoDe?.(a)?.enrollmentId
+                ? { enrollmentId: precoDe(a)!.enrollmentId }
+                : {}),
+              /*
+               * O dia de vencimento é o do clube, como nas geradas — a família
+               * não tem de aprender um prazo diferente por a mensalidade ter
+               * sido lançada à mão. Um mês em atraso nasce vencido, e é o que
+               * se quer: é exactamente o que ele é.
+               */
+              dueDate: diaDeVencimento(period, calendario(period).dia),
+            });
+          }
+        }
+
+        /* Lançar à mão um mês que tinha sido apagado é voltar atrás: a marca sai. Ver `ChargeSkip`. */
+        const quemRecebe = [...new Set(aCriar.map((c) => c.athleteId))];
+        if (quemRecebe.length > 0) {
+          await db.chargeSkip.deleteMany({ where: { athleteId: { in: quemRecebe }, period: { in: periodos } } });
+        }
+
+        const criadas = aCriar.length
+          ? await db.charge.createManyAndReturn({
+              data: aCriar,
+              skipDuplicates: true,
+              select: { id: true, athleteId: true, period: true, amountCents: true, dueDate: true },
+            })
+          : [];
+
+        /*
+         * Lançadas como pagas: o mesmo registo de "Marcar como paga".
+         *
+         * Um pagamento manual em dinheiro por mensalidade, para o histórico dizer
+         * como se soube que foi paga, em vez de um estado sem rasto. É também o
+         * que as Finanças e a app da família já sabem ler.
+         */
+        if (pagas && aMarcar.length > 0) {
+          await db.charge.updateMany({
+            where: { id: { in: aMarcar.map((c) => c.id) }, status: ChargeStatus.OPEN },
+            data: { status: ChargeStatus.SETTLED, settledAt: agora },
+          });
+        }
+        const pagasAgora = pagas ? [...criadas, ...aMarcar] : [];
+        if (pagasAgora.length > 0) {
+          await db.payment.createMany({
+            data: pagasAgora.map((c) => ({
+              chargeId: c.id,
+              amountCents: c.amountCents,
+              method: input.metodo ?? PaymentMethod.CASH,
+              status: PaymentStatus.PAID,
+              provider: "manual",
+              paidAt: agora,
+            })),
+          });
+        }
+
+        /*
+         * Os avisos preparam-se aqui e enviam-se fora da transacção.
+         *
+         * `enqueue` entrega o push na hora. Para um atleta eram meia dúzia de
+         * chamadas, mas para o clube inteiro são centenas, e cada uma a segurar
+         * a ligação à base enquanto espera pela rede. Com o `connection_limit`
+         * a 5, isso parava o servidor para toda a gente.
+         */
+        const porAtleta = new Map(atletas.map((a) => [a.id, a]));
+        // Uma mensalidade que nasce paga não pede nada a ninguém: não há aviso.
+        const avisos = (pagas ? [] : criadas).flatMap((c) => {
+          const a = porAtleta.get(c.athleteId)!;
+          return a.guardians
+            .filter((g) => g.membership.isActive)
+            .map((g) => ({
               academyId: ctx.academyId,
               userId: g.membership.userId,
               type: NotificationType.PAYMENT_PENDING,
               title: "Nova mensalidade",
-              body: `A mensalidade de ${periodLabelPt(c.period)} de ${athlete.name} já está disponível — ${(c.amountCents / 100).toFixed(2)} €, até ${dateLabelPt(c.dueDate)}.`,
+              body: `A mensalidade de ${periodLabelPt(c.period)} de ${a.name} já está disponível — ${(c.amountCents / 100).toFixed(2)} €, até ${dateLabelPt(c.dueDate)}.`,
               payload: { route: "/pagamentos", chargeId: c.id },
-            },
-            db,
-          );
-        }
-      }
+            }));
+        });
 
-      return {
-        criadas: criadas.length,
-        jaExistiam: periodos.filter((p) => existentes.has(p)),
-        avisados: criadas.length > 0 ? destinatarios.length : 0,
-      };
-    });
+        return {
+          criadas,
+          marcadas: aMarcar.length,
+          jaExistiam: [...jaExistiam].sort(),
+          jaPagas: [...jaPagas].sort(),
+          emPagamento,
+          semPreco,
+          atletasComNovas: new Set([...criadas, ...aMarcar].map((c) => c.athleteId)).size,
+          avisos,
+        };
+      },
+      { timeoutMs: 60_000 },
+    );
+
+    /*
+     * O aviso à família, uma vez por mensalidade nova.
+     *
+     * A mesma mensagem da emissão automática (ver `ensureCharges`): dizer o
+     * mês, o valor e o prazo no corpo, para se ler no ecrã bloqueado sem
+     * abrir a app. Só as **novas** — os meses que já existiam não voltam a
+     * incomodar ninguém. Um aviso que falhe não desfaz as mensalidades.
+     */
+    for (const aviso of avisos) {
+      await this.notifications.enqueue(aviso).catch((e) => {
+        this.log.warn(`Aviso de mensalidade por enviar a ${aviso.userId}: ${e instanceof Error ? e.message : e}`);
+      });
+    }
+
+    return {
+      criadas: criadas.length,
+      /** Já existiam por pagar e passaram a pagas. Só ao lançar como pagas. */
+      marcadas,
+      atletas: atletasComNovas,
+      jaExistiam,
+      /** Meses em que alguém já tinha a mensalidade paga: ficou como estava. */
+      jaPagas,
+      /** Por pagar com um pagamento online a decorrer: não se mexeu. */
+      emPagamento,
+      semPreco,
+      avisados: new Set(avisos.map((a) => a.userId)).size,
+    };
   }
 
   /* ------------------------------------------------------------------------ */
@@ -846,7 +1024,17 @@ export class BillingService implements OnModuleInit, OnModuleDestroy {
    * `manual`, para o histórico dizer *como* se soube que foi pago, em vez de um
    * estado que muda sem rasto.
    */
-  async setChargeStatus(ctx: RequestContext, chargeId: string, status: ChargeStatus) {
+  async setChargeStatus(
+    ctx: RequestContext,
+    chargeId: string,
+    status: ChargeStatus,
+    /**
+     * Como foi paga, quando se marca como paga: MB WAY, numerário ou cartão.
+     * Omitido fica numerário, que era o que se gravava sempre antes de a
+     * consola perguntar.
+     */
+    metodo: MetodoManual = PaymentMethod.CASH,
+  ) {
     if (!can(ctx, "billing:write")) throw new ForbiddenException("Sem permissão para alterar mensalidades");
 
     return this.prisma.runAs(ctx.academyId, async (db) => {
@@ -864,7 +1052,7 @@ export class BillingService implements OnModuleInit, OnModuleDestroy {
             data: {
               chargeId: charge.id,
               amountCents: charge.amountCents,
-              method: PaymentMethod.CASH,
+              method: metodo,
               status: PaymentStatus.PAID,
               provider: "manual",
               paidAt: new Date(),
@@ -2139,6 +2327,17 @@ function ibanValido(iban: string): boolean {
  */
 export const MESES_POR_OMISSAO = [1, 2, 3, 4, 5, 6, 7, 9, 10, 11, 12];
 
+/**
+ * Os métodos que se escolhem ao marcar uma mensalidade como paga à mão.
+ *
+ * Só os que acontecem fora da plataforma e que um clube recebe em mão ou ao
+ * balcão. Multibanco, Google Pay e os outros chegam pela euPago, com o método
+ * que ela confirma: escolhê-los à mão era registar um pagamento online que
+ * nunca passou por lá.
+ */
+export const METODOS_MANUAIS = [PaymentMethod.MBWAY, PaymentMethod.CASH, PaymentMethod.CARD] as const;
+export type MetodoManual = (typeof METODOS_MANUAIS)[number];
+
 /** O calendário de cobrança que vale num período: os meses cobrados e o dia de vencimento. */
 export type Calendario = { meses: number[]; dia: number };
 
@@ -2555,38 +2754,7 @@ export async function gerarCobrancas(
     ),
   );
 
-  /*
-   * As inscrições individuais activas — o ajuste que se sobrepõe ao preço da
-   * equipa. Mesma regra de `activeIndividualEnrollment`, mas em bloco: uma
-   * leitura para todos, em vez de uma por atleta.
-   */
-  const hoje = new Date();
-  const individuais = new Map<string, { amountCents: number; discountCents: number; enrollmentId: string }>();
-  for (const e of await db.enrollment.findMany({
-    where: { athleteId: { in: ids }, plan: { teamId: null, isActive: true } },
-    include: { plan: true },
-    orderBy: { startsOn: "desc" },
-  })) {
-    if (individuais.has(e.athleteId)) continue; // a mais recente ganha
-    if (!(e.endsOn === null || e.endsOn >= hoje)) continue;
-    individuais.set(e.athleteId, {
-      amountCents: e.plan.amountCents,
-      discountCents: e.discountCents,
-      enrollmentId: e.id,
-    });
-  }
-
-  // Os planos de equipa, um por equipa.
-  const planosPorEquipa = new Map<string, { amountCents: number }>();
-  for (const plan of await db.subscriptionPlan.findMany({
-    where: { teamId: { not: null }, isActive: true },
-    select: { teamId: true, amountCents: true },
-    orderBy: { id: "desc" },
-  })) {
-    if (plan.teamId && !planosPorEquipa.has(plan.teamId)) {
-      planosPorEquipa.set(plan.teamId, { amountCents: plan.amountCents });
-    }
-  }
+  const precoDe = await lerPrecosDosAtletas(db, ids);
 
   const calendario = await lerCalendario(db, academyId);
   const diaDoClube = calendario(period).dia;
@@ -2646,11 +2814,9 @@ export async function gerarCobrancas(
     }
     if (dispensados.has(a.id)) continue;
 
-    const individual = individuais.get(a.id);
-    const daEquipa = a.teams[0] ? planosPorEquipa.get(a.teams[0].teamId) : undefined;
-    const fonte = individual ?? daEquipa;
+    const preco = precoDe(a);
 
-    if (!fonte) {
+    if (!preco) {
       semPreco++;
       continue;
     }
@@ -2659,17 +2825,14 @@ export async function gerarCobrancas(
       continue;
     }
 
-    // O desconto só existe na inscrição individual; o preço da equipa não o tem.
-    const valor = individual ? Math.max(0, individual.amountCents - individual.discountCents) : fonte.amountCents;
-
     novas.push({
       academyId,
       athleteId: a.id,
       // Liga a cobrança à inscrição que a originou, quando houve uma — é o que
       // deixa perceber, meses depois, de que preço é que aquele valor veio.
-      ...(individual ? { enrollmentId: individual.enrollmentId } : {}),
+      ...(preco.enrollmentId ? { enrollmentId: preco.enrollmentId } : {}),
       period,
-      amountCents: valor,
+      amountCents: preco.amountCents,
       // Quem chegou depois do prazo deste mês paga no prazo seguinte, sem
       // deixar de ser a mensalidade deste mês. Ver `proximoVencimento`.
       dueDate: a.joinedAt > dueDate ? proximoVencimento : dueDate,
@@ -2694,6 +2857,62 @@ export async function gerarCobrancas(
     semPreco,
     foraDoMes,
     atletasNovos: novas.map((n) => n.athleteId),
+  };
+}
+
+/**
+ * O preço de cada atleta, lido em bloco.
+ *
+ * A inscrição individual activa mais recente manda, com o desconto dela; sem
+ * inscrição, vale o plano da primeira equipa. Sem nenhum dos dois, o atleta não
+ * tem preço e a função devolve `null`.
+ *
+ * Saiu de dentro de `gerarCobrancas` quando o lançamento à mão passou a poder
+ * cobrar equipas inteiras "ao preço de cada um". A regra de quanto um atleta
+ * paga não pode viver em dois sítios: no dia em que uma mudar, a emissão do mês
+ * e o lançamento à mão passavam a cobrar valores diferentes ao mesmo atleta.
+ */
+export async function lerPrecosDosAtletas(
+  db: ScopedClient,
+  ids: string[],
+): Promise<(a: { id: string; teams: { teamId: string }[] }) => { amountCents: number; enrollmentId?: string } | null> {
+  const hoje = new Date();
+  const individuais = new Map<string, { amountCents: number; discountCents: number; enrollmentId: string }>();
+  for (const e of await db.enrollment.findMany({
+    where: { athleteId: { in: ids }, plan: { teamId: null, isActive: true } },
+    include: { plan: true },
+    orderBy: { startsOn: "desc" },
+  })) {
+    if (individuais.has(e.athleteId)) continue; // a mais recente ganha
+    if (!(e.endsOn === null || e.endsOn >= hoje)) continue;
+    individuais.set(e.athleteId, {
+      amountCents: e.plan.amountCents,
+      discountCents: e.discountCents,
+      enrollmentId: e.id,
+    });
+  }
+
+  // Os planos de equipa, um por equipa.
+  const planosPorEquipa = new Map<string, number>();
+  for (const plan of await db.subscriptionPlan.findMany({
+    where: { teamId: { not: null }, isActive: true },
+    select: { teamId: true, amountCents: true },
+    orderBy: { id: "desc" },
+  })) {
+    if (plan.teamId && !planosPorEquipa.has(plan.teamId)) planosPorEquipa.set(plan.teamId, plan.amountCents);
+  }
+
+  return (a) => {
+    const individual = individuais.get(a.id);
+    // O desconto só existe na inscrição individual; o preço da equipa não o tem.
+    if (individual) {
+      return {
+        amountCents: Math.max(0, individual.amountCents - individual.discountCents),
+        enrollmentId: individual.enrollmentId,
+      };
+    }
+    const daEquipa = a.teams[0] ? planosPorEquipa.get(a.teams[0].teamId) : undefined;
+    return daEquipa === undefined ? null : { amountCents: daEquipa };
   };
 }
 

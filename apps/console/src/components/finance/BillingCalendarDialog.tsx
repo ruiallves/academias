@@ -328,7 +328,7 @@ export function BillingCalendarDialog({ onClose, onSaved }: { onClose: () => voi
           </div>
           <p className="mt-2 text-[11px] leading-relaxed text-ink-3">
             {quando === "atual"
-              ? "Um mês desligado deixa de existir: não gera mensalidades, não se lança à mão, não recebe cobranças avulsas e não aparece nas Mensalidades nem na ficha do atleta. Ligar um mês emite logo as que faltam."
+              ? "Um mês desligado deixa de existir: não gera mensalidades, não se lança à mão, não recebe cobranças avulsas e não aparece nas Mensalidades nem na ficha do atleta. Ligar o mês corrente emite logo as que faltam. Um mês que já passou não é emitido: lança-o em Lançar mensalidade."
               : `Nada muda nesta época. A partir de ${diaDeAbertura(proximaEpoca)}, os meses desligados aqui deixam de existir e o vencimento passa a este dia.`}
           </p>
         </div>

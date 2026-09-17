@@ -1,5 +1,6 @@
 import { useSyncExternalStore } from "react";
 import { apiGet } from "@/lib/http";
+import { METHOD_LABEL } from "@/lib/finance";
 import type {
   Academy,
   Announcement,
@@ -281,6 +282,8 @@ type ApiCharge = {
   /** `FEE` é a mensalidade do mês; `EXTRA` é o que o clube cobrou à parte. */
   kind: string; title: string | null;
   amountCents: number; dueDate: string; status: string; overdue: boolean;
+  /** Como e quando foi paga. Só nas pagas. */
+  paidMethod?: string | null; paidAt?: string | null;
 };
 
 /** Uma comunicação publicada, com a taxa de leitura. Ver `GET /api/announcements`. */
@@ -423,6 +426,41 @@ export function loadAcademy(): Promise<void> {
 export function reloadAcademy(): Promise<void> {
   loading = null;
   return loadAcademy();
+}
+
+/** Uma linha de `/api/charges` como a consola a usa. */
+function mapFee(c: ApiCharge): Fee {
+  return {
+    id: c.id,
+    athleteId: c.athleteId,
+    period: c.period,
+    extra: c.kind === "EXTRA",
+    title: c.title ?? undefined,
+    amountCents: c.amountCents,
+    dueDate: c.dueDate,
+    // "Vencida" não é estado guardado: é derivado da data, e o servidor já o disse.
+    // "Anulada" (VOID) é decisão da direção; o resto em aberto é "Não pago".
+    status: (
+      c.status === "SETTLED" ? "paid" : c.status === "VOID" ? "void" : c.overdue ? "overdue" : "pending"
+    ) as FeeStatus,
+    ...(c.paidAt ? { paidAt: c.paidAt } : {}),
+    ...(c.paidMethod ? { method: METHOD_LABEL[c.paidMethod] ?? c.paidMethod } : {}),
+  };
+}
+
+/**
+ * Volta a carregar só as mensalidades.
+ *
+ * Lançar, marcar como paga ou apagar uma mensalidade só muda `/api/charges`.
+ * Chamavam `reloadAcademy()`, que traz a academia inteira (arranque, atletas,
+ * staff, treinos, jogos, eventos, comunicações e o calendário da época): cerca
+ * de seis segundos em que a tabela e o selector de períodos continuavam a
+ * mostrar o que estava antes, e parecia que era preciso atualizar a página.
+ * Isto é um pedido só, e a página redesenha-se quando ele chega.
+ */
+export async function reloadFees(): Promise<void> {
+  const apiFees = await apiGet<ApiCharge[]>("/api/charges");
+  apply({ ...state, fees: (apiFees ?? []).map(mapFee) });
 }
 
 /** As colunas do jogo que a convocatória escreve — ver `aplicarLogistica`. */
@@ -866,20 +904,7 @@ function juntar<T extends { id: string }>(atuais: T[], novos: T[]): T[] {
 
   const sessions: TrainingSession[] = apiSessions.map(mapSession);
 
-  const fees: Fee[] = apiFees.map((c) => ({
-    id: c.id,
-    athleteId: c.athleteId,
-    period: c.period,
-    extra: c.kind === "EXTRA",
-    title: c.title ?? undefined,
-    amountCents: c.amountCents,
-    dueDate: c.dueDate,
-    // "Vencida" não é estado guardado: é derivado da data, e o servidor já o disse.
-    // "Anulada" (VOID) é decisão da direção; o resto em aberto é "Não pago".
-    status: (
-      c.status === "SETTLED" ? "paid" : c.status === "VOID" ? "void" : c.overdue ? "overdue" : "pending"
-    ) as FeeStatus,
-  }));
+  const fees: Fee[] = apiFees.map(mapFee);
 
   return {
     ready: true,

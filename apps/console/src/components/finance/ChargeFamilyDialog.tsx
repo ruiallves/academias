@@ -7,7 +7,7 @@ import { mesCobrado } from "@/lib/api";
 import { useActiveCatalog } from "@/lib/catalogs";
 import { guardiansOf, listAthletes, teamById } from "@/lib/api";
 import { apiPost } from "@/lib/http";
-import { reloadAcademy } from "@/lib/store";
+import { reloadFees } from "@/lib/store";
 import { money } from "@/lib/format";
 import { useSession } from "@/session";
 import type { Athlete, Guardian } from "@/data/types";
@@ -95,7 +95,7 @@ export function ChargeFamilyDialog({ onClose, onDone }: { onClose: () => void; o
        * consola — nomeadamente para a tabela das Mensalidades, que é onde a
        * direcção vai ver quem deve o quê. Mesma razão de `NewFeeDialog`.
        */
-      await reloadAcademy();
+      await reloadFees();
       onDone();
     } catch (err) {
       setErro(err instanceof Error ? err.message : "Não foi possível criar a cobrança.");

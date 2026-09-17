@@ -1,13 +1,14 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { CustoDoPagamento } from "@/components/finance/CustoDoPagamento";
 import { createPortal } from "react-dom";
-import { Link, useSearchParams } from "react-router-dom";
+import { useSearchParams } from "react-router-dom";
 import { PageHeader } from "@/components/Shell";
 import { Dialog, DialogField } from "@/components/Dialog";
-import { DataTable, Empty, Metric, MetricRow, Monogram, Panel, PanelHead, Pill, SelectField, cx, type Column } from "@/components/primitives";
+import { DataTable, Empty, Metric, MetricRow, Monogram, Panel, Pill, SelectField, cx, type Column } from "@/components/primitives";
 import { ResultCount, SearchInput, Segmented, Select, Toolbar } from "@/components/filters";
 import { NewFeeDialog } from "@/components/finance/NewFeeDialog";
 import { BillingCalendarDialog } from "@/components/finance/BillingCalendarDialog";
+import { MetodoDePagamentoDialog, type MetodoManual } from "@/components/finance/MetodoDePagamento";
 import { CalendarDays, Check, ChevronDown, CircleCheck, Download, Loader2, Plus, Search, Send, Settings, Trash2, TriangleAlert, Users, Wallet } from "@/lib/icons";
 import {
   arrears,
@@ -24,9 +25,9 @@ import {
   teamById,
   today,
 } from "@/lib/api";
-import { apiDelete, apiGet, apiPatch, apiPost, apiPut } from "@/lib/http";
-import { reloadAcademy, useStore } from "@/lib/store";
-import { money, percent, periodLabel, relativeDays, shortName } from "@/lib/format";
+import { apiDelete, apiPatch, apiPost, apiPut } from "@/lib/http";
+import { reloadAcademy, reloadFees, useStore } from "@/lib/store";
+import { money, percent, periodLabel, relativeDays, shortDate, shortName } from "@/lib/format";
 import { exportFees, nomeDoFicheiro } from "@/lib/fees-export";
 import { can } from "@/lib/permissions";
 import type { Fee, FeeStatus } from "@/data/types";
@@ -197,17 +198,10 @@ export default function Fees() {
   const [athletePricesOpen, setAthletePricesOpen] = useState(false);
   const [exportOpen, setExportOpen] = useState(false);
   /*
-   * Sobe de um a cada preço gravado.
-   *
-   * A tabela em cima vem do `store` e o `reloadAcademy()` já a punha certa. O
-   * painel de baixo — `MissingCharges` — é que tem leitura própria
-   * (`/api/charges/em-falta`) e só a fazia ao montar: definia-se o preço, o
-   * servidor emitia as mensalidades, e a lista continuava a dizer que aqueles
-   * atletas não tinham nenhuma. Só um F5 a arrumava, e um F5 para ver o efeito
-   * do que se acabou de fazer é a interface a admitir que não está a olhar.
+   * Depois de gravar um preço ou lançar mensalidades. A tabela vem do `store`,
+   * que quem grava já recarregou; não há mais nada nesta página a avisar.
    */
-  const [feesVersion, setFeesVersion] = useState(0);
-  const onFeeSaved = useCallback(() => setFeesVersion((v) => v + 1), []);
+  const onFeeSaved = useCallback(() => undefined, []);
   const [sendingReminders, setSendingReminders] = useState(false);
   const [reminderResult, setReminderResult] = useState<string | null>(null);
   /**
@@ -290,12 +284,21 @@ export default function Fees() {
       },
     },
     {
+      /*
+        Como e quando foi paga, numa coluna: o método em cima, o dia por baixo.
+
+        O dia é o do pagamento. Num pagamento online é o que a euPago
+        confirmou; num marcado à mão é o dia em que se mudou o estado.
+      */
       key: "method",
-      header: "Método",
+      header: "Pagamento",
       hideBelow: "lg",
       render: (f) =>
-        f.method ? (
-          <span className="text-ink-2">{f.method}</span>
+        f.status === "paid" && (f.method || f.paidAt) ? (
+          <div className="leading-tight">
+            <div className="text-ink-2">{f.method ?? "Paga"}</div>
+            {f.paidAt && <div className="mt-0.5 text-[11px] text-ink-4">{shortDate(new Date(f.paidAt))}</div>}
+          </div>
         ) : f.reference ? (
           <span className="font-mono text-meta text-ink-3">{f.reference}</span>
         ) : (
@@ -485,18 +488,6 @@ export default function Fees() {
           />
         </Panel>
 
-        {/*
-          Porque é que falta alguém.
-          Vive por baixo da tabela e não dentro dela: são atletas **sem**
-          mensalidade, e uma tabela de mensalidades não os pode conter. Ver
-          `MissingCharges`.
-        */}
-        <MissingCharges
-          period={period}
-          mayWrite={mayEditFees}
-          onOpenPrices={() => setPricesOpen(true)}
-          version={feesVersion}
-        />
       </div>
 
       {exportOpen && (
@@ -523,193 +514,6 @@ export default function Fees() {
         <AthleteFeesDialog session={session} onSaved={onFeeSaved} onClose={() => setAthletePricesOpen(false)} />
       )}
     </>
-  );
-}
-
-/* -------------------------------------------------------------------------- */
-
-type MissingReason = "fora-do-mes" | "sem-preco" | "por-gerar";
-
-type MissingCharges = {
-  period: string;
-  cobraEsteMes: boolean;
-  atletas: { athleteId: string; name: string; teamId: string | null; reason: MissingReason }[];
-};
-
-/**
- * Quem não tem mensalidade neste mês — e porquê.
- *
- * ## A ausência que ninguém conseguia explicar
- *
- * Esta página lê `Charge`. Um atleta sem cobrança simplesmente não aparece, e o
- * ecrã dizia "Sem mensalidades neste filtro" — a mesma frase para três coisas
- * completamente diferentes: o mês não se cobra, falta o preço, ou falta emitir.
- *
- * Foi exactamente assim que se perdeu uma tarde: atleta inscrito, preço da equipa
- * definido, e nada em Mensalidades. Não havia bug — o calendário de cobrança do
- * clube não incluía Agosto, e nenhum ecrã o dizia.
- *
- * Cada motivo tem uma acção diferente, e é isso que este painel mostra: o mês
- * fechado manda-te às Definições, o preço em falta ao diálogo de preços, e a
- * cobrança por emitir resolve-se aqui mesmo.
- */
-function MissingCharges({
-  period,
-  mayWrite,
-  onOpenPrices,
-  version,
-}: {
-  /** O período em causa. Em "Todos os períodos" a pergunta é sobre o mês corrente. */
-  period: string;
-  mayWrite: boolean;
-  onOpenPrices: () => void;
-  /**
-   * Sobe sempre que um preço é gravado noutro sítio da página.
-   *
-   * Este painel não lê do `store` — pergunta ao servidor quem ficou de fora — e
-   * por isso nada o obrigava a voltar a perguntar. Definir um preço emite
-   * mensalidades, e sem isto a lista ficava a mentir até alguém recarregar.
-   */
-  version: number;
-}) {
-  const alvo = period === ALL ? currentPeriod : period;
-  /*
-   * Num mês desligado não falta ninguém: o clube não cobra. O painel ficava a
-   * listar o plantel inteiro como "fora do mês", o que é pôr o mês à vista
-   * outra vez — por baixo da tabela.
-   */
-  const alvoCobrado = mesCobrado(alvo);
-  const [data, setData] = useState<MissingCharges | null>(null);
-  const [busy, setBusy] = useState(false);
-  const [erro, setErro] = useState<string | null>(null);
-
-  const carregar = useCallback(async () => {
-    try {
-      setData(await apiGet<MissingCharges>("/api/charges/em-falta", { periodo: alvo }));
-      setErro(null);
-    } catch (e) {
-      // Um treinador sem `billing:read` nunca chega aqui; qualquer outra falha
-      // não pode partir a página — o painel simplesmente não aparece.
-      setData(null);
-      setErro(e instanceof Error ? e.message : null);
-    }
-    // `version` não se usa aqui dentro: entra nas dependências de propósito, para
-    // que gravar um preço volte a correr esta leitura.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [alvo, version]);
-
-  useEffect(() => {
-    void carregar();
-  }, [carregar]);
-
-  async function gerar() {
-    setBusy(true);
-    try {
-      await apiPost(`/api/charges/gerar?periodo=${alvo}`, {});
-      await reloadAcademy();
-      await carregar();
-    } catch (e) {
-      setErro(e instanceof Error ? e.message : "Não foi possível gerar as mensalidades.");
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  if (!data || data.atletas.length === 0) return null;
-
-  const label = periodLabel(alvo);
-  const porGerar = data.atletas.filter((a) => a.reason === "por-gerar");
-  const semPreco = data.atletas.filter((a) => a.reason === "sem-preco");
-  /*
-   * Os que têm alguma coisa a fazer.
-   *
-   * `fora-do-mes` não é um problema de ninguém: é o calendário do clube. Quem
-   * se inscreveu **neste** mês não entra aqui — esses são cobrados à mesma, por
-   * isso chegam como `por-gerar`. Ver `gerarCobrancas` na API.
-   */
-  const accionaveis = data.atletas.filter((a) => a.reason !== "fora-do-mes");
-  const foraDoMes = data.atletas.length - accionaveis.length;
-
-  /*
-   * O mês fechado é uma resposta só, não uma lista.
-   *
-   * Quando não há nada a fazer — o clube não cobra este mês e ninguém se
-   * inscreveu nele — listar trinta nomes com o mesmo motivo é ruído. Uma frase
-   * e o caminho para a mudar.
-   */
-  if (accionaveis.length === 0) {
-    return (
-      <Panel>
-        <div className="flex flex-wrap items-center gap-3 px-5 py-4">
-          <span className="flex size-8 shrink-0 items-center justify-center rounded-full bg-sunken text-ink-3">
-            <CalendarDays className="size-4" strokeWidth={1.75} />
-          </span>
-          <div className="min-w-0 flex-1">
-            <div className="text-body font-medium text-ink">O clube não cobra {label}</div>
-            <div className="text-meta text-ink-3">
-              Por isso não há mensalidades neste mês — nem para os {data.atletas.length} atletas activos. Não é
-              dívida por pagar: é um mês fora do calendário de cobrança.
-            </div>
-          </div>
-          <Link to="/definicoes" className="ctl-outline shrink-0">
-            <Settings className="size-3.5" strokeWidth={1.75} />
-            Ver calendário
-          </Link>
-        </div>
-      </Panel>
-    );
-  }
-
-  if (!alvoCobrado) return null;
-
-  return (
-    <Panel>
-      <PanelHead
-        title={`Sem mensalidade em ${label}`}
-        hint={`${accionaveis.length} ${accionaveis.length === 1 ? "atleta" : "atletas"}`}
-      >
-        {mayWrite && porGerar.length > 0 && (
-          <button type="button" className="ctl-primary" disabled={busy} onClick={() => void gerar()}>
-            {busy ? "A gerar…" : `Emitir ${porGerar.length}`}
-          </button>
-        )}
-        {mayWrite && semPreco.length > 0 && porGerar.length === 0 && (
-          <button type="button" className="ctl-outline" onClick={onOpenPrices}>
-            Definir preços
-          </button>
-        )}
-      </PanelHead>
-
-      <ul>
-        {accionaveis.map((a) => (
-          <li key={a.athleteId} className="flex items-center gap-3 border-b border-line px-5 py-2.5 last:border-b-0">
-            <Monogram name={a.name} size="sm" />
-            <Link to={`/atletas/${a.athleteId}`} className="min-w-0 flex-1 truncate text-body text-ink hover:underline">
-              {a.name}
-            </Link>
-            <span className="shrink-0 text-meta text-ink-4">{teamById(a.teamId ?? "")?.name ?? "sem equipa"}</span>
-            {a.reason === "sem-preco" ? (
-              <Pill tone="warn">preço por configurar</Pill>
-            ) : (
-              <Pill tone="neutral">por emitir</Pill>
-            )}
-          </li>
-        ))}
-      </ul>
-
-      {foraDoMes > 0 && (
-        // O resto do plantel não tem mensalidade porque o mês não se cobra —
-        // dito uma vez, em rodapé, para não repetir o mesmo motivo trinta vezes.
-        <p className="border-t border-line px-5 py-2.5 text-meta text-ink-3">
-          Os outros {foraDoMes} atletas activos não têm mensalidade porque o clube não cobra {label}.{" "}
-          <Link to="/definicoes" className="font-medium text-ink hover:underline">
-            Ver calendário
-          </Link>
-        </p>
-      )}
-
-      {erro && <p className="border-t border-line px-5 py-3 text-meta text-risk">{erro}</p>}
-    </Panel>
   );
 }
 
@@ -1427,6 +1231,8 @@ function FeeStatusControl({ fee }: { fee: Fee }) {
    * referência viva, e a razão tem de chegar a quem carregou.
    */
   const [aApagar, setAApagar] = useState(false);
+  /** A perguntar como foi paga, antes de a marcar como paga. */
+  const [aPagar, setAPagar] = useState(false);
   const [erro, setErro] = useState<string | null>(null);
   const [pos, setPos] = useState<{ left: number; top?: number; bottom?: number } | null>(null);
   const btnRef = useRef<HTMLButtonElement>(null);
@@ -1473,12 +1279,23 @@ function FeeStatusControl({ fee }: { fee: Fee }) {
     e.stopPropagation();
     setOpen(false);
     if (value === target || busy) return;
+    // Marcar como paga pergunta primeiro como foi paga. Ver `MetodoDePagamentoDialog`.
+    if (value === "SETTLED") {
+      setAPagar(true);
+      return;
+    }
+    await gravar(value);
+  }
+
+  async function gravar(value: string, method?: MetodoManual) {
     setBusy(true);
     setErro(null);
     try {
-      await apiPatch(`/api/charges/${fee.id}/status`, { status: value });
-      await reloadAcademy();
+      await apiPatch(`/api/charges/${fee.id}/status`, { status: value, ...(method ? { method } : {}) });
+      setAPagar(false);
+      await reloadFees();
     } catch (err) {
+      setAPagar(false);
       setErro(err instanceof Error ? err.message : "Não foi possível mudar o estado.");
     } finally {
       setBusy(false);
@@ -1492,7 +1309,7 @@ function FeeStatusControl({ fee }: { fee: Fee }) {
     try {
       await apiDelete(`/api/charges/${fee.id}`);
       setAApagar(false);
-      await reloadAcademy();
+      await reloadFees();
     } catch (err) {
       setAApagar(false);
       setErro(err instanceof Error ? err.message : "Não foi possível apagar.");
@@ -1583,9 +1400,19 @@ function FeeStatusControl({ fee }: { fee: Fee }) {
         clicar; um portal continua a ser filho dela na árvore React, e um clique
         em "Cancelar" levava também para lá. O `div` de fora pára isso.
       */}
-      {(aApagar || erro) &&
+      {(aApagar || aPagar || erro) &&
         createPortal(
           <div onClick={(e) => e.stopPropagation()} onMouseDown={(e) => e.stopPropagation()}>
+            {aPagar && (
+              <MetodoDePagamentoDialog
+                titulo={`${shortName(athleteById(fee.athleteId)?.name ?? "")} · ${
+                  fee.extra ? (fee.title ?? "Cobrança") : periodLabel(fee.period)
+                } · ${money(fee.amountCents)}`}
+                busy={busy}
+                onConfirm={(m) => void gravar("SETTLED", m)}
+                onClose={() => setAPagar(false)}
+              />
+            )}
             {aApagar && (
               <Dialog
                 title="Apagar mensalidade?"
