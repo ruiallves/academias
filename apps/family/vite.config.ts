@@ -96,7 +96,14 @@ export default defineConfig(({ command, mode }) => {
       },
     },
     server: {
+      /*
+       * A 5174, e mais nenhuma: a consola devolve a sessão a `localhost:5174`
+       * ao voltar para a Família ou o Sócio (`appUrl` em
+       * `apps/console/src/lib/app-contexts.ts`). Porta ocupada é erro no
+       * arranque, e não uma mudança silenciosa para a 5175. Só `vite dev`.
+       */
       port: 5174,
+      strictPort: true,
       // Liga a todas as interfaces (0.0.0.0), não só a `localhost` — sem isto, um
       // telemóvel na mesma rede (ou um túnel, que chega pela rede) não encontra o
       // servidor nenhum.

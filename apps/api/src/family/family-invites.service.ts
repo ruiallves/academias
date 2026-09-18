@@ -2,10 +2,10 @@ import { randomBytes } from "node:crypto";
 import { BadRequestException, ForbiddenException, Injectable, NotFoundException } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
 import { LegalService } from "../legal/legal.service";
-import { PrismaService } from "../prisma/prisma.service";
+import { PrismaService, type ScopedClient } from "../prisma/prisma.service";
 import { SupabaseAccountsService } from "../auth/supabase-accounts.service";
 import { MailClient } from "../mail/mail.client";
-import { familyInviteEmail } from "../mail/mail.templates";
+import { familyApprovedEmail, familyInviteEmail } from "../mail/mail.templates";
 import { can, type RequestContext } from "../common/permissions";
 
 /**
@@ -333,12 +333,42 @@ export class FamilyInvitesService {
         ) AS id
       `;
 
-      const membership = await db.membership.upsert({
-        where: { academyId_userId_role: { academyId, userId: created[0].id, role: "GUARDIAN" } },
-        update: { isActive: true },
-        create: { academyId, userId: created[0].id, role: "GUARDIAN" },
-        select: { id: true },
+      /*
+       * A conta nasce à espera do clube.
+       *
+       * O NIF e a data provam que a pessoa conhece a criança; não provam que é
+       * o pai. Quem o sabe é a secretaria, e é ela que abre a porta na página
+       * Famílias (`approve`). Até lá a membership fica desligada, e tudo o que
+       * já lê `isActive` (o login, os avisos, as cobranças) deixa-a de fora.
+       *
+       * Quem já é encarregado aprovado e volta a passar pelo link (um segundo
+       * filho, um duplo toque com rede fraca) não volta para a fila: o educando
+       * novo liga-se, como no `addChild`. Quem foi desactivado pelo clube volta
+       * a pedir, e não se reactiva sozinho, que era o que acontecia antes.
+       */
+      const existente = await db.membership.findFirst({
+        where: { userId: created[0].id, role: "GUARDIAN" },
+        select: { id: true, isActive: true },
       });
+      const pending = !existente?.isActive;
+      const membership = existente
+        ? pending
+          ? await db.membership.update({
+              where: { id: existente.id },
+              data: { approvalRequestedAt: new Date() },
+              select: { id: true },
+            })
+          : existente
+        : await db.membership.create({
+            data: {
+              academyId,
+              userId: created[0].id,
+              role: "GUARDIAN",
+              isActive: false,
+              approvalRequestedAt: new Date(),
+            },
+            select: { id: true },
+          });
 
       /*
        * Sem pagador designado.
@@ -372,7 +402,7 @@ export class FamilyInvitesService {
       const academy = await db.academy.findFirst({ where: { id: academyId }, select: { slug: true, name: true } });
       const athlete = await db.athlete.findFirst({ where: { id: athleteId }, select: { name: true } });
 
-      return { slug: academy?.slug ?? "", academyName: academy?.name ?? "", athlete: athlete?.name ?? "" };
+      return { slug: academy?.slug ?? "", academyName: academy?.name ?? "", athlete: athlete?.name ?? "", pending };
     });
 
     /*
@@ -416,6 +446,144 @@ export class FamilyInvitesService {
       const athlete = await db.athlete.findFirst({ where: { id: athleteId }, select: { id: true, name: true } });
       return { athlete };
     });
+  }
+
+  /* ------------------------------------------------------------------------ */
+  /* Os pedidos de acesso — a aprovação do clube                               */
+  /* ------------------------------------------------------------------------ */
+
+  /**
+   * Os pais à espera, do mais antigo para o mais recente.
+   *
+   * Leva o educando com que cada um se registou, e o escalão dele: é o que a
+   * secretaria precisa para reconhecer a família sem abrir mais nada.
+   */
+  async pendingRequests(ctx: RequestContext) {
+    if (!can(ctx, "family:read")) throw new ForbiddenException("Sem permissão");
+
+    return this.prisma.runAs(ctx.academyId, async (db) => {
+      const rows = await db.membership.findMany({
+        where: { role: "GUARDIAN", isActive: false, approvalRequestedAt: { not: null } },
+        orderBy: { approvalRequestedAt: "asc" },
+        select: {
+          id: true,
+          approvalRequestedAt: true,
+          user: { select: { name: true, email: true, phone: true } },
+          guardianOf: {
+            select: {
+              relation: true,
+              athlete: {
+                select: {
+                  id: true,
+                  name: true,
+                  teams: { take: 1, select: { team: { select: { name: true } } } },
+                },
+              },
+            },
+          },
+        },
+      });
+
+      return rows.map((m) => ({
+        membershipId: m.id,
+        requestedAt: m.approvalRequestedAt,
+        name: m.user.name,
+        email: m.user.email,
+        phone: m.user.phone,
+        children: m.guardianOf.map((g) => ({
+          athleteId: g.athlete.id,
+          name: g.athlete.name,
+          team: g.athlete.teams[0]?.team.name ?? null,
+          relation: g.relation,
+        })),
+      }));
+    });
+  }
+
+  /**
+   * Abrir a porta.
+   *
+   * A conta liga-se e o pai recebe um email a dizer que já pode entrar. O
+   * email é o único aviso possível: sem conta activa não há push, porque a
+   * subscrição passa pelo mesmo guard que o estava a recusar.
+   */
+  async approve(ctx: RequestContext, membershipId: string) {
+    if (!can(ctx, "family:write")) throw new ForbiddenException("Sem permissão para aprovar famílias");
+
+    const aprovado = await this.prisma.runAs(ctx.academyId, async (db) => {
+      const alvo = await this.pedido(db, membershipId);
+      await db.membership.update({
+        where: { id: alvo.id },
+        data: { isActive: true, approvalRequestedAt: null, approvedAt: new Date() },
+      });
+      const academy = await db.academy.findFirst({
+        where: { id: ctx.academyId },
+        select: { slug: true, name: true, shortName: true, signalColor: true, logoUrl: true },
+      });
+      return { ...alvo, academy };
+    });
+
+    let emailSent = false;
+    if (this.mail.ready && aprovado.user.email) {
+      const mail = familyApprovedEmail({
+        brand: {
+          shortName: aprovado.academy?.shortName ?? "Academia",
+          name: aprovado.academy?.name ?? "a academia",
+          signalColor: aprovado.academy?.signalColor,
+          logoUrl: aprovado.academy?.logoUrl,
+        },
+        name: aprovado.user.name,
+        children: aprovado.guardianOf.map((g) => g.athlete.name),
+        link: this.appLink(aprovado.academy?.slug ?? ""),
+      });
+      const r = await this.mail.send({
+        to: aprovado.user.email,
+        toName: aprovado.user.name,
+        subject: mail.subject,
+        html: mail.html,
+        text: mail.text,
+        kind: "family-approved",
+      });
+      emailSent = r.sent;
+    }
+
+    return { ok: true as const, membershipId, emailSent };
+  }
+
+  /**
+   * Recusar o pedido.
+   *
+   * Uma conta que nunca foi aprovada apaga-se: não tem histórico, só a ligação
+   * ao educando que ela própria pediu, e essa vai em cascata. Quem já foi
+   * encarregado e voltou a pedir depois de desactivado fica como estava, desligado
+   * e fora da fila, com o histórico intacto.
+   */
+  async reject(ctx: RequestContext, membershipId: string) {
+    if (!can(ctx, "family:write")) throw new ForbiddenException("Sem permissão para recusar famílias");
+
+    return this.prisma.runAs(ctx.academyId, async (db) => {
+      const alvo = await this.pedido(db, membershipId);
+      if (alvo.approvedAt === null) {
+        await db.membership.delete({ where: { id: alvo.id } });
+      } else {
+        await db.membership.update({ where: { id: alvo.id }, data: { approvalRequestedAt: null } });
+      }
+      return { ok: true as const, membershipId };
+    });
+  }
+
+  private async pedido(db: ScopedClient, membershipId: string) {
+    const alvo = await db.membership.findFirst({
+      where: { id: membershipId, role: "GUARDIAN", isActive: false, approvalRequestedAt: { not: null } },
+      select: {
+        id: true,
+        approvedAt: true,
+        user: { select: { name: true, email: true } },
+        guardianOf: { select: { athlete: { select: { name: true } } } },
+      },
+    });
+    if (!alvo) throw new NotFoundException("Este pedido já não está à espera.");
+    return alvo;
   }
 
   /* ------------------------------------------------------------------------ */
@@ -491,6 +659,13 @@ export class FamilyInvitesService {
    * **landing**, que é onde se instala a app: o pai abre no Chrome, instala, e só
    * então entra.
    */
+  /** A app do clube, para o botão do email de aprovação. */
+  private appLink(slug: string): string {
+    const base = this.config.get<string>("PUBLIC_BASE_URL");
+    if (base) return `${base.replace(/\/$/, "").replace("{slug}", slug)}/app/`;
+    return "http://localhost:5174/";
+  }
+
   private linkFor(slug: string, token: string): string {
     const base = this.config.get<string>("PUBLIC_BASE_URL");
     if (base) return `${base.replace(/\/$/, "").replace("{slug}", slug)}/familia/${token}`;

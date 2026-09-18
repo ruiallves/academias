@@ -282,7 +282,16 @@ export async function buildCallUpPdf(sheet: CallUpSheet): Promise<Doc> {
     },
   });
 
-  y = fimDaTabela + 4;
+  /*
+   * O fim da tabela é o que o motor diz, e não a última linha desenhada.
+   *
+   * Contava-se no `didDrawCell` das linhas do corpo — e sem convocados não há
+   * corpo nenhum: o fim ficava onde a tabela **começa**, e a legenda e as
+   * observações eram escritas por cima do cabeçalho. `lastAutoTable.finalY`
+   * inclui o cabeçalho e é da última página, que é onde o resto continua.
+   */
+  const fimDoMotor = (doc as unknown as { lastAutoTable?: { finalY?: number } }).lastAutoTable?.finalY;
+  y = Math.max(fimDaTabela, fimDoMotor ?? 0) + 4;
 
   /* ------------------------------------------------------------- legenda --- */
   doc.setFont("helvetica", "normal");
@@ -353,19 +362,18 @@ function cabecalho(doc: Doc, sheet: CallUpSheet, cor: Cores, emblema: Emblema | 
   }
 
   const x = MARGEM + alto + 4;
+  const larguraDoNome = LARGURA - alto - 60;
   doc.setFont("helvetica", "bold");
-  doc.setFontSize(15);
   doc.setTextColor(...INK);
-  doc.text(sheet.academy.name, x, y + 5.6, { baseline: "middle", maxWidth: LARGURA - alto - 60 });
+  doc.text(numaLinha(doc, sheet.academy.name, larguraDoNome, 15, 11), x, y + 5.6, { baseline: "middle" });
 
   doc.setFont("helvetica", "normal");
-  doc.setFontSize(9);
   doc.setTextColor(...MUTED);
   doc.text(
-    `${sheet.team}${sheet.season ? ` · Época ${sheet.season}` : ""}`,
+    numaLinha(doc, `${sheet.team}${sheet.season ? ` · Época ${sheet.season}` : ""}`, larguraDoNome, 9, 7.5),
     x,
     y + 10.4,
-    { baseline: "middle", maxWidth: LARGURA - alto - 60 },
+    { baseline: "middle" },
   );
 
   const direita = MARGEM + LARGURA;
@@ -379,7 +387,7 @@ function cabecalho(doc: Doc, sheet: CallUpSheet, cor: Cores, emblema: Emblema | 
     doc.setFont("helvetica", "normal");
     doc.setFontSize(9);
     doc.setTextColor(...MUTED);
-    doc.text(prova, direita, y + 9.4, { align: "right", baseline: "middle" });
+    doc.text(numaLinha(doc, prova, 56, 9, 7.5), direita, y + 9.4, { align: "right", baseline: "middle" });
   }
 
   const faixa = y + alto + 3.5;
@@ -414,9 +422,9 @@ function oJogo(doc: Doc, sheet: CallUpSheet, cor: Cores, y: number): number {
     doc.text(label.toUpperCase(), x, topo + 1.5, { align, baseline: "middle", charSpace: 0.2 });
 
     doc.setFont("helvetica", nosso ? "bold" : "normal");
-    doc.setFontSize(11.5);
     doc.setTextColor(...(nosso ? cor.ink : INK));
-    doc.text(nome, x, topo + 7, { align, baseline: "middle", maxWidth: LARGURA / 2 - 22 });
+    // Numa linha só: por baixo está a data, e um nome partido em dois ia-lhe por cima.
+    doc.text(numaLinha(doc, nome, LARGURA / 2 - 22, 11.5, 8.5), x, topo + 7, { align, baseline: "middle" });
   };
 
   lado("Casa", casa, sheet.isHome, meio - 16, "right");
@@ -441,13 +449,36 @@ function aLogistica(doc: Doc, sheet: CallUpSheet, y: number): number {
     ["Chegada ao campo", sheet.arrivalTime],
   ];
   const largura = LARGURA / celulas.length;
+  const ENTRE_LINHAS = 4.4;
 
-  celulas.forEach(([label, valor], i) => {
+  /*
+   * A altura é a da célula mais comprida.
+   *
+   * Era fixa (13mm), e um "Pav. Centro Educativo de Trovela" partia-se em duas
+   * linhas e a segunda ia parar por cima da tabela dos convocados. Agora cada
+   * valor parte-se antes de desenhar, conta-se quantas linhas tem a maior, e a
+   * faixa inteira (as divisórias e a régua de baixo) cresce com ela. Três linhas
+   * no máximo: um local maior do que isso corta-se com reticências.
+   */
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(10);
+  const partidos = celulas.map(([, valor], i) => {
+    const disponivel = largura - (i === 0 ? 4 : 8);
+    const linhas = doc.splitTextToSize(valor.trim() || "—", disponivel) as string[];
+    if (linhas.length <= 3) return linhas;
+    const tres = linhas.slice(0, 3);
+    tres[2] = cortar(doc, `${tres[2]}…`, disponivel);
+    return tres;
+  });
+  const maisLinhas = Math.max(1, ...partidos.map((l) => l.length));
+  const fim = y + 13 + (maisLinhas - 1) * ENTRE_LINHAS;
+
+  celulas.forEach(([label], i) => {
     const x = MARGEM + i * largura;
     if (i > 0) {
       doc.setDrawColor(...LINE);
       doc.setLineWidth(0.35);
-      doc.line(x, y + 1, x, y + 12);
+      doc.line(x, y + 1, x, fim - 1);
     }
     const texto = i === 0 ? x : x + 4;
 
@@ -459,10 +490,11 @@ function aLogistica(doc: Doc, sheet: CallUpSheet, y: number): number {
     doc.setFont("helvetica", "bold");
     doc.setFontSize(10);
     doc.setTextColor(...INK);
-    doc.text(valor.trim() || "—", texto, y + 9, { baseline: "middle", maxWidth: largura - 6 });
+    partidos[i].forEach((linha, n) => {
+      doc.text(linha, texto, y + 9 + n * ENTRE_LINHAS, { baseline: "middle" });
+    });
   });
 
-  const fim = y + 13;
   regua(doc, fim, LINE, 0.35);
   return fim;
 }
@@ -653,6 +685,33 @@ export async function carregarEmblema(url: string): Promise<Emblema | null> {
   } catch {
     return null;
   }
+}
+
+/**
+ * Um texto que tem de caber numa linha: encolhe a letra até `minimo`, e só
+ * depois corta com reticências.
+ *
+ * O `maxWidth` do jsPDF parte o texto em várias linhas sem reservar espaço para
+ * elas, e as linhas a mais caíam em cima do que vinha a seguir. Nos sítios onde
+ * a folha só tem uma linha — o nome do clube, o das equipas, a prova — encolher
+ * lê-se melhor do que partir. Deixa o tamanho escolhido posto no documento.
+ */
+function numaLinha(doc: Doc, texto: string, largura: number, tamanho: number, minimo: number): string {
+  let t = tamanho;
+  doc.setFontSize(t);
+  while (doc.getTextWidth(texto) > largura && t > minimo) {
+    t = Math.max(minimo, t - 0.5);
+    doc.setFontSize(t);
+  }
+  return doc.getTextWidth(texto) > largura ? cortar(doc, texto, largura) : texto;
+}
+
+/** Corta até caber, com reticências, no tamanho de letra que estiver posto. */
+function cortar(doc: Doc, texto: string, largura: number): string {
+  if (doc.getTextWidth(texto) <= largura) return texto;
+  let t = texto.replace(/…$/, "");
+  while (t.length > 1 && doc.getTextWidth(`${t}…`) > largura) t = t.slice(0, -1);
+  return `${t.trimEnd()}…`;
 }
 
 function hexRgb(hex: string): RGB {

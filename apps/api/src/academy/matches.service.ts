@@ -10,6 +10,7 @@ import {
   type RequestContext,
 } from "../common/permissions";
 import { headCoaches, pesoDoTitulo } from "./head-coaches";
+import { formatarNoFuso, horaNoFuso, instanteNoFuso, lerHora, partesNoFuso, somarDias } from "../common/fuso";
 
 /**
  * Jogos e convocatórias.
@@ -861,7 +862,7 @@ export class MatchesService {
         type: "MATCH_STAFF_ASSIGNED",
         title: `Escalado: ${jogo?.team.name ?? "jogo"} — ${jogo?.opponent ?? ""}`.trim(),
         body: jogo
-          ? `${alvo.funcao} · ${jogo.startsAt.toLocaleDateString("pt-PT", { weekday: "long", day: "numeric", month: "long" })} às ${jogo.startsAt.toLocaleTimeString("pt-PT", { hour: "2-digit", minute: "2-digit" })} · ${jogo.venue} (${jogo.isHome ? "casa" : "fora"})`
+          ? `${alvo.funcao} · ${formatarNoFuso(jogo.startsAt, { weekday: "long", day: "numeric", month: "long" })} às ${horaNoFuso(jogo.startsAt)} · ${jogo.venue} (${jogo.isHome ? "casa" : "fora"})`
           : alvo.funcao,
         payload: { matchId, link: `/jogos/${matchId}` },
       });
@@ -1410,7 +1411,7 @@ export class MatchesService {
      * O `enqueue` abre a sua própria transação de tenant, curta — é o que a RLS
      * da tabela `Notification` exige.
      */
-    const quando = match.startsAt.toLocaleString("pt-PT", {
+    const quando = formatarNoFuso(match.startsAt, {
       weekday: "long", day: "numeric", month: "long", hour: "2-digit", minute: "2-digit",
     });
 
@@ -2077,16 +2078,22 @@ const texto = (v: string | null | undefined): string | null => {
  * formulário onde ela é a mesma do jogo em 99% dos casos.
  */
 function horaNoDia(hhmm: string, referencia: Date): Date | null {
-  const m = /^(\d{1,2}):(\d{2})$/.exec(hhmm.trim());
-  if (!m) return null;
-  const h = Number(m[1]);
-  const min = Number(m[2]);
-  if (h > 23 || min > 59) return null;
+  const lida = lerHora(hhmm);
+  if (!lida) return null;
 
-  const d = new Date(referencia);
-  d.setHours(h, min, 0, 0);
-  if (d.getTime() > referencia.getTime()) d.setDate(d.getDate() - 1);
-  return d;
+  /*
+   * No relógio do clube, e não no da máquina.
+   *
+   * Era `setHours`, que usa o fuso de onde a API corre. Em produção isso é UTC:
+   * "12:00" ficava 12:00 UTC, que em Lisboa no Verão são as 13:00 — a
+   * convocatória guardava sempre uma hora a mais do que se escreveu. Ver
+   * `common/fuso.ts`.
+   */
+  const jogo = partesNoFuso(referencia);
+  const noDia = instanteNoFuso(jogo.ano, jogo.mes, jogo.dia, lida.hora, lida.minuto);
+  if (noDia.getTime() <= referencia.getTime()) return noDia;
+  const vespera = somarDias(jogo.ano, jogo.mes, jogo.dia, -1);
+  return instanteNoFuso(vespera.ano, vespera.mes, vespera.dia, lida.hora, lida.minuto);
 }
 
 /**
@@ -2135,7 +2142,7 @@ function descreverMudancas(
 ): string[] {
   const mudou: string[] = [];
   const hora = (d: Date | null) =>
-    d ? d.toLocaleTimeString("pt-PT", { hour: "2-digit", minute: "2-digit" }) : null;
+    d ? horaNoFuso(d) : null;
   const mesmoInstante = (a: Date | null, b: Date | null) =>
     (a?.getTime() ?? null) === (b?.getTime() ?? null);
 

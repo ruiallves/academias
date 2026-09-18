@@ -1,15 +1,15 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import { PageHeader } from "@/components/Shell";
-import { DataTable, Empty, Metric, MetricRow, Monogram, Panel, Pill, type Column } from "@/components/primitives";
+import { DataTable, Empty, Metric, MetricRow, Monogram, Panel, PanelHead, Pill, type Column } from "@/components/primitives";
 import { BulkBar, BulkDeleteDialog } from "@/components/BulkDelete";
 import { ResultCount, SearchInput, Segmented, Toolbar } from "@/components/filters";
 import { FamilyInviteDialog } from "@/components/FamilyInviteDialog";
 import { FamilyQrDialog } from "@/components/FamilyQrDialog";
 import { Check, Copy, Home, Link2, QrCode, Send, Trash2 } from "@/lib/icons";
 import { athleteById, listGuardians, teamById } from "@/lib/api";
-import { percent, shortName } from "@/lib/format";
-import { apiDelete, apiGet, apiPatch } from "@/lib/http";
+import { percent, relativeDays, shortName } from "@/lib/format";
+import { apiDelete, apiGet, apiPatch, apiPost } from "@/lib/http";
 import { reloadAcademy } from "@/lib/store";
 import { can } from "@/lib/permissions";
 import { cx } from "@/components/primitives";
@@ -65,6 +65,27 @@ export default function Families() {
   useEffect(() => {
     void recarregarLink();
   }, [recarregarLink]);
+
+  /*
+   * Os pais que se registaram pelo link e esperam pelo clube. Ver
+   * `FamilyInvitesService.pendingRequests`. Vazio é o normal, e aí o bloco
+   * nem aparece.
+   */
+  const [pedidos, setPedidos] = useState<PedidoDeAcesso[]>([]);
+  // Fica cá fora e não no bloco: aprovar o último pedido faz o bloco sumir, e
+  // a confirmação tem de continuar à vista.
+  const [avisoPedido, setAvisoPedido] = useState<Aviso | null>(null);
+  const recarregarPedidos = useCallback(async () => {
+    try {
+      setPedidos((await apiGet<PedidoDeAcesso[]>("/api/family-invite/pedidos")) ?? []);
+    } catch {
+      // Como o link: não conseguir ler os pedidos não parte a página.
+      setPedidos([]);
+    }
+  }, []);
+  useEffect(() => {
+    void recarregarPedidos();
+  }, [recarregarPedidos]);
   const withApp = guardians.filter((g) => g.appInstalled).length;
 
   const rows = useMemo(() => {
@@ -293,6 +314,29 @@ export default function Families() {
           <Metric label="Pagamento automático" value="—" note="débito directo por activar" />
         </MetricRow>
 
+        {avisoPedido && (
+          <p
+            role="status"
+            className={cx(
+              "rounded-[var(--radius-control)] px-3.5 py-2.5 text-meta",
+              avisoPedido.tom === "ok" ? "bg-ok-soft text-ok" : "bg-risk-soft text-risk",
+            )}
+          >
+            {avisoPedido.texto}
+          </p>
+        )}
+
+        {pedidos.length > 0 && (
+          <PedidosDeAcesso
+            pedidos={pedidos}
+            mayWrite={mayWrite}
+            onAviso={setAvisoPedido}
+            onResolvido={async () => {
+              await Promise.all([recarregarPedidos(), reloadAcademy()]);
+            }}
+          />
+        )}
+
         <Panel>
           <Toolbar>
             <Segmented
@@ -341,6 +385,121 @@ export default function Families() {
 }
 
 /* -------------------------------------------------------------------------- */
+
+type Aviso = { tom: "ok" | "erro"; texto: string };
+
+type PedidoDeAcesso = {
+  membershipId: string;
+  requestedAt: string;
+  name: string;
+  email: string;
+  phone: string | null;
+  children: { athleteId: string; name: string; team: string | null; relation: string }[];
+};
+
+/**
+ * Os pedidos de acesso à app, à espera do clube.
+ *
+ * O pai registou-se pelo link com o NIF e a data de nascimento do educando.
+ * Isso prova que conhece a criança; quem sabe se é mesmo o encarregado é a
+ * secretaria, e é aqui que ela responde. Aprovar abre-lhe a app e manda-lhe um
+ * email. Recusar apaga o pedido, e a conta fica sem acesso.
+ */
+function PedidosDeAcesso({
+  pedidos,
+  mayWrite,
+  onAviso: setAviso,
+  onResolvido,
+}: {
+  pedidos: PedidoDeAcesso[];
+  mayWrite: boolean;
+  onAviso: (aviso: Aviso | null) => void;
+  onResolvido: () => Promise<void>;
+}) {
+  const [busy, setBusy] = useState<string | null>(null);
+
+  async function responder(p: PedidoDeAcesso, accao: "aprovar" | "recusar") {
+    if (accao === "recusar" && !confirm(`Recusar o pedido de ${p.name}? Não vai ter acesso à app do clube.`)) return;
+    setBusy(p.membershipId);
+    setAviso(null);
+    try {
+      const r = await apiPost<{ emailSent?: boolean }>(`/api/family-invite/pedidos/${p.membershipId}/${accao}`, {});
+      await onResolvido();
+      if (accao === "aprovar") {
+        setAviso(
+          r?.emailSent
+            ? { tom: "ok", texto: `${shortName(p.name)} já pode entrar na app. Enviámos-lhe um email a avisar.` }
+            : { tom: "ok", texto: `${shortName(p.name)} já pode entrar na app. O email não seguiu, por isso avisa-o por outra via.` },
+        );
+      }
+    } catch (e) {
+      setAviso({ tom: "erro", texto: e instanceof Error ? e.message : "Não foi possível responder ao pedido." });
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  return (
+    <Panel>
+      <PanelHead
+        title="Pedidos de acesso à app"
+        hint={pedidos.length === 1 ? "1 família à espera de aprovação" : `${pedidos.length} famílias à espera de aprovação`}
+      />
+      <ul>
+        {pedidos.map((p) => (
+          <li
+            key={p.membershipId}
+            className="flex flex-wrap items-center gap-x-4 gap-y-2.5 border-t border-line px-5 py-3 first:border-t-0"
+          >
+            <div className="flex min-w-0 flex-1 basis-[260px] items-center gap-2.5">
+              <Monogram name={p.name} />
+              <div className="min-w-0">
+                <div className="flex items-center gap-1.5">
+                  <span className="truncate font-medium text-ink">{p.name}</span>
+                  {p.children[0] && <span className="shrink-0 text-meta text-ink-3">{p.children[0].relation}</span>}
+                </div>
+                <div className="truncate text-meta text-ink-3">
+                  {p.children.length === 0
+                    ? "Sem educando associado"
+                    : p.children.map((c) => `${shortName(c.name)}${c.team ? ` · ${c.team}` : ""}`).join(", ")}
+                </div>
+              </div>
+            </div>
+
+            <div className="min-w-0 flex-1 basis-[200px]">
+              <div className="truncate text-ink-2">{p.email}</div>
+              <div className="truncate text-meta text-ink-4 tabular">
+                {p.phone ? `${p.phone} · ` : ""}pediu {relativeDays(new Date(p.requestedAt))}
+              </div>
+            </div>
+
+            {mayWrite && (
+              <div className="ml-auto flex shrink-0 items-center gap-1.5">
+                <button
+                  type="button"
+                  onClick={() => void responder(p, "recusar")}
+                  disabled={busy === p.membershipId}
+                  className="ctl-ghost text-ink-3 hover:text-risk"
+                >
+                  Recusar
+                </button>
+                <button
+                  type="button"
+                  onClick={() => void responder(p, "aprovar")}
+                  disabled={busy === p.membershipId}
+                  className="ctl-primary"
+                >
+                  <Check className="size-3.5" strokeWidth={2.25} />
+                  Aprovar
+                </button>
+              </div>
+            )}
+          </li>
+        ))}
+      </ul>
+    </Panel>
+  );
+}
 
 type InviteLink = {
   id: string;

@@ -37,6 +37,9 @@ type MembershipRow = {
  */
 export type AppKind = "family" | "athlete" | "console";
 
+/** O 403 de quem se registou pelo link das famílias e espera pelo clube. */
+export const FAMILY_PENDING_CODE = "FAMILY_APPROVAL_PENDING";
+
 /**
  * Qual das memberships desta pessoa nesta academia é que vale para este pedido.
  *
@@ -101,6 +104,14 @@ export class AuthService {
     `;
   }
 
+  /** Um pedido de família à espera neste clube? Ver `app.family_approval_pending`. */
+  async familyApprovalPending(authId: string, academyId: string): Promise<boolean> {
+    const rows = await this.prisma.$queryRaw<{ pending: boolean }[]>`
+      SELECT app.family_approval_pending(${authId}, ${academyId}) AS pending
+    `;
+    return rows[0]?.pending === true;
+  }
+
   async academyIdBySlug(slug: string): Promise<string | null> {
     const rows = await this.prisma.$queryRaw<{ id: string | null }[]>`
       SELECT app.resolve_academy_by_slug(${slug}) AS id
@@ -152,6 +163,28 @@ export class AuthService {
     if (!academyId) throw new NotFoundException(`Academia "${slug}" não encontrada`);
 
     const daAcademia = memberships.filter((m) => m.academy_id === academyId);
+
+    /*
+     * O pai que se registou e ainda não foi aprovado.
+     *
+     * A membership dele existe mas está desligada, por isso não vem em
+     * `daAcademia`, e sem isto levava o mesmo 403 de quem não tem nada a ver
+     * com o clube. O código próprio é o que deixa a app mostrar "o pedido foi
+     * enviado ao clube" em vez de "esta conta não é de encarregado". Só se
+     * pergunta quando falta o vínculo de família: a quem já o tem não custa nada.
+     */
+    if (
+      (app === "family" || daAcademia.length === 0) &&
+      !daAcademia.some((m) => m.role === "GUARDIAN") &&
+      (await this.familyApprovalPending(authId, academyId))
+    ) {
+      throw new ForbiddenException({
+        statusCode: 403,
+        code: FAMILY_PENDING_CODE,
+        message: "O teu pedido de acesso foi enviado ao clube e está à espera de aprovação.",
+      });
+    }
+
     if (daAcademia.length === 0) throw new ForbiddenException("Sem acesso a esta academia");
 
     const membership = escolherMembership(daAcademia, app);

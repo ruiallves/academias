@@ -19,6 +19,7 @@ import {
 import { SHORT_NAME_MAX } from "../common/short-name";
 import { matchTitle } from "../common/match-title";
 import { AMIGAVEL } from "./catalogs.service";
+import { instanteNoFuso, partesNoFuso, somarDias } from "../common/fuso";
 
 /**
  * As colunas de um evento que a consola lê — partilhadas pela leitura, criação e
@@ -787,7 +788,12 @@ export class AcademyService {
         throw new ForbiddenException("Essa pessoa tem um cargo acima do teu");
       }
 
-      await db.membership.update({ where: { id: membershipId }, data: { isActive: active } });
+      // Reactivar à mão também resolve um pedido de acesso que houvesse: a
+      // conta passa a estar aprovada, e sai da fila da página Famílias.
+      await db.membership.update({
+        where: { id: membershipId },
+        data: active ? { isActive: true, approvalRequestedAt: null } : { isActive: false },
+      });
       return { ok: true, isActive: active };
     });
   }
@@ -1381,6 +1387,9 @@ export class AcademyService {
           account: { select: { id: true, isActive: true, userId: true, lastSeenAt: true } },
           teams: { select: { teamId: true, position: true }, take: 1 },
           guardians: {
+            // Os pedidos à espera do clube ficam fora: aparecem só no bloco de
+            // aprovação da página Famílias (`/api/family-invite/pedidos`).
+            where: { membership: { approvalRequestedAt: null } },
             select: {
               relation: true,
               membership: {
@@ -3682,15 +3691,31 @@ function occurrences(
   // em todas as ocorrências, mesmo as que caem noutro mês.
   const duracao = fim.getTime() - inicio.getTime();
 
+  /*
+   * Tudo no relógio do clube, e nada no da máquina.
+   *
+   * A série repetia o **instante** da primeira ocorrência de dia a dia. Com a API
+   * em UTC, um treino às 18:30 em Setembro (17:30 UTC) continuava às 17:30 UTC
+   * depois da mudança de hora de Outubro, que em Lisboa são as 17:30: a equipa
+   * inteira chegava uma hora antes do treino. Agora a série anda de dia em dia de
+   * calendário, e cada ocorrência é "18:30 em Lisboa" nesse dia. Ver
+   * `common/fuso.ts`.
+   */
+  const primeiro = partesNoFuso(inicio);
+  const ultimo = partesNoFuso(ate);
+
   // Até ao fim do dia escolhido: quem escreve "até 30 de Junho" quer o dia 30
   // incluído, não a meia-noite que o abre.
-  const limite = new Date(ate);
-  limite.setHours(23, 59, 59, 999);
+  const limite = new Date(instanteNoFuso(ultimo.ano, ultimo.mes, ultimo.dia, 23, 59).getTime() + 59_999);
 
   const dias = repeat.freq === "WEEKLY" && repeat.weekdays?.length ? new Set(repeat.weekdays) : null;
 
   const out: [string, string][] = [];
-  const cursor = new Date(inicio);
+  let dia = { ano: primeiro.ano, mes: primeiro.mes, dia: primeiro.dia };
+  const naHora = (d: { ano: number; mes: number; dia: number }) =>
+    instanteNoFuso(d.ano, d.mes, d.dia, primeiro.hora, primeiro.minuto);
+  const diaDaSemana = (d: { ano: number; mes: number; dia: number }) => new Date(Date.UTC(d.ano, d.mes - 1, d.dia)).getUTCDay();
+  let cursor = naHora(dia);
 
   while (cursor <= limite && out.length < MAX_OCCURRENCES) {
     /*
@@ -3703,9 +3728,9 @@ function occurrences(
      */
     const serve =
       repeat.freq === "WEEKLY" && dias
-        ? dias.has(cursor.getDay())
+        ? dias.has(diaDaSemana(dia))
         : repeat.freq === "MONTHLY"
-          ? cursor.getDate() === inicio.getDate()
+          ? dia.dia === primeiro.dia
           : true;
     if (serve) {
       out.push([new Date(cursor).toISOString(), new Date(cursor.getTime() + duracao).toISOString()]);
@@ -3720,24 +3745,23 @@ function occurrences(
        * série no dia certo e salta os meses que não o têm, que é o que um humano
        * faria com um calendário à frente.
        */
-      const diaPretendido = inicio.getDate();
-      const proximo = new Date(cursor);
-      proximo.setDate(1);
-      proximo.setMonth(proximo.getMonth() + 1);
-      const ultimoDia = new Date(proximo.getFullYear(), proximo.getMonth() + 1, 0).getDate();
+      const diaPretendido = primeiro.dia;
+      const mesSeguinte = dia.mes === 12 ? { ano: dia.ano + 1, mes: 1 } : { ano: dia.ano, mes: dia.mes + 1 };
+      const ultimoDia = new Date(Date.UTC(mesSeguinte.ano, mesSeguinte.mes, 0)).getUTCDate();
       if (diaPretendido > ultimoDia) {
         // Fevereiro não tem 31: salta-se o mês em vez de o empurrar para Março.
-        cursor.setTime(proximo.getTime());
+        dia = { ...mesSeguinte, dia: 1 };
+        cursor = naHora(dia);
         continue;
       }
-      proximo.setDate(diaPretendido);
-      proximo.setHours(inicio.getHours(), inicio.getMinutes(), 0, 0);
-      cursor.setTime(proximo.getTime());
+      dia = { ...mesSeguinte, dia: diaPretendido };
+      cursor = naHora(dia);
     } else {
       // Diário e semanal andam de um dia: o semanal filtra pelos dias escolhidos
       // acima, o que também cobre "de duas em duas semanas" quando vier a ser
       // preciso — passa a ser um filtro, não outro ramo.
-      cursor.setDate(cursor.getDate() + 1);
+      dia = somarDias(dia.ano, dia.mes, dia.dia, 1);
+      cursor = naHora(dia);
     }
   }
 

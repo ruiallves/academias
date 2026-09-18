@@ -48,7 +48,12 @@ export default function EscolherArea({ name }: { name: string }) {
     { type: "ATHLETE", label: "Atleta", hint: "Os teus treinos, jogos, convocatórias, avaliações e o que o treinador partilhar contigo.", icon: Dumbbell },
     { type: "MEMBER", label: "Sócio", hint: "O teu cartão, as quotas, os jogos e as novidades do clube.", icon: IdCard },
   ];
-  const opcoes = todas.filter((o) => contexts?.some((c) => c.type === o.type));
+  const pendente = contexts?.some((c) => c.type === "FAMILY" && c.pending);
+  const opcoes = todas
+    .filter((o) => contexts?.some((c) => c.type === o.type))
+    .map((o) =>
+      o.type === "FAMILY" && pendente ? { ...o, hint: "O teu pedido de acesso está à espera de aprovação do clube." } : o,
+    );
 
   return (
     <div className="mx-auto flex min-h-dvh max-w-[480px] flex-col justify-center gap-6 px-6 py-10">

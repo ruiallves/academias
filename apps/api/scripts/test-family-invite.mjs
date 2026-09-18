@@ -32,7 +32,7 @@ const env = (k) => {
   return l.slice(k.length + 1).trim().replace(/^"|"$/g, "");
 };
 
-const S = env("SUPABASE_URL").replace(/\/$/, ""), A = env("SUPABASE_ANON_KEY"), API = "http://localhost:3000";
+const S = env("SUPABASE_URL").replace(/\/$/, ""), A = env("SUPABASE_ANON_KEY"), API = process.env.API ?? "http://localhost:3000";
 const SLUG = "life-club";
 
 let ok = 0, bad = 0;
@@ -163,6 +163,11 @@ check("sem o par NIF+data não se regista ninguém", semProva.status === 404);
 
 console.log("\n=== O que a conta nova vê ===");
 const pai = registo.body.accessToken;
+// A conta nasce à espera do clube, e a direcção aprova-a. Ver `test-aprovacao-familias.mjs`.
+check("a conta nova fica à espera do clube", registo.body?.pending === true);
+check("e à espera não vê nada", (await asStaff(pai, "GET", "/api/athletes")).body?.code === "FAMILY_APPROVAL_PENDING");
+const pendente = (await asStaff(director, "GET", "/api/family-invite/pedidos")).body?.find((p) => p.email === EMAIL);
+check("a direcção aprova", (await asStaff(director, "POST", `/api/family-invite/pedidos/${pendente?.membershipId}/aprovar`)).status < 300);
 const meus = await asStaff(pai, "GET", "/api/athletes");
 check("vê exactamente um atleta", meus.body?.length === 1, `${meus.body?.length}`);
 check("e é o filho dele", meus.body?.[0]?.id === alvo.id);

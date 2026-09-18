@@ -387,6 +387,49 @@ export function familyInviteEmail(input: {
 }
 
 /**
+ * O clube aprovou o acesso de uma família à app.
+ *
+ * Sai quando a secretaria carrega em "Aprovar" na página Famílias. O pai
+ * registou-se, viu o ecrã "à espera do clube" e fechou a app; é este email que
+ * o faz voltar.
+ */
+export function familyApprovedEmail(input: {
+  brand: MailBrand;
+  name: string;
+  /** Os educandos a que a conta ficou ligada. */
+  children: string[];
+  link: string;
+}): { subject: string; html: string; text: string } {
+  const heading = "O teu acesso foi aprovado";
+  const filhos = input.children.map((c) => c.trim().split(/\s+/)[0]);
+  const deQuem =
+    filhos.length === 0
+      ? "do teu educando"
+      : filhos.length === 1
+        ? "de " + filhos[0]
+        : "de " + filhos.slice(0, -1).join(", ") + " e " + filhos[filhos.length - 1];
+  const paragraphs = [
+    esc(input.brand.name) + " aprovou o teu pedido. Já podes entrar na app e acompanhar os treinos, os jogos, as convocatórias e os avisos " + esc(deQuem) + ".",
+    "Entra com o email e a palavra-passe que escolheste no registo.",
+  ];
+  const notes = ["Se não pediste acesso à app deste clube, responde a este email para o avisar."];
+
+  return {
+    subject: input.brand.shortName + " · o teu acesso à app foi aprovado",
+    html: layout({ brand: input.brand, heading, paragraphs, cta: { label: "Abrir a app", url: input.link }, notes }),
+    text: plain(
+      "Olá " + input.name.trim().split(/\s+/)[0] + ",",
+      [
+        input.brand.name + " aprovou o teu pedido. Já podes entrar na app e acompanhar os treinos, os jogos, as convocatórias e os avisos " + deQuem + ".",
+        "Entra com o email e a palavra-passe que escolheste no registo.",
+      ],
+      { label: "Abrir a app", url: input.link },
+      notes,
+    ),
+  };
+}
+
+/**
  * O convite de um sócio para a app do clube.
  *
  * Sai quando a direcção inscreve o sócio à mão e quando aprova uma adesão do

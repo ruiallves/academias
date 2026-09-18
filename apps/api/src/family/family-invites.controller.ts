@@ -136,6 +136,22 @@ export class FamilyInviteController {
     return this.invites.revoke(req.ctx);
   }
 
+  /** Os pais que se registaram pelo link e esperam que o clube os aprove. */
+  @Get("pedidos")
+  pending(@Req() req: AuthedRequest) {
+    return this.invites.pendingRequests(req.ctx);
+  }
+
+  @Post("pedidos/:membershipId/aprovar")
+  approve(@Req() req: AuthedRequest, @Param("membershipId") membershipId: string) {
+    return this.invites.approve(req.ctx, membershipId);
+  }
+
+  @Post("pedidos/:membershipId/recusar")
+  reject(@Req() req: AuthedRequest, @Param("membershipId") membershipId: string) {
+    return this.invites.reject(req.ctx, membershipId);
+  }
+
   /**
    * Acrescentar outro educando, já com sessão.
    *

@@ -1077,6 +1077,43 @@ por atleta.
 Verificado por `npm run test:family-invite` (35 testes), que percorre o caminho
 inteiro e, sobretudo, as recusas.
 
+### A aprovação do clube
+
+O NIF e a data de nascimento provam que a pessoa conhece a criança, e não que é o
+pai. Por isso a conta criada pelo link **nasce à espera**: a `Membership` de
+encarregado fica com `isActive = false` e `approvalRequestedAt` preenchido. Tudo o
+que já lia `isActive` (o login em `app.resolve_memberships`, os avisos, as
+cobranças, as contagens da plataforma) deixa o pedido de fora sem mudar nada.
+
+- **Na app**, logo a seguir ao registo, aparece "Pedido enviado ao clube · À espera
+  de aprovação" (`screens/PedidoPendente.tsx`), com "Verificar outra vez" e a saída
+  para outra conta. O servidor responde 403 com o código `FAMILY_APPROVAL_PENDING`
+  (em `AuthService.contextFor`, via `app.family_approval_pending`), e
+  `/api/app/contexts` devolve `{ type: "FAMILY", pending: true }`. É assim que a
+  app distingue "à espera" de "esta conta não é de encarregado".
+- **Na consola**, a página Famílias mostra o bloco "Pedidos de acesso à app" por
+  baixo das métricas, **só quando há pedidos**: nome, relação, educando e escalão,
+  contacto, há quanto tempo pediu, e Aprovar/Recusar (`family:write`; ver
+  `family:read`). Os pedidos não entram na tabela de famílias nem na ficha do
+  atleta.
+- **Aprovar** liga a conta e manda ao pai o email "O teu acesso foi aprovado"
+  (`familyApprovedEmail`), com o botão para a app. Push não dá: sem conta activa
+  não há subscrição.
+- **Recusar** apaga a conta se nunca foi aprovada (a ligação ao educando vai em
+  cascata). Se já tinha sido aprovada antes (`approvedAt`), só sai da fila e fica
+  desligada, com o histórico intacto.
+- Um encarregado **já aprovado** que volta a passar pelo link (o segundo filho)
+  não volta para a fila. Um encarregado **desactivado pelo clube** já não se
+  reactiva sozinho pelo link, que era o que acontecia antes: volta a pedir.
+- Reactivar à mão ("Reactivar" na tabela) também resolve um pedido que houvesse.
+- Os encarregados que já existiam ficaram aprovados na migração
+  `20260918150000_aprovacao_das_familias`.
+
+Teste: `npm run test:aprovacao-familias` (32 verificações, com dados próprios; o
+registo está a 5/min por IP, por isso espera um minuto entre corridas). O
+`test:family-invite` passou a aprovar a conta antes de verificar o que ela vê;
+atenção que a limpeza desse teste apaga **todos** os links de famílias do clube.
+
 ## Site público (`apps/site`)
 
 O site da marca — o que angaria clubes. App à parte, sem dependência da API: é
@@ -1609,6 +1646,36 @@ ligação (o `Promise.all` não as paraleliza). Com a base remota, de vez em qua
 passava dos cinco segundos. Passou a duas transações, cada uma com metade: a
 primeira decide (quem é, se pode entrar, o que deve), a segunda é o clube e corre
 em paralelo com a assinatura da fotografia.
+
+## As horas são as do clube, não as da máquina
+
+"Nas convocatórias, se meter 12h e guardar, fica 13h." O servidor lia a hora dos
+detalhes da convocatória ("12:00") com `setHours`, que usa o fuso **da máquina
+onde a API corre**. Em produção é UTC, e 12:00 UTC são 13:00 em Lisboa no
+Verão; no PC de quem programa (Lisboa) dava certo, e por isso passou.
+
+A regra passou a ser: hora de relógio (a que se escreve num formulário, a que se
+lê numa notificação) é do fuso do clube; instante (o que se guarda) é UTC. A
+passagem entre os dois vive só em `common/fuso.ts` (`instanteNoFuso`,
+`partesNoFuso`, `formatarNoFuso`, `horaNoFuso`), com `Intl` e `timeZone`
+explícito, e nunca com o fuso da máquina. O fuso é `Europe/Lisbon` para todos
+os clubes por agora; um clube dos Açores ou da Madeira pede `Academy.timezone`.
+
+O mesmo erro estava noutros sítios, e foram corrigidos juntos:
+
+- **Repetição de treinos** (`occurrences`): repetia o instante da primeira
+  ocorrência, e depois da mudança de hora de 25 de Outubro um treino semanal das
+  18:30 passava para as 17:30. Agora anda de dia de calendário em dia de
+  calendário, sempre às 18:30 de Lisboa.
+- **Textos das notificações** com horas (jogo, escala de staff, plano de treino,
+  alterações à convocatória, referência Multibanco da quota) passaram a ser
+  escritos no fuso do clube.
+
+Teste: `scripts/test-fuso-horario.mjs` (14), que **só prova alguma coisa com a
+API a correr em UTC** (`TZ=UTC node dist/main`), como em produção. Nota para
+testes: as colunas `timestamp` sem fuso guardam UTC, e o `pg` lê-as na hora local
+de quem corre o teste; o teste regista um `setTypeParser(1114, …)` para as ler
+como UTC.
 
 ## A app está sempre na versão servida
 

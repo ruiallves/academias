@@ -39,7 +39,8 @@ import { setActiveArea } from "@/lib/area";
 export type ContextType = "FAMILY" | "ATHLETE" | "MEMBER" | "STAFF";
 
 export type AppContext =
-  | { type: "FAMILY" }
+  /** `pending`: registado pelo link e à espera que o clube o aprove. Ver `PedidoPendente`. */
+  | { type: "FAMILY"; pending?: boolean }
   /** O próprio atleta — a mesma app da família, com outro chapéu (`x-app: athlete`). */
   | { type: "ATHLETE" }
   | { type: "MEMBER"; memberId: string; number: number | null; status: string }

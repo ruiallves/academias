@@ -27,6 +27,7 @@ import Notifications from "@/screens/Notifications";
 import Onboarding from "@/screens/Onboarding";
 import Profile from "@/screens/Profile";
 import { LegalGate } from "@/screens/LegalGate";
+import PedidoPendente from "@/screens/PedidoPendente";
 
 /* -------------------------------------------------------------------------- */
 /* Educando activo                                                             */
@@ -88,12 +89,16 @@ export default function App() {
   /* Uma conta sem contexto nenhum cai no fluxo antigo da família — que sabe
      explicar "esta conta não é de encarregado" melhor do que nós aqui. */
   const areaActiva = active ?? (semContexto ? ("FAMILY" as const) : null);
+  /* Registado pelo link e ainda sem resposta do clube. Ver `screens/PedidoPendente`. */
+  const familiaPendente = Boolean(contexts?.some((c) => c.type === "FAMILY" && c.pending));
 
   /*
    * Presença só no contexto de família: o endpoint passa pelo guard, e uma
    * conta só-de-sócio não tem membership — cada batida seria um 403 de ruído.
    */
-  usePresence(Boolean(session) && (areaActiva === "FAMILY" || areaActiva === "ATHLETE"));
+  usePresence(
+    Boolean(session) && ((areaActiva === "FAMILY" && !familiaPendente) || areaActiva === "ATHLETE"),
+  );
 
   useEffect(() => {
     if (!readToken()) return;
@@ -154,6 +159,7 @@ export default function App() {
         onboarded={onboarded}
         setOnboarded={setOnboarded}
         pathname={pathname}
+        familiaPendente={familiaPendente}
       />
     </LegalGate>
   );
@@ -169,8 +175,10 @@ function Dentro({
   onboarded,
   setOnboarded,
   pathname,
+  familiaPendente,
 }: {
   areaActiva: "FAMILY" | "ATHLETE" | "MEMBER" | "STAFF" | null;
+  familiaPendente: boolean;
   contexts: NonNullable<ReturnType<typeof useContexts>["contexts"]>;
   session: NonNullable<ReturnType<typeof useSession>>;
   store: ReturnType<typeof useStore>;
@@ -190,8 +198,10 @@ function Dentro({
      * (ver `lib/area.ts`) faz o servidor estreitar tudo ao próprio, e o resto
      * da app lê `store.atleta` onde o texto ou uma secção mudam.
      */
+    // Um pedido à espera do clube não tem o que carregar: o servidor recusava.
+    if (areaActiva === "FAMILY" && familiaPendente) return;
     if ((areaActiva === "FAMILY" || areaActiva === "ATHLETE") && readToken()) void load();
-  }, [areaActiva]);
+  }, [areaActiva, familiaPendente]);
 
   /*
    * E a partir daí mantém-se viva sozinha: ao voltar ao ecrã, de minuto a
@@ -201,7 +211,7 @@ function Dentro({
    * a consola. Passar `null` desliga o mecanismo sem partir a regra dos hooks,
    * que é o que obriga a chamá-lo aqui em cima, antes das saídas.
    */
-  useFresco(areaActiva === "FAMILY" || areaActiva === "ATHLETE" ? reload : null);
+  useFresco((areaActiva === "FAMILY" && !familiaPendente) || areaActiva === "ATHLETE" ? reload : null);
 
   /* Mais do que um contexto e nenhum vestido: "como queres continuar?" */
   if (areaActiva === null) return <EscolherArea name={session.name ?? ""} />;
@@ -211,6 +221,14 @@ function Dentro({
 
   /* A de staff é a consola: entrega-se a sessão e sai-se daqui. Ver `lib/handoff.ts`. */
   if (areaActiva === "STAFF") return <AbrirConsola temOutras={contexts.length > 1} />;
+
+  /*
+   * O pai registou-se e o clube ainda não respondeu. Antes do `store.ready`:
+   * não há arranque nenhum a esperar, e o splash ficava a pulsar para sempre.
+   * `store.pendente` é a mesma resposta vinda do 403 do servidor, para o caso
+   * de os contextos terem chegado antes de o pedido existir.
+   */
+  if (areaActiva === "FAMILY" && (familiaPendente || store.pendente)) return <PedidoPendente />;
 
   if (!store.ready) return <Splash />;
   // O servidor recusou esta conta nesta app. Não é avaria — tem saída própria.

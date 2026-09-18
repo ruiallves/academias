@@ -455,6 +455,8 @@ type State = {
    * carregar" com um botão que recarrega para o mesmo sítio, para sempre.
    */
   denied: string | null;
+  /** O servidor respondeu `FAMILY_APPROVAL_PENDING`: o clube ainda não aprovou esta conta. */
+  pendente: boolean;
   academy: { name: string; shortName: string; mark: string; signalColor: string; logoUrl: string | null };
   /**
    * Quem entrou. O email vem junto porque há um ecrã que precisa dele: quando a
@@ -496,6 +498,7 @@ const EMPTY: State = {
   ready: false,
   error: null,
   denied: null,
+  pendente: false,
   academy: { name: "", shortName: "", mark: "", signalColor: "#0f6b62", logoUrl: null },
   guardian: { name: "", firstName: "", email: "" },
   role: "",
@@ -611,6 +614,11 @@ export function load(): Promise<void> {
        */
       if (error instanceof ApiError && error.code === LEGAL_REQUIRED_CODE) {
         apply({ ...EMPTY, ready: false });
+        return;
+      }
+      // Registado e à espera do clube: tem ecrã próprio, não é conta errada.
+      if (error instanceof ApiError && error.code === "FAMILY_APPROVAL_PENDING") {
+        apply({ ...EMPTY, ready: true, pendente: true });
         return;
       }
       if (error instanceof ApiError && error.status === 403) {
@@ -900,6 +908,7 @@ function build(
     ready: true,
     error: null,
     denied: null,
+    pendente: false,
     evaluations: evaluationsOut,
     reports: reportsOut,
     nutrition: nutritionOut,

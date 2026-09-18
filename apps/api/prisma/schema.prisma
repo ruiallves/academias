@@ -430,6 +430,16 @@ model Membership {
   /// notificações, e ficava eternamente "Por instalar". Nulo é "nunca entrou".
   lastSeenAt DateTime?
 
+  /// Um pedido de acesso de família à espera do clube.
+  ///
+  /// O pai que se regista pelo link das famílias entra com a conta desligada
+  /// (`isActive = false`) e isto preenchido; aprovar liga-a e limpa isto. Ver a
+  /// migração `20260918150000_aprovacao_das_familias`.
+  approvalRequestedAt DateTime?
+  /// Quando o clube aprovou este encarregado. Nulo num pedido que nunca foi
+  /// aprovado: recusá-lo apaga a conta, em vez de só a deixar desligada.
+  approvedAt          DateTime?
+
   /// Os cargos **secundários** desta pessoa. Ver `MembershipRole`.
   extraRoles MembershipRole[]
 

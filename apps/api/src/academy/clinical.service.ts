@@ -81,7 +81,8 @@ export class ClinicalService {
     consulta: { nome: string; userIds: string[]; titulo: string; date: Date; time: string | null; location: string | null },
     remarcada: boolean,
   ) {
-    const quando = consulta.date.toLocaleDateString("pt-PT", { day: "numeric", month: "long" });
+    // A coluna é `@db.Date` (meia-noite UTC): lê-se em UTC para o dia não escorregar.
+    const quando = consulta.date.toLocaleDateString("pt-PT", { day: "numeric", month: "long", timeZone: "UTC" });
     const horas = consulta.time ? ` às ${consulta.time}` : "";
     const onde = consulta.location ? `, em ${consulta.location}` : "";
     for (const userId of consulta.userIds) {

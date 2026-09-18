@@ -35,5 +35,17 @@ export default defineConfig(({ command }) => ({
   // Fora do `dev`, cai `console.*` e `debugger` do bundle. Em dev ficam, que é
   // onde servem para alguma coisa.
   esbuild: command === "build" ? { drop: ["console", "debugger"] } : {},
-  server: { port: 5173 },
+  /*
+   * A 5173, e mais nenhuma.
+   *
+   * A app do clube entrega a sessão a `localhost:5173` quando se escolhe Staff
+   * (`consoleUrl` em `apps/family/src/lib/handoff.ts`). Sem `strictPort`, uma
+   * 5173 ocupada fazia o Vite mudar-se sozinho para a 5174 — que é a porta da
+   * app do clube — e a entrega caía numa porta sem ninguém, ou na app errada,
+   * sem erro nenhum a dizer porquê. Assim, porta ocupada é um erro no arranque,
+   * que é onde se vê.
+   *
+   * Só `vite dev` lê isto: em produção a consola é `/consola`, servida pela API.
+   */
+  server: { port: 5173, strictPort: true },
 }));

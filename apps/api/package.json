@@ -32,6 +32,7 @@
     "test:multi-roles": "node scripts/test-multi-roles.mjs",
     "test:invite-flow": "node scripts/test-invite-flow.mjs",
     "test:family-invite": "node scripts/test-family-invite.mjs",
+    "test:aprovacao-familias": "node scripts/test-aprovacao-familias.mjs",
     "test:development": "node scripts/test-development.mjs",
     "test:photos": "node scripts/test-photos.mjs",
     "seed": "node prisma/seed.mjs",

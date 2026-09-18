@@ -18,6 +18,7 @@ import {
 import { PrismaService, type ScopedClient } from "../prisma/prisma.service";
 import { NotificationsService } from "../notifications/notifications.service";
 import { can, type RequestContext } from "../common/permissions";
+import { formatarNoFuso } from "../common/fuso";
 
 /**
  * Quotas — o lado da consola.
@@ -936,7 +937,7 @@ export function razaoParaNaoApagar(
     return !p.expiresAt || p.expiresAt.getTime() > agora.getTime();
   });
   if (viva) {
-    const ate = viva.expiresAt ? ` até ${viva.expiresAt.toLocaleDateString("pt-PT")}` : "";
+    const ate = viva.expiresAt ? ` até ${formatarNoFuso(viva.expiresAt, { day: "2-digit", month: "2-digit", year: "numeric" })}` : "";
     return viva.method === PaymentMethod.MBWAY
       ? "Há um pedido MB Way em curso: espera uns minutos, que ele expira"
       : `Há uma referência Multibanco por pagar${ate}: se for paga depois de apagada, o dinheiro entra sem registo. Espera que expire, ou anula-a`;

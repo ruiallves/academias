@@ -147,6 +147,7 @@ export class ClubAppService {
      * nomear ("Equipa técnica") no ecrã de escolha.
      */
     const staff = daAcademia.find((m) => !deFamilia(m.role));
+    const pendente = !familia && (await this.auth.familyApprovalPending(eu.authId, academyId));
 
     return this.prisma.runAs(academyId, async (db) => {
       let member = eu.userId ? await db.member.findFirst({ where: { userId: eu.userId } }) : null;
@@ -165,6 +166,12 @@ export class ClubAppService {
 
       const contexts: Record<string, unknown>[] = [];
       if (familia) contexts.push({ type: "FAMILY" });
+      /*
+       * Registado pelo link e à espera do clube: a área existe, e abri-la mostra
+       * o ecrã de espera. Sem isto, um sócio que pedisse acesso de família só
+       * via a área de sócio e não sabia que o pedido tinha seguido.
+       */
+      else if (pendente) contexts.push({ type: "FAMILY", pending: true });
       if (atleta) contexts.push({ type: "ATHLETE" });
       if (member) {
         contexts.push({

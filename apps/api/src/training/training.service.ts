@@ -6,6 +6,7 @@ import { StorageService } from "../storage/storage.service";
 import { can, inTeamScope, teamScopeFilter, type RequestContext } from "../common/permissions";
 import { NotificationsService } from "../notifications/notifications.service";
 import { contasDasEquipas } from "../academy/athlete-accounts";
+import { formatarNoFuso } from "../common/fuso";
 
 /**
  * Imagens de exercícios — montagens no campo, prancheta, quadro branco.
@@ -522,7 +523,7 @@ export class TrainingService {
     });
 
     // Fora da transação — cada `enqueue` abre a sua, curta.
-    const quando = session.startsAt.toLocaleString("pt-PT", {
+    const quando = formatarNoFuso(session.startsAt, {
       weekday: "long", day: "numeric", month: "long", hour: "2-digit", minute: "2-digit",
     });
     for (const userId of contas) {
