@@ -4,6 +4,7 @@ import { BrowserRouter } from "react-router-dom";
 import App from "./App";
 import { StandaloneGate } from "./StandaloneGate";
 import { vigiarVersao } from "@academia/ui/versao";
+import { forcarVistaDeTelemovel } from "./lib/vista-telemovel";
 import { applyBrand } from "./lib/brand";
 import { captureFromUrl } from "./lib/invite";
 import { adoptSessionFromUrl } from "./lib/session";
@@ -32,6 +33,13 @@ adoptSessionFromUrl();
 captureAreaFromUrl();
 
 applyBrand();
+
+/*
+ * "Ver como computador" ligado no browser do telemóvel desenhava a app
+ * minúscula numa página de computador. Compensa-se antes do primeiro render,
+ * para ninguém ver a versão pequena. Ver `lib/vista-telemovel.ts`.
+ */
+forcarVistaDeTelemovel();
 
 /*
  * A app instalada no telemóvel fica viva semanas. O service worker do

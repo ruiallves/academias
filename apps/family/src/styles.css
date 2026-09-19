@@ -207,3 +207,18 @@
     .rise, .pop { animation: none; }
   }
 }
+
+/* ---------------------------------------------------------------------------
+   "Ver como computador" no telemóvel (ver `lib/vista-telemovel.ts`).
+
+   A página leva um `zoom` para voltar à largura do ecrã, e o zoom também
+   multiplica as alturas em `dvh` — que esse modo já mede na página larga. Aqui
+   as alturas de ecrã passam a ser a altura visível dividida pelo zoom, e o zoom
+   devolve-lhes o tamanho certo.
+   --------------------------------------------------------------------------- */
+html[data-vista-telemovel] .min-h-dvh {
+  min-height: var(--altura-da-app) !important;
+}
+html[data-vista-telemovel] .max-h-\[88dvh\] {
+  max-height: calc(var(--altura-da-app) * 0.88) !important;
+}

@@ -1647,6 +1647,26 @@ passava dos cinco segundos. Passou a duas transações, cada uma com metade: a
 primeira decide (quem é, se pode entrar, o que deve), a segunda é o clube e corre
 em paralelo com a assinatura da fotografia.
 
+## A app do clube vê-se como no telemóvel, mesmo em "ver como computador"
+
+Com "Site para computador" ligado no browser do telemóvel (às vezes está ligado
+para todos os sites), o browser desenha a página numa largura de ~980px e ignora
+o `width=device-width`. A app, uma coluna de 480px, aparecia minúscula no meio
+de um ecrã largo. Nenhum site consegue desligar esse modo.
+
+`lib/vista-telemovel.ts` detecta o caso (ecrã de toque com menos de 600px e uma
+página mais de 25% mais larga do que ele) e amplia a página inteira com `zoom`
+na proporção exacta, antes do primeiro render. O `zoom` também multiplicaria as
+alturas em `dvh`, por isso o `styles.css` troca `min-h-dvh` e `max-h-[88dvh]`
+por `--altura-da-app` enquanto o `<html>` tiver `data-vista-telemovel`. Tablets
+ficam de fora (o iPad pede o site de computador por omissão, e a coluna
+centrada é o que se quer lá). A app da família não usa pontos de quebra
+(`sm:`/`md:`), e é isso que torna o `zoom` seguro; se algum dia os usar, este
+modo passa a vê-los como num ecrã largo.
+
+Provado com um telemóvel simulado (ecrã de 412px, página de 980px, toque): fica
+igual ao telemóvel normal, e a altura da página continua a ser um ecrã.
+
 ## As horas são as do clube, não as da máquina
 
 "Nas convocatórias, se meter 12h e guardar, fica 13h." O servidor lia a hora dos
