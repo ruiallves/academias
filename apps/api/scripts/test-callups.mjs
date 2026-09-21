@@ -194,6 +194,21 @@ check("e adversário, hora e sítio no corpo", avisos.every((a) => /Fão/.test(a
 check("ninguém do staff é avisado", !avisos.some((a) => /clinico|treinador|direcao|secretaria/.test(a.email)));
 
 console.log("\n=== Depois de submetida ===");
+/*
+ * Abrir a página não pode dar erro.
+ *
+ * A consola pede os convidados de outros escalões assim que a convocatória
+ * abre — e abre sozinha no próximo jogo. Esse pedido é uma leitura, e recusá-lo
+ * com "já foi submetida" punha o aviso de erro no ecrã de quem só entrou na
+ * página. O guarda é para quem escreve, e continua lá (a prova a seguir).
+ */
+// Fechada na base, e não só pelo passo anterior: esta prova não pode depender
+// de a submissão acima ter corrido bem para medir o que diz medir.
+await db.query(`UPDATE "Match" SET "callUpsClosedAt" = COALESCE("callUpsClosedAt", now()) WHERE id = 'mt_proximo'`);
+const convidadosDepois = await call(coach, "GET", "/api/matches/mt_proximo/convidados-elegiveis");
+check("os convidados continuam a ler-se", convidadosDepois.status === 200 && Array.isArray(convidadosDepois.body),
+  `${convidadosDepois.status} ${JSON.stringify(convidadosDepois.body).slice(0, 90)}`);
+
 const depois = await call(coach, "POST", "/api/matches/mt_proximo/convocatoria", { athleteIds: ["ath_martim"] });
 check("não se altera sem reabrir", depois.status === 400 && /eabr/.test(depois.body?.message ?? ""), depois.body?.message);
 check("reabrir funciona", (await call(coach, "POST", "/api/matches/mt_proximo/convocatoria/reabrir")).status < 300);

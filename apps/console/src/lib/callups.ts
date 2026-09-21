@@ -284,4 +284,10 @@ export const fetchMatches = () => apiGet<ApiMatch[]>("/api/matches");
  * multi-desporto e nem todas as modalidades numeram assim) ou quando não há
  * ninguém elegível.
  */
-export const fetchGuestPool = (matchId: string) => apiGet<GuestCandidate[]>(`/api/matches/${matchId}/convidados-elegiveis`);
+export const fetchGuestPool = (matchId: string) =>
+  /*
+   * Silencioso: corre sozinho quando a convocatória abre, sem ninguém ter pedido
+   * nada, e quem o chama já trata a falha como "sem convidados". Um cartão de
+   * erro aqui aparecia a quem só entrou na página.
+   */
+  apiGetSilencioso<GuestCandidate[]>(`/api/matches/${matchId}/convidados-elegiveis`);

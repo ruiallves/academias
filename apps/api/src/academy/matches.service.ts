@@ -1210,7 +1210,17 @@ export class MatchesService {
     // convidados: eram duas idas ao pooler do Supabase em série — mais de 2s no
     // total — para o que devia ser uma consulta só.
     return this.prisma.runAs(ctx.academyId, async (db) => {
-      const match = await this.loadMatch(db, ctx, matchId);
+      /*
+       * Uma leitura, e por isso passa com a convocatória submetida.
+       *
+       * O guarda de `loadMatch` existe para quem **escreve**: mexer numa lista
+       * que as famílias já receberam. Ler os candidatos não mexe em nada — e a
+       * consola precisa deles depois de submeter, porque é daqui que a folha em
+       * PDF tira o nome de um convidado de outro escalão que está fora do âmbito
+       * de quem imprime. Recusá-la era um erro a saltar no ecrã de quem só abriu
+       * a página das convocatórias, e uma folha com "—" no lugar do nome.
+       */
+      const match = await this.loadMatch(db, ctx, matchId, { allowSubmitted: true });
 
       const otherTeams = await db.team.findMany({
         where: { sportId: match.sportId, id: { not: match.teamId } },

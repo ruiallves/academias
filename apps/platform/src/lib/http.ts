@@ -56,7 +56,7 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 
   if (!res.ok) {
     const body = await res.json().catch(() => null);
-    throw new ApiError(res.status, body?.message ?? mensagem(res.status));
+    throw new ApiError(res.status, legivel(body?.message) ?? mensagem(res.status));
   }
   // Nem toda a resposta com sucesso traz corpo: um `null` devolvido por um handler
   // do Nest sai como 200 vazio, e `res.json()` rebentaria com "Unexpected end of
@@ -80,6 +80,38 @@ export const apiPatch = <T,>(path: string, body: unknown) =>
  */
 export const apiDelete = <T,>(path: string, body?: unknown) =>
   request<T>(path, { method: "DELETE", ...(body ? { body: JSON.stringify(body) } : {}) });
+
+/**
+ * A mensagem de erro do servidor, pronta a ler.
+ *
+ * ## O caso que isto veio resolver
+ *
+ * Gravar um preço acordado de 19,99 € deu `property monthlyCents should not
+ * exist`, cru, em inglês, no meio do diálogo. Quem o leu concluiu que o
+ * problema eram os cêntimos. Não era: o painel já estava na versão nova e a API
+ * ainda não, e a API recusava um campo que só conheceria dali a uns minutos.
+ *
+ * Este painel é o único cliente publicado **à parte** da API (Vercel de um
+ * lado, Railway do outro). A consola e a app da família vêm no mesmo deploy
+ * que a API e nunca ficam à frente dela; este fica, durante o minuto ou dois
+ * em que um deploy anda desencontrado do outro. Cada campo novo num formulário
+ * do painel volta a abrir essa janela.
+ *
+ * Por isso a frase do `ValidationPipe` (`forbidNonWhitelisted`) é traduzida
+ * para o que quer dizer, e as outras validações chegam juntas numa frase em vez
+ * de uma lista.
+ */
+function legivel(message: unknown): string | null {
+  const linhas = (Array.isArray(message) ? message : [message]).filter(
+    (m): m is string => typeof m === "string" && m.trim() !== "",
+  );
+  if (linhas.length === 0) return null;
+
+  if (linhas.some((m) => /^property \S+ should not exist$/.test(m))) {
+    return "O servidor ainda está a receber a versão nova do painel. Espera um minuto e grava outra vez.";
+  }
+  return linhas.join(" · ");
+}
 
 function mensagem(status: number): string {
   if (status === 403) return "O teu papel não permite esta operação.";

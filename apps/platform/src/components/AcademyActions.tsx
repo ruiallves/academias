@@ -127,9 +127,17 @@ export function AcademyActions({
     setPreco(partida === undefined ? "" : (partida / 100).toFixed(2).replace(".", ","));
   }, [partida, precoMexido]);
 
-  /** O que está escrito, em cêntimos. `null` enquanto não for um valor válido. */
+  /**
+   * O que está escrito, em cêntimos. `null` enquanto não for um valor válido.
+   *
+   * Aceita as formas como um preço se escreve cá: `19,99`, `19.99`, `19,99 €`
+   * e `1.019,99`. Com vírgula, os pontos são milhares; sem vírgula, o ponto é a
+   * casa decimal. `1.019,99` dava `NaN` e o preço **não seguia** — o servidor
+   * gravava o de tabela sem dizer nada, num acordo feito para ser outro valor.
+   */
   const precoCents = (() => {
-    const n = Number(preco.replace(/[€\s]/g, "").replace(",", "."));
+    const limpo = preco.replace(/[€\s]/g, "");
+    const n = Number(limpo.includes(",") ? limpo.replace(/\./g, "").replace(",", ".") : limpo);
     return Number.isFinite(n) && n > 0 ? Math.round(n * 100) : null;
   })();
   const tabela = planoEscolhido?.amountCents ?? null;
