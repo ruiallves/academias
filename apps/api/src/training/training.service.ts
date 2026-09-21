@@ -34,9 +34,10 @@ const IMAGE_MAX_COUNT = 6;
  *    `CLUB` é da academia. É decisão de quem cria, gravada na linha, e o filtro
  *    é aplicado **aqui** em todas as leituras — não na interface.
  * 3. **Âmbito** — o plano é da sessão e a sessão é de uma equipa: um treinador
- *    planeia as equipas dele (`teamScopeFilter`), como em tudo o resto. Ler é
- *    mais largo do que escrever, pela mesma razão do calendário: a metodologia
- *    do clube ganha em ver-se.
+ *    planeia **e lê** as equipas dele (`teamScopeFilter`). O plano não se
+ *    partilha entre escalões: o que se partilha são os **modelos de treino** e
+ *    a **biblioteca de exercícios**, que nascem `CLUB` e existem para isso.
+ *    Quem vê a academia toda (direção, coordenação) lê os planos todos.
  *
  * ## Quem edita o que é de outro
  *
@@ -389,11 +390,13 @@ export class TrainingService {
    */
   async listPlans(ctx: RequestContext, from: Date, to: Date) {
     if (!can(ctx, "training:read")) throw new ForbiddenException("Sem acesso à área técnica");
+    const scope = teamScopeFilter(ctx);
 
     return this.prisma.runAs(ctx.academyId, async (db) => {
       const rows = await db.trainingSession.findMany({
         where: {
           startsAt: { gte: from, lte: to },
+          ...(scope ? { teamId: scope } : {}),
           OR: [{ objective: { not: null } }, { blocks: { some: {} } }],
         },
         select: {
@@ -452,6 +455,18 @@ export class TrainingService {
       },
     });
     if (!s) throw new NotFoundException("Treino não encontrado");
+    /*
+     * O plano é da equipa, e só dela.
+     *
+     * Um plano de treino é o trabalho de um treinador para o seu escalão: o que
+     * vai fazer, com que carga, com que exercícios. Não é do clube como a
+     * biblioteca de exercícios ou os modelos de treino, que se partilham de
+     * propósito. Quem vê a academia toda (direção, coordenação) continua a ver
+     * tudo — é o trabalho deles acompanhar.
+     */
+    if (!inTeamScope(ctx, s.teamId)) {
+      throw new ForbiddenException("Este treino é de uma equipa fora do teu âmbito");
+    }
 
     return {
       sessionId: s.id,
@@ -1040,7 +1055,7 @@ export class TrainingService {
           id: true, name: true, visibility: true, createdById: true,
           objective: true, objectives: true, sessionType: true, intensity: true,
           expectedAthletes: true, material: true, planNotes: true,
-          useCount: true, lastUsedAt: true, updatedAt: true,
+          useCount: true, lastUsedAt: true, updatedAt: true, createdAt: true,
           createdBy: { select: { user: { select: { name: true } } } },
           blocks: {
             orderBy: { order: "asc" },
@@ -1067,6 +1082,8 @@ export class TrainingService {
         useCount: t.useCount,
         lastUsedAt: t.lastUsedAt,
         updatedAt: t.updatedAt,
+        /* Quando nasceu — a lista de modelos di-lo, para se ver o que é antigo. */
+        createdAt: t.createdAt,
         authorName: t.createdBy?.user.name ?? null,
         mine: t.createdById === ctx.membershipId,
         /* O que a lista mostra sem abrir: quantos blocos e quanto tempo. */

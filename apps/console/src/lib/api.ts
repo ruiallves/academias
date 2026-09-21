@@ -13,6 +13,7 @@ import {
   athletes,
   coaches,
   currentPeriod,
+  currentSeason,
   evaluations,
   fees,
   guardians,
@@ -40,7 +41,25 @@ export { academy, today, currentPeriod };
  * recarregam o store; deixou de haver uma cópia local a fundir. Estas três funções
  * continuam a ser o único ponto de leitura — todas as de baixo passam por aqui.
  */
+/**
+ * As equipas da época em curso.
+ *
+ * Uma equipa vive numa época: o Sub-13 de 2026/27 e o de 2027/28 são duas
+ * linhas. Depois de uma viragem de época (ver `SeasonRollover`), o servidor
+ * manda as duas — precisa-se delas para ler o percurso de quem passou — e a
+ * consola do dia a dia só quer a de agora. Sem este filtro, a lista de equipas
+ * duplicava-se e os selectores ofereciam plantéis do ano passado.
+ *
+ * Sem época marcada (clubes antigos, uma época só), fica tudo como estava.
+ */
 function allTeams() {
+  if (!currentSeason) return teams;
+  const daEpoca = teams.filter((t) => t.season === currentSeason);
+  return daEpoca.length > 0 ? daEpoca : teams;
+}
+
+/** Todas, inclusive as de épocas passadas. Para o histórico, e só para ele. */
+export function teamsDeTodasAsEpocas() {
   return teams;
 }
 function allAthletes() {
@@ -399,11 +418,17 @@ export function arrears(session: Session): Arrears {
  * `teamId` estreita ao escalão. Não se pode simular isso passando um `scope`
  * falso: para um diretor o âmbito é ignorado por desenho (vê a academia toda), e
  * o filtro tem de ser um argumento explícito.
+ *
+ * Sem `teamId`, contam só os treinos **meus**. O calendário traz o clube todo a
+ * quem é staff, e os treinos de outra equipa chegam sem a folha de presenças —
+ * o que os fazia entrar na conta como se ninguém tivesse faltado, e inflava a
+ * taxa de um treinador. Para a direção não muda nada: `mine` é verdadeiro em
+ * tudo o que ela vê.
  */
 export function attendanceRate(session: Session, days = 30, teamId?: string): number | null {
   const from = new Date(today.getTime() - days * 86_400_000);
   const recorded = listSessions(session, from, today)
-    .filter((s) => (teamId ? s.teamId === teamId : true))
+    .filter((s) => (teamId ? s.teamId === teamId : s.mine ?? true))
     .filter((s) => s.attendance);
   if (recorded.length === 0) return null;
 
@@ -535,17 +560,25 @@ export function weekOf(anchor: Date = today): Date[] {
   return Array.from({ length: 7 }, (_, i) => new Date(start.getTime() + i * 86_400_000));
 }
 
+/**
+ * Os treinos de um dia, para a faixa da semana da Visão geral.
+ *
+ * Só os **meus**: a Visão geral responde a "o que tenho de fazer hoje?", e o
+ * treino do escalão do lado não é trabalho dele. O clube inteiro continua a um
+ * clique, no Calendário. Para a direção, `mine` é verdadeiro em tudo.
+ */
 export function sessionsOnDay(session: Session, day: Date): TrainingSession[] {
   const from = new Date(day);
   from.setHours(0, 0, 0, 0);
   const to = new Date(day);
   to.setHours(23, 59, 59, 999);
-  return listSessions(session, from, to);
+  return listSessions(session, from, to).filter((s) => s.mine ?? true);
 }
 
+/** O próximo treino **meu** — o que abre a Visão geral do treinador. */
 export function nextSession(session: Session): TrainingSession | undefined {
   const horizon = new Date(today.getTime() + 14 * 86_400_000);
-  return listSessions(session, today, horizon).find((s) => s.status === "scheduled");
+  return listSessions(session, today, horizon).find((s) => s.status === "scheduled" && (s.mine ?? true));
 }
 
 /* -------------------------------------------------------------------------- */
@@ -584,8 +617,9 @@ export function attentionItems(session: Session): AttentionItem[] {
     }
   }
 
+  // Só os meus: um treinador não tem de atribuir treinador ao escalão do lado.
   const unassigned = listSessions(session, today, new Date(today.getTime() + 7 * 86_400_000)).filter(
-    (s) => s.status === "scheduled" && !s.coachId,
+    (s) => s.status === "scheduled" && !s.coachId && (s.mine ?? true),
   );
   if (unassigned.length > 0) {
     const first = new Date(unassigned[0].start);

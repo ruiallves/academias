@@ -217,7 +217,7 @@ export const NAV_CATALOG: NavGroup[] = [
   {
     label: "Área técnica",
     items: [
-      { key: "training", label: "Treinos", to: "/treinos", icon: Dumbbell, requires: "training:read" },
+      { key: "training", label: "Planeamento", to: "/treinos", icon: Dumbbell, requires: "training:read" },
       {
         /*
           Jogos pede `calendar:read` e não `attendance:read`.

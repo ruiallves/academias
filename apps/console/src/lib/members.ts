@@ -1,4 +1,5 @@
-import { apiDelete, apiGet, apiPatch, apiPost } from "@/lib/http";
+import { apiDelete, apiGet, apiGetSilencioso, apiPatch, apiPost } from "@/lib/http";
+import type { RespostaComExistentes } from "@/lib/importacao";
 
 /**
  * Sócios — a fronteira de dados.
@@ -68,6 +69,21 @@ export type MemberRow = {
   phoneCountry: string;
   birthdate: string | null;
   city: string | null;
+  /*
+   * A ficha completa, para a lista se poder exportar e voltar a entrar.
+   *
+   * A exportação de sócios sai com as colunas da importação — é isso que deixa
+   * um clube corrigir um campo em toda a gente numa folha de cálculo e voltar a
+   * carregá-la. Sem estes campos na lista, a folha exportada vinha sem eles e a
+   * reimportação limpava-os a toda a gente. Ver `COLUNAS_EXPORT_SOCIOS`.
+   */
+  address: string | null;
+  postalCode: string | null;
+  country: string;
+  documentKind: string;
+  documentNumber: string | null;
+  taxId: string | null;
+  sex: Sex;
   status: MemberStatus;
   createdAt: string;
   approvedAt: string | null;
@@ -126,6 +142,10 @@ export type MemberFeeRow = {
   settledAt: string | null;
   method: string | null;
   notes: string | null;
+  /** Quem pagou pela app. Só nas pagas online. */
+  paidBy?: string | null;
+  /** O identificador com que o pagamento aparece na euPago. */
+  paymentId?: string | null;
 };
 
 /**
@@ -367,6 +387,15 @@ export const removeMember = (id: string) =>
 
 export const listTiers = () => apiGet<MemberTier[]>("/api/members/tiers");
 
+/**
+ * As mesmas categorias, sem avisar se falhar.
+ *
+ * Para a lista de primeiros passos, que as pede de fundo só para as contar. Um
+ * ecrã que as pede porque alguém abriu um diálogo usa a versão de cima: aí a
+ * falha tem consequência e a pessoa tem de a ver.
+ */
+export const listTiersSilencioso = () => apiGetSilencioso<MemberTier[]>("/api/members/tiers");
+
 export const createTier = (body: Record<string, unknown>) =>
   apiPost<{ id: string; name: string }>("/api/members/tiers", body);
 
@@ -408,9 +437,11 @@ export type ImportRow = {
   sex?: Sex;
 };
 
-export type ImportResult = {
+export type ImportResult = RespostaComExistentes & {
   ok: boolean;
   created: number;
+  /** Quantas fichas foram substituídas pelos dados da folha. */
+  updated: number;
   duplicates: { line: number; name: string }[];
   problems: { line: number; reason: string }[];
   /**
@@ -421,11 +452,24 @@ export type ImportResult = {
 };
 
 /**
- * `createTiers` responde à pergunta que o servidor faz quando a folha traz
- * categorias novas: criá-las, ou parar. Ver `ImportDialog`.
+ * As três respostas que o diálogo dá ao servidor.
+ *
+ * `createTiers` e `sobrescrever` respondem às duas perguntas que a importação
+ * faz antes de escrever: criar as categorias que faltam, e substituir os dados
+ * de quem já cá está. `enviarConvites` **não é uma pergunta**, é uma escolha, e
+ * nasce desligada: trezentos emails a sair em nome do clube não podem ser a
+ * omissão de um botão de importar. Ver `ImportDialog`.
  */
-export const importMembers = (rows: ImportRow[], createTiers = false) =>
-  apiPost<ImportResult>("/api/members/import", { rows, createTiers });
+export const importMembers = (
+  rows: ImportRow[],
+  opts: { createTiers?: boolean; sobrescrever?: boolean; enviarConvites?: boolean } = {},
+) =>
+  apiPost<ImportResult>("/api/members/import", {
+    rows,
+    createTiers: opts.createTiers === true,
+    sobrescrever: opts.sobrescrever === true,
+    enviarConvites: opts.enviarConvites === true,
+  });
 
 /** Idade, que é o que decide se alguém cabe numa categoria. */
 export function ageOf(birthdate: string, now = new Date()): number {

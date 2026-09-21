@@ -444,3 +444,41 @@
   }
   @media (prefers-reduced-motion: reduce) { .mobile-sheet { animation: none; } }
 }
+
+/* -------------------------------------------------------------------------- */
+/* Avisos                                                                      */
+/* -------------------------------------------------------------------------- */
+
+/*
+ * O cartão entra do lado onde vive — da direita, um passo curto. Vem de baixo
+ * ao pé do telemóvel, onde ele nasce colado à barra de navegação e um
+ * deslizamento lateral não teria de onde vir.
+ */
+@keyframes aviso-entra {
+  from { transform: translateX(16px); opacity: 0; }
+  to   { transform: translateX(0);    opacity: 1; }
+}
+
+/*
+ * A linha do tempo: encolhe da largura toda até nada.
+ *
+ * `scaleX` e não `width` de propósito — é uma transformação, corre na placa
+ * gráfica e não obriga o browser a recalcular a caixa sessenta vezes por
+ * segundo enquanto alguém lê uma frase.
+ */
+@keyframes aviso-tempo {
+  from { transform: scaleX(1); }
+  to   { transform: scaleX(0); }
+}
+
+/*
+ * Com movimento reduzido, o cartão aparece e a linha fica cheia.
+ *
+ * O aviso **não** deixa de se fechar sozinho: o temporizador é JavaScript e
+ * continua a correr. O que desaparece é a animação, não o comportamento — quem
+ * pede menos movimento não está a pedir para os avisos ficarem para sempre.
+ */
+@media (prefers-reduced-motion: reduce) {
+  [class*="aviso-entra"] { animation: none !important; }
+  [class*="aviso-tempo"] { animation: none !important; transform: scaleX(1); }
+}

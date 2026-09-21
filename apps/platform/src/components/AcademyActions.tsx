@@ -69,6 +69,17 @@ export function AcademyActions({
    * escolha do plano, e não num ecrã à parte — são a mesma decisão.
    */
   const [anual, setAnual] = useState(false);
+  /*
+   * A mensalidade que vai no contrato.
+   *
+   * Texto e em euros, porque é um campo que se escreve: guardar cêntimos
+   * obrigava a converter a cada tecla e a inventar um número para estados
+   * intermédios ("29," não é nada). Segue o plano enquanto ninguém lhe tocar —
+   * a partir daí manda quem escreveu, e o preço de tabela fica ao lado para se
+   * ver a diferença.
+   */
+  const [preco, setPreco] = useState("");
+  const [precoMexido, setPrecoMexido] = useState(false);
   const [inicio, setInicio] = useState(() => new Date().toISOString().slice(0, 10));
   /*
    * A fidelização, em anos, e só no anual.
@@ -99,6 +110,31 @@ export function AcademyActions({
   }, [onClose]);
 
   const planoEscolhido = plans.find((p) => p.id === planId) ?? null;
+
+  /*
+   * O valor de partida.
+   *
+   * O acordado deste clube quando o plano é o que ele já tem — reabrir a janela
+   * tem de propor o que está em vigor, senão a gravação seguinte desfazia o
+   * acordo sem ninguém pedir. Se se escolher **outro** plano, a partida é o
+   * preço de tabela desse: mudar de plano é começar conversa nova.
+   */
+  const partida =
+    planId === academy.planId && academy.priceCents != null ? academy.priceCents : planoEscolhido?.amountCents;
+
+  useEffect(() => {
+    if (precoMexido) return;
+    setPreco(partida === undefined ? "" : (partida / 100).toFixed(2).replace(".", ","));
+  }, [partida, precoMexido]);
+
+  /** O que está escrito, em cêntimos. `null` enquanto não for um valor válido. */
+  const precoCents = (() => {
+    const n = Number(preco.replace(/[€\s]/g, "").replace(",", "."));
+    return Number.isFinite(n) && n > 0 ? Math.round(n * 100) : null;
+  })();
+  const tabela = planoEscolhido?.amountCents ?? null;
+  const negociado = precoCents !== null && tabela !== null && precoCents !== tabela;
+
   const cancelada = academy.status === "CANCELLED";
   const mayDelete = me.role === "OWNER";
 
@@ -131,6 +167,12 @@ export function AcademyActions({
                 billingPeriod: anual ? "ANNUAL" : "MONTHLY",
                 startsOn: inicio,
                 minimumMonths: anual ? anos * 12 : 1,
+                /*
+                 * O valor vai sempre, igual à tabela ou não. É o servidor que
+                 * decide se isto é um acordo (e o guarda) ou a confirmação do
+                 * preço do plano (e não guarda nada) — ver `setAcademyPlan`.
+                 */
+                ...(precoCents !== null ? { monthlyCents: precoCents } : {}),
                 ...(renovacao.trim() ? { renewalNote: renovacao.trim() } : {}),
                 ...(notas.trim() ? { notes: notas.trim() } : {}),
               }
@@ -300,14 +342,63 @@ export function AcademyActions({
                         conta feita aqui para se ver o número — e é por isso que
                         o rótulo diz de onde vem.
                       */}
-                      {planoEscolhido && (
+                      {/*
+                        A mensalidade, escrita e não herdada.
+
+                        Abre com o preço do plano, que é o caso normal e não
+                        devia dar trabalho nenhum. Mas há clubes que negoceiam,
+                        e até aqui a única saída era criar um plano só para
+                        aquele cliente — um catálogo com planos de um clube cada,
+                        que ninguém consegue ler um ano depois.
+                      */}
+                      <label className="mt-3 block">
+                        <span className="mb-1 block text-meta font-medium text-ink">Mensalidade</span>
+                        <div className="relative">
+                          <input
+                            value={preco}
+                            onChange={(e) => {
+                              setPreco(e.target.value);
+                              setPrecoMexido(true);
+                            }}
+                            inputMode="decimal"
+                            placeholder="0,00"
+                            className="h-9 w-full rounded-[var(--radius-control)] border border-line bg-surface pr-7 pl-2 text-body text-ink tabular outline-none focus:border-line-strong"
+                          />
+                          <span className="pointer-events-none absolute top-1/2 right-2.5 -translate-y-1/2 text-meta text-ink-3">
+                            €
+                          </span>
+                        </div>
+                      </label>
+
+                      {precoCents === null ? (
+                        <p className="mt-1.5 text-[11px] leading-relaxed text-[#a82a20]">
+                          Escreve a mensalidade para poder emitir as condições.
+                        </p>
+                      ) : (
                         <p className="mt-2 text-meta text-ink-2">
                           O clube paga{" "}
                           <strong className="font-semibold text-ink tabular">
-                            {euros(anual ? Math.round(planoEscolhido.amountCents * 12 * 0.9) : planoEscolhido.amountCents)}
+                            {euros(anual ? Math.round(precoCents * 12 * 0.9) : precoCents)}
                           </strong>{" "}
                           {anual ? "por ano" : "por mês"}
-                          {anual && <span className="text-ink-3"> ({euros(planoEscolhido.amountCents)}/mês de tabela)</span>}
+                          {anual && <span className="text-ink-3"> ({euros(precoCents)}/mês)</span>}
+                        </p>
+                      )}
+
+                      {/* O preço de tabela fica à vista quando o acordo se afasta dele. */}
+                      {negociado && tabela !== null && (
+                        <p className="mt-1 text-[11px] leading-relaxed text-ink-3">
+                          Preço à medida. O plano {planoEscolhido?.name} está a {euros(tabela)}/mês.{" "}
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setPreco((tabela / 100).toFixed(2).replace(".", ","));
+                              setPrecoMexido(true);
+                            }}
+                            className="font-medium text-ink underline underline-offset-2"
+                          >
+                            Usar o de tabela
+                          </button>
                         </p>
                       )}
 
@@ -416,7 +507,19 @@ export function AcademyActions({
                   <button
                     type="button"
                     onClick={() => void gravarPlano()}
-                    disabled={busy || !planId || (planId === academy.planId && subStatus === academy.subscriptionStatus)}
+                    /*
+                     * Com condições por emitir há sempre o que fazer — nem que
+                     * o plano e o estado fiquem iguais: mudar só a mensalidade
+                     * é uma renegociação, e antes disto o botão ficava apagado
+                     * precisamente nesse caso. Sem emitir, volta a regra antiga:
+                     * gravar o que já lá está não é gravar nada.
+                     */
+                    disabled={
+                      busy ||
+                      !planId ||
+                      (emitir && precoCents === null) ||
+                      (!emitir && planId === academy.planId && subStatus === academy.subscriptionStatus)
+                    }
                     className="ctl-primary"
                   >
                     {busy ? "A gravar…" : "Guardar plano"}

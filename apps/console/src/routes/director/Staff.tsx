@@ -1,5 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { PageHeader } from "@/components/Shell";
+import { BotaoExportar } from "@/components/BotaoExportar";
+import { COLUNAS_EXPORT_STAFF } from "@/lib/colunas-export";
 import { DataTable, Empty, Metric, MetricRow, Monogram, Panel, PanelHead, Pill, RowLink, type Column } from "@/components/primitives";
 import { BulkBar, BulkDeleteDialog } from "@/components/BulkDelete";
 import { apiDelete } from "@/lib/http";
@@ -199,6 +201,12 @@ export default function Staff() {
   return (
     <>
       <PageHeader title="Staff" subtitle={`${all.length} pessoas · época 2026/27`}>
+        {/*
+          O staff não se importa de volta — não há folha de cálculo que crie
+          contas e cargos, e não deve haver. Exporta-se para o que os clubes
+          fazem com estas listas: a acta, o seguro, o mapa de pessoal.
+        */}
+        <BotaoExportar linhas={all} colunas={COLUNAS_EXPORT_STAFF} ficheiro="staff" folha="Staff" />
         {can(session, "staff:write") && (
           <button type="button" className="ctl-primary" onClick={() => setInviting(true)}>
             <Plus className="size-3.5" strokeWidth={2} />

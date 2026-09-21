@@ -6,6 +6,7 @@ import { navFor, SETTINGS_ITEM, type NavItem } from "@/lib/nav";
 import { useNavGroups } from "@/lib/nav-groups";
 import { permissionsOf } from "@/lib/permissions";
 import { academy, listAthletes, listTeams, navCounts, teamById } from "@/lib/api";
+import { currentSeason } from "@/lib/store";
 import { DEV_PROFILES, devSignInAs, signOut } from "@/lib/session";
 import { ROLE_LABEL, useSession } from "@/session";
 import { cx, Monogram } from "./primitives";
@@ -227,7 +228,7 @@ function AcademyHeader({ collapsed, onToggle }: { collapsed: boolean; onToggle: 
 
       <div className="min-w-0 flex-1">
         <div className="truncate text-body font-semibold text-ink">{academy.shortName}</div>
-        <div className="truncate text-[11px] text-ink-3">Época 2026/27</div>
+        <div className="truncate text-[11px] text-ink-3">{currentSeason ? `Época ${currentSeason}` : "Época"}</div>
       </div>
 
       {/*

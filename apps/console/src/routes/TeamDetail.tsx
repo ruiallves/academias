@@ -3,6 +3,7 @@ import { Link, useNavigate, useParams } from "react-router-dom";
 import { PageHeader } from "@/components/Shell";
 import { DeleteTeamDialog } from "@/components/DeleteTeamDialog";
 import { TeamCompetitionsPanel } from "@/components/TeamCompetitionsPanel";
+import { PercursoDaEquipa } from "@/components/Percurso";
 import { TeamStaffDialog } from "@/components/TeamStaffDialog";
 import { isHeadCoach, roleOptions } from "@/lib/team-role";
 import { apiPatch } from "@/lib/http";
@@ -284,6 +285,7 @@ export default function TeamDetail() {
       )}
 
       {tab === "staff" && (
+        <div className="space-y-3">
         <StaffTab
           teamId={id}
           coaches={coaches}
@@ -293,6 +295,9 @@ export default function TeamDetail() {
           mayRole={can(session, "team:write")}
           onAssign={() => setAtribuir(true)}
         />
+        {/* De onde a equipa veio, quem a treinou e quem saiu do plantel. */}
+        <PercursoDaEquipa teamId={id} />
+        </div>
       )}
 
       {atribuir && (

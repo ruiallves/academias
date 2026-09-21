@@ -1,4 +1,5 @@
 import { BadRequestException, ForbiddenException, Injectable, NotFoundException } from "@nestjs/common";
+import { assertZeroOuCobravel } from "../billing/minimos";
 import type { MemberDocumentKind, MemberSex, MemberStatus, Prisma } from "@prisma/client";
 import { PrismaService, type ScopedClient } from "../prisma/prisma.service";
 import { AuthService } from "../auth/auth.service";
@@ -6,6 +7,7 @@ import { can, type RequestContext } from "../common/permissions";
 import { CARD_QR_PREFIX } from "../club-app/club-app.service";
 import { MemberInvitesService } from "./member-invites.service";
 import { ligarFichaAConta } from "./member-account-link";
+import { nomeDeQuemMexe, registarAlteracoes } from "../common/historico";
 import { aberturaAnual, periodoDaQuota, situacaoDeQuotas } from "./member-fees.service";
 import { PHOTO_BUCKET, PHOTO_TTL } from "../storage/photos.service";
 import { StorageService } from "../storage/storage.service";
@@ -211,6 +213,20 @@ export class MembersService {
           id: true, number: true, name: true, email: true, phone: true, phoneCountry: true,
           birthdate: true, city: true, status: true, createdAt: true, approvedAt: true, source: true,
           /*
+           * A ficha completa, para a lista se poder exportar e voltar.
+           *
+           * A exportação de sócios tem de sair com **as colunas da importação**,
+           * senão o ida-e-volta não fecha: o clube exporta, corrige um campo em
+           * todos numa folha de cálculo, e volta a carregar. Sem a morada e o
+           * NIF aqui, a folha exportada vinha sem eles e a reimportação
+           * limpava-os a toda a gente.
+           *
+           * São sete campos por linha e quem chama já tem `member:read` — a
+           * ficha inteira está a um clique na página do sócio.
+           */
+          address: true, postalCode: true, country: true,
+          documentKind: true, documentNumber: true, taxId: true, sex: true,
+          /*
            * O estado da app, para a coluna com o mesmo nome.
            *
            * Três coisas diferentes que a lista tem de saber distinguir: **tem
@@ -339,9 +355,15 @@ export class MembersService {
     this.mustWrite(ctx);
 
     return this.prisma.runAs(ctx.academyId, async (db) => {
+      // O antes, para o histórico da ficha (ver `common/historico.ts`).
       const member = await db.member.findFirst({
         where: { id },
-        select: { id: true, status: true, number: true, acceptedTermsAt: true },
+        select: {
+          id: true, status: true, number: true, acceptedTermsAt: true, tierId: true, notes: true,
+          name: true, email: true, phone: true, phoneCountry: true, address: true, postalCode: true,
+          city: true, country: true, birthdate: true, sex: true, documentKind: true,
+          documentNumber: true, taxId: true,
+        },
       });
       if (!member) throw new NotFoundException("Sócio não encontrado");
 
@@ -356,6 +378,25 @@ export class MembersService {
        * inventar a morada no mesmo gesto.
        */
       const texto = (v: string | undefined) => (v === undefined ? undefined : v.trim() || null);
+
+      /*
+       * Um sócio não pode ficar sem contacto nenhum.
+       *
+       * É a mesma regra da inscrição (`create`): **email ou telemóvel**, pelo
+       * menos um. Faltava aqui, e a falta era do género que só se vê tarde —
+       * a ficha de um sócio editada até ficar sem os dois é uma linha que
+       * ninguém consegue usar para cobrar a quota nem para convocar a
+       * assembleia, e nada no caminho o impedia.
+       *
+       * Compara-se o **resultado**, e não o que veio no corpo: apagar o email
+       * de quem tem telemóvel é legítimo, apagar o email de quem só tem email
+       * não é. Um campo que não vem no pedido fica como está.
+       */
+      const emailDepois = dto.email !== undefined ? dto.email.trim() : (member.email ?? "");
+      const telemovelDepois = dto.phone !== undefined ? dto.phone.trim() : (member.phone ?? "");
+      if (!emailDepois && !telemovelDepois) {
+        throw new BadRequestException("Um sócio precisa de pelo menos um contacto — email ou telemóvel");
+      }
 
       if (dto.tierId !== undefined) data.tierId = dto.tierId || null;
       if (dto.notes !== undefined) data.notes = dto.notes.trim() || null;
@@ -423,6 +464,34 @@ export class MembersService {
         });
         /* Um email novo pode ser o de uma conta deste clube — ver `create`. */
         if (dto.email !== undefined) await ligarFichaAConta(db, gravado);
+
+        // O histórico da ficha: quem mudou o quê. Ver `common/historico.ts`.
+        const { updatedAt: _ignora, approvedById: _quem, approvedAt: _quando, ...mudou } = data as Record<string, unknown>;
+
+        /*
+         * A categoria vai por nome e não por `tierId`: quem lê o histórico quer
+         * ler "Atleta → Sénior", e um identificador não diz nada a ninguém.
+         */
+        const idsDeCategoria = [member.tierId, mudou.tierId as string | null | undefined].filter(
+          (v): v is string => typeof v === "string" && v.length > 0,
+        );
+        const categorias = idsDeCategoria.length
+          ? await db.memberTier.findMany({ where: { id: { in: idsDeCategoria } }, select: { id: true, name: true } })
+          : [];
+        const categoria = (v: unknown) =>
+          typeof v === "string" ? (categorias.find((t) => t.id === v)?.name ?? v) : v === null ? null : undefined;
+        const { tierId: _antesTier, ...restoAntes } = member;
+        const { tierId: _depoisTier, ...restoDepois } = mudou;
+
+        await registarAlteracoes(
+          db,
+          ctx,
+          "MEMBER",
+          id,
+          { ...restoAntes, categoria: categoria(member.tierId) },
+          { ...restoDepois, ...("tierId" in mudou ? { categoria: categoria(mudou.tierId) } : {}) },
+          await nomeDeQuemMexe(db, ctx),
+        );
       } catch (error) {
         if (isUniqueViolation(error, "number")) {
           throw new BadRequestException("Já existe um sócio com esse número");
@@ -693,14 +762,31 @@ export class MembersService {
    * importa outra vez e fica com metade do clube duplicado. Ou entra o livro
    * todo, ou não entra nada e devolve-se a lista de linhas a corrigir.
    *
-   * ## Os duplicados não são erro de quem importa
+   * ## Quem já cá está é a mesma pessoa, não um erro
    *
-   * O NIF é único por clube. Uma linha que já existe é ignorada e contada — é o
-   * caso normal de quem reimporta a folha depois de lhe acrescentar pessoas, e
-   * fazer disso um erro obrigava a editar a folha só para tirar quem já entrou.
+   * Uma linha que corresponde a um sócio do livro pára a importação e é
+   * devolvida na lista `existing`, com o nome de quem foi encontrado e os
+   * campos que iam mudar. Quem está a importar vê **antes** de acontecer, e
+   * responde: substituir, ou não. Com `sobrescrever`, essas linhas passam a
+   * actualizar a ficha em vez de a duplicar — é o que torna possível corrigir
+   * um campo em todo o clube numa folha de cálculo.
    *
-   * Ao contrário da inscrição pública, aqui **dizer** que já existe não abre
-   * oráculo nenhum: quem chama isto já tem `member:write` e já vê o livro todo.
+   * ## Como se reconhece a mesma pessoa
+   *
+   * Pelo **número** de sócio primeiro, que é a identidade no livro do clube.
+   * Depois pelo **NIF**. E, por fim, pelo **contacto** — o email ou o telemóvel
+   * —, mas só quando esse contacto pertence a um sócio e a mais nenhum: num
+   * clube há casais e irmãos a partilhar o telefone de casa, e um contacto
+   * repetido não identifica ninguém. Quando é ambíguo, a linha é devolvida como
+   * problema em vez de escolher uma ficha à sorte.
+   *
+   * Mesmo assim, a confirmação mostra sempre o nome encontrado ao lado do nome
+   * da folha: uma correspondência errada vê-se antes de ser aplicada.
+   *
+   * ## Ao contrário da inscrição pública
+   *
+   * Aqui **dizer** que já existe não abre oráculo nenhum: quem chama isto já
+   * tem `member:write` e já vê o livro todo.
    *
    * ## Sem consentimento carimbado
    *
@@ -708,7 +794,12 @@ export class MembersService {
    * desta plataforma existir, numa data que a folha não traz — e carimbar o
    * momento da importação seria fabricar a prova que o RGPD pede ao clube.
    */
-  async importMembers(ctx: RequestContext, rows: MemberImportRowDto[], createTiers = false) {
+  async importMembers(
+    ctx: RequestContext,
+    rows: MemberImportRowDto[],
+    createTiers = false,
+    opts: { sobrescrever?: boolean; enviarConvites?: boolean } = {},
+  ) {
     this.mustWrite(ctx);
     if (rows.length === 0) throw new BadRequestException("A folha não tem linhas");
 
@@ -744,10 +835,7 @@ export class MembersService {
       if (desconhecidas.size > 0) {
         if (!createTiers) {
           return {
-            ok: false as const,
-            created: 0,
-            duplicates: [],
-            problems: [],
+            ...VAZIO,
             unknownTiers: [...desconhecidas.values()],
           };
         }
@@ -766,32 +854,68 @@ export class MembersService {
         }
       }
 
-      const existing = await db.member.findMany({ select: { taxId: true, number: true } });
-      const takenTaxIds = new Set(existing.map((m) => m.taxId).filter((t): t is string => !!t));
-      const takenNumbers = new Set(existing.map((m) => m.number).filter((n): n is number => n !== null));
+      /*
+       * O livro como está, indexado pelas três formas de reconhecer alguém.
+       *
+       * O contacto guarda-se com a **contagem**: um email ou um telefone que
+       * pertence a dois sócios não identifica nenhum, e o que se faz com ele é
+       * dizê-lo, não escolher. Ver o cabeçalho.
+       */
+      const livro = await db.member.findMany({
+        select: { id: true, name: true, number: true, taxId: true, email: true, phone: true },
+      });
+
+      const porNumero = new Map<number, Existente>();
+      const porNif = new Map<string, Existente>();
+      const porContacto = new Map<string, Existente | "ambiguo">();
+
+      for (const m of livro) {
+        if (m.number !== null) porNumero.set(m.number, m);
+        if (m.taxId) porNif.set(m.taxId, m);
+        for (const contacto of contactosDe(m)) {
+          porContacto.set(contacto, porContacto.has(contacto) ? "ambiguo" : m);
+        }
+      }
 
       const problems: { line: number; reason: string }[] = [];
       const duplicates: { line: number; name: string }[] = [];
+      const existing: LinhaExistente[] = [];
       const create: Prisma.MemberCreateManyInput[] = [];
+      const update: { id: string; data: Prisma.MemberUpdateInput }[] = [];
+      /* Números e NIFs que a própria folha já usou — duas linhas iguais na
+         mesma folha não são duas pessoas. */
+      const naFolha = { numeros: new Set<number>(), nifs: new Set<string>() };
 
       rows.forEach((row, i) => {
         const line = row.line ?? i + 2;
         const taxId = row.taxId?.replace(/[\s.]/g, "") || null;
 
         /*
-         * Já cá está?
-         *
-         * Pelo **número** primeiro, que é o que identifica um sócio no livro do
-         * clube — e que agora a folha traz sempre. Antes a chave era o NIF, e com
-         * o NIF a deixar de ser obrigatório uma segunda importação da mesma folha
-         * duplicava o clube inteiro com números novos.
+         * Duas linhas da mesma folha a dizer a mesma pessoa. Isso é engano de
+         * quem escreveu a folha, e não tem confirmação que valha: fica de fora.
          */
-        if (takenNumbers.has(row.number) || (taxId && takenTaxIds.has(taxId))) {
+        if (naFolha.numeros.has(row.number) || (taxId && naFolha.nifs.has(taxId))) {
           duplicates.push({ line, name: row.name.trim() });
           return;
         }
-        takenNumbers.add(row.number);
-        if (taxId) takenTaxIds.add(taxId);
+        naFolha.numeros.add(row.number);
+        if (taxId) naFolha.nifs.add(taxId);
+
+        /*
+         * Já cá está?
+         *
+         * Número, NIF, contacto — por esta ordem. Ver o cabeçalho para o porquê
+         * de o contacto ser o último e de um contacto repartido não contar.
+         */
+        const achado = porNumero.get(row.number) ?? (taxId ? porNif.get(taxId) : undefined) ?? contactoDaLinha(row, porContacto);
+
+        if (achado === "ambiguo") {
+          problems.push({
+            line,
+            reason: "O contacto desta linha pertence a mais do que um sócio — põe o número de sócio para dizer qual",
+          });
+          return;
+        }
 
         let birthdate: Date | null = null;
         if (row.birthdate) {
@@ -819,27 +943,79 @@ export class MembersService {
           }
         }
 
+        /*
+         * O que a folha diz desta pessoa.
+         *
+         * Um campo que a folha não traz **não entra** — nem a criar (fica nulo,
+         * como sempre) nem a substituir. Uma folha sem a coluna da morada não é
+         * um clube a dizer que ninguém tem morada; apagar o que já lá está por
+         * causa de uma coluna em falta seria a pior maneira de perder dados.
+         */
+        const daFolha = {
+          tierId: tier.id,
+          name: row.name.trim(),
+          ...(row.email !== undefined ? { email: row.email.trim().toLowerCase() || null } : {}),
+          ...(birthdate ? { birthdate } : {}),
+          ...(row.country !== undefined ? { country: (row.country || "PT").toUpperCase().slice(0, 2) } : {}),
+          ...(row.address !== undefined ? { address: row.address.trim() || null } : {}),
+          ...(row.postalCode !== undefined ? { postalCode: row.postalCode.trim() || null } : {}),
+          ...(row.city !== undefined ? { city: row.city.trim() || null } : {}),
+          ...(row.phoneCountry !== undefined ? { phoneCountry: row.phoneCountry } : {}),
+          phone: row.phone.replace(/\s/g, ""),
+          ...(row.sex !== undefined ? { sex: row.sex as MemberSex } : {}),
+          ...(row.documentKind !== undefined ? { documentKind: row.documentKind as MemberDocumentKind } : {}),
+          ...(row.documentNumber !== undefined ? { documentNumber: row.documentNumber.trim() || null } : {}),
+          ...(taxId ? { taxId } : {}),
+          ...(row.status !== undefined ? { status: row.status as MemberStatus } : {}),
+        };
+
+        if (achado) {
+          const mudam = camposQueMudam(achado, daFolha);
+
+          /*
+           * A linha é igual à ficha: não há nada para substituir, e por isso
+           * não há nada a perguntar.
+           *
+           * É o caso normal de quem reimporta a folha do ano passado com três
+           * nomes novos no fim. Parar para perguntar "substituir 300 fichas?"
+           * sobre trezentas linhas que não mudam nada era transformar a
+           * confirmação num carimbo que ninguém lê — e é a leitura dela que a
+           * torna útil.
+           */
+          if (mudam.length === 0) {
+            duplicates.push({ line, name: row.name.trim() });
+            return;
+          }
+
+          if (!opts.sobrescrever) {
+            existing.push({
+              line,
+              name: row.name.trim(),
+              matchedName: achado.name,
+              number: achado.number,
+              changes: mudam,
+            });
+            return;
+          }
+
+          update.push({ id: achado.id, data: { ...daFolha, updatedAt: now } });
+          return;
+        }
+
         create.push({
           academyId: ctx.academyId,
-          tierId: tier.id,
           number: row.number,
-          name: row.name.trim(),
-          email: row.email?.trim().toLowerCase() || null,
           birthdate,
           country: (row.country ?? "PT").toUpperCase().slice(0, 2),
-          address: row.address?.trim() || null,
-          postalCode: row.postalCode?.trim() || null,
-          city: row.city?.trim() || null,
           phoneCountry: row.phoneCountry ?? "+351",
-          phone: row.phone.replace(/\s/g, ""),
           sex: (row.sex as MemberSex) ?? "UNSPECIFIED",
           documentKind: (row.documentKind as MemberDocumentKind) ?? "CC",
-          documentNumber: row.documentNumber?.trim() || null,
           taxId,
           // Quem vem da folha do clube já é sócio. Pô-los todos por aprovar
           // dava à direção uma fila de centenas de aprovações que não são
           // decisões nenhumas.
           status: (row.status as MemberStatus) ?? "ACTIVE",
+          ...daFolha,
           acceptedTermsAt: null,
           approvedAt: now,
           approvedById: ctx.membershipId,
@@ -849,12 +1025,33 @@ export class MembersService {
       });
 
       if (problems.length > 0) {
-        return { ok: false as const, created: 0, duplicates: [], problems: problems.slice(0, 50), unknownTiers: [] };
+        return { ...VAZIO, problems: problems.slice(0, 50) };
+      }
+
+      /*
+       * A segunda pergunta: substituir quem já cá está?
+       *
+       * Pára **antes** de escrever fosse o que fosse — inclusive antes de criar
+       * as linhas novas, que também esperam. Uma importação que cria metade e
+       * pergunta pela outra metade deixa quem responde sem forma de voltar
+       * atrás.
+       */
+      if (existing.length > 0) {
+        return { ...VAZIO, existing: existing.slice(0, 200), existingTotal: existing.length };
       }
 
       // Ou entra o livro todo, ou não entra nada: o `runAs` já corre tudo isto
       // dentro de uma transacção, e um `createMany` é uma instrução só.
       if (create.length > 0) await db.member.createMany({ data: create });
+
+      /*
+       * As substituições, uma a uma.
+       *
+       * Não há `updateMany` que sirva: cada ficha leva os seus valores. São
+       * poucas em relação ao tamanho da folha na maioria das importações, e
+       * continuam todas dentro da mesma transacção — ou muda tudo, ou nada.
+       */
+      for (const u of update) await db.member.update({ where: { id: u.id }, data: u.data });
 
       /*
        * A marca de água sobe até ao maior número da folha.
@@ -880,7 +1077,7 @@ export class MembersService {
        *
        * Só os que têm email — os outros nem token geram (ver `preparar`).
        */
-      const importados = create.filter((m) => m.email);
+      const importados = opts.enviarConvites ? create.filter((m) => m.email) : [];
       if (importados.length > 0) {
         const criados = await db.member.findMany({
           where: { taxId: { in: importados.map((m) => m.taxId).filter((t): t is string => Boolean(t)) } },
@@ -895,13 +1092,20 @@ export class MembersService {
         for (const m of criados) void this.invites.enviarSePossivel(ctx.academyId, m.id);
       }
 
-      return { ok: true as const, created: create.length, duplicates, problems: [], unknownTiers: [] };
+      return {
+        ...VAZIO,
+        ok: true as const,
+        created: create.length,
+        updated: update.length,
+        duplicates,
+      };
     });
   }
 
   /* ---------------------------------------------------------------------- */
   /* Categorias                                                             */
   /* ---------------------------------------------------------------------- */
+
 
   async tiers(ctx: RequestContext) {
     this.mustRead(ctx);
@@ -923,6 +1127,8 @@ export class MembersService {
 
   async createTier(ctx: RequestContext, dto: MemberTierInputDto) {
     this.mustWrite(ctx);
+
+    if (dto.feeCents != null) assertZeroOuCobravel(dto.feeCents, "O preço");
 
     return this.prisma.runAs(ctx.academyId, async (db) => {
       const last = await db.memberTier.findFirst({ orderBy: { order: "desc" }, select: { order: true } });
@@ -959,6 +1165,7 @@ export class MembersService {
     return this.prisma.runAs(ctx.academyId, async (db) => {
       const tier = await db.memberTier.findFirst({ where: { id }, select: { id: true, feeCents: true, billing: true } });
       if (!tier) throw new NotFoundException("Categoria não encontrada");
+      if (dto.feeCents != null) assertZeroOuCobravel(dto.feeCents, "O preço");
 
       await db.memberTier.update({
         where: { id },
@@ -1180,4 +1387,115 @@ function isUniqueViolation(error: unknown, field: string): boolean {
   const target = e.meta?.target;
   if (target === null || target === undefined) return true;
   return Array.isArray(target) ? target.includes(field) : String(target).includes(field);
+}
+
+/* -------------------------------------------------------------------------- */
+/* A importação: reconhecer quem já cá está                                    */
+/* -------------------------------------------------------------------------- */
+
+type Existente = {
+  id: string;
+  name: string;
+  number: number | null;
+  taxId: string | null;
+  email: string | null;
+  phone: string | null;
+};
+
+/** Uma linha da folha que corresponde a um sócio do livro. */
+type LinhaExistente = {
+  line: number;
+  /** O nome como vem na folha. */
+  name: string;
+  /** O nome de quem foi encontrado — é o que deixa ver um engano antes de o aplicar. */
+  matchedName: string;
+  number: number | null;
+  /** Os campos que iam mudar, em português, para a confirmação os poder dizer. */
+  changes: string[];
+};
+
+/**
+ * A resposta vazia, que é a forma de todas as outras.
+ *
+ * Existe para que cada saída — problemas, categorias por criar, pessoas por
+ * confirmar, sucesso — tenha os mesmos campos. Um cliente que leia
+ * `res.updated` não tem de saber por que ramo a resposta veio.
+ */
+const VAZIO = {
+  ok: false as boolean,
+  created: 0,
+  updated: 0,
+  duplicates: [] as { line: number; name: string }[],
+  problems: [] as { line: number; reason: string }[],
+  unknownTiers: [] as string[],
+  existing: [] as LinhaExistente[],
+  /** Quantos ao todo — `existing` vem cortada nos 200 para a resposta não crescer sem fim. */
+  existingTotal: 0,
+};
+
+/** Um contacto comparável: email em minúsculas, telefone só com dígitos. */
+function contactosDe(m: { email: string | null; phone: string | null }): string[] {
+  const out: string[] = [];
+  const email = m.email?.trim().toLowerCase();
+  if (email) out.push(`e:${email}`);
+  const phone = m.phone?.replace(/\D/g, "");
+  // Menos de nove dígitos não é um telemóvel português: é um campo mal
+  // preenchido, e não pode servir para colar duas fichas uma na outra.
+  if (phone && phone.length >= 9) out.push(`t:${phone}`);
+  return out;
+}
+
+/** O sócio que o contacto desta linha identifica — ou `"ambiguo"`, ou nada. */
+function contactoDaLinha(
+  row: { email?: string; phone: string },
+  indice: Map<string, Existente | "ambiguo">,
+): Existente | "ambiguo" | undefined {
+  for (const chave of contactosDe({ email: row.email ?? null, phone: row.phone })) {
+    const achado = indice.get(chave);
+    if (achado) return achado;
+  }
+  return undefined;
+}
+
+/** Como se chamam, para quem lê a confirmação, os campos que a folha traz. */
+const ROTULO: Record<string, string> = {
+  name: "nome",
+  email: "email",
+  phone: "telemóvel",
+  phoneCountry: "indicativo",
+  birthdate: "data de nascimento",
+  address: "morada",
+  postalCode: "código postal",
+  city: "localidade",
+  country: "país",
+  sex: "sexo",
+  documentKind: "tipo de documento",
+  documentNumber: "n.º de documento",
+  taxId: "NIF",
+  status: "estado",
+  tierId: "categoria",
+};
+
+/**
+ * O que muda nesta ficha se a folha for aplicada.
+ *
+ * Comparado campo a campo e **em português**, porque isto não é para um log: é
+ * a frase que se mostra antes de perguntar "substituir?". Uma linha que não
+ * muda nada não aparece na confirmação nem chega a escrever.
+ *
+ * `tierId` fica de fora da comparação por não vir na leitura do livro — a
+ * categoria muda-se na mesma ao substituir, e dizer "categoria" em todas as
+ * linhas só faria ruído.
+ */
+function camposQueMudam(actual: Existente, folha: Record<string, unknown>): string[] {
+  const mudam: string[] = [];
+  const antes = actual as unknown as Record<string, unknown>;
+
+  for (const [campo, valor] of Object.entries(folha)) {
+    if (campo === "tierId" || !(campo in antes)) continue;
+    const anterior = antes[campo] ?? null;
+    const novo = valor ?? null;
+    if (String(anterior) !== String(novo)) mudam.push(ROTULO[campo] ?? campo);
+  }
+  return mudam;
 }

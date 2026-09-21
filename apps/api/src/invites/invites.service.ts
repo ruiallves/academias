@@ -603,11 +603,21 @@ export class InvitesService {
 
       // As equipas do convite — decididas por quem convidou, nunca aqui.
       for (const teamId of invite.teamIds) {
-        await db.teamStaff.upsert({
-          where: { teamId_membershipId: { teamId, membershipId: membership.id } },
-          update: {},
-          create: { teamId, membershipId: membership.id, title: invite.title ?? "Treinador" },
+        /*
+         * A passagem activa, ou uma nova. O `upsert` por chave composta deixou
+         * de servir quando `TeamStaff` passou a guardar histórico: a chave leva
+         * agora o `joinedAt`, e o que interessa saber é se esta pessoa já treina
+         * esta equipa **hoje**.
+         */
+        const ja = await db.teamStaff.findFirst({
+          where: { teamId, membershipId: membership.id, leftAt: null },
+          select: { id: true },
         });
+        if (!ja) {
+          await db.teamStaff.create({
+            data: { teamId, membershipId: membership.id, title: invite.title ?? "Treinador" },
+          });
+        }
       }
 
       // As aceitações da criação de conta — contexto SIGNUP, na mesma transação.

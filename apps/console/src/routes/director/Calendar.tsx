@@ -24,6 +24,8 @@ import { dayShort, longDate, monthName, time } from "@/lib/format";
 import { can, isAcademyWide } from "@/lib/permissions";
 import { useSession } from "@/session";
 import { isMobile } from "@/lib/viewport";
+import { dayKey as chaveDoDia, listCycles, type Cycle } from "@/lib/cycles";
+import { matches as jogosDoStore } from "@/lib/store";
 
 type View = "agenda" | "mes";
 
@@ -131,6 +133,37 @@ export default function Calendar() {
   const all = useEvents(session, from, to);
   const carregando = useCalendarLoading();
   const events = all.filter((e) => !e.teamId || !hidden.has(e.teamId));
+
+  /*
+   * A periodização, quando o calendário mostra uma equipa só: a legenda
+   * isolou-a, ou o clube só tem uma. Com várias equipas o mês fica como era.
+   * Os ciclos são lidos com `training:read`; sem ele não há camada nenhuma.
+   */
+  const visiveis = teams.filter((t) => !hidden.has(t.id));
+  const soUma = visiveis.length === 1 ? visiveis[0] : null;
+  const [ciclos, setCiclos] = useState<Cycle[]>([]);
+  useEffect(() => {
+    if (!soUma || !can(session, "training:read")) {
+      setCiclos([]);
+      return;
+    }
+    let vivo = true;
+    listCycles(soUma.id)
+      .then((c) => vivo && setCiclos(c))
+      .catch(() => vivo && setCiclos([]));
+    return () => {
+      vivo = false;
+    };
+  }, [soUma?.id, session]);
+  const periodizacao =
+    soUma && ciclos.length > 0
+      ? {
+          cycles: ciclos,
+          matchDays: [
+            ...new Set(jogosDoStore.filter((m) => m.teamId === soUma.id && m.status !== "CANCELLED").map((m) => chaveDoDia(new Date(m.startsAt)))),
+          ],
+        }
+      : undefined;
   // Deriva-se de `all`, não de `events`: se o painel já estava aberto e o
   // utilizador esconder o escalão na legenda, o evento não desaparece debaixo dele.
   const selected = all.find((e) => e.id === selectedId) ?? null;
@@ -261,6 +294,7 @@ export default function Calendar() {
                 colors={colors}
                 onAdd={(day) => editable && setComposing(day)}
                 onSelect={abrir}
+                periodizacao={periodizacao}
               />
             ) : (
               <AgendaList events={events} colors={colors} onSelect={abrir} />

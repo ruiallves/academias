@@ -285,7 +285,9 @@ export function EventDetail({
               pessoa da área técnica — a metodologia do clube ganha em ver-se. */}
           {event.kind === "training" && (
             <div className="space-y-2 px-5 py-4">
-              {can(session, "training:read") && (
+              {/* O plano é da equipa: quem não a acompanha não o abre (o servidor
+                  recusa na mesma). Ver `lerPlano` em `training.service.ts`. */}
+              {can(session, "training:read") && meu && (
                 <Link to={`/treinos/${event.id}`} className="ctl-primary w-full justify-center">
                   Abrir plano de treino
                 </Link>

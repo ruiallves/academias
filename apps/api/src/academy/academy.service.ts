@@ -6,6 +6,7 @@ import { escolherTreinador, headCoaches } from "./head-coaches";
 import { MatchesService } from "./matches.service";
 import { StorageService } from "../storage/storage.service";
 import { PHOTO_BUCKET, PHOTO_TTL } from "../storage/photos.service";
+import { nomeDeQuemMexe, registarAlteracoes } from "../common/historico";
 import { DIAS_DO_MES } from "../members/member-fees.service";
 import { basePermissions, can, outranks, ROLE_PERMISSIONS, type Permission, type RequestContext, teamScopeForRoster } from "../common/permissions";
 import { athleteScopeFilter, athleteTeamScopeWhere, calendarScopeFilter, inTeamScope, teamScopeFilter } from "../common/permissions";
@@ -153,10 +154,12 @@ const DELEGATABLE: ReadonlySet<Permission> = new Set<Permission>([
  * Substitui `apps/console/src/data/demo.ts`. Três regras que valem para tudo o que
  * está aqui:
  *
- *  1. **O âmbito é aplicado na fronteira**, com `teamScopeFilter`, e não em cada
- *     ecrã. Um treinador que peça `/api/athletes` recebe os atletas das equipas
- *     dele — não recebe a academia toda e filtra no browser. A RLS por baixo é a
- *     segunda camada; esta é a primeira.
+ *  1. **O âmbito é aplicado na fronteira**, e não em cada ecrã: quem escreve só
+ *     escreve nas suas equipas (`teamScopeFilter`), e quem lê recebe o que a
+ *     permissão dele abre — `/api/athletes` devolve as equipas dele a quem só
+ *     lê, e o clube a quem tem `athlete:write` (ver `athleteTeamScopeWhere`, e
+ *     a razão: duplicados). A RLS por baixo é a segunda camada; esta é a
+ *     primeira.
  *  2. **A permissão é verificada aqui**, no serviço, não no controlador. Quem sabe
  *     o URL chega ao endpoint na mesma, e a tabela de permissões do cliente só
  *     decide o que se mostra.
@@ -794,6 +797,7 @@ export class AcademyService {
         where: { id: membershipId },
         data: active ? { isActive: true, approvalRequestedAt: null } : { isActive: false },
       });
+      await registarAlteracoes(db, ctx, "STAFF", membershipId, { acesso: !active }, { acesso: active }, await nomeDeQuemMexe(db, ctx));
       return { ok: true, isActive: active };
     });
   }
@@ -928,6 +932,8 @@ export class AcademyService {
           sport: { select: { matchMinutes: true } },
           season: { select: { id: true, label: true } },
           staff: {
+            // Quem lá está hoje: as passagens fechadas são histórico.
+            where: { leftAt: null },
             // Por título, para o empate na escolha do treinador dar sempre o mesmo.
             orderBy: { title: "asc" },
             select: {
@@ -1223,7 +1229,10 @@ export class AcademyService {
         select: {
           id: true, name: true, maxAge: true, schedule: true, sportId: true, matchMinutes: true,
           season: { select: { label: true } },
-          staff: { select: { title: true, membership: { select: { id: true, user: { select: { name: true } } } } } },
+          staff: {
+            where: { leftAt: null },
+            select: { title: true, membership: { select: { id: true, user: { select: { name: true } } } } },
+          },
           _count: { select: { athletes: true } },
           competitions: { select: { competition: { select: { id: true, label: true } } } },
         },
@@ -1385,7 +1394,7 @@ export class AcademyService {
           // A conta do próprio na app — ver `AthleteInvitesService`.
           email: true, inviteSentAt: true,
           account: { select: { id: true, isActive: true, userId: true, lastSeenAt: true } },
-          teams: { select: { teamId: true, position: true }, take: 1 },
+          teams: { where: { leftAt: null }, select: { teamId: true, position: true }, take: 1 },
           guardians: {
             // Os pedidos à espera do clube ficam fora: aparecem só no bloco de
             // aprovação da página Famílias (`/api/family-invite/pedidos`).
@@ -1958,7 +1967,7 @@ export class AcademyService {
     if (treino.startsAt <= new Date()) throw new BadRequestException("Este treino já começou");
 
     const noPlantel = await db.athlete.findFirst({
-      where: { id: athleteId, teams: { some: { teamId: treino.teamId } } },
+      where: { id: athleteId, teams: { some: { leftAt: null, teamId: treino.teamId } } },
       select: { id: true },
     });
     if (!noPlantel) throw new BadRequestException("Este atleta não treina nesta equipa");
@@ -2020,7 +2029,7 @@ export class AcademyService {
          * já garante que é da academia; isto garante que é da equipa.
          */
         const doPlantel = await db.athlete.findMany({
-          where: { id: { in: marcados }, teams: { some: { teamId: training.teamId } } },
+          where: { id: { in: marcados }, teams: { some: { leftAt: null, teamId: training.teamId } } },
           select: {
             id: true,
             name: true,
@@ -2700,7 +2709,7 @@ export class AcademyService {
           // que se está a cobrar e porquê. Ver `ChargeKind` no `schema.prisma`.
           kind: true, title: true, notes: true,
           category: { select: { label: true } },
-          athlete: { select: { name: true, teams: { select: { teamId: true }, take: 1 } } },
+          athlete: { select: { name: true, teams: { where: { leftAt: null }, select: { teamId: true }, take: 1 } } },
           // A tentativa de pagamento viva, se houver — é o que deixa a app do
           // pai voltar a mostrar a referência Multibanco ou reabrir o
           // formulário, em vez de criar outra cobrança na euPago.
@@ -2713,7 +2722,7 @@ export class AcademyService {
             take: 5,
             select: {
               method: true, status: true, entity: true, reference: true, redirectUrl: true, expiresAt: true,
-              paidAt: true,
+              paidAt: true, identificador: true, payerName: true, payerRelation: true,
             },
           },
           settledAt: true,
@@ -2763,6 +2772,14 @@ export class AcademyService {
            */
           paidMethod: pago?.method ?? null,
           paidAt: c.status === "SETTLED" ? (pago?.paidAt ?? c.settledAt) : null,
+          /*
+           * Quem pagou, e o identificador com que o pagamento aparece no
+           * backoffice da euPago: é o que deixa o clube casar os dois lados.
+           * Nulos nos pagamentos marcados à mão e nos anteriores a isto.
+           */
+          paidBy: pago?.payerName ?? null,
+          paidByRelation: pago?.payerRelation ?? null,
+          paymentId: pago?.identificador ?? null,
         };
       });
     });
@@ -2805,6 +2822,9 @@ export class AcademyService {
         select: {
           id: true,
           role: true,
+          // O antes das permissões pontuais, para o histórico da ficha.
+          grants: true,
+          revokes: true,
           customRole: { select: { rank: true, permissions: true, archivedAt: true } },
           extraRoles: { select: { role: { select: { rank: true, permissions: true, archivedAt: true } } } },
         },
@@ -2858,6 +2878,12 @@ export class AcademyService {
         where: { id: membershipId },
         data: { grants: finalGrants, revokes: finalRevokes },
       });
+      await registarAlteracoes(
+        db, ctx, "STAFF", membershipId,
+        { permissoesDadas: target.grants, permissoesRetiradas: target.revokes },
+        { permissoesDadas: finalGrants, permissoesRetiradas: finalRevokes },
+        await nomeDeQuemMexe(db, ctx),
+      );
 
       return { grants: finalGrants, revokes: finalRevokes };
     });
@@ -2907,7 +2933,10 @@ export class AcademyService {
       });
       if (teams.length !== wanted.length) throw new BadRequestException("Equipa desconhecida ou fora do teu âmbito");
 
-      const current = await db.teamStaff.findMany({ where: { membershipId }, select: { id: true, teamId: true } });
+      const current = await db.teamStaff.findMany({
+        where: { membershipId, leftAt: null },
+        select: { id: true, teamId: true },
+      });
       const has = new Set(current.map((r) => r.teamId));
 
       const toRemove = current
@@ -2919,7 +2948,14 @@ export class AcademyService {
 
       if (toRemove.length) {
         const equipasSaiu = current.filter((r) => toRemove.includes(r.id)).map((r) => r.teamId);
-        await db.teamStaff.deleteMany({ where: { id: { in: toRemove } } });
+        /*
+         * Fecha-se a passagem, não se apaga.
+         *
+         * Quem treinou o Sub-13 esta época treinou-o, e é isso que a ficha dele
+         * e a da equipa passam a mostrar. Apagar a linha era reescrever o
+         * passado para arrumar o presente — a mesma regra dos treinos abaixo.
+         */
+        await db.teamStaff.updateMany({ where: { id: { in: toRemove } }, data: { leftAt: new Date() } });
 
         /*
          * Sair de uma equipa tira o nome dos treinos que ainda não aconteceram.
@@ -2963,7 +2999,7 @@ export class AcademyService {
         const comPrincipal = new Set(
           (
             await db.teamStaff.findMany({
-              where: { teamId: { in: toAdd }, title: { contains: "principal", mode: "insensitive" } },
+              where: { teamId: { in: toAdd }, leftAt: null, title: { contains: "principal", mode: "insensitive" } },
               select: { teamId: true },
             })
           ).map((r) => r.teamId),
@@ -2978,7 +3014,23 @@ export class AcademyService {
         });
       }
 
-      const final = await db.teamStaff.findMany({ where: { membershipId }, select: { teamId: true } });
+      const final = await db.teamStaff.findMany({
+        where: { membershipId, leftAt: null },
+        select: { teamId: true },
+      });
+      // O histórico da ficha: as equipas por nome, que é como se leem.
+      const nomes = await db.team.findMany({
+        where: { id: { in: [...new Set([...current.map((r) => r.teamId), ...final.map((r) => r.teamId)])] } },
+        select: { id: true, name: true },
+      });
+      const nomeDa = (id: string) => nomes.find((t) => t.id === id)?.name ?? id;
+      await registarAlteracoes(
+        db, ctx, "STAFF", membershipId,
+        { equipas: current.map((r) => nomeDa(r.teamId)).sort() },
+        { equipas: final.map((r) => nomeDa(r.teamId)).sort() },
+        await nomeDeQuemMexe(db, ctx),
+      );
+
       return { teamIds: final.map((r) => r.teamId) };
     });
   }
@@ -3027,12 +3079,15 @@ export class AcademyService {
       });
       if (!team) throw new NotFoundException("Equipa não encontrada");
 
-      const linha = await db.teamStaff.findFirst({ where: { teamId, membershipId }, select: { id: true } });
+      const linha = await db.teamStaff.findFirst({
+        where: { teamId, membershipId, leftAt: null },
+        select: { id: true },
+      });
       if (!linha) throw new NotFoundException("Esta pessoa não está atribuída a esta equipa");
 
       if (/principal/i.test(limpo)) {
         await db.teamStaff.updateMany({
-          where: { teamId, id: { not: linha.id }, title: { contains: "principal", mode: "insensitive" } },
+          where: { teamId, leftAt: null, id: { not: linha.id }, title: { contains: "principal", mode: "insensitive" } },
           data: { title: "Treinador adjunto" },
         });
       }
@@ -3042,7 +3097,7 @@ export class AcademyService {
       // A equipa inteira de volta: promover mexeu em mais do que uma linha, e o
       // ecrã tem de poder redesenhar a lista sem adivinhar quem foi despromovido.
       const rows = await db.teamStaff.findMany({
-        where: { teamId },
+        where: { teamId, leftAt: null },
         select: { title: true, membership: { select: { id: true, user: { select: { name: true } } } } },
       });
       return { coaches: rows.map((r) => ({ id: r.membership.id, name: r.membership.user.name, title: r.title })) };

@@ -1,4 +1,5 @@
 import { useSyncExternalStore } from "react";
+import { reduzirFotografia } from "@academia/ui/imagem";
 import { apiDelete, apiGet, apiPost } from "@/lib/http";
 
 /**
@@ -218,32 +219,57 @@ export function checkFoto(file: File): string | null {
   return null;
 }
 
-export async function uploadFotoSocio(file: File): Promise<string | null> {
+/**
+ * Carregar uma fotografia para o armazenamento, do lado do telemóvel.
+ *
+ * Partilhado pelo sócio e pelo atleta: são o mesmo caminho em três passos
+ * (autorizar, carregar directo, confirmar), e a diferença é só o endpoint.
+ *
+ * ## As duas coisas que aqui se fazem pela factura
+ *
+ * **Reduzir antes de subir.** Uma fotografia de câmara são megabytes e aparece
+ * num avatar de 34 pixels. Ver `reduzirFotografia`. Corre antes de pedir a
+ * autorização porque é o tipo do ficheiro que sobe que decide a extensão da
+ * chave.
+ *
+ * **Marcá-la como guardável.** Sem o cabeçalho, o Supabase grava `no-cache` nos
+ * metadados do objecto. Hoje isso não muda o que chega ao browser (a descarga
+ * por endereço assinado vem sem `cache-control` e com `Expires` igual ao prazo
+ * do endereço), mas muda no dia em que uma destas imagens for servida por CDN.
+ * Quem faz a cache funcionar hoje é o endereço ser estável — ver a cache de
+ * assinaturas em `storage.service.ts`.
+ */
+export async function subirFotografia(
+  rota: string,
+  file: File,
+): Promise<string | null> {
   const problema = checkFoto(file);
   if (problema) throw new FotoError(problema);
 
+  const pronta = await reduzirFotografia(file);
+
   const signed = await apiPost<{ url: string; token: string; key: string }>(
-    "/api/socio/foto/upload",
-    {
-      contentType: file.type,
-    },
+    `${rota}/upload`,
+    { contentType: pronta.type },
   );
   const res = await fetch(signed.url, {
     method: "PUT",
     headers: {
-      "Content-Type": file.type,
+      "Content-Type": pronta.type,
+      "cache-control": "max-age=31536000, immutable",
       ...(signed.token ? { Authorization: `Bearer ${signed.token}` } : {}),
     },
-    body: file,
+    body: pronta,
   });
   if (!res.ok) throw new FotoError("Não foi possível carregar a fotografia.");
 
-  const { photoUrl } = await apiPost<{ photoUrl: string | null }>(
-    "/api/socio/foto",
-    { key: signed.key },
-  );
+  const { photoUrl } = await apiPost<{ photoUrl: string | null }>(rota, {
+    key: signed.key,
+  });
   return photoUrl;
 }
+
+export const uploadFotoSocio = (file: File) => subirFotografia("/api/socio/foto", file);
 
 export const removerFotoSocio = () =>
   apiDelete<{ ok: true }>("/api/socio/foto");

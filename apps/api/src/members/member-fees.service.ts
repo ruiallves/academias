@@ -7,6 +7,7 @@ import {
   type OnModuleDestroy,
   type OnModuleInit,
 } from "@nestjs/common";
+import { assertZeroOuCobravel } from "../billing/minimos";
 import { ConfigService } from "@nestjs/config";
 import {
   ChargeStatus,
@@ -223,14 +224,26 @@ export class MemberFeesService implements OnModuleInit, OnModuleDestroy {
       const member = await db.member.findFirst({ where: { id: memberId }, select: { id: true } });
       if (!member) throw new NotFoundException("Sócio não encontrado");
 
-      return db.memberFee.findMany({
+      const quotas = await db.memberFee.findMany({
         where: { memberId },
         orderBy: [{ period: "desc" }],
         select: {
           id: true, period: true, label: true, amountCents: true, dueOn: true,
           status: true, settledAt: true, method: true, notes: true,
+          // O pagamento que a liquidou, para dizer quem pagou e com que
+          // identificador aparece na euPago. Pode cobrir vários meses.
+          paidBy: {
+            where: { payment: { status: "PAID" } },
+            take: 1,
+            select: { payment: { select: { identificador: true, payerName: true } } },
+          },
         },
       });
+      return quotas.map(({ paidBy, ...q }) => ({
+        ...q,
+        paidBy: q.status === "SETTLED" ? (paidBy[0]?.payment.payerName ?? null) : null,
+        paymentId: q.status === "SETTLED" ? (paidBy[0]?.payment.identificador ?? null) : null,
+      }));
     });
   }
 
@@ -323,6 +336,7 @@ export class MemberFeesService implements OnModuleInit, OnModuleDestroy {
     if (periodos.length === 0) throw new BadRequestException("Escolhe pelo menos um mês");
     const invalido = periodos.find((p) => !ehMes(p));
     if (invalido) throw new BadRequestException(`"${invalido}" não é um mês (AAAA-MM)`);
+    assertZeroOuCobravel(input.amountCents, "O valor da quota");
 
     return this.prisma.runAs(ctx.academyId, async (db) => {
       const member = await db.member.findFirst({

@@ -25,6 +25,7 @@ import { MembersController, PublicMembersController } from "./members/members.co
 import { MembersService } from "./members/members.service";
 import { MemberFeesService } from "./members/member-fees.service";
 import { SubscriptionOrdersService } from "./subscription/subscription-orders.service";
+import { SubscriptionNoticesService } from "./subscription/subscription-notices.service";
 import { SubscriptionController } from "./subscription/subscription.controller";
 import { MemberInvitesService } from "./members/member-invites.service";
 import { PollsService } from "./members/polls.service";
@@ -44,6 +45,7 @@ import { AcademyService } from "./academy/academy.service";
 import { CatalogsController } from "./academy/catalogs.controller";
 import { CatalogsService } from "./academy/catalogs.service";
 import { AthletesService } from "./academy/athletes.service";
+import { SeasonsService } from "./academy/seasons.service";
 import { MatchesController } from "./academy/matches.controller";
 import { MatchesService } from "./academy/matches.service";
 import { AnnouncementsController } from "./academy/announcements.controller";
@@ -66,6 +68,9 @@ import { FamilyInvitesService } from "./family/family-invites.service";
 import { FinanceController } from "./finance/finance.controller";
 import { InventoryController } from "./inventory/inventory.controller";
 import { TrainingController } from "./training/training.controller";
+import { HistoricoController, HistoricoService } from "./common/historico.controller";
+import { CyclesController } from "./training/cycles.controller";
+import { CyclesService } from "./training/cycles.service";
 import { FinanceService } from "./finance/finance.service";
 import { InventoryService } from "./inventory/inventory.service";
 import { TrainingService } from "./training/training.service";
@@ -144,6 +149,8 @@ import { LegalAdminService } from "./legal/legal-admin.service";
     AnnouncementsController,
     // Área técnica: planos de treino, exercícios, modelos de jogo, bolas paradas.
     TrainingController,
+    CyclesController,
+    HistoricoController,
     // Academias AI: análises de vídeo — e as rotas dos workers de CV, com guard próprio.
     AiController,
     AiWorkerController,
@@ -197,14 +204,18 @@ import { LegalAdminService } from "./legal/legal-admin.service";
     MembersService,
     MemberFeesService,
     SubscriptionOrdersService,
+    SubscriptionNoticesService,
     MemberInvitesService,
     PollsService,
     ScoutingVideoService,
     ScoutingWorkflowService,
     AthletesService,
+    SeasonsService,
     MatchesService,
     AnnouncementsService,
     TrainingService,
+    CyclesService,
+    HistoricoService,
     AiService,
     AiVideoService,
     AiJobsService,

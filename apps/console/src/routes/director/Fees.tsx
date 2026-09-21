@@ -298,6 +298,12 @@ export default function Fees() {
           <div className="leading-tight">
             <div className="text-ink-2">{f.method ?? "Paga"}</div>
             {f.paidAt && <div className="mt-0.5 text-[11px] text-ink-4">{shortDate(new Date(f.paidAt))}</div>}
+            {f.paidBy && <div className="mt-0.5 text-[11px] text-ink-3">Por {f.paidBy}</div>}
+            {f.paymentId && (
+              <div className="mt-0.5 select-all break-all font-mono text-[10px] text-ink-4" title="Assim aparece no backoffice da euPago">
+                {f.paymentId}
+              </div>
+            )}
           </div>
         ) : f.reference ? (
           <span className="font-mono text-meta text-ink-3">{f.reference}</span>
@@ -1093,8 +1099,8 @@ function AthleteFeesDialog({
       return;
     }
     // 0 € é válido: é o atleta isento, e a mensalidade dele nasce paga.
-    if (!Number.isFinite(cents) || cents < 0 || (cents > 0 && cents < 100)) {
-      setError("Indica 0 €, ou um valor de pelo menos 1 €.");
+    if (!Number.isFinite(cents) || cents < 0 || (cents > 0 && cents < 50)) {
+      setError("Indica 0 €, ou um valor de pelo menos 0,50 €.");
       return;
     }
 

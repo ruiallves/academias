@@ -1,4 +1,5 @@
 import { apiDelete, apiGet, apiPatch, apiPost } from "@/lib/http";
+import { erroAvisado } from "@/lib/avisos";
 
 /**
  * O armazém do clube, do lado do cliente.
@@ -252,7 +253,7 @@ export async function uploadItemImage(itemId: string, file: File): Promise<{ key
   );
 
   if (file.size > autorizacao.maxBytes) {
-    throw new Error(`A imagem tem mais de ${Math.round(autorizacao.maxBytes / 1024 / 1024)} MB`);
+    throw erroAvisado(`A imagem tem mais de ${Math.round(autorizacao.maxBytes / 1024 / 1024)} MB`);
   }
 
   const r = await fetch(autorizacao.url, {
@@ -260,7 +261,8 @@ export async function uploadItemImage(itemId: string, file: File): Promise<{ key
     headers: { "Content-Type": file.type, ...(autorizacao.headers ?? {}) },
     body: file,
   });
-  if (!r.ok) throw new Error("Não foi possível carregar a imagem");
+  // Directo ao armazenamento, fora do cliente HTTP: avisa-se aqui.
+  if (!r.ok) throw erroAvisado("Não foi possível carregar a imagem");
 
   return apiPost<{ key: string; url: string }>(`/api/inventory/items/${itemId}/imagens`, { key: autorizacao.key });
 }

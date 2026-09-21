@@ -7,8 +7,9 @@
  *
  *  1. **Visibilidade** — um exercício PRIVATE é do autor e mais ninguém o vê,
  *     nem o consegue meter num plano por id.
- *  2. **Âmbito** — um treinador com uma equipa só planeia essa; o plano de uma
- *     equipa alheia recusa com 403.
+ *  2. **Âmbito** — um treinador com uma equipa só planeia **e só lê** essa; o
+ *     plano de uma equipa alheia recusa com 403 e nem aparece no resumo. Quem
+ *     vê a academia toda lê tudo.
  *  3. **Permissão** — um encarregado não entra na área de todo.
  *  4. **Autoria** — o exercício de um colega não se edita; duplica-se.
  *  5. **Histórico** — apagar um exercício usado arquiva-o, nunca o apaga.
@@ -193,6 +194,21 @@ if (semAdjunto) {
   if (alheioId) {
     const tenta = await call(adjunto, "PUT", `/api/training/sessions/${alheioId}/plan`, { objective: "ZZ invasão" });
     check("e não planeia a equipa de outro (403)", tenta.status === 403, `${tenta.status}`);
+
+    // O plano é da equipa: nem se lê o de outra, nem ele entra no resumo.
+    await call(director, "PUT", `/api/training/sessions/${alheioId}/plan`, {
+      objective: "ZZ plano alheio",
+      blocks: [{ name: "Bloco", durationMin: 15 }],
+    });
+    const leAlheio = await call(adjunto, "GET", `/api/training/sessions/${alheioId}/plan`);
+    check("nem lê o plano da equipa de outro (403)", leAlheio.status === 403, `${leAlheio.status}`);
+    const resumoAdjunto = await call(adjunto, "GET", "/api/training/plans?from=2026-09-09T00:00:00.000Z&to=2026-09-11T00:00:00.000Z");
+    check("e o resumo dele não traz esse plano", !(resumoAdjunto.body ?? []).some((x) => x.sessionId === alheioId),
+      JSON.stringify((resumoAdjunto.body ?? []).map((x) => x.sessionId)).slice(0, 120));
+    const direcao = await call(director, "GET", `/api/training/sessions/${alheioId}/plan`);
+    check("a direção lê o plano de qualquer equipa", direcao.status === 200, `${direcao.status}`);
+
+    await db.query(`DELETE FROM "SessionBlock" WHERE "sessionId" = $1`, [alheioId]);
     await db.query(`DELETE FROM "TrainingSession" WHERE id = $1`, [alheioId]);
   }
 } else {

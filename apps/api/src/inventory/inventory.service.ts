@@ -249,7 +249,7 @@ export class InventoryService {
           // Por omissão só o que está por devolver: é a pergunta que se faz a
           // esta lista. O histórico completo pede-se com `status=all`.
           ...(params.status === "all" ? {} : { status: (params.status as InventoryAssignmentStatus) ?? "ACTIVE" }),
-          ...(params.teamId ? { athlete: { teams: { some: { teamId: params.teamId } } } } : {}),
+          ...(params.teamId ? { athlete: { teams: { some: { leftAt: null, teamId: params.teamId } } } } : {}),
         },
         orderBy: { assignedAt: "desc" },
         take: 500,
@@ -258,7 +258,7 @@ export class InventoryService {
           athlete: {
             select: {
               id: true, name: true,
-              teams: { select: { team: { select: { id: true, name: true } } } },
+              teams: { where: { leftAt: null }, select: { team: { select: { id: true, name: true } } } },
             },
           },
           variant: { select: { id: true, label: true, item: { select: { id: true, name: true } } } },

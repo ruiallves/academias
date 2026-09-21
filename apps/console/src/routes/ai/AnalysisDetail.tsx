@@ -74,8 +74,8 @@ export default function AnalysisDetail() {
    * tentar — a análise pode estar a meio do processamento e a próxima volta do
    * poll resolve sozinha.
    */
-  const load = useCallback(() => {
-    getAnalysis(id)
+  const load = useCallback((silencioso = false) => {
+    getAnalysis(id, silencioso)
       .then((d) => {
         setDetail(d);
         setFalhou(null);
@@ -119,7 +119,8 @@ export default function AnalysisDetail() {
   const polling = active || propagando || (falhou !== null && !missing);
   useEffect(() => {
     if (!polling) return;
-    timer.current = setInterval(load, 5000);
+    // A sondagem é silenciosa: ver `getAnalysis`.
+    timer.current = setInterval(() => load(true), 5000);
     return () => {
       if (timer.current) clearInterval(timer.current);
     };
@@ -144,7 +145,7 @@ export default function AnalysisDetail() {
     return (
       <Panel>
         <Empty icon={TriangleAlert} title="Não foi possível carregar" detail={falhou}>
-          <button type="button" className="ctl-outline" onClick={load}>
+          <button type="button" className="ctl-outline" onClick={() => load()}>
             Tentar outra vez
           </button>
         </Empty>
@@ -235,7 +236,7 @@ export default function AnalysisDetail() {
             <p className="min-w-0 flex-1 text-meta text-ink-3">
               Os dados podem estar desactualizados — {falhou}
             </p>
-            <button type="button" className="ctl-outline shrink-0" onClick={load}>
+            <button type="button" className="ctl-outline shrink-0" onClick={() => load()}>
               Actualizar
             </button>
           </div>

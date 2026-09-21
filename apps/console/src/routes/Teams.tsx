@@ -1,6 +1,8 @@
 import { Link } from "react-router-dom";
 import { useState } from "react";
 import { PageHeader } from "@/components/Shell";
+import { BotaoExportar } from "@/components/BotaoExportar";
+import { COLUNAS_EXPORT_EQUIPAS } from "@/lib/colunas-export";
 import { NewTeamDialog } from "@/components/NewTeamDialog";
 import { ImportTeamsDialog } from "@/components/ImportTeamsDialog";
 import { Empty, Monogram, Panel } from "@/components/primitives";
@@ -97,6 +99,8 @@ export default function Teams() {
             : `${teams.length} ${teams.length === 1 ? "equipa activa" : "equipas activas"}${currentSeason ? ` na época ${currentSeason}` : ""}`
         }
       >
+        {/* O retrato da época: quem treina o quê, com quantos e a que horas. */}
+        <BotaoExportar linhas={teams} colunas={COLUNAS_EXPORT_EQUIPAS} ficheiro="equipas" folha="Equipas" />
         {can(session, "team:write") && (
           <>
             {/* Importar antes de criar: um clube que está a arrancar traz as

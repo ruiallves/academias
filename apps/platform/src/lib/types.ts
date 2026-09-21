@@ -69,6 +69,13 @@ export type Academy = {
   plan: string | null;
   subscriptionStatus: string | null;
   mrrCents: number;
+  /**
+   * A mensalidade acordada com este clube. `null` é o caso normal: vale o plano.
+   *
+   * Vem na lista porque é daqui que o diálogo do plano abre — sem ela, reabrir a
+   * janela propunha o preço de tabela e a gravação seguinte desfazia o acordo.
+   */
+  priceCents: number | null;
   athletes: number;
   staff: number;
   guardians: number;

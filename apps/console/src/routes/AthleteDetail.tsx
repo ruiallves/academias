@@ -20,6 +20,10 @@ import { AthleteKitPanel } from "@/components/inventory/AthleteKitPanel";
 import { ClinicalPanel } from "@/components/ClinicalPanel";
 import { NutritionPanel } from "@/components/NutritionPanel";
 import { AppDoAtletaPanel } from "@/components/AppDoAtletaPanel";
+import { HistoricoPanel } from "@/components/HistoricoPanel";
+import { PercursoDoAtleta } from "@/components/Percurso";
+import { BotaoExportarPerfil } from "@/components/BotaoExportarPerfil";
+import { exportarFichaDeAtleta } from "@/lib/perfis";
 import {
   ArrowLeft,
   Cake,
@@ -29,6 +33,7 @@ import {
   FileText,
   Footprints,
   Gauge,
+  History,
   Boxes,
   HeartPulse,
   Home,
@@ -75,7 +80,7 @@ import { useSession } from "@/session";
 import type { Athlete } from "@/data/types";
 import { Spinner } from "@/components/Busy";
 
-type Tab = "overview" | "matches" | "attendance" | "development" | "clinical" | "kit" | "fees" | "family";
+type Tab = "overview" | "matches" | "attendance" | "development" | "clinical" | "kit" | "fees" | "family" | "history";
 
 /**
  * A ficha do atleta.
@@ -150,6 +155,14 @@ export default function AthleteDetail() {
     ...(can(session, "inventory:read") ? [{ value: "kit" as const, label: "Artigos", icon: Boxes }] : []),
     ...(can(session, "billing:read") ? [{ value: "fees" as const, label: "Mensalidades", icon: Wallet }] : []),
     ...(can(session, "family:read") ? [{ value: "family" as const, label: "Encarregado", icon: Home }] : []),
+    /*
+      O que já mexeram na ficha.
+
+      Só a quem a pode editar — a mesma porta do servidor. Separador e não painel
+      na visão geral: é uma pergunta que se faz de vez em quando ("quem lhe mudou
+      o peso?") e que não tem de estar à frente de quem só quer ver o atleta.
+    */
+    ...(can(session, "athlete:write") ? [{ value: "history" as const, label: "Histórico", icon: History }] : []),
   ];
 
   return (
@@ -166,13 +179,24 @@ export default function AthleteDetail() {
       */}
       <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
         <Segmented value={tab} onChange={setTab} options={tabs} />
-        {!editing && can(session, "athlete:write") && (
+        {!editing && (
           <div className="flex shrink-0 items-center gap-1.5">
-            <button type="button" className="ctl-ghost" onClick={() => setEditing(true)}>
-              <Pencil className="size-3.5" strokeWidth={1.75} />
-              Editar
-            </button>
-            <AthleteStatusMenu athlete={athlete} />
+            {/*
+              Exportar não pede permissão de escrita: quem abre a ficha já leu
+              tudo o que sai no papel, e é quem tem de responder à federação ou à
+              família que pede o processo. O que cada um leva é o que vê — a
+              decisão está em `lib/perfis.ts`.
+            */}
+            <BotaoExportarPerfil exportar={() => exportarFichaDeAtleta(athlete, session, matches)} />
+            {can(session, "athlete:write") && (
+              <>
+                <button type="button" className="ctl-ghost" onClick={() => setEditing(true)}>
+                  <Pencil className="size-3.5" strokeWidth={1.75} />
+                  Editar
+                </button>
+                <AthleteStatusMenu athlete={athlete} />
+              </>
+            )}
           </div>
         )}
       </div>
@@ -201,6 +225,13 @@ export default function AthleteDetail() {
       {tab === "kit" && <AthleteKitPanel athleteId={athlete.id} athleteName={athlete.name} />}
       {tab === "fees" && <FeesTab athlete={athlete} />}
       {tab === "family" && <Family athlete={athlete} />}
+      {tab === "history" && (
+        <div className="space-y-3">
+          {/* Por onde passou, antes do que se mudou na ficha. */}
+          <PercursoDoAtleta athleteId={athlete.id} />
+          <HistoricoPanel tipo="atletas" id={athlete.id} />
+        </div>
+      )}
       </>
       )}
     </>
@@ -1308,8 +1339,8 @@ function FeeEditor({
   async function save() {
     const cents = Math.round(Number(value.trim().replace(",", ".")) * 100);
     // 0 € é válido: é o atleta isento, e a mensalidade dele nasce paga.
-    if (!Number.isFinite(cents) || cents < 0 || (cents > 0 && cents < 100)) {
-      setError("Indica 0 €, ou um valor de pelo menos 1 €.");
+    if (!Number.isFinite(cents) || cents < 0 || (cents > 0 && cents < 50)) {
+      setError("Indica 0 €, ou um valor de pelo menos 0,50 €.");
       return;
     }
     setBusy(true);

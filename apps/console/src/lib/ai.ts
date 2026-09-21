@@ -1,4 +1,4 @@
-import { apiDelete, apiGet, apiPatch, apiPost } from "@/lib/http";
+import { apiDelete, apiGet, apiGetSilencioso, apiPatch, apiPost } from "@/lib/http";
 
 /**
  * A fronteira de dados da Academias AI.
@@ -143,7 +143,13 @@ export type AiDashboard = {
 
 export const aiDashboard = () => apiGet<AiDashboard>("/api/ai/dashboard");
 export const listAnalyses = () => apiGet<AnalysisRow[]>("/api/ai/analyses");
-export const getAnalysis = (id: string) => apiGet<AnalysisDetail>(`/api/ai/analyses/${id}`);
+/**
+ * A análise. `silencioso` para a sondagem — que corre de cinco em cinco
+ * segundos enquanto a máquina trabalha, e que não pode encher o canto de avisos
+ * por causa de uma rede fraca. O carregamento inicial avisa, como tudo o resto.
+ */
+export const getAnalysis = (id: string, silencioso = false) =>
+  (silencioso ? apiGetSilencioso : apiGet)<AnalysisDetail>(`/api/ai/analyses/${id}`);
 
 export const createAnalysis = (body: {
   teamId: string;
@@ -191,7 +197,9 @@ export type CropsIndex = {
   tracks: Record<string, CropRef[]>;
   expiresIn: number;
 };
-export const analysisCrops = (analysisId: string) => apiGet<CropsIndex>(`/api/ai/analyses/${analysisId}/crops`);
+export const analysisCrops = (analysisId: string) =>
+  // De fundo, e sem consequência quando falha: o ecrã fica sem os recortes.
+  apiGetSilencioso<CropsIndex>(`/api/ai/analyses/${analysisId}/crops`);
 
 /* -------------------------------------------------------------------------- */
 /* Identidades — as pessoas, por oposição aos tracks                           */

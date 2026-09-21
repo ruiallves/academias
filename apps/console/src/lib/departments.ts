@@ -1,5 +1,5 @@
 import { useSyncExternalStore } from "react";
-import { apiDelete, apiGet, apiPatch, apiPost } from "@/lib/http";
+import { apiDelete, apiGetSilencioso, apiPatch, apiPost } from "@/lib/http";
 import type { Permission, Role } from "@/lib/permissions";
 
 /**
@@ -64,7 +64,9 @@ export function useDepartments(): State {
 /** Lê do servidor. A primeira leitura semeia os quatro de origem, lá do lado. */
 export async function loadDepartments(): Promise<void> {
   try {
-    const departments = await apiGet<Department[]>("/api/departments");
+    // Silencioso: pedido de fundo, como os cargos. A falha fica em
+    // `state.error`, que as Definições mostram no sítio delas.
+    const departments = await apiGetSilencioso<Department[]>("/api/departments");
     state = { departments, loaded: true, error: null };
   } catch (e) {
     state = {

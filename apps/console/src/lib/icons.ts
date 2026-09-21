@@ -110,6 +110,8 @@ export {
   Boxes,
   PackageOpen,
   Undo2,
+  /* O histórico de uma ficha: o relógio com a seta para trás. */
+  History,
   /* O manípulo de arrasto de uma lista: três linhas, a convenção de sempre. */
   Menu as DragHandle,
   type LucideIcon,

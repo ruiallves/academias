@@ -502,6 +502,15 @@ function MethodSheet({
    */
   const varios = charges.length > 1;
 
+  /*
+   * O mínimo de cada método na euPago: MB Way desde 0,50 €, Multibanco desde
+   * 1 €. Cada mês é um pagamento, por isso conta o mês mais barato. O servidor
+   * recusa na mesma (`minimos.ts`); aqui é para não oferecer o que falha.
+   */
+  const MINIMO: Partial<Record<string, number>> = { MBWAY: 50, MULTIBANCO: 100 };
+  const maisBarato = Math.min(...charges.map((c) => c.amountCents));
+  const abaixoDoMinimo = (key: string) => (MINIMO[key] ?? 0) > maisBarato;
+
   /**
    * Uma mensalidade, um pagamento.
    *
@@ -671,14 +680,17 @@ function MethodSheet({
           )}
           <ul className="overflow-hidden rounded-[var(--radius-lg)] bg-surface shadow-[var(--shadow-soft)]">
             {METODOS.map((m) => {
-              const bloqueado = m.kind === "redirect" && varios;
+              const pequeno = abaixoDoMinimo(m.key);
+              const bloqueado = (m.kind === "redirect" && varios) || pequeno;
               const Icon = m.icon;
               const hint =
                 m.key === "DIRECT_DEBIT" && mandate
                   ? `Da conta ···${mandate.ibanTail}`
-                  : bloqueado
-                    ? "Só um mês de cada vez"
-                    : m.hint;
+                  : pequeno
+                    ? `Só a partir de ${money(MINIMO[m.key] ?? 0)}`
+                    : bloqueado
+                      ? "Só um mês de cada vez"
+                      : m.hint;
               return (
                 <li key={m.key} className="border-b border-line last:border-0">
                   <button

@@ -331,7 +331,7 @@ export class PhotosService {
     const scope = teamScopeFilter(ctx);
     const found = await this.prisma.runAs(ctx.academyId, (db) =>
       db.athlete.findFirst({
-        where: { id: athleteId, ...(scope ? { teams: { some: { teamId: scope } } } : {}) },
+        where: { id: athleteId, ...(scope ? { teams: { some: { leftAt: null, teamId: scope } } } : {}) },
         select: { id: true },
       }),
     );

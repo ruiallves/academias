@@ -163,7 +163,7 @@ export class AthleteInvitesService {
       const [athlete, academy] = await Promise.all([
         db.athlete.findFirst({
           where: { id: alvo.athleteId },
-          select: { name: true, email: true, accountMembershipId: true, teams: { select: { team: { select: { name: true } } }, take: 1 } },
+          select: { name: true, email: true, accountMembershipId: true, teams: { where: { leftAt: null }, select: { team: { select: { name: true } } }, take: 1 } },
         }),
         db.academy.findFirst({
           where: { id: alvo.academyId },

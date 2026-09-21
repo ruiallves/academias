@@ -240,7 +240,7 @@ export const ROLE_PERMISSIONS: Record<Role, Permission[]> = {
     "athlete:write", "team:write", "calendar:write", "attendance:write",
     "comms:write", "evaluation:write", "report:write",
     // A área técnica é o trabalho dele: modelos de jogo do clube, biblioteca
-    // global, planos de qualquer escalão.
+    // global, e o plano e a periodização **das equipas dele** (ver `lerPlano`).
     "training:write",
   ],
 
@@ -257,10 +257,15 @@ export const ROLE_PERMISSIONS: Record<Role, Permission[]> = {
     // âmbito (`teamScopeFilter`) impede-o de criar algo em nome de um escalão
     // que não é dele, e a interface nem lhe oferece "toda a academia" (isAcademyWide).
     "calendar:write",
-    // Inscreve e importa atletas — por omissão, e só nas suas equipas. É o
-    // treinador que conhece o plantel dele; obrigar tudo a passar pela direção
-    // era um estrangulamento no arranque de uma época. A direção pode retirar-lho
-    // a um treinador em concreto (`Membership.revokes`), na ficha de staff.
+    // Inscreve e importa atletas — só nas suas equipas. É o treinador que conhece
+    // o plantel dele; obrigar tudo a passar pela direção era um estrangulamento
+    // no arranque de uma época. A direção pode retirar-lho a um treinador em
+    // concreto (`Membership.revokes`), na ficha de staff.
+    //
+    // Atenção ao efeito na **leitura**: com esta permissão a lista de atletas
+    // passa a ser a do clube (ver `athleteTeamScopeWhere`), para não se criarem
+    // duplicados de quem já lá está. Quem lhe retirar isto volta a ver só as
+    // suas equipas, também a ler.
     "athlete:write",
     // Comunica com os pais das suas equipas — um treino que muda de hora, um aviso
     // de equipamento. Só os pais: o público "Geral"/"Treinadores" é da direção, e o
@@ -662,8 +667,8 @@ export function athleteTeamScopeWhere(ctx: RequestContext) {
   const semEquipa = can(ctx, "team:write") || athleteScopeFilter(ctx) !== undefined;
   return {
     OR: [
-      { teams: { some: { teamId: teamScope } } },
-      ...(semEquipa ? [{ teams: { none: {} } }] : []),
+      { teams: { some: { leftAt: null, teamId: teamScope } } },
+      ...(semEquipa ? [{ teams: { none: { leftAt: null } } }] : []),
     ],
   };
 }

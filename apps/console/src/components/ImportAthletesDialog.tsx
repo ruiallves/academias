@@ -15,10 +15,13 @@ import {
   posicoesNovas,
   type NewPositions,
   type NewTeamPlan,
+  type ParsedRow,
   type ParseResult,
   type RowError,
 } from "@/lib/import";
 import { Dialog } from "./Dialog";
+import { ConfirmarSobrescrita, EnviarConvites } from "./ConfirmarSobrescrita";
+import type { RespostaComExistentes } from "@/lib/importacao";
 import { cx, SelectField } from "./primitives";
 
 /**
@@ -69,8 +72,34 @@ export function ImportAthletesDialog({ onClose }: { onClose: () => void }) {
   const [parsed, setParsed] = useState<ParseResult | null>(null);
   const [parsing, setParsing] = useState(false);
   const [importing, setImporting] = useState(false);
-  const [result, setResult] = useState<{ created: number; errors: RowError[]; semPosicao: number } | null>(null);
+  const [result, setResult] = useState<{ created: number; updated: number; errors: RowError[]; semPosicao: number } | null>(null);
   const [error, setError] = useState<string | null>(null);
+  /*
+   * Os convites saem só se alguém os pedir.
+   *
+   * Nasce desligado. Saíam sempre, e um plantel carregado por Excel mandava
+   * dezenas de emails a famílias que não estavam à espera de nenhum.
+   */
+  const [convidar, setConvidar] = useState(false);
+  /** Quem o NIF reconheceu, quando o servidor parou para perguntar. */
+  const [existentes, setExistentes] = useState<RespostaComExistentes | null>(null);
+  /*
+   * O que a primeira tentativa já resolveu — e que a segunda não pode refazer.
+   *
+   * Importar passou a poder acontecer duas vezes: a primeira descobre quem já
+   * cá está e pára, a segunda confirma. As **equipas e as posições em falta**,
+   * porém, são criadas antes de os atletas seguirem, e criá-las outra vez dava
+   * "já existe uma equipa com esse nome" — as linhas dela perdiam o id e eram
+   * contadas como recusadas, mesmo com a equipa criada e à espera delas.
+   *
+   * Por isso a primeira passagem guarda aqui as linhas já com os ids, e a
+   * segunda usa-as tal e qual. Limpa-se ao escolher outro ficheiro.
+   */
+  const [preparado, setPreparado] = useState<{
+    rows: ParsedRow[];
+    teamErrors: { name: string; error: string }[];
+    semPosicao: number;
+  } | null>(null);
 
   /** Criar as equipas em falta, e o que cada uma vai ser. Só existe se houver. */
   const [createNew, setCreateNew] = useState(true);
@@ -125,6 +154,10 @@ export function ImportAthletesDialog({ onClose }: { onClose: () => void }) {
 
   async function onFile(file: File) {
     setError(null);
+    // Uma folha nova são perguntas novas: o que se respondeu sobre a anterior
+    // não pode ficar respondido para esta.
+    setExistentes(null);
+    setPreparado(null);
     setParsing(true);
     setFileName(file.name);
     try {
@@ -140,63 +173,94 @@ export function ImportAthletesDialog({ onClose }: { onClose: () => void }) {
     }
   }
 
-  async function confirm() {
+  /**
+   * Envia as linhas, e volta a enviá-las com a resposta que o servidor pediu.
+   *
+   * O servidor pára antes de escrever quando reconhece atletas pelo NIF, e
+   * devolve quem são sem mexer em nada. Repetir o pedido com `sobrescrever`
+   * ligado é o "sim" a essa pergunta. As equipas e as posições que faltam são
+   * criadas **antes**, e só na primeira passagem — ver `preparado`.
+   */
+  async function confirm(sobrescrever = false) {
     if (!parsed) return;
     setImporting(true);
     setError(null);
     try {
-      let rows = parsed.valid;
-      let teamErrors: { name: string; error: string }[] = [];
+      let rows = preparado?.rows ?? parsed.valid;
+      let teamErrors = preparado?.teamErrors ?? [];
+      let semPosicaoN = preparado?.semPosicao ?? 0;
 
       /*
-       * As equipas primeiro, os atletas depois.
-       *
-       * Só assim há um `teamId` para pôr nas linhas. Uma equipa que falhe não
-       * derruba a importação: as linhas dela ficam sem id, são contadas como
-       * recusadas no fim, e todos os outros atletas entram na mesma.
+       * As equipas e as posições, só na primeira passagem. Ver `preparado`.
        */
-      if (createNew && plans.length) {
-        const { ids, failed } = await createTeams(plans, season);
-        teamErrors = failed;
-        rows = rows.map((r) => (r.teamId ? r : { ...r, teamId: ids.get(r.teamName.trim().toLowerCase()) }));
-      }
-
-      /*
-       * As posições, antes dos atletas e depois das equipas.
-       *
-       * Depois das equipas porque uma posição pode pertencer à modalidade de uma
-       * equipa acabada de criar; antes dos atletas porque o servidor recusa uma
-       * posição que a modalidade não conhece.
-       *
-       * Recusar criá-las **não** deixa o atleta de fora, ao contrário do que
-       * acontece com a equipa: a equipa é obrigatória, a posição não. A linha
-       * entra sem posição, e fica registado que assim foi.
-       */
-      let semPosicao: typeof rows = [];
-      if (novasPosicoes.length) {
-        const desconhecidas = new Set(
-          novasPosicoes.flatMap((n) => n.names.map((x) => x.toLowerCase())),
-        );
-
-        if (criarPosicoes && podeCriarPosicoes) {
-          const { failed } = await createPositions(novasPosicoes);
-          // O que não foi criado continua desconhecido: essas linhas seguem sem posição.
-          const falharam = new Set(
-            novasPosicoes
-              .filter((n) => failed.some((f) => f.sportName === n.sportName))
-              .flatMap((n) => n.names.map((x) => x.toLowerCase())),
-          );
-          semPosicao = rows.filter((r) => r.position && falharam.has(r.position.toLowerCase()));
-        } else {
-          semPosicao = rows.filter((r) => r.position && desconhecidas.has(r.position.toLowerCase()));
+      if (!preparado) {
+        /*
+         * As equipas primeiro, os atletas depois.
+         *
+         * Só assim há um `teamId` para pôr nas linhas. Uma equipa que falhe não
+         * derruba a importação: as linhas dela ficam sem id, são contadas como
+         * recusadas no fim, e todos os outros atletas entram na mesma.
+         */
+        if (createNew && plans.length) {
+          const { ids, failed } = await createTeams(plans, season);
+          teamErrors = failed;
+          rows = rows.map((r) => (r.teamId ? r : { ...r, teamId: ids.get(r.teamName.trim().toLowerCase()) }));
         }
 
-        const limpar = new Set(semPosicao.map((r) => r.line));
-        rows = rows.map((r) => (limpar.has(r.line) ? { ...r, position: undefined } : r));
+        /*
+         * As posições, antes dos atletas e depois das equipas.
+         *
+         * Depois das equipas porque uma posição pode pertencer à modalidade de uma
+         * equipa acabada de criar; antes dos atletas porque o servidor recusa uma
+         * posição que a modalidade não conhece.
+         *
+         * Recusar criá-las **não** deixa o atleta de fora, ao contrário do que
+         * acontece com a equipa: a equipa é obrigatória, a posição não. A linha
+         * entra sem posição, e fica registado que assim foi.
+         */
+        let semPosicao: typeof rows = [];
+        if (novasPosicoes.length) {
+          const desconhecidas = new Set(
+            novasPosicoes.flatMap((n) => n.names.map((x) => x.toLowerCase())),
+          );
+
+          if (criarPosicoes && podeCriarPosicoes) {
+            const { failed } = await createPositions(novasPosicoes);
+            // O que não foi criado continua desconhecido: essas linhas seguem sem posição.
+            const falharam = new Set(
+              novasPosicoes
+                .filter((n) => failed.some((f) => f.sportName === n.sportName))
+                .flatMap((n) => n.names.map((x) => x.toLowerCase())),
+            );
+            semPosicao = rows.filter((r) => r.position && falharam.has(r.position.toLowerCase()));
+          } else {
+            semPosicao = rows.filter((r) => r.position && desconhecidas.has(r.position.toLowerCase()));
+          }
+
+          const limpar = new Set(semPosicao.map((r) => r.line));
+          rows = rows.map((r) => (limpar.has(r.line) ? { ...r, position: undefined } : r));
+          semPosicaoN = semPosicao.length;
+        }
+
+        setPreparado({ rows, teamErrors, semPosicao: semPosicaoN });
       }
 
       const semEquipa = rows.filter((r) => !r.teamId);
-      const res = await importAthletes(rows);
+      const res = await importAthletes(rows, {
+        sobrescrever: sobrescrever || existentes !== null,
+        enviarConvites: convidar,
+      });
+
+      /*
+       * Atletas que já cá estão: a pergunta, antes de qualquer escrita de
+       * fichas. Fica-se na revisão com o painel aberto — o ecrã "concluído"
+       * seria mentira, porque ainda não se importou nada.
+       */
+      if (res.existingTotal > 0) {
+        setExistentes({ existing: res.existing, existingTotal: res.existingTotal });
+        return;
+      }
+      setExistentes(null);
 
       // O servidor pode rejeitar linhas que o cliente deixou passar (uma corrida,
       // um duplicado criado entretanto). Junta-se o que ele reportou ao que já se
@@ -204,6 +268,7 @@ export function ImportAthletesDialog({ onClose }: { onClose: () => void }) {
       const porque = new Map(teamErrors.map((t) => [t.name.trim().toLowerCase(), t.error]));
       setResult({
         created: res.created,
+        updated: res.updated,
         errors: [
           ...res.errors,
           ...semEquipa.map((r) => {
@@ -220,7 +285,7 @@ export function ImportAthletesDialog({ onClose }: { onClose: () => void }) {
         // Quem entrou, mas sem a posição que vinha no ficheiro. Não é um erro —
         // o atleta está lá — mas é uma coisa que a pessoa quer saber, senão
         // descobre-a atleta a atleta daqui a um mês.
-        semPosicao: semPosicao.length,
+        semPosicao: semPosicaoN,
       });
       setPhase("done");
       await reloadAcademy();
@@ -244,7 +309,15 @@ export function ImportAthletesDialog({ onClose }: { onClose: () => void }) {
       onClose={onClose}
       width={620}
       footer={
-        <Footer phase={phase} parsed={parsed} importable={importable} importing={importing} onClose={onClose} onConfirm={confirm} />
+        <Footer
+          phase={phase}
+          parsed={parsed}
+          importable={importable}
+          importing={importing}
+          onClose={onClose}
+          onConfirm={() => void confirm()}
+          porSubstituir={existentes?.existingTotal ?? 0}
+        />
       }
     >
       <div className="p-5">
@@ -263,6 +336,9 @@ export function ImportAthletesDialog({ onClose }: { onClose: () => void }) {
             criarPosicoes={criarPosicoes}
             setCriarPosicoes={setCriarPosicoes}
             podeCriarPosicoes={podeCriarPosicoes}
+            convidar={convidar}
+            setConvidar={setConvidar}
+            existentes={existentes}
           />
         )}
         {phase === "done" && result && <Done result={result} />}
@@ -298,8 +374,8 @@ function Pick({
           <div className="text-body font-medium text-ink">Começa pelo modelo</div>
           <p className="mt-0.5 text-meta leading-relaxed text-ink-3">
             Tem as colunas certas, uma linha de exemplo e a lista das tuas equipas. Preenche-o e volta aqui. A coluna
-            <strong className="font-medium text-ink-2"> Email</strong> é opcional — cada atleta com email recebe, ao importar, o
-            convite para criar conta e instalar a app do clube.
+            <strong className="font-medium text-ink-2"> Email</strong> é opcional e serve para convidar o atleta para a
+            app, se e quando quiseres.
           </p>
           <button type="button" onClick={() => void downloadTemplate()} className="ctl-outline mt-2.5">
             <Download className="size-3.5" strokeWidth={1.75} />
@@ -367,6 +443,9 @@ function Pick({
 /* -------------------------------------------------------------------------- */
 
 function Review({
+  convidar,
+  setConvidar,
+  existentes,
   parsed,
   plans,
   setPlans,
@@ -392,6 +471,10 @@ function Review({
   criarPosicoes: boolean;
   setCriarPosicoes: (v: boolean) => void;
   podeCriarPosicoes: boolean;
+  convidar: boolean;
+  setConvidar: (v: boolean) => void;
+  /** Quem o NIF reconheceu. Enquanto existir, o botão actualiza em vez de criar. */
+  existentes: RespostaComExistentes | null;
 }) {
   if (parsed.missingColumns.length) {
     return (
@@ -597,6 +680,24 @@ function Review({
         </div>
       )}
 
+      {existentes && (
+        <ConfirmarSobrescrita
+          linhas={existentes.existing}
+          total={existentes.existingTotal}
+          substantivo="atleta"
+          nota="A equipa da folha junta-se às que o atleta já tem, em vez de as substituir."
+        />
+      )}
+
+      {valid.length > 0 && (
+        <EnviarConvites
+          ligado={convidar}
+          onChange={setConvidar}
+          substantivo="atleta"
+          semEmail={valid.filter((r) => !r.email).length}
+        />
+      )}
+
       {valid.length === 0 && errors.length === 0 && (
         <p className="rounded-[var(--radius-control)] bg-sunken px-3 py-2.5 text-meta text-ink-2">
           O ficheiro está vazio — não há linhas para importar.
@@ -608,7 +709,7 @@ function Review({
 
 /* -------------------------------------------------------------------------- */
 
-function Done({ result }: { result: { created: number; errors: RowError[]; semPosicao: number } }) {
+function Done({ result }: { result: { created: number; updated: number; errors: RowError[]; semPosicao: number } }) {
   return (
     <div className="space-y-3">
       <div className="flex items-center gap-3 rounded-[var(--radius-panel)] border border-line bg-[#e6f2e9]/40 p-4">
@@ -618,6 +719,8 @@ function Done({ result }: { result: { created: number; errors: RowError[]; semPo
         <div>
           <div className="text-body font-medium text-ink">
             {result.created} {result.created === 1 ? "atleta inscrito" : "atletas inscritos"}
+            {result.updated > 0 &&
+              `, ${result.updated} ${result.updated === 1 ? "ficha actualizada" : "fichas actualizadas"}`}
           </div>
           <div className="text-meta text-ink-3">Já aparecem na lista e nos plantéis das equipas.</div>
         </div>
@@ -662,6 +765,7 @@ function Footer({
   importing,
   onClose,
   onConfirm,
+  porSubstituir,
 }: {
   phase: Phase;
   parsed: ParseResult | null;
@@ -669,6 +773,8 @@ function Footer({
   importing: boolean;
   onClose: () => void;
   onConfirm: () => void;
+  /** Quantos atletas da folha já cá estão. Muda o que o botão promete fazer. */
+  porSubstituir: number;
 }) {
   if (phase === "done") {
     return (
@@ -687,7 +793,11 @@ function Footer({
       </button>
       {phase === "review" && (
         <button type="button" onClick={onConfirm} disabled={!canImport || importing} className="ctl-primary">
-          {importing ? "A importar…" : `Importar ${importable}`}
+          {importing
+            ? "A importar…"
+            : porSubstituir > 0
+              ? `Actualizar ${porSubstituir === 1 ? "1 ficha" : `${porSubstituir} fichas`} e importar`
+              : `Importar ${importable}`}
         </button>
       )}
     </>

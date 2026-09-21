@@ -3,6 +3,7 @@ import {
   IsEmail,
   ArrayMaxSize,
   IsArray,
+  IsBoolean,
   IsInt,
   IsISO8601,
   IsOptional,
@@ -201,6 +202,24 @@ export class ImportAthletesDto {
   @ValidateNested({ each: true })
   @Type(() => AthleteInputDto)
   rows!: AthleteInputDto[];
+
+  /**
+   * Actualizar a ficha de quem já cá está, em vez de recusar a linha.
+   *
+   * Sem isto, a importação **pára** e devolve a lista de quem foi reconhecido
+   * pelo NIF, com o que ia mudar em cada um. Substituir dados de atletas —
+   * que são menores — não é decisão que o servidor tome por ver uma folha.
+   */
+  @IsOptional() @IsBoolean() sobrescrever?: boolean;
+
+  /**
+   * Mandar a cada atleta com email o convite para a app.
+   *
+   * **Desligado por omissão.** Um plantel importado são dezenas de emails a
+   * sair em nome do clube num só clique, e quem está a carregar a folha quer
+   * primeiro os dados lá dentro. A lista de atletas manda-os depois.
+   */
+  @IsOptional() @IsBoolean() enviarConvites?: boolean;
 }
 
 /**

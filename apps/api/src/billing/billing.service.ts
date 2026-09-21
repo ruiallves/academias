@@ -2,11 +2,13 @@ import { inicioDaEpoca } from "../members/member-fees.service";
 import { randomUUID } from "node:crypto";
 import { BadRequestException, ForbiddenException, Injectable, Logger, NotFoundException, type OnModuleDestroy, type OnModuleInit } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
-import { PaymentMethod, PaymentStatus, ChargeStatus, NotificationType, type Payment, type Prisma } from "@prisma/client";
+import { PaymentMethod, PaymentStatus, ChargeKind, ChargeStatus, NotificationType, type Payment, type Prisma } from "@prisma/client";
 import { PrismaService, type ScopedClient } from "../prisma/prisma.service";
 import { razaoParaNaoApagar } from "../members/member-fees.service";
 import { NotificationsService } from "../notifications/notifications.service";
 import { EupagoClient, type ChargeResult, type RedirectUrls } from "./eupago.client";
+import { montarIdentificador } from "./identificador";
+import { assertMinimoDoMetodo, MINIMO_COBRAVEL } from "./minimos";
 import { athleteScopeFilter, athleteTeamScopeWhere, can, teamScopeFilter, type RequestContext } from "../common/permissions";
 
 /**
@@ -523,7 +525,8 @@ export class BillingService implements OnModuleInit, OnModuleDestroy {
     }
 
     // 4. A lista de pagos da API de gestão — a única resposta possível para MB Way.
-    const pago = pagos?.get(payment.id);
+    // Pelo identificador que foi para a euPago: o legível, ou o id nos antigos.
+    const pago = (payment.identificador ? pagos?.get(payment.identificador) : undefined) ?? pagos?.get(payment.id);
     if (pago) {
       await this.confirmPayment(
         [payment.id],
@@ -580,7 +583,18 @@ export class BillingService implements OnModuleInit, OnModuleDestroy {
    */
   async createExtraCharge(
     ctx: RequestContext,
-    input: { athleteId: string; title: string; amountCents: number; dueDate: string; categoryId?: string; notes?: string },
+    input: {
+      /** Um atleta (o gesto de sempre), vários, uma equipa inteira, ou toda a academia. */
+      athleteId?: string;
+      athleteIds?: string[];
+      teamId?: string;
+      todos?: boolean;
+      title: string;
+      amountCents: number;
+      dueDate: string;
+      categoryId?: string;
+      notes?: string;
+    },
   ) {
     if (!can(ctx, "billing:write")) throw new ForbiddenException("Sem permissão para cobrar");
 
@@ -599,8 +613,30 @@ export class BillingService implements OnModuleInit, OnModuleDestroy {
        * estreito de cobrar a um atleta que não é dele. Para a direcção devolve
        * `undefined` e a condição desaparece, como em todo o lado.
        */
-      const athlete = await db.athlete.findFirst({
-        where: { id: input.athleteId, ...(athleteScopeFilter(ctx) ? { id: athleteScopeFilter(ctx) } : {}) },
+      const pedidos = [...new Set([...(input.athleteIds ?? []), ...(input.athleteId ? [input.athleteId] : [])])];
+      if (!input.todos && !input.teamId && pedidos.length === 0) {
+        throw new BadRequestException("Falta dizer a quem se cobra");
+      }
+
+      /*
+       * Quem vai ser cobrado.
+       *
+       * Três formas de dizer a mesma coisa, e é o servidor que as resolve:
+       * atletas escolhidos à mão, uma equipa, ou a academia toda. A equipa e o
+       * "todos" resolvem-se **aqui** e não na consola de propósito: uma lista
+       * de ids vinda do cliente envelhece entre abrir o diálogo e carregar no
+       * botão (alguém foi inscrito, alguém saiu), e o âmbito de quem cobra tem
+       * de valer na mesma. Só atletas **activos**: cobrar o equipamento a quem
+       * já saiu do clube é criar uma dívida que ninguém vai pagar.
+       */
+      const athletes = await db.athlete.findMany({
+        where: {
+          ...(athleteScopeFilter(ctx) ? { id: athleteScopeFilter(ctx) } : {}),
+          ...(pedidos.length > 0 ? { id: { in: pedidos } } : {}),
+          ...(input.teamId ? { teams: { some: { leftAt: null, teamId: input.teamId } } } : {}),
+          ...(pedidos.length > 0 ? {} : { status: "ACTIVE" }),
+        },
+        orderBy: { name: "asc" },
         select: {
           id: true,
           name: true,
@@ -609,7 +645,10 @@ export class BillingService implements OnModuleInit, OnModuleDestroy {
           },
         },
       });
-      if (!athlete) throw new NotFoundException("Atleta não encontrado");
+      if (athletes.length === 0) throw new NotFoundException("Nenhum atleta para cobrar");
+      if (pedidos.length > 0 && athletes.length !== pedidos.length) {
+        throw new NotFoundException("Atleta não encontrado");
+      }
 
       /*
        * O mês do vencimento tem de ser um mês cobrado.
@@ -634,51 +673,71 @@ export class BillingService implements OnModuleInit, OnModuleDestroy {
         if (!categoria) throw new BadRequestException("Categoria de receita desconhecida");
       }
 
-      const charge = await db.charge.create({
-        data: {
-          academyId: ctx.academyId,
-          athleteId: athlete.id,
-          kind: "EXTRA",
-          /*
-           * O período é o mês do vencimento, e não o mês de hoje: é assim que a
-           * cobrança aparece na lista do mês em que tem de ser paga, ao lado da
-           * mensalidade que a acompanha.
-           *
-           * `slot` único é o que deixa haver duas no mesmo mês — ver a nota da
-           * coluna no `schema.prisma`.
-           */
-          period: `${dueDate.getUTCFullYear()}-${String(dueDate.getUTCMonth() + 1).padStart(2, "0")}`,
-          slot: randomUUID(),
-          title,
-          categoryId: input.categoryId || null,
-          notes: input.notes?.trim() || null,
-          amountCents: input.amountCents,
-          dueDate,
-        },
-        select: { id: true, period: true, title: true, amountCents: true, dueDate: true },
-      });
+      /*
+       * O período é o mês do vencimento, e não o mês de hoje: é assim que a
+       * cobrança aparece na lista do mês em que tem de ser paga, ao lado da
+       * mensalidade que a acompanha.
+       *
+       * `slot` único é o que deixa haver duas no mesmo mês — ver a nota da
+       * coluna no `schema.prisma`.
+       */
+      const period = `${dueDate.getUTCFullYear()}-${String(dueDate.getUTCMonth() + 1).padStart(2, "0")}`;
+      const criadas: { id: string; athleteId: string; name: string }[] = [];
 
-      /* Todos os encarregados activos — ver a nota em `sendOverdueReminders`. */
-      const destinatarios = athlete.guardians.filter((g) => g.membership.isActive);
-
-      for (const g of destinatarios) {
-        await this.notifications.enqueue(
-          {
+      for (const athlete of athletes) {
+        const charge = await db.charge.create({
+          data: {
             academyId: ctx.academyId,
-            userId: g.membership.userId,
-            type: NotificationType.PAYMENT_DUE,
+            athleteId: athlete.id,
+            kind: "EXTRA",
+            period,
+            slot: randomUUID(),
             title,
-            body: `${athlete.name} · ${(charge.amountCents / 100).toFixed(2)} € até ${dateLabelPt(charge.dueDate)}.${
-              input.notes?.trim() ? ` ${input.notes.trim()}` : ""
-            }`,
-            payload: { route: "/pagamentos", chargeId: charge.id },
+            categoryId: input.categoryId || null,
+            notes: input.notes?.trim() || null,
+            amountCents: input.amountCents,
+            dueDate,
           },
-          db,
-        );
+          select: { id: true },
+        });
+        criadas.push({ id: charge.id, athleteId: athlete.id, name: athlete.name });
+
+        /* Todos os encarregados activos — ver a nota em `sendOverdueReminders`. */
+        for (const g of athlete.guardians.filter((x) => x.membership.isActive)) {
+          await this.notifications.enqueue(
+            {
+              academyId: ctx.academyId,
+              userId: g.membership.userId,
+              type: NotificationType.PAYMENT_DUE,
+              title,
+              body: `${athlete.name} · ${(input.amountCents / 100).toFixed(2)} € até ${dateLabelPt(dueDate)}.${
+                input.notes?.trim() ? ` ${input.notes.trim()}` : ""
+              }`,
+              payload: { route: "/pagamentos", chargeId: charge.id },
+            },
+            db,
+          );
+        }
       }
 
-      return { ...charge, avisados: destinatarios.length };
-    });
+      const avisados = athletes.reduce((n, a) => n + a.guardians.filter((g) => g.membership.isActive).length, 0);
+
+      /*
+       * A resposta continua a ser a de uma cobrança quando é uma só: era o que
+       * a consola já lia. Com várias, o que interessa é quantas nasceram e
+       * quantas famílias foram avisadas.
+       */
+      return {
+        id: criadas[0].id,
+        period,
+        title,
+        amountCents: input.amountCents,
+        dueDate,
+        cobrados: criadas.length,
+        atletas: criadas.map((c) => c.name),
+        avisados,
+      };
+    }, { timeoutMs: 60_000 });
   }
 
   /* ------------------------------------------------------------------------ */
@@ -801,7 +860,7 @@ export class BillingService implements OnModuleInit, OnModuleDestroy {
           alvo === "atletas"
             ? { id: { in: idsDeAtletas } }
             : alvo === "equipas"
-              ? { status: "ACTIVE", teams: { some: { teamId: { in: idsDeEquipas } } } }
+              ? { status: "ACTIVE", teams: { some: { leftAt: null, teamId: { in: idsDeEquipas } } } }
               : { status: "ACTIVE" };
         const atletas = await db.athlete.findMany({
           where: { AND: [onde, ...(ambito ? [{ id: ambito }] : [])] },
@@ -809,7 +868,7 @@ export class BillingService implements OnModuleInit, OnModuleDestroy {
           select: {
             id: true,
             name: true,
-            teams: { select: { teamId: true }, take: 1 },
+            teams: { where: { leftAt: null }, select: { teamId: true }, take: 1 },
             guardians: { select: { membership: { select: { userId: true, isActive: true } } } },
           },
         });
@@ -1321,7 +1380,7 @@ export class BillingService implements OnModuleInit, OnModuleDestroy {
           ...(athleteScope ? { id: athleteScope } : {}),
         },
         orderBy: { name: "asc" },
-        select: { id: true, name: true, joinedAt: true, teams: { select: { teamId: true }, take: 1 } },
+        select: { id: true, name: true, joinedAt: true, teams: { where: { leftAt: null }, select: { teamId: true }, take: 1 } },
       });
       if (atletas.length === 0) return { period, cobraEsteMes: true, atletas: [] };
 
@@ -1461,7 +1520,7 @@ export class BillingService implements OnModuleInit, OnModuleDestroy {
       }
 
       const atletas = await db.athlete.findMany({
-        where: { status: "ACTIVE", teams: { some: { teamId } } },
+        where: { status: "ACTIVE", teams: { some: { leftAt: null, teamId } } },
         select: { id: true },
       });
       const ids = atletas.map((a) => a.id);
@@ -1514,7 +1573,7 @@ export class BillingService implements OnModuleInit, OnModuleDestroy {
     return this.prisma.runAs(ctx.academyId, async (db) => {
       const athlete = await db.athlete.findFirst({
         where: { id: athleteId },
-        select: { id: true, teams: { select: { teamId: true, team: { select: { name: true } } }, take: 1 } },
+        select: { id: true, teams: { where: { leftAt: null }, select: { teamId: true, team: { select: { name: true } } }, take: 1 } },
       });
       if (!athlete) throw new NotFoundException("Atleta não encontrado");
 
@@ -1686,6 +1745,8 @@ export class BillingService implements OnModuleInit, OnModuleDestroy {
       if (!charge) throw new NotFoundException("Mensalidade não encontrada");
       if (charge.status === ChargeStatus.SETTLED) throw new BadRequestException("Já está paga");
       if (charge.status === ChargeStatus.VOID) throw new BadRequestException("Esta mensalidade foi anulada");
+      // A euPago recusa abaixo do mínimo do método: diz-se antes de lá chegar.
+      assertMinimoDoMetodo(method, charge.amountCents);
 
       const agora = Date.now();
       const vivos = charge.payments.filter(
@@ -1725,6 +1786,14 @@ export class BillingService implements OnModuleInit, OnModuleDestroy {
             select: { user: { select: { name: true, email: true } } },
           })
         : null;
+      // O que o pagador é do atleta, para a consola dizer "Maria Silva (Mãe)".
+      const laco = ctx.membershipId
+        ? await db.guardianLink.findFirst({
+            where: { athleteId: charge.athleteId, membershipId: ctx.membershipId },
+            select: { relation: true },
+          })
+        : null;
+      const payerName = pagador?.user.name?.trim() || null;
 
       const payment = await db.payment.create({
         data: {
@@ -1732,11 +1801,17 @@ export class BillingService implements OnModuleInit, OnModuleDestroy {
           amountCents: charge.amountCents,
           method,
           status: PaymentStatus.PENDING,
+          identificador: montarIdentificador(
+            [{ tipo: charge.kind === ChargeKind.EXTRA ? "EXTRA" : "MENS", periodo: charge.period, nome: charge.athlete.name }],
+            payerName,
+          ),
+          payerName,
+          payerRelation: laco?.relation?.trim() || null,
         },
       });
 
       const request = {
-        reference: payment.id,
+        reference: payment.identificador ?? payment.id,
         amountCents: charge.amountCents,
         description: `Mensalidade ${charge.period} — ${charge.athlete.name}`,
         payerName: pagador?.user.name ?? charge.athlete.name,
@@ -1836,7 +1911,7 @@ export class BillingService implements OnModuleInit, OnModuleDestroy {
       const fees = await db.memberFee.findMany({
         where: { id: { in: pedidas }, memberId },
         orderBy: { period: "asc" },
-        include: { member: { select: { name: true, email: true } }, payments: true },
+        include: { member: { select: { name: true, email: true, userId: true } }, payments: true },
       });
 
       if (fees.length !== pedidas.length) throw new NotFoundException("Quota não encontrada");
@@ -1847,6 +1922,7 @@ export class BillingService implements OnModuleInit, OnModuleDestroy {
 
       const fee = fees[0];
       const total = fees.reduce((n, f) => n + f.amountCents, 0);
+      assertMinimoDoMetodo(method, total);
 
       /*
        * Uma tentativa viva de cada vez — agora contada sobre o **grupo**.
@@ -1881,6 +1957,16 @@ export class BillingService implements OnModuleInit, OnModuleDestroy {
       });
       const apiKey = academia?.eupagoApiKey ?? undefined;
 
+      /*
+       * Quem paga é a conta que reclamou a ficha: um sócio, uma conta. O nome
+       * vem da conta quando a RLS a deixa ver (partilha academia por outro
+       * vínculo); senão é o da ficha, que é a mesma pessoa.
+       */
+      const conta = fee.member.userId
+        ? await db.user.findFirst({ where: { id: fee.member.userId }, select: { name: true } })
+        : null;
+      const payerName = conta?.name?.trim() || fee.member.name.trim() || null;
+
       const payment = await db.payment.create({
         data: {
           // A âncora é a mais antiga; o que se liquida está em `memberFees`.
@@ -1889,6 +1975,12 @@ export class BillingService implements OnModuleInit, OnModuleDestroy {
           method,
           status: PaymentStatus.PENDING,
           memberFees: { create: fees.map((f) => ({ memberFeeId: f.id })) },
+          // Vários meses num pagamento dizem-se no MES: SET26_A_DEZ26.
+          identificador: montarIdentificador(
+            fees.map((f) => ({ tipo: "QUOTA" as const, periodo: f.period, nome: f.member.name })),
+            payerName,
+          ),
+          payerName,
         },
       });
 
@@ -1898,7 +1990,7 @@ export class BillingService implements OnModuleInit, OnModuleDestroy {
           : `Quotas ${fee.period} a ${fees[fees.length - 1].period} (${fees.length} meses) — ${fee.member.name}`;
 
       const request = {
-        reference: payment.id,
+        reference: payment.identificador ?? payment.id,
         amountCents: total,
         description: descricao,
         payerName: fee.member.name,
@@ -1959,7 +2051,7 @@ export class BillingService implements OnModuleInit, OnModuleDestroy {
 
     const r = await this.eupago.chargeDirectDebit({
       mandateRef: mandato.eupagoRef,
-      paymentId: payment.id,
+      paymentId: payment.identificador ?? payment.id,
       amountCents,
       apiKey,
     });
@@ -1972,8 +2064,8 @@ export class BillingService implements OnModuleInit, OnModuleDestroy {
     });
 
     // O débito SEPA leva dias a liquidar; o webhook dirá quando chegou. O
-    // identificador que volta é o nosso payment.id (o `obs` do pedido).
-    return { providerRef: payment.id };
+    // identificador que volta é o nosso (o `obs` do pedido).
+    return { providerRef: payment.identificador ?? payment.id };
   }
 
   /**
@@ -2092,7 +2184,7 @@ export class BillingService implements OnModuleInit, OnModuleDestroy {
    * o mesmo evento não liquida a cobrança duas vezes nem envia duas notificações.
    *
    * `refs` são os candidatos a identificar o pagamento, por ordem de confiança:
-   * o nosso `identifier` (o id do Payment, que nós próprios enviámos), depois a
+   * o nosso `identifier` (o `identificador` do Payment, ou o id nos antigos), depois a
    * referência e o trid do provedor.
    */
   async confirmPayment(refs: string[], paidAt: Date, rawPayload: unknown, paidCents?: number) {
@@ -2379,7 +2471,7 @@ export class BillingService implements OnModuleInit, OnModuleDestroy {
 
       const paymentId = await this.prisma.runAs(academyId, async (db) => {
         const p = await db.payment.findFirst({
-          where: { provider: "eupago", OR: [{ providerRef: ref }, { id: ref }] },
+          where: { provider: "eupago", OR: [{ providerRef: ref }, { id: ref }, { identificador: ref }] },
           select: { id: true },
         });
         return p?.id ?? null;
@@ -2651,7 +2743,8 @@ function dateLabelPt(d: Date): string {
 }
 
 /**
- * Um euro no mínimo, mil no máximo — trava um "0" ou um zero a mais por engano.
+ * 0,50 € no mínimo (o que a euPago aceita, ver `minimos.ts`), mil no máximo —
+ * trava um "0" ou um zero a mais por engano.
  *
  * Com `permitirZero`, o zero passa. É para os **preços** de mensalidade: um
  * atleta com bolsa, o filho de um treinador, um acordo com a escola. Não é para
@@ -2660,8 +2753,8 @@ function dateLabelPt(d: Date): string {
  */
 function assertValidAmount(amountCents: number, permitirZero = false): void {
   if (permitirZero && amountCents === 0) return;
-  if (!Number.isInteger(amountCents) || amountCents < 100 || amountCents > 100_000) {
-    throw new BadRequestException(permitirZero ? "Valor 0 €, ou entre 1 € e 1000 €" : "Valor entre 1 € e 1000 €");
+  if (!Number.isInteger(amountCents) || amountCents < MINIMO_COBRAVEL || amountCents > 100_000) {
+    throw new BadRequestException(permitirZero ? "Valor 0 €, ou entre 0,50 € e 1000 €" : "Valor entre 0,50 € e 1000 €");
   }
 }
 
@@ -2839,7 +2932,7 @@ export async function gerarCobrancas(
       status: "ACTIVE",
       ...(apenasAtletas ? { id: { in: apenasAtletas } } : {}),
     },
-    select: { id: true, joinedAt: true, teams: { select: { teamId: true }, take: 1 } },
+    select: { id: true, joinedAt: true, teams: { where: { leftAt: null }, select: { teamId: true }, take: 1 } },
   });
   if (atletas.length === 0) {
     return { period, criadas: 0, jaExistiam: 0, semPreco: 0, foraDoMes: 0, atletasNovos: [] };

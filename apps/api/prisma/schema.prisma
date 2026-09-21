@@ -115,7 +115,7 @@ model Academy {
   /// contas a 15 de Setembro abre o ano de quotas a 15 de Setembro, e o período
   /// acaba a 14 de Setembro do ano seguinte. O dia só decide **quando** o
   /// período abre; a quota continua a ter por período o mês (`AAAA-MM`).
-  memberAnnualStartDay Int @default(1)
+  memberAnnualStartDay   Int @default(1)
 
   /// ## O maior número de sócio já dado neste clube
   ///
@@ -171,6 +171,8 @@ model Academy {
   athletes       Athlete[]
   teams          Team[]
   sessions       TrainingSession[]
+  trainingCycles TrainingCycle[]
+  profileChanges ProfileChange[]
   sessionBlocks  SessionBlock[]
   templates      SessionTemplate[]
   templateBlocks SessionTemplateBlock[]
@@ -225,6 +227,9 @@ model Academy {
 
   /// As ordens de adesão deste clube — ver `SubscriptionOrder`.
   subscriptionOrders SubscriptionOrder[]
+
+  /// Os avisos de pagamento da subscrição — ver `SubscriptionNotice`.
+  subscriptionNotices SubscriptionNotice[]
 }
 
 /// O ciclo de vida de um cliente. Derivado do onboarding e da subscrição — o
@@ -478,6 +483,8 @@ model Membership {
   gameModelsMade  GameModel[]                @relation("GameModelAuthor")
   setPiecesMade   SetPiece[]                 @relation("SetPieceAuthor")
   templatesMade   SessionTemplate[]          @relation("SessionTemplateAuthor")
+  cyclesMade      TrainingCycle[]            @relation("TrainingCycleAuthor")
+  changesMade     ProfileChange[]            @relation("ProfileChangeAuthor")
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -892,11 +899,9 @@ model Athlete {
 
   /**
    * ---- A conta do próprio atleta na app do clube ---------------------------
-   *
    * O email é o **do atleta**, não o do encarregado: é para este endereço que
    * sai o convite, e é com ele que a conta fica ligada. Opcional, porque um
    * Sub-8 não tem email — e a ficha não pode depender disso.
-   *
    * O convite segue o desenho dos sócios: 32 bytes aleatórios, na base fica o
    * hash, um convite de cada vez, e o link morre ao ser usado. A ligação é a
    * `Membership` com papel `ATHLETE` — e não um `userId` como no sócio, porque
@@ -970,6 +975,13 @@ model Team {
   seasonId  String
   season    Season  @relation(fields: [seasonId], references: [id])
 
+  /// A equipa de onde esta veio, quando nasceu numa viragem de época: este
+  /// Sub-13 é o Sub-11 do ano passado que subiu. É o que deixa seguir um grupo
+  /// de ano para ano sem o adivinhar pelo nome.
+  previousTeamId String?
+  previousTeam   Team?   @relation("TeamLineage", fields: [previousTeamId], references: [id], onDelete: SetNull)
+  nextTeams      Team[]  @relation("TeamLineage")
+
   name String
 
   /// A idade máxima da equipa: 11 num "Sub-11".
@@ -1017,6 +1029,7 @@ model Team {
   athletes     TeamMembership[]
   staff        TeamStaff[]
   sessions     TrainingSession[]
+  cycles       TrainingCycle[]
   matches      Match[]
   events       CalendarEvent[]
   plans        SubscriptionPlan[]
@@ -1061,8 +1074,14 @@ model TeamStaff {
   /// "Treinador principal", "Treinador adjunto", "Coordenador".
   title        String
 
-  @@unique([teamId, membershipId])
+  /// Como nos atletas: quando começou a treinar a equipa, e quando deixou.
+  /// Ver a migração `20260920140000_percurso_e_epoca_nova`.
+  joinedAt DateTime  @default(now())
+  leftAt   DateTime?
+
+  @@unique([teamId, membershipId, joinedAt])
   @@index([membershipId])
+  @@index([teamId, leftAt])
 }
 
 /**
@@ -1129,6 +1148,8 @@ model TrainingSession {
    * /**
    * /**
    * /**
+   * /**
+   * /**
    * /*
    * O plano vive **na sessão**, não numa tabela paralela.
    * Um treino planeado e um treino do calendário são o mesmo treino: o que as
@@ -1141,7 +1162,7 @@ model TrainingSession {
   /// O objetivo principal da sessão ("Transição defensiva").
   objective        String?
   /// Objetivos secundários, na ordem em que o treinador os escreveu.
-  objectives       String[] @default([])
+  objectives       String[]  @default([])
   /// "Aquisitivo", "Recuperação", "Pré-competitivo", ... — vocabulário do clube.
   sessionType      String?
   /// Intensidade planeada, 1–10. A carga é derivada — nunca guardada.
@@ -1156,7 +1177,6 @@ model TrainingSession {
   postNotes        String?
   /**
    * Quando o treinador partilhou o plano com os atletas — nulo é "não partilhado".
-   *
    * É o treinador que decide, treino a treino: o plano é trabalho dele e há
    * sessões que não quer mostrar antes de as dar. Uma data e não um booleano
    * porque a pergunta que se faz depois é "desde quando é que eles o vêem".
@@ -1171,6 +1191,51 @@ model TrainingSession {
 
   @@index([academyId, startsAt])
   @@index([teamId, startsAt])
+}
+
+/// O nível de um ciclo de periodização. O macrociclo é a época (`Season`).
+enum CycleLevel {
+  MESO
+  MICRO
+}
+
+/// Um mesociclo ou um microciclo de uma equipa: um intervalo de dias com
+/// intenção. Não contém treinos por chave: um treino, um jogo ou um evento
+/// pertence ao ciclo que contém o seu dia (hora de Lisboa). Ver a migração
+/// `20260919120000_periodizacao`: dentro do mesmo nível e da mesma equipa não
+/// há sobreposições, e isso é garantido na base.
+model TrainingCycle {
+  id        String     @id @default(cuid())
+  academyId String
+  academy   Academy    @relation(fields: [academyId], references: [id], onDelete: Cascade)
+  teamId    String
+  team      Team       @relation(fields: [teamId], references: [id], onDelete: Cascade)
+  level     CycleLevel
+  /// Dias inteiros, inclusivos. Nenhum comprimento fixo: um micro pode ter 4
+  /// ou 10 dias.
+  startsOn  DateTime   @db.Date
+  endsOn    DateTime   @db.Date
+
+  /// "Desenvolvimento". O micro numera-se sozinho ("Micro 08") e não precisa.
+  name      String?
+  /// A fase: "Pré-época", "Competição", "Transição"… Texto, com sugestões por
+  /// modalidade na consola.
+  phase     String?
+  /// As categorias de objetivo em foco, do perfil da modalidade.
+  focus     String[] @default([])
+  objective String?
+  notes     String?
+  /// Só os mesos usam: a cor da faixa.
+  color     String?
+
+  createdById String?
+  createdBy   Membership? @relation("TrainingCycleAuthor", fields: [createdById], references: [id], onDelete: SetNull)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([teamId, level, startsOn])
+  @@index([academyId])
 }
 
 /// Um bloco de uma sessão de treino — "Posse 6v4, 20 min, intensidade 7".
@@ -1872,16 +1937,24 @@ model Payment {
   method      PaymentMethod
   status      PaymentStatus @default(PENDING)
 
-  provider    String  @default("eupago")
+  provider      String  @default("eupago")
   /// Identificador da euPago. Chave da idempotência do webhook.
-  providerRef String?
+  providerRef   String?
+  /// O que segue para a euPago como `identifier` e aparece no backoffice dela:
+  /// TIPO-MES-ATLETAS-PAGADOR-ID (ver `billing/identificador.ts`). É também por
+  /// ele que o webhook volta. Nulo nos antigos (foi o `id`) e nos manuais.
+  identificador String? @unique
+  /// Quem carregou em "pagar", fotografado no momento. Nulo nos manuais.
+  payerName     String?
+  /// O que o pagador é do atleta ("Mãe", "Pai"). Nulo nas quotas de sócio.
+  payerRelation String?
   /// Entidade + referência Multibanco, quando aplicável.
-  entity      String?
-  reference   String?
+  entity        String?
+  reference     String?
   /// O formulário alojado (cartão, Google Pay, Apple Pay, PaySafeCard): o URL
   /// para onde o pai é levado. Guardado para um reload poder reabri-lo em vez
   /// de criar outro pagamento.
-  redirectUrl String?
+  redirectUrl   String?
 
   paidAt     DateTime?
   expiresAt  DateTime?
@@ -2172,6 +2245,8 @@ model Match {
    * /**
    * /**
    * /**
+   * /**
+   * /**
    * /*
    * Em que competição se joga isto.
    * Aponta para o catálogo (`CatalogItem` de `kind = "competitions"`) e é
@@ -2249,9 +2324,9 @@ model Match {
   /// Ver também `sourceProvider` acima: juntos dizem de onde veio cada metade.
   statsEnteredAt DateTime?
 
-  callUps     MatchCallUp[]
-  appearances MatchAppearance[]
-  staff       MatchStaff[]
+  callUps        MatchCallUp[]
+  appearances    MatchAppearance[]
+  staff          MatchStaff[]
   /// O relatório do jogo e o do adversário — um de cada, escritos depois do apito.
   report         MatchReport?
   opponentReport OpponentReport?
@@ -2655,14 +2730,14 @@ model Evaluation {
   coach     Membership @relation(fields: [coachId], references: [id])
 
   /// "2026/27 · 1.º período"
-  period String
-  status EvaluationStatus @default(DRAFT)
+  period         String
+  status         EvaluationStatus @default(DRAFT)
   /**
    * O próprio atleta vê a avaliação na app quando publicada. Nasce ligado — o
    * boletim é sobre ele e para ele —, e o treinador desliga-o na avaliação que
    * preferir guardar para os pais.
    */
-  athleteVisible Boolean @default(true)
+  athleteVisible Boolean          @default(true)
 
   /// { "Técnica": 4, "Atitude": 5 } — as chaves vêm de `Sport.skills`.
   scores Json
@@ -2731,16 +2806,15 @@ model AthleteReport {
   /// o que faz falta aqui é escrever depressa no fim de um treino.
   body   String
 
-  visibility ReportVisibility @default(INTERNAL)
-  status     ReportStatus     @default(DRAFT)
+  visibility     ReportVisibility @default(INTERNAL)
+  status         ReportStatus     @default(DRAFT)
   /**
    * O próprio atleta pode lê-lo na app — independente da `visibility`.
-   *
    * Nasce desligado, como o partilhar com a família: metade do que se escreve
    * sobre um miúdo é para os adultos, e um relatório que o atleta lê sem o
    * treinador ter decidido isso não tem volta. Só conta com `status` PUBLISHED.
    */
-  athleteVisible Boolean @default(false)
+  athleteVisible Boolean          @default(false)
 
   /**
    * Os números no dia em que foi publicado.
@@ -3966,6 +4040,19 @@ model Subscription {
   currentPeriodEnd DateTime?
   cancelledAt      DateTime?
 
+  /// A mensalidade acordada com **este** clube, quando não é a de tabela.
+  ///
+  /// Nulo é o caso normal: vale o plano. Preenchido, substitui a fórmula
+  /// inteira — incluindo a parte por atleta: quem escreve um valor à mão está a
+  /// dizer "este clube paga isto", e somar-lhe extras devolvia pela janela a
+  /// negociação que se acabou de fazer pela porta.
+  ///
+  /// O MRR do painel lê daqui primeiro (ver `app.platform_overview`), senão o
+  /// número que se olha todos os dias mostrava uma receita que não entra no
+  /// banco. O contrato guarda o seu próprio instantâneo em `SubscriptionOrder`:
+  /// reemitir repete o papel que esteve em cima da mesa, e não o acordo de hoje.
+  priceCents Int?
+
   /// Última tentativa de cobrança falhada — a origem do alerta no Overview.
   lastFailureAt   DateTime?
   lastFailureNote String?
@@ -4071,8 +4158,67 @@ model SubscriptionOrder {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
+  /// Os avisos de pagamento emitidos ao abrigo desta ordem.
+  notices SubscriptionNotice[]
+
   @@index([academyId, status])
   @@index([academyId, createdAt])
+}
+
+/// O aviso mensal de pagamento da subscrição da plataforma.
+///
+/// ## O relógio é a assinatura
+///
+/// O clube que aceitou as condições a 20 de Setembro recebe a 20 de Outubro, a
+/// 20 de Novembro, e assim por diante; num contrato anual, a 20 de Setembro do
+/// ano seguinte. Cada aviso cobre o período que **acabou de correr** — o mês que
+/// o clube usou —, e por isso o primeiro chega um mês depois de assinar.
+///
+/// Os meses curtos encolhem o dia sem o perder: quem assina a 31 recebe a 28 (ou
+/// 29) em Fevereiro e volta ao dia 31 em Março. A conta está em
+/// `subscription/ciclo.ts`, e é lá que se lê porquê.
+///
+/// ## Porquê uma tabela
+///
+/// Um aviso por período, e a prova de que saiu. A varredura corre de hora a hora
+/// para sobreviver a um servidor que esteve em baixo no dia 20, e é o índice
+/// único `(academyId, periodStart)` — não a memória do processo — que impede o
+/// segundo email do mesmo mês.
+///
+/// Os valores ficam copiados, como na ordem: o preço de tabela muda, e um aviso
+/// que fosse lê-lo ao plano passava a dizer outra coisa no dia seguinte.
+model SubscriptionNotice {
+  id        String  @id @default(cuid())
+  academyId String
+  academy   Academy @relation(fields: [academyId], references: [id], onDelete: Cascade)
+
+  /// A ordem assinada que lhe deu origem. Fica a nulo se a ordem desaparecer: o
+  /// aviso é um facto do passado e não se apaga com o contrato.
+  orderId String?
+  order   SubscriptionOrder? @relation(fields: [orderId], references: [id], onDelete: SetNull)
+
+  /// O período coberto, inclusivo dos dois lados.
+  periodStart DateTime @db.Date
+  periodEnd   DateTime @db.Date
+  /// O dia em que devia sair (o aniversário da assinatura) e a data-limite.
+  issuedOn    DateTime @db.Date
+  dueOn       DateTime @db.Date
+
+  planName      String
+  billingPeriod SubscriptionBillingPeriod @default(MONTHLY)
+  amountCents   Int
+
+  /// Para quem foi, e se chegou a sair. O nome fica copiado: quem recebe hoje
+  /// pode já não estar no clube quando alguém for ler isto.
+  toEmail     String?
+  toName      String?
+  sentAt      DateTime?
+  failureNote String?
+
+  createdAt DateTime @default(now())
+
+  @@unique([academyId, periodStart])
+  @@index([academyId, issuedOn])
 }
 
 enum SubscriptionStatus {
@@ -4080,6 +4226,44 @@ enum SubscriptionStatus {
   ACTIVE
   PAST_DUE
   CANCELLED
+}
+
+/// O que uma ficha era antes. Ver a migração `20260920150000_historico_de_alteracoes`.
+enum ProfileKind {
+  ATHLETE
+  MEMBER
+  STAFF
+}
+
+/// Uma alteração a um campo de uma ficha: quem, quando, de quê para quê.
+///
+/// Uma linha por campo, e não por gravação: é o que deixa ler "Peso 62 → 64" de
+/// relance e seguir a história de um número só. Os valores guardam-se já em
+/// texto, como se mostram; o histórico não tem de saber de tipos, e uma coluna
+/// que muda de tipo mais tarde não estraga o que já lá está.
+///
+/// Escreve-se e lê-se, nunca se edita nem se apaga (o `GRANT` na migração diz o
+/// mesmo): um histórico que se corrige não é um histórico.
+model ProfileChange {
+  id        String      @id @default(cuid())
+  academyId String
+  academy   Academy     @relation(fields: [academyId], references: [id], onDelete: Cascade)
+  kind      ProfileKind
+  /// O atleta, o sócio, ou a membership de quem é do staff.
+  subjectId String
+  field     String
+  before    String?
+  after     String?
+
+  byId   String?
+  by     Membership? @relation("ProfileChangeAuthor", fields: [byId], references: [id], onDelete: SetNull)
+  /// O nome de quem mudou, à data: um cargo apagado não leva consigo a resposta.
+  byName String
+
+  createdAt DateTime @default(now())
+
+  @@index([academyId, kind, subjectId, createdAt])
+  @@index([academyId, createdAt])
 }
 
 /// Registo do que os administradores da plataforma fazem.
@@ -5512,11 +5696,11 @@ model LegalDocument {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  @@unique([type, version])
-  @@index([type, status, effectiveAt])
-
   /// As ordens de adesão que se agarram a esta versão dos Termos.
   orders SubscriptionOrder[] @relation("OrderTerms")
+
+  @@unique([type, version])
+  @@index([type, status, effectiveAt])
 }
 
 /// Uma aceitação. **Append-only**: nunca se edita nem apaga. O histórico de uma

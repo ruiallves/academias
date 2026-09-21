@@ -227,6 +227,27 @@ export class MemberImportDto {
    * a mais nas quotas, nos benefícios e no site.
    */
   @IsOptional() @IsBoolean() createTiers?: boolean;
+
+  /**
+   * Substituir os dados de quem a folha já conhece.
+   *
+   * Sem isto, a importação **pára** e devolve a lista de quem já existe, com o
+   * que ia mudar em cada um — é a segunda pergunta que se faz a quem importa,
+   * a seguir às categorias. Substituir dados de sócios a sério não é uma coisa
+   * que o servidor decida sozinho por ver uma folha.
+   */
+  @IsOptional() @IsBoolean() sobrescrever?: boolean;
+
+  /**
+   * Mandar a cada sócio o convite para criar conta e instalar a app.
+   *
+   * **Desligado por omissão**, e a omissão mudou de lado de propósito. Uma
+   * folha de trezentos sócios são trezentos emails a sair em nome do clube num
+   * só clique, e quem está a carregar o livro antigo raramente quer isso no
+   * mesmo dia — quer os dados lá dentro primeiro. Liga-se na caixa do diálogo,
+   * ou manda-se depois pela lista, com calma e às pessoas certas.
+   */
+  @IsOptional() @IsBoolean() enviarConvites?: boolean;
 }
 
 /**

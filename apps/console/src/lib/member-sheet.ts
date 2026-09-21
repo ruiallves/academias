@@ -303,3 +303,44 @@ export function downloadTemplate(tierNames: string[]): void {
   XLSX.utils.book_append_sheet(book, sheet, "Sócios");
   XLSX.writeFile(book, "modelo-socios.xlsx");
 }
+
+/* -------------------------------------------------------------------------- */
+/* Exportar                                                                    */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * O livro de sócios para Excel, **com as colunas que a importação lê**.
+ *
+ * Vive aqui e não em `exportar.ts` por uma razão que vale a pena dizer: é o
+ * mesmo `COLUMNS` acima que define os dois lados. Um clube exporta a lista,
+ * muda a categoria de toda a gente numa folha de cálculo, e volta a carregar —
+ * e isso só fecha enquanto os cabeçalhos forem os mesmos. Separar as duas
+ * listas garantia que, à primeira coluna renomeada, uma delas ficava para trás
+ * sem ninguém dar por isso.
+ *
+ * O **número de sócio** é o que liga as duas pontas: é por ele que a
+ * reimportação reconhece a ficha. Sai sempre, mesmo vazio num sócio por
+ * aprovar — e uma linha sem número entra como sócio novo, que é a leitura
+ * certa.
+ */
+export const EXPORT_COLUMNS: { header: string; key: Key; largura?: number }[] = [
+  { header: COLUMNS.number.label, key: "number", largura: 12 },
+  { header: COLUMNS.name.label, key: "name", largura: 28 },
+  { header: COLUMNS.tier.label, key: "tier", largura: 18 },
+  { header: COLUMNS.phone.label, key: "phone", largura: 14 },
+  { header: COLUMNS.email.label, key: "email", largura: 26 },
+  { header: COLUMNS.birthdate.label, key: "birthdate", largura: 16 },
+  { header: COLUMNS.address.label, key: "address", largura: 30 },
+  { header: COLUMNS.postalCode.label, key: "postalCode", largura: 14 },
+  { header: COLUMNS.city.label, key: "city", largura: 18 },
+  { header: COLUMNS.documentNumber.label, key: "documentNumber", largura: 18 },
+  { header: COLUMNS.taxId.label, key: "taxId", largura: 12 },
+  { header: COLUMNS.sex.label, key: "sex", largura: 8 },
+];
+
+/** `FEMALE` → `F`, que é o que a importação volta a ler. Ver `SEXES`. */
+export function sexoParaFolha(sex: string | null | undefined): string {
+  if (sex === "FEMALE") return "F";
+  if (sex === "MALE") return "M";
+  return "";
+}

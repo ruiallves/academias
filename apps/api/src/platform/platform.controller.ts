@@ -7,6 +7,7 @@ import { PlatformService } from "./platform.service";
 import { ClubLogoService } from "../storage/club-logo.service";
 import { BillingService } from "../billing/billing.service";
 import { MemberFeesService } from "../members/member-fees.service";
+import { SubscriptionNoticesService } from "../subscription/subscription-notices.service";
 
 /**
  * O corpo de "criar academia", validado. Classe e não interface — ver
@@ -111,6 +112,15 @@ class SetAcademyPlanDto {
   /** `AAAA-MM-DD`. Omisso: hoje. */
   @IsOptional() @IsString() @Matches(/^\d{4}-\d{2}-\d{2}$/) startsOn?: string;
   @IsOptional() @IsInt() @Min(1) @Max(60) minimumMonths?: number;
+  /**
+   * A mensalidade acordada, em cêntimos.
+   *
+   * Omissa: vale o preço de tabela do plano. O tecto é alto de propósito — um
+   * clube grande com um acordo à medida não tem de caber num número redondo —,
+   * mas zero não passa: uma mensalidade a zero é uma oferta, e uma oferta
+   * escreve-se em `notes`, não num campo que o MRR vai somar.
+   */
+  @IsOptional() @IsInt() @Min(1) @Max(10_000_00) monthlyCents?: number;
   @IsOptional() @IsString() @Length(0, 300) renewalNote?: string;
   @IsOptional() @IsString() @Length(0, 600) notes?: string;
 
@@ -149,6 +159,7 @@ export class PlatformController {
     private readonly logo: ClubLogoService,
     private readonly billing: BillingService,
     private readonly memberFees: MemberFeesService,
+    private readonly avisos: SubscriptionNoticesService,
   ) {}
 
   /** Quem sou eu, do lado da plataforma. A app usa-o para arrancar. */
@@ -231,6 +242,7 @@ export class PlatformController {
       minimumMonths: body.minimumMonths,
       renewalNote: body.renewalNote,
       notes: body.notes,
+      monthlyCents: body.monthlyCents,
     });
   }
 
@@ -303,6 +315,23 @@ export class PlatformController {
     const mensalidades = await this.billing.issueMonthlyCharges(alvo);
     const quotas = await this.memberFees.emitirQuotasDoMes(alvo);
     return { ...mensalidades, quotas };
+  }
+
+  /**
+   * Mandar já os avisos de pagamento da subscrição que estiverem devidos.
+   *
+   * O mesmo passe que corre de hora a hora. É idempotente — um aviso por clube
+   * e por período, garantido pela base —, e por isso carregar duas vezes não
+   * manda dois emails a ninguém.
+   *
+   * `?academia=` estreita a um clube, como na emissão de cobranças: serve o
+   * apoio, e torna isto exercitável num teste sem escrever avisos na plataforma
+   * inteira.
+   */
+  @Post("subscricao/avisos")
+  @PlatformRoles("OWNER", "ADMIN")
+  emitirAvisosDeSubscricao(@Query("academia") academia?: string) {
+    return this.avisos.emitirAvisos(academia?.trim() || undefined);
   }
 
   @Get("audit")

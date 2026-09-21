@@ -15,7 +15,6 @@ import {
   ChevronRight,
   CreditCard,
   Home,
-  IdCard,
   MapPin,
   Megaphone,
   RefreshCw,
@@ -127,10 +126,13 @@ export default function SocioApp() {
       <main className="flex-1 px-4 pb-[calc(104px+env(safe-area-inset-bottom))]">
         <Routes>
           <Route path="/socio" element={<Inicio />} />
-          <Route path="/socio/cartao" element={<Cartao />} />
           <Route path="/socio/quotas" element={<Quotas />} />
-          <Route path="/socio/clube" element={<Clube />} />
+          <Route path="/socio/jogos" element={<Jogos />} />
+          <Route path="/socio/novidades" element={<Novidades />} />
           <Route path="/socio/perfil" element={<Perfil />} />
+          {/* O cartão vive no Início; "Clube" passou a Jogos + Novidades. */}
+          <Route path="/socio/cartao" element={<Navigate to="/socio" replace />} />
+          <Route path="/socio/clube" element={<Navigate to="/socio/novidades" replace />} />
           <Route path="*" element={<Navigate to="/socio" replace />} />
         </Routes>
       </main>
@@ -193,11 +195,16 @@ function SocioHeader() {
   );
 }
 
+/*
+ * O cartão já não tem separador: está no Início, que é o que se abre à porta
+ * do estádio. O lugar dele ficou para os jogos, e os comunicados e as
+ * sondagens têm o seu.
+ */
 const TABS = [
   { to: "/socio", label: "Início", icon: Home },
-  { to: "/socio/cartao", label: "Cartão", icon: IdCard },
   { to: "/socio/quotas", label: "Quotas", icon: Wallet },
-  { to: "/socio/clube", label: "Clube", icon: Megaphone },
+  { to: "/socio/jogos", label: "Jogos", icon: CalendarDays },
+  { to: "/socio/novidades", label: "Novidades", icon: Megaphone },
 ];
 
 /** A mesma pílula da família — a app não muda de gramática entre contextos. */
@@ -274,9 +281,16 @@ const ESTADO: Record<
 
 /**
  * "O que preciso de saber como sócio?" — a mesma pergunta do "Hoje" da família,
- * com outra resposta. Só entra o que é relevante agora: quota por pagar primeiro
- * (é a única coisa accionável), o cartão como identidade, o próximo jogo, as
- * novidades. Secções vazias não aparecem — um ecrã não é um formulário.
+ * com outra resposta, por esta ordem:
+ *
+ * 1. a quota por pagar (é a única coisa accionável), ou a confirmação de que
+ *    está tudo em dia;
+ * 2. o cartão, inteiro: é o que se mostra à entrada, e abrir a app já o põe à
+ *    frente;
+ * 3. o jogo de maior prioridade, com o caminho para os outros;
+ * 4. os comunicados e a sondagem por responder.
+ *
+ * Secções vazias não aparecem — um ecrã não é um formulário.
  */
 function Inicio() {
   const { data } = useSocio();
@@ -284,11 +298,11 @@ function Inicio() {
   if (!data) return null;
 
   const agora = new Date();
-  const estado = ESTADO[data.member.status] ?? ESTADO.ACTIVE;
   const porPagar = data.fees.filter((f) => f.status === "OPEN");
   const emAtraso = porPagar.some((f) => f.overdue);
   const ultima = data.fees.find((f) => f.status === "SETTLED");
   const sondagem = data.polls.find((p) => !p.myOptionId);
+  const destaque = data.matches[0];
   let i = 0;
 
   return (
@@ -333,38 +347,12 @@ function Inicio() {
         </button>
       )}
 
-      {/* O cartão — a identidade de sócio, resumida; o cartão a sério tem separador. */}
-      {data.academy.cardEnabled && (
-        <button
-          type="button"
-          onClick={() => navigate("/socio/cartao")}
-          className="rise w-full rounded-[20px] bg-surface p-4 text-left shadow-[var(--shadow-soft)]"
-          style={{ ["--i" as string]: i++ }}
-        >
-          <div className="flex items-center gap-3">
-            <span className="flex size-10 items-center justify-center rounded-[12px] bg-signal-soft text-signal-ink">
-              <IdCard className="size-[22px]" strokeWidth={1.75} />
-            </span>
-            <span className="min-w-0 flex-1">
-              <span className="block truncate text-[15px] font-semibold text-ink">
-                {data.member.name}
-              </span>
-              <span className="block text-[13px] text-ink-3">
-                {data.member.number
-                  ? `Sócio #${data.member.number}`
-                  : "Número por atribuir"}
-                {data.member.tierName ? ` · ${data.member.tierName}` : ""}
-              </span>
-            </span>
-            <Chip tone={estado.tone}>{estado.label}</Chip>
-          </div>
-        </button>
-      )}
-
       {/* Quota regularizada — a confirmação discreta de que está tudo bem. */}
       {porPagar.length === 0 && ultima && (
-        <div
-          className="rise flex items-center gap-3 rounded-[20px] bg-surface p-4 shadow-[var(--shadow-soft)]"
+        <button
+          type="button"
+          onClick={() => navigate("/socio/quotas")}
+          className="rise flex w-full items-center gap-3 rounded-[20px] bg-surface p-4 text-left shadow-[var(--shadow-soft)]"
           style={{ ["--i" as string]: i++ }}
         >
           <span className="flex size-10 items-center justify-center rounded-full bg-ok-soft text-ok">
@@ -378,66 +366,59 @@ function Inicio() {
               {ultima.label ?? ultima.period} · {money(ultima.amountCents)}
             </span>
           </span>
-        </div>
+          <ChevronRight className="size-5 shrink-0 text-ink-4" strokeWidth={2} />
+        </button>
+      )}
+
+      {/* O cartão, inteiro: o que antes tinha separador próprio. */}
+      {data.academy.cardEnabled && (
+        <section className="rise" style={{ ["--i" as string]: i++ }}>
+          <Label>O meu cartão</Label>
+          <CartaoDoSocio />
+        </section>
       )}
 
       {/*
-        Os jogos de maior prioridade — não "o próximo", agora que há jogos de
-        todos os escalões. A prioridade é a ordem da app inteira: dos mais
-        velhos para os mais novos primeiro, e dentro do mesmo escalão o mais
-        próximo. Dois cabem no Início sem o afogar; o resto está a um toque,
-        em Clube, já agrupado por equipa — ver `JogosDoClube`.
+        O jogo de maior prioridade. A lista chega ordenada do servidor: dos
+        escalões mais velhos para os mais novos, e dentro de cada um o mais
+        próximo. O primeiro é o destaque; os outros estão no separador Jogos,
+        agrupados por equipa (ver `JogosDoClube`).
       */}
-      {data.matches.length > 0 && (
+      {destaque && (
         <section className="rise" style={{ ["--i" as string]: i++ }}>
-          <Label
-            action={
-              data.matches.length > 2 ? (
-                <button
-                  type="button"
-                  onClick={() => navigate("/socio/clube")}
-                  className="text-[13px] font-semibold text-signal-ink"
-                >
-                  Ver tudo
-                </button>
-              ) : undefined
-            }
-          >
-            Jogos
-          </Label>
-          <div className="space-y-2">
-            {data.matches.slice(0, 2).map((jogo) => (
-              <JogoCard key={jogo.id} jogo={jogo} />
-            ))}
-          </div>
+          <Label>Próximo jogo</Label>
+          <JogoCard jogo={destaque} />
+          {data.matches.length > 1 && (
+            <button
+              type="button"
+              onClick={() => navigate("/socio/jogos")}
+              className="mt-2 flex w-full items-center justify-center gap-1.5 rounded-[16px] bg-surface py-3 text-[14px] font-semibold text-signal-ink shadow-[var(--shadow-soft)] active:bg-sunken"
+            >
+              Ver mais jogos ({data.matches.length - 1})
+              <ChevronRight className="size-4" strokeWidth={2.2} />
+            </button>
+          )}
         </section>
       )}
 
-      {sondagem && (
-        <section className="rise" style={{ ["--i" as string]: i++ }}>
-          <Label>Sondagem</Label>
-          <Sondagem poll={sondagem} />
-        </section>
-      )}
-
-      {data.news.length > 0 && (
+      {/* Por último, a sondagem por responder e os comunicados mais recentes. */}
+      {(sondagem || data.news.length > 0) && (
         <section className="rise" style={{ ["--i" as string]: i++ }}>
           <Label
             action={
-              data.news.length > 2 ? (
-                <button
-                  type="button"
-                  onClick={() => navigate("/socio/clube")}
-                  className="text-[13px] font-semibold text-signal-ink"
-                >
-                  Ver tudo
-                </button>
-              ) : undefined
+              <button
+                type="button"
+                onClick={() => navigate("/socio/novidades")}
+                className="text-[13px] font-semibold text-signal-ink"
+              >
+                Ver tudo
+              </button>
             }
           >
-            Últimas do clube
+            Comunicados e sondagens
           </Label>
           <div className="space-y-2">
+            {sondagem && <Sondagem poll={sondagem} />}
             {data.news.slice(0, 2).map((n) => (
               <Noticia
                 key={n.id}
@@ -464,8 +445,10 @@ function Inicio() {
  * Um cartão a sério: a cor do clube como fundo, o emblema, o nome e o número
  * grandes. O QR só quando o clube o ligou — e o que ele carrega é um token
  * opaco, nunca um dado pessoal (ver `CARD_QR_PREFIX` no servidor).
+ *
+ * Vive no Início, onde se abre a app à entrada. Não tem ecrã próprio.
  */
-function Cartao() {
+function CartaoDoSocio() {
   const { data } = useSocio();
   const [qr, setQr] = useState<string | null>(null);
 
@@ -481,24 +464,13 @@ function Cartao() {
       .catch(() => setQr(null));
   }, [conteudoQr]);
 
-  if (!data) return null;
-
-  if (!data.academy.cardEnabled) {
-    return (
-      <div className="pt-3">
-        <Vazio icon={IdCard} title="Cartão indisponível">
-          {data.academy.shortName} ainda não activou o cartão de sócio digital.
-        </Vazio>
-      </div>
-    );
-  }
+  if (!data || !data.academy.cardEnabled) return null;
 
   const estado = ESTADO[data.member.status] ?? ESTADO.ACTIVE;
   const desde = new Date(data.member.memberSince);
 
   return (
-    <div className="space-y-5 pt-3">
-      <Label>O meu cartão</Label>
+    <div className="space-y-3">
 
       {/*
         A cor do clube pinta o cartão; o texto é branco com sombra de tinta para
@@ -506,7 +478,7 @@ function Cartao() {
         e não um rectângulo — imita o reflexo de um cartão físico.
       */}
       <div
-        className="rise relative overflow-hidden rounded-[24px] p-5 text-white"
+        className="relative overflow-hidden rounded-[24px] p-5 text-white"
         style={{
           background: `linear-gradient(135deg, color-mix(in oklab, ${data.academy.signalColor} 88%, #000) 0%, ${data.academy.signalColor} 55%, color-mix(in oklab, ${data.academy.signalColor} 72%, #000) 100%)`,
           boxShadow: "var(--shadow-float)",
@@ -603,7 +575,7 @@ function Cartao() {
       </div>
 
       {data.academy.cardQrEnabled && qr && (
-        <div className="rise rounded-[24px] bg-surface p-5 text-center shadow-[var(--shadow-soft)]">
+        <div className="rounded-[24px] bg-surface p-5 text-center shadow-[var(--shadow-soft)]">
           <img
             src={qr}
             alt="Código QR do cartão de sócio"
@@ -1154,17 +1126,22 @@ function PagarSheet({
               />
             )}
 
+            {/* O Multibanco da euPago só aceita a partir de 1 € (o MB Way desde 0,50 €). */}
             <button
               type="button"
+              disabled={alvo.amountCents < 100}
               onClick={() => setMetodo("MULTIBANCO")}
               className={cx(
-                "flex w-full items-center gap-3 rounded-[16px] bg-surface p-4 text-left shadow-[var(--shadow-soft)]",
+                "flex w-full items-center gap-3 rounded-[16px] bg-surface p-4 text-left shadow-[var(--shadow-soft)] disabled:opacity-45",
                 metodo === "MULTIBANCO" && "ring-2 ring-[var(--color-signal)]",
               )}
             >
               <CreditCard className="size-5 text-ink-2" strokeWidth={1.9} />
               <span className="flex-1 text-[15px] font-medium text-ink">
                 Referência Multibanco
+                {alvo.amountCents < 100 && (
+                  <span className="block text-[12px] font-medium text-ink-3">Só a partir de 1,00 €</span>
+                )}
               </span>
             </button>
 
@@ -1204,11 +1181,10 @@ const formatarRef = (r: string) => r.replace(/(\d{3})(?=\d)/g, "$1 ").trim();
 /* Clube                                                                       */
 /* -------------------------------------------------------------------------- */
 
-function Clube() {
+/** Todos os jogos do clube, de todos os escalões. O Início só mostra o primeiro. */
+function Jogos() {
   const { data } = useSocio();
   if (!data) return null;
-
-  const abertas = data.polls;
 
   return (
     <div className="space-y-5 pt-3">
@@ -1220,12 +1196,26 @@ function Clube() {
           dos mais velhos para os mais novos.
         </Vazio>
       )}
+    </div>
+  );
+}
 
-      {abertas.length > 0 && (
+/** Os comunicados da direção e as sondagens; as por responder vêm primeiro. */
+function Novidades() {
+  const { data } = useSocio();
+  if (!data) return null;
+
+  const sondagens = [...data.polls].sort(
+    (a, b) => Number(Boolean(a.myOptionId)) - Number(Boolean(b.myOptionId)),
+  );
+
+  return (
+    <div className="space-y-5 pt-3">
+      {sondagens.length > 0 && (
         <section>
           <Label>Sondagens</Label>
           <div className="space-y-3">
-            {abertas.map((p) => (
+            {sondagens.map((p) => (
               <Sondagem key={p.id} poll={p} />
             ))}
           </div>
@@ -1233,9 +1223,9 @@ function Clube() {
       )}
 
       <section>
-        <Label>Notícias e comunicados</Label>
+        <Label>Comunicados</Label>
         {data.news.length === 0 ? (
-          <Vazio icon={Megaphone} title="Ainda não há novidades">
+          <Vazio icon={Megaphone} title="Ainda não há comunicados">
             As notícias e os comunicados da direção aparecem aqui.
           </Vazio>
         ) : (

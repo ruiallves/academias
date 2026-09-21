@@ -3,7 +3,12 @@ import { Panel, PanelHead, Pill } from "./primitives";
 import { Spinner } from "./Busy";
 import { money } from "@/lib/format";
 import { dataPT } from "@/lib/legal";
-import { signSubscriptionOrder, subscriptionOrders, type SubscriptionOrders } from "@/lib/subscricao";
+import {
+  signSubscriptionOrder,
+  subscriptionOrders,
+  type SubscriptionNotice,
+  type SubscriptionOrders,
+} from "@/lib/subscricao";
 
 /**
  * As condições comerciais do clube, nas Definições.
@@ -125,7 +130,53 @@ export function ContratoPanel() {
           </div>
         </>
       )}
+
+      <Avisos avisos={dados?.avisos ?? []} />
     </Panel>
+  );
+}
+
+/**
+ * Os avisos de pagamento que já saíram.
+ *
+ * ## Porque é que isto se mostra
+ *
+ * Porque o aviso é um email, e um email é uma coisa que se perde. Quem trata das
+ * contas do clube tem de poder confirmar sozinho o que foi pedido, quando, e
+ * para onde foi — sem ligar a ninguém. É a mesma razão por que a ficha do sócio
+ * mostra as quotas lançadas em vez de confiar na caixa de correio dele.
+ *
+ * Um aviso por enviar aparece a dizê-lo: o clube deve o mesmo dinheiro, e não é
+ * o email que cria a dívida.
+ */
+function Avisos({ avisos }: { avisos: SubscriptionNotice[] }) {
+  if (avisos.length === 0) return null;
+
+  return (
+    <div className="border-t border-line">
+      <header className="flex items-baseline gap-2.5 px-5 pt-4 pb-1">
+        <h3 className="text-panel text-ink">Avisos de pagamento</h3>
+        <span className="text-meta text-ink-3">os mais recentes</span>
+      </header>
+      <ul className="divide-y divide-line">
+        {avisos.map((a) => (
+          <li key={a.id} className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1 px-5 py-2.5">
+            <span className="min-w-0 text-body text-ink-2">
+              {dataPT(a.periodStart)} a {dataPT(a.periodEnd)}
+            </span>
+            <span className="flex items-baseline gap-2.5">
+              <span className="text-meta text-ink-3">
+                {a.sentAt ? `enviado a ${dataPT(a.sentAt)}` : "por enviar"}
+              </span>
+              <span className="text-body text-ink tabular">{money(a.amountCents)}</span>
+            </span>
+          </li>
+        ))}
+      </ul>
+      <p className="px-5 pt-1 pb-3 text-meta leading-relaxed text-ink-3">
+        Saem para quem representa o clube, no dia do mês em que as condições foram assinadas.
+      </p>
+    </div>
   );
 }
 

@@ -185,6 +185,8 @@ const TENANT_SCOPED = new Set<string>([
   "Notification",
   "Evaluation",
   "NutritionPlan",
+  "TrainingCycle",
+  "ProfileChange",
   "ClinicalEntry",
   // Scouting. `ProspectEvent` e `ObservationRating` ficam de fora — herdam o
   // tenant do pai, e a RLS trata-os por junção.

@@ -277,7 +277,7 @@ export class FamilyInvitesService {
     return this.prisma.runAs(academyId, async (db) => {
       const athlete = await db.athlete.findFirst({
         where: { id: athleteId },
-        select: { name: true, teams: { select: { team: { select: { name: true } } }, take: 1 } },
+        select: { name: true, teams: { where: { leftAt: null }, select: { team: { select: { name: true } } }, take: 1 } },
       });
       if (!athlete) throw new NotFoundException(NOT_FOUND);
 
@@ -476,7 +476,7 @@ export class FamilyInvitesService {
                 select: {
                   id: true,
                   name: true,
-                  teams: { take: 1, select: { team: { select: { name: true } } } },
+                  teams: { where: { leftAt: null }, take: 1, select: { team: { select: { name: true } } } },
                 },
               },
             },

@@ -6,12 +6,16 @@ import { Empty, Loading, Panel, PanelHead, Pill, cx, type Tone } from "@/compone
 import { Segmented } from "@/components/filters";
 import { MemberFeeDialog } from "@/components/MemberFeeDialog";
 import { PhotoPicker } from "@/components/PhotoPicker";
+import { HistoricoPanel } from "@/components/HistoricoPanel";
+import { BotaoExportarPerfil } from "@/components/BotaoExportarPerfil";
+import { exportarFichaDeSocio } from "@/lib/perfis";
 import { removeMemberPhoto, uploadMemberPhoto } from "@/lib/photos";
 import {
   ArrowLeft,
   Check,
   ChevronDown,
   CircleCheck,
+  History,
   LayoutGrid,
   Mail,
   MapPin,
@@ -73,7 +77,7 @@ export default function MemberDetail() {
   const [notFound, setNotFound] = useState(false);
   const [editing, setEditing] = useState(false);
   const [busy, setBusy] = useState(false);
-  const [tab, setTab] = useState<"overview" | "fees">("overview");
+  const [tab, setTab] = useState<"overview" | "fees" | "history">("overview");
 
   const mayWrite = can(session, "member:write");
 
@@ -175,8 +179,11 @@ export default function MemberDetail() {
         </div>
 
         {/* As acções de estado ao lado do nome: é a decisão que se vem cá tomar. */}
-        {mayWrite && (
-          <div className="flex shrink-0 flex-wrap items-center gap-1.5">
+        <div className="flex shrink-0 flex-wrap items-center gap-1.5">
+          {/* A ficha em papel — para o processo do sócio, ou para a assembleia. */}
+          {!editing && <BotaoExportarPerfil exportar={() => exportarFichaDeSocio(m, session)} />}
+          {mayWrite && (
+            <>
             {!editing && (
               <button type="button" className="ctl-ghost" onClick={() => setEditing(true)}>
                 <Pencil className="size-3.5" strokeWidth={1.75} />
@@ -198,8 +205,9 @@ export default function MemberDetail() {
               </button>
             )}
             <MemberStatusMenu member={m} onChanged={load} />
-          </div>
-        )}
+            </>
+          )}
+        </div>
       </header>
 
       {m.status === "PENDING" && (
@@ -226,6 +234,8 @@ export default function MemberDetail() {
             options={[
               { value: "overview" as const, label: "Visão geral", icon: LayoutGrid },
               { value: "fees" as const, label: "Quotas", icon: Wallet },
+              // O que já mexeram na ficha, a quem a pode editar.
+              ...(mayWrite ? [{ value: "history" as const, label: "Histórico", icon: History }] : []),
             ]}
           />
         </div>
@@ -242,6 +252,8 @@ export default function MemberDetail() {
         />
       ) : tab === "fees" ? (
         <QuotasTab member={m} mayWrite={mayWrite} onChanged={load} />
+      ) : tab === "history" ? (
+        <HistoricoPanel tipo="socios" id={m.id} />
       ) : (
         <div className="grid gap-3 lg:grid-cols-[minmax(0,1.2fr)_minmax(0,1fr)]">
           <div className="space-y-3">
@@ -305,7 +317,7 @@ export default function MemberDetail() {
             </Panel>
 
             <Panel>
-              <PanelHead title="Histórico" />
+              <PanelHead title="Inscrição" />
               <ul className="px-5 py-2.5">
                 <Event label="Inscreveu-se" at={m.createdAt} note={m.source === "site" ? "pela página do clube" : undefined} />
                 {m.approvedAt && (
@@ -600,7 +612,16 @@ function QuotasLancadasPanel({
                   {f.status === "SETTLED" && f.method === "TRANSFER" && " · transferência"}
                   {f.status === "SETTLED" && f.method === "MBWAY" && " · MB Way"}
                   {f.status === "SETTLED" && f.method === "MULTIBANCO" && " · Multibanco"}
+                  {f.paidBy && ` · por ${f.paidBy}`}
                 </span>
+                {f.paymentId && (
+                  <span
+                    className="block select-all break-all font-mono text-[10px] text-ink-4"
+                    title="Assim aparece no backoffice da euPago"
+                  >
+                    {f.paymentId}
+                  </span>
+                )}
               </span>
               {/* Uma quota paga online não se mexe daqui: o dinheiro está na
                   euPago, e desfazer isso é um estorno. A pastilha fica muda. */}
@@ -1349,21 +1370,35 @@ function EditPanel({
   const [error, setError] = useState<string | null>(null);
 
   /*
-   * Três exigências — e o que estiver preenchido tem de estar bem.
+   * O nome, um contacto — e o que estiver preenchido tem de estar bem.
    *
    * "Opcional" quer dizer "pode não vir", nunca "pode vir errado": um NIF com
    * oito dígitos entra na base como se fosse bom e ninguém volta lá para o ver.
    *
-   * O número só é exigido a quem já o tem: uma inscrição por aprovar ainda não
-   * recebeu nenhum, e pedi-lo aqui era obrigar a admitir o sócio para lhe
-   * corrigir uma letra do nome.
+   * ## O contacto é **um dos dois**, e era aqui que estava errado
+   *
+   * Isto exigia o telemóvel sempre. A regra do produto é a da inscrição — email
+   * **ou** telemóvel, pelo menos um — e a consequência de as duas discordarem
+   * era concreta: um sócio antigo que só deixou o email no livro não se
+   * conseguia editar sem lhe inventar um número de telefone. Um telemóvel
+   * inventado é pior do que um telemóvel em falta, porque ninguém sabe que
+   * está errado.
+   *
+   * O servidor impõe a mesma coisa (`update`), que é onde a regra tem de valer;
+   * isto é a interface a dizê-la antes de alguém carregar em Gravar.
+   *
+   * O número de sócio só é exigido a quem já o tem: uma inscrição por aprovar
+   * ainda não recebeu nenhum, e pedi-lo aqui era obrigar a admitir o sócio para
+   * lhe corrigir uma letra do nome.
    */
   const cpOk = !postalCode.trim() || /^\d{4}-\d{3}$/.test(postalCode.trim());
   const emailOk = !email.trim() || email.includes("@");
+  const telefoneOk = !phone.trim() || /^\d{6,15}$/.test(phone.replace(/\s/g, ""));
+  const temContacto = Boolean(email.trim() || phone.trim());
   const nifOk = !taxId.trim() || /^\d{9}$/.test(taxId.trim());
   const numeroOk = member.number == null || number.trim() !== "";
   const valid =
-    name.trim().length >= 3 && phone.trim().length >= 6 && numeroOk && cpOk && emailOk && nifOk;
+    name.trim().length >= 3 && temContacto && telefoneOk && numeroOk && cpOk && emailOk && nifOk;
 
   async function save() {
     if (!valid || busy) return;
@@ -1488,16 +1523,38 @@ function EditPanel({
           <div className="space-y-3 px-5 py-4">
             <div className="grid grid-cols-2 gap-3">
               <DialogField label="E-mail">
-                <input value={email} onChange={(e) => setEmail(e.target.value)} className={dialogInputClass} />
+                <input
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                  type="email"
+                  placeholder="nome@exemplo.pt"
+                  className={cx(dialogInputClass, !emailOk && "border-risk")}
+                />
               </DialogField>
               <DialogField label="Telemóvel">
                 <input
                   value={phone}
-                  onChange={(e) => setPhone(e.target.value)}
-                  className={cx(dialogInputClass, phone.trim().length < 6 && "border-risk")}
+                  onChange={(e) => setPhone(e.target.value.replace(/[^\d\s]/g, ""))}
+                  inputMode="tel"
+                  placeholder="912 345 678"
+                  className={cx(dialogInputClass, !telefoneOk && "border-risk")}
                 />
               </DialogField>
             </div>
+
+            {/*
+              A regra dita uma vez, e só quando falha.
+
+              Nenhum dos dois campos é obrigatório sozinho, e marcar os dois
+              como obrigatórios seria mentir. A frase aparece quando ficam ambos
+              vazios — que é o único momento em que interessa lê-la — e é a
+              mesma que o servidor devolve.
+            */}
+            {!temContacto && (
+              <p className="rounded-[var(--radius-control)] bg-warn-soft px-3 py-2 text-meta leading-relaxed text-warn">
+                Um sócio precisa de pelo menos um contacto — email ou telemóvel. Chega um dos dois.
+              </p>
+            )}
 
             <DialogField label="Morada" hint="opcional">
               <input value={address} onChange={(e) => setAddress(e.target.value)} className={dialogInputClass} />

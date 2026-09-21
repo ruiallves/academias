@@ -1,5 +1,5 @@
 import { useSyncExternalStore } from "react";
-import { apiDelete, apiGet, apiPatch, apiPost } from "@/lib/http";
+import { apiDelete, apiGetSilencioso, apiPatch, apiPost } from "@/lib/http";
 import { loadDepartments } from "@/lib/departments";
 import type { Permission, Role } from "@/lib/permissions";
 
@@ -84,7 +84,14 @@ async function recarregar(): Promise<void> {
 /** Lê do servidor. A primeira leitura semeia os papéis de origem, lá do lado. */
 export async function loadRoles(): Promise<void> {
   try {
-    const roles = await apiGet<AcademyRole[]>("/api/roles");
+    /*
+     * Silencioso: isto é pedido de fundo pela lista de primeiros passos, que
+     * só quer **contar** os cargos, e a falha já tem resposta — fica em
+     * `state.error`, que as Definições mostram no sítio delas. Sem isto, um
+     * cargo cujo âmbito não chegue a `/api/roles` levava com um aviso ao canto
+     * a cada entrada na consola, sem ter pedido nada.
+     */
+    const roles = await apiGetSilencioso<AcademyRole[]>("/api/roles");
     state = { roles, loaded: true, error: null };
   } catch (e) {
     state = { ...state, loaded: true, error: e instanceof Error ? e.message : "Não foi possível carregar os papéis." };

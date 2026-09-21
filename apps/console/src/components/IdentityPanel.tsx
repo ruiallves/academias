@@ -4,6 +4,7 @@ import { Check, Trash2, Upload } from "@/lib/icons";
 import { apiDelete, apiPatch, apiPost } from "@/lib/http";
 import { reloadAcademy, useStore } from "@/lib/store";
 import { signalVars } from "@academia/ui/tokens";
+import { erroAvisado } from "@/lib/avisos";
 
 /**
  * A identidade do clube — a cor e o símbolo.
@@ -303,7 +304,8 @@ function ClubSymbol({ mayWrite, onError }: { mayWrite: boolean; onError: (m: str
         headers: { "Content-Type": file.type, Authorization: `Bearer ${token}` },
         body: file,
       });
-      if (!res.ok) throw new Error("O carregamento falhou. Tenta outra vez.");
+      // Directo ao armazenamento, fora do cliente HTTP: avisa-se aqui.
+      if (!res.ok) throw erroAvisado("O carregamento falhou. Tenta outra vez.");
 
       await apiPost("/api/identidade/simbolo", { key });
       await reloadAcademy();

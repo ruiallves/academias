@@ -3,7 +3,7 @@ import { athletes, guardians, sessions, staff, teams, useStore } from "@/lib/sto
 import { useCatalog } from "@/lib/catalogs";
 import { loadRoles, useRoles } from "@/lib/roles";
 import { usePendingInvites } from "@/lib/invites";
-import { listTiers } from "@/lib/members";
+import { listTiersSilencioso } from "@/lib/members";
 import { can, type Permission, type Session } from "@/lib/permissions";
 
 /**
@@ -268,7 +268,7 @@ export function useOnboarding(session: Session): Onboarding {
   const [memberTiers, setMemberTiers] = useState(0);
   useEffect(() => {
     if (!can(session, "member:write")) return;
-    listTiers()
+    listTiersSilencioso()
       .then((tiers) => setMemberTiers(tiers.length))
       .catch(() => {
         /* sem sócios ainda configurados no servidor: fica 0, o passo continua por fazer */

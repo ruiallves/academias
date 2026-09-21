@@ -123,9 +123,9 @@ export function NewFeeDialog({ onClose, onDone }: { onClose: () => void; onDone:
    *
    * Um atleta com bolsa, o filho de um treinador, um acordo com a escola: a
    * mensalidade existe, vale 0 € e nasce paga (o servidor trata disso). O que
-   * não passa é o campo vazio ou um valor entre zero e um euro.
+   * não passa é o campo vazio ou um valor entre zero e 0,50 € (o mínimo da euPago, no MB WAY).
    */
-  const valorValido = modo === "preco" || (cents !== null && (cents === 0 || cents >= 100));
+  const valorValido = modo === "preco" || (cents !== null && (cents === 0 || cents >= 50));
   // Lançadas como pagas, tem de se dizer como: não há método por omissão.
   const valido = abrangidos.length > 0 && meses.size > 0 && valorValido && (estado === "OPEN" || metodo !== null);
 

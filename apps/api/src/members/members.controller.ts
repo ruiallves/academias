@@ -82,7 +82,10 @@ export class MembersController {
    */
   @Post("import")
   importMembers(@Req() req: AuthedRequest, @Body() dto: MemberImportDto) {
-    return this.members.importMembers(req.ctx, dto.rows, dto.createTiers ?? false);
+    return this.members.importMembers(req.ctx, dto.rows, dto.createTiers ?? false, {
+      sobrescrever: dto.sobrescrever === true,
+      enviarConvites: dto.enviarConvites === true,
+    });
   }
 
   @Get("tiers")

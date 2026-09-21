@@ -14,11 +14,16 @@ import { Segmented } from "@/components/filters";
 import { AccessPanel } from "@/components/AccessPanel";
 import { StaffEditDialog } from "@/components/StaffEditDialog";
 import { TeamStaffDialog } from "@/components/TeamStaffDialog";
+import { HistoricoPanel } from "@/components/HistoricoPanel";
+import { PercursoDoStaff } from "@/components/Percurso";
+import { BotaoExportarPerfil } from "@/components/BotaoExportarPerfil";
+import { exportarFichaDeStaff } from "@/lib/perfis";
 import {
   ArrowLeft,
   CalendarDays,
   ClipboardCheck,
   Gauge,
+  History,
   LayoutGrid,
   Mail,
   Phone,
@@ -48,7 +53,7 @@ import { PhotoPicker } from "@/components/PhotoPicker";
 import { removeStaffPhoto, uploadStaffPhoto } from "@/lib/photos";
 import { reloadAcademy } from "@/lib/store";
 
-type Tab = "overview" | "teams" | "activity" | "access";
+type Tab = "overview" | "teams" | "activity" | "access" | "history";
 
 /**
  * A ficha de uma pessoa da academia.
@@ -118,6 +123,9 @@ export default function StaffDetail() {
     ...(can(session, "access:write") || can(session, "settings:write")
       ? [{ value: "access" as const, label: "Acesso", icon: Shield }]
       : []),
+    // Cargo, equipas, acesso e permissões mudam com o tempo, e alguém acaba por
+    // perguntar quem deu o quê a quem. Só a quem mexe nos acessos.
+    ...(can(session, "access:write") ? [{ value: "history" as const, label: "Histórico", icon: History }] : []),
   ];
 
   return (
@@ -151,6 +159,13 @@ export default function StaffDetail() {
       )}
       {tab === "activity" && <Activity member={member} />}
       {tab === "access" && <AccessPanel member={member} session={session} />}
+      {tab === "history" && (
+        <div className="space-y-3">
+          {/* As equipas que treinou, e quando. */}
+          <PercursoDoStaff membershipId={member.id} />
+          <HistoricoPanel tipo="staff" id={member.id} />
+        </div>
+      )}
     </>
   );
 }
@@ -221,11 +236,16 @@ function StaffHeader({
         </p>
       </div>
 
-      {can(session, "staff:write") && (
-        <button type="button" onClick={onEdit} className="ctl-ghost shrink-0">
-          Editar ficha
-        </button>
-      )}
+      <div className="flex shrink-0 items-center gap-1.5">
+        {/* A ficha em papel de quem trabalha no clube: o percurso, a actividade
+            e — a quem gere acessos — o que esta pessoa vê no produto. */}
+        <BotaoExportarPerfil exportar={() => exportarFichaDeStaff(member, session)} />
+        {can(session, "staff:write") && (
+          <button type="button" onClick={onEdit} className="ctl-ghost">
+            Editar ficha
+          </button>
+        )}
+      </div>
     </div>
   );
 }

@@ -1,5 +1,5 @@
 import { useSyncExternalStore } from "react";
-import { apiDelete, apiGet, apiPatch, apiPost } from "@/lib/http";
+import { apiDelete, apiGetSilencioso, apiPatch, apiPost } from "@/lib/http";
 
 /**
  * Catálogos da academia.
@@ -171,7 +171,11 @@ let pending: Promise<void> | null = null;
 
 export function loadCatalogs(force = false): Promise<void> {
   if (loaded && !force) return Promise.resolve();
-  pending ??= apiGet<ApiItem[]>("/api/catalogs")
+  /*
+   * Silencioso: vem com o arranque para encher os menus dos diálogos, e quem
+   * não tem acesso à academia fica com as listas vazias — que é o que deve ver.
+   */
+  pending ??= apiGetSilencioso<ApiItem[]>("/api/catalogs")
     .then((rows) => {
       const next = { ...EMPTY };
       for (const key of CATALOG_KEYS) next[key] = [];
@@ -187,6 +191,20 @@ export function loadCatalogs(force = false): Promise<void> {
         });
       }
       state = next;
+      loaded = true;
+      emit();
+    })
+    .catch(() => {
+      /*
+       * Apanha a própria falha, em vez de a deixar sair.
+       *
+       * O comentário acima sempre disse que quem não tem acesso fica com as
+       * listas vazias — mas não havia `catch` nenhum, e o `void loadCatalogs()`
+       * do arranque transformava o 403 numa promessa rejeitada sem dono. Antes
+       * isso morria na consola do browser; com os avisos, passou a aparecer ao
+       * canto. As listas ficam vazias e marcadas como carregadas, que é o
+       * estado certo: os menus dos diálogos não ficam à espera para sempre.
+       */
       loaded = true;
       emit();
     })

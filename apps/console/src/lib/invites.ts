@@ -1,5 +1,5 @@
 import { useSyncExternalStore } from "react";
-import { apiDelete, apiGet, apiPost } from "@/lib/http";
+import { apiDelete, apiGetSilencioso, apiPost } from "@/lib/http";
 import type { Role } from "@/lib/permissions";
 import type { StaffDepartment } from "@/data/types";
 
@@ -75,7 +75,14 @@ export function useInvitesState(): State {
 /** Lê os pendentes. Silencioso a falhar: quem não tem `staff:read` não os vê. */
 export async function loadInvites(): Promise<void> {
   try {
-    const invites = await apiGet<PendingInvite[]>("/api/invites");
+    /*
+     * Silencioso, e este é o caso que mais custou: `/api/invites` exige
+     * `staff:read` e responde "Sem permissão" — um treinador ou um scout
+     * levavam com esse cartão **a cada entrada na consola**, por causa de um
+     * pedido que ninguém fez e cuja resposta certa é a lista vazia que o
+     * `catch` já devolvia.
+     */
+    const invites = await apiGetSilencioso<PendingInvite[]>("/api/invites");
     state = { invites, loaded: true };
   } catch {
     state = { invites: [], loaded: true };

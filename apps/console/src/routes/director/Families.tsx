@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import { PageHeader } from "@/components/Shell";
+import { BotaoExportar } from "@/components/BotaoExportar";
+import { COLUNAS_EXPORT_FAMILIAS } from "@/lib/colunas-export";
 import { DataTable, Empty, Metric, MetricRow, Monogram, Panel, PanelHead, Pill, type Column } from "@/components/primitives";
 import { BulkBar, BulkDeleteDialog } from "@/components/BulkDelete";
 import { ResultCount, SearchInput, Segmented, Toolbar } from "@/components/filters";
@@ -227,6 +229,16 @@ export default function Families() {
       )}
 
       <PageHeader title="Famílias" subtitle={`${guardians.length} encarregados de educação`}>
+        {/*
+          A lista de contactos das famílias, com os educandos de cada um. É o
+          que um clube leva para a reunião de pais e para o seguro.
+        */}
+        <BotaoExportar
+          linhas={guardians}
+          colunas={COLUNAS_EXPORT_FAMILIAS}
+          ficheiro="familias"
+          folha="Famílias"
+        />
         {/*
           Convidar exige `family:write`, e o botão passou a perguntar.
 

@@ -4,6 +4,10 @@ import { PageHeader } from "@/components/Shell";
 import { SearchInput, Segmented } from "@/components/filters";
 import { DataTable, Empty, Loading, Monogram, Panel, Pill, RowLink, cx, type Column, type Tone } from "@/components/primitives";
 import { Dialog, DialogField, dialogInputClass } from "@/components/Dialog";
+import { ConfirmarSobrescrita, EnviarConvites } from "@/components/ConfirmarSobrescrita";
+import { BotaoExportar } from "@/components/BotaoExportar";
+import { COLUNAS_EXPORT_SOCIOS } from "@/lib/colunas-export";
+import type { RespostaComExistentes } from "@/lib/importacao";
 import { CalendarDays, Check, Copy, Download, ExternalLink, Home, Plus, QrCode, Send, Settings, Tag, Trash2, Upload } from "@/lib/icons";
 import { descarregarCartazDeAdesao, descarregarQrDeAdesao, linkDeAdesao, qrDeAdesao } from "@/lib/adesao";
 import {
@@ -238,6 +242,17 @@ export default function Members() {
         subtitle={data ? `${active} ${active === 1 ? "sócio activo" : "sócios activos"}` : undefined}
       >
         <SearchInput value={q} onChange={setQ} placeholder="Nome, email ou NIF" />
+        {/*
+          Exportar sai com **as colunas da importação**, e é essa a razão de
+          existir: o clube exporta o livro, corrige um campo em toda a gente na
+          folha de cálculo, e volta a carregar. Ver `EXPORT_COLUMNS`.
+        */}
+        <BotaoExportar
+          linhas={data?.members ?? []}
+          colunas={COLUNAS_EXPORT_SOCIOS}
+          ficheiro={`socios-${academy.slug}`}
+          folha="Sócios"
+        />
         {mayWrite && (
           <button type="button" className="ctl-outline" onClick={() => setImportOpen(true)}>
             <Upload className="size-3.5" strokeWidth={1.75} />
@@ -1214,8 +1229,17 @@ function ImportDialog({ onClose, onDone }: { onClose: () => void; onDone: () => 
   const [fileName, setFileName] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [result, setResult] = useState<{ created: number; duplicates: number } | null>(null);
+  const [result, setResult] = useState<{ created: number; updated: number; duplicates: number } | null>(null);
   const [tierNames, setTierNames] = useState<string[]>([]);
+  /*
+   * Os emails saem só se alguém os pedir.
+   *
+   * Nasce desligado. Era o contrário, e ninguém o via — o botão dizia
+   * "Importar e convidar 312" e trezentos emails saíam em nome do clube.
+   */
+  const [convidar, setConvidar] = useState(false);
+  /** Quem a folha já conhece, quando o servidor parou para perguntar. */
+  const [existentes, setExistentes] = useState<RespostaComExistentes | null>(null);
   /**
    * As categorias que a folha traz e o clube não tem.
    *
@@ -1239,6 +1263,10 @@ function ImportDialog({ onClose, onDone }: { onClose: () => void; onDone: () => 
     if (!file) return;
     setError(null);
     setResult(null);
+    // Uma folha nova são perguntas novas: o que se respondeu sobre a anterior
+    // não pode ficar respondido para esta.
+    setExistentes(null);
+    setNovas(null);
     setFileName(file.name);
     try {
       setSheet(await readMemberSheet(file));
@@ -1248,16 +1276,33 @@ function ImportDialog({ onClose, onDone }: { onClose: () => void; onDone: () => 
     }
   }
 
-  async function send(criarCategorias = false) {
+  /**
+   * Envia a folha, e volta a enviá-la com cada resposta que o servidor pediu.
+   *
+   * O servidor pára duas vezes antes de escrever: nas categorias que o clube
+   * não tem, e em quem a folha já conhece. Cada paragem devolve o que precisa
+   * de resposta e **não escreve nada** — por isso repetir o pedido com a
+   * resposta ligada é seguro, e é o que estes dois booleanos fazem.
+   */
+  async function send({ criarCategorias = false, sobrescrever = false } = {}) {
     if (!sheet || bad.length > 0 || good.length === 0 || busy) return;
     setBusy(true);
     setError(null);
     try {
-      const res = await importMembers(good.map((r) => r.row), criarCategorias);
+      const res = await importMembers(good.map((r) => r.row), {
+        createTiers: criarCategorias || novas !== null,
+        sobrescrever: sobrescrever || existentes !== null,
+        enviarConvites: convidar,
+      });
 
       // Categorias novas: a importação não falhou, ficou à espera de resposta.
       if (!res.ok && res.unknownTiers.length > 0) {
         setNovas(res.unknownTiers);
+        return;
+      }
+      // Gente que já cá está: a segunda pergunta, e a que apaga dados.
+      if (!res.ok && res.existingTotal > 0) {
+        setExistentes({ existing: res.existing, existingTotal: res.existingTotal });
         return;
       }
       if (!res.ok) {
@@ -1265,7 +1310,8 @@ function ImportDialog({ onClose, onDone }: { onClose: () => void; onDone: () => 
         return;
       }
       setNovas(null);
-      setResult({ created: res.created, duplicates: res.duplicates.length });
+      setExistentes(null);
+      setResult({ created: res.created, updated: res.updated, duplicates: res.duplicates.length });
       setSheet(null);
       onDone();
     } catch (e) {
@@ -1274,6 +1320,13 @@ function ImportDialog({ onClose, onDone }: { onClose: () => void; onDone: () => 
       setBusy(false);
     }
   }
+
+  /** O que o botão faz a seguir, e como se chama. É a pergunta que está aberta. */
+  const proximoPasso = existentes
+    ? { label: `Substituir ${existentes.existingTotal === 1 ? "1 ficha" : `${existentes.existingTotal} fichas`} e importar`, acao: () => void send({ sobrescrever: true }) }
+    : novas !== null
+      ? { label: `Criar ${novas.length === 1 ? "a categoria" : `as ${novas.length} categorias`} e importar`, acao: () => void send({ criarCategorias: true }) }
+      : { label: good.length > 0 ? `Importar ${good.length}` : "Importar", acao: () => void send() };
 
   return (
     <Dialog
@@ -1296,15 +1349,9 @@ function ImportDialog({ onClose, onDone }: { onClose: () => void; onDone: () => 
               type="button"
               className="ctl-primary"
               disabled={busy || !sheet || bad.length > 0 || good.length === 0}
-              onClick={() => void send(novas !== null)}
+              onClick={proximoPasso.acao}
             >
-              {busy
-                ? "A importar…"
-                : novas !== null
-                  ? `Criar ${novas.length === 1 ? "a categoria" : `as ${novas.length} categorias`} e importar`
-                  : good.length > 0
-                    ? `Importar e convidar ${good.length}`
-                    : "Importar"}
+              {busy ? "A importar…" : proximoPasso.label}
             </button>
           )}
         </>
@@ -1314,12 +1361,16 @@ function ImportDialog({ onClose, onDone }: { onClose: () => void; onDone: () => 
         {result ? (
           <div className="rounded-[var(--radius-control)] border border-line bg-ok-soft/40 p-4">
             <p className="text-body font-medium text-ink">
-              {result.created} {result.created === 1 ? "sócio importado" : "sócios importados"}.
+              {result.created} {result.created === 1 ? "sócio importado" : "sócios importados"}
+              {result.updated > 0 &&
+                `, ${result.updated} ${result.updated === 1 ? "ficha actualizada" : "fichas actualizadas"}`}
+              .
             </p>
             {result.duplicates > 0 && (
               <p className="mt-1 text-meta text-ink-3">
-                {result.duplicates} {result.duplicates === 1 ? "já existia" : "já existiam"} no livro e{" "}
-                {result.duplicates === 1 ? "foi ignorado" : "foram ignorados"} — o NIF já cá estava.
+                {result.duplicates}{" "}
+                {result.duplicates === 1 ? "linha repetida na folha ficou" : "linhas repetidas na folha ficaram"} de
+                fora.
               </p>
             )}
           </div>
@@ -1345,20 +1396,25 @@ function ImportDialog({ onClose, onDone }: { onClose: () => void; onDone: () => 
             </p>
 
             {/*
-              Uma importação manda correio, e isso não pode ser uma surpresa.
-
-              Trezentas fichas de Excel são trezentos emails a sair em nome do
-              clube, para pessoas a sério, e num só clique. Quem carrega o livro
-              tem de o saber **antes** — e saber também que quem não tiver email
-              na folha fica sem convite, que é o caso de metade dos livros
-              antigos. A lista tem a coluna "App" e o envio em massa para o
-              resolver depois, com calma.
+              Uma importação manda correio, e isso não pode ser uma surpresa —
+              nem a omissão. Era uma frase a avisar que os emails iam sair de
+              qualquer maneira; passou a ser uma escolha, desligada.
             */}
-            <p className="rounded-[var(--radius-control)] bg-signal-soft px-3 py-2 text-meta leading-relaxed text-signal-ink">
-              Cada sócio com email na folha recebe, ao importar, um convite para criar conta e instalar a app do
-              clube. Quem não tiver email fica sem convite — podes enviá-lo depois pela lista.
-            </p>
+            <EnviarConvites
+              ligado={convidar}
+              onChange={setConvidar}
+              substantivo="sócio"
+              semEmail={good.filter((r) => !r.row.email).length}
+            />
           </>
+        )}
+
+        {existentes && (
+          <ConfirmarSobrescrita
+            linhas={existentes.existing}
+            total={existentes.existingTotal}
+            substantivo="sócio"
+          />
         )}
 
         {novas && (

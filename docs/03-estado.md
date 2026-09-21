@@ -109,8 +109,29 @@ sempre quem o registou.
 ## Consola — Equipa técnica
 
 Visão geral (próximo treino) · Equipas · Atletas · Calendário · Presenças ·
-Convocatórias · Clínico · Avaliações · Relatórios · Comunicação — **tudo limitado às
-suas equipas**, aplicado na fronteira de dados e não em cada ecrã.
+Convocatórias · Clínico · Avaliações · Relatórios · Comunicação.
+
+**Escrever é sempre só nas equipas dele**, aplicado na fronteira de dados e não
+em cada ecrã. **Ler é mais largo, e segue a permissão**: quem pode inscrever
+atletas (`athlete:write`, que o treinador tem por omissão) lê os atletas do
+clube; quem pode gerir equipas (`team:write`) lê as equipas todas; o calendário
+é do clube para qualquer staff, para se saber se o campo está ocupado. Ver
+`athleteTeamScopeWhere`, `teamScopeForRoster` e `calendarScopeFilter` em
+`common/permissions.ts`.
+
+**O plano de treino e a periodização são a excepção, e ficam na equipa**: um
+treinador lê e escreve só os dos seus escalões (`lerPlano`, `listPlans` e
+`CyclesService.list`). O que se partilha entre treinadores são os **modelos de
+treino** e a **biblioteca de exercícios**, que nascem `CLUB` e existem para
+isso. Quem vê a academia toda (direção, coordenação) lê os planos todos, que é
+o trabalho dela.
+
+**Os ecrãs de trabalho dele mostram o que é dele**: a Visão geral (próximo
+treino, faixa da semana, "precisa de atenção") e o Planeamento abrem nas equipas
+dele, e a taxa de assiduidade conta só os treinos dele. O clube inteiro continua
+a um clique, no Calendário e no seletor de equipa do Planeamento. A marca é o
+`mine` que o servidor põe em cada treino, e para quem vê a academia toda é
+sempre verdadeiro.
 
 O treinador tem `calendar:write` **dentro do seu âmbito**: cria treinos e jogos
 para as suas equipas, mas a opção "toda a academia" não lhe aparece no diálogo —
@@ -365,6 +386,84 @@ GPS), esta passa a ser "a planeada" e compara-se; é também o terreno preparado
 para a IA: os alertas da semana ("sem minutos de transição planeados") já são
 derivados dos mesmos dados, nunca inventados.
 
+### Planeamento: mesociclos e microciclos por cima do calendário
+
+"Treinos" passou a chamar-se **Planeamento** (a rota continua `/treinos`). Quem
+não periodiza não nota diferença: escolhe a equipa (ou todas) e tem a semana à
+frente, como antes. Quem quer periodizar ganha, por equipa, a época numa barra
+com os mesociclos, os microciclos e os jogos.
+
+**O modelo** (migração `20260919120000_periodizacao`):
+
+- O **macrociclo é a época** (`Season`), a que a equipa já pertence. Não há
+  tabela para ele.
+- Uma tabela, `TrainingCycle`, com `level` MESO ou MICRO: um intervalo de dias
+  inteiros (`startsOn`/`endsOn`, `@db.Date`, inclusivos) de uma equipa, com
+  `name`, `focus[]` (sugestões da modalidade e texto livre), `objective`,
+  `notes` e `color` (paleta ou cor livre). `phase` ficou na tabela mas a
+  consola já não o usa: o nome é a fase.
+- **O microciclo é sempre uma semana, de segunda a domingo** (decisão do
+  produto). O servidor recusa outro intervalo ao criar ou ao mudar datas; os
+  micros antigos continuam editáveis enquanto não se lhes mexer nas datas.
+- **O mesociclo também é feito de semanas inteiras**: começa a uma segunda e
+  acaba a um domingo, e o servidor recusa outras datas. No diálogo, os campos de
+  data só deixam escolher segundas (início) e domingos (fim), com `step` de 7
+  dias no próprio calendário do browser; uma data escrita à mão encosta-se à
+  semana dela. A dica ao lado diz quantas semanas são.
+- Os mesociclos de antes desta regra podem acabar a meio de uma semana. Para
+  esses, **a semana pertence ao mesociclo que contém a sua quinta-feira** (a
+  regra da semana ISO), e o calendário pinta a semana inteira com a cor dele.
+  Continuam editáveis enquanto não se lhes mexer nas datas.
+- **O mesociclo traz as suas semanas**: criá-lo cria logo os microciclos por
+  baixo; alargar-lhe as datas cria os que faltam; apagá-lo leva os que ainda
+  estão vazios (sem objetivo, foco nem notas) e deixa os que têm trabalho.
+  Sempre só onde não há micro. `POST /api/training/cycles/gerar` continua a
+  existir e faz o mesmo para um intervalo.
+- **Nada aponta para os ciclos.** Um treino, um jogo ou um evento pertence ao
+  micro que contém o seu dia (hora de Lisboa). Por isso os treinos antigos
+  entram sozinhos, mover um treino muda-o de micro, e apagar um ciclo nunca
+  apaga nem desliga treinos.
+- **Sem sobreposições no mesmo nível e na mesma equipa**, garantido na base
+  (restrições de exclusão com `btree_gist`, uma por nível). O serviço verifica
+  antes para dizer com qual choca.
+- Lê-se com `training:read` (o treinador vê a periodização do clube),
+  escreve-se com `training:write` e o âmbito da equipa. Sem permissão nova.
+
+**O dia em relação ao jogo** (MD-4, MD-1, MD+1) calcula-se, nunca se guarda
+(`matchDayLabel` em `apps/console/src/lib/cycles.ts`).
+
+**Na consola:**
+
+- **Planeamento** (`routes/training/Trainings.tsx`, `SeasonBar.tsx`,
+  `CycleDialogs.tsx`, `ExportDialog.tsx`): seletor de equipa (o treinador
+  começa na dele, a direção no clube inteiro); com equipa, a barra da época
+  ("Novo mesociclo", "Exportar"); por baixo, o microciclo aberto com objetivo,
+  foco e notas, o MD de cada dia, a carga e a distribuição por objetivo, e um
+  aviso quando o foco não tem minutos planeados.
+- **O diálogo do mesociclo**: nome em texto livre com sugestões (Pré-época,
+  Desenvolvimento, Competição, Transição, Férias), foco com as categorias da
+  modalidade e um campo "Outro foco", seis cores e "Outra cor" (o seletor do
+  sistema). A cor não depende do nome. Os grupos de sugestões não estão dentro
+  de um `<label>`: um clique no espaço entre elas carregava na primeira.
+- **Exportar em PDF** (`lib/periodization-pdf.ts`, A4 deitado, com a cor e o
+  emblema do clube): o macrociclo (barra da época, mesociclos e todos os
+  microciclos), um mesociclo (objetivo, foco e cada semana com os treinos) ou
+  um microciclo (os sete dias lado a lado, com MD, jogos, treinos e blocos).
+- **Editor do treino**: "Plano de treino · Micro 09 · MD-3 · Competição I" no
+  cabeçalho, e o objetivo e o foco do micro por cima do plano.
+- **Calendário**: com uma só equipa visível na legenda e se ela tiver ciclos,
+  cada dia mostra a faixa do mesociclo, o micro onde começa e o MD.
+- A barra lateral mostra a época corrente do arranque (que agora traz as datas
+  de cada época, `seasonRanges` no store) em vez de "Época 2026/27" à mão.
+
+**Fica para depois**: duplicar treinos, copiar um micro para outras semanas ou
+equipas, deslocar um intervalo, modelos de microciclo (com a hora e o campo de
+`Team.schedule`), o resumo planeado vs realizado por micro, um nível MACRO para
+a dupla periodização, e oferecer mover os treinos quando um jogo muda de dia.
+
+Teste: `npm run test:periodizacao` (38 verificações, equipa própria, contra a
+API da :3001).
+
 ### Biblioteca de exercícios
 
 `Exercise` com metadados de filtro (categoria, sub-objetivos, tipo, intensidade,
@@ -500,9 +599,10 @@ estrutura na área) — preenche-se, não se desenha do zero.
 
 ### Fronteiras
 
-O âmbito manda como em tudo: um treinador **planeia as equipas dele**
-(`teamScopeFilter` no `savePlan`), lê os planos do clube (a mesma razão do
-calendário — a metodologia ganha em ver-se). Os cargos personalizados criados
+O âmbito manda como em tudo: um treinador **planeia e lê as equipas dele**
+(`teamScopeFilter` no `savePlan`, no `listPlans` e no `lerPlano`). O plano de
+um escalão não se abre de fora: partilham-se modelos e exercícios, não planos.
+A direção e a coordenação, que veem a academia toda, leem tudo. Os cargos personalizados criados
 antes desta área receberam `training:read`/`training:write` por migração
 (`area_tecnica_nos_cargos`) — permissões que nasceram agora não são escolha de
 ninguém a atropelar; clínico, scouting e staff genérico ficaram de fora, como no
@@ -865,8 +965,10 @@ já e grava por baixo; se a gravação falhar, relê-se e a verdade do servidor
 prevalece. As guardas contra escalada vivem no servidor — não se delega
 `access:write` nem `settings:write`, só se concede o que o próprio granter tem, e
 ninguém edita o seu próprio acesso. O treinador tem `athlete:write` **por omissão**
-(inscreve e importa atletas, mas só nas suas equipas — o âmbito é garantido no
-servidor); a direção pode retirar-lho a um treinador em concreto por aqui.
+(inscreve e importa atletas nas suas equipas; com essa permissão passa também a
+**ler** a lista de atletas do clube, para não criar duplicados de quem já lá
+está); a direção pode retirar-lho a um treinador em concreto por aqui, e aí o
+âmbito por equipa volta também à leitura.
 Verificado por `npm run test:access` (12).
 
 ## Convites de staff
@@ -1647,6 +1749,239 @@ passava dos cinco segundos. Passou a duas transações, cada uma com metade: a
 primeira decide (quem é, se pode entrar, o que deve), a segunda é o clube e corre
 em paralelo com a assinatura da fotografia.
 
+## O fim da época, e o percurso de cada um
+
+### Quando a época vira
+
+Não há data fixa: cada clube arranca quando quer. Nas **Definições** há o cartão
+"Época" com a época em curso e as datas, e o botão **Começar nova época**
+(`academy:write`). Nada acontece sozinho.
+
+### O assistente, em três passos
+
+1. **A época**: nome e datas propostos (a seguinte, um ano à frente: 2026/27 dá
+   2027/28), e os escalões que transitam, cada um com o preço da mensalidade
+   já preenchido e editável. Desligar um escalão deixa-o para trás.
+2. **Os atletas**: assume-se que **todos renovam**. Cada um traz a sugestão de
+   escalão, com procura por nome ou escalão, e três destinos: o escalão,
+   "Por renovar" ou "Não continua". Contadores em cima dizem como está.
+3. **O resumo**, e só aí se grava.
+
+### A regra da idade
+
+A das federações: **idade a 31 de Dezembro do ano em que a época começa**. Um
+Sub-15 joga até aos 15, por isso quem faz 16 nesse ano sobe ao escalão mais
+baixo que ainda o aceite, dentro da mesma modalidade. Sem nenhum que o aceite,
+o assistente marca "sem escalão para a idade" e pergunta.
+
+### O que a viragem faz
+
+Cria a época (que passa a ser a corrente, e desmarca a anterior), copia os
+escalões com `Team.previousTeamId` a dizer de onde vieram, move os atletas,
+leva os treinadores atrás e cria os planos de preço das equipas novas. **Nada
+se apaga**: a época que acaba fica inteira, com jogos, treinos, mensalidades e
+avaliações.
+
+Quem "não continua" fica `LEFT`; quem fica "por renovar" fica **sem equipa** na
+época nova, e é assim que aparece em Atletas à espera de decisão (não foi
+preciso estado novo para isso).
+
+As passagens mudam **no instante em que se carrega no botão**, não na data de
+início da época: um clube que vira em Junho para Agosto não pode ter os miúdos
+em dois plantéis nesses dois meses.
+
+### O percurso
+
+`TeamMembership` e `TeamStaff` passaram a guardar histórico (entrada e saída).
+Mudar de escalão no dia a dia deixou de reescrever a ligação: fecha a passagem
+e abre outra. As fichas mostram:
+
+- **atleta**: separador Histórico, painel "Percurso" com escalões, épocas,
+  datas e posição;
+- **treinador**: o mesmo, com a função em cada equipa;
+- **equipa**: no separador Staff, "Passaram por aqui" com os treinadores, de
+  onde a equipa veio, e os atletas que saíram do plantel.
+
+Consequências no código, que valem para quem escrever leituras novas:
+`Athlete.teams` e `Team.staff` **têm de filtrar `leftAt: null`** para responder
+"hoje" (foram 42 leituras a acertar de uma vez), e a consola passa a mostrar só
+as equipas da época em curso (`allTeams` em `lib/api.ts`; `teamsDeTodasAsEpocas`
+para o histórico).
+
+Endpoints: `GET /api/seasons/proposta`, `POST /api/seasons/virar`,
+`GET /api/{athletes,teams}/:id/percurso` e `GET /api/staff/:membershipId/percurso`.
+Teste: `scripts/test-nova-epoca.mjs` (44 verificações).
+
+**Por fazer:** a importação de atletas ainda pode somar escalões ao mesmo
+atleta de propósito (ver `importMany`), por isso "um plantel de cada vez" é
+regra do caminho normal, não da base de dados.
+
+## Cobrar a um atleta, a uma equipa, ou a todos
+
+"Cobrar a uma família" (em Contas) cobrava a um atleta de cada vez. O kit do
+Sub-15 obrigava a repetir o mesmo formulário vinte vezes, e é aí que o clube
+desiste e volta ao envelope. Agora escolhe-se o alvo:
+
+- **um atleta**, como antes;
+- **uma equipa**: uma cobrança por atleta dela;
+- **todos**: uma por atleta activo do clube.
+
+Quem está na equipa, e quem são "todos", **resolve-se no servidor**
+(`createExtraCharge`), não na lista que a consola tem em mãos: entre abrir o
+diálogo e carregar no botão pode entrar um atleta, e o âmbito de quem cobra
+(`athleteScopeFilter`) tem de valer na mesma. Só atletas activos, porque cobrar
+a quem já saiu é criar dívida que ninguém paga. O pedido leva `teamId` ou
+`todos`, nunca uma lista de ids.
+
+Cada cobrança é uma `Charge` `EXTRA` como a de sempre, com `slot` próprio, e
+avisa os encarregados activos do seu atleta, com o nome dele no aviso. A
+resposta diz `cobrados` e `avisados`; o diálogo mostra o total antes ("5 ×
+25,00 € · 125,00 € no total") e o botão diz a quantos vai cobrar.
+
+Teste: `scripts/test-cobrar-equipa.mjs` (19 verificações, num clube
+descartável).
+
+## O PDF do mesociclo traz os treinos por inteiro
+
+Exportar um mesociclo dava o objetivo do bloco e uma tabela de semanas com os
+treinos espremidos numa célula ("Sáb 18:00 · 85'"). Agora a folha tem três
+partes:
+
+1. **os números do mesociclo**: treinos (e quantos têm plano), volume planeado,
+   carga média e jogos;
+2. **os microciclos**, com objetivo, foco, treinos, volume e carga média da
+   semana, e os jogos;
+3. **os treinos, um a um**: data e hora, o dia em relação ao jogo (MD-n), o
+   microciclo, o local, o objetivo principal, o tipo de treino, os blocos com a
+   duração de cada um, e a carga (volume, rótulo e pontuação). Um treino sem
+   plano diz "por planear" e o resto fica a travessão.
+
+Para isso, a exportação do mesociclo passou a ir buscar os blocos de cada
+treino, como já fazia a da semana (`ExportDialog`). Na época não: são dezenas de
+treinos e a folha é uma tabela de semanas.
+
+## Os modelos de treino dizem o que são
+
+A lista de "Modelos Favoritos", no plano de treino, era uma lista de nomes. Um
+nome não chega para escolher: "Teste" não diz se são 60 ou 100 minutos, se é
+leve ou puxado, se é meu ou do colega, nem se é de há duas semanas ou da época
+passada.
+
+Agora o popup tem:
+
+- **separadores** "Todos", "Criados por mim" e "Do clube" (os dos colegas),
+  com a contagem de cada um, procura por nome, objectivo ou autor, e ordenação
+  (mais usados, mais recentes, por nome);
+- **em cada modelo**: a carga estimada (a mesma conta do plano, `sessionLoad`),
+  o volume, a intensidade média, o tipo de sessão, os atletas esperados, o
+  objectivo, quem o criou, a data de criação, quantas vezes foi usado e quando;
+- **ao abrir um modelo**, os blocos por ordem com tempo, exercício, categoria e
+  intensidade, mais o material e as notas. Antes só se via isso aplicando o
+  modelo e desfazendo.
+
+Aplicar deixou de ser um clique na linha: a linha abre, e aplica-se no botão
+"Usar". O caixote só aparece a quem pode mesmo apagar (o autor, ou quem tem
+âmbito de clube), que é a regra do servidor em `deleteTemplate`.
+
+Não há modelos de fora do clube: a biblioteca é de cada academia. "Do clube"
+são os dos colegas, e chamar-lhe comunidade seria prometer outra coisa.
+
+O servidor passou a mandar `createdAt` na lista (`listTemplates`). Teste:
+`scripts/test-modelos-de-treino.mjs` (46 verificações).
+
+## App do sócio: o cartão no Início, separadores Jogos e Novidades
+
+O cartão deixou de ter separador: está inteiro no Início, que é o que se abre à
+entrada do estádio. O Início lê-se por esta ordem:
+
+1. a quota em atraso (ou por pagar), que leva às Quotas; sem nada por pagar,
+   "Quotas em dia";
+2. o cartão (com o QR, quando o clube o ligar);
+3. o jogo de maior prioridade (o primeiro da lista do servidor: escalões mais
+   velhos primeiro, depois o mais próximo), com "Ver mais jogos (N)";
+4. "Comunicados e sondagens": a sondagem por responder e os dois comunicados
+   mais recentes, com "Ver tudo".
+
+Os separadores passaram a Início, Quotas, Jogos e Novidades. Jogos tem todos os
+jogos agrupados por escalão; Novidades tem as sondagens (as por responder
+primeiro) e todos os comunicados. As rotas antigas continuam a funcionar:
+`/socio/cartao` leva ao Início e `/socio/clube` às Novidades, na app e nas
+notificações (`lib/rotas.ts`).
+
+## O mínimo é o da euPago, e os Movimentos dizem o método
+
+**Mínimo.** A euPago aceita MB WAY a partir de 0,50 € e Multibanco a partir de
+1 € (documentação dela). O mínimo de qualquer cobrança, preço de mensalidade,
+preço de categoria de sócio ou quota lançada passa a ser **0 € (isento) ou
+0,50 €**, em vez de 1 €: abaixo de 0,50 € nenhum método a cobra. Entre 0,50 € e
+1 € só se paga por MB WAY: a app esconde o Multibanco ("Só a partir de 1,00 €")
+e o servidor recusa-o com "paga por MB WAY". Tudo em `billing/minimos.ts`.
+
+**Movimentos.** As mensalidades pagas entravam com o método vazio (estava
+escrito `method: null`). Vêm agora do pagamento que as liquidou, com quem pagou
+em "Origem/destino" ("Maria Silva (Mãe)"). As avulsas deixaram de se chamar
+"Mensalidade": levam o título ("Kit de treino · João Silva").
+
+**Incidente (2026-09-19).** Ao testar isto, o teste foi parar a um
+`nest start --watch` que estava na porta 3001 com a chave de produção e criou
+uma referência Multibanco real de 30 € (290800638), que ninguém vai pagar. O
+teste passou a recusar as portas 3000 e 3001. E atenção: no PowerShell,
+`$env:EUPAGO_API_KEY = ""` **apaga** a variável e a API lê a chave do `.env`;
+arrancar a API de teste pelo bash (`EUPAGO_API_KEY= …`) e confirmar no log
+"as referências são simuladas" antes de correr qualquer teste de pagamento.
+
+## Cada pagamento diz de quem é, na consola e na euPago
+
+O clube via "pago" na consola e um movimento no backoffice da euPago, e não
+sabia de quem era: o que seguia para a euPago era o id interno do pagamento, e
+do nosso lado não se guardava quem carregou em "pagar".
+
+Agora cada pagamento feito pela app nasce com um **identificador que se lê**, e
+é esse que segue para a euPago como `identifier` (aparece no backoffice):
+
+    TIPO-MES-ATLETAS-PAGADOR-ID
+    MENS-SET26-JOAO_SILVA-MARIA_SILVA-7K2F9Q
+    QUOTA-SET26_A_NOV26-RUI_COSTA-RUI_COSTA-H8M3PX
+
+- **TIPO**: `MENS`, `EXTRA` (kit, torneio, viagem), `QUOTA`; tipos misturados
+  num pagamento dão `VARIOS`.
+- **MES**: um mês (`SET26`), meses seguidos como intervalo (`SET26_A_NOV26`),
+  até três soltos um a um (`SET26_E_NOV26`), mais do que isso `5MESES`.
+- **ATLETAS**: primeiro e último nome; vários juntam-se com `_E_`. Numa quota é
+  o sócio.
+- **PAGADOR**: quem pagou, primeiro e último nome.
+- **ID**: seis caracteres ao acaso (sem 0/O/1/I), para ser único.
+
+Maiúsculas sem acentos, algarismos, `-` e `_`, no máximo 64 caracteres: a
+euPago não documenta limites, e isto passa em qualquer sistema. Quando não cabe,
+os atletas ficam só com o primeiro nome, depois só quantos são, e por fim
+corta-se o pagador. O ID nunca se corta. Ver `billing/identificador.ts`.
+
+**Hoje, o que vai junto num pagamento**: na app da família cada cobrança paga-se
+sozinha (uma mensalidade ou um kit, de um atleta). Nas quotas de sócio, vários
+meses podem ir num pagamento só (`pagar até…`), e o identificador diz o
+intervalo. O formato já cobre pagamentos com vários atletas e tipos misturados,
+para quando existir um "pagar tudo" na app da família.
+
+**Quem pagou fica guardado** no pagamento (`payerName`, e `payerRelation`
+com o laço ao atleta, "Mãe"), fotografado no momento. A consola mostra-o nas
+Mensalidades (coluna Pagamento: método, dia, "Por Maria Silva (Mãe)" e o
+identificador) e nas quotas da ficha do sócio. O identificador é o mesmo que
+aparece na euPago: é por ele que se casa um movimento com o pagamento.
+
+O webhook, a reconciliação e o débito directo encontram o pagamento pelo
+identificador, e continuam a encontrar os antigos pelo id (migração
+`20260919120000_identificador_do_pagamento`). Os pagamentos marcados à mão não
+têm identificador nem pagador.
+
+**Por fazer:** os campos extra da euPago (`campos_extra`) mostrariam o pai e o
+atleta em colunas próprias do backoffice, mas têm de ser configurados à mão no
+canal de cada clube e só estão documentados para o Multibanco. Ficaram de fora.
+
+Teste: `scripts/test-identificador-pagamento.mjs` (46 verificações, incluindo o
+mínimo e os Movimentos), contra uma API **sem** `EUPAGO_API_KEY` numa porta
+própria (3011): pára se alguma referência não sair simulada.
+
 ## A app do clube vê-se como no telemóvel, mesmo em "ver como computador"
 
 Com "Site para computador" ligado no browser do telemóvel (às vezes está ligado
@@ -2018,6 +2353,281 @@ grava não se consegue inspeccionar. Verificado por `npm run test:qr --workspace
 e confirma o assunto, a chamada, o endereço por extenso sem `https://`, e que o
 cartaz das famílias **leva o token** — o endereço impresso e o QR saem do mesmo
 argumento, e imprimir um e codificar outro seria mentir em papel.
+
+## Os erros aparecem todos no mesmo sítio
+
+Um cartão ao **canto de baixo à direita**, com o botão de fechar e uma linha na
+**cor do clube** a encolher até ele se ir embora. Com o rato em cima, a linha
+pára: ler uma frase inteira não deve ser uma corrida.
+
+**Por cima de tudo.** O painel de primeiros passos vive exactamente neste canto
+(`z-40`) e os diálogos estão em `z-50`; os avisos estão em `z-[80]`, que é a
+camada mais alta da consola. Um erro tapado é um erro que não existe.
+
+**A cobertura vem de um sítio só.** O aviso é levantado dentro de
+`lib/http.ts`, que é por onde **todos** os pedidos passam — uma frase do
+servidor que antes morria num `catch` esquecido, ou que era desenhada no fundo
+de um diálogo com scroll onde ninguém a via, aparece agora no canto sem que o
+ecrã tenha de fazer nada. Quem apanha o erro continua a poder tratá-lo: o aviso
+acrescenta-se, não substitui.
+
+**A regra é: o que aparece é o que alguém pediu.** Um erro a seguir a um gesto
+aparece; um pedido que corre sozinho não, mesmo quando falha. É a distinção que
+faltou à primeira versão, e custou caro: o arranque pede as oito listas de uma
+vez, e um cargo sem staff nem mensalidades recebe dois 403 — que são a resposta
+certa e que o `soft()` do arranque já deitava fora. Passaram a aparecer ao
+canto, a cada entrada na consola, a dizer "Sem acesso ao staff" e "Sem acesso a
+mensalidades" a quem nunca pediu nada disso.
+
+Correm em silêncio (`apiGetSilencioso` / `apiPostSilencioso`) **todos** os
+carregadores de arranque: o `soft()` das oito listas, o `/api/bootstrap` (que
+tem ecrã próprio, o `BootError`), os catálogos, os convites, as notificações, os
+departamentos, os cargos, as categorias de sócio e as taxas euPago; mais o
+calendário ao mudar de mês e as sondagens — respostas a uma convocatória de doze
+em doze segundos, progresso de uma análise, marca de presença.
+
+A lista completa importa porque a primeira correcção só cobriu o `soft()`, e o
+problema continuou: `/api/invites` exige `staff:read` e responde **"Sem
+permissão"**, ou seja um treinador e um scout levavam com esse cartão a cada
+entrada.
+
+E havia uma **segunda porta**. Um `void carregar()` sem `catch` produz uma
+promessa rejeitada sem dono, e o `vigiarPromessasPerdidas` apanhava-a e
+mostrava-a — mesmo depois de o cliente HTTP ter decidido calar aquele erro.
+Silenciar o pedido não chegava. O vigia passou a ignorar os `ApiError`: quem
+decide sobre um erro de pedido é o cliente, e o vigia fica com o que existe para
+apanhar, que são os erros do lado do browser. O `loadCatalogs` também passou a
+apanhar a própria falha, que era o que o comentário dele já prometia e não
+fazia.
+
+Duas excepções mais, ambas com caminho próprio: a **sessão acabada** (leva à
+porta do clube) e os **termos por aceitar** (abre o gate legal).
+
+O que **não** passa pelo cliente HTTP são os carregamentos de ficheiros, que
+vão directos ao armazenamento por endereço assinado. Esses usam `erroAvisado`
+(e, nas fotografias, a própria `PhotoError` anuncia-se no construtor). As
+promessas que ninguém apanhou entram por `vigiarPromessasPerdidas`, ligado no
+arranque: um `void gravar()` sem `catch` deixou de morrer em silêncio.
+
+**O mesmo erro não se empilha.** Quando a rede cai são nove pedidos a falhar
+com a mesma frase; nove cartões iguais dizem que o produto está partido, não que
+houve nove erros. O aviso reacende, conta as repetições ("3×") e a linha do
+tempo recomeça. Tecto de quatro no ecrã, e quem sai é o mais velho.
+
+Os avisos são montados em `main.tsx`, **fora** dos portões de sessão e de
+arranque: dentro da casca, um erro a carregar a academia não tinha onde
+aparecer. Verificado por `npm run test:avisos` (23, a lógica do canal) e
+`npm run test:avisos-http` (15, o que aparece e o que não), ambos em
+`@academia/console`. O segundo corre os **carregadores verdadeiros** com tudo a
+responder 403 e exige zero cartões — foi por os ter listado à mão, em vez de os
+correr, que a avaria escapou à primeira.
+
+## Importar e exportar listas
+
+**Exportar existe em seis listas**: atletas, sócios, staff, famílias, equipas e
+prospectos. Um botão só (`components/BotaoExportar.tsx`), as colunas de cada
+lista em `lib/colunas-export.ts`, a mecânica em `lib/exportar.ts` (o `xlsx`
+entra por `await import`, como no export de mensalidades). **Exporta o que está
+no ecrã**, já filtrado: quem filtrou pelos Sub-13 quer os Sub-13.
+
+**Sócios e atletas saem com as colunas da importação**, pela mesma ordem e com
+os cabeçalhos tirados de `member-sheet.ts` e `import.ts` — não de uma segunda
+lista escrita à mão. É isso que fecha o ciclo que os clubes pediram: exportar,
+corrigir um campo em toda a gente numa folha de cálculo, e voltar a carregar.
+Para o livro de sócios sair completo, `GET /api/members` passou a trazer morada,
+código postal, país, documento, NIF e sexo. Verificado por
+`npm run test:exportar --workspace @academia/console` (25), que **exporta a
+sério e volta a ler o ficheiro com o leitor da importação** — um cabeçalho
+renomeado de um lado parte o teste, que é exactamente a avaria que ele existe
+para apanhar.
+
+**Os convites deixaram de sair por omissão.** Uma folha de trezentos sócios
+eram trezentos emails a sair em nome do clube num só clique, e ninguém o
+escolhia: era o que o botão fazia ("Importar e convidar 312"). Passou a ser uma
+caixa, desligada, nos dois diálogos (`enviarConvites` no corpo do pedido). Quem
+não tem email na folha continua sem convite, e a caixa di-lo com a contagem.
+
+**Quem já cá está deixou de ser um erro.** As duas importações **param antes de
+escrever** quando reconhecem gente, e devolvem `existing` com o nome da folha, o
+nome da ficha encontrada e os campos que iam mudar. O painel
+(`components/ConfirmarSobrescrita.tsx`) mostra isso e o botão passa a dizer
+"Substituir N fichas e importar"; a resposta é `sobrescrever` no pedido
+seguinte, que não repete nada — nada foi escrito na primeira passagem.
+
+- **Sócios**: reconhece pelo **número**, depois pelo **NIF**, depois pelo
+  **contacto** (email ou telemóvel). O contacto só conta quando pertence a um
+  sócio e a mais nenhum — num clube há casais e irmãos com o telefone de casa
+  em comum —, e quando é ambíguo a linha sai como problema a pedir o número.
+- **Atletas**: a chave é o **NIF**. A equipa da folha **junta-se** às que o
+  atleta já tem em vez de as substituir, porque as folhas são por escalão e um
+  miúdo que sobe está nas duas. O mesmo nome e data com outro NIF continua a ser
+  recusado: é uma contradição, não uma actualização.
+- Uma linha **igual** à ficha não pergunta nada e conta como já existente:
+  parar sobre trezentas linhas que não mudam nada era transformar a confirmação
+  num carimbo que ninguém lê.
+- Nenhum campo que a folha não traga é apagado. Uma coluna em falta não é o
+  clube a dizer que ninguém tem morada.
+
+**Editar um sócio pede um contacto, não os dois.** A regra da inscrição é email
+**ou** telemóvel, pelo menos um; a edição exigia o telemóvel sempre, e o
+servidor não exigia nada. Um sócio antigo que só deixou o email no livro não se
+conseguia editar sem lhe inventar um número de telefone — e um telemóvel
+inventado é pior do que um em falta, porque ninguém sabe que está errado. A
+regra passou a viver em `MembersService.update` (compara o **resultado**, por
+isso apagar o email de quem tem telemóvel continua a ser legítimo) e o
+`EditPanel` diz a mesma frase antes de se carregar em Gravar.
+
+Verificado por `npm run test:importacao` (55). A suite corre contra uma API de
+teste **com o correio desligado** — a alternativa era mandar emails a sério para
+endereços inventados a cada corrida.
+
+## O aviso mensal da subscrição sai sozinho
+
+Mudar o plano de um clube já era contratar (a ordem de adesão, mais acima), mas
+**cobrar** continuava a ser um gesto manual: alguém tinha de se lembrar de pedir
+o dinheiro a cada clube, todos os meses. Passou a sair sozinho.
+
+**O relógio é o dia em que o clube aceitou as condições.** Assinou a 20 de
+Setembro, o responsável recebe a 20 de Outubro, a 20 de Novembro, e assim por
+diante; num contrato anual, a 20 de Setembro do ano seguinte. Cada aviso cobre o
+período que **acabou de correr** (20/09 a 19/10): paga-se o mês que se usou, e o
+primeiro aviso chega um mês depois de assinar.
+
+**Fevereiro e os meses de 30 dias** encolhem o dia sem o perder: quem assina a
+31 de Janeiro recebe a 28 (ou 29) em Fevereiro, a 31 em Março, a 30 em Abril, a
+31 em Maio. Cada data calcula-se a partir da assinatura e nunca a partir do aviso
+anterior — somar um mês de cada vez dava 31/01 → 28/02 → 28/03 e ao fim de um ano
+o clube pagava no dia 28 sem ninguém ter decidido isso. A conta está em
+`subscription/ciclo.ts`, e o dia é o do calendário do clube
+(`common/fuso.ts`): quem assina às 00:30 de dia 20 em Lisboa não pode passar a
+ter aniversário no dia 19 por causa de uma hora de Verão.
+
+**Quem recebe** é quem representa o clube — a pessoa mais antiga com `legal:club`,
+a mesma definição que decide quem assina o contrato (`subscription/responsavel.ts`,
+partilhado pelos dois caminhos: um contrato assinado por uma pessoa e uma cobrança
+mandada a outra seria duas verdades sobre a mesma coisa).
+
+**O que o email leva**: cliente, plano, período, valor e data-limite (oito dias,
+`SUBSCRIPTION_NOTICE_DUE_DAYS`). **Não leva dados de pagamento** — a factura segue
+pelo caminho do costume, e um IBAN num email automático é a porta por onde entra a
+burla do IBAN trocado.
+
+**Como não sai duas vezes**: `SubscriptionNotice` guarda um aviso por clube e por
+período, com índice único `(academyId, periodStart)`, e a linha nasce **antes** do
+envio para reservar o período. A varredura corre de hora a hora
+(`AUTO_SUBSCRIPTION_NOTICES_INTERVAL_MIN`, 0 desliga) em vez de um relógio no dia
+certo: um relógio mensal falha um mês inteiro se o processo estiver a reiniciar
+naquele minuto. É o mesmo desenho da emissão de quotas e mensalidades.
+
+**O que fica de fora**: clubes sem ordem assinada, subscrições canceladas
+(`app.academies_for_subscription_notices()`, função `SECURITY DEFINER` porque o
+papel da aplicação não tem — nem deve ter — acesso às tabelas da plataforma), e
+períodos que começam antes da data de início contratada. O passado também:
+`SUBSCRIPTION_NOTICE_CATCHUP_DAYS` (35) limita o atraso recuperado, para que ligar
+isto num clube que assinou há um ano não lhe mande doze avisos de uma vez.
+
+Na consola, os avisos aparecem por baixo das condições, em Definições: período,
+valor e se saíram. Um email é uma coisa que se perde, e quem trata das contas do
+clube tem de poder confirmar sozinho o que foi pedido.
+
+A plataforma tem o botão para os emitir já: `POST /api/platform/subscricao/avisos`
+(`?academia=` estreita a um clube), idempotente como a varredura.
+
+Verificado por `npm run test:avisos-subscricao --workspace @academia/api` (42), que
+corre a conta dos meses sem base de dados (incluindo os doze meses a partir do dia
+31, e o 29 de Fevereiro) e depois a varredura a sério num clube descartável. A API
+de teste corre **sem chave de correio**, e por isso o aviso fica gravado com o
+endereço a quem se destinava e a nota de que não saiu, sem mandar email nenhum:
+
+```
+MAIL_API_KEY= PORT=3012 npm run start:dev --workspace=@academia/api
+API=http://127.0.0.1:3012 node scripts/test-avisos-de-subscricao.mjs
+```
+
+## Histórico de alterações em todas as fichas
+
+Uma ficha só mostrava o estado de hoje. Quando o peso de um atleta aparece
+quatro quilos abaixo, quando um sócio passa a inactivo, quando alguém ganha uma
+permissão que não devia ter, a pergunta é sempre a mesma — **quem mexeu, quando,
+e o que estava lá antes**. Não havia como saber.
+
+Passou a haver, em atletas, sócios e staff. `ProfileChange` guarda **uma linha
+por campo mudado** (`kind`, `subjectId`, `field`, `before`, `after`, `byId`,
+`byName`, `createdAt`), escrita de dentro da própria gravação por
+`registarAlteracoes` (`common/historico.ts`). Guarda o nome de quem mexeu além
+da `Membership`: quem sai do clube deixa de ter ficha, e um histórico que diz
+"alguém" não serve para nada.
+
+- **Atleta**: nome, email, data de nascimento, NIF, estado, exame médico,
+  altura, peso, lado dominante, número, equipa e posição. Equipa por **nome**,
+  não por `teamId`.
+- **Sócio**: os campos todos da ficha, com a categoria por nome. A data de
+  gravação e o carimbo de aprovação não contam como alteração.
+- **Staff**: cargo, equipas, acesso à consola (ligado/desligado) e as permissões
+  dadas ou retiradas à parte do cargo.
+
+**Gravar sem mudar nada não escreve nada**, e um campo que não veio no
+formulário não aparece. A escrita nunca faz falhar a gravação: um erro a
+registar fica no log e a edição segue — perder a correcção do peso por causa do
+histórico seria trocar o essencial pelo acessório.
+
+**O histórico não se reescreve.** A migração dá `SELECT` e `INSERT` e mais nada,
+e uma segunda migração (`historico_so_escreve`) **retira** `UPDATE` e `DELETE`:
+o schema `public` do Supabase tem um *default privilege* que dá `arwd` a
+`academia_app` em cada tabela nova, e sem o `REVOKE` explícito o `GRANT`
+restrito somava-se a ele em vez de o limitar. A aplicação podia editar o registo
+que existe para não ser editado.
+
+**Quem lê é quem pode editar**: `GET /api/historico/{atletas|socios|staff}/:id`
+pede `athlete:write`, `member:write` ou `access:write`, e no caso dos atletas
+confirma o âmbito por equipa (com a excepção de sempre: um atleta sem equipa é
+de quem organiza plantéis). Mostrar a um treinador que a secretaria mudou o NIF
+de um miúdo de outro escalão não serve para nada, e o painel não aparece a quem
+não pode lá ir.
+
+Na consola é um separador **Histórico** nas três fichas
+(`components/HistoricoPanel.tsx`), com as linhas agrupadas por quem mexeu e
+quando: editar uma ficha é um gesto só, e mostrá-lo como seis entradas soltas
+faria parecer seis idas à ficha. Os nomes dos campos e os valores passam a
+português em `lib/historico.ts` — "Peso 42 kg → 45,5 kg", e não
+`weightKg 42 → 45.5`.
+
+Verificado por `npm run test:historico --workspace @academia/api` (20), com uma
+prova final que tenta mesmo editar uma linha do histórico com o papel da
+aplicação e exige o erro 42501.
+
+## Exportar uma ficha individual para PDF
+
+Uma ficha que só existe dentro da consola não se pode entregar, e há sempre quem
+a peça: a federação quer o processo do atleta, a família tem direito a pedir o
+que o clube guarda sobre o filho, a direcção leva a ficha do sócio à assembleia.
+A resposta era fotografar o ecrã.
+
+Botão **Exportar** nas três fichas (`components/BotaoExportarPerfil.tsx`). O
+documento é A4 vertical desenhado em milímetros com `jspdf` carregado só quando
+se exporta — a mesma mecânica da convocatória e do plano de treino. O desenho
+está em `lib/perfil-pdf.ts` (que não sabe o que é um atleta: recebe secções) e
+**o que entra em cada ficha** em `lib/perfis.ts`:
+
+- **Atleta**: identificação, ficha física com a aptidão, a época, assiduidade,
+  encarregado de educação, boletim clínico, mensalidades e o histórico.
+- **Sócio**: identificação, contactos, quotas (com o livro de quotas lançadas),
+  inscrição e consentimentos com as datas, notas internas e o histórico.
+- **Staff**: cargo e área, contactos, percurso por época, actividade, acesso à
+  consola com as permissões à parte, e o histórico.
+
+**O papel mostra o que a pessoa já vê no ecrã**: cada secção passa pela mesma
+permissão do separador de onde vem — sem `family:read` não saem contactos do
+encarregado, sem `clinical:read` não sai diagnóstico nenhum (fica a aptidão, que
+é o que o treinador precisa), sem `billing:read` não saem valores. Não substitui
+o servidor; evita que exportar se torne o caminho fácil para ver o que a consola
+esconde. Uma secção sem um único valor preenchido não se desenha, e o rodapé de
+todas as páginas diz que o documento leva dados pessoais.
+
+Verificado por `npm run test:perfil --workspace @academia/console` (16), que
+gera o PDF a sério e lê o texto de dentro dos fluxos comprimidos: as secções
+vazias não aparecem, nenhum `null` chega ao papel, e quarenta alterações passam
+para a segunda página com o cabeçalho da tabela atrás.
 
 ## Duração do jogo por equipa, relatórios e adversários
 

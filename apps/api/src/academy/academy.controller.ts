@@ -1,10 +1,12 @@
 import { Body, Controller, Delete, Get, Param, Patch, Post, Put, Query, Req } from "@nestjs/common";
-import { ArrayMaxSize, IsArray, IsBoolean, IsIn, IsInt, IsOptional, IsString, Length, Matches, Max, Min } from "class-validator";
+import { ArrayMaxSize, IsArray, IsBoolean, IsIn, IsInt, IsOptional, IsString, Length, Matches, Max, Min, ValidateNested } from "class-validator";
+import { Type } from "class-transformer";
 import { ChargeStatus, type AthleteStatus } from "@prisma/client";
 import type { AuthedRequest } from "../auth/auth.guard";
 import { AcademyService } from "./academy.service";
 import { SHORT_NAME_MAX } from "../common/short-name";
 import { AthletesService } from "./athletes.service";
+import { SeasonsService } from "./seasons.service";
 import { AthleteInputDto, AthleteTaxIdDto, AthleteUpdateDto, ImportAthletesDto } from "./athletes.dto";
 import { CreateTeamDto, ImportTeamsDto } from "./teams.dto";
 import { AttendanceDto, CreateEventDto, EditEventDto, UpdateEventDto, AbsenceNoticeDto } from "./events.dto";
@@ -16,9 +18,84 @@ import { BillingService, METODOS_MANUAIS, periodoActual, type AplicarEm, type Me
  * O valor volta a ser validado no serviço (`assertValidAmount`, 1 € a 1000 €):
  * aqui trava-se a forma, lá trava-se a regra, e é a regra que conta.
  */
-class CreateExtraChargeDto {
+/** O que a viragem de época leva. Ver `SeasonsService.virar`. */
+class EquipaQueTransitaDto {
+  @IsString()
+  fromTeamId!: string;
+
+  @IsOptional()
+  @IsString()
+  @Length(2, 60)
+  name?: string;
+
+  /** O preço da mensalidade do escalão na época nova. `null` deixa-o por definir. */
+  @IsOptional()
+  @IsInt()
+  @Min(0)
+  @Max(100_000)
+  amountCents?: number | null;
+
+  /** Por omissão os treinadores vão atrás da equipa. */
+  @IsOptional()
+  @IsBoolean()
+  manterStaff?: boolean;
+}
+
+class AtletaQueTransitaDto {
   @IsString()
   athleteId!: string;
+
+  /** O id do escalão **desta** época, ou "SAI"/"POR_RENOVAR". */
+  @IsString()
+  destino!: string;
+}
+
+class VirarEpocaDto {
+  @IsString()
+  @Length(4, 20)
+  label!: string;
+
+  @Matches(/^\d{4}-\d{2}-\d{2}$/, { message: "Data de início inválida" })
+  startsOn!: string;
+
+  @Matches(/^\d{4}-\d{2}-\d{2}$/, { message: "Data de fim inválida" })
+  endsOn!: string;
+
+  @IsArray()
+  @ArrayMaxSize(80)
+  @ValidateNested({ each: true })
+  @Type(() => EquipaQueTransitaDto)
+  equipas!: EquipaQueTransitaDto[];
+
+  @IsArray()
+  @ArrayMaxSize(2000)
+  @ValidateNested({ each: true })
+  @Type(() => AtletaQueTransitaDto)
+  atletas!: AtletaQueTransitaDto[];
+}
+
+class CreateExtraChargeDto {
+  /** Um atleta. O gesto de sempre, e o que a app continua a enviar. */
+  @IsOptional()
+  @IsString()
+  athleteId?: string;
+
+  /** Vários atletas escolhidos à mão. */
+  @IsOptional()
+  @IsArray()
+  @IsString({ each: true })
+  @ArrayMaxSize(500)
+  athleteIds?: string[];
+
+  /** Uma equipa inteira: quem está nela é resolvido no servidor. */
+  @IsOptional()
+  @IsString()
+  teamId?: string;
+
+  /** Todos os atletas activos do âmbito de quem cobra. */
+  @IsOptional()
+  @IsBoolean()
+  todos?: boolean;
 
   @IsString()
   @Length(2, 80)
@@ -357,11 +434,46 @@ export class AcademyController {
     private readonly academy: AcademyService,
     private readonly athletes: AthletesService,
     private readonly billing: BillingService,
+    private readonly seasons: SeasonsService,
   ) {}
 
   @Get("bootstrap")
   bootstrap(@Req() req: AuthedRequest) {
     return this.academy.bootstrap(req.ctx);
+  }
+
+  /* ------------------------------------------------------------------------ */
+  /* A época                                                                   */
+  /* ------------------------------------------------------------------------ */
+
+  /** O que a época nova seria, se fosse agora. Não grava nada. */
+  @Get("seasons/proposta")
+  propostaDeEpoca(@Req() req: AuthedRequest) {
+    return this.seasons.proposta(req.ctx);
+  }
+
+  /** Virar a época. Ver `SeasonsService.virar`. */
+  @Post("seasons/virar")
+  virarEpoca(@Req() req: AuthedRequest, @Body() body: VirarEpocaDto) {
+    return this.seasons.virar(req.ctx, body);
+  }
+
+  /** Por onde este atleta já passou — escalões, épocas e datas. */
+  @Get("athletes/:id/percurso")
+  percursoDoAtleta(@Req() req: AuthedRequest, @Param("id") id: string) {
+    return this.seasons.percursoDoAtleta(req.ctx, id);
+  }
+
+  /** As equipas que esta pessoa treinou, e quando. */
+  @Get("staff/:membershipId/percurso")
+  percursoDoStaff(@Req() req: AuthedRequest, @Param("membershipId") membershipId: string) {
+    return this.seasons.percursoDoStaff(req.ctx, membershipId);
+  }
+
+  /** Quem passou por esta equipa, e de que equipa ela veio. */
+  @Get("teams/:id/percurso")
+  percursoDaEquipa(@Req() req: AuthedRequest, @Param("id") id: string) {
+    return this.seasons.percursoDaEquipa(req.ctx, id);
   }
 
   @Get("teams")
@@ -533,7 +645,10 @@ export class AcademyController {
   /** Importação em lote a partir de um ficheiro. Devolve o resultado linha a linha. */
   @Post("athletes/import")
   importAthletes(@Req() req: AuthedRequest, @Body() body: ImportAthletesDto) {
-    return this.athletes.importMany(req.ctx, body.rows);
+    return this.athletes.importMany(req.ctx, body.rows, {
+      sobrescrever: body.sobrescrever === true,
+      enviarConvites: body.enviarConvites === true,
+    });
   }
 
   /**

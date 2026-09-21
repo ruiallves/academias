@@ -1,4 +1,4 @@
-import { apiGet, apiPatch, apiPost } from "@/lib/http";
+import { apiGet, apiGetSilencioso, apiPatch, apiPost } from "@/lib/http";
 import { matches, reloadAcademy, type ApiMatch, type GuestCandidate, type MatchLogistics } from "@/lib/store";
 import { activeRestriction, isUnavailable, isoToday } from "@/lib/clinical";
 import { athleteById, listAthletes } from "@/lib/api";
@@ -104,7 +104,9 @@ export type CallUpReply = {
  * são **nove** pedidos. Ver `MatchesService.respostasDaConvocatoria`.
  */
 export const callUpReplies = (matchId: string) =>
-  apiGet<{
+  // Silenciosa: é sondada de doze em doze segundos, e uma falha não diz nada a
+  // ninguém — a página continua a mostrar o que tinha. Ver `apiGetSilencioso`.
+  apiGetSilencioso<{
     matchId: string;
     submitted: boolean;
     confirmationRequired: boolean;

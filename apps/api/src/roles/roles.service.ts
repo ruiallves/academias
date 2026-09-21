@@ -2,6 +2,7 @@ import { BadRequestException, ForbiddenException, Injectable, NotFoundException 
 import type { Role } from "@prisma/client";
 import { PrismaService, type ScopedClient } from "../prisma/prisma.service";
 import { semearCargosEmFalta } from "../departments/first-role";
+import { nomeDeQuemMexe, registarAlteracoes } from "../common/historico";
 import { NAV_KEYS, isNavKey } from "../common/nav";
 import { ROLE_PERMISSIONS, can, outranks, type Permission, type RequestContext } from "../common/permissions";
 
@@ -468,7 +469,7 @@ export class RolesService {
           id: true,
           role: true,
           customRoleId: true,
-          customRole: { select: { rank: true, archivedAt: true } },
+          customRole: { select: { rank: true, archivedAt: true, name: true } },
           extraRoles: { select: { role: { select: { rank: true, archivedAt: true } } } },
         },
       });
@@ -495,8 +496,10 @@ export class RolesService {
       }
 
       /* ---------------------------------------------------------- principal */
+      const cargoAntes = target.customRole?.name ?? null;
       if (roleId === null) {
         await db.membership.update({ where: { id: membershipId }, data: { customRoleId: null } });
+        await registarAlteracoes(db, ctx, "STAFF", membershipId, { cargo: cargoAntes }, { cargo: null }, await nomeDeQuemMexe(db, ctx));
       } else {
         const role = await this.mustFind(db, roleId);
         if (role.rank > RANK[ctx.role]) {
@@ -506,6 +509,7 @@ export class RolesService {
           where: { id: membershipId },
           data: { customRoleId: roleId, role: role.baseRole },
         });
+        await registarAlteracoes(db, ctx, "STAFF", membershipId, { cargo: cargoAntes }, { cargo: role.name }, await nomeDeQuemMexe(db, ctx));
       }
 
       /* -------------------------------------------------------- secundários */

@@ -3,7 +3,7 @@ import { ConfigService } from "@nestjs/config";
 import { createHmac, timingSafeEqual } from "node:crypto";
 
 export type ChargeRequest = {
-  /** O nosso id de Payment. Vai para a euPago como `identifier` e volta no webhook. */
+  /** O `identificador` do Payment (ou o id, nos antigos). Vai como `identifier` e volta no webhook. */
   reference: string;
   amountCents: number;
   description: string;
@@ -426,9 +426,9 @@ export class EupagoClient implements OnModuleInit {
    * As transacções **pagas** do canal, nos últimos três meses, por identificador.
    *
    * É a única forma de confirmar um MB Way sem webhook: a euPago não tem uma
-   * consulta por transacção, tem esta lista. O `identifier` é o id do nosso
-   * `Payment`, que enviámos ao criar — por isso a lista responde directamente
-   * "este pagamento está pago".
+   * consulta por transacção, tem esta lista. O `identifier` é o que enviámos ao
+   * criar (o `identificador` do Payment, ou o id nos antigos) — por isso a lista
+   * responde directamente "este pagamento está pago".
    *
    * Exige OAuth (`client_credentials`) com credenciais próprias do backoffice,
    * distintas da chave do canal. Sem elas devolve `null` e não `Map` vazio: a

@@ -7,6 +7,7 @@ import { can, teamScopeFilter, type RequestContext, teamScopeForRoster } from ".
 import { gerarCobrancas, periodoActual } from "../billing/billing.service";
 import type { AthleteInputDto, AthleteUpdateDto } from "./athletes.dto";
 import { AthleteInvitesService } from "./athlete-invites.service";
+import { nomeDeQuemMexe, registarAlteracoes } from "../common/historico";
 
 /**
  * Criação de atletas — um a um ou em lote a partir de um ficheiro.
@@ -99,9 +100,20 @@ export class AthletesService {
     return this.prisma.runAs(ctx.academyId, async (db) => {
       const teams = await this.teamsInScope(ctx, db);
 
+      /*
+       * O antes, para o histórico da ficha.
+       *
+       * Lido na mesma ida à base que o âmbito já obrigava, e só os campos que
+       * este formulário mexe: é o que permite dizer "Peso 62 → 64" e quem o
+       * escreveu. Ver `common/historico.ts`.
+       */
       const athlete = await db.athlete.findFirst({
         where: { id },
-        select: { id: true, teams: { select: { id: true, teamId: true } } },
+        select: {
+          id: true, name: true, email: true, birthdate: true, taxId: true, status: true,
+          medicalValidUntil: true, heightCm: true, weightKg: true, dominantSide: true, squadNumber: true,
+          teams: { where: { leftAt: null }, select: { id: true, teamId: true, position: true, team: { select: { name: true } } } },
+        },
       });
       if (!athlete) throw new BadRequestException("Atleta não encontrado");
 
@@ -156,7 +168,7 @@ export class AthletesService {
           where: {
             id: { not: id },
             squadNumber: dto.squadNumber,
-            teams: { some: { teamId } },
+            teams: { some: { leftAt: null, teamId } },
           },
           select: { name: true },
         });
@@ -165,12 +177,17 @@ export class AthletesService {
       }
 
       /*
-       * Mudar de escalão é actualizar a ligação, não criar outra.
+       * Mudar de escalão fecha a passagem e abre outra.
        *
-       * Criar uma segunda `TeamMembership` deixava o atleta em dois plantéis ao
-       * mesmo tempo — e é assim que um miúdo aparece convocado por duas equipas
-       * para o mesmo sábado. O histórico de escalões, quando existir, faz-se com
-       * `leftAt`; até lá, uma ligação por atleta é a leitura honesta do modelo.
+       * Era um `update` do `teamId` da mesma linha, e o Sub-11 do ano passado
+       * desaparecia: "por onde este miúdo já passou" não tinha resposta. Agora
+       * a passagem antiga fica com data de saída — é ela o percurso — e nasce
+       * uma nova no escalão novo. Continua a ser **uma de cada vez** por este
+       * caminho: quem muda de equipa sai da anterior, e é assim que se evita um
+       * miúdo convocado por duas equipas para o mesmo sábado. (A importação
+       * pode somar escalões de propósito; ver a nota em `importMany`.)
+       *
+       * Mudar só a posição não mexe no percurso: é a mesma passagem.
        */
       if (dto.teamId !== undefined || dto.position !== undefined) {
         const current = athlete.teams[0];
@@ -179,21 +196,47 @@ export class AthletesService {
         if (!teams.has(teamId)) throw new ForbiddenException("Essa equipa está fora do teu âmbito");
 
         const position = dto.position === undefined ? undefined : dto.position.trim() || null;
+        const mudaDeEquipa = Boolean(current) && teamId !== current.teamId;
 
-        if (current) {
-          await db.teamMembership.update({
-            where: { id: current.id },
-            data: { teamId, ...(position !== undefined ? { position } : {}) },
-          });
+        if (current && !mudaDeEquipa) {
+          if (position !== undefined) {
+            await db.teamMembership.update({ where: { id: current.id }, data: { position } });
+          }
         } else {
+          const agora = new Date();
+          if (current) {
+            await db.teamMembership.update({ where: { id: current.id }, data: { leftAt: agora } });
+          }
           await db.teamMembership.create({
-            data: { teamId, athleteId: id, ...(position ? { position } : {}) },
+            data: {
+              teamId,
+              athleteId: id,
+              joinedAt: agora,
+              // Sem posição nova, leva a que tinha: mudar de escalão não faz de
+              // um defesa central um extremo.
+              ...(position !== undefined ? { position } : current?.position ? { position: current.position } : {}),
+            },
           });
         }
       }
 
       try {
-        return await db.athlete.update({ where: { id }, data, select: { id: true, name: true } });
+        const guardado = await db.athlete.update({ where: { id }, data, select: { id: true, name: true } });
+
+        const equipaNova = dto.teamId === undefined ? undefined : (await db.team.findFirst({ where: { id: dto.teamId }, select: { name: true } }))?.name;
+        await registarAlteracoes(db, ctx, "ATHLETE", id, {
+          ...athlete,
+          weightKg: athlete.weightKg === null ? null : Number(athlete.weightKg),
+          team: athlete.teams[0]?.team.name ?? null,
+          position: athlete.teams[0]?.position ?? null,
+        }, {
+          ...data,
+          weightKg: dto.weightDg === undefined ? undefined : dto.weightDg / 10,
+          team: equipaNova,
+          position: dto.position === undefined ? undefined : dto.position.trim() || null,
+        }, await nomeDeQuemMexe(db, ctx));
+
+        return guardado;
       } catch (error) {
         // Único por academia: repetir um NIF é sempre engano, e é um engano que
         // faria um pai cair no educando errado ao registar-se na app.
@@ -230,7 +273,7 @@ export class AthletesService {
       const teams = await this.teamsInScope(ctx, db);
       const athlete = await db.athlete.findFirst({
         where: { id },
-        select: { id: true, teams: { select: { teamId: true } } },
+        select: { id: true, teams: { where: { leftAt: null }, select: { teamId: true } } },
       });
       if (!athlete) throw new BadRequestException("Atleta não encontrado");
       if (!athlete.teams.some((t) => teams.has(t.teamId))) {
@@ -497,7 +540,7 @@ export class AthletesService {
     const teams = await this.teamsInScope(ctx, db);
     const athlete = await db.athlete.findFirst({
       where: { id },
-      select: { id: true, name: true, photoKey: true, teams: { select: { teamId: true } } },
+      select: { id: true, name: true, photoKey: true, teams: { where: { leftAt: null }, select: { teamId: true } } },
     });
     if (!athlete) throw new NotFoundException("Atleta não encontrado");
     if (!athlete.teams.some((t) => teams.has(t.teamId))) {
@@ -513,7 +556,11 @@ export class AthletesService {
    * que não — com o número da linha tal como no ficheiro, para quem corrige saber
    * onde olhar.
    */
-  async importMany(ctx: RequestContext, rows: AthleteInputDto[]) {
+  async importMany(
+    ctx: RequestContext,
+    rows: AthleteInputDto[],
+    opts: { sobrescrever?: boolean; enviarConvites?: boolean } = {},
+  ) {
     if (!can(ctx, "athlete:write")) throw new ForbiddenException("Sem permissão para inscrever atletas");
 
     /*
@@ -533,16 +580,48 @@ export class AthletesService {
     const resultado = await this.prisma.runAs(ctx.academyId, async (db) => {
       const teams = await this.teamsInScope(ctx, db);
 
-      // Nomes já existentes na academia — para não recriar quem já lá está. A
-      // comparação é por nome + data de nascimento: dois "João Silva" de idades
-      // diferentes são pessoas diferentes; o mesmo nome e a mesma data é o mesmo.
-      const existing = new Set(
-        (await db.athlete.findMany({ select: { name: true, birthdate: true } })).map(
-          (a) => `${a.name.trim().toLowerCase()}|${a.birthdate.toISOString().slice(0, 10)}`,
-        ),
+      /*
+       * Quem já cá está, pelas duas chaves que importam.
+       *
+       * O **NIF** é a identidade: é único por academia, a folha traz sempre um,
+       * e é por ele que uma linha se reconhece como uma ficha que já existe.
+       *
+       * O nome com a data de nascimento é a segunda rede, e serve para outra
+       * coisa: apanhar a mesma pessoa a entrar com um NIF diferente — um engano
+       * de digitação que, sem isto, criava um segundo atleta com o mesmo nome e
+       * a mesma idade. Dois "João Silva" de idades diferentes continuam a ser
+       * duas pessoas.
+       */
+      const plantel = await db.athlete.findMany({
+        select: {
+          id: true, name: true, birthdate: true, taxId: true, email: true,
+          medicalValidUntil: true, heightCm: true, weightKg: true,
+          dominantSide: true, squadNumber: true,
+          teams: { where: { leftAt: null }, select: { teamId: true } },
+        },
+      });
+
+      /*
+       * Tipados como `AtletaNoPlantel` e não pelo que a leitura devolve: os
+       * índices também recebem as fichas escritas durante esta própria folha,
+       * e essas vêm da linha, não da base.
+       */
+      const porNif = new Map<string, AtletaNoPlantel>(
+        plantel.filter((a) => a.taxId).map((a) => [a.taxId as string, a]),
+      );
+      const porNomeEData = new Map<string, AtletaNoPlantel>(
+        plantel.map((a) => [chaveDoAtleta(a.name, a.birthdate), a]),
       );
 
       const created: { id: string; name: string }[] = [];
+      const updated: { id: string; name: string }[] = [];
+      const existing: {
+        line: number;
+        name: string;
+        matchedName: string;
+        taxId: string;
+        changes: string[];
+      }[] = [];
       const errors: { row: number; name: string; error: string }[] = [];
       // Números de camisola já usados por equipa, para apanhar choques **dentro do
       // próprio ficheiro** — dois atletas com o 7 na mesma equipa, na mesma folha.
@@ -551,9 +630,21 @@ export class AthletesService {
       for (const [i, dto] of rows.entries()) {
         const line = i + 2; // +1 pela base-0, +1 pelo cabeçalho do ficheiro
         const key = `${dto.name.trim().toLowerCase()}|${dto.birthdate.slice(0, 10)}`;
+        const nif = dto.taxId.replace(/[\s.]/g, "");
 
-        if (existing.has(key)) {
-          errors.push({ row: line, name: dto.name, error: "Já existe um atleta com este nome e data de nascimento" });
+        const jaLaEsta = porNif.get(nif);
+
+        /*
+         * O mesmo nome e a mesma data, com outro NIF.
+         *
+         * Não é uma actualização — é uma contradição, e das que ninguém quer
+         * resolver sozinho: ou o NIF da folha está errado, ou o da ficha está.
+         * Fica como erro de linha, com o atleta a entrar de fora, e alguém
+         * decide. Só quando não foi reconhecido pelo NIF: com o NIF a bater
+         * certo, é a mesma pessoa e o nome pode até estar a ser corrigido.
+         */
+        if (!jaLaEsta && porNomeEData.has(key)) {
+          errors.push({ row: line, name: dto.name, error: "Já existe um atleta com este nome e data de nascimento, com outro NIF" });
           continue;
         }
 
@@ -567,13 +658,70 @@ export class AthletesService {
           usedNumbers.set(dto.teamId, set);
         }
 
+        /*
+         * Já cá está: actualiza-se, ou pergunta-se.
+         *
+         * A equipa da folha **junta-se** às que o atleta já tem em vez de as
+         * substituir. Um miúdo que joga no Sub-13 e sobe ao Sub-15 está nas
+         * duas, e uma folha por escalão — que é como os clubes as fazem —
+         * tirava-lhe a outra sem ninguém pedir.
+         */
+        if (jaLaEsta) {
+          const mudam = mudancasDoAtleta(jaLaEsta, dto, teams);
+
+          if (!opts.sobrescrever) {
+            if (mudam.length > 0) {
+              existing.push({ line, name: dto.name.trim(), matchedName: jaLaEsta.name, taxId: nif, changes: mudam });
+            }
+            continue;
+          }
+
+          if (mudam.length > 0) {
+            await this.updateOne(db, jaLaEsta, dto);
+            updated.push({ id: jaLaEsta.id, name: dto.name.trim() });
+          }
+          continue;
+        }
+
         const result = await this.insertOne(db, ctx.academyId, dto, teams);
         if ("error" in result) {
           errors.push({ row: line, name: dto.name, error: result.error });
         } else {
           created.push({ id: result.athlete.id, name: result.athlete.name });
-          existing.add(key);
+          /*
+           * Entra nos índices, para a própria folha não se duplicar.
+           *
+           * Duas linhas com o mesmo NIF são a mesma pessoa escrita duas vezes,
+           * e a segunda tem de encontrar a primeira. A ficha indexada é a que
+           * acabou de ser escrita — construída da linha, e não uma cópia de
+           * outro atleta qualquer.
+           */
+          const nova: AtletaNoPlantel = {
+            id: result.athlete.id,
+            name: result.athlete.name,
+            birthdate: new Date(dto.birthdate),
+            taxId: nif,
+            email: dto.email?.trim().toLowerCase() || null,
+            medicalValidUntil: dto.medicalValidUntil ? new Date(dto.medicalValidUntil) : null,
+            heightCm: dto.heightCm ?? null,
+            weightKg: dto.weightDg == null ? null : (dto.weightDg / 10),
+            dominantSide: (dto.dominantSide as DominantSide) ?? null,
+            squadNumber: dto.squadNumber ?? null,
+            teams: [{ teamId: dto.teamId }],
+          };
+          porNomeEData.set(key, nova);
+          porNif.set(nif, nova);
         }
+      }
+
+      /*
+       * A pergunta, antes de escrever seja o que for.
+       *
+       * `athletes` vazio para que nenhum convite saia por engano no caminho em
+       * que nada foi criado. Ver o fim do método.
+       */
+      if (existing.length > 0 && !opts.sobrescrever) {
+        return { created: 0, updated: 0, errors: [], athletes: [], existing: existing.slice(0, 200), existingTotal: existing.length };
       }
 
       /*
@@ -593,15 +741,31 @@ export class AthletesService {
         );
       }
 
-      return { created: created.length, errors, athletes: created };
+      return {
+        created: created.length,
+        updated: updated.length,
+        errors,
+        athletes: created,
+        existing: [] as typeof existing,
+        existingTotal: 0,
+      };
     }, { timeoutMs: tectoMs });
 
     /*
      * Os convites dos importados — depois da transação, em série, sem esperar.
-     * Quem não tem email na folha fica sem convite e sem erro: é o caso normal
-     * dos escalões mais novos, e a lista de atletas deixa enviá-lo depois.
+     *
+     * **Só se tiverem sido pedidos.** Era o que acontecia sempre, e um plantel
+     * carregado por Excel mandava dezenas de emails a famílias que não estavam
+     * à espera de nenhum. Quem não tem email na folha continua sem convite e
+     * sem erro — o caso normal dos escalões mais novos — e a lista de atletas
+     * deixa enviá-los depois, às pessoas certas.
+     *
+     * Só a quem **entrou agora**: um atleta actualizado já cá estava, e o
+     * convite dele já saiu (ou já tem conta).
      */
-    for (const a of resultado.athletes) void this.invites.enviarSePossivel(ctx.academyId, a.id);
+    if (opts.enviarConvites) {
+      for (const a of resultado.athletes) void this.invites.enviarSePossivel(ctx.academyId, a.id);
+    }
 
     return resultado;
   }
@@ -622,6 +786,46 @@ export class AthletesService {
       select: { id: true, name: true },
     });
     return new Map(teams.map((t) => [t.id, t.name]));
+  }
+
+  /**
+   * Actualiza a ficha de um atleta que a folha voltou a trazer.
+   *
+   * Só o que a folha traz. Um campo que a folha não tem não é o clube a dizer
+   * que ele está vazio — é uma coluna em falta, e apagar por causa disso seria
+   * a pior maneira de perder dados. O NIF não muda: foi ele que identificou
+   * esta ficha.
+   *
+   * A equipa **junta-se**: ver a nota em `importMany`.
+   */
+  private async updateOne(db: ScopedClient, actual: AtletaNoPlantel, dto: AthleteInputDto): Promise<void> {
+    await db.athlete.update({
+      where: { id: actual.id },
+      data: {
+        name: dto.name.trim(),
+        birthdate: new Date(dto.birthdate),
+        ...(dto.email !== undefined ? { email: dto.email.trim().toLowerCase() || null } : {}),
+        ...(dto.medicalValidUntil !== undefined
+          ? { medicalValidUntil: dto.medicalValidUntil ? new Date(dto.medicalValidUntil) : null }
+          : {}),
+        ...(dto.heightCm !== undefined ? { heightCm: dto.heightCm } : {}),
+        ...(dto.weightDg !== undefined ? { weightKg: dto.weightDg / 10 } : {}),
+        ...(dto.dominantSide !== undefined ? { dominantSide: dto.dominantSide as DominantSide } : {}),
+        ...(dto.squadNumber !== undefined ? { squadNumber: dto.squadNumber } : {}),
+      },
+    });
+
+    const jaNaEquipa = actual.teams.some((t) => t.teamId === dto.teamId);
+    if (!jaNaEquipa) {
+      await db.teamMembership.create({
+        data: { teamId: dto.teamId, athleteId: actual.id, ...(dto.position ? { position: dto.position } : {}) },
+      });
+    } else if (dto.position) {
+      await db.teamMembership.updateMany({
+        where: { teamId: dto.teamId, athleteId: actual.id },
+        data: { position: dto.position },
+      });
+    }
   }
 
   /**
@@ -666,7 +870,7 @@ export class AthletesService {
     const nif = dto.taxId.replace(/[\s.]/g, "");
     const jaExiste = await db.athlete.findFirst({
       where: { taxId: nif },
-      select: { name: true, teams: { select: { team: { select: { name: true } } }, take: 1 } },
+      select: { name: true, teams: { where: { leftAt: null }, select: { team: { select: { name: true } } }, take: 1 } },
     });
     if (jaExiste) {
       const equipa = jaExiste.teams[0]?.team.name;
@@ -742,4 +946,67 @@ function listar(itens: { n: number; um: string; muitos: string }[]): string {
   const partes = itens.map((i) => `${i.n} ${i.n === 1 ? i.um : i.muitos}`);
   if (partes.length === 1) return partes[0];
   return partes.slice(0, -1).join(", ") + " e " + partes[partes.length - 1];
+}
+
+/* -------------------------------------------------------------------------- */
+/* A importação: reconhecer quem já cá está                                    */
+/* -------------------------------------------------------------------------- */
+
+/** A ficha como a importação a lê, para comparar com a linha da folha. */
+type AtletaNoPlantel = {
+  id: string;
+  name: string;
+  birthdate: Date;
+  taxId: string | null;
+  email: string | null;
+  medicalValidUntil: Date | null;
+  heightCm: number | null;
+  /** Aceita o `Decimal` da base e o número que a folha acabou de escrever — ver `mudancasDoAtleta`. */
+  weightKg: { toString(): string } | number | null;
+  dominantSide: DominantSide | null;
+  squadNumber: number | null;
+  teams: { teamId: string }[];
+};
+
+/** Nome e data de nascimento, comparáveis. Ver `importMany`. */
+function chaveDoAtleta(name: string, birthdate: Date): string {
+  return `${name.trim().toLowerCase()}|${birthdate.toISOString().slice(0, 10)}`;
+}
+
+const dia = (d: Date | null): string | null => (d ? d.toISOString().slice(0, 10) : null);
+
+/**
+ * O que muda nesta ficha se a linha da folha for aplicada, em português.
+ *
+ * Não é um log: é a frase que se mostra antes de perguntar "substituir?". Uma
+ * linha que não muda nada não aparece na confirmação nem chega a escrever — e
+ * é o caso da maioria das linhas de quem reimporta a folha do ano passado com
+ * três nomes novos no fim.
+ */
+function mudancasDoAtleta(
+  actual: AtletaNoPlantel,
+  dto: AthleteInputDto,
+  teams: Map<string, string>,
+): string[] {
+  const mudam: string[] = [];
+
+  if (actual.name.trim() !== dto.name.trim()) mudam.push("nome");
+  if (dia(actual.birthdate) !== dto.birthdate.slice(0, 10)) mudam.push("data de nascimento");
+
+  if (dto.email !== undefined && (actual.email ?? "") !== (dto.email.trim().toLowerCase() || "")) {
+    mudam.push("email");
+  }
+  if (dto.medicalValidUntil !== undefined && dia(actual.medicalValidUntil) !== (dto.medicalValidUntil?.slice(0, 10) ?? null)) {
+    mudam.push("exame médico");
+  }
+  if (dto.heightCm !== undefined && actual.heightCm !== dto.heightCm) mudam.push("altura");
+  if (dto.weightDg !== undefined && Number(actual.weightKg ?? 0) * 10 !== dto.weightDg) mudam.push("peso");
+  if (dto.dominantSide !== undefined && actual.dominantSide !== dto.dominantSide) mudam.push("lado dominante");
+  if (dto.squadNumber !== undefined && actual.squadNumber !== dto.squadNumber) mudam.push("número");
+
+  if (!actual.teams.some((t) => t.teamId === dto.teamId)) {
+    mudam.push(`entra em ${teams.get(dto.teamId) ?? "outra equipa"}`);
+  }
+
+  return mudam;
 }

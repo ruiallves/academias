@@ -368,6 +368,13 @@ export type Fee = {
   paidAt?: string;
   /** Como foi paga, já em palavras ("MB WAY", "Numerário"). Só nas pagas. */
   method?: string;
+  /** Quem pagou pela app, com o laço ao atleta: "Maria Silva (Mãe)". */
+  paidBy?: string;
+  /**
+   * O identificador com que o pagamento aparece no backoffice da euPago
+   * (MENS-SET26-JOAO_SILVA-MARIA_SILVA-7K2F9Q). É o que casa os dois lados.
+   */
+  paymentId?: string;
   /** Referência euPago, quando gerada. */
   reference?: string;
 };

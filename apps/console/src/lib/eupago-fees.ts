@@ -1,5 +1,5 @@
 import { useSyncExternalStore } from "react";
-import { apiGet } from "@/lib/http";
+import { apiGetSilencioso } from "@/lib/http";
 
 /**
  * O que a euPago leva de cada pagamento — para o clube ver antes de fixar o preço.
@@ -65,7 +65,9 @@ export function loadEupagoFees(): Promise<void> {
   if (state.loaded) return Promise.resolve();
   if (aCarregar) return aCarregar;
 
-  aCarregar = apiGet<Tabela>(CAMINHO)
+  // Silenciosa: a tabela de taxas carrega-se sozinha, e a falha já é dita na
+  // consola do browser aqui em baixo — o ecrã não inventa números.
+  aCarregar = apiGetSilencioso<Tabela>(CAMINHO)
     .then((tabela) => {
       state = { tabela, loaded: true };
     })

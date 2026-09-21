@@ -78,7 +78,7 @@ export class MatchesService {
             select: {
               athleteId: true, status: true, isGuest: true,
               declineReason: true, respondedAt: true,
-              athlete: { select: { name: true, teams: { select: { team: { select: { name: true } } }, take: 1 } } },
+              athlete: { select: { name: true, teams: { where: { leftAt: null }, select: { team: { select: { name: true } } }, take: 1 } } },
             },
           },
           /*
@@ -270,7 +270,7 @@ export class MatchesService {
               // A equipa técnica da ficha da equipa — o que a folha usa quando
               // ninguém escalou uma equipa de trabalho para este jogo.
               staff: {
-                where: { membership: { isActive: true } },
+                where: { leftAt: null, membership: { isActive: true } },
                 orderBy: { title: "asc" },
                 select: { title: true, membership: { select: { user: { select: { name: true } } } } },
               },
@@ -293,7 +293,7 @@ export class MatchesService {
                    * atleta emprestado de outro escalão não tem linha aqui e fica
                    * sem posição, que é a resposta honesta.
                    */
-                  teams: { select: { position: true, team: { select: { name: true } } } },
+                  teams: { where: { leftAt: null }, select: { position: true, team: { select: { name: true } } } },
                 },
               },
             },
@@ -1042,11 +1042,11 @@ export class MatchesService {
         where: {
           id: { in: ids },
           OR: [
-            { teams: { some: { teamId: match.teamId } } },
-            { teams: { some: { teamId: { in: otherTeamIds } } }, birthdate: { gte: floor } },
+            { teams: { some: { leftAt: null, teamId: match.teamId } } },
+            { teams: { some: { leftAt: null, teamId: { in: otherTeamIds } } }, birthdate: { gte: floor } },
           ],
         },
-        select: { id: true, teams: { select: { teamId: true } } },
+        select: { id: true, teams: { where: { leftAt: null }, select: { teamId: true } } },
       });
       if (roster.length !== ids.length) {
         throw new BadRequestException("Atleta fora do plantel desta equipa e não elegível como convidado");
@@ -1118,12 +1118,12 @@ export class MatchesService {
          * Sem os que já saíram do clube (LEFT) — mas COM os pausados: o jogo é
          * passado, e quem está em pausa hoje pode ter jogado nessa altura.
          */
-        where: { teams: { some: { teamId: match.teamId } }, status: { not: "LEFT" } },
+        where: { teams: { some: { leftAt: null, teamId: match.teamId } }, status: { not: "LEFT" } },
         orderBy: { name: "asc" },
         select: {
           id: true,
           name: true,
-          teams: { where: { teamId: match.teamId }, select: { position: true }, take: 1 },
+          teams: { where: { leftAt: null, teamId: match.teamId }, select: { position: true }, take: 1 },
         },
       });
 
@@ -1224,14 +1224,14 @@ export class MatchesService {
       const athletes = await db.athlete.findMany({
         where: {
           status: { not: "LEFT" },
-          teams: { some: { teamId: { in: otherIds } } },
+          teams: { some: { leftAt: null, teamId: { in: otherIds } } },
           // O filtro de idade é feito na base: quem nasceu antes desta data já
           // é velho de mais para esta equipa. Ver `birthdateFloor`.
           birthdate: { gte: birthdateFloor(match.maxAge, match.startsAt) },
         },
         select: {
           id: true, name: true, status: true, squadNumber: true, birthdate: true,
-          teams: { where: { teamId: { in: otherIds } }, select: { teamId: true, position: true }, take: 1 },
+          teams: { where: { leftAt: null, teamId: { in: otherIds } }, select: { teamId: true, position: true }, take: 1 },
           clinical: { where: { clearedOn: null, impact: { not: "NONE" } }, select: { impact: true } },
         },
       });
@@ -1293,16 +1293,16 @@ export class MatchesService {
         where: {
           id: { in: ids },
           OR: [
-            { teams: { some: { teamId: match.teamId } } },
+            { teams: { some: { leftAt: null, teamId: match.teamId } } },
             {
-              teams: { some: { teamId: { in: otherTeamIds } } },
+              teams: { some: { leftAt: null, teamId: { in: otherTeamIds } } },
               birthdate: { gte: floor },
             },
           ],
         },
         select: {
           id: true, name: true, status: true,
-          teams: { select: { teamId: true }, take: 1 },
+          teams: { where: { leftAt: null }, select: { teamId: true }, take: 1 },
           clinical: { where: { clearedOn: null, impact: { not: "NONE" } }, select: { impact: true } },
         },
       });

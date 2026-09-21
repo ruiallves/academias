@@ -116,7 +116,7 @@ export class ClinicalService {
   private async atletaNoAmbito(db: ScopedClient, ctx: RequestContext, athleteId: string) {
     const athlete = await db.athlete.findFirst({
       where: { id: athleteId },
-      select: { id: true, teams: { select: { teamId: true } } },
+      select: { id: true, teams: { where: { leftAt: null }, select: { teamId: true } } },
     });
     if (!athlete) throw new NotFoundException("Atleta não encontrado");
 

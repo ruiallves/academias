@@ -1,4 +1,4 @@
-import { useEffect, type ReactNode } from "react";
+import { useEffect, useRef, type ReactNode } from "react";
 import { X } from "@/lib/icons";
 import { cx } from "./primitives";
 
@@ -29,8 +29,16 @@ export function Dialog({
   width?: number;
   labelledBy?: string;
 }) {
+  const caixa = useRef<HTMLDivElement>(null);
   useEffect(() => {
-    const onKey = (e: KeyboardEvent) => e.key === "Escape" && onClose();
+    // Com dois diálogos abertos (uma confirmação por cima de um formulário), o
+    // Escape fecha só o de cima: o último a entrar na página.
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== "Escape") return;
+      const abertos = document.querySelectorAll('[role="dialog"]');
+      if (abertos[abertos.length - 1] !== caixa.current) return;
+      onClose();
+    };
     document.addEventListener("keydown", onKey);
     return () => document.removeEventListener("keydown", onKey);
   }, [onClose]);
@@ -41,6 +49,7 @@ export function Dialog({
       onMouseDown={(e) => e.target === e.currentTarget && onClose()}
     >
       <div
+        ref={caixa}
         role="dialog"
         aria-modal="true"
         aria-labelledby={labelledBy}

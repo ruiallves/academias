@@ -1,5 +1,5 @@
 import { useSyncExternalStore } from "react";
-import { apiGet, apiPatch } from "@/lib/http";
+import { apiGetSilencioso, apiPatch } from "@/lib/http";
 
 /**
  * As notificações de quem está na consola.
@@ -49,7 +49,9 @@ export function useUnreadCount(): number {
 
 export async function loadNotifications(): Promise<void> {
   try {
-    const items = await apiGet<Notification[]>("/api/notifications");
+    // Silencioso: o sino carrega-se sozinho à entrada, e uma lista de
+    // notificações que falha não pode partir a consola nem gritar por isso.
+    const items = await apiGetSilencioso<Notification[]>("/api/notifications");
     state = { items, loaded: true };
   } catch {
     // Silencioso: uma lista de notificações que falha não pode partir a consola.

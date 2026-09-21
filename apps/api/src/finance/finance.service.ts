@@ -361,23 +361,38 @@ export class FinanceService {
               orderBy: { settledAt: "desc" },
               take: 300,
               select: {
-                id: true, amountCents: true, period: true, settledAt: true,
+                id: true, amountCents: true, period: true, settledAt: true, kind: true, title: true,
                 athlete: { select: { id: true, name: true } },
+                /*
+                 * O pagamento que a liquidou: é dele que vem o método (MB WAY,
+                 * Multibanco, numerário…) e quem pagou. Uma paga sem pagamento
+                 * registado (marcada antes de se guardarem os manuais, ou uma
+                 * de 0 €) fica sem método.
+                 */
+                payments: {
+                  where: { status: "PAID" },
+                  orderBy: { paidAt: "desc" },
+                  take: 1,
+                  select: { method: true, payerName: true, payerRelation: true },
+                },
               },
             })
           )
-            .filter((c) => !termo || `mensalidade ${c.period} ${c.athlete.name}`.toLowerCase().includes(termo.toLowerCase()))
-            .map((c) => ({
+            .map((c) => ({ c, descricao: `${c.kind === "EXTRA" && c.title ? c.title : `Mensalidade ${c.period}`} · ${c.athlete.name}` }))
+            .filter(({ descricao }) => !termo || descricao.toLowerCase().includes(termo.toLowerCase()))
+            .map(({ c, descricao }) => ({
               id: `charge_${c.id}`,
               source: "fees" as const,
               kind: "INCOME" as const,
               status: "COMPLETED" as const,
-              description: `Mensalidade ${c.period} · ${c.athlete.name}`,
+              description: descricao,
               amountCents: c.amountCents,
               occurredAt: c.settledAt ?? new Date(),
               dueDate: null,
-              method: null,
-              counterparty: null,
+              method: c.payments[0]?.method ?? null,
+              counterparty: c.payments[0]?.payerName
+                ? `${c.payments[0].payerName}${c.payments[0].payerRelation ? ` (${c.payments[0].payerRelation})` : ""}`
+                : null,
               notes: null,
               seriesId: null,
               category: { id: "auto-fees", label: "Mensalidades" },

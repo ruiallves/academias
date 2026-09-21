@@ -6,6 +6,14 @@ import { time } from "@/lib/format";
 import { Plus } from "@/lib/icons";
 import { useMobile } from "@/lib/viewport";
 import { cx, OutcomeTag } from "./primitives";
+import { cycleOn, dayKey as chaveDoDia, defaultColor, matchDayLabel, mesoOf, microLabel, type Cycle } from "@/lib/cycles";
+
+/**
+ * A periodização de uma equipa, por cima do mês. Só vem quando o calendário
+ * mostra uma equipa só (ver `Calendar`): com dez equipas, dez faixas de fases
+ * não se leem.
+ */
+export type Periodizacao = { cycles: Cycle[]; matchDays: string[] };
 
 const WEEKDAYS = ["Seg", "Ter", "Qua", "Qui", "Sex", "Sáb", "Dom"];
 
@@ -25,12 +33,14 @@ export function MonthGrid({
   colors,
   onAdd,
   onSelect,
+  periodizacao,
 }: {
   anchor: Date;
   events: CalendarEvent[];
   colors: Map<string, CategoricalColor>;
   onAdd: (day: Date) => void;
   onSelect: (event: CalendarEvent) => void;
+  periodizacao?: Periodizacao;
 }) {
   const days = monthGrid(anchor);
   const byDay = groupByDay(events);
@@ -59,6 +69,24 @@ export function MonthGrid({
           const open = expanded === key;
           const visible = open ? items : items.slice(0, 3);
 
+          /*
+           * A camada da periodização: a cor da fase numa faixa fina no topo, o
+           * micro no dia em que começa (ou à segunda, para se ler em cada linha)
+           * e o dia em relação ao jogo. Tudo pela data: é o mesmo cálculo do
+           * Planeamento, e por isso nunca os dois discordam.
+           */
+          const k = chaveDoDia(day);
+          const micro = periodizacao ? cycleOn(periodizacao.cycles, "MICRO", k) : undefined;
+          // A cor segue a semana e não o dia: num mesociclo antigo que acaba a
+          // meio de uma semana, a semana inteira é do mesociclo dela.
+          const fase = periodizacao
+            ? micro
+              ? mesoOf(periodizacao.cycles, micro)
+              : cycleOn(periodizacao.cycles, "MESO", k)
+            : undefined;
+          const rotuloMicro = micro && (micro.startsOn === k || day.getDay() === 1) ? microLabel(periodizacao!.cycles, micro) : null;
+          const md = periodizacao ? matchDayLabel(k, periodizacao.matchDays) : null;
+
           return (
             <Fragment key={key}>
               <div
@@ -70,7 +98,15 @@ export function MonthGrid({
                   !outside && isWeekend && "bg-sunken/25",
                 )}
               >
-                <div className="mb-1 flex items-center justify-between px-1">
+                {fase && (
+                  <span
+                    className="absolute inset-x-0 top-0 h-[3px]"
+                    style={{ background: fase.color ?? defaultColor(fase.phase) }}
+                    title={fase.name ?? fase.phase ?? "Mesociclo"}
+                    aria-hidden
+                  />
+                )}
+                <div className="mb-1 flex items-center justify-between gap-1 px-1">
                   <span
                     className={cx(
                       "text-meta font-semibold tabular",
@@ -83,6 +119,22 @@ export function MonthGrid({
                   >
                     {day.getDate()}
                   </span>
+
+                  {(rotuloMicro || md) && (
+                    <span className="flex min-w-0 flex-1 items-center gap-1 text-[10px] text-ink-4">
+                      {rotuloMicro && (
+                        <span className="truncate" title={[rotuloMicro, fase?.name ?? fase?.phase].filter(Boolean).join(" · ")}>
+                          {rotuloMicro}
+                          {fase && micro?.startsOn === k ? ` · ${fase.name ?? fase.phase ?? ""}` : ""}
+                        </span>
+                      )}
+                      {md && (
+                        <span className={cx("ml-auto shrink-0 rounded-[4px] px-1 font-semibold tabular", md === "MD" ? "bg-signal-soft text-signal-ink" : "bg-sunken text-ink-3")}>
+                          {md === "MD" ? "Jogo" : md}
+                        </span>
+                      )}
+                    </span>
+                  )}
 
                   {/* O botão só existe ao passar o rato: 42 sinais de mais numa
                       grelha seriam ruído permanente. */}

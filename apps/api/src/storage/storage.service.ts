@@ -184,6 +184,9 @@ export class StorageService {
    * lista de atletas. O ecrã cai para as iniciais, como se nunca tivesse havido foto.
    */
   async signDownload(bucket: string, key: string, expiresIn: number): Promise<string | null> {
+    const emCache = this.assinaturaEmCache(bucket, key, expiresIn);
+    if (emCache) return emCache;
+
     try {
       const res = await fetch(`${this.url}/storage/v1/object/sign/${bucket}/${key}`, {
         method: "POST",
@@ -196,10 +199,110 @@ export class StorageService {
       }
       const body = (await res.json()) as { signedURL?: string; signedUrl?: string };
       const path = body.signedURL ?? body.signedUrl;
-      return path ? `${this.url}/storage/v1${path}` : null;
+      if (!path) return null;
+
+      const url = `${this.url}/storage/v1${path}`;
+      this.guardarAssinatura(bucket, key, expiresIn, url);
+      return url;
     } catch (error) {
       this.log.warn(`Assinatura de leitura rebentou (${bucket}/${key}): ${error}`);
       return null;
+    }
+  }
+
+  /* ------------------------------------------------------------------------ */
+  /* O mesmo ficheiro, o mesmo endereço                                        */
+  /* ------------------------------------------------------------------------ */
+
+  /**
+   * ## A conta de egress que isto veio pagar
+   *
+   * O token de um endereço assinado leva lá dentro o instante em que foi
+   * emitido. Dois pedidos com mais de um segundo de intervalo devolvem tokens
+   * diferentes — portanto **endereços diferentes para o mesmo ficheiro**. Para
+   * o browser são recursos novos, e a cache dele nunca acerta: cada abertura da
+   * lista de atletas voltava a descarregar as 108 fotografias do princípio.
+   *
+   * Em números reais deste produto: 57 MB por abertura da lista de atletas, 23
+   * MB pela de sócios, 22 MB pela de staff. Uma recarga de página custava o
+   * mesmo outra vez. Com o refrescamento automático da app dos pais, de minuto
+   * a minuto, a mesma fotografia saía do Supabase sessenta vezes por hora.
+   *
+   * ## O que a cache faz
+   *
+   * Guarda o endereço já assinado e devolve **o mesmo** enquanto ele for válido
+   * com folga. Não é uma cache de bytes: são umas centenas de strings, e o que
+   * ela poupa são gigabytes.
+   *
+   * Funciona porque o Supabase serve a descarga assinada com um `Expires` igual
+   * ao prazo do próprio endereço (medido: sem `cache-control`, com `Expires`).
+   * Com o endereço a repetir-se, esse `Expires` passa a valer alguma coisa e o
+   * browser guarda a imagem até ao fim do prazo. Com um endereço novo de cada
+   * vez, não valia nada — e revalidar também não salva: um `If-None-Match`
+   * devolve 200 e os bytes todos, não 304.
+   *
+   * ## Porquê a margem
+   *
+   * Devolve-se o endereço guardado só enquanto faltar mais do que `MARGEM` para
+   * expirar. Sem isso, o último pedido antes do prazo recebia um endereço com
+   * dois segundos de vida e a fotografia partia-se no ecrã de quem o recebeu.
+   * Cinco minutos chegam para qualquer página acabar de carregar.
+   *
+   * ## Porquê um tecto
+   *
+   * Porque isto vive na memória do processo e um clube com muitos ficheiros
+   * encheria-a sem limite. Ao chegar ao tecto deita-se fora a metade mais
+   * antiga: as entradas são baratas de refazer, e o que interessa é o que anda
+   * a ser pedido agora.
+   */
+  private readonly assinaturas = new Map<string, { url: string; validoAte: number }>();
+
+  /** Cinco minutos de folga antes do prazo. */
+  private static readonly MARGEM_MS = 5 * 60 * 1000;
+
+  /** Umas centenas de strings. Muito acima do que qualquer clube usa de uma vez. */
+  private static readonly TECTO = 2000;
+
+  private assinaturaEmCache(bucket: string, key: string, expiresIn: number): string | null {
+    const guardada = this.assinaturas.get(`${bucket}|${key}|${expiresIn}`);
+    if (!guardada) return null;
+    if (guardada.validoAte <= Date.now()) {
+      this.assinaturas.delete(`${bucket}|${key}|${expiresIn}`);
+      return null;
+    }
+    return guardada.url;
+  }
+
+  private guardarAssinatura(bucket: string, key: string, expiresIn: number, url: string): void {
+    /*
+     * Um prazo curto não sobrevive à margem — o `signDownload(…, 60)` do
+     * `publicUrlFor`, ou os 120 segundos de um vídeo. Nesses casos não se
+     * guarda: são poucos, e um endereço quase expirado é pior do que assinar
+     * outra vez.
+     */
+    const vida = expiresIn * 1000 - StorageService.MARGEM_MS;
+    if (vida <= 0) return;
+
+    if (this.assinaturas.size >= StorageService.TECTO) {
+      const metade = Math.floor(StorageService.TECTO / 2);
+      for (const k of [...this.assinaturas.keys()].slice(0, metade)) this.assinaturas.delete(k);
+    }
+
+    this.assinaturas.set(`${bucket}|${key}|${expiresIn}`, { url, validoAte: Date.now() + vida });
+  }
+
+  /**
+   * Esquecer o endereço de um ficheiro.
+   *
+   * Chama-se quando o ficheiro **muda de conteúdo na mesma chave** — hoje isso
+   * não acontece (cada carregamento gera uma chave nova, ver `photos.service`),
+   * mas apagar sem esquecer deixaria um endereço a apontar para o que já não
+   * existe até ao fim do prazo.
+   */
+  forgetSigned(bucket: string, key: string): void {
+    const prefixo = `${bucket}|${key}|`;
+    for (const k of this.assinaturas.keys()) {
+      if (k.startsWith(prefixo)) this.assinaturas.delete(k);
     }
   }
 
@@ -236,6 +339,8 @@ export class StorageService {
    * fotografias de sócio, que confirma que a anterior desaparece.
    */
   async remove(bucket: string, key: string): Promise<void> {
+    /* O endereço guardado deixa de valer no instante em que o ficheiro sai. */
+    this.forgetSigned(bucket, key);
     try {
       const { "Content-Type": _json, ...headers } = this.headers();
       const res = await fetch(`${this.url}/storage/v1/object/${bucket}/${key}`, { method: "DELETE", headers });

@@ -1,5 +1,6 @@
 import { getAccessToken, readSession, refreshSession, signOut } from "@/lib/session";
 import { LEGAL_REQUIRED_CODE, legalRequired } from "@/lib/legal-signal";
+import { mostrarErro } from "@/lib/avisos";
 
 /**
  * O cliente HTTP da consola.
@@ -152,7 +153,7 @@ function enviar(url: URL, method: string, token: string | null, body?: unknown):
 async function pedir<T>(
   method: string,
   path: string,
-  opts: { params?: Record<string, string | undefined>; body?: unknown } = {},
+  opts: { params?: Record<string, string | undefined>; body?: unknown; silencioso?: boolean } = {},
 ): Promise<T> {
   const url = endereco(path, opts.params);
   const token = await getAccessToken();
@@ -195,7 +196,31 @@ async function pedir<T>(
      */
     if (res.status === 403 && parsed?.code === LEGAL_REQUIRED_CODE) legalRequired();
 
-    throw new ApiError(res.status, msg ?? mensagem(res.status), parsed?.code);
+    const erro = new ApiError(res.status, msg ?? mensagem(res.status), parsed?.code);
+
+    /*
+     * O erro aparece, sempre e no mesmo sítio.
+     *
+     * É aqui e não em cada ecrã porque é aqui que **todos** passam: uma frase
+     * do servidor que morria num `catch` esquecido, ou que era mostrada no
+     * fundo de um diálogo com scroll onde ninguém a via, passa a aparecer no
+     * canto. Quem chama continua a poder apanhá-la e a fazer o que quiser — o
+     * aviso não substitui o tratamento, acrescenta-se-lhe.
+     *
+     * Duas excepções, e as duas têm caminho próprio:
+     *
+     *  - a **sessão acabada** (401 com token) leva a pessoa à porta do clube,
+     *    e um cartão de erro em cima disso só assusta;
+     *  - os **termos por aceitar** abrem o gate legal, que explica o que é
+     *    preciso fazer muito melhor do que uma linha.
+     *
+     * E `silencioso` para o punhado de pedidos que falham por desenho — as
+     * sondagens de fundo, sobretudo. Ver `apiGet`.
+     */
+    const proprio = (res.status === 401 && token) || parsed?.code === LEGAL_REQUIRED_CODE;
+    if (!opts.silencioso && !proprio) mostrarErro(erro.message);
+
+    throw erro;
   }
 
   return readBody<T>(res);
@@ -203,6 +228,24 @@ async function pedir<T>(
 
 export const apiGet = <T,>(path: string, params?: Record<string, string | undefined>) =>
   pedir<T>("GET", path, { params });
+
+/**
+ * Uma leitura que **não** avisa quando falha.
+ *
+ * Para o que corre em fundo e por conta própria: as sondagens das respostas a
+ * uma convocatória, o progresso de uma análise, a marca de presença. Falham
+ * sozinhas, repetem-se sozinhas, e um cartão de erro a cada doze segundos por
+ * causa de uma rede fraca é ruído que ensina a ignorar os avisos que interessam.
+ *
+ * Não serve para esconder erros de coisas que alguém pediu: se um clique falha,
+ * quem clicou tem de saber.
+ */
+export const apiGetSilencioso = <T,>(path: string, params?: Record<string, string | undefined>) =>
+  pedir<T>("GET", path, { params, silencioso: true });
+
+/** O par de `apiGetSilencioso` para escritas de fundo. Ver lá o porquê. */
+export const apiPostSilencioso = <T,>(path: string, body: unknown) =>
+  pedir<T>("POST", path, { body, silencioso: true });
 
 /** Escrita. A academia vem do mesmo sítio que na leitura — do subdomínio ou da sessão. */
 export const apiPost = <T,>(path: string, body: unknown) => pedir<T>("POST", path, { body });

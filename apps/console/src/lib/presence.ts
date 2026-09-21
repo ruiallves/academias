@@ -1,5 +1,5 @@
 import { useEffect } from "react";
-import { apiPost } from "@/lib/http";
+import { apiPostSilencioso } from "@/lib/http";
 
 /**
  * O sinal de vida do separador aberto.
@@ -42,7 +42,9 @@ export function usePresence(activo: boolean) {
     let vivo = true;
     const bater = () => {
       if (!vivo || document.visibilityState !== "visible") return;
-      void apiPost("/api/presence", {}).catch(() => {});
+      // Silenciosa: bate sozinha de fundo, e uma rede fraca não pode encher
+      // o canto de avisos por causa de uma marca de presença.
+      void apiPostSilencioso("/api/presence", {}).catch(() => {});
     };
 
     bater();

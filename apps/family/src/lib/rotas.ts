@@ -35,12 +35,15 @@ export type Destino = { area: "FAMILY" | "MEMBER"; rota: string };
 const FAMILIA = new Set(["/", "/agenda", "/pagamentos", "/atleta", "/notificacoes", "/perfil"]);
 
 /** As páginas do sócio — as rotas de `screens/socio/SocioApp`. */
-const SOCIO = new Set(["/socio", "/socio/cartao", "/socio/quotas", "/socio/clube", "/socio/perfil"]);
+const SOCIO = new Set(["/socio", "/socio/quotas", "/socio/jogos", "/socio/novidades", "/socio/perfil"]);
 
 /** O que o servidor escreveu, e o que isso quer dizer hoje. */
 const ANTIGAS: Record<string, string> = {
   /* Os avisos da academia leem-se por inteiro na lista de notificações. */
   "/avisos": "/notificacoes",
+  /* O cartão passou para o Início, e "Clube" partiu-se em Jogos e Novidades. */
+  "/socio/cartao": "/socio",
+  "/socio/clube": "/socio/novidades",
 };
 
 export function destinoDaNotificacao(bruta: string | null | undefined): Destino | null {

@@ -958,6 +958,101 @@ export function subscriptionOrderEmail(input: {
   };
 }
 
+/**
+ * O aviso de pagamento da subscrição — o que sai todos os meses.
+ *
+ * ## O que este email é, e o que não é
+ *
+ * É o aviso de que a mensalidade da plataforma está a vencer: quanto, que
+ * período cobre, e até quando. **Não traz dados de pagamento** — a factura segue
+ * pelo caminho do costume, e um IBAN escrito num email automático é a porta por
+ * onde entra a burla que se conhece (o email falso com o IBAN trocado).
+ *
+ * ## Porque é que o período vem escrito
+ *
+ * Porque "a mensalidade de Outubro" não quer dizer nada num ciclo que corre de
+ * dia 20 a dia 19. Quem recebe tem de poder confirmar o que está a pagar sem
+ * perguntar a ninguém — e quem trata das contas do clube arquiva isto.
+ */
+export function subscriptionNoticeEmail(input: {
+  brand: MailBrand;
+  /** Quem recebe — o responsável do clube. */
+  name: string;
+  /** O cargo com que consta: "Presidente". */
+  title: string;
+  /** O nome do cliente, o clube por extenso. */
+  clientName: string;
+  planName: string;
+  annual: boolean;
+  amountCents: number;
+  periodStart: Date;
+  periodEnd: Date;
+  dueOn: Date;
+  /** Onde estão as condições assinadas. */
+  link: string;
+}): { subject: string; html: string; text: string } {
+  const primeiro = input.name.trim().split(/\s+/)[0] || input.name;
+  const periodo = dia(input.periodStart) + " a " + dia(input.periodEnd);
+
+  const linhas: [string, string][] = [
+    ["Cliente", esc(input.clientName)],
+    ["Plano", esc(input.planName)],
+    ["Período", esc(periodo)],
+    ["Valor", euros(input.amountCents)],
+    ["Data-limite", dia(input.dueOn)],
+  ];
+
+  const tabela =
+    '<table role="presentation" cellpadding="0" cellspacing="0" style="width:100%;border-collapse:collapse;' +
+    'border:1px solid #e5e2dc;border-radius:10px;overflow:hidden;">' +
+    linhas
+      .map(
+        ([rotulo, valor], i) =>
+          '<tr style="' + (i % 2 === 0 ? "background:#faf9f7;" : "") + '">' +
+          '<td style="padding:9px 12px;font-size:13px;color:#52504c;white-space:nowrap;">' + esc(rotulo) + "</td>" +
+          '<td style="padding:9px 12px;font-size:13px;color:#1a1917;font-weight:600;text-align:right;">' + valor + "</td>" +
+          "</tr>",
+      )
+      .join("") +
+    "</table>";
+
+  const abertura =
+    (input.annual ? "Venceu a anuidade" : "Venceu a mensalidade") +
+    " de " + esc(input.brand.name) + " na plataforma Academias, referente a " + esc(periodo) + ".";
+
+  const notes = [
+    "A factura segue pelo caminho do costume. Este email é o aviso, e não pede dados de pagamento nenhuns.",
+    "Se já pagaste, ignora este aviso. Ele sai no dia do vencimento e não sabe do banco.",
+    "Alguma coisa não bate certo? Responde a este email.",
+  ];
+
+  return {
+    subject:
+      "Academias · " + (input.annual ? "anuidade" : "mensalidade") + " de " + input.brand.shortName +
+      " · " + euros(input.amountCents),
+    html: layout({
+      brand: input.brand,
+      greeting: "Olá " + primeiro + ",",
+      heading: input.annual ? "Anuidade a pagamento" : "Mensalidade a pagamento",
+      paragraphs: [
+        abertura + " Chega a ti como <strong>" + esc(input.title) + "</strong>, que é quem representa o clube.",
+      ],
+      blocks: [tabela],
+      cta: { label: "Ver as condições", url: input.link },
+      notes,
+    }),
+    text: plain(
+      "Olá " + primeiro + ",",
+      [
+        semTags(abertura) + " Chega a ti como " + input.title + ", que é quem representa o clube.",
+        ...linhas.map(([rotulo, valor]) => rotulo + ": " + semTags(valor)),
+      ],
+      { label: "Ver as condições", url: input.link },
+      notes.map(semTags),
+    ),
+  };
+}
+
 /** "19,99 €" — o formato que o resto do produto usa. */
 function euros(cents: number): string {
   return new Intl.NumberFormat("pt-PT", { style: "currency", currency: "EUR" }).format(cents / 100);

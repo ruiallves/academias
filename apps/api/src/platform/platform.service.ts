@@ -42,6 +42,8 @@ type AcademyRow = {
   id: string; slug: string; name: string; status: string;
   created_at: Date; trial_ends_at: Date | null;
   plan_id: string | null; plan_name: string | null; sub_status: string | null; mrr_cents: number;
+  /** O preço acordado com este clube. Nulo é o caso normal: vale o plano. */
+  price_cents: number | null;
   athletes: number; staff: number; guardians: number; teams: number;
   onboarding_done: number; last_activity: Date | null;
   /** Marca, não domínio: é o que põe o emblema do clube ao lado do nome. */
@@ -204,6 +206,12 @@ export class PlatformService {
       plan: r.plan_name,
       subscriptionStatus: r.sub_status,
       mrrCents: r.mrr_cents,
+      /*
+       * O acordado vai para a lista porque é de lá que o diálogo do plano
+       * abre. Sem ele, reabrir a janela propunha outra vez o preço de tabela e
+       * a gravação seguinte desfazia o acordo sem ninguém pedir.
+       */
+      priceCents: r.price_cents,
       athletes: r.athletes,
       staff: r.staff,
       guardians: r.guardians,
@@ -245,7 +253,9 @@ export class PlatformService {
       select: {
         id: true, slug: true, name: true, status: true, createdAt: true, trialEndsAt: true,
         logoUrl: true, signalColor: true,
-        subscription: { select: { status: true, plan: { select: { id: true, name: true, amountCents: true } } } },
+        subscription: {
+          select: { status: true, priceCents: true, plan: { select: { id: true, name: true, amountCents: true } } },
+        },
       },
     });
     if (!academy) throw new NotFoundException("Academia não encontrada");
@@ -268,7 +278,7 @@ export class PlatformService {
         where: { academyId: id, isActive: true, role: "GUARDIAN" },
         select: { userId: true, lastSeenAt: true },
       }),
-      this.prisma.athlete.findMany({ where: { academyId: id }, select: { status: true, teams: { select: { teamId: true }, take: 1 } } }),
+      this.prisma.athlete.findMany({ where: { academyId: id }, select: { status: true, teams: { where: { leftAt: null }, select: { teamId: true }, take: 1 } } }),
       this.prisma.team.findMany({
         where: { academyId: id },
         orderBy: { name: "asc" },
@@ -402,6 +412,13 @@ export class PlatformService {
       plan: academy.subscription?.plan.name ?? null,
       planId: academy.subscription?.plan.id ?? null,
       subscriptionStatus: academy.subscription?.status ?? null,
+      /*
+       * Os dois preços, lado a lado: o de tabela e o acordado. A ficha mostra a
+       * diferença quando ela existe — um clube com preço à medida é uma coisa
+       * que quem abre a ficha tem de ver sem ir procurar ao contrato.
+       */
+      planAmountCents: academy.subscription?.plan.amountCents ?? null,
+      priceCents: academy.subscription?.priceCents ?? null,
       people: {
         staff: staff.length,
         coaches: porRole.get("COACH") ?? 0,
@@ -947,6 +964,15 @@ export class PlatformService {
       minimumMonths?: number;
       renewalNote?: string;
       notes?: string;
+      /**
+       * A mensalidade acordada, quando não é a de tabela.
+       *
+       * Vem em cêntimos e substitui o preço do plano no contrato **e** no MRR.
+       * Igual à tabela, não se guarda: assim o clube acompanha uma futura
+       * actualização de preço do plano, em vez de ficar preso a um número que
+       * alguém confirmou uma vez sem querer mudar nada.
+       */
+      monthlyCents?: number;
     },
   ) {
     const academy = await this.prisma.academy.findUnique({
@@ -974,16 +1000,39 @@ export class PlatformService {
     const novoEstado = status ?? academy.subscription?.status ?? "TRIALING";
     const cancelada = novoEstado === "CANCELLED";
 
+    /*
+     * O preço acordado, se for mesmo outro.
+     *
+     * Confirmar o valor de tabela não cria um acordo: guardá-lo prendia o clube
+     * a um número que alguém carimbou sem querer mudar nada, e uma actualização
+     * futura do plano deixava de lhe chegar. Igual à tabela, volta a nulo.
+     */
+    const acordado =
+      condicoes?.monthlyCents !== undefined && condicoes.monthlyCents !== plan.amountCents
+        ? condicoes.monthlyCents
+        : null;
+
     const subscription = await this.prisma.subscription.upsert({
       where: { academyId: id },
       // Sem subscrição — o clube foi criado sem plano. É aqui que passa a existir.
-      create: { academyId: id, planId: plan.id, status: novoEstado, ...(cancelada ? { cancelledAt: new Date() } : {}) },
+      create: {
+        academyId: id,
+        planId: plan.id,
+        status: novoEstado,
+        priceCents: acordado,
+        ...(cancelada ? { cancelledAt: new Date() } : {}),
+      },
       update: {
         planId: plan.id,
         status: novoEstado,
         cancelledAt: cancelada ? new Date() : null,
+        /*
+         * Só se mexe no preço quando quem chamou falou dele. Uma correcção de
+         * estado não apaga um acordo comercial que ninguém pôs em causa.
+         */
+        ...(condicoes?.monthlyCents !== undefined ? { priceCents: acordado } : {}),
       },
-      select: { planId: true, status: true },
+      select: { planId: true, status: true, priceCents: true },
     });
 
     await this.audit(
@@ -995,6 +1044,9 @@ export class PlatformService {
         slug: academy.slug,
         de: academy.subscription ? `${academy.subscription.planId}/${academy.subscription.status}` : "sem subscrição",
         para: `${plan.name}/${subscription.status}`,
+        // O preço negociado fica no registo: é a pergunta que se faz um ano
+        // depois ("quem é que lhe deu este valor?") e a resposta tem de existir.
+        ...(subscription.priceCents !== null ? { preco: `${(subscription.priceCents / 100).toFixed(2)} €/mês` } : {}),
       },
       ip,
     );
@@ -1013,7 +1065,12 @@ export class PlatformService {
     let ordem: { id: string; enviado: boolean; motivo: string | null } | null = null;
     if (condicoes?.billingPeriod) {
       try {
-        const r = await this.orders.emitir(id, { id: plan.id, name: plan.name, amountCents: plan.amountCents }, {
+        const r = await this.orders.emitir(id, {
+          id: plan.id,
+          name: plan.name,
+          // O acordado, quando existe: é o que o clube vai ler no contrato.
+          amountCents: subscription.priceCents ?? plan.amountCents,
+        }, {
           billingPeriod: condicoes.billingPeriod,
           startsOn: condicoes.startsOn ? new Date(condicoes.startsOn) : new Date(),
           minimumMonths: condicoes.minimumMonths ?? 12,

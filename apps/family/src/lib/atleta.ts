@@ -1,5 +1,5 @@
-import { apiDelete, apiGet, apiPost } from "@/lib/http";
-import { checkFoto, FotoError } from "@/lib/socio";
+import { apiDelete, apiGet } from "@/lib/http";
+import { subirFotografia } from "@/lib/socio";
 
 /**
  * A área de atleta — o que só o próprio faz.
@@ -11,27 +11,8 @@ import { checkFoto, FotoError } from "@/lib/socio";
  * treino que o treinador partilhou.
  */
 
-/** A fotografia do próprio — o mesmo caminho em duas fases da do sócio. */
-export async function uploadFotoAtleta(file: File): Promise<string | null> {
-  const problema = checkFoto(file);
-  if (problema) throw new FotoError(problema);
-
-  const signed = await apiPost<{ url: string; token: string; key: string }>("/api/atleta/foto/upload", {
-    contentType: file.type,
-  });
-  const res = await fetch(signed.url, {
-    method: "PUT",
-    headers: {
-      "Content-Type": file.type,
-      ...(signed.token ? { Authorization: `Bearer ${signed.token}` } : {}),
-    },
-    body: file,
-  });
-  if (!res.ok) throw new FotoError("Não foi possível carregar a fotografia.");
-
-  const { photoUrl } = await apiPost<{ photoUrl: string | null }>("/api/atleta/foto", { key: signed.key });
-  return photoUrl;
-}
+/** A fotografia do próprio. Mesmo caminho da do sócio — ver `subirFotografia`. */
+export const uploadFotoAtleta = (file: File) => subirFotografia("/api/atleta/foto", file);
 
 export const removerFotoAtleta = () => apiDelete<{ ok: true }>("/api/atleta/foto");
 

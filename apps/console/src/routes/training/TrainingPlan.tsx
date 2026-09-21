@@ -6,8 +6,8 @@ import { FieldView, THUMB_RATIO } from "@/components/FieldEditor";
 import { Empty, Loading, Panel, PanelHead, Pill, cx } from "@/components/primitives";
 import { Check, ChevronDown, ChevronRight, Clock, Copy, DragHandle, Download, Plus, Search, Star, Trash2, TriangleAlert, Whistle, X } from "@/lib/icons";
 import { teamById } from "@/lib/api";
-import { can } from "@/lib/permissions";
-import { longDate, time } from "@/lib/format";
+import { can, isAcademyWide } from "@/lib/permissions";
+import { longDate, shortDate, time } from "@/lib/format";
 import { categoriesFor, exercisePath } from "@/lib/sports";
 import {
   SESSION_TYPES,
@@ -29,6 +29,8 @@ import {
 } from "@/lib/training";
 import { useSession } from "@/session";
 import { sharePlan } from "@/lib/training";
+import { matches } from "@/lib/store";
+import { cycleOn, dayKey, listCycles, matchDayLabel, mesoOf, microLabel, type Cycle } from "@/lib/cycles";
 import { Users } from "@/lib/icons";
 
 /**
@@ -155,6 +157,24 @@ export default function TrainingPlan() {
       .then(setPlan)
       .catch((e: Error) => setError(e.message));
   }, [id]);
+
+  /*
+   * Onde este treino cai na periodização da equipa: o micro, a fase e o dia em
+   * relação ao jogo. Só leitura, e só se a equipa periodizar. O treino não sabe
+   * do ciclo: é o dia dele que o põe lá (ver `lib/cycles.ts`).
+   */
+  const [ciclos, setCiclos] = useState<Cycle[]>([]);
+  const teamDoPlano = plan?.teamId;
+  useEffect(() => {
+    if (!teamDoPlano) return;
+    let vivo = true;
+    listCycles(teamDoPlano)
+      .then((c) => vivo && setCiclos(c))
+      .catch(() => vivo && setCiclos([]));
+    return () => {
+      vivo = false;
+    };
+  }, [teamDoPlano]);
 
   const editable = Boolean(plan?.mine) && can(session, "training:write");
 
@@ -346,18 +366,27 @@ export default function TrainingPlan() {
   const categories = categoriesFor(sportId);
   const allObjectiveValues = categories.flatMap((c) => [c.label, ...c.subs]);
 
+  const dia = dayKey(start);
+  const micro = cycleOn(ciclos, "MICRO", dia);
+  const fase = micro ? mesoOf(ciclos, micro) : cycleOn(ciclos, "MESO", dia);
+  const diasDeJogo = [
+    ...new Set(matches.filter((m) => m.teamId === plan.teamId && m.status !== "CANCELLED").map((m) => dayKey(new Date(m.startsAt)))),
+  ];
+  const md = matchDayLabel(dia, diasDeJogo);
+  const contexto = [micro ? microLabel(ciclos, micro) : null, md && md !== "MD" ? md : null, fase ? fase.name ?? fase.phase : null].filter(Boolean);
+
   return (
     <PlanVocab.Provider value={{ categories, sportId }}>
     <>
       <PageHeader
-        eyebrow="Plano de treino"
+        eyebrow={["Plano de treino", ...contexto].join(" · ")}
         title={`${plan.teamName} · ${time(start)}`}
         subtitle={`${longDate(start)} · ${plan.venue}${plan.coachName ? ` · ${plan.coachName}` : ""}${
           plan.sharedAt ? " · Partilhado com os atletas" : ""
         }`}
       >
-        <Link to="/treinos" className="ctl-ghost">
-          Todos os treinos
+        <Link to={`/treinos?equipa=${plan.teamId}`} className="ctl-ghost">
+          Planeamento
         </Link>
         {/*
           Um botão, e não dois.
@@ -414,6 +443,28 @@ export default function TrainingPlan() {
           </button>
         )}
       </PageHeader>
+
+      {/*
+        A intenção do micro, à vista de quem desenha o treino. É aqui que ela
+        serve: o objetivo da semana ao lado do objetivo da sessão.
+      */}
+      {micro && (micro.objective || micro.focus.length > 0) && (
+        <div className="mb-3 flex flex-wrap items-baseline gap-x-4 gap-y-1 rounded-[var(--radius-panel)] border border-line bg-sunken/50 px-4 py-2.5 text-meta">
+          <span className="font-semibold text-ink">{microLabel(ciclos, micro)}</span>
+          {micro.objective && (
+            <span className="text-ink-2">
+              <span className="text-ink-4">Objetivo </span>
+              {micro.objective}
+            </span>
+          )}
+          {micro.focus.length > 0 && (
+            <span className="text-ink-2">
+              <span className="text-ink-4">Foco </span>
+              {micro.focus.join(", ")}
+            </span>
+          )}
+        </div>
+      )}
 
       <div className="grid gap-3 xl:grid-cols-3">
         {/* A sessão */}
@@ -1420,14 +1471,177 @@ function GuardarModeloDialog({
 }
 
 /**
+ * Um modelo na lista: o que se vê sem abrir, e o que se vê ao abrir.
+ *
+ * Fechado responde a "serve-me?": nome, de quem é, carga, volume, blocos,
+ * quando nasceu e quantas vezes já foi usado. Aberto responde a "o que é que
+ * isto traz?": os blocos por ordem, com o tempo e o exercício de cada um, que
+ * é o que ninguém conseguia ver sem aplicar o modelo e depois desfazer.
+ */
+function ModeloDaLista({
+  modelo: m,
+  aberto,
+  onAbrir,
+  aplicar,
+  aAplicar,
+  aApagar,
+  pedirApagar,
+  apagar,
+}: {
+  modelo: SessionTemplateRow;
+  aberto: boolean;
+  onAbrir: () => void;
+  aplicar: () => void;
+  aAplicar: string | null;
+  aApagar: boolean;
+  pedirApagar: () => void;
+  apagar: () => void;
+}) {
+  /*
+   * Apagar é só o que é meu, ou tudo para quem manda no clube. É a mesma regra
+   * do servidor (`deleteTemplate`): mostrar o caixote a quem levaria com um 403
+   * é prometer um botão que não funciona.
+   */
+  const { session } = useSession();
+  const podeApagar = m.mine || isAcademyWide(session);
+  /* A mesma carga que o plano mostra — ver `sessionLoad`, que é onde vive a conta. */
+  const carga = sessionLoad(m.blocks, m.intensity);
+  /* Modelos guardados antes de o servidor mandar a data ficam sem ela. */
+  const criado = m.createdAt ? new Date(m.createdAt) : null;
+  const usado = m.lastUsedAt ? new Date(m.lastUsedAt) : null;
+
+  return (
+    <li className="border-b border-line last:border-0">
+      <div className="flex items-start gap-3 px-5 py-3">
+        <button
+          type="button"
+          onClick={onAbrir}
+          aria-expanded={aberto}
+          className="min-w-0 flex-1 text-left"
+        >
+          <span className="flex flex-wrap items-center gap-2">
+            <span className="truncate text-body font-medium text-ink">{m.name}</span>
+            {/* Quem o vê, que é outra coisa de quem o fez: um modelo meu pode
+                estar partilhado com o clube, e o separador "Do clube" é dos
+                modelos dos outros. */}
+            {m.visibility === "PRIVATE" ? <Pill tone="neutral">Só meu</Pill> : <Pill tone="neutral">Partilhado</Pill>}
+            {m.sessionType && <Pill tone="neutral">{m.sessionType}</Pill>}
+            {/* A carga estimada, com o mesmo tom do resto do plano. */}
+            {m.blockCount > 0 && <Pill tone={carga.tone}>{`Carga ${carga.label.toLowerCase()}`}</Pill>}
+          </span>
+          <span className="mt-1 block truncate text-meta text-ink-2">
+            {m.blockCount} {m.blockCount === 1 ? "bloco" : "blocos"} · {m.totalMin} min
+            {m.blockCount > 0 ? ` · intensidade ${(carga.score / 10).toFixed(1)}/10` : ""}
+            {m.expectedAthletes ? ` · ${m.expectedAthletes} atletas` : ""}
+          </span>
+          <span className="mt-0.5 block truncate text-meta text-ink-3">
+            {m.objective ?? m.objectives.join(" · ") ?? ""}
+            {m.objective || m.objectives.length > 0 ? " · " : ""}
+            {m.mine ? "criado por mim" : m.authorName ? `criado por ${m.authorName}` : "autor desconhecido"}
+            {criado && !Number.isNaN(criado.getTime()) ? ` · ${shortDate(criado)}` : ""}
+            {/* Quantas vezes já foi usado: é o que distingue o modelo de
+                terça-feira de um que se guardou uma vez e nunca mais. */}
+            {m.useCount > 0 ? ` · usado ${m.useCount}×` : " · nunca usado"}
+            {usado ? ` (última vez ${shortDate(usado)})` : ""}
+          </span>
+        </button>
+
+        <span className="flex shrink-0 items-center gap-1">
+          <button
+            type="button"
+            className="ctl-outline"
+            onClick={aplicar}
+            disabled={aAplicar !== null}
+          >
+            {aAplicar === m.id ? "A aplicar…" : "Usar"}
+          </button>
+          {/*
+            Fora do botão de abrir, e não lá dentro: um <button> dentro de outro
+            não é HTML válido, e apagar não pode ser um clique na linha.
+          */}
+          {podeApagar &&
+            (aApagar ? (
+              <button type="button" className="ctl-ghost text-risk" onClick={apagar}>
+                Apagar?
+              </button>
+            ) : (
+              <button
+                type="button"
+                aria-label={`Apagar o modelo ${m.name}`}
+                className="ctl-ghost size-8 justify-center px-0 text-ink-4 hover:text-risk"
+                onClick={pedirApagar}
+              >
+                <Trash2 className="size-3.5" strokeWidth={1.75} />
+              </button>
+            ))}
+          <ChevronDown
+            className={cx("size-4 text-ink-4 transition-transform", aberto && "rotate-180")}
+            strokeWidth={1.75}
+          />
+        </span>
+      </div>
+
+      {aberto && (
+        <div className="border-t border-line bg-sunken/50 px-5 py-3">
+          {m.blocks.length === 0 ? (
+            <p className="text-meta text-ink-3">Este modelo não tem blocos.</p>
+          ) : (
+            <ol className="space-y-1.5">
+              {m.blocks.map((b, idx) => (
+                <li key={`${b.name}-${idx}`} className="flex items-baseline gap-2 text-meta">
+                  <span className="num w-10 shrink-0 text-right text-ink-3">{b.durationMin}′</span>
+                  <span className="min-w-0 flex-1">
+                    <span className="text-ink-2">{b.name}</span>
+                    {b.exerciseName && <span className="text-ink-3">{` · ${b.exerciseName}`}</span>}
+                    {b.category && <span className="text-ink-4">{` · ${b.category}`}</span>}
+                    {b.intensity != null && <span className="text-ink-4">{` · int. ${b.intensity}/10`}</span>}
+                  </span>
+                </li>
+              ))}
+            </ol>
+          )}
+          {m.material && (
+            <p className="mt-2.5 text-meta text-ink-3">
+              <span className="font-medium text-ink-2">Material:</span> {m.material}
+            </p>
+          )}
+          {m.planNotes && <p className="mt-1.5 text-meta whitespace-pre-line text-ink-3">{m.planNotes}</p>}
+        </div>
+      )}
+    </li>
+  );
+}
+
+/** Separadores da lista de modelos: de quem são. */
+type AbaDeModelos = "todos" | "meus" | "clube";
+
+/** Como se ordena a lista. */
+type OrdemDeModelos = "usados" | "recentes" | "nome";
+
+/**
  * A lista de modelos — escolher um, ou guardar este treino como mais um.
  *
  * As duas coisas no mesmo sítio porque são a mesma pergunta vista dos dois
  * lados, e porque separá-las custava outro botão no cabeçalho.
  *
- * O aviso de que aplicar **substitui** está à vista antes de escolher, e não
- * numa confirmação por cima: quem já carregou no modelo decidiu, e uma segunda
- * janela a perguntar "de certeza?" carrega-se sem ler.
+ * ## Porque é que cada modelo diz tanto
+ *
+ * Era uma lista de nomes, e um nome não chega para decidir: "Terça" não diz se
+ * é um treino de 60 ou de 100 minutos, se é leve ou se rebenta com o plantel,
+ * se é meu ou do colega, nem se é de há duas semanas ou da época passada.
+ * Agora cada linha traz a carga estimada (a mesma aritmética do plano, ver
+ * `sessionLoad`), o volume, o tipo de sessão, quem o fez, quando o fez, quantas
+ * vezes já foi usado, e abre para mostrar os blocos que traz.
+ *
+ * Os separadores respondem à pergunta de quem procura: **os meus** e os **do
+ * clube** (os que os colegas partilharam). Não há modelos de fora do clube: a
+ * biblioteca é de cada academia, e um "comunidade" com o que os colegas
+ * partilharam chamava comunidade a outra coisa.
+ *
+ * Aplicar deixou de ser um clique na linha: a linha abre, e quem aplica carrega
+ * em "Usar este modelo". O aviso de que aplicar **substitui** está à vista antes
+ * de escolher, e não numa confirmação por cima: quem carregou decidiu, e uma
+ * segunda janela a perguntar "de certeza?" carrega-se sem ler.
  */
 function ModelosDialog({
   sessionId,
@@ -1449,6 +1663,11 @@ function ModelosDialog({
   const [aAplicar, setAAplicar] = useState<string | null>(null);
   /* Apagar pede confirmação no próprio sítio: o segundo toque no caixote. */
   const [aApagar, setAApagar] = useState<string | null>(null);
+  const [aba, setAba] = useState<AbaDeModelos>("todos");
+  const [ordem, setOrdem] = useState<OrdemDeModelos>("usados");
+  const [procura, setProcura] = useState("");
+  /* Um modelo aberto de cada vez: aberto às pilhas, a lista deixa de se ler. */
+  const [aberto, setAberto] = useState<string | null>(null);
 
   useEffect(() => {
     listTemplates()
@@ -1480,6 +1699,28 @@ function ModelosDialog({
     }
   }
 
+  /* Quantos há de cada lado — o separador di-lo antes de se lá ir. */
+  const meus = (modelos ?? []).filter((m) => m.mine).length;
+  const doClube = (modelos ?? []).length - meus;
+
+  const termo = procura.trim().toLowerCase();
+  const lista = (modelos ?? [])
+    .filter((m) => (aba === "meus" ? m.mine : aba === "clube" ? !m.mine : true))
+    .filter(
+      (m) =>
+        !termo ||
+        [m.name, m.objective, m.sessionType, m.authorName, ...m.objectives]
+          .filter(Boolean)
+          .some((t) => String(t).toLowerCase().includes(termo)),
+    )
+    .sort((a, b) =>
+      ordem === "nome"
+        ? a.name.localeCompare(b.name, "pt")
+        : ordem === "recentes"
+          ? b.createdAt.localeCompare(a.createdAt)
+          : b.useCount - a.useCount || b.updatedAt.localeCompare(a.updatedAt),
+    );
+
   return (
     <Dialog
       title="Modelos de treino"
@@ -1489,7 +1730,7 @@ function ModelosDialog({
           : "O plano deste treino passa a ser o do modelo."
       }
       onClose={onClose}
-      width={520}
+      width={640}
       footer={
         <>
           {podeGuardar && (
@@ -1520,58 +1761,85 @@ function ModelosDialog({
           />
         </div>
       ) : (
-        <ul>
-          {modelos.map((m) => (
-            <li key={m.id} className="group flex items-center border-b border-line last:border-0">
-              <button
-                type="button"
-                onClick={() => void aplicar(m.id)}
-                disabled={aAplicar !== null}
-                className="flex min-w-0 flex-1 items-center gap-3 py-3 pl-5 text-left transition-colors hover:bg-sunken disabled:opacity-60"
+        <>
+          {/*
+            A barra de cima: de quem são, por que ordem, e a procura. Fica
+            colada ao topo porque a lista corre por baixo dela.
+          */}
+          <div className="sticky top-0 z-10 space-y-2.5 border-b border-line bg-surface px-5 py-3">
+            <div className="flex flex-wrap items-center gap-1.5">
+              {(
+                [
+                  ["todos", `Todos (${modelos.length})`],
+                  ["meus", `Criados por mim (${meus})`],
+                  ["clube", `Do clube (${doClube})`],
+                ] as [AbaDeModelos, string][]
+              ).map(([chave, rotulo]) => (
+                <button
+                  key={chave}
+                  type="button"
+                  onClick={() => setAba(chave)}
+                  className={cx(
+                    "h-8 rounded-full px-3 text-meta font-medium transition-colors",
+                    aba === chave ? "bg-ink text-surface" : "bg-sunken text-ink-2 hover:text-ink",
+                  )}
+                >
+                  {rotulo}
+                </button>
+              ))}
+              <select
+                aria-label="Ordenar os modelos"
+                value={ordem}
+                onChange={(e) => setOrdem(e.target.value as OrdemDeModelos)}
+                className="ml-auto h-8 rounded-full bg-sunken px-3 text-meta font-medium text-ink-2"
               >
-                <span className="min-w-0 flex-1">
-                  <span className="flex items-center gap-2">
-                    <span className="truncate text-body font-medium text-ink">{m.name}</span>
-                    {m.visibility === "PRIVATE" && <Pill tone="neutral">Só meu</Pill>}
-                  </span>
-                  <span className="mt-0.5 block truncate text-meta text-ink-3">
-                    {m.blockCount} {m.blockCount === 1 ? "bloco" : "blocos"} · {m.totalMin} min
-                    {m.objective ? ` · ${m.objective}` : ""}
-                    {/* Quantas vezes já foi usado: é o que distingue o modelo de
-                        terça-feira de um que se guardou uma vez e nunca mais. */}
-                    {m.useCount > 0 ? ` · usado ${m.useCount}×` : ""}
-                  </span>
-                </span>
-                {aAplicar === m.id ? (
-                  <span className="shrink-0 text-meta text-ink-3">A aplicar…</span>
-                ) : (
-                  <ChevronRight className="size-4 shrink-0 text-ink-4" strokeWidth={1.75} />
-                )}
-              </button>
-              {/*
-                Fora do botão de aplicar, e não lá dentro: um <button> dentro de
-                outro não é HTML válido, e clicar no caixote não pode ser um
-                clique na linha.
-              */}
-              <span className="shrink-0 pr-3 pl-2">
-                {aApagar === m.id ? (
-                  <button type="button" className="ctl-ghost text-risk" onClick={() => void apagar(m.id)}>
-                    Apagar?
-                  </button>
-                ) : (
-                  <button
-                    type="button"
-                    aria-label={`Apagar o modelo ${m.name}`}
-                    className="ctl-ghost size-8 justify-center px-0 text-ink-4 hover:text-risk"
-                    onClick={() => setAApagar(m.id)}
-                  >
-                    <Trash2 className="size-3.5" strokeWidth={1.75} />
-                  </button>
-                )}
-              </span>
-            </li>
-          ))}
-        </ul>
+                <option value="usados">Mais usados</option>
+                <option value="recentes">Mais recentes</option>
+                <option value="nome">Por nome</option>
+              </select>
+            </div>
+            <div className="relative">
+              <Search className="absolute top-1/2 left-3 size-3.5 -translate-y-1/2 text-ink-4" strokeWidth={1.75} />
+              <input
+                value={procura}
+                onChange={(e) => setProcura(e.target.value)}
+                placeholder="Procurar por nome, objectivo ou autor"
+                className={cx(dialogInputClass, "h-9 pl-8")}
+              />
+            </div>
+          </div>
+
+          {lista.length === 0 ? (
+            <div className="px-5 py-10">
+              <Empty
+                title="Nada por aqui"
+                detail={
+                  termo
+                    ? "Nenhum modelo com esse nome, objectivo ou autor."
+                    : aba === "meus"
+                      ? "Ainda não guardaste nenhum modelo. Monta um treino, grava-o, e guarda-o aqui."
+                      : "Nenhum colega partilhou modelos com o clube."
+                }
+              />
+            </div>
+          ) : (
+            <ul>
+              {lista.map((m) => (
+                <ModeloDaLista
+                  key={m.id}
+                  modelo={m}
+                  aberto={aberto === m.id}
+                  onAbrir={() => setAberto((cur) => (cur === m.id ? null : m.id))}
+                  aplicar={() => void aplicar(m.id)}
+                  aAplicar={aAplicar}
+                  aApagar={aApagar === m.id}
+                  pedirApagar={() => setAApagar(m.id)}
+                  apagar={() => void apagar(m.id)}
+                />
+              ))}
+            </ul>
+          )}
+        </>
       )}
     </Dialog>
   );

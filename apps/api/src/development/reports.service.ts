@@ -92,7 +92,7 @@ export class ReportsService {
           visibility: true, status: true, snapshot: true, athleteVisible: true,
           publishedAt: true, createdAt: true, updatedAt: true,
           author: { select: { id: true, user: { select: { name: true } } } },
-          athlete: { select: { name: true, teams: { select: { teamId: true }, take: 1 } } },
+          athlete: { select: { name: true, teams: { where: { leftAt: null }, select: { teamId: true }, take: 1 } } },
         },
       });
 

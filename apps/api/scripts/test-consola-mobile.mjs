@@ -107,7 +107,9 @@ check("o servidor devolve o contexto STAFF", servico.includes('contexts.push({ t
 check("a qualquer membership que não seja de família", servico.includes("daAcademia.find((m) => !deFamilia(m.role))"));
 
 const contexts = ler(path.join(APP, "lib", "contexts.ts"));
-check("a app conhece o contexto", contexts.includes('"FAMILY" | "MEMBER" | "STAFF"'));
+// O tipo cresceu (a área de atleta entrou pelo meio): basta que tenha os três.
+const tipoDeContexto = contexts.match(/export type ContextType = ([^;]+);/)?.[1] ?? "";
+check("a app conhece o contexto", ['"FAMILY"', '"MEMBER"', '"STAFF"'].every((t) => tipoDeContexto.includes(t)));
 check("e guarda a escolha", contexts.includes('v === "STAFF"'));
 check("a entrega existe", existsSync(path.join(APP, "lib", "handoff.ts")));
 const handoff = ler(path.join(APP, "lib", "handoff.ts"));
@@ -119,7 +121,8 @@ check("o switcher tem Staff", ler(path.join(APP, "screens", "socio", "AreaSwitch
 
 const manifest = ler(path.join(API, "tenant", "tenant-assets.controller.ts"));
 check("o manifest cobre /consola (scope /)", /scope:\s*"\/"/.test(manifest));
-const nav = ler(path.join(CONSOLA, "components", "MobileNav.tsx"));
+// O "Mudar de área" saiu do menu para o seu componente, que o menu e o topo usam.
+const nav = ler(path.join(CONSOLA, "components", "AreaSwitch.tsx"));
 check("a consola tem o caminho de volta", nav.includes("irParaApp(") && nav.includes("Mudar de área"));
 check("e devolve o par mais recente à app", ler(path.join(CONSOLA, "lib", "app-contexts.ts")).includes('"academia.family.session"'));
 check("sair da consola sai da app", ler(path.join(CONSOLA, "lib", "session.ts")).includes('removeItem("academia.family.session")'));

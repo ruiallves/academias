@@ -130,6 +130,10 @@ check("e o tempo somado", meu?.totalMin === TOTAL, `${meu?.totalMin}`);
 check("por usar ainda", meu?.useCount === 0, `${meu?.useCount}`);
 check("com o objectivo do plano", meu?.objective === PLANO.objective);
 check("visível ao clube por omissão", meu?.visibility === "CLUB", `${meu?.visibility}`);
+/* A lista da consola mostra quando o modelo nasceu, e quem o fez. */
+check("com a data de criação", !Number.isNaN(new Date(meu?.createdAt ?? "").getTime()), `${meu?.createdAt}`);
+check("e o autor", typeof meu?.authorName === "string" && meu.mine === true, `${meu?.authorName} / ${meu?.mine}`);
+check("com os blocos por dentro", Array.isArray(meu?.blocks) && meu.blocks.length === PLANO.blocks.length, `${meu?.blocks?.length}`);
 
 console.log("\n=== Não duplicar ===");
 const mesmoNome = await call(coach, "POST", `/api/training/sessions/${s1}/template`, { name: "ZZ Modelo Terça" });

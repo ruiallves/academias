@@ -1,6 +1,8 @@
 import { useMemo, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import { PageHeader } from "@/components/Shell";
+import { BotaoExportar } from "@/components/BotaoExportar";
+import { COLUNAS_EXPORT_ATLETAS } from "@/lib/colunas-export";
 import { NewAthleteDialog } from "@/components/NewAthleteDialog";
 import { ImportAthletesDialog } from "@/components/ImportAthletesDialog";
 import { AvailabilityTag, cx, DataTable, Empty, Monogram, Panel, Pill, RowLink, type Column } from "@/components/primitives";
@@ -255,6 +257,16 @@ export default function Athletes() {
             : `${athletes.length} atletas nas tuas ${teams.length} equipas`
         }
       >
+        {/*
+          Sai com as colunas da importação, e com as linhas **que estão no
+          ecrã**: quem filtrou pelos Sub-13 quer os Sub-13. Ver `BotaoExportar`.
+        */}
+        <BotaoExportar
+          linhas={rows}
+          colunas={COLUNAS_EXPORT_ATLETAS}
+          ficheiro="atletas"
+          folha="Atletas"
+        />
         {can(session, "athlete:write") && (
           <>
             <button type="button" onClick={() => setImporting(true)} className="ctl-outline">

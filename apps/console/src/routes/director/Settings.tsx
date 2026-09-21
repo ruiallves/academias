@@ -18,6 +18,7 @@ import { SportsPanel } from "@/components/SportsPanel";
  * use.
  */
 import { cx, Panel, PanelHead, Pill } from "@/components/primitives";
+import { EpocaPanel } from "@/components/EpocaPanel";
 import { CircleCheck, Wallet } from "@/lib/icons";
 import { useStore } from "@/lib/store";
 import { type CatalogKey } from "@/lib/catalogs";
@@ -87,6 +88,9 @@ export default function Settings() {
         </div>
 
         <div className="space-y-3">
+          {/* Em que época o clube está, e o botão que começa a seguinte. */}
+          <EpocaPanel />
+
           <PwaPreview />
 
           {/*

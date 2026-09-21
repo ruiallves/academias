@@ -1,10 +1,11 @@
 import { BadRequestException, ForbiddenException, Injectable, Logger, NotFoundException } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
 import type { SubscriptionBillingPeriod } from "@prisma/client";
-import { PrismaService, type ScopedClient } from "../prisma/prisma.service";
+import { PrismaService } from "../prisma/prisma.service";
 import { MailClient } from "../mail/mail.client";
 import { subscriptionOrderEmail } from "../mail/mail.templates";
-import { ROLE_PERMISSIONS, can, type RequestContext } from "../common/permissions";
+import { can, type RequestContext } from "../common/permissions";
+import { responsavelDoClube } from "./responsavel";
 import { renovacaoPorOmissao, semFidelizacao } from "./condicoes";
 
 /**
@@ -137,7 +138,7 @@ export class SubscriptionOrdersService {
       condicoes.renewalNote?.trim() || renovacaoPorOmissao(condicoes.billingPeriod, minimumMonths);
 
     const [responsavel, anteriores] = await this.prisma.runAs(academyId, async (db) => [
-      await this.responsavelDoClube(db, academyId),
+      await responsavelDoClube(db, academyId),
       await db.subscriptionOrder.count({ where: { academyId } }),
     ] as const);
 
@@ -224,7 +225,31 @@ export class SubscriptionOrdersService {
    */
   async paraAConsola(ctx: RequestContext) {
     const { pendente, assinada } = await this.doClube(ctx.academyId);
-    return { pendente, assinada, podeAssinar: can(ctx, "legal:club") };
+    /*
+     * Os avisos de pagamento vêm com as condições, e não num segundo pedido: são
+     * a mesma pergunta ("o que é que eu tenho com a Academias?") e o painel é um
+     * só. Os doze mais recentes chegam para um ano de mensalidades.
+     */
+    const avisos = await this.prisma.runAs(ctx.academyId, (db) =>
+      db.subscriptionNotice.findMany({
+        where: { academyId: ctx.academyId },
+        orderBy: { issuedOn: "desc" },
+        take: 12,
+        select: {
+          id: true,
+          periodStart: true,
+          periodEnd: true,
+          issuedOn: true,
+          dueOn: true,
+          amountCents: true,
+          planName: true,
+          billingPeriod: true,
+          toEmail: true,
+          sentAt: true,
+        },
+      }),
+    );
+    return { pendente, assinada, avisos, podeAssinar: can(ctx, "legal:club") };
   }
 
   /** A ordem viva do clube, e a última assinada. É o que os dois ecrãs mostram. */
@@ -286,38 +311,6 @@ export class SubscriptionOrdersService {
         },
       });
     });
-  }
-
-  /**
-   * Quem representa o clube — o primeiro responsável.
-   *
-   * A regra é a do sistema legal: tem `legal:club` quem o cargo lhe der, ou, sem
-   * cargo à medida, o papel-base. Entre vários, o mais antigo: é quem inaugurou
-   * o clube, e é a pessoa que a plataforma conhece como o presidente.
-   */
-  private async responsavelDoClube(db: ScopedClient, academyId: string) {
-    const vinculos = await db.membership.findMany({
-      where: { academyId, isActive: true, role: { notIn: ["GUARDIAN", "ATHLETE"] } },
-      orderBy: { createdAt: "asc" },
-      select: {
-        title: true,
-        role: true,
-        customRole: { select: { name: true, permissions: true } },
-        user: { select: { name: true, email: true } },
-      },
-    });
-
-    for (const v of vinculos) {
-      const perms: string[] = v.customRole?.permissions ?? ROLE_PERMISSIONS[v.role];
-      if (!perms.includes("legal:club")) continue;
-      if (!v.user.email) continue;
-      return {
-        name: v.user.name,
-        email: v.user.email,
-        title: v.customRole?.name ?? v.title ?? "Presidente",
-      };
-    }
-    return null;
   }
 
   /**

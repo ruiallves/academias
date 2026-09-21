@@ -90,7 +90,7 @@ export class EvaluationsService {
           note: true, strengths: true, focus: true, athleteVisible: true,
           publishedAt: true, createdAt: true, updatedAt: true,
           coach: { select: { id: true, user: { select: { name: true } } } },
-          athlete: { select: { name: true, teams: { select: { teamId: true }, take: 1 } } },
+          athlete: { select: { name: true, teams: { where: { leftAt: null }, select: { teamId: true }, take: 1 } } },
         },
       });
 
@@ -271,7 +271,7 @@ export class EvaluationsService {
   private async athleteInScope(db: ScopedClient, ctx: RequestContext, athleteId: string) {
     const athlete = await db.athlete.findFirst({
       where: { id: athleteId, ...this.athleteWhere(ctx) },
-      select: { id: true, name: true, teams: { select: { teamId: true }, take: 1 } },
+      select: { id: true, name: true, teams: { where: { leftAt: null }, select: { teamId: true }, take: 1 } },
     });
     if (!athlete) throw new NotFoundException("Atleta não encontrado ou fora do teu âmbito");
     return athlete;

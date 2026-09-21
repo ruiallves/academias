@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import { PageHeader } from "@/components/Shell";
+import { BotaoExportar } from "@/components/BotaoExportar";
+import { COLUNAS_EXPORT_PROSPECTS } from "@/lib/colunas-export";
 import { DataTable, Empty, Loading, Monogram, Panel, Pill, cx, type Column } from "@/components/primitives";
 import { SearchInput } from "@/components/filters";
 import { Binoculars, Plus } from "@/lib/icons";
@@ -114,6 +116,7 @@ export default function Prospects() {
         subtitle={rows ? `${rows.length} ${rows.length === 1 ? "prospecto" : "prospectos"}` : undefined}
       >
         <SearchInput value={q} onChange={setQ} placeholder="Procurar por nome" />
+        <BotaoExportar linhas={rows ?? []} colunas={COLUNAS_EXPORT_PROSPECTS} ficheiro="prospectos" folha="Prospectos" />
         {can(session, "scouting:write") && (
           <button type="button" className="ctl-primary" onClick={() => setCreating(true)}>
             <Plus className="size-3.5" strokeWidth={2} />

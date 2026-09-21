@@ -320,8 +320,16 @@ export class AuthService {
   private async scopeFor(academyId: string, membershipId: string, role: Role): Promise<Scope> {
     return this.prisma.runAs(academyId, async (db) => {
       if (role === "COACH" || role === "STAFF") {
+        /*
+         * As equipas que treina **hoje**.
+         *
+         * `TeamStaff` passou a guardar histórico (ver a migração
+         * `20260920140000_percurso_e_epoca_nova`), e sem este filtro um
+         * treinador continuava a ver os plantéis de que já saiu — para sempre,
+         * e do lado do âmbito, que é onde isso mais custa.
+         */
         const staffOf = await db.teamStaff.findMany({
-          where: { membershipId },
+          where: { membershipId, leftAt: null },
           select: { teamId: true },
         });
         return { teamIds: staffOf.map((t) => t.teamId) };

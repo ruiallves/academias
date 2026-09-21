@@ -83,7 +83,7 @@ export async function headCoaches(db: ScopedClient, teamIds: (string | null)[]) 
   if (ids.length === 0) return found;
 
   const rows = await db.teamStaff.findMany({
-    where: { teamId: { in: ids }, membership: { isActive: true } },
+    where: { teamId: { in: ids }, leftAt: null, membership: { isActive: true } },
     orderBy: { title: "asc" },
     select: { teamId: true, title: true, membership: { select: { id: true, user: { select: { name: true } } } } },
   });

@@ -2,6 +2,7 @@ import { apiPatch, apiPost } from "@/lib/http";
 import { academy, teams } from "@/lib/store";
 import { sportById, teamById } from "@/lib/api";
 import { guessMaxAge } from "@/lib/team-age";
+import type { RespostaComExistentes } from "@/lib/importacao";
 
 /**
  * Importação de atletas a partir de um ficheiro Excel.
@@ -466,10 +467,49 @@ function normalizeDate(value: string): string {
  * conhece ids. Uma linha sem `teamId` a esta altura é uma linha cuja equipa
  * ficou por criar, e não é enviada — o diálogo já a contou como recusada.
  */
-export function importAthletes(rows: ParsedRow[]) {
-  return apiPost<{ created: number; errors: RowError[] }>("/api/athletes/import", {
+export type AthleteImportResult = RespostaComExistentes & {
+  created: number;
+  /** Quantas fichas foram actualizadas com os dados da folha. */
+  updated: number;
+  errors: RowError[];
+};
+
+export function importAthletes(
+  rows: ParsedRow[],
+  opts: { sobrescrever?: boolean; enviarConvites?: boolean } = {},
+) {
+  return apiPost<AthleteImportResult>("/api/athletes/import", {
     rows: rows
       .filter((r) => r.teamId)
       .map(({ line: _line, teamName: _teamName, ...r }) => r),
+    sobrescrever: opts.sobrescrever === true,
+    enviarConvites: opts.enviarConvites === true,
   });
 }
+
+/* -------------------------------------------------------------------------- */
+/* Exportar                                                                    */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * O lado dominante como a folha o escreve — e como o leitor o volta a ler.
+ *
+ * Ver `parseDominantSide`: o ficheiro fala português, a base fala `RIGHT`.
+ */
+export function ladoParaFolha(side: string | null | undefined): string {
+  if (side === "RIGHT") return "Direito";
+  if (side === "LEFT") return "Esquerdo";
+  if (side === "BOTH") return "Ambos";
+  return "";
+}
+
+/**
+ * Os cabeçalhos da exportação de atletas: **os mesmos da importação**, pela
+ * mesma ordem.
+ *
+ * É o que fecha o ida-e-volta — exportar o plantel, corrigir um campo em toda
+ * a gente numa folha de cálculo, e voltar a carregar. Saem de `COLUMNS`, e não
+ * de uma segunda lista escrita à mão, para que uma coluna renomeada mude os
+ * dois lados de uma vez.
+ */
+export const EXPORT_HEADERS = COLUMNS.map((c) => c.header);

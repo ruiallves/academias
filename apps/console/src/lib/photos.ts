@@ -1,4 +1,6 @@
+import { reduzirFotografia } from "@academia/ui/imagem";
 import { apiDelete, apiPost } from "@/lib/http";
+import { mostrarErro } from "@/lib/avisos";
 
 /**
  * Carregar uma fotografia, do lado do browser.
@@ -29,7 +31,24 @@ const MAX_BYTES = 8 * 1024 * 1024;
 
 type Signed = { url: string; token: string; key: string };
 
-export class PhotoError extends Error {}
+/**
+ * Um problema com uma fotografia — e que **aparece** no canto ao ser criado.
+ *
+ * Os carregamentos vão directos ao armazenamento por endereço assinado, sem
+ * passar pelo cliente HTTP, e por isso não herdavam o aviso que todos os outros
+ * erros da consola têm. Anunciar-se no construtor é o que os põe no mesmo
+ * canto sem obrigar os cinco sítios que os lançam a lembrarem-se disso.
+ *
+ * Quem apanha continua a poder mostrá-lo onde quiser: o aviso acrescenta-se ao
+ * tratamento, não o substitui.
+ */
+export class PhotoError extends Error {
+  constructor(mensagem: string) {
+    super(mensagem);
+    this.name = "PhotoError";
+    mostrarErro(mensagem);
+  }
+}
 
 /**
  * O que o `<input type="file">` devolveu está em condições?
@@ -48,6 +67,23 @@ async function put(signed: Signed, file: File): Promise<void> {
     method: "PUT",
     headers: {
       "Content-Type": file.type,
+      /*
+         O que este cabeçalho faz, e o que **não** faz.
+
+         Medido contra o Supabase deste projecto: a descarga por endereço
+         assinado vem sem `cache-control` nenhum e com `Expires` igual ao prazo
+         do endereço. É o `Expires` que manda o browser guardar a imagem, e
+         quem o torna útil é o endereço ser **estável** — ver a cache de
+         assinaturas em `storage.service.ts`. Um `If-None-Match` devolve 200 e
+         não 304, por isso revalidar não poupa byte nenhum: ou o endereço se
+         repete, ou a fotografia volta a sair inteira.
+
+         Então porquê mandá-lo? Porque sem ele o Supabase grava `no-cache` nos
+         metadados do objecto — também medido. Não afecta este caminho hoje,
+         afecta o dia em que uma destas imagens for servida por um bucket
+         público ou por CDN, e é a diferença entre guardável e não guardável.
+      */
+      "cache-control": "max-age=31536000, immutable",
       ...(signed.token ? { Authorization: `Bearer ${signed.token}` } : {}),
     },
     body: file,
@@ -69,8 +105,12 @@ export async function uploadAthletePhoto(athleteId: string, file: File): Promise
   const problema = checkPhoto(file);
   if (problema) throw new PhotoError(problema);
 
-  const signed = await apiPost<Signed>(`/api/athletes/${athleteId}/foto/upload`, { contentType: file.type });
-  await put(signed, file);
+  /* Reduzir **antes** de pedir a autorização: é o tipo do ficheiro que sobe
+     que decide a extensão da chave, e o reduzido sai sempre em JPEG. */
+  const pronta = await reduzirFotografia(file);
+
+  const signed = await apiPost<Signed>(`/api/athletes/${athleteId}/foto/upload`, { contentType: pronta.type });
+  await put(signed, pronta);
   const { photoUrl } = await apiPost<{ photoUrl: string | null }>(`/api/athletes/${athleteId}/foto`, { key: signed.key });
   return photoUrl;
 }
@@ -84,8 +124,12 @@ export async function uploadStaffPhoto(membershipId: string, file: File): Promis
   const problema = checkPhoto(file);
   if (problema) throw new PhotoError(problema);
 
-  const signed = await apiPost<Signed>(`/api/staff/${membershipId}/foto/upload`, { contentType: file.type });
-  await put(signed, file);
+  /* Reduzir **antes** de pedir a autorização: é o tipo do ficheiro que sobe
+     que decide a extensão da chave, e o reduzido sai sempre em JPEG. */
+  const pronta = await reduzirFotografia(file);
+
+  const signed = await apiPost<Signed>(`/api/staff/${membershipId}/foto/upload`, { contentType: pronta.type });
+  await put(signed, pronta);
   const { photoUrl } = await apiPost<{ photoUrl: string | null }>(`/api/staff/${membershipId}/foto`, { key: signed.key });
   return photoUrl;
 }
@@ -99,8 +143,12 @@ export async function uploadMemberPhoto(memberId: string, file: File): Promise<s
   const problema = checkPhoto(file);
   if (problema) throw new PhotoError(problema);
 
-  const signed = await apiPost<Signed>(`/api/members/${memberId}/foto/upload`, { contentType: file.type });
-  await put(signed, file);
+  /* Reduzir **antes** de pedir a autorização: é o tipo do ficheiro que sobe
+     que decide a extensão da chave, e o reduzido sai sempre em JPEG. */
+  const pronta = await reduzirFotografia(file);
+
+  const signed = await apiPost<Signed>(`/api/members/${memberId}/foto/upload`, { contentType: pronta.type });
+  await put(signed, pronta);
   const { photoUrl } = await apiPost<{ photoUrl: string | null }>(`/api/members/${memberId}/foto`, { key: signed.key });
   return photoUrl;
 }

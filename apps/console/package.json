@@ -10,6 +10,10 @@
     "typecheck": "tsc -b --noEmit",
     "test:pdf": "esbuild scripts/test-callup-pdf.ts --bundle --platform=node --format=esm --outfile=node_modules/.cache/test-callup-pdf.mjs --alias:@=./src --define:import.meta.env={} --log-level=warning && node node_modules/.cache/test-callup-pdf.mjs",
     "test:qr": "esbuild scripts/test-qr-cartaz.ts --bundle --platform=node --format=esm --external:qrcode --outfile=node_modules/.cache/test-qr-cartaz.mjs --alias:@=./src --define:import.meta.env={} --log-level=warning && node node_modules/.cache/test-qr-cartaz.mjs",
+    "test:avisos-http": "esbuild scripts/test-avisos-http.ts --bundle --platform=node --format=esm --outfile=node_modules/.cache/test-avisos-http.mjs --alias:@=./src --external:react --define:import.meta.env={} --log-level=warning && node node_modules/.cache/test-avisos-http.mjs",
+    "test:avisos": "esbuild scripts/test-avisos.ts --bundle --platform=node --format=esm --outfile=node_modules/.cache/test-avisos.mjs --alias:@=./src --external:react --define:import.meta.env={} --log-level=warning && node node_modules/.cache/test-avisos.mjs",
+    "test:exportar": "esbuild scripts/test-exportar.ts --bundle --platform=node --format=esm --external:xlsx --outfile=node_modules/.cache/test-exportar.mjs --alias:@=./src --external:react --define:import.meta.env={} --log-level=warning && node node_modules/.cache/test-exportar.mjs",
+    "test:perfil": "esbuild scripts/test-perfil-pdf.ts --bundle --platform=node --format=esm --outfile=node_modules/.cache/test-perfil-pdf.mjs --alias:@=./src --external:react --define:import.meta.env={} --log-level=warning && node node_modules/.cache/test-perfil-pdf.mjs",
     "test:staff": "esbuild scripts/test-staff.ts --bundle --platform=node --format=esm --outfile=node_modules/.cache/test-staff.mjs --alias:@=./src --external:react --define:import.meta.env={} --log-level=warning && node node_modules/.cache/test-staff.mjs"
   },
   "dependencies": {

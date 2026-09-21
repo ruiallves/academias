@@ -15,8 +15,9 @@ import { useEffect } from "react";
  *  1. **Ao voltar ao ecrã.** É o mais importante numa app de telemóvel: entre
  *     olhar para a app e olhar outra vez passaram-se minutos ou horas, e é
  *     exactamente aí que a informação envelheceu.
- *  2. **De minuto a minuto, com o ecrã à vista.** Para quem fica com a app
- *     aberta — a ver se o treino foi cancelado, à espera da convocatória.
+ *  2. **De dez em dez minutos, com o ecrã à vista.** A rede de segurança de
+ *     quem não tem notificações ligadas. Não é isto que faz a app parecer
+ *     imediata; é o ponto 3.
  *  3. **Quando chega um push.** O service worker avisa as janelas abertas (ver
  *     `push-sw.js`), e a lista muda ao mesmo tempo que a notificação aparece,
  *     sem ninguém lhe tocar.
@@ -25,16 +26,37 @@ import { useEffect } from "react";
  *
  * Nada disto bloqueia o ecrã. Não há splash, não há "a carregar", e uma
  * releitura que falhe deixa tudo como estava (ver o `catch` de `load`). O peso
- * também é travado: uma releitura de cada vez, e nunca duas em menos de dez
- * segundos — trocar de app duas vezes seguidas não dispara dois arranques, que
- * é a diferença entre uma app que se sente viva e uma que se sente lenta.
+ * também é travado: uma releitura de cada vez, e nunca duas em menos de um
+ * minuto — trocar de app duas vezes seguidas não dispara dois arranques, que é
+ * a diferença entre uma app que se sente viva e uma que se sente lenta (e, como
+ * se viu na factura do Supabase, entre uma app barata e uma cara).
  */
 
-/** Com o ecrã à vista, de quanto em quanto tempo se relê. */
-const INTERVALO = 60_000;
+/**
+ * Com o ecrã à vista, de quanto em quanto tempo se relê.
+ *
+ * Eram sessenta segundos, e sessenta segundos custaram dinheiro: cada volta
+ * repete o arranque inteiro, e o arranque traz fotografias. Numa app aberta ao
+ * longo do dia são centenas de leituras completas que quase nunca trazem
+ * novidade nenhuma — o Supabase cobra egress, e a factura apareceu.
+ *
+ * Dez minutos, porque o relógio **não** é o que faz isto parecer imediato. Quem
+ * faz isso é o push: o servidor avisa no instante em que há alguma coisa, o
+ * service worker passa o recado, e a app relê já. O relógio é só a rede de
+ * segurança para quem não tem notificações ligadas, e aí dez minutos é a
+ * diferença entre saber agora e saber daqui a pouco — não entre saber e não
+ * saber.
+ */
+const INTERVALO = 10 * 60_000;
 
-/** O mínimo entre duas releituras. Trava as rajadas de `visibilitychange`. */
-const MINIMO = 10_000;
+/**
+ * O mínimo entre duas releituras. Trava as rajadas de `visibilitychange`.
+ *
+ * Um minuto, e não dez segundos: num telemóvel entra-se e sai-se da app dezenas
+ * de vezes seguidas, e cada saída e entrada disparava uma leitura completa. O
+ * que se leu há menos de um minuto ainda é o que lá está.
+ */
+const MINIMO = 60_000;
 
 export function useFresco(recarregar: (() => Promise<unknown>) | null) {
   useEffect(() => {

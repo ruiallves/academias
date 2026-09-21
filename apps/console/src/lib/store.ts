@@ -1,5 +1,5 @@
 import { useSyncExternalStore } from "react";
-import { apiGet } from "@/lib/http";
+import { apiGet, apiGetSilencioso } from "@/lib/http";
 import { METHOD_LABEL } from "@/lib/finance";
 import type {
   Academy,
@@ -79,7 +79,7 @@ type ApiBootstrap = {
   }[];
   season: { id: string; label: string } | null;
   /** Todas as épocas da academia, da mais recente para trás. */
-  seasons?: { id: string; label: string; isCurrent: boolean }[];
+  seasons?: { id: string; label: string; isCurrent: boolean; startsOn?: string; endsOn?: string }[];
   me: {
     membershipId: string;
     userId: string;
@@ -286,6 +286,8 @@ type ApiCharge = {
   amountCents: number; dueDate: string; status: string; overdue: boolean;
   /** Como e quando foi paga. Só nas pagas. */
   paidMethod?: string | null; paidAt?: string | null;
+  /** Quem pagou e o identificador com que aparece na euPago. Só nas pagas pela app. */
+  paidBy?: string | null; paidByRelation?: string | null; paymentId?: string | null;
 };
 
 /** Uma comunicação publicada, com a taxa de leitura. Ver `GET /api/announcements`. */
@@ -307,6 +309,8 @@ type State = {
   season: string;
   /** Os rótulos das épocas que existem, da mais recente para trás. */
   seasons: string[];
+  /** As datas de cada época, pelo rótulo. A barra da época do Planeamento desenha-se com elas. */
+  seasonRanges: Record<string, { startsOn: string; endsOn: string }>;
   me: Me | null;
   teams: Team[];
   staff: StaffMember[];
@@ -339,6 +343,7 @@ const EMPTY: State = {
   },
   season: "",
   seasons: [],
+  seasonRanges: {},
   me: null,
   teams: [],
   staff: [],
@@ -381,7 +386,13 @@ export function loadAcademy(): Promise<void> {
       // de estar lá, e tem de ser pedido outra vez. Ver `ensureCalendarRange`.
       janelas = [];
       emVoo = [];
-      const boot = await apiGet<ApiBootstrap>("/api/bootstrap");
+      /*
+       * Silencioso: uma falha aqui não é um cartão ao canto, é um ecrã inteiro.
+       * O erro fica em `state.error` e o `AcademyBoot` desenha o `BootError`,
+       * que explica e oferece o que fazer a seguir. Um aviso por cima disso
+       * seria a mesma frase duas vezes, uma delas a tapar a outra.
+       */
+      const boot = await apiGetSilencioso<ApiBootstrap>("/api/bootstrap");
 
       // Em paralelo: são independentes, e em série somavam quatro idas ao servidor.
       // As que a pessoa não pode ver falham com 403 e ficam vazias — um treinador
@@ -447,6 +458,8 @@ function mapFee(c: ApiCharge): Fee {
     ) as FeeStatus,
     ...(c.paidAt ? { paidAt: c.paidAt } : {}),
     ...(c.paidMethod ? { method: METHOD_LABEL[c.paidMethod] ?? c.paidMethod } : {}),
+    ...(c.paidBy ? { paidBy: c.paidByRelation ? `${c.paidBy} (${c.paidByRelation})` : c.paidBy } : {}),
+    ...(c.paymentId ? { paymentId: c.paymentId } : {}),
   };
 }
 
@@ -511,10 +524,21 @@ export function aplicarLogistica(
  *
  * Um 403 aqui não é uma avaria: é o âmbito a funcionar. O treinador que não vê
  * mensalidades recebe uma lista vazia, e a navegação já não lhe mostra o ecrã.
+ *
+ * **Silencioso**, e isso é metade do ponto. O arranque pede as oito listas de
+ * uma vez, e um cargo sem staff nem mensalidades recebe dois 403 — que são a
+ * resposta certa. Quando os avisos passaram a ser levantados no cliente HTTP,
+ * esses dois 403 começaram a aparecer ao canto a dizer "Sem acesso ao staff" e
+ * "Sem acesso a mensalidades" **a cada entrada na consola**, a quem nunca pediu
+ * nada disso. O `catch` daqui já os deitava fora; o que faltava era não os
+ * anunciar antes de chegarem cá.
+ *
+ * Um 403 a seguir a um **clique** continua a aparecer: aí a pessoa pediu
+ * alguma coisa e tem de saber que lhe foi recusada.
  */
 async function soft<T>(path: string, params?: Record<string, string>): Promise<T[]> {
   try {
-    return (await apiGet<T[]>(path, params)) ?? [];
+    return (await apiGetSilencioso<T[]>(path, params)) ?? [];
   } catch {
     return [];
   }
@@ -623,7 +647,12 @@ async function trazer(from: Date, to: Date, de: number, ate: number): Promise<vo
      * são mais cinco idas e voltas. Mudar de mês custava isso três vezes, para
      * trazer uma dúzia de treinos.
      */
-    const pacote = await apiGet<{ sessions: ApiSession[]; matches: ApiMatch[]; events: ApiEvent[] }>(
+    /*
+     * Silencioso: isto corre sozinho ao mudar de mês e ao arrancar, e a falha
+     * já tem resposta própria — a janela é esquecida para a próxima visita
+     * voltar a tentar. Ver o `catch` em baixo.
+     */
+    const pacote = await apiGetSilencioso<{ sessions: ApiSession[]; matches: ApiMatch[]; events: ApiEvent[] }>(
       "/api/calendar",
       { from: from.toISOString(), to: to.toISOString() },
     );
@@ -958,6 +987,11 @@ function juntar<T extends { id: string }>(atuais: T[], novos: T[]): T[] {
     },
     season: boot.season?.label ?? "",
     seasons: (boot.seasons ?? []).map((s) => s.label),
+    seasonRanges: Object.fromEntries(
+      (boot.seasons ?? [])
+        .filter((s) => s.startsOn && s.endsOn)
+        .map((s) => [s.label, { startsOn: s.startsOn!.slice(0, 10), endsOn: s.endsOn!.slice(0, 10) }]),
+    ),
     me: boot.me,
     teams,
     staff,
@@ -1028,6 +1062,7 @@ export let me: Me | null = null;
 export let currentSeason = "";
 /** As épocas que a academia tem, da mais recente para trás. Ver `NewTeamDialog`. */
 export let seasons: string[] = [];
+export let seasonRanges: Record<string, { startsOn: string; endsOn: string }> = {};
 
 /** Competências avaliadas — configuração da modalidade, não uma lista fixa no código. */
 export let SKILLS: string[] = [];
@@ -1048,6 +1083,7 @@ function apply(next: State) {
   me = next.me;
   currentSeason = next.season;
   seasons = next.seasons;
+  seasonRanges = next.seasonRanges;
   SKILLS = next.academy.sports[0]?.skills ?? [];
   emit();
 }
