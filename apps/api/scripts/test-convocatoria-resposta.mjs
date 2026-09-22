@@ -227,6 +227,13 @@ const submeteu = await call(coach, "POST", `/api/matches/${MATCH}/convocatoria/s
   arrivalTime: hhmm(chegada),
   notes: "Levar equipamento alternativo.",
   confirmationRequired: false,
+  /*
+   * Quem responde por um atleta. A consola manda-o sempre, e o DTO do servidor
+   * não o tinha: submeter rebentava com "property respondBy should not exist"
+   * (o pipe recusa o que não está no DTO). Fica aqui para o campo não poder
+   * desaparecer da porta sem alguém dar por isso.
+   */
+  respondBy: "ATHLETE",
 });
 check("submete (2xx)", submeteu.status === 200 || submeteu.status === 201, `${submeteu.status} ${JSON.stringify(submeteu.body).slice(0, 140)}`);
 
@@ -240,6 +247,9 @@ check("a jornada ficou no jogo", guardado?.roundLabel === "Jornada 7", `${guarda
 check("o ponto de encontro também", guardado?.meetingPoint === "Parque do clube", `${guardado?.meetingPoint}`);
 check("e o recado às famílias", guardado?.callUpNotes === "Levar equipamento alternativo.", `${guardado?.callUpNotes}`);
 check("a confirmação nasce desligada", guardado?.confirmationRequired === false, `${guardado?.confirmationRequired}`);
+
+const respondeQuem = (await db.query(`SELECT "respondBy" FROM "Match" WHERE id = $1`, [MATCH])).rows[0];
+check("e quem responde ficou como foi pedido", respondeQuem?.respondBy === "ATHLETE", `${respondeQuem?.respondBy}`);
 
 const listaJogos = (await call(coach, "GET", "/api/matches")).body;
 const naLista = Array.isArray(listaJogos) ? listaJogos.find((m) => m.id === MATCH) : null;

@@ -4,6 +4,7 @@ import {
   ArrayMaxSize,
   IsArray,
   IsBoolean,
+  IsIn,
   IsInt,
   IsOptional,
   IsString,
@@ -50,6 +51,18 @@ class SubmitCallUpsDto {
 
   @IsOptional() @IsBoolean()
   confirmationRequired?: boolean;
+
+  /**
+   * Quem responde por um atleta nesta convocatória: o encarregado, ou o próprio.
+   *
+   * Faltava aqui, e a consola manda-o desde que o botão existe — o pipe de
+   * validação recusa o que não está no DTO (`forbidNonWhitelisted`), e submeter
+   * uma convocatória rebentava com "property respondBy should not exist". O
+   * serviço já o sabia tratar (`CallUpLogistics`); era só a porta que não o
+   * deixava entrar.
+   */
+  @IsOptional() @IsIn(["GUARDIAN", "ATHLETE"])
+  respondBy?: "GUARDIAN" | "ATHLETE";
 }
 
 /** A resposta de uma família a uma convocatória. */
