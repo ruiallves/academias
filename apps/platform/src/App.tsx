@@ -6,6 +6,7 @@ import AcademyDetail from "@/routes/AcademyDetail";
 import Contacts from "@/routes/Contacts";
 import Tickets from "@/routes/Tickets";
 import Growth from "@/routes/Growth";
+import Contas from "@/routes/Contas";
 import Audit from "@/routes/Audit";
 import Admins from "@/routes/Admins";
 import Legal from "@/routes/Legal";
@@ -23,6 +24,9 @@ export default function App({ me }: { me: Me }) {
         <Route path="tickets" element={<Tickets me={me} />} />
         <Route path="contactos" element={<Contacts me={me} />} />
         <Route path="crescimento" element={<Growth />} />
+        {/* As contas do negócio. `OWNER` e `ADMIN` no servidor; quem dá apoio não
+            vê quanto a empresa ganha ou gasta. */}
+        <Route path="contas" element={<Contas />} />
         <Route path="registo" element={<Audit />} />
         <Route path="administradores" element={<Admins me={me} />} />
         <Route path="legal" element={<Legal me={me} />} />

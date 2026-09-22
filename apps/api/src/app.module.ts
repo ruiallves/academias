@@ -51,6 +51,8 @@ import { MatchesService } from "./academy/matches.service";
 import { AnnouncementsController } from "./academy/announcements.controller";
 import { AnnouncementsService } from "./academy/announcements.service";
 import { PlatformController } from "./platform/platform.controller";
+import { PlatformFinanceController } from "./platform/platform-finance.controller";
+import { PlatformFinanceService } from "./platform/platform-finance.service";
 import { PlatformService } from "./platform/platform.service";
 import { PlatformGuard } from "./platform/platform.guard";
 import { PlatformPrisma } from "./platform/platform.prisma";
@@ -161,6 +163,7 @@ import { LegalAdminService } from "./legal/legal-admin.service";
     // O sinal de vida dos separadores abertos. Ver `presence.service.ts`.
     PresenceController,
     PlatformController,
+    PlatformFinanceController,
     ContactsController,
     AdminsController,
     AdminInvitePageController,
@@ -225,6 +228,7 @@ import { LegalAdminService } from "./legal/legal-admin.service";
     InventoryService,
     FinanceService,
     PlatformService,
+    PlatformFinanceService,
     PlatformGuard,
     PlatformPrisma,
     TicketsService,

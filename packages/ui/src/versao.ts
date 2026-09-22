@@ -190,6 +190,18 @@ export function avisoDeVersaoVelha(): void {
     "display:flex",
     "align-items:center",
     "gap:12px",
+    /*
+     * `width:max-content` — senão a faixa parte-se, uma palavra por linha, no
+     * telemóvel.
+     *
+     * Uma caixa `position:fixed` com só o `left` definido (sem `right`) calcula a
+     * largura automática contra o espaço da margem esquerda até ao fim do ecrã —
+     * ~50vw com o `left:50%`. Num telemóvel isso esmaga a faixa a meia largura, o
+     * texto encolhe até à palavra mais comprida e cada palavra cai numa linha.
+     * `max-content` dá-lhe a largura de uma linha do conteúdo; o `max-width`
+     * continua a ser o tecto em ecrãs mesmo estreitos.
+     */
+    "width:max-content",
     "max-width:calc(100vw - 32px)",
     "padding:10px 12px 10px 16px",
     "border-radius:999px",
@@ -200,6 +212,8 @@ export function avisoDeVersaoVelha(): void {
   ].join(";");
 
   const texto = document.createElement("span");
+  // A frase é curta e é para ficar numa linha — sem depender de estilos herdados.
+  texto.style.whiteSpace = "nowrap";
   texto.textContent = "Há uma versão nova desta app.";
   const botao = document.createElement("button");
   botao.type = "button";

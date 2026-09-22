@@ -7,7 +7,8 @@
     "dev": "vite",
     "build": "tsc --noEmit && vite build",
     "preview": "vite preview",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "test:convite-captura": "node --experimental-strip-types scripts/test-convite-captura.mjs"
   },
   "dependencies": {
     "@academia/ui": "*",

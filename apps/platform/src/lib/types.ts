@@ -267,3 +267,111 @@ export const CHANNEL_LABEL: Record<ContactChannel, string> = {
 };
 
 export type CalendarFeed = { url: string; reachable: boolean; googleAddUrl: string };
+
+/* ---------------------------------------------------------------------------- */
+/* Contas da plataforma                                                          */
+/* ---------------------------------------------------------------------------- */
+
+/**
+ * O dinheiro do negócio: o que entra, o que sai, e o que aí vem.
+ *
+ * Os valores viajam sempre em cêntimos e **com IVA**; o líquido vem calculado
+ * pela API onde interessa (é o líquido que paga os custos). Ver
+ * `platform-finance.service.ts`.
+ */
+export type FinanceKind = "INCOME" | "EXPENSE";
+export type FinanceStatus = "COMPLETED" | "PENDING";
+export type Recurrence = "MONTHLY" | "ANNUAL";
+
+export type Transacao = {
+  id: string;
+  kind: FinanceKind;
+  status: FinanceStatus;
+  description: string;
+  amountCents: number;
+  vatRate: number;
+  occurredAt: string;
+  dueDate: string | null;
+  category: string | null;
+  counterparty: string | null;
+  notes: string | null;
+  academyId: string | null;
+  academy: { id: string; name: string; slug: string } | null;
+  /** Quando veio de uma mensalidade paga. Um ganho destes não se edita à mão. */
+  noticeId: string | null;
+  recurringId: string | null;
+  recurring: { id: string; description: string } | null;
+};
+
+export type GastoFixo = {
+  id: string;
+  description: string;
+  amountCents: number;
+  vatRate: number;
+  recurrence: Recurrence;
+  dayOfMonth: number;
+  month: number | null;
+  category: string | null;
+  counterparty: string | null;
+  notes: string | null;
+  startsOn: string;
+  endsOn: string | null;
+  isActive: boolean;
+};
+
+export type MensalidadeDoClube = {
+  id: string;
+  academyId: string;
+  academy: { id: string; name: string; slug: string };
+  periodStart: string;
+  periodEnd: string;
+  issuedOn: string;
+  dueOn: string;
+  amountCents: number;
+  planName: string;
+  billingPeriod: "MONTHLY" | "ANNUAL";
+  sentAt: string | null;
+  paidAt: string | null;
+  paidNote: string | null;
+};
+
+export type ContasResumo = {
+  mes: {
+    ganhosCents: number;
+    ganhosLiquidosCents: number;
+    gastosCents: number;
+    gastosLiquidosCents: number;
+    saldoLiquidoCents: number;
+  };
+  ano: { ganhosLiquidosCents: number; gastosLiquidosCents: number; saldoLiquidoCents: number };
+  porReceber: { count: number; cents: number; vencidas: number };
+  settings: { openingBalanceCents: number; subscriptionVatRate: number; subscriptionVatIncluded: boolean };
+};
+
+export type PrevisaoMes = {
+  /** `AAAA-MM` */
+  mes: string;
+  receitaCents: number;
+  /** Só com a simulação ligada. Vem à parte para o ecrã a poder marcar. */
+  receitaSimuladaCents: number;
+  gastosCents: number;
+  saldoCents: number;
+  acumuladoCents: number;
+  clubes: number;
+};
+
+export type Previsao = {
+  meses: PrevisaoMes[];
+  fixos: { mensalCents: number; anualCents: number; porMesCents: number };
+  clubes: number;
+  /** O primeiro mês em que o contratado cobre os gastos. Nulo quando nenhum cobre. */
+  cobreEm: string | null;
+};
+
+export type ContasSettings = {
+  id: string;
+  openingBalanceCents: number;
+  openingBalanceAt: string | null;
+  subscriptionVatRate: number;
+  subscriptionVatIncluded: boolean;
+};

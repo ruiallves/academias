@@ -50,6 +50,7 @@
     "test:periodizacao": "node scripts/test-periodizacao.mjs",
     "test:historico": "node scripts/test-historico.mjs",
     "test:avisos-subscricao": "node scripts/test-avisos-de-subscricao.mjs",
+    "test:contas": "node scripts/test-contas-plataforma.mjs",
     "test:modalidades": "node scripts/test-modalidades.mjs",
     "test:delete-academy": "node scripts/test-delete-academy.mjs",
     "test:delete-team": "node scripts/test-delete-team.mjs",

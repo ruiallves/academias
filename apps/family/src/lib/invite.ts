@@ -40,23 +40,60 @@ export type InvitePreview = {
 export function captureFromUrl(): void {
   try {
     const params = new URLSearchParams(window.location.search);
-    const convite = params.get("convite");
-    const socio = params.get("socio");
-    const atleta = params.get("atleta");
+
+    /*
+     * O token pode vir de duas formas, e as duas têm de valer:
+     *
+     *  - na **query** (`?atleta=…`), como a landing o passa ao abrir a app;
+     *  - no **caminho** (`/atleta/<token>`), como o link do clube chega quando a
+     *    app **já instalada** o abre dentro do seu âmbito (o service worker serve
+     *    a casca e não há query nenhuma).
+     *
+     * Faltava a segunda, e o efeito era mau de perceber: quem tinha a app
+     * instalada abria o link de atleta, o token no caminho era ignorado, e a app
+     * caía no login de família — com a mensagem "este link já não está válido",
+     * que é de outro convite. O convite de atleta certo nunca chegava a ser lido.
+     */
+    const noCaminho = window.location.pathname.match(/\/(familia|socio|atleta)\/([^/?#]+)/);
+    const tipoCaminho = noCaminho?.[1];
+    const convite = params.get("convite") ?? (tipoCaminho === "familia" ? noCaminho![2] : null);
+    const socio = params.get("socio") ?? (tipoCaminho === "socio" ? noCaminho![2] : null);
+    const atleta = params.get("atleta") ?? (tipoCaminho === "atleta" ? noCaminho![2] : null);
     const academia = params.get("academia");
 
+    /*
+     * Um convite de cada vez, e é sempre o que a pessoa acabou de abrir.
+     *
+     * Sem isto, um token de família de uma tentativa anterior (ou de outro link)
+     * sequestrava a leitura — o `App` verifica sócio e atleta antes do login de
+     * família, mas um token velho no sítio errado ainda estraga o fluxo. Quem
+     * chega por um link novo quer esse, e mais nenhum: limpam-se os outros.
+     */
+    if (convite || socio || atleta) {
+      localStorage.removeItem(KEY);
+      localStorage.removeItem(SOCIO_KEY);
+      localStorage.removeItem(ATLETA_KEY);
+    }
     if (convite) localStorage.setItem(KEY, convite);
     if (socio) localStorage.setItem(SOCIO_KEY, socio);
     if (atleta) localStorage.setItem(ATLETA_KEY, atleta);
     if (academia) localStorage.setItem(SLUG_KEY, academia);
 
-    if (convite || socio || atleta || academia) {
+    if (convite || socio || atleta || academia || noCaminho) {
       params.delete("convite");
       params.delete("socio");
       params.delete("atleta");
       params.delete("academia");
       const rest = params.toString();
-      window.history.replaceState({}, "", window.location.pathname + (rest ? `?${rest}` : ""));
+      /*
+       * A barra fica na raiz da app (o `base` do Vite: `/app/` ou `/`), sem token
+       * no caminho nem na query — fora do histórico e de qualquer captura de ecrã,
+       * e dentro do `basename` do router, senão a app abria fora dele depois de
+       * registar. O fragmento preserva-se: é por lá que a sessão viaja no
+       * desenvolvimento (ver `adoptSessionFromUrl`, que corre a seguir).
+       */
+      const base = (import.meta.env as { BASE_URL?: string } | undefined)?.BASE_URL ?? "/";
+      window.history.replaceState({}, "", base + (rest ? `?${rest}` : "") + window.location.hash);
     }
   } catch {
     /* sem armazenamento: o registo ainda funciona nesta sessão, com o token colado à mão */

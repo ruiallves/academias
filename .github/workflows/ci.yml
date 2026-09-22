@@ -49,3 +49,6 @@ jobs:
 
       - name: Rotas públicas da raiz do clube têm reescrita (não dão 404)
         run: npm run test:rotas-publicas --workspace=@academia/api
+
+      - name: App da família apanha o convite da query e do caminho
+        run: npm run test:convite-captura --workspace=@academia/family

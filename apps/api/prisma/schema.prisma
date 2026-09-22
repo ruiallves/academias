@@ -230,6 +230,9 @@ model Academy {
 
   /// Os avisos de pagamento da subscrição — ver `SubscriptionNotice`.
   subscriptionNotices SubscriptionNotice[]
+
+  /// Os movimentos das contas da plataforma que são deste clube.
+  platformTransactions PlatformTransaction[]
 }
 
 /// O ciclo de vida de um cliente. Derivado do onboarding e da subscrição — o
@@ -3947,6 +3950,11 @@ model PlatformAdmin {
   ticketsOwned Ticket[]              @relation("TicketAssignee")
   ticketNotes  TicketNote[]          @relation("TicketNoteAuthor")
 
+  /// As contas da plataforma: quem lançou o movimento, e quem deu a mensalidade
+  /// de um clube como paga.
+  transactions   PlatformTransaction[] @relation("TransactionCreatedBy")
+  noticesMarked  SubscriptionNotice[]  @relation("NoticePaidBy")
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 }
@@ -4215,10 +4223,21 @@ model SubscriptionNotice {
   sentAt      DateTime?
   failureNote String?
 
+  /// Quando o clube pagou, quem o registou e a nota de quem registou. É isto
+  /// que separa o esperado do recebido nas contas da plataforma.
+  paidAt   DateTime?
+  paidNote String?
+  paidById String?
+  paidBy   PlatformAdmin? @relation("NoticePaidBy", fields: [paidById], references: [id], onDelete: SetNull)
+
+  /// O ganho que este aviso gerou nas contas, quando foi dado como pago.
+  transaction PlatformTransaction?
+
   createdAt DateTime @default(now())
 
   @@unique([academyId, periodStart])
   @@index([academyId, issuedOn])
+  @@index([paidAt])
 }
 
 enum SubscriptionStatus {
@@ -4264,6 +4283,108 @@ model ProfileChange {
 
   @@index([academyId, kind, subjectId, createdAt])
   @@index([academyId, createdAt])
+}
+
+/// Ganho ou gasto do negócio. O sentido está aqui, e o valor é sempre positivo.
+enum PlatformFinanceKind {
+  INCOME
+  EXPENSE
+}
+
+/// `COMPLETED` aconteceu; `PENDING` está previsto e ainda não se moveu.
+enum PlatformFinanceStatus {
+  COMPLETED
+  PENDING
+}
+
+enum PlatformRecurrence {
+  MONTHLY
+  ANNUAL
+}
+
+/// Um movimento das contas da plataforma.
+///
+/// A receita recorrente **não** se escreve aqui à mão: nasce de um aviso de
+/// mensalidade dado como pago (`noticeId`), e é por isso que essa ligação é
+/// única. O que se escreve são os gastos e os ganhos que não vêm dos clubes.
+model PlatformTransaction {
+  id     String                @id @default(cuid())
+  kind   PlatformFinanceKind
+  status PlatformFinanceStatus @default(COMPLETED)
+
+  description String
+  /// Sempre positivo, em cêntimos, **com IVA**.
+  amountCents Int
+  /// 23, 13, 6 ou 0. O líquido calcula-se; guardá-lo era deixar dois números
+  /// da mesma coisa a discordarem.
+  vatRate     Int @default(23)
+
+  occurredAt DateTime  @db.Date
+  dueDate    DateTime? @db.Date
+
+  category     String?
+  counterparty String?
+  notes        String?
+
+  academyId String?
+  academy   Academy? @relation(fields: [academyId], references: [id], onDelete: SetNull)
+
+  noticeId String?             @unique
+  notice   SubscriptionNotice? @relation(fields: [noticeId], references: [id], onDelete: SetNull)
+
+  recurringId String?
+  recurring   PlatformRecurringExpense? @relation(fields: [recurringId], references: [id], onDelete: SetNull)
+
+  createdById String?
+  createdBy   PlatformAdmin? @relation("TransactionCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([occurredAt])
+  @@index([kind, occurredAt])
+  @@index([academyId])
+}
+
+/// Um gasto fixo: descrito uma vez, contado em todos os meses que lhe tocam.
+///
+/// É daqui que sai a previsão. `dayOfMonth` vai até 28 de propósito: um gasto
+/// marcado para 31 não existe em Fevereiro, e a previsão passaria a saltar meses.
+model PlatformRecurringExpense {
+  id           String             @id @default(cuid())
+  description  String
+  amountCents  Int
+  vatRate      Int                @default(23)
+  recurrence   PlatformRecurrence @default(MONTHLY)
+  dayOfMonth   Int                @default(1)
+  /// Só nos anuais: em que mês (1 a 12).
+  month        Int?
+  category     String?
+  counterparty String?
+  notes        String?
+  startsOn     DateTime           @db.Date
+  endsOn       DateTime?          @db.Date
+  isActive     Boolean            @default(true)
+
+  transactions PlatformTransaction[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([isActive])
+}
+
+/// O saldo de abertura e o IVA das mensalidades. Uma linha só.
+model PlatformFinanceSettings {
+  id                  String    @id @default(cuid())
+  openingBalanceCents Int       @default(0)
+  openingBalanceAt    DateTime? @db.Date
+  /// O IVA das mensalidades dos clubes, e se o preço acordado já o inclui.
+  subscriptionVatRate     Int     @default(23)
+  subscriptionVatIncluded Boolean @default(false)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 }
 
 /// Registo do que os administradores da plataforma fazem.
