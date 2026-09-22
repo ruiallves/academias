@@ -361,6 +361,50 @@ cliente ficou por confirmar antes de o cliente ligar a perguntar.
 
 ---
 
+## Contas: gastos, ganhos e previsão
+
+O painel sabia o MRR e mais nada, e um número de receita sem custos ao lado não
+diz se o negócio se paga. A página **Contas** (`/contas`, `OWNER` e `ADMIN`)
+responde a três perguntas: quanto rendeu este mês, quanto sai por mês mesmo sem
+vender nada, e a partir de que mês é que os clubes que já existem cobrem os
+custos fixos.
+
+**A receita recorrente vem dos clubes**, e não de linhas escritas à mão. Cada
+contrato assinado projeta-se pelo relógio dele — quem assinou a 20 paga a 20, um
+contrato anual conta uma vez por ano — com a mesma conta que emite os avisos
+mensais (`subscription/ciclo.ts`). Assim a previsão e o email que o clube recebe
+nunca discordam. O que se escreve à mão são os gastos e os ganhos que não vêm de
+clubes.
+
+**Três tabelas** (`PlatformTransaction`, `PlatformRecurringExpense`,
+`PlatformFinanceSettings`), todas fora do alcance de `academia_app` como as
+outras tabelas da plataforma. O livro guarda o valor **com IVA** e a taxa; o
+líquido é uma divisão, e é a líquido que a página e a previsão correm, porque é
+o que fica depois de entregar o IVA.
+
+**Os gastos fixos são uma regra, não doze linhas.** Um gasto mensal descreve-se
+uma vez (valor, dia, categoria) e conta em todos os meses; um anual conta no mês
+dele. O dia vai até 28 de propósito: um gasto marcado para 31 não existe em
+Fevereiro e a previsão passaria a saltar meses. "Lançar" copia a regra para o
+livro quando o gasto acontece mesmo, e a previsão não o conta duas vezes.
+
+**As mensalidades dos clubes fecham o ciclo.** O aviso que sai todos os meses
+(ver `docs/03-estado.md`) ganhou "Recebida": marcar escreve o ganho no livro,
+ligado ao aviso por uma chave única — marcar duas vezes não soma duas, e
+desmarcar apaga-o. Um ganho vindo de uma mensalidade não se edita nem se apaga à
+mão; corrige-se no aviso. O preço combinado com um clube é normalmente **sem
+IVA**, e as definições dizem a taxa e se já o inclui.
+
+**A simulação vem à parte.** A previsão base tem só os clubes contratados; ligar
+"Simular" acrescenta "N clubes novos por mês a X euros" numa série própria, com
+barra tracejada e coluna própria na tabela. Um gráfico que junta o assinado com o
+desejado é um gráfico que se acredita duas vezes.
+
+Verificado por `npm run test:contas --workspace @academia/api` (31), que corre
+contra a base a sério e por isso mede **diferenças** e não totais: a plataforma
+já tem clubes e gastos, e um teste que exigisse "doze meses com receita" passava
+hoje e falhava no dia em que outro clube assinasse.
+
 ## Desenho
 
 Herda os tokens de `packages/ui` — mesma tipografia, mesmas hairlines, mesma
@@ -398,18 +442,22 @@ anterior, ou nada.
 | Funções `SECURITY DEFINER`: overview, academias, séries | **feito** |
 | `PlatformGuard`, módulo `platform`, endpoints | **feito** |
 | App `apps/platform` — Visão geral, Academias, Crescimento, Registo | **feito** |
+| Contas: gastos, ganhos, previsão e mensalidades recebidas | **feito** |
 | Contactos: lista, ficha, histórico de conversas | **feito** |
 | Contactos: feed `.ics` para o Google Calendar + "Agendar no Google" | **feito** |
 | Contactos: entrada pública pelo site (`POST /api/site/contacto`) | **feito** — ver `docs/03-estado.md` |
 | Criar academia + convite ao diretor | **feito** (reutiliza o mecanismo de convites) |
 | Papel `platform_app` sem BYPASSRLS | **por fazer** — ver `platform.prisma.ts` |
 | Impersonation ("ver como academia") com MFA | por fazer |
-| Subscrições: alterar plano, cobranças, faturação | por fazer |
+| Subscrições: alterar plano e emitir contrato | **feito** — ver `docs/03-estado.md` |
+| Subscrições: aviso mensal de pagamento e registo do recebimento | **feito** |
+| Subscrições: faturas e cobrança automática | por fazer |
 | Onboarding guiado do diretor (os 8 passos no lado dele) | por fazer |
 | System health e suporte | por fazer |
 
 Verificado por `npm run test:platform` (25 testes, a fronteira ao nível da base de
-dados), `npm run test:platform-api` (30 testes, os endpoints) e
+dados), `npm run test:platform-api` (30 testes, os endpoints),
+`npm run test:contas` (31, as contas do negócio) e
 `npm run test:contacts` (os contactos e o feed de calendário, incluindo o token
 rodado a invalidar o anterior). Provam as duas
 direcções: um diretor de academia leva 403 no painel, e um administrador da

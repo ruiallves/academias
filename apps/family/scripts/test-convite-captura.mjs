@@ -12,7 +12,7 @@
  *
  * Uso: node --experimental-strip-types apps/family/scripts/test-convite-captura.mjs
  */
-import { captureFromUrl, readAthleteInvite, readMemberInvite, readInvite } from "../src/lib/invite.ts";
+import { captureFromUrl, saveInvite, readAthleteInvite, readMemberInvite, readInvite } from "../src/lib/invite.ts";
 
 let passed = 0;
 let failed = 0;
@@ -89,6 +89,23 @@ console.log("\n=== 5. O fragmento da sessão (handoff em dev) preserva-se ===");
 urlDe = comURL({ pathname: `/atleta/${T}`, hash: "#s=abc" });
 captureFromUrl();
 check("o #s= sobrevive à limpeza (adoptSessionFromUrl corre a seguir)", urlDe().includes("#s=abc"), urlDe());
+
+console.log("\n=== 6. Colar um link na caixa 'cola o link do clube' vai para a chave certa ===");
+// O email diz "copia este endereço" — e é o link de atleta inteiro que se cola.
+comURL({ pathname: "/" }, { "academia.family.convite": "VELHO_FAMILIA" });
+let r = saveInvite(`https://ad-fafe.academias.pt/atleta/${T}`);
+check(
+  "link de atleta colado → convite de atleta, na chave de atleta",
+  r.kind === "athlete" && r.token === T && readAthleteInvite() === T,
+  JSON.stringify({ r, atleta: readAthleteInvite() }),
+);
+check("e não fica nada na chave de família (era o bug)", readInvite() === null, JSON.stringify(readInvite()));
+r = saveInvite(`https://ad-fafe.academias.pt/socio/${T}`);
+check("link de sócio colado → convite de sócio", r.kind === "member" && readMemberInvite() === T);
+r = saveInvite(`https://ad-fafe.academias.pt/familia/${T}?x=1`);
+check("link de família colado → convite de família, sem a query", r.kind === "family" && r.token === T && readInvite() === T);
+r = saveInvite(T);
+check("um código solto continua a ser de família", r.kind === "family" && r.token === T);
 
 console.log(`\n${failed === 0 ? "TUDO OK" : "HÁ FALHAS"} — ${passed} ok, ${failed} falhas`);
 process.exit(failed === 0 ? 0 : 1);

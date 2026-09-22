@@ -102,7 +102,7 @@ export default function Contas() {
         <Panel>
           <PanelHead
             title="Os próximos 12 meses"
-            hint={previsao.data ? `${previsao.data.clubes} clubes contratados` : undefined}
+            hint={previsao.data ? `${previsao.data.clubes} ${previsao.data.clubes === 1 ? "clube contratado" : "clubes contratados"}` : undefined}
           >
             <label className="flex items-center gap-2 text-meta text-ink-2">
               <input
@@ -282,35 +282,42 @@ function Grafico({ previsao, simulando }: { previsao: Previsao; simulando: boole
     ...previsao.meses.map((m) => m.gastosCents),
     1,
   );
+  const semGastos = previsao.meses.every((m) => m.gastosCents === 0);
 
   return (
     <>
-      <div className="relative flex items-end gap-1.5 px-5 pt-4" style={{ height: 190 }}>
+      {/*
+        Cada mês é uma caixa com altura fixa, e o que lá vive está **posicionado**
+        e não empilhado. Em `flex` com alturas em percentagem, as barras
+        encolhiam para uns fios de um pixel e a marca dos gastos, pendurada num
+        elemento de altura zero, não tinha de que se pendurar.
+      */}
+      <div className="flex items-end gap-1.5 px-5 pt-4" style={{ height: 190 }}>
         {previsao.meses.map((m) => {
-          const altura = (v: number) => `${Math.max((v / max) * 100, v > 0 ? 3 : 0)}%`;
+          const pct = (v: number) => Math.max((v / max) * 100, v > 0 ? 1.5 : 0);
+          const receita = pct(m.receitaCents);
+          const simulada = pct(m.receitaSimuladaCents);
           return (
             <div
               key={m.mes}
-              className="flex h-full min-w-0 flex-1 flex-col justify-end gap-0.5"
+              className="relative h-full min-w-0 flex-1"
               title={`${mesLabel(m.mes)} · receita ${euros(m.receitaCents + m.receitaSimuladaCents)} · gastos ${euros(m.gastosCents)}`}
             >
-              {m.receitaSimuladaCents > 0 && (
-                <div
-                  className="w-full rounded-t-[3px] border border-dashed border-signal bg-signal/20"
-                  style={{ height: altura(m.receitaSimuladaCents) }}
+              <span
+                className="absolute inset-x-0 bottom-0 block rounded-t-[3px]"
+                style={{ height: `${receita}%`, background: "var(--color-signal)" }}
+              />
+              {simulada > 0 && (
+                <span
+                  className="absolute inset-x-0 block rounded-t-[3px] border border-b-0 border-dashed border-signal bg-signal/25"
+                  style={{ bottom: `${receita}%`, height: `${simulada}%` }}
                 />
               )}
-              <div
-                className={cx("w-full", m.receitaSimuladaCents > 0 ? "" : "rounded-t-[3px]")}
-                style={{ height: altura(m.receitaCents), background: "var(--color-signal)" }}
+              {/* Os gastos: a linha que a barra tem de passar. */}
+              <span
+                className="absolute inset-x-0 block h-[2px] bg-ink"
+                style={{ bottom: `calc(${pct(m.gastosCents)}% - 1px)` }}
               />
-              {/* Os gastos: uma marca escura sobre a barra, no sítio onde a receita os cobre. */}
-              <div className="relative h-0">
-                <span
-                  className="absolute right-0 left-0 block h-[2px] bg-ink"
-                  style={{ bottom: `calc(${altura(m.gastosCents)} - 1px)`, position: "absolute" }}
-                />
-              </div>
             </div>
           );
         })}
@@ -325,15 +332,17 @@ function Grafico({ previsao, simulando }: { previsao: Previsao; simulando: boole
       </div>
 
       <p className="px-5 pt-3 pb-1 text-meta leading-relaxed text-ink-3">
-        {previsao.cobreEm ? (
+        {semGastos ? (
+          <>Ainda não há gastos registados: a previsão mostra só a receita dos clubes contratados.</>
+        ) : previsao.cobreEm ? (
           <>
-            Com os clubes de hoje, a receita passa a cobrir os gastos fixos em{" "}
+            Com os clubes de hoje, a receita passa a cobrir os gastos em{" "}
             <b className="text-ink">{mesLabel(previsao.cobreEm)}</b>.
           </>
         ) : (
-          <>Com os clubes de hoje, a receita ainda não cobre os gastos fixos dentro de um ano.</>
+          <>Com os clubes de hoje, a receita ainda não cobre os gastos dentro de um ano.</>
         )}
-        {simulando && " A barra tracejada é a simulação, e não está contratada."}
+        {simulando && " A barra tracejada é a simulação, sem contrato por trás."}
       </p>
 
       <div className="overflow-x-auto px-5 pb-4">

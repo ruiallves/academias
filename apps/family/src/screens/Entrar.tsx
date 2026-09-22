@@ -228,7 +228,20 @@ export default function Entrar({ onEntered }: { onEntered: () => void }) {
           onEntrar={() => setStep("login")}
           onColar={(valor) => {
             setErro(null);
-            setToken(saveInvite(valor));
+            const { kind, token: colado } = saveInvite(valor);
+            /*
+             * Um link de atleta ou de sócio colado aqui não é deste ecrã. O
+             * `App` escolhe o ecrã a partir da chave guardada, por isso volta-se
+             * ao início da app para ele o ler e abrir o convite certo. Antes o
+             * link inteiro ficava guardado como convite de família e este ecrã
+             * recusava-o com "este link já não está válido" — o email diz
+             * "copia este endereço", e era exactamente isso que partia.
+             */
+            if (kind !== "family") {
+              window.location.replace(import.meta.env.BASE_URL);
+              return;
+            }
+            setToken(colado);
           }}
         />
       )}

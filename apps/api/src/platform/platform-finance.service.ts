@@ -557,8 +557,13 @@ export class PlatformFinanceService {
       meses: resultado,
       fixos: { mensalCents: gastoFixoMensal, anualCents: gastoFixoAnual, porMesCents: gastoFixoMensal + Math.round(gastoFixoAnual / 12) },
       clubes: porClube.size,
-      /** O primeiro mês em que o contratado cobre os gastos, se houver. */
-      cobreEm: resultado.find((l) => l.receitaCents >= l.gastosCents)?.mes ?? null,
+      /**
+       * O primeiro mês em que o contratado cobre os gastos.
+       *
+       * Exige gastos maiores do que zero: sem nada lançado, zero cobre zero em
+       * Janeiro e a página anunciava que o negócio já se pagava a si próprio.
+       */
+      cobreEm: resultado.find((l) => l.gastosCents > 0 && l.receitaCents >= l.gastosCents)?.mes ?? null,
     };
   }
 }

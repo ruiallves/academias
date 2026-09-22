@@ -634,8 +634,25 @@ ${
     /* O convite de **sócio** viaja pelo mesmo caminho, com outro parâmetro e
        outra chave — ver \`captureFromUrl\` em apps/family/src/lib/invite.ts. */
     var socio = params.get("socio");
+    /*
+      E o de **atleta**. Faltava, e o efeito era exactamente o que este bloco
+      existe para evitar: no iOS a app instala-se por "Adicionar ao ecrã
+      principal" e abre pela start_url, sem query — o token de atleta perdia-se
+      aqui, a app abria no login vazio, e o atleta ia colar o link à mão (onde
+      outro defeito o tratava como convite de família). Nenhum convite de
+      atleta alguma vez chegou ao ecrã certo por esta via.
+    */
+    var atleta = params.get("atleta");
+    /* Um convite de cada vez, e é o que acabou de chegar — nada de um token
+       antigo de outro tipo a sequestrar o arranque da app. */
+    if (convite || socio || atleta) {
+      localStorage.removeItem("academia.family.convite");
+      localStorage.removeItem("academia.socio.convite");
+      localStorage.removeItem("academia.atleta.convite");
+    }
     if (convite) localStorage.setItem("academia.family.convite", convite);
     if (socio) localStorage.setItem("academia.socio.convite", socio);
+    if (atleta) localStorage.setItem("academia.atleta.convite", atleta);
     localStorage.setItem("academia.family.slug", slug);
   } catch (e) {}
 

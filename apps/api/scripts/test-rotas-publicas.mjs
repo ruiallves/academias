@@ -61,5 +61,18 @@ for (const p of PUBLICOS) {
 // A raiz `/` → landing também tem de lá estar.
 check("a raiz / é reescrita para a landing", fonte.includes("`/l/${slug}`"));
 
+/*
+ * A outra metade do caminho: a landing tem de **pré-guardar** os três convites
+ * no localStorage, com as chaves que a app da família lê. No iOS a app instala-se
+ * por "Adicionar ao ecrã principal" e abre pela start_url sem query — é esta
+ * semente que faz o token sobreviver. Faltava o de atleta, e nenhum convite de
+ * atleta chegou alguma vez ao ecrã certo por essa via.
+ */
+console.log("\n=== A landing pré-guarda os três convites com as chaves da app ===");
+const landing = readFileSync(path.join(HERE, "..", "src", "landing", "landing.template.ts"), "utf8");
+for (const chave of ["academia.family.convite", "academia.socio.convite", "academia.atleta.convite"]) {
+  check(`a landing semeia ${chave}`, landing.includes(`localStorage.setItem("${chave}"`), "semente em falta");
+}
+
 console.log(`\n${failed === 0 ? "TUDO OK" : "HÁ FALHAS"} — ${passed} ok, ${failed} falhas`);
 process.exit(failed === 0 ? 0 : 1);

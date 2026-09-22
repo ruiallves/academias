@@ -108,15 +108,37 @@ export function readInvite(): string | null {
   }
 }
 
-/** Aceita o link inteiro ou só o código — quem cola, cola o que tem à mão. */
-export function saveInvite(value: string): string {
-  const token = value.trim().replace(/^.*\/familia\//, "").replace(/[?#].*$/, "");
+/** De que convite é um link colado. */
+export type InviteKind = "family" | "member" | "athlete";
+
+/**
+ * Aceita o link inteiro ou só o código — quem cola, cola o que tem à mão.
+ *
+ * E aceita os **três** convites, não só o de família. A caixa "cola o link do
+ * clube" recebia um link de atleta (`…/atleta/<token>`), não sabia tirar-lhe
+ * nada, guardava o endereço **inteiro** como token de família, e a
+ * pré-visualização de família recusava-o — "este link já não está válido",
+ * fosse qual fosse o link, fosse quantas vezes fosse reenviado. Agora cada link
+ * vai para a chave certa e quem chama fica a saber de que convite se trata,
+ * para levar a pessoa ao ecrã certo. Um código solto, sem prefixo, continua a
+ * ser de família — é o único que se cola à mão.
+ */
+export function saveInvite(value: string): { kind: InviteKind; token: string } {
+  const raw = value.trim();
+  const m = raw.match(/\/(familia|socio|atleta)\/([^/?#]+)/);
+  const kind: InviteKind = m?.[1] === "socio" ? "member" : m?.[1] === "atleta" ? "athlete" : "family";
+  const token = (m?.[2] ?? raw.replace(/^.*\/familia\//, "")).replace(/[?#].*$/, "");
+  const key = kind === "member" ? SOCIO_KEY : kind === "athlete" ? ATLETA_KEY : KEY;
   try {
-    localStorage.setItem(KEY, token);
+    // Um convite de cada vez — o que se acabou de colar manda.
+    localStorage.removeItem(KEY);
+    localStorage.removeItem(SOCIO_KEY);
+    localStorage.removeItem(ATLETA_KEY);
+    localStorage.setItem(key, token);
   } catch {
     /* idem */
   }
-  return token;
+  return { kind, token };
 }
 
 export function readMemberInvite(): string | null {
