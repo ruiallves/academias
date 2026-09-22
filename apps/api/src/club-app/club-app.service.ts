@@ -188,6 +188,71 @@ export class ClubAppService {
   }
 
   /* ------------------------------------------------------------------------ */
+  /* As notificações da pessoa                                                 */
+  /* ------------------------------------------------------------------------ */
+
+  /**
+   * As notificações desta conta neste clube — a mesma lista, com a mesma forma,
+   * de `NotificationsService.listForUser`, por uma porta que não exige
+   * `Membership`.
+   *
+   * Uma notificação é da pessoa, não do papel: a quota paga do sócio e a
+   * convocatória do filho vão para o mesmo `userId`. O `/api/notifications`
+   * passa pelo guard, que exige uma membership, e um sócio sem vínculo de
+   * família não tem nenhuma — ficava sem sino, com notificações na base que
+   * nunca via. Aqui autentica-se pelo JWT, como o resto da área de sócio.
+   */
+  async notificacoes(authorization: string | undefined, slug: string) {
+    const eu = await this.identidade(authorization);
+    const academyId = await this.academiaDe(slug);
+    const userId = eu.userId;
+    if (!userId) return [];
+
+    const rows = await this.prisma.runAs(academyId, (db) =>
+      db.notification.findMany({
+        where: { userId },
+        orderBy: { createdAt: "desc" },
+        take: 50,
+      }),
+    );
+
+    return rows.map((n) => {
+      const payload = (n.payload ?? {}) as Record<string, unknown>;
+      const endereco = (chave: string) => {
+        const v = payload[chave];
+        return typeof v === "string" && v.trim() !== "" ? v : null;
+      };
+      return {
+        id: n.id,
+        kind: n.type,
+        type: n.type,
+        title: n.title,
+        body: n.body,
+        link: endereco("link"),
+        route: endereco("route"),
+        readAt: n.readAt,
+        createdAt: n.createdAt,
+      };
+    });
+  }
+
+  /** Idempotente: `readAt: null` no filtro impede que reler mude a data da primeira vez. */
+  async marcarNotificacoesLidas(authorization: string | undefined, slug: string, ids: string[]) {
+    const eu = await this.identidade(authorization);
+    const academyId = await this.academiaDe(slug);
+    const userId = eu.userId;
+    if (!userId || ids.length === 0) return { ok: true, marcadas: 0 };
+
+    const r = await this.prisma.runAs(academyId, (db) =>
+      db.notification.updateMany({
+        where: { userId, id: { in: ids }, readAt: null },
+        data: { readAt: new Date() },
+      }),
+    );
+    return { ok: true, marcadas: r.count };
+  }
+
+  /* ------------------------------------------------------------------------ */
   /* A área de sócio                                                           */
   /* ------------------------------------------------------------------------ */
 

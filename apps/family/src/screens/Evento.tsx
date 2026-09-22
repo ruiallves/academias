@@ -256,8 +256,20 @@ function Convocatoria({ jogo }: { jogo: Match }) {
   const Icone = meta.icone;
   const [aRecusar, setARecusar] = useState(false);
 
+  /*
+   * Quem responde é um só.
+   *
+   * O clube diz, em cada convocatória, se responde o encarregado ou o atleta.
+   * Quem não for vê a convocatória inteira e não tem botão nenhum — e o servidor
+   * recusa na mesma se alguém tentar pelo endereço (ver `assertPodeResponderPor`).
+   *
+   * Isto era a avaria que se via: um atleta com conta confirmava a sua própria
+   * convocatória, quando num escalão de formação quem decide é o pai.
+   */
+  const souQuemResponde = atleta ? jogo.respondBy === "ATHLETE" : jogo.respondBy === "GUARDIAN";
+
   const respondeu = jogo.reply;
-  const porResponder = jogo.callUp === "in" && !respondeu;
+  const porResponder = jogo.callUp === "in" && !respondeu && souQuemResponde;
 
   return (
     <section className="mt-4 overflow-hidden rounded-[var(--radius-xl)] bg-surface shadow-[var(--shadow-soft)]">
@@ -276,9 +288,15 @@ function Convocatoria({ jogo }: { jogo: Match }) {
                 ? respondeu.going
                   ? (atleta ? "Disseste que vais." : "Disseste que vai.")
                   : (atleta ? "Disseste que não vais." : "Disseste que não vai.")
-                : jogo.confirmationRequired
-                  ? "O clube pede que confirmes a presença."
-                  : "Contamos com ele. Só precisas de responder se não puder ir.")}
+                : !souQuemResponde
+                  ? jogo.respondBy === "ATHLETE"
+                    ? "Neste jogo é o atleta que responde."
+                    : "Quem responde é o encarregado de educação."
+                  : jogo.confirmationRequired
+                    ? "O clube pede que confirmes a presença."
+                    : atleta
+                      ? "Contamos contigo. Só precisas de responder se não puderes ir."
+                      : "Contamos com ele. Só precisas de responder se não puder ir.")}
           </span>
         </span>
       </div>
@@ -293,19 +311,21 @@ function Convocatoria({ jogo }: { jogo: Match }) {
               detalhe={respondeu.reason ?? ""}
               quando={respondeu.at}
             >
-              <Responder jogo={jogo} going label={atleta ? "Afinal vou" : "Afinal vai"} />
+              {souQuemResponde && <Responder jogo={jogo} going label={atleta ? "Afinal vou" : "Afinal vai"} />}
             </RespostaDada>
           )}
 
           {respondeu?.going && (
             <RespostaDada tom="ok" icone={Check} titulo="Presença confirmada" quando={respondeu.at}>
-              <button
-                type="button"
-                onClick={() => setARecusar(true)}
-                className="text-[13px] font-semibold text-ink-2 underline underline-offset-2"
-              >
-                {atleta ? "Afinal não vou poder ir" : "Afinal não vai poder ir"}
-              </button>
+              {souQuemResponde && (
+                <button
+                  type="button"
+                  onClick={() => setARecusar(true)}
+                  className="text-[13px] font-semibold text-ink-2 underline underline-offset-2"
+                >
+                  {atleta ? "Afinal não vou poder ir" : "Afinal não vai poder ir"}
+                </button>
+              )}
             </RespostaDada>
           )}
 
@@ -511,7 +531,15 @@ function Ausencia({ treino }: { treino: Training }) {
   const [aAvisar, setAAvisar] = useState(false);
   const jaPassou = treino.end <= new Date();
 
+  /* Quem avisa é quem o treino diz — a mesma regra da convocatória. */
+  const souQuemResponde = atleta ? treino.respondBy === "ATHLETE" : treino.respondBy === "GUARDIAN";
+
   if (treino.recorded || (jaPassou && !treino.notice)) return null;
+  /*
+   * A quem não avisa, nem o cartão: sem aviso dado não há nada a mostrar, e um
+   * bloco a explicar quem avisa em todos os treinos da época era ruído.
+   */
+  if (!souQuemResponde && !treino.notice) return null;
 
   return (
     <section className="mt-4 overflow-hidden rounded-[var(--radius-xl)] bg-surface p-4 shadow-[var(--shadow-soft)]">
@@ -533,7 +561,7 @@ function Ausencia({ treino }: { treino: Training }) {
               {time(treino.notice.at)}
             </p>
           </div>
-          {!jaPassou && !aAvisar && (
+          {!jaPassou && !aAvisar && souQuemResponde && (
             <div className="mt-3 grid grid-cols-2 gap-2">
               <button type="button" onClick={() => setAAvisar(true)} className="cta-quiet">
                 Mudar o motivo

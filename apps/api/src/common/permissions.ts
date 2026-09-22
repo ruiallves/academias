@@ -1,3 +1,4 @@
+import { ForbiddenException } from "@nestjs/common";
 import { Role } from "@prisma/client";
 
 /**
@@ -623,6 +624,37 @@ export function inTeamScope(ctx: RequestContext, teamId: string | null): boolean
 export function athleteScopeFilter(ctx: RequestContext): { in: string[] } | undefined {
   if (ctx.role === "GUARDIAN" || ctx.role === "ATHLETE") return { in: ctx.scope.athleteIds ?? [] };
   return undefined;
+}
+
+/**
+ * Quem fala por um atleta: o encarregado, ou o próprio.
+ *
+ * ## A avaria que isto fecha
+ *
+ * A resposta a uma convocatória e o aviso de falta autorizavam-se só com
+ * `athleteScopeFilter` — "este atleta é meu". Um atleta com conta tem-se a si no
+ * âmbito, e por isso confirmava a sua própria convocatória. Num escalão de
+ * formação quem decide se o miúdo vai ao jogo é o encarregado.
+ *
+ * Agora cada jogo e cada treino dizem quem responde (`respondBy`), e é **um ou
+ * outro**: quem não for o responsável vê o evento e não tem por onde responder.
+ * O staff também não responde por aqui — quem tem `attendance:write` regista a
+ * falta na folha, que é o instrumento dele; um treinador a "avisar" em nome de
+ * uma família punha-lhe na boca uma coisa que ela não disse.
+ */
+export function assertPodeResponderPor(
+  ctx: RequestContext,
+  respondBy: "GUARDIAN" | "ATHLETE",
+): void {
+  if (ctx.role !== "GUARDIAN" && ctx.role !== "ATHLETE") {
+    throw new ForbiddenException("A resposta é da família ou do atleta. O staff regista na folha.");
+  }
+  if (respondBy === "ATHLETE" && ctx.role !== "ATHLETE") {
+    throw new ForbiddenException("Aqui é o atleta que responde.");
+  }
+  if (respondBy === "GUARDIAN" && ctx.role !== "GUARDIAN") {
+    throw new ForbiddenException("Quem responde por ti é o teu encarregado de educação.");
+  }
 }
 
 /**

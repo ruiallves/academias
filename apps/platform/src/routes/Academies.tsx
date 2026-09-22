@@ -8,15 +8,8 @@ import { AcademyActions } from "@/components/AcademyActions";
 import { Failed, Skeleton } from "./Overview";
 import { euros, shortDate, since } from "@/lib/format";
 import { useApi } from "@/lib/query";
-import { STATUS_LABEL, type Academy, type AcademyStatus, type Me } from "@/lib/types";
-
-const TONE: Record<AcademyStatus, "neutral" | "ok" | "warn" | "risk" | "signal"> = {
-  SETUP: "signal",
-  TRIAL: "warn",
-  ACTIVE: "ok",
-  PAST_DUE: "risk",
-  CANCELLED: "neutral",
-};
+import { type Academy, type Me } from "@/lib/types";
+import { ESTADO_LABEL, ESTADO_TOM, estadoComercial, temReceita } from "@/lib/estado";
 
 /**
  * Os três estados por que se olha para esta lista.
@@ -247,7 +240,9 @@ export default function Academies({ me }: { me: Me }) {
                       </Link>
                     </td>
                     <td className="px-3 py-2.5">
-                      <Pill tone={TONE[a.status]}>{STATUS_LABEL[a.status]}</Pill>
+                      {/* O estado comercial, e não `Academy.status`: esse fica
+                          preso em SETUP para sempre. Ver `lib/estado.ts`. */}
+                      <Pill tone={ESTADO_TOM[estadoComercial(a)]}>{ESTADO_LABEL[estadoComercial(a)]}</Pill>
                     </td>
                     <td className="px-3 py-2.5 text-ink-2">{a.plan ?? "—"}</td>
                     {/*
@@ -258,7 +253,7 @@ export default function Academies({ me }: { me: Me }) {
                       quando é que o período experimental acaba.
                     */}
                     <td className="px-3 py-2.5 text-right font-medium text-ink tabular">
-                      {a.status === "TRIAL" || a.status === "SETUP" ? (
+                      {!temReceita(estadoComercial(a)) ? (
                         <span className="text-meta font-normal text-[#8a5a12]">
                           {a.trialEndsAt ? `até ${shortDate(a.trialEndsAt)}` : "experimental"}
                         </span>

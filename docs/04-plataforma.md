@@ -405,6 +405,40 @@ contra a base a sério e por isso mede **diferenças** e não totais: a platafor
 já tem clubes e gastos, e um teste que exigisse "doze meses com receita" passava
 hoje e falhava no dia em que outro clube assinasse.
 
+## Os gráficos
+
+Todos saem de `components/chart/Chart.tsx`, escrito em SVG à mão. A versão
+anterior eram `<div>`s com altura em percentagem: liam-se, mas não se mediam
+(sem eixo, sem grelha, e o valor de um mês só num `title` do browser).
+
+O que o motor garante:
+
+- **Mede antes de desenhar.** A largura vem de um `ResizeObserver` e o SVG
+  desenha em pixéis reais — é por isso que os pontos são redondos. A versão
+  antiga esticava o `viewBox` com `preserveAspectRatio="none"` e transformava os
+  marcadores em triângulos.
+- **Uma escala, sempre.** Duas séries no mesmo gráfico só quando são a mesma
+  grandeza (euros com euros). Dois eixos nunca.
+- **Números redondos no eixo** (0 / 2500 / 5000), grelha de um pixel contínua e
+  recessiva, e rótulos de X desbastados ao que cabe.
+- **Cursor e tooltip por omissão**, com rato e com as setas do teclado: a linha
+  vertical agarra-se ao ponto mais próximo e o tooltip diz o valor.
+- **O texto nunca veste a cor da série.** A cor vive na marca; números e rótulos
+  usam a tinta do produto. Duas séries levam legenda.
+
+As quatro formas: `AreaChart` (linha de 2px com área em gradiente, para séries
+contínuas), `BarChart` (períodos fechados; barras até 24px, com linha e série
+empilhada opcionais), `DivergingBars` (entradas para cima, saídas para baixo) e
+`SaldoChart`.
+
+**O saldo é o caso especial.** Nas Contas, a previsão deixou de ser barras de
+receita com uma linha de gastos por cima — obrigava a fazer a subtracção de
+cabeça, mês a mês. É uma linha só, o **saldo acumulado**, com a cor a dizer o
+sinal: verde acima de zero, vermelho abaixo. Dois recortes (um por cima, outro
+por baixo do zero) desenham a mesma linha duas vezes, e é isso que faz a
+mudança de cor acontecer no ponto exacto em que cruza. A pergunta da página
+passou a ler-se sem números: **quando é que isto passa a dar**.
+
 ## Desenho
 
 Herda os tokens de `packages/ui` — mesma tipografia, mesmas hairlines, mesma

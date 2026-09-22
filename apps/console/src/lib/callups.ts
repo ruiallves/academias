@@ -56,8 +56,16 @@ export type CallUpLogistics = {
   meetingTime?: string;
   arrivalTime?: string;
   notes?: string;
-  /** Pedir confirmação activa à família. Desligado por omissão — ver o diálogo. */
+  /** Pedir confirmação activa a quem responde. Desligado por omissão — ver o diálogo. */
   confirmationRequired?: boolean;
+  /**
+   * Quem responde por um atleta: o encarregado (por omissão) ou o próprio.
+   *
+   * É um ou outro. Nos escalões mais velhos são os atletas que dizem se vão, e
+   * aí o encarregado vê a convocatória sem botão. O servidor recusa quem não
+   * for — ver `assertPodeResponderPor` na API.
+   */
+  respondBy?: "GUARDIAN" | "ATHLETE";
 };
 
 export const submitCallUps = (matchId: string, logistica: CallUpLogistics = {}) =>

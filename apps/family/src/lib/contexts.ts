@@ -85,6 +85,15 @@ export function useContexts(): State {
 }
 
 /**
+ * Os contextos já carregados, para quem não é um componente (ver
+ * `lib/notificacoes`, que escolhe por aqui que chapéu pede ao servidor).
+ * `null` = ainda não se perguntou.
+ */
+export function contextosActuais(): AppContext[] | null {
+  return state.contexts;
+}
+
+/**
  * Pergunta ao servidor e resolve o que se resolve sozinho.
  *
  * Um contexto só → é esse, sem perguntar nada a ninguém. Dois → vale a área

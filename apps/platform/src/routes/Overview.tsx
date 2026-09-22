@@ -79,7 +79,7 @@ export default function Overview() {
           <Metric
             label="Academias a pagar"
             value={String(a.active)}
-            note={`${a.trial} em avaliação · ${a.setup} a montar`}
+            note={`${a.trial} em avaliação · ${a.undecided} por decidir`}
             trend={{ value: a.newThisMonth }}
           />
           <Metric

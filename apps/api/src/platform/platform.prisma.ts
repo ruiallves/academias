@@ -30,12 +30,43 @@ import { Prisma, PrismaClient } from "@prisma/client";
  *
  * Está registado em `docs/04-plataforma.md`.
  */
+/**
+ * Quantas ligações é que esta pode abrir.
+ *
+ * ## O dia em que nenhuma migração corria
+ *
+ * `MIGRATE_DATABASE_URL` aponta para o pooler em **modo sessão**, que no
+ * Supabase tem quinze lugares no projecto inteiro. Sem `connection_limit` no
+ * endereço, o Prisma abre `nº de cpus × 2 + 1` — dez, doze, dezassete, conforme
+ * a máquina. Cada API aberta come um pool desses: a de produção, a de
+ * desenvolvimento, a de testes noutro porto.
+ *
+ * Com duas APIs locais de pé o pool ficou cheio, e `prisma migrate deploy`
+ * passou a responder `max clients reached in session mode` — para sempre, e sem
+ * relação aparente com o que se estava a fazer. As migrações deixaram de poder
+ * correr por causa de um servidor esquecido a correr noutra janela.
+ *
+ * Dois chegam bem: este painel serve uma pessoa de cada vez e as leituras dele
+ * são de segundos. Só se acrescenta quando o endereço não traz já um limite
+ * escolhido à mão, que continua a ganhar.
+ */
+const LIGACOES = 2;
+
+function comLimite(url: string | undefined): string | undefined {
+  if (!url || /[?&]connection_limit=/.test(url)) return url;
+  return `${url}${url.includes("?") ? "&" : "?"}connection_limit=${LIGACOES}`;
+}
+
 @Injectable()
 export class PlatformPrisma extends PrismaClient implements OnModuleInit, OnModuleDestroy {
   constructor() {
     super({
       datasources: {
-        db: { url: process.env.PLATFORM_DATABASE_URL ?? process.env.MIGRATE_DATABASE_URL ?? process.env.DATABASE_URL },
+        db: {
+          url: comLimite(
+            process.env.PLATFORM_DATABASE_URL ?? process.env.MIGRATE_DATABASE_URL ?? process.env.DATABASE_URL,
+          ),
+        },
       },
     });
   }

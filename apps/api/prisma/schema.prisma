@@ -1134,6 +1134,10 @@ model TrainingSession {
   coachId String?
   coach   Membership? @relation("SessionCoach", fields: [coachId], references: [id])
 
+  /// Quem avisa que o atleta não vai a este treino: o encarregado ou o próprio.
+  /// Ver `Match.respondBy` — é a mesma regra, e o mesmo enum.
+  respondBy ResponderBy @default(GUARDIAN)
+
   status SessionStatus @default(SCHEDULED)
   notes  String?
 
@@ -2224,6 +2228,12 @@ enum MatchStatus {
 /// Um jogo. Vive à parte de `TrainingSession` porque tem o que um treino nunca
 /// terá — adversário, resultado, convocatória — e juntá-los daria uma tabela com
 /// metade das colunas sempre nulas.
+/// Quem fala por um atleta: o encarregado de educação, ou o atleta.
+enum ResponderBy {
+  GUARDIAN
+  ATHLETE
+}
+
 model Match {
   id        String  @id @default(cuid())
   academyId String
@@ -2310,6 +2320,14 @@ model Match {
   /// famílias a ignorar a app. Liga-se no jogo em que a resposta importa a
   /// sério — o autocarro alugado, a final.
   confirmationRequired Boolean @default(false)
+
+  /// Quem responde por um atleta neste jogo: o encarregado ou o próprio.
+  ///
+  /// `GUARDIAN` por omissão. `ATHLETE` é para escalões mais velhos, onde quem
+  /// diz se vai é o atleta. É **um ou outro**, nunca os dois: com duas bocas a
+  /// responder pela mesma pessoa, a última resposta ganha e o treinador deixa
+  /// de saber de quem foi.
+  respondBy ResponderBy @default(GUARDIAN)
 
   /// Proveniência, quando importado de uma fonte externa (ZeroZero).
   sourceProvider String?

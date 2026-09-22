@@ -9,7 +9,7 @@ import { PHOTO_BUCKET, PHOTO_TTL } from "../storage/photos.service";
 import { nomeDeQuemMexe, registarAlteracoes } from "../common/historico";
 import { DIAS_DO_MES } from "../members/member-fees.service";
 import { basePermissions, can, outranks, ROLE_PERMISSIONS, type Permission, type RequestContext, teamScopeForRoster } from "../common/permissions";
-import { athleteScopeFilter, athleteTeamScopeWhere, calendarScopeFilter, inTeamScope, teamScopeFilter } from "../common/permissions";
+import { assertPodeResponderPor, athleteScopeFilter, athleteTeamScopeWhere, calendarScopeFilter, inTeamScope, teamScopeFilter } from "../common/permissions";
 import {
   gerarCobrancas,
   inicioDaProximaEpoca,
@@ -1771,7 +1771,7 @@ export class AcademyService {
         orderBy: { startsAt: "asc" },
         select: {
           id: true, teamId: true, startsAt: true, endsAt: true, venue: true,
-          dressingRoom: true, dressingRooms: true, status: true, notes: true,
+          dressingRoom: true, dressingRooms: true, status: true, notes: true, respondBy: true,
           // Só a bandeira: o plano em si sai por `/api/training/sessions/:id/plano-partilhado`.
           planSharedAt: true,
           absenceNotices: {
@@ -1814,6 +1814,13 @@ export class AcademyService {
         coachId: s.coach?.id ?? porEquipa.get(s.teamId)?.id ?? null,
         coachName: s.coach?.user.name ?? porEquipa.get(s.teamId)?.name ?? null,
         recorded: s.attendanceClosedAt !== null,
+        /**
+         * Quem avisa que um atleta não vem: o encarregado ou o próprio.
+         *
+         * Vai para o cliente porque é ele que decide se mostra o botão — e o
+         * servidor recusa na mesma a quem não for (ver `assertPodeResponderPor`).
+         */
+        respondBy: s.respondBy,
         /** Se este treino é de uma equipa minha — decide o que se mostra dele, e o que se pode fazer. */
         mine: inTeamScope(ctx, s.teamId),
         /** O treinador partilhou o plano com os atletas — a app mostra a secção. */
@@ -1925,6 +1932,12 @@ export class AcademyService {
 
     return this.prisma.runAs(ctx.academyId, async (db) => {
       const treino = await this.treinoParaAviso(db, sessionId, athleteId);
+      /*
+       * Quem avisa é quem o treino diz: o encarregado, ou o próprio atleta nos
+       * escalões em que o clube o decidiu. Ver `assertPodeResponderPor` — sem
+       * esta linha, um atleta com conta avisava por si em vez do pai.
+       */
+      assertPodeResponderPor(ctx, treino.respondBy);
 
       const aviso = await db.absenceNotice.upsert({
         where: { sessionId_athleteId: { sessionId, athleteId } },
@@ -1950,7 +1963,8 @@ export class AcademyService {
     }
 
     return this.prisma.runAs(ctx.academyId, async (db) => {
-      await this.treinoParaAviso(db, sessionId, athleteId);
+      const treino = await this.treinoParaAviso(db, sessionId, athleteId);
+      assertPodeResponderPor(ctx, treino.respondBy);
       await db.absenceNotice.deleteMany({ where: { sessionId, athleteId } });
       return { sessionId, athleteId, removed: true };
     });
@@ -1967,7 +1981,7 @@ export class AcademyService {
   private async treinoParaAviso(db: ScopedClient, sessionId: string, athleteId: string) {
     const treino = await db.trainingSession.findFirst({
       where: { id: sessionId },
-      select: { id: true, teamId: true, status: true, startsAt: true, attendanceClosedAt: true },
+      select: { id: true, teamId: true, status: true, startsAt: true, attendanceClosedAt: true, respondBy: true },
     });
     if (!treino) throw new NotFoundException("Treino não encontrado");
     if (treino.status === "CANCELLED") throw new BadRequestException("Este treino está desmarcado");
@@ -2182,6 +2196,8 @@ export class AcademyService {
       isHome?: boolean;
       /** A prova, só nos jogos. Ver `Match.competitionId`. */
       competitionId?: string;
+      /** Quem avisa a falta, num treino. Ver `ResponderBy`. */
+      respondBy?: "GUARDIAN" | "ATHLETE";
       repeat?: { freq: "DAILY" | "WEEKLY" | "MONTHLY"; until: string; weekdays?: number[] };
     },
   ) {
@@ -2310,6 +2326,8 @@ export class AcademyService {
       opponent?: string;
       isHome?: boolean;
       competitionId?: string;
+      /** Quem avisa a falta, num treino. Ver `ResponderBy`. */
+      respondBy?: "GUARDIAN" | "ATHLETE";
     },
   ) {
     const scope = teamScopeFilter(ctx);
@@ -2499,10 +2517,12 @@ export class AcademyService {
             // Os dois enquanto durar a travessia — ver a migração `20260908120000`.
             dressingRoom: balnearios[0] ?? null,
             dressingRooms: balnearios,
+            // Quem avisa que não vai. Ver `ResponderBy`.
+            respondBy: dto.respondBy === "ATHLETE" ? "ATHLETE" : "GUARDIAN",
           },
           select: {
             id: true, teamId: true, startsAt: true, endsAt: true, venue: true,
-            dressingRoom: true, dressingRooms: true, status: true,
+            dressingRoom: true, dressingRooms: true, status: true, respondBy: true,
             coach: { select: { id: true, user: { select: { name: true } } } },
           },
         });

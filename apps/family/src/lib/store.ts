@@ -76,6 +76,8 @@ type ApiSession = {
   id: string;
   /** O treinador partilhou o plano com os atletas — a área de atleta mostra-o. */
   planShared?: boolean;
+  /** Quem avisa as faltas deste treino. Ver `ResponderBy`, na API. */
+  respondBy?: "GUARDIAN" | "ATHLETE";
   teamId: string;
   startsAt: string;
   endsAt: string;
@@ -113,6 +115,8 @@ type ApiMatch = {
   arrivalAt?: string | null;
   callUpNotes?: string | null;
   confirmationRequired?: boolean;
+  /** Quem responde por um atleta neste jogo. Ver `ResponderBy`, na API. */
+  respondBy?: "GUARDIAN" | "ATHLETE";
   calledUp: {
     athleteId: string;
     status: string;
@@ -311,6 +315,8 @@ export type Training = {
   notice?: { reason: string; at: Date };
   /** A folha já está fechada — a partir daqui o aviso não muda nada. */
   recorded: boolean;
+  /** Quem avisa que não vai a este treino. Ver `Match.respondBy`. */
+  respondBy: "GUARDIAN" | "ATHLETE";
 };
 
 /**
@@ -346,6 +352,14 @@ export type Match = {
   reply: { going: boolean; reason: string | null; at: Date } | null;
   /** O clube pediu confirmação activa neste jogo? */
   confirmationRequired: boolean;
+  /**
+   * Quem responde por este atleta: o encarregado, ou o próprio.
+   *
+   * Decide quem vê os botões. É um ou outro — e o servidor recusa quem não for,
+   * por isso esconder aqui não é a segurança, é a cortesia de não oferecer um
+   * botão que ia dar erro.
+   */
+  respondBy: "GUARDIAN" | "ATHLETE";
   /** A logística do dia. Só existe depois de a convocatória sair. */
   round?: string;
   meetingPoint?: string;
@@ -737,6 +751,7 @@ function build(
       sessionId: s.id,
       childId,
       planShared: s.planShared === true,
+      respondBy: s.respondBy === "ATHLETE" ? "ATHLETE" : "GUARDIAN",
       start: new Date(s.startsAt),
       end: new Date(s.endsAt),
       venue: s.venue,
@@ -799,6 +814,7 @@ function build(
               }
             : null,
         confirmationRequired: m.confirmationRequired === true,
+        respondBy: m.respondBy === "ATHLETE" ? "ATHLETE" : "GUARDIAN",
         round: m.roundLabel?.trim() || undefined,
         meetingPoint: m.meetingPoint?.trim() || undefined,
         meetingAt: m.meetingAt ? new Date(m.meetingAt) : undefined,

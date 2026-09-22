@@ -235,8 +235,14 @@ export type ApiMatch = {
   meetingAt: string | null;
   arrivalAt: string | null;
   callUpNotes: string | null;
-  /** O clube pediu confirmação activa às famílias neste jogo? */
+  /** O clube pediu confirmação activa a quem responde neste jogo? */
   confirmationRequired: boolean;
+  /**
+   * Quem responde por um atleta neste jogo: o encarregado ou o próprio.
+   *
+   * É um ou outro, e é o servidor que o impõe. A app mostra o botão a quem for.
+   */
+  respondBy: "GUARDIAN" | "ATHLETE";
 
   /** É de uma equipa minha? Decide o que vem preenchido e o que se pode abrir. */
   mine: boolean;
@@ -481,7 +487,7 @@ export async function reloadFees(): Promise<void> {
 /** As colunas do jogo que a convocatória escreve — ver `aplicarLogistica`. */
 export type MatchLogistics = Pick<
   ApiMatch,
-  "roundLabel" | "meetingPoint" | "meetingAt" | "arrivalAt" | "callUpNotes" | "confirmationRequired"
+  "roundLabel" | "meetingPoint" | "meetingAt" | "arrivalAt" | "callUpNotes" | "confirmationRequired" | "respondBy"
 >;
 
 /**

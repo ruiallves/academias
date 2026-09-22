@@ -107,6 +107,14 @@ export function NewEventDialog({
   const [venue, setVenue] = useState(venues[0]?.label ?? "");
   /** Os balneários escolhidos. Vários, porque um clube leva duas equipas ao mesmo jogo. */
   const [balnearios, setBalnearios] = useState<string[]>([]);
+  /*
+   * Quem avisa que um atleta não vai a este treino.
+   *
+   * O encarregado por omissão, que é quem decide num escalão de formação. Nos
+   * mais velhos passa-se ao atleta, e aí é só ele — a mesma regra da
+   * convocatória (ver `SubmitCallUpDialog`).
+   */
+  const [respondBy, setRespondBy] = useState<"GUARDIAN" | "ATHLETE">("GUARDIAN");
   const [opponent, setOpponent] = useState("");
   const [isHome, setIsHome] = useState(true);
   const [competitionId, setCompetitionId] = useState("");
@@ -263,6 +271,7 @@ export function NewEventDialog({
         dressingRooms: balneariosEfectivos,
         ...(balneariosEfectivos[0] ? { dressingRoom: balneariosEfectivos[0] } : {}),
         ...(tipoEfectivo ? { typeId: tipoEfectivo.id } : {}),
+        ...(kind === "training" ? { respondBy } : {}),
         ...(isMatch ? { opponent: opponent.trim(), isHome } : {}),
         ...(isMatch && competitionId ? { competitionId } : {}),
         ...(repetir && until
@@ -486,6 +495,36 @@ export function NewEventDialog({
         <DialogField label="Título" hint="opcional">
           <input value={title} onChange={(e) => setTitle(e.target.value)} placeholder={suggested} className={dialogInputClass} />
         </DialogField>
+
+        {/*
+          Quem avisa que não vai, num treino.
+          A mesma pergunta da convocatória, e a mesma regra: um ou outro.
+        */}
+        {kind === "training" && (
+          <DialogField label="Quem avisa as faltas" hint="a app pede a quem escolheres">
+            <div className="flex gap-1.5">
+              {(
+                [
+                  ["GUARDIAN", "As famílias"],
+                  ["ATHLETE", "Os atletas"],
+                ] as const
+              ).map(([valor, rotulo]) => (
+                <button
+                  key={valor}
+                  type="button"
+                  onClick={() => setRespondBy(valor)}
+                  aria-pressed={respondBy === valor}
+                  className={cx(
+                    "h-9 flex-1 rounded-[var(--radius-control)] border text-meta font-medium",
+                    respondBy === valor ? "border-ink bg-ink text-surface" : "border-line text-ink-2",
+                  )}
+                >
+                  {rotulo}
+                </button>
+              ))}
+            </div>
+          </DialogField>
+        )}
 
         <div className="grid grid-cols-[minmax(0,1.4fr)_minmax(0,1fr)_minmax(0,1fr)] gap-3">
           <DialogField label="Data">

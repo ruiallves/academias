@@ -8,6 +8,7 @@ import { usePresence } from "@/lib/presence";
 import { refreshPush } from "@/lib/push";
 import { useFresco } from "@/lib/fresco";
 import { chooseContext, loadContexts, useContexts } from "@/lib/contexts";
+import { carregarNotificacoes, useNotificacoes } from "@/lib/notificacoes";
 import { consoleUrl, irParaConsola } from "@/lib/handoff";
 import { readAthleteInvite, readMemberInvite } from "@/lib/invite";
 import Entrar from "@/screens/Entrar";
@@ -165,6 +166,14 @@ export default function App() {
   );
 }
 
+/**
+ * O chapéu com que a store da família foi carregada da última vez.
+ *
+ * Serve para saber se uma mudança de `areaActiva` é uma **troca** (atleta →
+ * família) ou o primeiro arranque. Só o `Dentro` lhe toca, e há um só.
+ */
+let ultimaAreaCarregada: "FAMILY" | "ATHLETE" | null = null;
+
 /** A app depois das portas — sessão, contextos e termos. */
 function Dentro({
   areaActiva,
@@ -200,7 +209,23 @@ function Dentro({
      */
     // Um pedido à espera do clube não tem o que carregar: o servidor recusava.
     if (areaActiva === "FAMILY" && familiaPendente) return;
-    if ((areaActiva === "FAMILY" || areaActiva === "ATHLETE") && readToken()) void load();
+    if (!(areaActiva === "FAMILY" || areaActiva === "ATHLETE") || !readToken()) return;
+
+    /*
+     * Trocar de chapéu é trocar de dados.
+     *
+     * `load()` é idempotente de propósito — guarda a promessa do arranque e
+     * devolve-a a quem voltar a chamar, para dois ecrãs não pedirem tudo duas
+     * vezes. Mas isso é o que fazia a troca de atleta para família não trocar
+     * nada: a área mudava no menu, `load()` devolvia o arranque **de atleta** já
+     * feito, o `x-app` novo nunca chegava ao servidor, e a vista ficava com os
+     * dados de atleta. O que estava carregado era de outro chapéu e não deve
+     * sobreviver: `resetAndLoad()` esquece-o e pede de raiz com o chapéu certo.
+     * Só na troca — no primeiro arranque é o `load()` de sempre.
+     */
+    const trocou = ultimaAreaCarregada !== null && ultimaAreaCarregada !== areaActiva;
+    ultimaAreaCarregada = areaActiva;
+    void (trocou ? resetAndLoad() : load());
   }, [areaActiva, familiaPendente]);
 
   /*
@@ -525,7 +550,16 @@ function NoChildren({ atleta = false }: { atleta?: boolean }) {
 function Header() {
   const store = useStore();
   const navigate = useNavigate();
-  const unread = store.notifications.filter((n) => !n.readAt).length;
+  /*
+   * O sino é um só, para todas as áreas — ver `lib/notificacoes`. Contava
+   * `store.notifications`, que é da família; o header de sócio não tinha sino,
+   * e a mesma pessoa via contagens diferentes conforme a roupa que vestia.
+   */
+  const { unread } = useNotificacoes();
+  useEffect(() => {
+    void carregarNotificacoes();
+  }, []);
+  useFresco(carregarNotificacoes);
 
   /*
    * `backdrop-blur-md` e não `-xl`: o header está fixo por cima de tudo o que

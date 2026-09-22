@@ -2,6 +2,7 @@ import { BadRequestException, ForbiddenException, Injectable, NotFoundException 
 import { PrismaService, type ScopedClient } from "../prisma/prisma.service";
 import { NotificationsService } from "../notifications/notifications.service";
 import {
+  assertPodeResponderPor,
   athleteScopeFilter,
   calendarScopeFilter,
   can,
@@ -63,7 +64,7 @@ export class MatchesService {
           // A logística do dia — o que a app da família mostra ao pai e o que o
           // PDF imprime. Ver a migração `20260912120000`.
           roundLabel: true, meetingPoint: true, meetingAt: true, arrivalAt: true,
-          callUpNotes: true, confirmationRequired: true,
+          callUpNotes: true, confirmationRequired: true, respondBy: true,
           // A prova, para a convocatória a poder imprimir sem ninguém a escrever.
           competition: { select: { id: true, label: true } },
           team: { select: { name: true, maxCallUps: true } },
@@ -174,6 +175,7 @@ export class MatchesService {
           arrivalAt: m.arrivalAt,
           callUpNotes: m.callUpNotes,
           confirmationRequired: m.confirmationRequired,
+        respondBy: m.respondBy,
           /** É de uma equipa minha? Decide o que vem preenchido, e o que a consola deixa abrir. */
           mine: meu,
           /** A função com que **eu** estou escalado neste jogo. `null` se não estou. */
@@ -257,7 +259,7 @@ export class MatchesService {
           callUpsClosedAt: true, statsEnteredAt: true,
           // A logística dita ao submeter — a folha em PDF lê-a daqui.
           roundLabel: true, meetingPoint: true, meetingAt: true, arrivalAt: true,
-          callUpNotes: true, confirmationRequired: true,
+          callUpNotes: true, confirmationRequired: true, respondBy: true,
           competition: { select: { id: true, label: true } },
           sourceProvider: true, sourceUrl: true, importedAt: true,
           team: {
@@ -379,6 +381,7 @@ export class MatchesService {
         arrivalAt: m.arrivalAt,
         callUpNotes: m.callUpNotes,
         confirmationRequired: m.confirmationRequired,
+        respondBy: m.respondBy,
         statsEnteredAt: m.statsEnteredAt,
         /*
          * De onde veio o jogo. Vazio quando foi marcado à mão.
@@ -1354,7 +1357,7 @@ export class MatchesService {
   async submitCallUps(ctx: RequestContext, matchId: string, logistica: CallUpLogistics = {}) {
     this.assertCanManageCallUps(ctx);
 
-    const { match, avisados, convocados, pedeConfirmacao, gravada } = await this.prisma.runAs(ctx.academyId, async (db) => {
+    const { match, avisados, convocados, pedeConfirmacao, respondeQuem, gravada } = await this.prisma.runAs(ctx.academyId, async (db) => {
       const match = await this.loadMatch(db, ctx, matchId);
       const callUps = await db.matchCallUp.findMany({
         where: { matchId },
@@ -1393,19 +1396,31 @@ export class MatchesService {
 
       // Um pai com dois filhos convocados recebe dois avisos — um por atleta, e é
       // o que ele quer: são duas convocatórias diferentes, com dois nomes.
-      const destinatarios: { userId: string; athleteName: string }[] = [];
+      /*
+       * Quem recebe, e em que qualidade.
+       *
+       * Os dois são avisados — estar convocado interessa ao pai e ao atleta —,
+       * mas só a um deles se **pede** a confirmação: aquele que o jogo diz que
+       * responde. Pedir aos dois era receber duas respostas pela mesma pessoa.
+       */
+      const destinatarios: { userId: string; athleteName: string; papel: "GUARDIAN" | "ATHLETE" }[] = [];
       for (const c of callUps) {
         for (const g of c.athlete.guardians) {
-          if (g.membership.isActive) destinatarios.push({ userId: g.membership.userId, athleteName: c.athlete.name });
+          if (g.membership.isActive) {
+            destinatarios.push({ userId: g.membership.userId, athleteName: c.athlete.name, papel: "GUARDIAN" });
+          }
         }
         // E o próprio, quando tem conta na app.
-        if (c.athlete.account?.isActive) destinatarios.push({ userId: c.athlete.account.userId, athleteName: c.athlete.name });
+        if (c.athlete.account?.isActive) {
+          destinatarios.push({ userId: c.athlete.account.userId, athleteName: c.athlete.name, papel: "ATHLETE" });
+        }
       }
       return {
         match,
         avisados: destinatarios,
         convocados: callUps.length,
         pedeConfirmacao: logistica.confirmationRequired === true,
+        respondeQuem: gravada.respondBy,
         gravada,
       };
     });
@@ -1436,17 +1451,24 @@ export class MatchesService {
      * Por isso o título pede, em vez de informar, e o corpo diz o que fazer.
      */
     for (const alvo of avisados) {
+      /* Só se pede a quem responde; ao outro, informa-se. */
+      const pedeAEste = pedeConfirmacao && alvo.papel === respondeQuem;
+      const primeiro = alvo.athleteName.split(/\s+/)[0];
       await this.notifications.enqueue({
         academyId: ctx.academyId,
         userId: alvo.userId,
         type: "MATCH_CALLED_UP",
-        title: pedeConfirmacao
-          ? `Confirma a presença do ${alvo.athleteName.split(/\s+/)[0]}`
-          : `${alvo.athleteName} está convocado`,
+        title: pedeAEste
+          ? alvo.papel === "ATHLETE"
+            ? "Confirma a tua presença"
+            : `Confirma a presença do ${primeiro}`
+          : alvo.papel === "ATHLETE"
+            ? "Estás convocado"
+            : `${alvo.athleteName} está convocado`,
         // Concreto de propósito: uma notificação que obriga a abrir a app para
         // saber do que se trata gasta a paciência de quem a recebe.
-        body: pedeConfirmacao
-          ? `${alvo.athleteName} está convocado · ${match.isHome ? "Em casa" : "Fora"} com ${match.opponent} · ${quando} · ${match.venue}. Abre para dizer se vai.`
+        body: pedeAEste
+          ? `${match.isHome ? "Em casa" : "Fora"} com ${match.opponent} · ${quando} · ${match.venue}. Abre para ${alvo.papel === "ATHLETE" ? "dizeres" : "dizer"} se vai.`
           : `${match.isHome ? "Em casa" : "Fora"} com ${match.opponent} · ${quando} · ${match.venue}`,
         /*
          * `route` e não `url`: é a chave que a app e o push leem
@@ -1520,9 +1542,17 @@ export class MatchesService {
     return this.prisma.runAs(ctx.academyId, async (db) => {
       const match = await db.match.findFirst({
         where: { id: matchId },
-        select: { id: true, startsAt: true, status: true, callUpsClosedAt: true },
+        select: { id: true, startsAt: true, status: true, callUpsClosedAt: true, respondBy: true },
       });
       if (!match) throw new NotFoundException("Jogo não encontrado");
+      /*
+       * Quem responde é quem o jogo diz.
+       *
+       * O âmbito acima só prova que o atleta é deste utilizador, e um atleta com
+       * conta tem-se a si próprio. Sem esta linha, o miúdo confirmava a sua
+       * convocatória em vez do pai.
+       */
+      assertPodeResponderPor(ctx, match.respondBy);
       if (!match.callUpsClosedAt) {
         // Uma convocatória por submeter não é pública — responder a ela seria
         // responder a uma lista que ainda pode mudar.
@@ -1593,7 +1623,7 @@ export class MatchesService {
         where: { id: matchId },
         select: {
           callUpsClosedAt: true, roundLabel: true, meetingPoint: true,
-          meetingAt: true, arrivalAt: true, callUpNotes: true, confirmationRequired: true,
+          meetingAt: true, arrivalAt: true, callUpNotes: true, confirmationRequired: true, respondBy: true,
         },
       });
       if (!actual) throw new NotFoundException("Jogo não encontrado");
@@ -1623,13 +1653,24 @@ export class MatchesService {
           },
         },
       });
-      const destinatarios: { userId: string; athleteName: string }[] = [];
+      /*
+       * Quem recebe, e em que qualidade.
+       *
+       * Os dois são avisados — estar convocado interessa ao pai e ao atleta —,
+       * mas só a um deles se **pede** a confirmação: aquele que o jogo diz que
+       * responde. Pedir aos dois era receber duas respostas pela mesma pessoa.
+       */
+      const destinatarios: { userId: string; athleteName: string; papel: "GUARDIAN" | "ATHLETE" }[] = [];
       for (const c of callUps) {
         for (const g of c.athlete.guardians) {
-          if (g.membership.isActive) destinatarios.push({ userId: g.membership.userId, athleteName: c.athlete.name });
+          if (g.membership.isActive) {
+            destinatarios.push({ userId: g.membership.userId, athleteName: c.athlete.name, papel: "GUARDIAN" });
+          }
         }
         // E o próprio, quando tem conta na app.
-        if (c.athlete.account?.isActive) destinatarios.push({ userId: c.athlete.account.userId, athleteName: c.athlete.name });
+        if (c.athlete.account?.isActive) {
+          destinatarios.push({ userId: c.athlete.account.userId, athleteName: c.athlete.name, papel: "ATHLETE" });
+        }
       }
 
       return { match, antes: actual, depois: novo, avisados: destinatarios };
@@ -1714,7 +1755,7 @@ export class MatchesService {
     return this.prisma.runAs(ctx.academyId, async (db) => {
       const match = await db.match.findFirst({
         where: { id: matchId, ...(scope ? { teamId: scope } : {}) },
-        select: { id: true, callUpsClosedAt: true, confirmationRequired: true },
+        select: { id: true, callUpsClosedAt: true, confirmationRequired: true, respondBy: true },
       });
       if (!match) throw new NotFoundException("Jogo não encontrado ou fora do teu âmbito");
 
@@ -1727,6 +1768,7 @@ export class MatchesService {
         matchId,
         submitted: match.callUpsClosedAt !== null,
         confirmationRequired: match.confirmationRequired,
+        respondBy: match.respondBy,
         rows,
       };
     });
@@ -2068,6 +2110,8 @@ export type CallUpLogistics = {
   arrivalTime?: string | null;
   notes?: string | null;
   confirmationRequired?: boolean;
+  /** Quem responde por um atleta nesta convocatória. Ver `ResponderBy`. */
+  respondBy?: "GUARDIAN" | "ATHLETE";
 };
 
 /** Texto que só conta se tiver alguma coisa escrita. Vazio é nulo, não `""`. */
@@ -2130,6 +2174,9 @@ function limparLogistica(l: CallUpLogistics, kickOff: Date) {
     arrivalAt: hora(l.arrivalTime),
     callUpNotes: texto(l.notes),
     confirmationRequired: l.confirmationRequired === true,
+    // Um ou outro, e o valor por omissão é o encarregado: num escalão de
+    // formação quem decide se o miúdo vai é quem responde por ele.
+    respondBy: l.respondBy === "ATHLETE" ? ("ATHLETE" as const) : ("GUARDIAN" as const),
   };
 }
 

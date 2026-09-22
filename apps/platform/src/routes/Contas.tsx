@@ -6,6 +6,7 @@ import { DefinicoesDialog, GastoFixoDialog, MovimentoDialog, emCentimos } from "
 import { apiDelete, apiPost } from "@/lib/http";
 import { euros, eurosExact, shortDate } from "@/lib/format";
 import { useApi } from "@/lib/query";
+import { ChartHero, SaldoChart } from "@/components/chart/Chart";
 import type { ContasResumo, GastoFixo, MensalidadeDoClube, Previsao, Transacao } from "@/lib/types";
 
 /**
@@ -270,79 +271,60 @@ const mesLabel = (chave: string) => {
 };
 
 /**
- * A previsão, desenhada.
+ * A previsão, desenhada: para onde vai o dinheiro.
  *
- * Barras para a receita e uma linha para os gastos fixos: a pergunta é "em que
- * mês é que a barra passa a linha", e é isso que se vê sem ler um número. A
- * tabela por baixo tem os números para quem os quer.
+ * ## Porque é uma linha e não barras
+ *
+ * A pergunta desta página não é "quanto entra em Março" — isso está na tabela.
+ * É **quando é que isto passa a dar**. Uma linha do saldo acumulado responde de
+ * uma vez: verde acima de zero, vermelho abaixo, e o mês em que atravessa vê-se
+ * sem ler número nenhum. As barras de receita ao lado de uma linha de gastos
+ * obrigavam a fazer a subtracção de cabeça, mês a mês.
+ *
+ * O acumulado é a soma dos saldos mensais desde hoje — o buraco que se abre até
+ * a receita chegar, e quanto falta para o tapar.
  */
 function Grafico({ previsao, simulando }: { previsao: Previsao; simulando: boolean }) {
-  const max = Math.max(
-    ...previsao.meses.map((m) => m.receitaCents + m.receitaSimuladaCents),
-    ...previsao.meses.map((m) => m.gastosCents),
-    1,
-  );
-  const semGastos = previsao.meses.every((m) => m.gastosCents === 0);
+  const meses = previsao.meses;
+  const fim = meses[meses.length - 1];
+  const viraEm = meses.find((m) => m.acumuladoCents >= 0 && m.saldoCents > 0);
 
   return (
     <>
-      {/*
-        Cada mês é uma caixa com altura fixa, e o que lá vive está **posicionado**
-        e não empilhado. Em `flex` com alturas em percentagem, as barras
-        encolhiam para uns fios de um pixel e a marca dos gastos, pendurada num
-        elemento de altura zero, não tinha de que se pendurar.
-      */}
-      <div className="flex items-end gap-1.5 px-5 pt-4" style={{ height: 190 }}>
-        {previsao.meses.map((m) => {
-          const pct = (v: number) => Math.max((v / max) * 100, v > 0 ? 1.5 : 0);
-          const receita = pct(m.receitaCents);
-          const simulada = pct(m.receitaSimuladaCents);
-          return (
-            <div
-              key={m.mes}
-              className="relative h-full min-w-0 flex-1"
-              title={`${mesLabel(m.mes)} · receita ${euros(m.receitaCents + m.receitaSimuladaCents)} · gastos ${euros(m.gastosCents)}`}
-            >
-              <span
-                className="absolute inset-x-0 bottom-0 block rounded-t-[3px]"
-                style={{ height: `${receita}%`, background: "var(--color-signal)" }}
-              />
-              {simulada > 0 && (
-                <span
-                  className="absolute inset-x-0 block rounded-t-[3px] border border-b-0 border-dashed border-signal bg-signal/25"
-                  style={{ bottom: `${receita}%`, height: `${simulada}%` }}
-                />
-              )}
-              {/* Os gastos: a linha que a barra tem de passar. */}
-              <span
-                className="absolute inset-x-0 block h-[2px] bg-ink"
-                style={{ bottom: `calc(${pct(m.gastosCents)}% - 1px)` }}
-              />
-            </div>
-          );
-        })}
-      </div>
+      <ChartHero
+        valor={euros(fim?.acumuladoCents ?? 0)}
+        unidade={`acumulado até ${mesLabel(fim?.mes ?? "")}`}
+        delta={{
+          texto: viraEm
+            ? `o acumulado passa a positivo em ${mesLabel(viraEm.mes)}`
+            : "o acumulado ainda é negativo no fim do período",
+          bom: viraEm ? true : false,
+        }}
+      />
 
-      <div className="flex px-5 pt-2">
-        {previsao.meses.map((m) => (
-          <span key={m.mes} className="flex-1 truncate text-center text-[10px] text-ink-4">
-            {mesLabel(m.mes)}
-          </span>
-        ))}
-      </div>
+      <SaldoChart
+        height={220}
+        formato={euros}
+        formatoEixo={euros}
+        dados={meses.map((m) => ({
+          key: m.mes,
+          label: mesLabel(m.mes),
+          value: m.acumuladoCents,
+          detalhe: `${euros(m.acumuladoCents)} acumulado · ${m.saldoCents >= 0 ? "+" : ""}${euros(m.saldoCents)} no mês`,
+        }))}
+      />
 
       <p className="px-5 pt-3 pb-1 text-meta leading-relaxed text-ink-3">
-        {semGastos ? (
-          <>Ainda não há gastos registados: a previsão mostra só a receita dos clubes contratados.</>
-        ) : previsao.cobreEm ? (
+        A linha é o saldo somado desde hoje: o que entra dos contratos menos os gastos fixos.
+        {previsao.cobreEm ? (
           <>
-            Com os clubes de hoje, a receita passa a cobrir os gastos em{" "}
-            <b className="text-ink">{mesLabel(previsao.cobreEm)}</b>.
+            {" "}
+            A receita passa a cobrir os gastos em <b className="text-ink">{mesLabel(previsao.cobreEm)}</b>.
           </>
         ) : (
-          <>Com os clubes de hoje, a receita ainda não cobre os gastos dentro de um ano.</>
+          " Com os clubes de hoje, a receita ainda não cobre os gastos dentro de um ano."
         )}
-        {simulando && " A barra tracejada é a simulação, sem contrato por trás."}
+        {simulando && " A simulação já está somada à linha — são clubes sem contrato por trás."}
       </p>
 
       <div className="overflow-x-auto px-5 pb-4">

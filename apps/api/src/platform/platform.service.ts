@@ -32,6 +32,15 @@ import type { PlatformAdminContext } from "./platform.guard";
 /** Os oito passos de `docs/04-plataforma.md`. */
 export const ONBOARDING_STEPS = 8;
 
+/**
+ * O que `app.platform_overview()` devolve.
+ *
+ * `setup` mantém o nome da coluna e **mudou de significado**: hoje é "por
+ * decidir" (não paga e o trial já acabou). O nome ficou para a função poder ser
+ * substituída com `CREATE OR REPLACE` sem perder as permissões; a razão está na
+ * migração `20260922100000`. Sai daqui para o painel como `undecided`, que é o
+ * que ele mostra.
+ */
 type OverviewRow = {
   academies: number; setup: number; trial: number; active: number; past_due: number; cancelled: number;
   athletes: number; guardians: number; staff: number;
@@ -103,7 +112,9 @@ export class PlatformService {
     return {
       academies: {
         total: totals.academies,
-        setup: totals.setup,
+        /* Ver `OverviewRow`: a coluna chama-se `setup` e conta os que já não
+           estão a experimentar nem a pagar. */
+        undecided: totals.setup,
         trial: totals.trial,
         active: totals.active,
         pastDue: totals.past_due,
@@ -514,9 +525,31 @@ export class PlatformService {
       if (a.status === "CANCELLED") continue;
       const base = { academyId: a.id, academyName: a.name };
 
-      if (a.trialEndsAt && a.status === "TRIAL") {
+      /*
+       * O trial a acabar — o aviso que **nunca apareceu**.
+       *
+       * A condição era `a.status === "TRIAL"`, e nenhuma academia chega a esse
+       * estado: nasce em `SETUP` e só a desactivação lhe mexe (ver a migração
+       * `20260922100000`). O aviso mais valioso do painel esteve desligado desde
+       * sempre, sem uma linha de erro.
+       *
+       * Agora pergunta-se o que interessa mesmo: o trial ainda corre e este
+       * clube não está a pagar. Serve também quem não tem subscrição nenhuma,
+       * que é a maioria — "sem plano" é a opção por omissão ao criar.
+       */
+      const aPagar = a.subscriptionStatus === "ACTIVE" || a.subscriptionStatus === "PAST_DUE";
+      if (a.trialEndsAt && !aPagar) {
         const days = Math.ceil((new Date(a.trialEndsAt).getTime() - now) / DAY);
-        if (days <= 3) {
+        /*
+         * Uma janela, e não "tudo o que já passou".
+         *
+         * Sem o limite de baixo, cada clube de demonstração que ficou pelo
+         * caminho repetia "Trial expirado" todos os dias para sempre — que foi
+         * exactamente o que obrigou a retirar o aviso de onboarding parado, dez
+         * linhas abaixo. Duas semanas depois de expirar deixa de ser notícia e
+         * passa a ser estado: está no cartão do topo, em "por decidir".
+         */
+        if (days <= 3 && days >= -14) {
           alerts.push({
             ...base, id: `${a.id}:trial`, severity: "risk",
             title: days < 0 ? "Trial expirado" : `Trial acaba em ${days} ${days === 1 ? "dia" : "dias"}`,

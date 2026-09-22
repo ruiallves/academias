@@ -26,6 +26,7 @@
     "seed:legal": "node prisma/seed-legal.mjs",
     "test:legal": "node scripts/test-legal.mjs",
     "test:aviso": "node scripts/test-aviso-de-falta.mjs",
+    "test:quem-responde": "node scripts/test-quem-responde.mjs",
     "test:atleta": "node scripts/test-atleta.mjs",
     "test:jogos-socio": "node scripts/test-jogos-socio.mjs",
     "test:guest-callups": "node scripts/test-guest-callups.mjs",

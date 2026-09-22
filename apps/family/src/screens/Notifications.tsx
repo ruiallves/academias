@@ -3,8 +3,9 @@ import { Link, useLocation, useNavigate } from "react-router-dom";
 import { destinoDaNotificacao } from "@/lib/rotas";
 import { chooseContext } from "@/lib/contexts";
 import { Bell, CalendarClock, FileText, Gauge, Megaphone, Trophy, Wallet, type LucideIcon, Dumbbell, Apple , Stethoscope } from "lucide-react";
-import { apiPatch } from "@/lib/http";
-import { reload, useStore, type ApiNotification } from "@/lib/store";
+import { activeArea } from "@/lib/area";
+import { carregarNotificacoes, marcarLidas, useNotificacoes } from "@/lib/notificacoes";
+import type { ApiNotification } from "@/lib/store";
 import { cx, whenLabel } from "@/ui";
 import { currentSubscription, pushState, pushSupported } from "@/lib/push";
 
@@ -45,8 +46,11 @@ const STYLE: Record<string, { icon: LucideIcon; cls: string; urgent?: boolean }>
 const FALLBACK = { icon: Bell, cls: "bg-sunken text-ink-2" };
 
 export default function Notifications() {
-  const store = useStore();
-  const notifications = store.notifications;
+  /* A lista partilhada por todas as áreas — ver `lib/notificacoes`. */
+  const { items: notifications } = useNotificacoes();
+  useEffect(() => {
+    void carregarNotificacoes();
+  }, []);
 
   /*
    * O convite para ligar o push só faz sentido a quem não o tem ligado.
@@ -90,13 +94,8 @@ export default function Notifications() {
     const unread = notifications.filter((n) => !n.readAt).map((n) => n.id);
     if (unread.length === 0) return;
 
-    const t = setTimeout(() => {
-      void apiPatch("/api/notifications/read", { ids: unread })
-        .then(() => reload())
-        .catch(() => {
-          /* sem drama: fica por ler e tenta-se na próxima visita */
-        });
-    }, 1200);
+    // Optimista e partilhado: o sino apaga-se em todas as áreas ao mesmo tempo.
+    const t = setTimeout(() => void marcarLidas(unread), 1200);
     return () => clearTimeout(t);
   }, [notifications]);
 
@@ -121,7 +120,10 @@ export default function Notifications() {
             para carregar.
           */}
           {pushLigado === false && pushSupported() && (
-            <Link to="/perfil" className="mt-3 inline-block text-meta font-semibold text-signal-ink underline underline-offset-2">
+            <Link
+              to={activeArea() === "MEMBER" ? "/socio/perfil" : "/perfil"}
+              className="mt-3 inline-block text-meta font-semibold text-signal-ink underline underline-offset-2"
+            >
               Ligar notificações no telemóvel
             </Link>
           )}
@@ -196,20 +198,21 @@ function NotifRow({ n, i }: { n: ApiNotification; i: number }) {
   }
 
   /*
-   * Uma quota de sócio vive na outra vista da app.
+   * Um destino noutra área da app veste-a primeiro.
    *
-   * O `<Link>` sozinho não chegava: as rotas de sócio só existem enquanto a
-   * área de sócio estiver vestida, e de dentro da família caíam no `*` do
-   * router — de volta à inicial, que é exactamente o "não leva a lado nenhum"
-   * que isto veio resolver. Veste-se a área primeiro, e só depois se navega.
+   * O `<Link>` sozinho não chegava: as rotas de cada área só existem enquanto
+   * ela estiver vestida, e um destino de sócio aberto de dentro da família (ou
+   * o contrário, agora que este ecrã também vive na área de sócio) caía no `*`
+   * do router — de volta à inicial, que é exactamente o "não leva a lado nenhum"
+   * que isto veio resolver. Veste-se a área do destino, e só depois se navega.
    */
-  if (destino.area === "MEMBER") {
+  if (destino.area !== activeArea()) {
     return (
       <li className="rise" style={{ ["--i" as string]: i }}>
         <button
           type="button"
           onClick={() => {
-            chooseContext("MEMBER");
+            chooseContext(destino.area);
             navigate(destino.rota);
           }}
           className={cx(className, "active:scale-[0.99]")}

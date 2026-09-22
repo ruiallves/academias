@@ -1,6 +1,6 @@
-import { Body, Controller, Delete, Get, Headers, Param, Post, Req, Res } from "@nestjs/common";
+import { Body, Controller, Delete, Get, Headers, Param, Patch, Post, Req, Res } from "@nestjs/common";
 import { Throttle } from "@nestjs/throttler";
-import { IsBoolean, IsIn, IsOptional, IsString, Length } from "class-validator";
+import { ArrayMaxSize, IsArray, IsBoolean, IsIn, IsOptional, IsString, Length } from "class-validator";
 import type { Request, Response } from "express";
 import { Public } from "../auth/auth.guard";
 import { ClubAppService } from "./club-app.service";
@@ -30,6 +30,14 @@ class RegistarSocioDto {
   acceptLegal?: boolean;
 }
 
+/** As notificações a marcar como lidas — o mesmo corpo de `/api/notifications/read`. */
+class MarcarLidasDto {
+  @IsArray()
+  @ArrayMaxSize(200)
+  @IsString({ each: true })
+  ids!: string[];
+}
+
 /**
  * A app do clube — os endpoints que não passam pelo guard.
  *
@@ -51,6 +59,30 @@ export class ClubAppController {
   @Get("api/app/contexts")
   contexts(@Headers("authorization") auth: string, @Headers("x-academy-slug") slug: string) {
     return this.app.contexts(auth, slug ?? "");
+  }
+
+  /*
+   * As notificações da pessoa, por esta porta.
+   *
+   * São as mesmas de `/api/notifications` — a lista é por `userId`, não por
+   * papel. Mas aquela passa pelo guard, que exige uma `Membership`, e um sócio
+   * sem vínculo de família não tem nenhuma: ficava sem sino. Aqui autentica-se
+   * pelo JWT como o resto da área de sócio. A app pede por aqui só quando não
+   * tem outro chapéu — ver `lib/notificacoes` na app da família.
+   */
+  @Throttle({ default: { ttl: 60_000, limit: 60 } })
+  @Get("api/socio/notificacoes")
+  notificacoes(@Headers("authorization") auth: string, @Headers("x-academy-slug") slug: string) {
+    return this.app.notificacoes(auth, slug ?? "");
+  }
+
+  @Patch("api/socio/notificacoes/read")
+  marcarNotificacoesLidas(
+    @Headers("authorization") auth: string,
+    @Headers("x-academy-slug") slug: string,
+    @Body() body: MarcarLidasDto,
+  ) {
+    return this.app.marcarNotificacoesLidas(auth, slug ?? "", body.ids);
   }
 
   /** A Member View inteira, numa ida. */

@@ -76,6 +76,7 @@ export function SubmitCallUpDialog({
     arrivalAt?: string | null;
     callUpNotes?: string | null;
     confirmationRequired?: boolean;
+    respondBy?: "GUARDIAN" | "ATHLETE";
   };
   convocados: number;
   /**
@@ -108,6 +109,16 @@ export function SubmitCallUpDialog({
   );
   const [notes, setNotes] = useState(match.callUpNotes ?? "");
   const [confirmationRequired, setConfirmationRequired] = useState(match.confirmationRequired === true);
+  /*
+   * Quem responde por um atleta neste jogo.
+   *
+   * Por omissão o encarregado, que é quem decide num escalão de formação. Nos
+   * mais velhos passa-se ao atleta, e aí é **só** ele: duas bocas a responder
+   * pela mesma pessoa davam duas respostas e nenhuma explicação.
+   */
+  const [respondBy, setRespondBy] = useState<"GUARDIAN" | "ATHLETE">(
+    match.respondBy === "ATHLETE" ? "ATHLETE" : "GUARDIAN",
+  );
   const [busy, setBusy] = useState(false);
   const [erro, setErro] = useState<string | null>(null);
 
@@ -124,6 +135,7 @@ export function SubmitCallUpDialog({
       arrivalTime: arrivalTime || undefined,
       notes: notes.trim() || undefined,
       confirmationRequired,
+      respondBy,
     };
 
     try {
@@ -245,7 +257,38 @@ export function SubmitCallUpDialog({
           ler — e aí a confirmação deixa de valer nada justamente no jogo em que
           era precisa. Fica desligada, e liga-se no autocarro alugado.
         */}
-        <Bloco titulo="A resposta das famílias">
+        <Bloco titulo="A resposta">
+          {/*
+            Quem responde vem antes de se pedir confirmação: é a pergunta de que
+            a outra depende. Num escalão de formação responde o encarregado; nos
+            mais velhos, o atleta. Nunca os dois — ver `respondBy`.
+          */}
+          <div className="mb-2 flex gap-1.5">
+            {(
+              [
+                ["GUARDIAN", "Respondem as famílias"],
+                ["ATHLETE", "Respondem os atletas"],
+              ] as const
+            ).map(([valor, rotulo]) => (
+              <button
+                key={valor}
+                type="button"
+                onClick={() => setRespondBy(valor)}
+                aria-pressed={respondBy === valor}
+                className={cx(
+                  "h-9 flex-1 rounded-[var(--radius-control)] border text-meta font-medium",
+                  respondBy === valor ? "border-ink bg-ink text-surface" : "border-line text-ink-2",
+                )}
+              >
+                {rotulo}
+              </button>
+            ))}
+          </div>
+          <p className="mb-2 text-meta leading-relaxed text-ink-3">
+            {respondBy === "ATHLETE"
+              ? "Os atletas respondem na app deles. Quem é encarregado vê a convocatória e não responde."
+              : "Os encarregados respondem na app. Os atletas veem a convocatória e não respondem."}
+          </p>
           <button
             type="button"
             role="switch"
@@ -257,8 +300,12 @@ export function SubmitCallUpDialog({
               <span className="block text-body font-medium text-ink">Pedir confirmação</span>
               <span className="block text-meta leading-relaxed text-ink-3">
                 {confirmationRequired
-                  ? "A app pede à família que confirme. Vês quem confirmou e quem ainda não abriu."
-                  : "Assume-se que quem está convocado vai. A família só responde se não puder ir."}
+                  ? respondBy === "ATHLETE"
+                    ? "A app pede ao atleta que confirme. Vês quem confirmou e quem ainda não abriu."
+                    : "A app pede à família que confirme. Vês quem confirmou e quem ainda não abriu."
+                  : respondBy === "ATHLETE"
+                    ? "Assume-se que quem está convocado vai. O atleta só responde se não puder ir."
+                    : "Assume-se que quem está convocado vai. A família só responde se não puder ir."}
               </span>
             </span>
             <span

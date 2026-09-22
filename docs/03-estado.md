@@ -2544,6 +2544,43 @@ MAIL_API_KEY= PORT=3012 npm run start:dev --workspace=@academia/api
 API=http://127.0.0.1:3012 node scripts/test-avisos-de-subscricao.mjs
 ```
 
+## Quem responde por um atleta: a família ou o próprio
+
+Um atleta com conta na app podia **confirmar a sua própria convocatória** e
+avisar que não ia ao treino. A autorização fazia uma pergunta só — "este atleta é
+meu?" — e um atleta tem-se a si no âmbito. Num escalão de formação quem decide se
+o miúdo vai ao jogo é o encarregado de educação, e o produto estava a deixar o
+miúdo decidir.
+
+**Cada convocatória e cada treino dizem agora quem responde**: `GUARDIAN` (por
+omissão) ou `ATHLETE`, para os escalões mais velhos. É **um ou outro**, nunca os
+dois: com duas bocas a responder pela mesma pessoa, a última resposta ganha e o
+treinador deixa de saber de quem foi.
+
+- No diálogo de submeter a convocatória, o bloco passou a ser "A resposta", com
+  a escolha ("Respondem as famílias" / "Respondem os atletas") acima do
+  interruptor de pedir confirmação, e o texto do interruptor acompanha.
+- Ao marcar um treino, o mesmo em "Quem avisa as faltas".
+- Fica no jogo e no treino, e não na equipa, porque é onde o clube decide hoje.
+  Se se repetir escalão a escalão, a definição sobe para a equipa e estas colunas
+  passam a ser o valor herdado.
+
+**A regra é do servidor** (`assertPodeResponderPor`, em `common/permissions.ts`),
+e vale nos dois caminhos: `POST /api/matches/:id/convocatoria/resposta` e
+`POST /api/sessions/:id/ausencia`. O staff também não responde por aqui — quem
+tem `attendance:write` regista a falta na folha, que é o instrumento dele. A app
+esconde os botões a quem não responde e diz quem é que responde, mas isso é
+cortesia: o 403 é que é a regra.
+
+**O aviso pede a quem responde.** Ao submeter, os dois continuam a ser
+notificados (estar convocado interessa ao pai e ao atleta), mas só quem responde
+recebe "Confirma a presença"; ao outro chega "está convocado".
+
+Verificado por `npm run test:quem-responde --workspace @academia/api` (17), que
+cria uma conta de atleta pelo convite e prova as quatro fronteiras nos dois
+sentidos. `test:convocatoria-resposta` (62), `test:aviso` (25) e `test:atleta`
+(49) continuam a passar.
+
 ## Histórico de alterações em todas as fichas
 
 Uma ficha só mostrava o estado de hoje. Quando o peso de um atleta aparece

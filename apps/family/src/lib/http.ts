@@ -27,7 +27,18 @@ export class ApiError extends Error {
   }
 }
 
-function send(path: string, method: string, token: string | null, body?: unknown): Promise<Response> {
+/**
+ * O chapéu a forçar num pedido, quando não é o da área vestida.
+ *
+ * Quase tudo manda o `x-app` da área activa (ver `appHeader`). A excepção são as
+ * notificações: são da **pessoa**, não da área, e o sino tem de bater certo em
+ * todas — mas o servidor só as serve por uma membership que a pessoa tenha, e
+ * na área de sócio o chapéu activo pode não ser nenhuma. Quem sabe qual serve é
+ * `lib/notificacoes`, e diz-o aqui.
+ */
+export type RequestOpts = { app?: "family" | "athlete" };
+
+function send(path: string, method: string, token: string | null, body?: unknown, app?: RequestOpts["app"]): Promise<Response> {
   return fetch(`${API}${path}`, {
     method,
     headers: {
@@ -45,16 +56,16 @@ function send(path: string, method: string, token: string | null, body?: unknown
        * app mostrava o plantel inteiro como sendo os filhos dele. Ver
        * `escolherMembership` na API.
        */
-      "x-app": appHeader(),
+      "x-app": app ?? appHeader(),
       ...(body !== undefined ? { "Content-Type": "application/json" } : {}),
     },
     body: body !== undefined ? JSON.stringify(body) : undefined,
   });
 }
 
-async function request<T>(method: string, path: string, body?: unknown): Promise<T> {
+async function request<T>(method: string, path: string, body?: unknown, opts?: RequestOpts): Promise<T> {
   const token = await getAccessToken();
-  let res = await send(path, method, token, body);
+  let res = await send(path, method, token, body, opts?.app);
 
   /*
    * Um 401 merece uma segunda tentativa antes de mandar o pai para o ecrã de
@@ -71,7 +82,7 @@ async function request<T>(method: string, path: string, body?: unknown): Promise
    */
   if (res.status === 401 && token) {
     const renewed = await refreshSession();
-    if (renewed && renewed !== token) res = await send(path, method, renewed, body);
+    if (renewed && renewed !== token) res = await send(path, method, renewed, body, opts?.app);
   }
 
   if (!res.ok) {
@@ -97,9 +108,9 @@ async function request<T>(method: string, path: string, body?: unknown): Promise
   return (text ? JSON.parse(text) : undefined) as T;
 }
 
-export const apiGet = <T>(path: string) => request<T>("GET", path);
+export const apiGet = <T>(path: string, opts?: RequestOpts) => request<T>("GET", path, undefined, opts);
 export const apiPost = <T>(path: string, body?: unknown) => request<T>("POST", path, body ?? {});
-export const apiPatch = <T>(path: string, body?: unknown) => request<T>("PATCH", path, body ?? {});
+export const apiPatch = <T>(path: string, body?: unknown, opts?: RequestOpts) => request<T>("PATCH", path, body ?? {}, opts);
 export const apiDelete = <T>(path: string) => request<T>("DELETE", path);
 
 /**

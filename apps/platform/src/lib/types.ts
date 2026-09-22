@@ -34,7 +34,14 @@ export type Alert = {
 };
 
 export type Overview = {
-  academies: { total: number; setup: number; trial: number; active: number; pastDue: number; cancelled: number; newThisMonth: number; churnThisMonth: number };
+  /**
+   * `active`, `trial` e `undecided` são uma **partição** dos clubes não
+   * cancelados: quem paga, quem ainda está a experimentar, e quem já não faz
+   * nem uma coisa nem outra. Contados onde o estado comercial vive mesmo (a
+   * subscrição e o fim do trial), e não em `Academy.status` — ver a migração
+   * `20260922100000`.
+   */
+  academies: { total: number; trial: number; active: number; undecided: number; pastDue: number; cancelled: number; newThisMonth: number; churnThisMonth: number };
   people: { athletes: number; guardians: number; staff: number };
   revenue: { mrrCents: number; arrCents: number };
   usage: number | null;

@@ -494,7 +494,10 @@ function Squad({ match }: { match: ApiMatch }) {
         {locked ? (
           <>
             <span className="text-meta text-ink-3">
-              As famílias dos {match.calledUp.length} convocados foram avisadas.
+              {/* Quem foi avisado é quem responde por eles — ver `respondBy`. */}
+              {match.respondBy === "ATHLETE"
+                ? `Os ${match.calledUp.length} convocados foram avisados. Respondem eles.`
+                : `As famílias dos ${match.calledUp.length} convocados foram avisadas.`}
             </span>
             {/*
               Corrigir a hora do encontro **sem** reabrir.
@@ -592,6 +595,7 @@ function Squad({ match }: { match: ApiMatch }) {
             arrivalAt: match.arrivalAt,
             callUpNotes: match.callUpNotes,
             confirmationRequired: match.confirmationRequired,
+            respondBy: match.respondBy,
           }}
           convocados={dialogo === "editar" ? match.calledUp.length : picked.size}
           modo={dialogo}

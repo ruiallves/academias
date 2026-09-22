@@ -5,15 +5,9 @@ import { ClubMark, Empty, Metric, MetricRow, Panel, PanelHead, Pill, Progress } 
 import { ActivityChart } from "@/components/Charts";
 import { euros, shortDate, since } from "@/lib/format";
 import { useApi } from "@/lib/query";
-import { STATUS_LABEL, type AcademyDetail as Detail, type AcademyStatus } from "@/lib/types";
+import { type AcademyDetail as Detail } from "@/lib/types";
+import { ESTADO_LABEL, ESTADO_TOM, estadoComercial } from "@/lib/estado";
 
-const TONE: Record<AcademyStatus, "neutral" | "ok" | "warn" | "risk" | "signal"> = {
-  SETUP: "signal",
-  TRIAL: "warn",
-  ACTIVE: "ok",
-  PAST_DUE: "risk",
-  CANCELLED: "neutral",
-};
 
 /** Os papéis, ditos como quem os lê. O painel não fala em enums. */
 const ROLE_LABEL: Record<string, string> = {
@@ -81,7 +75,8 @@ export default function AcademyDetail() {
           </div>
         </div>
         <div className="flex shrink-0 items-center gap-2">
-          <Pill tone={TONE[d.status]}>{STATUS_LABEL[d.status]}</Pill>
+          {/* O mesmo estado que a lista mostra — ver `lib/estado.ts`. */}
+          <Pill tone={ESTADO_TOM[estadoComercial(d)]}>{ESTADO_LABEL[estadoComercial(d)]}</Pill>
           <span className="text-meta text-ink-3">
             {d.plan ?? "Sem plano"}
             {d.subscriptionStatus === "ACTIVE" ? " · a pagar" : d.plan ? " · por activar" : ""}

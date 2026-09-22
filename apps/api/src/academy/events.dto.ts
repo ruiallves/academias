@@ -43,6 +43,15 @@ export class CreateEventDto {
   @IsIn(KINDS)
   kind!: string;
 
+  /**
+   * Quem avisa que um atleta não vai a este treino: `GUARDIAN` (por omissão) ou
+   * `ATHLETE`, nos escalões em que o clube decidiu que são os próprios. Só faz
+   * sentido num treino; nos outros tipos é ignorado. Ver `ResponderBy`.
+   */
+  @IsOptional()
+  @IsIn(["GUARDIAN", "ATHLETE"])
+  respondBy?: "GUARDIAN" | "ATHLETE";
+
   /** Ausente é "toda a academia". Só a direção o pode fazer — verificado no serviço. */
   @IsOptional()
   @IsString()
@@ -236,4 +245,6 @@ export class EditEventDto {
   @IsOptional() @IsString() @Length(1, 80) opponent?: string;
   @IsOptional() @IsBoolean() isHome?: boolean;
   @IsOptional() @IsString() @Length(1, 40) competitionId?: string;
+  /** Quem avisa a falta a este treino. Ver `CreateEventDto.respondBy`. */
+  @IsOptional() @IsIn(["GUARDIAN", "ATHLETE"]) respondBy?: "GUARDIAN" | "ATHLETE";
 }

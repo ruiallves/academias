@@ -9,6 +9,7 @@ import {
 import QRCode from "qrcode";
 import {
   BarChart3,
+  Bell,
   CalendarDays,
   Camera,
   Check,
@@ -52,6 +53,8 @@ import {
   type SocioPoll,
 } from "@/lib/socio";
 import { AreaSwitch } from "@/screens/socio/AreaSwitch";
+import Notifications from "@/screens/Notifications";
+import { carregarNotificacoes, useNotificacoes } from "@/lib/notificacoes";
 
 /**
  * A Member View — a área de sócio da app do clube.
@@ -129,6 +132,8 @@ export default function SocioApp() {
           <Route path="/socio/quotas" element={<Quotas />} />
           <Route path="/socio/jogos" element={<Jogos />} />
           <Route path="/socio/novidades" element={<Novidades />} />
+          {/* As mesmas notificações da família — são da pessoa, não da área. Ver `lib/notificacoes`. */}
+          <Route path="/socio/notificacoes" element={<Notifications />} />
           <Route path="/socio/perfil" element={<Perfil />} />
           {/* O cartão vive no Início; "Clube" passou a Jogos + Novidades. */}
           <Route path="/socio/cartao" element={<Navigate to="/socio" replace />} />
@@ -148,6 +153,12 @@ export default function SocioApp() {
 function SocioHeader() {
   const { data } = useSocio();
   const navigate = useNavigate();
+  /* O mesmo sino da família — a mesma contagem, seja qual for a área vestida. */
+  const { unread } = useNotificacoes();
+  useEffect(() => {
+    void carregarNotificacoes();
+  }, []);
+  useFresco(carregarNotificacoes);
   if (!data) return null;
 
   /*
@@ -178,6 +189,14 @@ function SocioHeader() {
         </span>
         {/* O switcher de contexto vive aqui — pequeno, e só quando há para onde ir. */}
         <AreaSwitch />
+        <button type="button" onClick={() => navigate("/socio/notificacoes")} className="icon-btn" aria-label="Notificações">
+          <Bell className="size-[22px]" strokeWidth={1.75} />
+          {unread > 0 && (
+            <span className="absolute top-2 right-2.5 flex min-w-[16px] items-center justify-center rounded-full bg-risk px-1 text-[10px] font-bold text-white ring-2 ring-canvas">
+              {unread}
+            </span>
+          )}
+        </button>
         <button
           type="button"
           onClick={() => navigate("/socio/perfil")}
