@@ -13,7 +13,7 @@ import { PrismaService } from "../prisma/prisma.service";
 import { SupabaseAccountsService } from "../auth/supabase-accounts.service";
 import { MailClient } from "../mail/mail.client";
 import { staffInviteEmail } from "../mail/mail.templates";
-import { can, ROLE_PERMISSIONS, type RequestContext } from "../common/permissions";
+import { can, ROLE_PERMISSIONS, ungrantablePermissions, type RequestContext } from "../common/permissions";
 
 /**
  * Convites de staff.
@@ -180,7 +180,7 @@ export class InvitesService {
         // aqui e nunca usada — o convite põe `department: null` de propósito
         // (ver mais abaixo). A coluna deixou de existir na migração
         // `20260827180000_alinhar_schema`.
-        select: { id: true, name: true, baseRole: true, rank: true },
+        select: { id: true, name: true, baseRole: true, rank: true, permissions: true },
       });
       if (!cargo) throw new BadRequestException("Cargo desconhecido");
 
@@ -198,6 +198,22 @@ export class InvitesService {
       }
 
       /*
+       * E não se convida para um cargo que dá o que o convidante não tem.
+       *
+       * A patente não chega: um cargo de patente igual à minha pode carregar
+       * `role:write` ou `academy:delete` que **eu** não tenho. Sem isto, quem
+       * tinha só `staff:write` convidava uma conta nova directamente para um
+       * cargo desses e escalava no momento em que ela aceitasse. É a mesma regra
+       * que `roles.assign` e `setAccess` aplicam — ver `ungrantablePermissions`.
+       */
+      const foraDoMeu = ungrantablePermissions(ctx, cargo.permissions);
+      if (foraDoMeu.length) {
+        throw new ForbiddenException(
+          `Não podes convidar para um cargo que concede permissões que tu não tens: ${foraDoMeu.join(", ")}`,
+        );
+      }
+
+      /*
        * Os cargos secundários, validados um a um.
        *
        * A patente verifica-se em todos e não só no principal: sem isto, quem
@@ -209,12 +225,18 @@ export class InvitesService {
       if (extraRoleIds.length) {
         const extras = await db.academyRole.findMany({
           where: { id: { in: extraRoleIds }, archivedAt: null },
-          select: { id: true, baseRole: true },
+          select: { id: true, baseRole: true, permissions: true },
         });
         if (extras.length !== extraRoleIds.length) throw new BadRequestException("Cargo desconhecido");
         for (const extra of extras) {
           if (RANK[extra.baseRole] > RANK[ctx.role]) {
             throw new ForbiddenException("Não podes convidar alguém para um cargo acima do teu");
+          }
+          const foraDoMeu = ungrantablePermissions(ctx, extra.permissions);
+          if (foraDoMeu.length) {
+            throw new ForbiddenException(
+              `Não podes convidar para um cargo que concede permissões que tu não tens: ${foraDoMeu.join(", ")}`,
+            );
           }
         }
       }

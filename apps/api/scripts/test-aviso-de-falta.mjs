@@ -180,6 +180,15 @@ async function main() {
       !notaAlheia || notaAlheia.note === null,
       JSON.stringify(notaAlheia),
     );
+    // Mais apertado: nem sequer o **estado** (faltou/lesão/atraso) de um educando
+    // alheio atravessa famílias — é dado pessoal de um menor de outra família. Sem
+    // o filtro `meus` no bloco `absences` de `sessionsIn`, a linha aparece e isto
+    // falha (o exploit passa).
+    check(
+      "outra família NÃO vê sequer o registo de falta de um educando alheio",
+      notaAlheia === undefined,
+      JSON.stringify(notaAlheia),
+    );
 
     const depoisPai1 = await req(pai, "GET", `/api/sessions?from=${new Date(Date.now() - 86_400_000).toISOString()}&to=${new Date(Date.now() + 5 * 86_400_000).toISOString()}`);
     const minha = ((depoisPai1.body ?? []).find((s) => s.id === SESSAO)?.absences ?? []).find((a) => a.athleteId === meu.id);

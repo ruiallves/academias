@@ -4,7 +4,7 @@ import { PrismaService, type ScopedClient } from "../prisma/prisma.service";
 import { semearCargosEmFalta } from "../departments/first-role";
 import { nomeDeQuemMexe, registarAlteracoes } from "../common/historico";
 import { NAV_KEYS, isNavKey } from "../common/nav";
-import { ROLE_PERMISSIONS, can, outranks, type Permission, type RequestContext } from "../common/permissions";
+import { ROLE_PERMISSIONS, can, outranks, ungrantablePermissions, type Permission, type RequestContext } from "../common/permissions";
 
 /**
  * Papéis da academia.
@@ -505,6 +505,22 @@ export class RolesService {
         if (role.rank > RANK[ctx.role]) {
           throw new ForbiddenException("Não podes dar um cargo com mais acesso do que o teu");
         }
+        /*
+         * Nem por um cargo se dá o que não se tem.
+         *
+         * A patente acima não chega: um cargo de patente igual à minha pode
+         * carregar uma permissão que **eu** não tenho (`role:write`,
+         * `academy:delete`, `access:write`…). Sem isto, quem só tinha
+         * `access:write` vestia esse cargo a um testa de ferro e escalava — a
+         * mesma escada que `setAccess`/`filterGrantable` já barram à mão. Ver
+         * `ungrantablePermissions`.
+         */
+        const foraDoMeu = ungrantablePermissions(ctx, role.permissions);
+        if (foraDoMeu.length) {
+          throw new ForbiddenException(
+            `Não podes dar um cargo que concede permissões que tu não tens: ${foraDoMeu.join(", ")}`,
+          );
+        }
         await db.membership.update({
           where: { id: membershipId },
           data: { customRoleId: roleId, role: role.baseRole },
@@ -521,6 +537,14 @@ export class RolesService {
           const extra = await this.mustFind(db, id);
           if (extra.rank > RANK[ctx.role]) {
             throw new ForbiddenException("Não podes dar um cargo com mais acesso do que o teu");
+          }
+          // A mesma rede do principal: um secundário não entrega uma permissão
+          // que quem o dá não tem.
+          const foraDoMeu = ungrantablePermissions(ctx, extra.permissions);
+          if (foraDoMeu.length) {
+            throw new ForbiddenException(
+              `Não podes dar um cargo que concede permissões que tu não tens: ${foraDoMeu.join(", ")}`,
+            );
           }
         }
 

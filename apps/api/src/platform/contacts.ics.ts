@@ -112,9 +112,18 @@ function stamp(d: Date): string {
   return d.toISOString().replace(/[-:]/g, "").replace(/\.\d{3}/, "");
 }
 
-/** Vírgulas, pontos e vírgulas e barras têm significado no formato. */
+/**
+ * Vírgulas, pontos e vírgulas e barras têm significado no formato — e qualquer
+ * quebra de linha tem de virar `\n`, **incluindo um `\r` sozinho**: sem isso, um
+ * CR isolado num campo do CRM (nome, nota) passava em cru e podia partir a linha
+ * ou injectar uma propriedade no ICS. Trata-se `\r\n`, `\r` e `\n`, por essa ordem.
+ */
 function escape(text: string): string {
-  return text.replace(/\\/g, "\\\\").replace(/;/g, "\\;").replace(/,/g, "\\,").replace(/\r?\n/g, "\\n");
+  return text
+    .replace(/\\/g, "\\\\")
+    .replace(/;/g, "\\;")
+    .replace(/,/g, "\\,")
+    .replace(/\r\n|\r|\n/g, "\\n");
 }
 
 /**

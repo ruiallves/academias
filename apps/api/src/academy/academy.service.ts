@@ -1830,6 +1830,14 @@ export class AcademyService {
           ? s.attendance
               .filter((a) => a.status !== "PRESENT")
               /*
+               * Só as do meu educando — a mesma regra dos `notices` logo abaixo.
+               * `inTeamScope` deixa passar qualquer família do escalão, e não
+               * chega mascarar o motivo: **quem** faltou (e se foi por lesão) já
+               * é dado pessoal de um menor de outra família. O staff tem `meus`
+               * nulo e continua a ver a folha inteira, que é o que precisa.
+               */
+              .filter((a) => !meus || meus.has(a.athleteId))
+              /*
                * O motivo acompanha a falta justificada — é o que a ficha do
                * atleta mostra ao lado dela, e sem ele o registo perdia-se ao
                * recarregar mesmo depois de gravado. **Mas só a quem é dele.**
@@ -3148,7 +3156,7 @@ export class AcademyService {
     }
 
     const academy = await this.prisma.runAs(ctx.academyId, (db) =>
-      db.academy.findFirst({ where: { id: ctx.academyId }, select: { id: true, name: true, slug: true } }),
+      db.academy.findFirst({ where: { id: ctx.academyId }, select: { id: true, name: true, slug: true, logoUrl: true } }),
     );
     if (!academy) throw new NotFoundException("Academia não encontrada");
 
@@ -3182,6 +3190,10 @@ export class AcademyService {
         where: { user: { photoKey: { not: null } } },
         select: { user: { select: { photoKey: true } } },
       });
+      // Os sócios também têm fotografia — `socios/{memberId}/…`, no mesmo bucket
+      // `fotos`. Faltavam aqui, e a foto de cada sócio ficava órfã no
+      // armazenamento depois de o clube ser apagado.
+      const socios = await db.member.findMany({ where: { photoKey: { not: null } }, select: { photoKey: true } });
       const videos = await db.prospectVideo.findMany({
         where: { storageKey: { not: "" } },
         select: { storageKey: true },
@@ -3191,6 +3203,7 @@ export class AcademyService {
         fotos: [
           ...atletas.map((a) => a.photoKey!),
           ...staff.map((m) => m.user.photoKey!).filter(Boolean),
+          ...socios.map((m) => m.photoKey!),
         ],
         videos: videos.map((v) => v.storageKey),
         imagens: exercicios.flatMap((e) => e.imageKeys),
@@ -3244,6 +3257,22 @@ export class AcademyService {
     await limpar("fotos", ficheiros.fotos);
     await limpar("scouting", ficheiros.videos);
     await limpar("exercicios", ficheiros.imagens);
+
+    /*
+     * Os vídeos e recortes da Academias AI — os mais sensíveis de todos, porque
+     * são imagem de menores em movimento. Vivem no bucket `ai-videos`, com chave
+     * `{academyId}/…`, e não têm uma coluna por onde os enumerar um a um: a pasta
+     * inteira do clube varre-se por prefixo. Faltava, e ficavam para sempre.
+     */
+    await this.storage.removePrefix("ai-videos", ctx.academyId);
+
+    /*
+     * O símbolo do clube, no bucket público. A chave vem do próprio `logoUrl`
+     * (`…/object/public/clube-publico/{key}`). O cabeçalho deste método prometia
+     * apagá-lo e o código não o fazia.
+     */
+    const logoKey = academy.logoUrl?.split("/object/public/clube-publico/")[1];
+    if (logoKey) await limpar("clube-publico", [decodeURIComponent(logoKey)]);
 
     return { ok: true, name: academy.name, ...contagens };
   }

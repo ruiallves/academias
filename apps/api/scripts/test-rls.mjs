@@ -51,11 +51,22 @@ async function asAcademy(academyId, sql, params = []) {
   }
 }
 
+/*
+ * `btree_gist` (uma restrição anti-sobreposição de ciclos de treino) não existe
+ * no PGlite e nada tem a ver com isolamento entre academias. Sem isto, a
+ * migração `periodizacao` rebentava e o teste de RLS deixava de correr — foi o
+ * que aconteceu desde que ela entrou. Neutraliza-se só aqui, no teste.
+ */
+const sanitize = (sql) =>
+  sql
+    .replace(/CREATE EXTENSION[^;]*btree_gist[^;]*;/gi, "-- [btree_gist ignorado no PGlite]")
+    .replace(/ALTER TABLE\s+"TrainingCycle"\s+ADD CONSTRAINT\s+"[^"]*_sem_sobreposicao"[\s\S]*?;/gi, "-- [EXCLUDE ignorado]");
+
 async function main() {
   console.log("A aplicar migrações…");
   for (const dir of readdirSync(MIGRATIONS).sort()) {
     const file = path.join(MIGRATIONS, dir, "migration.sql");
-    await db.exec(readFileSync(file, "utf8"));
+    await db.exec(sanitize(readFileSync(file, "utf8")));
     console.log(`  ${dir}`);
   }
 

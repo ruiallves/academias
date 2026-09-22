@@ -72,6 +72,16 @@ const REWRITES: Rewrite[] = [
   { pattern: /^\/socio\/([^/]+)\/?$/, to: (slug, m) => `/l/${slug}/socio/${m[1]}` },
 
   /*
+   * O convite da área de atleta. A mesma história do `/socio/`, outra vez: o
+   * `linkFor` monta-o na raiz do domínio do clube (`{slug}.academias.pt/atleta/:token`)
+   * e a rota que existe é `/l/:slug/atleta/:token`, mas ninguém traduzia a raiz —
+   * o link do email dava `Cannot GET /atleta/<token>`. É a quarta vez que um
+   * endereço público novo na raiz nasce sem a linha aqui; até haver uma rede que
+   * o lembre, é a mão que a põe.
+   */
+  { pattern: /^\/atleta\/([^/]+)\/?$/, to: (slug, m) => `/l/${slug}/atleta/${m[1]}` },
+
+  /*
    * O link do email de repor a palavra-passe. Só há caminho: o token vai no
    * fragmento (`#t=`), que o browser nunca manda ao servidor.
    */

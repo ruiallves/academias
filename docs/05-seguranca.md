@@ -68,3 +68,62 @@ Testadas com uma academia atacante real. Cada uma é um caso em `test-security.m
 3. **`CONSOLE_ORIGIN`, `FAMILY_ORIGIN`, `PLATFORM_ORIGIN`** — as três origens reais;
    sem elas, o CORS cai nos `localhost` de desenvolvimento.
 4. **Papel `platform_app` sem BYPASSRLS** — ver dívida em `04-plataforma.md`.
+
+---
+
+# Segunda auditoria adversarial — 21 de setembro de 2026
+
+Auditoria completa, do princípio. O isolamento entre academias, o modelo de
+permissões, a assinatura do webhook euPago e as verificações de prefixo do
+armazenamento foram sondados a fundo e **resistiram** — a camada de base de dados
+provou-se contra Postgres a sério (PGlite), com tentativas activas de leitura e
+escrita cruzadas. Os achados novos vivem quase todos acima da base: distribuição
+de cargos, apagamento de ficheiros e uma fuga de estado entre famílias.
+
+**Regressão nova:** `npm run test:rls-cobertura` (80 asserções — toda a tabela de
+tenant tem RLS+FORCE+política, ou é inacessível à ligação da academia; o histórico
+é só-escrita; e A não toca em B) e `npm run test:escalada` (a decisão de não
+conceder o que não se tem, validada ao contrário). O `test:rls` de sempre foi
+**reparado** — a migração `periodizacao` (btree_gist) partia-o no PGlite desde 19
+de setembro, e a rede de isolamento estava a correr a vermelho sem ninguém ver. Um
+workflow de CI (`.github/workflows/ci.yml`) corre esta rede em cada push.
+
+## Corrigido
+
+| ID | Severidade | O quê | Correção |
+|---|---|---|---|
+| VULN-016 | **Alta** | Escalada por cargo — `roles.assign` e `invites.create` só verificavam a **patente** do cargo, nunca as permissões dele. Quem tinha `access:write`/`staff:write` mas não `role:write` podia atribuir (ou convidar para) um cargo de patente igual à sua que carregasse `role:write`, `academy:delete` ou uma permissão retirada por pessoa, e escalar por um testa de ferro. `setAccess`/`filterGrantable` já barravam isto; a distribuição de cargos já criados não. | `ungrantablePermissions(ctx, perms)` em `common/permissions.ts` — nega o cargo se carregar uma permissão que quem o dá não tem. Aplicada ao principal e aos secundários, em `assign` e em `invite`. |
+| VULN-017 | **Alta** | Direito ao apagamento — apagar um clube deixava **vídeos e recortes de menores** da Academias AI (bucket `ai-videos`, `{academyId}/…`) órfãos no armazenamento para sempre. | `deleteAcademy` varre o prefixo `ai-videos/{academyId}` (novo `StorageService.removePrefix`, melhor-esforço). |
+| VULN-018 | Média | Direito ao apagamento — as fotografias dos **sócios** (`socios/{memberId}`) e o **símbolo do clube** (`clube-publico`) também ficavam órfãos; o cabeçalho do método prometia apagar o símbolo e não o fazia. | `deleteAcademy` recolhe `Member.photoKey` e apaga o símbolo pela chave lida do `logoUrl`. |
+| VULN-019 | Média | Fuga entre famílias — o bloco `absences` de `sessionsIn` devolvia a **falta e o estado** (faltou/lesão/atraso) de qualquer atleta do escalão a qualquer família dele; só mascarava o motivo. O estado é dado pessoal de um menor de outra família. | Filtro `meus` no bloco `absences`, igual ao que o bloco `notices` já fazia. O staff (âmbito nulo) continua a ver a folha inteira. |
+| VULN-020 | Baixa | `/auth/me` calculava as permissões do `ROLE_PERMISSIONS[papel]` do enum, ignorando o cargo à medida e as retiradas por pessoa. Não era fronteira (o `can()` do servidor decide), mas a consola construía menus a partir daqui e mostrava portas que o servidor depois recusava. | Passa a medir por `can(ctx, p)` sobre o universo de permissões — honra `rolePermissions`, `grants` e `revokes`. |
+| VULN-021 | Baixa | `contacts.ics` não escapava um `\r` sozinho — injeção de linha/propriedade num ICS a partir de campos do CRM (que nascem do formulário público do site). | `escape` trata `\r\n`, `\r` e `\n`. |
+
+## Fronteiras que resistiram (provadas, não lidas)
+
+- **Isolamento entre academias.** Toda a tabela com `academyId` tem RLS + `FORCE` +
+  política, confirmado pelo catálogo do Postgres em `test:rls-cobertura`. As três
+  tabelas de plataforma sem RLS (`Contact`, `Subscription`, `SupportSession`) têm
+  os privilégios de `academia_app` **retirados** — a ligação da academia nem as
+  toca. As funções `SECURITY DEFINER` fixam `search_path` e devolvem só ids.
+- **Escalada de hierarquia.** `outranks` mede quem age pelo papel-base e o alvo pelo
+  cargo **mais alto** (secundário incluído): um director não despromove, não apaga,
+  não desactiva nem retira acesso a quem tem um cargo acima. `test:escalada` cobre-o.
+- **Webhook euPago.** Assinatura HMAC em tempo constante, arranque recusado sem
+  segredo forte, valor comparado com a base. O tenant vem sempre do pagamento, nunca
+  do pedido — não se liquida a academia de outro.
+- **Armazenamento.** Prefixo verificado **e** âmbito verificado em cada set/remove;
+  os caminhos "próprio" tiram o id da sessão, não do cliente. Buckets privados, menos
+  o símbolo do clube, por desenho.
+- **Auditoria só-escrita.** `academia_app` não tem UPDATE/DELETE em `ProfileChange`
+  nem em `LegalAcceptance`, e só INSERT em `AuditLog`. Confirmado no catálogo.
+
+## Em aberto — por decisão ou por precisar de contexto do produto
+
+| ID | O quê | Porquê fica |
+|---|---|---|
+| VULN-022 | Webhook `PAID` sem `amount` não verifica valor | O guard de valor só corre quando o `amount` vem no evento; um `PAID` sem `amount` liquida sem comparar. Fechá-lo (recusar em vez de liquidar) toca no caminho do dinheiro e depende das garantias reais do payload da euPago — decisão a tomar com essa informação, não às cegas. |
+| VULN-023 | CSP nas páginas SSR | Sem Content-Security-Policy na landing, convite e reposição de palavra-passe. Não há injeção aberta (o escape de contexto está fechado), mas uma CSP com `nonce` por resposta é a rede que falta. Já estava anotada como endurecimento futuro. |
+| VULN-024 | CORS reflecte qualquer `*.academias.pt` com `credentials` | Inofensivo hoje (não há cookies de sessão; a sessão é `Bearer` em `localStorage` por origem), mas perigoso no dia em que entrar o cookie `httpOnly` (VULN-007). Estreitar antes disso. |
+| VULN-025 | FKs do cliente sem verificação de tenant | `createTransaction` e afins gravam `athleteId`/`memberId`/… do DTO sem confirmar que são da academia. A RLS impede a fuga (a leitura cruzada volta nula, a escrita no pai alheio é recusada), mas fica um risco de referência pendente. Validar o id com um `findFirst` no âmbito remove o pé-de-cabra. |
+| — | `test-security.mjs` desactualizado | O caso do webhook usa o formato antigo (`transacao/estado`), o header `x-eupago-signature` em hex e não o `x-signature` em base64 de agora. Precisa de ser reescrito para o formato 2.0 antes de voltar a valer como regressão. |

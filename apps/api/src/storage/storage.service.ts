@@ -352,6 +352,62 @@ export class StorageService {
     }
   }
 
+  /**
+   * Apaga tudo debaixo de um prefixo — a pasta inteira de uma coisa.
+   *
+   * O Storage não tem "apagar pasta": lista-se e apaga-se em lotes, descendo às
+   * subpastas, até a listagem vir vazia. É a mesma dança que `AiVideoService`
+   * faz para uma análise; aqui é genérica porque o apagamento de um clube
+   * precisa dela para varrer, por exemplo, `ai-videos/{academyId}/`.
+   *
+   * **Melhor-esforço, e nunca rebenta.** Chama-se no fim de operações
+   * irreversíveis (apagar um clube), onde um erro do Storage não pode devolver
+   * "falhou" a quem já viu a base ficar limpa. Um ficheiro que sobre resolve-se
+   * por varredura; fica registado no log.
+   */
+  async removePrefix(bucket: string, prefix: string): Promise<void> {
+    const base = this.url;
+    const headers = this.headers();
+    const listar = async (p: string): Promise<void> => {
+      for (let volta = 0; volta < 200; volta++) {
+        const res = await fetch(`${base}/storage/v1/object/list/${bucket}`, {
+          method: "POST",
+          headers,
+          body: JSON.stringify({ prefix: p, limit: 100, offset: 0 }),
+        });
+        if (!res.ok) {
+          this.log.warn(`Listagem de ${bucket}/${p} falhou: HTTP ${res.status} — deixado para varredura`);
+          return;
+        }
+        const items = (await res.json()) as { name: string; id?: string }[];
+        if (items.length === 0) return;
+
+        // Subpastas (entradas sem id) primeiro; ficheiros a seguir, em lote.
+        for (const folder of items.filter((i) => !i.id)) {
+          await listar(`${p}/${folder.name}`);
+        }
+        const files = items.filter((i) => i.id).map((i) => `${p}/${i.name}`);
+        if (files.length === 0) return;
+
+        const { "Content-Type": _json, ...delHeaders } = headers;
+        const del = await fetch(`${base}/storage/v1/object/${bucket}`, {
+          method: "DELETE",
+          headers: { ...delHeaders, "Content-Type": "application/json" },
+          body: JSON.stringify({ prefixes: files }),
+        });
+        if (!del.ok) {
+          this.log.warn(`Apagar lote de ${bucket}/${p} falhou: HTTP ${del.status} — deixado para varredura`);
+          return;
+        }
+      }
+    };
+    try {
+      await listar(prefix);
+    } catch (error) {
+      this.log.warn(`Varredura de ${bucket}/${prefix} rebentou: ${error}`);
+    }
+  }
+
   /** Confirma que o ficheiro chegou mesmo. Sem isto, gravava-se a chave de um upload que falhou. */
   async exists(bucket: string, key: string): Promise<boolean> {
     const url = await this.signDownload(bucket, key, 60);

@@ -1,0 +1,51 @@
+name: CI — segurança e tipos
+
+# A rede de segurança que corre em cada push e PR. Só passos auto-contidos:
+# não precisa de Supabase, de base de dados a sério, nem da euPago. Os testes de
+# integração (test:security, test:hierarquia, test:family-scope, …) correm contra
+# uma API a sério com uma base semeada e ficam para o ambiente de staging — nunca
+# contra produção nem contra a chave euPago de produção.
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+
+jobs:
+  seguranca:
+    name: Isolamento, escalada e tipos
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          # `--experimental-strip-types` (usado por test:escalada) precisa de >=22.6.
+          node-version: "24"
+          cache: npm
+
+      - name: Instalar dependências
+        run: npm ci
+
+      - name: Gerar o cliente Prisma
+        # test:escalada importa common/permissions.ts, que importa `Role` de
+        # @prisma/client em runtime — daí ser preciso gerar o cliente.
+        run: npm run prisma:generate --workspace=@academia/api
+
+      - name: Catálogo de acessos coerente (cliente ↔ servidor)
+        run: npm run check:access
+
+      - name: Tipos da API
+        run: npm run typecheck --workspace=@academia/api
+
+      - name: Isolamento entre academias (RLS, PGlite)
+        run: npm run test:rls --workspace=@academia/api
+
+      - name: Cobertura de isolamento e histórico só-escrita (PGlite)
+        run: npm run test:rls-cobertura --workspace=@academia/api
+
+      - name: Escalada por cargo — não se concede o que não se tem
+        run: npm run test:escalada --workspace=@academia/api
+
+      - name: Rotas públicas da raiz do clube têm reescrita (não dão 404)
+        run: npm run test:rotas-publicas --workspace=@academia/api

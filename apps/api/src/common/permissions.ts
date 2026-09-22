@@ -510,6 +510,29 @@ export function basePermissions(ctx: RequestContext): Permission[] {
 }
 
 /**
+ * As permissões de `permissions` que `ctx` **não pode conceder** — as que o
+ * próprio não tem. Vazio = pode dar o conjunto todo.
+ *
+ * A rede de quem **distribui** autoridade. `setAccess` e a criação/edição de
+ * papéis já exigem `can(ctx, p)` por cada permissão (ver `filterDelegatable` e
+ * `filterGrantable`), mas **atribuir** um cargo já criado, ou **convidar** para
+ * ele, entregava o conjunto inteiro do cargo só com uma verificação de patente.
+ * Um director sem `role:write` podia, por essa porta, vestir a um testa de ferro
+ * um cargo de patente igual à dele que carregasse `role:write` — ou
+ * `academy:delete` — e escalar. Medir aqui fecha-a, e é a mesma regra que a
+ * criação do cargo já aplicava: não se dá o que não se tem.
+ *
+ * Só permissões reais entram na conta: uma string desconhecida guardada num
+ * cargo não concede nada e não bloqueia nada — como em `filterGrantable`.
+ */
+export function ungrantablePermissions(ctx: RequestContext, permissions: readonly string[]): Permission[] {
+  const known = new Set<string>(Object.values(ROLE_PERMISSIONS).flat());
+  return [...new Set(permissions)]
+    .filter((p): p is Permission => known.has(p))
+    .filter((p) => !can(ctx, p));
+}
+
+/**
  * Estreita um filtro de equipas ao âmbito do utilizador.
  *
  * Chamada em todos os serviços que devolvem dados por equipa. Devolver `undefined`

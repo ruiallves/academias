@@ -3,7 +3,7 @@ import type { Request } from "express";
 import { AuthService } from "./auth.service";
 import { SupabaseJwtService } from "./supabase-jwt.service";
 import { Public, type AuthedRequest } from "./auth.guard";
-import { ROLE_PERMISSIONS } from "../common/permissions";
+import { ROLE_PERMISSIONS, can, type Permission } from "../common/permissions";
 
 /**
  * Quem sou eu, e o que posso fazer.
@@ -55,8 +55,17 @@ export class AuthController {
       academyId: ctx.academyId,
       role: ctx.role,
       scope: ctx.scope,
-      // O cliente recebe a lista final — papel mais concessões pontuais.
-      permissions: [...new Set([...ROLE_PERMISSIONS[ctx.role], ...ctx.grants])],
+      /*
+       * A lista final e **verdadeira** — a mesma que o servidor usa para
+       * decidir. Media-se por `can()`, que honra o cargo à medida
+       * (`rolePermissions` substitui o papel-base), as concessões e as
+       * retiradas. Antes somava-se o enum do papel-base com os grants, e
+       * ignorava as duas primeiras: a consola mostrava um menu que o servidor
+       * depois recusava, ou escondia um a que a pessoa tinha direito.
+       */
+      permissions: [
+        ...new Set<Permission>([...(Object.values(ROLE_PERMISSIONS).flat() as Permission[]), ...ctx.grants]),
+      ].filter((p) => can(ctx, p)),
     };
   }
 }

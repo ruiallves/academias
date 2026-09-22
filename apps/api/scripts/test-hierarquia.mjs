@@ -137,6 +137,19 @@ await cargo("presidente", "Presidente", "OWNER", 100);
 await cargo("director", "Director", "DIRECTOR", 80);
 await cargo("treinador", "Treinador", "COACH", 40);
 
+/*
+ * Um cargo de patente de director que carrega uma permissão que o director-actor
+ * NÃO tem — `billing:read` (o `cargo()` acima não a dá a ninguém). Serve para
+ * provar que a atribuição e o convite não deixam distribuir o que quem age não
+ * tem, mesmo dentro da patente. Sem a guarda em `roles.assign`/`invites.create`,
+ * as duas verificações abaixo passam a 200 (o exploit).
+ */
+await db.query(
+  `INSERT INTO "AcademyRole" (id, "academyId", key, name, "baseRole", permissions, "navKeys", "isSystem", rank, "updatedAt")
+   VALUES ('zh_extra', $1, 'extra', 'Director com contas', 'DIRECTOR', $2, ARRAY[]::text[], false, 80, now())`,
+  [ID, ["academy:read", "staff:read", "staff:write", "access:write", "role:write", "billing:read"]],
+);
+
 /**
  * Uma pessoa no clube de teste, com a sessão emprestada de uma conta que já
  * existe. O `authId` é o que a liga; o `x-academy-slug` é o que faz o pedido
@@ -240,6 +253,41 @@ await call(director, "PATCH", `/api/memberships/zh_m_treinador/active`, { active
 
 const cargoAoTreinador = await call(director, "PATCH", `/api/roles/assign/zh_m_treinador`, { roleId: "zh_director" });
 check("e dá-lhe um cargo até ao nível dela (200)", cargoAoTreinador.status === 200, `${cargoAoTreinador.status}`);
+
+/* ============================ não se dá o que não se tem, nem por cargo ===== */
+
+console.log("\n=== A direcção não distribui uma permissão que não tem ===");
+const escaladaPorCargo = await call(director, "PATCH", `/api/roles/assign/zh_m_treinador`, { roleId: "zh_extra" });
+check(
+  "atribuir um cargo com uma permissão que o director não tem é recusado (403)",
+  escaladaPorCargo.status === 403,
+  `${escaladaPorCargo.status} ${JSON.stringify(escaladaPorCargo.body)}`,
+);
+const escaladaPorSecundario = await call(director, "PATCH", `/api/roles/assign/zh_m_treinador`, {
+  roleId: "zh_director",
+  extraRoleIds: ["zh_extra"],
+});
+check(
+  "e também não a entrega por um cargo secundário (403)",
+  escaladaPorSecundario.status === 403,
+  `${escaladaPorSecundario.status} ${JSON.stringify(escaladaPorSecundario.body)}`,
+);
+const escaladaPorConvite = await call(director, "POST", `/api/invites`, {
+  name: "Testa Ferro",
+  email: `escalada-${Date.now()}@exemplo.pt`,
+  academyRoleId: "zh_extra",
+});
+check(
+  "nem convida alguém directamente para esse cargo (403)",
+  escaladaPorConvite.status === 403,
+  `${escaladaPorConvite.status} ${JSON.stringify(escaladaPorConvite.body)}`,
+);
+// A folha da treinadora tem de ficar como estava — o cargo dela é o zh_director.
+check(
+  "e a treinadora continua com o cargo até ao nível dela",
+  (await estado("zh_m_treinador")).customRoleId === "zh_director",
+  JSON.stringify(await estado("zh_m_treinador")),
+);
 
 const apagarTreinador = await call(director, "DELETE", `/api/memberships/zh_m_treinador`);
 check("e apaga-o (200)", apagarTreinador.status === 200, `${apagarTreinador.status} ${JSON.stringify(apagarTreinador.body)}`);
