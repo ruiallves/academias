@@ -9,7 +9,8 @@
  *    permissões que ele próprio não tem);
  *  - não se cria acima de si;
  *  - o âmbito não se muda depois de criado;
- *  - apagar um departamento **não** apaga quem lá trabalhava.
+ *  - apagar um departamento leva os cargos dele atrás, e quem os vestia fica
+ *    sem cargo, sem perder acesso.
  *
  * E a herança: um cargo criado dentro de um departamento nasce com o âmbito dele,
  * mesmo que o cliente mande outro.
@@ -30,7 +31,7 @@ const env = (k) => {
 
 const S = env("SUPABASE_URL").replace(/\/$/, "");
 const A = env("SUPABASE_ANON_KEY");
-const API = "http://localhost:3000";
+const API = process.env.API_URL ?? process.env.API ?? "http://localhost:3000";
 
 let ok = 0, bad = 0;
 const check = (l, c, d = "") => {
@@ -248,17 +249,36 @@ await call(director, "PATCH", `/api/departments/${depId}`, { baseRole: "OWNER", 
 const aindaStaff = await db.query(`SELECT "baseRole" FROM "Department" WHERE id = $1`, [depId]);
 check("mudar o âmbito depois de criado não passa", aindaStaff.rows[0]?.baseRole === "STAFF", aindaStaff.rows[0]?.baseRole);
 
-console.log("\n=== Apagar não apaga quem lá trabalhava ===");
+console.log("\n=== Apagar um departamento leva os cargos dele ===");
+/*
+ * Era o contrário: os cargos ficavam a boiar num grupo "Sem departamento", com o
+ * argumento de não tirar acesso a ninguém. O que dava era um clube a apagar a
+ * área e a ter de apagar os cargos dela um a um a seguir, a desfazer à mão o que
+ * já tinha mandado desfazer. Um departamento é a área do clube; os cargos dele
+ * não querem dizer nada sozinhos.
+ */
 const apagado = await call(director, "DELETE", `/api/departments/${depId}`);
 check("a direção apaga o departamento", apagado.status === 200, `${apagado.status}`);
 /* Os mesmos dois de cima — o do departamento e o que o teste criou. */
-check("e avisa quantos cargos ficaram órfãos", apagado.body?.orphanedRoles === 2, `${apagado.body?.orphanedRoles}`);
-const orfao = await db.query(`SELECT "departmentId", permissions FROM "AcademyRole" WHERE name = 'ZZ Roupeiro'`);
-check("o cargo continua a existir", orfao.rows.length === 1, `${orfao.rows.length}`);
-check("sem departamento", orfao.rows[0]?.departmentId === null, `${orfao.rows[0]?.departmentId}`);
+check("e diz quantos cargos foram com ele", apagado.body?.roles === 2, `${apagado.body?.roles}`);
+const oCargo = await db.query(`SELECT "archivedAt" FROM "AcademyRole" WHERE name = 'ZZ Roupeiro'`);
+check("o cargo desapareceu", oCargo.rows[0]?.archivedAt !== null, JSON.stringify(oCargo.rows[0] ?? null));
+const listaDepois = await call(director, "GET", "/api/roles");
 check(
-  "e com as permissões que tinha — ninguém perdeu acesso",
-  (orfao.rows[0]?.permissions ?? []).includes("athlete:read"),
+  "e já não aparece na lista de cargos",
+  !(listaDepois.body ?? []).some((r) => r.name === "ZZ Roupeiro"),
+  `${(listaDepois.body ?? []).length} cargos`,
+);
+/*
+ * E não volta a nascer. `semearCargosEmFalta` dá um primeiro cargo a todo o
+ * departamento que não tenha nenhum, a cada leitura — é a razão de isto arquivar
+ * em vez de apagar a linha.
+ */
+await call(director, "GET", "/api/departments");
+const ressuscitou = await call(director, "GET", "/api/roles");
+check(
+  "nem depois de reler departamentos e cargos",
+  !(ressuscitou.body ?? []).some((r) => r.name === "ZZ Roupeiro"),
   "",
 );
 

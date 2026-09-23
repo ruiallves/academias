@@ -1,6 +1,6 @@
 import { useEffect, useId, useMemo, useRef, useState, type ReactNode } from "react";
 import { Check, ChevronDown, Search, X } from "@/lib/icons";
-import { cx } from "./primitives";
+import { cx, ListaDeEscolha } from "./primitives";
 
 /**
  * Escolher vários de uma lista — com pesquisa, e o que já se escolheu à vista.
@@ -210,7 +210,7 @@ export function TokenPicker({
       </div>
 
       {aberto && (
-        <ul
+        <ListaDeEscolha
           id={listboxId}
           role="listbox"
           className="absolute z-20 mt-1 max-h-52 w-full overflow-y-auto rounded-[var(--radius-control)] border border-line bg-surface py-1 shadow-[0_8px_24px_-12px_rgb(26_25_23/0.35)]"
@@ -239,7 +239,7 @@ export function TokenPicker({
               </li>
             ))
           )}
-        </ul>
+        </ListaDeEscolha>
       )}
 
       {/* O vazio diz-se: um evento sem balneário é normal, e quem olha para a

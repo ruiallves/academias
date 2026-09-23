@@ -1,4 +1,4 @@
-import { useState, type FormEvent, type ReactNode } from "react";
+import { cloneElement, type FormEvent, isValidElement, type ReactElement, type ReactNode, useId, useState } from "react";
 import { API } from "@/lib/api";
 import { Reveal, cx } from "@/components/primitives";
 import { CONTACT_EMAIL } from "@/lib/content";
@@ -415,13 +415,24 @@ function Field({
   className?: string;
   children: ReactNode;
 }) {
+  const id = useId();
+  /*
+   * A ligação ao campo, quando é um só e não traz `id` seu. É o que mantém o
+   * rótulo a focar o campo sem o pôr à volta dele — ver `DialogField`.
+   */
+  const soUmCampo =
+    isValidElement(children) &&
+    typeof children.type === "string" &&
+    ["input", "select", "textarea"].includes(children.type) &&
+    !(children.props as { id?: string }).id;
+
   return (
-    <label className={className}>
-      <span className="mb-1 flex items-baseline justify-between gap-3">
+    <div className={className}>
+      <label {...(soUmCampo ? { htmlFor: id } : {})} className="mb-1 flex items-baseline justify-between gap-3">
         <span className="field-label">{label}</span>
         {hint && <span className="text-[12px] text-ink-4">{hint}</span>}
-      </span>
-      {children}
-    </label>
+      </label>
+      {soUmCampo ? cloneElement(children as ReactElement<{ id?: string }>, { id }) : children}
+    </div>
   );
 }

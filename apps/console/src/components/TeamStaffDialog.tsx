@@ -1,10 +1,10 @@
+import { cargoDe } from "@/lib/staff";
 import { useMemo, useState } from "react";
 import { listCoachCandidates, listTeams, staffById } from "@/lib/api";
 import { teamAgeLabel } from "@/lib/team-age";
 import { apiPatch } from "@/lib/http";
 import { reloadAcademy } from "@/lib/store";
 import { can, type Session } from "@/lib/permissions";
-import { ROLE_LABEL } from "@/session";
 import { Dialog } from "./Dialog";
 import { Monogram, cx } from "./primitives";
 
@@ -162,7 +162,7 @@ export function TeamStaffDialog({
                   <span className="min-w-0 flex-1">
                     <span className="block truncate text-body text-ink">{c.name}</span>
                     <span className="block truncate text-meta text-ink-4">
-                      {c.title || ROLE_LABEL[c.role]}
+                      {cargoDe(c)}
                     </span>
                   </span>
                   {/* Quantas equipas já tem: atribuir a quinta a alguém é uma

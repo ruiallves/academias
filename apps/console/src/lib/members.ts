@@ -84,6 +84,12 @@ export type MemberRow = {
   documentNumber: string | null;
   taxId: string | null;
   sex: Sex;
+  /**
+   * Quando abre o ano de quotas deste sócio, `MM-DD`. **Nunca vazio** — quem
+   * herda a abertura do clube recebe aqui a do clube, já resolvida. Ver `list`
+   * na API: uma célula vazia na folha exportada voltaria a entrar como "hoje".
+   */
+  annualStart: string;
   status: MemberStatus;
   createdAt: string;
   approvedAt: string | null;
@@ -125,6 +131,14 @@ export type MemberDetail = MemberRow & {
   inviteSentAt: string | null;
   /** Vem com a ficha: é uma linha do cabeçalho, não um separador que se abre. */
   fees: MemberFeesSummary;
+  /**
+   * Quando abre o ano de quotas **deste** sócio.
+   *
+   * `own: false` quer dizer que está a herdar a abertura do clube — é o caso de
+   * toda a gente que já existia antes de o ano passar a ser de cada um. `month`
+   * e `day` são o que vale hoje, herdado ou não.
+   */
+  annual: { month: number; day: number; own: boolean; clubMonth: number; clubDay: number };
 };
 
 /* ---------------------------------------------------------------------------- */
@@ -146,6 +160,13 @@ export type MemberFeeRow = {
   paidBy?: string | null;
   /** O identificador com que o pagamento aparece na euPago. */
   paymentId?: string | null;
+  /**
+   * O intervalo que esta quota cobre — só nas anuais. É o que permite mostrar
+   * "22/09/2026 a 21/01/2027" e saber qual se pode ainda dividir. Nulo nas
+   * mensais, onde o período já diz tudo.
+   */
+  coversFrom?: string | null;
+  coversTo?: string | null;
 };
 
 /**
@@ -190,9 +211,17 @@ export type MemberFeePeriods = {
    * abre. Ausente num servidor antigo: lê-se como mensal.
    */
   billing: "MONTHLY" | "ANNUAL";
-  /** Quando o período anual do clube abre — decide que épocas o ecrã oferece. */
+  /**
+   * Quando abre o ano de quotas **deste sócio** — o dele, ou o do clube quando
+   * a ficha não o tem. Decide o mês em que o ecrã de lançar abre e o dia das
+   * fronteiras da cobertura.
+   */
   annualStartMonth: number;
   annualStartDay: number;
+  /** `false` = está a herdar a abertura do clube. */
+  ownAnnualStart?: boolean;
+  /** O que já está coberto por uma anuidade — para não se lançar por cima. */
+  covered?: { from: string; to: string }[];
   taken: string[];
 };
 
@@ -242,14 +271,48 @@ export function feeStanding(lastPaidPeriod: string | null, hoje = new Date()): "
 export const listMemberFees = (memberId: string) => apiGet<MemberFeeRow[]>(`/api/members/${memberId}/fees`);
 export const memberFeePeriods = (memberId: string) =>
   apiGet<MemberFeePeriods>(`/api/members/${memberId}/fees/periods`);
-export const createMemberFees = (memberId: string, body: { periods: string[]; amountCents: number; notes?: string }) =>
-  apiPost<{ created: number; alreadyExisted: string[] }>(`/api/members/${memberId}/fees`, body);
+export const createMemberFees = (
+  memberId: string,
+  body: { periods: string[]; amountCents: number; notes?: string; until?: string },
+) => apiPost<{ created: number; alreadyExisted: string[] }>(`/api/members/${memberId}/fees`, body);
+
+/**
+ * Cobrar esta anuidade só até um mês, e passar o resto para uma segunda.
+ *
+ * O sócio que quer pagar meio ano de uma vez. O mês **entra**: "até Dezembro"
+ * cobra Dezembro. O valor é repartido pelos meses de cada parte, e a segunda
+ * nasce com prazo no próprio início — não conta como dívida antes disso.
+ */
+export const splitMemberFee = (id: string, until: string) =>
+  apiPost<{
+    ok: true;
+    primeira: { id: string; amountCents: number; coversTo: string; months: number };
+    segunda: { id: string; label: string | null; amountCents: number; coversFrom: string; coversTo: string; months: number };
+  }>(`/api/members/fees/${id}/dividir`, { until });
 /**
  * Apagar uma quota. O servidor recusa as pagas online e as que têm um pagamento
  * online em curso, e diz porquê; a apagada não volta pela emissão automática.
  */
 export const deleteMemberFee = (id: string) =>
   apiDelete<{ ok: true; period: string; label: string | null }>(`/api/members/fees/${id}`);
+
+/**
+ * Quando abre o ano de quotas deste sócio.
+ *
+ * `annualStart` vazio devolve-o à abertura do clube. Mudar a data **refaz o
+ * ano**: as quotas dele desaparecem — partes de um ano partido incluídas — e
+ * nasce uma anuidade na janela nova, com o valor que o ano já valia. Não fica
+ * nada de permeio, e por isso não há intervalo por cobrir.
+ *
+ * O servidor recusa se alguma dessas quotas tiver sido paga online ou tiver uma
+ * referência ainda viva: apagá-la levava o registo do dinheiro atrás.
+ */
+export const setMemberAnnualYear = (memberId: string, body: { annualStart: string }) =>
+  apiPatch<{
+    ok: true;
+    apagadas: { label: string | null; de: string | null; ate: string | null }[];
+    nova: { id: string; label: string | null; amountCents: number; coversFrom: string; coversTo: string } | null;
+  }>(`/api/members/${memberId}/ano-de-quotas`, body);
 
 /** O menu "Marcar como paga / por pagar / Anular" — o mesmo das mensalidades. */
 export const setMemberFeeStatus = (id: string, status: MemberFeeRow["status"]) =>
@@ -407,7 +470,11 @@ export const createTier = (body: Record<string, unknown>) =>
 export const updateTier = (id: string, body: Record<string, unknown>) =>
   apiPatch<{ ok: true; repriced: number }>(`/api/members/tiers/${id}`, body);
 
-export const archiveTier = (id: string) => apiDelete<{ ok: boolean; members: number }>(`/api/members/tiers/${id}`);
+/**
+ * Apagar uma categoria. Devolve **quantos sócios ficaram sem categoria** — o
+ * número que o aviso mostra antes e a mensagem de sucesso repete depois.
+ */
+export const deleteTier = (id: string) => apiDelete<{ ok: boolean; members: number }>(`/api/members/tiers/${id}`);
 
 /* -------------------------------------------------------------------------- */
 /* Importação                                                                  */
@@ -435,6 +502,14 @@ export type ImportRow = {
   documentNumber?: string;
   taxId?: string;
   sex?: Sex;
+  /**
+   * Quando abre o ano de quotas, `MM-DD`. Ausente = o dia de hoje.
+   *
+   * Só conta em quem tem categoria anual; numa categoria mensal fica gravado e
+   * espera. Preenchê-lo **refaz** a anuidade em curso desses sócios, e o ecrã
+   * de importação avisa disso antes de escrever.
+   */
+  annualStart?: string;
 };
 
 export type ImportResult = RespostaComExistentes & {

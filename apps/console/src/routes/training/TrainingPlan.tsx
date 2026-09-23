@@ -3,7 +3,7 @@ import { Link, useParams } from "react-router-dom";
 import { PageHeader } from "@/components/Shell";
 import { Dialog, DialogField, dialogInputClass } from "@/components/Dialog";
 import { FieldView, THUMB_RATIO } from "@/components/FieldEditor";
-import { Empty, Loading, Panel, PanelHead, Pill, cx } from "@/components/primitives";
+import { cx, Empty, ListaDeEscolha, Loading, Panel, PanelHead, Pill } from "@/components/primitives";
 import { Check, ChevronDown, ChevronRight, Clock, Copy, DragHandle, Download, Plus, Search, Star, Trash2, TriangleAlert, Whistle, X } from "@/lib/icons";
 import { teamById } from "@/lib/api";
 import { can, isAcademyWide } from "@/lib/permissions";
@@ -1143,7 +1143,7 @@ function ExercisePicker({
             miniatura a 64px ninguém distinguia uma posse de um circuito, e
             escolher passava por ler nomes um a um.
           */
-          <ul className="grid max-h-[26rem] grid-cols-2 gap-2 overflow-y-auto pr-1 sm:grid-cols-3">
+          <ListaDeEscolha className="grid max-h-[26rem] grid-cols-2 gap-2 overflow-y-auto pr-1 sm:grid-cols-3">
             {rows.map((e) => (
               <li key={e.id}>
                 <button
@@ -1172,7 +1172,7 @@ function ExercisePicker({
                 </button>
               </li>
             ))}
-          </ul>
+          </ListaDeEscolha>
         )}
       </div>
     </Dialog>

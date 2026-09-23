@@ -1,3 +1,4 @@
+import { cargoDe, departamentoDe, eDoClinico, semCargo } from "@/lib/staff";
 import { useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import {
@@ -41,17 +42,16 @@ import {
   seasonsCount,
   staffMember,
   teamHistory,
-  useStaffEdits,
   yearsAtClub,
   type Stint,
 } from "@/lib/staff";
 import { shortDate } from "@/lib/format";
 import { can, type Session } from "@/lib/permissions";
 import { ROLE_LABEL, useSession } from "@/session";
-import { DEPARTMENT_LABEL, type StaffMember } from "@/data/types";
+import type { StaffMember } from "@/data/types";
 import { PhotoPicker } from "@/components/PhotoPicker";
 import { removeStaffPhoto, uploadStaffPhoto } from "@/lib/photos";
-import { reloadAcademy } from "@/lib/store";
+import { reloadAcademy, useStore } from "@/lib/store";
 
 type Tab = "overview" | "teams" | "activity" | "access" | "history";
 
@@ -78,8 +78,16 @@ export default function StaffDetail() {
   const [editing, setEditing] = useState(false);
   const [atribuir, setAtribuir] = useState(false);
 
-  // Redesenha quando a ficha for editada ou quando um acesso mudar.
-  useStaffEdits();
+  /*
+    Redesenha quando a ficha for editada, quando um acesso mudar — e quando a
+    academia recarregar.
+
+    Faltava o último, e era o que fazia o cargo ficar velho no ecrã: mudar o
+    cargo principal grava e chama `reloadAcademy()`, mas esta página lia o staff
+    por uma função (`staffMember`) sem estar subscrita ao store. Os dados novos
+    chegavam e ninguém mandava desenhar.
+  */
+  useStore();
   useAccessOverrides();
 
   const member = staffMember(id);
@@ -220,10 +228,18 @@ function StaffHeader({
 
       <div className="min-w-0 flex-1">
         <div className="mb-1 flex flex-wrap items-center gap-1.5">
-          <Pill tone={member.department === "clinical" ? "signal" : "neutral"}>
-            {DEPARTMENT_LABEL[member.department]}
-          </Pill>
-          <span className="text-meta text-ink-3">{ROLE_LABEL[member.role]}</span>
+          <Pill tone={eDoClinico(member) ? "signal" : "neutral"}>{departamentoDe(member)}</Pill>
+          {/* O cargo, e não o papel-base: este dizia quase sempre o mesmo que a
+              pastilha do departamento ao lado. Ver `cargoDe`.
+
+              Sem cargo é uma ausência e lê-se como tal — é o estado de quem
+              tinha um cargo que o clube apagou, e o caminho de volta é o painel
+              "Acesso", aqui em baixo. */}
+          {semCargo(member) ? (
+            <Pill tone="warn">Sem cargo</Pill>
+          ) : (
+            <span className="text-meta text-ink-3">{cargoDe(member)}</span>
+          )}
           {hasOverrides(member.id) && can(session, "access:write") && <Pill tone="warn">acesso alterado</Pill>}
           {!member.isActive && <Pill tone="warn">inactivo</Pill>}
         </div>
@@ -231,7 +247,7 @@ function StaffHeader({
         <h1 className="text-page text-ink">{member.name}</h1>
 
         <p className="mt-0.5 text-body text-ink-3">
-          {member.title} · na academia desde {new Date(member.since).getFullYear()}
+          {cargoDe(member)} · na academia desde {new Date(member.since).getFullYear()}
           {years > 0 && ` · ${years} ${years === 1 ? "ano" : "anos"}`}
         </p>
       </div>
@@ -289,8 +305,14 @@ function Overview({ member, history }: { member: StaffMember; history: Stint[] }
         <Panel>
           <PanelHead title="Na academia" />
           <div className="space-y-0 px-5 py-1">
-            <InfoRow label="Cargo" value={member.title} />
-            <InfoRow label="Departamento" value={DEPARTMENT_LABEL[member.department]} />
+            <InfoRow label="Cargo" value={cargoDe(member)} />
+            {/* O que estava escrito na ficha, quando é outra coisa: um clube que
+                escreveu "Fisioterapeuta" não o perde por dar o cargo "Dep.
+                Médico" a essa pessoa. */}
+            {member.title && member.roleName && member.title.trim() !== member.roleName.trim() && (
+              <InfoRow label="Função na ficha" value={member.title} />
+            )}
+            <InfoRow label="Departamento" value={departamentoDe(member)} />
             <InfoRow label="Acesso" value={ROLE_LABEL[member.role]} />
             <InfoRow label="Desde" value={shortDateFull(member.since)} />
             <InfoRow label="Estado" value={member.isActive ? "Activo" : "Já não trabalha na academia"} />

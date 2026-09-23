@@ -2,6 +2,7 @@ import { BadRequestException, ForbiddenException, Injectable, NotFoundException 
 import type { Role } from "@prisma/client";
 import { PrismaService, type ScopedClient } from "../prisma/prisma.service";
 import { semearCargosEmFalta } from "../departments/first-role";
+import { apagarCargos, assertNaoTrancaOClube } from "./sem-cargo";
 import { nomeDeQuemMexe, registarAlteracoes } from "../common/historico";
 import { NAV_KEYS, isNavKey } from "../common/nav";
 import { ROLE_PERMISSIONS, can, outranks, ungrantablePermissions, type Permission, type RequestContext } from "../common/permissions";
@@ -398,28 +399,50 @@ export class RolesService {
   }
 
   /**
-   * Arquivar.
+   * Apagar um cargo, mesmo com gente a vesti-lo.
    *
-   * Nunca apagar: as memberships apontam para aqui, e um papel apagado deixava
-   * pessoas com um acesso que ninguém consegue explicar depois. Arquivado não
-   * conta em `contextFor` — quem o vestia cai nos valores do papel-base, que é a
-   * degradação segura.
+   * ## O que estava antes, e porque mudou
+   *
+   * Isto arquivava, e só depois de a lista estar vazia: *"Ainda há 3 pessoas com
+   * este papel"*. A ideia era não deixar ninguém com um acesso que mais tarde
+   * ninguém soubesse explicar. O que dava, na prática, era um cargo que não se
+   * conseguia apagar sem primeiro reatribuir três pessoas uma a uma — e um clube
+   * a reorganizar-se faz isso ao contrário: apaga a estrutura velha e arruma as
+   * pessoas depois.
+   *
+   * O medo também não se confirmava. Quem fica sem cargo principal cai nos
+   * **valores por omissão do papel-base** (ver `exceptionsFor`), que é a
+   * degradação já documentada: um presidente sem cargo continua a poder tudo,
+   * um treinador volta ao que "treinador" quer dizer. Ninguém fica com um acesso
+   * misterioso — fica sem o extra que o cargo lhe dava, e a ficha diz "Sem
+   * cargo", que é a verdade.
+   *
+   * ## Continua a arquivar por baixo, e é de propósito
+   *
+   * O que muda é que as pessoas deixam de lá apontar (ver `apagarCargos`): a
+   * linha fica, o cargo desaparece de todas as listas, e quem o vestia fica sem
+   * cargo. Apagar a linha era o gesto óbvio e está errado — `semearCargosEmFalta`
+   * daria ao departamento um cargo novo na leitura seguinte.
+   *
+   * ## O que continua a não se apagar
+   *
+   * O cargo do **presidente** — é quem responde pelo clube — e as duas regras de
+   * escalada de sempre: o cargo que a própria pessoa veste, e qualquer um de
+   * patente acima da dela. E a guarda que sobra a tudo: tem de ficar alguém
+   * capaz de criar cargos outra vez (ver `assertNaoTrancaOClube`).
    */
-  async archive(ctx: RequestContext, id: string) {
+  async remove(ctx: RequestContext, id: string) {
     if (!can(ctx, "role:write")) throw new ForbiddenException("Sem permissão para editar papéis");
 
     return this.prisma.runAs(ctx.academyId, async (db) => {
       const role = await this.mustFind(db, id);
-      if (role.isSystem) throw new ForbiddenException("Os papéis de origem não se apagam");
+      // Mensagem própria: `assertMayEdit` fala de editar, e aqui está-se a apagar.
+      if (role.key === "presidente") throw new ForbiddenException("O cargo do presidente não se apaga");
       this.assertMayEdit(ctx, role);
 
-      const people = await db.membership.count({ where: { customRoleId: id } });
-      if (people > 0) {
-        throw new BadRequestException(`Ainda há ${people} ${people === 1 ? "pessoa" : "pessoas"} com este papel`);
-      }
-
-      await db.academyRole.update({ where: { id }, data: { archivedAt: new Date(), updatedAt: new Date() } });
-      return { ok: true };
+      await assertNaoTrancaOClube(db, [id]);
+      const people = await apagarCargos(db, [id]);
+      return { ok: true, name: role.name, people };
     });
   }
 

@@ -8,7 +8,9 @@ import { CARD_QR_PREFIX } from "../club-app/club-app.service";
 import { MemberInvitesService } from "./member-invites.service";
 import { ligarFichaAConta } from "./member-account-link";
 import { nomeDeQuemMexe, registarAlteracoes } from "../common/historico";
-import { aberturaAnual, periodoDaQuota, situacaoDeQuotas } from "./member-fees.service";
+import { partesNoFuso } from "../common/fuso";
+import { aberturaAnual, periodoDaQuota, refazerAnoDeQuotas, situacaoDeQuotas } from "./member-fees.service";
+import { decisaoDoAnoDaFolha } from "./cobertura";
 import { PHOTO_BUCKET, PHOTO_TTL } from "../storage/photos.service";
 import { StorageService } from "../storage/storage.service";
 import type {
@@ -226,6 +228,8 @@ export class MembersService {
            */
           address: true, postalCode: true, country: true,
           documentKind: true, documentNumber: true, taxId: true, sex: true,
+          /* O ano de quotas, pela mesma razão: sai na folha e volta por ela. */
+          annualStartDay: true, annualStartMonth: true,
           /*
            * O estado da app, para a coluna com o mesmo nome.
            *
@@ -262,6 +266,18 @@ export class MembersService {
       });
       const ultimaPaga = new Map(pagas.map((p) => [p.memberId, p._max.period]));
 
+      /*
+       * A abertura do clube, para a lista poder dizer a de cada sócio **sem
+       * nulos**.
+       *
+       * Na base o campo é nulo em quem herda; na folha exportada não pode ser:
+       * um sócio que está na plataforma tem sempre um ano de quotas, e uma
+       * célula vazia na exportação seria lida na reimportação como "assume
+       * hoje" e mudava-lhe a anuidade. Resolve-se aqui, onde o valor herdado
+       * ainda se sabe de onde vem.
+       */
+      const clube = await aberturaAnual(db, ctx.academyId);
+
       return {
         /*
          * `userId` não sai daqui — sai o que ele **significa**.
@@ -270,10 +286,12 @@ export class MembersService {
          * da conta, e mandá-lo seria dar à consola um identificador de outra
          * pessoa sem nenhum ecrã a usá-lo.
          */
-        members: rows.map(({ userId, inviteSentAt, ...m }) => ({
+        members: rows.map(({ userId, inviteSentAt, annualStartDay, annualStartMonth, ...m }) => ({
           ...m,
           app: userId ? ("account" as const) : inviteSentAt ? ("invited" as const) : m.email ? ("none" as const) : ("noemail" as const),
           inviteSentAt,
+          /** Quando abre o ano de quotas deste sócio, `MM-DD`. Nunca vazio. */
+          annualStart: `${String(annualStartMonth ?? clube.mes).padStart(2, "0")}-${String(annualStartDay ?? clube.dia).padStart(2, "0")}`,
           /** O período (`AAAA-MM`) da última quota liquidada. Nulo = nunca pagou nenhuma. */
           lastPaidPeriod: ultimaPaga.get(m.id) ?? null,
         })),
@@ -315,6 +333,9 @@ export class MembersService {
           status: true, source: true, notes: true,
           acceptedTermsAt: true, partnerCommsAt: true, partnerDataAt: true,
           createdAt: true, approvedAt: true,
+          /* Quando abre o ano de quotas deste sócio. Nulos = a abertura do
+             clube; a ficha mostra qual é e deixa mudá-la. */
+          annualStartDay: true, annualStartMonth: true,
           /* A app do clube: a ficha diz se a conta já foi reclamada e quando
              saiu o último convite — é o que decide o texto do botão. */
           userId: true, inviteSentAt: true, photoKey: true,
@@ -335,7 +356,28 @@ export class MembersService {
        */
       const fees = await situacaoDeQuotas(db, ctx.academyId, m.id);
 
-      return { ...m, approvedBy: m.approvedBy?.user.name ?? null, fees };
+      /* A abertura que vale para este sócio — a dele, ou a do clube. A ficha
+         mostra as duas coisas: o valor em uso e se é herdado. */
+      const clube = await aberturaAnual(db, ctx.academyId);
+      const annual = {
+        month: m.annualStartMonth ?? clube.mes,
+        day: m.annualStartDay ?? clube.dia,
+        /* `false` = está a herdar a abertura do clube. */
+        own: m.annualStartMonth != null,
+        clubMonth: clube.mes,
+        clubDay: clube.dia,
+      };
+
+      return {
+        ...m,
+        approvedBy: m.approvedBy?.user.name ?? null,
+        fees,
+        annual,
+        /* O mesmo que a lista manda, e com o mesmo nome: a ficha é uma linha da
+           lista com mais campos, e um tipo que herda o outro não pode prometer
+           um campo que só metade das respostas traz. Ver `MemberDetail`. */
+        annualStart: `${String(annual.month).padStart(2, "0")}-${String(annual.day).padStart(2, "0")}`,
+      };
     });
 
     // Rede fora da transação — ver `list`.
@@ -715,6 +757,14 @@ export class MembersService {
             approvedById: status === "PENDING" ? null : ctx.membershipId,
             source: "secretaria",
             notes: dto.notes?.trim() || null,
+            /*
+             * O ano de quotas deste sócio abre hoje, salvo indicação em
+             * contrário. Grava-se em toda a gente e não só nas categorias
+             * anuais: a categoria muda, a data de adesão não, e uma ficha que
+             * passe a anual amanhã tem de ter o aniversário no dia em que
+             * entrou — não na janela do clube.
+             */
+            ...aberturaDoDto(dto.annualStart, now),
             updatedAt: now,
           },
           select: { id: true, name: true, number: true, email: true, userId: true },
@@ -742,8 +792,13 @@ export class MembersService {
        * da transacção (HTTP nunca entra num `runAs`), **sem** await (a resposta
        * da secretaria não espera pelo Resend) e silencioso (um email que falha
        * não desfaz uma inscrição — o botão de reenviar existe para isso).
+       *
+       * A não ser que quem inscreveu tenha dito que não. `sendInvite` ausente
+       * é `true`: o comportamento de sempre fica, e desligar passou a ser
+       * possível para quem carrega a ficha antes de a pessoa saber que vai ser
+       * inscrita. Ver `MemberCreateDto.sendInvite`.
        */
-      void this.invites.enviarSePossivel(ctx.academyId, member.id);
+      if (dto.sendInvite !== false) void this.invites.enviarSePossivel(ctx.academyId, member.id);
       return member;
     });
   }
@@ -808,7 +863,8 @@ export class MembersService {
     return this.prisma.runAs(ctx.academyId, async (db) => {
       const tiers = await db.memberTier.findMany({
         where: { archivedAt: null },
-        select: { id: true, name: true, minAge: true, maxAge: true },
+        /* `billing` porque a coluna do ano de quotas só mexe em quem é anual. */
+        select: { id: true, name: true, minAge: true, maxAge: true, billing: true, feeCents: true, archivedAt: true },
       });
       const tierByName = new Map(tiers.map((t) => [fold(t.name), t]));
 
@@ -848,7 +904,7 @@ export class MembersService {
         for (const nome of desconhecidas.values()) {
           const criada = await db.memberTier.create({
             data: { academyId: ctx.academyId, name: nome, order: ordem++, isPublic: false },
-            select: { id: true, name: true, minAge: true, maxAge: true },
+            select: { id: true, name: true, minAge: true, maxAge: true, billing: true, feeCents: true, archivedAt: true },
           });
           tierByName.set(fold(criada.name), criada);
         }
@@ -862,7 +918,11 @@ export class MembersService {
        * dizê-lo, não escolher. Ver o cabeçalho.
        */
       const livro = await db.member.findMany({
-        select: { id: true, name: true, number: true, taxId: true, email: true, phone: true },
+        /* A abertura do ano também, para a confirmação poder dizer que muda. */
+        select: {
+          id: true, name: true, number: true, taxId: true, email: true, phone: true,
+          annualStartMonth: true, annualStartDay: true,
+        },
       });
 
       const porNumero = new Map<number, Existente>();
@@ -885,6 +945,17 @@ export class MembersService {
       /* Números e NIFs que a própria folha já usou — duas linhas iguais na
          mesma folha não são duas pessoas. */
       const naFolha = { numeros: new Set<number>(), nifs: new Set<string>() };
+      /*
+       * As fichas já existentes a quem a folha muda o ano de quotas.
+       *
+       * Mudar a data **refaz o ano** (ver `refazerAnoDeQuotas`), e refazê-lo é
+       * apagar quotas: não pode acontecer no meio do `createMany`. Anota-se aqui
+       * e trata-se no fim, depois de as fichas estarem escritas.
+       */
+      const refazer: { id: string; mes: number; dia: number; tier: (typeof tiers)[number] }[] = [];
+      /* Quem entra pela folha começa o ano hoje, como quem é inscrito à mão.
+         Pelo relógio do clube: às 00:30 de Lisboa o UTC ainda é ontem. */
+      const abreHoje = partesNoFuso(now);
 
       rows.forEach((row, i) => {
         const line = row.line ?? i + 2;
@@ -927,6 +998,17 @@ export class MembersService {
           }
         }
 
+        /* O que a coluna do ano de quotas faz a esta linha. A regra vive
+           inteira, junta e sem Prisma, em `decisaoDoAnoDaFolha`. */
+        const ano = decisaoDoAnoDaFolha(
+          row.annualStart?.trim() || null,
+          achado ?? null,
+          abreHoje,
+        );
+        const abertura = ano.grava
+          ? { annualStartMonth: ano.grava.mes, annualStartDay: ano.grava.dia }
+          : null;
+
         const tier = tierByName.get(fold(row.tier))!;
         // A idade só se verifica quando a folha traz a data. Sem ela não há
         // nada a verificar — e recusar a linha por isso seria voltar a exigir a
@@ -967,6 +1049,7 @@ export class MembersService {
           ...(row.documentNumber !== undefined ? { documentNumber: row.documentNumber.trim() || null } : {}),
           ...(taxId ? { taxId } : {}),
           ...(row.status !== undefined ? { status: row.status as MemberStatus } : {}),
+          ...(abertura ?? {}),
         };
 
         if (achado) {
@@ -999,6 +1082,9 @@ export class MembersService {
           }
 
           update.push({ id: achado.id, data: { ...daFolha, updatedAt: now } });
+          if (ano.refaz && ano.grava) {
+            refazer.push({ id: achado.id, mes: ano.grava.mes, dia: ano.grava.dia, tier });
+          }
           return;
         }
 
@@ -1052,6 +1138,33 @@ export class MembersService {
        * continuam todas dentro da mesma transacção — ou muda tudo, ou nada.
        */
       for (const u of update) await db.member.update({ where: { id: u.id }, data: u.data });
+
+      /*
+       * E o ano de quotas de quem a folha mudou.
+       *
+       * **Depois** das fichas, porque refazer o ano lê a categoria que a folha
+       * acabou de escrever, e só nas **anuais**: numa categoria mensal a data
+       * fica gravada à espera de um dia servir, e não há anuidade para refazer.
+       *
+       * Um travo aqui derruba a importação inteira, e é o que tem de acontecer:
+       * a única coisa que trava é dinheiro que entrou pela euPago (ver
+       * `razaoParaNaoApagar`), e deixar passar metade da folha com a outra
+       * metade das anuidades por refazer era pior do que não entrar nada. A
+       * transação volta tudo atrás.
+       */
+      for (const r of refazer) {
+        await refazerAnoDeQuotas(
+          db,
+          ctx.academyId,
+          {
+            id: r.id,
+            annualStartMonth: r.mes,
+            annualStartDay: r.dia,
+            tier: { feeCents: r.tier.feeCents, billing: r.tier.billing, archivedAt: r.tier.archivedAt },
+          },
+          now,
+        );
+      }
 
       /*
        * A marca de água sobe até ao maior número da folha.
@@ -1241,28 +1354,58 @@ export class MembersService {
   }
 
   /**
-   * Arquivar uma categoria.
+   * Apagar uma categoria.
    *
-   * Nunca apagar enquanto tiver sócios: os sócios ficariam sem categoria e
-   * ninguém saberia porquê. Arquivada, some do formulário público e continua a
-   * explicar o que os sócios antigos pagam.
+   * ## Isto arquivava, e o arquivo era um beco
+   *
+   * A regra era "nunca apagar enquanto tiver sócios", com o argumento de que os
+   * sócios ficariam sem categoria e ninguém saberia porquê. O que saiu daí foi
+   * pior: a consola **escondia o botão** a qualquer categoria com sócios, e não
+   * havia caminho nenhum para a tirar da frente. Um clube que criou "Sócio
+   * Prata" por engano e lhe atribuiu trinta pessoas ficava com ela para sempre.
+   *
+   * E o arquivo não guardava o que prometia guardar. `archivedAt` só era
+   * escrito, nunca limpo, e a lista de categorias só mostra as não arquivadas:
+   * não havia como desarquivar. Era um apagar que deixava a linha escondida na
+   * base — com a agravante de a cobrança automática já ignorar quem tem
+   * categoria arquivada (ver `emitirAutomaticas`), portanto os sócios já
+   * ficavam sem quota sem que a ficha o dissesse.
+   *
+   * ## O que acontece agora
+   *
+   * Apaga-se, e os sócios ficam **sem categoria**. É o que quem carrega no
+   * botão quer dizer, e é o que a consola avisa antes, com o número à frente.
+   *
+   * O `tierId` é posto a nulo aqui e não deixado ao `onDelete: SetNull` do
+   * esquema: assim a contagem devolvida é a que aconteceu mesmo, e a intenção
+   * fica escrita onde se lê, não numa regra da base que uma migração futura
+   * pode mudar sem ninguém dar por isso.
+   *
+   * ## O que **não** se perde
+   *
+   * As quotas. `MemberFee` guarda o seu próprio `amountCents` e não aponta para
+   * a categoria, por isso o histórico de quem pagou o quê fica intacto. O que
+   * se perde é o que a categoria dizia — nome, preço, benefícios — e é
+   * exactamente isso que se está a pedir para apagar.
+   *
+   * ## O que passa a estar parado
+   *
+   * Um sócio sem categoria **não recebe quota automática** (`emitirAutomaticas`
+   * exige categoria com preço). Não é efeito secundário deste método, é como o
+   * produto funciona — mas é a consequência que ninguém adivinha, e por isso
+   * está no aviso da consola.
    */
-  async archiveTier(ctx: RequestContext, id: string) {
+  async deleteTier(ctx: RequestContext, id: string) {
     this.mustWrite(ctx);
 
     return this.prisma.runAs(ctx.academyId, async (db) => {
-      const tier = await db.memberTier.findFirst({
-        where: { id },
-        select: { id: true, _count: { select: { members: true } } },
-      });
+      const tier = await db.memberTier.findFirst({ where: { id }, select: { id: true } });
       if (!tier) throw new NotFoundException("Categoria não encontrada");
 
-      await db.memberTier.update({
-        where: { id },
-        data: { archivedAt: new Date(), isPublic: false, updatedAt: new Date() },
-      });
+      const { count } = await db.member.updateMany({ where: { tierId: id }, data: { tierId: null } });
+      await db.memberTier.delete({ where: { id } });
 
-      return { ok: true, members: tier._count.members };
+      return { ok: true, members: count };
     });
   }
 
@@ -1400,6 +1543,8 @@ type Existente = {
   taxId: string | null;
   email: string | null;
   phone: string | null;
+  annualStartMonth: number | null;
+  annualStartDay: number | null;
 };
 
 /** Uma linha da folha que corresponde a um sócio do livro. */
@@ -1474,7 +1619,38 @@ const ROTULO: Record<string, string> = {
   taxId: "NIF",
   status: "estado",
   tierId: "categoria",
+  /* Os dois lados da mesma data dizem a mesma coisa — `camposQueMudam`
+     desduplica, para a confirmação não a listar duas vezes. */
+  annualStartMonth: "ano de quotas",
+  annualStartDay: "ano de quotas",
 };
+
+/**
+ * O dia e o mês em que abre o ano de quotas de um sócio novo, a partir do que
+ * o formulário mandou (`MM-DD`).
+ *
+ * Só serve a criação — numa ficha que já existe, a data muda pela porta dela
+ * (`PATCH :id/ano-de-quotas`), porque mudá-la refaz o ano.
+ *
+ * - **ausente**: a data de hoje no relógio do clube. É o pedido do clube — quem
+ *   adere hoje começa o ano hoje, e só daqui a um ano volta a ser cobrado. Pelo
+ *   relógio do clube e não em UTC: às 00:30 de Lisboa em Setembro o UTC ainda
+ *   está no dia anterior, e a data de adesão de uma ficha não pode ser a de
+ *   ontem;
+ * - **vazio**: herda a abertura do clube.
+ */
+function aberturaDoDto(
+  valor: string | undefined,
+  hoje: Date,
+): { annualStartMonth: number | null; annualStartDay: number | null } {
+  if (valor === undefined) {
+    const { mes, dia } = partesNoFuso(hoje);
+    return { annualStartMonth: mes, annualStartDay: dia };
+  }
+  if (valor === "") return { annualStartMonth: null, annualStartDay: null };
+  const [mes, dia] = valor.split("-").map(Number);
+  return { annualStartMonth: mes, annualStartDay: dia };
+}
 
 /**
  * O que muda nesta ficha se a folha for aplicada.
@@ -1495,7 +1671,8 @@ function camposQueMudam(actual: Existente, folha: Record<string, unknown>): stri
     if (campo === "tierId" || !(campo in antes)) continue;
     const anterior = antes[campo] ?? null;
     const novo = valor ?? null;
-    if (String(anterior) !== String(novo)) mudam.push(ROTULO[campo] ?? campo);
+    const rotulo = ROTULO[campo] ?? campo;
+    if (String(anterior) !== String(novo) && !mudam.includes(rotulo)) mudam.push(rotulo);
   }
   return mudam;
 }

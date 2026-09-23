@@ -1,7 +1,6 @@
 import { evaluations, sessions, staff, staffStints, teams, today, type StaffStint } from "@/lib/store";
 import { customEvents, resultOutcome } from "@/lib/calendar";
-import { getStaffEdits } from "@/lib/staff-edits";
-import type { StaffDepartment, StaffMember } from "@/data/types";
+import { DEPARTMENT_LABEL, type StaffDepartment, type StaffMember } from "@/data/types";
 import type { Role } from "@/lib/permissions";
 
 /**
@@ -21,18 +20,13 @@ import type { Role } from "@/lib/permissions";
 
 /** Uma pessoa, já com as edições aplicadas. */
 export function staffMember(id: string): StaffMember | undefined {
-  const base = staff.find((s) => s.id === id);
-  if (!base) return undefined;
-  return { ...base, ...getStaffEdits()[id] };
+  return staff.find((s) => s.id === id);
 }
 
-/** Toda a gente, com edições. */
+/** Toda a gente que passou pela academia. */
 export function allStaff(): StaffMember[] {
-  const edits = getStaffEdits();
-  return staff.map((s) => ({ ...s, ...edits[s.id] }));
+  return staff;
 }
-
-export { updateStaff, useStaffEdits, type StaffEdit } from "@/lib/staff-edits";
 
 /* -------------------------------------------------------------------------- */
 /* Histórico                                                                   */
@@ -85,6 +79,74 @@ export function teamHistory(id: string): Stint[] {
     }));
 
   return [...current, ...past].sort((a, b) => b.season.localeCompare(a.season));
+}
+
+/**
+ * O cargo desta pessoa, como se escreve em qualquer lado.
+ *
+ * ## Porque é que existe
+ *
+ * Havia três respostas para a mesma pergunta espalhadas pelo produto: o cargo
+ * atribuído (`roleName`, que é o que decide o acesso), o título escrito à mão na
+ * ficha (`title`), e o nome do papel-base (`ROLE_LABEL[role]`, que é quase
+ * sempre o nome do departamento). Mudar o cargo de alguém mudava o primeiro e
+ * mais nada — e a ficha, as listas e as exportações continuavam a dizer o
+ * antigo, sem nada que o explicasse.
+ *
+ * A ordem é a da verdade: o cargo atribuído manda, o título escrito à mão serve
+ * a quem ainda não tem cargo, e quem não tem nenhum dos dois está **sem cargo**
+ * — ver `SEM_CARGO`, que explica porque é que já não cai no papel-base.
+ */
+export function cargoDe(m: { roleName?: string | null; title?: string | null; role: Role }): string {
+  return (m.roleName ?? "").trim() || (m.title ?? "").trim() || SEM_CARGO;
+}
+
+/** O que basta saber de alguém para lhe dizer o departamento. */
+type ComDepartamento = { roleDepartment?: { key: string; name: string } | null; department: StaffDepartment };
+
+/**
+ * O departamento desta pessoa — o do cargo, quando tem cargo.
+ *
+ * O irmão de `cargoDe`, e pela mesma razão. Há dois departamentos: o do **cargo**
+ * (a tabela `Department`, que é a que o clube edita e onde vive o âmbito) e o
+ * enum antigo escrito à mão na ficha (`department`). Mudar alguém de cargo mexe
+ * no primeiro e não toca no segundo, e a pastilha no cabeçalho continuava a
+ * dizer "Secretaria e operações" a quem tinha acabado de passar a Treinador.
+ *
+ * O enum fica a servir quem **não** tem cargo, que é onde continua a ser a única
+ * resposta. Não se copia um para o outro: os departamentos do clube são uma
+ * tabela livre ("Marketing", "Logística") e não cabem em cinco valores fechados.
+ */
+export function departamentoDe(m: ComDepartamento): string {
+  return m.roleDepartment?.name ?? DEPARTMENT_LABEL[m.department];
+}
+
+/** O departamento clínico, que tem cor própria nas pastilhas. */
+export function eDoClinico(m: ComDepartamento): boolean {
+  return m.roleDepartment ? m.roleDepartment.key === "clinico" : m.department === "clinical";
+}
+
+/**
+ * Quem não tem posição nenhuma no clube.
+ *
+ * ## Porque é que deixou de cair no papel-base
+ *
+ * O último recurso era `ROLE_LABEL[m.role]` — "Equipa técnica", "Direção". Isso
+ * é o **acesso**, não o cargo, e a lista de staff já o mostra na coluna do lado:
+ * a mesma palavra escrita duas vezes na mesma linha, uma delas a fingir que era
+ * uma resposta à pergunta "o que é que esta pessoa faz cá".
+ *
+ * Passou a doer quando os cargos passaram a apagar-se com gente lá dentro. Quem
+ * ficava sem cargo continuava a ler-se como "Equipa técnica", e apagar um cargo
+ * parecia não ter feito nada. Agora diz o que é: sem cargo. É a mesma escolha
+ * que os sócios já fazem com "sem categoria" — a ausência tem nome, e a partir
+ * do nome vê-se o que falta arrumar.
+ */
+export const SEM_CARGO = "Sem cargo";
+
+/** Esta pessoa ficou sem posição no clube? */
+export function semCargo(m: { roleName?: string | null; title?: string | null }): boolean {
+  return !(m.roleName ?? "").trim() && !(m.title ?? "").trim();
 }
 
 /** Quantas épocas distintas — o número que resume uma carreira no clube. */
@@ -236,6 +298,27 @@ export function yearsAtClub(since: string): number {
 }
 
 export const DEPARTMENTS: StaffDepartment[] = ["direction", "technical", "clinical", "operations"];
+
+/**
+ * A ordem da lista de Staff.
+ *
+ * Quem saiu vai para o fim, e só depois se ordena por departamento e nome.
+ * Intercalados, ficavam no meio da lista a parecer pessoal ao serviço — e num
+ * clube com alguns anos são metade das linhas.
+ *
+ * Vive aqui, e não dentro do `sort` da página, para poder ser verificada por
+ * `npm run test:staff`: foi uma linha destas a esconder toda a gente que saiu.
+ */
+export function ordemDoStaff<T extends { isActive: boolean; department: StaffDepartment; name: string }>(
+  a: T,
+  b: T,
+): number {
+  return (
+    Number(b.isActive) - Number(a.isActive) ||
+    DEPARTMENTS.indexOf(a.department) - DEPARTMENTS.indexOf(b.department) ||
+    a.name.localeCompare(b.name, "pt")
+  );
+}
 
 /** Os papéis atribuíveis na ficha, do mais amplo ao mais restrito. */
 export const ASSIGNABLE_ROLES: Role[] = ["OWNER", "DIRECTOR", "COORDINATOR", "COACH", "MEDICAL", "STAFF"];

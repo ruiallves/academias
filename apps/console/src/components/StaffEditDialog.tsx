@@ -1,10 +1,10 @@
 import { useState, type FormEvent } from "react";
-import { ASSIGNABLE_ROLES, DEPARTMENTS, updateStaff } from "@/lib/staff";
+import { ASSIGNABLE_ROLES, DEPARTMENTS } from "@/lib/staff";
 import { apiDelete, apiPatch } from "@/lib/http";
-import { reloadAcademy } from "@/lib/store";
+import { aplicarFichaDeStaff, reloadAcademy, type FichaDeStaff } from "@/lib/store";
 import { can, type Role, type Session } from "@/lib/permissions";
 import { ROLE_LABEL } from "@/session";
-import { DEPARTMENT_LABEL, type StaffDepartment, type StaffMember } from "@/data/types";
+import { DEPARTMENT_API, DEPARTMENT_LABEL, type StaffDepartment, type StaffMember } from "@/data/types";
 import { Dialog, DialogField, dialogInputClass } from "./Dialog";
 import { SelectField } from "./primitives";
 import { Trash2 } from "@/lib/icons";
@@ -115,18 +115,30 @@ export function StaffEditDialog({
       }
     }
 
-    updateStaff(member.id, {
-      name: name.trim(),
-      email: email.trim(),
-      phone: phone.trim(),
-      title: title.trim(),
-      department,
-      isActive,
-      // O papel só muda se quem está a editar o pode mudar. A interface já o
-      // esconde; isto é o que impede que um estado antigo do formulário o altere
-      // à mesma. As equipas só se largam — nunca se escolhem aqui.
-      ...(mayChangeAccess ? { role, ...(usesTeams ? {} : { teamIds: [] }) } : {}),
-    });
+    /*
+      A ficha grava-se no servidor.
+
+      Era uma escrita em memória (`updateStaff`, em `lib/staff-edits.ts`): ficava
+      certa no ecrã de quem editou, não chegava a mais ninguém, e desaparecia no
+      primeiro F5. O estado e as equipas já gravavam; o resto não.
+     */
+    try {
+      const ficha = await apiPatch<FichaDeStaff>(`/api/staff/${member.id}`, {
+        name: name.trim(),
+        email: email.trim(),
+        phone: phone.trim(),
+        title: title.trim(),
+        department: DEPARTMENT_API[department],
+        // O papel só muda se quem está a editar o pode mudar, e só a quem não
+        // tem cargo atribuído — com cargo, é o cargo que manda (separador
+        // Acesso). O servidor recusa nos dois casos; aqui é para não pedir.
+        ...(mayChangeAccess && !member.roleName ? { role } : {}),
+      });
+      aplicarFichaDeStaff(member.id, ficha);
+    } catch (err) {
+      setErro(err instanceof Error ? err.message : "Não foi possível gravar a ficha.");
+      return;
+    }
     onClose();
   }
 

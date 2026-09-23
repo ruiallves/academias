@@ -934,6 +934,169 @@ tem ecrã dedicado na PWA (ver Por fazer).
 
 ---
 
+## O que um ecrã de toque não perdoa
+
+Uma fisioterapeuta, no telemóvel, a registar uma consulta: escreve o nome do
+atleta, aparece a lista, toca no nome — **não selecciona e a lista desaparece**.
+No computador o mesmo gesto funciona, e por isso ninguém tinha dado por ela.
+
+Duas causas, as duas invisíveis a quem desenvolve num portátil.
+
+### Coisas de tocar dentro de um `<label>`
+
+Um `<label>` reencaminha para o campo que rotula qualquer toque que caia lá
+dentro. `DialogField` era um `<label>` à volta de tudo o que lhe dessem — e o
+selector de atleta é um campo de texto **mais uma lista de nomes para tocar**. O
+toque ia parar ao campo de texto, o teclado reabria, e a escolha nunca
+acontecia.
+
+`DialogField` passou a ser uma `<div>` com o `<label>` só à volta do texto,
+ligado ao campo por `htmlFor` quando o campo é um só. Doze campos iguais
+espalhados pelas quatro apps (consola, famílias, plataforma, site) levaram a
+mesma mudança.
+
+O mesmo defeito estava no pior sítio possível: na app das famílias, tocar no
+nome de um documento legal para o **ler** marcava a caixa de o **aceitar** —
+ficava registado que a pessoa aceitou o documento que estava a tentar abrir.
+
+### Listas que deixam o campo perder o foco
+
+Tocar numa opção tira o foco ao campo de texto. No telemóvel isso fecha o
+teclado, e fechar o teclado devolve meio ecrã de altura **entre o dedo pousar e
+o dedo levantar**: a lista sobe, o dedo levanta noutro sítio, e o toque não
+escolhe nada — ou escolhe a linha de baixo.
+
+`ListaDeEscolha` (em `components/primitives.tsx`) é a moldura dessas listas e
+faz `preventDefault` no `mousedown`, que é o que impede o campo de perder o
+foco. Vai no `mousedown` e não no `pointerdown` de propósito: o `mousedown` só
+nasce de um toque que o browser já decidiu ser um toque, e travar o
+`pointerdown` travava também o deslizar para percorrer a lista. Quem escolhe
+continua a ser o `onClick`, por isso o teclado (Tab, Enter) funciona na mesma.
+
+Passaram a usá-la todas as listas de escolher da consola: o selector de atleta
+do registo clínico, o `PersonPicker`, a pesquisa da barra lateral e a do
+telemóvel, o `TokenPicker`, os selectores de atleta das mensalidades, do
+equipamento e das convocatórias.
+
+### A rede
+
+`npm run check:toque` lê o código e recusa os dois padrões — rótulos que
+recebem coisas de tocar (incluindo os que as recebem de outro ficheiro, como o
+`DialogField`) e listas de escolher ao lado de um campo de procura sem segurar o
+foco. Entra no `npm run typecheck`, como `check:access` e `check:http`.
+
+Não persegue formas: persegue **ocorrências**. Um `<label>` à volta do texto de
+uma caixa de marcar é o padrão certo e continua a passar; o que não passa é um
+rótulo que receba um botão ou uma ligação de quem o chama.
+
+Validação ao contrário: repor o `<label>` no `DialogField` faz o guião apontar
+para `ClinicalEntryDialog` — o selector que originou a queixa.
+
+## Apagar cargos e departamentos, mesmo com pessoas
+
+Apagar um cargo exigia que ele estivesse vazio. O botão só aparecia com zero
+pessoas, e o servidor recusava por trás: *"Ainda há 3 pessoas com este papel"*.
+Para desfazer um cargo era preciso reatribuir as pessoas uma a uma primeiro — e
+um clube a reorganizar-se faz o contrário: desfaz a estrutura velha e arruma as
+pessoas depois. O botão que existia também não pedia confirmação nenhuma.
+
+Agora **todos os cargos e departamentos se apagam**, com gente lá dentro, e
+sempre com confirmação.
+
+### Quem fica sem cargo não fica sem acesso
+
+É a parte contra-intuitiva, e é o que torna isto seguro. Sem cargo principal, a
+pessoa cai nos **valores por omissão do papel-base** — é o que `exceptionsFor`
+faz quando devolve `rolePermissions: null`, e já lá estava escrito: uma lista
+vazia trancaria a pessoa fora do produto sem ninguém perceber porquê. Um
+presidente continua presidente; um treinador volta ao que "treinador" quer
+dizer. O que perde é o que o cargo lhe dava **a mais**.
+
+Os dois diálogos dizem-no por esta ordem: primeiro quantas pessoas ficam sem
+cargo, porque é o que assusta; depois que ninguém perde acesso, porque é o que
+decide se se carrega no botão.
+
+### A etiqueta: "Sem cargo"
+
+`cargoDe` caía em `ROLE_LABEL[role]` como último recurso — "Equipa técnica",
+"Direção". Isso é o **acesso**, não o cargo, e a lista de staff já o mostra na
+coluna do lado: a mesma palavra duas vezes na mesma linha. Com os cargos a
+apagarem-se, ficou pior: quem ficava sem cargo continuava a ler-se como "Equipa
+técnica", e apagar parecia não ter feito nada.
+
+Quem não tem cargo nem título diz **Sem cargo** — apagado na lista, pastilha na
+ficha, tal como os sócios já dizem "sem categoria". O caminho de volta é o
+painel *Acesso* da ficha de cada pessoa.
+
+O nome do cargo também está copiado em `Membership.title` (é o convite que o
+escreve lá). Essa cópia sai com o cargo, senão a lista continuava a mostrá-lo.
+Um título escrito à mão que diga outra coisa fica: é uma decisão de alguém sobre
+aquela pessoa.
+
+### Um departamento leva os cargos dele
+
+Era o contrário: ficavam a boiar num grupo "Sem departamento", para não tirar
+acesso a ninguém. O que dava era um clube a apagar a área e a ter de apagar os
+cargos dela um a um a seguir. Um departamento é a área do clube; os cargos dele
+não querem dizer nada sozinhos.
+
+### Arquiva por baixo, e é de propósito
+
+`semearCargosEmFalta` corre **a cada leitura** e dá um primeiro cargo a todo o
+departamento que não tenha nenhum. Apagar a linha do último cargo de um
+departamento era vê-lo voltar a nascer no F5 seguinte, com outro nome. Por isso
+o cargo é arquivado e as pessoas é que são limpas à mão (`apagarCargos`): a
+condição de lá é `roles: { none: {} }`, arquivados incluídos, e é deliberada.
+
+### O que continua fechado
+
+- **O cargo do presidente.** É quem responde pelo clube. Se um departamento
+  alguma vez o contiver, é destacado em vez de apagado.
+- **O cargo que a própria pessoa veste**, e qualquer um de patente acima da
+  dela. São as regras de escalada de sempre, agora também a apagar — apagar o
+  departamento era a porta das traseiras para elas.
+- **Tem de sobrar alguém com `role:write`.** `role:write` só vem por omissão ao
+  `OWNER`: num clube administrado por um director a vestir um cargo à medida,
+  apagar esse cargo tirava a última pessoa capaz de criar outro. Ninguém perdia
+  o clube, mas ninguém lá dentro voltava a mexer em cargos. `assertNaoTrancaOClube`
+  recusa e diz o que fazer.
+
+Verificado por `npm run test:apagar-cargos --workspace @academia/api` (19),
+`test:escalada` (15, com a guarda do bloqueio) e `test:staff --workspace
+@academia/console` (a etiqueta). `test:departments` (35), `test:multi-roles` (26)
+e `test:departamento-novo` (20) continuam a passar.
+
+## Quem saiu continua na lista de Staff
+
+A página Staff filtrava por `isActive`, e quem era desactivado desaparecia dela
+por inteiro. A ficha continuava a existir e a dizer "Já não trabalha na
+academia", a exportação até tinha uma coluna *Estado* — que nunca escrevia outra
+coisa senão "Activo", porque os outros nunca chegavam lá. Para quem usava a
+lista, a pessoa tinha sido apagada: procurar o contacto de um treinador que saiu
+em Dezembro não tinha por onde se fazer.
+
+Desactivar é tirar o acesso, não apagar o passado.
+
+- A tabela traz toda a gente. **Quem saiu vai para o fim**, a cinzento e com a
+  etiqueta *Saiu* — o mesmo tratamento que a lista de atletas dá a um atleta que
+  saiu. Intercalados por departamento, ficavam no meio da lista a parecer pessoal
+  ao serviço.
+- As **métricas do topo** contam só quem cá trabalha: é o clube de hoje, e contar
+  quem saiu dava um número de pessoal que não existe. As dos **separadores**
+  contam o que a tabela mostra, senão a etiqueta dizia 4 e a lista por baixo
+  tinha 5 linhas. A nota de cada métrica diz quantos saíram daquele departamento
+  ("secretaria e logística · 1 saiu"), que é o que explica um 0 ao lado de um 1
+  sem obrigar a procurar a legenda noutro sítio.
+- O cabeçalho da página diz "7 pessoas · 1 já não trabalha cá".
+- Para **escolher** alguém — atribuir uma equipa, pôr num jogo — existe
+  `listStaffActivo`, que é outra pergunta: ninguém entrega uma equipa a quem
+  saiu. A equipa técnica de uma equipa já filtrava os desactivados no servidor
+  (`activos`, em `academy.service.ts`) e continua a filtrar.
+
+A ordem vive em `ordemDoStaff` (`lib/staff.ts`) e não dentro do `sort` da página,
+para poder ser verificada: foi uma linha destas a esconder toda a gente que saiu.
+`npm run test:staff --workspace @academia/console` cobre-a.
+
 ## Ficha de staff
 
 Qualquer pessoa é clicável — na lista, no plantel de uma equipa, num treino por
@@ -1117,6 +1280,62 @@ juntas mantiveram os carregamentos avariados sem deixar rasto:
 Verificado por `npm run test:photos` (24 testes) — que **carrega mesmo o ficheiro**
 para o Supabase e confirma que o link abre e que, sem assinatura, não abre. Um teste
 que só chamasse a API não teria apanhado nada disto.
+
+## Associar a um atleta uma conta que já existe
+
+O link das famílias serve quem chega de fora: cria a conta e liga-a ao educando
+no mesmo passo. Quem **já tem conta no clube** não tinha caminho nenhum. O pai
+que é sócio há quinze anos, o treinador do escalão acima com a filha nos sub-12,
+a tesoureira que é mãe de dois: todos entravam na app e nenhum deles conseguia
+dizer que tem um filho aqui. A secretaria também não tinha botão — na ficha do
+atleta via-se o encarregado e não se lhe podia pôr um.
+
+Na ficha do atleta, separador **Encarregado**, o botão *Associar conta* abre a
+lista das contas do clube. Escolhe-se a pessoa, escreve-se a relação, e a área
+de **Família** aparece-lhe na app da vez seguinte que a abrir.
+
+### A lista é de pessoas, não de vínculos
+
+Quem é treinador e sócio aparecia duas vezes, e escolher uma das duas não queria
+dizer nada: o que passa a ser encarregado é a **conta**. Cada linha traz o que
+aquela pessoa já é no clube ("Equipa técnica", "Sócio n.º 12", "Encarregado") e
+quantos educandos tem, para a secretaria reconhecer o nome certo entre dois
+parecidos. A procura vai ao servidor: um clube com seiscentos sócios não cabe
+numa lista que se percorre com os olhos.
+
+Quem ainda não tem conta nenhuma não aparece, e o vazio diz onde ir: o link das
+famílias, que é o caminho que lhe cria a conta.
+
+### Dois chapéus, duas memberships
+
+O contexto de família nasce de uma `Membership` com papel `GUARDIAN` — é o que
+`app.resolve_memberships` devolve e o que a app lê para desenhar os menus. Um
+treinador que também é pai fica com **duas**, e o vínculo que já tinha não se
+toca: acrescenta-se o de família ao lado.
+
+**Um sócio não tem `Membership` nenhuma** (ver `escotilhas_do_socio`), e a
+política RLS da tabela `User` só mostra quem tem uma. Ler a conta por ali dava
+"Conta não encontrada" precisamente no caso que isto existe para resolver. A
+identidade vem de onde a pessoa se vê: do vínculo, se o tiver, ou da ficha de
+sócio — e uma das duas é também a prova de que a conta é deste clube.
+
+### Entra activa, e sem fila
+
+Quem se regista pelo link fica à espera de aprovação, porque ninguém no clube
+garantiu que aquela pessoa é mesmo encarregada daquela criança. Aqui é o
+contrário: é o clube a ligar, com a ficha do atleta à frente. Pôr em fila um
+pedido que a própria secretaria acabou de fazer era pedir-lhe que se aprovasse a
+si mesma.
+
+Desassociar tira o educando e **deixa a conta de pé**: apagá-la levava atrás o
+rasto de quem avisou faltas e respondeu a convocatórias, e a pessoa pode voltar a
+ter um educando para o ano.
+
+Pede `family:write`, o âmbito do atleta vale como em toda a parte, e cada
+associação fica no histórico da ficha — é onde se vai perguntar "quem meteu este
+encarregado aqui?". Verificado por
+`npm run test:encarregado --workspace @academia/api` (34), que prova os dois
+casos: o treinador, que tem vínculo, e o sócio, que não tem.
 
 ## Convite às famílias
 
@@ -1692,6 +1911,92 @@ guardas antes do provedor estão nos testes acima e em
 outros testes de euPago já dizem, é criar uma referência a sério: a chave em
 `.env` é de produção. Essa confirmação faz-se uma vez, à mão, pela app.
 
+## O ano de quotas é do sócio, e mudá-lo refaz o ano
+
+A janela do clube resolvia o clube e não resolvia o sócio. Quem adere a 22 de
+Setembro num clube que abre o ano em Janeiro recebia uma anuidade inteira por um
+ano que já ia em três quartos. **Cada sócio passou a ter a sua data de
+abertura** (`Member.annualStartMonth` / `annualStartDay`, migração
+`ano_de_quotas_do_socio`), nula em quem herda a do clube. Quem é inscrito hoje
+fica com hoje, pelo relógio do clube e não em UTC: às 00:30 de Lisboa em
+Setembro o UTC ainda está em ontem, e a data de adesão de uma ficha não pode ser
+a de ontem.
+
+**A cobertura passou a estar escrita em cada quota.** `MemberFee.coversFrom` e
+`coversTo`, inclusivos, ancorados no dia de aniversário: 22 de Setembro "até
+Dezembro" vai de 22/09 a 21/01, e são quatro meses porque Dezembro **entra**. O
+período continua a ser `AAAA-MM` e continua a ser a chave; a cobertura é o que
+deixa partir uma anuidade sem inventar meses. A aritmética vive sozinha em
+`src/members/cobertura.ts`, sem Nest, sem Prisma e sem imports, para poder ser
+exercitada sem servidor nenhum: é dinheiro, e é a parte fácil de enganar
+(`npm run test:cobertura`, 63 verificações).
+
+**Partir uma anuidade** (`POST /api/members/fees/:id/dividir`): escolhe-se o mês
+final da primeira parte, a segunda nasce no dia seguinte e leva o resto dos
+meses. O valor reparte-se proporcionalmente e a **segunda fica com o que sobra**,
+não com a sua própria conta arredondada: 100 € a 4/12 dá 33,33 + 66,67, e só
+assim as partes somam o que o sócio deve. Ambas as partes aparecem na app.
+
+**Mudar a data refaz o ano. Sempre.** O botão **Ano de quotas** está ao lado de
+Lançar quotas, no separador das quotas da ficha (`AnoDeQuotasDialog`,
+`PATCH /api/members/:id/ano-de-quotas`), e só grava no Guardar. Chegou a
+perguntar o que fazer à quota a decorrer, com três respostas: manter, redatar,
+ou tapar o intervalo com uma quota curta. Saíram as três. Eram três respostas
+para uma pergunta que o clube não quer que lhe façam, e a mais inocente delas
+deixava o sócio meses sem ser cobrado, em silêncio. A regra é uma: **as quotas
+daquele ano desaparecem e nasce uma anuidade na janela nova, com o valor que o
+ano já valia.** Um ano partido em duas ou três partes sai inteiro e fica uma só.
+Não sobra intervalo por cobrir porque não fica nada de permeio, e o diálogo
+mostra linha a linha, riscado, o que vai desaparecer.
+
+O único travão é dinheiro que entrou pela euPago (`razaoParaNaoApagar`, a mesma
+do botão Apagar quota): uma quota paga online, ou com referência ainda viva, não
+se apaga. Tudo numa transação, por isso um travão deixa a data como estava.
+
+Por ter dois chamadores, o corpo disto mora à parte
+(`refazerAnoDeQuotas`, em `member-fees.service.ts`) e recebe o cliente Prisma em
+vez de o abrir: a importação já vem dentro da sua própria transação, e abrir ali
+um `runAs` dentro de outro pedia uma segunda ligação ao pool para escrever
+linhas que a primeira ainda segura.
+
+A ficha **não** muda a data pelo `PATCH` genérico. Esteve lá, quando mexer na
+data só decidia o ciclo seguinte; saiu quando deixou de decidir. Uma escrita com
+este peso ao lado da morada ou refazia o ano sem ninguém pedir, ou gravava uma
+data que a anuidade a correr desmente.
+
+**A data entra e sai pela folha.** "Início do ano de quotas" é uma coluna
+opcional da importação de sócios e vai na exportação, em `DD/MM`. Aceita-se o
+que uma folha real traz (`22/09`, `22-09`, `22.9`, uma data completa, e o que o
+Excel fizer disso ao transformar a célula em data). O que a coluna faz vive inteiro numa
+função pura, `decisaoDoAnoDaFolha`, longe dos ramos do `forEach` que a aplica,
+porque dela sai a decisão de apagar quotas:
+
+- **ficha nova**, célula vazia: abre hoje, como quem é inscrito à mão;
+- **ficha nova**, célula preenchida: abre no que a célula diz;
+- **ficha que já cá está**, célula vazia: não se toca. Vazio não é uma ordem, e
+  aqui vale a dobrar: assumir hoje refazia-lhe a anuidade;
+- **célula igual** ao que a ficha tem: grava-se, e não se refaz nada. É o caso
+  normal do ida-e-volta, em que a folha exportada traz a coluna preenchida em
+  toda a gente; refazer o ano de trezentos sócios por causa de uma morada
+  corrigida seria estragar o livro com um clique de correção;
+- **célula diferente**: grava e refaz.
+
+Só nas categorias anuais é que refazer tem o que apagar; numa mensal a data fica
+gravada à espera de um dia servir. O ecrã de importação conta as linhas com a
+coluna preenchida e diz o que lhes vai acontecer antes de escrever, e um travão
+por pagamento online derruba a importação inteira, que é o que tem de acontecer:
+meia folha dentro com metade das anuidades por refazer era pior do que nada.
+
+A exportação **nunca** deixa a célula vazia: a API resolve a abertura herdada
+antes de a lista sair (`GET /api/members` devolve `annualStart` sempre
+preenchido), porque uma célula em branco voltava a entrar como "assume hoje".
+`npm run test:exportar --workspace=@academia/console` exporta a sério com as
+colunas da consola e volta a ler o ficheiro com o leitor da importação; corre no
+CI ao lado de `test:cobertura`.
+
+Na criação de um sócio, escolher uma categoria anual faz aparecer o campo da
+abertura, com hoje por omissão e sempre mudável.
+
 ## Apagar quotas e mensalidades
 
 Quotas de sócio e mensalidades de atleta mudavam de estado (paga, por pagar,
@@ -1748,6 +2053,23 @@ ligação (o `Promise.all` não as paraleliza). Com a base remota, de vez em qua
 passava dos cinco segundos. Passou a duas transações, cada uma com metade: a
 primeira decide (quem é, se pode entrar, o que deve), a segunda é o clube e corre
 em paralelo com a assinatura da fotografia.
+
+## Apagar um departamento saiu de dentro de editar
+
+O botão vivia no rodapé do ecrã de **editar** um departamento, e a confirmação
+abria no fundo do corpo do diálogo — fora da vista, num ecrã com quatro
+secções. Carregava-se em "Apagar departamento" e não acontecia nada de
+visível, o que é indistinguível de um botão avariado. O servidor sempre esteve
+bem: apaga o departamento e os cargos ficam sem ele (`onDelete: SetNull`).
+
+Agora é um caixote no cabeçalho de cada departamento, na lista das Definições,
+ao lado de "Editar departamento", e a confirmação é um diálogo próprio
+(`DeleteDepartmentDialog`). São assuntos diferentes: editar é mexer no que uma
+área do clube pode fazer; apagar é fazê-la desaparecer.
+
+Provado de ponta a ponta na consola: criar um departamento, apagá-lo pelo
+caixote, e o cargo que ele criou fica sem departamento, como está escrito na
+confirmação.
 
 ## O fim da época, e o percurso de cada um
 
@@ -2580,6 +2902,65 @@ Verificado por `npm run test:quem-responde --workspace @academia/api` (17), que
 cria uma conta de atleta pelo convite e prova as quatro fronteiras nos dois
 sentidos. `test:convocatoria-resposta` (62), `test:aviso` (25) e `test:atleta`
 (49) continuam a passar.
+
+## A ficha do staff grava-se no servidor
+
+O cargo de alguém aparecia desactualizado por toda a consola: mudava-se o cargo
+principal no separador Acesso e o cabeçalho da ficha, a lista de staff e as
+tabelas continuavam a dizer o anterior. Eram duas avarias com o mesmo sintoma.
+
+A primeira era de leitura. O que se mostrava era `title` — o cargo **escrito**
+na ficha, texto livre — ou o rótulo do papel-base, quando quem manda é o **cargo
+atribuído** (`roleName`). Passou a haver um sítio só a decidir isso, `cargoDe`
+(`lib/staff.ts`): o cargo atribuído primeiro, depois o escrito, e o papel-base
+como último recurso. Quem mostra o cargo chama-o — a ficha, a lista, a pesquisa.
+Faltava ainda o `useStore()` em duas páginas: sem a subscrição, a academia
+recarregava por baixo e o ecrã ficava no que tinha.
+
+A segunda era de escrita, e mais grave: o diálogo "Editar ficha" **não gravava
+nada**. Nome, e-mail, telemóvel, cargo escrito e departamento iam para um armazém
+em memória do browser (`lib/staff-edits.ts`), que a consola fundia por cima do que
+vinha da API. Ficava certo no ecrã de quem editou, não chegava a mais ninguém do
+clube, e desaparecia no primeiro F5 — o estado e as equipas, que ali ao lado no
+mesmo diálogo já falavam com o servidor, tornavam isto ainda menos visível.
+
+Agora é `PATCH /api/staff/:id` (`updateStaffProfile`). O módulo em memória foi
+apagado. O que o endpoint exige:
+
+- `staff:write`, e **patente**: não se edita a ficha de quem está acima (`outranks`).
+- O **e-mail é o da conta**. Muda no Supabase primeiro, fora da transacção: se o
+  endereço já for de outra conta, nada foi escrito e a ficha fica como estava —
+  a ordem contrária deixava o login para trás do que a ficha diz.
+- O **papel-base** só se muda com `access:write`, e só a quem **não** tem cargo
+  atribuído. Com cargo, é o cargo que decide o acesso, e a resposta diz onde:
+  separador Acesso.
+- Tudo o que mudou fica no histórico da pessoa, pelo `registarAlteracoes` de sempre.
+
+A resposta devolve a ficha gravada, e não um `ok`. É o mesmo motivo de
+`aplicarLogistica`: com `reloadAcademy()` o ecrã passava seis a dez segundos a
+mostrar o cargo antigo depois de guardar, que é quanto basta para alguém concluir
+que não gravou e voltar a gravar. A consola escreve a resposta na lista
+(`aplicarFichaDeStaff`, em `lib/store.ts`) e o cabeçalho acompanha o gesto.
+
+### E o departamento, pela mesma razão
+
+A pastilha do cabeçalho continuava a dizer "Secretaria e operações" a quem tinha
+acabado de passar a Treinador. São **dois** departamentos: o do cargo (a tabela
+`Department`, onde vive o âmbito e que é a que o clube edita) e o enum antigo
+escrito à mão na ficha (`Membership.department`). Atribuir um cargo mexe no
+primeiro e não toca no segundo.
+
+`/api/staff` passou a mandar o departamento do cargo (`roleDepartment`, com `key`
+e `name`), e quem o mostra chama `departamentoDe` (`lib/staff.ts`), irmão do
+`cargoDe`: o do cargo primeiro, o enum só para quem não tem cargo. Vale nos cinco
+sítios onde aparecia — pastilha e ficha, lista de staff, exportação e PDF. Não se
+copia um para o outro: os departamentos do clube são uma tabela livre
+("Marketing", "Logística") e não cabem em cinco valores fechados.
+
+Verificado por `npm run test:ficha --workspace @academia/api` (20), num clube
+descartável: grava e a lista concorda, fica no histórico, o papel muda sem cargo
+e é recusado com cargo, o departamento do cargo chega à consola e quem não tem
+cargo não traz nenhum, e as duas recusas de autoridade.
 
 ## Histórico de alterações em todas as fichas
 

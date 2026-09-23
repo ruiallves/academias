@@ -16,6 +16,7 @@ import { SupabaseAccountsService } from "../auth/supabase-accounts.service";
 import { BillingService } from "../billing/billing.service";
 import {
   MemberFeesService,
+  aberturaDoSocio,
   inicioDaEpoca,
   mesesAteFimDaEpoca,
   rotulo,
@@ -321,6 +322,9 @@ export class ClubAppService {
           select: {
             id: true, period: true, label: true, amountCents: true, dueOn: true,
             status: true, settledAt: true,
+            /* O que cada quota cobre — a app mostra o intervalo de uma
+               anuidade, e é por ele que se ordenam as que estão por pagar. */
+            coversFrom: true, coversTo: true,
           },
         }),
         /* Os meses que o clube apagou não se oferecem a pagar. Ver `MemberFeeSkip`. */
@@ -343,8 +347,31 @@ export class ClubAppService {
        * e a app mostra-o em vez de doze meses que não existem.
        */
       const anual = Boolean(tier && !tier.archivedAt && tier.billing === "ANNUAL");
+      /*
+       * Numa anual não há meses adiantados para oferecer — há as **anuidades**
+       * que este sócio tem por pagar, e podem ser mais do que uma.
+       *
+       * Desde que uma anuidade se pode partir (o sócio que paga meio ano de uma
+       * vez), o ano dele pode estar coberto por duas quotas: a que corre agora e
+       * a que começa daqui a uns meses. Mostram-se **as duas**, pela ordem em
+       * que começam. Era uma só, a do ciclo em curso, e a segunda metade
+       * simplesmente não aparecia na app.
+       *
+       * O ciclo é o deste sócio (o dia e mês da ficha dele), e só se cai na
+       * abertura do clube quando a ficha não os tem.
+       */
+      const abertura = aberturaDoSocio(socio, {
+        mes: academia?.memberAnnualStartMonth ?? 8,
+        dia: academia?.memberAnnualStartDay ?? 1,
+      });
+      const porPagar = fees
+        .filter((f) => f.status === "OPEN" && (!f.coversTo || f.coversTo >= agora))
+        .sort((a, b) => (a.coversFrom?.getTime() ?? 0) - (b.coversFrom?.getTime() ?? 0))
+        .map((f) => f.period);
       const periodos = anual
-        ? [inicioDaEpoca(agora, academia?.memberAnnualStartMonth ?? 8, academia?.memberAnnualStartDay ?? 1)]
+        ? porPagar.length > 0
+          ? porPagar
+          : [inicioDaEpoca(agora, abertura.mes, abertura.dia)]
         : mesesAteFimDaEpoca(agora);
       const upcoming = periodos.filter((period) => !dispensados.has(period)).map((period) => {
         const fee = porPeriodo.get(period);

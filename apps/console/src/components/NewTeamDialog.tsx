@@ -1,4 +1,5 @@
-﻿import { Link } from "react-router-dom";
+﻿import { cargoDe } from "@/lib/staff";
+import { Link } from "react-router-dom";
 import { useState, type FormEvent } from "react";
 import { academy, listCoachCandidates } from "@/lib/api";
 import { apiPost } from "@/lib/http";
@@ -211,7 +212,7 @@ export function NewTeamDialog({ onClose }: { onClose: () => void }) {
           */}
           <DialogField label="Treinador principal" hint="opcional">
             <PersonPicker
-              pessoas={coaches.map((c) => ({ id: c.id, name: c.name, sub: c.title }))}
+              pessoas={coaches.map((c) => ({ id: c.id, name: c.name, sub: cargoDe(c) }))}
               value={coachId}
               onChange={setCoachId}
               emptyLabel="Por atribuir"

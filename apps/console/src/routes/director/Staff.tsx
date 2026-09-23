@@ -1,23 +1,23 @@
+import { cargoDe, departamentoDe, eDoClinico, ordemDoStaff, semCargo } from "@/lib/staff";
 import { useEffect, useMemo, useState } from "react";
 import { PageHeader } from "@/components/Shell";
 import { BotaoExportar } from "@/components/BotaoExportar";
 import { COLUNAS_EXPORT_STAFF } from "@/lib/colunas-export";
-import { DataTable, Empty, Metric, MetricRow, Monogram, Panel, PanelHead, Pill, RowLink, type Column } from "@/components/primitives";
+import { cx, DataTable, Empty, Metric, MetricRow, Monogram, Panel, PanelHead, Pill, RowLink, type Column } from "@/components/primitives";
 import { BulkBar, BulkDeleteDialog } from "@/components/BulkDelete";
 import { apiDelete } from "@/lib/http";
-import { reloadAcademy } from "@/lib/store";
+import { reloadAcademy, useStore } from "@/lib/store";
 import { ResultCount, SearchInput, Segmented, Toolbar } from "@/components/filters";
 import { Clock, HeartPulse, Plus, Shield, Users, Whistle } from "@/lib/icons";
 import { listStaff, teamById, unrecordedSessions } from "@/lib/api";
 import { revokeInvite, usePendingInvites } from "@/lib/invites";
-import { useStaffEdits } from "@/lib/staff-edits";
 import { loadDepartments } from "@/lib/departments";
 import { loadRoles } from "@/lib/roles";
 import { shortDate } from "@/lib/format";
 import { can } from "@/lib/permissions";
 import { ROLE_LABEL, useSession } from "@/session";
 import { InviteDialog } from "@/components/InviteDialog";
-import { DEPARTMENT_LABEL, type StaffDepartment, type StaffMember } from "@/data/types";
+import type { StaffDepartment, StaffMember } from "@/data/types";
 
 type Filter = "todos" | StaffDepartment;
 
@@ -51,7 +51,8 @@ export default function Staff() {
   const [inviting, setInviting] = useState(false);
 
   // Redesenha quando uma ficha for editada — o nome ou o cargo mudam aqui também.
-  useStaffEdits();
+  /* Sem isto, a lista não acompanha uma mudança de cargo nem uma ficha editada. */
+  useStore();
 
   /*
    * Os cargos e os departamentos, carregados **ao abrir a página**.
@@ -95,7 +96,47 @@ export default function Staff() {
     return map;
   }, [session]);
 
+  /*
+   * Duas contagens, e são perguntas diferentes.
+   *
+   * As métricas do topo são o **clube de hoje**: quantas pessoas trabalham em
+   * cada departamento. Quem saiu não pertence ao departamento clínico nem a
+   * nenhum outro, e contá-lo ali dava a um diretor um número de pessoal que não
+   * existe.
+   *
+   * As dos separadores contam o que a tabela mostra — senão a etiqueta dizia 4
+   * e a lista por baixo tinha 5 linhas, que é a contradição que se vê de
+   * relance. O cabeçalho da página diz quantos já não cá estão, que é o que
+   * explica a diferença entre as duas filas de números.
+   */
+  const activos = useMemo(() => all.filter((m) => m.isActive), [all]);
+  const saidos = all.length - activos.length;
+
   const counts = useMemo(() => {
+    const byDept = (d: StaffDepartment) => activos.filter((m) => m.department === d).length;
+    return {
+      todos: activos.length,
+      direction: byDept("direction"),
+      technical: byDept("technical"),
+      clinical: byDept("clinical"),
+      operations: byDept("operations"),
+    };
+  }, [activos]);
+
+  /*
+   * A nota da métrica diz quantos saíram daquele departamento.
+   *
+   * É o que evita a leitura "isto está avariado" quando a métrica diz 0 e o
+   * separador logo abaixo diz 1: a explicação fica no mesmo cartão que levanta
+   * a pergunta, e não numa legenda noutro sítio da página.
+   */
+  const nota = (d: StaffDepartment, base: string) => {
+    const n = all.filter((m) => m.department === d && !m.isActive).length;
+    return n === 0 ? base : `${base} · ${n} ${n === 1 ? "saiu" : "saíram"}`;
+  };
+
+  /** As dos separadores: incluem quem saiu, como a tabela. */
+  const naTabela = useMemo(() => {
     const byDept = (d: StaffDepartment) => all.filter((m) => m.department === d).length;
     return {
       todos: all.length,
@@ -108,13 +149,13 @@ export default function Staff() {
 
   const rows = useMemo(() => {
     const q = query.trim().toLowerCase();
-    const order: StaffDepartment[] = ["direction", "technical", "clinical", "operations"];
     return all
       .filter((m) => (filter === "todos" ? true : m.department === filter))
-      .filter((m) => (q ? m.name.toLowerCase().includes(q) || m.title.toLowerCase().includes(q) : true))
-      .sort(
-        (a, b) => order.indexOf(a.department) - order.indexOf(b.department) || a.name.localeCompare(b.name, "pt"),
-      );
+      .filter((m) =>
+        q ? m.name.toLowerCase().includes(q) || cargoDe(m).toLowerCase().includes(q) || m.title.toLowerCase().includes(q) : true,
+      )
+      /* Quem saiu no fim, depois departamento e nome — ver `ordemDoStaff`. */
+      .sort(ordemDoStaff);
   }, [all, filter, query]);
 
   const columns: Column<StaffMember>[] = [
@@ -123,14 +164,35 @@ export default function Staff() {
       header: "Nome",
       render: (m) => (
         <div className="flex items-center gap-2.5">
-          <Monogram name={m.name} photoUrl={m.photoUrl} />
-          <div className="min-w-0">
-            {/* Só o nome abre a ficha — a linha serve para escolher. */}
-            <RowLink to={`/staff/${m.id}`} className="inline-block max-w-full truncate align-bottom font-medium text-ink">
-              {m.name}
-            </RowLink>
-            <div className="truncate text-meta text-ink-3">{m.title}</div>
+          {/*
+            Quem saiu não pode ler-se como quem ficou — o mesmo tratamento que a
+            lista de atletas dá a um atleta que saiu. A etiqueta diz o estado; o
+            cinzento faz com que nem seja preciso lê-la.
+          */}
+          <div className={cx("flex min-w-0 items-center gap-2.5", !m.isActive && "opacity-55 grayscale")}>
+            <Monogram name={m.name} photoUrl={m.photoUrl} />
+            <div className="min-w-0">
+              {/* Só o nome abre a ficha — a linha serve para escolher. */}
+              <RowLink
+                to={`/staff/${m.id}`}
+                className={cx(
+                  "inline-block max-w-full truncate align-bottom font-medium",
+                  m.isActive ? "text-ink" : "text-ink-3",
+                )}
+              >
+                {m.name}
+              </RowLink>
+              {/* Sem cargo lê-se como ausência, e não como um cargo chamado
+                  "Sem cargo": mais apagado do que os outros. */}
+              <div className={cx("truncate text-meta", semCargo(m) ? "text-ink-4 italic" : "text-ink-3")}>
+                {cargoDe(m)}
+              </div>
+            </div>
           </div>
+          {/* "Saiu" e não a frase inteira: a coluna do nome não tem largura
+              para ela, e com a frase o nome ficava cortado a meio. A ficha diz
+              "Já não trabalha na academia" por extenso, que é onde há espaço. */}
+          {!m.isActive && <Pill tone="warn">Saiu</Pill>}
         </div>
       ),
     },
@@ -138,7 +200,7 @@ export default function Staff() {
       key: "department",
       header: "Departamento",
       hideBelow: "sm",
-      render: (m) => <Pill tone={m.department === "clinical" ? "signal" : "neutral"}>{DEPARTMENT_LABEL[m.department]}</Pill>,
+      render: (m) => <Pill tone={eDoClinico(m) ? "signal" : "neutral"}>{departamentoDe(m)}</Pill>,
     },
     {
       key: "access",
@@ -200,7 +262,14 @@ export default function Staff() {
 
   return (
     <>
-      <PageHeader title="Staff" subtitle={`${all.length} pessoas · época 2026/27`}>
+      <PageHeader
+        title="Staff"
+        subtitle={
+          saidos > 0
+            ? `${activos.length} pessoas · ${saidos} já não ${saidos === 1 ? "trabalha" : "trabalham"} cá`
+            : `${activos.length} pessoas · época 2026/27`
+        }
+      >
         {/*
           O staff não se importa de volta — não há folha de cálculo que crie
           contas e cargos, e não deve haver. Exporta-se para o que os clubes
@@ -219,10 +288,10 @@ export default function Staff() {
 
       <div className="space-y-3">
         <MetricRow>
-          <Metric label="Direção" value={String(counts.direction)} icon={Shield} note="e coordenação" />
-          <Metric label="Equipa técnica" value={String(counts.technical)} icon={Whistle} note="treinadores e apoio" />
-          <Metric label="Departamento clínico" value={String(counts.clinical)} icon={HeartPulse} note="médico, físio, nutrição" />
-          <Metric label="Operações" value={String(counts.operations)} icon={Users} note="secretaria e logística" />
+          <Metric label="Direção" value={String(counts.direction)} icon={Shield} note={nota("direction", "e coordenação")} />
+          <Metric label="Equipa técnica" value={String(counts.technical)} icon={Whistle} note={nota("technical", "treinadores e apoio")} />
+          <Metric label="Departamento clínico" value={String(counts.clinical)} icon={HeartPulse} note={nota("clinical", "médico, físio, nutrição")} />
+          <Metric label="Operações" value={String(counts.operations)} icon={Users} note={nota("operations", "secretaria e logística")} />
         </MetricRow>
 
         {/*
@@ -272,11 +341,11 @@ export default function Staff() {
               value={filter}
               onChange={setFilter}
               options={[
-                { value: "todos", label: "Todos", count: counts.todos },
-                { value: "direction", label: "Direção", count: counts.direction },
-                { value: "technical", label: "Técnica", count: counts.technical },
-                { value: "clinical", label: "Clínico", count: counts.clinical },
-                { value: "operations", label: "Operações", count: counts.operations },
+                { value: "todos", label: "Todos", count: naTabela.todos },
+                { value: "direction", label: "Direção", count: naTabela.direction },
+                { value: "technical", label: "Técnica", count: naTabela.technical },
+                { value: "clinical", label: "Clínico", count: naTabela.clinical },
+                { value: "operations", label: "Operações", count: naTabela.operations },
               ]}
             />
             <SearchInput value={query} onChange={setQuery} placeholder="Procurar nome ou cargo…" />

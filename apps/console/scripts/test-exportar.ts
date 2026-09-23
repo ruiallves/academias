@@ -91,6 +91,7 @@ const socio = (over: Partial<MemberRow> = {}): MemberRow =>
     documentNumber: "12345678 9 ZZ4",
     taxId: "212345678",
     sex: "FEMALE",
+    annualStart: "09-22",
     status: "ACTIVE",
     createdAt: "2026-01-02T10:00:00.000Z",
     approvedAt: "2026-01-03T10:00:00.000Z",
@@ -103,7 +104,10 @@ const socio = (over: Partial<MemberRow> = {}): MemberRow =>
     ...over,
   }) as MemberRow;
 
-const socios = [socio(), socio({ id: "m2", number: 43, name: "António Sousa", email: null, taxId: null, sex: "MALE" })];
+const socios = [
+  socio(),
+  socio({ id: "m2", number: 43, name: "António Sousa", email: null, taxId: null, sex: "MALE", annualStart: "01-31" }),
+];
 const ficheiroSocios = folhaDe(socios, COLUNAS_EXPORT_SOCIOS);
 const lidoSocios = await readMemberSheet(comoFicheiro(ficheiroSocios, "socios.xlsx"));
 
@@ -128,6 +132,7 @@ check("a localidade volta igual", primeiro?.city === "Braga", primeiro?.city);
 check("o NIF volta igual", primeiro?.taxId === "212345678", primeiro?.taxId);
 check("o documento volta igual", primeiro?.documentNumber === "12345678 9 ZZ4", primeiro?.documentNumber);
 check("o sexo volta como F/M", primeiro?.sex === "FEMALE", String(primeiro?.sex));
+check("o ano de quotas volta igual", primeiro?.annualStart === "09-22", String(primeiro?.annualStart));
 
 /*
  * Um sócio sem email e sem NIF é o caso normal de metade dos livros antigos.
@@ -137,6 +142,27 @@ const segundo = lidoSocios.rows[1]?.row;
 check("um sócio sem email volta sem email", !segundo?.email, String(segundo?.email));
 check("e sem NIF volta sem NIF", !segundo?.taxId, String(segundo?.taxId));
 check("com o sexo masculino", segundo?.sex === "MALE", String(segundo?.sex));
+check("e com o seu próprio ano de quotas", segundo?.annualStart === "01-31", String(segundo?.annualStart));
+
+/*
+ * O ano de quotas **nunca sai vazio**, e isto é mais do que uma preocupação
+ * estética: uma célula em branco volta a entrar como "assume hoje", e assumir
+ * hoje num sócio que já tem anuidade a correr é apagar-lhe as quotas do ano.
+ * Quem está na plataforma tem sempre um ano de quotas — a API resolve o
+ * herdado antes de a lista sair — e a folha tem de o dizer em todas as linhas.
+ */
+const colunaAno = COLUNAS_EXPORT_SOCIOS.find((c) => c.header === "Início do ano de quotas");
+check("a coluna do ano de quotas vai na folha", Boolean(colunaAno), "");
+check(
+  "e vem preenchida em todas as linhas",
+  socios.every((m) => String(colunaAno?.valor(m) ?? "").trim() !== ""),
+  socios.map((m) => String(colunaAno?.valor(m))).join(" | "),
+);
+check(
+  "no formato dia/mês que a importação lê",
+  socios.every((m) => /^\d{2}\/\d{2}$/.test(String(colunaAno?.valor(m)))),
+  socios.map((m) => String(colunaAno?.valor(m))).join(" | "),
+);
 
 /*
  * A coluna que **não** volta: o estado existe para quem lê a folha, e a

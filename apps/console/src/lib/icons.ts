@@ -112,6 +112,8 @@ export {
   Undo2,
   /* O histórico de uma ficha: o relógio com a seta para trás. */
   History,
+  /* Partir uma anuidade em duas — o sócio que paga meio ano de uma vez. */
+  Scissors,
   /* O manípulo de arrasto de uma lista: três linhas, a convenção de sempre. */
   Menu as DragHandle,
   type LucideIcon,

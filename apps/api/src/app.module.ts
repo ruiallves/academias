@@ -67,6 +67,8 @@ import { FamilyInviteController, FamilySignupController } from "./family/family-
 import { AthleteInvitesController, AthleteSignupController } from "./academy/athlete-invites.controller";
 import { AthleteInvitesService } from "./academy/athlete-invites.service";
 import { FamilyInvitesService } from "./family/family-invites.service";
+import { GuardianLinksController } from "./family/guardian-links.controller";
+import { GuardianLinksService } from "./family/guardian-links.service";
 import { FinanceController } from "./finance/finance.controller";
 import { InventoryController } from "./inventory/inventory.controller";
 import { TrainingController } from "./training/training.controller";
@@ -168,6 +170,7 @@ import { LegalAdminService } from "./legal/legal-admin.service";
     AdminsController,
     AdminInvitePageController,
     FamilyInviteController,
+    GuardianLinksController,
     DevelopmentController,
     PhotosController,
     ClubLogoController,
@@ -235,6 +238,7 @@ import { LegalAdminService } from "./legal/legal-admin.service";
     ContactsService,
     AdminInvitesService,
     FamilyInvitesService,
+    GuardianLinksService,
     AthleteInvitesService,
     EvaluationsService,
     PhotosService,

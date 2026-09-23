@@ -130,9 +130,19 @@ export async function setRoleNav(id: string, navKeys: string[]): Promise<void> {
   await recarregar();
 }
 
-export async function archiveRole(id: string): Promise<void> {
-  await apiDelete(`/api/roles/${id}`);
+/**
+ * Apagar um cargo, mesmo com gente a vesti-lo.
+ *
+ * Devolve **quantas pessoas ficaram sem cargo** — o número que o aviso mostra
+ * antes e a mensagem repete depois, como em `deleteTier` para os sócios.
+ *
+ * Ninguém perde acesso: sem cargo, a pessoa cai nos valores por omissão do
+ * papel-base. O que perde é o que o cargo lhe dava a mais.
+ */
+export async function apagarCargo(id: string): Promise<{ name: string; people: number }> {
+  const r = await apiDelete<{ ok: true; name: string; people: number }>(`/api/roles/${id}`);
   await recarregar();
+  return r;
 }
 
 /**

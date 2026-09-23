@@ -2,7 +2,7 @@ import { useMemo, useRef, useState, type FormEvent } from "react";
 import { createPortal } from "react-dom";
 import { Dialog, DialogField, dialogInputClass } from "@/components/Dialog";
 import { Segmented } from "@/components/filters";
-import { Monogram, cx } from "@/components/primitives";
+import { cx, ListaDeEscolha, Monogram } from "@/components/primitives";
 import { Check, ChevronLeft, ChevronRight, Receipt, Search, Send, TriangleAlert, X } from "@/lib/icons";
 import { feeHistory, listAthletes, listTeams, teamById } from "@/lib/api";
 import { apiPost } from "@/lib/http";
@@ -661,7 +661,7 @@ function EscolherAtletas({
           Nenhum atleta com esse nome.
         </p>
       ) : (
-        <ul className="max-h-[220px] overflow-y-auto rounded-[var(--radius-control)] border border-line">
+        <ListaDeEscolha className="max-h-[220px] overflow-y-auto rounded-[var(--radius-control)] border border-line">
           {encontrados.map((a) => {
             const on = escolhidos.has(a.id);
             return (
@@ -687,7 +687,7 @@ function EscolherAtletas({
               Escreve para encontrar os outros {atletas.length - encontrados.length}.
             </li>
           )}
-        </ul>
+        </ListaDeEscolha>
       )}
     </div>
   );

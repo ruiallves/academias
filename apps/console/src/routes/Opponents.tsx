@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import { PageHeader } from "@/components/Shell";
-import { Empty, Loading, Panel, PanelHead, Pill, cx } from "@/components/primitives";
+import { cx, Empty, ListaDeEscolha, Loading, Panel, PanelHead, Pill } from "@/components/primitives";
 import { ArrowLeft, ChevronRight, Search, Shield } from "@/lib/icons";
 import { useStore } from "@/lib/store";
 import { listOpponents, type OpponentSummary } from "@/lib/matches";
@@ -93,7 +93,7 @@ export default function Opponents() {
             detail={rows.length === 0 ? "Aparecem aqui à medida que os jogos se jogam." : undefined}
           />
         ) : (
-          <ul>
+          <ListaDeEscolha>
             {filtrados.map((r) => (
               <li key={r.name} className="border-b border-line last:border-b-0">
                 <button
@@ -122,7 +122,7 @@ export default function Opponents() {
                 </button>
               </li>
             ))}
-          </ul>
+          </ListaDeEscolha>
         )}
       </Panel>
     </>

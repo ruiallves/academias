@@ -727,3 +727,86 @@ export function athleteTeamScopeWhere(ctx: RequestContext) {
     ],
   };
 }
+
+/* -------------------------------------------------------------------------- */
+/* Apagar cargos sem trancar o clube                                           */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * Depois de apagar estes cargos, sobra alguém a poder mexer em cargos?
+ *
+ * ## Porque é que isto é uma pergunta
+ *
+ * Os cargos passaram a apagar-se com gente lá dentro, e um departamento leva os
+ * seus atrás. Quem fica sem cargo **não fica sem acesso** — cai nos valores por
+ * omissão do papel-base, que é o que `exceptionsFor` faz quando devolve
+ * `rolePermissions: null`. Um presidente continua presidente.
+ *
+ * Só que `role:write` — criar e apagar cargos — por omissão só vem a quem é
+ * `OWNER`. Num clube onde quem administra é um `DIRECTOR` a vestir um cargo à
+ * medida que lhe dá `role:write`, apagar esse cargo tira a última pessoa capaz
+ * de criar outro. Ninguém perde o clube; ninguém lá dentro volta a mexer em
+ * cargos. A porta fecha-se por dentro e a chave fica do lado de fora.
+ *
+ * É o caso que o dono do produto levantou ao pedir isto, e é real: acontece a
+ * quem apaga a lista toda de uma vez, que é o gesto que a mudança existe para
+ * permitir.
+ *
+ * ## Porque é que vive aqui
+ *
+ * Porque é a mesma pergunta que `can` responde, feita no futuro: *o que é que
+ * esta pessoa poderá fazer depois disto?* E porque este ficheiro não importa
+ * nada de relativo — é o que deixa `test:escalada` importá-lo com
+ * `--experimental-strip-types` e provar a regra sem levantar servidor nenhum.
+ */
+
+/** Uma pessoa, com o que decide o que ela pode. Os campos vêm de `exceptionsFor`. */
+export type PessoaComCargos = {
+  role: string;
+  grants: string[];
+  revokes: string[];
+  customRoleId: string | null;
+  customRole: { permissions: string[]; archivedAt: Date | null } | null;
+  extraRoles: { roleId: string; role: { permissions: string[]; archivedAt: Date | null } }[];
+};
+
+/**
+ * O que esta pessoa poderá fazer **depois** de se apagarem estes cargos.
+ *
+ * Copia a conta de `exceptionsFor` — incluindo o chão do papel-base quando não
+ * sobra cargo principal — porque uma segunda versão da regra que decide acessos
+ * é uma segunda versão que há-de divergir. O que muda é só uma coisa: os cargos
+ * em `apagados` já não contam.
+ */
+export function podeDepois(p: PessoaComCargos, apagados: Set<string>, permissao: Permission): boolean {
+  if (p.revokes.includes(permissao)) return false;
+  if (p.grants.includes(permissao)) return true;
+
+  const principal =
+    p.customRole && !p.customRole.archivedAt && p.customRoleId && !apagados.has(p.customRoleId)
+      ? p.customRole
+      : null;
+  const secundarios = p.extraRoles
+    .filter((r) => !apagados.has(r.roleId) && !r.role.archivedAt)
+    .map((r) => r.role);
+
+  const vivos = principal ? [principal, ...secundarios] : secundarios;
+  const doPapelBase = (ROLE_PERMISSIONS[p.role as Role] ?? []) as Permission[];
+
+  // Sem cargo nenhum vivo, manda o papel-base — tal como em `exceptionsFor`.
+  if (vivos.length === 0) return doPapelBase.includes(permissao);
+
+  const chao = principal ? [] : doPapelBase;
+  return [...chao, ...vivos.flatMap((r) => r.permissions)].includes(permissao);
+}
+
+/**
+ * Sobra alguém no clube a poder criar cargos?
+ *
+ * Conta **toda a gente activa**, incluindo quem está a apagar: a pergunta é se o
+ * clube fica capaz, não se aquela pessoa fica satisfeita.
+ */
+export function sobraQuemMexeEmCargos(pessoas: PessoaComCargos[], apagar: string[]): boolean {
+  const apagados = new Set(apagar);
+  return pessoas.some((p) => podeDepois(p, apagados, "role:write"));
+}

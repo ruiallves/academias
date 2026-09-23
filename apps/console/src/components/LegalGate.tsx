@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
+import { type ReactNode, useCallback, useEffect, useId, useMemo, useState } from "react";
 import { LegalMarkdown } from "@academia/ui/legal-markdown";
 import { Dialog } from "./Dialog";
 import { FileText } from "@/lib/icons";
@@ -139,12 +139,7 @@ function AcceptScreen({ status, onAccepted }: { status: LegalStatus; onAccepted:
               action={
                 <button
                   type="button"
-                  // `preventDefault`: o botão vive dentro do `<label>`, e abrir o
-                  // documento não pode marcar a caixa por ele.
-                  onClick={(e) => {
-                    e.preventDefault();
-                    setALer(doc);
-                  }}
+                  onClick={() => setALer(doc)}
                   className="ctl-outline shrink-0"
                 >
                   <FileText className="size-3.5" strokeWidth={1.75} />
@@ -194,20 +189,37 @@ function Linha({
   hint?: ReactNode;
   action?: ReactNode;
 }) {
+  const id = useId();
+
+  /*
+   * O rótulo cobre o texto, e não a linha inteira.
+   *
+   * Era um `<label>` à volta de tudo — incluindo do botão "Ler documento" que
+   * lhe passam em `action`. Um `<label>` reencaminha para a caixa de marcar
+   * qualquer toque que caia lá dentro, e num telemóvel isso é a diferença entre
+   * **ler** o contrato e **aceitá-lo sem o abrir**. Havia um `preventDefault` no
+   * botão a tapar o buraco, o que é pedir a quem escrever o próximo que se
+   * lembre dele.
+   *
+   * Agora a caixa e o texto ficam ligados pelo `id`, e o que vier de fora fica
+   * fora do rótulo. Tocar no texto continua a marcar; tocar no botão abre o
+   * documento, e mais nada.
+   */
   return (
-    <label className="flex cursor-pointer items-start gap-3 px-5 py-4 max-md:flex-wrap">
+    <div className="flex items-start gap-3 px-5 py-4 max-md:flex-wrap">
       <input
+        id={id}
         type="checkbox"
         checked={checked}
         onChange={(e) => onChange(e.target.checked)}
         className="mt-0.5 size-4 shrink-0 accent-[var(--color-signal)]"
       />
-      <span className="min-w-0 flex-1">
+      <label htmlFor={id} className="min-w-0 flex-1 cursor-pointer">
         <span className="block text-body font-medium text-ink">{label}</span>
         {hint && <span className="mt-0.5 block text-meta text-ink-3">{hint}</span>}
-      </span>
+      </label>
       {action && <span className="max-md:ml-7 max-md:w-full">{action}</span>}
-    </label>
+    </div>
   );
 }
 

@@ -1,12 +1,13 @@
 import { BadRequestException, ConflictException, ForbiddenException, Injectable, NotFoundException } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
-import { Prisma, type AttendanceStatus, type CalendarEventKind, type Role } from "@prisma/client";
+import { Prisma, type AttendanceStatus, type CalendarEventKind, type Role, type StaffDepartment } from "@prisma/client";
 import { PrismaService, type ScopedClient } from "../prisma/prisma.service";
 import { escolherTreinador, headCoaches } from "./head-coaches";
 import { MatchesService } from "./matches.service";
 import { StorageService } from "../storage/storage.service";
 import { PHOTO_BUCKET, PHOTO_TTL } from "../storage/photos.service";
 import { nomeDeQuemMexe, registarAlteracoes } from "../common/historico";
+import { SupabaseAccountsService } from "../auth/supabase-accounts.service";
 import { DIAS_DO_MES } from "../members/member-fees.service";
 import { basePermissions, can, outranks, ROLE_PERMISSIONS, type Permission, type RequestContext, teamScopeForRoster } from "../common/permissions";
 import { assertPodeResponderPor, athleteScopeFilter, athleteTeamScopeWhere, calendarScopeFilter, inTeamScope, teamScopeFilter } from "../common/permissions";
@@ -173,6 +174,8 @@ export class AcademyService {
     private readonly prisma: PrismaService,
     private readonly storage: StorageService,
     private readonly config: ConfigService,
+    /* O email da ficha é o email da conta: muda nos dois, ou em nenhum. */
+    private readonly contas: SupabaseAccountsService,
     /*
      * Os jogos vivem noutro serviço, e o calendário precisa deles **na mesma
      * transacção** — ver `calendar`. Injectar é mais barato do que abrir uma
@@ -743,6 +746,156 @@ export class AcademyService {
   }
 
   /* ------------------------------------------------------------------------ */
+
+  /**
+   * A ficha de quem trabalha no clube: nome, contactos, cargo escrito e área.
+   *
+   * ## Porque é que isto não existia
+   *
+   * Existia o ecrã. "Editar ficha" mudava o nome, o email, o telemóvel, o cargo
+   * escrito e o departamento — **no browser**, num armazém em memória que a
+   * consola fundia por cima do que vinha da API (`lib/staff-edits.ts`). Ficava
+   * certo no ecrã de quem editou, não chegava a mais ninguém, e desaparecia no
+   * primeiro F5. O estado (activo) e as equipas gravavam; o resto não.
+   *
+   * ## O que é do clube e o que é da pessoa
+   *
+   * O cargo escrito e o departamento são desta academia: vivem na `Membership`.
+   * O nome, o email e o telemóvel são da **conta** — a mesma pessoa pode
+   * trabalhar em dois clubes, e mudar aqui muda nos dois. A consola di-lo a
+   * quem edita, porque é o género de coisa que ninguém adivinha.
+   *
+   * ## O email muda nos dois sítios
+   *
+   * No `User`, que é para onde saem os avisos, e na conta do Supabase, que é por
+   * onde a pessoa entra (ver `SupabaseAccounts.changeEmail`). Mudar só um dos
+   * dois é a definição de uma armadilha.
+   *
+   * ## O papel-base
+   *
+   * Só com `access:write`, e só a quem **não** tem cargo atribuído: com cargo, é
+   * o cargo que manda (ver `assign` em `RolesService`), e deixar mudá-lo aqui
+   * era abrir a porta a um estado que a atribuição seguinte desfaz sem aviso.
+   */
+  async updateStaffProfile(
+    ctx: RequestContext,
+    membershipId: string,
+    dto: {
+      name?: string;
+      email?: string;
+      phone?: string | null;
+      title?: string | null;
+      department?: StaffDepartment | null;
+      role?: Role;
+    },
+  ) {
+    if (!can(ctx, "staff:write")) throw new ForbiddenException("Sem permissão para editar fichas");
+
+    const alvo = await this.prisma.runAs(ctx.academyId, async (db) => {
+      const m = await db.membership.findFirst({
+        where: { id: membershipId, role: { notIn: ["GUARDIAN", "ATHLETE"] } },
+        select: {
+          id: true, role: true, title: true, department: true, customRoleId: true,
+          customRole: { select: { rank: true, key: true, archivedAt: true } },
+          extraRoles: { select: { role: { select: { rank: true, archivedAt: true } } } },
+          user: { select: { id: true, authId: true, name: true, email: true, phone: true } },
+        },
+      });
+      if (!m) throw new NotFoundException("Pessoa não encontrada");
+      if (!outranks(ctx, m)) throw new ForbiddenException("Essa pessoa tem um cargo acima do teu");
+      return m;
+    });
+
+    const nome = dto.name?.trim();
+    if (dto.name !== undefined && (nome ?? "").length < 2) {
+      throw new BadRequestException("O nome não pode ficar vazio");
+    }
+    const email = dto.email?.trim().toLowerCase();
+    if (dto.email !== undefined && !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email ?? "")) {
+      throw new BadRequestException("Email inválido");
+    }
+    if (dto.role !== undefined && !can(ctx, "access:write")) {
+      throw new ForbiddenException("Sem permissão para mudar o acesso");
+    }
+    if (dto.role !== undefined && alvo.customRoleId) {
+      throw new BadRequestException("Esta pessoa tem um cargo atribuído: o acesso muda no separador Acesso");
+    }
+    if (dto.role !== undefined && !outranks(ctx, { role: dto.role, customRole: null, extraRoles: [] })) {
+      throw new ForbiddenException("Não podes dar um papel com mais acesso do que o teu");
+    }
+
+    /*
+     * A conta primeiro, e fora da transacção do clube.
+     *
+     * Se o Supabase recusar o email (já existe noutra conta), nada foi escrito
+     * ainda — é a ordem que evita a ficha mudar e o login ficar para trás.
+     */
+    const mudaEmail = email !== undefined && email !== alvo.user.email.toLowerCase();
+    if (mudaEmail && alvo.user.authId) {
+      await this.contas.changeEmail(alvo.user.authId, email!);
+    }
+
+    return this.prisma.runAs(ctx.academyId, async (db) => {
+      if (nome !== undefined || mudaEmail || dto.phone !== undefined) {
+        await db.user.update({
+          where: { id: alvo.user.id },
+          data: {
+            ...(nome !== undefined ? { name: nome } : {}),
+            ...(mudaEmail ? { email: email! } : {}),
+            ...(dto.phone !== undefined ? { phone: dto.phone?.trim() || null } : {}),
+          },
+        });
+      }
+
+      if (dto.title !== undefined || dto.department !== undefined || dto.role !== undefined) {
+        await db.membership.update({
+          where: { id: membershipId },
+          data: {
+            ...(dto.title !== undefined ? { title: dto.title?.trim() || null } : {}),
+            ...(dto.department !== undefined ? { department: dto.department ?? null } : {}),
+            ...(dto.role !== undefined ? { role: dto.role } : {}),
+          },
+        });
+      }
+
+      await registarAlteracoes(
+        db,
+        ctx,
+        "STAFF",
+        membershipId,
+        { nome: alvo.user.name, email: alvo.user.email, telemovel: alvo.user.phone, cargo: alvo.title, departamento: alvo.department, papel: alvo.role },
+        { nome, email: mudaEmail ? email : undefined, telemovel: dto.phone, cargo: dto.title, departamento: dto.department, papel: dto.role },
+        await nomeDeQuemMexe(db, ctx),
+      );
+
+      /*
+       * Devolve-se a ficha gravada, e não um `ok`.
+       *
+       * Sem isto a consola só tinha uma saída para mostrar o que acabou de
+       * escrever: `reloadAcademy()`, que traz a academia inteira — e durante os
+       * segundos que isso demora o ecrã continua a mostrar o cargo antigo, que
+       * é exactamente o que faz alguém concluir que a gravação se perdeu (ver
+       * `aplicarLogistica`, na consola, pelo mesmo motivo). Com a ficha na
+       * resposta, o ecrã acompanha o gesto no mesmo fotograma.
+       */
+      const gravada = await db.membership.findUniqueOrThrow({
+        where: { id: membershipId },
+        select: {
+          id: true, title: true, department: true, role: true,
+          user: { select: { name: true, email: true, phone: true } },
+        },
+      });
+      return {
+        id: gravada.id,
+        name: gravada.user.name,
+        email: gravada.user.email,
+        phone: gravada.user.phone,
+        title: gravada.title,
+        department: gravada.department,
+        role: gravada.role,
+      };
+    });
+  }
 
   /**
    * Desactivar ou reactivar uma conta — de staff ou de encarregado.
@@ -1631,7 +1784,10 @@ export class AcademyService {
         select: {
           id: true, role: true, title: true, department: true, isActive: true, grants: true, revokes: true, createdAt: true,
           customRoleId: true,
-          customRole: { select: { name: true } },
+          // O departamento **do cargo**, que é o verdadeiro quando há cargo: a
+          // coluna `department` aqui ao lado é o enum antigo da ficha e fica no
+          // que estava quando alguém muda de cargo. Ver `departamentoDe`, na consola.
+          customRole: { select: { name: true, department: { select: { key: true, name: true } } } },
           // Os cargos secundários de cada pessoa — o que faz a ficha dela dizer
           // tudo o que ela é, e não só o cargo com que foi convidada.
           extraRoles: { select: { role: { select: { id: true, name: true, archivedAt: true } } } },
@@ -1649,6 +1805,7 @@ export class AcademyService {
         role: m.role,
         roleId: m.customRoleId,
         roleName: m.customRole?.name ?? null,
+        roleDepartment: m.customRole?.department ?? null,
         // Um cargo arquivado deixa de contar em toda a parte (ver `exceptionsFor`);
         // mostrá-lo aqui era prometer um acesso que já não existe.
         extraRoles: m.extraRoles.filter((r) => !r.role.archivedAt).map((r) => ({ id: r.role.id, name: r.role.name })),

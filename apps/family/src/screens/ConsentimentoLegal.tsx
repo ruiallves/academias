@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useId, useState } from "react";
 import { apiGet } from "@/lib/http";
 import { acceptanceLabel, type LegalDocumentView } from "@/lib/legal";
 
@@ -56,22 +56,58 @@ export function ConsentimentoLegal({
   return (
     <div className="space-y-2.5 border-t border-line pt-4">
       {docs.map((d) => (
-        <label key={d.id} className="flex items-start gap-3">
-          <input
-            type="checkbox"
-            checked={Boolean(marcados[d.id])}
-            onChange={(e) => marcar(d.id, e.target.checked)}
-            className="mt-[3px] size-[18px] shrink-0 accent-[var(--color-signal)]"
-          />
-          {/* Sem a versão por baixo: quem abre o documento vê-a lá, no site. */}
-          <span className="text-[14px] leading-snug text-ink">
-            {acceptanceLabel(d).replace(d.title, "").trim()}{" "}
-            <a href={d.url} target="_blank" rel="noreferrer" className="underline underline-offset-2">
-              {d.title}
-            </a>
-          </span>
-        </label>
+        <LinhaDeAceitacao
+          key={d.id}
+          doc={d}
+          marcado={Boolean(marcados[d.id])}
+          onMarcar={(v) => marcar(d.id, v)}
+        />
       ))}
+    </div>
+  );
+}
+
+/**
+ * Uma linha de aceitação: a caixa, a frase, e o documento para ler.
+ *
+ * ## Porque é que o `<label>` não cobre a linha toda
+ *
+ * Cobria, e a ligação para o documento ficava lá dentro. Um `<label>`
+ * reencaminha para a caixa qualquer toque que caia dentro dele — e num telemóvel
+ * isso queria dizer que **tocar em "Termos de Serviço" para os ler marcava a
+ * aceitação** em vez de os abrir. É o pior sítio do produto para um toque ir
+ * parar ao sítio errado: fica registado que a pessoa aceitou um documento que
+ * ela estava a tentar abrir.
+ *
+ * Agora o rótulo cobre só a frase, ligado à caixa pelo `id`. Tocar na frase
+ * marca; tocar no nome do documento abre-o, e mais nada.
+ */
+function LinhaDeAceitacao({
+  doc,
+  marcado,
+  onMarcar,
+}: {
+  doc: Required;
+  marcado: boolean;
+  onMarcar: (v: boolean) => void;
+}) {
+  const id = useId();
+  return (
+    <div className="flex items-start gap-3">
+      <input
+        id={id}
+        type="checkbox"
+        checked={marcado}
+        onChange={(e) => onMarcar(e.target.checked)}
+        className="mt-[3px] size-[18px] shrink-0 accent-[var(--color-signal)]"
+      />
+      {/* Sem a versão por baixo: quem abre o documento vê-a lá, no site. */}
+      <span className="text-[14px] leading-snug text-ink">
+        <label htmlFor={id}>{acceptanceLabel(doc).replace(doc.title, "").trim()}</label>{" "}
+        <a href={doc.url} target="_blank" rel="noreferrer" className="underline underline-offset-2">
+          {doc.title}
+        </a>
+      </span>
     </div>
   );
 }

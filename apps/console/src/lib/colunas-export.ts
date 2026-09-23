@@ -1,9 +1,10 @@
+import { cargoDe, departamentoDe } from "@/lib/staff";
 import type { ColunaExport } from "@/lib/exportar";
 import { dataISO } from "@/lib/exportar";
-import { EXPORT_COLUMNS, sexoParaFolha } from "@/lib/member-sheet";
+import { diaMesParaFolha, EXPORT_COLUMNS, sexoParaFolha } from "@/lib/member-sheet";
 import { ladoParaFolha } from "@/lib/import";
 import { STATUS_LABEL, type MemberRow } from "@/lib/members";
-import { DEPARTMENT_LABEL, type Athlete, type Guardian, type StaffMember, type Team } from "@/data/types";
+import type { Athlete, Guardian, StaffMember, Team } from "@/data/types";
 import { athleteById, sportById, teamById } from "@/lib/api";
 import { teamAgeLabel } from "@/lib/team-age";
 import { STAGE_LABEL, ageOf as idadeDe, type ProspectRow } from "@/lib/scouting";
@@ -56,6 +57,8 @@ const VALOR_SOCIO: Record<string, (m: MemberRow) => string | number | null | und
   documentNumber: (m) => m.documentNumber,
   taxId: (m) => m.taxId,
   sex: (m) => sexoParaFolha(m.sex),
+  // Nunca vazio: a API resolve quem herda a abertura do clube. Ver `list`.
+  annualStart: (m) => diaMesParaFolha(m.annualStart),
 };
 
 export const COLUNAS_EXPORT_SOCIOS: ColunaExport<MemberRow>[] = [
@@ -114,8 +117,8 @@ const ESTADO_ATLETA: Record<Athlete["status"], string> = {
 
 export const COLUNAS_EXPORT_STAFF: ColunaExport<StaffMember>[] = [
   { header: "Nome", valor: (s) => s.name, largura: 28 },
-  { header: "Cargo", valor: (s) => s.title, largura: 22 },
-  { header: "Departamento", valor: (s) => DEPARTMENT_LABEL[s.department], largura: 22 },
+  { header: "Cargo", valor: (s) => cargoDe(s), largura: 22 },
+  { header: "Departamento", valor: (s) => departamentoDe(s), largura: 22 },
   { header: "Email", valor: (s) => s.email, largura: 26 },
   { header: "Telemóvel", valor: (s) => s.phone, largura: 14 },
   /* As equipas pelo nome, separadas por vírgula: uma pessoa pode ter várias e

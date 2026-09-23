@@ -134,6 +134,18 @@ export class MemberUpdateDto {
   @IsOptional() @IsBoolean() acceptedTerms?: boolean;
 
   @IsOptional() @IsString() @Length(0, 2000) notes?: string;
+
+  /*
+   * O ano de quotas **não** se muda por aqui, e a ausência é a funcionalidade.
+   *
+   * Esteve cá, quando mexer na data só decidia o ciclo seguinte. Deixou de
+   * decidir: hoje mudar a data **refaz o ano** — apaga as quotas daquele ano e
+   * lança uma nova. Uma escrita com esse peso não pode entrar de borla no PATCH
+   * genérico da ficha, ao lado da morada: ou refazia o ano sem ninguém pedir, ou
+   * gravava uma data que a anuidade a correr desmente. Tem porta própria —
+   * `PATCH :id/ano-de-quotas`, ver `MemberAnnualYearDto` — e a folha de
+   * importação, que avisa antes.
+   */
 }
 
 export class MemberTierInputDto {
@@ -212,6 +224,21 @@ export class MemberImportRowDto {
   @IsOptional() @IsIn(SEXES as unknown as string[]) sex?: string;
   @IsOptional() @IsIn(DOCS as unknown as string[]) documentKind?: string;
   @IsOptional() @IsIn(STATUSES as unknown as string[]) status?: string;
+
+  /**
+   * Quando abre o ano de quotas deste sócio, em `MM-DD`.
+   *
+   * Ausente ou vazio fica a **data de hoje** — a mesma regra de quem é
+   * inscrito à mao. Não é a abertura do clube: uma folha antiga carregada em
+   * Março daria a toda a gente um ano que já ia a meio.
+   *
+   * Preenchido numa ficha que já cá está e tem categoria anual, **refaz a
+   * anuidade** dela — as quotas daquele ano são apagadas e nasce uma na janela
+   * nova. O ecrã de importação avisa disso antes de escrever.
+   */
+  @IsOptional()
+  @Matches(/^$|^(0[1-9]|1[0-2])-(0[1-9]|[12]\d|3[01])$/, { message: "Abertura no formato MM-DD" })
+  annualStart?: string;
 }
 
 export class MemberImportDto {
@@ -300,6 +327,35 @@ export class MemberCreateDto {
   @IsOptional() @IsIn(STATUSES as unknown as string[]) status?: string;
   @IsOptional() @IsBoolean() acceptedTerms?: boolean;
   @IsOptional() @IsString() @Length(0, 2000) notes?: string;
+
+  /**
+   * O dia e o mês em que abre o ano de quotas deste sócio, em `MM-DD`.
+   *
+   * Omisso numa categoria anual fica a **data de hoje**: quem adere hoje começa
+   * o ano hoje, e só daqui a um ano volta a ser cobrado. Era a janela do clube
+   * para toda a gente, e isso vendia a quem entrava a meio um ano que já ia a
+   * meio. Vazio (`""`) devolve-o explicitamente à abertura do clube.
+   */
+  @IsOptional()
+  @Matches(/^$|^(0[1-9]|1[0-2])-(0[1-9]|[12]\d|3[01])$/, { message: "Abertura no formato MM-DD" })
+  annualStart?: string;
+
+  /**
+   * Mandar o convite da app a quem acabou de ser inscrito.
+   *
+   * **Ligado por omissão**, que é o comportamento de sempre: quem inscreve à
+   * mão costuma querer que a pessoa entre na app, e obrigar a um segundo gesto
+   * era esquecê-lo. Ausente vale `true` — um cliente antigo continua a mandar
+   * convite como mandava.
+   *
+   * Desligar serve o caso real que faltava: carregar uma ficha com o email já
+   * conhecido **sem** avisar ninguém, porque a pessoa ainda não sabe que vai
+   * ser inscrita, porque o clube quer convidar toda a gente no mesmo dia, ou
+   * porque o email entrou para efeitos de facturação e mais nada.
+   *
+   * Sem email não muda nada: não há convite para mandar de qualquer maneira.
+   */
+  @IsOptional() @IsBoolean() sendInvite?: boolean;
 }
 
 /**
@@ -323,6 +379,38 @@ export class MemberFeeCreateDto {
   @IsInt() @Min(0) @Max(1_000_000) amountCents!: number;
 
   @IsOptional() @IsString() @Length(0, 500) notes?: string;
+
+  /**
+   * O último mês **incluído**, quando se lança uma anuidade mais curta do que
+   * um ano. Omisso é o ano inteiro a contar do mês escolhido. Só faz sentido
+   * numa categoria anual e com um mês de início só — o serviço recusa o resto.
+   */
+  @IsOptional()
+  @Matches(/^\d{4}-(0[1-9]|1[0-2])$/, { message: "Mês inválido — usa AAAA-MM, por exemplo 2026-12" })
+  until?: string;
+}
+
+/**
+ * Cobrar uma anuidade só até um mês, e passar o resto para uma segunda.
+ *
+ * O mês **entra**: "até Dezembro" cobra Dezembro. Ver `MemberFeesService.dividir`.
+ */
+export class MemberFeeSplitDto {
+  @Matches(/^\d{4}-(0[1-9]|1[0-2])$/, { message: "Mês inválido — usa AAAA-MM, por exemplo 2026-12" })
+  until!: string;
+}
+
+/**
+ * Quando abre o ano de quotas de um sócio, e o que fazer à que está a correr.
+ *
+ * `annualStart` vazio devolve-o à abertura do clube. Mudar a data **refaz o
+ * ano**: as quotas dele são apagadas e nasce uma na janela nova, com o valor
+ * que o ano já valia. Ver `MemberFeesService.definirAnoDeQuotas`.
+ */
+export class MemberAnnualYearDto {
+  @IsString()
+  @Matches(/^$|^(0[1-9]|1[0-2])-(0[1-9]|[12]\d|3[01])$/, { message: "Abertura no formato MM-DD" })
+  annualStart!: string;
 }
 
 /** O menu "Marcar como paga / por pagar / Anular" — os três estados que se escolhem à mão. */

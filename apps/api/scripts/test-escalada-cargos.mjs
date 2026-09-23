@@ -31,6 +31,7 @@ import {
   outranks,
   rankOf,
   ROLE_PERMISSIONS,
+  sobraQuemMexeEmCargos,
 } from "../src/common/permissions.ts";
 
 let passed = 0;
@@ -107,6 +108,61 @@ check("rankOf do alvo é 100 (o secundário manda)", rankOf(alvoComSecundarioOwn
 check("o director (patente 80) NÃO manda nesse alvo", outranks(director, alvoComSecundarioOwner) === false);
 const treinadorSimples = { role: "COACH", customRole: null, extraRoles: [] };
 check("mas manda num treinador simples (patente 40)", outranks(director, treinadorSimples) === true);
+
+console.log("\n=== 6. Apagar cargos não tranca o clube por fora ===");
+/*
+ * Os cargos passaram a apagar-se com gente lá dentro, e apagar um departamento
+ * leva os dele atrás. Quem fica sem cargo não fica sem acesso — cai nos valores
+ * por omissão do papel-base. Mas `role:write` só vem por omissão ao `OWNER`:
+ * num clube administrado por um director a vestir um cargo à medida, apagar
+ * esse cargo tirava a última pessoa capaz de criar outro.
+ *
+ * Desligar a guarda = tirar o `throw` de `assertNaoTrancaOClube`. Feito isso, o
+ * primeiro caso aqui passa a deixar apagar, e o clube fica sem porta.
+ */
+const pessoa = (role, cargoId, permissoes, extras = []) => ({
+  role,
+  grants: [],
+  revokes: [],
+  customRoleId: cargoId,
+  customRole: cargoId ? { permissions: permissoes, archivedAt: null } : null,
+  extraRoles: extras,
+});
+
+const CARGO_ADMIN = "cargo-admin";
+/* Um clube sem presidente a sério: quem manda é um director com um cargo à medida. */
+const soUmAdmin = [
+  pessoa("DIRECTOR", CARGO_ADMIN, ["role:write", "staff:write"]),
+  pessoa("COACH", "cargo-treinador", ["attendance:write"]),
+];
+check(
+  "apagar o único cargo com role:write deixaria o clube sem ninguém a mexer em cargos",
+  sobraQuemMexeEmCargos(soUmAdmin, [CARGO_ADMIN]) === false,
+);
+check(
+  "apagar outro qualquer é seguro",
+  sobraQuemMexeEmCargos(soUmAdmin, ["cargo-treinador"]) === true,
+);
+
+/* Com um presidente na casa, o papel-base chega: o cargo dele pode ir abaixo. */
+const comPresidente = [...soUmAdmin, pessoa("OWNER", "cargo-presidente", [])];
+check(
+  "um OWNER sem cargo continua a poder mexer em cargos (é o papel-base)",
+  sobraQuemMexeEmCargos(comPresidente, [CARGO_ADMIN, "cargo-presidente"]) === true,
+);
+
+/* Um cargo secundário também conta — é por lá que muita gente recebe o acesso. */
+const porSecundario = [
+  pessoa("COACH", "cargo-treinador", ["attendance:write"], [
+    { roleId: "cargo-extra", role: { permissions: ["role:write"], archivedAt: null } },
+  ]),
+];
+check("um cargo secundário com role:write segura o clube", sobraQuemMexeEmCargos(porSecundario, []) === true);
+check("e apagá-lo tranca-o", sobraQuemMexeEmCargos(porSecundario, ["cargo-extra"]) === false);
+
+/* Uma retirada por pessoa ganha ao cargo, aqui como em toda a parte. */
+const comRevoke = [{ ...pessoa("OWNER", null, []), revokes: ["role:write"] }];
+check("quem tem role:write retirado não conta como saída", sobraQuemMexeEmCargos(comRevoke, []) === false);
 
 console.log(`\n${failed === 0 ? "TUDO OK" : "HÁ FALHAS"} — ${passed} ok, ${failed} falhas`);
 process.exit(failed === 0 ? 0 : 1);

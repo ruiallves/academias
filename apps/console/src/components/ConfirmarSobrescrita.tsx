@@ -113,9 +113,73 @@ export function EnviarConvites({
       <span className="text-body text-ink-2">
         Enviar o convite para a app
         <span className="block text-meta leading-relaxed text-ink-4">
-          Cada {substantivo} com email na folha recebe, ao importar, um email para criar conta. Deixa desligado
-          para carregar os dados agora e convidar os {plural} depois, pela lista.
+          Ao importar, sai um email para criar conta a cada {substantivo} com email na folha{" "}
+          <strong className="font-medium text-ink-3">que ainda não tenha conta</strong>. Quem já entrou na app
+          não recebe nada. Deixa desligado para carregar os dados agora e convidar os {plural} depois, pela lista.
           {semEmail ? ` ${semEmail} ${semEmail === 1 ? "linha não tem" : "linhas não têm"} email e não recebem nada.` : ""}
+        </span>
+      </span>
+    </label>
+  );
+}
+
+/**
+ * "Enviar o convite para a app?" — agora ao **criar uma ficha**, uma de cada vez.
+ *
+ * ## Porquê ligada, ao contrário da importação
+ *
+ * Porque são momentos diferentes. Importar um livro antigo é trabalho de
+ * secretaria e mandar correio a trezentas pessoas é outra decisão (ver
+ * `EnviarConvites`, logo acima, e a razão de estar desligada lá). Inscrever uma
+ * pessoa ao balcão é o contrário: ela está ali, deu o email, e o passo seguinte
+ * é entrar na app. Desligar por omissão aqui era acrescentar um gesto que toda
+ * a gente se esqueceria de fazer.
+ *
+ * ## Porque é que a opção passou a existir
+ *
+ * Porque nem sempre se quer avisar já. Um email que entra para efeitos de
+ * facturação, uma ficha carregada antes de a pessoa saber que vai ser inscrita,
+ * um clube que prefere convidar o escalão todo no mesmo dia. Antes disto, quem
+ * escrevesse o email mandava o convite, quisesse ou não.
+ *
+ * Sem email não há nada a decidir: a caixa fica desactivada e a explicar porquê,
+ * em vez de oferecer uma escolha que não tem efeito nenhum.
+ */
+export function ConvidarAoCriar({
+  ligado,
+  onChange,
+  temEmail,
+  substantivo,
+}: {
+  ligado: boolean;
+  onChange: (v: boolean) => void;
+  /** Há email na ficha? Sem ele não existe convite para mandar. */
+  temEmail: boolean;
+  substantivo: "sócio" | "atleta";
+}) {
+  if (!temEmail) {
+    return (
+      <p className="rounded-[var(--radius-control)] bg-sunken px-3 py-2 text-meta leading-relaxed text-ink-3">
+        Sem email não sai convite nenhum. A ficha fica criada e podes convidar este {substantivo} depois, a
+        partir da lista ou da ficha.
+      </p>
+    );
+  }
+
+  return (
+    <label className="flex cursor-pointer items-start gap-2.5 rounded-[var(--radius-control)] border border-line bg-sunken/40 px-3 py-2.5">
+      <input
+        type="checkbox"
+        checked={ligado}
+        onChange={(e) => onChange(e.target.checked)}
+        className="mt-0.5 size-4 accent-[var(--color-signal)]"
+      />
+      <span className="text-body text-ink-2">
+        Enviar o convite para a app
+        <span className="block text-meta leading-relaxed text-ink-4">
+          {ligado
+            ? `Ao gravar, este ${substantivo} recebe um email para criar conta e instalar a app do clube.`
+            : `A ficha fica criada e não sai email nenhum. Podes convidar este ${substantivo} depois, pela lista ou pela ficha.`}
         </span>
       </span>
     </label>

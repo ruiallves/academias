@@ -52,3 +52,13 @@ jobs:
 
       - name: App da família apanha o convite da query e do caminho
         run: npm run test:convite-captura --workspace=@academia/family
+
+      - name: Aritmética das quotas anuais partidas (preço e fronteiras)
+        run: npm run test:cobertura --workspace=@academia/api
+
+      # A coluna do ano de quotas apaga anuidades quando muda. O ida-e-volta
+      # exporta a sério e volta a ler com o leitor da importação: uma célula que
+      # saísse vazia voltava a entrar como "assume hoje" e refazia o ano a quem
+      # não pediu nada.
+      - name: Exportar e reimportar sócios fecha o ciclo
+        run: npm run test:exportar --workspace=@academia/console

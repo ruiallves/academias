@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { PageHeader } from "@/components/Shell";
-import { Empty, Metric, MetricRow, Monogram, Panel, PanelHead, Pill, cx } from "@/components/primitives";
+import { cx, Empty, ListaDeEscolha, Metric, MetricRow, Monogram, Panel, PanelHead, Pill } from "@/components/primitives";
 import { ArrowUpRight, Check, Download, Megaphone, Pencil, Plus, Search, Trophy, Users } from "@/lib/icons";
 import { athleteById, teamById } from "@/lib/api";
 import { aplicarLogistica, useStore, type ApiMatch, type GuestCandidate } from "@/lib/store";
@@ -953,7 +953,7 @@ function GuestPicker({
           <p className="px-5 pb-3 text-meta text-ink-4">Ninguém com esse nome nos escalões inferiores.</p>
         )
       ) : (
-        <ul>
+        <ListaDeEscolha>
           {visible.map((g) => {
             const on = picked.has(g.id);
             const disabled = locked || g.blocked || (!on && cheio);
@@ -1001,7 +1001,7 @@ function GuestPicker({
               </li>
             );
           })}
-        </ul>
+        </ListaDeEscolha>
       )}
     </div>
   );

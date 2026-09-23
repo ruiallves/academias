@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState } from "react";
+import { cloneElement, isValidElement, type ReactElement, useId, useMemo, useRef, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { PageHeader } from "@/components/Shell";
 import { Bar, Empty, Panel, PanelHead, Pill, SelectField, cx } from "@/components/primitives";
@@ -413,13 +413,24 @@ export default function NewAnalysis() {
 }
 
 function Field({ label, hint, children }: { label: string; hint?: string; children: React.ReactNode }) {
+  const id = useId();
+  /*
+   * A ligação ao campo, quando é um só e não traz `id` seu. É o que mantém o
+   * rótulo a focar o campo sem o pôr à volta dele — ver `DialogField`.
+   */
+  const soUmCampo =
+    isValidElement(children) &&
+    typeof children.type === "string" &&
+    ["input", "select", "textarea"].includes(children.type) &&
+    !(children.props as { id?: string }).id;
+
   return (
-    <label className="block">
-      <span className="mb-1 flex items-baseline gap-2 text-meta font-medium text-ink-2">
+    <div className="block">
+      <label {...(soUmCampo ? { htmlFor: id } : {})} className="mb-1 flex items-baseline gap-2 text-meta font-medium text-ink-2">
         {label}
         {hint && <span className="font-normal text-ink-4">{hint}</span>}
-      </span>
-      {children}
-    </label>
+      </label>
+      {soUmCampo ? cloneElement(children as ReactElement<{ id?: string }>, { id }) : children}
+    </div>
   );
 }

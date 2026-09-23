@@ -35,7 +35,8 @@ import {
   setPermission,
 } from "../src/lib/access";
 import { ROLE_PERMISSIONS, permissionsOf, type Session } from "../src/lib/permissions";
-import { yearsAtClub } from "../src/lib/staff";
+import { cargoDe, ordemDoStaff, semCargo, yearsAtClub } from "../src/lib/staff";
+import type { StaffDepartment } from "../src/data/types";
 import { deriveSteps, type Facts } from "../src/lib/onboarding";
 
 let passed = 0;
@@ -214,6 +215,75 @@ console.log("\n=== Quem ve que passos ===");
 
   check("o departamento clinico nao tem passos de montagem",
     deriveSteps(medical, vazia).length === 0, `${deriveSteps(medical, vazia).length}`);
+}
+
+console.log("\n=== A ordem da lista de Staff ===");
+{
+  /*
+   * A avaria que isto fecha: a lista filtrava `isActive`, e quem era
+   * desactivado desaparecia da página Staff por inteiro — com a ficha ainda a
+   * existir, e com uma exportação que tinha uma coluna "Estado" onde nunca se
+   * escrevia outra coisa senão "Activo". Desactivar é tirar o acesso, não
+   * apagar o passado: quem saiu fica na lista, no fim e marcado.
+   */
+  type Linha = { isActive: boolean; department: StaffDepartment; name: string };
+  const p = (name: string, department: StaffDepartment, isActive = true): Linha => ({ name, department, isActive });
+
+  const lista: Linha[] = [
+    p("Zulmira", "operations"),
+    p("Ana", "technical", false),
+    p("Bruno", "direction"),
+    p("Carla", "technical"),
+    p("Alberto", "technical"),
+    p("Dora", "direction", false),
+  ];
+  const ordenada = [...lista].sort(ordemDoStaff).map((x) => x.name);
+
+  check("quem saiu vai todo para o fim", ordenada.slice(4).sort().join(",") === "Ana,Dora", ordenada.join(" · "));
+  check(
+    "e quem ficou mantém a ordem de sempre — departamento, depois nome",
+    ordenada.slice(0, 4).join(",") === "Bruno,Alberto,Carla,Zulmira",
+    ordenada.join(" · "),
+  );
+  check(
+    "entre os que saíram, a mesma regra",
+    ordenada[4] === "Dora" && ordenada[5] === "Ana",
+    ordenada.join(" · "),
+  );
+
+  const soActivos = lista.filter((x) => x.isActive);
+  check(
+    "uma lista sem ninguém que tenha saído ordena-se como antes",
+    [...soActivos].sort(ordemDoStaff).map((x) => x.name).join(",") === "Bruno,Alberto,Carla,Zulmira",
+  );
+}
+
+console.log("\n=== Sem cargo tem nome ===");
+{
+  /*
+   * Os cargos passaram a apagar-se com gente lá dentro. Quem fica sem cargo
+   * caía em `ROLE_LABEL[role]` — "Equipa técnica" — que é o **acesso**, não o
+   * cargo, e que a lista de staff já mostra na coluna do lado. Resultado:
+   * apagar um cargo não mudava nada no ecrã onde se ia confirmar.
+   */
+  const comCargo = { roleName: "Diretor desportivo", title: "Treinador", role: "COACH" as const };
+  check("o cargo atribuído manda", cargoDe(comCargo) === "Diretor desportivo", cargoDe(comCargo));
+  check("e não é 'sem cargo'", !semCargo(comCargo));
+
+  const soTitulo = { roleName: null, title: "Roupeiro", role: "STAFF" as const };
+  check("sem cargo atribuído, vale o título escrito à mão", cargoDe(soTitulo) === "Roupeiro", cargoDe(soTitulo));
+  check("e também não é 'sem cargo'", !semCargo(soTitulo));
+
+  const semNada = { roleName: null, title: "", role: "COACH" as const };
+  check("sem nenhum dos dois, diz 'Sem cargo'", cargoDe(semNada) === "Sem cargo", cargoDe(semNada));
+  check("e o predicado concorda", semCargo(semNada));
+  check(
+    "já não cai no papel-base",
+    cargoDe(semNada) !== "Equipa técnica" && cargoDe({ ...semNada, role: "DIRECTOR" }) === "Sem cargo",
+  );
+
+  // Espaços em branco não são um cargo.
+  check("um título só com espaços é ausência", semCargo({ roleName: "  ", title: "   " }));
 }
 
 console.log("\n=== Anos de casa ===");

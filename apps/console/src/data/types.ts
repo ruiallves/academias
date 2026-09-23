@@ -155,6 +155,15 @@ export type Team = {
  */
 export type StaffDepartment = "direction" | "technical" | "clinical" | "scouting" | "operations";
 
+/** O mesmo departamento, como o servidor o escreve (`StaffDepartment`). */
+export const DEPARTMENT_API: Record<StaffDepartment, "DIRECTION" | "TECHNICAL" | "CLINICAL" | "SCOUTING" | "OPERATIONS"> = {
+  direction: "DIRECTION",
+  technical: "TECHNICAL",
+  clinical: "CLINICAL",
+  scouting: "SCOUTING",
+  operations: "OPERATIONS",
+};
+
 export const DEPARTMENT_LABEL: Record<StaffDepartment, string> = {
   direction: "Direção",
   technical: "Equipa técnica",
@@ -204,6 +213,13 @@ export type StaffMember = {
    */
   roleId?: string | null;
   roleName?: string | null;
+  /**
+   * O departamento **do cargo** — o verdadeiro, quando há cargo.
+   *
+   * `department` aqui em cima é o enum antigo, escrito à mão na ficha, e não
+   * acompanha uma mudança de cargo. Ver `departamentoDe`.
+   */
+  roleDepartment?: { key: string; name: string } | null;
   /**
    * Os cargos que se acrescentam. Um presidente que também treina os Sub-13
    * tem-no aqui.

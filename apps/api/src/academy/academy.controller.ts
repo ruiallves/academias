@@ -18,6 +18,25 @@ import { BillingService, METODOS_MANUAIS, periodoActual, type AplicarEm, type Me
  * O valor volta a ser validado no serviço (`assertValidAmount`, 1 € a 1000 €):
  * aqui trava-se a forma, lá trava-se a regra, e é a regra que conta.
  */
+/** O que a ficha de staff deixa mudar. Tudo opcional: grava-se o que mudou. */
+class StaffProfileDto {
+  @IsOptional() @IsString() @Length(2, 80) name?: string;
+
+  @IsOptional() @IsString() @Length(3, 160) email?: string;
+
+  @IsOptional() @IsString() @Length(0, 40) phone?: string;
+
+  /** O cargo escrito na ficha ("Fisioterapeuta"). O cargo com permissões é outro. */
+  @IsOptional() @IsString() @Length(0, 80) title?: string;
+
+  @IsOptional() @IsIn(["DIRECTION", "TECHNICAL", "CLINICAL", "SCOUTING", "OPERATIONS"])
+  department?: "DIRECTION" | "TECHNICAL" | "CLINICAL" | "SCOUTING" | "OPERATIONS";
+
+  /** Só para quem tem `access:write`, e só sem cargo atribuído. */
+  @IsOptional() @IsIn(["OWNER", "DIRECTOR", "COORDINATOR", "COACH", "STAFF", "MEDICAL", "SCOUT"])
+  role?: "OWNER" | "DIRECTOR" | "COORDINATOR" | "COACH" | "STAFF" | "MEDICAL" | "SCOUT";
+}
+
 /** O que a viragem de época leva. Ver `SeasonsService.virar`. */
 class EquipaQueTransitaDto {
   @IsString()
@@ -697,6 +716,18 @@ export class AcademyController {
    * Também exige `access:write`: as equipas de um treinador são o âmbito dos
    * dados dele, não uma etiqueta na ficha. A regra e as guardas estão no serviço.
    */
+  /**
+   * A ficha de quem trabalha no clube.
+   *
+   * Nome, email e telemóvel são da conta da pessoa (mudam em todos os clubes
+   * onde ela esteja); o cargo escrito e o departamento são deste clube. Ver
+   * `AcademyService.updateStaffProfile`.
+   */
+  @Patch("staff/:id")
+  updateStaffProfile(@Req() req: AuthedRequest, @Param("id") id: string, @Body() body: StaffProfileDto) {
+    return this.academy.updateStaffProfile(req.ctx, id, body);
+  }
+
   @Patch("staff/:id/teams")
   setTeams(@Req() req: AuthedRequest, @Param("id") id: string, @Body() body: SetTeamsDto) {
     return this.academy.setTeams(req.ctx, id, body.teamIds);

@@ -3,7 +3,7 @@ import { useMobile } from "@/lib/viewport";
 import { Link, useSearchParams } from "react-router-dom";
 import { PageHeader } from "@/components/Shell";
 import { CartaoDeSocioPanel } from "@/components/CartaoDeSocio";
-import { DepartmentDialog } from "@/components/DepartmentDialog";
+import { DeleteDepartmentDialog, DepartmentDialog } from "@/components/DepartmentDialog";
 import { DeleteAcademyPanel } from "@/components/DeleteAcademyPanel";
 import { IdentityPanel } from "@/components/IdentityPanel";
 import { ContratoPanel } from "@/components/ContratoPanel";
@@ -19,13 +19,14 @@ import { SportsPanel } from "@/components/SportsPanel";
  */
 import { cx, Panel, PanelHead, Pill } from "@/components/primitives";
 import { EpocaPanel } from "@/components/EpocaPanel";
-import { CircleCheck, Wallet } from "@/lib/icons";
-import { useStore } from "@/lib/store";
+import { CircleCheck, Trash2, Wallet } from "@/lib/icons";
+import { reloadAcademy, useStore } from "@/lib/store";
 import { type CatalogKey } from "@/lib/catalogs";
 import { can, type Permission } from "@/lib/permissions";
 import { AREAS, CLINICAL_AREAS, SCOUTING_AREAS, levelOf, type Area } from "@/lib/access";
 import { SCOPE_LABEL, loadDepartments, useDepartments, type Department } from "@/lib/departments";
-import { archiveRole, loadRoles, useRoles, type AcademyRole } from "@/lib/roles";
+import { loadRoles, useRoles, type AcademyRole } from "@/lib/roles";
+import { DeleteRoleDialog } from "@/components/DeleteRoleDialog";
 import { RoleDialog } from "@/components/RoleDialog";
 import { useSession } from "@/session";
 
@@ -205,6 +206,8 @@ function RolesPanel({ open }: { open?: boolean }) {
   const [creatingRole, setCreatingRole] = useState<string | null>(null);
   const [editingDep, setEditingDep] = useState<Department | null>(null);
   const [creatingDep, setCreatingDep] = useState(false);
+  const [apagandoDep, setApagandoDep] = useState<Department | null>(null);
+  const [apagandoRole, setApagandoRole] = useState<AcademyRole | null>(null);
   const ref = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -287,6 +290,20 @@ function RolesPanel({ open }: { open?: boolean }) {
                 <button type="button" className="ctl-ghost" onClick={() => setEditingDep(dep)}>
                   Editar departamento
                 </button>
+                {/*
+                  Apagar vive aqui, ao lado do departamento, e não dentro do ecrã
+                  de editar: são assuntos diferentes, e lá dentro a confirmação
+                  abria fora da vista.
+                */}
+                <button
+                  type="button"
+                  aria-label={`Apagar ${dep.name}`}
+                  title="Apagar departamento"
+                  className="ctl-ghost size-8 justify-center px-0 text-ink-4 hover:text-risk"
+                  onClick={() => setApagandoDep(dep)}
+                >
+                  <Trash2 className="size-3.5" strokeWidth={1.75} />
+                </button>
               </div>
             )}
           </header>
@@ -309,7 +326,14 @@ function RolesPanel({ open }: { open?: boolean }) {
               {dep.roles.map((dr) => {
                 const role = roles.find((r) => r.id === dr.id);
                 if (!role) return null;
-                return <RoleRow key={role.id} role={role} onEdit={() => setEditingRole(role)} />;
+                return (
+                  <RoleRow
+                    key={role.id}
+                    role={role}
+                    onEdit={() => setEditingRole(role)}
+                    onDelete={() => setApagandoRole(role)}
+                  />
+                );
               })}
             </ul>
           )}
@@ -331,7 +355,12 @@ function RolesPanel({ open }: { open?: boolean }) {
           </div>
           <ul>
             {semDepartamento.map((role) => (
-              <RoleRow key={role.id} role={role} onEdit={() => setEditingRole(role)} />
+              <RoleRow
+                key={role.id}
+                role={role}
+                onEdit={() => setEditingRole(role)}
+                onDelete={() => setApagandoRole(role)}
+              />
             ))}
           </ul>
         </Panel>
@@ -377,6 +406,30 @@ function RolesPanel({ open }: { open?: boolean }) {
         />
       )}
 
+      {apagandoRole && (
+        <DeleteRoleDialog
+          role={apagandoRole}
+          onClose={() => setApagandoRole(null)}
+          onDeleted={() => {
+            setApagandoRole(null);
+            /* Ficar sem cargo muda a ficha e a lista de staff: o store recarrega. */
+            void reloadAcademy();
+          }}
+        />
+      )}
+
+      {apagandoDep && (
+        <DeleteDepartmentDialog
+          department={apagandoDep}
+          onClose={() => setApagandoDep(null)}
+          onDeleted={() => {
+            setApagandoDep(null);
+            /* Os cargos ficam sem departamento: o store deles tem de recarregar. */
+            void loadRoles();
+          }}
+        />
+      )}
+
       {(creatingRole !== null || editingRole) && (
         <RoleDialog
           role={editingRole ?? undefined}
@@ -401,7 +454,7 @@ function RolesPanel({ open }: { open?: boolean }) {
  * a hierarquia é a moldura — o painel é o departamento, as linhas são os cargos
  * — e a linha volta a ser uma linha normal de painel, como em todo o produto.
  */
-function RoleRow({ role, onEdit }: { role: AcademyRole; onEdit: () => void }) {
+function RoleRow({ role, onEdit, onDelete }: { role: AcademyRole; onEdit: () => void; onDelete: () => void }) {
   return (
     <li className="flex flex-wrap items-center gap-3 border-b border-line px-5 py-2.5 last:border-b-0">
       <div className="min-w-0 flex-1">
@@ -424,9 +477,19 @@ function RoleRow({ role, onEdit }: { role: AcademyRole; onEdit: () => void }) {
           <button type="button" className="ctl-ghost" onClick={onEdit}>
             Editar
           </button>
-          {!role.isSystem && role.people === 0 && (
-            <button type="button" className="ctl-ghost" onClick={() => void archiveRole(role.id)}>
-              Arquivar
+          {/*
+            "Apagar" sempre, e não só com o cargo vazio.
+
+            Estava preso a `role.people === 0`, e o servidor recusava por trás
+            com "Ainda há 3 pessoas com este papel". Para apagar era preciso
+            reatribuir as pessoas primeiro, uma a uma — e um clube a
+            reorganizar-se faz o contrário: desfaz a estrutura velha e arruma as
+            pessoas depois. Quem ficar sem cargo não fica sem acesso, e o
+            diálogo diz isso antes de apagar.
+          */}
+          {!role.isSystem && (
+            <button type="button" className="ctl-ghost" onClick={onDelete}>
+              Apagar
             </button>
           )}
         </div>

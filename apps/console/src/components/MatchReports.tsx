@@ -1,4 +1,4 @@
-import { useEffect, useState, type ReactNode } from "react";
+import { cloneElement, isValidElement, type ReactElement, type ReactNode, useEffect, useId, useState } from "react";
 import { Link } from "react-router-dom";
 import { Empty, Panel, PanelHead, Pill, cx } from "@/components/primitives";
 import { SaveVeil, useSaving } from "@/components/Busy";
@@ -523,11 +523,22 @@ function LigacaoVideo({ v }: { v: VideoLink }) {
 }
 
 function Campo({ label, children }: { label: string; children: ReactNode }) {
+  const id = useId();
+  /*
+   * A ligação ao campo, quando é um só e não traz `id` seu. É o que mantém o
+   * rótulo a focar o campo sem o pôr à volta dele — ver `DialogField`.
+   */
+  const soUmCampo =
+    isValidElement(children) &&
+    typeof children.type === "string" &&
+    ["input", "select", "textarea"].includes(children.type) &&
+    !(children.props as { id?: string }).id;
+
   return (
-    <label className="block">
-      <span className="mb-1.5 block text-meta font-medium text-ink">{label}</span>
-      {children}
-    </label>
+    <div className="block">
+      <label {...(soUmCampo ? { htmlFor: id } : {})} className="mb-1.5 block text-meta font-medium text-ink">{label}</label>
+      {soUmCampo ? cloneElement(children as ReactElement<{ id?: string }>, { id }) : children}
+    </div>
   );
 }
 

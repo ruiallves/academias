@@ -25,7 +25,6 @@ import {
 import type { AbsenceKind, AttentionItem, Athlete, Fee, Team, TrainingSession } from "@/data/types";
 import type { Session } from "@/lib/permissions";
 import { can, isAcademyWide } from "@/lib/permissions";
-import { getStaffEdits } from "@/lib/staff-edits";
 import { matches } from "@/lib/store";
 import { matchAttention, myMatchDuty, type MatchStatus } from "@/lib/matches";
 import { relativeDays } from "@/lib/format";
@@ -128,15 +127,31 @@ export function semEquipa(a: { teamId: string }): boolean {
 }
 
 /**
- * Toda a gente que trabalha na academia — direção, técnica, clínico, operações.
+ * Toda a gente que passou pela academia — direção, técnica, clínico, operações.
  *
  * Funde as edições feitas na ficha, como `listAthletes` funde o que se cria em
- * `lib/roster.ts`. Quem sai da academia é desactivado e não apagado: continua a
- * aparecer no histórico das equipas que treinou, e só desaparece das listas.
+ * `lib/roster.ts`.
+ *
+ * ## Quem saiu continua aqui
+ *
+ * Isto filtrava por `isActive`, e quem era desactivado desaparecia da página
+ * Staff por inteiro. A ficha continuava a existir e a dizer "Já não trabalha na
+ * academia", a exportação até tinha uma coluna *Estado* — que nunca escrevia
+ * outra coisa senão "Activo", porque os outros nunca chegavam lá. Para quem
+ * usava a lista, a pessoa tinha sido apagada; para procurar o contacto de um
+ * treinador que saiu em Dezembro não havia por onde.
+ *
+ * Desactivar é tirar o acesso, não apagar o passado. A lista traz toda a gente,
+ * e a página põe quem saiu no fim, marcado. Para **escolher** alguém — atribuir
+ * uma equipa, pôr num jogo — existe `listStaffActivo`, que é outra pergunta.
  */
 export function listStaff() {
-  const edits = getStaffEdits();
-  return staff.map((m) => ({ ...m, ...edits[m.id] })).filter((m) => m.isActive);
+  return staff;
+}
+
+/** Só quem ainda cá trabalha. É a lista de onde se escolhe alguém. */
+export function listStaffActivo() {
+  return listStaff().filter((m) => m.isActive);
 }
 
 /** Só quem está atribuído a equipas. É o subconjunto que interessa a um horário. */
@@ -163,7 +178,7 @@ export function listCoaches() {
  * relatórios de staff sem nunca ter sido staff.
  */
 export function listCoachCandidates() {
-  return listStaff().filter((m) => m.role !== "GUARDIAN" && m.role !== "ATHLETE");
+  return listStaffActivo().filter((m) => m.role !== "GUARDIAN" && m.role !== "ATHLETE");
 }
 
 export function listGuardians() {
@@ -281,10 +296,7 @@ export const teamById = (id: string) => allTeams().find((t) => t.id === id);
 export const athleteById = (id: string) => allAthletes().find((a) => a.id === id);
 // Procura em todo o staff, não só nos treinadores: um treino pode ser conduzido
 // por um preparador físico, e a ficha de uma equipa lista quem lá trabalha.
-export const staffById = (id: string) => {
-  const base = staff.find((m) => m.id === id);
-  return base ? { ...base, ...getStaffEdits()[id] } : undefined;
-};
+export const staffById = (id: string) => staff.find((m) => m.id === id);
 export const coachById = staffById;
 
 /**

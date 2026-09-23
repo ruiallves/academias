@@ -677,6 +677,42 @@ export function Loading({
  * `compact` existe para o punhado de sítios onde este ar seria demais — uma
  * caixa pequena dentro de um diálogo, não uma página.
  */
+/**
+ * A moldura de uma lista de onde se escolhe escrevendo — nomes de atletas,
+ * pessoas, competições.
+ *
+ * ## O que ela faz de diferente de uma `<ul>`
+ *
+ * Segura o foco no campo de texto enquanto se toca numa opção. Um toque numa
+ * lista assim tira o foco ao campo; no telemóvel isso fecha o teclado, e fechar
+ * o teclado devolve meio ecrã de altura à página **entre o dedo pousar e o dedo
+ * levantar**. A lista sobe, o dedo levanta noutro sítio, e o toque não escolhe
+ * nada — ou escolhe a linha errada. Foi a avaria que um clube relatou: *"toco no
+ * nome do atleta, ele não selecciona e a lista desaparece"*.
+ *
+ * `preventDefault` no `mousedown` é o que impede o campo de perder o foco. Vai
+ * no `mousedown` e não no `pointerdown` de propósito: o `mousedown` só nasce de
+ * um toque que o browser já decidiu ser um toque, e não de um arrasto — travar
+ * o `pointerdown` travava também o deslizar para percorrer a lista.
+ *
+ * Quem escolhe continua a ser o `onClick` de cada opção: o teclado (Tab, Enter)
+ * continua a funcionar como sempre.
+ */
+export function ListaDeEscolha({
+  className,
+  children,
+  ...resto
+}: { className?: string; children: ReactNode } & Omit<
+  React.HTMLAttributes<HTMLUListElement>,
+  "onMouseDown" | "className" | "children"
+>) {
+  return (
+    <ul {...resto} className={className} onMouseDown={(e) => e.preventDefault()}>
+      {children}
+    </ul>
+  );
+}
+
 export function Empty({
   title,
   detail,

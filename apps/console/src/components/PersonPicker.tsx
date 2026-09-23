@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { Check, ChevronDown, Search, X } from "@/lib/icons";
-import { cx } from "./primitives";
+import { cx, ListaDeEscolha } from "./primitives";
 
 export type Pessoa = { id: string; name: string; sub?: string };
 
@@ -209,7 +209,7 @@ export function PersonPicker({
                 />
               </div>
 
-              <ul role="listbox" className="max-h-[min(50vh,240px)] overflow-y-auto">
+              <ListaDeEscolha role="listbox" className="max-h-[min(50vh,240px)] overflow-y-auto">
                 <li>
                   <Opcao label={emptyLabel} escolhida={value === ""} onClick={() => escolher("")} suave />
                 </li>
@@ -223,7 +223,7 @@ export function PersonPicker({
                     Ninguém com esse nome.
                   </li>
                 )}
-              </ul>
+              </ListaDeEscolha>
             </div>
           </>,
           document.body,

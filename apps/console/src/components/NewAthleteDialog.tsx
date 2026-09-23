@@ -1,10 +1,11 @@
 import { useState, type FormEvent } from "react";
 import { listTeams, sportById } from "@/lib/api";
 import { apiPost } from "@/lib/http";
+import { ConvidarAoCriar } from "./ConfirmarSobrescrita";
 import { reloadAcademy } from "@/lib/store";
 import type { Session } from "@/lib/permissions";
 import { Dialog, DialogField, dialogInputClass } from "./Dialog";
-import { cx, SelectField } from "./primitives";
+import { SelectField } from "./primitives";
 
 /**
  * Criar atleta.
@@ -26,8 +27,14 @@ export function NewAthleteDialog({ session, onClose }: { session: Session; onClo
   const [teamId, setTeamId] = useState(teams[0]?.id ?? "");
   const [position, setPosition] = useState("");
   const [squadNumber, setSquadNumber] = useState("");
-  /** O email do próprio atleta — opcional; com ele, o convite da app sai ao inscrever. */
+  /** O email do próprio atleta — opcional; com ele, pode sair o convite da app. */
   const [email, setEmail] = useState("");
+  /*
+   * Ligado por omissão: quem escreve o email ao balcão quer, quase sempre, que
+   * o atleta entre na app. Desligar serve quem carrega a ficha antes de o
+   * querer avisar. Ver `ConvidarAoCriar`.
+   */
+  const [convidar, setConvidar] = useState(true);
 
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -52,7 +59,7 @@ export function NewAthleteDialog({ session, onClose }: { session: Session; onClo
         birthdate,
         teamId,
         taxId: taxId.replace(/\s/g, ""),
-        ...(email.trim() ? { email: email.trim().toLowerCase() } : {}),
+        ...(email.trim() ? { email: email.trim().toLowerCase(), sendInvite: convidar } : {}),
         ...(position ? { position } : {}),
         ...(squadNumber ? { squadNumber: Number(squadNumber) } : {}),
       });
@@ -77,7 +84,7 @@ export function NewAthleteDialog({ session, onClose }: { session: Session; onClo
             Cancelar
           </button>
           <button type="submit" form="form-novo-atleta" className="ctl-primary" disabled={!valid || busy || teams.length === 0}>
-            {busy ? "A inscrever…" : email.trim() ? "Inscrever e convidar" : "Inscrever"}
+            {busy ? "A inscrever…" : email.trim() && convidar ? "Inscrever e convidar" : "Inscrever"}
           </button>
         </>
       }
@@ -141,16 +148,12 @@ export function NewAthleteDialog({ session, onClose }: { session: Session; onClo
             {!emailOk && <p className="mt-1 text-[11px] text-[#a82a20]">Escreve um email válido.</p>}
           </DialogField>
 
-          <p
-            className={cx(
-              "rounded-[var(--radius-control)] px-3 py-2 text-meta leading-relaxed",
-              email.trim() ? "bg-signal-soft text-signal-ink" : "bg-sunken text-ink-3",
-            )}
-          >
-            {email.trim()
-              ? "Ao inscrever, este atleta recebe um email com o convite para criar conta e instalar a app do clube."
-              : "Sem email não sai convite nenhum — a ficha fica criada e podes convidá-lo depois, a partir da lista ou da ficha."}
-          </p>
+          <ConvidarAoCriar
+            ligado={convidar}
+            onChange={setConvidar}
+            temEmail={Boolean(email.trim())}
+            substantivo="atleta"
+          />
 
           <div className="grid grid-cols-[minmax(0,1fr)_auto] gap-3">
             <DialogField label="Equipa">

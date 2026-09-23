@@ -4,7 +4,8 @@ import { PageHeader } from "@/components/Shell";
 import { SearchInput, Segmented } from "@/components/filters";
 import { DataTable, Empty, Loading, Monogram, Panel, Pill, RowLink, cx, type Column, type Tone } from "@/components/primitives";
 import { Dialog, DialogField, dialogInputClass } from "@/components/Dialog";
-import { ConfirmarSobrescrita, EnviarConvites } from "@/components/ConfirmarSobrescrita";
+import { ConfirmarSobrescrita, ConvidarAoCriar, EnviarConvites } from "@/components/ConfirmarSobrescrita";
+import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { BotaoExportar } from "@/components/BotaoExportar";
 import { COLUNAS_EXPORT_SOCIOS } from "@/lib/colunas-export";
 import type { RespostaComExistentes } from "@/lib/importacao";
@@ -35,7 +36,7 @@ import {
   createMember,
   feeStanding,
   ageOf,
-  archiveTier,
+  deleteTier,
   createTier,
   importMembers,
   listMembers,
@@ -785,6 +786,8 @@ function TiersList({
   const [tiers, setTiers] = useState<MemberTier[] | null>(null);
   const [editing, setEditing] = useState<MemberTier | "new" | null>(null);
   const [error, setError] = useState<string | null>(null);
+  /** A categoria que está a ser apagada, à espera da confirmação. */
+  const [apagar, setApagar] = useState<MemberTier | null>(null);
 
   /* A categoria aberta a editar regista aqui o seu próprio guardar. */
   const guardarForm = useRef<(() => Promise<boolean>) | null>(null);
@@ -858,16 +861,23 @@ function TiersList({
                   <button type="button" className="ctl-ghost" onClick={() => setEditing(t)}>
                     Editar
                   </button>
-                  {t.members === 0 && (
-                    <button
-                      type="button"
-                      className="ctl-ghost"
-                      aria-label="Arquivar"
-                      onClick={() => void archiveTier(t.id).then(load)}
-                    >
-                      <Trash2 className="size-3.5" strokeWidth={1.75} />
-                    </button>
-                  )}
+                  {/*
+                    O botão aparece **sempre**.
+
+                    Estava escondido a qualquer categoria com sócios, e o efeito
+                    era não haver caminho nenhum para a tirar da frente: uma
+                    categoria criada por engano e já atribuída ficava lá para
+                    sempre. Quem tem sócios passa pelo aviso, que diz quantos
+                    são e o que lhes acontece; não deixa de poder decidir.
+                  */}
+                  <button
+                    type="button"
+                    className="ctl-ghost"
+                    aria-label={`Apagar a categoria ${t.name}`}
+                    onClick={() => setApagar(t)}
+                  >
+                    <Trash2 className="size-3.5" strokeWidth={1.75} />
+                  </button>
                 </div>
               )}
             </li>
@@ -884,6 +894,39 @@ function TiersList({
             Nova categoria
           </button>
         </div>
+      )}
+
+      {/*
+        O aviso diz as duas coisas que acontecem, e a segunda é a que ninguém
+        adivinha: um sócio sem categoria deixa de ter quota lançada
+        automaticamente. Escondê-la era deixar um clube a apagar uma categoria e
+        a descobrir em Outubro que trinta pessoas não foram cobradas.
+      */}
+      {apagar && (
+        <ConfirmDialog
+          title={`Apagar "${apagar.name}"?`}
+          confirmLabel="Apagar categoria"
+          onClose={() => setApagar(null)}
+          onConfirm={async () => {
+            await deleteTier(apagar.id);
+            setApagar(null);
+            load();
+          }}
+        >
+          {apagar.members === 0 ? (
+            <>Esta categoria não tem sócios. Apagá-la não mexe em mais nada.</>
+          ) : (
+            <>
+              <strong className="font-medium text-ink">
+                {apagar.members} {apagar.members === 1 ? "sócio fica" : "sócios ficam"} sem categoria.
+              </strong>{" "}
+              {apagar.members === 1 ? "A ficha dele continua" : "As fichas deles continuam"} com tudo o resto, e
+              as quotas já lançadas não mudam. Mas, enquanto {apagar.members === 1 ? "estiver" : "estiverem"} sem
+              categoria, {apagar.members === 1 ? "não recebe" : "não recebem"} quota nova automaticamente —
+              atribui-lhes outra para voltar a cobrar.
+            </>
+          )}
+        </ConfirmDialog>
       )}
     </>
   );
@@ -925,8 +968,25 @@ function NewMemberDialog({ onClose, onCreated }: { onClose: () => void; onCreate
   const [postalCode, setPostalCode] = useState("");
   const [city, setCity] = useState("");
   const [tierId, setTierId] = useState("");
+  /*
+   * O dia e o mês em que abre o ano de quotas deste sócio.
+   *
+   * **Hoje**, por omissão, porque quem adere hoje começa o ano hoje e só daqui
+   * a um ano volta a ser cobrado — era a janela do clube para toda a gente, e
+   * isso vendia a quem entrava a meio um ano que já ia a meio. Pergunta-se
+   * mesmo assim, porque a ficha que se carrega hoje nem sempre é a inscrição
+   * de hoje.
+   */
+  const [annualDia, setAnnualDia] = useState(() => new Date().getDate());
+  const [annualMes, setAnnualMes] = useState(() => new Date().getMonth() + 1);
   const [status, setStatus] = useState<MemberStatus>("ACTIVE");
   const [acceptedTerms, setAcceptedTerms] = useState(false);
+  /*
+   * Ligado por omissão: quem inscreve ao balcão tem a pessoa à frente e o passo
+   * seguinte é ela entrar na app. Desligar serve quem carrega a ficha sem a
+   * querer avisar já. Ver `ConvidarAoCriar`.
+   */
+  const [convidar, setConvidar] = useState(true);
 
   useEffect(() => {
     listTiers()
@@ -947,6 +1007,10 @@ function NewMemberDialog({ onClose, onCreated }: { onClose: () => void; onCreate
    * O que é preenchido continua a ser validado na forma: opcional quer dizer
    * "pode não vir", nunca "pode vir errado".
    */
+  /* A categoria escolhida — só numa anual é que o ano de quotas quer dizer
+     alguma coisa, e só aí se pergunta. */
+  const anual = tiers.find((t) => t.id === tierId)?.billing === "ANNUAL";
+
   const emailOk = !email.trim() || /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email.trim());
   const phoneOk = !phone.trim() || /^\d{6,15}$/.test(phone.replace(/\s/g, ""));
   const temContacto = Boolean(email.trim() || phone.trim());
@@ -990,8 +1054,15 @@ function NewMemberDialog({ onClose, onCreated }: { onClose: () => void; onCreate
         ...(postalCode.trim() ? { postalCode } : {}),
         ...(city.trim() ? { city: city.trim() } : {}),
         ...(tierId ? { tierId } : {}),
+        /* Só quando se perguntou. Ausente, o servidor carimba hoje — que é o
+           mesmo valor, mas pelo relógio do clube e não pelo do browser. */
+        ...(anual
+          ? { annualStart: `${String(annualMes).padStart(2, "0")}-${String(annualDia).padStart(2, "0")}` }
+          : {}),
         status,
         acceptedTerms,
+        /* Só conta quando há email; sem ele o servidor não tem para onde mandar. */
+        ...(email.trim() ? { sendInvite: convidar } : {}),
       });
       onCreated();
       onClose();
@@ -1182,6 +1253,54 @@ function NewMemberDialog({ onClose, onCreated }: { onClose: () => void; onCreate
           </DialogField>
         </div>
 
+        {/*
+          O ano de quotas, e só numa categoria anual.
+
+          Numa mensal a pergunta não tem resposta útil — cobra-se todos os meses,
+          e a data fica na mesma gravada à espera de um dia servir. Aparece aqui,
+          colada à categoria que a torna relevante, e não numa secção própria.
+        */}
+        {anual && (
+          <div className="rounded-[var(--radius-control)] bg-sunken px-3 py-2.5">
+            <DialogField label="O ano de quotas abre a" hint="hoje, por omissão">
+              <div className="flex items-end gap-1.5">
+                <select
+                  aria-label="Dia"
+                  value={Math.min(annualDia, DIAS_DO_MES[annualMes - 1])}
+                  onChange={(e) => setAnnualDia(Number(e.target.value))}
+                  className={cx(dialogInputClass, "w-auto pr-1.5 tabular")}
+                >
+                  {Array.from({ length: DIAS_DO_MES[annualMes - 1] }, (_, i) => i + 1).map((d) => (
+                    <option key={d} value={d}>
+                      {d}
+                    </option>
+                  ))}
+                </select>
+                <select
+                  aria-label="Mês"
+                  value={annualMes}
+                  onChange={(e) => {
+                    const m = Number(e.target.value);
+                    setAnnualMes(m);
+                    /* 31 de Fevereiro não é uma data: o dia encolhe com o mês. */
+                    setAnnualDia((d) => Math.min(d, DIAS_DO_MES[m - 1]));
+                  }}
+                  className={cx(dialogInputClass, "w-auto pr-1.5")}
+                >
+                  {MESES.map((nome, i) => (
+                    <option key={nome} value={i + 1}>
+                      {nome}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            </DialogField>
+            <p className="mt-2 text-meta leading-relaxed text-ink-3">
+              A anuidade deste sócio corre a partir deste dia, todos os anos. Dá para mudar depois, na ficha dele.
+            </p>
+          </div>
+        )}
+
         <label className="flex cursor-pointer items-start gap-2.5 border-t border-line pt-3">
           <input
             type="checkbox"
@@ -1197,6 +1316,15 @@ function NewMemberDialog({ onClose, onCreated }: { onClose: () => void; onCreate
             </span>
           </span>
         </label>
+
+        {/* O convite fica por baixo do consentimento e acima do botão: é a
+            última coisa que se decide, e é a única que sai do clube para fora. */}
+        <ConvidarAoCriar
+          ligado={convidar}
+          onChange={setConvidar}
+          temEmail={Boolean(email.trim())}
+          substantivo="sócio"
+        />
       </div>
     </Dialog>
   );
@@ -1258,6 +1386,9 @@ function ImportDialog({ onClose, onDone }: { onClose: () => void; onDone: () => 
 
   const bad = sheet?.rows.filter((r) => r.errors.length > 0) ?? [];
   const good = sheet?.rows.filter((r) => r.errors.length === 0) ?? [];
+  /* Quantas linhas trazem o ano de quotas escrito — as únicas cuja anuidade
+     esta importação pode refazer. Ver o aviso mais abaixo. */
+  const comAnoDeQuotas = good.filter((r) => r.row.annualStart).length;
 
   async function pick(file: File | undefined) {
     if (!file) return;
@@ -1394,6 +1525,31 @@ function ImportDialog({ onClose, onDone }: { onClose: () => void; onDone: () => 
               Colunas obrigatórias: {REQUIRED_COLUMNS.join(", ")}. Opcionais: {OPTIONAL_COLUMNS.join(", ")} — entram
               se lá estiverem, ficam por preencher se não.
             </p>
+
+            {/*
+              O ano de quotas é a única coluna da folha que mexe em dinheiro já
+              lançado: escrevê-la num sócio anual que já cá está apaga-lhe as quotas
+              daquele ano e lança uma anuidade nova na janela nova. Isso não pode
+              descobrir-se depois, e por isso o aviso conta as linhas.
+            */}
+            {comAnoDeQuotas > 0 && (
+              <div className="rounded-[var(--radius-control)] border border-warn/30 bg-warn-soft p-4">
+                <p className="text-body font-medium text-ink">
+                  {comAnoDeQuotas === 1
+                    ? "Uma linha traz o início do ano de quotas."
+                    : `${comAnoDeQuotas} linhas trazem o início do ano de quotas.`}
+                </p>
+                <p className="mt-2 text-meta leading-relaxed text-ink-3">
+                  Nos sócios de <strong className="font-medium text-ink-2">categoria anual</strong> que já cá estão, e
+                  só quando a data for diferente da que têm, a anuidade é <strong className="font-medium text-ink-2">refeita</strong>:
+                  as quotas daquele ano são apagadas e nasce uma na janela nova, com o valor que o ano já valia. Quotas
+                  pagas online travam a importação inteira.
+                </p>
+                <p className="mt-1.5 text-meta leading-relaxed text-ink-3">
+                  Linhas com a célula vazia não são tocadas; num sócio novo o ano abre hoje.
+                </p>
+              </div>
+            )}
 
             {/*
               Uma importação manda correio, e isso não pode ser uma surpresa —

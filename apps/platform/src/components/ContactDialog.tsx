@@ -1,4 +1,4 @@
-import { useEffect, useState, type FormEvent, type ReactNode } from "react";
+import { cloneElement, type FormEvent, isValidElement, type ReactElement, type ReactNode, useEffect, useId, useState } from "react";
 import { CalendarPlus, MessageCircle, Phone, Trash2, X } from "lucide-react";
 import { apiDelete, apiGet, apiPatch, apiPost } from "@/lib/http";
 import { googleEventUrl, telHref, whatsappHref } from "@/lib/google";
@@ -399,14 +399,25 @@ const INPUT =
   "h-9 w-full rounded-[var(--radius-control)] border border-line bg-surface px-2.5 text-body text-ink focus:border-line-strong focus:outline-none";
 
 function Field({ label, hint, children }: { label: string; hint?: string; children: ReactNode }) {
+  const id = useId();
+  /*
+   * A ligação ao campo, quando é um só e não traz `id` seu. É o que mantém o
+   * rótulo a focar o campo sem o pôr à volta dele — ver `DialogField`.
+   */
+  const soUmCampo =
+    isValidElement(children) &&
+    typeof children.type === "string" &&
+    ["input", "select", "textarea"].includes(children.type) &&
+    !(children.props as { id?: string }).id;
+
   return (
-    <label className="block">
-      <span className="mb-1.5 flex items-baseline justify-between gap-2">
+    <div className="block">
+      <label {...(soUmCampo ? { htmlFor: id } : {})} className="mb-1.5 flex items-baseline justify-between gap-2">
         <span className="text-meta font-medium text-ink">{label}</span>
         {hint && <span className="text-[11px] text-ink-4">{hint}</span>}
-      </span>
-      {children}
-    </label>
+      </label>
+      {soUmCampo ? cloneElement(children as ReactElement<{ id?: string }>, { id }) : children}
+    </div>
   );
 }
 

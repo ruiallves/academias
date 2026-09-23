@@ -38,6 +38,7 @@ import {
   HeartPulse,
   Home,
   LayoutGrid,
+  Link2,
   LogOut,
   Pencil,
   Ruler,
@@ -63,6 +64,9 @@ import {
 } from "@/lib/api";
 import { ApiError, apiDelete, apiGet, apiPatch, apiPut } from "@/lib/http";
 import { Dialog } from "@/components/Dialog";
+import { ConfirmDialog } from "@/components/ConfirmDialog";
+import { LigarEncarregadoDialog } from "@/components/LigarEncarregadoDialog";
+import { desligarEncarregado } from "@/lib/encarregados";
 import { useApi } from "@/lib/query";
 import { average, type ApiEvaluation, type ApiReport } from "@/lib/development";
 import { ReportDialog, VisibilityPill } from "@/components/ReportDialog";
@@ -967,7 +971,24 @@ function Clinical({ athlete }: { athlete: Athlete }) {
 /* -------------------------------------------------------------------------- */
 
 function Family({ athlete }: { athlete: Athlete }) {
+  const { session } = useSession();
   const guardians = guardiansOf(athlete.id);
+  const podeGerir = can(session, "family:write");
+  const [aLigar, setALigar] = useState(false);
+  const [aDesligar, setADesligar] = useState<{ id: string; name: string } | null>(null);
+
+  /*
+   * Mudar de ficha fecha o que estiver aberto.
+   *
+   * A rota é a mesma para todos os atletas, e só o `id` muda: o componente
+   * não volta a nascer, e um diálogo aberto ficava de pé sobre a ficha
+   * seguinte — com a conta escolhida na ficha anterior lá dentro, pronta a
+   * ser associada ao miúdo errado.
+   */
+  useEffect(() => {
+    setALigar(false);
+    setADesligar(null);
+  }, [athlete.id]);
 
   return (
     <div className="space-y-3">
@@ -975,10 +996,31 @@ function Family({ athlete }: { athlete: Athlete }) {
       <AppDoAtletaPanel athlete={athlete} />
 
     <Panel>
-      <PanelHead title="Encarregado de educação" hint={`${guardians.length}`} />
+      <PanelHead title="Encarregado de educação" hint={`${guardians.length}`}>
+        {podeGerir && (
+          <button type="button" onClick={() => setALigar(true)} className="ctl-ghost">
+            <Link2 className="size-3.5" strokeWidth={1.75} />
+            Associar conta
+          </button>
+        )}
+      </PanelHead>
       {guardians.length === 0 ? (
         <div className="px-5 py-12">
-          <Empty icon={Home} title="Sem encarregado associado" detail="Um atleta devia ter sempre alguém a quem a academia possa telefonar." />
+          <Empty icon={Home} title="Sem encarregado associado" detail="Um atleta devia ter sempre alguém a quem a academia possa telefonar.">
+            {/*
+              O vazio é onde a saída faz falta.
+
+              Há duas, e são para pessoas diferentes: quem já tem conta no clube
+              (o sócio, o treinador) associa-se aqui; quem ainda não tem entra
+              pelo link das famílias, na página Famílias, que lhe cria a conta.
+            */}
+            {podeGerir && (
+              <button type="button" onClick={() => setALigar(true)} className="ctl-outline mt-1">
+                <Link2 className="size-3.5" strokeWidth={1.75} />
+                Associar uma conta do clube
+              </button>
+            )}
+          </Empty>
         </div>
       ) : (
         <ul>
@@ -991,6 +1033,17 @@ function Family({ athlete }: { athlete: Athlete }) {
                   <div className="text-meta text-ink-3">{g.relation}</div>
                 </div>
                 {g.appInstalled ? <Pill tone="ok">App instalada</Pill> : <Pill tone="warn">Sem a app</Pill>}
+                {podeGerir && (
+                  <button
+                    type="button"
+                    onClick={() => setADesligar({ id: g.id, name: g.name })}
+                    className="ctl-ghost size-8 shrink-0 justify-center px-0"
+                    aria-label={`Desassociar ${g.name}`}
+                    title="Desassociar deste atleta"
+                  >
+                    <Trash2 className="size-3.5" strokeWidth={1.75} />
+                  </button>
+                )}
               </div>
               <dl className="space-y-1 pl-[38px] text-meta">
                 <div className="flex justify-between gap-3">
@@ -1007,6 +1060,38 @@ function Family({ athlete }: { athlete: Athlete }) {
         </ul>
       )}
     </Panel>
+
+    {aLigar && (
+      <LigarEncarregadoDialog
+        athleteId={athlete.id}
+        athleteName={athlete.name}
+        onClose={() => setALigar(false)}
+        // A lista de encarregados é derivada dos atletas (ver `allGuardians`), e
+        // por isso o que muda aqui só se vê depois de a academia voltar a ler.
+        onDone={() => void reloadAcademy()}
+      />
+    )}
+
+    {aDesligar && (
+      <ConfirmDialog
+        title="Desassociar encarregado"
+        confirmLabel="Desassociar"
+        onClose={() => setADesligar(null)}
+        onConfirm={async () => {
+          await desligarEncarregado(athlete.id, aDesligar.id);
+          setADesligar(null);
+          await reloadAcademy();
+        }}
+      >
+        <p>
+          <strong>{aDesligar.name}</strong> deixa de ver {athlete.name} na app: sem convocatórias, sem treinos e sem
+          mensalidades deste atleta.
+        </p>
+        <p className="mt-2 text-ink-3">
+          A conta fica, e os outros educandos também. Voltar a associar é o mesmo gesto ao contrário.
+        </p>
+      </ConfirmDialog>
+    )}
     </div>
   );
 }

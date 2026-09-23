@@ -29,7 +29,16 @@ class UpdateDepartmentDto {
   @IsOptional() @IsArray() @ArrayMaxSize(40) @IsString({ each: true }) navKeys?: string[];
 
   /**
-   * Levar as permissões novas aos cargos que herdaram deste departamento.
+   * O alcance, que passou a poder mudar depois de criado.
+   *
+   * Opcional: quem não lhe toca não o manda, e o departamento fica com o que
+   * tinha. O guarda de hierarquia é o mesmo da criação, e está no serviço.
+   */
+  @IsOptional() @IsIn(SCOPES as unknown as string[]) baseRole?: Role;
+
+  /**
+   * Levar as permissões novas — e o alcance, se mudou — aos cargos que herdaram
+   * deste departamento.
    *
    * Opcional e por omissão falso: ver a nota sobre efeitos à distância em
    * `DepartmentsService`.

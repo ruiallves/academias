@@ -9,12 +9,12 @@ import {
 } from "@/lib/api";
 import { AVAILABILITY_LABEL, availabilityOf, clinicalOf, IMPACT_LABEL, KIND_LABEL } from "@/lib/clinical";
 import { dominantSideLabel, summariseSeason, type AthleteMatch } from "@/lib/athlete";
-import { coachActivity, matchRecord, teamHistory } from "@/lib/staff";
+import { coachActivity, departamentoDe, matchRecord, teamHistory } from "@/lib/staff";
 import { DOC_LABEL, SEX_LABEL, STATUS_LABEL, listMemberFees, type MemberDetail } from "@/lib/members";
 import { money, percent, periodLabel, shortDate } from "@/lib/format";
 import { can, type Session } from "@/lib/permissions";
 import { ROLE_LABEL } from "@/session";
-import { DEPARTMENT_LABEL, type Athlete, type StaffMember } from "@/data/types";
+import type { Athlete, StaffMember } from "@/data/types";
 
 /**
  * O que entra na ficha em papel de cada perfil.
@@ -392,7 +392,7 @@ export async function exportarFichaDeStaff(member: StaffMember, session: Session
     titulo: "Identificação",
     pares: [
       ["Cargo", member.roleName ?? member.title],
-      ["Departamento", DEPARTMENT_LABEL[member.department]],
+      ["Departamento", departamentoDe(member)],
       /*
        * A área só quando acrescenta alguma coisa: num treinador o papel e o
        * departamento dizem os dois "Equipa técnica", e repetir a mesma palavra
@@ -400,7 +400,7 @@ export async function exportarFichaDeStaff(member: StaffMember, session: Session
        */
       [
         "Área de acesso",
-        (ROLE_LABEL[member.role] ?? member.role) === DEPARTMENT_LABEL[member.department]
+        (ROLE_LABEL[member.role] ?? member.role) === departamentoDe(member)
           ? null
           : (ROLE_LABEL[member.role] ?? member.role),
       ],
@@ -473,7 +473,7 @@ export async function exportarFichaDeStaff(member: StaffMember, session: Session
   await exportarPerfil({
     tipo: "Ficha de pessoal",
     nome: member.name,
-    subtitulo: [member.roleName ?? member.title, DEPARTMENT_LABEL[member.department]].filter(Boolean).join(" · "),
+    subtitulo: [member.roleName ?? member.title, departamentoDe(member)].filter(Boolean).join(" · "),
     distintivos: [
       member.isActive ? "Acesso activo" : "Sem acesso",
       percurso.find((s) => s.current)?.teamName ?? null,

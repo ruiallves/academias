@@ -86,8 +86,8 @@ export class RolesController {
   }
 
   @Delete(":id")
-  archive(@Req() req: AuthedRequest, @Param("id") id: string) {
-    return this.roles.archive(req.ctx, id);
+  remove(@Req() req: AuthedRequest, @Param("id") id: string) {
+    return this.roles.remove(req.ctx, id);
   }
 
   /**

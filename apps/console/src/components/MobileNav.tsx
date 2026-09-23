@@ -9,7 +9,7 @@ import { teamAgeLabel } from "@/lib/team-age";
 import { useUnreadCount } from "@/lib/notifications";
 import { signOut } from "@/lib/session";
 import { ROLE_LABEL, useSession } from "@/session";
-import { cx, Monogram } from "./primitives";
+import { cx, ListaDeEscolha, Monogram } from "./primitives";
 import { ClubMark } from "./ClubMark";
 import { NotificationsPanel } from "./NotificationsPanel";
 import { TrialBadge } from "./TrialBadge";
@@ -399,7 +399,7 @@ function MobileSearch({ onClose }: { onClose: () => void }) {
           Cancelar
         </button>
       </div>
-      <ul className="flex-1 overflow-y-auto">
+      <ListaDeEscolha className="flex-1 overflow-y-auto">
         {results.map((r) => (
           <li key={`${r.kind}-${r.id}`} className="border-b border-line">
             <button
@@ -421,7 +421,7 @@ function MobileSearch({ onClose }: { onClose: () => void }) {
         {query.trim() && results.length === 0 && (
           <li className="px-4 py-8 text-center text-meta text-ink-3">Nada com esse nome.</li>
         )}
-      </ul>
+      </ListaDeEscolha>
     </div>
   );
 }

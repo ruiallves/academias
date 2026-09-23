@@ -98,6 +98,35 @@ export class SupabaseAccountsService {
   }
 
   /**
+   * Mudar o email da conta.
+   *
+   * O email vive em dois sítios: no `User` (para onde saem os avisos) e na conta
+   * do Supabase (por onde a pessoa entra). Mudar só o primeiro deixava-a a
+   * receber os emails no endereço novo e a entrar com o antigo — e ninguém
+   * descobre isso sozinho. `email_confirm` porque quem muda é a direcção do
+   * clube, que já sabe quem é a pessoa; obrigá-la a confirmar um endereço que
+   * não foi ela a escrever seria pedir-lhe que resolvesse um engano alheio.
+   */
+  async changeEmail(authId: string, email: string): Promise<void> {
+    const key = this.config.getOrThrow<string>("SUPABASE_SERVICE_ROLE_KEY");
+
+    const res = await fetch(`${this.url}/auth/v1/admin/users/${authId}`, {
+      method: "PUT",
+      headers: { apikey: key, Authorization: `Bearer ${key}`, "Content-Type": "application/json" },
+      body: JSON.stringify({ email, email_confirm: true }),
+    });
+
+    if (!res.ok) {
+      const body = (await res.json().catch(() => null)) as { msg?: string; message?: string } | null;
+      const texto = body?.msg ?? body?.message ?? "";
+      if (res.status === 422 || /already|exists/i.test(texto)) {
+        throw new ConflictException("Já existe uma conta com este email");
+      }
+      throw new BadRequestException("Não foi possível mudar o email da conta");
+    }
+  }
+
+  /**
    * Um token para repor a palavra-passe, sem o Supabase enviar email nenhum.
    *
    * O `generate_link` do admin devolve o token em vez de o mandar: é o que deixa o

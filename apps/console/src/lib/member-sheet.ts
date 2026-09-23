@@ -57,6 +57,22 @@ const COLUMNS = {
   },
   taxId: { label: "NIF", required: false, aliases: ["nif", "contribuinte", "n contribuinte"] },
   sex: { label: "Sexo", required: false, aliases: ["sexo", "genero"] },
+  /**
+   * O dia e o mês em que abre o ano de quotas do sócio — `DD/MM`.
+   *
+   * Só conta nas categorias **anuais**: é a data em que a anuidade dele corre,
+   * todos os anos. Vazio assume o dia da importação, que é a mesma regra de
+   * quem se inscreve à mão. Preenchido **refaz a anuidade** desse sócio — ver o
+   * aviso no ecrã de importação.
+   */
+  annualStart: {
+    label: "Início do ano de quotas",
+    required: false,
+    aliases: [
+      "inicio do ano de quotas", "ano de quotas", "inicio das quotas", "periodo das quotas",
+      "periodo de quotas", "abertura das quotas", "inicio da anuidade", "anuidade",
+    ],
+  },
 } as const;
 
 type Key = keyof typeof COLUMNS;
@@ -125,6 +141,45 @@ function parseDate(value: unknown): string | null {
   return null;
 }
 
+/**
+ * O dia e o mês em que abre o ano de quotas — devolvido como `MM-DD`, que é o
+ * que a API lê.
+ *
+ * Aceita-se tudo o que uma folha real traz: `22/09`, `22-09`, `22.9`, uma data
+ * completa (de onde se tira só o dia e o mês), e o que o Excel fizer disso.
+ *
+ * O Excel é o caso que obriga a isto: escrever `22/09` numa célula faz dele uma
+ * **data** do ano corrente, e o que chega aqui já não é texto nenhum. Exportar
+ * e voltar a importar sem perder a coluna depende de se aceitar as duas formas.
+ */
+function parseDiaMes(value: unknown): string | null {
+  const doDia = (dia: number, mes: number) =>
+    mes >= 1 && mes <= 12 && dia >= 1 && dia <= 31
+      ? `${String(mes).padStart(2, "0")}-${String(dia).padStart(2, "0")}`
+      : null;
+
+  if (value instanceof Date && !Number.isNaN(value.getTime())) {
+    return doDia(value.getUTCDate(), value.getUTCMonth() + 1);
+  }
+  if (typeof value === "number" && value > 0) {
+    const p = XLSX.SSF.parse_date_code(value);
+    return p ? doDia(p.d, p.m) : null;
+  }
+
+  const raw = text(value);
+  if (!raw) return null;
+
+  /* Uma data completa: fica o dia e o mês, o ano não interessa. */
+  const completa = parseDate(raw);
+  if (completa) {
+    const [, m, d] = completa.split("-").map(Number);
+    return doDia(d, m);
+  }
+
+  const dm = /^(\d{1,2})[-/.](\d{1,2})$/.exec(raw);
+  return dm ? doDia(+dm[1], +dm[2]) : null;
+}
+
 function iso(date: Date): string | null {
   if (Number.isNaN(date.getTime())) return null;
   return date.toISOString().slice(0, 10);
@@ -187,6 +242,7 @@ export async function readMemberSheet(file: File): Promise<ParsedSheet> {
     const taxId = text(cell(raw, "taxId")).replace(/[\s.]/g, "");
     const documentNumber = text(cell(raw, "documentNumber"));
     const tier = text(cell(raw, "tier"));
+    const annualStart = parseDiaMes(cell(raw, "annualStart"));
 
     // 1234-567, 1234 567 ou 1234567 — todas dizem a mesma coisa.
     const postalRaw = text(cell(raw, "postalCode")).replace(/\s/g, "");
@@ -218,6 +274,9 @@ export async function readMemberSheet(file: File): Promise<ParsedSheet> {
 
     if (email && !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) errors.push("Email inválido");
     if (text(cell(raw, "birthdate")) && !birthdate) errors.push("Data de nascimento inválida");
+    if (text(cell(raw, "annualStart")) && !annualStart) {
+      errors.push("Início do ano de quotas inválido — usa dia/mês, por exemplo 22/09");
+    }
     if (postalRaw && !/^\d{4}-\d{3}$/.test(postalCode)) errors.push("Código postal no formato 0000-000");
     if (taxId && !/^\d{9}$/.test(taxId)) errors.push("O NIF tem nove dígitos");
 
@@ -251,6 +310,7 @@ export async function readMemberSheet(file: File): Promise<ParsedSheet> {
         ...(documentNumber ? { documentNumber } : {}),
         ...(taxId ? { taxId } : {}),
         ...(sex ? { sex } : {}),
+        ...(annualStart ? { annualStart } : {}),
       },
       errors,
     });
@@ -286,6 +346,8 @@ export function downloadTemplate(tierNames: string[]): void {
     "N.º de documento": "12345678 9 ZZ4",
     NIF: "212345678",
     Sexo: "F",
+    /* Vazio assume o dia da importação — a linha de baixo mostra-o. */
+    "Início do ano de quotas": "22/09",
   };
 
   const minimo: Record<string, string> = Object.fromEntries(
@@ -336,6 +398,7 @@ export const EXPORT_COLUMNS: { header: string; key: Key; largura?: number }[] = 
   { header: COLUMNS.documentNumber.label, key: "documentNumber", largura: 18 },
   { header: COLUMNS.taxId.label, key: "taxId", largura: 12 },
   { header: COLUMNS.sex.label, key: "sex", largura: 8 },
+  { header: COLUMNS.annualStart.label, key: "annualStart", largura: 20 },
 ];
 
 /** `FEMALE` → `F`, que é o que a importação volta a ler. Ver `SEXES`. */
@@ -343,4 +406,17 @@ export function sexoParaFolha(sex: string | null | undefined): string {
   if (sex === "FEMALE") return "F";
   if (sex === "MALE") return "M";
   return "";
+}
+
+/**
+ * `09-22` → `22/09`, que é o que a importação volta a ler. Ver `parseDiaMes`.
+ *
+ * Nunca devolve vazio para um sócio que exista: a API já resolve quem herda a
+ * abertura do clube antes de a lista sair. Se mesmo assim vier vazio, vazio
+ * fica — inventar uma data aqui era escrever um ano de quotas que ninguém
+ * escolheu.
+ */
+export function diaMesParaFolha(mmdd: string | null | undefined): string {
+  const m = /^(\d{2})-(\d{2})$/.exec(mmdd ?? "");
+  return m ? `${m[2]}/${m[1]}` : "";
 }

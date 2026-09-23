@@ -3583,6 +3583,22 @@ model Member {
   tierId String?
   tier   MemberTier? @relation(fields: [tierId], references: [id], onDelete: SetNull)
 
+  /// ## O ano de quotas é deste sócio, não do clube
+  ///
+  /// Quem adere a 22 de Setembro tem o ano a correr de 22 de Setembro a 21 de
+  /// Setembro, e só aí volta a ser cobrado. Era do clube
+  /// (`Academy.memberAnnualStartMonth/Day`) e isso obrigava quem entrasse a
+  /// meio a pagar um ano que já ia a meio — que é exactamente o que um clube
+  /// não quer vender.
+  ///
+  /// Nulo é o caso normal e quer dizer "o do clube": os sócios que já existiam
+  /// não precisaram de migração nenhuma, e um clube que cobre toda a gente na
+  /// mesma janela continua a não ter de preencher isto sócio a sócio. Escreve-se
+  /// ao criar um sócio novo (a data de adesão) e na ficha, quando alguém o
+  /// quiser mudar. Os dois andam sempre juntos. Ver `aberturaDoSocio`.
+  annualStartDay   Int?
+  annualStartMonth Int?
+
   name      String
   email     String?
   birthdate DateTime? @db.Date
@@ -3728,6 +3744,30 @@ model MemberFee {
   amountCents Int
   /// Até quando. Nulo = sem prazo formal.
   dueOn       DateTime? @db.Date
+
+  /// ## O que esta quota cobre — só nas anuais
+  ///
+  /// Numa quota mensal o `period` diz tudo: é o mês, e a cobertura é ele.
+  /// Numa anual deixou de dizer: o ano de cada sócio começa no dia dele, e uma
+  /// anuidade pode ser **partida** (o sócio que quer pagar meio ano de uma vez,
+  /// e o resto depois). Sem o intervalo escrito não há como saber onde acaba
+  /// uma parte e começa a outra, nem quantos meses cada uma vale — que é o que
+  /// decide o preço. `coversTo` é **inclusivo**: 22/09/2026 a 21/09/2027 é um
+  /// ano inteiro.
+  ///
+  /// Nulo nas mensais e nas anuais anteriores a esta migração que não foram
+  /// reconhecidas — quem as lê trata a ausência como "um ano a partir do
+  /// período". Ver `coberturaDaQuota`.
+  coversFrom  DateTime? @db.Date
+  coversTo    DateTime? @db.Date
+
+  /// Quando o sócio foi avisado de que esta quota existe.
+  ///
+  /// A parte de trás de uma anuidade partida nasce hoje mas só começa daqui a
+  /// uns meses, e avisar logo era cobrar já o que ainda não se deve. Fica nula
+  /// até o período dela chegar; a varredura avisa aí e carimba. Ver
+  /// `avisarQuotasQueComecaram`.
+  noticedAt   DateTime?
 
   status    ChargeStatus   @default(OPEN)
   settledAt DateTime?

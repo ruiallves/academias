@@ -20,6 +20,25 @@ import { PrismaService, type ScopedClient } from "../prisma/prisma.service";
 import { NotificationsService } from "../notifications/notifications.service";
 import { can, type RequestContext } from "../common/permissions";
 import { formatarNoFuso } from "../common/fuso";
+/*
+ * A aritmética das coberturas vive à parte, sem Nest nem Prisma, para poder ser
+ * exercitada sem servidor nenhum — é dinheiro, e é a parte fácil de enganar.
+ * Ver `cobertura.ts` e `scripts/test-cobertura-anual.mjs`.
+ */
+import {
+  distanciaEmMeses,
+  fimDaCobertura,
+  inicioDaCobertura,
+  inicioDaEpoca,
+  mesDe,
+  mesFinalCoberto,
+  mesMais,
+  mesesCobertos,
+  repartirValor,
+  sobrepoem,
+} from "./cobertura";
+
+export * from "./cobertura";
 
 /**
  * Quotas — o lado da consola.
@@ -138,16 +157,29 @@ export class MemberFeesService implements OnModuleInit, OnModuleDestroy {
     const totais = { period, academias: alvo.length, visitadas: 0, criadas: 0, comErro: 0 };
 
     for (const { academy_id: academyId } of alvo) {
-      if (!apenasAcademia && this.lancado.get(academyId) === period) continue;
+      /*
+       * Gerar salta-se quando o mês já foi lançado neste clube. **Avisar** não.
+       *
+       * A segunda metade de uma anuidade partida nasce hoje e só começa daqui a
+       * meses; o aviso dela cai num dia qualquer, muito depois de o mês deste
+       * clube ter sido lançado. Com o salto a cobrir as duas coisas, esse aviso
+       * não saía nunca.
+       */
+      const gerar = Boolean(apenasAcademia) || this.lancado.get(academyId) !== period;
 
       try {
         const criadas = await this.prisma.runAs(academyId, async (db) => {
-          const r = await gerarQuotas(db, academyId, period);
-          await this.avisarQuotasNovas(db, academyId, r.novas);
-          return r.criadas;
+          let n = 0;
+          if (gerar) {
+            const r = await gerarQuotas(db, academyId, period);
+            await this.avisarQuotasNovas(db, academyId, r.novas);
+            n = r.criadas;
+          }
+          await this.avisarQuotasQueComecaram(db, academyId);
+          return n;
         });
 
-        this.lancado.set(academyId, period);
+        if (gerar) this.lancado.set(academyId, period);
         totais.visitadas++;
         totais.criadas += criadas;
         if (criadas > 0) {
@@ -209,6 +241,49 @@ export class MemberFeesService implements OnModuleInit, OnModuleDestroy {
     }
   }
 
+  /**
+   * As quotas cujo período **chegou** e que ainda não foram anunciadas.
+   *
+   * A segunda metade de uma anuidade partida nasce no dia em que a primeira é
+   * partida, e só começa meses depois. Avisar logo era cobrar o que ainda não
+   * se deve — o clube foi explícito: o sócio só é avisado quando esse período
+   * chegar. Fica com `noticedAt` nulo até lá, e é esta passagem que a apanha.
+   *
+   * Carimba também as dos sócios sem conta ligada: não há para onde as mandar,
+   * e sem o carimbo voltavam a ser lidas em todas as passagens, para sempre.
+   */
+  private async avisarQuotasQueComecaram(db: ScopedClient, academyId: string, agora = new Date()) {
+    const porAvisar = await db.memberFee.findMany({
+      where: { noticedAt: null, status: ChargeStatus.OPEN, coversFrom: { not: null, lte: agora } },
+      select: {
+        id: true, label: true, period: true, amountCents: true,
+        member: { select: { userId: true } },
+      },
+      take: 200,
+    });
+    if (porAvisar.length === 0) return;
+
+    for (const q of porAvisar) {
+      if (!q.member.userId) continue;
+      await this.notifications.enqueue(
+        {
+          academyId,
+          userId: q.member.userId,
+          type: NotificationType.PAYMENT_PENDING,
+          title: "Nova quota",
+          body: `A ${(q.label ?? rotulo(q.period)).toLowerCase()} já está disponível — ${(q.amountCents / 100).toFixed(2)} €.`,
+          payload: { route: "/socio/quotas", memberFeeId: q.id },
+        },
+        db,
+      );
+    }
+
+    await db.memberFee.updateMany({
+      where: { id: { in: porAvisar.map((q) => q.id) } },
+      data: { noticedAt: agora },
+    });
+  }
+
   private mustRead(ctx: RequestContext) {
     if (!can(ctx, "member:read")) throw new ForbiddenException("Sem acesso aos sócios");
   }
@@ -230,6 +305,9 @@ export class MemberFeesService implements OnModuleInit, OnModuleDestroy {
         select: {
           id: true, period: true, label: true, amountCents: true, dueOn: true,
           status: true, settledAt: true, method: true, notes: true,
+          /* O que cada quota cobre — a ficha mostra o intervalo, e é por ele
+             que se sabe qual se pode ainda dividir. */
+          coversFrom: true, coversTo: true,
           // O pagamento que a liquidou, para dizer quem pagou e com que
           // identificador aparece na euPago. Pode cobrir vários meses.
           paidBy: {
@@ -269,13 +347,20 @@ export class MemberFeesService implements OnModuleInit, OnModuleDestroy {
     return this.prisma.runAs(ctx.academyId, async (db) => {
       const member = await db.member.findFirst({
         where: { id: memberId },
-        select: { id: true, tier: { select: { feeCents: true, billing: true, archivedAt: true } } },
+        select: {
+          id: true,
+          annualStartDay: true,
+          annualStartMonth: true,
+          tier: { select: { feeCents: true, billing: true, archivedAt: true } },
+        },
       });
       if (!member) throw new NotFoundException("Sócio não encontrado");
 
-      const taken = (
-        await db.memberFee.findMany({ where: { memberId }, select: { period: true } })
-      ).map((f) => f.period);
+      const quotas = await db.memberFee.findMany({
+        where: { memberId },
+        select: { period: true, coversFrom: true, coversTo: true },
+      });
+      const taken = quotas.map((f) => f.period);
 
       return {
         hasTier: member.tier != null,
@@ -286,11 +371,19 @@ export class MemberFeesService implements OnModuleInit, OnModuleDestroy {
          * `MemberFeeDialog` na consola.
          */
         billing: member.tier && !member.tier.archivedAt ? member.tier.billing : ("MONTHLY" as const),
-        /* E quando abre o período anual do clube — é o que decide que épocas se oferecem. */
+        /*
+         * Quando abre o ano **deste** sócio — o dele, ou o do clube quando não
+         * tem. É o que dá o dia das fronteiras da cobertura, e o que o ecrã
+         * mostra ao lado do mês de início.
+         */
         ...(await (async () => {
-          const { mes, dia } = await aberturaAnual(db, ctx.academyId);
-          return { annualStartMonth: mes, annualStartDay: dia };
+          const { mes, dia } = aberturaDoSocio(member, await aberturaAnual(db, ctx.academyId));
+          return { annualStartMonth: mes, annualStartDay: dia, ownAnnualStart: member.annualStartMonth != null };
         })()),
+        /* O que já está coberto, para o ecrã não deixar lançar por cima. */
+        covered: quotas
+          .filter((f) => f.coversFrom && f.coversTo)
+          .map((f) => ({ from: f.coversFrom!, to: f.coversTo! })),
         taken,
       };
     });
@@ -328,7 +421,7 @@ export class MemberFeesService implements OnModuleInit, OnModuleDestroy {
   async lancar(
     ctx: RequestContext,
     memberId: string,
-    input: { periods: string[]; amountCents: number; notes?: string },
+    input: { periods: string[]; amountCents: number; notes?: string; until?: string },
   ) {
     this.mustWrite(ctx);
 
@@ -336,31 +429,57 @@ export class MemberFeesService implements OnModuleInit, OnModuleDestroy {
     if (periodos.length === 0) throw new BadRequestException("Escolhe pelo menos um mês");
     const invalido = periodos.find((p) => !ehMes(p));
     if (invalido) throw new BadRequestException(`"${invalido}" não é um mês (AAAA-MM)`);
+    const ate = input.until?.trim() || undefined;
+    if (ate && !ehMes(ate)) throw new BadRequestException(`"${ate}" não é um mês (AAAA-MM)`);
     assertZeroOuCobravel(input.amountCents, "O valor da quota");
 
     return this.prisma.runAs(ctx.academyId, async (db) => {
       const member = await db.member.findFirst({
         where: { id: memberId },
-        select: { id: true, tier: { select: { billing: true, archivedAt: true } } },
+        select: {
+          id: true,
+          annualStartDay: true,
+          annualStartMonth: true,
+          tier: { select: { billing: true, archivedAt: true } },
+        },
       });
       if (!member) throw new NotFoundException("Sócio não encontrado");
 
-      /*
-       * Numa categoria anual cada quota é de um período, e o período é o mês em
-       * que ele abre — o que o clube definiu para as suas quotas anuais. Lançar
-       * "Março" a um sócio anual de um clube de Janeiro criava uma segunda quota
-       * do mesmo ano, com rótulo de mês, ao lado da do ano.
-       */
       const billing =
         member.tier && !member.tier.archivedAt && member.tier.billing === "ANNUAL" ? "ANNUAL" : "MONTHLY";
-      const { mes: inicio, dia } = await aberturaAnual(db, ctx.academyId);
+      const { dia } = aberturaDoSocio(member, await aberturaAnual(db, ctx.academyId));
+
+      /*
+       * Numa anual o mês escolhido é o **início** da cobertura, e pode ser
+       * qualquer um.
+       *
+       * Era obrigado a ser o mês de abertura do clube, e isso tirava o único
+       * caso que a direcção tem para lançar uma anuidade à mão: registar um ano
+       * passado, que abriu noutro mês. Agora escolhe-se o mês e o ano de
+       * início, como nas mensalidades, e a cobertura é um ano a partir dali —
+       * ou até ao mês indicado, quando se quer uma parte.
+       */
+      if (billing !== "ANNUAL" && ate) {
+        throw new BadRequestException("Só uma quota anual se cobra até um mês: as mensais são de um mês só");
+      }
+      if (ate && periodos.length > 1) {
+        throw new BadRequestException("Para cobrar até um mês escolhe um período de início só");
+      }
       if (billing === "ANNUAL") {
-        const foraDaEpoca = periodos.find((p) => p !== inicioDaEpocaDoMes(p, inicio));
-        if (foraDaEpoca) {
-          throw new BadRequestException(
-            `A categoria deste sócio é anual e o período abre em ${MESES[inicio - 1]}: lançam-se períodos anuais, não meses`,
-          );
+        for (const p of periodos) {
+          const fim = ate ?? mesMais(p, 11);
+          if (distanciaEmMeses(p, fim) < 1) {
+            throw new BadRequestException("O mês final não pode ser anterior ao de início");
+          }
         }
+        await assertSemSobreposicao(
+          db,
+          memberId,
+          periodos.map((p) => ({
+            de: inicioDaCobertura(p, dia),
+            ate: fimDaCobertura(ate ?? mesMais(p, 11), dia),
+          })),
+        );
       }
 
       const jaExistiam = (
@@ -376,7 +495,7 @@ export class MemberFeesService implements OnModuleInit, OnModuleDestroy {
         if (existentes.has(period)) continue;
         await db.memberFee.create({
           data: {
-            ...novaQuota(ctx.academyId, memberId, period, input.amountCents, billing, new Date(), dia),
+            ...novaQuota(ctx.academyId, memberId, period, input.amountCents, billing, new Date(), dia, ate),
             ...(input.notes?.trim() ? { notes: input.notes.trim() } : {}),
           },
         });
@@ -387,6 +506,197 @@ export class MemberFeesService implements OnModuleInit, OnModuleDestroy {
       await db.memberFeeSkip.deleteMany({ where: { memberId, period: { in: periodos } } });
 
       return { created: criadas, alreadyExisted: jaExistiam };
+    });
+  }
+
+  /**
+   * Cobrar esta anuidade só **até** um mês, e passar o resto para uma segunda.
+   *
+   * ## O que o clube pediu
+   *
+   * Um sócio que queira pagar meio ano de uma vez: edita-se a anuidade para ser
+   * cobrada de agora até ao mês X, e nasce logo outra a cobrir o resto do ano.
+   * A segunda pode ser partida outra vez — é a mesma operação.
+   *
+   * O mês escolhido **entra**: com o ano a abrir dia 22, cobrar até Dezembro vai
+   * de 22 de Setembro a 21 de Janeiro, quatro meses.
+   *
+   * ## O preço
+   *
+   * Proporcional aos meses, sobre o valor **desta** quota e não sobre o preço
+   * da categoria: uma anuidade com um valor acordado à mão parte-se por esse
+   * valor. A segunda fica com o que sobra ao cêntimo, para as duas somarem
+   * exactamente o que a anuidade valia — dividir por doze e multiplicar de
+   * volta não devolve o mesmo número.
+   *
+   * ## O início não se mexe
+   *
+   * Só se edita o fim, e é isso que impede uma parte de recuar para antes da
+   * que a precede, ou de pisar um mês já pago. Quem quiser outro início lança
+   * uma quota nova, onde o mês inicial se escolhe.
+   */
+  async dividir(ctx: RequestContext, feeId: string, ate: string) {
+    this.mustWrite(ctx);
+    if (!ehMes(ate)) throw new BadRequestException("Mês inválido");
+
+    return this.prisma.runAs(ctx.academyId, async (db) => {
+      const fee = await db.memberFee.findFirst({
+        where: { id: feeId },
+        select: {
+          id: true, memberId: true, period: true, amountCents: true, status: true, notes: true,
+          coversFrom: true, coversTo: true,
+          member: {
+            select: {
+              annualStartDay: true,
+              annualStartMonth: true,
+              tier: { select: { billing: true, archivedAt: true } },
+            },
+          },
+        },
+      });
+      if (!fee) throw new NotFoundException("Quota não encontrada");
+      if (fee.status !== ChargeStatus.OPEN) {
+        throw new BadRequestException("Só se divide uma quota em aberto — esta já foi paga ou anulada");
+      }
+
+      const billing: MemberFeeBilling =
+        fee.member.tier && !fee.member.tier.archivedAt && fee.member.tier.billing === "ANNUAL"
+          ? "ANNUAL"
+          : "MONTHLY";
+      /*
+       * O dia das fronteiras é o da própria quota, e não o da ficha: mudar o
+       * aniversário do sócio amanhã não pode deslocar uma cobertura que já foi
+       * escrita (e talvez já paga em parte).
+       */
+      const dia =
+        fee.coversFrom?.getUTCDate() ??
+        aberturaDoSocio(fee.member, await aberturaAnual(db, ctx.academyId)).dia;
+
+      const cobertura = coberturaDaQuota(fee, billing, dia);
+      if (!cobertura) throw new BadRequestException("Esta quota é de um mês só — não há nada para dividir");
+
+      const inicioMes = mesDe(cobertura.de);
+      const finalActual = mesFinalCoberto(cobertura.ate);
+      if (distanciaEmMeses(inicioMes, ate) < 1) {
+        throw new BadRequestException("O mês final não pode ser anterior ao de início");
+      }
+      if (distanciaEmMeses(inicioMes, ate) >= distanciaEmMeses(inicioMes, finalActual)) {
+        throw new BadRequestException("Esta quota já acaba aí — escolhe um mês mais cedo");
+      }
+
+      const novoFim = fimDaCobertura(ate, dia);
+      const total = mesesCobertos(cobertura.de, cobertura.ate);
+      const primeiros = mesesCobertos(cobertura.de, novoFim);
+
+      const { primeira: valorPrimeira, segunda: valorSegunda } = repartirValor(
+        fee.amountCents,
+        total,
+        primeiros,
+      );
+      assertZeroOuCobravel(valorPrimeira, "A parte que fica");
+      assertZeroOuCobravel(valorSegunda, "A parte que sobra");
+
+      const inicioSegunda = new Date(novoFim.getTime() + 86_400_000);
+      const periodoSegunda = mesDe(inicioSegunda);
+
+      /* O unique `(memberId, period)` é a rede; dizê-lo antes é o que explica. */
+      const ocupado = await db.memberFee.findFirst({
+        where: { memberId: fee.memberId, period: periodoSegunda },
+        select: { label: true },
+      });
+      if (ocupado) {
+        throw new BadRequestException(`Já existe uma quota que começa nesse mês ("${ocupado.label ?? periodoSegunda}")`);
+      }
+
+      const agora = new Date();
+
+      await db.memberFee.update({
+        where: { id: fee.id },
+        data: {
+          coversTo: novoFim,
+          amountCents: valorPrimeira,
+          label: rotuloDaCobertura(cobertura.de, novoFim),
+          dueOn: prazoDaCobertura(cobertura.de, novoFim, agora),
+        },
+      });
+
+      /* A parte de trás pode ter sido apagada antes: recriá-la é voltar atrás. */
+      await db.memberFeeSkip.deleteMany({ where: { memberId: fee.memberId, period: periodoSegunda } });
+
+      const segunda = await db.memberFee.create({
+        data: {
+          ...novaQuota(ctx.academyId, fee.memberId, periodoSegunda, valorSegunda, "ANNUAL", agora, dia, finalActual),
+          ...(fee.notes?.trim() ? { notes: fee.notes.trim() } : {}),
+        },
+        select: { id: true, label: true, amountCents: true, coversFrom: true, coversTo: true, dueOn: true },
+      });
+
+      return {
+        ok: true as const,
+        primeira: { id: fee.id, amountCents: valorPrimeira, coversTo: novoFim, months: primeiros },
+        segunda: { ...segunda, months: total - primeiros },
+      };
+    });
+  }
+
+  /**
+   * Quando abre o ano de quotas deste sócio.
+   *
+   * ## Mudar a data refaz o ano. Sempre.
+   *
+   * Não há escolha nenhuma a fazer aqui, e houve: chegou a perguntar-se se se
+   * queria manter o ano em curso, redatá-lo, ou tapar o intervalo com uma quota
+   * curta. Três respostas para uma pergunta que o clube não quer que lhe façam —
+   * e a pior delas deixava o sócio meses sem ser cobrado, em silêncio.
+   *
+   * A regra é uma: **as quotas daquele ano desaparecem e nasce uma nova, na
+   * janela nova, com o valor que o ano já valia.** Se o ano estava partido em
+   * duas ou três partes, saem todas e fica uma anuidade inteira. Não fica
+   * intervalo por cobrir porque não fica nada de permeio.
+   *
+   * ## O que trava, e é o único travão
+   *
+   * Dinheiro que entrou pela euPago. Uma quota paga online, ou com uma
+   * referência ainda viva, não se apaga — apagá-la levava o registo do
+   * pagamento atrás, e o dinheiro ficava sem rasto no produto. É a mesma regra
+   * (e a mesma função) do botão "Apagar quota": ver `razaoParaNaoApagar`. Uma
+   * quota marcada como paga **à mão** não trava, porque aí é a direcção a
+   * desfazer o que ela própria escreveu.
+   *
+   * Tudo numa transação: se o refazer não couber, nem a data fica gravada.
+   */
+  async definirAnoDeQuotas(ctx: RequestContext, memberId: string, input: { annualStart: string }) {
+    this.mustWrite(ctx);
+
+    const valor = input.annualStart.trim();
+    if (valor !== "" && !/^(0[1-9]|1[0-2])-(0[1-9]|[12]\d|3[01])$/.test(valor)) {
+      throw new BadRequestException("Data de abertura inválida");
+    }
+
+    return this.prisma.runAs(ctx.academyId, async (db) => {
+      const member = await db.member.findFirst({
+        where: { id: memberId },
+        select: {
+          id: true,
+          annualStartDay: true,
+          annualStartMonth: true,
+          tier: { select: { feeCents: true, billing: true, archivedAt: true } },
+        },
+      });
+      if (!member) throw new NotFoundException("Sócio não encontrado");
+
+      const [mes, dia] = valor === "" ? [null, null] : valor.split("-").map(Number);
+      await db.member.update({
+        where: { id: memberId },
+        data: { annualStartMonth: mes, annualStartDay: dia },
+      });
+
+      return refazerAnoDeQuotas(db, ctx.academyId, {
+        id: memberId,
+        annualStartMonth: mes,
+        annualStartDay: dia,
+        tier: member.tier,
+      });
     });
   }
 
@@ -523,7 +833,11 @@ export class MemberFeesService implements OnModuleInit, OnModuleDestroy {
 
     const member = await db.member.findFirst({
       where: { id: memberId },
-      select: { tier: { select: { feeCents: true, archivedAt: true, billing: true } } },
+      select: {
+        annualStartDay: true,
+        annualStartMonth: true,
+        tier: { select: { feeCents: true, archivedAt: true, billing: true } },
+      },
     });
     const tier = member?.tier && !member.tier.archivedAt ? member.tier : null;
     if (!tier?.feeCents) {
@@ -540,7 +854,10 @@ export class MemberFeesService implements OnModuleInit, OnModuleDestroy {
      * período vira, e é a emissão automática que a traz. Os períodos passados
      * já existem (a direcção lançou-os) e pagam-se pelo seu id.
      */
-    const { mes: inicio, dia } = await aberturaAnual(db, academyId);
+    const { mes: inicio, dia } = aberturaDoSocio(
+      member ?? { annualStartDay: null, annualStartMonth: null },
+      await aberturaAnual(db, academyId),
+    );
     if (tier.billing === "ANNUAL") {
       const corrente = inicioDaEpoca(new Date(), inicio, dia);
       if (period !== corrente) {
@@ -550,6 +867,17 @@ export class MemberFeesService implements OnModuleInit, OnModuleDestroy {
             : "A tua quota é anual: paga-se uma vez por período, não por meses",
         );
       }
+      /*
+       * E nada de nascer por cima de uma cobertura que já existe.
+       *
+       * O período estar livre deixou de querer dizer que o ano está por cobrir:
+       * apagada a primeira parte de uma anuidade partida, a segunda continua a
+       * cobrir o resto e o mês de abertura fica vago. Sem isto, o sócio abria a
+       * app e criava um ano inteiro por cima do que já devia.
+       */
+      await assertSemSobreposicao(db, memberId, [
+        { de: inicioDaCobertura(period, dia), ate: fimDaCobertura(mesMais(period, 11), dia) },
+      ]);
     }
 
     const criada = await db.memberFee.create({
@@ -591,28 +919,46 @@ export async function gerarQuotas(
 ): Promise<{ criadas: number; novas: { memberId: string; period: string }[]; socios: number }> {
   const socios = await db.member.findMany({
     where: { status: "ACTIVE", tier: { feeCents: { not: null }, archivedAt: null } },
-    select: { id: true, tier: { select: { feeCents: true, billing: true } } },
+    select: {
+      id: true,
+      annualStartDay: true,
+      annualStartMonth: true,
+      tier: { select: { feeCents: true, billing: true } },
+    },
   });
   if (socios.length === 0) return { criadas: 0, novas: [], socios: 0 };
 
   /*
-   * Cada sócio tem o seu período: o mês corrente numa categoria mensal, o
-   * período anual do clube que está aberto **hoje** numa anual. Hoje, e não o
-   * mês da varredura: um clube que abre a 15 de Setembro ainda está no período
-   * anterior a 1 de Setembro, e a quota nova só nasce a partir do dia 15. A
-   * pergunta "quem já tem?" é feita sobre os dois períodos; sobre um só, um
-   * sócio de categoria anual recebia uma quota nova todos os meses.
+   * Cada sócio tem o **seu** período: o mês corrente numa categoria mensal, e
+   * numa anual o ano dele — o que abriu no dia e mês da ficha, ou na abertura
+   * do clube quando a ficha não os tem.
+   *
+   * Era um período só, do clube inteiro. Deixou de poder ser quando o ano
+   * passou a começar no dia da adesão de cada um: dois sócios anuais do mesmo
+   * clube podem estar em ciclos que abrem em meses diferentes, e a pergunta
+   * "quem já tem?" tem de ser feita sobre o período de cada um.
    */
-  const { mes, dia } = await aberturaAnual(db, academyId);
-  const daEpoca = inicioDaEpoca(agora, mes, dia);
-  type Categoria = { feeCents: number | null; billing: MemberFeeBilling };
-  const periodoDe = (t: Categoria) => (t.billing === "ANNUAL" ? daEpoca : period);
-  const periodosEmJogo = [...new Set([period, daEpoca])];
+  const clube = await aberturaAnual(db, academyId);
+  const ids = socios.map((s) => s.id);
+
+  const plano = socios.map((s) => {
+    const anual = s.tier?.billing === "ANNUAL";
+    const abertura = aberturaDoSocio(s, clube);
+    return {
+      id: s.id,
+      anual,
+      abertura,
+      preco: s.tier!.feeCents!,
+      periodo: anual ? inicioDaEpoca(agora, abertura.mes, abertura.dia) : period,
+    };
+  });
+
+  const periodosEmJogo = [...new Set(plano.map((p) => p.periodo))];
 
   const existentes = new Set(
     (
       await db.memberFee.findMany({
-        where: { memberId: { in: socios.map((s) => s.id) }, period: { in: periodosEmJogo } },
+        where: { memberId: { in: ids }, period: { in: periodosEmJogo } },
         select: { memberId: true, period: true },
       })
     ).map((f) => `${f.memberId}|${f.period}`),
@@ -620,15 +966,44 @@ export async function gerarQuotas(
 
   /* As que a direcção apagou não voltam. Ver `MemberFeeSkip`. */
   for (const d of await db.memberFeeSkip.findMany({
-    where: { memberId: { in: socios.map((s) => s.id) }, period: { in: periodosEmJogo } },
+    where: { memberId: { in: ids }, period: { in: periodosEmJogo } },
     select: { memberId: true, period: true },
   })) {
     existentes.add(`${d.memberId}|${d.period}`);
   }
 
-  const novas = socios
-    .filter((s) => s.tier?.feeCents && !existentes.has(`${s.id}|${periodoDe(s.tier)}`))
-    .map((s) => novaQuota(academyId, s.id, periodoDe(s.tier!), s.tier!.feeCents!, s.tier!.billing, agora, dia));
+  /*
+   * E, nas anuais, nada de pisar uma cobertura que já existe.
+   *
+   * O período sozinho deixou de chegar no dia em que uma anuidade se pôde
+   * partir: apagada a primeira metade, a segunda continua a cobrir o resto do
+   * ano e o mês de abertura fica livre — a varredura criava um ano inteiro por
+   * cima dela, e o sócio passava a dever os mesmos meses duas vezes.
+   */
+  const anuais = plano.filter((p) => p.anual);
+  const cobertas = new Map<string, { de: Date; ate: Date }[]>();
+  if (anuais.length > 0) {
+    for (const f of await db.memberFee.findMany({
+      where: { memberId: { in: anuais.map((p) => p.id) }, coversFrom: { not: null }, coversTo: { not: null } },
+      select: { memberId: true, coversFrom: true, coversTo: true },
+    })) {
+      cobertas.set(f.memberId, [...(cobertas.get(f.memberId) ?? []), { de: f.coversFrom!, ate: f.coversTo! }]);
+    }
+  }
+
+  const novas = plano
+    .filter((p) => {
+      if (existentes.has(`${p.id}|${p.periodo}`)) return false;
+      if (!p.anual) return true;
+      const nova = {
+        de: inicioDaCobertura(p.periodo, p.abertura.dia),
+        ate: fimDaCobertura(mesMais(p.periodo, 11), p.abertura.dia),
+      };
+      return !(cobertas.get(p.id) ?? []).some((c) => sobrepoem(c, nova));
+    })
+    .map((p) =>
+      novaQuota(academyId, p.id, p.periodo, p.preco, p.anual ? "ANNUAL" : "MONTHLY", agora, p.abertura.dia),
+    );
 
   if (novas.length > 0) await db.memberFee.createMany({ data: novas, skipDuplicates: true });
 
@@ -648,14 +1023,42 @@ function novaQuota(
   billing: MemberFeeBilling = "MONTHLY",
   agora = new Date(),
   diaDeAbertura = 1,
+  /** O último mês **incluído**, nas anuais. Omisso = o ano inteiro. */
+  ate?: string,
 ) {
+  if (billing !== "ANNUAL") {
+    return {
+      academyId,
+      memberId,
+      period,
+      label: rotulo(period),
+      amountCents,
+      dueOn: fimDoMes(period),
+      coversFrom: null,
+      coversTo: null,
+      noticedAt: agora,
+      updatedAt: new Date(),
+    };
+  }
+
+  const de = inicioDaCobertura(period, diaDeAbertura);
+  const fim = fimDaCobertura(ate ?? mesMais(period, 11), diaDeAbertura);
   return {
     academyId,
     memberId,
     period,
-    label: billing === "ANNUAL" ? `Quota anual ${rotuloDaEpoca(period)}` : rotulo(period),
+    label: rotuloDaCobertura(de, fim),
     amountCents,
-    dueOn: prazoDaQuota(period, billing, agora, diaDeAbertura),
+    dueOn: prazoDaCobertura(de, fim, agora),
+    coversFrom: de,
+    coversTo: fim,
+    /*
+     * Já começou? Quem a criou avisa. Só começa mais tarde — é a segunda metade
+     * de uma anuidade partida — e fica por avisar até o período dela chegar,
+     * que foi o que o clube pediu: o sócio não é incomodado com o que ainda não
+     * deve. Ver `avisarQuotasQueComecaram`.
+     */
+    noticedAt: de <= agora ? agora : null,
     updatedAt: new Date(),
   };
 }
@@ -700,7 +1103,10 @@ export async function situacaoDeQuotas(
   const fees = await db.memberFee.findMany({
     where: { memberId },
     orderBy: [{ period: "desc" }],
-    select: { period: true, label: true, amountCents: true, status: true, dueOn: true, settledAt: true },
+    select: {
+      period: true, label: true, amountCents: true, status: true, dueOn: true, settledAt: true,
+      coversFrom: true, coversTo: true,
+    },
   });
 
   const abertas = fees.filter((f) => f.status === "OPEN");
@@ -715,20 +1121,37 @@ export async function situacaoDeQuotas(
    */
   const socio = await db.member.findFirst({
     where: { id: memberId },
-    select: { tier: { select: { billing: true, archivedAt: true } } },
+    select: {
+      annualStartDay: true,
+      annualStartMonth: true,
+      tier: { select: { billing: true, archivedAt: true } },
+    },
   });
   const billing: MemberFeeBilling =
     socio?.tier && !socio.tier.archivedAt && socio.tier.billing === "ANNUAL" ? "ANNUAL" : "MONTHLY";
 
-  const { mes, dia } = await aberturaAnual(db, academyId);
+  const clube = await aberturaAnual(db, academyId);
+  const { mes, dia } = aberturaDoSocio(socio ?? { annualStartDay: null, annualStartMonth: null }, clube);
   const currentPeriod = periodoDaQuota(billing, agora, mes, dia);
-  const corrente = fees.find((f) => f.period === currentPeriod);
+
+  /*
+   * Numa anual, a quota corrente é a que **cobre hoje** e não a que abre o
+   * ciclo. Partida a anuidade, a primeira parte pode já estar paga e é a
+   * segunda que conta — sem isto a ficha dizia "em dia" a quem tem a segunda
+   * metade por pagar. O período continua a ser o do ciclo, para as quotas
+   * antigas sem cobertura escrita caírem no comportamento de sempre.
+   */
+  const corrente =
+    billing === "ANNUAL"
+      ? (fees.find((f) => f.coversFrom && f.coversTo && f.coversFrom <= agora && agora <= f.coversTo) ??
+        fees.find((f) => f.period === currentPeriod))
+      : fees.find((f) => f.period === currentPeriod);
 
   return {
     currentPeriod,
     currentLabel:
       billing === "ANNUAL"
-        ? nomeDaEpoca(currentPeriod)
+        ? (corrente?.label ?? nomeDaEpoca(currentPeriod))
         : `${MESES[Number(currentPeriod.split("-")[1]) - 1]} ${currentPeriod.split("-")[0]}`,
     currentKind: billing === "ANNUAL" ? "season" : "month",
     currentStatus: !corrente
@@ -768,6 +1191,220 @@ export async function aberturaAnual(db: ScopedClient, academyId: string): Promis
   return { mes: a?.memberAnnualStartMonth ?? 8, dia: a?.memberAnnualStartDay ?? 1 };
 }
 
+/* -------------------------------------------------------------------------- */
+/* O ano de cada sócio, e o que cada quota cobre                               */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * Em que dia e mês abre o ano **deste** sócio.
+ *
+ * A dele, quando a tem; a do clube quando não. Um sócio que adere a 22 de
+ * Setembro fica com 22/09 e é cobrado nesse dia todos os anos — era a razão de
+ * tudo isto: com a janela do clube, quem entrava a meio comprava um ano que já
+ * ia a meio. Nulo continua a querer dizer "o do clube", e é o que deixou os
+ * sócios que já existiam onde estavam.
+ */
+export function aberturaDoSocio(
+  socio: { annualStartDay: number | null; annualStartMonth: number | null },
+  clube: Abertura,
+): Abertura {
+  const mes = Math.min(Math.max(socio.annualStartMonth ?? clube.mes, 1), 12);
+  const dia = Math.min(Math.max(socio.annualStartDay ?? clube.dia, 1), DIAS_DO_MES[mes - 1]);
+  return { mes, dia };
+}
+
+/**
+ * Refazer o ano de quotas de um sócio na janela que passou a valer.
+ *
+ * O corpo do "mudar a data refaz o ano", solto da rota: apaga as quotas
+ * daquele ano — as partes de um ano partido incluídas — e cria **uma**
+ * anuidade na janela nova, com o valor que o ano já valia. Ver
+ * `MemberFeesService.definirAnoDeQuotas` para o porquê de não haver escolha.
+ *
+ * Recebe o `db` em vez de o abrir, porque tem dois chamadores e o segundo — a
+ * importação de sócios — já vem dentro da sua própria transação. Abrir aqui
+ * um `runAs` de dentro de outro pedia uma segunda ligação ao pool para escrever
+ * linhas que a primeira ainda segura: o caminho directo para um impasse.
+ *
+ * **Não grava a data.** Quem chama é que decide o que fica em
+ * `annualStartMonth`/`annualStartDay`; isto trata só das quotas, e recebe já os
+ * valores novos.
+ */
+export async function refazerAnoDeQuotas(
+  db: ScopedClient,
+  academyId: string,
+  socio: {
+    id: string;
+    annualStartMonth: number | null;
+    annualStartDay: number | null;
+    tier: { feeCents: number | null; billing: MemberFeeBilling; archivedAt: Date | null } | null;
+  },
+  agora = new Date(),
+) {
+  const nada = {
+    ok: true as const,
+    apagadas: [] as { label: string | null; de: Date | null; ate: Date | null }[],
+    nova: null,
+  };
+
+  const tier = socio.tier && !socio.tier.archivedAt ? socio.tier : null;
+  if (tier?.billing !== "ANNUAL") return nada;
+
+  const abertura = aberturaDoSocio(socio, await aberturaAnual(db, academyId));
+
+  const periodo = inicioDaEpoca(agora, abertura.mes, abertura.dia);
+  const de = inicioDaCobertura(periodo, abertura.dia);
+  const ate = fimDaCobertura(mesMais(periodo, 11), abertura.dia);
+
+  /*
+   * O ano a refazer: tudo o que a janela nova pisa, mais tudo o que ainda não
+   * acabou.
+   *
+   * As duas condições são precisas. A sobreposição apanha as partes de um ano
+   * partido que caem dentro da janela nova; a segunda apanha o que ficaria **a
+   * seguir** a ela sem lhe tocar — uma segunda metade que já começava depois do
+   * fim da janela nova continuaria lá, e era exactamente a sobra que isto
+   * existe para não deixar.
+   */
+  const candidatas = await db.memberFee.findMany({
+    where: { memberId: socio.id, coversFrom: { not: null }, coversTo: { not: null } },
+    select: {
+      id: true, label: true, period: true, amountCents: true, status: true,
+      coversFrom: true, coversTo: true,
+    },
+  });
+  const afetadas = candidatas.filter(
+    (f) =>
+      sobrepoem({ de: f.coversFrom!, ate: f.coversTo! }, { de, ate }) ||
+      (f.status !== ChargeStatus.VOID && f.coversTo! >= agora),
+  );
+
+  if (afetadas.length === 0) return nada;
+
+  /* O único travão: dinheiro que entrou pela euPago. Ver o cabeçalho. */
+  const ids = afetadas.map((f) => f.id);
+  const pagamentos = await db.payment.findMany({
+    where: { OR: [{ memberFeeId: { in: ids } }, { memberFees: { some: { memberFeeId: { in: ids } } } }] },
+    select: { status: true, provider: true, method: true, expiresAt: true, createdAt: true },
+  });
+  const razao = razaoParaNaoApagar(pagamentos);
+  if (razao) throw new BadRequestException(`Não dá para refazer o ano: ${razao}`);
+
+  /* O ano novo vale o que o ano velho valia — não é o momento de repreçar. */
+  const total = afetadas.reduce((n, f) => n + f.amountCents, 0);
+  assertZeroOuCobravel(total, "O valor do ano novo");
+
+  await db.memberFee.deleteMany({ where: { id: { in: ids } } });
+  /* Refazer é recomeçar: as marcas de dispensa dos meses envolvidos saem, senão
+     o livro recusava o que se acabou de criar. */
+  await db.memberFeeSkip.deleteMany({
+    where: { memberId: socio.id, period: { in: [...new Set([...afetadas.map((f) => f.period), periodo])] } },
+  });
+
+  const nova = await db.memberFee.create({
+    data: novaQuota(academyId, socio.id, periodo, total, "ANNUAL", agora, abertura.dia),
+    select: { id: true, label: true, amountCents: true, coversFrom: true, coversTo: true },
+  });
+
+  return {
+    ok: true as const,
+    apagadas: afetadas.map((f) => ({ label: f.label, de: f.coversFrom, ate: f.coversTo })),
+    nova,
+  };
+}
+
+/**
+ * A cobertura de uma quota, mesmo quando ela não a tem escrita.
+ *
+ * As anuais criadas antes desta funcionalidade ficaram com o intervalo
+ * preenchido na migração, mas uma linha antiga que a migração não reconheceu
+ * (rótulo mudado à mão) ainda pode vir sem ele. Nesse caso vale o que sempre
+ * valeu: um ano a contar do período. Devolve `null` para as mensais, onde o
+ * período já diz tudo.
+ */
+export function coberturaDaQuota(
+  fee: { period: string; coversFrom: Date | null; coversTo: Date | null },
+  billing: MemberFeeBilling,
+  dia: number,
+): { de: Date; ate: Date } | null {
+  if (fee.coversFrom && fee.coversTo) return { de: fee.coversFrom, ate: fee.coversTo };
+  if (billing !== "ANNUAL" || !ehMes(fee.period)) return null;
+  return { de: inicioDaCobertura(fee.period, dia), ate: fimDaCobertura(mesMais(fee.period, 11), dia) };
+}
+
+/**
+ * Como se chama uma quota pelo que ela cobre.
+ *
+ * Um ano inteiro continua a ser "Quota anual 2026/27" — é como o clube lhe
+ * chama e não havia razão para mudar. Uma parte diz os meses que paga, porque é
+ * isso que o sócio precisa de ler para saber até quando está em dia.
+ */
+export function rotuloDaCobertura(de: Date, ate: Date): string {
+  const inicio = mesDe(de);
+  const fim = mesFinalCoberto(ate);
+  if (mesesCobertos(de, ate) >= 12) return `Quota anual ${rotuloDaEpoca(inicio)}`;
+
+  const [anoI, mesI] = inicio.split("-").map(Number);
+  const [anoF, mesF] = fim.split("-").map(Number);
+  if (inicio === fim) return `Quota de ${MESES[mesI - 1]} ${anoI}`;
+  return anoI === anoF
+    ? `Quota de ${MESES[mesI - 1]} a ${MESES[mesF - 1]} ${anoF}`
+    : `Quota de ${MESES[mesI - 1]} ${anoI} a ${MESES[mesF - 1]} ${anoF}`;
+}
+
+/**
+ * O prazo de uma quota anual, pela cobertura dela. Os mesmos três casos de
+ * `prazoDaQuota`, agora com o intervalo escrito em vez de deduzido: já acabou
+ * (é um atraso, e o prazo é o fim), ainda não começou (paga-se no mês em que
+ * abrir — é isto que faz a segunda metade de uma anuidade partida não nascer
+ * em dívida), ou está a decorrer (até ao fim deste mês).
+ */
+export function prazoDaCobertura(de: Date, ate: Date, agora = new Date()): Date {
+  if (ate < agora) return ate;
+  if (de > agora) return fimDoMes(mesDe(de));
+  return fimDoMes(periodoCorrente(agora));
+}
+
+/** `22/09/2026` — para dizer numa mensagem de erro qual é a quota que choca. */
+function dataCurta(d: Date): string {
+  const p = (n: number) => String(n).padStart(2, "0");
+  return `${p(d.getUTCDate())}/${p(d.getUTCMonth() + 1)}/${d.getUTCFullYear()}`;
+}
+
+/**
+ * Recusa uma cobertura que pise outra do mesmo sócio.
+ *
+ * Duas anuidades a cobrir o mesmo mês são o mesmo mês cobrado duas vezes. O
+ * unique `(memberId, period)` só apanha as que começam no mesmo mês; desde que
+ * uma anuidade se pode partir, duas podem chocar sem partilhar o início.
+ */
+export async function assertSemSobreposicao(
+  db: ScopedClient,
+  memberId: string,
+  novas: { de: Date; ate: Date }[],
+  ignorarFeeId?: string,
+): Promise<void> {
+  const existentes = await db.memberFee.findMany({
+    where: {
+      memberId,
+      coversFrom: { not: null },
+      coversTo: { not: null },
+      ...(ignorarFeeId ? { id: { not: ignorarFeeId } } : {}),
+    },
+    select: { label: true, coversFrom: true, coversTo: true },
+  });
+
+  for (const nova of novas) {
+    const choque = existentes.find((e) => sobrepoem({ de: e.coversFrom!, ate: e.coversTo! }, nova));
+    if (choque) {
+      throw new BadRequestException(
+        `Este período sobrepõe-se a "${choque.label ?? "uma quota que já existe"}" ` +
+          `(${dataCurta(choque.coversFrom!)} a ${dataCurta(choque.coversTo!)})`,
+      );
+    }
+  }
+}
+
 /** Quantos dias tem cada mês, num ano comum — o tecto do dia de abertura. */
 export const DIAS_DO_MES = [31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
 
@@ -786,12 +1423,9 @@ export const DIAS_DO_MES = [31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
  *
  * O `8` por omissão é o que era, para quem chamar isto sem categoria à mão.
  */
-export function inicioDaEpoca(agora: Date, inicio = 8, dia = 1): string {
-  const m = agora.getMonth() + 1;
-  const jaAbriu = m > inicio || (m === inicio && agora.getDate() >= dia);
-  const ano = jaAbriu ? agora.getFullYear() : agora.getFullYear() - 1;
-  return `${ano}-${String(inicio).padStart(2, "0")}`;
-}
+/* `inicioDaEpoca` mudou-se para `cobertura.ts` — é aritmética pura, e é lá que
+   ela se consegue exercitar sem servidor. Continua a sair daqui pelo
+   `export *` do topo, para quem já a importava. */
 
 /** O mesmo, a partir de um mês qualquer: com início em Agosto, `2026-10` e `2027-03` dão `2026-08`. */
 export function inicioDaEpocaDoMes(period: string, inicio = 8): string {

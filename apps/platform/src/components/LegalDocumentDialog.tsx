@@ -1,4 +1,4 @@
-import { useEffect, useState, type FormEvent, type ReactNode } from "react";
+import { cloneElement, type FormEvent, isValidElement, type ReactElement, type ReactNode, useEffect, useId, useState } from "react";
 import { X } from "lucide-react";
 import { LegalMarkdown } from "@academia/ui/legal-markdown";
 import { apiGet } from "@/lib/http";
@@ -268,14 +268,25 @@ export function LegalDocumentDialog({ group, id, from, suggestedVersion, canWrit
 }
 
 function Field({ label, hint, children }: { label: string; hint?: string; children: ReactNode }) {
+  const id = useId();
+  /*
+   * A ligação ao campo, quando é um só e não traz `id` seu. É o que mantém o
+   * rótulo a focar o campo sem o pôr à volta dele — ver `DialogField`.
+   */
+  const soUmCampo =
+    isValidElement(children) &&
+    typeof children.type === "string" &&
+    ["input", "select", "textarea"].includes(children.type) &&
+    !(children.props as { id?: string }).id;
+
   return (
-    <label className="block">
-      <span className="mb-1.5 flex items-baseline justify-between gap-2">
+    <div className="block">
+      <label {...(soUmCampo ? { htmlFor: id } : {})} className="mb-1.5 flex items-baseline justify-between gap-2">
         <span className="text-meta font-medium text-ink-2">{label}</span>
         {hint && <span className="text-meta text-ink-4">{hint}</span>}
-      </span>
-      {children}
-    </label>
+      </label>
+      {soUmCampo ? cloneElement(children as ReactElement<{ id?: string }>, { id }) : children}
+    </div>
   );
 }
 

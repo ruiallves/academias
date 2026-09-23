@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState, type FormEvent } from "react";
 import { Dialog, DialogField, dialogInputClass } from "@/components/Dialog";
-import { Monogram, SelectField, cx } from "@/components/primitives";
+import { cx, ListaDeEscolha, Monogram, SelectField } from "@/components/primitives";
 import { Check, PackageOpen, Search, TriangleAlert } from "@/lib/icons";
 import { listAthletes, teamById } from "@/lib/api";
 import { semEquipasAtribuidas } from "@/lib/permissions";
@@ -173,7 +173,7 @@ export function DeliverDialog({
                   />
                 </div>
                 {encontrados.length > 0 && (
-                  <ul className="mt-1.5 overflow-hidden rounded-[var(--radius-control)] border border-line">
+                  <ListaDeEscolha className="mt-1.5 overflow-hidden rounded-[var(--radius-control)] border border-line">
                     {encontrados.map((a) => (
                       <li key={a.id}>
                         <button
@@ -191,7 +191,7 @@ export function DeliverDialog({
                         </button>
                       </li>
                     ))}
-                  </ul>
+                  </ListaDeEscolha>
                 )}
                 {procura.trim() && encontrados.length === 0 && atletas.length > 0 && (
                   <p className="mt-1.5 text-meta text-ink-3">Nenhum atleta com esse nome.</p>

@@ -5,6 +5,8 @@ import { Dialog, DialogField, dialogInputClass } from "@/components/Dialog";
 import { Empty, Loading, Panel, PanelHead, Pill, cx, type Tone } from "@/components/primitives";
 import { Segmented } from "@/components/filters";
 import { MemberFeeDialog } from "@/components/MemberFeeDialog";
+import { DividirQuotaDialog } from "@/components/DividirQuotaDialog";
+import { AnoDeQuotasDialog } from "@/components/AnoDeQuotasDialog";
 import { PhotoPicker } from "@/components/PhotoPicker";
 import { HistoricoPanel } from "@/components/HistoricoPanel";
 import { BotaoExportarPerfil } from "@/components/BotaoExportarPerfil";
@@ -12,6 +14,7 @@ import { exportarFichaDeSocio } from "@/lib/perfis";
 import { removeMemberPhoto, uploadMemberPhoto } from "@/lib/photos";
 import {
   ArrowLeft,
+  CalendarDays,
   Check,
   ChevronDown,
   CircleCheck,
@@ -22,6 +25,7 @@ import {
   Pencil,
   Phone,
   Plus,
+  Scissors,
   Trash2,
   Wallet,
 } from "@/lib/icons";
@@ -30,6 +34,7 @@ import { useSession } from "@/session";
 import { money } from "@/lib/format";
 import {
   DOC_LABEL,
+  MESES,
   SEX_LABEL,
   STATUS_LABEL,
   ageOf,
@@ -413,8 +418,15 @@ function QuotasTab({ member, mayWrite, onChanged }: { member: Data; mayWrite: bo
       <QuotasLancadasPanel
         key={versao}
         memberId={member.id}
+        memberName={member.name}
+        /* O ano de quotas mexe no livro, por isso vive aqui e não na ficha. */
+        annual={member.annual}
+        anual={member.tier?.billing === "ANNUAL"}
         mayWrite={mayWrite}
-        onChanged={onChanged}
+        onChanged={() => {
+          setVersao((v) => v + 1);
+          onChanged();
+        }}
         onLancar={mayWrite ? () => setLancar(true) : undefined}
       />
 
@@ -519,11 +531,19 @@ function SituacaoPanel({ fees, tier }: { fees: Data["fees"]; tier: Data["tier"] 
  */
 function QuotasLancadasPanel({
   memberId,
+  memberName,
+  annual,
+  anual,
   mayWrite,
   onChanged,
   onLancar,
 }: {
   memberId: string;
+  memberName: string;
+  /** Quando abre o ano deste sócio — o dele, ou o do clube. */
+  annual: Data["annual"];
+  /** A categoria é anual? Só aí o ano de quotas decide alguma coisa. */
+  anual: boolean;
   mayWrite: boolean;
   /** Recebeu, anulou, reabriu: o cabeçalho tem de reler a situação. */
   onChanged?: () => void;
@@ -545,6 +565,10 @@ function QuotasLancadasPanel({
 
   /* A quota que se está a perguntar se se apaga — o diálogo de uma linha. */
   const [aApagar, setAApagar] = useState<MemberFeeRow | null>(null);
+  /* E a anuidade que se está a partir em duas. Ver `DividirQuotaDialog`. */
+  const [aDividir, setADividir] = useState<MemberFeeRow | null>(null);
+  /* O diálogo do ano de quotas — só grava no Guardar. Ver `AnoDeQuotasDialog`. */
+  const [anoAberto, setAnoAberto] = useState(false);
 
   async function apagar(fee: MemberFeeRow) {
     if (busy) return;
@@ -584,6 +608,17 @@ function QuotasLancadasPanel({
   return (
     <Panel>
       <PanelHead title="Quotas lançadas" hint={fees ? `${fees.length}` : undefined}>
+        {/*
+          O ano de quotas vive aqui, ao lado de lançar: é uma decisão sobre o
+          livro, não um campo da ficha. Só nas categorias anuais, que é onde ele
+          decide alguma coisa.
+        */}
+        {mayWrite && anual && (
+          <button type="button" className="ctl-ghost" onClick={() => setAnoAberto(true)}>
+            <CalendarDays className="size-3.5" strokeWidth={1.9} />
+            Ano de quotas
+          </button>
+        )}
         {onLancar && (
           <button type="button" className="ctl-ghost" onClick={onLancar}>
             <Plus className="size-3.5" strokeWidth={2} />
@@ -591,6 +626,12 @@ function QuotasLancadasPanel({
           </button>
         )}
       </PanelHead>
+      {anual && (
+        <p className="px-5 pt-2 text-meta text-ink-3">
+          O ano abre a {annual.day} de {MESES[annual.month - 1]}
+          {!annual.own && <span className="text-ink-4"> · herdado do clube</span>}
+        </p>
+      )}
       {erro && <p className="px-5 pt-2 text-meta text-risk">{erro}</p>}
       {fees === null ? (
         <p className="px-5 py-3 text-meta text-ink-3">A carregar…</p>
@@ -608,6 +649,9 @@ function QuotasLancadasPanel({
                 <span className="block truncate text-body text-ink">{f.label ?? f.period}</span>
                 <span className="block text-meta text-ink-3">
                   {money(f.amountCents)}
+                  {/* O que uma anuidade cobre. Sem isto, duas partes do mesmo
+                      ano são duas linhas que não se distinguem. */}
+                  {f.coversFrom && f.coversTo && ` · ${dataCurta(f.coversFrom)} a ${dataCurta(f.coversTo)}`}
                   {f.status === "SETTLED" && f.method === "CASH" && " · marcada à mão"}
                   {f.status === "SETTLED" && f.method === "TRANSFER" && " · transferência"}
                   {f.status === "SETTLED" && f.method === "MBWAY" && " · MB Way"}
@@ -623,6 +667,23 @@ function QuotasLancadasPanel({
                   </span>
                 )}
               </span>
+              {/*
+                Partir a anuidade em duas — o sócio que quer pagar meio ano de
+                uma vez. Só faz sentido numa quota anual (tem cobertura escrita)
+                e em aberto: uma paga não se reparte, e uma mensal não tem o que
+                dividir.
+              */}
+              {mayWrite && f.status === "OPEN" && f.coversFrom && f.coversTo && (
+                <button
+                  type="button"
+                  className="ctl-ghost shrink-0"
+                  onClick={() => setADividir(f)}
+                  title="Cobrar só até um mês, e o resto numa quota nova"
+                >
+                  <Scissors className="size-3.5" strokeWidth={1.9} />
+                  Dividir
+                </button>
+              )}
               {/* Uma quota paga online não se mexe daqui: o dinheiro está na
                   euPago, e desfazer isso é um estorno. A pastilha fica muda. */}
               {mayWrite && !(f.status === "SETTLED" && f.method !== null && f.method !== "CASH") ? (
@@ -638,6 +699,34 @@ function QuotasLancadasPanel({
             </li>
           ))}
         </ul>
+      )}
+
+      {anoAberto && (
+        <AnoDeQuotasDialog
+          memberId={memberId}
+          memberName={memberName}
+          annual={annual}
+          fees={fees ?? []}
+          onClose={() => setAnoAberto(false)}
+          onDone={() => {
+            setAnoAberto(false);
+            /* Redatar mexe numa quota: o livro e o cabeçalho têm de reler. */
+            carregar();
+            onChanged?.();
+          }}
+        />
+      )}
+
+      {aDividir && (
+        <DividirQuotaDialog
+          fee={aDividir}
+          onClose={() => setADividir(null)}
+          onDone={() => {
+            setADividir(null);
+            carregar();
+            onChanged?.();
+          }}
+        />
       )}
 
       {aApagar && (
@@ -1007,6 +1096,7 @@ function QuotaPanel({
     </Panel>
   );
 }
+
 
 /* -------------------------------------------------------------------------- */
 
@@ -1589,4 +1679,17 @@ function EditPanel({
       </div>
     </div>
   );
+}
+
+/**
+ * `22/09/2026` — a data de uma fronteira de cobertura.
+ *
+ * Em UTC de propósito: `coversFrom`/`coversTo` são datas puras (`@db.date`), e
+ * lê-las no fuso do browser fazia o dia 1 aparecer como dia 30 do mês anterior
+ * a quem estivesse a ocidente de Greenwich.
+ */
+function dataCurta(iso: string): string {
+  const d = new Date(iso);
+  const p = (n: number) => String(n).padStart(2, "0");
+  return `${p(d.getUTCDate())}/${p(d.getUTCMonth() + 1)}/${d.getUTCFullYear()}`;
 }

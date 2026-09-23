@@ -8,7 +8,6 @@ import {
   anoDoPeriodoAnual,
   createMemberFees,
   memberFeePeriods,
-  rotuloDoPeriodoAnual,
   type MemberFeePeriods,
 } from "@/lib/members";
 
@@ -95,10 +94,11 @@ export function MemberFeeDialog({
          * sítio errado e obrigar a corrigir antes de fazer seja o que for.
          */
         if (d.billing === "ANNUAL") {
-          const inicio = d.annualStartMonth ?? 8;
-          const epoca = { mes: inicio, ano: anoDoPeriodoAnual(inicio, hoje, d.annualStartDay ?? 1) };
-          setDe(epoca);
-          setAte(epoca);
+          const mes = d.annualStartMonth ?? 8;
+          const ano = anoDoPeriodoAnual(mes, hoje, d.annualStartDay ?? 1);
+          setDe({ mes, ano });
+          /* Um ano inteiro: doze meses contados do de início, inclusive. */
+          setAte(somarMeses({ mes, ano }, 11));
         }
       })
       .catch((e: Error) => setErro(e.message));
@@ -106,17 +106,23 @@ export function MemberFeeDialog({
 
   const jaTem = useMemo(() => new Set(dados?.taken ?? []), [dados]);
 
-  /* A unidade desta ficha: meses, ou períodos anuais. Ver o cabeçalho. */
+  /* A unidade desta ficha: meses, ou uma anuidade. Ver o cabeçalho. */
   const anual = dados?.billing === "ANNUAL";
-  /* O mês em que o período anual abre — o da categoria, não Agosto por decreto. */
-  const inicio = dados?.annualStartMonth ?? 8;
-  const unidade = anual ? (inicio === 1 ? "ano" : "época") : "mês";
-  const unidades = anual ? (inicio === 1 ? "anos" : "épocas") : "meses";
+  const unidade = anual ? "quota" : "mês";
+  const unidades = anual ? "quotas" : "meses";
 
-  /* O intervalo inteiro, antes de tirar seja o que for. */
+  /*
+   * O intervalo.
+   *
+   * Numa mensal é uma quota por mês — o acerto de atrasos, que é o caso para
+   * que este ecrã nasceu. Numa **anual** é o contrário: um intervalo, uma
+   * quota. O "de" é o mês em que o ano daquele sócio abre e o "até" é o último
+   * mês coberto, inclusive; o servidor escreve a cobertura na quota e o preço é
+   * o que aqui se escrever.
+   */
   const intervalo = useMemo(
-    () => (anual ? epocasNoIntervalo(de, ate, inicio) : mesesNoIntervalo(de, ate)),
-    [anual, de, ate, inicio],
+    () => (anual ? umaAnuidade(de, ate) : mesesNoIntervalo(de, ate)),
+    [anual, de, ate],
   );
   const invertido = intervalo === null;
   const doIntervalo = intervalo ?? [];
@@ -126,9 +132,12 @@ export function MemberFeeDialog({
     [doIntervalo, jaTem, retirados],
   );
   const saltados = doIntervalo.filter((p) => jaTem.has(p)).length;
+  /* Quantos meses a anuidade cobre — é o que explica o preço a quem o escreve. */
+  const mesesCobertos = anual && !invertido ? distanciaEmMeses(de, ate) : 0;
 
   const cents = paraCentimos(valor);
-  const total = cents == null ? 0 : cents * escolhidos.length;
+  /* Numa anual o valor escrito **é** o da quota; numa mensal é por mês. */
+  const total = cents == null ? 0 : anual ? cents * escolhidos.length : cents * escolhidos.length;
   const demais = escolhidos.length > 36;
   const podeGravar = cents != null && escolhidos.length > 0 && !demais && !busy;
 
@@ -148,6 +157,9 @@ export function MemberFeeDialog({
       await createMemberFees(memberId, {
         periods: escolhidos,
         amountCents: cents,
+        /* Numa anual vai também o último mês coberto — é o que faz a quota
+           durar o que se escolheu em vez de um ano inteiro por omissão. */
+        ...(anual ? { until: periodoDe(ate) } : {}),
         ...(nota.trim() ? { notes: nota.trim() } : {}),
       });
       onDone();
@@ -204,7 +216,7 @@ export function MemberFeeDialog({
         ) : (
           <>
             <DialogField
-              label={`Valor de cada ${unidade} (€)`}
+              label={anual ? "Valor da quota (€)" : "Valor de cada mês (€)"}
               hint={
                 dados.defaultAmountCents != null
                   ? "vem da categoria"
@@ -222,15 +234,13 @@ export function MemberFeeDialog({
 
             <fieldset>
               <legend className="mb-1.5 text-meta font-medium text-ink">
-                {anual ? (inicio === 1 ? "Anos" : "Épocas") : "Meses"}
+                {anual ? "Período coberto" : "Meses"}
                 <span className="ml-2 font-normal text-ink-4">de … até, inclusive</span>
               </legend>
 
               <div className="flex flex-wrap items-end gap-x-3 gap-y-2">
                 <ExtremoDoIntervalo
                   rotulo="De"
-                  anual={anual}
-                  inicio={inicio}
                   valor={de}
                   onChange={(v) => {
                     setDe(v);
@@ -239,8 +249,6 @@ export function MemberFeeDialog({
                 />
                 <ExtremoDoIntervalo
                   rotulo="Até"
-                  anual={anual}
-                  inicio={inicio}
                   valor={ate}
                   onChange={(v) => {
                     setAte(v);
@@ -251,6 +259,12 @@ export function MemberFeeDialog({
 
               {invertido ? (
                 <p className="mt-1.5 text-meta text-risk">O fim do intervalo é anterior ao início.</p>
+              ) : anual ? (
+                <p className="mt-1.5 text-meta leading-relaxed text-ink-3">
+                  Uma quota, a cobrir {mesesCobertos} {mesesCobertos === 1 ? "mês" : "meses"}
+                  {saltados > 0 ? " — já existe uma quota que começa nesse mês." : "."}
+                  {mesesCobertos < 12 && saltados === 0 ? " O resto do ano fica por lançar." : ""}
+                </p>
               ) : (
                 <p className="mt-1.5 text-meta leading-relaxed text-ink-3">
                   {saltados > 0
@@ -267,7 +281,9 @@ export function MemberFeeDialog({
               pastilha pode sair. Sem esta lista, "de Setembro a Março" seria um
               salto de fé — e quem lança dinheiro não salta.
             */}
-            {escolhidos.length > 0 && (
+            {/* Numa anual é uma quota só, e o intervalo já está dito acima:
+                uma pastilha a repeti-lo seria mobília. */}
+            {!anual && escolhidos.length > 0 && (
               <div>
                 <p className="mb-1.5 text-meta font-medium text-ink">
                   A lançar
@@ -284,7 +300,7 @@ export function MemberFeeDialog({
                       title="Tirar do lançamento"
                       className="group flex items-center gap-1 rounded-[var(--radius-control)] border border-ink bg-ink px-2 py-1 text-meta font-semibold text-surface"
                     >
-                      {etiqueta(p, anual, inicio)}
+                      {etiqueta(p)}
                       <X className="size-3 opacity-50 group-hover:opacity-100" strokeWidth={2.5} />
                     </button>
                   ))}
@@ -333,12 +349,14 @@ const MESES_CURTOS = ["Jan", "Fev", "Mar", "Abr", "Mai", "Jun", "Jul", "Ago", "S
 type Extremo = { mes: number; ano: number };
 
 /**
- * Um extremo do intervalo — "De" ou "Até".
+ * Um extremo do intervalo — "De" ou "Até". Mês e ano, sempre.
  *
- * Mês e ano numa categoria mensal; só a época numa anual, porque aí o mês não é
- * uma escolha: é sempre o mês em que a época abre. Mostrá-lo desligado seria um
- * campo que não faz nada, e mostrá-lo activo seria oferecer onze meses que o
- * servidor recusa.
+ * Numa anual só se escolhia o **ano**, porque o mês era decretado pela abertura
+ * do clube e oferecer os outros onze era oferecer o que o servidor recusava.
+ * Deixou de ser: o ano de quotas é de cada sócio e começa no dia em que ele
+ * aderiu, e uma anuidade pode cobrir de um mês qualquer até outro. Com o mês a
+ * escolher-se, este ecrã passou a ser o mesmo nas duas periodicidades — que é
+ * o que o clube pediu ao dizer "o campo de mês e ano como nas mensalidades".
  *
  * Os anos vão de daqui a um ano até dez atrás. Dez chega para qualquer acerto
  * que um clube faça na prática, e uma lista maior torna a escolha do ano certo
@@ -347,15 +365,10 @@ type Extremo = { mes: number; ano: number };
 function ExtremoDoIntervalo({
   rotulo,
   valor,
-  anual,
-  inicio,
   onChange,
 }: {
   rotulo: string;
   valor: Extremo;
-  anual: boolean;
-  /** O mês em que o período anual abre — o que uma época "é", em `AAAA-MM`. */
-  inicio: number;
   onChange: (v: Extremo) => void;
 }) {
   const atual = new Date().getFullYear();
@@ -365,29 +378,27 @@ function ExtremoDoIntervalo({
   return (
     <label className="flex items-end gap-1.5">
       <span className="pb-2 text-meta text-ink-3">{rotulo}</span>
-      {!anual && (
-        <select
-          aria-label={`${rotulo} — mês`}
-          value={valor.mes}
-          onChange={(e) => onChange({ ...valor, mes: Number(e.target.value) })}
-          className={selectClass}
-        >
-          {MESES.map((nome, i) => (
-            <option key={nome} value={i + 1}>
-              {nome}
-            </option>
-          ))}
-        </select>
-      )}
       <select
-        aria-label={`${rotulo} — ${anual ? "época" : "ano"}`}
+        aria-label={`${rotulo} — mês`}
+        value={valor.mes}
+        onChange={(e) => onChange({ ...valor, mes: Number(e.target.value) })}
+        className={selectClass}
+      >
+        {MESES.map((nome, i) => (
+          <option key={nome} value={i + 1}>
+            {nome}
+          </option>
+        ))}
+      </select>
+      <select
+        aria-label={`${rotulo} — ano`}
         value={valor.ano}
-        onChange={(e) => onChange({ ...valor, ano: Number(e.target.value), ...(anual ? { mes: inicio } : {}) })}
+        onChange={(e) => onChange({ ...valor, ano: Number(e.target.value) })}
         className={cx(selectClass, "tabular")}
       >
         {anos.map((a) => (
           <option key={a} value={a}>
-            {anual ? rotuloDoPeriodoAnual(inicio, a) : a}
+            {a}
           </option>
         ))}
       </select>
@@ -414,24 +425,37 @@ function mesesNoIntervalo(de: Extremo, ate: Extremo): string[] | null {
   return meses;
 }
 
-/**
- * Os períodos anuais entre dois extremos, inclusive — um por ano, no mês em que
- * abrem (o da categoria).
- *
- * O período guardado continua a ser `AAAA-MM`: uma época **é** o mês em que
- * abre. Ver as migrações `quota_mensal_ou_anual` e `inicio_do_periodo_anual`.
- */
-function epocasNoIntervalo(de: Extremo, ate: Extremo, inicio: number): string[] | null {
-  if (ate.ano < de.ano) return null;
-  const epocas: string[] = [];
-  for (let a = de.ano; a <= ate.ano; a++) epocas.push(`${a}-${String(inicio).padStart(2, "0")}`);
-  return epocas;
+/** `AAAA-MM` de um extremo. */
+function periodoDe(e: Extremo): string {
+  return `${e.ano}-${String(e.mes).padStart(2, "0")}`;
 }
 
-/** "Set 25" numa quota mensal, "2026/27" (ou "2026", no ano civil) numa anual — curto, para a pastilha. */
-function etiqueta(period: string, anual: boolean, inicio: number): string {
+/** `n` meses depois de um extremo. */
+function somarMeses(e: Extremo, n: number): Extremo {
+  const i = e.ano * 12 + (e.mes - 1) + n;
+  return { ano: Math.floor(i / 12), mes: (i % 12) + 1 };
+}
+
+/** Quantos meses vão de `de` a `ate`, inclusive. */
+function distanciaEmMeses(de: Extremo, ate: Extremo): number {
+  return ate.ano * 12 + (ate.mes - 1) - (de.ano * 12 + (de.mes - 1)) + 1;
+}
+
+/**
+ * Uma anuidade: **uma** quota, do mês de início.
+ *
+ * O intervalo não produz uma quota por período como nas mensais — produz uma
+ * só, e o fim viaja à parte (`until`), porque é a cobertura dela e não outro
+ * lançamento. `null` quando o fim é anterior ao início.
+ */
+function umaAnuidade(de: Extremo, ate: Extremo): string[] | null {
+  if (distanciaEmMeses(de, ate) < 1) return null;
+  return [periodoDe(de)];
+}
+
+/** "Set 25" — curto, para a pastilha de uma quota mensal. */
+function etiqueta(period: string): string {
   const [ano, mes] = period.split("-");
-  if (anual) return rotuloDoPeriodoAnual(inicio, Number(ano));
   return `${MESES_CURTOS[Number(mes) - 1] ?? mes} ${ano.slice(2)}`;
 }
 

@@ -1,6 +1,6 @@
 import { useSyncExternalStore } from "react";
 import { apiDelete, apiGetSilencioso, apiPatch, apiPost } from "@/lib/http";
-import type { Permission, Role } from "@/lib/permissions";
+import { isAcademyWide, type Permission, type Role, type Session } from "@/lib/permissions";
 
 /**
  * Os departamentos da academia.
@@ -97,7 +97,16 @@ export async function updateDepartment(
     permissions?: Permission[];
     navKeys?: string[];
     /**
-     * Levar as permissões novas aos cargos que herdaram deste departamento.
+     * O alcance. Mandado só quando muda.
+     *
+     * Mudá-lo altera o ponto de partida dos cargos **novos** deste
+     * departamento. Os cargos que já cá estão só mudam com `applyToRoles`, e
+     * quem já tem um desses cargos mantém o alcance que tem até lho
+     * atribuírem outra vez — o alcance é copiado em cadeia, não seguido.
+     */
+    baseRole?: Role;
+    /**
+     * Levar as permissões novas — e o alcance, se mudou — aos cargos que herdaram deste departamento.
      *
      * Nunca por omissão: um departamento editado que mudasse calado o que dezenas
      * de pessoas podem fazer é um efeito à distância que uma tabela de permissões
@@ -112,14 +121,18 @@ export async function updateDepartment(
 }
 
 /**
- * Apagar um departamento.
+ * Apagar um departamento, e os cargos que vivem lá dentro.
  *
- * Os cargos lá dentro ficam sem departamento, mas ficam — e com as permissões que
- * tinham. Apagar "Departamento Clínico" não pode ser uma forma acidental de tirar
- * o acesso a quem lá trabalhava.
+ * Um departamento é a área do clube; os cargos dele não querem dizer nada
+ * sozinhos, e ficavam a boiar num grupo "Sem departamento" à espera de serem
+ * apagados um a um. Vão abaixo com ele.
+ *
+ * `people` diz quantas pessoas ficaram sem cargo — ninguém perde acesso, cai nos
+ * valores por omissão do papel-base. `keptRoles` conta os que **não** foram:
+ * o do presidente e o de quem está a apagar, que nunca se apagam a si próprios.
  */
-export async function removeDepartment(id: string): Promise<{ orphanedRoles: number }> {
-  const r = await apiDelete<{ orphanedRoles: number }>(`/api/departments/${id}`);
+export async function removeDepartment(id: string): Promise<{ roles: number; people: number; keptRoles: number }> {
+  const r = await apiDelete<{ roles: number; people: number; keptRoles: number }>(`/api/departments/${id}`);
   await loadDepartments();
   return r;
 }
@@ -177,6 +190,29 @@ export const SCOPE_LABEL: Record<string, string> = {
  * continuam a saber ler os seis, porque é isso que mostra um departamento que já
  * existe.
  */
+/**
+ * Qual das duas opções do seletor é que um alcance gravado **é**, na prática.
+ *
+ * ## Porque é que isto é preciso
+ *
+ * Porque as duas opções não cobrem os valores que o campo guarda. `baseRole`
+ * aceita seis papéis, e três dos quatro departamentos semeados usam os que não
+ * estão no seletor: a Direção é `DIRECTOR`, o Clínico é `MEDICAL`, o Scouting é
+ * `SCOUT`. Comparar o valor com o botão deixava esses três **sem nada marcado**
+ * ao abrir a edição, como se a pergunta nunca tivesse sido respondida.
+ *
+ * A pergunta do ecrã é binária ("vê o clube todo" ou "só as suas equipas") e a
+ * resposta lê-se do comportamento, não do nome: `isAcademyWide` é a mesma função
+ * que decide o que uma pessoa vê na consola, e o `check:access` garante que ela
+ * concorda com o `teamScopeFilter` do servidor. Reutilizá-la é o que impede uma
+ * terceira lista de papéis a divergir das outras duas em silêncio.
+ *
+ * O `Session` aqui é só o papel: é o único campo que `isAcademyWide` lê.
+ */
+export function escolhaDoAlcance(role: Role): Role {
+  return isAcademyWide({ role } as Session) ? "COORDINATOR" : "COACH";
+}
+
 export const SCOPE_CHOICES: { value: Role; label: string; hint: string }[] = [
   {
     value: "COORDINATOR",

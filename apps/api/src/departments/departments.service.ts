@@ -1,5 +1,6 @@
 import { BadRequestException, ForbiddenException, Injectable, NotFoundException } from "@nestjs/common";
 import type { Role } from "@prisma/client";
+import { apagarCargos, assertNaoTrancaOClube } from "../roles/sem-cargo";
 import { PrismaService, type ScopedClient } from "../prisma/prisma.service";
 import { isNavKey } from "../common/nav";
 import { ROLE_PERMISSIONS, can, type Permission, type RequestContext } from "../common/permissions";
@@ -114,7 +115,7 @@ export interface DepartmentInput {
   baseRole: Role;
   permissions: string[];
   navKeys?: string[];
-  /** Ao editar: levar as permissões novas aos cargos que herdaram deste. */
+  /** Ao editar: levar as permissões novas — e o alcance, se mudou — aos cargos que herdaram deste. */
   applyToRoles?: boolean;
 }
 
@@ -268,13 +269,43 @@ export class DepartmentsService {
       if (input.navKeys !== undefined) data.navKeys = input.navKeys.filter(isNavKey);
 
       /*
-       * O âmbito não se muda depois de criado.
+       * O alcance, agora editável.
        *
-       * Mesma regra que o papel-base de um cargo, e pela mesma razão: mudá-lo
-       * mudava, sem ninguém tocar em pessoa nenhuma, o que toda a gente daquele
-       * departamento consegue ver. Quem precisa de outro âmbito cria outro
-       * departamento e move lá os cargos — uma acção visível.
+       * ## O que aqui estava escrito, e porque é que estava errado
+       *
+       * Dizia que o âmbito não se muda depois de criado, porque mudá-lo mudaria
+       * "o que toda a gente daquele departamento consegue ver, sem ninguém
+       * tocar em pessoa nenhuma". O receio é razoável; o facto não é. O alcance
+       * é **copiado** em cadeia, não seguido: o cargo copia-o do departamento
+       * ao nascer (`AcademyRole.baseRole`), e a pessoa copia-o do cargo ao
+       * recebê-lo (`Membership.role`, escrita em `assignRole`). O pedido lê
+       * `ctx.role` da membership, e não daqui.
+       *
+       * Portanto mudar isto nunca mexeu, nem mexe, em ninguém à distância. O
+       * que fazia era deixar um departamento criado com o alcance errado assim
+       * para sempre, com a única saída a ser criar outro e mudar os cargos de
+       * sítio.
+       *
+       * ## O que muda mesmo
+       *
+       * O ponto de partida dos cargos **novos** deste departamento. E, se quem
+       * edita o pedir (`applyToRoles`), o alcance dos cargos que já cá estão —
+       * o que por sua vez decide o que quem os receber a partir de agora vai
+       * ver. Quem já os tem mantém o que tem até o cargo lhe ser atribuído
+       * outra vez; é o que a consola diz, com essas palavras.
+       *
+       * O guarda de hierarquia é o mesmo da criação: ninguém dá a um
+       * departamento mais alcance do que tem.
        */
+      let baseRole: Role | undefined;
+      if (input.baseRole !== undefined && input.baseRole !== dep.baseRole) {
+        if (!SCOPES.includes(input.baseRole)) throw new BadRequestException("Âmbito inválido");
+        if (RANK[input.baseRole] > RANK[ctx.role]) {
+          throw new ForbiddenException("Não podes dar a um departamento mais acesso do que tens");
+        }
+        baseRole = input.baseRole;
+        data.baseRole = baseRole;
+      }
 
       let permissions: Permission[] | undefined;
       if (input.permissions !== undefined) {
@@ -295,10 +326,14 @@ export class DepartmentsService {
        * departamento nenhum, e ninguém lhe tira permissões por esta porta.
        */
       let updatedRoles = 0;
-      if (permissions && input.applyToRoles) {
+      if (input.applyToRoles && (permissions || baseRole)) {
         const { count } = await db.academyRole.updateMany({
           where: { departmentId: id, archivedAt: null, isSystem: false },
-          data: { permissions, updatedAt: new Date() },
+          data: {
+            ...(permissions ? { permissions } : {}),
+            ...(baseRole ? { baseRole } : {}),
+            updatedAt: new Date(),
+          },
         });
         updatedRoles = count;
       }
@@ -308,12 +343,27 @@ export class DepartmentsService {
   }
 
   /**
-   * Apagar um departamento.
+   * Apagar um departamento, e os cargos que vivem dentro dele.
    *
-   * Os cargos lá dentro **não** se apagam: ficam sem departamento
-   * (`onDelete: SetNull`). Apagar "Departamento Clínico" não pode ser uma forma
-   * acidental de tirar o acesso a quem lá trabalhava — o que se apaga é a
-   * arrumação, não as pessoas nem o que elas podem fazer.
+   * ## O que mudou, e porquê
+   *
+   * Os cargos ficavam a boiar: `onDelete: SetNull` tirava-lhes o departamento e
+   * eles sobreviviam num grupo "Sem departamento". O argumento era não tirar
+   * acesso a ninguém sem querer. O resultado era que apagar o Departamento
+   * Clínico deixava "Médico" e "Fisioterapeuta" órfãos no ecrã, e quem queria
+   * mesmo desfazer aquela área tinha de os apagar um a um a seguir — a apagar
+   * outra vez o que já tinha mandado apagar.
+   *
+   * Um departamento é a área do clube; os cargos dele não querem dizer nada
+   * sozinhos. Vão abaixo com ele, e quem os vestia fica **sem cargo** — que é
+   * uma coisa que o produto sabe mostrar, e não um acesso perdido: sem cargo
+   * principal, a pessoa cai nos valores por omissão do papel-base (ver
+   * `exceptionsFor`). Um presidente continua presidente.
+   *
+   * O cargo do presidente nunca está aqui dentro (nasce sem departamento), mas
+   * se alguma vez lá aparecer é **destacado** em vez de apagado: é o único que
+   * não se apaga, e um caminho lateral que o levasse abaixo seria pior do que a
+   * porta da frente que está fechada.
    */
   async remove(ctx: RequestContext, id: string) {
     if (!can(ctx, "role:write")) throw new ForbiddenException("Sem permissão para apagar departamentos");
@@ -321,15 +371,37 @@ export class DepartmentsService {
     return this.prisma.runAs(ctx.academyId, async (db) => {
       const dep = await db.department.findFirst({
         where: { id },
-        select: { id: true, baseRole: true, _count: { select: { roles: true } } },
+        select: { id: true, name: true, baseRole: true },
       });
       if (!dep) throw new NotFoundException("Departamento não encontrado");
       if (RANK[dep.baseRole] > RANK[ctx.role]) {
         throw new ForbiddenException("Esse departamento está acima do teu");
       }
 
+      const cargos = await db.academyRole.findMany({
+        where: { departmentId: id, archivedAt: null },
+        select: { id: true, key: true, rank: true },
+      });
+
+      const intocaveis = cargos.filter((r) => r.key === "presidente" || r.id === ctx.roleId);
+      /*
+       * O cargo que quem está a apagar veste também fica.
+       *
+       * É a mesma regra de `assertMayEdit` — ninguém apaga o chão onde está —
+       * e sem ela apagar o departamento era a porta das traseiras para ela.
+       */
+      const aApagar = cargos.filter((r) => !intocaveis.some((i) => i.id === r.id));
+
+      const acima = aApagar.find((r) => r.rank > RANK[ctx.role]);
+      if (acima) throw new ForbiddenException("Há um cargo aí dentro acima do teu");
+
+      const ids = aApagar.map((r) => r.id);
+      await assertNaoTrancaOClube(db, ids);
+
+      const people = await apagarCargos(db, ids);
       await db.department.delete({ where: { id } });
-      return { ok: true, orphanedRoles: dep._count.roles };
+
+      return { ok: true, name: dep.name, roles: ids.length, keptRoles: intocaveis.length, people };
     });
   }
 

@@ -38,13 +38,22 @@ const sanitize = (sql) =>
     .replace(/CREATE EXTENSION[^;]*btree_gist[^;]*;/gi, "-- [btree_gist ignorado no PGlite]")
     .replace(/ALTER TABLE\s+"TrainingCycle"\s+ADD CONSTRAINT\s+"[^"]*_sem_sobreposicao"[\s\S]*?;/gi, "-- [EXCLUDE ignorado]");
 
-/**
- * Tabelas de plataforma: têm `academyId` mas vivem noutra fronteira (o
- * `PlatformGuard` e uma ligação à parte). A rede delas não é a RLS — é o
- * `REVOKE ALL ... FROM academia_app`. Não podem ser lidas pela ligação da
- * academia, e é isso que o teste confirma.
+/*
+ * Uma tabela com `academyId` está segura por uma de duas vias, e o teste aceita
+ * as duas:
+ *
+ *  - **RLS** com `FORCE` e política, que é o caso de tudo o que é da academia;
+ *  - **sem privilégio nenhum** para `academia_app`, que é como as tabelas de
+ *    plataforma (`Contact`, `Subscription`, `SupportSession`,
+ *    `PlatformTransaction`) se protegem: vivem noutra fronteira, com o
+ *    `PlatformGuard` e uma ligação à parte, e a ligação da academia nem lhes
+ *    toca.
+ *
+ * A verificação é da **propriedade** e não de uma lista de nomes. A lista já
+ * ficou desactualizada uma vez — uma tabela de plataforma nova (as contas do
+ * painel) fazia o teste falhar sem nada estar errado —, e uma rede que grita
+ * quando está tudo bem é uma rede que se aprende a ignorar.
  */
-const PLATAFORMA_SEM_GRANT = new Set(["Contact", "Subscription", "SupportSession"]);
 
 const db = new PGlite();
 let passed = 0;
@@ -126,12 +135,17 @@ async function main() {
       check(`${t}: RLS + FORCE + política`, true);
       continue;
     }
-    // Sem RLS só se passar: é uma tabela de plataforma sem qualquer grant à academia.
-    const semGrant = !(await canApp(t, "SELECT")) && !(await canApp(t, "INSERT"));
+    /*
+     * Sem RLS só passa quem a ligação da academia não consegue tocar de todo.
+     * Um SELECT ou um INSERT que reste é uma tabela de tenant a descoberto.
+     */
+    const podeLer = await canApp(t, "SELECT");
+    const podeEscrever =
+      (await canApp(t, "INSERT")) || (await canApp(t, "UPDATE")) || (await canApp(t, "DELETE"));
     check(
-      `${t}: sem RLS mas inacessível a academia_app (tabela de plataforma)`,
-      PLATAFORMA_SEM_GRANT.has(t) && semGrant,
-      `enabled=${!!r.e} forced=${!!r.f} políticas=${pols.get(t) || 0} grantSelect=${await canApp(t, "SELECT")}`,
+      `${t}: sem RLS, mas inalcançável por academia_app (tabela de plataforma)`,
+      !podeLer && !podeEscrever,
+      `enabled=${!!r.e} forced=${!!r.f} políticas=${pols.get(t) || 0} SELECT=${podeLer} escrita=${podeEscrever}`,
     );
   }
 

@@ -1,6 +1,6 @@
 import { useMemo, useState, type FormEvent } from "react";
 import { Dialog, DialogField, dialogInputClass } from "./Dialog";
-import { cx, Monogram, SelectField } from "./primitives";
+import { cx, ListaDeEscolha, Monogram, SelectField } from "./primitives";
 import { Search, X } from "@/lib/icons";
 import { listAthletes, teamById } from "@/lib/api";
 import { addClinicalEntry, IMPACT_LABEL, isoToday, KIND_LABEL } from "@/lib/clinical";
@@ -321,7 +321,7 @@ function AthletePicker({
       </div>
 
       {matches.length > 0 && (
-        <ul className="mt-1.5 overflow-hidden rounded-[var(--radius-control)] border border-line">
+        <ListaDeEscolha className="mt-1.5 overflow-hidden rounded-[var(--radius-control)] border border-line">
           {matches.map((a) => (
             <li key={a.id}>
               <button
@@ -337,7 +337,7 @@ function AthletePicker({
               </button>
             </li>
           ))}
-        </ul>
+        </ListaDeEscolha>
       )}
 
       {query.trim() && matches.length === 0 && (

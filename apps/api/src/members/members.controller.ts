@@ -6,8 +6,10 @@ import { MembersService } from "./members.service";
 import { MemberFeesService } from "./member-fees.service";
 import { MemberInvitesService } from "./member-invites.service";
 import {
+  MemberAnnualYearDto,
   MemberCreateDto,
   MemberFeeCreateDto,
+  MemberFeeSplitDto,
   MemberFeeStatusDto,
   MemberImportDto,
   MemberInviteManyDto,
@@ -57,6 +59,16 @@ export class MembersController {
     return this.fees.mudarEstado(req.ctx, id, body.status);
   }
 
+  /**
+   * Cobrar esta anuidade só até um mês, e passar o resto para uma segunda — o
+   * sócio que quer pagar meio ano de uma vez. O mês indicado **entra**. Ver
+   * `MemberFeesService.dividir`.
+   */
+  @Post("fees/:id/dividir")
+  splitFee(@Req() req: AuthedRequest, @Param("id") id: string, @Body() body: MemberFeeSplitDto) {
+    return this.fees.dividir(req.ctx, id, body.until);
+  }
+
   @Get()
   list(
     @Req() req: AuthedRequest,
@@ -103,9 +115,10 @@ export class MembersController {
     return this.members.updateTier(req.ctx, id, dto);
   }
 
+  /** Apaga mesmo, e devolve quantos sócios ficaram sem categoria. Ver `deleteTier`. */
   @Delete("tiers/:id")
-  archiveTier(@Req() req: AuthedRequest, @Param("id") id: string) {
-    return this.members.archiveTier(req.ctx, id);
+  deleteTier(@Req() req: AuthedRequest, @Param("id") id: string) {
+    return this.members.deleteTier(req.ctx, id);
   }
 
   @Get(":id")
@@ -122,6 +135,16 @@ export class MembersController {
   @Post(":id/fees")
   createMemberFees(@Req() req: AuthedRequest, @Param("id") id: string, @Body() dto: MemberFeeCreateDto) {
     return this.fees.lancar(req.ctx, id, dto);
+  }
+
+  /**
+   * Quando abre o ano de quotas deste sócio — e, se lho pedirem, redatar a
+   * anuidade que está a correr para a janela nova. Ver
+   * `MemberFeesService.definirAnoDeQuotas`.
+   */
+  @Patch(":id/ano-de-quotas")
+  setAnnualYear(@Req() req: AuthedRequest, @Param("id") id: string, @Body() body: MemberAnnualYearDto) {
+    return this.fees.definirAnoDeQuotas(req.ctx, id, body);
   }
 
   /** O valor por omissão e os meses que já têm quota — o que o ecrã de lançar precisa. */

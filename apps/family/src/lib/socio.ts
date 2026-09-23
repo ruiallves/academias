@@ -19,6 +19,15 @@ export type SocioFee = {
   status: "OPEN" | "SETTLED" | "VOID";
   settledAt: string | null;
   overdue: boolean;
+  /**
+   * O que esta quota cobre — só nas anuais.
+   *
+   * Uma anuidade pode ser partida em duas (o sócio que paga meio ano de uma
+   * vez), e aí o rótulo sozinho não chega: o que distingue as duas linhas é o
+   * intervalo. Nulo nas mensais, onde o período já diz tudo.
+   */
+  coversFrom?: string | null;
+  coversTo?: string | null;
 };
 
 /**

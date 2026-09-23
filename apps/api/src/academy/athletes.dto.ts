@@ -104,6 +104,30 @@ export class AthleteInputDto {
   @Min(0)
   @Max(999)
   squadNumber?: number;
+
+  /**
+   * Mandar o convite da app ao atleta que acabou de ser inscrito.
+   *
+   * **Ligado por omissão**, que é o comportamento de sempre: quem escreve o
+   * email costuma querer que o atleta entre na app, e obrigar a um segundo
+   * gesto era esquecê-lo. Ausente vale `true`, para um cliente antigo continuar
+   * a mandar convite como mandava.
+   *
+   * Desligar é para inscrever com o email já conhecido **sem** avisar ninguém
+   * ainda: o clube que quer convidar o escalão todo no mesmo dia, ou o email
+   * que entrou para facturação e mais nada.
+   *
+   * Sem email não muda nada: não há convite para mandar. Gémeo do `sendInvite`
+   * de `MemberCreateDto`.
+   *
+   * **A importação ignora-o.** Este mesmo DTO descreve as linhas de uma folha
+   * (ver `rows` em `ImportAthletesDto`), e lá a decisão é uma só para a
+   * importação inteira: `enviarConvites`. Uma escolha por linha num ficheiro
+   * de Excel é uma coluna que ninguém preenche.
+   */
+  @IsOptional()
+  @IsBoolean()
+  sendInvite?: boolean;
 }
 
 /**

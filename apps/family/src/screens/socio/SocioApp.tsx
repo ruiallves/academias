@@ -670,7 +670,15 @@ function Quotas() {
       */}
       {anual && (
         <p className="px-1 text-[13px] leading-relaxed text-ink-3">
-          A tua categoria paga-se uma vez por ano.
+          {/*
+            "Uma vez por ano" deixou de ser sempre verdade: o clube pode partir
+            a anuidade em duas, para quem quer pagar meio ano de cada vez. Aí
+            são duas linhas, cada uma com o seu período — e dizer-lhe que paga
+            uma vez por ano punha-o à procura do engano.
+          */}
+          {abertas.length > 1
+            ? "A tua quota é anual e está dividida em partes. Cada uma cobre um período — paga-se uma de cada vez."
+            : "A tua categoria paga-se uma vez por ano."}
           {data.member.tierFeeCents !== null && ` São ${money(data.member.tierFeeCents)} por ano.`}
         </p>
       )}
@@ -736,6 +744,13 @@ function Quotas() {
               <span className="block text-[15px] font-semibold text-ink">
                 {f.label ?? f.period}
               </span>
+              {/* O período que a quota cobre — é o que distingue duas partes
+                  da mesma anuidade uma da outra. */}
+              {f.coversFrom && f.coversTo && (
+                <span className="block text-[13px] text-ink-3">
+                  {dateShort(new Date(f.coversFrom))} a {dateShort(new Date(f.coversTo))}
+                </span>
+              )}
               <span
                 className={cx(
                   "block text-[13px]",

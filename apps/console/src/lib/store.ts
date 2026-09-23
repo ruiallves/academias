@@ -180,6 +180,8 @@ type ApiStaff = {
   title: string | null; department: string | null; isActive: boolean; grants: string[]; revokes: string[];
   /** O cargo principal atribuído a esta pessoa, quando tem um. */
   roleId: string | null; roleName: string | null;
+  /** O departamento a que o cargo principal pertence. */
+  roleDepartment: { key: string; name: string } | null;
   /** Os cargos que se lhe acrescentaram. Ver `MembershipRole` no servidor. */
   extraRoles: { id: string; name: string }[];
   since: string; teamIds: string[];
@@ -523,6 +525,44 @@ export function aplicarLogistica(
   const matches = [...state.matches];
   matches[i] = { ...matches[i], ...campos };
   apply({ ...state, matches });
+}
+
+/** A ficha como o servidor a devolve depois de a gravar — ver `updateStaffProfile`. */
+export type FichaDeStaff = {
+  name: string;
+  email: string;
+  phone: string | null;
+  title: string | null;
+  department: string | null;
+  role: StaffMember["role"];
+};
+
+/**
+ * Escreve na lista a ficha que o servidor acabou de gravar.
+ *
+ * O irmão de `aplicarLogistica`, pela mesma razão: editar um cargo chamava
+ * `reloadAcademy()`, e durante os segundos que a academia inteira demora a
+ * chegar o cabeçalho continuava a dizer o cargo antigo. Quem fechava o diálogo
+ * e olhava para cima concluía que não tinha gravado — e voltava a gravar.
+ *
+ * O que se escreve aqui é a resposta do servidor, não o que o formulário tinha:
+ * o nome vem aparado, o cargo vazio volta como `null`, e o papel pode não ter
+ * mudado (quem tem cargo atribuído manda no acesso pelo separador Acesso).
+ */
+export function aplicarFichaDeStaff(membershipId: string, ficha: FichaDeStaff): void {
+  const i = state.staff.findIndex((m) => m.id === membershipId);
+  if (i === -1) return;
+  const lista = [...state.staff];
+  lista[i] = {
+    ...lista[i],
+    name: ficha.name,
+    email: ficha.email,
+    phone: ficha.phone ?? "",
+    title: ficha.title ?? "",
+    department: departmentOf(ficha.department),
+    role: ficha.role,
+  };
+  apply({ ...state, staff: lista });
 }
 
 /**
@@ -937,6 +977,7 @@ function juntar<T extends { id: string }>(atuais: T[], novos: T[]): T[] {
     revokes: s.revokes,
     roleId: s.roleId,
     roleName: s.roleName,
+    roleDepartment: s.roleDepartment ?? null,
     extraRoles: s.extraRoles ?? [],
   }));
 

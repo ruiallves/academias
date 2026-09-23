@@ -4,7 +4,7 @@ import { createPortal } from "react-dom";
 import { useSearchParams } from "react-router-dom";
 import { PageHeader } from "@/components/Shell";
 import { Dialog, DialogField } from "@/components/Dialog";
-import { DataTable, Empty, Metric, MetricRow, Monogram, Panel, Pill, SelectField, cx, type Column } from "@/components/primitives";
+import { type Column, cx, DataTable, Empty, ListaDeEscolha, Metric, MetricRow, Monogram, Panel, Pill, SelectField } from "@/components/primitives";
 import { ResultCount, SearchInput, Segmented, Select, Toolbar } from "@/components/filters";
 import { NewFeeDialog } from "@/components/finance/NewFeeDialog";
 import { BillingCalendarDialog } from "@/components/finance/BillingCalendarDialog";
@@ -1159,7 +1159,7 @@ function AthleteFeesDialog({
         </div>
       </div>
 
-      <ul className="max-h-[300px] overflow-y-auto">
+      <ListaDeEscolha className="max-h-[300px] overflow-y-auto">
         {visible.length === 0 ? (
           <li className="px-5 py-8 text-center text-meta text-ink-4">Ninguém com esse nome.</li>
         ) : (
@@ -1193,7 +1193,7 @@ function AthleteFeesDialog({
             );
           })
         )}
-      </ul>
+      </ListaDeEscolha>
 
       <div className="border-t border-line p-4">
         <label className="mb-1.5 block text-meta font-medium text-ink-3">Valor individual, por mês</label>

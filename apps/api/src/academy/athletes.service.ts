@@ -71,8 +71,12 @@ export class AthletesService {
      * com email recebe o convite sem ninguém ter de se lembrar de um segundo
      * gesto. Fora da transação (é correio, não base de dados) e sem esperar:
      * a inscrição já é um facto, e um email que falhe tem o botão da ficha.
+     *
+     * Salvo se quem inscreveu tiver desligado a opção. `sendInvite` ausente é
+     * `true`, para nada mudar para quem não lhe toca. Ver
+     * `AthleteCreateDto.sendInvite`.
      */
-    void this.invites.enviarSePossivel(ctx.academyId, athlete.id);
+    if (dto.sendInvite !== false) void this.invites.enviarSePossivel(ctx.academyId, athlete.id);
 
     return athlete;
   }
