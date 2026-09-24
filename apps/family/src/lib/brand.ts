@@ -50,7 +50,8 @@ export function readBrand(): Brand {
  * onde veio o convite, o subdomínio, e só depois o `.env`. Um sítio só, senão a
  * barreira de instalação acaba a falar de uma academia e os pedidos de outra.
  */
-export { academySlug } from "@/lib/invite";
+import { academySlug } from "@/lib/invite";
+export { academySlug };
 
 /**
  * Pinta a app. Sem argumento, usa a última identidade conhecida — é o que corre
@@ -76,11 +77,14 @@ export function applyBrand(brand?: Partial<Brand>): void {
    *
    * O iOS lê estas duas coisas do DOM no momento em que se adiciona, por isso
    * corrigi-las aqui chega — e este é o sítio onde a marca já se aplica.
+   *
+   * O ícone é o que a API desenha a partir do símbolo, quadrado e opaco, e não o
+   * símbolo cru: o iOS assenta a transparência sobre preto e estica o que não é
+   * quadrado.
    */
   if (next.logoUrl) {
-    for (const sel of ['link[rel="apple-touch-icon"]', 'link[rel="icon"]']) {
-      document.querySelector(sel)?.setAttribute("href", next.logoUrl);
-    }
+    document.querySelector('link[rel="apple-touch-icon"]')?.setAttribute("href", iconeGerado(next.logoUrl, "apple-180"));
+    document.querySelector('link[rel="icon"]')?.setAttribute("href", iconeGerado(next.logoUrl, "192"));
   }
   if (next.shortName) {
     document.querySelector('meta[name="apple-mobile-web-app-title"]')?.setAttribute("content", next.shortName);
@@ -93,4 +97,16 @@ export function applyBrand(brand?: Partial<Brand>): void {
       /* modo privado: a app funciona na mesma, só reabre no valor por omissão */
     }
   }
+}
+
+/**
+ * O endereço de um ícone desenhado pela API a partir do símbolo.
+ *
+ * Gémeo de `caminhoDoIcone` em `apps/api/src/tenant/club-icons.ts`: a versão é
+ * o nome do ficheiro do símbolo, e mudar a regra lá obriga a mudá-la aqui.
+ */
+function iconeGerado(logoUrl: string, nome: "192" | "apple-180"): string {
+  const ficheiro = logoUrl.split("?")[0].split("/").pop() ?? "";
+  const versao = ficheiro.replace(/\.[^.]*$/, "").replace(/[^A-Za-z0-9_-]/g, "").slice(-40) || "0";
+  return `/icone/${encodeURIComponent(academySlug())}/${versao}/${nome}.png`;
 }

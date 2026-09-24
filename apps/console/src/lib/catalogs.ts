@@ -52,7 +52,8 @@ export type CatalogKey =
   | "competitions"
   | "inventoryCategories"
   | "financeIncome"
-  | "financeExpense";
+  | "financeExpense"
+  | "consultationTypes";
 
 export const CATALOG_KEYS: CatalogKey[] = [
   "venues",
@@ -63,6 +64,14 @@ export const CATALOG_KEYS: CatalogKey[] = [
   "financeIncome",
   "financeExpense",
 ];
+
+/**
+ * Os catálogos do clube inteiro, fora das modalidades.
+ *
+ * Os tipos de consulta não são de um desporto: a fisioterapia é a mesma para o
+ * futebol e para o futsal. Vivem num painel próprio das Definições.
+ */
+export const CLUB_CATALOG_KEYS: CatalogKey[] = ["consultationTypes"];
 
 export type CatalogItem = {
   id: string;
@@ -80,6 +89,8 @@ export type CatalogItem = {
    * mesmos escalões nem os mesmos balneários nas duas.
    */
   sportId: string | null;
+  /** `#1c6a86`. Só os tipos de consulta a usam (a cor no calendário das Consultas). */
+  color?: string;
 };
 
 export const CATALOG_META: Record<CatalogKey, { title: string; hint: string; placeholder: string; noteLabel?: string }> = {
@@ -121,6 +132,11 @@ export const CATALOG_META: Record<CatalogKey, { title: string; hint: string; pla
     hint: "em que se gasta",
     placeholder: "Transportes, Arbitragem, Instalações…",
   },
+  consultationTypes: {
+    title: "Tipos de consulta",
+    hint: "o que o departamento clínico pode agendar; o primeiro vem escolhido",
+    placeholder: "Psicologia, Podologia, Exame médico…",
+  },
 };
 
 /* -------------------------------------------------------------------------- */
@@ -136,6 +152,7 @@ type ApiItem = {
   isSystem: boolean;
   archivedAt: string | null;
   sportId: string | null;
+  color?: string | null;
 };
 
 const EMPTY: Record<CatalogKey, CatalogItem[]> = {
@@ -146,6 +163,7 @@ const EMPTY: Record<CatalogKey, CatalogItem[]> = {
   inventoryCategories: [],
   financeIncome: [],
   financeExpense: [],
+  consultationTypes: [],
 };
 
 let state: Record<CatalogKey, CatalogItem[]> = { ...EMPTY };
@@ -178,7 +196,7 @@ export function loadCatalogs(force = false): Promise<void> {
   pending ??= apiGetSilencioso<ApiItem[]>("/api/catalogs")
     .then((rows) => {
       const next = { ...EMPTY };
-      for (const key of CATALOG_KEYS) next[key] = [];
+      for (const key of [...CATALOG_KEYS, ...CLUB_CATALOG_KEYS]) next[key] = [];
       for (const r of rows) {
         if (!next[r.kind]) continue;
         next[r.kind].push({
@@ -188,6 +206,7 @@ export function loadCatalogs(force = false): Promise<void> {
           archived: r.archivedAt !== null,
           system: r.isSystem,
           sportId: r.sportId,
+          ...(r.color ? { color: r.color } : {}),
         });
       }
       state = next;
@@ -246,6 +265,12 @@ export async function addItem(
 
 export async function renameItem(_key: CatalogKey, id: string, label: string, note?: string): Promise<void> {
   await apiPatch(`/api/catalogs/${id}`, { label: label.trim(), note: note?.trim() ?? "" });
+  await loadCatalogs(true);
+}
+
+/** A cor de um item (hoje, de um tipo de consulta). `null` volta à de omissão. */
+export async function setItemColor(id: string, color: string | null): Promise<void> {
+  await apiPatch(`/api/catalogs/${id}`, { color });
   await loadCatalogs(true);
 }
 

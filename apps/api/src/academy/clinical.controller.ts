@@ -1,9 +1,11 @@
 import { Body, Controller, Delete, Param, Patch, Post, Req } from "@nestjs/common";
-import { IsIn, IsISO8601, IsOptional, IsString, Length } from "class-validator";
+import { IsBoolean, IsIn, IsISO8601, IsOptional, IsString, Length, ValidateNested } from "class-validator";
+import { Type } from "class-transformer";
+import { RepeatDto } from "./events.dto";
 import type { AuthedRequest } from "../auth/auth.guard";
 import { ClinicalService } from "./clinical.service";
 
-const KINDS = ["INJURY", "EXAM", "PHYSIO", "NUTRITION", "PSYCHOLOGY", "NOTE"];
+const KINDS = ["INJURY", "EXAM", "PHYSIO", "NUTRITION", "PSYCHOLOGY", "NOTE", "CONSULTATION"];
 const STATUS = ["DONE", "SCHEDULED", "CANCELLED"];
 const IMPACTS = ["NONE", "LIMITED", "OUT"];
 
@@ -22,6 +24,22 @@ class ClinicalDto {
   @IsOptional() @IsString() @Length(0, 120) location?: string;
   @IsOptional() @IsString() @Length(0, 160) title?: string;
   @IsOptional() @IsString() @Length(0, 4000) detail?: string;
+
+  /** O tipo de consulta do clube. Decide o `kind`. */
+  @IsOptional() @IsString() @Length(1, 40) typeId?: string;
+  /** As notas de quem deu a consulta. Não saem para a família. */
+  @IsOptional() @IsString() @Length(0, 8000) notes?: string;
+  /** Pedir à família (ou ao atleta) que confirme, como numa convocatória. */
+  @IsOptional() @IsBoolean() confirmationRequired?: boolean;
+  @IsOptional() @IsIn(["GUARDIAN", "ATHLETE"]) respondBy?: string;
+
+  /** Só em agendamentos: a mesma consulta repetida até uma data, como no calendário. */
+  @IsOptional() @ValidateNested() @Type(() => RepeatDto) repeat?: RepeatDto;
+}
+
+class RespostaDto {
+  @IsBoolean() going!: boolean;
+  @IsOptional() @IsString() @Length(0, 300) reason?: string;
 }
 
 class AltaDto {
@@ -53,6 +71,12 @@ export class ClinicalController {
   @Post("clinical/:id/alta")
   clear(@Req() req: AuthedRequest, @Param("id") id: string, @Body() body: AltaDto) {
     return this.clinical.darAlta(req.ctx, id, body?.on);
+  }
+
+  /** A família (ou o atleta) confirma ou recusa uma consulta que pediu confirmação. */
+  @Post("clinical/:id/resposta")
+  reply(@Req() req: AuthedRequest, @Param("id") id: string, @Body() body: RespostaDto) {
+    return this.clinical.responder(req.ctx, id, { going: body.going, reason: body.reason ?? null });
   }
 
   @Post("clinical/:id/reabrir")

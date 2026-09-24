@@ -1,7 +1,8 @@
 import { useRef, useState } from "react";
+import { Link } from "react-router-dom";
 import { Apple, Camera, ChevronRight, FileText, MessageSquare, Stethoscope, X } from "lucide-react";
 import { useChild } from "@/App";
-import { reload, useStore, type Evaluation, type Report } from "@/lib/store";
+import { consultaPorResponder, reload, useStore, type Evaluation, type Report } from "@/lib/store";
 import { removerFotoAtleta, uploadFotoAtleta } from "@/lib/atleta";
 import { Avatar, Bar, Money, cx } from "@/ui";
 
@@ -150,7 +151,8 @@ export default function Athlete() {
           <h2 className="mb-1 px-1 text-[13px] font-semibold tracking-[0.04em] text-ink-3 uppercase">Consultas</h2>
           <ul className="overflow-hidden rounded-[var(--radius-lg)] bg-surface shadow-[var(--shadow-soft)]">
             {child.appointments.map((c) => (
-              <li key={c.id} className="flex items-center gap-3 border-b border-line p-4 last:border-0">
+              <li key={c.id} className="border-b border-line last:border-0">
+                <Link to={`/consulta/${c.id}`} className="flex items-center gap-3 p-4 active:bg-sunken/60">
                 <span className="flex size-9 shrink-0 items-center justify-center rounded-full bg-signal-soft text-signal-ink">
                   <Stethoscope className="size-[18px]" strokeWidth={1.9} />
                 </span>
@@ -166,6 +168,16 @@ export default function Athlete() {
                       .join(" · ")}
                   </span>
                 </span>
+                {consultaPorResponder(c, store.atleta) ? (
+                  <span className="shrink-0 rounded-full bg-warn-soft px-2 py-0.5 text-[11px] font-semibold text-warn">Confirma</span>
+                ) : c.reply ? (
+                  <span className={cx("shrink-0 text-[12px] font-semibold", c.reply.going ? "text-ok" : "text-risk")}>
+                    {c.reply.going ? "Confirmada" : "Não vai"}
+                  </span>
+                ) : (
+                  <ChevronRight className="size-4 shrink-0 text-ink-4" strokeWidth={2} />
+                )}
+                </Link>
               </li>
             ))}
           </ul>

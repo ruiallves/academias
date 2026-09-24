@@ -1495,6 +1495,8 @@ export class AcademyService {
      * endpoint é que não a aplicava.
      */
     const mayReadDiagnosis = can(ctx, "clinical:read");
+    /* As notas de quem deu a consulta: só para quem escreve no boletim, nunca para a família. */
+    const mayReadConsultNotes = can(ctx, "clinical:write");
 
     /*
      * O NIF do atleta: quem **edita a ficha** vê-o, e mais ninguém.
@@ -1586,6 +1588,8 @@ export class AcademyService {
                   id: true, kind: true, status: true, date: true, time: true, location: true,
                   title: true, detail: true, impact: true, expectedReturn: true,
                   outDays: true, clearedOn: true,
+                  typeId: true, notes: true, confirmationRequired: true, respondBy: true,
+                  reply: true, declineReason: true, respondedAt: true,
                 },
               }
             : {
@@ -1595,6 +1599,8 @@ export class AcademyService {
                   id: true, kind: true, status: true, date: true, time: true, location: true,
                   title: true, detail: true, impact: true, expectedReturn: true,
                   outDays: true, clearedOn: true,
+                  typeId: true, notes: true, confirmationRequired: true, respondBy: true,
+                  reply: true, declineReason: true, respondedAt: true,
                 },
               },
         },
@@ -1710,6 +1716,13 @@ export class AcademyService {
             location: c.location,
             title: mayReadDiagnosis ? c.title : null,
             detail: mayReadDiagnosis ? c.detail : null,
+            notes: mayReadConsultNotes ? c.notes : null,
+            typeId: c.typeId,
+            confirmationRequired: c.confirmationRequired,
+            respondBy: c.respondBy,
+            reply: c.reply ? c.reply.toLowerCase() : null,
+            declineReason: c.declineReason,
+            respondedAt: c.respondedAt,
             impact: c.impact.toLowerCase(),
             expectedReturn: c.expectedReturn,
             outDays: c.outDays,

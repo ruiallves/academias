@@ -170,6 +170,13 @@ type ApiAthlete = {
     expectedReturn: string | null;
     outDays: number | null;
     clearedOn: string | null;
+    typeId?: string | null;
+    notes?: string | null;
+    confirmationRequired?: boolean;
+    respondBy?: "GUARDIAN" | "ATHLETE";
+    reply?: "confirmed" | "declined" | null;
+    declineReason?: string | null;
+    respondedAt?: string | null;
   }[];
 };
 
@@ -910,6 +917,13 @@ function juntar<T extends { id: string }>(atuais: T[], novos: T[]): T[] {
           expectedReturn: c.expectedReturn?.slice(0, 10) ?? undefined,
           outDays: c.outDays ?? undefined,
           clearedOn: c.clearedOn?.slice(0, 10) ?? undefined,
+          typeId: c.typeId ?? undefined,
+          notes: c.notes ?? undefined,
+          confirmationRequired: c.confirmationRequired ?? false,
+          respondBy: c.respondBy ?? "GUARDIAN",
+          reply: c.reply ?? undefined,
+          declineReason: c.declineReason ?? undefined,
+          respondedAt: c.respondedAt ?? undefined,
         }))
       : a.restriction
         ? [

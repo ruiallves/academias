@@ -916,9 +916,19 @@ export async function gerarQuotas(
   academyId: string,
   period: string,
   agora = new Date(),
+  /**
+   * Só estes sócios. É o que a aprovação usa: quem é aprovado hoje fica logo
+   * com a quota dele, sem esperar pela passagem automática, e sem que essa
+   * aprovação lance as quotas do clube inteiro.
+   */
+  apenas?: string[],
 ): Promise<{ criadas: number; novas: { memberId: string; period: string }[]; socios: number }> {
   const socios = await db.member.findMany({
-    where: { status: "ACTIVE", tier: { feeCents: { not: null }, archivedAt: null } },
+    where: {
+      status: "ACTIVE",
+      tier: { feeCents: { not: null }, archivedAt: null },
+      ...(apenas ? { id: { in: apenas } } : {}),
+    },
     select: {
       id: true,
       annualStartDay: true,

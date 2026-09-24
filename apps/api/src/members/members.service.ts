@@ -9,7 +9,7 @@ import { MemberInvitesService } from "./member-invites.service";
 import { ligarFichaAConta } from "./member-account-link";
 import { nomeDeQuemMexe, registarAlteracoes } from "../common/historico";
 import { partesNoFuso } from "../common/fuso";
-import { aberturaAnual, periodoDaQuota, refazerAnoDeQuotas, situacaoDeQuotas } from "./member-fees.service";
+import { aberturaAnual, gerarQuotas, periodoCorrente, periodoDaQuota, refazerAnoDeQuotas, situacaoDeQuotas } from "./member-fees.service";
 import { decisaoDoAnoDaFolha } from "./cobertura";
 import { PHOTO_BUCKET, PHOTO_TTL } from "../storage/photos.service";
 import { StorageService } from "../storage/storage.service";
@@ -404,7 +404,7 @@ export class MembersService {
           id: true, status: true, number: true, acceptedTermsAt: true, tierId: true, notes: true,
           name: true, email: true, phone: true, phoneCountry: true, address: true, postalCode: true,
           city: true, country: true, birthdate: true, sex: true, documentKind: true,
-          documentNumber: true, taxId: true,
+          documentNumber: true, taxId: true, annualStartMonth: true,
         },
       });
       if (!member) throw new NotFoundException("Sócio não encontrado");
@@ -479,6 +479,12 @@ export class MembersService {
       }
 
       let aprovadoAgora = false;
+      /*
+       * Entrou agora: saiu de "por aprovar" para activo. É isto, e não o número,
+       * que abre o ano de quotas e lança a quota. Um pedido a que a secretaria
+       * já tinha dado número à mão também é uma aprovação, e ficava sem quota.
+       */
+      const entrouAgora = member.status === "PENDING" && dto.status === "ACTIVE";
       if (dto.status !== undefined && dto.status !== member.status) {
         data.status = dto.status as MemberStatus;
 
@@ -487,6 +493,23 @@ export class MembersService {
           data.approvedAt = new Date();
           data.approvedById = ctx.membershipId;
           aprovadoAgora = true;
+        }
+        if (entrouAgora) {
+          /*
+           * O ano de quotas abre no dia da aprovação.
+           *
+           * Quem adere pelo site nasce sem data sua e herdava a abertura do
+           * clube (1 de Janeiro, por omissão): aprovado a 24 de Setembro, ficava
+           * com um ano que já ia em três quartos. É a mesma regra de quem é
+           * inscrito à mão (`aberturaDoDto`), contada a partir do dia em que o
+           * clube o aceita, pelo relógio do clube. Uma ficha que já tem a sua
+           * data (a secretaria escolheu-a ao criar) fica com ela.
+           */
+          if (member.annualStartMonth == null) {
+            const { mes, dia } = partesNoFuso(new Date());
+            data.annualStartMonth = mes;
+            data.annualStartDay = dia;
+          }
         }
       }
 
@@ -508,7 +531,15 @@ export class MembersService {
         if (dto.email !== undefined) await ligarFichaAConta(db, gravado);
 
         // O histórico da ficha: quem mudou o quê. Ver `common/historico.ts`.
-        const { updatedAt: _ignora, approvedById: _quem, approvedAt: _quando, ...mudou } = data as Record<string, unknown>;
+        /*
+         * A data de abertura posta pela aprovação é consequência dela, não uma
+         * edição: fica fora do histórico, dos dois lados.
+         */
+        const {
+          updatedAt: _ignora, approvedById: _quem, approvedAt: _quando,
+          annualStartMonth: _mes, annualStartDay: _dia,
+          ...mudou
+        } = data as Record<string, unknown>;
 
         /*
          * A categoria vai por nome e não por `tierId`: quem lê o histórico quer
@@ -522,7 +553,7 @@ export class MembersService {
           : [];
         const categoria = (v: unknown) =>
           typeof v === "string" ? (categorias.find((t) => t.id === v)?.name ?? v) : v === null ? null : undefined;
-        const { tierId: _antesTier, ...restoAntes } = member;
+        const { tierId: _antesTier, annualStartMonth: _mesAntes, ...restoAntes } = member;
         const { tierId: _depoisTier, ...restoDepois } = mudou;
 
         await registarAlteracoes(
@@ -544,6 +575,30 @@ export class MembersService {
           throw new BadRequestException("Já existe um sócio com esse contribuinte");
         }
         throw error;
+      }
+
+      /*
+       * A quota de quem acabou de ser aprovado, já.
+       *
+       * Esperava pela passagem automática, e essa só lança cada clube uma vez
+       * por mês: aprovado a meio do mês, o sócio ficava sem quota até ao mês
+       * seguinte. Numa categoria anual nasce a anuidade que abre hoje e fecha
+       * daqui a um ano; numa mensal, a do mês corrente. Só deste sócio, e pelo
+       * mesmo gerador da passagem automática, que respeita as apagadas pela
+       * direcção e as coberturas que já existam.
+       */
+      if (entrouAgora) {
+        /*
+         * O dia de hoje no relógio do clube, ao meio-dia UTC. O ciclo anual
+         * (`inicioDaEpoca`) lê o relógio do servidor, que é UTC: entre a
+         * meia-noite e a uma de Lisboa, no Verão, o UTC ainda está em ontem, e
+         * um ano que abre hoje dava-se como não aberto. Saía a anuidade do ano
+         * passado. Ao meio-dia UTC do dia de Lisboa, os dois relógios dizem o
+         * mesmo dia.
+         */
+        const { ano, mes, dia } = partesNoFuso(new Date());
+        const hojeNoClube = new Date(Date.UTC(ano, mes - 1, dia, 12));
+        await gerarQuotas(db, ctx.academyId, periodoCorrente(hojeNoClube), hojeNoClube, [id]);
       }
 
       return { ok: true, aprovadoAgora };

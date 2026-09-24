@@ -149,6 +149,10 @@ export default defineConfig(({ command, mode }) => {
               process.env.VITE_ACADEMY_SLUG ?? "life-club",
             )}`,
         },
+
+        // Os ícones que o manifest declara, desenhados pela API a partir do
+        // símbolo do clube. O slug já vai no caminho — ver `tenant/club-icons.ts`.
+        "/icone": { target: "http://localhost:3000", changeOrigin: true },
       },
     },
     // `true` só serve para testar num telemóvel a sério através de um túnel

@@ -32,9 +32,10 @@ import type { Sport } from "@/data/types";
  * "Sub-13" da natação, e a piscina não é um campo — a arrumação passou a dizer
  * isso sozinha, e as Definições ficaram com um painel a menos.
  *
- * Abrem por omissão, porque é para lá que se vem depois de criar a modalidade.
- * Fecham-se com o mesmo gesto, porque um clube com cinco modalidades não quer
- * vinte listas abertas.
+ * Abrem-se com um toque na modalidade e entram fechadas: quem abre as
+ * Definições não vem quase nunca por causa dos balneários, e as modalidades
+ * abertas enterravam tudo o que vem a seguir no ecrã. A excepção é quem chega
+ * de um "gerir locais": esse vem por causa daquilo, e a modalidade abre.
  */
 export function SportsPanel({
   mayWrite,
@@ -113,10 +114,8 @@ export function SportsPanel({
 /**
  * Uma modalidade, e o que se configura dentro dela.
  *
- * Os quatro catálogos abrem por omissão — é para aqui que se vem a seguir a criar
- * a modalidade, e uma lista fechada por omissão fazia parecer que não havia nada
- * para configurar. Fecham-se com o mesmo botão para um clube com cinco
- * modalidades não ficar com vinte listas abertas.
+ * Fechada por omissão, com o nome, a área técnica e as posições à vista. Abre
+ * sozinha só quando se chega por um deep-link a um dos catálogos dela.
  */
 function SportRow({
   sport,
@@ -131,7 +130,7 @@ function SportRow({
   onEdit: () => void;
   onRemove: () => void;
 }) {
-  const [open, setOpen] = useState(true);
+  const [open, setOpen] = useState(() => !!deepLinked && CATALOG_KEYS.includes(deepLinked));
 
   return (
     <li className="border-b border-line last:border-0">

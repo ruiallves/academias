@@ -22,6 +22,7 @@ import { ClubMark } from "@/ClubMark";
 import Today from "@/screens/Today";
 import Agenda from "@/screens/Agenda";
 import Evento from "@/screens/Evento";
+import Consulta from "@/screens/Consulta";
 import Payments from "@/screens/Payments";
 import Athlete from "@/screens/Athlete";
 import Notifications from "@/screens/Notifications";
@@ -302,6 +303,7 @@ function Dentro({
             <Route path="/agenda" element={<Agenda />} />
             {/* O treino ou o jogo, por dentro — ver `screens/Evento`. */}
             <Route path="/evento/:kind/:id" element={<Evento />} />
+            <Route path="/consulta/:id" element={<Consulta />} />
             {/* A área de atleta não tem pagamentos: o endereço cai no início. */}
             <Route path="/pagamentos" element={store.atleta ? <Navigate to="/" replace /> : <Payments />} />
             <Route path="/atleta" element={<Athlete />} />

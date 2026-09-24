@@ -1,5 +1,5 @@
 import { Body, Controller, Delete, Get, Param, Patch, Post, Req } from "@nestjs/common";
-import { IsBoolean, IsInt, IsOptional, IsString, Length, Max, Min } from "class-validator";
+import { IsBoolean, IsInt, IsOptional, IsString, Length, Matches, Max, Min, ValidateIf } from "class-validator";
 import type { AuthedRequest } from "../auth/auth.guard";
 import { CatalogsService } from "./catalogs.service";
 
@@ -16,6 +16,8 @@ class UpdateCatalogItemDto {
   @IsOptional() @IsString() @Length(0, 160) note?: string;
   @IsOptional() @IsInt() @Min(0) @Max(9999) order?: number;
   @IsOptional() @IsBoolean() archived?: boolean;
+  /** `#1c6a86`, ou `null` para voltar à de omissão. */
+  @IsOptional() @ValidateIf((_, v) => v !== null) @IsString() @Matches(/^#[0-9a-fA-F]{6}$/) color?: string | null;
 }
 
 /**

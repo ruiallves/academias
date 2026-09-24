@@ -1,4 +1,6 @@
 import { useState } from "react";
+import { Link } from "react-router-dom";
+import { useCatalog } from "@/lib/catalogs";
 import { AvailabilityTag, cx, Empty, Metric, MetricRow, Panel, PanelHead, Pill } from "./primitives";
 import { ClinicalEntryDialog } from "./ClinicalEntryDialog";
 import { CalendarDays, Check, HeartPulse, Lock, Plus } from "@/lib/icons";
@@ -6,6 +8,7 @@ import { medicalExpiry, medicalState } from "@/lib/medical";
 import { today } from "@/lib/api";
 import {
   activeRestriction,
+  areaLabel,
   availabilityOf,
   clearClinicalEntry,
   clinicalOf,
@@ -33,7 +36,8 @@ import type { Athlete, ClinicalEntry } from "@/data/types";
  */
 export function ClinicalPanel({ athlete, session }: { athlete: Athlete; session: Session }) {
   useClinicalRecords();
-  const [composing, setComposing] = useState<"done" | "scheduled" | null>(null);
+  const [composing, setComposing] = useState<"registo" | "consulta" | null>(null);
+  const tiposDeConsulta = useCatalog("consultationTypes");
 
   /*
    * A alta passou a ser uma ida ao servidor.
@@ -126,7 +130,7 @@ export function ClinicalPanel({ athlete, session }: { athlete: Athlete; session:
         <Panel>
           <PanelHead title="Agendado" hint={appointments.length ? `${appointments.length}` : undefined}>
             {mayWrite && (
-              <button type="button" onClick={() => setComposing("scheduled")} className="ctl-outline">
+              <button type="button" onClick={() => setComposing("consulta")} className="ctl-outline">
                 <CalendarDays className="size-3.5" strokeWidth={1.75} />
                 Agendar
               </button>
@@ -140,7 +144,8 @@ export function ClinicalPanel({ athlete, session }: { athlete: Athlete; session:
           ) : (
             <ul>
               {appointments.map((a) => (
-                <li key={a.id} className="flex items-center gap-3 border-b border-line px-5 py-3 last:border-0">
+                <li key={a.id} className="border-b border-line last:border-0">
+                  <Link to={`/clinico/consultas/${a.id}`} className="flex items-center gap-3 px-5 py-3 hover:bg-sunken/50">
                   <span className="flex size-9 shrink-0 flex-col items-center justify-center rounded-[8px] bg-sunken">
                     <span className="text-[9px] font-semibold text-ink-3 uppercase">
                       {new Date(a.date).toLocaleDateString("pt-PT", { month: "short" }).replace(".", "")}
@@ -154,8 +159,9 @@ export function ClinicalPanel({ athlete, session }: { athlete: Athlete; session:
                       {a.location && ` · ${a.location}`}
                     </div>
                   </div>
-                  <Pill tone="signal">{KIND_LABEL[a.kind]}</Pill>
+                  <Pill tone="signal">{areaLabel(a, tiposDeConsulta)}</Pill>
                   <span className="shrink-0 text-meta text-ink-3">{relativeDays(new Date(a.date), today)}</span>
+                  </Link>
                 </li>
               ))}
             </ul>
@@ -166,7 +172,7 @@ export function ClinicalPanel({ athlete, session }: { athlete: Athlete; session:
       <Panel>
         <PanelHead title="Boletim clínico" hint={mayRead ? `${entries.length} registos` : "acesso restrito"}>
           {mayWrite && (
-            <button type="button" onClick={() => setComposing("done")} className="ctl-primary">
+            <button type="button" onClick={() => setComposing("registo")} className="ctl-primary">
               <Plus className="size-3.5" strokeWidth={2} />
               Novo registo
             </button>
@@ -203,7 +209,7 @@ export function ClinicalPanel({ athlete, session }: { athlete: Athlete; session:
         <ClinicalEntryDialog
           athlete={athlete}
           session={session}
-          defaultMode={composing}
+          variant={composing}
           onClose={() => setComposing(null)}
         />
       )}

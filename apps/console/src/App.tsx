@@ -21,6 +21,7 @@ import AthleteDetail from "@/routes/AthleteDetail";
 import MedicalOverview from "@/routes/medical/Overview";
 import MedicalClinical from "@/routes/medical/Clinical";
 import MedicalConsultations from "@/routes/medical/Consultations";
+import ConsultationDetail from "@/routes/medical/ConsultationDetail";
 import Sessions from "@/routes/Sessions";
 import CallUps from "@/routes/CallUps";
 import Matches from "@/routes/Matches";
@@ -191,6 +192,7 @@ export default function App() {
             estado de disponibilidade — ver lib/permissions.ts. */}
         <Route path="clinico" element={<Allow p="clinical:read"><MedicalClinical /></Allow>} />
         <Route path="clinico/consultas" element={<Allow p="clinical:read"><MedicalConsultations /></Allow>} />
+        <Route path="clinico/consultas/:id" element={<Allow p="clinical:read"><ConsultationDetail /></Allow>} />
 
         <Route path="*" element={<Navigate to="/" replace />} />
       </Route>

@@ -464,6 +464,7 @@ model Membership {
   opponentReports OpponentReport[]           @relation("OpponentReportAuthor")
   ledEvents       CalendarEvent[]            @relation("EventCoach")
   clinicalWrites  ClinicalEntry[]            @relation("ClinicalAuthor")
+  clinicalReplies ClinicalEntry[]            @relation("ClinicalReplier")
   evaluations     Evaluation[]
   reportsWritten  AthleteReport[]            @relation("ReportAuthor")
   announcements   Announcement[]
@@ -2143,6 +2144,14 @@ enum ClinicalKind {
   NUTRITION
   PSYCHOLOGY
   NOTE
+  /// Uma consulta de um tipo do clube que não é nenhum dos de cima.
+  CONSULTATION
+}
+
+/// A resposta da família (ou do atleta) a uma consulta que pediu confirmação.
+enum ClinicalReply {
+  CONFIRMED
+  DECLINED
 }
 
 /// O que a entrada faz à disponibilidade do atleta.
@@ -2190,8 +2199,26 @@ model ClinicalEntry {
   location String?
 
   title  String
-  /// Notas de consulta. Dados de saúde — ver as políticas RLS.
+  /// A nota que acompanha o agendamento. A família lê-a.
   detail String?
+  /// As notas da consulta, escritas por quem a deu. Só saem para quem tem
+  /// `clinical:write`: a família e o treinador não as recebem.
+  notes  String?
+
+  /// O tipo de consulta do clube (catálogo `consultationTypes`). O `kind` deriva
+  /// do nome dele ao gravar; o tipo guarda-se para o ecrã dizer o nome do clube.
+  typeId String?
+  type   CatalogItem? @relation("ClinicalType", fields: [typeId], references: [id], onDelete: SetNull)
+
+  /// Pedir à família (ou ao atleta) que confirme a presença, como numa convocatória.
+  confirmationRequired Boolean        @default(false)
+  /// Quem confirma. A mesma regra e o mesmo enum de `Match.respondBy`.
+  respondBy            ResponderBy    @default(GUARDIAN)
+  reply                ClinicalReply?
+  declineReason        String?
+  respondedAt          DateTime?
+  respondedById        String?
+  respondedBy          Membership?    @relation("ClinicalReplier", fields: [respondedById], references: [id], onDelete: SetNull)
 
   impact         ClinicalImpact @default(NONE)
   /// Retoma prevista. É o que o treinador precisa para planear.
@@ -3911,11 +3938,17 @@ model CatalogItem {
   /// intacta.
   archivedAt DateTime?
 
+  /// A cor escolhida pelo clube, `#1c6a86`. Só os tipos de consulta a usam: é a
+  /// cor com que aparecem no calendário das Consultas. Nula usa a de omissão.
+  color String?
+
   /// Só para `kind = "competitions"`: as equipas que a disputam e os jogos dela.
   teams   TeamCompetition[]
   matches Match[]           @relation("MatchCompetition")
   /// Os eventos marcados com este tipo. Ver `CalendarEvent.typeId`.
   events  CalendarEvent[]   @relation("EventType")
+  /// As consultas marcadas com este tipo. Ver `ClinicalEntry.typeId`.
+  clinicalEntries ClinicalEntry[] @relation("ClinicalType")
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt

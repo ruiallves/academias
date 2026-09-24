@@ -1,4 +1,5 @@
 import { clubPalette } from "../common/contrast";
+import { caminhoDoIcone } from "../tenant/club-icons";
 /**
  * A landing page da academia.
  *
@@ -148,14 +149,13 @@ ${academy.logoUrl ? `<meta property="og:image" content="${esc(academy.logoUrl)}"
   telemóvel de todos os pais continuava a aparecer o nosso quadrado. O Android
   obedecia ao manifest; o iPhone nunca chegou a saber que o emblema existia.
 
-  Vai o emblema do clube quando existe. É uma imagem que não controlamos, e o
-  iOS trata-a como quem cola um autocolante quadrado: não redimensiona com
-  proporção e assenta a transparência sobre preto. Um emblema quadrado e opaco
-  fica perfeito; um muito largo fica esticado — daí o aviso na consola a pedir
-  um símbolo quadrado (ver IdentityPanel.tsx).
+  Vai o emblema do clube quando existe, já encaixado num quadrado opaco de
+  180 px (ver tenant/club-icons.ts): o iOS não redimensiona com proporção e
+  assenta a transparência sobre preto. A versão do símbolo vai no endereço, por
+  isso um símbolo novo nunca sai de uma cache com o endereço do antigo.
 -->
-<link rel="apple-touch-icon" href="${academy.logoUrl ? esc(academy.logoUrl) : "/icon-180.png"}" />
-<link rel="icon" href="${academy.logoUrl ? esc(academy.logoUrl) : "/icon-192.png"}" />
+<link rel="apple-touch-icon" href="${academy.logoUrl ? esc(caminhoDoIcone(academy.slug, academy.logoUrl, "apple-180")) : "/icon-180.png"}" />
+<link rel="icon" href="${academy.logoUrl ? esc(caminhoDoIcone(academy.slug, academy.logoUrl, "192")) : "/icon-192.png"}" />
 <meta name="apple-mobile-web-app-capable" content="yes" />
 <meta name="apple-mobile-web-app-title" content="${shortName}" />
 

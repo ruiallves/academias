@@ -3,7 +3,7 @@ import { useSearchParams } from "react-router-dom";
 import { PageHeader } from "@/components/Shell";
 import { AvailabilityTag, DataTable, Empty, Monogram, Panel, Pill, type Column } from "@/components/primitives";
 import { ResultCount, SearchInput, Segmented, Toolbar } from "@/components/filters";
-import { CalendarDays, HeartPulse, Plus } from "@/lib/icons";
+import { HeartPulse, Plus } from "@/lib/icons";
 import { medicalExpiry, medicalState } from "@/lib/medical";
 import { ClinicalEntryDialog } from "@/components/ClinicalEntryDialog";
 import { listAthletes, teamById, today } from "@/lib/api";
@@ -26,7 +26,7 @@ export default function MedicalClinical() {
   const { session } = useSession();
   const [params, setParams] = useSearchParams();
   const [query, setQuery] = useState("");
-  const [composing, setComposing] = useState<"done" | "scheduled" | null>(null);
+  const [composing, setComposing] = useState(false);
 
   useClinicalRecords();
 
@@ -142,19 +142,17 @@ export default function MedicalClinical() {
             : `Os atletas das tuas equipas · ${athletes.length} fichas`
         }
       >
-        {/* O departamento clínico regista a partir daqui, sem ter de navegar até
-            à ficha de cada atleta — é a acção mais frequente do dia dele. */}
+        {/*
+          Daqui regista-se uma lesão, e só isso.
+
+          Agendar é das Consultas, que é onde se vê o que já está marcado. Aqui
+          havia os dois botões, e o de agendar deixava marcar uma lesão.
+        */}
         {can(session, "clinical:write") && (
-          <>
-            <button type="button" onClick={() => setComposing("scheduled")} className="ctl-outline">
-              <CalendarDays className="size-3.5" strokeWidth={1.75} />
-              Agendar
-            </button>
-            <button type="button" onClick={() => setComposing("done")} className="ctl-primary">
-              <Plus className="size-3.5" strokeWidth={2} />
-              Novo registo
-            </button>
-          </>
+          <button type="button" onClick={() => setComposing(true)} className="ctl-primary">
+            <Plus className="size-3.5" strokeWidth={2} />
+            Registar lesão
+          </button>
         )}
       </PageHeader>
 
@@ -186,7 +184,7 @@ export default function MedicalClinical() {
       </Panel>
 
       {composing && (
-        <ClinicalEntryDialog session={session} defaultMode={composing} onClose={() => setComposing(null)} />
+        <ClinicalEntryDialog session={session} variant="lesao" onClose={() => setComposing(false)} />
       )}
     </>
   );

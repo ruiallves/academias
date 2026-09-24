@@ -9,6 +9,7 @@ import { IdentityPanel } from "@/components/IdentityPanel";
 import { ContratoPanel } from "@/components/ContratoPanel";
 import { LegalPanel } from "@/components/LegalPanel";
 import { SportsPanel } from "@/components/SportsPanel";
+import { ConsultationTypesPanel } from "@/components/ConsultationTypesPanel";
 /*
  * A importação de jogos (zerozero) saiu daqui por agora.
  *
@@ -74,6 +75,8 @@ export default function Settings() {
             "os escalões" — procura os escalões do futebol. Ver `SportsPanel`.
           */}
           <SportsPanel mayWrite={maySettings} deepLinked={deepLinked} />
+          {/* Os tipos de consulta são do clube e não de uma modalidade. */}
+          <ConsultationTypesPanel mayWrite={maySettings} focus={deepLinked === "consultationTypes"} />
           {/*
             Os cargos vêm a seguir às modalidades.
             É a ordem do trabalho: primeiro decide-se o que o clube pratica e

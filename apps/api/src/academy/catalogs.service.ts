@@ -42,7 +42,7 @@ import { can, type RequestContext } from "../common/permissions";
 // "competitions" — as provas que o clube disputa. Entram no catálogo e não numa
 // tabela própria porque é exactamente o que os catálogos são: uma lista de
 // nomes que o clube gere, por modalidade. Ver a migração `competicoes`.
-const KINDS = ["venues", "dressingRooms", "eventTypes", "competitions", "inventoryCategories", "financeIncome", "financeExpense"] as const;
+const KINDS = ["venues", "dressingRooms", "eventTypes", "competitions", "inventoryCategories", "financeIncome", "financeExpense", "consultationTypes"] as const;
 export type CatalogKind = (typeof KINDS)[number];
 
 export function isCatalogKind(value: string): value is CatalogKind {
@@ -84,6 +84,15 @@ const SEED: Partial<Record<CatalogKind, { label: string; note?: string; isSystem
    * se pode remover do catálogo não é rede.
    */
   competitions: [{ label: AMIGAVEL, isSystem: true }],
+  /*
+   * Os tipos de consulta, com que o departamento clínico abre.
+   *
+   * A Fisioterapia primeiro porque é o que se marca mais vezes, e o primeiro da
+   * lista é o que o diálogo de agendar traz escolhido. Nenhum é `isSystem`: o
+   * clube renomeia, arquiva e junta os seus (Psicologia, Podologia…). O nome
+   * decide o que o domínio sabe deles; ver `kindDoTipo` no serviço clínico.
+   */
+  consultationTypes: [{ label: "Fisioterapia" }, { label: "Consulta" }, { label: "Nutrição" }, { label: "Exame" }],
   /*
    * As categorias de material, com que o armazém abre.
    *
@@ -163,7 +172,7 @@ export class CatalogsService {
        * existirem já tem `eventTypes` e ficaria sem "Amigável" para sempre se a
        * condição fosse sobre o catálogo inteiro.
        */
-      for (const kind of ["eventTypes", "competitions", "inventoryCategories", "financeIncome", "financeExpense"] as const) {
+      for (const kind of ["eventTypes", "competitions", "inventoryCategories", "financeIncome", "financeExpense", "consultationTypes"] as const) {
         const jaLa = await db.catalogItem.count({ where: { kind } });
         if (jaLa > 0) continue;
         await db.catalogItem.createMany({
@@ -184,7 +193,7 @@ export class CatalogsService {
         orderBy: [{ kind: "asc" }, { order: "asc" }, { label: "asc" }],
         select: {
           id: true, kind: true, label: true, note: true, order: true,
-          isSystem: true, archivedAt: true, sportId: true,
+          isSystem: true, archivedAt: true, sportId: true, color: true,
         },
       });
     });
@@ -244,7 +253,7 @@ export class CatalogsService {
           },
           select: {
             id: true, kind: true, label: true, note: true, order: true,
-            isSystem: true, archivedAt: true, sportId: true,
+            isSystem: true, archivedAt: true, sportId: true, color: true,
           },
         });
       } catch (error) {
@@ -256,7 +265,7 @@ export class CatalogsService {
     });
   }
 
-  async update(ctx: RequestContext, id: string, dto: { label?: string; note?: string; order?: number }) {
+  async update(ctx: RequestContext, id: string, dto: { label?: string; note?: string; order?: number; color?: string | null }) {
     this.mustWrite(ctx);
 
     return this.prisma.runAs(ctx.academyId, async (db) => {
@@ -273,6 +282,8 @@ export class CatalogsService {
           ...(dto.label !== undefined ? { label: dto.label.trim() } : {}),
           ...(dto.note !== undefined ? { note: dto.note.trim() || null } : {}),
           ...(dto.order !== undefined ? { order: dto.order } : {}),
+          // Em minúsculas, que é o que a base aceita (ver o CHECK da migração).
+          ...(dto.color !== undefined ? { color: dto.color ? dto.color.toLowerCase() : null } : {}),
           updatedAt: new Date(),
         },
       });

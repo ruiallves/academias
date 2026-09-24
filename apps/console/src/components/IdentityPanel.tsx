@@ -337,12 +337,14 @@ function ClubSymbol({ mayWrite, onError }: { mayWrite: boolean; onError: (m: str
         Aparece no ícone que as famílias instalam no telemóvel, na página do clube e na página de sócios. Quadrado e
         com pelo menos 512 px de lado dá o melhor resultado. PNG, WebP ou JPEG até 2 MB.
       </p>
-      {/* O iPhone cola o ícone como um autocolante quadrado: não corrige proporção
-          e assenta a transparência sobre preto. Vale a pena dizê-lo aqui, que é
-          onde a escolha se faz — ver `landing.template.ts`. */}
+      {/* O ícone da app é gerado a partir do símbolo (ver `tenant/club-icons.ts` na
+          API), já quadrado e opaco. O que não depende de nós é quando o telemóvel
+          o vai buscar: o Android verifica o manifest quando a app abre, com um
+          intervalo que é dele; o iPhone nunca volta a perguntar. */}
       <p className="mb-3 max-w-[62ch] text-[11px] text-ink-4">
-        No iPhone o símbolo é usado tal e qual: um ficheiro com fundo transparente fica sobre preto no ecrã inicial, e
-        um muito largo fica esticado. Com fundo próprio e quadrado, fica igual ao que carregares.
+        Se trocares de símbolo, a app já instalada em Android muda de ícone sozinha nos dias seguintes, quando for
+        aberta. No iPhone o ícone fica o que era quando a app foi adicionada: para ver o novo, é preciso removê-la do
+        ecrã principal e voltar a adicioná-la.
       </p>
 
       <div className="flex items-center gap-4">

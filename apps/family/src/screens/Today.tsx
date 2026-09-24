@@ -1,7 +1,7 @@
 import { Link } from "react-router-dom";
 import { ArrowUpRight, ChevronRight, MapPin, Megaphone, Stethoscope, Trophy, UserRound, Wallet } from "lucide-react";
 import { useChild } from "@/App";
-import { useStore, type Match, type Training } from "@/lib/store";
+import { consultaPorResponder, useStore, type Match, type Training } from "@/lib/store";
 import { cx, dayShort, greeting, money, monthShort, time, whenLabel } from "@/ui";
 
 /**
@@ -122,7 +122,7 @@ export default function Today() {
       {child.appointments[0] && (
         <div className="rise" style={{ ["--i" as string]: i++ }}>
           <Link
-            to="/atleta"
+            to={`/consulta/${child.appointments[0].id}`}
             className="flex items-center gap-3.5 rounded-[var(--radius-lg)] bg-surface p-3.5 shadow-[var(--shadow-soft)] active:scale-[0.99]"
           >
             <span className="flex size-10 shrink-0 items-center justify-center rounded-[13px] bg-signal-soft text-signal-ink">
@@ -138,6 +138,10 @@ export default function Today() {
                 <span className="block truncate text-meta text-ink-3">{child.appointments[0].location}</span>
               )}
             </span>
+            {/* O clube pediu confirmação: diz-se no cartão, como na convocatória. */}
+            {consultaPorResponder(child.appointments[0], store.atleta) && (
+              <span className="shrink-0 rounded-full bg-warn-soft px-2 py-0.5 text-[11px] font-semibold text-warn">Confirma</span>
+            )}
             <ArrowUpRight className="size-4 shrink-0 text-ink-4" strokeWidth={2.25} />
           </Link>
         </div>

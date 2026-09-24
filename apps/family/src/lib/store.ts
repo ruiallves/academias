@@ -53,6 +53,12 @@ type ApiAthlete = {
     time: string | null;
     location: string | null;
     title: string | null;
+    detail?: string | null;
+    confirmationRequired?: boolean;
+    respondBy?: "GUARDIAN" | "ATHLETE";
+    reply?: "confirmed" | "declined" | null;
+    declineReason?: string | null;
+    respondedAt?: string | null;
   }[];
 };
 
@@ -223,6 +229,13 @@ export type Appointment = {
   time?: string;
   location?: string;
   title: string;
+  /** A nota que o clube escreveu para a família ("trazer calções e toalha"). */
+  note?: string;
+  /** O clube pediu confirmação, como numa convocatória. */
+  confirmationRequired: boolean;
+  /** Quem confirma. Ver `Match.respondBy`. */
+  respondBy: "GUARDIAN" | "ATHLETE";
+  reply?: { going: boolean; reason?: string; at: Date };
 };
 
 /**
@@ -247,10 +260,23 @@ function consultasMarcadas(a: ApiAthlete): Appointment[] {
       ...(c.time ? { time: c.time } : {}),
       ...(c.location ? { location: c.location } : {}),
       title: c.title ?? ROTULO_CONSULTA[c.kind] ?? "Consulta",
+      ...(c.detail ? { note: c.detail } : {}),
+      confirmationRequired: !!c.confirmationRequired,
+      respondBy: c.respondBy === "ATHLETE" ? ("ATHLETE" as const) : ("GUARDIAN" as const),
+      ...(c.reply && c.respondedAt
+        ? { reply: { going: c.reply === "confirmed", reason: c.declineReason ?? undefined, at: new Date(c.respondedAt) } }
+        : {}),
     }));
 }
 
 /** O que cada tipo de registo clínico se chama, quando o título não vem. */
+/**
+ * O clube pediu confirmação e ainda ninguém respondeu, e quem está a ler é
+ * quem responde. É o que acende o "Confirma" nos cartões.
+ */
+export const consultaPorResponder = (a: Appointment, atleta: boolean) =>
+  a.confirmationRequired && !a.reply && (atleta ? a.respondBy === "ATHLETE" : a.respondBy === "GUARDIAN");
+
 export const ROTULO_CONSULTA: Record<string, string> = {
   nutrition: "Consulta de nutrição",
   psychology: "Consulta de psicologia",
@@ -258,6 +284,7 @@ export const ROTULO_CONSULTA: Record<string, string> = {
   exam: "Exame médico",
   injury: "Consulta",
   note: "Consulta",
+  consultation: "Consulta",
 };
 
 export type Child = {

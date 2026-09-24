@@ -318,7 +318,10 @@ export type Athlete = {
  * acompanhamento contínuo e vivem no mesmo boletim, porque é a mesma pessoa a
  * olhar para o atleta inteiro.
  */
-export type ClinicalKind = "injury" | "exam" | "physio" | "nutrition" | "psychology" | "note";
+export type ClinicalKind = "injury" | "exam" | "physio" | "nutrition" | "psychology" | "note" | "consultation";
+
+/** A resposta da família a uma consulta que pediu confirmação. */
+export type ClinicalReply = "confirmed" | "declined";
 
 /**
  * O que a entrada faz à disponibilidade do atleta.
@@ -358,6 +361,16 @@ export type ClinicalEntry = {
   clearedOn?: string;
   /** Quem registou — o boletim tem de ser rastreável. */
   authorId?: string;
+  /** O tipo de consulta do clube (catálogo `consultationTypes`). */
+  typeId?: string;
+  /** As notas de quem deu a consulta. Só vêm a quem escreve no boletim. */
+  notes?: string;
+  /** Pediu-se à família (ou ao atleta) que confirmasse. */
+  confirmationRequired?: boolean;
+  respondBy?: "GUARDIAN" | "ATHLETE";
+  reply?: ClinicalReply;
+  declineReason?: string;
+  respondedAt?: string;
 };
 
 /** `void` = mensalidade anulada pela direção (bolsa, atleta que saiu) — nem devida nem paga. */

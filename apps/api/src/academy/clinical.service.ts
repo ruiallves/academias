@@ -2,7 +2,7 @@ import { BadRequestException, ForbiddenException, Injectable, Logger, NotFoundEx
 import type { ClinicalImpact, ClinicalKind, ClinicalStatus, Prisma } from "@prisma/client";
 import { PrismaService, type ScopedClient } from "../prisma/prisma.service";
 import { NotificationsService } from "../notifications/notifications.service";
-import { can, type RequestContext } from "../common/permissions";
+import { assertPodeResponderPor, athleteScopeFilter, can, type RequestContext } from "../common/permissions";
 
 /**
  * O boletim clínico — escritas.
@@ -52,7 +52,10 @@ export class ClinicalService {
    * conta de cada encarregado activo e, quando o atleta tem conta própria, a ele
    * também: o miúdo de dezassete anos é quem lá tem de estar.
    */
-  private async quemAvisar(db: ScopedClient, athleteId: string): Promise<{ nome: string; userIds: string[] }> {
+  private async quemAvisar(
+    db: ScopedClient,
+    athleteId: string,
+  ): Promise<{ nome: string; userIds: string[]; atleta: string | null; encarregados: string[] }> {
     const atleta = await db.athlete.findFirst({
       where: { id: athleteId },
       select: {
@@ -61,11 +64,12 @@ export class ClinicalService {
         guardians: { select: { membership: { select: { userId: true, isActive: true } } } },
       },
     });
-    const userIds = [
-      ...(atleta?.account?.isActive ? [atleta.account.userId] : []),
-      ...(atleta?.guardians ?? []).filter((g) => g.membership.isActive).map((g) => g.membership.userId),
+    const proprio = atleta?.account?.isActive ? atleta.account.userId : null;
+    const encarregados = [
+      ...new Set((atleta?.guardians ?? []).filter((g) => g.membership.isActive).map((g) => g.membership.userId)),
     ];
-    return { nome: atleta?.name ?? "", userIds: [...new Set(userIds)] };
+    const userIds = [...new Set([...(proprio ? [proprio] : []), ...encarregados])];
+    return { nome: atleta?.name ?? "", userIds, atleta: proprio, encarregados };
   }
 
   /**
@@ -78,22 +82,48 @@ export class ClinicalService {
   private async avisarDaConsulta(
     academyId: string,
     entryId: string,
-    consulta: { nome: string; userIds: string[]; titulo: string; date: Date; time: string | null; location: string | null },
+    consulta: {
+      nome: string;
+      userIds: string[];
+      atleta: string | null;
+      encarregados: string[];
+      titulo: string;
+      date: Date;
+      time: string | null;
+      location: string | null;
+      /** Quem tem de confirmar, quando se pediu confirmação. */
+      pedirA?: "GUARDIAN" | "ATHLETE" | null;
+    },
     remarcada: boolean,
+    /** Uma série marcada de uma vez: um aviso só, com o intervalo, e não um por sessão. */
+    serie?: { total: number; ultima: Date },
   ) {
     // A coluna é `@db.Date` (meia-noite UTC): lê-se em UTC para o dia não escorregar.
-    const quando = consulta.date.toLocaleDateString("pt-PT", { day: "numeric", month: "long", timeZone: "UTC" });
+    const dataPt = (d: Date) => d.toLocaleDateString("pt-PT", { day: "numeric", month: "long", timeZone: "UTC" });
+    const quando = dataPt(consulta.date);
     const horas = consulta.time ? ` às ${consulta.time}` : "";
     const onde = consulta.location ? `, em ${consulta.location}` : "";
+    const corpo = serie
+      ? `${consulta.titulo} de ${consulta.nome}: ${serie.total} sessões, de ${quando} a ${dataPt(serie.ultima)}${horas}${onde}.`
+      : `${consulta.titulo} de ${consulta.nome}${remarcada ? " passou para" : ":"} ${quando}${horas}${onde}.`;
+    /*
+     * Os dois sabem; só quem responde recebe o pedido. É a regra da
+     * convocatória: o atleta sabe da consulta, mas quem confirma é o pai (ou o
+     * contrário, quando o clube o escolheu).
+     */
+    const responde = new Set(
+      consulta.pedirA === "ATHLETE" ? (consulta.atleta ? [consulta.atleta] : []) : consulta.pedirA === "GUARDIAN" ? consulta.encarregados : [],
+    );
     for (const userId of consulta.userIds) {
+      const pedido = responde.has(userId) ? (serie ? " Confirma a presença em cada uma na app." : " Confirma a presença na app.") : "";
       await this.notifications
         .enqueue({
           academyId,
           userId,
           type: "CLINICAL_APPOINTMENT",
-          title: remarcada ? "Consulta com data nova" : "Consulta marcada",
-          body: `${consulta.titulo} de ${consulta.nome}${remarcada ? " passou para" : ":"} ${quando}${horas}${onde}.`,
-          payload: { route: "/atleta", clinicalEntryId: entryId },
+          title: remarcada ? "Consulta com data nova" : serie ? "Consultas marcadas" : "Consulta marcada",
+          body: corpo + pedido,
+          payload: { route: `/consulta/${entryId}`, clinicalEntryId: entryId },
         })
         .catch((e) => this.log.warn(`Aviso de consulta ${entryId} por enviar a ${userId}: ${e}`));
     }
@@ -153,7 +183,7 @@ export class ClinicalService {
   async criar(ctx: RequestContext, athleteId: string, dto: ClinicalInput) {
     this.mustWrite(ctx);
 
-    const { entry, agendado, destinatarios } = await this.prisma.runAs(ctx.academyId, async (db) => {
+    const { entry, agendado, destinatarios, serie } = await this.prisma.runAs(ctx.academyId, async (db) => {
       await this.atletaNoAmbito(db, ctx, athleteId);
 
       /* Sem data é hoje — registar o que acabou de acontecer é o caso comum. */
@@ -161,23 +191,51 @@ export class ClinicalService {
       const agendado = dto.status === "SCHEDULED";
       const impact: ClinicalImpact = agendado ? "NONE" : ((dto.impact ?? "NONE") as ClinicalImpact);
 
+      /* O tipo de consulta do clube decide o `kind`, e dá o título por omissão. */
+      const tipo = dto.typeId ? await tipoDeConsulta(db, dto.typeId) : null;
+      const kind: ClinicalKind = tipo ? tipo.kind : ((dto.kind ?? "NOTE") as ClinicalKind);
+
+      /* Uma lesão acontece; não se marca. */
+      if (agendado && kind === "INJURY") {
+        throw new BadRequestException("Uma lesão não se agenda. Regista-a no boletim quando acontecer.");
+      }
+      const pedeConfirmacao = agendado && !!dto.confirmationRequired;
+      const respondBy = dto.respondBy === "ATHLETE" ? "ATHLETE" : "GUARDIAN";
+
       const expectedReturn = dto.expectedReturn ? dia(dto.expectedReturn, "A data de retoma é inválida") : null;
       if (expectedReturn && expectedReturn < date) {
         throw new BadRequestException("A retoma não pode ser anterior ao registo");
       }
+
+      /*
+       * Repetir, como no calendário.
+       *
+       * Só num agendamento: o que já aconteceu regista-se uma vez. Cada sessão
+       * fica um registo a sério, como cada treino de uma série é um evento: dar
+       * a de quinta como feita ou desmarcá-la não mexe nas outras.
+       */
+      if (dto.repeat && !agendado) {
+        throw new BadRequestException("Só um agendamento se repete");
+      }
+      const datas = dto.repeat ? datasDaSerie(date, dto.repeat) : [date];
 
       const entry = await db.clinicalEntry.create({
         data: {
           academyId: ctx.academyId,
           athleteId,
           authorId: ctx.membershipId,
-          kind: (dto.kind ?? "NOTE") as ClinicalKind,
+          kind,
+          typeId: tipo?.id ?? null,
           status: (dto.status ?? "DONE") as ClinicalStatus,
-          date,
+          // A primeira da série, que pode não ser o dia de início: "às quintas" a partir de uma terça.
+          date: datas[0],
           time: agendado ? dto.time?.trim() || null : null,
           location: agendado ? dto.location?.trim() || null : null,
-          title: dto.title?.trim() || TITULO[(dto.kind ?? "NOTE") as ClinicalKind],
+          title: dto.title?.trim() || tipo?.label || TITULO[kind],
           detail: dto.detail?.trim() || null,
+          notes: dto.notes?.trim() || null,
+          confirmationRequired: pedeConfirmacao,
+          respondBy,
           impact,
           expectedReturn,
           outDays:
@@ -185,8 +243,33 @@ export class ClinicalService {
               ? Math.max(0, Math.round((expectedReturn.getTime() - date.getTime()) / 86_400_000))
               : null,
         },
-        select: { id: true, title: true, date: true, time: true, location: true },
+        select: {
+          id: true, title: true, date: true, time: true, location: true, kind: true, typeId: true,
+          status: true, detail: true, confirmationRequired: true, respondBy: true,
+        },
       });
+
+      if (datas.length > 1) {
+        await db.clinicalEntry.createMany({
+          data: datas.slice(1).map((d) => ({
+            academyId: ctx.academyId,
+            athleteId,
+            authorId: ctx.membershipId,
+            kind: entry.kind,
+            typeId: entry.typeId,
+            status: entry.status,
+            confirmationRequired: entry.confirmationRequired,
+            respondBy: entry.respondBy,
+            date: d,
+            time: entry.time,
+            location: entry.location,
+            title: entry.title,
+            detail: entry.detail,
+            impact: "NONE" as ClinicalImpact,
+          })),
+        });
+      }
+      const serie = datas.length > 1 ? { total: datas.length, ultima: datas[datas.length - 1] } : undefined;
 
       /*
        * O exame actualiza a validade administrativa.
@@ -199,7 +282,7 @@ export class ClinicalService {
        * Escreve-se aqui, no mesmo gesto e com a permissão de quem faz o exame.
        * Só para exames **realizados**: um exame agendado ainda não valida nada.
        */
-      if (dto.kind === "EXAM" && dto.validUntil && dto.status !== "SCHEDULED") {
+      if (kind === "EXAM" && dto.validUntil && dto.status !== "SCHEDULED") {
         await db.athlete.update({
           where: { id: athleteId },
           data: { medicalValidUntil: dia(dto.validUntil, "A validade do exame é inválida") },
@@ -207,20 +290,30 @@ export class ClinicalService {
       }
 
       /* Quem avisar, ainda dentro da transacção: o envio é que fica para fora. */
-      const destinatarios = agendado ? await this.quemAvisar(db, athleteId) : { nome: "", userIds: [] };
-      return { entry, agendado, destinatarios };
+      const destinatarios = agendado
+        ? await this.quemAvisar(db, athleteId)
+        : { nome: "", userIds: [], atleta: null, encarregados: [] };
+      return { entry, agendado, destinatarios, serie };
     });
 
     if (agendado && destinatarios.userIds.length > 0) {
       await this.avisarDaConsulta(
         ctx.academyId,
         entry.id,
-        { ...destinatarios, titulo: entry.title, date: entry.date, time: entry.time, location: entry.location },
+        {
+          ...destinatarios,
+          titulo: entry.title,
+          date: entry.date,
+          time: entry.time,
+          location: entry.location,
+          pedirA: entry.confirmationRequired ? entry.respondBy : null,
+        },
         false,
+        serie,
       );
     }
 
-    return { id: entry.id, avisados: agendado ? destinatarios.userIds.length : 0 };
+    return { id: entry.id, created: serie?.total ?? 1, avisados: agendado ? destinatarios.userIds.length : 0 };
   }
 
   /** Corrigir um registo. O que não vier fica como está. */
@@ -231,8 +324,26 @@ export class ClinicalService {
       const entry = await this.entradaNoAmbito(db, ctx, id);
 
       const data: Prisma.ClinicalEntryUpdateInput = {};
+      if (dto.typeId !== undefined) {
+        const tipo = await tipoDeConsulta(db, dto.typeId);
+        data.type = { connect: { id: tipo.id } };
+        data.kind = tipo.kind;
+      }
       if (dto.title !== undefined) data.title = dto.title.trim() || TITULO[entry.kind];
       if (dto.detail !== undefined) data.detail = dto.detail.trim() || null;
+      if (dto.notes !== undefined) data.notes = dto.notes.trim() || null;
+      if (dto.confirmationRequired !== undefined) data.confirmationRequired = dto.confirmationRequired;
+      if (dto.respondBy !== undefined) data.respondBy = dto.respondBy === "ATHLETE" ? "ATHLETE" : "GUARDIAN";
+      /*
+       * Mudou o dia ou a hora: a resposta que havia era para outra marcação.
+       * Fica por responder outra vez, como uma convocatória reenviada.
+       */
+      if (dto.date !== undefined || dto.time !== undefined) {
+        data.reply = null;
+        data.declineReason = null;
+        data.respondedAt = null;
+        data.respondedBy = { disconnect: true };
+      }
       if (dto.date !== undefined) data.date = dia(dto.date, "A data do registo é inválida");
       if (dto.time !== undefined) data.time = dto.time.trim() || null;
       if (dto.location !== undefined) data.location = dto.location.trim() || null;
@@ -245,10 +356,13 @@ export class ClinicalService {
       const depois = await db.clinicalEntry.update({
         where: { id },
         data,
-        select: { id: true, status: true, title: true, date: true, time: true, location: true },
+        select: {
+          id: true, status: true, title: true, date: true, time: true, location: true, kind: true,
+          confirmationRequired: true, respondBy: true,
+        },
       });
 
-      if (dto.kind === "EXAM" && dto.validUntil) {
+      if ((dto.kind === "EXAM" || depois.kind === "EXAM") && dto.validUntil) {
         await db.athlete.update({
           where: { id: entry.athleteId },
           data: { medicalValidUntil: dia(dto.validUntil, "A validade do exame é inválida") },
@@ -266,7 +380,7 @@ export class ClinicalService {
         (data.date !== undefined || data.time !== undefined || data.location !== undefined);
       const destinatarios = mudouAMarcacao
         ? await this.quemAvisar(db, entry.athleteId)
-        : { nome: "", userIds: [] };
+        : { nome: "", userIds: [], atleta: null, encarregados: [] };
 
       return { depois, mudouAMarcacao, destinatarios };
     });
@@ -275,12 +389,66 @@ export class ClinicalService {
       await this.avisarDaConsulta(
         ctx.academyId,
         depois.id,
-        { ...destinatarios, titulo: depois.title, date: depois.date, time: depois.time, location: depois.location },
+        {
+          ...destinatarios,
+          titulo: depois.title,
+          date: depois.date,
+          time: depois.time,
+          location: depois.location,
+          pedirA: depois.confirmationRequired ? depois.respondBy : null,
+        },
         true,
       );
     }
 
     return { ok: true as const, avisados: mudouAMarcacao ? destinatarios.userIds.length : 0 };
+  }
+
+  /**
+   * A família (ou o atleta) responde a uma consulta que pediu confirmação.
+   *
+   * O espelho de `MatchesService.responderConvocatoria`: o atleta tem de ser de
+   * quem responde (`athleteScopeFilter`), e quem responde é quem a consulta diz
+   * (`assertPodeResponderPor`). A recusa leva motivo, para o departamento
+   * clínico saber se remarca ou se telefona.
+   */
+  async responder(ctx: RequestContext, id: string, resposta: { going: boolean; reason?: string | null }) {
+    const motivo = (resposta.reason ?? "").trim();
+    if (!resposta.going && !motivo) {
+      throw new BadRequestException("Diz porque é que não pode ir, para a consulta poder ser remarcada");
+    }
+    if (motivo.length > 300) throw new BadRequestException("O motivo é demasiado longo");
+
+    return this.prisma.runAs(ctx.academyId, async (db) => {
+      const entry = await db.clinicalEntry.findFirst({
+        where: { id },
+        select: { id: true, athleteId: true, status: true, date: true, confirmationRequired: true, respondBy: true },
+      });
+      const meus = athleteScopeFilter(ctx);
+      /* Um atleta que não é deste utilizador responde como uma consulta que não existe. */
+      if (!entry || (meus && !meus.in.includes(entry.athleteId))) {
+        throw new NotFoundException("Consulta não encontrada");
+      }
+      assertPodeResponderPor(ctx, entry.respondBy);
+      if (entry.status !== "SCHEDULED") throw new BadRequestException("Esta consulta já não está marcada");
+      if (!entry.confirmationRequired) throw new BadRequestException("Esta consulta não pede confirmação");
+      if (entry.date.getTime() < dia(new Date().toISOString(), "").getTime()) {
+        throw new BadRequestException("Esta consulta já passou");
+      }
+
+      const depois = await db.clinicalEntry.update({
+        where: { id },
+        data: {
+          reply: resposta.going ? "CONFIRMED" : "DECLINED",
+          // Voltar atrás limpa o motivo, ou ficava a explicar uma ausência que deixou de existir.
+          declineReason: resposta.going ? null : motivo,
+          respondedAt: new Date(),
+          respondedById: ctx.membershipId,
+        },
+        select: { id: true, reply: true, declineReason: true, respondedAt: true },
+      });
+      return depois;
+    });
   }
 
   /**
@@ -353,6 +521,14 @@ export type ClinicalInput = {
   expectedReturn?: string | null;
   /** Só para exames: até quando é que o atleta fica com o exame válido. */
   validUntil?: string;
+  /** O tipo de consulta do clube (catálogo `consultationTypes`). Decide o `kind`. */
+  typeId?: string;
+  /** As notas de quem deu a consulta. Não saem para a família. */
+  notes?: string;
+  confirmationRequired?: boolean;
+  respondBy?: string;
+  /** Só em agendamentos: a mesma consulta até uma data. A forma é a do calendário (`RepeatDto`). */
+  repeat?: { freq: "DAILY" | "WEEKLY" | "MONTHLY"; until: string; weekdays?: number[] };
 };
 
 /** O título por omissão de cada tipo — um registo sem título não é ilegível. */
@@ -363,6 +539,7 @@ const TITULO: Record<ClinicalKind, string> = {
   NUTRITION: "Nutrição",
   PSYCHOLOGY: "Psicologia",
   NOTE: "Nota",
+  CONSULTATION: "Consulta",
 };
 
 /**
@@ -377,4 +554,75 @@ function dia(valor: string, erro: string): Date {
   const d = new Date(`${valor.slice(0, 10)}T00:00:00Z`);
   if (Number.isNaN(d.getTime())) throw new BadRequestException(erro);
   return d;
+}
+
+/**
+ * Quantas sessões uma série pode ter. Três por semana durante uma época dá umas
+ * 130; o tecto é o mesmo do calendário e trava o "todos os dias durante cinco
+ * anos" escrito por engano.
+ */
+const MAX_SESSOES = 200;
+
+/**
+ * As datas de uma série de consultas.
+ *
+ * O mesmo gerador do calendário (`occurrences` em `academy.service.ts`), mas só
+ * com dias: a coluna é `@db.Date` e a hora vive à parte, em texto, por isso não
+ * há mudança de hora nem fuso que a faça escorregar. Anda-se de dia em dia em
+ * UTC, que é como as datas estão guardadas.
+ *
+ * No mensal, um mês sem o dia pretendido (31 de Fevereiro) salta-se, como no
+ * calendário; `weekdays` vazio repete no dia da semana da primeira sessão.
+ */
+export function datasDaSerie(
+  primeira: Date,
+  repeat: { freq: "DAILY" | "WEEKLY" | "MONTHLY"; until: string; weekdays?: number[] },
+): Date[] {
+  const ate = dia(repeat.until, "A data de fim da repetição é inválida");
+  if (ate < primeira) throw new BadRequestException("A repetição tem de acabar depois da primeira consulta");
+
+  const out: Date[] = [];
+  if (repeat.freq === "MONTHLY") {
+    const alvo = primeira.getUTCDate();
+    for (let m = 0; out.length < MAX_SESSOES; m++) {
+      const d = new Date(Date.UTC(primeira.getUTCFullYear(), primeira.getUTCMonth() + m, alvo));
+      // Transbordou para o mês seguinte: este mês não tem o dia, salta-se.
+      if (d.getUTCDate() !== alvo) continue;
+      if (d > ate) break;
+      out.push(d);
+    }
+    return out;
+  }
+
+  const dias = repeat.freq === "WEEKLY" ? new Set(repeat.weekdays?.length ? repeat.weekdays : [primeira.getUTCDay()]) : null;
+  for (let d = new Date(primeira); d <= ate && out.length < MAX_SESSOES; d = new Date(d.getTime() + 86_400_000)) {
+    if (!dias || dias.has(d.getUTCDay())) out.push(d);
+  }
+  if (out.length === 0) throw new BadRequestException("Nenhum dos dias escolhidos cai entre as duas datas");
+  return out;
+}
+
+/**
+ * O `kind` de um tipo de consulta do clube, pelo nome.
+ *
+ * O catálogo é do clube e os nomes são dele, mas o domínio precisa de saber que
+ * um exame é um exame (é o que actualiza a validade médica). O resto é
+ * `CONSULTATION`. A mesma ideia de `kindOfEventType` na consola.
+ */
+export function kindDoTipo(label: string): ClinicalKind {
+  const n = label.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
+  if (n.includes("exame")) return "EXAM";
+  if (n.includes("fisio")) return "PHYSIO";
+  if (n.includes("nutri")) return "NUTRITION";
+  if (n.includes("psico")) return "PSYCHOLOGY";
+  return "CONSULTATION";
+}
+
+async function tipoDeConsulta(db: ScopedClient, id: string) {
+  const tipo = await db.catalogItem.findFirst({
+    where: { id, kind: "consultationTypes", archivedAt: null },
+    select: { id: true, label: true },
+  });
+  if (!tipo) throw new BadRequestException("Esse tipo de consulta não existe no clube");
+  return { ...tipo, kind: kindDoTipo(tipo.label) };
 }

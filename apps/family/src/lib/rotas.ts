@@ -54,6 +54,8 @@ export function destinoDaNotificacao(bruta: string | null | undefined): Destino 
   if (SOCIO.has(rota)) return { area: "MEMBER", rota };
   // `/evento/treino/:id` e `/evento/jogo/:id` — ver `screens/Evento`.
   if (/^\/evento\/(treino|jogo)\/[\w-]+$/.test(rota)) return { area: "FAMILY", rota };
+  // `/consulta/:id` — uma consulta marcada, com o pedido de confirmação. Ver `screens/Consulta`.
+  if (/^\/consulta\/[\w-]+$/.test(rota)) return { area: "FAMILY", rota };
 
   return null;
 }

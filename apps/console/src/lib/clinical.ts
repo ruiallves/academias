@@ -1,7 +1,7 @@
 import { athleteById, today } from "@/lib/api";
 import { apiDelete, apiPatch, apiPost } from "@/lib/http";
 import { reloadAcademy } from "@/lib/store";
-import type { ClinicalEntry, ClinicalImpact, ClinicalKind } from "@/data/types";
+import type { Athlete, ClinicalEntry, ClinicalImpact, ClinicalKind } from "@/data/types";
 
 /**
  * Estado clínico de um atleta.
@@ -44,6 +44,7 @@ export const KIND_LABEL: Record<ClinicalKind, string> = {
   nutrition: "Nutrição",
   psychology: "Psicologia",
   note: "Nota",
+  consultation: "Consulta",
 };
 
 export const IMPACT_LABEL: Record<ClinicalImpact, string> = {
@@ -65,6 +66,12 @@ const paraApi = (v: string) => v.toUpperCase();
 
 export type NovaEntrada = {
   kind: ClinicalKind;
+  /** O tipo de consulta do clube. Com ele, o servidor decide o `kind`. */
+  typeId?: string;
+  /** As notas de quem deu a consulta. */
+  notes?: string;
+  confirmationRequired?: boolean;
+  respondBy?: "GUARDIAN" | "ATHLETE";
   status: "done" | "scheduled";
   date: string;
   time?: string;
@@ -75,6 +82,8 @@ export type NovaEntrada = {
   expectedReturn?: string;
   /** Só em exames realizados: escreve também a validade na ficha do atleta. */
   validUntil?: string;
+  /** Só em agendamentos: a mesma consulta até uma data, como no calendário. */
+  repeat?: { freq: "DAILY" | "WEEKLY" | "MONTHLY"; until: string; weekdays?: number[] };
 };
 
 /**
@@ -84,8 +93,8 @@ export type NovaEntrada = {
  * todos os ecrãs o lêem. Sem o recarregamento, o registo estava na base e não no
  * ecrã — que é o mesmo sintoma, ao contrário.
  */
-export async function addClinicalEntry(athleteId: string, entry: NovaEntrada): Promise<void> {
-  await apiPost(`/api/athletes/${athleteId}/clinical`, {
+export async function addClinicalEntry(athleteId: string, entry: NovaEntrada): Promise<{ created: number }> {
+  const r = await apiPost<{ created?: number }>(`/api/athletes/${athleteId}/clinical`, {
     kind: paraApi(entry.kind),
     status: paraApi(entry.status),
     impact: paraApi(entry.impact),
@@ -96,8 +105,13 @@ export async function addClinicalEntry(athleteId: string, entry: NovaEntrada): P
     ...(entry.detail ? { detail: entry.detail } : {}),
     ...(entry.expectedReturn ? { expectedReturn: entry.expectedReturn } : {}),
     ...(entry.validUntil ? { validUntil: entry.validUntil } : {}),
+    ...(entry.repeat ? { repeat: entry.repeat } : {}),
+    ...(entry.typeId ? { typeId: entry.typeId } : {}),
+    ...(entry.notes ? { notes: entry.notes } : {}),
+    ...(entry.confirmationRequired ? { confirmationRequired: true, respondBy: entry.respondBy ?? "GUARDIAN" } : {}),
   });
   await reloadAcademy();
+  return { created: r?.created ?? 1 };
 }
 
 /**
@@ -128,6 +142,10 @@ export async function updateClinicalEntry(entryId: string, patch: Partial<NovaEn
     ...(patch.detail !== undefined ? { detail: patch.detail } : {}),
     ...(patch.expectedReturn !== undefined ? { expectedReturn: patch.expectedReturn } : {}),
     ...(patch.validUntil ? { validUntil: patch.validUntil } : {}),
+    ...(patch.typeId ? { typeId: patch.typeId } : {}),
+    ...(patch.notes !== undefined ? { notes: patch.notes } : {}),
+    ...(patch.confirmationRequired !== undefined ? { confirmationRequired: patch.confirmationRequired } : {}),
+    ...(patch.respondBy ? { respondBy: patch.respondBy } : {}),
   });
   await reloadAcademy();
 }
@@ -162,6 +180,43 @@ export function upcomingAppointments(athleteId: string): ClinicalEntry[] {
   return clinicalOf(athleteId)
     .filter((e) => e.status === "scheduled" && e.date >= iso)
     .sort((a, b) => a.date.localeCompare(b.date));
+}
+
+/**
+ * O nome de uma consulta: o do tipo do clube, se o tiver, senão o do `kind`.
+ * "Consulta" não diz nada quando o clube lhe chamou "Podologia".
+ */
+export function areaLabel(e: ClinicalEntry, tipos: { id: string; label: string }[]): string {
+  return (e.typeId && tipos.find((t) => t.id === e.typeId)?.label) || KIND_LABEL[e.kind] || "Consulta";
+}
+
+/**
+ * O que o domínio entende de um tipo de consulta do clube, pelo nome. O mesmo
+ * que `kindDoTipo` no servidor, que é quem decide ao gravar; aqui serve para o
+ * ecrã explicar (um "Exame" actualiza a validade médica).
+ */
+export function kindOfConsultationType(label: string): ClinicalKind {
+  const n = label.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
+  if (n.includes("exame")) return "exam";
+  if (n.includes("fisio")) return "physio";
+  if (n.includes("nutri")) return "nutrition";
+  if (n.includes("psico")) return "psychology";
+  return "consultation";
+}
+
+/** O que conta como consulta: tudo menos lesões e notas soltas. */
+export const isConsulta = (e: ClinicalEntry) => e.kind !== "injury" && e.kind !== "note";
+
+/** Uma consulta e de quem é, encontrada pelo id em todo o boletim que esta sessão vê. */
+export function findConsulta(
+  athletes: Athlete[],
+  id: string,
+): { athlete: Athlete; entry: ClinicalEntry } | undefined {
+  for (const athlete of athletes) {
+    const entry = athlete.clinical?.find((c) => c.id === id);
+    if (entry) return { athlete, entry };
+  }
+  return undefined;
 }
 
 /** A entrada que está a afectar o atleta agora, se houver. */

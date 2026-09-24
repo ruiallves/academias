@@ -1997,6 +1997,18 @@ CI ao lado de `test:cobertura`.
 Na criação de um sócio, escolher uma categoria anual faz aparecer o campo da
 abertura, com hoje por omissão e sempre mudável.
 
+**Aprovar um pedido abre o ano no dia da aprovação e lança a quota logo.** Quem
+adere pelo site nasce sem data sua e herdava a abertura do clube (1 de Janeiro),
+e a quota só aparecia na passagem automática, que lança cada clube uma vez por
+mês. Agora `MembersService.update`, ao passar de `PENDING` a `ACTIVE` pela
+primeira vez, grava hoje como abertura (se a ficha não tiver já a sua) e chama
+`gerarQuotas` só para esse sócio (`apenas`): numa anual nasce a anuidade de hoje
+a daqui a um ano menos um dia, numa mensal a do mês corrente. O gerador recebe o
+dia de Lisboa ao meio-dia UTC, porque `inicioDaEpoca` lê o relógio do servidor e
+entre a meia-noite e a uma de Lisboa, no Verão, ainda seria ontem (saía a
+anuidade do ano passado). A data posta pela aprovação não entra no histórico da
+ficha.
+
 ## Apagar quotas e mensalidades
 
 Quotas de sócio e mensalidades de atleta mudavam de estado (paga, por pagar,
@@ -2428,6 +2440,61 @@ queixa de que "não marca". E do lado da app não havia nada.
 
 Teste: `scripts/test-consulta-agendada.mjs` (34, clube descartável com um
 encarregado e um atleta de contas criadas na base, para nenhum push sair).
+
+### Consultas repetidas e a vista de calendário
+
+- **Repetir até uma data.** Agendar uma consulta tem o mesmo bloco "Repetir" do
+  Novo evento (todos os dias, semanal com dias à escolha, mensal, e o último dia
+  incluído). O bloco passou a ser um componente só, `components/Repetir.tsx`,
+  usado pelos dois diálogos. O pedido leva `repeat` com a forma de `RepeatDto`.
+- **No servidor**, `ClinicalService.criar` gera as datas com `datasDaSerie`: só
+  dias, porque a coluna é `@db.Date` e a hora vive em texto, e por isso não há
+  fuso nem mudança de hora a mexer na série. Cada sessão é um `ClinicalEntry`
+  próprio (dar uma como feita ou desmarcá-la não mexe nas outras). O mensal salta
+  os meses sem o dia, o tecto é 200 sessões, e só um agendamento se repete. A
+  família e o atleta recebem **um** aviso para a série inteira ("12 sessões, de …
+  a …"), e a resposta traz `created`.
+- **A página de Consultas abre num calendário do mês**, com a lista a um clique
+  (a escolha fica guardada no browser). Cor por área, cheia no que está agendado
+  e esbatida no que já foi registado; o `+` de cada dia abre o agendamento nessa
+  data; no telemóvel é a grelha de pontos com a lista do dia por baixo, como no
+  Calendário. Os filtros e a procura valem para as duas vistas.
+
+### Tipos de consulta do clube, página da consulta e confirmação da família
+
+Migração `20260924100000_consultas_tipos_e_confirmacao`.
+
+- **Uma lesão não se agenda.** O diálogo tem três variantes (`variant`):
+  `lesao` nos Boletins (só "Registar lesão", sem tipo nem agendar), `registo`
+  na ficha do atleta (o que aconteceu, de qualquer tipo; é por aí que um exame
+  feito actualiza a validade), e `consulta` para agendar. O servidor recusa
+  também um agendamento `INJURY`.
+- **Os tipos de consulta são do clube**: catálogo `consultationTypes`, semeado
+  com Fisioterapia, Consulta, Nutrição e Exame (o primeiro vem escolhido), e
+  gerido nas Definições num painel próprio (não é de uma modalidade).
+  `ClinicalEntry.typeId` guarda o tipo; o `kind` deriva do nome
+  (`kindDoTipo`: exame, fisio, nutri, psico, e o resto é o novo
+  `CONSULTATION`). Os ecrãs mostram o nome do clube (`areaLabel`).
+- **A página da consulta** (`/clinico/consultas/:id`, `ConsultationDetail`):
+  notas da consulta (`ClinicalEntry.notes`, só saem a quem tem
+  `clinical:write`, nunca à família nem ao treinador), remarcar, a resposta da
+  família, "Dar como realizada" (marca logo, sem pedir a validade do exame) e "Desmarcar". Só
+  se envia o que mudou: mandar a data sem lhe mexer contava como remarcar.
+- **Pedir confirmação**, como na convocatória: `confirmationRequired` +
+  `respondBy` (encarregado por omissão, ou o atleta). A família responde no novo
+  ecrã `/consulta/:id` da app (Vai / Não pode ir, com motivo obrigatório; a
+  base tem um CHECK). `POST /api/clinical/:id/resposta` passa por
+  `athleteScopeFilter` **e** `assertPodeResponderPor`. Remarcar o dia ou a hora
+  apaga a resposta, que era para outra marcação.
+- **Avisos:** o encarregado activo e o atleta com conta recebem sempre o aviso
+  (push e na app); só quem responde recebe "Confirma a presença na app". A rota
+  do aviso passou a `/consulta/:id` (reconhecida em `lib/rotas.ts`). O Início e
+  a área do atleta levam à consulta e mostram "Confirma" quando falta resposta.
+- **Nas Definições**, os tipos de consulta têm um painel próprio
+  (`ConsultationTypesPanel`), sempre aberto e sem setas de ordem. Cada tipo tem a
+  sua cor (`CatalogItem.color`, migração `20260924110000_cor_dos_tipos_de_consulta`),
+  e tocar na bolinha abre o seletor. É essa a cor no calendário e na lista das
+  Consultas; sem cor escolhida usa a de omissão do `kind`.
 
 ## Mensalidades de 0 €
 
@@ -3365,6 +3432,32 @@ treino. A secção *Nutrição* vive no ecrã do educando/percurso para as duas
 áreas.
 
 Verificado por `npm run test:atleta`.
+
+## O ícone da app instalada
+
+O clube trocava de símbolo e a app no telemóvel continuava com o primeiro. O
+manifest declarava o símbolo tal como foi carregado (`sizes: "any"`), e o Chrome
+no Android só aceita como ícone de app um PNG quadrado com 144 px ou mais. O do
+Life Club tem 341×399. Sem ícone aceitável o manifest é inválido, e com o
+manifest inválido o Chrome deixa de actualizar a app instalada, sem aviso.
+
+Agora os ícones são **desenhados pela API** a partir do símbolo
+(`tenant/club-icons.ts`, com `sharp`): 192, 512, maskable 512 (símbolo dentro da
+zona segura, fundo branco) e 180 para o iPhone (opaco). O símbolo encaixa sem
+cortar nem esticar. Vivem em `/icone/:slug/:versao/:nome.png`; a versão é o nome
+do ficheiro do símbolo, que muda a cada carregamento, por isso símbolo novo é
+endereço novo. A versão actual guarda-se um ano (`immutable`), uma antiga cinco
+minutos. Desenhados uma vez por processo e guardados em memória. Símbolo
+ilegível devolve o nosso genérico.
+
+Usam-nos o manifest, o `apple-touch-icon` da landing e o da app
+(`lib/brand.ts`, gémeo de `caminhoDoIcone`). A marca guardada da app passou a
+actualizar-se também para sócios sem família (`loadSocio`).
+
+O que não depende de nós: o Android verifica o manifest quando a app abre, com
+o intervalo dele (cerca de um dia), e pode pedir confirmação para trocar o
+ícone. O iPhone nunca actualiza o ícone de uma app já adicionada: é preciso
+removê-la e voltar a adicioná-la. A consola di-lo por baixo do símbolo.
 
 ## Por fazer
 

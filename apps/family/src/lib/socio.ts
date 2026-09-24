@@ -1,6 +1,7 @@
 import { useSyncExternalStore } from "react";
 import { reduzirFotografia } from "@academia/ui/imagem";
 import { apiDelete, apiGet, apiPost } from "@/lib/http";
+import { applyBrand } from "@/lib/brand";
 
 /**
  * A área de sócio — dados e chamadas.
@@ -136,6 +137,14 @@ export async function loadSocio(): Promise<void> {
   emit();
   try {
     const data = await apiGet<SocioInicio>("/api/socio/inicio");
+    // A marca guardada é a que a app veste ao abrir, antes de haver dados. Só o
+    // bootstrap da família a actualizava: um sócio sem família abria sempre com
+    // o símbolo do primeiro dia, por mais que o clube o trocasse.
+    applyBrand({
+      color: data.academy.signalColor,
+      shortName: data.academy.shortName,
+      logoUrl: data.academy.logoUrl,
+    });
     state = { data, error: null, loading: false };
   } catch (e) {
     state = {
