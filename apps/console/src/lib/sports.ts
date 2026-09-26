@@ -147,7 +147,9 @@ function footballStarter(kind: string, format: GameFormat): Diagram {
   const d = emptyDiagram(fieldFor(format, !fullPitch));
   const at = (k: DiagramItem["kind"], fx: number, fy: number, label?: string): DiagramItem => ({
     id: newId(),
-    kind: k,
+    /* "opponent" é escrita de conveniência nos presets abaixo: na peça fica um
+       jogador de colete branco, que é o que ele sempre foi. Ver `TeamColor`. */
+    ...(k === "opponent" ? { kind: "player" as const, color: "white" as const } : { kind: k }),
     x: fx * s.w,
     y: fy * s.h,
     ...(label ? { label } : {}),
@@ -231,7 +233,8 @@ function basketballStarter(kind: string): Diagram {
   const d = emptyDiagram(fullCourt ? "basket" : "basket-half");
   const at = (k: DiagramItem["kind"], x: number, y: number, label?: string): DiagramItem => ({
     id: newId(),
-    kind: k,
+    /* O mesmo de cima: adversário é jogador de branco. */
+    ...(k === "opponent" ? { kind: "player" as const, color: "white" as const } : { kind: k }),
     x,
     y,
     ...(label ? { label } : {}),
@@ -419,7 +422,7 @@ const BASKET_TYPES = ["Analítico", "Drill de lançamento", "1x1 / 2x2 / 3x3", "
 
 const footballVocabulary = (formats: GameFormat[]): EditorVocabulary => ({
   formats,
-  items: ["player", "opponent", "gk", "playerBall", "ball", "cone", "pole", "miniGoal", "goal", "barrier", "ladder", "dummy", "zone", "text"],
+  items: ["player", "gk", "playerBall", "ball", "cone", "pole", "miniGoal", "goal", "barrier", "ladder", "dummy", "zone", "text"],
   arrows: ["pass", "run", "dribble", "shot", "press", "cross"],
   labels: {},
 });
@@ -427,7 +430,7 @@ const footballVocabulary = (formats: GameFormat[]): EditorVocabulary => ({
 const BASKET_VOCABULARY: EditorVocabulary = {
   formats: formatsOf("basketball"),
   // Sem guarda-redes, balizas, barreiras nem cruzamentos: não existem no jogo.
-  items: ["player", "opponent", "playerBall", "ball", "cone", "pole", "ladder", "dummy", "zone", "text"],
+  items: ["player", "playerBall", "ball", "cone", "pole", "ladder", "dummy", "zone", "text"],
   arrows: ["pass", "run", "dribble", "shot", "press"],
   labels: { shot: "Lançamento", dribble: "Drible", press: "Pressão", playerBall: "Jogador c/ bola" },
 };

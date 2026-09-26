@@ -13,6 +13,15 @@ import {
   isHalfField,
   itemLabel,
   newId,
+  coresDaPeca,
+  nextNumber,
+  normalizarDiagrama,
+  PAINTED_ON_STAMP,
+  PERSON_KINDS,
+  PLAYER_FILL,
+  coresRecentes,
+  guardarCorRecente,
+  type PieceColor,
   type ArrowKind,
   type Diagram,
   type EditorVocabulary,
@@ -79,10 +88,9 @@ const BASKET_KEY = "rgba(0,0,0,0.11)";
 const BASKET_BALL = "#e0762c";
 const BASKET_SEAM = "rgba(40,20,8,0.75)";
 const LINES = "rgba(255,255,255,0.75)";
-const US = "#1d3a5f";
-const THEM = "#f4f1ea";
-const THEM_INK = "#3d3a34";
-const GK = "#b97324";
+/* As cores das peças de pessoa vivem em `lib/training.ts`, ao lado do tipo
+   `TeamColor`: são dados do desenho e não decoração deste componente — ficam
+   gravadas no `diagram` e têm de ser as mesmas no editor, na miniatura e no PDF. */
 const CONE = "#e0862e";
 const ZONE = "rgba(255, 214, 90, 0.18)";
 const ZONE_LINE = "rgba(255, 214, 90, 0.9)";
@@ -444,15 +452,36 @@ function ItemShape({
     case "playerBall":
     case "gk":
     case "opponent": {
-      const fill = item.kind === "gk" ? GK : item.kind === "opponent" ? THEM : US;
-      const ink = item.kind === "opponent" ? THEM_INK : "#fff";
+      const { fill, ink, halo } = coresDaPeca(item);
       return (
         // O `scale(k)` encolhe o símbolo no futsal; a **posição** fica em metros
         // verdadeiros, e as zonas (abaixo) mantêm as dimensões reais.
         <g transform={`scale(${k})`}>
+          {/*
+            O anel de seleção é **duplo** desde que os coletes deixaram de ser dois.
+            Era um traço amarelo (`#ffd65a`) e isso chegava sobre azul e sobre
+            branco; sobre um colete amarelo desaparecia, e "não dá para ver o que
+            está selecionado" é pior do que não ter a cor. O halo escuro por fora
+            separa o amarelo de qualquer coisa que esteja debaixo dele.
+          */}
+          {selected && <circle r={1.9} fill="none" stroke="rgba(20,16,10,0.85)" strokeWidth={0.95} />}
           <circle r={1.9} fill={fill} stroke={selected ? "#ffd65a" : "rgba(255,255,255,0.85)"} strokeWidth={selected ? 0.45 : 0.25} />
           {label && (
-            <text y={0.75} textAnchor="middle" fontSize={2.1} fontWeight={700} fill={ink} style={{ userSelect: "none" }}>
+            /* O contorno vai **por baixo** do preenchimento (`paint-order`), senão
+               comia metade do traço do número. Ver `haloFor`: é ele que faz o
+               número ler-se sobre uma cor escolhida à roda. */
+            <text
+              y={0.75}
+              textAnchor="middle"
+              fontSize={2.1}
+              fontWeight={700}
+              fill={ink}
+              stroke={halo}
+              strokeWidth={0.32}
+              paintOrder="stroke"
+              strokeLinejoin="round"
+              style={{ userSelect: "none" }}
+            >
               {label}
             </text>
           )}
@@ -864,7 +893,26 @@ export function FieldEditor({
     [vocabulary],
   );
   const arrows = vocabulary.arrows;
-  const [diagram, setDiagram] = useState<Diagram>(() => asDiagram(initial) ?? emptyDiagram("f11"));
+  const [diagram, setDiagram] = useState<Diagram>(() => {
+    const d = asDiagram(initial) ?? emptyDiagram("f11");
+    /* Os adversários dos desenhos antigos entram já como jogadores de branco —
+       só assim se lhes pode mudar a cor. Ver `normalizarDiagrama`. */
+    return normalizarDiagrama(d);
+  });
+  /**
+   * O colete armado: o que os próximos jogadores vão levar, e o que o botão de
+   * cor pinta na seleção.
+   *
+   * Um estado só para as duas coisas de propósito. Quem pinta uma seleção de
+   * vermelho está a montar a equipa vermelha, e o jogador seguinte que carimbar
+   * quer ser vermelho também — dois estados separados obrigavam a escolher a
+   * mesma cor duas vezes.
+   */
+  const [color, setColor] = useState<PieceColor>(PLAYER_FILL);
+  const [coresAbertas, setCoresAbertas] = useState(false);
+  /* A fila de cores deste browser. Ver `coresRecentes`. */
+  const [recentes, setRecentes] = useState<string[]>(() => coresRecentes());
+  const picker = useRef<HTMLDivElement | null>(null);
   const [frameIx, setFrameIx] = useState(0);
   const [tool, setTool] = useState<Tool>({ mode: "select" });
   const [selected, setSelected] = useState<Set<string>>(new Set());
@@ -954,7 +1002,14 @@ export function FieldEditor({
         // A zona nasce à medida do terreno: 14×10 num campo de onze é um bloco
         // de trabalho; num de 40×20 seria meio campo.
         ...(tool.kind === "zone" ? (small ? { w: 8, h: 6 } : { w: 14, h: 10 }) : {}),
-        ...(tool.kind === "player" || tool.kind === "opponent" ? { label: nextNumber(frame.items, tool.kind) } : {}),
+        /*
+         * O colete vai na peça, e o número conta-se **dentro do colete**: a
+         * equipa vermelha começa no 1 outra vez. Era o que os dois tipos de peça
+         * davam de graça (`player` e `opponent` numeravam à parte) e que se
+         * perderia ao contar por tipo agora que as equipas são cinco.
+         */
+        ...(PAINTED_ON_STAMP.has(tool.kind) ? { color } : {}),
+        ...(tool.kind === "player" || tool.kind === "playerBall" ? { label: nextNumber(frame.items, color) } : {}),
         ...(tool.kind === "text" ? { label: "Texto" } : {}),
       };
       commit(patchFrame((f) => ({ ...f, items: [...f.items, item] })));
@@ -1313,6 +1368,66 @@ export function FieldEditor({
 
   const labelled = single && ["player", "opponent", "gk", "playerBall", "zone", "text"].includes(single.kind);
 
+  /**
+   * Vestir a seleção com um colete, e armar esse colete para o que vier a seguir.
+   *
+   * As duas coisas no mesmo gesto porque são o mesmo gesto: quem pinta três
+   * jogadores de vermelho está a montar a equipa vermelha e o seguinte que
+   * carimbar também é dela.
+   *
+   * **Os números não se recalculam.** Foi a tentação obvia — pintar de vermelho e
+   * renumerar de 1 a 4 — e está errada: os números de um exercício são muitas
+   * vezes os números das camisolas verdadeiras, e trocar o 8 por 2 porque alguem
+   * mudou de colete apagava informação que o treinador escreveu à mão. Se houver
+   * números repetidos dentro de um colete, o desenho é dele.
+   */
+  const paintSelected = useCallback(
+    (novo: PieceColor) => {
+      setColor(novo);
+      if (selected.size === 0) return;
+      commit(
+        patchFrame((f) => ({
+          ...f,
+          items: f.items.map((i) => (selected.has(i.id) && PERSON_KINDS.has(i.kind) ? { ...i, color: novo } : i)),
+        })),
+      );
+    },
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [selected, commit, patchFrame],
+  );
+
+  /* Quantas pessoas estão selecionadas — decide se o botão pinta ou só arma. */
+  const pessoasSelecionadas = frame.items.filter((i) => selected.has(i.id) && PERSON_KINDS.has(i.kind)).length;
+
+  /* Fechar por fora e por Escape — um popover que só fecha a carregar outra vez
+     no botão fica aberto por cima do campo enquanto se desenha. */
+  useEffect(() => {
+    if (!coresAbertas) return;
+    const fora = (e: PointerEvent) => {
+      if (!picker.current?.contains(e.target as Node)) setCoresAbertas(false);
+    };
+    const esc = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setCoresAbertas(false);
+    };
+    document.addEventListener("pointerdown", fora);
+    document.addEventListener("keydown", esc);
+    return () => {
+      document.removeEventListener("pointerdown", fora);
+      document.removeEventListener("keydown", esc);
+    };
+  }, [coresAbertas]);
+
+  /**
+   * A cor escolhida entra na fila — e só aqui, quando a escolha está **feita**.
+   *
+   * A roda de cor dispara a cada passo do arrasto, para o campo mudar ao vivo.
+   * Se cada passo entrasse na fila, uma passagem pelo azul a caminho do vermelho
+   * enchia o histórico com dezenas de tons que ninguém escolheu.
+   */
+  const fixarCor = useCallback((cor: PieceColor) => {
+    setRecentes(guardarCorRecente(cor));
+  }, []);
+
   const setLabel = (label: string) => {
     if (!single) return;
     // Escrever letra a letra não é história — o commit fica para o blur.
@@ -1347,6 +1462,105 @@ export function FieldEditor({
         ))}
         <span className="mx-1 h-5 w-px bg-line" />
         <div className="ml-auto flex items-center gap-1.5">
+          {/*
+            O colete, ao lado do desfazer.
+
+            Esteve numa tira por cima do campo, a aparecer e a desaparecer, e
+            ficou horrível — uma barra que salta empurra o campo para baixo cada
+            vez que se seleciona um jogador. Aqui é um botão do tamanho dos
+            outros, sempre no mesmo sítio, que mostra a cor armada.
+
+            A cor é **livre**: o que abre é a roda de cor do sistema. Os seis
+            atalhos ao lado não são a lista de cores permitidas — são para quem
+            monta a equipa vermelha vinte vezes não ter de acertar no vermelho
+            vinte vezes.
+
+            Serve duas coisas com o mesmo gesto: com jogadores selecionados
+            pinta-os; sem seleção arma a cor dos próximos. Ver `paintSelected`.
+          */}
+          <div className="relative" ref={picker}>
+            <button
+              type="button"
+              className="ctl-ghost size-8 justify-center px-0"
+              aria-label={pessoasSelecionadas > 0 ? `Cor de ${pessoasSelecionadas} selecionados` : "Cor dos próximos jogadores"}
+              title={pessoasSelecionadas > 0 ? "Pintar quem está selecionado" : "Cor dos próximos jogadores"}
+              aria-expanded={coresAbertas}
+              onClick={() => setCoresAbertas((v) => !v)}
+            >
+              <span className="size-4 rounded-full ring-1 ring-line-strong" style={{ background: color }} />
+            </button>
+            {coresAbertas && (
+              <div className="absolute right-0 top-9 z-10 w-max rounded-[var(--radius-control)] border border-line bg-surface p-2 shadow-lg">
+                <p className="mb-1.5 text-meta text-ink-3">
+                  {pessoasSelecionadas > 0
+                    ? pessoasSelecionadas === 1
+                      ? "Cor deste jogador"
+                      : `Cor de ${pessoasSelecionadas} jogadores`
+                    : "Cor dos próximos jogadores"}
+                </p>
+                <div className="flex items-center gap-1.5">
+                  {/*
+                    A roda de cor do sistema. `<input type="color">` e não um
+                    seletor nosso: é o que o treinador já sabe usar, tem conta-gotas
+                    no Windows e no Mac, e não há nada que escrevêssemos à mão que
+                    ficasse melhor num telemóvel.
+                  */}
+                  <label className="relative size-8 shrink-0 cursor-pointer overflow-hidden rounded-full ring-1 ring-line-strong" title="Escolher uma cor">
+                    <span
+                      className="absolute inset-0"
+                      style={{ background: "conic-gradient(#ef4444,#eab308,#22c55e,#06b6d4,#3b82f6,#a855f7,#ef4444)" }}
+                    />
+                    <span className="absolute inset-[30%] rounded-full ring-1 ring-white/70" style={{ background: color }} />
+                    <input
+                      type="color"
+                      value={color}
+                      aria-label="Escolher uma cor"
+                      /* `onChange` e não `onBlur`: a roda de cor dá pré-visualização
+                         ao vivo, e o treinador quer ver o campo a mudar enquanto
+                         arrasta. O `commit` de cada passo entra no desfazer, que é
+                         o comportamento certo para uma pincelada. */
+                      onChange={(e) => paintSelected(e.target.value)}
+                      /* `blur` é quando o seletor nativo fecha: é aí que a cor
+                         deixa de ser uma passagem e passa a ser uma escolha. */
+                      onBlur={(e) => fixarCor(e.target.value)}
+                      className="absolute inset-0 cursor-pointer opacity-0"
+                    />
+                  </label>
+                  <span className="h-6 w-px bg-line" />
+                  {/*
+                    A fila: as últimas cores usadas, a mais recente à frente. Não é
+                    uma paleta fixa — uma cor escolhida na roda entra aqui e a mais
+                    antiga sai. Ver `coresRecentes`.
+                  */}
+                  {recentes.map((fill) => (
+                    <button
+                      key={fill}
+                      type="button"
+                      aria-label={`Cor ${fill}`}
+                      title={fill}
+                      aria-pressed={color.toLowerCase() === fill}
+                      onClick={() => {
+                        paintSelected(fill);
+                        /* Escolher da fila também a traz para a frente: é assim que
+                           os quatro coletes de um treinador ficam sempre à mão. */
+                        fixarCor(fill);
+                        setCoresAbertas(false);
+                      }}
+                      className={cx(
+                        "size-6 shrink-0 rounded-full transition-transform hover:scale-110",
+                        /* O anel por fora, para não tapar a cor — que é a única coisa
+                           que este botão tem para dizer. */
+                        color.toLowerCase() === fill
+                          ? "ring-2 ring-[var(--color-signal)] ring-offset-2 ring-offset-[var(--color-surface)]"
+                          : "ring-1 ring-line",
+                      )}
+                      style={{ background: fill }}
+                    />
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
           <button type="button" className="ctl-ghost size-8 justify-center px-0" aria-label="Desfazer" title="Desfazer (Ctrl+Z)" onClick={undo} disabled={history.length === 0}>
             <RefreshCw className="size-3.5 -scale-x-100" strokeWidth={1.75} />
           </button>
@@ -1415,8 +1629,19 @@ export function FieldEditor({
                   campo de basquetebol, a bola do botão é a laranja. */}
               <svg viewBox="-3 -3 6 6" className="size-5 shrink-0 rounded" style={{ background: pitchBackground(diagram.field) }}>
                 <g transform="scale(0.9)">
+                  {/* Com o colete armado: a paleta e a tira de cores têm de dizer
+                      a mesma coisa, senão escolhe-se vermelho e vê-se azul. */}
                   <ItemShape
-                    item={{ id: "p", kind, x: 0, y: 0, w: 5, h: 4, label: kind === "player" ? "7" : kind === "opponent" ? "9" : undefined }}
+                    item={{
+                      id: "p",
+                      kind,
+                      x: 0,
+                      y: 0,
+                      w: 5,
+                      h: 4,
+                      ...(PAINTED_ON_STAMP.has(kind) ? { color } : {}),
+                      ...(kind === "player" || kind === "playerBall" ? { label: "7" } : {}),
+                    }}
                     field={diagram.field}
                   />
                 </g>
@@ -1640,12 +1865,6 @@ function ballPositions(f: DiagramFrame, k: number): { x: number; y: number }[] {
 }
 
 /** O número livre seguinte para um jogador acabado de colocar. */
-function nextNumber(items: DiagramItem[], kind: ItemKind): string {
-  const used = new Set(items.filter((i) => i.kind === kind).map((i) => i.label));
-  for (let n = 1; n <= 30; n++) if (!used.has(String(n))) return String(n);
-  return "";
-}
-
 function zoomBy(v: { x: number; y: number; w: number; h: number }, factor: number) {
   const w = Math.min(160, Math.max(18, v.w * factor));
   const h = (w / v.w) * v.h;

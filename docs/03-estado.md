@@ -561,8 +561,8 @@ academias novas** — a criação de academia não o corre sozinha.
 
 `FieldEditor` (SVG, pointer events — funciona em tablet): os quatro terrenos
 nas medidas reais (coordenadas em metros), paleta de elementos
-(jogador, GR, adversário, bola, cone, estaca, barreira, balizas, escada, boneco,
-zona redimensionável, texto), seis tipos de seta com a convenção dos quadros
+(jogador, jogador c/ bola, GR, bola, cone, estaca, barreira, balizas, escada,
+boneco, zona redimensionável, texto), seis tipos de seta com a convenção dos quadros
 táticos (passe a cheio, deslocamento tracejado, condução ondulada, remate duplo,
 pressão pontilhada, cruzamento curvo), seleção múltipla, duplicar, undo/redo
 (Ctrl+Z/Y), zoom com a roda e pan. Tocar num elemento que já existe seleciona e
@@ -574,6 +574,69 @@ com duração própria, e o `DiagramPlayer` anima as posições entre frames por
 interpolação, com reproduzir/pausa/anterior/seguinte. O desenho é JSON opaco
 para o servidor (com tecto de 300 KB); as miniaturas dos cartões são o primeiro
 frame, cortado no servidor.
+
+**A cor do jogador é livre, e o adversário deixou de ser uma peça.** Havia dois
+tipos — `player` e `opponent` — e um treinador disse a coisa óbvia: *"há
+exercícios que utilizo 3 ou 4 cores"*. Um rondo a três equipas, um exercício com
+apoios, uma transição com quem espera: nada disso é "adversário", é um colete
+diferente. Acrescentar `opponent2` e `opponent3` era escrever três vezes a mesma
+peça, por isso a cor passou a ser um **atributo** dela (`DiagramItem.color`, um
+hex) e `opponent` saiu da paleta. O tipo sobrevive só para ler o que está
+guardado: `normalizarDiagrama` traduz-o para jogador de branco à entrada do
+editor, e a base não se mexe — a tradução fica gravada na primeira vez que
+alguém guardar o exercício. Não houve migração de dados de propósito: reescrever
+o JSON de todos os exercícios de todos os clubes para mudar uma palavra é muito
+risco para nenhum ganho.
+
+O seletor é um botão redondo **ao lado do desfazer**, com a cor armada dentro.
+Esteve numa tira por cima do campo, a aparecer quando havia jogadores
+selecionados, e ficou horrível: uma barra que salta empurra o campo para baixo
+cada vez que se toca num jogador. Abre a roda de cor do sistema
+(`<input type="color">`, que tem conta-gotas no Windows e no Mac e funciona no
+telemóvel) e, ao lado, a **fila das últimas cores usadas** — a mais recente à
+frente. Uma cor escolhida na roda entra na fila e a mais antiga sai; escolher uma
+da fila também a traz para a frente, e é assim que os quatro coletes de um
+treinador ficam sempre à mão sem ele configurar nada (`coresRecentes`, tecto de
+8, semeada com seis para o primeiro dia ser igual ao que era). A fila entra no
+`blur` do seletor nativo e não a cada passo do arrasto — a roda dispara
+continuamente para o campo mudar ao vivo, e uma passagem pelo azul a caminho do
+vermelho não é uma escolha. Vive no `localStorage` deste browser e não no
+exercício: é o hábito de quem desenha, não uma propriedade do desenho, e um
+exercício aberto por um terceiro não muda de aspeto. Lê-se defensivamente, porque
+o armazenamento deita excepção numa janela privada e a chave pode ter lá o que
+outra versão escreveu — qualquer problema volta aos seis.
+
+Um gesto, duas coisas: com jogadores selecionados pinta-os, sem seleção arma a
+cor dos próximos.
+
+Três consequências que não se veem no pedido:
+
+- **a tinta do número é calculada** (`inkFor`), porque com uma roda de cor
+  ninguém a pode escolher à mão. E escolher a melhor de duas **não chega**: o
+  varrimento de 5832 cores mostrou tons médios (`#5a9696`) onde nem o branco nem
+  o escuro atingem 4,5:1, porque um tom médio está longe dos dois ao mesmo tempo.
+  Daí o número ser **contornado** com a outra tinta (`haloFor`, `paint-order`),
+  como nas camisolas: a legibilidade passa a depender do contraste entre o número
+  e o contorno, que é sempre 11:1;
+- **o anel de seleção ganhou um halo escuro**. Era um traço amarelo, e isso
+  chegava sobre azul e sobre branco; sobre um colete amarelo desaparecia;
+- **os números contam-se por cor** (`nextNumber`): a equipa vermelha começa no 1
+  mesmo com onze azuis no campo. Era grátis com dois tipos de peça e perdia-se ao
+  contar por tipo. Pintar uma seleção **não** renumera: os números são muitas
+  vezes os das camisolas verdadeiras, e trocar o 8 por 2 porque alguém mudou de
+  colete apagava o que o treinador escreveu à mão.
+
+O guarda-redes fica de fora do carimbo (`PAINTED_ON_STAMP`): nasce sempre
+laranja, porque a cor dele é informação — vê-se num relance quem ele é sem ler
+número nenhum. Mudar-lha à mão continua a dar, e faz falta num exercício com duas
+balizas.
+
+Prova: `npm run test:coletes` (63 verificações), no CI. Guarda duas coisas que se
+partem em silêncio — que um desenho antigo reaberto fica **exactamente** como
+estava, e que o número se lê sobre qualquer cor da roda. Os seis atalhos são
+verificados sob deuteranopia, protanopia e tritanopia simuladas: a primeira
+tentativa tinha um verde escuro que ficava a 27/441 do azul, e foi por isso que o
+verde ficou claro.
 
 **As miniaturas têm moldura própria** (`THUMB_RATIO`, 4:3) e não a forma do
 terreno: um meio campo é vertical (0,77) e um campo inteiro horizontal (1,5), e

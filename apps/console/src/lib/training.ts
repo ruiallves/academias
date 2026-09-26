@@ -420,6 +420,130 @@ export type ItemKind =
   | "zone"
   | "text";
 
+/**
+ * A cor de um jogador — o que era "nós e eles" e passou a ser um colete.
+ *
+ * ## Porquê cores e não mais tipos de peça
+ *
+ * Havia dois tipos, `player` e `opponent`, e um treinador disse a coisa óbvia:
+ * *"há exercícios que utilizo 3 ou 4 cores"*. Um rondó a três equipas, um
+ * exercício com apoios, uma transição com quem espera — nada disso é "adversário",
+ * é um colete diferente. Acrescentar `opponent2`, `opponent3` era escrever três
+ * vezes a mesma peça; a cor é um atributo dela, e por isso é aqui que fica.
+ *
+ * `opponent` deixou de aparecer na paleta por isso mesmo — é um jogador branco, e
+ * `normalizarDiagrama` traduz os desenhos antigos. O tipo sobrevive só para os
+ * ler.
+ *
+ * ## Porque são nomes e não hexadecimais
+ *
+ * Porque um seletor de cor livre dá quinze azuis parecidos e um amarelo que não
+ * se lê. Estas seis são coletes a sério, cada uma com a tinta do número já
+ * escolhida para ler por cima dela, e têm de continuar a ler-se nos três pisos
+ * do editor: relva, pavilhão e o parquet do basquetebol.
+ */
+export type PieceColor = string;
+
+/** O azul, o branco e a laranja que as peças sempre tiveram. */
+export const PLAYER_FILL = "#1d3a5f";
+export const OPPONENT_FILL = "#f4f1ea";
+export const GK_FILL = "#b97324";
+
+/**
+ * As cores que este seletor mostra, e o que as põe lá.
+ *
+ * A cor é livre; estes seis existem porque um treinador que monta a equipa
+ * vermelha vinte vezes não pode ter de acertar no vermelho numa roda de cor
+ * vinte vezes. São coletes a sério, e são escolhidos para **se distinguirem uns
+ * dos outros mesmo para quem tem daltonismo vermelho-verde**: o verde é claro e
+ * não escuro por causa disso, porque um verde escuro ao lado de um vermelho é o
+ * par que cerca de 8% dos homens não separa. Ver `scripts/test-coletes.ts`.
+ */
+export const QUICK_COLORS: { label: string; fill: string }[] = [
+  { label: "Azul", fill: PLAYER_FILL },
+  { label: "Branco", fill: OPPONENT_FILL },
+  { label: "Vermelho", fill: "#b3261e" },
+  { label: "Amarelo", fill: "#ecc02c" },
+  { label: "Verde", fill: "#56c07a" },
+  { label: "Preto", fill: "#26231f" },
+];
+
+/** Quantas cabem na fila. Uma linha do popover, e nada de barra de scroll. */
+export const MAX_RECENTES = 8;
+
+const CHAVE_RECENTES = "academia.quadro.cores";
+
+/** `#abc` ou `#aabbcc`. O que vem do armazenamento não é de confiança. */
+const HEX = /^#(?:[0-9a-f]{3}|[0-9a-f]{6})$/i;
+
+/**
+ * As cores do seletor: as usadas há menos tempo à frente.
+ *
+ * Semeada com os seis atalhos, por isso no primeiro dia é igual ao que era. A
+ * partir daí **organiza-se sozinha**: escolher uma cor na roda põe-na à frente e
+ * empurra a mais antiga para fora, e escolher uma da fila também a traz para a
+ * frente. Quem trabalha com quatro coletes acaba com esses quatro à mão e sem
+ * ter configurado nada.
+ *
+ * Vive no `localStorage` deste browser e não no exercício: é o hábito de quem
+ * desenha, não uma propriedade do desenho — dois treinadores do mesmo clube têm
+ * filas diferentes, e o exercício aberto por um terceiro não muda de aspeto.
+ *
+ * Lê defensivamente porque tudo aqui pode mentir: o `localStorage` deita
+ * excepção numa janela privada, e a chave pode ter lá dentro o que outra versão
+ * escreveu. Qualquer problema devolve os atalhos.
+ */
+export function coresRecentes(): string[] {
+  const semente = QUICK_COLORS.map((c) => c.fill);
+  try {
+    const cru = globalThis.localStorage?.getItem(CHAVE_RECENTES);
+    if (!cru) return semente;
+    const lido: unknown = JSON.parse(cru);
+    if (!Array.isArray(lido)) return semente;
+    const boas = [...new Set(lido.filter((v): v is string => typeof v === "string" && HEX.test(v)).map(normalizarCor))];
+    return boas.length > 0 ? boas.slice(0, MAX_RECENTES) : semente;
+  } catch {
+    return semente;
+  }
+}
+
+/**
+ * Pôr uma cor à frente da fila, e devolver a fila nova.
+ *
+ * Devolve-a em vez de avisar quem quer que seja: quem chama já está a gravar
+ * estado do editor, e um ouvinte global para isto seria mais peças do que o
+ * problema tem. Gravar pode falhar (janela privada, quota) e não falha nada por
+ * causa disso — a fila continua a funcionar em memória até a página fechar.
+ */
+export function guardarCorRecente(cor: PieceColor): string[] {
+  const nova = normalizarCor(cor);
+  if (!HEX.test(nova)) return coresRecentes();
+
+  const fila = [nova, ...coresRecentes().filter((c) => c !== nova)].slice(0, MAX_RECENTES);
+  try {
+    globalThis.localStorage?.setItem(CHAVE_RECENTES, JSON.stringify(fila));
+  } catch {
+    /* Sem sítio para guardar. A fila desta sessão serve na mesma. */
+  }
+  return fila;
+}
+
+/** As peças que são pessoas — as únicas que podem vestir um colete. */
+export const PERSON_KINDS: ReadonlySet<ItemKind> = new Set<ItemKind>(["player", "playerBall", "gk", "opponent"]);
+
+/**
+ * As que **nascem** com o colete armado. O guarda-redes não está aqui.
+ *
+ * Ele tem cor própria — a laranja — e ela é informação: num desenho vê-se num
+ * relance quem é o guarda-redes sem ler número nenhum. Se o carimbo lhe
+ * aplicasse o colete armado, o primeiro guarda-redes de todos os exercícios
+ * passava a nascer azul e essa leitura desaparecia.
+ *
+ * Mudar-lhe a cor **à mão** continua a dar, e faz falta: um exercício com duas
+ * balizas precisa de distinguir os dois guarda-redes.
+ */
+export const PAINTED_ON_STAMP: ReadonlySet<ItemKind> = new Set<ItemKind>(["player", "playerBall"]);
+
 /** Um elemento no campo. Coordenadas em metros de campo: 0–105 × 0–68. */
 export type DiagramItem = {
   id: string;
@@ -433,6 +557,15 @@ export type DiagramItem = {
   rot?: number;
   /** Número do jogador, texto da etiqueta, nome da zona. */
   label?: string;
+  /**
+   * O colete, só nas peças de `PERSON_KINDS`.
+   *
+   * Ausente quer dizer **a cor de sempre daquela peça** — azul no jogador,
+   * laranja no guarda-redes — e não "azul". A diferença importa: sem isto, dar
+   * uma cor por omissão ao guarda-redes pintava de azul todos os que já estão
+   * desenhados.
+   */
+  color?: PieceColor;
 };
 
 export type ArrowKind = "pass" | "run" | "dribble" | "shot" | "press" | "cross";
@@ -486,7 +619,12 @@ export const ITEM_LABEL: Record<ItemKind, string> = {
   text: "Texto",
 };
 
-export const ALL_ITEM_KINDS: ItemKind[] = ["player", "opponent", "gk", "playerBall", "ball", "cone", "pole", "miniGoal", "goal", "barrier", "ladder", "dummy", "zone", "text"];
+/*
+ * `opponent` **não** está aqui, e a falta é a funcionalidade: um adversário é um
+ * jogador de colete branco. O tipo continua a existir para ler os desenhos
+ * antigos — ver `normalizarDiagrama`.
+ */
+export const ALL_ITEM_KINDS: ItemKind[] = ["player", "gk", "playerBall", "ball", "cone", "pole", "miniGoal", "goal", "barrier", "ladder", "dummy", "zone", "text"];
 export const ALL_ARROW_KINDS: ArrowKind[] = ["pass", "run", "dribble", "shot", "press", "cross"];
 
 /**
@@ -517,6 +655,128 @@ export function itemLabel(kind: ItemKind, vocab: EditorVocabulary = DEFAULT_VOCA
 
 export function arrowLabel(kind: ArrowKind, vocab: EditorVocabulary = DEFAULT_VOCABULARY): string {
   return vocab.labels[kind] ?? ARROW_LABEL[kind];
+}
+
+/**
+ * Um desenho lido, com os adversários já traduzidos para jogadores de branco.
+ *
+ * Corre à entrada, uma vez, e não no render: o editor, as miniaturas e o PDF
+ * passam todos a ver só jogadores com cor, e nenhum deles tem de saber que houve
+ * um tipo chamado `opponent`. Um desenho antigo fica igual ao que era — os
+ * adversários já se desenhavam brancos — e passa a ser editável como os outros:
+ * antes, mudar-lhes a cor era impossível porque a cor era o tipo.
+ *
+ * A base não se mexe. O `diagram` é JSON e a tradução fica gravada na primeira vez
+ * que alguem guardar o exercício; até lá, lê-se assim de cada vez. Não houve
+ * migração de dados de propósito: reescrever o JSON de todos os exercícios de
+ * todos os clubes para mudar uma palavra é muito risco para nenhum ganho.
+ */
+export function normalizarItem(item: DiagramItem): DiagramItem {
+  if (item.kind !== "opponent") return item;
+  const { kind: _era, ...resto } = item;
+  return { ...resto, kind: "player", color: item.color ?? OPPONENT_FILL };
+}
+
+export function normalizarDiagrama(d: Diagram): Diagram {
+  if (!d.frames.some((f) => f.items.some((i) => i.kind === "opponent"))) return d;
+  return { ...d, frames: d.frames.map((f) => ({ ...f, items: f.items.map(normalizarItem) })) };
+}
+
+/**
+ * O número seguinte **daquele colete**.
+ *
+ * Contado por cor e não por tipo de peça: um jogador com bola é da mesma equipa
+ * que os outros, e a equipa vermelha começa no 1 mesmo com onze azuis no campo.
+ * O guarda-redes fica de fora da contagem — tem o número dele, e não gasta o 1
+ * da linha.
+ */
+export function nextNumber(items: DiagramItem[], color: PieceColor): string {
+  const mesma = normalizarCor(color);
+  const used = new Set(
+    items
+      .filter((i) => (i.kind === "player" || i.kind === "playerBall") && normalizarCor(i.color ?? PLAYER_FILL) === mesma)
+      .map((i) => i.label),
+  );
+  for (let n = 1; n <= 30; n++) if (!used.has(String(n))) return String(n);
+  return "";
+}
+
+/** `#B3261E` e `#b3261e` são o mesmo colete. */
+export function normalizarCor(cor: PieceColor): string {
+  return cor.trim().toLowerCase();
+}
+
+/**
+ * A cor com que uma peça se desenha, e a tinta do número por cima dela.
+ *
+ * Sem `color` vale a cor histórica da peça: o guarda-redes é laranja, o
+ * adversário é branco, o resto é azul. É o que garante que nada muda de aspecto
+ * num desenho que ninguém tocou.
+ */
+export function coresDaPeca(item: { kind: ItemKind; color?: PieceColor }): {
+  fill: string;
+  ink: string;
+  halo: string;
+} {
+  const fill =
+    item.color ?? (item.kind === "gk" ? GK_FILL : item.kind === "opponent" ? OPPONENT_FILL : PLAYER_FILL);
+  return { fill, ink: inkFor(fill), halo: haloFor(fill) };
+}
+
+export const INK_DARK = "#3d3a34";
+export const INK_LIGHT = "#ffffff";
+
+/**
+ * A tinta do número, **calculada** a partir do colete.
+ *
+ * É isto que torna a cor livre segura. Com uma paleta fixa a tinta escolhia-se à
+ * mão para cada cor; com uma roda de cor, quem escolhesse um amarelo claro
+ * receberia um número branco por cima e o número desaparecia — e o número é
+ * metade do que uma peça diz.
+ *
+ * Escolhe-se, entre o branco e o mesmo tom escuro que as peças claras sempre
+ * usaram, o que contrasta mais, pela fórmula do WCAG. Sobre qualquer cor uma das
+ * duas passa os 4,5:1 — e `test-coletes` prova-o num varrimento de milhares de
+ * cores, em vez de nas poucas dos atalhos.
+ */
+export function inkFor(fill: PieceColor): string {
+  return contrasteWcag(fill, INK_LIGHT) >= contrasteWcag(fill, INK_DARK) ? INK_LIGHT : INK_DARK;
+}
+
+/**
+ * O contorno do número — a outra tinta.
+ *
+ * Existe porque escolher a melhor das duas **não chega**. Foi o varrimento que o
+ * mostrou: num tom médio como `#5a9696` a melhor das duas fica em 3,4:1, e a
+ * outra é pior — há cores onde nenhuma das duas atinge os 4,5:1, e não é por má
+ * escolha, é porque um tom médio está longe do branco e do preto ao mesmo tempo.
+ *
+ * A saída é a que as camisolas usam desde sempre: número contornado. O contorno
+ * cria a aresta que o fundo não dá, e a legibilidade deixa de depender do
+ * contraste entre o número e o colete — passa a depender do contraste entre o
+ * número e o contorno, que é sempre branco contra escuro.
+ */
+export function haloFor(fill: PieceColor): string {
+  return inkFor(fill) === INK_LIGHT ? INK_DARK : INK_LIGHT;
+}
+
+/** Luminância relativa de um `#rrggbb` (ou `#rgb`), como o WCAG a define. */
+function luminancia(hex: string): number {
+  const h = hex.trim().replace("#", "");
+  const largo = h.length === 3 ? h.split("").map((c) => c + c).join("") : h;
+  const canal = (i: number) => {
+    const c = parseInt(largo.slice(i, i + 2), 16) / 255;
+    return c <= 0.03928 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4;
+  };
+  const soma = 0.2126 * canal(0) + 0.7152 * canal(2) + 0.0722 * canal(4);
+  /* Uma cor que não se consiga ler conta como preta: mais vale um número branco
+     por cima de um desenho estranho do que um NaN a apagar a peça. */
+  return Number.isNaN(soma) ? 0 : soma;
+}
+
+export function contrasteWcag(a: string, b: string): number {
+  const [claro, escuro] = [luminancia(a), luminancia(b)].sort((m, n) => n - m);
+  return (claro + 0.05) / (escuro + 0.05);
 }
 
 export function emptyDiagram(field: FieldKind = "f11"): Diagram {

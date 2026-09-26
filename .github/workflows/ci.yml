@@ -66,6 +66,12 @@ jobs:
       - name: O aviso da área nova não é um convite
         run: npm run test:aviso-area --workspace=@academia/api
 
+      # A cor dos jogadores é livre, e por isso a tinta do número é calculada. O
+      # varrimento prova que ela se lê sobre qualquer cor da roda — e que os
+      # desenhos com "adversário" continuam idênticos ao que eram.
+      - name: Os coletes do quadro tático
+        run: npm run test:coletes --workspace=@academia/console
+
       # A coluna do ano de quotas apaga anuidades quando muda. O ida-e-volta
       # exporta a sério e volta a ler com o leitor da importação: uma célula que
       # saísse vazia voltava a entrar como "assume hoje" e refazia o ano a quem
