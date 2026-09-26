@@ -232,14 +232,15 @@ export function FamilyInviteDialog({ onClose }: { onClose: () => void }) {
           <li>1. O pai abre o link no telemóvel e cai na página do clube, que instala a app.</li>
           <li>2. Dentro da app, cria conta — nome, telemóvel, email e palavra-passe.</li>
           <li>
-            3. Identifica o filho pelo <strong className="font-medium text-ink-2">NIF e data de nascimento</strong>. Sem esses
-            dois, o link não liga a criança nenhuma — por isso pode ser partilhado à vontade.
+            3. Identifica o filho pelo <strong className="font-medium text-ink-2">NIF (ou outro documento) e data de nascimento</strong>.
+            Sem esses dois, o link não liga a criança nenhuma, por isso pode ser partilhado à vontade.
           </li>
         </ol>
 
         <p className="text-[11px] leading-relaxed text-ink-4">
           <Clock className="mr-1 inline size-3 align-[-2px]" strokeWidth={1.75} />
-          Atletas sem NIF preenchido na ficha não podem ser reclamados. É o campo <em>NIF</em> em cada atleta.
+          Atletas sem identificação na ficha não podem ser reclamados. É o campo <em>Identificação</em> em cada atleta: o NIF, ou
+          outro documento para quem não tem NIF (a família escolhe "Outro documento" e escreve só o número).
         </p>
       </div>
     </Dialog>

@@ -2,6 +2,7 @@ import { BadRequestException, ForbiddenException, Injectable, NotFoundException 
 import type { DominantSide, RequestStatus, RequestUrgency } from "@prisma/client";
 import { PrismaService } from "../prisma/prisma.service";
 import { can, teamScopeFilter, type RequestContext } from "../common/permissions";
+import { identificacaoNova } from "../academy/identificacao";
 import type {
   AddCandidateDto,
   AddToShortlistDto,
@@ -583,8 +584,8 @@ export class ScoutingWorkflowService {
         throw new BadRequestException("A equipa é de outra modalidade");
       }
 
-      const taxId = dto.taxId.replace(/[\s.]/g, "");
-      if (!/^\d{9}$/.test(taxId)) throw new BadRequestException("O NIF tem nove dígitos");
+      const ident = identificacaoNova(dto);
+      if ("error" in ident) throw new BadRequestException(ident.error);
 
       let athlete: { id: string; name: string };
       try {
@@ -593,7 +594,9 @@ export class ScoutingWorkflowService {
             academyId: ctx.academyId,
             name: p.name,
             birthdate: p.birthdate,
-            taxId,
+            taxId: ident.taxId,
+            idDocNumber: ident.idDocNumber,
+            idDocLabel: ident.idDocLabel,
             status: "ACTIVE",
             ...(p.dominantSide ? { dominantSide: p.dominantSide as DominantSide } : {}),
             ...(dto.squadNumber != null ? { squadNumber: dto.squadNumber } : {}),
@@ -604,6 +607,9 @@ export class ScoutingWorkflowService {
       } catch (error) {
         if (isUniqueViolation(error, "taxId")) {
           throw new BadRequestException("Já existe um atleta com este NIF nesta academia");
+        }
+        if (isUniqueViolation(error, "idDocNumber")) {
+          throw new BadRequestException("Já existe um atleta com este documento nesta academia");
         }
         throw error;
       }

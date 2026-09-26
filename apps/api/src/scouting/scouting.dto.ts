@@ -179,7 +179,10 @@ export class AddCandidateDto {
  */
 export class RecruitDto {
   @IsString() @Length(1, 40) teamId!: string;
-  @Matches(/^\d{9}$/, { message: "O NIF tem nove dígitos" }) taxId!: string;
+  /** O NIF, ou o outro documento para quem não o tem. Um dos dois. Ver `identificacao.ts`. */
+  @IsOptional() @IsString() @Length(0, 20) taxId?: string;
+  @IsOptional() @IsString() @Length(0, 60) idDocLabel?: string;
+  @IsOptional() @IsString() @Length(0, 40) idDocNumber?: string;
   @IsOptional() @IsInt() @Min(0) @Max(999) squadNumber?: number;
   @IsOptional() @IsString() @Length(0, 500) note?: string;
 }

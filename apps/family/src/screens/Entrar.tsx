@@ -4,6 +4,7 @@ import { academySlug, clearInvite, readInvite, saveInvite, saveSlug, type Invite
 import { saveSession, signIn } from "@/lib/session";
 import { cx } from "@/ui";
 import { ClubMark } from "@/ClubMark";
+import { campoDaProva, provaParaApi, provaValida, provaVazia, TipoDeDocumento } from "@/IdentificacaoDoFilho";
 import { ConsentimentoLegal } from "@/screens/ConsentimentoLegal";
 import { RecuperarPalavraPasse } from "@/screens/RecuperarPalavraPasse";
 
@@ -381,13 +382,14 @@ function Escolha({
 
 /** Passo 1: de quem és pai. */
 function Filho({ token, onVoltar, onEncontrado }: { token: string; onVoltar: () => void; onEncontrado: () => void }) {
-  const [taxId, setTaxId] = useState("");
+  /* O NIF, ou outro documento para quem não tem NIF. Ver `IdentificacaoDoFilho`. */
+  const [prova, setProva] = useState(provaVazia);
   const [birthdate, setBirthdate] = useState("");
   const [match, setMatch] = useState<Matched | null>(null);
   const [busy, setBusy] = useState(false);
   const [erro, setErro] = useState<string | null>(null);
 
-  const valido = /^\d{9}$/.test(taxId.replace(/\s/g, "")) && birthdate !== "";
+  const valido = provaValida(prova) && birthdate !== "";
 
   async function procurar(e: FormEvent) {
     e.preventDefault();
@@ -399,12 +401,12 @@ function Filho({ token, onVoltar, onEncontrado }: { token: string; onVoltar: () 
       const res = await fetch(`${API}/api/convite-familia/${encodeURIComponent(token)}/educando`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ taxId: taxId.replace(/\s/g, ""), birthdate }),
+        body: JSON.stringify({ ...provaParaApi(prova), birthdate }),
       });
       const body = (await res.json().catch(() => null)) as (Matched & { message?: string }) | null;
       if (!res.ok) throw new Error(body?.message ?? "Não foi possível confirmar.");
 
-      sessionStorage.setItem(RASCUNHO, JSON.stringify({ taxId: taxId.replace(/\s/g, ""), birthdate }));
+      sessionStorage.setItem(RASCUNHO, JSON.stringify({ ...provaParaApi(prova), birthdate }));
       setMatch({ firstName: body!.firstName, team: body!.team });
     } catch (err) {
       setErro(err instanceof Error ? err.message : "Não foi possível confirmar.");
@@ -433,15 +435,16 @@ function Filho({ token, onVoltar, onEncontrado }: { token: string; onVoltar: () 
 
   return (
     <form onSubmit={procurar} className="space-y-4">
-      <Campo label="NIF do teu filho">
+      {/* Fora do rótulo de propósito: um botão dentro de um <label> não recebe o toque. */}
+      <TipoDeDocumento value={prova} onChange={setProva} />
+
+      <Campo label={prova.tipo === "nif" ? "NIF do teu filho" : "Número do documento do teu filho"}>
         <input
-          value={taxId}
-          onChange={(e) => setTaxId(e.target.value)}
-          inputMode="numeric"
-          maxLength={11}
-          placeholder="123456789"
+          value={prova.valor}
+          onChange={(e) => setProva({ ...prova, valor: e.target.value })}
+          {...campoDaProva(prova)}
           autoFocus
-          className={INPUT}
+          className={cx(INPUT, prova.tipo === "doc" && "uppercase")}
         />
       </Campo>
 
@@ -450,8 +453,9 @@ function Filho({ token, onVoltar, onEncontrado }: { token: string; onVoltar: () 
       </Campo>
 
       <p className="text-[12px] leading-relaxed text-ink-3">
-        É assim que o clube confirma que és tu o encarregado. Se não bater certo, fala com a secretaria — pode ser
-        que o NIF ainda não esteja na ficha dele.
+        {prova.tipo === "nif"
+          ? "É assim que o clube confirma que és tu o encarregado. Se não bater certo, fala com a secretaria. Pode ser que o NIF ainda não esteja na ficha dele."
+          : "Sem NIF português? Escreve o número do documento que deste ao clube (passaporte, título de residência…). Se não bater certo, fala com a secretaria."}
       </p>
 
       {erro && <p className="rounded-[var(--radius-sm)] bg-[#fae9e7] px-3.5 py-2.5 text-[13px] leading-relaxed text-[#a82a20]">{erro}</p>}
@@ -518,7 +522,7 @@ function Dados({
     setErro(null);
     setContaExiste(false);
 
-    const filho = JSON.parse(sessionStorage.getItem(RASCUNHO) ?? "{}") as { taxId?: string; birthdate?: string };
+    const filho = JSON.parse(sessionStorage.getItem(RASCUNHO) ?? "{}") as { taxId?: string; docNumber?: string; birthdate?: string };
 
     try {
       const res = await fetch(`${API}/api/convite-familia/${encodeURIComponent(token)}/registar`, {
@@ -530,7 +534,7 @@ function Dados({
           phone: phone.trim(),
           password,
           relation,
-          taxId: filho.taxId ?? "",
+          ...(filho.docNumber ? { docNumber: filho.docNumber } : { taxId: filho.taxId ?? "" }),
           birthdate: filho.birthdate ?? "",
           acceptLegal: true,
         }),

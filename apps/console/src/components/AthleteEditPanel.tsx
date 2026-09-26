@@ -6,6 +6,7 @@ import type { Athlete } from "@/data/types";
 import { mayReadTaxId, type Session } from "@/lib/permissions";
 import { dialogInputClass } from "./Dialog";
 import { Panel, PanelHead, cx } from "./primitives";
+import { IdentificacaoField, identificacaoInicial, identificacaoOk, identificacaoParaApi } from "./IdentificacaoField";
 
 /**
  * Editar a ficha de um atleta — na própria página, não numa janela.
@@ -42,7 +43,7 @@ export function AthleteEditPanel({
 
   const [name, setName] = useState(athlete.name);
   const [birthdate, setBirthdate] = useState(athlete.birthdate.slice(0, 10));
-  const [taxId, setTaxId] = useState(athlete.taxId ?? "");
+  const [ident, setIdent] = useState(identificacaoInicial(athlete));
   const [email, setEmail] = useState(athlete.email ?? "");
   const [teamId, setTeamId] = useState(athlete.teamId);
   const [position, setPosition] = useState(athlete.position ?? "");
@@ -77,7 +78,7 @@ export function AthleteEditPanel({
   // Obrigatório desde que passou a ser a chave do registo da família. Numa ficha
   // antiga pode estar vazio — e é aqui que se corrige, por isso o formulário
   // exige-o a quem o vê.
-  const nifOk = !vejoNif || /^\d{9}$/.test(taxId.replace(/\s/g, ""));
+  const nifOk = !vejoNif || identificacaoOk(ident);
   const heightOk = heightCm === "" || (Number(heightCm) >= 50 && Number(heightCm) <= 250);
   const weightOk = weightKg === "" || (Number(weightKg) >= 20 && Number(weightKg) <= 200);
   const valid = name.trim().length >= 2 && birthdate !== "" && teamId !== "" && nifOk && heightOk && weightOk;
@@ -101,7 +102,7 @@ export function AthleteEditPanel({
         name: name.trim(),
         birthdate,
         teamId,
-        ...(vejoNif ? { taxId: taxId.replace(/\s/g, "") } : {}),
+        ...(vejoNif ? identificacaoParaApi(ident, "editar") : {}),
         // Vazio apaga: o que se vê é o que fica.
         email: email.trim().toLowerCase(),
         position: position.trim(),
@@ -151,35 +152,17 @@ export function AthleteEditPanel({
               <input type="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="atleta@mail.pt" className={dialogInputClass} />
             </Field>
 
-            <div className="grid grid-cols-2 gap-3">
-              <Field label="Data de nascimento">
-                <input
-                  type="date"
-                  value={birthdate}
-                  onChange={(e) => setBirthdate(e.target.value)}
-                  className={dialogInputClass}
-                />
-              </Field>
+            <Field label="Data de nascimento">
+              <input
+                type="date"
+                value={birthdate}
+                onChange={(e) => setBirthdate(e.target.value)}
+                className={dialogInputClass}
+              />
+            </Field>
 
-              {vejoNif && (
-                <Field label="NIF" hint="obrigatório">
-                  <input
-                    value={taxId}
-                    onChange={(e) => setTaxId(e.target.value)}
-                    inputMode="numeric"
-                    placeholder="123456789"
-                    className={cx(dialogInputClass, !nifOk && taxId !== "" && "border-risk")}
-                  />
-                </Field>
-              )}
-            </div>
-
-            {!nifOk && (
-              <p className="text-meta leading-relaxed text-ink-3">
-                São nove dígitos. É com o NIF e a data de nascimento que a família se liga a este atleta ao
-                instalar a app — sem ele, o link que a academia manda não encontra ninguém.
-              </p>
-            )}
+            {/* O NIF, ou outro documento para quem não o tem. Ver `IdentificacaoField`. */}
+            {vejoNif && <IdentificacaoField value={ident} onChange={setIdent} />}
           </div>
         </Panel>
 

@@ -133,6 +133,8 @@ export async function exportarFichaDeAtleta(athlete: Athlete, session: Session, 
       ["Número", athlete.squadNumber ? String(athlete.squadNumber) : null],
       // O NIF só vem do servidor a quem tem `family:read` — ver o tipo `Athlete`.
       ["Contribuinte", athlete.taxId],
+      // O outro documento, para quem não tem NIF. Mesma regra de leitura.
+      [athlete.idDocLabel || "Outro documento", athlete.idDocNumber],
       ["Na academia desde", data(athlete.joinedAt)],
       ["E-mail do atleta", athlete.email],
     ],

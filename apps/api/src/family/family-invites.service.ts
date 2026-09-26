@@ -7,6 +7,7 @@ import { SupabaseAccountsService } from "../auth/supabase-accounts.service";
 import { MailClient } from "../mail/mail.client";
 import { familyApprovedEmail, familyInviteEmail } from "../mail/mail.templates";
 import { can, type RequestContext } from "../common/permissions";
+import { DOCUMENTO_VALIDO, NIF_VALIDO, normalizarDocumento, normalizarNif } from "../academy/identificacao";
 
 /**
  * O link que traz as famílias para a app.
@@ -61,13 +62,18 @@ export type RegisterInput = {
   phone: string;
   password: string;
   relation: string;
-  taxId: string;
+  /** O NIF do educando, ou o número de outro documento (`docNumber`). Um dos dois. */
+  taxId?: string;
+  docNumber?: string;
   birthdate: string;
   /** Aceita os documentos legais em vigor para as famílias. */
   acceptLegal?: boolean;
 };
 
 export type RequestMeta = { ip?: string; userAgent?: string };
+
+/** Com que é que a família identifica o educando: o NIF, ou o número de outro documento. */
+export type ProvaDoEducando = { taxId?: string; docNumber?: string };
 
 @Injectable()
 export class FamilyInvitesService {
@@ -270,9 +276,9 @@ export class FamilyInvitesService {
    * e pouco de mais para servir de alguma coisa a quem esteja a sondar. O nome
    * completo, a idade exacta e tudo o resto ficam para depois de a conta existir.
    */
-  async findAthlete(token: string, taxId: string, birthdate: string) {
+  async findAthlete(token: string, prova: ProvaDoEducando, birthdate: string) {
     const academyId = await this.academyOf(token);
-    const athleteId = await this.matchAthlete(academyId, taxId, birthdate);
+    const athleteId = await this.matchAthlete(academyId, prova, birthdate);
 
     return this.prisma.runAs(academyId, async (db) => {
       const athlete = await db.athlete.findFirst({
@@ -312,7 +318,7 @@ export class FamilyInvitesService {
     const name = dto.name.trim();
     if (name.length < 2) throw new BadRequestException("Falta o teu nome");
 
-    const athleteId = await this.matchAthlete(academyId, dto.taxId, dto.birthdate);
+    const athleteId = await this.matchAthlete(academyId, dto, dto.birthdate);
 
     // Os termos antes da conta — a conta no Supabase não entra em rollback nenhum.
     const docs = await this.legal.assertSignupConsent(["FAMILY"], dto, academyId);
@@ -431,10 +437,10 @@ export class FamilyInvitesService {
    * própria app diz isso no seletor de educando. A prova é a mesma do registo:
    * NIF e data de nascimento. Ter conta não dá direito a reclamar crianças.
    */
-  async addChild(ctx: RequestContext, taxId: string, birthdate: string) {
+  async addChild(ctx: RequestContext, prova: ProvaDoEducando, birthdate: string) {
     if (ctx.role !== "GUARDIAN") throw new ForbiddenException("Só encarregados de educação");
 
-    const athleteId = await this.matchAthlete(ctx.academyId, taxId, birthdate);
+    const athleteId = await this.matchAthlete(ctx.academyId, prova, birthdate);
 
     return this.prisma.runAs(ctx.academyId, async (db) => {
       await db.guardianLink.upsert({
@@ -617,16 +623,31 @@ export class FamilyInvitesService {
    * A mensagem de erro é a mesma para todos os enganos possíveis, e é essa
    * indiferença que impede isto de servir para confirmar NIFs de crianças.
    */
-  private async matchAthlete(academyId: string, taxId: string, birthdate: string): Promise<string> {
-    const nif = (taxId ?? "").replace(/\s/g, "");
-    if (!/^\d{9}$/.test(nif)) throw new BadRequestException("O NIF tem nove dígitos");
-
+  private async matchAthlete(academyId: string, prova: ProvaDoEducando, birthdate: string): Promise<string> {
     const date = new Date(birthdate);
     if (Number.isNaN(date.getTime())) throw new BadRequestException("Data de nascimento inválida");
 
-    const rows = await this.prisma.$queryRaw<{ athlete: string | null }[]>`
-      SELECT app.match_athlete_for_family(${academyId}, ${nif}, ${birthdate}::date) AS athlete
-    `;
+    /*
+     * O NIF, ou o outro documento. A família diz só o número; o que é o
+     * documento é do clube. Cada um tem a sua função na base, com as mesmas
+     * regras: um id ou nada, e a mesma resposta para todos os enganos.
+     */
+    const doc = normalizarDocumento(prova.docNumber);
+    let rows: { athlete: string | null }[];
+    if (doc) {
+      if (!DOCUMENTO_VALIDO.test(doc)) {
+        throw new BadRequestException("O número do documento tem de 3 a 30 letras ou algarismos");
+      }
+      rows = await this.prisma.$queryRaw<{ athlete: string | null }[]>`
+        SELECT app.match_athlete_by_document(${academyId}, ${doc}, ${birthdate}::date) AS athlete
+      `;
+    } else {
+      const nif = normalizarNif(prova.taxId);
+      if (!NIF_VALIDO.test(nif)) throw new BadRequestException("O NIF tem nove dígitos");
+      rows = await this.prisma.$queryRaw<{ athlete: string | null }[]>`
+        SELECT app.match_athlete_for_family(${academyId}, ${nif}, ${birthdate}::date) AS athlete
+      `;
+    }
     const athleteId = rows[0]?.athlete;
     if (!athleteId) throw new NotFoundException(NOT_FOUND);
     return athleteId;

@@ -2,6 +2,7 @@ import { BadRequestException, ForbiddenException, Injectable, NotFoundException 
 import { PrismaService, type ScopedClient } from "../prisma/prisma.service";
 import { athleteScopeFilter, athleteTeamScopeWhere, can, type RequestContext } from "../common/permissions";
 import { nomeDeQuemMexe, registarAlteracoes } from "../common/historico";
+import { AreaAbertaService } from "../mail/area-aberta.service";
 
 /**
  * Ligar um encarregado de educação que **já tem conta** a um atleta.
@@ -35,7 +36,10 @@ import { nomeDeQuemMexe, registarAlteracoes } from "../common/historico";
  */
 @Injectable()
 export class GuardianLinksService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly aviso: AreaAbertaService,
+  ) {}
 
   /**
    * As contas do clube que podem passar a encarregadas.
@@ -171,7 +175,7 @@ export class GuardianLinksService {
     if (!can(ctx, "family:write")) throw new ForbiddenException("Sem permissão para gerir famílias");
     const relation = relacao.trim() || "Encarregado";
 
-    return this.prisma.runAs(ctx.academyId, async (db) => {
+    const feito = await this.prisma.runAs(ctx.academyId, async (db) => {
       await this.assertAtletaVisivel(db, ctx, athleteId);
 
       /*
@@ -217,8 +221,27 @@ export class GuardianLinksService {
         await nomeDeQuemMexe(db, ctx),
       );
 
-      return { ok: true as const, membershipId: membership.id, name: conta.name, email: conta.email ?? null, relation };
+      return {
+        ok: true as const,
+        membershipId: membership.id,
+        name: conta.name,
+        email: conta.email ?? null,
+        relation,
+        areaNova: membership.areaNova,
+      };
     });
+
+    /*
+     * Só quando a área de família é nova para esta pessoa, e só depois de a
+     * transacção fechar. Não houve convite — a conta já existia — e sem isto
+     * ninguém lhe dizia que passou a ter por onde acompanhar o educando.
+     */
+    if (feito.areaNova) {
+      void this.aviso.avisar(ctx.academyId, "family", { name: feito.name, email: feito.email });
+    }
+
+    const { areaNova: _ignora, ...resposta } = feito;
+    return resposta;
   }
 
   /** Desligar — o engano que se corrige, e o encarregado que deixou de o ser. */
@@ -277,23 +300,35 @@ export class GuardianLinksService {
   }
 
   /** A membership `GUARDIAN` desta pessoa, viva. Cria-a, ou acorda a que existir. */
-  private async membershipDeFamilia(db: ScopedClient, academyId: string, userId: string) {
+  private async membershipDeFamilia(
+    db: ScopedClient,
+    academyId: string,
+    userId: string,
+  ): Promise<{ id: string; areaNova: boolean }> {
     const existente = await db.membership.findFirst({
       where: { academyId, userId, role: "GUARDIAN" },
       select: { id: true, isActive: true },
     });
+    /*
+     * `areaNova` é o que decide se a pessoa é avisada. Acrescentar-lhe um segundo
+     * educando não lhe abre área nenhuma — ela já lá entra — e mandar-lhe "tens
+     * uma área nova" a cada filho era transformar um aviso útil em ruído.
+     */
     if (!existente) {
-      return db.membership.create({
+      const criada = await db.membership.create({
         data: { academyId, userId, role: "GUARDIAN", isActive: true },
         select: { id: true },
       });
+      return { id: criada.id, areaNova: true };
     }
-    if (existente.isActive) return existente;
-    return db.membership.update({
+    if (existente.isActive) return { id: existente.id, areaNova: false };
+    const reactivada = await db.membership.update({
       where: { id: existente.id },
       data: { isActive: true, approvalRequestedAt: null },
       select: { id: true },
     });
+    /* Reactivar também abre: a área tinha desaparecido da app dela. */
+    return { id: reactivada.id, areaNova: true };
   }
 
   /** Os nomes, por ordem — é assim que o histórico da ficha os mostra. */

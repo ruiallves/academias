@@ -29,10 +29,19 @@ export const COLUMNS = [
   { key: "name", header: "Nome", required: true, example: "Martim Bragança" },
   { key: "birthdate", header: "Data de nascimento", required: true, example: "2015-03-14" },
   { key: "team", header: "Equipa", required: true, example: "Sub-11 Futebol" },
-  // Opcional, mas é a coluna que decide se a família consegue instalar a app e
-  // ligar-se a este atleta. Vem logo a seguir às obrigatórias por isso mesmo:
-  // quem preenche o ficheiro tem de a ver antes de decidir saltá-la.
-  { key: "taxId", header: "NIF", required: true, example: "123456789" },
+  /*
+   * A identificação: o NIF, ou outro documento para quem não o tem (atletas
+   * estrangeiros). Cada linha precisa de um dos dois, e é com ele que a família
+   * se liga a este atleta na app. O NIF deixou de ser uma coluna obrigatória
+   * para uma folha só de estrangeiros poder vir sem ela; as folhas antigas, que
+   * a têm, continuam a entrar como sempre.
+   *
+   * "Outro documento" é o nome (só o clube o vê: Passaporte, Título de
+   * residência); "N.º do documento" é a identificação.
+   */
+  { key: "taxId", header: "NIF", required: false, example: "123456789" },
+  { key: "idDocLabel", header: "Outro documento", required: false, example: "" },
+  { key: "idDocNumber", header: "N.º do documento", required: false, example: "" },
   // O email do próprio atleta. Opcional — e é a coluna que faz sair o convite
   // da app ao importar: quem a tem preenchida recebe o email a seguir.
   { key: "email", header: "Email", required: false, example: "martim@mail.pt" },
@@ -60,6 +69,9 @@ export type ParsedRow = {
    */
   teamId?: string;
   taxId?: string;
+  /** Outro documento, para quem não tem NIF. Ver a nota nas colunas. */
+  idDocLabel?: string;
+  idDocNumber?: string;
   email?: string;
   position?: string;
   squadNumber?: number;
@@ -119,6 +131,9 @@ export async function buildTemplate(): Promise<Blob> {
     [""],
     ["Uma equipa que ainda não exista pode ser escrita à mesma."],
     ["Ao importar, perguntamos se a queres criar."],
+    [""],
+    ["Atleta sem NIF? Deixa o NIF vazio e escreve o documento e o número"],
+    ["nas colunas Outro documento e N.º do documento (por exemplo Passaporte, AB1234567)."],
     [""],
     ["O mesmo vale para a coluna Posição: escreve a que o clube usa."],
     ["Se a modalidade ainda não a tiver, perguntamos se a queres acrescentar."],
@@ -198,13 +213,28 @@ export async function parseFile(file: File): Promise<ParseResult> {
 
     const row: ParsedRow = { line, name, birthdate, teamName, ...(team ? { teamId: team.id } : {}) };
 
+    /*
+     * O NIF ou o outro documento, obrigatório como na inscrição à mão. Uma folha
+     * importada sem identificação dava um plantel inteiro que nenhuma família
+     * consegue reclamar, e a correcção seria depois, ficha a ficha.
+     */
     const taxId = get("NIF").replace(/[\s.]/g, "");
-    // Obrigatório, como na inscrição à mão. Uma folha importada sem NIF dava um
-    // plantel inteiro que nenhuma família consegue reclamar — e a correcção seria
-    // depois, ficha a ficha.
-    if (!taxId) return void errors.push({ line, name, error: "NIF em falta" });
-    if (!/^\d{9}$/.test(taxId)) return void errors.push({ line, name, error: "NIF inválido — são nove dígitos" });
-    row.taxId = taxId;
+    const idDocNumber = get("N.º do documento").toUpperCase().replace(/[\s.\-/]/g, "");
+    if (!taxId && !idDocNumber) {
+      return void errors.push({ line, name, error: "Falta o NIF ou o número de outro documento" });
+    }
+    if (taxId) {
+      if (!/^\d{9}$/.test(taxId)) return void errors.push({ line, name, error: "NIF inválido, são nove dígitos" });
+      row.taxId = taxId;
+    }
+    if (idDocNumber) {
+      if (!/^[A-Z0-9]{3,30}$/.test(idDocNumber)) {
+        return void errors.push({ line, name, error: "N.º do documento inválido, de 3 a 30 letras ou algarismos" });
+      }
+      row.idDocNumber = idDocNumber;
+      const idDocLabel = get("Outro documento");
+      if (idDocLabel) row.idDocLabel = idDocLabel.slice(0, 60);
+    }
 
     // O email, quando vem. Um endereço mal escrito não entra: o convite ia
     // sair para lado nenhum e a ficha ficava a dizer que foi enviado.

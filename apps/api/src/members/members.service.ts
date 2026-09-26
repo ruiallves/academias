@@ -7,6 +7,7 @@ import { can, type RequestContext } from "../common/permissions";
 import { CARD_QR_PREFIX } from "../club-app/club-app.service";
 import { MemberInvitesService } from "./member-invites.service";
 import { ligarFichaAConta } from "./member-account-link";
+import { AreaAbertaService } from "../mail/area-aberta.service";
 import { nomeDeQuemMexe, registarAlteracoes } from "../common/historico";
 import { partesNoFuso } from "../common/fuso";
 import { aberturaAnual, gerarQuotas, periodoCorrente, periodoDaQuota, refazerAnoDeQuotas, situacaoDeQuotas } from "./member-fees.service";
@@ -39,6 +40,7 @@ export class MembersService {
     private readonly auth: AuthService,
     private readonly invites: MemberInvitesService,
     private readonly storage: StorageService,
+    private readonly aviso: AreaAbertaService,
   ) {}
 
   /* ---------------------------------------------------------------------- */
@@ -396,6 +398,13 @@ export class MembersService {
   async update(ctx: RequestContext, id: string, dto: MemberUpdateDto) {
     this.mustWrite(ctx);
 
+    /*
+     * Quem a ficha ganhou por dono, se ganhou algum. Vive **fora** do `runAs`
+     * porque o aviso só pode sair depois de a transacção fechar: um email que
+     * anuncia uma área que um rollback desfez não volta atrás.
+     */
+    let ligado: { userId: string; name: string; email: string } | null = null;
+
     return this.prisma.runAs(ctx.academyId, async (db) => {
       // O antes, para o histórico da ficha (ver `common/historico.ts`).
       const member = await db.member.findFirst({
@@ -528,7 +537,7 @@ export class MembersService {
           select: { id: true, email: true, userId: true },
         });
         /* Um email novo pode ser o de uma conta deste clube — ver `create`. */
-        if (dto.email !== undefined) await ligarFichaAConta(db, gravado);
+        if (dto.email !== undefined) ligado = await ligarFichaAConta(db, gravado);
 
         // O histórico da ficha: quem mudou o quê. Ver `common/historico.ts`.
         /*
@@ -606,6 +615,9 @@ export class MembersService {
       /* Quem aderiu pelo site recebe o convite quando o clube o aceita —
          sem segurar a resposta, como na criação. */
       if (r.aprovadoAgora) void this.invites.enviarSePossivel(ctx.academyId, id);
+      /* E quem ganhou a área de sócio por o email corrigido ser o da conta dele
+         fica a saber — não houve convite. Ver `AreaAbertaService`. */
+      if (ligado) void this.aviso.avisar(ctx.academyId, "member", ligado);
       return { ok: true as const };
     });
   }
@@ -730,6 +742,8 @@ export class MembersService {
     this.mustWrite(ctx);
 
     const now = new Date();
+    /* Fora do `runAs` — ver a nota em `update`. */
+    let ligado: { userId: string; name: string; email: string } | null = null;
 
     /*
      * Um sócio sem contacto nenhum é uma linha que ninguém consegue usar.
@@ -831,7 +845,7 @@ export class MembersService {
          * a seguir não sai (`preparar` recusa fichas com dono): não se manda
          * "cria a tua conta" a quem já a tem.
          */
-        await ligarFichaAConta(db, member);
+        ligado = await ligarFichaAConta(db, member);
 
         return { id: member.id, name: member.name, number: member.number };
       } catch (error) {
@@ -854,6 +868,13 @@ export class MembersService {
        * inscrita. Ver `MemberCreateDto.sendInvite`.
        */
       if (dto.sendInvite !== false) void this.invites.enviarSePossivel(ctx.academyId, member.id);
+      /*
+       * E se a ficha se colou a uma conta que já existia, não houve convite
+       * nenhum: o aviso da área nova toma o lugar dele. Respeita o mesmo
+       * `sendInvite`, porque quem carrega a ficha antes de a pessoa saber que vai
+       * ser inscrita também não quer que ela receba isto.
+       */
+      if (ligado && dto.sendInvite !== false) void this.aviso.avisar(ctx.academyId, "member", ligado);
       return member;
     });
   }
@@ -914,8 +935,16 @@ export class MembersService {
     if (rows.length === 0) throw new BadRequestException("A folha não tem linhas");
 
     const now = new Date();
+    /*
+     * As fichas da folha que se colaram a contas que já existiam.
+     *
+     * Fora do `runAs` e avisadas **depois** dele, e aqui isso não é um detalhe:
+     * a importação é tudo-ou-nada, e uma folha que rebenta na última linha volta
+     * atrás. Trezentos emails a anunciar áreas que deixaram de existir não voltam.
+     */
+    const ligados: { userId: string; name: string; email: string }[] = [];
 
-    return this.prisma.runAs(ctx.academyId, async (db) => {
+    const resultado = await this.prisma.runAs(ctx.academyId, async (db) => {
       const tiers = await db.memberTier.findMany({
         where: { archivedAt: null },
         /* `billing` porque a coluna do ano de quotas só mexe em quem é anual. */
@@ -1256,7 +1285,10 @@ export class MembersService {
          * sócios), **depois** os convites: uma ficha com dono não gera convite,
          * e é assim que ninguém recebe "cria a tua conta" tendo-a já.
          */
-        for (const m of criados) await ligarFichaAConta(db, m);
+        for (const m of criados) {
+          const c = await ligarFichaAConta(db, m);
+          if (c) ligados.push(c);
+        }
         for (const m of criados) void this.invites.enviarSePossivel(ctx.academyId, m.id);
       }
 
@@ -1268,6 +1300,17 @@ export class MembersService {
         duplicates,
       };
     });
+
+    /*
+     * Os avisos das áreas abertas, com a folha já dentro. Respeitam o mesmo
+     * interruptor dos convites: um clube que carrega o livro antigo sem querer
+     * mandar correio nesse dia também não quer estes.
+     */
+    if (opts.enviarConvites && ligados.length > 0) {
+      void this.aviso.avisarMuitos(ctx.academyId, "member", ligados);
+    }
+
+    return resultado;
   }
 
   /* ---------------------------------------------------------------------- */

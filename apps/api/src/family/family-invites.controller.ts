@@ -60,11 +60,22 @@ class SendFamilyInviteDto {
   recipients!: FamilyRecipientDto[];
 }
 
-/** As duas provas. Nunca uma só — ver `FamilyInvitesService`. */
+/**
+ * As duas provas. Nunca uma só — ver `FamilyInvitesService`.
+ *
+ * A primeira é o NIF **ou** o número de outro documento, para os atletas sem
+ * NIF. A família não diz qual é o documento, só o número: o nome é do clube.
+ */
 class IdentifyChildDto {
+  @IsOptional()
   @IsString()
-  @Matches(/^\d{9}$/, { message: "O NIF tem nove dígitos" })
-  taxId!: string;
+  @Length(0, 20)
+  taxId?: string;
+
+  @IsOptional()
+  @IsString()
+  @Length(0, 40)
+  docNumber?: string;
 
   @IsISO8601()
   birthdate!: string;
@@ -163,7 +174,7 @@ export class FamilyInviteController {
   @Throttle({ default: { ttl: 60_000, limit: 10 } })
   @Post("educandos")
   addChild(@Req() req: AuthedRequest, @Body() body: IdentifyChildDto) {
-    return this.invites.addChild(req.ctx, body.taxId, body.birthdate);
+    return this.invites.addChild(req.ctx, body, body.birthdate);
   }
 }
 
@@ -223,7 +234,7 @@ export class FamilySignupController {
   @Throttle({ default: { ttl: 60_000, limit: 10 } })
   @Post("api/convite-familia/:token/educando")
   find(@Param("token") token: string, @Body() body: IdentifyChildDto) {
-    return this.invites.findAthlete(token, body.taxId, body.birthdate);
+    return this.invites.findAthlete(token, body, body.birthdate);
   }
 
   /** Criar a conta e ligá-la ao educando. Devolve a sessão — a app entra já dentro. */

@@ -8,10 +8,13 @@ import { randomInt } from "node:crypto";
  * O clube via o movimento na euPago e não sabia de quem era: o que seguia como
  * `identifier` era o id do Payment (`cmf3x…`). Agora segue isto, que se lê:
  *
- *     TIPO-MES-ATLETAS-PAGADOR-ID
- *     MENS-SET26-JOAO_SILVA-MARIA_SILVA-7K2F9Q
- *     QUOTA-SET26_A_DEZ26-RUI_COSTA-RUI_COSTA-H8M3PX
+ *     CLUBE-TIPO-MES-ATLETAS-PAGADOR-ID
+ *     LIFE_CLUB-MENS-SET26-JOAO_SILVA-MARIA_SILVA-7K2F9Q
+ *     LIFE_CLUB-QUOTA-SET26_A_DEZ26-RUI_COSTA-RUI_COSTA-H8M3PX
  *
+ * - **CLUBE**: o nome curto do clube (`Academy.shortName`), até
+ *   `MAXIMO_CLUBE` caracteres. À cabeça, porque no backoffice da euPago os
+ *   movimentos de vários clubes aparecem juntos e é por ele que se separam.
  * - **TIPO**: `MENS` (mensalidade), `EXTRA` (equipamento, torneio, viagem…),
  *   `QUOTA` (quota de sócio). Um pagamento com coisas de tipos diferentes é
  *   `VARIOS`.
@@ -30,7 +33,8 @@ import { randomInt } from "node:crypto";
  * que qualquer sistema aceita: maiúsculas sem acentos, algarismos, `-` e `_`,
  * e no máximo `MAXIMO` caracteres. Quando não cabe, encurta-se pela ordem que
  * menos custa ler: atletas só com o primeiro nome, depois só quantos são,
- * depois o pagador cortado. O ID nunca se corta: é o que o torna único.
+ * depois o pagador cortado. O clube e o ID nunca saem: o clube diz de quem é
+ * o dinheiro, o ID é o que o torna único.
  */
 
 export type TipoDePagamento = "MENS" | "EXTRA" | "QUOTA";
@@ -44,6 +48,9 @@ export type ItemPago = {
 };
 
 export const MAXIMO = 64;
+
+/** O nome do clube não ocupa mais do que isto; corta-se pela palavra. */
+export const MAXIMO_CLUBE = 16;
 
 const MESES = ["JAN", "FEV", "MAR", "ABR", "MAI", "JUN", "JUL", "AGO", "SET", "OUT", "NOV", "DEZ"];
 
@@ -106,14 +113,37 @@ function meses(periodos: string[]): string {
   return `${unicos.length}MESES`;
 }
 
-export function montarIdentificador(itens: ItemPago[], pagador: string | null | undefined, sufixo = sufixoAleatorio()): string {
+/**
+ * "Life Club" → LIFE_CLUB; "Grupo Desportivo de Fafe" → GRUPO_DESPORTIVO.
+ * Corta-se à palavra enquanto couber, e só a meio de uma palavra quando a
+ * primeira sozinha já não cabe.
+ */
+export function nomeDoClube(clube: string | null | undefined): string {
+  const p = palavras(clube ?? "");
+  let out = "";
+  for (const w of p) {
+    const junto = out ? `${out}_${w}` : w;
+    if (junto.length > MAXIMO_CLUBE) break;
+    out = junto;
+  }
+  return out || (p[0] ?? "").slice(0, MAXIMO_CLUBE);
+}
+
+export function montarIdentificador(
+  itens: ItemPago[],
+  pagador: string | null | undefined,
+  /** O nome curto do clube (`Academy.shortName`). */
+  clube: string | null | undefined,
+  sufixo = sufixoAleatorio(),
+): string {
   const tipos = [...new Set(itens.map((i) => i.tipo))];
   const tipo = tipos.length === 1 ? tipos[0] : "VARIOS";
   const quando = meses(itens.map((i) => i.periodo)) || "SEMMES";
   const nomes = [...new Set(itens.map((i) => i.nome.trim()).filter(Boolean))];
 
   const quem = nomeCurto(pagador ?? "") || "SEM_NOME";
-  const montar = (atletas: string, pagou: string) => [tipo, quando, atletas || "SEM_NOME", pagou, sufixo].join("-");
+  const doClube = nomeDoClube(clube) || "CLUBE";
+  const montar = (atletas: string, pagou: string) => [doClube, tipo, quando, atletas || "SEM_NOME", pagou, sufixo].join("-");
 
   const completos = nomes.map(nomeCurto).filter(Boolean).join("_E_");
   let id = montar(completos, quem);

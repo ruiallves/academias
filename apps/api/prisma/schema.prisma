@@ -888,7 +888,18 @@ model Athlete {
   /// Um atleta sem NIF é um atleta que nenhuma família consegue reclamar na app, e
   /// a academia só descobre isso quando o pai telefona.
   ///
+  /// Nulo também quando o atleta se identifica por outro documento (ver abaixo):
+  /// cada atleta tem de ter o NIF **ou** o outro documento.
   taxId String?
+
+  /// Outro documento de identificação, para quem não tem NIF (atletas
+  /// estrangeiros). O nome é só para o clube ("Passaporte", "Título de
+  /// residência"); a família nunca o escreve, identifica o filho pelo número.
+  idDocLabel  String?
+  /// O número, normalizado: maiúsculas, sem espaços, pontos nem traços. Único
+  /// por academia, como o NIF, e a mesma prova na app: número + data de
+  /// nascimento. Ver `app.match_athlete_by_document`.
+  idDocNumber String?
 
   heightCm     Int?
   weightKg     Decimal?      @db.Decimal(4, 1)
@@ -952,6 +963,7 @@ model Athlete {
   aiIdentities   PlayerIdentity[]
 
   @@unique([academyId, taxId])
+  @@unique([academyId, idDocNumber])
   @@index([academyId])
   @@index([academyId, status])
 }

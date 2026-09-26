@@ -20,7 +20,14 @@ import type { Athlete } from "@/data/types";
  *
  * Quem convida é quem gere o acesso das famílias (`family:write`): a conta de
  * um atleta — muitas vezes menor — é um acto administrativo. O email tem de
- * ser **do próprio**: com o do pai, a conta do pai ficava com a área "Atleta".
+ * ser **do próprio**, e continua a ser essa a instrução no formulário; com o do
+ * encarregado não acontece nada, porque o servidor recusa ligar uma ficha à
+ * conta de quem é encarregado dela (ver `athlete-account-link.ts`), mas o
+ * convite sai para o endereço errado e a ficha fica à espera.
+ *
+ * Carregar no botão pode não mandar email nenhum: se aquele email já tem conta
+ * neste clube, a ficha liga-se na hora e o painel di-lo. Foi pedido assim —
+ * quem já entrou uma vez na app não volta a ser convidado.
  */
 export function AppDoAtletaPanel({ athlete }: { athlete: Athlete }) {
   const { session } = useSession();
@@ -43,7 +50,12 @@ export function AppDoAtletaPanel({ athlete }: { athlete: Athlete }) {
     }
   }
 
-  const convidar = async () => `Convite enviado para ${(await inviteAthlete(athlete.id)).email}.`;
+  const convidar = async () => {
+    const r = await inviteAthlete(athlete.id);
+    return r.linked
+      ? `${r.email} já tinha conta neste clube: a ficha ficou ligada e não saiu convite.`
+      : `Convite enviado para ${r.email}.`;
+  };
   const desligar = async () => {
     if (!confirm("Desligar a conta desta ficha? O atleta deixa de ver a área de atleta na app. Um convite novo volta a ligá-la.")) {
       return "Ficou como estava.";

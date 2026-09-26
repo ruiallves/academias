@@ -258,6 +258,13 @@ export type Athlete = {
    */
   taxId?: string;
   /**
+   * Outro documento, para quem não tem NIF (atletas estrangeiros). O nome é só
+   * do clube; o número é a identificação, e é com ele que a família reclama o
+   * atleta na app. Chega nas mesmas condições do NIF.
+   */
+  idDocLabel?: string;
+  idDocNumber?: string;
+  /**
    * A equipa. **Vazio quando não tem nenhuma** — e isso acontece a sério:
    * apagar uma equipa deixa os atletas dela sem ligação a plantel nenhum.
    *

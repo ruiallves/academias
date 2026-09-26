@@ -5,7 +5,8 @@ import { apiPost } from "@/lib/http";
 import { signOut } from "@/lib/session";
 import { resetOnboarding } from "@/lib/onboarding";
 import { NotificationCard } from "@/NotificationCard";
-import { Avatar, Label } from "@/ui";
+import { Avatar, Label, cx } from "@/ui";
+import { campoDaProva, provaParaApi, provaValida, provaVazia, TipoDeDocumento } from "@/IdentificacaoDoFilho";
 
 /**
  * O perfil de quem está a usar a app — o pai, não o filho.
@@ -62,7 +63,7 @@ export default function Profile() {
           {/*
             Um irmão que também treina no clube.
             
-            A prova é a mesma do registo — NIF e data de nascimento — e é assim de
+            A prova é a mesma do registo — NIF (ou outro documento) e data de nascimento — e é assim de
             propósito: ter conta não dá direito a reclamar crianças. Se aqui
             bastasse escolher de uma lista, a conta de um pai passava a ver os
             filhos dos outros.
@@ -155,12 +156,13 @@ function ActionRow({
  * educandos logo por cima — é metade da explicação.
  */
 function AddChild({ onDone }: { onDone: () => void }) {
-  const [taxId, setTaxId] = useState("");
+  /* O NIF, ou outro documento para quem não tem NIF. A mesma prova do registo. */
+  const [prova, setProva] = useState(provaVazia);
   const [birthdate, setBirthdate] = useState("");
   const [busy, setBusy] = useState(false);
   const [erro, setErro] = useState<string | null>(null);
 
-  const valido = /^\d{9}$/.test(taxId.replace(/\s/g, "")) && birthdate !== "";
+  const valido = provaValida(prova) && birthdate !== "";
 
   async function juntar(e: FormEvent) {
     e.preventDefault();
@@ -168,7 +170,7 @@ function AddChild({ onDone }: { onDone: () => void }) {
     setBusy(true);
     setErro(null);
     try {
-      await apiPost("/api/family-invite/educandos", { taxId: taxId.replace(/\s/g, ""), birthdate });
+      await apiPost("/api/family-invite/educandos", { ...provaParaApi(prova), birthdate });
       await reload();
       onDone();
     } catch (err) {
@@ -180,14 +182,15 @@ function AddChild({ onDone }: { onDone: () => void }) {
 
   return (
     <form onSubmit={juntar} className="space-y-2 p-2">
+      <TipoDeDocumento value={prova} onChange={setProva} />
       <input
-        value={taxId}
-        onChange={(e) => setTaxId(e.target.value)}
-        inputMode="numeric"
-        maxLength={11}
-        placeholder="NIF do educando"
+        value={prova.valor}
+        onChange={(e) => setProva({ ...prova, valor: e.target.value })}
+        {...campoDaProva(prova)}
+        placeholder={prova.tipo === "nif" ? "NIF do educando" : "Número do documento do educando"}
+        aria-label={prova.tipo === "nif" ? "NIF do educando" : "Número do documento do educando"}
         autoFocus
-        className={FIELD}
+        className={cx(FIELD, prova.tipo === "doc" && "uppercase")}
       />
       <input type="date" value={birthdate} onChange={(e) => setBirthdate(e.target.value)} className={FIELD} />
 

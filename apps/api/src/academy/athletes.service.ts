@@ -5,7 +5,18 @@ import { StorageService } from "../storage/storage.service";
 import { PHOTO_BUCKET } from "../storage/photos.service";
 import { can, teamScopeFilter, type RequestContext, teamScopeForRoster } from "../common/permissions";
 import { gerarCobrancas, periodoActual } from "../billing/billing.service";
-import type { AthleteInputDto, AthleteUpdateDto } from "./athletes.dto";
+import type { AthleteInputDto, AthleteTaxIdDto, AthleteUpdateDto } from "./athletes.dto";
+import {
+  chavesDeIdentidade,
+  DOCUMENTO_VALIDO,
+  identificacaoEditada,
+  identificacaoLegivel,
+  identificacaoNova,
+  normalizarDocumento,
+  normalizarNif,
+  NIF_VALIDO,
+  type Identificacao,
+} from "./identificacao";
 import { AthleteInvitesService } from "./athlete-invites.service";
 import { nomeDeQuemMexe, registarAlteracoes } from "../common/historico";
 
@@ -114,7 +125,7 @@ export class AthletesService {
       const athlete = await db.athlete.findFirst({
         where: { id },
         select: {
-          id: true, name: true, email: true, birthdate: true, taxId: true, status: true,
+          id: true, name: true, email: true, birthdate: true, taxId: true, idDocLabel: true, idDocNumber: true, status: true,
           medicalValidUntil: true, heightCm: true, weightKg: true, dominantSide: true, squadNumber: true,
           teams: { where: { leftAt: null }, select: { id: true, teamId: true, position: true, team: { select: { name: true } } } },
         },
@@ -160,7 +171,14 @@ export class AthletesService {
         data.birthdate = birth;
       }
 
-      if (dto.taxId !== undefined) data.taxId = dto.taxId.replace(/[\s.]/g, "");
+      /* O NIF ou o outro documento — nunca a ficha sem nenhum. Ver `identificacaoEditada`. */
+      if (dto.taxId !== undefined || dto.idDocNumber !== undefined || dto.idDocLabel !== undefined) {
+        const ident = identificacaoEditada(athlete, dto);
+        if ("error" in ident) throw new BadRequestException(ident.error);
+        data.taxId = ident.taxId;
+        data.idDocNumber = ident.idDocNumber;
+        data.idDocLabel = ident.idDocLabel;
+      }
       if (dto.medicalValidUntil !== undefined) data.medicalValidUntil = new Date(dto.medicalValidUntil);
       if (dto.heightCm !== undefined) data.heightCm = dto.heightCm;
       if (dto.weightDg !== undefined) data.weightKg = dto.weightDg / 10;
@@ -247,6 +265,9 @@ export class AthletesService {
         if (isUniqueViolation(error, "taxId")) {
           throw new BadRequestException("Já existe um atleta com este NIF nesta academia");
         }
+        if (isUniqueViolation(error, "idDocNumber")) {
+          throw new BadRequestException("Já existe um atleta com este documento nesta academia");
+        }
         throw error;
       }
     });
@@ -265,11 +286,28 @@ export class AthletesService {
    * de um campo só, usado na ficha para preencher NIFs em falta sem abrir o
    * formulário inteiro; `update` é o formulário.
    */
-  async setTaxId(ctx: RequestContext, id: string, taxId: string) {
+  async setTaxId(ctx: RequestContext, id: string, dto: AthleteTaxIdDto) {
     if (!can(ctx, "athlete:write")) throw new ForbiddenException("Sem permissão");
 
-    const nif = taxId.replace(/[\s.]/g, "");
-    if (!/^\d{9}$/.test(nif)) throw new BadRequestException("O NIF tem nove dígitos");
+    /*
+     * O NIF, ou o outro documento. Vem um dos dois e o outro fica como estava:
+     * este caminho preenche e corrige, não apaga.
+     */
+    const data: Prisma.AthleteUpdateInput = {};
+    if (dto.taxId !== undefined) {
+      const nif = normalizarNif(dto.taxId);
+      if (!NIF_VALIDO.test(nif)) throw new BadRequestException("O NIF tem nove dígitos");
+      data.taxId = nif;
+    }
+    if (dto.idDocNumber !== undefined) {
+      const doc = normalizarDocumento(dto.idDocNumber);
+      if (!DOCUMENTO_VALIDO.test(doc)) {
+        throw new BadRequestException("O número do documento tem de 3 a 30 letras ou algarismos");
+      }
+      data.idDocNumber = doc;
+      data.idDocLabel = dto.idDocLabel?.trim() || null;
+    }
+    if (Object.keys(data).length === 0) throw new BadRequestException("Falta o NIF ou o número do documento");
 
     return this.prisma.runAs(ctx.academyId, async (db) => {
       // O âmbito passa pelas equipas, como em todo o resto: um treinador só mexe
@@ -285,10 +323,17 @@ export class AthletesService {
       }
 
       try {
-        return await db.athlete.update({ where: { id }, data: { taxId: nif }, select: { id: true, taxId: true } });
+        return await db.athlete.update({
+          where: { id },
+          data,
+          select: { id: true, taxId: true, idDocLabel: true, idDocNumber: true },
+        });
       } catch (error) {
         if (isUniqueViolation(error, "taxId")) {
           throw new BadRequestException("Já existe um atleta com este NIF nesta academia");
+        }
+        if (isUniqueViolation(error, "idDocNumber")) {
+          throw new BadRequestException("Já existe um atleta com este documento nesta academia");
         }
         throw error;
       }
@@ -598,7 +643,7 @@ export class AthletesService {
        */
       const plantel = await db.athlete.findMany({
         select: {
-          id: true, name: true, birthdate: true, taxId: true, email: true,
+          id: true, name: true, birthdate: true, taxId: true, idDocLabel: true, idDocNumber: true, email: true,
           medicalValidUntil: true, heightCm: true, weightKg: true,
           dominantSide: true, squadNumber: true,
           teams: { where: { leftAt: null }, select: { teamId: true } },
@@ -610,8 +655,9 @@ export class AthletesService {
        * índices também recebem as fichas escritas durante esta própria folha,
        * e essas vêm da linha, não da base.
        */
-      const porNif = new Map<string, AtletaNoPlantel>(
-        plantel.filter((a) => a.taxId).map((a) => [a.taxId as string, a]),
+      /* Pelo NIF e pelo outro documento: um atleta com os dois é encontrado por qualquer um. */
+      const porIdentidade = new Map<string, AtletaNoPlantel>(
+        plantel.flatMap((a) => chavesDeIdentidade(a).map((k) => [k, a] as const)),
       );
       const porNomeEData = new Map<string, AtletaNoPlantel>(
         plantel.map((a) => [chaveDoAtleta(a.name, a.birthdate), a]),
@@ -634,9 +680,13 @@ export class AthletesService {
       for (const [i, dto] of rows.entries()) {
         const line = i + 2; // +1 pela base-0, +1 pelo cabeçalho do ficheiro
         const key = `${dto.name.trim().toLowerCase()}|${dto.birthdate.slice(0, 10)}`;
-        const nif = dto.taxId.replace(/[\s.]/g, "");
+        const ident = identificacaoNova(dto);
+        if ("error" in ident) {
+          errors.push({ row: line, name: dto.name, error: ident.error });
+          continue;
+        }
 
-        const jaLaEsta = porNif.get(nif);
+        const jaLaEsta = chavesDeIdentidade(ident).map((k) => porIdentidade.get(k)).find(Boolean);
 
         /*
          * O mesmo nome e a mesma data, com outro NIF.
@@ -648,7 +698,7 @@ export class AthletesService {
          * certo, é a mesma pessoa e o nome pode até estar a ser corrigido.
          */
         if (!jaLaEsta && porNomeEData.has(key)) {
-          errors.push({ row: line, name: dto.name, error: "Já existe um atleta com este nome e data de nascimento, com outro NIF" });
+          errors.push({ row: line, name: dto.name, error: "Já existe um atleta com este nome e data de nascimento, com outra identificação" });
           continue;
         }
 
@@ -675,13 +725,13 @@ export class AthletesService {
 
           if (!opts.sobrescrever) {
             if (mudam.length > 0) {
-              existing.push({ line, name: dto.name.trim(), matchedName: jaLaEsta.name, taxId: nif, changes: mudam });
+              existing.push({ line, name: dto.name.trim(), matchedName: jaLaEsta.name, taxId: identificacaoLegivel(ident), changes: mudam });
             }
             continue;
           }
 
           if (mudam.length > 0) {
-            await this.updateOne(db, jaLaEsta, dto);
+            await this.updateOne(db, jaLaEsta, dto, ident);
             updated.push({ id: jaLaEsta.id, name: dto.name.trim() });
           }
           continue;
@@ -704,7 +754,9 @@ export class AthletesService {
             id: result.athlete.id,
             name: result.athlete.name,
             birthdate: new Date(dto.birthdate),
-            taxId: nif,
+            taxId: ident.taxId,
+            idDocLabel: ident.idDocLabel,
+            idDocNumber: ident.idDocNumber,
             email: dto.email?.trim().toLowerCase() || null,
             medicalValidUntil: dto.medicalValidUntil ? new Date(dto.medicalValidUntil) : null,
             heightCm: dto.heightCm ?? null,
@@ -714,7 +766,7 @@ export class AthletesService {
             teams: [{ teamId: dto.teamId }],
           };
           porNomeEData.set(key, nova);
-          porNif.set(nif, nova);
+          for (const k of chavesDeIdentidade(ident)) porIdentidade.set(k, nova);
         }
       }
 
@@ -797,16 +849,19 @@ export class AthletesService {
    *
    * Só o que a folha traz. Um campo que a folha não tem não é o clube a dizer
    * que ele está vazio — é uma coluna em falta, e apagar por causa disso seria
-   * a pior maneira de perder dados. O NIF não muda: foi ele que identificou
-   * esta ficha.
+   * a pior maneira de perder dados. A identificação que a ficha já tem não muda:
+   * foi ela que a reconheceu. A que lhe falta (um NIF numa ficha que só tinha
+   * passaporte, ou o contrário) preenche-se.
    *
    * A equipa **junta-se**: ver a nota em `importMany`.
    */
-  private async updateOne(db: ScopedClient, actual: AtletaNoPlantel, dto: AthleteInputDto): Promise<void> {
+  private async updateOne(db: ScopedClient, actual: AtletaNoPlantel, dto: AthleteInputDto, ident: Identificacao): Promise<void> {
     await db.athlete.update({
       where: { id: actual.id },
       data: {
         name: dto.name.trim(),
+        ...(!actual.taxId && ident.taxId ? { taxId: ident.taxId } : {}),
+        ...(!actual.idDocNumber && ident.idDocNumber ? { idDocNumber: ident.idDocNumber, idDocLabel: ident.idDocLabel } : {}),
         birthdate: new Date(dto.birthdate),
         ...(dto.email !== undefined ? { email: dto.email.trim().toLowerCase() || null } : {}),
         ...(dto.medicalValidUntil !== undefined
@@ -871,15 +926,23 @@ export class AthletesService {
      * causa, diz-se **quem** é que já tem aquele NIF — que é o que a secretaria
      * precisa de saber para ir buscar a ficha em vez de criar outra.
      */
-    const nif = dto.taxId.replace(/[\s.]/g, "");
+    const ident = identificacaoNova(dto);
+    if ("error" in ident) return { error: ident.error };
+
     const jaExiste = await db.athlete.findFirst({
-      where: { taxId: nif },
-      select: { name: true, teams: { where: { leftAt: null }, select: { team: { select: { name: true } } }, take: 1 } },
+      where: {
+        OR: [
+          ...(ident.taxId ? [{ taxId: ident.taxId }] : []),
+          ...(ident.idDocNumber ? [{ idDocNumber: ident.idDocNumber }] : []),
+        ],
+      },
+      select: { name: true, taxId: true, teams: { where: { leftAt: null }, select: { team: { select: { name: true } } }, take: 1 } },
     });
     if (jaExiste) {
       const equipa = jaExiste.teams[0]?.team.name;
+      const qual = ident.taxId && jaExiste.taxId === ident.taxId ? "NIF" : "documento";
       return {
-        error: `Já existe um atleta com este NIF: ${jaExiste.name}${equipa ? ` (${equipa})` : " — sem equipa"}`,
+        error: `Já existe um atleta com este ${qual}: ${jaExiste.name}${equipa ? ` (${equipa})` : " — sem equipa"}`,
       };
     }
 
@@ -891,8 +954,10 @@ export class AthletesService {
       name: dto.name.trim(),
       birthdate: birth,
       status: "ACTIVE" as AthleteStatus,
-      // Sempre presente: o DTO recusa a inscrição sem ele.
-      taxId: nif,
+      // Um dos dois, sempre: `identificacaoNova` recusa a inscrição sem nenhum.
+      taxId: ident.taxId,
+      idDocNumber: ident.idDocNumber,
+      idDocLabel: ident.idDocLabel,
       ...(dto.email?.trim() ? { email: dto.email.trim().toLowerCase() } : {}),
       ...(dto.medicalValidUntil ? { medicalValidUntil: new Date(dto.medicalValidUntil) } : {}),
       ...(dto.heightCm != null ? { heightCm: dto.heightCm } : {}),
@@ -913,6 +978,9 @@ export class AthletesService {
       // faria um pai cair no educando errado ao registar-se. Vale a pena nomeá-lo.
       if (isUniqueViolation(error, "taxId")) {
         return { error: "Já existe um atleta com este NIF nesta academia" };
+      }
+      if (isUniqueViolation(error, "idDocNumber")) {
+        return { error: "Já existe um atleta com este documento nesta academia" };
       }
       return { error: "Não foi possível inscrever (número de camisola em uso, ou dado inválido)" };
     }
@@ -962,6 +1030,8 @@ type AtletaNoPlantel = {
   name: string;
   birthdate: Date;
   taxId: string | null;
+  idDocLabel: string | null;
+  idDocNumber: string | null;
   email: string | null;
   medicalValidUntil: Date | null;
   heightCm: number | null;

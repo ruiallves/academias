@@ -33,6 +33,8 @@ const CAMPOS: Record<string, string> = {
   email: "E-mail",
   birthdate: "Data de nascimento",
   taxId: "Contribuinte",
+  idDocLabel: "Outro documento",
+  idDocNumber: "N.º do documento",
   status: "Estado",
   medicalValidUntil: "Exame médico válido até",
   heightCm: "Altura",

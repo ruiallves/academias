@@ -1804,6 +1804,7 @@ export class BillingService implements OnModuleInit, OnModuleDestroy {
           identificador: montarIdentificador(
             [{ tipo: charge.kind === ChargeKind.EXTRA ? "EXTRA" : "MENS", periodo: charge.period, nome: charge.athlete.name }],
             payerName,
+            (await db.academy.findFirst({ where: { id: ctx.academyId }, select: { shortName: true } }))?.shortName,
           ),
           payerName,
           payerRelation: laco?.relation?.trim() || null,
@@ -1979,6 +1980,7 @@ export class BillingService implements OnModuleInit, OnModuleDestroy {
           identificador: montarIdentificador(
             fees.map((f) => ({ tipo: "QUOTA" as const, periodo: f.period, nome: f.member.name })),
             payerName,
+            (await db.academy.findFirst({ where: { id: academyId }, select: { shortName: true } }))?.shortName,
           ),
           payerName,
         },

@@ -7,6 +7,8 @@ import { athleteInviteEmail } from "../mail/mail.templates";
 import { SupabaseAccountsService } from "../auth/supabase-accounts.service";
 import { LegalService } from "../legal/legal.service";
 import { can, type RequestContext } from "../common/permissions";
+import { ligarAtletaAConta } from "./athlete-account-link";
+import { AreaAbertaService } from "../mail/area-aberta.service";
 
 /**
  * O convite que transforma uma ficha de atleta numa conta — a área de atleta
@@ -27,11 +29,16 @@ import { can, type RequestContext } from "../common/permissions";
  * pelo guard como a família — âmbito, permissões e gate legal resolvem-se
  * pela membership — e o `scopeFor` estreita-lhe a leitura ao próprio.
  *
- * E **não há ligação automática pelo email**. Nos sócios há: a ficha com o
- * email de uma conta do clube cola-se a essa conta. Num atleta seria um
- * problema real — muitos clubes escrevem o email do pai na ficha do filho, e
- * a conta do pai ganharia uma área "Atleta" com a ficha do miúdo. A conta de
- * atleta nasce só do convite, que é um gesto explícito de quem o abre.
+ * E **há ligação automática pelo email, com guardas**. Não havia: a conta de
+ * atleta nascia só do convite, porque muitos clubes escrevem o email do pai na
+ * ficha do filho e a conta do pai ganharia uma área "Atleta" com a ficha do
+ * miúdo. O que se perdia com isso era pior e apareceu logo: quem já tem conta no
+ * clube — o treinador que joga nos seniores — recebia um convite a pedir-lhe que
+ * "escolhesse" uma palavra-passe para um email que já tem conta, e a área de
+ * atleta não aparecia até alguem adivinhar que tinha de escrever a palavra-passe
+ * antiga. Agora liga-se sozinha, e as guardas afastam o email do encarregado,
+ * os irmãos no mesmo email e as contas que o clube desligou:
+ * ver `athlete-account-link.ts`. O convite fica para quem não tem conta.
  *
  * ## O token
  *
@@ -49,6 +56,7 @@ export class AthleteInvitesService {
     private readonly config: ConfigService,
     private readonly accounts: SupabaseAccountsService,
     private readonly legal: LegalService,
+    private readonly aviso: AreaAbertaService,
   ) {}
 
   /**
@@ -64,6 +72,14 @@ export class AthleteInvitesService {
   async enviar(ctx: RequestContext, athleteId: string) {
     this.assertMayInvite(ctx);
     if (!this.activo) throw new BadRequestException(DESLIGADO);
+
+    /*
+     * Se a conta já existe, não sai convite nenhum: liga-se e está feito. É o
+     * pedido do clube — quem já entrou uma vez na app não volta a ser convidado
+     * — e a consola diz qual das duas coisas aconteceu.
+     */
+    const ligado = await this.ligarSeJaTemConta(ctx.academyId, athleteId);
+    if (ligado) return { ok: true as const, linked: true as const, email: ligado.email };
 
     const preparado = await this.preparar(ctx.academyId, athleteId);
     if (!preparado.ok) throw new BadRequestException(preparado.reason);
@@ -84,6 +100,9 @@ export class AthleteInvitesService {
   async enviarSePossivel(academyId: string, athleteId: string): Promise<void> {
     if (!this.activo) return;
     try {
+      /* A conta já existe? Liga e cala-se — sem email, que era o que sobrava
+         para dizer a uma pessoa uma coisa que ela já tem. */
+      if (await this.ligarSeJaTemConta(academyId, athleteId)) return;
       const preparado = await this.preparar(academyId, athleteId);
       if (!preparado.ok) return;
       await this.mandarEmail(preparado);
@@ -104,10 +123,16 @@ export class AthleteInvitesService {
     if (ids.length === 0) throw new BadRequestException("Não escolheste nenhum atleta");
 
     let enviados = 0;
+    /* Os que não precisaram de convite — a conta já existia e a ficha ligou-se. */
+    let ligados = 0;
     const falhas: { id: string; reason: string }[] = [];
 
     for (const id of [...new Set(ids)]) {
       try {
+        if (await this.ligarSeJaTemConta(ctx.academyId, id)) {
+          ligados++;
+          continue;
+        }
         const preparado = await this.preparar(ctx.academyId, id);
         if (!preparado.ok) {
           falhas.push({ id, reason: preparado.reason });
@@ -121,7 +146,7 @@ export class AthleteInvitesService {
       }
     }
 
-    return { ok: true as const, enviados, falhas };
+    return { ok: true as const, enviados, ligados, falhas };
   }
 
   /**
@@ -272,6 +297,36 @@ export class AthleteInvitesService {
    */
   private assertMayInvite(ctx: RequestContext): void {
     if (!can(ctx, "family:write")) throw new ForbiddenException("Sem permissão para gerir o acesso à app");
+  }
+
+  /**
+   * A ficha liga-se à conta que já existe, se houver uma e as guardas deixarem.
+   *
+   * Nunca rebenta: os três chamadores são caminhos de convite, e um erro aqui
+   * tem de os deixar seguir para o email em vez de os parar. Ver
+   * `athlete-account-link.ts` para as guardas.
+   */
+  private async ligarSeJaTemConta(academyId: string, athleteId: string) {
+    try {
+      const ligado = await this.prisma.runAs(academyId, async (db) => {
+        const athlete = await db.athlete.findFirst({
+          where: { id: athleteId },
+          select: { id: true, email: true, accountMembershipId: true },
+        });
+        if (!athlete) return null;
+        return ligarAtletaAConta(db, academyId, athlete);
+      });
+
+      /*
+       * O aviso, **depois** de a transacção fechar e sem `await`: não houve
+       * convite, e sem isto a área nova era uma surpresa que a pessoa só
+       * descobria no dia em que por acaso abrisse a app. Ver `AreaAbertaService`.
+       */
+      if (ligado) void this.aviso.avisar(academyId, "athlete", ligado);
+      return ligado;
+    } catch {
+      return null;
+    }
   }
 
   private async preparar(academyId: string, athleteId: string) {

@@ -543,6 +543,71 @@ export function athleteInviteEmail(input: {
  * Um recibo que prometesse "vais ser aceite" faria o clube desdizê-lo, e um
  * clube não deve deixar de poder recusar uma adesão por causa do nosso email.
  */
+/**
+ * Uma área nova abriu numa conta que já existia — e por isso não houve convite.
+ *
+ * ## Porque é que este email existe
+ *
+ * Porque o silêncio era o preço de uma coisa boa. Quem já tem conta no clube não
+ * recebe convite quando lhe abrem outro perfil: a ficha cola-se à conta e a área
+ * aparece. Do lado de quem lá está, isso queria dizer **nada** — nenhum aviso, e
+ * a área a aparecer um dia em que a pessoa por acaso abrisse a app. O treinador
+ * que passou a sócio sabia que tinha pago a quota e não sabia que a podia pagar
+ * ali.
+ *
+ * Por isso este email não é um convite e não leva token nenhum: leva a notícia e
+ * o caminho. Entra-se com a conta que já se tem, e é exactamente isso que o texto
+ * diz — era o engano do convite (pedia para "escolher" uma palavra-passe a quem
+ * já tinha uma).
+ *
+ * Só sai quando **o clube** abre a área. Quando é a própria pessoa a fazer a
+ * ligação acontecer, abrindo a app, não sai: escrever a alguem que está a olhar
+ * para o ecrã a dizer-lhe o que tem no ecrã não é um aviso, é ruído.
+ */
+export function areaAbertaEmail(input: {
+  brand: MailBrand;
+  name: string;
+  area: "member" | "athlete" | "family";
+  link: string;
+}): { subject: string; html: string; text: string } {
+  const A = {
+    member: {
+      nome: "área de sócio",
+      o_que: "ver o teu cartão de sócio, as tuas quotas e pagá-las pelo telemóvel",
+    },
+    athlete: {
+      nome: "área de atleta",
+      o_que: "ver os teus treinos, os teus jogos, as convocatórias e o que o treinador partilhar contigo",
+    },
+    family: {
+      nome: "área de família",
+      o_que: "acompanhar os treinos, os jogos, as convocatórias e os avisos dos teus educandos",
+    },
+  }[input.area];
+
+  const heading = "Tens uma área nova na app";
+  const paragraphs = [
+    esc(input.brand.name) + " abriu-te a <strong>" + esc(A.nome) + "</strong> na app do clube. Já podes " + esc(A.o_que) + ".",
+    /* A frase que o convite nunca conseguiu dizer: não há conta para criar. */
+    "Não precisas de criar conta nem de escolher palavra-passe nenhuma — entra com a conta que já tens neste clube e a área está lá.",
+  ];
+  const notes = ["Se achas que isto é um engano, responde a este email para o clube o corrigir."];
+
+  return {
+    subject: input.brand.shortName + " · já tens a " + A.nome + " na app",
+    html: layout({ brand: input.brand, heading, paragraphs, cta: { label: "Abrir a app", url: input.link }, notes }),
+    text: plain(
+      "Olá " + input.name.trim().split(/\s+/)[0] + ",",
+      [
+        input.brand.name + " abriu-te a " + A.nome + " na app do clube. Já podes " + A.o_que + ".",
+        "Não precisas de criar conta nem de escolher palavra-passe nenhuma — entra com a conta que já tens neste clube e a área está lá.",
+      ],
+      { label: "Abrir a app", url: input.link },
+      notes,
+    ),
+  };
+}
+
 export function memberSignupReceivedEmail(input: {
   brand: MailBrand;
   name: string;

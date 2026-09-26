@@ -1545,6 +1545,7 @@ export class AcademyService {
         orderBy: { name: "asc" },
         select: {
           id: true, name: true, birthdate: true, photoUrl: true, photoKey: true, status: true, joinedAt: true, taxId: true,
+          idDocLabel: true, idDocNumber: true,
           heightCm: true, weightKg: true, dominantSide: true, squadNumber: true, medicalValidUntil: true,
           // A conta do próprio na app — ver `AthleteInvitesService`.
           email: true, inviteSentAt: true,
@@ -1665,6 +1666,9 @@ export class AcademyService {
           name: a.name,
           birthdate: a.birthdate,
           taxId: mayReadTaxId ? a.taxId : null,
+          /* O outro documento, para quem não tem NIF: a mesma regra de leitura do NIF. */
+          idDocLabel: mayReadTaxId ? a.idDocLabel : null,
+          idDocNumber: mayReadTaxId ? a.idDocNumber : null,
           email: a.email,
           /*
            * A conta do próprio atleta na app, num estado só — o mesmo vocabulário

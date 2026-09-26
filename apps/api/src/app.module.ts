@@ -66,6 +66,7 @@ import { AdminInvitesService } from "./platform/admin-invites.service";
 import { FamilyInviteController, FamilySignupController } from "./family/family-invites.controller";
 import { AthleteInvitesController, AthleteSignupController } from "./academy/athlete-invites.controller";
 import { AthleteInvitesService } from "./academy/athlete-invites.service";
+import { AreaAbertaService } from "./mail/area-aberta.service";
 import { FamilyInvitesService } from "./family/family-invites.service";
 import { GuardianLinksController } from "./family/guardian-links.controller";
 import { GuardianLinksService } from "./family/guardian-links.service";
@@ -240,6 +241,7 @@ import { LegalAdminService } from "./legal/legal-admin.service";
     FamilyInvitesService,
     GuardianLinksService,
     AthleteInvitesService,
+    AreaAbertaService,
     EvaluationsService,
     PhotosService,
     ClubLogoService,

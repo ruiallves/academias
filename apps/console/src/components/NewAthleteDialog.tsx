@@ -6,6 +6,7 @@ import { reloadAcademy } from "@/lib/store";
 import type { Session } from "@/lib/permissions";
 import { Dialog, DialogField, dialogInputClass } from "./Dialog";
 import { SelectField } from "./primitives";
+import { IdentificacaoField, identificacaoInicial, identificacaoOk, identificacaoParaApi } from "./IdentificacaoField";
 
 /**
  * Criar atleta.
@@ -23,7 +24,7 @@ export function NewAthleteDialog({ session, onClose }: { session: Session; onClo
 
   const [name, setName] = useState("");
   const [birthdate, setBirthdate] = useState("");
-  const [taxId, setTaxId] = useState("");
+  const [ident, setIdent] = useState(identificacaoInicial());
   const [teamId, setTeamId] = useState(teams[0]?.id ?? "");
   const [position, setPosition] = useState("");
   const [squadNumber, setSquadNumber] = useState("");
@@ -41,10 +42,9 @@ export function NewAthleteDialog({ session, onClose }: { session: Session; onClo
 
   const team = teams.find((t) => t.id === teamId);
   const positions = team ? sportById(team.sportId)?.positions ?? [] : [];
-  // O NIF é obrigatório: sem ele, nenhuma família consegue reclamar este atleta na
-  // app, e a academia só dá por isso quando o pai telefona. Nove dígitos, e meio
-  // escritos não servem — ficam na base e nunca batem certo com o que ele escreve.
-  const nifOk = /^\d{9}$/.test(taxId.replace(/\s/g, ""));
+  // O NIF, ou outro documento, é obrigatório: sem nenhum, nenhuma família consegue
+  // reclamar este atleta na app, e a academia só dá por isso quando o pai telefona.
+  const nifOk = identificacaoOk(ident);
   const emailOk = email.trim() === "" || /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim());
   const valid = name.trim().length >= 2 && birthdate !== "" && teamId !== "" && nifOk && emailOk;
 
@@ -58,7 +58,7 @@ export function NewAthleteDialog({ session, onClose }: { session: Session; onClo
         name: name.trim(),
         birthdate,
         teamId,
-        taxId: taxId.replace(/\s/g, ""),
+        ...identificacaoParaApi(ident, "criar"),
         ...(email.trim() ? { email: email.trim().toLowerCase(), sendInvite: convidar } : {}),
         ...(position ? { position } : {}),
         ...(squadNumber ? { squadNumber: Number(squadNumber) } : {}),
@@ -113,22 +113,11 @@ export function NewAthleteDialog({ session, onClose }: { session: Session; onClo
           </DialogField>
 
           {/*
-            O NIF não é burocracia: é a chave com que a família se liga a este
-            atleta ao instalar a app — NIF mais data de nascimento, os dois. Sem
-            ele, este atleta existe mas nenhum pai o consegue reclamar.
+            O NIF, ou outro documento para quem não o tem, não é burocracia: é a
+            chave com que a família se liga a este atleta ao instalar a app, com
+            a data de nascimento. Sem nenhum, nenhum pai o consegue reclamar.
           */}
-          <DialogField label="NIF" hint="obrigatório — é o que liga a família à app">
-            <input
-              value={taxId}
-              onChange={(e) => setTaxId(e.target.value)}
-              inputMode="numeric"
-              maxLength={11}
-              placeholder="123456789"
-              className={dialogInputClass}
-              aria-invalid={!nifOk}
-            />
-            {!nifOk && <p className="mt-1 text-[11px] text-[#a82a20]">O NIF tem nove dígitos.</p>}
-          </DialogField>
+          <IdentificacaoField value={ident} onChange={setIdent} />
 
           {/*
             O email é o **do atleta** — e é opcional. Com ele, sai o convite para

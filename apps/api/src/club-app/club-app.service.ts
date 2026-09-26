@@ -25,6 +25,7 @@ import {
 import { PHOTO_BUCKET, PHOTO_TTL, PhotosService } from "../storage/photos.service";
 import { StorageService } from "../storage/storage.service";
 import { reclamarFichaPelaConta } from "../members/member-account-link";
+import { reclamarAtletaPelaConta } from "../academy/athlete-account-link";
 import { LegalService } from "../legal/legal.service";
 
 /**
@@ -57,7 +58,15 @@ import { LegalService } from "../legal/legal.service";
 /** O que o QR do cartão carrega. Um prefixo e o token opaco — e mais nada. */
 export const CARD_QR_PREFIX = "academias:socio:";
 
-type Identidade = { authId: string; userId: string | null };
+/**
+ * Quem está do outro lado do token.
+ *
+ * O `email` vem do próprio token, assinado pela Supabase, e não de uma leitura
+ * de `User` — porque a RLS de `User` exige `Membership` e um sócio não tem
+ * nenhuma. É o que deixa reclamar a ficha de atleta de quem só é sócio. Ver
+ * `athlete-account-link.ts`.
+ */
+type Identidade = { authId: string; userId: string | null; email: string | null };
 
 @Injectable()
 export class ClubAppService {
@@ -93,7 +102,7 @@ export class ClubAppService {
     const rows = await this.prisma.$queryRaw<{ id: string | null }[]>`
       SELECT app.resolve_user_by_auth(${user.authId}) AS id
     `;
-    return { authId: user.authId, userId: rows[0]?.id ?? null };
+    return { authId: user.authId, userId: rows[0]?.id ?? null, email: user.email ?? null };
   }
 
   private async academiaDe(slug: string): Promise<string> {
@@ -138,8 +147,10 @@ export class ClubAppService {
     const daAcademia = memberships.filter((m) => m.academy_id === academyId);
     const deFamilia = (role: string) => role === "GUARDIAN" || role === "ATHLETE";
     const familia = daAcademia.some((m) => m.role === "GUARDIAN");
-    /* O próprio atleta — a quarta área. Uma membership de atleta, uma ficha. */
-    const atleta = daAcademia.some((m) => m.role === "ATHLETE");
+    /* O próprio atleta — a quarta área. Uma membership de atleta, uma ficha.
+       Não é `const` porque a ficha pode ser reclamada aqui mesmo, um pouco
+       abaixo, e nesse caso a área passa a existir neste mesmo pedido. */
+    let atleta = daAcademia.some((m) => m.role === "ATHLETE");
     /*
      * Staff é qualquer membership que não seja de família — presidente,
      * treinador, médico, observador. A app não desenha essa vista: entrega a
@@ -163,6 +174,21 @@ export class ClubAppService {
         if (await reclamarFichaPelaConta(db, eu.userId)) {
           member = await db.member.findFirst({ where: { userId: eu.userId } });
         }
+      }
+
+      /*
+       * E a ficha de **atleta**, pela mesma razão e no mesmo momento.
+       *
+       * Este é o caminho que resolve o caso a sério: a ficha já existe, o
+       * convite já saiu há dias, e ninguém vai voltar a criar a ficha para o
+       * gancho da criação disparar. A pessoa abre a app e a área está lá.
+       *
+       * Só com vínculo aqui — família, pessoal, ou uma ficha de sócio já
+       * reclamada — e com as duas guardas do `athlete-account-link` a travar o
+       * email do encarregado na ficha do filho.
+       */
+      if (!atleta && eu.userId && (familia || staff || member)) {
+        atleta = await reclamarAtletaPelaConta(db, academyId, { userId: eu.userId, email: eu.email });
       }
 
       const contexts: Record<string, unknown>[] = [];

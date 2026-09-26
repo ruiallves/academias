@@ -132,6 +132,9 @@ type ApiAthlete = {
   id: string; name: string; birthdate: string; photoUrl: string | null; status: string; joinedAt: string;
   /** `null` para quem não tem `family:read` — um treinador não recebe o NIF. */
   taxId: string | null;
+  /** O outro documento, para quem não tem NIF. Mesma regra de leitura do NIF. */
+  idDocLabel?: string | null;
+  idDocNumber?: string | null;
   heightCm: number | null; weightKg: number | null; dominantSide: string | null; squadNumber: number | null;
   medicalValidUntil: string | null; teamId: string | null; position: string | null;
   /** A conta do próprio atleta na app — ver `AthleteInvitesService` na API. */
@@ -852,6 +855,8 @@ function juntar<T extends { id: string }>(atuais: T[], novos: T[]): T[] {
     name: a.name,
     birthdate: a.birthdate,
     taxId: a.taxId ?? undefined,
+    idDocLabel: a.idDocLabel ?? undefined,
+    idDocNumber: a.idDocNumber ?? undefined,
     teamId: a.teamId ?? "",
     position: a.position ?? undefined,
     guardianIds: a.guardians.map((g) => g.membershipId),

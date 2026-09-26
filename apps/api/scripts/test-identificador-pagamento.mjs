@@ -8,14 +8,14 @@
  *
  * O que se guarda aqui:
  *
- * 1. O formato, TIPO-MES-ATLETAS-PAGADOR-ID, em casos soltos: acentos,
+ * 1. O formato, CLUBE-TIPO-MES-ATLETAS-PAGADOR-ID, em casos soltos: acentos,
  *    partículas, vários meses (seguidos e soltos), vários atletas, tipos
  *    misturados, nomes que não cabem.
  * 2. Num clube descartável, a mensalidade e o kit pagos pela app: o pagamento
  *    nasce com o identificador, é **esse** que segue para a euPago (a
  *    referência simulada leva-o dentro), guarda quem pagou e o que é do atleta,
  *    e o webhook que volta com ele liquida a cobrança.
- * 3. Três meses de quota de sócio num pagamento: `QUOTA-SET26_A_NOV26-…`.
+ * 3. Três meses de quota de sócio num pagamento: `ZD-QUOTA-SET26_A_NOV26-…`.
  * 4. A consola recebe quem pagou e o identificador nas Mensalidades e nas
  *    quotas do sócio.
  *
@@ -83,58 +83,62 @@ const mens = (periodo, nome) => ({ tipo: "MENS", periodo, nome });
 
 check(
   "uma mensalidade",
-  montarIdentificador([mens("2026-09", "João Miguel da Silva")], "Maria Fernandes da Silva", FIXO) ===
-    "MENS-SET26-JOAO_SILVA-MARIA_SILVA-7K2F9Q",
-  montarIdentificador([mens("2026-09", "João Miguel da Silva")], "Maria Fernandes da Silva", FIXO),
+  montarIdentificador([mens("2026-09", "João Miguel da Silva")], "Maria Fernandes da Silva", "Life Club", FIXO) ===
+    "LIFE_CLUB-MENS-SET26-JOAO_SILVA-MARIA_SILVA-7K2F9Q",
+  montarIdentificador([mens("2026-09", "João Miguel da Silva")], "Maria Fernandes da Silva", "Life Club", FIXO),
 );
 check("sem acentos nem cedilhas", nomeCurto("Inês Conceição") === "INES_CONCEICAO", nomeCurto("Inês Conceição"));
 check("um nome só fica como está", nomeCurto("Zé") === "ZE", nomeCurto("Zé"));
 check(
   "um kit é EXTRA",
-  montarIdentificador([{ tipo: "EXTRA", periodo: "2026-09", nome: "Ana Costa" }], "Rui Costa", FIXO) ===
-    "EXTRA-SET26-ANA_COSTA-RUI_COSTA-7K2F9Q",
+  montarIdentificador([{ tipo: "EXTRA", periodo: "2026-09", nome: "Ana Costa" }], "Rui Costa", "Life Club", FIXO) ===
+    "LIFE_CLUB-EXTRA-SET26-ANA_COSTA-RUI_COSTA-7K2F9Q",
 );
 check(
   "meses seguidos são um intervalo",
-  montarIdentificador(["2026-09", "2026-10", "2026-11"].map((p) => ({ tipo: "QUOTA", periodo: p, nome: "Rui Costa" })), "Rui Costa", FIXO) ===
-    "QUOTA-SET26_A_NOV26-RUI_COSTA-RUI_COSTA-7K2F9Q",
+  montarIdentificador(["2026-09", "2026-10", "2026-11"].map((p) => ({ tipo: "QUOTA", periodo: p, nome: "Rui Costa" })), "Rui Costa", "Life Club", FIXO) ===
+    "LIFE_CLUB-QUOTA-SET26_A_NOV26-RUI_COSTA-RUI_COSTA-7K2F9Q",
 );
 check(
   "o intervalo passa a passagem de ano",
-  montarIdentificador([mens("2026-12", "Ana Costa"), mens("2027-01", "Ana Costa")], "Rui Costa", FIXO) ===
-    "MENS-DEZ26_A_JAN27-ANA_COSTA-RUI_COSTA-7K2F9Q",
+  montarIdentificador([mens("2026-12", "Ana Costa"), mens("2027-01", "Ana Costa")], "Rui Costa", "Life Club", FIXO) ===
+    "LIFE_CLUB-MENS-DEZ26_A_JAN27-ANA_COSTA-RUI_COSTA-7K2F9Q",
 );
 check(
   "meses soltos dizem-se um a um",
-  montarIdentificador([mens("2026-09", "Ana Costa"), mens("2026-11", "Ana Costa")], "Rui Costa", FIXO) ===
-    "MENS-SET26_E_NOV26-ANA_COSTA-RUI_COSTA-7K2F9Q",
+  montarIdentificador([mens("2026-09", "Ana Costa"), mens("2026-11", "Ana Costa")], "Rui Costa", "Life Club", FIXO) ===
+    "LIFE_CLUB-MENS-SET26_E_NOV26-ANA_COSTA-RUI_COSTA-7K2F9Q",
 );
 check(
   "mais de três soltos dizem quantos são",
-  montarIdentificador(["2026-09", "2026-11", "2027-01", "2027-03"].map((p) => mens(p, "Ana Costa")), "Rui Costa", FIXO) ===
-    "MENS-4MESES-ANA_COSTA-RUI_COSTA-7K2F9Q",
+  montarIdentificador(["2026-09", "2026-11", "2027-01", "2027-03"].map((p) => mens(p, "Ana Costa")), "Rui Costa", "Life Club", FIXO) ===
+    "LIFE_CLUB-MENS-4MESES-ANA_COSTA-RUI_COSTA-7K2F9Q",
 );
 check(
   "dois irmãos no mesmo pagamento",
-  montarIdentificador([mens("2026-09", "Ana Costa"), mens("2026-09", "Tiago Costa")], "Rui Costa", FIXO) ===
-    "MENS-SET26-ANA_COSTA_E_TIAGO_COSTA-RUI_COSTA-7K2F9Q",
+  montarIdentificador([mens("2026-09", "Ana Costa"), mens("2026-09", "Tiago Costa")], "Rui Costa", "Life Club", FIXO) ===
+    "LIFE_CLUB-MENS-SET26-ANA_COSTA_E_TIAGO_COSTA-RUI_COSTA-7K2F9Q",
 );
 check(
   "mensalidade e kit juntos são VARIOS",
-  montarIdentificador([mens("2026-09", "Ana Costa"), { tipo: "EXTRA", periodo: "2026-09", nome: "Ana Costa" }], "Rui Costa", FIXO) ===
-    "VARIOS-SET26-ANA_COSTA-RUI_COSTA-7K2F9Q",
+  montarIdentificador([mens("2026-09", "Ana Costa"), { tipo: "EXTRA", periodo: "2026-09", nome: "Ana Costa" }], "Rui Costa", "Life Club", FIXO) ===
+    "LIFE_CLUB-VARIOS-SET26-ANA_COSTA-RUI_COSTA-7K2F9Q",
 );
 const longo = montarIdentificador(
   [mens("2026-09", "Maximiliano Bartolomeu Vasconcelos"), mens("2026-09", "Constantino Albuquerque"), mens("2026-09", "Bernardino Figueiredo")],
   "Maria Madalena Vasconcelos",
+  "Grupo Desportivo e Recreativo de Fafe",
   FIXO,
 );
 check(`nunca passa de ${MAXIMO} caracteres`, longo.length <= MAXIMO, `${longo} (${longo.length})`);
 check("e nunca perde o ID", longo.endsWith("-7K2F9Q"), longo);
+check("nem o clube, cortado à palavra", longo.startsWith("GRUPO_DESPORTIVO-"), longo);
+check("sem clube diz CLUBE", montarIdentificador([mens("2026-09", "Ana Costa")], "Rui Costa", null, FIXO) === "CLUBE-MENS-SET26-ANA_COSTA-RUI_COSTA-7K2F9Q");
 check("só maiúsculas, algarismos, - e _", /^[A-Z0-9_-]+$/.test(longo), longo);
-const sozinho = montarIdentificador([mens("2026-09", "Ana Costa")], "Rui Costa");
+const sozinho = montarIdentificador([mens("2026-09", "Ana Costa")], "Rui Costa", "Life Club");
+check("o clube vai à cabeça", sozinho.startsWith("LIFE_CLUB-MENS-"), sozinho);
 check("o ID ao acaso tem 6 caracteres legíveis", /-[2-9A-HJ-NP-Z]{6}$/.test(sozinho), sozinho);
-check("sem pagador diz SEM_NOME", montarIdentificador([mens("2026-09", "Ana Costa")], null, FIXO) === "MENS-SET26-ANA_COSTA-SEM_NOME-7K2F9Q");
+check("sem pagador diz SEM_NOME", montarIdentificador([mens("2026-09", "Ana Costa")], null, "Life Club", FIXO) === "LIFE_CLUB-MENS-SET26-ANA_COSTA-SEM_NOME-7K2F9Q");
 
 /* --------------------------------------------------------- 2. clube de teste --- */
 
@@ -269,7 +273,7 @@ try {
   check("o pagamento começa (2xx)", r1.status === 200 || r1.status === 201, `${r1.status} ${JSON.stringify(r1.body).slice(0, 200)}`);
   const p1 = await pagamentoDe("chargeId", "zd_mens");
   soSimulada(p1);
-  const esperado1 = new RegExp(`^MENS-SET26-JOAO_SILVA-${PAGADOR}-[2-9A-HJ-NP-Z]{6}$`);
+  const esperado1 = new RegExp(`^ZD-MENS-SET26-JOAO_SILVA-${PAGADOR}-[2-9A-HJ-NP-Z]{6}$`);
   check("nasce com o identificador", esperado1.test(p1?.identificador ?? ""), `${p1?.identificador}`);
   check("é esse que segue para a euPago", p1?.providerRef === `dev-mb-${p1?.identificador}`, `${p1?.providerRef}`);
   check("guarda quem pagou", p1?.payerName === direcao.name, `${p1?.payerName}`);
@@ -350,7 +354,7 @@ try {
   check("o pagamento começa (2xx)", r3.status === 200 || r3.status === 201, `${r3.status} ${JSON.stringify(r3.body).slice(0, 200)}`);
   const p3 = await pagamentoDe("memberFeeId", "zd_q09");
   soSimulada(p3);
-  const esperado3 = new RegExp(`^QUOTA-SET26_A_NOV26-RUI_COSTA-${PAGADOR}-[2-9A-HJ-NP-Z]{6}$`);
+  const esperado3 = new RegExp(`^ZD-QUOTA-SET26_A_NOV26-RUI_COSTA-${PAGADOR}-[2-9A-HJ-NP-Z]{6}$`);
   check("um identificador para os três meses", esperado3.test(p3?.identificador ?? ""), `${p3?.identificador}`);
   check("guarda quem pagou", Boolean(p3?.payerName), `${p3?.payerName}`);
   check("sem laço (é o próprio sócio)", p3?.payerRelation === null, `${p3?.payerRelation}`);

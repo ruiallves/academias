@@ -934,6 +934,27 @@ tem ecrã dedicado na PWA (ver Por fazer).
 
 ---
 
+## O histórico de mensalidades na ficha do atleta diz o que cada linha é
+
+O separador *Mensalidades* da ficha mostrava três coisas por linha: o mês, o
+valor e o estado. Com um extra no mesmo mês da mensalidade (o equipamento, um
+torneio), o ecrã dizia "Setembro de 2026" duas vezes com valores diferentes, e
+um clube perguntou porque é que o atleta tinha duas mensalidades em Setembro.
+Não tinha: a segunda era um extra chamado "Teste", e o nome estava guardado — só
+não aparecia.
+
+Agora cada linha (`LinhaDoHistorico`, em `routes/AthleteDetail.tsx`):
+
+- num **extra**, diz o nome dele e o mês numa pastilha ao lado;
+- quando está **paga**, diz o método, o dia e quem pagou ("MB WAY · 26 set · por
+  Lara Castro (Mãe)"), e por baixo o identificador da euPago em monoespaçado, para
+  copiar — o mesmo que a página de Mensalidades já mostrava;
+- quando está **por pagar**, diz o prazo ("Venceu há 4 dias" a vermelho) e a
+  referência Multibanco, se houver.
+
+Os dados já vinham no mesmo objecto (`mapFee`, em `lib/store.ts`); faltava
+mostrá-los.
+
 ## O que um ecrã de toque não perdoa
 
 Uma fisioterapeuta, no telemóvel, a registar uma consulta: escreve o nome do
@@ -2273,10 +2294,14 @@ do nosso lado não se guardava quem carregou em "pagar".
 Agora cada pagamento feito pela app nasce com um **identificador que se lê**, e
 é esse que segue para a euPago como `identifier` (aparece no backoffice):
 
-    TIPO-MES-ATLETAS-PAGADOR-ID
-    MENS-SET26-JOAO_SILVA-MARIA_SILVA-7K2F9Q
-    QUOTA-SET26_A_NOV26-RUI_COSTA-RUI_COSTA-H8M3PX
+    CLUBE-TIPO-MES-ATLETAS-PAGADOR-ID
+    LIFE_CLUB-MENS-SET26-JOAO_SILVA-MARIA_SILVA-7K2F9Q
+    LIFE_CLUB-QUOTA-SET26_A_NOV26-RUI_COSTA-RUI_COSTA-H8M3PX
 
+- **CLUBE** (desde 25/09/2026): o nome curto do clube (`Academy.shortName`),
+  cortado à palavra em 16 caracteres. À cabeça, porque os movimentos de vários
+  clubes aparecem juntos no backoffice da euPago. Os pagamentos anteriores
+  ficam com o identificador que tinham.
 - **TIPO**: `MENS`, `EXTRA` (kit, torneio, viagem), `QUOTA`; tipos misturados
   num pagamento dão `VARIOS`.
 - **MES**: um mês (`SET26`), meses seguidos como intervalo (`SET26_A_NOV26`),
@@ -2289,7 +2314,7 @@ Agora cada pagamento feito pela app nasce com um **identificador que se lê**, e
 Maiúsculas sem acentos, algarismos, `-` e `_`, no máximo 64 caracteres: a
 euPago não documenta limites, e isto passa em qualquer sistema. Quando não cabe,
 os atletas ficam só com o primeiro nome, depois só quantos são, e por fim
-corta-se o pagador. O ID nunca se corta. Ver `billing/identificador.ts`.
+corta-se o pagador. O clube e o ID nunca saem. Ver `billing/identificador.ts`.
 
 **Hoje, o que vai junto num pagamento**: na app da família cada cobrança paga-se
 sozinha (uma mensalidade ou um kit, de um atleta). Nas quotas de sócio, vários
@@ -3392,9 +3417,91 @@ opcional), e pelo botão da ficha (painel *App do clube*, separador
 Encarregado) ou em massa na lista de atletas. Quem convida tem `family:write`.
 `ATHLETE_INVITES_ENABLED=false` desliga o correio.
 
-**Sem ligação automática pelo email**, ao contrário dos sócios: muitos clubes
-escrevem o email do pai na ficha do filho, e a conta do pai ganharia uma área
-"Atleta" com a ficha do miúdo. A conta de atleta nasce só do convite.
+### A conta é da pessoa, os perfis são papéis
+
+Esteve **sem ligação automática pelo email**, ao contrário dos sócios, e a razão
+era boa: muitos clubes escrevem o email do pai na ficha do filho, e a conta do
+pai ganharia uma área "Atleta" com a ficha do miúdo — com a ficha clínica e as
+avaliações dentro, que é o que o papel `ATHLETE` lê. A conta de atleta nascia só
+do convite.
+
+O que se perdia com isso apareceu na AD Márcia Felgueiras: uma pessoa que é
+treinadora, encarregada de um filho e jogadora dos seniores abria a app e via
+duas áreas. O convite que o clube lhe mandou pedia-lhe que "escolhesse" uma
+palavra-passe para um email que já tem conta, ou seja, pedia-lhe a palavra-passe
+que ela já usa, num ecrã que diz o contrário. Funciona, e ninguém percebe que
+funciona.
+
+A regra passou a ser a dos sócios: **quem já entrou uma vez na app deste clube
+não recebe convites para os perfis seguintes — eles aparecem.**
+`athlete-account-link.ts`, gémeo do `member-account-link.ts`, com cinco guardas
+(`razaoParaNaoLigar`, pura e testada à parte porque uma delas protege a ficha
+clínica de um menor):
+
+| não liga quando | porquê |
+|---|---|
+| a ficha já tem conta | nada a fazer |
+| a ficha não tem email | nada por onde ligar |
+| não há conta com esse email **neste clube** | e isto não é uma verificação escrita: a RLS de `User` é `same_academy_users`, e uma conta de outro clube não aparece |
+| a conta é **encarregada deste atleta** | um `GuardianLink` entre as duas pontas diz, em dados, que aquele email é o do encarregado. É o engano comum, e fica de fora. Encarregado de *outro* atleta passa — é a pessoa do exemplo |
+| a conta já é dona de outra ficha | uma conta, um atleta (`accountMembershipId` é único); sem isto, um pai com três filhos no mesmo email fazia a segunda ligação rebentar dentro de um gancho que não pode falhar |
+| o clube **desligou** esta conta | "Desligar conta" desactiva a membership em vez de a apagar; sem esta guarda o desligar durava até a pessoa voltar a abrir a app |
+
+E, do lado da app, uma sexta: **duas fichas sem dono com o mesmo email não ligam
+nenhuma** (`fichaUnicaComEsteEmail`). São irmãos com o email do pai, e escolher
+uma seria escolher um filho — fica o convite, que obriga alguém a dizer qual.
+
+Corre em três sítios: ao criar e ao importar a ficha (em vez do email), no botão
+*Enviar convite* (que passa a dizer "já tinha conta: a ficha ficou ligada"), e em
+`contexts` quando a pessoa abre a app. O último é o que resolve as fichas que já
+existem: ninguém vai voltar a criá-las para o gancho da criação disparar. Nesse
+caminho o email vem **do token**, assinado pela Supabase, e não de uma leitura de
+`User` — a RLS exige `Membership` e um sócio não tem nenhuma, pelo que a ler
+`User` dali o sócio que joga nos seniores era o único perfil que nunca se ligava.
+
+Os termos não se aceitam ao ligar. O atleta entra pelo guard como a família, e
+é lá que o gate legal aparece a quem ainda não aceitou os documentos.
+
+### E o clube avisa, porque não houve convite
+
+Tirar o convite tirava também a única coisa que dizia à pessoa que algo mudou. A
+área passava a existir e ela descobria-a no dia em que por acaso abrisse a app —
+o treinador que passou a sócio sabia que tinha de pagar a quota e não sabia que a
+podia pagar ali. `areaAbertaEmail` + `AreaAbertaService` tapam isso, e valem para
+as **três** áreas (sócio, atleta, família), não só para a que motivou a mudança.
+
+Não é um convite e di-lo por inteiro: botão *Abrir a app*, link para a raiz da
+app sem token nenhum, e a frase que ao convite faltava — *"não precisas de criar
+conta nem de escolher palavra-passe nenhuma"*. Cada área promete o que é dela:
+quotas e cartão no sócio, treinos e convocatórias no atleta, educandos na família.
+
+Quatro regras sobre **quando** sai, e todas nasceram de uma maneira de errar:
+
+- **depois da transacção, nunca de dentro dela.** A importação é tudo-ou-nada, e
+  uma folha que rebenta na última linha volta atrás; trezentos emails a anunciar
+  áreas que deixaram de existir não voltam. Os chamadores guardam quem ligou numa
+  variável fora do `runAs` e avisam depois, sem `await`;
+- **não sai quando é a própria pessoa a provocar a ligação**, abrindo a app
+  (`contexts`). Escrever a quem está a olhar para o ecrã a dizer-lhe o que tem no
+  ecrã não é um aviso. É por isso que o aviso vive nos caminhos da consola e não
+  dentro de `ligarFichaAConta` / `ligarAtletaAConta`, que servem os dois lados;
+- **respeita os interruptores do correio.** `sendInvite: false` na criação e
+  `enviarConvites` na importação calam-no também: quem carrega uma ficha antes de a
+  pessoa saber que vai ser inscrita não quer nada a sair;
+- **na família, só quando a área é nova.** `membershipDeFamilia` passou a devolver
+  `areaNova` (membership criada, ou reactivada depois de desligada). Acrescentar um
+  segundo educando a quem já é encarregado não abre área nenhuma, e mandar "tens
+  uma área nova" a cada filho era transformar um aviso útil em ruído.
+
+Prova: `npm run test:aviso-area` (35 verificações, agrupado com esbuild porque
+`mail.templates.ts` importa por caminho sem extensão), no CI. O que ele guarda é
+sobretudo o texto: que o botão não volta a ser "Criar a minha conta", que nenhum
+token viaja no email, e que as palavras "criar conta" e "palavra-passe" nunca
+aparecem fora de uma negação.
+
+Prova: `npm run test:ligacao-atleta` (16 verificações, sem servidor nem base),
+no CI. Validado ao contrário — sem as guardas do encarregado e do desligar,
+cinco delas caem.
 
 O link `/l/{slug}/atleta/{token}` cai na landing com `?atleta=`, a app guarda
 o token (`lib/invite.ts`) e o ecrã `ConviteAtleta` pede **uma** coisa — a
@@ -3648,3 +3755,36 @@ removê-la e voltar a adicioná-la. A consola di-lo por baixo do símbolo.
 - MFA da impersonation e limite de tentativas no resgate de convite: o segundo
   **foi corrigido** (rate-limit de 5/min), o primeiro fica com a feature. Ver
   [05-seguranca](05-seguranca.md).
+
+## Atletas sem NIF: outro documento
+
+Há clubes com atletas estrangeiros sem NIF português, e o NIF era obrigatório em
+toda a inscrição e a única prova com que a família reclamava o filho na app.
+Passa a valer o **NIF ou outro documento** (migração
+`20260926100000_outro_documento_do_atleta`).
+
+- **Na ficha:** `Athlete.idDocLabel` (o nome do documento, só para o clube:
+  "Passaporte") e `Athlete.idDocNumber` (normalizado em maiúsculas, sem
+  espaços, pontos nem traços; único por academia, como o NIF). Cada atleta tem
+  de ter um dos dois. A regra vive toda em `academy/identificacao.ts`
+  (`identificacaoNova`, `identificacaoEditada`), sem Nest nem Prisma, e serve a
+  inscrição, a edição, a importação, o recrutamento do scouting e o registo da
+  família. Uma ficha antiga sem nada pode editar-se noutros campos; o que não se
+  deixa é uma edição apagar a identificação que existia.
+- **Na consola:** um campo só (`IdentificacaoField`), com "NIF | Outro
+  documento", na inscrição, na edição da ficha, no recrutamento e no painel
+  "Identificação" do separador Família (que passou a gravar pela edição da
+  ficha, para trocar o NIF por um passaporte limpar o outro sem a ficha ficar
+  um instante sem nada). O documento só chega a quem recebe o NIF
+  (`athlete:write`), e aparece no PDF de perfil e no histórico.
+- **Na app da família:** o registo pelo link e o "Juntar educando" têm os
+  mesmos dois botões. Em "Outro documento" escreve-se **só o número**; o nome é
+  do clube. O servidor procura com `app.match_athlete_by_document`, gémea de
+  `match_athlete_for_family` (um id ou nada, sem listar, ignora quem saiu), e a
+  resposta a um engano é a mesma de sempre.
+- **No Excel:** a coluna NIF deixou de ser obrigatória como coluna (as folhas
+  antigas entram como sempre) e juntaram-se "Outro documento" e "N.º do
+  documento", logo a seguir. Cada linha precisa de NIF ou de número. A
+  importação reconhece uma ficha existente por qualquer um dos dois e, ao
+  actualizar, preenche o que lhe falta sem mudar o que já tinha. A exportação
+  leva as duas colunas (`test:exportar` continua a passar).

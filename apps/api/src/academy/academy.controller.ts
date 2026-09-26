@@ -658,7 +658,7 @@ export class AcademyController {
 
   @Patch("athletes/:id/nif")
   setAthleteTaxId(@Req() req: AuthedRequest, @Param("id") id: string, @Body() body: AthleteTaxIdDto) {
-    return this.athletes.setTaxId(req.ctx, id, body.taxId);
+    return this.athletes.setTaxId(req.ctx, id, body);
   }
 
   /** Importação em lote a partir de um ficheiro. Devolve o resultado linha a linha. */

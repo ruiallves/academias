@@ -1,8 +1,9 @@
 import { useEffect, useState } from "react";
-import { Bar, Empty, Panel, PanelHead, Pill, cx } from "./primitives";
+import { Bar, Empty, Panel, PanelHead, Pill } from "./primitives";
 import { Dialog, DialogField, dialogInputClass } from "./Dialog";
 import { listTeams } from "@/lib/api";
 import type { Session } from "@/lib/permissions";
+import { IdentificacaoField, identificacaoInicial, identificacaoOk, identificacaoParaApi } from "./IdentificacaoField";
 import {
   addToShortlist,
   createShortlist,
@@ -267,9 +268,10 @@ export function AddToShortlistDialog({
  *
  * ## O que se pede
  *
- * A equipa, porque um prospecto não tinha escalão nosso. E o **NIF**, porque um
- * atleta sem ele é um atleta que nenhuma família consegue reclamar na app — e um
- * recrutamento é uma inscrição como as outras.
+ * A equipa, porque um prospecto não tinha escalão nosso. E o **NIF** (ou outro
+ * documento, para quem não o tem), porque um atleta sem identificação é um
+ * atleta que nenhuma família consegue reclamar na app, e um recrutamento é uma
+ * inscrição como as outras.
  */
 export function RecruitDialog({
   prospect,
@@ -285,13 +287,13 @@ export function RecruitDialog({
   const teams = listTeams(session).filter((t) => t.sportId === prospect.sportId);
 
   const [teamId, setTeamId] = useState(teams[0]?.id ?? "");
-  const [taxId, setTaxId] = useState("");
+  const [ident, setIdent] = useState(identificacaoInicial());
   const [squadNumber, setSquadNumber] = useState("");
   const [note, setNote] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const nifOk = /^\d{9}$/.test(taxId.replace(/\s/g, ""));
+  const nifOk = identificacaoOk(ident);
   const valid = Boolean(teamId) && nifOk;
 
   async function submit() {
@@ -301,7 +303,7 @@ export function RecruitDialog({
     try {
       const result = await recruit(prospect.id, {
         teamId,
-        taxId: taxId.replace(/\s/g, ""),
+        ...identificacaoParaApi(ident, "criar"),
         ...(squadNumber ? { squadNumber: Number(squadNumber) } : {}),
         ...(note.trim() ? { note: note.trim() } : {}),
       });
@@ -374,22 +376,7 @@ export function RecruitDialog({
           </div>
         )}
 
-        <DialogField label="NIF" hint="obrigatório">
-          <input
-            value={taxId}
-            onChange={(e) => setTaxId(e.target.value)}
-            inputMode="numeric"
-            placeholder="123456789"
-            className={cx(dialogInputClass, !nifOk && taxId !== "" && "border-risk")}
-          />
-        </DialogField>
-
-        {!nifOk && (
-          <p className="text-meta leading-relaxed text-ink-3">
-            São nove dígitos. É com o NIF e a data de nascimento que a família se liga a este atleta ao instalar
-            a app — sem ele, ninguém o consegue reclamar.
-          </p>
-        )}
+        <IdentificacaoField value={ident} onChange={setIdent} />
 
         <DialogField label="Nota" hint="opcional — fica no histórico">
           <input

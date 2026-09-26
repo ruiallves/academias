@@ -20,6 +20,7 @@ import { AthleteKitPanel } from "@/components/inventory/AthleteKitPanel";
 import { ClinicalPanel } from "@/components/ClinicalPanel";
 import { NutritionPanel } from "@/components/NutritionPanel";
 import { AppDoAtletaPanel } from "@/components/AppDoAtletaPanel";
+import { IdentificacaoField, identificacaoInicial, identificacaoOk, identificacaoParaApi } from "@/components/IdentificacaoField";
 import { HistoricoPanel } from "@/components/HistoricoPanel";
 import { PercursoDoAtleta } from "@/components/Percurso";
 import { BotaoExportarPerfil } from "@/components/BotaoExportarPerfil";
@@ -81,7 +82,7 @@ import { age, longDate, money, percent, periodLabel, relativeDays, shortDate, ti
 import { can, mayReadTaxId } from "@/lib/permissions";
 import { AthleteEditPanel } from "@/components/AthleteEditPanel";
 import { useSession } from "@/session";
-import type { Athlete } from "@/data/types";
+import type { Athlete, Fee } from "@/data/types";
 import { Spinner } from "@/components/Busy";
 
 type Tab = "overview" | "matches" | "attendance" | "development" | "clinical" | "kit" | "fees" | "family" | "history";
@@ -662,6 +663,11 @@ function Overview({
       </MetricRow>
 
       <div className="grid gap-3 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
+        {/*
+          A ficha física é curta: a conta da app do atleta vai por baixo dela,
+          na mesma coluna, e fica à vista sem descer a página.
+        */}
+        <div className="min-w-0 space-y-3">
         <Panel>
           <PanelHead title="Ficha física" hint="actualizada manualmente" />
           <dl className="px-5 py-1.5">
@@ -676,11 +682,15 @@ function Overview({
           </dl>
         </Panel>
 
+        <AppDoAtletaPanel athlete={athlete} />
+        </div>
+
         {hasMatches ? (
-          <Panel>
+          /* Estica até ao fundo da coluna da esquerda, e o vazio fica ao centro. */
+          <Panel className="flex flex-col">
             <PanelHead title="Últimos jogos" hint={recent.length ? `${recent.length}` : undefined} />
             {recent.length === 0 ? (
-              <div className="px-5 py-10">
+              <div className="flex flex-1 items-center justify-center px-5 py-10">
                 <Empty title="Ainda sem jogos" detail="Aparecem aqui assim que houver participações registadas." />
               </div>
             ) : (
@@ -735,10 +745,10 @@ function AttendancePanel({ athleteId }: { athleteId: string }) {
   const s = athleteAttendanceSummary(athleteId);
 
   return (
-    <Panel>
+    <Panel className="flex flex-col">
       <PanelHead title="Assiduidade" hint="últimos 6 meses" />
       {s.recorded === 0 ? (
-        <div className="px-5 py-10">
+        <div className="flex flex-1 items-center justify-center px-5 py-10">
           <Empty title="Sem treinos registados" detail="A assiduidade aparece quando os treinos forem registados." />
         </div>
       ) : (
@@ -993,7 +1003,6 @@ function Family({ athlete }: { athlete: Athlete }) {
   return (
     <div className="space-y-3">
       <TaxIdPanel athlete={athlete} />
-      <AppDoAtletaPanel athlete={athlete} />
 
     <Panel>
       <PanelHead title="Encarregado de educação" hint={`${guardians.length}`}>
@@ -1097,14 +1106,15 @@ function Family({ athlete }: { athlete: Athlete }) {
 }
 
 /**
- * O NIF do atleta.
+ * A identificação do atleta: o NIF, ou outro documento para quem não o tem.
  *
  * ## Porque é que vive no separador da família
  *
- * Porque é aqui que ele serve para alguma coisa. O NIF mais a data de nascimento
- * são a chave com que um pai se liga a este atleta ao instalar a app — sem o
- * campo preenchido, o link que a academia manda não consegue ligar ninguém a esta
- * criança, e a secretaria fica com um telefonema para atender sem saber porquê.
+ * Porque é aqui que ela serve para alguma coisa. O NIF (ou o número do outro
+ * documento) mais a data de nascimento são a chave com que um pai se liga a este
+ * atleta ao instalar a app. Sem nenhum dos dois, o link que a academia manda não
+ * consegue ligar ninguém a esta criança, e a secretaria fica com um telefonema
+ * para atender sem saber porquê.
  *
  * Por isso o vazio aqui não é um traço discreto: é um aviso, com a consequência
  * escrita.
@@ -1114,32 +1124,33 @@ function TaxIdPanel({ athlete }: { athlete: Athlete }) {
   /*
    * Ver antes de editar.
    *
-   * O painel media o vazio por `athlete.taxId` — e a quem não recebe o campo
-   * (ver `mayReadTaxId`) ele chega sempre vazio. Um treinador lia "Por
-   * preencher — nenhum encarregado consegue reclamar este atleta" na ficha de
-   * um miúdo cujo NIF está lá desde o primeiro dia, e o botão convidava-o a
-   * escrever um por cima. Um aviso falso é pior do que aviso nenhum, e a
+   * A quem não recebe a identificação (ver `mayReadTaxId`) ela chega sempre
+   * vazia. Um aviso de "por preencher" a um treinador seria falso, e a
    * correcção que ele convidava a fazer estragava o dado certo.
    */
   const vejoNif = mayReadTaxId(session);
   const mayEdit = can(session, "athlete:write") && vejoNif;
 
   const [editing, setEditing] = useState(false);
-  const [value, setValue] = useState(athlete.taxId ?? "");
+  const [value, setValue] = useState(() => identificacaoInicial(athlete));
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  // Já não se aceita vazio: o NIF passou a ser obrigatório, e apagá-lo para o
-  // corrigir a seguir deixava, entre as duas coisas, um atleta que nenhuma família
-  // consegue reclamar. Corrige-se escrevendo o certo por cima.
-  const valid = /^\d{9}$/.test(value.replace(/\s/g, ""));
+  const valid = identificacaoOk(value);
+  const temNif = Boolean(athlete.taxId);
+  const temDoc = Boolean(athlete.idDocNumber);
 
   async function save() {
     if (!valid || busy) return;
     setBusy(true);
     setError(null);
     try {
-      await apiPatch(`/api/athletes/${athlete.id}/nif`, { taxId: value.replace(/\s/g, "") });
+      /*
+       * Pela edição da ficha e não pelo caminho só do NIF: trocar o NIF por um
+       * passaporte tem de limpar o outro, e só a edição o faz sem deixar a ficha
+       * um instante sem identificação.
+       */
+      await apiPatch(`/api/athletes/${athlete.id}`, identificacaoParaApi(value, "editar"));
       await reloadAcademy();
       setEditing(false);
     } catch (err) {
@@ -1151,44 +1162,59 @@ function TaxIdPanel({ athlete }: { athlete: Athlete }) {
 
   return (
     <Panel>
-      <PanelHead title="NIF" hint="liga a família à app" />
+      <PanelHead title="Identificação" hint="liga a família à app" />
       <div className="px-5 py-4">
         {editing ? (
-          <div className="flex flex-wrap items-center gap-2">
-            <input
-              value={value}
-              onChange={(e) => setValue(e.target.value)}
-              inputMode="numeric"
-              maxLength={11}
-              placeholder="123456789"
-              autoFocus
-              className="h-9 w-[160px] rounded-[var(--radius-control)] border border-line bg-surface px-2.5 text-body tabular text-ink focus:border-line-strong focus:outline-none"
-            />
-            <button type="button" onClick={save} disabled={!valid || busy} className="ctl-primary">
-              {busy ? "A guardar…" : "Guardar"}
-            </button>
-            <button type="button" onClick={() => { setEditing(false); setValue(athlete.taxId ?? ""); }} className="ctl-ghost">
-              Cancelar
-            </button>
-            {!valid && <span className="text-meta text-[#a82a20]">São nove dígitos.</span>}
-            {error && <span className="text-meta text-[#a82a20]">{error}</span>}
+          <div className="space-y-3">
+            <div className="max-w-[520px]">
+              <IdentificacaoField value={value} onChange={setValue} />
+            </div>
+            <div className="flex flex-wrap items-center gap-2">
+              <button type="button" onClick={save} disabled={!valid || busy} className="ctl-primary">
+                {busy ? "A guardar…" : "Guardar"}
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setEditing(false);
+                  setValue(identificacaoInicial(athlete));
+                }}
+                className="ctl-ghost"
+              >
+                Cancelar
+              </button>
+              {error && <span className="text-meta text-[#a82a20]">{error}</span>}
+            </div>
           </div>
         ) : (
           <div className="flex flex-wrap items-center justify-between gap-3">
             {!vejoNif ? (
               <span className="text-meta leading-relaxed text-ink-3">
-                O NIF é de quem trata das famílias e emite recibos. Não aparece aqui.
+                A identificação é de quem trata das famílias e emite recibos. Não aparece aqui.
               </span>
-            ) : athlete.taxId ? (
-              <span className="text-body tabular text-ink">{athlete.taxId}</span>
+            ) : temNif || temDoc ? (
+              <span className="min-w-0 space-y-0.5">
+                {temNif && (
+                  <span className="block text-body tabular text-ink">
+                    <span className="text-meta text-ink-3">NIF </span>
+                    {athlete.taxId}
+                  </span>
+                )}
+                {temDoc && (
+                  <span className="block text-body tabular text-ink">
+                    <span className="text-meta text-ink-3">{athlete.idDocLabel || "Outro documento"} </span>
+                    {athlete.idDocNumber}
+                  </span>
+                )}
+              </span>
             ) : (
               <span className="text-meta leading-relaxed text-[#8a5a12]">
-                Por preencher — enquanto estiver assim, nenhum encarregado consegue reclamar este atleta na app.
+                Por preencher. Enquanto estiver assim, nenhum encarregado consegue reclamar este atleta na app.
               </span>
             )}
             {mayEdit && (
               <button type="button" onClick={() => setEditing(true)} className="ctl-outline">
-                {athlete.taxId ? "Alterar" : "Preencher"}
+                {temNif || temDoc ? "Alterar" : "Preencher"}
               </button>
             )}
           </div>
@@ -1386,13 +1412,9 @@ function FeesTab({ athlete }: { athlete: Athlete }) {
             <Empty icon={Wallet} title="Sem mensalidades ainda" />
           </div>
         ) : (
-          <ul className="px-5 py-1.5">
+          <ul>
             {history.map((f) => (
-              <li key={f.id} className="flex items-center gap-3 border-b border-line py-2.5 last:border-0">
-                <span className="min-w-0 flex-1 truncate text-body text-ink-2">{periodLabel(f.period)}</span>
-                <span className="shrink-0 text-meta text-ink tabular">{money(f.amountCents)}</span>
-                <Pill tone={FEE_STATUS_TONE[f.status]}>{FEE_STATUS_LABEL[f.status]}</Pill>
-              </li>
+              <LinhaDoHistorico key={f.id} fee={f} />
             ))}
           </ul>
         )}
@@ -1405,6 +1427,78 @@ function FeesTab({ athlete }: { athlete: Athlete }) {
  * O valor efectivo em destaque, com a origem por baixo, e a acção certa consoante
  * o estado: ajustar (quando ainda não há ajuste), mudar ou reverter (quando já há).
  */
+/**
+ * Uma linha do histórico de mensalidades, na ficha do atleta.
+ *
+ * ## O que ela dizia, e o que faltava
+ *
+ * Dizia três coisas: o mês, o valor e o estado. Com duas cobranças no mesmo mês
+ * — a mensalidade e um extra (o equipamento, um torneio) — o ecrã mostrava
+ * "Setembro de 2026" duas vezes, com valores diferentes, e parecia uma
+ * mensalidade cobrada a dobrar. Um clube perguntou exactamente isso. Não era: a
+ * segunda linha era um extra chamado "Teste", e o nome dele estava guardado — só
+ * não aparecia em lado nenhum.
+ *
+ * ## E o pagamento, que estava só na outra página
+ *
+ * Quem paga, por que método, em que dia, e com que identificador — tudo isso
+ * vivia na página de Mensalidades e não na ficha do atleta, que é onde se vai
+ * quando a pergunta é sobre *aquele* atleta. Os dados já vinham no mesmo objecto
+ * (ver `mapFee`, em `lib/store.ts`): faltava mostrá-los.
+ *
+ * O identificador é o que casa este pagamento com o backoffice da euPago, por
+ * isso vai em monoespaçado e selecciona-se de uma vez — é para copiar.
+ */
+function LinhaDoHistorico({ fee: f }: { fee: Fee }) {
+  const pago = f.status === "paid";
+  const vencido = f.status === "overdue";
+
+  return (
+    <li className="border-b border-line px-5 py-3 last:border-0">
+      <div className="flex items-baseline gap-3">
+        <span className="min-w-0 flex-1">
+          {/* O extra diz o que é; a mensalidade é o mês, e o mês já é o nome dela. */}
+          <span className="truncate text-body text-ink-2">{f.extra ? (f.title ?? "Extra") : periodLabel(f.period)}</span>
+          {f.extra && (
+            <span className="ml-1.5 align-middle">
+              <Pill>{periodLabel(f.period)}</Pill>
+            </span>
+          )}
+        </span>
+        <span className="shrink-0 text-meta text-ink tabular">{money(f.amountCents)}</span>
+        <Pill tone={FEE_STATUS_TONE[f.status]}>{FEE_STATUS_LABEL[f.status]}</Pill>
+      </div>
+
+      {pago ? (
+        <div className="mt-1 leading-tight">
+          <p className="text-meta text-ink-3">
+            {[f.method ?? "Paga", f.paidAt && shortDate(new Date(f.paidAt)), f.paidBy && `por ${f.paidBy}`]
+              .filter(Boolean)
+              .join(" · ")}
+          </p>
+          {f.paymentId && (
+            <p
+              className="mt-0.5 select-all break-all font-mono text-[10px] text-ink-4"
+              title="Assim aparece no backoffice da euPago"
+            >
+              {f.paymentId}
+            </p>
+          )}
+        </div>
+      ) : (
+        <p className="mt-1 text-meta text-ink-4">
+          {/* Por pagar, o que interessa é o prazo — e, se já houver referência, ela. */}
+          <span className={vencido ? "font-medium text-risk" : undefined}>
+            {vencido ? "Venceu " : "Vence "}
+            {relativeDays(new Date(f.dueDate), today)}
+          </span>
+          {f.reference && <span className="ml-2 font-mono text-ink-3">{f.reference}</span>}
+        </p>
+      )}
+    </li>
+  );
+}
+
 function FeeEditor({
   athleteId,
   fee,

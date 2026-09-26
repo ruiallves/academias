@@ -59,7 +59,9 @@ export class AthleteInputDto {
   email?: string;
 
   /**
-   * NIF do atleta — nove dígitos. **Obrigatório.**
+   * NIF do atleta — nove dígitos. **Obrigatório, salvo se vier outro documento**
+   * (`idDocNumber`): cada atleta tem de ter um dos dois. A regra vive em
+   * `identificacaoNova`, porque um decorador não sabe olhar para dois campos.
    *
    * Serve a faturação e, sobretudo, o registo da família: é com ele mais a data de
    * nascimento que um pai prova de quem é pai, ao entrar pela app. Ver
@@ -74,10 +76,26 @@ export class AthleteInputDto {
    *
    * A coluna na base continua a aceitar nulo — há atletas inscritos antes desta
    * regra, e apagá-los não é opção. O que muda é que **nenhuma escrita nova** os
-   * cria sem NIF.
+   * cria sem NIF (ou sem o outro documento).
    */
-  @Matches(/^\d{9}$/, { message: "O NIF tem nove dígitos" })
-  taxId!: string;
+  @IsOptional()
+  @IsString()
+  @Length(0, 20)
+  taxId?: string;
+
+  /**
+   * Outro documento, para quem não tem NIF: o nome é só para o clube
+   * ("Passaporte"), o número é a identificação. Ver `identificacao.ts`.
+   */
+  @IsOptional()
+  @IsString()
+  @Length(0, 60)
+  idDocLabel?: string;
+
+  @IsOptional()
+  @IsString()
+  @Length(0, 40)
+  idDocNumber?: string;
 
   @IsOptional()
   @IsISO8601()
@@ -150,8 +168,9 @@ export class AthleteInputDto {
  *   Um `PATCH` de atleta que lhes tocasse deitava fora essa rastreabilidade.
  *   `medicalValidUntil` está cá porque é administrativo: a validade do exame, não
  *   o que o exame diz.
- * - **`taxId` a nulo** — corrige-se escrevendo o certo por cima. Ver
- *   `AthleteTaxIdDto`.
+ * - **A identificação a nada.** O NIF e o outro documento limpam-se com vazio,
+ *   mas o serviço recusa a edição que deixe a ficha sem nenhum dos dois (ver
+ *   `identificacaoEditada`). Trocar o NIF por um passaporte é mandar os dois.
  */
 export class AthleteUpdateDto {
   @IsOptional()
@@ -181,9 +200,21 @@ export class AthleteUpdateDto {
   @Length(0, 254)
   email?: string;
 
+  /** Vazio limpa, se ficar o outro documento. */
   @IsOptional()
-  @Matches(/^\d{9}$/, { message: "O NIF tem nove dígitos" })
+  @Matches(/^(\d{9})?$/, { message: "O NIF tem nove dígitos" })
   taxId?: string;
+
+  @IsOptional()
+  @IsString()
+  @Length(0, 60)
+  idDocLabel?: string;
+
+  /** Vazio limpa, se ficar o NIF. */
+  @IsOptional()
+  @IsString()
+  @Length(0, 40)
+  idDocNumber?: string;
 
   @IsOptional()
   @IsISO8601()
@@ -247,14 +278,25 @@ export class ImportAthletesDto {
 }
 
 /**
- * Só o NIF — para corrigir, ou para preencher a ficha de quem foi inscrito antes
- * de o campo ser obrigatório.
+ * Só a identificação — o NIF ou o outro documento — para corrigir, ou para
+ * preencher a ficha de quem foi inscrito antes de ser obrigatória.
  *
- * **Já não aceita `null`.** Apagava-se um NIF para o corrigir a seguir, e entre as
- * duas coisas ficava um atleta que nenhuma família conseguia reclamar. Corrigir é
- * escrever o certo por cima; não há passo intermédio nenhum a proteger.
+ * **Não apaga.** Apagava-se um NIF para o corrigir a seguir, e entre as duas
+ * coisas ficava um atleta que nenhuma família conseguia reclamar. Corrigir é
+ * escrever o certo por cima. Vem um dos dois, e o outro fica como estava.
  */
 export class AthleteTaxIdDto {
+  @IsOptional()
   @Matches(/^\d{9}$/, { message: "O NIF tem nove dígitos" })
-  taxId!: string;
+  taxId?: string;
+
+  @IsOptional()
+  @IsString()
+  @Length(0, 60)
+  idDocLabel?: string;
+
+  @IsOptional()
+  @IsString()
+  @Length(1, 40)
+  idDocNumber?: string;
 }
