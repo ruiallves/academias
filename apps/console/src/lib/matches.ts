@@ -285,6 +285,15 @@ export const saveOpponentReport = (id: string, body: Omit<OpponentReport, "updat
 export const listOpponents = () => apiGet<OpponentSummary[]>("/api/matches/adversarios");
 
 /** Quanto dura um jogo desta equipa. Ver `Team.matchMinutes`. */
+/**
+ * Editar a equipa numa gravação só — o popup "Editar equipa". Só vai o que mudou.
+ * Ver `updateTeam` na API.
+ */
+export const updateTeam = (
+  teamId: string,
+  patch: { name?: string; maxAge?: number; matchMinutes?: number; maxCallUps?: number; competitionIds?: string[] },
+) => apiPatch<{ ok: true }>(`/api/teams/${teamId}`, patch);
+
 export const setTeamMatchMinutes = (teamId: string, minutes: number) =>
   apiPatch<{ teamId: string; matchMinutes: number }>(`/api/teams/${teamId}/duracao-jogo`, { minutes });
 

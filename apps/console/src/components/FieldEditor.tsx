@@ -640,6 +640,39 @@ function ArrowShape({ arrow, selected, k = 1 }: { arrow: DiagramArrow; selected?
 }
 
 /* -------------------------------------------------------------------------- */
+/* Quem fica por cima de quem                                                  */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * A ordem por que as peças se pintam.
+ *
+ * Em SVG não há `z-index`: quem vem depois fica por cima. A ordem era a de
+ * colocação, e isso dava duas coisas erradas.
+ *
+ * **Uma peça arrastada podia deslizar por baixo de outra.** Um treinador
+ * arrasta um jogador, ele passa por cima de uma zona ou de outro jogador e
+ * desaparece por trás — a mão está a mexer numa coisa que já não se vê. O que
+ * se está a arrastar pinta-se por último, sempre. E fica por cima depois de
+ * largar: o `onPointerUp` passa as peças mexidas para o fim da lista, que é a
+ * ordem gravada. Voltar para baixo ao tirar o dedo era o que um treinador via
+ * como "largo o jogador e ele desaparece".
+ *
+ * **E a zona tapava toda a gente.** Ela é o espaço do exercício — o corredor,
+ * a zona de pressão — e desenhá-la depois punha-a por cima dos jogadores que a
+ * ocupam, que é o contrário do que ela quer dizer. Vai para trás de tudo, e
+ * assim quem cai lá dentro continua a ver-se.
+ *
+ * Fica num sítio só porque as três vistas — o cartão parado, a animação e o
+ * editor — têm de empilhar igual. Um desenho que muda de aspeto entre o editor
+ * e o cartão é um desenho em que não se confia.
+ */
+function ordemDePintura<T extends { id: string; kind: ItemKind }>(items: T[], aArrastar?: ReadonlySet<string>): T[] {
+  const camada = (i: T) => (aArrastar?.has(i.id) ? 2 : i.kind === "zone" ? 0 : 1);
+  // `sort` é estável: dentro da mesma camada, a ordem de colocação mantém-se.
+  return [...items].sort((a, b) => camada(a) - camada(b));
+}
+
+/* -------------------------------------------------------------------------- */
 /* Vista parada                                                                */
 /* -------------------------------------------------------------------------- */
 
@@ -689,7 +722,7 @@ export function FieldView({
       {f.arrows.map((a) => (
         <ArrowShape key={a.id} arrow={a} k={k} />
       ))}
-      {f.items.map((i) => (
+      {ordemDePintura(f.items).map((i) => (
         <g key={i.id} transform={`translate(${i.x} ${i.y}) rotate(${i.rot ?? 0})`}>
           <ItemShape item={i} k={k} field={d.field} />
         </g>
@@ -795,7 +828,7 @@ export function DiagramPlayer({ diagram, className }: { diagram: unknown; classN
         {from.arrows.map((a) => (
           <ArrowShape key={a.id} arrow={a} k={k} />
         ))}
-        {items
+        {ordemDePintura(items)
           .filter((i) => !(playing && i.kind === "ball"))
           .map((i) => (
             <g key={i.id} transform={`translate(${i.x} ${i.y}) rotate(${i.rot ?? 0})`}>
@@ -973,6 +1006,12 @@ export function FieldEditor({
   >(null);
   const [ghostArrow, setGhostArrow] = useState<DiagramArrow | null>(null);
   const [marquee, setMarquee] = useState<{ x1: number; y1: number; x2: number; y2: number } | null>(null);
+  /*
+   * O que a mão está a mexer, para pintar por cima de tudo — ver
+   * `ordemDePintura`. É estado e não `ref` porque muda o que se desenha; o
+   * `drag` acima é só mecânica do gesto e ninguém precisa de o ver.
+   */
+  const [aArrastar, setAArrastar] = useState<ReadonlySet<string> | null>(null);
 
   const onPointerDown = (e: React.PointerEvent) => {
     if (e.button !== 0 && e.pointerType === "mouse") return;
@@ -984,6 +1023,9 @@ export function FieldEditor({
     // colocar um jogador e o queria ajustar carimbava outro em cima.
     const hitId = (e.target as Element).closest("[data-id]")?.getAttribute("data-id");
     const resize = (e.target as Element).closest("[data-resize]")?.getAttribute("data-resize");
+    // Gesto novo, levantamento limpo: se o anterior acabou sem `pointerup`
+    // (o browser cancelou-o), nada fica levantado por engano.
+    setAArrastar(null);
 
     // A mão arrasta a vista por cima do que for; Alt+arrasto é o atalho de rato
     // para o mesmo gesto sem trocar de ferramenta.
@@ -1029,6 +1071,9 @@ export function FieldEditor({
     if (resize) {
       const z = frame.items.find((i) => i.id === resize)!;
       drag.current = { type: "resize", id: resize, start: p, w: z.w ?? 14, h: z.h ?? 10, rot: z.rot ?? 0 };
+      // A zona que se está a redimensionar sobe também: é nela que a mão está,
+      // e o puxador do canto não pode ficar debaixo de um jogador.
+      setAArrastar(new Set([resize]));
       return;
     }
 
@@ -1041,6 +1086,7 @@ export function FieldEditor({
       for (const ar of frame.arrows)
         if (next.has(ar.id)) origin.set(ar.id, { x: ar.x1, y: ar.y1 });
       drag.current = { type: "move", start: p, origin, moved: false };
+      setAArrastar(next);
       return;
     }
 
@@ -1117,6 +1163,9 @@ export function FieldEditor({
   const onPointerUp = (e: React.PointerEvent) => {
     const d = drag.current;
     drag.current = null;
+    // Largou: o levantamento acaba, e quem o mantém por cima é a ordem gravada
+    // (as peças mexidas vão para o fim da lista, mais abaixo).
+    setAArrastar(null);
 
     if (!d) return;
 
@@ -1156,8 +1205,32 @@ export function FieldEditor({
       return;
     }
 
-    if (d.type === "resize" || (d.type === "move" && d.moved)) {
-      // O estado local já tem as posições finais; agora é história.
+    if (d.type === "move" && d.moved) {
+      /*
+       * O que se arrastou fica por cima, também depois de largar.
+       *
+       * Durante o gesto a peça já sobe (ver `ordemDePintura`); ao largar, a
+       * ordem passa a ser essa mesma no desenho gravado — as peças mexidas vão
+       * para o fim da lista, que é quem pinta por último. Sem isto, largar um
+       * jogador em cima de outro fazia-o desaparecer por baixo no instante em
+       * que se tirava o dedo.
+       *
+       * O "antes" do desfazer é o desenho com a ordem antiga (durante o arrasto
+       * a lista não mudou de ordem, só a pintura), por isso desfazer devolve as
+       * posições **e** as camadas.
+       */
+      const depois = patchFrame((f) => ({
+        ...f,
+        items: [...f.items.filter((i) => !d.origin.has(i.id)), ...f.items.filter((i) => d.origin.has(i.id))],
+      }));
+      setDiagram(depois);
+      setHistory((h) => [...h.slice(-49), diagramBefore(d, diagram, frameIx)]);
+      setFuture([]);
+      onChange(depois);
+    }
+
+    if (d.type === "resize") {
+      // O estado local já tem as medidas finais; agora é história.
       setHistory((h) => [...h.slice(-49), diagramBefore(d, diagram, frameIx)]);
       setFuture([]);
       onChange(diagram);
@@ -1674,7 +1747,7 @@ export function FieldEditor({
                 <ArrowShape arrow={a} selected={selected.has(a.id)} k={kScale} />
               </g>
             ))}
-            {frame.items.map((i) => (
+            {ordemDePintura(frame.items, aArrastar ?? undefined).map((i) => (
               <g key={i.id} data-id={i.id} transform={`translate(${i.x} ${i.y}) rotate(${i.rot ?? 0})`} className="cursor-move">
                 <ItemShape item={i} selected={selected.has(i.id)} k={kScale} field={diagram.field} />
                 {i.kind === "zone" && selected.has(i.id) && (

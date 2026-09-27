@@ -30,6 +30,31 @@ import {
  * família liga-se depois pelo fluxo de Famílias, que é o que a app existe para
  * fazer. Ver `docs/03-estado.md`.
  */
+/**
+ * Uma equipa do atleta: qual, com que número, a jogar onde.
+ *
+ * Um atleta pode estar em várias equipas — futebol e futsal, ou um Sub-13 que
+ * também joga nos Sub-14 — e o número e a posição são de cada uma: o 10 no
+ * futebol pode ser o 7 no futsal. Ver `TeamMembership.squadNumber`.
+ */
+export class EquipaDoAtletaDto {
+  @IsString()
+  @Length(1, 40)
+  teamId!: string;
+
+  @IsOptional()
+  @IsInt()
+  @Min(0)
+  @Max(999)
+  squadNumber?: number | null;
+
+  /** Vazio limpa — em natação não há posição para escolher. */
+  @IsOptional()
+  @IsString()
+  @Length(0, 40)
+  position?: string | null;
+}
+
 export class AthleteInputDto {
   @IsString()
   @Length(2, 120)
@@ -39,9 +64,29 @@ export class AthleteInputDto {
   @IsISO8601()
   birthdate!: string;
 
+  /**
+   * As equipas do atleta, cada uma com o seu número e posição. A primeira é a
+   * principal. Quando vem, substitui `teamId`/`position`/`squadNumber`.
+   *
+   * A importação não a usa: lá cada linha é uma equipa, e um atleta em várias
+   * equipas são várias linhas com o mesmo NIF. Ver `importMany`.
+   */
+  @IsOptional()
+  @IsArray()
+  @ArrayMaxSize(10)
+  @ValidateNested({ each: true })
+  @Type(() => EquipaDoAtletaDto)
+  equipas?: EquipaDoAtletaDto[];
+
+  /**
+   * Uma equipa só, a da linha da importação (e a forma antiga da inscrição).
+   * Obrigatória quando não vem `equipas` — o serviço recusa um atleta sem
+   * nenhuma das duas.
+   */
+  @IsOptional()
   @IsString()
   @Length(1, 40)
-  teamId!: string;
+  teamId?: string;
 
   @IsOptional()
   @IsString()
@@ -182,7 +227,24 @@ export class AthleteUpdateDto {
   @IsISO8601()
   birthdate?: string;
 
-  /** Mudar de escalão. A equipa nova tem de estar no âmbito de quem edita. */
+  /**
+   * As equipas do atleta, **a lista inteira**: a que sai da lista sai da equipa
+   * (a passagem fica, com data de saída — é o percurso), a que entra ganha uma
+   * passagem nova, e nas que ficam muda-se o número e a posição. Ver `update`.
+   *
+   * Quando vem, `teamId`/`position`/`squadNumber` não se lêem.
+   */
+  @IsOptional()
+  @IsArray()
+  @ArrayMaxSize(10)
+  @ValidateNested({ each: true })
+  @Type(() => EquipaDoAtletaDto)
+  equipas?: EquipaDoAtletaDto[];
+
+  /**
+   * Mudar de escalão, a forma antiga: troca a equipa **principal**. A equipa
+   * nova tem de estar no âmbito de quem edita.
+   */
   @IsOptional()
   @IsString()
   @Length(1, 40)

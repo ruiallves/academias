@@ -17,6 +17,7 @@ import {
   listGuardians,
   listTeams,
   today,
+  naEquipa,
 } from "@/lib/api";
 import { greeting, longDate, money, percent, relativeDays } from "@/lib/format";
 import { useSession } from "@/session";
@@ -125,7 +126,7 @@ function BillingByTeam() {
 
   const rows = teams
     .map((team) => {
-      const ids = new Set(athletes.filter((a) => a.teamId === team.id).map((a) => a.id));
+      const ids = new Set(athletes.filter((a) => naEquipa(a, team.id)).map((a) => a.id));
       const mine = fees.filter((f) => ids.has(f.athleteId));
       const billed = mine.reduce((n, f) => n + f.amountCents, 0);
       const collected = mine.filter((f) => f.status === "paid").reduce((n, f) => n + f.amountCents, 0);

@@ -6,7 +6,7 @@ import { DeliverDialog } from "@/components/inventory/DeliverDialog";
 import { ReturnDialog } from "@/components/inventory/ReturnDialog";
 import { ArrowLeft, PackageOpen, Search, TriangleAlert, Undo2 } from "@/lib/icons";
 import { shortDate } from "@/lib/format";
-import { listTeams } from "@/lib/api";
+import { listTeams, naEquipa, athleteById } from "@/lib/api";
 import { can } from "@/lib/permissions";
 import { useSession } from "@/session";
 import { ASSIGNMENT_LABEL, listAssignments, listItems, type Assignment } from "@/lib/inventory";
@@ -56,7 +56,11 @@ export default function Deliveries() {
   const filtrados = useMemo(() => {
     const termo = fold(q);
     return (rows ?? []).filter((a) => {
-      if (equipa && a.teamId !== equipa) return false;
+      if (equipa) {
+        // Pelo atleta, que pode estar em várias equipas; sem ficha, pela equipa da entrega.
+        const atleta = athleteById(a.athleteId);
+        if (atleta ? !naEquipa(atleta, equipa) : a.teamId !== equipa) return false;
+      }
       if (artigo && a.itemId !== artigo) return false;
       if (termo && !fold(`${a.athleteName} ${a.itemName}`).includes(termo)) return false;
       return true;

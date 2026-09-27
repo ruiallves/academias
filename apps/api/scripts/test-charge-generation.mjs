@@ -261,7 +261,7 @@ const aindaPaga = (await db.query(
 check("e continua marcada como paga — a geração não reescreve", aindaPaga === "SETTLED", aindaPaga);
 
 console.log("\n=== O ajuste individual manda ===");
-const individual = await call(direcao, "PUT", `/api/athletes/${idSemPreco}/fee`, { amountCents: 1000 });
+const individual = await call(direcao, "PUT", `/api/athletes/${idSemPreco}/fee`, { amountCents: 1000, sportId: modelo.sportId });
 check("a direção ajusta um atleta em concreto", individual.status === 200, `${individual.status}`);
 
 /*
@@ -293,7 +293,7 @@ check("o servidor diz que a actualizou", individual.body?.reprecadas?.actualizad
  * É a contraprova que dá sentido à verificação anterior: sem ela, "reprecifica"
  * lia-se como "reescreve tudo".
  */
-const paga = await call(direcao, "PUT", `/api/athletes/${idComPreco}/fee`, { amountCents: 1200 });
+const paga = await call(direcao, "PUT", `/api/athletes/${idComPreco}/fee`, { amountCents: 1200, sportId: modelo.sportId });
 check("ajustar quem já pagou não falha", paga.status === 200, `${paga.status}`);
 const intacta = (await db.query(
   `SELECT "amountCents", status FROM "Charge" WHERE "athleteId" = $1 AND period = $2`,
@@ -309,7 +309,7 @@ check("e continua paga", intacta?.status === "SETTLED", intacta?.status);
  * não tem, e este é o "quem não tem". Deixá-lo ajustado aqui fazia a verificação
  * seguinte falhar por causa desta, e não por causa do que ela mede.
  */
-await call(direcao, "DELETE", `/api/athletes/${idComPreco}/fee`);
+await call(direcao, "DELETE", `/api/athletes/${idComPreco}/fee?sportId=${modelo.sportId}`);
 
 // Mas num mês por emitir, o ajuste é o que vale.
 const proximo = new Date(hoje.getFullYear(), hoje.getMonth() + 1, 1);

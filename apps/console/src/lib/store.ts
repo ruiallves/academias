@@ -126,6 +126,8 @@ type ApiTeam = {
   feeCents: number | null;
   /** A duração de jogo do escalão. Ver `Team.matchMinutes` em `data/types.ts`. */
   matchMinutes?: number | null;
+  /** O máximo de convocados da equipa. */
+  maxCallUps?: number;
 };
 
 type ApiAthlete = {
@@ -137,6 +139,8 @@ type ApiAthlete = {
   idDocNumber?: string | null;
   heightCm: number | null; weightKg: number | null; dominantSide: string | null; squadNumber: number | null;
   medicalValidUntil: string | null; teamId: string | null; position: string | null;
+  /** Todas as equipas, a principal primeiro, cada uma com o seu número e posição. */
+  equipas?: { teamId: string; squadNumber: number | null; position: string | null }[];
   /** A conta do próprio atleta na app — ver `AthleteInvitesService` na API. */
   email: string | null;
   app: "account" | "invited" | "none" | "noemail";
@@ -843,11 +847,13 @@ function juntar<T extends { id: string }>(atuais: T[], novos: T[]): T[] {
     coachIds: t.coaches.map((c) => c.id),
     coaches: t.coaches,
     headCoach: t.headCoach ?? null,
-    athleteIds: apiAthletes.filter((a) => a.teamId === t.id).map((a) => a.id),
+    // Todos os que estão nesta equipa — incluindo quem a tem como segunda equipa.
+    athleteIds: apiAthletes.filter((a) => equipasDaApi(a).some((e) => e.teamId === t.id)).map((a) => a.id),
     schedule: Array.isArray(t.schedule) ? (t.schedule as Team["schedule"]) : [],
     competitions: t.competitions ?? [],
     feeCents: t.feeCents,
     matchMinutes: t.matchMinutes ?? null,
+    ...(t.maxCallUps !== undefined ? { maxCallUps: t.maxCallUps } : {}),
   }));
 
   const athletes: Athlete[] = apiAthletes.map((a) => ({
@@ -859,6 +865,11 @@ function juntar<T extends { id: string }>(atuais: T[], novos: T[]): T[] {
     idDocNumber: a.idDocNumber ?? undefined,
     teamId: a.teamId ?? "",
     position: a.position ?? undefined,
+    equipas: equipasDaApi(a).map((e) => ({
+      teamId: e.teamId,
+      squadNumber: e.squadNumber ?? undefined,
+      position: e.position ?? undefined,
+    })),
     guardianIds: a.guardians.map((g) => g.membershipId),
     joinedAt: a.joinedAt,
     status: a.status === "PAUSED" ? "paused" : a.status === "LEFT" ? "left" : "active",
@@ -1169,3 +1180,13 @@ export const currentPeriod = `${today.getFullYear()}-${String(today.getMonth() +
 export const evaluations: Evaluation[] = [];
 export const staffStints: { staffId: string; season: string; teamName: string; sportId: string; title: string }[] = [];
 export type StaffStint = (typeof staffStints)[number];
+/**
+ * As equipas de um atleta, como a API as manda.
+ *
+ * Um servidor antigo só manda `teamId`: cai para essa, sozinha, com o número e a
+ * posição da ficha. Assim a consola nova funciona antes e depois do deploy da API.
+ */
+function equipasDaApi(a: ApiAthlete): { teamId: string; squadNumber: number | null; position: string | null }[] {
+  if (a.equipas) return a.equipas;
+  return a.teamId ? [{ teamId: a.teamId, squadNumber: a.squadNumber, position: a.position }] : [];
+}

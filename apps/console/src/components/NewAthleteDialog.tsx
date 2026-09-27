@@ -1,11 +1,11 @@
 import { useState, type FormEvent } from "react";
-import { listTeams, sportById } from "@/lib/api";
+import { listTeams } from "@/lib/api";
 import { apiPost } from "@/lib/http";
 import { ConvidarAoCriar } from "./ConfirmarSobrescrita";
 import { reloadAcademy } from "@/lib/store";
 import type { Session } from "@/lib/permissions";
 import { Dialog, DialogField, dialogInputClass } from "./Dialog";
-import { SelectField } from "./primitives";
+import { EquipasDoAtletaField, equipasParaApi, linhaNova, problemaDasEquipas, type LinhaDeEquipa } from "./EquipasDoAtletaField";
 import { IdentificacaoField, identificacaoInicial, identificacaoOk, identificacaoParaApi } from "./IdentificacaoField";
 
 /**
@@ -16,18 +16,29 @@ import { IdentificacaoField, identificacaoInicial, identificacaoOk, identificaca
  * uma conta (para receber avisos e mensalidades na app), e liga-se pelo fluxo de
  * **Famílias**, com convite. Criá-lo aqui seria criar uma conta sem consentimento.
  *
- * A posição só aparece se a modalidade da equipa tiver posições — natação não tem,
- * e o formulário não finge que tem.
+ * Um atleta pode ficar logo em várias equipas — futebol e futsal, por exemplo.
+ * Cada uma pede a modalidade, a equipa, o número e a posição (ver
+ * `EquipasDoAtletaField`); a primeira é a principal. A posição só aparece se a
+ * modalidade tiver posições — natação não tem, e o formulário não finge que tem.
  */
-export function NewAthleteDialog({ session, onClose }: { session: Session; onClose: () => void }) {
+export function NewAthleteDialog({
+  session,
+  onClose,
+  teamId: equipaInicial,
+}: {
+  session: Session;
+  onClose: () => void;
+  /** A equipa com que abre — quem vem do plantel de uma equipa já a escolheu. */
+  teamId?: string;
+}) {
   const teams = listTeams(session);
 
   const [name, setName] = useState("");
   const [birthdate, setBirthdate] = useState("");
   const [ident, setIdent] = useState(identificacaoInicial());
-  const [teamId, setTeamId] = useState(teams[0]?.id ?? "");
-  const [position, setPosition] = useState("");
-  const [squadNumber, setSquadNumber] = useState("");
+  const [linhas, setLinhas] = useState<LinhaDeEquipa[]>(() =>
+    teams.length === 0 ? [] : [linhaNova(teams, undefined, equipaInicial && teams.some((t) => t.id === equipaInicial) ? equipaInicial : undefined)],
+  );
   /** O email do próprio atleta — opcional; com ele, pode sair o convite da app. */
   const [email, setEmail] = useState("");
   /*
@@ -40,13 +51,11 @@ export function NewAthleteDialog({ session, onClose }: { session: Session; onClo
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const team = teams.find((t) => t.id === teamId);
-  const positions = team ? sportById(team.sportId)?.positions ?? [] : [];
   // O NIF, ou outro documento, é obrigatório: sem nenhum, nenhuma família consegue
   // reclamar este atleta na app, e a academia só dá por isso quando o pai telefona.
   const nifOk = identificacaoOk(ident);
   const emailOk = email.trim() === "" || /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim());
-  const valid = name.trim().length >= 2 && birthdate !== "" && teamId !== "" && nifOk && emailOk;
+  const valid = name.trim().length >= 2 && birthdate !== "" && problemaDasEquipas(linhas) === null && nifOk && emailOk;
 
   async function submit(e: FormEvent) {
     e.preventDefault();
@@ -57,11 +66,10 @@ export function NewAthleteDialog({ session, onClose }: { session: Session; onClo
       await apiPost("/api/athletes", {
         name: name.trim(),
         birthdate,
-        teamId,
+        // As equipas, cada uma com o seu número e posição; a primeira é a principal.
+        equipas: equipasParaApi(linhas),
         ...identificacaoParaApi(ident, "criar"),
         ...(email.trim() ? { email: email.trim().toLowerCase(), sendInvite: convidar } : {}),
-        ...(position ? { position } : {}),
-        ...(squadNumber ? { squadNumber: Number(squadNumber) } : {}),
       });
       await reloadAcademy();
       onClose();
@@ -76,7 +84,7 @@ export function NewAthleteDialog({ session, onClose }: { session: Session; onClo
     <Dialog
       labelledBy="novo-atleta"
       title="Novo atleta"
-      subtitle={team?.name}
+      subtitle={linhas.length > 1 ? `Em ${linhas.length} equipas` : teams.find((t) => t.id === linhas[0]?.teamId)?.name}
       onClose={onClose}
       footer={
         <>
@@ -144,38 +152,13 @@ export function NewAthleteDialog({ session, onClose }: { session: Session; onClo
             substantivo="atleta"
           />
 
-          <div className="grid grid-cols-[minmax(0,1fr)_auto] gap-3">
-            <DialogField label="Equipa">
-              <SelectField
-                className="w-full"
-                value={teamId}
-                onChange={(v) => { setTeamId(v); setPosition(""); }}
-                options={teams.map((t) => ({ value: t.id, label: t.name }))}
-              />
-            </DialogField>
-            <DialogField label="Número" hint="opcional">
-              <input
-                type="number"
-                min={0}
-                max={999}
-                value={squadNumber}
-                onChange={(e) => setSquadNumber(e.target.value)}
-                className={dialogInputClass}
-                style={{ width: 90 }}
-              />
-            </DialogField>
-          </div>
-
-          {positions.length > 0 && (
-            <DialogField label="Posição" hint="opcional">
-              <SelectField
-                className="w-full"
-                value={position}
-                onChange={setPosition}
-                options={[{ value: "", label: "—" }, ...positions.map((p) => ({ value: p, label: p }))]}
-              />
-            </DialogField>
-          )}
+          {/*
+            As equipas. Um atleta que pratica futebol e futsal fica nas duas, cada
+            uma com o seu número e posição, e paga a soma das mensalidades.
+          */}
+          <DialogField label="Equipas" hint="o número e a posição são de cada equipa">
+            <EquipasDoAtletaField linhas={linhas} onChange={setLinhas} teams={teams} />
+          </DialogField>
 
           {error && (
             <p className="rounded-[var(--radius-control)] bg-risk-soft px-3 py-2 text-meta text-risk">{error}</p>

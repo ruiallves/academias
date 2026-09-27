@@ -1,7 +1,7 @@
 import { apiGet, apiGetSilencioso, apiPatch, apiPost } from "@/lib/http";
 import { matches, reloadAcademy, type ApiMatch, type GuestCandidate, type MatchLogistics } from "@/lib/store";
 import { activeRestriction, isUnavailable, isoToday } from "@/lib/clinical";
-import { athleteById, listAthletes } from "@/lib/api";
+import { athleteById, listAthletes, naEquipa, numeroNaEquipa } from "@/lib/api";
 import { shortDate } from "@/lib/format";
 import type { Session } from "@/lib/permissions";
 import type { Athlete } from "@/data/types";
@@ -217,7 +217,7 @@ function motivoDeBloqueio(a: Athlete): string | null {
 
 export function eligibleFor(session: Session, match: ApiMatch): Eligible[] {
   return listAthletes(session)
-    .filter((a) => a.teamId === match.teamId)
+    .filter((a) => naEquipa(a, match.teamId))
     .map((a) => ({
       athlete: a,
       blockedBy: motivoDeBloqueio(a),
@@ -226,7 +226,7 @@ export function eligibleFor(session: Session, match: ApiMatch): Eligible[] {
       // Disponíveis primeiro; o resto por número de camisola, como um treinador lê
       // um plantel.
       if (Boolean(x.blockedBy) !== Boolean(y.blockedBy)) return x.blockedBy ? 1 : -1;
-      return (x.athlete.squadNumber ?? 99) - (y.athlete.squadNumber ?? 99);
+      return (numeroNaEquipa(x.athlete, match.teamId) ?? 99) - (numeroNaEquipa(y.athlete, match.teamId) ?? 99);
     });
 }
 

@@ -1,5 +1,5 @@
-import { useCallback, useEffect, useState } from "react";
-import { CustoDoPagamento } from "@/components/finance/CustoDoPagamento";
+import { useEffect, useState } from "react";
+import { PrecoDoAtleta } from "@/components/finance/PrecoDoAtleta";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import {
   AvailabilityTag,
@@ -63,7 +63,7 @@ import {
   today,
   type AthleteSessionRecord,
 } from "@/lib/api";
-import { ApiError, apiDelete, apiGet, apiPatch, apiPut } from "@/lib/http";
+import { ApiError, apiDelete, apiPatch } from "@/lib/http";
 import { Dialog } from "@/components/Dialog";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { LigarEncarregadoDialog } from "@/components/LigarEncarregadoDialog";
@@ -83,7 +83,6 @@ import { can, mayReadTaxId } from "@/lib/permissions";
 import { AthleteEditPanel } from "@/components/AthleteEditPanel";
 import { useSession } from "@/session";
 import type { Athlete, Fee } from "@/data/types";
-import { Spinner } from "@/components/Busy";
 
 type Tab = "overview" | "matches" | "attendance" | "development" | "clinical" | "kit" | "fees" | "family" | "history";
 
@@ -132,11 +131,10 @@ export default function AthleteDetail() {
     );
   }
 
-  const team = teamById(athlete.teamId);
-  const sport = sportById(team?.sportId ?? "");
   const season = summariseSeason(id, matches);
   const attendance = athleteAttendanceSummary(id);
-  const hasMatches = (sport?.positions.length ?? 0) > 0;
+  // Em alguma das modalidades dele há jogos (natação não tem).
+  const hasMatches = athlete.equipas.some((e) => (sportById(teamById(e.teamId)?.sportId ?? "")?.positions.length ?? 0) > 0);
 
   const tabs: { value: Tab; label: string; icon: typeof LayoutGrid }[] = [
     { value: "overview", label: "Visão geral", icon: LayoutGrid },
@@ -258,8 +256,17 @@ function BackLink() {
 
 function AthleteHeader({ athlete }: { athlete: Athlete }) {
   const { session } = useSession();
-  const team = teamById(athlete.teamId);
-  const sport = sportById(team?.sportId ?? "");
+  /*
+   * Todas as equipas do atleta, a principal primeiro. Um atleta de futebol e
+   * futsal mostra as duas, cada uma com a sua modalidade e posição; a
+   * modalidade só se escreve quando o clube tem mais do que uma.
+   */
+  const equipas = athlete.equipas.map((e) => {
+    const team = teamById(e.teamId);
+    return { ...e, team, sport: sportById(team?.sportId ?? "") };
+  });
+  const variasModalidades = new Set(equipas.map((e) => e.sport?.id)).size > 1;
+  const outrosNumeros = equipas.slice(1).filter((e) => e.squadNumber !== undefined);
 
   // Redesenha assim que o departamento clínico der baixa ou alta.
   useClinicalRecords();
@@ -307,9 +314,14 @@ function AthleteHeader({ athlete }: { athlete: Athlete }) {
 
         <div className="min-w-0 flex-1">
           <div className="mb-1 flex flex-wrap items-center gap-1.5">
-            {sport && <Pill tone="signal">{sport.name}</Pill>}
-            <span className="text-meta text-ink-3">{team?.name}</span>
-            {athlete.position && <span className="text-meta text-ink-3">· {athlete.position}</span>}
+            {equipas.map((e, i) => (
+              <span key={e.teamId} className="inline-flex items-center gap-1.5">
+                {i > 0 && <span className="text-meta text-ink-4">·</span>}
+                {e.sport && (variasModalidades || i === 0) && <Pill tone="signal">{e.sport.name}</Pill>}
+                <span className="text-meta text-ink-3">{e.team?.name}</span>
+                {e.position && <span className="text-meta text-ink-3">· {e.position}</span>}
+              </span>
+            ))}
             {athlete.status === "paused" && <Pill tone="warn">Em pausa</Pill>}
             {saiu && <Pill tone="risk">Saiu do clube</Pill>}
             <CalledUpTag athleteId={athlete.id} />
@@ -335,6 +347,12 @@ function AthleteHeader({ athlete }: { athlete: Athlete }) {
               {athlete.squadNumber}
             </div>
             <div className="text-[11px] text-ink-3">camisola</div>
+            {/* O número nas outras equipas: o 10 no futebol pode ser o 7 no futsal. */}
+            {outrosNumeros.map((e) => (
+              <div key={e.teamId} className="mt-1 text-[11px] text-ink-3">
+                <span className="font-semibold text-ink-2 tabular">{e.squadNumber}</span> em {e.team?.name}
+              </div>
+            ))}
           </div>
         )}
       </div>
@@ -1347,14 +1365,6 @@ function Development({ athlete }: { athlete: Athlete }) {
 /* Mensalidades                                                                */
 /* -------------------------------------------------------------------------- */
 
-type AthleteFee = {
-  source: "individual" | "team" | "none";
-  effectiveAmountCents: number | null;
-  individualAmountCents: number | null;
-  teamAmountCents: number | null;
-  teamName: string | null;
-};
-
 const FEE_STATUS_TONE = { paid: "ok", processing: "signal", pending: "warn", overdue: "risk", void: "neutral" } as const;
 /** Os mesmos rótulos de Mensalidades — ver `STATUS_LABEL` lá, e o porquê de "Não pago". */
 const FEE_STATUS_LABEL = { paid: "Pago", processing: "A confirmar", pending: "Não pago", overdue: "Vencido", void: "Anulada" };
@@ -1370,38 +1380,13 @@ function FeesTab({ athlete }: { athlete: Athlete }) {
   const mayConfigure = can(session, "billing:write");
   const history = feeHistory(athlete.id);
 
-  const [fee, setFee] = useState<AthleteFee | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-
-  const load = useCallback(async () => {
-    setLoading(true);
-    setError(null);
-    try {
-      setFee(await apiGet<AthleteFee>(`/api/athletes/${athlete.id}/fee`));
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Não foi possível carregar.");
-    } finally {
-      setLoading(false);
-    }
-  }, [athlete.id]);
-
-  useEffect(() => {
-    void load();
-  }, [load]);
-
   return (
     <div className="space-y-3">
       <Panel>
         <PanelHead title="Mensalidade" />
         <div className="px-5 py-5">
-          {loading ? (
-            <Spinner className="py-3" />
-          ) : error ? (
-            <p className="text-meta text-risk">{error}</p>
-          ) : (
-            fee && <FeeEditor athleteId={athlete.id} fee={fee} mayConfigure={mayConfigure} onSaved={load} />
-          )}
+          {/* O mesmo que o diálogo "Preço por atleta" das Mensalidades. */}
+          <PrecoDoAtleta athleteId={athlete.id} mayConfigure={mayConfigure} />
         </div>
       </Panel>
 
@@ -1423,10 +1408,6 @@ function FeesTab({ athlete }: { athlete: Athlete }) {
   );
 }
 
-/**
- * O valor efectivo em destaque, com a origem por baixo, e a acção certa consoante
- * o estado: ajustar (quando ainda não há ajuste), mudar ou reverter (quando já há).
- */
 /**
  * Uma linha do histórico de mensalidades, na ficha do atleta.
  *
@@ -1499,138 +1480,3 @@ function LinhaDoHistorico({ fee: f }: { fee: Fee }) {
   );
 }
 
-function FeeEditor({
-  athleteId,
-  fee,
-  mayConfigure,
-  onSaved,
-}: {
-  athleteId: string;
-  fee: AthleteFee;
-  mayConfigure: boolean;
-  onSaved: () => void;
-}) {
-  const [editing, setEditing] = useState(false);
-  const [value, setValue] = useState(fee.individualAmountCents !== null ? (fee.individualAmountCents / 100).toFixed(2) : "");
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-
-  async function save() {
-    const cents = Math.round(Number(value.trim().replace(",", ".")) * 100);
-    // 0 € é válido: é o atleta isento, e a mensalidade dele nasce paga.
-    if (!Number.isFinite(cents) || cents < 0 || (cents > 0 && cents < 50)) {
-      setError("Indica 0 €, ou um valor de pelo menos 0,50 €.");
-      return;
-    }
-    setBusy(true);
-    setError(null);
-    try {
-      await apiPut(`/api/athletes/${athleteId}/fee`, { amountCents: cents });
-      await reloadAcademy();
-      setEditing(false);
-      onSaved();
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Não foi possível guardar.");
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  async function clear() {
-    setBusy(true);
-    setError(null);
-    try {
-      await apiDelete(`/api/athletes/${athleteId}/fee`);
-      await reloadAcademy();
-      onSaved();
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Não foi possível reverter.");
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  if (editing) {
-    return (
-      <div className="max-w-[280px]">
-        <label className="mb-1.5 block text-meta font-medium text-ink-3">Valor individual, por mês</label>
-        <div className="flex items-center gap-2">
-          <span className="text-body text-ink-3">€</span>
-          <input
-            type="text"
-            inputMode="decimal"
-            autoFocus
-            value={value}
-            // Seleccionado ao entrar: o campo chega com o preço actual, e um
-            // preço troca-se em vez de se editar. Sem isto, escrever "35" sobre
-            // um "60.00" dava "60.0035" (arredonda para o mesmo valor, e o botão
-            // parecia não fazer nada) ou "3560.00" (recusado pelo servidor). O
-            // mesmo que no campo dos preços por equipa, em `Fees.tsx`.
-            onFocus={(e) => e.currentTarget.select()}
-            onChange={(e) => setValue(e.target.value)}
-            onKeyDown={(e) => e.key === "Enter" && void save()}
-            className="h-9 flex-1 rounded-[var(--radius-control)] border border-line bg-surface px-2.5 text-body tabular focus:border-line-strong focus:outline-none"
-          />
-        </div>
-        <CustoDoPagamento amountCents={paraCentimosDoAjuste(value)} />
-        {error && <p className="mt-1.5 text-meta text-risk">{error}</p>}
-        <div className="mt-3 flex gap-2">
-          <button type="button" onClick={() => setEditing(false)} disabled={busy} className="ctl-ghost">
-            Cancelar
-          </button>
-          <button type="button" onClick={() => void save()} disabled={busy} className="ctl-primary">
-            {busy ? "A guardar…" : "Guardar"}
-          </button>
-        </div>
-      </div>
-    );
-  }
-
-  return (
-    <div>
-      {fee.effectiveAmountCents === null ? (
-        <p className="text-body text-ink-3">Ainda não há preço configurado para este atleta.</p>
-      ) : (
-        <>
-          <div className="text-[36px] leading-none font-semibold text-ink tabular">{money(fee.effectiveAmountCents)}</div>
-          <p className="mt-2 text-meta text-ink-3">
-            {fee.source === "individual" ? (
-              <>
-                Ajuste individual — a equipa paga{" "}
-                <span className="font-medium text-ink-2">{fee.teamAmountCents !== null ? money(fee.teamAmountCents) : "—"}</span>.
-              </>
-            ) : (
-              <>Preço da equipa{fee.teamName ? ` — ${fee.teamName}` : ""}.</>
-            )}
-          </p>
-        </>
-      )}
-
-      {error && <p className="mt-2 text-meta text-risk">{error}</p>}
-
-      {mayConfigure && (
-        <div className="mt-4 flex gap-2">
-          <button type="button" onClick={() => setEditing(true)} className="ctl-outline">
-            {fee.source === "individual" ? "Alterar valor individual" : "Ajustar individualmente"}
-          </button>
-          {fee.source === "individual" && (
-            <button type="button" onClick={() => void clear()} disabled={busy} className="ctl-ghost">
-              {busy ? "A reverter…" : "Reverter para o preço da equipa"}
-            </button>
-          )}
-        </div>
-      )}
-    </div>
-  );
-}
-
-/**
- * O valor escrito no campo, em cêntimos — só para a linha de custo.
- *
- * Não valida nada: quem valida é a gravação, contra o servidor. Aqui só se quer
- * saber se já há número suficiente para fazer a conta enquanto se escreve.
- */
-function paraCentimosDoAjuste(v: string): number | null {
-  const n = Number(v.trim().replace(/\s/g, "").replace("€", "").replace(",", "."));
-  return Number.isFinite(n) && n > 0 ? Math.round(n * 100) : null;
-}

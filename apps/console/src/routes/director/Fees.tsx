@@ -7,10 +7,12 @@ import { Dialog, DialogField } from "@/components/Dialog";
 import { type Column, cx, DataTable, Empty, ListaDeEscolha, Metric, MetricRow, Monogram, Panel, Pill, SelectField } from "@/components/primitives";
 import { ResultCount, SearchInput, Segmented, Select, Toolbar } from "@/components/filters";
 import { NewFeeDialog } from "@/components/finance/NewFeeDialog";
+import { PrecoDoAtleta } from "@/components/finance/PrecoDoAtleta";
 import { BillingCalendarDialog } from "@/components/finance/BillingCalendarDialog";
 import { MetodoDePagamentoDialog, type MetodoManual } from "@/components/finance/MetodoDePagamento";
-import { CalendarDays, Check, ChevronDown, CircleCheck, Download, Loader2, Plus, Search, Send, Settings, Trash2, TriangleAlert, Users, Wallet } from "@/lib/icons";
+import { CalendarDays, Check, ChevronDown, ChevronRight, CircleCheck, Download, Loader2, Plus, Search, Send, Settings, Trash2, TriangleAlert, Users, Wallet } from "@/lib/icons";
 import {
+  academy,
   arrears,
   athleteById,
   availablePeriods,
@@ -24,8 +26,9 @@ import {
   listTeams,
   teamById,
   today,
+  naEquipa,
 } from "@/lib/api";
-import { apiDelete, apiPatch, apiPost, apiPut } from "@/lib/http";
+import { apiDelete, apiPatch, apiPost } from "@/lib/http";
 import { reloadAcademy, reloadFees, useStore } from "@/lib/store";
 import { money, percent, periodLabel, relativeDays, shortDate, shortName } from "@/lib/format";
 import { exportFees, nomeDoFicheiro } from "@/lib/fees-export";
@@ -156,7 +159,7 @@ export default function Fees() {
    * cima, e o número grande é o que se lê primeiro.
    */
   const noEscopo = useMemo(
-    () => (equipa === ALL ? rows : rows.filter((f) => (athleteById(f.athleteId)?.teamId ?? "") === equipa)),
+    () => (equipa === ALL ? rows : rows.filter((f) => { const a = athleteById(f.athleteId); return a ? naEquipa(a, equipa) : false; })),
     [rows, equipa],
   );
 
@@ -811,8 +814,23 @@ function TeamFeesDialog({
   onSaved: () => void;
   onClose: () => void;
 }) {
-  const teams = listTeams(session);
+  const todas = listTeams(session);
   const [aplicarEm, setAplicarEm] = useState<AplicarEm>(mesCobrado(currentPeriod) ? "atual" : "proximo");
+
+  /*
+   * Um separador por modalidade, quando há mais do que uma.
+   *
+   * Um atleta que joga futebol e futsal paga a soma dos dois preços, e cada
+   * modalidade tem os seus: separá-las é o que deixa configurar o futsal sem
+   * andar à procura dele no meio das equipas de futebol. Com uma modalidade só,
+   * um separador "Futebol" ao lado de "Todas" não separava nada — a mesma regra
+   * da página das Equipas.
+   */
+  const modalidades = academy.sports.filter((sp) => todas.some((t) => t.sportId === sp.id));
+  const [modalidade, setModalidade] = useState<string>("todas");
+  const teams = modalidade === "todas" ? todas : todas.filter((t) => t.sportId === modalidade);
+  const varias = modalidades.length > 1;
+  const nomeDaModalidade = (id: string) => academy.sports.find((sp) => sp.id === id)?.name ?? "";
 
   /*
    * O "Concluído" espera pelo que ficou a meio.
@@ -872,7 +890,7 @@ function TeamFeesDialog({
     <Dialog
       labelledBy="precos-por-equipa"
       title="Preços por equipa"
-      subtitle="O preço por omissão de cada atleta — o ajuste individual, na ficha do atleta, sobrepõe-se."
+      subtitle="O preço de cada equipa. Quem joga em duas modalidades paga a soma, e o ajuste individual de um atleta sobrepõe-se ao da equipa."
       onClose={concluir}
       width={480}
       footer={
@@ -888,19 +906,38 @@ function TeamFeesDialog({
         </button>
       }
     >
-      {teams.length === 0 ? (
+      {todas.length === 0 ? (
         <div className="px-5 py-10">
           <Empty title="Sem equipas ainda" />
         </div>
       ) : (
         <>
           <ApplyFromChoice value={aplicarEm} onChange={setAplicarEm} />
+          {varias && (
+            <div className="border-b border-line px-5 py-2.5">
+              <Segmented
+                label="Modalidade"
+                value={modalidade}
+                onChange={setModalidade}
+                options={[
+                  { value: "todas", label: "Todas", count: todas.length },
+                  ...modalidades.map((sp) => ({
+                    value: sp.id,
+                    label: sp.name,
+                    count: todas.filter((t) => t.sportId === sp.id).length,
+                  })),
+                ]}
+              />
+            </div>
+          )}
           <ul>
             {teams.map((t) => (
               <li key={t.id} className="flex items-center gap-3 border-b border-line px-5 py-3 last:border-0">
                 <div className="min-w-0 flex-1">
                   <div className="truncate text-body font-medium text-ink">{t.name}</div>
                   <div className="text-meta text-ink-3">
+                    {/* Em "Todas", a modalidade diz a que separador pertence. */}
+                    {varias && modalidade === "todas" && `${nomeDaModalidade(t.sportId)} · `}
                     {t.athleteIds.length} {t.athleteIds.length === 1 ? "atleta" : "atletas"}
                   </div>
                 </div>
@@ -1054,14 +1091,19 @@ function paraCentimosDoPreco(v: string): number | null {
 }
 
 /**
- * Preço por atleta — o mesmo ajuste individual de sempre, aplicado a vários
- * atletas escolhidos de uma vez.
+ * Preço por atleta: escolhe-se um atleta e define-se o valor em cada modalidade
+ * que ele pratica.
  *
- * Existe para o caso em que um valor diferente não pertence a uma equipa
- * inteira nem a um atleta só: uma bolsa que abrange três irmãos, um acordo
- * pontual com um grupo. Cada atleta escolhido passa a ter o mesmo ajuste
- * individual de `PUT /api/athletes/:id/fee` — sobrepõe-se ao preço da equipa, e
- * fica assim até alguém o reverter na ficha do próprio atleta.
+ * ## Um atleta de cada vez
+ *
+ * Aplicava o mesmo valor a vários atletas escolhidos juntos (irmãos, um grupo
+ * com o mesmo acordo). Com o preço por modalidade isso deixou de fazer sentido:
+ * um valor não quer dizer nada sem se saber de que modalidade é, e três atletas
+ * escolhidos juntos podem praticar modalidades diferentes. O servidor também já
+ * não o aceita.
+ *
+ * Escolhido o atleta, o que aparece é o mesmo que a ficha dele mostra, no
+ * separador Mensalidades (`PrecoDoAtleta`): uma linha por modalidade, e a soma.
  */
 function AthleteFeesDialog({
   session,
@@ -1074,144 +1116,83 @@ function AthleteFeesDialog({
   onClose: () => void;
 }) {
   const athletes = listAthletes(session);
-  const [aplicarEm, setAplicarEm] = useState<AplicarEm>("atual");
+  const [aplicarEm, setAplicarEm] = useState<AplicarEm>(mesCobrado(currentPeriod) ? "atual" : "proximo");
   const [query, setQuery] = useState("");
-  const [selected, setSelected] = useState<Set<string>>(new Set());
-  const [amount, setAmount] = useState("");
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [result, setResult] = useState<string | null>(null);
+  const [escolhido, setEscolhido] = useState<string | null>(null);
 
   const q = query.trim().toLowerCase();
   const visible = q ? athletes.filter((a) => a.name.toLowerCase().includes(q)) : athletes;
-
-  const toggle = (id: string) =>
-    setSelected((s) => {
-      const next = new Set(s);
-      next.has(id) ? next.delete(id) : next.add(id);
-      return next;
-    });
-
-  async function apply() {
-    const cents = Math.round(Number(amount.trim().replace(",", ".")) * 100);
-    if (selected.size === 0) {
-      setError("Escolhe pelo menos um atleta.");
-      return;
-    }
-    // 0 € é válido: é o atleta isento, e a mensalidade dele nasce paga.
-    if (!Number.isFinite(cents) || cents < 0 || (cents > 0 && cents < 50)) {
-      setError("Indica 0 €, ou um valor de pelo menos 0,50 €.");
-      return;
-    }
-
-    setBusy(true);
-    setError(null);
-    setResult(null);
-    try {
-      await apiPut("/api/athletes/fee", { athleteIds: [...selected], amountCents: cents, aplicarEm });
-      await reloadAcademy();
-      onSaved();
-      setResult(
-        `Ajustados ${selected.size} ${selected.size === 1 ? "atleta" : "atletas"}` +
-          (aplicarEm === "atual"
-            ? `, com a mensalidade de ${periodLabel(currentPeriod)} emitida.`
-            : `. A cobrança começa em ${periodLabel(proximoPeriodoCobrado(currentPeriod))}.`),
-      );
-      setSelected(new Set());
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Não foi possível guardar.");
-    } finally {
-      setBusy(false);
-    }
-  }
+  const atleta = escolhido ? athleteById(escolhido) : undefined;
 
   return (
     <Dialog
       labelledBy="preco-por-atleta"
       title="Preço por atleta"
-      subtitle="Um ajuste individual, aplicado a vários atletas de uma vez — sobrepõe-se ao preço da equipa."
+      subtitle={
+        atleta
+          ? atleta.name
+          : "Escolhe o atleta. O valor define-se em cada modalidade que ele pratica e sobrepõe-se ao preço da equipa."
+      }
       onClose={onClose}
       width={480}
       footer={
         <>
-          <button type="button" onClick={onClose} className="ctl-ghost">
-            Fechar
-          </button>
-          <button type="button" onClick={() => void apply()} disabled={busy} className="ctl-primary">
-            {busy ? "A aplicar…" : `Aplicar a ${selected.size || ""} ${selected.size === 1 ? "atleta" : "atletas"}`.trim()}
+          {atleta && (
+            <button type="button" onClick={() => setEscolhido(null)} className="ctl-ghost mr-auto">
+              Escolher outro atleta
+            </button>
+          )}
+          <button type="button" onClick={onClose} className="ctl-primary">
+            Concluído
           </button>
         </>
       }
     >
       <ApplyFromChoice value={aplicarEm} onChange={setAplicarEm} />
 
-      <div className="border-b border-line p-4">
-        <div className="relative">
-          <Search className="pointer-events-none absolute top-1/2 left-2.5 size-3.5 -translate-y-1/2 text-ink-4" strokeWidth={1.75} />
-          <input
-            type="text"
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
-            placeholder="Procurar atleta…"
-            autoFocus
-            className="h-9 w-full rounded-[var(--radius-control)] border border-line bg-surface pr-3 pl-8 text-body text-ink placeholder:text-ink-4 focus:border-line-strong focus:outline-none"
-          />
+      {atleta ? (
+        <div className="px-5 py-5">
+          <PrecoDoAtleta athleteId={atleta.id} mayConfigure aplicarEm={aplicarEm} onSaved={onSaved} />
         </div>
-      </div>
+      ) : (
+        <>
+          <div className="border-b border-line p-4">
+            <div className="relative">
+              <Search className="pointer-events-none absolute top-1/2 left-2.5 size-3.5 -translate-y-1/2 text-ink-4" strokeWidth={1.75} />
+              <input
+                type="text"
+                value={query}
+                onChange={(e) => setQuery(e.target.value)}
+                placeholder="Procurar atleta…"
+                autoFocus
+                className="h-9 w-full rounded-[var(--radius-control)] border border-line bg-surface pr-3 pl-8 text-body text-ink placeholder:text-ink-4 focus:border-line-strong focus:outline-none"
+              />
+            </div>
+          </div>
 
-      <ListaDeEscolha className="max-h-[300px] overflow-y-auto">
-        {visible.length === 0 ? (
-          <li className="px-5 py-8 text-center text-meta text-ink-4">Ninguém com esse nome.</li>
-        ) : (
-          visible.map((a) => {
-            const on = selected.has(a.id);
-            return (
-              <li key={a.id}>
-                <button
-                  type="button"
-                  onClick={() => toggle(a.id)}
-                  aria-pressed={on}
-                  className={cx(
-                    "flex w-full items-center gap-2.5 border-b border-line px-4 py-2.5 text-left transition-colors duration-[120ms] last:border-0",
-                    on ? "bg-signal-soft/60" : "hover:bg-sunken",
-                  )}
-                >
-                  <span
-                    className={cx(
-                      "flex size-5 shrink-0 items-center justify-center rounded-[6px] border transition-colors duration-[120ms]",
-                      on ? "border-transparent bg-signal-strong text-signal-on" : "border-line-strong",
-                    )}
+          <ListaDeEscolha className="max-h-[340px] overflow-y-auto">
+            {visible.length === 0 ? (
+              <li className="px-5 py-8 text-center text-meta text-ink-4">Ninguém com esse nome.</li>
+            ) : (
+              visible.map((a) => (
+                <li key={a.id}>
+                  <button
+                    type="button"
+                    onClick={() => setEscolhido(a.id)}
+                    className="flex w-full items-center gap-2.5 border-b border-line px-4 py-2.5 text-left transition-colors duration-[120ms] last:border-0 hover:bg-sunken"
                   >
-                    {on && <Check className="size-3.5" strokeWidth={2.5} />}
-                  </span>
-                  <span className="min-w-0 flex-1">
-                    <span className="block truncate text-body font-medium text-ink">{a.name}</span>
-                    <span className="block truncate text-meta text-ink-3">{teamById(a.teamId)?.name ?? "—"}</span>
-                  </span>
-                </button>
-              </li>
-            );
-          })
-        )}
-      </ListaDeEscolha>
-
-      <div className="border-t border-line p-4">
-        <label className="mb-1.5 block text-meta font-medium text-ink-3">Valor individual, por mês</label>
-        <div className="flex items-center gap-2">
-          <span className="text-body text-ink-3">€</span>
-          <input
-            type="text"
-            inputMode="decimal"
-            value={amount}
-            onChange={(e) => setAmount(e.target.value)}
-            placeholder="0,00"
-            className="h-9 w-32 rounded-[var(--radius-control)] border border-line bg-surface px-2.5 text-body tabular focus:border-line-strong focus:outline-none"
-          />
-        </div>
-        <CustoDoPagamento amountCents={paraCentimosDoPreco(amount)} />
-        {error && <p className="mt-2 text-meta text-risk">{error}</p>}
-        {result && <p className="mt-2 text-meta text-ok">{result}</p>}
-      </div>
+                    <span className="min-w-0 flex-1">
+                      <span className="block truncate text-body font-medium text-ink">{a.name}</span>
+                      <span className="block truncate text-meta text-ink-3">{teamById(a.teamId)?.name ?? "Sem equipa"}</span>
+                    </span>
+                    <ChevronRight className="size-4 shrink-0 text-ink-4" strokeWidth={1.75} />
+                  </button>
+                </li>
+              ))
+            )}
+          </ListaDeEscolha>
+        </>
+      )}
     </Dialog>
   );
 }

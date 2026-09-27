@@ -4,7 +4,7 @@ import { Dialog, DialogField, dialogInputClass } from "@/components/Dialog";
 import { Segmented } from "@/components/filters";
 import { cx, ListaDeEscolha, Monogram } from "@/components/primitives";
 import { Check, ChevronLeft, ChevronRight, Receipt, Search, Send, TriangleAlert, X } from "@/lib/icons";
-import { feeHistory, listAthletes, listTeams, teamById } from "@/lib/api";
+import { feeHistory, listAthletes, listTeams, teamById, naEquipa } from "@/lib/api";
 import { apiPost } from "@/lib/http";
 import { reloadFees } from "@/lib/store";
 import { money, periodLabel } from "@/lib/format";
@@ -102,7 +102,7 @@ export function NewFeeDialog({ onClose, onDone }: { onClose: () => void; onDone:
   /* Os atletas que o pedido vai abranger, pelo que a consola já sabe. */
   const abrangidos: Athlete[] = useMemo(() => {
     if (alvo === "atletas") return activos.filter((a) => escolhidos.has(a.id));
-    if (alvo === "equipas") return activos.filter((a) => equipasEscolhidas.has(a.teamId));
+    if (alvo === "equipas") return activos.filter((a) => a.equipas.some((e) => equipasEscolhidas.has(e.teamId)));
     return activos;
   }, [alvo, activos, escolhidos, equipasEscolhidas]);
 
@@ -305,7 +305,7 @@ export function NewFeeDialog({ onClose, onDone }: { onClose: () => void; onDone:
                 {equipas.length === 0 && <li className="px-3 py-2.5 text-meta text-ink-3">Não há equipas.</li>}
                 {equipas.map((t) => {
                   const on = equipasEscolhidas.has(t.id);
-                  const quantos = activos.filter((a) => a.teamId === t.id).length;
+                  const quantos = activos.filter((a) => naEquipa(a, t.id)).length;
                   return (
                     <li key={t.id}>
                       <button

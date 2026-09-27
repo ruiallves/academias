@@ -6,8 +6,10 @@ import { cx, Empty, Monogram, OutcomeTag, Panel, Pill } from "@/components/primi
 import { Segmented } from "@/components/filters";
 import { MonthGrid } from "@/components/MonthGrid";
 import { NewEventDialog } from "@/components/NewEventDialog";
+import { ImportCalendarDialog } from "@/components/ImportCalendarDialog";
+import { ExportCalendarDialog } from "@/components/ExportCalendarDialog";
 import { EventDetail } from "@/components/EventDetail";
-import { CalendarDays, ChevronLeft, ChevronRight, Loader2, Plus } from "@/lib/icons";
+import { CalendarDays, ChevronLeft, ChevronRight, Download, Loader2, Plus, Upload } from "@/lib/icons";
 import type { CategoricalColor } from "@academia/ui/tokens";
 import { coachById, listTeams, today } from "@/lib/api";
 import {
@@ -68,6 +70,10 @@ export default function Calendar() {
   /** E a equipa, quando quem manda para cá já a tinha escolhido (`?equipa=`). */
   const [composingTeam, setComposingTeam] = useState<string | undefined>(undefined);
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  /* Importar o calendário de uma folha. Ver `ImportCalendarDialog`. */
+  const [importando, setImportando] = useState(false);
+  /* Exportar pergunta primeiro o período e a equipa. Ver `ExportCalendarDialog`. */
+  const [exportando, setExportando] = useState(false);
 
   
   /**
@@ -194,19 +200,35 @@ export default function Calendar() {
         title="Calendário"
         subtitle={isAcademyWide(session) ? "Treinos, jogos e eventos da academia" : "Treinos e jogos das tuas equipas"}
       >
+        {/* Exportar é leitura: quem vê o calendário pode levá-lo, mesmo sem o poder editar. */}
+        <button type="button" onClick={() => setExportando(true)} className="ctl-outline">
+          <Download className="size-3.5" strokeWidth={1.75} />
+          Exportar
+        </button>
         {editable && (
-          <button
-            type="button"
-            onClick={() => {
-              setComposingKind(undefined);
-              setComposingTeam(undefined);
-              setComposing(today);
-            }}
-            className="ctl-primary"
-          >
-            <Plus className="size-3.5" strokeWidth={2} />
-            Novo evento
-          </button>
+          <>
+            {/*
+              Importar vive ao lado de marcar, e não num menu: um clube que
+              arranca tem a época inteira numa folha, e é este o ecrã onde se
+              lembra disso.
+            */}
+            <button type="button" onClick={() => setImportando(true)} className="ctl-outline">
+              <Upload className="size-3.5" strokeWidth={1.75} />
+              Importar
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setComposingKind(undefined);
+                setComposingTeam(undefined);
+                setComposing(today);
+              }}
+              className="ctl-primary"
+            >
+              <Plus className="size-3.5" strokeWidth={2} />
+              Novo evento
+            </button>
+          </>
         )}
       </PageHeader>
 
@@ -325,6 +347,9 @@ export default function Calendar() {
           }}
         />
       )}
+
+      {importando && <ImportCalendarDialog onClose={() => setImportando(false)} />}
+      {exportando && <ExportCalendarDialog onClose={() => setExportando(false)} />}
 
       {selected && (
         <EventDetail

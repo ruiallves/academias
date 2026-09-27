@@ -79,7 +79,7 @@ export class MatchesService {
             select: {
               athleteId: true, status: true, isGuest: true,
               declineReason: true, respondedAt: true,
-              athlete: { select: { name: true, teams: { where: { leftAt: null }, select: { team: { select: { name: true } } }, take: 1 } } },
+              athlete: { select: { name: true, teams: { where: { leftAt: null }, select: { team: { select: { name: true } } }, orderBy: [{ joinedAt: "asc" }, { id: "asc" }], take: 1 } } },
             },
           },
           /*
@@ -1237,14 +1237,26 @@ export class MatchesService {
       const athletes = await db.athlete.findMany({
         where: {
           status: { not: "LEFT" },
-          teams: { some: { leftAt: null, teamId: { in: otherIds } } },
+          /*
+           * De outra equipa, e não desta: um atleta que também está nesta equipa
+           * (joga nos dois escalões) já é do plantel dela e convoca-se como tal.
+           */
+          AND: [
+            { teams: { some: { leftAt: null, teamId: { in: otherIds } } } },
+            { teams: { none: { leftAt: null, teamId: match.teamId } } },
+          ],
           // O filtro de idade é feito na base: quem nasceu antes desta data já
           // é velho de mais para esta equipa. Ver `birthdateFloor`.
           birthdate: { gte: birthdateFloor(match.maxAge, match.startsAt) },
         },
         select: {
           id: true, name: true, status: true, squadNumber: true, birthdate: true,
-          teams: { where: { leftAt: null, teamId: { in: otherIds } }, select: { teamId: true, position: true }, take: 1 },
+          teams: {
+            where: { leftAt: null, teamId: { in: otherIds } },
+            select: { teamId: true, position: true, squadNumber: true },
+            orderBy: [{ joinedAt: "asc" }, { id: "asc" }],
+            take: 1,
+          },
           clinical: { where: { clearedOn: null, impact: { not: "NONE" } }, select: { impact: true } },
         },
       });
@@ -1252,7 +1264,8 @@ export class MatchesService {
       return athletes.map((a) => ({
         id: a.id,
         name: a.name,
-        squadNumber: a.squadNumber,
+        // O número na equipa de onde vem; a passagem antiga sem número cai no da ficha.
+        squadNumber: a.teams[0]?.squadNumber ?? a.squadNumber,
         position: a.teams[0]?.position ?? null,
         teamId: a.teams[0]?.teamId ?? "",
         teamName: teamName.get(a.teams[0]?.teamId ?? "") ?? "",
@@ -1315,7 +1328,7 @@ export class MatchesService {
         },
         select: {
           id: true, name: true, status: true,
-          teams: { where: { leftAt: null }, select: { teamId: true }, take: 1 },
+          teams: { where: { leftAt: null }, select: { teamId: true }, orderBy: [{ joinedAt: "asc" }, { id: "asc" }], take: 1 },
           clinical: { where: { clearedOn: null, impact: { not: "NONE" } }, select: { impact: true } },
         },
       });

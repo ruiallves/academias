@@ -9,6 +9,7 @@
  */
 export {
   SquarePen as Pencil,
+  UserPlus,
   LayoutGrid,
   Users,
   Home,

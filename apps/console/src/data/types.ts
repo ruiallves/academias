@@ -147,6 +147,8 @@ export type Team = {
    * 90" na ficha do atleta. Nulo numa modalidade sem jogos.
    */
   matchMinutes: number | null;
+  /** Quantos atletas cabem numa convocatória desta equipa. Ausente em respostas antigas. */
+  maxCallUps?: number;
 };
 
 /**
@@ -276,6 +278,17 @@ export type Athlete = {
    */
   teamId: string;
   position?: string;
+  /**
+   * **Todas** as equipas do atleta, a principal (`teamId`) primeiro, cada uma
+   * com o seu número e posição.
+   *
+   * Um atleta pode estar em várias equipas: futebol e futsal, ou um Sub-13 que
+   * também joga nos Sub-14. `teamId` continua a ser a principal, para quem só
+   * precisa de uma (um rótulo, uma linha). Quem pergunta "este atleta é desta
+   * equipa?" usa `naEquipa()` de `lib/api.ts`, e nunca compara com `teamId`:
+   * era essa comparação que o deixava fora do plantel da segunda equipa.
+   */
+  equipas: { teamId: string; squadNumber?: number; position?: string }[];
   guardianIds: string[];
   joinedAt: string;
   status: "active" | "paused" | "left";

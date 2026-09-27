@@ -740,6 +740,15 @@ export class AcademyService {
         throw new BadRequestException(`"${sport.name}" tem prospectos de scouting. Trata deles primeiro.`);
       }
 
+      /*
+       * Os preços individuais desta modalidade desligam-se antes.
+       *
+       * Sem equipas não há atleta nenhum a praticá-la, e nenhum desses preços
+       * conta. Mas a coluna perde a modalidade ao apagar (`SetNull`), e um preço
+       * individual sem modalidade é o valor único, que se sobrepõe à soma toda:
+       * ficava a mandar na mensalidade de alguém. Ver `lerPrecosDetalhados`.
+       */
+      await db.subscriptionPlan.updateMany({ where: { sportId: id }, data: { isActive: false } });
       await db.sport.delete({ where: { id } });
       return { ok: true };
     });
@@ -1081,7 +1090,7 @@ export class AcademyService {
         where: scope ? { id: scope } : {},
         orderBy: { name: "asc" },
         select: {
-          id: true, name: true, maxAge: true, schedule: true, sportId: true, matchMinutes: true,
+          id: true, name: true, maxAge: true, schedule: true, sportId: true, matchMinutes: true, maxCallUps: true,
           sport: { select: { matchMinutes: true } },
           season: { select: { id: true, label: true } },
           staff: {
@@ -1127,6 +1136,8 @@ export class AcademyService {
         // A duração de jogo desta equipa; a da modalidade só enquanto a equipa
         // não tiver a sua. Ver `Team.matchMinutes`.
         matchMinutes: t.matchMinutes ?? t.sport.matchMinutes ?? null,
+        /* O máximo de convocados — editável no popup "Editar equipa". */
+        maxCallUps: t.maxCallUps,
         season: t.season.label,
         schedule: t.schedule,
         athleteCount: t._count.athletes,
@@ -1416,6 +1427,82 @@ export class AcademyService {
    * até ao fim **daqui para a frente**; as fichas já gravadas ficam como estão,
    * porque foram gravadas com a duração que valia nesse dia.
    */
+  /**
+   * Editar uma equipa, numa transacção só.
+   *
+   * Antes eram quatro sítios e quatro gravações — as provas num painel, a
+   * duração noutro, os convocados na página das convocatórias, e o nome em
+   * lado nenhum. O popup "Editar equipa" junta-os, e grava tudo ou nada: meia
+   * equipa editada, com o nome novo e as provas antigas, era pior do que
+   * nenhuma.
+   *
+   * As regras são as de cada caminho que já existia: o nome não repete outro
+   * na mesma modalidade e época (como em `createTeam`), as provas são do
+   * catálogo (`validCompetitionIds`) e "Amigável" nunca sai — é o que torna a
+   * competição obrigatória num jogo.
+   */
+  async updateTeam(
+    ctx: RequestContext,
+    teamId: string,
+    dto: { name?: string; maxAge?: number; matchMinutes?: number; maxCallUps?: number; competitionIds?: string[] },
+  ) {
+    if (!can(ctx, "team:write")) throw new ForbiddenException("Sem permissão para editar equipas");
+    const scope = teamScopeFilter(ctx);
+    if (scope && !scope.in.includes(teamId)) throw new ForbiddenException("Esta equipa não é tua");
+
+    return this.prisma.runAs(ctx.academyId, async (db) => {
+      const team = await db.team.findFirst({
+        where: { id: teamId },
+        select: { id: true, name: true, seasonId: true, sportId: true },
+      });
+      if (!team) throw new NotFoundException("Equipa não encontrada");
+
+      const data: Prisma.TeamUpdateInput = {};
+      if (dto.name !== undefined) {
+        const nome = dto.name.trim();
+        if (nome.length < 2) throw new BadRequestException("O nome tem de ter pelo menos 2 letras");
+        if (nome.toLowerCase() !== team.name.toLowerCase()) {
+          const repetida = await db.team.findFirst({
+            where: {
+              id: { not: teamId },
+              seasonId: team.seasonId,
+              sportId: team.sportId,
+              name: { equals: nome, mode: "insensitive" },
+            },
+            select: { id: true },
+          });
+          if (repetida) throw new BadRequestException(`Já existe uma equipa "${nome}" nesta modalidade e época`);
+        }
+        data.name = nome;
+      }
+      if (dto.maxAge !== undefined) data.maxAge = dto.maxAge;
+      if (dto.matchMinutes !== undefined) data.matchMinutes = dto.matchMinutes;
+      if (dto.maxCallUps !== undefined) data.maxCallUps = dto.maxCallUps;
+      if (Object.keys(data).length) await db.team.update({ where: { id: teamId }, data });
+
+      if (dto.competitionIds !== undefined) {
+        const validos = await this.validCompetitionIds(db, dto.competitionIds);
+        const amigavel = await this.ensureAmigavel(db, ctx.academyId);
+        const depois = new Set([...validos, amigavel]);
+        const antes = new Set(
+          (await db.teamCompetition.findMany({ where: { teamId }, select: { competitionId: true } })).map(
+            (c) => c.competitionId,
+          ),
+        );
+        const aRemover = [...antes].filter((id) => !depois.has(id));
+        const aJuntar = [...depois].filter((id) => !antes.has(id));
+        if (aRemover.length) {
+          await db.teamCompetition.deleteMany({ where: { teamId, competitionId: { in: aRemover } } });
+        }
+        if (aJuntar.length) {
+          await db.teamCompetition.createMany({ data: aJuntar.map((competitionId) => ({ teamId, competitionId })) });
+        }
+      }
+
+      return { ok: true as const };
+    });
+  }
+
   async setTeamMatchMinutes(ctx: RequestContext, teamId: string, minutes: number) {
     if (!can(ctx, "team:write")) throw new ForbiddenException("Sem permissão para editar equipas");
 
@@ -1550,7 +1637,13 @@ export class AcademyService {
           // A conta do próprio na app — ver `AthleteInvitesService`.
           email: true, inviteSentAt: true,
           account: { select: { id: true, isActive: true, userId: true, lastSeenAt: true } },
-          teams: { where: { leftAt: null }, select: { teamId: true, position: true }, take: 1 },
+          // Todas as equipas vivas, a principal (a mais antiga) primeiro. Ver
+          // `equipas-do-atleta.ts`.
+          teams: {
+            where: { leftAt: null },
+            select: { teamId: true, position: true, squadNumber: true },
+            orderBy: [{ joinedAt: "asc" }, { id: "asc" }],
+          },
           guardians: {
             // Os pedidos à espera do clube ficam fora: aparecem só no bloco de
             // aprovação da página Famílias (`/api/family-invite/pedidos`).
@@ -1691,10 +1784,22 @@ export class AcademyService {
           heightCm: a.heightCm,
           weightKg: a.weightKg === null ? null : Number(a.weightKg),
           dominantSide: a.dominantSide,
-          squadNumber: a.squadNumber,
+          /*
+           * A equipa principal, o número e a posição dela — os campos de sempre,
+           * para quem só precisa de uma equipa (um rótulo, a app da família).
+           * O número cai para o da ficha numa passagem que ainda não tem o seu
+           * (criada antes de o número passar para a equipa).
+           */
+          squadNumber: a.teams[0]?.squadNumber ?? a.squadNumber,
           medicalValidUntil: a.medicalValidUntil,
           teamId: a.teams[0]?.teamId ?? null,
           position: a.teams[0]?.position ?? null,
+          /** Todas as equipas, cada uma com o seu número e posição. */
+          equipas: a.teams.map((t, i) => ({
+            teamId: t.teamId,
+            squadNumber: t.squadNumber ?? (i === 0 ? a.squadNumber : null),
+            position: t.position,
+          })),
           guardians: a.guardians.map((g) => ({
             membershipId: g.membership.id,
             isActive: g.membership.isActive,
@@ -2911,7 +3016,7 @@ export class AcademyService {
           // que se está a cobrar e porquê. Ver `ChargeKind` no `schema.prisma`.
           kind: true, title: true, notes: true,
           category: { select: { label: true } },
-          athlete: { select: { name: true, teams: { where: { leftAt: null }, select: { teamId: true }, take: 1 } } },
+          athlete: { select: { name: true, teams: { where: { leftAt: null }, select: { teamId: true }, orderBy: [{ joinedAt: "asc" }, { id: "asc" }], take: 1 } } },
           // A tentativa de pagamento viva, se houver — é o que deixa a app do
           // pai voltar a mostrar a referência Multibanco ou reabrir o
           // formulário, em vez de criar outra cobrança na euPago.

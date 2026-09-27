@@ -1,12 +1,13 @@
 import { cloneElement, type FormEvent, isValidElement, type ReactElement, type ReactNode, useId, useState } from "react";
 import { apiPatch } from "@/lib/http";
-import { listTeams, sportById } from "@/lib/api";
+import { listTeams, sportById, teamById } from "@/lib/api";
 import { reloadAcademy } from "@/lib/store";
 import type { Athlete } from "@/data/types";
 import { mayReadTaxId, type Session } from "@/lib/permissions";
 import { dialogInputClass } from "./Dialog";
 import { Panel, PanelHead, cx } from "./primitives";
 import { IdentificacaoField, identificacaoInicial, identificacaoOk, identificacaoParaApi } from "./IdentificacaoField";
+import { EquipasDoAtletaField, equipasParaApi, linhaNova, linhasDoAtleta, problemaDasEquipas, type LinhaDeEquipa } from "./EquipasDoAtletaField";
 
 /**
  * Editar a ficha de um atleta — na própria página, não numa janela.
@@ -45,9 +46,14 @@ export function AthleteEditPanel({
   const [birthdate, setBirthdate] = useState(athlete.birthdate.slice(0, 10));
   const [ident, setIdent] = useState(identificacaoInicial(athlete));
   const [email, setEmail] = useState(athlete.email ?? "");
-  const [teamId, setTeamId] = useState(athlete.teamId);
-  const [position, setPosition] = useState(athlete.position ?? "");
-  const [squadNumber, setSquadNumber] = useState(athlete.squadNumber?.toString() ?? "");
+  /*
+   * As equipas do atleta, cada uma com o seu número e posição. Um atleta sem
+   * equipa nenhuma (a dele foi apagada) abre com uma linha por escolher.
+   */
+  const [linhas, setLinhas] = useState<LinhaDeEquipa[]>(() => {
+    const dele = linhasDoAtleta(athlete, teams);
+    return dele.length > 0 ? dele : [{ ...linhaNova(teams), teamId: "" }];
+  });
   const [heightCm, setHeightCm] = useState(athlete.heightCm?.toString() ?? "");
   const [weightKg, setWeightKg] = useState(athlete.weightKg?.toString() ?? "");
   const [dominantSide, setDominantSide] = useState(sideToApi(athlete.dominantSide));
@@ -56,9 +62,8 @@ export function AthleteEditPanel({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const team = teams.find((t) => t.id === teamId);
-  const sport = team ? sportById(team.sportId) : undefined;
-  const positions = sport?.positions ?? [];
+  // O rótulo do lado dominante vem da modalidade principal ("Pé" no futebol, "Mão" no basquetebol).
+  const sport = sportById(teamById(linhas[0]?.teamId ?? "")?.sportId ?? "");
 
   /*
    * O NIF só entra no formulário de quem o recebe.
@@ -81,9 +86,17 @@ export function AthleteEditPanel({
   const nifOk = !vejoNif || identificacaoOk(ident);
   const heightOk = heightCm === "" || (Number(heightCm) >= 50 && Number(heightCm) <= 250);
   const weightOk = weightKg === "" || (Number(weightKg) >= 20 && Number(weightKg) <= 200);
-  const valid = name.trim().length >= 2 && birthdate !== "" && teamId !== "" && nifOk && heightOk && weightOk;
+  const valid = name.trim().length >= 2 && birthdate !== "" && problemaDasEquipas(linhas) === null && nifOk && heightOk && weightOk;
 
-  const movedTeam = teamId !== athlete.teamId;
+  /*
+   * As equipas de onde sai. A passagem fica no percurso dele, e as presenças e os
+   * jogos já registados não mudam — é histórico, e reescrevê-lo seria mentir
+   * sobre onde este atleta jogou.
+   */
+  const saiDe = athlete.equipas
+    .filter((e) => !linhas.some((l) => l.teamId === e.teamId))
+    .map((e) => teamById(e.teamId)?.name)
+    .filter(Boolean);
 
   async function submit(e: FormEvent) {
     e.preventDefault();
@@ -101,12 +114,11 @@ export function AthleteEditPanel({
       await apiPatch(`/api/athletes/${athlete.id}`, {
         name: name.trim(),
         birthdate,
-        teamId,
+        // A lista inteira: a que sai da lista sai da equipa. Ver `aplicarEquipas` na API.
+        equipas: equipasParaApi(linhas),
         ...(vejoNif ? identificacaoParaApi(ident, "editar") : {}),
         // Vazio apaga: o que se vê é o que fica.
         email: email.trim().toLowerCase(),
-        position: position.trim(),
-        ...(squadNumber ? { squadNumber: Number(squadNumber) } : {}),
         ...(heightCm ? { heightCm: Number(heightCm) } : {}),
         // O servidor guarda décimas de kg, para casar com o `Decimal(4,1)`.
         ...(weightKg ? { weightDg: Math.round(Number(weightKg) * 10) } : {}),
@@ -167,56 +179,19 @@ export function AthleteEditPanel({
         </Panel>
 
         <Panel>
-          <PanelHead title="Inscrição" />
+          <PanelHead title="Equipas" hint="o número e a posição são de cada equipa" />
           <div className="space-y-3 px-5 py-4">
-            <div className="grid grid-cols-2 gap-3">
-              <Field label="Equipa">
-                <select value={teamId} onChange={(e) => setTeamId(e.target.value)} className={dialogInputClass}>
-                  {/*
-                    Um atleta sem equipa — a dele foi apagada — abre aqui sem
-                    nada escolhido. Sem esta opção, o browser mostrava a
-                    primeira equipa da lista como se já fosse a dele, e o
-                    Guardar ficava desactivado sem nada que o explicasse.
-                  */}
-                  {teamId === "" && <option value="">Sem equipa — escolhe uma</option>}
-                  {teams.map((t) => (
-                    <option key={t.id} value={t.id}>
-                      {t.name}
-                    </option>
-                  ))}
-                </select>
-              </Field>
+            {/*
+              As equipas do atleta. Futebol e futsal, ou dois escalões: cada linha
+              é uma equipa, com o seu número e posição. Tirar uma linha é sair
+              dessa equipa; a passagem fica no percurso.
+            */}
+            <EquipasDoAtletaField linhas={linhas} onChange={setLinhas} teams={teams} />
 
-              <Field label="Camisola" hint="opcional">
-                <input
-                  value={squadNumber}
-                  onChange={(e) => setSquadNumber(e.target.value.replace(/\D/g, "").slice(0, 3))}
-                  inputMode="numeric"
-                  className={dialogInputClass}
-                />
-              </Field>
-            </div>
-
-            {/* Sem posições na modalidade (natação), o campo não aparece — em vez
-                de aparecer vazio a pedir uma coisa que não existe. */}
-            {positions.length > 0 && (
-              <Field label="Posição" hint="opcional">
-                <select value={position} onChange={(e) => setPosition(e.target.value)} className={dialogInputClass}>
-                  <option value="">—</option>
-                  {positions.map((p) => (
-                    <option key={p} value={p}>
-                      {p}
-                    </option>
-                  ))}
-                </select>
-              </Field>
-            )}
-
-            {movedTeam && (
+            {saiDe.length > 0 && (
               <p className="rounded-[var(--radius-control)] border border-line bg-sunken/50 px-3 py-2 text-meta leading-relaxed text-ink-2">
-                Muda de escalão para <strong className="font-medium text-ink">{team?.name}</strong>. As
-                presenças e os jogos já registados ficam como estão — é histórico, e reescrevê-lo seria
-                mentir sobre onde este atleta jogou.
+                Sai de <strong className="font-medium text-ink">{saiDe.join(", ")}</strong>. As presenças e os jogos já
+                registados ficam como estão: são o histórico de onde este atleta jogou.
               </p>
             )}
           </div>

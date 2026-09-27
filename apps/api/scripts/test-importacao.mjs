@@ -310,7 +310,6 @@ const fichaAtleta = (await db.query(
   `SELECT id, name, "squadNumber" FROM "Athlete" WHERE "taxId" = '299900001'`,
 )).rows[0];
 check("o nome mudou", fichaAtleta?.name === "ZZ Atleta Um Corrigido", `${fichaAtleta?.name}`);
-check("o número mudou", fichaAtleta?.squadNumber === 77, `${fichaAtleta?.squadNumber}`);
 
 const equipasDele = (await db.query(
   `SELECT "teamId" FROM "TeamMembership" WHERE "athleteId" = $1 AND "leftAt" IS NULL`,
@@ -318,6 +317,15 @@ const equipasDele = (await db.query(
 )).rows.map((r) => r.teamId);
 check("entrou na equipa nova", equipasDele.includes(outraEquipa.id), JSON.stringify(equipasDele));
 check("e continua na antiga", equipasDele.includes(equipa.id), JSON.stringify(equipasDele));
+/*
+ * O número é da equipa (`TeamMembership.squadNumber`): o 77 veio numa linha da
+ * equipa nova, e é lá que fica. A ficha guarda o da principal, que é a antiga.
+ */
+const numeroNaNova = (await db.query(
+  `SELECT "squadNumber" FROM "TeamMembership" WHERE "athleteId" = $1 AND "teamId" = $2`,
+  [fichaAtleta.id, outraEquipa.id],
+)).rows[0]?.squadNumber;
+check("o número ficou na equipa da linha", numeroNaNova === 77, `${numeroNaNova}`);
 
 /* -------------------------------------------------------------------------- */
 
@@ -328,8 +336,9 @@ const contradicao = await call(presidente, "POST", "/api/athletes/import", {
 });
 check("é recusado como erro de linha", contradicao.body?.errors?.length === 1, JSON.stringify(contradicao.body?.errors));
 check(
-  "e a frase nomeia o NIF",
-  /NIF/.test(contradicao.body?.errors?.[0]?.error ?? ""),
+  // "identificação" desde que o clube aceita outro documento além do NIF.
+  "e a frase nomeia a identificação",
+  /NIF|identifica/.test(contradicao.body?.errors?.[0]?.error ?? ""),
   `${contradicao.body?.errors?.[0]?.error}`,
 );
 

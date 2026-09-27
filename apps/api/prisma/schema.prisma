@@ -289,6 +289,8 @@ model Sport {
   requests   ScoutingRequest[]
   fitDims    FitDimension[]
   catalog    CatalogItem[]
+  /// Os preços individuais nesta modalidade. Ver `SubscriptionPlan.sportId`.
+  plans      SubscriptionPlan[]
 
   /// A área técnica desta modalidade.
   exercises  Exercise[]
@@ -1074,6 +1076,13 @@ model TeamMembership {
   athlete   Athlete   @relation(fields: [athleteId], references: [id], onDelete: Cascade)
   /// Valor de `Sport.positions`. Nulo em desportos sem posições.
   position  String?
+  /// O número da camisola **nesta equipa**.
+  ///
+  /// Um atleta que joga futebol e futsal pode ser o 10 num e o 7 no outro. Vivia
+  /// em `Athlete.squadNumber`, um para tudo; essa coluna fica, com o número da
+  /// equipa principal, para quem ainda a lê. Único por equipa entre as passagens
+  /// vivas — verificado no serviço (`AthletesService`).
+  squadNumber Int?
   joinedAt  DateTime  @default(now())
   leftAt    DateTime?
 
@@ -1745,6 +1754,14 @@ model SubscriptionPlan {
   /// Nulo = plano da academia inteira; preenchido = plano de um escalão.
   teamId    String?
   team      Team?   @relation(fields: [teamId], references: [id])
+  /// A modalidade de um preço **individual** (`teamId` nulo).
+  ///
+  /// Um atleta que pratica futebol e futsal paga a soma das duas, e o ajuste
+  /// individual é por modalidade: "no futsal paga 15 €" não mexe no futebol.
+  /// Nulo num plano individual é o valor único de antes, que se sobrepõe à
+  /// soma toda; fica para quem não tem equipa. Ver `lerPrecosDosAtletas`.
+  sportId   String?
+  sport     Sport?  @relation(fields: [sportId], references: [id], onDelete: SetNull)
 
   name        String
   amountCents Int
@@ -1755,6 +1772,7 @@ model SubscriptionPlan {
   enrollments Enrollment[]
 
   @@index([academyId])
+  @@index([sportId])
 }
 
 model Enrollment {

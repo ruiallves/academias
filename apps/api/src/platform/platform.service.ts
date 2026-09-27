@@ -289,7 +289,7 @@ export class PlatformService {
         where: { academyId: id, isActive: true, role: "GUARDIAN" },
         select: { userId: true, lastSeenAt: true },
       }),
-      this.prisma.athlete.findMany({ where: { academyId: id }, select: { status: true, teams: { where: { leftAt: null }, select: { teamId: true }, take: 1 } } }),
+      this.prisma.athlete.findMany({ where: { academyId: id }, select: { status: true, teams: { where: { leftAt: null }, select: { teamId: true }, orderBy: [{ joinedAt: "asc" }, { id: "asc" }], take: 1 } } }),
       this.prisma.team.findMany({
         where: { academyId: id },
         orderBy: { name: "asc" },

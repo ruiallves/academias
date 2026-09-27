@@ -22,7 +22,7 @@
  * Uso: npm run test:exportar
  */
 import * as XLSX from "xlsx";
-import { COLUNAS_EXPORT_ATLETAS, COLUNAS_EXPORT_SOCIOS } from "../src/lib/colunas-export";
+import { COLUNAS_EXPORT_ATLETAS, COLUNAS_EXPORT_SOCIOS, umaLinhaPorEquipa } from "../src/lib/colunas-export";
 import { readMemberSheet } from "../src/lib/member-sheet";
 import { COLUMNS as COLUNAS_ATLETA, parseFile } from "../src/lib/import";
 import type { ColunaExport } from "../src/lib/exportar";
@@ -252,6 +252,39 @@ if (linhaAtleta) {
   const motivo = lidoAtletas.errors[0]?.error ?? "";
   check("a única coisa que falha é a equipa", /equipa/i.test(motivo), motivo);
 }
+
+/*
+ * Um atleta em duas equipas sai em duas linhas, que é como a importação o lê:
+ * a mesma identificação, e o número e a posição de cada equipa.
+ */
+console.log("\n=== Atletas: um atleta em duas equipas são duas linhas ===");
+const emDuas = {
+  ...atleta,
+  equipas: [
+    { teamId: "t1", squadNumber: 7, position: "Médio" },
+    { teamId: "t2", squadNumber: 10, position: "Ala" },
+  ],
+} as unknown as Athlete;
+const soUma = { ...atleta, id: "a2", equipas: [{ teamId: "t1", squadNumber: 7 }] } as unknown as Athlete;
+const linhasDuas = umaLinhaPorEquipa([emDuas, soUma]);
+check("duas equipas dão duas linhas, uma equipa dá uma", linhasDuas.length === 3, String(linhasDuas.length));
+const folhaDuas = XLSX.read(folhaDe(linhasDuas.slice(0, 2), COLUNAS_EXPORT_ATLETAS), { type: "array" });
+const brutas = XLSX.utils.sheet_to_json<Record<string, unknown>>(folhaDuas.Sheets[folhaDuas.SheetNames[0]]);
+check(
+  "as duas linhas levam o mesmo NIF",
+  brutas.length === 2 && brutas.every((r) => String(r["NIF"]) === "123456789"),
+  JSON.stringify(brutas.map((r) => r["NIF"])),
+);
+check(
+  "cada linha leva o número da sua equipa",
+  String(brutas[0]?.["Número"]) === "7" && String(brutas[1]?.["Número"]) === "10",
+  JSON.stringify(brutas.map((r) => r["Número"])),
+);
+check(
+  "e a posição da sua equipa",
+  brutas[0]?.["Posição"] === "Médio" && brutas[1]?.["Posição"] === "Ala",
+  JSON.stringify(brutas.map((r) => r["Posição"])),
+);
 
 /* -------------------------------------------------------------------------- */
 

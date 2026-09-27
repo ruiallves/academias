@@ -116,18 +116,34 @@ export type NewTeamPlan = {
  * preenche ver o formato esperado de cada célula — uma data escrita à mão como
  * "14/03/2015" seria rejeitada, e o exemplo mostra `2015-03-14`. Uma segunda folha
  * lista os nomes exactos das equipas, para não haver dúvida sobre como as escrever.
+ *
+ * ## Um atleta em várias equipas
+ *
+ * Cada linha é **uma equipa**. Um atleta que joga futebol e futsal são duas
+ * linhas com o mesmo NIF, cada uma com a sua equipa, o seu número e a sua
+ * posição: o servidor junta-as no mesmo atleta (ver `importMany`). O modelo
+ * traz esse caso na segunda linha de exemplo, que é a maneira mais curta de o
+ * explicar a quem preenche.
  */
 export async function buildTemplate(): Promise<Blob> {
   const XLSX = await import("xlsx");
 
   const header = COLUMNS.map((c) => c.header);
   const example = COLUMNS.map((c) => c.example);
-  const sheet = XLSX.utils.aoa_to_sheet([header, example]);
+  // O mesmo atleta, noutra equipa: mesmo NIF, outra equipa, outro número.
+  const outraEquipa = COLUMNS.map((c) =>
+    c.key === "team" ? "Sub-11 Futsal" : c.key === "squadNumber" ? "10" : c.key === "position" ? "Ala" : c.example,
+  );
+  const sheet = XLSX.utils.aoa_to_sheet([header, example, outraEquipa]);
   sheet["!cols"] = COLUMNS.map((c) => ({ wch: Math.max(c.header.length, 16) }));
 
   const teamsSheet = XLSX.utils.aoa_to_sheet([
     ["As equipas que já existem — escreve o nome exactamente como aqui:"],
     ...teams.map((t) => [t.name]),
+    [""],
+    ["Um atleta em várias equipas (futebol e futsal, por exemplo)?"],
+    ["Repete a linha com o mesmo NIF, uma por equipa, cada uma com o seu número e posição."],
+    ["As duas linhas de exemplo da folha Atletas são o mesmo atleta em duas equipas."],
     [""],
     ["Uma equipa que ainda não exista pode ser escrita à mesma."],
     ["Ao importar, perguntamos se a queres criar."],
@@ -501,8 +517,29 @@ export type AthleteImportResult = RespostaComExistentes & {
   created: number;
   /** Quantas fichas foram actualizadas com os dados da folha. */
   updated: number;
+  /**
+   * Equipas a mais de atletas que entraram nesta folha: um atleta em duas
+   * equipas são duas linhas com o mesmo NIF, e a segunda junta-se à primeira.
+   * Ausente num servidor antigo.
+   */
+  equipasJuntadas?: number;
   errors: RowError[];
 };
+
+/**
+ * Quem é esta linha: o NIF, ou o outro documento. Duas linhas com a mesma
+ * identificação são o mesmo atleta em duas equipas.
+ */
+function identidadeDaLinha(r: ParsedRow): string {
+  return r.taxId ? `nif:${r.taxId}` : `doc:${(r.idDocNumber ?? "").toUpperCase()}`;
+}
+
+/** Quantos atletas há nestas linhas, e quantos vêm em mais do que uma equipa. */
+export function contarAtletas(rows: ParsedRow[]): { atletas: number; emVariasEquipas: number } {
+  const porAtleta = new Map<string, number>();
+  for (const r of rows) porAtleta.set(identidadeDaLinha(r), (porAtleta.get(identidadeDaLinha(r)) ?? 0) + 1);
+  return { atletas: porAtleta.size, emVariasEquipas: [...porAtleta.values()].filter((n) => n > 1).length };
+}
 
 export function importAthletes(
   rows: ParsedRow[],

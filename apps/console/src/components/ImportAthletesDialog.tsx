@@ -10,6 +10,7 @@ import {
   createTeams,
   downloadTemplate,
   importAthletes,
+  contarAtletas,
   parseFile,
   planTeam,
   posicoesNovas,
@@ -72,7 +73,7 @@ export function ImportAthletesDialog({ onClose }: { onClose: () => void }) {
   const [parsed, setParsed] = useState<ParseResult | null>(null);
   const [parsing, setParsing] = useState(false);
   const [importing, setImporting] = useState(false);
-  const [result, setResult] = useState<{ created: number; updated: number; errors: RowError[]; semPosicao: number } | null>(null);
+  const [result, setResult] = useState<{ created: number; updated: number; equipasJuntadas?: number; errors: RowError[]; semPosicao: number } | null>(null);
   const [error, setError] = useState<string | null>(null);
   /*
    * Os convites saem só se alguém os pedir.
@@ -269,6 +270,7 @@ export function ImportAthletesDialog({ onClose }: { onClose: () => void }) {
       setResult({
         created: res.created,
         updated: res.updated,
+        equipasJuntadas: res.equipasJuntadas ?? 0,
         errors: [
           ...res.errors,
           ...semEquipa.map((r) => {
@@ -373,9 +375,18 @@ function Pick({
         <div className="min-w-0 flex-1">
           <div className="text-body font-medium text-ink">Começa pelo modelo</div>
           <p className="mt-0.5 text-meta leading-relaxed text-ink-3">
-            Tem as colunas certas, uma linha de exemplo e a lista das tuas equipas. Preenche-o e volta aqui. A coluna
+            Tem as colunas certas, linhas de exemplo e a lista das tuas equipas. Preenche-o e volta aqui. A coluna
             <strong className="font-medium text-ink-2"> Email</strong> é opcional e serve para convidar o atleta para a
             app, se e quando quiseres.
+          </p>
+          {/*
+            Um atleta em várias equipas: dito aqui, antes de preencher, porque é a
+            dúvida de quem tem atletas em futebol e futsal. O modelo traz o caso
+            nas duas linhas de exemplo. Ver `buildTemplate`.
+          */}
+          <p className="mt-1.5 text-meta leading-relaxed text-ink-3">
+            <strong className="font-medium text-ink-2">Atleta em várias equipas?</strong> Uma linha por equipa, com o
+            mesmo NIF, cada uma com o seu número e posição. Juntamo-las no mesmo atleta.
           </p>
           <button type="button" onClick={() => void downloadTemplate()} className="ctl-outline mt-2.5">
             <Download className="size-3.5" strokeWidth={1.75} />
@@ -493,12 +504,19 @@ function Review({
 
   const { valid, errors } = parsed;
   const blocked = valid.length - importable;
+  // Pessoas, não linhas: um atleta em duas equipas são duas linhas.
+  const contagem = contarAtletas(valid);
   const totalPosicoes = novasPosicoes.reduce((n, x) => n + x.names.length, 0);
 
   return (
     <div className="space-y-3">
       <div className="flex gap-3">
-        <Tally n={importable} label={importable === 1 ? "atleta pronto" : "atletas prontos"} tone="ok" />
+        {/* Com linhas de fora, as contas são por linha; sem elas, por pessoa. */}
+        <Tally
+          n={blocked === 0 ? contagem.atletas : importable}
+          label={(blocked === 0 ? contagem.atletas : importable) === 1 ? "atleta pronto" : "atletas prontos"}
+          tone="ok"
+        />
         {errors.length + blocked > 0 && (
           <Tally
             n={errors.length + blocked}
@@ -507,6 +525,15 @@ function Review({
           />
         )}
       </div>
+
+      {contagem.emVariasEquipas > 0 && (
+        <p className="text-meta text-ink-3">
+          {contagem.emVariasEquipas === 1
+            ? "Um atleta vem em mais do que uma equipa"
+            : `${contagem.emVariasEquipas} atletas vêm em mais do que uma equipa`}{" "}
+          (linhas com o mesmo NIF). Ficam em todas, cada uma com o seu número e posição.
+        </p>
+      )}
 
       {/*
         As equipas que ainda não existem.
@@ -709,7 +736,7 @@ function Review({
 
 /* -------------------------------------------------------------------------- */
 
-function Done({ result }: { result: { created: number; updated: number; errors: RowError[]; semPosicao: number } }) {
+function Done({ result }: { result: { created: number; updated: number; equipasJuntadas?: number; errors: RowError[]; semPosicao: number } }) {
   return (
     <div className="space-y-3">
       <div className="flex items-center gap-3 rounded-[var(--radius-panel)] border border-line bg-[#e6f2e9]/40 p-4">
@@ -721,6 +748,8 @@ function Done({ result }: { result: { created: number; updated: number; errors: 
             {result.created} {result.created === 1 ? "atleta inscrito" : "atletas inscritos"}
             {result.updated > 0 &&
               `, ${result.updated} ${result.updated === 1 ? "ficha actualizada" : "fichas actualizadas"}`}
+            {(result.equipasJuntadas ?? 0) > 0 &&
+              `, ${result.equipasJuntadas} ${result.equipasJuntadas === 1 ? "equipa a mais" : "equipas a mais"} em atletas de várias equipas`}
           </div>
           <div className="text-meta text-ink-3">Já aparecem na lista e nos plantéis das equipas.</div>
         </div>

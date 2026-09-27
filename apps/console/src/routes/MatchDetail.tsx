@@ -17,7 +17,7 @@ import {
 } from "@/lib/icons";
 import { useSession } from "@/session";
 import { can } from "@/lib/permissions";
-import { athleteById } from "@/lib/api";
+import { athleteById, numeroNaEquipa } from "@/lib/api";
 import { tallyNoun } from "@/lib/calendar";
 import { reloadAcademy, useStore } from "@/lib/store";
 import { SaveVeil, Spinner, useSaving } from "@/components/Busy";
@@ -603,13 +603,17 @@ function CallUpPanel({ match }: { match: Match }) {
 
   /*
    * A ficha do jogo traz o plantel com nome e posição, mas não com o número de
-   * camisola — ele vive no atleta, e é o número que a folha imprime na segunda
+   * camisola — ele vive na passagem do atleta pela equipa (o 10 no futebol pode
+   * ser o 7 no futsal), e é o número **desta** equipa que a folha imprime na segunda
    * coluna. Vai buscá-lo aqui em vez de o acrescentar a `SquadRow`: é a única
    * coisa desta página que precisa dele, e uma coluna a mais na resposta do
    * servidor para uma folha que se imprime uma vez por semana não se paga.
    */
   const sheetRows: SheetRow[] = match.squad.map((s) => ({
-    squadNumber: athleteById(s.athleteId)?.squadNumber ?? null,
+    squadNumber: (() => {
+      const a = athleteById(s.athleteId);
+      return a ? (numeroNaEquipa(a, match.teamId) ?? a.squadNumber ?? null) : null;
+    })(),
     name: s.name,
     position: s.position,
     status: s.callUpStatus,

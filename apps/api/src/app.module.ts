@@ -42,6 +42,7 @@ import { AcademyController } from "./academy/academy.controller";
 import { ClinicalController } from "./academy/clinical.controller";
 import { ClinicalService } from "./academy/clinical.service";
 import { AcademyService } from "./academy/academy.service";
+import { EventsImportService } from "./academy/events-import.service";
 import { CatalogsController } from "./academy/catalogs.controller";
 import { CatalogsService } from "./academy/catalogs.service";
 import { AthletesService } from "./academy/athletes.service";
@@ -204,6 +205,7 @@ import { LegalAdminService } from "./legal/legal-admin.service";
     LandingService,
     InvitesService,
     AcademyService,
+    EventsImportService,
     CatalogsService,
     DepartmentsService,
     RolesService,

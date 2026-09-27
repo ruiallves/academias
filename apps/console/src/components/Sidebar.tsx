@@ -5,7 +5,7 @@ import { teamAgeLabel } from "@/lib/team-age";
 import { navFor, SETTINGS_ITEM, type NavItem } from "@/lib/nav";
 import { useNavGroups } from "@/lib/nav-groups";
 import { permissionsOf } from "@/lib/permissions";
-import { academy, listAthletes, listTeams, navCounts, teamById } from "@/lib/api";
+import { academy, listAthletes, listTeams, navCounts, nomesDasEquipas } from "@/lib/api";
 import { currentSeason } from "@/lib/store";
 import { DEV_PROFILES, devSignInAs, signOut } from "@/lib/session";
 import { ROLE_LABEL, useSession } from "@/session";
@@ -311,7 +311,7 @@ function SearchField() {
     const athletes: SearchResult[] = listAthletes(session)
       .filter((a) => a.name.toLowerCase().includes(q))
       .slice(0, 6)
-      .map((a) => ({ kind: "athlete", id: a.id, name: a.name, sub: teamById(a.teamId)?.name ?? "Sem equipa" }));
+      .map((a) => ({ kind: "athlete", id: a.id, name: a.name, sub: nomesDasEquipas(a) }));
     const teams: SearchResult[] = listTeams(session)
       .filter((t) => t.name.toLowerCase().includes(q))
       .slice(0, 4)

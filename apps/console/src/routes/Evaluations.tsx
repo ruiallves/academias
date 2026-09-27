@@ -5,7 +5,7 @@ import { Bar, Empty, Loading, Monogram, Panel, Pill, SelectField, cx } from "@/c
 import { ResultCount, SearchInput, Segmented, Toolbar } from "@/components/filters";
 import { EvaluationEditor, type RosterEntry } from "@/components/EvaluationEditor";
 import { Check, Gauge, Send } from "@/lib/icons";
-import { listAthletes, listTeams, sportById, teamById } from "@/lib/api";
+import { listAthletes, listTeams, sportById, teamById, naEquipa } from "@/lib/api";
 import { apiPost } from "@/lib/http";
 import { useApi } from "@/lib/query";
 import { average, currentPeriodLabel, periodsFor, SCALE, type ApiEvaluation } from "@/lib/development";
@@ -67,7 +67,7 @@ export default function Evaluations() {
     const rank = (e: ApiEvaluation | undefined) => (!e ? 0 : e.status === "DRAFT" ? 1 : 2);
 
     return athletes
-      .filter((a) => a.teamId === teamId)
+      .filter((a) => naEquipa(a, teamId))
       .map((athlete) => ({ athlete, evaluation: byAthlete.get(athlete.id) }))
       .sort(
         (x, y) =>

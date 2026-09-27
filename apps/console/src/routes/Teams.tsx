@@ -7,7 +7,7 @@ import { NewTeamDialog } from "@/components/NewTeamDialog";
 import { ImportTeamsDialog } from "@/components/ImportTeamsDialog";
 import { Empty, Monogram, Panel } from "@/components/primitives";
 import { ArrowRight, Clock, Plus, Shield, Upload } from "@/lib/icons";
-import { academy, attendanceRate, listAthletes, listTeams, sportById, teamCoaches } from "@/lib/api";
+import { academy, attendanceRate, listAthletes, listTeams, sportById, teamCoaches, naEquipa } from "@/lib/api";
 import { useTeamColors } from "@/lib/calendar";
 import type { CategoricalColor } from "@academia/ui/tokens";
 import { currentSeason } from "@/lib/store";
@@ -137,7 +137,7 @@ export default function Teams() {
             <TeamCard
               key={team.id}
               team={team}
-              count={athletes.filter((a) => a.teamId === team.id).length}
+              count={athletes.filter((a) => naEquipa(a, team.id)).length}
               cor={cores.get(team.id)}
               mostrarModalidade={varias}
             />

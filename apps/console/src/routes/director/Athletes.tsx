@@ -2,7 +2,7 @@ import { useMemo, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import { PageHeader } from "@/components/Shell";
 import { BotaoExportar } from "@/components/BotaoExportar";
-import { COLUNAS_EXPORT_ATLETAS } from "@/lib/colunas-export";
+import { COLUNAS_EXPORT_ATLETAS, umaLinhaPorEquipa } from "@/lib/colunas-export";
 import { NewAthleteDialog } from "@/components/NewAthleteDialog";
 import { ImportAthletesDialog } from "@/components/ImportAthletesDialog";
 import { AvailabilityTag, cx, DataTable, Empty, Monogram, Panel, Pill, RowLink, type Column } from "@/components/primitives";
@@ -13,7 +13,7 @@ import { apiDelete } from "@/lib/http";
 import { reloadAcademy } from "@/lib/store";
 import { ResultCount, SearchInput, Segmented, Select, Toolbar } from "@/components/filters";
 import { Plus, Upload, Users } from "@/lib/icons";
-import { academy, currentPeriod, guardiansOf, listAthletes, listFees, listTeams, semEquipa, today } from "@/lib/api";
+import { academy, currentPeriod, guardiansOf, listAthletes, listFees, listTeams, semEquipa, today, naEquipa, nomesDasEquipas } from "@/lib/api";
 import { age, shortDate, shortName } from "@/lib/format";
 import type { Athlete } from "@/data/types";
 import { availabilityOf, useClinicalRecords } from "@/lib/clinical";
@@ -72,7 +72,7 @@ export default function Athletes() {
   const rows = useMemo(() => {
     const q = query.trim().toLowerCase();
     return athletes
-      .filter((a) => (team === "all" ? true : team === "none" ? semEquipa(a) : a.teamId === team))
+      .filter((a) => (team === "all" ? true : team === "none" ? semEquipa(a) : naEquipa(a, team)))
       .filter((a) => {
         if (estado === "activos") return a.status === "active";
         if (estado === "pausa") return a.status === "paused";
@@ -169,7 +169,8 @@ export default function Athletes() {
         semEquipa(a) ? (
           <Pill tone="warn">Sem equipa</Pill>
         ) : (
-          <span className="text-ink-2">{teams.find((t) => t.id === a.teamId)?.name}</span>
+          // Todas as equipas: quem joga futebol e futsal aparece nas duas.
+          <span className="text-ink-2">{nomesDasEquipas(a)}</span>
         ),
     },
     {
@@ -260,9 +261,15 @@ export default function Athletes() {
         {/*
           Sai com as colunas da importação, e com as linhas **que estão no
           ecrã**: quem filtrou pelos Sub-13 quer os Sub-13. Ver `BotaoExportar`.
+          Uma linha por equipa, que é como a importação lê um atleta em várias
+          (ver `umaLinhaPorEquipa`); filtrado por uma equipa, só a linha dela.
         */}
         <BotaoExportar
-          linhas={rows}
+          linhas={
+            team !== "all" && team !== "none"
+              ? umaLinhaPorEquipa(rows).filter((a) => a.teamId === team)
+              : umaLinhaPorEquipa(rows)
+          }
           colunas={COLUNAS_EXPORT_ATLETAS}
           ficheiro="atletas"
           folha="Atletas"

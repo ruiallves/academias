@@ -868,7 +868,6 @@ export class BillingService implements OnModuleInit, OnModuleDestroy {
           select: {
             id: true,
             name: true,
-            teams: { where: { leftAt: null }, select: { teamId: true }, take: 1 },
             guardians: { select: { membership: { select: { userId: true, isActive: true } } } },
           },
         });
@@ -1380,36 +1379,28 @@ export class BillingService implements OnModuleInit, OnModuleDestroy {
           ...(athleteScope ? { id: athleteScope } : {}),
         },
         orderBy: { name: "asc" },
-        select: { id: true, name: true, joinedAt: true, teams: { where: { leftAt: null }, select: { teamId: true }, take: 1 } },
+        select: {
+          id: true,
+          name: true,
+          joinedAt: true,
+          // A equipa que se mostra: a mais antiga, sempre a mesma.
+          teams: { where: { leftAt: null }, select: { teamId: true }, orderBy: [{ joinedAt: "asc" }, { teamId: "asc" }], take: 1 },
+        },
       });
       if (atletas.length === 0) return { period, cobraEsteMes: true, atletas: [] };
 
       const ids = atletas.map((a) => a.id);
+      // Só a mensalidade: uma avulsa do mês não quer dizer que a mensalidade exista.
       const comCobranca = new Set(
-        (await db.charge.findMany({ where: { period, athleteId: { in: ids } }, select: { athleteId: true } }))
+        (await db.charge.findMany({ where: { period, athleteId: { in: ids }, slot: "" }, select: { athleteId: true } }))
           .map((c) => c.athleteId),
       );
 
       const cobraEsteMes = (await lerCalendario(db, ctx.academyId))(period).meses.includes(mes);
 
-      // Quem tem preço — individual ou da equipa. A mesma resolução de
-      // `gerarCobrancas`, aqui só para saber se existe, não quanto é.
-      const hoje = new Date();
-      const comIndividual = new Set<string>();
-      for (const e of await db.enrollment.findMany({
-        where: { athleteId: { in: ids }, plan: { teamId: null, isActive: true } },
-        select: { athleteId: true, endsOn: true },
-      })) {
-        if (e.endsOn === null || e.endsOn >= hoje) comIndividual.add(e.athleteId);
-      }
-      const equipasComPreco = new Set(
-        (
-          await db.subscriptionPlan.findMany({
-            where: { teamId: { not: null }, isActive: true },
-            select: { teamId: true },
-          })
-        ).map((p) => p.teamId as string),
-      );
+      // Quem tem preço. A mesma regra de `gerarCobrancas`, aqui só para saber se
+      // existe, não quanto é.
+      const precoDe = await lerPrecosDosAtletas(db, ids);
 
       const semCobranca = atletas.filter((a) => !comCobranca.has(a.id));
 
@@ -1418,7 +1409,7 @@ export class BillingService implements OnModuleInit, OnModuleDestroy {
         cobraEsteMes,
         atletas: semCobranca.map((a) => {
           const teamId = a.teams[0]?.teamId ?? null;
-          const temPreco = comIndividual.has(a.id) || (teamId !== null && equipasComPreco.has(teamId));
+          const temPreco = precoDe(a) !== null;
           const cobra = cobraEsteMes;
           return {
             athleteId: a.id,
@@ -1524,24 +1515,6 @@ export class BillingService implements OnModuleInit, OnModuleDestroy {
         select: { id: true },
       });
       const ids = atletas.map((a) => a.id);
-
-      /*
-       * Quem tem preço próprio fica de fora da reprecificação.
-       *
-       * O ajuste individual sobrepõe-se ao da equipa — é a regra do produto — e
-       * baixar o preço da equipa não pode reescrever a bolsa de um miúdo.
-       */
-      const hoje = new Date();
-      const comAjusteIndividual = new Set(
-        (
-          await db.enrollment.findMany({
-            where: { athleteId: { in: ids }, plan: { teamId: null, isActive: true } },
-            select: { athleteId: true, endsOn: true },
-          })
-        )
-          .filter((e) => e.endsOn === null || e.endsOn >= hoje)
-          .map((e) => e.athleteId),
-      );
       const periodo = periodoActual();
       const cobrancas = await gerarCobrancas(db, ctx.academyId, periodo, ids);
 
@@ -1550,18 +1523,26 @@ export class BillingService implements OnModuleInit, OnModuleDestroy {
        *
        * `gerarCobrancas` só cria o que falta, por isso sozinha deixava a tabela
        * das mensalidades — e a app do pai — a mostrar o preço antigo para sempre.
-       * Só se aplica a quem paga o preço da equipa: um atleta com ajuste
-       * individual continua a pagar o dele, que é o que "individual sobrepõe-se"
-       * quer dizer. Ver `reprecificarCobrancas`.
+       *
+       * Cada atleta vai para o preço que a regra lhe dá, e não para o valor da
+       * equipa: quem joga também noutra modalidade paga a soma, e quem tem ajuste
+       * individual nesta continua a pagar o dele (a bolsa de um miúdo não muda
+       * por se baixar o preço da equipa). Ver `lerPrecosDetalhados`.
        */
-      const semAjusteIndividual = ids.filter((id) => !comAjusteIndividual.has(id));
-      const reprecadas = await reprecificarCobrancas(db, periodo, semAjusteIndividual, amountCents);
+      const reprecadas = await reprecificarPelaRegra(db, periodo, ids);
 
       return { teamId, amountCents: plan.amountCents, cobrancas, reprecadas };
     });
   }
 
-  /** O que este atleta paga hoje — individual se houver, senão o da equipa, senão nada. */
+  /**
+   * O que este atleta paga por mês, e de onde vem cada parte.
+   *
+   * Uma linha por modalidade que ele pratica: a equipa que conta, o preço dela,
+   * o ajuste individual se houver, e o que vale. `effectiveAmountCents` é a
+   * soma, que é o que a mensalidade cobra — e o único campo que a app da
+   * família lê.
+   */
   async getAthleteFee(ctx: RequestContext, athleteId: string) {
     if (!can(ctx, "billing:read")) throw new ForbiddenException("Sem acesso a mensalidades");
 
@@ -1571,32 +1552,44 @@ export class BillingService implements OnModuleInit, OnModuleDestroy {
     if (scope && !scope.in.includes(athleteId)) throw new ForbiddenException("Este atleta não é teu");
 
     return this.prisma.runAs(ctx.academyId, async (db) => {
-      const athlete = await db.athlete.findFirst({
-        where: { id: athleteId },
-        select: { id: true, teams: { where: { leftAt: null }, select: { teamId: true, team: { select: { name: true } } }, take: 1 } },
-      });
+      const athlete = await db.athlete.findFirst({ where: { id: athleteId }, select: { id: true } });
       if (!athlete) throw new NotFoundException("Atleta não encontrado");
 
-      const individual = await activeIndividualEnrollment(db, athleteId);
-      const team = athlete.teams[0];
-      const teamPlan = team
-        ? await db.subscriptionPlan.findFirst({ where: { teamId: team.teamId, isActive: true }, orderBy: { id: "desc" } })
-        : null;
-
-      const individualAmount = individual ? individual.plan.amountCents - individual.discountCents : null;
+      const preco = (await lerPrecosDetalhados(db, [athleteId]))(athleteId);
 
       return {
-        source: individual ? ("individual" as const) : teamPlan ? ("team" as const) : ("none" as const),
-        effectiveAmountCents: individual ? individualAmount : (teamPlan?.amountCents ?? null),
-        individualAmountCents: individualAmount,
-        teamAmountCents: teamPlan?.amountCents ?? null,
-        teamName: team?.team.name ?? null,
+        effectiveAmountCents: preco.amountCents,
+        modalidades: preco.modalidades.map((m) => ({
+          sportId: m.sportId,
+          sportName: m.sportName,
+          teamName: m.teamName,
+          teamAmountCents: m.teamAmountCents,
+          individualAmountCents: m.individualAmountCents,
+          amountCents: m.amountCents,
+        })),
+        /** O valor único de antes, que se sobrepõe à soma. Ver `PrecoDetalhado`. */
+        valorUnicoCents: preco.valorUnico?.amountCents ?? null,
       };
     });
   }
 
-  /** Ajuste individual — sobrepõe-se ao preço da equipa para este atleta em concreto. */
-  async setAthleteFee(ctx: RequestContext, athleteId: string, amountCents: number, aplicarEm?: AplicarEm) {
+  /**
+   * Ajuste individual — o valor deste atleta numa modalidade, que se sobrepõe ao
+   * preço da equipa dessa modalidade. A mensalidade passa a ser a soma com as
+   * outras.
+   *
+   * Sem modalidade só para quem não tem equipa nenhuma: é o valor único, e é o
+   * único preço que um atleta sem plantel pode ter. Quem tem equipa diz sempre
+   * de que modalidade é o valor — um valor sem modalidade sobrepõe-se à soma
+   * toda, e isso já não é o que um ajuste quer dizer.
+   */
+  async setAthleteFee(
+    ctx: RequestContext,
+    athleteId: string,
+    amountCents: number,
+    aplicarEm?: AplicarEm,
+    sportId?: string,
+  ) {
     if (!can(ctx, "billing:write")) throw new ForbiddenException("Sem permissão para configurar mensalidades");
     assertValidAmount(amountCents, true);
 
@@ -1604,7 +1597,17 @@ export class BillingService implements OnModuleInit, OnModuleDestroy {
       const athlete = await db.athlete.findFirst({ where: { id: athleteId }, select: { id: true, name: true } });
       if (!athlete) throw new NotFoundException("Atleta não encontrado");
 
-      await applyIndividualFee(db, ctx.academyId, athlete, amountCents);
+      const modalidades = await modalidadesDoAtleta(db, athleteId);
+      let sport: { id: string; name: string } | null = null;
+      if (sportId) {
+        const nome = modalidades.get(sportId);
+        if (!nome) throw new BadRequestException("Este atleta não tem equipa nessa modalidade.");
+        sport = { id: sportId, name: nome };
+      } else if (modalidades.size > 0) {
+        throw new BadRequestException("Escolhe a modalidade deste valor.");
+      }
+
+      await applyIndividualFee(db, ctx.academyId, athlete, amountCents, sport);
 
       // Mesma razão de `setTeamFee`: um atleta que não tinha preço nenhum passa
       // a ter, e a mensalidade do mês corrente nasce aqui em vez de ficar à
@@ -1614,84 +1617,40 @@ export class BillingService implements OnModuleInit, OnModuleDestroy {
       const periodo = periodoActual();
       const cobrancas = await gerarCobrancas(db, ctx.academyId, periodo, [athlete.id]);
 
-      /*
-       * E as já emitidas passam a valer o preço novo — mesma razão de
-       * `setTeamFee`. Aqui não há excepção a fazer: o ajuste individual **é** o
-       * preço deste atleta, não há nada por baixo que se lhe sobreponha.
-       */
-      const reprecadas = await reprecificarCobrancas(db, periodo, [athlete.id], amountCents);
+      // E as já emitidas passam a valer o preço novo, que é a soma das
+      // modalidades e não só o valor acabado de gravar.
+      const reprecadas = await reprecificarPelaRegra(db, periodo, [athlete.id]);
 
       return { athleteId, amountCents, cobrancas, reprecadas };
     });
   }
 
-  /**
-   * O mesmo ajuste, para vários atletas de uma vez — irmãos, um grupo com o
-   * mesmo acordo, uma bolsa que abrange uma equipa inteira sem ser a equipa
-   * toda. Uma pessoa que fica sem ajuste (id errado, já não está na academia)
-   * não impede as restantes — o pedido diz quantos ficaram e quais faltaram.
+  /*
+   * O ajuste para vários atletas de uma vez (`PUT /api/athletes/fee`) deixou de
+   * existir. Com o preço por modalidade, um valor não quer dizer nada sem se
+   * saber de que modalidade é — e três atletas escolhidos juntos podem praticar
+   * modalidades diferentes. O preço individual define-se atleta a atleta, uma
+   * linha por modalidade.
    */
-  async setAthleteFeeBulk(ctx: RequestContext, athleteIds: string[], amountCents: number, aplicarEm?: AplicarEm) {
-    if (!can(ctx, "billing:write")) throw new ForbiddenException("Sem permissão para configurar mensalidades");
-    assertValidAmount(amountCents, true);
-    if (athleteIds.length === 0) throw new BadRequestException("Escolhe pelo menos um atleta");
 
-    return this.prisma.runAs(ctx.academyId, async (db) => {
-      const athletes = await db.athlete.findMany({
-        where: { id: { in: athleteIds } },
-        select: { id: true, name: true },
-      });
-      if (athletes.length === 0) throw new NotFoundException("Nenhum destes atletas foi encontrado");
-
-      for (const athlete of athletes) {
-        await applyIndividualFee(db, ctx.academyId, athlete, amountCents);
-      }
-
-      /*
-       * Gera, como os outros dois.
-       *
-       * Aqui não gerava nada — e era um buraco a sério, não uma omissão inócua:
-       * quem definisse preços por este caminho ficava com os atletas a dizer
-       * "por emitir" no painel de mensalidades em falta, indefinidamente, sem
-       * perceber porque é que o mesmo gesto feito pelo preço da equipa produzia
-       * mensalidades e este não. Três formas de definir um preço têm de acabar
-       * todas no mesmo sítio.
-       */
-      const foundIds = new Set(athletes.map((a) => a.id));
-      const periodo = periodoActual();
-      const cobrancas = this.geraAgora(aplicarEm)
-        ? await gerarCobrancas(db, ctx.academyId, periodo, [...foundIds])
-        : null;
-
-      /*
-       * E as já emitidas passam a valer o preço novo — mesma razão de
-       * `setTeamFee`. Aqui não há excepção a fazer: o ajuste individual **é** o
-       * preço deste atleta, não há nada por baixo que se lhe sobreponha.
-       */
-      const reprecadas = this.geraAgora(aplicarEm)
-        ? await reprecificarCobrancas(db, periodo, [...foundIds], amountCents)
-        : null;
-
-      return {
-        amountCents,
-        updated: athletes.map((a) => a.id),
-        missing: athleteIds.filter((id) => !foundIds.has(id)),
-        cobrancas,
-        reprecadas,
-      };
-    });
-  }
-
-  /** Remove o ajuste individual — o atleta volta a pagar o preço da equipa. */
-  async clearAthleteFee(ctx: RequestContext, athleteId: string) {
+  /**
+   * Remove o ajuste individual de uma modalidade — nessa modalidade, o atleta
+   * volta a pagar o preço da equipa. Sem modalidade, remove o valor único.
+   *
+   * A mensalidade já emitida deste mês passa a valer o preço novo (a soma sem
+   * o ajuste), como quando se grava um ajuste; as pagas e as que têm um
+   * pagamento a caminho ficam como estão. Ver `reprecificarCobrancas`.
+   */
+  async clearAthleteFee(ctx: RequestContext, athleteId: string, sportId?: string) {
     if (!can(ctx, "billing:write")) throw new ForbiddenException("Sem permissão para configurar mensalidades");
 
     return this.prisma.runAs(ctx.academyId, async (db) => {
       const athlete = await db.athlete.findFirst({ where: { id: athleteId }, select: { id: true } });
       if (!athlete) throw new NotFoundException("Atleta não encontrado");
 
-      await endActiveEnrollments(db, athleteId);
-      return { athleteId, cleared: true };
+      await endIndividualEnrollments(db, athleteId, sportId || null);
+      const reprecadas = await reprecificarPelaRegra(db, periodoActual(), [athleteId]);
+      return { athleteId, cleared: true, reprecadas };
     });
   }
 
@@ -2786,9 +2745,14 @@ function isActiveEnrollment(e: { endsOn: Date | null }, today: Date): boolean {
   return e.endsOn === null || e.endsOn >= today;
 }
 
-async function activeIndividualEnrollment(db: ScopedClient, athleteId: string) {
+/**
+ * A inscrição individual activa de um atleta numa modalidade.
+ *
+ * `sportId` nulo é o valor único de antes (ver `PrecoDetalhado.valorUnico`).
+ */
+async function activeIndividualEnrollment(db: ScopedClient, athleteId: string, sportId: string | null) {
   const rows = await db.enrollment.findMany({
-    where: { athleteId, plan: { teamId: null, isActive: true } },
+    where: { athleteId, plan: { teamId: null, isActive: true, sportId } },
     include: { plan: true },
     orderBy: { startsOn: "desc" },
   });
@@ -2796,43 +2760,68 @@ async function activeIndividualEnrollment(db: ScopedClient, athleteId: string) {
   return rows.find((e) => isActiveEnrollment(e, today)) ?? null;
 }
 
-/** Fecha (não apaga) as inscrições activas de um atleta — histórico, não amnésia. */
-async function endActiveEnrollments(db: ScopedClient, athleteId: string): Promise<void> {
-  const rows = await db.enrollment.findMany({ where: { athleteId }, select: { id: true, endsOn: true } });
+/**
+ * Fecha (não apaga) os ajustes individuais activos de um atleta numa
+ * modalidade — histórico, não amnésia. `sportId` nulo fecha o valor único.
+ */
+async function endIndividualEnrollments(db: ScopedClient, athleteId: string, sportId: string | null): Promise<void> {
+  const rows = await db.enrollment.findMany({
+    where: { athleteId, plan: { teamId: null, sportId } },
+    select: { id: true, endsOn: true },
+  });
   const today = new Date();
   const activeIds = rows.filter((e) => isActiveEnrollment(e, today)).map((e) => e.id);
   if (activeIds.length === 0) return;
   await db.enrollment.updateMany({ where: { id: { in: activeIds } }, data: { endsOn: today } });
 }
 
+/** As modalidades em que o atleta tem equipa agora, com o nome. */
+async function modalidadesDoAtleta(db: ScopedClient, athleteId: string): Promise<Map<string, string>> {
+  const out = new Map<string, string>();
+  for (const m of await db.teamMembership.findMany({
+    where: { athleteId, leftAt: null },
+    select: { team: { select: { sportId: true, sport: { select: { name: true } } } } },
+  })) {
+    out.set(m.team.sportId, m.team.sport.name);
+  }
+  return out;
+}
+
 /**
- * Aplica o ajuste individual a um atleta — partilhado por `setAthleteFee` e
- * `setAthleteFeeBulk`, para as duas nunca poderem divergir na forma como criam
- * ou actualizam o plano pessoal.
+ * Aplica o ajuste individual de um atleta numa modalidade (ou o valor único,
+ * com `sportId` nulo).
+ *
+ * Um ajuste por modalidade fecha o valor único, se ainda houver: o valor único
+ * sobrepõe-se à soma toda, e deixá-lo vivo fazia o ajuste acabado de gravar não
+ * contar para nada.
  */
 async function applyIndividualFee(
   db: ScopedClient,
   academyId: string,
   athlete: { id: string; name: string },
   amountCents: number,
+  sport: { id: string; name: string } | null,
 ): Promise<void> {
-  const existing = await activeIndividualEnrollment(db, athlete.id);
+  const existing = await activeIndividualEnrollment(db, athlete.id, sport?.id ?? null);
 
   if (existing) {
-    // Já tinha um ajuste individual — é só actualizar o preço, sem criar rasto
-    // novo. O desconto (se algum dia se usar) mantém-se como estava.
+    // Já tinha um ajuste nesta modalidade — é só actualizar o preço, sem criar
+    // rasto novo. O desconto (se algum dia se usar) mantém-se como estava.
     await db.subscriptionPlan.update({ where: { id: existing.planId }, data: { amountCents } });
   } else {
-    // Um atleta pode ter uma inscrição activa apontada para outra coisa (a
-    // equipa, no futuro, se isso vier a existir) — termina-a antes de criar a
-    // individual, para nunca haver duas em simultâneo.
-    await endActiveEnrollments(db, athlete.id);
-
     const plan = await db.subscriptionPlan.create({
-      data: { academyId, teamId: null, name: `Individual — ${athlete.name}`, amountCents },
+      data: {
+        academyId,
+        teamId: null,
+        sportId: sport?.id ?? null,
+        name: sport ? `Individual — ${athlete.name} · ${sport.name}` : `Individual — ${athlete.name}`,
+        amountCents,
+      },
     });
     await db.enrollment.create({ data: { athleteId: athlete.id, planId: plan.id, startsOn: new Date() } });
   }
+
+  if (sport) await endIndividualEnrollments(db, athlete.id, null);
 }
 
 /* ---------------------------------------------------------------------------- */
@@ -2875,19 +2864,30 @@ async function applyIndividualFee(
  * cobrança fica como está, e é dito quantas ficaram de fora.
  *
  * O resto — `OPEN`, sem pagamento vivo — passa a valer o preço novo.
+ *
+ * ## Um valor por atleta
+ *
+ * Recebia um valor para todos, e servia enquanto o preço de um atleta era o da
+ * equipa dele. Com o preço por modalidade deixou de servir: mudar o preço do
+ * futsal leva um atleta que só joga futsal para 25 € e um que joga também
+ * futebol para 55 €. Quem chama diz o valor de cada um, lido de
+ * `lerPrecosDetalhados`; quem ficou sem preço não se toca.
+ *
+ * Só a mensalidade (`slot` vazio). Uma avulsa do mesmo mês (o equipamento) não
+ * é um preço de mensalidade e nunca pode passar a valer um.
  */
 export async function reprecificarCobrancas(
   db: ScopedClient,
   period: string,
-  athleteIds: string[],
-  amountCents: number,
+  precos: Map<string, number>,
 ): Promise<{ actualizadas: number; intocadas: number }> {
-  if (athleteIds.length === 0) return { actualizadas: 0, intocadas: 0 };
+  if (precos.size === 0) return { actualizadas: 0, intocadas: 0 };
 
   const candidatas = await db.charge.findMany({
-    where: { period, athleteId: { in: athleteIds }, status: "OPEN" },
+    where: { period, athleteId: { in: [...precos.keys()] }, status: "OPEN", slot: "" },
     select: {
       id: true,
+      athleteId: true,
       amountCents: true,
       payments: {
         where: { status: { in: ["PENDING", "PROCESSING", "PAID"] } },
@@ -2897,18 +2897,41 @@ export async function reprecificarCobrancas(
     },
   });
 
-  const paraMudar = candidatas.filter((c) => c.payments.length === 0 && c.amountCents !== amountCents);
-  const travadas = candidatas.filter((c) => c.payments.length > 0 && c.amountCents !== amountCents);
+  const mudaDeValor = candidatas.filter((c) => c.amountCents !== precos.get(c.athleteId));
+  const paraMudar = mudaDeValor.filter((c) => c.payments.length === 0);
+  const travadas = mudaDeValor.filter((c) => c.payments.length > 0);
 
-  if (paraMudar.length > 0) {
-    await db.charge.updateMany({
-      where: { id: { in: paraMudar.map((c) => c.id) } },
+  for (const c of paraMudar) {
+    const amountCents = precos.get(c.athleteId) as number;
+    await db.charge.update({
+      where: { id: c.id },
       /* Baixar o preço a 0 € liquida a mensalidade: já não há nada a pedir. */
       data: { amountCents, ...(nasceIsenta(amountCents) ? { status: ChargeStatus.SETTLED, settledAt: new Date() } : {}) },
     });
   }
 
   return { actualizadas: paraMudar.length, intocadas: travadas.length };
+}
+
+/**
+ * Reprecificar estes atletas ao preço que a regra lhes dá agora.
+ *
+ * O caminho de quem acabou de mudar um preço: lê o preço de cada um (a soma das
+ * modalidades) e aplica-o às mensalidades já emitidas deste período. Quem ficou
+ * sem preço nenhum fica como está: tirar um preço não é dizer que o mês é grátis.
+ */
+export async function reprecificarPelaRegra(
+  db: ScopedClient,
+  period: string,
+  athleteIds: string[],
+): Promise<{ actualizadas: number; intocadas: number }> {
+  const precoDe = await lerPrecosDosAtletas(db, athleteIds);
+  const precos = new Map<string, number>();
+  for (const id of athleteIds) {
+    const p = precoDe({ id });
+    if (p) precos.set(id, p.amountCents);
+  }
+  return reprecificarCobrancas(db, period, precos);
 }
 
 export async function gerarCobrancas(
@@ -2934,7 +2957,7 @@ export async function gerarCobrancas(
       status: "ACTIVE",
       ...(apenasAtletas ? { id: { in: apenasAtletas } } : {}),
     },
-    select: { id: true, joinedAt: true, teams: { where: { leftAt: null }, select: { teamId: true }, take: 1 } },
+    select: { id: true, joinedAt: true },
   });
   if (atletas.length === 0) {
     return { period, criadas: 0, jaExistiam: 0, semPreco: 0, foraDoMes: 0, atletasNovos: [] };
@@ -2942,11 +2965,18 @@ export async function gerarCobrancas(
 
   const ids = atletas.map((a) => a.id);
 
-  // Quem já tem cobrança neste período. Uma leitura só, em vez de uma por atleta.
+  /*
+   * Quem já tem a mensalidade deste período. Uma leitura só, em vez de uma por
+   * atleta.
+   *
+   * Só a mensalidade (`slot` vazio). Contava qualquer cobrança do mês, e uma
+   * avulsa (o equipamento, um torneio) fazia o atleta passar por "já tem": a
+   * mensalidade desse mês nunca nascia.
+   */
   const existentes = new Set(
     (
       await db.charge.findMany({
-        where: { period, athleteId: { in: ids } },
+        where: { period, athleteId: { in: ids }, slot: "" },
         select: { athleteId: true },
       })
     ).map((c) => c.athleteId),
@@ -3080,36 +3110,78 @@ export async function gerarCobrancas(
   };
 }
 
+/** O preço de um atleta numa modalidade. */
+export type PrecoNaModalidade = {
+  sportId: string;
+  sportName: string;
+  /** A equipa que conta para o preço desta modalidade. */
+  teamId: string;
+  teamName: string;
+  /** O preço da equipa. Nulo = a equipa ainda não tem preço. */
+  teamAmountCents: number | null;
+  /** O ajuste individual nesta modalidade, já com o desconto. Nulo = não há. */
+  individualAmountCents: number | null;
+  individualEnrollmentId: string | null;
+  /** O que conta: o individual se houver, senão o da equipa. Nulo = por configurar. */
+  amountCents: number | null;
+};
+
+/** Tudo o que decide quanto um atleta paga por mês. */
+export type PrecoDetalhado = {
+  /** A soma. Nulo = nenhuma modalidade tem preço, e o atleta não é cobrado. */
+  amountCents: number | null;
+  /** Só quando o valor vem de um preço individual só — liga a cobrança a ele. */
+  enrollmentId?: string;
+  modalidades: PrecoNaModalidade[];
+  /**
+   * O valor único de antes do preço por modalidade (`sportId` nulo), já com o
+   * desconto. Quando existe, é ele o preço e a soma não conta. Fica para quem
+   * não tem equipa; quem tem equipa passou para a modalidade na migração
+   * `20260927100000_preco_por_modalidade`.
+   */
+  valorUnico: { amountCents: number; enrollmentId: string } | null;
+};
+
 /**
- * O preço de cada atleta, lido em bloco.
+ * O preço de cada atleta, lido em bloco, com o detalhe por modalidade.
  *
- * A inscrição individual activa mais recente manda, com o desconto dela; sem
- * inscrição, vale o plano da primeira equipa. Sem nenhum dos dois, o atleta não
- * tem preço e a função devolve `null`.
+ * ## A regra
  *
- * Saiu de dentro de `gerarCobrancas` quando o lançamento à mão passou a poder
- * cobrar equipas inteiras "ao preço de cada um". A regra de quanto um atleta
- * paga não pode viver em dois sítios: no dia em que uma mudar, a emissão do mês
- * e o lançamento à mão passavam a cobrar valores diferentes ao mesmo atleta.
+ * Um atleta paga **a soma das modalidades que pratica**: futebol e futsal são
+ * duas mensalidades somadas numa só cobrança, que a família paga de uma vez.
+ * Em cada modalidade conta o ajuste individual dessa modalidade, se houver; senão
+ * o preço da equipa. Uma modalidade sem nenhum dos dois fica por configurar e
+ * não entra na soma; sem nenhuma com preço, o atleta não tem preço.
+ *
+ * Duas equipas da **mesma** modalidade (um Sub-13 que também joga nos Sub-14)
+ * contam uma vez: a mais antiga que tenha preço. Pagar o futebol a dobrar por
+ * estar em dois escalões seria cobrar duas vezes a mesma coisa.
+ *
+ * Antes contava a "primeira equipa", e a primeira era a que a base devolvesse,
+ * sem ordem: um atleta em duas modalidades pagava uma delas, e qual podia mudar
+ * de um mês para o outro.
+ *
+ * ## Um sítio só
+ *
+ * A emissão do mês, o lançamento à mão, a ficha do atleta e a reprecificação
+ * lêem todos daqui. No dia em que dois lessem regras diferentes, o mesmo atleta
+ * tinha dois preços.
  */
-export async function lerPrecosDosAtletas(
-  db: ScopedClient,
-  ids: string[],
-): Promise<(a: { id: string; teams: { teamId: string }[] }) => { amountCents: number; enrollmentId?: string } | null> {
+export async function lerPrecosDetalhados(db: ScopedClient, ids: string[]): Promise<(athleteId: string) => PrecoDetalhado> {
   const hoje = new Date();
-  const individuais = new Map<string, { amountCents: number; discountCents: number; enrollmentId: string }>();
+
+  // Os ajustes individuais vivos, por atleta e por modalidade ("" = valor único).
+  const individuais = new Map<string, { amountCents: number; enrollmentId: string }>();
   for (const e of await db.enrollment.findMany({
     where: { athleteId: { in: ids }, plan: { teamId: null, isActive: true } },
-    include: { plan: true },
+    select: { id: true, athleteId: true, discountCents: true, endsOn: true, plan: { select: { amountCents: true, sportId: true } } },
     orderBy: { startsOn: "desc" },
   })) {
-    if (individuais.has(e.athleteId)) continue; // a mais recente ganha
     if (!(e.endsOn === null || e.endsOn >= hoje)) continue;
-    individuais.set(e.athleteId, {
-      amountCents: e.plan.amountCents,
-      discountCents: e.discountCents,
-      enrollmentId: e.id,
-    });
+    const chave = `${e.athleteId}|${e.plan.sportId ?? ""}`;
+    if (individuais.has(chave)) continue; // a mais recente ganha
+    // O desconto só existe na inscrição individual; o preço da equipa não o tem.
+    individuais.set(chave, { amountCents: Math.max(0, e.plan.amountCents - e.discountCents), enrollmentId: e.id });
   }
 
   // Os planos de equipa, um por equipa.
@@ -3122,17 +3194,79 @@ export async function lerPrecosDosAtletas(
     if (plan.teamId && !planosPorEquipa.has(plan.teamId)) planosPorEquipa.set(plan.teamId, plan.amountCents);
   }
 
-  return (a) => {
-    const individual = individuais.get(a.id);
-    // O desconto só existe na inscrição individual; o preço da equipa não o tem.
-    if (individual) {
-      return {
-        amountCents: Math.max(0, individual.amountCents - individual.discountCents),
-        enrollmentId: individual.enrollmentId,
-      };
+  // As equipas de cada atleta, das mais antigas para as mais novas.
+  const equipas = new Map<string, { teamId: string; teamName: string; sportId: string; sportName: string }[]>();
+  for (const m of await db.teamMembership.findMany({
+    where: { athleteId: { in: ids }, leftAt: null },
+    select: { athleteId: true, teamId: true, team: { select: { name: true, sportId: true, sport: { select: { name: true } } } } },
+    orderBy: [{ joinedAt: "asc" }, { teamId: "asc" }],
+  })) {
+    const lista = equipas.get(m.athleteId) ?? [];
+    lista.push({ teamId: m.teamId, teamName: m.team.name, sportId: m.team.sportId, sportName: m.team.sport.name });
+    equipas.set(m.athleteId, lista);
+  }
+
+  return (athleteId) => {
+    const porModalidade = new Map<string, NonNullable<ReturnType<typeof equipas.get>>>();
+    for (const e of equipas.get(athleteId) ?? []) {
+      const lista = porModalidade.get(e.sportId) ?? [];
+      lista.push(e);
+      porModalidade.set(e.sportId, lista);
     }
-    const daEquipa = a.teams[0] ? planosPorEquipa.get(a.teams[0].teamId) : undefined;
-    return daEquipa === undefined ? null : { amountCents: daEquipa };
+
+    const modalidades: PrecoNaModalidade[] = [...porModalidade.values()].map((lista) => {
+      const equipa = lista.find((e) => planosPorEquipa.has(e.teamId)) ?? lista[0];
+      const teamAmountCents = planosPorEquipa.get(equipa.teamId) ?? null;
+      const individual = individuais.get(`${athleteId}|${equipa.sportId}`) ?? null;
+      return {
+        sportId: equipa.sportId,
+        sportName: equipa.sportName,
+        teamId: equipa.teamId,
+        teamName: equipa.teamName,
+        teamAmountCents,
+        individualAmountCents: individual?.amountCents ?? null,
+        individualEnrollmentId: individual?.enrollmentId ?? null,
+        amountCents: individual ? individual.amountCents : teamAmountCents,
+      };
+    });
+
+    const valorUnico = individuais.get(`${athleteId}|`) ?? null;
+    if (valorUnico) {
+      return { amountCents: valorUnico.amountCents, enrollmentId: valorUnico.enrollmentId, modalidades, valorUnico };
+    }
+
+    const comPreco = modalidades.filter((m) => m.amountCents !== null);
+    if (comPreco.length === 0) return { amountCents: null, modalidades, valorUnico: null };
+
+    return {
+      amountCents: comPreco.reduce((soma, m) => soma + (m.amountCents as number), 0),
+      // De que preço veio o valor, quando veio de um só — é o que deixa perceber,
+      // meses depois, de onde saiu aquele número. Uma soma não tem uma origem.
+      ...(comPreco.length === 1 && comPreco[0].individualEnrollmentId
+        ? { enrollmentId: comPreco[0].individualEnrollmentId }
+        : {}),
+      modalidades,
+      valorUnico: null,
+    };
+  };
+}
+
+/**
+ * O preço de cada atleta, só o valor — o que a emissão e o lançamento precisam.
+ *
+ * Saiu de dentro de `gerarCobrancas` quando o lançamento à mão passou a poder
+ * cobrar equipas inteiras "ao preço de cada um". A regra vive em
+ * `lerPrecosDetalhados`; isto só tira o total.
+ */
+export async function lerPrecosDosAtletas(
+  db: ScopedClient,
+  ids: string[],
+): Promise<(a: { id: string }) => { amountCents: number; enrollmentId?: string } | null> {
+  const detalhe = await lerPrecosDetalhados(db, ids);
+  return (a) => {
+    const d = detalhe(a.id);
+    if (d.amountCents === null) return null;
+    return { amountCents: d.amountCents, ...(d.enrollmentId ? { enrollmentId: d.enrollmentId } : {}) };
   };
 }
 

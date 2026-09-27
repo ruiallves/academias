@@ -997,6 +997,40 @@ tem ecrã dedicado na PWA (ver Por fazer).
 
 ---
 
+## No quadro tático, o que a mão mexe fica por cima
+
+Em SVG não há `z-index`: quem vem depois pinta por cima. A ordem era a de
+colocação, e dava duas coisas erradas.
+
+**A peça arrastada deslizava por baixo das outras.** Arrastava-se um jogador,
+ele passava por cima de outro ou de uma zona e desaparecia por trás — a mão a
+mexer numa coisa que já não se via.
+
+**E a zona tapava quem estava dentro dela.** A zona é o espaço do exercício, o
+corredor, a área de pressão. Desenhada depois, ficava por cima dos jogadores que
+a ocupam, que é o contrário do que ela quer dizer.
+
+A ordem passou a ser decidida em `ordemDePintura` (`components/FieldEditor.tsx`):
+
+1. as **zonas** primeiro, atrás de tudo;
+2. o resto pela ordem de colocação;
+3. o que está a ser **arrastado** por último, à frente de tudo.
+
+E fica por cima depois de largar. A primeira versão só a levantava durante o
+gesto, e um treinador largava o jogador e via-o voltar para baixo no instante em
+que tirava o dedo. Agora o `onPointerUp` passa as peças mexidas para o fim da
+lista, que é a ordem gravada; o "antes" do desfazer guarda a ordem antiga, por
+isso desfazer devolve as posições e as camadas. A zona que se está a
+redimensionar também sobe enquanto se mexe, senão o puxador do canto ficava
+debaixo de um jogador.
+
+As zonas atrás também arrumam os toques: um clique num jogador dentro de uma
+zona passa a acertar no jogador, e não no rectângulo grande por cima dele.
+
+A regra vive num sítio só porque as três vistas — o cartão parado, a animação e
+o editor — têm de empilhar igual. Um desenho que muda de aspeto entre o editor e
+o cartão é um desenho em que não se confia.
+
 ## O histórico de mensalidades na ficha do atleta diz o que cada linha é
 
 O separador *Mensalidades* da ficha mostrava três coisas por linha: o mês, o
@@ -2584,6 +2618,104 @@ Migração `20260924100000_consultas_tipos_e_confirmacao`.
   e tocar na bolinha abre o seletor. É essa a cor no calendário e na lista das
   Consultas; sem cor escolhida usa a de omissão do `kind`.
 
+## Um atleta em duas modalidades paga a soma
+
+Um atleta que pratica futebol e futsal paga **as duas mensalidades somadas numa
+só cobrança**, e a família paga tudo de uma vez (decisão do Rui: uma linha por
+mês, não uma por modalidade). A regra vive num sítio só,
+`lerPrecosDetalhados` em `billing.service.ts`, e lêem-na a emissão do mês, o
+lançamento à mão, o painel das mensalidades em falta, a reprecificação e a ficha:
+
+- Por cada modalidade em que o atleta tem equipa, conta o **ajuste individual
+  dessa modalidade**, se houver; senão o **preço da equipa**. Uma modalidade sem
+  nenhum dos dois fica "por configurar" e não entra na soma; sem nenhuma com
+  preço, o atleta não é cobrado (`sem-preco`).
+- Duas equipas da **mesma** modalidade contam uma vez: a mais antiga com preço.
+- Antes contava a "primeira equipa", que era a que a base devolvesse, sem ordem.
+
+**O ajuste individual é por modalidade:** `SubscriptionPlan.sportId` (migração
+`20260927100000_preco_por_modalidade`, que passou os ajustes existentes para a
+modalidade do atleta). Um plano individual com `sportId` nulo é o **valor
+único** de antes, que se sobrepõe à soma; fica para quem não tem equipa.
+`PUT /api/athletes/:id/fee` exige `sportId` a quem tem equipa (e só uma
+modalidade que ele pratique); `DELETE /api/athletes/:id/fee?sportId=` tira o de
+uma modalidade e reprecifica o mês. `GET` devolve `modalidades[]` e a soma em
+`effectiveAmountCents` (o único campo que a app da família lê). Apagar uma
+modalidade desliga os preços individuais dela antes, senão ficavam valor único.
+**O ajuste para vários atletas de uma vez (`PUT /api/athletes/fee`) deixou de
+existir**: um valor sem modalidade não quer dizer nada.
+
+**Na consola:** "Preços por equipa" tem um separador por modalidade (Todas,
+Futebol, Futsal…) quando o clube tem mais do que uma, a regra das Equipas.
+"Preço por atleta" escolhe **um** atleta pela pesquisa e mostra as modalidades
+dele com o valor de cada uma; é o mesmo componente do separador Mensalidades da
+ficha (`components/finance/PrecoDoAtleta.tsx`).
+
+**A reprecificação passou a ser por atleta** (`reprecificarCobrancas` recebe um
+mapa atleta→valor; `reprecificarPelaRegra` lê-o da regra): mudar o preço do
+futsal leva cada atleta ao valor dele, a soma incluída.
+
+**Corrigido de passagem:** a emissão e o painel em falta contavam **qualquer**
+cobrança do mês como "já tem mensalidade", e uma avulsa (o equipamento) fazia a
+mensalidade desse mês nunca nascer. E a reprecificação podia mudar o valor de
+uma avulsa do mesmo mês. Agora as três olham só para `slot = ""`.
+
+Teste: `scripts/test-fee-config.mjs` (inclui o atleta em duas modalidades, com
+uma equipa temporária `zz_t_fee_2mod`).
+
+## Um atleta em várias equipas
+
+Um atleta pode estar em várias equipas: futebol e futsal, ou um Sub-13 que
+também joga nos Sub-14. **O número e a posição são de cada equipa**
+(`TeamMembership.squadNumber`, migração `20260927120000_numero_por_equipa`, que
+copiou o número da ficha para as passagens vivas). A **principal** é a passagem
+viva mais antiga; `Athlete.squadNumber` fica com o número dela
+(`sincronizarNumeroPrincipal`), para quem ainda lê essa coluna.
+
+**Servidor** (`academy/equipas-do-atleta.ts`, um sítio só para as três portas):
+- **Inscrever** aceita `equipas: [{teamId, squadNumber, position}]` (a primeira
+  é a principal); `teamId` solto continua a valer.
+- **Editar** com `equipas` é a lista inteira: a que sai fica com `leftAt` (o
+  percurso), a nova entra, e nas que ficam muda o número e a posição
+  (`aplicarEquipas`). Uma equipa fora do âmbito de quem edita pode vir na lista
+  mas não se lhe mexe. Voltar a uma equipa por onde já passou reabre a passagem
+  (o índice único `teamId + athleteId` não deixa outra). A forma antiga
+  (`teamId`/`squadNumber`/`position` soltos) troca só a principal.
+- **O número não se repete** entre as passagens vivas de uma equipa, na
+  inscrição, na edição e na importação (`choqueDeNumeros`). Antes a inscrição
+  não verificava nada.
+- **Importar:** cada linha é uma equipa; várias linhas com o mesmo NIF são o
+  mesmo atleta. A segunda linha de um atleta criado na mesma folha junta a
+  equipa **sem perguntar "substituir?"** (antes parava, como se o atleta já
+  existisse). A resposta traz `equipasJuntadas`.
+- `GET /api/athletes` devolve `equipas[]`; `teamId`, `position` e `squadNumber`
+  continuam a ser os da principal.
+- **Viragem de época:** o destino escolhido trata da modalidade dele; as outras
+  equipas do atleta acompanham a sua, se ela transitar (senão sai dela). O
+  número e a posição vão com ele. O assistente continua com um destino por atleta.
+- Os convidados de outro escalão deixam de fora quem também está na equipa do jogo.
+- As leituras de "a equipa do atleta" com `take: 1` passaram todas a ordenar pela
+  passagem mais antiga (antes era a que a base devolvesse).
+
+**Consola:** `Athlete.equipas` e `naEquipa()` / `numeroNaEquipa()` /
+`posicaoNaEquipa()` / `nomesDasEquipas()` em `lib/api.ts`. Plantéis, presenças,
+convocatórias, avaliações, filtros e contagens perguntam `naEquipa`, nunca
+`a.teamId ===`. A convocatória, a ficha de jogo e a análise de vídeo mostram o
+número **dessa** equipa. Inscrever e editar usam `EquipasDoAtletaField`: uma
+linha por equipa (modalidade → equipa → número → posição; a modalidade só quando
+o clube tem mais do que uma) e "Acrescentar outra modalidade". "Adicionar ao
+plantel" muda de escalão dentro da mesma modalidade e junta noutra. A
+importação explica o caso no passo do modelo e no próprio modelo (duas linhas de
+exemplo, o mesmo atleta em duas equipas), conta pessoas e não linhas, e diz
+quantos vêm em várias equipas. A exportação sai com uma linha por equipa
+(`umaLinhaPorEquipa`), que é o que a importação volta a ler.
+
+**Por fazer:** as avaliações usam as competências da modalidade da equipa
+principal; um atleta de duas modalidades não tem ainda avaliação por modalidade.
+
+Testes: `scripts/test-varias-equipas.mjs` (20), `test-importacao.mjs`,
+`test:exportar` na consola (um atleta em duas equipas são duas linhas).
+
 ## Mensalidades de 0 €
 
 Um atleta pode ter mensalidade de **0 €**: a bolsa, o filho de um treinador, o
@@ -3851,3 +3983,97 @@ Passa a valer o **NIF ou outro documento** (migração
   importação reconhece uma ficha existente por qualquer um dos dois e, ao
   actualizar, preenche o que lhe falta sem mudar o que já tinha. A exportação
   leva as duas colunas (`test:exportar` continua a passar).
+
+## Importar o calendário de uma folha
+
+Um clube que arranca tem a época inteira num Excel, e marcá-la evento a evento
+no calendário é o trabalho que faz a adopção parar à segunda semana. O botão
+**Importar** vive ao lado de *Novo evento*, no Calendário.
+
+**Três folhas, uma por tipo.** Treinos, Jogos e Outros, porque cada tipo pede
+campos diferentes: um treino não tem adversário nem prova, um jogo não se repete
+às terças e quintas, e só um evento genérico tem título próprio. Numa folha
+única metade das colunas ficava vazia em metade das linhas. O ficheiro pode
+trazer só as folhas que interessam. O modelo leva uma quarta, *Como preencher*,
+com os nomes exactos das equipas, locais, balneários, provas e tipos do clube.
+
+**A repetição é semanal**, "Repetir até" mais "Dias da semana" — terças e
+quintas até 30 de Junho numa linha só. Sem os dias, repete no dia da semana da
+data. Diária e mensal ficam de fora: são raras num calendário de clube e duas
+colunas a mais custavam mais do que valem. Nos jogos não há repetição nenhuma.
+
+**O que a academia ainda não tem pergunta-se uma vez.** Locais, balneários,
+provas e tipos de evento novos aparecem numa lista com uma caixa: criar, ou não.
+Uma prova que a equipa ainda não dispute é ligada no mesmo gesto (`team:write`),
+porque usá-la num jogo dela é dizer que a disputa. As **equipas não** entram
+nessa lista: uma equipa cria-se com modalidade e escalão, e adivinhá-los a
+partir de uma linha de calendário era inventar — equipa desconhecida é erro de
+linha.
+
+**O ensaio é o passo que importa.** `POST /api/events/import` com `ensaio: true`
+corre tudo no servidor e não escreve nada: devolve quantos eventos saem das
+linhas depois de repetidas, quantos chocam e com quê. É a única forma de
+verificar uma importação de calendário — os eventos ficam espalhados por doze
+meses e ninguém os relê. Só depois de o ver é que o botão passa a *Criar N
+eventos*.
+
+**Conflitos:** a mesma equipa em dois sítios à mesma hora, e o mesmo balneário
+por duas coisas ao mesmo tempo — contra o que já está marcado **e** contra o
+próprio ficheiro, que se pisa a si mesmo quando uma linha vem copiada. O local
+não é exclusivo, de propósito: dois escalões dividem um campo ao meio todos os
+dias. Um choque salta a ocorrência e conta-se; não derruba o ficheiro.
+
+As regras que decidem — os dias de uma série, o que o tipo do clube faz do
+evento, e o que choca com o quê — vivem sozinhas em
+`academy/calendario-regras.ts`, sem Nest e sem Prisma e sem imports, como
+`members/cobertura.ts` e pela mesma razão: são a parte que se engana em
+silêncio. `npm run test:calendario-import` (28) corre-as sem servidor, e
+`npm run test:calendario --workspace=@academia/console` (38) lê ficheiros
+`.xlsx` a sério com o leitor da consola — a começar pelo próprio modelo, que
+tem de passar pelo leitor sem uma queixa.
+
+### Exportar o calendário
+
+O botão **Exportar**, ao lado de Importar, abre uma pergunta em vez de
+descarregar logo: o período (a época atual por omissão), **várias equipas** e
+**vários tipos de evento** (os do catálogo do clube), e se os cancelados vêm.
+Tudo vem escolhido; restringir é tirar. Com parte das equipas escolhidas há uma
+caixa para os eventos de toda a academia. Exportar é leitura (`calendar:read`),
+por isso o botão aparece a quem vê o calendário mesmo sem o poder editar.
+
+O ficheiro tem as **mesmas três folhas e colunas da importação**, e é esse o
+ponto: exportar, corrigir na folha e voltar a importar. Por isso vem do servidor
+(`GET /api/events/export`) e não do que a consola tem em memória — a consola só
+traz a janela à vista e não traz os balneários de um jogo nem quem avisa as
+faltas de um treino. As horas saem no relógio do clube. Cada evento sai na sua
+linha (a repetição não se reconstrói). Os cancelados só vêm a pedido, com uma
+coluna Estado que a importação não lê.
+
+Os ciclos (macro, meso, micro) **não** saem daqui: são do Planeamento, por
+equipa, com a exportação própria. O popup diz isso e tem um botão pequeno
+"Ir para o Planeamento". `test:calendario` passou a exportar e voltar a ler o
+ficheiro (48).
+
+## A equipa: editar num popup, e montar o plantel na própria página
+
+**Editar equipa** é um botão no cabeçalho da página da equipa (`team:write`) que
+abre um popup com tudo o que é da equipa: nome, idade máxima (escalão), duração
+do jogo, máximo de convocados e as competições que disputa. Antes eram dois
+painéis na visão geral a gravar cada um sozinho (provas e duração), o máximo de
+convocados vivia só na página das convocatórias, e o nome e o escalão não se
+editavam em lado nenhum. Grava tudo de uma vez (`PATCH /api/teams/:id`, numa
+transacção), só o que mudou: o nome não repete outro na mesma modalidade e
+época, e "Amigável" nunca sai das provas. A modalidade e a época não se mudam
+daqui. O `TeamCompetitionsPanel` e o painel da duração saíram; a lista de
+equipas passou a trazer `maxCallUps`.
+
+**O plantel monta-se no separador Plantel**: "Adicionar atletas" escolhe vários
+atletas que já estão no clube (com procura, idade, e de que equipa vêm; quem
+saiu não aparece) e "Novo atleta" abre a inscrição já com esta equipa escolhida
+(`athlete:write`). Adicionar um atleta que está noutra equipa **muda-o** para
+esta, pelo mesmo caminho de mudar a equipa na ficha (`PATCH /api/athletes/:id`),
+com a passagem antiga fechada no percurso. Não se juntam equipas: o produto
+trata cada atleta como sendo de uma equipa (a ficha, as mensalidades e a app da
+família mostram uma), e um atleta em duas desaparecia de um dos plantéis. O
+popup diz de onde sai cada um antes de gravar, e avisa quem está acima da idade
+da equipa.

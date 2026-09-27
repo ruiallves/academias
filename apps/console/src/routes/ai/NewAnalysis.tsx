@@ -5,6 +5,7 @@ import { Bar, Empty, Panel, PanelHead, Pill, SelectField, cx } from "@/component
 import { dialogInputClass } from "@/components/Dialog";
 import { ArrowLeft, ArrowRight, Check, Film, Upload, Users } from "@/lib/icons";
 import { athletes, matches, teams } from "@/lib/store";
+import { naEquipa, numeroNaEquipa, posicaoNaEquipa } from "@/lib/api";
 import { shortDate } from "@/lib/format";
 import { can } from "@/lib/permissions";
 import { useSession } from "@/session";
@@ -69,7 +70,7 @@ export default function NewAnalysis() {
     .filter((m) => m.teamId === teamId && m.status !== "CANCELLED")
     .sort((a, b) => +new Date(b.startsAt) - +new Date(a.startsAt))
     .slice(0, 20);
-  const teamAthletes = athletes.filter((a) => a.teamId === teamId && a.status === "active");
+  const teamAthletes = athletes.filter((a) => naEquipa(a, teamId) && a.status === "active");
   const selectedMatch = teamMatches.find((m) => m.id === matchId) ?? null;
 
   /*
@@ -88,9 +89,9 @@ export default function NewAnalysis() {
       ? convocatoria.flatMap((c) => {
           const a = athletes.find((x) => x.id === c.athleteId);
           if (!a) return [];
-          return [{ id: a.id, name: a.name, squadNumber: a.squadNumber ?? null, position: a.position, convocado: c.status !== "DECLINED", convidado: c.isGuest }];
+          return [{ id: a.id, name: a.name, squadNumber: numeroNaEquipa(a, teamId) ?? null, position: posicaoNaEquipa(a, teamId), convocado: c.status !== "DECLINED", convidado: c.isGuest }];
         })
-      : teamAthletes.map((a) => ({ id: a.id, name: a.name, squadNumber: a.squadNumber ?? null, position: a.position, convocado: true, convidado: false }));
+      : teamAthletes.map((a) => ({ id: a.id, name: a.name, squadNumber: numeroNaEquipa(a, teamId) ?? null, position: posicaoNaEquipa(a, teamId), convocado: true, convidado: false }));
 
   /** Entrar no passo do plantel: todos convocáveis pré-escolhidos, número da ficha. */
   /**

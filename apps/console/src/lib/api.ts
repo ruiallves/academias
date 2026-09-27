@@ -106,12 +106,47 @@ export function listTeams(session: Session) {
  * da equipa dele, e não devia poder chamá-lo para lá sem mais.
  *
  * Onde não podem entrar, não entram por si: as convocatórias e as presenças
- * filtram por `a.teamId === team.id`, e `null` nunca é igual a uma equipa.
+ * filtram por `naEquipa(a, team.id)`, e um atleta sem equipas não está em
+ * nenhuma.
+ *
+ * Um atleta em várias equipas entra se **alguma** for do âmbito: o treinador
+ * do futsal vê o miúdo que também joga futebol.
  */
 export function listAthletes(session: Session): Athlete[] {
   const ids = new Set(scopedTeamIds(session));
   const orfaos = can(session, "team:write");
-  return allAthletes().filter((a) => (semEquipa(a) ? orfaos : ids.has(a.teamId)));
+  return allAthletes().filter((a) => (semEquipa(a) ? orfaos : a.equipas.some((e) => ids.has(e.teamId))));
+}
+
+/**
+ * Este atleta está nesta equipa? Em qualquer uma das dele, não só na principal.
+ *
+ * É a pergunta dos plantéis, das presenças e das convocatórias. Comparar com
+ * `a.teamId` respondia só pela principal, e um atleta de futebol e futsal
+ * desaparecia do plantel de futsal.
+ */
+export function naEquipa(a: { teamId: string; equipas?: Athlete["equipas"] }, teamId: string): boolean {
+  if (!teamId) return false;
+  return a.equipas ? a.equipas.some((e) => e.teamId === teamId) : a.teamId === teamId;
+}
+
+/** O número do atleta nesta equipa — o 10 no futebol pode ser o 7 no futsal. */
+export function numeroNaEquipa(a: Athlete, teamId: string): number | undefined {
+  return a.equipas.find((e) => e.teamId === teamId)?.squadNumber ?? (teamId === a.teamId ? a.squadNumber : undefined);
+}
+
+/** A posição do atleta nesta equipa. */
+export function posicaoNaEquipa(a: Athlete, teamId: string): string | undefined {
+  return a.equipas.find((e) => e.teamId === teamId)?.position ?? (teamId === a.teamId ? a.position : undefined);
+}
+
+/**
+ * As equipas do atleta, em texto: "Sub-13 · Futsal Sub-13". Para os sítios que
+ * mostram onde ele joga; "Sem equipa" quando não tem nenhuma.
+ */
+export function nomesDasEquipas(a: Athlete): string {
+  const nomes = a.equipas.map((e) => teamById(e.teamId)?.name).filter(Boolean);
+  return nomes.length > 0 ? nomes.join(" · ") : "Sem equipa";
 }
 
 /**
@@ -484,7 +519,7 @@ export function athleteSessions(athleteId: string, limitDays = 180): AthleteSess
   const from = new Date(today.getTime() - limitDays * 86_400_000);
 
   return sessions
-    .filter((s) => s.teamId === athlete.teamId && s.status !== "cancelled")
+    .filter((s) => naEquipa(athlete, s.teamId) && s.status !== "cancelled")
     .filter((s) => {
       const d = new Date(s.start);
       return d >= from && d <= today;

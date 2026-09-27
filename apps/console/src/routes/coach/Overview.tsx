@@ -14,6 +14,7 @@ import {
   nextSession,
   teamById,
   today,
+  naEquipa,
 } from "@/lib/api";
 import { greeting, longDate, relativeDays, shortName, time } from "@/lib/format";
 import type { TrainingSession } from "@/data/types";
@@ -69,7 +70,7 @@ function NextSession({ training: s }: { training: TrainingSession }) {
   const team = teamById(s.teamId);
   const start = new Date(s.start);
   const end = new Date(s.end);
-  const roster = listAthletes(session).filter((a) => a.teamId === s.teamId && a.status === "active");
+  const roster = listAthletes(session).filter((a) => naEquipa(a, s.teamId) && a.status === "active");
 
   return (
     <Panel className="overflow-hidden">
@@ -142,7 +143,7 @@ function MyTeams() {
       <PanelHead title="As minhas equipas" hint={`${teams.length}`} />
       <ul className="flex-1 px-5 py-1.5">
         {teams.map((t) => {
-          const count = athletes.filter((a) => a.teamId === t.id).length;
+          const count = athletes.filter((a) => naEquipa(a, t.id)).length;
           const rate = attendanceRate(session, 30, t.id);
           return (
             <li key={t.id} className="flex items-center gap-3 border-b border-line py-3 last:border-0">

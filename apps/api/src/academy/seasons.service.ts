@@ -81,7 +81,7 @@ export class SeasonsService {
         orderBy: { name: "asc" },
         select: {
           id: true, name: true, birthdate: true, status: true, photoKey: true,
-          teams: { where: { leftAt: null }, select: { teamId: true, position: true }, take: 1 },
+          teams: { where: { leftAt: null }, select: { teamId: true, position: true }, orderBy: [{ joinedAt: "asc" }, { id: "asc" }], take: 1 },
         },
       });
 
@@ -367,14 +367,21 @@ export class SeasonsService {
         const pedidos = new Map(dto.atletas.map((a) => [a.athleteId, a.destino]));
         const atletas = await db.athlete.findMany({
           where: { id: { in: [...pedidos.keys()] } },
-          select: { id: true, teams: { where: { leftAt: null }, select: { id: true, teamId: true, position: true } } },
+          select: {
+            id: true,
+            squadNumber: true,
+            teams: {
+              where: { leftAt: null },
+              select: { id: true, teamId: true, position: true, squadNumber: true, team: { select: { sportId: true } } },
+              orderBy: [{ joinedAt: "asc" }, { id: "asc" }],
+            },
+          },
         });
         if (atletas.length !== pedidos.size) throw new BadRequestException("Atleta desconhecido");
 
         const contas = { transitaram: 0, sairam: 0, porRenovar: 0 };
         for (const atleta of atletas) {
           const destino = pedidos.get(atleta.id)!;
-          const posicao = atleta.teams[0]?.position ?? null;
 
           for (const passagem of atleta.teams) {
             await db.teamMembership.update({ where: { id: passagem.id }, data: { leftAt: agora } });
@@ -397,9 +404,38 @@ export class SeasonsService {
            */
           const teamId = novaDe.get(destino);
           if (!teamId) throw new BadRequestException("Esse escalão não transita para a época nova");
-          await db.teamMembership.create({
-            data: { teamId, athleteId: atleta.id, joinedAt: agora, ...(posicao ? { position: posicao } : {}) },
-          });
+
+          /*
+           * O destino escolhido é da modalidade dele; as outras equipas do atleta
+           * seguem a sua.
+           *
+           * Um atleta pode estar em várias equipas (futebol e futsal), e o
+           * assistente pergunta um destino por atleta. Esse destino trata da
+           * modalidade a que pertence. Numa outra modalidade, o atleta acompanha
+           * a equipa em que está, se ela também transitar; se não transitar, sai
+           * dela, como antes. O número e a posição vão com ele: são de cada
+           * equipa, e mudar de época não faz do 10 outro número.
+           */
+          const sportDoDestino = antigas.find((t) => t.id === destino)?.sportId;
+          const daModalidade = atleta.teams.find((t) => t.team.sportId === sportDoDestino) ?? atleta.teams[0];
+          const entradas = [
+            {
+              teamId,
+              position: daModalidade?.position ?? null,
+              squadNumber: daModalidade?.squadNumber ?? (daModalidade === atleta.teams[0] ? atleta.squadNumber : null),
+            },
+            ...atleta.teams
+              .filter((t) => t.team.sportId !== sportDoDestino && novaDe.has(t.teamId))
+              .map((t) => ({ teamId: novaDe.get(t.teamId)!, position: t.position, squadNumber: t.squadNumber })),
+          ].filter((e, i, todas) => todas.findIndex((x) => x.teamId === e.teamId) === i);
+
+          for (const [i, e] of entradas.entries()) {
+            await db.teamMembership.create({
+              // Um milissegundo entre cada uma: a primeira (a do destino) fica a principal.
+              data: { athleteId: atleta.id, joinedAt: new Date(agora.getTime() + i), ...e },
+            });
+          }
+          await db.athlete.update({ where: { id: atleta.id }, data: { squadNumber: entradas[0].squadNumber } });
           contas.transitaram++;
         }
 

@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { Dialog } from "./Dialog";
 import { AvailabilityTag, cx, Monogram, SelectField } from "./primitives";
-import { listAthletes, teamById } from "@/lib/api";
+import { listAthletes, teamById, naEquipa } from "@/lib/api";
 import { recordAttendance } from "@/lib/attendance";
 import { availabilityOf, isUnavailable, useClinicalRecords } from "@/lib/clinical";
 import { longDate, shortName, time } from "@/lib/format";
@@ -52,7 +52,7 @@ export function AttendanceDialog({
   useClinicalRecords();
   const team = teamById(training.teamId);
   const roster = listAthletes(session)
-    .filter((a) => a.teamId === training.teamId && a.status === "active")
+    .filter((a) => naEquipa(a, training.teamId) && a.status === "active")
     .sort((a, b) => a.name.localeCompare(b.name, "pt"));
 
   /*

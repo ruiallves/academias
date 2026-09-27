@@ -4,6 +4,8 @@ import { Type } from "class-transformer";
 import { ChargeStatus, type AthleteStatus } from "@prisma/client";
 import type { AuthedRequest } from "../auth/auth.guard";
 import { AcademyService } from "./academy.service";
+import { EventsImportService } from "./events-import.service";
+import { ImportarCalendarioDto } from "./events-import.dto";
 import { SHORT_NAME_MAX } from "../common/short-name";
 import { AthletesService } from "./athletes.service";
 import { SeasonsService } from "./seasons.service";
@@ -244,38 +246,16 @@ class SetFeeDto {
   aplicarEm?: AplicarEm;
 }
 
-/** O mesmo preço para vários atletas de uma vez — até 200, o mesmo tecto da importação. */
-class SetAthleteFeeBulkDto {
-  @IsArray()
-  @ArrayMaxSize(200)
-  @IsString({ each: true })
-  athleteIds!: string[];
-
-  /*
-   * A regra dita em euros, e em português.
-   *
-   * As mensagens por omissão do class-validator saíam assim: "amountCents must
-   * not be greater than 100000". Em inglês, com o nome interno do campo e o
-   * valor em cêntimos — para uma direcção de clube que só quis pôr a mensalidade
-   * a 35 €, não diz nada. E era a única pista que chegava ao ecrã.
-   *
-   * O tecto existe para apanhar um dedo escorregado, não para limitar o preço de
-   * ninguém: nenhuma mensalidade de formação chega perto de 1000 €, e um valor
-   * acima disso é quase sempre um número que ficou colado a outro.
-   */
-  @IsInt({ message: "O valor tem de ser em euros e cêntimos, sem outros caracteres" })
-  /*
-   * Zero é um preço: o atleta isento (bolsa, filho de treinador, acordo com a
-   * escola). A mensalidade dele nasce paga — ver `nasceIsenta` no serviço, que
-   * é também quem recusa os valores entre zero e um euro.
-   */
-  @Min(0, { message: "O valor não pode ser negativo" })
-  @Max(100_000, { message: "A mensalidade mais alta que se pode registar é 1000 € — confirma o valor que escreveste" })
-  amountCents!: number;
-
+/**
+ * O ajuste individual de um atleta: o preço dele numa modalidade.
+ *
+ * A modalidade é obrigatória para quem tem equipa (ver `setAthleteFee`); só
+ * um atleta sem plantel grava sem ela, e aí é o valor único.
+ */
+class SetAthleteFeeDto extends SetFeeDto {
   @IsOptional()
-  @IsIn(["atual", "proximo"])
-  aplicarEm?: AplicarEm;
+  @IsString()
+  sportId?: string;
 }
 
 /** As excepções de acesso a gravar para uma pessoa. Validadas — ver `invites.dto.ts`. */
@@ -442,6 +422,21 @@ class DeleteTeamDto {
   @IsString() @Length(1, 200) confirmName!: string;
 }
 
+/**
+ * Editar uma equipa: o que o popup "Editar equipa" mostra, numa gravação só.
+ *
+ * Cada campo é opcional — só vem o que mudou — e a modalidade e a época não
+ * estão aqui de propósito: mudar a modalidade de uma equipa com jogos deixava
+ * posições e provas que não são dela, e a época muda-se pela viragem.
+ */
+class UpdateTeamDto {
+  @IsOptional() @IsString() @Length(2, 80) name?: string;
+  @IsOptional() @IsInt() @Min(4) @Max(99) maxAge?: number;
+  @IsOptional() @IsInt() @Min(1) @Max(300) matchMinutes?: number;
+  @IsOptional() @IsInt() @Min(1) @Max(60) maxCallUps?: number;
+  @IsOptional() @IsArray() @ArrayMaxSize(12) @IsString({ each: true }) competitionIds?: string[];
+}
+
 /** As provas que uma equipa disputa. Substitui a lista por inteiro. */
 class TeamCompetitionsDto {
   @IsArray() @ArrayMaxSize(12) @IsString({ each: true }) competitionIds!: string[];
@@ -454,6 +449,7 @@ export class AcademyController {
     private readonly athletes: AthletesService,
     private readonly billing: BillingService,
     private readonly seasons: SeasonsService,
+    private readonly eventsImport: EventsImportService,
   ) {}
 
   @Get("bootstrap")
@@ -516,6 +512,12 @@ export class AcademyController {
    * As provas de uma equipa. `team:write` — quem gere a equipa decide onde ela
    * joga; criar a prova no catálogo é que é das Definições.
    */
+  /** Editar a equipa — nome, escalão, duração do jogo, convocados e provas. Ver `UpdateTeamDto`. */
+  @Patch("teams/:id")
+  updateTeam(@Req() req: AuthedRequest, @Param("id") id: string, @Body() dto: UpdateTeamDto) {
+    return this.academy.updateTeam(req.ctx, id, dto);
+  }
+
   @Put("teams/:id/competicoes")
   setTeamCompetitions(@Req() req: AuthedRequest, @Param("id") id: string, @Body() dto: TeamCompetitionsDto) {
     return this.academy.setTeamCompetitions(req.ctx, id, dto.competitionIds);
@@ -832,6 +834,45 @@ export class AcademyController {
     return this.academy.createEvent(req.ctx, body);
   }
 
+  /**
+   * O calendário de uma folha.
+   *
+   * Com `ensaio` não escreve nada e devolve o que ia acontecer — é o passo que
+   * o ecrã mostra antes de perguntar. Ver `EventsImportService`.
+   */
+  /**
+   * O calendário de um período, com as colunas da importação — para o
+   * ida-e-volta de exportar, corrigir na folha e voltar a importar.
+   */
+  @Get("events/export")
+  exportEvents(
+    @Req() req: AuthedRequest,
+    @Query("from") from: string,
+    @Query("to") to: string,
+    /** Ids separados por vírgula. Ausente é todas as equipas. */
+    @Query("equipas") equipas?: string,
+    /** "1" traz os eventos de toda a academia quando há equipas escolhidas. */
+    @Query("academia") academia?: string,
+    /** Nomes dos tipos de evento, separados por vírgula. Ausente é todos. */
+    @Query("tipos") tipos?: string,
+    @Query("cancelados") cancelados?: string,
+  ) {
+    const lista = (v?: string) => (v ?? "").split(",").map((x) => x.trim()).filter(Boolean);
+    return this.eventsImport.exportar(req.ctx, {
+      from: new Date(from),
+      to: new Date(to),
+      teamIds: lista(equipas),
+      incluirDaAcademia: academia === "1",
+      tipos: lista(tipos),
+      incluirCancelados: cancelados === "1",
+    });
+  }
+
+  @Post("events/import")
+  importEvents(@Req() req: AuthedRequest, @Body() body: ImportarCalendarioDto) {
+    return this.eventsImport.importar(req.ctx, body.rows, { ensaio: body.ensaio });
+  }
+
   /** Cancelar ou reativar um evento. */
   @Patch("events/:id")
   updateEvent(@Req() req: AuthedRequest, @Param("id") id: string, @Body() body: UpdateEventDto) {
@@ -970,21 +1011,15 @@ export class AcademyController {
     return this.billing.getAthleteFee(req.ctx, id);
   }
 
-  /** Ajuste individual — sobrepõe-se ao preço da equipa para este atleta. */
+  /** Ajuste individual numa modalidade — sobrepõe-se ao preço da equipa dessa modalidade. */
   @Put("athletes/:id/fee")
-  setAthleteFee(@Req() req: AuthedRequest, @Param("id") id: string, @Body() body: SetFeeDto) {
-    return this.billing.setAthleteFee(req.ctx, id, body.amountCents, body.aplicarEm);
+  setAthleteFee(@Req() req: AuthedRequest, @Param("id") id: string, @Body() body: SetAthleteFeeDto) {
+    return this.billing.setAthleteFee(req.ctx, id, body.amountCents, body.aplicarEm, body.sportId);
   }
 
-  /** O mesmo ajuste individual, para vários atletas escolhidos de uma vez. */
-  @Put("athletes/fee")
-  setAthleteFeeBulk(@Req() req: AuthedRequest, @Body() body: SetAthleteFeeBulkDto) {
-    return this.billing.setAthleteFeeBulk(req.ctx, body.athleteIds, body.amountCents, body.aplicarEm);
-  }
-
-  /** Remove o ajuste individual — volta a pagar o preço da equipa. */
+  /** Remove o ajuste individual de uma modalidade (`?sportId=`) — volta a pagar o preço da equipa. */
   @Delete("athletes/:id/fee")
-  clearAthleteFee(@Req() req: AuthedRequest, @Param("id") id: string) {
-    return this.billing.clearAthleteFee(req.ctx, id);
+  clearAthleteFee(@Req() req: AuthedRequest, @Param("id") id: string, @Query("sportId") sportId?: string) {
+    return this.billing.clearAthleteFee(req.ctx, id, sportId);
   }
 }

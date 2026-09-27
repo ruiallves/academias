@@ -7,6 +7,11 @@
  * individual sobrepõe-se-lhe; reverter volta ao preço da equipa; e um treinador
  * sem `billing:read` não vê preços em `/api/teams`.
  *
+ * E o preço por modalidade: o ajuste individual é de uma modalidade, e um
+ * atleta em duas modalidades paga a soma. Para isso cria uma equipa temporária
+ * noutra modalidade do Life Club (`zz_t_fee_2mod`), põe lá o Martim, e apaga
+ * tudo no fim.
+ *
  * Uso: node scripts/test-fee-config.mjs
  */
 import { readFileSync } from "node:fs";
@@ -77,6 +82,10 @@ const precoOriginalSub11 = (await db.query(
 
 const cleanup = async () => {
   await db.query(`DELETE FROM "Enrollment" WHERE "athleteId" IN ('ath_martim', 'ath_gustavo')`);
+  // A segunda modalidade: a passagem, o preço e a equipa temporária.
+  await db.query(`DELETE FROM "TeamMembership" WHERE "teamId" = 'zz_t_fee_2mod'`);
+  await db.query(`DELETE FROM "SubscriptionPlan" WHERE "teamId" = 'zz_t_fee_2mod'`);
+  await db.query(`DELETE FROM "Team" WHERE id = 'zz_t_fee_2mod'`);
   // Os planos individuais órfãos desta corrida — um plano com inscrição é de
   // uma pessoa, e fica.
   await db.query(`
@@ -124,66 +133,116 @@ check("actualiza o mesmo plano (200)", setTeamAgain.status === 200 && setTeamAga
 const planCount = (await db.query(`SELECT count(*)::int n FROM "SubscriptionPlan" WHERE "teamId" = 't_sub11' AND "isActive" = true`)).rows[0].n;
 check("continua a haver só um plano activo para a equipa", planCount === 1, `${planCount}`);
 
+// A modalidade do Sub-11 — o ajuste individual diz sempre de que modalidade é.
+const sub11 = (await db.query(`SELECT "academyId", "sportId", "seasonId" FROM "Team" WHERE id = 't_sub11'`)).rows[0];
+const fut = sub11.sportId;
+
 console.log("\n=== Um atleta sem ajuste paga o preço da equipa ===");
 const feeBefore = await call(director, "GET", "/api/athletes/ath_martim/fee");
-check("fonte é 'team'", feeBefore.body?.source === "team", JSON.stringify(feeBefore.body));
-check("o valor efectivo é o da equipa", feeBefore.body?.effectiveAmountCents === 4200, `${feeBefore.body?.effectiveAmountCents}`);
+check("o valor efectivo é o da equipa", feeBefore.body?.effectiveAmountCents === 4200, JSON.stringify(feeBefore.body));
+const futBefore = feeBefore.body?.modalidades?.find((m) => m.sportId === fut);
+check(
+  "uma linha por modalidade, com o preço da equipa e sem individual",
+  feeBefore.body?.modalidades?.length === 1 && futBefore?.teamAmountCents === 4200 && futBefore?.individualAmountCents === null,
+  JSON.stringify(feeBefore.body?.modalidades),
+);
 check("o encarregado do próprio atleta lê o mesmo", (await call(parentOwn, "GET", "/api/athletes/ath_martim/fee")).status === 200);
 check("outro encarregado não lê (403)", (await call(parentOther, "GET", "/api/athletes/ath_martim/fee")).status === 403);
 
-console.log("\n=== Ajuste individual sobrepõe-se ===");
-const setIndividual = await call(director, "PUT", "/api/athletes/ath_martim/fee", { amountCents: 3000 });
+console.log("\n=== Ajuste individual sobrepõe-se, na modalidade dele ===");
+const semModalidade = await call(director, "PUT", "/api/athletes/ath_martim/fee", { amountCents: 3000 });
+check("sem modalidade é recusado a quem tem equipa (400)", semModalidade.status === 400, `${semModalidade.status}`);
+const outraModalidade = await call(director, "PUT", "/api/athletes/ath_martim/fee", { amountCents: 3000, sportId: "nao_existe" });
+check("numa modalidade que ele não pratica é recusado (400)", outraModalidade.status === 400, `${outraModalidade.status}`);
+
+const setIndividual = await call(director, "PUT", "/api/athletes/ath_martim/fee", { amountCents: 3000, sportId: fut });
 check("a direção ajusta individualmente (200)", setIndividual.status === 200 && setIndividual.body?.amountCents === 3000, JSON.stringify(setIndividual.body));
 
 const feeAfter = await call(director, "GET", "/api/athletes/ath_martim/fee");
-check("fonte passa a 'individual'", feeAfter.body?.source === "individual", JSON.stringify(feeAfter.body));
+const futAfter = feeAfter.body?.modalidades?.find((m) => m.sportId === fut);
 check("o valor efectivo é o individual", feeAfter.body?.effectiveAmountCents === 3000, `${feeAfter.body?.effectiveAmountCents}`);
-check("o preço da equipa continua visível para comparação", feeAfter.body?.teamAmountCents === 4200, `${feeAfter.body?.teamAmountCents}`);
+check(
+  "o preço da equipa continua visível para comparação",
+  futAfter?.teamAmountCents === 4200 && futAfter?.individualAmountCents === 3000,
+  JSON.stringify(futAfter),
+);
+const planoCriado = (await db.query(
+  `SELECT sp."sportId" FROM "Enrollment" e JOIN "SubscriptionPlan" sp ON sp.id = e."planId"
+    WHERE e."athleteId" = 'ath_martim' AND e."endsOn" IS NULL`,
+)).rows;
+check("o plano individual guarda a modalidade", planoCriado.length === 1 && planoCriado[0].sportId === fut, JSON.stringify(planoCriado));
 
-const coachSetIndividual = await call(coach, "PUT", "/api/athletes/ath_martim/fee", { amountCents: 1000 });
+const coachSetIndividual = await call(coach, "PUT", "/api/athletes/ath_martim/fee", { amountCents: 1000, sportId: fut });
 check("um treinador não ajusta individualmente (403)", coachSetIndividual.status === 403, `${coachSetIndividual.status}`);
 
 console.log("\n=== Ajustar outra vez actualiza, não duplica ===");
-const setIndividualAgain = await call(director, "PUT", "/api/athletes/ath_martim/fee", { amountCents: 3500 });
+const setIndividualAgain = await call(director, "PUT", "/api/athletes/ath_martim/fee", { amountCents: 3500, sportId: fut });
 check("actualiza o valor (200)", setIndividualAgain.status === 200 && setIndividualAgain.body?.amountCents === 3500, `${setIndividualAgain.status}`);
 const enrollCount = (await db.query(`SELECT count(*)::int n FROM "Enrollment" WHERE "athleteId" = 'ath_martim' AND ("endsOn" IS NULL)`)).rows[0].n;
 check("continua a haver só uma inscrição activa", enrollCount === 1, `${enrollCount}`);
 
 console.log("\n=== Validação de forma ===");
-const badAmount = await call(director, "PUT", "/api/athletes/ath_martim/fee", { amountCents: 0 });
-check("valor a zero recusado (400)", badAmount.status === 400, `${badAmount.status}`);
+const badAmount = await call(director, "PUT", "/api/athletes/ath_martim/fee", { amountCents: 25, sportId: fut });
+check("valor entre zero e um euro recusado (400)", badAmount.status === 400, `${badAmount.status}`);
 const hugeAmount = await call(director, "PATCH", "/api/teams/t_sub11/fee", { amountCents: 999_999 });
 check("valor absurdo recusado (400)", hugeAmount.status === 400, `${hugeAmount.status}`);
 
+console.log("\n=== Duas modalidades: paga a soma ===");
+const outra = (await db.query(
+  `SELECT id FROM "Sport" WHERE "academyId" = $1 AND id <> $2 ORDER BY name LIMIT 1`,
+  [sub11.academyId, fut],
+)).rows[0];
+if (!outra) {
+  check("o Life Club tem uma segunda modalidade para o teste", false, "só há uma");
+} else {
+  await db.query(
+    `INSERT INTO "Team" (id, "academyId", "sportId", "seasonId", name, "maxAge", "updatedAt")
+     VALUES ('zz_t_fee_2mod', $1, $2, $3, 'ZZ Segunda Modalidade', 13, NOW())`,
+    [sub11.academyId, outra.id, sub11.seasonId],
+  );
+  await db.query(`INSERT INTO "TeamMembership" (id, "teamId", "athleteId") VALUES ('zz_tm_fee_2mod', 'zz_t_fee_2mod', 'ath_martim')`);
+
+  const semPrecoNaSegunda = await call(director, "GET", "/api/athletes/ath_martim/fee");
+  const segunda = semPrecoNaSegunda.body?.modalidades?.find((m) => m.sportId === outra.id);
+  check("a segunda modalidade aparece, por configurar", segunda && segunda.amountCents === null, JSON.stringify(semPrecoNaSegunda.body?.modalidades));
+  check("sem preço, a segunda não entra na soma", semPrecoNaSegunda.body?.effectiveAmountCents === 3500, `${semPrecoNaSegunda.body?.effectiveAmountCents}`);
+
+  const precoSegunda = await call(director, "PATCH", "/api/teams/zz_t_fee_2mod/fee", { amountCents: 2000, aplicarEm: "proximo" });
+  check("a direção define o preço da equipa da segunda modalidade (200)", precoSegunda.status === 200, JSON.stringify(precoSegunda.body));
+  const soma = await call(director, "GET", "/api/athletes/ath_martim/fee");
+  check("paga a soma: 35 € individual numa + 20 € da equipa na outra", soma.body?.effectiveAmountCents === 5500, `${soma.body?.effectiveAmountCents}`);
+
+  const ajusteSegunda = await call(director, "PUT", "/api/athletes/ath_martim/fee", { amountCents: 1500, sportId: outra.id, aplicarEm: "proximo" });
+  check("ajuste individual na segunda modalidade (200)", ajusteSegunda.status === 200, JSON.stringify(ajusteSegunda.body));
+  const soma2 = await call(director, "GET", "/api/athletes/ath_martim/fee");
+  check("o ajuste de uma modalidade não mexe na outra: 35 + 15", soma2.body?.effectiveAmountCents === 5000, `${soma2.body?.effectiveAmountCents}`);
+  const vivos = (await db.query(`SELECT count(*)::int n FROM "Enrollment" WHERE "athleteId" = 'ath_martim' AND "endsOn" IS NULL`)).rows[0].n;
+  check("uma inscrição activa por modalidade (2)", vivos === 2, `${vivos}`);
+
+  const tiraSegunda = await call(director, "DELETE", `/api/athletes/ath_martim/fee?sportId=${outra.id}`);
+  check("tirar o ajuste de uma modalidade (200)", tiraSegunda.status === 200 && tiraSegunda.body?.cleared === true, `${tiraSegunda.status}`);
+  const soma3 = await call(director, "GET", "/api/athletes/ath_martim/fee");
+  check("essa modalidade volta ao preço da equipa, a outra fica: 35 + 20", soma3.body?.effectiveAmountCents === 5500, `${soma3.body?.effectiveAmountCents}`);
+
+  // Sai da segunda modalidade para o resto do teste voltar a ser de uma só.
+  await db.query(`DELETE FROM "TeamMembership" WHERE "teamId" = 'zz_t_fee_2mod'`);
+}
+
 console.log("\n=== Reverter para o preço da equipa ===");
-const clear = await call(director, "DELETE", "/api/athletes/ath_martim/fee");
+const clear = await call(director, "DELETE", `/api/athletes/ath_martim/fee?sportId=${fut}`);
 check("a direção reverte o ajuste (200)", clear.status === 200 && clear.body?.cleared === true, `${clear.status}`);
 const feeReverted = await call(director, "GET", "/api/athletes/ath_martim/fee");
-check("volta a pagar o preço da equipa", feeReverted.body?.source === "team" && feeReverted.body?.effectiveAmountCents === 4200, JSON.stringify(feeReverted.body));
+check(
+  "volta a pagar o preço da equipa",
+  feeReverted.body?.effectiveAmountCents === 4200 && feeReverted.body?.modalidades?.[0]?.individualAmountCents === null,
+  JSON.stringify(feeReverted.body),
+);
 const endedEnroll = (await db.query(`SELECT "endsOn" FROM "Enrollment" WHERE "athleteId" = 'ath_martim' ORDER BY "startsOn" DESC LIMIT 1`)).rows[0];
 check("a inscrição individual ficou terminada, não apagada (histórico)", endedEnroll && endedEnroll.endsOn !== null, JSON.stringify(endedEnroll));
 
-console.log("\n=== Ajuste em lote — vários atletas de uma vez ===");
+console.log("\n=== O ajuste para vários atletas de uma vez deixou de existir ===");
 const bulk = await call(director, "PUT", "/api/athletes/fee", { athleteIds: ["ath_martim", "ath_gustavo"], amountCents: 2800 });
-check("a direção ajusta dois atletas de uma vez (200)", bulk.status === 200 && bulk.body?.updated?.length === 2, JSON.stringify(bulk.body));
-const martimAfterBulk = await call(director, "GET", "/api/athletes/ath_martim/fee");
-const gustavoAfterBulk = await call(director, "GET", "/api/athletes/ath_gustavo/fee");
-check("o primeiro atleta fica com o ajuste", martimAfterBulk.body?.source === "individual" && martimAfterBulk.body?.effectiveAmountCents === 2800, JSON.stringify(martimAfterBulk.body));
-check("o segundo atleta também", gustavoAfterBulk.body?.source === "individual" && gustavoAfterBulk.body?.effectiveAmountCents === 2800, JSON.stringify(gustavoAfterBulk.body));
-
-const bulkAgain = await call(director, "PUT", "/api/athletes/fee", { athleteIds: ["ath_martim", "ath_gustavo"], amountCents: 3100 });
-check("repetir actualiza, não duplica (200)", bulkAgain.status === 200, `${bulkAgain.status}`);
-const martimEnrollCount = (await db.query(`SELECT count(*)::int n FROM "Enrollment" WHERE "athleteId" = 'ath_martim' AND "endsOn" IS NULL`)).rows[0].n;
-check("continua a haver só uma inscrição activa por atleta", martimEnrollCount === 1, `${martimEnrollCount}`);
-
-const bulkWithMissing = await call(director, "PUT", "/api/athletes/fee", { athleteIds: ["ath_martim", "ath_nao_existe"], amountCents: 3200 });
-check("um id inexistente aparece em 'missing', não bloqueia o resto", bulkWithMissing.status === 200 && bulkWithMissing.body?.missing?.includes("ath_nao_existe") && bulkWithMissing.body?.updated?.includes("ath_martim"), JSON.stringify(bulkWithMissing.body));
-
-const coachBulk = await call(coach, "PUT", "/api/athletes/fee", { athleteIds: ["ath_martim"], amountCents: 3000 });
-check("um treinador não ajusta em lote (403)", coachBulk.status === 403, `${coachBulk.status}`);
-
-const emptyBulk = await call(director, "PUT", "/api/athletes/fee", { athleteIds: [], amountCents: 3000 });
-check("lista vazia recusada (400)", emptyBulk.status === 400, `${emptyBulk.status}`);
+check("PUT /api/athletes/fee já não aplica nada (404)", bulk.status === 404, `${bulk.status}`);
 
 console.log("\n=== Limpeza ===");
 await cleanup();

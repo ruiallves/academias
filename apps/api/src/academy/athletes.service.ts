@@ -18,6 +18,16 @@ import {
   type Identificacao,
 } from "./identificacao";
 import { AthleteInvitesService } from "./athlete-invites.service";
+import {
+  aplicarEquipas,
+  choqueDeNumeros,
+  entrarNaEquipa,
+  equipasDaInscricao,
+  normalizarEquipas,
+  ORDEM_DAS_PASSAGENS,
+  sincronizarNumeroPrincipal,
+  type Equipa,
+} from "./equipas-do-atleta";
 import { nomeDeQuemMexe, registarAlteracoes } from "../common/historico";
 
 /**
@@ -127,7 +137,11 @@ export class AthletesService {
         select: {
           id: true, name: true, email: true, birthdate: true, taxId: true, idDocLabel: true, idDocNumber: true, status: true,
           medicalValidUntil: true, heightCm: true, weightKg: true, dominantSide: true, squadNumber: true,
-          teams: { where: { leftAt: null }, select: { id: true, teamId: true, position: true, team: { select: { name: true } } } },
+          teams: {
+            where: { leftAt: null },
+            select: { id: true, teamId: true, position: true, squadNumber: true, team: { select: { name: true } } },
+            orderBy: ORDEM_DAS_PASSAGENS,
+          },
         },
       });
       if (!athlete) throw new BadRequestException("Atleta não encontrado");
@@ -184,78 +198,63 @@ export class AthletesService {
       if (dto.weightDg !== undefined) data.weightKg = dto.weightDg / 10;
       if (dto.dominantSide !== undefined) data.dominantSide = dto.dominantSide as DominantSide;
 
-      if (dto.squadNumber !== undefined) {
-        const teamId = dto.teamId ?? athlete.teams[0]?.teamId;
-        const clash = await db.athlete.findFirst({
-          where: {
-            id: { not: id },
-            squadNumber: dto.squadNumber,
-            teams: { some: { leftAt: null, teamId } },
-          },
-          select: { name: true },
-        });
-        if (clash) throw new BadRequestException(`O número ${dto.squadNumber} já é do ${clash.name}`);
-        data.squadNumber = dto.squadNumber;
-      }
-
       /*
-       * Mudar de escalão fecha a passagem e abre outra.
+       * As equipas — cada uma com o seu número e a sua posição.
        *
-       * Era um `update` do `teamId` da mesma linha, e o Sub-11 do ano passado
-       * desaparecia: "por onde este miúdo já passou" não tinha resposta. Agora
-       * a passagem antiga fica com data de saída — é ela o percurso — e nasce
-       * uma nova no escalão novo. Continua a ser **uma de cada vez** por este
-       * caminho: quem muda de equipa sai da anterior, e é assim que se evita um
-       * miúdo convocado por duas equipas para o mesmo sábado. (A importação
-       * pode somar escalões de propósito; ver a nota em `importMany`.)
+       * A lista inteira (`equipas`) é o caminho da ficha: o atleta fica
+       * exactamente nestas equipas. A equipa que sai fica com data de saída (é o
+       * percurso, "por onde este miúdo já passou"), a nova ganha uma passagem, e
+       * nas que ficam muda o número e a posição. Ver `aplicarEquipas`.
        *
-       * Mudar só a posição não mexe no percurso: é a mesma passagem.
+       * A forma antiga (`teamId`, `position`, `squadNumber` soltos) mexe só na
+       * equipa **principal**: trocar o `teamId` é mudar de escalão, e o resto das
+       * equipas fica como está. Sem posição ou número novos, leva os que tinha:
+       * mudar de escalão não faz de um defesa central um extremo.
        */
-      if (dto.teamId !== undefined || dto.position !== undefined) {
-        const current = athlete.teams[0];
-        const teamId = dto.teamId ?? current?.teamId;
+      let desejadas: Equipa[] | null = null;
+      if (dto.equipas !== undefined) {
+        desejadas = normalizarEquipas(dto.equipas);
+      } else if (dto.teamId !== undefined || dto.position !== undefined || dto.squadNumber !== undefined) {
+        const actuais: Equipa[] = athlete.teams.map((t) => ({
+          teamId: t.teamId,
+          squadNumber: t.squadNumber ?? (t === athlete.teams[0] ? athlete.squadNumber : null),
+          position: t.position,
+        }));
+        const principal = actuais[0];
+        const teamId = dto.teamId ?? principal?.teamId;
         if (!teamId) throw new BadRequestException("Falta a equipa");
-        if (!teams.has(teamId)) throw new ForbiddenException("Essa equipa está fora do teu âmbito");
-
-        const position = dto.position === undefined ? undefined : dto.position.trim() || null;
-        const mudaDeEquipa = Boolean(current) && teamId !== current.teamId;
-
-        if (current && !mudaDeEquipa) {
-          if (position !== undefined) {
-            await db.teamMembership.update({ where: { id: current.id }, data: { position } });
-          }
-        } else {
-          const agora = new Date();
-          if (current) {
-            await db.teamMembership.update({ where: { id: current.id }, data: { leftAt: agora } });
-          }
-          await db.teamMembership.create({
-            data: {
-              teamId,
-              athleteId: id,
-              joinedAt: agora,
-              // Sem posição nova, leva a que tinha: mudar de escalão não faz de
-              // um defesa central um extremo.
-              ...(position !== undefined ? { position } : current?.position ? { position: current.position } : {}),
-            },
-          });
-        }
+        const nova: Equipa = {
+          teamId,
+          squadNumber: dto.squadNumber !== undefined ? dto.squadNumber : (principal?.squadNumber ?? null),
+          position: dto.position !== undefined ? dto.position.trim() || null : (principal?.position ?? null),
+        };
+        desejadas = [nova, ...actuais.slice(1).filter((e) => e.teamId !== teamId)];
       }
+
+      const equipas = desejadas ? await aplicarEquipas(db, id, desejadas, teams) : null;
+      // O número da principal depois de gravado, para o histórico dizer "Número 7 → 10".
+      const numeroDepois = equipas
+        ? ((await db.athlete.findFirst({ where: { id }, select: { squadNumber: true } }))?.squadNumber ?? null)
+        : undefined;
+      const posicoes = (lista: { position: string | null; nome: string }[]) =>
+        lista.filter((p) => p.position).map((p) => `${p.nome}: ${p.position}`).join(" · ") || null;
 
       try {
         const guardado = await db.athlete.update({ where: { id }, data, select: { id: true, name: true } });
 
-        const equipaNova = dto.teamId === undefined ? undefined : (await db.team.findFirst({ where: { id: dto.teamId }, select: { name: true } }))?.name;
         await registarAlteracoes(db, ctx, "ATHLETE", id, {
           ...athlete,
           weightKg: athlete.weightKg === null ? null : Number(athlete.weightKg),
-          team: athlete.teams[0]?.team.name ?? null,
-          position: athlete.teams[0]?.position ?? null,
+          team: athlete.teams.map((t) => t.team.name).join(", ") || null,
+          position: posicoes(athlete.teams.map((t) => ({ position: t.position, nome: t.team.name }))),
         }, {
           ...data,
           weightKg: dto.weightDg === undefined ? undefined : dto.weightDg / 10,
-          team: equipaNova,
-          position: dto.position === undefined ? undefined : dto.position.trim() || null,
+          squadNumber: numeroDepois,
+          team: equipas ? equipas.depois.join(", ") || null : undefined,
+          position: desejadas
+            ? posicoes(desejadas.map((d) => ({ position: d.position, nome: teams.get(d.teamId) ?? athlete.teams.find((t) => t.teamId === d.teamId)?.team.name ?? "" })))
+            : undefined,
         }, await nomeDeQuemMexe(db, ctx));
 
         return guardado;
@@ -646,7 +645,7 @@ export class AthletesService {
           id: true, name: true, birthdate: true, taxId: true, idDocLabel: true, idDocNumber: true, email: true,
           medicalValidUntil: true, heightCm: true, weightKg: true,
           dominantSide: true, squadNumber: true,
-          teams: { where: { leftAt: null }, select: { teamId: true } },
+          teams: { where: { leftAt: null }, select: { teamId: true, squadNumber: true, position: true }, orderBy: ORDEM_DAS_PASSAGENS },
         },
       });
 
@@ -676,6 +675,17 @@ export class AthletesService {
       // Números de camisola já usados por equipa, para apanhar choques **dentro do
       // próprio ficheiro** — dois atletas com o 7 na mesma equipa, na mesma folha.
       const usedNumbers = new Map<string, Set<number>>();
+      /*
+       * Quem nasceu nesta mesma folha.
+       *
+       * Um atleta em duas equipas são duas linhas com o mesmo NIF. A segunda
+       * encontra a primeira pelo NIF — e antes disto era tratada como uma ficha
+       * que já existia: a importação parava a perguntar "substituir?" por um
+       * atleta que ela própria tinha acabado de criar. Agora junta a equipa e
+       * segue, sem pergunta nenhuma.
+       */
+      const nascidosNaFolha = new Set<string>();
+      let equipasJuntadas = 0;
 
       for (const [i, dto] of rows.entries()) {
         const line = i + 2; // +1 pela base-0, +1 pelo cabeçalho do ficheiro
@@ -683,6 +693,11 @@ export class AthletesService {
         const ident = identificacaoNova(dto);
         if ("error" in ident) {
           errors.push({ row: line, name: dto.name, error: ident.error });
+          continue;
+        }
+        const equipasDaLinha = equipasDaInscricao(dto);
+        if ("error" in equipasDaLinha) {
+          errors.push({ row: line, name: dto.name, error: equipasDaLinha.error });
           continue;
         }
 
@@ -702,14 +717,45 @@ export class AthletesService {
           continue;
         }
 
-        if (dto.squadNumber != null) {
-          const set = usedNumbers.get(dto.teamId) ?? new Set<number>();
-          if (set.has(dto.squadNumber)) {
-            errors.push({ row: line, name: dto.name, error: `Número ${dto.squadNumber} repetido nesta equipa dentro do ficheiro` });
+        const numeroRepetido = equipasDaLinha.find(
+          (e) => e.squadNumber !== null && usedNumbers.get(e.teamId)?.has(e.squadNumber),
+        );
+        if (numeroRepetido) {
+          errors.push({ row: line, name: dto.name, error: `Número ${numeroRepetido.squadNumber} repetido nesta equipa dentro do ficheiro` });
+          continue;
+        }
+        for (const e of equipasDaLinha) {
+          if (e.squadNumber === null) continue;
+          const set = usedNumbers.get(e.teamId) ?? new Set<number>();
+          set.add(e.squadNumber);
+          usedNumbers.set(e.teamId, set);
+        }
+
+        /*
+         * O mesmo atleta, noutra linha desta folha: é mais uma equipa dele.
+         * Ver `nascidosNaFolha`.
+         */
+        if (jaLaEsta && nascidosNaFolha.has(jaLaEsta.id)) {
+          const novas = equipasDaLinha.filter((e) => !jaLaEsta.teams.some((t) => t.teamId === e.teamId));
+          if (novas.length === 0) {
+            errors.push({ row: line, name: dto.name, error: "Este atleta já aparece nesta equipa numa linha acima" });
             continue;
           }
-          set.add(dto.squadNumber);
-          usedNumbers.set(dto.teamId, set);
+          if (novas.some((e) => !teams.has(e.teamId))) {
+            errors.push({ row: line, name: dto.name, error: "Equipa desconhecida ou fora do teu âmbito" });
+            continue;
+          }
+          const choque = await choqueDeNumeros(db, jaLaEsta.id, novas, teams);
+          if (choque) {
+            errors.push({ row: line, name: dto.name, error: choque });
+            continue;
+          }
+          for (const e of novas) {
+            await entrarNaEquipa(db, jaLaEsta.id, e);
+            jaLaEsta.teams.push(e);
+          }
+          equipasJuntadas += novas.length;
+          continue;
         }
 
         /*
@@ -721,7 +767,7 @@ export class AthletesService {
          * tirava-lhe a outra sem ninguém pedir.
          */
         if (jaLaEsta) {
-          const mudam = mudancasDoAtleta(jaLaEsta, dto, teams);
+          const mudam = mudancasDoAtleta(jaLaEsta, dto, equipasDaLinha, teams);
 
           if (!opts.sobrescrever) {
             if (mudam.length > 0) {
@@ -731,7 +777,11 @@ export class AthletesService {
           }
 
           if (mudam.length > 0) {
-            await this.updateOne(db, jaLaEsta, dto, ident);
+            const falhou = await this.updateOne(db, jaLaEsta, dto, ident, equipasDaLinha, teams);
+            if (falhou) {
+              errors.push({ row: line, name: dto.name, error: falhou });
+              continue;
+            }
             updated.push({ id: jaLaEsta.id, name: dto.name.trim() });
           }
           continue;
@@ -742,6 +792,7 @@ export class AthletesService {
           errors.push({ row: line, name: dto.name, error: result.error });
         } else {
           created.push({ id: result.athlete.id, name: result.athlete.name });
+          nascidosNaFolha.add(result.athlete.id);
           /*
            * Entra nos índices, para a própria folha não se duplicar.
            *
@@ -762,8 +813,8 @@ export class AthletesService {
             heightCm: dto.heightCm ?? null,
             weightKg: dto.weightDg == null ? null : (dto.weightDg / 10),
             dominantSide: (dto.dominantSide as DominantSide) ?? null,
-            squadNumber: dto.squadNumber ?? null,
-            teams: [{ teamId: dto.teamId }],
+            squadNumber: equipasDaLinha[0].squadNumber,
+            teams: [...equipasDaLinha],
           };
           porNomeEData.set(key, nova);
           for (const k of chavesDeIdentidade(ident)) porIdentidade.set(k, nova);
@@ -777,7 +828,7 @@ export class AthletesService {
        * que nada foi criado. Ver o fim do método.
        */
       if (existing.length > 0 && !opts.sobrescrever) {
-        return { created: 0, updated: 0, errors: [], athletes: [], existing: existing.slice(0, 200), existingTotal: existing.length };
+        return { created: 0, updated: 0, equipasJuntadas: 0, errors: [], athletes: [], existing: existing.slice(0, 200), existingTotal: existing.length };
       }
 
       /*
@@ -800,6 +851,8 @@ export class AthletesService {
       return {
         created: created.length,
         updated: updated.length,
+        /** Equipas a mais de atletas que entraram nesta folha (várias linhas, o mesmo NIF). */
+        equipasJuntadas,
         errors,
         athletes: created,
         existing: [] as typeof existing,
@@ -855,7 +908,19 @@ export class AthletesService {
    *
    * A equipa **junta-se**: ver a nota em `importMany`.
    */
-  private async updateOne(db: ScopedClient, actual: AtletaNoPlantel, dto: AthleteInputDto, ident: Identificacao): Promise<void> {
+  private async updateOne(
+    db: ScopedClient,
+    actual: AtletaNoPlantel,
+    dto: AthleteInputDto,
+    ident: Identificacao,
+    equipas: Equipa[],
+    teams: Map<string, string>,
+  ): Promise<string | null> {
+    // O número e a posição são da equipa da linha: vê-se o choque antes de escrever.
+    if (equipas.some((e) => !teams.has(e.teamId))) return "Equipa desconhecida ou fora do teu âmbito";
+    const choque = await choqueDeNumeros(db, actual.id, equipas, teams);
+    if (choque) return choque;
+
     await db.athlete.update({
       where: { id: actual.id },
       data: {
@@ -870,21 +935,30 @@ export class AthletesService {
         ...(dto.heightCm !== undefined ? { heightCm: dto.heightCm } : {}),
         ...(dto.weightDg !== undefined ? { weightKg: dto.weightDg / 10 } : {}),
         ...(dto.dominantSide !== undefined ? { dominantSide: dto.dominantSide as DominantSide } : {}),
-        ...(dto.squadNumber !== undefined ? { squadNumber: dto.squadNumber } : {}),
       },
     });
 
-    const jaNaEquipa = actual.teams.some((t) => t.teamId === dto.teamId);
-    if (!jaNaEquipa) {
-      await db.teamMembership.create({
-        data: { teamId: dto.teamId, athleteId: actual.id, ...(dto.position ? { position: dto.position } : {}) },
-      });
-    } else if (dto.position) {
-      await db.teamMembership.updateMany({
-        where: { teamId: dto.teamId, athleteId: actual.id },
-        data: { position: dto.position },
-      });
+    /*
+     * A equipa da linha junta-se às que o atleta tem. Numa equipa que já é
+     * dele, o número e a posição da folha substituem os que lá estão — mas só
+     * os que a folha traz: uma célula vazia é uma coluna que ninguém preencheu.
+     */
+    for (const e of equipas) {
+      const jaNaEquipa = actual.teams.some((t) => t.teamId === e.teamId);
+      if (!jaNaEquipa) {
+        await entrarNaEquipa(db, actual.id, e);
+      } else if (e.squadNumber !== null || e.position) {
+        await db.teamMembership.updateMany({
+          where: { teamId: e.teamId, athleteId: actual.id, leftAt: null },
+          data: {
+            ...(e.squadNumber !== null ? { squadNumber: e.squadNumber } : {}),
+            ...(e.position ? { position: e.position } : {}),
+          },
+        });
+      }
     }
+    await sincronizarNumeroPrincipal(db, actual.id);
+    return null;
   }
 
   /**
@@ -900,7 +974,10 @@ export class AthletesService {
     dto: AthleteInputDto,
     teams: Map<string, string>,
   ): Promise<{ athlete: { id: string; name: string } } | { error: string }> {
-    if (!teams.has(dto.teamId)) {
+    // As equipas, cada uma com o seu número e posição. Ver `equipas-do-atleta.ts`.
+    const equipas = equipasDaInscricao(dto);
+    if ("error" in equipas) return equipas;
+    if (equipas.some((e) => !teams.has(e.teamId))) {
       return { error: "Equipa desconhecida ou fora do teu âmbito" };
     }
 
@@ -936,7 +1013,7 @@ export class AthletesService {
           ...(ident.idDocNumber ? [{ idDocNumber: ident.idDocNumber }] : []),
         ],
       },
-      select: { name: true, taxId: true, teams: { where: { leftAt: null }, select: { team: { select: { name: true } } }, take: 1 } },
+      select: { name: true, taxId: true, teams: { where: { leftAt: null }, select: { team: { select: { name: true } } }, orderBy: [{ joinedAt: "asc" }, { id: "asc" }], take: 1 } },
     });
     if (jaExiste) {
       const equipa = jaExiste.teams[0]?.team.name;
@@ -946,9 +1023,19 @@ export class AthletesService {
       };
     }
 
+    /*
+     * O número já é de outro nesta equipa.
+     *
+     * Não havia verificação nenhuma na inscrição: o número vivia no atleta, e
+     * dois 7 no mesmo Sub-13 entravam sem aviso. A mensagem genérica mais abaixo
+     * ("número de camisola em uso") prometia uma regra que não existia.
+     */
+    const choque = await choqueDeNumeros(db, null, equipas, teams);
+    if (choque) return { error: choque };
+
     // Estilo unchecked (`academyId` escalar + `teamId` na ligação): é o que casa
-    // com a extensão de tenant, que injecta `academyId` no `create`. A ligação à
-    // equipa entra na mesma escrita — atleta e plantel, ou nada.
+    // com a extensão de tenant, que injecta `academyId` no `create`. As ligações
+    // às equipas entram na mesma escrita — atleta e plantéis, ou nada.
     const data: Prisma.AthleteUncheckedCreateInput = {
       academyId,
       name: dto.name.trim(),
@@ -963,8 +1050,18 @@ export class AthletesService {
       ...(dto.heightCm != null ? { heightCm: dto.heightCm } : {}),
       ...(dto.weightDg != null ? { weightKg: dto.weightDg / 10 } : {}),
       ...(dto.dominantSide ? { dominantSide: dto.dominantSide as DominantSide } : {}),
-      ...(dto.squadNumber != null ? { squadNumber: dto.squadNumber } : {}),
-      teams: { create: { teamId: dto.teamId, ...(dto.position ? { position: dto.position } : {}) } },
+      // O número da equipa principal, para quem ainda lê esta coluna.
+      ...(equipas[0].squadNumber != null ? { squadNumber: equipas[0].squadNumber } : {}),
+      teams: {
+        create: equipas.map((e, i) => ({
+          teamId: e.teamId,
+          squadNumber: e.squadNumber,
+          position: e.position,
+          // Um milissegundo entre cada uma, para a primeira ser a principal
+          // (a passagem mais antiga) sem depender de empates.
+          joinedAt: new Date(Date.now() + i),
+        })),
+      },
     };
 
     try {
@@ -1039,7 +1136,8 @@ type AtletaNoPlantel = {
   weightKg: { toString(): string } | number | null;
   dominantSide: DominantSide | null;
   squadNumber: number | null;
-  teams: { teamId: string }[];
+  /** As equipas vivas, a principal primeiro, cada uma com o seu número e posição. */
+  teams: { teamId: string; squadNumber: number | null; position: string | null }[];
 };
 
 /** Nome e data de nascimento, comparáveis. Ver `importMany`. */
@@ -1060,6 +1158,7 @@ const dia = (d: Date | null): string | null => (d ? d.toISOString().slice(0, 10)
 function mudancasDoAtleta(
   actual: AtletaNoPlantel,
   dto: AthleteInputDto,
+  equipas: Equipa[],
   teams: Map<string, string>,
 ): string[] {
   const mudam: string[] = [];
@@ -1076,10 +1175,20 @@ function mudancasDoAtleta(
   if (dto.heightCm !== undefined && actual.heightCm !== dto.heightCm) mudam.push("altura");
   if (dto.weightDg !== undefined && Number(actual.weightKg ?? 0) * 10 !== dto.weightDg) mudam.push("peso");
   if (dto.dominantSide !== undefined && actual.dominantSide !== dto.dominantSide) mudam.push("lado dominante");
-  if (dto.squadNumber !== undefined && actual.squadNumber !== dto.squadNumber) mudam.push("número");
 
-  if (!actual.teams.some((t) => t.teamId === dto.teamId)) {
-    mudam.push(`entra em ${teams.get(dto.teamId) ?? "outra equipa"}`);
+  /*
+   * O número e a posição são de cada equipa. Numa equipa nova, entrar já diz
+   * tudo; numa que já é dele, conta o que a folha traz e é diferente.
+   */
+  for (const e of equipas) {
+    const nome = teams.get(e.teamId) ?? "outra equipa";
+    const actualNaEquipa = actual.teams.find((t) => t.teamId === e.teamId);
+    if (!actualNaEquipa) {
+      mudam.push(`entra em ${nome}`);
+      continue;
+    }
+    if (e.squadNumber !== null && actualNaEquipa.squadNumber !== e.squadNumber) mudam.push(`número em ${nome}`);
+    if (e.position && actualNaEquipa.position !== e.position) mudam.push(`posição em ${nome}`);
   }
 
   return mudam;

@@ -600,7 +600,14 @@ export class ScoutingWorkflowService {
             status: "ACTIVE",
             ...(p.dominantSide ? { dominantSide: p.dominantSide as DominantSide } : {}),
             ...(dto.squadNumber != null ? { squadNumber: dto.squadNumber } : {}),
-            teams: { create: { teamId: dto.teamId, ...(p.position ? { position: p.position } : {}) } },
+            // O número é da equipa (ver `TeamMembership.squadNumber`); o da ficha acompanha-o.
+            teams: {
+              create: {
+                teamId: dto.teamId,
+                ...(p.position ? { position: p.position } : {}),
+                ...(dto.squadNumber != null ? { squadNumber: dto.squadNumber } : {}),
+              },
+            },
           },
           select: { id: true, name: true },
         });

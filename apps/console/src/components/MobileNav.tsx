@@ -4,7 +4,7 @@ import { Menu } from "lucide-react";
 import { Bell, LogOut, Search, X } from "@/lib/icons";
 import { navFor, SETTINGS_ITEM, type NavItem } from "@/lib/nav";
 import { permissionsOf } from "@/lib/permissions";
-import { academy, listAthletes, listTeams, navCounts, teamById } from "@/lib/api";
+import { academy, listAthletes, listTeams, navCounts, nomesDasEquipas } from "@/lib/api";
 import { teamAgeLabel } from "@/lib/team-age";
 import { useUnreadCount } from "@/lib/notifications";
 import { signOut } from "@/lib/session";
@@ -376,7 +376,7 @@ function MobileSearch({ onClose }: { onClose: () => void }) {
     const atletas = listAthletes(session)
       .filter((a) => a.name.toLowerCase().includes(q))
       .slice(0, 8)
-      .map((a): Resultado => ({ kind: "athlete", id: a.id, name: a.name, sub: teamById(a.teamId)?.name ?? "Sem equipa" }));
+      .map((a): Resultado => ({ kind: "athlete", id: a.id, name: a.name, sub: nomesDasEquipas(a) }));
     const equipas = listTeams(session)
       .filter((t) => t.name.toLowerCase().includes(q))
       .slice(0, 4)

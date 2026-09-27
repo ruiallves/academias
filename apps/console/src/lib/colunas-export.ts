@@ -107,6 +107,23 @@ export const COLUNAS_EXPORT_ATLETAS: ColunaExport<Athlete>[] = [
   { header: "Estado", valor: (a) => ESTADO_ATLETA[a.status], largura: 10 },
 ];
 
+/**
+ * Uma linha por equipa, como a importação as lê.
+ *
+ * Um atleta em várias equipas (futebol e futsal) sai em várias linhas, com a
+ * mesma identificação e o número e a posição de cada equipa — exactamente como
+ * a importação o espera (ver `importMany` na API). Reimportar a folha junta-as
+ * outra vez no mesmo atleta. Um atleta sem equipa sai numa linha, com a equipa
+ * vazia.
+ */
+export function umaLinhaPorEquipa(atletas: Athlete[]): Athlete[] {
+  return atletas.flatMap((a) =>
+    (a.equipas?.length ?? 0) <= 1
+      ? [a]
+      : a.equipas.map((e) => ({ ...a, teamId: e.teamId, squadNumber: e.squadNumber, position: e.position })),
+  );
+}
+
 const ESTADO_ATLETA: Record<Athlete["status"], string> = {
   active: "Activo",
   paused: "Em pausa",

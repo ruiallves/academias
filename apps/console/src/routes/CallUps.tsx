@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { PageHeader } from "@/components/Shell";
 import { cx, Empty, ListaDeEscolha, Metric, MetricRow, Monogram, Panel, PanelHead, Pill } from "@/components/primitives";
 import { ArrowUpRight, Check, Download, Megaphone, Pencil, Plus, Search, Trophy, Users } from "@/lib/icons";
-import { athleteById, teamById } from "@/lib/api";
+import { athleteById, teamById, numeroNaEquipa, posicaoNaEquipa } from "@/lib/api";
 import { aplicarLogistica, useStore, type ApiMatch, type GuestCandidate } from "@/lib/store";
 import {
   eligibleFor,
@@ -249,9 +249,11 @@ function Squad({ match }: { match: ApiMatch }) {
         const guest = guests.find((g) => g.id === c.athleteId);
 
         return {
-          squadNumber: atleta?.squadNumber ?? guest?.squadNumber ?? null,
+          // O número e a posição **nesta equipa**; um convidado de outro escalão
+          // leva os da equipa de onde vem.
+          squadNumber: (atleta ? numeroNaEquipa(atleta, match.teamId) : undefined) ?? guest?.squadNumber ?? atleta?.squadNumber ?? null,
           name: atleta?.name ?? guest?.name ?? "—",
-          position: atleta?.position ?? guest?.position ?? null,
+          position: (atleta ? posicaoNaEquipa(atleta, match.teamId) : undefined) ?? guest?.position ?? atleta?.position ?? null,
           status: c.status === "CONFIRMED" || c.status === "DECLINED" ? c.status : "CALLED",
           guestFrom: c.isGuest ? (c.guestFromTeam ?? guest?.teamName ?? "outro escalão") : null,
         };
@@ -456,7 +458,7 @@ function Squad({ match }: { match: ApiMatch }) {
                 </span>
 
                 <span className="w-6 shrink-0 text-right text-meta font-semibold text-ink-3 tabular">
-                  {athlete.squadNumber ?? "—"}
+                  {numeroNaEquipa(athlete, match.teamId) ?? "—"}
                 </span>
 
                 <Monogram name={athlete.name} photoUrl={athlete.photoUrl} size="sm" />
@@ -465,7 +467,9 @@ function Squad({ match }: { match: ApiMatch }) {
                   <span className={cx("block truncate text-body", blockedBy ? "text-ink-4" : "font-medium text-ink")}>
                     {athlete.name}
                   </span>
-                  {athlete.position && <span className="block truncate text-meta text-ink-3">{athlete.position}</span>}
+                  {posicaoNaEquipa(athlete, match.teamId) && (
+                    <span className="block truncate text-meta text-ink-3">{posicaoNaEquipa(athlete, match.teamId)}</span>
+                  )}
                 </span>
 
                 {blockedBy && <Pill tone="risk">{blockedBy}</Pill>}

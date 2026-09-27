@@ -4,7 +4,7 @@ import { Empty, Loading, Monogram, Panel, PanelHead, Pill, cx } from "@/componen
 import { ResultCount, SearchInput, Segmented, Toolbar } from "@/components/filters";
 import { ReportDialog, VisibilityPill } from "@/components/ReportDialog";
 import { FileText, Plus } from "@/lib/icons";
-import { listAthletes, listTeams, today } from "@/lib/api";
+import { listAthletes, listTeams, today, naEquipa } from "@/lib/api";
 import { useApi } from "@/lib/query";
 import { currentPeriodLabel, type ApiEvaluation, type ApiReport } from "@/lib/development";
 import { relativeDays, shortName } from "@/lib/format";
@@ -161,7 +161,7 @@ export default function Reports() {
           <PanelHead title="Avaliações entregues" hint={currentPeriodLabel().split("·")[1]?.trim()} />
           <ul className="px-5 py-1.5">
             {teams.map((t) => {
-              const roster = athletes.filter((a) => a.teamId === t.id);
+              const roster = athletes.filter((a) => naEquipa(a, t.id));
               const entregues = evaluations.filter(
                 (e) => e.status === "PUBLISHED" && roster.some((a) => a.id === e.athleteId),
               ).length;

@@ -3,7 +3,7 @@ import { CustoDoPagamento } from "./CustoDoPagamento";
 import { Dialog, DialogField, dialogInputClass } from "@/components/Dialog";
 import { Monogram, SelectField, cx } from "@/components/primitives";
 import { Check, Home, Search, Send, TriangleAlert, Wallet } from "@/lib/icons";
-import { mesCobrado } from "@/lib/api";
+import { mesCobrado, naEquipa } from "@/lib/api";
 import { useActiveCatalog } from "@/lib/catalogs";
 import { guardiansOf, listAthletes, listTeams, teamById } from "@/lib/api";
 import { apiPost } from "@/lib/http";
@@ -94,7 +94,7 @@ export function ChargeFamilyDialog({ onClose, onDone }: { onClose: () => void; o
 
   /* Quantos atletas vai isto apanhar, pelo que a consola tem em mãos. */
   const quantos =
-    alvo === "ATLETA" ? (atleta ? 1 : 0) : alvo === "EQUIPA" ? atletas.filter((a) => a.teamId === equipaId).length : atletas.length;
+    alvo === "ATLETA" ? (atleta ? 1 : 0) : alvo === "EQUIPA" ? atletas.filter((a) => naEquipa(a, equipaId)).length : atletas.length;
   const alvoEscolhido = alvo === "ATLETA" ? Boolean(atleta) : alvo === "EQUIPA" ? Boolean(equipaId) : true;
 
   const valido =

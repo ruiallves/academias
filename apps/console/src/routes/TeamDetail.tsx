@@ -2,13 +2,14 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import { PageHeader } from "@/components/Shell";
 import { DeleteTeamDialog } from "@/components/DeleteTeamDialog";
-import { TeamCompetitionsPanel } from "@/components/TeamCompetitionsPanel";
+import { EditTeamDialog } from "@/components/EditTeamDialog";
+import { AddToRosterDialog } from "@/components/AddToRosterDialog";
+import { NewAthleteDialog } from "@/components/NewAthleteDialog";
 import { PercursoDaEquipa } from "@/components/Percurso";
 import { TeamStaffDialog } from "@/components/TeamStaffDialog";
 import { isHeadCoach, roleOptions } from "@/lib/team-role";
 import { apiPatch } from "@/lib/http";
 import { reloadAcademy } from "@/lib/store";
-import { setTeamMatchMinutes } from "@/lib/matches";
 import { Attention } from "@/components/Attention";
 import { EventDetail } from "@/components/EventDetail";
 import { PersonLink } from "@/components/PersonLink";
@@ -36,7 +37,9 @@ import {
   Clock,
   HeartPulse,
   LayoutGrid,
+  Pencil,
   Plus,
+  UserPlus,
   Trash2,
   TriangleAlert,
   Trophy,
@@ -56,6 +59,7 @@ import {
   teamById,
   today,
   unrecordedSessions,
+  naEquipa,
 } from "@/lib/api";
 import { age, longDate, percent, relativeDays, shortDate, shortName, time } from "@/lib/format";
 import { teamAgeLabel } from "@/lib/team-age";
@@ -106,6 +110,8 @@ export default function TeamDetail() {
   const [tab, setTab] = useState<Tab>("overview");
   const [atribuir, setAtribuir] = useState(false);
   const [apagar, setApagar] = useState(false);
+  /* Editar a equipa: provas, duração, convocados, nome e escalão, num popup só. */
+  const [editar, setEditar] = useState(false);
   const [selectedEventId, setSelectedEventId] = useState<string | null>(null);
   const navigate = useNavigate();
 
@@ -175,7 +181,7 @@ export default function TeamDetail() {
   }
 
   const sport = sportById(team.sportId);
-  const roster = listAthletes(session).filter((a) => a.teamId === id);
+  const roster = listAthletes(session).filter((a) => naEquipa(a, id));
   const activeRoster = roster.filter((a) => a.status === "active");
   // Mesma razão de `Teams.tsx`: os nomes vêm com a equipa, não da lista de staff
   // — que um treinador não pode ler. Ver `teamCoaches`.
@@ -241,6 +247,13 @@ export default function TeamDetail() {
           e ninguém deve tropeçar nela a caminho de ver o plantel. Só aparece a
           quem tem `team:delete` — presidência e direção, por omissão.
         */}
+        {can(session, "team:write") && (
+          <button type="button" className="ctl-outline" onClick={() => setEditar(true)}>
+            <Pencil className="size-3.5" strokeWidth={1.75} />
+            Editar equipa
+          </button>
+        )}
+
         {can(session, "team:delete") && (
           <button
             type="button"
@@ -273,7 +286,7 @@ export default function TeamDetail() {
       )}
 
       {tab === "roster" && (
-        <RosterTab roster={roster} fees={fees} canBill={canBill} canFamily={canFamily} />
+        <RosterTab team={team} session={session} roster={roster} fees={fees} canBill={canBill} canFamily={canFamily} />
       )}
 
       {tab === "stats" && (
@@ -307,6 +320,8 @@ export default function TeamDetail() {
           onClose={() => setAtribuir(false)}
         />
       )}
+
+      {editar && <EditTeamDialog team={team} onClose={() => setEditar(false)} />}
 
       {apagar && (
         <DeleteTeamDialog
@@ -391,148 +406,75 @@ function OverviewTab({
         />
       </MetricRow>
 
-      <Attention items={items} />
+      {/*
+        A atenção e a forma recente lado a lado: são as duas coisas que se vêm
+        ver a esta página, e a atenção sozinha numa linha deixava meio ecrã em
+        branco. O que se segue fica por baixo da forma, na mesma coluna, e as
+        duas colunas têm a mesma altura: a forma cresce para acertar com a
+        atenção, e a atenção estica quando é a direita que é mais alta.
 
-      {/* As provas ficam no topo da visão geral: é o quadro competitivo da
-          época, e responde a "onde é que esta equipa joga" antes de qualquer
-          número. */}
-      <TeamCompetitionsPanel team={team} editable={can(session, "team:write")} />
-
-      <MatchMinutesPanel team={team} editable={can(session, "team:write")} />
-
+        As provas e a duração do jogo saíram daqui para o popup "Editar equipa".
+        Ver `EditTeamDialog`.
+      */}
       <div className="grid gap-3 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
-        {nextEvent && (
-          <Panel>
-            <PanelHead title="A seguir" hint={relativeDays(nextEvent.start, today)} />
-            <button
-              type="button"
-              onClick={() => onSelectEvent(nextEvent.id)}
-              className="flex w-full items-center gap-3 px-5 py-4 text-left transition-colors duration-[120ms] hover:bg-sunken/50"
-            >
-              <span className="flex size-9 shrink-0 items-center justify-center rounded-full bg-sunken text-ink-3">
-                <CalendarDays className="size-4" strokeWidth={1.75} />
-              </span>
-              <span className="min-w-0 flex-1">
-                <span className="block truncate text-body font-medium text-ink">
-                  {KIND_LABEL[nextEvent.kind]}
-                  {nextEvent.kind === "match" && nextEvent.match ? ` vs ${nextEvent.match.opponent}` : ""}
-                </span>
-                <span className="block text-meta text-ink-3">
-                  {capitalize(longDate(nextEvent.start))} · <span className="font-mono tabular">{time(nextEvent.start)}</span> ·{" "}
-                  {nextEvent.venue}
-                </span>
-              </span>
-            </button>
-          </Panel>
-        )}
+        <Attention items={items} />
 
-        <Panel>
-          <PanelHead title="Forma recente" hint={recentForm.length ? `últimos ${recentForm.length}` : undefined} />
-          {recentForm.length === 0 ? (
-            <div className="px-5 py-8">
-              <Empty title="Ainda sem jogos" detail="A forma aparece assim que houver resultados." />
-            </div>
-          ) : (
-            <div className="flex items-center gap-1.5 px-5 py-4">
-              {recentForm.map((m) => {
-                const outcome = resultOutcome(m.match)!;
-                const tone = outcome === "win" ? "bg-ok text-white" : outcome === "loss" ? "bg-risk text-white" : "bg-ink-4 text-white";
-                const letter = OUTCOME_LETTER[outcome];
-                return (
-                  <button
-                    key={m.id}
-                    type="button"
-                    onClick={() => onSelectEvent(m.id)}
-                    title={`vs ${m.match.opponent} · ${m.match.result!.ourScore}-${m.match.result!.theirScore}`}
-                    className={cx("flex size-8 items-center justify-center rounded-full text-meta font-bold transition-transform duration-[120ms] hover:scale-105", tone)}
-                  >
-                    {letter}
-                  </button>
-                );
-              })}
-            </div>
+        <div className="flex min-w-0 flex-col gap-3">
+          <Panel className="flex flex-1 flex-col">
+            <PanelHead title="Forma recente" hint={recentForm.length ? `últimos ${recentForm.length}` : undefined} />
+            {recentForm.length === 0 ? (
+              <div className="flex flex-1 items-center justify-center px-5 py-8">
+                <Empty title="Ainda sem jogos" detail="A forma aparece assim que houver resultados." />
+              </div>
+            ) : (
+              <div className="flex flex-1 items-center gap-1.5 px-5 py-4">
+                {recentForm.map((m) => {
+                  const outcome = resultOutcome(m.match)!;
+                  const tone = outcome === "win" ? "bg-ok text-white" : outcome === "loss" ? "bg-risk text-white" : "bg-ink-4 text-white";
+                  const letter = OUTCOME_LETTER[outcome];
+                  return (
+                    <button
+                      key={m.id}
+                      type="button"
+                      onClick={() => onSelectEvent(m.id)}
+                      title={`vs ${m.match.opponent} · ${m.match.result!.ourScore}-${m.match.result!.theirScore}`}
+                      className={cx("flex size-8 items-center justify-center rounded-full text-meta font-bold transition-transform duration-[120ms] hover:scale-105", tone)}
+                    >
+                      {letter}
+                    </button>
+                  );
+                })}
+              </div>
+            )}
+          </Panel>
+
+          {nextEvent && (
+            <Panel>
+              <PanelHead title="A seguir" hint={relativeDays(nextEvent.start, today)} />
+              <button
+                type="button"
+                onClick={() => onSelectEvent(nextEvent.id)}
+                className="flex w-full items-center gap-3 px-5 py-4 text-left transition-colors duration-[120ms] hover:bg-sunken/50"
+              >
+                <span className="flex size-9 shrink-0 items-center justify-center rounded-full bg-sunken text-ink-3">
+                  <CalendarDays className="size-4" strokeWidth={1.75} />
+                </span>
+                <span className="min-w-0 flex-1">
+                  <span className="block truncate text-body font-medium text-ink">
+                    {KIND_LABEL[nextEvent.kind]}
+                    {nextEvent.kind === "match" && nextEvent.match ? ` vs ${nextEvent.match.opponent}` : ""}
+                  </span>
+                  <span className="block text-meta text-ink-3">
+                    {capitalize(longDate(nextEvent.start))} · <span className="font-mono tabular">{time(nextEvent.start)}</span> ·{" "}
+                    {nextEvent.venue}
+                  </span>
+                </span>
+              </button>
+            </Panel>
           )}
-        </Panel>
+        </div>
       </div>
     </div>
-  );
-}
-
-/**
- * Quanto dura um jogo deste escalão.
- *
- * Vivia nas Definições, por modalidade, e era o mesmo 90 para o Sub-11 e para
- * o Sub-19. É do escalão: um Sub-11 de futebol joga 60, e os minutos de quem
- * jogou até ao fim saem daqui. Grava ao sair do campo, como o máximo de
- * convocados; muda as fichas daqui para a frente, não as já gravadas.
- */
-function MatchMinutesPanel({ team, editable }: { team: NonNullable<ReturnType<typeof teamById>>; editable: boolean }) {
-  const [texto, setTexto] = useState(team.matchMinutes == null ? "" : String(team.matchMinutes));
-  const [busy, setBusy] = useState(false);
-  const [erro, setErro] = useState<string | null>(null);
-
-  useEffect(() => {
-    setTexto(team.matchMinutes == null ? "" : String(team.matchMinutes));
-  }, [team.matchMinutes]);
-
-  async function commit() {
-    const n = Number(texto);
-    if (!texto.trim() || !Number.isInteger(n) || n < 1 || n > 300) {
-      setTexto(team.matchMinutes == null ? "" : String(team.matchMinutes));
-      return;
-    }
-    if (n === team.matchMinutes) return;
-    setBusy(true);
-    setErro(null);
-    try {
-      await setTeamMatchMinutes(team.id, n);
-      await reloadAcademy();
-    } catch (e) {
-      setErro(e instanceof Error ? e.message : "Não foi possível gravar.");
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  return (
-    <Panel>
-      <div className="flex flex-wrap items-center gap-x-4 gap-y-2 px-5 py-3">
-        <span className="inline-flex items-center gap-2 text-body text-ink">
-          <Clock className="size-4 text-ink-4" strokeWidth={1.75} />
-          Duração do jogo
-        </span>
-        <span className="text-meta text-ink-3">
-          É deste número que saem os minutos de quem jogou até ao fim.
-        </span>
-        <label className="ml-auto flex items-center gap-2 text-meta text-ink-3">
-          {editable ? (
-            <input
-              type="text"
-              inputMode="numeric"
-              pattern="[0-9]*"
-              maxLength={3}
-              value={texto}
-              disabled={busy}
-              aria-label="Duração do jogo em minutos"
-              onChange={(e) => setTexto(e.target.value.replace(/\D/g, ""))}
-              onBlur={() => void commit()}
-              onKeyDown={(e) => {
-                if (e.key === "Enter") (e.target as HTMLInputElement).blur();
-              }}
-              className="h-8 w-16 rounded-[var(--radius-control)] border border-line bg-surface px-2 text-center text-body text-ink tabular focus:border-line-strong focus:outline-none"
-            />
-          ) : (
-            <span className="text-body font-medium tabular text-ink">{team.matchMinutes ?? "—"}</span>
-          )}
-          min
-        </label>
-        {erro && (
-          <span role="alert" className="w-full text-meta text-risk">
-            {erro}
-          </span>
-        )}
-      </div>
-    </Panel>
   );
 }
 
@@ -541,17 +483,25 @@ function MatchMinutesPanel({ team, editable }: { team: NonNullable<ReturnType<ty
 /* -------------------------------------------------------------------------- */
 
 function RosterTab({
+  team,
+  session,
   roster,
   fees,
   canBill,
   canFamily,
 }: {
+  team: NonNullable<ReturnType<typeof teamById>>;
+  session: Session;
   roster: Athlete[];
   fees: ReturnType<typeof listFees>;
   canBill: boolean;
   canFamily: boolean;
 }) {
   const feeByAthlete = new Map(fees.map((f) => [f.athleteId, f]));
+  /* Montar o plantel daqui: atletas que já existem, ou um novo, já nesta equipa. */
+  const mayWrite = can(session, "athlete:write");
+  const [aAdicionar, setAAdicionar] = useState(false);
+  const [aInscrever, setAInscrever] = useState(false);
 
   const allColumns: Column<Athlete>[] = [
     {
@@ -617,15 +567,34 @@ function RosterTab({
   });
 
   return (
-    <Panel>
-      <DataTable
-        columns={columns}
-        rows={[...roster].sort((a, b) => a.name.localeCompare(b.name, "pt"))}
-        keyOf={(a) => a.id}
-        to={(a) => `/atletas/${a.id}`}
-        empty={<Empty icon={Users} title="Sem atletas nesta equipa" />}
-      />
-    </Panel>
+    <>
+      <Panel>
+        <PanelHead title="Plantel" hint={`${roster.length} ${roster.length === 1 ? "atleta" : "atletas"}`}>
+          {mayWrite && (
+            <>
+              <button type="button" onClick={() => setAInscrever(true)} className="ctl-ghost">
+                <UserPlus className="size-3.5" strokeWidth={1.75} />
+                Novo atleta
+              </button>
+              <button type="button" onClick={() => setAAdicionar(true)} className="ctl-primary">
+                <Plus className="size-3.5" strokeWidth={2} />
+                Adicionar atletas
+              </button>
+            </>
+          )}
+        </PanelHead>
+        <DataTable
+          columns={columns}
+          rows={[...roster].sort((a, b) => a.name.localeCompare(b.name, "pt"))}
+          keyOf={(a) => a.id}
+          to={(a) => `/atletas/${a.id}`}
+          empty={<Empty icon={Users} title="Sem atletas nesta equipa" detail={mayWrite ? "Adiciona atletas que já estão no clube, ou inscreve um novo." : undefined} />}
+        />
+      </Panel>
+
+      {aAdicionar && <AddToRosterDialog team={team} session={session} onClose={() => setAAdicionar(false)} />}
+      {aInscrever && <NewAthleteDialog session={session} teamId={team.id} onClose={() => setAInscrever(false)} />}
+    </>
   );
 }
 

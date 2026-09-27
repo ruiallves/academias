@@ -104,7 +104,7 @@ export function NewAnnouncementDialog({
   const athletes = listAthletes(session);
   const reach = useMemo(() => {
     const recorte = teamIds.length > 0 ? new Set(teamIds) : null;
-    const visados = athletes.filter((a) => !recorte || recorte.has(a.teamId));
+    const visados = athletes.filter((a) => !recorte || a.equipas.some((e) => recorte.has(e.teamId)));
     // Aos atletas só chega quem tem conta na app — é o que o servidor conta também.
     if (audience === "athletes") return visados.filter((a) => a.app === "account").length;
     const alvo = new Set(visados.map((a) => a.id));
