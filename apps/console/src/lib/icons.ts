@@ -118,6 +118,11 @@ export {
   /* O manípulo de arrasto de uma lista: três linhas, a convenção de sempre. */
   Menu as DragHandle,
   type LucideIcon,
+  // O tipo de um exercício: desenho no campo, ou imagens.
+  LandPlot as Campo,
+  Images,
+  ImagePlus,
+  Expand,
 } from "lucide-react";
 
 /* -------------------------------------------------------------------------- */

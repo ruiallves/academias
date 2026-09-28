@@ -55,6 +55,12 @@ model Academy {
   appIconUrl  String?
   signalColor String  @default("#0f6b62")
 
+  /// O espaço de ficheiros que o clube pode usar, em MB. 5 GB por omissão, como
+  /// dizem os Termos de Serviço; a plataforma aumenta-o a quem paga mais. O que
+  /// está usado mede-se no armazenamento (`app.storage_by_academy`), não se
+  /// guarda. Ver `storage/espaco.service.ts`.
+  storageLimitMb Int @default(5120)
+
   /// Dia do mês em que as mensalidades vencem.
   billingDueDay Int @default(8)
 

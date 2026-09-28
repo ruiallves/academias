@@ -87,6 +87,8 @@ import { PhotosService } from "./storage/photos.service";
 import { ClubLogoController } from "./storage/club-logo.controller";
 import { ClubLogoService } from "./storage/club-logo.service";
 import { StorageService } from "./storage/storage.service";
+import { EspacoService } from "./storage/espaco.service";
+import { EspacoController } from "./storage/espaco.controller";
 import { ReportsService } from "./development/reports.service";
 import { NutritionService } from "./development/nutrition.service";
 import { SupabaseAccountsService } from "./auth/supabase-accounts.service";
@@ -176,6 +178,7 @@ import { LegalAdminService } from "./legal/legal-admin.service";
     DevelopmentController,
     PhotosController,
     ClubLogoController,
+    EspacoController,
     FamilySignupController,
     AthleteInvitesController,
     AthleteSignupController,
@@ -248,6 +251,7 @@ import { LegalAdminService } from "./legal/legal-admin.service";
     PhotosService,
     ClubLogoService,
     StorageService,
+    EspacoService,
     ReportsService,
     NutritionService,
     SupabaseAccountsService,

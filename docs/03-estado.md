@@ -2663,6 +2663,73 @@ uma avulsa do mesmo mês. Agora as três olham só para `slot = ""`.
 Teste: `scripts/test-fee-config.mjs` (inclui o atleta em duas modalidades, com
 uma equipa temporária `zz_t_fee_2mod`).
 
+## Exercícios de campo ou de imagens
+
+Um exercício mostra-se **desenhado no campo** ou **com imagens** (a fotografia
+do quadro, da montagem, de uma prancheta). Não há coluna nova: com desenho é de
+campo; sem desenho e com imagens é de imagens; sem nada abre no campo.
+
+- **Ao criar**, a primeira coisa são dois cartões ("Desenhar no campo" / "Com
+  imagens", `EscolhaDoTipo`). Num exercício existente troca-se no cabeçalho do
+  painel; passar a imagens só tira o desenho **ao guardar** (`diagram: null` no
+  pedido), por isso voltar atrás não perde nada. Imagens de exercícios de campo
+  antigos continuam num painel à parte, em baixo.
+- **A disposição é a de sempre**: o desenho (ou as imagens) em dois terços, a
+  ficha à direita. Esteve a largura toda, com a ficha por baixo, e o Rui não
+  gostou: voltou atrás. **A paleta de peças tem a altura do campo** (a coluna
+  estica com a linha e a lista rola por dentro); antes tinha um tecto de 480 px
+  contra os 560 do campo.
+- **Galeria** (`GaleriaDeImagens`): a imagem grande inteira, miniaturas por
+  baixo, arrastar e largar, até 6, ampliar. Num exercício **por criar** as
+  imagens ficam na página e sobem depois do "Criar exercício" (antes era "cria
+  o exercício primeiro").
+- **Biblioteca:** o cartão de um exercício de imagens mostra a primeira (`cover`,
+  assinada **fora** da transação e com a cache de `signDownload`) e "N imagens".
+- **PDF:** sem desenho, imprime as imagens no lugar dos frames.
+- **Tamanho:** as imagens de treino são reduzidas no browser antes de subir
+  (`reduzirImagemDeTreino` em `packages/ui/src/imagem.ts`: 2400 px, JPEG 0,88,
+  intactas até 1,5 MB), e o limite passou de 8 para **20 MB** na consola, na API
+  e no balde `exercicios` (migração `20260928120000_imagens_de_treino_20mb`;
+  `ensureBucket` só aplica o limite ao criar o balde).
+
+## Espaço de ficheiros por clube
+
+Cada clube tem **5 GB** para ficheiros por omissão (`Academy.storageLimitMb`,
+5120; migração `20260928100000_espaco_por_clube`). A plataforma aumenta-o, e os
+Termos de Serviço dizem que é possível quando der, com aumento da mensalidade.
+
+**O usado mede-se, não se guarda.** `app.storage_by_academy(academyId|NULL)`
+(SECURITY DEFINER, `plpgsql` para se criar no PGlite sem esquema `storage`) soma
+`storage.objects` e atribui cada ficheiro ao clube pelo caminho: `clube-publico`,
+`scouting` e `ai-videos` começam pelo id do clube; `fotos` vai pelo dono
+(`atletas/<atleta>`, `socios/<sócio>`, `staff/<utilizador>`, que conta em cada
+clube onde a pessoa é staff); `inventario` por `artigos/<artigo>`; `exercicios`
+por `exercicios/<exercício>`. Apagar um ficheiro baixa o número sozinho. Em
+28/09/2026: 118 MB atribuídos de 121 MB guardados (o resto são órfãos, como
+fotografias de atletas apagados).
+
+**O travão** (`EspacoService.garantirEspaco`): cada autorização de carregamento
+pergunta primeiro. No limite, recusa com "O clube chegou ao limite de espaço…";
+um vídeo de scouting conta com o tamanho que declara. Travadas: fotografias
+(atleta, staff, sócio, e as dos próprios), símbolo carregado pelo clube,
+inventário, exercícios, scouting e início de uma análise Academias AI. **Não**
+travados: a plataforma a carregar o símbolo de um clube novo, e o que o worker
+da Academias AI gera a meio de uma análise. Apagar é sempre possível.
+
+**Onde se vê:** consola, Definições, coluna da direita, painel "Espaço"
+(`EspacoPanel`, `GET /api/espaco`, staff sim, família e atleta não), com a barra
+neutra até 80%. Plataforma: coluna "Espaço" na lista de clubes, e painel na
+ficha do clube com atalhos 5/10/20/50 GB e campo livre
+(`PATCH /api/platform/academies/:id/espaco`, `OWNER`/`ADMIN`, auditado como
+`academy.storage`; baixar abaixo do usado não apaga nada).
+
+**Termos de Serviço v1.3** (em `prisma/legal/termos-de-servico.md`): 5 GB nos
+planos (secção 2), preço próprio para mais espaço (secção 7), e a regra inteira
+na secção 13 ("Utilização razoável e espaço de armazenamento"). Publica-se com
+`npm run seed:legal`, e publicar liga o gate a todos os responsáveis dos clubes.
+
+Teste: `scripts/test-espaco.mjs` (9).
+
 ## Um atleta em várias equipas
 
 Um atleta pode estar em várias equipas: futebol e futsal, ou um Sub-13 que
@@ -4077,3 +4144,20 @@ trata cada atleta como sendo de uma equipa (a ficha, as mensalidades e a app da
 família mostram uma), e um atleta em duas desaparecia de um dos plantéis. O
 popup diz de onde sai cada um antes de gravar, e avisa quem está acima da idade
 da equipa.
+
+## A agenda da família mostra tudo o que o filho tem
+
+A Agenda da app (família e atleta) mostrava só treinos e jogos. As consultas
+apareciam no Início e na área do atleta, e os eventos do clube (torneios,
+reuniões de pais, estágios) em lado nenhum: a família sabia do torneio de Natal
+pelo WhatsApp, e uma consulta às 18:00 não se via ao lado do treino das 18:30.
+
+- **Consultas** (`child.appointments`) entram na agenda com a hora que a médica
+  escreveu (sem hora ficam no topo do dia, com "—"), marca de cor âmbar, e o
+  estado da confirmação no cartão ("Confirma a presença", "confirmada", "não
+  vai"). Tocar abre `/consulta/:id`.
+- **Eventos do clube**: a app passou a pedir `GET /api/events` (a família e o
+  atleta já tinham `calendar:read`, e o servidor só lhes manda os das suas
+  equipas e os de toda a academia). Entram os da equipa do educando e os da
+  academia, com o tipo do clube no cartão. Tocar abre um ecrã simples,
+  `/evento/clube/:id` (`EventoDoClube`): quando, onde, balneário e para quem.

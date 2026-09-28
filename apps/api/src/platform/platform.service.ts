@@ -1,3 +1,4 @@
+import { EspacoService } from "../storage/espaco.service";
 import { randomBytes, createHash } from "node:crypto";
 import { BadRequestException, ConflictException, Injectable, NotFoundException } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
@@ -92,6 +93,8 @@ export class PlatformService {
      * pode depender de nada que esteja atrás do `PlatformGuard`.
      */
     private readonly orders: SubscriptionOrdersService,
+    /** O espaço de ficheiros de cada clube — ver `storage/espaco.service.ts`. */
+    private readonly espaco: EspacoService,
   ) {}
 
   /* ------------------------------------------------------------------------ */
@@ -206,6 +209,17 @@ export class PlatformService {
      */
     const online = this.presence.porAcademia();
 
+    /*
+     * O espaço de ficheiros, para se ver na lista quem está perto do limite:
+     * é a conversa de subir a mensalidade, e tem de se ver antes de o clube
+     * dar com os carregamentos recusados.
+     */
+    const [usado, limites] = await Promise.all([
+      this.espaco.deTodos(),
+      this.prisma.academy.findMany({ select: { id: true, storageLimitMb: true } }),
+    ]);
+    const limiteDe = new Map(limites.map((a) => [a.id, a.storageLimitMb]));
+
     return rows.map((r) => ({
       id: r.id,
       slug: r.slug,
@@ -232,6 +246,8 @@ export class PlatformService {
       lastActivity: r.last_activity,
       logoUrl: r.logo_url,
       signalColor: r.signal_color,
+      storageUsedBytes: usado.get(r.id) ?? 0,
+      storageLimitMb: limiteDe.get(r.id) ?? 5120,
     }));
   }
 
@@ -411,6 +427,9 @@ export class PlatformService {
     const doMes = charges.filter((c) => c.period === periodo);
     const cents = (rs: typeof charges) => rs.reduce((n, c) => n + c.amountCents, 0);
 
+    // O espaço de ficheiros: o que usa, por categoria, e o limite.
+    const storage = await this.espaco.doClube(academy.id);
+
     return {
       id: academy.id,
       slug: academy.slug,
@@ -418,6 +437,7 @@ export class PlatformService {
       status: academy.status,
       createdAt: academy.createdAt,
       trialEndsAt: academy.trialEndsAt,
+      storage,
       logoUrl: academy.logoUrl,
       signalColor: academy.signalColor,
       plan: academy.subscription?.plan.name ?? null,
@@ -1149,6 +1169,29 @@ export class PlatformService {
 
     await this.audit(admin, "academy.order.resend", "academy", id, { para: r.ordem.sentToEmail ?? "sem destinatário" }, ip);
     return { ok: true, enviado: r.enviado, motivo: r.motivo };
+  }
+
+  /**
+   * Mudar o espaço de ficheiros de um clube.
+   *
+   * O limite por omissão é 5 GB, como dizem os Termos de Serviço; aumentá-lo é
+   * uma condição comercial, normalmente acompanhada de uma mensalidade maior.
+   * Fica no registo de auditoria, com o antes e o depois.
+   *
+   * Baixar abaixo do que o clube já usa é permitido: nada se apaga, o clube só
+   * deixa de carregar ficheiros novos até voltar a caber.
+   */
+  async setStorageLimit(admin: PlatformAdminContext, id: string, limitMb: number, ip?: string) {
+    const academy = await this.prisma.academy.findUnique({
+      where: { id },
+      select: { id: true, slug: true, storageLimitMb: true },
+    });
+    if (!academy) throw new BadRequestException("Academia não encontrada");
+
+    await this.prisma.academy.update({ where: { id }, data: { storageLimitMb: limitMb } });
+    await this.audit(admin, "academy.storage", "academy", id, { slug: academy.slug, deMb: academy.storageLimitMb, paraMb: limitMb }, ip);
+
+    return this.espaco.doClube(id);
   }
 
   async setAcademyActive(admin: PlatformAdminContext, id: string, active: boolean, ip?: string) {

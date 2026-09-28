@@ -577,8 +577,8 @@ export class ClubAppService {
    * `memberId`: ele vem da ficha dela.
    */
   async fotoUpload(authorization: string | undefined, slug: string, contentType: string) {
-    const { socioId } = await this.proprio(authorization, slug);
-    return this.photos.memberUploadUrlProprio(socioId, contentType);
+    const { academyId, socioId } = await this.proprio(authorization, slug);
+    return this.photos.memberUploadUrlProprio(academyId, socioId, contentType);
   }
 
   async fotoConfirmar(authorization: string | undefined, slug: string, key: string) {

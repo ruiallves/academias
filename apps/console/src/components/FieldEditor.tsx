@@ -1686,8 +1686,16 @@ export function FieldEditor({
       </div>
 
       <div className="flex gap-2">
-        {/* Paleta */}
-        <div className="flex w-28 shrink-0 flex-col gap-1 overflow-y-auto rounded-[var(--radius-control)] border border-line bg-sunken/40 p-1.5" style={{ maxHeight: 480 }}>
+        {/*
+          Paleta, com a altura do campo.
+
+          Tinha um tecto fixo (480 px) e o campo outro (560): a paleta acabava
+          antes do campo, ou passava dele num campo mais baixo. Agora a coluna
+          estica com a linha — cuja altura é a do campo, o único filho que ocupa
+          espaço — e a lista vive por dentro, posicionada, a rolar se não couber.
+        */}
+        <div className="relative w-28 shrink-0">
+        <div className="absolute inset-0 flex flex-col gap-1 overflow-y-auto rounded-[var(--radius-control)] border border-line bg-sunken/40 p-1.5">
           {palette.map(({ kind, label }) => (
             <button
               key={kind}
@@ -1722,6 +1730,7 @@ export function FieldEditor({
               <span className="leading-tight">{label}</span>
             </button>
           ))}
+        </div>
         </div>
 
         {/* Campo */}

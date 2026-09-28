@@ -20,7 +20,7 @@ export default function App({ me }: { me: Me }) {
         <Route path="academias" element={<Academies me={me} />} />
         {/* A ficha de um clube. Ver `AcademyDetail` — responde a outra pergunta
             que a lista, e por isso é outra página e não mais colunas. */}
-        <Route path="academias/:id" element={<AcademyDetail />} />
+        <Route path="academias/:id" element={<AcademyDetail me={me} />} />
         <Route path="tickets" element={<Tickets me={me} />} />
         <Route path="contactos" element={<Contacts me={me} />} />
         <Route path="crescimento" element={<Growth />} />

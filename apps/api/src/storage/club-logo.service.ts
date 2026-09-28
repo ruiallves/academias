@@ -3,6 +3,7 @@ import { BadRequestException, ForbiddenException, Injectable } from "@nestjs/com
 import { ConfigService } from "@nestjs/config";
 import { PrismaService } from "../prisma/prisma.service";
 import { StorageService } from "./storage.service";
+import { EspacoService } from "./espaco.service";
 import { can, type RequestContext } from "../common/permissions";
 
 /**
@@ -39,6 +40,7 @@ export class ClubLogoService {
     private readonly prisma: PrismaService,
     private readonly storage: StorageService,
     private readonly config: ConfigService,
+    private readonly espaco: EspacoService,
   ) {}
 
   private ensureBucket() {
@@ -53,6 +55,9 @@ export class ClubLogoService {
   /** Passo 1: autorização para carregar. A chave é escolhida aqui, nunca pelo cliente. */
   async signUpload(ctx: RequestContext, contentType: string) {
     this.mustWrite(ctx);
+    // O clube no limite de espaço não carrega mais (a plataforma, ao abrir um
+    // clube, passa por `signUploadFor` e não é travada).
+    await this.espaco.garantirEspaco(ctx.academyId);
     return this.signUploadFor(ctx.academyId, contentType);
   }
 

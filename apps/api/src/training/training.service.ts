@@ -7,6 +7,7 @@ import { can, inTeamScope, teamScopeFilter, type RequestContext } from "../commo
 import { NotificationsService } from "../notifications/notifications.service";
 import { contasDasEquipas } from "../academy/athlete-accounts";
 import { formatarNoFuso } from "../common/fuso";
+import { EspacoService } from "../storage/espaco.service";
 
 /**
  * Imagens de exercícios — montagens no campo, prancheta, quadro branco.
@@ -18,7 +19,14 @@ import { formatarNoFuso } from "../common/fuso";
  */
 export const EXERCISE_BUCKET = "exercicios";
 const IMAGE_TTL = 6 * 60 * 60;
-const IMAGE_MAX_BYTES = 8 * 1024 * 1024;
+/**
+ * 20 MB por imagem de exercício. A consola reduz antes de subir (2400 px, ver
+ * `reduzirImagemDeTreino`), por isso o normal é perto de 1 MB; o limite é a rede
+ * para o que o browser não consiga reduzir. O balde já criado recebe este valor
+ * pela migração `20260928120000_imagens_de_treino_20mb`: `ensureBucket` só o
+ * aplica ao criar.
+ */
+const IMAGE_MAX_BYTES = 20 * 1024 * 1024;
 const IMAGE_TYPES = ["image/jpeg", "image/png", "image/webp"];
 /** Seis chega para "como se monta": mais do que isso é um álbum, não uma ficha. */
 const IMAGE_MAX_COUNT = 6;
@@ -51,6 +59,7 @@ export class TrainingService {
     private readonly prisma: PrismaService,
     private readonly storage: StorageService,
     private readonly notifications: NotificationsService,
+    private readonly espaco: EspacoService,
   ) {}
 
   /* ------------------------------------------------------------------------ */
@@ -68,7 +77,7 @@ export class TrainingService {
   async listExercises(ctx: RequestContext, sportId?: string) {
     if (!can(ctx, "training:read")) throw new ForbiddenException("Sem acesso à área técnica");
 
-    return this.prisma.runAs(ctx.academyId, async (db) => {
+    const lista = await this.prisma.runAs(ctx.academyId, async (db) => {
       const rows = await db.exercise.findMany({
         where: { archivedAt: null, ...visibleTo(ctx), ...(sportId ? { sportId } : {}) },
         orderBy: { updatedAt: "desc" },
@@ -76,7 +85,7 @@ export class TrainingService {
           id: true, name: true, description: true, category: true, objectives: true, phase: true, type: true,
           intensity: true, players: true, durationMin: true, space: true, material: true,
           ageMin: true, ageMax: true, complexity: true, visibility: true, videoUrl: true,
-          diagram: true, createdById: true, updatedAt: true, sportId: true,
+          diagram: true, imageKeys: true, createdById: true, updatedAt: true, sportId: true,
           createdBy: { select: { user: { select: { name: true } } } },
           favorites: { where: { membershipId: ctx.membershipId }, select: { id: true } },
         },
@@ -125,6 +134,10 @@ export class TrainingService {
         // desenho completo, com todos os frames, vem na ficha (`getExercise`).
         thumbnail: thumbnailOf(e.diagram),
         frames: frameCount(e.diagram),
+        // Um exercício só de imagens mostra a primeira no cartão. Assina-se
+        // fora da transação, mais abaixo.
+        capaKey: e.diagram ? null : (e.imageKeys[0] ?? null),
+        imageCount: e.imageKeys.length,
         mine: e.createdById === ctx.membershipId,
         authorName: e.createdBy?.user.name ?? null,
         favorite: e.favorites.length > 0,
@@ -133,6 +146,21 @@ export class TrainingService {
         updatedAt: e.updatedAt,
       }));
     });
+
+    /*
+     * A capa dos exercícios de imagens: o link assinado da primeira imagem.
+     *
+     * Depois de a transação fechar — rede dentro de uma transação segura uma
+     * ligação do pool enquanto espera. E com a cache de `signDownload`, que é o
+     * que evita um link novo (e um descarregamento novo) a cada visita à
+     * biblioteca. Ver `storage.service.ts`.
+     */
+    return Promise.all(
+      lista.map(async ({ capaKey, ...e }) => ({
+        ...e,
+        cover: capaKey ? await this.storage.signDownload(EXERCISE_BUCKET, capaKey, IMAGE_TTL) : null,
+      })),
+    );
   }
 
   async getExercise(ctx: RequestContext, id: string) {
@@ -183,6 +211,8 @@ export class TrainingService {
       throw new BadRequestException("A imagem tem de ser JPEG, PNG ou WebP");
     }
     await this.assertExerciseEditable(ctx, exerciseId);
+    // O clube no limite de espaço não carrega mais. Ver `EspacoService`.
+    await this.espaco.garantirEspaco(ctx.academyId);
     await this.storage.ensureBucket({
       name: EXERCISE_BUCKET,
       fileSizeLimit: IMAGE_MAX_BYTES,

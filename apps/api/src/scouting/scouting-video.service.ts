@@ -5,6 +5,7 @@ import { PrismaService } from "../prisma/prisma.service";
 import { can, type RequestContext } from "../common/permissions";
 import { StorageService } from "../storage/storage.service";
 import type { AddMomentDto, StartUploadDto, UpdateVideoDto } from "./scouting.dto";
+import { EspacoService } from "../storage/espaco.service";
 
 /**
  * A biblioteca de vídeo do scouting.
@@ -41,6 +42,7 @@ export class ScoutingVideoService {
     private readonly prisma: PrismaService,
     private readonly config: ConfigService,
     private readonly storage: StorageService,
+    private readonly espaco: EspacoService,
   ) {}
 
   /* ---------------------------------------------------------------------- */
@@ -84,6 +86,8 @@ export class ScoutingVideoService {
    */
   async startUpload(ctx: RequestContext, prospectId: string, dto: StartUploadDto) {
     if (!can(ctx, "scouting:video:write")) throw new ForbiddenException("Sem permissão para carregar vídeo");
+    // Um vídeo diz quanto tem: não começa se não couber no espaço do clube.
+    await this.espaco.garantirEspaco(ctx.academyId, dto.sizeBytes ?? 0);
 
     // A linha nasce dentro da transação; o endereço de carregamento assina-se depois
     // dela fechar — rede dentro de uma transação seca o pool. Ver `playbackUrl`.

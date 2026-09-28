@@ -2,6 +2,7 @@ import { apiDelete, apiGet, apiPatch, apiPost, apiPut } from "@/lib/http";
 import { academy as storeAcademy, teams as storeTeams } from "@/lib/store";
 import { categoryColor, type CategoricalColor } from "@academia/ui/tokens";
 import { erroAvisado } from "@/lib/avisos";
+import { reduzirImagemDeTreino } from "@academia/ui/imagem";
 
 /**
  * A fronteira de dados da área técnica.
@@ -1200,6 +1201,13 @@ export type ExerciseSummary = {
   sportId: string | null;
   thumbnail: unknown;
   frames: number;
+  /**
+   * A primeira imagem de um exercício só de imagens (sem desenho), já assinada.
+   * Nulo num exercício com desenho, ou sem imagens. Ausente num servidor antigo.
+   */
+  cover?: string | null;
+  /** Quantas imagens tem. Ausente num servidor antigo. */
+  imageCount?: number;
   mine: boolean;
   authorName: string | null;
   favorite: boolean;
@@ -1213,7 +1221,7 @@ export type ExerciseImage = { key: string; url: string };
 /** Uma referência curta a outro conteúdo técnico — o que chega para um link. */
 export type TechnicalRef = { id: string; name: string };
 
-export type ExerciseFull = Omit<ExerciseSummary, "thumbnail" | "frames" | "favorite" | "usageCount" | "lastUsedAt"> & {
+export type ExerciseFull = Omit<ExerciseSummary, "thumbnail" | "frames" | "cover" | "imageCount" | "favorite" | "usageCount" | "lastUsedAt"> & {
   rules: string | null;
   progressions: string | null;
   regressions: string | null;
@@ -1395,10 +1403,16 @@ export const setExerciseFavorite = (id: string, on: boolean) =>
  * fotografias (`lib/photos.ts`): autorizar, carregar direto para o Supabase,
  * confirmar. Os bytes nunca passam pela nossa API.
  */
-export async function uploadExerciseImage(exerciseId: string, file: File): Promise<ExerciseImage> {
+export async function uploadExerciseImage(exerciseId: string, original: File): Promise<ExerciseImage> {
   const types = ["image/jpeg", "image/png", "image/webp"];
-  if (!types.includes(file.type)) throw new Error("A imagem tem de ser JPEG, PNG ou WebP.");
-  if (file.size > 8 * 1024 * 1024) throw erroAvisado("A imagem é grande de mais — o máximo são 8 MB.");
+  if (!types.includes(original.type)) throw new Error("A imagem tem de ser JPEG, PNG ou WebP.");
+  /*
+   * Reduzida antes de subir: um quadro fotografado com o telemóvel tem 5 a 12 MB
+   * e lê-se igual a 2400 pixels, com perto de 1 MB. Ver `reduzirImagemDeTreino`.
+   * O limite de 20 MB fica para o que o browser não consiga reduzir.
+   */
+  const file = await reduzirImagemDeTreino(original);
+  if (file.size > 20 * 1024 * 1024) throw erroAvisado("A imagem é grande de mais: o máximo são 20 MB.");
 
   const signed = await apiPost<{ url: string; token: string; key: string }>(
     `/api/training/exercises/${exerciseId}/images/upload`,

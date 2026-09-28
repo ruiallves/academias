@@ -15,6 +15,17 @@ import { SubscriptionNoticesService } from "../subscription/subscription-notices
  * validar; a defesa em profundidade impede que um slug com `.` ou `/` chegue a ser
  * usado num subdomínio ou num caminho.
  */
+/**
+ * O espaço de ficheiros de um clube, em MB. Entre 1 GB e 1 TB: abaixo disso não
+ * cabe um plantel com fotografias, acima disso é um engano de dígitos.
+ */
+class SetStorageLimitDto {
+  @IsInt()
+  @Min(1024, { message: "O espaço mínimo é 1 GB" })
+  @Max(1024 * 1024, { message: "O espaço máximo é 1 TB — confirma o valor" })
+  limitMb!: number;
+}
+
 class CreateAcademyDto {
   @IsString()
   @Length(3, 120)
@@ -244,6 +255,21 @@ export class PlatformController {
       notes: body.notes,
       monthlyCents: body.monthlyCents,
     });
+  }
+
+  /**
+   * O espaço de ficheiros de um clube. Mesma regra do plano: `SUPPORT` vê,
+   * não muda. Ver `setStorageLimit`.
+   */
+  @Patch("academies/:id/espaco")
+  @PlatformRoles("OWNER", "ADMIN")
+  setStorageLimit(
+    @Req() req: PlatformRequest,
+    @Ip() ip: string,
+    @Param("id") id: string,
+    @Body() body: SetStorageLimitDto,
+  ) {
+    return this.platform.setStorageLimit(req.admin, id, body.limitMb, ip);
   }
 
   /**

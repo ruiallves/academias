@@ -6,7 +6,7 @@ import { ClubMark, Empty, Panel, Pill, Progress, cx } from "@/components/primiti
 import { NewAcademyDialog } from "@/components/NewAcademyDialog";
 import { AcademyActions } from "@/components/AcademyActions";
 import { Failed, Skeleton } from "./Overview";
-import { euros, shortDate, since } from "@/lib/format";
+import { euros, shortDate, since, tamanho } from "@/lib/format";
 import { useApi } from "@/lib/query";
 import { type Academy, type Me } from "@/lib/types";
 import { ESTADO_LABEL, ESTADO_TOM, estadoComercial, temReceita } from "@/lib/estado";
@@ -205,6 +205,8 @@ export default function Academies({ me }: { me: Me }) {
                   <th className="px-3 py-2 text-left whitespace-nowrap">Online</th>
                   <th className="px-3 py-2 text-left whitespace-nowrap">Onboarding</th>
                   <th className="px-3 py-2 text-left whitespace-nowrap">Atividade</th>
+                  {/* O espaço de ficheiros: quem está perto do limite é a conversa de subir a mensalidade. */}
+                  <th className="px-3 py-2 text-right whitespace-nowrap">Espaço</th>
                   <th className="px-5 py-2 text-right whitespace-nowrap">Entrou</th>
                   <th className="px-3 py-2 text-right whitespace-nowrap"></th>
                 </tr>
@@ -314,6 +316,9 @@ export default function Academies({ me }: { me: Me }) {
                       */}
                       <span className={cx("text-meta", staleness(a.lastActivity))}>{since(a.lastActivity)}</span>
                     </td>
+                    <td className="px-3 py-2.5 text-right whitespace-nowrap">
+                      <EspacoNaLista usado={a.storageUsedBytes} limiteMb={a.storageLimitMb} />
+                    </td>
                     <td className="px-5 py-2.5 text-right text-meta text-ink-3 whitespace-nowrap">{shortDate(a.createdAt)}</td>
                     <td className="px-3 py-2.5 text-right whitespace-nowrap">
                       {mayCreate && (
@@ -341,3 +346,17 @@ function staleness(iso: string | null): string {
   return "text-ink-3";
 }
 
+/**
+ * O espaço de um clube, na lista: usado e limite, com o tom a subir perto do fim.
+ * Neutro até aos 80%; a partir daí é uma linha que merece um telefonema.
+ */
+function EspacoNaLista({ usado, limiteMb }: { usado: number; limiteMb: number }) {
+  const limite = limiteMb * 1024 * 1024;
+  const fracao = limite > 0 ? usado / limite : 0;
+  const tom = fracao >= 1 ? "text-risk" : fracao >= 0.8 ? "text-warn" : "text-ink-3";
+  return (
+    <span className={cx("text-meta tabular", tom)} title={`${Math.round(fracao * 100)}% do limite`}>
+      {tamanho(usado)} <span className="text-ink-4">/ {tamanho(limite)}</span>
+    </span>
+  );
+}

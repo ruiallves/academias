@@ -51,18 +51,42 @@ const QUALIDADE = 0.85;
  * falha devolve-se o ficheiro original e segue-se.
  */
 export async function reduzirFotografia(file: File): Promise<File> {
+  return reduzir(file, { ladoMaximo: LADO_MAXIMO, jaEPequena: JA_E_PEQUENA, qualidade: QUALIDADE });
+}
+
+/**
+ * Reduzir uma imagem de treino: um quadro tático, uma montagem, uma prancheta.
+ *
+ * Mais generosa do que a de uma fotografia de pessoa, porque aqui há texto e
+ * setas para ler: 2400 pixels no lado maior e JPEG a 0,88. Uma fotografia de
+ * telemóvel de um quadro (5 a 12 MB) fica perto de 1 MB e lê-se igual no ecrã
+ * e no PDF do exercício. Uma imagem com até 1,5 MB não se toca.
+ *
+ * O que se ganha também conta no espaço do clube (5 GB por omissão, ver
+ * `EspacoService` na API): uma biblioteca de exercícios com fotografias de
+ * câmara enchia-o dez vezes mais depressa.
+ */
+export async function reduzirImagemDeTreino(file: File): Promise<File> {
+  return reduzir(file, { ladoMaximo: 2400, jaEPequena: 1.5 * 1024 * 1024, qualidade: 0.88 });
+}
+
+async function reduzir(
+  file: File,
+  opcoes: { ladoMaximo: number; jaEPequena: number; qualidade: number },
+): Promise<File> {
+  const { ladoMaximo, jaEPequena, qualidade } = opcoes;
   if (!/^image\/(jpeg|png|webp)$/.test(file.type)) return file;
-  if (file.size <= JA_E_PEQUENA) return file;
+  if (file.size <= jaEPequena) return file;
 
   try {
     const bitmap = await desenhavel(file);
     if (!bitmap) return file;
 
     /*
-     * Uma fotografia que já cabe em 1024 fica com escala 1 e só é recomprimida
+     * Uma imagem que já cabe no lado máximo fica com escala 1 e só é recomprimida
      * — que é o que baixa os 7 MB de uma câmara sem lhe mexer no tamanho.
      */
-    const escala = Math.min(1, LADO_MAXIMO / Math.max(bitmap.width, bitmap.height));
+    const escala = Math.min(1, ladoMaximo / Math.max(bitmap.width, bitmap.height));
     const largura = Math.round(bitmap.width * escala);
     const altura = Math.round(bitmap.height * escala);
 
@@ -75,7 +99,7 @@ export async function reduzirFotografia(file: File): Promise<File> {
     bitmap.close();
 
     const blob = await new Promise<Blob | null>((resolve) =>
-      canvas.toBlob(resolve, "image/jpeg", QUALIDADE),
+      canvas.toBlob(resolve, "image/jpeg", qualidade),
     );
     /* Se o resultado não ficou menor, a original serve — e é sempre melhor. */
     if (!blob || blob.size >= file.size) return file;

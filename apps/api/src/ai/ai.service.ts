@@ -6,6 +6,7 @@ import { can, teamScopeFilter, type RequestContext } from "../common/permissions
 import { AiVideoService, videoExtensionFor } from "./ai-video.service";
 import { AiJobsService } from "./ai-jobs.service";
 import { AiPresenceService } from "./ai-presence.service";
+import { EspacoService } from "../storage/espaco.service";
 import type {
   CompleteVideoDto,
   CreateAnalysisDto,
@@ -40,6 +41,7 @@ export class AiService {
     private readonly jobs: AiJobsService,
     private readonly presence: AiPresenceService,
     private readonly config: ConfigService,
+    private readonly espaco: EspacoService,
   ) {}
 
   /* ---------------------------------------------------------------------- */
@@ -398,6 +400,13 @@ export class AiService {
   async startVideoUpload(ctx: RequestContext, analysisId: string, dto: StartVideoUploadDto) {
     if (!can(ctx, "ai:write")) throw new ForbiddenException("Sem permissão para carregar vídeo");
     const teamScope = teamScopeFilter(ctx);
+    /*
+     * Um clube no limite de espaço não começa uma análise nova. O vídeo em si
+     * pode nem ficar no armazenamento (vai para o disco do worker e apaga-se),
+     * mas o que a análise produz fica — por isso só se trava quem já está no
+     * limite, sem contar o tamanho do vídeo.
+     */
+    await this.espaco.garantirEspaco(ctx.academyId);
 
     const created = await this.prisma.runAs(ctx.academyId, async (db) => {
       const a = await db.aIAnalysis.findFirst({

@@ -101,6 +101,43 @@ type ApiSession = {
   notices?: { athleteId: string; reason: string; noticedAt: string; noticedBy: string | null }[];
 };
 
+/**
+ * Um evento do clube que não é treino nem jogo: um torneio, uma reunião de
+ * pais, um estágio. O servidor só manda os das equipas de quem pergunta e os
+ * de toda a academia (`calendarScopeFilter`).
+ */
+type ApiEvent = {
+  id: string;
+  teamId: string | null;
+  teamName: string | null;
+  kind: string;
+  title: string;
+  startsAt: string;
+  endsAt: string;
+  venue: string;
+  dressingRooms?: string[];
+  typeLabel?: string | null;
+  cancelled: boolean;
+};
+
+/** Um evento do clube, pronto para a agenda. Ver `ApiEvent`. */
+export type ClubEvent = {
+  id: string;
+  /** Nulo num evento de toda a academia — aparece a todos os educandos. */
+  teamId: string | null;
+  teamName: string | null;
+  title: string;
+  /** Como o clube lhe chama ("Torneio", "Estágio"). */
+  typeLabel: string;
+  start: Date;
+  end: Date;
+  venue: string;
+  rooms: string[];
+  cancelled: boolean;
+};
+
+const ROTULO_DO_TIPO: Record<string, string> = { TRAINING: "Treino", MATCH: "Jogo", TOURNAMENT: "Torneio", OTHER: "Evento" };
+
 type ApiMatch = {
   id: string;
   teamId: string;
@@ -524,6 +561,8 @@ type State = {
   children: Child[];
   trainings: Training[];
   matches: Match[];
+  /** Torneios, reuniões, estágios — o resto do calendário. Ver `ClubEvent`. */
+  clubEvents: ClubEvent[];
   payments: Payment[];
   notices: Notice[];
   notifications: ApiNotification[];
@@ -547,6 +586,7 @@ const EMPTY: State = {
   children: [],
   trainings: [],
   matches: [],
+  clubEvents: [],
   payments: [],
   notices: [],
   notifications: [],
@@ -597,7 +637,7 @@ export function load(): Promise<void> {
        */
       const atleta = boot.me.role === "ATHLETE";
 
-      const [athletes, teams, sessions, matches, charges, announcements, notifications, evaluations, reports, nutrition] =
+      const [athletes, teams, sessions, matches, charges, announcements, notifications, evaluations, reports, nutrition, events] =
         await Promise.all([
           /*
            * Os atletas **não** são `soft`.
@@ -621,6 +661,13 @@ export function load(): Promise<void> {
           soft<ApiEvaluation>("/api/evaluations"),
           soft<ApiReport>("/api/reports"),
           soft<ApiNutritionPlan>("/api/nutricao"),
+          /*
+           * O resto do calendário: torneios, reuniões, estágios. Faltava, e a
+           * agenda só mostrava treinos e jogos — a família sabia do torneio de
+           * Natal pelo grupo de WhatsApp. `soft`, como os outros que não são o
+           * coração da app.
+           */
+          soft<ApiEvent>(`/api/events?from=${from}&to=${to}`),
         ]);
 
       // O preço é por atleta e pode ter ajuste individual — um pedido por filho,
@@ -634,7 +681,7 @@ export function load(): Promise<void> {
       );
 
       apply(
-        build(boot, athletes, teams, sessions, matches, charges, announcements, notifications, new Map(fees), evaluations, reports, nutrition),
+        build(boot, athletes, teams, sessions, matches, charges, announcements, notifications, new Map(fees), evaluations, reports, nutrition, events),
       );
     } catch (error) {
       /*
@@ -737,6 +784,7 @@ function build(
   evaluations: ApiEvaluation[],
   reports: ApiReport[],
   nutrition: ApiNutritionPlan[],
+  events: ApiEvent[] = [],
 ): State {
   const teamById = new Map(teams.map((t) => [t.id, t]));
   const sportById = new Map(boot.sports.map((s) => [s.id, s.name]));
@@ -968,6 +1016,18 @@ function build(
     children,
     trainings,
     matches: asMatches,
+    clubEvents: events.map((e) => ({
+      id: e.id,
+      teamId: e.teamId,
+      teamName: e.teamName,
+      title: e.title,
+      typeLabel: e.typeLabel || ROTULO_DO_TIPO[e.kind] || "Evento",
+      start: new Date(e.startsAt),
+      end: new Date(e.endsAt),
+      venue: e.venue,
+      rooms: e.dressingRooms ?? [],
+      cancelled: e.cancelled,
+    })),
     payments,
     notices,
     notifications,

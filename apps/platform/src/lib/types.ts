@@ -104,6 +104,16 @@ export type Academy = {
   logoUrl: string | null;
   /** A cor do clube. Serve de fundo ao monograma de quem ainda não tem emblema. */
   signalColor: string;
+  /** O espaço de ficheiros usado, em bytes, e o limite, em MB (5120 por omissão). */
+  storageUsedBytes: number;
+  storageLimitMb: number;
+};
+
+/** O espaço de ficheiros de um clube, por categoria — ver `EspacoService` na API. */
+export type EspacoDoClube = {
+  usedBytes: number;
+  limitBytes: number;
+  categorias: { key: string; label: string; bytes: number; ficheiros: number }[];
 };
 
 export type SeriesPoint = { month: string; new_academies: number; cancelled: number; active_end: number };
@@ -148,6 +158,7 @@ export type Plan = {
  */
 export type AcademyDetail = {
   id: string;
+  storage: EspacoDoClube;
   slug: string;
   name: string;
   status: AcademyStatus;

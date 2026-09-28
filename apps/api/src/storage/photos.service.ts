@@ -2,6 +2,7 @@ import { randomBytes } from "node:crypto";
 import { BadRequestException, ForbiddenException, Injectable, NotFoundException } from "@nestjs/common";
 import { PrismaService } from "../prisma/prisma.service";
 import { StorageService } from "./storage.service";
+import { EspacoService } from "./espaco.service";
 import { can, teamScopeFilter, type RequestContext } from "../common/permissions";
 
 /**
@@ -48,6 +49,7 @@ export class PhotosService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly storage: StorageService,
+    private readonly espaco: EspacoService,
   ) {}
 
   private ensureBucket() {
@@ -65,7 +67,7 @@ export class PhotosService {
   async athleteUploadUrl(ctx: RequestContext, athleteId: string, contentType: string) {
     if (!can(ctx, "athlete:write")) throw new ForbiddenException("Sem permissão");
     await this.assertAthleteInScope(ctx, athleteId);
-    return this.athleteUpload(athleteId, contentType);
+    return this.athleteUpload(ctx.academyId, athleteId, contentType);
   }
 
   async setAthletePhoto(ctx: RequestContext, athleteId: string, key: string) {
@@ -93,7 +95,7 @@ export class PhotosService {
    */
 
   athleteUploadUrlProprio(ctx: RequestContext, contentType: string) {
-    return this.athleteUpload(this.proprio(ctx), contentType);
+    return this.athleteUpload(ctx.academyId, this.proprio(ctx), contentType);
   }
 
   setAthletePhotoProprio(ctx: RequestContext, key: string) {
@@ -110,7 +112,9 @@ export class PhotosService {
     return id;
   }
 
-  private async athleteUpload(athleteId: string, contentType: string) {
+  private async athleteUpload(academyId: string, athleteId: string, contentType: string) {
+    // O clube no limite de espaço não carrega mais. Ver `EspacoService`.
+    await this.espaco.garantirEspaco(academyId);
     this.checkType(contentType);
     await this.ensureBucket();
 
@@ -181,6 +185,7 @@ export class PhotosService {
   async staffUploadUrl(ctx: RequestContext, membershipId: string, contentType: string) {
     this.checkType(contentType);
     const userId = await this.assertStaffAllowed(ctx, membershipId);
+    await this.espaco.garantirEspaco(ctx.academyId);
     await this.ensureBucket();
 
     const key = `staff/${userId}/${randomBytes(8).toString("hex")}${extensionFor(contentType)}`;
@@ -245,7 +250,7 @@ export class PhotosService {
   async memberUploadUrl(ctx: RequestContext, memberId: string, contentType: string) {
     if (!can(ctx, "member:write")) throw new ForbiddenException("Sem permissão para gerir sócios");
     await this.assertMember(ctx.academyId, memberId);
-    return this.memberUpload(memberId, contentType);
+    return this.memberUpload(ctx.academyId, memberId, contentType);
   }
 
   async setMemberPhoto(ctx: RequestContext, memberId: string, key: string) {
@@ -261,8 +266,8 @@ export class PhotosService {
   }
 
   /** A app do sócio. `memberId` já é o do próprio — ver `ClubAppService`. */
-  memberUploadUrlProprio(memberId: string, contentType: string) {
-    return this.memberUpload(memberId, contentType);
+  memberUploadUrlProprio(academyId: string, memberId: string, contentType: string) {
+    return this.memberUpload(academyId, memberId, contentType);
   }
 
   setMemberPhotoProprio(academyId: string, memberId: string, key: string) {
@@ -273,7 +278,8 @@ export class PhotosService {
     return this.memberRemove(academyId, memberId);
   }
 
-  private async memberUpload(memberId: string, contentType: string) {
+  private async memberUpload(academyId: string, memberId: string, contentType: string) {
+    await this.espaco.garantirEspaco(academyId);
     this.checkType(contentType);
     await this.ensureBucket();
 

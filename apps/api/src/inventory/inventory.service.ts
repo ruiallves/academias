@@ -5,6 +5,7 @@ import { PrismaService, type ScopedClient } from "../prisma/prisma.service";
 import { StorageService } from "../storage/storage.service";
 import { can, type RequestContext } from "../common/permissions";
 import { currentSeason } from "../common/seasons";
+import { EspacoService } from "../storage/espaco.service";
 import type {
   AssignDto,
   CreateItemDto,
@@ -63,6 +64,7 @@ export class InventoryService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly storage: StorageService,
+    private readonly espaco: EspacoService,
   ) {}
 
   private mustRead(ctx: RequestContext) {
@@ -806,6 +808,8 @@ export class InventoryService {
       throw new BadRequestException("A imagem tem de ser JPEG, PNG ou WebP");
     }
     await this.mustExist(ctx, itemId);
+    // O clube no limite de espaço não carrega mais. Ver `EspacoService`.
+    await this.espaco.garantirEspaco(ctx.academyId);
     await this.storage.ensureBucket({
       name: INVENTORY_BUCKET,
       fileSizeLimit: IMAGE_MAX_BYTES,

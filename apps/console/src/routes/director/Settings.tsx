@@ -7,6 +7,7 @@ import { DeleteDepartmentDialog, DepartmentDialog } from "@/components/Departmen
 import { DeleteAcademyPanel } from "@/components/DeleteAcademyPanel";
 import { IdentityPanel } from "@/components/IdentityPanel";
 import { ContratoPanel } from "@/components/ContratoPanel";
+import { EspacoPanel } from "@/components/EspacoPanel";
 import { LegalPanel } from "@/components/LegalPanel";
 import { SportsPanel } from "@/components/SportsPanel";
 import { ConsultationTypesPanel } from "@/components/ConsultationTypesPanel";
@@ -105,6 +106,9 @@ export default function Settings() {
 
           {/* O que o clube contratou — e o botão de assinar, para quem o representa. */}
           <ContratoPanel />
+
+          {/* O espaço de ficheiros: quanto usa, e o limite (5 GB por omissão). */}
+          <EspacoPanel />
 
           {/* O que está em vigor e o que esta conta (e o clube) já aceitou. Só leitura. */}
           <LegalPanel />

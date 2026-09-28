@@ -1,9 +1,9 @@
 ---
 type: TERMS_OF_SERVICE
-version: 1.2
+version: 1.3
 title: Termos de Serviço
 summary: O contrato entre o clube e a Academias — o que inclui cada plano, pagamento, suspensão, cancelamento e as responsabilidades de cada parte.
-changeNote: Fidelização. Com um período de fidelização em vigor, o clube só pode subir de plano, e se cancelar paga as mensalidades que faltam até ao fim desse período.
+changeNote: Espaço de armazenamento. Cada clube tem 5 GB para ficheiros por omissão, que podem ser aumentados quando for possível, com aumento da mensalidade. No limite, deixam de se aceitar ficheiros novos e nada do que existe é apagado.
 ---
 
 Estes termos regulam a utilização da plataforma Academias por clubes e academias desportivas. Estão escritos para serem lidos por quem dirige um clube, não por juristas. Ao aceitá-los em nome do clube, a pessoa que os aceita declara que está autorizada a representá-lo para este efeito. O Acordo de Tratamento de Dados e a Política de Utilização Aceitável fazem parte deste contrato.
@@ -45,6 +45,8 @@ O plano Consola **não inclui** a app do clube, a cobrança de mensalidades ou q
 - Página pública de adesão a sócio, e gestão de sócios, categorias e quotas.
 - Notificações no telemóvel.
 
+Todos os planos incluem **5 GB de espaço de armazenamento** para os ficheiros do clube (ver a secção 13).
+
 Funcionalidades futuras — nomeadamente a análise de vídeo Academias AI — serão objecto de termos próprios e de contratação à parte, e não estão incluídas em nenhum dos planos acima.
 
 A composição dos planos pode evoluir. Acrescentar funcionalidades não exige aviso; retirar uma funcionalidade de um plano que o clube já paga é comunicado com pelo menos 30 dias de antecedência, e o clube pode cancelar até essa data sem qualquer custo.
@@ -85,7 +87,7 @@ A subscrição é **mensal**. Os preços em vigor à data desta versão são:
 - **Plano Consola**: 14,99 € por mês, IVA incluído.
 - **Plano Connect**: 19,99 € por mês, IVA incluído.
 
-Os preços são por clube e não variam com o número de atletas. Prevalecem, quando existam, as condições da proposta aceite pelo clube, incluindo um **período de fidelização** (o período contratual mínimo que a proposta indique). A mensalidade é devida na data indicada na factura.
+Os preços são por clube e não variam com o número de atletas. Um aumento do espaço de armazenamento acima dos 5 GB incluídos tem um preço próprio, somado à mensalidade (ver a secção 13). Prevalecem, quando existam, as condições da proposta aceite pelo clube, incluindo um **período de fidelização** (o período contratual mínimo que a proposta indique). A mensalidade é devida na data indicada na factura.
 
 O pagamento faz-se por **transferência bancária** ou por **MB WAY**, com os dados indicados na factura ou na área de subscrição. Poderá vir a ser disponibilizado o pagamento por **débito directo**; quando o for, a adesão é opcional e exige autorização expressa do clube.
 
@@ -137,9 +139,15 @@ Além da falta de pagamento, podemos suspender o acesso, no todo ou em parte, em
 
 Qualquer das partes pode resolver o contrato por incumprimento grave da outra, não corrigido no prazo de 15 dias após aviso escrito. A Academias pode ainda resolver o contrato com aviso prévio de 60 dias, caso deixe de prestar o serviço.
 
-## 13. Utilização razoável
+## 13. Utilização razoável e espaço de armazenamento
 
-O serviço destina-se à actividade normal de um clube desportivo. Podemos aplicar limites razoáveis de armazenamento, de volume de envio de notificações e de pedidos automáticos, para proteger o serviço e os restantes clubes. Um clube que exceda de forma persistente a utilização normal é contactado para acordar condições adequadas antes de qualquer limitação.
+O serviço destina-se à actividade normal de um clube desportivo. Podemos aplicar limites razoáveis de volume de envio de notificações e de pedidos automáticos, para proteger o serviço e os restantes clubes. Um clube que exceda de forma persistente a utilização normal é contactado para acordar condições adequadas antes de qualquer limitação.
+
+**Espaço de armazenamento.** Cada clube dispõe, por omissão, de **5 GB** para os ficheiros que carrega na plataforma: fotografias de atletas, staff e sócios, o símbolo do clube, imagens do inventário e dos exercícios, e vídeos. O espaço usado e o limite estão sempre visíveis nas Definições do clube.
+
+O limite pode ser aumentado a pedido do clube, **quando for possível**, mediante **aumento da mensalidade** do clube, nas condições que acordarmos por escrito. Não somos obrigados a aceitar um aumento que não seja técnica ou comercialmente viável.
+
+Quando o clube atinge o limite, a plataforma deixa de aceitar ficheiros novos até o clube libertar espaço, apagando ficheiros de que já não precise, ou até o limite ser aumentado. **Nenhum ficheiro existente é apagado por o limite ter sido atingido**, e o resto do serviço continua a funcionar normalmente.
 
 ## 14. Disponibilidade do serviço
 

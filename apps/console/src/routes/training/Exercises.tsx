@@ -215,10 +215,18 @@ export default function Exercises() {
                   <div className="relative">
                     {e.thumbnail ? (
                       <FieldView diagram={e.thumbnail} className="block w-full" ratio={THUMB_RATIO} />
+                    ) : e.cover ? (
+                      /* Um exercício só de imagens: a primeira, no mesmo formato do campo. */
+                      <img src={e.cover} alt="" loading="lazy" className="block aspect-[4/3] w-full bg-sunken object-cover" />
                     ) : (
                       <div className="flex aspect-[4/3] items-center justify-center bg-[#527a5e] text-[11px] font-medium text-white/70">
                         Sem desenho
                       </div>
+                    )}
+                    {!e.thumbnail && (e.imageCount ?? 0) > 1 && (
+                      <span className="absolute right-2 bottom-2 rounded-full bg-black/50 px-2 py-0.5 text-[10px] font-semibold text-white tabular">
+                        {e.imageCount} imagens
+                      </span>
                     )}
                     {e.frames > 1 && (
                       <span className="absolute right-2 bottom-2 rounded-full bg-black/50 px-2 py-0.5 text-[10px] font-semibold text-white tabular">

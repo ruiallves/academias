@@ -47,3 +47,12 @@ export function monthLabel(ym: string): string {
 export function weekLabel(ymd: string): string {
   return `${Number(ymd.slice(8, 10))}/${Number(ymd.slice(5, 7))}`;
 }
+
+/** "1,2 GB", "340 MB", "12 KB" — o espaço de ficheiros de um clube. */
+export function tamanho(bytes: number): string {
+  const MB = 1024 * 1024;
+  if (bytes >= 1024 * MB) return `${(bytes / (1024 * MB)).toLocaleString("pt-PT", { maximumFractionDigits: 1 })} GB`;
+  if (bytes >= MB) return `${Math.round(bytes / MB)} MB`;
+  if (bytes === 0) return "0 MB";
+  return `${Math.max(1, Math.round(bytes / 1024))} KB`;
+}

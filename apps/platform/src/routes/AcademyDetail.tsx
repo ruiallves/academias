@@ -5,7 +5,8 @@ import { ClubMark, Empty, Metric, MetricRow, Panel, PanelHead, Pill, Progress } 
 import { ActivityChart } from "@/components/Charts";
 import { euros, shortDate, since } from "@/lib/format";
 import { useApi } from "@/lib/query";
-import { type AcademyDetail as Detail } from "@/lib/types";
+import { type AcademyDetail as Detail, type Me } from "@/lib/types";
+import { EspacoDoClubePanel } from "@/components/EspacoDoClubePanel";
 import { ESTADO_LABEL, ESTADO_TOM, estadoComercial } from "@/lib/estado";
 
 
@@ -44,7 +45,7 @@ const ROLE_LABEL: Record<string, string> = {
  * os nomes das equipas, que não são de ninguém. A fronteira é a mesma de
  * `docs/04-plataforma.md`, e não se atravessa por ser cómodo.
  */
-export default function AcademyDetail() {
+export default function AcademyDetail({ me }: { me: Me }) {
   const { id = "" } = useParams();
   const ficha = useApi<Detail>(`/academies/${id}`);
 
@@ -133,6 +134,17 @@ export default function AcademyDetail() {
           <Metric label="Staff" value={String(people.staff)} note="com conta activa" />
           <Metric label="Famílias" value={String(people.guardians)} note="encarregados com conta" />
         </MetricRow>
+
+        {/*
+          O espaço de ficheiros, e o limite. Muda-o quem muda o plano
+          (`OWNER`/`ADMIN`); `SUPPORT` vê. Ver `EspacoDoClubePanel`.
+        */}
+        <EspacoDoClubePanel
+          key={d.id}
+          academyId={d.id}
+          espaco={d.storage}
+          mayEdit={me.role === "OWNER" || me.role === "ADMIN"}
+        />
 
         <div className="grid gap-3 xl:grid-cols-2">
           {/*

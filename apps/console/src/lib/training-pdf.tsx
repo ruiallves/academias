@@ -2,7 +2,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { signalOnSurface } from "@academia/ui/tokens";
 import { FieldView, Pitch, baseView, itemScale, pitchBackground } from "@/components/FieldEditor";
 import { academy, currentSeason } from "@/lib/store";
-import { carregarEmblema } from "@/lib/callup-sheet";
+import { carregarEmblema, type Emblema } from "@/lib/callup-sheet";
 import { longDate, time } from "@/lib/format";
 import { SPORT_PROFILES, kindLabel, sportAreaById } from "@/lib/sports";
 import {
@@ -302,6 +302,22 @@ class Folha {
     this.y += altura + 4;
   }
 
+  /**
+   * Uma imagem já carregada (fotografia do quadro, da montagem), à largura da
+   * página e sem passar de `alturaMax`, com a proporção dela.
+   */
+  imagem(e: Emblema, alturaMax = 150): void {
+    let w = LARGURA;
+    let h = w * (e.altura / e.largura);
+    if (h > alturaMax) {
+      h = alturaMax;
+      w = h * (e.largura / e.altura);
+    }
+    this.garante(h + 4);
+    this.doc.addImage(e.dados, e.formato, PAG.m + (LARGURA - w) / 2, this.y, w, h);
+    this.y += h + 4;
+  }
+
   /** O rodapé com a numeração, escrito no fim sobre todas as páginas. */
   fechar(): void {
     const d = this.doc;
@@ -451,6 +467,17 @@ export async function exportarExercicio(ex: ExercicioImprimivel): Promise<void> 
   }
 
   await frames(folha, ex.diagram, ex.name);
+
+  /*
+   * Um exercício de imagens (sem desenho) imprime as imagens no lugar dos
+   * frames. Uma que não carregue fica de fora; o resto da folha sai na mesma.
+   */
+  if (!asDiagram(ex.diagram) && ex.images?.length) {
+    for (const img of ex.images) {
+      const e = await carregarEmblema(img.url);
+      if (e) folha.imagem(e);
+    }
+  }
 
   /*
    * O texto todo, e por esta ordem.
