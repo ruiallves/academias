@@ -103,6 +103,12 @@ export class SettingsDto {
 }
 
 /** Um orçamento: categoria + época + tecto. Zero apaga a linha. */
+/** Copiar o orçamento de uma época para outra. Ver `copiarOrcamento`. */
+export class CopyBudgetDto {
+  @IsString() @Length(1, 40) fromSeasonId!: string;
+  @IsString() @Length(1, 40) toSeasonId!: string;
+}
+
 export class BudgetDto {
   @IsString() @Length(1, 40) seasonId!: string;
   @IsString() @Length(1, 40) categoryId!: string;

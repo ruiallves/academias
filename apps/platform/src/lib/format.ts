@@ -3,7 +3,12 @@
 const EUR = new Intl.NumberFormat("pt-PT", { style: "currency", currency: "EUR", maximumFractionDigits: 0 });
 const EUR_EXACT = new Intl.NumberFormat("pt-PT", { style: "currency", currency: "EUR" });
 
-export const euros = (cents: number) => EUR.format(cents / 100);
+/**
+ * Sem cêntimos quando o valor é redondo (`20 €`), com eles quando não é
+ * (`12,50 €`, `19,99 €`). Arredondar sempre mostrava 19,99 como 20 €, e o
+ * preço acordado parecia não ter ficado gravado.
+ */
+export const euros = (cents: number) => (Math.round(cents) % 100 === 0 ? EUR : EUR_EXACT).format(cents / 100);
 export const eurosExact = (cents: number) => EUR_EXACT.format(cents / 100);
 
 export function shortDate(iso: string | null): string {

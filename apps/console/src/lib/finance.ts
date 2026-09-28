@@ -208,6 +208,25 @@ export const updateSettings = (body: Record<string, unknown>) => apiPut<{ ok: tr
 export const getBudgets = (seasonId?: string) =>
   apiGet<BudgetRows>("/api/finance/budgets", seasonId ? { seasonId } : undefined);
 
+/** Uma época no histórico do orçamento: o planeado contra o gasto. */
+export type BudgetSeason = {
+  seasonId: string;
+  label: string;
+  startsOn: string;
+  endsOn: string;
+  current: boolean;
+  budgetCents: number;
+  categoriasOrcamentadas: number;
+  spentCents: number;
+};
+
+/** Todas as épocas, da mais recente para trás. */
+export const getBudgetHistory = () => apiGet<BudgetSeason[]>("/api/finance/budgets/historico");
+
+/** Copia o orçamento de uma época para outra, sem escrever por cima do que já lá está. */
+export const copyBudget = (fromSeasonId: string, toSeasonId: string) =>
+  apiPost<{ copiadas: number; mantidas: number }>("/api/finance/budgets/copiar", { fromSeasonId, toSeasonId });
+
 export const setBudget = (body: { seasonId: string; categoryId: string; amountCents: number }) =>
   apiPut<{ ok: true }>("/api/finance/budgets", body);
 

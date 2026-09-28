@@ -2723,10 +2723,11 @@ ficha do clube com atalhos 5/10/20/50 GB e campo livre
 (`PATCH /api/platform/academies/:id/espaco`, `OWNER`/`ADMIN`, auditado como
 `academy.storage`; baixar abaixo do usado não apaga nada).
 
-**Termos de Serviço v1.3** (em `prisma/legal/termos-de-servico.md`): 5 GB nos
+**Termos de Serviço v1.3 e v1.4** (em `prisma/legal/termos-de-servico.md`): 5 GB nos
 planos (secção 2), preço próprio para mais espaço (secção 7), e a regra inteira
-na secção 13 ("Utilização razoável e espaço de armazenamento"). Publica-se com
-`npm run seed:legal`, e publicar liga o gate a todos os responsáveis dos clubes.
+na secção 13 ("Utilização razoável e espaço de armazenamento"). A v1.4 tira o
+"quando for possível": o aumento faz-se sempre, com acréscimo na mensalidade. Publicada a
+28/09/2026 com `npm run seed:legal`: o gate pede-a aos responsáveis dos clubes.
 
 Teste: `scripts/test-espaco.mjs` (9).
 

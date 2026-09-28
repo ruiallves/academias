@@ -1,9 +1,9 @@
 ---
 type: TERMS_OF_SERVICE
-version: 1.3
+version: 1.4
 title: Termos de Serviço
 summary: O contrato entre o clube e a Academias — o que inclui cada plano, pagamento, suspensão, cancelamento e as responsabilidades de cada parte.
-changeNote: Espaço de armazenamento. Cada clube tem 5 GB para ficheiros por omissão, que podem ser aumentados quando for possível, com aumento da mensalidade. No limite, deixam de se aceitar ficheiros novos e nada do que existe é apagado.
+changeNote: Espaço de armazenamento. O limite de 5 GB de cada clube pode ser aumentado a pedido do clube, com um acréscimo na mensalidade.
 ---
 
 Estes termos regulam a utilização da plataforma Academias por clubes e academias desportivas. Estão escritos para serem lidos por quem dirige um clube, não por juristas. Ao aceitá-los em nome do clube, a pessoa que os aceita declara que está autorizada a representá-lo para este efeito. O Acordo de Tratamento de Dados e a Política de Utilização Aceitável fazem parte deste contrato.
@@ -145,7 +145,7 @@ O serviço destina-se à actividade normal de um clube desportivo. Podemos aplic
 
 **Espaço de armazenamento.** Cada clube dispõe, por omissão, de **5 GB** para os ficheiros que carrega na plataforma: fotografias de atletas, staff e sócios, o símbolo do clube, imagens do inventário e dos exercícios, e vídeos. O espaço usado e o limite estão sempre visíveis nas Definições do clube.
 
-O limite pode ser aumentado a pedido do clube, **quando for possível**, mediante **aumento da mensalidade** do clube, nas condições que acordarmos por escrito. Não somos obrigados a aceitar um aumento que não seja técnica ou comercialmente viável.
+O limite pode ser aumentado a pedido do clube, mediante um **acréscimo na mensalidade** do clube, calculado em função do espaço adicional contratado. O novo limite e o novo valor da mensalidade são confirmados por escrito antes de entrarem em vigor.
 
 Quando o clube atinge o limite, a plataforma deixa de aceitar ficheiros novos até o clube libertar espaço, apagando ficheiros de que já não precise, ou até o limite ser aumentado. **Nenhum ficheiro existente é apagado por o limite ter sido atingido**, e o resto do serviço continua a funcionar normalmente.
 

@@ -1,7 +1,7 @@
 import { Body, Controller, Delete, Get, Patch, Post, Put, Query, Param, Req } from "@nestjs/common";
 import type { AuthedRequest } from "../auth/auth.guard";
 import { FinanceService } from "./finance.service";
-import { BudgetDto, CreateTransactionDto, DeleteTransactionDto, SettingsDto, UpdateTransactionDto } from "./finance.dto";
+import { BudgetDto, CopyBudgetDto, CreateTransactionDto, DeleteTransactionDto, SettingsDto, UpdateTransactionDto } from "./finance.dto";
 
 /**
  * Contas. As permissões vivem no serviço, como em todo o produto — o
@@ -71,6 +71,18 @@ export class FinanceController {
   @Get("budgets")
   budgets(@Req() req: AuthedRequest, @Query("seasonId") seasonId?: string) {
     return this.finance.budgets(req.ctx, seasonId);
+  }
+
+  /** O orçamento de todas as épocas, em totais: o planeado contra o gasto. */
+  @Get("budgets/historico")
+  budgetHistory(@Req() req: AuthedRequest) {
+    return this.finance.historicoDoOrcamento(req.ctx);
+  }
+
+  /** Começar uma época com o orçamento de outra — só as categorias ainda sem valor. */
+  @Post("budgets/copiar")
+  copyBudget(@Req() req: AuthedRequest, @Body() dto: CopyBudgetDto) {
+    return this.finance.copiarOrcamento(req.ctx, dto.fromSeasonId, dto.toSeasonId);
   }
 
   @Put("budgets")

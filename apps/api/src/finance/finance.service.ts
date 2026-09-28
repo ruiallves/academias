@@ -694,6 +694,98 @@ export class FinanceService {
     });
   }
 
+  /**
+   * O orçamento de cada época, em totais — o histórico do planeamento.
+   *
+   * A página do Orçamento mostrava só a época em curso, e o que se planeou nas
+   * outras ficava na base sem caminho para lá chegar. É a pergunta que se faz
+   * ao planear a seguinte: "quanto orçámos no ano passado, e quanto gastámos
+   * de facto?". O gasto é o mesmo que a página mostra — despesas concluídas
+   * dentro das datas da época.
+   *
+   * Uma leitura por época para o gasto: um clube tem uma mão-cheia delas, e um
+   * `groupBy` por intervalos de datas diferentes não existe.
+   */
+  async historicoDoOrcamento(ctx: RequestContext) {
+    this.mustRead(ctx);
+
+    return this.prisma.runAs(ctx.academyId, async (db) => {
+      const [epocas, emCurso, porEpoca] = await Promise.all([
+        db.season.findMany({
+          orderBy: { startsOn: "desc" },
+          select: { id: true, label: true, startsOn: true, endsOn: true },
+        }),
+        currentSeason(db),
+        db.financialBudget.groupBy({ by: ["seasonId"], _sum: { amountCents: true }, _count: { _all: true } }),
+      ]);
+      const orcado = new Map(porEpoca.map((b) => [b.seasonId, { cents: b._sum.amountCents ?? 0, linhas: b._count._all }]));
+
+      const gastos = await Promise.all(
+        epocas.map((e) =>
+          db.financialTransaction.aggregate({
+            where: { kind: "EXPENSE", status: "COMPLETED", occurredAt: { gte: e.startsOn, lte: e.endsOn } },
+            _sum: { amountCents: true },
+          }),
+        ),
+      );
+
+      return epocas.map((e, i) => ({
+        seasonId: e.id,
+        label: e.label,
+        startsOn: e.startsOn.toISOString().slice(0, 10),
+        endsOn: e.endsOn.toISOString().slice(0, 10),
+        current: e.id === emCurso?.id,
+        budgetCents: orcado.get(e.id)?.cents ?? 0,
+        categoriasOrcamentadas: orcado.get(e.id)?.linhas ?? 0,
+        spentCents: gastos[i]._sum.amountCents ?? 0,
+      }));
+    });
+  }
+
+  /**
+   * Começar o orçamento de uma época a partir de outra.
+   *
+   * Planear a época seguinte começa quase sempre pelo que se orçou na anterior,
+   * e copiar vinte categorias à mão era o trabalho que fazia o orçamento ficar
+   * por fazer. Copiam-se só as categorias que a época de destino **ainda não
+   * tem**: um valor já escrito é uma decisão, e não se escreve por cima dela.
+   * Categorias arquivadas ficam de fora — ninguém as vê na página.
+   */
+  async copiarOrcamento(ctx: RequestContext, fromSeasonId: string, toSeasonId: string) {
+    this.mustWrite(ctx);
+    if (fromSeasonId === toSeasonId) throw new BadRequestException("Escolhe outra época para copiar");
+
+    return this.prisma.runAs(ctx.academyId, async (db) => {
+      const [de, para] = await Promise.all([
+        db.season.findFirst({ where: { id: fromSeasonId }, select: { id: true } }),
+        db.season.findFirst({ where: { id: toSeasonId }, select: { id: true } }),
+      ]);
+      if (!de || !para) throw new NotFoundException("Época não encontrada");
+
+      const [origem, destino] = await Promise.all([
+        db.financialBudget.findMany({
+          where: { seasonId: fromSeasonId, category: { archivedAt: null } },
+          select: { categoryId: true, amountCents: true },
+        }),
+        db.financialBudget.findMany({ where: { seasonId: toSeasonId }, select: { categoryId: true } }),
+      ]);
+      const jaTem = new Set(destino.map((d) => d.categoryId));
+      const novas = origem.filter((o) => !jaTem.has(o.categoryId));
+      if (novas.length) {
+        await db.financialBudget.createMany({
+          data: novas.map((o) => ({
+            academyId: ctx.academyId,
+            seasonId: toSeasonId,
+            categoryId: o.categoryId,
+            amountCents: o.amountCents,
+          })),
+          skipDuplicates: true,
+        });
+      }
+      return { copiadas: novas.length, mantidas: origem.length - novas.length };
+    });
+  }
+
   /** Fixar o tecto de uma categoria. Zero apaga a linha — sem tecto não há linha. */
   async setBudget(ctx: RequestContext, dto: BudgetDto) {
     this.mustWrite(ctx);
