@@ -5,6 +5,19 @@ import { cx } from "./primitives";
 import { euros } from "@/lib/format";
 import type { Academy, Me, Plan } from "@/lib/types";
 
+/**
+ * O desconto de quem paga o ano à cabeça.
+ *
+ * A regra é do servidor (`DESCONTO_ANUAL_PCT`, em
+ * `api/src/subscription/subscription-orders.service.ts`), e é lá que se decide o
+ * que vai no contrato. Isto é a mesma conta, feita aqui para se ver o número
+ * antes de emitir: se um mudar, o outro tem de mudar também.
+ */
+const DESCONTO_ANUAL_PCT = 10;
+
+/** O ano com desconto, arredondado ao cêntimo como o servidor o arredonda. */
+const anualComDesconto = (mensalCents: number) => Math.round((mensalCents * 12 * (100 - DESCONTO_ANUAL_PCT)) / 100);
+
 /** Os estados de uma subscrição, ditos como quem os lê. */
 const ESTADOS: { value: SubStatus; label: string; nota: string }[] = [
   { value: "TRIALING", label: "Em avaliação", nota: "não conta para o MRR" },
@@ -326,7 +339,7 @@ export function AcademyActions({
                       <div className="mt-3 flex flex-wrap gap-1.5">
                         {[
                           { v: false, label: "Mensal", hint: "preço de tabela" },
-                          { v: true, label: "Anual", hint: "menos 10%" },
+                          { v: true, label: "Anual", hint: `menos ${DESCONTO_ANUAL_PCT}%` },
                         ].map((o) => (
                           <button
                             key={o.label}
@@ -386,10 +399,25 @@ export function AcademyActions({
                         <p className="mt-2 text-meta text-ink-2">
                           O clube paga{" "}
                           <strong className="font-semibold text-ink tabular">
-                            {euros(anual ? Math.round(precoCents * 12 * 0.9) : precoCents)}
+                            {euros(anual ? anualComDesconto(precoCents) : precoCents)}
                           </strong>{" "}
                           {anual ? "por ano" : "por mês"}
-                          {anual && <span className="text-ink-3"> ({euros(precoCents)}/mês)</span>}
+                          {/*
+                            A mensalidade que o desconto dá, e não a de tabela.
+
+                            Dizia "(19,99 €/mês)" ao lado dos 215,89 € por ano — o
+                            ano com desconto e o mês sem ele, na mesma frase. Quem lia
+                            ficava sem saber qual dos dois o clube paga. Agora diz o
+                            mês que sai do ano, e a tabela fica ao lado para se ver de
+                            onde vem: é o que o clube lê no contrato e no site.
+                          */}
+                          {anual && (
+                            <span className="text-ink-3">
+                              {" "}
+                              ({euros(Math.round(anualComDesconto(precoCents) / 12))}/mês em vez de {euros(precoCents)},
+                              menos {DESCONTO_ANUAL_PCT}%)
+                            </span>
+                          )}
                         </p>
                       )}
 

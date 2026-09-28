@@ -447,6 +447,7 @@ export class PlatformFinanceService {
         select: {
           academyId: true,
           signedAt: true,
+          billingAnchorAt: true,
           startsOn: true,
           billingPeriod: true,
           amountCents: true,
@@ -486,7 +487,8 @@ export class PlatformFinanceService {
 
       janelas.forEach((j, i) => {
         const devidos = avisosDevidos({
-          assinatura: diaDoClube(ordem.signedAt!),
+          // O mesmo dia que os avisos usam — ver `subscription-notices.service`.
+          assinatura: diaDoClube(ordem.billingAnchorAt ?? ordem.signedAt!),
           desde: ordem.startsOn,
           hoje: j.fim,
           periodo: ordem.billingPeriod,

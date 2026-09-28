@@ -8,6 +8,7 @@ import { initialRoles, isPresidente } from "../roles/roles.service";
 import { shortNameOf } from "../common/short-name";
 import { MailClient } from "../mail/mail.client";
 import { SubscriptionOrdersService } from "../subscription/subscription-orders.service";
+import { nomeDoFicheiro } from "../subscription/declaracao";
 import { academyOwnerInviteEmail } from "../mail/mail.templates";
 import type { StaffDepartment, SubscriptionStatus } from "@prisma/client";
 import type { PlatformAdminContext } from "./platform.guard";
@@ -1192,6 +1193,26 @@ export class PlatformService {
     await this.audit(admin, "academy.storage", "academy", id, { slug: academy.slug, deMb: academy.storageLimitMb, paraMb: limitMb }, ip);
 
     return this.espaco.doClube(id);
+  }
+
+  /**
+   * A declaração de aceitação de uma ordem, para descarregar no painel.
+   *
+   * Pelo cliente da plataforma e não pelo do clube: quem lê aqui é a
+   * Academias, que é a outra parte do contrato. Em base64 dentro de JSON pela
+   * mesma razão da consola — o cliente HTTP do painel leva o token, um link não.
+   */
+  async declaracaoDaOrdem(academyId: string, orderId: string) {
+    const dec = await this.prisma.subscriptionDeclaration.findFirst({
+      where: { academyId, orderId },
+      select: { pdf: true, sha256: true, order: { select: { signedAt: true } }, academy: { select: { slug: true } } },
+    });
+    if (!dec) throw new NotFoundException("Esta ordem não tem declaração.");
+    return {
+      ficheiro: nomeDoFicheiro(dec.academy.slug, dec.order.signedAt ?? new Date()),
+      sha256: dec.sha256,
+      base64: Buffer.from(dec.pdf).toString("base64"),
+    };
   }
 
   async setAcademyActive(admin: PlatformAdminContext, id: string, active: boolean, ip?: string) {

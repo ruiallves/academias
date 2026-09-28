@@ -200,6 +200,43 @@ export type AcademyDetail = {
     collectedCents: number;
     periods: number;
   };
+  /** As condições de subscrição: a por assinar, e a última assinada. */
+  orders: { pendente: OrdemDoClube | null; assinada: OrdemDoClube | null };
+};
+
+/**
+ * Uma ordem de condições de subscrição, como a plataforma a vê.
+ *
+ * Ao contrário da consola, aqui chegam os dados de quem assinou (NIF, data de
+ * nascimento, IP): a Academias é a outra parte do contrato.
+ */
+export type OrdemDoClube = {
+  id: string;
+  planName: string;
+  billingPeriod: "MONTHLY" | "ANNUAL";
+  amountCents: number;
+  listMonthlyCents: number;
+  discountPct: number;
+  startsOn: string;
+  minimumMonths: number;
+  termsVersion: string | null;
+  status: "PENDING" | "SIGNED" | "SUPERSEDED";
+  sentToName: string | null;
+  sentToEmail: string | null;
+  sentAt: string | null;
+  signedAt: string | null;
+  signerName: string | null;
+  signerEmail: string | null;
+  signerTitle: string | null;
+  signerTaxId: string | null;
+  signerBirthdate: string | null;
+  signerIp: string | null;
+  institutionName: string | null;
+  institutionTaxId: string | null;
+  /** Preenchido numa ordem reemitida só para se voltar a assinar. */
+  billingAnchorAt: string | null;
+  temDeclaracao: boolean;
+  declaracaoSha256?: string | null;
 };
 
 export type AuditEntry = {

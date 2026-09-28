@@ -7,6 +7,7 @@ import { euros, shortDate, since } from "@/lib/format";
 import { useApi } from "@/lib/query";
 import { type AcademyDetail as Detail, type Me } from "@/lib/types";
 import { EspacoDoClubePanel } from "@/components/EspacoDoClubePanel";
+import { CondicoesDoClubePanel } from "@/components/CondicoesDoClubePanel";
 import { ESTADO_LABEL, ESTADO_TOM, estadoComercial } from "@/lib/estado";
 
 
@@ -254,6 +255,9 @@ export default function AcademyDetail({ me }: { me: Me }) {
                 </ul>
               )}
             </Panel>
+
+            {/* O contrato com a Academias: o que está por assinar e o que foi assinado. */}
+            <CondicoesDoClubePanel academyId={d.id} orders={d.orders} />
 
             {/*
               A cobrança **do clube às famílias** — não a nossa.

@@ -4,11 +4,14 @@ import { Spinner } from "./Busy";
 import { money } from "@/lib/format";
 import { dataPT } from "@/lib/legal";
 import {
-  signSubscriptionOrder,
+  declaracaoDaOrdem,
+  guardarFicheiro,
   subscriptionOrders,
   type SubscriptionNotice,
   type SubscriptionOrders,
 } from "@/lib/subscricao";
+import { AssinarCondicoesDialog } from "./AssinarCondicoesDialog";
+import { Download } from "@/lib/icons";
 
 /**
  * As condições comerciais do clube, nas Definições.
@@ -42,15 +45,18 @@ export function ContratoPanel() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  async function assinar() {
+  const [aAssinar, setAAssinar] = useState(false);
+
+  /* A declaração em PDF: vem em base64 pelo cliente autenticado, e guarda-se. */
+  async function descarregar(id: string) {
     if (busy) return;
     setBusy(true);
     setErro(null);
     try {
-      await signSubscriptionOrder();
-      await carregar();
+      const r = await declaracaoDaOrdem(id);
+      guardarFicheiro(r.ficheiro, r.base64);
     } catch (e) {
-      setErro(e instanceof Error ? e.message : "Não foi possível assinar.");
+      setErro(e instanceof Error ? e.message : "Não foi possível descarregar a declaração.");
     } finally {
       setBusy(false);
     }
@@ -82,10 +88,20 @@ export function ContratoPanel() {
                 <>
                   <span className="tabular">{money(ordem.amountCents)}</span>{" "}
                   {ordem.billingPeriod === "ANNUAL" ? "por ano" : "por mês"}
+                  {/*
+                    No anual, a mensalidade que o clube fica a pagar, e a de tabela
+                    ao lado para se ver o desconto.
+
+                    Dizia só "(19,99 €/mês de tabela, menos 10%)": o clube via o
+                    preço que não paga e tinha de fazer a conta para saber o que
+                    paga. A mensalidade é o ano a dividir por doze — o mesmo número
+                    que o site anuncia no plano anual.
+                  */}
                   {ordem.discountPct > 0 && (
                     <span className="text-ink-3">
                       {" "}
-                      ({money(ordem.listMonthlyCents)}/mês de tabela, menos {ordem.discountPct}%)
+                      ({money(ordem.billingPeriod === "ANNUAL" ? Math.round(ordem.amountCents / 12) : ordem.amountCents)}
+                      /mês em vez de {money(ordem.listMonthlyCents)}, menos {ordem.discountPct}%)
                     </span>
                   )}
                 </>
@@ -96,23 +112,46 @@ export function ContratoPanel() {
             <Linha rotulo="Período contratual mínimo" valor={periodoMinimo(ordem.minimumMonths)} />
             {ordem.renewalNote && <Linha rotulo="Renovação" valor={ordem.renewalNote} />}
             {ordem.notes && <Linha rotulo="Observações" valor={ordem.notes} />}
+            {!porAssinar && ordem.institutionName && (
+              <Linha
+                rotulo="Instituição"
+                valor={`${ordem.institutionName}${ordem.institutionTaxId ? ` · NIF ${ordem.institutionTaxId}` : ""}`}
+              />
+            )}
           </dl>
 
           <div className="border-t border-line px-5 py-3">
             {ordem.signedAt && !porAssinar ? (
-              <p className="text-meta leading-relaxed text-ink-3">
-                Assinadas em {dataPT(ordem.signedAt)}
-                {ordem.signerName ? ` por ${ordem.signerName}` : ""}
-                {ordem.signerTitle ? ` (${ordem.signerTitle})` : ""}.
-                {ordem.termsVersion ? ` Aplicam-se os Termos de Serviço v${ordem.termsVersion}.` : ""}
-              </p>
+              <div className="flex flex-wrap items-center gap-3">
+                <p className="min-w-0 flex-1 text-meta leading-relaxed text-ink-3">
+                  Assinadas em {dataPT(ordem.signedAt)}
+                  {ordem.signerName ? ` por ${ordem.signerName}` : ""}
+                  {ordem.signerTitle ? ` (${ordem.signerTitle})` : ""}.
+                  {ordem.termsVersion ? ` Aplicam-se os Termos de Serviço v${ordem.termsVersion}.` : ""}
+                </p>
+                {/* Só a quem pode assinar: a declaração leva o NIF e a data de
+                    nascimento de quem assinou. */}
+                {ordem.temDeclaracao && dados?.podeAssinar && (
+                  <button type="button" className="ctl-outline shrink-0" disabled={busy} onClick={() => void descarregar(ordem.id)}>
+                    <Download className="size-3.5" strokeWidth={1.75} />
+                    Declaração (PDF)
+                  </button>
+                )}
+              </div>
             ) : dados?.podeAssinar ? (
               <div className="flex flex-wrap items-center gap-3">
-                <button type="button" className="ctl-primary" disabled={busy} onClick={() => void assinar()}>
-                  {busy ? "A assinar…" : "Assinar as condições"}
+                <button type="button" className="ctl-primary" disabled={busy} onClick={() => setAAssinar(true)}>
+                  Assinar as condições
                 </button>
                 <p className="min-w-0 flex-1 text-meta leading-relaxed text-ink-3">
-                  Ficam registadas com o teu nome, a data e o endereço de onde assinaste.
+                  {/*
+                    Numa ordem reemitida só para voltar a assinar, diz-se porquê:
+                    as condições são as mesmas, e um clube que já tinha assinado
+                    pergunta com razão o que é que mudou.
+                  */}
+                  {ordem.billingAnchorAt
+                    ? "As condições são as mesmas que já tinham assinado. Voltam a ser assinadas com a identificação da instituição e de quem a representa, e passam a ter uma declaração em PDF."
+                    : "Pede-se a identificação da instituição e de quem a representa, e fica uma declaração em PDF."}
                   {ordem.termsVersion ? ` Aplicam-se os Termos de Serviço v${ordem.termsVersion}.` : ""}
                 </p>
               </div>
@@ -132,6 +171,18 @@ export function ContratoPanel() {
       )}
 
       <Avisos avisos={dados?.avisos ?? []} />
+
+      {aAssinar && dados?.pendente && (
+        <AssinarCondicoesDialog
+          ordem={dados.pendente}
+          sugestao={dados.sugestao}
+          onClose={() => setAAssinar(false)}
+          onSigned={() => {
+            setAAssinar(false);
+            void carregar();
+          }}
+        />
+      )}
     </Panel>
   );
 }

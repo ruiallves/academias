@@ -159,6 +159,7 @@ export class SubscriptionNoticesService implements OnModuleInit, OnModuleDestroy
           amountCents: true,
           startsOn: true,
           signedAt: true,
+          billingAnchorAt: true,
         },
       });
       if (!ordem?.signedAt) return null;
@@ -192,7 +193,10 @@ export class SubscriptionNoticesService implements OnModuleInit, OnModuleDestroy
 
     const devidos = avisosDevidos({
       // O dia em que o clube assinou, pelo calendário dele — ver `diaDoClube`.
-      assinatura: diaDoClube(ordem.signedAt!),
+      // Numa ordem reemitida só para voltar a assinar, o dia é o da assinatura
+      // original (`billingAnchorAt`): reassinar por papelada não muda o dia em
+      // que o clube paga, nem cria um aviso a meio do mês.
+      assinatura: diaDoClube(ordem.billingAnchorAt ?? ordem.signedAt!),
       desde: ordem.startsOn,
       hoje,
       periodo: ordem.billingPeriod,

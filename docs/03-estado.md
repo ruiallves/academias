@@ -191,6 +191,26 @@ pessoa — sempre o mesmo comportamento, um sítio só a manter.
 
 ---
 
+## Assinar as condições da subscrição com declaração
+
+Nas Definições, "Assinar as condições" abre um diálogo (`AssinarCondicoesDialog`)
+que pede o nome e o NIF da instituição e, de quem a representa, o nome completo,
+o NIF e a data de nascimento, mais a caixa da declaração. O servidor valida
+(`subscription/declaracao.ts`: dígito de controlo dos NIF, maioridade, NIF do
+representante diferente do da instituição), grava na `SubscriptionOrder` e gera
+um PDF guardado em `SubscriptionDeclaration` (só `SELECT, INSERT` para
+`academia_app`, com SHA-256). Descarrega-se na consola ("Declaração (PDF)",
+`legal:club`) e na plataforma, no painel "Condições da subscrição" da ficha do
+clube. A consola nunca recebe o NIF nem a data de nascimento do representante.
+
+Clubes que assinaram antes disto voltam a assinar: a migração
+`20260928140100_reassinar_condicoes` reemite como pendente a última ordem
+assinada sem declaração, com `billingAnchorAt` = a assinatura original, para os
+avisos e a previsão não mudarem de dia. **Aplica-se só no deploy, com o código
+novo já no ar.** Teste: `npm run test:declaracao` (38).
+
+---
+
 ## A família avisa que não vai ao treino
 
 O jogo já se podia recusar — a convocatória tem resposta com motivo, autor e
@@ -4162,3 +4182,23 @@ pelo WhatsApp, e uma consulta às 18:00 não se via ao lado do treino das 18:30.
   equipas e os de toda a academia). Entram os da equipa do educando e os da
   academia, com o tipo do clube no cartão. Tocar abre um ecrã simples,
   `/evento/clube/:id` (`EventoDoClube`): quando, onde, balneário e para quem.
+
+## Contas: o orçamento de cada época, e os movimentos por época
+
+**Orçamento.** A página mostrava só a época em curso, e o planeado nas
+anteriores ficava na base sem caminho para lá. Agora:
+
+- escolhe-se a época no topo (fica no endereço, `?epoca=<id>`);
+- o **Histórico**, no fundo, põe todas as épocas lado a lado: orçado, gasto e a
+  diferença (a vermelho quando se gastou acima do orçado), com o número de
+  categorias orçamentadas. Tocar numa linha abre essa época.
+  `GET /api/finance/budgets/historico` — o gasto é o mesmo critério da página,
+  despesas concluídas dentro das datas da época;
+- uma época ainda sem orçamento oferece **copiar** o da mais próxima que tenha
+  (quase sempre a anterior). `POST /api/finance/budgets/copiar` copia só as
+  categorias que a época de destino ainda não tem, e ignora as arquivadas: um
+  valor já escrito é uma decisão, e não se escreve por cima.
+
+**Movimentos.** Um filtro "Época" ao lado dos outros (`?epoca=2026/27`), pelas
+datas da época: os lançados pela data do movimento, as mensalidades pela data do
+pagamento. A exportação leva a época no nome do ficheiro.

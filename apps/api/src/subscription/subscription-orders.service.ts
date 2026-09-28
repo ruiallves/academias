@@ -7,15 +7,37 @@ import { subscriptionOrderEmail } from "../mail/mail.templates";
 import { can, type RequestContext } from "../common/permissions";
 import { responsavelDoClube } from "./responsavel";
 import { renovacaoPorOmissao, semFidelizacao } from "./condicoes";
+import { gerarDeclaracaoPdf, nomeDoFicheiro, validarDeclaracao, type DadosDaDeclaracao } from "./declaracao";
+
+/**
+ * A ordem sem os dados pessoais de quem assinou.
+ *
+ * O painel das condições é lido por quem entra nas Definições, e a ordem guarda
+ * o NIF e a data de nascimento do representante. Esses ficam na declaração em
+ * PDF, que só descarrega quem pode assinar; o painel não precisa deles para
+ * dizer o que foi assinado e por quem. O IP e o navegador vão pelo mesmo
+ * caminho.
+ */
+function semDadosPessoais<T extends { signerTaxId?: string | null; signerBirthdate?: Date | null; signerIp?: string | null; signerAgent?: string | null }>(
+  ordem: T,
+): Omit<T, "signerTaxId" | "signerBirthdate" | "signerIp" | "signerAgent"> {
+  const { signerTaxId: _nif, signerBirthdate: _nasc, signerIp: _ip, signerAgent: _ua, ...resto } = ordem;
+  return resto;
+}
 
 /**
  * O desconto de quem paga o ano à cabeça, em pontos percentuais.
  *
- * **Está escrito em dois sítios**, e é preciso saber: aqui, e em
+ * **Está escrito em três sítios**, e é preciso saber: aqui, em
  * `apps/site/src/lib/content.ts` (`ANNUAL_DISCOUNT`), que é o que o site
- * anuncia. São aplicações separadas e não partilham código de domínio; mudar o
- * desconto obriga a mudar os dois, ou o site promete uma coisa e o contrato diz
- * outra.
+ * anuncia, e em `apps/platform/src/components/AcademyActions.tsx`, que mostra o
+ * número antes de emitir. São aplicações separadas e não partilham código de
+ * domínio; mudar o desconto obriga a mudar os três, ou o site promete uma coisa,
+ * o painel mostra outra e o contrato diz uma terceira.
+ *
+ * A mensalidade de um contrato anual é sempre o ano a dividir por doze
+ * (215,89 € → 17,99 €/mês). É esse o número que o clube lê no contrato, no
+ * email e no site.
  */
 export const DESCONTO_ANUAL_PCT = 10;
 
@@ -224,7 +246,9 @@ export class SubscriptionOrdersService {
    * que decide o que se vê, ao lado da que decide o que se aceita.
    */
   async paraAConsola(ctx: RequestContext) {
-    const { pendente, assinada } = await this.doClube(ctx.academyId);
+    const clube = await this.doClube(ctx.academyId);
+    const pendente = clube.pendente ? semDadosPessoais(clube.pendente) : null;
+    const assinada = clube.assinada ? semDadosPessoais(clube.assinada) : null;
     /*
      * Os avisos de pagamento vêm com as condições, e não num segundo pedido: são
      * a mesma pergunta ("o que é que eu tenho com a Academias?") e o painel é um
@@ -249,10 +273,24 @@ export class SubscriptionOrdersService {
         },
       }),
     );
-    return { pendente, assinada, avisos, podeAssinar: can(ctx, "legal:club") };
+    const podeAssinar = can(ctx, "legal:club");
+    return {
+      pendente,
+      assinada,
+      avisos,
+      podeAssinar,
+      // O que o formulário da assinatura traz já escrito — só a quem o vai abrir.
+      sugestao: podeAssinar && pendente ? await this.sugestaoParaAssinar(ctx) : null,
+    };
   }
 
-  /** A ordem viva do clube, e a última assinada. É o que os dois ecrãs mostram. */
+  /**
+   * A ordem viva do clube, e a última assinada. É o que os dois ecrãs mostram.
+   *
+   * `temDeclaracao` diz se a assinada tem o PDF — as assinadas antes da
+   * declaração existir não têm, e o botão de descarregar não pode prometer um
+   * ficheiro que não há.
+   */
   async doClube(academyId: string) {
     return this.prisma.runAs(academyId, async (db) => {
       const [pendente, assinada] = await Promise.all([
@@ -263,9 +301,19 @@ export class SubscriptionOrdersService {
         db.subscriptionOrder.findFirst({
           where: { academyId, status: "SIGNED" },
           orderBy: { signedAt: "desc" },
+          include: { declaration: { select: { sha256: true, createdAt: true } } },
         }),
       ]);
-      return { pendente, assinada };
+      return {
+        pendente: pendente ? { ...pendente, temDeclaracao: false } : null,
+        assinada: assinada
+          ? (({ declaration, ...resto }) => ({
+              ...resto,
+              temDeclaracao: Boolean(declaration),
+              declaracaoSha256: declaration?.sha256 ?? null,
+            }))(assinada)
+          : null,
+      };
     });
   }
 
@@ -276,10 +324,15 @@ export class SubscriptionOrdersService {
    * quem assina hoje pode já não estar no clube quando alguém for ler isto, e um
    * contrato que vai buscar o cargo à ficha actual muda de assinatura sozinho.
    */
-  async assinar(ctx: RequestContext, meta: { ip?: string; userAgent?: string }) {
+  async assinar(ctx: RequestContext, pedido: DadosDaDeclaracao, meta: { ip?: string; userAgent?: string }) {
     if (!can(ctx, "legal:club")) {
       throw new ForbiddenException("Só quem representa o clube pode assinar as condições.");
     }
+
+    const agora = new Date();
+    const validado = validarDeclaracao(pedido, agora);
+    if (!validado.ok) throw new BadRequestException(validado.erro);
+    const d = validado.dados;
 
     return this.prisma.runAs(ctx.academyId, async (db) => {
       const ordem = await db.subscriptionOrder.findFirst({
@@ -288,28 +341,134 @@ export class SubscriptionOrdersService {
       });
       if (!ordem) throw new NotFoundException("Não há condições por assinar.");
 
-      const quem = await db.membership.findFirst({
-        where: { id: ctx.membershipId },
-        select: {
-          title: true,
-          customRole: { select: { name: true } },
-          user: { select: { id: true, name: true, email: true } },
-        },
+      const [quem, termos] = await Promise.all([
+        db.membership.findFirst({
+          where: { id: ctx.membershipId },
+          select: {
+            title: true,
+            customRole: { select: { name: true } },
+            user: { select: { id: true, name: true, email: true } },
+          },
+        }),
+        ordem.termsDocumentId
+          ? db.legalDocument.findFirst({ where: { id: ordem.termsDocumentId }, select: { contentHash: true } })
+          : null,
+      ]);
+
+      const signerTitle = quem?.customRole?.name ?? quem?.title ?? null;
+
+      /*
+       * O PDF nasce aqui, com a assinatura, e fica guardado tal como saiu.
+       *
+       * Gerá-lo a cada download era ter uma declaração que podia mudar de texto
+       * com o código — e uma declaração assinada não muda. Vai na mesma
+       * transacção da assinatura: não há ordem assinada sem declaração, nem
+       * declaração sem ordem assinada.
+       */
+      const { pdf, sha256 } = gerarDeclaracaoPdf({
+        institutionName: d.institutionName,
+        institutionTaxId: d.institutionTaxId,
+        signerName: d.signerName,
+        signerTaxId: d.signerTaxId,
+        signerBirthdate: d.nascimento,
+        signerEmail: quem?.user.email ?? null,
+        signerTitle,
+        signedAt: agora,
+        signerIp: meta.ip ?? null,
+        orderId: ordem.id,
+        planName: ordem.planName,
+        annual: ordem.billingPeriod === "ANNUAL",
+        amountCents: ordem.amountCents,
+        listMonthlyCents: ordem.listMonthlyCents,
+        discountPct: ordem.discountPct,
+        startsOn: ordem.startsOn,
+        minimumMonths: ordem.minimumMonths,
+        renewalNote: ordem.renewalNote,
+        notes: ordem.notes,
+        termsVersion: ordem.termsVersion,
+        termsHash: termos?.contentHash ?? null,
       });
 
-      return db.subscriptionOrder.update({
+      const assinada = await db.subscriptionOrder.update({
         where: { id: ordem.id },
         data: {
           status: "SIGNED",
-          signedAt: new Date(),
+          signedAt: agora,
           signedByUserId: quem?.user.id ?? null,
-          signerName: quem?.user.name ?? null,
+          // O nome escrito pelo representante, e não o da conta: é o que consta
+          // da declaração, e quem assina pode usar a conta com um nome curto.
+          signerName: d.signerName,
           signerEmail: quem?.user.email ?? null,
-          signerTitle: quem?.customRole?.name ?? quem?.title ?? null,
+          signerTitle,
           signerIp: meta.ip ?? null,
           signerAgent: meta.userAgent?.slice(0, 300) ?? null,
+          institutionName: d.institutionName,
+          institutionTaxId: d.institutionTaxId,
+          signerTaxId: d.signerTaxId,
+          signerBirthdate: d.nascimento,
         },
       });
+
+      await db.subscriptionDeclaration.create({
+        data: { academyId: ctx.academyId, orderId: ordem.id, pdf, sha256 },
+      });
+
+      return semDadosPessoais({ ...assinada, temDeclaracao: true });
+    });
+  }
+
+  /**
+   * A declaração em PDF, para descarregar na consola.
+   *
+   * Só a quem pode assinar (`legal:club`): leva o NIF e a data de nascimento de
+   * quem assinou, e isso não é para toda a gente que entra nas Definições.
+   *
+   * Vai em base64 dentro de JSON, e não como ficheiro, para passar pelo mesmo
+   * cliente HTTP autenticado da consola — um `<a href>` não leva o token.
+   */
+  async declaracaoParaAConsola(ctx: RequestContext, orderId: string) {
+    if (!can(ctx, "legal:club")) {
+      throw new ForbiddenException("Só quem representa o clube pode descarregar a declaração.");
+    }
+    return this.prisma.runAs(ctx.academyId, async (db) => {
+      const dec = await db.subscriptionDeclaration.findFirst({
+        where: { orderId, academyId: ctx.academyId },
+        select: { pdf: true, sha256: true, order: { select: { signedAt: true } }, academy: { select: { slug: true } } },
+      });
+      if (!dec) throw new NotFoundException("Esta ordem não tem declaração.");
+      return {
+        ficheiro: nomeDoFicheiro(dec.academy.slug, dec.order.signedAt ?? new Date()),
+        sha256: dec.sha256,
+        base64: Buffer.from(dec.pdf).toString("base64"),
+      };
+    });
+  }
+
+  /**
+   * O que se sugere no formulário da assinatura.
+   *
+   * A instituição da última assinatura com declaração, se houver — um clube não
+   * muda de NIF de um ano para o outro, e reescrevê-lo a cada renovação é onde
+   * nascem os enganos. Sem isso, o nome do clube tal como está na plataforma. Os
+   * dados pessoais do representante **não** se sugerem: quem assina pode ser
+   * outra pessoa, e ver o NIF de outro pré-preenchido era mostrar-lho.
+   */
+  private async sugestaoParaAssinar(ctx: RequestContext) {
+    return this.prisma.runAs(ctx.academyId, async (db) => {
+      const [ultima, academy, eu] = await Promise.all([
+        db.subscriptionOrder.findFirst({
+          where: { academyId: ctx.academyId, status: "SIGNED", NOT: { institutionTaxId: null } },
+          orderBy: { signedAt: "desc" },
+          select: { institutionName: true, institutionTaxId: true },
+        }),
+        db.academy.findFirst({ where: { id: ctx.academyId }, select: { name: true } }),
+        db.membership.findFirst({ where: { id: ctx.membershipId }, select: { user: { select: { name: true } } } }),
+      ]);
+      return {
+        institutionName: ultima?.institutionName ?? academy?.name ?? "",
+        institutionTaxId: ultima?.institutionTaxId ?? "",
+        signerName: eu?.user.name ?? "",
+      };
     });
   }
 

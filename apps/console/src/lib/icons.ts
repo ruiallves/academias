@@ -21,6 +21,8 @@ export {
   Megaphone,
   Gauge,
   FileText,
+  /* Assinar as condições da subscrição — a caneta é o gesto de assinar. */
+  PenLine,
   Settings,
   Search,
   /* Scouting: o binóculo é a área, o olho é a observação. */

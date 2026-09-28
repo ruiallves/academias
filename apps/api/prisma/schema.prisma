@@ -233,6 +233,8 @@ model Academy {
 
   /// As ordens de adesão deste clube — ver `SubscriptionOrder`.
   subscriptionOrders SubscriptionOrder[]
+  /// As declarações de aceitação assinadas — ver `SubscriptionDeclaration`.
+  subscriptionDeclarations SubscriptionDeclaration[]
 
   /// Os avisos de pagamento da subscrição — ver `SubscriptionNotice`.
   subscriptionNotices SubscriptionNotice[]
@@ -4290,14 +4292,48 @@ model SubscriptionOrder {
   signerIp       String?
   signerAgent    String?
 
+  /// A instituição que se vincula e quem a representa, escritos por quem assina.
+  /// Ver a migração `20260928140000_declaracao_de_aceitacao`.
+  institutionName  String?
+  institutionTaxId String?
+  signerTaxId      String?
+  signerBirthdate  DateTime? @db.Date
+
+  /// O dia de onde se contam os avisos de pagamento. Nulo = o dia da assinatura.
+  /// Só se preenche numa ordem reemitida para se voltar a assinar com as mesmas
+  /// condições: reassinar por papelada não muda o dia em que o clube paga.
+  billingAnchorAt DateTime?
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
   /// Os avisos de pagamento emitidos ao abrigo desta ordem.
   notices SubscriptionNotice[]
 
+  /// A declaração de aceitação em PDF, gerada no momento da assinatura.
+  declaration SubscriptionDeclaration?
+
   @@index([academyId, status])
   @@index([academyId, createdAt])
+}
+
+/// A declaração de aceitação das condições, em PDF.
+///
+/// Só de escrita (`REVOKE UPDATE, DELETE` a `academia_app`): uma declaração
+/// assinada não se corrige, emite-se outra. À parte da ordem para as leituras
+/// dela não arrastarem os bytes do ficheiro.
+model SubscriptionDeclaration {
+  id        String            @id @default(cuid())
+  academyId String
+  academy   Academy           @relation(fields: [academyId], references: [id], onDelete: Cascade)
+  orderId   String            @unique
+  order     SubscriptionOrder @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  pdf       Bytes
+  /// A impressão digital do ficheiro tal como foi gerado.
+  sha256    String
+  createdAt DateTime          @default(now())
+
+  @@index([academyId])
 }
 
 /// O aviso mensal de pagamento da subscrição da plataforma.

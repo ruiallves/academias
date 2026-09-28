@@ -951,10 +951,16 @@ export function subscriptionOrderEmail(input: {
    * Sem desconto seriam dois números iguais um por cima do outro, e dois números
    * iguais num contrato fazem quem lê parar para perceber a diferença que não há.
    */
+  /*
+   * No anual, a mensalidade que o desconto dá — o ano a dividir por doze — e a
+   * de tabela ao lado. Antes ia só a de tabela, e o clube lia no contrato o
+   * preço que não paga.
+   */
+  const mensal = input.annual ? Math.round(input.amountCents / 12) : input.amountCents;
   const preco = input.discountPct > 0
     ? euros(input.amountCents) + " " + porPeriodo +
-      " <span style=\"color:#8a867c\">(" + euros(input.listMonthlyCents) + "/mês de tabela, menos " +
-      input.discountPct + "%)</span>"
+      " <span style=\"color:#8a867c\">(" + euros(mensal) + "/mês em vez de " + euros(input.listMonthlyCents) +
+      ", menos " + input.discountPct + "%)</span>"
     : euros(input.amountCents) + " " + porPeriodo;
 
   const linhas: [string, string][] = [

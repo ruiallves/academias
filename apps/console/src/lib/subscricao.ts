@@ -27,6 +27,16 @@ export type SubscriptionOrder = {
   signedAt: string | null;
   signerName: string | null;
   signerTitle: string | null;
+  /** A instituição que se vinculou, escrita por quem assinou. Nula nas antigas. */
+  institutionName: string | null;
+  institutionTaxId: string | null;
+  /**
+   * Preenchido numa ordem reemitida só para se voltar a assinar com a
+   * identificação: as condições são as mesmas, e o dia de cobrança também.
+   */
+  billingAnchorAt: string | null;
+  /** Se há declaração em PDF para descarregar. As assinadas antes dela não têm. */
+  temDeclaracao: boolean;
 };
 
 /**
@@ -61,8 +71,57 @@ export type SubscriptionOrders = {
    * recalcula aqui — ver `paraAConsola` na API.
    */
   podeAssinar: boolean;
+  /**
+   * O que o formulário da assinatura traz já escrito: a instituição da última
+   * assinatura, e o nome de quem está a assinar. Nulo quando não há nada por
+   * assinar ou esta conta não pode assinar.
+   */
+  sugestao: { institutionName: string; institutionTaxId: string; signerName: string } | null;
+};
+
+/** O que quem assina escreve. Ver `AssinarCondicoesDialog`. */
+export type DadosDaAssinatura = {
+  institutionName: string;
+  institutionTaxId: string;
+  signerName: string;
+  signerTaxId: string;
+  /** `AAAA-MM-DD`. */
+  signerBirthdate: string;
+  accepted: boolean;
 };
 
 export const subscriptionOrders = () => apiGet<SubscriptionOrders>("/api/subscricao/ordem");
 
-export const signSubscriptionOrder = () => apiPost<SubscriptionOrder>("/api/subscricao/ordem/assinar", {});
+export const signSubscriptionOrder = (dados: DadosDaAssinatura) =>
+  apiPost<SubscriptionOrder>("/api/subscricao/ordem/assinar", dados);
+
+/** A declaração de aceitação em PDF. Vem em base64 — ver `declaracaoParaAConsola` na API. */
+export const declaracaoDaOrdem = (id: string) =>
+  apiGet<{ ficheiro: string; sha256: string; base64: string }>(`/api/subscricao/ordem/${id}/declaracao`);
+
+/**
+ * Um NIF português com o dígito de controlo certo.
+ *
+ * A mesma conta que o servidor faz (`nifValido`, em `api/src/subscription/
+ * declaracao.ts`). Aqui é só para avisar antes de enviar; quem decide é lá.
+ */
+export function nifValido(nif: string): boolean {
+  if (!/^\d{9}$/.test(nif)) return false;
+  const d = nif.split("").map(Number);
+  const soma = d.slice(0, 8).reduce((acc, x, i) => acc + x * (9 - i), 0);
+  const resto = soma % 11;
+  return d[8] === (resto < 2 ? 0 : 11 - resto);
+}
+
+/** Guarda no computador um ficheiro que veio em base64. */
+export function guardarFicheiro(ficheiro: string, base64: string, tipo = "application/pdf") {
+  const bytes = Uint8Array.from(atob(base64), (c) => c.charCodeAt(0));
+  const url = URL.createObjectURL(new Blob([bytes], { type: tipo }));
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = ficheiro;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+}

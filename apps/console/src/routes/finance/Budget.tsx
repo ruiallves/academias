@@ -1,11 +1,11 @@
 import { useEffect, useMemo, useState } from "react";
-import { Link } from "react-router-dom";
+import { Link, useSearchParams } from "react-router-dom";
 import { PageHeader } from "@/components/Shell";
-import { Empty, Loading, Panel, cx } from "@/components/primitives";
-import { ArrowLeft, Check, Loader2, TriangleAlert, Wallet } from "@/lib/icons";
+import { Empty, Loading, Panel, PanelHead, SelectField, cx } from "@/components/primitives";
+import { ArrowLeft, Check, Copy, Loader2, TriangleAlert, Wallet } from "@/lib/icons";
 import { can } from "@/lib/permissions";
 import { useSession } from "@/session";
-import { euros, getBudgets, setBudget, type BudgetRows } from "@/lib/finance";
+import { copyBudget, euros, getBudgetHistory, getBudgets, setBudget, type BudgetRows, type BudgetSeason } from "@/lib/finance";
 
 /**
  * Orçamento da época — quanto o clube decidiu gastar por categoria, contra o
@@ -14,6 +14,15 @@ import { euros, getBudgets, setBudget, type BudgetRows } from "@/lib/finance";
  * O "gasto" é derivado das despesas concluídas dentro da época; aqui só se
  * escreve o tecto. Uma categoria sem tecto mostra o gasto na mesma — o
  * orçamento é opcional, a verdade não.
+ *
+ * ## As outras épocas
+ *
+ * A página mostrava só a época em curso, e o planeado nas anteriores ficava na
+ * base sem caminho para lá. Agora escolhe-se a época no topo (fica no endereço,
+ * `?epoca=`), e o **Histórico** no fundo põe todas lado a lado — orçado,
+ * gasto e a diferença —, que é a pergunta de quem planeia a seguinte. Uma
+ * época ainda sem orçamento oferece copiar o de outra, só nas categorias que
+ * ainda não têm valor.
  */
 export default function Budget() {
   const { session } = useSession();
@@ -24,11 +33,27 @@ export default function Budget() {
   /** Rascunhos por categoria, em texto de euros — só o que o utilizador tocou. */
   const [rascunho, setRascunho] = useState<Record<string, string>>({});
   const [aGravar, setAGravar] = useState<string | null>(null);
+  const [historico, setHistorico] = useState<BudgetSeason[]>([]);
+  const [aCopiar, setACopiar] = useState(false);
+  const [aviso, setAviso] = useState<string | null>(null);
+
+  /* A época à vista vive no endereço: o histórico leva a ela, e o voltar atrás também. */
+  const [params, setParams] = useSearchParams();
+  const epoca = params.get("epoca") ?? undefined;
+  const escolherEpoca = (id: string) => {
+    const p = new URLSearchParams(params);
+    p.set("epoca", id);
+    setParams(p, { replace: true });
+    setRascunho({});
+    setAviso(null);
+  };
 
   async function carregar() {
     setErro(null);
     try {
-      setDados(await getBudgets());
+      const [d, h] = await Promise.all([getBudgets(epoca), getBudgetHistory().catch(() => [] as BudgetSeason[])]);
+      setDados(d);
+      setHistorico(h);
     } catch (e) {
       setErro(e instanceof Error ? e.message : "Não foi possível carregar o orçamento.");
     }
@@ -36,7 +61,38 @@ export default function Budget() {
 
   useEffect(() => {
     void carregar();
-  }, []);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [epoca]);
+
+  /*
+   * De onde copiar: a época mais próxima, antes desta, que tenha orçamento — é
+   * quase sempre a do ano anterior. Sem nenhuma antes, a mais próxima depois.
+   */
+  const fonteDaCopia = useMemo(() => {
+    if (!dados) return undefined;
+    const i = historico.findIndex((h) => h.seasonId === dados.season.id);
+    const antes = historico.slice(i + 1).find((h) => h.budgetCents > 0);
+    return antes ?? historico.slice(0, Math.max(i, 0)).reverse().find((h) => h.budgetCents > 0);
+  }, [dados, historico]);
+
+  async function copiar() {
+    if (!dados || !fonteDaCopia || aCopiar) return;
+    setACopiar(true);
+    setErro(null);
+    try {
+      const r = await copyBudget(fonteDaCopia.seasonId, dados.season.id);
+      await carregar();
+      setAviso(
+        r.copiadas === 0
+          ? "Nada para copiar: estas categorias já tinham valor."
+          : `${r.copiadas} ${r.copiadas === 1 ? "categoria copiada" : "categorias copiadas"} de ${fonteDaCopia.label}. Ajusta o que mudou.`,
+      );
+    } catch (e) {
+      setErro(e instanceof Error ? e.message : "Não foi possível copiar.");
+    } finally {
+      setACopiar(false);
+    }
+  }
 
   const totais = useMemo(() => {
     const rows = dados?.rows ?? [];
@@ -91,9 +147,32 @@ export default function Budget() {
         eyebrow="Contas"
         title="Orçamento"
         subtitle={`Época ${dados.season.label} — o tecto de cada categoria de despesa, contra o gasto real.`}
-      />
+      >
+        {historico.length > 1 && (
+          <SelectField
+            value={dados.season.id}
+            onChange={escolherEpoca}
+            options={historico.map((h) => ({ value: h.seasonId, label: h.current ? `${h.label} · em curso` : h.label }))}
+          />
+        )}
+      </PageHeader>
 
       {erro && <p className="mb-2 text-meta text-risk">{erro}</p>}
+
+      {/* Uma época por orçamentar: começar pela de outra poupa escrever tudo de novo. */}
+      {podeEscrever && totais.budget === 0 && fonteDaCopia && dados.rows.length > 0 && (
+        <div className="mb-3 flex flex-wrap items-center gap-3 rounded-[var(--radius-panel)] border border-line bg-sunken/40 px-4 py-3">
+          <span className="min-w-0 flex-1 text-meta leading-relaxed text-ink-2">
+            A época {dados.season.label} ainda não tem orçamento. Podes começar pelo de {fonteDaCopia.label}
+            {" "}({euros(fonteDaCopia.budgetCents)}) e ajustar a partir daí.
+          </span>
+          <button type="button" className="ctl-outline" onClick={() => void copiar()} disabled={aCopiar}>
+            {aCopiar ? <Loader2 className="size-3.5 animate-spin" strokeWidth={2} /> : <Copy className="size-3.5" strokeWidth={1.75} />}
+            Copiar de {fonteDaCopia.label}
+          </button>
+        </div>
+      )}
+      {aviso && <p className="mb-3 text-meta text-ok">{aviso}</p>}
 
       {dados.rows.length === 0 ? (
         <Empty
@@ -204,7 +283,83 @@ export default function Budget() {
       {podeEscrever && (
         <p className="mt-3 text-meta text-ink-4">Escreve o valor em euros e confirma — um orçamento a zero remove o tecto.</p>
       )}
+
+      {historico.length > 0 && <Historico epocas={historico} atual={dados.season.id} onEscolher={escolherEpoca} />}
     </>
+  );
+}
+
+/**
+ * O histórico: todas as épocas lado a lado, o orçado contra o gasto.
+ *
+ * Tocar numa linha abre essa época em cima. A diferença diz para onde foi o
+ * desvio — a vermelho quando se gastou mais do que se orçou —, e uma época sem
+ * orçamento mostra o gasto na mesma: foi o que custou, planeado ou não.
+ */
+function Historico({
+  epocas,
+  atual,
+  onEscolher,
+}: {
+  epocas: BudgetSeason[];
+  atual: string;
+  onEscolher: (id: string) => void;
+}) {
+  return (
+    <Panel className="mt-6">
+      <PanelHead title="Histórico" hint="o orçado contra o gasto, por época" />
+      <div className="hidden grid-cols-[minmax(0,1fr)_110px_110px_130px] gap-3 border-b border-line px-4 py-2 text-meta font-medium text-ink-3 sm:grid">
+        <span>Época</span>
+        <span className="text-right">Orçado</span>
+        <span className="text-right">Gasto</span>
+        <span className="text-right">Diferença</span>
+      </div>
+      <ul>
+        {epocas.map((h) => {
+          const diferenca = h.spentCents - h.budgetCents;
+          const escolhida = h.seasonId === atual;
+          return (
+            <li key={h.seasonId} className="border-b border-line last:border-0">
+              <button
+                type="button"
+                onClick={() => onEscolher(h.seasonId)}
+                aria-current={escolhida ? "true" : undefined}
+                className={cx(
+                  "grid w-full grid-cols-2 gap-x-3 gap-y-1 px-4 py-2.5 text-left transition-colors hover:bg-sunken/50 sm:grid-cols-[minmax(0,1fr)_110px_110px_130px]",
+                  escolhida && "bg-signal-soft/30",
+                )}
+              >
+                <span className="col-span-2 min-w-0 sm:col-span-1">
+                  <span className="text-body font-medium text-ink">{h.label}</span>
+                  {h.current && <span className="ml-2 text-meta text-signal-ink">em curso</span>}
+                  <span className="block text-meta text-ink-4">
+                    {h.categoriasOrcamentadas > 0
+                      ? `${h.categoriasOrcamentadas} ${h.categoriasOrcamentadas === 1 ? "categoria orçamentada" : "categorias orçamentadas"}`
+                      : "sem orçamento"}
+                  </span>
+                </span>
+                <span className="text-body text-ink-2 tabular sm:text-right">
+                  <span className="text-meta text-ink-4 sm:hidden">Orçado </span>
+                  {h.budgetCents > 0 ? euros(h.budgetCents) : "—"}
+                </span>
+                <span className="text-body text-ink-2 tabular sm:text-right">
+                  <span className="text-meta text-ink-4 sm:hidden">Gasto </span>
+                  {euros(h.spentCents)}
+                </span>
+                <span
+                  className={cx(
+                    "col-span-2 text-body tabular sm:col-span-1 sm:text-right",
+                    h.budgetCents === 0 ? "text-ink-4" : diferenca > 0 ? "font-semibold text-risk" : "text-ok",
+                  )}
+                >
+                  {h.budgetCents === 0 ? "—" : diferenca > 0 ? `${euros(diferenca)} acima` : `${euros(-diferenca)} abaixo`}
+                </span>
+              </button>
+            </li>
+          );
+        })}
+      </ul>
+    </Panel>
   );
 }
 

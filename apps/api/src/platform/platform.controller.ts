@@ -233,6 +233,12 @@ export class PlatformController {
     return this.platform.academyDetail(id);
   }
 
+  /** A declaração de aceitação de uma ordem assinada, em PDF (base64). */
+  @Get("academies/:id/ordens/:ordemId/declaracao")
+  declaracao(@Param("id") id: string, @Param("ordemId") ordemId: string) {
+    return this.platform.declaracaoDaOrdem(id, ordemId);
+  }
+
   /**
    * Mudar o plano de um clube — e, com ele, o estado da subscrição.
    *

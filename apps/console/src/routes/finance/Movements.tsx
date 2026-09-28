@@ -9,6 +9,7 @@ import { shortDate } from "@/lib/format";
 import { can } from "@/lib/permissions";
 import { useSession } from "@/session";
 import { useActiveCatalog } from "@/lib/catalogs";
+import { useStore } from "@/lib/store";
 import {
   METHOD_LABEL,
   STATUS_LABEL,
@@ -36,6 +37,8 @@ export default function Movements() {
   const podeEscrever = can(session, "finance:write");
   const categoriasReceita = useActiveCatalog("financeIncome");
   const categoriasDespesa = useActiveCatalog("financeExpense");
+  /* As épocas do clube, da mais recente para trás, e as datas de cada uma. */
+  const { seasons, seasonRanges } = useStore();
 
   const [params, setParams] = useSearchParams();
   const [rows, setRows] = useState<TransactionRow[] | null>(null);
@@ -90,6 +93,13 @@ export default function Movements() {
   const tipo = params.get("tipo") ?? "";
   const estado = params.get("estado") ?? "";
   const categoria = params.get("categoria") ?? "";
+  /*
+   * A época, pelo rótulo ("2026/27"), no endereço como os outros filtros.
+   * Filtra pelas datas dela: é o mesmo critério do Orçamento, que conta os
+   * gastos dentro das datas da época. Vazio é tudo.
+   */
+  const epoca = params.get("epoca") ?? "";
+  const datasDaEpoca = epoca ? seasonRanges[epoca] : undefined;
 
   async function carregar() {
     setErro(null);
@@ -99,6 +109,9 @@ export default function Movements() {
           kind: tipo || undefined,
           status: estado || undefined,
           categoryId: categoria || undefined,
+          ...(datasDaEpoca
+            ? { from: `${datasDaEpoca.startsOn}T00:00:00.000Z`, to: `${datasDaEpoca.endsOn}T23:59:59.999Z` }
+            : {}),
         }),
       );
     } catch (e) {
@@ -108,7 +121,8 @@ export default function Movements() {
 
   useEffect(() => {
     void carregar();
-  }, [tipo, estado, categoria]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tipo, estado, categoria, epoca, datasDaEpoca?.startsOn, datasDaEpoca?.endsOn]);
 
   const filtrados = useMemo(() => {
     const termo = q.trim().toLowerCase();
@@ -157,7 +171,7 @@ export default function Movements() {
     sheet["!cols"] = Object.keys(linhas[0] ?? { a: 1 }).map((k) => ({ wch: Math.max(12, k.length + 4) }));
     const book = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(book, sheet, "Movimentos");
-    XLSX.writeFile(book, "movimentos.xlsx");
+    XLSX.writeFile(book, epoca ? `movimentos-${epoca.replace(/\//g, "-")}.xlsx` : "movimentos.xlsx");
   }
 
   if (erro && !rows) return <Empty title="Movimentos" detail={erro} icon={TriangleAlert} />;
@@ -204,6 +218,17 @@ export default function Movements() {
               className="h-9 w-full rounded-[var(--radius-control)] border border-line bg-surface pl-8 text-body text-ink placeholder:text-ink-4"
             />
           </div>
+          {/* Só as épocas com datas: sem elas não há intervalo por onde filtrar. */}
+          {seasons.some((l) => seasonRanges[l]) && (
+            <SelectField
+              value={epoca}
+              onChange={(v) => mexer("epoca", v)}
+              options={[
+                { value: "", label: "Todas as épocas" },
+                ...seasons.filter((l) => seasonRanges[l]).map((l) => ({ value: l, label: `Época ${l}` })),
+              ]}
+            />
+          )}
           <SelectField
             value={tipo}
             onChange={(v) => mexer("tipo", v)}
