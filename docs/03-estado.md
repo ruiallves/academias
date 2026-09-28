@@ -3638,7 +3638,11 @@ canal do clube e os avisos caíam em 404. A reconciliação de Multibanco usa a
 chave do clube; a de MB Way usa o OAuth da plataforma e não vê o canal do
 clube, por isso nesses clubes o MB Way depende só do webhook. Testado por
 `scripts/test-webhook-por-clube.mjs` (12), em dois clubes descartáveis contra
-uma API de teste sem chave euPago.
+uma API de teste sem chave euPago, e o painel por
+`scripts/test-eupago-na-plataforma.mjs` (18): gravar pela plataforma põe o
+webhook do clube a funcionar sem reiniciar, e apagar desliga-o na hora. Como o
+`admin@academias.pt` dos testes antigos já não existe, este cria um admin
+descartável (palavra-passe ao acaso) e apaga-o no fim.
 
 Havia uma terceira causa, escondida atrás das outras duas: a migração
 `app_do_clube` redefiniu `app.resolve_payment_academy` sem o `OR p.id = p_ref`
@@ -4225,3 +4229,46 @@ anteriores ficava na base sem caminho para lá. Agora:
 **Movimentos.** Um filtro "Época" ao lado dos outros (`?epoca=2026/27`), pelas
 datas da época: os lançados pela data do movimento, as mensalidades pela data do
 pagamento. A exportação leva a época no nome do ficheiro.
+
+## Contactos da plataforma: um clube por linha
+
+A lista de Contactos serve para saber que clubes já contactámos. Cada linha é
+um **clube** (`Contact.name`); a pessoa com quem se fala é opcional
+(`personName`, `role`). Na própria linha marcam-se "Email" e "Chamada" com um
+clique (`emailedAt`, `calledAt`); marcar escreve no histórico e passa "Por
+contactar" a "À espera de resposta"; desmarcar limpa a data. A resposta é o
+estado (com os nomes "À espera de resposta" e "Não interessados") e o que
+disseram fica em `replyNote`; mudar a resposta também vai ao histórico.
+
+Os clubes dividem-se pela associação: as 22 AFs no futebol e no futsal (AF Porto
+por omissão, lista em `apps/platform/src/lib/types.ts`), texto livre nas outras
+modalidades (`sport`, `association`). O filtro "Associação" agrupa por modalidade
+e mostra só as que têm clubes. Um clube novo nasce na associação do filtro
+aberto, e a ficha avisa quando o nome já existe.
+
+Migração `20260928150000_contactos_por_clube`, só acrescenta colunas: o antigo
+`club` passou para `name` e o nome da pessoa para `personName`; `club` fica na
+tabela sem uso até se poder largar. Um pedido do site convertido em contacto
+nasce com o clube como nome. Testado por `scripts/test-contactos-e-mensalidades.mjs`.
+
+## Mensalidade da plataforma marcada à mão, na ficha do clube
+
+Na ficha de cada clube (plataforma, OWNER/ADMIN) o painel "Mensalidade da
+plataforma" lista os avisos do clube e também os períodos que ainda não têm
+aviso: o que está a correr e o seguinte. "Recebido" dá o período como pago e
+escreve o ganho nas Contas, como no botão das Contas.
+
+Conta a última ordem assinada ou, sem ela, a que está **por assinar**: a maioria
+dos clubes que pagam ainda não assinou, e o registo não pode esperar. Os
+períodos contam-se do dia da assinatura (ou do `billingAnchorAt`) e, sem
+assinatura, do início do contrato, com a mesma conta dos avisos
+(`periodosDoContrato` em `subscription/ciclo.ts`).
+
+Marcar um período sem aviso cria a linha do aviso já paga e sem email; quando o
+dia chegar, a varredura encontra o período tratado e não manda nada. A varredura
+passou também a saltar um período que se sobreponha a um aviso existente, para o
+caso de o clube assinar depois e o dia de referência mudar. Desmarcar um aviso
+que ainda não saiu (sem `sentAt`, dia futuro) apaga a linha e o ganho, e a
+varredura volta a mandá-lo no dia certo. Testado por
+`scripts/test-contactos-e-mensalidades.mjs` (25) e, na varredura,
+`test-avisos-de-subscricao.mjs` (42), com a API de teste **sem** `MAIL_API_KEY`.

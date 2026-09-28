@@ -280,11 +280,18 @@ export type ContactTouch = {
 
 export type Contact = {
   id: string;
+  /** O nome do clube. */
   name: string;
+  sport: string;
+  association: string | null;
+  /** Com quem se falou, se se sabe. */
+  personName: string | null;
+  role: string | null;
+  emailedAt: string | null;
+  calledAt: string | null;
+  replyNote: string | null;
   phone: string | null;
   email: string | null;
-  club: string | null;
-  role: string | null;
   status: ContactStatus;
   notes: string | null;
   owner: { id: string; name: string } | null;
@@ -308,13 +315,48 @@ export const CONTACT_STATUS: ContactStatus[] = ["NOVO", "CONTACTADO", "SEM_RESPO
 
 export const CONTACT_STATUS_LABEL: Record<ContactStatus, string> = {
   NOVO: "Por contactar",
-  CONTACTADO: "Contactado",
+  CONTACTADO: "À espera de resposta",
   SEM_RESPOSTA: "Sem resposta",
   REUNIAO: "Reunião marcada",
   PROPOSTA: "Proposta enviada",
   CLIENTE: "Cliente",
-  PERDIDO: "Perdido",
+  PERDIDO: "Não interessados",
 };
+
+/**
+ * As associações distritais de futebol (também do futsal): as 22 da FPF.
+ * AF Porto primeiro, por ser onde está quase tudo o que se contacta; o resto por
+ * ordem alfabética.
+ */
+export const ASSOCIACOES_FUTEBOL = [
+  "AF Porto",
+  "AF Algarve",
+  "AF Angra do Heroísmo",
+  "AF Aveiro",
+  "AF Beja",
+  "AF Braga",
+  "AF Bragança",
+  "AF Castelo Branco",
+  "AF Coimbra",
+  "AF Évora",
+  "AF Guarda",
+  "AF Horta",
+  "AF Leiria",
+  "AF Lisboa",
+  "AF Madeira",
+  "AF Ponta Delgada",
+  "AF Portalegre",
+  "AF Santarém",
+  "AF Setúbal",
+  "AF Viana do Castelo",
+  "AF Vila Real",
+  "AF Viseu",
+];
+
+/** As modalidades que usam as AFs. As outras têm associação em texto livre. */
+export const MODALIDADES_COM_AF = ["Futebol", "Futsal"];
+
+export const MODALIDADES = ["Futebol", "Futsal", "Andebol", "Basquetebol", "Voleibol", "Hóquei em patins", "Natação", "Atletismo", "Ténis", "Rugby"];
 
 export const CHANNEL_LABEL: Record<ContactChannel, string> = {
   CHAMADA: "Chamada",

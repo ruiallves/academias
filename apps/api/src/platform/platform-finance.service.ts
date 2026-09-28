@@ -1,7 +1,7 @@
 import { BadRequestException, Injectable, Logger, NotFoundException } from "@nestjs/common";
 import type { PlatformFinanceKind, PlatformFinanceStatus, PlatformRecurrence } from "@prisma/client";
 import { PlatformPrisma } from "./platform.prisma";
-import { avisosDevidos, chaveDoDia, diaDoClube, soODia, somaDias, somaMeses } from "../subscription/ciclo";
+import { avisosDevidos, chaveDoDia, diaDoClube, periodosDoContrato, soODia, somaDias, somaMeses } from "../subscription/ciclo";
 
 /**
  * As contas da plataforma.
@@ -348,14 +348,191 @@ export class PlatformFinanceService {
   }
 
   async desmarcarNotice(id: string) {
-    const aviso = await this.prisma.subscriptionNotice.findUnique({ where: { id }, select: { id: true } });
+    const aviso = await this.prisma.subscriptionNotice.findUnique({
+      where: { id },
+      select: { id: true, sentAt: true, issuedOn: true },
+    });
     if (!aviso) throw new NotFoundException("Aviso não encontrado");
     await this.prisma.platformTransaction.deleteMany({ where: { noticeId: id } });
+
+    /*
+     * Um pagamento registado à mão antes do dia do aviso criou a linha do aviso
+     * sem email nenhum. Desmarcá-lo apaga essa linha: fica tudo como se nunca
+     * tivesse sido registado, e a varredura manda o aviso no dia certo. Se a
+     * linha ficasse, a varredura via o período como tratado e o clube nunca
+     * recebia o aviso.
+     */
+    if (!aviso.sentAt && soODia(aviso.issuedOn) > diaDoClube(new Date())) {
+      await this.prisma.subscriptionNotice.delete({ where: { id } });
+      return { ok: true, apagado: true };
+    }
+
     await this.prisma.subscriptionNotice.update({
       where: { id },
       data: { paidAt: null, paidNote: null, paidById: null },
     });
     return { ok: true };
+  }
+
+  /* ------------------------------------------- mensalidades de um clube, à mão */
+
+  /**
+   * As condições que contam para um clube: a última assinada, senão a que está
+   * à espera de assinatura. Muitos clubes pagam antes de assinar, e o registo
+   * manual não pode esperar pela assinatura.
+   */
+  private async condicoesDoClube(academyId: string) {
+    const select = {
+      id: true, planName: true, billingPeriod: true, amountCents: true,
+      startsOn: true, signedAt: true, billingAnchorAt: true, status: true,
+    } as const;
+    return (
+      (await this.prisma.subscriptionOrder.findFirst({
+        where: { academyId, status: "SIGNED", signedAt: { not: null } },
+        orderBy: { signedAt: "desc" },
+        select,
+      })) ??
+      (await this.prisma.subscriptionOrder.findFirst({
+        where: { academyId, status: "PENDING" },
+        orderBy: { createdAt: "desc" },
+        select,
+      }))
+    );
+  }
+
+  /** O dia de onde se contam os períodos: o mesmo que a varredura usa quando há assinatura. */
+  private ancora(o: { billingAnchorAt: Date | null; signedAt: Date | null; startsOn: Date }): Date {
+    if (o.billingAnchorAt) return diaDoClube(o.billingAnchorAt);
+    if (o.signedAt) return diaDoClube(o.signedAt);
+    return soODia(o.startsOn);
+  }
+
+  /**
+   * As mensalidades de um clube, para a ficha dele: os avisos que existem e os
+   * períodos do contrato que ainda não têm aviso (o que está a correr e o
+   * seguinte), todos com o botão de dar como recebida.
+   */
+  async mensalidadesDoClube(academyId: string) {
+    const [condicoes, avisos] = await Promise.all([
+      this.condicoesDoClube(academyId),
+      this.prisma.subscriptionNotice.findMany({
+        where: { academyId },
+        orderBy: { periodStart: "desc" },
+        take: 36,
+        select: {
+          id: true, periodStart: true, periodEnd: true, issuedOn: true, dueOn: true,
+          planName: true, billingPeriod: true, amountCents: true, sentAt: true,
+          paidAt: true, paidNote: true, paidBy: { select: { name: true } },
+        },
+      }),
+    ]);
+
+    const porChave = new Map(avisos.map((a) => [chaveDoDia(a.periodStart), a]));
+    const linhas = avisos.map((a) => ({
+      chave: chaveDoDia(a.periodStart),
+      noticeId: a.id as string | null,
+      periodStart: a.periodStart,
+      periodEnd: a.periodEnd,
+      dueOn: a.dueOn as Date | null,
+      amountCents: a.amountCents,
+      enviado: Boolean(a.sentAt),
+      paidAt: a.paidAt,
+      paidNote: a.paidNote,
+      paidBy: a.paidBy?.name ?? null,
+    }));
+
+    if (condicoes) {
+      const hoje = diaDoClube(new Date());
+      for (const p of periodosDoContrato({
+        ancora: this.ancora(condicoes),
+        desde: condicoes.startsOn,
+        hoje,
+        periodo: condicoes.billingPeriod,
+      })) {
+        const chave = chaveDoDia(p.periodStart);
+        if (porChave.has(chave)) continue;
+        // Um aviso com outra âncora (antes de assinar) que já cobre este período.
+        if (avisos.some((a) => a.periodStart <= p.periodEnd && a.periodEnd >= p.periodStart)) continue;
+        linhas.push({
+          chave,
+          noticeId: null,
+          periodStart: p.periodStart,
+          periodEnd: p.periodEnd,
+          dueOn: null,
+          amountCents: condicoes.amountCents,
+          enviado: false,
+          paidAt: null,
+          paidNote: null,
+          paidBy: null,
+        });
+      }
+    }
+
+    linhas.sort((a, b) => b.periodStart.getTime() - a.periodStart.getTime());
+    return {
+      condicoes: condicoes
+        ? {
+            planName: condicoes.planName,
+            billingPeriod: condicoes.billingPeriod,
+            amountCents: condicoes.amountCents,
+            assinadas: condicoes.status === "SIGNED",
+            startsOn: condicoes.startsOn,
+          }
+        : null,
+      periodos: linhas,
+    };
+  }
+
+  /**
+   * Dar como recebido o período de um clube que ainda não tem aviso.
+   *
+   * Cria a linha do aviso (sem email: o clube já pagou) e marca-a paga, com o
+   * movimento nas contas, como qualquer outro aviso. Quando o dia desse aviso
+   * chegar, a varredura encontra o período tratado e não manda nada.
+   */
+  async registarPagamentoDoClube(
+    adminId: string | null,
+    academyId: string,
+    dto: { periodStart: string; paidAt?: string; note?: string },
+  ) {
+    const condicoes = await this.condicoesDoClube(academyId);
+    if (!condicoes) throw new BadRequestException("O clube ainda não tem condições emitidas");
+
+    const hoje = diaDoClube(new Date());
+    const periodo = periodosDoContrato({
+      ancora: this.ancora(condicoes),
+      desde: condicoes.startsOn,
+      hoje,
+      periodo: condicoes.billingPeriod,
+      maximo: 480,
+    }).find((p) => chaveDoDia(p.periodStart) === dto.periodStart.slice(0, 10));
+    if (!periodo) throw new BadRequestException("Esse período não é do contrato deste clube");
+
+    const existente = await this.prisma.subscriptionNotice.findUnique({
+      where: { academyId_periodStart: { academyId, periodStart: periodo.periodStart } },
+      select: { id: true },
+    });
+    const id =
+      existente?.id ??
+      (
+        await this.prisma.subscriptionNotice.create({
+          data: {
+            academyId,
+            orderId: condicoes.id,
+            periodStart: periodo.periodStart,
+            periodEnd: periodo.periodEnd,
+            issuedOn: periodo.issuedOn,
+            dueOn: somaDias(periodo.issuedOn, 8),
+            planName: condicoes.planName,
+            billingPeriod: condicoes.billingPeriod,
+            amountCents: condicoes.amountCents,
+          },
+          select: { id: true },
+        })
+      ).id;
+
+    await this.marcarNoticePaga(adminId, id, { paidAt: dto.paidAt, note: dto.note });
+    return { ok: true, noticeId: id };
   }
 
   /* ------------------------------------------------------------------ resumo */

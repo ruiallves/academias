@@ -75,6 +75,13 @@ class PagoDto {
   @IsOptional() @IsString() @Length(0, 300) note?: string;
 }
 
+class PagamentoDoClubeDto {
+  /** O início do período, `AAAA-MM-DD`, como a ficha o recebeu. */
+  @IsISO8601() periodStart!: string;
+  @IsOptional() @IsISO8601() paidAt?: string;
+  @IsOptional() @IsString() @Length(0, 300) note?: string;
+}
+
 /**
  * As contas do negócio, no painel da plataforma.
  *
@@ -211,6 +218,20 @@ export class PlatformFinanceController {
   async marcarPago(@Req() req: PlatformRequest, @Param("id") id: string, @Body() dto: PagoDto) {
     const r = await this.contas.marcarNoticePaga(req.admin.id, id, dto ?? {});
     await this.platform.audit(req.admin, "finance.notice.paid", "notice", id);
+    return r;
+  }
+
+  /** As mensalidades de um clube, para a ficha dele — avisos e períodos ainda sem aviso. */
+  @Get("clubes/:academyId/mensalidades")
+  mensalidadesDoClube(@Param("academyId") academyId: string) {
+    return this.contas.mensalidadesDoClube(academyId);
+  }
+
+  /** Dar como recebido um período que ainda não tem aviso (pago antes do dia, ou sem contrato assinado). */
+  @Post("clubes/:academyId/mensalidades")
+  async registarPagamento(@Req() req: PlatformRequest, @Param("academyId") academyId: string, @Body() dto: PagamentoDoClubeDto) {
+    const r = await this.contas.registarPagamentoDoClube(req.admin.id, academyId, dto);
+    await this.platform.audit(req.admin, "finance.notice.paid", "notice", r.noticeId, { academyId, periodo: dto.periodStart });
     return r;
   }
 

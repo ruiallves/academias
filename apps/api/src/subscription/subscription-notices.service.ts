@@ -180,17 +180,30 @@ export class SubscriptionNoticesService implements OnModuleInit, OnModuleDestroy
       const desde = somaMeses(hoje, -18);
       const existentes = await db.subscriptionNotice.findMany({
         where: { academyId, periodStart: { gte: desde } },
-        select: { periodStart: true },
+        select: { periodStart: true, periodEnd: true },
       });
 
       const responsavel = await responsavelDoClube(db, academyId);
 
-      return { ordem, academy, responsavel, jaEmitidos: new Set(existentes.map((e) => chaveDoDia(e.periodStart))) };
+      return {
+        ordem,
+        academy,
+        responsavel,
+        existentes,
+        jaEmitidos: new Set(existentes.map((e) => chaveDoDia(e.periodStart))),
+      };
     });
 
     if (!contexto) return feitos;
-    const { ordem, academy, responsavel, jaEmitidos } = contexto;
+    const { ordem, academy, responsavel, existentes, jaEmitidos } = contexto;
 
+    /*
+     * Um período que já está coberto por outro aviso não sai outra vez. Acontece
+     * quando o pagamento foi registado à mão na plataforma antes de o clube
+     * assinar (contado do início do contrato) e a assinatura mudou o dia de
+     * referência: os períodos deixam de começar no mesmo dia, e o índice único
+     * sozinho já não os apanhava.
+     */
     const devidos = avisosDevidos({
       // O dia em que o clube assinou, pelo calendário dele — ver `diaDoClube`.
       // Numa ordem reemitida só para voltar a assinar, o dia é o da assinatura
@@ -202,7 +215,7 @@ export class SubscriptionNoticesService implements OnModuleInit, OnModuleDestroy
       periodo: ordem.billingPeriod,
       jaEmitidos,
       janelaDias: this.janelaDias,
-    });
+    }).filter((d) => !existentes.some((e) => e.periodStart <= d.periodEnd && e.periodEnd >= d.periodStart));
 
     for (const devido of devidos) {
       const aviso = await this.criarAviso(academyId, ordem, devido, responsavel);

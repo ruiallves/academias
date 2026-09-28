@@ -36,8 +36,24 @@ class ContactDto {
   @IsOptional() @ValidateIf((_, v) => v !== "" && v !== null) @IsEmail() @Length(0, 254)
   email?: string;
 
-  @IsOptional() @IsString() @Length(0, 160)
-  club?: string;
+  @IsOptional() @IsString() @Length(0, 40)
+  sport?: string;
+
+  /** "AF Porto" para futebol; texto livre noutras modalidades. */
+  @IsOptional() @IsString() @Length(0, 80)
+  association?: string;
+
+  @IsOptional() @IsString() @Length(0, 120)
+  personName?: string;
+
+  @IsOptional() @IsString() @Length(0, 2000)
+  replyNote?: string;
+
+  @IsOptional() @IsBoolean()
+  emailed?: boolean;
+
+  @IsOptional() @IsBoolean()
+  called?: boolean;
 
   @IsOptional() @IsString() @Length(0, 80)
   role?: string;

@@ -25,6 +25,7 @@ export function googleEventUrl(contact: Contact, when: Date): string {
 
   const detalhe = [
     contact.nextActionNote,
+    contact.personName ? `Falar com: ${contact.personName}` : null,
     contact.phone ? `Telefone: ${contact.phone}` : null,
     contact.email ? `Email: ${contact.email}` : null,
     contact.notes ? `\nNotas: ${contact.notes}` : null,
@@ -32,7 +33,7 @@ export function googleEventUrl(contact: Contact, when: Date): string {
 
   const params = new URLSearchParams({
     action: "TEMPLATE",
-    text: `Seguimento: ${contact.name}${contact.club ? ` · ${contact.club}` : ""}`,
+    text: `Seguimento: ${contact.name}${contact.association ? ` · ${contact.association}` : ""}`,
     dates: `${stamp(when)}/${stamp(end)}`,
     details: detalhe,
     ctz: "Europe/Lisbon",

@@ -414,10 +414,12 @@ export class TicketsService {
 
     const contact = await this.prisma.contact.create({
       data: {
-        name: ticket.name,
+        // O contacto é o clube; quem escreveu fica como a pessoa com quem se fala.
+        name: ticket.club?.trim() || ticket.name,
+        personName: ticket.club?.trim() ? ticket.name : null,
+        role: ticket.role,
         email: ticket.email,
         phone: ticket.phone,
-        club: ticket.club,
         notes: notes || null,
         status: "NOVO",
         // Quem converte fica com ele. Um contacto novo sem dono é um contacto que

@@ -9,6 +9,7 @@ import { type AcademyDetail as Detail, type Me } from "@/lib/types";
 import { EspacoDoClubePanel } from "@/components/EspacoDoClubePanel";
 import { EupagoDoClubePanel } from "@/components/EupagoDoClubePanel";
 import { CondicoesDoClubePanel } from "@/components/CondicoesDoClubePanel";
+import { MensalidadesDaPlataformaPanel } from "@/components/MensalidadesDaPlataformaPanel";
 import { ESTADO_LABEL, ESTADO_TOM, estadoComercial } from "@/lib/estado";
 
 
@@ -269,6 +270,12 @@ export default function AcademyDetail({ me }: { me: Me }) {
 
             {/* O contrato com a Academias: o que está por assinar e o que foi assinado. */}
             <CondicoesDoClubePanel academyId={d.id} orders={d.orders} />
+
+            {/*
+              O que o clube nos paga, marcado à mão. As Contas só se abrem a
+              OWNER/ADMIN, e este painel também.
+            */}
+            {(me.role === "OWNER" || me.role === "ADMIN") && <MensalidadesDaPlataformaPanel key={`mens-${d.id}`} academyId={d.id} />}
 
             {/*
               A cobrança **do clube às famílias** — não a nossa.

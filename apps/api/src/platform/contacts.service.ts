@@ -39,11 +39,17 @@ const FEED_AHEAD_DAYS = 180;
 const FEED_BEHIND_DAYS = 7;
 
 export type ContactInput = {
-  /** Obrigatório a criar, opcional a alterar — ver `ContactDto` no controlador. */
+  /** O nome do clube. Obrigatório a criar, opcional a alterar — ver `ContactDto`. */
   name?: string;
+  sport?: string;
+  association?: string | null;
+  personName?: string | null;
+  replyNote?: string | null;
+  /** Marcar ou desmarcar "email enviado" / "ligámos". Marcar fica no histórico. */
+  emailed?: boolean;
+  called?: boolean;
   phone?: string | null;
   email?: string | null;
-  club?: string | null;
   role?: string | null;
   status?: ContactStatus;
   notes?: string | null;
@@ -130,7 +136,7 @@ export class ContactsService {
 
   async create(admin: PlatformAdminContext, dto: ContactInput, ip?: string) {
     const name = (dto.name ?? "").trim();
-    if (name.length < 2) throw new BadRequestException("O nome é preciso");
+    if (name.length < 2) throw new BadRequestException("O nome do clube é preciso");
 
     const contact = await this.prisma.contact.create({
       data: {
@@ -141,10 +147,11 @@ export class ContactsService {
         // contactos sem dono é uma lista onde ninguém liga a ninguém.
         ownerId: admin.id,
       },
-      select: { id: true, name: true },
+      select: { id: true, name: true, status: true },
     });
 
-    await this.platform.audit(admin, "contact.create", "contact", contact.id, { name, club: dto.club ?? null }, ip);
+    await this.marcas(admin, contact.id, { emailedAt: null, calledAt: null, status: "NOVO" }, dto);
+    await this.platform.audit(admin, "contact.create", "contact", contact.id, { name, association: dto.association ?? null }, ip);
     return this.get(contact.id);
   }
 
@@ -176,17 +183,84 @@ export class ContactsService {
    */
 
   async update(admin: PlatformAdminContext, id: string, dto: ContactInput) {
-    await this.exists(id);
+    const antes = await this.prisma.contact.findUnique({
+      where: { id },
+      select: { emailedAt: true, calledAt: true, status: true },
+    });
+    if (!antes) throw new NotFoundException("Contacto não encontrado");
 
     const name = dto.name?.trim();
-    if (name !== undefined && name.length < 2) throw new BadRequestException("O nome é preciso");
+    if (name !== undefined && name.length < 2) throw new BadRequestException("O nome do clube é preciso");
 
     await this.prisma.contact.update({
       where: { id },
-      data: { ...(name ? { name } : {}), ...clean(dto), ...(dto.status ? { status: dto.status } : {}) },
+      data: { ...(name ? { name } : {}), ...clean(dto) },
     });
+    await this.marcas(admin, id, antes, dto);
 
     return this.get(id);
+  }
+
+  /**
+   * "Email enviado", "Ligámos" e a resposta — o que a lista existe para saber.
+   *
+   * Marcar deixa uma linha no histórico (com a data e quem foi), e um clube que
+   * ainda estava "por contactar" passa a "à espera de resposta": marcar que se
+   * ligou e deixá-lo como por contactar seria a lista a mentir. Desmarcar é
+   * corrigir um engano: limpa a data e não escreve histórico.
+   *
+   * Uma resposta nova (mudança de estado) também fica no histórico, com o que
+   * responderam, para se ler depois como a conversa andou.
+   */
+  private async marcas(
+    admin: PlatformAdminContext,
+    id: string,
+    antes: { emailedAt: Date | null; calledAt: Date | null; status: ContactStatus },
+    dto: ContactInput,
+  ) {
+    const agora = new Date();
+    const data: { emailedAt?: Date | null; calledAt?: Date | null; status?: ContactStatus; lastContactAt?: Date } = {};
+    const historico: { channel: ContactChannel; status: ContactStatus | null; note: string | null }[] = [];
+
+    let status = dto.status ?? antes.status;
+    const marcouAgora = (dto.emailed === true && !antes.emailedAt) || (dto.called === true && !antes.calledAt);
+    if (marcouAgora && status === "NOVO") status = "CONTACTADO";
+
+    if (dto.emailed === true && !antes.emailedAt) {
+      data.emailedAt = agora;
+      historico.push({ channel: "EMAIL", status: null, note: null });
+    } else if (dto.emailed === false && antes.emailedAt) {
+      data.emailedAt = null;
+    }
+    if (dto.called === true && !antes.calledAt) {
+      data.calledAt = agora;
+      historico.push({ channel: "CHAMADA", status: null, note: null });
+    } else if (dto.called === false && antes.calledAt) {
+      data.calledAt = null;
+    }
+
+    if (status !== antes.status) {
+      data.status = status;
+      const resposta = dto.replyNote?.trim() || null;
+      // A mudança de estado vai na última linha que se escreveu agora, ou numa sua.
+      if (historico.length > 0) {
+        historico[historico.length - 1].status = status;
+        historico[historico.length - 1].note = resposta;
+      } else {
+        historico.push({ channel: "OUTRO", status, note: resposta });
+      }
+    }
+    if (historico.length > 0) data.lastContactAt = agora;
+    if (Object.keys(data).length === 0) return;
+
+    await this.prisma.$transaction([
+      ...historico.map((h) =>
+        this.prisma.contactTouch.create({
+          data: { contactId: id, channel: h.channel, status: h.status, note: h.note, byName: admin.name, happenedAt: agora },
+        }),
+      ),
+      this.prisma.contact.update({ where: { id }, data }),
+    ]);
   }
 
   /**
@@ -217,6 +291,8 @@ export class ContactsService {
         where: { id },
         data: {
           ...(dto.status ? { status: dto.status } : {}),
+          ...(dto.channel === "EMAIL" ? { emailedAt: happenedAt } : {}),
+          ...(dto.channel === "CHAMADA" ? { calledAt: happenedAt } : {}),
           // Só avança. Registar uma chamada antiga que faltava lançar não pode
           // fazer o contacto parecer mais recente do que o último que houve.
           lastContactAt: happenedAt,
@@ -314,7 +390,7 @@ export class ContactsService {
         status: { notIn: ["CLIENTE", "PERDIDO"] },
       },
       select: {
-        id: true, name: true, club: true, phone: true, email: true,
+        id: true, name: true, personName: true, association: true, phone: true, email: true,
         status: true, nextActionAt: true, nextActionNote: true,
       },
       orderBy: { nextActionAt: "asc" },
@@ -338,7 +414,9 @@ export class ContactsService {
 /* ---------------------------------------------------------------------------- */
 
 type Row = {
-  id: string; name: string; phone: string | null; email: string | null; club: string | null;
+  id: string; name: string; phone: string | null; email: string | null;
+  sport: string; association: string | null; personName: string | null;
+  emailedAt: Date | null; calledAt: Date | null; replyNote: string | null;
   role: string | null; status: ContactStatus; notes: string | null;
   lastContactAt: Date | null; nextActionAt: Date | null; nextActionNote: string | null;
   createdAt: Date; updatedAt: Date;
@@ -354,8 +432,13 @@ function shape(r: Row) {
     name: r.name,
     phone: r.phone,
     email: r.email,
-    club: r.club,
+    sport: r.sport,
+    association: r.association,
+    personName: r.personName,
     role: r.role,
+    emailedAt: r.emailedAt,
+    calledAt: r.calledAt,
+    replyNote: r.replyNote,
     status: r.status,
     notes: r.notes,
     owner: r.owner,
@@ -399,7 +482,10 @@ function clean(dto: ContactInput) {
   return {
     phone: text(dto.phone),
     email: email ? email.toLowerCase() : email,
-    club: text(dto.club),
+    ...(dto.sport !== undefined ? { sport: dto.sport.trim() || "Futebol" } : {}),
+    association: text(dto.association),
+    personName: text(dto.personName),
+    replyNote: text(dto.replyNote),
     role: text(dto.role),
     notes: text(dto.notes),
     nextActionNote: text(dto.nextActionNote),

@@ -81,6 +81,45 @@ export function dataDoAviso(assinatura: Date, n: number, periodo: SubscriptionBi
   return somaMeses(soODia(assinatura), n * passoEmMeses(periodo));
 }
 
+/**
+ * Os períodos de um contrato até hoje, mais o seguinte, do mais recente para o
+ * mais antigo.
+ *
+ * Serve o registo manual de pagamentos na ficha do clube: é a mesma conta dos
+ * avisos (`dataDoAviso`), por isso um pagamento registado à mão cai no mesmo
+ * período que o aviso automático cobriria, e a varredura já não o emite.
+ * O seguinte entra para se poder registar um pagamento adiantado.
+ */
+export function periodosDoContrato(input: {
+  ancora: Date;
+  desde: Date;
+  hoje: Date;
+  periodo: SubscriptionBillingPeriod;
+  maximo?: number;
+}): AvisoDevido[] {
+  const ancora = soODia(input.ancora);
+  const desde = soODia(input.desde);
+  const hoje = soODia(input.hoje);
+  const out: AvisoDevido[] = [];
+  for (let n = 1; n <= 480; n += 1) {
+    const periodStart = dataDoAviso(ancora, n - 1, input.periodo);
+    if (periodStart > hoje) {
+      // O seguinte ao que está a correr, e mais nenhum.
+      if (out.length === 0 || out[out.length - 1].periodStart <= hoje) {
+        if (periodStart >= desde) {
+          const issuedOn = dataDoAviso(ancora, n, input.periodo);
+          out.push({ issuedOn, periodStart, periodEnd: somaDias(issuedOn, -1), numero: n });
+        }
+      }
+      break;
+    }
+    if (periodStart < desde) continue;
+    const issuedOn = dataDoAviso(ancora, n, input.periodo);
+    out.push({ issuedOn, periodStart, periodEnd: somaDias(issuedOn, -1), numero: n });
+  }
+  return out.reverse().slice(0, input.maximo ?? 12);
+}
+
 export type AvisoDevido = {
   /** O dia em que o aviso sai — o aniversário da assinatura. */
   issuedOn: Date;

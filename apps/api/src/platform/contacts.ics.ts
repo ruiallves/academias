@@ -25,8 +25,10 @@
 
 type Feed = {
   id: string;
+  /** O clube. */
   name: string;
-  club: string | null;
+  personName: string | null;
+  association: string | null;
   phone: string | null;
   email: string | null;
   status: string;
@@ -37,12 +39,12 @@ type Feed = {
 /** O nome legível de cada estado. Igual ao da app — o feed é lido por humanos. */
 const ESTADO: Record<string, string> = {
   NOVO: "Por contactar",
-  CONTACTADO: "Contactado",
+  CONTACTADO: "À espera de resposta",
   SEM_RESPOSTA: "Sem resposta",
   REUNIAO: "Reunião marcada",
   PROPOSTA: "Proposta enviada",
   CLIENTE: "Cliente",
-  PERDIDO: "Perdido",
+  PERDIDO: "Não interessados",
 };
 
 /** Meia hora. Um seguimento é um telefonema, não uma tarde. */
@@ -68,10 +70,11 @@ export function renderIcs(contacts: Feed[], calendarName: string): string {
   for (const c of contacts) {
     const start = c.nextActionAt;
     const end = new Date(start.getTime() + DURATION_MIN * 60_000);
-    const where = c.club ? ` · ${c.club}` : "";
+    const where = c.association ? ` · ${c.association}` : "";
 
     const detalhe = [
       c.nextActionNote,
+      c.personName ? `Falar com: ${c.personName}` : null,
       c.phone ? `Telefone: ${c.phone}` : null,
       c.email ? `Email: ${c.email}` : null,
       `Estado: ${ESTADO[c.status] ?? c.status}`,
@@ -95,7 +98,7 @@ export function renderIcs(contacts: Feed[], calendarName: string): string {
       "BEGIN:VALARM",
       "TRIGGER:-PT30M",
       "ACTION:DISPLAY",
-      `DESCRIPTION:${escape(`Ligar a ${c.name}`)}`,
+      `DESCRIPTION:${escape(`Ligar a ${c.personName ?? c.name}`)}`,
       "END:VALARM",
       "END:VEVENT",
     );

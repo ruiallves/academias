@@ -4738,16 +4738,30 @@ model TicketNote {
 model Contact {
   id String @id @default(cuid())
 
+  /// O nome do **clube**. A lista existe para saber que clubes já contactámos;
+  /// a pessoa, quando se sabe, é `personName`.
   name  String
+  /// A modalidade. Futebol por omissão — é onde está quase todo o mercado.
+  sport       String  @default("Futebol")
+  /// A associação distrital: "AF Porto", "AF Braga"… para futebol e futsal (a
+  /// lista está na plataforma); texto livre para as outras modalidades.
+  association String?
+  /// Com quem se falou, se se sabe. Opcional de propósito.
+  personName  String?
+  /// Quando se mandou o (último) email e quando se ligou. Nulo é "ainda não".
+  emailedAt   DateTime?
+  calledAt    DateTime?
+  /// O que responderam, por palavras de quem ouviu.
+  replyNote   String?
   /// O número de telefone, como foi escrito. Sem normalizar de propósito: um
   /// contacto com um número estrangeiro ou uma extensão continua a ser útil, e um
   /// validador rígido só faria perder o dado.
   phone String?
   email String?
-  /// O clube ou academia da pessoa. Texto livre — ainda não é cliente, logo ainda
-  /// não há `Academy` para apontar.
+  /// Antigo: o clube, quando o contacto era uma pessoa. Passou para `name` na
+  /// migração `contactos_por_clube` e já não se escreve; fica até se poder largar.
   club  String?
-  /// O que a pessoa é lá dentro: "Diretor", "Treinador principal", "Presidente".
+  /// O cargo de `personName`: "Diretor", "Presidente".
   role  String?
 
   status ContactStatus @default(NOVO)
@@ -4783,6 +4797,7 @@ model Contact {
   @@index([status, lastContactAt])
   @@index([nextActionAt])
   @@index([ownerId])
+  @@index([sport, association])
 }
 
 /// O estado da conversa, e só isso.

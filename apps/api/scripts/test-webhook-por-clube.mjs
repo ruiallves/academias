@@ -104,7 +104,7 @@ async function limpar() {
     await db.query(`DELETE FROM "Athlete" WHERE "academyId" = $1`, [id]);
     await db.query(`DELETE FROM "Academy" WHERE id = $1`, [id]);
   }
-  await db.query(`DELETE FROM "WebhookEvent" WHERE "eventId" LIKE 'zw-trid-%'`);
+  await db.query(`DELETE FROM "WebhookEvent" WHERE "eventId" LIKE 'zw-trid-%' OR payload->>'webhook' LIKE 'zw-%'`);
 }
 
 try {
