@@ -95,6 +95,13 @@ model Academy {
   /// enquanto só um clube cobra online. Nunca sai por nenhum endpoint.
   eupagoApiKey String?
 
+  /// A chave do webhook do canal do clube — a "Chave Criptográfica" que o clube
+  /// escreve no backoffice da euPago. Os avisos desse canal chegam a
+  /// `/webhooks/eupago/<slug>` e verificam-se com esta chave, e só podem mexer
+  /// em pagamentos **deste** clube. Nulo = o clube usa o webhook global.
+  /// Nunca sai por nenhum endpoint.
+  eupagoWebhookSecret String?
+
   /// ## O cartão de sócio na app do clube
   ///
   /// Dois interruptores e não um: há clubes que querem o cartão digital mas não

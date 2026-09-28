@@ -156,9 +156,13 @@ export type Plan = {
  * contactos. Os nomes de equipas entram porque não são de ninguém e são o que dá
  * forma aos números. Ver `academyDetail` na API.
  */
+/** A euPago de um clube, para o painel. Só se está preenchida — os valores nunca vêm. */
+export type EupagoDoClube = { apiKey: boolean; webhookSecret: boolean; webhookUrl: string };
+
 export type AcademyDetail = {
   id: string;
   storage: EspacoDoClube;
+  eupago: EupagoDoClube;
   slug: string;
   name: string;
   status: AcademyStatus;

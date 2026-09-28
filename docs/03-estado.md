@@ -206,8 +206,8 @@ clube. A consola nunca recebe o NIF nem a data de nascimento do representante.
 Clubes que assinaram antes disto voltam a assinar: a migração
 `20260928140100_reassinar_condicoes` reemite como pendente a última ordem
 assinada sem declaração, com `billingAnchorAt` = a assinatura original, para os
-avisos e a previsão não mudarem de dia. **Aplica-se só no deploy, com o código
-novo já no ar.** Teste: `npm run test:declaracao` (38).
+avisos e a previsão não mudarem de dia. Aplicada a 28/09/2026, depois do deploy
+(reemitiu ad-fafe e admarciamirandafelgueiras). Teste: `npm run test:declaracao` (38).
 
 ---
 
@@ -3616,6 +3616,29 @@ ficar gravadas em `WebhookEvent` com o motivo — o silêncio era metade do prob
 Sem `EUPAGO_CLIENT_ID`/`EUPAGO_CLIENT_SECRET` a reconciliação só confirma
 Multibanco; MB Way fica dependente do webhook (e expira ao fim de dez minutos,
 para a app dizer "por pagar" em vez de prometer). O servidor avisa-o ao arrancar.
+
+**Clubes com canal próprio na euPago têm um webhook próprio.** Um clube que
+recebe na conta dele dá-nos a chave de API do canal (`Academy.eupagoApiKey`, já
+usada para criar os pagamentos) e escreve no backoffice dele o webhook
+`https://api.academias.pt/webhooks/eupago/<slug>` com uma Chave Criptográfica
+dele (`Academy.eupagoWebhookSecret`, 16 caracteres no mínimo; migração
+`20260928100000_webhook_eupago_por_clube`). Esse endereço verifica-se com a
+chave do clube e **só mexe em pagamentos desse clube**: um aviso bem assinado
+com o identificador de um pagamento de outro clube responde 200 (para a euPago
+não repetir), fica em `WebhookEvent` como "pagamento de outro clube" e não toca
+em nada. Clube sem chave, ou slug desconhecido, dá 401 como uma assinatura
+errada, para a rota pública não dizer que clubes existem. O webhook global
+continua para quem cobra pela conta da plataforma, e a chave de um clube não
+passa lá. As duas chaves colam-se no painel "Pagamentos euPago" da ficha do
+clube na plataforma (`PATCH /api/platform/academies/:id/eupago`, OWNER/ADMIN,
+auditado sem os valores; o painel mostra o endereço a dar ao clube e nunca
+devolve as chaves). Ordem: primeiro o deploy da rota, depois as chaves; com a
+chave de API gravada e a rota ainda por publicar, os pagamentos iam para o
+canal do clube e os avisos caíam em 404. A reconciliação de Multibanco usa a
+chave do clube; a de MB Way usa o OAuth da plataforma e não vê o canal do
+clube, por isso nesses clubes o MB Way depende só do webhook. Testado por
+`scripts/test-webhook-por-clube.mjs` (12), em dois clubes descartáveis contra
+uma API de teste sem chave euPago.
 
 Havia uma terceira causa, escondida atrás das outras duas: a migração
 `app_do_clube` redefiniu `app.resolve_payment_academy` sem o `OR p.id = p_ref`

@@ -507,17 +507,30 @@ export class EupagoClient implements OnModuleInit {
    * assinatura byte a byte pelo tempo de resposta. É pouco código para uma falha
    * que deixaria qualquer pessoa marcar mensalidades como pagas.
    */
-  verifySignature(rawBody: string, signature: string | undefined): boolean {
+  verifySignature(
+    rawBody: string,
+    signature: string | undefined,
+    /**
+     * A chave de um clube, quando o aviso chegou ao webhook desse clube
+     * (`/webhooks/eupago/<slug>`). Ausente é o segredo global do servidor.
+     */
+    chaveDoClube?: string,
+  ): boolean {
     if (!signature) return false;
 
     // Falha fechado se o segredo não estiver configurado. Um segredo vazio faz o
     // HMAC ser `HMAC("", body)` — que qualquer atacante calcula, porque o vazio é
     // público. Sem esta guarda, o webhook aceitaria eventos forjados e marcaria
     // mensalidades como pagas sem dinheiro. O arranque também recusa (ver
-    // `onModuleInit`); esta é a segunda linha de defesa.
-    const secret = this.config.getOrThrow<string>("EUPAGO_WEBHOOK_SECRET");
+    // `onModuleInit`); esta é a segunda linha de defesa. A chave de um clube
+    // passa pela mesma regra.
+    const secret = chaveDoClube ?? this.config.getOrThrow<string>("EUPAGO_WEBHOOK_SECRET");
     if (secret.length < 16) {
-      this.log.error("EUPAGO_WEBHOOK_SECRET ausente ou fraco — webhook recusado por segurança");
+      this.log.error(
+        chaveDoClube
+          ? "Chave do webhook do clube fraca — webhook recusado por segurança"
+          : "EUPAGO_WEBHOOK_SECRET ausente ou fraco — webhook recusado por segurança",
+      );
       return false;
     }
 

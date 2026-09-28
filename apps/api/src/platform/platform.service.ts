@@ -281,6 +281,8 @@ export class PlatformService {
       select: {
         id: true, slug: true, name: true, status: true, createdAt: true, trialEndsAt: true,
         logoUrl: true, signalColor: true,
+        /* Só para dizer se estão preenchidas — os valores nunca saem daqui. */
+        eupagoApiKey: true, eupagoWebhookSecret: true,
         subscription: {
           select: { status: true, priceCents: true, plan: { select: { id: true, name: true, amountCents: true } } },
         },
@@ -439,6 +441,7 @@ export class PlatformService {
       createdAt: academy.createdAt,
       trialEndsAt: academy.trialEndsAt,
       storage,
+      eupago: this.eupagoDoClube(academy),
       logoUrl: academy.logoUrl,
       signalColor: academy.signalColor,
       plan: academy.subscription?.plan.name ?? null,
@@ -1182,6 +1185,75 @@ export class PlatformService {
    * Baixar abaixo do que o clube já usa é permitido: nada se apaga, o clube só
    * deixa de carregar ficheiros novos até voltar a caber.
    */
+  /**
+   * O estado da euPago de um clube, para o painel: o que está preenchido e o
+   * endereço do webhook que se dá ao clube. **Nunca os valores** — a chave de
+   * API e a chave do webhook são do clube e não voltam a sair do servidor
+   * depois de gravadas; para as trocar, escrevem-se de novo.
+   */
+  private eupagoDoClube(a: { slug: string; eupagoApiKey: string | null; eupagoWebhookSecret: string | null }) {
+    const base = (this.config.get<string>("PUBLIC_API_URL") ?? "https://api.academias.pt").replace(/\/$/, "");
+    return {
+      apiKey: Boolean(a.eupagoApiKey?.trim()),
+      webhookSecret: Boolean(a.eupagoWebhookSecret?.trim()),
+      webhookUrl: `${base}/webhooks/eupago/${a.slug}`,
+    };
+  }
+
+  /**
+   * Gravar as credenciais euPago de um clube: a chave de API do canal dele e a
+   * chave do webhook que ele escreveu no backoffice.
+   *
+   * Um campo que não vem fica como está; um campo vazio **apaga** — o clube
+   * volta à conta da plataforma (chave de API) ou ao webhook global. A chave do
+   * webhook tem de ter pelo menos 16 caracteres: é ela que impede alguém de
+   * forjar um "pago" neste clube, e uma chave curta adivinha-se.
+   *
+   * Fica no registo de auditoria **sem** os valores: quem, quando, o quê mudou.
+   */
+  async setEupago(
+    admin: PlatformAdminContext,
+    id: string,
+    dto: { apiKey?: string; webhookSecret?: string },
+    ip?: string,
+  ) {
+    const academy = await this.prisma.academy.findUnique({
+      where: { id },
+      select: { id: true, slug: true, eupagoApiKey: true, eupagoWebhookSecret: true },
+    });
+    if (!academy) throw new BadRequestException("Academia não encontrada");
+
+    const data: { eupagoApiKey?: string | null; eupagoWebhookSecret?: string | null } = {};
+    if (dto.apiKey !== undefined) data.eupagoApiKey = dto.apiKey.trim() || null;
+    if (dto.webhookSecret !== undefined) {
+      const chave = dto.webhookSecret.trim();
+      if (chave && chave.length < 16) {
+        throw new BadRequestException("A chave do webhook tem de ter pelo menos 16 caracteres");
+      }
+      data.eupagoWebhookSecret = chave || null;
+    }
+    if (Object.keys(data).length === 0) throw new BadRequestException("Nada para gravar");
+
+    const depois = await this.prisma.academy.update({
+      where: { id },
+      data,
+      select: { slug: true, eupagoApiKey: true, eupagoWebhookSecret: true },
+    });
+    await this.audit(
+      admin,
+      "academy.eupago",
+      "academy",
+      id,
+      {
+        slug: academy.slug,
+        ...(dto.apiKey !== undefined ? { apiKey: data.eupagoApiKey ? "definida" : "apagada" } : {}),
+        ...(dto.webhookSecret !== undefined ? { webhookSecret: data.eupagoWebhookSecret ? "definida" : "apagada" } : {}),
+      },
+      ip,
+    );
+    return this.eupagoDoClube(depois);
+  }
+
   async setStorageLimit(admin: PlatformAdminContext, id: string, limitMb: number, ip?: string) {
     const academy = await this.prisma.academy.findUnique({
       where: { id },
