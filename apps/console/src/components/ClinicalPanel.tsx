@@ -36,7 +36,13 @@ import type { Athlete, ClinicalEntry } from "@/data/types";
  */
 export function ClinicalPanel({ athlete, session }: { athlete: Athlete; session: Session }) {
   useClinicalRecords();
-  const [composing, setComposing] = useState<"registo" | "consulta" | null>(null);
+  /*
+   * Na ficha regista-se uma lesão e só isso, como nos Boletins. Exames,
+   * fisioterapia e o resto são consultas: agendam-se e registam-se nas Consultas.
+   */
+  const [composing, setComposing] = useState<"lesao" | "consulta" | null>(null);
+  /* O registo a corrigir (ou apagar). Ver `ClinicalEntryDialog` com `entry`. */
+  const [aEditar, setAEditar] = useState<ClinicalEntry | null>(null);
   const tiposDeConsulta = useCatalog("consultationTypes");
 
   /*
@@ -172,9 +178,9 @@ export function ClinicalPanel({ athlete, session }: { athlete: Athlete; session:
       <Panel>
         <PanelHead title="Boletim clínico" hint={mayRead ? `${entries.length} registos` : "acesso restrito"}>
           {mayWrite && (
-            <button type="button" onClick={() => setComposing("registo")} className="ctl-primary">
+            <button type="button" onClick={() => setComposing("lesao")} className="ctl-primary">
               <Plus className="size-3.5" strokeWidth={2} />
-              Novo registo
+              Registar lesão
             </button>
           )}
         </PanelHead>
@@ -199,11 +205,22 @@ export function ClinicalPanel({ athlete, session }: { athlete: Athlete; session:
                 entry={e}
                 mayWrite={mayWrite}
                 onClear={() => void darAlta(e.id)}
+                onEdit={() => setAEditar(e)}
               />
             ))}
           </ul>
         )}
       </Panel>
+
+      {aEditar && (
+        <ClinicalEntryDialog
+          athlete={athlete}
+          session={session}
+          variant={aEditar.kind === "injury" ? "lesao" : "registo"}
+          entry={aEditar}
+          onClose={() => setAEditar(null)}
+        />
+      )}
 
       {composing && (
         <ClinicalEntryDialog
@@ -223,10 +240,12 @@ function ClinicalRow({
   entry,
   mayWrite,
   onClear,
+  onEdit,
 }: {
   entry: ClinicalEntry;
   mayWrite: boolean;
   onClear: () => void;
+  onEdit: () => void;
 }) {
   const open = entry.impact !== "none" && !entry.clearedOn;
 
@@ -259,6 +278,12 @@ function ClinicalRow({
         {open && mayWrite && (
           <button type="button" onClick={onClear} className="ctl-outline h-7 text-meta">
             Dar alta
+          </button>
+        )}
+        {/* Corrigir ou apagar: só quem escreve no boletim. */}
+        {mayWrite && (
+          <button type="button" onClick={onEdit} className="ctl-ghost h-7 text-meta">
+            Editar
           </button>
         )}
       </div>

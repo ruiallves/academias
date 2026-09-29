@@ -2,7 +2,7 @@ import { useEffect } from "react";
 import { useApi } from "@/lib/query";
 import type { CSSProperties } from "react";
 import { NavLink, Outlet } from "react-router-dom";
-import { Building2, FileClock, Inbox, LayoutGrid, LogOut, Scale, ShieldCheck, TrendingUp, Users, Wallet } from "lucide-react";
+import { Building2, FileClock, Inbox, LayoutGrid, LogOut, Megaphone, Scale, ShieldCheck, TrendingUp, Users, Wallet } from "lucide-react";
 import { TICKETS_MUDARAM } from "@/lib/tickets";
 import { signOut } from "@/lib/session";
 import { cx } from "./primitives";
@@ -37,6 +37,9 @@ const NAV: NavItem[] = [
   { to: "/contas", label: "Contas", icon: Wallet },
   { to: "/crescimento", label: "Crescimento", icon: TrendingUp },
   { to: "/registo", label: "Registo", icon: FileClock },
+  // O que mudou, contado aos clubes. Fica depois do registo porque é a última
+  // coisa de um ciclo de trabalho: fez-se, ficou registado, conta-se.
+  { to: "/novidades", label: "Novidades", icon: Megaphone },
   // Termos, políticas e DPA — versões, publicação e quem já aceitou.
   { to: "/legal", label: "Legal", icon: Scale },
 ];

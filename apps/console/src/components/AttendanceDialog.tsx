@@ -3,7 +3,7 @@ import { Dialog } from "./Dialog";
 import { AvailabilityTag, cx, Monogram, SelectField } from "./primitives";
 import { listAthletes, teamById, naEquipa } from "@/lib/api";
 import { recordAttendance } from "@/lib/attendance";
-import { availabilityOf, isUnavailable, useClinicalRecords } from "@/lib/clinical";
+import { availabilityOn, diaDe, useClinicalRecords } from "@/lib/clinical";
 import { longDate, shortName, time } from "@/lib/format";
 import type { AbsenceKind, TrainingSession } from "@/data/types";
 import type { Session } from "@/lib/permissions";
@@ -111,11 +111,23 @@ export function AttendanceDialog({
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  // Quem está de baixa não entra na conta: não faltou ao treino, está impedido de
-  // o fazer. Contá-lo como falta puniria o atleta pela lesão no seu próprio
-  // relatório de assiduidade.
-  const injured = roster.filter((a) => isUnavailable(a.id));
-  const eligible = roster.filter((a) => !isUnavailable(a.id));
+  /*
+   * O estado de cada atleta **no dia do treino**, e não hoje.
+   *
+   * Um treino de há duas semanas regista-se com quem estava de baixa nessa
+   * altura: quem já teve alta não passa a ter falta, e quem se lesionou depois
+   * não fica de fora de um treino onde esteve.
+   *
+   * Quem está de baixa não entra na conta: não faltou ao treino, está impedido de
+   * o fazer. Contá-lo como falta puniria o atleta pela lesão no seu próprio
+   * relatório de assiduidade. Quem está condicionado treina, e marca-se como os
+   * outros, com o ponto amarelo a lembrar que treinou limitado.
+   */
+  const diaDoTreino = diaDe(new Date(training.start));
+  const estado = (id: string) => availabilityOn(id, diaDoTreino);
+  const injured = roster.filter((a) => estado(a.id) === "out");
+  const eligible = roster.filter((a) => estado(a.id) !== "out");
+  const condicionados = eligible.filter((a) => estado(a.id) === "limited").length;
   const missing = eligible.filter((a) => absences[a.id] && absences[a.id] !== "late").length;
   const present = eligible.length - missing;
 
@@ -159,6 +171,7 @@ export function AttendanceDialog({
         <>
           <span className="mr-auto text-meta text-ink-3 tabular">
             {present} de {eligible.length} presentes
+            {condicionados > 0 && <span className="text-ink-4"> · {condicionados} condicionado{condicionados === 1 ? "" : "s"}</span>}
             {injured.length > 0 && <span className="text-ink-4"> · {injured.length} de baixa</span>}
           </span>
           <button type="button" onClick={onClose} className="ctl-ghost" disabled={saving}>
@@ -190,7 +203,9 @@ export function AttendanceDialog({
       <ul className="p-2">
         {roster.map((a) => {
           const kind = absences[a.id];
-          const injured = isUnavailable(a.id);
+          const disponibilidade = estado(a.id);
+          const injured = disponibilidade === "out";
+          const condicionado = disponibilidade === "limited";
 
           if (injured) {
             return (
@@ -198,7 +213,7 @@ export function AttendanceDialog({
                 <div className="flex w-full items-center gap-2.5 rounded-[var(--radius-control)] px-3 py-2 opacity-70">
                   <Monogram name={a.name} photoUrl={a.photoUrl} size="sm" />
                   <span className="min-w-0 flex-1 truncate text-body text-ink-3">{shortName(a.name)}</span>
-                  <AvailabilityTag availability={availabilityOf(a.id)} size="sm" />
+                  <AvailabilityTag availability={disponibilidade} size="sm" />
                 </div>
               </li>
             );
@@ -210,10 +225,12 @@ export function AttendanceDialog({
                 <div className="flex w-full items-center gap-2.5">
                   <Monogram name={a.name} photoUrl={a.photoUrl} size="sm" />
 
-                  {/* Ponto de cor: o estado lê-se de relance, sem abrir o dropdown. */}
+                  {/* Ponto de cor: o estado lê-se de relance, sem abrir o dropdown.
+                      Presente e condicionado é amarelo: treinou, mas limitado. */}
                   <span
-                    className={cx("size-1.5 shrink-0 rounded-full", kind ? DOT_TONE[kind] : "bg-ok")}
+                    className={cx("size-1.5 shrink-0 rounded-full", kind ? DOT_TONE[kind] : condicionado ? "bg-warn" : "bg-ok")}
                     aria-hidden
+                    title={condicionado && !kind ? "Condicionado" : undefined}
                   />
 
                   <span
@@ -224,6 +241,8 @@ export function AttendanceDialog({
                   >
                     {shortName(a.name)}
                   </span>
+
+                  {condicionado && <AvailabilityTag availability="limited" size="sm" />}
 
                   <SelectField
                     size="sm"

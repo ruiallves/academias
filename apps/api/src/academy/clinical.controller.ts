@@ -84,7 +84,7 @@ export class ClinicalController {
     return this.clinical.reabrir(req.ctx, id);
   }
 
-  /** Desmarcar um agendamento. Registos do que aconteceu não se apagam. */
+  /** Apagar um registo: desmarcar um agendamento, ou tirar uma baixa lançada por engano. */
   @Delete("clinical/:id")
   remove(@Req() req: AuthedRequest, @Param("id") id: string) {
     return this.clinical.apagar(req.ctx, id);

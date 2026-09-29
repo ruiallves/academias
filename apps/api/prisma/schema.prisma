@@ -239,7 +239,7 @@ model Academy {
   legalAcceptances LegalAcceptance[]
 
   /// As ordens de adesão deste clube — ver `SubscriptionOrder`.
-  subscriptionOrders SubscriptionOrder[]
+  subscriptionOrders       SubscriptionOrder[]
   /// As declarações de aceitação assinadas — ver `SubscriptionDeclaration`.
   subscriptionDeclarations SubscriptionDeclaration[]
 
@@ -378,6 +378,9 @@ model User {
 
   /// As ordens de adesão que esta pessoa assinou pelo clube.
   signedOrders SubscriptionOrder[] @relation("OrderSignedBy")
+
+  /// As mensalidades a que esta pessoa mudou o estado à mão.
+  chargeStatusChanges Charge[] @relation("ChargeStatusChangedBy")
 }
 
 enum Role {
@@ -1084,13 +1087,13 @@ model Team {
 }
 
 model TeamMembership {
-  id        String    @id @default(cuid())
-  teamId    String
-  team      Team      @relation(fields: [teamId], references: [id], onDelete: Cascade)
-  athleteId String
-  athlete   Athlete   @relation(fields: [athleteId], references: [id], onDelete: Cascade)
+  id          String    @id @default(cuid())
+  teamId      String
+  team        Team      @relation(fields: [teamId], references: [id], onDelete: Cascade)
+  athleteId   String
+  athlete     Athlete   @relation(fields: [athleteId], references: [id], onDelete: Cascade)
   /// Valor de `Sport.positions`. Nulo em desportos sem posições.
-  position  String?
+  position    String?
   /// O número da camisola **nesta equipa**.
   ///
   /// Um atleta que joga futebol e futsal pode ser o 10 num e o 7 no outro. Vivia
@@ -1098,8 +1101,8 @@ model TeamMembership {
   /// equipa principal, para quem ainda a lê. Único por equipa entre as passagens
   /// vivas — verificado no serviço (`AthletesService`).
   squadNumber Int?
-  joinedAt  DateTime  @default(now())
-  leftAt    DateTime?
+  joinedAt    DateTime  @default(now())
+  leftAt      DateTime?
 
   @@unique([teamId, athleteId])
   @@index([athleteId])
@@ -1188,6 +1191,7 @@ model TrainingSession {
    * ---- Plano de treino (Área técnica) -----------------------------------
    */
   /**
+   * /**
    * /**
    * /**
    * /**
@@ -1900,6 +1904,12 @@ model Charge {
   status      ChargeStatus @default(OPEN)
   settledAt   DateTime?
 
+  /// Quem mudou o estado à mão (paga, por pagar, anulada), e quando. Nulo nas
+  /// que nunca foram mexidas à mão. Ver `BillingService.setChargeStatus`.
+  statusChangedById String?
+  statusChangedBy   User?     @relation("ChargeStatusChangedBy", fields: [statusChangedById], references: [id], onDelete: SetNull)
+  statusChangedAt   DateTime? @db.Timestamptz(3)
+
   payments Payment[]
 
   createdAt DateTime @default(now())
@@ -1909,6 +1919,7 @@ model Charge {
   @@index([academyId, period])
   @@index([academyId, status])
   @@index([categoryId])
+  @@index([statusChangedById])
 }
 
 enum PaymentStatus {
@@ -2326,6 +2337,7 @@ model Match {
   /// Preenchidos só depois de jogado — é a ausência do resultado que decide se a
   /// UI mostra a convocatória ou a estatística.
   /**
+   * /**
    * /**
    * /**
    * /**
@@ -3830,8 +3842,8 @@ model MemberFee {
   /// Nulo nas mensais e nas anuais anteriores a esta migração que não foram
   /// reconhecidas — quem as lê trata a ausência como "um ano a partir do
   /// período". Ver `coberturaDaQuota`.
-  coversFrom  DateTime? @db.Date
-  coversTo    DateTime? @db.Date
+  coversFrom DateTime? @db.Date
+  coversTo   DateTime? @db.Date
 
   /// Quando o sócio foi avisado de que esta quota existe.
   ///
@@ -3839,7 +3851,7 @@ model MemberFee {
   /// uns meses, e avisar logo era cobrar já o que ainda não se deve. Fica nula
   /// até o período dela chegar; a varredura avisa aí e carimba. Ver
   /// `avisarQuotasQueComecaram`.
-  noticedAt   DateTime?
+  noticedAt DateTime?
 
   status    ChargeStatus   @default(OPEN)
   settledAt DateTime?
@@ -3988,12 +4000,12 @@ model CatalogItem {
   color String?
 
   /// Só para `kind = "competitions"`: as equipas que a disputam e os jogos dela.
-  teams   TeamCompetition[]
-  matches Match[]           @relation("MatchCompetition")
+  teams           TeamCompetition[]
+  matches         Match[]           @relation("MatchCompetition")
   /// Os eventos marcados com este tipo. Ver `CalendarEvent.typeId`.
-  events  CalendarEvent[]   @relation("EventType")
+  events          CalendarEvent[]   @relation("EventType")
   /// As consultas marcadas com este tipo. Ver `ClinicalEntry.typeId`.
-  clinicalEntries ClinicalEntry[] @relation("ClinicalType")
+  clinicalEntries ClinicalEntry[]   @relation("ClinicalType")
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -4088,11 +4100,14 @@ model PlatformAdmin {
 
   /// As contas da plataforma: quem lançou o movimento, e quem deu a mensalidade
   /// de um clube como paga.
-  transactions   PlatformTransaction[] @relation("TransactionCreatedBy")
-  noticesMarked  SubscriptionNotice[]  @relation("NoticePaidBy")
+  transactions  PlatformTransaction[] @relation("TransactionCreatedBy")
+  noticesMarked SubscriptionNotice[]  @relation("NoticePaidBy")
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+
+  /// As versões que este administrador escreveu. Ver `Release`.
+  releases Release[]
 }
 
 /// Convite para entrar na plataforma como administrador.
@@ -4487,7 +4502,7 @@ model PlatformTransaction {
   amountCents Int
   /// 23, 13, 6 ou 0. O líquido calcula-se; guardá-lo era deixar dois números
   /// da mesma coisa a discordarem.
-  vatRate     Int @default(23)
+  vatRate     Int    @default(23)
 
   occurredAt DateTime  @db.Date
   dueDate    DateTime? @db.Date
@@ -4546,12 +4561,12 @@ model PlatformRecurringExpense {
 
 /// O saldo de abertura e o IVA das mensalidades. Uma linha só.
 model PlatformFinanceSettings {
-  id                  String    @id @default(cuid())
-  openingBalanceCents Int       @default(0)
-  openingBalanceAt    DateTime? @db.Date
+  id                      String    @id @default(cuid())
+  openingBalanceCents     Int       @default(0)
+  openingBalanceAt        DateTime? @db.Date
   /// O IVA das mensalidades dos clubes, e se o preço acordado já o inclui.
-  subscriptionVatRate     Int     @default(23)
-  subscriptionVatIncluded Boolean @default(false)
+  subscriptionVatRate     Int       @default(23)
+  subscriptionVatIncluded Boolean   @default(false)
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -4719,6 +4734,77 @@ model Ticket {
 /// Não guarda a resposta enviada, porque não há envio de email neste servidor: a
 /// resposta sai do cliente de email de quem responde. O que fica aqui é o que a
 /// equipa escreveu para a equipa.
+/// ## As novidades que se contam aos clubes
+///
+/// Um clube que não sabe o que mudou não usa o que mudou. Havia um `release.txt`
+/// na raiz do repositório, escrito a cada deploy, que ninguém fora daqui lia.
+///
+/// Isto é a mesma coisa com destinatários: escreve-se a versão, escolhem-se os
+/// clubes, e sai um email ao **responsável** de cada um — a mesma pessoa que
+/// assina o contrato e recebe as cobranças (`responsavelDoClube`). Uma segunda
+/// definição de "o responsável" daria novidades a uma pessoa e faturas a outra.
+///
+/// Só a plataforma lê estas tabelas: `academia_app` não tem privilégio nenhum
+/// sobre elas (ver a migração), que é a mesma regra de `Ticket` e `PlatformAdmin`.
+model Release {
+  id String @id @default(cuid())
+
+  /// Como o Rui a escreve no topo do `release.txt`: "1.4", "29/09/2026".
+  /// Texto livre de propósito — numerar versões é uma decisão dele, não do modelo.
+  version String
+  /// A linha do assunto do email, sem o nome da plataforma à frente.
+  title   String
+  /// O corpo, como se escreve num `release.txt`: uma novidade por linha, com "-"
+  /// à cabeça. Guardado tal e qual, e formatado na altura de desenhar o email —
+  /// ver `linhasDeNovidades`. Guardar HTML aqui seria guardar a decisão de
+  /// apresentação dentro do dado.
+  notes   String
+
+  /// Quando saiu. Nulo = rascunho, e um rascunho ainda se edita e apaga.
+  sentAt    DateTime?
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+
+  /// Quem a escreveu, para o registo dizer de quem foi a decisão.
+  authorId String?
+  author   PlatformAdmin? @relation(fields: [authorId], references: [id], onDelete: SetNull)
+
+  recipients ReleaseRecipient[]
+
+  @@index([sentAt])
+}
+
+/// Uma linha por clube a quem a versão foi mandada.
+///
+/// Guarda o **resultado** e não a intenção: quem recebeu, para que endereço, e o
+/// motivo quando não deu. Sem isto, um envio a doze clubes que falha em três é
+/// indistinguível de um envio a nove — e o que se quer saber no dia seguinte é
+/// exactamente quais três.
+///
+/// O nome do clube e o do responsável ficam **copiados**, não lidos por junção: o
+/// que interessa saber é para quem foi na altura, e um clube que mude de
+/// presidente não pode reescrever o passado.
+model ReleaseRecipient {
+  id        String  @id @default(cuid())
+  releaseId String
+  release   Release @relation(fields: [releaseId], references: [id], onDelete: Cascade)
+
+  /// Sem chave estrangeira para `Academy`: apagar um clube não apaga o registo de
+  /// lhe termos escrito.
+  academyId   String
+  academyName String
+
+  name  String
+  email String
+
+  sentAt DateTime?
+  /// O motivo, quando o email não saiu. Nulo com `sentAt` preenchido = correu bem.
+  error  String?
+
+  @@unique([releaseId, academyId])
+  @@index([academyId])
+}
+
 model TicketNote {
   id       String @id @default(cuid())
   ticketId String
@@ -4740,9 +4826,9 @@ model Contact {
 
   /// O nome do **clube**. A lista existe para saber que clubes já contactámos;
   /// a pessoa, quando se sabe, é `personName`.
-  name  String
+  name        String
   /// A modalidade. Futebol por omissão — é onde está quase todo o mercado.
-  sport       String  @default("Futebol")
+  sport       String    @default("Futebol")
   /// A associação distrital: "AF Porto", "AF Braga"… para futebol e futsal (a
   /// lista está na plataforma); texto livre para as outras modalidades.
   association String?
@@ -4756,13 +4842,13 @@ model Contact {
   /// O número de telefone, como foi escrito. Sem normalizar de propósito: um
   /// contacto com um número estrangeiro ou uma extensão continua a ser útil, e um
   /// validador rígido só faria perder o dado.
-  phone String?
-  email String?
+  phone       String?
+  email       String?
   /// Antigo: o clube, quando o contacto era uma pessoa. Passou para `name` na
   /// migração `contactos_por_clube` e já não se escreve; fica até se poder largar.
-  club  String?
+  club        String?
   /// O cargo de `personName`: "Diretor", "Presidente".
-  role  String?
+  role        String?
 
   status ContactStatus @default(NOVO)
 

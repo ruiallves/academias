@@ -507,3 +507,62 @@ cd apps/platform && npm run dev      # :5180
 Entrar com a conta criada por `seed:platform`. Em produção isto vive em
 `admin.academias.pt`, e a variável `PLATFORM_ORIGIN` diz à API que essa origem
 existe.
+
+## Novidades: contar aos clubes o que mudou
+
+Um clube que não sabe o que mudou não usa o que mudou. As novidades viviam num
+`release.txt` na raiz do repositório, escrito a cada deploy e lido por uma
+pessoa, e funcionalidades pedidas por um clube ficavam meses por usar **por esse
+clube**, que não sabia que já lá estavam.
+
+O menu **Novidades** escreve uma versão, escolhe os clubes e manda um email a
+cada um. Modelos `Release` e `ReleaseRecipient` (migração
+`20260929120000_novidades_para_os_clubes`), rotas em `api/platform/releases`,
+atrás de `OWNER`/`ADMIN` — **incluindo ler**, porque a lista de destinatários
+traz o nome e o email do presidente de cada clube e isso não é para o `SUPPORT`
+que veio responder a um ticket.
+
+**Quem recebe é o responsável do clube**, que é `responsavelDoClube`: a mesma
+pessoa que assina o contrato e recebe as cobranças. Não há aqui uma segunda
+definição de "o responsável", e a falta dela custou um refactor: a regra passou
+a viver numa função pura (`escolherResponsavel`), porque os dois caminhos usam
+ligações com tipos diferentes — o servidor das academias lê dentro de um
+`runAs`, o painel lê com a ligação sem âmbito. Forçar com um `as` era um tipo a
+mentir sobre qual das ligações estava ali; assim cada lado faz a sua consulta
+com o `SELECT_RESPONSAVEL` e a decisão é uma só.
+
+**Os clubes que pagam vêm escolhidos**, pela regra que o painel já usa
+(`temReceita`: a pagar ou em falta). Um clube em avaliação ou por decidir não vem
+escolhido, porque mandar-lhe novidades é uma decisão comercial e não um
+automatismo, mas está na lista a um clique. Ficam de fora, mesmo pagando, quem
+não tem a quem escrever e quem **já recebeu** aquela versão: reenviar existe para
+alcançar quem faltou, não para escrever duas vezes a quem já leu. A regra vive
+no cliente (`escolhidosPorOmissao`) e a API devolve o estado em bruto — uma
+segunda cópia dela no servidor e a lista de clubes a pagar do painel passavam a
+poder discordar uma da outra.
+
+**Rascunho e envio.** Uma versão nasce rascunho e pode ser reescrita e apagada.
+Depois de enviada fecha-se: o texto que saiu por email não se reescreve, porque
+reescrevê-lo mudava o histórico sem mudar o que as pessoas leram. Reenviar a
+clubes **novos** continua a dar.
+
+`ReleaseRecipient` guarda o **resultado** e não a intenção: quem recebeu, para
+que endereço, e o motivo quando não deu. Um envio a doze clubes que falha em três
+é indistinguível de um envio a nove, e o que se quer saber no dia seguinte é
+exactamente quais três. O nome do clube e o do responsável ficam **copiados** e
+não lidos por junção — o que interessa é para quem foi na altura, e um clube que
+mude de presidente não reescreve o passado. Cada clube é independente: um email
+que falha grava o motivo naquela linha e o envio continua.
+
+As duas tabelas são **só da plataforma**: `REVOKE ALL … FROM academia_app`, como
+`Ticket` e `PlatformAdmin`. `ReleaseRecipient` tem uma coluna `academyId` e não
+tem RLS, e o `test:rls-cobertura` aceita-o pela segunda via que verifica — uma
+tabela sem privilégio nenhum para `academia_app` não precisa de política, porque
+nenhum pedido de academia lhe chega. (Passou de 81 para 83 verificações.)
+
+Prova: `npm run test:novidades` (43), no CI. O que ele guarda acima de tudo é que
+**a pré-visualização não minta**: o painel desenha a lista antes de enviar com
+uma função dele e o servidor desenha o email com outra, e o teste passa-lhes o
+mesmo conjunto de treze casos. Agrupado com esbuild porque atravessa dois
+workspaces, com `--packages=external` (sem isso o bundle arrastava o
+`@nestjs/common` e rebentava num `require` de `stream`).

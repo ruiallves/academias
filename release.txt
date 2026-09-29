@@ -1,0 +1,6 @@
+29/09/2026
+- Ficha do atleta: as equipas (modalidade, equipa, número e posição) passam a editar-se na Visão geral, sem abrir o modo Editar.
+- Mensalidades: "Transferência bancária" passa a ser um dos métodos ao marcar uma mensalidade como paga à mão (e ao lançar mensalidades já pagas).
+- Mensalidades: a exportação para Excel tem uma coluna nova, "Método de pagamento".
+- Mensalidades: quando alguém muda o estado à mão (paga, por pagar, anulada), a coluna Pagamento diz quem foi e em que dia ("Marcada por", "Reaberta por", "Anulada por").
+- Boletim clínico: uma lesão (baixa) passa a poder ser editada e apagada na ficha do atleta, só por quem escreve no boletim. Apagar tira-a da base de dados e de tudo o que dependia dela.

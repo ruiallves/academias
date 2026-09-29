@@ -310,6 +310,8 @@ type ApiCharge = {
   paidMethod?: string | null; paidAt?: string | null;
   /** Quem pagou e o identificador com que aparece na euPago. Só nas pagas pela app. */
   paidBy?: string | null; paidByRelation?: string | null; paymentId?: string | null;
+  /** Quem mudou o estado à mão, e quando. Nulo nas nunca mexidas e nas pagas online. */
+  changedBy?: string | null; changedAt?: string | null;
 };
 
 /** Uma comunicação publicada, com a taxa de leitura. Ver `GET /api/announcements`. */
@@ -482,6 +484,7 @@ function mapFee(c: ApiCharge): Fee {
     ...(c.paidMethod ? { method: METHOD_LABEL[c.paidMethod] ?? c.paidMethod } : {}),
     ...(c.paidBy ? { paidBy: c.paidByRelation ? `${c.paidBy} (${c.paidByRelation})` : c.paidBy } : {}),
     ...(c.paymentId ? { paymentId: c.paymentId } : {}),
+    ...(c.changedAt ? { changedAt: c.changedAt, changedBy: c.changedBy ?? undefined } : {}),
   };
 }
 

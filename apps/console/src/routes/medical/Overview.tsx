@@ -128,7 +128,7 @@ export default function MedicalOverview() {
                   return (
                     <li key={a.id} className="flex items-center gap-2.5 border-b border-line px-5 py-3 last:border-0">
                       <Monogram name={a.name} photoUrl={a.photoUrl} size="sm" />
-                      <Link to={`/atletas/${a.id}`} className="min-w-0 flex-1">
+                      <Link to={`/atletas/${a.id}?separador=clinico`} className="min-w-0 flex-1">
                         <span className="block truncate text-body font-medium text-ink hover:underline">
                           {shortName(a.name)}
                         </span>
@@ -198,7 +198,7 @@ function RecentFollowUps() {
             <span className="flex size-7 shrink-0 items-center justify-center rounded-full bg-sunken text-ink-3">
               <Icon className="size-3.5" strokeWidth={1.75} />
             </span>
-            <Link to={`/atletas/${athleteId}`} className="min-w-0 flex-1">
+            <Link to={`/atletas/${athleteId}?separador=clinico`} className="min-w-0 flex-1">
               <span className="block truncate text-body text-ink hover:underline">{entry.title}</span>
               <span className="block truncate text-meta text-ink-3">
                 {shortName(listAthletes(session).find((a) => a.id === athleteId)?.name ?? "—")}

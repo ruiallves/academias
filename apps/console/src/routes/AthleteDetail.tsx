@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { PrecoDoAtleta } from "@/components/finance/PrecoDoAtleta";
-import { Link, useNavigate, useParams } from "react-router-dom";
+import { Link, useNavigate, useParams, useSearchParams } from "react-router-dom";
 import {
   AvailabilityTag,
   Bar,
@@ -20,6 +20,7 @@ import { AthleteKitPanel } from "@/components/inventory/AthleteKitPanel";
 import { ClinicalPanel } from "@/components/ClinicalPanel";
 import { NutritionPanel } from "@/components/NutritionPanel";
 import { AppDoAtletaPanel } from "@/components/AppDoAtletaPanel";
+import { EquipasDoAtletaPanel } from "@/components/EquipasDoAtletaPanel";
 import { IdentificacaoField, identificacaoInicial, identificacaoOk, identificacaoParaApi } from "@/components/IdentificacaoField";
 import { HistoricoPanel } from "@/components/HistoricoPanel";
 import { PercursoDoAtleta } from "@/components/Percurso";
@@ -86,6 +87,9 @@ import type { Athlete, Fee } from "@/data/types";
 
 type Tab = "overview" | "matches" | "attendance" | "development" | "clinical" | "kit" | "fees" | "family" | "history";
 
+/** Os separadores que se abrem por link (`?separador=`), com o nome em português. */
+const SEPARADOR_DO_LINK: Record<string, Tab> = { clinico: "clinical" };
+
 /**
  * A ficha do atleta.
  *
@@ -101,7 +105,12 @@ type Tab = "overview" | "matches" | "attendance" | "development" | "clinical" | 
 export default function AthleteDetail() {
   const { id = "" } = useParams();
   const { session } = useSession();
-  const [tab, setTab] = useState<Tab>("overview");
+  /*
+   * `?separador=clinico` abre já no separador clínico: é por aí que os Boletins
+   * entram, porque quem vem de lá quer o boletim e não a visão geral.
+   */
+  const [params] = useSearchParams();
+  const [tab, setTab] = useState<Tab>(() => SEPARADOR_DO_LINK[params.get("separador") ?? ""] ?? "overview");
   const [editing, setEditing] = useState(false);
 
   const athlete = athleteById(id);
@@ -686,6 +695,9 @@ function Overview({
           na mesma coluna, e fica à vista sem descer a página.
         */}
         <div className="min-w-0 space-y-3">
+        {/* As equipas editam-se aqui mesmo, sem abrir a ficha inteira. */}
+        <EquipasDoAtletaPanel athlete={athlete} />
+
         <Panel>
           <PanelHead title="Ficha física" hint="actualizada manualmente" />
           <dl className="px-5 py-1.5">
@@ -889,6 +901,8 @@ function Matches({ athleteId, matches }: { athleteId: string; matches: AthleteMa
 
 const STATUS_META: Record<string, { label: string; tone: "ok" | "warn" | "risk" | "neutral" }> = {
   present: { label: "Presente", tone: "ok" },
+  limited: { label: "Condicionado", tone: "warn" },
+  out: { label: "De baixa", tone: "neutral" },
   late: { label: "Atrasado", tone: "neutral" },
   justified: { label: "Justificada", tone: "warn" },
   absent: { label: "Faltou", tone: "risk" },

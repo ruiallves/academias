@@ -140,7 +140,8 @@ export async function updateClinicalEntry(entryId: string, patch: Partial<NovaEn
     ...(patch.location !== undefined ? { location: patch.location } : {}),
     ...(patch.title !== undefined ? { title: patch.title } : {}),
     ...(patch.detail !== undefined ? { detail: patch.detail } : {}),
-    ...(patch.expectedReturn !== undefined ? { expectedReturn: patch.expectedReturn } : {}),
+    // Vazia vai como `null`: o servidor limpa a retoma, e recusava uma data "".
+    ...(patch.expectedReturn !== undefined ? { expectedReturn: patch.expectedReturn || null } : {}),
     ...(patch.validUntil ? { validUntil: patch.validUntil } : {}),
     ...(patch.typeId ? { typeId: patch.typeId } : {}),
     ...(patch.notes !== undefined ? { notes: patch.notes } : {}),
@@ -233,6 +234,32 @@ export function availabilityOf(athleteId: string): Availability {
   const active = activeRestriction(athleteId);
   if (!active) return "available";
   return active.impact === "out" ? "out" : "limited";
+}
+
+/**
+ * A disponibilidade num dia (`2026-09-18`), e não hoje.
+ *
+ * É a pergunta das presenças: um treino de há duas semanas regista-se com o
+ * estado que o atleta tinha **nesse dia**. Uma entrada conta a partir da data
+ * dela e até à alta (o dia da alta já é dia de apto). Apagar ou corrigir a baixa
+ * no boletim muda a resposta, e é isso que se quer: o boletim é a verdade.
+ */
+export function availabilityOn(athleteId: string, day: string): Availability {
+  const noDia = clinicalOf(athleteId).filter(
+    (e) =>
+      e.status !== "scheduled" &&
+      e.status !== "cancelled" &&
+      e.impact !== "none" &&
+      e.date.slice(0, 10) <= day &&
+      (!e.clearedOn || e.clearedOn.slice(0, 10) > day),
+  );
+  if (noDia.some((e) => e.impact === "out")) return "out";
+  return noDia.length > 0 ? "limited" : "available";
+}
+
+/** O dia local de um instante, em `AAAA-MM-DD`. */
+export function diaDe(d: Date): string {
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 }
 
 /** Verdadeiro quando o atleta não pode ser convocado nem contar como falta. */

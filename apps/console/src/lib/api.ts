@@ -29,7 +29,7 @@ import { matches } from "@/lib/store";
 import { matchAttention, myMatchDuty, type MatchStatus } from "@/lib/matches";
 import { relativeDays } from "@/lib/format";
 import { getAttendanceRecords } from "@/lib/attendance";
-import { isUnavailable } from "@/lib/clinical";
+import { availabilityOn, diaDe, isUnavailable } from "@/lib/clinical";
 import { medicalNeedsAttention, medicalState } from "@/lib/medical";
 
 export { academy, today, currentPeriod };
@@ -481,7 +481,9 @@ export function attendanceRate(session: Session, days = 30, teamId?: string): nu
 
   const totals = recorded.reduce(
     (acc, s) => {
-      const roster = teamById(s.teamId)?.athleteIds.length ?? 0;
+      // Quem estava de baixa nesse dia não conta: não podia estar lá.
+      const dia = diaDe(new Date(s.start));
+      const roster = (teamById(s.teamId)?.athleteIds ?? []).filter((id) => availabilityOn(id, dia) !== "out").length;
       // "Atrasado" conta como presente — apareceu. Só falta e falta justificada
       // pesam na assiduidade.
       const missed = s.attendance!.absences.filter((x) => x.kind !== "late").length;
@@ -498,8 +500,14 @@ export function attendanceRate(session: Session, days = 30, teamId?: string): nu
 
 export type AthleteSessionRecord = {
   session: TrainingSession;
-  /** `null` quando o treino ainda não foi registado — diferente de ter estado presente. */
-  status: AbsenceKind | "present" | null;
+  /**
+   * `null` quando o treino ainda não foi registado — diferente de ter estado presente.
+   *
+   * `limited` é presente, mas a treinar condicionado; `out` é de baixa nesse dia,
+   * e não conta nem como presença nem como falta. Os dois vêm do boletim, no dia
+   * do treino (ver `availabilityOn`).
+   */
+  status: AbsenceKind | "present" | "limited" | "out" | null;
   /** O motivo, só numa falta justificada. */
   note?: string;
 };
@@ -528,7 +536,14 @@ export function athleteSessions(athleteId: string, limitDays = 180): AthleteSess
       const attendance = overrides[s.id] ?? s.attendance;
       if (!attendance) return { session: s, status: null };
       const hit = attendance.absences.find((x) => x.athleteId === athleteId);
-      return { session: s, status: hit ? hit.kind : ("present" as const), note: hit?.note };
+      if (hit) return { session: s, status: hit.kind, note: hit.note };
+      /*
+       * Sem marca é presente, a não ser que o boletim diga outra coisa nesse
+       * dia. A folha não guarda a baixa: é o boletim que a sabe, e corrigir ou
+       * apagar a baixa corrige também isto.
+       */
+      const noDia = availabilityOn(athleteId, diaDe(new Date(s.start)));
+      return { session: s, status: noDia === "out" ? ("out" as const) : noDia === "limited" ? ("limited" as const) : ("present" as const) };
     })
     .sort((a, b) => b.session.start.localeCompare(a.session.start));
 }
@@ -544,10 +559,12 @@ export type AthleteAttendanceSummary = {
 };
 
 export function athleteAttendanceSummary(athleteId: string, limitDays = 180): AthleteAttendanceSummary {
-  const records = athleteSessions(athleteId, limitDays).filter((r) => r.status !== null);
+  // Os treinos em que estava de baixa ficam de fora: não são presença nem falta.
+  const records = athleteSessions(athleteId, limitDays).filter((r) => r.status !== null && r.status !== "out");
 
   const count = (k: AthleteSessionRecord["status"]) => records.filter((r) => r.status === k).length;
-  const present = count("present");
+  // Condicionado é presente: treinou, limitado.
+  const present = count("present") + count("limited");
   const late = count("late");
   const absent = count("absent");
   const justified = count("justified");

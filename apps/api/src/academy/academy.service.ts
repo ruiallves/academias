@@ -2310,12 +2310,20 @@ export class AcademyService {
     return this.prisma.runAs(ctx.academyId, async (db) => {
       const training = await db.trainingSession.findFirst({
         where: { id: sessionId },
-        select: { id: true, teamId: true, status: true },
+        select: { id: true, teamId: true, status: true, startsAt: true },
       });
       if (!training) throw new NotFoundException("Treino não encontrado");
       if (scope && !scope.in.includes(training.teamId)) {
         throw new ForbiddenException("Esse treino é de uma equipa fora do teu âmbito");
       }
+      /*
+       * O dia do treino no relógio do clube, como o `@db.Date` do boletim o
+       * guarda (meia-noite UTC). A baixa que conta é a desse dia, não a de hoje:
+       * quem já teve alta pode levar falta a um treino de quando estava bem, e
+       * quem estava de baixa nesse dia não leva, mesmo que já tenha alta.
+       */
+      const p = partesNoFuso(training.startsAt);
+      const diaDoTreino = new Date(Date.UTC(p.ano, p.mes - 1, p.dia));
       if (training.status === "CANCELLED") {
         throw new BadRequestException("Um treino cancelado não tem presenças para registar");
       }
@@ -2337,7 +2345,15 @@ export class AcademyService {
             // A disponibilidade não é um campo — deriva do boletim. A mesma
             // consulta das convocatórias (ver `matches.service.ts`), para as
             // duas regras não divergirem à primeira alteração.
-            clinical: { where: { clearedOn: null, impact: { not: "NONE" } }, select: { impact: true } },
+            clinical: {
+              where: {
+                status: "DONE",
+                impact: { not: "NONE" },
+                date: { lte: diaDoTreino },
+                OR: [{ clearedOn: null }, { clearedOn: { gt: diaDoTreino } }],
+              },
+              select: { impact: true },
+            },
           },
         });
         if (doPlantel.length !== marcados.length) {
@@ -3029,10 +3045,12 @@ export class AcademyService {
             take: 5,
             select: {
               method: true, status: true, entity: true, reference: true, redirectUrl: true, expiresAt: true,
-              paidAt: true, identificador: true, payerName: true, payerRelation: true,
+              paidAt: true, identificador: true, payerName: true, payerRelation: true, provider: true,
             },
           },
           settledAt: true,
+          statusChangedAt: true,
+          statusChangedBy: { select: { name: true } },
         },
       });
 
@@ -3087,6 +3105,14 @@ export class AcademyService {
           paidBy: pago?.payerName ?? null,
           paidByRelation: pago?.payerRelation ?? null,
           paymentId: pago?.identificador ?? null,
+          /*
+           * Quem mudou o estado à mão, e quando. Numa paga online não se
+           * mostra: quem a liquidou foi a euPago, mesmo que alguém a tenha
+           * reaberto antes.
+           */
+          ...(c.statusChangedAt && !(pago && pago.provider !== "manual")
+            ? { changedBy: c.statusChangedBy?.name ?? null, changedAt: c.statusChangedAt }
+            : { changedBy: null, changedAt: null }),
         };
       });
     });

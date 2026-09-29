@@ -426,6 +426,12 @@ export type Fee = {
   paymentId?: string;
   /** Referência euPago, quando gerada. */
   reference?: string;
+  /**
+   * Quem mudou o estado à mão (paga, por pagar, anulada), e quando. Sem nome
+   * quando a pessoa já não existe; sem os dois nas nunca mexidas à mão.
+   */
+  changedBy?: string;
+  changedAt?: string;
 };
 
 export type AbsenceKind = "absent" | "justified" | "late";

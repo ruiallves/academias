@@ -4,6 +4,7 @@ import { BadRequestException, ForbiddenException, Injectable, Logger, NotFoundEx
 import { ConfigService } from "@nestjs/config";
 import { PaymentMethod, PaymentStatus, ChargeKind, ChargeStatus, NotificationType, type Payment, type Prisma } from "@prisma/client";
 import { PrismaService, type ScopedClient } from "../prisma/prisma.service";
+import { partesNoFuso } from "../common/fuso";
 import { razaoParaNaoApagar } from "../members/member-fees.service";
 import { NotificationsService } from "../notifications/notifications.service";
 import { EupagoClient, type ChargeResult, type RedirectUrls } from "./eupago.client";
@@ -985,6 +986,7 @@ export class BillingService implements OnModuleInit, OnModuleDestroy {
               notes: input.notes?.trim() || null,
               amountCents: valor,
               ...(pagas || nasceIsenta(valor) ? { status: ChargeStatus.SETTLED, settledAt: agora } : {}),
+              ...(pagas ? quemMudou(ctx, agora) : {}),
               ...(input.amountCents === undefined && precoDe?.(a)?.enrollmentId
                 ? { enrollmentId: precoDe(a)!.enrollmentId }
                 : {}),
@@ -1026,7 +1028,7 @@ export class BillingService implements OnModuleInit, OnModuleDestroy {
         if (pagas && aMarcar.length > 0) {
           await db.charge.updateMany({
             where: { id: { in: aMarcar.map((c) => c.id) }, status: ChargeStatus.OPEN },
-            data: { status: ChargeStatus.SETTLED, settledAt: agora },
+            data: { status: ChargeStatus.SETTLED, settledAt: agora, ...quemMudou(ctx, agora) },
           });
         }
         /*
@@ -1053,6 +1055,7 @@ export class BillingService implements OnModuleInit, OnModuleDestroy {
               data: {
                 status: ChargeStatus.OPEN,
                 settledAt: null,
+                ...quemMudou(ctx, agora),
                 amountCents: grupo[0].amountCents,
                 dueDate: diaDeVencimento(grupo[0].period, calendario(grupo[0].period).dia),
                 ...(input.notes?.trim() ? { notes: input.notes.trim() } : {}),
@@ -1180,7 +1183,8 @@ export class BillingService implements OnModuleInit, OnModuleDestroy {
     chargeId: string,
     status: ChargeStatus,
     /**
-     * Como foi paga, quando se marca como paga: MB WAY, numerário ou cartão.
+     * Como foi paga, quando se marca como paga: MB WAY, numerário, cartão ou
+     * transferência.
      * Omitido fica numerário, que era o que se gravava sempre antes de a
      * consola perguntar.
      */
@@ -1211,7 +1215,7 @@ export class BillingService implements OnModuleInit, OnModuleDestroy {
             },
           });
         }
-        await db.charge.update({ where: { id: charge.id }, data: { status, settledAt: new Date() } });
+        await db.charge.update({ where: { id: charge.id }, data: { status, settledAt: new Date(), ...quemMudou(ctx) } });
       } else {
         // Voltar a "por pagar" ou anular: um pagamento manual anterior passa a
         // reembolsado, para o registo não continuar a dizer que foi pago.
@@ -1219,7 +1223,7 @@ export class BillingService implements OnModuleInit, OnModuleDestroy {
           where: { chargeId: charge.id, provider: "manual", status: PaymentStatus.PAID },
           data: { status: PaymentStatus.REFUNDED },
         });
-        await db.charge.update({ where: { id: charge.id }, data: { status, settledAt: null } });
+        await db.charge.update({ where: { id: charge.id }, data: { status, settledAt: null, ...quemMudou(ctx) } });
       }
 
       return { id: charge.id, status };
@@ -2477,13 +2481,22 @@ export const MESES_POR_OMISSAO = [1, 2, 3, 4, 5, 6, 7, 9, 10, 11, 12];
 /**
  * Os métodos que se escolhem ao marcar uma mensalidade como paga à mão.
  *
- * Só os que acontecem fora da plataforma e que um clube recebe em mão ou ao
- * balcão. Multibanco, Google Pay e os outros chegam pela euPago, com o método
+ * Só os que acontecem fora da plataforma: o que um clube recebe em mão, ao
+ * balcão ou por transferência bancária para a conta dele. Multibanco, Google Pay e os outros chegam pela euPago, com o método
  * que ela confirma: escolhê-los à mão era registar um pagamento online que
  * nunca passou por lá.
  */
-export const METODOS_MANUAIS = [PaymentMethod.MBWAY, PaymentMethod.CASH, PaymentMethod.CARD] as const;
+export const METODOS_MANUAIS = [PaymentMethod.MBWAY, PaymentMethod.CASH, PaymentMethod.CARD, PaymentMethod.TRANSFER] as const;
 export type MetodoManual = (typeof METODOS_MANUAIS)[number];
+
+/**
+ * Quem mudou à mão o estado de uma mensalidade, e quando: vai para a coluna do
+ * pagamento na consola. Só nas mudanças feitas por alguém da direção; o webhook
+ * da euPago não passa por aqui.
+ */
+function quemMudou(ctx: RequestContext, quando: Date = new Date()) {
+  return { statusChangedById: ctx.userId, statusChangedAt: quando };
+}
 
 /** O calendário de cobrança que vale num período: os meses cobrados e o dia de vencimento. */
 export type Calendario = { meses: number[]; dia: number };
@@ -3270,9 +3283,16 @@ export async function lerPrecosDosAtletas(
   };
 }
 
-/** O período de hoje, no formato `AAAA-MM` que o `Charge` usa. */
+/**
+ * O período de hoje, no formato `AAAA-MM` que o `Charge` usa.
+ *
+ * Pelo calendário do clube, e não pelo relógio da máquina: em produção a API
+ * corre em UTC, e o mês novo só começava à 01:00 de Lisboa no Verão. A
+ * emissão automática do dia 1 esperava uma hora por isso.
+ */
 export function periodoActual(hoje = new Date()): string {
-  return `${hoje.getFullYear()}-${String(hoje.getMonth() + 1).padStart(2, "0")}`;
+  const p = partesNoFuso(hoje);
+  return `${p.ano}-${String(p.mes).padStart(2, "0")}`;
 }
 
 /** O período a seguir a este. Dezembro passa a Janeiro do ano seguinte. */

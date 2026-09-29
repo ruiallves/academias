@@ -608,6 +608,102 @@ export function areaAbertaEmail(input: {
   };
 }
 
+/**
+ * As novidades de uma versão, como uma lista.
+ *
+ * Uma linha, uma novidade. O travessão à cabeça tira-se se lá estiver, porque é
+ * assim que se escreve um `release.txt` e ninguém deve ter de o reescrever para
+ * o mandar; as linhas vazias caem, para um parágrafo a mais no meio do texto não
+ * abrir um marcador vazio no email.
+ *
+ * Vive aqui, ao lado do template, e é exportada para poder ser exercitada sem
+ * montar um email inteiro — é a única parte disto com regras.
+ */
+export function linhasDeNovidades(notes: string): string[] {
+  return notes
+    .split(/\r?\n/)
+    .map((linha) => linha.trim().replace(/^[-*\u2022]\s*/, "").trim())
+    .filter((linha) => linha.length > 0);
+}
+
+/**
+ * O que mudou na plataforma, contado ao responsável de um clube.
+ *
+ * ## Porque é que este email existe
+ *
+ * Porque um clube que não sabe o que mudou não usa o que mudou. As novidades
+ * viviam num `release.txt` na raiz do repositório, escrito a cada deploy e lido
+ * por uma pessoa. Funcionalidades pedidas por um clube ficavam meses sem ser
+ * usadas por esse clube, que não sabia que já lá estavam.
+ *
+ * ## Não é um email de sistema, é uma carta
+ *
+ * Por isso trata a pessoa pelo nome e diz o nome do clube: quem o recebe assina
+ * o contrato desta plataforma, e um "Caro cliente" a um presidente de colectividade
+ * é pior do que não escrever. O botão leva à consola **dele** e não a uma página
+ * de marketing — o sítio onde as novidades estão é o sítio para onde se manda.
+ */
+export function releaseNotesEmail(input: {
+  /** O nome próprio de quem recebe. */
+  name: string;
+  /** O clube, para a carta dizer a quem se dirige. */
+  clubName: string;
+  /** "1.4", "29/09/2026" — como foi escrita no painel. */
+  version: string;
+  title: string;
+  /** O corpo em bruto, uma novidade por linha. Ver `linhasDeNovidades`. */
+  notes: string;
+  /** A consola deste clube. */
+  link: string;
+}): { subject: string; html: string; text: string } {
+  const brand: MailBrand = { shortName: "Academias", name: "Plataforma Academias", signalColor: FALLBACK };
+  const itens = linhasDeNovidades(input.notes);
+
+  const paragraphs = [
+    "Há novidades na plataforma do <strong>" + esc(input.clubName) + "</strong>. Isto é o que mudou:",
+  ];
+
+  /*
+   * A lista vai em `blocks` e não em `paragraphs`: um `<ul>` dentro de um `<p>`
+   * é HTML inválido, e o Outlook — que é metade do correio de trabalho em
+   * Portugal — desenha-o como lhe apetece. Ver a nota em `Layout.blocks`.
+   */
+  const blocks =
+    itens.length > 0
+      ? [
+          '<ul style="margin:0 0 14px;padding-left:20px;font-size:15px;line-height:1.6;color:#3c3a37;">' +
+            itens.map((i) => '<li style="margin:0 0 8px;">' + esc(i) + "</li>").join("") +
+            "</ul>",
+        ]
+      : [];
+
+  const notes = [
+    "Recebes isto porque estás registado como o responsável do clube na plataforma.",
+  ];
+
+  return {
+    subject: "Academias · " + input.title,
+    html: layout({
+      brand,
+      greeting: "Olá " + esc(input.name.trim().split(/\s+/)[0]) + ",",
+      heading: input.title,
+      paragraphs,
+      blocks,
+      cta: { label: "Abrir a consola", url: input.link },
+      notes,
+    }),
+    text: plain(
+      "Olá " + input.name.trim().split(/\s+/)[0] + ",",
+      [
+        "Há novidades na plataforma do " + input.clubName + ". Isto é o que mudou:",
+        ...itens.map((i) => "- " + i),
+      ],
+      { label: "Abrir a consola", url: input.link },
+      notes,
+    ),
+  };
+}
+
 export function memberSignupReceivedEmail(input: {
   brand: MailBrand;
   name: string;

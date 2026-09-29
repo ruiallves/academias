@@ -59,7 +59,9 @@ import { PlatformGuard } from "./platform/platform.guard";
 import { PlatformPrisma } from "./platform/platform.prisma";
 import { ContactsController, ContactsCalendarController } from "./platform/contacts.controller";
 import { TicketsController } from "./platform/tickets.controller";
+import { ReleasesController } from "./platform/releases.controller";
 import { TicketsService } from "./platform/tickets.service";
+import { ReleasesService } from "./platform/releases.service";
 import { SiteContactController } from "./platform/site-contact.controller";
 import { ContactsService } from "./platform/contacts.service";
 import { AdminsController, AdminInvitePageController } from "./platform/admin-invites.controller";
@@ -186,6 +188,7 @@ import { LegalAdminService } from "./legal/legal-admin.service";
     ContactsCalendarController,
     // Público por construção — é o formulário de contacto do site de marketing.
     TicketsController,
+    ReleasesController,
     SiteContactController,
     // O manifest da PWA com a marca do clube, na raiz da origem do clube.
     TenantAssetsController,
@@ -241,6 +244,7 @@ import { LegalAdminService } from "./legal/legal-admin.service";
     PlatformGuard,
     PlatformPrisma,
     TicketsService,
+    ReleasesService,
     ContactsService,
     AdminInvitesService,
     FamilyInvitesService,

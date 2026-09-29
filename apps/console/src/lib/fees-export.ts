@@ -60,7 +60,11 @@ export type ExportRange = {
 export async function exportFees(rows: FeeExportRow[], range: ExportRange): Promise<void> {
   const XLSX = await import("xlsx");
 
-  const cabecalho = ["Período", "Atleta", "Equipa", "Encarregado", "Contacto", "Estado", "Valor", "Vencimento"];
+  /*
+   * O método só existe nas pagas. Vazio nas outras, e nas pagas marcadas antes
+   * de a consola perguntar como foram pagas.
+   */
+  const cabecalho = ["Período", "Atleta", "Equipa", "Encarregado", "Contacto", "Estado", "Método de pagamento", "Valor", "Vencimento"];
   const linhas = rows.map((r) => [
     r.fee.period,
     r.athlete,
@@ -68,13 +72,14 @@ export async function exportFees(rows: FeeExportRow[], range: ExportRange): Prom
     r.guardians,
     r.contact,
     ESTADO[r.fee.status],
+    r.fee.status === "paid" ? (r.fee.method ?? "") : "",
     r.fee.amountCents / 100,
     serieDeData(r.fee.dueDate),
   ]);
 
   const folha = XLSX.utils.aoa_to_sheet([cabecalho, ...linhas]);
   folha["!cols"] = [
-    { wch: 10 }, { wch: 26 }, { wch: 18 }, { wch: 26 }, { wch: 20 }, { wch: 13 }, { wch: 12 }, { wch: 13 },
+    { wch: 10 }, { wch: 26 }, { wch: 18 }, { wch: 26 }, { wch: 20 }, { wch: 13 }, { wch: 20 }, { wch: 12 }, { wch: 13 },
   ];
   /*
    * O filtro do Excel, já ligado: quem abre isto vai ordenar e filtrar, e
@@ -85,8 +90,8 @@ export async function exportFees(rows: FeeExportRow[], range: ExportRange): Prom
    * `!freeze` que ninguém lê é pior do que a sua ausência: parece configurado.
    */
   folha["!autofilter"] = { ref: XLSX.utils.encode_range({ s: { r: 0, c: 0 }, e: { r: linhas.length, c: cabecalho.length - 1 } }) };
-  formatarColuna(XLSX, folha, 6, linhas.length, EUROS);
-  formatarColuna(XLSX, folha, 7, linhas.length, DATA);
+  formatarColuna(XLSX, folha, 7, linhas.length, EUROS);
+  formatarColuna(XLSX, folha, 8, linhas.length, DATA);
 
   const wb = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb, folha, "Mensalidades");

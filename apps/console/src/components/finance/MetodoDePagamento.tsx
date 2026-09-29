@@ -7,15 +7,15 @@ import mbway from "@/assets/pagamentos/mbway.png";
 /**
  * Os métodos de um pagamento registado à mão.
  *
- * Os mesmos três que o servidor aceita (`METODOS_MANUAIS`): o que um clube
- * recebe em mão ou ao balcão. Multibanco e os outros chegam pela euPago, com o
+ * Os mesmos quatro que o servidor aceita (`METODOS_MANUAIS`): o que um clube
+ * recebe em mão, ao balcão ou por transferência para a conta dele. Multibanco e os outros chegam pela euPago, com o
  * método que ela confirma.
  */
-export type MetodoManual = "MBWAY" | "CASH" | "CARD";
+export type MetodoManual = "MBWAY" | "CASH" | "CARD" | "TRANSFER";
 
 /*
- * A marca do MB WAY é o logótipo oficial, o mesmo do site. Numerário e cartão
- * não têm marca: um emoji diz-o à primeira, sem parecer um ícone de biblioteca.
+ * A marca do MB WAY é o logótipo oficial, o mesmo do site. Numerário, cartão e
+ * transferência não têm marca: um emoji diz-o à primeira, sem parecer um ícone de biblioteca.
  */
 export const METODOS: { value: MetodoManual; label: string; marca: ReactNode }[] = [
   {
@@ -25,9 +25,10 @@ export const METODOS: { value: MetodoManual; label: string; marca: ReactNode }[]
   },
   { value: "CASH", label: "Numerário", marca: <span aria-hidden className="text-[20px] leading-none">💶</span> },
   { value: "CARD", label: "Cartão", marca: <span aria-hidden className="text-[20px] leading-none">💳</span> },
+  { value: "TRANSFER", label: "Transferência", marca: <span aria-hidden className="text-[20px] leading-none">🏦</span> },
 ];
 
-/** Os três métodos, lado a lado. Nenhum vem escolhido: é uma pergunta, não um valor por omissão. */
+/** Os quatro métodos, dois a dois. Nenhum vem escolhido: é uma pergunta, não um valor por omissão. */
 export function EscolherMetodo({
   value,
   onChange,
@@ -36,7 +37,7 @@ export function EscolherMetodo({
   onChange: (m: MetodoManual) => void;
 }) {
   return (
-    <div role="radiogroup" aria-label="Método de pagamento" className="grid grid-cols-3 gap-2">
+    <div role="radiogroup" aria-label="Método de pagamento" className="grid grid-cols-2 gap-2">
       {METODOS.map((m) => {
         const on = value === m.value;
         return (

@@ -292,6 +292,10 @@ export default function Fees() {
 
         O dia é o do pagamento. Num pagamento online é o que a euPago
         confirmou; num marcado à mão é o dia em que se mudou o estado.
+
+        Uma mudança feita à mão diz quem a fez ("Marcada por", "Anulada por",
+        "Reaberta por"), aqui e não noutra coluna: é a resposta a "como se sabe
+        que isto está assim?", que é a pergunta desta coluna.
       */
       key: "method",
       header: "Pagamento",
@@ -302,11 +306,19 @@ export default function Fees() {
             <div className="text-ink-2">{f.method ?? "Paga"}</div>
             {f.paidAt && <div className="mt-0.5 text-[11px] text-ink-4">{shortDate(new Date(f.paidAt))}</div>}
             {f.paidBy && <div className="mt-0.5 text-[11px] text-ink-3">Por {f.paidBy}</div>}
+            {f.changedAt && <div className="mt-0.5 text-[11px] text-ink-3">Marcada por {f.changedBy ?? "alguém que já saiu"}</div>}
             {f.paymentId && (
               <div className="mt-0.5 select-all break-all font-mono text-[10px] text-ink-4" title="Assim aparece no backoffice da euPago">
                 {f.paymentId}
               </div>
             )}
+          </div>
+        ) : f.changedAt ? (
+          <div className="leading-tight">
+            <div className="text-ink-2">
+              {f.status === "void" ? "Anulada" : "Reaberta"} por {f.changedBy ?? "alguém que já saiu"}
+            </div>
+            <div className="mt-0.5 text-[11px] text-ink-4">{shortDate(new Date(f.changedAt))}</div>
           </div>
         ) : f.reference ? (
           <span className="font-mono text-meta text-ink-3">{f.reference}</span>
@@ -1452,7 +1464,14 @@ function FeeStatusControl({ fee }: { fee: Fee }) {
   );
 }
 
-function summariseAll(rows: Fee[]) {
+/**
+ * As métricas de cima, sobre as linhas em vista.
+ *
+ * As anuladas ficam de fora: não se vão cobrar, e contá-las no facturado punha
+ * dinheiro em "Por cobrar" que nunca vai entrar.
+ */
+function summariseAll(todas: Fee[]) {
+  const rows = todas.filter((f) => f.status !== "void");
   const sum = (pred: (f: Fee) => boolean) => rows.filter(pred).reduce((n, f) => n + f.amountCents, 0);
   return {
     total: rows.length,

@@ -1,15 +1,16 @@
 import { Link } from "react-router-dom";
 import { useMemo, useState, type FormEvent } from "react";
 import { Dialog, DialogField, dialogInputClass } from "./Dialog";
+import { ConfirmDialog } from "./ConfirmDialog";
 import { cx, ListaDeEscolha, Monogram, SelectField } from "./primitives";
 import { Repetir, useRepeticao } from "./Repetir";
-import { Search, Settings, X } from "@/lib/icons";
+import { Search, Settings, Trash2, X } from "@/lib/icons";
 import { listAthletes, teamById } from "@/lib/api";
-import { addClinicalEntry, IMPACT_LABEL, isoToday, KIND_LABEL } from "@/lib/clinical";
+import { addClinicalEntry, deleteClinicalEntry, IMPACT_LABEL, isoToday, KIND_LABEL, updateClinicalEntry } from "@/lib/clinical";
 import { useActiveCatalog } from "@/lib/catalogs";
 import { shortName } from "@/lib/format";
 import { can, type Session } from "@/lib/permissions";
-import type { Athlete, ClinicalImpact, ClinicalKind } from "@/data/types";
+import type { Athlete, ClinicalEntry, ClinicalImpact, ClinicalKind } from "@/data/types";
 
 /** O que se regista na ficha do atleta: o que aconteceu. Agendar é a outra variante. */
 const KINDS_REGISTO: ClinicalKind[] = ["injury", "exam", "physio", "nutrition", "psychology", "note"];
@@ -43,6 +44,10 @@ export type ClinicalDialogVariant = "lesao" | "registo" | "consulta";
  * `athlete` é opcional. A partir da ficha de um atleta já se sabe de quem se
  * trata; a partir dos ecrãs do departamento clínico não, e aí aparece um selector
  * — é o que evita ter de navegar até à ficha só para registar uma consulta.
+ *
+ * Com `entry`, corrige um registo do que aconteceu (uma baixa com a data ou o
+ * impacto errados) e deixa apagá-lo. Os agendamentos editam-se na página da
+ * consulta, que tem a confirmação e as notas privadas.
  */
 export function ClinicalEntryDialog({
   athlete,
@@ -50,6 +55,7 @@ export function ClinicalEntryDialog({
   onClose,
   variant,
   defaultDate,
+  entry,
 }: {
   athlete?: Athlete;
   session: Session;
@@ -57,7 +63,10 @@ export function ClinicalEntryDialog({
   variant: ClinicalDialogVariant;
   /** `2026-10-07` — quem abre a partir de um dia do calendário de Consultas já o escolheu. */
   defaultDate?: string;
+  /** O registo a corrigir. Sem ele, cria-se um novo. */
+  entry?: ClinicalEntry;
 }) {
+  const aEditar = !!entry;
   const [picked, setPicked] = useState<Athlete | undefined>(athlete);
   const scheduling = variant === "consulta";
 
@@ -66,21 +75,22 @@ export function ClinicalEntryDialog({
   const [typeId, setTypeId] = useState("");
   const tipo = tipos.find((t) => t.id === typeId) ?? tipos[0];
 
-  const [kind, setKind] = useState<ClinicalKind>("injury");
-  const [title, setTitle] = useState("");
-  const [detail, setDetail] = useState("");
-  const [impact, setImpact] = useState<ClinicalImpact>("out");
-  const [date, setDate] = useState(defaultDate ?? isoToday());
+  const [kind, setKind] = useState<ClinicalKind>(entry?.kind ?? "injury");
+  const [title, setTitle] = useState(entry?.title ?? "");
+  const [detail, setDetail] = useState(entry?.detail ?? "");
+  const [impact, setImpact] = useState<ClinicalImpact>(entry?.impact ?? "out");
+  const [date, setDate] = useState(entry?.date.slice(0, 10) ?? defaultDate ?? isoToday());
   const [time, setTime] = useState("10:00");
   const [location, setLocation] = useState("");
-  const [expectedReturn, setExpectedReturn] = useState("");
+  const [expectedReturn, setExpectedReturn] = useState(entry?.expectedReturn?.slice(0, 10) ?? "");
   /*
    * Até quando o exame vale.
    *
    * Um ano a contar de hoje é o que a esmagadora maioria dos exames desportivos
    * dá, e é o valor que a médica confirmaria à mão em quase todos os casos.
    */
-  const [validUntil, setValidUntil] = useState(maisUmAno());
+  /* Ao corrigir, vem vazio: só muda a validade na ficha se alguém a escrever. */
+  const [validUntil, setValidUntil] = useState(aEditar ? "" : maisUmAno());
 
   /* Só num agendamento: fisioterapia às terças e quintas até ao fim do mês. */
   const repeticao = useRepeticao(date);
@@ -90,6 +100,7 @@ export function ClinicalEntryDialog({
 
   const [busy, setBusy] = useState(false);
   const [erro, setErro] = useState<string | null>(null);
+  const [aApagar, setAApagar] = useState(false);
 
   const kindEfectivo: ClinicalKind = variant === "lesao" ? "injury" : kind;
   /* O exame realizado é o único registo que também escreve na ficha do atleta. */
@@ -102,6 +113,20 @@ export function ClinicalEntryDialog({
     setBusy(true);
     setErro(null);
     try {
+      if (entry) {
+        await updateClinicalEntry(entry.id, {
+          kind: kindEfectivo,
+          date,
+          title: title.trim() || KIND_LABEL[kindEfectivo],
+          detail: detail.trim(),
+          impact,
+          // Sem impacto não há retoma: limpa a que houvesse.
+          expectedReturn: impact !== "none" ? expectedReturn : "",
+          ...(exameFeito && validUntil ? { validUntil } : {}),
+        });
+        onClose();
+        return;
+      }
       /*
        * Os dias de paragem e o autor são do servidor. O autor sobretudo — um
        * boletim clínico tem de dizer quem escreveu, e quem escreveu é quem o
@@ -145,7 +170,13 @@ export function ClinicalEntryDialog({
     }
   }
 
-  const titulo = scheduling ? "Agendar consulta" : variant === "lesao" ? "Registar lesão" : "Novo registo clínico";
+  const titulo = aEditar
+    ? `Editar ${KIND_LABEL[kindEfectivo].toLowerCase()}`
+    : scheduling
+      ? "Agendar consulta"
+      : variant === "lesao"
+        ? "Registar lesão"
+        : "Novo registo clínico";
 
   return (
     <Dialog
@@ -155,6 +186,17 @@ export function ClinicalEntryDialog({
       onClose={onClose}
       footer={
         <>
+          {entry && (
+            <button
+              type="button"
+              onClick={() => setAApagar(true)}
+              disabled={busy}
+              className="ctl-ghost mr-auto text-ink-3 hover:text-risk"
+            >
+              <Trash2 className="size-3.5" strokeWidth={1.75} />
+              Apagar
+            </button>
+          )}
           <button type="button" onClick={onClose} className="ctl-ghost">
             Cancelar
           </button>
@@ -368,6 +410,28 @@ export function ClinicalEntryDialog({
           </div>
         )}
       </form>
+      {aApagar && entry && (
+        <ConfirmDialog
+          title={`Apagar ${KIND_LABEL[entry.kind].toLowerCase()}?`}
+          onConfirm={async () => {
+            await deleteClinicalEntry(entry.id);
+            setAApagar(false);
+            onClose();
+          }}
+          onClose={() => setAApagar(false)}
+        >
+          <p>
+            <strong className="font-semibold text-ink">{entry.title}</strong> (
+            {new Date(entry.date).toLocaleDateString("pt-PT")}) sai do boletim de {picked?.name ?? "este atleta"} e da
+            base de dados.
+          </p>
+          <p className="text-meta text-ink-3">
+            {entry.impact !== "none"
+              ? "Os dias em que contava como baixa ou condicionado deixam de contar: nas presenças, na ficha e nas convocatórias. Não se pode desfazer."
+              : "Não se pode desfazer."}
+          </p>
+        </ConfirmDialog>
+      )}
     </Dialog>
   );
 }

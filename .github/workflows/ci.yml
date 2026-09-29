@@ -61,6 +61,11 @@ jobs:
       - name: A ficha de atleta só se cola à conta certa
         run: npm run test:ligacao-atleta --workspace=@academia/api
 
+      # As novidades aos clubes. O que este guarda acima de tudo é que a
+      # pré-visualização do painel e o email do servidor não divirjam.
+      - name: Novidades da plataforma — destinatários e texto
+        run: npm run test:novidades --workspace=@academia/api
+
       # O email que substitui o convite. Se ele voltar a pedir "escolhe a
       # palavra-passe", repete-se o engano que deixava a pessoa sem área.
       - name: O aviso da área nova não é um convite

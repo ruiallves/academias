@@ -233,8 +233,7 @@ try {
   console.log("\n=== O que se apaga e o que não se apaga ===");
   const apagaAgendamento = await call(medica, "DELETE", `/api/clinical/${consulta.body.id}`);
   check("um agendamento desmarca-se", apagaAgendamento.status === 200, `${apagaAgendamento.status}`);
-  const apagaHistorial = await call(medica, "DELETE", `/api/clinical/${baixa.body.id}`);
-  check("um registo do que aconteceu não se apaga (400)", apagaHistorial.status === 400, `${apagaHistorial.status}`);
+  // Um registo do que aconteceu também se apaga (desde 29/09/2026): ver o fim, depois das datas.
 
   console.log("\n=== Quem pode escrever ===");
   const porFamilia = await call(familia, "POST", `/api/athletes/${atleta.id}/clinical`, {
@@ -258,6 +257,12 @@ try {
     `SELECT date::text AS d FROM "ClinicalEntry" WHERE id = $1`, [baixa.body.id],
   )).rows[0];
   check("a data gravada é a que foi escrita", diaCerto?.d === "2026-09-01", `${diaCerto?.d}`);
+
+  /* Uma baixa lançada por engano apaga-se, por quem escreve no boletim. */
+  const apagaHistorialTreinador = await call(treinador, "DELETE", `/api/clinical/${baixa.body.id}`);
+  check("o treinador não apaga um registo (403)", apagaHistorialTreinador.status === 403, `${apagaHistorialTreinador.status}`);
+  const apagaHistorial = await call(medica, "DELETE", `/api/clinical/${baixa.body.id}`);
+  check("um registo do que aconteceu apaga-se, por quem escreve no boletim", apagaHistorial.status === 200, `${apagaHistorial.status}`);
 
   const retomaAntes = await call(medica, "POST", `/api/athletes/${atleta.id}/clinical`, {
     kind: "INJURY", status: "DONE", impact: "OUT",

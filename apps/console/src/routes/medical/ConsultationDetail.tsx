@@ -198,7 +198,7 @@ function Pagina({ athlete, entry }: { athlete: Athlete; entry: ClinicalEntry }) 
         <div className="space-y-3">
           <Panel>
             <PanelHead title="Atleta" />
-            <Link to={`/atletas/${athlete.id}`} className="flex items-center gap-3 px-5 py-4 hover:bg-sunken/50">
+            <Link to={`/atletas/${athlete.id}?separador=clinico`} className="flex items-center gap-3 px-5 py-4 hover:bg-sunken/50">
               <Monogram name={athlete.name} photoUrl={athlete.photoUrl} />
               <span className="min-w-0">
                 <span className="block truncate text-body font-medium text-ink">{athlete.name}</span>

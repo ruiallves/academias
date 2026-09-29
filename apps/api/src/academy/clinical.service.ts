@@ -329,7 +329,14 @@ export class ClinicalService {
         data.type = { connect: { id: tipo.id } };
         data.kind = tipo.kind;
       }
-      if (dto.title !== undefined) data.title = dto.title.trim() || TITULO[entry.kind];
+      /*
+       * O tipo de um registo (lesão, exame, nota…) corrige-se como o resto. Numa
+       * consulta com tipo do clube é o tipo que o decide, e isso já veio acima.
+       */
+      if (dto.kind !== undefined && dto.typeId === undefined && entry.status !== "SCHEDULED") {
+        data.kind = dto.kind as ClinicalKind;
+      }
+      if (dto.title !== undefined) data.title = dto.title.trim() || TITULO[(data.kind as ClinicalKind | undefined) ?? entry.kind];
       if (dto.detail !== undefined) data.detail = dto.detail.trim() || null;
       if (dto.notes !== undefined) data.notes = dto.notes.trim() || null;
       if (dto.confirmationRequired !== undefined) data.confirmationRequired = dto.confirmationRequired;
@@ -484,23 +491,19 @@ export class ClinicalService {
   }
 
   /**
-   * Apagar.
+   * Apagar um registo do boletim, agendado ou já passado.
    *
-   * Só o que ainda não aconteceu — um agendamento que se desmarca. Um registo do
-   * que se passou é histórico clínico e não se faz desaparecer: corrige-se, ou
-   * dá-se alta. Apagar uma lesão apagava a razão pela qual um atleta esteve fora
-   * três semanas, e essa razão pertence à ficha dele.
+   * Só quem escreve no boletim (`clinical:write`). Apagar é definitivo: a
+   * entrada sai da base, do perfil do atleta e de tudo o que dela deriva (a
+   * disponibilidade, as presenças desses dias, as convocatórias). A consola
+   * pergunta antes. Uma baixa lançada por engano, ou no atleta errado, não tem
+   * de ficar para sempre no historial clínico de um miúdo.
    */
   async apagar(ctx: RequestContext, id: string) {
     this.mustWrite(ctx);
 
     return this.prisma.runAs(ctx.academyId, async (db) => {
-      const entry = await this.entradaNoAmbito(db, ctx, id);
-      if (entry.status !== "SCHEDULED") {
-        throw new BadRequestException(
-          "Um registo do que aconteceu não se apaga — corrige-o, ou dá alta. Só agendamentos se desmarcam.",
-        );
-      }
+      await this.entradaNoAmbito(db, ctx, id);
       await db.clinicalEntry.delete({ where: { id } });
       return { ok: true as const };
     });

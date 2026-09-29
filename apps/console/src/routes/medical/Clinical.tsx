@@ -177,8 +177,9 @@ export default function MedicalClinical() {
           rows={rows}
           keyOf={(a) => a.id}
           // O boletim vive na ficha do atleta, que já o tem completo. Uma forma
-          // de lá chegar, não duas a divergirem com o tempo.
-          to={(a) => `/atletas/${a.id}`}
+          // de lá chegar, não duas a divergirem com o tempo, e já no separador
+          // clínico: quem vem dos Boletins quer o boletim.
+          to={(a) => `/atletas/${a.id}?separador=clinico`}
           empty={<Empty icon={HeartPulse} title="Nenhum atleta neste filtro" />}
         />
       </Panel>
