@@ -541,10 +541,33 @@ no cliente (`escolhidosPorOmissao`) e a API devolve o estado em bruto — uma
 segunda cópia dela no servidor e a lista de clubes a pagar do painel passavam a
 poder discordar uma da outra.
 
-**Rascunho e envio.** Uma versão nasce rascunho e pode ser reescrita e apagada.
-Depois de enviada fecha-se: o texto que saiu por email não se reescreve, porque
-reescrevê-lo mudava o histórico sem mudar o que as pessoas leram. Reenviar a
-clubes **novos** continua a dar.
+**Editar depois de enviar dá, sempre.** Começou por fechar ao primeiro envio,
+com o argumento de que reescrever o texto mudava o histórico sem mudar o que as
+pessoas leram, e o Rui pediu o contrário: uma gralha encontrada depois de mandar
+a três clubes tem de se poder corrigir antes de mandar aos outros nove. O
+argumento continua verdadeiro e por isso é **dito** em vez de imposto: o editor
+avisa que o que se muda não chega a quem já recebeu, e o registo de auditoria
+guarda `jaEnviada`. Apagar também dá, e o registo guarda quantos a tinham
+recebido, porque o email continua na caixa dessas pessoas. Reenviar a clubes
+**novos** continua a dar, e a quem já recebeu não se manda outra vez.
+
+**Ver o email antes de o mandar.** `POST api/platform/releases/preview` desenha o
+email com a **mesma função do envio** e devolve assunto, HTML, texto simples,
+remetente e destinatário, sem escrever nada nem falar com o fornecedor de email.
+O painel mostra-o como um cliente de email (De, Para, Assunto), num `<iframe>`
+com `sandbox`, com "Ver como" um clube concreto, largura de computador ou de
+telemóvel, e o texto simples. Uma pré-visualização feita no painel seria uma
+segunda versão do email, e as duas acabariam por discordar.
+
+**O email tem desenho próprio** (`releaseNotesEmail`), e não o `layout` dos
+emails de sistema, que é deliberadamente discreto: a primeira versão, feita com
+ele, pareceu "um pouco básica". Logótipo da plataforma no topo (a versão de
+128 px que o site serve, `ACADEMIAS_LOGO_URL`, mudável com `EMAIL_LOGO_URL`; o
+original de 4096 px tem quase um megabyte), versão como etiqueta, cada novidade
+numerada, e o tema em negrito quando se escreve "Tema: descrição"
+(`partirNovidade`, que não parte URLs, horas nem frases compridas). O cabeçalho
+lê-se com as imagens bloqueadas. Mexer no `layout` partilhado mudaria também o
+convite de sócio e o aviso de pagamento.
 
 `ReleaseRecipient` guarda o **resultado** e não a intenção: quem recebeu, para
 que endereço, e o motivo quando não deu. Um envio a doze clubes que falha em três
@@ -560,7 +583,7 @@ tem RLS, e o `test:rls-cobertura` aceita-o pela segunda via que verifica — uma
 tabela sem privilégio nenhum para `academia_app` não precisa de política, porque
 nenhum pedido de academia lhe chega. (Passou de 81 para 83 verificações.)
 
-Prova: `npm run test:novidades` (43), no CI. O que ele guarda acima de tudo é que
+Prova: `npm run test:novidades` (64), no CI. O que ele guarda acima de tudo é que
 **a pré-visualização não minta**: o painel desenha a lista antes de enviar com
 uma função dele e o servidor desenha o email com outra, e o teste passa-lhes o
 mesmo conjunto de treze casos. Agrupado com esbuild porque atravessa dois

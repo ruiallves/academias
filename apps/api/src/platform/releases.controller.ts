@@ -22,7 +22,7 @@ class EditarVersaoDto {
  * O texto por gravar, para se ver o email enquanto se escreve. Mais folgado que
  * o de gravar: uma pré-visualização de um assunto ainda vazio tem de funcionar.
  */
-class PreviewDto {
+export class PreviewDto {
   @IsString() @Length(0, 40) version!: string;
   @IsString() @Length(0, 120) title!: string;
   @IsString() @Length(0, 20_000) notes!: string;

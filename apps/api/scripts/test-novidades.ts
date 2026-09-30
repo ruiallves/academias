@@ -25,7 +25,11 @@
 import { ACADEMIAS_LOGO_URL, linhasDeNovidades, partirNovidade, releaseNotesEmail } from "../src/mail/mail.templates";
 import { escolherResponsavel, type VinculoDeStaff } from "../src/subscription/responsavel";
 import { ROLE_PERMISSIONS } from "../src/common/permissions";
+import { plainToInstance } from "class-transformer";
+import { validateSync } from "class-validator";
+import { PreviewDto } from "../src/platform/releases.controller";
 import {
+  corpoDaPreview,
   escolhidosPorOmissao,
   linhasDeNovidades as linhasNoPainel,
   type Destinatario,
@@ -294,6 +298,37 @@ check("no texto simples fica cru, que é o que se quer", comHtml.text.includes("
 const vazio = releaseNotesEmail({ name: "Ana", clubName: "C", version: "1", title: "T", notes: "   \n  ", link: "https://x/" });
 check("sem novidades, não há marcadores", marcadores(vazio.html) === 0, String(marcadores(vazio.html)));
 check("nem a caixa da lista", !vazio.html.includes("background:#faf9f7;border:1px solid #efece8;border-radius:10px"));
+
+/* -------------------------------------------------------------------------- */
+console.log("\n=== 7. O que o painel manda, a API aceita ===");
+
+/*
+ * O bug que isto guarda: a pré-visualização mandava o objecto do ecrã inteiro,
+ * com um `releaseId` que o DTO não declara. A API recusa campos desconhecidos
+ * (`forbidNonWhitelisted`), e o painel mostrava "o servidor ainda está a receber
+ * a versão nova" — a mensagem certa para um deploy desencontrado, a errada para
+ * isto. Numa versão nova o campo era `undefined` e sumia no JSON, por isso só
+ * falhava ao pré-visualizar uma versão já gravada.
+ *
+ * Aqui valida-se o corpo **que o painel constrói** com as regras **da API**, as
+ * mesmas do `ValidationPipe`. É o contrato entre os dois, e é o que nenhum dos
+ * dois lados via sozinho.
+ */
+const pipe = { whitelist: true, forbidNonWhitelisted: true } as const;
+const errosDe = (body: unknown) =>
+  validateSync(plainToInstance(PreviewDto, JSON.parse(JSON.stringify(body))) as object, pipe)
+    .map((e) => e.property + ": " + Object.values(e.constraints ?? {}).join(", "));
+
+/* O objecto que o ecrã tem na mão quando abre a pré-visualização de uma versão gravada. */
+const doEcra = { version: "29/09/2026", title: "O que há de novo", notes: "- Um\n- Dois", releaseId: "rel_123" };
+
+check("a API recusaria o objecto do ecrã tal e qual", errosDe(doEcra).some((e) => e.startsWith("releaseId")), errosDe(doEcra).join(" | "));
+check("o corpo do painel passa, sem clube", errosDe(corpoDaPreview(doEcra)).length === 0, errosDe(corpoDaPreview(doEcra)).join(" | "));
+check("e com clube", errosDe(corpoDaPreview(doEcra, "academia_1")).length === 0, errosDe(corpoDaPreview(doEcra, "academia_1")).join(" | "));
+check("não leva o releaseId", !("releaseId" in corpoDaPreview(doEcra)));
+check("sem clube, não leva academyId vazio", !("academyId" in corpoDaPreview(doEcra, undefined)));
+/* Um rascunho ainda por escrever também se pré-visualiza. */
+check("um texto ainda vazio passa", errosDe(corpoDaPreview({ version: "", title: "", notes: "" })).length === 0);
 
 console.log("");
 console.log(`${bad === 0 ? "TUDO OK" : "HÁ FALHAS"} — ${ok} ok, ${bad} falhas`);

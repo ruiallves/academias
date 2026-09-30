@@ -11,6 +11,7 @@ import {
   deleteRelease,
   escolhidosPorOmissao,
   linhasDeNovidades,
+  corpoDaPreview,
   previewRelease,
   sendRelease,
   updateRelease,
@@ -393,7 +394,7 @@ function PreviewDialog({ texto, onClose }: { texto: AVer; onClose: () => void })
   useEffect(() => {
     let vivo = true;
     setErro(null);
-    previewRelease({ ...texto, ...(academyId ? { academyId } : {}) })
+    previewRelease(corpoDaPreview(texto, academyId || undefined))
       .then((r) => vivo && setEmail(r))
       .catch((e) => vivo && setErro(e instanceof Error ? e.message : "Não foi possível pré-visualizar."));
     return () => {

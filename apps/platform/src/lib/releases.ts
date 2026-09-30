@@ -67,7 +67,27 @@ export type EmailPreview = {
   text: string;
 };
 
-export const previewRelease = (body: { version: string; title: string; notes: string; academyId?: string }) =>
+/**
+ * O corpo do pedido de pré-visualização: **estes quatro campos e mais nenhum**.
+ *
+ * A API recusa campos que não conhece (`forbidNonWhitelisted`), e o primeiro
+ * envio mandava o objecto do ecrã inteiro, com um `releaseId` que o servidor não
+ * pede. Numa versão nova o `releaseId` era `undefined` e sumia no JSON; numa
+ * gravada ia, e a pré-visualização falhava com a mensagem de "o servidor ainda
+ * está a receber a versão nova", que apontava para o deploy e não para o bug.
+ * Escolher os campos à mão fecha a porta a que volte a acontecer com o próximo
+ * campo que o ecrã ganhar. Ver `test-novidades`, que valida isto contra o DTO.
+ */
+export function corpoDaPreview(texto: { version: string; title: string; notes: string }, academyId?: string) {
+  return {
+    version: texto.version,
+    title: texto.title,
+    notes: texto.notes,
+    ...(academyId ? { academyId } : {}),
+  };
+}
+
+export const previewRelease = (body: ReturnType<typeof corpoDaPreview>) =>
   apiPost<EmailPreview>("/releases/preview", body);
 
 export const sendRelease = (id: string, academyIds: string[]) =>

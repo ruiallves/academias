@@ -107,8 +107,20 @@ function legivel(message: unknown): string | null {
   );
   if (linhas.length === 0) return null;
 
-  if (linhas.some((m) => /^property \S+ should not exist$/.test(m))) {
-    return "O servidor ainda está a receber a versão nova do painel. Espera um minuto e grava outra vez.";
+  const recusados = linhas
+    .map((m) => /^property (\S+) should not exist$/.exec(m)?.[1])
+    .filter((c): c is string => Boolean(c));
+  if (recusados.length > 0) {
+    /*
+     * O nome do campo vai no fim, entre parênteses. Na maior parte das vezes é
+     * mesmo o deploy desencontrado e a pessoa ignora-o; mas quando não é, é a
+     * única pista de que o painel mandou um campo a mais — foi assim que um
+     * `releaseId` na pré-visualização se passou por "espera um minuto".
+     */
+    return (
+      "O servidor ainda está a receber a versão nova do painel. Espera um minuto e grava outra vez. " +
+      `(campo: ${recusados.join(", ")})`
+    );
   }
   return linhas.join(" · ");
 }

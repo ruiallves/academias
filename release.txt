@@ -1,3 +1,11 @@
+30/09/2026
+- Painel da plataforma: menu Novidades para escrever uma versão e mandá-la por email ao responsável de cada clube, com os clubes que pagam já escolhidos.
+- Novidades: dá para editar e apagar uma versão mesmo depois de enviada; o editor avisa que o que se muda não chega a quem já recebeu.
+- Novidades: botão "Ver o email" abre o email tal e qual vai sair (remetente, destinatário, assunto e corpo), como um clube escolhido o recebe, em computador ou telemóvel, e em texto simples.
+- Novidades: corrigido o "Ver o email" de uma versão já gravada, que falhava com "o servidor ainda está a receber a versão nova".
+- Painel da plataforma: quando o servidor recusa um campo, a mensagem passa a dizer qual.
+- Novidades: o email ganhou o logótipo da plataforma e um desenho próprio, com cada novidade numerada e o tema em destaque quando se escreve "Tema: descrição".
+
 29/09/2026
 - Ficha do atleta: as equipas (modalidade, equipa, número e posição) passam a editar-se na Visão geral, sem abrir o modo Editar.
 - Mensalidades: "Transferência bancária" passa a ser um dos métodos ao marcar uma mensalidade como paga à mão (e ao lançar mensalidades já pagas).
