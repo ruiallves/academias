@@ -211,6 +211,17 @@ export class MailClient implements OnModuleInit {
   }
 
   /**
+   * De quem sai o correio, para uma pré-visualização o poder mostrar.
+   *
+   * A linha "De:" é a primeira coisa que quem recebe lê, antes do assunto, e
+   * uma pré-visualização que a esconde está a mostrar metade do que chega.
+   * Sem `MAIL_FROM` configurado devolve o endereço vazio — e o ecrã di-lo.
+   */
+  get remetente(): { email: string; name: string } {
+    return { ...this.from };
+  }
+
+  /**
    * Envia. Devolve o que aconteceu; nunca atira.
    *
    * O corpo vai sempre em duas versões, texto e HTML. Não é cortesia: um email só

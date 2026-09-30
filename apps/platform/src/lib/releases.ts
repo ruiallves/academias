@@ -57,6 +57,19 @@ export const updateRelease = (id: string, body: { version?: string; title?: stri
 
 export const deleteRelease = (id: string) => apiDelete<{ ok: true }>(`/releases/${encodeURIComponent(id)}`);
 
+/** O email tal e qual vai sair, desenhado pelo servidor. Ver `ReleasesService.preview`. */
+export type EmailPreview = {
+  de: { email: string; name: string };
+  para: { name: string; email: string };
+  clubName: string;
+  subject: string;
+  html: string;
+  text: string;
+};
+
+export const previewRelease = (body: { version: string; title: string; notes: string; academyId?: string }) =>
+  apiPost<EmailPreview>("/releases/preview", body);
+
 export const sendRelease = (id: string, academyIds: string[]) =>
   apiPost<{ ok: true; enviados: number; falhas: { academyId: string; name: string; reason: string }[] }>(
     `/releases/${encodeURIComponent(id)}/enviar`,

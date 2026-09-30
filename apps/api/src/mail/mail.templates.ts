@@ -627,24 +627,83 @@ export function linhasDeNovidades(notes: string): string[] {
 }
 
 /**
+ * Uma novidade partida em tema e texto, quando se escreveu assim.
+ *
+ * "Ficha do atleta: as equipas passam a editar-se na Visão geral." — o que vem
+ * antes dos dois pontos é o sítio da plataforma, e no email aparece em negrito
+ * por cima do resto. É a diferença entre uma lista de frases e uma lista que se
+ * lê na diagonal, e custa zero a quem escreve: é como já se escrevia no
+ * `release.txt`.
+ *
+ * Só parte quando parece mesmo um tema: dois pontos **seguidos de espaço** (um
+ * `https://` ou umas `10:30` não partem), e um tema curto (até 48 caracteres) —
+ * uma frase comprida com dois pontos no meio é uma frase, não um título.
+ */
+export function partirNovidade(linha: string): { tema: string | null; texto: string } {
+  const i = linha.indexOf(": ");
+  if (i < 2 || i > 48) return { tema: null, texto: linha };
+  const tema = linha.slice(0, i).trim();
+  const texto = linha.slice(i + 2).trim();
+  if (!texto) return { tema: null, texto: linha };
+  return { tema, texto };
+}
+
+/**
+ * O logótipo da plataforma, para os emails que são **da** plataforma.
+ *
+ * A versão de 128 px que o site já serve: mostra-se a 44 px, e três vezes a
+ * resolução chega para um ecrã de telemóvel sem pesar nada. O original
+ * (`images/academias-logo.png`) tem 4096 px e quase um megabyte — num email
+ * seria um anexo disfarçado.
+ */
+export const ACADEMIAS_LOGO_URL = "https://academias.pt/academias-logo.png";
+
+/**
+ * A primeira letra em maiúscula.
+ *
+ * Só no HTML, e só quando o tema foi partido: aí a descrição fica numa linha
+ * própria, e "as equipas passam a…" em minúscula lê-se como um fragmento. No
+ * texto simples fica "Tema: as equipas…", onde a minúscula é a certa.
+ */
+function maiuscula(texto: string): string {
+  return texto.charAt(0).toLocaleUpperCase("pt-PT") + texto.slice(1);
+}
+
+/** O verde do logótipo, que é o da marca. */
+const VERDE = "#14594c";
+const VERDE_ESCURO = "#0e3f36";
+
+/**
  * O que mudou na plataforma, contado ao responsável de um clube.
  *
  * ## Porque é que este email existe
  *
  * Porque um clube que não sabe o que mudou não usa o que mudou. As novidades
  * viviam num `release.txt` na raiz do repositório, escrito a cada deploy e lido
- * por uma pessoa. Funcionalidades pedidas por um clube ficavam meses sem ser
- * usadas por esse clube, que não sabia que já lá estavam.
+ * por uma pessoa, e funcionalidades pedidas por um clube ficavam meses por usar
+ * por esse clube, que não sabia que já lá estavam.
  *
- * ## Não é um email de sistema, é uma carta
+ * ## Porque é que não usa o `layout` dos outros
  *
- * Por isso trata a pessoa pelo nome e diz o nome do clube: quem o recebe assina
- * o contrato desta plataforma, e um "Caro cliente" a um presidente de colectividade
- * é pior do que não escrever. O botão leva à consola **dele** e não a uma página
- * de marketing — o sítio onde as novidades estão é o sítio para onde se manda.
+ * Porque os outros são emails **de sistema** — um convite, um aviso de
+ * pagamento — e esse desenho é deliberadamente discreto: a cor do clube, um
+ * título, um botão. Isto é um **anúncio**, e a primeira versão, feita com esse
+ * desenho, pareceu "um pouco básica". Tem por isso o seu próprio: o logótipo da
+ * plataforma no topo, a versão como etiqueta, cada novidade como uma linha com
+ * marcador e tema em negrito, e um rodapé que diz porquê se recebe isto.
+ * Mexer no `layout` partilhado para chegar aqui mudaria também o convite de
+ * sócio e o aviso de pagamento, que não pediram nada.
+ *
+ * ## Mesmas regras de sobrevivência
+ *
+ * Tabelas e estilos em linha, porque é o que o Outlook percebe. `width` e
+ * `height` do logótipo em atributos, porque o Outlook ignora o CSS e desenhava a
+ * imagem com 128 px. E o cabeçalho **lê-se sem imagens**: o nome da plataforma
+ * é texto ao lado do logótipo, e o `alt` é um "A" branco sobre o mesmo verde —
+ * metade dos clientes de email bloqueia imagens até a pessoa pedir.
  */
 export function releaseNotesEmail(input: {
-  /** O nome próprio de quem recebe. */
+  /** O nome de quem recebe — usa-se o primeiro. */
   name: string;
   /** O clube, para a carta dizer a quem se dirige. */
   clubName: string;
@@ -655,53 +714,169 @@ export function releaseNotesEmail(input: {
   notes: string;
   /** A consola deste clube. */
   link: string;
+  /** Para testes e ambientes sem o site; por omissão, o do site. */
+  logoUrl?: string;
 }): { subject: string; html: string; text: string } {
-  const brand: MailBrand = { shortName: "Academias", name: "Plataforma Academias", signalColor: FALLBACK };
-  const itens = linhasDeNovidades(input.notes);
+  const itens = linhasDeNovidades(input.notes).map(partirNovidade);
+  const primeiro = input.name.trim().split(/\s+/)[0] || input.name.trim();
+  const logo = input.logoUrl ?? ACADEMIAS_LOGO_URL;
+  const n = itens.length;
+  const quantas = n === 1 ? "1 novidade" : n + " novidades";
 
-  const paragraphs = [
-    "Há novidades na plataforma do <strong>" + esc(input.clubName) + "</strong>. Isto é o que mudou:",
-  ];
+  const lista = itens
+    .map(
+      (it, i) => `
+          <tr>
+            <td valign="top" style="width:34px;padding:${i === 0 ? "4px" : "16px"} 0 ${i === n - 1 ? "4px" : "16px"};${i > 0 ? "border-top:1px solid #efece8;" : ""}">
+              <table role="presentation" cellpadding="0" cellspacing="0" border="0"><tr>
+                <td align="center" valign="middle" style="width:22px;height:22px;background:#e6f0ec;border-radius:50%;
+                    font-family:Helvetica,Arial,sans-serif;font-size:11px;font-weight:700;color:${VERDE};line-height:22px;">${i + 1}</td>
+              </tr></table>
+            </td>
+            <td valign="top" style="padding:${i === 0 ? "4px" : "16px"} 0 ${i === n - 1 ? "4px" : "16px"};${i > 0 ? "border-top:1px solid #efece8;" : ""}
+                font-family:Helvetica,Arial,sans-serif;">
+              ${it.tema ? `<p style="margin:0 0 3px;font-size:15px;line-height:1.4;font-weight:700;color:#1c1a18;">${esc(it.tema)}</p>` : ""}
+              <p style="margin:0;font-size:15px;line-height:1.6;color:${it.tema ? "#4a4743" : "#2d2b28"};">${esc(it.tema ? maiuscula(it.texto) : it.texto)}</p>
+            </td>
+          </tr>`,
+    )
+    .join("");
 
-  /*
-   * A lista vai em `blocks` e não em `paragraphs`: um `<ul>` dentro de um `<p>`
-   * é HTML inválido, e o Outlook — que é metade do correio de trabalho em
-   * Portugal — desenha-o como lhe apetece. Ver a nota em `Layout.blocks`.
-   */
-  const blocks =
-    itens.length > 0
-      ? [
-          '<ul style="margin:0 0 14px;padding-left:20px;font-size:15px;line-height:1.6;color:#3c3a37;">' +
-            itens.map((i) => '<li style="margin:0 0 8px;">' + esc(i) + "</li>").join("") +
-            "</ul>",
-        ]
-      : [];
+  const html = `<!doctype html>
+<html lang="pt">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<meta name="color-scheme" content="light" />
+<title>${esc(input.title)}</title>
+</head>
+<body style="margin:0;padding:0;background:#f1efeb;">
+<!-- O texto que o telemóvel mostra ao lado do assunto, antes de abrir. -->
+<div style="display:none;max-height:0;overflow:hidden;opacity:0;">${esc(quantas)} na plataforma do ${esc(input.clubName)}.</div>
 
-  const notes = [
-    "Recebes isto porque estás registado como o responsável do clube na plataforma.",
-  ];
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background:#f1efeb;">
+<tr><td align="center" style="padding:36px 16px 28px;">
 
-  return {
-    subject: "Academias · " + input.title,
-    html: layout({
-      brand,
-      greeting: "Olá " + esc(input.name.trim().split(/\s+/)[0]) + ",",
-      heading: input.title,
-      paragraphs,
-      blocks,
-      cta: { label: "Abrir a consola", url: input.link },
-      notes,
-    }),
-    text: plain(
-      "Olá " + input.name.trim().split(/\s+/)[0] + ",",
-      [
-        "Há novidades na plataforma do " + input.clubName + ". Isto é o que mudou:",
-        ...itens.map((i) => "- " + i),
-      ],
-      { label: "Abrir a consola", url: input.link },
-      notes,
-    ),
-  };
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0"
+       style="max-width:580px;background:#ffffff;border-radius:14px;overflow:hidden;
+              border:1px solid #e7e3dd;">
+
+  <!-- Cabeçalho: o logótipo e o nome, que se lê mesmo com as imagens bloqueadas. -->
+  <tr>
+    <td style="background:${VERDE_ESCURO};padding:22px 32px;">
+      <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0"><tr>
+        <td valign="middle">
+          <table role="presentation" cellpadding="0" cellspacing="0" border="0"><tr>
+            <td valign="middle" style="width:44px;height:44px;">
+              <img src="${esc(logo)}" alt="A" width="44" height="44"
+                   style="display:block;width:44px;height:44px;border:0;border-radius:50%;background:${VERDE};
+                          font-family:Helvetica,Arial,sans-serif;font-size:20px;font-weight:700;color:#ffffff;
+                          text-align:center;line-height:44px;" />
+            </td>
+            <td valign="middle" style="padding-left:12px;font-family:Helvetica,Arial,sans-serif;">
+              <p style="margin:0;font-size:18px;font-weight:700;color:#ffffff;letter-spacing:0.01em;">Academias</p>
+              <p style="margin:2px 0 0;font-size:12px;color:#a9c9bf;">Plataforma de gestão de clubes</p>
+            </td>
+          </tr></table>
+        </td>
+        <td align="right" valign="middle" style="font-family:Helvetica,Arial,sans-serif;">
+          <span style="display:inline-block;padding:5px 11px;border-radius:999px;background:#1d5c50;
+                       font-size:11.5px;font-weight:700;color:#d8ece5;letter-spacing:0.04em;white-space:nowrap;">NOVIDADES</span>
+        </td>
+      </tr></table>
+    </td>
+  </tr>
+
+  <!-- A abertura: versão, título e a quem se escreve. -->
+  <tr>
+    <td style="padding:32px 32px 8px;font-family:Helvetica,Arial,sans-serif;">
+      <p style="margin:0 0 10px;font-size:12px;font-weight:700;color:${VERDE};letter-spacing:0.06em;text-transform:uppercase;">
+        Versão ${esc(input.version)} · ${esc(quantas)}
+      </p>
+      <h1 style="margin:0 0 18px;font-size:25px;line-height:1.25;font-weight:700;color:#1c1a18;">${esc(input.title)}</h1>
+      <p style="margin:0 0 6px;font-size:15px;line-height:1.6;color:#4a4743;">Olá ${esc(primeiro)},</p>
+      <p style="margin:0;font-size:15px;line-height:1.6;color:#4a4743;">
+        Há novidades na plataforma do <strong style="color:#1c1a18;">${esc(input.clubName)}</strong>. Fica aqui o resumo do que mudou.
+      </p>
+    </td>
+  </tr>
+
+  <!-- As novidades. -->
+  ${
+    n > 0
+      ? `<tr>
+    <td style="padding:20px 32px 4px;">
+      <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0"
+             style="background:#faf9f7;border:1px solid #efece8;border-radius:10px;">
+        <tr><td style="padding:14px 20px;">
+          <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">${lista}
+          </table>
+        </td></tr>
+      </table>
+    </td>
+  </tr>`
+      : ""
+  }
+
+  <!-- O caminho para lá. -->
+  <tr>
+    <td style="padding:26px 32px 30px;font-family:Helvetica,Arial,sans-serif;">
+      <table role="presentation" cellpadding="0" cellspacing="0" border="0"><tr>
+        <td style="background:${VERDE};border-radius:8px;">
+          <a href="${esc(input.link)}"
+             style="display:inline-block;padding:14px 28px;font-family:Helvetica,Arial,sans-serif;
+                    font-size:15px;font-weight:700;color:#ffffff;text-decoration:none;">Abrir a consola do clube</a>
+        </td>
+      </tr></table>
+      <p style="margin:14px 0 0;font-size:12.5px;line-height:1.5;color:#8a8681;">
+        Ou copia este endereço:
+        <a href="${esc(input.link)}" style="color:${VERDE};text-decoration:underline;word-break:break-all;">${esc(input.link)}</a>
+      </p>
+    </td>
+  </tr>
+
+  <!-- Porquê se recebe isto. -->
+  <tr>
+    <td style="padding:18px 32px 22px;background:#faf9f7;border-top:1px solid #efece8;font-family:Helvetica,Arial,sans-serif;">
+      <p style="margin:0;font-size:12.5px;line-height:1.55;color:#8a8681;">
+        Recebes este email porque estás registado como responsável do ${esc(input.clubName)} na plataforma Academias.
+        Tens alguma dúvida ou sugestão? Basta responder.
+      </p>
+    </td>
+  </tr>
+
+</table>
+
+<p style="margin:20px 0 0;font-family:Helvetica,Arial,sans-serif;font-size:11.5px;color:#a8a49f;">
+  Academias · <a href="https://academias.pt" style="color:#a8a49f;text-decoration:underline;">academias.pt</a>
+</p>
+
+</td></tr>
+</table>
+</body>
+</html>`;
+
+  const text = [
+    "ACADEMIAS · NOVIDADES",
+    "Versão " + input.version + " · " + quantas,
+    "",
+    input.title,
+    "",
+    "Olá " + primeiro + ",",
+    "",
+    "Há novidades na plataforma do " + input.clubName + ". Fica aqui o resumo do que mudou.",
+    "",
+    ...itens.map((it, i) => (i + 1) + ". " + (it.tema ? it.tema + ": " + it.texto : it.texto)),
+    "",
+    "Abrir a consola do clube:",
+    input.link,
+    "",
+    "--",
+    "Recebes este email porque estás registado como responsável do " + input.clubName + " na plataforma Academias.",
+    "Tens alguma dúvida ou sugestão? Basta responder.",
+  ].join("\n");
+
+  return { subject: "Academias · " + input.title, html, text };
 }
 
 export function memberSignupReceivedEmail(input: {

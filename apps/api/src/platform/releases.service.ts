@@ -1,7 +1,7 @@
 import { BadRequestException, Injectable, Logger, NotFoundException } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
 import { MailClient } from "../mail/mail.client";
-import { releaseNotesEmail } from "../mail/mail.templates";
+import { ACADEMIAS_LOGO_URL, releaseNotesEmail } from "../mail/mail.templates";
 import { SELECT_RESPONSAVEL, escolherResponsavel } from "../subscription/responsavel";
 import { PlatformPrisma } from "./platform.prisma";
 import { PlatformService } from "./platform.service";
@@ -29,13 +29,18 @@ import type { PlatformAdminContext } from "./platform.guard";
  * existe e porquê. Escolhê-lo à mesma grava a linha com o motivo, em vez de o
  * envio ficar a mentir que foram todos.
  *
- * ## Rascunho e envio
+ * ## Editar depois de enviar
  *
- * Uma versão nasce rascunho e pode ser reescrita e apagada. Depois de enviada
- * fecha-se: o texto que saiu por email não se reescreve, porque reescrevê-lo
- * mudava o histórico sem mudar o que as pessoas leram. Reenviar a **clubes
- * novos** continua a dar — é o caso de um clube que entrou depois, ou de um
- * email que falhou.
+ * Dá, sempre. Começou por não dar — a versão fechava ao primeiro envio, com o
+ * argumento de que reescrever o texto mudava o histórico sem mudar o que as
+ * pessoas leram — e o Rui pediu o contrário: uma gralha encontrada depois de
+ * mandar a três clubes tem de se poder corrigir antes de mandar aos outros
+ * nove. O argumento continua verdadeiro e por isso é **dito**, em vez de
+ * imposto: o ecrã avisa que o que se mudar não chega a quem já recebeu. Quem
+ * recebeu, e para que endereço, fica em `ReleaseRecipient`, que editar não toca.
+ *
+ * Reenviar a clubes novos continua a dar — é o caso de um clube que entrou
+ * depois, ou de um email que falhou — e a quem já recebeu não se manda outra vez.
  */
 @Injectable()
 export class ReleasesService {
@@ -156,7 +161,7 @@ export class ReleasesService {
     input: { version?: string; title?: string; notes?: string },
     ip?: string,
   ) {
-    const actual = await this.exigirRascunho(id, "reescrever");
+    const actual = await this.existe(id);
     const r = await this.prisma.release.update({
       where: { id },
       data: {
@@ -166,15 +171,72 @@ export class ReleasesService {
       },
       select: { id: true, version: true, title: true },
     });
-    await this.platform.audit(admin, "release.update", "release", id, { versao: actual.version }, ip);
+    await this.platform.audit(admin, "release.update", "release", id, {
+      versao: actual.version,
+      /* Fica escrito se foi mexida depois de sair: é a diferença entre corrigir
+         um rascunho e mudar um texto que já alguém leu. */
+      jaEnviada: Boolean(actual.sentAt),
+    }, ip);
     return r;
   }
 
+  /**
+   * Apagar — também depois de enviada, pela mesma razão de se poder editar.
+   *
+   * Leva consigo a lista de quem recebeu (a relação é em cascata). Por isso o
+   * registo de auditoria guarda **quantos** a tinham recebido: o email já está
+   * na caixa dessas pessoas, e apagar aqui não o tira de lá.
+   */
   async remove(admin: PlatformAdminContext | null, id: string, ip?: string) {
-    const actual = await this.exigirRascunho(id, "apagar");
+    const actual = await this.existe(id);
+    const recebidos = await this.prisma.releaseRecipient.count({ where: { releaseId: id, sentAt: { not: null } } });
     await this.prisma.release.delete({ where: { id } });
-    await this.platform.audit(admin, "release.delete", "release", id, { versao: actual.version }, ip);
+    await this.platform.audit(admin, "release.delete", "release", id, { versao: actual.version, recebidos }, ip);
     return { ok: true as const };
+  }
+
+  /**
+   * O email tal e qual vai sair — sem sair.
+   *
+   * Desenhado **pelo servidor**, com a mesma função do envio, e não imitado no
+   * painel: uma pré-visualização feita por outra mão é uma segunda versão do
+   * email, e mais tarde ou mais cedo as duas discordam. Assim o que se vê é, byte
+   * a byte, o que o responsável recebe.
+   *
+   * Recebe o texto por gravar, para se poder ver enquanto se escreve. Com um
+   * clube escolhido usa o nome e o responsável verdadeiros; sem nenhum, um
+   * exemplo. Não escreve nada em lado nenhum e não fala com o fornecedor de
+   * email.
+   */
+  async preview(input: { version: string; title: string; notes: string; academyId?: string }) {
+    let clubName = "Clube de Exemplo";
+    let para: { name: string; email: string } = { name: "Ana Sousa", email: "presidente@clube-exemplo.pt" };
+    let slug = "exemplo";
+
+    if (input.academyId) {
+      const a = await this.prisma.academy.findUnique({
+        where: { id: input.academyId },
+        select: { id: true, name: true, slug: true },
+      });
+      if (a) {
+        clubName = a.name;
+        slug = a.slug;
+        const responsavel = await this.responsavelDe(a.id);
+        if (responsavel) para = { name: responsavel.name, email: responsavel.email };
+      }
+    }
+
+    const mail = releaseNotesEmail({
+      name: para.name,
+      clubName,
+      version: input.version.trim() || "\u2014",
+      title: input.title.trim() || "(sem assunto)",
+      notes: input.notes,
+      link: this.consolaDe(slug),
+      logoUrl: this.logoUrl(),
+    });
+
+    return { de: this.mail.remetente, para, clubName, ...mail };
   }
 
   /**
@@ -233,6 +295,7 @@ export class ReleasesService {
         title: release.title,
         notes: release.notes,
         link: this.consolaDe(a.slug),
+        logoUrl: this.logoUrl(),
       });
 
       let erro: string | null = null;
@@ -306,12 +369,18 @@ export class ReleasesService {
     });
   }
 
-  /** Uma versão já enviada não se reescreve nem se apaga. Ver o cabeçalho. */
-  private async exigirRascunho(id: string, verbo: string) {
+  private async existe(id: string) {
     const r = await this.prisma.release.findUnique({ where: { id }, select: { id: true, version: true, sentAt: true } });
     if (!r) throw new NotFoundException("Versão não encontrada");
-    if (r.sentAt) throw new BadRequestException(`Esta versão já foi enviada — não dá para a ${verbo}.`);
     return r;
+  }
+
+  /**
+   * O logótipo do email. Por omissão o que o site serve; `EMAIL_LOGO_URL` muda-o
+   * sem deploy, para o dia em que o site mudar de casa.
+   */
+  private logoUrl(): string {
+    return this.config.get<string>("EMAIL_LOGO_URL")?.trim() || ACADEMIAS_LOGO_URL;
   }
 
   /** A consola deste clube. O mesmo desenho dos outros links da casa. */

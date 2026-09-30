@@ -22,7 +22,7 @@
  *
  * Uso: npm run test:novidades
  */
-import { linhasDeNovidades, releaseNotesEmail } from "../src/mail/mail.templates";
+import { ACADEMIAS_LOGO_URL, linhasDeNovidades, partirNovidade, releaseNotesEmail } from "../src/mail/mail.templates";
 import { escolherResponsavel, type VinculoDeStaff } from "../src/subscription/responsavel";
 import { ROLE_PERMISSIONS } from "../src/common/permissions";
 import {
@@ -204,43 +204,96 @@ const varios = [
 check("numa lista real, só o que paga e falta", JSON.stringify(daqui(varios)) === JSON.stringify(["paga"]), daqui(varios).join(","));
 
 /* -------------------------------------------------------------------------- */
-console.log("\n=== 5. O email ===");
+console.log("\n=== 5. Tema e texto ===");
 
+/*
+ * "Ficha do atleta: as equipas…" — o que vem antes dos dois pontos é o sítio da
+ * plataforma, e sai em negrito. Mas só quando parece mesmo um tema: é aqui que
+ * se prova que um endereço, uma hora ou uma frase comprida não são partidos.
+ */
+const TEMAS: { nome: string; linha: string; tema: string | null; texto: string }[] = [
+  { nome: "tema e texto", linha: "Ficha do atleta: as equipas editam-se.", tema: "Ficha do atleta", texto: "as equipas editam-se." },
+  { nome: "sem dois pontos", linha: "Tudo mais rápido.", tema: null, texto: "Tudo mais rápido." },
+  { nome: "um endereço não parte", linha: "Vê em https://academias.pt agora", tema: null, texto: "Vê em https://academias.pt agora" },
+  { nome: "uma hora não parte", linha: "Treinos às 10:30 aparecem certos", tema: null, texto: "Treinos às 10:30 aparecem certos" },
+  {
+    nome: "um tema comprido é uma frase, não um título",
+    linha: "Quando um clube tem muitas equipas e muitos atletas ao mesmo tempo: fica mais rápido",
+    tema: null,
+    texto: "Quando um clube tem muitas equipas e muitos atletas ao mesmo tempo: fica mais rápido",
+  },
+  { nome: "dois pontos no fim não partem", linha: "Novidades: ", tema: null, texto: "Novidades: " },
+  { nome: "uma letra antes não é tema", linha: "A: b", tema: null, texto: "A: b" },
+  { nome: "só o primeiro par parte", linha: "Quotas: agora: mais claro", tema: "Quotas", texto: "agora: mais claro" },
+];
+for (const c of TEMAS) {
+  const r = partirNovidade(c.linha);
+  check(c.nome, r.tema === c.tema && r.texto === c.texto, JSON.stringify(r));
+}
+
+/* -------------------------------------------------------------------------- */
+console.log("\n=== 6. O email ===");
+
+const LINK = "https://admarciamirandafelgueiras.academias.pt/consola/";
 const mail = releaseNotesEmail({
   name: "Ana Maria Sousa",
   clubName: "AD Márcia Miranda Felgueiras",
   version: "29/09/2026",
   title: "O que há de novo",
-  notes: "- Ficha do atleta: as equipas editam-se na Visão geral.\n- Quadro tático: a cor dos jogadores é livre.",
-  link: "https://admarciamirandafelgueiras.academias.pt/consola/",
+  notes: "- Ficha do atleta: as equipas editam-se na Visão geral.\n- Quadro tático: a cor dos jogadores é livre.\n- Tudo mais rápido.",
+  link: LINK,
 });
 
+/* Quantos marcadores numerados tem a lista — é o que se vê, contado. */
+const marcadores = (html: string) => (html.match(/width:22px;height:22px/g) ?? []).length;
+
 check("o assunto leva a plataforma à frente", mail.subject === "Academias · O que há de novo", mail.subject);
-check("trata a pessoa pelo primeiro nome", mail.text.startsWith("Olá Ana,"), mail.text.slice(0, 30));
+check("trata a pessoa pelo primeiro nome", mail.html.includes("Olá Ana,") && mail.text.includes("Olá Ana,"));
 check("diz o nome do clube", mail.html.includes("AD Márcia Miranda Felgueiras"));
-check("as novidades vão como lista no HTML", (mail.html.match(/<li/g) ?? []).length === 2);
-check("e como travessões no texto simples", mail.text.includes("- Quadro tático: a cor dos jogadores é livre."));
-check("o botão leva à consola do clube", mail.html.includes("https://admarciamirandafelgueiras.academias.pt/consola/"));
+check("a versão vai como etiqueta, com a contagem", mail.html.includes("Versão 29/09/2026 · 3 novidades"));
+check("uma novidade, um marcador numerado", marcadores(mail.html) === 3, String(marcadores(mail.html)));
+check("o tema sai em negrito, à parte", /font-weight:700;color:#1c1a18;">Ficha do atleta<\/p>/.test(mail.html));
+check("uma linha sem tema não inventa um", !/>Tudo mais rápido\.<\/p>[\s\S]{0,5}font-weight:700/.test(mail.html) && mail.html.includes(">Tudo mais rápido.</p>"));
+check("o texto simples numera e mantém o tema", mail.text.includes("1. Ficha do atleta: as equipas editam-se na Visão geral.") && mail.text.includes("3. Tudo mais rápido."));
+check("o botão leva à consola do clube", mail.html.includes(`href="${LINK}"`));
+check("e o endereço vai também por extenso", mail.text.includes(LINK));
+
+/*
+ * O logótipo. Três coisas, e cada uma é um email partido em algum cliente:
+ * endereço absoluto (um relativo não carrega fora do site), largura e altura em
+ * atributos (o Outlook ignora o CSS e desenhava os 128 px), e um `alt` — metade
+ * dos clientes bloqueia imagens até se pedir, e o cabeçalho tem de se ler assim.
+ */
+const img = mail.html.match(/<img[^>]*>/)?.[0] ?? "";
+check("o logótipo é o da plataforma", img.includes(`src="${ACADEMIAS_LOGO_URL}"`), img.slice(0, 80));
+check("por endereço absoluto e seguro", ACADEMIAS_LOGO_URL.startsWith("https://"));
+check("com largura e altura em atributos", /width="44"/.test(img) && /height="44"/.test(img), img);
+check("e um alt para quando as imagens estão bloqueadas", /alt="[^"]+"/.test(img), img);
+check("o nome da plataforma é texto, não só imagem", />Academias<\/p>/.test(mail.html));
+check("o logótipo pode vir de outro sítio", releaseNotesEmail({ name: "A", clubName: "C", version: "1", title: "T", notes: "x", link: "h", logoUrl: "https://cdn/x.png" }).html.includes('src="https://cdn/x.png"'));
 
 /*
  * O que se escreve no painel entra num email em HTML. Um `<script>` escrito por
- * engano — ou de propósito — não pode atravessar.
+ * engano — ou de propósito — não pode atravessar, nem no tema nem no texto.
  */
 const comHtml = releaseNotesEmail({
   name: "Ana",
   clubName: 'Clube "do" <Norte>',
-  version: "1",
-  title: "Teste",
-  notes: "- <script>alert(1)</script> e <b>negrito</b>",
+  version: "<b>1</b>",
+  title: "Teste <i>x</i>",
+  notes: "- <b>Tema</b>: <script>alert(1)</script>\n- <img src=x onerror=alert(1)>",
   link: "https://x.academias.pt/consola/",
 });
-check("o HTML das novidades sai escapado", !comHtml.html.includes("<script>"), comHtml.html.match(/.{0,40}script.{0,20}/)?.[0] ?? "");
-check("e o do nome do clube também", comHtml.html.includes("&lt;Norte&gt;") && !comHtml.html.includes("<Norte>"));
+check("o HTML das novidades sai escapado", !comHtml.html.includes("<script>") && !comHtml.html.includes("<img src=x"));
+check("o do tema também", comHtml.html.includes("&lt;b&gt;Tema&lt;/b&gt;"));
+check("o do nome do clube também", comHtml.html.includes("&lt;Norte&gt;") && !comHtml.html.includes("<Norte>"));
+check("o da versão e do título também", comHtml.html.includes("&lt;b&gt;1&lt;/b&gt;") && comHtml.html.includes("Teste &lt;i&gt;x&lt;/i&gt;"));
 check("no texto simples fica cru, que é o que se quer", comHtml.text.includes("<script>alert(1)</script>"));
 
-/* Um corpo sem novidades nenhumas não pode abrir uma lista vazia. */
+/* Um corpo sem novidades nenhumas não pode abrir uma caixa vazia. */
 const vazio = releaseNotesEmail({ name: "Ana", clubName: "C", version: "1", title: "T", notes: "   \n  ", link: "https://x/" });
-check("sem novidades, não há lista", !vazio.html.includes("<ul"), vazio.html.match(/<ul[^>]*>.{0,40}/)?.[0] ?? "");
+check("sem novidades, não há marcadores", marcadores(vazio.html) === 0, String(marcadores(vazio.html)));
+check("nem a caixa da lista", !vazio.html.includes("background:#faf9f7;border:1px solid #efece8;border-radius:10px"));
 
 console.log("");
 console.log(`${bad === 0 ? "TUDO OK" : "HÁ FALHAS"} — ${ok} ok, ${bad} falhas`);

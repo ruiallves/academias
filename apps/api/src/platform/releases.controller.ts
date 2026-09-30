@@ -18,6 +18,18 @@ class EditarVersaoDto {
   @IsOptional() @IsString() @Length(3, 20_000) notes?: string;
 }
 
+/**
+ * O texto por gravar, para se ver o email enquanto se escreve. Mais folgado que
+ * o de gravar: uma pré-visualização de um assunto ainda vazio tem de funcionar.
+ */
+class PreviewDto {
+  @IsString() @Length(0, 40) version!: string;
+  @IsString() @Length(0, 120) title!: string;
+  @IsString() @Length(0, 20_000) notes!: string;
+  /** Ver como este clube o recebe. Ausente = um clube de exemplo. */
+  @IsOptional() @IsString() @Length(1, 64) academyId?: string;
+}
+
 class EnviarDto {
   /** Os clubes escolhidos. O tecto é folgado; não há mil clubes. */
   @IsArray() @ArrayMaxSize(500) @IsString({ each: true })
@@ -55,6 +67,16 @@ export class ReleasesController {
   @Get("destinatarios")
   destinatarios(@Query("release") releaseId?: string) {
     return this.releases.destinatarios(releaseId);
+  }
+
+  /*
+   * Também antes do `:id`. É um POST porque leva o texto inteiro no corpo — num
+   * GET iria na query, e vinte mil caracteres num URL não passam em todo o lado.
+   * Não escreve nada: ver `ReleasesService.preview`.
+   */
+  @Post("preview")
+  preview(@Body() dto: PreviewDto) {
+    return this.releases.preview(dto);
   }
 
   @Post()
