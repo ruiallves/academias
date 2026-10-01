@@ -1,4 +1,4 @@
-01/10/2026 v2
+02/10/2026
 - Jogos, Pós-jogo: o minuto de entrada e o "por quem entrou" passaram para a caixa por baixo do jogador, que abre sozinha ao marcar "Entrou". As linhas ficaram alinhadas de jogador para jogador.
 - Jogos, Pós-jogo, futebol: quem entrou do banco diz agora por quem entrou, além do minuto. Escolher quem saiu põe-lhe sozinho o minuto de saída, e os minutos dos dois ficam certos.
 - Jogos, Pós-jogo, futsal e basquetebol: como se entra e sai a toda a hora, a ficha pede só quem foi titular e quem entrou, sem minutos nem "por quem".

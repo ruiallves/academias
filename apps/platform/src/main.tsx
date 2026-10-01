@@ -10,6 +10,13 @@ import "./styles.css";
 /* A plataforma também se actualiza sozinha. Ver `packages/ui/src/versao.ts`. */
 vigiarVersao({ atual: __BUILD_ID__, base: import.meta.env.BASE_URL });
 
+// A página arrancou: a marca de "já recarreguei" do index.html deixa de ser precisa.
+try {
+  sessionStorage.removeItem("academias.recarregou");
+} catch {
+  /* sem armazenamento, não há marca para apagar */
+}
+
 /**
  * A única porta que não passa pelo `LoginGate`.
  *

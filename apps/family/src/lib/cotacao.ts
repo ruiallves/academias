@@ -60,6 +60,57 @@ export function useCotacao(caminho: "/billing/cotacao" | "/api/socio/cotacao", v
   return cotacao;
 }
 
+/**
+ * O clube aceita pagamentos pela app? `null` enquanto não se sabe.
+ *
+ * Quem pergunta tem de esperar pela resposta antes de mostrar um botão de
+ * pagar: mostrá-lo primeiro e tirá-lo depois era deixar o pai tocar em algo que
+ * o servidor ia recusar. A última resposta fica guardada por clube, para que a
+ * segunda visita já abra certa, e é sempre confirmada com o servidor.
+ *
+ * Uma falha sem resposta guardada conta como "aceita": o servidor continua a
+ * recusar o que tiver de recusar.
+ */
+export function useAceitaPagamentos(clube: string): { aceita: boolean | null; feesOnPayer: boolean } {
+  const chave = `academias.pagamentos.aceita.${clube}`;
+  const guardado = (): boolean | null => {
+    try {
+      const v = localStorage.getItem(chave);
+      return v === "1" ? true : v === "0" ? false : null;
+    } catch {
+      return null;
+    }
+  };
+  const [aceita, setAceita] = useState<boolean | null>(guardado);
+  const [feesOnPayer, setFeesOnPayer] = useState(false);
+
+  useEffect(() => {
+    let vivo = true;
+    setAceita(guardado());
+    apiGet<Cotacao>("/billing/cotacao")
+      .then((c) => {
+        if (!vivo) return;
+        const sim = c.enabled !== false;
+        setAceita(sim);
+        setFeesOnPayer(c.feesOnPayer === true);
+        try {
+          localStorage.setItem(chave, sim ? "1" : "0");
+        } catch {
+          /* sem armazenamento, pergunta-se outra vez na próxima */
+        }
+      })
+      .catch(() => {
+        if (vivo) setAceita((a) => a ?? true);
+      });
+    return () => {
+      vivo = false;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [chave]);
+
+  return { aceita, feesOnPayer };
+}
+
 /** A linha de um método numa cotação, se a cotação a tiver. */
 export const doMetodo = (c: Cotacao | null, method: string): LinhaDaCotacao | undefined =>
   c?.methods.find((m) => m.method === method);

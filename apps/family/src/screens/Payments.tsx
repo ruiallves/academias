@@ -13,7 +13,7 @@ import {
   TriangleAlert,
 } from "lucide-react";
 import { apiGet, apiPost } from "@/lib/http";
-import { PAGAMENTOS_DESATIVADOS, doMetodo, useCotacao } from "@/lib/cotacao";
+import { PAGAMENTOS_DESATIVADOS, doMetodo, useAceitaPagamentos, useCotacao } from "@/lib/cotacao";
 import { reload, useStore, type Payment } from "@/lib/store";
 import { Avatar, Money, cx, dateShort, money } from "@/ui";
 
@@ -80,10 +80,13 @@ export default function Payments() {
    * a dizer o que está em dívida — é informação que o pai precisa — mas deixa
    * de oferecer o que o servidor ia recusar: escolher meses e pagar.
    */
-  const regras = useCotacao("/billing/cotacao", []);
-  const desativados = regras?.enabled === false;
+  const regras = useAceitaPagamentos(store.academy.name);
+  const desativados = regras.aceita === false;
+  // Enquanto o servidor não responde, nada de escolher nem de pagar: o botão
+  // não pode aparecer para desaparecer um segundo depois.
+  const semPagar = regras.aceita !== true;
 
-  const chosen = desativados ? [] : outstanding.filter((p) => selected.has(p.id));
+  const chosen = semPagar ? [] : outstanding.filter((p) => selected.has(p.id));
   const total = useMemo(() => chosen.reduce((n, p) => n + p.amountCents, 0), [chosen]);
   // O que já foi pago e espera confirmação não é dívida — é espera. Contá-lo
   // no total era dizer ao pai que devia o que acabou de pagar.
@@ -167,10 +170,12 @@ export default function Payments() {
               {desativados
                 ? "Paga-se diretamente ao clube."
                 : chosen.length > 0
-                  ? regras?.feesOnPayer
+                  ? regras.feesOnPayer
                     ? `${span} · mais a taxa do método`
                     : span
-                  : "Escolhe os meses que queres pagar."}
+                  : semPagar
+                    ? " "
+                    : "Escolhe os meses que queres pagar."}
             </p>
           </div>
 
@@ -178,7 +183,7 @@ export default function Payments() {
             Os atalhos. Sem eles, pagar seis meses de atraso são seis toques em
             seis linhas — e a app parece um formulário em vez de uma carteira.
           */}
-          <div className={cx("mt-3 flex flex-wrap gap-2", desativados && "hidden")}>
+          <div className={cx("mt-3 flex flex-wrap gap-2", semPagar && "hidden")}>
             <Quick active={allChosen} onClick={() => setSelected(new Set(outstanding.map((p) => p.id)))}>
               Todas · {money(owedTotal)}
             </Quick>
@@ -212,8 +217,8 @@ export default function Payments() {
                     <MonthRow
                       key={p.id}
                       payment={p}
-                      selected={!desativados && selected.has(p.id)}
-                      onToggle={desativados ? undefined : () => toggle(p.id)}
+                      selected={!semPagar && selected.has(p.id)}
+                      onToggle={semPagar ? undefined : () => toggle(p.id)}
                     />
                   ))}
                 </ul>

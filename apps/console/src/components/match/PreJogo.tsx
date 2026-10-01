@@ -96,18 +96,69 @@ export function PreJogo(p: PreJogoProps) {
    * da linha continuar a servir para rolar a lista.
    */
   const [arrasto, setArrasto] = useState<{ id: string; x: number; y: number; alvo: string | null } | null>(null);
-  const pegado = useRef<{ id: string; x: number; y: number; ativo: boolean } | null>(null);
+  const pegado = useRef<{ id: string; x: number; y: number; px: number; py: number; ativo: boolean } | null>(null);
   const acabouDeArrastar = useRef(false);
   const porBaixo = (x: number, y: number) => document.elementFromPoint(x, y)?.closest("[data-drop]")?.getAttribute("data-drop") ?? null;
 
+  /*
+   * A página acompanha o arrasto.
+   *
+   * No telemóvel o plantel fica por baixo do campo, e quem pega num jogador lá
+   * em baixo não tem onde o largar: o dedo está ocupado e a página não rola.
+   * Por isso, ao pegar, o campo vem para a vista sozinho; e com o jogador na
+   * mão, encostar o dedo ao cimo ou ao fundo do ecrã rola a página nesse
+   * sentido, tão mais depressa quanto mais perto da borda.
+   */
+  const campo = useRef<HTMLDivElement>(null);
+  const rolagem = useRef(0);
+  useEffect(() => () => cancelAnimationFrame(rolagem.current), []);
+
+  function acompanhar() {
+    const el = campo.current;
+    if (!el) return;
+    const caixa = quemRola(el);
+    const b = el.getBoundingClientRect();
+    const escondido = b.top < 0 || b.bottom > window.innerHeight;
+    if (escondido) {
+      const calmo = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+      el.scrollIntoView({ behavior: calmo ? "auto" : "smooth", block: b.height > window.innerHeight ? "start" : "center" });
+    }
+    // Enquanto o campo vem para a vista, as bordas esperam: duas rolagens ao mesmo tempo lutam.
+    const desde = performance.now() + (escondido ? 500 : 0);
+    const ZONA = 96;
+    const passo = () => {
+      const i = pegado.current;
+      if (!i?.ativo) return;
+      if (performance.now() >= desde) {
+        const r = caixa === document.scrollingElement ? null : caixa.getBoundingClientRect();
+        const cimo = Math.max(0, r?.top ?? 0);
+        const fundo = Math.min(window.innerHeight, r?.bottom ?? window.innerHeight);
+        const dy = i.py < cimo + ZONA ? -(cimo + ZONA - i.py) : i.py > fundo - ZONA ? i.py - (fundo - ZONA) : 0;
+        if (dy) {
+          const antes = caixa.scrollTop;
+          caixa.scrollTop += Math.sign(dy) * Math.min(18, 3 + Math.abs(dy) * 0.16);
+          // O que está por baixo do dedo mudou sem o dedo se mexer.
+          if (caixa.scrollTop !== antes) setArrasto({ id: i.id, x: i.px, y: i.py, alvo: porBaixo(i.px, i.py) });
+        }
+      }
+      rolagem.current = requestAnimationFrame(passo);
+    };
+    rolagem.current = requestAnimationFrame(passo);
+  }
+
   function pegar(e: ReactPointerEvent, id: string) {
     if (!p.podeEditar || (e.pointerType === "mouse" && e.button !== 0)) return;
-    pegado.current = { id, x: e.clientX, y: e.clientY, ativo: false };
+    pegado.current = { id, x: e.clientX, y: e.clientY, px: e.clientX, py: e.clientY, ativo: false };
     const mover = (ev: PointerEvent) => {
       const i = pegado.current;
       if (!i) return;
       if (!i.ativo && Math.hypot(ev.clientX - i.x, ev.clientY - i.y) < 7) return;
-      i.ativo = true;
+      i.px = ev.clientX;
+      i.py = ev.clientY;
+      if (!i.ativo) {
+        i.ativo = true;
+        acompanhar();
+      }
       ev.preventDefault();
       setArrasto({ id: i.id, x: ev.clientX, y: ev.clientY, alvo: porBaixo(ev.clientX, ev.clientY) });
     };
@@ -117,6 +168,7 @@ export function PreJogo(p: PreJogoProps) {
       window.removeEventListener("pointercancel", largar);
       const i = pegado.current;
       pegado.current = null;
+      cancelAnimationFrame(rolagem.current);
       setArrasto(null);
       if (!i?.ativo || ev.type === "pointercancel") return;
       // O clique que vem a seguir ao largar não é um clique.
@@ -204,7 +256,7 @@ export function PreJogo(p: PreJogoProps) {
           </CartaoTopo>
 
           <div className="grid gap-x-5 gap-y-4 px-5 pb-5 md:grid-cols-[minmax(0,430px)_minmax(0,1fr)]">
-            <div className="mx-auto w-full max-w-[430px]">
+            <div ref={campo} className="mx-auto w-full max-w-[430px]">
               <PitchBoard
                 format={p.formato}
                 pecas={p.pecas}
@@ -508,6 +560,15 @@ export function PreJogo(p: PreJogoProps) {
       </div>
     </div>
   );
+}
+
+/** Quem rola a página à volta deste elemento: o primeiro pai com barra, ou o documento. */
+function quemRola(el: Element): Element {
+  for (let n = el.parentElement; n; n = n.parentElement) {
+    const o = getComputedStyle(n).overflowY;
+    if ((o === "auto" || o === "scroll") && n.scrollHeight > n.clientHeight + 1) return n;
+  }
+  return document.scrollingElement ?? document.documentElement;
 }
 
 function Recado({ children }: { children: ReactNode }) {

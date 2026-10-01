@@ -13,6 +13,30 @@
   </head>
   <body>
     <div id="root"></div>
+    <!--
+      Uma página guardada de antes de uma atualização pede um ficheiro que já
+      não existe, e fica em branco. Quando o programa da página não carrega,
+      recarrega-se uma vez: a página nova traz os nomes certos. A marca na
+      sessão impede que isto ande às voltas se o problema for outro; apaga-se
+      em main.tsx assim que a página arranca.
+    -->
+    <script>
+      window.addEventListener(
+        "error",
+        function (e) {
+          var t = e.target;
+          if (!t || t.tagName !== "SCRIPT") return;
+          try {
+            if (sessionStorage.getItem("academias.recarregou")) return;
+            sessionStorage.setItem("academias.recarregou", "1");
+          } catch (_) {
+            return;
+          }
+          location.reload();
+        },
+        true,
+      );
+    </script>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>
