@@ -12,8 +12,9 @@ import type { ScopedClient } from "../prisma/prisma.service";
  * precisa do URL da API e de um token. O **claim** (que atravessa tenants) vive
  * em `ai-worker.service.ts`; aqui está o que se faz dentro de um contexto de
  * academia: enfileirar, encadear e manter as caches de leitura.
- *
+ *f
  * ## O limiar de revisão
+ * 
  *
  * Abaixo de 0.75 de confiança de identidade, um track pede um humano. O número
  * não é ciência — é o ponto de partida honesto: preferimos pedir uma confirmação
