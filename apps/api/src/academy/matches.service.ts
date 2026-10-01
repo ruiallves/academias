@@ -97,6 +97,14 @@ export class MatchesService {
             take: 1,
           },
           /*
+           * Só o que a lista precisa para dizer em que ponto está cada jogo:
+           * quantas posições do onze estão preenchidas, e se já há análise e
+           * notas do adversário. O conteúdo é da página do jogo.
+           */
+          plan: { select: { slots: true, bench: true } },
+          report: { select: { id: true } },
+          opponentReport: { select: { id: true } },
+          /*
            * A ficha, e não só o resultado.
            *
            * Faltava, e o buraco só apareceu quando a semente de jogos falsos do
@@ -180,6 +188,16 @@ export class MatchesService {
           mine: meu,
           /** A função com que **eu** estou escalado neste jogo. `null` se não estou. */
           myStaffRole: m.staff[0]?.role ?? null,
+          prep: (() => {
+            const slots = Array.isArray(m.plan?.slots) ? (m.plan!.slots as { athleteId?: string | null }[]) : [];
+            return {
+              slots: slots.length,
+              starters: slots.filter((x) => x?.athleteId).length,
+              bench: m.plan?.bench.length ?? 0,
+            };
+          })(),
+          analysed: m.report !== null,
+          opponentKnown: m.opponentReport !== null,
           /** Quem jogou e o que fez. Vazio enquanto a ficha estiver por preencher — ou se o jogo não é meu. */
           appearances: meu
             ? m.appearances.map((a) => ({
@@ -316,6 +334,7 @@ export class MatchesService {
             },
           },
           report: { select: RELATORIO_SELECT },
+          plan: { select: PLANO_SELECT },
           opponentReport: { select: ADVERSARIO_SELECT },
         },
       });
@@ -438,6 +457,7 @@ export class MatchesService {
           .map((x) => ({ name: x.membership.user.name, role: x.title })),
         /** O relatório do jogo. Nulo enquanto ninguém o escrever. */
         report: m.report ? relatorioParaFora(m.report) : null,
+        plan: m.plan ? planoParaFora(m.plan) : null,
         /** O que se viu do adversário neste jogo. */
         opponentReport: m.opponentReport ? adversarioParaFora(m.opponentReport) : null,
         /** Os outros jogos contra este adversário, do mais recente para trás. */
@@ -494,15 +514,115 @@ export class MatchesService {
     });
   }
 
-  /** O que se viu do adversário. As mesmas regras de `saveReport`. */
+  /**
+   * A forma recente: o que cada atleta jogou nos últimos jogos desta equipa.
+   *
+   * É o que a sugestão do onze lê para dizer "titular nos últimos 3 jogos". Só
+   * os cinco jogos anteriores com ficha preenchida: mais do que isso é época
+   * passada, e uma média de trinta jogos não diz como o atleta está agora.
+   */
+  async forma(ctx: RequestContext, matchId: string) {
+    return this.prisma.runAs(ctx.academyId, async (db) => {
+      const alvo = await this.mustReach(db, ctx, matchId);
+      const jogos = await db.match.findMany({
+        where: { teamId: alvo.teamId, startsAt: { lt: alvo.startsAt }, appearances: { some: {} } },
+        orderBy: { startsAt: "desc" },
+        take: 5,
+        select: { id: true, appearances: { select: { athleteId: true, started: true, minutes: true } } },
+      });
+      const porAtleta = new Map<string, { played: number; starts: number; minutes: number }>();
+      for (const j of jogos) {
+        for (const a of j.appearances) {
+          const x = porAtleta.get(a.athleteId) ?? { played: 0, starts: 0, minutes: 0 };
+          x.played += 1;
+          if (a.started) x.starts += 1;
+          x.minutes += a.minutes;
+          porAtleta.set(a.athleteId, x);
+        }
+      }
+      return { matches: jogos.length, athletes: [...porAtleta].map(([athleteId, x]) => ({ athleteId, ...x })) };
+    });
+  }
+
+  /**
+   * O plano do jogo: o onze no campo, o banco e os capitães.
+   *
+   * Gravado inteiro, como os relatórios, e com a mesma permissão. Ao contrário
+   * deles, escreve-se **antes** do jogo: é a preparação. Depois do apito
+   * continua editável, para se acertar o que mudou à última hora.
+   *
+   * Os atletas têm de ser do clube; um id que não exista sai do plano em vez de
+   * recusar a gravação inteira. Ninguém aparece duas vezes: quem está no campo
+   * não está no banco.
+   */
+  async savePlan(ctx: RequestContext, matchId: string, dto: PlanoInput) {
+    this.assertCanRecord(ctx);
+
+    return this.prisma.runAs(ctx.academyId, async (db) => {
+      await this.mustReach(db, ctx, matchId);
+
+      const pedidos = [
+        ...(dto.slots ?? []).map((x) => x.athleteId),
+        ...(dto.bench ?? []),
+        dto.captainId,
+        dto.viceCaptainId,
+      ].filter((x): x is string => typeof x === "string" && x.length > 0);
+      const existem = new Set(
+        (await db.athlete.findMany({ where: { id: { in: [...new Set(pedidos)] } }, select: { id: true } })).map((a) => a.id),
+      );
+
+      const noCampo = new Set<string>();
+      const slots = (dto.slots ?? []).slice(0, 16).map((x, i) => {
+        const athleteId = x.athleteId && existem.has(x.athleteId) && !noCampo.has(x.athleteId) ? x.athleteId : null;
+        if (athleteId) noCampo.add(athleteId);
+        return {
+          id: String(x.id ?? i).slice(0, 40),
+          label: String(x.label ?? "").slice(0, 6),
+          x: Number.isFinite(x.x) ? Number(x.x) : 0,
+          y: Number.isFinite(x.y) ? Number(x.y) : 0,
+          athleteId,
+        };
+      });
+      const bench = [...new Set(dto.bench ?? [])].filter((id) => existem.has(id) && !noCampo.has(id)).slice(0, 30);
+      const naFicha = (id?: string | null) => (id && (noCampo.has(id) || bench.includes(id)) ? id : null);
+      const captainId = naFicha(dto.captainId);
+      const vice = naFicha(dto.viceCaptainId);
+
+      const data = {
+        authorId: ctx.membershipId,
+        pitch: (dto.pitch ?? "f11").slice(0, 12),
+        system: texto(dto.system),
+        gameModelId: dto.gameModelId || null,
+        slots,
+        bench,
+        captainId,
+        viceCaptainId: vice && vice !== captainId ? vice : null,
+        notes: texto(dto.notes),
+        objectives: limparObjetivos(dto.objectives),
+      };
+
+      const saved = await db.matchPlan.upsert({
+        where: { matchId },
+        create: { matchId, ...data },
+        update: data,
+        select: PLANO_SELECT,
+      });
+
+      return planoParaFora(saved);
+    });
+  }
+
+  /**
+   * O que se sabe do adversário. As mesmas regras de `saveReport`, menos uma:
+   * escreve-se também **antes** do jogo. É quando mais serve: o que se sabe
+   * dele é a preparação, e obrigar a esperar pelo apito era guardar a
+   * observação para quando já não mudava nada.
+   */
   async saveOpponentReport(ctx: RequestContext, matchId: string, dto: AdversarioInput) {
     this.assertCanRecord(ctx);
 
     return this.prisma.runAs(ctx.academyId, async (db) => {
-      const match = await this.mustReach(db, ctx, matchId);
-      if (match.startsAt.getTime() > Date.now()) {
-        throw new BadRequestException("O relatório do adversário escreve-se depois do jogo");
-      }
+      await this.mustReach(db, ctx, matchId);
 
       const data = {
         authorId: ctx.membershipId,
@@ -1981,6 +2101,52 @@ export type AdversarioInput = {
   setPieces?: string | null;
   notes?: string | null;
 };
+
+export type PlanoInput = {
+  pitch?: string;
+  system?: string | null;
+  gameModelId?: string | null;
+  slots?: { id?: string; label?: string; x: number; y: number; athleteId?: string | null }[];
+  bench?: string[];
+  captainId?: string | null;
+  viceCaptainId?: string | null;
+  notes?: string | null;
+  objectives?: { id?: string; text?: string; met?: boolean | null }[];
+};
+
+/** Até dez objetivos, cada um uma frase. Um objetivo vazio não se guarda. */
+function limparObjetivos(lista: PlanoInput["objectives"]) {
+  return (lista ?? [])
+    .map((o, i) => ({ id: String(o?.id ?? i).slice(0, 40), text: String(o?.text ?? "").trim().slice(0, 200), met: typeof o?.met === "boolean" ? o.met : null }))
+    .filter((o) => o.text.length > 0)
+    .slice(0, 10);
+}
+
+const PLANO_SELECT = {
+  pitch: true, system: true, gameModelId: true, slots: true, bench: true,
+  captainId: true, viceCaptainId: true, notes: true, objectives: true, updatedAt: true,
+  author: { select: { user: { select: { name: true } } } },
+} as const;
+
+function planoParaFora(p: {
+  pitch: string; system: string | null; gameModelId: string | null; slots: unknown; bench: string[];
+  captainId: string | null; viceCaptainId: string | null; notes: string | null; objectives: unknown; updatedAt: Date;
+  author: { user: { name: string } | null } | null;
+}) {
+  return {
+    pitch: p.pitch,
+    system: p.system,
+    gameModelId: p.gameModelId,
+    slots: Array.isArray(p.slots) ? p.slots : [],
+    bench: p.bench,
+    captainId: p.captainId,
+    viceCaptainId: p.viceCaptainId,
+    notes: p.notes,
+    objectives: Array.isArray(p.objectives) ? p.objectives : [],
+    updatedAt: p.updatedAt.toISOString(),
+    authorName: p.author?.user?.name ?? null,
+  };
+}
 
 const RELATORIO_SELECT = {
   summary: true, positives: true, negatives: true, toImprove: true, difficulties: true,

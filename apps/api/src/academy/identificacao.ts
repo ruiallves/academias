@@ -3,9 +3,21 @@
  *
  * Um atleta estrangeiro pode não ter NIF português. Nesse caso o clube escreve
  * o nome do documento (só para si: "Passaporte", "Título de residência") e o
- * número. Cada atleta tem de ter um dos dois, e é por eles que a família o
+ * número. Cada atleta tem **um dos dois, e só um**: é por ele que a família o
  * reclama na app (com a data de nascimento) e que a importação reconhece uma
  * ficha que já existe.
+ *
+ * ## Um, e não os dois
+ *
+ * O formulário da ficha sempre foi uma escolha — NIF **ou** outro documento. A
+ * importação é que deixava passar uma linha com as duas colunas preenchidas, e
+ * um clube importou cem atletas assim (NIF mais o número do cartão de cidadão).
+ * A ficha ficava com duas identificações quando o ecrã só mostra e só deixa
+ * editar uma, e a família só pode usar uma para se ligar.
+ *
+ * Agora as duas juntas são um erro, dito com as mesmas palavras nos quatro
+ * caminhos. As fichas que já têm as duas não se mexem sozinhas: podem
+ * corrigir-se, e ao escolher uma no formulário a outra sai.
  *
  * Tudo o que decide vive aqui, sem Nest nem Prisma, para os quatro caminhos que
  * escrevem atletas (inscrição, edição, importação, recrutamento do scouting) e
@@ -33,6 +45,10 @@ export const DOCUMENTO_VALIDO = /^[A-Z0-9]{3,30}$/;
 
 export type Identificacao = { taxId: string | null; idDocLabel: string | null; idDocNumber: string | null };
 
+/** A recusa de uma identificação a dobrar, igual em todo o lado. */
+export const SO_UM_DOS_DOIS =
+  "Vêm o NIF e outro documento: o atleta identifica-se por um dos dois, não pelos dois. Deixa só o NIF, ou só o documento";
+
 /**
  * A identificação de um atleta novo, a partir do que veio no pedido.
  *
@@ -51,6 +67,7 @@ export function identificacaoNova(dto: {
     return { error: "O número do documento tem de 3 a 30 letras ou algarismos" };
   }
   if (!nif && !doc) return { error: "Falta a identificação: o NIF ou o número de outro documento" };
+  if (nif && doc) return { error: SO_UM_DOS_DOIS };
   return {
     taxId: nif || null,
     idDocNumber: doc || null,
@@ -87,6 +104,18 @@ export function identificacaoEditada(
   if (tinha && !taxId && !idDocNumber) {
     return { error: "O atleta tem de ficar com o NIF ou com outro documento" };
   }
+  /*
+   * Um dos dois, e só um. Recusa-se a edição que **põe** a ficha com os dois —
+   * a que manda os dois, ou a que junta o segundo a quem só tinha um. Trocar é
+   * mandar um preenchido e o outro vazio.
+   *
+   * Uma ficha antiga que já tem os dois pode corrigir qualquer um sem ser
+   * obrigada a escolher já: recusar aí era prender uma gralha no NIF atrás de
+   * uma decisão que ninguém pediu.
+   */
+  const jaTinhaOsDois = Boolean(actual.taxId && actual.idDocNumber);
+  const mandaOsDois = Boolean(normalizarNif(dto.taxId) && normalizarDocumento(dto.idDocNumber));
+  if (taxId && idDocNumber && (mandaOsDois || !jaTinhaOsDois)) return { error: SO_UM_DOS_DOIS };
   return { taxId, idDocNumber, idDocLabel: idDocNumber ? idDocLabel : null };
 }
 

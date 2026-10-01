@@ -13,6 +13,7 @@ import {
   identificacaoEditada,
   identificacaoLegivel,
   identificacaoNova,
+  SO_UM_DOS_DOIS,
   normalizarDocumento,
   normalizarNif,
   NIF_VALIDO,
@@ -308,6 +309,8 @@ export class AthletesService {
       data.idDocLabel = dto.idDocLabel?.trim() || null;
     }
     if (Object.keys(data).length === 0) throw new BadRequestException("Falta o NIF ou o número do documento");
+    // Um dos dois, e só um: ver `identificacao.ts`.
+    if (data.taxId && data.idDocNumber) throw new BadRequestException(SO_UM_DOS_DOIS);
 
     return this.prisma.runAs(ctx.academyId, async (db) => {
       // O âmbito passa pelas equipas, como em todo o resto: um treinador só mexe
@@ -315,11 +318,25 @@ export class AthletesService {
       const teams = await this.teamsInScope(ctx, db);
       const athlete = await db.athlete.findFirst({
         where: { id },
-        select: { id: true, teams: { where: { leftAt: null }, select: { teamId: true } } },
+        select: { id: true, taxId: true, idDocNumber: true, teams: { where: { leftAt: null }, select: { teamId: true } } },
       });
       if (!athlete) throw new BadRequestException("Atleta não encontrado");
       if (!athlete.teams.some((t) => teams.has(t.teamId))) {
         throw new ForbiddenException("Esse atleta está fora do teu âmbito");
+      }
+      /*
+       * Este caminho preenche e corrige, não troca: juntar um NIF a quem se
+       * identifica por outro documento (ou o contrário) deixava a ficha com os
+       * dois. Trocar faz-se no formulário da ficha, que tira o outro.
+       */
+      const juntaNif = data.taxId && !athlete.taxId && athlete.idDocNumber;
+      const juntaDoc = data.idDocNumber && !athlete.idDocNumber && athlete.taxId;
+      if (juntaNif || juntaDoc) {
+        throw new BadRequestException(
+          juntaNif
+            ? "Este atleta identifica-se por outro documento. Para o trocar pelo NIF, edita a ficha"
+            : "Este atleta identifica-se pelo NIF. Para o trocar por outro documento, edita a ficha",
+        );
       }
 
       try {
@@ -933,8 +950,11 @@ export class AthletesService {
       where: { id: actual.id },
       data: {
         name: dto.name.trim(),
-        ...(!actual.taxId && ident.taxId ? { taxId: ident.taxId } : {}),
-        ...(!actual.idDocNumber && ident.idDocNumber ? { idDocNumber: ident.idDocNumber, idDocLabel: ident.idDocLabel } : {}),
+        /*
+         * A identificação não muda na importação. A linha traz uma só (as duas
+         * juntas são erro de linha) e foi por ela que a ficha se encontrou: é a
+         * que a ficha já tem.
+         */
         birthdate: new Date(dto.birthdate),
         ...(dto.email !== undefined ? { email: dto.email.trim().toLowerCase() || null } : {}),
         ...(dto.medicalValidUntil !== undefined

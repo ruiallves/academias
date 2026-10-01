@@ -148,6 +148,7 @@ export async function buildTemplate(): Promise<Blob> {
     ["Uma equipa que ainda não exista pode ser escrita à mesma."],
     ["Ao importar, perguntamos se a queres criar."],
     [""],
+    ["Cada atleta leva o NIF ou outro documento, nunca os dois na mesma linha."],
     ["Atleta sem NIF? Deixa o NIF vazio e escreve o documento e o número"],
     ["nas colunas Outro documento e N.º do documento (por exemplo Passaporte, AB1234567)."],
     [""],
@@ -238,6 +239,18 @@ export async function parseFile(file: File): Promise<ParseResult> {
     const idDocNumber = get("N.º do documento").toUpperCase().replace(/[\s.\-/]/g, "");
     if (!taxId && !idDocNumber) {
       return void errors.push({ line, name, error: "Falta o NIF ou o número de outro documento" });
+    }
+    /*
+     * Um dos dois, e só um — como no formulário da ficha, que é uma escolha.
+     * Dito aqui, na pré-visualização, para o clube corrigir a folha antes de a
+     * mandar; o servidor recusa a linha na mesma (`identificacao.ts`).
+     */
+    if (taxId && idDocNumber) {
+      return void errors.push({
+        line,
+        name,
+        error: "Tem NIF e outro documento: o atleta identifica-se por um dos dois. Deixa só o NIF, ou só o documento",
+      });
     }
     if (taxId) {
       if (!/^\d{9}$/.test(taxId)) return void errors.push({ line, name, error: "NIF inválido, são nove dígitos" });

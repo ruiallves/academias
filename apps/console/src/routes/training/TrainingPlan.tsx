@@ -1,10 +1,10 @@
 import { createContext, useContext, useEffect, useMemo, useRef, useState } from "react";
-import { Link, useParams } from "react-router-dom";
+import { Link, useNavigate, useParams } from "react-router-dom";
 import { PageHeader } from "@/components/Shell";
 import { Dialog, DialogField, dialogInputClass } from "@/components/Dialog";
 import { FieldView, THUMB_RATIO } from "@/components/FieldEditor";
 import { cx, Empty, ListaDeEscolha, Loading, Panel, PanelHead, Pill } from "@/components/primitives";
-import { Check, ChevronDown, ChevronRight, Clock, Copy, DragHandle, Download, Plus, Search, Star, Trash2, TriangleAlert, Whistle, X } from "@/lib/icons";
+import { ArrowLeft, Check, ChevronDown, ChevronRight, Clock, Copy, DragHandle, Download, Plus, Search, Star, Trash2, TriangleAlert, Whistle, X } from "@/lib/icons";
 import { teamById } from "@/lib/api";
 import { can, isAcademyWide } from "@/lib/permissions";
 import { longDate, shortDate, time } from "@/lib/format";
@@ -65,6 +65,7 @@ const PlanVocab = createContext<{ categories: ObjectiveCategory[]; sportId: stri
  */
 export default function TrainingPlan() {
   const { id = "" } = useParams();
+  const navegar = useNavigate();
   const { session } = useSession();
 
   const [plan, setPlan] = useState<SessionPlan | null>(null);
@@ -378,6 +379,23 @@ export default function TrainingPlan() {
   return (
     <PlanVocab.Provider value={{ categories, sportId }}>
     <>
+      {/*
+        Voltar ao sítio de onde se veio: a equipa, a vista e a semana em que se
+        estava no Planeamento. Quem abriu o plano por uma ligação direta não tem
+        para onde voltar, e segue para o Planeamento da equipa.
+      */}
+      <button
+        type="button"
+        onClick={() => {
+          if ((window.history.state as { idx?: number } | null)?.idx) navegar(-1);
+          else navegar(`/treinos?equipa=${plan.teamId}`);
+        }}
+        className="mb-3 inline-flex items-center gap-1.5 text-meta font-medium text-ink-3 hover:text-ink"
+      >
+        <ArrowLeft className="size-3.5" strokeWidth={1.75} />
+        Voltar
+      </button>
+
       <PageHeader
         eyebrow={["Plano de treino", ...contexto].join(" · ")}
         title={`${plan.teamName} · ${time(start)}`}
@@ -385,9 +403,6 @@ export default function TrainingPlan() {
           plan.sharedAt ? " · Partilhado com os atletas" : ""
         }`}
       >
-        <Link to={`/treinos?equipa=${plan.teamId}`} className="ctl-ghost">
-          Planeamento
-        </Link>
         {/*
           Um botão, e não dois.
 

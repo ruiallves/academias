@@ -3,12 +3,20 @@ import { temReceita, estadoComercial } from "@/lib/estado";
 import type { AcademyStatus } from "@/lib/types";
 
 /**
- * As novidades da plataforma, contadas aos clubes.
+ * Os comunicados da plataforma aos clubes.
  *
- * Uma versão escreve-se aqui, escolhem-se os clubes, e sai um email ao
- * **responsável** de cada um — a mesma pessoa que assina o contrato e recebe as
- * cobranças.
+ * Escreve-se aqui, escolhem-se os clubes, e sai um email ao **responsável** de
+ * cada um — a mesma pessoa que assina o contrato e recebe as cobranças.
+ *
+ * São de dois tipos. `NOVIDADES` é uma versão, com uma novidade por linha, e foi
+ * por onde isto começou. `MENSAGEM` é um email livre, com assunto e texto, para
+ * tudo o resto que se quer dizer a um clube.
  */
+
+export type TipoDeComunicado = "NOVIDADES" | "MENSAGEM";
+
+/** Um servidor antigo não manda o tipo: eram todos novidades. */
+export const tipoDe = (r: { kind?: string | null }): TipoDeComunicado => (r.kind === "MENSAGEM" ? "MENSAGEM" : "NOVIDADES");
 
 export type ReleaseRecipient = {
   academyId: string;
@@ -22,6 +30,9 @@ export type ReleaseRecipient = {
 
 export type Release = {
   id: string;
+  /** Novidades de uma versão, ou uma mensagem livre. Ver `tipoDe`. */
+  kind?: TipoDeComunicado;
+  /** Vazia numa mensagem. */
   version: string;
   title: string;
   notes: string;
@@ -49,7 +60,7 @@ export type Destinatario = {
   jaRecebeu: boolean;
 };
 
-export const createRelease = (body: { version: string; title: string; notes: string }) =>
+export const createRelease = (body: { kind: TipoDeComunicado; version: string; title: string; notes: string }) =>
   apiPost<{ id: string }>("/releases", body);
 
 export const updateRelease = (id: string, body: { version?: string; title?: string; notes?: string }) =>
@@ -78,8 +89,12 @@ export type EmailPreview = {
  * Escolher os campos à mão fecha a porta a que volte a acontecer com o próximo
  * campo que o ecrã ganhar. Ver `test-novidades`, que valida isto contra o DTO.
  */
-export function corpoDaPreview(texto: { version: string; title: string; notes: string }, academyId?: string) {
+export function corpoDaPreview(
+  texto: { kind?: TipoDeComunicado; version: string; title: string; notes: string },
+  academyId?: string,
+) {
   return {
+    ...(texto.kind ? { kind: texto.kind } : {}),
     version: texto.version,
     title: texto.title,
     notes: texto.notes,
@@ -109,7 +124,13 @@ export const sendRelease = (id: string, academyIds: string[]) =>
  * porque um reenvio existe para alcançar quem faltou, e não para escrever duas
  * vezes a quem já leu.
  */
-export function escolhidosPorOmissao(clubes: Destinatario[]): Set<string> {
+export function escolhidosPorOmissao(clubes: Destinatario[], kind: TipoDeComunicado = "NOVIDADES"): Set<string> {
+  /*
+   * Uma mensagem não vem com ninguém escolhido. As novidades são para os
+   * clubes que usam a plataforma; uma mensagem é para quem se quiser, e a quem
+   * se escreve faz parte do que se está a decidir.
+   */
+  if (kind === "MENSAGEM") return new Set();
   return new Set(
     clubes
       .filter((c) => c.responsavel && !c.jaRecebeu && temReceita(estadoComercial(c)))
@@ -131,4 +152,17 @@ export function linhasDeNovidades(notes: string): string[] {
     .split(/\r?\n/)
     .map((linha) => linha.trim().replace(/^[-*•]\s*/, "").trim())
     .filter((linha) => linha.length > 0);
+}
+
+/**
+ * O texto de uma mensagem como o email o vai mostrar: uma ou mais linhas em
+ * branco separam dois parágrafos, e as quebras simples ficam. Gémeo de
+ * `paragrafosDoComunicado` do servidor, que é o que manda.
+ */
+export function paragrafosDoComunicado(notes: string): string[] {
+  return notes
+    .replace(/\r\n/g, "\n")
+    .split(/\n\s*\n/)
+    .map((p) => p.split("\n").map((l) => l.trim()).join("\n").trim())
+    .filter((p) => p.length > 0);
 }

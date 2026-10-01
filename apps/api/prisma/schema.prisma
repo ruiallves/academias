@@ -93,7 +93,10 @@ model Academy {
   ///
   /// Não mexe em mais nada. Os preços configuram-se, as mensalidades e as
   /// quotas emitem-se e marcam-se à mão como sempre.
-  paymentsEnabled Boolean @default(true)
+  ///
+  /// Nasce desligado, e só se liga com o canal euPago do clube configurado
+  /// (`eupagoConfigurado`): sem ele o dinheiro ia para a conta da plataforma.
+  paymentsEnabled Boolean @default(false)
 
   /// ## A comissão da euPago: quem a paga
   ///
@@ -508,6 +511,7 @@ model Membership {
   ledMatches      Match[]                    @relation("MatchCoach")
   matchStaff      MatchStaff[]               @relation("MatchStaff")
   matchReports    MatchReport[]              @relation("MatchReportAuthor")
+  matchPlans      MatchPlan[]                @relation("MatchPlanAuthor")
   opponentReports OpponentReport[]           @relation("OpponentReportAuthor")
   ledEvents       CalendarEvent[]            @relation("EventCoach")
   clinicalWrites  ClinicalEntry[]            @relation("ClinicalAuthor")
@@ -2485,6 +2489,8 @@ model Match {
   /// O relatório do jogo e o do adversário — um de cada, escritos depois do apito.
   report         MatchReport?
   opponentReport OpponentReport?
+  /// O plano do jogo: o onze no campo, o banco e os capitães.
+  plan           MatchPlan?
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -2674,6 +2680,49 @@ model MatchReport {
   /// do projecto aceita 50 MB por ficheiro; o vídeo vive no YouTube, no Veo ou
   /// no Drive do clube, e aqui fica o caminho até lá.
   videos Json @default("[]")
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+/// O plano de um jogo: quem começa, onde, quem fica no banco e quem leva a braçadeira.
+///
+/// Um por jogo, como os relatórios. Sem `academyId`: chega ao seu por `Match`,
+/// e a política RLS vive na migração `20261002100000_plano_de_jogo`.
+///
+/// Os atletas guardam-se por id dentro de `slots` e de `bench`, sem chave
+/// estrangeira: o plano é um desenho que se corrige, e um atleta apagado
+/// deixa só uma posição vazia no campo.
+model MatchPlan {
+  id      String @id @default(cuid())
+  matchId String @unique
+  match   Match  @relation(fields: [matchId], references: [id], onDelete: Cascade)
+
+  authorId String?
+  author   Membership? @relation("MatchPlanAuthor", fields: [authorId], references: [id], onDelete: SetNull)
+
+  /// A variante do campo: `f11`, `f9`, `f7`, `f5`, `futsal`, `basket`.
+  pitch  String
+  /// O sistema, por nome ("4-3-3"). Texto livre: pode vir de um modelo de jogo.
+  system String?
+  /// O modelo de jogo da Área técnica de onde o desenho veio, se veio de algum.
+  gameModelId String?
+
+  /// As posições: `[{ "id", "label", "x", "y", "athleteId" }]`.
+  slots Json     @default("[]")
+  /// Os suplentes, por ordem.
+  bench String[] @default([])
+
+  captainId     String?
+  viceCaptainId String?
+
+  /// O que se quer do jogo, por palavras.
+  notes String?
+
+  /// Os objetivos do jogo: `[{ "id", "text", "met" }]`. `met` é nulo antes do
+  /// jogo, e na análise passa a verdadeiro ou falso: é o que liga o plano ao
+  /// que aconteceu.
+  objectives Json @default("[]")
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -4899,6 +4948,10 @@ model Release {
   /// ver `linhasDeNovidades`. Guardar HTML aqui seria guardar a decisão de
   /// apresentação dentro do dado.
   notes   String
+  /// `NOVIDADES` (uma versão, uma novidade por linha) ou `MENSAGEM` (um
+  /// comunicado livre: assunto e texto, sem versão). Texto com CHECK na base, e
+  /// não um enum: ver a migração `comunicados_aos_clubes`.
+  kind    String @default("NOVIDADES")
 
   /// Quando saiu. Nulo = rascunho, e um rascunho ainda se edita e apaga.
   sentAt    DateTime?

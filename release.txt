@@ -1,4 +1,73 @@
-01/10/2026
+01/10/2026 v2
+- Jogos, Pós-jogo: o minuto de entrada e o "por quem entrou" passaram para a caixa por baixo do jogador, que abre sozinha ao marcar "Entrou". As linhas ficaram alinhadas de jogador para jogador.
+- Jogos, Pós-jogo, futebol: quem entrou do banco diz agora por quem entrou, além do minuto. Escolher quem saiu põe-lhe sozinho o minuto de saída, e os minutos dos dois ficam certos.
+- Jogos, Pós-jogo, futsal e basquetebol: como se entra e sai a toda a hora, a ficha pede só quem foi titular e quem entrou, sem minutos nem "por quem".
+- Jogos, Pós-jogo: a ficha deixou de mostrar erros enquanto se preenche. A verificação faz-se ao carregar em "Gravar ficha": os erros impossíveis (minutos trocados, golos a mais do que o resultado, o mesmo jogador substituído duas vezes) travam a gravação; os esquecimentos prováveis (entrou sem dizer por quem ou a que minuto, saiu sem ninguém entrar) são avisos, e dá para gravar mesmo assim.
+- Jogos, Pós-jogo: a ficha abre já com os titulares da equipa inicial do Pré-jogo marcados. Falta só acertar o que mudou, dizer quem entrou do banco e gravar.
+- Jogos: toda a área passou a servir o futsal e o basquetebol, e não só o futebol. O basquetebol desenha-se em meio campo, com o cesto em cima; a ficha de basquetebol não mostra cartões; o Ao vivo marca cestos de 1, 2 e 3 pontos em vez de golos. Onde se lia "onze" lê-se agora "equipa inicial".
+- Jogos: acertos para o telemóvel. Os nomes das equipas partem em duas linhas em vez de serem cortados, a lista mostra o nome do adversário inteiro, os seletores do Pré-jogo deixaram de empurrar a página para o lado, a lista de convocados rola com a página, e as barras de gravar ficam por cima da barra de separadores.
+- Jogos, Pós-jogo: a ficha de jogo foi redesenhada. Cada jogador é uma linha com a fotografia ou o número, o papel (titular, entrou, não jogou) num seletor, os golos e as assistências em contadores de mais e menos, os cartões desenhados como cartões (o amarelo conta até dois) e os minutos em campo numa pastilha. Os minutos exatos de cada golo, da saída e dos cartões ficam atrás de uma seta.
+- Jogos, Pós-jogo: no topo da ficha aparecem os totais (titulares, suplentes utilizados, golos, cartões), e o botão de gravar acompanha a página em vez de ficar no fundo.
+- Jogos, Análise: área redesenhada. "Como correu" em destaque com o resultado ao lado; por baixo, lado a lado, o que correu bem e o que correu mal, o que se leva para o treino e as dificuldades; e os vídeos como ligações com nome.
+- Jogos, Pré-jogo: a lista de convocados passa a vir agrupada por posição (guarda-redes, defesas, médios, avançados), pela ordem das posições do clube. Ao passar o rato por um jogador, o cursor vira mão e aparece uma pega, a dizer que se pode arrastar.
+- Jogos, Pré-jogo: os jogadores arrastam-se da lista para uma posição do campo ou para o banco, e de volta para a lista para saírem da ficha. Enquanto se arrasta, as posições pulsam, a que está por baixo cresce e o banco acende; ao largar, o jogador entra com um pequeno salto. Funciona com rato e com o dedo.
+- Jogos: o passo "Convocatória enviada" e o botão da convocatória levam às Convocatórias, já abertas nesse jogo, em vez de irem para o Pré-jogo.
+- Jogos: o desenho da lista e da página de cada jogo foi refeito de raiz. Cartões brancos de cantos largos, letra grande nos números e muito espaço, no lugar das linhas finas e dos rótulos em maiúsculas.
+- Jogos, lista: o próximo jogo aparece em destaque no topo, com os dois emblemas, a data, o local e um anel com o que falta preparar. Por baixo, as linhas por semana, cada uma com a data, o emblema do adversário, o estado e o resultado ou a preparação.
+- Jogos, página do jogo: cabeçalho com os dois emblemas e a hora ou o resultado ao centro, e as seis áreas numa barra de pastilhas (Visão geral, Pré-jogo, Ao vivo, Pós-jogo, Análise, Adversário), com um ponto verde no que já está feito.
+- Jogos, Pré-jogo: campo novo, em relvado verde e de pé (ataca-se para cima), com os jogadores em peças com fotografia ou número e o nome por baixo. Os suplentes ficam numa lista ao lado do campo, pela ordem em que entram.
+- Jogos, Adversário: área refeita. À esquerda as notas deste jogo; à direita o balanço (vitórias, empates, derrotas) e os registos anteriores, cada um com a data, a época, a equipa, a prova, o resultado e quem o escreveu. "Começar pelo último registo" copia as notas da última vez.
+- Jogos, Visão geral: "A seguir" com o próximo passo e um botão para o fazer, a lista do que falta, o onze no campo e os dados do jogo.
+- Jogos: a lista foi refeita. Os jogos agrupam-se por semana, cada linha mostra a data, a equipa e a prova, o adversário em destaque, o estado do jogo (por preparar, em preparação, pronto, a decorrer, por analisar, analisado) e, antes do jogo, a preparação em quatro passos. Tem pesquisa por adversário e um botão "Filtrar" para casa ou fora e estado.
+- Jogos: a página de um jogo passou a ter seis áreas numa coluna à esquerda: Visão geral, Pré-jogo, Ao vivo, Pós-jogo, Análise e Adversário. Cada área diz em que ponto está. O topo escuro deu lugar a um desenho claro, com o estado do jogo à vista.
+- Jogos, Visão geral (nova): a lista do que falta fazer neste jogo, com ligação para cada passo, o onze em pequeno, os dados do jogo, o histórico com o adversário e a equipa de trabalho.
+- Jogos, Pré-jogo: o campo passou a desenho em traço, com a fotografia e o número de cada jogador. As posições arrastam-se. A sugestão por posição diz o motivo (posição dele, titular nos últimos jogos, presenças). Os suplentes têm ordem, e quem não está no campo nem no banco fica fora da ficha.
+- Jogos, Pré-jogo: objetivos do jogo (até dez) e plano para o adversário.
+- Jogos, Ao vivo (novo, opcional): relógio e botões grandes para marcar golo, golo sofrido, cartões e substituições ao minuto, a pensar no telemóvel. No fim grava o resultado e a ficha, que depois se acerta no Pós-jogo.
+- Jogos, Análise: os objetivos definidos antes do jogo aparecem para marcar se foram cumpridos.
+- Pagamentos pela app: ficaram desligados em todos os clubes que ainda não têm o euPago configurado. Sem o canal do clube, o dinheiro pago na app não tinha a conta do clube para onde ir.
+- Definições, Pagamentos: um clube sem o euPago configurado não consegue ligar os pagamentos pela app. O interruptor fica bloqueado, com a explicação, até o euPago estar configurado. Um clube novo nasce com eles desligados.
+- Painel da plataforma: tirar as chaves euPago de um clube desliga-lhe os pagamentos pela app.
+- Jogos: a página de um jogo foi refeita. O topo passou a ser um marcador escuro com a cor do clube, e o resto organiza-se em quatro fases: Plano de jogo, Pós-jogo, Análise e Adversário. Cada fase mostra um ponto verde quando já está feita.
+- Jogos, Plano de jogo (novo): o campo da modalidade e do escalão (futebol 11, 9, 7 ou 5, futsal, basquetebol) com o sistema à escolha, para montar os titulares, escolher os suplentes e marcar o capitão e o sub-capitão. Carregar numa posição mostra primeiro os jogadores dessa posição; "Sugerir onze" preenche o que falta, sem quem está de baixa ou disse que não vai.
+- Jogos, Plano de jogo: dá para importar um modelo de jogo da Área técnica, e os jogadores já colocados passam para as posições novas.
+- Jogos, Plano de jogo: "Exportar ficha de jogo" gera um PDF com titulares, suplentes, capitão, sub-capitão e equipa técnica, para passar para a aplicação da federação.
+- Jogos, Adversário: o que se sabe do adversário já se pode escrever antes do jogo, e não só depois.
+- Planeamento, Microciclo: cada dia tem um "+" para marcar um evento nesse dia e nessa equipa. Abre ali mesmo o diálogo do calendário, e o evento aparece na semana logo depois de gravar.
+- Plano de treino: botão "Voltar" no topo, que regressa ao sítio de onde se veio no Planeamento (a mesma equipa, a mesma vista e a mesma semana).
+- Planeamento, Mesociclo: apagar o mesociclo passou a ser só o ícone do caixote, ao lado de "Editar mesociclo".
+- Planeamento, Mesociclo: no cabeçalho, "Novo mesociclo" dá lugar a "Editar mesociclo" e "Apagar mesociclo". Apagar leva também os microciclos dele (pede confirmação); os treinos e os jogos ficam.
+- Planeamento, Época: carregar num mesociclo (na linha da época ou no cartão) abre a vista dele, em vez do diálogo de edição.
+- Planeamento, Treinos: vista refeita no desenho das Presenças, com os números numa linha, "A planear" e "Realizados" um de cada vez, e os treinos agrupados por dia.
+- Planeamento, todas as equipas: gráfico novo por cima de "O que se treina", com a carga de treino de cada equipa numa linha (as últimas 8 semanas e as próximas 4). A legenda liga e desliga equipas, e passar por cima de uma semana mostra os valores de todas.
+- Planeamento: corrigido um mesociclo antigo do Sub-11 Futebol (Life Club) que estava guardado de terça a segunda e ocupava o dia 31 de agosto. Passou a 13 de julho a 30 de agosto, e a segunda-feira 31 ficou livre para o mesociclo seguinte.
+- Planeamento, novo mesociclo: o calendário do Início e do Fim mostra os dias já ocupados por outros mesociclos, pintados com a cor de cada um. Esses dias não se deixam escolher, e as datas propostas já caem em semanas livres.
+- Planeamento, Mesociclo: nova ordem. Primeiro os números (treinos, volume, carga), depois o gráfico, depois o cartão do mesociclo e por fim o que se treina.
+- Planeamento, Época: "A época numa linha" fica em cima, e o gráfico de carga logo a seguir.
+- Planeamento: o gráfico de carga passou a ser de linha. Linha cheia para o que já se treinou, tracejada para o que está planeado para vir, pontos com a cor do nível de carga, os mesociclos em faixas por trás e um balão com os números de cada semana. Dá para ver carga, minutos ou intensidade.
+- Planeamento: as vistas de cada equipa passaram a ser Microciclo, Mesociclo, Época e Treinos.
+- Planeamento, Mesociclo: vista nova com o mesociclo aberto (datas, objetivo, foco e as suas semanas), os números dele (treinos, volume planeado, carga média, semanas), a carga semana a semana e o que se treina. Dá para saltar para o mesociclo anterior, o seguinte ou o atual.
+- Planeamento, Época: gráfico novo com a carga de treino ao longo da época, uma barra por semana. A cor diz se a carga é baixa, moderada, alta ou muito alta; o que já se treinou aparece cheio e o que está planeado para vir aparece esbatido. Passar por cima mostra os números da semana e carregar abre-a.
+- Planeamento: "O que se treina" mostra também a percentagem de cada objetivo.
+- Presenças: página refeita, no desenho do Planeamento. As equipas ficam numa coluna à esquerda, para ver tudo ou só uma equipa.
+- Presenças: três vistas, uma de cada vez: Por registar (o trabalho, do mais antigo para o mais recente), Registados (para conferir e corrigir) e A seguir (os próximos 14 dias). As listas agrupam-se por dia.
+- Presenças: os números (presença média, por registar, treinos na semana, a seguir) passaram para uma linha só e acompanham a equipa escolhida. Nos registados vê-se também quantas faltas e atrasos houve.
+- Planeamento: "Novo mesociclo" salta logo para a vista Época e abre o diálogo por cima.
+- Planeamento: trocar de equipa passou a ser imediato, sem o ecrã a desfocar nem disco a carregar.
+- Planeamento: página refeita. As equipas ficam numa coluna à esquerda (com pesquisa quando são muitas) e a página abre logo numa equipa, na última que se usou.
+- Planeamento: cada equipa tem três vistas, uma de cada vez: Semana (os dias, a carga e o que se treina), Época (os mesociclos e as semanas de cada um) e Treinos (por planear e realizados).
+- Planeamento: criar um mesociclo passou a estar sempre à vista: no cabeçalho da equipa, na vista Época e num convite na Semana enquanto a equipa não tem nenhum. Uma época por periodizar explica os três níveis (época, mesociclos, microciclos).
+- Planeamento: na Época, cada mesociclo é um cartão com as datas, o objetivo, o foco e a lista das suas semanas; carregar numa semana abre-a.
+- Painel da plataforma: o menu "Novidades" passou a "Comunicados". Além das novidades de uma versão, dá para escrever uma mensagem livre (assunto e texto) e mandá-la por email aos clubes que se escolherem.
+- Atletas: uma linha da importação com NIF e outro documento ao mesmo tempo passa a dar erro, na pré-visualização e no servidor. O atleta identifica-se por um dos dois. O mesmo vale ao inscrever e ao editar a ficha.
+- Atletas: as fichas que já tinham os dois (importadas antes) não mudam sozinhas; ao escolher uma identificação no formulário da ficha, a outra sai.
+
+01/10/2026 v1
+Pagamentos: o clube decide agora quem paga a comissão. Com "Taxa por conta de quem paga" ligada, a comissão é somada ao valor e o clube recebe a mensalidade por inteiro. Quem paga vê o total e a taxa em separado antes de confirmar. Também dá para desligar os pagamentos pela app.
+Ficha do atleta: há um separador "Documentos" para guardar o cartão de cidadão, o exame médico e outros ficheiros de cada atleta, e um separador "Escola" com as notas que a família submete pela app. No Clínico entra a informação médica: grupo sanguíneo, alergias e medicação.
+Staff: importa a equipa técnica inteira de uma folha Excel e envia os convites quando quiseres, a uma pessoa ou a todas de uma vez.
+Jogos: no futebol já se regista o tempo adicional de cada parte, e os minutos de cada atleta acertam-se sozinhos.
+Definições: página refeita, com um menu ao lado e tudo mais fácil de encontrar.
 
 Em detalhe:
 - Staff: dá para adicionar uma pessoa sem lhe mandar já o convite. Fica em "Por convidar", com o cargo e as equipas, e o convite envia-se depois, a uma pessoa ou a todas de uma vez.

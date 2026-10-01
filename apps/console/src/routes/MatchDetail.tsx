@@ -1,19 +1,14 @@
-import { useEffect, useMemo, useState, type ReactNode } from "react";
-import { Link, useParams } from "react-router-dom";
-import { PageHeader } from "@/components/Shell";
+import { useEffect, useMemo, useState } from "react";
+import { Link, useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { Empty, Loading, Panel, PanelHead, Pill, cx } from "@/components/primitives";
-import { Segmented } from "@/components/filters";
 import {
   ArrowLeft,
   Check,
   ChevronRight,
   Clock,
-  ExternalLink,
   MapPin,
   Download,
-  Trophy,
   Users,
-  Whistle,
 } from "@/lib/icons";
 import { useSession } from "@/session";
 import { can } from "@/lib/permissions";
@@ -24,7 +19,16 @@ import { reloadAcademy, useStore } from "@/lib/store";
 import { SaveVeil, Spinner, useSaving } from "@/components/Busy";
 import { descarregarFolha, folhaDoJogo } from "@/lib/callup-export";
 import { MatchStaffEditor } from "@/components/MatchStaff";
-import { MatchReportPanel, OpponentHistoryPanel, OpponentReportPanel } from "@/components/MatchReports";
+import { GamePlan, ObjetivosNaAnalise, useJogadores } from "@/components/match/GamePlan";
+import { PitchBoard } from "@/components/match/PitchBoard";
+import { LinhaDaFicha, ResumoDaFicha } from "@/components/match/Ficha";
+import { AbasDoJogo, Cartao, CartaoTopo, Emblema, Vazio } from "@/components/match/ui";
+import { CabecalhoDoJogo } from "@/components/match/views";
+import { VisaoGeral } from "@/components/match/VisaoGeral";
+import { Adversario } from "@/components/match/Adversario";
+import { Analise } from "@/components/match/Analise";
+import type { GameFormat } from "@/lib/training";
+import { LiveMatch } from "@/components/match/LiveMatch";
 import type { SheetRow } from "@/lib/callup-sheet";
 import {
   OUTCOME_LABEL,
@@ -33,6 +37,8 @@ import {
   retroPool,
   saveAddedTime,
   saveAppearances,
+  saveMatchReport,
+  saveOpponentReport,
   saveResult,
   saveRetroSquad,
   type MatchDetail as Match,
@@ -80,6 +86,8 @@ import {
 export default function MatchDetail() {
   const { id = "" } = useParams();
   const { session } = useSession();
+  const [params, setParams] = useSearchParams();
+  const navigate = useNavigate();
 
   const [match, setMatch] = useState<Match | null>(null);
   const [erro, setErro] = useState<string | null>(null);
@@ -131,58 +139,285 @@ export default function MatchDetail() {
   const aDecorrer = passou && fim.getTime() > agora && match.status !== "CANCELLED";
   const temPlantel = match.squad.length > 0;
 
+  /*
+   * A área aberta vive no endereço. Sem escolha, abre a visão geral: é ela que
+   * diz onde o jogo está e o que falta.
+   */
+  const pedida = params.get("aba") === "plano" ? "pre" : params.get("aba");
+  const aba: Aba = ABAS.some((x) => x.key === pedida) ? (pedida as Aba) : "geral";
+  const irPara = (key: Aba) => {
+    const q = new URLSearchParams(params);
+    if (key === "geral") q.delete("aba");
+    else q.set("aba", key);
+    setParams(q);
+  };
+
+  const cancelado = match.status === "CANCELLED";
+  const onze = match.plan?.slots ?? [];
+  const titulares = onze.filter((x) => x.athleteId).length;
+  const onzeCompleto = onze.length > 0 && titulares === onze.length;
+  const temFicha = match.squad.some((x) => x.played);
+  const temResultado = match.ourScore !== null;
+  const objetivos = match.plan?.objectives ?? [];
+
+  /** O que falta, por ordem. É o que a visão geral lista e o que dá o estado ao jogo. */
+  const passos: { feito: boolean; texto: string; area: Aba; depois?: boolean; convocatoria?: boolean }[] = [
+    // Antes do jogo, a convocatória faz-se no ecrã dela: o passo leva para lá, já neste jogo.
+    { feito: match.submitted, texto: passou ? "Plantel registado" : "Convocatória enviada", area: passou ? "pos" : "pre", convocatoria: !passou },
+    { feito: onzeCompleto, texto: onze.length ? `Equipa inicial escolhida (${titulares} de ${onze.length})` : "Equipa inicial escolhida", area: "pre" },
+    { feito: (match.plan?.bench.length ?? 0) > 0, texto: "Suplentes escolhidos", area: "pre" },
+    { feito: Boolean(match.plan?.captainId), texto: "Capitão definido", area: "pre" },
+    { feito: objetivos.length > 0, texto: "Objetivos do jogo definidos", area: "pre" },
+    { feito: Boolean(match.opponentReport), texto: "Notas sobre o adversário", area: "adversario" },
+    { feito: temResultado, texto: "Resultado registado", area: "pos", depois: true },
+    { feito: temFicha, texto: "Ficha preenchida (quem jogou e quanto)", area: "pos", depois: true },
+    { feito: Boolean(match.report), texto: "Análise escrita", area: "analise", depois: true },
+    ...(objetivos.length > 0
+      ? [{ feito: objetivos.every((o) => o.met !== null), texto: "Objetivos avaliados", area: "analise" as Aba, depois: true }]
+      : []),
+  ];
+  const preparado = match.submitted && onzeCompleto;
+
+  /*
+   * O estado do jogo, calculado do que existe. Não se escolhe à mão: um estado
+   * escolhido fica errado no dia em que alguém se esquece de o mudar.
+   */
+  const estado: { texto: string; tom: "neutro" | "aviso" | "ok" | "vivo" | "risco" } = cancelado
+    ? { texto: "Cancelado", tom: "risco" }
+    : aDecorrer
+      ? { texto: "A decorrer", tom: "vivo" }
+      : passou
+        ? match.report && temResultado
+          ? { texto: "Analisado", tom: "neutro" }
+          : temResultado
+            ? { texto: "Terminado · por analisar", tom: "aviso" }
+            : { texto: "Terminado · sem resultado", tom: "aviso" }
+        : preparado
+          ? { texto: "Pronto", tom: "ok" }
+          : match.plan || match.submitted
+            ? { texto: "Em preparação", tom: "aviso" }
+            : { texto: "Por preparar", tom: "neutro" };
+
+  const dia = inicio.toLocaleDateString("pt-PT", { weekday: "long", day: "numeric", month: "long" });
+  const hora = (d: Date) => d.toLocaleTimeString("pt-PT", { hour: "2-digit", minute: "2-digit" });
+  const jogados = match.opponentHistory.filter((h) => h.ourScore !== null && h.theirScore !== null);
+  const vitorias = jogados.filter((h) => h.ourScore! > h.theirScore!).length;
+  const derrotas = jogados.filter((h) => h.ourScore! < h.theirScore!).length;
+
   return (
-    <>
-      <PageHeader eyebrow={match.teamName} title="Jogo">
-        <Link to="/jogos" className="ctl-ghost">
-          <ArrowLeft className="size-3.5" strokeWidth={2} />
-          Todos os jogos
-        </Link>
-      </PageHeader>
+    /*
+      Os painéis que já existiam (a ficha, a convocatória, o relatório) ganham
+      aqui os cantos e a sombra dos cartões desta área, para a página ler como
+      uma coisa só.
+    */
+    <div className="mx-auto max-w-[1280px] space-y-4 [&_.panel]:rounded-[20px] [&_.panel]:border-line/80 [&_.panel]:shadow-[0_1px_2px_rgb(26_25_23/0.04),0_16px_36px_-24px_rgb(26_25_23/0.22)]">
+      <Link to="/jogos" className="inline-flex items-center gap-1.5 text-meta font-medium text-ink-3 hover:text-ink">
+        <ArrowLeft className="size-3.5" strokeWidth={1.75} />
+        Todos os jogos
+      </Link>
 
-      <Scoreboard match={match} aDecorrer={aDecorrer} passou={passou} mayRecord={mayRecord} onSaved={guardado} />
+      <Scoreboard match={match} aDecorrer={aDecorrer} passou={passou} mayRecord={mayRecord} onSaved={guardado} estado={estado} />
 
-      <div className="mt-3 grid items-start gap-3 lg:grid-cols-[minmax(0,1fr)_320px]">
-        <div className="space-y-3">
-          {passou ? (
-            temPlantel ? (
+      <div className="sticky top-0 z-20 -mx-2 bg-canvas/85 px-2 py-2 backdrop-blur-md">
+        <AbasDoJogo
+          ativa={aba}
+          onIr={irPara}
+          abas={[
+            { key: "geral", label: "Visão geral" },
+            { key: "pre", label: "Pré-jogo", feito: preparado, nota: onze.length ? `${titulares}/${onze.length}` : undefined },
+            { key: "vivo", label: "Ao vivo" },
+            { key: "pos", label: "Pós-jogo", feito: temResultado && temFicha, nota: temResultado ? `${match.ourScore}–${match.theirScore}` : undefined },
+            { key: "analise", label: "Análise", feito: Boolean(match.report) },
+            { key: "adversario", label: "Adversário", feito: Boolean(match.opponentReport), nota: match.opponentHistory.length ? String(match.opponentHistory.length) : undefined },
+          ]}
+        />
+      </div>
+
+      {/* ------------------------------------------------------ Visão geral */}
+      {aba === "geral" && (
+        <VisaoGeral<Aba>
+          passos={passos.map((x) => ({
+            feito: x.feito,
+            texto: x.texto,
+            area: x.area,
+            areaNome: x.convocatoria ? "convocatórias" : (ABAS.find((a) => a.key === x.area)?.label.toLowerCase() ?? ""),
+            bloqueado: Boolean(x.depois) && !passou,
+            ...(x.convocatoria ? { ir: () => navigate(`/convocatorias?jogo=${match.id}`) } : {}),
+          }))}
+          onIr={irPara}
+          onze={match.plan ? <ResumoDoOnze match={match} /> : null}
+          onzeApoio={match.plan ? [match.plan.system, `${titulares} titulares`, `${match.plan.bench.length} suplentes`].filter(Boolean).join(" · ") : "Ainda sem equipa inicial"}
+          onzeArea="pre"
+          factos={[
+            { rotulo: "Quando", valor: `${dia.charAt(0).toUpperCase()}${dia.slice(1)}, ${hora(inicio)}` },
+            { rotulo: "Onde", valor: `${match.venue} · ${match.isHome ? "em casa" : "fora"}` },
+            {
+              rotulo: "Equipa",
+              valor: (
+                <Link to={`/equipas/${match.teamId}`} className="underline-offset-2 hover:underline">
+                  {match.teamName}
+                </Link>
+              ),
+            },
+            ...(match.competition ? [{ rotulo: "Prova", valor: [match.competition.label, match.roundLabel].filter(Boolean).join(" · ") }] : []),
+            ...(match.coachName ? [{ rotulo: "Treinador", valor: match.coachName }] : []),
+            ...(match.meetingAt ? [{ rotulo: "Ponto de encontro", valor: `${hora(new Date(match.meetingAt))}${match.meetingPoint ? ` · ${match.meetingPoint}` : ""}` }] : []),
+            { rotulo: "Convocatória", valor: match.submitted ? `Enviada · ${match.squad.length} convocados` : passou ? "Sem convocatória" : "Por enviar" },
+          ]}
+          adversario={
+            <Cartao>
+              <CartaoTopo titulo={match.opponent} apoio={jogados.length === 0 ? "Primeiro jogo registado contra este adversário" : `${jogados.length} ${jogados.length === 1 ? "jogo anterior" : "jogos anteriores"}`}>
+                <button type="button" className="ctl-ghost h-8" onClick={() => irPara("adversario")}>
+                  Ver
+                  <ChevronRight className="size-3.5" strokeWidth={1.75} />
+                </button>
+              </CartaoTopo>
+              <div className="flex items-center gap-3 px-5 pb-5">
+                <Emblema nome={match.opponent} tamanho={44} />
+                {jogados.length > 0 ? (
+                  <div className="flex gap-4 text-center">
+                    {[
+                      [vitorias, "V", "text-ok"],
+                      [jogados.length - vitorias - derrotas, "E", "text-ink"],
+                      [derrotas, "D", "text-risk"],
+                    ].map(([n, l, cor]) => (
+                      <div key={l as string}>
+                        <div className={cx("text-[22px] leading-none font-semibold tabular", cor as string)}>{n}</div>
+                        <div className="mt-1 text-[11px] text-ink-3">{l}</div>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <p className="text-meta text-ink-3">{match.opponentReport ? "Já tem notas para este jogo." : "Ainda sem notas. Escreve o que souberes dele."}</p>
+                )}
+              </div>
+            </Cartao>
+          }
+          extra={<StaffPanel match={match} passou={passou} mayRecord={mayRecord} onSaved={guardado} />}
+        />
+      )}
+
+      {/* --------------------------------------------------------- Pré-jogo */}
+      {aba === "pre" && (
+        <div className="space-y-4">
+          <GamePlan match={match} mayEdit={mayRecord} onSaved={guardado} />
+          {/* A convocatória monta-se no ecrã dela; aqui vê-se como está. */}
+          {!passou && <CallUpPanel match={match} />}
+        </div>
+      )}
+
+      {/* ---------------------------------------------------------- Ao vivo */}
+      {aba === "vivo" &&
+        (cancelado ? (
+          <PorVir titulo="Este jogo foi cancelado" texto="Não há nada para acompanhar." />
+        ) : (
+          <LiveMatch match={match} mayRecord={mayRecord} onSaved={guardado} />
+        ))}
+
+      {/* --------------------------------------------------------- Pós-jogo */}
+      {aba === "pos" &&
+        (passou ? (
+          <div className="space-y-4">
+            {temPlantel ? (
               <SheetPanel match={match} mayRecord={mayRecord} onSaved={guardado} />
             ) : (
               <RetroSquadPanel match={match} mayRecord={mayRecord} onSaved={guardado} />
-            )
-          ) : (
-            <CallUpPanel match={match} />
-          )}
+            )}
+            {/* Corrigir um plantel retroactivo já registado — discreto, mas à mão. */}
+            {temPlantel && mayRecord && <RetroSquadPanel match={match} mayRecord={mayRecord} onSaved={guardado} collapsed />}
+          </div>
+        ) : (
+          <PorVir titulo="O pós-jogo abre depois do apito" texto="É aqui que se regista o resultado, quem entrou, quantos minutos jogou cada um, os golos e os cartões." />
+        ))}
 
-          {/* Corrigir um plantel retroactivo já registado — discreto, mas à mão. */}
-          {passou && temPlantel && mayRecord && (
-            <RetroSquadPanel match={match} mayRecord={mayRecord} onSaved={guardado} collapsed />
-          )}
+      {/* ---------------------------------------------------------- Análise */}
+      {aba === "analise" &&
+        (passou ? (
+          <div className="space-y-4">
+            <ObjetivosNaAnalise match={match} mayEdit={mayRecord} onSaved={guardado} />
+            <Analise
+              relatorio={match.report}
+              podeEditar={mayRecord}
+              contexto={
+                temResultado ? (
+                  <span
+                    className={cx(
+                      "rounded-full px-3 py-1 text-meta font-semibold tabular",
+                      match.ourScore! > match.theirScore! ? "bg-ok-soft text-ok" : match.ourScore! < match.theirScore! ? "bg-risk-soft text-risk" : "bg-sunken text-ink-2",
+                    )}
+                  >
+                    {match.ourScore! > match.theirScore! ? "Vitória" : match.ourScore! < match.theirScore! ? "Derrota" : "Empate"} {match.ourScore}–{match.theirScore}
+                  </span>
+                ) : undefined
+              }
+              onGuardar={async (corpo) => {
+                await saveMatchReport(match.id, corpo);
+                await guardado();
+              }}
+            />
+          </div>
+        ) : (
+          <PorVir titulo="A análise escreve-se depois do jogo" texto="Os objetivos definidos no Pré-jogo voltam aqui para dizer se foram cumpridos, ao lado do que correu bem e do que há a melhorar." />
+        ))}
 
-          {/*
-            Depois do apito: o que se escreve sobre o jogo e sobre o adversário.
-            Só depois — um relatório de um jogo por jogar é um palpite, e o
-            servidor recusa-o também.
-          */}
-          {passou && (
-            <>
-              <MatchReportPanel match={match} mayRecord={mayRecord} onSaved={guardado} />
-              <OpponentReportPanel match={match} mayRecord={mayRecord} onSaved={guardado} />
-            </>
-          )}
-        </div>
+      {/* ------------------------------------------------------- Adversário */}
+      {aba === "adversario" && (
+        <Adversario
+          nome={match.opponent}
+          registo={match.opponentReport}
+          historico={match.opponentHistory}
+          podeEditar={mayRecord}
+          onGuardar={async (notas) => {
+            await saveOpponentReport(match.id, notas);
+            await guardado();
+          }}
+        />
+      )}
+    </div>
+  );
+}
 
-        <div className="space-y-3">
-          {/*
-            O que já se sabe deste adversário, antes e depois do jogo. Antes é
-            quando mais vale: é a preparação do jogo sem sair da página dele.
-          */}
-          <OpponentHistoryPanel match={match} />
-          <StaffPanel match={match} passou={passou} mayRecord={mayRecord} onSaved={guardado} />
-          <FactsPanel match={match} passou={passou} />
-        </div>
-      </div>
-    </>
+type Aba = "geral" | "pre" | "vivo" | "pos" | "analise" | "adversario";
+const ABAS: { key: Aba; label: string }[] = [
+  { key: "geral", label: "Visão geral" },
+  { key: "pre", label: "Pré-jogo" },
+  { key: "vivo", label: "Ao vivo" },
+  { key: "pos", label: "Pós-jogo" },
+  { key: "analise", label: "Análise" },
+  { key: "adversario", label: "Adversário" },
+];
+
+/** O onze em pequeno, só de leitura, para a visão geral. */
+function ResumoDoOnze({ match }: { match: Match }) {
+  const jogadores = useJogadores(match);
+  const porId = useMemo(() => new Map(jogadores.map((j) => [j.id, j])), [jogadores]);
+  if (!match.plan) return null;
+  return (
+    <PitchBoard
+      format={match.plan.pitch as GameFormat}
+      className="rounded-[18px]"
+      pecas={match.plan.slots.map((x) => {
+        const j = x.athleteId ? porId.get(x.athleteId) : undefined;
+        return {
+          id: x.id,
+          label: x.label,
+          x: x.x,
+          y: x.y,
+          jogador: x.athleteId
+            ? { numero: j?.numero ?? null, nome: j?.curto ?? "Atleta", foto: j?.foto, marca: match.plan!.captainId === x.athleteId ? "C" : match.plan!.viceCaptainId === x.athleteId ? "SC" : null }
+            : null,
+        };
+      })}
+    />
+  );
+}
+
+/** Uma área que ainda não chegou. */
+function PorVir({ titulo, texto }: { titulo: string; texto: string }) {
+  return (
+    <Cartao>
+      <Vazio icone={<Clock className="size-5" strokeWidth={1.75} />} titulo={titulo} texto={texto} />
+    </Cartao>
   );
 }
 
@@ -203,20 +438,21 @@ function Scoreboard({
   passou,
   mayRecord,
   onSaved,
+  estado,
 }: {
   match: Match;
   aDecorrer: boolean;
   passou: boolean;
   mayRecord: boolean;
   onSaved: () => void;
+  /** O estado do jogo, calculado na página. */
+  estado: { texto: string; tom: "neutro" | "aviso" | "ok" | "vivo" | "risco" };
 }) {
   const inicio = new Date(match.startsAt);
   const cancelado = match.status === "CANCELLED";
   const temResultado = match.ourScore !== null && match.theirScore !== null;
   const res = outcome(match);
 
-  const casa = match.isHome ? match.teamName : match.opponent;
-  const fora = match.isHome ? match.opponent : match.teamName;
   const golosCasa = match.isHome ? match.ourScore : match.theirScore;
   const golosFora = match.isHome ? match.theirScore : match.ourScore;
 
@@ -229,119 +465,74 @@ function Scoreboard({
    * nao acendia o botao.
    */
   const escrevivel = passou && !cancelado && mayRecord;
+  const { academy } = useStore();
   const r = useResultado(match, onSaved);
 
-  return (
-    <Panel className="overflow-hidden">
-      {/* A faixa do clube. 3px — identidade, não decoração. */}
-      <div aria-hidden className="h-[3px] w-full" style={{ background: "var(--color-signal)" }} />
-
-      <div className="px-5 pt-5 pb-4 sm:px-8">
-        {/* A linha de contexto por cima do marcador. */}
-        <div className="mb-4 flex flex-wrap items-center justify-center gap-x-3 gap-y-1 text-meta text-ink-3">
-          <span className="font-medium text-ink-2">
-            {inicio.toLocaleDateString("pt-PT", { weekday: "long", day: "numeric", month: "long" })}
-          </span>
-          <span aria-hidden>·</span>
-          <span>{inicio.toLocaleTimeString("pt-PT", { hour: "2-digit", minute: "2-digit" })}</span>
-          <span aria-hidden>·</span>
-          <span className="inline-flex items-center gap-1">
-            <MapPin className="size-3.5" strokeWidth={1.75} />
-            {match.venue}
-          </span>
-          <Pill>{match.isHome ? "em casa" : "fora"}</Pill>
-          {cancelado && <Pill tone="risk">cancelado</Pill>}
-          {aDecorrer && (
-            <span className="inline-flex items-center gap-1.5 rounded-full bg-ok-soft px-2 py-0.5 text-meta font-medium text-ok">
-              <span className="size-1.5 animate-pulse rounded-full bg-ok" aria-hidden />
-              a decorrer
-            </span>
-          )}
-        </div>
-
-        {/* O marcador em si: nome — número — nome. */}
-        <div className="grid grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] items-center gap-3 sm:gap-6">
-          <TeamSide name={casa} ours={match.isHome} align="right" />
-
-          <div className="flex flex-col items-center gap-1.5">
-            {escrevivel ? (
-              <>
-                <ScoreInputs match={match} r={r} />
-                {/* O selo de vitoria/empate/derrota nao desaparece so por o
-                    resultado estar editavel — e a leitura do jogo, nao do modo. */}
-                {temResultado && res && <OutcomePill res={res} />}
-              </>
-            ) : temResultado ? (
-              <>
-                <div className="flex items-baseline gap-2 sm:gap-3">
-                  <span className="text-[44px] leading-none font-semibold tabular text-ink sm:text-[60px]">
-                    {golosCasa}
-                  </span>
-                  <span className="text-[28px] leading-none font-light text-ink-4 sm:text-[36px]">–</span>
-                  <span className="text-[44px] leading-none font-semibold tabular text-ink sm:text-[60px]">
-                    {golosFora}
-                  </span>
-                </div>
-                {res && <OutcomePill res={res} />}
-              </>
-            ) : passou && !cancelado ? (
-              <span className="text-[44px] leading-none font-light tabular text-ink-4 sm:text-[60px]">–</span>
-            ) : (
-              <>
-                <span className="text-[36px] leading-none font-semibold tabular text-ink sm:text-[44px]">
-                  {inicio.toLocaleTimeString("pt-PT", { hour: "2-digit", minute: "2-digit" })}
-                </span>
-                <span className="text-meta text-ink-4">{quandoFalta(inicio)}</span>
-              </>
-            )}
-          </div>
-
-          <TeamSide name={fora} ours={!match.isHome} align="left" />
-        </div>
-
-        {escrevivel && <ResultActions r={r} />}
-
-        {!passou && !cancelado && mayRecord && (
-          <p className="mt-4 text-center text-meta text-ink-4">
-            O resultado regista-se aqui depois do apito.
-          </p>
-        )}
-      </div>
-
-      {/* A faixa de estado: o que está feito e o que falta, num relance. */}
-      <div className="flex flex-wrap items-center justify-center gap-x-5 gap-y-1.5 border-t border-line bg-sunken/40 px-5 py-2.5 text-meta">
-        <Estado
-          feito={match.submitted}
-          feitoLabel={passou ? "Plantel registado" : "Convocatória enviada"}
-          faltaLabel={passou ? "Plantel por registar" : "Convocatória por enviar"}
-        />
-        {passou && !cancelado && (
-          <>
-            <Estado feito={match.ourScore !== null} feitoLabel="Resultado registado" faltaLabel="Resultado por registar" />
-            <Estado
-              feito={match.squad.some((s) => s.played)}
-              feitoLabel="Ficha preenchida"
-              faltaLabel="Ficha por preencher"
-            />
-          </>
-        )}
-      </div>
-    </Panel>
+  const estados = (
+    <>
+      <span className="inline-flex items-center gap-1.5">
+        <Clock className="size-3.5 text-ink-4" strokeWidth={1.75} />
+        {inicio.toLocaleDateString("pt-PT", { weekday: "long", day: "numeric", month: "long" })}, {inicio.toLocaleTimeString("pt-PT", { hour: "2-digit", minute: "2-digit" })}
+      </span>
+      <span className="inline-flex items-center gap-1.5">
+        <MapPin className="size-3.5 text-ink-4" strokeWidth={1.75} />
+        {match.venue}
+      </span>
+      <Estado
+        feito={match.submitted}
+        feitoLabel={passou ? "Plantel registado" : "Convocatória enviada"}
+        faltaLabel={passou ? "Plantel por registar" : "Convocatória por enviar"}
+      />
+      {passou && !cancelado && (
+        <>
+          <Estado feito={match.ourScore !== null} feitoLabel="Resultado registado" faltaLabel="Resultado por registar" />
+          <Estado feito={match.squad.some((x) => x.played)} feitoLabel="Ficha preenchida" faltaLabel="Ficha por preencher" />
+        </>
+      )}
+    </>
   );
-}
 
-function TeamSide({ name, ours, align }: { name: string; ours: boolean; align: "left" | "right" }) {
   return (
-    <div className={cx("min-w-0", align === "right" ? "text-right" : "text-left")}>
-      <div
-        className={cx(
-          "truncate text-[17px] leading-snug font-semibold sm:text-[21px]",
-          ours ? "text-ink" : "text-ink-2",
-        )}
-      >
-        {name}
-      </div>
-    </div>
+    <CabecalhoDoJogo
+      equipa={match.teamName}
+      adversario={match.opponent}
+      emCasa={match.isHome}
+      logo={academy.logoUrl}
+      contexto={[match.competition?.label, match.roundLabel].filter(Boolean).join(" · ") || "Jogo"}
+      estado={{ chave: "", ...estado }}
+      rodape={estados}
+      centro={
+        escrevivel ? (
+          <>
+            <ScoreInputs match={match} r={r} />
+            {/* O selo de vitória, empate ou derrota não desaparece por o resultado estar editável. */}
+            {temResultado && res && <OutcomePill res={res} />}
+            <ResultActions r={r} />
+          </>
+        ) : temResultado ? (
+          <>
+            <div className="flex items-baseline gap-2.5">
+              <span className="placar text-[52px] leading-none font-semibold tracking-[-0.03em] text-ink tabular">{golosCasa}</span>
+              <span className="text-[30px] leading-none font-light text-ink-4">–</span>
+              <span className="placar text-[52px] leading-none font-semibold tracking-[-0.03em] text-ink tabular">{golosFora}</span>
+            </div>
+            {res && <OutcomePill res={res} />}
+          </>
+        ) : passou && !cancelado ? (
+          <>
+            <span className="text-[44px] leading-none font-light text-ink-4">–</span>
+            <span className="text-meta text-ink-3">{aDecorrer ? "a decorrer" : "sem resultado"}</span>
+          </>
+        ) : (
+          <>
+            <span className="placar text-[44px] leading-none font-semibold tracking-[-0.03em] text-ink tabular">
+              {inicio.toLocaleTimeString("pt-PT", { hour: "2-digit", minute: "2-digit" })}
+            </span>
+            <span className="text-meta text-ink-3">{cancelado ? "cancelado" : quandoFalta(inicio)}</span>
+          </>
+        )
+      }
+    />
   );
 }
 
@@ -480,7 +671,7 @@ function ScoreInputs({
 /** O botao e o que o acompanha — por baixo do traco, ao centro. */
 function ResultActions({ r }: { r: ReturnType<typeof useResultado> }) {
   return (
-    <div className="mt-5 border-t border-line pt-4">
+    <div className="mt-2">
       <div className="flex flex-wrap items-center justify-center gap-2">
         <button
           type="button"
@@ -661,7 +852,7 @@ function CallUpPanel({ match }: { match: Match }) {
             {folha ? "A gerar…" : "Exportar PDF"}
           </button>
         )}
-        <Link to="/convocatorias" className="ctl-primary">
+        <Link to={`/convocatorias?jogo=${match.id}`} className="ctl-primary">
           {match.submitted ? "Ver nas Convocatórias" : "Montar convocatória"}
           <ChevronRight className="size-3.5" strokeWidth={2} />
         </Link>
@@ -925,6 +1116,12 @@ type Linha = Pick<
   | "onMinute" | "offMinute" | "yellowAt" | "redAt" | "tallyAt" | "assistsAt"
 > & {
   papel: Papel;
+  /**
+   * Por quem entrou (só no futebol). Não se grava como tal: fica escrito no
+   * minuto de saída do outro jogador, igual ao minuto de entrada deste. Ao
+   * abrir a ficha, reconstitui-se por aí. Ver `daFicha`.
+   */
+  substitui: string | null;
 };
 
 /** Titular e suplente utilizado entram na ficha; quem não jogou não tem linha. */
@@ -993,6 +1190,7 @@ function linhaDe(s: SquadRow): Linha {
     athleteId: s.athleteId,
     // Os dois campos antigos colapsam num: não jogou / entrou / titular.
     papel: !s.played ? "nao" : s.started ? "titular" : "entrou",
+    substitui: null,
     minutes: s.minutes,
     tally: s.tally,
     assists: s.assists,
@@ -1094,7 +1292,7 @@ function TempoAdicional({ match, mayRecord, onSaved }: { match: Match; mayRecord
   if (!mayRecord) {
     if (total === 0) return null;
     return (
-      <p className="border-b border-line px-5 py-2.5 text-meta text-ink-3">
+      <p className="rounded-[14px] bg-sunken/60 px-4 py-2.5 text-meta text-ink-3">
         Tempo adicional:{" "}
         <span className="text-ink-2">
           {gravado.map((m, i) => `+${m}′ na ${nomeDaParte(i, jogo.periodName)}`).join(" · ")}
@@ -1120,7 +1318,7 @@ function TempoAdicional({ match, mayRecord, onSaved }: { match: Match; mayRecord
   }
 
   return (
-    <div className="border-b border-line px-5 py-3">
+    <div className="rounded-[14px] bg-sunken/60 px-4 py-2.5">
       <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
         <span className="text-meta font-medium text-ink">Tempo adicional</span>
         {valores.map((v, i) => {
@@ -1146,7 +1344,7 @@ function TempoAdicional({ match, mayRecord, onSaved }: { match: Match; mayRecord
                   const limpo = e.target.value.replace(/\D/g, "");
                   setValores((x) => x.map((y, j) => (j === i ? limpo : y)));
                 }}
-                className="h-9 w-12 rounded-[var(--radius-control)] border border-line bg-surface text-center text-body tabular text-ink outline-none placeholder:text-ink-4/60 focus:border-line-strong"
+                className="h-9 w-12 rounded-full border border-line bg-surface text-center text-body tabular text-ink outline-none placeholder:text-ink-4/60 focus:border-ink-3"
               />
               <span className="text-meta text-ink-3">min</span>
             </span>
@@ -1230,10 +1428,10 @@ function SheetPanel({ match, mayRecord, onSaved }: { match: Match; mayRecord: bo
    * faz a página aguentar esse instante — e é também o que deixa um convocado
    * retirado do plantel desaparecer da ficha sem esperar pelo efeito.
    */
-  const linhaDo = (s: SquadRow): Linha => linhas[s.athleteId] ?? linhaDe(s);
+  const linhaDo = (s: SquadRow): Linha => linhas[s.athleteId] ?? linhaComPlano(match, s);
   const set = (id: string, patch: Partial<Linha>) =>
     setLinhas((x) => {
-      const base = x[id] ?? linhaDe(match.squad.find((s) => s.athleteId === id)!);
+      const base = x[id] ?? linhaComPlano(match, match.squad.find((s) => s.athleteId === id)!);
       return { ...x, [id]: { ...base, ...patch } };
     });
 
@@ -1249,8 +1447,79 @@ function SheetPanel({ match, mayRecord, onSaved }: { match: Match; mayRecord: bo
    * estava errada. Um suplente sem minuto de entrada **não** conta: já não é um
    * erro, é um detalhe por preencher. Ver `semEntrada`.
    */
-  const porCorrigir = emCampo.filter((l) => incoerencias(l).length > 0).length;
   const semMinutos = emCampo.filter(semEntrada).length;
+
+  /*
+   * Como se entra e sai nesta modalidade.
+   *
+   * No futebol as substituições são poucas e contam-se: para um entrar, um tem
+   * de sair, e a ficha pergunta por quem e a que minuto. No futsal e no
+   * basquetebol entra-se e sai-se a toda a hora: diz-se só quem foi titular e
+   * quem entrou, e não se contam minutos.
+   */
+  const codigo = sportById(match.sportId)?.code;
+  const rotativo = codigo === "futsal" || codigo === "basketball";
+  const comSubstituicoes = !rotativo && Boolean(regras?.addedTime);
+  const nomeDe = (id: string) => match.squad.find((s) => s.athleteId === id)?.name ?? "Atleta";
+
+  /**
+   * Mudar a substituição de quem entrou: por quem, e a que minuto.
+   *
+   * As duas linhas mexem juntas. Quem saiu fica com o minuto de saída igual ao
+   * de entrada de quem o substituiu; quem deixa de ser o substituído perde o
+   * minuto de saída que lhe tinha sido posto por esta substituição.
+   */
+  function substituir(id: string, alvo: string | null, minuto: number | null) {
+    setLinhas((x) => {
+      const eu = x[id] ?? linhaComPlano(match, match.squad.find((s) => s.athleteId === id)!);
+      const y = { ...x, [id]: { ...eu, substitui: alvo, onMinute: minuto } };
+      const antes = eu.substitui;
+      if (antes && antes !== alvo && y[antes] && y[antes].offMinute === eu.onMinute) y[antes] = { ...y[antes], offMinute: null };
+      if (alvo && y[alvo] && minuto != null) y[alvo] = { ...y[alvo], offMinute: minuto };
+      return y;
+    });
+  }
+
+  /**
+   * O que a ficha tem de errado, visto só quando se tenta gravar.
+   *
+   * Enquanto se preenche, a ficha deixa escrever à vontade: a meio de acertar
+   * dois números, um aviso a cada tecla só atrapalha. Ao gravar, lê-se tudo de
+   * uma vez. Os **erros** são impossíveis e travam (o servidor recusava-os de
+   * qualquer maneira); os **avisos** são faltas prováveis e deixam gravar na
+   * mesma, porque há clubes que não registam minutos.
+   */
+  function verificar(): { erros: string[]; avisos: string[] } {
+    const erros: string[] = [];
+    const avisos: string[] = [];
+    if (excedeMarcador) erros.push(excedeMarcador);
+    for (const l of emCampo) for (const p of incoerencias(l)) erros.push(`${nomeDe(l.athleteId)}: ${p}`);
+
+    if (comSubstituicoes) {
+      const saidas = new Map<string, string>();
+      for (const l of emCampo.filter((e) => e.papel === "entrou")) {
+        const nome = nomeDe(l.athleteId);
+        if (!l.substitui) avisos.push(`${nome} entrou, mas falta dizer por quem.`);
+        if (l.onMinute == null) avisos.push(`${nome} entrou, mas falta o minuto.`);
+        if (!l.substitui) continue;
+        const saiu = linhas[l.substitui];
+        if (saidas.has(l.substitui)) erros.push(`${nomeDe(l.substitui)} aparece como substituído por ${saidas.get(l.substitui)} e por ${nome}.`);
+        saidas.set(l.substitui, nome);
+        if (!saiu || !jogou(saiu)) erros.push(`${nome} entrou por ${nomeDe(l.substitui)}, que não chegou a jogar.`);
+        else if (saiu.papel === "entrou" && saiu.onMinute != null && l.onMinute != null && saiu.onMinute > l.onMinute) {
+          erros.push(`${nome} entrou ao ${l.onMinute}′ por ${nomeDe(l.substitui)}, que só entrou ao ${saiu.onMinute}′.`);
+        }
+      }
+      // Quem saiu a meio sem ninguém entrar por ele (e sem ser expulso) deixa a equipa com menos um.
+      for (const l of emCampo) {
+        if (l.offMinute != null && !l.redCard && !saidas.has(l.athleteId)) avisos.push(`${nomeDe(l.athleteId)} saiu ao ${l.offMinute}′ e ninguém entrou por ele.`);
+      }
+    }
+    return { erros, avisos };
+  }
+  const [revisao, setRevisao] = useState<{ erros: string[]; avisos: string[] } | null>(null);
+  // Depois de uma tentativa, a revisão acompanha as correções em vez de ficar parada.
+  const emRevisao = revisao ? verificar() : null;
 
   /*
    * A ficha contra o marcador.
@@ -1322,8 +1591,14 @@ function SheetPanel({ match, mayRecord, onSaved }: { match: Match; mayRecord: bo
     [linhas, match.squad, duracao, tempo],
   );
 
-  async function gravar() {
+  async function gravar(mesmoAssim = false) {
     setErro(null);
+    const v = verificar();
+    if (v.erros.length > 0 || (v.avisos.length > 0 && !mesmoAssim)) {
+      setRevisao(v);
+      return;
+    }
+    setRevisao(null);
     try {
       await correr(async () => {
         await saveAppearances(
@@ -1353,143 +1628,254 @@ function SheetPanel({ match, mayRecord, onSaved }: { match: Match; mayRecord: bo
     }
   }
 
+  /* O basquetebol não tem cartões. */
+  const semCartoes = sportById(match.sportId)?.code === "basketball";
+  /* Os titulares vieram do pré-jogo e ainda não foram gravados. */
+  const doPlano = fichaPorAbrir(match) && Boolean(match.plan?.slots.some((x) => x.athleteId)) && titulares > 0;
+  const amarelos = emCampo.reduce((n, l) => n + l.yellowCards, 0);
+  const vermelhos = emCampo.filter((l) => l.redCard).length;
+
   return (
-    <Panel>
-      {/*
-        O véu cobre o painel inteiro, cabeçalho incluído.
+    <>
+      <Cartao className="overflow-hidden">
+        {/*
+          O véu cobre o cartão inteiro, resumo incluído.
 
-        Enquanto grava, nada aqui dentro é verdade: o resumo do cabeçalho conta
-        os titulares do que está no ecrã, e o que está no ecrã ainda não é o que
-        ficou gravado. Desfocar as linhas e deixar o cabeçalho nítido dava a
-        impressão de que aquela contagem já era o resultado.
-      */}
-      <SaveVeil estado={estado}>
-        <PanelHead
-          title="Ficha de jogo"
-          hint={
-            emCampo.length === 0
-              ? "por preencher"
-              : `${titulares} ${titulares === 1 ? "titular" : "titulares"} · ${emCampo.length - titulares} ${
-                  emCampo.length - titulares === 1 ? "suplente" : "suplentes"
-                } · ${golos} ${golos === 1 ? golo : `${golo}s`}`
-          }
-        />
-
-        <TempoAdicional match={match} mayRecord={mayRecord} onSaved={onSaved} />
-
-        {mayRecord && (
-          <p className="border-b border-line px-5 py-2.5 text-meta leading-relaxed text-ink-3">
-            Diz de cada um se foi <span className="font-medium text-ink-2">titular</span>, se{" "}
-            <span className="font-medium text-ink-2">entrou</span> do banco, ou se{" "}
-            <span className="font-medium text-ink-2">não jogou</span>. Só isso já fecha a ficha. Os minutos de
-            entrada e de saída e os dos cartões são opcionais, para quem os quiser registar.
-          </p>
-        )}
-
-        <ul>
-          {match.squad.map((s) => (
-            <SheetRow
-              key={s.athleteId}
-              atleta={s}
-              linha={linhaDo(s)}
-              golo={golo}
-              duracao={duracao}
-              tempo={tempo}
-              mayRecord={mayRecord}
-              onChange={(patch) => set(s.athleteId, patch)}
+          Enquanto grava, nada aqui dentro é verdade: o resumo conta os titulares
+          do que está no ecrã, e o que está no ecrã ainda não é o que ficou
+          gravado.
+        */}
+        <SaveVeil estado={estado}>
+          <CartaoTopo
+            titulo="Ficha de jogo"
+            apoio={
+              mayRecord
+                ? doPlano
+                  ? "Os titulares vêm da equipa inicial do Pré-jogo. Acerta o que mudou, diz quem entrou do banco e grava."
+                  : "Diz de cada um se foi titular, se entrou do banco ou se não jogou. O resto é opcional."
+                : emCampo.length === 0
+                  ? "Por preencher."
+                  : undefined
+            }
+          />
+          <div className="space-y-3 px-5 pb-4">
+            <ResumoDaFicha
+              itens={[
+                { valor: titulares, rotulo: titulares === 1 ? "titular" : "titulares" },
+                { valor: emCampo.length - titulares, rotulo: emCampo.length - titulares === 1 ? "suplente utilizado" : "suplentes utilizados" },
+                { valor: golos, rotulo: golos === 1 ? golo : `${golo}s`, tom: golos > 0 ? "ok" : undefined },
+                ...(semCartoes
+                  ? []
+                  : [{
+                  valor: (
+                    <span className="inline-flex items-baseline gap-2">
+                      <span className="text-warn">{amarelos}</span>
+                      <span className="text-[15px] font-normal text-ink-4">·</span>
+                      <span className="text-risk">{vermelhos}</span>
+                    </span>
+                  ),
+                  rotulo: "amarelos · vermelhos",
+                }]),
+              ]}
             />
-          ))}
-        </ul>
+            <TempoAdicional match={match} mayRecord={mayRecord} onSaved={onSaved} />
+          </div>
 
-        {mayRecord && (
-          <div className="flex flex-wrap items-center gap-3 border-t border-line px-5 py-3">
-            <button
-              type="button"
-              className="ctl-primary h-11"
-              disabled={busy || !mudou || porCorrigir > 0 || excedeMarcador !== null}
-              onClick={() => void gravar()}
-            >
-              Gravar ficha
+          <ul className="border-t border-line">
+            {match.squad.map((s) => (
+              <SheetRow
+                key={s.athleteId}
+                atleta={s}
+                teamId={match.teamId}
+                linha={linhaDo(s)}
+                golo={golo}
+                duracao={duracao}
+                tempo={tempo}
+                mayRecord={mayRecord}
+                semCartoes={semCartoes}
+                rotativo={rotativo}
+                problemas={emRevisao ? incoerencias(linhaDo(s)) : []}
+                substituicao={
+                  comSubstituicoes && linhaDo(s).papel === "entrou"
+                    ? {
+                        valor: linhaDo(s).substitui,
+                        // Quem estava em campo: os titulares e quem já tinha entrado, menos quem já foi substituído por outro.
+                        opcoes: match.squad
+                          .filter((o) => o.athleteId !== s.athleteId && jogou(linhaDo(o)))
+                          .filter((o) => !match.squad.some((e) => e.athleteId !== s.athleteId && linhaDo(e).substitui === o.athleteId))
+                          .map((o) => ({ id: o.athleteId, nome: o.name })),
+                        onChange: (alvo) => substituir(s.athleteId, alvo, linhaDo(s).onMinute),
+                      }
+                    : undefined
+                }
+                onChange={(patch) => {
+                  // No futebol, mudar o minuto de entrada arrasta o minuto de saída de quem foi substituído.
+                  if (comSubstituicoes && "onMinute" in patch && linhaDo(s).papel === "entrou" && linhaDo(s).substitui) {
+                    substituir(s.athleteId, linhaDo(s).substitui, patch.onMinute ?? null);
+                    const { onMinute: _m, ...resto } = patch;
+                    if (Object.keys(resto).length > 0) set(s.athleteId, resto);
+                  } else if ("papel" in patch && patch.papel !== "entrou" && linhaDo(s).substitui) {
+                    // Deixou de ser suplente utilizado: a substituição desfaz-se.
+                    substituir(s.athleteId, null, null);
+                    set(s.athleteId, patch);
+                  } else set(s.athleteId, patch);
+                }}
+              />
+            ))}
+          </ul>
+        </SaveVeil>
+      </Cartao>
+
+      {/*
+        A revisão: o que a ficha tem de errado, dito de uma vez, quando se tenta
+        gravar. Os erros travam; os avisos deixam gravar na mesma.
+      */}
+      {mayRecord && emRevisao && (emRevisao.erros.length > 0 || emRevisao.avisos.length > 0) && (
+        <Cartao className="mc-entra">
+          <CartaoTopo
+            titulo={emRevisao.erros.length > 0 ? "Há coisas que não batem certo" : "Antes de gravar, confirma isto"}
+            apoio={emRevisao.erros.length > 0 ? "Corrige o que está a vermelho para poder gravar." : "Podem ser esquecimentos. Se estiver certo assim, grava na mesma."}
+          >
+            <button type="button" className="ctl-ghost h-8" onClick={() => setRevisao(null)}>
+              Fechar
             </button>
-            {excedeMarcador ? (
-              <span className="text-meta font-medium text-risk">{excedeMarcador}</span>
-            ) : porCorrigir > 0 ? (
-              <span className="text-meta font-medium text-risk">
-                {porCorrigir === 1
-                  ? "Há uma linha com minutos impossíveis — corrige-a para gravar."
-                  : `Há ${porCorrigir} linhas com minutos impossíveis — corrige-as para gravar.`}
-              </span>
-            ) : mudou && !busy ? (
-              <span className="text-meta font-medium text-warn">Há alterações por gravar.</span>
-            ) : (
-              /*
-                Um aviso e não um travão: quem quiser os minutos dos suplentes
-                escreve a entrada; quem não quiser grava na mesma.
-              */
-              semMinutos > 0 && (
-                <span className="text-meta text-ink-3">
-                  {semMinutos === 1
-                    ? "Um suplente sem minuto de entrada fica sem minutos contados."
-                    : `${semMinutos} suplentes sem minuto de entrada ficam sem minutos contados.`}
-                </span>
-              )
-            )}
-            {erro && (
-              <span role="alert" className="text-meta text-risk">
+          </CartaoTopo>
+          <ul className="space-y-1.5 px-5 pb-5">
+            {emRevisao.erros.map((e) => (
+              <li key={e} className="flex items-start gap-2.5 rounded-[12px] bg-risk-soft px-3 py-2 text-meta leading-relaxed text-risk">
+                <span aria-hidden className="mt-1.5 size-1.5 shrink-0 rounded-full bg-risk" />
+                {e}
+              </li>
+            ))}
+            {emRevisao.avisos.map((a) => (
+              <li key={a} className="flex items-start gap-2.5 rounded-[12px] bg-warn-soft px-3 py-2 text-meta leading-relaxed text-warn">
+                <span aria-hidden className="mt-1.5 size-1.5 shrink-0 rounded-full bg-warn" />
+                {a}
+              </li>
+            ))}
+          </ul>
+        </Cartao>
+      )}
+
+      {/* Gravar, sempre à mão: a ficha é comprida e o botão não pode ficar no fundo. */}
+      {mayRecord && (
+        <div className="sticky bottom-3 z-10 max-md:bottom-[calc(72px+env(safe-area-inset-bottom))] flex flex-wrap items-center gap-3 rounded-[16px] border border-line bg-surface/95 px-4 py-2.5 shadow-[0_10px_30px_-14px_rgb(26_25_23/0.35)] backdrop-blur">
+          <span className="min-w-0 flex-1 text-meta">
+            {erro ? (
+              <span role="alert" className="text-risk">
                 {erro}
               </span>
+            ) : emRevisao && emRevisao.erros.length > 0 ? (
+              <span className="font-medium text-risk">
+                {emRevisao.erros.length === 1 ? "Há um erro por corrigir." : `Há ${emRevisao.erros.length} erros por corrigir.`}
+              </span>
+            ) : emRevisao && emRevisao.avisos.length > 0 ? (
+              <span className="font-medium text-warn">
+                {emRevisao.avisos.length === 1 ? "Há um aviso por confirmar." : `Há ${emRevisao.avisos.length} avisos por confirmar.`}
+              </span>
+            ) : mudou && !busy ? (
+              <span className="font-medium text-warn">Há alterações por gravar.</span>
+            ) : rotativo ? (
+              <span className="text-ink-3">{emCampo.length === 0 ? "Ainda sem ninguém em campo." : "Ficha gravada."}</span>
+            ) : semMinutos > 0 ? (
+              /* Um aviso e não um travão: quem quiser os minutos dos suplentes escreve a entrada. */
+              <span className="text-ink-3">
+                {semMinutos === 1 ? "Um suplente sem minuto de entrada fica sem minutos contados." : `${semMinutos} suplentes sem minuto de entrada ficam sem minutos contados.`}
+              </span>
+            ) : (
+              <span className="text-ink-3">{emCampo.length === 0 ? "Ainda sem ninguém em campo." : "Ficha gravada."}</span>
             )}
-          </div>
-        )}
-      </SaveVeil>
-    </Panel>
+          </span>
+          {/* Só com avisos (e sem erros) se pode gravar na mesma. */}
+          {emRevisao && emRevisao.erros.length === 0 && emRevisao.avisos.length > 0 && (
+            <button type="button" className="ctl-outline h-9" disabled={busy} onClick={() => void gravar(true)}>
+              Gravar mesmo assim
+            </button>
+          )}
+          <button type="button" className="ctl-primary h-9" disabled={busy || !mudou} onClick={() => void gravar()}>
+            {busy ? "A gravar…" : "Gravar ficha"}
+          </button>
+        </div>
+      )}
+    </>
   );
 }
 
-function daFicha(match: Match): Record<string, Linha> {
-  return Object.fromEntries(match.squad.map((s) => [s.athleteId, linhaDe(s)]));
+/**
+ * A ficha ainda está por abrir: ninguém tem linha gravada.
+ *
+ * É só neste caso que o plano do pré-jogo preenche os titulares. Depois de uma
+ * gravação, o que vale é o que ficou gravado: o plano não volta a mexer.
+ */
+const fichaPorAbrir = (match: Match) => !match.squad.some((s) => s.played);
+
+/**
+ * A linha de um convocado, a partir do que está gravado e, numa ficha por
+ * abrir, do plano do pré-jogo: quem lá estava no campo entra como titular.
+ *
+ * O treinador montou a equipa antes do jogo; pedir-lhe para a marcar outra vez,
+ * um a um, era perguntar duas vezes o mesmo. Fica por gravar (o botão acende),
+ * para ele confirmar o que mudou à última hora.
+ */
+function linhaComPlano(match: Match, s: SquadRow): Linha {
+  const l = linhaDe(s);
+  if (fichaPorAbrir(match) && match.plan?.slots.some((x) => x.athleteId === s.athleteId)) return { ...l, papel: "titular" };
+  return l;
 }
 
-const PAPEIS: { value: Papel; label: string; hint: string }[] = [
-  { value: "titular", label: "Titular", hint: "Começou o jogo" },
-  { value: "entrou", label: "Entrou", hint: "Saiu do banco" },
-  { value: "nao", label: "Não jogou", hint: "Ficou no banco" },
-];
+function daFicha(match: Match): Record<string, Linha> {
+  const linhas = Object.fromEntries(match.squad.map((s) => [s.athleteId, linhaComPlano(match, s)]));
+  /*
+   * Quem substituiu quem: lê-se dos minutos. Quem entrou ao 63 substituiu quem
+   * saiu ao 63. Cada saída serve uma entrada só.
+   */
+  const usados = new Set<string>();
+  for (const l of Object.values(linhas)) {
+    if (l.papel !== "entrou" || l.onMinute == null) continue;
+    const saiu = Object.values(linhas).find((o) => o.athleteId !== l.athleteId && jogou(o) && o.offMinute === l.onMinute && !usados.has(o.athleteId));
+    if (saiu) {
+      l.substitui = saiu.athleteId;
+      usados.add(saiu.athleteId);
+    }
+  }
+  return linhas;
+}
 
 function SheetRow({
   atleta,
+  teamId,
   linha,
   golo,
   duracao,
   tempo,
   mayRecord,
+  semCartoes,
+  rotativo,
+  problemas,
+  substituicao,
   onChange,
 }: {
   atleta: SquadRow;
+  teamId: string;
   linha: Linha;
   golo: string;
   duracao: number;
   tempo: TempoDoJogo;
   mayRecord: boolean;
+  semCartoes: boolean;
+  rotativo: boolean;
+  /** As contradições da linha. Só chegam depois de uma tentativa de gravar. */
+  problemas: string[];
+  substituicao?: { opcoes: { id: string; nome: string }[]; valor: string | null; onChange: (id: string | null) => void };
   onChange: (p: Partial<Linha>) => void;
 }) {
-  const [detalhe, setDetalhe] = useState(false);
-  const emCampo = jogou(linha);
-  const derivados = minutosDerivados(linha, duracao, tempo);
-  const problemas = incoerencias(linha);
-
-  // Uma contradição escondida atrás de um painel fechado é uma contradição que
-  // ninguém corrige: abre-se o detalhe, que é onde estão os campos em causa.
-  const noDetalhe = problemas.length;
-  useEffect(() => {
-    if (noDetalhe > 0) setDetalhe(true);
-  }, [noDetalhe]);
+  const a = athleteById(atleta.athleteId);
 
   /**
    * Escolher o papel arruma o resto.
    *
    * Passar a titular limpa o minuto de entrada (um titular entra aos 0, e um 63
-   * ali seria uma contradição). Deixar de jogar limpa tudo — golos de quem não
+   * ali seria uma contradição). Deixar de jogar limpa tudo: golos de quem não
    * entrou em campo é a linha que faz um pai telefonar.
    */
   function escolher(papel: Papel) {
@@ -1497,468 +1883,32 @@ function SheetRow({
       onChange({
         papel,
         minutes: 0, tally: 0, assists: 0, yellowCards: 0, redCard: false,
-        onMinute: null, offMinute: null, yellowAt: [], redAt: null,
+        onMinute: null, offMinute: null, yellowAt: [], redAt: null, tallyAt: [], assistsAt: [],
       });
       return;
     }
-    // Um titular entra aos 0, e um 63 no minuto de entrada seria uma contradição.
     // Os minutos já não se guardam aqui: saem de `minutosDerivados`.
     onChange({ papel, ...(papel === "titular" ? { onMinute: null } : {}) });
   }
 
   return (
-    <li className="border-b border-line last:border-b-0">
-      {/*
-        A linha da pessoa e o registo do jogo dela são duas coisas, e agora
-        parecem-no.
-
-        Tinham o mesmo fundo, e num jogo com vinte atletas isso dava uma parede
-        onde não se via onde acabava um jogador e começava o seguinte — as
-        estatísticas de um pareciam pertencer ao nome de baixo. O nome fica no
-        fundo levantado, os números no fundo da superfície.
-      */}
-      <div
-        className={cx(
-          "flex flex-wrap items-center gap-x-3 gap-y-2 px-5 py-2.5",
-          emCampo && "bg-sunken/60",
-        )}
-      >
-        <span className="min-w-0 flex-1">
-          <span className={cx("block truncate text-body", emCampo ? "font-medium text-ink" : "text-ink-3")}>
-            {atleta.name}
-          </span>
-          <span className="block text-meta text-ink-4">
-            {atleta.position ?? "sem posição"}
-            {atleta.isGuest && ` · de ${atleta.guestFromTeam}`}
-            {atleta.callUpStatus === "DECLINED" && " · tinha dito que não podia"}
-          </span>
-        </span>
-
-        {/* O resumo do que já está registado, para quem só passa os olhos. */}
-        {emCampo && (
-          <div className="flex shrink-0 items-center gap-1.5">
-            {linha.tally > 0 && (
-              <Pill tone="ok">
-                {linha.tally} {linha.tally === 1 ? golo : `${golo}s`}
-              </Pill>
-            )}
-            {linha.yellowCards > 0 && !linha.redCard && (
-              <Pill tone="warn">{linha.yellowCards === 2 ? "2 amarelos" : "amarelo"}</Pill>
-            )}
-            {linha.redCard && <Pill tone="risk">vermelho</Pill>}
-            <span className="w-12 text-right text-meta tabular text-ink-2">
-              {derivados === null ? "—" : `${derivados}′`}
-            </span>
-          </div>
-        )}
-
-        {/*
-          A pergunta, em três respostas.
-          Substituiu um visto "jogou" mais um interruptor "Titular" escondido lá
-          dentro — duas perguntas para uma resposta só, e nenhuma delas a que o
-          treinador tem na cabeça.
-        */}
-        {mayRecord ? (
-          // Ao pé do telemóvel o grupo passa a linha própria em vez de encolher:
-          // encolher cortava "Não jogou" a meio, e a resposta mais importante da
-          // linha é precisamente esta.
-          <div className="w-full sm:w-auto sm:shrink-0">
-            <Segmented
-              size="md"
-              label={`Papel de ${atleta.name}`}
-              value={linha.papel}
-              onChange={escolher}
-              options={PAPEIS}
-            />
-          </div>
-        ) : (
-          emCampo && <Pill tone="signal">{linha.papel === "titular" ? "Titular" : "Entrou"}</Pill>
-        )}
-      </div>
-
-      {emCampo && mayRecord && (
-        <div className="border-t border-line/60 bg-surface px-5 py-3">
-          {/* O essencial, sempre à vista. */}
-          <div className="flex flex-wrap items-center gap-x-5 gap-y-2.5">
-            <NumField
-              label={golo === "golo" ? "Golos" : "Pontos"}
-              value={linha.tally}
-              max={99}
-              onCommit={(n) => onChange({ tally: n })}
-            />
-            <NumField label="Assist." value={linha.assists} max={99} onCommit={(n) => onChange({ assists: n })} />
-
-            {/*
-              Quem entrou do banco pode dizer quando, aqui e não escondido no
-              detalhe — é este número que determina os minutos dele. Pode ficar
-              vazio: obrigar a lembrar o minuto exacto de cada substituição era
-              o que deixava fichas inteiras por gravar.
-            */}
-            {linha.papel === "entrou" && (
-              <MinuteField
-                label="Entrou ao"
-                value={linha.onMinute}
-                max={duracao + 30}
-                hint={linha.onMinute == null ? "opcional" : undefined}
-                onCommit={(n) => onChange({ onMinute: n })}
-              />
-            )}
-
-            {/*
-              Os minutos são resultado, não pergunta.
-
-              Havia aqui um campo que o treinador escrevia e que discordava, mais
-              vezes do que não, da conta que sai da entrada e da saída — e era o
-              escrito à mão que ficava gravado. Ver `minutosDerivados`.
-            */}
-            <span className="flex items-center gap-2 text-meta text-ink-3">
-              Minutos
-              <span
-                className={cx(
-                  "inline-flex h-10 min-w-14 items-center justify-center rounded-[8px] bg-sunken px-2 text-body font-medium tabular",
-                  derivados === null ? "text-ink-4" : "text-ink",
-                )}
-                title={derivados === null ? "Sem minuto de entrada, os minutos ficam por contar" : "Calculado a partir da entrada e da saída"}
-              >
-                {derivados === null ? "—" : derivados}
-              </span>
-            </span>
-
-            <button
-              type="button"
-              onClick={() => setDetalhe((v) => !v)}
-              aria-expanded={detalhe}
-              className="ctl-ghost h-9 gap-1.5 text-meta text-ink-3"
-            >
-              {detalhe ? "Menos detalhes" : "Mais detalhes"}
-              <ChevronRight className={cx("size-3.5 transition-transform", detalhe && "rotate-90")} strokeWidth={2} />
-            </button>
-          </div>
-
-          {/*
-            O detalhe federado, atrás de um clique.
-
-            Ninguém é obrigado a preenchê-lo — a ficha fecha sem isto — mas quem
-            leva a acta a sério tem onde escrever os minutos exactos. Estava
-            fechado porque a maioria dos jogos de formação nunca os regista, e
-            oito campos vazios por atleta em vinte atletas era o que fazia esta
-            página parecer trabalho em vez de registo.
-          */}
-          {detalhe && (
-            <div className="mt-3 space-y-3 border-t border-line/60 pt-3">
-              {/*
-                Três assuntos, três linhas, cada uma com o seu nome.
-
-                Estavam todos misturados numa só tira que ia dando a volta: "Saiu
-                ao", "Amarelos", "Amarelo ao", "Vermelho", "1.º golo ao" — a
-                mesma fila de caixas iguais, sem nada a dizer onde acabava um
-                assunto e começava o outro, e com o que o treinador mais quer
-                escrever no fim de tudo.
-
-                O que se marcou vem primeiro porque é a pergunta que traz aqui a
-                maioria das pessoas. A substituição vem a seguir porque explica os
-                minutos. A disciplina vem por último porque é a excepção.
-              */}
-              {(linha.tally > 0 || linha.assists > 0) && (
-                <Detalhe titulo={`${golo === "golo" ? "Golos" : "Pontos"} e assistências`}>
-                  {/* Um campo por golo e por assistência declarados — nem mais um.
-                      Pedir o minuto de um golo que ninguém marcou não faz pergunta
-                      nenhuma, e por isso a linha só existe depois de haver contagem. */}
-                  {Array.from({ length: Math.min(linha.tally, 12) }, (_, i) => (
-                    <MinuteField
-                      key={`g${i}`}
-                      label={linha.tally === 1 ? `${golo === "golo" ? "Golo" : "Ponto"} ao` : `${i + 1}.º ${golo} ao`}
-                      value={linha.tallyAt[i] ?? null}
-                      max={duracao + 30}
-                      onCommit={(n) => onChange({ tallyAt: substituirMinuto(linha.tallyAt, i, n, linha.tally) })}
-                    />
-                  ))}
-                  {Array.from({ length: Math.min(linha.assists, 12) }, (_, i) => (
-                    <MinuteField
-                      key={`a${i}`}
-                      label={linha.assists === 1 ? "Assistência ao" : `${i + 1}.ª assist. ao`}
-                      value={linha.assistsAt[i] ?? null}
-                      max={duracao + 30}
-                      onCommit={(n) => onChange({ assistsAt: substituirMinuto(linha.assistsAt, i, n, linha.assists) })}
-                    />
-                  ))}
-                </Detalhe>
-              )}
-
-              {/* "Entrou ao" não está aqui: subiu para a linha de cima, porque é
-                  dele que saem os minutos jogados de um suplente. */}
-              <Detalhe titulo="Em campo">
-                <MinuteField
-                  label="Saiu ao"
-                  value={linha.offMinute}
-                  max={duracao + 30}
-                  hint={linha.offMinute == null ? "jogou até ao fim" : undefined}
-                  onCommit={(n) => onChange({ offMinute: n })}
-                />
-              </Detalhe>
-
-              <Detalhe titulo="Disciplina">
-                <label className="flex items-center gap-2">
-                  <span className="text-meta whitespace-nowrap text-ink-3">Amarelos</span>
-                  <Segmented
-                    size="md"
-                    label="Cartões amarelos"
-                    value={String(linha.yellowCards)}
-                    // Reduzir o número corta os minutos a mais: dois minutos com
-                    // um amarelo declarado são duas afirmações a discordar.
-                    onChange={(v) =>
-                      onChange({ yellowCards: Number(v), yellowAt: linha.yellowAt.slice(0, Number(v)) })
-                    }
-                    options={[
-                      { value: "0", label: "0" },
-                      { value: "1", label: "1" },
-                      { value: "2", label: "2" },
-                    ]}
-                  />
-                </label>
-
-                {/* Um campo de minuto por amarelo declarado, e nem mais um. */}
-                {Array.from({ length: linha.yellowCards }, (_, i) => (
-                  <MinuteField
-                    key={i}
-                    label={linha.yellowCards === 1 ? "Amarelo ao" : `${i + 1}.º amarelo ao`}
-                    value={linha.yellowAt[i] ?? null}
-                    max={duracao + 30}
-                    onCommit={(n) => {
-                      const proximo = [...linha.yellowAt];
-                      // Apagar o minuto do primeiro amarelo não pode deixar um
-                      // buraco que empurre o segundo para o lugar do primeiro.
-                      if (n == null) proximo.splice(i, 1);
-                      else proximo[i] = n;
-                      onChange({ yellowAt: proximo.filter((m) => m != null).slice(0, linha.yellowCards) });
-                    }}
-                  />
-                ))}
-
-                <SmallToggle
-                  on={linha.redCard}
-                  tone="risk"
-                  onClick={() => onChange({ redCard: !linha.redCard, ...(linha.redCard ? { redAt: null } : {}) })}
-                >
-                  Vermelho
-                </SmallToggle>
-                {linha.redCard && (
-                  <MinuteField
-                    label="Expulso ao"
-                    value={linha.redAt}
-                    max={duracao + 30}
-                    onCommit={(n) => onChange({ redAt: n })}
-                  />
-                )}
-              </Detalhe>
-            </div>
-          )}
-
-          {/*
-            O aviso de contradição, na linha de quem a tem.
-            Não trava a escrita — o treinador pode estar a meio de corrigir os
-            dois números — mas trava o Gravar lá em baixo, e diz aqui porquê.
-          */}
-          {problemas.length > 0 && (
-            <ul className="mt-3 space-y-1 rounded-[var(--radius-control)] bg-risk-soft px-3 py-2">
-              {problemas.map((p) => (
-                <li key={p} className="text-meta leading-relaxed text-risk">
-                  {p}
-                </li>
-              ))}
-            </ul>
-          )}
-        </div>
-      )}
-    </li>
-  );
-}
-
-/** Põe (ou tira) um minuto numa lista, sem deixar buracos nem passar do declarado. */
-function substituirMinuto(lista: number[], i: number, n: number | null, tecto: number): number[] {
-  const proximo = [...lista];
-  if (n == null) proximo.splice(i, 1);
-  else proximo[i] = n;
-  return proximo.filter((m) => m != null).slice(0, tecto);
-}
-
-/**
- * Um minuto do jogo, que pode não estar registado.
- *
- * Gémeo de `NumField`, com uma diferença que é a razão de existir: **vazio é um
- * valor**. Um `NumField` a zero afirma "ao minuto zero"; aqui, vazio afirma
- * "ninguém registou", que é o estado da esmagadora maioria das fichas. Apagar o
- * campo volta a esse estado em vez de escrever um zero.
- */
-/**
- * Um assunto do painel de detalhe, com o seu nome à esquerda.
- *
- * O rótulo fica na coluna e não por cima porque, em vinte atletas, vinte
- * cabeçalhos empilhados davam uma página de títulos. À largura de telemóvel a
- * coluna desfaz-se e o nome passa a linha própria — que é o único sítio onde
- * ainda cabe.
- */
-function Detalhe({ titulo, children }: { titulo: string; children: ReactNode }) {
-  return (
-    <div className="flex flex-col gap-1.5 sm:flex-row sm:items-baseline sm:gap-4">
-      <span className="text-meta font-medium text-ink-3 sm:w-40 sm:shrink-0 sm:text-right">{titulo}</span>
-      <div className="flex flex-wrap items-center gap-x-4 gap-y-2.5">{children}</div>
-    </div>
-  );
-}
-
-function MinuteField({
-  label,
-  value,
-  max,
-  hint,
-  onCommit,
-}: {
-  label: string;
-  value: number | null;
-  max: number;
-  hint?: string;
-  onCommit: (n: number | null) => void;
-}) {
-  const [texto, setTexto] = useState(value == null ? "" : String(value));
-
-  useEffect(() => {
-    setTexto(value == null ? "" : String(value));
-  }, [value]);
-
-  function commit() {
-    if (texto.trim() === "") {
-      setTexto("");
-      if (value !== null) onCommit(null);
-      return;
-    }
-    const n = Math.max(0, Math.min(max, Number(texto) || 0));
-    setTexto(String(n));
-    if (n !== value) onCommit(n);
-  }
-
-  return (
-    <label className="flex items-center gap-2">
-      <span className="text-meta whitespace-nowrap text-ink-3">{label}</span>
-      <span className="relative inline-flex items-center">
-        <input
-          type="text"
-          inputMode="numeric"
-          pattern="[0-9]*"
-          maxLength={3}
-          value={texto}
-          placeholder="—"
-          onChange={(e) => setTexto(e.target.value.replace(/\D/g, ""))}
-          onBlur={commit}
-          onKeyDown={(e) => {
-            if (e.key === "Enter") (e.target as HTMLInputElement).blur();
-          }}
-          className="h-10 w-16 rounded-[8px] border border-line bg-surface pr-4 text-center text-body font-medium tabular text-ink outline-none transition-colors placeholder:font-normal placeholder:text-ink-4 focus:border-line-strong"
-        />
-        <span aria-hidden className="pointer-events-none absolute right-2 text-meta text-ink-4">
-          ′
-        </span>
-      </span>
-      {hint && <span className="text-meta text-ink-4">{hint}</span>}
-    </label>
-  );
-}
-
-/**
- * Um número que se escreve.
- *
- * Guarda o texto enquanto se escreve — apagar tudo para escrever outro número
- * não pode fazer o campo saltar para 0 — e só compromete ao sair do campo, já
- * validado e preso ao limite.
- */
-function NumField({
-  label,
-  value,
-  onCommit,
-  max,
-  wide,
-}: {
-  label: string;
-  value: number;
-  onCommit: (n: number) => void;
-  max: number;
-  wide?: boolean;
-}) {
-  const [texto, setTexto] = useState(String(value));
-
-  /*
-   * Este número comanda o que existe no ecrã: escrever 1 golo faz nascer o
-   * campo do minuto desse golo. Por isso conta-se a cada tecla e não ao sair
-   * do campo — esperar pelo `blur` fazia o campo aparecer só depois de a pessoa
-   * carregar noutro sítio qualquer, e quem escrevia "1" ficava a olhar para uma
-   * linha onde não acontecia nada.
-   *
-   * O `MinuteField` continua a contar ao sair, e de propósito: um minuto a meio
-   * de ser escrito ("6" a caminho de "60") acendia avisos de contradição a cada
-   * tecla, e o que ele comanda é uma verificação, não a existência de campos.
-   */
-  useEffect(() => {
-    setTexto((t) => (Number(t === "" ? "0" : t) === value ? t : String(value)));
-  }, [value]);
-
-  function escrever(bruto: string) {
-    setTexto(bruto);
-    // Campo esvaziado conta como zero, mas deixa-se ficar vazio para se poder
-    // escrever por cima sem apagar um "0" à frente.
-    const n = bruto === "" ? 0 : Math.max(0, Math.min(max, Number(bruto) || 0));
-    if (n !== value) onCommit(n);
-  }
-
-  return (
-    <label className="flex items-center gap-2">
-      <span className="text-meta text-ink-3">{label}</span>
-      <input
-        type="text"
-        inputMode="numeric"
-        pattern="[0-9]*"
-        maxLength={3}
-        value={texto}
-        onChange={(e) => escrever(e.target.value.replace(/\D/g, ""))}
-        onBlur={() => setTexto(String(value))}
-        onKeyDown={(e) => {
-          if (e.key === "Enter") (e.target as HTMLInputElement).blur();
-        }}
-        className={cx(
-          "h-10 rounded-[8px] border border-line bg-surface text-center text-body font-medium tabular text-ink outline-none transition-colors focus:border-line-strong",
-          wide ? "w-16" : "w-12",
-        )}
-      />
-    </label>
-  );
-}
-
-function SmallToggle({
-  on,
-  tone = "signal",
-  onClick,
-  children,
-}: {
-  on: boolean;
-  tone?: "signal" | "risk";
-  onClick: () => void;
-  children: React.ReactNode;
-}) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      aria-pressed={on}
-      className={cx(
-        "min-h-10 rounded-[var(--radius-control)] border px-3 text-meta font-medium transition-colors",
-        on
-          ? tone === "risk"
-            ? "border-transparent bg-risk text-white"
-            : "border-transparent bg-ink text-surface"
-          : "border-line text-ink-3 hover:border-line-strong hover:text-ink",
-      )}
-    >
-      {children}
-    </button>
+    <LinhaDaFicha
+      nome={atleta.name}
+      numero={a ? (numeroNaEquipa(a, teamId) ?? a.squadNumber ?? null) : null}
+      foto={a?.photoUrl}
+      apoio={[atleta.position ?? "sem posição", atleta.isGuest ? `de ${atleta.guestFromTeam}` : null, atleta.callUpStatus === "DECLINED" ? "tinha dito que não podia" : null].filter(Boolean).join(" · ")}
+      linha={linha}
+      golo={golo}
+      duracao={duracao}
+      minutos={minutosDerivados(linha, duracao, tempo)}
+      problemas={problemas}
+      podeEditar={mayRecord}
+      semCartoes={semCartoes}
+      rotativo={rotativo}
+      substituicao={substituicao}
+      onPapel={escolher}
+      onChange={onChange}
+    />
   );
 }
 
@@ -1997,87 +1947,5 @@ function StaffPanel({
         )}
       />
     </Panel>
-  );
-}
-
-/* ========================================================================== */
-/* Os factos                                                                  */
-/* ========================================================================== */
-
-function FactsPanel({ match, passou }: { match: Match; passou: boolean }) {
-  const inicio = new Date(match.startsAt);
-
-  return (
-    <Panel>
-      <PanelHead title="Detalhes" />
-      <dl className="space-y-3 px-5 py-4 text-meta">
-        <Facto icon={<Clock className="size-3.5" strokeWidth={1.75} />} label="Quando">
-          {inicio.toLocaleDateString("pt-PT", { day: "2-digit", month: "2-digit", year: "numeric" })} às{" "}
-          {inicio.toLocaleTimeString("pt-PT", { hour: "2-digit", minute: "2-digit" })}
-        </Facto>
-        <Facto icon={<MapPin className="size-3.5" strokeWidth={1.75} />} label="Onde">
-          {match.venue} · {match.isHome ? "em casa" : "fora"}
-        </Facto>
-        <Facto icon={<Trophy className="size-3.5" strokeWidth={1.75} />} label="Escalão">
-          <Link to={`/equipas/${match.teamId}`} className="text-ink underline-offset-2 hover:underline">
-            {match.teamName}
-          </Link>
-        </Facto>
-        {match.coachName && (
-          <Facto icon={<Whistle className="size-3.5" strokeWidth={1.75} />} label="Treinador">
-            {match.coachName}
-          </Facto>
-        )}
-      </dl>
-
-      {/*
-        De onde veio o jogo. Quem abre a página tem de perceber, sem perguntar,
-        se o resultado foi escrito por um colega ou veio de fora — e isso passa a
-        acontecer quando a integração (ZeroZero, FPF) existir.
-      */}
-      <div className="border-t border-line px-5 py-3 text-meta leading-relaxed text-ink-3">
-        {match.source ? (
-          <>
-            Importado de <span className="text-ink-2">{match.source.provider}</span>
-            {match.source.url && (
-              <>
-                {" · "}
-                <a
-                  href={match.source.url}
-                  target="_blank"
-                  rel="noreferrer"
-                  className="inline-flex items-center gap-1 text-ink underline-offset-2 hover:underline"
-                >
-                  ver lá
-                  <ExternalLink className="size-3" strokeWidth={1.75} />
-                </a>
-              </>
-            )}
-          </>
-        ) : match.statsEnteredAt ? (
-          <>Ficha preenchida à mão em {new Date(match.statsEnteredAt).toLocaleDateString("pt-PT")}.</>
-        ) : (
-          /*
-            Mesma armadilha do painel do staff: "a ficha ainda não foi
-            preenchida" é uma queixa quando o jogo já foi, e um disparate quando
-            ele é para sábado — não há ficha por preencher de um jogo que ainda
-            não aconteceu.
-          */
-          <>Marcado à mão.{passou ? " A ficha ainda não foi preenchida." : ""}</>
-        )}
-      </div>
-    </Panel>
-  );
-}
-
-function Facto({ icon, label, children }: { icon: React.ReactNode; label: string; children: React.ReactNode }) {
-  return (
-    <div className="flex items-start gap-2.5">
-      <span className="mt-0.5 shrink-0 text-ink-4">{icon}</span>
-      <div className="min-w-0">
-        <dt className="text-ink-4">{label}</dt>
-        <dd className="text-ink-2">{children}</dd>
-      </div>
-    </div>
   );
 }

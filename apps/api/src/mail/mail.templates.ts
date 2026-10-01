@@ -879,6 +879,154 @@ export function releaseNotesEmail(input: {
   return { subject: "Academias · " + input.title, html, text };
 }
 
+/**
+ * Um comunicado livre da plataforma a um clube: assunto e texto.
+ *
+ * Irmão de `releaseNotesEmail`, com o mesmo cabeçalho e o mesmo rodapé, para os
+ * dois se reconhecerem como vindos da mesma casa. O que muda é o miolo: em vez
+ * de uma lista numerada de novidades, o texto como foi escrito. Uma linha em
+ * branco separa parágrafos; uma quebra simples fica uma quebra.
+ *
+ * O botão para a consola é opcional de propósito: um aviso de manutenção ou uma
+ * mensagem de boas festas não mandam ninguém a lado nenhum.
+ */
+export function comunicadoEmail(input: {
+  name: string;
+  clubName: string;
+  /** O assunto. */
+  title: string;
+  /** O texto em bruto. Ver `paragrafosDoComunicado`. */
+  notes: string;
+  link: string;
+  logoUrl?: string;
+}): { subject: string; html: string; text: string } {
+  const paragrafos = paragrafosDoComunicado(input.notes);
+  const primeiro = input.name.trim().split(/\s+/)[0] || input.name.trim();
+  const logo = input.logoUrl ?? ACADEMIAS_LOGO_URL;
+  const resumo = (paragrafos[0] ?? "").replace(/\s+/g, " ").slice(0, 110);
+
+  const corpo = paragrafos
+    .map(
+      (p) =>
+        `<p style="margin:0 0 14px;font-size:15px;line-height:1.65;color:#2d2b28;">${esc(p).replace(/\n/g, "<br />")}</p>`,
+    )
+    .join("\n      ");
+
+  const html = `<!doctype html>
+<html lang="pt">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<meta name="color-scheme" content="light" />
+<title>${esc(input.title)}</title>
+</head>
+<body style="margin:0;padding:0;background:#f1efeb;">
+<div style="display:none;max-height:0;overflow:hidden;opacity:0;">${esc(resumo)}</div>
+
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background:#f1efeb;">
+<tr><td align="center" style="padding:36px 16px 28px;">
+
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0"
+       style="max-width:580px;background:#ffffff;border-radius:14px;overflow:hidden;
+              border:1px solid #e7e3dd;">
+
+  <tr>
+    <td style="background:${VERDE_ESCURO};padding:22px 32px;">
+      <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0"><tr>
+        <td valign="middle">
+          <table role="presentation" cellpadding="0" cellspacing="0" border="0"><tr>
+            <td valign="middle" style="width:44px;height:44px;">
+              <img src="${esc(logo)}" alt="A" width="44" height="44"
+                   style="display:block;width:44px;height:44px;border:0;border-radius:50%;background:${VERDE};
+                          font-family:Helvetica,Arial,sans-serif;font-size:20px;font-weight:700;color:#ffffff;
+                          text-align:center;line-height:44px;" />
+            </td>
+            <td valign="middle" style="padding-left:12px;font-family:Helvetica,Arial,sans-serif;">
+              <p style="margin:0;font-size:18px;font-weight:700;color:#ffffff;letter-spacing:0.01em;">Academias</p>
+              <p style="margin:2px 0 0;font-size:12px;color:#a9c9bf;">Plataforma de gestão de clubes</p>
+            </td>
+          </tr></table>
+        </td>
+        <td align="right" valign="middle" style="font-family:Helvetica,Arial,sans-serif;">
+          <span style="display:inline-block;padding:5px 11px;border-radius:999px;background:#1d5c50;
+                       font-size:11.5px;font-weight:700;color:#d8ece5;letter-spacing:0.04em;white-space:nowrap;">COMUNICADO</span>
+        </td>
+      </tr></table>
+    </td>
+  </tr>
+
+  <tr>
+    <td style="padding:32px 32px 6px;font-family:Helvetica,Arial,sans-serif;">
+      <h1 style="margin:0 0 18px;font-size:25px;line-height:1.25;font-weight:700;color:#1c1a18;">${esc(input.title)}</h1>
+      <p style="margin:0 0 14px;font-size:15px;line-height:1.65;color:#4a4743;">Olá ${esc(primeiro)},</p>
+      ${corpo}
+    </td>
+  </tr>
+
+  <tr>
+    <td style="padding:12px 32px 30px;font-family:Helvetica,Arial,sans-serif;">
+      <table role="presentation" cellpadding="0" cellspacing="0" border="0"><tr>
+        <td style="background:${VERDE};border-radius:8px;">
+          <a href="${esc(input.link)}"
+             style="display:inline-block;padding:14px 28px;font-family:Helvetica,Arial,sans-serif;
+                    font-size:15px;font-weight:700;color:#ffffff;text-decoration:none;">Abrir a consola do clube</a>
+        </td>
+      </tr></table>
+    </td>
+  </tr>
+
+  <tr>
+    <td style="padding:18px 32px 22px;background:#faf9f7;border-top:1px solid #efece8;font-family:Helvetica,Arial,sans-serif;">
+      <p style="margin:0;font-size:12.5px;line-height:1.55;color:#8a8681;">
+        Recebes este email porque estás registado como responsável do ${esc(input.clubName)} na plataforma Academias.
+        Para falar connosco, basta responder.
+      </p>
+    </td>
+  </tr>
+
+</table>
+
+<p style="margin:20px 0 0;font-family:Helvetica,Arial,sans-serif;font-size:11.5px;color:#a8a49f;">
+  Academias · <a href="https://academias.pt" style="color:#a8a49f;text-decoration:underline;">academias.pt</a>
+</p>
+
+</td></tr>
+</table>
+</body>
+</html>`;
+
+  const text = [
+    "ACADEMIAS · COMUNICADO",
+    "",
+    input.title,
+    "",
+    "Olá " + primeiro + ",",
+    "",
+    ...paragrafos.flatMap((p) => [p, ""]),
+    "Abrir a consola do clube:",
+    input.link,
+    "",
+    "--",
+    "Recebes este email porque estás registado como responsável do " + input.clubName + " na plataforma Academias.",
+    "Para falar connosco, basta responder.",
+  ].join("\n");
+
+  return { subject: "Academias · " + input.title, html, text };
+}
+
+/**
+ * O texto de um comunicado, em parágrafos: uma ou mais linhas em branco separam
+ * dois. As quebras simples dentro de um parágrafo ficam (uma morada, uma lista
+ * escrita à mão). Gémeo de `paragrafosDoComunicado` no painel.
+ */
+export function paragrafosDoComunicado(notes: string): string[] {
+  return notes
+    .replace(/\r\n/g, "\n")
+    .split(/\n\s*\n/)
+    .map((p) => p.split("\n").map((l) => l.trim()).join("\n").trim())
+    .filter((p) => p.length > 0);
+}
+
 export function memberSignupReceivedEmail(input: {
   brand: MailBrand;
   name: string;

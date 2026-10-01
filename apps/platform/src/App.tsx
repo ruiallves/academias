@@ -30,7 +30,9 @@ export default function App({ me }: { me: Me }) {
         <Route path="contas" element={<Contas />} />
         <Route path="registo" element={<Audit />} />
         <Route path="administradores" element={<Admins me={me} />} />
-        <Route path="novidades" element={<Novidades />} />
+        <Route path="comunicados" element={<Novidades />} />
+        {/* O endereço antigo, para os favoritos e os links já partilhados. */}
+        <Route path="novidades" element={<Navigate to="/comunicados" replace />} />
         <Route path="legal" element={<Legal me={me} />} />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Route>

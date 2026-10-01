@@ -80,6 +80,12 @@ export type Academy = {
   /** Famílias e sócios podem pagar pela app? Desligado, só se paga ao clube. */
   paymentsEnabled: boolean;
   /**
+   * O clube tem o seu canal euPago configurado (as chaves ficam no servidor).
+   * Sem ele os pagamentos pela app não se ligam: o dinheiro não teria a conta
+   * do clube para onde ir.
+   */
+  eupagoConfigured: boolean;
+  /**
    * A comissão da euPago é de quem paga. Ligado, **os valores da plataforma são
    * o que o clube recebe**, e a família paga esse valor mais a taxa do método.
    */

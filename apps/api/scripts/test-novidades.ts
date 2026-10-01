@@ -22,7 +22,7 @@
  *
  * Uso: npm run test:novidades
  */
-import { ACADEMIAS_LOGO_URL, linhasDeNovidades, partirNovidade, releaseNotesEmail } from "../src/mail/mail.templates";
+import { ACADEMIAS_LOGO_URL, comunicadoEmail, linhasDeNovidades, paragrafosDoComunicado, partirNovidade, releaseNotesEmail } from "../src/mail/mail.templates";
 import { escolherResponsavel, type VinculoDeStaff } from "../src/subscription/responsavel";
 import { ROLE_PERMISSIONS } from "../src/common/permissions";
 import { plainToInstance } from "class-transformer";
@@ -32,6 +32,7 @@ import {
   corpoDaPreview,
   escolhidosPorOmissao,
   linhasDeNovidades as linhasNoPainel,
+  paragrafosDoComunicado as paragrafosNoPainel,
   type Destinatario,
 } from "../../platform/src/lib/releases";
 
@@ -329,6 +330,58 @@ check("não leva o releaseId", !("releaseId" in corpoDaPreview(doEcra)));
 check("sem clube, não leva academyId vazio", !("academyId" in corpoDaPreview(doEcra, undefined)));
 /* Um rascunho ainda por escrever também se pré-visualiza. */
 check("um texto ainda vazio passa", errosDe(corpoDaPreview({ version: "", title: "", notes: "" })).length === 0);
+
+/* -------------------------------------------------------------------------- */
+console.log("");
+console.log("=== 8. A mensagem: um comunicado livre ===");
+
+/*
+ * As Novidades passaram a Comunicados: além de uma versão, manda-se aos clubes
+ * uma mensagem com assunto e texto. O que se guarda aqui é o mesmo de sempre:
+ * a pré-visualização do painel e o email do servidor partem o texto da mesma
+ * maneira, e o corpo que o painel manda é o que a API aceita.
+ */
+const TEXTOS: { nome: string; entrada: string; esperado: string[] }[] = [
+  { nome: "um parágrafo", entrada: "Olá a todos.", esperado: ["Olá a todos."] },
+  { nome: "linha em branco separa", entrada: "Um.\n\nDois.", esperado: ["Um.", "Dois."] },
+  { nome: "várias linhas em branco contam como uma", entrada: "Um.\n\n\n\nDois.", esperado: ["Um.", "Dois."] },
+  { nome: "a quebra simples fica dentro do parágrafo", entrada: "Rua A\nPorto\n\nAté já.", esperado: ["Rua A\nPorto", "Até já."] },
+  { nome: "quebras do Windows", entrada: "Um.\r\n\r\nDois.", esperado: ["Um.", "Dois."] },
+  { nome: "espaços à volta saem", entrada: "  Um.  \n   \n  Dois.  ", esperado: ["Um.", "Dois."] },
+  { nome: "só espaços não é texto", entrada: "  \n \n", esperado: [] },
+];
+for (const c of TEXTOS) {
+  const servidor = paragrafosDoComunicado(c.entrada);
+  const painel = paragrafosNoPainel(c.entrada);
+  check(`${c.nome}: o servidor parte como esperado`, JSON.stringify(servidor) === JSON.stringify(c.esperado), JSON.stringify(servidor));
+  check(`${c.nome}: o painel concorda com o servidor`, JSON.stringify(painel) === JSON.stringify(servidor), JSON.stringify(painel));
+}
+
+const carta = comunicadoEmail({
+  name: "Ana Sousa",
+  clubName: "Clube <de> Teste",
+  title: "Manutenção no sábado",
+  notes: "A plataforma pára entre as 7h e as 9h.\nNão é preciso fazer nada.\n\nObrigado & até já.",
+  link: "https://exemplo.academias.pt/consola/",
+});
+check("o assunto leva o título", carta.subject === "Academias · Manutenção no sábado", carta.subject);
+check("trata quem recebe pelo primeiro nome", carta.html.includes("Olá Ana,") && carta.text.includes("Olá Ana,"));
+check("dois parágrafos, e a quebra simples vira <br>", (carta.html.match(/line-height:1\.65;color:#2d2b28/g) ?? []).length === 2 && carta.html.includes("7h e as 9h.<br />Não é preciso"));
+check("o texto é escapado", carta.html.includes("Obrigado &amp; até já.") && carta.html.includes("Clube &lt;de&gt; Teste") && !carta.html.includes("<de>"));
+check("diz COMUNICADO, e não fala de versões", carta.html.includes("COMUNICADO") && !/Vers[aã]o/.test(carta.html) && !/novidade/i.test(carta.html));
+check("leva o caminho para a consola", carta.html.includes("https://exemplo.academias.pt/consola/") && carta.text.includes("https://exemplo.academias.pt/consola/"));
+check("o texto simples tem os dois parágrafos", carta.text.includes("Não é preciso fazer nada.\n\nObrigado & até já."));
+
+/* Uma mensagem não vem com ninguém escolhido; as novidades continuam com os que pagam. */
+const pagante = clube({ id: "paga", subscriptionStatus: "ACTIVE" });
+check("as novidades escolhem quem paga", escolhidosPorOmissao([pagante]).has("paga") && escolhidosPorOmissao([pagante], "NOVIDADES").has("paga"));
+check("uma mensagem não escolhe ninguém", escolhidosPorOmissao([pagante], "MENSAGEM").size === 0);
+
+const mensagemDoEcra = { kind: "MENSAGEM" as const, version: "", title: "Manutenção", notes: "Texto.", releaseId: "rel_9" };
+check("o corpo de uma mensagem passa na API", errosDe(corpoDaPreview(mensagemDoEcra)).length === 0, errosDe(corpoDaPreview(mensagemDoEcra)).join(" | "));
+check("e leva o tipo", corpoDaPreview(mensagemDoEcra).kind === "MENSAGEM");
+check("um tipo inventado é recusado", errosDe({ ...corpoDaPreview(mensagemDoEcra), kind: "OUTRA" }).some((e) => e.startsWith("kind")));
+check("as novidades continuam a não mandar o tipo quando o ecrã não o tem", !("kind" in corpoDaPreview(doEcra)));
 
 console.log("");
 console.log(`${bad === 0 ? "TUDO OK" : "HÁ FALHAS"} — ${ok} ok, ${bad} falhas`);

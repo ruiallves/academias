@@ -91,6 +91,38 @@ export type OpponentReport = {
   authorName: string | null;
 };
 
+/** Uma posição do plano de jogo: onde está no campo e quem lá joga. */
+export type PlanSlot = { id: string; label: string; x: number; y: number; athleteId: string | null };
+
+/**
+ * O plano do jogo: o onze no campo, o banco e os capitães.
+ *
+ * Escreve-se antes do jogo, e é o que a ficha de jogo exporta. Os atletas vão
+ * por id; quem está no campo não está no banco.
+ */
+export type MatchPlan = {
+  /** A variante do campo (`f11`, `f9`, `f7`, `f5`, `futsal`, `basket`). */
+  pitch: string;
+  system: string | null;
+  /** O modelo de jogo da Área técnica de onde o desenho veio. */
+  gameModelId: string | null;
+  slots: PlanSlot[];
+  bench: string[];
+  captainId: string | null;
+  viceCaptainId: string | null;
+  notes: string | null;
+  /** Os objetivos do jogo. `met` é nulo até à análise. */
+  objectives: PlanObjective[];
+  updatedAt: string;
+  authorName: string | null;
+};
+
+/** Um objetivo do jogo: define-se antes, avalia-se depois. */
+export type PlanObjective = { id: string; text: string; met: boolean | null };
+
+/** O que um atleta jogou nos últimos jogos da equipa, para a sugestão do onze. */
+export type Forma = { matches: number; athletes: { athleteId: string; played: number; starts: number; minutes: number }[] };
+
 /** Um jogo contra o mesmo adversário, com o que se escreveu dele nessa altura. */
 export type OpponentHistoryRow = {
   matchId: string;
@@ -169,6 +201,8 @@ export type MatchDetail = {
   teamStaff: { name: string; role: string }[];
   /** O relatório do jogo. Nulo enquanto ninguém o escrever. */
   report: MatchReport | null;
+  /** O plano do jogo. Nulo enquanto ninguém montar o onze. */
+  plan: MatchPlan | null;
   /** O que se viu do adversário neste jogo. */
   opponentReport: OpponentReport | null;
   /** Os outros jogos contra este adversário, do mais recente para trás. */
@@ -188,6 +222,15 @@ export type MatchListRow = {
   ourScore: number | null;
   theirScore: number | null;
   submitted: boolean;
+  competition: { id: string; label: string } | null;
+  /** O onze do plano: quantas posições há e quantas estão preenchidas. */
+  prep: { slots: number; starters: number; bench: number };
+  /** Já tem relatório do jogo. */
+  analysed: boolean;
+  /** Já tem notas do adversário neste jogo. */
+  opponentKnown: boolean;
+  /** As participações registadas (vazio se a ficha não foi preenchida, ou não é meu). */
+  appearances: { athleteId: string }[];
   /**
    * A função com que **eu** estou escalado neste jogo, se estiver.
    *
@@ -217,6 +260,9 @@ export const listMatches = (from?: Date, to?: Date) => {
 };
 
 export const getMatch = (id: string) => apiGet<MatchDetail>(`/api/matches/${id}`);
+
+/** A forma recente dos atletas da equipa deste jogo. */
+export const getForma = (id: string) => apiGet<Forma>(`/api/matches/${id}/forma`);
 
 export const staffPool = () =>
   apiGet<{ membershipId: string; name: string; role: string | null }[]>("/api/matches/equipa-tecnica");
@@ -283,6 +329,10 @@ export const saveMatchReport = (
   id: string,
   body: Omit<MatchReport, "updatedAt" | "authorName" | "videos"> & { videos: { url: string; label?: string | null }[] },
 ) => apiPut<MatchReport>(`/api/matches/${id}/relatorio`, body);
+
+/** O plano do jogo, inteiro de cada vez, como os relatórios. */
+export const saveMatchPlan = (id: string, body: Omit<MatchPlan, "updatedAt" | "authorName">) =>
+  apiPut<MatchPlan>(`/api/matches/${id}/plano`, body);
 
 export const saveOpponentReport = (id: string, body: Omit<OpponentReport, "updatedAt" | "authorName">) =>
   apiPut<OpponentReport>(`/api/matches/${id}/adversario`, body);

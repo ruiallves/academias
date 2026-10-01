@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Eye, Megaphone, Monitor, Pencil, Send, Smartphone, Trash2, TriangleAlert } from "lucide-react";
+import { Eye, Mail, Megaphone, Monitor, Pencil, Send, Smartphone, Trash2, TriangleAlert } from "lucide-react";
 import { PageHeader } from "@/components/Shell";
 import { Empty, Panel, PanelHead, Pill, cx } from "@/components/primitives";
 import { Failed, Skeleton } from "./Overview";
@@ -12,16 +12,25 @@ import {
   escolhidosPorOmissao,
   linhasDeNovidades,
   corpoDaPreview,
+  paragrafosDoComunicado,
   previewRelease,
   sendRelease,
+  tipoDe,
   updateRelease,
   type Destinatario,
   type EmailPreview,
   type Release,
+  type TipoDeComunicado,
 } from "@/lib/releases";
 
 /**
- * As novidades da plataforma.
+ * Os comunicados da plataforma aos clubes.
+ *
+ * Começou por ser só "Novidades" (o que mudou em cada versão). Passou a
+ * Comunicados quando o Rui pediu para escrever aos clubes sobre qualquer
+ * assunto: além das novidades há a **mensagem**, um email livre com assunto e
+ * texto, mandado aos clubes que se escolherem. O envio, a pré-visualização e o
+ * registo de quem recebeu são os mesmos para os dois.
  *
  * ## O que esta página resolve
  *
@@ -41,11 +50,12 @@ import {
  */
 
 /** O que a pré-visualização mostra: o texto (gravado ou não) e, opcionalmente, a versão. */
-type AVer = { version: string; title: string; notes: string; releaseId?: string };
+type AVer = { kind: TipoDeComunicado; version: string; title: string; notes: string; releaseId?: string };
 
 export default function Novidades() {
   const releases = useApi<Release[]>("/releases");
-  const [aEditar, setAEditar] = useState<Release | "nova" | null>(null);
+  /* Um comunicado a editar, ou um novo de um dos dois tipos. */
+  const [aEditar, setAEditar] = useState<Release | TipoDeComunicado | null>(null);
   const [aEnviar, setAEnviar] = useState<Release | null>(null);
   const [aVer, setAVer] = useState<AVer | null>(null);
 
@@ -56,18 +66,22 @@ export default function Novidades() {
 
   return (
     <>
-      <PageHeader title="Novidades" subtitle="O que mudou, contado aos clubes">
-        <button type="button" className="ctl-primary" onClick={() => setAEditar("nova")}>
+      <PageHeader title="Comunicados" subtitle="Emails aos clubes: uma mensagem, ou as novidades de uma versão">
+        <button type="button" className="ctl-outline" onClick={() => setAEditar("NOVIDADES")}>
           <Megaphone className="size-3.5" strokeWidth={1.75} />
-          Nova versão
+          Novidades de uma versão
+        </button>
+        <button type="button" className="ctl-primary" onClick={() => setAEditar("MENSAGEM")}>
+          <Mail className="size-3.5" strokeWidth={1.75} />
+          Nova mensagem
         </button>
       </PageHeader>
 
       {lista.length === 0 ? (
         <Panel>
           <Empty
-            title="Ainda não há nenhuma versão"
-            detail="Escreve o que mudou, vê como fica o email, e manda aos clubes. Cada um recebe um email do responsável dele."
+            title="Ainda não há nenhum comunicado"
+            detail="Escreve uma mensagem, ou as novidades de uma versão, vê como fica o email e manda aos clubes que escolheres. Recebe o responsável de cada clube."
           />
         </Panel>
       ) : (
@@ -78,7 +92,7 @@ export default function Novidades() {
               release={r}
               onEditar={() => setAEditar(r)}
               onEnviar={() => setAEnviar(r)}
-              onVer={() => setAVer({ version: r.version, title: r.title, notes: r.notes, releaseId: r.id })}
+              onVer={() => setAVer({ kind: tipoDe(r), version: r.version, title: r.title, notes: r.notes, releaseId: r.id })}
               onMudou={releases.reload}
             />
           ))}
@@ -87,7 +101,8 @@ export default function Novidades() {
 
       {aEditar && (
         <EditorDialog
-          release={aEditar === "nova" ? null : aEditar}
+          release={typeof aEditar === "string" ? null : aEditar}
+          kind={typeof aEditar === "string" ? aEditar : tipoDe(aEditar)}
           onVer={setAVer}
           onClose={() => setAEditar(null)}
           onDone={() => {
@@ -100,7 +115,9 @@ export default function Novidades() {
       {aEnviar && (
         <EnvioDialog
           release={aEnviar}
-          onVer={() => setAVer({ version: aEnviar.version, title: aEnviar.title, notes: aEnviar.notes, releaseId: aEnviar.id })}
+          onVer={() =>
+            setAVer({ kind: tipoDe(aEnviar), version: aEnviar.version, title: aEnviar.title, notes: aEnviar.notes, releaseId: aEnviar.id })
+          }
           onClose={() => setAEnviar(null)}
           onDone={() => {
             setAEnviar(null);
@@ -132,7 +149,11 @@ function VersaoPanel({
 }) {
   const [busy, setBusy] = useState(false);
   const rascunho = !release.sentAt;
-  const itens = linhasDeNovidades(release.notes);
+  const mensagem = tipoDe(release) === "MENSAGEM";
+  const itens = mensagem ? [] : linhasDeNovidades(release.notes);
+  const paragrafos = mensagem ? paragrafosDoComunicado(release.notes) : [];
+  /* Como se lhe chama nas perguntas: "a mensagem", ou "a versão 1.4". */
+  const nome = mensagem ? `a mensagem “${release.title}”` : `a versão ${release.version}`;
 
   async function apagar() {
     /*
@@ -141,8 +162,8 @@ function VersaoPanel({
      * para ninguém apagar a julgar que está a "retirar" o anúncio.
      */
     const pergunta = rascunho
-      ? `Apagar o rascunho ${release.version}? Não há como voltar atrás.`
-      : `Apagar a versão ${release.version}? Já foi enviada a ${release.enviados} ${release.enviados === 1 ? "clube" : "clubes"}: ` +
+      ? `Apagar ${nome}, ainda em rascunho? Não há como voltar atrás.`
+      : `Apagar ${nome}? Já foi enviada a ${release.enviados} ${release.enviados === 1 ? "clube" : "clubes"}: ` +
         "o email continua na caixa deles, e aqui perde-se o registo de quem a recebeu.";
     if (!confirm(pergunta)) return;
     setBusy(true);
@@ -156,19 +177,30 @@ function VersaoPanel({
 
   return (
     <Panel>
-      <PanelHead title={release.title} hint={`Versão ${release.version}`}>
+      <PanelHead title={release.title} hint={mensagem ? "Mensagem" : `Novidades · versão ${release.version}`}>
         {rascunho ? <Pill tone="neutral">Rascunho</Pill> : <Pill tone="ok">Enviada {shortDate(release.sentAt)}</Pill>}
       </PanelHead>
 
       <div className="space-y-3 px-5 py-4">
-        <ul className="space-y-1.5">
-          {itens.map((linha, i) => (
-            <li key={i} className="flex gap-2 text-body leading-relaxed text-ink-2">
-              <span className="mt-2 size-1 shrink-0 rounded-full bg-ink-4" />
-              <span className="min-w-0">{linha}</span>
-            </li>
-          ))}
-        </ul>
+        {mensagem ? (
+          /* O texto como foi escrito, cortado: quem quer lê-lo todo abre "Ver o email". */
+          <div className="max-h-40 space-y-2 overflow-hidden text-body leading-relaxed text-ink-2 [mask-image:linear-gradient(#000_70%,transparent)]">
+            {paragrafos.map((p, i) => (
+              <p key={i} className="whitespace-pre-line">
+                {p}
+              </p>
+            ))}
+          </div>
+        ) : (
+          <ul className="space-y-1.5">
+            {itens.map((linha, i) => (
+              <li key={i} className="flex gap-2 text-body leading-relaxed text-ink-2">
+                <span className="mt-2 size-1 shrink-0 rounded-full bg-ink-4" />
+                <span className="min-w-0">{linha}</span>
+              </li>
+            ))}
+          </ul>
+        )}
 
         {/*
           Quem já recebeu, e quem não. As falhas ficam visíveis de propósito: um
@@ -235,23 +267,28 @@ function VersaoPanel({
 
 function EditorDialog({
   release,
+  kind,
   onVer,
   onClose,
   onDone,
 }: {
   release: Release | null;
+  /** O tipo não muda depois de criado: uma mensagem não vira novidades. */
+  kind: TipoDeComunicado;
   onVer: (t: AVer) => void;
   onClose: () => void;
   onDone: () => void;
 }) {
-  const [version, setVersion] = useState(release?.version ?? hoje());
+  const mensagem = kind === "MENSAGEM";
+  const [version, setVersion] = useState(release?.version ?? (mensagem ? "" : hoje()));
   const [title, setTitle] = useState(release?.title ?? "");
   const [notes, setNotes] = useState(release?.notes ?? "");
   const [busy, setBusy] = useState(false);
   const [erro, setErro] = useState<string | null>(null);
 
-  const itens = useMemo(() => linhasDeNovidades(notes), [notes]);
-  const valido = version.trim().length > 0 && title.trim().length >= 3 && itens.length > 0;
+  /* O que o email vai ter: parágrafos numa mensagem, novidades numa versão. */
+  const itens = useMemo(() => (mensagem ? paragrafosDoComunicado(notes) : linhasDeNovidades(notes)), [notes, mensagem]);
+  const valido = (mensagem || version.trim().length > 0) && title.trim().length >= 3 && itens.length > 0;
   const jaSaiu = Boolean(release?.sentAt);
 
   async function guardar() {
@@ -259,8 +296,8 @@ function EditorDialog({
     setBusy(true);
     setErro(null);
     try {
-      if (release) await updateRelease(release.id, { version, title, notes });
-      else await createRelease({ version, title, notes });
+      if (release) await updateRelease(release.id, mensagem ? { title, notes } : { version, title, notes });
+      else await createRelease({ kind, version: mensagem ? "" : version, title, notes });
       onDone();
     } catch (e) {
       setErro(e instanceof Error ? e.message : "Não foi possível guardar.");
@@ -270,7 +307,7 @@ function EditorDialog({
 
   return (
     <Dialogo
-      title={release ? "Editar a versão" : "Nova versão"}
+      title={mensagem ? (release ? "Editar a mensagem" : "Nova mensagem") : release ? "Editar as novidades" : "Novidades de uma versão"}
       onClose={onClose}
       footer={
         <>
@@ -283,7 +320,7 @@ function EditorDialog({
             type="button"
             className="ctl-ghost mr-auto"
             disabled={itens.length === 0}
-            onClick={() => onVer({ version, title, notes, releaseId: release?.id })}
+            onClick={() => onVer({ kind, version, title, notes, releaseId: release?.id })}
           >
             <Eye className="size-3.5" strokeWidth={1.75} /> Pré-visualizar o email
           </button>
@@ -305,7 +342,7 @@ function EditorDialog({
         <p className="flex items-start gap-1.5 rounded-[var(--radius-control)] bg-warn-soft px-3 py-2 text-meta leading-relaxed text-ink-2">
           <TriangleAlert className="mt-0.5 size-3.5 shrink-0 text-warn" strokeWidth={1.75} />
           <span>
-            Esta versão já foi enviada a{" "}
+            {mensagem ? "Esta mensagem" : "Esta versão"} já foi enviada a{" "}
             <strong className="font-medium">
               {release.enviados} {release.enviados === 1 ? "clube" : "clubes"}
             </strong>
@@ -314,40 +351,60 @@ function EditorDialog({
         </p>
       )}
 
-      <div className="grid gap-3 sm:grid-cols-[140px_minmax(0,1fr)]">
-        <Campo label="Versão" hint="como quiseres">
-          <input value={version} onChange={(e) => setVersion(e.target.value)} maxLength={40} className={inputClass} />
-        </Campo>
+      <div className={cx("grid gap-3", !mensagem && "sm:grid-cols-[140px_minmax(0,1fr)]")}>
+        {!mensagem && (
+          <Campo label="Versão" hint="como quiseres">
+            <input value={version} onChange={(e) => setVersion(e.target.value)} maxLength={40} className={inputClass} />
+          </Campo>
+        )}
         <Campo label="Assunto do email">
           <input
             autoFocus
             value={title}
             onChange={(e) => setTitle(e.target.value)}
-            placeholder="O que há de novo na plataforma"
+            placeholder={mensagem ? "Manutenção no sábado de manhã" : "O que há de novo na plataforma"}
             maxLength={120}
             className={inputClass}
           />
         </Campo>
       </div>
 
-      <Campo label="Novidades" hint="uma por linha · «Tema: descrição» põe o tema em destaque">
-        <textarea
-          value={notes}
-          onChange={(e) => setNotes(e.target.value)}
-          rows={12}
-          placeholder={
-            "- Ficha do atleta: as equipas passam a editar-se na Visão geral.\n- Quadro tático: a cor dos jogadores é livre."
-          }
-          className={cx(inputClass, "h-auto resize-y py-2 font-mono text-meta leading-relaxed")}
-        />
-      </Campo>
+      {mensagem ? (
+        <Campo label="Mensagem" hint="uma linha em branco separa parágrafos · começa depois do «Olá, nome»">
+          <textarea
+            value={notes}
+            onChange={(e) => setNotes(e.target.value)}
+            rows={12}
+            placeholder={
+              "No sábado, entre as 7h e as 9h, a plataforma vai estar em manutenção.\n\nDurante esse tempo a consola e a app do clube ficam indisponíveis. Não é preciso fazer nada."
+            }
+            className={cx(inputClass, "h-auto resize-y py-2 leading-relaxed")}
+          />
+        </Campo>
+      ) : (
+        <Campo label="Novidades" hint="uma por linha · «Tema: descrição» põe o tema em destaque">
+          <textarea
+            value={notes}
+            onChange={(e) => setNotes(e.target.value)}
+            rows={12}
+            placeholder={
+              "- Ficha do atleta: as equipas passam a editar-se na Visão geral.\n- Quadro tático: a cor dos jogadores é livre."
+            }
+            className={cx(inputClass, "h-auto resize-y py-2 font-mono text-meta leading-relaxed")}
+          />
+        </Campo>
+      )}
 
       <p className="text-meta text-ink-4">
-        {itens.length === 0
-          ? "Ainda sem novidades."
-          : itens.length === 1
-            ? "1 novidade no email."
-            : `${itens.length} novidades no email.`}
+        {mensagem
+          ? itens.length === 0
+            ? "Ainda sem texto."
+            : "O email leva o nome de quem recebe, o texto e um botão para a consola do clube."
+          : itens.length === 0
+            ? "Ainda sem novidades."
+            : itens.length === 1
+              ? "1 novidade no email."
+              : `${itens.length} novidades no email.`}
       </p>
     </Dialogo>
   );
@@ -549,7 +606,11 @@ function EnvioDialog({
   const lista = clubes.data ?? [];
   /* A escolha por omissão calcula-se **uma vez**, quando a lista chega: recalcular
      a cada render desfazia o que a pessoa tivesse desmarcado. */
-  const marcados = escolhidos ?? escolhidosPorOmissao(lista);
+  const mensagem = tipoDe(release) === "MENSAGEM";
+  const marcados = escolhidos ?? escolhidosPorOmissao(lista, tipoDe(release));
+  /* Os atalhos: só marcam clubes a quem se pode escrever. */
+  const comResponsavel = lista.filter((c) => c.responsavel);
+  const marcar = (quais: Destinatario[]) => setEscolhidos(new Set(quais.map((c) => c.id)));
 
   const alternar = (id: string) => {
     const novo = new Set(marcados);
@@ -608,9 +669,36 @@ function EnvioDialog({
       }
     >
       <p className="text-meta leading-relaxed text-ink-3">
-        Cada clube recebe um email do <strong className="font-medium text-ink-2">responsável</strong> dele — a mesma
-        pessoa que assina o contrato. Os clubes que pagam vêm escolhidos; os outros estão aqui a um clique.
+        Em cada clube recebe o <strong className="font-medium text-ink-2">responsável</strong>, a mesma pessoa que
+        assina o contrato.{" "}
+        {mensagem
+          ? "Escolhe os clubes a quem queres escrever."
+          : "Os clubes que pagam vêm escolhidos; os outros estão aqui a um clique."}
       </p>
+
+      <div className="flex flex-wrap items-center gap-1.5">
+        <span className="mr-1 text-meta text-ink-4">Escolher</span>
+        <button type="button" className="ctl-ghost h-7 text-meta" onClick={() => marcar(comResponsavel)}>
+          Todos
+        </button>
+        <button
+          type="button"
+          className="ctl-ghost h-7 text-meta"
+          onClick={() => marcar(comResponsavel.filter((c) => temReceita(estadoComercial(c))))}
+        >
+          Os que pagam
+        </button>
+        <button
+          type="button"
+          className="ctl-ghost h-7 text-meta"
+          onClick={() => marcar(comResponsavel.filter((c) => !c.jaRecebeu))}
+        >
+          Quem ainda não recebeu
+        </button>
+        <button type="button" className="ctl-ghost h-7 text-meta" onClick={() => marcar([])}>
+          Nenhum
+        </button>
+      </div>
 
       {clubes.loading && <p className="text-meta text-ink-4">A carregar os clubes…</p>}
       {clubes.error && <p className="text-meta text-risk">{clubes.error}</p>}

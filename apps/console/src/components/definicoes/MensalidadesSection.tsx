@@ -82,6 +82,11 @@ export function MensalidadesSection() {
   const proxima = academy.billingNext;
   const oferecidos = tabela?.methods.filter((m) => m.offered) ?? [];
   const ligados = academy.paymentsEnabled;
+  /*
+   * Sem o canal euPago do clube, os pagamentos pela app não se ligam: o
+   * servidor recusa, e o interruptor nem se oferece. Desligar dá sempre.
+   */
+  const semEupago = !academy.eupagoConfigured;
   const taxaDoPagador = academy.feesOnPayer;
 
   /* Um interruptor de cada vez: grava, e volta a ler o clube do servidor. */
@@ -125,7 +130,7 @@ export function MensalidadesSection() {
 
       <Bloco
         titulo="Pagamentos pela app"
-        estado={!ligados ? <Pill tone="warn">desativados</Pill> : undefined}
+        estado={!ligados ? <Pill tone="warn">{semEupago ? "euPago por configurar" : "desativados"}</Pill> : undefined}
         descricao="Se as famílias e os sócios podem pagar mensalidades e quotas pela app do clube."
       >
         <div className="flex items-start justify-between gap-6">
@@ -139,11 +144,18 @@ export function MensalidadesSection() {
           </div>
           <Interruptor
             ligado={ligados}
-            disabled={busy || !mayWrite}
+            disabled={busy || !mayWrite || (semEupago && !ligados)}
             onChange={() => void gravar({ paymentsEnabled: !ligados })}
             label="Pagamentos pela app"
           />
         </div>
+        {semEupago && (
+          <p className="mt-3 rounded-[var(--radius-control)] bg-warn-soft px-3 py-2 text-meta leading-relaxed text-ink-2">
+            {ligados
+              ? "O clube ainda não tem o euPago configurado. Se desligares os pagamentos pela app, só os voltas a ligar depois de o euPago estar configurado."
+              : "Para ligar os pagamentos pela app, o clube precisa de ter o seu euPago configurado, para o dinheiro cair na conta do clube. Fala connosco e tratamos disso."}
+          </p>
+        )}
       </Bloco>
 
       <Bloco

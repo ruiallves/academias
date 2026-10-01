@@ -1,7 +1,7 @@
 import { BadRequestException, Injectable, Logger, NotFoundException } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
 import { MailClient } from "../mail/mail.client";
-import { ACADEMIAS_LOGO_URL, releaseNotesEmail } from "../mail/mail.templates";
+import { ACADEMIAS_LOGO_URL, comunicadoEmail, paragrafosDoComunicado, releaseNotesEmail, linhasDeNovidades } from "../mail/mail.templates";
 import { SELECT_RESPONSAVEL, escolherResponsavel } from "../subscription/responsavel";
 import { PlatformPrisma } from "./platform.prisma";
 import { PlatformService } from "./platform.service";
@@ -42,6 +42,17 @@ import type { PlatformAdminContext } from "./platform.guard";
  * Reenviar a clubes novos continua a dar — é o caso de um clube que entrou
  * depois, ou de um email que falhou — e a quem já recebeu não se manda outra vez.
  */
+/**
+ * Os dois comunicados que o painel manda aos clubes.
+ *
+ * `NOVIDADES` é uma versão, com uma novidade por linha, e foi por onde isto
+ * começou. `MENSAGEM` é um email livre: assunto e texto, para tudo o resto que
+ * se quer dizer a um clube (uma manutenção, uma mudança de preço, um convite).
+ * Partilham tudo menos o desenho do email e a versão, que a mensagem não tem.
+ */
+export type TipoDeComunicado = "NOVIDADES" | "MENSAGEM";
+const tipoDe = (kind: string | null | undefined): TipoDeComunicado => (kind === "MENSAGEM" ? "MENSAGEM" : "NOVIDADES");
+
 @Injectable()
 export class ReleasesService {
   private readonly log = new Logger(ReleasesService.name);
@@ -62,7 +73,7 @@ export class ReleasesService {
       orderBy: { createdAt: "desc" },
       take: 100,
       select: {
-        id: true, version: true, title: true, notes: true,
+        id: true, kind: true, version: true, title: true, notes: true,
         sentAt: true, createdAt: true,
         author: { select: { name: true } },
         recipients: {
@@ -141,10 +152,18 @@ export class ReleasesService {
   /* Escrever                                                                */
   /* ---------------------------------------------------------------------- */
 
-  async create(admin: PlatformAdminContext | null, input: { version: string; title: string; notes: string }, ip?: string) {
+  async create(
+    admin: PlatformAdminContext | null,
+    input: { kind?: string; version?: string; title: string; notes: string },
+    ip?: string,
+  ) {
+    const kind = tipoDe(input.kind);
+    this.validar(kind, input.version ?? "", input.notes);
     const r = await this.prisma.release.create({
       data: {
-        version: input.version.trim(),
+        kind,
+        // Uma mensagem não tem versão.
+        version: kind === "MENSAGEM" ? "" : (input.version ?? "").trim(),
         title: input.title.trim(),
         notes: input.notes.trim(),
         authorId: admin?.id ?? null,
@@ -162,10 +181,12 @@ export class ReleasesService {
     ip?: string,
   ) {
     const actual = await this.existe(id);
+    const kind = tipoDe(actual.kind);
+    this.validar(kind, input.version ?? actual.version, input.notes ?? actual.notes);
     const r = await this.prisma.release.update({
       where: { id },
       data: {
-        ...(input.version !== undefined ? { version: input.version.trim() } : {}),
+        ...(input.version !== undefined && kind === "NOVIDADES" ? { version: input.version.trim() } : {}),
         ...(input.title !== undefined ? { title: input.title.trim() } : {}),
         ...(input.notes !== undefined ? { notes: input.notes.trim() } : {}),
       },
@@ -208,7 +229,7 @@ export class ReleasesService {
    * exemplo. Não escreve nada em lado nenhum e não fala com o fornecedor de
    * email.
    */
-  async preview(input: { version: string; title: string; notes: string; academyId?: string }) {
+  async preview(input: { kind?: string; version: string; title: string; notes: string; academyId?: string }) {
     let clubName = "Clube de Exemplo";
     let para: { name: string; email: string } = { name: "Ana Sousa", email: "presidente@clube-exemplo.pt" };
     let slug = "exemplo";
@@ -226,14 +247,13 @@ export class ReleasesService {
       }
     }
 
-    const mail = releaseNotesEmail({
+    const mail = this.desenhar(tipoDe(input.kind), {
       name: para.name,
       clubName,
       version: input.version.trim() || "\u2014",
       title: input.title.trim() || "(sem assunto)",
       notes: input.notes,
       link: this.consolaDe(slug),
-      logoUrl: this.logoUrl(),
     });
 
     return { de: this.mail.remetente, para, clubName, ...mail };
@@ -258,9 +278,9 @@ export class ReleasesService {
   async enviar(admin: PlatformAdminContext | null, id: string, academyIds: string[], ip?: string) {
     const release = await this.prisma.release.findUnique({
       where: { id },
-      select: { id: true, version: true, title: true, notes: true },
+      select: { id: true, kind: true, version: true, title: true, notes: true },
     });
-    if (!release) throw new NotFoundException("Versão não encontrada");
+    if (!release) throw new NotFoundException("Comunicado não encontrado");
     if (academyIds.length === 0) throw new BadRequestException("Não escolheste nenhum clube");
     if (!this.mail.ready) throw new BadRequestException("O envio de emails ainda não está configurado no servidor.");
 
@@ -288,14 +308,13 @@ export class ReleasesService {
         continue;
       }
 
-      const mail = releaseNotesEmail({
+      const mail = this.desenhar(tipoDe(release.kind), {
         name: responsavel.name,
         clubName: a.name,
         version: release.version,
         title: release.title,
         notes: release.notes,
         link: this.consolaDe(a.slug),
-        logoUrl: this.logoUrl(),
       });
 
       let erro: string | null = null;
@@ -306,7 +325,7 @@ export class ReleasesService {
           subject: mail.subject,
           html: mail.html,
           text: mail.text,
-          kind: "release-notes",
+          kind: tipoDe(release.kind) === "MENSAGEM" ? "platform-message" : "release-notes",
         });
         if (!r.sent) erro = r.reason ?? "O fornecedor de email recusou a mensagem.";
       } catch (e) {
@@ -370,9 +389,36 @@ export class ReleasesService {
   }
 
   private async existe(id: string) {
-    const r = await this.prisma.release.findUnique({ where: { id }, select: { id: true, version: true, sentAt: true } });
-    if (!r) throw new NotFoundException("Versão não encontrada");
+    const r = await this.prisma.release.findUnique({
+      where: { id },
+      select: { id: true, kind: true, version: true, notes: true, sentAt: true },
+    });
+    if (!r) throw new NotFoundException("Comunicado não encontrado");
     return r;
+  }
+
+  /** O email de um comunicado, pelo tipo. A pré-visualização e o envio passam os dois por aqui. */
+  private desenhar(
+    kind: TipoDeComunicado,
+    dados: { name: string; clubName: string; version: string; title: string; notes: string; link: string },
+  ) {
+    return kind === "MENSAGEM"
+      ? comunicadoEmail({ ...dados, logoUrl: this.logoUrl() })
+      : releaseNotesEmail({ ...dados, logoUrl: this.logoUrl() });
+  }
+
+  /**
+   * O que cada tipo exige para ser gravado: as novidades uma versão e pelo
+   * menos uma linha, a mensagem pelo menos um parágrafo. Um email vazio com um
+   * botão não é um comunicado.
+   */
+  private validar(kind: TipoDeComunicado, version: string, notes: string) {
+    if (kind === "NOVIDADES") {
+      if (!version.trim()) throw new BadRequestException("Falta a versão");
+      if (linhasDeNovidades(notes).length === 0) throw new BadRequestException("Escreve pelo menos uma novidade");
+    } else if (paragrafosDoComunicado(notes).length === 0) {
+      throw new BadRequestException("Escreve a mensagem");
+    }
   }
 
   /**

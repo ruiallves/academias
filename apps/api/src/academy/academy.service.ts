@@ -1,5 +1,6 @@
 import { BadRequestException, ConflictException, ForbiddenException, Injectable, NotFoundException } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
+import { eupagoConfigurado, MENSAGEM_SEM_EUPAGO } from "../billing/eupago-do-clube";
 import { Prisma, type AttendanceStatus, type CalendarEventKind, type Role, type StaffDepartment } from "@prisma/client";
 import { PrismaService, type ScopedClient } from "../prisma/prisma.service";
 import { escolherTreinador, headCoaches } from "./head-coaches";
@@ -293,7 +294,12 @@ export class AcademyService {
       }
 
       return {
-        academy,
+        /*
+         * `eupagoConfigured` diz à consola se o interruptor dos pagamentos pela
+         * app se pode ligar. As chaves em si nunca saem daqui: lêem-se numa
+         * consulta à parte e só o sim ou não segue na resposta.
+         */
+        academy: academy ? { ...academy, eupagoConfigured: await this.temEupago(db, ctx.academyId) } : academy,
         sports,
         /*
          * `season` continua a ser a corrente — é o que meia consola lê para
@@ -619,6 +625,15 @@ export class AcademyService {
     return { ok: true, cobrancas, ...retiradas };
   }
 
+  /** O clube tem as duas chaves do seu canal euPago? Só o sim ou não, nunca as chaves. */
+  private async temEupago(db: ScopedClient, academyId: string): Promise<boolean> {
+    const canal = await db.academy.findFirst({
+      where: { id: academyId },
+      select: { eupagoApiKey: true, eupagoWebhookSecret: true },
+    });
+    return eupagoConfigurado(canal);
+  }
+
   /**
    * As duas decisões do clube sobre pagar pela app.
    *
@@ -641,6 +656,23 @@ export class AcademyService {
     if (!can(ctx, "settings:write")) throw new ForbiddenException("Sem permissão para mudar as definições");
 
     return this.prisma.runAs(ctx.academyId, async (db) => {
+      /*
+       * Ligar os pagamentos pela app pede o canal euPago do clube.
+       *
+       * Sem ele, o que se pagasse na app seguia pela chave geral e caía na conta
+       * da plataforma. Desligar dá sempre. A excepção é um servidor sem chave
+       * geral nenhuma, que é o modo simulado de desenvolvimento e dos testes: aí
+       * não há euPago a sério para onde o dinheiro fugir.
+       */
+      if (dto.paymentsEnabled === true) {
+        const canal = await db.academy.findFirst({
+          where: { id: ctx.academyId },
+          select: { eupagoApiKey: true, eupagoWebhookSecret: true },
+        });
+        const simulado = !(this.config.get<string>("EUPAGO_API_KEY") ?? "").trim();
+        if (!eupagoConfigurado(canal) && !simulado) throw new BadRequestException(MENSAGEM_SEM_EUPAGO);
+      }
+
       const a = await db.academy.update({
         where: { id: ctx.academyId },
         data: {

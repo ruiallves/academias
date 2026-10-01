@@ -45,7 +45,11 @@ import { useSession } from "@/session";
  */
 export default function CallUps() {
   const store = useStore();
-  const [selectedId, setSelectedId] = useState<string | null>(null);
+  /*
+   * `?jogo=<id>` abre já nesse jogo: é como a página do jogo manda para cá,
+   * para ninguém ter de o procurar outra vez na lista.
+   */
+  const [selectedId, setSelectedId] = useState<string | null>(() => new URLSearchParams(window.location.search).get("jogo"));
 
   const upcoming = useMemo(() => upcomingMatches(), [store.matches]);
   const match = upcoming.find((m) => m.id === selectedId) ?? upcoming[0];

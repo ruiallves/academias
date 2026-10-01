@@ -1,8 +1,8 @@
-import { useState, type ReactNode } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import { Dialog, DialogField, dialogInputClass } from "@/components/Dialog";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { cx } from "@/components/primitives";
-import { Check, Plus, Trash2, X } from "@/lib/icons";
+import { CalendarDays, Check, ChevronLeft, ChevronRight, Plus, Trash2, X } from "@/lib/icons";
 import { ApiError } from "@/lib/http";
 import { categoriesFor } from "@/lib/sports";
 import {
@@ -14,14 +14,13 @@ import {
   mondayOf,
   defaultColor,
   deleteCycle,
+  dayKey,
+  keyToDate,
   rangeLabel,
   updateCycle,
   type Cycle,
   type CycleLevel,
 } from "@/lib/cycles";
-
-/** Uma segunda-feira qualquer: o `min` dos campos de data, a que o `step` de 7 dias se agarra. */
-const SEGUNDA_DE_REFERENCIA = "2020-01-06";
 
 const textarea =
   "min-h-20 w-full rounded-[var(--radius-control)] border border-line bg-surface px-2.5 py-2 text-body text-ink focus:border-line-strong focus:outline-none";
@@ -49,6 +48,7 @@ export function CycleDialog({
   initial,
   label,
   mesoCount = 0,
+  ocupados = [],
   onClose,
   onSaved,
 }: {
@@ -63,6 +63,8 @@ export function CycleDialog({
   label?: string;
   /** Quantos mesociclos a equipa já tem: a cor do novo é a seguinte da paleta. */
   mesoCount?: number;
+  /** Os mesociclos da equipa: o calendário pinta os dias que já são de outro. */
+  ocupados?: Cycle[];
   onClose: () => void;
   onSaved: () => void;
 }) {
@@ -90,6 +92,10 @@ export function CycleDialog({
   const [busy, setBusy] = useState(false);
   const [erro, setErro] = useState<string | null>(null);
 
+  /* Os outros mesociclos, e aquele com que estas datas chocam. */
+  const outros = meso ? ocupados.filter((o) => o.level === "MESO" && o.id !== cycle?.id) : [];
+  const choque = startsOn && endsOn ? outros.find((o) => o.startsOn <= endsOn && o.endsOn >= startsOn) : undefined;
+
   const categorias = categoriesFor(sportId);
   const sugeridos = new Set(categorias.map((c) => c.label));
   const escritosAMao = focus.filter((f) => !sugeridos.has(f));
@@ -112,6 +118,7 @@ export function CycleDialog({
   async function guardar() {
     if (!startsOn || !endsOn) return setErro("Escolhe o início e o fim.");
     if (endsOn < startsOn) return setErro("O fim é antes do início.");
+    if (choque) return setErro("Estas datas sobrepõem-se a outro mesociclo.");
     setBusy(true);
     setErro(null);
     // As datas só vão quando mudam: um mesociclo antigo, de antes das semanas
@@ -186,7 +193,7 @@ export function CycleDialog({
             <button
               type="button"
               onClick={() => void guardar()}
-              disabled={busy}
+              disabled={busy || Boolean(choque)}
               className="ctl-primary"
             >
               Guardar
@@ -222,40 +229,24 @@ export function CycleDialog({
 
           {/* A semana não se escolhe: um microciclo é sempre de segunda a domingo. */}
           {meso ? (
-            <div className="grid grid-cols-[minmax(0,1fr)_minmax(0,1fr)] gap-3">
-              <DialogField label="Início">
-                {/*
-                  Só segundas-feiras: `step` de 7 dias a partir de uma segunda
-                  faz o próprio calendário do browser desligar os outros dias.
-                  Uma data escrita à mão encosta-se à segunda dessa semana.
-                */}
-                <input
-                  type="date"
-                  className={dialogInputClass}
-                  value={startsOn}
-                  min={SEGUNDA_DE_REFERENCIA}
-                  step={7}
-                  onChange={(e) => e.target.value && setStartsOn(mondayOf(e.target.value))}
-                />
-              </DialogField>
-              <DialogField
-                label="Fim"
-                hint={
-                  semanasDoMeso
-                    ? `${semanasDoMeso} ${semanasDoMeso === 1 ? "semana" : "semanas"}`
-                    : undefined
-                }
-              >
-                {/* Só domingos, pela mesma razão. */}
-                <input
-                  type="date"
-                  className={dialogInputClass}
-                  value={endsOn}
-                  min={startsOn ? addDays(startsOn, 6) : addDays(SEGUNDA_DE_REFERENCIA, 6)}
-                  step={7}
-                  onChange={(e) => e.target.value && setEndsOn(addDays(mondayOf(e.target.value), 6))}
-                />
-              </DialogField>
+            <div>
+              <DatasDoMesociclo
+                inicio={startsOn}
+                fim={endsOn}
+                cor={color}
+                outros={outros}
+                semanas={semanasDoMeso}
+                onChange={(de, ate) => {
+                  setStartsOn(de);
+                  setEndsOn(ate);
+                  setErro(null);
+                }}
+              />
+              {choque && (
+                <p className="mt-2 text-meta text-risk">
+                  Estas datas sobrepõem-se a {choque.name ?? choque.phase ?? "outro mesociclo"} ({rangeLabel(choque.startsOn, choque.endsOn)}).
+                </p>
+              )}
             </div>
           ) : (
             startsOn &&
@@ -439,6 +430,211 @@ export function CycleDialog({
         </ConfirmDialog>
       )}
     </>
+  );
+}
+
+const DIAS_DA_SEMANA = ["S", "T", "Q", "Q", "S", "S", "D"];
+
+/** `2026-08` → o mês seguinte (ou anterior, com `n` negativo). */
+function somaMeses(ym: string, n: number): string {
+  const [y, m] = ym.split("-").map(Number);
+  const t = y * 12 + (m - 1) + n;
+  return `${Math.floor(t / 12)}-${String((t % 12) + 1).padStart(2, "0")}`;
+}
+
+const dataCurta = (k: string) => keyToDate(k).toLocaleDateString("pt-PT", { day: "2-digit", month: "2-digit", year: "numeric" });
+
+/**
+ * O início e o fim de um mesociclo: dois campos de data, cada um com o seu
+ * calendário pequeno, como os do browser.
+ *
+ * Não são os do browser porque esses não sabem pintar dias, e era preciso ver
+ * o que já está ocupado: aqui os dias dos outros mesociclos aparecem com a cor
+ * de cada um. O resto é o que era: no início só se escolhem segundas-feiras, no
+ * fim só domingos, e os outros dias aparecem apagados.
+ */
+function DatasDoMesociclo({
+  inicio,
+  fim,
+  cor,
+  outros,
+  semanas,
+  onChange,
+}: {
+  inicio: string;
+  fim: string;
+  cor: string;
+  outros: Cycle[];
+  semanas: number | null;
+  onChange: (inicio: string, fim: string) => void;
+}) {
+  const [aberto, setAberto] = useState<"inicio" | "fim" | null>(null);
+  const caixa = useRef<HTMLDivElement>(null);
+
+  // Um clique fora fecha o calendário, como num campo de data.
+  useEffect(() => {
+    if (!aberto) return;
+    const fora = (e: MouseEvent) => {
+      if (caixa.current && !caixa.current.contains(e.target as Node)) setAberto(null);
+    };
+    document.addEventListener("mousedown", fora);
+    return () => document.removeEventListener("mousedown", fora);
+  }, [aberto]);
+
+  const campo = (qual: "inicio" | "fim", valor: string) => (
+    <div className="relative">
+      <button
+        type="button"
+        aria-expanded={aberto === qual}
+        onClick={() => setAberto(aberto === qual ? null : qual)}
+        className={cx(dialogInputClass, "flex items-center justify-between gap-2 text-left tabular", aberto === qual && "border-line-strong")}
+      >
+        <span className={valor ? "text-ink" : "text-ink-4"}>{valor ? dataCurta(valor) : "dd/mm/aaaa"}</span>
+        <CalendarDays className="size-3.5 shrink-0 text-ink-3" strokeWidth={1.75} />
+      </button>
+      {aberto === qual && (
+        <MiniCalendario
+          qual={qual}
+          inicio={inicio}
+          fim={fim}
+          cor={cor}
+          outros={outros}
+          aDireita={qual === "fim"}
+          onEscolher={(k) => {
+            if (qual === "inicio") onChange(k, fim && fim >= addDays(k, 6) ? fim : addDays(k, 6));
+            else onChange(inicio, k);
+            setAberto(null);
+          }}
+        />
+      )}
+    </div>
+  );
+
+  return (
+    <div ref={caixa} className="grid grid-cols-[minmax(0,1fr)_minmax(0,1fr)] gap-3">
+      <Grupo label="Início">{campo("inicio", inicio)}</Grupo>
+      <Grupo label="Fim" hint={semanas ? `${semanas} ${semanas === 1 ? "semana" : "semanas"}` : undefined}>
+        {campo("fim", fim)}
+      </Grupo>
+    </div>
+  );
+}
+
+/** O calendário pequeno de um campo: um mês, a flutuar por baixo dele. */
+function MiniCalendario({
+  qual,
+  inicio,
+  fim,
+  cor,
+  outros,
+  aDireita,
+  onEscolher,
+}: {
+  qual: "inicio" | "fim";
+  inicio: string;
+  fim: string;
+  cor: string;
+  outros: Cycle[];
+  aDireita: boolean;
+  onEscolher: (day: string) => void;
+}) {
+  const hoje = dayKey(new Date());
+  const [mes, setMes] = useState(((qual === "inicio" ? inicio : fim) || inicio || hoje).slice(0, 7));
+
+  const ocupadoPor = (k: string) => outros.find((o) => k >= o.startsOn && k <= o.endsOn);
+  const nomeDe = (o: Cycle) => o.name ?? o.phase ?? "Mesociclo";
+  const corDe = (o: Cycle) => o.color ?? defaultColor(o.phase, outros.indexOf(o));
+
+  const primeiro = `${mes}-01`;
+  const ultimo = addDays(`${somaMeses(mes, 1)}-01`, -1);
+  const dias: string[] = [];
+  for (let seg = mondayOf(primeiro); seg <= ultimo; seg = addDays(seg, 7)) {
+    for (let i = 0; i < 7; i++) dias.push(addDays(seg, i));
+  }
+
+  return (
+    <div
+      className={cx(
+        "absolute top-[calc(100%+4px)] z-20 w-[244px] rounded-[var(--radius-control)] border border-line bg-surface p-2.5 shadow-[var(--shadow-pop)]",
+        aDireita ? "right-0" : "left-0",
+      )}
+    >
+      <div className="mb-1.5 flex items-center justify-between">
+        <span className="pl-1 text-meta font-medium text-ink first-letter:uppercase">
+          {keyToDate(primeiro).toLocaleDateString("pt-PT", { month: "long", year: "numeric" })}
+        </span>
+        <span className="flex">
+          <button type="button" className="ctl-ghost size-6 justify-center px-0" aria-label="Mês anterior" onClick={() => setMes(somaMeses(mes, -1))}>
+            <ChevronLeft className="size-3.5" strokeWidth={1.75} />
+          </button>
+          <button type="button" className="ctl-ghost size-6 justify-center px-0" aria-label="Mês seguinte" onClick={() => setMes(somaMeses(mes, 1))}>
+            <ChevronRight className="size-3.5" strokeWidth={1.75} />
+          </button>
+        </span>
+      </div>
+
+      <div className="grid grid-cols-7 text-center">
+        {DIAS_DA_SEMANA.map((d, i) => (
+          <span key={i} className="pb-1 text-[10px] font-medium text-ink-4">
+            {d}
+          </span>
+        ))}
+        {dias.map((k) => {
+          const seg = mondayOf(k);
+          const dono = ocupadoPor(k);
+          const dentro = Boolean(inicio && fim && k >= inicio && k <= fim);
+          const escolhido = k === (qual === "inicio" ? inicio : fim);
+          // Como antes: segundas no início, domingos no fim (e nunca antes do início).
+          const serve = qual === "inicio" ? k === seg : k === addDays(seg, 6) && (!inicio || k > inicio);
+          const pode = serve && !dono;
+          const estilo = dono
+            ? { background: `color-mix(in oklab, ${corDe(dono)} 40%, transparent)` }
+            : escolhido
+              ? { background: cor }
+              : dentro
+                ? { background: `color-mix(in oklab, ${cor} 22%, transparent)` }
+                : undefined;
+          return (
+            <button
+              key={k}
+              type="button"
+              disabled={!pode}
+              onClick={() => onEscolher(k)}
+              title={dono ? `${nomeDe(dono)} · ${rangeLabel(dono.startsOn, dono.endsOn)}` : undefined}
+              aria-label={`${keyToDate(k).toLocaleDateString("pt-PT", { day: "numeric", month: "long" })}${dono ? `, ocupado por ${nomeDe(dono)}` : ""}`}
+              style={estilo}
+              className={cx(
+                "h-7 text-[12px] tabular",
+                k === seg && "rounded-l-[6px]",
+                k === addDays(seg, 6) && "rounded-r-[6px]",
+                k.slice(0, 7) !== mes && "opacity-40",
+                escolhido && !dono
+                  ? "font-semibold text-white"
+                  : dono
+                    ? "cursor-not-allowed text-ink-2"
+                    : pode
+                      ? "font-medium text-ink hover:bg-sunken"
+                      : "cursor-default text-ink-4",
+                k === hoje && !escolhido && "underline decoration-2 underline-offset-4",
+              )}
+            >
+              {Number(k.slice(8, 10))}
+            </button>
+          );
+        })}
+      </div>
+
+      {outros.length > 0 && (
+        <div className="mt-2 flex flex-wrap gap-x-3 gap-y-1 border-t border-line pt-2 text-[10px] text-ink-3">
+          {outros.map((o) => (
+            <span key={o.id} className="inline-flex items-center gap-1">
+              <span className="size-2 rounded-[2px]" style={{ background: `color-mix(in oklab, ${corDe(o)} 60%, transparent)` }} />
+              {nomeDe(o)}
+            </span>
+          ))}
+        </div>
+      )}
+    </div>
   );
 }
 

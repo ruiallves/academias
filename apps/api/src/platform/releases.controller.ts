@@ -1,12 +1,16 @@
-import { ArrayMaxSize, IsArray, IsOptional, IsString, Length } from "class-validator";
+import { ArrayMaxSize, IsArray, IsIn, IsOptional, IsString, Length } from "class-validator";
 import { Body, Controller, Delete, Get, Param, Patch, Post, Query, Req, UseGuards } from "@nestjs/common";
 import { Public } from "../auth/auth.guard";
 import { PlatformGuard, PlatformRoles, type PlatformRequest } from "./platform.guard";
 import { ReleasesService } from "./releases.service";
 
+const TIPOS = ["NOVIDADES", "MENSAGEM"];
+
 class NovaVersaoDto {
-  /** "1.4", "29/09/2026" — texto livre, é o Rui que decide como numera. */
-  @IsString() @Length(1, 40) version!: string;
+  /** Novidades de uma versão, ou uma mensagem livre. Omitido, novidades. */
+  @IsOptional() @IsIn(TIPOS) kind?: string;
+  /** "1.4", "29/09/2026" — texto livre, é o Rui que decide como numera. Só nas novidades. */
+  @IsOptional() @IsString() @Length(0, 40) version?: string;
   @IsString() @Length(3, 120) title!: string;
   /** Uma novidade por linha. Ver `linhasDeNovidades`. */
   @IsString() @Length(3, 20_000) notes!: string;
@@ -23,6 +27,7 @@ class EditarVersaoDto {
  * o de gravar: uma pré-visualização de um assunto ainda vazio tem de funcionar.
  */
 export class PreviewDto {
+  @IsOptional() @IsIn(TIPOS) kind?: string;
   @IsString() @Length(0, 40) version!: string;
   @IsString() @Length(0, 120) title!: string;
   @IsString() @Length(0, 20_000) notes!: string;

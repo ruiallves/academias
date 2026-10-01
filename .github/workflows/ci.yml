@@ -106,6 +106,10 @@ jobs:
       - name: Notas da escola — quem submete e quem lê
         run: npm run test:notas-escolares --workspace=@academia/api
 
+      # O atleta identifica-se pelo NIF ou por outro documento: um, e só um.
+      - name: Identificação do atleta — NIF ou outro documento
+        run: npm run test:identificacao --workspace=@academia/api
+
       # A coluna do ano de quotas apaga anuidades quando muda. O ida-e-volta
       # exporta a sério e volta a ler com o leitor da importação: uma célula que
       # saísse vazia voltava a entrar como "assume hoje" e refazia o ano a quem

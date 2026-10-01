@@ -6,6 +6,7 @@ import {
   IsBoolean,
   IsIn,
   IsInt,
+  IsNumber,
   IsOptional,
   IsString,
   IsUrl,
@@ -199,6 +200,42 @@ class SaveReportDto {
   videos?: VideoLinkDto[];
 }
 
+/** Uma posição do plano: onde está no campo e quem lá joga. */
+class PlanSlotDto {
+  @IsOptional() @IsString() @Length(0, 40) id?: string;
+  @IsOptional() @IsString() @Length(0, 6) label?: string;
+  @IsNumber() x!: number;
+  @IsNumber() y!: number;
+  @IsOptional() @IsString() @Length(0, 40) athleteId?: string | null;
+}
+
+/** Um objetivo do jogo. `met` só se preenche depois, na análise. */
+class PlanObjectiveDto {
+  @IsOptional() @IsString() @Length(0, 40) id?: string;
+  @IsOptional() @IsString() @Length(0, 200) text?: string;
+  @IsOptional() @IsBoolean() met?: boolean | null;
+}
+
+/** O plano do jogo, inteiro de cada vez. Ver `MatchesService.savePlan`. */
+class SavePlanDto {
+  @IsOptional() @IsString() @Length(1, 12) pitch?: string;
+  @IsOptional() @IsString() @Length(0, 40) system?: string | null;
+  @IsOptional() @IsString() @Length(0, 40) gameModelId?: string | null;
+
+  @IsOptional() @IsArray() @ArrayMaxSize(16) @ValidateNested({ each: true }) @Type(() => PlanSlotDto)
+  slots?: PlanSlotDto[];
+
+  @IsOptional() @IsArray() @ArrayMaxSize(30) @IsString({ each: true })
+  bench?: string[];
+
+  @IsOptional() @IsString() @Length(0, 40) captainId?: string | null;
+  @IsOptional() @IsString() @Length(0, 40) viceCaptainId?: string | null;
+  @IsOptional() @IsString() @Length(0, 4000) notes?: string | null;
+
+  @IsOptional() @IsArray() @ArrayMaxSize(10) @ValidateNested({ each: true }) @Type(() => PlanObjectiveDto)
+  objectives?: PlanObjectiveDto[];
+}
+
 /** O que se viu do adversário. As mesmas regras do relatório do jogo. */
 class SaveOpponentReportDto {
   @IsOptional() @IsString() @Length(0, 40) formation?: string | null;
@@ -366,6 +403,18 @@ export class MatchesController {
   @Put(":id/relatorio")
   saveReport(@Req() req: AuthedRequest, @Param("id") id: string, @Body() body: SaveReportDto) {
     return this.matches.saveReport(req.ctx, id, body);
+  }
+
+  /** A forma recente dos atletas da equipa, para a sugestão do onze. */
+  @Get(":id/forma")
+  forma(@Req() req: AuthedRequest, @Param("id") id: string) {
+    return this.matches.forma(req.ctx, id);
+  }
+
+  /** O plano do jogo: o onze, o banco e os capitães. */
+  @Put(":id/plano")
+  savePlan(@Req() req: AuthedRequest, @Param("id") id: string, @Body() body: SavePlanDto) {
+    return this.matches.savePlan(req.ctx, id, body);
   }
 
   /** O que se viu do adversário neste jogo. */

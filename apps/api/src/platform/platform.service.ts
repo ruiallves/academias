@@ -4,6 +4,7 @@ import { BadRequestException, ConflictException, Injectable, NotFoundException }
 import { ConfigService } from "@nestjs/config";
 import { PresenceService } from "../presence/presence.service";
 import { PlatformPrisma } from "./platform.prisma";
+import { eupagoConfigurado } from "../billing/eupago-do-clube";
 import { initialRoles, isPresidente } from "../roles/roles.service";
 import { shortNameOf } from "../common/short-name";
 import { MailClient } from "../mail/mail.client";
@@ -1234,9 +1235,22 @@ export class PlatformService {
     }
     if (Object.keys(data).length === 0) throw new BadRequestException("Nada para gravar");
 
+    /*
+     * Tirar uma chave desliga os pagamentos pela app.
+     *
+     * Um clube sem o canal completo não pode cobrar pela app (ver
+     * `eupagoConfigurado`): o que se pagasse ia pela chave geral, para a conta
+     * da plataforma. Pôr as chaves não os liga sozinho; isso é o clube que
+     * decide, nas Definições.
+     */
+    const ficaConfigurado = eupagoConfigurado({
+      eupagoApiKey: data.eupagoApiKey !== undefined ? data.eupagoApiKey : academy.eupagoApiKey,
+      eupagoWebhookSecret: data.eupagoWebhookSecret !== undefined ? data.eupagoWebhookSecret : academy.eupagoWebhookSecret,
+    });
+
     const depois = await this.prisma.academy.update({
       where: { id },
-      data,
+      data: { ...data, ...(ficaConfigurado ? {} : { paymentsEnabled: false }) },
       select: { slug: true, eupagoApiKey: true, eupagoWebhookSecret: true },
     });
     await this.audit(

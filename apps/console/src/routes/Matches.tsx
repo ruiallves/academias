@@ -2,9 +2,12 @@ import { useEffect, useMemo, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import { PageHeader } from "@/components/Shell";
 import { Attention } from "@/components/Attention";
-import { Empty, Loading, Panel, Pill, cx } from "@/components/primitives";
+import { Empty, Loading, cx } from "@/components/primitives";
+import { SearchInput } from "@/components/filters";
+import { Cartao } from "@/components/match/ui";
+import { LinhaDeJogo, ProximoJogo, type EstadoDoJogo, type JogoNaLista } from "@/components/match/views";
 import { Segmented } from "@/components/filters";
-import { ChevronRight, CircleCheck, MapPin, Plus, Shield, Trophy } from "@/lib/icons";
+import { CircleCheck, Plus, Shield, SlidersHorizontal, Trophy } from "@/lib/icons";
 import { useStore } from "@/lib/store";
 import { listMatches, matchAttention, myMatchDuty, outcome, type MatchListRow } from "@/lib/matches";
 import { useSession } from "@/session";
@@ -51,6 +54,15 @@ export default function Matches() {
   const [loading, setLoading] = useState(true);
   const [erro, setErro] = useState<string | null>(null);
   const [equipa, setEquipa] = useState<string>("todas");
+  /*
+   * A procura e os filtros que se usam de vez em quando. A equipa e o período
+   * estão sempre à vista; onde se joga e o estado só aparecem em "Filtrar",
+   * para a barra não ser uma fila de caixas.
+   */
+  const [procura, setProcura] = useState("");
+  const [maisFiltros, setMaisFiltros] = useState(false);
+  const [onde, setOnde] = useState<"todos" | "casa" | "fora">("todos");
+  const [estadoFiltro, setEstadoFiltro] = useState<string>("todos");
 
   /*
    * A vista e o filtro vivem no endereço.
@@ -137,6 +149,12 @@ export default function Matches() {
     .filter((r) => (vista === "proximos" ? !jaFoi(r) : jaFoi(r)))
     .filter((r) => (soPendentes ? pendenteIds.has(r.id) : true))
     .filter((r) => (soMeus ? r.myStaffRole !== null : true))
+    .filter((r) => (onde === "todos" ? true : onde === "casa" ? r.isHome : !r.isHome))
+    .filter((r) => (estadoFiltro === "todos" ? true : estadoDoJogo(r, agora).chave === estadoFiltro))
+    .filter((r) => {
+      const t = semAcentos(procura.trim());
+      return t === "" || semAcentos(r.opponent).includes(t) || semAcentos(r.teamName).includes(t) || semAcentos(r.competition?.label ?? "").includes(t);
+    })
     // Os próximos sobem no tempo (o mais perto primeiro); os passados descem (o
     // mais recente primeiro). É a ordem em que cada um deles se procura.
     .sort((a, b) =>
@@ -145,18 +163,27 @@ export default function Matches() {
         : new Date(b.startsAt).getTime() - new Date(a.startsAt).getTime(),
     );
 
-  /** Agrupado por mês, para a lista ter por onde se agarrar. */
-  const meses = useMemo(() => {
+  /** Agrupado por semana (segunda a domingo): é assim que um clube pensa nos jogos. */
+  const semanas = useMemo(() => {
     const out: { chave: string; label: string; jogos: MatchListRow[] }[] = [];
     for (const m of filtrados) {
-      const d = new Date(m.startsAt);
-      const chave = `${d.getFullYear()}-${d.getMonth()}`;
+      const seg = segundaDe(new Date(m.startsAt));
+      const chave = seg.toDateString();
       const ultimo = out[out.length - 1];
       if (ultimo?.chave === chave) ultimo.jogos.push(m);
-      else out.push({ chave, label: d.toLocaleDateString("pt-PT", { month: "long", year: "numeric" }), jogos: [m] });
+      else out.push({ chave, label: nomeDaSemana(seg), jogos: [m] });
     }
     return out;
   }, [filtrados]);
+  const filtrosAtivos = (onde !== "todos" ? 1 : 0) + (estadoFiltro !== "todos" ? 1 : 0);
+  /*
+   * O próximo jogo. Só na vista "A chegar" e sem filtros nem procura: com um
+   * filtro posto, um destaque que o ignora parecia um engano.
+   */
+  const destaque =
+    vista === "proximos" && !soPendentes && !soMeus && filtrosAtivos === 0 && procura.trim() === ""
+      ? (filtrados.find((r) => r.status !== "CANCELLED" && (r.mine || equipa !== "todas")) ?? filtrados.find((r) => r.status !== "CANCELLED"))
+      : undefined;
 
   /*
    * Os mesmos itens da Visão geral, da mesma função.
@@ -219,81 +246,152 @@ export default function Matches() {
         </div>
       )}
 
-      <Panel>
-        <div className="flex flex-wrap items-center gap-2 border-b border-line px-5 py-3">
-          <Segmented
-            size="md"
-            label="Período"
-            value={vista}
-            onChange={setVista}
-            options={[
-              { value: "proximos", label: "A chegar" },
-              { value: "passados", label: "Já jogados" },
-            ]}
-          />
+      {/* O próximo jogo, em destaque: é a primeira pergunta de quem abre esta página. */}
+      {destaque && (
+        <div className="mb-4">
+          <ProximoJogo jogo={paraLinha(destaque, agora)} logo={store.academy.logoUrl} />
+        </div>
+      )}
 
-          {soPendentes && (
-            <button
-              type="button"
-              onClick={() => setVista(vista)}
-              className="inline-flex min-h-9 items-center gap-1.5 rounded-[var(--radius-control)] bg-warn-soft px-2.5 text-meta font-medium text-warn"
-            >
-              só o que falta
-              <span aria-hidden>×</span>
-            </button>
-          )}
+      <div className="flex flex-wrap items-center gap-2">
+        <Segmented
+          size="md"
+          label="Período"
+          value={vista}
+          onChange={setVista}
+          options={[
+            { value: "proximos", label: "A chegar" },
+            { value: "passados", label: "Já jogados" },
+          ]}
+        />
 
-          {/*
-            "Onde estou escalado" só aparece a quem está escalado nalgum sítio.
-            Um filtro que só devolve zero é um botão que ensina a não carregar em
-            botões. Para a massagista, é o único filtro desta página que lhe diz
-            alguma coisa.
-          */}
-          {(soMeus || escalado > 0) && (
-            <button
-              type="button"
-              aria-pressed={soMeus}
-              onClick={() => setParams(soMeus ? {} : { meus: "1" }, { replace: true })}
-              className={cx(
-                "inline-flex min-h-9 items-center gap-1.5 rounded-[var(--radius-control)] px-2.5 text-meta font-medium transition-colors",
-                soMeus ? "bg-ink text-surface" : "border border-line text-ink-2 hover:border-line-strong",
-              )}
-            >
-              Onde estou escalado
-              {!soMeus && <span className="tabular opacity-60">{escalado}</span>}
-              {soMeus && <span aria-hidden>×</span>}
-            </button>
-          )}
+        {soPendentes && (
+          <button
+            type="button"
+            onClick={() => setVista(vista)}
+            className="inline-flex min-h-9 items-center gap-1.5 rounded-[var(--radius-control)] bg-warn-soft px-2.5 text-meta font-medium text-warn"
+          >
+            só o que falta
+            <span aria-hidden>×</span>
+          </button>
+        )}
 
+        {/*
+          "Onde estou escalado" só aparece a quem está escalado nalgum sítio.
+          Um filtro que só devolve zero é um botão que ensina a não carregar em
+          botões.
+        */}
+        {(soMeus || escalado > 0) && (
+          <button
+            type="button"
+            aria-pressed={soMeus}
+            onClick={() => setParams(soMeus ? {} : { meus: "1" }, { replace: true })}
+            className={cx(
+              "inline-flex min-h-9 items-center gap-1.5 rounded-[var(--radius-control)] px-2.5 text-meta font-medium transition-colors",
+              soMeus ? "bg-ink text-surface" : "border border-line text-ink-2 hover:border-line-strong",
+            )}
+          >
+            Onde estou escalado
+            {!soMeus && <span className="tabular opacity-60">{escalado}</span>}
+            {soMeus && <span aria-hidden>×</span>}
+          </button>
+        )}
+
+        <div className="ml-auto flex flex-wrap items-center gap-2">
+          <SearchInput value={procura} onChange={setProcura} placeholder="Procurar adversário…" />
           {/* Só com mais do que uma equipa: uma caixa com uma opção é ruído. */}
           {equipas.length > 1 && (
-            <label className="ml-auto flex items-center gap-2">
-              <span className="text-meta text-ink-3">Equipa</span>
-              <select
-                value={equipa}
-                onChange={(e) => setEquipa(e.target.value)}
-                className="h-9 rounded-[var(--radius-control)] border border-line bg-surface px-2 text-meta text-ink outline-none focus:border-line-strong"
-              >
-                <option value="todas">Todas</option>
-                {equipas.map((t) => (
-                  <option key={t.id} value={t.id}>
-                    {t.name}
-                  </option>
-                ))}
-              </select>
-            </label>
+            <select
+              aria-label="Equipa"
+              value={equipa}
+              onChange={(e) => setEquipa(e.target.value)}
+              className="h-9 rounded-[var(--radius-control)] border border-line bg-surface px-2 text-meta text-ink outline-none focus:border-line-strong"
+            >
+              <option value="todas">Todas as equipas</option>
+              {equipas.map((t) => (
+                <option key={t.id} value={t.id}>
+                  {t.name}
+                </option>
+              ))}
+            </select>
+          )}
+          <button
+            type="button"
+            aria-expanded={maisFiltros}
+            onClick={() => setMaisFiltros((v) => !v)}
+            className={cx("ctl-outline h-9", (maisFiltros || filtrosAtivos > 0) && "border-ink text-ink")}
+          >
+            <SlidersHorizontal className="size-3.5" strokeWidth={1.75} />
+            Filtrar
+            {filtrosAtivos > 0 && <span className="tabular">{filtrosAtivos}</span>}
+          </button>
+        </div>
+      </div>
+
+      {maisFiltros && (
+        <div className="mt-2 flex flex-wrap items-center gap-x-5 gap-y-2 rounded-[16px] border border-line bg-surface px-4 py-3">
+          <span className="flex items-center gap-2">
+            <span className="text-meta text-ink-3">Onde</span>
+            <Segmented
+              label="Onde se joga"
+              value={onde}
+              onChange={setOnde}
+              options={[
+                { value: "todos", label: "Todos" },
+                { value: "casa", label: "Casa" },
+                { value: "fora", label: "Fora" },
+              ]}
+            />
+          </span>
+          <span className="flex items-center gap-2">
+            <span className="text-meta text-ink-3">Estado</span>
+            <select
+              aria-label="Estado do jogo"
+              value={estadoFiltro}
+              onChange={(e) => setEstadoFiltro(e.target.value)}
+              className="h-8 rounded-[var(--radius-control)] border border-line bg-surface px-2 text-meta text-ink outline-none focus:border-line-strong"
+            >
+              <option value="todos">Todos</option>
+              {(vista === "proximos"
+                ? [
+                    ["por-preparar", "Por preparar"],
+                    ["em-preparacao", "Em preparação"],
+                    ["pronto", "Pronto"],
+                  ]
+                : [
+                    ["sem-resultado", "Sem resultado"],
+                    ["por-analisar", "Por analisar"],
+                    ["analisado", "Analisado"],
+                  ]
+              ).map(([v, l]) => (
+                <option key={v} value={v}>
+                  {l}
+                </option>
+              ))}
+            </select>
+          </span>
+          {filtrosAtivos > 0 && (
+            <button
+              type="button"
+              className="text-meta font-medium text-ink-3 underline-offset-2 hover:text-ink hover:underline"
+              onClick={() => {
+                setOnde("todos");
+                setEstadoFiltro("todos");
+              }}
+            >
+              Limpar
+            </button>
           )}
         </div>
+      )}
 
+      <div className="mt-2">
         {loading ? (
           <Loading />
         ) : erro ? (
           <Empty title="Não foi possível carregar" detail={erro} />
-        ) : meses.length === 0 ? (
+        ) : semanas.length === 0 ? (
           <Empty
-            /* Um ícone dá corpo ao vazio — sem ele são duas linhas de texto a
-               boiar num painel grande. `ok` quando o vazio é boa notícia: "nada
-               por fazer" é um estado desejável, não uma falta. */
             icon={soPendentes ? CircleCheck : Trophy}
             tone={soPendentes ? "ok" : "neutral"}
             title={
@@ -301,131 +399,117 @@ export default function Matches() {
                 ? "Não estás escalado para nenhum jogo"
                 : soPendentes
                   ? "Nada por fazer aqui"
-                  : vista === "proximos"
-                    ? "Nenhum jogo marcado"
-                    : "Nenhum jogo jogado"
+                  : procura.trim() || filtrosAtivos > 0
+                    ? "Nenhum jogo com esses filtros"
+                    : vista === "proximos"
+                      ? "Nenhum jogo marcado"
+                      : "Nenhum jogo jogado"
             }
             detail={
               soMeus
                 ? "Quando alguém te puser na ficha técnica de um jogo, recebes aviso e ele aparece aqui."
                 : soPendentes
                   ? "Tudo em dia nesta vista."
-                  : vista === "proximos"
-                    ? "Os jogos marcam-se no calendário, e aparecem aqui."
-                    : "Assim que houver jogos passados, aparecem aqui para preencheres a ficha."
+                  : procura.trim() || filtrosAtivos > 0
+                    ? "Experimenta outro nome, ou limpa os filtros."
+                    : vista === "proximos"
+                      ? "Os jogos marcam-se no calendário, e aparecem aqui."
+                      : "Assim que houver jogos passados, aparecem aqui para preencheres a ficha."
             }
           />
         ) : (
-          meses.map((mes) => (
-            <section key={mes.chave}>
-              <h2 className="sticky top-0 z-10 border-b border-line bg-sunken/90 px-5 py-2 text-group text-ink-3 uppercase backdrop-blur">
-                {mes.label}
+          semanas.map((sem) => (
+            <section key={sem.chave} className="mt-5 first:mt-3">
+              <h2 className="mb-2 flex items-baseline justify-between px-1">
+                <span className="text-meta font-semibold text-ink">{sem.label}</span>
+                <span className="text-[11.5px] text-ink-4 tabular">
+                  {sem.jogos.length} {sem.jogos.length === 1 ? "jogo" : "jogos"}
+                </span>
               </h2>
-              <ul>
-                {mes.jogos.map((m) => (
-                  <Row key={m.id} match={m} passado={vista === "passados"} pendente={pendenteIds.has(m.id)} />
-                ))}
-              </ul>
+              <Cartao className="overflow-hidden">
+                <ul>
+                  {sem.jogos.map((m) => (
+                    <LinhaDeJogo key={m.id} jogo={paraLinha(m, agora)} />
+                  ))}
+                </ul>
+              </Cartao>
             </section>
           ))
         )}
-      </Panel>
+      </div>
     </>
   );
 }
 
-/** Uma linha: data à esquerda como régua, mini-marcador ao centro, estado à direita. */
-function Row({ match, passado, pendente }: { match: MatchListRow; passado: boolean; pendente: boolean }) {
-  const inicio = new Date(match.startsAt);
-  const res = outcome(match);
-  const cancelado = match.status === "CANCELLED";
+const semAcentos = (v: string) => v.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
 
-  const casa = match.isHome ? match.teamName : match.opponent;
-  const fora = match.isHome ? match.opponent : match.teamName;
-  const golosCasa = match.isHome ? match.ourScore : match.theirScore;
-  const golosFora = match.isHome ? match.theirScore : match.ourScore;
+/** A segunda-feira (à meia-noite) da semana de uma data. */
+function segundaDe(d: Date): Date {
+  const x = new Date(d.getFullYear(), d.getMonth(), d.getDate());
+  x.setDate(x.getDate() - ((x.getDay() + 6) % 7));
+  return x;
+}
 
-  return (
-    <li className="border-b border-line last:border-b-0">
-      <Link
-        to={`/jogos/${match.id}`}
-        className="flex min-h-16 items-center gap-3 px-5 py-3 transition-colors hover:bg-sunken/60 sm:gap-4"
-      >
-        {/* A data como régua: o olho desce por ela sem ler. */}
-        <span className="w-11 shrink-0 text-center">
-          <span className="block text-[19px] leading-tight font-semibold tabular text-ink">{inicio.getDate()}</span>
-          <span className="block text-[11px] uppercase text-ink-4">
-            {inicio.toLocaleDateString("pt-PT", { weekday: "short" }).replace(".", "")}
-          </span>
-        </span>
+/** "Esta semana", "Próxima semana", "Semana passada", ou "12 a 18 de outubro". */
+function nomeDaSemana(seg: Date): string {
+  const esta = segundaDe(new Date()).getTime();
+  const dif = Math.round((seg.getTime() - esta) / (7 * 86_400_000));
+  if (dif === 0) return "Esta semana";
+  if (dif === 1) return "Próxima semana";
+  if (dif === -1) return "Semana passada";
+  const dom = new Date(seg.getFullYear(), seg.getMonth(), seg.getDate() + 6);
+  const mes = (d: Date) => d.toLocaleDateString("pt-PT", { month: "long" });
+  const ano = seg.getFullYear() !== new Date().getFullYear() ? ` de ${dom.getFullYear()}` : "";
+  return seg.getMonth() === dom.getMonth()
+    ? `${seg.getDate()} a ${dom.getDate()} de ${mes(dom)}${ano}`
+    : `${seg.getDate()} de ${mes(seg)} a ${dom.getDate()} de ${mes(dom)}${ano}`;
+}
 
-        {/* O mini-marcador. */}
-        <span className="grid min-w-0 flex-1 grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] items-center gap-2 sm:gap-3">
-          <span
-            className={cx(
-              "truncate text-right text-body",
-              cancelado ? "text-ink-4 line-through" : match.isHome ? "font-medium text-ink" : "text-ink-2",
-            )}
-          >
-            {casa}
-          </span>
+/** A preparação de um jogo. Uma API ainda por atualizar não a manda: conta como vazia. */
+const prepDe = (m: MatchListRow) => m.prep ?? { slots: 0, starters: 0, bench: 0 };
 
-          <span className="shrink-0 text-center">
-            {res ? (
-              <span
-                className={cx(
-                  "inline-block rounded-[6px] px-2 py-0.5 text-body font-semibold tabular",
-                  res === "win" && "bg-ok-soft text-ok",
-                  res === "draw" && "bg-sunken text-ink-2",
-                  res === "loss" && "bg-risk-soft text-risk",
-                )}
-              >
-                {golosCasa}–{golosFora}
-              </span>
-            ) : (
-              <span className="text-meta tabular text-ink-3">
-                {inicio.toLocaleTimeString("pt-PT", { hour: "2-digit", minute: "2-digit" })}
-              </span>
-            )}
-          </span>
 
-          <span
-            className={cx(
-              "truncate text-body",
-              cancelado ? "text-ink-4 line-through" : !match.isHome ? "font-medium text-ink" : "text-ink-2",
-            )}
-          >
-            {fora}
-          </span>
-        </span>
+/**
+ * O estado de um jogo, calculado do que existe.
+ *
+ * A mesma leitura da página do jogo: ninguém escolhe o estado à mão. Antes do
+ * apito conta a preparação (convocatória e onze); depois, o resultado e a
+ * análise.
+ */
+function estadoDoJogo(m: MatchListRow, agora: number): EstadoDoJogo {
+  const inicio = new Date(m.startsAt).getTime();
+  const fim = new Date(m.endsAt).getTime();
+  if (m.status === "CANCELLED") return { chave: "cancelado", texto: "Cancelado", tom: "risco" };
+  if (inicio <= agora && fim > agora) return { chave: "a-decorrer", texto: "A decorrer", tom: "vivo" };
+  if (inicio <= agora) {
+    if (m.ourScore === null) return { chave: "sem-resultado", texto: "Sem resultado", tom: "aviso" };
+    return m.analysed ? { chave: "analisado", texto: "Analisado", tom: "neutro" } : { chave: "por-analisar", texto: "Por analisar", tom: "aviso" };
+  }
+  const onzeCompleto = prepDe(m).slots > 0 && prepDe(m).starters === prepDe(m).slots;
+  if (m.submitted && onzeCompleto) return { chave: "pronto", texto: "Pronto", tom: "ok" };
+  if (m.submitted || prepDe(m).starters > 0) return { chave: "em-preparacao", texto: "Em preparação", tom: "aviso" };
+  return { chave: "por-preparar", texto: "Por preparar", tom: "neutro" };
+}
 
-        {/*
-          O selo de escalado, antes do resto.
-          Fica fora do bloco `md:flex` de propósito: num telemóvel, "vou trabalhar
-          neste jogo" é a informação que sobrevive ao corte — o campo e o escalão
-          não são.
-        */}
-        {match.myStaffRole && <Pill tone="signal">{match.myStaffRole}</Pill>}
-
-        {/* O contexto e o que falta, à direita. */}
-        <span className="hidden shrink-0 items-center gap-2 md:flex">
-          <span className="inline-flex max-w-[160px] items-center gap-1 truncate text-meta text-ink-3">
-            <MapPin className="size-3.5 shrink-0" strokeWidth={1.75} />
-            {match.venue}
-          </span>
-          <span className="w-[86px] text-right">
-            {cancelado ? (
-              <Pill>cancelado</Pill>
-            ) : pendente ? (
-              <Pill tone="warn">{passado ? "sem resultado" : "por convocar"}</Pill>
-            ) : (
-              <span className="text-meta text-ink-4">{match.teamName}</span>
-            )}
-          </span>
-        </span>
-
-        <ChevronRight className="size-4 shrink-0 text-ink-4" strokeWidth={1.75} />
-      </Link>
-    </li>
-  );
+/** Um jogo da lista, no formato que as vistas desenham. */
+function paraLinha(m: MatchListRow, agora: number): JogoNaLista {
+  const inicio = new Date(m.startsAt);
+  const res = outcome(m);
+  const prep = prepDe(m);
+  return {
+    id: m.id,
+    equipa: m.teamName,
+    adversario: m.opponent,
+    emCasa: m.isHome,
+    prova: m.competition?.label ?? null,
+    inicio,
+    local: m.venue,
+    estado: estadoDoJogo(m, agora),
+    resultado: res && m.ourScore !== null && m.theirScore !== null ? { nos: m.ourScore, eles: m.theirScore, desfecho: res } : null,
+    // Os quatro passos da preparação, pela ordem em que se fazem.
+    preparacao: [m.submitted, prep.slots > 0 && prep.starters === prep.slots, prep.bench > 0, Boolean(m.opponentKnown)],
+    cancelado: m.status === "CANCELLED",
+    passado: inicio.getTime() <= agora,
+    funcao: m.myStaffRole,
+  };
 }

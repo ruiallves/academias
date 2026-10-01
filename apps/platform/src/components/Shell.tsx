@@ -39,7 +39,7 @@ const NAV: NavItem[] = [
   { to: "/registo", label: "Registo", icon: FileClock },
   // O que mudou, contado aos clubes. Fica depois do registo porque é a última
   // coisa de um ciclo de trabalho: fez-se, ficou registado, conta-se.
-  { to: "/novidades", label: "Novidades", icon: Megaphone },
+  { to: "/comunicados", label: "Comunicados", icon: Megaphone },
   // Termos, políticas e DPA — versões, publicação e quem já aceitou.
   { to: "/legal", label: "Legal", icon: Scale },
 ];
