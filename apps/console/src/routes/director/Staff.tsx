@@ -1,5 +1,5 @@
 import { cargoDe, departamentoDe, eDoClinico, ordemDoStaff, semCargo } from "@/lib/staff";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { PageHeader } from "@/components/Shell";
 import { BotaoExportar } from "@/components/BotaoExportar";
 import { COLUNAS_EXPORT_STAFF } from "@/lib/colunas-export";
@@ -8,15 +8,16 @@ import { BulkBar, BulkDeleteDialog } from "@/components/BulkDelete";
 import { apiDelete } from "@/lib/http";
 import { reloadAcademy, useStore } from "@/lib/store";
 import { ResultCount, SearchInput, Segmented, Toolbar } from "@/components/filters";
-import { Clock, HeartPulse, Plus, Shield, Users, Whistle } from "@/lib/icons";
+import { Clock, HeartPulse, Plus, Send, Shield, Upload, Users, Whistle } from "@/lib/icons";
 import { listStaff, teamById, unrecordedSessions } from "@/lib/api";
-import { revokeInvite, usePendingInvites } from "@/lib/invites";
+import { porEnviar, revokeInvite, sendInvite, sendInvites, usePendingInvites, type PendingInvite } from "@/lib/invites";
 import { loadDepartments } from "@/lib/departments";
 import { loadRoles } from "@/lib/roles";
 import { shortDate } from "@/lib/format";
 import { can } from "@/lib/permissions";
 import { ROLE_LABEL, useSession } from "@/session";
 import { InviteDialog } from "@/components/InviteDialog";
+import { ImportStaffDialog } from "@/components/ImportStaffDialog";
 import type { StaffDepartment, StaffMember } from "@/data/types";
 
 type Filter = "todos" | StaffDepartment;
@@ -49,6 +50,10 @@ export default function Staff() {
   const [filter, setFilter] = useState<Filter>("todos");
   const [query, setQuery] = useState("");
   const [inviting, setInviting] = useState(false);
+  const [importing, setImporting] = useState(false);
+  /* O envio dos convites guardados: o que está a sair, e o que aconteceu. */
+  const [aEnviar, setAEnviar] = useState<string | "todos" | null>(null);
+  const [aviso, setAviso] = useState<{ tom: "ok" | "risk"; texto: string } | null>(null);
 
   // Redesenha quando uma ficha for editada — o nome ou o cargo mudam aqui também.
   /* Sem isto, a lista não acompanha uma mudança de cargo nem uma ficha editada. */
@@ -84,6 +89,47 @@ export default function Staff() {
    */
   const agora = Date.now();
   const invites = usePendingInvites().filter((inv) => new Date(inv.expiresAt).getTime() > agora);
+  /* Guardados sem enviar, e os que já saíram e esperam que a pessoa aceite. */
+  const guardados = invites.filter(porEnviar);
+  const enviados = invites.filter((i) => !porEnviar(i));
+
+  async function enviarUm(inv: PendingInvite, reenvio: boolean) {
+    setAEnviar(inv.id);
+    setAviso(null);
+    try {
+      const r = await sendInvite(inv.id);
+      setAviso(
+        r.emailed
+          ? { tom: "ok", texto: `Convite ${reenvio ? "reenviado" : "enviado"} para ${inv.email}.${reenvio ? " O link anterior deixou de valer." : ""}` }
+          : { tom: "risk", texto: `O convite de ${inv.name} ficou pronto, mas o email não saiu${r.emailError ? ` (${r.emailError})` : ""}. Tenta reenviar.` },
+      );
+    } catch (e) {
+      setAviso({ tom: "risk", texto: e instanceof Error ? e.message : "Não foi possível enviar o convite." });
+    } finally {
+      setAEnviar(null);
+    }
+  }
+
+  async function enviarTodos() {
+    setAEnviar("todos");
+    setAviso(null);
+    try {
+      const r = await sendInvites(guardados.map((i) => i.id));
+      const falhas = r.resultados.filter((x) => !x.emailed);
+      setAviso(
+        falhas.length === 0
+          ? { tom: "ok", texto: `${r.enviados} ${r.enviados === 1 ? "convite enviado" : "convites enviados"}.` }
+          : {
+              tom: "risk",
+              texto: `${r.enviados} ${r.enviados === 1 ? "convite enviado" : "convites enviados"}, ${falhas.length} por sair. ${falhas[0].error ?? ""}`,
+            },
+      );
+    } catch (e) {
+      setAviso({ tom: "risk", texto: e instanceof Error ? e.message : "Não foi possível enviar os convites." });
+    } finally {
+      setAEnviar(null);
+    }
+  }
 
   // Registos de presenças em atraso, por pessoa. É a única métrica de staff que
   // interessa a um diretor — e é sobre processo, não sobre desempenho.
@@ -271,20 +317,29 @@ export default function Staff() {
         }
       >
         {/*
-          O staff não se importa de volta — não há folha de cálculo que crie
-          contas e cargos, e não deve haver. Exporta-se para o que os clubes
-          fazem com estas listas: a acta, o seguro, o mapa de pessoal.
+          Exporta-se para o que os clubes fazem com estas listas (a acta, o
+          seguro, o mapa de pessoal), e a mesma folha volta a entrar pelo
+          Importar: as colunas Nome, Email, Cargo e Equipas são as mesmas. O que
+          a importação cria é um convite guardado, e não uma conta: a conta
+          nasce quando a pessoa aceita. Ver `lib/staff-import.ts`.
         */}
         <BotaoExportar linhas={all} colunas={COLUNAS_EXPORT_STAFF} ficheiro="staff" folha="Staff" />
         {can(session, "staff:write") && (
-          <button type="button" className="ctl-primary" onClick={() => setInviting(true)}>
-            <Plus className="size-3.5" strokeWidth={2} />
-            Convidar
-          </button>
+          <>
+            <button type="button" className="ctl-outline" onClick={() => setImporting(true)}>
+              <Upload className="size-3.5" strokeWidth={1.75} />
+              Importar
+            </button>
+            <button type="button" className="ctl-primary" onClick={() => setInviting(true)}>
+              <Plus className="size-3.5" strokeWidth={2} />
+              Adicionar
+            </button>
+          </>
         )}
       </PageHeader>
 
       {inviting && <InviteDialog session={session} onClose={() => setInviting(false)} />}
+      {importing && <ImportStaffDialog onClose={() => setImporting(false)} />}
 
       <div className="space-y-3">
         <MetricRow>
@@ -294,6 +349,61 @@ export default function Staff() {
           <Metric label="Operações" value={String(counts.operations)} icon={Users} note={nota("operations", "secretaria e logística")} />
         </MetricRow>
 
+        {aviso && (
+          <p
+            role="status"
+            className={cx(
+              "rounded-[var(--radius-panel)] px-4 py-2.5 text-meta leading-relaxed",
+              aviso.tom === "ok" ? "bg-ok-soft text-ok" : "bg-risk-soft text-risk",
+            )}
+          >
+            {aviso.texto}
+          </p>
+        )}
+
+        {/*
+          Por convidar: quem foi adicionado (à mão ou por ficheiro) e ainda não
+          recebeu o convite. Fica à frente de tudo porque é trabalho por fazer:
+          enquanto o convite não sair, a pessoa não entra.
+        */}
+        {guardados.length > 0 && can(session, "staff:write") && (
+          <Panel>
+            <PanelHead title="Por convidar" hint={`${guardados.length} · ainda sem email`}>
+              <button type="button" className="ctl-primary h-8" disabled={aEnviar !== null} onClick={() => void enviarTodos()}>
+                <Send className="size-3.5" strokeWidth={1.75} />
+                {aEnviar === "todos"
+                  ? "A enviar…"
+                  : guardados.length === 1
+                    ? "Enviar o convite"
+                    : `Enviar os ${guardados.length} convites`}
+              </button>
+            </PanelHead>
+            <ul>
+              {guardados.map((inv) => (
+                <LinhaDoConvite key={inv.id} inv={inv}>
+                  <button
+                    type="button"
+                    onClick={() => void enviarUm(inv, false)}
+                    disabled={aEnviar !== null}
+                    className="ctl-outline h-8 shrink-0"
+                  >
+                    {aEnviar === inv.id ? "A enviar…" : "Enviar convite"}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => void revokeInvite(inv.id)}
+                    disabled={aEnviar !== null}
+                    className="ctl-ghost h-8 shrink-0"
+                    title="Tira esta pessoa da lista"
+                  >
+                    Remover
+                  </button>
+                </LinhaDoConvite>
+              ))}
+            </ul>
+          </Panel>
+        )}
+
         {/*
           Convites por aceitar.
 
@@ -301,35 +411,31 @@ export default function Staff() {
           esquecido é um link válido que dá acesso à academia e que ninguém está a
           ver. Enquanto existir, tem de estar à frente de quem o pode fechar.
         */}
-        {invites.length > 0 && can(session, "staff:write") && (
+        {enviados.length > 0 && can(session, "staff:write") && (
           <Panel>
-            <PanelHead title="Convites por aceitar" hint={`${invites.length} · válidos 7 dias`} />
+            <PanelHead title="Convites por aceitar" hint={`${enviados.length} · válidos 7 dias`} />
             <ul>
-              {invites.map((inv) => (
-                <li
-                  key={inv.id}
-                  className="flex items-center gap-3 border-b border-line px-5 py-2.5 last:border-b-0"
-                >
-                  <Clock className="size-3.5 shrink-0 text-ink-4" strokeWidth={1.75} />
-                  <div className="min-w-0 flex-1">
-                    <div className="truncate text-body font-medium text-ink">{inv.name}</div>
-                    <div className="truncate text-meta text-ink-3">{inv.email}</div>
-                  </div>
-                  <Pill>{ROLE_LABEL[inv.role]}</Pill>
-                  <span className="hidden text-meta text-ink-4 sm:inline">
-                    {inv.teamIds.length === 0
-                      ? "sem equipas"
-                      : `${inv.teamIds.length} ${inv.teamIds.length === 1 ? "equipa" : "equipas"}`}
-                  </span>
+              {enviados.map((inv) => (
+                <LinhaDoConvite key={inv.id} inv={inv}>
                   <button
                     type="button"
-                    onClick={() => revokeInvite(inv.id)}
-                    className="ctl-ghost shrink-0"
+                    onClick={() => void enviarUm(inv, true)}
+                    disabled={aEnviar !== null}
+                    className="ctl-ghost h-8 shrink-0"
+                    title="Manda um link novo. O anterior deixa de funcionar."
+                  >
+                    {aEnviar === inv.id ? "A enviar…" : "Reenviar"}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => void revokeInvite(inv.id)}
+                    disabled={aEnviar !== null}
+                    className="ctl-ghost h-8 shrink-0"
                     title="Fecha o link — deixa de funcionar"
                   >
                     Revogar
                   </button>
-                </li>
+                </LinhaDoConvite>
               ))}
             </ul>
           </Panel>
@@ -337,6 +443,8 @@ export default function Staff() {
 
         <Panel>
           <Toolbar>
+            {/* A pesquisa primeiro, à esquerda: é o que mais se usa numa lista de pessoas. */}
+            <SearchInput value={query} onChange={setQuery} placeholder="Procurar nome ou cargo…" />
             <Segmented
               value={filter}
               onChange={setFilter}
@@ -348,7 +456,6 @@ export default function Staff() {
                 { value: "operations", label: "Operações", count: naTabela.operations },
               ]}
             />
-            <SearchInput value={query} onChange={setQuery} placeholder="Procurar nome ou cargo…" />
             <ResultCount n={rows.length} noun={["pessoa", "pessoas"]} />
           </Toolbar>
 
@@ -399,5 +506,27 @@ export default function Staff() {
         />
       )}
     </>
+  );
+}
+
+/** Uma pessoa convidada (ou por convidar): nome, email, cargo e equipas, com os botões à direita. */
+function LinhaDoConvite({ inv, children }: { inv: PendingInvite; children: ReactNode }) {
+  return (
+    <li className="flex flex-wrap items-center gap-x-3 gap-y-2 border-b border-line px-5 py-2.5 last:border-b-0">
+      <Clock className="size-3.5 shrink-0 text-ink-4" strokeWidth={1.75} />
+      <div className="min-w-0 flex-1">
+        <div className="truncate text-body font-medium text-ink">{inv.name}</div>
+        <div className="truncate text-meta text-ink-3">{inv.email}</div>
+      </div>
+      <Pill>{inv.title ?? ROLE_LABEL[inv.role]}</Pill>
+      <span className="hidden text-meta text-ink-4 sm:inline">
+        {inv.teamIds.length === 0
+          ? "sem equipas"
+          : inv.teamIds.length <= 2
+            ? inv.teamIds.map((id) => teamById(id)?.name).filter(Boolean).join(", ")
+            : `${inv.teamIds.length} equipas`}
+      </span>
+      {children}
+    </li>
   );
 }

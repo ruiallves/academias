@@ -129,6 +129,8 @@ export type MatchDetail = {
    * da modalidade. Nulo numa modalidade sem duração declarada.
    */
   matchMinutes: number | null;
+  /** O tempo adicional por parte, em minutos. Vazio se ninguém o registou. */
+  addedMinutes: number[];
   startsAt: string;
   endsAt: string;
   venue: string;
@@ -220,6 +222,10 @@ export const staffPool = () =>
   apiGet<{ membershipId: string; name: string; role: string | null }[]>("/api/matches/equipa-tecnica");
 
 /** `null` nos dois limpa o resultado e devolve o jogo a agendado. */
+/** O tempo adicional de cada parte. Só nas modalidades que o têm (ver `SportProfile.match`). */
+export const saveAddedTime = (id: string, minutes: number[]) =>
+  apiPost<{ ok: true; addedMinutes: number[] }>(`/api/matches/${id}/tempo-adicional`, { minutes });
+
 export const saveResult = (id: string, ourScore: number | null, theirScore: number | null) =>
   apiPost<{ ok: true }>(`/api/matches/${id}/resultado`, { ourScore, theirScore });
 

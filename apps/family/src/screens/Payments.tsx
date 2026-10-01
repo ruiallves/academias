@@ -13,6 +13,7 @@ import {
   TriangleAlert,
 } from "lucide-react";
 import { apiGet, apiPost } from "@/lib/http";
+import { PAGAMENTOS_DESATIVADOS, doMetodo, useCotacao } from "@/lib/cotacao";
 import { reload, useStore, type Payment } from "@/lib/store";
 import { Avatar, Money, cx, dateShort, money } from "@/ui";
 
@@ -74,7 +75,15 @@ export default function Payments() {
     return () => clearTimeout(t);
   }, [retorno, setParams]);
 
-  const chosen = outstanding.filter((p) => selected.has(p.id));
+  /*
+   * O clube aceita pagamentos pela app? Com eles desligados, este ecrã continua
+   * a dizer o que está em dívida — é informação que o pai precisa — mas deixa
+   * de oferecer o que o servidor ia recusar: escolher meses e pagar.
+   */
+  const regras = useCotacao("/billing/cotacao", []);
+  const desativados = regras?.enabled === false;
+
+  const chosen = desativados ? [] : outstanding.filter((p) => selected.has(p.id));
   const total = useMemo(() => chosen.reduce((n, p) => n + p.amountCents, 0), [chosen]);
   // O que já foi pago e espera confirmação não é dívida — é espera. Contá-lo
   // no total era dizer ao pai que devia o que acabou de pagar.
@@ -114,6 +123,13 @@ export default function Payments() {
         </div>
       )}
 
+      {desativados && (
+        <div className="mt-3 flex items-start gap-2.5 rounded-[var(--radius-md)] bg-sunken p-3.5 text-[13px] leading-relaxed text-ink-2">
+          <TriangleAlert className="mt-0.5 size-4 shrink-0 text-ink-3" strokeWidth={2} />
+          {PAGAMENTOS_DESATIVADOS}
+        </div>
+      )}
+
       {outstanding.length === 0 ? (
         <AllSettled />
       ) : (
@@ -148,7 +164,13 @@ export default function Payments() {
             </div>
 
             <p className="mt-1.5 text-[13px] text-white/55">
-              {chosen.length > 0 ? span : "Escolhe os meses que queres pagar."}
+              {desativados
+                ? "Paga-se diretamente ao clube."
+                : chosen.length > 0
+                  ? regras?.feesOnPayer
+                    ? `${span} · mais a taxa do método`
+                    : span
+                  : "Escolhe os meses que queres pagar."}
             </p>
           </div>
 
@@ -156,7 +178,7 @@ export default function Payments() {
             Os atalhos. Sem eles, pagar seis meses de atraso são seis toques em
             seis linhas — e a app parece um formulário em vez de uma carteira.
           */}
-          <div className="mt-3 flex flex-wrap gap-2">
+          <div className={cx("mt-3 flex flex-wrap gap-2", desativados && "hidden")}>
             <Quick active={allChosen} onClick={() => setSelected(new Set(outstanding.map((p) => p.id)))}>
               Todas · {money(owedTotal)}
             </Quick>
@@ -187,7 +209,12 @@ export default function Payments() {
                 )}
                 <ul className="overflow-hidden rounded-[var(--radius-lg)] bg-surface shadow-[var(--shadow-soft)]">
                   {items.map((p) => (
-                    <MonthRow key={p.id} payment={p} selected={selected.has(p.id)} onToggle={() => toggle(p.id)} />
+                    <MonthRow
+                      key={p.id}
+                      payment={p}
+                      selected={!desativados && selected.has(p.id)}
+                      onToggle={desativados ? undefined : () => toggle(p.id)}
+                    />
                   ))}
                 </ul>
               </section>
@@ -304,29 +331,43 @@ function Quick({ active, onClick, children }: { active: boolean; onClick: () => 
  * Uma linha por mês. A caixa de selecção à esquerda, onde se lê primeiro — à
  * direita competia com o valor, e a linha inteira parecia um botão de pagar.
  */
-function MonthRow({ payment, selected, onToggle }: { payment: Payment; selected: boolean; onToggle: () => void }) {
+/**
+ * Uma mensalidade por pagar.
+ *
+ * Sem `onToggle` a linha só se lê: é o caso de um clube com os pagamentos pela
+ * app desligados. Fica sem a bola de escolher, porque uma bola que não se deixa
+ * marcar parece uma avaria.
+ */
+function MonthRow({ payment, selected, onToggle }: { payment: Payment; selected: boolean; onToggle?: () => void }) {
   const overdue = payment.status === "overdue";
+  const tentativa = payment.openPayment;
+  /* A referência cobra mais do que a mensalidade quando a taxa é de quem paga. */
+  const valorDaTentativa =
+    tentativa?.amountCents && tentativa.amountCents !== payment.amountCents ? ` · ${money(tentativa.amountCents)}` : "";
 
   return (
     <li className="border-b border-line last:border-0">
       <button
         type="button"
         onClick={onToggle}
-        role="checkbox"
-        aria-checked={selected}
+        disabled={!onToggle}
+        role={onToggle ? "checkbox" : undefined}
+        aria-checked={onToggle ? selected : undefined}
         className={cx(
           "flex w-full items-center gap-3.5 px-4 py-3.5 text-left transition-colors duration-200",
-          selected ? "bg-signal-soft" : "active:bg-sunken/50",
+          selected ? "bg-signal-soft" : onToggle && "active:bg-sunken/50",
         )}
       >
-        <span
-          className={cx(
-            "flex size-[22px] shrink-0 items-center justify-center rounded-full border-2 transition-colors duration-200",
-            selected ? "border-transparent bg-signal-strong text-signal-on" : "border-line-strong",
-          )}
-        >
-          {selected && <Check className="size-3.5" strokeWidth={3} />}
-        </span>
+        {onToggle && (
+          <span
+            className={cx(
+              "flex size-[22px] shrink-0 items-center justify-center rounded-full border-2 transition-colors duration-200",
+              selected ? "border-transparent bg-signal-strong text-signal-on" : "border-line-strong",
+            )}
+          >
+            {selected && <Check className="size-3.5" strokeWidth={3} />}
+          </span>
+        )}
 
         <span className="min-w-0 flex-1">
           <span className="block truncate text-body font-semibold text-ink">{payment.label}</span>
@@ -346,6 +387,7 @@ function MonthRow({ payment, selected, onToggle }: { payment: Payment; selected:
           {payment.openPayment?.entity && payment.openPayment.reference ? (
             <span className="num block text-[12px] font-medium text-ink-2">
               MB {payment.openPayment.entity} · {payment.openPayment.reference}
+              {valorDaTentativa}
             </span>
           ) : payment.openPayment ? (
             <span className="block text-[12px] font-medium text-ink-3">
@@ -383,7 +425,7 @@ type PayResult = {
   ok: number;
   failed: number;
   /** Referências Multibanco geradas, para quem prefere pagar na caixa. */
-  references: { label: string; entity: string; reference: string }[];
+  references: { label: string; entity: string; reference: string; amountCents?: number }[];
   error?: string;
   /** Débito directo: a mensagem do fim é outra — o banco demora dias. */
   debitado?: boolean;
@@ -391,6 +433,8 @@ type PayResult = {
 
 type StartedPayment = {
   method: string;
+  /** O que foi mesmo pedido — a mensalidade, mais a taxa quando é de quem paga. */
+  amountCents?: number;
   entity: string | null;
   reference: string | null;
   redirectUrl: string | null;
@@ -503,6 +547,14 @@ function MethodSheet({
   const varios = charges.length > 1;
 
   /*
+   * Quanto fica cada método para estas mensalidades. Um valor por mensalidade,
+   * porque cada uma é um pagamento e leva a sua taxa. Só interessa quando o
+   * clube põe a taxa por conta de quem paga — senão o total é o de sempre.
+   */
+  const cotacao = useCotacao("/billing/cotacao", charges.map((c) => c.amountCents));
+  const comTaxa = cotacao?.feesOnPayer === true;
+
+  /*
    * O mínimo de cada método na euPago: MB Way desde 0,50 €, Multibanco desde
    * 1 €. Cada mês é um pagamento, por isso conta o mês mais barato. O servidor
    * recusa na mesma (`minimos.ts`); aqui é para não oferecer o que falha.
@@ -549,7 +601,7 @@ function MethodSheet({
         });
         ok++;
         if (p.entity && p.reference) {
-          references.push({ label: c.label, entity: p.entity, reference: p.reference });
+          references.push({ label: c.label, entity: p.entity, reference: p.reference, amountCents: p.amountCents });
         }
         // Um formulário alojado: sai-se da app para a página segura da euPago.
         // O resultado conta-se no regresso (`?retorno=…`) — e a verdade, como
@@ -601,8 +653,21 @@ function MethodSheet({
         </span>
       </div>
 
+      {/*
+        A taxa é de quem paga: di-lo antes de alguém escolher. O valor de cima é
+        o das mensalidades; o que sai da conta depende do método, e está em cada
+        linha.
+      */}
+      {comTaxa && view === "menu" && (
+        <p className="mb-3 px-1 text-[13px] leading-relaxed text-ink-3">
+          A este valor soma-se a <strong className="font-semibold text-ink">taxa do método de pagamento</strong>, que é
+          diferente de método para método.
+        </p>
+      )}
+
       {view === "mbway" && (
         <>
+          {comTaxa && <Conta valor={total} linha={doMetodo(cotacao, "MBWAY")} metodo="MB Way" />}
           <div className="mb-3">
             <label className="mb-1.5 block text-meta font-medium text-ink-3">Telemóvel do MB Way</label>
             <input
@@ -683,6 +748,7 @@ function MethodSheet({
               const pequeno = abaixoDoMinimo(m.key);
               const bloqueado = (m.kind === "redirect" && varios) || pequeno;
               const Icon = m.icon;
+              const linha = comTaxa ? doMetodo(cotacao, m.key) : undefined;
               const hint =
                 m.key === "DIRECT_DEBIT" && mandate
                   ? `Da conta ···${mandate.ibanTail}`
@@ -709,6 +775,15 @@ function MethodSheet({
                       <span className="block text-body font-semibold text-ink">{m.label}</span>
                       {hint && <span className="block text-[12px] font-medium text-ink-3">{hint}</span>}
                     </span>
+                    {/* O que sai da conta por este método, e quanto disso é taxa. */}
+                    {linha && !bloqueado && (
+                      <span className="shrink-0 text-right">
+                        <span className="num block text-body font-semibold text-ink">{money(linha.totalCents)}</span>
+                        <span className="num block text-[12px] font-medium text-ink-3">
+                          + {money(linha.surchargeCents)} de taxa
+                        </span>
+                      </span>
+                    )}
                     {busy ? (
                       <Loader className="size-4 shrink-0 animate-spin text-ink-4" strokeWidth={2} />
                     ) : (
@@ -735,6 +810,42 @@ function MethodSheet({
         Processado pela euPago. A academia nunca vê os teus dados bancários.
       </p>
     </Sheet>
+  );
+}
+
+/**
+ * A conta, quando a taxa é de quem paga: o valor, a taxa do método, o total.
+ *
+ * Aparece antes do último toque, que é o que faz sair dinheiro. Sem linha (o
+ * servidor não respondeu) não se inventa: fica só o aviso de que há taxa.
+ */
+function Conta({
+  valor,
+  linha,
+  metodo,
+}: {
+  valor: number;
+  linha: { surchargeCents: number; totalCents: number } | undefined;
+  metodo: string;
+}) {
+  if (!linha) {
+    return <p className="mb-3 px-1 text-[13px] text-ink-3">A este valor soma-se a taxa do {metodo}.</p>;
+  }
+  return (
+    <dl className="mb-3 space-y-1.5 rounded-[var(--radius-md)] bg-surface p-3.5 text-[13px] shadow-[var(--shadow-soft)]">
+      <div className="flex items-baseline justify-between gap-3">
+        <dt className="text-ink-3">Mensalidades</dt>
+        <dd className="num font-medium text-ink-2">{money(valor)}</dd>
+      </div>
+      <div className="flex items-baseline justify-between gap-3">
+        <dt className="text-ink-3">Taxa do {metodo}</dt>
+        <dd className="num font-medium text-ink-2">+ {money(linha.surchargeCents)}</dd>
+      </div>
+      <div className="flex items-baseline justify-between gap-3 border-t border-line pt-1.5">
+        <dt className="font-semibold text-ink">Total a pagar</dt>
+        <dd className="num font-semibold text-ink">{money(linha.totalCents)}</dd>
+      </div>
+    </dl>
   );
 }
 
@@ -799,13 +910,27 @@ function ResultSheet({ result, onClose }: { result: PayResult; onClose: () => vo
 }
 
 /** A referência copiável — para se poder pagar na caixa sem a escrever à mão. */
-function MbRef({ label, entity, reference }: { label: string; entity: string; reference: string }) {
+function MbRef({
+  label,
+  entity,
+  reference,
+  amountCents,
+}: {
+  label: string;
+  entity: string;
+  reference: string;
+  amountCents?: number;
+}) {
   const [copied, setCopied] = useState(false);
 
   return (
     <div className="flex items-center gap-3 rounded-[var(--radius-md)] bg-surface p-3.5 shadow-[var(--shadow-soft)]">
       <div className="min-w-0 flex-1">
-        <p className="text-[12px] text-ink-3">{label}</p>
+        <p className="text-[12px] text-ink-3">
+          {label}
+          {/* O valor da referência: com a taxa, é mais do que a mensalidade. */}
+          {amountCents ? <span className="num font-semibold text-ink-2"> · {money(amountCents)}</span> : null}
+        </p>
         <p className="num text-body font-semibold text-ink">
           {entity} · {reference}
         </p>

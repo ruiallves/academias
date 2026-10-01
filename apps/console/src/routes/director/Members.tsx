@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { CustoDoPagamento } from "@/components/finance/CustoDoPagamento";
 import { PageHeader } from "@/components/Shell";
+import { AvisoDePagamentos } from "@/components/finance/AvisoDePagamentos";
 import { SearchInput, Segmented } from "@/components/filters";
 import { DataTable, Empty, Loading, Monogram, Panel, Pill, RowLink, cx, type Column, type Tone } from "@/components/primitives";
 import { Dialog, DialogField, dialogInputClass } from "@/components/Dialog";
@@ -295,6 +296,8 @@ export default function Members() {
           </button>
         )}
       </PageHeader>
+
+      <AvisoDePagamentos quem="sócios" />
 
       {/*
         Os pendentes primeiro e com contador: uma inscrição feita no site e

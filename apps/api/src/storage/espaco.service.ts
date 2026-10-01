@@ -28,6 +28,7 @@ export const MB = 1024 * 1024;
 /** As categorias, como a consola e a plataforma as escrevem. */
 export const CATEGORIAS: Record<string, string> = {
   fotografias: "Fotografias",
+  documentos: "Documentos de atletas",
   simbolo: "Símbolo do clube",
   inventario: "Inventário",
   exercicios: "Exercícios",

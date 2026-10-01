@@ -83,6 +83,29 @@ jobs:
       - name: Os coletes do quadro tático
         run: npm run test:coletes --workspace=@academia/console
 
+      - name: Definições — o submenu e os endereços antigos
+        run: npm run test:definicoes --workspace=@academia/console
+
+      # Pagamentos desligados e a comissão por conta de quem paga. O serviço
+      # verdadeiro contra uma base e uma euPago de mentira: recusa sem chegar a
+      # pedir referência nenhuma, e cobra o valor que deixa ao clube o preço inteiro.
+      - name: Pagamentos — desligados, e a taxa de quem paga
+        run: npm run test:taxa-do-pagador --workspace=@academia/api
+
+      # A mesma conta está escrita no servidor e na consola: têm de dar o mesmo cêntimo.
+      - name: A taxa na consola é a do servidor
+        run: npm run test:taxa --workspace=@academia/console
+
+      # Dados de saúde e cópias de documentos de menores: quem não deve não chega
+      # lá. O serviço verdadeiro, com a família, um treinador de outra equipa e
+      # chaves de outro atleta e de outro clube a tentar.
+      - name: Ficha do atleta — informação médica e documentos
+        run: npm run test:ficha-do-atleta --workspace=@academia/api
+
+      # As notas da escola: só o encarregado submete, e só as dos seus. O clube lê.
+      - name: Notas da escola — quem submete e quem lê
+        run: npm run test:notas-escolares --workspace=@academia/api
+
       # A coluna do ano de quotas apaga anuidades quando muda. O ida-e-volta
       # exporta a sério e volta a ler com o leitor da importação: uma célula que
       # saísse vazia voltava a entrar como "assume hoje" e refazia o ano a quem

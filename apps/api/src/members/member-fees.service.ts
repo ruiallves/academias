@@ -316,13 +316,16 @@ export class MemberFeesService implements OnModuleInit, OnModuleDestroy {
           paidBy: {
             where: { payment: { status: "PAID" } },
             take: 1,
-            select: { payment: { select: { identificador: true, payerName: true } } },
+            select: { payment: { select: { identificador: true, payerName: true, surchargeCents: true } } },
           },
         },
       });
       return quotas.map(({ paidBy, ...q }) => ({
         ...q,
         paidBy: q.status === "SETTLED" ? (paidBy[0]?.payment.payerName ?? null) : null,
+        /* A comissão do pagamento que a liquidou — do pagamento inteiro, que
+           pode ter coberto vários meses. Ver `Academy.feesOnPayer`. */
+        paidSurchargeCents: q.status === "SETTLED" ? (paidBy[0]?.payment.surchargeCents ?? 0) : 0,
         paymentId: q.status === "SETTLED" ? (paidBy[0]?.payment.identificador ?? null) : null,
       }));
     });

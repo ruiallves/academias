@@ -1,6 +1,7 @@
 import { useState, type FormEvent } from "react";
-import { Panel, PanelHead, Pill } from "@/components/primitives";
-import { Plus, Trash2 } from "@/lib/icons";
+import { Pill } from "@/components/primitives";
+import { Erro, Lista } from "@/components/definicoes/ui";
+import { Pencil, Plus, Trash2 } from "@/lib/icons";
 import { apiDelete, apiPatch, apiPost } from "@/lib/http";
 import { reloadAcademy, useStore } from "@/lib/store";
 import { Dialog, DialogField, dialogInputClass } from "./Dialog";
@@ -62,39 +63,43 @@ export function SportsPanel({
 
   return (
     <>
-      <Panel>
-        <PanelHead title="Modalidades" hint="o que o clube pratica">
+      <div className="space-y-4">
+        <div className="flex flex-wrap items-end justify-between gap-x-6 gap-y-3">
+          <p className="max-w-[62ch] text-meta leading-relaxed text-ink-3">
+            Cada caixa é uma <strong className="font-medium text-ink-2">modalidade</strong>. Abre-a para ver o que é
+            dela: os escalões, as competições, os locais e os balneários.
+          </p>
           {mayWrite && (
-            <button type="button" className="ctl-primary" onClick={() => setCreating(true)}>
+            <button type="button" className="ctl-primary shrink-0" onClick={() => setCreating(true)}>
               <Plus className="size-3.5" strokeWidth={2} />
               Nova modalidade
             </button>
           )}
-        </PanelHead>
+        </div>
+
+        {erro && <Erro>{erro}</Erro>}
 
         {academy.sports.length === 0 ? (
-          <p className="px-5 py-6 text-center text-meta leading-relaxed text-ink-3">
-            Ainda não há modalidades.
-            <br />
-            Cria a primeira — é ela que organiza os escalões, os balneários e as equipas.
-          </p>
+          <Lista>
+            <p className="px-4 py-8 text-center text-meta leading-relaxed text-ink-3">
+              Ainda não há modalidades.
+              <br />
+              Cria a primeira: é ela que organiza os escalões, os balneários e as equipas.
+            </p>
+          </Lista>
         ) : (
-          <ul>
-            {academy.sports.map((sport) => (
-              <SportRow
-                key={sport.id}
-                deepLinked={deepLinked}
-                sport={sport}
-                mayWrite={mayWrite}
-                onEdit={() => setEditing(sport)}
-                onRemove={() => void remove(sport)}
-              />
-            ))}
-          </ul>
+          academy.sports.map((sport) => (
+            <SportRow
+              key={sport.id}
+              deepLinked={deepLinked}
+              sport={sport}
+              mayWrite={mayWrite}
+              onEdit={() => setEditing(sport)}
+              onRemove={() => void remove(sport)}
+            />
+          ))
         )}
-
-        {erro && <p className="border-t border-line px-5 py-3 text-meta text-risk">{erro}</p>}
-      </Panel>
+      </div>
 
       {(creating || editing) && (
         <SportDialog
@@ -132,9 +137,12 @@ function SportRow({
 }) {
   const [open, setOpen] = useState(() => !!deepLinked && CATALOG_KEYS.includes(deepLinked));
 
+  const perfil = profileOf(sport);
+  const Icon = perfil?.icon;
+
   return (
-    <li className="border-b border-line last:border-0">
-      <div className="flex items-center gap-3 px-5 py-3">
+    <Lista>
+      <div className="flex items-center gap-2 px-4 py-3">
         <button
           type="button"
           onClick={() => setOpen((v) => !v)}
@@ -146,43 +154,49 @@ function SportRow({
             className={cx("size-4 shrink-0 text-ink-3 transition-transform duration-[120ms]", !open && "-rotate-90")}
             strokeWidth={1.75}
           />
-          <span className="w-28 shrink-0 truncate text-body font-medium text-ink">{sport.name}</span>
-          {/* A disciplina, quando há: é o que diz que esta modalidade tem Área técnica. */}
-          {(() => {
-            const perfil = profileOf(sport);
-            if (!perfil) return null;
-            const Icon = perfil.icon;
-            return (
-              <span
-                className="inline-flex shrink-0 items-center gap-1.5 text-meta text-ink-4"
-                title="Tem área técnica: exercícios, sistemas e situações de jogo"
-              >
-                <Icon className="size-3.5" strokeWidth={1.75} />
-                Área técnica
-              </span>
-            );
-          })()}
-          <span className="flex min-w-0 flex-1 flex-wrap gap-1">
-            {sport.positions.length ? (
-              sport.positions.map((p) => <Pill key={p}>{p}</Pill>)
-            ) : (
-              // Natação não tem posições — e isso é configuração, não um caso
-              // especial no código.
-              <span className="text-meta text-ink-4">sem posições</span>
-            )}
+          {/* O ícone da disciplina, num quadrado da cor do clube: é a cara da modalidade. */}
+          <span className="flex size-9 shrink-0 items-center justify-center rounded-[10px] bg-signal-soft text-signal-ink">
+            {Icon ? <Icon className="size-[18px]" strokeWidth={1.75} /> : <span className="text-meta font-semibold">{sport.name.slice(0, 2).toUpperCase()}</span>}
+          </span>
+          <span className="min-w-0 flex-1">
+            <span className="flex flex-wrap items-center gap-2">
+              <span className="truncate text-body font-medium text-ink">{sport.name}</span>
+              {/* A disciplina, quando há: é o que diz que esta modalidade tem Área técnica. */}
+              {perfil && (
+                <span title="Tem área técnica: exercícios, sistemas e situações de jogo">
+                  <Pill tone="signal">área técnica</Pill>
+                </span>
+              )}
+            </span>
+            <span className="mt-1 flex flex-wrap gap-1">
+              {sport.positions.length ? (
+                sport.positions.map((p) => <Pill key={p}>{p}</Pill>)
+              ) : (
+                // Natação não tem posições — e isso é configuração, não um caso
+                // especial no código.
+                <span className="text-meta text-ink-4">sem posições</span>
+              )}
+            </span>
           </span>
         </button>
 
         {mayWrite && (
-          <span className="flex shrink-0 gap-1.5">
-            <button type="button" className="ctl-ghost" onClick={onEdit}>
-              Editar
+          <span className="flex shrink-0 items-center gap-0.5">
+            <button
+              type="button"
+              className="ctl-ghost size-8 justify-center px-0 text-ink-3 hover:text-ink"
+              onClick={onEdit}
+              aria-label={`Editar ${sport.name}`}
+              title="Editar modalidade"
+            >
+              <Pencil className="size-3.5" strokeWidth={1.75} />
             </button>
             <button
               type="button"
-              className="ctl-ghost text-ink-3 hover:text-risk"
+              className="ctl-ghost size-8 justify-center px-0 text-ink-4 hover:text-risk"
               onClick={onRemove}
               aria-label={`Apagar ${sport.name}`}
+              title="Apagar modalidade"
             >
               <Trash2 className="size-3.5" strokeWidth={1.75} />
             </button>
@@ -191,7 +205,7 @@ function SportRow({
       </div>
 
       {open && (
-        <div className="border-t border-line bg-sunken/30 pl-4">
+        <div className="border-t border-line bg-sunken/30">
           {CATALOG_KEYS.map((key) => (
             <CatalogPanel
               key={key}
@@ -216,7 +230,7 @@ function SportRow({
           ))}
         </div>
       )}
-    </li>
+    </Lista>
   );
 }
 

@@ -77,6 +77,13 @@ export type Academy = {
    * (`AAAA-08`); a partir dele valem `months` e `dueDay`.
    */
   billingNext: { from: string; months: number[]; dueDay: number } | null;
+  /** Famílias e sócios podem pagar pela app? Desligado, só se paga ao clube. */
+  paymentsEnabled: boolean;
+  /**
+   * A comissão da euPago é de quem paga. Ligado, **os valores da plataforma são
+   * o que o clube recebe**, e a família paga esse valor mais a taxa do método.
+   */
+  feesOnPayer: boolean;
   /** Quando a academia nasceu — o proxy do início do período experimental. */
   createdAt: string;
   sports: Sport[];
@@ -419,6 +426,8 @@ export type Fee = {
   method?: string;
   /** Quem pagou pela app, com o laço ao atleta: "Maria Silva (Mãe)". */
   paidBy?: string;
+  /** A comissão que quem pagou suportou por cima do valor, em cêntimos. */
+  paidSurchargeCents?: number;
   /**
    * O identificador com que o pagamento aparece no backoffice da euPago
    * (MENS-SET26-JOAO_SILVA-MARIA_SILVA-7K2F9Q). É o que casa os dois lados.

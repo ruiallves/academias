@@ -2,7 +2,8 @@ import { useEffect, useState } from "react";
 import { ChevronDown } from "@/lib/icons";
 import { euros } from "@/lib/finance";
 import { cx } from "@/components/primitives";
-import { detalhePorMetodo, loadEupagoFees, useEupagoFees } from "@/lib/eupago-fees";
+import { detalheDoPagador, detalhePorMetodo, loadEupagoFees, useEupagoFees } from "@/lib/eupago-fees";
+import { useStore } from "@/lib/store";
 
 /**
  * Quanto a família paga, e quanto o clube recebe.
@@ -17,6 +18,15 @@ import { detalhePorMetodo, loadEupagoFees, useEupagoFees } from "@/lib/eupago-fe
  * Dizer os dois números no momento em que o preço se decide é a diferença entre
  * uma decisão informada e uma surpresa. Se o clube quiser que lhe entrem 40 €
  * limpos, é aqui que percebe que tem de pedir 41.
+ *
+ * ## Os dois sentidos da conta
+ *
+ * Por omissão, o valor escrito é **o que a família paga**, e o intervalo é o que
+ * o clube recebe. Quando o clube põe a comissão por conta de quem paga
+ * (`academy.feesOnPayer`, nas Definições), a frase vira-se ao contrário: o valor
+ * escrito é **o que o clube recebe**, e o intervalo é o que a família paga. É o
+ * mesmo campo e o mesmo número a querer dizer outra coisa, e por isso a linha
+ * di-lo sempre por extenso.
  *
  * ## Sete métodos, não dois
  *
@@ -37,8 +47,9 @@ import { detalhePorMetodo, loadEupagoFees, useEupagoFees } from "@/lib/eupago-fe
  *
  * ## Quando não aparece
  *
- * Sem valor escrito, sem tabela de taxas (rede em baixo), ou quando o pagamento
- * não é online. Uma estimativa inventada seria pior do que o silêncio.
+ * Sem valor escrito, sem tabela de taxas (rede em baixo), quando o pagamento
+ * não é online, ou quando o clube desligou os pagamentos pela app — aí ninguém
+ * paga comissão nenhuma. Uma estimativa inventada seria pior do que o silêncio.
  */
 
 export function CustoDoPagamento({
@@ -55,6 +66,7 @@ export function CustoDoPagamento({
   className?: string;
 }) {
   const { tabela } = useEupagoFees();
+  const { academy } = useStore();
   /* Fechada de origem, e local a cada campo — abrir uma não abre as outras. */
   const [aberto, setAberto] = useState(false);
 
@@ -64,6 +76,68 @@ export function CustoDoPagamento({
 
   if (!online || !amountCents || amountCents <= 0 || !tabela) return null;
 
+  if (!academy.paymentsEnabled) {
+    return (
+      <p className={cx("mt-1.5 text-[11px] leading-relaxed text-ink-3", className)}>
+        Pagamentos pela app desativados: este valor paga-se ao clube, sem comissão.
+      </p>
+    );
+  }
+
+  const botao = (
+    <button
+      type="button"
+      onClick={() => setAberto((a) => !a)}
+      aria-expanded={aberto}
+      className="inline-flex items-center gap-0.5 align-baseline font-medium text-ink-3 underline-offset-2 hover:text-ink hover:underline"
+    >
+      por método
+      <ChevronDown className={cx("size-3 transition-transform duration-150", aberto && "rotate-180")} strokeWidth={2} />
+    </button>
+  );
+
+  /* ---- A comissão é de quem paga: o valor escrito é o que o clube recebe. ---- */
+  if (academy.feesOnPayer) {
+    const p = detalheDoPagador(amountCents, tabela);
+    if (!p) return null;
+    const igual = p.minCents === p.maxCents;
+
+    return (
+      <div className={cx("mt-1.5 text-[11px] leading-relaxed", className)}>
+        <p className="text-ink-2">
+          O clube recebe <span className="font-semibold text-ink">{euros(amountCents)}</span>
+          {" · "}quem paga pela app paga{" "}
+          <span className="font-semibold text-ink">
+            {igual ? euros(p.minCents) : `${euros(p.minCents)} a ${euros(p.maxCents)}`}
+          </span>{" "}
+          {botao}
+        </p>
+
+        {aberto && (
+          /* Do mais barato para o mais caro para quem paga. */
+          <table className="mt-1.5 w-full tabular">
+            <tbody>
+              {p.porMetodo.map((m) => (
+                <tr key={m.label} className="text-ink-3">
+                  <td className="py-px pr-2">{m.label}</td>
+                  <td className="py-px pr-2 text-right text-ink-4">+{euros(m.surchargeCents)}</td>
+                  <td className="py-px text-right font-medium text-ink-2">{euros(m.totalCents)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
+
+        {aberto && (
+          <p className="mt-1 text-ink-4">
+            Taxa da euPago, com IVA, paga por quem paga · {tabela.source}. Pago ao clube em mão, é só o valor.
+          </p>
+        )}
+      </div>
+    );
+  }
+
+  /* ---- Por omissão: o valor escrito é o que a família paga. ---- */
   const r = detalhePorMetodo(amountCents, tabela);
   if (!r) return null;
 
@@ -78,18 +152,7 @@ export function CustoDoPagamento({
           {igual ? euros(r.minCents) : `${euros(r.minCents)} a ${euros(r.maxCents)}`}
         </span>
         {" "}
-        <button
-          type="button"
-          onClick={() => setAberto((a) => !a)}
-          aria-expanded={aberto}
-          className="inline-flex items-center gap-0.5 align-baseline font-medium text-ink-3 underline-offset-2 hover:text-ink hover:underline"
-        >
-          por método
-          <ChevronDown
-            className={cx("size-3 transition-transform duration-150", aberto && "rotate-180")}
-            strokeWidth={2}
-          />
-        </button>
+        {botao}
       </p>
 
       {aberto && (

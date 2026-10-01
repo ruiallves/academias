@@ -1,4 +1,5 @@
-import { ArrayMaxSize, IsArray, IsEmail, IsOptional, IsString, Length, MaxLength, IsBoolean } from "class-validator";
+import { ArrayMaxSize, ArrayMinSize, IsArray, IsEmail, IsOptional, IsString, Length, MaxLength, IsBoolean, ValidateNested } from "class-validator";
+import { Type } from "class-transformer";
 
 /**
  * Os corpos dos pedidos de convite, como **classes** e não interfaces.
@@ -50,6 +51,55 @@ export class CreateInviteDto {
   @ArrayMaxSize(50)
   @IsString({ each: true })
   teamIds?: string[];
+
+  /** `false` guarda a pessoa sem enviar o convite. Omitido, envia logo. */
+  @IsOptional()
+  @IsBoolean()
+  enviar?: boolean;
+}
+
+/** Enviar vários convites guardados de uma vez. */
+export class SendInvitesDto {
+  @IsArray()
+  @ArrayMinSize(1)
+  @ArrayMaxSize(200)
+  @IsString({ each: true })
+  ids!: string[];
+}
+
+/** Uma linha da importação de staff: o mesmo que um convite, sem a decisão de enviar. */
+export class ImportInviteRowDto {
+  @IsString()
+  @Length(2, 120)
+  name!: string;
+
+  @IsEmail()
+  @MaxLength(254)
+  email!: string;
+
+  @IsString()
+  @Length(1, 40)
+  academyRoleId!: string;
+
+  @IsOptional()
+  @IsArray()
+  @ArrayMaxSize(50)
+  @IsString({ each: true })
+  teamIds?: string[];
+}
+
+export class ImportInvitesDto {
+  @IsArray()
+  @ArrayMinSize(1)
+  @ArrayMaxSize(200)
+  @ValidateNested({ each: true })
+  @Type(() => ImportInviteRowDto)
+  rows!: ImportInviteRowDto[];
+
+  /** Mandar já o convite a cada um. Desligado por omissão. */
+  @IsOptional()
+  @IsBoolean()
+  enviar?: boolean;
 }
 
 export class AcceptInviteDto {

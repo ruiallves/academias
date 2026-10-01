@@ -82,7 +82,8 @@ export function Shell() {
         prometem: o scroll acontece **dentro** do painel, e a página fica
         quieta. É por isso que isto está aqui em cima e não em cada tabela.
       */}
-      <main className="relative min-w-0 flex-1 overflow-y-auto max-md:pb-[calc(64px+env(safe-area-inset-bottom))]">
+      <main className="relative isolate min-w-0 flex-1 overflow-y-auto max-md:pb-[calc(64px+env(safe-area-inset-bottom))]">
+        <Estilhacos />
         {/* Largura total. A sidebar já dá o enquadramento à esquerda; uma segunda
             moldura de margem no meio do ecrã só afastava as colunas de dados umas
             das outras. O ar vem do padding, não de um limite de largura.
@@ -105,6 +106,45 @@ export function Shell() {
           sem lhe tomar o ecrã. Desaparece sozinho quando não houver passos a dar. */}
       <Onboarding />
       <MobileTabBar />
+    </div>
+  );
+}
+
+/**
+ * Os estilhaços da cor do clube, por trás da página.
+ *
+ * A mesma linguagem da página de adesão a sócio (`membership.template.ts`): um
+ * fundo todo cinzento parecia uma app qualquer, e isto diz de quem é a consola
+ * sem uma imagem. Aqui ficam muito mais apagados do que lá, porque por cima há
+ * tabelas para ler: veem-se nas margens e no espaço que a página deixa livre.
+ *
+ * Só os estilhaços. Halos de cor e linhas de campo por cima disto foram
+ * experimentados e recusados: ficava pior.
+ *
+ * `fixed` a partir de `--nav-w`, para não rolarem com a página nem passarem por
+ * baixo do menu; `-z-10` dentro do `isolate` do `<main>` mantém-nos atrás de
+ * tudo o que a página desenha.
+ */
+function Estilhacos() {
+  const forma = (clip: string, cor: string, opacity: number): CSSProperties => ({
+    clipPath: `polygon(${clip})`,
+    background: `var(--color-${cor})`,
+    opacity,
+  });
+  return (
+    <div
+      aria-hidden
+      style={{ left: "var(--nav-w, 0px)" }}
+      className="pointer-events-none fixed inset-y-0 right-0 -z-10 overflow-hidden max-md:left-0!"
+    >
+      {/* Em baixo, à esquerda. */}
+      <i className="absolute bottom-[10%] -left-12 block h-[130px] w-[190px] max-md:scale-50 max-md:origin-bottom-left" style={forma("0 0, 100% 42%, 30% 100%", "signal", 0.16)} />
+      <i className="absolute bottom-[3%] left-10 block h-[190px] w-[150px] max-md:scale-50 max-md:origin-bottom-left" style={forma("0 22%, 100% 0, 62% 100%", "signal-strong", 0.12)} />
+      <i className="absolute bottom-[24%] left-32 block h-[62px] w-[92px] max-md:hidden" style={forma("0 50%, 100% 0, 78% 100%", "signal", 0.1)} />
+      {/* À direita, em cima e em baixo. */}
+      <i className="absolute top-[14%] -right-16 block h-[150px] w-[210px] max-md:hidden" style={forma("0 0, 100% 50%, 26% 100%", "signal", 0.12)} />
+      <i className="absolute top-[30%] right-6 block h-[210px] w-[160px] max-md:hidden" style={forma("30% 0, 100% 30%, 0 100%", "signal-strong", 0.09)} />
+      <i className="absolute -right-5 bottom-[8%] block h-[84px] w-[120px] max-md:scale-50 max-md:origin-bottom-right" style={forma("0 30%, 100% 0, 60% 100%", "signal", 0.14)} />
     </div>
   );
 }

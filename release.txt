@@ -1,6 +1,35 @@
 01/10/2026
-- Mensalidades: corrigido o aviso "a mensalidade já está disponível" que chegava ao telemóvel sem a mensalidade existir, e se repetia de hora a hora. O aviso passa a sair só depois de a mensalidade estar mesmo criada.
-- Mensalidades e quotas: a emissão automática do mês deixa de falhar em clubes com muitas famílias para avisar.
+
+Em detalhe:
+- Staff: dá para adicionar uma pessoa sem lhe mandar já o convite. Fica em "Por convidar", com o cargo e as equipas, e o convite envia-se depois, a uma pessoa ou a todas de uma vez.
+- Staff: os convites já enviados ganharam "Reenviar", que manda um link novo e fecha o anterior.
+- Staff: novo botão "Importar", para adicionar várias pessoas de uma folha Excel (Nome, Email, Cargo, Equipas), com modelo para descarregar. Não manda email a ninguém, a não ser que se peça. A folha do Exportar tem as mesmas colunas e volta a entrar.
+- Staff: o campo de pesquisa passou para a esquerda, e o botão "Convidar" chama-se agora "Adicionar".
+- Equipas: a página ganhou um filtro por modalidade e um campo para procurar equipas pelo nome ou pelo treinador.
+- Staff: corrigidos os escalões repetidos na lista de Staff. Quem era tirado de um escalão e voltava a ser posto aparecia com ele duas vezes, e quem só era tirado continuava a mostrá-lo.
+- Consola do clube: o fundo deixou de ser todo cinzento e passou a ter formas discretas na cor do clube, como na página de adesão a sócio.
+- Definições, Cargos: "Comparar cargos" abre a tabela numa janela por cima da página, com a coluna das áreas sempre à vista.
+- Jogos: na ficha de um jogo de futebol passa a dar para registar o tempo adicional de cada parte (1.ª e 2.ª), em minutos. É opcional.
+- Jogos: no futsal e no basquetebol o tempo adicional não aparece, porque se jogam com o cronómetro parado. Cada modalidade passou a saber em quantas partes se joga (futebol 2, futsal 2, basquetebol 4).
+- Jogos: o tempo adicional soma aos minutos dos atletas que estavam em campo quando a parte acabou. Num jogo de 90 com +2 e +3, quem joga tudo fica com 95, quem sai ao intervalo com 47 e quem entra ao intervalo com 48. Os minutos refazem-se sozinhos ao gravar o tempo adicional.
+- Definições: página refeita, com um menu ao lado (Geral, Época, Modalidades, Cargos, Sócios, Clínico, Mensalidades, Plano, Legal) e uma secção de cada vez. As ligações antigas continuam a abrir a secção certa.
+- Definições, Cargos: a estrutura do clube fica à esquerda (departamentos e os cargos de cada um) e o cargo escolhido à direita, com o que edita, o que só vê e ao que não chega. A tabela com todos os cargos passou para o botão "Comparar cargos".
+- Definições, Mensalidades: mostra o calendário de cobrança do clube (meses cobrados, dia do prazo e a mudança agendada), e os métodos de pagamento com a comissão de cada um.
+- Definições, Clínico: cada tipo de consulta é um cartão com a sua cor; os arquivados ficam à parte, com um botão para restaurar.
+- Definições: o ícone da secção aberta passa a ver-se em clubes de cor clara, e o símbolo do clube fica alinhado com a explicação.
+- Definições: o menu "Mensalidades" passou a chamar-se "Pagamentos", porque o que lá se decide vale também para as quotas dos sócios.
+- Definições, Pagamentos: novo interruptor "Pagamentos pela app". Desligado, as famílias e os sócios deixam de poder pagar pela app, que passa a dizer que os pagamentos estão desativados. Os preços, as mensalidades e as quotas continuam a configurar-se e a marcar-se à mão.
+- Definições, Pagamentos: novo interruptor "Taxa por conta de quem paga" (desligado por omissão). Ligado, a comissão da euPago é somada ao valor e paga por quem paga, conforme o método, e os valores escritos na plataforma passam a ser o que o clube recebe.
+- App das famílias e dos sócios: com a taxa por conta de quem paga, cada método mostra o total e a taxa em separado antes de pagar (por exemplo 20,00 € + 0,27 € de taxa), e a referência Multibanco mostra o valor a pagar.
+- Mensalidades e livro de sócios: aviso pequeno por baixo do título quando os pagamentos estão desativados ou quando a taxa é paga por quem paga.
+- Preços: a linha por baixo de cada valor passa a dizer "o clube recebe X, quem paga pela app paga Y" quando a taxa é de quem paga, com o detalhe por método.
+- Mensalidades e ficha do sócio: um pagamento com taxa mostra quanto foi a taxa, ao lado de quem pagou.
+- Ficha do atleta, Clínico: novo painel "Informação médica" no topo, com grupo sanguíneo, alergias, medicação e observações. Preenche quem escreve no boletim clínico; lê quem já lia o clínico, só dos atletas das suas equipas.
+- Ficha do atleta: o separador "Desenvolvimento" deu lugar a "Documentos". O clube dá um nome ao documento (cartão de cidadão, exame médico…) e junta-lhe fotografias, PDF ou Word, até 10 ficheiros de 20 MB. As avaliações e os relatórios continuam nos seus menus.
+- Documentos do atleta: só os vê e carrega quem edita a ficha, e só dos atletas das suas equipas. Contam para o espaço do clube e saem com o atleta quando ele é apagado.
+- Ficha do atleta, Clínico: a informação médica passou para um cartão pequeno na coluna do lado, com a nutrição; o boletim fica ao centro.
+- App das famílias: nova secção "Escola" no ecrã do educando, onde o encarregado submete as notas da escola (período, disciplina e nota, de 1 a 5 ou de 0 a 20). Dá para submeter várias seguidas, corrigir e apagar.
+- Ficha do atleta: novo separador "Escola", com as notas submetidas pela família em forma de pauta (disciplinas em linhas, períodos em colunas, negativas a vermelho, média por período). O clube só lê.
 
 30/09/2026
 - Painel da plataforma: menu Novidades para escrever uma versão e mandá-la por email ao responsável de cada clube, com os clubes que pagam já escolhidos.

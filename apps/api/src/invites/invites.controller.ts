@@ -4,7 +4,7 @@ import { Throttle } from "@nestjs/throttler";
 import type { Request, Response } from "express";
 import { Public, type AuthedRequest } from "../auth/auth.guard";
 import { InvitesService } from "./invites.service";
-import { AcceptInviteDto, CreateInviteDto } from "./invites.dto";
+import { AcceptInviteDto, CreateInviteDto, ImportInvitesDto, SendInvitesDto } from "./invites.dto";
 import { renderInvite, renderInviteError } from "./invite.template";
 import type { TenantRequest } from "../tenant/tenant";
 
@@ -23,6 +23,24 @@ export class InvitesController {
   @Post()
   async create(@Req() req: AuthedRequest, @Body() body: CreateInviteDto) {
     return this.invites.create(req.ctx, body);
+  }
+
+  /** A importação de staff: várias pessoas de uma vez, por omissão sem enviar nada. */
+  @Post("importar")
+  async importar(@Req() req: AuthedRequest, @Body() body: ImportInvitesDto) {
+    return this.invites.createMany(req.ctx, body.rows, body.enviar === true);
+  }
+
+  /** Enviar vários convites guardados. */
+  @Post("enviar")
+  async sendMany(@Req() req: AuthedRequest, @Body() body: SendInvitesDto) {
+    return this.invites.sendMany(req.ctx, body.ids);
+  }
+
+  /** Enviar um convite guardado, ou reenviar um que já saiu (o link antigo deixa de valer). */
+  @Post(":id/enviar")
+  async send(@Req() req: AuthedRequest, @Param("id") id: string) {
+    return this.invites.send(req.ctx, id);
   }
 
   @Get()

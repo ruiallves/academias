@@ -59,6 +59,9 @@ type ApiBootstrap = {
     billingNextFrom?: string | null;
     billingNextMonths?: number[];
     billingNextDueDay?: number | null;
+    /** Pagar pela app, e quem suporta a comissão. Ver `setPaymentRules` na API. */
+    paymentsEnabled?: boolean;
+    feesOnPayer?: boolean;
     /** O que o clube escreveu na página pública de adesão a sócio. */
     membershipHeadline: string | null;
     membershipIntro: string | null;
@@ -310,6 +313,8 @@ type ApiCharge = {
   paidMethod?: string | null; paidAt?: string | null;
   /** Quem pagou e o identificador com que aparece na euPago. Só nas pagas pela app. */
   paidBy?: string | null; paidByRelation?: string | null; paymentId?: string | null;
+  /** A comissão que quem pagou suportou por cima do valor. Zero quase sempre. */
+  paidSurchargeCents?: number;
   /** Quem mudou o estado à mão, e quando. Nulo nas nunca mexidas e nas pagas online. */
   changedBy?: string | null; changedAt?: string | null;
 };
@@ -361,6 +366,7 @@ const EMPTY: State = {
     id: "", slug: "", name: "", shortName: "", signalColor: "#0f6b62", logoUrl: "", city: "",
     status: "ACTIVE", trialEndsAt: null, createdAt: "",
     billingDueDay: 8, billingMonths: [], billingNext: null,
+    paymentsEnabled: true, feesOnPayer: false,
     membershipHeadline: "", membershipIntro: "", membershipPoints: [],
     memberAnnualStartMonth: 8, memberAnnualStartDay: 1,
     sports: [],
@@ -484,6 +490,7 @@ function mapFee(c: ApiCharge): Fee {
     ...(c.paidMethod ? { method: METHOD_LABEL[c.paidMethod] ?? c.paidMethod } : {}),
     ...(c.paidBy ? { paidBy: c.paidByRelation ? `${c.paidBy} (${c.paidByRelation})` : c.paidBy } : {}),
     ...(c.paymentId ? { paymentId: c.paymentId } : {}),
+    ...(c.paidSurchargeCents ? { paidSurchargeCents: c.paidSurchargeCents } : {}),
     ...(c.changedAt ? { changedAt: c.changedAt, changedBy: c.changedBy ?? undefined } : {}),
   };
 }
@@ -1033,6 +1040,9 @@ function juntar<T extends { id: string }>(atuais: T[], novos: T[]): T[] {
       trialEndsAt: boot.academy.trialEndsAt,
       billingDueDay: boot.academy.billingDueDay ?? 8,
       billingMonths: boot.academy.billingMonths ?? [],
+      // Um servidor que ainda não manda os campos é um clube com tudo como era.
+      paymentsEnabled: boot.academy.paymentsEnabled ?? true,
+      feesOnPayer: boot.academy.feesOnPayer ?? false,
       billingNext: boot.academy.billingNextFrom
         ? {
             from: boot.academy.billingNextFrom,

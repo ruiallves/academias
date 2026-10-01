@@ -46,6 +46,10 @@ import { EventsImportService } from "./academy/events-import.service";
 import { CatalogsController } from "./academy/catalogs.controller";
 import { CatalogsService } from "./academy/catalogs.service";
 import { AthletesService } from "./academy/athletes.service";
+import { AthleteFichaController } from "./academy/athlete-ficha.controller";
+import { AthleteFichaService } from "./academy/athlete-ficha.service";
+import { SchoolGradesController } from "./academy/school-grades.controller";
+import { SchoolGradesService } from "./academy/school-grades.service";
 import { SeasonsService } from "./academy/seasons.service";
 import { MatchesController } from "./academy/matches.controller";
 import { MatchesService } from "./academy/matches.service";
@@ -178,6 +182,8 @@ import { LegalAdminService } from "./legal/legal-admin.service";
     FamilyInviteController,
     GuardianLinksController,
     DevelopmentController,
+    AthleteFichaController,
+    SchoolGradesController,
     PhotosController,
     ClubLogoController,
     EspacoController,
@@ -225,6 +231,8 @@ import { LegalAdminService } from "./legal/legal-admin.service";
     ScoutingVideoService,
     ScoutingWorkflowService,
     AthletesService,
+    AthleteFichaService,
+    SchoolGradesService,
     SeasonsService,
     MatchesService,
     AnnouncementsService,

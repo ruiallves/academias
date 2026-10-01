@@ -17,7 +17,8 @@ import {
 } from "@/lib/icons";
 import { useSession } from "@/session";
 import { can } from "@/lib/permissions";
-import { athleteById, numeroNaEquipa } from "@/lib/api";
+import { athleteById, numeroNaEquipa, sportById } from "@/lib/api";
+import { profileOf } from "@/lib/sports";
 import { tallyNoun } from "@/lib/calendar";
 import { reloadAcademy, useStore } from "@/lib/store";
 import { SaveVeil, Spinner, useSaving } from "@/components/Busy";
@@ -30,6 +31,7 @@ import {
   getMatch,
   outcome,
   retroPool,
+  saveAddedTime,
   saveAppearances,
   saveResult,
   saveRetroSquad,
@@ -1028,11 +1030,147 @@ function linhaDe(s: SquadRow): Linha {
  * um número plausível. Grava-se zero (o servidor faz a mesma conta) e o ecrã
  * mostra "—". Não trava nada: ver `semEntrada`.
  */
-function minutosDerivados(l: Linha, duracao: number): number | null {
+function minutosDerivados(l: Linha, duracao: number, tempo: TempoDoJogo = SEM_ADICIONAL): number | null {
   const entrada = l.papel === "titular" ? 0 : l.onMinute;
   if (entrada == null) return null;
   const saida = l.offMinute ?? duracao;
-  return Math.max(0, saida - entrada);
+  let minutos = saida - entrada;
+  /*
+   * O tempo adicional soma a quem estava em campo quando a parte acabou. A
+   * última parte só soma a quem não tem minuto de saída: uma saída escrita aos
+   * 93 já traz os descontos dentro. A mesma conta de `minutosEmCampo`, no
+   * servidor, que é quem decide o que fica gravado.
+   */
+  if (tempo.partes > 0 && duracao > 0) {
+    for (let i = 0; i < tempo.partes; i++) {
+      const fim = (duracao * (i + 1)) / tempo.partes;
+      const ultima = i === tempo.partes - 1;
+      const estavaLa = entrada < fim && (ultima ? l.offMinute == null : l.offMinute == null || l.offMinute >= fim);
+      if (estavaLa) minutos += tempo.adicional[i] ?? 0;
+    }
+  }
+  return Math.max(0, minutos);
+}
+
+/** As partes de um jogo e o tempo adicional de cada uma. Sem partes, não há tempo adicional. */
+type TempoDoJogo = { partes: number; adicional: number[] };
+const SEM_ADICIONAL: TempoDoJogo = { partes: 0, adicional: [] };
+
+/** "1.ª parte", "3.º período". */
+const nomeDaParte = (i: number, nome: "parte" | "período") => `${i + 1}.${nome === "parte" ? "ª" : "º"} ${nome}`;
+
+/**
+ * O tempo adicional de cada parte.
+ *
+ * Só aparece nas modalidades que o têm (`SportProfile.match.addedTime`): no
+ * futebol há compensação no fim de cada parte; no futsal e no basquetebol o
+ * cronómetro pára e a pergunta nem se faz.
+ *
+ * Grava-se à parte da ficha, com o seu próprio botão: é um facto do jogo e não
+ * de um atleta, e quem só quer acertar "+5 na segunda" não tem de gravar a
+ * ficha inteira. Soma aos minutos de quem estava em campo: num jogo de 90 com
+ * +2 e +3, quem joga tudo fica com 95. O servidor refaz os minutos da ficha ao
+ * gravar isto.
+ */
+function TempoAdicional({ match, mayRecord, onSaved }: { match: Match; mayRecord: boolean; onSaved: () => void }) {
+  const jogo = profileOf(sportById(match.sportId))?.match;
+  const partes = jogo?.addedTime ? jogo.periods : 0;
+  const gravado = Array.from({ length: partes }, (_, i) => (match.addedMinutes ?? [])[i] ?? 0); // um servidor antigo não manda o campo
+  const chave = gravado.join(",");
+
+  const [valores, setValores] = useState<string[]>(() => gravado.map((m) => (m ? String(m) : "")));
+  const [busy, setBusy] = useState(false);
+  const [erro, setErro] = useState<string | null>(null);
+
+  useEffect(() => {
+    setValores(gravado.map((m) => (m ? String(m) : "")));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [chave]);
+
+  if (!jogo || partes === 0) return null;
+
+  const total = gravado.reduce((n, m) => n + m, 0);
+  // Quem só lê vê o que ficou registado, e nada quando não ficou nada.
+  if (!mayRecord) {
+    if (total === 0) return null;
+    return (
+      <p className="border-b border-line px-5 py-2.5 text-meta text-ink-3">
+        Tempo adicional:{" "}
+        <span className="text-ink-2">
+          {gravado.map((m, i) => `+${m}′ na ${nomeDaParte(i, jogo.periodName)}`).join(" · ")}
+        </span>
+      </p>
+    );
+  }
+
+  const numeros = valores.map((v) => (v === "" ? 0 : Number(v)));
+  const mudou = numeros.join(",") !== chave;
+
+  async function gravar() {
+    setBusy(true);
+    setErro(null);
+    try {
+      await saveAddedTime(match.id, numeros);
+      onSaved();
+    } catch (e) {
+      setErro(e instanceof Error ? e.message : "Não foi possível gravar o tempo adicional.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div className="border-b border-line px-5 py-3">
+      <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
+        <span className="text-meta font-medium text-ink">Tempo adicional</span>
+        {valores.map((v, i) => {
+          const id = `tempo-adicional-${i}`;
+          return (
+            <span key={i} className="inline-flex items-center gap-1.5">
+              <label htmlFor={id} className="text-meta text-ink-3">
+                {nomeDaParte(i, jogo.periodName)}
+              </label>
+              <span className="text-meta text-ink-4" aria-hidden>
+                +
+              </span>
+              <input
+                id={id}
+                type="text"
+                inputMode="numeric"
+                pattern="[0-9]*"
+                maxLength={2}
+                value={v}
+                placeholder="0"
+                disabled={busy}
+                onChange={(e) => {
+                  const limpo = e.target.value.replace(/\D/g, "");
+                  setValores((x) => x.map((y, j) => (j === i ? limpo : y)));
+                }}
+                className="h-9 w-12 rounded-[var(--radius-control)] border border-line bg-surface text-center text-body tabular text-ink outline-none placeholder:text-ink-4/60 focus:border-line-strong"
+              />
+              <span className="text-meta text-ink-3">min</span>
+            </span>
+          );
+        })}
+        {mudou && (
+          <button type="button" className="ctl-outline h-9" disabled={busy || numeros.some((n) => n > 30)} onClick={() => void gravar()}>
+            {busy ? "A gravar…" : "Gravar"}
+          </button>
+        )}
+        <span className="text-[11px] text-ink-4">opcional</span>
+      </div>
+      {numeros.some((n) => n > 30) && (
+        <p role="alert" className="mt-1.5 text-meta text-risk">
+          O tempo adicional de cada parte vai de 0 a 30 minutos.
+        </p>
+      )}
+      {erro && (
+        <p role="alert" className="mt-1.5 text-meta text-risk">
+          {erro}
+        </p>
+      )}
+    </div>
+  );
 }
 
 /**
@@ -1068,6 +1206,12 @@ function SheetPanel({ match, mayRecord, onSaved }: { match: Match; mayRecord: bo
    * entrou e não saiu. O 90 é só para uma modalidade sem duração declarada.
    */
   const duracao = match.matchMinutes ?? 90;
+  /* O tempo adicional gravado: soma aos minutos de quem estava em campo. Ver `minutosDerivados`. */
+  const regras = profileOf(sportById(match.sportId))?.match;
+  const tempo = useMemo<TempoDoJogo>(
+    () => ({ partes: regras?.addedTime ? regras.periods : 0, adicional: match.addedMinutes ?? [] }),
+    [regras, match.addedMinutes],
+  );
 
   const [linhas, setLinhas] = useState<Record<string, Linha>>(() => daFicha(match));
   const [erro, setErro] = useState<string | null>(null);
@@ -1160,7 +1304,7 @@ function SheetPanel({ match, mayRecord, onSaved }: { match: Match; mayRecord: bo
           // ficha antiga com um número à mão que discorda da entrada e da saída
           // acende o Gravar, em vez de ficar por corrigir para sempre. Um
           // suplente sem entrada vale zero dos dois lados — ver `semEntrada`.
-          (minutosDerivados(l, duracao) ?? 0) !== s.minutes ||
+          (minutosDerivados(l, duracao, tempo) ?? 0) !== s.minutes ||
           l.tally !== s.tally ||
           l.assists !== s.assists ||
           l.yellowCards !== s.yellowCards ||
@@ -1175,7 +1319,7 @@ function SheetPanel({ match, mayRecord, onSaved }: { match: Match; mayRecord: bo
           l.assistsAt.join() !== s.assistsAt.join()
         );
       }),
-    [linhas, match.squad, duracao],
+    [linhas, match.squad, duracao, tempo],
   );
 
   async function gravar() {
@@ -1188,7 +1332,7 @@ function SheetPanel({ match, mayRecord, onSaved }: { match: Match; mayRecord: bo
             athleteId: l.athleteId,
             // Os minutos vêm sempre da conta. Um suplente sem minuto de entrada
             // vai a zero, e não a um palpite — o servidor faz a mesma conta.
-            minutes: minutosDerivados(l, duracao) ?? 0,
+            minutes: minutosDerivados(l, duracao, tempo) ?? 0,
             started: l.papel === "titular",
             tally: l.tally,
             assists: l.assists,
@@ -1231,6 +1375,8 @@ function SheetPanel({ match, mayRecord, onSaved }: { match: Match; mayRecord: bo
           }
         />
 
+        <TempoAdicional match={match} mayRecord={mayRecord} onSaved={onSaved} />
+
         {mayRecord && (
           <p className="border-b border-line px-5 py-2.5 text-meta leading-relaxed text-ink-3">
             Diz de cada um se foi <span className="font-medium text-ink-2">titular</span>, se{" "}
@@ -1248,6 +1394,7 @@ function SheetPanel({ match, mayRecord, onSaved }: { match: Match; mayRecord: bo
               linha={linhaDo(s)}
               golo={golo}
               duracao={duracao}
+              tempo={tempo}
               mayRecord={mayRecord}
               onChange={(patch) => set(s.athleteId, patch)}
             />
@@ -1314,6 +1461,7 @@ function SheetRow({
   linha,
   golo,
   duracao,
+  tempo,
   mayRecord,
   onChange,
 }: {
@@ -1321,12 +1469,13 @@ function SheetRow({
   linha: Linha;
   golo: string;
   duracao: number;
+  tempo: TempoDoJogo;
   mayRecord: boolean;
   onChange: (p: Partial<Linha>) => void;
 }) {
   const [detalhe, setDetalhe] = useState(false);
   const emCampo = jogou(linha);
-  const derivados = minutosDerivados(linha, duracao);
+  const derivados = minutosDerivados(linha, duracao, tempo);
   const problemas = incoerencias(linha);
 
   // Uma contradição escondida atrás de um painel fechado é uma contradição que

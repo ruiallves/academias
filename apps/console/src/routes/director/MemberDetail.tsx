@@ -657,6 +657,7 @@ function QuotasLancadasPanel({
                   {f.status === "SETTLED" && f.method === "MBWAY" && " · MB Way"}
                   {f.status === "SETTLED" && f.method === "MULTIBANCO" && " · Multibanco"}
                   {f.paidBy && ` · por ${f.paidBy}`}
+                  {f.paidSurchargeCents ? ` · + ${(f.paidSurchargeCents / 100).toFixed(2).replace(".", ",")} € de taxa, paga pelo sócio` : ""}
                 </span>
                 {f.paymentId && (
                   <span

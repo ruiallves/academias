@@ -35,8 +35,17 @@ export type PendingInvite = {
   teamIds: string[];
   expiresAt: string;
   createdAt: string;
+  /**
+   * Quando foi enviado. Nulo: a pessoa está guardada e o convite ainda não saiu
+   * (não há email nem link). Um servidor antigo não manda o campo, e aí todos
+   * os convites foram enviados ao criar: ver `porEnviar`.
+   */
+  sentAt?: string | null;
   invitedBy: string | null;
 };
+
+/** Guardado sem enviar. `undefined` (servidor antigo) conta como enviado. */
+export const porEnviar = (i: PendingInvite) => i.sentAt === null;
 
 /** O que a criação devolve — e é a única vez que o link existe. */
 export type Invite = {
@@ -50,6 +59,8 @@ export type Invite = {
   emailed: boolean;
   /** Porque é que não saiu, quando não saiu. */
   emailError?: string;
+  /** `false` quando ficou guardado sem enviar: não há link nenhum. */
+  sent: boolean;
 };
 
 type State = { invites: PendingInvite[]; loaded: boolean };
@@ -103,8 +114,10 @@ export async function createInvite(input: {
   /** Os cargos que se acrescentam ao principal. Vazio no caso normal. */
   extraRoleIds?: string[];
   teamIds: string[];
+  /** `false` guarda a pessoa sem lhe mandar o convite. */
+  enviar?: boolean;
 }): Promise<Invite> {
-  let created: { id: string; link: string; expiresAt: string; emailed: boolean; emailError?: string };
+  let created: { id: string; link: string; expiresAt: string; emailed: boolean; emailError?: string; sent?: boolean };
   try {
     created = await apiPost<typeof created>("/api/invites", input);
   } catch (error) {
@@ -126,8 +139,32 @@ export async function createInvite(input: {
     link: created.link,
     expiresAt: created.expiresAt,
     emailed: created.emailed,
+    sent: created.sent ?? true,
     ...(created.emailError ? { emailError: created.emailError } : {}),
   };
+}
+
+/**
+ * Enviar um convite guardado, ou reenviar um que já saiu.
+ *
+ * Num reenvio o link antigo deixa de abrir: o servidor emite um novo, com o
+ * prazo a recomeçar.
+ */
+export async function sendInvite(id: string): Promise<{ link: string; emailed: boolean; emailError?: string }> {
+  try {
+    return await apiPost<{ link: string; emailed: boolean; emailError?: string }>(`/api/invites/${id}/enviar`, {});
+  } finally {
+    await loadInvites();
+  }
+}
+
+/** Enviar vários de uma vez. Devolve quantos emails saíram e o que falhou. */
+export async function sendInvites(ids: string[]): Promise<{ enviados: number; resultados: { id: string; emailed: boolean; error?: string }[] }> {
+  try {
+    return await apiPost(`/api/invites/enviar`, { ids });
+  } finally {
+    await loadInvites();
+  }
 }
 
 /** Fechar um convite. O link deixa de valer — no servidor é `revokedAt`. */

@@ -33,6 +33,8 @@ class CreateMandateDto {
   bic?: string;
 }
 
+import { valoresDaCotacao } from "./taxa-do-pagador";
+
 @Controller("billing")
 export class BillingController {
   constructor(
@@ -55,6 +57,20 @@ export class BillingController {
   @Get("fees")
   eupagoFees() {
     return this.fees.tabela();
+  }
+
+  /**
+   * O que a app da família mostra antes de alguém escolher como paga: se o
+   * clube aceita pagamentos pela app, quem suporta a comissão, e quanto fica
+   * cada método para os valores pedidos (`?cents=2000,2500`, um por
+   * mensalidade).
+   *
+   * Os valores vêm do cliente e servem **só para mostrar**. O que se cobra
+   * calcula-se outra vez em `startPayment`, a partir da mensalidade na base.
+   */
+  @Get("cotacao")
+  cotacao(@Req() req: Request, @Query("cents") cents?: string) {
+    return this.billing.cotacaoDoClube(ctx(req).academyId, valoresDaCotacao(cents));
   }
 
   @Get("charges")

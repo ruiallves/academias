@@ -83,6 +83,30 @@ model Academy {
   billingNextMonths Int[]   @default([])
   billingNextDueDay Int?
 
+  /// ## Pagar pela app: ligado ou desligado
+  ///
+  /// Um clube pode não querer receber pela app — cobra ao balcão, ou ainda não
+  /// tem o canal dele na euPago. Com isto a `false` nenhum pagamento se inicia,
+  /// nem de mensalidade nem de quota de sócio: o servidor recusa
+  /// (`startPayment`, `startMemberFeePayment`) e as apps dizem que os
+  /// pagamentos estão desativados em vez de mostrarem o botão.
+  ///
+  /// Não mexe em mais nada. Os preços configuram-se, as mensalidades e as
+  /// quotas emitem-se e marcam-se à mão como sempre.
+  paymentsEnabled Boolean @default(true)
+
+  /// ## A comissão da euPago: quem a paga
+  ///
+  /// Por omissão (`false`) sai do que o clube recebe: uma mensalidade de 20 €
+  /// custa 20 € à família e chegam menos ao clube.
+  ///
+  /// A `true`, quem paga suporta a comissão do método que escolheu: paga
+  /// 20 € + taxa, e ao clube chegam os 20 €. **Os valores escritos na
+  /// plataforma passam a ser o que o clube recebe**, e não o que a família
+  /// paga. A conta vive em `billing/taxa-do-pagador.ts`; o que se cobrou a mais
+  /// fica em `Payment.surchargeCents`.
+  feesOnPayer Boolean @default(false)
+
   /// ## O canal euPago do clube — a arquitectura do "split"
   ///
   /// O dinheiro das mensalidades é **do clube**, a plataforma não fica com
@@ -201,6 +225,9 @@ model Academy {
   clinical       ClinicalEntry[]
   reports        AthleteReport[]
   nutritionPlans NutritionPlan[]
+  athleteMedicalInfos AthleteMedicalInfo[]
+  athleteDocuments AthleteDocument[]
+  schoolGrades SchoolGrade[]
   matches        Match[]
   events         CalendarEvent[]
   invites        StaffInvite[]
@@ -794,6 +821,10 @@ model StaffInvite {
   /// Uso único: preenchido no resgate, e a partir daí o link não vale mais nada.
   acceptedAt DateTime?
   revokedAt  DateTime?
+  /// Quando o convite foi enviado. Nulo é "por enviar": a pessoa está guardada
+  /// com o cargo e as equipas, e ainda não há email nem link. Ver
+  /// `InvitesService.send`.
+  sentAt     DateTime? @default(now()) @db.Timestamptz(3)
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -953,6 +984,9 @@ model Athlete {
   teams          TeamMembership[]
   attendance     AttendanceRecord[]
   nutritionPlans NutritionPlan[]
+  medicalInfo AthleteMedicalInfo?
+  documents AthleteDocument[]
+  schoolGrades SchoolGrade[]
   enrollments    Enrollment[]
   charges        Charge[]
   chargeSkips    ChargeSkip[]
@@ -1191,6 +1225,7 @@ model TrainingSession {
    * ---- Plano de treino (Área técnica) -----------------------------------
    */
   /**
+   * /**
    * /**
    * /**
    * /**
@@ -1997,9 +2032,17 @@ model Payment {
   /// recente. Ver a migração `20260910120000_quotas_varios_meses`.
   memberFees MemberFeePayment[]
 
-  amountCents Int
-  method      PaymentMethod
-  status      PaymentStatus @default(PENDING)
+  /// O que quem paga **paga**: o valor da mensalidade ou das quotas, mais
+  /// `surchargeCents`. É este o valor que segue para a euPago e é contra ele
+  /// que o webhook confere.
+  amountCents    Int
+  /// A comissão da euPago posta por cima do valor, quando o clube tem
+  /// `Academy.feesOnPayer`. Zero em todos os outros pagamentos. Fotografada ao
+  /// criar: mudar a definição ou a tabela de taxas depois não reescreve o que
+  /// já foi cobrado.
+  surchargeCents Int           @default(0)
+  method         PaymentMethod
+  status         PaymentStatus @default(PENDING)
 
   provider      String  @default("eupago")
   /// Identificador da euPago. Chave da idempotência do webhook.
@@ -2344,6 +2387,7 @@ model Match {
    * /**
    * /**
    * /**
+   * /**
    * /*
    * Em que competição se joga isto.
    * Aponta para o catálogo (`CatalogItem` de `kind = "competitions"`) e é
@@ -2365,6 +2409,12 @@ model Match {
 
   ourScore   Int?
   theirScore Int?
+
+  /// O tempo adicional, em minutos, por parte: `[2, 5]` é +2 na primeira e +5 na
+  /// segunda. Vazio quando não foi registado. Só nas modalidades que o têm (o
+  /// futebol); no futsal e no basquetebol o cronómetro pára e não há
+  /// compensação. Ver `PARTES_COM_TEMPO_ADICIONAL` em `matches.service.ts`.
+  addedMinutes Int[] @default([])
 
   /// Quando a convocatória foi submetida. Nulo = ainda se está a montar.
   ///
@@ -2986,6 +3036,96 @@ model NutritionPlan {
   updatedAt   DateTime  @updatedAt
 
   @@index([academyId, athleteId, createdAt])
+}
+
+/// A informação médica de um atleta: o que quem o trata ou o leva a um jogo
+/// tem de saber antes de acontecer alguma coisa.
+///
+/// ## Uma tabela sua, e não colunas no atleta
+///
+/// São dados de saúde de menores (RGPD, Art. 9). A ficha do atleta viaja para
+/// toda a gente que o vê — treinadores, secretaria, a família — e uma coluna
+/// lá era uma coluna que qualquer leitura nova arrastava sem ninguém decidir.
+/// Aqui só sai por um endpoint, que exige `clinical:read` e o atleta no âmbito,
+/// e só se escreve com `clinical:write`.
+///
+/// Uma linha por atleta, criada na primeira vez que alguém escreve.
+model AthleteMedicalInfo {
+  athleteId String  @id
+  athlete   Athlete @relation(fields: [athleteId], references: [id], onDelete: Cascade)
+  academyId String
+  academy   Academy @relation(fields: [academyId], references: [id], onDelete: Cascade)
+
+  /// "A+", "O-", … — um dos oito, ou nulo quando não se sabe.
+  bloodType  String?
+  allergies  String?
+  medication String?
+  notes      String?
+
+  /// Quem escreveu por último, fotografado: o nome fica mesmo que a pessoa saia.
+  updatedByName String?
+  updatedAt     DateTime @updatedAt
+
+  @@index([academyId])
+}
+
+/// Um documento de um atleta: o nome que o clube lhe dá ("Cartão de cidadão",
+/// "Exame médico 2026") e os ficheiros que o compõem — fotografias ou
+/// documentos.
+///
+/// Os ficheiros vivem no bucket privado `documentos`, com chave
+/// `<academyId>/<athleteId>/<aleatório>.<ext>`: o clube à frente para o espaço
+/// se medir e se varrer por prefixo, o atleta a seguir para sair com ele.
+/// `files` é a lista `{ key, name, type, size }`; os links assinam-se a cada
+/// leitura e nunca se guardam.
+model AthleteDocument {
+  id        String  @id @default(cuid())
+  academyId String
+  academy   Academy @relation(fields: [academyId], references: [id], onDelete: Cascade)
+  athleteId String
+  athlete   Athlete @relation(fields: [athleteId], references: [id], onDelete: Cascade)
+
+  name  String
+  files Json   @default("[]")
+
+  createdByName String?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  @@index([academyId, athleteId, createdAt])
+}
+
+/// Uma nota da escola de um atleta, submetida pelo encarregado na app.
+///
+/// Uma por ano lectivo, período e disciplina: submeter outra vez corrige a que
+/// lá estava. `subjectKey` é a disciplina sem acentos nem maiúsculas, para
+/// "Matemática" e "matematica" serem a mesma linha; `subject` é como a família
+/// a escreveu. `scale` é 5 (básico, de 1 a 5) ou 20 (secundário, de 0 a 20).
+///
+/// Só o encarregado escreve; o clube lê. Ver `SchoolGradesService`.
+model SchoolGrade {
+  id        String  @id @default(cuid())
+  academyId String
+  academy   Academy @relation(fields: [academyId], references: [id], onDelete: Cascade)
+  athleteId String
+  athlete   Athlete @relation(fields: [athleteId], references: [id], onDelete: Cascade)
+
+  /// `2026/27`.
+  schoolYear String
+  /// `1P`, `2P`, `3P` — ou `1S`, `2S` nas escolas semestrais.
+  period     String
+  subject    String
+  subjectKey String
+  grade      Int
+  scale      Int
+
+  /// Quem submeteu por último, fotografado.
+  submittedByName String?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@unique([athleteId, schoolYear, period, subjectKey])
+  @@index([academyId, athleteId])
 }
 
 /**

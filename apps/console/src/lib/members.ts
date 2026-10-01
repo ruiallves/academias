@@ -158,6 +158,8 @@ export type MemberFeeRow = {
   notes: string | null;
   /** Quem pagou pela app. Só nas pagas online. */
   paidBy?: string | null;
+  /** A comissão que quem pagou suportou por cima, no pagamento que a liquidou. */
+  paidSurchargeCents?: number;
   /** O identificador com que o pagamento aparece na euPago. */
   paymentId?: string | null;
   /**

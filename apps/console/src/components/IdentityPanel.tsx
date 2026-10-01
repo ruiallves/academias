@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
-import { Panel, PanelHead, cx } from "@/components/primitives";
-import { Check, Trash2, Upload } from "@/lib/icons";
+import { cx } from "@/components/primitives";
+import { Bloco, Campo, Erro, Leitura, campoClass } from "@/components/definicoes/ui";
+import { Check, Plus, Trash2, Upload } from "@/lib/icons";
 import { apiDelete, apiPatch, apiPost } from "@/lib/http";
 import { reloadAcademy, useStore } from "@/lib/store";
 import { signalVars } from "@academia/ui/tokens";
@@ -163,55 +164,66 @@ export function IdentityPanel({ mayWrite }: { mayWrite: boolean }) {
     }
   }
 
+  const escolhida = PRESETS.find((p) => p.hex === signal.toLowerCase());
+
   return (
-    <Panel>
-      <PanelHead title="Identidade" hint="o que as famílias vêem">
-        {saving && <span className="text-meta text-ink-3">a gravar…</span>}
-        {saved && !saving && (
-          <span className="flex items-center gap-1 text-meta text-ok">
-            <Check className="size-3.5" strokeWidth={2} />
-            gravado
-          </span>
-        )}
-      </PanelHead>
+    <>
+      {erro && <Erro>{erro}</Erro>}
 
-      <div className="grid gap-4 p-5 sm:grid-cols-2">
-        <Field label="Nome da academia" value={academy.name} />
-        <Field label="Endereço da app" value={`${academy.slug}.academias.pt`} mono />
-      </div>
-
-      <ShortNameField mayWrite={mayWrite} onError={setErro} />
+      <Bloco
+        titulo="Nome"
+        descricao="O nome por extenso e o endereço são os do registo do clube na plataforma. O nome curto é o que aparece onde o outro não cabe."
+      >
+        <div className="grid gap-x-8 gap-y-5 sm:grid-cols-2">
+          <Leitura label="Nome do clube" valor={academy.name} />
+          <Leitura label="Endereço da app" valor={`${academy.slug}.academias.pt`} mono />
+        </div>
+        <ShortNameField mayWrite={mayWrite} onError={setErro} />
+      </Bloco>
 
       <ClubSymbol mayWrite={mayWrite} onError={setErro} />
 
-      <div className="border-t border-line p-5">
-        <div className="mb-1 text-meta font-medium text-ink">Cor do clube</div>
-        <p className="mb-3 max-w-[62ch] text-meta text-ink-3">
-          Usada em identidade e selecção — navegação activa, foco, marca. Nunca em estado: pago é verde e vencido é
-          vermelho em todas as academias.
-        </p>
-
-        <div className="flex flex-wrap items-center gap-2">
-          {PRESETS.map((p) => (
-            <button
-              key={p.hex}
-              type="button"
-              disabled={!mayWrite || saving}
-              onClick={() => void saveColor(p.hex)}
-              aria-pressed={signal.toLowerCase() === p.hex}
-              className={cx(
-                "inline-flex items-center gap-2 rounded-[var(--radius-control)] border px-2.5 py-1.5 text-meta font-medium transition-colors duration-[120ms] disabled:opacity-50",
-                signal.toLowerCase() === p.hex
-                  ? "border-line-strong text-ink"
-                  : "border-line text-ink-2 hover:border-line-strong",
-              )}
-            >
-              <span className="flex size-4 items-center justify-center rounded-full" style={{ background: p.hex }}>
-                {signal.toLowerCase() === p.hex && <Check className="size-2.5 text-white" strokeWidth={3} />}
-              </span>
-              {p.name}
-            </button>
-          ))}
+      <Bloco
+        titulo="Cor do clube"
+        descricao="Pinta o que diz «estás aqui»: o menu activo, o foco, a marca. Nunca o estado de um pagamento — pago é verde e vencido é vermelho em todos os clubes."
+        estado={
+          saving ? (
+            <span className="text-meta text-ink-3">a gravar…</span>
+          ) : saved ? (
+            <span className="flex items-center gap-1 text-meta text-ok">
+              <Check className="size-3.5" strokeWidth={2} />
+              gravado
+            </span>
+          ) : undefined
+        }
+      >
+        {/*
+          Bolas de cor e não botões com nome: a cor escolhe-se a olhar para ela.
+          O nome da que está escolhida vai por baixo, uma vez, em vez de seis
+          etiquetas a competir com as seis cores.
+        */}
+        <div className="flex flex-wrap items-center gap-3">
+          {PRESETS.map((p) => {
+            const on = signal.toLowerCase() === p.hex;
+            return (
+              <button
+                key={p.hex}
+                type="button"
+                disabled={!mayWrite || saving}
+                onClick={() => void saveColor(p.hex)}
+                aria-pressed={on}
+                aria-label={p.name}
+                title={p.name}
+                className={cx(
+                  "flex size-9 items-center justify-center rounded-full transition-[box-shadow,transform] duration-[120ms] disabled:opacity-50",
+                  on ? "ring-2 ring-ink ring-offset-2 ring-offset-canvas" : "hover:scale-105",
+                )}
+                style={{ background: p.hex }}
+              >
+                {on && <Check className="size-4 text-white" strokeWidth={2.5} />}
+              </button>
+            );
+          })}
 
           {/*
             O selector livre, a seguir aos atalhos.
@@ -230,17 +242,17 @@ export function IdentityPanel({ mayWrite }: { mayWrite: boolean }) {
             assumida quando os eventos param de chegar. Ver `agendar`.
           */}
           <label
+            title="Outra cor"
             className={cx(
-              "inline-flex cursor-pointer items-center gap-2 rounded-[var(--radius-control)] border border-line px-2.5 py-1.5 text-meta font-medium text-ink-2 transition-colors duration-[120ms] hover:border-line-strong",
+              "relative flex size-9 cursor-pointer items-center justify-center rounded-full border border-dashed border-line-strong text-ink-3 transition-colors duration-[120ms] hover:border-ink-3 hover:text-ink",
+              !escolhida && "border-solid ring-2 ring-ink ring-offset-2 ring-offset-canvas",
               !mayWrite && "pointer-events-none opacity-50",
             )}
+            style={!escolhida ? { background: signal, borderColor: "transparent" } : undefined}
           >
-            <span
-              className="size-4 rounded-full ring-1 ring-line-strong ring-inset"
-              style={{ background: signal }}
-              aria-hidden
-            />
-            Outra cor
+            {/* Sobre uma cor própria o visto leva a tinta que se lê nela: branco num
+                amarelo-claro não se via. */}
+            {escolhida ? <Plus className="size-4" strokeWidth={1.75} /> : <Check className="size-4 text-signal-on" strokeWidth={2.5} />}
             {/*
               `disabled` só por permissão, e nunca por `saving`.
               O Chrome dispara `change` com o selector ainda aberto; se a gravação
@@ -260,13 +272,14 @@ export function IdentityPanel({ mayWrite }: { mayWrite: boolean }) {
               aria-label="Escolher outra cor"
             />
           </label>
-
-          <span className="font-mono text-[11px] text-ink-4">{signal.toUpperCase()}</span>
         </div>
-      </div>
 
-      {erro && <p className="border-t border-line px-5 py-3 text-meta text-risk">{erro}</p>}
-    </Panel>
+        <p className="mt-3 text-meta text-ink-3">
+          <span className="font-medium text-ink-2">{escolhida?.name ?? "Cor própria"}</span>
+          <span className="ml-2 font-mono text-[11px] text-ink-4">{signal.toUpperCase()}</span>
+        </p>
+      </Bloco>
+    </>
   );
 }
 
@@ -331,25 +344,29 @@ function ClubSymbol({ mayWrite, onError }: { mayWrite: boolean; onError: (m: str
   }
 
   return (
-    <div className="border-t border-line p-5">
-      <div className="mb-1 text-meta font-medium text-ink">Símbolo do clube</div>
-      <p className="mb-3 max-w-[62ch] text-meta text-ink-3">
-        Aparece no ícone que as famílias instalam no telemóvel, na página do clube e na página de sócios. Quadrado e
-        com pelo menos 512 px de lado dá o melhor resultado. PNG, WebP ou JPEG até 2 MB.
-      </p>
-      {/* O ícone da app é gerado a partir do símbolo (ver `tenant/club-icons.ts` na
-          API), já quadrado e opaco. O que não depende de nós é quando o telemóvel
-          o vai buscar: o Android verifica o manifest quando a app abre, com um
-          intervalo que é dele; o iPhone nunca volta a perguntar. */}
-      <p className="mb-3 max-w-[62ch] text-[11px] text-ink-4">
-        Se trocares de símbolo, a app já instalada em Android muda de ícone sozinha nos dias seguintes, quando for
-        aberta. No iPhone o ícone fica o que era quando a app foi adicionada: para ver o novo, é preciso removê-la do
-        ecrã principal e voltar a adicioná-la.
-      </p>
-
-      <div className="flex items-center gap-4">
+    <Bloco
+      centro
+      titulo="Símbolo"
+      descricao={
+        <>
+          <p>
+            É o ícone que as famílias instalam no telemóvel, e aparece na página do clube e na de sócios. Quadrado, com
+            pelo menos 512 px de lado. PNG, WebP ou JPEG até 2 MB.
+          </p>
+          {/* O ícone da app é gerado a partir do símbolo (ver `tenant/club-icons.ts` na
+              API), já quadrado e opaco. O que não depende de nós é quando o telemóvel
+              o vai buscar: o Android verifica o manifest quando a app abre, com um
+              intervalo que é dele; o iPhone nunca volta a perguntar. */}
+          <p className="text-[11px] text-ink-4">
+            Ao trocar, o Android muda o ícone sozinho nos dias seguintes. No iPhone é preciso remover a app do ecrã
+            principal e voltar a adicioná-la.
+          </p>
+        </>
+      }
+    >
+      <div className="flex flex-wrap items-center gap-x-5 gap-y-4">
         <span
-          className="flex size-16 shrink-0 items-center justify-center overflow-hidden rounded-[16px] text-[18px] font-bold text-signal-on"
+          className="flex size-[72px] shrink-0 items-center justify-center overflow-hidden rounded-[18px] text-[20px] font-bold text-signal-on"
           style={{ background: academy.logoUrl ? "var(--color-sunken)" : "var(--color-signal-strong)" }}
         >
           {academy.logoUrl ? (
@@ -359,48 +376,47 @@ function ClubSymbol({ mayWrite, onError }: { mayWrite: boolean; onError: (m: str
           )}
         </span>
 
-        <div className="flex flex-wrap items-center gap-2">
-          <button
-            type="button"
-            disabled={!mayWrite || busy}
-            onClick={() => input.current?.click()}
-            className="ctl-outline disabled:opacity-50"
-          >
-            <Upload className="size-3.5" strokeWidth={1.75} />
-            {busy ? "A carregar…" : academy.logoUrl ? "Trocar símbolo" : "Carregar símbolo"}
-          </button>
-
-          {academy.logoUrl && (
+        <div className="min-w-0">
+          <div className="flex flex-wrap items-center gap-2">
             <button
               type="button"
               disabled={!mayWrite || busy}
-              onClick={() => void remove()}
-              className="ctl-ghost text-risk disabled:opacity-50"
+              onClick={() => input.current?.click()}
+              className="ctl-outline disabled:opacity-50"
             >
-              <Trash2 className="size-3.5" strokeWidth={1.75} />
-              Remover
+              <Upload className="size-3.5" strokeWidth={1.75} />
+              {busy ? "A carregar…" : academy.logoUrl ? "Trocar símbolo" : "Carregar símbolo"}
             </button>
-          )}
 
-          <input
-            ref={input}
-            type="file"
-            accept="image/png,image/webp,image/jpeg"
-            className="sr-only"
-            onChange={(e) => {
-              const f = e.target.files?.[0];
-              if (f) void pick(f);
-            }}
-          />
+            {academy.logoUrl && (
+              <button
+                type="button"
+                disabled={!mayWrite || busy}
+                onClick={() => void remove()}
+                className="ctl-ghost text-risk disabled:opacity-50"
+              >
+                <Trash2 className="size-3.5" strokeWidth={1.75} />
+                Remover
+              </button>
+            )}
+
+            <input
+              ref={input}
+              type="file"
+              accept="image/png,image/webp,image/jpeg"
+              className="sr-only"
+              onChange={(e) => {
+                const f = e.target.files?.[0];
+                if (f) void pick(f);
+              }}
+            />
+          </div>
+          {!academy.logoUrl && (
+            <p className="mt-2 text-meta text-ink-3">Sem símbolo, usam-se as iniciais do nome curto.</p>
+          )}
         </div>
       </div>
-
-      {!academy.logoUrl && (
-        <p className="mt-3 text-[11px] text-ink-4">
-          Sem símbolo, usamos as iniciais do nome curto — é o que está no quadrado acima.
-        </p>
-      )}
-    </div>
+    </Bloco>
   );
 }
 
@@ -463,42 +479,24 @@ function ShortNameField({ mayWrite, onError }: { mayWrite: boolean; onError: (m:
   }
 
   return (
-    <div className="border-t border-line p-5">
-      <label className="block">
-        <span className="mb-1 block text-meta font-medium text-ink">Nome curto</span>
-        <input
-          value={texto}
-          maxLength={SHORT_NAME_MAX}
-          disabled={!mayWrite || saving}
-          onChange={(e) => setTexto(e.target.value)}
-          onBlur={() => void gravar()}
-          onKeyDown={(e) => {
-            if (e.key === "Enter") (e.target as HTMLInputElement).blur();
-            if (e.key === "Escape") setTexto(academy.shortName);
-          }}
-          className="h-9 w-full rounded-[var(--radius-control)] border border-line bg-surface px-2.5 text-body text-ink outline-none transition-colors focus:border-line-strong disabled:opacity-60 sm:max-w-[22rem]"
-        />
-      </label>
-      <p className="mt-2 max-w-[62ch] text-meta text-ink-3">
-        Como o clube aparece onde não cabe o nome por extenso: no assunto dos emails, na página de sócios, no
-        separador da consola e no ícone que as famílias instalam no telemóvel.
-      </p>
-    </div>
-  );
-}
-
-function Field({ label, value, mono }: { label: string; value: string; mono?: boolean }) {
-  return (
-    <label className="block">
-      <span className="mb-1 block text-meta font-medium text-ink">{label}</span>
+    <Campo
+      label="Nome curto"
+      className="mt-6"
+      ajuda="Aparece no assunto dos emails, na página de sócios, no separador da consola e por baixo do ícone no telemóvel das famílias."
+    >
       <input
-        readOnly
-        value={value}
-        className={cx(
-          "h-9 w-full rounded-[var(--radius-control)] border border-line bg-surface px-2.5 text-body text-ink-2",
-          mono && "font-mono text-meta",
-        )}
+        aria-label="Nome curto"
+        value={texto}
+        maxLength={SHORT_NAME_MAX}
+        disabled={!mayWrite || saving}
+        onChange={(e) => setTexto(e.target.value)}
+        onBlur={() => void gravar()}
+        onKeyDown={(e) => {
+          if (e.key === "Enter") (e.target as HTMLInputElement).blur();
+          if (e.key === "Escape") setTexto(academy.shortName);
+        }}
+        className={cx(campoClass, "sm:max-w-[22rem]")}
       />
-    </label>
+    </Campo>
   );
 }

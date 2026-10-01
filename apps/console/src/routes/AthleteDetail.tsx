@@ -17,7 +17,10 @@ import {
 } from "@/components/primitives";
 import { Segmented } from "@/components/filters";
 import { AthleteKitPanel } from "@/components/inventory/AthleteKitPanel";
+import { AthleteDocuments } from "@/components/AthleteDocuments";
+import { SchoolGrades } from "@/components/SchoolGrades";
 import { ClinicalPanel } from "@/components/ClinicalPanel";
+import { MedicalInfoPanel } from "@/components/MedicalInfoPanel";
 import { NutritionPanel } from "@/components/NutritionPanel";
 import { AppDoAtletaPanel } from "@/components/AppDoAtletaPanel";
 import { EquipasDoAtletaPanel } from "@/components/EquipasDoAtletaPanel";
@@ -33,8 +36,8 @@ import {
   CircleCheck,
   ClipboardCheck,
   FileText,
+  GraduationCap,
   Footprints,
-  Gauge,
   History,
   Boxes,
   HeartPulse,
@@ -69,9 +72,6 @@ import { Dialog } from "@/components/Dialog";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { LigarEncarregadoDialog } from "@/components/LigarEncarregadoDialog";
 import { desligarEncarregado } from "@/lib/encarregados";
-import { useApi } from "@/lib/query";
-import { average, type ApiEvaluation, type ApiReport } from "@/lib/development";
-import { ReportDialog, VisibilityPill } from "@/components/ReportDialog";
 import { PhotoPicker } from "@/components/PhotoPicker";
 import { removeAthletePhoto, uploadAthletePhoto } from "@/lib/photos";
 import { dominantSideLabel, summariseSeason, useAthleteMatches, type AthleteMatch } from "@/lib/athlete";
@@ -85,7 +85,7 @@ import { AthleteEditPanel } from "@/components/AthleteEditPanel";
 import { useSession } from "@/session";
 import type { Athlete, Fee } from "@/data/types";
 
-type Tab = "overview" | "matches" | "attendance" | "development" | "clinical" | "kit" | "fees" | "family" | "history";
+type Tab = "overview" | "matches" | "attendance" | "documents" | "school" | "clinical" | "kit" | "fees" | "family" | "history";
 
 /** Os separadores que se abrem por link (`?separador=`), com o nome em português. */
 const SEPARADOR_DO_LINK: Record<string, Tab> = { clinico: "clinical" };
@@ -151,12 +151,22 @@ export default function AthleteDetail() {
     // aparecer vazio a explicar-se.
     ...(hasMatches ? [{ value: "matches" as const, label: "Jogos", icon: Trophy }] : []),
     { value: "attendance", label: "Assiduidade", icon: ClipboardCheck },
-    // Avaliações e relatórios juntos: são as duas coisas que a academia **escreve**
-    // sobre o atleta, e quem abre uma costuma querer ver a outra a seguir.
-    ...(can(session, "evaluation:read") || can(session, "report:read")
-      ? [{ value: "development" as const, label: "Desenvolvimento", icon: Gauge }]
-      : []),
+    /*
+      Os documentos do atleta: cartão de cidadão, exame médico, autorizações.
+
+      Ocupa o lugar do antigo "Desenvolvimento". As avaliações e os relatórios
+      não se perderam: continuam nos menus Avaliações e Relatórios, que é onde
+      se escrevem. Só a quem edita a ficha — a mesma porta do servidor, que
+      ainda confirma se o atleta é de uma equipa dele.
+    */
+    ...(can(session, "athlete:write") ? [{ value: "documents" as const, label: "Documentos", icon: FileText }] : []),
     { value: "clinical", label: "Clínico", icon: HeartPulse },
+    /*
+      As notas da escola, que a família submete na app. A toda a gente do staff
+      que vê a ficha: é o treinador quem mais quer saber disto. O servidor ainda
+      confirma que o atleta é de uma equipa de quem pergunta.
+    */
+    { value: "school", label: "Escola", icon: GraduationCap },
     /*
       O equipamento que o clube lhe entregou.
  
@@ -232,7 +242,8 @@ export default function AthleteDetail() {
       )}
       {tab === "matches" && <Matches athleteId={id} matches={matches} />}
       {tab === "attendance" && <Attendance athleteId={id} />}
-      {tab === "development" && <Development athlete={athlete} />}
+      {tab === "documents" && <AthleteDocuments athlete={athlete} />}
+      {tab === "school" && <SchoolGrades athlete={athlete} />}
       {tab === "clinical" && <Clinical athlete={athlete} />}
       {tab === "kit" && <AthleteKitPanel athleteId={athlete.id} athleteName={athlete.name} />}
       {tab === "fees" && <FeesTab athlete={athlete} />}
@@ -1002,10 +1013,24 @@ function Attendance({ athleteId }: { athleteId: string }) {
 function Clinical({ athlete }: { athlete: Athlete }) {
   const { session } = useSession();
   return (
-    <div className="space-y-3">
-      <ClinicalPanel athlete={athlete} session={session} />
-      {/* O plano de nutrição vive ao pé do boletim: é o mesmo departamento a escrevê-lo. */}
-      <NutritionPanel athlete={athlete} session={session} />
+    /*
+      Duas colunas: o que **aconteceu** ao centro (estado, agenda, boletim), o que
+      o atleta **é** ao lado (informação médica, nutrição) — a ficha ao lado do
+      processo. A coluna do lado acompanha a página enquanto se percorre o
+      boletim, que é a parte comprida.
+
+      Num ecrã estreito empilham, e o boletim vem primeiro: é por ele que se
+      abre este separador.
+    */
+    <div className="grid items-start gap-3 lg:grid-cols-[minmax(0,1fr)_320px]">
+      <div className="min-w-0">
+        <ClinicalPanel athlete={athlete} session={session} />
+      </div>
+      <aside className="min-w-0 space-y-3 lg:sticky lg:top-4">
+        <MedicalInfoPanel athlete={athlete} session={session} />
+        {/* O plano de nutrição vive ao pé do boletim: é o mesmo departamento a escrevê-lo. */}
+        <NutritionPanel athlete={athlete} session={session} />
+      </aside>
     </div>
   );
 }
@@ -1253,125 +1278,6 @@ function TaxIdPanel({ athlete }: { athlete: Athlete }) {
         )}
       </div>
     </Panel>
-  );
-}
-
-/**
- * Desenvolvimento: o que a academia escreveu sobre este atleta.
- *
- * ## Porque é que as avaliações e os relatórios vivem no mesmo separador
- *
- * Porque respondem à mesma pergunta com dois formatos. A avaliação é o boletim
- * regular — as mesmas competências, período a período, e é por isso que aparece
- * como histórico: o valor está na sequência, não na última linha. O relatório é o
- * texto de quando houve alguma coisa para dizer.
- *
- * Separá-los em dois separadores obrigava a saltar entre eles para responder a "como
- * está este miúdo", que é a pergunta que traz alguém a esta página.
- *
- * ## E porque é que se escreve um relatório daqui
- *
- * Porque é aqui que se decide escrevê-lo. Obrigar a ir a Relatórios e escolher o
- * atleta de uma lista é o caminho longo para a mesma coisa — e o caminho longo é o
- * que fica por fazer.
- */
-function Development({ athlete }: { athlete: Athlete }) {
-  const { session } = useSession();
-  const [writing, setWriting] = useState(false);
-
-  const { data: evaluationData } = useApi<ApiEvaluation[]>(can(session, "evaluation:read") ? "/api/evaluations" : null);
-  const { data: reportData, reload } = useApi<ApiReport[]>(
-    can(session, "report:read") ? "/api/reports" : null,
-    { athleteId: athlete.id },
-  );
-
-  const evaluations = (evaluationData ?? []).filter((e) => e.athleteId === athlete.id);
-  const reports = reportData ?? [];
-
-  return (
-    <div className="grid gap-3 lg:grid-cols-2">
-      {writing && (
-        <ReportDialog report={null} athletes={[athlete]} onClose={() => setWriting(false)} onSaved={reload} />
-      )}
-
-      <Panel>
-        <PanelHead title="Avaliações" hint={evaluations.length ? `${evaluations.length} períodos` : undefined} />
-        {evaluations.length === 0 ? (
-          <div className="px-5 py-10">
-            <Empty icon={Gauge} title="Ainda sem avaliações" detail="As avaliações do período aparecem aqui, e comparam-se umas com as outras." />
-          </div>
-        ) : (
-          <ul>
-            {evaluations.map((e) => {
-              const media = average(e.scores);
-              return (
-                <li key={e.id} className="border-b border-line px-5 py-3 last:border-0">
-                  <div className="flex items-center gap-3">
-                    <div className="min-w-0 flex-1">
-                      <div className="truncate text-body font-medium text-ink">{e.period}</div>
-                      <div className="truncate text-meta text-ink-3">
-                        {e.coachName.split(" ")[0]}
-                        {e.publishedAt && ` · entregue ${shortDate(new Date(e.publishedAt))}`}
-                      </div>
-                    </div>
-                    {media !== null && <span className="shrink-0 text-body font-semibold text-ink tabular">{media.toFixed(1)}</span>}
-                    {e.status === "PUBLISHED" ? <Pill tone="ok">Entregue</Pill> : <Pill tone="warn">Rascunho</Pill>}
-                  </div>
-
-                  {/* As competências em linha: é o que se compara entre períodos. */}
-                  <dl className="mt-2 flex flex-wrap gap-x-4 gap-y-1">
-                    {Object.entries(e.scores).map(([skill, value]) => (
-                      <div key={skill} className="flex items-baseline gap-1.5">
-                        <dt className="text-meta text-ink-3">{skill}</dt>
-                        <dd className="text-meta font-medium text-ink tabular">{value}</dd>
-                      </div>
-                    ))}
-                  </dl>
-
-                  {e.strengths && <p className="mt-1.5 text-meta leading-relaxed text-ink-2">{e.strengths}</p>}
-                </li>
-              );
-            })}
-          </ul>
-        )}
-      </Panel>
-
-      <Panel>
-        <PanelHead title="Relatórios" hint={reports.length ? `${reports.length}` : undefined}>
-          {can(session, "report:write") && (
-            <button type="button" onClick={() => setWriting(true)} className="ctl-outline">
-              Escrever
-            </button>
-          )}
-        </PanelHead>
-
-        {reports.length === 0 ? (
-          <div className="px-5 py-10">
-            <Empty
-              icon={FileText}
-              title="Ainda sem relatórios"
-              detail="Um texto sobre o percurso deste atleta — interno, ou partilhado com a família."
-            />
-          </div>
-        ) : (
-          <ul>
-            {reports.map((r) => (
-              <li key={r.id} className="flex items-center gap-3 border-b border-line px-5 py-3 last:border-0">
-                <div className="min-w-0 flex-1">
-                  <div className="truncate text-body font-medium text-ink">{r.title}</div>
-                  <div className="truncate text-meta text-ink-3">
-                    {[r.period, r.authorName.split(" ")[0], shortDate(new Date(r.publishedAt ?? r.createdAt))]
-                      .filter(Boolean)
-                      .join(" · ")}
-                  </div>
-                </div>
-                {r.status === "DRAFT" ? <Pill tone="warn">Rascunho</Pill> : <VisibilityPill visibility={r.visibility} />}
-              </li>
-            ))}
-          </ul>
-        )}
-      </Panel>
-    </div>
   );
 }
 

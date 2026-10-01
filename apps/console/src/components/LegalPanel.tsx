@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
-import { Panel, PanelHead, Pill } from "./primitives";
+import { Pill } from "./primitives";
+import { Bloco, Erro, Lista, Linha } from "./definicoes/ui";
 import { ReadDialog } from "./LegalGate";
 import { Spinner } from "./Busy";
 import {
@@ -38,55 +39,73 @@ export function LegalPanel() {
     };
   }, []);
 
-  return (
-    <Panel>
-      <PanelHead title="Documentos legais" />
-      {erro && <p className="px-5 py-4 text-meta text-risk">{erro}</p>}
-      {!erro && (!docs || !history) && (
-        <Spinner />
-      )}
-      {docs && history && (
-        <>
-          <ul className="divide-y divide-line">
-            {docs.map((d) => {
-              const aceite = history.find((h) => h.type === d.type && h.version === d.version);
-              return (
-                <li key={d.id} className="flex items-center justify-between gap-3 px-5 py-3">
-                  <div className="min-w-0">
-                    <p className="truncate text-body font-medium text-ink">{d.title}</p>
-                    <p className="text-meta text-ink-3">
-                      Versão {d.version} · em vigor desde {dataPT(d.effectiveAt)}
-                      {aceite && <> · aceite em {dataPT(aceite.acceptedAt)}{aceite.onBehalfOfClub && !aceite.mine && ` por ${aceite.by}`}</>}
-                    </p>
-                  </div>
-                  <button type="button" className="ctl-outline shrink-0" onClick={() => setALer(d)}>
-                    Ler
-                  </button>
-                </li>
-              );
-            })}
-            {docs.length === 0 && <li className="px-5 py-4 text-meta text-ink-3">Ainda não há documentos publicados.</li>}
-          </ul>
+  if (erro) return <Erro>{erro}</Erro>;
+  if (!docs || !history) return <Spinner />;
 
-          {history.length > 0 && (
-            <div className="border-t border-line px-5 py-3">
-              <p className="mb-2 text-group uppercase text-ink-3">Histórico de aceitações</p>
-              <ul className="space-y-1">
-                {history.map((h) => (
-                  <li key={h.id} className="flex flex-wrap items-center gap-x-2 gap-y-0.5 text-meta text-ink-2">
-                    <span className="tabular-nums text-ink-3">{dataPT(h.acceptedAt)}</span>
-                    <span className="text-ink">
-                      {h.title} v{h.version}
-                    </span>
-                    {h.onBehalfOfClub ? <Pill tone="signal">pelo clube{!h.mine && ` · ${h.by}`}</Pill> : null}
-                  </li>
-                ))}
-              </ul>
-            </div>
-          )}
-        </>
+  return (
+    <>
+      <Bloco
+        titulo="Em vigor"
+        descricao="Os documentos que regem o uso da plataforma. Não se editam aqui: quando sai uma versão nova, é pedida a aceitação à entrada."
+      >
+        {docs.length === 0 ? (
+          <p className="text-meta text-ink-3">Ainda não há documentos publicados.</p>
+        ) : (
+          <Lista>
+            <ul>
+              {docs.map((d) => {
+                const aceite = history.find((h) => h.type === d.type && h.version === d.version);
+                return (
+                  <Linha key={d.id}>
+                    <div className="min-w-0 flex-1">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <span className="truncate text-body font-medium text-ink">{d.title}</span>
+                        <Pill>v{d.version}</Pill>
+                      </div>
+                      <p className="text-meta text-ink-3">
+                        Em vigor desde {dataPT(d.effectiveAt)}
+                        {aceite && (
+                          <>
+                            {" "}
+                            · aceite em {dataPT(aceite.acceptedAt)}
+                            {aceite.onBehalfOfClub && !aceite.mine && ` por ${aceite.by}`}
+                          </>
+                        )}
+                      </p>
+                    </div>
+                    <button type="button" className="ctl-outline shrink-0" onClick={() => setALer(d)}>
+                      Ler
+                    </button>
+                  </Linha>
+                );
+              })}
+            </ul>
+          </Lista>
+        )}
+      </Bloco>
+
+      {history.length > 0 && (
+        <Bloco
+          titulo="Aceitações"
+          descricao="O que esta conta, e o clube por quem o representa, já aceitou, versão a versão."
+        >
+          <Lista>
+            <ul>
+              {history.map((h) => (
+                <Linha key={h.id} className="py-2.5">
+                  <span className="w-24 shrink-0 text-meta text-ink-3 tabular">{dataPT(h.acceptedAt)}</span>
+                  <span className="min-w-0 flex-1 truncate text-body text-ink">
+                    {h.title} <span className="text-ink-3">v{h.version}</span>
+                  </span>
+                  {h.onBehalfOfClub ? <Pill tone="signal">pelo clube{!h.mine && ` · ${h.by}`}</Pill> : null}
+                </Linha>
+              ))}
+            </ul>
+          </Lista>
+        </Bloco>
       )}
+
       {aLer && <ReadDialog doc={aLer} onClose={() => setALer(null)} />}
-    </Panel>
+    </>
   );
 }

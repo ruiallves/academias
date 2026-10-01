@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
-import { Panel, PanelHead, Pill } from "./primitives";
+import { Pill } from "./primitives";
+import { Bloco, Erro, Lista } from "./definicoes/ui";
 import { Spinner } from "./Busy";
 import { money } from "@/lib/format";
 import { dataPT } from "@/lib/legal";
@@ -70,105 +71,113 @@ export function ContratoPanel() {
   const porAssinar = Boolean(dados?.pendente);
 
   return (
-    <Panel>
-      <PanelHead title="Condições da subscrição">
-        {porAssinar ? <Pill tone="warn">por assinar</Pill> : ordem?.signedAt ? <Pill tone="ok">assinadas</Pill> : null}
-      </PanelHead>
+    <>
+      <Bloco
+        titulo="Condições da subscrição"
+        estado={
+          porAssinar ? <Pill tone="warn">por assinar</Pill> : ordem?.signedAt ? <Pill tone="ok">assinadas</Pill> : undefined
+        }
+        descricao="O que o clube contratou à plataforma: o plano, o preço e desde quando."
+      >
+        {erro && <Erro>{erro}</Erro>}
+        {!erro && !dados && <Spinner />}
 
-      {erro && <p className="px-5 py-4 text-meta text-risk">{erro}</p>}
-      {!erro && !dados && <Spinner />}
+        {ordem && (
+          <>
+            {/*
+              O preço em grande, por cima da lista. É o número que quem abre
+              isto vem ver, e estava na segunda linha de uma tabela, do mesmo
+              tamanho que a periodicidade.
+            */}
+            <div className="mb-4 flex flex-wrap items-baseline gap-x-2.5 gap-y-1">
+              <span className="text-[26px] font-semibold leading-none tracking-[-0.02em] text-ink tabular">
+                {money(ordem.amountCents)}
+              </span>
+              <span className="text-body text-ink-3">{ordem.billingPeriod === "ANNUAL" ? "por ano" : "por mês"}</span>
+              {/*
+                No anual, a mensalidade que o clube fica a pagar, e a de tabela
+                ao lado para se ver o desconto.
 
-      {ordem && (
-        <>
-          <dl className="divide-y divide-line">
-            <Linha rotulo="Plano" valor={ordem.planName} />
-            <Linha
-              rotulo="Preço"
-              valor={
-                <>
-                  <span className="tabular">{money(ordem.amountCents)}</span>{" "}
-                  {ordem.billingPeriod === "ANNUAL" ? "por ano" : "por mês"}
-                  {/*
-                    No anual, a mensalidade que o clube fica a pagar, e a de tabela
-                    ao lado para se ver o desconto.
+                Dizia só "(19,99 €/mês de tabela, menos 10%)": o clube via o
+                preço que não paga e tinha de fazer a conta para saber o que
+                paga. A mensalidade é o ano a dividir por doze — o mesmo número
+                que o site anuncia no plano anual.
+              */}
+              {ordem.discountPct > 0 && (
+                <span className="text-meta text-ink-3">
+                  {money(ordem.billingPeriod === "ANNUAL" ? Math.round(ordem.amountCents / 12) : ordem.amountCents)}
+                  /mês em vez de {money(ordem.listMonthlyCents)}, menos {ordem.discountPct}%
+                </span>
+              )}
+            </div>
 
-                    Dizia só "(19,99 €/mês de tabela, menos 10%)": o clube via o
-                    preço que não paga e tinha de fazer a conta para saber o que
-                    paga. A mensalidade é o ano a dividir por doze — o mesmo número
-                    que o site anuncia no plano anual.
-                  */}
-                  {ordem.discountPct > 0 && (
-                    <span className="text-ink-3">
-                      {" "}
-                      ({money(ordem.billingPeriod === "ANNUAL" ? Math.round(ordem.amountCents / 12) : ordem.amountCents)}
-                      /mês em vez de {money(ordem.listMonthlyCents)}, menos {ordem.discountPct}%)
-                    </span>
-                  )}
-                </>
-              }
-            />
-            <Linha rotulo="Periodicidade" valor={ordem.billingPeriod === "ANNUAL" ? "Anual" : "Mensal"} />
-            <Linha rotulo="Data de início" valor={dataPT(ordem.startsOn)} />
-            <Linha rotulo="Período contratual mínimo" valor={periodoMinimo(ordem.minimumMonths)} />
-            {ordem.renewalNote && <Linha rotulo="Renovação" valor={ordem.renewalNote} />}
-            {ordem.notes && <Linha rotulo="Observações" valor={ordem.notes} />}
-            {!porAssinar && ordem.institutionName && (
-              <Linha
-                rotulo="Instituição"
-                valor={`${ordem.institutionName}${ordem.institutionTaxId ? ` · NIF ${ordem.institutionTaxId}` : ""}`}
-              />
-            )}
-          </dl>
-
-          <div className="border-t border-line px-5 py-3">
-            {ordem.signedAt && !porAssinar ? (
-              <div className="flex flex-wrap items-center gap-3">
-                <p className="min-w-0 flex-1 text-meta leading-relaxed text-ink-3">
-                  Assinadas em {dataPT(ordem.signedAt)}
-                  {ordem.signerName ? ` por ${ordem.signerName}` : ""}
-                  {ordem.signerTitle ? ` (${ordem.signerTitle})` : ""}.
-                  {ordem.termsVersion ? ` Aplicam-se os Termos de Serviço v${ordem.termsVersion}.` : ""}
-                </p>
-                {/* Só a quem pode assinar: a declaração leva o NIF e a data de
-                    nascimento de quem assinou. */}
-                {ordem.temDeclaracao && dados?.podeAssinar && (
-                  <button type="button" className="ctl-outline shrink-0" disabled={busy} onClick={() => void descarregar(ordem.id)}>
-                    <Download className="size-3.5" strokeWidth={1.75} />
-                    Declaração (PDF)
-                  </button>
+            <Lista>
+              <dl className="divide-y divide-line">
+                <Dado rotulo="Plano" valor={ordem.planName} />
+                <Dado rotulo="Periodicidade" valor={ordem.billingPeriod === "ANNUAL" ? "Anual" : "Mensal"} />
+                <Dado rotulo="Data de início" valor={dataPT(ordem.startsOn)} />
+                <Dado rotulo="Período contratual mínimo" valor={periodoMinimo(ordem.minimumMonths)} />
+                {ordem.renewalNote && <Dado rotulo="Renovação" valor={ordem.renewalNote} />}
+                {ordem.notes && <Dado rotulo="Observações" valor={ordem.notes} />}
+                {!porAssinar && ordem.institutionName && (
+                  <Dado
+                    rotulo="Instituição"
+                    valor={`${ordem.institutionName}${ordem.institutionTaxId ? ` · NIF ${ordem.institutionTaxId}` : ""}`}
+                  />
                 )}
-              </div>
-            ) : dados?.podeAssinar ? (
-              <div className="flex flex-wrap items-center gap-3">
-                <button type="button" className="ctl-primary" disabled={busy} onClick={() => setAAssinar(true)}>
-                  Assinar as condições
-                </button>
-                <p className="min-w-0 flex-1 text-meta leading-relaxed text-ink-3">
-                  {/*
-                    Numa ordem reemitida só para voltar a assinar, diz-se porquê:
-                    as condições são as mesmas, e um clube que já tinha assinado
-                    pergunta com razão o que é que mudou.
-                  */}
-                  {ordem.billingAnchorAt
-                    ? "As condições são as mesmas que já tinham assinado. Voltam a ser assinadas com a identificação da instituição e de quem a representa, e passam a ter uma declaração em PDF."
-                    : "Pede-se a identificação da instituição e de quem a representa, e fica uma declaração em PDF."}
-                  {ordem.termsVersion ? ` Aplicam-se os Termos de Serviço v${ordem.termsVersion}.` : ""}
+              </dl>
+            </Lista>
+
+            <div className="mt-4">
+              {ordem.signedAt && !porAssinar ? (
+                <div className="flex flex-wrap items-center gap-3">
+                  <p className="min-w-0 flex-1 text-meta leading-relaxed text-ink-3">
+                    Assinadas em {dataPT(ordem.signedAt)}
+                    {ordem.signerName ? ` por ${ordem.signerName}` : ""}
+                    {ordem.signerTitle ? ` (${ordem.signerTitle})` : ""}.
+                    {ordem.termsVersion ? ` Aplicam-se os Termos de Serviço v${ordem.termsVersion}.` : ""}
+                  </p>
+                  {/* Só a quem pode assinar: a declaração leva o NIF e a data de
+                      nascimento de quem assinou. */}
+                  {ordem.temDeclaracao && dados?.podeAssinar && (
+                    <button type="button" className="ctl-outline shrink-0" disabled={busy} onClick={() => void descarregar(ordem.id)}>
+                      <Download className="size-3.5" strokeWidth={1.75} />
+                      Declaração (PDF)
+                    </button>
+                  )}
+                </div>
+              ) : dados?.podeAssinar ? (
+                <div className="flex flex-wrap items-center gap-3">
+                  <button type="button" className="ctl-primary" disabled={busy} onClick={() => setAAssinar(true)}>
+                    Assinar as condições
+                  </button>
+                  <p className="min-w-0 flex-1 text-meta leading-relaxed text-ink-3">
+                    {/*
+                      Numa ordem reemitida só para voltar a assinar, diz-se porquê:
+                      as condições são as mesmas, e um clube que já tinha assinado
+                      pergunta com razão o que é que mudou.
+                    */}
+                    {ordem.billingAnchorAt
+                      ? "As condições são as mesmas que já tinham assinado. Voltam a ser assinadas com a identificação da instituição e de quem a representa, e passam a ter uma declaração em PDF."
+                      : "Pede-se a identificação da instituição e de quem a representa, e fica uma declaração em PDF."}
+                    {ordem.termsVersion ? ` Aplicam-se os Termos de Serviço v${ordem.termsVersion}.` : ""}
+                  </p>
+                </div>
+              ) : (
+                /*
+                  Quem não representa o clube lê as condições e não as assina. Dizer
+                  de quem é a assinatura evita a pergunta seguinte — e evita que
+                  alguém espere por um botão que não vai aparecer.
+                */
+                <p className="text-meta leading-relaxed text-ink-3">
+                  Estas condições são assinadas por quem representa o clube
+                  {ordem.sentToName ? ` — foram enviadas a ${ordem.sentToName}` : ""}.
                 </p>
-              </div>
-            ) : (
-              /*
-                Quem não representa o clube lê as condições e não as assina. Dizer
-                de quem é a assinatura evita a pergunta seguinte — e evita que
-                alguém espere por um botão que não vai aparecer.
-              */
-              <p className="text-meta leading-relaxed text-ink-3">
-                Estas condições são assinadas por quem representa o clube
-                {ordem.sentToName ? ` — foram enviadas a ${ordem.sentToName}` : ""}.
-              </p>
-            )}
-          </div>
-        </>
-      )}
+              )}
+            </div>
+          </>
+        )}
+      </Bloco>
 
       <Avisos avisos={dados?.avisos ?? []} />
 
@@ -183,7 +192,7 @@ export function ContratoPanel() {
           }}
         />
       )}
-    </Panel>
+    </>
   );
 }
 
@@ -204,36 +213,36 @@ function Avisos({ avisos }: { avisos: SubscriptionNotice[] }) {
   if (avisos.length === 0) return null;
 
   return (
-    <div className="border-t border-line">
-      <header className="flex items-baseline gap-2.5 px-5 pt-4 pb-1">
-        <h3 className="text-panel text-ink">Avisos de pagamento</h3>
-        <span className="text-meta text-ink-3">os mais recentes</span>
-      </header>
-      <ul className="divide-y divide-line">
-        {avisos.map((a) => (
-          <li key={a.id} className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1 px-5 py-2.5">
-            <span className="min-w-0 text-body text-ink-2">
-              {dataPT(a.periodStart)} a {dataPT(a.periodEnd)}
-            </span>
-            <span className="flex items-baseline gap-2.5">
-              <span className="text-meta text-ink-3">
-                {a.sentAt ? `enviado a ${dataPT(a.sentAt)}` : "por enviar"}
+    <Bloco
+      titulo="Avisos de pagamento"
+      descricao="Os mais recentes. Saem para quem representa o clube, no dia do mês em que as condições foram assinadas."
+    >
+      <Lista>
+        <ul className="divide-y divide-line">
+          {avisos.map((a) => (
+            <li key={a.id} className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1 px-4 py-2.5">
+              <span className="min-w-0 text-body text-ink">
+                {dataPT(a.periodStart)} a {dataPT(a.periodEnd)}
               </span>
-              <span className="text-body text-ink tabular">{money(a.amountCents)}</span>
-            </span>
-          </li>
-        ))}
-      </ul>
-      <p className="px-5 pt-1 pb-3 text-meta leading-relaxed text-ink-3">
-        Saem para quem representa o clube, no dia do mês em que as condições foram assinadas.
-      </p>
-    </div>
+              <span className="flex items-center gap-3">
+                {a.sentAt ? (
+                  <span className="text-meta text-ink-3">enviado a {dataPT(a.sentAt)}</span>
+                ) : (
+                  <Pill tone="warn">por enviar</Pill>
+                )}
+                <span className="w-20 text-right text-body font-medium text-ink tabular">{money(a.amountCents)}</span>
+              </span>
+            </li>
+          ))}
+        </ul>
+      </Lista>
+    </Bloco>
   );
 }
 
-function Linha({ rotulo, valor }: { rotulo: string; valor: React.ReactNode }) {
+function Dado({ rotulo, valor }: { rotulo: string; valor: React.ReactNode }) {
   return (
-    <div className="flex flex-wrap items-baseline justify-between gap-3 px-5 py-2.5">
+    <div className="flex flex-wrap items-baseline justify-between gap-3 px-4 py-2.5">
       <dt className="text-meta text-ink-3">{rotulo}</dt>
       <dd className="text-body text-ink">{valor}</dd>
     </div>

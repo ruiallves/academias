@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { Dialog, DialogField, dialogInputClass } from "@/components/Dialog";
-import { Panel, PanelHead, cx } from "@/components/primitives";
+import { cx } from "@/components/primitives";
+import { Bloco } from "@/components/definicoes/ui";
 import { Trash2, TriangleAlert } from "@/lib/icons";
 import { apiDelete } from "@/lib/http";
 import { academy } from "@/lib/store";
@@ -28,24 +29,25 @@ export function DeleteAcademyPanel() {
 
   return (
     <>
-      <Panel className="border-risk/40">
-        <PanelHead title="Apagar o clube" />
-        <div className="space-y-3 p-5">
-          <p className="text-meta leading-relaxed text-ink-3">
-            Apaga a {academy.name} e tudo o que lhe pertence — atletas, famílias, staff,
-            sócios, mensalidades, boletins clínicos, treinos e fotografias. Não há como
-            recuperar depois, nem por nós.
+      <Bloco
+        titulo="Apagar o clube"
+        perigo
+        descricao={`Apaga a ${academy.name} e tudo o que lhe pertence: atletas, famílias, staff, sócios, mensalidades, boletins clínicos, treinos e fotografias.`}
+      >
+        {/*
+          A moldura vermelha é a única das Definições, e é de propósito: tudo o
+          resto desta página desfaz-se com outro clique. Isto não.
+        */}
+        <div className="flex flex-wrap items-center justify-between gap-x-6 gap-y-3 rounded-[12px] border border-risk/35 bg-risk-soft/40 px-4 py-3.5">
+          <p className="min-w-0 max-w-[46ch] text-meta leading-relaxed text-ink-2">
+            Não há como recuperar depois, nem por nós. É pedido o nome do clube para confirmar.
           </p>
-          <button
-            type="button"
-            className="ctl-outline border-risk/50 text-risk hover:border-risk hover:text-risk"
-            onClick={() => setOpen(true)}
-          >
+          <button type="button" className="ctl-risk shrink-0" onClick={() => setOpen(true)}>
             <Trash2 className="size-3.5" strokeWidth={1.75} />
             Apagar o clube
           </button>
         </div>
-      </Panel>
+      </Bloco>
 
       {open && <DeleteDialog onClose={() => setOpen(false)} />}
     </>

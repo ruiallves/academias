@@ -83,6 +83,10 @@ export type SocioInicio = {
     cardEnabled: boolean;
     cardQrEnabled: boolean;
     onlinePayments: boolean;
+    /** O clube desligou os pagamentos pela app. */
+    paymentsDisabled?: boolean;
+    /** A comissão é somada ao valor e paga por quem paga. */
+    feesOnPayer?: boolean;
   };
   member: {
     id: string;
@@ -166,6 +170,9 @@ export type PagamentoIniciado = {
   id: string;
   method: string;
   status: string;
+  /** O que foi mesmo pedido: o valor das quotas, mais a taxa quando a há. */
+  amountCents?: number;
+  surchargeCents?: number;
   entity: string | null;
   reference: string | null;
   expiresAt: string | null;

@@ -21,6 +21,7 @@ export {
   Megaphone,
   Gauge,
   FileText,
+  GraduationCap,
   /* Assinar as condições da subscrição — a caneta é o gesto de assinar. */
   PenLine,
   Settings,

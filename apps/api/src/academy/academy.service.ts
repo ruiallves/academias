@@ -202,6 +202,8 @@ export class AcademyService {
           billingDueDay: true, billingMonths: true,
           // O calendário agendado para a próxima época, se houver.
           billingNextFrom: true, billingNextMonths: true, billingNextDueDay: true,
+          // Se se paga pela app, e quem suporta a comissão. Ver `setPaymentRules`.
+          paymentsEnabled: true, feesOnPayer: true,
           // O período experimental. Sem contrato nenhum activo, a consola
           // mostra quanto falta — ver o cartão no rodapé do menu lateral.
           // `createdAt` é o proxy do início do período: não há um campo próprio
@@ -615,6 +617,40 @@ export class AcademyService {
     );
 
     return { ok: true, cobrancas, ...retiradas };
+  }
+
+  /**
+   * As duas decisões do clube sobre pagar pela app.
+   *
+   * `paymentsEnabled` — a `false`, nem famílias nem sócios iniciam pagamentos
+   * pela app. Os preços, as mensalidades e as quotas continuam a configurar-se
+   * e a emitir-se; o que deixa de existir é o botão de pagar.
+   *
+   * `feesOnPayer` — a `true`, a comissão da euPago passa a ser de quem paga, e
+   * os valores da plataforma passam a ser o que o clube recebe.
+   *
+   * À parte de `setBillingSettings` de propósito: aquele gera o mês e limpa os
+   * meses desligados a cada gravação, e ligar um interruptor não pode ter esse
+   * efeito.
+   *
+   * Nenhuma das duas mexe no que já foi pedido. Uma referência Multibanco
+   * criada antes continua pagável na euPago, pelo valor com que nasceu, e se
+   * for paga liquida a mensalidade como sempre — o dinheiro entrou.
+   */
+  async setPaymentRules(ctx: RequestContext, dto: { paymentsEnabled?: boolean; feesOnPayer?: boolean }) {
+    if (!can(ctx, "settings:write")) throw new ForbiddenException("Sem permissão para mudar as definições");
+
+    return this.prisma.runAs(ctx.academyId, async (db) => {
+      const a = await db.academy.update({
+        where: { id: ctx.academyId },
+        data: {
+          ...(typeof dto.paymentsEnabled === "boolean" ? { paymentsEnabled: dto.paymentsEnabled } : {}),
+          ...(typeof dto.feesOnPayer === "boolean" ? { feesOnPayer: dto.feesOnPayer } : {}),
+        },
+        select: { paymentsEnabled: true, feesOnPayer: true },
+      });
+      return a;
+    });
   }
 
   /* ------------------------------------------------------------------------ */
@@ -1914,7 +1950,15 @@ export class AcademyService {
           // tudo o que ela é, e não só o cargo com que foi convidada.
           extraRoles: { select: { role: { select: { id: true, name: true, archivedAt: true } } } },
           user: { select: { name: true, email: true, phone: true, photoKey: true } },
-          coachOf: { select: { teamId: true, title: true } },
+          /*
+           * Só as passagens em vigor.
+           *
+           * `TeamStaff` guarda histórico: tirar alguém de um escalão fecha a
+           * linha (`leftAt`) e voltar a pô-lo cria outra. Sem este filtro, quem
+           * saiu e voltou aparecia com o escalão repetido, e quem só saiu
+           * continuava a mostrá-lo. Era a única leitura do staff sem ele.
+           */
+          coachOf: { where: { leftAt: null }, select: { teamId: true, title: true }, orderBy: { joinedAt: "asc" } },
         },
       });
 
@@ -1937,7 +1981,8 @@ export class AcademyService {
         grants: m.grants,
         revokes: m.revokes,
         since: m.createdAt,
-        teamIds: m.coachOf.map((t) => t.teamId),
+        // Sem repetidos, mesmo que um dia haja duas linhas em vigor na mesma equipa.
+        teamIds: [...new Set(m.coachOf.map((t) => t.teamId))],
       }));
     });
 
@@ -3045,7 +3090,7 @@ export class AcademyService {
             take: 5,
             select: {
               method: true, status: true, entity: true, reference: true, redirectUrl: true, expiresAt: true,
-              paidAt: true, identificador: true, payerName: true, payerRelation: true, provider: true,
+              paidAt: true, identificador: true, payerName: true, payerRelation: true, provider: true, surchargeCents: true, amountCents: true,
             },
           },
           settledAt: true,
@@ -3085,6 +3130,9 @@ export class AcademyService {
             ? {
                 method: aberto.method,
                 status: aberto.status,
+                // O que a referência cobra: o valor, mais a taxa quando é de
+                // quem paga. É o número a escrever no homebanking.
+                amountCents: aberto.amountCents,
                 entity: aberto.entity,
                 reference: aberto.reference,
                 redirectUrl: aberto.redirectUrl,
@@ -3105,6 +3153,13 @@ export class AcademyService {
           paidBy: pago?.payerName ?? null,
           paidByRelation: pago?.payerRelation ?? null,
           paymentId: pago?.identificador ?? null,
+          /*
+           * A comissão que quem pagou suportou, por cima do valor — só quando o
+           * clube a põe por conta de quem paga. A consola di-la ao lado do
+           * pagamento, para o valor da mensalidade e o que saiu da conta da
+           * família não parecerem um engano.
+           */
+          paidSurchargeCents: pago?.surchargeCents ?? 0,
           /*
            * Quem mudou o estado à mão, e quando. Numa paga online não se
            * mostra: quem a liquidou foi a euPago, mesmo que alguém a tenha
@@ -3590,6 +3645,9 @@ export class AcademyService {
      * inteira do clube varre-se por prefixo. Faltava, e ficavam para sempre.
      */
     await this.storage.removePrefix("ai-videos", ctx.academyId);
+
+    /* Os documentos dos atletas: mesma forma de chave, mesma varredura. */
+    await this.storage.removePrefix("documentos", ctx.academyId);
 
     /*
      * O símbolo do clube, no bucket público. A chave vem do próprio `logoUrl`

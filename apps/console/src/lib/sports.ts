@@ -81,6 +81,15 @@ export type SportProfile = {
   tagline: string;
   /** O que a definição preenche por omissão ao escolher esta disciplina. */
   defaults: { positions: string[]; skills: string[]; dominantSideLabel: string; matchMinutes: number };
+  /**
+   * Como se divide um jogo, e se tem tempo adicional.
+   *
+   * O futebol joga duas partes e o árbitro compensa o tempo perdido no fim de
+   * cada uma. O futsal (2 × 20) e o basquetebol (4 × 10) jogam-se com o
+   * cronómetro parado: não há compensação, e a ficha não a pergunta. O servidor
+   * tem a mesma regra em `PARTES_COM_TEMPO_ADICIONAL`.
+   */
+  match: { periods: number; periodName: "parte" | "período"; addedTime: boolean };
   /** O que o editor de campo oferece nesta modalidade. */
   vocabulary: EditorVocabulary;
   defaultFormat: GameFormat;
@@ -447,6 +456,7 @@ export const SPORT_PROFILES: Record<SportCode, SportProfile> = {
       dominantSideLabel: "Pé dominante",
       matchMinutes: 90,
     },
+    match: { periods: 2, periodName: "parte", addedTime: true },
     vocabulary: footballVocabulary(formatsOf("football")),
     defaultFormat: "f11",
     exercises: {
@@ -495,6 +505,7 @@ export const SPORT_PROFILES: Record<SportCode, SportProfile> = {
       dominantSideLabel: "Pé dominante",
       matchMinutes: 40,
     },
+    match: { periods: 2, periodName: "parte", addedTime: false },
     vocabulary: footballVocabulary(formatsOf("futsal")),
     defaultFormat: "futsal",
     exercises: {
@@ -543,6 +554,7 @@ export const SPORT_PROFILES: Record<SportCode, SportProfile> = {
       dominantSideLabel: "Mão dominante",
       matchMinutes: 40,
     },
+    match: { periods: 4, periodName: "período", addedTime: false },
     vocabulary: BASKET_VOCABULARY,
     defaultFormat: "basket",
     exercises: {

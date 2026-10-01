@@ -3,6 +3,8 @@ import { CustoDoPagamento } from "@/components/finance/CustoDoPagamento";
 import { createPortal } from "react-dom";
 import { useSearchParams } from "react-router-dom";
 import { PageHeader } from "@/components/Shell";
+import { AvisoDePagamentos } from "@/components/finance/AvisoDePagamentos";
+import { euros } from "@/lib/finance";
 import { Dialog, DialogField } from "@/components/Dialog";
 import { type Column, cx, DataTable, Empty, ListaDeEscolha, Metric, MetricRow, Monogram, Panel, Pill, SelectField } from "@/components/primitives";
 import { ResultCount, SearchInput, Segmented, Select, Toolbar } from "@/components/filters";
@@ -306,6 +308,12 @@ export default function Fees() {
             <div className="text-ink-2">{f.method ?? "Paga"}</div>
             {f.paidAt && <div className="mt-0.5 text-[11px] text-ink-4">{shortDate(new Date(f.paidAt))}</div>}
             {f.paidBy && <div className="mt-0.5 text-[11px] text-ink-3">Por {f.paidBy}</div>}
+            {/* A taxa foi de quem pagou: o clube recebeu o valor da mensalidade inteiro. */}
+            {f.paidSurchargeCents ? (
+              <div className="mt-0.5 text-[11px] text-ink-3" title="Comissão da euPago, suportada por quem pagou. O clube recebeu o valor inteiro.">
+                + {euros(f.paidSurchargeCents)} de taxa, paga pela família
+              </div>
+            ) : null}
             {f.changedAt && <div className="mt-0.5 text-[11px] text-ink-3">Marcada por {f.changedBy ?? "alguém que já saiu"}</div>}
             {f.paymentId && (
               <div className="mt-0.5 select-all break-all font-mono text-[10px] text-ink-4" title="Assim aparece no backoffice da euPago">
@@ -404,6 +412,8 @@ export default function Fees() {
           )}
         </button>
       </PageHeader>
+
+      <AvisoDePagamentos />
 
       <div className="space-y-3">
         {reminderResult && (

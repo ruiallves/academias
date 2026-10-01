@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState, type FormEvent } from "react";
+import { useCallback, useEffect, useId, useMemo, useState, type FormEvent } from "react";
 import { Link } from "react-router-dom";
 import { academy, listTeams } from "@/lib/api";
 import { teamAgeLabel } from "@/lib/team-age";
@@ -102,6 +102,16 @@ export function InviteDialog({ session, onClose }: { session: Session; onClose: 
   const [extraRoleIds, setExtraRoleIds] = useState<string[]>([]);
   const [teamIds, setTeamIds] = useState<string[]>([]);
   const [created, setCreated] = useState<Invite | null>(null);
+  /*
+   * Enviar já, ou só guardar.
+   *
+   * Ligado por omissão, que é o que este diálogo sempre fez. Desligado, a
+   * pessoa fica na lista "Por convidar" com o cargo e as equipas, e o convite
+   * manda-se depois: é o que serve a quem está a montar o staff todo antes de
+   * abrir a plataforma ao clube.
+   */
+  const [enviar, setEnviar] = useState(true);
+  const idEnviar = useId();
   const [erro, setErro] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
@@ -266,6 +276,7 @@ export function InviteDialog({ session, onClose }: { session: Session; onClose: 
           // dita duas vezes, e o servidor filtra-o na mesma.
           extraRoleIds: extraRoleIds.filter((id) => id !== roleId),
           teamIds: comEquipas ? teamIds : [],
+          enviar,
         }),
       );
     } catch (err) {
@@ -281,7 +292,7 @@ export function InviteDialog({ session, onClose }: { session: Session; onClose: 
   return (
     <Dialog
       labelledBy="convidar"
-      title="Convidar para a academia"
+      title="Adicionar ao staff"
       subtitle={academy.name}
       onClose={onClose}
       width={520}
@@ -291,7 +302,7 @@ export function InviteDialog({ session, onClose }: { session: Session; onClose: 
             Cancelar
           </button>
           <button type="submit" form="form-convite" className="ctl-primary" disabled={!valid || busy}>
-            {busy ? "A criar…" : "Gerar convite"}
+            {busy ? "A guardar…" : enviar ? "Gerar convite" : "Guardar sem enviar"}
           </button>
         </>
       }
@@ -526,6 +537,24 @@ export function InviteDialog({ session, onClose }: { session: Session; onClose: 
           </>
         )}
 
+        <div className="flex items-start gap-2.5 rounded-[var(--radius-control)] border border-line p-3">
+          <input
+            id={idEnviar}
+            type="checkbox"
+            checked={enviar}
+            onChange={(e) => setEnviar(e.target.checked)}
+            className="mt-0.5 size-4 shrink-0 accent-[var(--color-signal)]"
+          />
+          <label htmlFor={idEnviar} className="min-w-0 cursor-pointer">
+            <span className="block text-body text-ink">Enviar o convite por email agora</span>
+            <span className="block text-meta leading-relaxed text-ink-3">
+              {enviar
+                ? "Recebe já o link para criar a conta, válido 7 dias."
+                : "Fica guardado em \"Por convidar\", sem email. Envias quando quiseres, na página do Staff."}
+            </span>
+          </label>
+        </div>
+
         {erro && (
           <p className="rounded-[var(--radius-control)] bg-risk-soft px-3 py-2.5 text-meta leading-relaxed text-risk">
             {erro}
@@ -545,6 +574,38 @@ export function InviteDialog({ session, onClose }: { session: Session; onClose: 
  */
 function InviteCreated({ invite, onClose }: { invite: Invite; onClose: () => void }) {
   const [copied, setCopied] = useState(false);
+
+  /* Guardado sem enviar: não há link para mostrar, só onde o convite se manda depois. */
+  if (!invite.sent) {
+    return (
+      <Dialog
+        labelledBy="convite-guardado"
+        title="Guardado, por convidar"
+        subtitle={`${invite.name} · ${invite.title ?? ""}`}
+        onClose={onClose}
+        width={480}
+        footer={
+          <button type="button" onClick={onClose} className="ctl-primary">
+            Concluído
+          </button>
+        }
+      >
+        <div className="space-y-3 p-5">
+          <div className="flex items-start gap-2.5 rounded-[var(--radius-control)] border border-ok/25 bg-ok-soft p-3">
+            <Check className="mt-0.5 size-4 shrink-0 text-ok" strokeWidth={2} />
+            <p className="text-body leading-relaxed text-ink-2">
+              <strong className="font-medium text-ink">{invite.name}</strong> ficou na lista, com o cargo e as equipas
+              escolhidos. Ainda não recebeu email nenhum.
+            </p>
+          </div>
+          <p className="text-meta leading-relaxed text-ink-3">
+            O convite envia-se na página do Staff, em "Por convidar": a esta pessoa, ou a todas de uma vez. Só depois de
+            o aceitar é que ela entra na plataforma.
+          </p>
+        </div>
+      </Dialog>
+    );
+  }
 
   async function copy() {
     try {

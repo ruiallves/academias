@@ -10,6 +10,14 @@ import { NotificationsService } from "../notifications/notifications.service";
 import { EupagoClient, type ChargeResult, type RedirectUrls } from "./eupago.client";
 import { montarIdentificador } from "./identificador";
 import { assertMinimoDoMetodo, MINIMO_COBRAVEL } from "./minimos";
+import { EupagoFeesService } from "./eupago-fees";
+import {
+  cotacao,
+  MENSAGEM_DESATIVADOS,
+  PAGAMENTOS_DESATIVADOS,
+  valorACobrar,
+  type RegrasDePagamento,
+} from "./taxa-do-pagador";
 import { athleteScopeFilter, athleteTeamScopeWhere, can, teamScopeFilter, type RequestContext } from "../common/permissions";
 
 /**
@@ -158,7 +166,60 @@ export class BillingService implements OnModuleInit, OnModuleDestroy {
     private readonly eupago: EupagoClient,
     private readonly notifications: NotificationsService,
     private readonly config: ConfigService,
+    private readonly fees: EupagoFeesService,
   ) {}
+
+  /* ------------------------------------------------------------------------ */
+  /* As duas decisões do clube sobre pagar pela app                            */
+  /* ------------------------------------------------------------------------ */
+
+  /**
+   * Recusa quando o clube desligou os pagamentos pela app.
+   *
+   * É a porta do servidor, e é a que conta: esconder o botão nas apps não
+   * impede ninguém de chamar o endpoint à mão. Corre **antes** de qualquer
+   * escrita e de qualquer pedido à euPago.
+   */
+  private assertPagamentosLigados(regras: RegrasDePagamento | null | undefined): void {
+    if (regras && !regras.paymentsEnabled) {
+      throw new ForbiddenException({ code: PAGAMENTOS_DESATIVADOS, message: MENSAGEM_DESATIVADOS });
+    }
+  }
+
+  /**
+   * O que este pagamento cobra: o valor, mais a comissão quando o clube a põe
+   * por conta de quem paga. Ver `taxa-do-pagador.ts`.
+   */
+  private cobrar(valorCents: number, method: PaymentMethod, regras: RegrasDePagamento | null | undefined) {
+    try {
+      return valorACobrar(valorCents, method, { feesOnPayer: regras?.feesOnPayer ?? false }, this.fees.tabela());
+    } catch {
+      throw new BadRequestException("Esse método de pagamento não está disponível de momento");
+    }
+  }
+
+  /**
+   * O que as apps mostram antes de alguém escolher o método: se há pagamentos,
+   * quem paga a comissão, e quanto fica cada método para estes valores.
+   *
+   * Só os métodos que o servidor aceita (`METODOS_ATIVOS`) — mostrar o preço
+   * de um botão que não existe era ruído.
+   */
+  async cotacaoDoClube(academyId: string, valores: number[]) {
+    const regras = await this.prisma.runAs(academyId, (db) =>
+      db.academy.findFirst({ where: { id: academyId }, select: { paymentsEnabled: true, feesOnPayer: true } }),
+    );
+    const r: RegrasDePagamento = {
+      paymentsEnabled: regras?.paymentsEnabled ?? true,
+      feesOnPayer: regras?.feesOnPayer ?? false,
+    };
+    const tabela = this.fees.tabela();
+    return {
+      enabled: r.paymentsEnabled,
+      feesOnPayer: r.feesOnPayer,
+      methods: cotacao(valores, r, tabela).filter((m) => METODOS_ATIVOS.has(m.method as PaymentMethod)),
+    };
+  }
 
   /* ------------------------------------------------------------------------ */
   /* Leitura                                                                   */
@@ -1721,8 +1782,23 @@ export class BillingService implements OnModuleInit, OnModuleDestroy {
       if (!charge) throw new NotFoundException("Mensalidade não encontrada");
       if (charge.status === ChargeStatus.SETTLED) throw new BadRequestException("Já está paga");
       if (charge.status === ChargeStatus.VOID) throw new BadRequestException("Esta mensalidade foi anulada");
+
+      // A chave do canal do clube, quando existe — é o que faz o dinheiro
+      // liquidar no IBAN do clube, e não em mais lado nenhum. O slug é para o
+      // URL de retorno: cada clube tem o seu subdomínio na app da família.
+      const academia = await db.academy.findFirst({
+        where: { id: ctx.academyId },
+        select: { eupagoApiKey: true, slug: true, paymentsEnabled: true, feesOnPayer: true },
+      });
+      // Antes de tudo o resto: um clube com os pagamentos desligados não cria
+      // tentativas, não expira as antigas e não fala com a euPago.
+      this.assertPagamentosLigados(academia);
+
+      // O que se cobra: o valor da mensalidade, mais a comissão do método
+      // quando o clube a põe por conta de quem paga.
+      const aCobrar = this.cobrar(charge.amountCents, method, academia);
       // A euPago recusa abaixo do mínimo do método: diz-se antes de lá chegar.
-      assertMinimoDoMetodo(method, charge.amountCents);
+      assertMinimoDoMetodo(method, aCobrar.totalCents);
 
       const agora = Date.now();
       const vivos = charge.payments.filter(
@@ -1739,20 +1815,19 @@ export class BillingService implements OnModuleInit, OnModuleDestroy {
           await db.payment.update({ where: { id: p.id }, data: { status: PaymentStatus.EXPIRED } });
           continue;
         }
-        if (p.method === method) return p;
+        /*
+         * Só se devolve a tentativa viva se cobrar o que se cobraria agora. Uma
+         * referência criada antes de o clube mudar quem paga a comissão (ou de
+         * o preço mudar) tem outro valor, e reaproveitá-la era cobrar o valor
+         * antigo com as regras novas à vista.
+         */
+        if (p.method === method && p.amountCents === aCobrar.totalCents) return p;
         // Trocar de método: a tentativa antiga morre já. A referência antiga
         // pode continuar pagável do lado do provedor até expirar — se o pai a
         // pagar na mesma, o webhook trata o duplicado às claras.
         await db.payment.update({ where: { id: p.id }, data: { status: PaymentStatus.EXPIRED } });
       }
 
-      // A chave do canal do clube, quando existe — é o que faz o dinheiro
-      // liquidar no IBAN do clube, e não em mais lado nenhum. O slug é para o
-      // URL de retorno: cada clube tem o seu subdomínio na app da família.
-      const academia = await db.academy.findFirst({
-        where: { id: ctx.academyId },
-        select: { eupagoApiKey: true, slug: true },
-      });
       const apiKey = academia?.eupagoApiKey ?? undefined;
 
       // Quem paga — o email segue para a euPago para o recibo do formulário.
@@ -1774,7 +1849,8 @@ export class BillingService implements OnModuleInit, OnModuleDestroy {
       const payment = await db.payment.create({
         data: {
           chargeId: charge.id,
-          amountCents: charge.amountCents,
+          amountCents: aCobrar.totalCents,
+          surchargeCents: aCobrar.surchargeCents,
           method,
           status: PaymentStatus.PENDING,
           identificador: montarIdentificador(
@@ -1789,7 +1865,7 @@ export class BillingService implements OnModuleInit, OnModuleDestroy {
 
       const request = {
         reference: payment.identificador ?? payment.id,
-        amountCents: charge.amountCents,
+        amountCents: aCobrar.totalCents,
         description: `Mensalidade ${charge.period} — ${charge.athlete.name}`,
         payerName: pagador?.user.name ?? charge.athlete.name,
         payerEmail: pagador?.user.email ?? "",
@@ -1813,7 +1889,7 @@ export class BillingService implements OnModuleInit, OnModuleDestroy {
             case PaymentMethod.PAYSAFECARD:
               return this.eupago.createPaysafecardCharge(request, urls);
             case PaymentMethod.DIRECT_DEBIT:
-              return this.debitarPorMandato(db, ctx, payment, charge.amountCents, apiKey);
+              return this.debitarPorMandato(db, ctx, payment, aCobrar.totalCents, apiKey);
             default:
               throw new BadRequestException("Método de pagamento desconhecido");
           }
@@ -1897,8 +1973,22 @@ export class BillingService implements OnModuleInit, OnModuleDestroy {
         if (f.status === ChargeStatus.VOID) throw new BadRequestException(`A quota de ${f.period} foi anulada`);
       }
 
+      const academia = await db.academy.findFirst({
+        where: { id: academyId },
+        select: { eupagoApiKey: true, paymentsEnabled: true, feesOnPayer: true },
+      });
+      // A mesma porta das mensalidades: desligado é desligado para toda a gente.
+      this.assertPagamentosLigados(academia);
+
       const fee = fees[0];
-      const total = fees.reduce((n, f) => n + f.amountCents, 0);
+      /*
+       * `valor` é o que as quotas valem; `total` é o que se cobra — o mesmo
+       * número, a não ser que o clube ponha a comissão por conta de quem paga.
+       * Vários meses seguem numa referência só, e por isso é uma comissão só.
+       */
+      const valor = fees.reduce((n, f) => n + f.amountCents, 0);
+      const aCobrar = this.cobrar(valor, method, academia);
+      const total = aCobrar.totalCents;
       assertMinimoDoMetodo(method, total);
 
       /*
@@ -1924,14 +2014,11 @@ export class BillingService implements OnModuleInit, OnModuleDestroy {
         const morto =
           (p.expiresAt && p.expiresAt.getTime() < agora) ||
           (p.method === PaymentMethod.MBWAY && agora - p.createdAt.getTime() > 10 * 60_000);
-        if (!morto && p.method === method && cobre === alvo) return p;
+        // E o mesmo valor: ver a nota em `startPayment`.
+        if (!morto && p.method === method && cobre === alvo && p.amountCents === total) return p;
         await db.payment.update({ where: { id: p.id }, data: { status: PaymentStatus.EXPIRED } });
       }
 
-      const academia = await db.academy.findFirst({
-        where: { id: academyId },
-        select: { eupagoApiKey: true },
-      });
       const apiKey = academia?.eupagoApiKey ?? undefined;
 
       /*
@@ -1949,6 +2036,7 @@ export class BillingService implements OnModuleInit, OnModuleDestroy {
           // A âncora é a mais antiga; o que se liquida está em `memberFees`.
           memberFeeId: fee.id,
           amountCents: total,
+          surchargeCents: aCobrar.surchargeCents,
           method,
           status: PaymentStatus.PENDING,
           memberFees: { create: fees.map((f) => ({ memberFeeId: f.id })) },

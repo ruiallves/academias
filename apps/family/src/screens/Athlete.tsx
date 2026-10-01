@@ -5,6 +5,7 @@ import { useChild } from "@/App";
 import { consultaPorResponder, reload, useStore, type Evaluation, type Report } from "@/lib/store";
 import { removerFotoAtleta, uploadFotoAtleta } from "@/lib/atleta";
 import { Avatar, Bar, Money, cx } from "@/ui";
+import { NotasDaEscola } from "./NotasDaEscola";
 
 /**
  * "Como está o meu filho?"
@@ -220,6 +221,12 @@ export default function Athlete() {
       )}
 
       {reading && <ReportSheet report={reading} onClose={() => setReading(null)} />}
+
+      {/*
+        A escola: as notas que o encarregado submete e o clube lê na ficha.
+        Carrega-se sozinha e decide sozinha se aparece — ver `NotasDaEscola`.
+      */}
+      <NotasDaEscola childId={child.id} childName={child.firstName ?? child.name} />
 
       {/* Inscrição — linhas soltas, sem caixa. */}
       <section>

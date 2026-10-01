@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
-import { Loading, Panel, PanelHead, cx } from "@/components/primitives";
+import { Loading } from "@/components/primitives";
+import { Bloco, Erro, Interruptor } from "@/components/definicoes/ui";
 import { setMemberCard } from "@/lib/members";
 
 /**
@@ -41,81 +42,48 @@ export function CartaoDeSocioPanel({ mayWrite }: { mayWrite: boolean }) {
     }
   }
 
-  return (
-    <Panel>
-      <PanelHead title="Cartão de sócio" hint="na app do clube" />
+  if (erro) return <Erro>{erro}</Erro>;
+  if (!estado) {
+    return (
+      <div className="py-10">
+        <Loading size="panel" />
+      </div>
+    );
+  }
 
-      {erro ? (
-        <p className="px-5 py-4 text-meta text-risk">{erro}</p>
-      ) : !estado ? (
-        <div className="py-8">
-          <Loading size="panel" />
-        </div>
-      ) : (
-        <div className="space-y-3 px-5 py-4">
+  return (
+    <>
+      <Bloco
+        titulo="Cartão de sócio"
+        descricao="O cartão digital na app do clube: nome, número, categoria e estado. Com ele desligado, os sócios não veem cartão nenhum."
+      >
+        <div className="flex items-center justify-between gap-4">
+          <span className="text-body text-ink">{estado.cardEnabled ? "Ligado" : "Desligado"}</span>
           <Interruptor
-            titulo="Cartão de sócio"
-            hint="O cartão digital na app: nome, número, categoria e estado."
+            label="Cartão de sócio"
             ligado={estado.cardEnabled}
-            onToggle={() => void alternar("cardEnabled")}
+            onChange={() => void alternar("cardEnabled")}
             disabled={!mayWrite}
           />
+        </div>
+      </Bloco>
+
+      <Bloco
+        titulo="QR Code"
+        descricao="Um código no cartão para identificar o sócio à entrada. Leva um código opaco, nunca dados pessoais. Só faz sentido com o cartão ligado."
+      >
+        <div className="flex items-center justify-between gap-4">
+          <span className="text-body text-ink">
+            {!estado.cardEnabled ? "Precisa do cartão ligado" : estado.qrEnabled ? "Ligado" : "Desligado"}
+          </span>
           <Interruptor
-            titulo="QR Code"
-            hint="Um código no cartão para identificar o sócio na entrada. Carrega um token opaco — nunca dados pessoais."
+            label="QR Code no cartão"
             ligado={estado.qrEnabled}
-            onToggle={() => void alternar("qrEnabled")}
+            onChange={() => void alternar("qrEnabled")}
             disabled={!mayWrite || !estado.cardEnabled}
           />
-          {!estado.cardEnabled && (
-            <p className="text-meta text-ink-3">Com o cartão desligado, os sócios não veem cartão nenhum na app.</p>
-          )}
         </div>
-      )}
-    </Panel>
-  );
-}
-
-function Interruptor({
-  titulo,
-  hint,
-  ligado,
-  onToggle,
-  disabled,
-}: {
-  titulo: string;
-  hint: string;
-  ligado: boolean;
-  onToggle: () => void;
-  disabled?: boolean;
-}) {
-  return (
-    <button
-      type="button"
-      role="switch"
-      aria-checked={ligado}
-      disabled={disabled}
-      onClick={onToggle}
-      className="flex w-full items-center gap-3 rounded-[var(--radius-control)] border border-line p-3.5 text-left disabled:opacity-60"
-    >
-      <span className="min-w-0 flex-1">
-        <span className="block text-body font-medium text-ink">{titulo}</span>
-        <span className="block text-meta leading-relaxed text-ink-3">{hint}</span>
-      </span>
-      <span
-        aria-hidden
-        className={cx(
-          "relative h-6 w-10 shrink-0 rounded-full transition-colors",
-          ligado ? "bg-signal-strong" : "bg-sunken",
-        )}
-      >
-        <span
-          className={cx(
-            "absolute top-0.5 size-5 rounded-full bg-surface shadow transition-[left]",
-            ligado ? "left-[18px]" : "left-0.5",
-          )}
-        />
-      </span>
-    </button>
+      </Bloco>
+    </>
   );
 }

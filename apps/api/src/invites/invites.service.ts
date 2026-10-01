@@ -89,7 +89,18 @@ export type CreateInvite = {
    */
   extraRoleIds?: string[];
   teamIds?: string[];
+  /**
+   * `false` guarda a pessoa sem lhe mandar nada: fica "por enviar", sem link,
+   * até alguém carregar em enviar. Omitido, envia logo, como sempre.
+   */
+  enviar?: boolean;
 };
+
+/** O que sai de criar ou de enviar um convite. Sem `link` num convite por enviar. */
+export type InviteIssued = { id: string; link: string; expiresAt: Date; emailed: boolean; emailError?: string; sent: boolean };
+
+/** Um convite por enviar "não expira": o prazo só começa a contar quando sai. */
+const POR_ENVIAR_VALE_ANOS = 10;
 
 export type InviteSummary = {
   id: string;
@@ -101,6 +112,8 @@ export type InviteSummary = {
   teamIds: string[];
   expiresAt: Date;
   createdAt: Date;
+  /** Nulo: guardado e ainda por enviar. */
+  sentAt: Date | null;
   invitedBy: string | null;
 };
 
@@ -158,8 +171,9 @@ export class InvitesService {
   async create(
     ctx: RequestContext,
     dto: CreateInvite,
-  ): Promise<{ id: string; link: string; expiresAt: Date; emailed: boolean; emailError?: string }> {
+  ): Promise<InviteIssued> {
     if (!can(ctx, "staff:write")) throw new ForbiddenException("Sem permissão para convidar");
+    const enviar = dto.enviar !== false;
 
     const email = normalizeEmail(dto.email);
     if (!isEmail(email)) throw new BadRequestException("Email inválido");
@@ -288,8 +302,15 @@ export class InvitesService {
         data: { revokedAt: new Date() },
       });
 
+      /*
+       * Por enviar: o token existe porque a coluna o exige, mas nunca sai daqui
+       * (nem para a resposta), e por isso ninguém o pode resgatar. O token a
+       * sério nasce em `send`, com o prazo a contar a partir desse dia.
+       */
       const token = randomBytes(32).toString("base64url");
-      const expiresAt = new Date(Date.now() + VALID_DAYS * 24 * 60 * 60 * 1000);
+      const expiresAt = enviar
+        ? new Date(Date.now() + VALID_DAYS * 24 * 60 * 60 * 1000)
+        : new Date(Date.now() + POR_ENVIAR_VALE_ANOS * 365 * 24 * 60 * 60 * 1000);
 
       try {
         const invite = await db.staffInvite.create({
@@ -314,6 +335,7 @@ export class InvitesService {
             teamIds,
             invitedById: ctx.membershipId,
             expiresAt,
+            sentAt: enviar ? new Date() : null,
           },
           select: { id: true },
         });
@@ -344,6 +366,9 @@ export class InvitesService {
         throw error;
       }
     });
+
+    /* Guardado sem enviar: não há email nem link para mostrar. */
+    if (!enviar) return { id: created.id, link: "", expiresAt: created.expiresAt, emailed: false, sent: false };
 
     /*
      * O email, já fora da transação.
@@ -381,7 +406,147 @@ export class InvitesService {
       link: created.link,
       expiresAt: created.expiresAt,
       emailed: result.sent,
+      sent: true,
       ...(result.reason ? { emailError: result.reason } : {}),
+    };
+  }
+
+  /**
+   * Enviar um convite guardado, ou reenviar um que já saiu.
+   *
+   * Nasce aqui um token novo e o prazo recomeça: sete dias a contar de hoje.
+   * Num reenvio, o link antigo deixa de abrir no mesmo instante, que é o que se
+   * quer de "mandei para o email errado" ou "ele perdeu o link".
+   *
+   * O cargo é verificado outra vez. Entre guardar e enviar podem passar semanas:
+   * o cargo pode ter sido arquivado, ou ter ganho permissões que quem envia não
+   * tem. As regras são as de `create`, e valem no momento em que o link passa a
+   * existir.
+   */
+  async send(ctx: RequestContext, id: string): Promise<InviteIssued> {
+    if (!can(ctx, "staff:write")) throw new ForbiddenException("Sem permissão para convidar");
+
+    const token = randomBytes(32).toString("base64url");
+    const expiresAt = new Date(Date.now() + VALID_DAYS * 24 * 60 * 60 * 1000);
+
+    const emitido = await this.prisma.runAs(ctx.academyId, async (db) => {
+      const invite = await db.staffInvite.findFirst({
+        where: { id, acceptedAt: null, revokedAt: null },
+        select: {
+          id: true, name: true, email: true, role: true, title: true,
+          academyRole: { select: { name: true, baseRole: true, permissions: true, archivedAt: true } },
+        },
+      });
+      if (!invite) throw new NotFoundException("Convite não encontrado ou já fechado");
+
+      const cargo = invite.academyRole;
+      if (!cargo || cargo.archivedAt) {
+        throw new BadRequestException(`O cargo de ${invite.name} já não existe. Remove esta linha e adiciona-a outra vez com um cargo actual.`);
+      }
+      if (RANK[cargo.baseRole] > RANK[ctx.role]) {
+        throw new ForbiddenException("Não podes convidar alguém para um cargo acima do teu");
+      }
+      const foraDoMeu = ungrantablePermissions(ctx, cargo.permissions);
+      if (foraDoMeu.length) {
+        throw new ForbiddenException(
+          `Não podes convidar para um cargo que concede permissões que tu não tens: ${foraDoMeu.join(", ")}`,
+        );
+      }
+
+      const jaCa = await db.membership.findFirst({
+        where: { role: invite.role, user: { email: invite.email }, isActive: true },
+        select: { id: true },
+      });
+      if (jaCa) throw new ConflictException(`${invite.name} já tem este cargo na academia`);
+
+      await db.staffInvite.update({
+        where: { id: invite.id },
+        data: { tokenHash: hash(token), expiresAt, sentAt: new Date() },
+      });
+
+      const academy = await db.academy.findFirst({
+        where: { id: ctx.academyId },
+        select: { slug: true, name: true, shortName: true, signalColor: true, logoUrl: true },
+      });
+      return { invite, academy, title: cargo.name, link: this.linkFor(academy?.slug ?? "", token) };
+    });
+
+    // O email fora da transação, pela mesma razão de `create`.
+    const mail = staffInviteEmail({
+      brand: {
+        shortName: emitido.academy?.shortName ?? "Academia",
+        name: emitido.academy?.name ?? "a academia",
+        signalColor: emitido.academy?.signalColor,
+        logoUrl: emitido.academy?.logoUrl,
+      },
+      name: emitido.invite.name,
+      title: emitido.title,
+      link: emitido.link,
+      expiresAt,
+    });
+    const result = await this.mail.send({
+      to: emitido.invite.email,
+      toName: emitido.invite.name,
+      subject: mail.subject,
+      html: mail.html,
+      text: mail.text,
+      kind: "staff-invite",
+    });
+
+    return {
+      id: emitido.invite.id,
+      link: emitido.link,
+      expiresAt,
+      emailed: result.sent,
+      sent: true,
+      ...(result.reason ? { emailError: result.reason } : {}),
+    };
+  }
+
+  /**
+   * Enviar vários de uma vez: "enviar a todos" depois de importar a folha.
+   *
+   * Um de cada vez, e um que falhe não trava os outros: quem carregou no botão
+   * com trinta nomes quer saber quais saíram e quais não, e não receber um erro
+   * ao décimo com nove enviados sem o saber.
+   */
+  async sendMany(ctx: RequestContext, ids: string[]) {
+    if (!can(ctx, "staff:write")) throw new ForbiddenException("Sem permissão para convidar");
+    const resultados: { id: string; emailed: boolean; error?: string }[] = [];
+    for (const id of [...new Set(ids)]) {
+      try {
+        const r = await this.send(ctx, id);
+        resultados.push({ id, emailed: r.emailed, ...(r.emailError ? { error: r.emailError } : {}) });
+      } catch (e) {
+        resultados.push({ id, emailed: false, error: e instanceof Error ? e.message : "Não foi possível enviar" });
+      }
+    }
+    return { enviados: resultados.filter((r) => r.emailed).length, resultados };
+  }
+
+  /**
+   * Adicionar várias pessoas de uma vez: a importação de staff.
+   *
+   * Cada linha passa pelo mesmo `create` de um convite à mão, com as mesmas
+   * regras (cargo, patente, equipas, duplicados). As boas entram, as más voltam
+   * com o motivo, e nenhuma trava o ficheiro. `enviar` desligado por omissão:
+   * importar uma folha não manda correio a ninguém sem alguém o pedir.
+   */
+  async createMany(ctx: RequestContext, linhas: Omit<CreateInvite, "enviar">[], enviar = false) {
+    if (!can(ctx, "staff:write")) throw new ForbiddenException("Sem permissão para convidar");
+    const resultados: { row: number; name: string; ok: boolean; id?: string; emailed?: boolean; error?: string }[] = [];
+    for (const [i, linha] of linhas.entries()) {
+      try {
+        const r = await this.create(ctx, { ...linha, enviar });
+        resultados.push({ row: i, name: linha.name, ok: true, id: r.id, emailed: r.emailed });
+      } catch (e) {
+        resultados.push({ row: i, name: linha.name, ok: false, error: e instanceof Error ? e.message : "Não foi possível adicionar" });
+      }
+    }
+    return {
+      created: resultados.filter((r) => r.ok).length,
+      emailed: resultados.filter((r) => r.emailed).length,
+      errors: resultados.filter((r) => !r.ok).map((r) => ({ row: r.row, name: r.name, error: r.error ?? "" })),
     };
   }
 
@@ -395,7 +560,7 @@ export class InvitesService {
         orderBy: { createdAt: "desc" },
         select: {
           id: true, name: true, email: true, role: true, title: true, department: true,
-          teamIds: true, expiresAt: true, createdAt: true,
+          teamIds: true, expiresAt: true, createdAt: true, sentAt: true,
           invitedBy: { select: { user: { select: { name: true } } } },
         },
       });
@@ -439,7 +604,8 @@ export class InvitesService {
 
     return this.prisma.runAs(academyId, async (db) => {
       const invite = await db.staffInvite.findFirst({
-        where: { tokenHash: hash(token), acceptedAt: null, revokedAt: null, expiresAt: { gt: new Date() } },
+        // Um convite por enviar não tem link: o token dele nunca saiu do servidor.
+        where: { tokenHash: hash(token), acceptedAt: null, revokedAt: null, sentAt: { not: null }, expiresAt: { gt: new Date() } },
         select: {
           name: true, email: true, role: true, title: true, teamIds: true,
           academyRole: { select: { permissions: true } },

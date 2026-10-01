@@ -146,6 +146,16 @@ class SaveResultDto {
   @IsOptional() @IsInt() @Min(0) @Max(99) theirScore?: number | null;
 }
 
+/** O tempo adicional, em minutos, por parte. Ver `saveAddedTime`. */
+class AddedTimeDto {
+  @IsArray()
+  @ArrayMaxSize(8)
+  @IsInt({ each: true })
+  @Min(0, { each: true })
+  @Max(30, { each: true })
+  minutes!: number[];
+}
+
 class MatchStaffRowDto {
   @IsString() membershipId!: string;
   @IsString() @Length(1, 60) role!: string;
@@ -334,6 +344,11 @@ export class MatchesController {
       ourScore: body.ourScore ?? null,
       theirScore: body.theirScore ?? null,
     });
+  }
+
+  @Post(":id/tempo-adicional")
+  saveAddedTime(@Req() req: AuthedRequest, @Param("id") id: string, @Body() body: AddedTimeDto) {
+    return this.matches.saveAddedTime(req.ctx, id, body.minutes);
   }
 
   /** A ficha inteira de cada vez. Ver `saveAppearances` para o porquê. */

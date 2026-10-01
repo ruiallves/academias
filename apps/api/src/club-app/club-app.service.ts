@@ -1,4 +1,5 @@
 import { createHash, randomBytes } from "node:crypto";
+import { MENSAGEM_DESATIVADOS, PAGAMENTOS_DESATIVADOS, valoresDaCotacao } from "../billing/taxa-do-pagador";
 import {
   BadRequestException,
   ConflictException,
@@ -320,6 +321,7 @@ export class ClubAppService {
         select: {
           name: true, shortName: true, slug: true, logoUrl: true, signalColor: true,
           memberCardEnabled: true, memberCardQrEnabled: true, eupagoApiKey: true,
+          paymentsEnabled: true, feesOnPayer: true,
           memberAnnualStartMonth: true, memberAnnualStartDay: true,
         },
       });
@@ -426,6 +428,14 @@ export class ClubAppService {
           onlinePayments: Boolean(
             (academia?.eupagoApiKey ?? "").trim() || (this.config.get<string>("EUPAGO_API_KEY") ?? "").trim(),
           ),
+          /*
+           * O clube desligou os pagamentos pela app. É outra coisa que não ter
+           * por onde pagar: aqui a app **diz** que estão desativados, em vez de
+           * simplesmente não mostrar o botão.
+           */
+          paymentsDisabled: academia?.paymentsEnabled === false,
+          /* A comissão é de quem paga: a folha de pagamento mostra-a por método. */
+          feesOnPayer: academia?.feesOnPayer ?? false,
         },
         member: {
           id: socio.id,
@@ -700,6 +710,38 @@ export class ClubAppService {
   }
 
   /**
+   * Recusa quando o clube desligou os pagamentos pela app.
+   *
+   * O `startMemberFeePayment` recusa na mesma, e é ele a porta que conta. Esta
+   * existe porque "pagar um mês" e "pagar até um mês" **criam as quotas que
+   * faltam** antes de pedirem a referência: sem recusar aqui, um sócio de um
+   * clube sem pagamentos ficava com quotas lançadas por um botão que não devia
+   * ter feito nada.
+   */
+  private async assertPagamentosLigados(db: ScopedClient, academyId: string): Promise<void> {
+    const a = await db.academy.findFirst({ where: { id: academyId }, select: { paymentsEnabled: true } });
+    if (a && !a.paymentsEnabled) {
+      throw new ForbiddenException({ code: PAGAMENTOS_DESATIVADOS, message: MENSAGEM_DESATIVADOS });
+    }
+  }
+
+  /**
+   * Quanto fica cada método para um valor, para a folha de pagamento do sócio.
+   *
+   * Só para quem é sócio deste clube, como o resto desta área. Os valores vêm
+   * do cliente e só servem para mostrar.
+   */
+  async cotacao(authorization: string | undefined, slug: string, cents?: string) {
+    const eu = await this.identidade(authorization);
+    const academyId = await this.academiaDe(slug);
+    await this.prisma.runAs(academyId, (db) => this.socioDe(db, eu.userId, academyId));
+
+    const r = await this.billing.cotacaoDoClube(academyId, valoresDaCotacao(cents));
+    // As quotas pagam-se por MB Way ou Multibanco, e mais nada.
+    return { ...r, methods: r.methods.filter((m) => m.method === "MBWAY" || m.method === "MULTIBANCO") };
+  }
+
+  /**
    * Pagar uma quota — MB Way ou Multibanco.
    *
    * A quota tem de ser **do próprio**: é a única autorização que existe deste
@@ -727,6 +769,7 @@ export class ClubAppService {
 
     const socio = await this.prisma.runAs(academyId, async (db) => {
       const socio = await this.socioDe(db, eu.userId, academyId);
+      await this.assertPagamentosLigados(db, academyId);
 
       const esta = await db.memberFee.findFirst({
         where: { id: feeId, memberId: socio.id },
@@ -787,6 +830,8 @@ export class ClubAppService {
     const { socioId, feeIds } = await this.prisma.runAs(academyId, async (db) => {
       const socio = await this.socioDe(db, eu.userId, academyId);
       if (socio.status !== "ACTIVE") throw new ForbiddenException("Só um sócio activo paga quotas");
+      // Antes de nascer qualquer quota: ver `assertPagamentosLigados`.
+      await this.assertPagamentosLigados(db, academyId);
 
       /*
        * "Pagar até Março" é um gesto de quem tem quotas mensais. Numa categoria
@@ -835,6 +880,8 @@ export class ClubAppService {
     const { socioId, feeId } = await this.prisma.runAs(academyId, async (db) => {
       const socio = await this.socioDe(db, eu.userId, academyId);
       if (socio.status !== "ACTIVE") throw new ForbiddenException("Só um sócio activo paga quotas");
+      // Antes de nascer qualquer quota: ver `assertPagamentosLigados`.
+      await this.assertPagamentosLigados(db, academyId);
 
       /*
        * A janela "do mês corrente até Julho" é das quotas **mensais**. Numa

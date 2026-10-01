@@ -1,4 +1,4 @@
-import { Body, Controller, Delete, Get, Headers, Param, Patch, Post, Req, Res } from "@nestjs/common";
+import { Body, Controller, Delete, Get, Headers, Param, Patch, Post, Query, Req, Res } from "@nestjs/common";
 import { Throttle } from "@nestjs/throttler";
 import { ArrayMaxSize, IsArray, IsBoolean, IsIn, IsOptional, IsString, Length } from "class-validator";
 import type { Request, Response } from "express";
@@ -106,6 +106,20 @@ export class ClubAppController {
   @Delete("api/socio/foto")
   fotoRemover(@Headers("authorization") auth: string, @Headers("x-academy-slug") slug: string) {
     return this.app.fotoRemover(auth, slug ?? "");
+  }
+
+  /**
+   * Quanto fica cada método para um valor (`?cents=1500`), e se o clube aceita
+   * pagamentos pela app. Só para mostrar — o que se cobra calcula-se ao pagar.
+   */
+  @Throttle({ default: { ttl: 60_000, limit: 60 } })
+  @Get("api/socio/cotacao")
+  cotacao(
+    @Headers("authorization") auth: string,
+    @Headers("x-academy-slug") slug: string,
+    @Query("cents") cents?: string,
+  ) {
+    return this.app.cotacao(auth, slug ?? "", cents);
   }
 
   @Throttle({ default: { ttl: 60_000, limit: 10 } })

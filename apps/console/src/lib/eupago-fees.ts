@@ -156,3 +156,49 @@ export function detalhePorMetodo(
     porMetodo,
   };
 }
+
+/**
+ * O menor valor a cobrar para que ao clube cheguem `liquidoCents`.
+ *
+ * Gémea de `brutoParaLiquido` na API (`billing/taxa-do-pagador.ts`), pela mesma
+ * razão de `liquidoDe`: corre a cada tecla. O que se cobra de verdade é sempre
+ * o servidor que calcula; isto é para o clube ver o intervalo enquanto escreve
+ * o preço.
+ */
+export function brutoParaLiquido(liquidoCents: number, taxa: MetodoComTaxa, vatPercent: number): number {
+  if (!Number.isInteger(liquidoCents) || liquidoCents <= 0) return 0;
+  const iva = 1 + vatPercent / 100;
+  const fatia = (taxa.percent / 100) * iva;
+  if (!(fatia < 1) || fatia < 0) return liquidoCents;
+
+  const chega = (bruto: number) => liquidoDe(bruto, taxa, vatPercent).netCents >= liquidoCents;
+  let bruto = Math.max(liquidoCents, Math.ceil((liquidoCents + taxa.fixedCents * iva) / (1 - fatia)));
+  while (!chega(bruto)) bruto++;
+  while (bruto > liquidoCents && chega(bruto - 1)) bruto--;
+  return bruto;
+}
+
+/**
+ * Quando a comissão é de quem paga: o que a família paga, por método.
+ *
+ * O espelho de `detalhePorMetodo`. Lá o valor escrito é o que a família paga e
+ * o intervalo é o que o clube recebe; aqui o valor escrito é o que o clube
+ * recebe e o intervalo é o que a família paga. Ordenado do mais barato para o
+ * mais caro para quem paga.
+ */
+export function detalheDoPagador(
+  amountCents: number,
+  tabela: Tabela,
+): { minCents: number; maxCents: number; porMetodo: { label: string; surchargeCents: number; totalCents: number }[] } | null {
+  const linhas = tabela.methods.filter((m) => m.offered);
+  if (linhas.length === 0 || amountCents <= 0) return null;
+
+  const porMetodo = linhas
+    .map((m) => {
+      const totalCents = brutoParaLiquido(amountCents, m, tabela.vatPercent);
+      return { label: m.label, surchargeCents: totalCents - amountCents, totalCents };
+    })
+    .sort((a, b) => a.totalCents - b.totalCents);
+
+  return { minCents: porMetodo[0].totalCents, maxCents: porMetodo[porMetodo.length - 1].totalCents, porMetodo };
+}

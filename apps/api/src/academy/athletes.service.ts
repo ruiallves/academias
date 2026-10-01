@@ -1,4 +1,5 @@
 import { BadRequestException, ConflictException, ForbiddenException, Injectable, Logger, NotFoundException } from "@nestjs/common";
+import { DOCUMENT_BUCKET, pastaDoAtleta } from "./ficha-do-atleta";
 import type { AthleteStatus, DominantSide, Prisma } from "@prisma/client";
 import { PrismaService, type ScopedClient } from "../prisma/prisma.service";
 import { StorageService } from "../storage/storage.service";
@@ -571,6 +572,13 @@ export class AthletesService {
           this.log.warn(`Fotografia ${athlete.photoKey} ficou por apagar depois de remover o atleta ${id}.`);
         });
       }
+
+      /*
+       * Os documentos também. As linhas saíram em cascata; os ficheiros — cópias
+       * de cartões de cidadão e de exames de um menor — ficavam no bucket sem
+       * nada que lhes correspondesse. A pasta dele varre-se por prefixo.
+       */
+      await this.storage.removePrefix(DOCUMENT_BUCKET, pastaDoAtleta(ctx.academyId, id));
 
       return { ok: true as const, id, name: athlete.name };
     });

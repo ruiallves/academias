@@ -6,7 +6,8 @@ import { COLUNAS_EXPORT_EQUIPAS } from "@/lib/colunas-export";
 import { NewTeamDialog } from "@/components/NewTeamDialog";
 import { ImportTeamsDialog } from "@/components/ImportTeamsDialog";
 import { Empty, Monogram, Panel } from "@/components/primitives";
-import { ArrowRight, Clock, Plus, Shield, Upload } from "@/lib/icons";
+import { ResultCount, SearchInput, Segmented, Toolbar } from "@/components/filters";
+import { ArrowRight, Clock, Plus, Search, Shield, Upload } from "@/lib/icons";
 import { academy, attendanceRate, listAthletes, listTeams, sportById, teamCoaches, naEquipa } from "@/lib/api";
 import { useTeamColors } from "@/lib/calendar";
 import type { CategoricalColor } from "@academia/ui/tokens";
@@ -87,6 +88,27 @@ export default function Teams() {
    */
   const varias = academy.sports.length > 1;
 
+  /*
+   * Filtrar por modalidade e procurar pelo nome.
+   *
+   * As modalidades são as que têm equipas à vista de quem abre a página: um
+   * treinador só de futsal não ganha um botão "Futebol" que dava uma lista
+   * vazia. A procura ignora acentos e maiúsculas, e também encontra pelo nome
+   * do treinador ("as equipas do Rui").
+   */
+  const [modalidade, setModalidade] = useState("todas");
+  const [procura, setProcura] = useState("");
+  const modalidades = academy.sports.filter((sp) => teams.some((t) => t.sportId === sp.id));
+  const filtroModalidade = modalidades.some((sp) => sp.id === modalidade) ? modalidade : "todas";
+  const termo = semAcentos(procura.trim());
+  const visiveis = teams.filter(
+    (t) =>
+      (filtroModalidade === "todas" || t.sportId === filtroModalidade) &&
+      (termo === "" ||
+        semAcentos(t.name).includes(termo) ||
+        teamCoaches(t).some((c) => semAcentos(c.name).includes(termo))),
+  );
+
   return (
     <>
       <PageHeader
@@ -100,7 +122,7 @@ export default function Teams() {
         }
       >
         {/* O retrato da época: quem treina o quê, com quantos e a que horas. */}
-        <BotaoExportar linhas={teams} colunas={COLUNAS_EXPORT_EQUIPAS} ficheiro="equipas" folha="Equipas" />
+        <BotaoExportar linhas={visiveis} colunas={COLUNAS_EXPORT_EQUIPAS} ficheiro="equipas" folha="Equipas" />
         {can(session, "team:write") && (
           <>
             {/* Importar antes de criar: um clube que está a arrancar traz as
@@ -132,8 +154,38 @@ export default function Teams() {
           />
         </Panel>
       ) : (
+        <>
+        <Panel className="mb-3">
+          <div className="[&>div]:border-b-0">
+            <Toolbar>
+              <SearchInput value={procura} onChange={setProcura} placeholder="Procurar equipa…" />
+              {modalidades.length > 1 && (
+                <Segmented
+                  label="Modalidade"
+                  value={filtroModalidade}
+                  onChange={setModalidade}
+                  options={[
+                    { value: "todas", label: "Todas", count: teams.length },
+                    ...modalidades.map((sp) => ({
+                      value: sp.id,
+                      label: sp.name,
+                      count: teams.filter((t) => t.sportId === sp.id).length,
+                    })),
+                  ]}
+                />
+              )}
+              <ResultCount n={visiveis.length} noun={["equipa", "equipas"]} />
+            </Toolbar>
+          </div>
+        </Panel>
+
+        {visiveis.length === 0 ? (
+          <Panel>
+            <Empty icon={Search} title="Nenhuma equipa encontrada" detail="Experimenta outro nome ou outra modalidade." />
+          </Panel>
+        ) : (
         <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
-          {teams.map((team) => (
+          {visiveis.map((team) => (
             <TeamCard
               key={team.id}
               team={team}
@@ -143,6 +195,8 @@ export default function Teams() {
             />
           ))}
         </div>
+        )}
+        </>
       )}
 
       {creating && <NewTeamDialog onClose={() => setCreating(false)} />}
@@ -150,6 +204,9 @@ export default function Teams() {
     </>
   );
 }
+
+/** Minúsculas e sem acentos: "sénior" encontra-se a escrever "senior". */
+const semAcentos = (v: string) => v.normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase();
 
 function TeamCard({
   team,

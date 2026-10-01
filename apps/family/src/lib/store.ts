@@ -191,6 +191,8 @@ type ApiCharge = {
 export type OpenPayment = {
   method: string;
   status: string;
+  /** O que a tentativa cobra — pode ser mais do que a mensalidade, com a taxa. */
+  amountCents?: number;
   entity: string | null;
   reference: string | null;
   redirectUrl: string | null;

@@ -378,6 +378,12 @@ class TeamRoleDto {
  * Os dois campos são opcionais e independentes: o ecrã grava o que a pessoa
  * acabou de mexer, e não o formulário todo de cada vez.
  */
+/** Pagar pela app: ligado ou não, e quem suporta a comissão. */
+class PaymentRulesDto {
+  @IsOptional() @IsBoolean() paymentsEnabled?: boolean;
+  @IsOptional() @IsBoolean() feesOnPayer?: boolean;
+}
+
 class BillingSettingsDto {
   @IsOptional() @IsInt() @Min(1) @Max(28) dueDay?: number;
 
@@ -934,6 +940,12 @@ export class AcademyController {
    *
    * Sem `?periodo=`, o mês corrente — que é o caso de quase todas as vezes.
    */
+  /** Pagar pela app: ligado ou não, e quem suporta a comissão. Ver `setPaymentRules`. */
+  @Patch("pagamentos/regras")
+  setPaymentRules(@Req() req: AuthedRequest, @Body() body: PaymentRulesDto) {
+    return this.academy.setPaymentRules(req.ctx, body);
+  }
+
   /**
    * O calendário de cobrança — dia de vencimento e meses em que se cobra.
    *

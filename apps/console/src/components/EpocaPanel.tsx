@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { Dialog, DialogField, dialogInputClass } from "@/components/Dialog";
-import { Empty, Loading, Panel, PanelHead, Pill, SelectField, cx } from "@/components/primitives";
+import { Empty, Loading, Pill, SelectField, cx } from "@/components/primitives";
+import { Bloco } from "@/components/definicoes/ui";
 import { ArrowRight, CalendarDays, Check, Search, TriangleAlert } from "@/lib/icons";
 import { apiGet, apiPost } from "@/lib/http";
 import { longDate } from "@/lib/format";
@@ -34,37 +35,50 @@ export function EpocaPanel() {
 
   return (
     <>
-      <Panel>
-        <PanelHead title="Época" hint={store.seasons.length > 1 ? `${store.seasons.length} épocas` : undefined} />
-        <div className="space-y-3 p-5">
-          <div className="flex items-center gap-2.5">
-            <span className="flex size-8 items-center justify-center rounded-full bg-signal-soft text-signal-ink">
-              <CalendarDays className="size-4" strokeWidth={1.75} />
+      <Bloco
+        titulo="Época actual"
+        descricao="A época em que o clube está a trabalhar. As datas vêm da primeira equipa criada."
+      >
+        <div className="flex items-center gap-4">
+          <span className="flex size-12 shrink-0 items-center justify-center rounded-[14px] bg-signal-soft text-signal-ink">
+            <CalendarDays className="size-5" strokeWidth={1.75} />
+          </span>
+          <span className="min-w-0 flex-1">
+            <span className="block truncate text-[22px] font-semibold leading-tight tracking-[-0.01em] text-ink tabular">
+              {epoca || "Sem época definida"}
             </span>
-            <span className="min-w-0 flex-1">
-              <span className="block truncate text-body font-medium text-ink">{epoca || "Sem época definida"}</span>
-              <span className="block truncate text-meta text-ink-3">
-                {datas ? `${longDate(new Date(datas.startsOn))} a ${longDate(new Date(datas.endsOn))}` : "As datas vêm da primeira equipa criada."}
-              </span>
+            <span className="block truncate text-meta text-ink-3">
+              {datas ? `${longDate(new Date(datas.startsOn))} a ${longDate(new Date(datas.endsOn))}` : "Ainda sem datas."}
             </span>
-          </div>
-
-          <p className="text-meta leading-relaxed text-ink-3">
-            No fim da época, o clube monta a seguinte: os escalões passam, os atletas sobem por idade, os
-            treinadores vão atrás e os preços copiam-se. Nada se apaga — o que fica para trás é o percurso de
-            cada um.
-          </p>
-
-          {podeVirar ? (
-            <button type="button" className="ctl-outline w-full justify-center" onClick={() => setAVirar(true)}>
-              Começar nova época
-              <ArrowRight className="size-3.5" strokeWidth={1.75} />
-            </button>
-          ) : (
-            <p className="text-meta text-ink-4">Só a direção começa uma época nova.</p>
-          )}
+          </span>
         </div>
-      </Panel>
+
+        {/* As épocas que ficaram para trás: o percurso do clube, da mais recente para a mais antiga. */}
+        {store.seasons.length > 1 && (
+          <div className="mt-4 flex flex-wrap items-center gap-1.5">
+            <span className="mr-1 text-meta text-ink-3">Anteriores</span>
+            {store.seasons
+              .filter((s) => s !== store.season)
+              .map((s) => (
+                <Pill key={s}>{s}</Pill>
+              ))}
+          </div>
+        )}
+      </Bloco>
+
+      <Bloco
+        titulo="Nova época"
+        descricao="No fim da época, o clube monta a seguinte: os escalões passam, os atletas sobem por idade, os treinadores vão atrás e os preços copiam-se. Nada se apaga: o que fica para trás é o percurso de cada um."
+      >
+        {podeVirar ? (
+          <button type="button" className="ctl-outline" onClick={() => setAVirar(true)}>
+            Começar nova época
+            <ArrowRight className="size-3.5" strokeWidth={1.75} />
+          </button>
+        ) : (
+          <p className="text-meta text-ink-3">Só a direção começa uma época nova.</p>
+        )}
+      </Bloco>
 
       {aVirar && <NovaEpocaDialog onClose={() => setAVirar(false)} />}
     </>

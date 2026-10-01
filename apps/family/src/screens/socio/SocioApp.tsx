@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { PAGAMENTOS_DESATIVADOS, doMetodo, useCotacao } from "@/lib/cotacao";
 import {
   NavLink,
   Navigate,
@@ -653,14 +654,22 @@ function Quotas() {
    * isso vem depois do que está mesmo por pagar, e sem cor de alarme.
    */
   const proximos = data.upcoming.filter((m) => m.feeId === null);
+  /* O clube desligou os pagamentos pela app: di-se, em vez de sumir o botão. */
+  const desativados = data.academy.paymentsDisabled === true;
   const podePagar =
-    data.academy.onlinePayments && data.member.status === "ACTIVE";
+    data.academy.onlinePayments && !desativados && data.member.status === "ACTIVE";
 
   const anual = data.member.tierBilling === "ANNUAL";
 
   return (
     <div className="space-y-5 pt-3">
       <Label>Quotas</Label>
+
+      {desativados && (
+        <p className="rounded-[16px] bg-sunken p-3.5 text-[13px] leading-relaxed text-ink-2">
+          {PAGAMENTOS_DESATIVADOS}
+        </p>
+      )}
 
       {/*
         Numa categoria anual há uma quota por época, e mais nada.
@@ -862,6 +871,7 @@ function Quotas() {
       {aPagar && (
         <PagarSheet
           alvo={aPagar}
+          comTaxa={data.academy.feesOnPayer === true}
           telefone={data.member.phone}
           onClose={() => setAPagar(null)}
         />
@@ -1029,14 +1039,25 @@ function ResumoAte({
  */
 function PagarSheet({
   alvo,
+  comTaxa,
   telefone,
   onClose,
 }: {
   alvo: Alvo;
+  /** A taxa do método é de quem paga: a folha mostra-a por método. */
+  comTaxa: boolean;
   telefone: string | null;
   onClose: () => void;
 }) {
   const [metodo, setMetodo] = useState<"MBWAY" | "MULTIBANCO" | null>(null);
+  /*
+   * Quanto fica cada método. As quotas seguem numa referência só, e por isso é
+   * um valor só — o total. Sem taxa de quem paga, a cotação não muda nada e nem
+   * se pede.
+   */
+  const cotacao = useCotacao("/api/socio/cotacao", comTaxa ? [alvo.amountCents] : []);
+  const linhaDe = (m: "MBWAY" | "MULTIBANCO") => (comTaxa ? doMetodo(cotacao, m) : undefined);
+  const escolhida = metodo ? linhaDe(metodo) : undefined;
   const [phone, setPhone] = useState((telefone ?? "").replace(/^\+\d+\s*/, ""));
   const [busy, setBusy] = useState(false);
   const [erro, setErro] = useState<string | null>(null);
@@ -1089,7 +1110,7 @@ function PagarSheet({
                     Confirma no MB Way
                   </p>
                   <p className="mx-auto mt-1 max-w-[32ch] text-[13px] leading-relaxed text-ink-3">
-                    Enviámos o pedido de {money(alvo.amountCents)} para o teu
+                    Enviámos o pedido de {money(feito.amountCents ?? alvo.amountCents)} para o teu
                     telemóvel. Tens 5 minutos para aceitar.
                   </p>
                 </div>
@@ -1105,7 +1126,7 @@ function PagarSheet({
                     k="Referência"
                     v={formatarRef(feito.reference ?? "")}
                   />
-                  <LinhaRef k="Valor" v={money(alvo.amountCents)} />
+                  <LinhaRef k="Valor" v={money(feito.amountCents ?? alvo.amountCents)} />
                 </div>
                 <p className="mx-auto max-w-[32ch] text-[12px] leading-relaxed text-ink-3">
                   Paga no homebanking ou numa caixa. A quota fica regularizada
@@ -1132,6 +1153,7 @@ function PagarSheet({
               </p>
               <p className="text-[13px] text-ink-3">
                 {money(alvo.amountCents)}
+                {comTaxa && " · mais a taxa do método de pagamento"}
               </p>
             </div>
 
@@ -1147,6 +1169,7 @@ function PagarSheet({
               <span className="flex-1 text-[15px] font-medium text-ink">
                 MB Way
               </span>
+              <TaxaDoMetodo linha={linhaDe("MBWAY")} />
             </button>
 
             {metodo === "MBWAY" && (
@@ -1177,7 +1200,26 @@ function PagarSheet({
                   <span className="block text-[12px] font-medium text-ink-3">Só a partir de 1,00 €</span>
                 )}
               </span>
+              {alvo.amountCents >= 100 && <TaxaDoMetodo linha={linhaDe("MULTIBANCO")} />}
             </button>
+
+            {/* A conta por extenso, antes do toque que faz sair dinheiro. */}
+            {escolhida && (
+              <dl className="space-y-1.5 rounded-[16px] bg-surface p-4 text-[13px] shadow-[var(--shadow-soft)]">
+                <div className="flex items-baseline justify-between gap-3">
+                  <dt className="text-ink-3">Quotas</dt>
+                  <dd className="num font-medium text-ink-2">{money(alvo.amountCents)}</dd>
+                </div>
+                <div className="flex items-baseline justify-between gap-3">
+                  <dt className="text-ink-3">Taxa do método</dt>
+                  <dd className="num font-medium text-ink-2">+ {money(escolhida.surchargeCents)}</dd>
+                </div>
+                <div className="flex items-baseline justify-between gap-3 border-t border-line pt-1.5">
+                  <dt className="font-semibold text-ink">Total a pagar</dt>
+                  <dd className="num font-semibold text-ink">{money(escolhida.totalCents)}</dd>
+                </div>
+              </dl>
+            )}
 
             {erro && (
               <p className="px-1 text-[13px] font-medium text-risk">{erro}</p>
@@ -1189,12 +1231,23 @@ function PagarSheet({
               onClick={() => metodo && void iniciar(metodo)}
               className="cta w-full disabled:opacity-40"
             >
-              {busy ? "A preparar…" : `Pagar ${money(alvo.amountCents)}`}
+              {busy ? "A preparar…" : `Pagar ${money(escolhida?.totalCents ?? alvo.amountCents)}`}
             </button>
           </div>
         )}
       </div>
     </div>
+  );
+}
+
+/** O total de um método e quanto disso é taxa, à direita da linha do método. */
+function TaxaDoMetodo({ linha }: { linha: { surchargeCents: number; totalCents: number } | undefined }) {
+  if (!linha) return null;
+  return (
+    <span className="shrink-0 text-right">
+      <span className="num block text-[15px] font-semibold text-ink">{money(linha.totalCents)}</span>
+      <span className="num block text-[12px] font-medium text-ink-3">+ {money(linha.surchargeCents)} de taxa</span>
+    </span>
   );
 }
 
