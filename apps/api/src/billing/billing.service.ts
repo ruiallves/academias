@@ -309,11 +309,24 @@ export class BillingService implements OnModuleInit, OnModuleDestroy {
          * calendário (`createManualFees`), e um passe de hora a hora que as
          * apagasse desfazia esse lançamento sem ninguém dar por isso.
          */
-        const criadas = await this.prisma.runAs(academyId, async (db) => {
-          const resultado = await gerarCobrancas(db, academyId, period);
-          await this.avisarMensalidadesNovas(db, period, resultado.atletasNovos);
-          return resultado.criadas;
-        });
+        /*
+         * Um minuto, como o botão "Gerar mensalidades" — que já o tinha, e esta
+         * não. Com os cinco segundos por omissão, um clube com meia centena de
+         * atletas e famílias para avisar não cabia, a transacção era desfeita e
+         * a passagem seguinte falhava da mesma maneira, de hora a hora, sem nunca
+         * emitir o mês. (Os avisos já não se fazem cá dentro — ver
+         * `NotificationsService.enqueue` — mas o trabalho de base de dados de um
+         * clube grande continua a merecer a folga.)
+         */
+        const criadas = await this.prisma.runAs(
+          academyId,
+          async (db) => {
+            const resultado = await gerarCobrancas(db, academyId, period);
+            await this.avisarMensalidadesNovas(db, period, resultado.atletasNovos);
+            return resultado.criadas;
+          },
+          { timeoutMs: 60_000 },
+        );
 
         this.emitido.set(academyId, period);
         totais.visitadas++;

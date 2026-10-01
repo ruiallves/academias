@@ -1,3 +1,7 @@
+01/10/2026
+- Mensalidades: corrigido o aviso "a mensalidade já está disponível" que chegava ao telemóvel sem a mensalidade existir, e se repetia de hora a hora. O aviso passa a sair só depois de a mensalidade estar mesmo criada.
+- Mensalidades e quotas: a emissão automática do mês deixa de falhar em clubes com muitas famílias para avisar.
+
 30/09/2026
 - Painel da plataforma: menu Novidades para escrever uma versão e mandá-la por email ao responsável de cada clube, com os clubes que pagam já escolhidos.
 - Novidades: dá para editar e apagar uma versão mesmo depois de enviada; o editor avisa que o que se muda não chega a quem já recebeu.

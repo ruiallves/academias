@@ -61,6 +61,12 @@ jobs:
       - name: A ficha de atleta só se cola à conta certa
         run: npm run test:ligacao-atleta --workspace=@academia/api
 
+      # Um push não se desfaz. Este garante que nenhum sai de dentro de uma
+      # transacção: a 1/10 um clube inteiro foi avisado de mensalidades que um
+      # rollback apagou, e voltou a sê-lo de hora a hora.
+      - name: O push só sai depois do commit
+        run: npm run test:push-commit --workspace=@academia/api
+
       # As novidades aos clubes. O que este guarda acima de tudo é que a
       # pré-visualização do painel e o email do servidor não divirjam.
       - name: Novidades da plataforma — destinatários e texto

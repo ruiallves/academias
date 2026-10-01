@@ -177,7 +177,10 @@ export class MemberFeesService implements OnModuleInit, OnModuleDestroy {
           }
           await this.avisarQuotasQueComecaram(db, academyId);
           return n;
-        });
+          /* Um minuto, como a emissão das mensalidades: os cinco segundos por
+             omissão não chegam a um clube com centenas de sócios, e uma
+             transacção desfeita aqui repetia-se de hora a hora. */
+        }, { timeoutMs: 60_000 });
 
         if (gerar) this.lancado.set(academyId, period);
         totais.visitadas++;
