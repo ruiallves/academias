@@ -42,9 +42,40 @@ já tinha acontecido com o `Content-Type`, que duas delas não punham.
 
 É a mesma solução nas **três** apps — consola, famílias e painel da plataforma —
 de propósito: três apps a resolver o mesmo problema de três maneiras são três
-maneiras de o ter partido. Verificado por `npm run test:refresh` (13), que prova
+maneiras de o ter partido. Verificado por `npm run test:refresh` (18), que prova
 as duas pontas: que um token fora de validade é mesmo recusado pela nossa API, e
 que o refresh troca por um par novo que ela aceita.
+
+**Uma sessão viva nunca se deita fora.** Com a renovação feita, as pessoas
+continuavam a perder a sessão "do nada", na consola e na app. O Supabase não a
+matava — medido contra o projecto real, só recusa um refresh com duas rodas de
+atraso, e a sessão continua viva depois disso. Éramos nós que a largávamos, em
+cinco sítios:
+
+- **Cópias velhas do refresh.** A consola e a app do clube guardam a mesma
+  sessão em duas chaves (a entrega de staff copia o par), e a app guardava-a
+  também em memória. Cada uma rodava o refresh na sua e a outra ficava para
+  trás; à segunda roda vinha a recusa, e o cliente limpava as duas. Agora cada
+  app lê o par mais novo das duas chaves, desde que seja da mesma conta, e uma
+  recusa confirma-se com o que estiver guardado antes de se desistir.
+- **Qualquer 4xx do Supabase terminava a sessão**, incluindo o 409 de duas
+  renovações ao mesmo tempo e o 429. Só termina o que diz que o refresh ou a
+  sessão já não valem.
+- **Um 401 da nossa API terminava a sessão** mesmo com o Supabase a renová-la,
+  ou sem se ter conseguido falar com ele. Agora só se manda entrar quando o
+  Supabase recusa; o resto é um erro que o pedido seguinte volta a tentar.
+- **A API respondia 401 a tudo quando não conseguia ir buscar as chaves** do
+  Supabase, o que acontece de dez em dez minutos. Passou a verificar com as
+  últimas chaves que vieram, e sem elas responde 503 (`supabase-jwt.service.ts`).
+- **A página de entrada do clube nunca olhava para a sessão guardada**: abrir o
+  endereço do clube pedia sempre a palavra-passe. No computador segue agora
+  para a consola; no telemóvel é o botão de entrar que leva directo.
+
+Quando a sessão acaba sem ninguém a terminar, o motivo fica escrito no próprio
+aparelho (`academia.sessao.fim` no `localStorage`). Verificado por
+`npm run test:sessao` (68), que corre o `session.ts` e o `http.ts` verdadeiros
+da consola e da app contra um Supabase de mentira, e por
+`npm run test:verificar-token --workspace @academia/api` (16).
 
 **Ninguém fala com a API por fora.** `lib/callups.ts` tinha um cliente HTTP
 próprio que lia a sessão de `sessionStorage` — a sessão mudou-se para

@@ -33,9 +33,18 @@ import { academySlug } from "@/lib/invite";
  * A consola renova a sessão sozinha com o refresh; sem ele durava uma hora e
  * depois mandava a pessoa entrar outra vez. O refresh do Supabase **roda** a
  * cada uso, por isso a cópia que fica aqui envelhece enquanto a consola
- * trabalha — e é por isso que o caminho de volta (o "Mudar de área" da
- * consola) volta a escrever aqui o par mais recente. Uma app de cada vez tem
- * a sessão viva, e a entrega é sempre da que a tem para a que vai precisar.
+ * trabalha.
+ *
+ * Contava-se com o caminho de volta (o "Mudar de área" da consola) para voltar
+ * a escrever aqui o par mais recente — e isso só valia para quem voltava por
+ * esse botão. Quem abria a app pelo ícone, no dia seguinte, arrancava com a
+ * cópia velha: o Supabase recusava-a, e a app terminava a sessão das duas. Era
+ * assim que quem é staff perdia a sessão no telemóvel sem ter saído.
+ *
+ * Agora as duas apps leem sempre o par mais novo das duas chaves, desde que
+ * seja da mesma conta (ver `readStored` em `lib/session.ts`, e o `readSession`
+ * da consola). A entrega continua a copiar o par, mas já não importa qual das
+ * cópias envelheceu.
  */
 
 const CONSOLA_KEY = "academia.session";

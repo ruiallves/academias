@@ -116,19 +116,19 @@ check("veio um refresh token novo", typeof renovado.refresh_token === "string");
 check("diferente do que se usou", renovado.refresh_token !== entrada.refresh_token);
 
 /*
- * O antigo ainda é aceite por uns segundos — e é bom que seja.
+ * O imediatamente anterior ainda é aceite — e é bom que seja.
  *
- * O Supabase tem uma janela de tolerância à reutilização (o
- * `refresh_token_reuse_interval`, dez segundos por omissão) precisamente para o
- * caso de dois pedidos concorrentes renovarem ao mesmo tempo. Este teste existe
- * para **fixar o que é verdade**: já se escreveu aqui que o antigo era recusado
- * de imediato, e não era — um comentário que afirma o que o sistema não faz é
- * pior do que nenhum.
+ * O Supabase devolve o par activo a quem lhe apresenta o refresh de onde ele
+ * saiu: é o caso de dois pedidos concorrentes a renovarem ao mesmo tempo, ou de
+ * uma resposta que se perdeu pelo caminho. Medido neste projecto a 02/10/2026,
+ * isto vale mesmo doze segundos depois, e não só dentro da janela de dez do
+ * `refresh_token_reuse_interval`. Este teste existe para **fixar o que é
+ * verdade**: já se escreveu aqui que o antigo era recusado de imediato, e não
+ * era — um comentário que afirma o que o sistema não faz é pior do que nenhum.
  *
  * Não muda a decisão de coalescer as renovações em `refreshSession`: essa vale
  * por si (nove renovações iguais em vez de uma são desperdício e uma corrida
- * escusada), e a janela é configuração do projecto — pode ser zero amanhã, e o
- * cliente não deve depender dela para não deitar a sessão fora.
+ * escusada).
  */
 const reusar = await fetch(`${S}/auth/v1/token?grant_type=refresh_token`, {
   method: "POST",
@@ -148,6 +148,55 @@ const falso = await fetch(`${S}/auth/v1/token?grant_type=refresh_token`, {
   body: JSON.stringify({ refresh_token: "isto-nao-e-um-refresh" }),
 });
 check("recusado com 4xx — o cliente termina a sessão neste caso", falso.status >= 400 && falso.status < 500, `${falso.status}`);
+const falsoCorpo = await falso.json().catch(() => null);
+check(
+  "e com uma frase que o cliente reconhece como recusa do refresh",
+  /refresh.?token/i.test(`${falsoCorpo?.error_code ?? ""} ${falsoCorpo?.msg ?? ""}`),
+  JSON.stringify(falsoCorpo),
+);
+
+console.log("\n=== Duas rodas atrás já é recusado — e a sessão continua viva ===");
+/*
+ * O que fazia as pessoas perderem a sessão "do nada".
+ *
+ * A consola e a app do clube guardam a mesma sessão em duas chaves (e a app
+ * guardava-a também em memória). Cada uma rodava o refresh na sua, a cópia da
+ * outra ficava para trás, e à segunda roda o Supabase recusava-a. A sessão
+ * **não morre** com isso — o refresh activo continua a renovar —, mas o cliente
+ * lia a recusa como fim de sessão e limpava tudo.
+ *
+ * O cliente agora lê o par mais novo das duas chaves e confirma uma recusa com
+ * o que estiver guardado (ver `lib/session.ts` da consola e da app, e
+ * `npm run test:sessao`). Assenta nestes dois factos, e é por isso que ficam
+ * aqui fixados: se o Supabase passar a matar a sessão inteira ao ver um refresh
+ * velho, recuperar deixa de ser possível e é preciso outra solução.
+ *
+ * A espera é o `refresh_token_reuse_interval`: dentro dele até o de há duas
+ * rodas passa.
+ */
+const refrescar = (refresh_token) =>
+  fetch(`${S}/auth/v1/token?grant_type=refresh_token`, {
+    method: "POST",
+    headers: { apikey: A, "Content-Type": "application/json" },
+    body: JSON.stringify({ refresh_token }),
+  });
+const segunda = await (await refrescar(renovado.refresh_token)).json();
+check(
+  "a segunda roda devolve outro refresh",
+  typeof segunda.refresh_token === "string" && segunda.refresh_token !== renovado.refresh_token,
+);
+console.log("  …     a esperar 12 s, para sair da janela de tolerância");
+await new Promise((r) => setTimeout(r, 12_000));
+const avo = await refrescar(entrada.refresh_token);
+const avoCorpo = await avo.json().catch(() => null);
+check("o refresh de há duas rodas é recusado com 400", avo.status === 400, `${avo.status}`);
+check(
+  "com o código que o cliente reconhece como recusa",
+  avoCorpo?.error_code === "refresh_token_already_used",
+  JSON.stringify(avoCorpo),
+);
+const activo = await refrescar(segunda.refresh_token);
+check("e a sessão continua viva: o refresh activo ainda renova", activo.ok, `${activo.status}`);
 
 console.log(`\n${ok} passaram, ${bad} falharam`);
 process.exit(bad ? 1 : 0);

@@ -24,6 +24,11 @@ import { academy } from "@/lib/api";
  * envelheceu. Ao voltar, escreve-se o par actual na chave dela — senão a app
  * abria, tentava renovar com um refresh já rodado, e mandava a pessoa entrar
  * outra vez, sem perceber porquê.
+ *
+ * Isto cobre quem volta por aqui. Quem abre a app pelo ícone não passa por
+ * este código, e por isso as duas apps passaram também a ler o par mais novo
+ * das duas chaves ao arrancar e ao renovar (ver `readSession` em
+ * `lib/session.ts`).
  */
 
 export type AppContextType = "FAMILY" | "ATHLETE" | "MEMBER" | "STAFF";

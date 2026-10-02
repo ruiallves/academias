@@ -1,4 +1,4 @@
-import { getAccessToken, readSession, refreshSession, signOut } from "@/lib/session";
+import { getAccessToken, irParaAEntrada, readSession, refreshSession } from "@/lib/session";
 import { LEGAL_REQUIRED_CODE, legalRequired } from "@/lib/legal-signal";
 import { mostrarErro } from "@/lib/avisos";
 
@@ -149,6 +149,17 @@ function enviar(url: URL, method: string, token: string | null, body?: unknown):
  *
  * Uma vez só, de propósito: se o pedido repetido também levar 401, o problema
  * não é o token estar velho, e insistir era um ciclo.
+ *
+ * ## Um 401 só acaba com a sessão quando a sessão acabou
+ *
+ * Quem decide se a sessão vale é o Supabase, ao renovar. Se ele recusa, o
+ * `refreshSession` limpa o que estava guardado e aqui manda-se entrar. Se ele
+ * **renova** e a nossa API continua a responder 401, a sessão está boa e o
+ * problema é do lado de cá — e pôr a pessoa na rua por isso era o que fazia
+ * perder a sessão "do nada": bastava a API falhar a verificação duas vezes
+ * seguidas, com uma sondagem de fundo a correr, sem ninguém ter tocado em nada.
+ * Nesse caso mostra-se o erro e a sessão fica onde está; o pedido seguinte
+ * tenta outra vez.
  */
 async function pedir<T>(
   method: string,
@@ -156,6 +167,9 @@ async function pedir<T>(
   opts: { params?: Record<string, string | undefined>; body?: unknown; silencioso?: boolean } = {},
 ): Promise<T> {
   const url = endereco(path, opts.params);
+  // Antes de pedir o token: a renovação pode acabar com a sessão, e é preciso
+  // saber que ela existia para distinguir "acabou agora" de "nunca houve".
+  const tinhaSessao = readSession() !== null;
   const token = await getAccessToken();
   let res = await enviar(url, method, token, opts.body);
 
@@ -171,7 +185,7 @@ async function pedir<T>(
     const msg = Array.isArray(parsed?.message) ? parsed.message.join("; ") : parsed?.message;
 
     /*
-     * Depois de a renovação ter falhado, aí sim: a sessão acabou mesmo.
+     * O Supabase recusou a renovação: a sessão acabou mesmo.
      *
      * E diz-se, em vez de deixar a consola às escuras. Era este o buraco: o
      * arranque engolia os 401 (ver `soft` em `lib/store.ts`), os ecrãs ficavam
@@ -179,13 +193,22 @@ async function pedir<T>(
      * perceber. Agora quem já não tem sessão volta à porta do clube, que é onde
      * se entra.
      *
-     * **Só quando havia token.** Nem todos os 401 são de sessão — o guard
-     * também os devolve quando não consegue determinar a academia — e sem
-     * sessão quem manda entrar é o `LoginGate`, à entrada. Sair daqui nesse
-     * caso era um segundo reencaminhamento a competir com o primeiro, e o par
-     * dava voltas.
+     * **Só quando havia sessão e já não há.** Nem todos os 401 são de sessão —
+     * o guard também os devolve quando não consegue determinar a academia — e
+     * sem sessão à partida quem manda entrar é o `LoginGate`, à entrada. Sair
+     * daqui nesse caso era um segundo reencaminhamento a competir com o
+     * primeiro, e o par dava voltas.
+     *
+     * Pergunta-se pela sessão e não pelo token: quando a recusa acontece logo
+     * ao renovar, antes do pedido, já não há token nenhum para olhar — e a
+     * pessoa ficava com um cartão de erro numa consola sem sessão, em vez de
+     * ser levada a entrar.
      */
-    if (res.status === 401 && token) signOut();
+    const sessaoAcabou = res.status === 401 && tinhaSessao && readSession() === null;
+    if (sessaoAcabou) irParaAEntrada();
+    /* Um 401 com a sessão boa: ver o cabeçalho. A frase do servidor ("sessão
+       inválida") mandava entrar outra vez, que é o que não é preciso. */
+    const naoConfirmada = res.status === 401 && Boolean(token) && !sessaoAcabou;
 
     /*
      * Termos novos publicados com a consola aberta.
@@ -196,7 +219,11 @@ async function pedir<T>(
      */
     if (res.status === 403 && parsed?.code === LEGAL_REQUIRED_CODE) legalRequired();
 
-    const erro = new ApiError(res.status, msg ?? mensagem(res.status), parsed?.code);
+    const erro = new ApiError(
+      res.status,
+      naoConfirmada ? "Não foi possível confirmar a sessão. Tenta outra vez daqui a pouco." : (msg ?? mensagem(res.status)),
+      parsed?.code,
+    );
 
     /*
      * O erro aparece, sempre e no mesmo sítio.
@@ -209,15 +236,15 @@ async function pedir<T>(
      *
      * Duas excepções, e as duas têm caminho próprio:
      *
-     *  - a **sessão acabada** (401 com token) leva a pessoa à porta do clube,
-     *    e um cartão de erro em cima disso só assusta;
+     *  - a **sessão acabada** leva a pessoa à porta do clube, e um cartão de
+     *    erro em cima disso só assusta;
      *  - os **termos por aceitar** abrem o gate legal, que explica o que é
      *    preciso fazer muito melhor do que uma linha.
      *
      * E `silencioso` para o punhado de pedidos que falham por desenho — as
      * sondagens de fundo, sobretudo. Ver `apiGet`.
      */
-    const proprio = (res.status === 401 && token) || parsed?.code === LEGAL_REQUIRED_CODE;
+    const proprio = sessaoAcabou || parsed?.code === LEGAL_REQUIRED_CODE;
     if (!opts.silencioso && !proprio) mostrarErro(erro.message);
 
     throw erro;

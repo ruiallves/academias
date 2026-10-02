@@ -1,6 +1,6 @@
 import { cloneElement, type FormEvent, isValidElement, type ReactElement, useId, useState } from "react";
 import { Eye, EyeOff, Loader2, Lock, Mail } from "lucide-react";
-import { apiGet } from "@/lib/http";
+import { ApiError, apiGet } from "@/lib/http";
 import { readSession, writeSession } from "@/lib/session";
 import type { Me } from "@/lib/types";
 
@@ -22,17 +22,40 @@ const SUPABASE_ANON = (import.meta.env.VITE_SUPABASE_ANON_KEY as string | undefi
 export function LoginGate({ children }: { children: (me: Me) => React.ReactNode }) {
   const [me, setMe] = useState<Me | null>(null);
   const [checking, setChecking] = useState(() => readSession() !== null);
+  /**
+   * Há sessão guardada, mas não se conseguiu confirmá-la.
+   *
+   * Qualquer falha do `/me` mostrava o login — incluindo a API a reiniciar a
+   * meio de um deploy. Recarregar a página nesse minuto era "perder a sessão"
+   * com ela guardada e boa. Só se pede para entrar quando a sessão acabou
+   * mesmo (já não está guardada) ou quando o servidor diz que a conta não é
+   * da plataforma; o resto é avaria, e tem um botão para tentar outra vez.
+   */
+  const [semResposta, setSemResposta] = useState(false);
 
   // Há sessão guardada: confirma que ainda vale antes de desenhar o painel.
   if (checking) {
     apiGet<Me>("/me")
       .then(setMe)
-      .catch(() => setMe(null))
+      .catch((erro: unknown) => {
+        setMe(null);
+        setSemResposta(readSession() !== null && !(erro instanceof ApiError && erro.status === 403));
+      })
       .finally(() => setChecking(false));
     return <Splash />;
   }
 
   if (me) return <>{children(me)}</>;
+  if (semResposta) {
+    return (
+      <SemResposta
+        onRetry={() => {
+          setSemResposta(false);
+          setChecking(true);
+        }}
+      />
+    );
+  }
   return <Login onDone={setMe} />;
 }
 
@@ -167,6 +190,24 @@ function Splash() {
       <div className="flex flex-col items-center gap-5 py-4">
         <Mark />
         <Loader2 className="size-4 animate-spin text-ink-4" strokeWidth={2} />
+      </div>
+    </Frame>
+  );
+}
+
+/** A sessão está guardada; o servidor é que não respondeu. Ver `LoginGate`. */
+function SemResposta({ onRetry }: { onRetry: () => void }) {
+  return (
+    <Frame>
+      <div className="flex flex-col items-center gap-4 py-4 text-center">
+        <Mark />
+        <div>
+          <p className="text-body font-semibold text-ink">Não foi possível falar com o servidor</p>
+          <p className="mt-1 text-meta leading-relaxed text-ink-3">A tua sessão continua guardada. Tenta outra vez daqui a pouco.</p>
+        </div>
+        <button type="button" onClick={onRetry} className="ctl-outline h-9">
+          Tentar outra vez
+        </button>
       </div>
     </Frame>
   );

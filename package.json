@@ -22,7 +22,8 @@
     "check:deps": "node scripts/check-workspace-deps.mjs",
     "check:http": "node scripts/check-http-clients.mjs",
     "check:access": "node scripts/check-access-catalog.mjs",
-    "check:toque": "node scripts/check-toque.mjs"
+    "check:toque": "node scripts/check-toque.mjs",
+    "test:sessao": "node scripts/test-sessao-cliente.mjs"
   },
   "engines": {
     "node": ">=20"

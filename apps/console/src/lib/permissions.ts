@@ -269,6 +269,8 @@ export const ROLE_PERMISSIONS: Record<Role, Permission[]> = {
     "report:write",
     // A área técnica é o trabalho dele. Gémeo do servidor.
     "training:write",
+    // O que o treinador pode, o coordenador também pode. Gémeo do servidor.
+    "ai:write",
   ],
 
   /**

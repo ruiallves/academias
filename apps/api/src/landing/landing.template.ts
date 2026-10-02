@@ -662,6 +662,38 @@ ${
   var standalone = window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone === true;
   if (standalone) { location.replace(appUrl); return; }
 
+  /*
+    Quem já tem sessão nesta academia não volta a escrever a palavra-passe.
+
+    Esta página nunca olhava para a sessão guardada. O endereço do clube é o
+    que toda a gente recebeu e o que fica nos favoritos, e abri-lo mostrava
+    sempre o formulário — mesmo com uma sessão boa, que abria a consola sem
+    perguntar nada a quem fosse directo a /consola. Do lado de quem usa, era
+    perder a sessão: "ontem entrei, hoje pede-me a palavra-passe outra vez".
+
+    No computador sem convite esta página é só o login, e por isso segue-se
+    logo para a consola. No telemóvel a página é para instalar a app, e fica
+    como está: é o botão de entrar que passa a levar directo (ver mais abaixo).
+
+    Só quando a consola vive nesta mesma origem, que é onde a sessão guardada
+    aqui é a mesma que ela usa e renova. Em desenvolvimento são portas
+    diferentes e a cópia deste lado fica velha: entregá-la era dar à consola
+    um refresh que o Supabase já recusa.
+
+    Se a sessão afinal já não valer, é a consola que o descobre ao renovar:
+    limpa-a e devolve a pessoa a esta página, que então mostra o formulário.
+  */
+  var temSessao = false;
+  try {
+    var guardada = JSON.parse(localStorage.getItem('academia.session') || 'null');
+    temSessao = Boolean(guardada && guardada.accessToken && guardada.refreshToken && guardada.academySlug === slug)
+      && (consoleUrl.charAt(0) === '/' || consoleUrl.indexOf(location.origin) === 0);
+  } catch (e) {}
+  if (temSessao && document.body.classList.contains('desktop') && document.getElementById('login-form')) {
+    location.replace(consoleUrl);
+    return;
+  }
+
   // No computador o formulário está sempre visível: dá-lhe o foco de imediato.
   if (document.body.classList.contains('desktop')) {
     var first = document.getElementById('email');
@@ -750,6 +782,8 @@ ${
   // os dois painéis disputam o mesmo espaço.
   if (showLogin && loginPanel && installPanel) {
     showLogin.addEventListener('click', function () {
+      // Com sessão guardada não há formulário para abrir: vai-se já para a consola.
+      if (temSessao) { location.href = consoleUrl; return; }
       var opening = loginPanel.hidden;
       loginPanel.hidden = !opening;
       installPanel.hidden = opening;

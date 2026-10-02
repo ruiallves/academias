@@ -243,6 +243,10 @@ export const ROLE_PERMISSIONS: Record<Role, Permission[]> = {
     // A área técnica é o trabalho dele: modelos de jogo do clube, biblioteca
     // global, e o plano e a periodização **das equipas dele** (ver `lerPlano`).
     "training:write",
+    // Um coordenador tem de poder tudo o que um treinador pode: sem isto não
+    // conseguia convidar um treinador, cujo cargo traz `ai:write` (ver
+    // `ungrantablePermissions`).
+    "ai:write",
   ],
 
   // Sem `billing:read`. A regra do produto é que o financeiro só se vê com
@@ -511,6 +515,17 @@ export function basePermissions(ctx: RequestContext): Permission[] {
 }
 
 /**
+ * Permissões de áreas que ainda não estão abertas aos clubes.
+ *
+ * A Academias AI está fora de produção: não aparece no menu nem no editor de
+ * cargos, e por isso nenhum clube consegue dar ou tirar `ai:*` a ninguém. Se
+ * contassem aqui, um director cujo cargo não as tem ficava impedido de convidar
+ * um treinador, por causa de uma permissão que não vê e não pode corrigir.
+ * Quando a área abrir, esta lista esvazia-se.
+ */
+const POR_ABRIR: ReadonlySet<Permission> = new Set<Permission>(["ai:read", "ai:write"]);
+
+/**
  * As permissões de `permissions` que `ctx` **não pode conceder** — as que o
  * próprio não tem. Vazio = pode dar o conjunto todo.
  *
@@ -530,6 +545,7 @@ export function ungrantablePermissions(ctx: RequestContext, permissions: readonl
   const known = new Set<string>(Object.values(ROLE_PERMISSIONS).flat());
   return [...new Set(permissions)]
     .filter((p): p is Permission => known.has(p))
+    .filter((p) => !POR_ABRIR.has(p))
     .filter((p) => !can(ctx, p));
 }
 

@@ -1,4 +1,9 @@
 02/10/2026
+- Sessão: corrigidas as situações em que a consola ou a app do clube pediam para entrar outra vez sem a pessoa ter saído. A sessão só termina quando o Supabase a recusa mesmo (palavra-passe mudada, conta desativada); falhas de rede, do servidor ou renovações em simultâneo deixaram de a deitar fora.
+- Sessão, staff no telemóvel: quem passa da app do clube para a consola (área de Staff) já não perde a sessão ao voltar a abrir a app pelo ícone. As duas ficam sempre com a renovação mais recente.
+- Página de entrada do clube: quem já tem sessão iniciada no computador segue direto para a consola ao abrir o endereço do clube, em vez de ver o formulário de entrada. No telemóvel, o botão de entrar leva direto à consola.
+- Painel da plataforma: recarregar a página com o servidor a reiniciar já não mostra o ecrã de entrada. Aparece um aviso com "Tentar outra vez" e a sessão mantém-se.
+- Convites de staff: corrigido o erro "permissões que tu não tens: ai:write" que impedia um coordenador (ou um diretor com cargo à medida) de convidar treinadores.
 - Jogos, Pós-jogo: o minuto de entrada e o "por quem entrou" passaram para a caixa por baixo do jogador, que abre sozinha ao marcar "Entrou". As linhas ficaram alinhadas de jogador para jogador.
 - Jogos, Pós-jogo, futebol: quem entrou do banco diz agora por quem entrou, além do minuto. Escolher quem saiu põe-lhe sozinho o minuto de saída, e os minutos dos dois ficam certos.
 - Jogos, Pós-jogo, futsal e basquetebol: como se entra e sai a toda a hora, a ficha pede só quem foi titular e quem entrou, sem minutos nem "por quem".

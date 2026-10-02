@@ -47,9 +47,41 @@ import { academy } from "@/lib/api";
  * É a mesma solução que a app das famílias já tinha (`apps/family/src/lib/
  * session.ts`) — de propósito. Duas apps a resolver o mesmo problema de duas
  * maneiras são duas maneiras de o ter partido.
+ *
+ * ## Uma sessão viva nunca se deita fora
+ *
+ * A renovação existia e as pessoas continuavam a perder a sessão "do nada". O
+ * Supabase não a matava: éramos nós que a largávamos, em três situações em que
+ * ela continuava boa.
+ *
+ *  1. **Uma cópia velha do refresh.** Quem é staff e pai passa da app do clube
+ *     para a consola com a mesma sessão, e ela fica guardada em duas chaves
+ *     (ver `KEY_DA_APP`). Cada app rodava o refresh na sua, a cópia da outra
+ *     envelhecia, e ao fim de duas rodas o Supabase recusava-a — com a sessão
+ *     viva na chave ao lado. Agora lê-se sempre o par mais novo das duas
+ *     (`readSession`), e uma recusa confirma-se com o que lá estiver antes de
+ *     se desistir.
+ *  2. **Uma resposta que não é uma recusa.** Qualquer 4xx do Supabase terminava
+ *     a sessão, incluindo o 409 de duas renovações ao mesmo tempo (dois
+ *     separadores a acordar juntos) e o 429 de pedidos a mais. Só termina o que
+ *     diz que o refresh ou a sessão já não valem (`recusa`).
+ *  3. **Um 401 da nossa API com a sessão boa.** Ver `lib/http.ts`.
  */
 
 const KEY = "academia.session";
+
+/**
+ * A chave da app do clube, que em produção vive nesta mesma origem.
+ *
+ * Quando a conta é a mesma, é a mesma sessão guardada em dois sítios: a entrega
+ * entre as duas apps copia o par (ver `lib/app-contexts.ts` e o `lib/handoff.ts`
+ * da app). Lê-se aqui para nunca renovar com uma cópia mais velha do que a que
+ * a app já tem.
+ */
+const KEY_DA_APP = "academia.family.session";
+
+/** Onde fica escrito porque é que a última sessão acabou sem ninguém a terminar. */
+const KEY_DO_FIM = "academia.sessao.fim";
 
 /**
  * Onde a sessão vive.
@@ -72,7 +104,8 @@ export type StoredSession = {
   academySlug: string;
 };
 
-export function readSession(): StoredSession | null {
+/** O que a consola tem guardado, tal como está. */
+function lerGuardada(): StoredSession | null {
   try {
     // `sessionStorage` fica como leitura de recurso: quem já tinha a consola
     // aberta quando isto mudou continua com a sessão onde ela estava, em vez de
@@ -82,6 +115,43 @@ export function readSession(): StoredSession | null {
   } catch {
     return null;
   }
+}
+
+/** O par que a app do clube tem guardado nesta origem, se tiver algum completo. */
+function lerDaApp(): { accessToken: string; refreshToken: string } | null {
+  try {
+    const raw = store()?.getItem(KEY_DA_APP);
+    const p = raw ? (JSON.parse(raw) as { accessToken?: string; refreshToken?: string | null }) : null;
+    return p?.accessToken && p.refreshToken ? { accessToken: p.accessToken, refreshToken: p.refreshToken } : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * A sessão, com o par mais novo que houver nesta origem.
+ *
+ * Se a app do clube tiver a mesma conta com um token emitido depois, é esse o
+ * par vivo — o daqui é a cópia que envelheceu enquanto a app trabalhava. Fica-se
+ * com ele e guarda-se, para as duas chaves voltarem a dizer o mesmo.
+ *
+ * Só da mesma conta. Um telemóvel com um pai na app e um treinador na consola
+ * tem duas sessões de duas pessoas, e nenhuma delas toma o lugar da outra.
+ */
+export function readSession(): StoredSession | null {
+  const guardada = lerGuardada();
+  if (!guardada) return null;
+
+  const daApp = lerDaApp();
+  if (!daApp || !maisNovo(guardada.accessToken, daApp.accessToken)) return guardada;
+
+  const adoptada = { ...guardada, ...daApp };
+  try {
+    store()?.setItem(KEY, JSON.stringify(adoptada));
+  } catch {
+    /* sem armazenamento: vale para esta leitura */
+  }
+  return adoptada;
 }
 
 /* -------------------------------------------------------------------------- */
@@ -97,15 +167,31 @@ export function readSession(): StoredSession | null {
  * servidor, sempre; aqui só se quer saber se vale a pena tentar.
  */
 function expiresAt(token: string): number | null {
+  const exp = claims(token)?.exp;
+  return typeof exp === "number" ? exp * 1000 : null;
+}
+
+/** O que o token diz de si: de quem é, quando foi emitido e até quando vale. */
+function claims(token: string): { sub?: string; iat?: number; exp?: number } | null {
   try {
     const payload = token.split(".")[1];
     if (!payload) return null;
-    const json = atob(payload.replace(/-/g, "+").replace(/_/g, "/"));
-    const exp = (JSON.parse(json) as { exp?: number }).exp;
-    return typeof exp === "number" ? exp * 1000 : null;
+    return JSON.parse(atob(payload.replace(/-/g, "+").replace(/_/g, "/"))) as { sub?: string; iat?: number; exp?: number };
   } catch {
     return null;
   }
+}
+
+function mesmaConta(a: string, b: string): boolean {
+  const sub = claims(a)?.sub;
+  return Boolean(sub) && sub === claims(b)?.sub;
+}
+
+/** `outro` é da mesma conta que `este` e foi emitido depois. */
+function maisNovo(este: string, outro: string): boolean {
+  const a = claims(este)?.iat;
+  const b = claims(outro)?.iat;
+  return mesmaConta(este, outro) && typeof a === "number" && typeof b === "number" && b > a;
 }
 
 /*
@@ -125,11 +211,12 @@ const SKEW_MS = 60_000;
  * nove idas ao Supabase para obter a mesma coisa, e nove escritas a competir
  * pelo mesmo espaço no armazenamento.
  *
- * O Supabase **roda** o refresh a cada uso e tolera a reutilização do anterior
- * durante uns segundos — é o que hoje impede essa corrida de deitar a sessão
- * fora. Mas essa janela é configuração do projecto e pode ser zero amanhã;
- * depender dela seria construir sobre uma definição que ninguém aqui controla.
- * Todos esperam pela mesma renovação, e a questão não se põe.
+ * O Supabase **roda** o refresh a cada uso e continua a aceitar o
+ * imediatamente anterior — é o que deixa dois separadores renovarem ao mesmo
+ * tempo sem estragar nada. O de há duas rodas já é recusado (medido neste
+ * projecto: `refresh_token_already_used`), e é por isso que `refreshSession`
+ * confirma uma recusa com o que está guardado antes de dar a sessão por
+ * acabada.
  */
 let refreshing: Promise<string | null> | null = null;
 
@@ -141,7 +228,7 @@ function supabaseConfig(): { url: string; anon: string } | null {
 
 /** Grava o par novo, mantendo a academia — o slug não vem no refresh. */
 function saveTokens(accessToken: string, refreshToken: string): void {
-  const slug = readSession()?.academySlug ?? "";
+  const slug = lerGuardada()?.academySlug ?? "";
   const valor = JSON.stringify({ accessToken, refreshToken, academySlug: slug });
   try {
     store()?.setItem(KEY, valor);
@@ -151,43 +238,122 @@ function saveTokens(accessToken: string, refreshToken: string): void {
 }
 
 /**
+ * Porque é que o Supabase recusou a renovação — ou `null` se não recusou.
+ *
+ * Recusar é dizer que **este refresh ou esta sessão já não valem**: usado há
+ * demasiado tempo, sessão terminada, conta apagada ou suspensa. Só isso acaba
+ * com a sessão.
+ *
+ * Um 409 (duas renovações da mesma sessão ao mesmo tempo), um 429 (pedidos a
+ * mais) ou outro 4xx qualquer não dizem nada sobre a sessão, e tratá-los como
+ * recusa era pôr na rua quem tinha dois separadores abertos. O token velho
+ * segue, e o pedido seguinte tenta outra vez.
+ */
+async function recusa(res: Response): Promise<string | null> {
+  if (res.status !== 400 && res.status !== 401 && res.status !== 403) return null;
+  const corpo = (await res.json().catch(() => null)) as {
+    error_code?: string;
+    error?: string;
+    msg?: string;
+    error_description?: string;
+  } | null;
+  const codigo = corpo?.error_code ?? corpo?.error ?? "";
+  const texto = `${codigo} ${corpo?.msg ?? corpo?.error_description ?? ""}`;
+  return /refresh.?token|session|invalid_grant|user_not_found|user_banned|bad_jwt/i.test(texto) ? codigo || "recusado" : null;
+}
+
+/**
+ * A sessão acabou sem ninguém a terminar.
+ *
+ * Fica escrito porquê (`KEY_DO_FIM`): "perdi a sessão do nada" passa a ter uma
+ * resposta que se lê no próprio aparelho, em vez de um padrão para adivinhar.
+ *
+ * A cópia da app do clube só sai se for desta conta — é a mesma sessão, e está
+ * tão acabada como esta. A de outra pessoa não tem nada a ver com isto.
+ */
+function terminarPorRecusa(motivo: string): void {
+  const guardada = lerGuardada();
+  try {
+    store()?.removeItem(KEY);
+    sessionStorage.removeItem(KEY);
+    const daApp = lerDaApp();
+    if (guardada && daApp && mesmaConta(guardada.accessToken, daApp.accessToken)) store()?.removeItem(KEY_DA_APP);
+    store()?.setItem(KEY_DO_FIM, JSON.stringify({ quando: new Date().toISOString(), motivo, app: "consola" }));
+  } catch {
+    /* modo privado: não havia nada para limpar */
+  }
+}
+
+/**
  * Troca o refresh por um par novo.
  *
- * Só termina a sessão quando o Supabase **recusa** o refresh. Uma falha de rede
- * não desliga ninguém: um clube com internet a oscilar não pode perder a sessão
- * por isso, e o token velho ainda pode servir mais uns minutos.
+ * Só termina a sessão quando o Supabase **recusa** o refresh (ver `recusa`).
+ * Uma falha de rede não desliga ninguém: um clube com internet a oscilar não
+ * pode perder a sessão por isso, e o token velho ainda pode servir mais uns
+ * minutos.
+ *
+ * E mesmo uma recusa confirma-se: se entretanto outro separador, ou a app do
+ * clube, guardou um refresh diferente, o recusado era a cópia velha e o que
+ * conta é o que lá está agora. Tenta-se uma vez com esse antes de desistir.
+ *
+ * Devolve `null` em dois casos: não havia sessão, ou acabou de ser recusada —
+ * e aí já não há nada guardado, que é como quem chamou distingue (ver
+ * `lib/http.ts`).
  */
 export async function refreshSession(): Promise<string | null> {
   if (refreshing) return refreshing;
 
   const current = readSession();
-  const token = current?.refreshToken;
   const config = supabaseConfig();
-  if (!current || !token || !config) return current?.accessToken ?? null;
+  if (!current || !config) return current?.accessToken ?? null;
+
+  if (!current.refreshToken) {
+    /*
+     * Sem refresh não há como renovar. Enquanto o token de acesso valer,
+     * usa-se; depois disso a sessão acabou, e dizê-lo é melhor do que deixar a
+     * consola a levar 401 em todos os pedidos sem saída nenhuma.
+     */
+    const exp = expiresAt(current.accessToken);
+    if (exp !== null && exp <= Date.now()) {
+      terminarPorRecusa("sem_refresh");
+      return null;
+    }
+    return current.accessToken;
+  }
 
   refreshing = (async () => {
     try {
-      const res = await fetch(`${config.url}/auth/v1/token?grant_type=refresh_token`, {
-        method: "POST",
-        headers: { apikey: config.anon, "Content-Type": "application/json" },
-        body: JSON.stringify({ refresh_token: token }),
-      });
+      let token = current.refreshToken;
+      for (let tentativa = 1; ; tentativa++) {
+        const res = await fetch(`${config.url}/auth/v1/token?grant_type=refresh_token`, {
+          method: "POST",
+          headers: { apikey: config.anon, "Content-Type": "application/json" },
+          body: JSON.stringify({ refresh_token: token }),
+        });
 
-      if (!res.ok) {
-        // Recusado: o refresh já não vale. Aqui sim, a sessão acabou mesmo — e
-        // quem chamou trata de mandar entrar (ver `request` em `lib/http.ts`).
-        if (res.status >= 400 && res.status < 500) {
-          clearSession();
-          return null;
+        if (res.ok) {
+          const data = (await res.json()) as { access_token: string; refresh_token?: string };
+          // O refresh roda a cada uso; guardar o novo é o que mantém a corrente viva.
+          saveTokens(data.access_token, data.refresh_token ?? token);
+          return data.access_token;
         }
-        // 5xx é avaria do lado de lá — o token velho segue enquanto durar.
-        return readSession()?.accessToken ?? null;
-      }
 
-      const data = (await res.json()) as { access_token: string; refresh_token?: string };
-      // O refresh roda a cada uso; guardar o novo é o que mantém a corrente viva.
-      saveTokens(data.access_token, data.refresh_token ?? token);
-      return data.access_token;
+        const motivo = await recusa(res);
+        // Não é uma recusa (5xx, 409, 429…): o token velho segue enquanto durar.
+        if (!motivo) return readSession()?.accessToken ?? null;
+
+        // Recusado — mas pode ter sido só a cópia velha. O que está guardado agora?
+        const agora = readSession()?.refreshToken;
+        if (tentativa === 1 && agora && agora !== token) {
+          token = agora;
+          continue;
+        }
+
+        // Aqui sim, a sessão acabou mesmo — e quem chamou trata de mandar
+        // entrar (ver `pedir` em `lib/http.ts`).
+        terminarPorRecusa(motivo);
+        return null;
+      }
     } catch {
       /* sem rede: fica como estava e tenta-se no pedido seguinte */
       return readSession()?.accessToken ?? null;
@@ -230,7 +396,7 @@ export function clearSession(): void {
      */
     const st = store();
     if (st) {
-      st.removeItem("academia.family.session");
+      st.removeItem(KEY_DA_APP);
       for (const k of Object.keys(st)) {
         if (k.startsWith("academia.app.contexto")) st.removeItem(k);
       }
@@ -270,6 +436,17 @@ export function academyLandingUrl(): string {
  */
 export function signOut(): void {
   clearSession();
+  irParaAEntrada();
+}
+
+/**
+ * Leva à página de entrada do clube, sem mexer no que está guardado.
+ *
+ * É o que se faz quando a sessão **já** acabou: o Supabase recusou a renovação
+ * e `refreshSession` limpou o que havia a limpar. Chamar `signOut` aí limpava
+ * também a sessão da app do clube, fosse de quem fosse.
+ */
+export function irParaAEntrada(): void {
   window.location.replace(academyLandingUrl());
 }
 

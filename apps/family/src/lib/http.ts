@@ -1,4 +1,4 @@
-import { getAccessToken, refreshSession, signOut } from "@/lib/session";
+import { getAccessToken, readToken, refreshSession } from "@/lib/session";
 import { LEGAL_REQUIRED_CODE, legalRequired } from "@/lib/legal-signal";
 import { appHeader } from "@/lib/area";
 import { academySlug } from "@/lib/invite";
@@ -68,8 +68,7 @@ async function request<T>(method: string, path: string, body?: unknown, opts?: R
   let res = await send(path, method, token, body, opts?.app);
 
   /*
-   * Um 401 merece uma segunda tentativa antes de mandar o pai para o ecrã de
-   * entrada.
+   * Um 401 merece uma segunda tentativa antes de dar o pedido por falhado.
    *
    * O `getAccessToken()` já renova o que está a expirar, mas há um caso que a
    * validade não apanha: o relógio do telemóvel adiantado, um token revogado do
@@ -87,9 +86,21 @@ async function request<T>(method: string, path: string, body?: unknown, opts?: R
 
   if (!res.ok) {
     const parsed = await res.json().catch(() => null);
-    const msg = Array.isArray(parsed?.message) ? parsed.message.join("; ") : parsed?.message;
-    // Depois da renovação ter falhado, aí sim: a sessão acabou mesmo.
-    if (res.status === 401) signOut();
+    let msg = Array.isArray(parsed?.message) ? parsed.message.join("; ") : parsed?.message;
+    /*
+     * Um 401 já não termina a sessão daqui.
+     *
+     * Quem decide se a sessão vale é o Supabase, ao renovar: se ele recusa, o
+     * `refreshSession` termina-a e a app cai no ecrã de entrada por si. Se ele
+     * **renova** e a nossa API continua a responder 401, a sessão está boa e o
+     * problema é do lado de cá. Fazer `signOut()` aqui era o que punha os pais
+     * no ecrã de entrada sem terem saído: bastava a API falhar a verificação
+     * duas vezes seguidas numa releitura de fundo, com a app aberta e ninguém a
+     * tocar em nada. Agora o pedido falha, e o seguinte tenta outra vez.
+     */
+    if (res.status === 401 && token && readToken()) {
+      msg = "Não foi possível confirmar a sessão. Tenta outra vez daqui a pouco.";
+    }
     /*
      * Termos novos publicados com a app aberta.
      *

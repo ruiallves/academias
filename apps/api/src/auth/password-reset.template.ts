@@ -337,8 +337,10 @@ export function renderPasswordReset(opts: {
     if (origem === 'invite') {
       doneSub.textContent = 'Volta ao convite e escreve lá a palavra-passe nova para continuar.';
       /* A sessao desta troca nao vai ser usada — fecha-se ja, em vez de a
-         deixar viva no Supabase ate expirar. */
-      fetch(supabaseUrl + '/auth/v1/logout', {
+         deixar viva no Supabase ate expirar. So esta (scope=local): sem o
+         parametro o Supabase termina todas as sessoes da conta, em todos os
+         aparelhos. */
+      fetch(supabaseUrl + '/auth/v1/logout?scope=local', {
         method: 'POST',
         headers: { apikey: anonKey, Authorization: 'Bearer ' + sessao.access_token },
       }).catch(function () {});

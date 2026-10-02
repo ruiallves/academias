@@ -69,7 +69,7 @@ const EXCEPCOES = [
   ],
   [
     "apps/console/src/lib/app-contexts.ts",
-    "handoff da consola para a app do clube: escreve a sessão **da outra app** na mesma origem. O `session.ts` da consola não sabe ler a chave da família, e é esse o ponto — são duas sessões, não uma lida por fora",
+    "handoff da consola para a app do clube: escreve a sessão **na chave da outra app**, na mesma origem. É uma entrega, não uma leitura por fora: quem lê e renova continua a ser o `session.ts` de cada app",
   ],
 ];
 
@@ -124,10 +124,10 @@ for (const ficheiro of ficheiros) {
      *
      * Só a regra 1 as consultava, e a lista não diz que é de `fetch` — diz
      * "este ficheiro tem uma razão para fugir ao caminho normal". O handoff da
-     * consola para a app do clube é precisamente isso: escreve a sessão **da
-     * outra app**, cuja chave o `session.ts` da consola não conhece nem deve
-     * conhecer. Ficava listado e continuava a falhar, o que faz uma lista de
-     * excepções deixar de servir para alguma coisa.
+     * consola para a app do clube é precisamente isso: escreve a sessão **na
+     * chave da outra app**, e lê de lá o nome para não o perder. Ficava listado
+     * e continuava a falhar, o que faz uma lista de excepções deixar de servir
+     * para alguma coisa.
      */
     if (!eSessao && !excepcao && /(session|Storage)\.getItem\s*\(\s*["'`][^"'`]*session/i.test(linha)) {
       problemas.push(

@@ -1,4 +1,4 @@
-import { getAccessToken, refreshSession, signOut } from "@/lib/session";
+import { getAccessToken, readSession, refreshSession, signOut } from "@/lib/session";
 
 /**
  * O cliente HTTP do painel.
@@ -48,10 +48,21 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
     if (renovado && renovado !== token) res = await enviar(path, renovado, init);
   }
 
-  // Depois da renovação ter falhado, aí sim: cair para o login é a saída útil.
+  /*
+   * O Supabase recusou a renovação e já não há sessão guardada: aí sim, cair
+   * para o login é a saída útil.
+   *
+   * Se a sessão continua guardada, o Supabase renovou-a (ou não se conseguiu
+   * falar com ele) e o 401 é um problema do lado da API — sair por isso era
+   * perder a sessão a meio do trabalho sem ela ter acabado. O pedido falha, e o
+   * seguinte tenta outra vez.
+   */
   if (res.status === 401) {
-    signOut();
-    throw new ApiError(401, "A sessão expirou.");
+    if (readSession() === null) {
+      signOut();
+      throw new ApiError(401, "A sessão expirou.");
+    }
+    throw new ApiError(401, "Não foi possível confirmar a sessão. Tenta outra vez daqui a pouco.");
   }
 
   if (!res.ok) {
