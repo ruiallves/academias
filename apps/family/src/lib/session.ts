@@ -326,6 +326,51 @@ function terminarPorRecusa(motivo: string): void {
   emit();
 }
 
+/*
+ * Insistir antes de desistir.
+ *
+ * Um computador que acorda, ou um telemóvel que volta à frente, dispara os
+ * pedidos todos no mesmo instante — e nesse instante a rede ainda pode não ter
+ * voltado. A renovação falhava, o pedido seguia com o token velho, levava 401,
+ * e quem tinha estado fora via "não foi possível confirmar a sessão" numa
+ * sessão perfeitamente boa. O mesmo vale para o 409 (outro separador a renovar
+ * ao mesmo tempo), o 429 e um 5xx: passam sozinhos em menos de dois segundos.
+ */
+const ESPERAS_MS = [400, 1200];
+const KEY_DA_RENOVACAO = "academia.sessao.renovacao";
+
+/** Fica escrito porque é que a última renovação não deu — para quem for ver depois. */
+function anotarFalha(estado: number | "rede"): void {
+  try {
+    localStorage.setItem(KEY_DA_RENOVACAO, JSON.stringify({ quando: new Date().toISOString(), estado, app: "app" }));
+  } catch {
+    /* sem armazenamento: paciência */
+  }
+}
+
+/** Pede o par novo ao Supabase. `null` quando não se conseguiu falar com ele. */
+async function trocar(config: { url: string; anon: string }, token: string): Promise<Response | null> {
+  for (let i = 0; ; i++) {
+    let res: Response | null = null;
+    try {
+      res = await fetch(`${config.url}/auth/v1/token?grant_type=refresh_token`, {
+        method: "POST",
+        headers: { apikey: config.anon, "Content-Type": "application/json" },
+        body: JSON.stringify({ refresh_token: token }),
+      });
+    } catch {
+      res = null;
+    }
+    const passageiro = res === null || res.status >= 500 || res.status === 409 || res.status === 429;
+    if (!passageiro) return res;
+    if (i >= ESPERAS_MS.length) {
+      anotarFalha(res?.status ?? "rede");
+      return res;
+    }
+    await new Promise((r) => setTimeout(r, ESPERAS_MS[i]));
+  }
+}
+
 /**
  * Troca o refresh por um par novo.
  *
@@ -363,11 +408,8 @@ export async function refreshSession(): Promise<string | null> {
     try {
       let token = current.refreshToken as string;
       for (let tentativa = 1; ; tentativa++) {
-        const res = await fetch(`${config.url}/auth/v1/token?grant_type=refresh_token`, {
-          method: "POST",
-          headers: { apikey: config.anon, "Content-Type": "application/json" },
-          body: JSON.stringify({ refresh_token: token }),
-        });
+        const res = await trocar(config, token);
+        if (!res) return read()?.accessToken ?? null;
 
         if (res.ok) {
           const data = (await res.json()) as {
@@ -389,7 +431,11 @@ export async function refreshSession(): Promise<string | null> {
 
         const motivo = await recusa(res);
         // Não é uma recusa (5xx, 409, 429…): o token velho segue enquanto durar.
-        if (!motivo) return fresca()?.accessToken ?? null;
+        if (!motivo) {
+          // Um 4xx que não se reconhece como recusa: fica anotado, para se saber qual foi.
+          if (res.status < 500 && res.status !== 409 && res.status !== 429) anotarFalha(res.status);
+          return fresca()?.accessToken ?? null;
+        }
 
         // Recusado — mas pode ter sido só a cópia velha. O que está guardado agora?
         const agora = fresca()?.refreshToken;

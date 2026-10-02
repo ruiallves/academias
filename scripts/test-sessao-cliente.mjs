@@ -300,7 +300,7 @@ console.log("\n=== Consola: não se consegue falar com o Supabase ===");
   const w = mundo();
   w.naConsola(w.sup.entrar("rui").par);
   passam(61);
-  w.sup.forcar = ["rede", "rede"];
+  w.sup.forcar = Array(6).fill("rede"); // três tentativas por renovação, duas renovações
   const m = await w.abrir("console");
   check("o pedido falha, a dizer que não se confirmou a sessão", (await pedir(m)) === NAO_CONFIRMADA);
   check("mas a sessão continua guardada e ninguém foi mandado entrar", w.guardada(K_CONSOLA) !== null && w.idas.length === 0);
@@ -467,7 +467,7 @@ console.log("\n=== App: não se consegue falar com o Supabase ===");
   const w = mundo();
   w.naApp(w.sup.entrar("ana").par);
   passam(61);
-  w.sup.forcar = ["rede", "rede"];
+  w.sup.forcar = Array(6).fill("rede"); // três tentativas por renovação, duas renovações
   const m = await w.abrir("family");
   check("o pedido falha, a dizer que não se confirmou a sessão", (await pedir(m)) === NAO_CONFIRMADA);
   check("a app continua com sessão", m.sessao.readToken() !== null && w.guardada(K_APP) !== null);

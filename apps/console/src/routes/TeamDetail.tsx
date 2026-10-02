@@ -63,6 +63,7 @@ import {
 } from "@/lib/api";
 import { age, longDate, percent, relativeDays, shortDate, shortName, time } from "@/lib/format";
 import { teamAgeLabel } from "@/lib/team-age";
+import { TEAM_GENDER_LABEL } from "@/lib/genero";
 import { medicalExpiry, medicalNeedsAttention, medicalState, type MedicalState } from "@/lib/medical";
 import { availabilityOf, useClinicalRecords } from "@/lib/clinical";
 import { can, type Session } from "@/lib/permissions";
@@ -209,7 +210,7 @@ export default function TeamDetail() {
       <BackLink />
 
       <PageHeader
-        eyebrow={`${sport?.name ?? ""} · ${teamAgeLabel(team.maxAge)} · ${team.season}`}
+        eyebrow={`${sport?.name ?? ""} · ${teamAgeLabel(team.maxAge)}${team.gender ? ` · ${TEAM_GENDER_LABEL[team.gender]}` : ""} · ${team.season}`}
         title={team.name}
         subtitle={coaches.map((c) => c.name).join(", ") || "Sem treinador atribuído"}
       >

@@ -4,6 +4,7 @@ import { apiPost } from "@/lib/http";
 import { ConvidarAoCriar } from "./ConfirmarSobrescrita";
 import { reloadAcademy } from "@/lib/store";
 import type { Session } from "@/lib/permissions";
+import { ATHLETE_SEXES, ATHLETE_SEX_LABEL } from "@/lib/genero";
 import { Dialog, DialogField, dialogInputClass } from "./Dialog";
 import { EquipasDoAtletaField, equipasParaApi, linhaNova, problemaDasEquipas, type LinhaDeEquipa } from "./EquipasDoAtletaField";
 import { IdentificacaoField, identificacaoInicial, identificacaoOk, identificacaoParaApi } from "./IdentificacaoField";
@@ -35,6 +36,7 @@ export function NewAthleteDialog({
 
   const [name, setName] = useState("");
   const [birthdate, setBirthdate] = useState("");
+  const [sex, setSex] = useState("");
   const [ident, setIdent] = useState(identificacaoInicial());
   const [linhas, setLinhas] = useState<LinhaDeEquipa[]>(() =>
     teams.length === 0 ? [] : [linhaNova(teams, undefined, equipaInicial && teams.some((t) => t.id === equipaInicial) ? equipaInicial : undefined)],
@@ -66,6 +68,7 @@ export function NewAthleteDialog({
       await apiPost("/api/athletes", {
         name: name.trim(),
         birthdate,
+        ...(sex ? { sex } : {}),
         // As equipas, cada uma com o seu número e posição; a primeira é a principal.
         equipas: equipasParaApi(linhas),
         ...identificacaoParaApi(ident, "criar"),
@@ -118,6 +121,17 @@ export function NewAthleteDialog({
           */}
           <DialogField label="Data de nascimento">
             <input type="date" value={birthdate} onChange={(e) => setBirthdate(e.target.value)} className={dialogInputClass} required />
+          </DialogField>
+
+          <DialogField label="Sexo" hint="opcional · como está inscrito na federação">
+            <select value={sex} onChange={(e) => setSex(e.target.value)} className={dialogInputClass}>
+              <option value="">Por indicar</option>
+              {ATHLETE_SEXES.map((s) => (
+                <option key={s} value={s}>
+                  {ATHLETE_SEX_LABEL[s]}
+                </option>
+              ))}
+            </select>
           </DialogField>
 
           {/*

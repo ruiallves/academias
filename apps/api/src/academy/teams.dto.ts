@@ -2,6 +2,7 @@ import { Type } from "class-transformer";
 import {
   ArrayMaxSize,
   IsArray,
+  IsIn,
   IsInt,
   IsOptional,
   IsString,
@@ -20,6 +21,25 @@ import {
  * uma segunda barreira de tipos depois desta. As horas são validadas como `HH:MM`
  * para o calendário não ter de adivinhar o formato.
  */
+/** Os géneros de uma equipa. Gémea de `TeamGender` no schema. */
+export const TEAM_GENDERS = ["MALE", "FEMALE", "MIXED"] as const;
+export type TeamGenderValue = (typeof TEAM_GENDERS)[number];
+
+/**
+ * O género que o **nome** da equipa diz, quando diz.
+ *
+ * "Sub-15 Feminino" é uma equipa feminina, escreva-se como se escrever — a
+ * mesma ideia de `inferSportCode` para as modalidades. Só serve de rede para
+ * quem cria a equipa sem escolher: o que a pessoa escolhe ganha sempre.
+ */
+export function generoPeloNome(name: string): TeamGenderValue | null {
+  const n = name.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
+  if (/femin/.test(n)) return "FEMALE";
+  if (/masc/.test(n)) return "MALE";
+  if (/\bmist[ao]s?\b/.test(n)) return "MIXED";
+  return null;
+}
+
 export class ScheduleSlotDto {
   @IsInt()
   @Min(0)
@@ -67,6 +87,11 @@ export class CreateTeamDto {
   @Min(4)
   @Max(99)
   maxAge!: number;
+
+  /** Masculina, feminina ou mista. Sem ele, vale o que o nome disser. */
+  @IsOptional()
+  @IsIn(TEAM_GENDERS)
+  gender?: TeamGenderValue;
 
   @IsString()
   @Length(4, 20)

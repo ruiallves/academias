@@ -9,7 +9,8 @@ import { useCatalogForSport } from "@/lib/catalogs";
 import { can } from "@/lib/permissions";
 import { useSession } from "@/session";
 import { SEM_LIMITE, teamAgeLabel } from "@/lib/team-age";
-import type { Team } from "@/data/types";
+import { TEAM_GENDERS, TEAM_GENDER_LABEL } from "@/lib/genero";
+import type { Team, TeamGender } from "@/data/types";
 
 const AMIGAVEL = "Amigável";
 
@@ -35,6 +36,7 @@ export function EditTeamDialog({ team, onClose }: { team: Team; onClose: () => v
 
   const [nome, setNome] = useState(team.name);
   const [idade, setIdade] = useState(String(team.maxAge));
+  const [genero, setGenero] = useState<"" | TeamGender>(team.gender ?? "");
   const [minutos, setMinutos] = useState(team.matchMinutes == null ? "" : String(team.matchMinutes));
   const [convocados, setConvocados] = useState(team.maxCallUps == null ? "" : String(team.maxCallUps));
   const [escolhidas, setEscolhidas] = useState<Set<string>>(() => new Set(team.competitions.map((c) => c.id)));
@@ -69,6 +71,7 @@ export function EditTeamDialog({ team, onClose }: { team: Team; onClose: () => v
     const patch = {
       ...(nome.trim() !== team.name ? { name: nome.trim() } : {}),
       ...(idadeN !== team.maxAge ? { maxAge: idadeN } : {}),
+      ...(genero !== (team.gender ?? "") ? { gender: genero || null } : {}),
       ...(minutos !== "" && minutosN !== team.matchMinutes ? { matchMinutes: minutosN } : {}),
       ...(convocados !== "" && convocadosN !== team.maxCallUps ? { maxCallUps: convocadosN } : {}),
       ...(provasMudaram ? { competitionIds: [...escolhidas] } : {}),
@@ -144,6 +147,17 @@ export function EditTeamDialog({ team, onClose }: { team: Team; onClose: () => v
             Passa a {teamAgeLabel(idadeN)}: é esta idade que decide quem pode ser convocado de outra equipa.
           </p>
         )}
+
+        <DialogField label="Género" hint="opcional">
+          <select value={genero} onChange={(e) => setGenero(e.target.value as "" | TeamGender)} className={dialogInputClass}>
+            <option value="">Por indicar</option>
+            {TEAM_GENDERS.map((g) => (
+              <option key={g} value={g}>
+                {TEAM_GENDER_LABEL[g]}
+              </option>
+            ))}
+          </select>
+        </DialogField>
 
         <div className="grid grid-cols-2 gap-3">
           <DialogField label="Duração do jogo" hint="minutos">

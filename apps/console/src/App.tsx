@@ -52,6 +52,7 @@ import AiAnalyses from "@/routes/ai/Analyses";
 import NewAiAnalysis from "@/routes/ai/NewAnalysis";
 import AiAnalysisDetail from "@/routes/ai/AnalysisDetail";
 import AiInsights from "@/routes/ai/Insights";
+import Certification from "@/routes/certification/Certification";
 import Soon from "@/routes/Soon";
 
 /**
@@ -163,6 +164,10 @@ export default function App() {
         <Route path="ai/adversarios" element={<Allow p="ai:read"><Soon title="Adversários" phase="Opponent Intelligence — modelo de jogo, padrões e jogadores perigosos, com clips como prova." /></Allow>} />
           </>
         )}
+
+        {/* Certificação FPF. Só tem menu nos clubes com futebol; quem chega pelo
+            endereço sem o ter vê a página a dizê-lo. */}
+        <Route path="certificacao" element={<Allow p="certification:read"><Certification /></Allow>} />
 
         <Route path="mensalidades" element={<Allow p="billing:read"><Fees /></Allow>} />
         <Route path="comunicacao" element={<Allow p="comms:read"><Comms /></Allow>} />

@@ -1,10 +1,33 @@
-import { defineConfig } from "vite";
+import { defineConfig, loadEnv } from "vite";
 import react from "@vitejs/plugin-react";
 import tailwindcss from "@tailwindcss/vite";
 import { fileURLToPath, URL } from "node:url";
 import { versaoDoBuild } from "../../scripts/vite-versao.mjs";
 
-export default defineConfig(({ command }) => ({
+export default defineConfig(({ command, mode }) => {
+  /*
+   * A renovação da sessão tem de estar configurada **antes** de a consola sair
+   * daqui.
+   *
+   * `refreshSession` fala com o Supabase, e sem estes dois valores não faz nada:
+   * o token acaba ao fim de uma hora e a pessoa perde a sessão. Foi assim que a
+   * consola esteve em produção — o `.env.production` não os tinha, e em
+   * desenvolvimento vinham do `.env.local`, por isso nunca se viu. As variáveis
+   * são embutidas no bundle ao compilar, e é só aqui que isto se apanha. A mesma
+   * verificação da app do clube (ver apps/family/vite.config.ts).
+   */
+  if (command === "build") {
+    const env = loadEnv(mode, process.cwd(), "");
+    const faltam = ["VITE_SUPABASE_URL", "VITE_SUPABASE_ANON_KEY"].filter((k) => !env[k]?.trim());
+    if (faltam.length > 0) {
+      throw new Error(
+        `A consola não pode ser compilada sem ${faltam.join(" e ")}. ` +
+          `Estão em apps/console/.env.production — ver o cabeçalho desse ficheiro.`,
+      );
+    }
+  }
+
+  return {
   /**
    * Em produção a consola é servida pela API, na origem do clube:
    * `fafe.academias.pt/consola`. O `base` faz o Vite escrever os caminhos dos
@@ -48,4 +71,5 @@ export default defineConfig(({ command }) => ({
    * Só `vite dev` lê isto: em produção a consola é `/consola`, servida pela API.
    */
   server: { port: 5173, strictPort: true },
-}));
+};
+});

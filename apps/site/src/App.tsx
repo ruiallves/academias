@@ -1,16 +1,16 @@
 import { useEffect } from "react";
-import { Route, Routes, useLocation } from "react-router-dom";
+import { Navigate, Route, Routes, useLocation } from "react-router-dom";
 import { Nav } from "@/components/Nav";
 import { Footer } from "@/components/Footer";
 import Home from "@/routes/Home";
-import Software from "@/routes/Software";
+import Produto from "@/routes/Produto";
 import Planos from "@/routes/Planos";
 import Contactos from "@/routes/Contactos";
 import Legal, { LegacyLegal } from "@/routes/Legal";
 
 /**
- * Mudar de página põe a leitura no topo — excepto quando há uma âncora, que é
- * quando a pessoa pediu explicitamente para ir a um sítio a meio.
+ * Mudar de página põe a leitura no topo. A exceção é quando há uma âncora, que
+ * é quando a pessoa pediu para ir a um sítio a meio.
  */
 function ScrollToTop() {
   const { pathname, hash } = useLocation();
@@ -34,10 +34,12 @@ export default function App() {
       <main>
         <Routes>
           <Route path="/" element={<Home />} />
-          <Route path="/software" element={<Software />} />
+          <Route path="/produto" element={<Produto />} />
+          {/* O endereço antigo da página de produto, para nenhum link já enviado deixar de abrir. */}
+          <Route path="/software" element={<Navigate to="/produto" replace />} />
           <Route path="/planos" element={<Planos />} />
           <Route path="/contactos" element={<Contactos />} />
-          {/* Os documentos legais vêm da API, com versão. Os caminhos antigos redireccionam. */}
+          {/* Os documentos legais vêm da API, com versão. Os caminhos antigos redirecionam. */}
           <Route path="/legal" element={<Legal />} />
           <Route path="/legal/:slug" element={<Legal />} />
           <Route path="/legal/:slug/:version" element={<Legal />} />

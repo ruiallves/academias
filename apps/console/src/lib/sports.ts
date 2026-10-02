@@ -638,6 +638,16 @@ export function profiledSports(sports: Sport[] = storeAcademy.sports): Sport[] {
   return sports.filter((s) => profileOf(s) !== null);
 }
 
+/**
+ * O clube tem esta disciplina?
+ *
+ * É o que decide se um menu que só faz sentido numa modalidade aparece — a
+ * Certificação FPF é de futebol, e um clube só de natação não a deve ver.
+ */
+export function hasDiscipline(code: SportCode, sports: Sport[] = storeAcademy.sports): boolean {
+  return sports.some((s) => (isSportCode(s.code) ? s.code : inferSportCode(s.name)) === code);
+}
+
 /** A modalidade e o perfil, a partir do id — a pergunta que a rota faz. */
 export function sportAreaById(sportId: string | null | undefined): { sport: Sport; profile: SportProfile } | null {
   const sport = sportId ? storeAcademy.sports.find((s) => s.id === sportId) : undefined;

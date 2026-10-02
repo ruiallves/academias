@@ -13,6 +13,7 @@ import { useTeamColors } from "@/lib/calendar";
 import type { CategoricalColor } from "@academia/ui/tokens";
 import { currentSeason } from "@/lib/store";
 import { teamAgeLabel } from "@/lib/team-age";
+import { TEAM_GENDER_LABEL } from "@/lib/genero";
 import { can, semEquipasAtribuidas } from "@/lib/permissions";
 import { useSession } from "@/session";
 import type { Team } from "@/data/types";
@@ -256,6 +257,7 @@ function TeamCard({
             </h3>
             <p className="mt-1 truncate text-meta text-ink-3">
               {teamAgeLabel(team.maxAge)}
+              {team.gender && ` · ${TEAM_GENDER_LABEL[team.gender]}`}
               {mostrarModalidade && sport?.name && ` · ${sport.name}`}
             </p>
           </div>

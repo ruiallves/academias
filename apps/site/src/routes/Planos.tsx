@@ -1,136 +1,109 @@
 import { Link } from "react-router-dom";
-import { Reveal } from "@/components/primitives";
-import { Precos } from "@/sections/Precos";
-import { Perguntas } from "@/sections/trust";
-import { MODULES } from "@/lib/content";
+import { Seta } from "@/components/marca";
+import { Precos } from "@/seccoes/Precos";
+import { FAQ, MODULES } from "@/lib/content";
 
 /**
  * Planos.
  *
- * A página da **decisão**: os preços, a tabela do que muda entre os dois
- * planos, e as perguntas todas. A pergunta que sobra depois de ver os preços é
- * sempre a mesma — "e a app do clube, está no primeiro?" — e a tabela
- * responde-lhe sem obrigar ninguém a reler as listas.
+ * A página da decisão: os preços, a tabela do que muda entre os planos e as
+ * perguntas todas. A pergunta que sobra depois de ver os preços é quase sempre
+ * "e a app do clube, está no primeiro?", e a tabela responde-lhe.
  */
 export default function Planos() {
   return (
     <>
-      <Precos compact />
+      <Precos pagina />
 
-      {/* A tabela de decisão — na mesma caixa larga da mesa dos preços, que
-          fica logo acima: duas larguras diferentes na mesma página lêem-se como
-          desalinhamento, não como intenção. */}
-      <section className="band-tight bg-paper-2">
-        <div className="wrap-wide">
-          <Reveal>
-            <h2 className="display d3">O que muda entre os dois</h2>
-          </Reveal>
+      <section className="palco-cal faixa-curta">
+        <div className="wrap">
+          <h2 className="titulo t2">O que muda entre os planos</h2>
 
-          <Reveal i={1}>
-            <div className="canto-sm mt-8 overflow-x-auto border border-line-2 bg-chalk">
-              <table className="w-full border-collapse text-left">
-                <thead>
-                  <tr className="border-b border-line-2">
-                    <th className="py-4 pr-4 pl-6 text-[12px] font-[650] tracking-[0.12em] text-ink-3 uppercase">
-                      Módulo
-                    </th>
-                    <th className="w-[120px] py-4 text-center text-[12px] font-[650] tracking-[0.12em] text-ink-3 uppercase">
-                      Consola
-                    </th>
-                    <th className="w-[140px] py-4 text-center text-[12px] font-[650] tracking-[0.12em] text-field uppercase">
-                      Connect
-                    </th>
-                    <th className="w-[140px] py-4 text-center text-[12px] font-[650] tracking-[0.12em] text-ink-3 uppercase">
-                      Vision AI
-                      <span className="mt-1 block text-[10px] font-medium tracking-[0.08em] normal-case">
-                        brevemente
-                      </span>
-                    </th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {MODULES.map((m) => (
-                    <tr key={m.key} className="border-b border-line last:border-b-0">
-                      <td className="py-3.5 pr-4 pl-6">
-                        <p className="text-[15.5px] font-medium">{m.name}</p>
-                        <p className="hidden text-[13.5px] text-ink-3 sm:block">{m.line}</p>
-                      </td>
-                      <td className="py-3.5 text-center">
-                        <Cell on={!m.paidTier} />
-                      </td>
-                      <td className="py-3.5 text-center">
-                        <Cell on />
-                      </td>
-                      {/* O Vision AI é o Connect mais a IA: tudo o que lá está, está aqui. */}
-                      <td className="py-3.5 text-center">
-                        <Cell on />
-                      </td>
-                    </tr>
-                  ))}
-                  <tr className="border-b border-line">
+          <div className="mt-8 overflow-x-auto border border-fio-2 bg-sup">
+            <table className="w-full min-w-[560px] border-collapse text-left">
+              <thead>
+                <tr className="border-b border-fio-2">
+                  <th className="rotulo py-4 pr-4 pl-6 font-normal text-texto-3">Módulo</th>
+                  <th className="rotulo w-[110px] py-4 text-center font-normal text-texto-3">Consola</th>
+                  <th className="rotulo w-[110px] py-4 text-center font-normal text-texto">Connect</th>
+                  <th className="rotulo w-[130px] py-4 text-center font-normal text-texto-3">
+                    Vision AI
+                    <span className="block normal-case">em breve</span>
+                  </th>
+                </tr>
+              </thead>
+              <tbody>
+                {MODULES.map((m) => (
+                  <tr key={m.key} className="border-b border-fio">
                     <td className="py-3.5 pr-4 pl-6">
-                      <p className="text-[15.5px] font-medium">Página pública de adesão a sócio</p>
-                      <p className="hidden text-[13.5px] text-ink-3 sm:block">O clube recebe inscrições online.</p>
+                      <p className="font-semibold">{m.name}</p>
+                      <p className="hidden text-[0.88rem] text-texto-3 sm:block">{m.line}</p>
                     </td>
                     <td className="py-3.5 text-center">
-                      <Cell on={false} />
+                      <Sinal on={!m.paidTier} />
                     </td>
                     <td className="py-3.5 text-center">
-                      <Cell on />
+                      <Sinal on />
                     </td>
                     <td className="py-3.5 text-center">
-                      <Cell on />
+                      <Sinal on />
                     </td>
                   </tr>
-                  {/*
-                    A única linha da tabela que ainda não existe — e por isso o
-                    sinal é outro. Um ponto cheio ao lado de "análise de vídeo"
-                    seria dizer que já se compra; o anel diz "vem, não está cá".
-                  */}
-                  <tr>
-                    <td className="py-3.5 pr-4 pl-6">
-                      <p className="text-[15.5px] font-medium">Academias AI — análise de vídeo</p>
-                      <p className="hidden text-[13.5px] text-ink-3 sm:block">
-                        O jogo gravado vira números, com a confiança à vista. Cobrado por análises.
-                      </p>
-                    </td>
-                    <td className="py-3.5 text-center">
-                      <Cell on={false} />
-                    </td>
-                    <td className="py-3.5 text-center">
-                      <Cell on={false} />
-                    </td>
-                    <td className="py-3.5 text-center">
-                      <Cell on soon />
-                    </td>
-                  </tr>
-                </tbody>
-              </table>
-            </div>
-          </Reveal>
+                ))}
+                {/* A única linha que ainda não existe leva outro sinal: um anel, e não um ponto cheio. */}
+                <tr>
+                  <td className="py-3.5 pr-4 pl-6">
+                    <p className="font-semibold">Análise de vídeo</p>
+                    <p className="hidden text-[0.88rem] text-texto-3 sm:block">
+                      O jogo gravado vira números, com a confiança à vista. Cobrado por análises.
+                    </p>
+                  </td>
+                  <td className="py-3.5 text-center">
+                    <Sinal on={false} />
+                  </td>
+                  <td className="py-3.5 text-center">
+                    <Sinal on={false} />
+                  </td>
+                  <td className="py-3.5 text-center">
+                    <Sinal on breve />
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
 
-          <Reveal i={2}>
-            <p className="mt-6 max-w-[60ch] text-[14.5px] leading-relaxed text-ink-2">
-              Na prática: a <span className="font-semibold text-ink">Consola</span> resolve o clube por dentro. O{" "}
-              <span className="font-semibold text-ink">Connect</span> acrescenta as duas coisas que as famílias e os
-              sócios vêem — a app do clube e os pagamentos. Quase todos os clubes acabam no segundo; começa no que
-              fizer sentido e muda quando quiseres. O <span className="font-semibold text-ink">Vision AI</span> é o passo
-              a seguir e ainda não se vende — fica aqui para saberes para onde é que a plataforma vai antes de
-              escolheres, e cobra-se por análises de jogo, não por atleta.
-            </p>
-          </Reveal>
+          <p className="corpo mt-6 text-[0.95rem]">
+            A Consola resolve o clube por dentro. O Connect acrescenta o que as famílias e os sócios veem: a app do clube
+            e os pagamentos. Podes começar num e mudar para o outro quando quiseres.
+          </p>
         </div>
       </section>
 
-      {/* As perguntas todas — é aqui que se compram respostas. */}
-      <Perguntas />
+      <section id="perguntas" className="palco-cal faixa scroll-mt-(--topo)">
+        <div className="wrap grid gap-12 lg:grid-cols-[minmax(0,0.7fr)_minmax(0,1.3fr)] lg:gap-20">
+          <h2 className="titulo t2 max-w-[10ch]">Perguntas.</h2>
+          <div className="border-b border-fio">
+            {FAQ.map((f) => (
+              <details key={f.q} className="pergunta">
+                <summary>
+                  <span className="titulo t4">{f.q}</span>
+                  <span aria-hidden className="mais text-texto-3">
+                    +
+                  </span>
+                </summary>
+                <p className="corpo pb-6">{f.a}</p>
+              </details>
+            ))}
+          </div>
+        </div>
+      </section>
 
-      <section className="dark">
-        <div className="wrap band-tight flex flex-wrap items-center justify-between gap-8">
-          <p className="display d3 max-w-[22ch]">Trinta dias com tudo, para veres com o teu clube lá dentro.</p>
-          <Link to="/contactos" className="btn btn-primary">
-            Começar gratuitamente
-            <span aria-hidden className="arr">→</span>
+      <section className="bloco palco-noite mb-[clamp(8px,1.2vw,20px)]">
+        <div className="wrap faixa-curta flex flex-wrap items-center justify-between gap-8">
+          <p className="titulo t2 max-w-[20ch]">Trinta dias com tudo, com o teu clube lá dentro.</p>
+          <Link to="/contactos" className="btn btn-cheio">
+            Começar
+            <Seta />
           </Link>
         </div>
       </section>
@@ -138,19 +111,12 @@ export default function Planos() {
   );
 }
 
-/**
- * Um sinal, não um emoji: ponto cheio para incluído, traço para não incluído —
- * e **anel** para o que vem mas ainda não está cá. O terceiro estado existe
- * porque a tabela ganhou um plano por sair: pintá-lo com o mesmo ponto dos
- * outros era vender hoje o que só abre em 2027.
- */
-function Cell({ on, soon = false }: { on: boolean; soon?: boolean }) {
-  if (on && soon) {
-    return <span aria-label="Brevemente" className="inline-block size-2 rounded-full border border-field" />;
-  }
+/** Ponto cheio para incluído, traço para não incluído, anel para o que vem mas ainda não está cá. */
+function Sinal({ on, breve = false }: { on: boolean; breve?: boolean }) {
+  if (on && breve) return <span aria-label="Em breve" className="inline-block size-2.5 rounded-full border-2 border-texto" />;
   return on ? (
-    <span aria-label="Incluído" className="inline-block size-2 rounded-full bg-field" />
+    <span aria-label="Incluído" className="inline-block size-2.5 rounded-full bg-texto" />
   ) : (
-    <span aria-label="Não incluído" className="inline-block h-px w-3 bg-line-2 align-middle" />
+    <span aria-label="Não incluído" className="inline-block h-px w-3 bg-fio-2 align-middle" />
   );
 }

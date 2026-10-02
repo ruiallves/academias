@@ -1,0 +1,137 @@
+{
+  "announcements": [
+    {
+      "id": "aviso-jogo-sabado",
+      "title": "Jogo de sábado",
+      "body": "Sábado jogamos em casa às 15:00. Concentração às 14:15 no Campo 1.",
+      "audience": "TEAM",
+      "authorName": "Miguel Antunes",
+      "publishedAt": "2026-10-09T17:40:00+01:00"
+    },
+    {
+      "id": "aviso-equipamentos",
+      "title": "Equipamentos de jogo",
+      "body": "Os equipamentos desta época já chegaram. Entregamos aos Sub-13 no fim do treino de sexta.",
+      "audience": "TEAM",
+      "authorName": "Paulo Rebelo",
+      "publishedAt": "2026-10-06T11:20:00+01:00"
+    },
+    {
+      "id": "aviso-reuniao-pais",
+      "title": "Reunião de pais dos Sub-13",
+      "body": "Quinta, 15 de outubro, às 21:00 na sede. Falamos da época e do torneio de dezembro.",
+      "audience": "TEAM",
+      "authorName": "Miguel Antunes",
+      "publishedAt": "2026-10-01T18:05:00+01:00"
+    }
+  ],
+  "notifications": [
+    {
+      "id": "notif-avaliacao",
+      "type": "EVALUATION_PUBLISHED",
+      "title": "Avaliação disponível",
+      "body": "A avaliação de Tomás — Outubro de 2026 — já está na app.",
+      "route": "/atleta",
+      "createdAt": "2026-10-11T10:00:00+01:00",
+      "_readAt": null
+    },
+    {
+      "id": "notif-convocatoria-j5",
+      "type": "MATCH_CALLED_UP",
+      "title": "Confirma a presença do Tomás",
+      "body": "Em casa com União da Serra · sábado, 10 de outubro às 15:00 · Campo 1. Abre para dizer se vai.",
+      "route": "/evento/jogo/jogo-j5",
+      "createdAt": "2026-10-09T17:41:00+01:00",
+      "_readAt": "2026-10-09T18:30:00+01:00"
+    },
+    {
+      "id": "notif-aviso-jogo",
+      "type": "ANNOUNCEMENT_PUBLISHED",
+      "title": "Jogo de sábado",
+      "body": "Sábado jogamos em casa às 15:00. Concentração às 14:15 no Campo 1.",
+      "route": "/notificacoes",
+      "createdAt": "2026-10-09T17:40:00+01:00",
+      "_readAt": "2026-10-09T18:30:00+01:00"
+    },
+    {
+      "id": "notif-aviso-equipamentos",
+      "type": "ANNOUNCEMENT_PUBLISHED",
+      "title": "Equipamentos de jogo",
+      "body": "Os equipamentos desta época já chegaram. Entregamos aos Sub-13 no fim do treino de sexta.",
+      "route": "/notificacoes",
+      "createdAt": "2026-10-06T11:20:00+01:00",
+      "_readAt": "2026-10-06T13:02:00+01:00"
+    },
+    {
+      "id": "notif-pagamento-out",
+      "type": "PAYMENT_RECEIVED",
+      "title": "Pagamento confirmado",
+      "body": "Recebemos 35,00 € da mensalidade de outubro.",
+      "route": "/pagamentos",
+      "createdAt": "2026-10-05T09:14:30+01:00",
+      "_readAt": "2026-10-05T09:15:30+01:00"
+    },
+    {
+      "id": "notif-mensalidade-out",
+      "type": "PAYMENT_PENDING",
+      "title": "Nova mensalidade",
+      "body": "A mensalidade de outubro de Tomás Ferreira já está disponível — 35,00 €, até 8 de outubro.",
+      "route": "/pagamentos",
+      "createdAt": "2026-10-01T09:00:00+01:00",
+      "_readAt": "2026-10-05T09:12:00+01:00"
+    },
+    {
+      "id": "notif-aviso-reuniao",
+      "type": "ANNOUNCEMENT_PUBLISHED",
+      "title": "Reunião de pais dos Sub-13",
+      "body": "Quinta, 15 de outubro, às 21:00 na sede. Falamos da época e do torneio de dezembro.",
+      "route": "/notificacoes",
+      "createdAt": "2026-10-01T18:05:00+01:00",
+      "_readAt": "2026-10-01T20:47:00+01:00"
+    }
+  ],
+  "notificationsAtleta": [
+    {
+      "id": "notif-atl-convocatoria-j5",
+      "type": "MATCH_CALLED_UP",
+      "title": "Estás convocado",
+      "body": "Em casa com União da Serra · sábado, 10 de outubro às 15:00 · Campo 1",
+      "route": "/evento/jogo/jogo-j5",
+      "createdAt": "2026-10-09T17:41:00+01:00",
+      "_readAt": "2026-10-09T18:30:00+01:00"
+    },
+    {
+      "id": "notif-atl-aviso-jogo",
+      "type": "ANNOUNCEMENT_PUBLISHED",
+      "title": "Jogo de sábado",
+      "body": "Sábado jogamos em casa às 15:00. Concentração às 14:15 no Campo 1.",
+      "route": "/notificacoes",
+      "createdAt": "2026-10-09T17:40:00+01:00",
+      "_readAt": "2026-10-09T18:30:00+01:00"
+    },
+    {
+      "id": "notif-atl-aviso-equipamentos",
+      "type": "ANNOUNCEMENT_PUBLISHED",
+      "title": "Equipamentos de jogo",
+      "body": "Os equipamentos desta época já chegaram. Entregamos aos Sub-13 no fim do treino de sexta.",
+      "route": "/notificacoes",
+      "createdAt": "2026-10-06T11:20:00+01:00",
+      "_readAt": "2026-10-06T16:40:00+01:00"
+    }
+  ],
+  "events": [
+    {
+      "id": "evento-reuniao-pais",
+      "teamId": "team-sub13",
+      "teamName": "Sub-13",
+      "kind": "OTHER",
+      "title": "Reunião de pais",
+      "startsAt": "2026-10-15T21:00:00+01:00",
+      "endsAt": "2026-10-15T22:00:00+01:00",
+      "venue": "Sede do clube",
+      "dressingRooms": [],
+      "typeLabel": "Reunião",
+      "cancelled": false
+    }
+  ]
+}

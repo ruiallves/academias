@@ -1,0 +1,53 @@
+{
+  "evaluations": [
+    {
+      "id": "aval-2026-10",
+      "athleteId": "atl-tomas-ferreira",
+      "period": "Outubro de 2026",
+      "status": "PUBLISHED",
+      "scores": { "Técnica": 4, "Tática": 4, "Físico": 4, "Atitude": 5 },
+      "note": null,
+      "strengths": "Pede a bola entre linhas e joga simples. No sábado marcou a chegar de trás à área, como treinámos.",
+      "focus": "Fechar mais depressa quando perdemos a bola e usar mais o pé esquerdo no primeiro toque.",
+      "coachName": "Miguel Antunes",
+      "publishedAt": "2026-10-11T10:00:00+01:00"
+    },
+    {
+      "id": "aval-2026-06",
+      "athleteId": "atl-tomas-ferreira",
+      "period": "Junho de 2026",
+      "status": "PUBLISHED",
+      "scores": { "Técnica": 4, "Tática": 3, "Físico": 3, "Atitude": 5 },
+      "note": null,
+      "strengths": "Boa receção orientada e muita vontade de ter a bola. É dos que mais fala com os colegas em campo.",
+      "focus": "Ler mais cedo onde está o espaço e aguentar o ritmo na segunda parte.",
+      "coachName": "Miguel Antunes",
+      "publishedAt": "2026-06-20T10:00:00+01:00"
+    },
+    {
+      "id": "aval-2026-03",
+      "athleteId": "atl-tomas-ferreira",
+      "period": "Março de 2026",
+      "status": "PUBLISHED",
+      "scores": { "Técnica": 3, "Tática": 3, "Físico": 3, "Atitude": 4 },
+      "note": null,
+      "strengths": "Evolução clara no passe curto.",
+      "focus": "Decidir mais depressa com a bola no pé.",
+      "coachName": "Miguel Antunes",
+      "publishedAt": "2026-03-21T10:00:00+00:00"
+    }
+  ],
+  "reports": [
+    {
+      "id": "rel-epoca-2025-26",
+      "athleteId": "atl-tomas-ferreira",
+      "title": "Balanço da época",
+      "period": "2025/26",
+      "body": "O Tomás fez uma época muito regular. Foi dos atletas com mais presenças nos treinos e esteve em quase todos os jogos.\n\nPassou a jogar no meio-campo em janeiro e adaptou-se bem: gosta de ter a bola e de a fazer chegar à frente.\n\nPara a próxima época, já no futebol de 9, o trabalho é ganhar ritmo e aprender a defender o espaço nas costas.",
+      "authorName": "Miguel Antunes",
+      "publishedAt": "2026-06-27T18:00:00+01:00",
+      "snapshot": { "attendance": { "attended": 61, "total": 66 }, "matches": 18 }
+    }
+  ],
+  "nutricao": []
+}

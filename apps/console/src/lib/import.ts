@@ -51,6 +51,7 @@ export const COLUMNS = [
   { key: "heightCm", header: "Altura (cm)", required: false, example: "148" },
   { key: "weightKg", header: "Peso (kg)", required: false, example: "41.5" },
   { key: "dominantSide", header: "Lado dominante", required: false, example: "Direito" },
+  { key: "sex", header: "Sexo", required: false, example: "Feminino" },
 ] as const;
 
 /** Uma linha depois de validada no cliente, pronta para o servidor. */
@@ -79,6 +80,7 @@ export type ParsedRow = {
   heightCm?: number;
   weightDg?: number;
   dominantSide?: "RIGHT" | "LEFT" | "BOTH";
+  sex?: "FEMALE" | "MALE";
 };
 
 export type RowError = { line: number; name: string; error: string };
@@ -316,6 +318,11 @@ export async function parseFile(file: File): Promise<ParseResult> {
     if (side.startsWith("dir") || side === "right") row.dominantSide = "RIGHT";
     else if (side.startsWith("esq") || side === "left") row.dominantSide = "LEFT";
     else if (side.startsWith("amb") || side === "both") row.dominantSide = "BOTH";
+
+    // "Feminino", "F", "female" — e o mesmo para o masculino. Outra coisa fica por indicar.
+    const sexo = get("Sexo").toLowerCase();
+    if (sexo.startsWith("f")) row.sex = "FEMALE";
+    else if (sexo.startsWith("m")) row.sex = "MALE";
 
     valid.push(row);
   });

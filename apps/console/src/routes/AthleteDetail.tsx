@@ -32,6 +32,7 @@ import { exportarFichaDeAtleta } from "@/lib/perfis";
 import {
   ArrowLeft,
   Cake,
+  IdCard,
   ChevronDown,
   CircleCheck,
   ClipboardCheck,
@@ -75,6 +76,7 @@ import { desligarEncarregado } from "@/lib/encarregados";
 import { PhotoPicker } from "@/components/PhotoPicker";
 import { removeAthletePhoto, uploadAthletePhoto } from "@/lib/photos";
 import { dominantSideLabel, summariseSeason, useAthleteMatches, type AthleteMatch } from "@/lib/athlete";
+import { ATHLETE_SEX_LABEL } from "@/lib/genero";
 import { activeRestriction, availabilityOf, useClinicalRecords } from "@/lib/clinical";
 import { tallyNoun } from "@/lib/calendar";
 import { calledUpFor, matchLabel } from "@/lib/callups";
@@ -713,6 +715,9 @@ function Overview({
           <PanelHead title="Ficha física" hint="actualizada manualmente" />
           <dl className="px-5 py-1.5">
             <PhysicalRow icon={Cake} label="Data de nascimento" value={`${longDate(new Date(athlete.birthdate))} de ${new Date(athlete.birthdate).getFullYear()}`} />
+            {/* Só quando está indicado: uma linha "por indicar" em todas as
+                fichas de um clube de natação era ruído. */}
+            {athlete.sex && <PhysicalRow icon={IdCard} label="Sexo" value={ATHLETE_SEX_LABEL[athlete.sex]} />}
             <PhysicalRow icon={Ruler} label="Altura" value={athlete.heightCm ? `${athlete.heightCm} cm` : "—"} />
             <PhysicalRow icon={Weight} label="Peso" value={athlete.weightKg ? `${athlete.weightKg} kg` : "—"} />
             {/* O rótulo vem da modalidade: "Pé dominante" no futebol, "Mão

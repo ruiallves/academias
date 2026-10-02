@@ -347,7 +347,15 @@ export const listOpponents = () => apiGet<OpponentSummary[]>("/api/matches/adver
  */
 export const updateTeam = (
   teamId: string,
-  patch: { name?: string; maxAge?: number; matchMinutes?: number; maxCallUps?: number; competitionIds?: string[] },
+  patch: {
+    name?: string;
+    maxAge?: number;
+    /** `null` limpa: a equipa volta a "por indicar". */
+    gender?: "MALE" | "FEMALE" | "MIXED" | null;
+    matchMinutes?: number;
+    maxCallUps?: number;
+    competitionIds?: string[];
+  },
 ) => apiPatch<{ ok: true }>(`/api/teams/${teamId}`, patch);
 
 export const setTeamMatchMinutes = (teamId: string, minutes: number) =>

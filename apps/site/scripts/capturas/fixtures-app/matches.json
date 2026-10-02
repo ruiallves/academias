@@ -1,0 +1,216 @@
+[
+  {
+    "id": "jogo-j1",
+    "teamId": "team-sub13",
+    "teamName": "Sub-13",
+    "startsAt": "2026-09-12T11:00:00+01:00",
+    "endsAt": "2026-09-12T12:15:00+01:00",
+    "venue": "Campo da Ponte",
+    "opponent": "Desportivo da Ponte",
+    "isHome": false,
+    "status": "PLAYED",
+    "ourScore": 1,
+    "theirScore": 1,
+    "roundLabel": "Jornada 1",
+    "meetingPoint": "Sede do clube",
+    "meetingAt": "2026-09-12T09:45:00+01:00",
+    "arrivalAt": "2026-09-12T10:20:00+01:00",
+    "callUpNotes": null,
+    "confirmationRequired": true,
+    "respondBy": "GUARDIAN",
+    "_submittedAt": "2026-09-10T18:00:00+01:00",
+    "calledUp": [
+      {
+        "athleteId": "atl-tomas-ferreira",
+        "status": "CONFIRMED",
+        "isGuest": false,
+        "declineReason": null,
+        "respondedAt": "2026-09-10T19:12:00+01:00"
+      }
+    ]
+  },
+  {
+    "id": "jogo-j2",
+    "teamId": "team-sub13",
+    "teamName": "Sub-13",
+    "startsAt": "2026-09-19T15:00:00+01:00",
+    "endsAt": "2026-09-19T16:15:00+01:00",
+    "venue": "Campo 1",
+    "opponent": "Estrela do Monte",
+    "isHome": true,
+    "status": "PLAYED",
+    "ourScore": 3,
+    "theirScore": 0,
+    "roundLabel": "Jornada 2",
+    "meetingPoint": "Campo 1",
+    "meetingAt": "2026-09-19T14:15:00+01:00",
+    "arrivalAt": null,
+    "callUpNotes": null,
+    "confirmationRequired": true,
+    "respondBy": "GUARDIAN",
+    "_submittedAt": "2026-09-17T18:00:00+01:00",
+    "calledUp": [
+      {
+        "athleteId": "atl-tomas-ferreira",
+        "status": "CONFIRMED",
+        "isGuest": false,
+        "declineReason": null,
+        "respondedAt": "2026-09-17T20:40:00+01:00"
+      }
+    ]
+  },
+  {
+    "id": "jogo-j3",
+    "teamId": "team-sub13",
+    "teamName": "Sub-13",
+    "startsAt": "2026-09-26T10:30:00+01:00",
+    "endsAt": "2026-09-26T11:45:00+01:00",
+    "venue": "Campo do Vale",
+    "opponent": "Académica do Vale",
+    "isHome": false,
+    "status": "PLAYED",
+    "ourScore": 2,
+    "theirScore": 2,
+    "roundLabel": "Jornada 3",
+    "meetingPoint": "Sede do clube",
+    "meetingAt": "2026-09-26T09:00:00+01:00",
+    "arrivalAt": "2026-09-26T09:50:00+01:00",
+    "callUpNotes": null,
+    "confirmationRequired": true,
+    "respondBy": "GUARDIAN",
+    "_submittedAt": "2026-09-24T18:00:00+01:00",
+    "calledUp": [
+      {
+        "athleteId": "atl-tomas-ferreira",
+        "status": "CONFIRMED",
+        "isGuest": false,
+        "declineReason": null,
+        "respondedAt": "2026-09-24T18:35:00+01:00"
+      }
+    ]
+  },
+  {
+    "id": "jogo-j4",
+    "teamId": "team-sub13",
+    "teamName": "Sub-13",
+    "startsAt": "2026-10-03T15:00:00+01:00",
+    "endsAt": "2026-10-03T16:15:00+01:00",
+    "venue": "Campo 1",
+    "opponent": "Juventude da Ribeira",
+    "isHome": true,
+    "status": "PLAYED",
+    "ourScore": 2,
+    "theirScore": 0,
+    "roundLabel": "Jornada 4",
+    "meetingPoint": "Campo 1",
+    "meetingAt": "2026-10-03T14:15:00+01:00",
+    "arrivalAt": null,
+    "callUpNotes": null,
+    "confirmationRequired": true,
+    "respondBy": "GUARDIAN",
+    "_submittedAt": "2026-10-01T18:00:00+01:00",
+    "calledUp": [
+      {
+        "athleteId": "atl-tomas-ferreira",
+        "status": "CONFIRMED",
+        "isGuest": false,
+        "declineReason": null,
+        "respondedAt": "2026-10-01T21:02:00+01:00"
+      }
+    ]
+  },
+  {
+    "id": "jogo-j5",
+    "teamId": "team-sub13",
+    "teamName": "Sub-13",
+    "startsAt": "2026-10-10T15:00:00+01:00",
+    "endsAt": "2026-10-10T16:15:00+01:00",
+    "venue": "Campo 1",
+    "opponent": "União da Serra",
+    "isHome": true,
+    "status": "SCHEDULED",
+    "ourScore": null,
+    "theirScore": null,
+    "roundLabel": "Jornada 5",
+    "meetingPoint": "Campo 1",
+    "meetingAt": "2026-10-10T14:15:00+01:00",
+    "arrivalAt": null,
+    "callUpNotes": "Trazer o equipamento de jogo completo, caneleiras e garrafa de água.",
+    "confirmationRequired": true,
+    "respondBy": "GUARDIAN",
+    "_submittedAt": "2026-10-09T17:40:00+01:00",
+    "calledUp": [
+      {
+        "athleteId": "atl-tomas-ferreira",
+        "status": "CALLED",
+        "isGuest": false,
+        "declineReason": null,
+        "respondedAt": null
+      }
+    ],
+    "_resultado": [
+      2,
+      1
+    ]
+  },
+  {
+    "id": "jogo-j6",
+    "teamId": "team-sub13",
+    "teamName": "Sub-13",
+    "startsAt": "2026-10-17T11:00:00+01:00",
+    "endsAt": "2026-10-17T12:15:00+01:00",
+    "venue": "Campo do Pinhal",
+    "opponent": "Recreativo do Pinhal",
+    "isHome": false,
+    "status": "SCHEDULED",
+    "ourScore": null,
+    "theirScore": null,
+    "roundLabel": "Jornada 6",
+    "meetingPoint": null,
+    "meetingAt": null,
+    "arrivalAt": null,
+    "callUpNotes": null,
+    "confirmationRequired": true,
+    "respondBy": "GUARDIAN",
+    "_submittedAt": "2026-10-15T18:00:00+01:00",
+    "calledUp": [
+      {
+        "athleteId": "atl-tomas-ferreira",
+        "status": "CALLED",
+        "isGuest": false,
+        "declineReason": null,
+        "respondedAt": null
+      }
+    ]
+  },
+  {
+    "id": "jogo-j7",
+    "teamId": "team-sub13",
+    "teamName": "Sub-13",
+    "startsAt": "2026-10-24T15:00:00+01:00",
+    "endsAt": "2026-10-24T16:15:00+01:00",
+    "venue": "Campo 1",
+    "opponent": "Vitória da Lagoa",
+    "isHome": true,
+    "status": "SCHEDULED",
+    "ourScore": null,
+    "theirScore": null,
+    "roundLabel": "Jornada 7",
+    "meetingPoint": null,
+    "meetingAt": null,
+    "arrivalAt": null,
+    "callUpNotes": null,
+    "confirmationRequired": true,
+    "respondBy": "GUARDIAN",
+    "_submittedAt": "2026-10-22T18:00:00+01:00",
+    "calledUp": [
+      {
+        "athleteId": "atl-tomas-ferreira",
+        "status": "CALLED",
+        "isGuest": false,
+        "declineReason": null,
+        "respondedAt": null
+      }
+    ]
+  }
+]

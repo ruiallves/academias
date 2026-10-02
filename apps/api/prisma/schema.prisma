@@ -278,6 +278,10 @@ model Academy {
 
   /// Os movimentos das contas da plataforma que são deste clube.
   platformTransactions PlatformTransaction[]
+
+  /// Certificação FPF — a candidatura de cada época e o que se respondeu à mão.
+  certificationProcesses CertificationProcess[]
+  certificationAnswers   CertificationAnswer[]
 }
 
 /// O ciclo de vida de um cliente. Derivado do onboarding e da subscrição — o
@@ -362,6 +366,9 @@ model Season {
   inventoryAssignments InventoryAssignment[]
 
   financialBudgets FinancialBudget[]
+
+  /// A candidatura à certificação FPF desta época.
+  certificationProcesses CertificationProcess[]
 
   @@unique([academyId, label])
   @@index([academyId])
@@ -903,6 +910,28 @@ enum DominantSide {
   BOTH
 }
 
+/// O sexo com que o atleta está inscrito na federação.
+///
+/// Só dois valores, ao contrário de `MemberSex`: não é como a pessoa se
+/// descreve, é a categoria em que compete — é isso que as federações contam
+/// (a FPF pede "praticantes femininas inscritas" para as 5 estrelas). Fica
+/// vazio enquanto ninguém o indicar: a plataforma não adivinha pelo nome.
+enum AthleteSex {
+  FEMALE
+  MALE
+}
+
+/// Se a equipa é masculina, feminina ou mista.
+///
+/// Opcional de propósito: há modalidades onde a pergunta não se põe, e as
+/// equipas que já existiam não o diziam. `MIXED` é o escalão de formação onde
+/// jogam rapazes e raparigas juntos.
+enum TeamGender {
+  MALE
+  FEMALE
+  MIXED
+}
+
 enum AthleteStatus {
   ACTIVE
   PAUSED
@@ -961,6 +990,8 @@ model Athlete {
   /// Neutro de propósito: serve o pé no futebol e a mão no basquetebol. O rótulo
   /// vem de `Sport.dominantSideLabel`.
   dominantSide DominantSide?
+  /// O sexo com que está inscrito. Ver `AthleteSex`.
+  sex          AthleteSex?
   squadNumber  Int?
 
   /// Ficha médica. Um atleta com a validade expirada não pode competir — é uma
@@ -1073,6 +1104,8 @@ model Team {
   ///
   /// Ver `athleteAge` em `matches.service.ts` para a convenção de idade.
   maxAge Int
+  /// Masculina, feminina ou mista. Vazio enquanto ninguém o indicar. Ver `TeamGender`.
+  gender TeamGender?
 
   /// Horário regular: [{ weekday: 2, start: "17:30", end: "19:00", venue: "Campo 1" }].
   /// As sessões são geradas a partir daqui, mas cada uma vive por si depois de criada.
@@ -6341,4 +6374,85 @@ model LegalAcceptance {
   @@index([userId, documentType])
   @@index([academyId, documentType])
   @@index([documentId])
+}
+
+/**
+ * --------------------------------------------------------------------------
+ */
+/**
+ * Certificação FPF
+ */
+/**
+ * --------------------------------------------------------------------------
+ */
+
+/// A candidatura de um clube à certificação da FPF, numa época.
+///
+/// O manual vive em código (`src/certification/catalogo-*.ts`) e não aqui: muda
+/// todos os anos, e a diferença entre dois manuais lê-se melhor num diff do que
+/// em linhas de uma tabela. `catalogKey` diz por qual manual esta candidatura
+/// se avalia.
+///
+/// O nível, os pontos e o estado de cada requisito **não se guardam**. São
+/// calculados a cada leitura a partir dos dados do clube e das respostas de
+/// baixo, como a carga de um treino: guardá-los era ter a mesma verdade escrita
+/// duas vezes, e a segunda fica velha no dia em que alguém inscreve um atleta.
+model CertificationProcess {
+  id        String  @id @default(cuid())
+  academyId String
+  academy   Academy @relation(fields: [academyId], references: [id], onDelete: Cascade)
+  seasonId  String
+  season    Season  @relation(fields: [seasonId], references: [id], onDelete: Cascade)
+
+  /// `fpf-f11m-2026`. Futsal e feminino entram como chaves novas.
+  catalogKey String
+
+  /// O perfil da candidatura: o que liga e desliga grupos de questões (equipa
+  /// sénior, recrutamento, praticantes deslocados, não-nacionais) e o que a
+  /// plataforma não consegue saber sozinha sobre o acesso (equipas femininas,
+  /// provas nacionais, concelho de baixa densidade). Ver `Perfil` em
+  /// `src/certification/motor.ts`.
+  profile Json @default("{}")
+
+  answers CertificationAnswer[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([academyId, seasonId, catalogKey])
+  @@index([academyId])
+}
+
+/// O que uma pessoa respondeu a um requisito.
+///
+/// Só existe linha quando alguém decidiu: uma declaração assinada, um documento
+/// que o clube diz ter, o nível escolhido numa questão por patamares. Um
+/// requisito que a plataforma calcula não tem linha nenhuma — e quando tem, a
+/// resposta ganha ao cálculo, porque o clube pode ter o dossier noutro sítio.
+/// Apagar a linha devolve o requisito ao cálculo.
+model CertificationAnswer {
+  id        String               @id @default(cuid())
+  academyId String
+  academy   Academy              @relation(fields: [academyId], references: [id], onDelete: Cascade)
+  processId String
+  process   CertificationProcess @relation(fields: [processId], references: [id], onDelete: Cascade)
+
+  /// O código do requisito no catálogo: `5.2.1`, `D03`.
+  code String
+
+  /// `1` cumprido, `0` em falta. Nas questões por patamares é o índice do
+  /// patamar atingido, e `-1` nenhum.
+  value Int
+  note  String?
+
+  /// Quem respondeu por último, fotografado. Sem chave estrangeira: a resposta
+  /// é do clube e tem de sobreviver a quem saiu.
+  answeredById   String?
+  answeredByName String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([processId, code])
+  @@index([academyId])
 }

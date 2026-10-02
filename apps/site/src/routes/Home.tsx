@@ -1,31 +1,26 @@
-import { Campo, Hero, Realidade } from "@/sections/top";
-import { Pagamentos, Tour } from "@/sections/product";
-import { Fecho, Seguranca } from "@/sections/trust";
-import { Precos } from "@/sections/Precos";
+import { AppDoClube, Ciclo, Clubes, Consola, Fecho, Ferramentas, Heroi, Numeros } from "@/seccoes/home";
+import { Precos } from "@/seccoes/Precos";
 
 /**
- * A página.
+ * A página inicial.
  *
- * Sete andamentos, cada um com a sua respiração — não doze secções com a mesma
- * estrutura. O herói mostra o produto antes de qualquer argumento; a seguir,
- * quatro linhas com o clube tal como ele é hoje, que é a única coisa que quem
- * chega já reconhece; o tour condensa o produto num sítio só; pagamentos e
- * segurança fecham as duas objecções reais; a nota assume que isto é novo — que
- * é o que uma página sem clientes tem de fazer em vez de fingir escala — e o
- * preço vem no fim, quando já se sabe o que se está a comprar.
+ * Mostra o produto a funcionar, secção a secção: o que é, quem já o usa, a app
+ * no telemóvel das famílias, a consola de quem trabalha no clube, como tudo se
+ * liga, os números e os planos.
  *
- * O que saiu daqui não desapareceu: o inventário completo vive em /software,
- * as perguntas em /planos. A homepage vende a vista, não o manual.
+ * Nas duas secções do meio o aparelho fica preso ao ecrã e o scroll percorre o
+ * produto. O inventário completo vive em /produto.
  */
 export default function Home() {
   return (
     <>
-      <Hero />
-      <Realidade />
-      <Campo />
-      <Tour />
-      <Pagamentos />
-      <Seguranca />
+      <Heroi />
+      <Clubes />
+      <AppDoClube />
+      <Consola />
+      <Ciclo />
+      <Ferramentas />
+      <Numeros />
       <Precos />
       <Fecho />
     </>

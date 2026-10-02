@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 72" width="256" height="288">
+  <!-- CD Academias, o clube inventado para o site. Escudo índigo, o A sem travessão, a bola no lugar dele. -->
+  <path d="M4 3h56v36c0 15-12 25-28 30C16 64 4 54 4 39Z" fill="#3B2CF0"/>
+  <path d="M4 3h56v36c0 15-12 25-28 30C16 64 4 54 4 39Z" fill="none" stroke="#100D26" stroke-width="3" stroke-linejoin="round"/>
+  <path d="M32 13 51 53H41.5L32 31.5 22.5 53H13Z" fill="#F5F5F8"/>
+  <circle cx="32" cy="49.5" r="5.5" fill="#D4F93D"/>
+</svg>

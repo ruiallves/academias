@@ -27,11 +27,12 @@ import {
   Sparkle,
   Activity,
   Target,
+  Award,
   type LucideIcon,
 } from "@/lib/icons";
 import type { Permission, Session } from "@/lib/permissions";
 import { permissionsOf } from "@/lib/permissions";
-import { profileOf, profiledSports, sportPath } from "@/lib/sports";
+import { hasDiscipline, profileOf, profiledSports, sportPath, type SportCode } from "@/lib/sports";
 
 /**
  * A navegação, como catálogo.
@@ -82,6 +83,15 @@ export type NavItem = {
    * Basquetebol. Um clube só de natação não vê nenhum. Ver `navFor`.
    */
   dynamic?: "sports";
+  /**
+   * Só para clubes com esta disciplina.
+   *
+   * A Certificação FPF é de futebol: um clube de natação não tem candidatura
+   * nenhuma, e um menu que abre uma página a dizer "isto não é para ti" é um
+   * menu a mais. No editor de cargos o item aparece sempre, como `sports` — o
+   * cargo decide se o mostra, e a modalidade decide se existe.
+   */
+  discipline?: SportCode;
 };
 
 export type NavGroup = {
@@ -277,6 +287,20 @@ export const NAV_CATALOG: NavGroup[] = [
         maior do que é, e quem entra na consola não vem para aqui todos os dias.
       */
       { key: "inventory", label: "Inventário", to: "/inventario", icon: Boxes, requires: "inventory:read" },
+      /*
+        A certificação da FPF, em Gestão: é trabalho de direção, feito uma vez
+        por época e acompanhado ao longo dela — da família das contas e do
+        inventário, não do dia de treino.
+      */
+      {
+        key: "certification",
+        label: "Certificação FPF",
+        to: "/certificacao",
+        icon: Award,
+        requires: "certification:read",
+        discipline: "football",
+        beta: true,
+      },
     ],
   },
   {
@@ -360,6 +384,7 @@ export function navFor(session: Session): NavGroup[] {
     ...group,
     items: group.items
       .filter((i) => perms.has(i.requires) && (!chosen || chosen.has(i.key)))
+      .filter((i) => !i.discipline || hasDiscipline(i.discipline))
       .flatMap((i) => (i.dynamic === "sports" ? sportItems(i) : [i])),
   })).filter((group) => group.items.length > 0);
 }

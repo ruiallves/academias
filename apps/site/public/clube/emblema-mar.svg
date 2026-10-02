@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 72 72" width="288" height="288">
+  <!-- União do Mar, clube inventado para as capturas da troca de clube. Emblema redondo coral, três ondas e a bola. -->
+  <circle cx="36" cy="36" r="32" fill="#E4572E"/>
+  <circle cx="36" cy="36" r="32" fill="none" stroke="#3A1408" stroke-width="3"/>
+  <circle cx="36" cy="36" r="25.5" fill="none" stroke="#FFF4EC" stroke-width="1.5" opacity=".7"/>
+  <circle cx="36" cy="24" r="7" fill="#FFF4EC"/>
+  <path d="M15 39c3.5-3.5 7-3.5 10.500 0s7 3.500 10.500 0 7-3.500 10.500 0 7 3.500 10.500 0" fill="none" stroke="#FFF4EC" stroke-width="3.2" stroke-linecap="round"/>
+  <path d="M18 47c3-3 6-3 9 0s6 3 9 0 6-3 9 0 6 3 9 0" fill="none" stroke="#FFF4EC" stroke-width="3.2" stroke-linecap="round"/>
+  <path d="M24 55c2-2 4-2 6 0s4 2 6 0 4-2 6 0 4 2 6 0" fill="none" stroke="#FFF4EC" stroke-width="3.2" stroke-linecap="round"/>
+</svg>

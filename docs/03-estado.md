@@ -4303,3 +4303,109 @@ que ainda não saiu (sem `sentAt`, dia futuro) apaga a linha e o ganho, e a
 varredura volta a mandá-lo no dia certo. Testado por
 `scripts/test-contactos-e-mensalidades.mjs` (25) e, na varredura,
 `test-avisos-de-subscricao.mjs` (42), com a API de teste **sem** `MAIL_API_KEY`.
+
+## Certificação FPF
+
+Menu novo em Gestão (`/certificacao`), só para clubes com uma modalidade de
+futebol (`NavItem.discipline`), com as permissões `certification:read` (direção
+e coordenação) e `certification:write` (direção). Responde a três perguntas: em
+que nível o clube está, o que o trava, e o que falta para a estrela seguinte.
+
+**Como a FPF decide, e como o motor o repete.** Três verificações, e o nível é
+a mais baixa: o **acesso** (equipas por escalão, 11 atletas de Sub-13 para cima
+e 7 abaixo), as **obrigatórias** (cumulativas por patamar: 38 desde o CBFF, mais
+21 para as escolas, mais 24 para as 3 estrelas, mais 15 para as 4 e 5) e os
+**pontos** (100 em 9 critérios; 50 abre as 3 estrelas, 80 as 4, 90 as 5). O
+fluxograma da página 31 do manual é a função `avaliar` em
+`apps/api/src/certification/motor.ts`, pura e sem base de dados.
+
+**O manual é código.** `catalogo-fpf-f11m-2026.ts` tem os 195 requisitos do
+manual de futebol masculino de 2026/27, com código, pontos, patamar obrigatório
+e condição. Um manual novo é um ficheiro novo; futsal e feminino entram da mesma
+maneira. O que ficou por confirmar com a associação está escrito no topo desse
+ficheiro (o subcritério 3.3 não soma o que o índice diz, e os pontos das
+questões que não se aplicam nem sempre têm destino).
+
+**Nada do resultado se guarda.** Só há duas tabelas: `CertificationProcess`
+(a candidatura da época e o perfil) e `CertificationAnswer` (o que alguém
+respondeu). O nível, os pontos e o estado de cada requisito calculam-se a cada
+leitura: no dia em que um treinador planeia a semana, o nível muda sozinho.
+
+**O que a plataforma responde sozinha.** `regras.ts` tem uma regra por
+requisito que os dados conseguem provar, hoje 16: a pirâmide de praticantes, o
+dossier de treino (planos, ciclos, objetivos, material), convocatórias e
+relatórios de jogo, avaliações publicadas, boletim clínico, exames médicos,
+planos de nutrição, notas da escola, o Scouting como aplicação de recrutamento
+e o rácio de treinadores por equipa. Cada regra devolve o valor **e a frase com
+os números**. O resto responde-se à mão, e uma resposta do clube ganha sempre ao
+cálculo (apagá-la devolve o requisito ao cálculo). `QUASE_TODOS` (80%) é uma
+folga nossa, não da FPF, e está dita na frase de cada regra.
+
+**O perfil da candidatura** liga e desliga grupos de questões (equipa sénior,
+recrutamento, praticantes deslocados, não-nacionais) e guarda o que a
+plataforma não sabe sobre o acesso: que equipas são femininas, provas nacionais,
+ilhas e baixa densidade. Sem perfil confirmado mostra-se uma proposta, e a
+página pede para o confirmar.
+
+**O ecrã.** Três separadores. O **Resumo** tem só duas coisas: o topo (o arco
+dos pontos, as estrelas, o nível e três linhas com visto ou cruz a dizer o que o
+nível seguinte pede: equipas, obrigatórios e pontos) e a lista do que falta, com
+seis obrigatórios no máximo e uma linha para o resto. Os **Critérios** e os
+**Requisitos** têm separador próprio, e os escalões vivem no perfil da
+candidatura. A primeira versão tinha um mostrador escuro com três colunas de
+blocos e cinco painéis por baixo: o fundador achou-a confusa, com informação a
+mais e uma superfície que não existe no resto da consola. Não voltar a pôr
+tudo na mesma página nem superfícies escuras. A página não faz contas: cada
+escrita devolve o resumo inteiro recalculado.
+
+**Requisitos por nível.** O separador Requisitos filtra pelos obrigatórios de
+cada nível (CBFF e as cinco estrelas), com tudo o que o nível pede ou só o que
+acrescenta ao anterior. Com um nível escolhido, "em falta" quer dizer em falta
+para esse nível: um médico na coordenação clínica cumpre as 3 estrelas e falha
+as 4. O servidor manda `levels` em cada requisito (os patamares em que é
+obrigatório e se cada um está cumprido), para a consola não refazer contas.
+
+**O futebol feminino não se pergunta.** As equipas femininas e as praticantes
+femininas marcavam-se no perfil, à mão. Passaram a sair de `Team.gender` e de
+`Athlete.sex` (ver *Género das equipas e sexo dos atletas*): uma equipa
+feminina é a que tem `FEMALE`, e uma praticante é quem tem o sexo indicado como
+feminino ou está numa equipa feminina, nos escalões de formação. As equipas
+mistas e as sem género contam no masculino, que é onde as raparigas dos escalões
+mais novos estão inscritas.
+
+**Fica para depois**: o cofre de documentos e qualificações do staff (46
+requisitos dependem dele), os documentos do clube com capítulos ligados a
+requisitos, instalações, formações, a decisão do avaliador por questão e a
+exportação do dossier.
+
+Teste: `npm run test:certificacao` (131 verificações, sem base de dados: o
+catálogo, o motor, as regras, e o serviço verdadeiro sobre um clube de mentira
+em `scripts/certificacao-mundo.ts`). A migração `20261002200000_certificacao_fpf`
+cria as tabelas e distribui as permissões pelos cargos que já existem.
+
+## Género das equipas e sexo dos atletas
+
+A plataforma não distinguia equipas masculinas de femininas, nem atletas de
+atletas. A Certificação FPF foi o que o tornou preciso, mas o dado é das
+equipas e das fichas, e não da certificação.
+
+- `Team.gender` (`MALE`, `FEMALE`, `MIXED`) e `Athlete.sex` (`FEMALE`, `MALE`),
+  os dois **opcionais**. Há modalidades onde a pergunta não se põe, e o que já
+  existia não o dizia: vazio lê-se "por indicar", nunca um valor suposto.
+- O sexo do atleta é como está inscrito na federação, e por isso tem dois
+  valores e não os três de `MemberSex` (que é como o sócio se descreve).
+- **O nome serve de rede**: uma equipa criada sem escolher género fica com o que
+  o nome disser ("Sub-15 Feminino"), pela regra de `generoPeloNome` em
+  `teams.dto.ts`. A migração `20261002210000_genero_de_equipas_e_atletas`
+  aplicou a mesma regra às equipas que já existiam. O sexo dos atletas nunca se
+  adivinha.
+- A viragem de época copia o género com a equipa, e ao propor subidas quem vem
+  de uma equipa feminina sobe para uma feminina (`sugerirEscalao`).
+- Na consola: os diálogos de criar e editar equipa, a inscrição e a edição do
+  atleta, a coluna "Sexo" na importação e na exportação de atletas, e o género
+  ao lado do escalão na lista e na página da equipa. Rótulos em `lib/genero.ts`.
+
+O sexo aparece na ficha do atleta e no PDF do perfil quando está indicado. A
+família não inscreve atletas (liga-se a uma ficha que o clube criou, pelo NIF e
+pela data de nascimento), por isso não há registo na app onde o pedir: quem o
+indica é o clube, à mão ou pela folha de importação.

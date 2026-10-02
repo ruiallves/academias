@@ -72,7 +72,19 @@ export function Dialog({
 
         {children}
 
-        {footer && <footer className="sticky bottom-0 flex items-center justify-end gap-2 border-t border-line bg-surface px-5 py-3">{footer}</footer>}
+        {/*
+          No telemóvel a folha vai até ao fundo do ecrã, e o fundo do ecrã não é
+          todo nosso: no iPhone é a barra de gestos, no Android a de navegação.
+          Os botões ficavam a doze píxeis da borda, por baixo dessa barra — viam-se
+          mal e o toque ia para o sistema em vez de ir para o "Guardar". O rodapé
+          guarda agora a margem que o aparelho pede (`safe-area-inset-bottom`), e
+          os botões crescem para o tamanho de um dedo.
+        */}
+        {footer && (
+          <footer className="sticky bottom-0 z-10 flex flex-wrap items-center justify-end gap-2 border-t border-line bg-surface px-5 py-3 max-md:pb-[calc(14px+env(safe-area-inset-bottom))] max-md:[&>span]:basis-full max-md:[&_button]:h-10 max-md:[&_button]:flex-1 max-md:[&_button]:justify-center max-md:[&_button]:px-4">
+            {footer}
+          </footer>
+        )}
       </div>
     </div>
   );

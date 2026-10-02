@@ -1,0 +1,29 @@
+{
+  "cd-academias": {
+    "id": "acad-cd-academias",
+    "slug": "cd-academias",
+    "name": "Clube Desportivo Academias",
+    "shortName": "CD Academias",
+    "signalColor": "#3B2CF0",
+    "city": "Vila Nova",
+    "emblema": "emblema.svg"
+  },
+  "atletico-da-serra": {
+    "id": "acad-atletico-da-serra",
+    "slug": "atletico-da-serra",
+    "name": "Atlético da Serra",
+    "shortName": "Atlético da Serra",
+    "signalColor": "#1F6B4F",
+    "city": "Serra Alta",
+    "emblema": "emblema-serra.svg"
+  },
+  "uniao-do-mar": {
+    "id": "acad-uniao-do-mar",
+    "slug": "uniao-do-mar",
+    "name": "União do Mar",
+    "shortName": "União do Mar",
+    "signalColor": "#E4572E",
+    "city": "Praia Nova",
+    "emblema": "emblema-mar.svg"
+  }
+}

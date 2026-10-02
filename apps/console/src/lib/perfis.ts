@@ -9,6 +9,7 @@ import {
 } from "@/lib/api";
 import { AVAILABILITY_LABEL, availabilityOf, clinicalOf, IMPACT_LABEL, KIND_LABEL } from "@/lib/clinical";
 import { dominantSideLabel, summariseSeason, type AthleteMatch } from "@/lib/athlete";
+import { ATHLETE_SEX_LABEL } from "@/lib/genero";
 import { coachActivity, departamentoDe, matchRecord, teamHistory } from "@/lib/staff";
 import { DOC_LABEL, SEX_LABEL, STATUS_LABEL, listMemberFees, type MemberDetail } from "@/lib/members";
 import { money, percent, periodLabel, shortDate } from "@/lib/format";
@@ -144,6 +145,7 @@ export async function exportarFichaDeAtleta(athlete: Athlete, session: Session, 
     tipo: "factos",
     titulo: "Ficha física",
     pares: [
+      ["Sexo", athlete.sex ? ATHLETE_SEX_LABEL[athlete.sex] : null],
       ["Altura", athlete.heightCm ? `${athlete.heightCm} cm` : null],
       ["Peso", athlete.weightKg ? `${String(athlete.weightKg).replace(".", ",")} kg` : null],
       [dominantSideLabel(athlete.id) ?? "Lado dominante", ladoEmPortugues(athlete.dominantSide)],

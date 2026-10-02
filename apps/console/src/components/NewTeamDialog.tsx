@@ -7,6 +7,8 @@ import { reloadAcademy, seasons as knownSeasons } from "@/lib/store";
 import { useActiveCatalog } from "@/lib/catalogs";
 import { defaultSeason, seasonOptions } from "@/lib/seasons";
 import { SEM_LIMITE, teamAgeLabel } from "@/lib/team-age";
+import { TEAM_GENDERS, TEAM_GENDER_LABEL } from "@/lib/genero";
+import type { TeamGender } from "@/data/types";
 import { profileOf } from "@/lib/sports";
 import { Plus, Trash2 } from "@/lib/icons";
 import { CompetitionPicker } from "@/components/CompetitionPicker";
@@ -75,6 +77,7 @@ export function NewTeamDialog({ onClose }: { onClose: () => void }) {
   const sport = academy.sports.find((s) => s.id === sportId);
   const minutosSugeridos = profileOf(sport)?.defaults.matchMinutes ?? sport?.matchMinutes ?? null;
   const minutosOk = minutos === "" || (/^\d{1,3}$/.test(minutos) && Number(minutos) >= 1 && Number(minutos) <= 300);
+  const [gender, setGender] = useState<"" | TeamGender>("");
   const maxAge = Number(age);
   const ageOk = /^\d{1,2}$/.test(age) && maxAge >= 4 && maxAge <= SEM_LIMITE;
   const suggested = ageOk && sport ? `${teamAgeLabel(maxAge)} ${sport.name}` : "";
@@ -92,6 +95,8 @@ export function NewTeamDialog({ onClose }: { onClose: () => void }) {
         name: name.trim() || suggested,
         sportId,
         maxAge,
+        // Sem escolha, o servidor lê o género do nome ("Sub-15 Feminino").
+        ...(gender ? { gender } : {}),
         season: season.trim(),
         ...(coachId ? { coachId } : {}),
         ...(competitionIds.length ? { competitionIds } : {}),
@@ -177,6 +182,17 @@ export function NewTeamDialog({ onClose }: { onClose: () => void }) {
             Entram atletas até aos {maxAge} anos. É esta idade que decide quem pode ser convocado de outra equipa.
           </p>
         )}
+
+        <DialogField label="Género" hint="opcional">
+          <select value={gender} onChange={(e) => setGender(e.target.value as "" | TeamGender)} className={dialogInputClass}>
+            <option value="">Por indicar</option>
+            {TEAM_GENDERS.map((g) => (
+              <option key={g} value={g}>
+                {TEAM_GENDER_LABEL[g]}
+              </option>
+            ))}
+          </select>
+        </DialogField>
 
         <div className="grid grid-cols-2 gap-3">
           <DialogField label="Nome" hint="opcional">

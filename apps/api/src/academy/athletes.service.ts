@@ -1,6 +1,6 @@
 import { BadRequestException, ConflictException, ForbiddenException, Injectable, Logger, NotFoundException } from "@nestjs/common";
 import { DOCUMENT_BUCKET, pastaDoAtleta } from "./ficha-do-atleta";
-import type { AthleteStatus, DominantSide, Prisma } from "@prisma/client";
+import type { AthleteSex, AthleteStatus, DominantSide, Prisma } from "@prisma/client";
 import { PrismaService, type ScopedClient } from "../prisma/prisma.service";
 import { StorageService } from "../storage/storage.service";
 import { PHOTO_BUCKET } from "../storage/photos.service";
@@ -138,7 +138,7 @@ export class AthletesService {
         where: { id },
         select: {
           id: true, name: true, email: true, birthdate: true, taxId: true, idDocLabel: true, idDocNumber: true, status: true,
-          medicalValidUntil: true, heightCm: true, weightKg: true, dominantSide: true, squadNumber: true,
+          medicalValidUntil: true, heightCm: true, weightKg: true, dominantSide: true, sex: true, squadNumber: true,
           teams: {
             where: { leftAt: null },
             select: { id: true, teamId: true, position: true, squadNumber: true, team: { select: { name: true } } },
@@ -199,6 +199,7 @@ export class AthletesService {
       if (dto.heightCm !== undefined) data.heightCm = dto.heightCm;
       if (dto.weightDg !== undefined) data.weightKg = dto.weightDg / 10;
       if (dto.dominantSide !== undefined) data.dominantSide = dto.dominantSide as DominantSide;
+      if (dto.sex !== undefined) data.sex = dto.sex as AthleteSex;
 
       /*
        * As equipas — cada uma com o seu número e a sua posição.
@@ -669,7 +670,7 @@ export class AthletesService {
         select: {
           id: true, name: true, birthdate: true, taxId: true, idDocLabel: true, idDocNumber: true, email: true,
           medicalValidUntil: true, heightCm: true, weightKg: true,
-          dominantSide: true, squadNumber: true,
+          dominantSide: true, sex: true, squadNumber: true,
           teams: { where: { leftAt: null }, select: { teamId: true, squadNumber: true, position: true }, orderBy: ORDEM_DAS_PASSAGENS },
         },
       });
@@ -838,6 +839,7 @@ export class AthletesService {
             heightCm: dto.heightCm ?? null,
             weightKg: dto.weightDg == null ? null : (dto.weightDg / 10),
             dominantSide: (dto.dominantSide as DominantSide) ?? null,
+            sex: (dto.sex as AthleteSex) ?? null,
             squadNumber: equipasDaLinha[0].squadNumber,
             teams: [...equipasDaLinha],
           };
@@ -963,6 +965,7 @@ export class AthletesService {
         ...(dto.heightCm !== undefined ? { heightCm: dto.heightCm } : {}),
         ...(dto.weightDg !== undefined ? { weightKg: dto.weightDg / 10 } : {}),
         ...(dto.dominantSide !== undefined ? { dominantSide: dto.dominantSide as DominantSide } : {}),
+        ...(dto.sex !== undefined ? { sex: dto.sex as AthleteSex } : {}),
       },
     });
 
@@ -1078,6 +1081,7 @@ export class AthletesService {
       ...(dto.heightCm != null ? { heightCm: dto.heightCm } : {}),
       ...(dto.weightDg != null ? { weightKg: dto.weightDg / 10 } : {}),
       ...(dto.dominantSide ? { dominantSide: dto.dominantSide as DominantSide } : {}),
+      ...(dto.sex ? { sex: dto.sex as AthleteSex } : {}),
       // O número da equipa principal, para quem ainda lê esta coluna.
       ...(equipas[0].squadNumber != null ? { squadNumber: equipas[0].squadNumber } : {}),
       teams: {
@@ -1163,6 +1167,7 @@ type AtletaNoPlantel = {
   /** Aceita o `Decimal` da base e o número que a folha acabou de escrever — ver `mudancasDoAtleta`. */
   weightKg: { toString(): string } | number | null;
   dominantSide: DominantSide | null;
+  sex: AthleteSex | null;
   squadNumber: number | null;
   /** As equipas vivas, a principal primeiro, cada uma com o seu número e posição. */
   teams: { teamId: string; squadNumber: number | null; position: string | null }[];
@@ -1203,6 +1208,7 @@ function mudancasDoAtleta(
   if (dto.heightCm !== undefined && actual.heightCm !== dto.heightCm) mudam.push("altura");
   if (dto.weightDg !== undefined && Number(actual.weightKg ?? 0) * 10 !== dto.weightDg) mudam.push("peso");
   if (dto.dominantSide !== undefined && actual.dominantSide !== dto.dominantSide) mudam.push("lado dominante");
+  if (dto.sex !== undefined && actual.sex !== dto.sex) mudam.push("sexo");
 
   /*
    * O número e a posição são de cada equipa. Numa equipa nova, entrar já diz

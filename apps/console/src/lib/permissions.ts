@@ -166,6 +166,13 @@ export type Permission =
    * cargo, não pessoa a pessoa — ver `ADMIN_AREAS` no cliente.
    */
   | "legal:club"
+  /**
+   * Certificação FPF — o nível do clube, os requisitos do manual e as respostas
+   * dadas à mão. Gémea do servidor: `read` para presidência, direção e
+   * coordenação; `write` para presidência e direção, que assinam as
+   * declarações de compromisso em nome do clube.
+   */
+  | "certification:read" | "certification:write"
   | "clinical:write";
 
 export type Role =
@@ -202,6 +209,7 @@ const READ_ALL: Permission[] = [
   "inventory:read",
   "finance:read",
   "ai:read",
+  "certification:read",
 ];
 
 const WRITE_ALL: Permission[] = [
@@ -230,6 +238,8 @@ const WRITE_ALL: Permission[] = [
   "inventory:write",
   "finance:write",
   "ai:write",
+  // Responder à candidatura à FPF. Gémea do servidor.
+  "certification:write",
   // Vincular o clube aos termos: presidência e direção, como `settings:write`.
   "legal:club",
 ];

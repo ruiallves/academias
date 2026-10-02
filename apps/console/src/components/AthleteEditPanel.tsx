@@ -3,6 +3,7 @@ import { apiPatch } from "@/lib/http";
 import { listTeams, sportById, teamById } from "@/lib/api";
 import { reloadAcademy } from "@/lib/store";
 import type { Athlete } from "@/data/types";
+import { ATHLETE_SEXES, ATHLETE_SEX_LABEL } from "@/lib/genero";
 import { mayReadTaxId, type Session } from "@/lib/permissions";
 import { dialogInputClass } from "./Dialog";
 import { Panel, PanelHead, cx } from "./primitives";
@@ -57,6 +58,7 @@ export function AthleteEditPanel({
   const [heightCm, setHeightCm] = useState(athlete.heightCm?.toString() ?? "");
   const [weightKg, setWeightKg] = useState(athlete.weightKg?.toString() ?? "");
   const [dominantSide, setDominantSide] = useState(sideToApi(athlete.dominantSide));
+  const [sex, setSex] = useState<string>(athlete.sex ?? "");
   const [medicalValidUntil, setMedicalValidUntil] = useState(athlete.medicalValidUntil?.slice(0, 10) ?? "");
 
   const [busy, setBusy] = useState(false);
@@ -123,6 +125,7 @@ export function AthleteEditPanel({
         // O servidor guarda décimas de kg, para casar com o `Decimal(4,1)`.
         ...(weightKg ? { weightDg: Math.round(Number(weightKg) * 10) } : {}),
         ...(dominantSide ? { dominantSide } : {}),
+        ...(sex ? { sex } : {}),
         ...(medicalValidUntil ? { medicalValidUntil } : {}),
       });
       await reloadAcademy();
@@ -219,6 +222,19 @@ export function AthleteEditPanel({
                 />
               </Field>
             </div>
+
+            {/* Como está inscrito na federação. Fica "por indicar" até alguém
+                o dizer: a ficha não adivinha pelo nome. */}
+            <Field label="Sexo" hint="como está inscrito na federação">
+              <select value={sex} onChange={(e) => setSex(e.target.value)} className={dialogInputClass}>
+                <option value="">Por indicar</option>
+                {ATHLETE_SEXES.map((s) => (
+                  <option key={s} value={s}>
+                    {ATHLETE_SEX_LABEL[s]}
+                  </option>
+                ))}
+              </select>
+            </Field>
 
             {/* O rótulo vem da modalidade: "Pé dominante" no futebol, "Mão
                 dominante" no basquetebol, e nada na natação. */}

@@ -125,8 +125,8 @@ check("o manifest cobre /consola (scope /)", /scope:\s*"\/"/.test(manifest));
 const nav = ler(path.join(CONSOLA, "components", "AreaSwitch.tsx"));
 check("a consola tem o caminho de volta", nav.includes("irParaApp(") && nav.includes("Mudar de área"));
 check("e devolve o par mais recente à app", ler(path.join(CONSOLA, "lib", "app-contexts.ts")).includes('"academia.family.session"'));
-check("sair da consola sai da app", ler(path.join(CONSOLA, "lib", "session.ts")).includes('removeItem("academia.family.session")'));
-check("sair da app sai da consola", ler(path.join(APP, "lib", "session.ts")).includes('removeItem("academia.session")'));
+check("sair da consola sai da app", ler(path.join(CONSOLA, "lib", "session.ts")).includes('const KEY_DA_APP = "academia.family.session"') && ler(path.join(CONSOLA, "lib", "session.ts")).includes("st.removeItem(KEY_DA_APP)"));
+check("sair da app sai da consola", ler(path.join(APP, "lib", "session.ts")).includes('const KEY_DA_CONSOLA = "academia.session"') && ler(path.join(APP, "lib", "session.ts")).includes("localStorage.removeItem(KEY_DA_CONSOLA)"));
 
 /* ------------------------------------------------------------------------ */
 console.log(`\n${ok} OK, ${bad} falhas`);

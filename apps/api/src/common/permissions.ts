@@ -172,6 +172,20 @@ export type Permission =
    * cargo, não pessoa a pessoa — ver `ADMIN_AREAS` no cliente.
    */
   | "legal:club"
+  /**
+   * Certificação FPF — o nível do clube, os requisitos do manual e as respostas
+   * dadas à mão.
+   *
+   * `read` vê o nível, os três tetos e o que falta; acompanha quem já vê a
+   * operação (presidência, direção e coordenação), porque o coordenador técnico
+   * é uma das pessoas que a FPF chama pelo nome. `write` responde a requisitos
+   * e muda o perfil da candidatura: presidência e direção, que são quem assina
+   * as declarações de compromisso em nome do clube.
+   *
+   * À parte de `settings:write` de propósito: quem prepara a candidatura é
+   * muitas vezes uma pessoa só, e não tem de administrar a academia para isso.
+   */
+  | "certification:read" | "certification:write"
   | "clinical:status" | "clinical:read" | "clinical:write";
 
 const READ_ALL: Permission[] = [
@@ -185,6 +199,7 @@ const READ_ALL: Permission[] = [
   "inventory:read",
   "finance:read",
   "ai:read",
+  "certification:read",
 ];
 
 const WRITE_ALL: Permission[] = [
@@ -207,6 +222,8 @@ const WRITE_ALL: Permission[] = [
   "inventory:write",
   "finance:write",
   "ai:write",
+  // Responder à candidatura e assinar as declarações: presidência e direção.
+  "certification:write",
   // Vincular o clube aos termos: presidência e direção, como `settings:write`.
   "legal:club",
 ];

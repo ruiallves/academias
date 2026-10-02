@@ -1,0 +1,635 @@
+{
+  "con-mensalidades-antes": {
+    "ficheiro": "con-mensalidades-antes.webp",
+    "largura": 1920,
+    "altura": 1080,
+    "escala": 2,
+    "descricao": "Mensalidades de outubro, com a do Tomás Ferreira por pagar",
+    "focos": {
+      "linha-tomas": [
+        277.8,
+        596.4,
+        1600.4,
+        52
+      ],
+      "estado-tomas": [
+        1474.3,
+        596.4,
+        291.9,
+        52
+      ],
+      "total": [
+        680.4,
+        166.5,
+        391.6,
+        122.6
+      ]
+    }
+  },
+  "con-mensalidades-depois": {
+    "ficheiro": "con-mensalidades-depois.webp",
+    "largura": 1920,
+    "altura": 1080,
+    "escala": 2,
+    "descricao": "Mensalidades de outubro, com a do Tomás Ferreira paga por MB WAY pela mãe",
+    "focos": {
+      "linha-tomas": [
+        277.8,
+        596.4,
+        1600.4,
+        52
+      ],
+      "estado-tomas": [
+        1474.3,
+        596.4,
+        291.9,
+        52
+      ],
+      "total": [
+        680.4,
+        166.5,
+        391.6,
+        122.6
+      ]
+    }
+  },
+  "con-visao-geral": {
+    "ficheiro": "con-visao-geral.webp",
+    "largura": 1920,
+    "altura": 1080,
+    "escala": 2,
+    "descricao": "Visão geral da direção na segunda de manhã, com a lista do que precisa de atenção",
+    "focos": {
+      "atencao": [
+        276.8,
+        109,
+        1602.4,
+        351.6
+      ],
+      "linha-mensalidades": [
+        277.8,
+        157.8,
+        1600.4,
+        60.4
+      ],
+      "semana": [
+        276.8,
+        610.3,
+        1602.4,
+        224.5
+      ]
+    }
+  },
+  "con-comunicacao": {
+    "ficheiro": "con-comunicacao.webp",
+    "largura": 1920,
+    "altura": 1080,
+    "escala": 2,
+    "descricao": "Comunicação: o aviso de sexta aos Sub-13, lido por 41 de 46",
+    "focos": {
+      "leitura": [
+        430.8,
+        362.5,
+        1427.4,
+        16.8
+      ],
+      "aviso": [
+        277.8,
+        277.3,
+        1600.4,
+        122.6
+      ]
+    }
+  },
+  "con-presencas-antes": {
+    "ficheiro": "con-presencas-antes.webp",
+    "largura": 1920,
+    "altura": 1080,
+    "escala": 2,
+    "descricao": "Presenças dos Sub-13 na quarta à noite: o treino das 19:00 por registar, com um aviso de falta da família",
+    "focos": {
+      "linha-treino": [
+        521.8,
+        387.5,
+        1356.4,
+        62.4
+      ],
+      "lista": [
+        521.8,
+        387.5,
+        1356.4,
+        62.4
+      ]
+    }
+  },
+  "con-presencas-depois": {
+    "ficheiro": "con-presencas-depois.webp",
+    "largura": 1920,
+    "altura": 1080,
+    "escala": 2,
+    "descricao": "Folha de presenças do treino de quarta dos Sub-13: 14 de 15 presentes, a falta avisada já justificada e um atleta de baixa",
+    "focos": {
+      "linha-tomas": [
+        709,
+        858.6,
+        502,
+        44
+      ],
+      "lista": [
+        701,
+        200.6,
+        518,
+        754
+      ],
+      "contagem": [
+        721,
+        961.6,
+        166.2,
+        16.8
+      ]
+    }
+  },
+  "con-quadro-1": {
+    "ficheiro": "con-quadro-1.webp",
+    "largura": 1920,
+    "altura": 1080,
+    "escala": 2,
+    "descricao": "Editor tático: \"Saída a três e finalização\" em futebol 9, frame 1 de 4",
+    "focos": {
+      "campo": [
+        413.8,
+        293.4,
+        910.3,
+        560
+      ]
+    }
+  },
+  "con-plano-sessao": {
+    "ficheiro": "con-plano-sessao.webp",
+    "largura": 1920,
+    "altura": 1080,
+    "escala": 2,
+    "descricao": "Plano de sessão do treino de quarta dos Sub-13: quatro blocos, 75 minutos",
+    "focos": {
+      "blocos": [
+        814.9,
+        188.5,
+        1064.3,
+        254
+      ],
+      "bloco-saida": [
+        815.9,
+        299.5,
+        1062.3,
+        48
+      ],
+      "carga": [
+        276.8,
+        797.8,
+        526.1,
+        241.5
+      ]
+    }
+  },
+  "con-planeamento": {
+    "ficheiro": "con-planeamento.webp",
+    "largura": 1920,
+    "altura": 1080,
+    "escala": 2,
+    "descricao": "Planeamento dos Sub-13: microciclo de 5 a 11 de outubro, com a carga e os dias MD",
+    "focos": {
+      "carga": [
+        1206,
+        537.9,
+        330.6,
+        122.6
+      ],
+      "objetivos": [
+        520.8,
+        676.5,
+        1358.4,
+        110
+      ],
+      "semana": [
+        521.8,
+        349.3,
+        1356.4,
+        171.7
+      ],
+      "quarta": [
+        916.8,
+        361.3,
+        183.5,
+        147.7
+      ]
+    }
+  },
+  "con-quadro-4": {
+    "ficheiro": "con-quadro-4.webp",
+    "largura": 1920,
+    "altura": 1080,
+    "escala": 2,
+    "descricao": "Editor tático: \"Saída a três e finalização\" em futebol 9, frame 4 de 4",
+    "focos": {
+      "campo": [
+        413.8,
+        293.4,
+        910.3,
+        560
+      ]
+    }
+  },
+  "con-planeamento-meso": {
+    "ficheiro": "con-planeamento-meso.webp",
+    "largura": 1920,
+    "altura": 1080,
+    "escala": 2,
+    "descricao": "Planeamento dos Sub-13: mesociclo Competição I, com a carga semana a semana",
+    "focos": {
+      "carga": [
+        520.8,
+        408,
+        1358.4,
+        372.1
+      ]
+    }
+  },
+  "con-jogo-visao": {
+    "ficheiro": "con-jogo-visao.webp",
+    "largura": 1920,
+    "altura": 1080,
+    "escala": 2,
+    "descricao": "Página do jogo de sábado dos Sub-13 contra a União da Serra (2-1): visão geral",
+    "focos": {
+      "resultado": [
+        975.4,
+        121.8,
+        205.1,
+        172.4
+      ],
+      "onze": [
+        932.4,
+        457,
+        353.6,
+        524.9
+      ],
+      "passos": [
+        438,
+        457,
+        478.4,
+        464
+      ]
+    }
+  },
+  "con-jogo-ficha": {
+    "ficheiro": "con-jogo-ficha.webp",
+    "largura": 1920,
+    "altura": 1080,
+    "escala": 2,
+    "descricao": "Página do jogo de sábado, área Pós-jogo: resultado 2-1 e a ficha preenchida",
+    "focos": {
+      "linha-tomas": [
+        439,
+        939.2,
+        1278,
+        63
+      ],
+      "resultado": [
+        975.4,
+        3.8,
+        205.1,
+        172.4
+      ]
+    }
+  },
+  "con-convocatoria": {
+    "ficheiro": "con-convocatoria.webp",
+    "largura": 1920,
+    "altura": 1080,
+    "escala": 2,
+    "descricao": "Convocatória do jogo de sábado: 16 convocados, 15 confirmados e 1 que não pode",
+    "focos": {
+      "respostas": [
+        569.8,
+        338.3,
+        1308.4,
+        71.6
+      ],
+      "linha-tomas": [
+        569.8,
+        804.5,
+        1308.4,
+        56.4
+      ],
+      "recusa": [
+        589.8,
+        380.1,
+        1268.4,
+        16.8
+      ]
+    }
+  },
+  "con-quadro-2": {
+    "ficheiro": "con-quadro-2.webp",
+    "largura": 1920,
+    "altura": 1080,
+    "escala": 2,
+    "descricao": "Editor tático: \"Saída a três e finalização\" em futebol 9, frame 2 de 4",
+    "focos": {
+      "campo": [
+        413.8,
+        293.4,
+        910.3,
+        560
+      ]
+    }
+  },
+  "con-quadro-3": {
+    "ficheiro": "con-quadro-3.webp",
+    "largura": 1920,
+    "altura": 1080,
+    "escala": 2,
+    "descricao": "Editor tático: \"Saída a três e finalização\" em futebol 9, frame 3 de 4",
+    "focos": {
+      "campo": [
+        413.8,
+        293.4,
+        910.3,
+        560
+      ]
+    }
+  },
+  "con-atleta": {
+    "ficheiro": "con-atleta.webp",
+    "largura": 1920,
+    "altura": 1080,
+    "escala": 2,
+    "descricao": "Ficha do Tomás Ferreira, separador Visão geral",
+    "focos": {
+      "cabecalho": [
+        356.8,
+        52.8,
+        1461.6,
+        69.7
+      ],
+      "ultimos-jogos": [
+        1085,
+        369.9,
+        793.2,
+        216
+      ],
+      "jogo-sabado": [
+        1105,
+        375.9,
+        753.2,
+        41
+      ],
+      "assiduidade": [
+        277.8,
+        852.3,
+        1600.4,
+        127.8
+      ]
+    }
+  },
+  "con-atleta-avaliacoes": {
+    "ficheiro": "con-atleta-avaliacoes.webp",
+    "largura": 1920,
+    "altura": 1080,
+    "escala": 2,
+    "descricao": "Avaliações dos Sub-13 no 1.º período: a do Tomás Ferreira entregue, com 4, 4, 4 e 5",
+    "focos": {
+      "linha-tomas": [
+        277.8,
+        646.1,
+        1600.4,
+        56.9
+      ],
+      "tabela": [
+        277.8,
+        152,
+        1600.4,
+        551
+      ]
+    }
+  },
+  "con-avaliacao": {
+    "ficheiro": "con-avaliacao.webp",
+    "largura": 1920,
+    "altura": 1080,
+    "escala": 2,
+    "descricao": "Avaliação por competências do Tomás Ferreira, 1.º período de 2026/27",
+    "focos": {
+      "avaliacao": [
+        680,
+        147.5,
+        560,
+        784.9
+      ],
+      "competencias": [
+        701,
+        304.9,
+        518,
+        172
+      ]
+    }
+  },
+  "con-clinico": {
+    "ficheiro": "con-clinico.webp",
+    "largura": 1920,
+    "altura": 1080,
+    "escala": 2,
+    "descricao": "Departamento clínico: boletins, com o Salvador Cruz de baixa por entorse",
+    "focos": {
+      "baixa": [
+        277.8,
+        181.3,
+        1600.4,
+        52
+      ],
+      "condicionado": [
+        277.8,
+        233.3,
+        1600.4,
+        52
+      ]
+    }
+  },
+  "con-clinico-consultas": {
+    "ficheiro": "con-clinico-consultas.webp",
+    "largura": 1920,
+    "altura": 1080,
+    "escala": 2,
+    "descricao": "Departamento clínico: consultas e exames marcados para a semana",
+    "focos": {
+      "calendario": [
+        277.8,
+        369.3,
+        1600.4,
+        744
+      ],
+      "consulta-salvador": [
+        741,
+        647.3,
+        215.6,
+        23.8
+      ]
+    }
+  },
+  "con-scouting": {
+    "ficheiro": "con-scouting.webp",
+    "largura": 1920,
+    "altura": 1080,
+    "escala": 2,
+    "descricao": "Scouting: prospetos em observação",
+    "focos": {
+      "lista": [
+        277.8,
+        148.8,
+        1600.4,
+        397.3
+      ],
+      "linha-trial": [
+        277.8,
+        182,
+        1600.4,
+        52
+      ]
+    }
+  },
+  "con-socios": {
+    "ficheiro": "con-socios.webp",
+    "largura": 1920,
+    "altura": 1080,
+    "escala": 2,
+    "descricao": "Sócios: o livro do clube, com as quotas de cada um",
+    "focos": {
+      "linha-carla": [
+        277.8,
+        548.8,
+        1600.4,
+        52
+      ],
+      "quota-carla": [
+        1309.7,
+        566.9,
+        64.2,
+        17.8
+      ]
+    }
+  },
+  "con-inventario": {
+    "ficheiro": "con-inventario.webp",
+    "largura": 1920,
+    "altura": 1080,
+    "escala": 2,
+    "descricao": "Inventário: os artigos do clube, com o stock de cada um",
+    "focos": {
+      "lista": [
+        277.8,
+        212.8,
+        1600.4,
+        657.3
+      ],
+      "stock-baixo": [
+        277.8,
+        662,
+        1600.4,
+        52
+      ],
+      "tamanhos-camisola": [
+        277.8,
+        246,
+        1600.4,
+        52
+      ]
+    }
+  },
+  "con-inventario-painel": {
+    "ficheiro": "con-inventario-painel.webp",
+    "largura": 1920,
+    "altura": 1080,
+    "escala": 2,
+    "descricao": "Inventário: o painel, com o que há a repor e os últimos movimentos",
+    "focos": {
+      "repor": [
+        276.8,
+        228.5,
+        795.2,
+        737.1
+      ],
+      "stock-baixo": [
+        277.8,
+        531.8,
+        793.2,
+        52
+      ],
+      "movimentos": [
+        1084,
+        228.5,
+        795.2,
+        737.1
+      ]
+    }
+  },
+  "con-contas": {
+    "ficheiro": "con-contas.webp",
+    "largura": 1920,
+    "altura": 1080,
+    "escala": 2,
+    "descricao": "Contas do clube: saldo, receitas e despesas dos últimos meses e a previsão",
+    "focos": {
+      "saldo": [
+        277.8,
+        95,
+        1600.4,
+        116.8
+      ],
+      "grafico": [
+        276.8,
+        224.8,
+        927.7,
+        301.6
+      ],
+      "previsao": [
+        1216.5,
+        224.8,
+        662.7,
+        301.6
+      ],
+      "movimentos": [
+        276.8,
+        538.3,
+        526.1,
+        321.8
+      ],
+      "categorias": [
+        1353.1,
+        538.3,
+        526.1,
+        321.8
+      ]
+    }
+  },
+  "con-contas-movimentos": {
+    "ficheiro": "con-contas-movimentos.webp",
+    "largura": 1920,
+    "altura": 1080,
+    "escala": 2,
+    "descricao": "Contas: os movimentos de setembro e outubro",
+    "focos": {
+      "movimentos": [
+        277.8,
+        212.8,
+        1600.4,
+        1177.3
+      ],
+      "mensalidades": [
+        277.8,
+        610,
+        1600.4,
+        52
+      ]
+    }
+  }
+}

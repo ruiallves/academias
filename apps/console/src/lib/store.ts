@@ -116,7 +116,7 @@ type ApiBootstrap = {
 };
 
 type ApiTeam = {
-  id: string; name: string; maxAge: number; sportId: string; season: string;
+  id: string; name: string; maxAge: number; gender?: Team["gender"] | null; sportId: string; season: string;
   schedule: unknown; athleteCount: number;
   coaches: { id: string; name: string; title: string }[];
   /**
@@ -142,7 +142,7 @@ type ApiAthlete = {
   /** O outro documento, para quem não tem NIF. Mesma regra de leitura do NIF. */
   idDocLabel?: string | null;
   idDocNumber?: string | null;
-  heightCm: number | null; weightKg: number | null; dominantSide: string | null; squadNumber: number | null;
+  heightCm: number | null; weightKg: number | null; dominantSide: string | null; sex?: Athlete["sex"] | null; squadNumber: number | null;
   medicalValidUntil: string | null; teamId: string | null; position: string | null;
   /** Todas as equipas, a principal primeiro, cada uma com o seu número e posição. */
   equipas?: { teamId: string; squadNumber: number | null; position: string | null }[];
@@ -855,6 +855,7 @@ function juntar<T extends { id: string }>(atuais: T[], novos: T[]): T[] {
     name: t.name,
     sportId: t.sportId,
     maxAge: t.maxAge,
+    gender: t.gender ?? undefined,
     season: t.season,
     coachIds: t.coaches.map((c) => c.id),
     coaches: t.coaches,
@@ -895,6 +896,7 @@ function juntar<T extends { id: string }>(atuais: T[], novos: T[]): T[] {
     heightCm: a.heightCm ?? undefined,
     weightKg: a.weightKg ?? undefined,
     dominantSide: (a.dominantSide?.toLowerCase() as Athlete["dominantSide"]) ?? undefined,
+    sex: a.sex ?? undefined,
     squadNumber: a.squadNumber ?? undefined,
     /*
      * A baixa clínica, vinda do servidor.

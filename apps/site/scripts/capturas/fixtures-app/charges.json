@@ -1,0 +1,50 @@
+[
+  {
+    "id": "cob-2026-10",
+    "athleteId": "atl-tomas-ferreira",
+    "athleteName": "Tomás Ferreira",
+    "period": "2026-10",
+    "kind": "FEE",
+    "title": null,
+    "category": null,
+    "notes": null,
+    "amountCents": 3500,
+    "dueDate": "2026-10-08T12:00:00+01:00",
+    "status": "OPEN",
+    "overdue": false,
+    "openPayment": null,
+    "_settledAt": "2026-10-05T09:14:30+01:00"
+  },
+  {
+    "id": "cob-2026-09",
+    "athleteId": "atl-tomas-ferreira",
+    "athleteName": "Tomás Ferreira",
+    "period": "2026-09",
+    "kind": "FEE",
+    "title": null,
+    "category": null,
+    "notes": null,
+    "amountCents": 3500,
+    "dueDate": "2026-09-08T12:00:00+01:00",
+    "status": "OPEN",
+    "overdue": false,
+    "openPayment": null,
+    "_settledAt": "2026-09-03T21:40:00+01:00"
+  },
+  {
+    "id": "cob-inscricao-2026",
+    "athleteId": "atl-tomas-ferreira",
+    "athleteName": "Tomás Ferreira",
+    "period": "2026-08",
+    "kind": "EXTRA",
+    "title": "Inscrição 2026/27",
+    "category": "Inscrição",
+    "notes": null,
+    "amountCents": 4500,
+    "dueDate": "2026-08-31T12:00:00+01:00",
+    "status": "OPEN",
+    "overdue": false,
+    "openPayment": null,
+    "_settledAt": "2026-08-26T18:22:00+01:00"
+  }
+]

@@ -1,191 +1,179 @@
 @import "tailwindcss";
+@import "./aparelhos.css" layer(components);
+@import "./seccoes.css" layer(components);
 
 /* ---------------------------------------------------------------------------
    Academias — a marca
    ---------------------------------------------------------------------------
 
-   Este ficheiro é a identidade. Não é o tema do produto (esse vive em
-   `packages/ui`): a consola é uma ferramenta de trabalho, densa e neutra; isto
-   é a casa da marca, e tem de ter opinião.
+   O site fala a língua do produto. O que se vê do produto nesta página são
+   capturas reais da consola e da app, e a página à volta usa o mesmo
+   vocabulário delas: fundo quente, preto, cantos redondos e uma só cor viva.
 
-   ## A direção: a instituição
+   ## As decisões
 
-   Um clube não é uma startup. Tem sede, tem história, tem gerações. O site tem
-   de parecer isso — uma casa com anos — e não uma landing page a tentar
-   converter tráfego. Quatro decisões fazem esse trabalho:
+   1. **Neutros quentes e preto.** A cal do fundo e a areia das secções
+      alternam. O preto faz os títulos, os botões e a secção da consola.
 
-   1. **A serifa.** Fraunces nos títulos, com o itálico como sublinhado. Uma
-      serifa grande, apertada e com opinião é a coisa mais distante que existe
-      da tipografia geométrica de todas as landing pages — e a mais próxima de
-      uma instituição.
+   2. **Uma só cor viva.** Serve para o botão principal, para os realces e
+      para o bloco dos números. Nunca escreve texto.
 
-   2. **O verde é o chão, não o enfeite.** As secções escuras são verde-pinheiro
-      profundo, não preto. É a cor da casa: o campo à noite. O verde de campo
-      (#0f6b62) continua a apontar as acções; o pinheiro dá o ambiente.
+   3. **Formas redondas.** Blocos grandes de cantos redondos, botões em
+      cápsula, a navegação a flutuar. Sem filetes a fazer de caixa.
 
-   3. **O canto.** O logótipo é o arco do pontapé de canto. As superfícies
-      principais repetem-no: um único canto generosamente arredondado — o
-      superior esquerdo — e os outros três discretos. É um motivo que mais
-      ninguém tem, e reconhece-se sem o logótipo à vista.
+   4. **Uma letra.** Mona Sans, pesada e ligeiramente estreita nos títulos,
+      normal no texto. Sem letra de máquina e sem etiquetas em maiúsculas
+      dentro de caixas.
 
-   4. **Composição editorial, não módulos.** Secções que respiram de maneiras
-      diferentes: uma declaração de página inteira, um produto encostado à
-      página, listas com filetes em vez de grelhas de cartões. O ritmo faz-se
-      com luz e escala, não com sombras.
-
-   ## O que não há aqui
-
-   Gradientes de duas cores, vidro fosco, blobs, ícones a decorar conceitos,
-   grelhas de seis cartões iguais. Cada um desses é hoje a assinatura de uma
-   página gerada — e o produto por trás desta página é real.
+   5. **O produto ocupa o ecrã.** A página existe para mostrar a consola e a
+      app a funcionar. O resto sai da frente.
    --------------------------------------------------------------------------- */
 
-/**
- * `max-h-screen-sm:` — o ecrã baixo, disponível como variante.
- *
- * O mesmo limiar do bloco `@media (max-height: 860px)` lá em baixo, para as
- * medidas que vivem no JSX poderem encolher com as que vivem aqui. Declarado
- * uma vez: dois números iguais escritos em sítios diferentes acabam por
- * divergir, e aí a página encolhe metade de si própria.
- */
-@custom-variant max-h-screen-sm (@media (max-height: 860px));
-
 @theme {
-  /* --- Tinta e papel ------------------------------------------------------ */
-  /* O preto tem verde lá dentro; o papel é marfim quente. A mesma família da
-     cor da casa, vista à luz do dia. */
-  --color-ink: #14201c;
-  --color-ink-2: #3c4642;
-  --color-ink-3: #6a746f;
-  --color-ink-4: #9aa39d;
+  --font-sans: "Mona Sans", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+  --ease-saida: cubic-bezier(0.22, 1, 0.36, 1);
+}
 
-  --color-paper: #f6f3ec;
-  --color-paper-2: #edeade;
-  --color-chalk: #fffefb;
-
-  --color-line: #ded8ca;
-  --color-line-2: #c9c2b1;
-
-  /* --- O campo ------------------------------------------------------------ */
-  --color-field: #0f6b62;
-  --color-field-deep: #0a4c45;
-  --color-field-soft: #e4ece7;
-
-  /* --- A casa: o campo à noite ------------------------------------------- */
-  --color-pine: #0e332d;
-  --color-pine-2: #14403a;
-  --color-mint: #8fdcca;
-
-  /* --- Tipografia --------------------------------------------------------- */
-  --font-display: "Fraunces", Georgia, "Times New Roman", serif;
-  --font-sans: "Instrument Sans", ui-sans-serif, system-ui, -apple-system, sans-serif;
-  --font-mono: "Geist Mono", ui-monospace, "SF Mono", monospace;
-
-  /* --- Movimento ---------------------------------------------------------- */
-  --ease-out: cubic-bezier(0.22, 1, 0.36, 1);
+/* As cores mudam com o palco onde se está, e ficam disponíveis como utilitários. */
+@theme inline {
+  --color-fundo: var(--fundo);
+  --color-sup: var(--sup);
+  --color-texto: var(--texto);
+  --color-texto-2: var(--texto-2);
+  --color-texto-3: var(--texto-3);
+  --color-fio: var(--fio);
+  --color-fio-2: var(--fio-2);
+  --color-acento: var(--acento);
+  --color-sobre-acento: var(--sobre-acento);
 }
 
 @layer base {
-  html {
-    -webkit-text-size-adjust: 100%;
-    scroll-behavior: smooth;
+  :root {
+    /* A cor viva. */
+    --acento: #ffe53b;
+    --sobre-acento: #131313;
+
+    --cal: #f5f4f0;
+    --areia: #e9e7df;
+    --tinta: #131313;
+
+    --nav: 64px;
+    --topo: calc(var(--nav) + 24px);
+    --margem: clamp(16px, 3.4vw, 56px);
+    --raio-g: clamp(22px, 2.6vw, 40px);
+    --raio-m: 20px;
   }
 
-  @media (prefers-reduced-motion: reduce) {
-    html { scroll-behavior: auto; }
+  :root,
+  .palco-cal {
+    --fundo: var(--cal);
+    --sup: #ffffff;
+    --texto: var(--tinta);
+    --texto-2: #55554f;
+    --texto-3: #8b8a83;
+    --fio: rgb(19 19 19 / 0.1);
+    --fio-2: rgb(19 19 19 / 0.2);
+    --botao: var(--tinta);
+    --sobre-botao: #ffffff;
+  }
+
+  .palco-areia {
+    --fundo: var(--areia);
+    --sup: #f5f4f0;
+    --texto: var(--tinta);
+    --texto-2: #55554f;
+    --texto-3: #7f7e77;
+    --fio: rgb(19 19 19 / 0.12);
+    --fio-2: rgb(19 19 19 / 0.22);
+    --botao: var(--tinta);
+    --sobre-botao: #ffffff;
+  }
+
+  .palco-noite {
+    --fundo: var(--tinta);
+    --sup: #1f1f1f;
+    --texto: #f5f4f0;
+    --texto-2: #b5b4ac;
+    --texto-3: #85847d;
+    --fio: rgb(255 255 255 / 0.12);
+    --fio-2: rgb(255 255 255 / 0.24);
+    --botao: var(--acento);
+    --sobre-botao: var(--sobre-acento);
+  }
+
+  .palco-acento {
+    --fundo: var(--acento);
+    --sup: rgb(255 255 255 / 0.5);
+    --texto: var(--sobre-acento);
+    --texto-2: rgb(19 19 19 / 0.72);
+    --texto-3: rgb(19 19 19 / 0.55);
+    --fio: rgb(19 19 19 / 0.16);
+    --fio-2: rgb(19 19 19 / 0.3);
+    --botao: var(--tinta);
+    --sobre-botao: #ffffff;
+  }
+
+  html {
+    -webkit-text-size-adjust: 100%;
+    background: var(--cal);
   }
 
   body {
-    background: var(--color-paper);
-    color: var(--color-ink);
+    background: var(--fundo);
+    color: var(--texto);
     font-family: var(--font-sans);
-    font-size: 16px;
-    line-height: 1.55;
+    font-size: 17px;
+    line-height: 1.5;
     -webkit-font-smoothing: antialiased;
     text-rendering: optimizeLegibility;
   }
 
-  /* O grão.
-     -------------------------------------------------------------------------
-     Uma folha de ruído por cima de tudo, a 4% de opacidade. É a diferença
-     entre uma superfície impressa e um rectângulo de cor — e a cor chapada,
-     perfeitamente lisa, é hoje o material de que são feitas as páginas
-     geradas. O ruído é gerado por `feTurbulence` dentro de um `data:` URI:
-     não há ficheiro para carregar, e o padrão nunca se repete à vista.
+  ::selection { background: var(--acento); color: var(--sobre-acento); }
 
-     `overlay` faz o trabalho nos dois ambientes: aclara o papel e escurece o
-     pinheiro, com a mesma folha. */
-  body::after {
-    content: "";
-    position: fixed;
-    inset: 0;
-    z-index: 9999;
-    pointer-events: none;
-    opacity: 0.4;
-    mix-blend-mode: overlay;
-    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.82' numOctaves='4' stitchTiles='stitch'/%3E%3CfeColorMatrix type='saturate' values='0'/%3E%3C/filter%3E%3Crect width='160' height='160' filter='url(%23n)'/%3E%3C/svg%3E");
-  }
-
-  ::selection { background: var(--color-field); color: #fff; }
-
-  /* O foco é visível em toda a parte. Um site que se navega com o teclado é um
-     site que uma pessoa com leitor de ecrã consegue comprar. */
-  :focus-visible { outline: 2px solid var(--color-field); outline-offset: 3px; border-radius: 3px; }
+  :focus-visible { outline: 2px solid var(--texto); outline-offset: 3px; border-radius: 6px; }
 
   button:not(:disabled),
   summary,
   [role="button"] { cursor: pointer; }
-
   button:disabled { cursor: not-allowed; }
 }
 
 @layer components {
-  /* =========================================================================
-     Tipografia de exibição
+  .palco-cal,
+  .palco-areia,
+  .palco-noite,
+  .palco-acento { background: var(--fundo); color: var(--texto); }
 
-     Fraunces com os eixos calados (SOFT 0, WONK 0): institucional, não
-     caprichosa. O itálico é o único ornamento permitido — uma palavra por
-     título, como um sublinhado de caneta.
+  /* =========================================================================
+     Letra
      ========================================================================= */
 
-  .display {
-    font-family: var(--font-display);
-    font-weight: 540;
-    font-variation-settings: "SOFT" 0, "WONK" 0;
-    letter-spacing: -0.022em;
-    line-height: 1.04;
+  .titulo {
+    font-weight: 800;
+    font-stretch: 88%;
+    letter-spacing: -0.035em;
+    line-height: 0.96;
     text-wrap: balance;
   }
 
-  .display em,
-  .display i {
-    font-style: italic;
-    font-weight: 500;
-    letter-spacing: -0.012em;
-  }
+  .t1 { font-size: clamp(3rem, 8.4vw, 8.2rem); line-height: 0.9; letter-spacing: -0.045em; }
+  .t2 { font-size: clamp(2.1rem, 4.6vw, 4.4rem); }
+  .t3 { font-size: clamp(1.5rem, 2.3vw, 2.1rem); line-height: 1.04; letter-spacing: -0.028em; }
+  .t4 { font-size: 1.18rem; line-height: 1.2; letter-spacing: -0.015em; font-weight: 700; font-stretch: 95%; }
 
-  .d1 { font-size: clamp(2.8rem, 6.8vw, 5.4rem); line-height: 1.0; }
-  .d2 { font-size: clamp(2.05rem, 4.3vw, 3.3rem); line-height: 1.06; }
-  .d3 { font-size: clamp(1.55rem, 2.5vw, 2.1rem); line-height: 1.15; }
-
-  /* A entrada de cada secção: versaletes de sans, espaçados, na cor do campo.
-     Curto — é um sinal de orientação, não um título. */
-  .eyebrow {
-    font-size: 12px;
-    font-weight: 650;
-    letter-spacing: 0.16em;
-    text-transform: uppercase;
-    color: var(--color-field);
-  }
-  .dark .eyebrow { color: var(--color-mint); }
+  /* O rótulo pequeno por cima de um título. Sem caixa e sem maiúsculas. */
+  .rotulo { font-size: 0.9rem; font-weight: 650; color: var(--texto-3); letter-spacing: -0.005em; }
 
   .lede {
-    font-size: clamp(1.0625rem, 1.5vw, 1.1875rem);
-    line-height: 1.55;
-    color: var(--color-ink-2);
+    font-size: clamp(1.1rem, 1.5vw, 1.32rem);
+    line-height: 1.42;
+    color: var(--texto-2);
     text-wrap: pretty;
-    max-width: 56ch;
+    max-width: 44ch;
   }
+
+  .corpo { color: var(--texto-2); text-wrap: pretty; max-width: 60ch; }
+  .tabular { font-variant-numeric: tabular-nums; }
 
   /* =========================================================================
      Estrutura
@@ -193,265 +181,144 @@
 
   .wrap {
     width: 100%;
-    max-width: 1180px;
+    max-width: 1360px;
     margin-inline: auto;
-    padding-inline: clamp(20px, 5vw, 48px);
+    padding-inline: var(--margem);
   }
 
-  /* A caixa larga — para o que é uma tabela e não um texto.
-     1180px é a medida de leitura da página: uma coluna de prosa a mais do que
-     isso cansa. Mas os planos não se leem em coluna, comparam-se lado a lado, e
-     três lugares dentro de 1180 deixavam 280px de texto em cada um — as frases
-     partiam-se e a comparação passava a dar trabalho. Aqui a régua é outra: o
-     que a caixa tem de servir é a comparação, não o parágrafo. Alinha com a
-     `.wrap` abaixo dos 1380px, que é onde a diferença deixaria de caber. */
-  .wrap-wide {
-    width: 100%;
-    max-width: 1440px;
-    margin-inline: auto;
-    padding-inline: clamp(20px, 5vw, 48px);
+  .faixa { padding-block: clamp(72px, 10vw, 150px); }
+  .faixa-curta { padding-block: clamp(48px, 6vw, 92px); }
+
+  /* As páginas começam por baixo da navegação, que flutua. */
+  .sob-o-topo { padding-top: calc(var(--topo) + clamp(36px, 6vw, 88px)); }
+
+  .fio-cima { border-top: 1px solid var(--fio); }
+
+  /* O bloco: uma secção de cantos redondos pousada no fundo da página. */
+  .bloco {
+    margin-inline: clamp(8px, 1.2vw, 20px);
+    border-radius: var(--raio-g);
   }
 
-  .band { padding-block: clamp(76px, 11vw, 150px); }
-  .band-tight { padding-block: clamp(52px, 7vw, 96px); }
+  /* =========================================================================
+     Ações
+     ========================================================================= */
 
-  /* A abertura do herói. Aqui e não em utilitários porque tem de encolher com a
-     altura da janela, como tudo o resto — ver a nota do ecrã baixo, abaixo. */
-  .hero-top { padding-top: clamp(52px, 7vw, 96px); }
-  .hero-gap { margin-top: clamp(40px, 6vw, 80px); }
+  .btn {
+    display: inline-flex; align-items: center; justify-content: center; gap: 10px;
+    height: 54px; padding-inline: 28px;
+    border-radius: 999px;
+    font-size: 1.02rem; font-weight: 700; letter-spacing: -0.01em;
+    white-space: nowrap;
+    border: 1.5px solid transparent;
+    transition: background-color 180ms var(--ease-saida), color 180ms var(--ease-saida),
+                border-color 180ms var(--ease-saida), transform 120ms var(--ease-saida);
+  }
+  .btn:active { transform: scale(0.98); }
+  .btn .seta { transition: transform 240ms var(--ease-saida); }
+  .btn:hover .seta { transform: translateX(4px); }
 
-  /* O campo à noite. Chama-se `.dark` por herança — é pinheiro, não preto. */
-  .dark {
-    background: var(--color-pine);
-    color: #f2f6f1;
-    --color-line: #23483f;
-    --color-line-2: #2f5a4f;
-    --color-ink: #f2f6f1;
-    --color-ink-2: #b9cbc2;
-    --color-ink-3: #86a094;
-    --color-ink-4: #648073;
-    --color-chalk: #12403a;
+  .btn-cheio { background: var(--botao); color: var(--sobre-botao); }
+  .btn-cheio:hover { background: var(--acento); color: var(--sobre-acento); }
+  .palco-noite .btn-cheio:hover { background: #ffffff; color: var(--tinta); }
+
+  .btn-acento { background: var(--acento); color: var(--sobre-acento); }
+  .btn-acento:hover { background: var(--texto); color: var(--fundo); }
+
+  .btn-fio { border-color: var(--fio-2); color: var(--texto); }
+  .btn-fio:hover { border-color: var(--texto); }
+
+  .btn-p { height: 42px; padding-inline: 20px; font-size: 0.95rem; }
+
+  .ligacao { color: var(--texto); font-weight: 650; text-decoration: underline; text-decoration-thickness: 1.5px; text-underline-offset: 3px; }
+  .ligacao:hover { text-decoration-color: var(--texto-3); }
+
+  .ligacao-seta { display: inline-flex; align-items: center; gap: 8px; font-weight: 700; color: var(--texto); }
+  .ligacao-seta .seta { transition: transform 240ms var(--ease-saida); }
+  .ligacao-seta:hover .seta { transform: translateX(4px); }
+
+  .etiqueta {
+    display: inline-flex; align-items: center;
+    height: 26px; padding-inline: 11px; border-radius: 999px;
+    font-size: 0.78rem; font-weight: 700;
+    background: var(--fio); color: var(--texto);
+  }
+  .etiqueta-viva { background: var(--acento); color: var(--sobre-acento); }
+  .etiqueta-breve { background: transparent; border: 1.5px dashed var(--fio-2); color: var(--texto-2); }
+
+  /* =========================================================================
+     Navegação: uma cápsula a flutuar
+     ========================================================================= */
+
+  .cabecalho {
+    position: fixed; z-index: 50;
+    top: calc(12px + env(safe-area-inset-top, 0px));
+    left: var(--margem); right: var(--margem);
+    height: var(--nav);
+    padding-inline: 22px 12px;
+    border-radius: 999px;
+    background: rgb(255 255 255 / 0.96);
+    color: var(--tinta);
+    border: 1px solid rgb(19 19 19 / 0.07);
   }
 
-  .rule { border-top: 1px solid var(--color-line); }
+  .menu-cheio { position: fixed; inset: 0; z-index: 49; padding-top: calc(var(--topo) + 20px); }
 
-  /* Um documento legal em leitura. A estrutura vem do `LegalMarkdown`
-     partilhado (packages/ui); a tipografia é a das páginas de texto do site. */
-  .legal-prose { font-size: 15.5px; line-height: 1.65; color: var(--color-ink-2); }
+  /* =========================================================================
+     Formulário
+     ========================================================================= */
+
+  .campo-rotulo { display: block; font-size: 0.86rem; font-weight: 650; color: var(--texto-2); }
+
+  .campo {
+    width: 100%; height: 54px; padding-inline: 18px;
+    background: var(--sup); border: 1.5px solid transparent; border-radius: 16px;
+    font-size: 1.05rem; color: var(--texto);
+    transition: border-color 180ms var(--ease-saida);
+  }
+  .campo::placeholder { color: var(--texto-3); }
+  .campo:focus { outline: none; border-color: var(--texto); }
+  textarea.campo { height: auto; padding-block: 14px; resize: vertical; line-height: 1.5; }
+
+  /* =========================================================================
+     Documentos legais
+     ========================================================================= */
+
+  .legal-prose { font-size: 1rem; line-height: 1.65; color: var(--texto-2); }
   .legal-prose h2 {
-    margin-top: 2.25rem; padding-top: 2rem; border-top: 1px solid var(--color-line);
-    font-size: 19px; font-weight: 600; letter-spacing: -0.02em; color: var(--color-ink);
-    scroll-margin-top: 6rem;
+    margin-top: 2.25rem; padding-top: 2rem; border-top: 1px solid var(--fio);
+    font-size: 1.35rem; font-weight: 750; letter-spacing: -0.02em; color: var(--texto);
+    scroll-margin-top: calc(var(--topo) + 24px);
   }
   .legal-prose h2:first-child { margin-top: 0; padding-top: 0; border-top: 0; }
-  .legal-prose h3 { margin-top: 1.5rem; font-size: 16px; font-weight: 600; color: var(--color-ink); scroll-margin-top: 6rem; }
+  .legal-prose h3 { margin-top: 1.5rem; font-size: 1.05rem; font-weight: 700; color: var(--texto); scroll-margin-top: calc(var(--topo) + 24px); }
   .legal-prose p { margin-top: 0.75rem; }
   .legal-prose ul, .legal-prose ol { margin-top: 0.75rem; padding-left: 1.4rem; }
   .legal-prose ul { list-style: disc; }
   .legal-prose ol { list-style: decimal; }
   .legal-prose li + li { margin-top: 0.4rem; }
-  .legal-prose strong { font-weight: 600; color: var(--color-ink); }
-  .legal-prose a { color: var(--color-ink); text-decoration: underline; text-underline-offset: 2px; }
-
-  /* O canto — o arco do pontapé de canto, feito superfície. Um canto grande,
-     três discretos. É a assinatura geométrica da marca. */
-  .canto { border-radius: clamp(20px, 3vw, 36px) 8px 8px 8px; }
-  .canto-sm { border-radius: 18px 6px 6px 6px; }
+  .legal-prose strong { font-weight: 700; color: var(--texto); }
+  .legal-prose a { color: var(--texto); text-decoration: underline; text-underline-offset: 2px; }
 
   /* =========================================================================
-     Acções
-
-     Um botão firme, com a seta a fazer o trabalho do hover: desloca-se dois
-     pixéis e mais nada. A acção secundária é uma ligação com seta — não um
-     segundo botão a competir.
+     Perguntas
      ========================================================================= */
 
-  .btn {
-    display: inline-flex; align-items: center; justify-content: center; gap: 10px;
-    cursor: pointer;
-    height: 50px; padding-inline: 26px;
-    border-radius: 8px;
-    font-size: 15px; font-weight: 600; letter-spacing: -0.01em;
-    white-space: nowrap;
-    transition: background-color 160ms var(--ease-out), color 160ms var(--ease-out),
-                border-color 160ms var(--ease-out), transform 90ms var(--ease-out);
+  .pergunta { border-top: 1px solid var(--fio); }
+  .pergunta summary {
+    display: flex; align-items: center; justify-content: space-between; gap: 24px;
+    padding-block: 22px; list-style: none;
   }
-  .btn:active { transform: translateY(1px); }
-  .btn .arr { transition: transform 200ms var(--ease-out); }
-  .btn:hover .arr { transform: translateX(3px); }
-
-  .btn-primary { background: var(--color-pine); color: #fff; }
-  .btn-primary:hover { background: var(--color-field); }
-  .dark .btn-primary { background: #fff; color: var(--color-pine); }
-  .dark .btn-primary:hover { background: var(--color-mint); }
-
-  /* Herança: alguns sítios ainda pedem `.btn-ink`. É o primário. */
-  .btn-ink { background: var(--color-pine); color: #fff; }
-  .btn-ink:hover { background: var(--color-field); }
-  .dark .btn-ink { background: #fff; color: var(--color-pine); }
-  .dark .btn-ink:hover { background: var(--color-mint); }
-
-  .btn-outline { border: 1px solid var(--color-line-2); color: var(--color-ink); background: transparent; }
-  .btn-outline:hover { border-color: var(--color-ink); background: rgb(20 32 28 / 0.03); }
-  .dark .btn-outline { border-color: #35604f; color: #fff; }
-  .dark .btn-outline:hover { border-color: var(--color-mint); background: rgb(255 255 255 / 0.05); }
-
-  .btn-sm { height: 40px; padding-inline: 18px; font-size: 14px; border-radius: 7px; }
-
-  /* Ligação com sublinhado que cresce — a microinteração mais discreta que há. */
-  .link {
-    position: relative; font-weight: 500; color: var(--color-ink);
-    text-decoration: none;
+  .pergunta summary::-webkit-details-marker { display: none; }
+  .pergunta summary .mais {
+    display: grid; place-items: center; flex: none;
+    width: 34px; height: 34px; border-radius: 50%;
+    background: var(--fio); font-size: 1.2rem; font-weight: 500; line-height: 1;
+    transition: transform 260ms var(--ease-saida), background-color 200ms;
   }
-  .link::after {
-    content: ""; position: absolute; left: 0; right: 100%; bottom: -2px; height: 1px;
-    background: currentColor; transition: right 260ms var(--ease-out);
-  }
-  .link:hover::after { right: 0; }
-
-  /* A ligação com seta — a acção secundária desta casa. */
-  .link-arrow {
-    display: inline-flex; align-items: center; gap: 8px;
-    font-size: 15px; font-weight: 600; letter-spacing: -0.01em;
-    color: var(--color-field);
-  }
-  .dark .link-arrow { color: var(--color-mint); }
-  .link-arrow .arr { transition: transform 200ms var(--ease-out); }
-  .link-arrow:hover .arr { transform: translateX(3px); }
-
-  /* =========================================================================
-     Etiquetas
-     ========================================================================= */
-
-  .tag {
-    display: inline-flex; align-items: center; gap: 6px;
-    font-size: 11.5px; font-weight: 650;
-    letter-spacing: 0.1em; text-transform: uppercase;
-    padding: 4px 10px; border-radius: 4px;
-    border: 1px solid var(--color-line-2); color: var(--color-ink-3);
-  }
-  .tag-live { border-color: color-mix(in oklab, var(--color-field) 40%, transparent); color: var(--color-field); }
-  .dark .tag-live { color: var(--color-mint); border-color: #2f5a4f; }
-  .tag-soon { border-style: dashed; }
-
-  /* =========================================================================
-     Superfícies de produto
-
-     A moldura leva o canto da marca e uma barra mínima: um ponto verde e o
-     endereço. Sem os três círculos de janela — são o cliché de todos os
-     mockups — e sem perspectiva. O produto encosta-se à página, direito.
-     ========================================================================= */
-
-  .frame {
-    border: 1px solid var(--color-line-2);
-    border-radius: 18px 8px 8px 8px;
-    background: var(--color-chalk);
-    overflow: hidden;
-  }
-  .dark .frame { border-color: #2b544a; background: #0f2e29; }
-
-  .frame-bar {
-    display: flex; align-items: center; gap: 8px;
-    height: 36px; padding-inline: 16px;
-    border-bottom: 1px solid var(--color-line);
-    background: var(--color-paper-2);
-    font-family: var(--font-mono); font-size: 11px; color: var(--color-ink-4);
-  }
-  .dark .frame-bar { background: #123832; border-color: #1d453e; }
-  .frame-dot { width: 7px; height: 7px; border-radius: 999px; background: var(--color-field); opacity: 0.8; }
-
-  /* O interior das molduras é uma imagem, não uma página: nada se seleciona,
-     nada se clica. É o que separa "screenshot do produto" de "HTML por cima". */
-  .shot {
-    user-select: none;
-    -webkit-user-select: none;
-    pointer-events: none;
-  }
-
-  /* =========================================================================
-     Formulário
-
-     Campos de linha: só o filete de baixo, que escurece ao focar. Um formulário
-     de produto premium não é um cartão branco com oito caixas — é papel com
-     linhas para escrever.
-     ========================================================================= */
-
-  .field-label {
-    display: block;
-    font-size: 11.5px; font-weight: 650;
-    letter-spacing: 0.12em; text-transform: uppercase;
-    color: var(--color-ink-3);
-  }
-
-  .input-line {
-    width: 100%;
-    height: 46px;
-    background: transparent;
-    border: 0;
-    border-bottom: 1px solid var(--color-line-2);
-    border-radius: 0;
-    font-size: 16.5px;
-    color: var(--color-ink);
-    transition: border-color 180ms var(--ease-out);
-  }
-  .input-line::placeholder { color: var(--color-ink-4); }
-  .input-line:focus { outline: none; border-bottom-color: var(--color-ink); }
-  textarea.input-line { height: auto; padding-block: 10px; resize: vertical; line-height: 1.5; }
-
-  /* =========================================================================
-     Movimento
-
-     Uma regra só, aplicada com `data-reveal`: 14px de entrada e opacidade, com
-     atraso escalonado por `--i`. Nada de parallax, nada a flutuar em ciclo.
-     ========================================================================= */
-
-  [data-reveal] {
-    opacity: 0;
-    transform: translateY(14px);
-    transition:
-      opacity 620ms var(--ease-out) calc(var(--i, 0) * 70ms),
-      transform 620ms var(--ease-out) calc(var(--i, 0) * 70ms);
-  }
-  [data-reveal][data-shown] { opacity: 1; transform: none; }
+  .pergunta[open] summary .mais { transform: rotate(45deg); background: var(--acento); color: var(--sobre-acento); }
 
   @media (prefers-reduced-motion: reduce) {
-    [data-reveal] { opacity: 1; transform: none; transition: none; }
-  }
-
-  /* Numerais tabulares onde há números a comparar. */
-  .tabular { font-variant-numeric: tabular-nums; }
-
-  /* =========================================================================
-     O ecrã baixo
-
-     Um portátil tem largura de secretária e metade da altura: 1280×720 e
-     1366×768 são as duas máquinas mais comuns a abrir isto, e ambas dão menos
-     de 700px de janela útil.
-
-     Todo o dimensionamento desta folha usava `vw` — `clamp(76px, 11vw, 150px)`,
-     `clamp(2.8rem, 6.8vw, 5.4rem)`. `vw` não sabe nada sobre altura, por isso um
-     portátil recebia exactamente a mesma escala de um monitor de 27": o herói
-     empurrava o produto para fora do ecrã, e na página de planos gastava-se
-     metade da janela antes de o preço aparecer. Quem tinha de fazer scroll para
-     ver um preço eram precisamente as pessoas em portátil, que são a maioria.
-
-     Daí este bloco. Não é um "modo compacto" à parte — é a mesma composição com
-     o ar proporcional à janela que existe. O limiar de 860px apanha os
-     portáteis (900 de ecrã ≈ 820 de janela) e deixa 1080p e 1440p em paz.
-     ========================================================================= */
-  @media (max-height: 860px) {
-    .band { padding-block: clamp(48px, 7vh, 88px); }
-    .band-tight { padding-block: clamp(36px, 5vh, 64px); }
-    .hero-top { padding-top: clamp(28px, 4vh, 56px); }
-    .hero-gap { margin-top: clamp(28px, 4vh, 56px); }
-
-    /* Os títulos deixam de crescer com a largura para lá do que a altura
-       aguenta. O herói continua a ser a maior coisa da página — só deixa de ser
-       maior do que o ecrã. */
-    .d1 { font-size: clamp(2.4rem, 5vw, 3.6rem); }
-    .d2 { font-size: clamp(1.8rem, 3.4vw, 2.5rem); }
-    .d3 { font-size: clamp(1.35rem, 2vw, 1.7rem); }
-
-    .lede { font-size: clamp(1rem, 1.2vw, 1.0625rem); }
+    *, *::before, *::after { transition-duration: 0.01ms !important; animation: none !important; }
   }
 }

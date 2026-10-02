@@ -10,6 +10,7 @@ import { PHOTO_BUCKET, PHOTO_TTL } from "../storage/photos.service";
 import { nomeDeQuemMexe, registarAlteracoes } from "../common/historico";
 import { SupabaseAccountsService } from "../auth/supabase-accounts.service";
 import { DIAS_DO_MES } from "../members/member-fees.service";
+import { generoPeloNome, type TeamGenderValue } from "./teams.dto";
 import { basePermissions, can, outranks, ROLE_PERMISSIONS, type Permission, type RequestContext, teamScopeForRoster } from "../common/permissions";
 import { assertPodeResponderPor, athleteScopeFilter, athleteTeamScopeWhere, calendarScopeFilter, inTeamScope, teamScopeFilter } from "../common/permissions";
 import {
@@ -140,6 +141,9 @@ const DELEGATABLE: ReadonlySet<Permission> = new Set<Permission>([
    */
   "inventory:read", "inventory:write",
   "finance:read", "finance:write",
+  // A candidatura à FPF é muitas vezes trabalho de uma pessoa só — entra aqui
+  // no dia em que nasce, para não repetir o esquecimento das três de cima.
+  "certification:read", "certification:write",
   /*
    * Delegar a criação de papéis é o ponto da funcionalidade: a presidência pode
    * passá-la à direção, ou a uma pessoa em concreto, sem lhe dar mais nada. Não
@@ -1158,7 +1162,7 @@ export class AcademyService {
         where: scope ? { id: scope } : {},
         orderBy: { name: "asc" },
         select: {
-          id: true, name: true, maxAge: true, schedule: true, sportId: true, matchMinutes: true, maxCallUps: true,
+          id: true, name: true, maxAge: true, gender: true, schedule: true, sportId: true, matchMinutes: true, maxCallUps: true,
           sport: { select: { matchMinutes: true } },
           season: { select: { id: true, label: true } },
           staff: {
@@ -1200,6 +1204,7 @@ export class AcademyService {
         id: t.id,
         name: t.name,
         maxAge: t.maxAge,
+        gender: t.gender,
         sportId: t.sportId,
         // A duração de jogo desta equipa; a da modalidade só enquanto a equipa
         // não tiver a sua. Ver `Team.matchMinutes`.
@@ -1350,6 +1355,8 @@ export class AcademyService {
               name,
               sportId,
               maxAge,
+              // A folha não tem coluna de género: vale o que o nome disser.
+              gender: generoPeloNome(name),
               seasonId: season.id,
               schedule: [],
             },
@@ -1372,6 +1379,7 @@ export class AcademyService {
       name: string;
       sportId: string;
       maxAge: number;
+      gender?: TeamGenderValue;
       season: string;
       coachId?: string;
       schedule: { weekday: number; start: string; end: string; venue: string }[];
@@ -1447,6 +1455,8 @@ export class AcademyService {
           seasonId: season.id,
           name: dto.name.trim(),
           maxAge: dto.maxAge,
+          // O que a pessoa escolheu; sem escolha, o que o nome disser.
+          gender: dto.gender ?? generoPeloNome(dto.name),
           schedule: dto.schedule,
           // A duração fica gravada na equipa desde o primeiro dia, mesmo quando
           // veio da modalidade: é a equipa que a vai editar daqui em diante.
@@ -1459,7 +1469,7 @@ export class AcademyService {
             : {}),
         },
         select: {
-          id: true, name: true, maxAge: true, schedule: true, sportId: true, matchMinutes: true,
+          id: true, name: true, maxAge: true, gender: true, schedule: true, sportId: true, matchMinutes: true,
           season: { select: { label: true } },
           staff: {
             where: { leftAt: null },
@@ -1474,6 +1484,7 @@ export class AcademyService {
         id: team.id,
         name: team.name,
         maxAge: team.maxAge,
+        gender: team.gender,
         sportId: team.sportId,
         matchMinutes: team.matchMinutes,
         season: team.season.label,
@@ -1512,7 +1523,7 @@ export class AcademyService {
   async updateTeam(
     ctx: RequestContext,
     teamId: string,
-    dto: { name?: string; maxAge?: number; matchMinutes?: number; maxCallUps?: number; competitionIds?: string[] },
+    dto: { name?: string; maxAge?: number; gender?: TeamGenderValue | null; matchMinutes?: number; maxCallUps?: number; competitionIds?: string[] },
   ) {
     if (!can(ctx, "team:write")) throw new ForbiddenException("Sem permissão para editar equipas");
     const scope = teamScopeFilter(ctx);
@@ -1544,6 +1555,7 @@ export class AcademyService {
         data.name = nome;
       }
       if (dto.maxAge !== undefined) data.maxAge = dto.maxAge;
+      if (dto.gender !== undefined) data.gender = dto.gender;
       if (dto.matchMinutes !== undefined) data.matchMinutes = dto.matchMinutes;
       if (dto.maxCallUps !== undefined) data.maxCallUps = dto.maxCallUps;
       if (Object.keys(data).length) await db.team.update({ where: { id: teamId }, data });
@@ -1701,7 +1713,7 @@ export class AcademyService {
         select: {
           id: true, name: true, birthdate: true, photoUrl: true, photoKey: true, status: true, joinedAt: true, taxId: true,
           idDocLabel: true, idDocNumber: true,
-          heightCm: true, weightKg: true, dominantSide: true, squadNumber: true, medicalValidUntil: true,
+          heightCm: true, weightKg: true, dominantSide: true, sex: true, squadNumber: true, medicalValidUntil: true,
           // A conta do próprio na app — ver `AthleteInvitesService`.
           email: true, inviteSentAt: true,
           account: { select: { id: true, isActive: true, userId: true, lastSeenAt: true } },
@@ -1852,6 +1864,7 @@ export class AcademyService {
           heightCm: a.heightCm,
           weightKg: a.weightKg === null ? null : Number(a.weightKg),
           dominantSide: a.dominantSide,
+          sex: a.sex,
           /*
            * A equipa principal, o número e a posição dela — os campos de sempre,
            * para quem só precisa de uma equipa (um rótulo, a app da família).

@@ -1,16 +1,18 @@
 /**
- * O que a página diz.
+ * O que o site diz.
  *
- * Texto e números num sítio só — o site tem quatro páginas que falam do mesmo
+ * Texto e números num sítio só. O site tem várias páginas que falam do mesmo
  * produto, e um preço escrito em dois ficheiros é um preço que vai divergir.
  *
  * ## A regra que atravessa este ficheiro
  *
- * **Nada aqui promete o que o produto não faz.** O que está construído está na
- * lista de módulos; o que está a caminho está no roteiro, marcado como tal. Um
- * clube que compra por causa de uma linha desta página e não a encontra lá dentro
- * cancela — e conta-o aos outros clubes, que é o que num mercado destes custa mais
- * do que a subscrição.
+ * **Nada aqui promete o que o produto não faz.** O que está construído está nas
+ * listas; o que está a caminho está no roteiro, marcado como tal.
+ *
+ * ## Como se escreve
+ *
+ * Frases simples e diretas. Sem travessões, sem "X num só Y" e sem "não é A, é
+ * B". Um título diz o que a coisa é.
  */
 
 /* -------------------------------------------------------------------------- */
@@ -31,31 +33,13 @@ export type Plan = {
   /** Só no plano de baixo: o que fica de fora, dito sem rodeios. */
   excludes?: string[];
   /**
-   * Ainda não se vende.
-   *
-   * O preço está à vista de propósito — um clube que planeia o orçamento da
-   * época quer saber quanto lhe vai custar, e "sob consulta" num plano por sair
-   * é a forma mais rápida de o mandar comparar noutro lado. O que **não** se
-   * faz é oferecer o botão de experimentar: prometer trinta dias de uma coisa
-   * que ninguém pode abrir é a mentira que custa o cliente todo.
+   * Ainda não se vende. O preço está à vista para o clube poder orçamentar a
+   * época, mas não há botão de experimentar uma coisa que ninguém pode abrir.
    */
   soon?: boolean;
-  /**
-   * O preço é o **ponto de partida** e não o preço: o cartão escreve "desde".
-   *
-   * Um plano que sobe com o consumo tem de o dizer no sítio onde o número
-   * aparece. Escrever "29,99 €" sozinho num plano que custa 49,99 € a quem
-   * analisa dez jogos é a forma de descobrir o resto na factura — e a factura é
-   * o pior sítio para haver uma surpresa.
-   */
+  /** O preço é o ponto de partida: o cartão escreve "desde". */
   from?: boolean;
-  /**
-   * A linha por baixo do preço, no lugar de "facturado mensalmente".
-   *
-   * Nos planos que se vendem essa linha diz como se paga. Num plano por sair
-   * diz o que o preço dá — e num plano por consumo é a linha mais importante
-   * do cartão, porque é a que responde a "e se eu tiver mais jogos?".
-   */
+  /** A linha por baixo do preço, no lugar de "faturado mensalmente". */
   priceNote?: string;
 };
 
@@ -67,14 +51,15 @@ export const PLANS: Plan[] = [
     monthly: 14.99,
     includes: [
       "Atletas, equipas, escalões e staff",
-      "Papéis e permissões à medida do clube",
+      "Cargos e permissões à medida do clube",
       "Calendário, treinos, presenças e convocatórias",
       "Área técnica: editor tático, planos de treino e exercícios",
+      "Jogos: preparação, ficha e análise",
       "Avaliações e relatórios de atleta",
       "Departamento clínico: lesões, consultas e disponibilidade",
       "Scouting: prospectos, observações, vídeo e shortlists",
       "Comunicação segmentada e notificações",
-      "Importação de atletas por Excel",
+      "Importação e exportação por Excel",
     ],
     excludes: ["App do clube para famílias e sócios", "Mensalidades e pagamentos", "Página pública de adesão a sócio"],
   },
@@ -86,53 +71,30 @@ export const PLANS: Plan[] = [
     featured: true,
     includes: [
       "Tudo o que está na Consola",
-      "App do clube com a marca do clube (PWA)",
+      "App do clube com a marca do clube",
       "Área da família: convocatórias, presenças e avaliações no telemóvel dos pais",
+      "Área do atleta: os treinos e o que o treinador partilha",
       "Área do sócio: cartão digital, quotas, jogos e novidades",
-      "Área do staff: a consola dentro da mesma app instalada",
-      "Mensalidades: MB WAY, Multibanco e cartão",
-      "Confirmação automática e estado sempre actualizado",
+      "Área do staff: a consola dentro da mesma app",
+      "Mensalidades por MB WAY, Multibanco e cartão",
+      "Confirmação automática do pagamento",
       "Página pública de adesão a sócio",
       "Gestão de sócios e quotas",
       "Notificações push",
     ],
   },
-  /*
-    Vision — o plano que ainda não se vende, e que aparece na mesma.
-
-    Está aqui por duas razões, e nenhuma é entusiasmo. A primeira: um clube
-    escolhe plataforma uma vez e fica cinco anos, e quer saber para onde é que
-    ela vai antes de assinar. A segunda: o preço à vista permite-lhe orçamentar
-    a época — "sob consulta" num plano por sair manda-o comparar noutro lado.
-
-    O que o trava é o botão. Não há "experimentar 30 dias" numa coisa que
-    ninguém pode abrir; há "avisa-me quando sair". A diferença entre despertar
-    interesse e prometer o que não se entrega é exactamente esta linha.
-
-    ## Porque é que o preço é "desde"
-
-    Analisar um jogo custa tempo de GPU, e um clube que analisa dois jogos por
-    mês não pode pagar o mesmo que um que analisa vinte — nem o contrário, que
-    era pôr o pequeno a subsidiar o grande. Por isso o plano é por créditos, e o
-    número que aparece é o degrau de entrada.
-
-    Dizer "29,99 €" e cobrar 49,99 € a quem analisa dez jogos é a forma de o
-    clube descobrir o resto na factura, que é o pior sítio para haver surpresas.
-    Daí o **desde**, e daí a linha de créditos por baixo do preço ser a mais
-    importante do cartão: é a que responde a "e se eu tiver mais jogos?".
-  */
   {
     id: "vision",
     name: "Vision AI",
-    tagline: "Transforma o vídeo dos teus jogos em dados sobre os teus atletas e a tua equipa.",
+    tagline: "O vídeo dos teus jogos transformado em dados sobre os atletas e a equipa.",
     monthly: 29.99,
     from: true,
     soon: true,
-    priceNote: "inclui 5 análises de jogo por mês",
+    priceNote: "Inclui 5 análises de jogo por mês",
     includes: [
       "Tudo o que está no Connect",
       "Análise automática de jogos",
-      "Deteção e tracking de cada jogador",
+      "Deteção e seguimento de cada jogador",
       "Distância percorrida, zonas ocupadas e tempo em campo",
       "Estatísticas, momentos-chave e clips por jogador",
       "Análise do adversário a partir do que o clube já grava",
@@ -144,95 +106,180 @@ export function annualTotal(monthly: number): number {
   return monthly * 12 * (1 - ANNUAL_DISCOUNT);
 }
 
-/** "14,99 €" — vírgula decimal, espaço antes do símbolo. Português, não inglês. */
+/** "14,99 €": vírgula decimal e espaço antes do símbolo. */
 export function euro(value: number): string {
   return new Intl.NumberFormat("pt-PT", { style: "currency", currency: "EUR" }).format(value);
 }
 
 /* -------------------------------------------------------------------------- */
-/* Módulos                                                                     */
+/* Quem já cá está                                                             */
 /* -------------------------------------------------------------------------- */
 
-export type Module = {
-  key: string;
-  name: string;
-  line: string;
-  items: string[];
-  /** Só o Connect. */
-  paidTier?: boolean;
+/**
+ * Os clubes com subscrição ativa a 2 de outubro de 2026, por ordem alfabética.
+ *
+ * São clubes reais. Antes de publicar, confirmar com cada um que pode aparecer
+ * aqui. Quando houver o emblema de um clube, entra em `public/clubes/` e o
+ * nome passa a levar o emblema ao lado.
+ */
+export const CLUBES = [
+  "AD Márcia Miranda Felgueiras",
+  "Castanheira Sport Clube",
+  "Clube de Basquetebol do Fundão",
+  "Clube Desportivo de Loureiro",
+  "Futebol Clube Ferreirense",
+  "Juventude Atlético Clube",
+  "Santa Maria Futebol Clube",
+  "VA Boa Hora",
+];
+
+/**
+ * Os números da plataforma.
+ *
+ * **São contagens verdadeiras**, feitas à base de dados a 2 de outubro de 2026:
+ * tudo o que os clubes criaram na plataforma, sem contar o clube interno de
+ * testes. Não se arredonda para cima e não se inventa. Um número inventado
+ * numa página de vendas é publicidade enganosa, e basta um clube fazer as
+ * contas para o resto da página deixar de ser acreditado.
+ *
+ * Para atualizar, voltar a contar e mudar aqui os valores e a data.
+ */
+export const NUMEROS = {
+  data: "2 de outubro de 2026",
+  itens: [
+    { valor: 719, rotulo: "atletas" },
+    { valor: 76, rotulo: "equipas" },
+    { valor: 650, rotulo: "sócios" },
+    { valor: 5093, rotulo: "treinos marcados" },
+    { valor: 192, rotulo: "jogos" },
+  ],
 };
 
+/* -------------------------------------------------------------------------- */
+/* O clube por dentro, pessoa a pessoa                                         */
+/* -------------------------------------------------------------------------- */
+
+export type Pessoa = {
+  id: string;
+  nome: string;
+  linha: string;
+  itens: string[];
+  /** Só no Connect. */
+  connect?: boolean;
+  /** O que a montra mostra quando esta pessoa está à vista. */
+  montra: { tipo: "pc" | "tel"; captura: string };
+};
+
+export const PESSOAS: Pessoa[] = [
+  {
+    id: "direcao",
+    nome: "Direção",
+    linha: "O clube inteiro, e uma lista do que precisa de atenção.",
+    itens: [
+      "Atletas, equipas, escalões e staff",
+      "Cargos, departamentos e permissões definidos pelo clube",
+      "Mensalidades por escalão, por modalidade ou por atleta",
+      "Sócios, categorias e quotas mensais ou anuais",
+      "Finanças e inventário",
+      "Comunicação por público, com taxa de leitura",
+      "Certificação FPF: uma estimativa do nível do clube e do que falta para a estrela seguinte",
+      "Histórico de alterações em cada ficha",
+      "Importação e exportação por Excel",
+    ],
+    montra: { tipo: "pc", captura: "con-visao-geral" },
+  },
+  {
+    id: "treinador",
+    nome: "Treinador",
+    linha: "O treino desenha-se, planeia-se e mede-se.",
+    itens: [
+      "Editor tático com animação por fotogramas",
+      "Futebol de 11, 9, 7 e 5, futsal e basquetebol",
+      "Planos de sessão por blocos e biblioteca de exercícios",
+      "Planeamento da época por ciclos, com a carga de cada semana",
+      "Presenças e convocatórias",
+      "Jogos: preparação, equipa inicial, ficha e análise",
+      "Relatórios do jogo e do adversário",
+      "Avaliações por competência e relatórios de atleta",
+    ],
+    montra: { tipo: "pc", captura: "con-quadro-2" },
+  },
+  {
+    id: "clinico",
+    nome: "Clínico",
+    linha: "Quem pode jogar no sábado.",
+    itens: [
+      "Lesões e baixas, com datas",
+      "Consultas e exames",
+      "Disponibilidade do atleta no dia do treino e do jogo",
+      "Ficha médica e documentos",
+      "Acesso restrito ao departamento clínico",
+    ],
+    montra: { tipo: "pc", captura: "con-clinico" },
+  },
+  {
+    id: "scouting",
+    nome: "Scouting",
+    linha: "Quem se anda a ver, e o que já se sabe dele.",
+    itens: ["Prospectos e funil", "Observações de jogo", "Avaliações", "Vídeo", "Shortlists"],
+    montra: { tipo: "pc", captura: "con-scouting" },
+  },
+  {
+    id: "familia",
+    nome: "Família",
+    linha: "O clube no telemóvel de casa.",
+    connect: true,
+    itens: [
+      "Treinos, jogos e convocatórias, com resposta na app",
+      "Assiduidade e aviso de falta ao treino",
+      "Avaliações e relatórios",
+      "Mensalidades por MB WAY, Multibanco e cartão",
+      "Avisos do clube e notificações",
+      "Instalação a partir de um link, sem loja",
+    ],
+    montra: { tipo: "tel", captura: "app-inicio" },
+  },
+  {
+    id: "atleta",
+    nome: "Atleta",
+    linha: "O atleta tem a sua área.",
+    connect: true,
+    itens: ["Os treinos e os jogos dele", "As convocatórias", "O que o treinador partilha com ele", "Nutrição"],
+    montra: { tipo: "tel", captura: "app-area-atleta" },
+  },
+  {
+    id: "socio",
+    nome: "Sócio",
+    linha: "O cartão, as quotas e os jogos do clube.",
+    connect: true,
+    itens: [
+      "Cartão digital com fotografia",
+      "Quotas mensais ou anuais, pagas na app",
+      "Os jogos de todos os escalões",
+      "Novidades e sondagens",
+      "Página pública de adesão a sócio",
+    ],
+    montra: { tipo: "tel", captura: "app-socio-inicio" },
+  },
+];
+
+/* -------------------------------------------------------------------------- */
+/* Módulos (a tabela de comparação dos planos)                                 */
+/* -------------------------------------------------------------------------- */
+
+export type Module = { key: string; name: string; line: string; paidTier?: boolean };
+
 export const MODULES: Module[] = [
-  {
-    key: "gestao",
-    name: "Gestão",
-    line: "O registo do clube, com quem pode ver o quê.",
-    items: ["Atletas, equipas e staff", "Permissões por pessoa", "Calendário", "Presenças e Convocatórias", "Gestão de Inventário", "Gestão de Sócios e quotas", "Gestão Financeira"],
-  },
-  {
-    key: "tecnica",
-    name: "Equipa técnica",
-    line: "O treinador trabalha no que é dele",
-    items: ["Treinos e presenças", "Convocatórias", "Avaliações por competência", "Relatórios de atleta", "Plantel e âmbito por equipa"],
-  },
-  {
-    key: "treino",
-    name: "Área técnica",
-    line: "O treino desenha-se, planeia-se e mede-se.",
-    items: [
-      "Editor tático com animação por frames",
-      "Futebol de 11, 9, 7 e 5 — e futsal",
-      "Em expansão: basquetebol e outros desportos",
-      "Planos de sessão por blocos",
-      "Carga e tempo por objetivo, derivados",
-      "Biblioteca de exercícios com favoritos",
-      "Modelos de jogo e bolas paradas",
-    ],
-  },
-  {
-    /*
-      Era "Famílias", e a app era só delas. Deixou de ser: a mesma instalação
-      abre na área de quem entra — família, sócio ou staff. Listar as três aqui
-      é o que impede a página de continuar a prometer menos do que o produto faz.
-    */
-    key: "app",
-    name: "A app do clube",
-    line: "Uma app instalada, três áreas — conforme quem entra.",
-    paidTier: true,
-    items: [
-      "Família: treinos, jogos, convocatórias e assiduidade",
-      "Família: avaliações, relatórios e mensalidades",
-      "Sócio: cartão digital com código, quotas e votações",
-      "Sócio: próximo jogo e novidades do clube",
-      "Staff: a consola do clube, dentro da mesma app",
-      "Marca do clube, notificações e instalação sem loja",
-    ],
-  },
-  {
-    key: "pagamentos",
-    name: "Pagamentos",
-    line: "A mensalidade cobra-se sozinha.",
-    paidTier: true,
-    items: ["MB WAY, Multibanco e cartão", "Mensalidades por escalão ou por atleta", "Confirmação automática", "Histórico e dívida real", "Lembretes"],
-  },
-  {
-    key: "scouting",
-    name: "Scouting",
-    line: "Quem se anda a ver, e o que já se sabe dele.",
-    items: ["Prospectos e funil", "Observações de jogo", "Avaliações", "Vídeo", "Shortlists"],
-  },
-  {
-    key: "clinico",
-    name: "Clínico",
-    line: "Quem pode jogar no sábado.",
-    items: ["Lesões e boletins", "Consultas e exames", "Disponibilidade do atleta", "Acesso restrito ao departamento"],
-  },
-  {
-    key: "comunicacao",
-    name: "Comunicação",
-    line: "Uma mensagem chega a quem tem de a ler.",
-    items: ["Avisos por público", "Notificações push", "Taxa de leitura", "Segmentação por equipa"],
-  },
+  { key: "gestao", name: "Gestão", line: "Atletas, equipas, staff, cargos e permissões." },
+  { key: "tecnica", name: "Área técnica", line: "Editor tático, planos de sessão, exercícios e planeamento." },
+  { key: "jogos", name: "Jogos", line: "Preparação, convocatória, ficha e análise." },
+  { key: "avaliacoes", name: "Avaliações e relatórios", line: "Por competência, com a evolução do atleta." },
+  { key: "clinico", name: "Clínico", line: "Lesões, consultas, exames e disponibilidade." },
+  { key: "scouting", name: "Scouting", line: "Prospectos, observações, vídeo e shortlists." },
+  { key: "comunicacao", name: "Comunicação", line: "Avisos por público, com taxa de leitura." },
+  { key: "app", name: "App do clube", line: "Família, atleta, sócio e staff na mesma app.", paidTier: true },
+  { key: "pagamentos", name: "Pagamentos", line: "Mensalidades e quotas com confirmação automática.", paidTier: true },
+  { key: "socios", name: "Sócios e adesão pública", line: "Cartão, quotas e inscrições online.", paidTier: true },
 ];
 
 /* -------------------------------------------------------------------------- */
@@ -242,19 +289,19 @@ export const MODULES: Module[] = [
 export const SECURITY = [
   {
     title: "Cada clube é uma ilha",
-    body: "O isolamento não é um filtro na aplicação — é uma política na base de dados. Um pedido que perca o contexto do clube não devolve dados a mais: não devolve nada.",
+    body: "O isolamento é uma política na base de dados. Um pedido que perca o contexto do clube não devolve dados a mais. Não devolve nada.",
   },
   {
     title: "Permissões que o clube define",
-    body: "Papéis com verbos concretos — quem lê mensalidades, quem escreve no boletim clínico, quem convoca. Um treinador vê os atletas das equipas dele; um pai vê os filhos.",
+    body: "Cargos com verbos concretos: quem lê mensalidades, quem escreve no boletim clínico, quem convoca. Um treinador vê os atletas das equipas dele e um pai vê os filhos.",
   },
   {
-    title: "O acesso administrativo é restrito e registado",
-    body: "Não dizemos que não conseguimos aceder — dizemos quem pode, quando, e que fica escrito. O acesso de apoio a um clube exige motivo e tem prazo.",
+    title: "Acesso administrativo restrito e registado",
+    body: "Dizemos quem pode aceder, quando, e fica escrito. O acesso de apoio a um clube exige motivo e tem prazo.",
   },
   {
     title: "Dados clínicos à parte",
-    body: "Categoria especial no RGPD, tratada como tal: fora do alcance de quem não é do departamento clínico, e fora do alcance do apoio ao cliente.",
+    body: "Categoria especial no RGPD, tratada como tal. Ficam fora do alcance de quem não é do departamento clínico e fora do alcance do apoio ao cliente.",
   },
   {
     title: "Autenticação e sessões",
@@ -262,15 +309,15 @@ export const SECURITY = [
   },
   {
     title: "Registo de auditoria",
-    body: "O que se faz sobre um clube fica registado, com quem e quando. Um registo que se pode apagar não é um registo.",
+    body: "O que se faz sobre um clube fica registado, com quem e quando, e não se apaga.",
   },
   {
     title: "Na União Europeia",
-    body: "Base de dados e ficheiros alojados na UE. Tratamos dados de menores; a região não é um detalhe de infra-estrutura.",
+    body: "Base de dados e ficheiros alojados na UE. Tratamos dados de menores, e a região conta.",
   },
   {
-    title: "Sair é um direito, não uma negociação",
-    body: "Os dados são do clube. Exportamo-los a pedido, e apagamos o que houver para apagar quando o clube sai.",
+    title: "Sair é um direito",
+    body: "Os dados são do clube. Exportamo-los a pedido e apagamos o que houver para apagar quando o clube sai.",
   },
 ];
 
@@ -284,19 +331,13 @@ export type RoadmapItem = { when: string; title: string; body: string };
  * O roteiro, por ordem.
  *
  * As datas são **intenções**, e a página diz isso. A primeira depende de
- * licenciamento com terceiros, e prometer um mês para uma coisa que depende de uma
- * assinatura alheia é a forma mais rápida de perder a confiança de um clube.
+ * licenciamento com terceiros.
  */
 export const ROADMAP: RoadmapItem[] = [
   {
-    when: "Setembro 2026",
+    when: "Em curso",
     title: "Integração ZeroZero e FPF",
-    body: "Jogos, calendários e resultados oficiais sem ninguém os copiar à mão. Depende de licenciamento — estamos a tratar disso.",
-  },
-  {
-    when: "Outubro 2026",
-    title: "Área do atleta na app",
-    body: "A quarta área da app do clube, ao lado da família, do sócio e do staff: o atleta entra na sua, vê o que é dele e recebe notificações. Treinos, convocatórias, presenças e avaliações.",
+    body: "Jogos, calendários e resultados oficiais sem ninguém os copiar à mão. Depende de licenciamento, e estamos a tratar disso.",
   },
   {
     when: "Novembro 2026",
@@ -306,12 +347,12 @@ export const ROADMAP: RoadmapItem[] = [
   {
     when: "Janeiro 2027",
     title: "IA sobre os dados do clube",
-    body: "Resumos e sinais a partir do que já lá está — nunca a inventar o que ninguém registou. Entra no plano Vision AI.",
+    body: "Resumos e sinais a partir do que já lá está, sem inventar o que ninguém registou. Entra no plano Vision AI.",
   },
-    {
+  {
     when: "Março 2027",
     title: "IA sobre os vídeos do clube",
-    body: "Análise de vídeo por visão computacional: cada jogador seguido ao longo do jogo, métricas por atleta, clips ligados ao lance, e a leitura do adversário a partir do que o clube já grava. É o que o plano Vision AI traz — e cada número vem com a confiança medida ao lado.",
+    body: "Análise de vídeo por visão computacional: cada jogador seguido ao longo do jogo, métricas por atleta, clips ligados ao lance e a leitura do adversário. Cada número vem com a confiança medida ao lado.",
   },
 ];
 
@@ -322,43 +363,43 @@ export const ROADMAP: RoadmapItem[] = [
 export const FAQ = [
   {
     q: "Os dados do nosso clube ficam separados dos outros?",
-    a: "Ficam. Cada pedido corre com o contexto do clube a que pertence e a base de dados recusa tudo o resto — não é um filtro que alguém se possa esquecer de escrever. O nosso painel interno vê contagens e estado de subscrição, não vê atletas nem famílias.",
+    a: "Ficam. Cada pedido corre com o contexto do clube a que pertence e a base de dados recusa tudo o resto. O nosso painel interno vê contagens e o estado da subscrição, e não vê atletas nem famílias.",
   },
   {
     q: "Conseguimos exportar os nossos dados?",
-    a: "Os dados são do clube. Hoje a exportação é feita por nós a pedido, em formato aberto, sem custo. A exportação directa a partir da consola está no roteiro.",
+    a: "Os dados são do clube. As listas principais exportam-se para Excel a partir da consola, com as mesmas colunas da importação. O resto exportamos nós a pedido, em formato aberto e sem custo.",
   },
   {
     q: "Como funciona a app do clube?",
-    a: "O clube gera um link e manda-o a quem interessa. A pessoa abre no telemóvel, instala a app do clube — nome, cor e ícone do clube, não os nossos — e entra. Um pai identifica o filho pelo NIF e data de nascimento e passa a ter treinos, convocatórias, assiduidade, avaliações e mensalidades; um sócio tem o cartão, as quotas, os jogos e as novidades.",
+    a: "O clube gera um link e envia-o a quem interessa. A pessoa abre-o no telemóvel, instala a app do clube, com o nome, a cor e o ícone do clube, e entra. Um pai identifica o filho, o clube aprova o pedido, e a família passa a ter treinos, convocatórias, assiduidade, avaliações e mensalidades. Um sócio tem o cartão, as quotas, os jogos e as novidades.",
   },
   {
     q: "É preciso uma app para as famílias e outra para os sócios?",
-    a: "Não. É a mesma app, a mesma conta e a mesma instalação — o que muda é a área. Quem é só pai entra direto na área da família; quem é só sócio entra direto na do sócio; quem é as duas coisas escolhe ao entrar e troca quando quiser, sem sair da conta. Quem trabalha no clube tem também a área de staff, que abre a consola dentro da própria app instalada — não é uma segunda consola em ponto pequeno, é a mesma.",
+    a: "Não. É a mesma app, a mesma conta e a mesma instalação. O que muda é a área. Quem é só pai entra direto na área da família, e quem é só sócio entra direto na do sócio. Quem é as duas coisas escolhe ao entrar e troca quando quiser, sem sair da conta. Quem trabalha no clube tem também a área de staff, que abre a consola dentro da própria app instalada.",
   },
   {
     q: "Os pais e os sócios têm de instalar alguma coisa da App Store?",
-    a: "Não. É uma PWA: instala-se a partir do link, em dois toques, no iPhone e no Android. Não há loja, não há aprovação, não há actualizações a fazer.",
+    a: "Não. A app instala-se a partir do link, em dois toques, no iPhone e no Android. Não há loja, aprovações nem atualizações para fazer.",
   },
   {
     q: "Como funcionam os pagamentos?",
-    a: "O clube define a mensalidade — por escalão ou por atleta. A família recebe e paga por MB WAY, Multibanco ou cartão. A confirmação chega do banco ao nosso servidor e o estado no clube muda sozinho: ninguém marca nada como pago à mão.",
+    a: "O clube define a mensalidade, por escalão ou por atleta. A família recebe o aviso e paga por MB WAY, Multibanco ou cartão. A confirmação chega do banco ao nosso servidor e o estado no clube muda sozinho. Ninguém marca nada como pago à mão.",
   },
   {
     q: "Podemos pôr a nossa marca na plataforma?",
-    a: "Sim. O nome, a cor e o ícone do clube atravessam a consola, a app — em todas as áreas — e a página pública de adesão. Quem instala a app instala a app do clube.",
+    a: "Sim. O nome, a cor e o ícone do clube atravessam a consola, a app em todas as áreas e a página pública de adesão. Quem instala a app instala a app do clube.",
   },
   {
-    q: "O que é o plano Vision AI, e porque é que aparece se ainda não existe?",
-    a: "É o passo a seguir ao Connect: o vídeo que o clube já grava transformado em dados — cada jogador seguido ao longo do jogo, distância e zonas por atleta, clips ligados ao lance, e a leitura do adversário. Aparece porque um clube escolhe plataforma uma vez e fica anos com ela: esconder para onde vamos era deixar-te decidir sem essa informação, e o preço à vista é o que te permite orçamentar a época. O que não fazemos é vendê-lo já — não há período de teste de uma coisa que ninguém pode abrir.",
+    q: "O que é o plano Vision AI, e porque aparece se ainda não existe?",
+    a: "É o passo a seguir ao Connect: o vídeo que o clube já grava transformado em dados. Cada jogador seguido ao longo do jogo, distância e zonas por atleta, clips ligados ao lance e a leitura do adversário. Aparece porque um clube escolhe plataforma uma vez e fica anos com ela, e o preço à vista permite orçamentar a época. Ainda não o vendemos, e por isso não tem período de teste.",
   },
   {
-    q: "Como é que o Vision AI é cobrado?",
-    a: "Por análises, e não por jogador ou por equipa. Analisar um jogo custa tempo de máquina, e um clube que analisa dois jogos por mês não pode pagar o mesmo que um que analisa vinte — nem o contrário, que era pôr o pequeno a subsidiar o grande. O plano começa nos 29,99 €/mês com cinco análises de jogo; 49,99 € analisa até dez. Precisas de mais do que isso, ou de um mês de pico a meio da época? Fala connosco e estende-se — não vais bater numa parede a meio de um apuramento.",
+    q: "Como é cobrado o Vision AI?",
+    a: "Por análises, e não por jogador ou por equipa. Analisar um jogo custa tempo de máquina, e um clube que analisa dois jogos por mês não deve pagar o mesmo que um que analisa vinte. O plano começa nos 29,99 € por mês com cinco análises de jogo, e 49,99 € analisa até dez. Se precisares de mais, ou de um mês de pico a meio da época, fala connosco e estende-se.",
   },
   {
     q: "A IA vai inventar estatísticas sobre os nossos atletas?",
-    a: "Não, e a arquitetura é feita para que não possa. A visão computacional produz dados com a confiança medida; a estatística deriva desses dados; a interpretação só nasce quando a confiança chega. O que fica abaixo do limiar pede uma confirmação a um treinador em vez de se fazer passar por certo — um número inventado sobre um miúdo de treze anos vale menos do que número nenhum. E não há reconhecimento facial: são menores, e a identificação faz-se pelo plantel confirmado antes do processamento, pelo número da camisola e pela trajetória.",
+    a: "Não, e a arquitetura é feita para que não possa. A visão computacional produz dados com a confiança medida, e a estatística deriva desses dados. O que fica abaixo do limiar pede confirmação a um treinador em vez de se fazer passar por certo. Também não há reconhecimento facial. São menores, e a identificação faz-se pelo plantel confirmado antes do processamento, pelo número da camisola e pela trajetória.",
   },
   {
     q: "Existe período de teste?",
@@ -366,15 +407,15 @@ export const FAQ = [
   },
   {
     q: "Podemos cancelar?",
-    a: "A qualquer momento, e sem período mínimo. Hoje o cancelamento trata-se connosco — o autosserviço está a caminho. Ao sair, exportamos os dados do clube.",
+    a: "A qualquer momento, e sem período mínimo. Hoje o cancelamento trata-se connosco. Ao sair, exportamos os dados do clube.",
   },
   {
     q: "Como funciona o suporte?",
-    a: "Por email, com resposta em dias úteis. Nos primeiros trinta dias acompanhamos a montagem do clube — equipas, atletas, mensalidades e o convite às famílias.",
+    a: "Por email, com resposta em dias úteis. Nos primeiros trinta dias acompanhamos a montagem do clube: equipas, atletas, mensalidades e o convite às famílias.",
   },
   {
     q: "Conseguimos migrar de outro software?",
-    a: "O plantel entra por Excel, com um modelo que damos e validação linha a linha antes de gravar. O resto da migração é assistida: fala connosco com o que tens e dizemos o que é possível.",
+    a: "O plantel entra por Excel, com um modelo que damos e validação linha a linha antes de gravar. O resto da migração é assistida. Fala connosco com o que tens e dizemos o que é possível.",
   },
 ];
 
@@ -383,7 +424,7 @@ export const FAQ = [
 /* -------------------------------------------------------------------------- */
 
 export const NAV_LINKS = [
-  { to: "/software", label: "Software" },
+  { to: "/produto", label: "Produto" },
   { to: "/planos", label: "Planos" },
   { to: "/contactos", label: "Contacto" },
 ];
@@ -392,10 +433,7 @@ export const NAV_LINKS = [
  * A identificação legal da entidade.
  *
  * Está vazia de propósito, e as páginas legais só mostram estes campos quando
- * tiverem valor: uma página com "[NOME DA EMPRESA]" à vista é pior do que uma
- * página sem morada, e inventar uma sede é pior do que as duas.
- *
- * Preencher antes de publicar os documentos legais.
+ * tiverem valor. Preencher antes de publicar os documentos legais.
  */
 export const COMPANY = {
   brand: "Academias",

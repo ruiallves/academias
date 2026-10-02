@@ -162,6 +162,11 @@ export class AthleteInputDto {
   @Matches(/^(RIGHT|LEFT|BOTH)$/)
   dominantSide?: string;
 
+  /** O sexo com que está inscrito na federação. Ver `AthleteSex`. */
+  @IsOptional()
+  @Matches(/^(FEMALE|MALE)$/)
+  sex?: string;
+
   @IsOptional()
   @IsInt()
   @Min(0)
@@ -297,6 +302,11 @@ export class AthleteUpdateDto {
   @IsOptional()
   @Matches(/^(RIGHT|LEFT|BOTH)$/)
   dominantSide?: string;
+
+  /** O sexo com que está inscrito na federação. Ver `AthleteSex`. */
+  @IsOptional()
+  @Matches(/^(FEMALE|MALE)$/)
+  sex?: string;
 
   @IsOptional()
   @IsInt()

@@ -1,27 +1,26 @@
 import { Link } from "react-router-dom";
 import { CONTACT_EMAIL, INSTAGRAM_URL } from "@/lib/content";
 import { PAYMENT_METHODS, PaymentMark } from "./PaymentIcons";
-import { InstagramIcon, Mark } from "./primitives";
+import { InstagramIcon, Wordmark } from "./marca";
 
-const COLUMNS: { title: string; links: { to: string; label: string }[] }[] = [
+const COLUNAS: { titulo: string; links: { to: string; label: string }[] }[] = [
   {
-    title: "Produto",
+    titulo: "Produto",
     links: [
-      { to: "/software", label: "Software" },
+      { to: "/produto", label: "O clube por dentro" },
       { to: "/planos", label: "Planos" },
-      { to: "/software#roteiro", label: "Roteiro" },
-      { to: "/#seguranca", label: "Segurança" },
+      { to: "/produto#roteiro", label: "Roteiro" },
     ],
   },
   {
-    title: "Clube",
+    titulo: "Clube",
     links: [
       { to: "/contactos", label: "Contacto" },
       { to: "/planos#perguntas", label: "Perguntas" },
     ],
   },
   {
-    title: "Legal",
+    titulo: "Legal",
     links: [
       { to: "/legal/termos-de-servico", label: "Termos de Serviço" },
       { to: "/legal/termos-de-utilizacao", label: "Termos de Utilização" },
@@ -36,99 +35,60 @@ const COLUMNS: { title: string; links: { to: string; label: string }[] }[] = [
 /**
  * O rodapé.
  *
- * Abre com a assinatura da casa em serifa — grande, como quem fecha uma carta —
- * e só depois arruma as colunas. O aviso dos dados fica na última linha, sem
- * faixa a piscar: um clube que nos vai confiar fichas de menores lê isto com
- * atenção.
+ * Claro, depois do fecho escuro. A marca, o email, os meios de pagamento e as
+ * colunas. O aviso dos dados fica na última linha.
  */
 export function Footer() {
   return (
-    <footer className="dark border-t border-line">
-      <div className="wrap band-tight">
-        <div className="flex flex-col gap-8 border-b border-line pb-12 lg:flex-row lg:items-end lg:justify-between">
-          <p className="display d2 max-w-[16ch]">A infraestrutura digital do teu clube.</p>
-          <a href={`mailto:${CONTACT_EMAIL}`} className="link-arrow shrink-0">
-            {CONTACT_EMAIL}
-            <span aria-hidden className="arr">→</span>
-          </a>
-        </div>
-
-        <div className="mt-12 grid gap-10 sm:grid-cols-2 lg:grid-cols-[1.4fr_repeat(3,1fr)]">
+    <footer className="palco-cal">
+      <div className="wrap faixa-curta">
+        <div className="grid gap-10 sm:grid-cols-2 lg:grid-cols-[1.5fr_repeat(3,1fr)]">
           <div>
-            <div className="flex items-center justify-between gap-3">
-              <span className="inline-flex items-center gap-2.5">
-                <Mark size={20} className="text-mint" />
-                <span
-                  className="text-[18px] leading-none font-[560] tracking-[-0.02em]"
-                  style={{ fontFamily: "var(--font-display)", fontVariationSettings: '"SOFT" 0, "WONK" 0' }}
-                >
-                  academias
-                </span>
-              </span>
-
-              {/* @getacademias — sozinho, ao lado da assinatura: uma rede não pede
-                  uma coluna própria, mas merece mais do que ficar escondida no fim. */}
+            <Wordmark />
+            <p className="mt-4 max-w-[30ch] text-[0.95rem] leading-relaxed text-texto-2">
+              Feito em Portugal, para clubes e academias desportivas portuguesas.
+            </p>
+            <div className="mt-5 flex items-center gap-4">
+              <a href={`mailto:${CONTACT_EMAIL}`} className="ligacao">
+                {CONTACT_EMAIL}
+              </a>
               <a
                 href={INSTAGRAM_URL}
                 target="_blank"
                 rel="noreferrer"
-                aria-label="Segue a Academias no Instagram — @getacademias"
-                className="flex size-8 shrink-0 items-center justify-center rounded-full text-ink-3 transition-colors hover:text-mint"
+                aria-label="A Academias no Instagram, @getacademias"
+                className="flex size-9 items-center justify-center rounded-full bg-fio text-texto transition-colors hover:bg-acento"
               >
                 <InstagramIcon size={18} />
               </a>
             </div>
-            <p className="mt-4 max-w-[30ch] text-[14.5px] leading-relaxed text-ink-3">
-              Feito em Portugal, para clubes e academias desportivas portuguesas.
-            </p>
 
-            {/*
-              Os meios de pagamento — o rodapé confirma, não vende.
-
-              As marcas vão em reverso monocromático sobre o pinheiro; sem
-              pastilhas, que faziam disto uma parede de rectângulos brancos.
-              Ver `PaymentMark`. O espaçamento é maior do que era porque, sem
-              caixa à volta, é o vazio que separa uma marca da seguinte.
-
-              ## Duas linhas, e porquê
-
-              Os quatro que têm logótipo são **imagens**; o Cartão e o Débito
-              directo são **palavras**, porque não há marca nenhuma que os
-              represente. Misturados na mesma fila, as duas palavras liam-se
-              como marcas em falta — um buraco no alinhamento das alturas —
-              e os pictogramas que os acompanhavam pioravam-no, porque eram
-              desenhos nossos ao lado de marcas verdadeiras.
-
-              Separados, cada linha diz uma coisa só: em cima, as marcas que o
-              clube reconhece; por baixo, em texto, os outros dois meios. Sem
-              ícones: a linha de cima já disse que isto são pagamentos.
-            */}
-            <div className="mt-7 space-y-3.5">
+            {/* As marcas que têm logótipo em cima; as duas que não têm, em texto, por baixo. */}
+            <div className="mt-8 space-y-3.5">
               <ul className="flex flex-wrap items-center gap-x-6 gap-y-4" aria-label="Meios de pagamento aceites">
                 {PAYMENT_METHODS.filter((m) => m.logo).map((m) => (
                   <li key={m.id}>
-                    <PaymentMark method={m} onDark />
+                    <PaymentMark method={m} />
                   </li>
                 ))}
               </ul>
-
               <ul className="flex flex-wrap items-center gap-x-5 gap-y-2">
                 {PAYMENT_METHODS.filter((m) => !m.logo).map((m) => (
                   <li key={m.id}>
-                    <PaymentMark method={m} onDark icon={false} />
+                    <PaymentMark method={m} icon={false} />
                   </li>
                 ))}
               </ul>
             </div>
           </div>
 
-          {COLUMNS.map((col) => (
-            <div key={col.title}>
-              <p className="field-label">{col.title}</p>
+          {COLUNAS.map((col) => (
+            <div key={col.titulo}>
+              <p className="rotulo">{col.titulo}</p>
               <ul className="mt-4 space-y-2.5">
                 {col.links.map((l) => (
                   <li key={l.label}>
-                    <Link to={l.to} className="text-[14.5px] text-ink-2 transition-colors hover:text-white">
+                    <Link to={l.to} className="text-[0.98rem] font-medium text-texto-2 transition-colors hover:text-texto">
                       {l.label}
                     </Link>
                   </li>
@@ -138,9 +98,9 @@ export function Footer() {
           ))}
         </div>
 
-        <div className="mt-14 flex flex-wrap items-center justify-between gap-4 border-t border-line pt-6">
-          <p className="text-[12.5px] text-ink-4">© {new Date().getFullYear()} Academias · Portugal</p>
-          <p className="text-[12.5px] text-ink-4">Dados alojados na União Europeia</p>
+        <div className="fio-cima mt-14 flex flex-wrap items-center justify-between gap-4 pt-6 text-[0.86rem] text-texto-3">
+          <p>© {new Date().getFullYear()} Academias · Portugal</p>
+          <p>Dados alojados na União Europeia</p>
         </div>
       </div>
     </footer>

@@ -85,6 +85,51 @@ async function recusa(res: Response): Promise<string | null> {
   return /refresh.?token|session|invalid_grant|user_not_found|user_banned|bad_jwt/i.test(texto) ? codigo || "recusado" : null;
 }
 
+/*
+ * Insistir antes de desistir.
+ *
+ * Um computador que acorda, ou um telemóvel que volta à frente, dispara os
+ * pedidos todos no mesmo instante — e nesse instante a rede ainda pode não ter
+ * voltado. A renovação falhava, o pedido seguia com o token velho, levava 401,
+ * e quem tinha estado fora via "não foi possível confirmar a sessão" numa
+ * sessão perfeitamente boa. O mesmo vale para o 409 (outro separador a renovar
+ * ao mesmo tempo), o 429 e um 5xx: passam sozinhos em menos de dois segundos.
+ */
+const ESPERAS_MS = [400, 1200];
+const KEY_DA_RENOVACAO = "academia.sessao.renovacao";
+
+/** Fica escrito porque é que a última renovação não deu — para quem for ver depois. */
+function anotarFalha(estado: number | "rede"): void {
+  try {
+    sessionStorage.setItem(KEY_DA_RENOVACAO, JSON.stringify({ quando: new Date().toISOString(), estado, app: "painel" }));
+  } catch {
+    /* sem armazenamento: paciência */
+  }
+}
+
+/** Pede o par novo ao Supabase. `null` quando não se conseguiu falar com ele. */
+async function trocar(config: { url: string; anon: string }, token: string): Promise<Response | null> {
+  for (let i = 0; ; i++) {
+    let res: Response | null = null;
+    try {
+      res = await fetch(`${config.url}/auth/v1/token?grant_type=refresh_token`, {
+        method: "POST",
+        headers: { apikey: config.anon, "Content-Type": "application/json" },
+        body: JSON.stringify({ refresh_token: token }),
+      });
+    } catch {
+      res = null;
+    }
+    const passageiro = res === null || res.status >= 500 || res.status === 409 || res.status === 429;
+    if (!passageiro) return res;
+    if (i >= ESPERAS_MS.length) {
+      anotarFalha(res?.status ?? "rede");
+      return res;
+    }
+    await new Promise((r) => setTimeout(r, ESPERAS_MS[i]));
+  }
+}
+
 /**
  * Troca o refresh por um par novo.
  *
@@ -104,11 +149,8 @@ export async function refreshSession(): Promise<string | null> {
 
   refreshing = (async () => {
     try {
-      const res = await fetch(`${url}/auth/v1/token?grant_type=refresh_token`, {
-        method: "POST",
-        headers: { apikey: anon, "Content-Type": "application/json" },
-        body: JSON.stringify({ refresh_token: current.refreshToken }),
-      });
+      const res = await trocar({ url, anon }, current.refreshToken);
+        if (!res) return readSession()?.accessToken ?? null;
 
       if (!res.ok) {
         // Recusado: o refresh já não vale, e aí a sessão acabou mesmo.

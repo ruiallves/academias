@@ -1,0 +1,97 @@
+{
+  "carla": {
+    "userId": "user-carla-ferreira",
+    "name": "Carla Ferreira",
+    "email": "carla.ferreira@exemplo.pt",
+    "role": "GUARDIAN"
+  },
+  "tomas": {
+    "userId": "user-tomas-ferreira",
+    "name": "Tomás Ferreira",
+    "email": "tomas.ferreira@exemplo.pt",
+    "role": "ATHLETE"
+  },
+  "sports": [{ "id": "sport-futebol", "name": "Futebol" }],
+  "season": { "label": "2026/27" },
+  "athletes": [
+    {
+      "id": "atl-tomas-ferreira",
+      "name": "Tomás Ferreira",
+      "birthdate": "2014-03-14",
+      "photoUrl": null,
+      "status": "ACTIVE",
+      "teamId": "team-sub13",
+      "position": "Médio centro",
+      "squadNumber": 8,
+      "availability": "available",
+      "restriction": null,
+      "clinical": []
+    }
+  ],
+  "teams": [
+    {
+      "id": "team-sub13",
+      "name": "Sub-13",
+      "maxAge": 13,
+      "sportId": "sport-futebol",
+      "schedule": null,
+      "coaches": [{ "id": "staff-miguel-antunes", "name": "Miguel Antunes", "title": "Treinador principal" }],
+      "headCoach": { "id": "staff-miguel-antunes", "name": "Miguel Antunes" },
+      "feeCents": 3500
+    }
+  ],
+  "fee": { "effectiveAmountCents": 3500 },
+  "legalStatus": {
+    "audiences": ["FAMILY"],
+    "canBindClub": false,
+    "needsAuthority": false,
+    "pending": [],
+    "accepted": [
+      {
+        "id": "legal-termos-1-4",
+        "type": "TERMS",
+        "slug": "termos-de-utilizacao",
+        "title": "Termos de Utilização",
+        "summary": null,
+        "version": "1.4",
+        "scope": "USER",
+        "acceptanceKind": "ACCEPT",
+        "effectiveAt": "2026-09-28T00:00:00.000Z",
+        "changeNote": null,
+        "acceptedAt": "2026-09-29T20:31:00.000Z"
+      },
+      {
+        "id": "legal-privacidade-1-1",
+        "type": "PRIVACY",
+        "slug": "politica-de-privacidade",
+        "title": "Política de Privacidade",
+        "summary": null,
+        "version": "1.1",
+        "scope": "USER",
+        "acceptanceKind": "ACKNOWLEDGE",
+        "effectiveAt": "2026-09-01T00:00:00.000Z",
+        "changeNote": null,
+        "acceptedAt": "2026-09-02T19:04:00.000Z"
+      }
+    ],
+    "isUpdate": false
+  },
+  "cotacao": {
+    "enabled": true,
+    "feesOnPayer": false,
+    "methods": [
+      { "method": "MBWAY", "label": "MB Way", "surchargeCents": 0, "totalCents": 3500 },
+      { "method": "MULTIBANCO", "label": "Multibanco", "surchargeCents": 0, "totalCents": 3500 }
+    ]
+  },
+  "notasEscolares": {
+    "editable": true,
+    "notas": [
+      { "id": "nota-1", "schoolYear": "2025/26", "period": "3P", "subject": "Português", "grade": 4, "scale": 5 },
+      { "id": "nota-2", "schoolYear": "2025/26", "period": "3P", "subject": "Matemática", "grade": 4, "scale": 5 },
+      { "id": "nota-3", "schoolYear": "2025/26", "period": "3P", "subject": "Inglês", "grade": 5, "scale": 5 },
+      { "id": "nota-4", "schoolYear": "2025/26", "period": "3P", "subject": "Ciências Naturais", "grade": 4, "scale": 5 },
+      { "id": "nota-5", "schoolYear": "2025/26", "period": "3P", "subject": "Educação Física", "grade": 5, "scale": 5 }
+    ]
+  }
+}

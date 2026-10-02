@@ -130,8 +130,8 @@ export function PaymentMark({
         que é o que se quer sobre pinheiro — e fora dele para tinta escura sobre
         papel. Foi a pastilha branca que os pôs a mentir; sem ela dizem a verdade.
       */}
-      {icon && <PaymentIcon id={method.id} className="size-[17px] text-ink-3" />}
-      <span className="text-[13.5px] font-semibold tracking-[-0.01em] whitespace-nowrap text-ink-2">
+      {icon && <PaymentIcon id={method.id} className="size-[17px] text-texto-3" />}
+      <span className="text-[13.5px] font-semibold tracking-[-0.01em] whitespace-nowrap text-texto-2">
         {method.label}
       </span>
     </>

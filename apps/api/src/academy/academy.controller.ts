@@ -10,7 +10,7 @@ import { SHORT_NAME_MAX } from "../common/short-name";
 import { AthletesService } from "./athletes.service";
 import { SeasonsService } from "./seasons.service";
 import { AthleteInputDto, AthleteTaxIdDto, AthleteUpdateDto, ImportAthletesDto } from "./athletes.dto";
-import { CreateTeamDto, ImportTeamsDto } from "./teams.dto";
+import { CreateTeamDto, ImportTeamsDto, TEAM_GENDERS, type TeamGenderValue } from "./teams.dto";
 import { AttendanceDto, CreateEventDto, EditEventDto, UpdateEventDto, AbsenceNoticeDto } from "./events.dto";
 import { BillingService, METODOS_MANUAIS, periodoActual, type AplicarEm, type MetodoManual } from "../billing/billing.service";
 
@@ -438,6 +438,8 @@ class DeleteTeamDto {
 class UpdateTeamDto {
   @IsOptional() @IsString() @Length(2, 80) name?: string;
   @IsOptional() @IsInt() @Min(4) @Max(99) maxAge?: number;
+  /** `null` limpa — a equipa volta a "por indicar". */
+  @IsOptional() @IsIn(TEAM_GENDERS) gender?: TeamGenderValue | null;
   @IsOptional() @IsInt() @Min(1) @Max(300) matchMinutes?: number;
   @IsOptional() @IsInt() @Min(1) @Max(60) maxCallUps?: number;
   @IsOptional() @IsArray() @ArrayMaxSize(12) @IsString({ each: true }) competitionIds?: string[];

@@ -243,6 +243,9 @@ export const AREAS: Area[] = [
    */
   { label: "Inventário", hint: "artigos, stock e entregas de material", read: "inventory:read", write: "inventory:write" },
   { label: "Contas", hint: "saldo, movimentos e orçamento do clube", read: "finance:read", write: "finance:write" },
+  // Entra no catálogo no dia em que nasce. Ao lado das Contas por ser gestão do
+  // clube: quem prepara a candidatura raramente é quem treina.
+  { label: "Certificação FPF", hint: "nível do clube, requisitos e respostas à candidatura", read: "certification:read", write: "certification:write" },
 ];
 
 /**

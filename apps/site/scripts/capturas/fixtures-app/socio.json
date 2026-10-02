@@ -1,0 +1,64 @@
+{
+  "academy": {
+    "cardEnabled": true,
+    "cardQrEnabled": false,
+    "onlinePayments": true,
+    "paymentsDisabled": false,
+    "feesOnPayer": false
+  },
+  "member": {
+    "id": "socio-carla-ferreira",
+    "name": "Carla Ferreira",
+    "number": 1284,
+    "status": "ACTIVE",
+    "tierName": "Adulto",
+    "tierFeeCents": 500,
+    "tierBilling": "MONTHLY",
+    "email": "carla.ferreira@exemplo.pt",
+    "phone": "+351 912 345 678",
+    "memberSince": "2019-09-14T10:00:00+01:00",
+    "photoUrl": null,
+    "cardQr": null
+  },
+  "fees": [
+    { "id": "quota-2026-10", "period": "2026-10", "label": "Quota de Outubro 2026", "amountCents": 500, "dueOn": "2026-10-31T23:59:59+00:00", "status": "SETTLED", "settledAt": "2026-10-01T08:47:00+01:00", "overdue": false, "coversFrom": null, "coversTo": null },
+    { "id": "quota-2026-09", "period": "2026-09", "label": "Quota de Setembro 2026", "amountCents": 500, "dueOn": "2026-09-30T23:59:59+01:00", "status": "SETTLED", "settledAt": "2026-09-02T19:15:00+01:00", "overdue": false, "coversFrom": null, "coversTo": null },
+    { "id": "quota-2026-08", "period": "2026-08", "label": "Quota de Agosto 2026", "amountCents": 500, "dueOn": "2026-08-31T23:59:59+01:00", "status": "SETTLED", "settledAt": "2026-08-03T12:30:00+01:00", "overdue": false, "coversFrom": null, "coversTo": null },
+    { "id": "quota-2026-07", "period": "2026-07", "label": "Quota de Julho 2026", "amountCents": 500, "dueOn": "2026-07-31T23:59:59+01:00", "status": "SETTLED", "settledAt": "2026-07-01T09:05:00+01:00", "overdue": false, "coversFrom": null, "coversTo": null }
+  ],
+  "upcoming": [
+    { "period": "2026-10", "label": "Quota de Outubro 2026", "feeId": "quota-2026-10", "amountCents": 500, "status": "SETTLED" },
+    { "period": "2026-11", "label": "Quota de Novembro 2026", "feeId": null, "amountCents": 500, "status": null },
+    { "period": "2026-12", "label": "Quota de Dezembro 2026", "feeId": null, "amountCents": 500, "status": null },
+    { "period": "2027-01", "label": "Quota de Janeiro 2027", "feeId": null, "amountCents": 500, "status": null },
+    { "period": "2027-02", "label": "Quota de Fevereiro 2027", "feeId": null, "amountCents": 500, "status": null },
+    { "period": "2027-03", "label": "Quota de Março 2027", "feeId": null, "amountCents": 500, "status": null },
+    { "period": "2027-04", "label": "Quota de Abril 2027", "feeId": null, "amountCents": 500, "status": null },
+    { "period": "2027-05", "label": "Quota de Maio 2027", "feeId": null, "amountCents": 500, "status": null },
+    { "period": "2027-06", "label": "Quota de Junho 2027", "feeId": null, "amountCents": 500, "status": null },
+    { "period": "2027-07", "label": "Quota de Julho 2027", "feeId": null, "amountCents": 500, "status": null }
+  ],
+  "matches": [
+    { "id": "sj-seniores", "startsAt": "2026-10-11T16:00:00+01:00", "venue": "Campo 1", "opponent": "União do Vale", "isHome": true, "teamName": "Seniores", "teamMaxAge": 99, "competition": "Divisão de Honra" },
+    { "id": "sj-sub15", "startsAt": "2026-10-10T10:30:00+01:00", "venue": "Campo do Monte", "opponent": "Estrela do Monte", "isHome": false, "teamName": "Sub-15", "teamMaxAge": 15, "competition": "Campeonato Distrital" },
+    { "id": "sj-sub13", "startsAt": "2026-10-10T15:00:00+01:00", "venue": "Campo 1", "opponent": "União da Serra", "isHome": true, "teamName": "Sub-13", "teamMaxAge": 13, "competition": "Campeonato Distrital" },
+    { "id": "sj-sub11", "startsAt": "2026-10-10T09:30:00+01:00", "venue": "Campo 2", "opponent": "Juventude da Ribeira", "isHome": true, "teamName": "Sub-11", "teamMaxAge": 11, "competition": "Encontro de Traquinas" }
+  ],
+  "news": [
+    { "id": "com-assembleia", "title": "Assembleia geral a 23 de outubro", "body": "A assembleia geral ordinária é na sexta, 23 de outubro, às 21:00, na sede. Na ordem de trabalhos estão as contas da época passada e o orçamento desta.", "publishedAt": "2026-10-07T10:30:00+01:00" },
+    { "id": "com-relvado", "title": "Campo 2 com relvado novo", "body": "O Campo 2 reabriu esta semana com o relvado sintético novo. Obrigado a todos os sócios que ajudaram a tornar a obra possível.", "publishedAt": "2026-10-02T17:00:00+01:00" }
+  ],
+  "polls": [
+    {
+      "id": "sondagem-jantar",
+      "question": "Que dia preferes para o jantar de sócios?",
+      "details": null,
+      "publishedAt": "2026-10-06T12:00:00+01:00",
+      "myOptionId": null,
+      "options": [
+        { "id": "op-sexta", "label": "Sexta, 20 de novembro", "votes": 38 },
+        { "id": "op-sabado", "label": "Sábado, 21 de novembro", "votes": 57 }
+      ]
+    }
+  ]
+}

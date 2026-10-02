@@ -1,0 +1,385 @@
+{
+  "app-mensalidades-por-pagar": {
+    "ficheiro": "app-mensalidades-por-pagar.webp",
+    "movel": "app-mensalidades-por-pagar-m.webp",
+    "largura": 390,
+    "altura": 844,
+    "escala": 3,
+    "descricao": "Pagamentos na segunda de manhã: outubro do Tomás em aberto, 35,00 €, escolhido para pagar",
+    "cena": "segunda, 05/10, 09:12",
+    "focos": {
+      "estado": [16, 125, 358, 124],
+      "outubro": [16, 317, 358, 67],
+      "botao-pagar": [16, 708, 358, 52],
+      "ja-pagas": [16, 416, 358, 118]
+    }
+  },
+  "app-pagar-metodos": {
+    "ficheiro": "app-pagar-metodos.webp",
+    "movel": "app-pagar-metodos-m.webp",
+    "largura": 390,
+    "altura": 844,
+    "escala": 3,
+    "descricao": "A folha de pagamento: 35,00 €, MB Way ou referência Multibanco",
+    "cena": "segunda, 05/10, 09:12",
+    "focos": {
+      "folha": [0, 531, 390, 313],
+      "mbway": [16, 636, 358, 68],
+      "multibanco": [16, 705, 358, 68]
+    }
+  },
+  "app-pagar": {
+    "ficheiro": "app-pagar.webp",
+    "movel": "app-pagar-m.webp",
+    "largura": 390,
+    "altura": 844,
+    "escala": 3,
+    "descricao": "Pagar por MB Way: o telemóvel escrito, pronto a confirmar",
+    "cena": "segunda, 05/10, 09:12",
+    "focos": {
+      "folha": [0, 489, 390, 355],
+      "telemovel": [16, 619, 358, 48],
+      "confirmar": [16, 679, 358, 52],
+      "valor": [16, 521, 358, 58]
+    }
+  },
+  "app-pagar-enviado": {
+    "ficheiro": "app-pagar-enviado.webp",
+    "movel": "app-pagar-enviado-m.webp",
+    "largura": 390,
+    "altura": 844,
+    "escala": 3,
+    "descricao": "Pedido de MB Way enviado: a mensalidade fica a confirmar até o banco responder",
+    "cena": "segunda, 05/10, 09:12",
+    "focos": {
+      "folha": [0, 531, 390, 313],
+      "concluir": [20, 764, 350, 52]
+    }
+  },
+  "app-mensalidades-pago": {
+    "ficheiro": "app-mensalidades-pago.webp",
+    "movel": "app-mensalidades-pago-m.webp",
+    "largura": 390,
+    "altura": 844,
+    "escala": 3,
+    "descricao": "Pagamentos depois do MB Way: está tudo pago e outubro passou para as já pagas",
+    "cena": "segunda, 05/10, 09:16",
+    "focos": {
+      "estado": [16, 129, 358, 188],
+      "outubro": [16, 374, 358, 47],
+      "ja-pagas": [16, 349, 358, 165]
+    }
+  },
+  "app-inicio": {
+    "ficheiro": "app-inicio.webp",
+    "movel": "app-inicio-m.webp",
+    "largura": 390,
+    "altura": 844,
+    "escala": 3,
+    "descricao": "O início da família na quinta à noite: treino de sexta, a semana e os avisos do clube",
+    "cena": "quinta, 08/10, 21:15",
+    "focos": {
+      "cabecalho": [0, 0, 390, 62],
+      "proximo": [16, 145, 358, 160],
+      "semana": [16, 325, 358, 113],
+      "avisos": [16, 459, 358, 230],
+      "barra": [68, 774, 254, 56]
+    }
+  },
+  "app-agenda": {
+    "ficheiro": "app-agenda.webp",
+    "movel": "app-agenda-m.webp",
+    "largura": 390,
+    "altura": 844,
+    "escala": 3,
+    "descricao": "A agenda do Tomás: treino de sexta às 19:00 no Campo 2 e jogo de sábado às 15:00",
+    "cena": "quinta, 08/10, 21:15",
+    "focos": {
+      "treino-sexta": [16, 152, 358, 144],
+      "jogo-sabado": [16, 367, 358, 109],
+      "treino-quarta": [16, 504, 358, 144]
+    },
+    "alto": {
+      "ficheiro": "app-agenda-alto.webp",
+      "largura": 390,
+      "altura": 1882,
+      "escala": 3
+    }
+  },
+  "app-inicio-sexta": {
+    "ficheiro": "app-inicio-sexta.webp",
+    "movel": "app-inicio-sexta-m.webp",
+    "largura": 390,
+    "altura": 844,
+    "escala": 3,
+    "descricao": "O início da família na sexta à tarde: treino de hoje, convocatória para sábado e o aviso do jogo",
+    "cena": "sexta, 09/10, 17:45",
+    "focos": {
+      "cabecalho": [0, 0, 390, 62],
+      "proximo": [16, 145, 358, 160],
+      "convocatoria": [16, 325, 358, 68],
+      "semana": [16, 413, 358, 113],
+      "avisos": [16, 547, 358, 332],
+      "barra": [68, 774, 254, 56]
+    },
+    "alto": {
+      "ficheiro": "app-inicio-sexta-alto.webp",
+      "largura": 390,
+      "altura": 982,
+      "escala": 3
+    }
+  },
+  "app-agenda-sexta": {
+    "ficheiro": "app-agenda-sexta.webp",
+    "movel": "app-agenda-sexta-m.webp",
+    "largura": 390,
+    "altura": 844,
+    "escala": 3,
+    "descricao": "A agenda na sexta: treino de hoje às 19:00 no Campo 2 e o Tomás convocado para o jogo de sábado",
+    "cena": "sexta, 09/10, 17:45",
+    "focos": {
+      "treino-sexta": [16, 152, 358, 144],
+      "jogo-sabado": [16, 367, 358, 109],
+      "treino-quarta": [16, 504, 358, 144]
+    },
+    "alto": {
+      "ficheiro": "app-agenda-sexta-alto.webp",
+      "largura": 390,
+      "altura": 1882,
+      "escala": 3
+    }
+  },
+  "app-atleta": {
+    "ficheiro": "app-atleta.webp",
+    "movel": "app-atleta-m.webp",
+    "largura": 390,
+    "altura": 844,
+    "escala": 3,
+    "descricao": "A ficha do Tomás vista pela mãe: presença de 92% (11 de 12 treinos), convocatórias e a avaliação do treinador",
+    "cena": "quinta, 08/10, 21:15",
+    "focos": {
+      "assiduidade": [16, 252, 173, 137],
+      "convocatorias": [201, 252, 173, 137],
+      "avaliacao": [16, 413, 358, 511]
+    },
+    "alto": {
+      "ficheiro": "app-atleta-alto.webp",
+      "largura": 390,
+      "altura": 1854,
+      "escala": 3
+    }
+  },
+  "app-atleta-avaliacoes": {
+    "ficheiro": "app-atleta-avaliacoes.webp",
+    "movel": "app-atleta-avaliacoes-m.webp",
+    "largura": 390,
+    "altura": 844,
+    "escala": 3,
+    "descricao": "A avaliação de outubro do Tomás, com a evolução desde junho em cada competência",
+    "cena": "domingo, 11/10, 10:30",
+    "focos": {
+      "avaliacao": [16, 76, 358, 511],
+      "evolucao": [16, 374, 358, 175],
+      "a-trabalhar": [32, 287, 326, 70]
+    }
+  },
+  "app-convocatoria": {
+    "ficheiro": "app-convocatoria.webp",
+    "movel": "app-convocatoria-m.webp",
+    "largura": 390,
+    "altura": 844,
+    "escala": 3,
+    "descricao": "O jogo de sábado com o Tomás convocado: o clube pede confirmação",
+    "cena": "sexta, 09/10, 17:52",
+    "focos": {
+      "resposta": [32, 297, 326, 52],
+      "estado": [16, 204, 358, 161],
+      "logistica": [16, 381, 358, 256],
+      "do-clube": [16, 649, 358, 101]
+    },
+    "alto": {
+      "ficheiro": "app-convocatoria-alto.webp",
+      "largura": 390,
+      "altura": 921,
+      "escala": 3
+    }
+  },
+  "app-convocatoria-confirmada": {
+    "ficheiro": "app-convocatoria-confirmada.webp",
+    "movel": "app-convocatoria-confirmada-m.webp",
+    "largura": 390,
+    "altura": 844,
+    "escala": 3,
+    "descricao": "Depois de responder: presença do Tomás confirmada, com a hora da resposta",
+    "cena": "sexta, 09/10, 17:52",
+    "focos": {
+      "resposta": [32, 297, 326, 99],
+      "estado": [16, 204, 358, 209],
+      "logistica": [16, 429, 358, 256]
+    },
+    "alto": {
+      "ficheiro": "app-convocatoria-confirmada-alto.webp",
+      "largura": 390,
+      "altura": 968,
+      "escala": 3
+    }
+  },
+  "app-aviso": {
+    "ficheiro": "app-aviso.webp",
+    "movel": "app-aviso-m.webp",
+    "largura": 390,
+    "altura": 844,
+    "escala": 3,
+    "descricao": "As notificações na sexta à tarde: o aviso do jogo de sábado e a convocatória por responder",
+    "cena": "sexta, 09/10, 17:45",
+    "focos": {
+      "aviso": [16, 284, 358, 98],
+      "convocatoria": [16, 136, 358, 141],
+      "sino": [284, 10, 44, 44]
+    },
+    "alto": {
+      "ficheiro": "app-aviso-alto.webp",
+      "largura": 390,
+      "altura": 953,
+      "escala": 3
+    }
+  },
+  "app-contextos": {
+    "ficheiro": "app-contextos.webp",
+    "movel": "app-contextos-m.webp",
+    "largura": 390,
+    "altura": 844,
+    "escala": 3,
+    "descricao": "O seletor de área ao abrir a app: Staff, Família, Atleta e Sócio na mesma conta",
+    "cena": "quinta, 08/10, 21:15",
+    "focos": {
+      "areas": [24, 207, 342, 535],
+      "staff": [24, 207, 342, 130],
+      "familia": [24, 349, 342, 130],
+      "atleta": [24, 491, 342, 130],
+      "socio": [24, 633, 342, 109]
+    }
+  },
+  "app-contextos-duas": {
+    "ficheiro": "app-contextos-duas.webp",
+    "movel": "app-contextos-duas-m.webp",
+    "largura": 390,
+    "altura": 844,
+    "escala": 3,
+    "descricao": "O seletor de área da Carla ao abrir a app: Família e Sócio",
+    "cena": "quinta, 08/10, 21:15",
+    "focos": {
+      "areas": [24, 349, 342, 251],
+      "familia": [24, 349, 342, 130],
+      "socio": [24, 491, 342, 109]
+    }
+  },
+  "app-contextos-folha": {
+    "ficheiro": "app-contextos-folha.webp",
+    "movel": "app-contextos-folha-m.webp",
+    "largura": 390,
+    "altura": 844,
+    "escala": 3,
+    "descricao": "Trocar de área sem sair da conta: a folha que abre no cabeçalho, com a Família vestida",
+    "cena": "quinta, 08/10, 21:15",
+    "focos": {
+      "folha": [0, 441, 390, 403],
+      "botao": [194, 17, 78, 29]
+    }
+  },
+  "app-socio-inicio": {
+    "ficheiro": "app-socio-inicio.webp",
+    "movel": "app-socio-inicio-m.webp",
+    "largura": 390,
+    "altura": 844,
+    "escala": 3,
+    "descricao": "A área de sócio da Carla: quotas em dia e o cartão n.º 1284",
+    "cena": "quinta, 08/10, 21:17",
+    "focos": {
+      "cartao": [16, 269, 358, 231],
+      "quota": [16, 145, 358, 73],
+      "proximo-jogo": [16, 519, 358, 240]
+    },
+    "alto": {
+      "ficheiro": "app-socio-inicio-alto.webp",
+      "largura": 390,
+      "altura": 1416,
+      "escala": 3
+    }
+  },
+  "app-socio-quotas": {
+    "ficheiro": "app-socio-quotas.webp",
+    "movel": "app-socio-quotas-m.webp",
+    "largura": 390,
+    "altura": 844,
+    "escala": 3,
+    "descricao": "As quotas de sócia: regularizadas até outubro, com os próximos meses para pagar adiantado",
+    "cena": "quinta, 08/10, 21:17",
+    "focos": {
+      "estado": [16, 105, 358, 72],
+      "proximos": [16, 197, 358, 509],
+      "historico": [16, 726, 358, 281]
+    },
+    "alto": {
+      "ficheiro": "app-socio-quotas-alto.webp",
+      "largura": 390,
+      "altura": 1110,
+      "escala": 3
+    }
+  },
+  "app-area-atleta": {
+    "ficheiro": "app-area-atleta.webp",
+    "movel": "app-area-atleta-m.webp",
+    "largura": 390,
+    "altura": 844,
+    "escala": 3,
+    "descricao": "A área de atleta do Tomás na sexta à tarde: treino às 19:00 e a convocatória para sábado",
+    "cena": "sexta, 09/10, 17:45",
+    "focos": {
+      "cabecalho": [0, 0, 390, 62],
+      "proximo": [16, 145, 358, 160],
+      "convocatoria": [16, 325, 358, 68],
+      "semana": [16, 413, 358, 113],
+      "avisos": [16, 547, 358, 332],
+      "barra": [93, 774, 204, 56]
+    },
+    "alto": {
+      "ficheiro": "app-area-atleta-alto.webp",
+      "largura": 390,
+      "altura": 982,
+      "escala": 3
+    }
+  },
+  "app-inicio-serra": {
+    "ficheiro": "app-inicio-serra.webp",
+    "movel": "app-inicio-serra-m.webp",
+    "largura": 390,
+    "altura": 844,
+    "escala": 3,
+    "descricao": "O mesmo início noutro clube: Atlético da Serra, verde, com o seu emblema",
+    "cena": "quinta, 08/10, 21:15",
+    "focos": {
+      "cabecalho": [0, 0, 390, 62],
+      "proximo": [16, 145, 358, 160],
+      "semana": [16, 325, 358, 113],
+      "avisos": [16, 459, 358, 230],
+      "barra": [68, 774, 254, 56]
+    }
+  },
+  "app-inicio-mar": {
+    "ficheiro": "app-inicio-mar.webp",
+    "movel": "app-inicio-mar-m.webp",
+    "largura": 390,
+    "altura": 844,
+    "escala": 3,
+    "descricao": "O mesmo início noutro clube: União do Mar, coral, com o seu emblema",
+    "cena": "quinta, 08/10, 21:15",
+    "focos": {
+      "cabecalho": [0, 0, 390, 62],
+      "proximo": [16, 145, 358, 160],
+      "semana": [16, 325, 358, 113],
+      "avisos": [16, 459, 358, 230],
+      "barra": [68, 774, 254, 56]
+    }
+  }
+}

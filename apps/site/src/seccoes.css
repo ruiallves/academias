@@ -1,0 +1,244 @@
+/* ---------------------------------------------------------------------------
+   As secções da página.
+
+   O que acompanha o scroll sem degraus lê `--p`, o progresso de 0 a 1 que o
+   `Passeio` (ou a própria secção) escreve a cada fotograma.
+   --------------------------------------------------------------------------- */
+
+/* ===========================================================================
+   Herói
+   =========================================================================== */
+
+.heroi { --p: 0; padding-top: calc(var(--topo) + clamp(40px, 7vw, 104px)); overflow: hidden; }
+
+.heroi-montra {
+  position: relative;
+  margin-top: clamp(40px, 6vw, 88px);
+  padding: clamp(14px, 3.2vw, 56px) clamp(14px, 3.2vw, 56px) 0;
+  border-radius: var(--raio-g) var(--raio-g) 0 0;
+  background: var(--areia);
+  /* A montra aproxima-se um pouco à medida que a página desce. */
+  transform: scale(calc(0.955 + var(--p) * 0.045));
+  transform-origin: 50% 0;
+  will-change: transform;
+}
+.heroi-montra .monitor { border-radius: clamp(10px, 1.2vw, 18px) clamp(10px, 1.2vw, 18px) 0 0; }
+.heroi-tel {
+  position: absolute; right: clamp(8px, 5vw, 96px); bottom: 0;
+  transform: translateY(calc(18% - var(--p) * 16%));
+  will-change: transform;
+}
+.heroi-tel .telemovel { --tw: clamp(118px, 19vw, 310px); }
+
+/* ===========================================================================
+   Clubes a correr
+   =========================================================================== */
+
+.clubes { overflow: hidden; padding-block: clamp(36px, 5vw, 72px); }
+.clubes-pista { display: flex; width: max-content; animation: correr 46s linear infinite; }
+.clubes-pista:hover { animation-play-state: paused; }
+.clubes-pista ul { display: flex; align-items: center; list-style: none; flex: none; }
+.clubes-pista li {
+  display: flex; align-items: center; gap: clamp(22px, 3vw, 44px);
+  padding-right: clamp(22px, 3vw, 44px);
+  font-weight: 800; font-stretch: 88%; letter-spacing: -0.035em;
+  font-size: clamp(1.6rem, 3.4vw, 3.1rem); line-height: 1; white-space: nowrap;
+}
+.clubes-pista li::after { content: ""; width: 0.34em; height: 0.34em; border-radius: 50%; background: var(--acento); flex: none; box-shadow: 0 0 0 1.5px var(--texto); }
+@keyframes correr { to { transform: translateX(-50%); } }
+
+/* ===========================================================================
+   O passeio: o aparelho preso ao ecrã
+   =========================================================================== */
+
+.passeio { position: relative; --p: 0; }
+
+.passeio-preso {
+  position: sticky; top: 0;
+  height: 100svh;
+  overflow: hidden;
+  padding: calc(var(--topo) + 8px) clamp(18px, 4vw, 72px) 44px;
+  display: grid;
+  grid-template-columns: minmax(0, 0.7fr) minmax(0, 1.55fr);
+  gap: clamp(28px, 4vw, 84px);
+  align-items: center;
+}
+
+.passeio-legendas { display: grid; align-content: center; min-width: 0; }
+.legenda {
+  grid-area: 1 / 1;
+  opacity: 0;
+  transform: translateY(18px);
+  transition: opacity 300ms var(--ease-saida), transform 700ms var(--ease-saida);
+  pointer-events: none;
+}
+.legenda[data-on] { opacity: 1; transform: none; pointer-events: auto; transition-delay: 100ms; }
+.legenda .t2 { font-size: clamp(1.9rem, 3.6vw, 3.6rem); }
+.legenda .rotulo { color: var(--texto-2); }
+
+.passeio-visual { min-width: 0; min-height: 0; height: 100%; display: grid; place-items: center; }
+/* A largura que deixa o ecrã inteiro caber na altura que sobra. */
+.passeio-visual .monitor { width: min(100%, calc((100svh - var(--topo) - 130px) * 1.68)); }
+
+/* Os traços que dizem em que passo se vai. */
+.passeio-fio { position: absolute; left: 50%; bottom: 20px; transform: translateX(-50%); display: flex; gap: 6px; }
+.passeio-fio i { width: 22px; height: 4px; border-radius: 4px; background: var(--fio-2); transition: background-color 300ms, width 400ms var(--ease-saida); }
+.passeio-fio i[data-on] { background: var(--texto); width: 38px; }
+
+/* O telemóvel ao centro, as legendas de um lado e do outro. */
+.passeio-centro { --tw-c: min(350px, calc((100svh - var(--topo) - 110px) / 2.3)); }
+.passeio-centro .passeio-preso { grid-template-columns: minmax(0, 1fr); }
+.passeio-centro .passeio-legendas,
+.passeio-centro .passeio-visual { grid-area: 1 / 1; }
+.passeio-centro .legenda { width: min(32ch, calc(50% - var(--tw-c) / 2 - 48px)); align-self: center; }
+.passeio-centro .legenda:nth-child(even) { justify-self: end; }
+.passeio-centro .telemovel { --tw: var(--tw-c); position: relative; }
+
+/* A cor da secção da app: um disco por trás do telemóvel. */
+.app-disco { position: relative; display: grid; place-items: center; }
+.app-disco::before {
+  content: ""; position: absolute;
+  width: calc(var(--tw-c) * 1.9); aspect-ratio: 1; border-radius: 50%;
+  background: var(--acento);
+}
+
+@media (max-width: 860px) {
+  .passeio-preso,
+  .passeio-centro .passeio-preso {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: minmax(0, 1fr) auto;
+    gap: 18px;
+    padding-bottom: 40px;
+  }
+  .passeio-visual { order: -1; grid-area: auto !important; }
+  .passeio-legendas { min-height: 12rem; align-content: start; grid-area: auto !important; }
+  .passeio-centro .legenda { width: auto; align-self: start; }
+  .passeio-centro .legenda:nth-child(even) { justify-self: start; }
+  .passeio-centro { --tw-c: min(250px, calc((100svh - var(--topo) - 300px) / 2.3)); }
+  .passeio-visual .monitor { width: 100%; }
+  .legenda .t2 { font-size: 1.8rem; }
+  .legenda .lede { font-size: 1rem; margin-top: 10px; }
+  .passeio-fio { bottom: 14px; }
+}
+
+/* ===========================================================================
+   O ciclo: uma pista que anda para o lado
+   =========================================================================== */
+
+.ciclo { position: relative; --p: 0; }
+.ciclo-preso {
+  position: sticky; top: 0; height: 100svh; overflow: hidden;
+  display: flex; flex-direction: column; justify-content: center; gap: clamp(22px, 4svh, 48px);
+  padding-top: var(--topo);
+}
+.ciclo-pista {
+  display: flex; gap: clamp(14px, 1.6vw, 24px);
+  padding-inline: var(--margem);
+  width: max-content;
+  /* A pista anda até o último cartão encostar à margem direita. */
+  transform: translateX(calc(var(--p) * (100vw - 100%)));
+  will-change: transform;
+}
+.ciclo-cartao {
+  width: clamp(270px, 27vw, 400px);
+  height: min(54svh, 480px);
+  flex: none;
+  padding: clamp(20px, 2vw, 30px);
+  border-radius: var(--raio-g);
+  display: flex; flex-direction: column; justify-content: space-between; gap: 18px;
+}
+.ciclo-branco { background: #ffffff; color: var(--tinta); }
+.ciclo-n {
+  display: inline-grid; place-items: center; width: 34px; height: 34px; border-radius: 50%;
+  border: 1.5px solid currentColor; font-weight: 800; font-size: 0.95rem;
+}
+.ciclo-valor b { display: block; font-weight: 800; font-stretch: 84%; letter-spacing: -0.05em; line-height: 0.9; font-size: clamp(3.4rem, 6vw, 5.6rem); white-space: nowrap; }
+.ciclo-valor svg { display: block; width: 72%; height: auto; }
+.ciclo-valor span { display: block; margin-top: 10px; font-weight: 650; color: var(--texto-2); }
+.ciclo-branco .ciclo-valor span, .ciclo-branco p { color: #55554f; }
+
+@media (max-width: 860px) {
+  .ciclo-cartao { width: 76vw; }
+}
+
+/* ===========================================================================
+   De sete ferramentas para uma
+   =========================================================================== */
+
+.ferramentas { --p: 0; }
+.ferramentas-lista { display: flex; flex-wrap: wrap; gap: 10px; list-style: none; }
+.ferramenta {
+  /* Cada ferramenta risca-se na sua vez, à medida que a secção sobe no ecrã. */
+  --t: clamp(0, calc((var(--p) - var(--a)) / 0.07), 1);
+  position: relative;
+  display: inline-flex; align-items: center; height: clamp(44px, 5vw, 64px); padding-inline: clamp(18px, 2vw, 28px);
+  border-radius: 999px;
+  background: var(--sup);
+  font-weight: 700; font-size: clamp(1rem, 1.7vw, 1.5rem); letter-spacing: -0.02em;
+  opacity: calc(1 - var(--t) * 0.6);
+}
+.ferramenta::after {
+  content: ""; position: absolute; left: 14px; right: 14px; top: 50%; height: 2.5px; background: currentColor;
+  transform: scaleX(var(--t)); transform-origin: left;
+}
+.ferramenta-uma {
+  --t: clamp(0, calc((var(--p) - 0.42) / 0.08), 1);
+  display: inline-flex; align-items: center; gap: 14px;
+  height: clamp(64px, 8vw, 104px); padding-inline: clamp(24px, 3vw, 44px);
+  border-radius: 999px;
+  background: var(--acento); color: var(--sobre-acento);
+  font-weight: 800; font-stretch: 88%; font-size: clamp(1.6rem, 3.6vw, 3.2rem); letter-spacing: -0.035em;
+  opacity: calc(0.25 + var(--t) * 0.75);
+  transform: scale(calc(0.92 + var(--t) * 0.08));
+  transform-origin: left center;
+}
+
+/* ===========================================================================
+   Números
+   =========================================================================== */
+
+.numeros-grelha { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: clamp(20px, 3vw, 48px) clamp(16px, 2vw, 32px); }
+.numero b { display: block; font-weight: 800; font-stretch: 84%; letter-spacing: -0.05em; line-height: 0.86; font-size: clamp(3.2rem, 7vw, 6.6rem); }
+.numero span { display: block; margin-top: 10px; font-weight: 650; }
+
+/* ===========================================================================
+   Planos
+   =========================================================================== */
+
+.planos-mesa { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: clamp(10px, 1.2vw, 18px); }
+/* Os três planos cabem inteiros no ecrã, por baixo da navegação.
+   Tudo o que está dentro de um plano mede-se em `--u`, que vale 10px num ecrã
+   alto e encolhe com a altura da janela. Num portátil baixo o plano fica mais
+   pequeno em vez de obrigar a fazer scroll para chegar ao botão. */
+.planos-mesa { --u: clamp(6px, calc((100svh - var(--topo) - 28px) / 87), 10px); scroll-margin-top: calc(var(--topo) + 12px); }
+
+.plano {
+  display: flex; flex-direction: column;
+  padding: calc(var(--u) * 3.4);
+  border-radius: var(--raio-g);
+  font-size: calc(var(--u) * 1.5);
+  line-height: 1.32;
+}
+.plano-nome { font-size: calc(var(--u) * 4.6); }
+.plano-linha { margin-top: calc(var(--u) * 1.1); max-width: 36ch; color: var(--texto-2); }
+.plano-preco { margin-top: calc(var(--u) * 2.6); display: flex; align-items: flex-end; gap: calc(var(--u) * 0.9); color: var(--texto-3); }
+.plano-preco b { font-size: calc(var(--u) * 5.2); line-height: 0.9; color: var(--texto); }
+.plano-preco span { padding-bottom: calc(var(--u) * 0.3); }
+.plano-nota { margin-top: calc(var(--u) * 0.9); font-size: calc(var(--u) * 1.35); color: var(--texto-3); }
+.plano-lista { margin-top: calc(var(--u) * 2.4); list-style: none; }
+.plano-lista li { padding-block: calc(var(--u) * 0.82); border-top: 1px solid var(--fio); }
+.plano-fora { margin-top: calc(var(--u) * 1.6); font-size: calc(var(--u) * 1.35); color: var(--texto-3); }
+.plano-fora b { color: var(--texto-2); font-weight: 650; }
+.plano-acao { margin-top: auto; padding-top: calc(var(--u) * 2.6); }
+.plano-acao .btn { width: 100%; height: calc(var(--u) * 5.2); font-size: calc(var(--u) * 1.6); }
+.plano .etiqueta { height: calc(var(--u) * 2.6); padding-inline: calc(var(--u) * 1.1); font-size: calc(var(--u) * 1.2); }
+
+@media (max-width: 1020px) {
+  /* Numa só coluna os planos ficam empilhados e leem-se a rolar: tamanho inteiro. */
+  .planos-mesa { grid-template-columns: minmax(0, 1fr); --u: 10px; }
+}
+
+/* O interruptor mensal/anual: duas cápsulas dentro de uma. */
+.interruptor { display: inline-flex; padding: 4px; border-radius: 999px; background: var(--areia); }
+.interruptor button { height: 40px; padding-inline: 18px; border-radius: 999px; font-weight: 700; font-size: 0.95rem; color: var(--texto-2); transition: background-color 200ms, color 200ms; }
+.interruptor button[aria-pressed="true"] { background: var(--tinta); color: #ffffff; }

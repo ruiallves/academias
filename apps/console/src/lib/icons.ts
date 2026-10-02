@@ -79,6 +79,11 @@ export {
   ExternalLink,
   Loader2,
   Trophy,
+  /* Certificação FPF: a medalha é o menu, o selo é um requisito cumprido. */
+  Award,
+  BadgeCheck,
+  CircleDashed,
+  ScanLine,
   /* Ficha de jogo: o menos fecha o par com o Plus nos contadores. */
   Minus,
   HeartPulse,

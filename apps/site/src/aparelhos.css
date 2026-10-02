@@ -1,0 +1,107 @@
+/* ---------------------------------------------------------------------------
+   Os aparelhos: o ecrã da consola e o telemóvel da app.
+
+   Lá dentro vão capturas reais do produto. Aqui só se desenha a moldura, a
+   câmara e o realce. A moldura é discreta de propósito: quem tem de se ver é
+   o produto.
+   --------------------------------------------------------------------------- */
+
+.captura {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  object-position: top left;
+  opacity: 0;
+  transition: opacity 450ms var(--ease-saida);
+  user-select: none;
+  -webkit-user-select: none;
+  pointer-events: none;
+}
+.captura[data-on] { opacity: 1; }
+
+/* --- O ecrã da consola ----------------------------------------------------- */
+
+.monitor {
+  width: 100%;
+  background: #ffffff;
+  border-radius: clamp(10px, 1.2vw, 18px);
+  overflow: hidden;
+  box-shadow: 0 0 0 1px rgb(19 19 19 / 0.08), 0 24px 40px -28px rgb(19 19 19 / 0.4);
+}
+
+.monitor-ecra {
+  position: relative;
+  aspect-ratio: 16 / 9;
+  overflow: hidden;
+  background: #f7f6f3;
+}
+
+.monitor-camara {
+  position: absolute; inset: 0;
+  transform-origin: 0 0;
+  transition: transform 1200ms var(--ease-saida);
+}
+
+/* O realce: um marcador por cima do que acabou de mudar. */
+.realce {
+  position: absolute;
+  border-radius: 10px;
+  background: var(--acento);
+  opacity: 0.4;
+  animation: realce-entra 800ms var(--ease-saida) both;
+}
+@keyframes realce-entra {
+  from { opacity: 0; transform: scaleX(0.2); transform-origin: left; }
+  to { opacity: 0.4; transform: none; transform-origin: left; }
+}
+
+/* --- O telemóvel ----------------------------------------------------------- */
+
+.telemovel {
+  --tw: min(300px, 34svh);
+  width: var(--tw);
+  flex: none;
+  padding: calc(var(--tw) * 0.03);
+  background: #131313;
+  border-radius: calc(var(--tw) * 0.16);
+  box-shadow: 0 26px 40px -26px rgb(19 19 19 / 0.5);
+  transition: transform 900ms var(--ease-saida);
+}
+
+.telemovel-ecra {
+  position: relative;
+  aspect-ratio: 390 / 844;
+  overflow: hidden;
+  border-radius: calc(var(--tw) * 0.13);
+  background: #f7f6f3;
+}
+
+/* Um aviso do sistema: desce do topo do ecrã. */
+.aviso-push {
+  position: absolute; z-index: 2;
+  left: 4%; right: 4%; top: 2.5%;
+  display: flex; gap: 3%; align-items: flex-start;
+  padding: 3.5% 4%;
+  background: rgb(255 255 255 / 0.97);
+  border-radius: calc(var(--tw) * 0.065);
+  box-shadow: 0 10px 30px -12px rgb(19 19 19 / 0.35);
+  color: #131313;
+  font-size: calc(var(--tw) * 0.039);
+  line-height: 1.3;
+  transform: translateY(-150%);
+  transition: transform 700ms var(--ease-saida);
+}
+.aviso-push[data-on] { transform: none; }
+.aviso-push img { width: 9%; flex: none; }
+.aviso-push b { font-weight: 700; }
+.aviso-push span { color: #8b8a83; font-size: 0.86em; }
+
+/* Um aparelho é uma imagem do produto: nada lá dentro se seleciona nem se clica. */
+.monitor,
+.telemovel {
+  user-select: none;
+  -webkit-user-select: none;
+  pointer-events: none;
+}

@@ -43,6 +43,9 @@ export const NAV_KEYS: Record<string, Permission> = {
   "ai-development": "ai:read",
   "ai-opponents": "ai:read",
   fees: "billing:read",
+  // Certificação FPF. O cliente só a mostra a clubes com futebol; aqui basta a
+  // chave existir para um cargo a poder recortar.
+  certification: "certification:read",
   comms: "comms:read",
   evaluations: "evaluation:read",
   reports: "report:read",

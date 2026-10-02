@@ -60,7 +60,7 @@ export class SeasonsService {
         where: { seasonId: actual.id },
         orderBy: [{ maxAge: "asc" }, { name: "asc" }],
         select: {
-          id: true, name: true, maxAge: true, sportId: true,
+          id: true, name: true, maxAge: true, gender: true, sportId: true,
           sport: { select: { name: true } },
           staff: { where: { leftAt: null }, select: { membership: { select: { user: { select: { name: true } } } } } },
           _count: { select: { athletes: { where: { leftAt: null } } } },
@@ -288,7 +288,7 @@ export class SeasonsService {
         const antigas = await db.team.findMany({
           where: { id: { in: dto.equipas.map((e) => e.fromTeamId) } },
           select: {
-            id: true, name: true, maxAge: true, sportId: true, schedule: true,
+            id: true, name: true, maxAge: true, gender: true, sportId: true, schedule: true,
             maxCallUps: true, matchMinutes: true, seasonId: true,
           },
         });
@@ -323,6 +323,7 @@ export class SeasonsService {
               sportId: antiga.sportId,
               name: (pedido.name ?? antiga.name).trim() || antiga.name,
               maxAge: antiga.maxAge,
+              gender: antiga.gender,
               schedule: antiga.schedule as object,
               maxCallUps: antiga.maxCallUps,
               matchMinutes: antiga.matchMinutes,
@@ -473,10 +474,16 @@ function maisUmAno(d: Date): string {
  * 15. Quando passa, sobe ao escalão mais baixo que ainda o aceite, dentro da
  * mesma modalidade. Sem nenhum que o aceite (um júnior num clube que acaba nos
  * sub-17), devolve `null` e o assistente pergunta.
+ *
+ * Quem vem de uma equipa feminina sobe para uma feminina, e quem não vem não
+ * é proposto para uma: com um "Sub-15" e um "Sub-15 Feminino" no clube, o
+ * desempate era pela ordem em que vinham da base. Uma atleta sem equipa
+ * feminina à frente fica com a que houver — é o assistente que mostra, e a
+ * pessoa que decide.
  */
 function sugerirEscalao(
-  equipas: { id: string; maxAge: number; sportId: string }[],
-  actual: { id: string; maxAge: number; sportId: string } | undefined,
+  equipas: { id: string; maxAge: number; sportId: string; gender?: string | null }[],
+  actual: { id: string; maxAge: number; sportId: string; gender?: string | null } | undefined,
   idade: number,
 ): { id: string } | null {
   if (actual && idade <= actual.maxAge) return actual;
@@ -486,5 +493,7 @@ function sugerirEscalao(
     .filter((t) => idade <= t.maxAge)
     .sort((a, b) => a.maxAge - b.maxAge);
 
-  return candidatas[0] ?? null;
+  const feminina = actual?.gender === "FEMALE";
+  const doMesmo = candidatas.filter((t) => (t.gender === "FEMALE") === feminina);
+  return doMesmo[0] ?? (feminina ? candidatas[0] : null) ?? null;
 }

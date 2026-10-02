@@ -120,6 +120,8 @@ export type Team = {
    * para o que se mostra, e `birthdateFloor` no servidor para o que decide.
    */
   maxAge: number;
+  /** Masculina, feminina ou mista. Ausente enquanto ninguém o indicar. Ver `lib/genero.ts`. */
+  gender?: TeamGender;
   season: string;
   coachIds: string[];
   /**
@@ -339,6 +341,8 @@ export type Athlete = {
   weightKg?: number;
   /** O rótulo vem de `Sport.dominantSideLabel`; aqui só o valor. */
   dominantSide?: DominantSide;
+  /** O sexo com que está inscrito na federação. Ausente enquanto ninguém o indicar. */
+  sex?: AthleteSex;
   /** Número de camisola, quando a modalidade os usa. */
   squadNumber?: number;
 
@@ -575,3 +579,9 @@ export type AttentionItem = {
   to: string;
   action: string;
 };
+
+/** O género de uma equipa. Gémea de `TeamGender` no schema. */
+export type TeamGender = "MALE" | "FEMALE" | "MIXED";
+
+/** O sexo com que um atleta está inscrito. Gémea de `AthleteSex` no schema. */
+export type AthleteSex = "FEMALE" | "MALE";

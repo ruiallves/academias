@@ -3,6 +3,7 @@ import type { ColunaExport } from "@/lib/exportar";
 import { dataISO } from "@/lib/exportar";
 import { diaMesParaFolha, EXPORT_COLUMNS, sexoParaFolha } from "@/lib/member-sheet";
 import { ladoParaFolha } from "@/lib/import";
+import { ATHLETE_SEX_LABEL } from "@/lib/genero";
 import { STATUS_LABEL, type MemberRow } from "@/lib/members";
 import type { Athlete, Guardian, StaffMember, Team } from "@/data/types";
 import { athleteById, sportById, teamById } from "@/lib/api";
@@ -99,6 +100,8 @@ export const COLUNAS_EXPORT_ATLETAS: ColunaExport<Athlete>[] = [
   { header: "Altura (cm)", valor: (a) => a.heightCm, largura: 12 },
   { header: "Peso (kg)", valor: (a) => a.weightKg, largura: 12 },
   { header: "Lado dominante", valor: (a) => ladoParaFolha(a.dominantSide), largura: 16 },
+  // Com a palavra que a importação lê de volta.
+  { header: "Sexo", valor: (a) => (a.sex ? ATHLETE_SEX_LABEL[a.sex] : ""), largura: 12 },
   /*
    * O estado fica no fim, fora das colunas da importação — que não o lê. Uma
    * folha exportada com os que saíram serve para conferir; reimportá-la não os
