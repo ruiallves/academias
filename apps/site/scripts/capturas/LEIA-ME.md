@@ -14,7 +14,12 @@ node apps/site/scripts/capturas/consola.mjs con-atleta con-socios  só essas
 node apps/site/scripts/capturas/consola.mjs --sem-build          reaproveita o último build
 node apps/site/scripts/capturas/consola.mjs --ver                guarda também um PNG a 1920 na pasta de trabalho
 node apps/site/scripts/capturas/consola.mjs --sem-remendos       fotografa a consola tal como está
+node apps/site/scripts/capturas/consola.mjs --telemovel          as cenas de CENAS_TELEMOVEL num iPhone (390×844, ×3)
 ```
+
+Com `--telemovel` sai `<id>-tel.webp` (1170×2532), `<id>-tel-m.webp` (585 de largura)
+e `manifesto-consola-tel.json`. Uma cena pode trazer `telemovel: { preparar, focos }`
+para o que muda no telemóvel (ver `AJUSTES_TELEMOVEL` em `consola/cenas.mjs`).
 
 Sai para `apps/site/public/shots/`: `<id>.webp` (3840×2160), `<id>-m.webp`
 (1920×1080) e `manifesto-consola.json`, que é atualizado a cada captura.

@@ -1,4 +1,4 @@
-import { useId, useRef } from "react";
+import { useEffect, useId, useRef } from "react";
 import { cx } from "@/components/primitives";
 import { FORMAT_PITCH, type GameFormat } from "@/lib/training";
 
@@ -68,6 +68,24 @@ export function PitchBoard({
   const uid = useId().replace(/:/g, "");
   const svg = useRef<SVGSVGElement>(null);
   const arrasto = useRef<{ id: string; dx: number; dy: number; moveu: boolean } | null>(null);
+
+  /*
+   * No telemóvel, a relva rola a página e só os jogadores se agarram.
+   *
+   * O campo inteiro com `touch-none` prendia o dedo: quem o tinha à frente
+   * não conseguia descer. Agora só as peças recusam rolar, e com uma peça na
+   * mão o `touchmove` é travado aqui, porque o Safari nem sempre respeita o
+   * `touch-action` dentro de um SVG.
+   */
+  useEffect(() => {
+    const el = svg.current;
+    if (!el) return;
+    const travar = (e: TouchEvent) => {
+      if (arrasto.current && e.cancelable) e.preventDefault();
+    };
+    el.addEventListener("touchmove", travar, { passive: false });
+    return () => el.removeEventListener("touchmove", travar);
+  }, []);
   const s = FORMAT_PITCH[format] ?? FORMAT_PITCH.f11;
   // O basquetebol desenha-se em meio campo: os sistemas são de ataque posicional, junto ao cesto.
   const meioCampo = s.kind === "basketball";
@@ -102,7 +120,7 @@ export function PitchBoard({
     <svg
       ref={svg}
       viewBox={`${-m} ${-m} ${W + 2 * m} ${H + 2 * m}`}
-      className={cx("block w-full touch-none select-none", className)}
+      className={cx("block w-full select-none", className)}
       preserveAspectRatio="xMidYMid meet"
       role="group"
       aria-label="O campo e os jogadores"
@@ -127,6 +145,9 @@ export function PitchBoard({
         if (d && !d.moveu) onEscolher?.(d.id === escolhida ? null : d.id);
       }}
       onPointerLeave={() => {
+        arrasto.current = null;
+      }}
+      onPointerCancel={() => {
         arrasto.current = null;
       }}
     >
@@ -164,7 +185,7 @@ export function PitchBoard({
           <g
             key={p.id}
             transform={`translate(${X} ${Y})`}
-            className={cx("outline-none", editavel && "cursor-pointer", "[&:focus-visible_.anel]:opacity-100")}
+            className={cx("outline-none", editavel && "cursor-pointer touch-none", "[&:focus-visible_.anel]:opacity-100")}
             role={editavel ? "button" : undefined}
             tabIndex={editavel ? 0 : undefined}
             aria-label={`${p.label}: ${j ? j.nome : "por preencher"}`}

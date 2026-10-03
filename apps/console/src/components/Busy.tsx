@@ -94,10 +94,20 @@ export function useBusy(active: boolean) {
 /**
  * O que a casca desenha: o conteúdo, desfocado quando é preciso, e o disco.
  *
- * O desfoque vive num `<div>` **dentro** do `<main>` e não no `<main>` em si:
- * `filter` cria um contexto de empilhamento novo, e um `position: fixed` lá
- * dentro passaria a medir-se contra ele em vez de contra a janela. Com a camada
- * separada, o disco fica por cima e os diálogos continuam a comportar-se.
+ * ## O desfoque é uma película com o tamanho do ecrã
+ *
+ * Era um `filter: blur()` posto no conteúdo da página, e o conteúdo tem a
+ * altura que a página tiver. O Safari tem um tecto para o tamanho de uma
+ * camada com filtro: numa página muito comprida (a lista de Jogos de um clube
+ * com 77 jogos marcados) passava-o, e depois de o desfoque sair ficava a
+ * página em branco, só com os anéis e o campo de pesquisa, que ele desenha à
+ * parte. Num clube com poucos jogos nunca se via.
+ *
+ * Agora o conteúdo não leva filtro nenhum. Por cima dele pousa uma película
+ * `fixed`, do tamanho da área visível, que desfoca o que tem por baixo
+ * (`backdrop-filter`) e o esbate com a cor do fundo a 40%: à vista é o mesmo
+ * `blur(3px)` com `opacity: 0.6` de antes, mas o tamanho já não depende da
+ * página.
  */
 export function BusyScreen({ children }: { children: ReactNode }) {
   const n = useContext(BusyCount);
@@ -127,13 +137,26 @@ export function BusyScreen({ children }: { children: ReactNode }) {
         // `aria-hidden` enquanto espera: um leitor de ecrã a atravessar conteúdo
         // que está prestes a ser substituído lê coisas que já não são verdade.
         aria-hidden={visivel || undefined}
-        className={cxBusy(
-          "page-pad w-full transition-[filter,opacity] duration-200 motion-reduce:transition-none",
-          visivel && "pointer-events-none select-none blur-[3px] opacity-60",
-        )}
+        className={cxBusy("page-pad w-full", visivel && "pointer-events-none select-none")}
       >
         {children}
       </div>
+
+      {/*
+        A película: desfoca e esbate o que está por baixo, do tamanho do ecrã.
+        Está sempre montada para entrar e sair com a mesma transição de antes;
+        escondida, `invisible` tira-lhe o desfoque (a visibilidade só muda depois
+        de a opacidade chegar a zero). No telemóvel começa abaixo da barra de
+        cima, que antes também não desfocava.
+      */}
+      <div
+        aria-hidden
+        style={{ left: "var(--nav-w, 0px)", backdropFilter: "blur(3px)", WebkitBackdropFilter: "blur(3px)" }}
+        className={cxBusy(
+          "pointer-events-none fixed inset-y-0 right-0 z-20 bg-canvas/40 transition-[opacity,visibility] duration-200 motion-reduce:transition-none max-md:left-0! max-md:top-[52px]",
+          visivel ? "visible opacity-100" : "invisible opacity-0",
+        )}
+      />
 
       {visivel && (
         <div
@@ -153,9 +176,8 @@ export function BusyScreen({ children }: { children: ReactNode }) {
             `left: var(--nav-w)` começa a área de centragem onde o conteúdo começa.
             A variável vem da casca e acompanha o menu quando ele encolhe.
 
-            Isto só funciona porque esta camada vive **fora** do `<div>` que leva
-            o `blur`: um `filter` cria um bloco de contenção, e um `fixed` lá
-            dentro passaria a medir-se contra ele em vez de contra a janela.
+            Fica por cima da película (o mesmo `z-20`, desenhado depois), e por
+            isso o disco não se desfoca.
           */
           style={{ left: "var(--nav-w, 0px)" }}
           // No telemóvel não há barra lateral: `left` é 0 e o disco centra na janela.

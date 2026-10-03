@@ -92,12 +92,34 @@ export function PreJogo(p: PreJogoProps) {
    * campo pulsam a dizer que o recebem, e a que está por baixo cresce.
    *
    * Só começa depois de o ponteiro sair do sítio: um toque continua a ser um
-   * toque. No telemóvel pega-se pela fotografia (ou pelo número), para o resto
-   * da linha continuar a servir para rolar a lista.
+   * toque. No telemóvel a fotografia agarra logo; o resto da linha agarra ao
+   * fim de um toque demorado, para um deslizar rápido continuar a rolar a lista.
    */
   const [arrasto, setArrasto] = useState<{ id: string; x: number; y: number; alvo: string | null } | null>(null);
-  const pegado = useRef<{ id: string; x: number; y: number; px: number; py: number; ativo: boolean } | null>(null);
+  const pegado = useRef<{ id: string; x: number; y: number; px: number; py: number; ativo: boolean; moveu?: boolean } | null>(null);
   const acabouDeArrastar = useRef(false);
+  const espera = useRef(0);
+
+  /*
+   * Com um jogador na mão, o dedo deixa de rolar a página.
+   *
+   * Fica ligado desde o início, e não só durante o arrasto: o Chrome decide no
+   * primeiro toque se o gesto pode ser travado, e um ouvinte acrescentado a
+   * meio já chegava tarde.
+   */
+  const raiz = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const el = raiz.current;
+    if (!el) return;
+    const travar = (e: TouchEvent) => {
+      if (pegado.current?.ativo && e.cancelable) e.preventDefault();
+    };
+    el.addEventListener("touchmove", travar, { passive: false });
+    return () => {
+      el.removeEventListener("touchmove", travar);
+      clearTimeout(espera.current);
+    };
+  }, []);
   const porBaixo = (x: number, y: number) => document.elementFromPoint(x, y)?.closest("[data-drop]")?.getAttribute("data-drop") ?? null;
 
   /*
@@ -149,12 +171,38 @@ export function PreJogo(p: PreJogoProps) {
   function pegar(e: ReactPointerEvent, id: string) {
     if (!p.podeEditar || (e.pointerType === "mouse" && e.button !== 0)) return;
     pegado.current = { id, x: e.clientX, y: e.clientY, px: e.clientX, py: e.clientY, ativo: false };
+    /*
+     * No telemóvel, fora da fotografia, pega-se com um toque demorado. Antes
+     * disso o dedo é de quem rola: sair do sítio larga tudo.
+     */
+    const demorado = e.pointerType === "touch" && !(e.target as Element).closest("[data-pega]");
+    clearTimeout(espera.current);
+    if (demorado) {
+      espera.current = window.setTimeout(() => {
+        const i = pegado.current;
+        if (!i || i.ativo) return;
+        i.ativo = true;
+        navigator.vibrate?.(12);
+        acompanhar();
+        setArrasto({ id: i.id, x: i.px, y: i.py, alvo: porBaixo(i.px, i.py) });
+      }, 260);
+    }
     const mover = (ev: PointerEvent) => {
       const i = pegado.current;
       if (!i) return;
-      if (!i.ativo && Math.hypot(ev.clientX - i.x, ev.clientY - i.y) < 7) return;
+      if (!i.ativo && Math.hypot(ev.clientX - i.x, ev.clientY - i.y) < 7) {
+        i.px = ev.clientX;
+        i.py = ev.clientY;
+        return;
+      }
+      if (!i.ativo && demorado) {
+        // Deslizou antes de segurar: era para rolar.
+        largar(ev);
+        return;
+      }
       i.px = ev.clientX;
       i.py = ev.clientY;
+      i.moveu = true;
       if (!i.ativo) {
         i.ativo = true;
         acompanhar();
@@ -163,6 +211,7 @@ export function PreJogo(p: PreJogoProps) {
       setArrasto({ id: i.id, x: ev.clientX, y: ev.clientY, alvo: porBaixo(ev.clientX, ev.clientY) });
     };
     const largar = (ev: PointerEvent) => {
+      clearTimeout(espera.current);
       window.removeEventListener("pointermove", mover);
       window.removeEventListener("pointerup", largar);
       window.removeEventListener("pointercancel", largar);
@@ -170,7 +219,8 @@ export function PreJogo(p: PreJogoProps) {
       pegado.current = null;
       cancelAnimationFrame(rolagem.current);
       setArrasto(null);
-      if (!i?.ativo || ev.type === "pointercancel") return;
+      // Segurar e soltar no mesmo sítio não leva o jogador a lado nenhum.
+      if (!i?.ativo || !i.moveu || ev.type === "pointercancel") return;
       // O clique que vem a seguir ao largar não é um clique.
       acabouDeArrastar.current = true;
       setTimeout(() => (acabouDeArrastar.current = false), 0);
@@ -200,7 +250,7 @@ export function PreJogo(p: PreJogoProps) {
   const alvoSlot = arrasto?.alvo?.startsWith("slot:") ? arrasto.alvo.slice(5) : null;
 
   return (
-    <div className="space-y-4">
+    <div ref={raiz} className="space-y-4">
       <div className="grid items-start gap-4 xl:grid-cols-[minmax(0,1fr)_372px]">
         {/* ------------------------------------------------------------ o onze */}
         <Cartao>
@@ -293,10 +343,11 @@ export function PreJogo(p: PreJogoProps) {
                     <li
                       key={j.id}
                       onPointerDown={(e) => pegar(e, j.id)}
-                      className={cx("mc-entra flex items-center gap-2.5 rounded-[14px] bg-sunken/60 py-1.5 pr-1.5 pl-2 select-none", p.podeEditar && "cursor-grab hover:bg-sunken", arrasto?.id === j.id && "opacity-35")}
+                      onContextMenu={(e) => p.podeEditar && e.preventDefault()}
+                      className={cx("mc-entra flex [-webkit-touch-callout:none] items-center gap-2.5 rounded-[14px] bg-sunken/60 py-1.5 pr-1.5 pl-2 select-none", p.podeEditar && "cursor-grab hover:bg-sunken", arrasto?.id === j.id && "opacity-35")}
                     >
                       <span className="w-4 text-center text-[11px] font-medium text-ink-4 tabular">{i + 1}</span>
-                      <span className="touch-none">
+                      <span data-pega className="touch-none">
                         <Camisola numero={j.numero} foto={j.foto} tom="tinta" tamanho={30} />
                       </span>
                       <span className="min-w-0 flex-1">
@@ -376,8 +427,9 @@ export function PreJogo(p: PreJogoProps) {
                   )}
                   <li
                     onPointerDown={(e) => !j.indisponivel && pegar(e, j.id)}
+                    onContextMenu={(e) => p.podeEditar && e.preventDefault()}
                     className={cx(
-                      "group/linha flex items-center gap-1 rounded-[14px] pr-1.5 select-none",
+                      "group/linha flex [-webkit-touch-callout:none] items-center gap-1 rounded-[14px] pr-1.5 select-none",
                       p.podeEditar && !j.indisponivel && "cursor-grab",
                       sugerido && "bg-signal-soft/60",
                       j.indisponivel && "opacity-50",
@@ -394,8 +446,8 @@ export function PreJogo(p: PreJogoProps) {
                         p.podeEditar && !j.indisponivel && (peca && servir ? "cursor-pointer hover:bg-sunken/70" : "cursor-grab hover:bg-sunken/50"),
                       )}
                     >
-                      {/* No telemóvel pega-se por aqui: o resto da linha rola a lista. */}
-                      <span className="touch-none">
+                      {/* No telemóvel pega-se logo por aqui; no resto da linha, segurando. */}
+                      <span data-pega className="touch-none">
                         <Camisola numero={j.numero} foto={j.foto} tom={j.onde.tipo === "campo" ? "clube" : j.onde.tipo === "banco" ? "tinta" : "neutro"} />
                       </span>
                       <span className="min-w-0 flex-1">

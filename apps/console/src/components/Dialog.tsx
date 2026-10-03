@@ -1,4 +1,5 @@
 import { cloneElement, isValidElement, useEffect, useId, useRef, type ReactElement, type ReactNode } from "react";
+import { createPortal } from "react-dom";
 import { X } from "@/lib/icons";
 import { cx } from "./primitives";
 
@@ -43,7 +44,16 @@ export function Dialog({
     return () => document.removeEventListener("keydown", onKey);
   }, [onClose]);
 
-  return (
+  /*
+   * Desenhado no `<body>`, fora da página.
+   *
+   * O `<main>` da consola é `isolate`: tudo o que lá está dentro, por mais alto
+   * que seja o `z-index`, fica por baixo do que está fora dele. No telemóvel a
+   * barra de separadores está fora (fixa, `z-30`), e tapava os últimos 64 px da
+   * folha, que é onde vive o rodapé com o "Guardar". As presenças, e qualquer
+   * outro formulário em folha, ficavam sem botão para gravar.
+   */
+  return createPortal(
     <div
       className="fixed inset-0 z-50 flex items-center justify-center bg-ink/20 p-4 max-md:items-end max-md:p-0"
       onMouseDown={(e) => e.target === e.currentTarget && onClose()}
@@ -86,7 +96,8 @@ export function Dialog({
           </footer>
         )}
       </div>
-    </div>
+    </div>,
+    document.body,
   );
 }
 

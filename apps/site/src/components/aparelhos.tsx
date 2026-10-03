@@ -1,4 +1,5 @@
 import { useEffect, useState, type CSSProperties, type ReactNode } from "react";
+import { useEstreito } from "@/lib/scroll";
 import { cx } from "./marca";
 
 /**
@@ -81,9 +82,21 @@ export type Plano = {
   zoom?: number;
   /** O nome de um foco a contornar a colete. */
   realce?: string;
+  /**
+   * Para onde a câmara aponta no telemóvel, quando não é o `foco` nem o `realce`.
+   * No telemóvel só se vê parte da consola, e em páginas com uma janela aberta
+   * por cima é a janela que tem de ficar à vista.
+   */
+  focoMovel?: string;
 };
 
 const entre = (x: number, min: number, max: number) => Math.min(max, Math.max(min, x));
+
+/** No telemóvel, a altura do ecrã da consola em proporção da largura. Igual a `.monitor-ecra` no CSS. */
+const ECRA_ALTO = 1.15;
+
+/** Onde acaba o menu lateral da consola, em fração da largura da captura. */
+const MENU_LATERAL = 0.124;
 
 /**
  * O ecrã da consola.
@@ -105,14 +118,42 @@ export function Monitor({
   urgente?: boolean;
 }) {
   const manifesto = useManifesto("consola");
+  const estreito = useEstreito();
   const entrada = manifesto[plano.captura];
   const L = entrada?.largura ?? 1920;
   const A = entrada?.altura ?? 1080;
 
   const foco = plano.foco ? entrada?.focos?.[plano.foco] : undefined;
-  const z = foco ? (plano.zoom ?? 1.8) : 1;
-  const tx = foco ? entre(0.5 - ((foco[0] + foco[2] / 2) / L) * z, 1 - z, 0) : 0;
-  const ty = foco ? entre(0.5 - ((foco[1] + foco[3] / 2) / A) * z, 1 - z, 0) : 0;
+
+  /*
+   * No telemóvel o ecrã fica alto (`--ecra-r` no CSS) e a captura enche-o de
+   * cima a baixo: em vez da consola inteira, minúscula, vê-se a parte que
+   * interessa, já legível. Sem foco, a câmara fica na área de trabalho, à
+   * direita do menu lateral.
+   */
+  const R = estreito ? ECRA_ALTO / (A / L) : 1;
+  let z: number, tx: number, ty: number;
+  if (estreito) {
+    // Mostra cerca de 40% da largura da consola, alinhado à esquerda do que
+    // interessa: o texto lê-se a partir do início das linhas, sem cortes à esquerda.
+    const nome = plano.focoMovel ?? plano.foco ?? plano.realce;
+    const fm = nome ? entrada?.focos?.[nome] : undefined;
+    z = R * 1.25 * (foco ? Math.min(plano.zoom ?? 1, 1.2) : 1);
+    const vx = 1 / z;
+    const vy = R / z;
+    const [x0, y0] = fm
+      ? [
+          fm[2] / L > vx ? fm[0] / L - 0.008 : (fm[0] + fm[2] / 2) / L - vx / 2,
+          fm[3] / A > vy ? fm[1] / A - 0.01 : (fm[1] + fm[3] / 2) / A - vy / 2,
+        ]
+      : [MENU_LATERAL, 0];
+    tx = entre(-x0 * z, 1 - z, 0);
+    ty = entre(-y0 * z, R - z, 0);
+  } else {
+    z = foco ? (plano.zoom ?? 1.8) : 1;
+    tx = foco ? entre(0.5 - ((foco[0] + foco[2] / 2) / L) * z, 1 - z, 0) : 0;
+    ty = foco ? entre(0.5 - ((foco[1] + foco[3] / 2) / A) * z, 1 - z, 0) : 0;
+  }
 
   const realce = plano.realce ? entrada?.focos?.[plano.realce] : undefined;
 

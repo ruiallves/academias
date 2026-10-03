@@ -3,7 +3,7 @@ import { Link } from "react-router-dom";
 import { Monitor, Telemovel, type Plano } from "@/components/aparelhos";
 import { cx, Mark, Seta } from "@/components/marca";
 import { CLUBES, NUMEROS } from "@/lib/content";
-import { seguir, useParado } from "@/lib/scroll";
+import { seguir, useEstreito, useParado } from "@/lib/scroll";
 import { Passeio, type Passo } from "./Passeio";
 
 /**
@@ -183,7 +183,7 @@ const APP: Capitulo[] = [
 
 export function AppDoClube() {
   return (
-    <section className="bloco palco-cal bg-sup">
+    <section className="bloco palco-cal bg-sup mt-[clamp(8px,1.2vw,20px)]">
       <div className="wrap pt-[clamp(64px,9vw,130px)]">
         <p className="rotulo">A app do clube</p>
         <h2 className="titulo t1 mt-4 max-w-[12ch]">O clube no telemóvel de cada família.</h2>
@@ -231,13 +231,13 @@ const CONSOLA: Cena[] = [
     texto: "No editor tático, os jogadores e a bola movem-se de um fotograma para o seguinte. Continua a fazer scroll para os ver.",
   },
   {
-    plano: { captura: "con-planeamento" },
+    plano: { captura: "con-planeamento", focoMovel: "semana" },
     rotulo: "Planeamento",
     titulo: "Planear a semana e a época.",
     texto: "Cada treino com o seu plano, a distância ao jogo e a carga da semana.",
   },
   {
-    plano: { captura: "con-presencas-depois", realce: "linha-tomas" },
+    plano: { captura: "con-presencas-depois", realce: "linha-tomas", focoMovel: "lista" },
     rotulo: "Presenças",
     titulo: "Presenças marcadas no campo.",
     texto: "Com as faltas avisadas pela família e as baixas do departamento clínico.",
@@ -255,7 +255,7 @@ const CONSOLA: Cena[] = [
     texto: "O treinador avalia o plantel e publica. A família vê a avaliação na app.",
   },
   {
-    plano: { captura: "con-comunicacao", foco: "leitura", zoom: 1.4 },
+    plano: { captura: "con-comunicacao", foco: "leitura", zoom: 1.4, focoMovel: "aviso" },
     rotulo: "Comunicação",
     titulo: "Comunicar e saber quem leu.",
     texto: "Avisos por equipa ou por escalão, com a taxa de leitura à vista.",
@@ -283,9 +283,10 @@ const CAPTURAS_DA_CONSOLA = CONSOLA.flatMap((x) => (x.plano.captura === QUADROS[
 export function Consola() {
   // Dentro do passo do treino, o scroll passa os fotogramas da jogada um a um.
   const [quadro, setQuadro] = useState(0);
+  const estreito = useEstreito();
 
   return (
-    <section className="bloco palco-noite mt-[clamp(8px,1.2vw,20px)]">
+    <section className="bloco palco-noite">
       <div className="wrap pt-[clamp(64px,9vw,130px)]">
         <p className="rotulo">A consola</p>
         <h2 className="titulo t1 mt-4 max-w-[12ch]">O clube inteiro, para quem lá trabalha.</h2>
@@ -303,6 +304,14 @@ export function Consola() {
         {(passo) => {
           const cena = CONSOLA[passo];
           const plano = passo === PASSO_DO_TREINO ? { ...cena.plano, captura: QUADROS[quadro] } : cena.plano;
+          /*
+           * No telemóvel mostra-se a consola como ela é no telemóvel: a área de
+           * Staff da app, com as tabelas em cartões. São capturas próprias, com
+           * o sufixo `-tel` (ver `scripts/capturas`).
+           */
+          if (estreito) {
+            return <Telemovel capturas={CAPTURAS_DA_CONSOLA.map((c) => `${c}-tel`)} atual={`${plano.captura}-tel`} />;
+          }
           return <Monitor capturas={CAPTURAS_DA_CONSOLA} plano={plano} />;
         }}
       </Passeio>

@@ -317,3 +317,87 @@ export const CENAS = [
     },
   },
 ];
+
+/** As cenas que se tiram também no telemóvel (`--telemovel`), por esta ordem. */
+export const CENAS_TELEMOVEL = [
+  "con-visao-geral", "con-mensalidades-depois", "con-quadro-1", "con-quadro-2", "con-quadro-3", "con-quadro-4",
+  "con-planeamento", "con-presencas-depois", "con-jogo-ficha", "con-atleta-avaliacoes", "con-comunicacao",
+  "con-inventario", "con-contas",
+];
+
+/* -------------------------------------------------------------------------- */
+/* Ajustes do telemóvel                                                        */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * Leva um elemento para o primeiro ecrã. `topo` deixa-o logo abaixo da barra de
+ * cima da consola (56 px); senão fica ao centro.
+ */
+async function rolarAte(loc, topo = false) {
+  await loc.first().evaluate((el, t) => {
+    el.scrollIntoView({ block: t ? "start" : "center" });
+    if (t) window.scrollBy(0, -72);
+  }, topo);
+  await loc.page().waitForTimeout(300);
+}
+
+const cartao = (page, texto) => page.locator("li", { hasText: texto });
+
+const AJUSTES_TELEMOVEL = {
+  "con-mensalidades-depois": {
+    // A tabela vira cartões e o Tomás fica abaixo das métricas: desce-se até ele.
+    preparar: async (page) => rolarAte(cartao(page, "Tomás Ferreira")),
+    focos: {
+      "linha-tomas": (p) => cartao(p, "Tomás Ferreira"),
+      "estado-tomas": (p) => cartao(p, "Tomás Ferreira").getByText("Pago", { exact: true }),
+    },
+  },
+  "con-planeamento": {
+    preparar: async (page) => rolarAte(page.getByText("5–11 out", { exact: true }), true),
+    focos: {
+      micro: (p) => caixa(p, "5–11 out", "Organização ofensiva"),
+      semana: (p) => p.getByText("MD-5").locator("xpath=ancestor::div[2]"),
+    },
+  },
+  "con-contas": {
+    focos: {
+      saldo: (p) => caixa(p, "Saldo atual", "Despesas este mês"),
+      grafico: (p) => caixa(p, "Receitas e despesas", "out"),
+    },
+  },
+  "con-presencas-depois": {
+    // A folha rola dentro da janela: traz-se o Tomás para o meio, com o rodapé à vista.
+    preparar: async (page) => {
+      await page.locator("li button", { hasText: "Registar" }).click();
+      await page.getByRole("dialog").waitFor();
+      await rolarAte(page.getByRole("dialog").locator("li", { hasText: "Tomás Ferreira" }));
+    },
+  },
+  "con-jogo-ficha": {
+    preparar: async (page) => rolarAte(cartao(page, "Tomás Ferreira")),
+    focos: {
+      "linha-tomas": (p) => cartao(p, "Tomás Ferreira"),
+    },
+  },
+  "con-atleta-avaliacoes": {
+    preparar: async (page) => {
+      await page.locator("select").nth(1).selectOption("t-sub13");
+      await page.getByRole("button", { name: /Entregues/ }).click();
+      await rolarAte(cartao(page, "Tomás Ferreira"));
+    },
+    focos: {
+      "linha-tomas": (p) => cartao(p, "Tomás Ferreira"),
+    },
+  },
+  "con-inventario": {
+    focos: {
+      lista: (p) => p.locator("ul", { has: cartao(p, "Camisola de jogo principal") }),
+      "stock-baixo": (p) => cartao(p, "Camisola de jogo principal"),
+    },
+  },
+};
+
+for (const [id, ajuste] of Object.entries(AJUSTES_TELEMOVEL)) {
+  const cena = CENAS.find((c) => c.id === id);
+  if (cena) cena.telemovel = ajuste;
+}

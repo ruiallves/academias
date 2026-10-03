@@ -1,0 +1,251 @@
+{
+  "con-visao-geral": {
+    "ficheiro": "con-visao-geral-tel.webp",
+    "largura": 390,
+    "altura": 844,
+    "escala": 3,
+    "descricao": "Visão geral da direção na segunda de manhã, com a lista do que precisa de atenção",
+    "focos": {
+      "atencao": [
+        14,
+        190.9,
+        362,
+        340.1
+      ],
+      "linha-mensalidades": [
+        15,
+        237.7,
+        360,
+        58.5
+      ],
+      "semana": [
+        14,
+        819.5,
+        362,
+        677.5
+      ]
+    }
+  },
+  "con-mensalidades-depois": {
+    "ficheiro": "con-mensalidades-depois-tel.webp",
+    "largura": 390,
+    "altura": 844,
+    "escala": 3,
+    "descricao": "Mensalidades de outubro, com a do Tomás Ferreira paga por MB WAY pela mãe",
+    "focos": {
+      "linha-tomas": [
+        15,
+        358.2,
+        360,
+        178.6
+      ],
+      "estado-tomas": [
+        30.5,
+        506.6,
+        57.5,
+        17.6
+      ]
+    }
+  },
+  "con-quadro-1": {
+    "ficheiro": "con-quadro-1-tel.webp",
+    "largura": 390,
+    "altura": 844,
+    "escala": 3,
+    "descricao": "Editor tático: \"Saída a três e finalização\" em futebol 9, frame 1 de 4",
+    "focos": {
+      "campo": [
+        146.8,
+        482.5,
+        212.8,
+        151.3
+      ]
+    }
+  },
+  "con-quadro-2": {
+    "ficheiro": "con-quadro-2-tel.webp",
+    "largura": 390,
+    "altura": 844,
+    "escala": 3,
+    "descricao": "Editor tático: \"Saída a três e finalização\" em futebol 9, frame 2 de 4",
+    "focos": {
+      "campo": [
+        146.8,
+        482.5,
+        212.8,
+        151.3
+      ]
+    }
+  },
+  "con-quadro-3": {
+    "ficheiro": "con-quadro-3-tel.webp",
+    "largura": 390,
+    "altura": 844,
+    "escala": 3,
+    "descricao": "Editor tático: \"Saída a três e finalização\" em futebol 9, frame 3 de 4",
+    "focos": {
+      "campo": [
+        146.8,
+        482.5,
+        212.8,
+        151.3
+      ]
+    }
+  },
+  "con-quadro-4": {
+    "ficheiro": "con-quadro-4-tel.webp",
+    "largura": 390,
+    "altura": 844,
+    "escala": 3,
+    "descricao": "Editor tático: \"Saída a três e finalização\" em futebol 9, frame 4 de 4",
+    "focos": {
+      "campo": [
+        146.8,
+        482.5,
+        212.8,
+        151.3
+      ]
+    }
+  },
+  "con-planeamento": {
+    "ficheiro": "con-planeamento-tel.webp",
+    "largura": 390,
+    "altura": 844,
+    "escala": 3,
+    "descricao": "Planeamento dos Sub-13: microciclo de 5 a 11 de outubro, com a carga e os dias MD",
+    "focos": {
+      "micro": [
+        14,
+        21.5,
+        362,
+        875.3
+      ],
+      "semana": [
+        26.6,
+        256.5,
+        336.8,
+        97.9
+      ]
+    }
+  },
+  "con-presencas-depois": {
+    "ficheiro": "con-presencas-depois-tel.webp",
+    "largura": 390,
+    "altura": 844,
+    "escala": 3,
+    "descricao": "Folha de presenças do treino de quarta dos Sub-13: 14 de 15 presentes, a falta avisada já justificada e um atleta de baixa",
+    "focos": {
+      "linha-tomas": [
+        7.8,
+        661.2,
+        374.5,
+        42.6
+      ],
+      "lista": [
+        0,
+        23.7,
+        390,
+        730.4
+      ],
+      "contagem": [
+        19.4,
+        766.8,
+        351.3,
+        16.3
+      ]
+    }
+  },
+  "con-jogo-ficha": {
+    "ficheiro": "con-jogo-ficha-tel.webp",
+    "largura": 390,
+    "altura": 844,
+    "escala": 3,
+    "descricao": "Página do jogo de sábado, área Pós-jogo: resultado 2-1 e a ficha preenchida",
+    "focos": {
+      "linha-tomas": [
+        15,
+        347.8,
+        360,
+        199.8
+      ]
+    }
+  },
+  "con-atleta-avaliacoes": {
+    "ficheiro": "con-atleta-avaliacoes-tel.webp",
+    "largura": 390,
+    "altura": 844,
+    "escala": 3,
+    "descricao": "Avaliações dos Sub-13 no 1.º período: a do Tomás Ferreira entregue, com 4, 4, 4 e 5",
+    "focos": {
+      "linha-tomas": [
+        15,
+        653.1,
+        360,
+        77.7
+      ]
+    }
+  },
+  "con-comunicacao": {
+    "ficheiro": "con-comunicacao-tel.webp",
+    "largura": 390,
+    "altura": 844,
+    "escala": 3,
+    "descricao": "Comunicação: o aviso de sexta aos Sub-13, lido por 41 de 46",
+    "focos": {
+      "leitura": [
+        163.2,
+        600.5,
+        192.4,
+        16.3
+      ],
+      "aviso": [
+        15,
+        499.1,
+        360,
+        137.7
+      ]
+    }
+  },
+  "con-inventario": {
+    "ficheiro": "con-inventario-tel.webp",
+    "largura": 390,
+    "altura": 844,
+    "escala": 3,
+    "descricao": "Inventário: os artigos do clube, com o stock de cada um",
+    "focos": {
+      "lista": [
+        15,
+        438.4,
+        360,
+        2523.4
+      ],
+      "stock-baixo": [
+        15,
+        438.4,
+        360,
+        242
+      ]
+    }
+  },
+  "con-contas": {
+    "ficheiro": "con-contas-tel.webp",
+    "largura": 390,
+    "altura": 844,
+    "escala": 3,
+    "descricao": "Contas do clube: saldo, receitas e despesas dos últimos meses e a previsão",
+    "focos": {
+      "saldo": [
+        15,
+        216.1,
+        360,
+        261.8
+      ],
+      "grafico": [
+        14,
+        490.6,
+        362,
+        297.3
+      ]
+    }
+  }
+}

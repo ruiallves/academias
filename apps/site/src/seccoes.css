@@ -29,6 +29,12 @@
   will-change: transform;
 }
 .heroi-tel .telemovel { --tw: clamp(118px, 19vw, 310px); }
+@media (max-width: 860px) {
+  /* No telemóvel o ecrã da consola fica alto e o telemóvel cresce, por cima dele. */
+  .heroi-montra { padding: 12px 12px 0; }
+  .heroi-tel { right: 4px; }
+  .heroi-tel .telemovel { --tw: 46vw; }
+}
 
 /* ===========================================================================
    Clubes a correr
@@ -114,8 +120,10 @@
   .passeio-legendas { min-height: 12rem; align-content: start; grid-area: auto !important; }
   .passeio-centro .legenda { width: auto; align-self: start; }
   .passeio-centro .legenda:nth-child(even) { justify-self: start; }
-  .passeio-centro { --tw-c: min(250px, calc((100svh - var(--topo) - 300px) / 2.3)); }
-  .passeio-visual .monitor { width: 100%; }
+  .passeio-centro { --tw-c: min(270px, calc((100svh - var(--topo) - 250px) / 2.2)); }
+  .passeio-visual .monitor { width: min(100%, calc((100svh - var(--topo) - 250px) / 1.15)); }
+  .passeio-legendas { min-height: 10.5rem; }
+  .passeio-lado .telemovel { --tw: min(270px, calc((100svh - var(--topo) - 250px) / 2.2)); }
   .legenda .t2 { font-size: 1.8rem; }
   .legenda .lede { font-size: 1rem; margin-top: 10px; }
   .passeio-fio { bottom: 14px; }

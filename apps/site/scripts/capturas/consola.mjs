@@ -28,13 +28,13 @@ import { tmpdir } from "node:os";
 
 import { criarClube } from "./consola/clube.mjs";
 import { criarApi } from "./consola/api.mjs";
-import { CENAS } from "./consola/cenas.mjs";
+import { CENAS, CENAS_TELEMOVEL } from "./consola/cenas.mjs";
 
 const AQUI = dirname(fileURLToPath(import.meta.url));
 const RAIZ = resolve(AQUI, "../../../..");
 const CONSOLA = join(RAIZ, "apps/console");
 const SAIDA = join(RAIZ, "apps/site/public/shots");
-const MANIFESTO = join(SAIDA, "manifesto-consola.json");
+
 const EMBLEMA = join(RAIZ, "apps/site/public/clube/emblema.png");
 
 /** Onde vivem o playwright-core, o build e os registos. Fora do repositório. */
@@ -51,6 +51,20 @@ const pedidas = args.filter((a) => !a.startsWith("--"));
 const SEM_BUILD = args.includes("--sem-build");
 const VER = args.includes("--ver");
 const SEM_REMENDOS = args.includes("--sem-remendos");
+
+/*
+ * --telemovel: a consola como a área de Staff da app a abre num iPhone. Abaixo de
+ * 768 px as tabelas passam a cartões e o menu vai para uma barra em baixo.
+ */
+const TELEMOVEL = args.includes("--telemovel");
+const ECRA = TELEMOVEL
+  ? {
+      viewport: { width: 390, height: 844 }, deviceScaleFactor: 3, isMobile: true, hasTouch: true,
+      userAgent: "Mozilla/5.0 (iPhone; CPU iPhone OS 18_5 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.5 Mobile/15E148 Safari/604.1",
+    }
+  : { viewport: { width: 1920, height: 1080 }, deviceScaleFactor: 2 };
+const SUFIXO = TELEMOVEL ? "-tel" : "";
+const MANIFESTO = join(SAIDA, TELEMOVEL ? "manifesto-consola-tel.json" : "manifesto-consola.json");
 
 /* -------------------------------------------------------------------------- */
 /* 1. O build                                                                  */
@@ -253,8 +267,7 @@ async function capturar(browser, cena, sharp) {
   const responder = criarApi(clube, cena.api ? cena.api(clube) : {});
 
   const context = await browser.newContext({
-    viewport: { width: 1920, height: 1080 },
-    deviceScaleFactor: 2,
+    ...ECRA,
     locale: "pt-PT",
     timezoneId: "Europe/Lisbon",
     serviceWorkers: "block",
@@ -328,20 +341,25 @@ async function capturar(browser, cena, sharp) {
     const focos = {};
     for (const [nome, escolher] of Object.entries(cena.focos ?? {})) {
       const caixa = await escolher(page).first().boundingBox().catch(() => null);
-      if (caixa) focos[nome] = [caixa.x, caixa.y, caixa.width, caixa.height].map((n) => Math.round(n * 10) / 10);
-      else problemas.push(`foco "${nome}" não encontrado`);
+      if (!caixa) {
+        problemas.push(`foco "${nome}" não encontrado`);
+        continue;
+      }
+      focos[nome] = [caixa.x, caixa.y, caixa.width, caixa.height].map((n) => Math.round(n * 10) / 10);
+      // Um foco que a câmara do site não pode mostrar: mede-se na mesma, mas avisa-se.
+      if (caixa.y + caixa.height <= 0 || caixa.y >= ECRA.viewport.height) problemas.push(`foco "${nome}" fora do ecrã`);
     }
 
     const png = await page.screenshot({ type: "png" });
     mkdirSync(SAIDA, { recursive: true });
-    await sharp(png).webp({ quality: 90 }).toFile(join(SAIDA, `${cena.id}.webp`));
-    await sharp(png).resize({ width: 1920 }).webp({ quality: 90 }).toFile(join(SAIDA, `${cena.id}-m.webp`));
-    if (VER) writeFileSync(join(TRABALHO, `${cena.id}.png`), await sharp(png).resize({ width: 1920 }).png().toBuffer());
+    await sharp(png).webp({ quality: 90 }).toFile(join(SAIDA, `${cena.id}${SUFIXO}.webp`));
+    await sharp(png).resize({ width: ECRA.viewport.width * ECRA.deviceScaleFactor / 2 }).webp({ quality: 90 }).toFile(join(SAIDA, `${cena.id}${SUFIXO}-m.webp`));
+    if (VER) writeFileSync(join(TRABALHO, `${cena.id}${SUFIXO}.png`), await sharp(png).resize({ width: TELEMOVEL ? 585 : 1920 }).png().toBuffer());
 
     const manifesto = existsSync(MANIFESTO) ? JSON.parse(readFileSync(MANIFESTO, "utf8")) : {};
     manifesto[cena.id] = {
-      ficheiro: `${cena.id}.webp`,
-      largura: 1920, altura: 1080, escala: 2,
+      ficheiro: `${cena.id}${SUFIXO}.webp`,
+      largura: ECRA.viewport.width, altura: ECRA.viewport.height, escala: ECRA.deviceScaleFactor,
       descricao: cena.descricao,
       focos,
     };
@@ -362,7 +380,11 @@ async function main() {
   const { pw, exe } = chromium();
   const browser = await pw.chromium.launch({ executablePath: exe, headless: true });
 
-  const cenas = pedidas.length ? CENAS.filter((c) => pedidas.includes(c.id)) : CENAS;
+  // No telemóvel, cada cena pode trazer `telemovel: { preparar, focos, ... }`, que substitui o do computador.
+  const lista = TELEMOVEL
+    ? CENAS_TELEMOVEL.map((id) => CENAS.find((c) => c.id === id)).map((c) => ({ ...c, ...(c.telemovel ?? {}) }))
+    : CENAS;
+  const cenas = pedidas.length ? lista.filter((c) => pedidas.includes(c.id)) : lista;
   const desconhecidas = pedidas.filter((p) => !CENAS.some((c) => c.id === p));
   if (desconhecidas.length) console.warn("Cenas desconhecidas:", desconhecidas.join(", "));
 

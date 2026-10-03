@@ -38,8 +38,11 @@
   background: #f7f6f3;
 }
 
+/* A câmara tem sempre a proporção da captura; num ecrã mais alto do que ela,
+   o zoom calculado em `Monitor` faz-a encher a altura. */
 .monitor-camara {
-  position: absolute; inset: 0;
+  position: absolute; left: 0; top: 0;
+  width: 100%; aspect-ratio: 16 / 9;
   transform-origin: 0 0;
   transition: transform 1200ms var(--ease-saida);
 }
@@ -55,6 +58,10 @@
 @keyframes realce-entra {
   from { opacity: 0; transform: scaleX(0.2); transform-origin: left; }
   to { opacity: 0.4; transform: none; transform-origin: left; }
+}
+
+@media (max-width: 860px) {
+  .monitor-ecra { aspect-ratio: 1 / 1.15; }
 }
 
 /* --- O telemóvel ----------------------------------------------------------- */
