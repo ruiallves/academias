@@ -64,6 +64,8 @@ export function Shell() {
       className="flex h-dvh overflow-hidden bg-canvas max-md:flex-col"
       style={{ "--nav-w": collapsed ? "60px" : "236px" } as CSSProperties}
     >
+      {/* Os estilhaços, por trás de tudo: primeiros e sem `z-index`. Ver `Estilhacos`. */}
+      <Estilhacos />
       <MobileTopBar />
       <Sidebar collapsed={collapsed} onToggle={() => setCollapsed((v) => !v)} />
       {/*
@@ -83,7 +85,6 @@ export function Shell() {
         quieta. É por isso que isto está aqui em cima e não em cada tabela.
       */}
       <main className="relative isolate min-w-0 flex-1 overflow-y-auto max-md:pb-[calc(64px+env(safe-area-inset-bottom))]">
-        <Estilhacos />
         {/* Largura total. A sidebar já dá o enquadramento à esquerda; uma segunda
             moldura de margem no meio do ecrã só afastava as colunas de dados umas
             das outras. O ar vem do padding, não de um limite de largura.
@@ -122,8 +123,20 @@ export function Shell() {
  * experimentados e recusados: ficava pior.
  *
  * `fixed` a partir de `--nav-w`, para não rolarem com a página nem passarem por
- * baixo do menu; `-z-10` dentro do `isolate` do `<main>` mantém-nos atrás de
- * tudo o que a página desenha.
+ * baixo do menu.
+ *
+ * ## Fora do `<main>`, e sem `z-index` negativo
+ *
+ * Viviam dentro do `<main>` (que é a área que rola) com `-z-10`. No Safari essa
+ * combinação, um `fixed` de prioridade negativa dentro de um contentor com
+ * scroll, deixava páginas inteiras em branco: o conteúdo normal ia parar por
+ * baixo do fundo e só se viam as peças que o Safari desenha à parte (os anéis,
+ * a barra de pastilhas, os campos de texto, e os próprios estilhaços). Foi o
+ * que o Coruchense viu nos Jogos, no Mac e no iPhone, a 03/10/2026.
+ *
+ * Agora são o primeiro filho da moldura, sem `z-index`: o `<main>` vem depois e
+ * é posicionado, por isso desenha-se por cima deles sem truque nenhum. À vista
+ * não muda nada.
  */
 function Estilhacos() {
   const forma = (clip: string, cor: string, opacity: number): CSSProperties => ({
@@ -135,7 +148,7 @@ function Estilhacos() {
     <div
       aria-hidden
       style={{ left: "var(--nav-w, 0px)" }}
-      className="pointer-events-none fixed inset-y-0 right-0 -z-10 overflow-hidden max-md:left-0!"
+      className="pointer-events-none fixed inset-y-0 right-0 overflow-hidden max-md:left-0!"
     >
       {/* Em baixo, à esquerda. */}
       <i className="absolute bottom-[10%] -left-12 block h-[130px] w-[190px] max-md:scale-50 max-md:origin-bottom-left" style={forma("0 0, 100% 42%, 30% 100%", "signal", 0.16)} />

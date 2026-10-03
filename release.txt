@@ -1,4 +1,5 @@
 03/10/2026
+- Jogos no Safari (Mac e iPhone), segunda correção: a página de cada jogo (Visão geral, Pré-jogo e as outras áreas) também ficava em branco, só com a barra de áreas e o anel. Os triângulos de fundo da consola saíram de dentro da área que rola, onde o Safari os desenhava por cima do conteúdo. À vista fica igual.
 - Jogos no Safari (Mac e iPhone): corrigida a página que ficava em branco, só com os anéis e o campo de pesquisa, em clubes com muitos jogos marcados. O desfoque que aparece enquanto a página carrega passou a ser do tamanho do ecrã, e o Safari deixou de perder o desenho das páginas compridas. Vale para todas as páginas da consola e vê-se igual.
 - Pré-jogo no telemóvel: o campo deixa rolar a página (só os jogadores se agarram), e na lista pega-se num jogador pelo nome ou pela linha toda segurando um instante.
 - Consola no telemóvel: as janelas (Registar presenças e todos os outros formulários) passam a abrir por cima da barra de separadores. A barra tapava o fundo da janela, onde estão o "Guardar" e o "Cancelar", e por isso não se conseguia gravar as presenças no telemóvel.
