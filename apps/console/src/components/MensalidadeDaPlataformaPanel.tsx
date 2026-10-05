@@ -4,6 +4,8 @@ import { Bloco, Erro, Lista, Linha, campoClass } from "./definicoes/ui";
 import { Spinner } from "./Busy";
 import { money } from "@/lib/format";
 import { Download } from "@/lib/icons";
+import { Link } from "react-router-dom";
+import { ContratoPanel } from "./ContratoPanel";
 import {
   estadoDaMensalidade,
   faturaDaMensalidade,
@@ -94,6 +96,9 @@ export function MensalidadeDaPlataformaPanel({ bloqueio = false, onPago }: { blo
     <>
       {erro && <Erro>{erro}</Erro>}
 
+      {/* Clube suspenso e condições por aceitar: aceitam-se aqui mesmo, que o Plano está fechado. */}
+      {bloqueio && dados.porAssinar && <ContratoPanel onAssinado={() => void carregar()} />}
+
       <Bloco
         titulo={dados.emFalta.length > 0 ? `${anual ? "Anuidade" : "Mensalidade"} em falta` : "Mensalidade"}
         estado={
@@ -133,10 +138,33 @@ export function MensalidadeDaPlataformaPanel({ bloqueio = false, onPago }: { blo
           </p>
         ) : (
           <div className="space-y-4">
+            {dados.porAssinar && (
+              /*
+               * Paga-se o que se aceitou. Enquanto houver condições de adesão
+               * por aceitar, o servidor recusa a referência e o MB WAY; aqui
+               * diz-se porquê e onde se aceitam. No ecrã de clube suspenso o
+               * Plano não está à mão, e as condições aparecem por cima.
+               */
+              <div className="rounded-[12px] border border-warn/40 bg-warn-soft px-4 py-3 text-meta leading-relaxed text-ink-2">
+                <span className="font-medium text-ink">Antes de pagar, é preciso aceitar as condições de adesão.</span>{" "}
+                {bloqueio ? (
+                  "Estão aqui em cima: depois de as aceitares, o MB WAY e a referência Multibanco aparecem aqui."
+                ) : (
+                  <>
+                    Estão em{" "}
+                    <Link to="/definicoes?secao=plano" className="font-medium text-ink underline underline-offset-2">
+                      Definições, Plano
+                    </Link>
+                    . Depois de as aceitares, o MB WAY e a referência Multibanco aparecem aqui.
+                  </>
+                )}
+              </div>
+            )}
             {dados.emFalta.map((m) => (
               <EmFalta
                 key={m.id}
                 m={m}
+                porAssinar={dados.porAssinar}
                 podePagar={dados.podePagar}
                 bloqueio={bloqueio}
                 onMudou={carregar}
@@ -194,12 +222,14 @@ export function MensalidadeDaPlataformaPanel({ bloqueio = false, onPago }: { blo
 /** Uma mensalidade por pagar: o período, o valor, e as duas formas de pagar. */
 function EmFalta({
   m,
+  porAssinar,
   podePagar,
   bloqueio,
   onMudou,
   onMbway,
 }: {
   m: MensalidadeDaPlataforma;
+  porAssinar: boolean;
   podePagar: boolean;
   bloqueio: boolean;
   onMudou: () => Promise<unknown>;
@@ -262,7 +292,7 @@ function EmFalta({
         <p className="mt-3 text-meta text-ink-3">
           Só quem representa o clube pode pagar. {bloqueio ? "Pede a quem o representa que entre na consola." : ""}
         </p>
-      ) : (
+      ) : porAssinar ? null : (
         <div className="mt-4 space-y-4">
           {aConfirmar && (
             <div className="rounded-[10px] bg-sunken px-3.5 py-3 text-meta leading-relaxed text-ink-2">

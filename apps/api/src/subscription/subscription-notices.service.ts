@@ -154,6 +154,7 @@ export class SubscriptionNoticesService implements OnModuleInit, OnModuleDestroy
       if (!academy) return null;
 
       const condicoes = await condicoesDoClube(db, academyId);
+      const porAssinar = await condicoesPorAssinar(db, academyId);
 
       /*
        * Só os avisos recentes entram na pergunta "já saiu?": a janela de
@@ -170,10 +171,10 @@ export class SubscriptionNoticesService implements OnModuleInit, OnModuleDestroy
       });
 
       const responsavel = await responsavelDoClube(db, academyId);
-      return { academy, condicoes, existentes, responsavel };
+      return { academy, condicoes, porAssinar, existentes, responsavel };
     });
     if (!contexto) return feitos;
-    const { academy, condicoes, existentes, responsavel } = contexto;
+    const { academy, condicoes, porAssinar, existentes, responsavel } = contexto;
 
     /*
      * O dia de cobrança: o das condições quando as há (assinadas ou por
@@ -185,9 +186,15 @@ export class SubscriptionNoticesService implements OnModuleInit, OnModuleDestroy
 
     const contrato = {
       orderId: condicoes?.id ?? null,
-      planName: condicoes?.planName ?? linha.plan_name,
+      /*
+       * O plano e o valor são os de hoje, os da subscrição: um preço acordado
+       * depois da última assinatura (condições novas por assinar) já vale para
+       * a mensalidade seguinte. Das condições vem só o dia e a periodicidade.
+       */
+      planName: linha.plan_name,
       billingPeriod: (condicoes?.billingPeriod ?? "MONTHLY") as SubscriptionBillingPeriod,
-      amountCents: condicoes?.amountCents ?? linha.amount_cents,
+      amountCents: linha.amount_cents,
+      porAssinar,
     };
     const brand: MailBrand = {
       shortName: academy.shortName, name: academy.name, signalColor: academy.signalColor, logoUrl: academy.logoUrl,
@@ -294,7 +301,7 @@ export class SubscriptionNoticesService implements OnModuleInit, OnModuleDestroy
    */
   private async criarAviso(
     academyId: string,
-    contrato: { orderId: string | null; planName: string; billingPeriod: SubscriptionBillingPeriod; amountCents: number },
+    contrato: { orderId: string | null; planName: string; billingPeriod: SubscriptionBillingPeriod; amountCents: number; porAssinar: boolean },
     devido: AvisoDevido,
     hoje: Date,
     responsavel: ResponsavelDoClube | null,
@@ -340,6 +347,8 @@ export class SubscriptionNoticesService implements OnModuleInit, OnModuleDestroy
       kind: "disponivel" | "lembrete" | "suspenso";
       planName: string; billingPeriod: SubscriptionBillingPeriod; amountCents: number;
       periodStart: Date; periodEnd: Date; slug: string; lembrete?: number;
+      /** Há condições de adesão por aceitar: o email di-lo, porque sem isso não se paga. */
+      porAssinar: boolean;
       outras?: { periodStart: Date; periodEnd: Date; amountCents: number }[];
     },
   ) {
@@ -361,6 +370,7 @@ export class SubscriptionNoticesService implements OnModuleInit, OnModuleDestroy
         periodEnd: m.periodEnd,
         lembrete: m.lembrete,
         outras: m.outras,
+        porAssinar: m.porAssinar,
         link: this.linkDaConsola(m.slug),
       }),
     });
@@ -371,8 +381,10 @@ export class SubscriptionNoticesService implements OnModuleInit, OnModuleDestroy
       : "O acesso do clube ficou suspenso";
     const corpo =
       m.kind === "suspenso"
-        ? `A ${nome} de ${periodo} não foi paga até ao fim do período. Paga nas Definições para reabrir o acesso.`
-        : `A ${nome} de ${periodo} paga-se nas Definições, por MB WAY ou Multibanco.`;
+        ? `A ${nome} de ${periodo} não foi paga até ao fim do período. ${m.porAssinar ? "Aceita as condições de adesão e paga" : "Paga"} nas Definições para reabrir o acesso.`
+        : m.porAssinar
+          ? `A ${nome} de ${periodo} paga-se nas Definições, depois de aceitares as condições de adesão em Definições, Plano.`
+          : `A ${nome} de ${periodo} paga-se nas Definições, por MB WAY ou Multibanco.`;
     await this.notificacoes
       .enqueue({
         academyId,
@@ -470,6 +482,19 @@ const SELECT_CONDICOES = {
  * assinatura. Muitos clubes pagam antes de assinar, e a cobrança não espera
  * pela assinatura. A mesma regra do registo manual no painel.
  */
+/**
+ * Há condições de adesão por aceitar: nunca assinou nenhumas, ou há umas mais
+ * recentes à espera (um preço novo, um plano novo). Enquanto for verdade, a
+ * mensalidade não se paga: paga-se o que se aceitou, e não antes.
+ */
+export async function condicoesPorAssinar(db: ScopedClient, academyId: string): Promise<boolean> {
+  const [assinadas, pendentes] = await Promise.all([
+    db.subscriptionOrder.count({ where: { academyId, status: "SIGNED", signedAt: { not: null } } }),
+    db.subscriptionOrder.count({ where: { academyId, status: "PENDING" } }),
+  ]);
+  return assinadas === 0 || pendentes > 0;
+}
+
 export async function condicoesDoClube(db: ScopedClient, academyId: string) {
   return (
     (await db.subscriptionOrder.findFirst({

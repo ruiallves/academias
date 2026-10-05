@@ -1582,6 +1582,8 @@ export function subscriptionPaymentEmail(input: {
   outras?: { periodStart: Date; periodEnd: Date; amountCents: number }[];
   /** No recibo: como se pagou. */
   metodo?: string;
+  /** Há condições de adesão por aceitar: sem isso a mensalidade não se paga. */
+  porAssinar?: boolean;
   paidAt?: Date;
   /** A secção da mensalidade nas Definições da consola. */
   link: string;
@@ -1680,7 +1682,11 @@ export function subscriptionPaymentEmail(input: {
     }
   })();
 
-  const paragrafo = texto.abertura + " Chega a ti como <strong>" + esc(input.title) + "</strong>, que é quem representa o clube.";
+  const assinar =
+    input.porAssinar && input.kind !== "recebido"
+      ? " Antes de pagar, é preciso aceitar as condições de adesão do clube, na consola em Definições, Plano. Só depois aparecem o MB WAY e a referência Multibanco."
+      : "";
+  const paragrafo = texto.abertura + assinar + " Chega a ti como <strong>" + esc(input.title) + "</strong>, que é quem representa o clube.";
   const notes = [...texto.notes, "Alguma coisa não bate certo? Responde a este email."];
 
   return {

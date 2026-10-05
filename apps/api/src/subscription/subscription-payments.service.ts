@@ -12,7 +12,15 @@ import { StorageService } from "../storage/storage.service";
 import { responsavelDoClube } from "./responsavel";
 import { diaDoClube } from "./ciclo";
 import { identificadorDaMensalidade, periodoPorExtenso } from "./cobranca";
-import { SubscriptionNoticesService, condicoesDoClube, type LinhaDeCobranca } from "./subscription-notices.service";
+import {
+  SubscriptionNoticesService,
+  condicoesDoClube,
+  condicoesPorAssinar,
+  type LinhaDeCobranca,
+} from "./subscription-notices.service";
+
+/** O 403 de quem tenta pagar sem ter aceitado as condições de adesão. */
+export const ORDER_UNSIGNED_CODE = "SUBSCRIPTION_ORDER_UNSIGNED";
 
 /** Quanto tempo um pedido MB WAY ainda conta como "a confirmar" na consola. */
 const MBWAY_JANELA_MS = 15 * 60_000;
@@ -95,6 +103,7 @@ export class SubscriptionPaymentsService {
       if (!academy) throw new NotFoundException("Clube não encontrado");
 
       const condicoes = await condicoesDoClube(db, academyId);
+      const porAssinar = await condicoesPorAssinar(db, academyId);
       const avisos = await db.subscriptionNotice.findMany({
         where: { academyId },
         orderBy: { periodStart: "desc" },
@@ -141,11 +150,14 @@ export class SubscriptionPaymentsService {
         academy: { slug: academy.slug, name: academy.name, shortName: academy.shortName, signalColor: academy.signalColor, logoUrl: academy.logoUrl },
         suspenso: academy.suspendedAt !== null,
         podePagar: this.podePagar(ctx),
+        /** Há condições de adesão por aceitar: até lá, não se paga. Ver `condicoesPorAssinar`. */
+        porAssinar,
         /** Nulo quando o clube não paga (avaliação, ou sem plano activo). */
         plano: cobranca
           ? {
-              name: condicoes?.planName ?? cobranca.plan_name,
-              amountCents: condicoes?.amountCents ?? cobranca.amount_cents,
+              // O de hoje, o da subscrição: é o que os avisos cobram.
+              name: cobranca.plan_name,
+              amountCents: cobranca.amount_cents,
               billingPeriod: (condicoes?.billingPeriod ?? "MONTHLY") as SubscriptionBillingPeriod,
             }
           : null,
@@ -163,6 +175,7 @@ export class SubscriptionPaymentsService {
    */
   async multibanco(ctx: RequestContext, noticeId: string) {
     if (!this.podePagar(ctx)) throw new ForbiddenException("Só quem representa o clube pode pagar a mensalidade.");
+    await this.exigirCondicoesAceites(ctx);
     const { aviso, academy, pagador } = await this.avisoPorPagar(ctx, noticeId);
 
     const viva = aviso.payments.find(
@@ -200,6 +213,7 @@ export class SubscriptionPaymentsService {
   /** Um pedido MB WAY para o telemóvel indicado. A confirmação chega pelo webhook. */
   async mbway(ctx: RequestContext, noticeId: string, telefone: string) {
     if (!this.podePagar(ctx)) throw new ForbiddenException("Só quem representa o clube pode pagar a mensalidade.");
+    await this.exigirCondicoesAceites(ctx);
     const phone = telefone.replace(/\s+/g, "").replace(/^\+351/, "").replace(/^00351/, "");
     if (!/^9\d{8}$/.test(phone)) throw new BadRequestException("Indica um número de telemóvel português com 9 dígitos.");
 
@@ -230,6 +244,24 @@ export class SubscriptionPaymentsService {
       }),
     );
     return { ok: true, phone };
+  }
+
+  /**
+   * Paga-se o que se aceitou, e não antes.
+   *
+   * Enquanto o clube não tiver assinado as condições de adesão (ou houver umas
+   * mais recentes à espera, com outro preço ou plano), a referência e o MB WAY
+   * ficam recusados aqui, e não só escondidos na consola.
+   */
+  private async exigirCondicoesAceites(ctx: RequestContext) {
+    const porAssinar = await this.prisma.runAs(ctx.academyId, (db) => condicoesPorAssinar(db, ctx.academyId));
+    if (porAssinar) {
+      throw new ForbiddenException({
+        statusCode: 403,
+        code: ORDER_UNSIGNED_CODE,
+        message: "Antes de pagar, é preciso aceitar as condições de adesão, em Definições, Plano.",
+      });
+    }
   }
 
   /** A fatura de uma mensalidade, em base64, para descarregar na consola. */

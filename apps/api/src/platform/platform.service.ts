@@ -16,6 +16,7 @@ import type { PlatformAdminContext } from "./platform.guard";
 import { diaDoClube, soODia } from "../subscription/ciclo";
 import { mensalidadeNaLista } from "../subscription/cobranca";
 import { SuspensaoService } from "../auth/suspensao.service";
+import { SubscriptionNoticesService } from "../subscription/subscription-notices.service";
 
 /**
  * As leituras e escritas do painel da plataforma.
@@ -102,6 +103,8 @@ export class PlatformService {
     private readonly espaco: EspacoService,
     /** A lista em memória dos clubes suspensos, para fechar e reabrir à mão. */
     private readonly suspensao: SuspensaoService,
+    /** A cobrança da plataforma, para o aviso nascer no momento em que o plano fica activo. */
+    private readonly cobranca: SubscriptionNoticesService,
   ) {}
 
   /* ------------------------------------------------------------------------ */
@@ -1179,6 +1182,19 @@ export class PlatformService {
       } catch (e) {
         ordem = { id: "", enviado: false, motivo: e instanceof Error ? e.message : "Não foi possível emitir." };
       }
+    }
+
+    /*
+     * O aviso da mensalidade, já.
+     *
+     * Sem isto, um clube posto a pagar esperava pela varredura de hora a hora
+     * para ver a mensalidade nas Definições, e quem acabou de aderir abria a
+     * consola e lia "não há nada em falta". Depois da ordem, para o email já
+     * saber se há condições por aceitar. Idempotente como a varredura, e fora
+     * do caminho da resposta: uma falha aqui não desfaz o plano.
+     */
+    if (subscription.status === "ACTIVE") {
+      void this.cobranca.emitirAvisos(id).catch(() => undefined);
     }
 
     return { ok: true, planId: subscription.planId, status: subscription.status, ordem };

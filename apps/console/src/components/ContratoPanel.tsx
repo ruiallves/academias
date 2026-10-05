@@ -31,7 +31,7 @@ import { Download } from "@/lib/icons";
  * Serviço em nome do clube. Quem não a tem vê as condições — são o contrato do
  * clube onde trabalha — e não vê o botão.
  */
-export function ContratoPanel() {
+export function ContratoPanel({ onAssinado }: { onAssinado?: () => void } = {}) {
   const [dados, setDados] = useState<SubscriptionOrders | null>(null);
   const [erro, setErro] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -189,6 +189,8 @@ export function ContratoPanel() {
           onSigned={() => {
             setAAssinar(false);
             void carregar();
+            // A secção da mensalidade, ao lado, passa a deixar pagar.
+            onAssinado?.();
           }}
         />
       )}

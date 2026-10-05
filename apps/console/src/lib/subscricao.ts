@@ -127,6 +127,11 @@ export type EstadoDaMensalidade = {
   suspenso: boolean;
   /** `legal:club` ou `settings:write`. Quem não tem vê o estado e mais nada. */
   podePagar: boolean;
+  /**
+   * Há condições de adesão por aceitar (nunca assinou, ou há umas mais
+   * recentes à espera). Até lá, o servidor recusa a referência e o MB WAY.
+   */
+  porAssinar: boolean;
   /** Nulo quando o clube não paga (avaliação, ou sem plano activo). */
   plano: { name: string; amountCents: number; billingPeriod: "MONTHLY" | "ANNUAL" } | null;
   /** Por pagar, da mais antiga para a mais recente. */

@@ -51,12 +51,18 @@ export class SubscriptionController {
     private readonly pagamentos: SubscriptionPaymentsService,
   ) {}
 
+  /*
+   * As condições passam num clube suspenso: sem as aceitar não se paga, e
+   * pagar é a única saída da suspensão.
+   */
   @Get("ordem")
+  @SuspensionExempt()
   ordem(@Req() req: AuthedRequest) {
     return this.ordens.paraAConsola(req.ctx);
   }
 
   @Post("ordem/assinar")
+  @SuspensionExempt()
   assinar(@Req() req: AuthedRequest, @Ip() ip: string, @Body() body: AssinarCondicoesDto) {
     const ua = req.headers["user-agent"];
     return this.ordens.assinar(req.ctx, body, { ip, userAgent: typeof ua === "string" ? ua : undefined });
@@ -64,6 +70,7 @@ export class SubscriptionController {
 
   /** A declaração de aceitação em PDF — ver `declaracaoParaAConsola`. */
   @Get("ordem/:id/declaracao")
+  @SuspensionExempt()
   declaracao(@Req() req: AuthedRequest, @Param("id") id: string) {
     return this.ordens.declaracaoParaAConsola(req.ctx, id);
   }
