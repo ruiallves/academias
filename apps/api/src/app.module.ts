@@ -26,6 +26,7 @@ import { MembersService } from "./members/members.service";
 import { MemberFeesService } from "./members/member-fees.service";
 import { SubscriptionOrdersService } from "./subscription/subscription-orders.service";
 import { SubscriptionNoticesService } from "./subscription/subscription-notices.service";
+import { SubscriptionPaymentsService } from "./subscription/subscription-payments.service";
 import { SubscriptionController } from "./subscription/subscription.controller";
 import { MemberInvitesService } from "./members/member-invites.service";
 import { PollsService } from "./members/polls.service";
@@ -229,6 +230,7 @@ import { LegalAdminService } from "./legal/legal-admin.service";
     MemberFeesService,
     SubscriptionOrdersService,
     SubscriptionNoticesService,
+    SubscriptionPaymentsService,
     MemberInvitesService,
     PollsService,
     ScoutingVideoService,

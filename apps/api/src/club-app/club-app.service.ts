@@ -28,6 +28,7 @@ import { StorageService } from "../storage/storage.service";
 import { reclamarFichaPelaConta } from "../members/member-account-link";
 import { reclamarAtletaPelaConta } from "../academy/athlete-account-link";
 import { LegalService } from "../legal/legal.service";
+import { SuspensaoService } from "../auth/suspensao.service";
 
 /**
  * A app do clube — contextos e a área de sócio.
@@ -82,6 +83,7 @@ export class ClubAppService {
     private readonly storage: StorageService,
     private readonly config: ConfigService,
     private readonly legal: LegalService,
+    private readonly suspensao: SuspensaoService,
   ) {}
 
   /* ------------------------------------------------------------------------ */
@@ -109,6 +111,11 @@ export class ClubAppService {
   private async academiaDe(slug: string): Promise<string> {
     const academyId = await this.auth.academyIdBySlug(slug);
     if (!academyId) throw new NotFoundException(`Academia "${slug}" não encontrada`);
+    /*
+     * O clube suspenso por falta de pagamento fecha a app toda, e estas rotas
+     * não passam pelo guard global: a recusa é a mesma dele, feita aqui.
+     */
+    await this.suspensao.recusarSeSuspensa(academyId);
     return academyId;
   }
 

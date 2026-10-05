@@ -69,6 +69,11 @@ async function bootstrap() {
    * rota da API ganha um milímetro de folga.
    */
   app.use("/api/ai/worker", json({ limit: "16mb" }));
+  /*
+   * A fatura em PDF da mensalidade da plataforma vem em base64 no corpo. O
+   * painel é fechado pelo `PlatformGuard`, e o serviço recusa acima de 5 MB.
+   */
+  app.use("/api/platform/contas/mensalidades", json({ limit: "8mb" }));
 
   /**
    * O corpo em bruto é preservado para as rotas de webhook: a assinatura HMAC é

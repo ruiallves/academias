@@ -95,6 +95,64 @@ export const subscriptionOrders = () => apiGet<SubscriptionOrders>("/api/subscri
 export const signSubscriptionOrder = (dados: DadosDaAssinatura) =>
   apiPost<SubscriptionOrder>("/api/subscricao/ordem/assinar", dados);
 
+/**
+ * Uma mensalidade da plataforma, como a secção "Mensalidade" a mostra.
+ *
+ * `periodo` já vem por extenso do servidor ("5 de outubro a 4 de novembro de
+ * 2026"): é a frase de todo o lado, e nunca "a mensalidade de outubro".
+ */
+export type MensalidadeDaPlataforma = {
+  id: string;
+  periodStart: string;
+  periodEnd: string;
+  periodo: string;
+  amountCents: number;
+  planName: string;
+  billingPeriod: "MONTHLY" | "ANNUAL";
+  paidAt: string | null;
+  /** "MB WAY", "Multibanco", "Transferência". Nulo por pagar. */
+  metodo: string | null;
+  /** O período acabou sem pagamento. */
+  vencida: boolean;
+  /** O nome do PDF da fatura, quando a plataforma a anexou. Nulo: ainda não. */
+  fatura: string | null;
+  /** A referência Multibanco viva, se já foi pedida. */
+  multibanco: { entity: string | null; reference: string | null; expiresAt: string | null; amountCents: number } | null;
+  /** O último pedido MB WAY dos últimos minutos, para se saber se está a confirmar. */
+  mbway: { phone: string | null; status: "PENDING" | "PAID" | "FAILED" | "EXPIRED"; createdAt: string } | null;
+};
+
+export type EstadoDaMensalidade = {
+  academy: { slug: string; name: string; shortName: string; signalColor: string; logoUrl: string | null };
+  suspenso: boolean;
+  /** `legal:club` ou `settings:write`. Quem não tem vê o estado e mais nada. */
+  podePagar: boolean;
+  /** Nulo quando o clube não paga (avaliação, ou sem plano activo). */
+  plano: { name: string; amountCents: number; billingPeriod: "MONTHLY" | "ANNUAL" } | null;
+  /** Por pagar, da mais antiga para a mais recente. */
+  emFalta: MensalidadeDaPlataforma[];
+  /** Pagas, da mais recente para trás. */
+  historico: MensalidadeDaPlataforma[];
+};
+
+/** O 403 do clube fechado por falta de pagamento. O mesmo código em `suspensao.service.ts` na API. */
+export const ACADEMY_SUSPENDED_CODE = "ACADEMY_SUSPENDED";
+
+export const estadoDaMensalidade = () => apiGet<EstadoDaMensalidade>("/api/subscricao/mensalidade");
+
+export const pedirMultibanco = (id: string) =>
+  apiPost<{ entity: string | null; reference: string | null; expiresAt: string | null; amountCents: number }>(
+    `/api/subscricao/mensalidade/${id}/multibanco`,
+    {},
+  );
+
+/** A fatura de uma mensalidade paga, em base64 (o cliente autenticado não abre links). */
+export const faturaDaMensalidade = (id: string) =>
+  apiGet<{ ficheiro: string; base64: string }>(`/api/subscricao/mensalidade/${id}/fatura`);
+
+export const pedirMbway =(id: string, phone: string) =>
+  apiPost<{ ok: true; phone: string }>(`/api/subscricao/mensalidade/${id}/mbway`, { phone });
+
 /** A declaração de aceitação em PDF. Vem em base64 — ver `declaracaoParaAConsola` na API. */
 export const declaracaoDaOrdem = (id: string) =>
   apiGet<{ ficheiro: string; sha256: string; base64: string }>(`/api/subscricao/ordem/${id}/declaracao`);

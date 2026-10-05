@@ -68,6 +68,9 @@ Testadas com uma academia atacante real. Cada uma é um caso em `test-security.m
 3. **`CONSOLE_ORIGIN`, `FAMILY_ORIGIN`, `PLATFORM_ORIGIN`** — as três origens reais;
    sem elas, o CORS cai nos `localhost` de desenvolvimento.
 4. **Papel `platform_app` sem BYPASSRLS** — ver dívida em `04-plataforma.md`.
+5. **`PLATFORM_ALERT_EMAIL`** — para onde vão os tickets e, desde 05/10/2026, o
+   aviso de "factura a emitir" quando um clube paga a mensalidade da plataforma
+   pela consola. Sem ele, o pagamento fica registado e ninguém é avisado.
 
 ---
 

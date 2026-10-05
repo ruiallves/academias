@@ -21,7 +21,7 @@ export function Precos({ pagina = false }: { pagina?: boolean }) {
       <div className="wrap">
         <div className="flex flex-col items-start justify-between gap-8 lg:flex-row lg:items-end">
           <div>
-            {pagina ? <h1 className="titulo t1">Planos.</h1> : <h2 className="titulo t1">Planos.</h2>}
+            {pagina ? <h1 className="titulo t1">Planos<span className="ponto">.</span></h1> : <h2 className="titulo t1">Planos<span className="ponto">.</span></h2>}
             <p className="lede mt-6">
               A Consola é o clube por dentro. O Connect junta as famílias, os sócios e os pagamentos. O Vision AI vem a
               seguir e transforma o vídeo dos jogos em dados.

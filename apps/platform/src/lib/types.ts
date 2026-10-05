@@ -107,6 +107,20 @@ export type Academy = {
   /** O espaço de ficheiros usado, em bytes, e o limite, em MB (5120 por omissão). */
   storageUsedBytes: number;
   storageLimitMb: number;
+  /** Fechado por falta de pagamento da mensalidade da plataforma. */
+  suspendedAt: string | null;
+  /** A mensalidade da plataforma: a do período a correr, e a última paga. Ver `mensalidadeDoClube` na API. */
+  mensalidade: MensalidadeNaLista;
+};
+
+export type MensalidadeNaLista = {
+  estado: "sem-plano" | "em-dia" | "em-falta" | "suspenso";
+  atual: { periodStart: string; periodEnd: string; periodo: string; paidAt: string | null } | null;
+  /** Dias desde o início do período por pagar. */
+  emFaltaDias: number;
+  ultimaPaga: { periodStart: string; periodEnd: string; periodo: string; paidAt: string; metodo: string | null } | null;
+  /** Mensalidades pagas sem fatura (nem anexada, nem marcada como enviada). */
+  faturasEmFalta: number;
 };
 
 /** O espaço de ficheiros de um clube, por categoria — ver `EspacoService` na API. */

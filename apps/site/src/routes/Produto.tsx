@@ -41,7 +41,7 @@ export default function Produto() {
     <>
       <header className="palco-cal sob-o-topo">
         <div className="wrap pb-[clamp(40px,6vw,88px)]">
-          <h1 className="titulo t1 max-w-[10ch]">O clube por dentro.</h1>
+          <h1 className="titulo t1 max-w-[10ch]">O clube por dentro<span className="ponto">.</span></h1>
           <div className="mt-9 grid gap-8 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-end">
             <p className="lede">
               Tudo o que a plataforma faz hoje, pessoa a pessoa. A consola serve quem trabalha no clube. A app serve as
@@ -121,7 +121,7 @@ export default function Produto() {
       <section className="bloco palco-noite faixa">
         <div className="wrap grid gap-12 lg:grid-cols-[minmax(0,0.8fr)_minmax(0,1.2fr)] lg:gap-20">
           <div>
-            <h2 className="titulo t2 max-w-[12ch]">O que não se vê.</h2>
+            <h2 className="titulo t2 max-w-[12ch]">O que não se vê<span className="ponto">.</span></h2>
             <p className="lede mt-5">Um clube guarda dados de menores. Estas são as regras que os protegem.</p>
           </div>
           <dl className="grid gap-x-10 sm:grid-cols-2">
@@ -139,7 +139,7 @@ export default function Produto() {
       <section id="roteiro" className="palco-cal faixa scroll-mt-(--topo)">
         <div className="wrap grid gap-12 lg:grid-cols-[minmax(0,0.8fr)_minmax(0,1.2fr)] lg:gap-20">
           <div>
-            <h2 className="titulo t2 max-w-[12ch]">O que vem a seguir.</h2>
+            <h2 className="titulo t2 max-w-[12ch]">O que vem a seguir<span className="ponto">.</span></h2>
             <p className="lede mt-5">As datas são intenções. O que aqui está ainda não existe no produto.</p>
           </div>
           <ol>

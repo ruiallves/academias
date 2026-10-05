@@ -6,6 +6,7 @@ import { AuthService } from "./auth.service";
 import { SupabaseJwtService } from "./supabase-jwt.service";
 import { PresenceService } from "../presence/presence.service";
 import { LegalService } from "../legal/legal.service";
+import { SuspensaoService } from "./suspensao.service";
 
 /**
  * O guard é registado como `APP_GUARD` — global.
@@ -29,8 +30,11 @@ import { LegalService } from "../legal/legal.service";
      * também o usam.
      */
     LegalService,
+    // A lista de clubes suspensos por falta de pagamento: quem a aplica é o
+    // guard; quem a muda é a cobrança da plataforma. Ver `suspensao.service.ts`.
+    SuspensaoService,
     { provide: APP_GUARD, useClass: AuthGuard },
   ],
-  exports: [SupabaseJwtService, AuthService, PresenceService, LegalService],
+  exports: [SupabaseJwtService, AuthService, PresenceService, LegalService, SuspensaoService],
 })
 export class AuthModule {}

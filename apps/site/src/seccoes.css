@@ -250,3 +250,12 @@
 .interruptor { display: inline-flex; padding: 4px; border-radius: 999px; background: var(--areia); }
 .interruptor button { height: 40px; padding-inline: 18px; border-radius: 999px; font-weight: 700; font-size: 0.95rem; color: var(--texto-2); transition: background-color 200ms, color 200ms; }
 .interruptor button[aria-pressed="true"] { background: var(--tinta); color: #ffffff; }
+
+/* ===========================================================================
+   No verde escuro
+   =========================================================================== */
+
+/* A montra do herói assenta numa placa clara e translúcida, e não na areia. */
+.palco-noite .heroi-montra { background: rgb(255 255 255 / 0.06); }
+/* Os números em verde vivo, como os números grandes dos posts. */
+.palco-noite .numero b { color: var(--acento); }

@@ -2,6 +2,15 @@ import { BadRequestException, Injectable, Logger, NotFoundException } from "@nes
 import type { PlatformFinanceKind, PlatformFinanceStatus, PlatformRecurrence } from "@prisma/client";
 import { PlatformPrisma } from "./platform.prisma";
 import { avisosDevidos, chaveDoDia, diaDoClube, periodosDoContrato, soODia, somaDias, somaMeses } from "../subscription/ciclo";
+import { SubscriptionNoticesService } from "../subscription/subscription-notices.service";
+import { StorageService } from "../storage/storage.service";
+import { MailClient } from "../mail/mail.client";
+import { subscriptionInvoiceEmail } from "../mail/mail.templates";
+import { SELECT_RESPONSAVEL, escolherResponsavel } from "../subscription/responsavel";
+
+/** O bucket privado das faturas da mensalidade da plataforma. */
+export const FATURAS_BUCKET = "faturas";
+const FATURA_MAX_BYTES = 5 * 1024 * 1024;
 
 /**
  * As contas da plataforma.
@@ -39,7 +48,12 @@ import { avisosDevidos, chaveDoDia, diaDoClube, periodosDoContrato, soODia, soma
 export class PlatformFinanceService {
   private readonly log = new Logger(PlatformFinanceService.name);
 
-  constructor(private readonly prisma: PlatformPrisma) {}
+  constructor(
+    private readonly prisma: PlatformPrisma,
+    private readonly avisos: SubscriptionNoticesService,
+    private readonly storage: StorageService,
+    private readonly mail: MailClient,
+  ) {}
 
   /* ---------------------------------------------------------------- definições */
 
@@ -295,7 +309,11 @@ export class PlatformFinanceService {
    * O movimento fica ligado ao aviso. Desmarcar apaga-o: o que não foi recebido
    * não pode ficar a somar nas contas.
    */
-  async marcarNoticePaga(adminId: string | null, id: string, dto: { paidAt?: string; note?: string }) {
+  async marcarNoticePaga(
+    adminId: string | null,
+    id: string,
+    dto: { paidAt?: string; note?: string; method?: "MBWAY" | "MULTIBANCO" | "MANUAL" },
+  ) {
     const aviso = await this.prisma.subscriptionNotice.findUnique({
       where: { id },
       include: { academy: { select: { id: true, name: true } } },
@@ -307,7 +325,8 @@ export class PlatformFinanceService {
 
     await this.prisma.subscriptionNotice.update({
       where: { id },
-      data: { paidAt: quando, paidNote: dto.note?.trim() || null, paidById: adminId },
+      // Como se pagou: pela consola (MB WAY, Multibanco) ou à mão, por transferência.
+      data: { paidAt: quando, paidNote: dto.note?.trim() || null, paidById: adminId, paidMethod: dto.method ?? "MANUAL" },
     });
 
     /*
@@ -344,6 +363,15 @@ export class PlatformFinanceService {
       });
     }
 
+    /*
+     * Um clube suspenso por esta mensalidade reabre no mesmo gesto, venha o
+     * pagamento da consola ou de uma transferência registada à mão. Falhar
+     * aqui não desfaz o pagamento: a varredura seguinte volta a tentar.
+     */
+    await this.avisos
+      .levantarSeEmDia(aviso.academyId)
+      .catch((e) => this.log.warn(`Não foi possível reabrir o clube ${aviso.academyId}: ${e instanceof Error ? e.message : e}`));
+
     return { ok: true, paidAt: quando };
   }
 
@@ -371,7 +399,122 @@ export class PlatformFinanceService {
       where: { id },
       data: { paidAt: null, paidNote: null, paidById: null },
     });
+    // Sem pagamento não há fatura: a que estivesse anexada sai com ele.
+    await this.tirarFatura(id);
     return { ok: true };
+  }
+
+  /* ------------------------------------------------------ a fatura do pagamento */
+
+  /**
+   * Anexar a fatura (PDF) a uma mensalidade paga, e enviá-la ou não.
+   *
+   * A euPago não emite faturas: emitem-se no Portal das Finanças e anexam-se
+   * aqui. Com `enviar`, o responsável do clube recebe o PDF por email; sem,
+   * fica só guardada (e à vista na consola do clube). Anexar outra substitui a
+   * anterior.
+   */
+  async anexarFatura(id: string, dto: { fileName: string; base64: string; enviar: boolean }) {
+    const aviso = await this.prisma.subscriptionNotice.findUnique({
+      where: { id },
+      include: { academy: { select: { id: true, slug: true, name: true, shortName: true, signalColor: true, logoUrl: true } } },
+    });
+    if (!aviso) throw new NotFoundException("Mensalidade não encontrada");
+    if (!aviso.paidAt) throw new BadRequestException("A fatura anexa-se a uma mensalidade paga.");
+
+    const dados = Buffer.from(dto.base64.replace(/^data:[^,]*,/, ""), "base64");
+    if (dados.length === 0) throw new BadRequestException("O ficheiro chegou vazio.");
+    if (dados.length > FATURA_MAX_BYTES) throw new BadRequestException("A fatura tem mais de 5 MB.");
+    if (dados.subarray(0, 5).toString("latin1") !== "%PDF-") throw new BadRequestException("A fatura tem de ser um PDF.");
+
+    const limpo = dto.fileName.trim().replace(/[\\/:*?"<>|]+/g, "-") || "fatura";
+    const nome = /\.pdf$/i.test(limpo) ? limpo : `${limpo}.pdf`;
+    await this.storage.ensureBucket({ name: FATURAS_BUCKET, fileSizeLimit: FATURA_MAX_BYTES, allowedMimeTypes: ["application/pdf"] });
+    const key = `${aviso.academyId}/${aviso.id}/${Date.now()}.pdf`;
+    await this.storage.upload(FATURAS_BUCKET, key, dados, "application/pdf");
+    if (aviso.invoicePath && aviso.invoicePath !== key) {
+      await this.storage.remove(FATURAS_BUCKET, aviso.invoicePath).catch(() => undefined);
+    }
+
+    let enviadaPara: string | null = null;
+    let motivo: string | null = null;
+    if (dto.enviar) {
+      const vinculos = await this.prisma.membership.findMany({
+        where: { academyId: aviso.academyId, isActive: true, role: { notIn: ["GUARDIAN", "ATHLETE"] } },
+        orderBy: { createdAt: "asc" },
+        select: SELECT_RESPONSAVEL,
+      });
+      const responsavel = escolherResponsavel(vinculos);
+      if (!responsavel) {
+        motivo = "O clube não tem ninguém com poderes para o representar e endereço de email.";
+      } else {
+        const a = aviso.academy;
+        const r = await this.mail.send({
+          to: responsavel.email,
+          toName: responsavel.name,
+          kind: "subscription-invoice",
+          attachments: [{ filename: nome, content: dados.toString("base64"), type: "application/pdf" }],
+          ...subscriptionInvoiceEmail({
+            brand: { shortName: a.shortName, name: a.name, signalColor: a.signalColor, logoUrl: a.logoUrl },
+            name: responsavel.name,
+            title: responsavel.title,
+            annual: aviso.billingPeriod === "ANNUAL",
+            amountCents: aviso.amountCents,
+            periodStart: aviso.periodStart,
+            periodEnd: aviso.periodEnd,
+            fileName: nome,
+            link: this.avisos.linkDaConsola(a.slug),
+          }),
+        });
+        if (r.sent) enviadaPara = responsavel.email;
+        else motivo = r.reason ?? "O email não saiu.";
+      }
+    }
+
+    const agora = new Date();
+    await this.prisma.subscriptionNotice.update({
+      where: { id },
+      data: {
+        invoicePath: key,
+        invoiceFileName: nome,
+        invoiceSentAt: agora,
+        ...(enviadaPara ? { invoiceEmailedTo: enviadaPara, invoiceEmailedAt: agora } : {}),
+      },
+    });
+    return { ok: true, enviadaPara, motivo };
+  }
+
+  /** Dar a fatura como enviada por fora: sem ficheiro e sem email. */
+  async marcarFaturaEnviada(id: string) {
+    const aviso = await this.prisma.subscriptionNotice.findUnique({ where: { id }, select: { paidAt: true } });
+    if (!aviso) throw new NotFoundException("Mensalidade não encontrada");
+    if (!aviso.paidAt) throw new BadRequestException("A fatura é de uma mensalidade paga.");
+    await this.prisma.subscriptionNotice.update({ where: { id }, data: { invoiceSentAt: new Date() } });
+    return { ok: true };
+  }
+
+  /** Desfazer: tira o ficheiro (se houver) e volta a "falta fatura". O email que saiu, saiu. */
+  async tirarFatura(id: string) {
+    const aviso = await this.prisma.subscriptionNotice.findUnique({ where: { id }, select: { invoicePath: true } });
+    if (!aviso) throw new NotFoundException("Mensalidade não encontrada");
+    if (aviso.invoicePath) await this.storage.remove(FATURAS_BUCKET, aviso.invoicePath).catch(() => undefined);
+    await this.prisma.subscriptionNotice.update({
+      where: { id },
+      data: { invoicePath: null, invoiceFileName: null, invoiceSentAt: null, invoiceEmailedTo: null, invoiceEmailedAt: null },
+    });
+    return { ok: true };
+  }
+
+  /** O PDF anexado, em base64, para abrir no painel. */
+  async faturaParaDescarregar(id: string) {
+    const aviso = await this.prisma.subscriptionNotice.findUnique({
+      where: { id },
+      select: { invoicePath: true, invoiceFileName: true },
+    });
+    if (!aviso?.invoicePath) throw new NotFoundException("Esta mensalidade não tem fatura anexada.");
+    const dados = await this.storage.download(FATURAS_BUCKET, aviso.invoicePath);
+    if (!dados) throw new NotFoundException("Não foi possível ler a fatura.");
+    return { ficheiro: aviso.invoiceFileName ?? "fatura.pdf", base64: dados.toString("base64") };
   }
 
   /* ------------------------------------------- mensalidades de um clube, à mão */
@@ -422,7 +565,9 @@ export class PlatformFinanceService {
         select: {
           id: true, periodStart: true, periodEnd: true, issuedOn: true, dueOn: true,
           planName: true, billingPeriod: true, amountCents: true, sentAt: true,
-          paidAt: true, paidNote: true, paidBy: { select: { name: true } },
+          paidAt: true, paidNote: true, paidMethod: true, remindersSent: true, suspensionSentAt: true,
+          invoiceSentAt: true, invoiceFileName: true, invoiceEmailedTo: true, invoiceEmailedAt: true,
+          paidBy: { select: { name: true } },
         },
       }),
     ]);
@@ -439,6 +584,14 @@ export class PlatformFinanceService {
       paidAt: a.paidAt,
       paidNote: a.paidNote,
       paidBy: a.paidBy?.name ?? null,
+      /** `MBWAY`, `MULTIBANCO` ou `MANUAL`. Nulo por pagar. */
+      metodo: a.paidMethod as string | null,
+      lembretes: a.remindersSent as number,
+      suspensaoAvisada: a.suspensionSentAt !== null,
+      /** Nulo = falta tratar a fatura (numa paga). `ficheiro` nulo = marcada como enviada sem anexo. */
+      fatura: (a.invoiceSentAt
+        ? { em: a.invoiceSentAt, ficheiro: a.invoiceFileName, emailPara: a.invoiceEmailedTo, emailEm: a.invoiceEmailedAt }
+        : null) as { em: Date; ficheiro: string | null; emailPara: string | null; emailEm: Date | null } | null,
     }));
 
     if (condicoes) {
@@ -464,6 +617,10 @@ export class PlatformFinanceService {
           paidAt: null,
           paidNote: null,
           paidBy: null,
+          metodo: null,
+          lembretes: 0,
+          suspensaoAvisada: false,
+          fatura: null,
         });
       }
     }

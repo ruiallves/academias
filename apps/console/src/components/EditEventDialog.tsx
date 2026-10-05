@@ -9,6 +9,7 @@ import { longDate } from "@/lib/format";
 import { Settings, TriangleAlert } from "@/lib/icons";
 import { Dialog, DialogField, dialogInputClass } from "./Dialog";
 import { TokenPicker } from "./TokenPicker";
+import { CampoAdversario } from "./CampoAdversario";
 import { cx, SelectField } from "./primitives";
 
 /**
@@ -156,13 +157,7 @@ export function EditEventDialog({ event, onClose }: { event: CalendarEvent; onCl
         {isMatch && (
           <div className="grid grid-cols-[minmax(0,1fr)_auto] gap-3">
             <DialogField label="Adversário">
-              <input
-                value={opponent}
-                onChange={(e) => setOpponent(e.target.value)}
-                placeholder="ex.: SC Vilarinho"
-                className={dialogInputClass}
-                required
-              />
+              <CampoAdversario value={opponent} onChange={setOpponent} />
             </DialogField>
 
             <DialogField label="Onde">

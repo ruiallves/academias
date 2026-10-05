@@ -429,7 +429,7 @@ export function criarClube(agora, opcoes = {}) {
     bootstrap: {
       academy: {
         id: "ac-cd-academias", slug: "cd-academias", name: "Clube Desportivo Academias", shortName: "CD Academias",
-        city: "Vila Nova da Serra", signalColor: "#3B2CF0", logoUrl: EMBLEMA_URL, status: "ACTIVE", trialEndsAt: null,
+        city: "Vila Nova da Serra", signalColor: "#12936B", logoUrl: EMBLEMA_URL, status: "ACTIVE", trialEndsAt: null,
         createdAt: "2025-07-14T10:00:00.000Z", billingDueDay: 8, billingMonths: [9, 10, 11, 12, 1, 2, 3, 4, 5, 6],
         billingNextFrom: null, billingNextMonths: [], billingNextDueDay: null,
         paymentsEnabled: true, feesOnPayer: false, eupagoConfigured: true,

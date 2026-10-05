@@ -32,6 +32,7 @@ export class CreateTransactionDto {
   @IsOptional() @IsString() @Length(0, 40) staffId?: string;
   @IsOptional() @IsString() @Length(0, 40) matchId?: string;
   @IsOptional() @IsString() @Length(0, 40) calendarEventId?: string;
+  @IsOptional() @IsString() @Length(0, 40) trainingSessionId?: string;
 
   /**
    * A repetição: fixa, mensal, de `occurredAt` até `repeatUntil`.

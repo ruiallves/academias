@@ -4,7 +4,7 @@
     "slug": "cd-academias",
     "name": "Clube Desportivo Academias",
     "shortName": "CD Academias",
-    "signalColor": "#3B2CF0",
+    "signalColor": "#12936B",
     "city": "Vila Nova",
     "emblema": "emblema.svg"
   },
@@ -13,7 +13,7 @@
     "slug": "atletico-da-serra",
     "name": "Atlético da Serra",
     "shortName": "Atlético da Serra",
-    "signalColor": "#1F6B4F",
+    "signalColor": "#8C1D2F",
     "city": "Serra Alta",
     "emblema": "emblema-serra.svg"
   },

@@ -2,6 +2,7 @@ import { Link } from "react-router-dom";
 import { useState, type FormEvent } from "react";
 import { categoryColor } from "@academia/ui/tokens";
 import { KIND_LABEL, kindOfEventType, type EventKind } from "@/lib/calendar";
+import { matchTitle } from "@/lib/callups";
 import { listTeams, teamById } from "@/lib/api";
 import { apiPost } from "@/lib/http";
 import { reloadAcademy } from "@/lib/store";
@@ -11,6 +12,7 @@ import { Settings } from "@/lib/icons";
 import type { Session } from "@/lib/permissions";
 import { Dialog, DialogField, dialogInputClass } from "./Dialog";
 import { TokenPicker } from "./TokenPicker";
+import { CampoAdversario } from "./CampoAdversario";
 import { Repetir, useRepeticao } from "./Repetir";
 import { cx, SelectField } from "./primitives";
 
@@ -169,9 +171,13 @@ export function NewEventDialog({
   const needsTeam = isMatch || kind === "training";
 
   const teamName = teams.find((t) => t.id === teamId)?.name;
+  /*
+   * O título por omissão. Jogo: a equipa da casa primeiro ("Sub-13 vs Fafe" em
+   * casa, "Fafe vs Sub-13" fora), igual a `matchTitle`.
+   */
   const suggested = isMatch
-    ? opponent.trim()
-      ? `${isHome ? "vs" : "@"} ${opponent.trim()}`
+    ? opponent.trim() && teamName
+      ? matchTitle({ isHome, opponent: opponent.trim(), teamName })
       : `${KIND_LABEL[kind]} · ${teamName ?? ""}`
     : teamId
       ? `${KIND_LABEL[kind]} · ${teamName}`
@@ -388,13 +394,7 @@ export function NewEventDialog({
         {isMatch && (
           <div className="grid grid-cols-[minmax(0,1fr)_auto] gap-3">
             <DialogField label="Adversário">
-              <input
-                value={opponent}
-                onChange={(e) => setOpponent(e.target.value)}
-                placeholder="ex.: SC Vilarinho"
-                className={dialogInputClass}
-                required
-              />
+              <CampoAdversario value={opponent} onChange={setOpponent} />
             </DialogField>
 
             <DialogField label="Onde">

@@ -4,6 +4,8 @@ import { Public } from "../auth/auth.guard";
 import { PrismaService } from "../prisma/prisma.service";
 import { BillingService } from "./billing.service";
 import { EupagoClient } from "./eupago.client";
+import { SubscriptionPaymentsService } from "../subscription/subscription-payments.service";
+import { eDaPlataforma } from "../subscription/cobranca";
 
 /**
  * O webhook da euPago (Realtime Webhooks 2.0) — a única fonte de verdade sobre
@@ -49,6 +51,7 @@ export class EupagoWebhookController {
     private readonly prisma: PrismaService,
     private readonly billing: BillingService,
     private readonly eupago: EupagoClient,
+    private readonly subscricao: SubscriptionPaymentsService,
   ) {}
 
   @Post()
@@ -208,6 +211,29 @@ export class EupagoWebhookController {
       // próprios enviámos —, depois a referência e o trid do provedor.
       const refs = [identifier, reference, trid].filter(Boolean);
 
+      const amount = (t.amount ?? {}) as Record<string, unknown>;
+      const paidCents = amount.value != null ? Math.round(Number(amount.value) * 100) : undefined;
+      const when = t.date ? new Date(String(t.date)) : new Date();
+      const quando = Number.isNaN(when.getTime()) ? new Date() : when;
+
+      /*
+       * Um pagamento **à plataforma** (a mensalidade de um clube a nós) só
+       * chega pelo webhook global: é a conta da plataforma que o recebe. Pelo
+       * webhook de um clube é recusado, com rasto, e não se toca em nada.
+       */
+      if (!clube && (await this.subscricao.tratarWebhook(refs, status, quando, payload, paidCents))) {
+        await this.prisma.webhookEvent.update({ where: { id: event.id }, data: { processedAt: new Date(), error: null } });
+        return { ok: true, plataforma: true };
+      }
+      if (clube && refs.some(eDaPlataforma)) {
+        this.log.error(`Webhook do clube ${clube.slug} com um pagamento à plataforma — ignorado`);
+        await this.prisma.webhookEvent.update({
+          where: { id: event.id },
+          data: { error: `pagamento à plataforma (webhook de ${clube.slug})` },
+        });
+        return { ok: true, ignored: "plataforma" };
+      }
+
       /*
        * O webhook de um clube só mexe nos pagamentos desse clube.
        *
@@ -231,11 +257,6 @@ export class EupagoWebhookController {
           return { ok: true, ignored: "outro clube" };
         }
       }
-
-      const amount = (t.amount ?? {}) as Record<string, unknown>;
-      const paidCents = amount.value != null ? Math.round(Number(amount.value) * 100) : undefined;
-      const when = t.date ? new Date(String(t.date)) : new Date();
-      const quando = Number.isNaN(when.getTime()) ? new Date() : when;
 
       if (status === "PAID") {
         await this.billing.confirmPayment(refs, quando, payload, paidCents);

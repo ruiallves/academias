@@ -3211,6 +3211,11 @@ endereços inventados a cada corrida.
 
 ## O aviso mensal da subscrição sai sozinho
 
+> Em 05/10/2026 o ciclo mudou: o aviso passou a sair no **início** do período,
+> com pagamento na consola e suspensão no fim. Ver "A mensalidade da plataforma
+> paga-se na consola", mais abaixo. O que se segue descreve o desenho original;
+> a conta dos meses e o responsável continuam iguais.
+
 Mudar o plano de um clube já era contratar (a ordem de adesão, mais acima), mas
 **cobrar** continuava a ser um gesto manual: alguém tinha de se lembrar de pedir
 o dinheiro a cada clube, todos os meses. Passou a sair sozinho.
@@ -4303,6 +4308,77 @@ que ainda não saiu (sem `sentAt`, dia futuro) apaga a linha e o ganho, e a
 varredura volta a mandá-lo no dia certo. Testado por
 `scripts/test-contactos-e-mensalidades.mjs` (25) e, na varredura,
 `test-avisos-de-subscricao.mjs` (42), com a API de teste **sem** `MAIL_API_KEY`.
+
+## A mensalidade da plataforma paga-se na consola, pela euPago da plataforma
+
+A cobrança da plataforma (a secção "O aviso mensal da subscrição sai sozinho",
+mais acima) mudou de forma em 05/10/2026. O que lá está sobre o relógio do
+contrato, os meses curtos e o responsável continua a valer; o que mudou é o
+ciclo e o que o clube faz com o aviso.
+
+**Paga-se no início do período, na consola.** No dia em que o período começa
+nasce o aviso (`SubscriptionNotice`, `issuedOn = periodStart`, `dueOn =
+periodEnd`) e o responsável recebe um email a dizer que a mensalidade "de 5 de
+outubro a 4 de novembro" está disponível. Na consola, Definições → Mensalidade
+(`MensalidadeDaPlataformaPanel`), quem representa o clube (`legal:club`) ou gere
+as definições (`settings:write`) pede uma referência Multibanco ou um pedido MB
+WAY, pela **chave global** da euPago (`EUPAGO_API_KEY`): é dinheiro para nós, e
+por isso não passa por `Charge`/`Payment`, que são do clube e liquidam no IBAN
+dele. Cada pedido é um `SubscriptionPayment` com identificador
+`ACADEMIAS-<slug>-<AAAAMMDD>-<sufixo>`; o prefixo é o que o webhook global usa
+para distinguir um pagamento à plataforma de um pagamento a um clube, e
+`app.resolve_subscription_payment()` diz de que clube é para se abrir o `runAs`
+certo. O webhook de um clube recusa estes pagamentos, com rasto.
+
+**Sempre o período por extenso.** Nunca "a mensalidade de outubro": o período
+começa no dia em que o clube aderiu, e um clube que aderiu a 20 tem dois meses
+do calendário em cada mensalidade. `periodoPorExtenso` em
+`subscription/cobranca.ts` é a frase de todo o lado (emails, consola, painel).
+
+**Lembretes sem spam.** Aos 7, 14 e 21 dias sem pagamento sai um lembrete, por
+email e por notificação na consola (`PAYMENT_DUE`, com link para a secção).
+`remindersSent` conta-os; uma paragem comprida do servidor manda **um** (o mais
+recente), e um aviso que nasce atrasado começa com os já passados contados
+(`lembretesJaPassados`), para o email do aviso e o primeiro lembrete não saírem
+na mesma hora.
+
+**A suspensão.** No dia seguinte ao fim do período sem pagamento, e nunca com
+menos de uma semana desde o email do aviso (`deveSuspender`), o clube fica
+suspenso: `Academy.suspendedAt`, `status = PAST_DUE`, um email a dizê-lo uma vez
+(`suspensionSentAt`). O guard global recusa tudo com 403 `ACADEMY_SUSPENDED`
+(`SuspensaoService`, lista em memória lida de `app.suspended_academies()` de
+minuto a minuto), e a app do clube faz o mesmo em `academiaDe`. Ficam abertas as
+rotas `@SuspensionExempt()` (as três da mensalidade) e as `@LegalExempt()`. A
+consola mostra `ClubeSuspenso` (`AcademyBoot`) com o mesmo painel de pagar; a
+app das famílias diz que o clube está suspenso e para quem perguntar. Quando o
+pagamento chega, `marcarNoticePaga` (a mesma do botão "Recebido" do painel)
+chama `levantarSeEmDia`, que reabre o clube se não há período vencido por pagar.
+O painel também suspende e reabre à mão (`PATCH academies/:id/suspensao`).
+
+**Facturas.** A euPago não as emite. Quando um pagamento chega pela consola, sai
+um email a `PLATFORM_ALERT_EMAIL` com os dados para a factura (cliente, NIF da
+ordem assinada, período, valor com IVA, método, referência) e o responsável do
+clube recebe o recibo, que diz que a factura segue por email. O preço do plano
+já inclui o IVA; o valor cobra-se tal e qual.
+
+**Quem entra.** Todos os clubes com a subscrição `ACTIVE`
+(`app.subscription_billing()`), com ou sem condições emitidas. Sem ordem, o dia
+de cobrança é `Subscription.billingAnchorOn`, escrito quando o plano passa a
+activo (a migração preencheu os que já pagavam com o dia das condições). Os
+emails nunca levam a referência: um email com "entidade X, referência Y" é o
+que uma burla imita, e a consola com sessão iniciada é o único sítio onde se
+vê.
+
+Na lista do painel, a coluna "Atividade" deu lugar a "Mensalidade"
+(`mensalidadeNaLista`): em dia, em falta com os dias, suspenso ou sem plano, e
+a última recebida. Na ficha, cada período diz o método (`paidMethod`) e os
+lembretes que saíram.
+
+Migração `20261005150000_mensalidade_da_plataforma_eupago`, a aplicar antes de
+reiniciar a API. Verificado por `npm run test:cobranca --workspace @academia/api`
+(38), só com datas; a varredura a sério continua coberta por
+`test-avisos-de-subscricao.mjs`, que deixou de valer no ciclo antigo e tem de
+passar a esperar o aviso no início do período.
 
 ## Certificação FPF
 

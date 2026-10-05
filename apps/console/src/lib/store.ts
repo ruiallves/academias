@@ -1,5 +1,6 @@
 import { useSyncExternalStore } from "react";
-import { apiGet, apiGetSilencioso } from "@/lib/http";
+import { ApiError, apiGet, apiGetSilencioso } from "@/lib/http";
+import { ACADEMY_SUSPENDED_CODE } from "@/lib/subscricao";
 import { METHOD_LABEL } from "@/lib/finance";
 import type {
   Academy,
@@ -336,6 +337,12 @@ export type Me = ApiBootstrap["me"];
 type State = {
   ready: boolean;
   error: string | null;
+  /**
+   * O servidor respondeu `ACADEMY_SUSPENDED`: o clube está fechado por falta
+   * de pagamento da mensalidade da plataforma. Não é avaria: tem ecrã próprio,
+   * com o botão de pagar, e reabre sozinho quando o pagamento chega.
+   */
+  suspenso: boolean;
   academy: Academy;
   season: string;
   /** Os rótulos das épocas que existem, da mais recente para trás. */
@@ -364,6 +371,7 @@ type State = {
 const EMPTY: State = {
   ready: false,
   error: null,
+  suspenso: false,
   academy: {
     id: "", slug: "", name: "", shortName: "", signalColor: "#0f6b62", logoUrl: "", city: "",
     status: "ACTIVE", trialEndsAt: null, createdAt: "",
@@ -460,6 +468,11 @@ export function loadAcademy(): Promise<void> {
        */
       void ensureCalendarRange(...epocaDesportiva());
     } catch (error) {
+      // Clube suspenso por falta de pagamento: ecrã próprio, não é avaria.
+      if (error instanceof ApiError && error.code === ACADEMY_SUSPENDED_CODE) {
+        apply({ ...EMPTY, ready: true, suspenso: true });
+        return;
+      }
       apply({ ...EMPTY, ready: true, error: error instanceof Error ? error.message : "Não foi possível carregar." });
     }
   })();
@@ -1032,6 +1045,7 @@ function juntar<T extends { id: string }>(atuais: T[], novos: T[]): T[] {
   return {
     ready: true,
     error: null,
+    suspenso: false,
     academy: {
       id: boot.academy.id,
       slug: boot.academy.slug,

@@ -6,7 +6,7 @@ import { ClubMark, Empty, Panel, Pill, Progress, cx } from "@/components/primiti
 import { NewAcademyDialog } from "@/components/NewAcademyDialog";
 import { AcademyActions } from "@/components/AcademyActions";
 import { Failed, Skeleton } from "./Overview";
-import { euros, shortDate, since, tamanho } from "@/lib/format";
+import { euros, shortDate, tamanho } from "@/lib/format";
 import { useApi } from "@/lib/query";
 import { type Academy, type Me } from "@/lib/types";
 import { ESTADO_LABEL, ESTADO_TOM, estadoComercial, temReceita } from "@/lib/estado";
@@ -204,7 +204,13 @@ export default function Academies({ me }: { me: Me }) {
                   <th className="px-3 py-2 text-right whitespace-nowrap">Staff</th>
                   <th className="px-3 py-2 text-left whitespace-nowrap">Online</th>
                   <th className="px-3 py-2 text-left whitespace-nowrap">Onboarding</th>
-                  <th className="px-3 py-2 text-left whitespace-nowrap">Atividade</th>
+                  {/*
+                    A mensalidade da plataforma, no lugar da "Atividade": se a
+                    do período a correr está paga, há quantos dias falta, e
+                    quando foi a última recebida. É a pergunta que se faz a esta
+                    lista no dia 1 de cada mês; a actividade continua na ficha.
+                  */}
+                  <th className="px-3 py-2 text-left whitespace-nowrap">Mensalidade</th>
                   {/* O espaço de ficheiros: quem está perto do limite é a conversa de subir a mensalidade. */}
                   <th className="px-3 py-2 text-right whitespace-nowrap">Espaço</th>
                   <th className="px-5 py-2 text-right whitespace-nowrap">Entrou</th>
@@ -309,12 +315,7 @@ export default function Academies({ me }: { me: Me }) {
                       </div>
                     </td>
                     <td className="px-3 py-2.5">
-                      {/*
-                        A última vez que fecharam presenças. É o sinal de vida do
-                        cliente — quem deixa de registar deixa de usar, e quem
-                        deixa de usar não renova, muito antes de o dizer.
-                      */}
-                      <span className={cx("text-meta", staleness(a.lastActivity))}>{since(a.lastActivity)}</span>
+                      <MensalidadeNaLista m={a.mensalidade} />
                     </td>
                     <td className="px-3 py-2.5 text-right whitespace-nowrap">
                       <EspacoNaLista usado={a.storageUsedBytes} limiteMb={a.storageLimitMb} />
@@ -338,12 +339,36 @@ export default function Academies({ me }: { me: Me }) {
   );
 }
 
-function staleness(iso: string | null): string {
-  if (!iso) return "text-ink-4";
-  const days = (Date.now() - new Date(iso).getTime()) / 86_400_000;
-  if (days > 14) return "text-[#a82a20] font-medium";
-  if (days > 7) return "text-[#8a5a12]";
-  return "text-ink-3";
+/**
+ * A mensalidade da plataforma de um clube, na lista.
+ *
+ * Uma pastilha com o estado e, por baixo, a última recebida. "Em falta" sobe de
+ * tom com os dias: uma semana é normal (o aviso acabou de sair), três semanas é
+ * a véspera da suspensão.
+ */
+function MensalidadeNaLista({ m }: { m: Academy["mensalidade"] }) {
+  const ultima = m.ultimaPaga ? `última: ${shortDate(m.ultimaPaga.paidAt)}` : "nunca pagou";
+  if (m.estado === "sem-plano") return <span className="text-meta text-ink-4">—</span>;
+  return (
+    <span className="inline-flex flex-col gap-0.5" title={m.atual ? `Período: ${m.atual.periodo}` : undefined}>
+      {m.estado === "suspenso" ? (
+        <Pill tone="risk">Suspenso</Pill>
+      ) : m.estado === "em-falta" ? (
+        <Pill tone={m.emFaltaDias >= 21 ? "risk" : m.emFaltaDias >= 7 ? "warn" : "neutral"}>
+          Em falta · {m.emFaltaDias} {m.emFaltaDias === 1 ? "dia" : "dias"}
+        </Pill>
+      ) : m.faturasEmFalta > 0 ? (
+        /* Pago, e a fatura por emitir: anexa-se na ficha do clube. */
+        <Pill tone="warn">Em dia · falta fatura</Pill>
+      ) : (
+        <Pill tone="ok">Em dia</Pill>
+      )}
+      <span className="text-[11px] text-ink-4 whitespace-nowrap">
+        {ultima}
+        {m.estado !== "em-dia" && m.faturasEmFalta > 0 ? " · falta fatura" : ""}
+      </span>
+    </span>
+  );
 }
 
 /**

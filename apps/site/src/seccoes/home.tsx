@@ -57,9 +57,9 @@ export function Heroi() {
   }, []);
 
   return (
-    <section ref={ref} className="heroi palco-cal">
+    <section ref={ref} className="heroi palco-noite">
       <div className="wrap">
-        <h1 className="titulo t1 max-w-[13ch]">A infraestrutura digital do teu clube.</h1>
+        <h1 className="titulo t1 max-w-[13ch]">A infraestrutura digital do teu clube<span className="ponto">.</span></h1>
 
         <div className="mt-8 flex flex-col gap-7 lg:flex-row lg:items-end lg:justify-between">
           <p className="lede">
@@ -186,7 +186,7 @@ export function AppDoClube() {
     <section className="bloco palco-cal bg-sup mt-[clamp(8px,1.2vw,20px)]">
       <div className="wrap pt-[clamp(64px,9vw,130px)]">
         <p className="rotulo">A app do clube</p>
-        <h2 className="titulo t1 mt-4 max-w-[12ch]">O clube no telemóvel de cada família.</h2>
+        <h2 className="titulo t1 mt-4 max-w-[12ch]">O clube no telemóvel de cada família<span className="ponto">.</span></h2>
       </div>
 
       <Passeio id="app" ecras={6} passos={APP} variante="centro">
@@ -289,7 +289,7 @@ export function Consola() {
     <section className="bloco palco-noite">
       <div className="wrap pt-[clamp(64px,9vw,130px)]">
         <p className="rotulo">A consola</p>
-        <h2 className="titulo t1 mt-4 max-w-[12ch]">O clube inteiro, para quem lá trabalha.</h2>
+        <h2 className="titulo t1 mt-4 max-w-[12ch]">O clube inteiro, para quem lá trabalha<span className="ponto">.</span></h2>
       </div>
 
       <Passeio
@@ -351,7 +351,7 @@ export function Ciclo() {
     return (
       <section className="palco-cal faixa">
         <div className="wrap">
-          <h2 className="titulo t1 max-w-[13ch]">Do pagamento à evolução do atleta.</h2>
+          <h2 className="titulo t1 max-w-[13ch]">Do pagamento à evolução do atleta<span className="ponto">.</span></h2>
         </div>
         <div className="mt-10 overflow-x-auto">
           <CicloPista />
@@ -365,7 +365,7 @@ export function Ciclo() {
       <div className="ciclo-preso">
         <div className="wrap">
           <p className="rotulo">Tudo ligado</p>
-          <h2 className="titulo t2 mt-3 max-w-[18ch]">Do pagamento à evolução do atleta.</h2>
+          <h2 className="titulo t2 mt-3 max-w-[18ch]">Do pagamento à evolução do atleta<span className="ponto">.</span></h2>
         </div>
         <CicloPista />
       </div>
@@ -421,7 +421,7 @@ export function Ferramentas() {
     <section ref={ref} className="ferramentas palco-cal faixa">
       <div className="wrap grid gap-12 lg:grid-cols-[minmax(0,0.8fr)_minmax(0,1.2fr)] lg:gap-20">
         <div>
-          <h2 className="titulo t1 max-w-[9ch]">De sete sítios para um.</h2>
+          <h2 className="titulo t1 max-w-[9ch]">De sete sítios para um<span className="ponto">.</span></h2>
           <p className="lede mt-6">Um clube vive hoje espalhado por folhas, grupos e pastas. Na Academias fica tudo ligado.</p>
         </div>
         <div className="flex flex-col justify-center gap-8">
@@ -489,9 +489,9 @@ function Contador({ valor }: { valor: number }) {
 
 export function Numeros() {
   return (
-    <section className="bloco palco-acento">
+    <section className="bloco palco-noite">
       <div className="wrap faixa">
-        <h2 className="titulo t2 max-w-[16ch]">O que os clubes já fizeram na Academias.</h2>
+        <h2 className="titulo t2 max-w-[16ch]">O que os clubes já fizeram na Academias<span className="ponto">.</span></h2>
         <div className="numeros-grelha mt-[clamp(36px,5vw,72px)]">
           {NUMEROS.itens.map((x) => (
             <p key={x.rotulo} className="numero">
@@ -514,7 +514,7 @@ export function Fecho() {
   return (
     <section className="bloco palco-noite mb-[clamp(8px,1.2vw,20px)]">
       <div className="wrap faixa flex flex-col items-start gap-9">
-        <h2 className="titulo t1 max-w-[12ch]">Experimenta com o teu clube lá dentro.</h2>
+        <h2 className="titulo t1 max-w-[12ch]">Experimenta com o teu clube lá dentro<span className="ponto">.</span></h2>
         <div className="flex flex-wrap items-center gap-x-7 gap-y-4">
           <Link to="/contactos" className="btn btn-cheio">
             Experimentar 30 dias

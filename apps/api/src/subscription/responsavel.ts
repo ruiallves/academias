@@ -2,10 +2,11 @@ import type { Role } from "@prisma/client";
 import type { ScopedClient } from "../prisma/prisma.service";
 import { ROLE_PERMISSIONS } from "../common/permissions";
 
-export type ResponsavelDoClube = { name: string; email: string; title: string };
+export type ResponsavelDoClube = { name: string; email: string; title: string; userId: string };
 
 /** Um vínculo, com o que basta para decidir se é ele que representa o clube. */
 export type VinculoDeStaff = {
+  userId: string;
   title: string | null;
   role: Role;
   customRole: { name: string; permissions: string[] } | null;
@@ -17,6 +18,7 @@ export type VinculoDeStaff = {
  * chamadores lerem o mesmo — ver `escolherResponsavel`.
  */
 export const SELECT_RESPONSAVEL = {
+  userId: true,
   title: true,
   role: true,
   customRole: { select: { name: true, permissions: true } },
@@ -59,6 +61,8 @@ export function escolherResponsavel(vinculos: VinculoDeStaff[]): ResponsavelDoCl
       name: v.user.name,
       email: v.user.email,
       title: v.customRole?.name ?? v.title ?? "Presidente",
+      // Para a notificação na consola, que é da pessoa e não do email.
+      userId: v.userId,
     };
   }
   return null;

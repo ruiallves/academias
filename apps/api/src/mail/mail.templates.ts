@@ -23,6 +23,7 @@
  */
 
 import { periodoMinimoPorExtenso } from "../subscription/condicoes";
+import { periodoPorExtenso } from "../subscription/cobranca";
 
 export type MailBrand = {
   /** O nome curto, para o cabeçalho e para o assunto. */
@@ -1539,6 +1540,282 @@ export function subscriptionNoticeEmail(input: {
       ],
       { label: "Ver as condições", url: input.link },
       notes.map(semTags),
+    ),
+  };
+}
+
+/**
+ * Os emails da mensalidade da plataforma, desde que se paga na consola.
+ *
+ * Quatro momentos, um molde: a mensalidade ficou disponível (no primeiro dia
+ * do período), um lembrete por semana enquanto estiver por pagar, a suspensão
+ * quando o período acaba sem pagamento, e o recibo quando o pagamento chega.
+ *
+ * ## O que nunca vem aqui
+ *
+ * A referência Multibanco, o número de telemóvel, qualquer dado de pagamento.
+ * A referência vê-se na consola, com sessão iniciada: um email com "paga para
+ * a entidade X, referência Y" é precisamente o que uma burla por email imita,
+ * e quem recebe não tem como distinguir o nosso do falso. O email diz o que
+ * está em falta e aponta para a consola; a consola é que mostra como pagar.
+ *
+ * ## "De 5 de outubro a 4 de novembro"
+ *
+ * Nunca "a mensalidade de outubro": o período começa no dia em que o clube
+ * aderiu, e um que aderiu a 20 tem dois meses do calendário em cada
+ * mensalidade. A frase vem de `periodoPorExtenso`, a mesma da consola.
+ */
+export function subscriptionPaymentEmail(input: {
+  brand: MailBrand;
+  kind: "disponivel" | "lembrete" | "suspenso" | "recebido";
+  /** Quem recebe: o responsável do clube. */
+  name: string;
+  title: string;
+  planName: string;
+  annual: boolean;
+  amountCents: number;
+  periodStart: Date;
+  periodEnd: Date;
+  /** O número do lembrete, de 1 a 3. */
+  lembrete?: number;
+  /** Na suspensão: outras mensalidades também por pagar, se as houver. */
+  outras?: { periodStart: Date; periodEnd: Date; amountCents: number }[];
+  /** No recibo: como se pagou. */
+  metodo?: string;
+  paidAt?: Date;
+  /** A secção da mensalidade nas Definições da consola. */
+  link: string;
+}): { subject: string; html: string; text: string } {
+  const primeiro = input.name.trim().split(/\s+/)[0] || input.name;
+  const periodo = periodoPorExtenso(input.periodStart, input.periodEnd);
+  const nome = input.annual ? "anuidade" : "mensalidade";
+  const limite = dia(input.periodEnd);
+
+  const linhas: [string, string][] = [
+    ["Clube", esc(input.brand.name)],
+    ["Plano", esc(input.planName)],
+    ["Período", esc(periodo)],
+    ["Valor", euros(input.amountCents)],
+  ];
+  if (input.kind === "recebido") {
+    if (input.paidAt) linhas.push(["Pago em", dia(input.paidAt)]);
+    if (input.metodo) linhas.push(["Pago por", esc(input.metodo)]);
+  } else if (input.kind !== "suspenso") {
+    linhas.push(["Pagar até", limite]);
+  }
+  for (const o of input.outras ?? []) {
+    linhas.push(["Também em falta", esc(periodoPorExtenso(o.periodStart, o.periodEnd)) + " · " + euros(o.amountCents)]);
+  }
+
+  const tabela =
+    '<table role="presentation" cellpadding="0" cellspacing="0" style="width:100%;border-collapse:collapse;' +
+    'border:1px solid #e5e2dc;border-radius:10px;overflow:hidden;">' +
+    linhas
+      .map(
+        ([rotulo, valor], i) =>
+          '<tr style="' + (i % 2 === 0 ? "background:#faf9f7;" : "") + '">' +
+          '<td style="padding:9px 12px;font-size:13px;color:#52504c;white-space:nowrap;">' + esc(rotulo) + "</td>" +
+          '<td style="padding:9px 12px;font-size:13px;color:#1a1917;font-weight:600;text-align:right;">' + valor + "</td>" +
+          "</tr>",
+      )
+      .join("") +
+    "</table>";
+
+  const texto = ((): { heading: string; abertura: string; cta: string; subject: string; notes: string[] } => {
+    const como = "Paga-se na consola, em Definições, por MB WAY ou com referência Multibanco.";
+    switch (input.kind) {
+      case "disponivel":
+        return {
+          heading: "A " + nome + " da plataforma está disponível",
+          abertura:
+            "A " + nome + " de " + esc(input.brand.name) + " na plataforma Academias, de " + esc(periodo) +
+            ", já pode ser paga. " + como,
+          cta: "Pagar a " + nome,
+          subject: "Academias · " + nome + " de " + periodo + " · " + euros(input.amountCents),
+          notes: [
+            "Tens até " + limite + " para pagar. Depois dessa data o acesso do clube à consola e à app fica suspenso até o pagamento chegar.",
+            "Este email não traz dados de pagamento nenhuns. A referência vê-se só na consola, com sessão iniciada.",
+          ],
+        };
+      case "lembrete":
+        return {
+          heading: "A " + nome + " de " + periodo + " está em falta",
+          abertura:
+            "A " + nome + " de " + esc(input.brand.name) + " na plataforma Academias, de " + esc(periodo) +
+            ", continua por pagar. " + como,
+          cta: "Pagar a " + nome,
+          subject:
+            "Academias · " + nome + " de " + periodo + " em falta" +
+            (input.lembrete && input.lembrete >= 3 ? " · último aviso" : ""),
+          notes: [
+            "Tens até " + limite + " para pagar. Depois dessa data o acesso do clube à consola e à app fica suspenso até o pagamento chegar.",
+            "Se já pagaste hoje, ignora este aviso: a confirmação do banco pode demorar umas horas.",
+            "Este email não traz dados de pagamento nenhuns. A referência vê-se só na consola, com sessão iniciada.",
+          ],
+        };
+      case "suspenso":
+        return {
+          heading: "O acesso do clube ficou suspenso",
+          abertura:
+            "A " + nome + " de " + esc(input.brand.name) + " na plataforma Academias, de " + esc(periodo) +
+            ", não foi paga até " + limite + ". O acesso do clube à consola e à app ficou suspenso até o pagamento chegar. " +
+            "Os dados estão todos guardados e nada se perde.",
+          cta: "Pagar e reabrir o clube",
+          subject: "Academias · acesso de " + input.brand.shortName + " suspenso · " + nome + " de " + periodo + " em falta",
+          notes: [
+            "Quem representa o clube continua a poder entrar na consola só para pagar. Assim que o pagamento é confirmado, o acesso reabre sozinho.",
+            "Este email não traz dados de pagamento nenhuns. A referência vê-se só na consola, com sessão iniciada.",
+          ],
+        };
+      case "recebido":
+        return {
+          heading: "Pagamento recebido",
+          abertura:
+            "Recebemos o pagamento da " + nome + " de " + esc(input.brand.name) + " na plataforma Academias, de " +
+            esc(periodo) + ". Obrigado.",
+          cta: "Ver as mensalidades",
+          subject: "Academias · " + nome + " de " + periodo + " paga",
+          notes: ["A factura segue por email nos próximos dias, para este endereço."],
+        };
+    }
+  })();
+
+  const paragrafo = texto.abertura + " Chega a ti como <strong>" + esc(input.title) + "</strong>, que é quem representa o clube.";
+  const notes = [...texto.notes, "Alguma coisa não bate certo? Responde a este email."];
+
+  return {
+    subject: texto.subject,
+    html: layout({
+      brand: input.brand,
+      greeting: "Olá " + primeiro + ",",
+      heading: texto.heading,
+      paragraphs: [paragrafo],
+      blocks: [tabela],
+      cta: { label: texto.cta, url: input.link },
+      notes,
+    }),
+    text: plain(
+      "Olá " + primeiro + ",",
+      [semTags(paragrafo), ...linhas.map(([rotulo, valor]) => rotulo + ": " + semTags(valor))],
+      { label: texto.cta, url: input.link },
+      notes.map(semTags),
+    ),
+  };
+}
+
+/**
+ * A fatura da mensalidade da plataforma, em anexo.
+ *
+ * Sai do painel, quando se anexa a fatura emitida no Portal das Finanças e se
+ * escolhe enviá-la. Vai para o responsável do clube, com o PDF anexado e o
+ * período por extenso; na consola, a mesma fatura fica junto da mensalidade.
+ */
+export function subscriptionInvoiceEmail(input: {
+  brand: MailBrand;
+  name: string;
+  title: string;
+  annual: boolean;
+  amountCents: number;
+  periodStart: Date;
+  periodEnd: Date;
+  fileName: string;
+  link: string;
+}): { subject: string; html: string; text: string } {
+  const primeiro = input.name.trim().split(/s+/)[0] || input.name;
+  const periodo = periodoPorExtenso(input.periodStart, input.periodEnd);
+  const nome = input.annual ? "anuidade" : "mensalidade";
+  const paragrafo =
+    "Segue em anexo a fatura da " + nome + " de " + esc(input.brand.name) + " na plataforma Academias, de " +
+    esc(periodo) + ", no valor de " + euros(input.amountCents) + ". Chega a ti como <strong>" + esc(input.title) +
+    "</strong>, que é quem representa o clube.";
+  const notes = [
+    "A fatura também fica guardada na consola, em Definições, Mensalidade, junto do pagamento.",
+    "Alguma coisa não bate certo? Responde a este email.",
+  ];
+  return {
+    subject: "Academias · fatura da " + nome + " de " + periodo,
+    html: layout({
+      brand: input.brand,
+      greeting: "Olá " + primeiro + ",",
+      heading: "Fatura da " + nome,
+      paragraphs: [paragrafo, "Ficheiro: " + esc(input.fileName)],
+      cta: { label: "Ver na consola", url: input.link },
+      notes,
+    }),
+    text: plain(
+      "Olá " + primeiro + ",",
+      [semTags(paragrafo), "Ficheiro: " + input.fileName],
+      { label: "Ver na consola", url: input.link },
+      notes,
+    ),
+  };
+}
+
+/**
+ * O aviso a quem factura: um clube pagou a mensalidade da plataforma.
+ *
+ * A euPago não emite facturas; quem as emite é a pessoa, no Portal das
+ * Finanças, com o que este email traz à mão: o cliente, o NIF da instituição
+ * (o da ordem assinada, quando a há), o período e o valor. Vai para
+ * `PLATFORM_ALERT_EMAIL`, como os tickets.
+ */
+export function platformPaymentAlertEmail(input: {
+  clubName: string;
+  slug: string;
+  institutionName: string | null;
+  taxId: string | null;
+  periodStart: Date;
+  periodEnd: Date;
+  amountCents: number;
+  metodo: string;
+  providerRef: string | null;
+  paidAt: Date;
+  /** A ficha do clube no painel. */
+  link: string;
+}): { subject: string; html: string; text: string } {
+  const periodo = periodoPorExtenso(input.periodStart, input.periodEnd);
+  const linhas: [string, string][] = [
+    ["Clube", esc(input.clubName) + " (" + esc(input.slug) + ")"],
+    ["Facturar a", input.institutionName ? esc(input.institutionName) : "<em>sem ordem assinada</em>"],
+    ["NIF", input.taxId ? esc(input.taxId) : "<em>por obter</em>"],
+    ["Período", esc(periodo)],
+    ["Valor (com IVA)", euros(input.amountCents)],
+    ["Pago por", esc(input.metodo) + (input.providerRef ? " · " + esc(input.providerRef) : "")],
+    ["Pago em", dia(input.paidAt)],
+  ];
+  const tabela =
+    '<table role="presentation" cellpadding="0" cellspacing="0" style="width:100%;border-collapse:collapse;' +
+    'border:1px solid #e5e2dc;border-radius:10px;overflow:hidden;">' +
+    linhas
+      .map(
+        ([rotulo, valor], i) =>
+          '<tr style="' + (i % 2 === 0 ? "background:#faf9f7;" : "") + '">' +
+          '<td style="padding:9px 12px;font-size:13px;color:#52504c;white-space:nowrap;">' + esc(rotulo) + "</td>" +
+          '<td style="padding:9px 12px;font-size:13px;color:#1a1917;font-weight:600;text-align:right;">' + valor + "</td>" +
+          "</tr>",
+      )
+      .join("") +
+    "</table>";
+
+  const abertura = esc(input.clubName) + " pagou a mensalidade de " + esc(periodo) + ". Falta emitir a factura.";
+  const notes = ["O movimento já está nas contas da plataforma, ligado à mensalidade."];
+  const brand: MailBrand = { shortName: "Academias", name: "Plataforma Academias" };
+
+  return {
+    subject: "Factura a emitir · " + input.clubName + " · " + euros(input.amountCents),
+    html: layout({
+      brand,
+      heading: "Pagamento recebido de " + input.clubName,
+      paragraphs: [abertura],
+      blocks: [tabela],
+      cta: { label: "Abrir a ficha do clube", url: input.link },
+      notes,
+    }),
+    text: plain(
+      "Pagamento recebido de " + input.clubName,
+      [semTags(abertura), ...linhas.map(([rotulo, valor]) => rotulo + ": " + semTags(valor))],
+      { label: "Abrir a ficha do clube", url: input.link },
+      notes,
     ),
   };
 }

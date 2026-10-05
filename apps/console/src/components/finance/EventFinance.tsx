@@ -36,8 +36,8 @@ export function EventFinance({
   eventDate,
 }: {
   session: Session;
-  /** Exactamente um dos dois — jogos ligam-se pelo jogo, o resto pelo evento. */
-  link: { matchId?: string; calendarEventId?: string };
+  /** Exactamente um: jogos ligam-se pelo jogo, treinos pelo treino, o resto pelo evento. */
+  link: { matchId?: string; calendarEventId?: string; trainingSessionId?: string };
   eventLabel: string;
   /**
    * O dia do evento.
@@ -73,7 +73,7 @@ export function EventFinance({
     setRows(movimentosLembrados(link) ?? null);
     void carregar();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [link.matchId, link.calendarEventId]);
+  }, [link.matchId, link.calendarEventId, link.trainingSessionId]);
 
   async function confirmar(t: TransactionRow) {
     if (aMexer) return;

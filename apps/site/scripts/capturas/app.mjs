@@ -1015,7 +1015,7 @@ const CENAS = [
     async correr() {
       const s = await abrir({ nome: "inicio-serra", agora: QUI_2115, clube: "atletico-da-serra" });
       await s.page.getByText("Próximo treino").waitFor();
-      await tirarInicio(s, "app-inicio-serra", "O mesmo início noutro clube: Atlético da Serra, verde, com o seu emblema");
+      await tirarInicio(s, "app-inicio-serra", "O mesmo início noutro clube: Atlético da Serra, grená, com o seu emblema");
       await s.fechar();
     },
   },

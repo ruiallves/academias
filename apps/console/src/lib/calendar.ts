@@ -214,21 +214,20 @@ export function eventOutcome(e: CalendarEvent): Outcome | undefined {
 }
 
 /**
- * O título sem o escalão à frente — para onde ele já é evidente.
+ * O título de uma pastilha na grelha do mês.
  *
- * O nome de um jogo passou a trazer a equipa ("Sub-11 Futebol vs Benfica"),
- * porque numa lista de sábado ninguém adivinha de quem é o "vs Benfica". Numa
- * pastilha da grelha do mês isso vira-se contra si: o espaço dá para umas
- * quinze letras, e "Sub-11 Futeb…" esconde precisamente a parte que distingue
- * um jogo de outro no mesmo dia.
+ * O escalão já se vê pela cor e pelo ponto, e o espaço é curto, por isso um jogo
+ * mostra só o adversário, do lado em que joga, com o @ no lugar do clube: em casa
+ * "@ vs Fafe", fora "Fafe vs @".
+ * O título inteiro está no `title` da pastilha e na gaveta do evento.
  *
- * Ali o escalão já está dito de duas maneiras — a cor de fundo e o ponto — por
- * isso a pastilha corta-o e fica com o resto. Num treino, onde o título é só o
- * nome da equipa, não há resto: devolve-se o nome, que é o que sempre mostrou.
+ * O treino diz o escalão e que é treino ("Sub-19 Futebol - Treino"): só com o
+ * nome da equipa não se percebia que era um treino.
  */
 export function tituloCompacto(e: CalendarEvent): string {
-  if (!e.teamName || !e.title.startsWith(e.teamName)) return e.title;
-  return e.title.slice(e.teamName.length).trim() || e.teamName;
+  if (e.kind === "match" && e.match?.opponent) return e.match.home ? `@ vs ${e.match.opponent}` : `${e.match.opponent} vs @`;
+  if (e.kind === "training" && e.teamName && e.title === e.teamName) return `${e.teamName} - Treino`;
+  return e.title;
 }
 
 /* -------------------------------------------------------------------------- */

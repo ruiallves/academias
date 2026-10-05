@@ -157,6 +157,7 @@ export function AcademyActions({
   const negociado = precoCents !== null && tabela !== null && precoCents !== tabela;
 
   const cancelada = academy.status === "CANCELLED";
+  const suspensa = Boolean(academy.suspendedAt);
   const mayDelete = me.role === "OWNER";
 
   /*
@@ -218,6 +219,19 @@ export function AcademyActions({
       onDone();
     } catch (e) {
       setError(e instanceof ApiError ? e.message : "Não foi possível mudar o estado.");
+      setBusy(false);
+    }
+  }
+
+  /* Suspender ou reabrir por falta de pagamento. Ver `setAcademySuspended` na API. */
+  async function suspender(suspended: boolean) {
+    setBusy(true);
+    setError(null);
+    try {
+      await apiPatch(`/academies/${academy.id}/suspensao`, { suspended });
+      onDone();
+    } catch (e) {
+      setError(e instanceof ApiError ? e.message : "Não foi possível mudar a suspensão.");
       setBusy(false);
     }
   }
@@ -583,6 +597,26 @@ export function AcademyActions({
               </>
             )}
           </div>
+
+          {/* --- Suspender / reabrir por falta de pagamento ---------------- */}
+          {!cancelada && (
+            <div className="rounded-[var(--radius-control)] border border-line p-3.5">
+              <p className="text-body font-medium text-ink">{suspensa ? "Reabrir o acesso" : "Suspender por falta de pagamento"}</p>
+              <p className="mt-1 text-meta leading-relaxed text-ink-3">
+                {suspensa
+                  ? "O clube volta a entrar na consola e na app. A cobrança faz isto sozinha quando o pagamento chega; aqui é para um acordo à mão."
+                  : "A consola e a app fecham no ecrã de clube suspenso, com o botão de pagar. É o que a cobrança faz sozinha quando um período acaba sem pagamento. Os dados ficam todos."}
+              </p>
+              <button
+                type="button"
+                onClick={() => void suspender(!suspensa)}
+                disabled={busy}
+                className={cx("mt-3", suspensa ? "ctl-primary" : "ctl-outline text-[#8a5a12]")}
+              >
+                {busy ? "…" : suspensa ? "Reabrir clube" : "Suspender clube"}
+              </button>
+            </div>
+          )}
 
           {/* --- Desactivar / reactivar ---------------------------------- */}
           <div className="rounded-[var(--radius-control)] border border-line p-3.5">

@@ -303,13 +303,22 @@ export function EventDetail({
           {/*
             O dinheiro do evento — só para quem pode ver as Contas.
 
-            Um jogo liga-se pelo jogo, o resto pelo evento genérico; um treino
-            fica de fora porque não tem custos próprios (o campo e o material
-            são do clube, não da sessão). E só o que vive na base entra: um
-            jogo semeado no browser não tem a quem pendurar uma despesa.
+            Um jogo liga-se pelo jogo, um treino pelo treino, o resto pelo
+            evento genérico. Os treinos ficavam de fora, mas há treinos com
+            custos próprios: o pavilhão alugado, o autocarro, um treinador
+            convidado. E só o que vive na base entra: um jogo semeado no
+            browser não tem a quem pendurar uma despesa.
           */}
           {can(session, "finance:read") && event.kind === "match" && storeMatches.some((m) => m.id === event.id) && (
             <EventFinance session={session} link={{ matchId: event.id }} eventLabel={event.title} eventDate={event.start} />
+          )}
+          {can(session, "finance:read") && event.kind === "training" && storeSessions.some((t) => t.id === event.id) && (
+            <EventFinance
+              session={session}
+              link={{ trainingSessionId: event.id }}
+              eventLabel={`${event.teamName ?? event.title} - Treino`}
+              eventDate={event.start}
+            />
           )}
           {can(session, "finance:read") &&
             event.kind !== "match" &&

@@ -4,6 +4,7 @@ import { Empty, Loading, Panel, PanelHead, Pill, cx } from "@/components/primiti
 import {
   ArrowLeft,
   Check,
+  Pencil,
   ChevronRight,
   Clock,
   MapPin,
@@ -14,8 +15,9 @@ import { useSession } from "@/session";
 import { can } from "@/lib/permissions";
 import { athleteById, numeroNaEquipa, sportById } from "@/lib/api";
 import { profileOf } from "@/lib/sports";
-import { tallyNoun } from "@/lib/calendar";
-import { reloadAcademy, useStore } from "@/lib/store";
+import { fromApiMatch, tallyNoun, type CalendarEvent } from "@/lib/calendar";
+import { EditEventDialog } from "@/components/EditEventDialog";
+import { matches as storeMatches, reloadAcademy, useStore } from "@/lib/store";
 import { SaveVeil, Spinner, useSaving } from "@/components/Busy";
 import { descarregarFolha, folhaDoJogo } from "@/lib/callup-export";
 import { MatchStaffEditor } from "@/components/MatchStaff";
@@ -92,6 +94,8 @@ export default function MatchDetail() {
   const [match, setMatch] = useState<Match | null>(null);
   const [erro, setErro] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
+  /** O jogo aberto na janela de edição do calendário, quando se carrega em "Editar jogo". */
+  const [editando, setEditando] = useState<CalendarEvent | null>(null);
 
   const mayRecord = can(session, "attendance:write");
 
@@ -153,6 +157,8 @@ export default function MatchDetail() {
   };
 
   const cancelado = match.status === "CANCELLED";
+  const naBase = storeMatches.find((m) => m.id === match.id);
+  const podeEditar = !cancelado && can(session, "calendar:write") && Boolean(naBase) && naBase?.mine !== false;
   const onze = match.plan?.slots ?? [];
   const titulares = onze.filter((x) => x.athleteId).length;
   const onzeCompleto = onze.length > 0 && titulares === onze.length;
@@ -218,7 +224,8 @@ export default function MatchDetail() {
 
       <Scoreboard match={match} aDecorrer={aDecorrer} passou={passou} mayRecord={mayRecord} onSaved={guardado} estado={estado} />
 
-      <div className="sticky top-0 z-20 -mx-2 bg-canvas/85 px-2 py-2 backdrop-blur-md">
+      <div className="sticky top-0 z-20 -mx-2 flex items-center gap-2 bg-canvas/85 px-2 py-2 backdrop-blur-md">
+        <div className="min-w-0 flex-1">
         <AbasDoJogo
           ativa={aba}
           onIr={irPara}
@@ -231,7 +238,39 @@ export default function MatchDetail() {
             { key: "adversario", label: "Adversário", feito: Boolean(match.opponentReport), nota: match.opponentHistory.length ? String(match.opponentHistory.length) : undefined },
           ]}
         />
+        </div>
+
+        {/*
+          Editar o jogo: a mesma janela do calendário (data, horas, local,
+          adversário, casa ou fora, competição), sem ter de ir ao calendário
+          procurá-lo. As mesmas regras da gaveta do calendário: `calendar:write`,
+          um jogo da equipa de quem edita, e só o que já está na base.
+        */}
+        {podeEditar && (
+          <button
+            type="button"
+            onClick={() => {
+              const daBase = storeMatches.find((m) => m.id === match.id);
+              if (daBase) setEditando(fromApiMatch(daBase));
+            }}
+            className="flex h-12 shrink-0 items-center gap-2 rounded-[16px] bg-sunken px-4 text-body font-medium text-ink-3 transition-colors hover:text-ink"
+            title="Editar a data, a hora, o local e o adversário deste jogo"
+          >
+            <Pencil className="size-4" strokeWidth={1.75} />
+            <span className="max-sm:sr-only">Editar jogo</span>
+          </button>
+        )}
       </div>
+
+      {editando && (
+        <EditEventDialog
+          event={editando}
+          onClose={() => {
+            setEditando(null);
+            void recarregar();
+          }}
+        />
+      )}
 
       {/* ------------------------------------------------------ Visão geral */}
       {aba === "geral" && (

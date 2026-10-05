@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { BadRequestException, ForbiddenException, Injectable, NotFoundException } from "@nestjs/common";
+import { formatarNoFuso } from "../common/fuso";
 import type { FinanceKind, FinanceStatus, PaymentMethod } from "@prisma/client";
 import { PrismaService, type ScopedClient } from "../prisma/prisma.service";
 import { can, type RequestContext } from "../common/permissions";
@@ -125,6 +126,7 @@ export class FinanceService {
             category: { select: { label: true } },
             match: { select: { id: true, opponent: true, isHome: true } },
             calendarEvent: { select: { id: true, title: true } },
+            trainingSession: { select: { id: true, startsAt: true, team: { select: { name: true } } } },
           },
         }),
         // A série de seis meses — e, filtrada ao mês, também o mês por categoria.
@@ -267,7 +269,7 @@ export class FinanceService {
     ctx: RequestContext,
     p: {
       kind?: string; status?: string; categoryId?: string; q?: string;
-      from?: string; to?: string; matchId?: string; calendarEventId?: string;
+      from?: string; to?: string; matchId?: string; calendarEventId?: string; trainingSessionId?: string;
       athleteId?: string; teamId?: string;
     } = {},
   ) {
@@ -284,6 +286,7 @@ export class FinanceService {
           ...(p.categoryId ? { categoryId: p.categoryId } : {}),
           ...(p.matchId ? { matchId: p.matchId } : {}),
           ...(p.calendarEventId ? { calendarEventId: p.calendarEventId } : {}),
+          ...(p.trainingSessionId ? { trainingSessionId: p.trainingSessionId } : {}),
           ...(p.athleteId ? { athleteId: p.athleteId } : {}),
           ...(p.teamId ? { teamId: p.teamId } : {}),
           ...(p.from || p.to
@@ -310,6 +313,7 @@ export class FinanceService {
           staff: { select: { id: true, user: { select: { name: true } } } },
           match: { select: { id: true, opponent: true, isHome: true, team: { select: { name: true } } } },
           calendarEvent: { select: { id: true, title: true } },
+          trainingSession: { select: { id: true, startsAt: true, team: { select: { name: true } } } },
           createdBy: { select: { user: { select: { name: true } } } },
         },
       });
@@ -333,7 +337,8 @@ export class FinanceService {
         team: t.team,
         staffName: t.staff?.user.name ?? null,
         match: t.match ? { id: t.match.id, label: `${t.match.isHome ? "vs" : "@"} ${t.match.opponent}`, teamName: t.match.team.name } : null,
-        calendarEvent: t.calendarEvent,
+        // Um treino aparece onde aparece um evento, com o nome que tem no calendário.
+        calendarEvent: t.calendarEvent ?? eventoDoTreino(t.trainingSession),
         createdBy: t.createdBy?.user.name ?? null,
       }));
 
@@ -346,7 +351,7 @@ export class FinanceService {
         settings.includeFees &&
         (!p.kind || p.kind === "INCOME") &&
         (!p.status || p.status === "COMPLETED") &&
-        !p.categoryId && !p.matchId && !p.calendarEventId && !p.teamId;
+        !p.categoryId && !p.matchId && !p.calendarEventId && !p.trainingSessionId && !p.teamId;
 
       const automaticas = querAutomaticas
         ? (
@@ -425,6 +430,11 @@ export class FinanceService {
 
     return this.prisma.runAs(ctx.academyId, async (db) => {
       await this.validarCategoria(db, dto.categoryId, dto.kind);
+      if (dto.trainingSessionId) {
+        // Dentro do runAs: um treino de outro clube não aparece, e não se liga.
+        const treino = await db.trainingSession.findFirst({ where: { id: dto.trainingSessionId }, select: { id: true } });
+        if (!treino) throw new BadRequestException("O treino não existe neste clube");
+      }
 
       const comum = {
         academyId: ctx.academyId,
@@ -442,6 +452,7 @@ export class FinanceService {
         staffId: dto.staffId || null,
         matchId: dto.matchId || null,
         calendarEventId: dto.calendarEventId || null,
+        trainingSessionId: dto.trainingSessionId || null,
         createdById: ctx.membershipId ?? null,
       };
 
@@ -892,6 +903,13 @@ function mesesEntre(desde: string, ate: string): Date[] {
   return out;
 }
 
+/** Um treino ligado a um movimento, com o nome com que aparece no calendário. */
+function eventoDoTreino(t?: { id: string; startsAt: Date; team: { name: string } } | null): { id: string; title: string } | null {
+  if (!t) return null;
+  const dia = formatarNoFuso(t.startsAt, { day: "2-digit", month: "2-digit" });
+  return { id: t.id, title: `${t.team.name} - Treino ${dia}` };
+}
+
 /** O mais tardio de dois inícios — o mês corrente nunca conta antes do saldo inicial. */
 function maisTarde(a: Date, b?: Date): Date {
   return b && b > a ? b : a;
@@ -902,6 +920,7 @@ function serializeCurto(t: {
   category: { label: string } | null;
   match: { id: string; opponent: string; isHome: boolean } | null;
   calendarEvent: { id: string; title: string } | null;
+  trainingSession?: { id: string; startsAt: Date; team: { name: string } } | null;
 }) {
   return {
     id: t.id,
@@ -910,6 +929,6 @@ function serializeCurto(t: {
     occurredAt: t.occurredAt,
     status: t.status,
     category: t.category?.label ?? null,
-    eventLabel: t.match ? `${t.match.isHome ? "vs" : "@"} ${t.match.opponent}` : (t.calendarEvent?.title ?? null),
+    eventLabel: t.match ? `${t.match.isHome ? "vs" : "@"} ${t.match.opponent}` : (t.calendarEvent?.title ?? eventoDoTreino(t.trainingSession)?.title ?? null),
   };
 }

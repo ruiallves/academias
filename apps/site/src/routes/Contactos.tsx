@@ -126,7 +126,7 @@ export default function Contactos() {
     <div className="palco-cal sob-o-topo">
       <div className="wrap grid items-start gap-10 pb-[clamp(56px,8vw,120px)] lg:grid-cols-[minmax(0,0.85fr)_minmax(0,1.15fr)] lg:gap-16">
         <aside className="palco-noite flex flex-col rounded-(--raio-g) p-8 sm:p-10 lg:sticky lg:top-[calc(var(--topo)+24px)] lg:min-h-[560px]">
-          <h1 className="titulo t2 max-w-[11ch]">Diz-nos o que precisas.</h1>
+          <h1 className="titulo t2 max-w-[11ch]">Diz-nos o que precisas<span className="ponto">.</span></h1>
           <p className="mt-5 max-w-[36ch] text-[0.98rem] leading-relaxed text-texto-2">
             Experimentar, marcar uma reunião ou só tirar uma dúvida. Respondemos em dias úteis, com o que é verdade hoje.
           </p>
@@ -173,7 +173,7 @@ export default function Contactos() {
 
         {status === "done" ? (
           <div className="pt-2 lg:pt-6">
-            <h2 className="titulo t2 max-w-[14ch]">Chegou-nos. Obrigado.</h2>
+            <h2 className="titulo t2 max-w-[14ch]">Chegou-nos. Obrigado<span className="ponto">.</span></h2>
             <p className="corpo mt-5">
               {assunto.id === "experimentar" ? (
                 <>

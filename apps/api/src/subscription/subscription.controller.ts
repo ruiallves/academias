@@ -1,7 +1,8 @@
 import { Body, Controller, Get, Ip, Param, Post, Req } from "@nestjs/common";
 import { IsBoolean, IsString, Length, Matches } from "class-validator";
-import type { AuthedRequest } from "../auth/auth.guard";
+import { LegalExempt, SuspensionExempt, type AuthedRequest } from "../auth/auth.guard";
 import { SubscriptionOrdersService } from "./subscription-orders.service";
+import { SubscriptionPaymentsService } from "./subscription-payments.service";
 
 /**
  * O que quem assina escreve: a instituição e quem a representa.
@@ -30,6 +31,12 @@ class AssinarCondicoesDto {
   accepted!: boolean;
 }
 
+/** O telemóvel do MB WAY. A forma confere-se no serviço, que tira espaços e indicativo. */
+class MbwayDto {
+  @IsString() @Length(9, 20)
+  phone!: string;
+}
+
 /**
  * As condições comerciais, do lado do clube.
  *
@@ -39,7 +46,10 @@ class AssinarCondicoesDto {
  */
 @Controller("api/subscricao")
 export class SubscriptionController {
-  constructor(private readonly ordens: SubscriptionOrdersService) {}
+  constructor(
+    private readonly ordens: SubscriptionOrdersService,
+    private readonly pagamentos: SubscriptionPaymentsService,
+  ) {}
 
   @Get("ordem")
   ordem(@Req() req: AuthedRequest) {
@@ -56,5 +66,41 @@ export class SubscriptionController {
   @Get("ordem/:id/declaracao")
   declaracao(@Req() req: AuthedRequest, @Param("id") id: string) {
     return this.ordens.declaracaoParaAConsola(req.ctx, id);
+  }
+
+  /*
+   * A mensalidade da plataforma.
+   *
+   * Estas três passam num clube suspenso (`@SuspensionExempt()`) e com
+   * documentos por aceitar (`@LegalExempt()`): são a única porta de saída da
+   * suspensão, e fechá-la atrás de outro gate era uma porta que não abre.
+   */
+
+  @Get("mensalidade")
+  @LegalExempt()
+  @SuspensionExempt()
+  mensalidade(@Req() req: AuthedRequest) {
+    return this.pagamentos.estadoParaAConsola(req.ctx);
+  }
+
+  @Post("mensalidade/:id/multibanco")
+  @LegalExempt()
+  @SuspensionExempt()
+  multibanco(@Req() req: AuthedRequest, @Param("id") id: string) {
+    return this.pagamentos.multibanco(req.ctx, id);
+  }
+
+  @Get("mensalidade/:id/fatura")
+  @LegalExempt()
+  @SuspensionExempt()
+  fatura(@Req() req: AuthedRequest, @Param("id") id: string) {
+    return this.pagamentos.faturaParaAConsola(req.ctx, id);
+  }
+
+  @Post("mensalidade/:id/mbway")
+  @LegalExempt()
+  @SuspensionExempt()
+  mbway(@Req() req: AuthedRequest, @Param("id") id: string, @Body() body: MbwayDto) {
+    return this.pagamentos.mbway(req.ctx, id, body.phone);
   }
 }

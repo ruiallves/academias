@@ -160,6 +160,14 @@ export function avisosDevidos(input: {
   jaEmitidos: ReadonlySet<string>;
   /** Até quantos dias para trás se recupera um aviso em falta. */
   janelaDias: number;
+  /**
+   * O aviso sai no **início** do período, e não no fim.
+   *
+   * É o ciclo actual da mensalidade da plataforma (ver `cobranca.ts`): o clube
+   * paga o mês que vai usar, com a referência na mão desde o primeiro dia. Sem
+   * isto fica a conta antiga, do mês usado, que o painel ainda lê.
+   */
+  antecipado?: boolean;
 }): AvisoDevido[] {
   const assinatura = soODia(input.assinatura);
   const hoje = soODia(input.hoje);
@@ -170,12 +178,13 @@ export function avisosDevidos(input: {
   // O tecto é de segurança: um contrato com uma data disparatada não pode pôr
   // isto a andar para sempre.
   for (let n = 1; n <= 480; n += 1) {
-    const issuedOn = dataDoAviso(assinatura, n, input.periodo);
+    const periodStart = dataDoAviso(assinatura, n - 1, input.periodo);
+    const fimMaisUm = dataDoAviso(assinatura, n, input.periodo);
+    const issuedOn = input.antecipado ? periodStart : fimMaisUm;
     if (issuedOn > hoje) break;
     if (issuedOn < limite) continue;
 
-    const periodStart = dataDoAviso(assinatura, n - 1, input.periodo);
-    const periodEnd = somaDias(issuedOn, -1);
+    const periodEnd = somaDias(fimMaisUm, -1);
     /*
      * Só períodos **inteiros** dentro do contrato.
      *

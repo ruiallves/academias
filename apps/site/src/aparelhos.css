@@ -71,7 +71,7 @@
   width: var(--tw);
   flex: none;
   padding: calc(var(--tw) * 0.03);
-  background: #131313;
+  background: #04120d;
   border-radius: calc(var(--tw) * 0.16);
   box-shadow: 0 26px 40px -26px rgb(19 19 19 / 0.5);
   transition: transform 900ms var(--ease-saida);

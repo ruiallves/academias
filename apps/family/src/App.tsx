@@ -258,6 +258,8 @@ function Dentro({
   if (areaActiva === "FAMILY" && (familiaPendente || store.pendente)) return <PedidoPendente />;
 
   if (!store.ready) return <Splash />;
+  // O clube está fechado por falta de pagamento à plataforma. Não é avaria, e não é desta conta.
+  if (store.suspenso) return <ClubeSuspenso />;
   // O servidor recusou esta conta nesta app. Não é avaria — tem saída própria.
   if (store.denied) return <ContaErrada motivo={store.denied} />;
   if (store.error) return <Failed message={store.error} />;
@@ -472,6 +474,23 @@ function Failed({ message }: { message: string }) {
   return (
     <Gate title="Não foi possível carregar" action={<Retry />}>
       {message}
+    </Gate>
+  );
+}
+
+/**
+ * O clube está suspenso por falta de pagamento da mensalidade da plataforma.
+ *
+ * A família não tem nada a fazer aqui a não ser esperar: quem resolve é a
+ * direcção do clube, na consola. Diz-se isso, sem culpar ninguém e sem o
+ * valor, que não é da conta de quem está a ver. "Verificar outra vez" porque
+ * o acesso reabre sozinho no minuto em que o pagamento é confirmado.
+ */
+function ClubeSuspenso() {
+  return (
+    <Gate title="O acesso do clube está suspenso" action={<Retry label="Verificar outra vez" />}>
+      O clube tem um pagamento à plataforma em atraso, e a app fica fechada até ele chegar. Os dados estão todos
+      guardados. Se tiveres dúvidas, fala com a direcção do clube.
     </Gate>
   );
 }

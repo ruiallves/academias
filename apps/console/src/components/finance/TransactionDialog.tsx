@@ -74,7 +74,7 @@ export function TransactionDialog({
   /** Preenchido = corrigir este movimento, em vez de registar um novo. */
   transaction?: TransactionRow;
   /** Quando se chega pelo calendário, o movimento já nasce ligado ao evento. */
-  eventLink?: { matchId?: string; calendarEventId?: string; label: string; date?: Date };
+  eventLink?: { matchId?: string; calendarEventId?: string; trainingSessionId?: string; label: string; date?: Date };
   onClose: () => void;
   onDone: () => void;
 }) {
@@ -181,6 +181,7 @@ export function TransactionDialog({
         notes: notas.trim() || undefined,
         ...(eventLink?.matchId ? { matchId: eventLink.matchId } : {}),
         ...(eventLink?.calendarEventId ? { calendarEventId: eventLink.calendarEventId } : {}),
+        ...(eventLink?.trainingSessionId ? { trainingSessionId: eventLink.trainingSessionId } : {}),
       });
       onDone();
     } catch (err) {

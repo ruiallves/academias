@@ -22,8 +22,10 @@ import { cx } from "@/components/primitives";
 import { CargosSection } from "@/components/definicoes/CargosSection";
 import { MensalidadesSection } from "@/components/definicoes/MensalidadesSection";
 import { EpocaPanel } from "@/components/EpocaPanel";
+import { MensalidadeDaPlataformaPanel } from "@/components/MensalidadeDaPlataformaPanel";
 import {
   CalendarDays,
+  CreditCard,
   FileText,
   IdCard,
   Receipt,
@@ -81,6 +83,7 @@ const ICONE: Record<SecaoKey, LucideIcon> = {
   socios: IdCard,
   clinico: Stethoscope,
   mensalidades: Wallet,
+  mensalidade: CreditCard,
   plano: Receipt,
   legal: FileText,
   perigo: TriangleAlert,
@@ -159,6 +162,9 @@ export default function Settings() {
             )}
 
             {ativa === "mensalidades" && <MensalidadesSection />}
+
+            {/* O que o clube paga à plataforma, e como: MB WAY ou Multibanco. */}
+            {ativa === "mensalidade" && <MensalidadeDaPlataformaPanel />}
 
             {ativa === "plano" && (
               <>

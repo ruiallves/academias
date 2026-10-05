@@ -1,50 +1,59 @@
 import { Injectable, Logger, type OnModuleDestroy, type OnModuleInit } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
-import { PrismaService } from "../prisma/prisma.service";
+import type { AcademyStatus, SubscriptionBillingPeriod } from "@prisma/client";
+import { PrismaService, type ScopedClient } from "../prisma/prisma.service";
 import { MailClient } from "../mail/mail.client";
-import { subscriptionNoticeEmail } from "../mail/mail.templates";
-import { responsavelDoClube } from "./responsavel";
-import { avisosDevidos, chaveDoDia, diaDoClube, somaDias, somaMeses, type AvisoDevido } from "./ciclo";
+import { subscriptionPaymentEmail, type MailBrand } from "../mail/mail.templates";
+import { NotificationsService } from "../notifications/notifications.service";
+import { SuspensaoService } from "../auth/suspensao.service";
+import { responsavelDoClube, type ResponsavelDoClube } from "./responsavel";
+import { avisosDevidos, chaveDoDia, diaDoClube, soODia, somaMeses, type AvisoDevido } from "./ciclo";
+import { deveSuspender, lembreteDevido, lembretesJaPassados, periodoPorExtenso } from "./cobranca";
 
 /**
- * O aviso de pagamento da subscrição, todos os meses, sozinho.
+ * A cobrança da mensalidade da plataforma, todos os meses, sozinha.
  *
- * ## O que isto garante
+ * ## O ciclo
  *
- * Que a pessoa que representa o clube — a primeira que registámos, a mesma que
- * assinou as condições — recebe o aviso da mensalidade de uso da plataforma no
- * **dia em que aceitou o contrato**: aceitou a 20 de Setembro, recebe a 20 de
- * Outubro, a 20 de Novembro, e por aí fora. Num contrato anual é o mesmo dia do
- * ano seguinte.
+ * No dia em que o período começa (o aniversário do dia em que o clube aderiu,
+ * ver `ciclo.ts`) nasce o aviso, e o responsável do clube recebe um email a
+ * dizer que a mensalidade de X a Y está disponível para pagar na consola, por
+ * MB WAY ou Multibanco. Uma semana sem pagamento, um lembrete; duas, outro;
+ * três, o último. No dia a seguir ao fim do período sem pagamento, o clube
+ * fica **suspenso**: a consola e a app fecham, com um email a dizê-lo, até o
+ * pagamento chegar. Quando chega (`SubscriptionPaymentsService`), reabre
+ * sozinho.
  *
- * Cada aviso cobre o período que acabou de correr (20/09 a 19/10): o clube paga
- * o mês que usou, e por isso o primeiro aviso chega um mês depois de assinar.
- * Fevereiro e os meses de 30 dias encolhem o dia sem o perder — a conta está em
- * `ciclo.ts`, com os porquês.
+ * As regras das datas são puras e estão em `cobranca.ts`, com teste.
+ *
+ * ## Quem entra
+ *
+ * Todos os clubes com a subscrição `ACTIVE`, isto é, que pagam. Quem está em
+ * avaliação não entra, e quem está cancelado também não. A lista vem de
+ * `app.subscription_billing()`: a `Subscription` é da plataforma e o papel da
+ * aplicação não a lê.
+ *
+ * O dia de cobrança é o das condições (assinadas ou por assinar) quando as há,
+ * senão `Subscription.billingAnchorOn`, o dia em que o plano ficou activo.
  *
  * ## Porquê uma varredura, e não um relógio ao minuto certo
  *
  * Porque um relógio que dispara uma vez por mês falha uma vez por mês: basta o
- * processo estar a reiniciar naquele minuto — um deploy, o Railway a mover o
- * contentor — para o clube ficar sem aviso e ninguém dar por isso. A varredura
- * corre de hora a hora sobre uma operação idempotente: a primeira passagem
- * depois da meia-noite emite, as outras não fazem nada, e um servidor que esteve
- * em baixo apanha o atraso quando voltar. É o mesmo desenho da emissão de
- * quotas e de mensalidades (`member-fees.service`, `billing.service`).
+ * processo estar a reiniciar naquele minuto. A varredura corre de hora a hora
+ * sobre operações idempotentes: a primeira passagem depois da meia-noite emite,
+ * as outras não fazem nada, e um servidor que esteve em baixo apanha o atraso
+ * quando voltar. Quem garante que não sai o segundo email do mesmo período é o
+ * índice único `(academyId, periodStart)`, e não a memória do processo.
  *
- * Quem garante que não sai o segundo email do mesmo mês não é a memória do
- * processo — é o índice único `(academyId, periodStart)` na base. A linha nasce
- * **antes** do envio, precisamente para a reservar.
+ * Um aviso que nasce atrasado começa com os lembretes já passados contados
+ * (`lembretesJaPassados`), para o email do aviso e o primeiro lembrete não
+ * saírem na mesma hora; e ninguém é suspenso com menos de uma semana desde o
+ * email (`deveSuspender`).
  *
- * ## O que fica de fora
+ * ## O passado
  *
- * - Clubes **sem ordem assinada**: sem contrato aceite não há o que cobrar.
- * - Clubes com a subscrição **cancelada**, e períodos anteriores à data de
- *   início contratada.
- * - O **passado**: `janelaDias` limita o atraso que se recupera. Ligar isto num
- *   clube que assinou há um ano não lhe manda doze avisos de uma vez — uma
- *   dívida inventada por um sistema que ontem não existia. O que ficou para
- *   trás cobra-se a falar com o cliente, não com uma varredura.
+ * `janelaDias` limita o atraso que se recupera. Ligar isto num clube que paga
+ * há um ano não lhe manda doze avisos de uma vez.
  */
 @Injectable()
 export class SubscriptionNoticesService implements OnModuleInit, OnModuleDestroy {
@@ -55,6 +64,8 @@ export class SubscriptionNoticesService implements OnModuleInit, OnModuleDestroy
     private readonly prisma: PrismaService,
     private readonly mail: MailClient,
     private readonly config: ConfigService,
+    private readonly notificacoes: NotificationsService,
+    private readonly suspensao: SuspensaoService,
   ) {}
 
   onModuleInit() {
@@ -63,12 +74,6 @@ export class SubscriptionNoticesService implements OnModuleInit, OnModuleDestroy
 
   onModuleDestroy() {
     if (this.varredura) clearInterval(this.varredura);
-  }
-
-  /** Quantos dias tem o clube para pagar, a contar do aviso. */
-  private get diasParaPagar(): number {
-    const n = Number(this.config.get<string>("SUBSCRIPTION_NOTICE_DUE_DAYS") ?? "8");
-    return Number.isFinite(n) && n >= 0 ? n : 8;
   }
 
   /** Até quantos dias para trás se recupera um aviso que não chegou a sair. */
@@ -80,16 +85,16 @@ export class SubscriptionNoticesService implements OnModuleInit, OnModuleDestroy
   private arrancar() {
     const minutos = Number(this.config.get<string>("AUTO_SUBSCRIPTION_NOTICES_INTERVAL_MIN") ?? "60");
     if (!Number.isFinite(minutos) || minutos <= 0) {
-      this.log.warn("Avisos de subscrição desligados (AUTO_SUBSCRIPTION_NOTICES_INTERVAL_MIN=0)");
+      this.log.warn("Cobrança da plataforma desligada (AUTO_SUBSCRIPTION_NOTICES_INTERVAL_MIN=0)");
       return;
     }
     const passe = () =>
       this.emitirAvisos().catch((e) =>
-        this.log.error(`Avisos de subscrição falharam: ${e instanceof Error ? e.message : e}`),
+        this.log.error(`Cobrança da plataforma falhou: ${e instanceof Error ? e.message : e}`),
       );
 
     /*
-     * Dois minutos depois de arrancar: as outras duas varreduras entram aos 60 e
+     * Dois minutos depois de arrancar: as outras varreduras entram aos 60 e
      * aos 90 segundos, e arrancar com elas era disputar as cinco ligações do
      * pgbouncer no primeiro minuto de cada deploy.
      */
@@ -99,166 +104,124 @@ export class SubscriptionNoticesService implements OnModuleInit, OnModuleDestroy
   }
 
   /**
-   * Emitir os avisos devidos em todos os clubes.
+   * A passagem: avisos novos, lembretes e suspensões, em todos os clubes.
    *
-   * `apenasAcademia` estreita a um clube — serve o apoio, e é o que torna isto
-   * exercitável num teste sem escrever avisos na plataforma inteira.
-   *
-   * Um clube que falha não trava os outros: a passagem seguinte volta a tentar,
-   * e o que já foi emitido não se repete.
+   * `apenasAcademia` estreita a um clube: serve o apoio, e é o que torna isto
+   * exercitável num teste sem escrever na plataforma inteira. Um clube que
+   * falha não trava os outros.
    */
   async emitirAvisos(apenasAcademia?: string) {
     const hoje = diaDoClube(new Date());
-    /*
-     * A lista vem da base, e não de um `findMany` aqui.
-     *
-     * `Subscription` é uma tabela da plataforma e o papel da aplicação não tem
-     * acesso nenhum a ela — de propósito, desde a migração `20260816000600`.
-     * Quem sabe responder a "esta subscrição está cancelada?" sem abrir a porta
-     * é uma função `SECURITY DEFINER`, como já acontece na emissão de cobranças.
-     */
-    const linhas = await this.prisma.$queryRaw<{ academy_id: string }[]>`
-      SELECT * FROM app.academies_for_subscription_notices()
-    `;
+    const linhas = await this.prisma.$queryRaw<LinhaDeCobranca[]>`SELECT * FROM app.subscription_billing()`;
     const alvo = apenasAcademia ? linhas.filter((l) => l.academy_id === apenasAcademia) : linhas;
 
-    const totais = { academias: alvo.length, visitadas: 0, criados: 0, enviados: 0, semDestinatario: 0, comErro: 0 };
+    const totais = { academias: alvo.length, visitadas: 0, criados: 0, enviados: 0, lembretes: 0, suspensos: 0, semDestinatario: 0, comErro: 0 };
 
-    for (const { academy_id: academyId } of alvo) {
+    for (const linha of alvo) {
       try {
-        const feitos = await this.emitirDoClube(academyId, hoje);
+        const feitos = await this.tratarClube(linha, hoje);
         totais.visitadas++;
         totais.criados += feitos.criados;
         totais.enviados += feitos.enviados;
+        totais.lembretes += feitos.lembretes;
+        totais.suspensos += feitos.suspensos;
         totais.semDestinatario += feitos.semDestinatario;
       } catch (error) {
         totais.comErro++;
         this.log.error(
-          `Avisos de subscrição falharam no clube ${academyId}: ${error instanceof Error ? error.message : error}`,
+          `Cobrança da plataforma falhou no clube ${linha.academy_id}: ${error instanceof Error ? error.message : error}`,
         );
       }
     }
 
-    if (totais.criados > 0) {
-      this.log.log(`Avisos de subscrição: ${totais.criados} emitidos, ${totais.enviados} enviados`);
+    if (totais.criados + totais.lembretes + totais.suspensos > 0) {
+      this.log.log(
+        `Cobrança da plataforma: ${totais.criados} avisos, ${totais.lembretes} lembretes, ${totais.suspensos} suspensões`,
+      );
     }
     return totais;
   }
 
-  private async emitirDoClube(academyId: string, hoje: Date) {
-    const feitos = { criados: 0, enviados: 0, semDestinatario: 0 };
+  private async tratarClube(linha: LinhaDeCobranca, hoje: Date) {
+    const feitos = { criados: 0, enviados: 0, lembretes: 0, suspensos: 0, semDestinatario: 0 };
+    const academyId = linha.academy_id;
 
     const contexto = await this.prisma.runAs(academyId, async (db) => {
-      const ordem = await db.subscriptionOrder.findFirst({
-        where: { academyId, status: "SIGNED", signedAt: { not: null } },
-        orderBy: { signedAt: "desc" },
-        select: {
-          id: true,
-          planName: true,
-          billingPeriod: true,
-          amountCents: true,
-          startsOn: true,
-          signedAt: true,
-          billingAnchorAt: true,
-        },
-      });
-      if (!ordem?.signedAt) return null;
-
       const academy = await db.academy.findFirst({
         where: { id: academyId },
         select: { id: true, slug: true, name: true, shortName: true, signalColor: true, logoUrl: true },
       });
       if (!academy) return null;
 
+      const condicoes = await condicoesDoClube(db, academyId);
+
       /*
-       * Só os avisos recentes entram na pergunta "já saiu?".
-       *
-       * A janela de recuperação é de semanas; trazer o histórico todo de um
-       * clube com quatro anos para comparar datas era ler centenas de linhas a
-       * cada hora, e para nada.
+       * Só os avisos recentes entram na pergunta "já saiu?": a janela de
+       * recuperação é de semanas, e o histórico todo de um clube com anos
+       * era ler centenas de linhas a cada hora, para nada.
        */
-      const desde = somaMeses(hoje, -18);
       const existentes = await db.subscriptionNotice.findMany({
-        where: { academyId, periodStart: { gte: desde } },
-        select: { periodStart: true, periodEnd: true },
+        where: { academyId, periodStart: { gte: somaMeses(hoje, -18) } },
+        orderBy: { periodStart: "asc" },
+        select: {
+          id: true, periodStart: true, periodEnd: true, amountCents: true, billingPeriod: true, planName: true,
+          sentAt: true, paidAt: true, remindersSent: true, suspensionSentAt: true,
+        },
       });
 
       const responsavel = await responsavelDoClube(db, academyId);
-
-      return {
-        ordem,
-        academy,
-        responsavel,
-        existentes,
-        jaEmitidos: new Set(existentes.map((e) => chaveDoDia(e.periodStart))),
-      };
+      return { academy, condicoes, existentes, responsavel };
     });
-
     if (!contexto) return feitos;
-    const { ordem, academy, responsavel, existentes, jaEmitidos } = contexto;
+    const { academy, condicoes, existentes, responsavel } = contexto;
 
     /*
-     * Um período que já está coberto por outro aviso não sai outra vez. Acontece
-     * quando o pagamento foi registado à mão na plataforma antes de o clube
-     * assinar (contado do início do contrato) e a assinatura mudou o dia de
-     * referência: os períodos deixam de começar no mesmo dia, e o índice único
-     * sozinho já não os apanhava.
+     * O dia de cobrança: o das condições quando as há (assinadas ou por
+     * assinar; é o que o painel já usa para contar os períodos), senão o dia
+     * em que o plano ficou activo. Sem nenhum dos dois não há o que cobrar.
      */
+    const ancora = condicoes ? ancoraDasCondicoes(condicoes) : linha.anchor_on ? soODia(linha.anchor_on) : null;
+    if (!ancora) return feitos;
+
+    const contrato = {
+      orderId: condicoes?.id ?? null,
+      planName: condicoes?.planName ?? linha.plan_name,
+      billingPeriod: (condicoes?.billingPeriod ?? "MONTHLY") as SubscriptionBillingPeriod,
+      amountCents: condicoes?.amountCents ?? linha.amount_cents,
+    };
+    const brand: MailBrand = {
+      shortName: academy.shortName, name: academy.name, signalColor: academy.signalColor, logoUrl: academy.logoUrl,
+    };
+
+    /* ----------------------------------------------------------- os avisos */
+
     const devidos = avisosDevidos({
-      // O dia em que o clube assinou, pelo calendário dele — ver `diaDoClube`.
-      // Numa ordem reemitida só para voltar a assinar, o dia é o da assinatura
-      // original (`billingAnchorAt`): reassinar por papelada não muda o dia em
-      // que o clube paga, nem cria um aviso a meio do mês.
-      assinatura: diaDoClube(ordem.billingAnchorAt ?? ordem.signedAt!),
-      desde: ordem.startsOn,
+      assinatura: ancora,
+      desde: condicoes?.startsOn ?? ancora,
       hoje,
-      periodo: ordem.billingPeriod,
-      jaEmitidos,
+      periodo: contrato.billingPeriod,
+      jaEmitidos: new Set(existentes.map((e) => chaveDoDia(e.periodStart))),
       janelaDias: this.janelaDias,
+      antecipado: true,
+      // Um período já coberto por outro aviso (registado à mão com outra
+      // âncora, antes de assinar) não sai outra vez.
     }).filter((d) => !existentes.some((e) => e.periodStart <= d.periodEnd && e.periodEnd >= d.periodStart));
 
     for (const devido of devidos) {
-      const aviso = await this.criarAviso(academyId, ordem, devido, responsavel);
+      const aviso = await this.criarAviso(academyId, contrato, devido, hoje, responsavel);
       // Nulo = outra passagem criou este mesmo aviso primeiro. Não é erro.
       if (!aviso) continue;
       feitos.criados++;
 
       if (!responsavel) {
         feitos.semDestinatario++;
-        this.log.warn(
-          `Aviso ${aviso.id}: ${academy.slug} não tem ninguém com legal:club e endereço — ficou por enviar.`,
-        );
+        this.log.warn(`Aviso ${aviso.id}: ${academy.slug} não tem ninguém com legal:club e endereço. Ficou por enviar.`);
         continue;
       }
 
-      /*
-       * O email vai **fora** da transacção — a regra da casa. Uma chamada de
-       * rede lá dentro segura uma ligação do pool enquanto o serviço de email
-       * responde, e com `connection_limit=5` bastam cinco para travar tudo.
-       */
-      const enviado = await this.mail.send({
-        to: responsavel.email,
-        kind: "subscription-notice",
-        ...subscriptionNoticeEmail({
-          brand: {
-            shortName: academy.shortName,
-            name: academy.name,
-            signalColor: academy.signalColor,
-            logoUrl: academy.logoUrl,
-          },
-          name: responsavel.name,
-          title: responsavel.title,
-          clientName: academy.name,
-          planName: ordem.planName,
-          annual: ordem.billingPeriod === "ANNUAL",
-          amountCents: ordem.amountCents,
-          periodStart: devido.periodStart,
-          periodEnd: devido.periodEnd,
-          dueOn: somaDias(devido.issuedOn, this.diasParaPagar),
-          link: this.linkDaConsola(academy.slug),
-        }),
+      const enviado = await this.enviar(academyId, responsavel, brand, {
+        kind: "disponivel", ...contrato, periodStart: devido.periodStart, periodEnd: devido.periodEnd, slug: academy.slug,
       });
-
       await this.prisma.runAs(academyId, (db) =>
         db.subscriptionNotice.update({
           where: { id: aviso.id },
@@ -268,37 +231,91 @@ export class SubscriptionNoticesService implements OnModuleInit, OnModuleDestroy
       if (enviado.sent) feitos.enviados++;
     }
 
+    /* ---------------------------------------- os lembretes e a suspensão */
+
+    const porPagar = existentes.filter((e) => e.paidAt === null && e.periodStart <= hoje);
+    if (porPagar.length === 0 || !responsavel) return feitos;
+
+    const vencidos = porPagar.filter((e) => deveSuspender(e.periodEnd, hoje, e.paidAt, e.sentAt));
+    if (vencidos.length > 0) {
+      const [primeiro, ...resto] = vencidos;
+      const jaAvisado = vencidos.some((v) => v.suspensionSentAt !== null);
+      await this.suspender(academyId, linha);
+
+      if (!jaAvisado) {
+        const enviado = await this.enviar(academyId, responsavel, brand, {
+          kind: "suspenso", ...contrato, amountCents: primeiro.amountCents, planName: primeiro.planName,
+          billingPeriod: primeiro.billingPeriod, periodStart: primeiro.periodStart, periodEnd: primeiro.periodEnd,
+          slug: academy.slug,
+          outras: resto.map((r) => ({ periodStart: r.periodStart, periodEnd: r.periodEnd, amountCents: r.amountCents })),
+        });
+        if (enviado.sent) {
+          await this.prisma.runAs(academyId, (db) =>
+            db.subscriptionNotice.update({ where: { id: primeiro.id }, data: { suspensionSentAt: new Date() } }),
+          );
+          feitos.suspensos++;
+        }
+      }
+      // Suspenso é suspenso: os lembretes semanais já disseram tudo.
+      return feitos;
+    }
+
+    for (const aviso of porPagar) {
+      // Sem email do aviso não há lembrete: contava-se de um dia que o clube nunca viu.
+      if (!aviso.sentAt) continue;
+      const n = lembreteDevido(aviso.periodStart, hoje, aviso.remindersSent);
+      if (n === null) continue;
+
+      const enviado = await this.enviar(academyId, responsavel, brand, {
+        kind: "lembrete", ...contrato, amountCents: aviso.amountCents, planName: aviso.planName,
+        billingPeriod: aviso.billingPeriod, periodStart: aviso.periodStart, periodEnd: aviso.periodEnd,
+        slug: academy.slug, lembrete: n,
+      });
+      // Conta-se o lembrete mesmo quando o email não saiu: tentar outra vez de
+      // hora a hora contra um correio em baixo era a definição de spam.
+      await this.prisma.runAs(academyId, (db) =>
+        db.subscriptionNotice.update({
+          where: { id: aviso.id },
+          data: { remindersSent: n, lastReminderAt: new Date(), ...(enviado.sent ? {} : { failureNote: enviado.reason?.slice(0, 300) ?? "Lembrete não saiu." }) },
+        }),
+      );
+      if (enviado.sent) feitos.lembretes++;
+    }
+
     return feitos;
   }
 
   /**
    * A linha do aviso, antes do email.
    *
-   * É ela que reserva o período: duas passagens ao mesmo tempo — ou dois
-   * servidores — batem no índice único e só uma segue para o envio. Devolve
-   * nulo quando a corrida foi perdida, que não é erro nenhum.
+   * É ela que reserva o período: duas passagens ao mesmo tempo batem no índice
+   * único e só uma segue para o envio. Devolve nulo quando a corrida foi
+   * perdida, que não é erro nenhum.
    */
   private async criarAviso(
     academyId: string,
-    ordem: { id: string; planName: string; billingPeriod: "MONTHLY" | "ANNUAL"; amountCents: number },
+    contrato: { orderId: string | null; planName: string; billingPeriod: SubscriptionBillingPeriod; amountCents: number },
     devido: AvisoDevido,
-    responsavel: { name: string; email: string } | null,
+    hoje: Date,
+    responsavel: ResponsavelDoClube | null,
   ) {
     try {
       return await this.prisma.runAs(academyId, (db) =>
         db.subscriptionNotice.create({
           data: {
             academyId,
-            orderId: ordem.id,
+            orderId: contrato.orderId,
             periodStart: devido.periodStart,
             periodEnd: devido.periodEnd,
             issuedOn: devido.issuedOn,
-            dueOn: somaDias(devido.issuedOn, this.diasParaPagar),
-            planName: ordem.planName,
-            billingPeriod: ordem.billingPeriod,
-            amountCents: ordem.amountCents,
+            // Paga-se até ao fim do período: no dia seguinte, suspende.
+            dueOn: devido.periodEnd,
+            planName: contrato.planName,
+            billingPeriod: contrato.billingPeriod,
+            amountCents: contrato.amountCents,
             toEmail: responsavel?.email ?? null,
             toName: responsavel?.name ?? null,
+            remindersSent: lembretesJaPassados(devido.periodStart, hoje),
           },
           select: { id: true },
         }),
@@ -310,14 +327,173 @@ export class SubscriptionNoticesService implements OnModuleInit, OnModuleDestroy
   }
 
   /**
-   * Onde o clube vai ver as condições.
+   * O email e a notificação na consola, juntos: o responsável lê um ou outro.
+   *
+   * O email vai **fora** de qualquer transacção, a regra da casa: uma chamada
+   * de rede lá dentro segura uma ligação do pool enquanto o correio responde.
+   */
+  private async enviar(
+    academyId: string,
+    responsavel: ResponsavelDoClube,
+    brand: MailBrand,
+    m: {
+      kind: "disponivel" | "lembrete" | "suspenso";
+      planName: string; billingPeriod: SubscriptionBillingPeriod; amountCents: number;
+      periodStart: Date; periodEnd: Date; slug: string; lembrete?: number;
+      outras?: { periodStart: Date; periodEnd: Date; amountCents: number }[];
+    },
+  ) {
+    const periodo = periodoPorExtenso(m.periodStart, m.periodEnd);
+    const nome = m.billingPeriod === "ANNUAL" ? "anuidade" : "mensalidade";
+    const enviado = await this.mail.send({
+      to: responsavel.email,
+      toName: responsavel.name,
+      kind: `subscription-${m.kind}`,
+      ...subscriptionPaymentEmail({
+        brand,
+        kind: m.kind,
+        name: responsavel.name,
+        title: responsavel.title,
+        planName: m.planName,
+        annual: m.billingPeriod === "ANNUAL",
+        amountCents: m.amountCents,
+        periodStart: m.periodStart,
+        periodEnd: m.periodEnd,
+        lembrete: m.lembrete,
+        outras: m.outras,
+        link: this.linkDaConsola(m.slug),
+      }),
+    });
+
+    const titulo =
+      m.kind === "disponivel" ? `A ${nome} da plataforma está disponível`
+      : m.kind === "lembrete" ? `A ${nome} de ${periodo} está em falta`
+      : "O acesso do clube ficou suspenso";
+    const corpo =
+      m.kind === "suspenso"
+        ? `A ${nome} de ${periodo} não foi paga até ao fim do período. Paga nas Definições para reabrir o acesso.`
+        : `A ${nome} de ${periodo} paga-se nas Definições, por MB WAY ou Multibanco.`;
+    await this.notificacoes
+      .enqueue({
+        academyId,
+        userId: responsavel.userId,
+        type: "PAYMENT_DUE",
+        title: titulo,
+        body: corpo,
+        // `link` é o destino na consola; a app das famílias não tem esta página.
+        payload: { kind: "subscricao", link: "/definicoes?secao=mensalidade", periodStart: chaveDoDia(m.periodStart) },
+      })
+      .catch((e) => this.log.warn(`Notificação da mensalidade não gravada: ${e instanceof Error ? e.message : e}`));
+
+    return enviado;
+  }
+
+  /** Fechar o clube: `suspendedAt`, o estado, e a lista em memória do guard. */
+  private async suspender(academyId: string, linha: LinhaDeCobranca) {
+    if (linha.suspended_at) {
+      this.suspensao.marcar(academyId);
+      return;
+    }
+    await this.prisma.runAs(academyId, (db) =>
+      db.academy.update({ where: { id: academyId }, data: { suspendedAt: new Date(), status: "PAST_DUE" } }),
+    );
+    this.suspensao.marcar(academyId);
+    this.log.warn(`Clube ${academyId} suspenso por falta de pagamento da mensalidade da plataforma`);
+  }
+
+  /**
+   * Reabrir o clube se já não deve nada vencido.
+   *
+   * Chamado depois de cada pagamento, da consola ou registado à mão no painel.
+   * Uma mensalidade do período a correr ainda por pagar não segura a porta: o
+   * que suspende é o período acabar sem pagamento, e esse já foi pago.
+   */
+  async levantarSeEmDia(academyId: string): Promise<boolean> {
+    const hoje = diaDoClube(new Date());
+    const levantou = await this.prisma.runAs(academyId, async (db) => {
+      const academy = await db.academy.findFirst({
+        where: { id: academyId },
+        select: { suspendedAt: true, trialEndsAt: true },
+      });
+      if (!academy?.suspendedAt) return false;
+      const vencidos = await db.subscriptionNotice.count({
+        where: { academyId, paidAt: null, periodEnd: { lt: hoje } },
+      });
+      if (vencidos > 0) return false;
+      await db.academy.update({
+        where: { id: academyId },
+        data: {
+          suspendedAt: null,
+          status: academy.trialEndsAt && academy.trialEndsAt > new Date() ? "TRIAL" : "ACTIVE",
+        },
+      });
+      return true;
+    });
+    if (levantou) {
+      this.suspensao.levantar(academyId);
+      this.log.log(`Clube ${academyId} reaberto: mensalidade da plataforma paga`);
+    }
+    return levantou;
+  }
+
+  /**
+   * A secção da mensalidade nas Definições da consola.
    *
    * O mesmo padrão dos convites (`PUBLIC_BASE_URL` com `{slug}`): em produção
    * cada clube tem o seu subdomínio, e em desenvolvimento cai no servidor local.
    */
-  private linkDaConsola(slug: string): string {
+  linkDaConsola(slug: string): string {
     const base = this.config.get<string>("PUBLIC_BASE_URL");
-    if (base) return `${base.replace(/\/$/, "").replace("{slug}", slug)}/consola/definicoes`;
-    return "http://localhost:5173/definicoes";
+    if (base) return `${base.replace(/\/$/, "").replace("{slug}", slug)}/consola/definicoes?secao=mensalidade`;
+    return "http://localhost:5173/definicoes?secao=mensalidade";
   }
+}
+
+/** Uma linha de `app.subscription_billing()`: um clube que paga. */
+export type LinhaDeCobranca = {
+  academy_id: string;
+  academy_status: AcademyStatus;
+  trial_ends_at: Date | null;
+  suspended_at: Date | null;
+  plan_name: string;
+  amount_cents: number;
+  anchor_on: Date | null;
+};
+
+const SELECT_CONDICOES = {
+  id: true, planName: true, billingPeriod: true, amountCents: true,
+  startsOn: true, signedAt: true, billingAnchorAt: true, status: true,
+} as const;
+
+/**
+ * As condições que contam: a última assinada, senão a que está à espera de
+ * assinatura. Muitos clubes pagam antes de assinar, e a cobrança não espera
+ * pela assinatura. A mesma regra do registo manual no painel.
+ */
+export async function condicoesDoClube(db: ScopedClient, academyId: string) {
+  return (
+    (await db.subscriptionOrder.findFirst({
+      where: { academyId, status: "SIGNED", signedAt: { not: null } },
+      orderBy: { signedAt: "desc" },
+      select: SELECT_CONDICOES,
+    })) ??
+    (await db.subscriptionOrder.findFirst({
+      where: { academyId, status: "PENDING" },
+      orderBy: { createdAt: "desc" },
+      select: SELECT_CONDICOES,
+    }))
+  );
+}
+
+/**
+ * O dia de onde se contam os períodos, pelo calendário do clube.
+ *
+ * Numa ordem reemitida só para voltar a assinar, o dia é o da assinatura
+ * original (`billingAnchorAt`): reassinar por papelada não muda o dia em que
+ * o clube paga.
+ */
+export function ancoraDasCondicoes(o: { billingAnchorAt: Date | null; signedAt: Date | null; startsOn: Date }): Date {
+  if (o.billingAnchorAt) return diaDoClube(o.billingAnchorAt);
+  if (o.signedAt) return diaDoClube(o.signedAt);
+  return soODia(o.startsOn);
 }

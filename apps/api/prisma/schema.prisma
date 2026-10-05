@@ -187,6 +187,11 @@ model Academy {
   status       AcademyStatus @default(SETUP)
   trialEndsAt  DateTime?
   subscription Subscription?
+  /// Suspenso por falta de pagamento da mensalidade da plataforma: `status` fica
+  /// em `PAST_DUE` e a consola e a app fecham até se pagar. Nulo = não está.
+  /// Ver `SubscriptionNoticesService.suspender`.
+  suspendedAt DateTime?
+  subscriptionPayments SubscriptionPayment[]
 
   sports         Sport[]
   seasons        Season[]
@@ -1255,6 +1260,8 @@ model TrainingSession {
   /// Quando as presenças foram fechadas. Nulo = por registar.
   attendanceClosedAt DateTime?
   attendance         AttendanceRecord[]
+  /// O dinheiro ligado a este treino (um custo previsto, por exemplo). Ver `FinancialTransaction`.
+  financialTransactions FinancialTransaction[]
   /// Quem avisou que não vem — antes do treino. Ver `AbsenceNotice`.
   absenceNotices     AbsenceNotice[]
 
@@ -4434,6 +4441,11 @@ model Subscription {
   /// reemitir repete o papel que esteve em cima da mesa, e não o acordo de hoje.
   priceCents Int?
 
+  /// O dia em que o clube passou a pagar, pelo calendário dele. É a âncora do
+  /// ciclo de cobrança quando não há condições emitidas: a mensalidade de 5 de
+  /// Outubro a 4 de Novembro nasce a 5 de Outubro. Com condições, manda a ordem.
+  billingAnchorOn DateTime? @db.Date
+
   /// Última tentativa de cobrança falhada — a origem do alerta no Overview.
   lastFailureAt   DateTime?
   lastFailureNote String?
@@ -4636,9 +4648,28 @@ model SubscriptionNotice {
   paidNote String?
   paidById String?
   paidBy   PlatformAdmin? @relation("NoticePaidBy", fields: [paidById], references: [id], onDelete: SetNull)
+  /// Como foi pago: `MBWAY`, `MULTIBANCO` (pela euPago da plataforma) ou `MANUAL`
+  /// (dado como recebido no painel). Nulo enquanto não está pago.
+  paidMethod String?
+
+  /// Os lembretes já enviados ("está em falta"): um por semana, até três. É o
+  /// contador que impede o mesmo lembrete de sair duas vezes.
+  remindersSent  Int       @default(0)
+  lastReminderAt DateTime?
+  /// Quando se avisou que o clube ficou suspenso por este período.
+  suspensionSentAt DateTime?
+  /// A fatura deste pagamento: quando ficou tratada (anexada, ou só marcada como enviada por fora).
+  invoiceSentAt    DateTime?
+  /// O PDF no bucket privado `faturas`. Nulo quando só se marcou como enviada.
+  invoicePath      String?
+  invoiceFileName  String?
+  /// Para quem foi por email, quando foi. Nulo = não saiu email nenhum.
+  invoiceEmailedTo String?
+  invoiceEmailedAt DateTime?
 
   /// O ganho que este aviso gerou nas contas, quando foi dado como pago.
   transaction PlatformTransaction?
+  payments    SubscriptionPayment[]
 
   createdAt DateTime @default(now())
 
@@ -4652,6 +4683,57 @@ enum SubscriptionStatus {
   ACTIVE
   PAST_DUE
   CANCELLED
+}
+
+enum SubscriptionPaymentMethod {
+  MBWAY
+  MULTIBANCO
+}
+
+enum SubscriptionPaymentStatus {
+  PENDING
+  PAID
+  FAILED
+  EXPIRED
+}
+
+/**
+ * Um pagamento da mensalidade da plataforma pela euPago **da plataforma** — a
+ * referência Multibanco gerada ou o pedido MB WAY feito pelo clube na consola.
+ *
+ * Não é um `Payment`: esses são das famílias ao clube e liquidam no canal do
+ * clube. Este liquida na nossa conta, e é o `identifier` (`ACADEMIAS-…`) que
+ * o webhook usa para saber que é nosso. Ver `SubscriptionPaymentsService`.
+ */
+model SubscriptionPayment {
+  id        String  @id @default(cuid())
+  academyId String
+  academy   Academy @relation(fields: [academyId], references: [id], onDelete: Cascade)
+  noticeId  String
+  notice    SubscriptionNotice @relation(fields: [noticeId], references: [id], onDelete: Cascade)
+
+  method SubscriptionPaymentMethod
+  status SubscriptionPaymentStatus @default(PENDING)
+
+  /// O que vai para a euPago como `identifier` e volta no webhook.
+  identifier  String  @unique
+  providerRef String?
+  /// Multibanco: entidade e referência para pagar.
+  entity    String?
+  reference String?
+  /// MB WAY: o telemóvel a que se pediu.
+  phone String?
+
+  amountCents Int
+  expiresAt   DateTime?
+  paidAt      DateTime?
+  failureNote String?
+  payload     Json?
+
+  createdAt DateTime @default(now())
+
+  @@index([academyId, noticeId])
+  @@index([providerRef])
 }
 
 /// O que uma ficha era antes. Ver a migração `20260920150000_historico_de_alteracoes`.
@@ -5528,6 +5610,11 @@ model FinancialTransaction {
   calendarEventId String?
   calendarEvent   CalendarEvent? @relation(fields: [calendarEventId], references: [id], onDelete: SetNull)
 
+  /// Um treino com custos ou receitas próprios: o aluguer de um pavilhão, o
+  /// transporte para um treino fora, um treinador convidado.
+  trainingSessionId String?
+  trainingSession   TrainingSession? @relation(fields: [trainingSessionId], references: [id], onDelete: SetNull)
+
   /**
    * A série a que este movimento pertence, quando é uma despesa (ou receita)
    * fixa mensal — a renda do pavilhão, o seguro, o contrato do roupeiro.
@@ -5555,6 +5642,7 @@ model FinancialTransaction {
   @@index([academyId, kind, status])
   @@index([matchId])
   @@index([calendarEventId])
+  @@index([trainingSessionId])
   @@index([academyId, seriesId])
 }
 

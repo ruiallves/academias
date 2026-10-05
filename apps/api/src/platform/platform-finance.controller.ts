@@ -75,6 +75,13 @@ class PagoDto {
   @IsOptional() @IsString() @Length(0, 300) note?: string;
 }
 
+/** A fatura em PDF, em base64. Ver `anexarFatura`. */
+class FaturaDto {
+  @IsString() @Length(1, 160) fileName!: string;
+  @IsString() @Length(10, 8_000_000) base64!: string;
+  @IsBoolean() enviar!: boolean;
+}
+
 class PagamentoDoClubeDto {
   /** O início do período, `AAAA-MM-DD`, como a ficha o recebeu. */
   @IsISO8601() periodStart!: string;
@@ -232,6 +239,34 @@ export class PlatformFinanceController {
   async registarPagamento(@Req() req: PlatformRequest, @Param("academyId") academyId: string, @Body() dto: PagamentoDoClubeDto) {
     const r = await this.contas.registarPagamentoDoClube(req.admin.id, academyId, dto);
     await this.platform.audit(req.admin, "finance.notice.paid", "notice", r.noticeId, { academyId, periodo: dto.periodStart });
+    return r;
+  }
+
+  /** Anexar a fatura a uma mensalidade paga, e enviá-la ou não ao clube. */
+  @Post("mensalidades/:id/fatura")
+  async anexarFatura(@Req() req: PlatformRequest, @Param("id") id: string, @Body() dto: FaturaDto) {
+    const r = await this.contas.anexarFatura(id, dto);
+    await this.platform.audit(req.admin, "finance.notice.invoice", "notice", id, { ficheiro: dto.fileName, enviada: r.enviadaPara ?? "não" });
+    return r;
+  }
+
+  /** Marcar a fatura como enviada por fora, sem ficheiro nem email. */
+  @Post("mensalidades/:id/fatura/enviada")
+  async marcarFatura(@Req() req: PlatformRequest, @Param("id") id: string) {
+    const r = await this.contas.marcarFaturaEnviada(id);
+    await this.platform.audit(req.admin, "finance.notice.invoice", "notice", id, { marcada: "sem anexo" });
+    return r;
+  }
+
+  @Get("mensalidades/:id/fatura")
+  fatura(@Param("id") id: string) {
+    return this.contas.faturaParaDescarregar(id);
+  }
+
+  @Delete("mensalidades/:id/fatura")
+  async tirarFatura(@Req() req: PlatformRequest, @Param("id") id: string) {
+    const r = await this.contas.tirarFatura(id);
+    await this.platform.audit(req.admin, "finance.notice.invoice.removed", "notice", id);
     return r;
   }
 

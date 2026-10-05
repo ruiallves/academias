@@ -2,6 +2,10 @@ import { getAccessToken, irParaAEntrada, readSession, refreshSession } from "@/l
 import { LEGAL_REQUIRED_CODE, legalRequired } from "@/lib/legal-signal";
 import { mostrarErro } from "@/lib/avisos";
 
+/** O 403 do clube fechado por falta de pagamento. O mesmo código em `suspensao.service.ts` na API. */
+const ACADEMY_SUSPENDED_CODE = "ACADEMY_SUSPENDED";
+let aRecarregar = false;
+
 /**
  * O cliente HTTP da consola.
  *
@@ -219,6 +223,20 @@ async function pedir<T>(
      */
     if (res.status === 403 && parsed?.code === LEGAL_REQUIRED_CODE) legalRequired();
 
+    /*
+     * O clube ficou suspenso com a consola aberta.
+     *
+     * A varredura fechou a porta a meio da sessão, e a partir daqui todos os
+     * pedidos levam este 403. Recarregar leva ao arranque, que o reconhece e
+     * mostra o ecrã de pagar (`ClubeSuspenso`). Uma vez só: o ecrã de pagar
+     * fala com rotas isentas, que nunca devolvem este código, por isso não há
+     * ciclo; a guarda é só para não pedir duas recargas ao mesmo tempo.
+     */
+    if (res.status === 403 && parsed?.code === ACADEMY_SUSPENDED_CODE && !aRecarregar) {
+      aRecarregar = true;
+      window.location.reload();
+    }
+
     const erro = new ApiError(
       res.status,
       naoConfirmada ? "Não foi possível confirmar a sessão. Tenta outra vez daqui a pouco." : (msg ?? mensagem(res.status)),
@@ -244,7 +262,7 @@ async function pedir<T>(
      * E `silencioso` para o punhado de pedidos que falham por desenho — as
      * sondagens de fundo, sobretudo. Ver `apiGet`.
      */
-    const proprio = sessaoAcabou || parsed?.code === LEGAL_REQUIRED_CODE;
+    const proprio = sessaoAcabou || parsed?.code === LEGAL_REQUIRED_CODE || parsed?.code === ACADEMY_SUSPENDED_CODE;
     if (!opts.silencioso && !proprio) mostrarErro(erro.message);
 
     throw erro;

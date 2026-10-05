@@ -12,6 +12,7 @@ import { SupabaseJwtService } from "./supabase-jwt.service";
 import { PresenceService } from "../presence/presence.service";
 import { tenantFromHost } from "../tenant/tenant";
 import { LegalService } from "../legal/legal.service";
+import { SuspensaoService } from "./suspensao.service";
 import type { RequestContext } from "../common/permissions";
 
 /**
@@ -35,6 +36,17 @@ export const Public = () => SetMetadata(PUBLIC, true);
 export const LEGAL_EXEMPT = "legal:exempt";
 export const LegalExempt = () => SetMetadata(LEGAL_EXEMPT, true);
 
+/**
+ * Deixa uma rota passar num clube suspenso por falta de pagamento.
+ *
+ * É o conjunto mínimo que serve para pagar: ver a mensalidade em falta e pedir
+ * a referência. Tudo o resto leva 403 `ACADEMY_SUSPENDED`. As rotas isentas do
+ * gate legal (`@LegalExempt()`) também passam: são a infra-estrutura dos
+ * próprios ecrãs de bloqueio, e não leem nada de domínio.
+ */
+export const SUSPENSION_EXEMPT = "suspension:exempt";
+export const SuspensionExempt = () => SetMetadata(SUSPENSION_EXEMPT, true);
+
 export type AuthedRequest = Request & { ctx: RequestContext };
 
 /**
@@ -53,6 +65,7 @@ export class AuthGuard implements CanActivate {
     private readonly auth: AuthService,
     private readonly presence: PresenceService,
     private readonly legal: LegalService,
+    private readonly suspensao: SuspensaoService,
   ) {}
 
   async canActivate(context: ExecutionContext): Promise<boolean> {
@@ -100,6 +113,18 @@ export class AuthGuard implements CanActivate {
       context.getClass(),
     ]);
     if (!exempt) await this.legal.assertClearContext(req.ctx);
+
+    /*
+     * O clube suspenso por falta de pagamento.
+     *
+     * Depois do gate legal e pela mesma razão: precisa do `ctx`. A lista vive
+     * em memória (`SuspensaoService`), por isso isto não custa uma ida à base.
+     */
+    const podePagar = this.reflector.getAllAndOverride<boolean>(SUSPENSION_EXEMPT, [
+      context.getHandler(),
+      context.getClass(),
+    ]);
+    if (!exempt && !podePagar) await this.suspensao.recusarSeSuspensa(req.ctx.academyId);
 
     return true;
   }

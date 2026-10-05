@@ -408,6 +408,37 @@ export class StorageService {
     }
   }
 
+  /**
+   * Gravar um ficheiro pelo próprio servidor.
+   *
+   * Para o que chega à API já inteiro e pequeno (a fatura em PDF que o painel
+   * anexa), onde um upload assinado a partir do browser era uma volta a mais.
+   */
+  async upload(bucket: string, key: string, data: Buffer, contentType: string): Promise<void> {
+    const res = await fetch(`${this.url}/storage/v1/object/${bucket}/${key}`, {
+      method: "POST",
+      headers: { apikey: this.key, Authorization: `Bearer ${this.key}`, "Content-Type": contentType, "x-upsert": "true" },
+      body: new Uint8Array(data),
+    });
+    if (!res.ok) {
+      this.log.error(`Carregamento falhou (${bucket}/${key}): ${res.status} ${await res.text()}`);
+      throw new BadRequestException("Não foi possível guardar o ficheiro");
+    }
+  }
+
+  /** Ler um ficheiro privado pelo servidor. Nulo quando não existe ou não se conseguiu. */
+  async download(bucket: string, key: string): Promise<Buffer | null> {
+    try {
+      const res = await fetch(`${this.url}/storage/v1/object/${bucket}/${key}`, {
+        headers: { apikey: this.key, Authorization: `Bearer ${this.key}` },
+      });
+      if (!res.ok) return null;
+      return Buffer.from(await res.arrayBuffer());
+    } catch {
+      return null;
+    }
+  }
+
   /** Confirma que o ficheiro chegou mesmo. Sem isto, gravava-se a chave de um upload que falhou. */
   async exists(bucket: string, key: string): Promise<boolean> {
     const url = await this.signDownload(bucket, key, 60);

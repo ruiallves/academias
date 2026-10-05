@@ -81,7 +81,7 @@ export default function Planos() {
 
       <section id="perguntas" className="palco-cal faixa scroll-mt-(--topo)">
         <div className="wrap grid gap-12 lg:grid-cols-[minmax(0,0.7fr)_minmax(0,1.3fr)] lg:gap-20">
-          <h2 className="titulo t2 max-w-[10ch]">Perguntas.</h2>
+          <h2 className="titulo t2 max-w-[10ch]">Perguntas<span className="ponto">.</span></h2>
           <div className="border-b border-fio">
             {FAQ.map((f) => (
               <details key={f.q} className="pergunta">
@@ -100,7 +100,7 @@ export default function Planos() {
 
       <section className="bloco palco-noite mb-[clamp(8px,1.2vw,20px)]">
         <div className="wrap faixa-curta flex flex-wrap items-center justify-between gap-8">
-          <p className="titulo t2 max-w-[20ch]">Trinta dias com tudo, com o teu clube lá dentro.</p>
+          <p className="titulo t2 max-w-[20ch]">Trinta dias com tudo, com o teu clube lá dentro<span className="ponto">.</span></p>
           <Link to="/contactos" className="btn btn-cheio">
             Começar
             <Seta />

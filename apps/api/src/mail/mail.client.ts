@@ -24,6 +24,8 @@ export type Mail = {
    * saíram e não sabe de quê, que é metade da pergunta.
    */
   kind?: string;
+  /** Ficheiros anexados, em base64. Por agora só a fatura da mensalidade da plataforma. */
+  attachments?: { filename: string; content: string; type: string }[];
 };
 
 export type MailResult = { sent: boolean; reason?: string };
@@ -65,6 +67,9 @@ const SENDGRID: Provider = {
       { type: "text/plain", value: mail.text },
       { type: "text/html", value: mail.html },
     ],
+    ...(mail.attachments?.length
+      ? { attachments: mail.attachments.map((a) => ({ content: a.content, filename: a.filename, type: a.type, disposition: "attachment" })) }
+      : {}),
   }),
 };
 
@@ -79,6 +84,7 @@ const BREVO: Provider = {
     subject: mail.subject,
     htmlContent: mail.html,
     textContent: mail.text,
+    ...(mail.attachments?.length ? { attachment: mail.attachments.map((a) => ({ name: a.filename, content: a.content })) } : {}),
   }),
 };
 
@@ -101,6 +107,7 @@ const RESEND: Provider = {
     subject: mail.subject,
     html: mail.html,
     text: mail.text,
+    ...(mail.attachments?.length ? { attachments: mail.attachments.map((a) => ({ filename: a.filename, content: a.content })) } : {}),
   }),
 };
 

@@ -28,10 +28,11 @@ export class FinanceController {
     @Query("to") to?: string,
     @Query("matchId") matchId?: string,
     @Query("calendarEventId") calendarEventId?: string,
+    @Query("trainingSessionId") trainingSessionId?: string,
     @Query("athleteId") athleteId?: string,
     @Query("teamId") teamId?: string,
   ) {
-    return this.finance.transactions(req.ctx, { kind, status, categoryId, q, from, to, matchId, calendarEventId, athleteId, teamId });
+    return this.finance.transactions(req.ctx, { kind, status, categoryId, q, from, to, matchId, calendarEventId, trainingSessionId, athleteId, teamId });
   }
 
   @Post("transactions")

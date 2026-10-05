@@ -22,15 +22,18 @@ import type { AcademyStatus } from "@/lib/types";
  * Se uma mudar, muda a outra: a lista e o cartão do topo a contradizerem-se é
  * pior do que os dois estarem errados da mesma maneira.
  */
-export type EstadoComercial = "A_PAGAR" | "EM_FALTA" | "AVALIACAO" | "POR_DECIDIR" | "FECHADA";
+export type EstadoComercial = "A_PAGAR" | "EM_FALTA" | "SUSPENSA" | "AVALIACAO" | "POR_DECIDIR" | "FECHADA";
 
 export function estadoComercial(clube: {
   status: AcademyStatus;
   subscriptionStatus: string | null;
   trialEndsAt: string | null;
+  suspendedAt?: string | null;
 }): EstadoComercial {
   /* Fechado ganha a tudo: um clube desactivado não é um cliente em avaliação. */
   if (clube.status === "CANCELLED") return "FECHADA";
+  /* Suspenso por falta de pagamento: continua cliente, mas de porta fechada até pagar. */
+  if (clube.suspendedAt) return "SUSPENSA";
   if (clube.subscriptionStatus === "PAST_DUE") return "EM_FALTA";
   if (clube.subscriptionStatus === "ACTIVE") return "A_PAGAR";
   if (clube.trialEndsAt && new Date(clube.trialEndsAt) > new Date()) return "AVALIACAO";
@@ -40,6 +43,7 @@ export function estadoComercial(clube: {
 export const ESTADO_LABEL: Record<EstadoComercial, string> = {
   A_PAGAR: "A pagar",
   EM_FALTA: "Pagamento falhado",
+  SUSPENSA: "Suspensa",
   AVALIACAO: "Avaliação",
   POR_DECIDIR: "Por decidir",
   FECHADA: "Cancelada",
@@ -53,10 +57,11 @@ export const ESTADO_LABEL: Record<EstadoComercial, string> = {
 export const ESTADO_TOM: Record<EstadoComercial, "neutral" | "ok" | "warn" | "risk" | "signal"> = {
   A_PAGAR: "ok",
   EM_FALTA: "risk",
+  SUSPENSA: "risk",
   AVALIACAO: "warn",
   POR_DECIDIR: "signal",
   FECHADA: "neutral",
 };
 
 /** Paga (ou devia estar a pagar). É o que distingue receita de experiência. */
-export const temReceita = (e: EstadoComercial) => e === "A_PAGAR" || e === "EM_FALTA";
+export const temReceita = (e: EstadoComercial) => e === "A_PAGAR" || e === "EM_FALTA" || e === "SUSPENSA";

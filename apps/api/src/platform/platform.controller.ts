@@ -107,6 +107,11 @@ class SetAcademyActiveDto {
   @IsBoolean() active!: boolean;
 }
 
+/** Suspender ou reabrir por falta de pagamento. Ver `setAcademySuspended`. */
+class SetAcademySuspendedDto {
+  @IsBoolean() suspended!: boolean;
+}
+
 /**
  * O plano de um clube, e o estado da subscrição.
  *
@@ -225,6 +230,21 @@ export class PlatformController {
     @Body() body: SetAcademyActiveDto,
   ) {
     return this.platform.setAcademyActive(req.admin, id, body.active, ip);
+  }
+
+  /**
+   * Suspender ou reabrir um clube por falta de pagamento da mensalidade da
+   * plataforma. `OWNER`/`ADMIN`, como desactivar. Ver `setAcademySuspended`.
+   */
+  @Patch("academies/:id/suspensao")
+  @PlatformRoles("OWNER", "ADMIN")
+  setAcademySuspended(
+    @Req() req: PlatformRequest,
+    @Ip() ip: string,
+    @Param("id") id: string,
+    @Body() body: SetAcademySuspendedDto,
+  ) {
+    return this.platform.setAcademySuspended(req.admin, id, body.suspended, ip);
   }
 
   /**

@@ -275,8 +275,9 @@ export function matchLabel(m: ApiMatch): string {
  * Gémeo de `matchTitle` em `apps/api/src/common/match-title.ts`.
  */
 export function matchTitle(m: { isHome: boolean; opponent: string; teamName?: string | null }): string {
-  const contra = `${m.isHome ? "vs" : "@"} ${m.opponent}`;
-  return m.teamName ? `${m.teamName} ${contra}` : contra;
+  // A equipa da casa vem sempre primeiro: em casa "Sub-13 vs Fafe", fora "Fafe vs Sub-13".
+  if (!m.teamName) return `${m.isHome ? "vs" : "@"} ${m.opponent}`;
+  return m.isHome ? `${m.teamName} vs ${m.opponent}` : `${m.opponent} vs ${m.teamName}`;
 }
 
 export function athleteName(id: string): string {

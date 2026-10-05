@@ -537,6 +537,8 @@ type State = {
   denied: string | null;
   /** O servidor respondeu `FAMILY_APPROVAL_PENDING`: o clube ainda não aprovou esta conta. */
   pendente: boolean;
+  /** O servidor respondeu `ACADEMY_SUSPENDED`: o clube está fechado por falta de pagamento à plataforma. */
+  suspenso: boolean;
   academy: { name: string; shortName: string; mark: string; signalColor: string; logoUrl: string | null };
   /**
    * Quem entrou. O email vem junto porque há um ecrã que precisa dele: quando a
@@ -581,6 +583,7 @@ const EMPTY: State = {
   error: null,
   denied: null,
   pendente: false,
+  suspenso: false,
   academy: { name: "", shortName: "", mark: "", signalColor: "#0f6b62", logoUrl: null },
   guardian: { name: "", firstName: "", email: "" },
   role: "",
@@ -709,6 +712,11 @@ export function load(): Promise<void> {
       // Registado e à espera do clube: tem ecrã próprio, não é conta errada.
       if (error instanceof ApiError && error.code === "FAMILY_APPROVAL_PENDING") {
         apply({ ...EMPTY, ready: true, pendente: true });
+        return;
+      }
+      // O clube está fechado por falta de pagamento à plataforma: tem ecrã próprio.
+      if (error instanceof ApiError && error.code === "ACADEMY_SUSPENDED") {
+        apply({ ...EMPTY, ready: true, suspenso: true });
         return;
       }
       if (error instanceof ApiError && error.status === 403) {
@@ -1002,6 +1010,7 @@ function build(
     error: null,
     denied: null,
     pendente: false,
+    suspenso: false,
     evaluations: evaluationsOut,
     reports: reportsOut,
     nutrition: nutritionOut,

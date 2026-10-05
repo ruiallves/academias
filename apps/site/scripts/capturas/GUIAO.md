@@ -8,7 +8,7 @@ Nenhuma captura toca na API real, no Supabase nem na base de dados.
 ## O clube e as pessoas (tudo inventado)
 
 - Clube: **CD Academias** (Clube Desportivo Academias), slug `cd-academias`.
-- Cor de sinal do clube: `#3B2CF0` (índigo). Emblema: `apps/site/public/clube/emblema.svg` e `emblema.png`.
+- Cor de sinal do clube: `#12936B` (verde-esmeralda, da família do verde do site). Atlético da Serra: `#8C1D2F` (grená). União do Mar: `#E4572E`. Emblema: `apps/site/public/clube/emblema.svg` e `emblema.png`.
 - Modalidade: futebol. Equipas: Sub-11, **Sub-13** (futebol 9), Sub-15, Seniores.
 - Treinador dos Sub-13: Miguel Antunes. Diretor: Paulo Rebelo.
 - Atleta que o site segue: **Tomás Ferreira**, n.º 8, médio centro, Sub-13, nascido a 14/03/2014.

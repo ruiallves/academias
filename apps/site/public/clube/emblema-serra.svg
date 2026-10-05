@@ -1,9 +1,9 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 72" width="256" height="288">
-  <!-- Atlético da Serra, clube inventado para as capturas da troca de clube. Escudo redondo verde, duas serras e o sol. -->
-  <path d="M32 3c12 0 21 3 28 7v26c0 16-12 27-28 33C16 63 4 52 4 36V10c7-4 16-7 28-7Z" fill="#1F6B4F"/>
-  <path d="M32 3c12 0 21 3 28 7v26c0 16-12 27-28 33C16 63 4 52 4 36V10c7-4 16-7 28-7Z" fill="none" stroke="#0C2A1F" stroke-width="3" stroke-linejoin="round"/>
+  <!-- Atlético da Serra, clube inventado para as capturas da troca de clube. Escudo redondo grená, duas serras e o sol. -->
+  <path d="M32 3c12 0 21 3 28 7v26c0 16-12 27-28 33C16 63 4 52 4 36V10c7-4 16-7 28-7Z" fill="#8C1D2F"/>
+  <path d="M32 3c12 0 21 3 28 7v26c0 16-12 27-28 33C16 63 4 52 4 36V10c7-4 16-7 28-7Z" fill="none" stroke="#3A0B14" stroke-width="3" stroke-linejoin="round"/>
   <circle cx="44" cy="20" r="5.5" fill="#F2C94C"/>
   <path d="M9 47 24 23l8 12 6-8 17 20Z" fill="#F4F7F2"/>
-  <path d="M24 23l5.5 8.5-4 3-3.5-3.5-3.5 3Z" fill="#1F6B4F" opacity=".35"/>
+  <path d="M24 23l5.5 8.5-4 3-3.5-3.5-3.5 3Z" fill="#8C1D2F" opacity=".35"/>
   <path d="M14 53h36M19 59h26" stroke="#F4F7F2" stroke-width="3" stroke-linecap="round"/>
 </svg>

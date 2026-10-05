@@ -220,7 +220,7 @@ function EventChip({
         aria-hidden
       />
       <span className="shrink-0 font-mono tabular opacity-80">{time(event.start)}</span>
-      {/* Sem o escalão: a cor e o ponto já o dizem, e o espaço é curto. */}
+      {/* Com o escalão: ver `tituloCompacto`. */}
       <span className={cx("min-w-0 flex-1 truncate font-medium", event.cancelled && "line-through")}>
         {tituloCompacto(event)}
       </span>

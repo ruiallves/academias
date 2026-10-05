@@ -58,7 +58,10 @@ export function Passeio({ id, ecras, passos, variante = "lado", aoAndar, classNa
           {passos.map((x, i) => (
             <div key={x.titulo} className="legenda" data-on={passo === i ? "" : undefined}>
               <p className="rotulo">{x.rotulo}</p>
-              <h3 className="titulo t2 mt-3">{x.titulo}</h3>
+              <h3 className="titulo t2 mt-3">
+                {x.titulo.replace(/.$/, "")}
+                {x.titulo.endsWith(".") && <span className="ponto">.</span>}
+              </h3>
               <p className="lede mt-5">{x.texto}</p>
             </div>
           ))}

@@ -107,7 +107,7 @@ export type BudgetRows = {
 
 export type TransactionFilters = {
   kind?: string; status?: string; categoryId?: string; q?: string;
-  from?: string; to?: string; matchId?: string; calendarEventId?: string; athleteId?: string; teamId?: string;
+  from?: string; to?: string; matchId?: string; calendarEventId?: string; trainingSessionId?: string; athleteId?: string; teamId?: string;
 };
 
 /* -------------------------------------------------------------------------- */
@@ -145,16 +145,17 @@ export const listTransactions = (f: TransactionFilters = {}) =>
  */
 const memoriaDeEventos = new Map<string, TransactionRow[]>();
 
-const chaveDoEvento = (link: { matchId?: string; calendarEventId?: string }) =>
-  `${link.matchId ?? ""}|${link.calendarEventId ?? ""}`;
+const chaveDoEvento = (link: { matchId?: string; calendarEventId?: string; trainingSessionId?: string }) =>
+  `${link.matchId ?? ""}|${link.calendarEventId ?? ""}|${link.trainingSessionId ?? ""}`;
 
 /** O que já se sabe deste evento, ou `undefined` se ainda não se perguntou. */
-export const movimentosLembrados = (link: { matchId?: string; calendarEventId?: string }) =>
+export const movimentosLembrados = (link: { matchId?: string; calendarEventId?: string; trainingSessionId?: string }) =>
   memoriaDeEventos.get(chaveDoEvento(link));
 
 export async function movimentosDoEvento(link: {
   matchId?: string;
   calendarEventId?: string;
+  trainingSessionId?: string;
 }): Promise<TransactionRow[]> {
   const rows = await listTransactions(link);
   memoriaDeEventos.set(chaveDoEvento(link), rows);
@@ -168,7 +169,7 @@ export async function movimentosDoEvento(link: {
  * pertencer a um evento qualquer, e adivinhar qual seria mais frágil do que
  * voltar a perguntar.
  */
-export function esquecerMovimentos(link?: { matchId?: string; calendarEventId?: string }): void {
+export function esquecerMovimentos(link?: { matchId?: string; calendarEventId?: string; trainingSessionId?: string }): void {
   if (link) memoriaDeEventos.delete(chaveDoEvento(link));
   else memoriaDeEventos.clear();
 }

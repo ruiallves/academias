@@ -1,6 +1,7 @@
 import { useEffect, useState, type ReactNode } from "react";
 import { signalVars } from "@academia/ui/tokens";
-import { loadAcademy, useStore } from "@/lib/store";
+import { loadAcademy, reloadAcademy, useStore } from "@/lib/store";
+import { MensalidadeDaPlataformaPanel } from "@/components/MensalidadeDaPlataformaPanel";
 import { loadCatalogs } from "@/lib/catalogs";
 import { loadInvites } from "@/lib/invites";
 import { loadNotifications } from "@/lib/notifications";
@@ -67,6 +68,8 @@ export function AcademyBoot({ children }: { children: ReactNode }) {
 
   if (store.error) return <BootError message={store.error} />;
   if (!store.ready) return <BootLoading />;
+  // Fechado por falta de pagamento à plataforma: o único ecrã é o de pagar.
+  if (store.suspenso) return <ClubeSuspenso />;
   // Pronto mas sem perfil é um estado impossível — e é preciso que se veja como
   // falha, em vez de deixar a consola abrir sem se saber quem lá está dentro.
   if (!store.me) return <BootError message="A academia carregou sem perfil de utilizador." />;
@@ -118,6 +121,47 @@ function BootLoading() {
         style={{ borderTopColor: "var(--color-signal-line, var(--color-signal))" }}
         aria-hidden
       />
+    </div>
+  );
+}
+
+/**
+ * O clube está suspenso por falta de pagamento da mensalidade da plataforma.
+ *
+ * Não é um erro: é a consola fechada de propósito, com a única coisa que a
+ * reabre à frente. O painel é o mesmo da secção "Mensalidade" das Definições,
+ * em modo de bloqueio: quem representa o clube paga aqui, por MB WAY ou
+ * Multibanco, e quando o pagamento chega a consola volta a carregar sozinha.
+ * Quem não pode pagar vê o que está em falta e a quem pedir.
+ */
+function ClubeSuspenso() {
+  return (
+    <div className="flex min-h-dvh items-start justify-center bg-canvas p-6 md:items-center">
+      <div className="w-full max-w-[640px]">
+        <h1 className="mb-1.5 text-[22px] font-semibold leading-tight tracking-[-0.01em] text-ink">
+          O acesso do clube está suspenso
+        </h1>
+        <p className="mb-6 max-w-[62ch] text-body leading-relaxed text-ink-3">
+          A mensalidade da plataforma não foi paga até ao fim do período. A consola e a app das famílias ficam fechadas
+          até o pagamento chegar; os dados estão todos guardados e nada se perde.
+        </p>
+        <MensalidadeDaPlataformaPanel bloqueio onPago={() => void reloadAcademy()} />
+        <div className="mt-6 flex flex-wrap justify-end gap-2 border-t border-line pt-4">
+          <button type="button" onClick={() => void reloadAcademy()} className="ctl-outline">
+            Já paguei, verificar
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              clearSession();
+              window.location.reload();
+            }}
+            className="ctl-ghost"
+          >
+            Sair
+          </button>
+        </div>
+      </div>
     </div>
   );
 }

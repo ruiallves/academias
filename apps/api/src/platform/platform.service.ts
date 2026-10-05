@@ -13,6 +13,9 @@ import { nomeDoFicheiro } from "../subscription/declaracao";
 import { academyOwnerInviteEmail } from "../mail/mail.templates";
 import type { StaffDepartment, SubscriptionStatus } from "@prisma/client";
 import type { PlatformAdminContext } from "./platform.guard";
+import { diaDoClube, soODia } from "../subscription/ciclo";
+import { mensalidadeNaLista } from "../subscription/cobranca";
+import { SuspensaoService } from "../auth/suspensao.service";
 
 /**
  * As leituras e escritas do painel da plataforma.
@@ -97,6 +100,8 @@ export class PlatformService {
     private readonly orders: SubscriptionOrdersService,
     /** O espaço de ficheiros de cada clube — ver `storage/espaco.service.ts`. */
     private readonly espaco: EspacoService,
+    /** A lista em memória dos clubes suspensos, para fechar e reabrir à mão. */
+    private readonly suspensao: SuspensaoService,
   ) {}
 
   /* ------------------------------------------------------------------------ */
@@ -216,11 +221,28 @@ export class PlatformService {
      * é a conversa de subir a mensalidade, e tem de se ver antes de o clube
      * dar com os carregamentos recusados.
      */
-    const [usado, limites] = await Promise.all([
+    const [usado, limites, avisos] = await Promise.all([
       this.espaco.deTodos(),
-      this.prisma.academy.findMany({ select: { id: true, storageLimitMb: true } }),
+      this.prisma.academy.findMany({ select: { id: true, storageLimitMb: true, suspendedAt: true } }),
+      /*
+       * A mensalidade da plataforma de cada clube: a do período a correr e a
+       * última paga. É a coluna que substituiu a "Atividade" na lista. São
+       * poucas linhas por clube (uma por mês), e vêm todas de uma vez.
+       */
+      this.prisma.subscriptionNotice.findMany({
+        select: { academyId: true, periodStart: true, periodEnd: true, paidAt: true, paidMethod: true, sentAt: true, invoiceSentAt: true },
+        orderBy: { periodStart: "desc" },
+      }),
     ]);
     const limiteDe = new Map(limites.map((a) => [a.id, a.storageLimitMb]));
+    const suspensaDe = new Map(limites.map((a) => [a.id, a.suspendedAt]));
+    const avisosDe = new Map<string, typeof avisos>();
+    for (const a of avisos) {
+      const lista = avisosDe.get(a.academyId) ?? [];
+      lista.push(a);
+      avisosDe.set(a.academyId, lista);
+    }
+    const hoje = diaDoClube(new Date());
 
     return rows.map((r) => ({
       id: r.id,
@@ -250,6 +272,8 @@ export class PlatformService {
       signalColor: r.signal_color,
       storageUsedBytes: usado.get(r.id) ?? 0,
       storageLimitMb: limiteDe.get(r.id) ?? 5120,
+      suspendedAt: suspensaDe.get(r.id) ?? null,
+      mensalidade: mensalidadeNaLista(avisosDe.get(r.id) ?? [], r.sub_status, suspensaDe.get(r.id) ?? null, hoje),
     }));
   }
 
@@ -280,7 +304,7 @@ export class PlatformService {
     const academy = await this.prisma.academy.findUnique({
       where: { id },
       select: {
-        id: true, slug: true, name: true, status: true, createdAt: true, trialEndsAt: true,
+        id: true, slug: true, name: true, status: true, createdAt: true, trialEndsAt: true, suspendedAt: true,
         logoUrl: true, signalColor: true,
         /* Só para dizer se estão preenchidas — os valores nunca saem daqui. */
         eupagoApiKey: true, eupagoWebhookSecret: true,
@@ -441,6 +465,8 @@ export class PlatformService {
       status: academy.status,
       createdAt: academy.createdAt,
       trialEndsAt: academy.trialEndsAt,
+      /** Fechado por falta de pagamento da mensalidade da plataforma. */
+      suspendedAt: academy.suspendedAt,
       storage,
       eupago: this.eupagoDoClube(academy),
       logoUrl: academy.logoUrl,
@@ -1035,7 +1061,7 @@ export class PlatformService {
   ) {
     const academy = await this.prisma.academy.findUnique({
       where: { id },
-      select: { id: true, slug: true, subscription: { select: { planId: true, status: true } } },
+      select: { id: true, slug: true, subscription: { select: { planId: true, status: true, billingAnchorOn: true } } },
     });
     if (!academy) throw new BadRequestException("Academia não encontrada");
 
@@ -1070,6 +1096,18 @@ export class PlatformService {
         ? condicoes.monthlyCents
         : null;
 
+    /*
+     * O dia de cobrança, quando o clube passa a pagar.
+     *
+     * É dele que a cobrança da plataforma conta os períodos quando não há
+     * condições emitidas: o início contratado se veio, senão hoje. Fica como
+     * está num clube que já o tinha: mudar de plano não muda o dia em que paga.
+     */
+    const ancora =
+      novoEstado === "ACTIVE" && !academy.subscription?.billingAnchorOn
+        ? condicoes?.startsOn ? soODia(new Date(condicoes.startsOn)) : diaDoClube(new Date())
+        : undefined;
+
     const subscription = await this.prisma.subscription.upsert({
       where: { academyId: id },
       // Sem subscrição — o clube foi criado sem plano. É aqui que passa a existir.
@@ -1078,12 +1116,14 @@ export class PlatformService {
         planId: plan.id,
         status: novoEstado,
         priceCents: acordado,
+        billingAnchorOn: ancora ?? null,
         ...(cancelada ? { cancelledAt: new Date() } : {}),
       },
       update: {
         planId: plan.id,
         status: novoEstado,
         cancelledAt: cancelada ? new Date() : null,
+        ...(ancora ? { billingAnchorOn: ancora } : {}),
         /*
          * Só se mexe no preço quando quem chamou falou dele. Uma correcção de
          * estado não apaga um acordo comercial que ninguém pôs em causa.
@@ -1330,6 +1370,45 @@ export class PlatformService {
     );
 
     return { ok: true, status };
+  }
+
+  /**
+   * Suspender ou reabrir um clube à mão, por falta de pagamento.
+   *
+   * O mesmo fecho que a cobrança faz sozinha quando o período acaba sem
+   * pagamento: a consola e a app ficam no ecrã de "clube suspenso", com o
+   * botão de pagar, e os dados ficam todos. Reabrir à mão serve o acordo
+   * ("paga para a semana, abre já"); o pagamento pela consola reabre sozinho.
+   */
+  async setAcademySuspended(admin: PlatformAdminContext, id: string, suspended: boolean, ip?: string) {
+    const academy = await this.prisma.academy.findUnique({
+      where: { id },
+      select: { id: true, slug: true, status: true, trialEndsAt: true, suspendedAt: true },
+    });
+    if (!academy) throw new BadRequestException("Academia não encontrada");
+    if (academy.status === "CANCELLED") throw new BadRequestException("O clube está desactivado; reactiva-o primeiro.");
+
+    const status = suspended
+      ? "PAST_DUE"
+      : academy.trialEndsAt && academy.trialEndsAt > new Date()
+        ? "TRIAL"
+        : "ACTIVE";
+    await this.prisma.academy.update({
+      where: { id },
+      data: { status, suspendedAt: suspended ? (academy.suspendedAt ?? new Date()) : null },
+    });
+    if (suspended) this.suspensao.marcar(id);
+    else this.suspensao.levantar(id);
+
+    await this.audit(
+      admin,
+      suspended ? "academy.suspend" : "academy.unsuspend",
+      "academy",
+      id,
+      { slug: academy.slug, de: academy.status, para: status },
+      ip,
+    );
+    return { ok: true, status, suspended };
   }
 
   /**

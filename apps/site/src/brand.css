@@ -49,13 +49,20 @@
 
 @layer base {
   :root {
-    /* A cor viva. */
-    --acento: #ffe53b;
-    --sobre-acento: #131313;
+    /* As cores dos posts do Instagram: o verde do campo à noite e o verde vivo. */
+    --acento: #2bc48f;
+    --sobre-acento: #04120d;
 
-    --cal: #f5f4f0;
-    --areia: #e9e7df;
-    --tinta: #131313;
+    --cal: #f4f3ee;
+    --areia: #e4e2da;
+    --tinta: #071d17;
+    --branco: #fffefb;
+
+    /* O fundo escuro dos posts: verde quase preto, com uma luz verde a vir de um canto. */
+    --noite-fundo:
+      radial-gradient(90% 60% at 4% 40%, rgb(20 122 94 / 0.5) 0%, rgb(9 58 45 / 0.25) 42%, transparent 74%),
+      radial-gradient(80% 50% at 90% 4%, rgb(13 84 68 / 0.38) 0%, transparent 70%),
+      linear-gradient(158deg, #0a2a21 0%, #071d17 54%, #04120d 100%);
 
     --nav: 64px;
     --topo: calc(var(--nav) + 24px);
@@ -69,48 +76,49 @@
     --fundo: var(--cal);
     --sup: #ffffff;
     --texto: var(--tinta);
-    --texto-2: #55554f;
-    --texto-3: #8b8a83;
-    --fio: rgb(19 19 19 / 0.1);
-    --fio-2: rgb(19 19 19 / 0.2);
+    --texto-2: #4e5a55;
+    --texto-3: #85908b;
+    --fio: rgb(7 29 23 / 0.1);
+    --fio-2: rgb(7 29 23 / 0.2);
     --botao: var(--tinta);
-    --sobre-botao: #ffffff;
+    --sobre-botao: var(--branco);
   }
 
   .palco-areia {
     --fundo: var(--areia);
     --sup: #f5f4f0;
     --texto: var(--tinta);
-    --texto-2: #55554f;
-    --texto-3: #7f7e77;
-    --fio: rgb(19 19 19 / 0.12);
-    --fio-2: rgb(19 19 19 / 0.22);
+    --texto-2: #4e5a55;
+    --texto-3: #7c8782;
+    --fio: rgb(7 29 23 / 0.12);
+    --fio-2: rgb(7 29 23 / 0.22);
     --botao: var(--tinta);
-    --sobre-botao: #ffffff;
+    --sobre-botao: var(--branco);
   }
 
   .palco-noite {
     --fundo: var(--tinta);
-    --sup: #1f1f1f;
-    --texto: #f5f4f0;
-    --texto-2: #b5b4ac;
-    --texto-3: #85847d;
+    --sup: #0d2c23;
+    --texto: var(--branco);
+    --texto-2: rgb(255 254 251 / 0.72);
+    --texto-3: rgb(255 254 251 / 0.5);
     --fio: rgb(255 255 255 / 0.12);
-    --fio-2: rgb(255 255 255 / 0.24);
-    --botao: var(--acento);
-    --sobre-botao: var(--sobre-acento);
+    --fio-2: rgb(255 255 255 / 0.26);
+    /* Como nos posts: o botão é uma cápsula branca. */
+    --botao: var(--branco);
+    --sobre-botao: var(--tinta);
   }
 
   .palco-acento {
     --fundo: var(--acento);
     --sup: rgb(255 255 255 / 0.5);
     --texto: var(--sobre-acento);
-    --texto-2: rgb(19 19 19 / 0.72);
-    --texto-3: rgb(19 19 19 / 0.55);
-    --fio: rgb(19 19 19 / 0.16);
-    --fio-2: rgb(19 19 19 / 0.3);
+    --texto-2: rgb(4 18 13 / 0.74);
+    --texto-3: rgb(4 18 13 / 0.56);
+    --fio: rgb(4 18 13 / 0.16);
+    --fio-2: rgb(4 18 13 / 0.3);
     --botao: var(--tinta);
-    --sobre-botao: #ffffff;
+    --sobre-botao: var(--branco);
   }
 
   html {
@@ -143,6 +151,10 @@
   .palco-areia,
   .palco-noite,
   .palco-acento { background: var(--fundo); color: var(--texto); }
+  .palco-noite { background: var(--noite-fundo); background-color: var(--tinta); }
+
+  /* O ponto final dos títulos, a verde, como nos posts. Ver `Ponto` em `components/marca.tsx`. */
+  .ponto { color: var(--acento); }
 
   /* =========================================================================
      Letra
@@ -220,7 +232,7 @@
 
   .btn-cheio { background: var(--botao); color: var(--sobre-botao); }
   .btn-cheio:hover { background: var(--acento); color: var(--sobre-acento); }
-  .palco-noite .btn-cheio:hover { background: #ffffff; color: var(--tinta); }
+  .palco-noite .btn-cheio:hover { background: var(--acento); color: var(--sobre-acento); }
 
   .btn-acento { background: var(--acento); color: var(--sobre-acento); }
   .btn-acento:hover { background: var(--texto); color: var(--fundo); }
@@ -257,7 +269,7 @@
     height: var(--nav);
     padding-inline: 22px 12px;
     border-radius: 999px;
-    background: rgb(255 255 255 / 0.96);
+    background: rgb(255 254 251 / 0.97);
     color: var(--tinta);
     border: 1px solid rgb(19 19 19 / 0.07);
   }
