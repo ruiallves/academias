@@ -4,6 +4,7 @@ import { FieldView, Pitch, baseView, itemScale, pitchBackground } from "@/compon
 import { academy, currentSeason } from "@/lib/store";
 import { carregarEmblema, type Emblema } from "@/lib/callup-sheet";
 import { longDate, time } from "@/lib/format";
+import type { Esperados } from "@/lib/esperados-no-treino";
 import { SPORT_PROFILES, kindLabel, sportAreaById } from "@/lib/sports";
 import {
   ARROW_LABEL,
@@ -650,6 +651,7 @@ type Bloco = {
 export async function exportarPlano(
   plan: SessionPlan,
   carregarExercicio: (id: string) => Promise<ExercicioImprimivel>,
+  esperados: Esperados | null = null,
 ): Promise<void> {
   const folha = await novaFolha();
   const d = folha.doc;
@@ -724,12 +726,15 @@ export async function exportarPlano(
       { rotulo: "Treinador", valor: plan.coachName || "—" },
       {
         rotulo: "Sessão",
-        valor: [plan.sessionType, plan.intensity ? `intensidade ${plan.intensity}/5` : null].filter(Boolean).join(" · ") || "—",
+        valor: [plan.sessionType, plan.intensity ? `intensidade ${plan.intensity}/10` : null].filter(Boolean).join(" · ") || "—",
       },
     ],
     [
       { rotulo: "Material", valor: plan.material || "—", span: 2 },
-      { rotulo: "Atletas previstos", valor: plan.expectedAthletes ? String(plan.expectedAthletes) : "—" },
+      {
+        rotulo: "Atletas previstos",
+        valor: esperados ? `${esperados.total} de ${esperados.plantel}` : "—",
+      },
     ],
     plan.planNotes?.trim()
       ? [
@@ -738,6 +743,8 @@ export async function exportarPlano(
         ]
       : [{ rotulo: "Principais objectivos", valor: objectivos.join("; ") || "—", cabeca: true, span: 3 }],
   ]);
+
+  if (esperados) y = atletasEsperados(d, y, esperados);
 
   /* ---- Os painéis, por fase ----------------------------------------------- */
 
@@ -786,6 +793,11 @@ function grelha(d: Doc, y0: number, linhas: Celula[][]): number {
       return (c.cabeca ? 4.5 : 0) + linhasTexto.length * 3.6 + PAD * 2;
     });
     const h = Math.max(6.5, ...alturas);
+    // Uma linha que já não cabe passa inteira para a página seguinte.
+    if (y + h > PAG.h - PAG.m && y > PAG.m) {
+      d.addPage();
+      y = PAG.m;
+    }
 
     let x = PAG.m;
     linha.forEach((c, i) => {
@@ -831,6 +843,53 @@ function textoDaCelula(d: Doc, c: Celula, largura: number): string[] {
   const larguraRotulo = d.getTextWidth(`${c.rotulo}: `);
   d.setFont("helvetica", "normal");
   return d.splitTextToSize(c.valor, largura - larguraRotulo) as string[];
+}
+
+/**
+ * Os atletas esperados, por posição: três posições por linha, um atleta por
+ * linha dentro de cada uma. Por baixo, quem não conta e porquê, para o
+ * treinador não ir à procura de quem está de baixa ou avisou.
+ */
+const QUEBRA = "\n";
+
+function atletasEsperados(d: Doc, y: number, e: Esperados): number {
+  y = titulo(d, y, `Atletas esperados: ${e.total} de ${e.plantel}`);
+  const celulas: Celula[] = e.grupos.map((g) => ({
+    rotulo: `${g.posicao} (${g.atletas.length})`,
+    valor: g.atletas.map((a) => `${a.numero != null ? `${a.numero}  ` : ""}${a.nome}${a.nota ? ` (${a.nota})` : ""}`).join(QUEBRA),
+    cabeca: true,
+  }));
+  const linhas: Celula[][] = [];
+  for (let i = 0; i < celulas.length; i += 3) {
+    const linha = celulas.slice(i, i + 3);
+    // A última linha estica a última célula até ao fim, para a grelha fechar direita.
+    if (linha.length < 3) linha[linha.length - 1] = { ...linha[linha.length - 1], span: 4 - linha.length };
+    linhas.push(linha);
+  }
+  if (e.fora.length) {
+    linhas.push([{ rotulo: `Não contam (${e.fora.length})`, valor: e.fora.map((f) => `${f.nome}: ${f.motivo}`).join(QUEBRA), cabeca: true, span: 3 }]);
+  }
+  if (linhas.length === 0) linhas.push([{ rotulo: "Sem atletas", valor: "Esta equipa não tem atletas ativos.", cabeca: true, span: 3 }]);
+  // A grelha não parte linhas entre páginas: se a primeira já não cabe, começa na seguinte.
+  if (PAG.h - PAG.m - y < 30) {
+    d.addPage();
+    y = PAG.m;
+  }
+  return grelha(d, y, linhas);
+}
+
+/** Um título simples, com o mesmo corpo dos títulos de fase. */
+function titulo(d: Doc, y: number, texto: string): number {
+  if (PAG.h - PAG.m - y < 40) {
+    d.addPage();
+    y = PAG.m;
+  }
+  d.setFont("helvetica", "bold");
+  d.setFontSize(11);
+  d.setTextColor(30);
+  d.text(texto, PAG.m, y + 4);
+  d.setFont("helvetica", "normal");
+  return y + 9;
 }
 
 /** `21/09/2023` — a data como se escreve numa folha de treino. */

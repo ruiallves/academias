@@ -32,6 +32,7 @@ import { sharePlan } from "@/lib/training";
 import { matches } from "@/lib/store";
 import { cycleOn, dayKey, listCycles, matchDayLabel, mesoOf, microLabel, type Cycle } from "@/lib/cycles";
 import { Users } from "@/lib/icons";
+import { esperadosNoTreino } from "@/lib/esperados-no-treino";
 
 /**
  * O vocabulário do plano — as categorias de objectivo da modalidade da equipa
@@ -84,7 +85,11 @@ export default function TrainingPlan() {
     setAExportar(true);
     try {
       const pdf = await import("@/lib/training-pdf");
-      await pdf.exportarPlano(plan!, getExercise);
+      // Quem se espera no treino, por posição: sem baixas e sem quem avisou que falta.
+      const esperados = session
+        ? await esperadosNoTreino(session, plan.sessionId, plan.teamId, plan.startsAt).catch(() => null)
+        : null;
+      await pdf.exportarPlano(plan!, getExercise, esperados);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Não foi possível gerar o PDF.");
     } finally {
@@ -523,37 +528,25 @@ export default function TrainingPlan() {
                 />
               </DialogField>
 
-              <div className="grid grid-cols-2 gap-3">
-                <DialogField label="Tipo de treino">
-                  <select
-                    className={dialogInputClass}
-                    value={plan.sessionType ?? ""}
-                    onChange={(e) => patch({ sessionType: e.target.value || null })}
-                    disabled={!editable}
-                  >
-                    <option value="">Sem tipo</option>
-                    {SESSION_TYPES.map((t) => (
-                      <option key={t} value={t}>
-                        {t}
-                      </option>
-                    ))}
-                    {plan.sessionType && !SESSION_TYPES.includes(plan.sessionType as (typeof SESSION_TYPES)[number]) && (
-                      <option value={plan.sessionType}>{plan.sessionType}</option>
-                    )}
-                  </select>
-                </DialogField>
-                <DialogField label="Atletas esperados">
-                  <input
-                    type="number"
-                    min={0}
-                    max={99}
-                    className={dialogInputClass}
-                    value={plan.expectedAthletes ?? ""}
-                    onChange={(e) => patch({ expectedAthletes: e.target.value === "" ? null : Number(e.target.value) })}
-                    disabled={!editable}
-                  />
-                </DialogField>
-              </div>
+              {/* Sem "Atletas esperados": o PDF calcula-os do plantel, das baixas e dos avisos. */}
+              <DialogField label="Tipo de treino">
+                <select
+                  className={dialogInputClass}
+                  value={plan.sessionType ?? ""}
+                  onChange={(e) => patch({ sessionType: e.target.value || null })}
+                  disabled={!editable}
+                >
+                  <option value="">Sem tipo</option>
+                  {SESSION_TYPES.map((t) => (
+                    <option key={t} value={t}>
+                      {t}
+                    </option>
+                  ))}
+                  {plan.sessionType && !SESSION_TYPES.includes(plan.sessionType as (typeof SESSION_TYPES)[number]) && (
+                    <option value={plan.sessionType}>{plan.sessionType}</option>
+                  )}
+                </select>
+              </DialogField>
 
               <DialogField label="Intensidade planeada" hint={plan.intensity ? `${plan.intensity}/10` : "por definir"}>
                 <input
@@ -1546,9 +1539,7 @@ function ModeloDaLista({
           </span>
           <span className="mt-1 block truncate text-meta text-ink-2">
             {m.blockCount} {m.blockCount === 1 ? "bloco" : "blocos"} · {m.totalMin} min
-            {m.blockCount > 0 ? ` · intensidade ${(carga.score / 10).toFixed(1)}/10` : ""}
-            {m.expectedAthletes ? ` · ${m.expectedAthletes} atletas` : ""}
-          </span>
+            {m.blockCount > 0 ? ` · intensidade ${(carga.score / 10).toFixed(1)}/10` : ""}          </span>
           <span className="mt-0.5 block truncate text-meta text-ink-3">
             {m.objective ?? m.objectives.join(" · ") ?? ""}
             {m.objective || m.objectives.length > 0 ? " · " : ""}
