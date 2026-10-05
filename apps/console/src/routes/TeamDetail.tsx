@@ -501,6 +501,8 @@ function RosterTab({
   const feeByAthlete = new Map(fees.map((f) => [f.athleteId, f]));
   /* Montar o plantel daqui: atletas que já existem, ou um novo, já nesta equipa. */
   const mayWrite = can(session, "athlete:write");
+  /* Trazer atletas de outras equipas: quem escreve em atletas ou em equipas. Ver `trazerParaEquipa`. */
+  const mayBringIn = mayWrite || can(session, "team:write");
   const [aAdicionar, setAAdicionar] = useState(false);
   const [aInscrever, setAInscrever] = useState(false);
 
@@ -571,12 +573,14 @@ function RosterTab({
     <>
       <Panel>
         <PanelHead title="Plantel" hint={`${roster.length} ${roster.length === 1 ? "atleta" : "atletas"}`}>
-          {mayWrite && (
+          {(mayWrite || mayBringIn) && (
             <>
-              <button type="button" onClick={() => setAInscrever(true)} className="ctl-ghost">
-                <UserPlus className="size-3.5" strokeWidth={1.75} />
-                Novo atleta
-              </button>
+              {mayWrite && (
+                <button type="button" onClick={() => setAInscrever(true)} className="ctl-ghost">
+                  <UserPlus className="size-3.5" strokeWidth={1.75} />
+                  Novo atleta
+                </button>
+              )}
               <button type="button" onClick={() => setAAdicionar(true)} className="ctl-primary">
                 <Plus className="size-3.5" strokeWidth={2} />
                 Adicionar atletas

@@ -20,6 +20,7 @@ import {
   type Identificacao,
 } from "./identificacao";
 import { AthleteInvitesService } from "./athlete-invites.service";
+import { birthdateFloor } from "./matches.service";
 import {
   aplicarEquipas,
   choqueDeNumeros,
@@ -915,6 +916,137 @@ export class AthletesService {
    * ser o mesmo: mostrar uma equipa a quem inscreve e depois recusá-la com
    * "fora do teu âmbito" seria oferecer uma escolha impossível.
    */
+  /**
+   * Quem escreve numa equipa pode trazer para ela um atleta de qualquer outra.
+   *
+   * ## Porque é que isto existe
+   *
+   * Há atletas que treinam e jogam em dois escalões. O treinador do segundo
+   * não os via (a consola só carrega os atletas das equipas dele), tentava
+   * inscrevê-los outra vez e levava "Já existe um atleta com este NIF". Ficava
+   * sem saída: não podia duplicar a ficha, e não tinha onde a ir buscar.
+   *
+   * ## O que deixa, e o que não deixa
+   *
+   * Deixa **acrescentar** esta equipa às do atleta. As equipas onde ele estava
+   * ficam como estavam, com o número e a posição de cada uma, e o outro
+   * treinador não é avisado: a decisão é desportiva e não lhe tira nada. Não
+   * deixa tirar o atleta de lado nenhum nem mexer na ficha dele; para isso há a
+   * edição, com as regras dela.
+   *
+   * A equipa de destino tem de ser de quem pede (`teamScopeFilter`, o âmbito
+   * de escrita), e é preciso escrever em atletas ou em equipas.
+   */
+  private assertPodeTrazerPara(ctx: RequestContext, teamId: string) {
+    if (!can(ctx, "athlete:write") && !can(ctx, "team:write")) {
+      throw new ForbiddenException("Sem permissão para mexer no plantel");
+    }
+    const scope = teamScopeFilter(ctx);
+    if (scope && !scope.in.includes(teamId)) throw new ForbiddenException("Essa equipa não é das tuas");
+  }
+
+  /**
+   * Os atletas do clube que podem entrar nesta equipa: os activos que ainda
+   * lá não estão. Só o que é preciso para escolher (nome, idade, onde está),
+   * nada da ficha. Com `documento`, só o que tem esse NIF ou documento: é a
+   * pergunta do "Novo atleta" quando o NIF já existe.
+   */
+  async candidatosParaEquipa(ctx: RequestContext, teamId: string, documento?: string) {
+    this.assertPodeTrazerPara(ctx, teamId);
+    return this.prisma.runAs(ctx.academyId, async (db) => {
+      const equipa = await db.team.findFirst({ where: { id: teamId }, select: { id: true, maxAge: true } });
+      if (!equipa) throw new NotFoundException("Equipa não encontrada");
+      /*
+       * Só quem cabe na idade da equipa, ou abaixo: um atleta mais novo pode
+       * jogar acima, um mais velho não pode jogar abaixo. A idade é a do ano da
+       * época, como nas convocatórias (`birthdateFloor`). 99 é "sem limite".
+       */
+      const nascidoDesde = equipa.maxAge < 99 ? birthdateFloor(equipa.maxAge, new Date()) : null;
+
+      const doc = documento?.trim();
+      const atletas = await db.athlete.findMany({
+        where: {
+          status: { not: "LEFT" },
+          teams: { none: { teamId, leftAt: null } },
+          ...(nascidoDesde ? { birthdate: { gte: nascidoDesde } } : {}),
+          ...(doc
+            ? { OR: [{ taxId: normalizarNif(doc) || doc }, { idDocNumber: normalizarDocumento(doc) || doc }] }
+            : {}),
+        },
+        orderBy: { name: "asc" },
+        select: {
+          id: true,
+          name: true,
+          birthdate: true,
+          teams: {
+            where: { leftAt: null },
+            orderBy: ORDEM_DAS_PASSAGENS,
+            select: { teamId: true, team: { select: { name: true, sportId: true } } },
+          },
+        },
+      });
+      return atletas.map((a) => ({
+        id: a.id,
+        name: a.name,
+        birthdate: a.birthdate,
+        equipas: a.teams.map((t) => ({ teamId: t.teamId, nome: t.team.name, sportId: t.team.sportId })),
+      }));
+    });
+  }
+
+  /**
+   * Acrescentar esta equipa a atletas que já existem, sem os tirar das outras.
+   * Ver `assertPodeTrazerPara`. Fica no histórico da ficha de cada um.
+   */
+  async trazerParaEquipa(ctx: RequestContext, teamId: string, athleteIds: string[]) {
+    this.assertPodeTrazerPara(ctx, teamId);
+    const ids = [...new Set(athleteIds)];
+    if (ids.length === 0) throw new BadRequestException("Escolhe pelo menos um atleta");
+
+    return this.prisma.runAs(ctx.academyId, async (db) => {
+      const equipa = await db.team.findFirst({ where: { id: teamId }, select: { id: true, name: true, maxAge: true } });
+      if (!equipa) throw new NotFoundException("Equipa não encontrada");
+      const nascidoDesde = equipa.maxAge < 99 ? birthdateFloor(equipa.maxAge, new Date()) : null;
+
+      const atletas = await db.athlete.findMany({
+        where: { id: { in: ids } },
+        select: {
+          id: true,
+          name: true,
+          birthdate: true,
+          status: true,
+          teams: { where: { leftAt: null }, orderBy: ORDEM_DAS_PASSAGENS, select: { teamId: true, team: { select: { name: true } } } },
+        },
+      });
+      if (atletas.length !== ids.length) throw new BadRequestException("Há um atleta que não é deste clube");
+
+      const quem = await nomeDeQuemMexe(db, ctx);
+      const agora = new Date();
+      let adicionados = 0;
+      for (const a of atletas) {
+        if (a.status === "LEFT") throw new BadRequestException("Há um atleta que saiu do clube: volta pela ficha dele");
+        if (nascidoDesde && a.birthdate < nascidoDesde) {
+          throw new BadRequestException(`${a.name} tem idade acima da equipa (até aos ${equipa.maxAge} anos)`);
+        }
+        if (a.teams.some((t) => t.teamId === teamId)) continue;
+        await entrarNaEquipa(db, a.id, { teamId, squadNumber: null, position: null }, agora);
+        await sincronizarNumeroPrincipal(db, a.id);
+        const antes = a.teams.map((t) => t.team.name);
+        await registarAlteracoes(
+          db,
+          ctx,
+          "ATHLETE",
+          a.id,
+          { team: antes.join(", ") || null },
+          { team: [...antes, equipa.name].join(", ") },
+          quem,
+        );
+        adicionados++;
+      }
+      return { ok: true, adicionados };
+    });
+  }
+
   private async teamsInScope(ctx: RequestContext, db: ScopedClient): Promise<Map<string, string>> {
     const scope = teamScopeForRoster(ctx);
     const teams = await db.team.findMany({

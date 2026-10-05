@@ -1,6 +1,6 @@
 import { useState, type FormEvent } from "react";
 import { listTeams } from "@/lib/api";
-import { apiPost } from "@/lib/http";
+import { apiGet, apiPost } from "@/lib/http";
 import { ConvidarAoCriar } from "./ConfirmarSobrescrita";
 import { reloadAcademy } from "@/lib/store";
 import type { Session } from "@/lib/permissions";
@@ -52,6 +52,41 @@ export function NewAthleteDialog({
 
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  /*
+   * O NIF já é de um atleta do clube. Era um beco: o treinador do segundo
+   * escalão não via o atleta, tentava inscrevê-lo e parava aqui. Agora a janela
+   * oferece pô-lo também nestas equipas, sem o tirar das que já tem.
+   */
+  const [jaExiste, setJaExiste] = useState(false);
+
+  async function trazerExistente() {
+    if (busy) return;
+    setBusy(true);
+    setError(null);
+    try {
+      const doc = identificacaoParaApi(ident, "criar") as { taxId?: string; idDocNumber?: string };
+      const documento = doc.taxId || doc.idDocNumber || "";
+      const equipas = [...new Set(linhas.map((l) => l.teamId).filter(Boolean))];
+      let trazidos = 0;
+      for (const teamId of equipas) {
+        const encontrados = await apiGet<{ id: string }[]>(`/api/teams/${teamId}/candidatos`, { documento });
+        if (encontrados.length === 0) continue; // já está nesta equipa
+        await apiPost(`/api/teams/${teamId}/atletas`, { athleteIds: [encontrados[0].id] });
+        trazidos++;
+      }
+      await reloadAcademy();
+      if (trazidos === 0) {
+        setError("Este atleta já está nestas equipas.");
+        setJaExiste(false);
+        return;
+      }
+      onClose();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Não foi possível adicionar.");
+    } finally {
+      setBusy(false);
+    }
+  }
 
   // O NIF, ou outro documento, é obrigatório: sem nenhum, nenhuma família consegue
   // reclamar este atleta na app, e a academia só dá por isso quando o pai telefona.
@@ -77,7 +112,9 @@ export function NewAthleteDialog({
       await reloadAcademy();
       onClose();
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Não foi possível inscrever.");
+      const msg = err instanceof Error ? err.message : "Não foi possível inscrever.";
+      setError(msg);
+      setJaExiste(msg.startsWith("Já existe um atleta com este"));
     } finally {
       setBusy(false);
     }
@@ -174,8 +211,21 @@ export function NewAthleteDialog({
             <EquipasDoAtletaField linhas={linhas} onChange={setLinhas} teams={teams} />
           </DialogField>
 
-          {error && (
+          {error && !jaExiste && (
             <p className="rounded-[var(--radius-control)] bg-risk-soft px-3 py-2 text-meta text-risk">{error}</p>
+          )}
+          {error && jaExiste && (
+            <div className="space-y-2 rounded-[var(--radius-control)] bg-warn-soft px-3 py-2.5 text-meta leading-relaxed text-ink-2">
+              <p>
+                <span className="font-medium text-ink">{error.replace(/^Já existe um atleta com este (NIF|documento): /, "Este atleta já está no clube: ")}.</span>{" "}
+                Não é preciso inscrevê-lo outra vez: podes pô-lo também{" "}
+                {linhas.length > 1 ? "nestas equipas" : `no ${teams.find((t) => t.id === linhas[0]?.teamId)?.name ?? "plantel"}`}, e fica nas
+                equipas onde já está.
+              </p>
+              <button type="button" className="ctl-primary" disabled={busy} onClick={() => void trazerExistente()}>
+                {busy ? "A adicionar…" : linhas.length > 1 ? "Adicionar também a estas equipas" : "Adicionar também a esta equipa"}
+              </button>
+            </div>
           )}
         </form>
       )}

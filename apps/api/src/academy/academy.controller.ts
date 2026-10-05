@@ -21,6 +21,12 @@ import { BillingService, METODOS_MANUAIS, periodoActual, type AplicarEm, type Me
  * aqui trava-se a forma, lá trava-se a regra, e é a regra que conta.
  */
 /** O que a ficha de staff deixa mudar. Tudo opcional: grava-se o que mudou. */
+/** Os atletas que entram numa equipa sem sair das outras. Ver `trazerParaEquipa`. */
+class TrazerAtletasDto {
+  @IsArray() @ArrayMaxSize(200) @IsString({ each: true }) @Length(1, 40, { each: true })
+  athleteIds!: string[];
+}
+
 class StaffProfileDto {
   @IsOptional() @IsString() @Length(2, 80) name?: string;
 
@@ -640,6 +646,20 @@ export class AcademyController {
   @Get("athletes")
   listAthletes(@Req() req: AuthedRequest) {
     return this.academy.athletes(req.ctx);
+  }
+
+  /**
+   * Os atletas do clube que podem entrar numa equipa de quem pede, e o gesto de
+   * os trazer sem os tirar das outras. Ver `trazerParaEquipa`.
+   */
+  @Get("teams/:id/candidatos")
+  candidatosParaEquipa(@Req() req: AuthedRequest, @Param("id") id: string, @Query("documento") documento?: string) {
+    return this.athletes.candidatosParaEquipa(req.ctx, id, documento);
+  }
+
+  @Post("teams/:id/atletas")
+  trazerParaEquipa(@Req() req: AuthedRequest, @Param("id") id: string, @Body() body: TrazerAtletasDto) {
+    return this.athletes.trazerParaEquipa(req.ctx, id, body.athleteIds);
   }
 
   /** Inscrever um atleta. A permissão (`athlete:write`) é verificada no serviço. */
