@@ -7,6 +7,7 @@ import { can, inTeamScope, teamScopeFilter, type RequestContext } from "../commo
 import { NotificationsService } from "../notifications/notifications.service";
 import { contasDasEquipas } from "../academy/athlete-accounts";
 import { formatarNoFuso } from "../common/fuso";
+import { escolherTreinador } from "../academy/head-coaches";
 import { EspacoService } from "../storage/espaco.service";
 
 /**
@@ -471,7 +472,12 @@ export class TrainingService {
         objective: true, objectives: true, sessionType: true, intensity: true,
         expectedAthletes: true, material: true, planNotes: true, postNotes: true,
         planSharedAt: true,
-        team: { select: { name: true } },
+        team: {
+          select: {
+            name: true,
+            staff: { where: { leftAt: null, membership: { isActive: true } }, orderBy: { title: "asc" }, select: { title: true, membership: { select: { user: { select: { name: true } } } } } },
+          },
+        },
         coach: { select: { user: { select: { name: true } } } },
         blocks: {
           orderBy: { order: "asc" },
@@ -506,7 +512,8 @@ export class TrainingService {
       endsAt: s.endsAt,
       venue: s.venue,
       status: s.status,
-      coachName: s.coach?.user.name ?? null,
+      // Sem treinador no treino, vale o principal da equipa (ver `headCoaches`).
+        coachName: s.coach?.user.name ?? escolherTreinador(s.team.staff)?.membership.user.name ?? null,
       mine: inTeamScope(ctx, s.teamId),
       objective: s.objective,
       objectives: s.objectives,
@@ -602,7 +609,12 @@ export class TrainingService {
         select: {
           id: true, teamId: true, startsAt: true, endsAt: true, venue: true, status: true, planSharedAt: true,
           objective: true, objectives: true, sessionType: true, intensity: true, material: true, planNotes: true,
-          team: { select: { name: true } },
+          team: {
+            select: {
+              name: true,
+              staff: { where: { leftAt: null, membership: { isActive: true } }, orderBy: { title: "asc" }, select: { title: true, membership: { select: { user: { select: { name: true } } } } } },
+            },
+          },
           coach: { select: { user: { select: { name: true } } } },
           blocks: {
             orderBy: { order: "asc" },
@@ -624,7 +636,8 @@ export class TrainingService {
         endsAt: s.endsAt,
         venue: s.venue,
         status: s.status,
-        coachName: s.coach?.user.name ?? null,
+        // Sem treinador no treino, vale o principal da equipa (ver `headCoaches`).
+        coachName: s.coach?.user.name ?? escolherTreinador(s.team.staff)?.membership.user.name ?? null,
         sharedAt: s.planSharedAt,
         objective: s.objective,
         objectives: s.objectives,

@@ -1,3 +1,6 @@
+07/10/2026
+- Plano de treino: quando o treino não tem treinador escolhido, o plano e o PDF mostram o treinador principal da equipa (antes o campo saía vazio).
+
 05/10/2026
 - Planeamento: saiu o campo "Atletas esperados" do plano de treino; o número passa a ser calculado sozinho no PDF. Corrigida a intensidade no PDF, que aparecia sobre 5 em vez de sobre 10.
 - Plano de treino em PDF: no início aparecem os atletas esperados, por posição, sem os que estão de baixa no dia do treino nem os que avisaram pela app que não vêm (estes ficam listados à parte, com o motivo). Os condicionados contam, com a nota ao lado.
