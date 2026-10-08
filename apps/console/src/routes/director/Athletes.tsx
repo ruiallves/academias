@@ -14,7 +14,7 @@ import { reloadAcademy } from "@/lib/store";
 import { ResultCount, SearchInput, Segmented, Select, Toolbar } from "@/components/filters";
 import { Plus, Upload, Users } from "@/lib/icons";
 import { academy, currentPeriod, guardiansOf, listAthletes, listFees, listTeams, semEquipa, today, naEquipa, nomesDasEquipas } from "@/lib/api";
-import { age, shortDate, shortName } from "@/lib/format";
+import { age, monthName, shortDate, shortName } from "@/lib/format";
 import type { Athlete } from "@/data/types";
 import { availabilityOf, useClinicalRecords } from "@/lib/clinical";
 import { medicalExpiry, medicalState } from "@/lib/medical";
@@ -68,6 +68,10 @@ export default function Athletes() {
   const teams = listTeams(session);
   const fees = listFees(session, currentPeriod);
   const feeByAthlete = useMemo(() => new Map(fees.map((f) => [f.athleteId, f])), [fees]);
+  const mesDaColuna = (() => {
+    const nome = monthName(new Date(Number(currentPeriod.slice(0, 4)), Number(currentPeriod.slice(5, 7)) - 1, 1));
+    return nome[0].toUpperCase() + nome.slice(1);
+  })();
 
   const rows = useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -229,7 +233,8 @@ export default function Athletes() {
     },
     {
       key: "fee",
-      header: "Agosto",
+      /* O mês da mensalidade que a coluna mostra: o corrente (`currentPeriod`). Estava escrito "Agosto" à mão. */
+      header: mesDaColuna,
       align: "right",
       render: (a) => {
         const fee = feeByAthlete.get(a.id);
