@@ -85,6 +85,12 @@ com valores medidos por omissão — ver o cabeçalho de
 | `AI_WORKER_HALF` | meia precisão na GPU | nenhum mensurável |
 | `AI_WORKER_BATCH` | frames por lote | nenhum — é a mesma conta |
 | `AI_WORKER_DETECTOR` | `fasterrcnn` ou `ssdlite` | o `ssdlite` falha mais com jogadores sobrepostos |
+| `AI_WORKER_TILES` | 2 = cada frame em 2×2 janelas | ~4,6× a detecção, e sem memória na placa é 100× — medir antes (`scripts/medir-recall.py`) |
+| `AI_WORKER_LIVE_SEGMENT_SEC` | de quantos em quantos segundos de vídeo as caixas vão à API para o vídeo a correr | nenhum (thread própria); 0 desliga |
+
+Medir antes de mexer: `scripts/medir-recall.py` diz quantas pessoas cada
+configuração vê e a que velocidade; `scripts/medir-tracking.py` corre o tracker
+num troço e diz quantas delas segura e quantos tracks abre.
 
 Antes de trocar precisão por tempo, medir:
 

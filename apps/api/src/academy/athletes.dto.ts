@@ -53,6 +53,15 @@ export class EquipaDoAtletaDto {
   @IsString()
   @Length(0, 40)
   position?: string | null;
+
+  /**
+   * O n.º de licença na modalidade desta equipa, na época dela. Só na
+   * inscrição: depois gere-se no separador Licenças. Ver `AthleteLicense`.
+   */
+  @IsOptional()
+  @IsString()
+  @Length(0, 40)
+  licenseNumber?: string | null;
 }
 
 export class AthleteInputDto {
@@ -92,6 +101,16 @@ export class AthleteInputDto {
   @IsString()
   @Length(1, 40)
   position?: string;
+
+  /**
+   * O n.º de licença na modalidade de `teamId`, na época dessa equipa: a
+   * coluna "N.º de licença" da importação. Um atleta em duas modalidades são
+   * duas linhas, cada uma com a sua.
+   */
+  @IsOptional()
+  @IsString()
+  @Length(0, 40)
+  licenseNumber?: string;
 
   /**
    * O email do próprio atleta — para onde sai o convite da app. Opcional: um
@@ -141,6 +160,28 @@ export class AthleteInputDto {
   @IsString()
   @Length(0, 40)
   idDocNumber?: string;
+
+  /** A morada. Opcional; vazio limpa (na edição). */
+  @IsOptional()
+  @IsString()
+  @Length(0, 200)
+  address?: string;
+
+  @IsOptional()
+  @IsString()
+  @Length(0, 20)
+  postalCode?: string;
+
+  @IsOptional()
+  @IsString()
+  @Length(0, 80)
+  city?: string;
+
+  /** O n.º do Cartão de Cidadão (atletas portugueses). Opcional; vazio limpa. */
+  @IsOptional()
+  @IsString()
+  @Length(0, 20)
+  citizenCardNumber?: string;
 
   @IsOptional()
   @IsISO8601()
@@ -283,6 +324,28 @@ export class AthleteUpdateDto {
   @Length(0, 40)
   idDocNumber?: string;
 
+  /** A morada. Opcional; vazio limpa (na edição). */
+  @IsOptional()
+  @IsString()
+  @Length(0, 200)
+  address?: string;
+
+  @IsOptional()
+  @IsString()
+  @Length(0, 20)
+  postalCode?: string;
+
+  @IsOptional()
+  @IsString()
+  @Length(0, 80)
+  city?: string;
+
+  /** O n.º do Cartão de Cidadão (atletas portugueses). Opcional; vazio limpa. */
+  @IsOptional()
+  @IsString()
+  @Length(0, 20)
+  citizenCardNumber?: string;
+
   @IsOptional()
   @IsISO8601()
   medicalValidUntil?: string;
@@ -371,4 +434,20 @@ export class AthleteTaxIdDto {
   @IsString()
   @Length(1, 40)
   idDocNumber?: string;
+}
+
+/** Escrever (ou apagar, com vazio) a licença de um atleta numa modalidade e numa época. */
+export class AthleteLicenseDto {
+  @IsString()
+  @Length(1, 40)
+  sportId!: string;
+
+  @IsString()
+  @Length(1, 40)
+  seasonId!: string;
+
+  /** Vazio apaga a licença dessa modalidade nessa época. */
+  @IsString()
+  @Length(0, 40)
+  number!: string;
 }

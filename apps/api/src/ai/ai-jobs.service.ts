@@ -25,6 +25,11 @@ export const REVIEW_THRESHOLD = 0.75;
 /** Só tracks com tempo de jogo relevante pedem revisão — 20 s de figurante não. */
 export const REVIEW_MIN_TRACK_MS = 20_000;
 
+function hexToRgb(hex: string): [number, number, number] {
+  const n = Number.parseInt(hex.slice(1), 16);
+  return [(n >> 16) & 255, (n >> 8) & 255, n & 255];
+}
+
 @Injectable()
 export class AiJobsService {
   /** Enfileira um trabalho. Chamado sempre dentro de um `runAs`. */
@@ -47,6 +52,58 @@ export class AiJobsService {
       },
       select: { id: true },
     });
+  }
+
+  /**
+   * De "A"/"B"/"outros" a "nossa"/"deles"/"árbitro" — com a cor que o treinador escolheu.
+   *
+   * O worker não sabe qual é a nossa equipa; agrupa pela cor e guarda em cada
+   * track o grupo e a cor média (`summary.kitGroup`, `summary.kitColor`). A
+   * escolha do treinador (`AIAnalysis.oursKitColor`) é a que decide, e pode
+   * chegar antes ou depois da detecção — por isso isto corre nos dois sítios:
+   * quando a detecção fecha e quando a cor é escolhida. Sem cor escolhida só
+   * os "outros" ganham lado (árbitro); o resto fica `unknown`, que é honesto.
+   *
+   * Um track corrigido por um humano não muda de lado por aqui.
+   */
+  async resolveSides(db: ScopedClient, analysisId: string) {
+    const analysis = await db.aIAnalysis.findFirst({ where: { id: analysisId }, select: { oursKitColor: true } });
+    const tracks = await db.playerTrack.findMany({
+      where: { analysisId, status: { in: ["auto", "merged"] } },
+      select: { id: true, side: true, summary: true },
+    });
+    const ours = analysis?.oursKitColor ? hexToRgb(analysis.oursKitColor) : null;
+
+    // A cor média de cada grupo, para saber qual dos dois é o nosso.
+    const porGrupo: Record<string, number[][]> = {};
+    for (const t of tracks) {
+      const s = (t.summary ?? {}) as { kitGroup?: string; kitColor?: number[] };
+      if ((s.kitGroup === "A" || s.kitGroup === "B") && Array.isArray(s.kitColor)) {
+        (porGrupo[s.kitGroup] ??= []).push(s.kitColor);
+      }
+    }
+    let nosso: string | null = null;
+    if (ours) {
+      let melhor = Infinity;
+      for (const [grupo, cores] of Object.entries(porGrupo)) {
+        const media = [0, 1, 2].map((i) => cores.reduce((a, c) => a + c[i], 0) / cores.length);
+        const d = Math.hypot(media[0] - ours[0], media[1] - ours[1], media[2] - ours[2]);
+        if (d < melhor) {
+          melhor = d;
+          nosso = grupo;
+        }
+      }
+    }
+
+    for (const t of tracks) {
+      const s = (t.summary ?? {}) as { kitGroup?: string };
+      let side = "unknown";
+      if (s.kitGroup === "other") side = "referee";
+      else if (nosso && s.kitGroup) side = s.kitGroup === nosso ? "ours" : "theirs";
+      if (side !== t.side) {
+        await db.playerTrack.update({ where: { id: t.id }, data: { side, updatedAt: new Date() } });
+      }
+    }
   }
 
   /**

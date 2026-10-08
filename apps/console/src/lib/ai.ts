@@ -29,6 +29,10 @@ export type AnalysisRow = {
   /** Por dimensão, 0–1: { quality: {...}, player_tracking: 0.91, … }. */
   confidence: Record<string, unknown> | null;
   reviewCount: number;
+  /** A cor do nosso equipamento neste jogo (`#rrggbb`), escolhida pelo treinador. Nula até escolher. */
+  oursKitColor: string | null;
+  /** O campo calibrado pelo treinador (4 a 6 cliques num frame). Nulo até calibrar. */
+  calibration: Calibration | null;
   createdAt: string;
   completedAt: string | null;
   teamId: string;
@@ -81,6 +85,8 @@ export type AnalysisJob = {
 export type Track = {
   id: string;
   trackNumber: number;
+  /** A pessoa a que o track pertence, depois da identificação. */
+  identityId: string | null;
   side: string;
   jerseyNumber: number | null;
   athleteId: string | null;
@@ -173,7 +179,13 @@ export const identifyTrack = (trackId: string, athleteId: string | null) =>
 export const listInsights = () => apiGet<Insight[]>("/api/ai/insights");
 export const dismissInsight = (id: string) => apiPost(`/api/ai/insights/${id}/dismiss`, {});
 
-export const videoUrl = (videoId: string) => apiGet<{ url: string; expiresIn: number }>(`/api/ai/videos/${videoId}/url`);
+/**
+ * Onde ver o vídeo: a porta do worker que o tem, com um bilhete de ver (o
+ * caminho de hoje), ou um link do Storage (o antigo). 404 depois da purga —
+ * silencioso, porque "já não há vídeo" é um estado do ecrã, não um erro.
+ */
+export const videoUrl = (videoId: string) =>
+  apiGetSilencioso<{ url: string; expiresIn: number }>(`/api/ai/videos/${videoId}/url`);
 
 /**
  * Os recortes de uma análise.
@@ -200,6 +212,112 @@ export type CropsIndex = {
 export const analysisCrops = (analysisId: string) =>
   // De fundo, e sem consequência quando falha: o ecrã fica sem os recortes.
   apiGetSilencioso<CropsIndex>(`/api/ai/analyses/${analysisId}/crops`);
+
+/* -------------------------------------------------------------------------- */
+/* O vídeo a correr                                                            */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * Um troço do jogo já processado, enquanto o resto ainda se processa.
+ *
+ * `frames`: `[tsMs, [[tid, x1, y1, x2, y2, conf], …]]` por frame processado
+ * (5 por segundo de vídeo), nas coordenadas de `video` (`[largura, altura]`).
+ * Os tids são os **brutos** do tracker — ao vivo a IA vê pessoas, não nomes;
+ * a numeração final e os nomes chegam com a detecção e a identificação.
+ */
+export type LiveSegment = {
+  index: number;
+  fromMs: number;
+  toMs: number;
+  data: {
+    video: [number, number];
+    /**
+     * `[tsMs, [[pessoa, x1, y1, x2, y2, conf, grupo, X, Y], …], bola, detectadas]`; grupo 0
+     * sem equipa, 1 A, 2 B, 3 outros; X, Y em metros (nulos sem calibração); bola
+     * `[x, y, conf, X, Y]` ou nula; `detectadas` é quantas pessoas o detector viu
+     * (contra as que o tracker devolveu).
+     */
+    frames: [number, (number | null)[][], (number | null)[] | null, number?][];
+    /** As cores das equipas que a IA encontrou, em RGB. */
+    teams?: Record<string, [number, number, number]>;
+    stats?: {
+      framesProcessed?: number;
+      detections?: number;
+      tracksOpen?: number;
+      /** Segundos de relógio desde que a detecção começou. */
+      elapsedSec?: number;
+      /** Até onde o vídeo já foi processado, em ms. */
+      processedMs?: number;
+      /** Quantas vezes a compensação de câmara não conseguiu medir o movimento. */
+      cameraLost?: number;
+      /** O estado da calibração do campo no worker. */
+      pitch?: { calibrated?: boolean; lost?: boolean; lostAtMs?: number | null; length?: number; width?: number };
+    };
+  };
+};
+
+export const liveSegments = (analysisId: string, after: number) =>
+  apiGetSilencioso<{ processing: boolean; more: boolean; segments: LiveSegment[] }>(
+    `/api/ai/analyses/${analysisId}/live`,
+    { after: String(after) },
+  );
+
+/**
+ * As posições finais por frame — o ficheiro da detecção, já com os fragmentos
+ * colados e a numeração dos tracks que a análise mostra. Um link curto; o
+ * ficheiro vem comprimido (gzip) e lê-se com `lerPosicoes`.
+ */
+export type PositionsFile = {
+  videoSize: [number, number];
+  targetFps: number;
+  /** trackNumber → `[tsMs, cx, cy, w, h, conf]` por frame. */
+  tracks: Record<string, number[][]>;
+  /** A bola, só quando vista: `[tsMs, x, y, conf, X, Y]` (X, Y em metros, nulos sem calibração). */
+  ball?: (number | null)[][];
+  teams?: Record<string, [number, number, number]>;
+  /** trackNumber → "A" | "B" | "other". */
+  kitGroups?: Record<string, string>;
+  /** trackNumber → `[tsMs, X, Y]` em metros, quando houve calibração. */
+  metres?: Record<string, number[][]>;
+  pitch?: { calibrated?: boolean; lost?: boolean; length?: number; width?: number };
+};
+
+/** "A nossa equipa é a desta cor" — `#rrggbb`, um dos grupos que a IA mostrou. */
+export const chooseKit = (analysisId: string, color: string) =>
+  apiPatch<{ ok: true }>(`/api/ai/analyses/${analysisId}/kit`, { color });
+
+/**
+ * A calibração do campo: os pontos clicados num frame, a homografia imagem →
+ * metros que a consola calculou (o servidor volta a verificá-la), e as
+ * medidas do campo. O worker arrasta-a com a câmara e passa a dar metros.
+ */
+export type Calibration = {
+  pitch: { length: number; width: number };
+  atMs: number;
+  frame: [number, number];
+  points: { key: string; img: [number, number]; pitch: [number, number] }[];
+  H: number[];
+  /** O pior erro de reprojecção dos pontos, em metros. */
+  error?: number;
+  setAt?: string;
+};
+
+export const setCalibration = (analysisId: string, calibration: Omit<Calibration, "error" | "setAt">) =>
+  apiPatch<{ ok: true; error: number }>(`/api/ai/analyses/${analysisId}/calibration`, calibration);
+
+export const analysisPositions = (analysisId: string) =>
+  apiGetSilencioso<{ url: string | null; expiresIn: number }>(`/api/ai/analyses/${analysisId}/positions`);
+
+/** Descarrega e descomprime o ficheiro de posições. `null` se não houver. */
+export async function lerPosicoes(analysisId: string): Promise<PositionsFile | null> {
+  const { url } = await analysisPositions(analysisId);
+  if (!url) return null;
+  const res = await fetch(url);
+  if (!res.ok || !res.body) return null;
+  // O Storage serve o `.json.gz` tal e qual; o browser descomprime sem biblioteca.
+  const stream = res.body.pipeThrough(new DecompressionStream("gzip"));
+  return (await new Response(stream).json()) as PositionsFile;
+}
 
 /* -------------------------------------------------------------------------- */
 /* Identidades — as pessoas, por oposição aos tracks                           */

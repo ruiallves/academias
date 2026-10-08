@@ -197,23 +197,223 @@ detect_track ──► recortes (folhas no Storage) ──► identify ──►
   jogo (`MatchCallUp`, convidados incluídos, recusas desmarcadas); o plantel da
   equipa só sem jogo escolhido.
 
-## O que o tracking vê — as alavancas de recall
+## O que o tracking vê — e onde é que se perdia
 
-Medido no mesmo jogo: os tracks cobriam **8 % do tempo de jogador**, com 1,8
-pessoas seguidas em média num campo com 22. Não era o tracking: era o Faster
-R-CNN a não ver jogadores de 30–50 píxeis depois de o frame descer aos 800.
-A identificação organiza o que o tracking vê; não pode inventar o que ele não
-viu. Três alavancas em `config.py`, todas a trocar tempo por recall, e uma
-medida que as julga (`stats.meanConcurrentTracks`):
+Medido no jogo de 111 minutos: os tracks cobriam **8 % do tempo de jogador**,
+com 1,8 pessoas seguidas em média num campo com 22. A primeira hipótese foi o
+detector a não ver jogadores pequenos, e as alavancas de recall (`config.py`:
+mosaicos, limiar, resolução) ficaram ligadas no `.env` à espera de validação.
 
-| Alavanca | O que faz | Custo |
-|---|---|---|
-| `AI_WORKER_TILES=2` | cada frame vai ao detector em 2×2 janelas com folga; NMS junta as fronteiras | ~4,6× a detecção |
-| `AI_WORKER_SCORE_THRESHOLD=0.4` | dá ao ByteTrack detecções fracas para continuar tracks | nenhum |
-| `AI_WORKER_WORK_SHORT` até 1333 | resolução de trabalho acima do tecto dos pesos | quadrático |
+A validação (07/10/2026, `scripts/medir-recall.py` e `scripts/medir-tracking.py`,
+no mesmo jogo, RTX 5050 de 4 GB) disse outra coisa:
 
-O `.env` local está com mosaicos 2×2 e limiar 0,4. O número que diz se chegou
-é o `meanConcurrentTracks` da próxima análise — não se assume.
+| Configuração | fps | × tempo real | pessoas/frame |
+|---|---|---|---|
+| 800 px, sem mosaicos | 13,3 | 2,67× | 15,6 |
+| 1080 px | 8,2 | 1,65× | 16,0 |
+| 1333 px | 3,2 | 0,63× | 16,0 |
+| mosaicos 2×2 | 0,1 | 0,03× | 20,1 |
+
+O detector **já via 16 pessoas por frame** a 800 px. Os mosaicos viam 20 a
+7 segundos por frame — a placa não tem memória para eles e o Windows passa a
+usar a partilhada. A resolução quase não ajuda. **Era o tracker**: num troço de
+60 s, 17,8 detectadas por frame, 11,5 seguidas, e **823 tracks abertos num
+minuto**. Dois parâmetros do ByteTrack (`_build_tracker`) mentiam:
+
+- `lost_track_buffer` é em frames **a 30 FPS** (`max_time_lost = frame_rate/30 ×
+  buffer`): com `frame_rate=5` e buffer 10, um track perdido morria ao fim de
+  **um** frame.
+- `minimum_matching_threshold` é uma distância (1 − IoU): baixá-lo de 0,8 para
+  0,5 **apertou** a associação em vez de a abrir.
+
+Corrigidos (buffer de 2 s a 30 FPS, limiar 0,9): no mesmo troço, 15,2 seguidas
+por frame e 123 tracks por minuto.
+
+O primeiro jogo a correr na consola mostrou o resto: **a câmara não é fixa**.
+Faz panorâmicas atrás da bola e aproxima e afasta, e nem sempre apanha o campo
+todo. Numa panorâmica todas as caixas saltam de uma vez, a previsão do Kalman
+falha para toda a gente e o tracker abre vinte identidades num frame. Entrou a
+compensação do movimento da câmara (`CameraMotion` em `detect_track.py`, o GMC
+do BoT-SORT): fluxo óptico de cantos do **fundo** entre frames processados, com
+os jogadores tapados por máscara, uma semelhança por RANSAC, aplicada ao estado
+de cada track antes de associar. No minuto 20: 70 tracks por minuto e 16,9
+seguidas das 17,8 detectadas; no minuto 70 (mais zoom): 130. Ainda há
+fragmentação (a `_merge_fragments` cola parte; a Re-ID a sério é o resto), mas
+deixou de ser a ordem de grandeza que partia a identificação.
+
+O que fica por resolver no tracking é o **recall nos planos abertos**: quando a
+câmara afasta, um jogador tem 40 px e o Faster R-CNN a 800 px vê metade deles.
+Os mosaicos não cabem nesta placa; a resposta é um detector melhor em objectos
+pequenos com licença limpa (RF-DETR ou YOLOX, ambos Apache-2.0), medido com os
+mesmos scripts antes de entrar. O `.env` ficou sem mosaicos e com limiar 0,4 — a
+detecção a 2,67× o tempo real é o que permite o vídeo a correr.
+
+## O vídeo a correr
+
+A detecção demorava uma barra inteira — quarenta minutos a duas horas sem um
+píxel para ver. Agora larga o que já fez aos troços, e a ficha da análise mostra
+**o jogo com a IA por cima**: o `<video>` a correr, as caixas do tracking
+desenhadas num canvas por cima, e um painel ao lado (pessoas em campo agora,
+pessoas vistas, mapa de onde o jogo se jogou, quem está no frame). É a mesma
+computação, organizada para quem está a ver. A referência é o Veo, para clubes
+pequenos.
+
+```
+detect_track ──(troços de 10 s)──► POST /api/ai/worker/jobs/:id/live ──► AILiveSegment
+                                                                              │
+consola ◄── GET /api/ai/analyses/:id/live?after=N (3 em 3 s) ◄────────────────┘
+consola ◄── GET /api/ai/videos/:id/url → bilhete de ver → GET worker/ingest/{bilhete}/video (Range)
+```
+
+- **O worker manda, não guarda.** `_LiveFeed` em `detect_track.py`: de
+  `AI_WORKER_LIVE_SEGMENT_SEC` (10) em 10 s de vídeo, um troço com as caixas de
+  cada frame (**tids brutos** — a numeração final só existe no fim) e os
+  números até ali (frames, detecções, tempo decorrido). Numa thread própria,
+  com fila de tecto: a API muda não pára a GPU, e um troço perdido ao vivo não
+  é um erro. O resultado final não passa por aqui.
+- **Uma tabela, não o Storage.** `AILiveSegment` (único por análise e índice):
+  a consola pergunta "o que há depois do N" de três em três segundos, e pelo
+  Storage isso era um link assinado por troço e por pedido — o que mata a
+  cache. Dado transitório: a purga do vídeo apaga-o; as posições finais vão
+  para o Storage como sempre, e a consola troca de fonte quando o
+  `detect_track` fecha (`GET /api/ai/analyses/:id/positions`, descomprimido no
+  browser com `DecompressionStream`).
+- **Ver o vídeo onde ele está.** O ficheiro vive no disco do worker; a porta de
+  ingestão passou a servi-lo com `Range` (`GET /ingest/{bilhete}/video`), com um
+  bilhete de **ver** (`k: "play"`, 2 h) assinado pela mesma chave do bilhete de
+  carregar — poderes diferentes, e o worker recusa um bilhete de carregar na
+  porta de ver. Depois da purga não há vídeo: o mesmo palco desenha as posições
+  sobre um fundo escuro, com o seu relógio.
+- **Seguir a IA.** Arranca sozinho (sem som) 6 s atrás da fronteira, pára nela
+  e retoma quando ela avança; a 1× ficava para trás da detecção a 1,3×, por isso
+  acelera até 1,75× quando está mais de 6 s atrás e salta quando está mais de
+  90 s. Desligável. Entre dois frames processados as caixas interpolam-se no
+  tempo — senão ficavam 200 ms paradas ao lado de um jogador em movimento.
+- **Honestidade no ecrã.** Ao vivo o painel diz "a IA vê pessoas, não nomes";
+  o mapa diz "em coordenadas do vídeo — o campo em metros chega com a detecção
+  das linhas". Nada é inventado para parecer melhor.
+
+## O analista ao vivo — a ordem mudou (07/10/2026)
+
+O Rui redefiniu o objectivo: antes de saber **quem** é cada jogador, a IA tem
+de dizer o que **as equipas** estão a fazer, como um analista de banco num jogo
+ao vivo — a nossa, a deles, o árbitro, a posse, onde se joga, os padrões do
+adversário, e sugestões ao treinador. A identificação individual vem depois.
+A ordem acordada: equipas pela cor → bola e posse → campo (calibração pelo
+treinador) → padrões → sugestões → identificação individual.
+
+### Pessoas, não fragmentos
+
+`PersonRegistry` em `detect_track.py`: um fragmento novo do tracker herda o
+número de uma pessoa perdida há menos de 4 s se estiver ao alcance (com a
+câmara compensada — as pessoas perdidas movem-se com ela), com tamanho
+parecido e a **mesma cor de tronco** (histograma HSV, Bhattacharyya). Sem
+candidata, pessoa nova. O tracker que reencontra o próprio fragmento não passa
+pelo crivo. É o número que o ecrã mostra e o que chega ao `PlayerTrack`; a
+`_merge_fragments` continua a colar o que sobra, e a identificação (no fim) é
+que junta quem saiu e voltou — por posição isso é impossível, e não se finge.
+
+### Equipas pela cor
+
+`TeamClassifier`: por pessoa, a mediana Lab do tronco sem a relva (verde por
+matiz), acumulada no tempo; de 5 em 5 s de vídeo, k-means (3–4 grupos) sobre
+as pessoas com observações que cheguem; **as duas maiores** são as equipas,
+o resto é "outros" (árbitro, guarda-redes). As letras A/B ficam estáveis
+entre refrescamentos (o centro novo mais perto herda a letra). Qual é a nossa
+**não se adivinha**: o treinador clica na cor no painel (`PATCH
+/api/ai/analyses/:id/kit`, `AIAnalysis.oursKitColor`), e `resolveSides` passa
+A/B a `ours`/`theirs` nos tracks — quando a cor chega e quando a detecção
+fecha, por essa ordem ou pela outra.
+
+### Bola e posse
+
+O detector COCO já sabia o que é uma bola desportiva; só se deitava fora.
+`BallTracker` aceita uma candidata se estiver ao alcance da última vista (com
+a câmara compensada) ou se a última for velha; o que sai é "vista aqui" ou
+nada. A posse calcula-se na consola: a bola é de quem a tem a menos de 1,6
+alturas de corpo; sem bola vista, a última posse vale 2 s. **Sempre com a
+cobertura ao lado** ("bola vista 38 % do tempo"): num plano aberto a bola tem
+dez píxeis e falha mais do que acerta, e um número de posse sem isso era uma
+mentira. O ficheiro final leva `ball`, `teams` e `kitGroups`.
+
+### A bola de perto, e as de reserva
+
+O primeiro jogo mostrou a bola mal vista e, pior, bolas de reserva atrás da
+baliza a passarem por bola do jogo. Não era a qualidade do vídeo: a 800 px de
+lado curto a bola tem dez píxeis. `_ball_zoom` recorta uma janela de 480 px
+do **frame original** à volta de onde a bola estava (ou do centro dos
+jogadores) e passa-a pelo mesmo detector com zoom — uma inferência pequena de
+3 em 3 frames (de 2 em 2 quando perdida). O `BallTracker` prefere candidatas
+perto de jogadores, marca como "estacionada" uma bola parada mais de 4 s
+longe de toda a gente e ignora-a daí em diante, e troca para uma bola com
+gente quando a seguida está longe de todos. Medido: bola vista em 71–74 % dos
+frames no minuto 20 e no 70. O "dentro das linhas" chega com a calibração.
+
+### O quadrado que saltava entre dois jogadores
+
+Troca de identidades do tracker quando dois se cruzam. `PersonRegistry._undo_swaps`:
+para cada par de caixas coladas compara a cor do tronco de cada uma com a cor
+guardada de cada pessoa e, se trocadas batem claramente melhor, troca os
+números de volta. Resolve o caso de equipas diferentes; entre dois colegas de
+equipa não há sinal visual, e isso só com os números das camisolas.
+
+### A velocidade, e o que a estava a comer
+
+Dois achados nesta RTX 5050 de portátil (4 GB), ambos medidos:
+
+- **`cudnn.benchmark=True` era veneno.** Com a detecção em pipeline já
+  aquecida: 1,15× o tempo real ligado, **2,56×** desligado. Ligado, cada forma
+  de entrada nova (o lote de 8, o lote parcial do fim, a janela da bola)
+  custava uns vinte segundos de medição de algoritmos a meio do jogo, e os
+  algoritmos escolhidos pediam espaço de trabalho que a placa não tem. Era
+  isto que fazia as medições curtas do dia variarem entre 0,6× e 1×.
+- **A GPU não pode esperar pela CPU.** Entre lotes, uns milissegundos de
+  tracker na CPU chegavam para a placa baixar o relógio; `_pipeline` corre a
+  detecção numa thread, um lote à frente de quem consome.
+
+Com tudo ligado (câmara, pessoas, equipas, bola com zoom): **1,95× o tempo
+real** nos dois troços medidos, aquecimento incluído.
+
+### O campo em metros — a calibração do treinador
+
+O primeiro jogo com equipas e bola mostrou o que falta a tudo o resto: a IA
+contava gente na bancada e apanha-bolas, e escolhia bolas de reserva atrás da
+baliza. Sem saber onde é o campo, nenhuma regra resolve isso de forma limpa.
+
+- **O treinador calibra** (`PATCH /api/ai/analyses/:id/calibration`,
+  `AIAnalysis.calibration`): no painel, "Calibrar o campo" pára o vídeo; um
+  desenho do campo com os pontos conhecidos (cantos, grande e pequena área,
+  meio-campo, círculo, penáltis — `pontosDoCampo` em `lib/homografia.ts`);
+  clica-se um ponto no desenho e o sítio dele no vídeo, 4 a 6 vezes; as
+  medidas do campo editam-se ali (105 × 68 por omissão). A consola calcula a
+  homografia imagem → metros por mínimos quadrados normalizados e mostra o
+  erro máximo de reprojecção; o servidor volta a verificá-lo (3 m) antes de
+  guardar — quatro cliques com um trocado dão uma matriz válida e um campo
+  torto.
+- **O worker arrasta-a com a câmara** (`PitchTracker` em `detect_track.py`):
+  acumula a cadeia de semelhanças da compensação de câmara desde o início e
+  guarda-a por frame; um ponto do frame `t` vai ao frame da calibração por
+  `C_t0 · C_t⁻¹` e daí a metros por `H0`. A calibração chega **a meio do jogo**
+  pela resposta do heartbeat (`job["live"]`), e vale para trás e para a
+  frente. Um corte de câmara (salto de um quarto do frame, ou a cadeia sem o
+  frame da calibração) marca-a como `lost`; o painel diz "a câmara cortou,
+  volta a calibrar". Deriva lenta entre cortes existe e é reconhecida: a
+  re-ancoragem nas linhas brancas é a fase seguinte.
+- **Efeitos**: cada caixa e a bola levam X, Y em metros (nulos sem
+  calibração) nos troços ao vivo e no ficheiro final (`metres`, `pitch`);
+  quem está fora das linhas (1 m de folga) não entra nas equipas, nas
+  contagens, na posse nem no mapa, e desenha-se apagado; as candidatas a bola
+  fora das linhas saem antes do tracker; o mapa de calor passa a ser sobre o
+  campo em metros, com as linhas por cima.
+
+### O que vem a seguir
+
+Os padrões em metros ("atacam pela nossa direita", altura da linha defensiva,
+largura, remates: bola a entrar na zona da baliza com velocidade) e, deles, as
+sugestões ao treinador — números com confiança; um modelo de linguagem dá a
+frase, nunca o número. Depois: re-ancoragem da calibração nas linhas, um
+detector melhor em objectos pequenos (RF-DETR/YOLOX, Apache-2.0) para os
+planos abertos, e só então a identificação individual.
 
 ## O que ainda não está
 
@@ -238,7 +438,7 @@ reprocessar são parâmetros, não código novo).
 | 1 | Menu + dashboard + fundação de dados | feito |
 | 2 | Upload + storage + fila de jobs + worker | feito |
 | 3 | Qualidade do vídeo (real, CPU) | feito |
-| 4 | Detecção + tracking (torchvision + ByteTrack) | feito no worker; melhora com GPU |
+| 4 | Detecção + tracking (torchvision + ByteTrack) | feito no worker; ByteTrack afinado a 07/10; o vídeo a correr com as caixas por cima |
 | 5 | Identificação (camisola + embedding + plantel) | feito: recortes, `identify`, `PlayerIdentity`, propostas com confiança; Re-ID genérico (upgrade: OSNet) |
 | 6 | Interface de correção | revisão por pessoa com recortes e propagação; bola e campo por fazer |
 | 7 | Active learning | correções guardadas com antes/depois; export por fazer |

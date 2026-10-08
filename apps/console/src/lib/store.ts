@@ -143,6 +143,8 @@ type ApiAthlete = {
   /** O outro documento, para quem não tem NIF. Mesma regra de leitura do NIF. */
   idDocLabel?: string | null;
   idDocNumber?: string | null;
+  address?: string | null; postalCode?: string | null; city?: string | null; citizenCardNumber?: string | null;
+  licencas?: { sportId: string; seasonId: string; number: string }[];
   heightCm: number | null; weightKg: number | null; dominantSide: string | null; sex?: Athlete["sex"] | null; squadNumber: number | null;
   medicalValidUntil: string | null; teamId: string | null; position: string | null;
   /** Todas as equipas, a principal primeiro, cada uma com o seu número e posição. */
@@ -349,6 +351,8 @@ type State = {
   seasons: string[];
   /** As datas de cada época, pelo rótulo. A barra da época do Planeamento desenha-se com elas. */
   seasonRanges: Record<string, { startsOn: string; endsOn: string }>;
+  /** As épocas com o id, da mais recente para trás. As licenças guardam-se pelo id. */
+  seasonList: { id: string; label: string; isCurrent: boolean }[];
   me: Me | null;
   teams: Team[];
   staff: StaffMember[];
@@ -384,6 +388,7 @@ const EMPTY: State = {
   season: "",
   seasons: [],
   seasonRanges: {},
+  seasonList: [],
   me: null,
   teams: [],
   staff: [],
@@ -901,6 +906,11 @@ function juntar<T extends { id: string }>(atuais: T[], novos: T[]): T[] {
     status: a.status === "PAUSED" ? "paused" : a.status === "LEFT" ? "left" : "active",
     // Sem `?? ""`: a ausência passa intacta. Ver `medicalValidUntil` em `types.ts`.
     medicalValidUntil: a.medicalValidUntil,
+    address: a.address ?? undefined,
+    postalCode: a.postalCode ?? undefined,
+    city: a.city ?? undefined,
+    citizenCardNumber: a.citizenCardNumber ?? undefined,
+    licencas: a.licencas ?? [],
     photoUrl: a.photoUrl ?? undefined,
     email: a.email ?? undefined,
     app: a.app,
@@ -1097,6 +1107,7 @@ function juntar<T extends { id: string }>(atuais: T[], novos: T[]): T[] {
     },
     season: boot.season?.label ?? "",
     seasons: (boot.seasons ?? []).map((s) => s.label),
+    seasonList: (boot.seasons ?? []).map((s) => ({ id: s.id, label: s.label, isCurrent: s.isCurrent })),
     seasonRanges: Object.fromEntries(
       (boot.seasons ?? [])
         .filter((s) => s.startsOn && s.endsOn)
@@ -1173,6 +1184,7 @@ export let currentSeason = "";
 /** As épocas que a academia tem, da mais recente para trás. Ver `NewTeamDialog`. */
 export let seasons: string[] = [];
 export let seasonRanges: Record<string, { startsOn: string; endsOn: string }> = {};
+export let seasonList: { id: string; label: string; isCurrent: boolean }[] = [];
 
 /** Competências avaliadas — configuração da modalidade, não uma lista fixa no código. */
 export let SKILLS: string[] = [];
@@ -1194,6 +1206,7 @@ function apply(next: State) {
   currentSeason = next.season;
   seasons = next.seasons;
   seasonRanges = next.seasonRanges;
+  seasonList = next.seasonList;
   SKILLS = next.academy.sports[0]?.skills ?? [];
   emit();
 }

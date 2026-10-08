@@ -1713,6 +1713,9 @@ export class AcademyService {
         select: {
           id: true, name: true, birthdate: true, photoUrl: true, photoKey: true, status: true, joinedAt: true, taxId: true,
           idDocLabel: true, idDocNumber: true,
+          address: true, postalCode: true, city: true, citizenCardNumber: true,
+          // As licenças federativas, de todas as épocas. Ver `AthleteLicense`.
+          licenses: { select: { sportId: true, seasonId: true, number: true } },
           heightCm: true, weightKg: true, dominantSide: true, sex: true, squadNumber: true, medicalValidUntil: true,
           // A conta do próprio na app — ver `AthleteInvitesService`.
           email: true, inviteSentAt: true,
@@ -1842,6 +1845,12 @@ export class AcademyService {
           /* O outro documento, para quem não tem NIF: a mesma regra de leitura do NIF. */
           idDocLabel: mayReadTaxId ? a.idDocLabel : null,
           idDocNumber: mayReadTaxId ? a.idDocNumber : null,
+          /* A morada e o CC são dados pessoais como o NIF: a mesma regra de leitura. */
+          address: mayReadTaxId ? a.address : null,
+          postalCode: mayReadTaxId ? a.postalCode : null,
+          city: mayReadTaxId ? a.city : null,
+          citizenCardNumber: mayReadTaxId ? a.citizenCardNumber : null,
+          licencas: a.licenses,
           email: a.email,
           /*
            * A conta do próprio atleta na app, num estado só — o mesmo vocabulário
@@ -3096,6 +3105,138 @@ export class AcademyService {
 
       const updated = await db.calendarEvent.update({ where: { id }, data: { cancelled }, select: EVENT_SELECT });
       return serializeEvent(updated, await this.headCoaches(db, updated.teamId ? [updated.teamId] : []));
+    });
+  }
+
+  /**
+   * Cancelar vários eventos de uma vez: desmarcar ou apagar.
+   *
+   * ## As protecções
+   *
+   * Cada evento é verificado por si, e o que não passa fica de fora com o
+   * motivo: os outros seguem. As regras são as de cancelar um só, mais as de
+   * apagar:
+   *
+   * - **só o que ainda não começou.** O que já aconteceu é histórico;
+   * - **só o que é das equipas de quem pede** (o âmbito, como em tudo);
+   * - um treino com presenças registadas e um jogo disputado nunca se mexem;
+   * - **apagar** só o que não tem nada agarrado: presenças, avisos de falta,
+   *   plano de treino, convocatória, ficha de jogo, relatórios, movimentos nas
+   *   contas. Esses ficam de fora, e o caminho para eles é desmarcar.
+   *
+   * Desmarcar não avisa ninguém, como desmarcar um só: o treino aparece riscado
+   * no calendário e na app das famílias.
+   *
+   * Com `ensaio`, não escreve nada e devolve o que aconteceria a cada um: é o
+   * que a janela mostra antes de se confirmar.
+   */
+  async cancelarVarios(ctx: RequestContext, ids: string[], acao: "desmarcar" | "apagar", ensaio: boolean) {
+    if (!can(ctx, "calendar:write")) throw new ForbiddenException("Sem permissão para alterar eventos");
+    const scope = teamScopeFilter(ctx);
+    const unicos = [...new Set(ids)];
+    const agora = new Date();
+
+    return this.prisma.runAs(ctx.academyId, async (db) => {
+      const [treinos, jogos, eventos] = await Promise.all([
+        db.trainingSession.findMany({
+          where: { id: { in: unicos } },
+          select: {
+            id: true, teamId: true, startsAt: true, status: true, attendanceClosedAt: true,
+            objective: true, planNotes: true,
+            _count: { select: { attendance: true, absenceNotices: true, blocks: true, financialTransactions: true } },
+          },
+        }),
+        db.match.findMany({
+          where: { id: { in: unicos } },
+          select: {
+            id: true, teamId: true, startsAt: true, status: true,
+            report: { select: { id: true } }, opponentReport: { select: { id: true } }, plan: { select: { id: true } },
+            _count: { select: { callUps: true, appearances: true, financialTransactions: true, aiAnalyses: true } },
+          },
+        }),
+        db.calendarEvent.findMany({
+          where: { id: { in: unicos } },
+          select: { id: true, teamId: true, startsAt: true, cancelled: true, _count: { select: { financialTransactions: true } } },
+        }),
+      ]);
+
+      type Linha = { id: string; ok: boolean; motivo?: string };
+      const linhas: Linha[] = [];
+      const foraDoAmbito = (teamId: string | null) => Boolean(scope && (teamId === null || !scope.in.includes(teamId)));
+      const passado = (d: Date) => d <= agora;
+
+      const desmarcarTreinos: string[] = [];
+      const apagarTreinos: string[] = [];
+      for (const t of treinos) {
+        let motivo: string | undefined;
+        if (foraDoAmbito(t.teamId)) motivo = "Fora das tuas equipas";
+        else if (passado(t.startsAt)) motivo = "Já começou ou já passou";
+        else if (t.attendanceClosedAt || t._count.attendance > 0) motivo = "Tem presenças registadas";
+        else if (acao === "desmarcar" && t.status === "CANCELLED") motivo = "Já estava desmarcado";
+        else if (acao === "apagar") {
+          const agarrado = [
+            t._count.absenceNotices > 0 && "avisos de falta",
+            (t._count.blocks > 0 || t.objective || t.planNotes) && "plano de treino",
+            t._count.financialTransactions > 0 && "movimentos nas contas",
+          ].filter(Boolean);
+          if (agarrado.length) motivo = `Tem ${agarrado.join(", ")}: desmarca-o em vez de o apagar`;
+        }
+        linhas.push({ id: t.id, ok: !motivo, ...(motivo ? { motivo } : {}) });
+        if (!motivo) (acao === "apagar" ? apagarTreinos : desmarcarTreinos).push(t.id);
+      }
+
+      const desmarcarJogos: string[] = [];
+      const apagarJogos: string[] = [];
+      for (const m of jogos) {
+        let motivo: string | undefined;
+        if (foraDoAmbito(m.teamId)) motivo = "Fora das tuas equipas";
+        else if (passado(m.startsAt)) motivo = "Já começou ou já passou";
+        else if (m.status === "PLAYED") motivo = "Já foi disputado";
+        else if (acao === "desmarcar" && m.status === "CANCELLED") motivo = "Já estava desmarcado";
+        else if (acao === "apagar") {
+          const agarrado = [
+            m._count.callUps > 0 && "convocatória",
+            (m._count.appearances > 0 || m.report) && "ficha de jogo",
+            m.plan && "plano de jogo",
+            m.opponentReport && "relatório do adversário",
+            m._count.financialTransactions > 0 && "movimentos nas contas",
+            m._count.aiAnalyses > 0 && "análise de vídeo",
+          ].filter(Boolean);
+          if (agarrado.length) motivo = `Tem ${agarrado.join(", ")}: desmarca-o em vez de o apagar`;
+        }
+        linhas.push({ id: m.id, ok: !motivo, ...(motivo ? { motivo } : {}) });
+        if (!motivo) (acao === "apagar" ? apagarJogos : desmarcarJogos).push(m.id);
+      }
+
+      const desmarcarEventos: string[] = [];
+      const apagarEventos: string[] = [];
+      for (const e of eventos) {
+        let motivo: string | undefined;
+        if (foraDoAmbito(e.teamId)) motivo = e.teamId === null ? "Evento de toda a academia" : "Fora das tuas equipas";
+        else if (passado(e.startsAt)) motivo = "Já começou ou já passou";
+        else if (acao === "desmarcar" && e.cancelled) motivo = "Já estava desmarcado";
+        else if (acao === "apagar" && e._count.financialTransactions > 0) motivo = "Tem movimentos nas contas: desmarca-o em vez de o apagar";
+        linhas.push({ id: e.id, ok: !motivo, ...(motivo ? { motivo } : {}) });
+        if (!motivo) (acao === "apagar" ? apagarEventos : desmarcarEventos).push(e.id);
+      }
+
+      const achados = new Set(linhas.map((l) => l.id));
+      for (const id of unicos) if (!achados.has(id)) linhas.push({ id, ok: false, motivo: "Não encontrado" });
+
+      const feitos = linhas.filter((l) => l.ok).length;
+      if (!ensaio && feitos > 0) {
+        if (acao === "desmarcar") {
+          if (desmarcarTreinos.length) await db.trainingSession.updateMany({ where: { id: { in: desmarcarTreinos } }, data: { status: "CANCELLED" } });
+          if (desmarcarJogos.length) await db.match.updateMany({ where: { id: { in: desmarcarJogos } }, data: { status: "CANCELLED" } });
+          if (desmarcarEventos.length) await db.calendarEvent.updateMany({ where: { id: { in: desmarcarEventos } }, data: { cancelled: true } });
+        } else {
+          if (apagarTreinos.length) await db.trainingSession.deleteMany({ where: { id: { in: apagarTreinos } } });
+          if (apagarJogos.length) await db.match.deleteMany({ where: { id: { in: apagarJogos } } });
+          if (apagarEventos.length) await db.calendarEvent.deleteMany({ where: { id: { in: apagarEventos } } });
+        }
+      }
+
+      return { ensaio, acao, feitos, ficamDeFora: linhas.length - feitos, linhas };
     });
   }
 

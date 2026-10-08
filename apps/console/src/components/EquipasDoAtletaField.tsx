@@ -37,6 +37,11 @@ export type LinhaDeEquipa = {
   position: string;
   /** Uma equipa do atleta que quem edita não gere — mostra-se, não se muda. */
   fechada?: boolean;
+  /**
+   * O n.º de licença na modalidade desta equipa, na época dela. Só na
+   * inscrição (`comLicenca`): depois gere-se no separador Licenças da ficha.
+   */
+  licenseNumber?: string;
 };
 
 let contador = 0;
@@ -72,6 +77,7 @@ export function equipasParaApi(linhas: LinhaDeEquipa[]) {
     teamId: l.teamId,
     squadNumber: l.squadNumber === "" ? null : Number(l.squadNumber),
     position: l.position.trim() || null,
+    ...(l.licenseNumber?.trim() ? { licenseNumber: l.licenseNumber.trim() } : {}),
   }));
 }
 
@@ -87,11 +93,14 @@ export function EquipasDoAtletaField({
   linhas,
   onChange,
   teams,
+  comLicenca = false,
 }: {
   linhas: LinhaDeEquipa[];
   onChange: (linhas: LinhaDeEquipa[]) => void;
   /** As equipas que quem preenche pode escolher (o âmbito dele). */
   teams: Team[];
+  /** Pergunta o n.º de licença em cada linha. Só na inscrição. */
+  comLicenca?: boolean;
 }) {
   // As modalidades que têm equipas que se podem escolher, pela ordem do clube.
   const modalidades = academy.sports.filter((s) => teams.some((t) => t.sportId === s.id));
@@ -220,6 +229,17 @@ export function EquipasDoAtletaField({
                 </select>
               )}
             </div>
+
+            {comLicenca && (
+              <input
+                aria-label={`N.º de licença em ${nome}`}
+                placeholder={`N.º de licença${variasModalidades ? ` em ${sportById(l.sportId)?.name ?? "esta modalidade"}` : ""} (opcional)`}
+                value={l.licenseNumber ?? ""}
+                onChange={(e) => mudar(l.chave, { licenseNumber: e.target.value.slice(0, 40) })}
+                autoComplete="off"
+                className={cx(dialogInputClass, "mt-2")}
+              />
+            )}
           </div>
         );
       })}

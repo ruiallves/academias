@@ -11,6 +11,7 @@ import type {
   WorkerCompleteDto,
   WorkerFailDto,
   WorkerHeartbeatDto,
+  WorkerLiveSegmentDto,
   WorkerModelDto,
   WorkerTracksDto,
   WorkerUploadUrlDto,
@@ -112,6 +113,7 @@ export class AiWorkerService {
           id: true,
           kind: true,
           title: true,
+          calibration: true,
           team: { select: { id: true, name: true, maxAge: true, sport: { select: { name: true } } } },
           squad: {
             select: {
@@ -188,6 +190,8 @@ export class AiWorkerService {
           team: analysis.team.name,
           sport: analysis.team.sport.name,
           maxAge: analysis.team.maxAge,
+          // A calibração do campo, se já existir (reprocessar, ou calibrar antes de carregar).
+          calibration: analysis.calibration ?? null,
           squad: analysis.squad.map((s) => ({
             athleteId: s.athleteId,
             name: s.athlete.name,
@@ -316,7 +320,20 @@ export class AiWorkerService {
         });
       }
     });
-    return { ok: true };
+
+    /*
+     * O que o treinador decidiu entretanto vai na resposta.
+     *
+     * A calibração do campo e a cor da nossa equipa chegam a meio do jogo a
+     * correr, com o job já reclamado. O worker não tem porta para lhe
+     * ligarmos; o heartbeat bate de cinco em cinco segundos, e é o canal que
+     * já existe. Só para a detecção — é ela que mede metros.
+     */
+    if (job.kind !== "detect_track") return { ok: true };
+    const analysis = await this.prisma.runAs(job.academyId, (db) =>
+      db.aIAnalysis.findFirst({ where: { id: job.analysisId }, select: { calibration: true, oursKitColor: true } }),
+    );
+    return { ok: true, calibration: analysis?.calibration ?? null, oursKitColor: analysis?.oursKitColor ?? null };
   }
 
   /**
@@ -553,6 +570,8 @@ export class AiWorkerService {
      * ninguém vê chegar até ao dia em que chega.
      */
     await this.writeTracks(db, job, tracks, allowed);
+    // "A" e "B" passam a "nossa" e "deles" se o treinador já escolheu a cor.
+    await this.jobs.resolveSides(db, job.analysisId);
 
     const analysis = await db.aIAnalysis.findFirst({
       where: { id: job.analysisId },
@@ -660,6 +679,76 @@ export class AiWorkerService {
     return { ok: true, saved: gravados };
   }
 
+  /**
+   * Um troço do vídeo a correr — guardado assim que chega, para a consola o
+   * desenhar enquanto o resto se processa.
+   *
+   * ## O que se valida, e porquê aqui
+   *
+   * O corpo vem de um worker com token, mas é o que a consola vai desenhar
+   * frame a frame: cada caixa passa pelo crivo — seis números finitos, dentro
+   * do vídeo — e o que não passa cai em silêncio. Um troço mal formado não
+   * pode partir o ecrã de quem está a ver, e não pode rejeitar o troço inteiro
+   * por uma caixa.
+   *
+   * Só a detecção manda troços; de outro job é ignorado, não é erro.
+   */
+  async saveLiveSegment(jobId: string, dto: WorkerLiveSegmentDto) {
+    const job = await this.locate(jobId);
+    if (job.kind !== "detect_track") return { ok: true, ignored: true };
+
+    const [w, h] = dto.video.length === 2 ? dto.video : [0, 0];
+    const frames: [number, (number | null)[][], (number | null)[] | null, number][] = [];
+    for (const raw of dto.frames) {
+      if (!Array.isArray(raw) || raw.length < 2 || !Number.isFinite(raw[0]) || !Array.isArray(raw[1])) continue;
+      const caixas: (number | null)[][] = [];
+      for (const c of raw[1] as unknown[]) {
+        if (!Array.isArray(c) || c.length < 5 || !c.slice(0, 5).every((n) => Number.isFinite(n))) continue;
+        const [tid, x1, y1, x2, y2] = c as number[];
+        if (x2 <= x1 || y2 <= y1 || (w > 0 && (x1 > w || x2 < 0)) || (h > 0 && (y1 > h || y2 < 0))) continue;
+        const grupo = Number.isFinite(c[6]) ? Math.min(3, Math.max(0, Math.trunc(c[6] as number))) : 0;
+        // Em metros, quando o campo está calibrado; nulos quando não.
+        const metros = metrosDe(c[7], c[8]);
+        caixas.push([Math.trunc(tid), Math.round(x1), Math.round(y1), Math.round(x2), Math.round(y2), clamp01(c[5]) ?? 0, grupo, ...metros]);
+      }
+      // A bola: [x, y, conf, X, Y] dentro do vídeo, ou nula.
+      const b = raw[2];
+      const bola =
+        Array.isArray(b) && b.length >= 2 && Number.isFinite(b[0]) && Number.isFinite(b[1]) && (w === 0 || (b[0] >= 0 && b[0] <= w))
+          ? [Math.round(b[0] as number), Math.round(b[1] as number), clamp01(b[2]) ?? 0, ...metrosDe(b[3], b[4])]
+          : null;
+      // Quantas pessoas o detector viu neste frame (contra as que o tracker devolveu).
+      const detectadas = Number.isFinite(raw[3]) ? Math.max(0, Math.trunc(raw[3] as number)) : caixas.length;
+      frames.push([Math.trunc(raw[0] as number), caixas, bola, detectadas]);
+    }
+    if (frames.length === 0) return { ok: true, empty: true };
+
+    // As cores das equipas: só o que for mesmo [r, g, b].
+    const teams: Record<string, number[]> = {};
+    for (const [letra, rgb] of Object.entries(dto.teams ?? {})) {
+      if (["A", "B"].includes(letra) && Array.isArray(rgb) && rgb.length === 3 && rgb.every((n) => Number.isFinite(n))) {
+        teams[letra] = (rgb as number[]).map((n) => Math.min(255, Math.max(0, Math.round(n))));
+      }
+    }
+
+    await this.prisma.runAs(job.academyId, async (db) => {
+      const data = { video: [w, h], frames, stats: dto.stats ?? {}, teams };
+      await db.aILiveSegment.upsert({
+        where: { analysisId_index: { analysisId: job.analysisId, index: dto.index } },
+        create: {
+          academyId: job.academyId,
+          analysisId: job.analysisId,
+          index: dto.index,
+          fromMs: Math.max(0, Math.trunc(dto.fromMs)),
+          toMs: Math.max(0, Math.trunc(dto.toMs)),
+          data,
+        },
+        update: { fromMs: Math.max(0, Math.trunc(dto.fromMs)), toMs: Math.max(0, Math.trunc(dto.toMs)), data },
+      });
+    });
+    return { ok: true };
+  }
+
   /* ---------------------------------------------------------------------- */
   /* A purga do vídeo                                                       */
   /* ---------------------------------------------------------------------- */
@@ -699,7 +788,7 @@ export class AiWorkerService {
       db.playerTrack.findMany({
         where: { analysisId },
         select: {
-          trackNumber: true, firstMs: true, lastMs: true,
+          trackNumber: true, firstMs: true, lastMs: true, side: true, summary: true,
           identity: { select: { status: true, athleteId: true } },
         },
       }),
@@ -714,6 +803,10 @@ export class AiWorkerService {
         firstMs: t.firstMs,
         lastMs: t.lastMs,
         confirmedAthleteId: t.identity?.status === "confirmed" ? t.identity.athleteId : null,
+        // A equipa pela cor ("A"/"B"/"other") e o lado já resolvido: duas
+        // pessoas de equipas diferentes nunca são a mesma identidade.
+        kitGroup: (t.summary as { kitGroup?: string } | null)?.kitGroup ?? null,
+        side: t.side,
       })),
       confirmed: confirmadas.map((i) => ({
         identityId: i.id,
@@ -889,6 +982,9 @@ export class AiWorkerService {
       where: { id: video.id },
       data: { status: "PURGED", holder: null, purgedAt: new Date(), updatedAt: new Date() },
     });
+    // Os troços ao vivo eram para ver com o vídeo; sem vídeo, o que fica são
+    // as posições finais no Storage — mais pequenas e com a numeração certa.
+    await db.aILiveSegment.deleteMany({ where: { analysisId: job.analysisId } });
   }
 
   /* ---------------------------------------------------------------------- */
@@ -977,6 +1073,14 @@ function overallProgress(kind: string, jobProgress: number): number {
   };
   const [from, to] = windows[kind] ?? [0, 100];
   return Math.min(100, Math.max(0, Math.round(from + ((to - from) * jobProgress) / 100)));
+}
+
+/** Uma posição em metros vinda do worker: os dois números, ou dois nulos. */
+function metrosDe(x: unknown, y: unknown): [number | null, number | null] {
+  if (typeof x === "number" && typeof y === "number" && Number.isFinite(x) && Number.isFinite(y)) {
+    return [Math.round(x * 10) / 10, Math.round(y * 10) / 10];
+  }
+  return [null, null];
 }
 
 function clamp01(x: unknown): number | null {

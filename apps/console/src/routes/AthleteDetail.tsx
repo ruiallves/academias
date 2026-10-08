@@ -18,6 +18,7 @@ import {
 import { Segmented } from "@/components/filters";
 import { AthleteKitPanel } from "@/components/inventory/AthleteKitPanel";
 import { AthleteDocuments } from "@/components/AthleteDocuments";
+import { LicencasDoAtleta } from "@/components/LicencasDoAtleta";
 import { SchoolGrades } from "@/components/SchoolGrades";
 import { ClinicalPanel } from "@/components/ClinicalPanel";
 import { MedicalInfoPanel } from "@/components/MedicalInfoPanel";
@@ -47,6 +48,7 @@ import {
   Link2,
   LogOut,
   Pencil,
+  Plus,
   Ruler,
   Star,
   Timer,
@@ -84,6 +86,8 @@ import { reloadAcademy, useStore } from "@/lib/store";
 import { age, longDate, money, percent, periodLabel, relativeDays, shortDate, time } from "@/lib/format";
 import { can, mayReadTaxId } from "@/lib/permissions";
 import { AthleteEditPanel } from "@/components/AthleteEditPanel";
+import { FeeStatusControl } from "@/components/finance/FeeStatusControl";
+import { NewFeeDialog } from "@/components/finance/NewFeeDialog";
 import { useSession } from "@/session";
 import type { Athlete, Fee } from "@/data/types";
 
@@ -244,7 +248,20 @@ export default function AthleteDetail() {
       )}
       {tab === "matches" && <Matches athleteId={id} matches={matches} />}
       {tab === "attendance" && <Attendance athleteId={id} />}
-      {tab === "documents" && <AthleteDocuments athlete={athlete} />}
+      {tab === "documents" && (
+        /*
+          Como no Clínico: os documentos ao centro, e ao lado as licenças
+          federativas, que são o outro papel que se pede ao atleta.
+        */
+        <div className="grid items-start gap-3 lg:grid-cols-[minmax(0,1fr)_320px]">
+          <div className="min-w-0">
+            <AthleteDocuments athlete={athlete} />
+          </div>
+          <aside className="min-w-0 space-y-3 lg:sticky lg:top-4">
+            <LicencasDoAtleta athlete={athlete} />
+          </aside>
+        </div>
+      )}
       {tab === "school" && <SchoolGrades athlete={athlete} />}
       {tab === "clinical" && <Clinical athlete={athlete} />}
       {tab === "kit" && <AthleteKitPanel athleteId={athlete.id} athleteName={athlete.name} />}
@@ -1304,6 +1321,9 @@ function FeesTab({ athlete }: { athlete: Athlete }) {
   const { session } = useSession();
   const mayConfigure = can(session, "billing:write");
   const history = feeHistory(athlete.id);
+  // Lançar uma mensalidade só a este atleta: o diálogo das Mensalidades, com ele já escolhido.
+  const [aLancar, setALancar] = useState(false);
+  useEffect(() => setALancar(false), [athlete.id]);
 
   return (
     <div className="space-y-3">
@@ -1316,7 +1336,14 @@ function FeesTab({ athlete }: { athlete: Athlete }) {
       </Panel>
 
       <Panel>
-        <PanelHead title="Histórico" hint={`${history.length}`} />
+        <PanelHead title="Histórico" hint={`${history.length}`}>
+          {mayConfigure && (
+            <button type="button" onClick={() => setALancar(true)} className="ctl-outline">
+              <Plus className="size-3.5" strokeWidth={2} />
+              Lançar mensalidade
+            </button>
+          )}
+        </PanelHead>
         {history.length === 0 ? (
           <div className="px-5 py-12">
             <Empty icon={Wallet} title="Sem mensalidades ainda" />
@@ -1324,11 +1351,13 @@ function FeesTab({ athlete }: { athlete: Athlete }) {
         ) : (
           <ul>
             {history.map((f) => (
-              <LinhaDoHistorico key={f.id} fee={f} />
+              <LinhaDoHistorico key={f.id} fee={f} editavel={mayConfigure} />
             ))}
           </ul>
         )}
       </Panel>
+
+      {aLancar && <NewFeeDialog atleta={athlete} onClose={() => setALancar(false)} onDone={() => setALancar(false)} />}
     </div>
   );
 }
@@ -1355,7 +1384,7 @@ function FeesTab({ athlete }: { athlete: Athlete }) {
  * O identificador é o que casa este pagamento com o backoffice da euPago, por
  * isso vai em monoespaçado e selecciona-se de uma vez — é para copiar.
  */
-function LinhaDoHistorico({ fee: f }: { fee: Fee }) {
+function LinhaDoHistorico({ fee: f, editavel }: { fee: Fee; editavel: boolean }) {
   const pago = f.status === "paid";
   const vencido = f.status === "overdue";
 
@@ -1372,7 +1401,8 @@ function LinhaDoHistorico({ fee: f }: { fee: Fee }) {
           )}
         </span>
         <span className="shrink-0 text-meta text-ink tabular">{money(f.amountCents)}</span>
-        <Pill tone={FEE_STATUS_TONE[f.status]}>{FEE_STATUS_LABEL[f.status]}</Pill>
+        {/* Quem gere mensalidades muda o estado aqui, como na página de Mensalidades. */}
+        {editavel ? <FeeStatusControl fee={f} /> : <Pill tone={FEE_STATUS_TONE[f.status]}>{FEE_STATUS_LABEL[f.status]}</Pill>}
       </div>
 
       {pago ? (

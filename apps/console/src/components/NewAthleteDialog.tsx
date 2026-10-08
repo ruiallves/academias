@@ -8,6 +8,7 @@ import { ATHLETE_SEXES, ATHLETE_SEX_LABEL } from "@/lib/genero";
 import { Dialog, DialogField, dialogInputClass } from "./Dialog";
 import { EquipasDoAtletaField, equipasParaApi, linhaNova, problemaDasEquipas, type LinhaDeEquipa } from "./EquipasDoAtletaField";
 import { IdentificacaoField, identificacaoInicial, identificacaoOk, identificacaoParaApi } from "./IdentificacaoField";
+import { MoradaField, moradaParaApi, moradaVazia } from "./MoradaField";
 
 /**
  * Criar atleta.
@@ -43,6 +44,7 @@ export function NewAthleteDialog({
   );
   /** O email do próprio atleta — opcional; com ele, pode sair o convite da app. */
   const [email, setEmail] = useState("");
+  const [morada, setMorada] = useState(moradaVazia);
   /*
    * Ligado por omissão: quem escreve o email ao balcão quer, quase sempre, que
    * o atleta entre na app. Desligar serve quem carrega a ficha antes de o
@@ -107,6 +109,7 @@ export function NewAthleteDialog({
         // As equipas, cada uma com o seu número e posição; a primeira é a principal.
         equipas: equipasParaApi(linhas),
         ...identificacaoParaApi(ident, "criar"),
+        ...moradaParaApi(morada, "criar"),
         ...(email.trim() ? { email: email.trim().toLowerCase(), sendInvite: convidar } : {}),
       });
       await reloadAcademy();
@@ -178,6 +181,9 @@ export function NewAthleteDialog({
           */}
           <IdentificacaoField value={ident} onChange={setIdent} />
 
+          {/* O CC e a morada, logo a seguir à identificação. Tudo opcional. */}
+          <MoradaField value={morada} onChange={setMorada} />
+
           {/*
             O email é o **do atleta** — e é opcional. Com ele, sai o convite para
             a área de atleta da app; sem ele, a ficha fica na mesma e convida-se
@@ -208,7 +214,7 @@ export function NewAthleteDialog({
             uma com o seu número e posição, e paga a soma das mensalidades.
           */}
           <DialogField label="Equipas" hint="o número e a posição são de cada equipa">
-            <EquipasDoAtletaField linhas={linhas} onChange={setLinhas} teams={teams} />
+            <EquipasDoAtletaField linhas={linhas} onChange={setLinhas} teams={teams} comLicenca />
           </DialogField>
 
           {error && !jaExiste && (

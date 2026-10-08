@@ -6,7 +6,7 @@ import { StorageService } from "../storage/storage.service";
 import { PHOTO_BUCKET } from "../storage/photos.service";
 import { can, teamScopeFilter, type RequestContext, teamScopeForRoster } from "../common/permissions";
 import { gerarCobrancas, periodoActual } from "../billing/billing.service";
-import type { AthleteInputDto, AthleteTaxIdDto, AthleteUpdateDto } from "./athletes.dto";
+import type { AthleteInputDto, AthleteLicenseDto, AthleteTaxIdDto, AthleteUpdateDto } from "./athletes.dto";
 import {
   chavesDeIdentidade,
   DOCUMENTO_VALIDO,
@@ -32,6 +32,7 @@ import {
   type Equipa,
 } from "./equipas-do-atleta";
 import { nomeDeQuemMexe, registarAlteracoes } from "../common/historico";
+import { gravarLicencasDasEquipas, moradaDoPedido, normalizarLicenca } from "./licencas";
 
 /**
  * Criação de atletas — um a um ou em lote a partir de um ficheiro.
@@ -140,6 +141,7 @@ export class AthletesService {
         select: {
           id: true, name: true, email: true, birthdate: true, taxId: true, idDocLabel: true, idDocNumber: true, status: true,
           medicalValidUntil: true, heightCm: true, weightKg: true, dominantSide: true, sex: true, squadNumber: true,
+          address: true, postalCode: true, city: true, citizenCardNumber: true,
           teams: {
             where: { leftAt: null },
             select: { id: true, teamId: true, position: true, squadNumber: true, team: { select: { name: true } } },
@@ -201,6 +203,8 @@ export class AthletesService {
       if (dto.weightDg !== undefined) data.weightKg = dto.weightDg / 10;
       if (dto.dominantSide !== undefined) data.dominantSide = dto.dominantSide as DominantSide;
       if (dto.sex !== undefined) data.sex = dto.sex as AthleteSex;
+      // A morada e o CC: opcionais, vazio limpa. Ver `moradaDoPedido`.
+      Object.assign(data, moradaDoPedido(dto));
 
       /*
        * As equipas — cada uma com o seu número e a sua posição.
@@ -273,6 +277,59 @@ export class AthletesService {
         }
         throw error;
       }
+    });
+  }
+
+  /**
+   * A licença de um atleta numa modalidade e numa época: escrever, corrigir ou
+   * apagar (número vazio). É o separador Licenças da ficha.
+   *
+   * O âmbito é o da edição da ficha: quem edita este atleta gere as licenças
+   * dele. A modalidade e a época têm de ser deste clube (a RLS garante-o, e a
+   * leitura transforma o silêncio num erro que se percebe).
+   */
+  async gravarLicenca(ctx: RequestContext, id: string, dto: AthleteLicenseDto) {
+    if (!can(ctx, "athlete:write")) throw new ForbiddenException("Sem permissão para editar atletas");
+
+    return this.prisma.runAs(ctx.academyId, async (db) => {
+      const athlete = await db.athlete.findFirst({
+        where: { id },
+        select: { id: true, teams: { where: { leftAt: null }, select: { teamId: true } } },
+      });
+      if (!athlete) throw new NotFoundException("Atleta não encontrado");
+      if (athlete.teams.length === 0) {
+        if (!can(ctx, "team:write")) throw new ForbiddenException("Este atleta está sem equipa — só quem gere equipas lhe mexe");
+      } else {
+        const teams = await this.teamsInScope(ctx, db);
+        if (!athlete.teams.some((t) => teams.has(t.teamId))) throw new ForbiddenException("Esse atleta está fora do teu âmbito");
+      }
+
+      const [sport, season] = await Promise.all([
+        db.sport.findFirst({ where: { id: dto.sportId }, select: { id: true, name: true } }),
+        db.season.findFirst({ where: { id: dto.seasonId }, select: { id: true, label: true } }),
+      ]);
+      if (!sport) throw new BadRequestException("Modalidade desconhecida");
+      if (!season) throw new BadRequestException("Época desconhecida");
+
+      const chave = { athleteId_sportId_seasonId: { athleteId: id, sportId: sport.id, seasonId: season.id } };
+      const antes = await db.athleteLicense.findUnique({ where: chave, select: { number: true } });
+      const numero = normalizarLicenca(dto.number);
+
+      if (numero) {
+        await db.athleteLicense.upsert({
+          where: chave,
+          create: { academyId: ctx.academyId, athleteId: id, sportId: sport.id, seasonId: season.id, number: numero },
+          update: { number: numero },
+        });
+      } else if (antes) {
+        await db.athleteLicense.delete({ where: chave });
+      }
+
+      // No histórico da ficha, com a modalidade e a época à frente do número.
+      const rotulo = (n: string | null | undefined) => (n ? `${sport.name} ${season.label}: ${n}` : null);
+      await registarAlteracoes(db, ctx, "ATHLETE", id, { licenca: rotulo(antes?.number) }, { licenca: rotulo(numero) }, await nomeDeQuemMexe(db, ctx));
+
+      return { ok: true, number: numero };
     });
   }
 
@@ -672,9 +729,25 @@ export class AthletesService {
           id: true, name: true, birthdate: true, taxId: true, idDocLabel: true, idDocNumber: true, email: true,
           medicalValidUntil: true, heightCm: true, weightKg: true,
           dominantSide: true, sex: true, squadNumber: true,
+          address: true, postalCode: true, city: true, citizenCardNumber: true,
+          licenses: { select: { sportId: true, seasonId: true, number: true } },
           teams: { where: { leftAt: null }, select: { teamId: true, squadNumber: true, position: true }, orderBy: ORDEM_DAS_PASSAGENS },
         },
       });
+
+      /*
+       * A modalidade e a época de cada equipa: é aí que a licença da linha se
+       * escreve, e é com isso que se vê se ela muda.
+       */
+      const daEquipa = new Map(
+        (await db.team.findMany({ select: { id: true, sportId: true, seasonId: true } })).map((t) => [t.id, t]),
+      );
+      const licencaActual = (a: AtletaNoPlantel, teamId: string): string | null => {
+        const t = daEquipa.get(teamId);
+        return (t && a.licenses.find((l) => l.sportId === t.sportId && l.seasonId === t.seasonId)?.number) ?? null;
+      };
+      /* A licença da linha, para a equipa da linha. */
+      const licencasDaLinha = (dto: AthleteInputDto) => (dto.teamId ? [{ teamId: dto.teamId, number: dto.licenseNumber }] : []);
 
       /*
        * Tipados como `AtletaNoPlantel` e não pelo que a leitura devolve: os
@@ -781,6 +854,7 @@ export class AthletesService {
             await entrarNaEquipa(db, jaLaEsta.id, e);
             jaLaEsta.teams.push(e);
           }
+          await gravarLicencasDasEquipas(db, ctx.academyId, jaLaEsta.id, licencasDaLinha(dto));
           equipasJuntadas += novas.length;
           continue;
         }
@@ -794,7 +868,7 @@ export class AthletesService {
          * tirava-lhe a outra sem ninguém pedir.
          */
         if (jaLaEsta) {
-          const mudam = mudancasDoAtleta(jaLaEsta, dto, equipasDaLinha, teams);
+          const mudam = mudancasDoAtleta(jaLaEsta, dto, equipasDaLinha, teams, (teamId) => licencaActual(jaLaEsta, teamId));
 
           if (!opts.sobrescrever) {
             if (mudam.length > 0) {
@@ -809,6 +883,7 @@ export class AthletesService {
               errors.push({ row: line, name: dto.name, error: falhou });
               continue;
             }
+            await gravarLicencasDasEquipas(db, ctx.academyId, jaLaEsta.id, licencasDaLinha(dto));
             updated.push({ id: jaLaEsta.id, name: dto.name.trim() });
           }
           continue;
@@ -842,6 +917,13 @@ export class AthletesService {
             dominantSide: (dto.dominantSide as DominantSide) ?? null,
             sex: (dto.sex as AthleteSex) ?? null,
             squadNumber: equipasDaLinha[0].squadNumber,
+            address: null, postalCode: null, city: null, citizenCardNumber: null,
+            ...moradaDoPedido(dto),
+            licenses: licencasDaLinha(dto).flatMap((l) => {
+              const t = daEquipa.get(l.teamId);
+              const number = normalizarLicenca(l.number);
+              return t && number ? [{ sportId: t.sportId, seasonId: t.seasonId, number }] : [];
+            }),
             teams: [...equipasDaLinha],
           };
           porNomeEData.set(key, nova);
@@ -1098,6 +1180,7 @@ export class AthletesService {
         ...(dto.weightDg !== undefined ? { weightKg: dto.weightDg / 10 } : {}),
         ...(dto.dominantSide !== undefined ? { dominantSide: dto.dominantSide as DominantSide } : {}),
         ...(dto.sex !== undefined ? { sex: dto.sex as AthleteSex } : {}),
+        ...moradaDoPedido(dto),
       },
     });
 
@@ -1214,6 +1297,7 @@ export class AthletesService {
       ...(dto.weightDg != null ? { weightKg: dto.weightDg / 10 } : {}),
       ...(dto.dominantSide ? { dominantSide: dto.dominantSide as DominantSide } : {}),
       ...(dto.sex ? { sex: dto.sex as AthleteSex } : {}),
+      ...moradaDoPedido(dto),
       // O número da equipa principal, para quem ainda lê esta coluna.
       ...(equipas[0].squadNumber != null ? { squadNumber: equipas[0].squadNumber } : {}),
       teams: {
@@ -1230,6 +1314,17 @@ export class AthletesService {
 
     try {
       const athlete = await db.athlete.create({ data, select: { id: true, name: true } });
+      // A licença de cada equipa, na modalidade e na época dela. Ver `licencas.ts`.
+      await gravarLicencasDasEquipas(
+        db,
+        academyId,
+        athlete.id,
+        dto.equipas
+          ? dto.equipas.map((e) => ({ teamId: e.teamId, number: e.licenseNumber }))
+          : dto.teamId
+            ? [{ teamId: dto.teamId, number: dto.licenseNumber }]
+            : [],
+      );
       return { athlete };
     } catch (error) {
       // Um choque de número de camisola já na base, ou outra restrição — devolvido
@@ -1301,6 +1396,12 @@ type AtletaNoPlantel = {
   dominantSide: DominantSide | null;
   sex: AthleteSex | null;
   squadNumber: number | null;
+  address: string | null;
+  postalCode: string | null;
+  city: string | null;
+  citizenCardNumber: string | null;
+  /** As licenças de todas as épocas. Ver `AthleteLicense`. */
+  licenses: { sportId: string; seasonId: string; number: string }[];
   /** As equipas vivas, a principal primeiro, cada uma com o seu número e posição. */
   teams: { teamId: string; squadNumber: number | null; position: string | null }[];
 };
@@ -1325,6 +1426,7 @@ function mudancasDoAtleta(
   dto: AthleteInputDto,
   equipas: Equipa[],
   teams: Map<string, string>,
+  licencaActual: (teamId: string) => string | null = () => null,
 ): string[] {
   const mudam: string[] = [];
 
@@ -1341,6 +1443,16 @@ function mudancasDoAtleta(
   if (dto.weightDg !== undefined && Number(actual.weightKg ?? 0) * 10 !== dto.weightDg) mudam.push("peso");
   if (dto.dominantSide !== undefined && actual.dominantSide !== dto.dominantSide) mudam.push("lado dominante");
   if (dto.sex !== undefined && actual.sex !== dto.sex) mudam.push("sexo");
+  const morada = moradaDoPedido(dto);
+  if (morada.address !== undefined && actual.address !== morada.address) mudam.push("morada");
+  if (morada.postalCode !== undefined && actual.postalCode !== morada.postalCode) mudam.push("código postal");
+  if (morada.city !== undefined && actual.city !== morada.city) mudam.push("localidade");
+  if (morada.citizenCardNumber !== undefined && actual.citizenCardNumber !== morada.citizenCardNumber) mudam.push("cartão de cidadão");
+  /* A licença só conta preenchida: uma célula vazia é uma coluna que ninguém preencheu. */
+  const licenca = normalizarLicenca(dto.licenseNumber);
+  if (licenca && dto.teamId && licencaActual(dto.teamId) !== licenca) {
+    mudam.push(`licença em ${teams.get(dto.teamId) ?? "outra equipa"}`);
+  }
 
   /*
    * O número e a posição são de cada equipa. Numa equipa nova, entrar já diz

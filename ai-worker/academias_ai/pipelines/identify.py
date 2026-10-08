@@ -463,6 +463,17 @@ def _distance_matrix(
     D[sobre > OVERLAP_MS] = CANNOT_LINK
     g = np.array([grupo_cor.get(t, 0) for t in ids])
     D[g[:, None] != g[None, :]] = CANNOT_LINK
+    # E a equipa que o `detect_track` já atribuiu pela cor ao longo do jogo
+    # inteiro ("A"/"B"/"other") — mais fiável do que os três recortes de um
+    # track. Um guarda-redes e um jogador de campo, ou dois de equipas
+    # diferentes, nunca são a mesma pessoa, seja qual for a parecença.
+    equipa = [str(por_numero[t].get("kitGroup") or "") for t in ids]
+    for i in range(n):
+        if not equipa[i]:
+            continue
+        for j in range(i + 1, n):
+            if equipa[j] and equipa[j] != equipa[i]:
+                D[i, j] = D[j, i] = CANNOT_LINK
     np.fill_diagonal(D, 0.0)
     return np.maximum(D, 0.0)
 
@@ -554,6 +565,12 @@ def _describe_identity(
     presenca = sum(max(0, t["lastMs"] - t["firstMs"]) for t in tracks)
     grupo = Counter(grupo_cor.get(t, 0) for t in membros).most_common(1)[0][0]
     lado = lado_por_grupo.get(grupo, "unknown")
+    # O lado que a API já resolveu com a cor escolhida pelo treinador manda
+    # sobre o que se adivinha das âncoras: é o que ele disse, não o que parece.
+    lados = Counter(str(t.get("side") or "unknown") for t in tracks)
+    lados.pop("unknown", None)
+    if lados:
+        lado = lados.most_common(1)[0][0]
 
     # Número de camisola: votação entre os tracks, pesada pela confiança.
     votos: dict[int, float] = defaultdict(float)

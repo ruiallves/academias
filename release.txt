@@ -1,4 +1,22 @@
+08/10/2026
+- Calendário: novo botão "Cancelar eventos" para desmarcar ou apagar vários de uma vez. Escolhem-se as equipas, o tipo (treinos, jogos, torneios, outros), as datas, os dias da semana e a hora; vê-se a lista antes de confirmar e tira-se o que não é para tirar. Só entram eventos que ainda não começaram, e o que tem presenças, convocatória, plano ou avisos de falta não se apaga (fica de fora com o motivo).
+
 07/10/2026
+- Exercícios: o filtro "Todas as variantes" deu lugar ao filtro "Todas as pessoas". Abre uma lista com pesquisa no topo, por nome ou por escalão, onde cada pessoa que criou exercícios aparece com os escalões que treina e quantos exercícios criou. Escolhem-se vários de uma vez, e a biblioteca mostra só os exercícios criados por eles.
+- Academias AI: o vídeo a correr com a IA por cima. Na ficha da análise, assim que a detecção começa, o jogo aparece a correr com as caixas dos jogadores desenhadas em cima e um painel ao lado (pessoas em campo, pessoas vistas, mapa de onde o jogo se jogou). Já não é preciso esperar pela barra até ao fim. Depois de o vídeo ser apagado fica o mesmo palco, sem imagem, com as posições e os nomes.
+- Academias AI: o tracking passou a seguir os jogadores de verdade (17 por frame em vez de 11, e 12 vezes menos fragmentos). Duas causas: a afinação do seguimento a 5 frames por segundo, e a câmara, que não é fixa; o seguimento passou a compensar as panorâmicas e o zoom.
+- Academias AI, o vídeo a correr: o vídeo arranca sozinho ao pé de onde a IA vai, acelera quando fica para trás e salta se ficar muito atrás; as caixas acompanham os jogadores entre frames em vez de ficarem paradas ao lado deles.
+- Academias AI: cada pessoa em campo recebe um número que se mantém enquanto a IA não a perder de vista (antes cada troço de seguimento tinha o seu, e "pessoas vistas" subia aos duzentos em dois minutos).
+- Academias AI: a IA separa as equipas pela cor do equipamento e põe árbitros e guarda-redes em "outros". O treinador diz qual é a nossa com um clique na cor, no painel do jogo; a partir daí as caixas, os tracks e o mapa de calor ficam "nós" e "eles".
+- Academias AI: a bola passou a ser detetada e desenhada no vídeo, e o painel mostra a posse de bola das duas equipas, sempre com a percentagem de tempo em que a bola foi mesmo vista.
+- Academias AI: a bola é vista de perto (um segundo olhar em alta resolução à volta de onde estava), e as bolas de reserva paradas atrás da baliza ou na linha deixam de passar por bola do jogo.
+- Academias AI: quando dois jogadores de equipas diferentes se cruzam, o quadrado deixa de saltar de um para o outro; a cor do equipamento desfaz a troca.
+- Academias AI: a análise ficou cerca de duas vezes mais rápida na mesma máquina (1,95× o tempo real com tudo ligado), o que permite o vídeo a correr acompanhar o jogo.
+- Academias AI: o treinador pode calibrar o campo no painel do jogo (4 a 6 cliques em pontos conhecidos, uma vez por jogo). A partir daí a IA sabe o que está dentro das linhas: pessoas na bancada e bolas de reserva deixam de contar, e o mapa de onde se jogou passa a ser sobre o campo em metros. Se a câmara cortar, o painel pede para calibrar outra vez.
+- Academias AI: uma identidade deixa de poder juntar jogadores de equipas diferentes, ou um guarda-redes com um jogador de campo, por muito que se pareçam.
+- Atletas: novos campos opcionais de morada, código postal, localidade e n.º do Cartão de Cidadão, no Novo atleta, na edição da ficha e na importação/exportação em Excel.
+- Atletas: licenças federativas por modalidade e por época. Editam-se em "Editar ficha" e no separador Documentos (à direita, como a nutrição no Clínico); no Novo atleta e na importação (coluna "N.º de licença") a licença fica na modalidade e na época da equipa.
+- Ficha do atleta, Mensalidades: dá para mudar o estado de cada mensalidade (paga, por pagar, anulada, apagar) e lançar uma mensalidade só para esse atleta.
 - Plano de treino: quando o treino não tem treinador escolhido, o plano e o PDF mostram o treinador principal da equipa (antes o campo saía vazio).
 
 05/10/2026

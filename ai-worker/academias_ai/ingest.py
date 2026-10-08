@@ -24,6 +24,7 @@ anunciado — nem um byte a mais.
     GET  /ingest/{bilhete}            quantos bytes já cá estão → {received}
     PUT  /ingest/{bilhete}?offset=N   um bloco, a partir de N → {received}
     POST /ingest/{bilhete}/complete   verifica, mede, avisa a API → {ok}
+    GET  /ingest/{bilhete}/video      o vídeo, com Range — só com bilhete de ver
 
 E uma quinta, que não é do browser mas da API:
 
@@ -237,7 +238,7 @@ class _Handler(BaseHTTPRequestHandler):
         # pode tentar; sem bilhete válido leva 401 antes de custar um byte.
         self.send_header("Access-Control-Allow-Origin", "*")
         self.send_header("Access-Control-Allow-Methods", "GET, POST, PUT, OPTIONS")
-        self.send_header("Access-Control-Allow-Headers", "Content-Type")
+        self.send_header("Access-Control-Allow-Headers", "Content-Type, Range")
         self.send_header("Access-Control-Max-Age", "86400")
 
     def _json(self, status: int, body: dict[str, Any]) -> None:
@@ -301,12 +302,79 @@ class _Handler(BaseHTTPRequestHandler):
         if kind == "health":
             free = shutil.disk_usage(config.SPOOL).free
             return self._json(200, {"ok": True, "worker": config.WORKER_NAME, "spoolFreeBytes": free})
-        if kind != "ingest" or action is not None:
+        if kind != "ingest" or action not in (None, "video"):
             return self._json(404, {"error": "não há nada aqui"})
         ticket = verify_ticket(token or "")
         if not ticket:
             return self._json(401, {"error": "bilhete inválido ou caducado"})
+        if action == "video":
+            return self._video(ticket)
         return self._json(200, {"received": _received(spool_path(ticket["v"], ticket.get("m", "")))})
+
+    # --- ver -------------------------------------------------------------------
+
+    def _video(self, ticket: dict[str, Any]) -> None:
+        """O vídeo, para o `<video>` da consola — enquanto ele cá estiver.
+
+        É o que permite ver o jogo a correr com as caixas da IA por cima
+        enquanto a máquina processa. O bilhete é de **ver** (`k: "play"`), e
+        não o de carregar: um bilhete de carregamento autoriza escrever bytes,
+        e não pode passar a ler imagem de menores só por ter a mesma chave.
+
+        Com `Range`, porque é assim que um browser vê vídeo: pede os primeiros
+        bytes, salta para o minuto 40, volta atrás. Sem `Range` um `<video>` de
+        dois gigabytes nem arranca.
+        """
+        if ticket.get("k") != "play":
+            return self._json(403, {"error": "este bilhete não autoriza ver o vídeo"})
+        path = spool_path(ticket["v"], ticket.get("m", ""))
+        if not path.exists():
+            return self._json(404, {"error": "o vídeo já não está neste worker"})
+
+        tamanho = path.stat().st_size
+        inicio, fim = 0, tamanho - 1
+        pedido = (self.headers.get("Range") or "").strip()
+        parcial = False
+        if pedido.startswith("bytes="):
+            a, _, b = pedido[6:].partition("-")
+            try:
+                if a:
+                    inicio = int(a)
+                    fim = int(b) if b else tamanho - 1
+                elif b:
+                    inicio = max(0, tamanho - int(b))
+            except ValueError:
+                inicio, fim = 0, tamanho - 1
+            fim = min(fim, tamanho - 1)
+            if inicio > fim or inicio >= tamanho:
+                self.send_response(416)
+                self._cors()
+                self.send_header("Content-Range", f"bytes */{tamanho}")
+                self.send_header("Content-Length", "0")
+                self.end_headers()
+                return
+            parcial = True
+
+        comprimento = fim - inicio + 1
+        self.send_response(206 if parcial else 200)
+        self._cors()
+        self.send_header("Content-Type", ticket.get("m") or "video/mp4")
+        self.send_header("Accept-Ranges", "bytes")
+        self.send_header("Content-Length", str(comprimento))
+        if parcial:
+            self.send_header("Content-Range", f"bytes {inicio}-{fim}/{tamanho}")
+        self.send_header("Cache-Control", "private, max-age=3600")
+        self.end_headers()
+
+        with path.open("rb") as fh:
+            fh.seek(inicio)
+            restante = comprimento
+            while restante > 0:
+                bloco = fh.read(min(restante, 1 << 20))
+                if not bloco:
+                    break
+                self.wfile.write(bloco)
+                restante -= len(bloco)
 
     def do_POST(self) -> None:  # noqa: N802
         kind, token, action, _ = self._route()

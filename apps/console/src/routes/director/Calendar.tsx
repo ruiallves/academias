@@ -7,9 +7,10 @@ import { Segmented } from "@/components/filters";
 import { MonthGrid } from "@/components/MonthGrid";
 import { NewEventDialog } from "@/components/NewEventDialog";
 import { ImportCalendarDialog } from "@/components/ImportCalendarDialog";
+import { CancelarEventosDialog } from "@/components/CancelarEventosDialog";
 import { ExportCalendarDialog } from "@/components/ExportCalendarDialog";
 import { EventDetail } from "@/components/EventDetail";
-import { CalendarDays, ChevronLeft, ChevronRight, Download, Loader2, Plus, Upload } from "@/lib/icons";
+import { Ban, CalendarDays, ChevronLeft, ChevronRight, Download, Loader2, Plus, Upload } from "@/lib/icons";
 import type { CategoricalColor } from "@academia/ui/tokens";
 import { coachById, listTeams, today } from "@/lib/api";
 import {
@@ -74,6 +75,8 @@ export default function Calendar() {
   const [importando, setImportando] = useState(false);
   /* Exportar pergunta primeiro o período e a equipa. Ver `ExportCalendarDialog`. */
   const [exportando, setExportando] = useState(false);
+  /* Cancelar vários de uma vez. Ver `CancelarEventosDialog`. */
+  const [cancelando, setCancelando] = useState(false);
 
   
   /**
@@ -216,6 +219,11 @@ export default function Calendar() {
               <Upload className="size-3.5" strokeWidth={1.75} />
               Importar
             </button>
+            {/* Desfazer uma série marcada por engano, sem ir evento a evento. */}
+            <button type="button" onClick={() => setCancelando(true)} className="ctl-outline">
+              <Ban className="size-3.5" strokeWidth={1.75} />
+              Cancelar eventos
+            </button>
             <button
               type="button"
               onClick={() => {
@@ -349,6 +357,7 @@ export default function Calendar() {
       )}
 
       {importando && <ImportCalendarDialog onClose={() => setImportando(false)} />}
+      {cancelando && <CancelarEventosDialog onClose={() => setCancelando(false)} />}
       {exportando && <ExportCalendarDialog onClose={() => setExportando(false)} />}
 
       {selected && (

@@ -42,6 +42,13 @@ export type IngestTicket = {
   m: string;
   /** Expiração — segundos Unix. */
   e: number;
+  /**
+   * O que o bilhete autoriza. Ausente = carregar (o bilhete original); `"play"`
+   * = **ver** o vídeo enquanto está no disco do worker. São poderes diferentes
+   * com a mesma chave: um bilhete de carregar nunca lê um byte, e o worker
+   * recusa-o na porta de ver.
+   */
+  k?: "play";
 };
 
 const b64 = (buf: Buffer | string) => Buffer.from(buf).toString("base64url");

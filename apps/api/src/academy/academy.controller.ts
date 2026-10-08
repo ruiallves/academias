@@ -9,9 +9,9 @@ import { ImportarCalendarioDto } from "./events-import.dto";
 import { SHORT_NAME_MAX } from "../common/short-name";
 import { AthletesService } from "./athletes.service";
 import { SeasonsService } from "./seasons.service";
-import { AthleteInputDto, AthleteTaxIdDto, AthleteUpdateDto, ImportAthletesDto } from "./athletes.dto";
+import { AthleteInputDto, AthleteLicenseDto, AthleteTaxIdDto, AthleteUpdateDto, ImportAthletesDto } from "./athletes.dto";
 import { CreateTeamDto, ImportTeamsDto, TEAM_GENDERS, type TeamGenderValue } from "./teams.dto";
-import { AttendanceDto, CreateEventDto, EditEventDto, UpdateEventDto, AbsenceNoticeDto } from "./events.dto";
+import { AttendanceDto, CancelarVariosDto, CreateEventDto, EditEventDto, UpdateEventDto, AbsenceNoticeDto } from "./events.dto";
 import { BillingService, METODOS_MANUAIS, periodoActual, type AplicarEm, type MetodoManual } from "../billing/billing.service";
 
 /**
@@ -686,6 +686,12 @@ export class AcademyController {
     return this.athletes.update(req.ctx, id, body);
   }
 
+  /** A licença numa modalidade e numa época. Número vazio apaga. Ver `AthletesService.gravarLicenca`. */
+  @Put("athletes/:id/licenca")
+  setAthleteLicense(@Req() req: AuthedRequest, @Param("id") id: string, @Body() body: AthleteLicenseDto) {
+    return this.athletes.gravarLicenca(req.ctx, id, body);
+  }
+
   @Patch("athletes/:id/nif")
   setAthleteTaxId(@Req() req: AuthedRequest, @Param("id") id: string, @Body() body: AthleteTaxIdDto) {
     return this.athletes.setTaxId(req.ctx, id, body);
@@ -899,6 +905,16 @@ export class AcademyController {
   @Post("events/import")
   importEvents(@Req() req: AuthedRequest, @Body() body: ImportarCalendarioDto) {
     return this.eventsImport.importar(req.ctx, body.rows, { ensaio: body.ensaio });
+  }
+
+  /**
+   * Cancelar vários eventos de uma vez (o botão "Cancelar eventos" do
+   * calendário). Antes de `events/:id`, para `cancelar-varios` não ser lido
+   * como um id. Ver `AcademyService.cancelarVarios`.
+   */
+  @Post("events/cancelar-varios")
+  cancelarVarios(@Req() req: AuthedRequest, @Body() body: CancelarVariosDto) {
+    return this.academy.cancelarVarios(req.ctx, body.ids, body.acao, body.ensaio === true);
   }
 
   /** Cancelar ou reativar um evento. */

@@ -121,6 +121,15 @@ TILES = int(_num("AI_WORKER_TILES", 1))
 SCORE_THRESHOLD = _num("AI_WORKER_SCORE_THRESHOLD", 0.5)
 
 
+# --- O vídeo a correr: resultados enquanto se processa -------------------------
+#
+# A detecção manda as caixas à API de tantos em tantos segundos de vídeo, e a
+# consola desenha-as em cima do vídeo enquanto a máquina ainda vai a meio. É o
+# que transforma uma barra de duas horas num jogo a correr com a IA por cima.
+# 0 desliga: o resultado chega inteiro no fim, como antes.
+LIVE_SEGMENT_SEC = _num("AI_WORKER_LIVE_SEGMENT_SEC", 10.0)
+
+
 def validate() -> None:
     if not TOKEN or len(TOKEN) < 16:
         raise SystemExit(

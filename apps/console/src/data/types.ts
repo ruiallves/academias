@@ -281,6 +281,13 @@ export type Athlete = {
    */
   idDocLabel?: string;
   idDocNumber?: string;
+  /** A morada e o n.º do Cartão de Cidadão. Mesma regra de leitura do NIF: vazios para quem não a tem. */
+  address?: string;
+  postalCode?: string;
+  city?: string;
+  citizenCardNumber?: string;
+  /** As licenças federativas, uma por modalidade e época. Ver `AthleteLicense` na API. */
+  licencas: { sportId: string; seasonId: string; number: string }[];
   /**
    * A equipa. **Vazio quando não tem nenhuma** — e isso acontece a sério:
    * apagar uma equipa deixa os atletas dela sem ligação a plantel nenhum.

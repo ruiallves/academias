@@ -29,6 +29,7 @@ import {
   identityNeedsReview,
   type Identity,
 } from "@/lib/ai";
+import LiveViewer from "./LiveViewer";
 
 /**
  * A ficha de uma análise — o centro da Academias AI.
@@ -241,6 +242,15 @@ export default function AnalysisDetail() {
             </button>
           </div>
         </Panel>
+      )}
+
+      {/*
+        O jogo com a IA por cima — o vídeo a correr com as caixas do tracking,
+        desde o primeiro troço processado. Aparece assim que a detecção entra
+        na fila; depois da purga do vídeo fica o palco escuro com as posições.
+      */}
+      {detail.videos.length > 0 && detail.jobs.some((j) => j.kind === "detect_track") && (
+        <LiveViewer detail={detail} onChanged={() => load(true)} />
       )}
 
       {detail.status === "FAILED" && detail.failReason && (

@@ -1210,6 +1210,10 @@ export type ExerciseSummary = {
   imageCount?: number;
   mine: boolean;
   authorName: string | null;
+  /** Quem criou (a membership). Nulo na biblioteca base. Ausente num servidor antigo. */
+  authorId?: string | null;
+  /** Os escalões que quem criou treina hoje. Ausente num servidor antigo. */
+  authorTeams?: string[];
   favorite: boolean;
   usageCount: number;
   lastUsedAt: string | null;

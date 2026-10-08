@@ -72,13 +72,28 @@ type PorConfirmar = { athleteId: string; name: string; period: string; amountCen
  * quem emite Agosto a uma equipa é que todos fiquem com Agosto, não recusar a
  * equipa inteira por causa de um que já o tinha.
  */
-export function NewFeeDialog({ onClose, onDone }: { onClose: () => void; onDone: () => void }) {
+export function NewFeeDialog({
+  onClose,
+  onDone,
+  atleta,
+}: {
+  onClose: () => void;
+  onDone: () => void;
+  /**
+   * Lançar só para este atleta, a partir da ficha dele. A escolha de "a quem"
+   * desaparece: o atleta já está escolhido.
+   */
+  atleta?: Athlete;
+}) {
   const { session } = useSession();
-  const activos = useMemo(() => listAthletes(session).filter((a) => a.status === "active"), [session]);
+  const activos = useMemo(
+    () => (atleta ? [atleta] : listAthletes(session).filter((a) => a.status === "active")),
+    [session, atleta],
+  );
   const equipas = useMemo(() => listTeams(session), [session]);
 
   const [alvo, setAlvo] = useState<Alvo>("atletas");
-  const [escolhidos, setEscolhidos] = useState<Set<string>>(new Set());
+  const [escolhidos, setEscolhidos] = useState<Set<string>>(() => new Set(atleta ? [atleta.id] : []));
   const [equipasEscolhidas, setEquipasEscolhidas] = useState<Set<string>>(new Set());
   const [procura, setProcura] = useState("");
   const [modo, setModo] = useState<ModoValor>("preco");
@@ -255,7 +270,7 @@ export function NewFeeDialog({ onClose, onDone }: { onClose: () => void; onDone:
     <Dialog
       labelledBy="lancar-mensalidade"
       title="Lançar mensalidade"
-      subtitle="A atletas, equipas ou ao clube todo, nos meses que escolheres."
+      subtitle={atleta ? `Para ${atleta.name}, nos meses que escolheres.` : "A atletas, equipas ou ao clube todo, nos meses que escolheres."}
       icon={<Receipt className="size-4" strokeWidth={1.75} />}
       onClose={() => !porConfirmar && onClose()}
       width={580}
@@ -276,6 +291,7 @@ export function NewFeeDialog({ onClose, onDone }: { onClose: () => void; onDone:
     >
       <form id="form-mensalidade" onSubmit={submeter} className="space-y-4 p-5">
 
+        {!atleta && (
         <fieldset>
           <legend className="mb-1.5 text-meta font-medium text-ink">A quem</legend>
           <Segmented<Alvo>
@@ -332,6 +348,7 @@ export function NewFeeDialog({ onClose, onDone }: { onClose: () => void; onDone:
             )}
           </div>
         </fieldset>
+        )}
 
         <fieldset>
           <legend className="mb-1.5 text-meta font-medium text-ink">Valor</legend>

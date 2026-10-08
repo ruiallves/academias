@@ -52,6 +52,17 @@ export const COLUMNS = [
   { key: "weightKg", header: "Peso (kg)", required: false, example: "41.5" },
   { key: "dominantSide", header: "Lado dominante", required: false, example: "Direito" },
   { key: "sex", header: "Sexo", required: false, example: "Feminino" },
+  /*
+   * As colunas novas vão no fim, para as folhas antigas continuarem a servir.
+   *
+   * A licença é da modalidade da equipa da linha, na época dessa equipa: um
+   * atleta em futebol e futsal são duas linhas, cada uma com a sua licença.
+   */
+  { key: "licenseNumber", header: "N.º de licença", required: false, example: "1234567" },
+  { key: "citizenCardNumber", header: "N.º do CC", required: false, example: "12345678 9ZZ1" },
+  { key: "address", header: "Morada", required: false, example: "Rua do Estádio, 10" },
+  { key: "postalCode", header: "Código postal", required: false, example: "4700-000" },
+  { key: "city", header: "Localidade", required: false, example: "Braga" },
 ] as const;
 
 /** Uma linha depois de validada no cliente, pronta para o servidor. */
@@ -81,6 +92,11 @@ export type ParsedRow = {
   weightDg?: number;
   dominantSide?: "RIGHT" | "LEFT" | "BOTH";
   sex?: "FEMALE" | "MALE";
+  licenseNumber?: string;
+  citizenCardNumber?: string;
+  address?: string;
+  postalCode?: string;
+  city?: string;
 };
 
 export type RowError = { line: number; name: string; error: string };
@@ -134,7 +150,7 @@ export async function buildTemplate(): Promise<Blob> {
   const example = COLUMNS.map((c) => c.example);
   // O mesmo atleta, noutra equipa: mesmo NIF, outra equipa, outro número.
   const outraEquipa = COLUMNS.map((c) =>
-    c.key === "team" ? "Sub-11 Futsal" : c.key === "squadNumber" ? "10" : c.key === "position" ? "Ala" : c.example,
+    c.key === "team" ? "Sub-11 Futsal" : c.key === "squadNumber" ? "10" : c.key === "position" ? "Ala" : c.key === "licenseNumber" ? "7654321" : c.example,
   );
   const sheet = XLSX.utils.aoa_to_sheet([header, example, outraEquipa]);
   sheet["!cols"] = COLUMNS.map((c) => ({ wch: Math.max(c.header.length, 16) }));
@@ -146,6 +162,9 @@ export async function buildTemplate(): Promise<Blob> {
     ["Um atleta em várias equipas (futebol e futsal, por exemplo)?"],
     ["Repete a linha com o mesmo NIF, uma por equipa, cada uma com o seu número e posição."],
     ["As duas linhas de exemplo da folha Atletas são o mesmo atleta em duas equipas."],
+    [""],
+    ["N.º de licença: o da federação na modalidade dessa equipa, para a época dela."],
+    ["Futebol e futsal são duas linhas, cada uma com a sua licença."],
     [""],
     ["Uma equipa que ainda não exista pode ser escrita à mesma."],
     ["Ao importar, perguntamos se a queres criar."],
@@ -323,6 +342,18 @@ export async function parseFile(file: File): Promise<ParseResult> {
     const sexo = get("Sexo").toLowerCase();
     if (sexo.startsWith("f")) row.sex = "FEMALE";
     else if (sexo.startsWith("m")) row.sex = "MALE";
+
+    // Texto livre, só quando vem: uma célula vazia não apaga o que a ficha tem.
+    const licenca = get("N.º de licença").trim();
+    if (licenca) row.licenseNumber = licenca.slice(0, 40);
+    const cc = get("N.º do CC").trim();
+    if (cc) row.citizenCardNumber = cc.toUpperCase().slice(0, 20);
+    const morada = get("Morada").trim();
+    if (morada) row.address = morada.slice(0, 200);
+    const codigo = get("Código postal").trim();
+    if (codigo) row.postalCode = codigo.slice(0, 20);
+    const localidade = get("Localidade").trim();
+    if (localidade) row.city = localidade.slice(0, 80);
 
     valid.push(row);
   });

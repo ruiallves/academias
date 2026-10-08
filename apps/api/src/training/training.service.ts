@@ -87,7 +87,17 @@ export class TrainingService {
           intensity: true, players: true, durationMin: true, space: true, material: true,
           ageMin: true, ageMax: true, complexity: true, visibility: true, videoUrl: true,
           diagram: true, imageKeys: true, createdById: true, updatedAt: true, sportId: true,
-          createdBy: { select: { user: { select: { name: true } } } },
+          createdBy: {
+            select: {
+              user: { select: { name: true } },
+              // Os escalões que treina hoje: é o que o filtro por treinador mostra ao lado do nome.
+              coachOf: {
+                where: { leftAt: null },
+                orderBy: { team: { maxAge: "asc" } },
+                select: { team: { select: { name: true } } },
+              },
+            },
+          },
           favorites: { where: { membershipId: ctx.membershipId }, select: { id: true } },
         },
       });
@@ -141,6 +151,9 @@ export class TrainingService {
         imageCount: e.imageKeys.length,
         mine: e.createdById === ctx.membershipId,
         authorName: e.createdBy?.user.name ?? null,
+        /** Quem criou (a membership) e as equipas que treina: o filtro por treinador. Nulo na biblioteca base. */
+        authorId: e.createdById,
+        authorTeams: [...new Set(e.createdBy?.coachOf.map((c) => c.team.name) ?? [])],
         favorite: e.favorites.length > 0,
         usageCount: uses.get(e.id)?.count ?? 0,
         lastUsedAt: uses.get(e.id)?.last ?? null,

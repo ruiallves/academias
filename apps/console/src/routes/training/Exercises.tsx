@@ -6,7 +6,8 @@ import { Empty, Loading, Panel, Pill, SelectField, cx } from "@/components/primi
 import { Film, Plus, Search, Star } from "@/lib/icons";
 import { shortDate } from "@/lib/format";
 import { can } from "@/lib/permissions";
-import { FORMAT_LABEL, asDiagram, formatOf, listExercises, setExerciseFavorite, type ExerciseSummary } from "@/lib/training";
+import { listExercises, setExerciseFavorite, type ExerciseSummary } from "@/lib/training";
+import { FiltroDeTreinadores, type TreinadorDaBiblioteca } from "@/components/training/FiltroDeTreinadores";
 import { useSession } from "@/session";
 import { useSportArea } from "./sport-area-context";
 
@@ -26,10 +27,15 @@ type Tab = "all" | "fav" | "mine" | "used";
  *
  * ## O que vem da modalidade
  *
- * A lista pede só os exercícios desta modalidade, e o vocabulário dos filtros
- * — categorias de objectivo, variantes de terreno — é o do perfil dela. O
- * futebol filtra por "Organização ofensiva" e por "Futebol 7"; o basquetebol
- * por "Tomada de decisão", e não tem variantes para escolher.
+ * A lista pede só os exercícios desta modalidade, e as categorias de objectivo
+ * são as do perfil dela: o futebol filtra por "Organização ofensiva", o
+ * basquetebol por "Tomada de decisão".
+ *
+ * ## Por treinador
+ *
+ * O filtro das variantes de terreno deu lugar ao de treinadores: escolhem-se
+ * um ou vários, pelo nome ou pelo escalão que treinam, e vêem-se os exercícios
+ * que cada um criou. Ver `FiltroDeTreinadores`.
  */
 export default function Exercises() {
   const { sport, profile, path } = useSportArea();
@@ -37,14 +43,13 @@ export default function Exercises() {
   const navigate = useNavigate();
   const mayWrite = can(session, "training:write");
   const categories = profile.exercises.categories;
-  const formats = profile.vocabulary.formats;
 
   const [rows, setRows] = useState<ExerciseSummary[] | null>(null);
   const [tab, setTab] = useState<Tab>("all");
   const [q, setQ] = useState("");
   const [category, setCategory] = useState("");
   const [intensity, setIntensity] = useState("");
-  const [variant, setVariant] = useState("");
+  const [treinadores, setTreinadores] = useState<Set<string>>(new Set());
 
   useEffect(() => {
     setRows(null);
@@ -57,16 +62,7 @@ export default function Exercises() {
     let out = rows.filter((e) => {
       if (tab === "fav" && !e.favorite) return false;
       if (tab === "mine" && !e.mine) return false;
-      /*
-       * A variante deriva do terreno do desenho — não é um campo à parte para
-       * preencher. Um exercício sem desenho não declara variante e passa em
-       * todos os filtros: esconder por falta de dado seria fazê-lo desaparecer
-       * da biblioteca de quem filtra.
-       */
-      if (variant) {
-        const field = asDiagram(e.thumbnail)?.field;
-        if (field && formatOf(field) !== variant) return false;
-      }
+      if (treinadores.size > 0 && !(e.authorId && treinadores.has(e.authorId))) return false;
       if (category && e.category !== category) return false;
       if (intensity) {
         const n = e.intensity ?? 0;
@@ -84,7 +80,19 @@ export default function Exercises() {
     });
     if (tab === "used") out = [...out].sort((a, b) => b.usageCount - a.usageCount);
     return out;
-  }, [rows, tab, q, category, intensity, variant]);
+  }, [rows, tab, q, category, intensity, treinadores]);
+
+  /* Quem criou exercícios nesta modalidade, com os escalões que treina e quantos criou. */
+  const autores = useMemo<TreinadorDaBiblioteca[]>(() => {
+    const porId = new Map<string, TreinadorDaBiblioteca>();
+    for (const e of rows ?? []) {
+      if (!e.authorId || !e.authorName) continue;
+      const t = porId.get(e.authorId);
+      if (t) t.count++;
+      else porId.set(e.authorId, { id: e.authorId, name: e.authorName, teams: e.authorTeams ?? [], count: 1 });
+    }
+    return [...porId.values()].sort((a, b) => a.name.localeCompare(b.name, "pt"));
+  }, [rows]);
 
   async function toggleFavorite(e: ExerciseSummary) {
     // A estrela responde já; se o servidor recusar, volta atrás.
@@ -133,19 +141,7 @@ export default function Exercises() {
           ))}
 
           <div className="ml-auto flex flex-wrap items-center gap-1.5">
-            {/* Uma variante só (basquetebol, futsal) não é um filtro. */}
-            {formats.length > 1 && (
-              <SelectField
-                aria-label="Variante"
-                size="sm"
-                value={variant}
-                onChange={setVariant}
-                options={[
-                  { value: "", label: "Todas as variantes" },
-                  ...formats.map((f) => ({ value: f, label: FORMAT_LABEL[f] })),
-                ]}
-              />
-            )}
+            <FiltroDeTreinadores treinadores={autores} escolhidos={treinadores} onChange={setTreinadores} />
             <SelectField
               aria-label="Objetivo"
               size="sm"

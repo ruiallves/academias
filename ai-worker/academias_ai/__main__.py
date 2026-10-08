@@ -81,7 +81,9 @@ def _work(job: dict[str, Any], pipeline: Any) -> None:
         if now - last_beat >= 5:
             last_beat = now
             try:
-                api.heartbeat(job_id, value)
+                # O que o treinador decidiu entretanto (calibração do campo, a
+                # nossa cor) vem na resposta; a pipeline lê-o em `job["live"]`.
+                job["live"] = api.heartbeat(job_id, value)
             except api.JobGone:
                 raise
             except requests.RequestException:

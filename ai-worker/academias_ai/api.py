@@ -88,23 +88,28 @@ def claim(kinds: list[str]) -> dict[str, Any] | None:
     return _post("/api/ai/worker/claim", {"worker": config.WORKER_NAME, "kinds": kinds})
 
 
-def heartbeat(job_id: str, progress: int | None = None) -> None:
+def heartbeat(job_id: str, progress: int | None = None) -> dict[str, Any]:
     """Diz que ainda cá está — e ouve a resposta.
 
     O 404 é a única forma que a API tem de dizer "esse job desapareceu": não há
     canal do servidor para o worker, e inventar um (websocket, fila de comandos)
     para uma mensagem que já cabe aqui era construir infra-estrutura a mais. O
     heartbeat já bate de cinco em cinco segundos; é o sítio certo para ouvir.
+
+    E é também por aqui que chega o que o treinador decide a meio do jogo a
+    correr — a calibração do campo, a cor da nossa equipa: vêm na resposta,
+    e quem processa lê-as (ver `job["live"]` em `__main__`).
     """
     body: dict[str, Any] = {"worker": config.WORKER_NAME}
     if progress is not None:
         body["progress"] = max(0, min(100, int(progress)))
     try:
-        _post(f"/api/ai/worker/jobs/{job_id}/heartbeat", body)
+        resposta = _post(f"/api/ai/worker/jobs/{job_id}/heartbeat", body)
     except requests.HTTPError as error:
         if error.response is not None and error.response.status_code == 404:
             raise JobGone(job_id) from error
         raise
+    return resposta if isinstance(resposta, dict) else {}
 
 
 LOTE_TRACKS = 400
@@ -127,6 +132,20 @@ def send_tracks(job_id: str, tracks: list[dict[str, Any]]) -> None:
             f"/api/ai/worker/jobs/{job_id}/tracks",
             {"tracks": tracks[i : i + LOTE_TRACKS], "reset": i == 0},
         )
+
+
+def send_live_segment(job_id: str, segment: dict[str, Any]) -> None:
+    """Um troço do jogo já processado, para a consola desenhar enquanto o resto corre.
+
+    É o único pedido que **não sobe** quando falha: o vídeo a correr é um
+    conforto para quem está a ver, e o resultado final vai pelo caminho de
+    sempre. Perder um troço ao vivo custa dez segundos de caixas no ecrã;
+    deixar morrer uma hora de detecção por causa dele custava a tarde.
+    """
+    try:
+        _post(f"/api/ai/worker/jobs/{job_id}/live", segment, timeout=30)
+    except requests.RequestException as erro:
+        print(f"[api] troço ao vivo {segment.get('index')} perdido ({type(erro).__name__}); a detecção continua")
 
 
 def complete(job_id: str, result: dict[str, Any], model_versions: dict[str, str] | None = None) -> None:

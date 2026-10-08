@@ -1,6 +1,6 @@
 import { BadRequestException, ForbiddenException, Injectable, NotFoundException } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
-import { PrismaService } from "../prisma/prisma.service";
+import { PrismaService, type ScopedClient } from "../prisma/prisma.service";
 import { issueTicket } from "./ai-ticket";
 import { can, teamScopeFilter, type RequestContext } from "../common/permissions";
 import { AiVideoService, videoExtensionFor } from "./ai-video.service";
@@ -8,6 +8,8 @@ import { AiJobsService } from "./ai-jobs.service";
 import { AiPresenceService } from "./ai-presence.service";
 import { EspacoService } from "../storage/espaco.service";
 import type {
+  CalibrationDto,
+  ChooseKitDto,
   CompleteVideoDto,
   CreateAnalysisDto,
   IdentifyIdentityDto,
@@ -204,7 +206,7 @@ export class AiService {
           tracks: {
             orderBy: { firstMs: "asc" },
             select: {
-              id: true, trackNumber: true, side: true, jerseyNumber: true,
+              id: true, trackNumber: true, identityId: true, side: true, jerseyNumber: true,
               athleteId: true, athlete: { select: { name: true } },
               identityConfidence: true, trackConfidence: true,
               firstMs: true, lastMs: true, frameCount: true, summary: true, status: true,
@@ -309,6 +311,152 @@ export class AiService {
     };
   }
 
+  /**
+   * O vídeo a correr: os troços já processados, a partir do `after`.
+   *
+   * A consola chama isto de três em três segundos enquanto a detecção corre,
+   * com o último índice que tem; vem só o que é novo. Um jogo inteiro são uns
+   * seiscentos troços de 10 s, e o primeiro carregamento pede-os às dezenas —
+   * `LIVE_PAGE` por volta — até a resposta vir curta.
+   *
+   * `processing` diz se ainda há detecção a correr: é o que decide se o ecrã
+   * continua a perguntar ou pára de vez.
+   */
+  async liveSegments(ctx: RequestContext, analysisId: string, after: number) {
+    if (!can(ctx, "ai:read")) throw new ForbiddenException("Sem acesso à Academias AI");
+    const teamScope = teamScopeFilter(ctx);
+
+    return this.prisma.runAs(ctx.academyId, async (db) => {
+      const a = await db.aIAnalysis.findFirst({
+        where: { id: analysisId, ...(teamScope ? { teamId: teamScope } : {}) },
+        select: {
+          id: true,
+          jobs: {
+            where: { kind: "detect_track", status: { in: ["PENDING", "CLAIMED", "RUNNING"] } },
+            select: { id: true },
+            take: 1,
+          },
+        },
+      });
+      if (!a) throw new NotFoundException("Análise não encontrada");
+
+      const rows = await db.aILiveSegment.findMany({
+        where: { analysisId, index: { gt: after } },
+        orderBy: { index: "asc" },
+        take: LIVE_PAGE,
+        select: { index: true, fromMs: true, toMs: true, data: true },
+      });
+      return {
+        processing: a.jobs.length > 0,
+        more: rows.length === LIVE_PAGE,
+        segments: rows,
+      };
+    });
+  }
+
+  /**
+   * As posições finais por frame — o ficheiro que a detecção deixou no
+   * Storage, por link curto. É o que a consola lê quando a detecção acabou:
+   * numeração final, fragmentos já colados, e os nomes vêm dos tracks e das
+   * identidades de sempre. `url: null` enquanto o ficheiro não existir.
+   */
+  async analysisPositions(ctx: RequestContext, analysisId: string) {
+    if (!can(ctx, "ai:read")) throw new ForbiddenException("Sem acesso à Academias AI");
+    const teamScope = teamScopeFilter(ctx);
+
+    const found = await this.prisma.runAs(ctx.academyId, (db) =>
+      db.aIAnalysis.findFirst({
+        where: { id: analysisId, ...(teamScope ? { teamId: teamScope } : {}) },
+        select: { id: true },
+      }),
+    );
+    if (!found) throw new NotFoundException("Análise não encontrada");
+
+    // Fora da transação: é rede.
+    const key = `${ctx.academyId}/${analysisId}/derived/tracks/positions.json.gz`;
+    if (!(await this.video.exists(key))) return { url: null, expiresIn: 0 };
+    return { url: await this.video.signDownload(key, 600), expiresIn: 600 };
+  }
+
+  /**
+   * O treinador escolheu a cor do nosso equipamento.
+   *
+   * Pode ser a meio do jogo a correr ou depois: os tracks que já existem
+   * ganham lado agora (`resolveSides`), e os que a detecção ainda vai
+   * escrever ganham-no quando ela fechar. Trocar de ideias é escolher outra.
+   */
+  async chooseKit(ctx: RequestContext, id: string, dto: ChooseKitDto) {
+    if (!can(ctx, "ai:write")) throw new ForbiddenException("Sem permissão");
+    const teamScope = teamScopeFilter(ctx);
+
+    return this.prisma.runAs(ctx.academyId, async (db) => {
+      const a = await db.aIAnalysis.findFirst({
+        where: { id, ...(teamScope ? { teamId: teamScope } : {}) },
+        select: { id: true },
+      });
+      if (!a) throw new NotFoundException("Análise não encontrada");
+      await db.aIAnalysis.update({ where: { id }, data: { oursKitColor: dto.color.toLowerCase(), updatedAt: new Date() } });
+      await this.jobs.resolveSides(db, id);
+      await this.jobs.recomputeReview(db, id);
+      return { ok: true };
+    }, { timeoutMs: 60_000 });
+  }
+
+  /**
+   * O treinador calibrou o campo.
+   *
+   * Verifica-se a homografia que a consola calculou: cada ponto clicado,
+   * passado por `H`, tem de cair a menos de `CALIBRATION_TOLERANCE_M` do
+   * ponto do campo que diz ser. Não é desconfiança da consola; é que quatro
+   * cliques com um trocado dão uma matriz válida e um campo torto, e o lugar
+   * de o apanhar é antes de o worker passar a medir metros com ele. O worker
+   * recebe a calibração no heartbeat seguinte (ver `heartbeat`).
+   */
+  async setCalibration(ctx: RequestContext, id: string, dto: CalibrationDto) {
+    if (!can(ctx, "ai:write")) throw new ForbiddenException("Sem permissão");
+    const teamScope = teamScopeFilter(ctx);
+    // Cinco, não quatro: com quatro a homografia encaixa em quaisquer cliques e o erro dá
+    // sempre zero — a verificação abaixo não mediria nada.
+    if (dto.points.length < 5) throw new BadRequestException("A calibração precisa de pelo menos 5 pontos");
+    // O horizonte acima de todos os pontos clicados: o campo está à frente da câmara.
+    const sinais = dto.points.map((p) => Math.sign(dto.H[6] * p.img[0] + dto.H[7] * p.img[1] + dto.H[8]));
+    if (sinais.some((s) => s === 0 || s !== sinais[0])) {
+      throw new BadRequestException("A calibração não é plausível — um dos pontos não está onde diz");
+    }
+    if (dto.H.length !== 9 || !dto.H.every((n) => Number.isFinite(n))) throw new BadRequestException("Homografia inválida");
+
+    const pior = Math.max(...dto.points.map((p) => {
+      const [x, y] = p.img;
+      const w = dto.H[6] * x + dto.H[7] * y + dto.H[8];
+      if (Math.abs(w) < 1e-9) return Infinity;
+      const X = (dto.H[0] * x + dto.H[1] * y + dto.H[2]) / w;
+      const Y = (dto.H[3] * x + dto.H[4] * y + dto.H[5]) / w;
+      return Math.hypot(X - p.pitch[0], Y - p.pitch[1]);
+    }));
+    if (!(pior <= CALIBRATION_TOLERANCE_M)) {
+      throw new BadRequestException(`Os pontos não batem certo (erro de ${pior.toFixed(1)} m) — confirma os cliques`);
+    }
+
+    return this.prisma.runAs(ctx.academyId, async (db) => {
+      const a = await db.aIAnalysis.findFirst({
+        where: { id, ...(teamScope ? { teamId: teamScope } : {}) },
+        select: { id: true },
+      });
+      if (!a) throw new NotFoundException("Análise não encontrada");
+      const calibration = {
+        pitch: { length: dto.pitch.length, width: dto.pitch.width },
+        atMs: dto.atMs,
+        frame: dto.frame,
+        points: dto.points.map((p) => ({ key: p.key, img: p.img, pitch: p.pitch })),
+        H: dto.H,
+        error: Math.round(pior * 100) / 100,
+        setAt: new Date().toISOString(),
+      };
+      await db.aIAnalysis.update({ where: { id }, data: { calibration, updatedAt: new Date() } });
+      return { ok: true, error: calibration.error };
+    });
+  }
+
   async updateSquad(ctx: RequestContext, id: string, dto: UpdateSquadDto) {
     if (!can(ctx, "ai:write")) throw new ForbiddenException("Sem permissão");
     const teamScope = teamScopeFilter(ctx);
@@ -388,7 +536,32 @@ export class AiService {
 
     await this.video.deletePrefix(`${ctx.academyId}/${id}`);
 
-    await this.prisma.runAs(ctx.academyId, (db) => db.aIAnalysis.delete({ where: { id } }));
+    /*
+     * Os filhos pesados primeiro, em lotes, cada um na sua transação.
+     *
+     * Era um `delete` só, com a cascata a levar tudo: os troços do vídeo a
+     * correr (centenas de linhas com JSON de frames) e milhares de tracks. Num
+     * jogo inteiro passava os 5 s da transação, e a análise ficava por apagar
+     * com os ficheiros já apagados. Em lotes cada transação é curta; se uma
+     * falhar a meio, o que ficou apaga-se na próxima tentativa.
+     */
+    for (const apagar of [
+      async (db: ScopedClient) => {
+        const r = await db.aILiveSegment.findMany({ where: { analysisId: id }, select: { id: true }, take: 50 });
+        return r.length ? (await db.aILiveSegment.deleteMany({ where: { id: { in: r.map((x) => x.id) } } })).count : 0;
+      },
+      async (db: ScopedClient) => {
+        const r = await db.playerTrack.findMany({ where: { analysisId: id }, select: { id: true }, take: 2000 });
+        return r.length ? (await db.playerTrack.deleteMany({ where: { id: { in: r.map((x) => x.id) } } })).count : 0;
+      },
+    ]) {
+      for (let volta = 0; volta < 500; volta++) {
+        const n = await this.prisma.runAs(ctx.academyId, apagar, { timeoutMs: 30_000 });
+        if (n === 0) break;
+      }
+    }
+
+    await this.prisma.runAs(ctx.academyId, (db) => db.aIAnalysis.delete({ where: { id } }), { timeoutMs: 60_000 });
     return { ok: true };
   }
 
@@ -513,19 +686,40 @@ export class AiService {
     });
   }
 
-  /** Um link para ver, válido durante minutos. O player pede outro quando expirar. */
+  /**
+   * Um link para ver, válido durante minutos. O player pede outro quando expirar.
+   *
+   * ## Dois sítios onde o vídeo pode estar
+   *
+   * No disco do worker (o caminho de hoje): o link é a porta de ingestão dele,
+   * com um bilhete de **ver** (`k: "play"`) assinado pela mesma chave do
+   * bilhete de carregar — poderes diferentes, chave igual, e o worker distingue
+   * os dois. É o que deixa a consola pôr o `<video>` a correr com as caixas da
+   * IA por cima enquanto a máquina processa. Depois da purga não há ficheiro em
+   * lado nenhum, e o 404 di-lo.
+   *
+   * No Storage (o caminho antigo): um link assinado curto, como sempre.
+   */
   async videoUrl(ctx: RequestContext, videoId: string) {
     if (!can(ctx, "ai:read")) throw new ForbiddenException("Sem acesso à Academias AI");
+    const teamScope = teamScopeFilter(ctx);
 
     const video = await this.prisma.runAs(ctx.academyId, (db) =>
       db.aIVideo.findFirst({
-        where: { id: videoId, status: "READY" },
-        select: { storageKey: true, holder: true },
+        where: { id: videoId, status: "READY", ...(teamScope ? { analysis: { teamId: teamScope } } : {}) },
+        select: { id: true, analysisId: true, storageKey: true, holder: true, mimeType: true },
       }),
     );
     if (!video) throw new NotFoundException("Vídeo não encontrado");
-    // No disco de um worker não há link para dar — e depois de processado nem ficheiro há.
-    if (video.holder) throw new NotFoundException("O vídeo não fica guardado — só os dados");
+
+    if (video.holder) {
+      const ingest = this.config.get<string>("AI_WORKER_PUBLIC_URL")?.trim().replace(/\/$/, "");
+      const secret = this.config.get<string>("AI_WORKER_TOKEN")?.trim();
+      if (!ingest || !secret) throw new NotFoundException("O vídeo está numa máquina de processamento sem porta de ver");
+      const ttl = 2 * 3600;
+      const ticket = issueTicket(secret, { v: video.id, a: video.analysisId, ac: ctx.academyId, s: 0, m: video.mimeType, k: "play" }, ttl);
+      return { url: `${ingest}/ingest/${ticket}/video`, expiresIn: ttl };
+    }
 
     return { url: await this.video.signDownload(video.storageKey, 600), expiresIn: 600 };
   }
@@ -818,6 +1012,11 @@ export class AiService {
   }
 }
 
+/** Quantos troços do vídeo a correr vêm por pedido. Ver `liveSegments`. */
+const LIVE_PAGE = 60;
+/** Até quantos metros um ponto calibrado pode cair do sítio que diz ser. */
+const CALIBRATION_TOLERANCE_M = 3;
+
 /* -------------------------------------------------------------------------- */
 /* Formas de leitura partilhadas                                              */
 /* -------------------------------------------------------------------------- */
@@ -833,6 +1032,8 @@ const analysisListSelect = {
   progress: true,
   confidence: true,
   reviewCount: true,
+  oursKitColor: true,
+  calibration: true,
   createdAt: true,
   completedAt: true,
   team: { select: { id: true, name: true } },
@@ -842,7 +1043,7 @@ const analysisListSelect = {
 type AnalysisRow = {
   id: string; kind: string; title: string; opponent: string | null; competition: string | null;
   playedOn: Date | null; status: string; progress: number; confidence: unknown;
-  reviewCount: number; createdAt: Date; completedAt: Date | null;
+  reviewCount: number; oursKitColor: string | null; calibration: unknown; createdAt: Date; completedAt: Date | null;
   team: { id: string; name: string }; matchId: string | null;
 };
 
@@ -858,6 +1059,8 @@ function toAnalysisRow(a: AnalysisRow) {
     progress: a.progress,
     confidence: a.confidence ?? null,
     reviewCount: a.reviewCount,
+    oursKitColor: a.oursKitColor ?? null,
+    calibration: a.calibration ?? null,
     createdAt: a.createdAt,
     completedAt: a.completedAt,
     teamId: a.team.id,

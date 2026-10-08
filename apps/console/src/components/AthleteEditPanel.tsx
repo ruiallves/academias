@@ -8,6 +8,9 @@ import { mayReadTaxId, type Session } from "@/lib/permissions";
 import { dialogInputClass } from "./Dialog";
 import { Panel, PanelHead, cx } from "./primitives";
 import { IdentificacaoField, identificacaoInicial, identificacaoOk, identificacaoParaApi } from "./IdentificacaoField";
+import { MoradaField, moradaDoAtleta, moradaParaApi } from "./MoradaField";
+import { epocaDaEquipa, gravarLicenca } from "@/lib/licencas";
+import { seasonList } from "@/lib/store";
 import { EquipasDoAtletaField, equipasParaApi, linhaNova, linhasDoAtleta, problemaDasEquipas, type LinhaDeEquipa } from "./EquipasDoAtletaField";
 
 /**
@@ -60,6 +63,24 @@ export function AthleteEditPanel({
   const [dominantSide, setDominantSide] = useState(sideToApi(athlete.dominantSide));
   const [sex, setSex] = useState<string>(athlete.sex ?? "");
   const [medicalValidUntil, setMedicalValidUntil] = useState(athlete.medicalValidUntil?.slice(0, 10) ?? "");
+  const [morada, setMorada] = useState(() => moradaDoAtleta(athlete));
+  /*
+   * As licenças, uma por modalidade e época das equipas do formulário. A chave é
+   * "modalidade|época"; o valor começa no que está gravado. Acompanham as linhas:
+   * pôr o atleta numa equipa de outra modalidade abre logo o campo dela.
+   */
+  const [licencas, setLicencas] = useState<Record<string, string>>(() =>
+    Object.fromEntries(athlete.licencas.map((l) => [`${l.sportId}|${l.seasonId}`, l.number])),
+  );
+  const gravadas = new Map(athlete.licencas.map((l) => [`${l.sportId}|${l.seasonId}`, l.number]));
+  const camposDeLicenca = [
+    ...new Map(
+      linhas
+        .map((l) => ({ sportId: teamById(l.teamId)?.sportId ?? l.sportId, seasonId: epocaDaEquipa(l.teamId) }))
+        .filter((c): c is { sportId: string; seasonId: string } => Boolean(c.sportId && c.seasonId))
+        .map((c) => [`${c.sportId}|${c.seasonId}`, c] as const),
+    ).values(),
+  ];
 
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -119,6 +140,8 @@ export function AthleteEditPanel({
         // A lista inteira: a que sai da lista sai da equipa. Ver `aplicarEquipas` na API.
         equipas: equipasParaApi(linhas),
         ...(vejoNif ? identificacaoParaApi(ident, "editar") : {}),
+        // A morada e o CC seguem a regra do NIF: só no corpo de quem os vê.
+        ...(vejoNif ? moradaParaApi(morada, "editar") : {}),
         // Vazio apaga: o que se vê é o que fica.
         email: email.trim().toLowerCase(),
         ...(heightCm ? { heightCm: Number(heightCm) } : {}),
@@ -128,6 +151,12 @@ export function AthleteEditPanel({
         ...(sex ? { sex } : {}),
         ...(medicalValidUntil ? { medicalValidUntil } : {}),
       });
+      /* As licenças que mudaram, depois da ficha: cada uma no seu sítio (modalidade e época). */
+      for (const c of camposDeLicenca) {
+        const chave = `${c.sportId}|${c.seasonId}`;
+        const novo = (licencas[chave] ?? "").trim();
+        if (novo !== (gravadas.get(chave) ?? "")) await gravarLicenca(athlete.id, c.sportId, c.seasonId, novo);
+      }
       await reloadAcademy();
       onDone();
     } catch (err) {
@@ -178,6 +207,8 @@ export function AthleteEditPanel({
 
             {/* O NIF, ou outro documento para quem não o tem. Ver `IdentificacaoField`. */}
             {vejoNif && <IdentificacaoField value={ident} onChange={setIdent} />}
+            {/* O CC e a morada, logo a seguir à identificação. Tudo opcional. */}
+            {vejoNif && <MoradaField value={morada} onChange={setMorada} />}
           </div>
         </Panel>
 
@@ -196,6 +227,32 @@ export function AthleteEditPanel({
                 Sai de <strong className="font-medium text-ink">{saiDe.join(", ")}</strong>. As presenças e os jogos já
                 registados ficam como estão: são o histórico de onde este atleta jogou.
               </p>
+            )}
+          </div>
+        </Panel>
+
+        <Panel>
+          <PanelHead title="Licenças" hint="por modalidade, na época da equipa" />
+          <div className="space-y-3 px-5 py-4">
+            {camposDeLicenca.length === 0 ? (
+              <p className="text-meta text-ink-3">Escolhe uma equipa para indicar a licença.</p>
+            ) : (
+              camposDeLicenca.map((c) => {
+                const chave = `${c.sportId}|${c.seasonId}`;
+                const modalidade = sportById(c.sportId)?.name ?? "Modalidade";
+                const epoca = seasonList.find((x) => x.id === c.seasonId)?.label ?? "";
+                return (
+                  <Field key={chave} label={`N.º de licença em ${modalidade}`} hint={epoca ? `época ${epoca}` : undefined}>
+                    <input
+                      value={licencas[chave] ?? ""}
+                      onChange={(e) => setLicencas((v) => ({ ...v, [chave]: e.target.value.slice(0, 40) }))}
+                      placeholder="opcional"
+                      autoComplete="off"
+                      className={dialogInputClass}
+                    />
+                  </Field>
+                );
+              })
             )}
           </div>
         </Panel>

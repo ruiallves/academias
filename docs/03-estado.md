@@ -891,8 +891,11 @@ dito *antes* do processamento, é o que dispensa reconhecimento facial —,
 carregar o vídeo direto para o bucket privado `ai-videos` (o caminho das
 fotografias, com barra de progresso), e o pipeline corre sozinho: verificação
 de qualidade (real: nitidez, luz, estabilidade, terreno — OpenCV) e detecção +
-tracking (torchvision + ByteTrack, ~5 FPS). O detalhe da análise mostra o
-progresso ao vivo, a qualidade por dimensão, a confiança **medida** (nunca uma
+tracking (torchvision + ByteTrack, ~5 FPS). O detalhe da análise mostra **o
+jogo com a IA por cima** (o vídeo a correr com as caixas do tracking desde o
+primeiro troço processado, e um painel com pessoas em campo, pessoas vistas e
+o mapa de onde o jogo se jogou — ver "O vídeo a correr" em 06), a qualidade
+por dimensão, a confiança **medida** (nunca uma
 média — mostra-se o elo fraco), e a fila de revisão: o que ficou abaixo de
 0,75 pede um humano, e a correção vale para o track inteiro e fica guardada
 (`HumanCorrection`, o dataset do fine-tuning futuro). Terminar notifica quem

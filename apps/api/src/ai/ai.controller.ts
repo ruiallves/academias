@@ -1,4 +1,4 @@
-import { Body, Controller, Delete, Get, Param, Patch, Post, Req, UseGuards } from "@nestjs/common";
+import { Body, Controller, Delete, Get, Param, Patch, Post, Query, Req, UseGuards } from "@nestjs/common";
 import { SkipThrottle } from "@nestjs/throttler";
 import type { AuthedRequest } from "../auth/auth.guard";
 import { Public } from "../auth/auth.guard";
@@ -6,6 +6,8 @@ import { AiService } from "./ai.service";
 import { AiWorkerService } from "./ai-worker.service";
 import { AiWorkerGuard } from "./ai-worker.guard";
 import {
+  CalibrationDto,
+  ChooseKitDto,
   CompleteVideoDto,
   CreateAnalysisDto,
   IdentifyIdentityDto,
@@ -16,6 +18,7 @@ import {
   WorkerCompleteDto,
   WorkerFailDto,
   WorkerHeartbeatDto,
+  WorkerLiveSegmentDto,
   WorkerModelDto,
   WorkerTracksDto,
   WorkerUploadUrlDto,
@@ -56,6 +59,18 @@ export class AiController {
     return this.ai.updateSquad(req.ctx, id, dto);
   }
 
+  /** "A nossa equipa é a de cor X" — dito pelo treinador, no vídeo a correr. */
+  @Patch("analyses/:id/kit")
+  kit(@Req() req: AuthedRequest, @Param("id") id: string, @Body() dto: ChooseKitDto) {
+    return this.ai.chooseKit(req.ctx, id, dto);
+  }
+
+  /** O campo, calibrado pelo treinador com 4 a 6 cliques num frame. */
+  @Patch("analyses/:id/calibration")
+  calibration(@Req() req: AuthedRequest, @Param("id") id: string, @Body() dto: CalibrationDto) {
+    return this.ai.setCalibration(req.ctx, id, dto);
+  }
+
   @Delete("analyses/:id")
   remove(@Req() req: AuthedRequest, @Param("id") id: string) {
     return this.ai.deleteAnalysis(req.ctx, id);
@@ -84,6 +99,19 @@ export class AiController {
   @Get("analyses/:id/crops")
   crops(@Req() req: AuthedRequest, @Param("id") id: string) {
     return this.ai.analysisCrops(req.ctx, id);
+  }
+
+  /** Os troços já processados do vídeo a correr — os que vêm depois de `after`. */
+  @Get("analyses/:id/live")
+  live(@Req() req: AuthedRequest, @Param("id") id: string, @Query("after") after?: string) {
+    const n = Number.parseInt(after ?? "", 10);
+    return this.ai.liveSegments(req.ctx, id, Number.isFinite(n) ? n : -1);
+  }
+
+  /** As posições finais por frame — um link curto para o ficheiro da análise. */
+  @Get("analyses/:id/positions")
+  positions(@Req() req: AuthedRequest, @Param("id") id: string) {
+    return this.ai.analysisPositions(req.ctx, id);
   }
 
   @Post("tracks/:id/identify")
@@ -137,6 +165,12 @@ export class AiWorkerController {
   @Post("jobs/:id/tracks")
   tracks(@Param("id") id: string, @Body() dto: WorkerTracksDto) {
     return this.worker.saveTracks(id, dto);
+  }
+
+  /** Um troço do vídeo a correr — ver `WorkerLiveSegmentDto`. */
+  @Post("jobs/:id/live")
+  live(@Param("id") id: string, @Body() dto: WorkerLiveSegmentDto) {
+    return this.worker.saveLiveSegment(id, dto);
   }
 
   @Post("jobs/:id/complete")

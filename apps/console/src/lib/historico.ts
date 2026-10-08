@@ -43,6 +43,8 @@ const CAMPOS: Record<string, string> = {
   squadNumber: "Número",
   team: "Equipa",
   position: "Posição",
+  citizenCardNumber: "Cartão de Cidadão",
+  licenca: "Licença",
   /* Sócio */
   phone: "Telemóvel",
   phoneCountry: "Indicativo",

@@ -162,6 +162,25 @@ export class UpdateEventDto {
 }
 
 /**
+ * Cancelar vários eventos de uma vez: desmarcar (ficam riscados e reactivam-se)
+ * ou apagar (desaparecem). Com `ensaio`, só diz o que aconteceria a cada um.
+ */
+export class CancelarVariosDto {
+  @IsArray()
+  @ArrayMaxSize(500)
+  @IsString({ each: true })
+  @Length(1, 40, { each: true })
+  ids!: string[];
+
+  @IsIn(["desmarcar", "apagar"])
+  acao!: "desmarcar" | "apagar";
+
+  @IsOptional()
+  @IsBoolean()
+  ensaio?: boolean;
+}
+
+/**
  * Uma falta na folha de presenças.
  *
  * `present` não é um valor possível: a presença é a **ausência** de marca, e é

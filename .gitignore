@@ -18,3 +18,7 @@ apps/api/prisma/*.db
 # Gerado por `npm run build:web`: os builds da consola e da app da família,
 # copiados para dentro da API para esta os servir. Nunca se edita nada aqui.
 apps/api/public/
+
+# Vídeos de teste do worker de IA: ficam no disco, nunca no git (o GitHub recusa >100 MB).
+ai-worker/video/
+*.mp4

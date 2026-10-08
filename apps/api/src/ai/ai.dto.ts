@@ -11,6 +11,7 @@ import {
   IsOptional,
   IsString,
   Length,
+  Matches,
   Max,
   Min,
   ValidateNested,
@@ -141,6 +142,70 @@ export class WorkerTracksDto {
   @IsOptional() @IsBoolean() reset?: boolean;
   @IsArray() @ArrayMaxSize(1000) @IsObject({ each: true })
   tracks!: Record<string, unknown>[];
+}
+
+/**
+ * Um troço do jogo já processado, a caminho do ecrã de quem está a ver.
+ *
+ * Dez segundos de vídeo a 5 FPS: cinquenta frames, cada um com as caixas que o
+ * tracker tem abertas. Os tids são os **brutos** — a numeração final só existe
+ * no fim. O resultado definitivo não passa por aqui: vai pelos lotes de tracks
+ * e pelo `complete`, como sempre.
+ */
+export class WorkerLiveSegmentDto {
+  @IsInt() @Min(0) index!: number;
+  @IsInt() @Min(0) fromMs!: number;
+  @IsInt() @Min(0) toMs!: number;
+  /** `[largura, altura]` do vídeo — as caixas estão nessas coordenadas. */
+  @IsArray() @ArrayMaxSize(2) @IsInt({ each: true }) video!: number[];
+  /**
+   * `[[tsMs, [[pessoa, x1, y1, x2, y2, conf, grupo], …], bola], …]` — validado
+   * no serviço. `grupo`: 0 sem equipa, 1 A, 2 B, 3 outros. `bola`: `[x, y,
+   * conf]` ou nula quando não foi vista.
+   */
+  @IsArray() @ArrayMaxSize(600) frames!: unknown[];
+  @IsOptional() @IsObject() stats?: Record<string, unknown>;
+  /** As cores das equipas, `{ A: [r, g, b], B: [r, g, b] }`. */
+  @IsOptional() @IsObject() teams?: Record<string, unknown>;
+}
+
+export class CalibrationPointDto {
+  /** O ponto do campo ("corner_tl", "penalty_spot_l", …) — ver `PITCH_LANDMARKS` na consola. */
+  @IsString() @Length(1, 40) key!: string;
+  /** Onde está na imagem, em píxeis do vídeo. */
+  @IsArray() @ArrayMaxSize(2) @IsNumber({}, { each: true }) img!: number[];
+  /** Onde está no campo, em metros (origem no canto superior esquerdo, X ao comprimento). */
+  @IsArray() @ArrayMaxSize(2) @IsNumber({}, { each: true }) pitch!: number[];
+}
+
+export class PitchSizeDto {
+  @IsNumber() @Min(20) @Max(130) length!: number;
+  @IsNumber() @Min(15) @Max(90) width!: number;
+}
+
+/**
+ * A calibração do campo — 4 a 6 pontos clicados pelo treinador num frame.
+ *
+ * A homografia `H` (imagem → campo, 3×3 por linhas) vem calculada pela consola
+ * a partir dos pontos, e o servidor volta a verificá-la: quatro pontos e uma
+ * matriz que não os reprojecta a menos de uns metros é um erro de clique, não
+ * uma calibração.
+ */
+export class CalibrationDto {
+  @ValidateNested() @Type(() => PitchSizeDto) pitch!: PitchSizeDto;
+  /** O instante do vídeo em que os pontos foram clicados. */
+  @IsInt() @Min(0) atMs!: number;
+  /** `[largura, altura]` do vídeo em que se clicou. */
+  @IsArray() @ArrayMaxSize(2) @IsInt({ each: true }) frame!: number[];
+  @IsArray() @ArrayMaxSize(12) @ValidateNested({ each: true }) @Type(() => CalibrationPointDto)
+  points!: CalibrationPointDto[];
+  @IsArray() @ArrayMaxSize(9) @IsNumber({}, { each: true }) H!: number[];
+}
+
+/** O treinador diz qual é a cor do nosso equipamento neste jogo. */
+export class ChooseKitDto {
+  /** `#rrggbb` — a cor do grupo que ele clicou. */
+  @IsString() @Matches(/^#[0-9a-fA-F]{6}$/) color!: string;
 }
 
 export class WorkerModelDto {

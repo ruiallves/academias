@@ -184,65 +184,66 @@ model Academy {
   membershipPoints   String[] @default([])
 
   /// Estado do cliente na plataforma. Ver `docs/04-plataforma.md`.
-  status       AcademyStatus @default(SETUP)
-  trialEndsAt  DateTime?
-  subscription Subscription?
+  status               AcademyStatus         @default(SETUP)
+  trialEndsAt          DateTime?
+  subscription         Subscription?
   /// Suspenso por falta de pagamento da mensalidade da plataforma: `status` fica
   /// em `PAST_DUE` e a consola e a app fecham até se pagar. Nulo = não está.
   /// Ver `SubscriptionNoticesService.suspender`.
-  suspendedAt DateTime?
+  suspendedAt          DateTime?
   subscriptionPayments SubscriptionPayment[]
 
-  sports         Sport[]
-  seasons        Season[]
-  memberships    Membership[]
-  roles          AcademyRole[]
-  departments    Department[]
-  prospects      Prospect[]
-  observations   Observation[]
-  scoutCriteria  ScoutCriterion[]
-  shortlists     Shortlist[]
-  scoutRequests  ScoutingRequest[]
-  fitDimensions  FitDimension[]
-  prospectVideos ProspectVideo[]
-  memberTiers    MemberTier[]
-  members        Member[]
-  memberFees     MemberFee[]
-  memberFeeSkips MemberFeeSkip[]
-  polls          Poll[]
-  pollOptions    PollOption[]
-  pollVotes      PollVote[]
-  catalog        CatalogItem[]
-  athletes       Athlete[]
-  teams          Team[]
-  sessions       TrainingSession[]
-  trainingCycles TrainingCycle[]
-  profileChanges ProfileChange[]
-  sessionBlocks  SessionBlock[]
-  templates      SessionTemplate[]
-  templateBlocks SessionTemplateBlock[]
-  exercises      Exercise[]
-  gameModels     GameModel[]
-  setPieces      SetPiece[]
-  plans          SubscriptionPlan[]
-  charges        Charge[]
-  chargeSkips    ChargeSkip[]
-  announcements  Announcement[]
-  notifications  Notification[]
-  evaluations    Evaluation[]
-  clinical       ClinicalEntry[]
-  reports        AthleteReport[]
-  nutritionPlans NutritionPlan[]
+  sports              Sport[]
+  seasons             Season[]
+  memberships         Membership[]
+  roles               AcademyRole[]
+  departments         Department[]
+  prospects           Prospect[]
+  observations        Observation[]
+  scoutCriteria       ScoutCriterion[]
+  shortlists          Shortlist[]
+  scoutRequests       ScoutingRequest[]
+  fitDimensions       FitDimension[]
+  prospectVideos      ProspectVideo[]
+  memberTiers         MemberTier[]
+  members             Member[]
+  memberFees          MemberFee[]
+  memberFeeSkips      MemberFeeSkip[]
+  polls               Poll[]
+  pollOptions         PollOption[]
+  pollVotes           PollVote[]
+  catalog             CatalogItem[]
+  athletes            Athlete[]
+  teams               Team[]
+  sessions            TrainingSession[]
+  trainingCycles      TrainingCycle[]
+  profileChanges      ProfileChange[]
+  sessionBlocks       SessionBlock[]
+  templates           SessionTemplate[]
+  templateBlocks      SessionTemplateBlock[]
+  exercises           Exercise[]
+  gameModels          GameModel[]
+  setPieces           SetPiece[]
+  plans               SubscriptionPlan[]
+  charges             Charge[]
+  chargeSkips         ChargeSkip[]
+  announcements       Announcement[]
+  notifications       Notification[]
+  evaluations         Evaluation[]
+  clinical            ClinicalEntry[]
+  reports             AthleteReport[]
+  nutritionPlans      NutritionPlan[]
   athleteMedicalInfos AthleteMedicalInfo[]
-  athleteDocuments AthleteDocument[]
-  schoolGrades SchoolGrade[]
-  matches        Match[]
-  events         CalendarEvent[]
-  invites        StaffInvite[]
+  athleteDocuments    AthleteDocument[]
+  athleteLicenses     AthleteLicense[]
+  schoolGrades        SchoolGrade[]
+  matches             Match[]
+  events              CalendarEvent[]
+  invites             StaffInvite[]
   /// O link de auto-registo das famílias. Um vivo de cada vez.
-  familyInvites  FamilyInvite[]
+  familyInvites       FamilyInvite[]
   /// De que contacto nasceu este cliente. Ver `Contact`, do lado da plataforma.
-  contacts       Contact[]
+  contacts            Contact[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -263,6 +264,7 @@ model Academy {
   aiAnalyses         AIAnalysis[]
   aiVideos           AIVideo[]
   aiJobs             AIJob[]
+  aiLiveSegments     AILiveSegment[]
   aiTracks           PlayerTrack[]
   aiIdentities       PlayerIdentity[]
   aiEvents           DetectedEvent[]
@@ -336,15 +338,16 @@ model Sport {
   /// dizer a duração. Nulo em desportos individuais.
   matchMinutes      Int?
 
-  teams      Team[]
-  prospects  Prospect[]
-  criteria   ScoutCriterion[]
-  shortlists Shortlist[]
-  requests   ScoutingRequest[]
-  fitDims    FitDimension[]
-  catalog    CatalogItem[]
+  teams           Team[]
+  prospects       Prospect[]
+  athleteLicenses AthleteLicense[]
+  criteria        ScoutCriterion[]
+  shortlists      Shortlist[]
+  requests        ScoutingRequest[]
+  fitDims         FitDimension[]
+  catalog         CatalogItem[]
   /// Os preços individuais nesta modalidade. Ver `SubscriptionPlan.sportId`.
-  plans      SubscriptionPlan[]
+  plans           SubscriptionPlan[]
 
   /// A área técnica desta modalidade.
   exercises  Exercise[]
@@ -371,6 +374,8 @@ model Season {
   inventoryAssignments InventoryAssignment[]
 
   financialBudgets FinancialBudget[]
+
+  athleteLicenses AthleteLicense[]
 
   /// A candidatura à certificação FPF desta época.
   certificationProcesses CertificationProcess[]
@@ -990,6 +995,15 @@ model Athlete {
   /// nascimento. Ver `app.match_athlete_by_document`.
   idDocNumber String?
 
+  /// A morada, para a ficha e para os recibos. Opcional, como tudo o que não
+  /// liga a família à app. Lê-se com a mesma regra do NIF.
+  address           String?
+  postalCode        String?
+  city              String?
+  /// O número do Cartão de Cidadão, para atletas portugueses. Não é a chave de
+  /// ninguém (essa é o NIF ou `idDocNumber`): é o que a federação pede.
+  citizenCardNumber String?
+
   heightCm     Int?
   weightKg     Decimal?      @db.Decimal(4, 1)
   /// Neutro de propósito: serve o pé no futebol e a mão no basquetebol. O rótulo
@@ -1024,9 +1038,10 @@ model Athlete {
   teams          TeamMembership[]
   attendance     AttendanceRecord[]
   nutritionPlans NutritionPlan[]
-  medicalInfo AthleteMedicalInfo?
-  documents AthleteDocument[]
-  schoolGrades SchoolGrade[]
+  medicalInfo    AthleteMedicalInfo?
+  documents      AthleteDocument[]
+  licenses       AthleteLicense[]
+  schoolGrades   SchoolGrade[]
   enrollments    Enrollment[]
   charges        Charge[]
   chargeSkips    ChargeSkip[]
@@ -1258,17 +1273,18 @@ model TrainingSession {
   notes  String?
 
   /// Quando as presenças foram fechadas. Nulo = por registar.
-  attendanceClosedAt DateTime?
-  attendance         AttendanceRecord[]
+  attendanceClosedAt    DateTime?
+  attendance            AttendanceRecord[]
   /// O dinheiro ligado a este treino (um custo previsto, por exemplo). Ver `FinancialTransaction`.
   financialTransactions FinancialTransaction[]
   /// Quem avisou que não vem — antes do treino. Ver `AbsenceNotice`.
-  absenceNotices     AbsenceNotice[]
+  absenceNotices        AbsenceNotice[]
 
   /**
    * ---- Plano de treino (Área técnica) -----------------------------------
    */
   /**
+   * /**
    * /**
    * /**
    * /**
@@ -2432,6 +2448,7 @@ model Match {
    * /**
    * /**
    * /**
+   * /**
    * /*
    * Em que competição se joga isto.
    * Aponta para o catálogo (`CatalogItem` de `kind = "competitions"`) e é
@@ -2742,9 +2759,9 @@ model MatchPlan {
   author   Membership? @relation("MatchPlanAuthor", fields: [authorId], references: [id], onDelete: SetNull)
 
   /// A variante do campo: `f11`, `f9`, `f7`, `f5`, `futsal`, `basket`.
-  pitch  String
+  pitch       String
   /// O sistema, por nome ("4-3-3"). Texto livre: pode vir de um modelo de jogo.
-  system String?
+  system      String?
   /// O modelo de jogo da Área técnica de onde o desenho veio, se veio de algum.
   gameModelId String?
 
@@ -4644,18 +4661,18 @@ model SubscriptionNotice {
 
   /// Quando o clube pagou, quem o registou e a nota de quem registou. É isto
   /// que separa o esperado do recebido nas contas da plataforma.
-  paidAt   DateTime?
-  paidNote String?
-  paidById String?
-  paidBy   PlatformAdmin? @relation("NoticePaidBy", fields: [paidById], references: [id], onDelete: SetNull)
+  paidAt     DateTime?
+  paidNote   String?
+  paidById   String?
+  paidBy     PlatformAdmin? @relation("NoticePaidBy", fields: [paidById], references: [id], onDelete: SetNull)
   /// Como foi pago: `MBWAY`, `MULTIBANCO` (pela euPago da plataforma) ou `MANUAL`
   /// (dado como recebido no painel). Nulo enquanto não está pago.
   paidMethod String?
 
   /// Os lembretes já enviados ("está em falta"): um por semana, até três. É o
   /// contador que impede o mesmo lembrete de sair duas vezes.
-  remindersSent  Int       @default(0)
-  lastReminderAt DateTime?
+  remindersSent    Int       @default(0)
+  lastReminderAt   DateTime?
   /// Quando se avisou que o clube ficou suspenso por este período.
   suspensionSentAt DateTime?
   /// A fatura deste pagamento: quando ficou tratada (anexada, ou só marcada como enviada por fora).
@@ -4700,15 +4717,14 @@ enum SubscriptionPaymentStatus {
 /**
  * Um pagamento da mensalidade da plataforma pela euPago **da plataforma** — a
  * referência Multibanco gerada ou o pedido MB WAY feito pelo clube na consola.
- *
  * Não é um `Payment`: esses são das famílias ao clube e liquidam no canal do
  * clube. Este liquida na nossa conta, e é o `identifier` (`ACADEMIAS-…`) que
  * o webhook usa para saber que é nosso. Ver `SubscriptionPaymentsService`.
  */
 model SubscriptionPayment {
-  id        String  @id @default(cuid())
+  id        String             @id @default(cuid())
   academyId String
-  academy   Academy @relation(fields: [academyId], references: [id], onDelete: Cascade)
+  academy   Academy            @relation(fields: [academyId], references: [id], onDelete: Cascade)
   noticeId  String
   notice    SubscriptionNotice @relation(fields: [noticeId], references: [id], onDelete: Cascade)
 
@@ -4719,10 +4735,10 @@ model SubscriptionPayment {
   identifier  String  @unique
   providerRef String?
   /// Multibanco: entidade e referência para pagar.
-  entity    String?
-  reference String?
+  entity      String?
+  reference   String?
   /// MB WAY: o telemóvel a que se pediu.
-  phone String?
+  phone       String?
 
   amountCents Int
   expiresAt   DateTime?
@@ -5774,15 +5790,27 @@ model AIAnalysis {
   /// é aplicada.
   reviewCount Int @default(0)
 
+  /// A cor do nosso equipamento neste jogo, `#rrggbb`, escolhida pelo treinador
+  /// entre os grupos de cor que a IA encontrou. É o que transforma "equipa A" e
+  /// "equipa B" em "nossa" e "deles" — nunca se adivinha. Nula até ele escolher.
+  oursKitColor String?
+
+  /// A calibração do campo, feita pelo treinador num frame do vídeo: 4 a 6
+  /// pontos conhecidos do campo clicados na imagem. É o que transforma píxeis
+  /// em metros e diz o que está dentro das linhas. Ver `CalibrationDto`.
+  /// `{ pitch: {length, width}, atMs, frame: [w, h], points: [{key, img, pitch}], H: number[9] }`
+  calibration Json?
+
   failReason String?
 
   createdById String?
   createdBy   Membership? @relation("AIAnalysisAuthor", fields: [createdById], references: [id], onDelete: SetNull)
 
-  squad       AIAnalysisPlayer[]
-  videos      AIVideo[]
-  jobs        AIJob[]
-  tracks      PlayerTrack[]
+  squad        AIAnalysisPlayer[]
+  videos       AIVideo[]
+  jobs         AIJob[]
+  liveSegments AILiveSegment[]
+  tracks       PlayerTrack[]
   identities  PlayerIdentity[]
   events      DetectedEvent[]
   insights    AIInsight[]
@@ -5932,6 +5960,45 @@ model AIJob {
 
   @@index([status, priority, createdAt])
   @@index([analysisId])
+  @@index([academyId])
+}
+
+/// Um troço do jogo já processado, enquanto o resto ainda se processa.
+///
+/// ## Porque é que existe
+///
+/// A detecção demorava uma barra inteira — quarenta minutos a duas horas sem
+/// nada para ver. O worker produz as caixas frame a frame desde o primeiro
+/// segundo; só as largava no fim. Agora larga-as aos troços de dez segundos de
+/// vídeo, e a consola desenha-as em cima do vídeo a correr.
+///
+/// ## Porque é que é uma tabela e não o Storage
+///
+/// A consola pede "o que há de novo desde o troço N" de três em três segundos.
+/// Pelo Storage isso era um link assinado novo por troço e por pedido — a
+/// receita exacta que mata a cache (ver a nota sobre o egress). Numa tabela é
+/// uma query barata por índice, sem assinatura nenhuma. É dado **transitório**:
+/// o resultado final vai para o Storage como sempre (`PlayerTrack.dataKey`), e
+/// a purga do vídeo apaga isto com ele.
+///
+/// `data`: `{ video: [w, h], frames: [[tsMs, [[tid, x1, y1, x2, y2, conf], …]], …], stats }`
+/// com os tids **brutos** do tracker — a numeração final só existe no fim.
+model AILiveSegment {
+  id         String     @id @default(cuid())
+  academyId  String
+  academy    Academy    @relation(fields: [academyId], references: [id], onDelete: Cascade)
+  analysisId String
+  analysis   AIAnalysis @relation(fields: [analysisId], references: [id], onDelete: Cascade)
+
+  /// A ordem no jogo. Único por análise: reprocessar substitui, não duplica.
+  index  Int
+  fromMs Int
+  toMs   Int
+  data   Json
+
+  createdAt DateTime @default(now())
+
+  @@unique([analysisId, index])
   @@index([academyId])
 }
 
@@ -6543,4 +6610,30 @@ model CertificationAnswer {
 
   @@unique([processId, code])
   @@index([academyId])
+}
+
+/// A licença federativa de um atleta numa modalidade, numa época.
+///
+/// Um atleta pode jogar várias modalidades, e cada uma tem a sua federação e o
+/// seu número; e a inscrição renova-se de época para época. Por isso a chave é
+/// o trio atleta, modalidade, época, e não o atleta nem a equipa: dois escalões
+/// da mesma modalidade na mesma época são a mesma licença.
+model AthleteLicense {
+  id        String  @id @default(cuid())
+  academyId String
+  academy   Academy @relation(fields: [academyId], references: [id], onDelete: Cascade)
+  athleteId String
+  athlete   Athlete @relation(fields: [athleteId], references: [id], onDelete: Cascade)
+  sportId   String
+  sport     Sport   @relation(fields: [sportId], references: [id], onDelete: Cascade)
+  seasonId  String
+  season    Season  @relation(fields: [seasonId], references: [id], onDelete: Cascade)
+
+  number String
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([athleteId, sportId, seasonId])
+  @@index([academyId, seasonId])
 }
