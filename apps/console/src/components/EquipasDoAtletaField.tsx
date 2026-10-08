@@ -1,4 +1,5 @@
 import { academy, sportById, teamById } from "@/lib/api";
+import { epocaDaEquipa } from "@/lib/licencas";
 import { Plus, X } from "@/lib/icons";
 import type { Athlete, Team } from "@/data/types";
 import { dialogInputClass } from "./Dialog";
@@ -73,7 +74,14 @@ export function linhasDoAtleta(athlete: Athlete, noAmbito: Team[]): LinhaDeEquip
 
 /** O que vai para a API (`equipas` em `POST`/`PATCH /api/athletes`). */
 export function equipasParaApi(linhas: LinhaDeEquipa[]) {
-  return linhas.map((l) => ({
+  // A licença vai só da primeira linha de cada modalidade e época (ver o campo).
+  const vistas = new Set<string>();
+  return linhas.map((l) => {
+    const chave = `${teamById(l.teamId)?.sportId ?? l.sportId}|${epocaDaEquipa(l.teamId) ?? ""}`;
+    const dona = !vistas.has(chave);
+    vistas.add(chave);
+    return { ...l, licenseNumber: dona ? l.licenseNumber : undefined };
+  }).map((l) => ({
     teamId: l.teamId,
     squadNumber: l.squadNumber === "" ? null : Number(l.squadNumber),
     position: l.position.trim() || null,
@@ -107,6 +115,17 @@ export function EquipasDoAtletaField({
   const variasModalidades = modalidades.length > 1;
   const escolhidas = new Set(linhas.map((l) => l.teamId));
   const problema = problemaDasEquipas(linhas);
+
+  /*
+   * A licença é da modalidade e da época, não da equipa: o Sub-13 e o Sub-15 de
+   * futebol na mesma época são a mesma inscrição. O campo aparece na primeira
+   * linha de cada modalidade e época; as outras dizem que usam essa.
+   */
+  const chaveDaLicenca = (l: LinhaDeEquipa) => `${teamById(l.teamId)?.sportId ?? l.sportId}|${epocaDaEquipa(l.teamId) ?? ""}`;
+  const donaDaLicenca = new Map<string, number>();
+  linhas.forEach((l, i) => {
+    if (l.teamId && !donaDaLicenca.has(chaveDaLicenca(l))) donaDaLicenca.set(chaveDaLicenca(l), i);
+  });
 
   const mudar = (chave: string, patch: Partial<LinhaDeEquipa>) =>
     onChange(linhas.map((l) => (l.chave === chave ? { ...l, ...patch } : l)));
@@ -230,7 +249,11 @@ export function EquipasDoAtletaField({
               )}
             </div>
 
-            {comLicenca && (
+            {comLicenca && l.teamId && donaDaLicenca.get(chaveDaLicenca(l)) !== i ? (
+              <p className="mt-2 text-[11px] text-ink-4">
+                Usa a licença da equipa {(donaDaLicenca.get(chaveDaLicenca(l)) ?? 0) + 1}: na mesma modalidade e época, a licença é a mesma.
+              </p>
+            ) : comLicenca && (
               <input
                 aria-label={`N.º de licença em ${nome}`}
                 placeholder={`N.º de licença${variasModalidades ? ` em ${sportById(l.sportId)?.name ?? "esta modalidade"}` : ""} (opcional)`}

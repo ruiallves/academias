@@ -1,4 +1,5 @@
 08/10/2026
+- Novo atleta: com duas equipas da mesma modalidade na mesma época, o n.º de licença pede-se uma vez só (na primeira); a outra equipa usa a mesma licença.
 - Calendário: novo botão "Cancelar eventos" para desmarcar ou apagar vários de uma vez. Escolhem-se as equipas, o tipo (treinos, jogos, torneios, outros), as datas, os dias da semana e a hora; vê-se a lista antes de confirmar e tira-se o que não é para tirar. Só entram eventos que ainda não começaram, e o que tem presenças, convocatória, plano ou avisos de falta não se apaga (fica de fora com o motivo).
 
 07/10/2026
