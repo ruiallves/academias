@@ -142,6 +142,7 @@ export class AthletesService {
           id: true, name: true, email: true, birthdate: true, taxId: true, idDocLabel: true, idDocNumber: true, status: true,
           medicalValidUntil: true, heightCm: true, weightKg: true, dominantSide: true, sex: true, squadNumber: true,
           address: true, postalCode: true, city: true, citizenCardNumber: true,
+          birthCountry: true, nationality: true, phone: true,
           teams: {
             where: { leftAt: null },
             select: { id: true, teamId: true, position: true, squadNumber: true, team: { select: { name: true } } },
@@ -730,6 +731,7 @@ export class AthletesService {
           medicalValidUntil: true, heightCm: true, weightKg: true,
           dominantSide: true, sex: true, squadNumber: true,
           address: true, postalCode: true, city: true, citizenCardNumber: true,
+          birthCountry: true, nationality: true, phone: true,
           licenses: { select: { sportId: true, seasonId: true, number: true } },
           teams: { where: { leftAt: null }, select: { teamId: true, squadNumber: true, position: true }, orderBy: ORDEM_DAS_PASSAGENS },
         },
@@ -918,6 +920,7 @@ export class AthletesService {
             sex: (dto.sex as AthleteSex) ?? null,
             squadNumber: equipasDaLinha[0].squadNumber,
             address: null, postalCode: null, city: null, citizenCardNumber: null,
+            birthCountry: null, nationality: null, phone: null,
             ...moradaDoPedido(dto),
             licenses: licencasDaLinha(dto).flatMap((l) => {
               const t = daEquipa.get(l.teamId);
@@ -1400,6 +1403,9 @@ type AtletaNoPlantel = {
   postalCode: string | null;
   city: string | null;
   citizenCardNumber: string | null;
+  birthCountry: string | null;
+  nationality: string | null;
+  phone: string | null;
   /** As licenças de todas as épocas. Ver `AthleteLicense`. */
   licenses: { sportId: string; seasonId: string; number: string }[];
   /** As equipas vivas, a principal primeiro, cada uma com o seu número e posição. */
@@ -1448,6 +1454,9 @@ function mudancasDoAtleta(
   if (morada.postalCode !== undefined && actual.postalCode !== morada.postalCode) mudam.push("código postal");
   if (morada.city !== undefined && actual.city !== morada.city) mudam.push("localidade");
   if (morada.citizenCardNumber !== undefined && actual.citizenCardNumber !== morada.citizenCardNumber) mudam.push("cartão de cidadão");
+  if (morada.birthCountry !== undefined && actual.birthCountry !== morada.birthCountry) mudam.push("país de nascimento");
+  if (morada.nationality !== undefined && actual.nationality !== morada.nationality) mudam.push("nacionalidade");
+  if (morada.phone !== undefined && actual.phone !== morada.phone) mudam.push("telefone");
   /* A licença só conta preenchida: uma célula vazia é uma coluna que ninguém preencheu. */
   const licenca = normalizarLicenca(dto.licenseNumber);
   if (licenca && dto.teamId && licencaActual(dto.teamId) !== licenca) {

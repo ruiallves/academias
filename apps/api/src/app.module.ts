@@ -88,6 +88,8 @@ import { FinanceService } from "./finance/finance.service";
 import { InventoryService } from "./inventory/inventory.service";
 import { CertificationController } from "./certification/certification.controller";
 import { CertificationService } from "./certification/certification.service";
+import { InscricoesController } from "./inscricoes/inscricoes.controller";
+import { InscricoesService } from "./inscricoes/inscricoes.service";
 import { TrainingService } from "./training/training.service";
 import { DevelopmentController } from "./development/development.controller";
 import { EvaluationsService } from "./development/evaluations.service";
@@ -174,6 +176,7 @@ import { LegalAdminService } from "./legal/legal-admin.service";
     InventoryController,
     FinanceController,
     CertificationController,
+    InscricoesController,
     PushController,
     NotificationsController,
     // O sinal de vida dos separadores abertos. Ver `presence.service.ts`.
@@ -253,6 +256,7 @@ import { LegalAdminService } from "./legal/legal-admin.service";
     InventoryService,
     FinanceService,
     CertificationService,
+    InscricoesService,
     PlatformService,
     PlatformFinanceService,
     PlatformGuard,

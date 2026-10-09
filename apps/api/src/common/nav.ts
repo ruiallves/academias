@@ -46,6 +46,8 @@ export const NAV_KEYS: Record<string, Permission> = {
   // Certificação FPF. O cliente só a mostra a clubes com futebol; aqui basta a
   // chave existir para um cargo a poder recortar.
   certification: "certification:read",
+  // Inscrições na FPF. O cliente só a mostra a clubes com futebol ou futsal.
+  registrations: "registration:read",
   comms: "comms:read",
   evaluations: "evaluation:read",
   reports: "report:read",

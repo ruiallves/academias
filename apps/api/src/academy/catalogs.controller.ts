@@ -18,6 +18,8 @@ class UpdateCatalogItemDto {
   @IsOptional() @IsBoolean() archived?: boolean;
   /** `#1c6a86`, ou `null` para voltar à de omissão. */
   @IsOptional() @ValidateIf((_, v) => v !== null) @IsString() @Matches(/^#[0-9a-fA-F]{6}$/) color?: string | null;
+  /** Só nas competições: oficial ou não. Ver `convocaDeQualquerEscalao`. */
+  @IsOptional() @IsBoolean() official?: boolean;
 }
 
 /**

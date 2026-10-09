@@ -1,5 +1,5 @@
 import { BadRequestException, ForbiddenException, Injectable, NotFoundException } from "@nestjs/common";
-import { PrismaService } from "../prisma/prisma.service";
+import { PrismaService, type ScopedClient } from "../prisma/prisma.service";
 import { can, type RequestContext } from "../common/permissions";
 
 /**
@@ -63,6 +63,27 @@ export function isCatalogKind(value: string): value is CatalogKind {
  * uma segunda "Amigável" que ninguém percebia de onde vinha.
  */
 export const AMIGAVEL = "Amigável";
+
+/**
+ * A prova "Amigável" desta academia: a existente, ou uma nova.
+ *
+ * Todas as equipas a têm, e é por isso que vive aqui e não num serviço: criar
+ * à mão, importar por Excel e virar de época chamam-na todos. Recebe a
+ * ligação do tenant (`runAs`), por isso a RLS garante a academia.
+ */
+export async function ensureAmigavel(db: ScopedClient, academyId: string): Promise<string> {
+  const existente = await db.catalogItem.findFirst({
+    where: { kind: "competitions", label: AMIGAVEL },
+    select: { id: true },
+  });
+  if (existente) return existente.id;
+
+  const criada = await db.catalogItem.create({
+    data: { academyId, kind: "competitions", label: AMIGAVEL, isSystem: true, official: false, order: 0, updatedAt: new Date() },
+    select: { id: true },
+  });
+  return criada.id;
+}
 
 const SEED: Partial<Record<CatalogKind, { label: string; note?: string; isSystem?: boolean }[]>> = {
   eventTypes: [
@@ -182,6 +203,8 @@ export class CatalogsService {
             label: item.label,
             note: item.note ?? null,
             isSystem: item.isSystem ?? false,
+            // O "Amigável" nasce não oficial: é a prova dos jogos fora de campeonato.
+            ...(kind === "competitions" && item.label === AMIGAVEL ? { official: false } : {}),
             order: i,
             updatedAt: new Date(),
           })),
@@ -193,7 +216,7 @@ export class CatalogsService {
         orderBy: [{ kind: "asc" }, { order: "asc" }, { label: "asc" }],
         select: {
           id: true, kind: true, label: true, note: true, order: true,
-          isSystem: true, archivedAt: true, sportId: true, color: true,
+          isSystem: true, archivedAt: true, sportId: true, color: true, official: true,
         },
       });
     });
@@ -253,7 +276,7 @@ export class CatalogsService {
           },
           select: {
             id: true, kind: true, label: true, note: true, order: true,
-            isSystem: true, archivedAt: true, sportId: true, color: true,
+            isSystem: true, archivedAt: true, sportId: true, color: true, official: true,
           },
         });
       } catch (error) {
@@ -265,12 +288,21 @@ export class CatalogsService {
     });
   }
 
-  async update(ctx: RequestContext, id: string, dto: { label?: string; note?: string; order?: number; color?: string | null }) {
+  async update(
+    ctx: RequestContext,
+    id: string,
+    dto: { label?: string; note?: string; order?: number; color?: string | null; official?: boolean },
+  ) {
     this.mustWrite(ctx);
 
     return this.prisma.runAs(ctx.academyId, async (db) => {
-      const item = await db.catalogItem.findFirst({ where: { id }, select: { id: true, isSystem: true } });
+      const item = await db.catalogItem.findFirst({ where: { id }, select: { id: true, isSystem: true, kind: true } });
       if (!item) throw new NotFoundException("Item não encontrado");
+      if (dto.official !== undefined) {
+        if (item.kind !== "competitions") throw new BadRequestException("Só as competições são oficiais ou não");
+        // O "Amigável" é não oficial por definição: é a prova de qualquer jogo fora de campeonato.
+        if (item.isSystem) throw new BadRequestException("O Amigável é sempre uma competição não oficial");
+      }
       // Renomear "Jogo" para "Partida" partiria o que o domínio distingue.
       if (item.isSystem && dto.label !== undefined) {
         throw new BadRequestException("Este item é do sistema e não se renomeia");
@@ -284,6 +316,7 @@ export class CatalogsService {
           ...(dto.order !== undefined ? { order: dto.order } : {}),
           // Em minúsculas, que é o que a base aceita (ver o CHECK da migração).
           ...(dto.color !== undefined ? { color: dto.color ? dto.color.toLowerCase() : null } : {}),
+          ...(dto.official !== undefined ? { official: dto.official } : {}),
           updatedAt: new Date(),
         },
       });

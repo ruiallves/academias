@@ -55,7 +55,7 @@ export default function Agenda() {
         start: t.start,
         end: t.end,
         kind: "training",
-        title: child.team,
+        title: t.team || child.team,
         place: t.venue,
         room: t.dressingRoom,
         cancelled: t.cancelled,
@@ -68,7 +68,8 @@ export default function Agenda() {
         start: m.start,
         end: m.end,
         kind: "match",
-        title: `${m.isHome ? "vs" : "@"} ${m.opponent}`,
+        // Com duas equipas, diz de qual é o jogo.
+        title: `${child.teamIds.length > 1 && m.team ? `${m.team} · ` : ""}${m.isHome ? "vs" : "@"} ${m.opponent}`,
         place: m.venue,
         cancelled: m.cancelled,
         callUp: m.callUp,
@@ -104,7 +105,7 @@ export default function Agenda() {
     }),
     /* Os eventos do clube: os da equipa do filho e os de toda a academia. */
     ...store.clubEvents
-      .filter((e) => (e.teamId === null || e.teamId === child.teamId) && e.end >= now)
+      .filter((e) => (e.teamId === null || child.teamIds.includes(e.teamId)) && e.end >= now)
       .map<Item>((e) => ({
         id: `evento-${e.id}`,
         href: `/evento/clube/${e.id}`,

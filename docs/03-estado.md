@@ -4488,3 +4488,32 @@ O sexo aparece na ficha do atleta e no PDF do perfil quando está indicado. A
 família não inscreve atletas (liga-se a uma ficha que o clube criou, pelo NIF e
 pela data de nascimento), por isso não há registo na app onde o pedir: quem o
 indica é o clube, à mão ou pela folha de importação.
+
+## Inscrições na FPF (Modelo 2)
+
+Menu **Inscrições** em Gestão (`/inscricoes`), só para clubes com futebol ou
+futsal (`NavItem.discipline` aceita agora uma lista). Permissões
+`registration:read` e `registration:write`: presidência, direção e coordenação;
+quem tem equipas atribuídas só vê os atletas delas (`teamScopeFilter`).
+
+- **A folha** (`src/inscricoes/modelo-2.ts`) escreve por cima do PDF da FPF
+  (`apps/api/assets/fpf/modelo-2-nao-profissionais.pdf`), nas posições dos
+  campos, e tira os campos do formulário: várias folhas num PDF partilhavam os
+  nomes dos campos e mostravam o primeiro jogador em todas. O fundo é partilhado
+  entre páginas (três folhas ≈ uma). Preenche até "Clube em que se inscreve";
+  autorizações, assinaturas e a declaração do encarregado ficam em branco.
+- **As regras** (`src/inscricoes/regras.ts`, puras): categoria pela idade no ano
+  em que a época acaba (2006 e 2007 são Júnior A em 2024/25); CC partido em
+  número e dígito de controlo; sigla do outro documento pelo nome (Passaporte →
+  PAS); estatuto pela nacionalidade; revalidação proposta para quem já teve
+  licença na modalidade. Sem email/telefone do atleta usa os do encarregado.
+- **Os passos** (`PlayerRegistration`, um por atleta, modalidade e época):
+  gerada → assinada → entregue → validada. Gerar outra vez volta a "gerada";
+  validar pode gravar a licença na ficha; a cópia assinada carrega-se na
+  inscrição e junta-se ao documento dela, nos Documentos do atleta.
+- **Dados novos**: `Academy.fpfClubCode` e `footballAssociation` (Definições →
+  Geral), `Athlete.birthCountry`, `nationality` (ISO alfa-2) e `phone`, com a
+  regra de leitura do NIF. O código de país no boletim sai em alfa-3 (PRT);
+  falta confirmar com a FPF se é esse o código pedido.
+- Teste: `npm run test:inscricoes` (64). Migração `20261009120000_inscricoes_fpf`,
+  aplicada a 09/10/2026.

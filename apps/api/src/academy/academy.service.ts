@@ -2,6 +2,7 @@ import { BadRequestException, ConflictException, ForbiddenException, Injectable,
 import { ConfigService } from "@nestjs/config";
 import { eupagoConfigurado, MENSAGEM_SEM_EUPAGO } from "../billing/eupago-do-clube";
 import { Prisma, type AttendanceStatus, type CalendarEventKind, type Role, type StaffDepartment } from "@prisma/client";
+import { associacaoValida, normalizarCodigoDoClube } from "../inscricoes/regras";
 import { PrismaService, type ScopedClient } from "../prisma/prisma.service";
 import { escolherTreinador, headCoaches } from "./head-coaches";
 import { MatchesService } from "./matches.service";
@@ -22,7 +23,7 @@ import {
 } from "../billing/billing.service";
 import { SHORT_NAME_MAX } from "../common/short-name";
 import { matchTitle } from "../common/match-title";
-import { AMIGAVEL } from "./catalogs.service";
+import { AMIGAVEL, ensureAmigavel } from "./catalogs.service";
 import { instanteNoFuso, partesNoFuso, somarDias } from "../common/fuso";
 
 /**
@@ -144,6 +145,8 @@ const DELEGATABLE: ReadonlySet<Permission> = new Set<Permission>([
   // A candidatura à FPF é muitas vezes trabalho de uma pessoa só — entra aqui
   // no dia em que nasce, para não repetir o esquecimento das três de cima.
   "certification:read", "certification:write",
+  // As inscrições na FPF: o mesmo tipo de trabalho de uma pessoa só.
+  "registration:read", "registration:write",
   /*
    * Delegar a criação de papéis é o ponto da funcionalidade: a presidência pode
    * passá-la à direção, ou a uma pessoa em concreto, sem lhe dar mais nada. Não
@@ -219,6 +222,8 @@ export class AcademyService {
           // Quando abre o ano das quotas anuais (dia e mês) — a consola mostra-o
           // no topo das categorias de sócio.
           memberAnnualStartMonth: true, memberAnnualStartDay: true,
+          // O clube na federação: sai em cada boletim de inscrição (Modelo 2).
+          fpfClubCode: true, footballAssociation: true,
         },
       });
 
@@ -461,8 +466,31 @@ export class AcademyService {
    * sócio, a consola e a app. É o white-label, e é por isso que vive na academia
    * e não numa preferência de utilizador.
    */
-  async setIdentity(ctx: RequestContext, dto: { signalColor?: string; logoUrl?: string | null; shortName?: string }) {
+  async setIdentity(
+    ctx: RequestContext,
+    dto: { signalColor?: string; logoUrl?: string | null; shortName?: string; fpfClubCode?: string; footballAssociation?: string },
+  ) {
     if (!can(ctx, "settings:write")) throw new ForbiddenException("Sem permissão para mudar as definições");
+
+    /*
+     * O clube na federação: o código e a associação que o Modelo 2 da FPF
+     * pede em cada inscrição. Vazio limpa. Ver `inscricoes/regras.ts`.
+     */
+    let fpfClubCode: string | null | undefined;
+    if (dto.fpfClubCode !== undefined) {
+      try {
+        fpfClubCode = normalizarCodigoDoClube(dto.fpfClubCode);
+      } catch (e) {
+        throw new BadRequestException(e instanceof Error ? e.message : "Código do clube inválido");
+      }
+    }
+    let footballAssociation: string | null | undefined;
+    if (dto.footballAssociation !== undefined) {
+      footballAssociation = dto.footballAssociation.trim() || null;
+      if (footballAssociation && !associacaoValida(footballAssociation)) {
+        throw new BadRequestException("Associação de futebol desconhecida");
+      }
+    }
 
     /*
      * O nome curto, escrito pelo clube e não adivinhado por nós.
@@ -508,6 +536,8 @@ export class AcademyService {
           ...(dto.signalColor !== undefined ? { signalColor: dto.signalColor.toLowerCase() } : {}),
           ...(dto.logoUrl !== undefined ? { logoUrl: dto.logoUrl || null } : {}),
           ...(shortName !== undefined ? { shortName } : {}),
+          ...(fpfClubCode !== undefined ? { fpfClubCode } : {}),
+          ...(footballAssociation !== undefined ? { footballAssociation } : {}),
         },
       });
 
@@ -1308,6 +1338,8 @@ export class AcademyService {
 
       const created: { id: string; name: string }[] = [];
       const errors: { row: number; name: string; error: string }[] = [];
+      /** A prova "Amigável" do clube, pedida uma vez e só se alguma equipa nascer. */
+      let amigavel: string | undefined;
 
       for (const [i, row] of rows.entries()) {
         const line = i + 2; // +1 pela base-0, +1 pelo cabeçalho do ficheiro
@@ -1362,6 +1394,9 @@ export class AcademyService {
             },
             select: { id: true, name: true },
           });
+          // "Amigável" entra sempre, como na criação à mão (ver `createTeam`).
+          amigavel ??= await this.ensureAmigavel(db, ctx.academyId);
+          await db.teamCompetition.create({ data: { teamId: team.id, competitionId: amigavel } });
           created.push(team);
           existentes.add(chave);
         } catch (e) {
@@ -1714,6 +1749,7 @@ export class AcademyService {
           id: true, name: true, birthdate: true, photoUrl: true, photoKey: true, status: true, joinedAt: true, taxId: true,
           idDocLabel: true, idDocNumber: true,
           address: true, postalCode: true, city: true, citizenCardNumber: true,
+          birthCountry: true, nationality: true, phone: true,
           // As licenças federativas, de todas as épocas. Ver `AthleteLicense`.
           licenses: { select: { sportId: true, seasonId: true, number: true } },
           heightCm: true, weightKg: true, dominantSide: true, sex: true, squadNumber: true, medicalValidUntil: true,
@@ -1850,6 +1886,10 @@ export class AcademyService {
           postalCode: mayReadTaxId ? a.postalCode : null,
           city: mayReadTaxId ? a.city : null,
           citizenCardNumber: mayReadTaxId ? a.citizenCardNumber : null,
+          /* O que o boletim da FPF pede: a mesma regra de leitura. */
+          birthCountry: mayReadTaxId ? a.birthCountry : null,
+          nationality: mayReadTaxId ? a.nationality : null,
+          phone: mayReadTaxId ? a.phone : null,
           licencas: a.licenses,
           email: a.email,
           /*
@@ -3958,7 +3998,10 @@ export class AcademyService {
       const team = await db.team.findFirst({ where: { id: teamId }, select: { id: true } });
       if (!team) throw new NotFoundException("Equipa não encontrada");
 
-      const validos = await this.validCompetitionIds(db, competitionIds);
+      // "Amigável" fica sempre, mesmo que a lista não o traga (ver `ensureAmigavel`).
+      const validos = [
+        ...new Set([...(await this.validCompetitionIds(db, competitionIds)), await this.ensureAmigavel(db, ctx.academyId)]),
+      ];
 
       /*
        * Apagar e recriar, mas só o que muda.
@@ -3998,25 +4041,8 @@ export class AcademyService {
    * nem se renomeia, porque é a rede que garante que há sempre uma competição
    * para escolher, e uma rede que se pode remover não é rede.
    */
-  private async ensureAmigavel(db: ScopedClient, academyId: string): Promise<string> {
-    const existente = await db.catalogItem.findFirst({
-      where: { kind: "competitions", label: AMIGAVEL },
-      select: { id: true },
-    });
-    if (existente) return existente.id;
-
-    const criada = await db.catalogItem.create({
-      data: {
-        academyId,
-        kind: "competitions",
-        label: AMIGAVEL,
-        isSystem: true,
-        order: 0,
-        updatedAt: new Date(),
-      },
-      select: { id: true },
-    });
-    return criada.id;
+  private ensureAmigavel(db: ScopedClient, academyId: string): Promise<string> {
+    return ensureAmigavel(db, academyId);
   }
 
   /**

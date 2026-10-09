@@ -75,9 +75,11 @@ export default function Evento() {
       <header className="px-1">
         <p className="text-[13px] font-semibold tracking-[0.04em] text-ink-3 uppercase">
           {jogo ? "Jogo" : "Treino"}
+          {/* Com duas equipas, de qual é. */}
+          {jogo && child.teamIds.length > 1 && jogo.team ? ` · ${jogo.team}` : ""}
         </p>
         <h1 className="mt-0.5 text-[26px] leading-tight font-semibold tracking-[-0.02em] text-ink">
-          {jogo ? `${jogo.isHome ? "vs" : "@"} ${jogo.opponent}` : child.team}
+          {jogo ? `${jogo.isHome ? "vs" : "@"} ${jogo.opponent}` : treino?.team || child.team}
         </h1>
         <p className="mt-1 text-[14px] text-ink-2">
           {dayName(start)}, {dateShort(start)} · {time(start)}–{time(end)}

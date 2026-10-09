@@ -1,3 +1,4 @@
+import { codigoDePais } from "../inscricoes/paises";
 import type { ScopedClient } from "../prisma/prisma.service";
 
 /**
@@ -30,7 +31,10 @@ export function normalizarCartaoCidadao(v: string | undefined): string | null {
   return t || null;
 }
 
-type ComMorada = { address?: string; postalCode?: string; city?: string; citizenCardNumber?: string };
+type ComMorada = {
+  address?: string; postalCode?: string; city?: string; citizenCardNumber?: string;
+  birthCountry?: string; nationality?: string; phone?: string;
+};
 
 /**
  * Os campos da morada e do CC que vieram no pedido, prontos a escrever.
@@ -44,6 +48,10 @@ export function moradaDoPedido(dto: ComMorada) {
     ...(dto.postalCode !== undefined ? { postalCode: texto(dto.postalCode) } : {}),
     ...(dto.city !== undefined ? { city: texto(dto.city) } : {}),
     ...(dto.citizenCardNumber !== undefined ? { citizenCardNumber: normalizarCartaoCidadao(dto.citizenCardNumber) } : {}),
+    // O que o boletim da FPF pede: países em ISO alfa-2 (o DTO já recusa os que não existem).
+    ...(dto.birthCountry !== undefined ? { birthCountry: codigoDePais(dto.birthCountry) } : {}),
+    ...(dto.nationality !== undefined ? { nationality: codigoDePais(dto.nationality) } : {}),
+    ...(dto.phone !== undefined ? { phone: texto(dto.phone) } : {}),
   };
 }
 

@@ -1,9 +1,12 @@
 import { useEffect, useRef, useState, type FormEvent } from "react";
+// O menu do "Oficial / Não oficial" abre num portal, para a caixa da modalidade não o cortar.
+import { createPortal } from "react-dom";
 import {
   addItem,
   CATALOG_META,
   moveItem,
   renameItem,
+  setItemOfficial,
   toggleArchived,
   useCatalog,
   type CatalogKey,
@@ -112,6 +115,12 @@ export function CatalogPanel({
               <Plus className="size-3.5" strokeWidth={2} />
               Adicionar a {meta.title.toLowerCase()}
             </button>
+          )}
+
+          {catalogKey === "competitions" && (
+            <p className="mt-2 text-[11px] leading-relaxed text-ink-4">
+              As competições não oficiais permitem convocar atletas de qualquer escalão.
+            </p>
           )}
 
           {archived.length > 0 && (
@@ -258,7 +267,132 @@ function CatalogRow({
           </button>
         </span>
       )}
+
+      {/*
+        Oficial ou não, só nas competições, sempre no fim da linha para ficar
+        alinhado em todas (os botões de editar ocupam espaço mesmo escondidos).
+        O "Amigável" é sempre não oficial e não se muda.
+      */}
+      {catalogKey === "competitions" && (
+        <span className="flex w-[104px] shrink-0 justify-end">
+          {item.system ? (
+            <Pill>Não oficial</Pill>
+          ) : (
+            <OficialControl id={item.id} label={item.label} oficial={item.official !== false} />
+          )}
+        </span>
+      )}
     </li>
+  );
+}
+
+/* -------------------------------------------------------------------------- */
+
+/** Altura aproximada do menu: duas opções fixas. */
+const OFICIAL_MENU_HEIGHT = 92;
+
+/**
+ * Oficial ou não oficial, com o mesmo desenho do estado das mensalidades
+ * (`FeeStatusControl`): a pastilha diz o estado e é o gatilho; um clique abre
+ * as duas opções, com um visto na actual. O menu vive num portal para não ser
+ * recortado pela caixa da modalidade.
+ */
+function OficialControl({ id, label, oficial }: { id: string; label: string; oficial: boolean }) {
+  const [open, setOpen] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [pos, setPos] = useState<{ left: number; top?: number; bottom?: number } | null>(null);
+  const btnRef = useRef<HTMLButtonElement>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    const close = () => setOpen(false);
+    window.addEventListener("scroll", close, true);
+    window.addEventListener("resize", close);
+    return () => {
+      window.removeEventListener("scroll", close, true);
+      window.removeEventListener("resize", close);
+    };
+  }, [open]);
+
+  const toggle = () => {
+    const r = btnRef.current?.getBoundingClientRect();
+    if (r) {
+      const left = Math.max(8, r.right - 168);
+      const espacoEmBaixo = window.innerHeight - r.bottom;
+      setPos(
+        espacoEmBaixo >= OFICIAL_MENU_HEIGHT + 8 || r.top < OFICIAL_MENU_HEIGHT + 8
+          ? { top: r.bottom + 4, left }
+          : { bottom: window.innerHeight - r.top + 4, left },
+      );
+    }
+    setOpen((v) => !v);
+  };
+
+  async function escolher(valor: boolean) {
+    setOpen(false);
+    if (valor === oficial || busy) return;
+    setBusy(true);
+    try {
+      await setItemOfficial(id, valor);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <>
+      <button
+        ref={btnRef}
+        type="button"
+        onClick={toggle}
+        disabled={busy}
+        aria-haspopup="menu"
+        aria-expanded={open}
+        aria-label={`${label}: ${oficial ? "oficial" : "não oficial"}. Alterar`}
+        className={cx(
+          "inline-flex shrink-0 items-center gap-1 rounded-full px-2 py-0.5 text-[11px] leading-tight font-semibold transition-opacity duration-[120ms] hover:opacity-75 disabled:opacity-50",
+          oficial ? "bg-signal-soft text-signal-ink" : "bg-sunken text-ink-2",
+        )}
+      >
+        {oficial ? "Oficial" : "Não oficial"}
+        <ChevronDown className="size-3" strokeWidth={2.5} />
+      </button>
+
+      {open &&
+        pos &&
+        createPortal(
+          <>
+            <div className="fixed inset-0 z-40" onClick={() => setOpen(false)} aria-hidden />
+            <div
+              role="menu"
+              style={{ top: pos.top, bottom: pos.bottom, left: pos.left }}
+              className="fixed z-50 w-[168px] rounded-[var(--radius-panel)] border border-line bg-surface p-1 shadow-[var(--shadow-pop)]"
+            >
+              {[
+                { valor: true, texto: "Oficial" },
+                { valor: false, texto: "Não oficial" },
+              ].map((o) => (
+                <button
+                  key={o.texto}
+                  type="button"
+                  role="menuitem"
+                  onClick={() => void escolher(o.valor)}
+                  className={cx(
+                    "flex w-full items-center gap-2 rounded-[6px] px-2.5 py-1.5 text-left text-body transition-colors duration-[120ms] hover:bg-sunken",
+                    o.valor === oficial ? "text-ink" : "text-ink-2",
+                  )}
+                >
+                  <span className="flex size-4 shrink-0 items-center justify-center text-signal-ink">
+                    {o.valor === oficial && <Check className="size-3.5" strokeWidth={2.5} />}
+                  </span>
+                  <span className="flex-1">{o.texto}</span>
+                </button>
+              ))}
+            </div>
+          </>,
+          document.body,
+        )}
+    </>
   );
 }
 

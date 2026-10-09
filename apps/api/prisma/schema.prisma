@@ -157,6 +157,16 @@ model Academy {
   /// período abre; a quota continua a ter por período o mês (`AAAA-MM`).
   memberAnnualStartDay   Int @default(1)
 
+  /// ## O clube na federação
+  ///
+  /// O que o Modelo 2 da FPF pede ao clube em cada inscrição de jogador: o
+  /// código do clube e a Associação de Futebol onde está filiado. Escreve-se
+  /// uma vez em Definições → Geral e sai em todas as folhas. Ver
+  /// `inscricoes/modelo-2.ts`.
+  fpfClubCode         String?
+  /// O distrito da associação, sem o "AF": "Braga", "Porto", "Madeira".
+  footballAssociation String?
+
   /// ## O maior número de sócio já dado neste clube
   ///
   /// Só sobe. É o que faz um número apagado **ficar aberto** em vez de voltar à
@@ -289,6 +299,9 @@ model Academy {
   /// Certificação FPF — a candidatura de cada época e o que se respondeu à mão.
   certificationProcesses CertificationProcess[]
   certificationAnswers   CertificationAnswer[]
+
+  /// As inscrições federativas (Modelo 2) e em que passo vai cada uma.
+  playerRegistrations PlayerRegistration[]
 }
 
 /// O ciclo de vida de um cliente. Derivado do onboarding e da subscrição — o
@@ -341,6 +354,7 @@ model Sport {
   teams           Team[]
   prospects       Prospect[]
   athleteLicenses AthleteLicense[]
+  registrations   PlayerRegistration[]
   criteria        ScoutCriterion[]
   shortlists      Shortlist[]
   requests        ScoutingRequest[]
@@ -376,6 +390,7 @@ model Season {
   financialBudgets FinancialBudget[]
 
   athleteLicenses AthleteLicense[]
+  registrations   PlayerRegistration[]
 
   /// A candidatura à certificação FPF desta época.
   certificationProcesses CertificationProcess[]
@@ -1004,6 +1019,15 @@ model Athlete {
   /// ninguém (essa é o NIF ou `idDocNumber`): é o que a federação pede.
   citizenCardNumber String?
 
+  /// País de nascimento e nacionalidade, em ISO 3166-1 alfa-2 ("PT", "BR").
+  /// Opcionais; é o que o boletim de inscrição da FPF pede, com o código do
+  /// país e o estatuto (português, UE, estrangeiro) que sai da nacionalidade.
+  /// Ver `inscricoes/paises.ts`. Lêem-se com a regra do NIF.
+  birthCountry String?
+  nationality  String?
+  /// O telefone do próprio atleta (o dos pais está na conta deles).
+  phone        String?
+
   heightCm     Int?
   weightKg     Decimal?      @db.Decimal(4, 1)
   /// Neutro de propósito: serve o pé no futebol e a mão no basquetebol. O rótulo
@@ -1041,6 +1065,7 @@ model Athlete {
   medicalInfo    AthleteMedicalInfo?
   documents      AthleteDocument[]
   licenses       AthleteLicense[]
+  registrations  PlayerRegistration[]
   schoolGrades   SchoolGrade[]
   enrollments    Enrollment[]
   charges        Charge[]
@@ -3198,6 +3223,9 @@ model AthleteDocument {
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt
 
+  /// A inscrição federativa que guardou aqui a sua folha.
+  registrations PlayerRegistration[]
+
   @@index([academyId, athleteId, createdAt])
 }
 
@@ -4235,6 +4263,11 @@ model CatalogItem {
   /// Itens de que o domínio depende (os tipos de evento) não se apagam nem
   /// renomeiam: um treino abre folha de presenças, um jogo tem adversário.
   isSystem Boolean @default(false)
+
+  /// Só para `kind = "competitions"`: se a prova é oficial. Numa não oficial
+  /// (o "Amigável", torneios e convívios que o clube marque assim) a
+  /// convocatória chama atletas de qualquer escalão. Ver `convocaDeQualquerEscalao`.
+  official Boolean @default(true)
 
   /// Arquivado, não apagado. Apagar "Campo 2" reescreveria o local de todos os
   /// treinos que lá aconteceram; arquivar tira-o dos menus e deixa a história
@@ -6630,6 +6663,55 @@ model AthleteLicense {
   season    Season  @relation(fields: [seasonId], references: [id], onDelete: Cascade)
 
   number String
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([athleteId, sportId, seasonId])
+  @@index([academyId, seasonId])
+}
+
+/// A inscrição de um jogador na federação (Modelo 2 da FPF), e em que passo vai.
+///
+/// Uma por atleta, modalidade e época, como a licença: futebol e futsal são
+/// boletins diferentes, e a inscrição renova-se todas as épocas. Só existe
+/// depois de a folha ser gerada; um atleta sem linha está "por gerar".
+///
+/// Os passos andam para a frente à mão: `GENERATED` (a folha saiu),
+/// `SIGNED` (voltou assinada pelos pais), `SUBMITTED` (entregue à associação),
+/// `DONE` (validada, com licença). Voltar atrás é possível, para corrigir um
+/// clique. Gerar outra vez a folha devolve a inscrição a `GENERATED`.
+///
+/// O tipo de boletim e a categoria guardam-se como saíram na folha: o que
+/// foi entregue é o que conta, mesmo que a data de nascimento mude depois.
+model PlayerRegistration {
+  id        String  @id @default(cuid())
+  academyId String
+  academy   Academy @relation(fields: [academyId], references: [id], onDelete: Cascade)
+  athleteId String
+  athlete   Athlete @relation(fields: [athleteId], references: [id], onDelete: Cascade)
+  sportId   String
+  sport     Sport   @relation(fields: [sportId], references: [id], onDelete: Cascade)
+  seasonId  String
+  season    Season  @relation(fields: [seasonId], references: [id], onDelete: Cascade)
+
+  /// `FIRST`, `RENEWAL`, `TRANSFER_NATIONAL` ou `TRANSFER_INTERNATIONAL`.
+  kind     String
+  /// O código FPF da categoria: "01" (Sénior) a "17" (Petiz).
+  category String
+  /// `GENERATED`, `SIGNED`, `SUBMITTED` ou `DONE`.
+  status   String @default("GENERATED")
+
+  generatedAt     DateTime
+  generatedByName String?
+  signedAt        DateTime?
+  submittedAt     DateTime?
+  doneAt          DateTime?
+
+  /// A folha nos documentos do atleta, quando se pediu para a anexar. Lá
+  /// também fica a cópia assinada, quando alguém a carrega.
+  documentId String?
+  document   AthleteDocument? @relation(fields: [documentId], references: [id], onDelete: SetNull)
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt

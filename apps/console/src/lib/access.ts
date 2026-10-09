@@ -246,6 +246,7 @@ export const AREAS: Area[] = [
   // Entra no catálogo no dia em que nasce. Ao lado das Contas por ser gestão do
   // clube: quem prepara a candidatura raramente é quem treina.
   { label: "Certificação FPF", hint: "nível do clube, requisitos e respostas à candidatura", read: "certification:read", write: "certification:write" },
+  { label: "Inscrições", hint: "boletins de inscrição na FPF e o estado de cada um", read: "registration:read", write: "registration:write" },
 ];
 
 /**

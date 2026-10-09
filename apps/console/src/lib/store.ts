@@ -72,6 +72,9 @@ type ApiBootstrap = {
     /** Quando abre o ano das quotas anuais de sócio: o mês (1–12) e o dia. */
     memberAnnualStartMonth: number;
     memberAnnualStartDay: number;
+    /** O clube na federação. Ver `Academy.fpfClubCode` na API. */
+    fpfClubCode?: string | null;
+    footballAssociation?: string | null;
   };
   sports: {
     id: string;
@@ -144,6 +147,7 @@ type ApiAthlete = {
   idDocLabel?: string | null;
   idDocNumber?: string | null;
   address?: string | null; postalCode?: string | null; city?: string | null; citizenCardNumber?: string | null;
+  birthCountry?: string | null; nationality?: string | null; phone?: string | null;
   licencas?: { sportId: string; seasonId: string; number: string }[];
   heightCm: number | null; weightKg: number | null; dominantSide: string | null; sex?: Athlete["sex"] | null; squadNumber: number | null;
   medicalValidUntil: string | null; teamId: string | null; position: string | null;
@@ -307,6 +311,8 @@ export type GuestCandidate = {
   teamId: string;
   teamName: string;
   blocked: boolean;
+  /** Mais velho do que a equipa. Só aparece num amigável, onde se convoca de qualquer escalão. */
+  aboveAge?: boolean;
 };
 
 type ApiCharge = {
@@ -383,6 +389,7 @@ const EMPTY: State = {
     paymentsEnabled: true, feesOnPayer: false, eupagoConfigured: true,
     membershipHeadline: "", membershipIntro: "", membershipPoints: [],
     memberAnnualStartMonth: 8, memberAnnualStartDay: 1,
+    fpfClubCode: "", footballAssociation: "",
     sports: [],
   },
   season: "",
@@ -910,6 +917,9 @@ function juntar<T extends { id: string }>(atuais: T[], novos: T[]): T[] {
     postalCode: a.postalCode ?? undefined,
     city: a.city ?? undefined,
     citizenCardNumber: a.citizenCardNumber ?? undefined,
+    birthCountry: a.birthCountry ?? undefined,
+    nationality: a.nationality ?? undefined,
+    phone: a.phone ?? undefined,
     licencas: a.licencas ?? [],
     photoUrl: a.photoUrl ?? undefined,
     email: a.email ?? undefined,
@@ -1088,6 +1098,8 @@ function juntar<T extends { id: string }>(atuais: T[], novos: T[]): T[] {
       membershipPoints: boot.academy.membershipPoints ?? [],
       memberAnnualStartMonth: boot.academy.memberAnnualStartMonth ?? 8,
       memberAnnualStartDay: boot.academy.memberAnnualStartDay ?? 1,
+      fpfClubCode: boot.academy.fpfClubCode ?? "",
+      footballAssociation: boot.academy.footballAssociation ?? "",
       /*
        * Campo a campo, e por isso é preciso cuidado: o que não estiver aqui
        * **não chega ao ecrã**, mesmo estando certo na base de dados. Foi o que

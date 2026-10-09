@@ -104,7 +104,7 @@ export default function Today() {
 
       {next ? (
         <div className="rise" style={{ ["--i" as string]: i++ }}>
-          <NextUp item={next} team={child.team} coach={child.coach} href={hrefDe(next)} />
+          <NextUp item={next} team={next.team || child.team} coach={child.coach} href={hrefDe(next)} />
         </div>
       ) : (
         <div className="rise surface p-5 text-center" style={{ ["--i" as string]: i++ }}>
@@ -287,7 +287,7 @@ function PaymentDue({
 /* O próximo compromisso                                                       */
 /* -------------------------------------------------------------------------- */
 
-type Upcoming = { start: Date; end: Date; venue: string; dressingRoom?: string; opponent?: string; isHome?: boolean };
+type Upcoming = { start: Date; end: Date; venue: string; dressingRoom?: string; opponent?: string; isHome?: boolean; team?: string };
 
 /**
  * Para onde o cartão do próximo compromisso abre.

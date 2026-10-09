@@ -34,6 +34,12 @@ type ApiAthlete = {
   photoUrl: string | null;
   status: string;
   teamId: string | null;
+  /**
+   * Todas as equipas vivas do atleta, a principal primeiro. Uma miúda do
+   * Sub-12 que também joga no Sub-14 tem as duas, e a agenda tem de mostrar
+   * os treinos e os jogos de ambas. Ausente num servidor antigo.
+   */
+  equipas?: { teamId: string }[];
   position: string | null;
   squadNumber: number | null;
   availability: "available" | "limited" | "out";
@@ -331,7 +337,10 @@ export type Child = {
   name: string;
   firstName: string;
   team: string;
+  /** A equipa principal. Para saber de que equipas é um treino ou um jogo, ver `teamIds`. */
   teamId: string;
+  /** Todas as equipas, a principal primeiro. */
+  teamIds: string[];
   sport: string;
   coach: string;
   /** O que este atleta paga por mês. `null` enquanto a academia não o configurar. */
@@ -352,6 +361,8 @@ export type Child = {
 export type Training = {
   /** O plano está partilhado — ver `PlanoPartilhado` no ecrã do treino. */
   planShared: boolean;
+  /** A equipa deste treino: o filho pode estar em duas. */
+  team: string;
   id: string;
   /** O id do treino no servidor — sem o sufixo do filho. Ver `id`. */
   sessionId: string;
@@ -402,6 +413,8 @@ export type CallUpState = "pending" | "out" | "in" | "cancelled";
 
 export type Match = {
   id: string;
+  /** A equipa deste jogo: o filho pode estar em duas. */
+  team: string;
   /** O id do jogo no servidor — sem o sufixo do filho. Ver `id`. */
   matchId: string;
   childId: string;
@@ -801,12 +814,16 @@ function build(
 
   const children: Child[] = athletes.map((a) => {
     const team = a.teamId ? teamById.get(a.teamId) : undefined;
+    const teamIds = a.equipas?.length ? a.equipas.map((e) => e.teamId) : a.teamId ? [a.teamId] : [];
+    const nomes = teamIds.map((id) => teamById.get(id)?.name).filter((n): n is string => !!n);
     return {
       id: a.id,
       name: a.name,
       firstName: a.name.split(/\s+/)[0],
-      team: team?.name ?? "Sem equipa",
+      // Com duas equipas, as duas: "Sub-12 · Sub-14".
+      team: nomes.length ? nomes.join(" · ") : "Sem equipa",
       teamId: a.teamId ?? "",
+      teamIds,
       sport: team ? (sportById.get(team.sportId) ?? "") : "",
       /*
        * O treinador que o servidor escolheu, e não "o primeiro da lista".
@@ -825,9 +842,13 @@ function build(
 
   // Um treino é da equipa; a app mostra-o ao filho que está nessa equipa. Dois
   // irmãos na mesma equipa veriam o mesmo treino, cada um no seu separador.
+  //
+  // **Todas** as equipas do filho, e não só a principal: com só a principal,
+  // uma miúda do Sub-12 que também joga no Sub-14 não tinha os jogos do Sub-14
+  // na agenda do pai, embora o servidor os mandasse.
   const byTeam = new Map<string, string[]>();
   for (const c of children) {
-    byTeam.set(c.teamId, [...(byTeam.get(c.teamId) ?? []), c.id]);
+    for (const t of c.teamIds) byTeam.set(t, [...(byTeam.get(t) ?? []), c.id]);
   }
 
   const trainings: Training[] = sessions.flatMap((s) =>
@@ -835,6 +856,7 @@ function build(
       id: `${s.id}-${childId}`,
       sessionId: s.id,
       childId,
+      team: teamById.get(s.teamId)?.name ?? "",
       planShared: s.planShared === true,
       respondBy: s.respondBy === "ATHLETE" ? "ATHLETE" : "GUARDIAN",
       start: new Date(s.startsAt),
@@ -877,6 +899,7 @@ function build(
         id: `${m.id}-${childId}`,
         matchId: m.id,
         childId,
+        team: m.teamName ?? teamById.get(m.teamId)?.name ?? "",
         start: new Date(m.startsAt),
         end: new Date(m.endsAt),
         venue: m.venue,

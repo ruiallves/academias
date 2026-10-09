@@ -4,6 +4,9 @@ import { Check, Plus } from "@/lib/icons";
 import { cx } from "@/components/primitives";
 import { dialogInputClass } from "@/components/Dialog";
 
+/** A prova que todas as equipas têm. O mesmo nome que `AMIGAVEL` no servidor (`catalogs.service.ts`). */
+const AMIGAVEL = "Amigável";
+
 /**
  * As provas que uma equipa disputa.
  *
@@ -64,11 +67,27 @@ export function CompetitionPicker({
     }
   }
 
+  /*
+   * "Amigável" está sempre, marcado e sem se poder tirar.
+   *
+   * O servidor junta-o a cada equipa (`ensureAmigavel`): é a prova de qualquer
+   * jogo fora de campeonato, e é nos amigáveis que se convoca de qualquer
+   * escalão. Mostrá-lo desmarcado era dizer o contrário do que acontece. Se o
+   * clube ainda não o tem no catálogo, nasce com a equipa.
+   */
+  const outras = competicoes.filter((c) => c.label.trim().toLocaleLowerCase("pt") !== AMIGAVEL.toLocaleLowerCase("pt"));
+
   return (
     <div className="space-y-2">
-      {competicoes.length > 0 && (
-        <div className="flex flex-wrap gap-1.5">
-          {competicoes.map((c) => {
+      <div className="flex flex-wrap gap-1.5">
+        <span
+          title="Todas as equipas têm os jogos amigáveis"
+          className="inline-flex cursor-default items-center gap-1.5 rounded-full bg-signal-soft px-2.5 py-1 text-meta font-medium text-signal-ink"
+        >
+          <Check className="size-3" strokeWidth={2.5} />
+          {AMIGAVEL}
+        </span>
+        {outras.map((c) => {
             const on = selected.includes(c.id);
             return (
               <button
@@ -87,8 +106,7 @@ export function CompetitionPicker({
               </button>
             );
           })}
-        </div>
-      )}
+      </div>
 
       {!disabled && (
         <div className="flex items-center gap-1.5">
@@ -101,7 +119,7 @@ export function CompetitionPicker({
                 void criar();
               }
             }}
-            placeholder={competicoes.length ? "Outra prova…" : "Campeonato Distrital, Taça…"}
+            placeholder={outras.length ? "Outra prova…" : "Campeonato Distrital, Taça…"}
             className={cx(dialogInputClass, "h-8")}
           />
           <button type="button" className="ctl-outline h-8 shrink-0" onClick={() => void criar()} disabled={!nova.trim() || criando}>
@@ -111,8 +129,8 @@ export function CompetitionPicker({
         </div>
       )}
 
-      {competicoes.length === 0 && disabled && (
-        <p className="text-meta text-ink-4">Sem competições no catálogo do clube.</p>
+      {outras.length === 0 && disabled && (
+        <p className="text-meta text-ink-4">Sem outras competições no catálogo do clube.</p>
       )}
     </div>
   );

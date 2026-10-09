@@ -64,5 +64,7 @@
   "ai:write": "20260902200000_academias_ai",
   "legal:club": "20260911120000_documentos_legais",
   "certification:read": "20261002200000_certificacao_fpf",
-  "certification:write": "20261002200000_certificacao_fpf"
+  "certification:write": "20261002200000_certificacao_fpf",
+  "registration:read": "20261009120000_inscricoes_fpf",
+  "registration:write": "20261009120000_inscricoes_fpf"
 }

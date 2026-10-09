@@ -91,6 +91,11 @@ export type CatalogItem = {
   sportId: string | null;
   /** `#1c6a86`. Só os tipos de consulta a usam (a cor no calendário das Consultas). */
   color?: string;
+  /**
+   * Só nas competições: oficial ou não. Numa não oficial a convocatória chama
+   * atletas de qualquer escalão. Ausente num servidor antigo: conta como oficial.
+   */
+  official?: boolean;
 };
 
 export const CATALOG_META: Record<CatalogKey, { title: string; hint: string; placeholder: string; noteLabel?: string }> = {
@@ -115,7 +120,7 @@ export const CATALOG_META: Record<CatalogKey, { title: string; hint: string; pla
     title: "Competições",
     hint: "as provas que o clube disputa",
     placeholder: "Campeonato Distrital, Taça, Torneio de Verão…",
-    noteLabel: "Organização ou escalão",
+    // Sem segundo campo: o que distingue uma competição é ser oficial ou não (ver `CatalogPanel`).
   },
   inventoryCategories: {
     title: "Categorias de material",
@@ -153,6 +158,7 @@ type ApiItem = {
   archivedAt: string | null;
   sportId: string | null;
   color?: string | null;
+  official?: boolean;
 };
 
 const EMPTY: Record<CatalogKey, CatalogItem[]> = {
@@ -207,6 +213,7 @@ export function loadCatalogs(force = false): Promise<void> {
           system: r.isSystem,
           sportId: r.sportId,
           ...(r.color ? { color: r.color } : {}),
+          ...(r.official === false ? { official: false } : {}),
         });
       }
       state = next;
@@ -271,6 +278,12 @@ export async function renameItem(_key: CatalogKey, id: string, label: string, no
 /** A cor de um item (hoje, de um tipo de consulta). `null` volta à de omissão. */
 export async function setItemColor(id: string, color: string | null): Promise<void> {
   await apiPatch(`/api/catalogs/${id}`, { color });
+  await loadCatalogs(true);
+}
+
+/** Uma competição oficial ou não. Ver `convocaDeQualquerEscalao` na API. */
+export async function setItemOfficial(id: string, official: boolean): Promise<void> {
+  await apiPatch(`/api/catalogs/${id}`, { official });
   await loadCatalogs(true);
 }
 

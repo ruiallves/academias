@@ -294,6 +294,9 @@ class IdentityDto {
   @IsOptional() @IsString() @Length(0, 500) logoUrl?: string;
   /** Como o clube se trata a si próprio. Ver `shortNameOf` para o porquê de ser editável. */
   @IsOptional() @IsString() @Length(2, SHORT_NAME_MAX) shortName?: string;
+  /** O código do clube na FPF e a associação onde está filiado. Vazio limpa. */
+  @IsOptional() @IsString() @Length(0, 20) fpfClubCode?: string;
+  @IsOptional() @IsString() @Length(0, 40) footballAssociation?: string;
 }
 
 /** Desactivar ou reactivar uma conta — de staff ou de encarregado. */

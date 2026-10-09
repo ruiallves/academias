@@ -186,6 +186,17 @@ export type Permission =
    * muitas vezes uma pessoa só, e não tem de administrar a academia para isso.
    */
   | "certification:read" | "certification:write"
+  /**
+   * Inscrições na FPF — gerar o Modelo 2 de cada jogador e seguir a folha até
+   * à licença (gerada, assinada, entregue, validada).
+   *
+   * A folha leva o n.º do documento de identificação e a data de nascimento,
+   * por isso não acompanha `athlete:read`. Por omissão: presidência, direção
+   * e coordenação, que tratam dos atletas do clube inteiro. À parte de
+   * `athlete:write` porque é trabalho de secretaria, que muitas vezes é uma
+   * pessoa só.
+   */
+  | "registration:read" | "registration:write"
   | "clinical:status" | "clinical:read" | "clinical:write";
 
 const READ_ALL: Permission[] = [
@@ -200,6 +211,7 @@ const READ_ALL: Permission[] = [
   "finance:read",
   "ai:read",
   "certification:read",
+  "registration:read",
 ];
 
 const WRITE_ALL: Permission[] = [
@@ -224,6 +236,8 @@ const WRITE_ALL: Permission[] = [
   "ai:write",
   // Responder à candidatura e assinar as declarações: presidência e direção.
   "certification:write",
+  // Gerar e seguir as inscrições na FPF.
+  "registration:write",
   // Vincular o clube aos termos: presidência e direção, como `settings:write`.
   "legal:club",
 ];
@@ -264,6 +278,8 @@ export const ROLE_PERMISSIONS: Record<Role, Permission[]> = {
     // conseguia convidar um treinador, cujo cargo traz `ai:write` (ver
     // `ungrantablePermissions`).
     "ai:write",
+    // As inscrições na FPF: quem monta os plantéis é quem os inscreve.
+    "registration:write",
   ],
 
   // Sem `billing:read`. A regra do produto é que o financeiro só se vê com

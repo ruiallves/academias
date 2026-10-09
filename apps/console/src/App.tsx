@@ -53,6 +53,8 @@ import NewAiAnalysis from "@/routes/ai/NewAnalysis";
 import AiAnalysisDetail from "@/routes/ai/AnalysisDetail";
 import AiInsights from "@/routes/ai/Insights";
 import Certification from "@/routes/certification/Certification";
+import Inscricoes from "@/routes/inscricoes/Inscricoes";
+import { INSCRICOES_FPF } from "@/lib/funcionalidades";
 import Soon from "@/routes/Soon";
 
 /**
@@ -168,6 +170,8 @@ export default function App() {
         {/* Certificação FPF. Só tem menu nos clubes com futebol; quem chega pelo
             endereço sem o ter vê a página a dizê-lo. */}
         <Route path="certificacao" element={<Allow p="certification:read"><Certification /></Allow>} />
+        {/* Fora desta versão: ver `lib/funcionalidades.ts`. */}
+        {INSCRICOES_FPF && <Route path="inscricoes" element={<Allow p="registration:read"><Inscricoes /></Allow>} />}
 
         <Route path="mensalidades" element={<Allow p="billing:read"><Fees /></Allow>} />
         <Route path="comunicacao" element={<Allow p="comms:read"><Comms /></Allow>} />

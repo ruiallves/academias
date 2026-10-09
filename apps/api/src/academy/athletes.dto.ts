@@ -4,6 +4,7 @@ import {
   ArrayMaxSize,
   IsArray,
   IsBoolean,
+  IsIn,
   IsInt,
   IsISO8601,
   IsOptional,
@@ -14,6 +15,7 @@ import {
   Matches,
   ValidateNested,
 } from "class-validator";
+import { TODOS_OS_PAISES } from "../inscricoes/paises";
 
 /**
  * Os corpos de criação e importação de atletas — classes, não interfaces.
@@ -183,6 +185,20 @@ export class AthleteInputDto {
   @Length(0, 20)
   citizenCardNumber?: string;
 
+  /** País de nascimento e nacionalidade (ISO alfa-2) e telefone do atleta. Opcionais; vazio limpa. */
+  @IsOptional()
+  @IsIn(["", ...TODOS_OS_PAISES])
+  birthCountry?: string;
+
+  @IsOptional()
+  @IsIn(["", ...TODOS_OS_PAISES])
+  nationality?: string;
+
+  @IsOptional()
+  @IsString()
+  @Length(0, 30)
+  phone?: string;
+
   @IsOptional()
   @IsISO8601()
   medicalValidUntil?: string;
@@ -345,6 +361,20 @@ export class AthleteUpdateDto {
   @IsString()
   @Length(0, 20)
   citizenCardNumber?: string;
+
+  /** País de nascimento e nacionalidade (ISO alfa-2) e telefone do atleta. Opcionais; vazio limpa. */
+  @IsOptional()
+  @IsIn(["", ...TODOS_OS_PAISES])
+  birthCountry?: string;
+
+  @IsOptional()
+  @IsIn(["", ...TODOS_OS_PAISES])
+  nationality?: string;
+
+  @IsOptional()
+  @IsString()
+  @Length(0, 30)
+  phone?: string;
 
   @IsOptional()
   @IsISO8601()

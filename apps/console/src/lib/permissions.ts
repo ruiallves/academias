@@ -173,6 +173,11 @@ export type Permission =
    * declarações de compromisso em nome do clube.
    */
   | "certification:read" | "certification:write"
+  /**
+   * Inscrições na FPF (Modelo 2). Gémea do servidor: presidência, direção e
+   * coordenação leem e escrevem.
+   */
+  | "registration:read" | "registration:write"
   | "clinical:write";
 
 export type Role =
@@ -210,6 +215,7 @@ const READ_ALL: Permission[] = [
   "finance:read",
   "ai:read",
   "certification:read",
+  "registration:read",
 ];
 
 const WRITE_ALL: Permission[] = [
@@ -240,6 +246,8 @@ const WRITE_ALL: Permission[] = [
   "ai:write",
   // Responder à candidatura à FPF. Gémea do servidor.
   "certification:write",
+  // As inscrições na FPF. Gémea do servidor.
+  "registration:write",
   // Vincular o clube aos termos: presidência e direção, como `settings:write`.
   "legal:club",
 ];
@@ -281,6 +289,8 @@ export const ROLE_PERMISSIONS: Record<Role, Permission[]> = {
     "training:write",
     // O que o treinador pode, o coordenador também pode. Gémeo do servidor.
     "ai:write",
+    // As inscrições na FPF. Gémeo do servidor.
+    "registration:write",
   ],
 
   /**

@@ -94,7 +94,7 @@ import type { Athlete, Fee } from "@/data/types";
 type Tab = "overview" | "matches" | "attendance" | "documents" | "school" | "clinical" | "kit" | "fees" | "family" | "history";
 
 /** Os separadores que se abrem por link (`?separador=`), com o nome em português. */
-const SEPARADOR_DO_LINK: Record<string, Tab> = { clinico: "clinical" };
+const SEPARADOR_DO_LINK: Record<string, Tab> = { clinico: "clinical", documentos: "documents" };
 
 /**
  * A ficha do atleta.

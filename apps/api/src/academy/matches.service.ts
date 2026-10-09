@@ -11,6 +11,7 @@ import {
   type RequestContext,
 } from "../common/permissions";
 import { headCoaches, pesoDoTitulo } from "./head-coaches";
+import { AMIGAVEL } from "./catalogs.service";
 import { formatarNoFuso, horaNoFuso, instanteNoFuso, lerHora, partesNoFuso, somarDias } from "../common/fuso";
 
 /**
@@ -366,7 +367,7 @@ export class MatchesService {
         select: {
           id: true, startsAt: true, isHome: true, ourScore: true, theirScore: true,
           team: { select: { name: true } },
-          competition: { select: { label: true } },
+          competition: { select: { label: true, official: true } },
           opponentReport: { select: ADVERSARIO_SELECT },
         },
       });
@@ -684,7 +685,7 @@ export class MatchesService {
           id: true, teamId: true, startsAt: true, isHome: true, opponent: true,
           ourScore: true, theirScore: true,
           team: { select: { name: true } },
-          competition: { select: { label: true } },
+          competition: { select: { label: true, official: true } },
           opponentReport: { select: ADVERSARIO_SELECT },
         },
       });
@@ -1204,7 +1205,11 @@ export class MatchesService {
       const scope = teamScopeFilter(ctx);
       const match = await db.match.findFirst({
         where: { id: matchId, ...(scope ? { teamId: scope } : {}) },
-        select: { id: true, teamId: true, startsAt: true, callUpsClosedAt: true, team: { select: { maxAge: true, sportId: true } } },
+        select: {
+          id: true, teamId: true, startsAt: true, callUpsClosedAt: true,
+          team: { select: { maxAge: true, sportId: true } },
+          competition: { select: { label: true, official: true } },
+        },
       });
       if (!match) throw new NotFoundException("Jogo não encontrado ou fora do teu âmbito");
       if (match.startsAt.getTime() > Date.now()) {
@@ -1229,7 +1234,10 @@ export class MatchesService {
           id: { in: ids },
           OR: [
             { teams: { some: { leftAt: null, teamId: match.teamId } } },
-            { teams: { some: { leftAt: null, teamId: { in: otherTeamIds } } }, birthdate: { gte: floor } },
+            {
+              teams: { some: { leftAt: null, teamId: { in: otherTeamIds } } },
+              ...(convocaDeQualquerEscalao(match.competition) ? {} : { birthdate: { gte: floor } }),
+            },
           ],
         },
         select: { id: true, teams: { where: { leftAt: null }, select: { teamId: true } } },
@@ -1432,8 +1440,9 @@ export class MatchesService {
             { teams: { none: { leftAt: null, teamId: match.teamId } } },
           ],
           // O filtro de idade é feito na base: quem nasceu antes desta data já
-          // é velho de mais para esta equipa. Ver `birthdateFloor`.
-          birthdate: { gte: birthdateFloor(match.maxAge, match.startsAt) },
+          // é velho de mais para esta equipa. Ver `birthdateFloor`. Num
+          // amigável não há filtro: chama-se de qualquer escalão (ver `eAmigavel`).
+          ...(match.amigavel ? {} : { birthdate: { gte: birthdateFloor(match.maxAge, match.startsAt) } }),
         },
         select: {
           id: true, name: true, status: true, squadNumber: true, birthdate: true,
@@ -1457,6 +1466,8 @@ export class MatchesService {
         teamName: teamName.get(a.teams[0]?.teamId ?? "") ?? "",
         // Genérico de propósito — ver o porquê no comentário do método.
         blocked: a.status === "PAUSED" || a.clinical.some((c) => c.impact === "OUT"),
+        // Só num amigável aparece alguém assim: mais velho do que a equipa.
+        aboveAge: a.birthdate < birthdateFloor(match.maxAge, match.startsAt),
       }));
     });
   }
@@ -1508,7 +1519,8 @@ export class MatchesService {
             { teams: { some: { leftAt: null, teamId: match.teamId } } },
             {
               teams: { some: { leftAt: null, teamId: { in: otherTeamIds } } },
-              birthdate: { gte: floor },
+              // Num amigável, de qualquer escalão. Ver `eAmigavel`.
+              ...(match.amigavel ? {} : { birthdate: { gte: floor } }),
             },
           ],
         },
@@ -2040,6 +2052,7 @@ export class MatchesService {
         id: true, teamId: true, startsAt: true, opponent: true, isHome: true, venue: true,
         status: true, callUpsClosedAt: true,
         team: { select: { maxCallUps: true, maxAge: true, sportId: true } },
+        competition: { select: { label: true, official: true } },
       },
     });
 
@@ -2049,7 +2062,13 @@ export class MatchesService {
       throw new BadRequestException("A convocatória já foi submetida. Reabre-a para alterar.");
     }
 
-    return { ...match, maxCallUps: match.team.maxCallUps, maxAge: match.team.maxAge, sportId: match.team.sportId };
+    return {
+      ...match,
+      maxCallUps: match.team.maxCallUps,
+      maxAge: match.team.maxAge,
+      sportId: match.team.sportId,
+      amigavel: convocaDeQualquerEscalao(match.competition),
+    };
   }
 }
 
@@ -2349,6 +2368,23 @@ function foraDeCampo(r: ComMinutos): string | null {
  * base de dados. Comparar idades obrigaria a trazer todos os atletas da academia
  * para memória só para os deitar fora a seguir.
  */
+/**
+ * Uma competição não oficial convoca de qualquer escalão.
+ *
+ * A regra da idade (`birthdateFloor`) existe para os jogos oficiais, onde a
+ * federação não deixa um atleta jogar abaixo do escalão. Num amigável, num
+ * torneio ou num convívio, um Sub-11 contra Sub-13 é coisa comum e o clube
+ * chama quem quiser: o atleta mais velho aparece na lista com o aviso "acima da
+ * idade", em vez de ficar escondido. Decisão do clube, a 09/10/2026.
+ *
+ * Não oficial é o que o clube marcar assim nas Definições (`CatalogItem.official`),
+ * o "Amigável" sempre (ver `ensureAmigavel`), e um jogo antigo sem prova.
+ */
+export function convocaDeQualquerEscalao(competicao: { label: string; official: boolean } | null | undefined): boolean {
+  if (!competicao) return true;
+  return !competicao.official || competicao.label.trim().toLowerCase() === AMIGAVEL.toLowerCase();
+}
+
 export function birthdateFloor(maxAge: number, matchDate: Date): Date {
   const seasonYear = matchDate.getUTCFullYear() - (matchDate.getUTCMonth() < 7 ? 1 : 0);
   return new Date(Date.UTC(seasonYear - maxAge, 0, 1));

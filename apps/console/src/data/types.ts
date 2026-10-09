@@ -105,6 +105,9 @@ export type Academy = {
   /** Quando abre o ano das quotas anuais de sócio — do clube, para todas as categorias anuais. */
   memberAnnualStartMonth: number;
   memberAnnualStartDay: number;
+  /** O código do clube na FPF e a associação de futebol ("Braga"). Vazios até alguém os escrever. */
+  fpfClubCode: string;
+  footballAssociation: string;
 };
 
 export type Team = {
@@ -286,6 +289,10 @@ export type Athlete = {
   postalCode?: string;
   city?: string;
   citizenCardNumber?: string;
+  /** País de nascimento e nacionalidade (ISO alfa-2) e telefone: o que o boletim da FPF pede. Mesma regra. */
+  birthCountry?: string;
+  nationality?: string;
+  phone?: string;
   /** As licenças federativas, uma por modalidade e época. Ver `AthleteLicense` na API. */
   licencas: { sportId: string; seasonId: string; number: string }[];
   /**

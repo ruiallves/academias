@@ -28,10 +28,12 @@ import {
   Activity,
   Target,
   Award,
+  FileSignature,
   type LucideIcon,
 } from "@/lib/icons";
 import type { Permission, Session } from "@/lib/permissions";
 import { permissionsOf } from "@/lib/permissions";
+import { INSCRICOES_FPF } from "@/lib/funcionalidades";
 import { hasDiscipline, profileOf, profiledSports, sportPath, type SportCode } from "@/lib/sports";
 
 /**
@@ -90,8 +92,11 @@ export type NavItem = {
    * nenhuma, e um menu que abre uma página a dizer "isto não é para ti" é um
    * menu a mais. No editor de cargos o item aparece sempre, como `sports` — o
    * cargo decide se o mostra, e a modalidade decide se existe.
+   *
+   * Uma lista quando serve mais do que uma: as Inscrições (Modelo 2 da FPF)
+   * são de futebol **ou** futsal.
    */
-  discipline?: SportCode;
+  discipline?: SportCode | SportCode[];
 };
 
 export type NavGroup = {
@@ -301,6 +306,18 @@ export const NAV_CATALOG: NavGroup[] = [
         discipline: "football",
         beta: true,
       },
+      /*
+        As inscrições na FPF (Modelo 2): gerar os boletins e seguir cada um
+        até à licença. Só futebol e futsal, que são as modalidades do boletim.
+      */
+      {
+        key: "registrations",
+        label: "Inscrições",
+        to: "/inscricoes",
+        icon: FileSignature,
+        requires: "registration:read",
+        discipline: ["football", "futsal"],
+      },
     ],
   },
   {
@@ -384,7 +401,9 @@ export function navFor(session: Session): NavGroup[] {
     ...group,
     items: group.items
       .filter((i) => perms.has(i.requires) && (!chosen || chosen.has(i.key)))
-      .filter((i) => !i.discipline || hasDiscipline(i.discipline))
+      // Fora desta versão: ver `lib/funcionalidades.ts`.
+      .filter((i) => i.key !== "registrations" || INSCRICOES_FPF)
+      .filter((i) => !i.discipline || [i.discipline].flat().some((d) => hasDiscipline(d)))
       .flatMap((i) => (i.dynamic === "sports" ? sportItems(i) : [i])),
   })).filter((group) => group.items.length > 0);
 }

@@ -2,6 +2,7 @@ import { BadRequestException, ForbiddenException, Injectable, Logger, NotFoundEx
 import { PrismaService, type ScopedClient } from "../prisma/prisma.service";
 import { can, type RequestContext } from "../common/permissions";
 import { currentSeason } from "../common/seasons";
+import { ensureAmigavel } from "./catalogs.service";
 
 /**
  * A viragem de época: fechar a que acaba e montar a que começa.
@@ -314,6 +315,7 @@ export class SeasonsService {
 
         /* Os escalões, com a linhagem a dizer de onde vieram. */
         const novaDe = new Map<string, string>();
+        let amigavel: string | undefined;
         for (const pedido of dto.equipas) {
           const antiga = antigas.find((t) => t.id === pedido.fromTeamId)!;
           const nova = await db.team.create({
@@ -332,6 +334,10 @@ export class SeasonsService {
             select: { id: true, name: true },
           });
           novaDe.set(antiga.id, nova.id);
+
+          /* "Amigável" entra sempre, como em qualquer equipa nova (ver `ensureAmigavel`). */
+          amigavel ??= await ensureAmigavel(db, ctx.academyId);
+          await db.teamCompetition.create({ data: { teamId: nova.id, competitionId: amigavel } });
 
           /* O preço do escalão: o que veio no pedido, que o assistente mostrou. */
           if (pedido.amountCents != null) {

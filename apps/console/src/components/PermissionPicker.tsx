@@ -2,6 +2,7 @@ import { Check } from "@/lib/icons";
 import { Pill, cx } from "./primitives";
 import { ADMIN_AREAS, AREAS, CLINICAL_AREAS, SCOUTING_AREAS, levelOf, type Area, type Level } from "@/lib/access";
 import { NAV_CATALOG, SETTINGS_ITEM } from "@/lib/nav";
+import { INSCRICOES_FPF } from "@/lib/funcionalidades";
 import type { Permission } from "@/lib/permissions";
 
 /**
@@ -209,7 +210,10 @@ export function NavPicker({
   possible: Set<string>;
   disabled?: boolean;
 }) {
-  const items = [...NAV_CATALOG, { label: undefined, items: [SETTINGS_ITEM] }].flatMap((g) => g.items);
+  const items = [...NAV_CATALOG, { label: undefined, items: [SETTINGS_ITEM] }]
+    .flatMap((g) => g.items)
+    // Fora desta versão: ver `lib/funcionalidades.ts`. Só se esconde a linha; o que já estiver gravado fica.
+    .filter((i) => i.key !== "registrations" || INSCRICOES_FPF);
 
   return (
     <div className="space-y-3">

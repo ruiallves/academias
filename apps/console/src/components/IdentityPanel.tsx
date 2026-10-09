@@ -6,6 +6,8 @@ import { apiDelete, apiPatch, apiPost } from "@/lib/http";
 import { reloadAcademy, useStore } from "@/lib/store";
 import { signalVars } from "@academia/ui/tokens";
 import { erroAvisado } from "@/lib/avisos";
+import { ASSOCIACOES } from "@/lib/paises";
+import { hasDiscipline } from "@/lib/sports";
 
 /**
  * A identidade do clube — a cor e o símbolo.
@@ -180,6 +182,8 @@ export function IdentityPanel({ mayWrite }: { mayWrite: boolean }) {
         </div>
         <ShortNameField mayWrite={mayWrite} onError={setErro} />
       </Bloco>
+
+      {(hasDiscipline("football") || hasDiscipline("futsal")) && <FederacaoBloco mayWrite={mayWrite} onError={setErro} />}
 
       <ClubSymbol mayWrite={mayWrite} onError={setErro} />
 
@@ -424,6 +428,92 @@ function monogram(shortName: string): string {
   const parts = shortName.trim().split(/\s+/);
   const letters = parts.length > 1 ? parts[0][0] + parts[parts.length - 1][0] : shortName.slice(0, 2);
   return letters.toUpperCase();
+}
+
+/**
+ * O clube na federação: o código do clube e a Associação de Futebol.
+ *
+ * É o que o Modelo 2 da FPF pede ao clube em cada inscrição de jogador, e sai
+ * em todas as folhas geradas em Gestão → Inscrições. Só aparece a clubes com
+ * futebol ou futsal. Grava ao sair do campo, como o nome curto.
+ */
+function FederacaoBloco({ mayWrite, onError }: { mayWrite: boolean; onError: (m: string | null) => void }) {
+  const { academy } = useStore();
+  const [codigo, setCodigo] = useState(academy.fpfClubCode);
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    setCodigo(academy.fpfClubCode);
+  }, [academy.fpfClubCode]);
+
+  async function gravar(dados: { fpfClubCode?: string; footballAssociation?: string }) {
+    setSaving(true);
+    onError(null);
+    try {
+      await apiPatch("/api/identity", dados);
+      await reloadAcademy();
+    } catch (e) {
+      setCodigo(academy.fpfClubCode);
+      onError(e instanceof Error ? e.message : "Não foi possível gravar.");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  function gravarCodigo() {
+    const limpo = codigo.replace(/\s+/g, "");
+    if (limpo === academy.fpfClubCode) return;
+    if (limpo && !/^\d+$/.test(limpo)) {
+      setCodigo(academy.fpfClubCode);
+      onError("O código do clube tem só algarismos.");
+      return;
+    }
+    void gravar({ fpfClubCode: limpo });
+  }
+
+  return (
+    <Bloco
+      titulo="Federação"
+      descricao="O código do clube e a associação onde está filiado. Saem em todos os boletins de inscrição (Modelo 2) gerados em Inscrições."
+      estado={saving ? <span className="text-meta text-ink-3">a gravar…</span> : undefined}
+    >
+      <div className="grid gap-x-6 gap-y-5 sm:grid-cols-[minmax(0,10rem)_minmax(0,16rem)]">
+        <Campo label="Código do clube">
+          <input
+            aria-label="Código do clube"
+            value={codigo}
+            inputMode="numeric"
+            maxLength={10}
+            placeholder="0000"
+            disabled={!mayWrite || saving}
+            onChange={(e) => setCodigo(e.target.value)}
+            onBlur={gravarCodigo}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") (e.target as HTMLInputElement).blur();
+              if (e.key === "Escape") setCodigo(academy.fpfClubCode);
+            }}
+            className={cx(campoClass, "font-mono")}
+          />
+        </Campo>
+        <Campo label="Associação de Futebol">
+          <select
+            aria-label="Associação de Futebol"
+            value={academy.footballAssociation}
+            disabled={!mayWrite || saving}
+            onChange={(e) => void gravar({ footballAssociation: e.target.value })}
+            className={campoClass}
+          >
+            <option value="">Escolher…</option>
+            {ASSOCIACOES.map((a) => (
+              <option key={a} value={a}>
+                AF {a}
+              </option>
+            ))}
+          </select>
+        </Campo>
+      </div>
+    </Bloco>
+  );
 }
 
 /** O mesmo tecto do servidor — o do nome completo. Ver `common/short-name.ts`. */

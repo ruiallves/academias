@@ -958,7 +958,7 @@ function GuestPicker({
 
       {visible.length === 0 ? (
         open && (
-          <p className="px-5 pb-3 text-meta text-ink-4">Ninguém com esse nome nos escalões inferiores.</p>
+          <p className="px-5 pb-3 text-meta text-ink-4">Ninguém com esse nome noutros escalões.</p>
         )
       ) : (
         <ListaDeEscolha>
@@ -1001,6 +1001,9 @@ function GuestPicker({
                     </span>
                     {g.position && <span className="block truncate text-meta text-ink-3">{g.position}</span>}
                   </span>
+
+                  {/* Num amigável chama-se de qualquer escalão; o mais velho fica assinalado. */}
+                  {g.aboveAge && !g.blocked && <Pill tone="warn">acima da idade</Pill>}
 
                   {/* A equipa de origem fica sempre à vista — é o que distingue um
                       convidado de um erro de convocatória. */}
