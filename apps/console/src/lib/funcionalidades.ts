@@ -10,4 +10,4 @@
  * 09/10/2026). A migração `20261009120000_inscricoes_fpf` já está aplicada e
  * as rotas `/api/inscricoes` existem; só a consola não as mostra.
  */
-export const INSCRICOES_FPF = false;
+export const INSCRICOES_FPF = true;

@@ -48,9 +48,20 @@ export function nomeDoPais(codigo: string | null | undefined): string {
   return codigo ? nomeDe(codigo) : "";
 }
 
-/** As 22 associações de futebol. Gémea de `ASSOCIACOES` em `inscricoes/regras.ts` na API. */
+/**
+ * As associações distritais e regionais, sem o prefixo: "Braga" é a AF Braga
+ * numa modalidade de futebol e a AB Braga numa de basquetebol. Gémea de
+ * `ASSOCIACOES` em `inscricoes/regras.ts` na API.
+ */
 export const ASSOCIACOES = [
   "Algarve", "Angra do Heroísmo", "Aveiro", "Beja", "Braga", "Bragança", "Castelo Branco",
   "Coimbra", "Évora", "Guarda", "Horta", "Leiria", "Lisboa", "Madeira", "Ponta Delgada",
   "Portalegre", "Porto", "Santarém", "Setúbal", "Viana do Castelo", "Vila Real", "Viseu",
+] as const;
+
+/** Os distritos e as regiões autónomas, para o boletim da FPB. Gémea de `DISTRITOS` na API. */
+export const DISTRITOS = [
+  "Aveiro", "Beja", "Braga", "Bragança", "Castelo Branco", "Coimbra", "Évora", "Faro", "Guarda", "Leiria",
+  "Lisboa", "Portalegre", "Porto", "Santarém", "Setúbal", "Viana do Castelo", "Vila Real", "Viseu",
+  "Região Autónoma dos Açores", "Região Autónoma da Madeira",
 ] as const;

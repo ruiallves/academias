@@ -170,7 +170,11 @@ function Squad({ match }: { match: ApiMatch }) {
   const roster = useMemo(() => eligibleFor(session, match), [session, match]);
   const ownIds = useMemo(() => new Set(roster.map((r) => r.athlete.id)), [roster]);
 
-  const [picked, setPicked] = useState<Set<string>>(() => new Set(match.calledUp.map((c) => c.athleteId)));
+  // Quem saiu do clube depois de entrar num rascunho fica de fora: já não está na
+  // lista para se desmarcar, e o servidor recusava a gravação por causa dele.
+  const [picked, setPicked] = useState<Set<string>>(
+    () => new Set(match.calledUp.filter((c) => athleteById(c.athleteId)?.status !== "left").map((c) => c.athleteId)),
+  );
   const [busy, setBusy] = useState<null | "save" | "submit" | "reopen">(null);
   /*
    * Submeter passa por um diálogo — o que pergunta a logística do dia (ponto de
@@ -193,6 +197,16 @@ function Squad({ match }: { match: ApiMatch }) {
   const [error, setError] = useState<string | null>(null);
   const [saved, setSaved] = useState(false);
   const [folha, setFolha] = useState(false);
+  /*
+   * Submetida, mas com a lista em memória ainda a antiga.
+   *
+   * Submeter marca o jogo como enviado na hora (`aplicarLogistica`), e os
+   * convocados só chegam com a recarga da academia, em segundo plano. A folha
+   * sai de `match.calledUp`: exportada nesse intervalo, imprimia a lista de
+   * antes, com quem se acabou de tirar. Um clube recebeu assim um PDF com
+   * jogadores que não tinha convocado. O botão espera pela lista confirmada.
+   */
+  const [aConfirmar, setAConfirmar] = useState(false);
 
   /*
    * Candidatos de escalões inferiores — jogam para cima, nunca para baixo.
@@ -323,7 +337,21 @@ function Squad({ match }: { match: ApiMatch }) {
        * gesto de uma vez por jogo.
        */
       const detalhe = await getMatch(match.id);
-      await descarregarFolha({ match: folhaDoJogo(detalhe), rows: sheetRows, academy, season });
+      /*
+       * A última guarda: a lista do servidor tem de ser a que vai ser impressa.
+       * Se a recarga depois de submeter falhou, a de memória é a antiga, e a
+       * folha não sai com ela.
+       */
+      const doServidor = new Set(detalhe.squad.map((s) => s.athleteId));
+      const emMemoria = new Set(match.calledUp.map((c) => c.athleteId));
+      if (doServidor.size !== emMemoria.size || [...doServidor].some((id) => !emMemoria.has(id))) {
+        throw new Error("A lista de convocados mudou desde que a página carregou. Atualiza a página e exporta outra vez.");
+      }
+      // A resposta de cada família como está agora: quem recusou depois de a
+      // página carregar já não sai na folha (ver `buildCallUpPdf`).
+      const estado = new Map(detalhe.squad.map((s) => [s.athleteId, s.callUpStatus]));
+      const rows = sheetRows.map((r, i) => ({ ...r, status: estado.get(match.calledUp[i].athleteId) ?? r.status }));
+      await descarregarFolha({ match: folhaDoJogo(detalhe), rows, academy, season });
     } catch (e) {
       setError(e instanceof Error ? e.message : "Não foi possível gerar o PDF.");
     } finally {
@@ -396,16 +424,18 @@ function Squad({ match }: { match: ApiMatch }) {
         <button
           type="button"
           onClick={() => void exportar()}
-          disabled={!match.submitted || folha}
+          disabled={!match.submitted || folha || aConfirmar}
           className="ctl-outline"
           title={
-            match.submitted
-              ? "PDF da convocatória, para assinar no ponto de encontro"
-              : "Submete a convocatória primeiro — a folha é da lista que as famílias receberam"
+            !match.submitted
+              ? "Submete a convocatória primeiro — a folha é da lista que as famílias receberam"
+              : aConfirmar
+                ? "A confirmar os convocados"
+                : "PDF da convocatória, para assinar no ponto de encontro"
           }
         >
           <Download className="size-3.5" strokeWidth={1.75} />
-          {folha ? "A gerar…" : "Exportar PDF"}
+          {folha ? "A gerar…" : aConfirmar ? "A confirmar convocados…" : "Exportar PDF"}
         </button>
       </PanelHead>
 
@@ -626,7 +656,13 @@ function Squad({ match }: { match: ApiMatch }) {
               servidor — mas em segundo plano, porque o que o gesto acabou de
               mudar já está no ecrã.
             */
-            if (submeteu) void refresh();
+            if (submeteu) {
+              // O PDF fica bloqueado até a lista confirmada chegar. Ver `aConfirmar`.
+              setAConfirmar(true);
+              refresh()
+                .catch(() => setError("Não foi possível confirmar os convocados. Atualiza a página para exportar o PDF."))
+                .finally(() => setAConfirmar(false));
+            }
           }}
           onClose={() => setDialogo(null)}
         />

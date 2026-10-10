@@ -217,7 +217,9 @@ function motivoDeBloqueio(a: Athlete): string | null {
 
 export function eligibleFor(session: Session, match: ApiMatch): Eligible[] {
   return listAthletes(session)
-    .filter((a) => naEquipa(a, match.teamId))
+    // Quem saiu do clube continua na equipa (a saída não fecha a passagem), mas
+    // já não se convoca. O servidor recusa-o também.
+    .filter((a) => naEquipa(a, match.teamId) && a.status !== "left")
     .map((a) => ({
       athlete: a,
       blockedBy: motivoDeBloqueio(a),

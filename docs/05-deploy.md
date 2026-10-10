@@ -10,6 +10,7 @@ próprio — são compiladas e servidas pela API. Ver "Uma origem por clube" em
 | Railway | o worker da Academias AI (serviço à parte) | o domínio que o Railway der |
 | Vercel | o site de marketing | `academias.pt`, `www.academias.pt` |
 | Vercel | o painel da plataforma | `admin.academias.pt` |
+| Vercel | o site dos clubes (ver `08-site-do-clube.md`) | o domínio de cada clube, `*.sites.academias.pt` |
 
 ---
 

@@ -4517,3 +4517,22 @@ quem tem equipas atribuídas só vê os atletas delas (`teamScopeFilter`).
   falta confirmar com a FPF se é esse o código pedido.
 - Teste: `npm run test:inscricoes` (64). Migração `20261009120000_inscricoes_fpf`,
   aplicada a 09/10/2026.
+
+### Basquetebol (FPB) e a federação por modalidade — 09/10/2026
+
+- O menu Inscrições passou a servir também o basquetebol: Modelo 1 da FPB
+  (`assets/fpb/modelo-1-jogador.pdf`, desenho em `inscricoes/modelo-fpb.ts`),
+  preenchido até ao seguro desportivo. `folhas-pdf.ts` monta lotes mistos.
+  Escalões FPB pela idade no ano em que a época acaba (Sub 14 = 2011 e 2012 em
+  2024/25); Master e BCR à mão. Estatuto: FBP para portugueses (proposta; um
+  estrangeiro formado cá escreve-se à mão), comunitário ou não pelo país.
+  O boletim da FPB só tem primeira inscrição e revalidação.
+- A federação saiu da academia para a modalidade: `Sport.federationClubCode`,
+  `association`, `insuranceKind` (`FPB`/`CLUB`), `insurancePolicy`,
+  `insuranceCompany`, editados em Definições → Modalidades. `Academy.fpfClubCode`
+  e `footballAssociation` ficam obsoletos (copiados pela migração
+  `20261009160000_federacao_por_modalidade`, aplicada a 09/10); apagar numa
+  migração seguinte, depois de a API nova estar em produção.
+- Atleta: `idDocValidUntil`, `district`, `municipality` (regra de leitura do NIF).
+- Uma linha por atleta e modalidade: quem joga futebol e basquetebol aparece
+  duas vezes. `test:inscricoes` (99).

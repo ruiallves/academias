@@ -17,12 +17,16 @@
  * Uso: npm run test:inscricoes
  */
 import { PDFArray, PDFDocument, PDFName } from "pdf-lib";
-import { gerarModelo2, partirNome } from "../src/inscricoes/modelo-2";
+import { partirNome } from "../src/inscricoes/desenho";
+import { gerarFolhas } from "../src/inscricoes/folhas-pdf";
 import { estatutoFpf } from "../src/inscricoes/paises";
 import {
+  associacaoValida,
   categoriaPelaIdade,
   documentoDoAtleta,
   emFalta,
+  emFaltaNoClube,
+  federacaoDaModalidade,
   montarFolha,
   normalizarCodigoDoClube,
   siglaDoNome,
@@ -60,6 +64,13 @@ async function main() {
     check("2016 em 2026/27 é Benjamim (Sub-11)", categoriaPelaIdade(d("2016-09-01"), EPOCA) === "12");
     check("2018 em 2026/27 é Traquina (Sub-9)", categoriaPelaIdade(d("2018-09-01"), EPOCA) === "15");
     check("2021 em 2026/27 é Petiz", categoriaPelaIdade(d("2021-09-01"), EPOCA) === "17");
+    // FPB: em 2024/25 os Sub 14 eram os nascidos em 2011 e 2012.
+    check("FPB: 2011 em 2024/25 é Sub 14", categoriaPelaIdade(d("2011-05-01"), e2425, "FPB") === "SUB14");
+    check("FPB: 2012 em 2024/25 é Sub 14", categoriaPelaIdade(d("2012-05-01"), e2425, "FPB") === "SUB14");
+    check("FPB: 2013 em 2024/25 é Mini 12", categoriaPelaIdade(d("2013-05-01"), e2425, "FPB") === "MINI12");
+    check("FPB: 2007 em 2024/25 é Sub 18", categoriaPelaIdade(d("2007-05-01"), e2425, "FPB") === "SUB18");
+    check("FPB: 2006 em 2024/25 é Sénior", categoriaPelaIdade(d("2006-05-01"), e2425, "FPB") === "SENIOR");
+    check("FPB: 2020 em 2026/27 é Baby-Basket", categoriaPelaIdade(d("2021-05-01"), EPOCA, "FPB") === "BABY");
   }
 
   console.log("\nO documento de identificação");
@@ -113,7 +124,7 @@ async function main() {
     email: null,
     phone: null,
   };
-  const clube = { name: "GD Teste", fpfClubCode: "1234", footballAssociation: "Braga" };
+  const clube = { name: "GD Teste", federationClubCode: "1234", association: "Braga" };
   {
     const f = montarFolha({ atleta, clube, epoca: EPOCA, disciplina: "football", generoDaEquipa: "MALE", tipo: "FIRST", categoria: "09", licenca: null, contactoDoEncarregado: { email: "mae@x.pt", phone: "912000000" } });
     check("o nome sai limpo", f.nome === "João Silva");
@@ -125,13 +136,42 @@ async function main() {
     check("diz o que falta", ["dígito de controlo do CC", "país de nascimento", "nacionalidade", "sexo", "email", "telefone"].every((x) => falta.includes(x)), falta.join(", "));
   }
 
+  console.log("\nO basquetebol (FPB)");
+  {
+    const completo = {
+      ...atleta, taxId: "123456789", idDocValidUntil: d("2030-01-31"), address: "Rua A, 1", postalCode: "4700-123",
+      city: "Braga", district: "Braga", municipality: "Braga", email: "a@x.pt", phone: "912345678",
+    };
+    const fpb = (c: Record<string, unknown> = {}, a: typeof completo = completo) =>
+      montarFolha({ atleta: a, clube: { ...clube, insuranceKind: "FPB", ...c }, epoca: EPOCA, disciplina: "basketball", generoDaEquipa: "MALE", tipo: "FIRST", categoria: "SUB14", licenca: null });
+    check("o basquetebol vai para a FPB", fpb().federacao === "FPB");
+    check("português é FBP", fpb().estatuto === "FBP");
+    check("espanhol é sem FBP comunitário", fpb({}, { ...completo, nationality: "ES" }).estatuto === "COMUNITARIO");
+    check("brasileiro é sem FBP não comunitário", fpb({}, { ...completo, nationality: "BR" }).estatuto === "NAO_COMUNITARIO");
+    check("com tudo na ficha, nada em falta", emFalta(fpb()).length === 0, emFalta(fpb()).join(", "));
+    const semMorada = emFalta(fpb({}, { ...completo, district: null, municipality: null, idDocValidUntil: null, taxId: null }));
+    check("a FPB pede distrito, concelho, validade e NIF", ["distrito", "concelho", "validade do documento", "NIF"].every((x) => semMorada.includes(x)), semMorada.join(", "));
+    check("o futebol não os pede", emFalta(montarFolha({ atleta: { ...completo, district: null, taxId: null }, clube, epoca: EPOCA, disciplina: "football", generoDaEquipa: "MALE", tipo: "FIRST", categoria: "09", licenca: null })).length === 0);
+    check("seguro FPB: sem apólice nem companhia", JSON.stringify(fpb().seguro) === JSON.stringify({ tipo: "FPB", apolice: null, companhia: null }));
+    const doClube = fpb({ insuranceKind: "CLUB", insurancePolicy: "AP-1", insuranceCompany: "Seguradora X" }).seguro;
+    check("seguro do clube: com apólice e companhia", doClube?.tipo === "CLUB" && doClube.apolice === "AP-1" && doClube.companhia === "Seguradora X");
+    check("o futebol não leva seguro", montarFolha({ atleta: completo, clube: { ...clube, insuranceKind: "CLUB" }, epoca: EPOCA, disciplina: "football", generoDaEquipa: null, tipo: "FIRST", categoria: "09", licenca: null }).seguro === null);
+    check("ao clube de basquetebol falta o seguro, se não o disse", emFaltaNoClube({ ...clube }, "FPB").includes("seguro desportivo"));
+    check("e a apólice, se é do clube", emFaltaNoClube({ ...clube, insuranceKind: "CLUB" }, "FPB").includes("apólice e companhia do seguro"));
+    check("no basquetebol o código do clube não falta (o boletim não o tem)", !emFaltaNoClube({ ...clube, federationClubCode: null, insuranceKind: "FPB" }, "FPB").length);
+    check("passar ao seguro FPB limpa a apólice", JSON.stringify(federacaoDaModalidade({ insuranceKind: "FPB", insurancePolicy: "AP-1" })) === JSON.stringify({ insuranceKind: "FPB", insurancePolicy: null, insuranceCompany: null }));
+    check("associação que não existe é recusada", !associacaoValida("Marte") && associacaoValida("Braga"));
+    const doc = documentoDoAtleta({ citizenCardNumber: null, idDocLabel: "Título de residência", idDocNumber: "TR123" });
+    check("o «Outro» da FPB leva o nome do documento", doc?.sigla === "TR" && doc.descricao === "Título de residência" && doc.completo === "TR123");
+  }
+
   console.log("\nO PDF");
   {
     const folhas = ["Ana", "Bruno", "Carla"].map((n) =>
       montarFolha({ atleta: { ...atleta, name: n }, clube, epoca: EPOCA, disciplina: "football", generoDaEquipa: null, tipo: "RENEWAL", categoria: "09", licenca: "12345678" }),
     );
-    const um = await gerarModelo2(folhas.slice(0, 1));
-    const tres = await gerarModelo2(folhas);
+    const um = await gerarFolhas(folhas.slice(0, 1));
+    const tres = await gerarFolhas(folhas);
     const doc = await PDFDocument.load(tres);
     check("uma página por jogador", doc.getPageCount() === 3);
     check("sem campos de formulário (nomes repetidos entre folhas)", !doc.catalog.get(PDFName.of("AcroForm")));
@@ -142,7 +182,16 @@ async function main() {
     const primeiros = listas.map((l) => String((l as PDFArray).get(0)));
     check("o desenho do modelo é partilhado", new Set(primeiros).size === 1);
     check("três folhas não pesam três modelos", tres.length < um.length * 1.5, `${um.length} → ${tres.length}`);
-    const nomeEstranho = await gerarModelo2([montarFolha({ atleta: { ...atleta, name: "Łukasz Ştefan 李" }, clube, epoca: EPOCA, disciplina: "football", generoDaEquipa: null, tipo: "FIRST", categoria: "09", licenca: null })]);
+    const misto = await PDFDocument.load(
+      await gerarFolhas([
+        folhas[0],
+        montarFolha({ atleta, clube: { ...clube, insuranceKind: "FPB" }, epoca: EPOCA, disciplina: "basketball", generoDaEquipa: null, tipo: "FIRST", categoria: "SUB14", licenca: null }),
+        folhas[1],
+      ]),
+    );
+    const tamanhos = misto.getPages().map((p) => Math.round(p.getHeight()));
+    check("um lote pode misturar futebol e basquetebol, pela ordem pedida", misto.getPageCount() === 3 && tamanhos[0] === 842 && tamanhos[2] === 842, tamanhos.join(","));
+    const nomeEstranho = await gerarFolhas([montarFolha({ atleta: { ...atleta, name: "Łukasz Ştefan 李" }, clube, epoca: EPOCA, disciplina: "football", generoDaEquipa: null, tipo: "FIRST", categoria: "09", licenca: null })]);
     check("letras fora da fonte não rebentam a folha", nomeEstranho.length > 1000);
   }
 
@@ -161,18 +210,24 @@ type Linha = Record<string, any>;
 
 /**
  * Responde às consultas que o `InscricoesService` faz. Não imita o Prisma:
- * imita **este serviço**. Duas equipas de futebol (s13, s15) e uma de
- * basquetebol, que não entra nas inscrições.
+ * imita **este serviço**. Duas equipas de futebol (s13, s15), uma de
+ * basquetebol (b13) e uma de natação, que não entra nas inscrições. A Ana
+ * joga futebol e basquetebol.
  */
 function mundo() {
+  // A associação é do clube (`Academy.association`); a da modalidade já não se lê.
+  const associacao: { valor: string | null } = { valor: "Braga" };
+  const fed = { federationClubCode: "1234", association: "Lisboa", insuranceKind: null, insurancePolicy: null, insuranceCompany: null };
   const sports = [
-    { id: "fut", name: "Futebol", code: "football" },
-    { id: "bas", name: "Basquetebol", code: "basketball" },
+    { id: "fut", name: "Futebol", code: "football", ...fed },
+    { id: "bas", name: "Basquetebol", code: "basketball", ...fed, insuranceKind: "FPB" },
+    { id: "nat", name: "Natação", code: null, ...fed },
   ];
   const teams = [
     { id: "s13", name: "Sub-13", sportId: "fut", seasonId: "e26", gender: "MALE", maxAge: 13 },
     { id: "s15", name: "Sub-15", sportId: "fut", seasonId: "e26", gender: null, maxAge: 15 },
     { id: "b13", name: "Basket Sub-13", sportId: "bas", seasonId: "e26", gender: null, maxAge: 13 },
+    { id: "n1", name: "Natação", sportId: "nat", seasonId: "e26", gender: null, maxAge: 99 },
   ];
   const athletes: Linha[] = [
     { id: "a1", name: "Ana", birthdate: d("2014-02-01"), sex: "FEMALE", email: null, phone: null, citizenCardNumber: "123456789ZZ1", idDocLabel: null, idDocNumber: null, birthCountry: "PT", nationality: "PT", status: "ACTIVE" },
@@ -183,6 +238,8 @@ function mundo() {
     { athleteId: "a1", teamId: "s13", leftAt: null },
     { athleteId: "a2", teamId: "s15", leftAt: null },
     { athleteId: "a3", teamId: "b13", leftAt: null },
+    { athleteId: "a1", teamId: "b13", leftAt: null },
+    { athleteId: "a3", teamId: "n1", leftAt: null },
   ];
   const licenses: Linha[] = [{ athleteId: "a2", sportId: "fut", seasonId: "e25", number: "7654321", season: { startsOn: d("2025-07-01") } }];
   const regs: Linha[] = [];
@@ -201,7 +258,7 @@ function mundo() {
       findMany: async (q?: Linha) => sports.filter((s) => !q?.where?.id?.in || q.where.id.in.includes(s.id)),
     },
     academy: {
-      findFirst: async () => ({ name: "GD Teste", fpfClubCode: "1234", footballAssociation: "Braga" }),
+      findFirst: async () => ({ name: "GD Teste", association: associacao.valor }),
     },
     membership: {
       findFirst: async () => ({ user: { name: "Diretora" } }),
@@ -259,7 +316,7 @@ function mundo() {
   const prisma = { runAs: async (_: string, f: (db: unknown) => unknown) => f(db) };
   const nada = {} as never;
   const servico = new InscricoesService(prisma as never, nada, nada);
-  return { servico, regs, licenses };
+  return { servico, regs, licenses, associacao };
 }
 
 function pessoa(role: string, grants: string[] = [], revokes: string[] = [], teamIds: string[] = []): RequestContext {
@@ -283,9 +340,19 @@ async function servico() {
   const direcao = pessoa("DIRECTOR");
 
   const lista = await m.servico.lista(direcao);
-  check("só futebol e futsal: o basquetebol não entra", lista.rows.length === 2 && lista.sports.length === 1, String(lista.rows.length));
-  const ana = lista.rows.find((r) => r.athleteId === "a1")!;
+  check("futebol e basquetebol entram, a natação não", lista.rows.length === 4 && lista.sports.length === 2, String(lista.rows.length));
+  check("quem joga duas modalidades aparece duas vezes", lista.rows.filter((r) => r.athleteId === "a1").map((r) => r.sportId).sort().join() === "bas,fut");
+  const ana = lista.rows.find((r) => r.athleteId === "a1" && r.sportId === "fut")!;
+  const anaBasket = lista.rows.find((r) => r.athleteId === "a1" && r.sportId === "bas")!;
   const bruno = lista.rows.find((r) => r.athleteId === "a2")!;
+  check("a linha de basquetebol é da FPB, com o escalão da FPB", anaBasket.federation === "FPB" && anaBasket.category === "SUB14", `${anaBasket.federation} ${anaBasket.category}`);
+  check("a de futebol é da FPF", ana.federation === "FPF" && ana.category === "09");
+  check("cada modalidade diz o que falta ao clube nela", lista.sports.every((x) => x.missing.length === 0), JSON.stringify(lista.sports.map((x) => x.missing)));
+  check("a associação vem do clube, a mesma nas duas modalidades", lista.club.association === "Braga" && lista.club.missing.length === 0);
+  m.associacao.valor = null;
+  const semAssociacao = await m.servico.lista(direcao);
+  check("sem associação, falta uma vez ao clube e não a cada modalidade", semAssociacao.club.missing.join() === "associação" && semAssociacao.sports.every((x) => x.missing.length === 0), JSON.stringify(semAssociacao.sports.map((x) => x.missing)));
+  m.associacao.valor = "Braga";
   check("quem nunca teve licença vai como primeira inscrição", ana.kind === "FIRST");
   check("quem teve licença noutra época vai como revalidação, com o número", bruno.kind === "RENEWAL" && bruno.license === "7654321");
   check("a Ana tem os dados todos menos contactos", ana.missing.join() === "email,telefone", ana.missing.join());
@@ -299,6 +366,10 @@ async function servico() {
   check("a coordenação lê e escreve por omissão", (await estadoDe(m.servico.lista(pessoa("COORDINATOR")))) === "ok");
   check("quem só lê pode pré-visualizar", (await estadoDe(m.servico.gerar(pessoa("DIRECTOR", [], ["registration:write"]), { seasonId: "e26", items: [{ athleteId: "a1", sportId: "fut" }], register: false }))) === "ok");
   check("mas não registar", (await estadoDe(m.servico.gerar(pessoa("DIRECTOR", [], ["registration:write"]), { seasonId: "e26", items: [{ athleteId: "a1", sportId: "fut" }] }))) === 403);
+  check("transferência no basquetebol é recusada", (await estadoDe(m.servico.gerar(direcao, { seasonId: "e26", items: [{ athleteId: "a1", sportId: "bas", kind: "TRANSFER_NATIONAL" }] }))) === 400);
+  check("um escalão da FPF no basquetebol é recusado", (await estadoDe(m.servico.gerar(direcao, { seasonId: "e26", items: [{ athleteId: "a1", sportId: "bas", category: "09" }], register: false }))) === 400);
+  const duas = await m.servico.gerar(direcao, { seasonId: "e26", items: [{ athleteId: "a1", sportId: "fut" }, { athleteId: "a1", sportId: "bas" }], register: false });
+  check("as duas folhas da Ana saem no mesmo PDF", duas.count === 2 && (await PDFDocument.load(Buffer.from(duas.pdf, "base64"))).getPageCount() === 2);
   check("tipo de boletim inventado é recusado", (await estadoDe(m.servico.gerar(direcao, { seasonId: "e26", items: [{ athleteId: "a1", sportId: "fut", kind: "OUTRO" }] }))) === 400);
 
   const ver = await m.servico.gerar(direcao, { seasonId: "e26", items: [{ athleteId: "a1", sportId: "fut" }], register: false });

@@ -1,0 +1,195 @@
+@import "tailwindcss";
+
+/* ---------------------------------------------------------------------------
+   O site do clube — tokens
+
+   Os neutros são os da plataforma (packages/ui/theme.css), para a consola, a
+   app e o site de um clube parecerem da mesma casa. O sinal é o do clube,
+   derivado em runtime por `signalVars` (tokens.ts) e escrito no contentor da
+   página pelo layout. `night` é o escuro do cabeçalho e do rodapé: fixo, para
+   funcionar com qualquer cor de clube — a cor do clube acende por cima dele,
+   não é ele.
+   --------------------------------------------------------------------------- */
+
+@theme {
+  --color-canvas: #f6f5f2;
+  --color-surface: #ffffff;
+  --color-sunken: #efede8;
+  --color-line: #e5e2dc;
+  --color-line-strong: #d3cfc6;
+
+  --color-ink: #1a1917;
+  --color-ink-2: #524f48;
+  --color-ink-3: #8a867c;
+  --color-ink-4: #ada89d;
+
+  --color-night: #141311;
+  --color-night-2: #1e1d1a;
+  --color-night-line: #2f2d29;
+  --color-night-ink: #f3f1ec;
+  --color-night-ink-2: #b9b4a9;
+
+  --color-signal: #0f6b62;
+  --color-signal-line: #0f6b62;
+  --color-signal-strong: #0f6b62;
+  --color-signal-ink: #0a4c45;
+  --color-signal-soft: #e7f0ee;
+  --color-signal-on: #ffffff;
+
+  --color-ok: #1f7a45;
+  --color-warn: #9a5b08;
+  --color-risk: #a82a20;
+
+  --font-sans: var(--font-archivo), ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+
+  --radius-card: 12px;
+  --radius-control: 8px;
+
+  --shadow-card: 0 1px 2px rgb(26 25 23 / 0.05), 0 10px 30px -12px rgb(26 25 23 / 0.18);
+  --ease-out: cubic-bezier(0.2, 0, 0, 1);
+}
+
+:root {
+  --signal-on-rgb: 255 255 255;
+  --signal-lift: #277a72;
+  --signal-deep: #0b4d46;
+}
+
+/* Layout "porto": a estrutura do fcporto.pt com as cores claras da casa.
+   O fundo é branco, e não o canvas creme: sem cabeçalho escuro por cima, o
+   branco é o que separa a barra lateral do conteúdo. */
+[data-layout="porto"] {
+  --color-canvas: #ffffff;
+  background-color: var(--color-canvas);
+}
+
+@layer base {
+  html {
+    -webkit-text-size-adjust: 100%;
+    scroll-behavior: smooth;
+  }
+
+  body {
+    background-color: var(--color-canvas);
+    color: var(--color-ink-2);
+    font-family: var(--font-sans);
+    font-size: 1rem;
+    line-height: 1.55;
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
+  }
+
+  h1,
+  h2,
+  h3,
+  h4 {
+    color: var(--color-ink);
+    font-weight: 700;
+    letter-spacing: -0.015em;
+    line-height: 1.15;
+    text-wrap: balance;
+  }
+
+  p {
+    text-wrap: pretty;
+  }
+
+  button:not(:disabled),
+  [role="button"]:not([aria-disabled="true"]),
+  summary {
+    cursor: pointer;
+  }
+
+  :focus-visible {
+    outline: 2px solid var(--color-signal-line);
+    outline-offset: 2px;
+    border-radius: 4px;
+  }
+
+  ::selection {
+    background: var(--color-signal-soft);
+    color: var(--color-signal-ink);
+  }
+
+  [data-numeric],
+  .tabular {
+    font-variant-numeric: tabular-nums;
+  }
+}
+
+/* ---------------------------------------------------------------------------
+   Utilitários da casa
+   --------------------------------------------------------------------------- */
+
+@utility container-site {
+  width: 100%;
+  max-width: 1200px;
+  margin-inline: auto;
+  padding-inline: 1rem;
+  @media (width >= 40rem) {
+    padding-inline: 1.5rem;
+  }
+}
+
+/* Título de clube: a Archivo apertada e pesada. É o registo dos sites de
+   referência — cartaz de jogo, não revista. */
+@utility display {
+  font-variation-settings: "wdth" 88;
+  font-weight: 800;
+  letter-spacing: -0.02em;
+  line-height: 0.98;
+  text-transform: uppercase;
+}
+
+/* A etiqueta pequena por cima de um título: "Notícias", "Próximo jogo". */
+@utility eyebrow {
+  font-size: 0.75rem;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  line-height: 1;
+}
+
+/* A linha curta na cor do clube que acompanha títulos de secção. */
+@utility traco {
+  display: block;
+  width: 2.25rem;
+  height: 3px;
+  border-radius: 2px;
+  background: var(--color-signal);
+}
+
+/* ---------------------------------------------------------------------------
+   Entrada ao rolar: uma regra só, 14px, e desligada em reduced-motion.
+   --------------------------------------------------------------------------- */
+
+[data-reveal] {
+  opacity: 0;
+  transform: translateY(14px);
+  transition:
+    opacity 0.45s var(--ease-out),
+    transform 0.45s var(--ease-out);
+  transition-delay: var(--reveal-delay, 0ms);
+}
+
+[data-reveal="in"] {
+  opacity: 1;
+  transform: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html {
+    scroll-behavior: auto;
+  }
+  [data-reveal] {
+    opacity: 1;
+    transform: none;
+    transition: none;
+  }
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+  }
+}

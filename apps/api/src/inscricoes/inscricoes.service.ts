@@ -20,7 +20,7 @@ import { currentSeason } from "../common/seasons";
 import { PrismaService, type ScopedClient } from "../prisma/prisma.service";
 import { EspacoService } from "../storage/espaco.service";
 import { StorageService } from "../storage/storage.service";
-import { gerarModelo2 } from "./modelo-2";
+import { gerarFolhas } from "./folhas-pdf";
 import {
   ESTADOS,
   categoriaPelaIdade,
@@ -29,10 +29,11 @@ import {
   eTipo,
   emFalta,
   emFaltaNoClube,
+  federacaoDe,
   montarFolha,
   nomeDaCategoria,
   tipoProposto,
-  type Categoria,
+  tiposDa,
   type Disciplina,
   type Estado,
   type Folha,
@@ -42,15 +43,34 @@ import {
 /** Quantas folhas um pedido gera de uma vez. Um clube grande tem ~300 atletas de futebol. */
 const MAX_POR_LOTE = 400;
 
-/** O prefixo das folhas geradas nos documentos do atleta. As assinadas têm outro. */
+/**
+ * O prefixo das folhas geradas nos documentos do atleta. As assinadas têm
+ * outro. "Modelo 2" ficou no nome também para as do basquetebol (que são o
+ * Modelo 1 da FPB): é o que distingue a folha gerada nos documentos que já
+ * existem, e mudá-lo deixava de as reconhecer.
+ */
 const PREFIXO_GERADA = "Modelo 2 (gerado)";
 const PREFIXO_ASSINADA = "Modelo 2 (assinado)";
+
+/** A modalidade e o clube na federação dela. */
+const MODALIDADE = {
+  id: true, name: true, code: true,
+  federationClubCode: true, insuranceKind: true, insurancePolicy: true, insuranceCompany: true,
+} as const;
+type Modalidade = {
+  id: string; name: string; code: string | null;
+  federationClubCode: string | null;
+  insuranceKind: string | null; insurancePolicy: string | null; insuranceCompany: string | null;
+};
+
+/** O clube: o nome e a associação distrital, que é a mesma em todas as modalidades. */
+type ClubeLido = { name: string; association: string | null };
 
 type Epoca = { id: string; label: string; startsOn: Date; endsOn: Date };
 
 const disciplinaDe = (s: { code: string | null; name: string }): Disciplina | null => {
   const code = s.code ?? inferSportCode(s.name);
-  return code === "football" || code === "futsal" ? code : null;
+  return code === "football" || code === "futsal" || code === "basketball" ? code : null;
 };
 
 /** O que a folha precisa de cada atleta, numa ida à base. */
@@ -60,6 +80,8 @@ async function atletasDaFolha(db: ScopedClient, ids: string[]) {
     select: {
       id: true, name: true, birthdate: true, sex: true, email: true, phone: true,
       citizenCardNumber: true, idDocLabel: true, idDocNumber: true, birthCountry: true, nationality: true,
+      // O que só o boletim da FPB pede.
+      taxId: true, idDocValidUntil: true, address: true, postalCode: true, city: true, district: true, municipality: true,
       licenses: { select: { sportId: true, seasonId: true, number: true, season: { select: { startsOn: true } } } },
       guardians: { select: { membership: { select: { user: { select: { email: true, phone: true } } } } } },
     },
@@ -70,11 +92,13 @@ async function atletasDaFolha(db: ScopedClient, ids: string[]) {
 type AtletaLido = Awaited<ReturnType<typeof atletasDaFolha>> extends Map<string, infer V> ? V : never;
 
 /**
- * Inscrições na FPF (Modelo 2).
+ * Inscrições federativas: Modelo 2 da FPF (futebol e futsal) e Modelo 1 da
+ * FPB (basquetebol).
  *
  * ## O que faz
  *
- * Lista quem joga futebol ou futsal numa época, com o que a folha levaria e o
+ * Lista quem joga futebol, futsal ou basquetebol numa época, uma linha por
+ * atleta e modalidade (quem joga duas aparece duas vezes), com o que a folha levaria e o
  * que falta na ficha; gera as folhas (uma ou cem num PDF só); e segue cada
  * inscrição pelos passos que acontecem fora da plataforma: assinada pelos
  * pais, entregue à associação, validada.
@@ -117,7 +141,7 @@ export class InscricoesService {
         select: { id: true, label: true, startsOn: true, endsOn: true },
       });
       const epoca = (seasonId ? epocas.find((e) => e.id === seasonId) : null) ?? (await currentSeason(db));
-      const modalidades = (await db.sport.findMany({ select: { id: true, name: true, code: true } }))
+      const modalidades = (await db.sport.findMany({ select: MODALIDADE }))
         .map((s) => ({ ...s, disciplina: disciplinaDe(s) }))
         .filter((s): s is typeof s & { disciplina: Disciplina } => s.disciplina !== null);
 
@@ -125,11 +149,25 @@ export class InscricoesService {
       const base = {
         canWrite: can(ctx, "registration:write"),
         seasons: epocas.map((e) => ({ id: e.id, label: e.label })),
-        club: { ...clube, missing: emFaltaNoClube(clube) },
-        sports: modalidades.map((s) => ({ id: s.id, name: s.name, discipline: s.disciplina })),
+        /* O que falta ao clube em todas as modalidades: a associação, nas Definições → Geral. */
+        club: { association: clube.association, missing: clube.association ? [] : ["associação"] },
+        /* Cada modalidade com a sua federação, e o que falta ao clube nela. */
+        sports: modalidades.map((s) => {
+          const federacao = federacaoDe(s.disciplina);
+          const missing = emFaltaNoClube({ ...s, name: clube.name, association: clube.association }, federacao)
+            // A associação é do clube e diz-se uma vez, em `club.missing`, e não em cada modalidade.
+            .filter((m) => !m.startsWith("associação"));
+          return { id: s.id, name: s.name, discipline: s.disciplina, federation: federacao, missing };
+        }),
       };
       if (modalidades.length === 0) {
-        return { ...base, available: false as const, reason: "As inscrições na FPF são para clubes com futebol ou futsal.", season: null, rows: [] };
+        return {
+          ...base,
+          available: false as const,
+          reason: "As inscrições são para clubes com futebol, futsal ou basquetebol.",
+          season: null,
+          rows: [],
+        };
       }
       if (!epoca) {
         return { ...base, available: false as const, reason: "Ainda não há uma época criada.", season: null, rows: [] };
@@ -142,8 +180,9 @@ export class InscricoesService {
         season: { id: epoca.id, label: epoca.label },
         rows: linhas.map(({ folha, ...l }) => ({
           ...l,
+          federation: folha.federacao,
           category: folha.categoria,
-          categoryLabel: nomeDaCategoria(folha.categoria),
+          categoryLabel: nomeDaCategoria(folha.categoria, folha.federacao),
           kind: folha.tipo,
           license: folha.licenca,
           missing: emFalta(folha),
@@ -196,7 +235,7 @@ export class InscricoesService {
     const athleteIds = [...new Set([...porLinha.values()].map((l) => l.athleteId))];
     const atletas = await atletasDaFolha(db, athleteIds);
     const modalidades = new Map(
-      (await db.sport.findMany({ where: { id: { in: sportIds } }, select: { id: true, name: true, code: true } })).map((s) => [s.id, s]),
+      (await db.sport.findMany({ where: { id: { in: sportIds } }, select: MODALIDADE })).map((s) => [s.id, s]),
     );
     const clube = await this.clube(db, ctx);
 
@@ -206,7 +245,7 @@ export class InscricoesService {
       const sport = modalidades.get(l.sportId);
       if (!a || !sport) continue;
       const r = inscricaoDe.get(chave(l.athleteId, l.sportId)) ?? null;
-      const folha = this.folhaDe(a, clube, epoca, sport, l.teams, r ? { tipo: r.kind as Tipo, categoria: r.category as Categoria } : {});
+      const folha = this.folhaDe(a, clube, epoca, sport, l.teams, r ? { tipo: r.kind as Tipo, categoria: r.category } : {});
       out.push({
         athleteId: a.id,
         name: a.name,
@@ -231,24 +270,22 @@ export class InscricoesService {
     return out.sort((x, y) => x.name.localeCompare(y.name, "pt"));
   }
 
-  private async clube(db: ScopedClient, ctx: RequestContext) {
-    const c = await db.academy.findFirst({
-      where: { id: ctx.academyId },
-      select: { name: true, fpfClubCode: true, footballAssociation: true },
-    });
+  private async clube(db: ScopedClient, ctx: RequestContext): Promise<ClubeLido> {
+    const c = await db.academy.findFirst({ where: { id: ctx.academyId }, select: { name: true, association: true } });
     if (!c) throw new NotFoundException("Clube não encontrado");
     return c;
   }
 
   private folhaDe(
     a: AtletaLido,
-    clube: { name: string; fpfClubCode: string | null; footballAssociation: string | null },
+    clube: ClubeLido,
     epoca: Epoca,
-    sport: { id: string; name: string; code: string | null },
+    sport: Modalidade,
     equipas: { gender: string | null }[],
-    escolha: { tipo?: Tipo; categoria?: Categoria },
+    escolha: { tipo?: Tipo; categoria?: string },
   ): Folha {
     const disciplina = disciplinaDe(sport) ?? "football";
+    const federacao = federacaoDe(disciplina);
     // A licença desta época; senão a mais recente, que é o número que a revalidação leva.
     const daModalidade = a.licenses
       .filter((l) => l.sportId === sport.id)
@@ -262,12 +299,13 @@ export class InscricoesService {
 
     return montarFolha({
       atleta: a,
-      clube,
+      // O nome e a associação são do clube; o código e o seguro, desta modalidade.
+      clube: { ...sport, name: clube.name, association: clube.association },
       epoca,
       disciplina,
       generoDaEquipa,
       tipo: escolha.tipo ?? tipoProposto(anterior),
-      categoria: escolha.categoria ?? categoriaPelaIdade(a.birthdate, epoca),
+      categoria: escolha.categoria ?? categoriaPelaIdade(a.birthdate, epoca, federacao),
       licenca: licenca?.number ?? null,
       contactoDoEncarregado: contacto ? { email: contacto.email, phone: contacto.phone ?? null } : undefined,
     });
@@ -297,9 +335,9 @@ export class InscricoesService {
     if (registar || dto.attach) this.mustWrite(ctx);
     if (!Array.isArray(dto.items) || dto.items.length === 0) throw new BadRequestException("Escolhe pelo menos um atleta");
     if (dto.items.length > MAX_POR_LOTE) throw new BadRequestException(`No máximo ${MAX_POR_LOTE} folhas de cada vez`);
+    // A forma aqui; o que cada federação aceita, mais abaixo, com a modalidade de cada um.
     for (const i of dto.items) {
       if (i.kind !== undefined && !eTipo(i.kind)) throw new BadRequestException("Tipo de boletim inválido");
-      if (i.category !== undefined && !eCategoria(i.category)) throw new BadRequestException("Categoria inválida");
     }
 
     // A leitura e as decisões, numa transação; o PDF e o armazenamento, fora.
@@ -319,7 +357,7 @@ export class InscricoesService {
       const atletas = await atletasDaFolha(db, [...new Set(dto.items.map((i) => i.athleteId))]);
       const clube = await this.clube(db, ctx);
       const modalidades = new Map(
-        (await db.sport.findMany({ where: { id: { in: sportIds } }, select: { id: true, name: true, code: true } })).map((s) => [s.id, s]),
+        (await db.sport.findMany({ where: { id: { in: sportIds } }, select: MODALIDADE })).map((s) => [s.id, s]),
       );
 
       const vistos = new Set<string>();
@@ -333,9 +371,15 @@ export class InscricoesService {
         const sport = modalidades.get(i.sportId);
         // Só quem aparece na lista desta pessoa: o âmbito vale para gerar como para ler.
         if (!linha || !a || !sport) throw new NotFoundException("Atleta fora da lista de inscrições");
+        const federacao = linha.folha.federacao;
+        // O boletim da FPB não tem transferências; e cada federação tem os seus escalões.
+        if (i.kind !== undefined && !tiposDa(federacao).includes(i.kind as Tipo)) {
+          throw new BadRequestException(`O boletim da ${federacao} não tem esse tipo de inscrição (${a.name})`);
+        }
+        if (i.category !== undefined && !eCategoria(i.category, federacao)) throw new BadRequestException("Categoria inválida");
         const folha = this.folhaDe(a, clube, epoca, sport, [], {
           tipo: (i.kind as Tipo | undefined) ?? linha.folha.tipo,
-          categoria: (i.category as Categoria | undefined) ?? linha.folha.categoria,
+          categoria: i.category ?? linha.folha.categoria,
         });
         // O género da equipa já foi decidido na linha; não se perde por gerar.
         folha.genero = linha.folha.genero;
@@ -344,7 +388,7 @@ export class InscricoesService {
       return { epoca, itens, quem: registar ? await nomeDeQuemMexe(db, ctx) : null };
     }, { timeoutMs: 20_000 });
 
-    const pdf = await gerarModelo2(preparado.itens.map((i) => i.folha));
+    const pdf = await gerarFolhas(preparado.itens.map((i) => i.folha));
 
     if (registar) {
       const agora = new Date();
@@ -402,7 +446,7 @@ export class InscricoesService {
     epocaLabel: string,
     quem: string | null,
   ): Promise<string> {
-    const bytes = Buffer.from(await gerarModelo2([i.folha]));
+    const bytes = Buffer.from(await gerarFolhas([i.folha]));
     const key = `${pastaDoAtleta(ctx.academyId, i.athleteId)}/${randomBytes(8).toString("hex")}.pdf`;
     await this.storage.upload(DOCUMENT_BUCKET, key, bytes, "application/pdf");
     const ficheiro: FicheiroDoDocumento = { key, name: `${PREFIXO_GERADA} ${i.folha.nome}.pdf`, type: tipoDaChave(key) };

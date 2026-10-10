@@ -157,15 +157,22 @@ model Academy {
   /// período abre; a quota continua a ter por período o mês (`AAAA-MM`).
   memberAnnualStartDay   Int @default(1)
 
-  /// ## O clube na federação
-  ///
-  /// O que o Modelo 2 da FPF pede ao clube em cada inscrição de jogador: o
-  /// código do clube e a Associação de Futebol onde está filiado. Escreve-se
-  /// uma vez em Definições → Geral e sai em todas as folhas. Ver
-  /// `inscricoes/modelo-2.ts`.
+  /// **Obsoletos** desde 09/10/2026: a federação passou para cada modalidade
+  /// (`Sport.federationClubCode` e `Sport.association`), porque o futebol e o
+  /// basquetebol têm federações, códigos e associações diferentes. A migração
+  /// `20261009160000_federacao_por_modalidade` copiou-os para as modalidades
+  /// de futebol e futsal. Ficam até a API que os lia sair de produção; nada os
+  /// lê nem escreve. Apagar numa migração seguinte.
   fpfClubCode         String?
-  /// O distrito da associação, sem o "AF": "Braga", "Porto", "Madeira".
   footballAssociation String?
+
+  /// ## A associação distrital do clube
+  ///
+  /// A mesma em todas as modalidades: "Braga" é a AF Braga nos boletins de
+  /// futebol e futsal e a AB Braga nos de basquetebol. Escreve-se uma vez em
+  /// Definições → Geral. O código do clube e o seguro continuam em cada
+  /// modalidade (`Sport.federationClubCode`, `Sport.insuranceKind`).
+  association String?
 
   /// ## O maior número de sócio já dado neste clube
   ///
@@ -350,6 +357,23 @@ model Sport {
   /// Definições e fica só como ponto de partida para quem cria uma equipa sem
   /// dizer a duração. Nulo em desportos individuais.
   matchMinutes      Int?
+
+  /// ## O clube na federação desta modalidade
+  ///
+  /// Futebol e futsal inscrevem-se na FPF, com o código do clube; o basquetebol
+  /// na FPB, que não dá código aos clubes. A associação é do clube e não da
+  /// modalidade (`Academy.association`). Ver `inscricoes/regras.ts`.
+  federationClubCode String?
+  /// **Obsoleta** desde 09/10/2026: a associação passou para o clube
+  /// (`Academy.association`), copiada pela migração
+  /// `20261009180000_associacao_do_clube`. Nada a lê nem escreve.
+  association        String?
+  /// O seguro desportivo dos jogadores, como o boletim da FPB o pede: `FPB`
+  /// (o seguro da federação) ou `CLUB` (um seguro do clube, com apólice e
+  /// companhia). Nulo é por indicar. Só o basquetebol o usa.
+  insuranceKind      String?
+  insurancePolicy    String?
+  insuranceCompany   String?
 
   teams           Team[]
   prospects       Prospect[]
@@ -1023,10 +1047,16 @@ model Athlete {
   /// Opcionais; é o que o boletim de inscrição da FPF pede, com o código do
   /// país e o estatuto (português, UE, estrangeiro) que sai da nacionalidade.
   /// Ver `inscricoes/paises.ts`. Lêem-se com a regra do NIF.
-  birthCountry String?
-  nationality  String?
+  birthCountry    String?
+  nationality     String?
   /// O telefone do próprio atleta (o dos pais está na conta deles).
-  phone        String?
+  phone           String?
+  /// A validade do documento de identificação (CC ou o outro), o distrito e
+  /// o concelho: o que o boletim da FPB pede além disto. Opcionais, com a
+  /// regra de leitura do NIF.
+  idDocValidUntil DateTime? @db.Date
+  district        String?
+  municipality    String?
 
   heightCm     Int?
   weightKg     Decimal?      @db.Decimal(4, 1)
@@ -1309,6 +1339,7 @@ model TrainingSession {
    * ---- Plano de treino (Área técnica) -----------------------------------
    */
   /**
+   * /**
    * /**
    * /**
    * /**
@@ -2474,6 +2505,7 @@ model Match {
    * /**
    * /**
    * /**
+   * /**
    * /*
    * Em que competição se joga isto.
    * Aponta para o catálogo (`CatalogItem` de `kind = "competitions"`) e é
@@ -2501,6 +2533,12 @@ model Match {
   /// futebol); no futsal e no basquetebol o cronómetro pára e não há
   /// compensação. Ver `PARTES_COM_TEMPO_ADICIONAL` em `matches.service.ts`.
   addedMinutes Int[] @default([])
+
+  /// O prolongamento, em minutos, por parte: `[15, 15]` no futebol, `[5]` ou
+  /// `[5, 5]` no basquetebol. Vazio quando não houve. Alonga o jogo de quem
+  /// não saiu, e as suas partes também têm tempo adicional no futebol. Ver
+  /// `PROLONGAMENTO` em `minutos-do-jogo.ts`.
+  overtimeMinutes Int[] @default([])
 
   /// Quando a convocatória foi submetida. Nulo = ainda se está a montar.
   ///
@@ -4925,6 +4963,34 @@ model PlatformFinanceSettings {
   updatedAt DateTime @updatedAt
 }
 
+/// Um objetivo da plataforma: para onde vai o negócio.
+///
+/// Com `metric`, o progresso mede-se sozinho na base de dados (clubes a pagar,
+/// atletas, MRR…; ver `platform-goals.service.ts`). Sem ela é um objetivo à
+/// mão: o progresso escreve-se em `current`, ou dá-se como feito em `doneAt`.
+/// Só da plataforma: o papel das academias não lhe toca.
+model PlatformGoal {
+  id          String    @id @default(cuid())
+  title       String
+  description String?
+  /// "Clientes", "Receita", "Produto", "Internacional", "Fora da caixa".
+  area        String
+  /// A métrica medida sozinha. Nula = objetivo à mão.
+  metric      String?
+  target      Float?
+  /// O progresso à mão, quando não há métrica.
+  current     Float?
+  deadline    DateTime? @db.Date
+  doneAt      DateTime?
+  order       Int       @default(0)
+  archivedAt  DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([area, order])
+}
+
 /// Registo do que os administradores da plataforma fazem.
 ///
 /// **Append-only**: não existe endpoint que apague uma entrada, e não deve existir.
@@ -5844,10 +5910,10 @@ model AIAnalysis {
   jobs         AIJob[]
   liveSegments AILiveSegment[]
   tracks       PlayerTrack[]
-  identities  PlayerIdentity[]
-  events      DetectedEvent[]
-  insights    AIInsight[]
-  corrections HumanCorrection[]
+  identities   PlayerIdentity[]
+  events       DetectedEvent[]
+  insights     AIInsight[]
+  corrections  HumanCorrection[]
 
   createdAt   DateTime  @default(now())
   updatedAt   DateTime  @updatedAt

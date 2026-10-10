@@ -37,6 +37,7 @@ import {
   mudarEstado,
   nomeDoTipo,
   passoDe,
+  tiposDa,
   type Linha,
   type Lista,
   type Passo,
@@ -44,7 +45,9 @@ import {
 } from "@/lib/inscricoes";
 
 /**
- * Inscrições — os boletins de inscrição na FPF (Modelo 2).
+ * Inscrições — os boletins de inscrição nas federações: o Modelo 2 da FPF
+ * (futebol e futsal) e o Modelo 1 da FPB (basquetebol). Um jogador em duas
+ * modalidades tem duas linhas, uma por boletim.
  *
  * ## O que a página responde
  *
@@ -69,7 +72,11 @@ export default function Inscricoes() {
   const [data, setData] = useState<Lista | null>(null);
   const [erro, setErro] = useState(false);
   const [seasonId, setSeasonId] = useState<string | undefined>(undefined);
-  const [passo, setPasso] = useState<Passo | "all" | "missing">("all");
+  /**
+   * Os passos escolhidos no funil. Vários de uma vez ("geradas" e "assinadas",
+   * para ver o que ainda não foi entregue); vazio é todos.
+   */
+  const [passos, setPassos] = useState<Set<Filtro>>(new Set());
   const [sport, setSport] = useState("all");
   const [team, setTeam] = useState("all");
   const [query, setQuery] = useState("");
@@ -116,10 +123,13 @@ export default function Inscricoes() {
 
   const visiveis = useMemo(
     () =>
-      base.filter((r) =>
-        passo === "all" ? true : passo === "missing" ? r.missing.length > 0 && passoDe(r) === "PENDING" : passoDe(r) === passo,
+      base.filter(
+        (r) =>
+          passos.size === 0 ||
+          passos.has(passoDe(r)) ||
+          (passos.has("missing") && r.missing.length > 0 && passoDe(r) === "PENDING"),
       ),
-    [base, passo],
+    [base, passos],
   );
 
   if (erro) return <Empty title="Inscrições" detail="Não foi possível carregar as inscrições. Tente outra vez daqui a pouco." icon={TriangleAlert} />;
@@ -235,7 +245,8 @@ export default function Inscricoes() {
       hideBelow: "md",
       render: (r) => (
         <span className="whitespace-nowrap text-ink-2">
-          <span className="font-mono text-meta text-ink-4">{r.category}</span> {r.categoryLabel}
+          {/* O código só no futebol, onde é o número que o boletim mostra ("09"). */}
+          {/^\d+$/.test(r.category) && <span className="font-mono text-meta text-ink-4">{r.category}</span>} {r.categoryLabel}
         </span>
       ),
     },
@@ -280,7 +291,7 @@ export default function Inscricoes() {
 
   return (
     <>
-      <PageHeader title="Inscrições" subtitle={`Boletins de inscrição na FPF (Modelo 2) · Época ${season.label}`}>
+      <PageHeader title="Inscrições" subtitle={`Boletins de inscrição nas federações · Época ${season.label}`}>
         {data.seasons.length > 1 && (
           <Select
             label="Época"
@@ -309,20 +320,32 @@ export default function Inscricoes() {
         )}
       </PageHeader>
 
-      {data.club.missing.length > 0 && (
+      {(data.club.missing.length > 0 || faltasDoClube(data.sports).length > 0) && (
         <div className="mb-4 flex flex-wrap items-center justify-between gap-3 rounded-[var(--radius-panel)] border border-line bg-warn-soft px-5 py-3">
           <p className="min-w-0 text-body text-ink">
-            <b className="font-semibold">Falta {juntar(data.club.missing)}.</b> Sem {data.club.missing.length === 1 ? "ele" : "eles"}, esse campo sai em branco
-            em todas as folhas.
+            <b className="font-semibold">Falta {juntar([...data.club.missing.map((m) => `a ${m} do clube`), ...faltasDoClube(data.sports)])}.</b>{" "}
+            Sem isso, esses campos saem em branco nas folhas.
           </p>
-          <Link to="/definicoes" className="ctl-outline shrink-0">
+          {/* A associação está no Geral; o código e o seguro, nas Modalidades. */}
+          <Link to={data.club.missing.length > 0 ? "/definicoes" : "/definicoes?secao=modalidades"} className="ctl-outline shrink-0">
             Abrir Definições
             <ArrowRight className="size-3.5" strokeWidth={1.75} />
           </Link>
         </div>
       )}
 
-      <Funil linhas={base} passo={passo} onPasso={(p) => setPasso((actual) => (actual === p ? "all" : p))} />
+      <Funil
+        linhas={base}
+        escolhidos={passos}
+        onAlternar={(p) =>
+          setPassos((actuais) => {
+            const proximos = new Set(actuais);
+            if (proximos.has(p)) proximos.delete(p);
+            else proximos.add(p);
+            return proximos;
+          })
+        }
+      />
 
       <div className="panel mt-4">
         <Toolbar>
@@ -346,17 +369,13 @@ export default function Inscricoes() {
               options={[{ value: "all", label: "Todas as equipas" }, ...equipas.map(([id, name]) => ({ value: id, label: name }))]}
             />
           )}
-          {/* O mesmo filtro do funil, onde se procura um filtro: mudar um muda o outro. */}
-          <Select
-            label="Estado"
-            value={passo}
-            onChange={setPasso}
-            options={[
-              { value: "all", label: "Todos os estados" },
-              ...PASSOS.map((x) => ({ value: x.key, label: x.label })),
-              { value: "missing", label: "Por gerar, com dados em falta" },
-            ]}
-          />
+          {/* O estado filtra-se no funil, em cima: vários de uma vez. */}
+          {passos.size > 0 && (
+            <button type="button" className="ctl-ghost" onClick={() => setPassos(new Set())}>
+              <X className="size-3.5" strokeWidth={1.75} />
+              Limpar estados
+            </button>
+          )}
           <ResultCount n={visiveis.length} noun={["jogador", "jogadores"]} />
         </Toolbar>
 
@@ -370,7 +389,7 @@ export default function Inscricoes() {
             rows.length === 0 ? (
               <Empty
                 title="Ninguém para inscrever"
-                detail={`Não há atletas em equipas de futebol ou futsal na época ${season.label}.`}
+                detail={`Não há atletas em equipas de futebol, futsal ou basquetebol na época ${season.label}.`}
                 icon={FileSignature}
               />
             ) : (
@@ -396,7 +415,10 @@ export default function Inscricoes() {
         <GerarDialog
           linhas={gerar}
           seasonId={season.id}
-          clubeEmFalta={data.club.missing}
+          clubeEmFalta={[
+            ...data.club.missing.map((m) => `a ${m} do clube`),
+            ...faltasDoClube(data.sports.filter((s) => gerar.some((l) => l.sportId === s.id))),
+          ]}
           onClose={() => setGerar(null)}
           onDone={async () => {
             setGerar(null);
@@ -438,6 +460,10 @@ export default function Inscricoes() {
   );
 }
 
+/** O que falta ao clube em cada modalidade, em frases: "no Futebol, o código do clube". */
+const faltasDoClube = (sports: Lista["sports"]) =>
+  sports.filter((s) => s.missing.length > 0).map((s) => `${juntar(s.missing)} em ${s.name}`);
+
 const juntar = (xs: string[]) => (xs.length <= 1 ? xs.join("") : `${xs.slice(0, -1).join(", ")} e ${xs[xs.length - 1]}`);
 
 /* -------------------------------------------------------------------------- */
@@ -455,12 +481,17 @@ const ICONE_DO_PASSO: Record<Passo, LucideIcon> = {
 /**
  * Quantos jogadores em cada passo, e o filtro da lista.
  *
+ * Cada caixa liga e desliga o seu passo, e podem estar várias ligadas: a lista
+ * mostra os jogadores de qualquer uma delas. Nenhuma ligada é todos.
+ *
  * Cinco colunas lado a lado, pela ordem em que a folha anda: lê-se da esquerda
  * para a direita como o caminho que é. A barra por baixo de cada uma é a parte
  * do plantel que lá está. Os dados em falta vão à parte: não são um passo, são
  * o que impede a primeira folha de sair completa.
  */
-function Funil({ linhas, passo, onPasso }: { linhas: Linha[]; passo: Passo | "all" | "missing"; onPasso: (p: Passo | "missing") => void }) {
+type Filtro = Passo | "missing";
+
+function Funil({ linhas, escolhidos, onAlternar }: { linhas: Linha[]; escolhidos: Set<Filtro>; onAlternar: (p: Filtro) => void }) {
   const total = linhas.length;
   const conta = (p: Passo) => linhas.filter((l) => passoDe(l) === p).length;
   const emFalta = linhas.filter((l) => l.missing.length > 0 && passoDe(l) === "PENDING").length;
@@ -470,7 +501,7 @@ function Funil({ linhas, passo, onPasso }: { linhas: Linha[]; passo: Passo | "al
       <div className="panel grid grid-cols-5 overflow-hidden max-md:grid-cols-2 max-md:[&>*:last-child]:col-span-2">
         {PASSOS.map((p, i) => {
           const n = conta(p.key);
-          const on = passo === p.key;
+          const on = escolhidos.has(p.key);
           const Icone = ICONE_DO_PASSO[p.key];
           const feito = p.key === "DONE";
           return (
@@ -478,7 +509,7 @@ function Funil({ linhas, passo, onPasso }: { linhas: Linha[]; passo: Passo | "al
               key={p.key}
               type="button"
               aria-pressed={on}
-              onClick={() => onPasso(p.key)}
+              onClick={() => onAlternar(p.key)}
               className={cx(
                 "group relative min-w-0 px-4 py-3.5 text-left transition-colors duration-[120ms]",
                 i > 0 && "md:border-l md:border-line",
@@ -506,12 +537,12 @@ function Funil({ linhas, passo, onPasso }: { linhas: Linha[]; passo: Passo | "al
 
       <button
         type="button"
-        aria-pressed={passo === "missing"}
-        onClick={() => onPasso("missing")}
+        aria-pressed={escolhidos.has("missing")}
+        onClick={() => onAlternar("missing")}
         disabled={emFalta === 0}
         className={cx(
           "panel flex min-w-[11rem] items-center gap-3 px-4 py-3.5 text-left transition-colors duration-[120ms] disabled:cursor-default",
-          passo === "missing" ? "bg-warn-soft" : emFalta > 0 && "hover:bg-sunken/60",
+          escolhidos.has("missing") ? "bg-warn-soft" : emFalta > 0 && "hover:bg-sunken/60",
         )}
       >
         <span className={cx("inline-flex size-9 shrink-0 items-center justify-center rounded-full", emFalta ? "bg-warn-soft text-warn" : "bg-ok-soft text-ok")}>
@@ -720,6 +751,9 @@ function GerarDialog({
   const [aGerar, setAGerar] = useState<"ver" | "gerar" | null>(null);
 
   const emFalta = linhas.filter((l) => l.missing.length > 0);
+  // Com basquetebol no lote, as transferências (que a FPB não tem) não se oferecem.
+  const temFpb = linhas.some((l) => l.federation === "FPB");
+  const tiposPossiveis = tiposDa(temFpb ? "FPB" : "FPF");
   const adiantadas = linhas.filter((l) => l.registration && l.registration.status !== "GENERATED");
   const itens = () => linhas.map((l) => ({ athleteId: l.athleteId, sportId: l.sportId, ...(tipo !== "proposto" ? { kind: tipo } : {}) }));
   const n = linhas.length;
@@ -755,7 +789,7 @@ function GerarDialog({
   return (
     <Dialog
       title={n === 1 ? `Gerar a folha de ${linhas[0].name}` : `Gerar ${n} folhas`}
-      subtitle="Modelo 2 da FPF · um PDF, uma página por jogador"
+      subtitle="O boletim da federação de cada modalidade · um PDF, uma página por jogador"
       icon={<FileSignature className="size-4" strokeWidth={1.75} />}
       onClose={onClose}
       width={520}
@@ -781,7 +815,7 @@ function GerarDialog({
         <DialogField label="Tipo de boletim">
           <select value={tipo} onChange={(e) => setTipo(e.target.value as Tipo | "proposto")} className={dialogInputClass}>
             <option value="proposto">O proposto para cada jogador</option>
-            {TIPOS.map((t) => (
+            {TIPOS.filter((t) => tiposPossiveis.includes(t.key)).map((t) => (
               <option key={t.key} value={t.key}>
                 {t.label} {n > 1 ? "(todos)" : ""}
               </option>
@@ -792,6 +826,9 @@ function GerarDialog({
           <p className="-mt-2 text-meta text-ink-3">
             {contarTipos(linhas)}. Quem já teve licença nesta modalidade vai como revalidação.
           </p>
+        )}
+        {temFpb && (
+          <p className="-mt-2 text-meta text-ink-3">O boletim da FPB só tem primeira inscrição e revalidação.</p>
         )}
 
         {/* A caixa fora do rótulo: nada tocável dentro de `<label>` (ver `check:toque`). */}
@@ -817,13 +854,30 @@ function GerarDialog({
           <ul className="space-y-2 rounded-[10px] bg-sunken px-3.5 py-3 text-meta text-ink-2">
             {clubeEmFalta.length > 0 && (
               <Aviso>
-                Falta {juntar(clubeEmFalta)} nas Definições: sai em branco em todas as folhas.
+                Falta {juntar(clubeEmFalta)}, nas Definições: sai em branco nas folhas dessa modalidade.
               </Aviso>
             )}
             {emFalta.length > 0 && (
               <Aviso>
-                {emFalta.length === 1 ? `${emFalta[0].name} tem` : `${emFalta.length} jogadores têm`} dados em falta na ficha. Esses campos saem em
-                branco, para preencher à mão.
+                <span className="block">
+                  {emFalta.length === 1 ? `${emFalta[0].name} tem` : `${emFalta.length} jogadores têm`} dados em falta na ficha. Esses campos
+                  saem em branco, para preencher à mão:
+                </span>
+                <ul className="mt-1.5 max-h-56 space-y-1.5 overflow-y-auto pr-1">
+                  {agruparFaltas(emFalta).map((g) => (
+                    <li key={g.campos.join("|")}>
+                      <span className="font-medium text-ink">{maiuscula(juntar(g.campos))}</span>
+                      <span className="text-ink-3"> · </span>
+                      <span title={g.nomes.length > NOMES_POR_GRUPO ? g.nomes.join(", ") : undefined}>
+                        {juntar(
+                          g.nomes.length > NOMES_POR_GRUPO
+                            ? [...g.nomes.slice(0, NOMES_POR_GRUPO), `mais ${g.nomes.length - NOMES_POR_GRUPO}`]
+                            : g.nomes,
+                        )}
+                      </span>
+                    </li>
+                  ))}
+                </ul>
               </Aviso>
             )}
             {adiantadas.length > 0 && (
@@ -843,9 +897,36 @@ function Aviso({ children }: { children: ReactNode }) {
   return (
     <li className="flex gap-2">
       <TriangleAlert className="mt-0.5 size-3.5 shrink-0 text-warn" strokeWidth={1.75} />
-      <span className="min-w-0">{children}</span>
+      <div className="min-w-0">{children}</div>
     </li>
   );
+}
+
+/** Quantos nomes se mostram em cada grupo de dados em falta; os outros ficam no "mais N" (e por inteiro ao passar o rato). */
+const NOMES_POR_GRUPO = 8;
+
+const maiuscula = (t: string) => (t ? t[0].toUpperCase() + t.slice(1) : t);
+
+/**
+ * Os jogadores com dados em falta, juntos pelo que lhes falta.
+ *
+ * Um grupo por conjunto de campos ("distrito, concelho e validade do
+ * documento"), com os nomes de quem tem exatamente essa falta; os maiores
+ * grupos primeiro. É o que se corrige de uma vez: abre-se a ficha de cada um
+ * do grupo e preenche-se o mesmo. Um jogador em duas modalidades conta uma vez
+ * por grupo.
+ */
+function agruparFaltas(linhas: Linha[]): { campos: string[]; nomes: string[] }[] {
+  const grupos = new Map<string, { campos: string[]; nomes: Set<string> }>();
+  for (const l of linhas) {
+    const chave = l.missing.join("|");
+    const g = grupos.get(chave) ?? { campos: l.missing, nomes: new Set<string>() };
+    g.nomes.add(l.name);
+    grupos.set(chave, g);
+  }
+  return [...grupos.values()]
+    .map((g) => ({ campos: g.campos, nomes: [...g.nomes].sort((a, b) => a.localeCompare(b, "pt")) }))
+    .sort((a, b) => b.nomes.length - a.nomes.length || a.campos.length - b.campos.length);
 }
 
 function contarTipos(linhas: Linha[]): string {
@@ -940,7 +1021,7 @@ function InscricaoDialog({
         <dl className="grid grid-cols-2 gap-x-6 gap-y-3 text-body sm:grid-cols-3">
           <Facto label="Boletim" valor={nomeDoTipo(r?.kind ?? linha.kind)} />
           <Facto label="Categoria" valor={`${linha.category} · ${linha.categoryLabel}`} />
-          <Facto label="Licença FPF" valor={linha.license ?? "—"} mono />
+          <Facto label={`Licença ${linha.federation}`} valor={linha.license ?? "—"} mono />
         </dl>
 
         {linha.missing.length > 0 ? (
@@ -1024,7 +1105,7 @@ function InscricaoDialog({
         {canWrite && (
           <div className="space-y-3 border-t border-line pt-4">
             {p !== "DONE" && (
-              <DialogField label="N.º de licença da FPF" hint="opcional; ao validar, fica na ficha do atleta, nesta modalidade e época">
+              <DialogField label={`N.º de licença da ${linha.federation}`} hint="opcional; ao validar, fica na ficha do atleta, nesta modalidade e época">
                 <input value={licenca} onChange={(e) => setLicenca(e.target.value)} maxLength={40} className={cx(dialogInputClass, "font-mono")} />
               </DialogField>
             )}

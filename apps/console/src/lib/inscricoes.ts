@@ -2,7 +2,8 @@ import { apiGet, apiPatch, apiPost } from "@/lib/http";
 import { erroAvisado } from "@/lib/avisos";
 
 /**
- * Inscrições na FPF (Modelo 2): os tipos, os pedidos e o vocabulário.
+ * Inscrições federativas (Modelo 2 da FPF, Modelo 1 da FPB): os tipos, os
+ * pedidos e o vocabulário.
  *
  * O servidor decide tudo o que vai na folha (`inscricoes/regras.ts` na API);
  * aqui só se mostra e se pede.
@@ -11,6 +12,11 @@ import { erroAvisado } from "@/lib/avisos";
 export type Estado = "GENERATED" | "SIGNED" | "SUBMITTED" | "DONE";
 export type Passo = "PENDING" | Estado;
 export type Tipo = "FIRST" | "RENEWAL" | "TRANSFER_NATIONAL" | "TRANSFER_INTERNATIONAL";
+export type Federacao = "FPF" | "FPB";
+
+/** O boletim da FPB só tem primeira inscrição e revalidação. Gémeo de `tiposDa` na API. */
+export const tiposDa = (f: Federacao): Tipo[] =>
+  f === "FPB" ? ["FIRST", "RENEWAL"] : ["FIRST", "RENEWAL", "TRANSFER_NATIONAL", "TRANSFER_INTERNATIONAL"];
 
 export type Inscricao = {
   id: string;
@@ -30,6 +36,8 @@ export type Linha = {
   name: string;
   birthdate: string;
   sportId: string;
+  /** FPF (futebol e futsal) ou FPB (basquetebol): decide o boletim, os escalões e os tipos. */
+  federation: Federacao;
   teams: { id: string; name: string }[];
   category: string;
   categoryLabel: string;
@@ -45,8 +53,10 @@ export type Lista = {
   canWrite: boolean;
   seasons: { id: string; label: string }[];
   season: { id: string; label: string } | null;
-  club: { name: string; fpfClubCode: string | null; footballAssociation: string | null; missing: string[] };
-  sports: { id: string; name: string; discipline: "football" | "futsal" }[];
+  /** O que falta ao clube em todas as modalidades: a associação, em Definições → Geral. */
+  club: { association: string | null; missing: string[] };
+  /** Cada modalidade com boletim, a sua federação e o que falta ao clube nela (código, seguro). */
+  sports: { id: string; name: string; discipline: "football" | "futsal" | "basketball"; federation: Federacao; missing: string[] }[];
   rows: Linha[];
 };
 

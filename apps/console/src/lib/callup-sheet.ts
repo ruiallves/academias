@@ -173,7 +173,17 @@ export async function buildCallUpPdf(sheet: CallUpSheet): Promise<Doc> {
   y = aLogistica(doc, sheet, y);
 
   /* ----------------------------------------------------------- o plantel --- */
-  const linhas = ordenar(sheet.rows, sheet.order);
+  /*
+   * Quem recusou não vai, e por isso não está na folha.
+   *
+   * Saía como os outros, com linha para assinar, e o clube lia o PDF como uma
+   * convocatória de jogadores que não tinha chamado. Filtra-se aqui, e não em
+   * quem monta as linhas, para nenhum ecrã o esquecer.
+   */
+  const linhas = ordenar(
+    sheet.rows.filter((r) => r.status !== "DECLINED"),
+    sheet.order,
+  );
   /** O fundo da última linha desenhada — vai-se reescrevendo até à última. */
   let fimDaTabela = y;
 

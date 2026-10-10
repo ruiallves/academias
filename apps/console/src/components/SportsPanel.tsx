@@ -10,6 +10,7 @@ import { CATALOG_KEYS, type CatalogKey } from "@/lib/catalogs";
 import { ChevronDown } from "@/lib/icons";
 import { cx } from "@/components/primitives";
 import { SPORT_PROFILES, inferSportCode, profileOf, type SportCode } from "@/lib/sports";
+import { Segmented } from "@/components/filters";
 import type { Sport } from "@/data/types";
 
 /**
@@ -32,6 +33,11 @@ import type { Sport } from "@/data/types";
  * Agora saem da modalidade a que pertencem. O "Sub-13" do futebol não é o
  * "Sub-13" da natação, e a piscina não é um campo — a arrumação passou a dizer
  * isso sozinha, e as Definições ficaram com um painel a menos.
+ *
+ * O futebol, o futsal e o basquetebol têm ainda, à cabeça, o clube na
+ * federação deles: o código, a associação e (no basquetebol) o seguro. Estava
+ * em Definições → Geral, só para o futebol; cada federação tem o seu código e
+ * a sua associação, e por isso passou para cada modalidade.
  *
  * Abrem-se com um toque na modalidade e entram fechadas: quem abre as
  * Definições não vem quase nunca por causa dos balneários, e as modalidades
@@ -139,6 +145,9 @@ function SportRow({
 
   const perfil = profileOf(sport);
   const Icon = perfil?.icon;
+  const fed = federacaoDaModalidade(sport);
+  // A associação é do clube; o resumo mostra-a com o prefixo desta federação.
+  const { academy } = useStore();
 
   return (
     <Lista>
@@ -165,6 +174,13 @@ function SportRow({
               {perfil && (
                 <span title="Tem área técnica: exercícios, sistemas e situações de jogo">
                   <Pill tone="signal">área técnica</Pill>
+                </span>
+              )}
+              {fed && (
+                <span title="O clube na federação: sai nos boletins de inscrição">
+                  <Pill tone={academy.association ? "neutral" : "warn"}>
+                    {academy.association ? `${fed.sigla} · ${fed.prefixo} ${academy.association}` : `${fed.sigla} · associação por indicar`}
+                  </Pill>
                 </span>
               )}
             </span>
@@ -206,6 +222,7 @@ function SportRow({
 
       {open && (
         <div className="border-t border-line bg-sunken/30">
+          {fed && <FederacaoDaModalidade sport={sport} mayWrite={mayWrite} />}
           {CATALOG_KEYS.map((key) => (
             <CatalogPanel
               key={key}
@@ -231,6 +248,157 @@ function SportRow({
         </div>
       )}
     </Lista>
+  );
+}
+
+/* -------------------------------------------------------------------------- */
+
+/** A federação de cada disciplina com boletim de inscrição. */
+const FEDERACAO: Partial<Record<SportCode, { sigla: "FPF" | "FPB"; nome: string; prefixo: "AF" | "AB" }>> = {
+  football: { sigla: "FPF", nome: "Federação Portuguesa de Futebol", prefixo: "AF" },
+  // O futsal é da FPF (o Modelo 2 tem a cruz "Futsal"), mas o cartão diz futsal
+  // e não futebol: na modalidade de futsal, "Futebol" lia-se como engano.
+  futsal: { sigla: "FPF", nome: "Futsal (FPF)", prefixo: "AF" },
+  basketball: { sigla: "FPB", nome: "Federação Portuguesa de Basquetebol", prefixo: "AB" },
+};
+
+export const federacaoDaModalidade = (sport: Sport) => {
+  const code = profileOf(sport)?.code;
+  return code ? FEDERACAO[code] : undefined;
+};
+
+/**
+ * O clube na federação desta modalidade.
+ *
+ * Futebol e futsal inscrevem-se na FPF, com o código do clube; o basquetebol
+ * na FPB, que não dá código aos clubes. A associação é a mesma em todas (AF
+ * Braga numa, AB Braga na outra) e escreve-se uma vez, em Definições → Geral. No basquetebol há ainda o seguro desportivo, que o boletim
+ * pede: o da FPB (e o resto fica em branco) ou o do clube, com a apólice e a
+ * companhia. Tudo sai nos boletins gerados em Inscrições.
+ *
+ * Grava ao sair de cada campo, como o nome curto no Geral.
+ */
+function FederacaoDaModalidade({ sport, mayWrite }: { sport: Sport; mayWrite: boolean }) {
+  const fed = federacaoDaModalidade(sport)!;
+  const [codigo, setCodigo] = useState(sport.federationClubCode ?? "");
+  const [apolice, setApolice] = useState(sport.insurancePolicy ?? "");
+  const [companhia, setCompanhia] = useState(sport.insuranceCompany ?? "");
+  const [saving, setSaving] = useState(false);
+  const [erro, setErro] = useState<string | null>(null);
+
+  async function gravar(dados: Record<string, string>) {
+    setSaving(true);
+    setErro(null);
+    try {
+      await apiPatch(`/api/sports/${sport.id}`, dados);
+      await reloadAcademy();
+    } catch (e) {
+      setErro(e instanceof Error ? e.message : "Não foi possível gravar.");
+      setCodigo(sport.federationClubCode ?? "");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  const aoSair = (campo: string, valor: string, actual: string | null | undefined) => {
+    const limpo = valor.trim();
+    if (limpo !== (actual ?? "")) void gravar({ [campo]: limpo });
+  };
+
+  const clube = sport.insuranceKind === "CLUB";
+
+  return (
+    <div className="border-b border-line px-4 py-4">
+      <div className="mb-3 flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1">
+        <p className="text-meta font-medium text-ink">
+          Federação · <span className="text-ink-2">{fed.nome}</span>
+        </p>
+        {saving && <span className="text-meta text-ink-3">a gravar…</span>}
+      </div>
+      {/*
+        Só o futebol e o futsal têm código: a FPB não dá código aos clubes. A
+        associação é do clube e está em Definições → Geral.
+      */}
+      {fed.sigla === "FPF" && (
+        <div className="grid gap-x-4 gap-y-3 sm:grid-cols-[minmax(0,9rem)]">
+          <DialogField label="Código do clube">
+            <input
+              value={codigo}
+              inputMode="numeric"
+              maxLength={10}
+              placeholder="0000"
+              disabled={!mayWrite || saving}
+              onChange={(e) => setCodigo(e.target.value)}
+              onBlur={() => aoSair("federationClubCode", codigo.replace(/\s+/g, ""), sport.federationClubCode)}
+              className={cx(dialogInputClass, "font-mono")}
+            />
+          </DialogField>
+        </div>
+      )}
+
+      {fed.sigla === "FPB" && (
+        <div>
+          {/*
+            O seguro e, quando é do clube, a apólice e a companhia na mesma
+            linha, alinhados por baixo: são uma decisão só. Num ecrã estreito
+            empilham.
+          */}
+          <div
+            className={cx(
+              "grid items-end gap-x-4 gap-y-3",
+              clube && "sm:grid-cols-[auto_minmax(0,1fr)_minmax(0,1fr)]",
+            )}
+          >
+            <div>
+              <p className="mb-1.5 text-meta font-medium text-ink">Seguro desportivo</p>
+              <Segmented<"FPB" | "CLUB" | "">
+                size="md"
+                label="Seguro desportivo"
+                value={sport.insuranceKind ?? ""}
+                onChange={(v) => mayWrite && v && void gravar({ insuranceKind: v })}
+                options={[
+                  { value: "FPB", label: "Seguro FPB" },
+                  { value: "CLUB", label: "Seguro do clube" },
+                ]}
+              />
+            </div>
+            {clube && (
+              <>
+                <DialogField label="N.º da apólice">
+                  <input
+                    value={apolice}
+                    maxLength={60}
+                    disabled={!mayWrite || saving}
+                    onChange={(e) => setApolice(e.target.value)}
+                    onBlur={() => aoSair("insurancePolicy", apolice, sport.insurancePolicy)}
+                    className={cx(dialogInputClass, "h-11")}
+                  />
+                </DialogField>
+                <DialogField label="Companhia">
+                  <input
+                    value={companhia}
+                    maxLength={80}
+                    disabled={!mayWrite || saving}
+                    onChange={(e) => setCompanhia(e.target.value)}
+                    onBlur={() => aoSair("insuranceCompany", companhia, sport.insuranceCompany)}
+                    className={cx(dialogInputClass, "h-11")}
+                  />
+                </DialogField>
+              </>
+            )}
+          </div>
+          {!clube && (
+            <p className="mt-2 text-meta text-ink-3">
+              {sport.insuranceKind === "FPB"
+                ? "Os boletins saem com o seguro da FPB marcado, sem apólice nem companhia."
+                : "Escolhe o seguro: sem ele, o boletim sai com esta parte em branco."}
+            </p>
+          )}
+        </div>
+      )}
+
+      {erro && <p className="mt-3 rounded-[var(--radius-control)] bg-risk-soft px-3 py-2 text-meta text-risk">{erro}</p>}
+    </div>
   );
 }
 

@@ -62,7 +62,8 @@ import {
   naEquipa,
 } from "@/lib/api";
 import { age, longDate, percent, relativeDays, shortDate, shortName, time } from "@/lib/format";
-import { teamAgeLabel } from "@/lib/team-age";
+import { SEM_LIMITE, teamAgeLabel } from "@/lib/team-age";
+import { profileOf } from "@/lib/sports";
 import { TEAM_GENDER_LABEL } from "@/lib/genero";
 import { medicalExpiry, medicalNeedsAttention, medicalState, type MedicalState } from "@/lib/medical";
 import { availabilityOf, useClinicalRecords } from "@/lib/clinical";
@@ -196,9 +197,11 @@ export default function TeamDetail() {
   const totals = computeTotals(played);
 
   const attendance30 = attendanceRate(session, 30, id);
-  const nextEvent = events
+  /* O que vem a seguir: o primeiro vai para o número do topo, os seguintes para o "A seguir". */
+  const proximos = events
     .filter((e) => !e.cancelled && e.start >= today)
-    .sort((a, b) => a.start.getTime() - b.start.getTime())[0];
+    .sort((a, b) => a.start.getTime() - b.start.getTime());
+  const nextEvent = proximos[0];
 
   const canBill = can(session, "billing:read");
   const canFamily = can(session, "family:read");
@@ -282,7 +285,9 @@ export default function TeamDetail() {
           played={played}
           attendance30={attendance30}
           nextEvent={nextEvent}
+          proximos={proximos.slice(0, 5)}
           onSelectEvent={abrir}
+          onEditar={can(session, "team:write") ? () => setEditar(true) : null}
         />
       )}
 
@@ -369,7 +374,9 @@ function OverviewTab({
   played,
   attendance30,
   nextEvent,
+  proximos,
   onSelectEvent,
+  onEditar,
 }: {
   session: Session;
   team: NonNullable<ReturnType<typeof teamById>>;
@@ -379,7 +386,11 @@ function OverviewTab({
   played: (CalendarEvent & { match: MatchInfo })[];
   attendance30: number | null;
   nextEvent?: CalendarEvent;
+  /** Os próximos eventos, por ordem. */
+  proximos: CalendarEvent[];
   onSelectEvent: (id: string) => void;
+  /** Abre o "Editar equipa". Nulo para quem não pode editar. */
+  onEditar: (() => void) | null;
 }) {
   const items = teamAttention(session, team.id, roster);
   const recentForm = [...played].sort((a, b) => a.start.getTime() - b.start.getTime()).slice(-5);
@@ -408,27 +419,28 @@ function OverviewTab({
       </MetricRow>
 
       {/*
-        A atenção e a forma recente lado a lado: são as duas coisas que se vêm
-        ver a esta página, e a atenção sozinha numa linha deixava meio ecrã em
-        branco. O que se segue fica por baixo da forma, na mesma coluna, e as
-        duas colunas têm a mesma altura: a forma cresce para acertar com a
-        atenção, e a atenção estica quando é a direita que é mais alta.
+        A atenção e a ficha da equipa à esquerda; a forma recente e o que vem
+        a seguir à direita.
+        A forma tem só o tamanho das bolinhas: esticá-la para acertar com a
+        atenção deixava cinco bolinhas a boiar num quadro enorme. Quem cresce
+        é o "A seguir", que mostra os próximos eventos e não só o primeiro.
 
         As provas e a duração do jogo saíram daqui para o popup "Editar equipa".
         Ver `EditTeamDialog`.
       */}
       <div className="grid gap-3 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
-        <Attention items={items} />
+        <div className="flex min-w-0 flex-col gap-3">
+          <FichaDaEquipa team={team} onEditar={onEditar} />
+          <Attention items={items} />
+        </div>
 
         <div className="flex min-w-0 flex-col gap-3">
-          <Panel className="flex flex-1 flex-col">
+          <Panel>
             <PanelHead title="Forma recente" hint={recentForm.length ? `últimos ${recentForm.length}` : undefined} />
             {recentForm.length === 0 ? (
-              <div className="flex flex-1 items-center justify-center px-5 py-8">
-                <Empty title="Ainda sem jogos" detail="A forma aparece assim que houver resultados." />
-              </div>
+              <p className="px-5 py-4 text-meta text-ink-3">Ainda sem jogos. A forma aparece assim que houver resultados.</p>
             ) : (
-              <div className="flex flex-1 items-center gap-1.5 px-5 py-4">
+              <div className="flex items-center gap-1.5 px-5 py-4">
                 {recentForm.map((m) => {
                   const outcome = resultOutcome(m.match)!;
                   const tone = outcome === "win" ? "bg-ok text-white" : outcome === "loss" ? "bg-risk text-white" : "bg-ink-4 text-white";
@@ -449,33 +461,107 @@ function OverviewTab({
             )}
           </Panel>
 
-          {nextEvent && (
-            <Panel>
-              <PanelHead title="A seguir" hint={relativeDays(nextEvent.start, today)} />
-              <button
-                type="button"
-                onClick={() => onSelectEvent(nextEvent.id)}
-                className="flex w-full items-center gap-3 px-5 py-4 text-left transition-colors duration-[120ms] hover:bg-sunken/50"
-              >
-                <span className="flex size-9 shrink-0 items-center justify-center rounded-full bg-sunken text-ink-3">
-                  <CalendarDays className="size-4" strokeWidth={1.75} />
-                </span>
-                <span className="min-w-0 flex-1">
-                  <span className="block truncate text-body font-medium text-ink">
-                    {KIND_LABEL[nextEvent.kind]}
-                    {nextEvent.kind === "match" && nextEvent.match ? ` vs ${nextEvent.match.opponent}` : ""}
-                  </span>
-                  <span className="block text-meta text-ink-3">
-                    {capitalize(longDate(nextEvent.start))} · <span className="font-mono tabular">{time(nextEvent.start)}</span> ·{" "}
-                    {nextEvent.venue}
-                  </span>
-                </span>
-              </button>
-            </Panel>
-          )}
+          <Panel className="flex flex-1 flex-col">
+            <PanelHead title="A seguir" />
+            {proximos.length === 0 ? (
+              <div className="flex flex-1 items-center justify-center px-5 py-8">
+                <Empty title="Nada agendado" detail="Os próximos treinos e jogos da equipa aparecem aqui." />
+              </div>
+            ) : (
+              <ul className="flex-1">
+                {proximos.map((e) => (
+                  <li key={e.id} className="border-b border-line last:border-b-0">
+                    <button
+                      type="button"
+                      onClick={() => onSelectEvent(e.id)}
+                      className="flex w-full items-center gap-3 px-5 py-3 text-left transition-colors duration-[120ms] hover:bg-sunken/50"
+                    >
+                      <span className="flex size-9 shrink-0 items-center justify-center rounded-full bg-sunken text-ink-3">
+                        <CalendarDays className="size-4" strokeWidth={1.75} />
+                      </span>
+                      <span className="min-w-0 flex-1">
+                        <span className="block truncate text-body font-medium text-ink">
+                          {KIND_LABEL[e.kind]}
+                          {e.kind === "match" && e.match ? ` vs ${e.match.opponent}` : ""}
+                        </span>
+                        <span className="block truncate text-meta text-ink-3">
+                          {capitalize(longDate(e.start))} · <span className="font-mono tabular">{time(e.start)}</span> · {e.venue}
+                        </span>
+                      </span>
+                      <span className="shrink-0 text-meta text-ink-3">{relativeDays(e.start, today)}</span>
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </Panel>
         </div>
       </div>
     </div>
+  );
+}
+
+/**
+ * O que define a equipa: escalão, género, duração do jogo, convocados e provas.
+ *
+ * Os mesmos campos do "Editar equipa", à vista. Estavam só dentro do popup, e
+ * para saber quanto dura um jogo do Sub-16 era preciso abrir o editar e
+ * fechar sem gravar. O botão abre o mesmo popup.
+ */
+function FichaDaEquipa({ team, onEditar }: { team: NonNullable<ReturnType<typeof teamById>>; onEditar: (() => void) | null }) {
+  const jogo = profileOf(sportById(team.sportId))?.match;
+  // "40 min · 4 × 10": a duração dita como a modalidade a joga.
+  const partes = jogo && team.matchMinutes ? ` · ${jogo.periods} × ${team.matchMinutes / jogo.periods}` : "";
+
+  const linhas: [string, React.ReactNode][] = [
+    ["Escalão", team.maxAge >= SEM_LIMITE ? "Seniores, sem idade máxima" : `${teamAgeLabel(team.maxAge)} · até aos ${team.maxAge} anos`],
+    ["Género", team.gender ? TEAM_GENDER_LABEL[team.gender] : <span className="text-ink-4">por indicar</span>],
+    [
+      "Duração do jogo",
+      team.matchMinutes ? (
+        <span className="tabular">
+          {team.matchMinutes} min{partes}
+        </span>
+      ) : (
+        <span className="text-ink-4">por indicar</span>
+      ),
+    ],
+    ["Máximo de convocados", team.maxCallUps ? <span className="tabular">{team.maxCallUps}</span> : <span className="text-ink-4">por indicar</span>],
+  ];
+
+  return (
+    <Panel>
+      <PanelHead title="Ficha da equipa">
+        {onEditar && (
+          <button type="button" className="ctl-outline" onClick={onEditar}>
+            <Pencil className="size-3.5" strokeWidth={1.75} />
+            Editar
+          </button>
+        )}
+      </PanelHead>
+      <dl className="grid gap-x-6 gap-y-3 px-5 py-4 sm:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
+        {linhas.map(([rotulo, valor]) => (
+          <div key={rotulo} className="min-w-0">
+            <dt className="text-meta text-ink-3">{rotulo}</dt>
+            <dd className="mt-0.5 truncate text-body text-ink">{valor}</dd>
+          </div>
+        ))}
+        <div className="min-w-0 sm:col-span-2">
+          <dt className="text-meta text-ink-3">Competições que disputa</dt>
+          <dd className="mt-1 flex flex-wrap gap-1.5">
+            {team.competitions.length === 0 ? (
+              <span className="text-body text-ink-4">nenhuma</span>
+            ) : (
+              team.competitions.map((c) => (
+                <span key={c.id} className="rounded-full border border-line px-2.5 py-0.5 text-meta text-ink-2">
+                  {c.label}
+                </span>
+              ))
+            )}
+          </dd>
+        </div>
+      </dl>
+    </Panel>
   );
 }
 

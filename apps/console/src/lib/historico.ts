@@ -46,6 +46,9 @@ const CAMPOS: Record<string, string> = {
   citizenCardNumber: "Cartão de Cidadão",
   birthCountry: "País de nascimento",
   nationality: "Nacionalidade",
+  idDocValidUntil: "Validade do documento",
+  district: "Distrito",
+  municipality: "Concelho",
   licenca: "Licença",
   /* Sócio */
   phone: "Telemóvel",

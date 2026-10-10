@@ -5,7 +5,7 @@ import { PrismaService, type ScopedClient } from "../prisma/prisma.service";
 import { StorageService } from "../storage/storage.service";
 import { PHOTO_BUCKET } from "../storage/photos.service";
 import { can, teamScopeFilter, type RequestContext, teamScopeForRoster } from "../common/permissions";
-import { gerarCobrancas, periodoActual } from "../billing/billing.service";
+import { anularMensalidadesDeQuemSai, gerarCobrancas, periodoActual } from "../billing/billing.service";
 import type { AthleteInputDto, AthleteLicenseDto, AthleteTaxIdDto, AthleteUpdateDto } from "./athletes.dto";
 import {
   chavesDeIdentidade,
@@ -143,6 +143,7 @@ export class AthletesService {
           medicalValidUntil: true, heightCm: true, weightKg: true, dominantSide: true, sex: true, squadNumber: true,
           address: true, postalCode: true, city: true, citizenCardNumber: true,
           birthCountry: true, nationality: true, phone: true,
+          idDocValidUntil: true, district: true, municipality: true,
           teams: {
             where: { leftAt: null },
             select: { id: true, teamId: true, position: true, squadNumber: true, team: { select: { name: true } } },
@@ -444,11 +445,16 @@ export class AthletesService {
     return this.prisma.runAs(ctx.academyId, async (db) => {
       const athlete = await this.inScope(ctx, db, id);
 
-      return db.athlete.update({
+      const atualizado = await db.athlete.update({
         where: { id: athlete.id },
         data: { status },
         select: { id: true, name: true, status: true },
       });
+
+      // A mensalidade do mês por pagar cai com a saída. Ver `anularMensalidadesDeQuemSai`.
+      const mensalidadesAnuladas = status === "LEFT" ? await anularMensalidadesDeQuemSai(db, ctx, athlete.id) : 0;
+
+      return { ...atualizado, mensalidadesAnuladas };
     });
   }
 
@@ -732,6 +738,7 @@ export class AthletesService {
           dominantSide: true, sex: true, squadNumber: true,
           address: true, postalCode: true, city: true, citizenCardNumber: true,
           birthCountry: true, nationality: true, phone: true,
+          idDocValidUntil: true, district: true, municipality: true,
           licenses: { select: { sportId: true, seasonId: true, number: true } },
           teams: { where: { leftAt: null }, select: { teamId: true, squadNumber: true, position: true }, orderBy: ORDEM_DAS_PASSAGENS },
         },
@@ -921,6 +928,7 @@ export class AthletesService {
             squadNumber: equipasDaLinha[0].squadNumber,
             address: null, postalCode: null, city: null, citizenCardNumber: null,
             birthCountry: null, nationality: null, phone: null,
+            idDocValidUntil: null, district: null, municipality: null,
             ...moradaDoPedido(dto),
             licenses: licencasDaLinha(dto).flatMap((l) => {
               const t = daEquipa.get(l.teamId);
@@ -1406,6 +1414,9 @@ type AtletaNoPlantel = {
   birthCountry: string | null;
   nationality: string | null;
   phone: string | null;
+  idDocValidUntil: Date | null;
+  district: string | null;
+  municipality: string | null;
   /** As licenças de todas as épocas. Ver `AthleteLicense`. */
   licenses: { sportId: string; seasonId: string; number: string }[];
   /** As equipas vivas, a principal primeiro, cada uma com o seu número e posição. */
@@ -1457,6 +1468,9 @@ function mudancasDoAtleta(
   if (morada.birthCountry !== undefined && actual.birthCountry !== morada.birthCountry) mudam.push("país de nascimento");
   if (morada.nationality !== undefined && actual.nationality !== morada.nationality) mudam.push("nacionalidade");
   if (morada.phone !== undefined && actual.phone !== morada.phone) mudam.push("telefone");
+  if (morada.idDocValidUntil !== undefined && dia(actual.idDocValidUntil) !== dia(morada.idDocValidUntil)) mudam.push("validade do documento");
+  if (morada.district !== undefined && actual.district !== morada.district) mudam.push("distrito");
+  if (morada.municipality !== undefined && actual.municipality !== morada.municipality) mudam.push("concelho");
   /* A licença só conta preenchida: uma célula vazia é uma coluna que ninguém preencheu. */
   const licenca = normalizarLicenca(dto.licenseNumber);
   if (licenca && dto.teamId && licencaActual(dto.teamId) !== licenca) {

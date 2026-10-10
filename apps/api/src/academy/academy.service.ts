@@ -2,7 +2,7 @@ import { BadRequestException, ConflictException, ForbiddenException, Injectable,
 import { ConfigService } from "@nestjs/config";
 import { eupagoConfigurado, MENSAGEM_SEM_EUPAGO } from "../billing/eupago-do-clube";
 import { Prisma, type AttendanceStatus, type CalendarEventKind, type Role, type StaffDepartment } from "@prisma/client";
-import { associacaoValida, normalizarCodigoDoClube } from "../inscricoes/regras";
+import { associacaoValida, federacaoDaModalidade } from "../inscricoes/regras";
 import { PrismaService, type ScopedClient } from "../prisma/prisma.service";
 import { escolherTreinador, headCoaches } from "./head-coaches";
 import { MatchesService } from "./matches.service";
@@ -222,15 +222,15 @@ export class AcademyService {
           // Quando abre o ano das quotas anuais (dia e mês) — a consola mostra-o
           // no topo das categorias de sócio.
           memberAnnualStartMonth: true, memberAnnualStartDay: true,
-          // O clube na federação: sai em cada boletim de inscrição (Modelo 2).
-          fpfClubCode: true, footballAssociation: true,
+          // A associação distrital: a mesma em todas as modalidades. Ver `Academy.association`.
+          association: true,
         },
       });
 
       const [sports, seasons, me, fundador] = await Promise.all([
         db.sport.findMany({
           orderBy: { name: "asc" },
-          select: { id: true, name: true, code: true, positions: true, skills: true, dominantSideLabel: true, matchMinutes: true },
+          select: SPORT_SELECT,
         }),
         /*
          * Todas as épocas, não só a corrente.
@@ -468,29 +468,13 @@ export class AcademyService {
    */
   async setIdentity(
     ctx: RequestContext,
-    dto: { signalColor?: string; logoUrl?: string | null; shortName?: string; fpfClubCode?: string; footballAssociation?: string },
+    dto: { signalColor?: string; logoUrl?: string | null; shortName?: string; association?: string },
   ) {
     if (!can(ctx, "settings:write")) throw new ForbiddenException("Sem permissão para mudar as definições");
 
-    /*
-     * O clube na federação: o código e a associação que o Modelo 2 da FPF
-     * pede em cada inscrição. Vazio limpa. Ver `inscricoes/regras.ts`.
-     */
-    let fpfClubCode: string | null | undefined;
-    if (dto.fpfClubCode !== undefined) {
-      try {
-        fpfClubCode = normalizarCodigoDoClube(dto.fpfClubCode);
-      } catch (e) {
-        throw new BadRequestException(e instanceof Error ? e.message : "Código do clube inválido");
-      }
-    }
-    let footballAssociation: string | null | undefined;
-    if (dto.footballAssociation !== undefined) {
-      footballAssociation = dto.footballAssociation.trim() || null;
-      if (footballAssociation && !associacaoValida(footballAssociation)) {
-        throw new BadRequestException("Associação de futebol desconhecida");
-      }
-    }
+    // A associação distrital do clube, para os boletins de todas as federações. Vazio limpa.
+    const association = dto.association === undefined ? undefined : dto.association.trim() || null;
+    if (association && !associacaoValida(association)) throw new BadRequestException("Associação desconhecida");
 
     /*
      * O nome curto, escrito pelo clube e não adivinhado por nós.
@@ -536,8 +520,7 @@ export class AcademyService {
           ...(dto.signalColor !== undefined ? { signalColor: dto.signalColor.toLowerCase() } : {}),
           ...(dto.logoUrl !== undefined ? { logoUrl: dto.logoUrl || null } : {}),
           ...(shortName !== undefined ? { shortName } : {}),
-          ...(fpfClubCode !== undefined ? { fpfClubCode } : {}),
-          ...(footballAssociation !== undefined ? { footballAssociation } : {}),
+          ...(association !== undefined ? { association } : {}),
         },
       });
 
@@ -799,6 +782,18 @@ export class AcademyService {
           : undefined;
       if (code !== undefined) await checkDisciplinaLivre(db, code, id);
 
+      /*
+       * O clube na federação desta modalidade: código, associação e seguro.
+       * Vazio limpa. As regras (só algarismos, uma associação que existe, o
+       * seguro do clube com apólice) vivem em `inscricoes/regras.ts`.
+       */
+      let federacao: ReturnType<typeof federacaoDaModalidade>;
+      try {
+        federacao = federacaoDaModalidade(dto);
+      } catch (e) {
+        throw new BadRequestException(e instanceof Error ? e.message : "Dados da federação inválidos");
+      }
+
       const updated = await db.sport.update({
         where: { id },
         data: {
@@ -807,6 +802,7 @@ export class AcademyService {
           ...(dto.positions !== undefined ? { positions: clean(dto.positions) } : {}),
           ...(dto.skills !== undefined ? { skills: clean(dto.skills) } : {}),
           ...(dto.dominantSideLabel !== undefined ? { dominantSideLabel: dto.dominantSideLabel.trim() || null } : {}),
+          ...federacao,
         },
         select: SPORT_SELECT,
       });
@@ -1750,6 +1746,7 @@ export class AcademyService {
           idDocLabel: true, idDocNumber: true,
           address: true, postalCode: true, city: true, citizenCardNumber: true,
           birthCountry: true, nationality: true, phone: true,
+          idDocValidUntil: true, district: true, municipality: true,
           // As licenças federativas, de todas as épocas. Ver `AthleteLicense`.
           licenses: { select: { sportId: true, seasonId: true, number: true } },
           heightCm: true, weightKg: true, dominantSide: true, sex: true, squadNumber: true, medicalValidUntil: true,
@@ -1890,6 +1887,9 @@ export class AcademyService {
           birthCountry: mayReadTaxId ? a.birthCountry : null,
           nationality: mayReadTaxId ? a.nationality : null,
           phone: mayReadTaxId ? a.phone : null,
+          idDocValidUntil: mayReadTaxId ? a.idDocValidUntil : null,
+          district: mayReadTaxId ? a.district : null,
+          municipality: mayReadTaxId ? a.municipality : null,
           licencas: a.licenses,
           email: a.email,
           /*
@@ -4455,6 +4455,10 @@ type SportInput = {
   positions?: string[];
   skills?: string[];
   dominantSideLabel?: string;
+  federationClubCode?: string;
+  insuranceKind?: string;
+  insurancePolicy?: string;
+  insuranceCompany?: string;
 };
 
 /**
@@ -4468,6 +4472,8 @@ const DURACAO_POR_DISCIPLINA: Record<string, number> = { football: 90, futsal: 4
 
 const SPORT_SELECT = {
   id: true, name: true, code: true, positions: true, skills: true, dominantSideLabel: true, matchMinutes: true,
+  // O clube na federação desta modalidade. Ver `Sport.federationClubCode`.
+  federationClubCode: true, insuranceKind: true, insurancePolicy: true, insuranceCompany: true,
 } as const;
 
 /**

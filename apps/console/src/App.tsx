@@ -56,6 +56,7 @@ import Certification from "@/routes/certification/Certification";
 import Inscricoes from "@/routes/inscricoes/Inscricoes";
 import { INSCRICOES_FPF } from "@/lib/funcionalidades";
 import Soon from "@/routes/Soon";
+import Website from "@/routes/website/Website";
 
 /**
  * A mesma árvore de rotas serve os dois perfis.
@@ -166,6 +167,9 @@ export default function App() {
         <Route path="ai/adversarios" element={<Allow p="ai:read"><Soon title="Adversários" phase="Opponent Intelligence — modelo de jogo, padrões e jogadores perigosos, com clips como prova." /></Allow>} />
           </>
         )}
+
+        {/* O site do clube — só em DEV, como a Academias AI. Ver `GRUPO_WEBSITE` em `lib/nav.ts`. */}
+        {import.meta.env.DEV && <Route path="website" element={<Allow p="settings:write"><Website /></Allow>} />}
 
         {/* Certificação FPF. Só tem menu nos clubes com futebol; quem chega pelo
             endereço sem o ter vê a página a dizê-lo. */}

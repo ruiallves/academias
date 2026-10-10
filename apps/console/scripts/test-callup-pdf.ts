@@ -47,7 +47,8 @@ const atletas = (n: number): SheetRow[] =>
     squadNumber: i + 1,
     name,
     position: i === 0 ? "Guarda-redes" : null,
-    status: i % 3 === 0 ? "CONFIRMED" : i % 3 === 1 ? "CALLED" : "DECLINED",
+    // Sem recusas: quem recusa não sai na folha, e tem a sua secção abaixo.
+    status: i % 2 === 0 ? "CONFIRMED" : "CALLED",
     guestFrom: i === 5 ? "Sub-11" : null,
   }));
 
@@ -174,6 +175,18 @@ const curta = await buildCallUpPdf(folha(atletas(8)));
 check("oito convocados cabem numa", curta.getNumberOfPages() === 1, `${curta.getNumberOfPages()}`);
 const textoCurto = textoDoPdf(bytesDe(curta));
 check("e aí o rodapé não numera nada", !textoCurto.includes(" de 1"));
+
+console.log("\n=== Quem recusou não sai ===");
+/*
+ * Uma família que disse "não vai" não assina no ponto de encontro. Na folha, o
+ * clube lia-o como convocado sem o ter chamado.
+ */
+const comRecusas = atletas(8).map((r, i) => (i === 2 || i === 5 ? { ...r, status: "DECLINED" as const } : r));
+const textoRecusas = textoDoPdf(bytesDe(await buildCallUpPdf(folha(comRecusas))));
+check("o que recusou não aparece", !textoRecusas.includes("Carlos Mendes"));
+check("nem o convidado que recusou", !textoRecusas.includes("Filipe Marques"));
+check("os outros continuam", textoRecusas.includes("Afonso Ribeiro") && textoRecusas.includes("Diogo Faria"));
+check("e a contagem desconta-os", textoRecusas.includes("6 convocados"));
 
 console.log("\n=== Ordenar por número ===");
 const porNumero = await buildCallUpPdf(folha(atletas(8), { order: "number" }));

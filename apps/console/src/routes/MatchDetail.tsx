@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link, useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { Empty, Loading, Panel, PanelHead, Pill, cx } from "@/components/primitives";
+import { feminina, nomeDaParte, regrasDoJogo } from "@/components/match/relogio";
 import {
   ArrowLeft,
   Check,
@@ -38,6 +39,7 @@ import {
   outcome,
   retroPool,
   saveAddedTime,
+  saveOvertime,
   saveAppearances,
   saveMatchReport,
   saveOpponentReport,
@@ -841,19 +843,17 @@ function CallUpPanel({ match }: { match: Match }) {
    * coisa desta página que precisa dele, e uma coluna a mais na resposta do
    * servidor para uma folha que se imprime uma vez por semana não se paga.
    */
-  const sheetRows: SheetRow[] = match.squad.map((s) => ({
-    squadNumber: (() => {
-      const a = athleteById(s.athleteId);
-      return a ? (numeroNaEquipa(a, match.teamId) ?? a.squadNumber ?? null) : null;
-    })(),
-    name: s.name,
-    position: s.position,
-    status: s.callUpStatus,
-    guestFrom: s.isGuest ? (s.guestFromTeam ?? "outro escalão") : null,
-  }));
-
-  // O jogo como a folha o lê — com a equipa de trabalho. Ver `folhaDoJogo`.
-  const sheetMatch = folhaDoJogo(match);
+  const linhasDaFolha = (m: Match): SheetRow[] =>
+    m.squad.map((s) => ({
+      squadNumber: (() => {
+        const a = athleteById(s.athleteId);
+        return a ? (numeroNaEquipa(a, m.teamId) ?? a.squadNumber ?? null) : null;
+      })(),
+      name: s.name,
+      position: s.position,
+      status: s.callUpStatus,
+      guestFrom: s.isGuest ? (s.guestFromTeam ?? "outro escalão") : null,
+    }));
 
   /**
    * A folha, sem perguntar nada.
@@ -868,7 +868,12 @@ function CallUpPanel({ match }: { match: Match }) {
     if (folha) return;
     setFolha(true);
     try {
-      await descarregarFolha({ match: sheetMatch, rows: sheetRows, academy, season });
+      /*
+       * O jogo relido agora, e não o de quando a página abriu: uma família que
+       * recusou entretanto já não pode sair na folha (ver `buildCallUpPdf`).
+       */
+      const fresco = await getMatch(match.id);
+      await descarregarFolha({ match: folhaDoJogo(fresco), rows: linhasDaFolha(fresco), academy, season });
     } finally {
       setFolha(false);
     }
@@ -1270,94 +1275,199 @@ function linhaDe(s: SquadRow): Linha {
 function minutosDerivados(l: Linha, duracao: number, tempo: TempoDoJogo = SEM_ADICIONAL): number | null {
   const entrada = l.papel === "titular" ? 0 : l.onMinute;
   if (entrada == null) return null;
-  const saida = l.offMinute ?? duracao;
-  let minutos = saida - entrada;
+  // Um expulso sai ao minuto do vermelho.
+  const sai = l.offMinute ?? l.redAt ?? null;
+  const prolongamento = tempo.prolongamento ?? [];
+  let minutos = (sai ?? duracao + prolongamento.reduce((n, m) => n + m, 0)) - entrada;
   /*
-   * O tempo adicional soma a quem estava em campo quando a parte acabou. A
-   * última parte só soma a quem não tem minuto de saída: uma saída escrita aos
-   * 93 já traz os descontos dentro. A mesma conta de `minutosEmCampo`, no
-   * servidor, que é quem decide o que fica gravado.
+   * O tempo adicional soma a quem estava em campo quando a parte acabou,
+   * prolongamento incluído. A última parte só soma a quem não saiu: uma saída
+   * escrita aos 93 já traz os descontos dentro. A mesma conta de
+   * `minutosEmCampo` (minutos-do-jogo.ts), no servidor, que é quem decide o que
+   * fica gravado.
    */
   if (tempo.partes > 0 && duracao > 0) {
-    for (let i = 0; i < tempo.partes; i++) {
-      const fim = (duracao * (i + 1)) / tempo.partes;
-      const ultima = i === tempo.partes - 1;
-      const estavaLa = entrada < fim && (ultima ? l.offMinute == null : l.offMinute == null || l.offMinute >= fim);
+    const fins = Array.from({ length: tempo.partes }, (_, i) => (duracao * (i + 1)) / tempo.partes);
+    let ate = duracao;
+    for (const m of prolongamento) fins.push((ate += m));
+    fins.forEach((fim, i) => {
+      const ultima = i === fins.length - 1;
+      const estavaLa = entrada < fim && (ultima ? sai == null : sai == null || sai >= fim);
       if (estavaLa) minutos += tempo.adicional[i] ?? 0;
-    }
+    });
   }
   return Math.max(0, minutos);
 }
 
-/** As partes de um jogo e o tempo adicional de cada uma. Sem partes, não há tempo adicional. */
-type TempoDoJogo = { partes: number; adicional: number[] };
+/**
+ * As partes de um jogo, o tempo adicional de cada uma e o prolongamento. Sem
+ * partes, não há tempo adicional.
+ */
+type TempoDoJogo = { partes: number; adicional: number[]; prolongamento?: number[] };
 const SEM_ADICIONAL: TempoDoJogo = { partes: 0, adicional: [] };
 
-/** "1.ª parte", "3.º período". */
-const nomeDaParte = (i: number, nome: "parte" | "período") => `${i + 1}.${nome === "parte" ? "ª" : "º"} ${nome}`;
-
 /**
- * O tempo adicional de cada parte.
+ * O tempo do jogo: o prolongamento, se houve, e o tempo adicional de cada parte.
  *
- * Só aparece nas modalidades que o têm (`SportProfile.match.addedTime`): no
- * futebol há compensação no fim de cada parte; no futsal e no basquetebol o
- * cronómetro pára e a pergunta nem se faz.
+ * O prolongamento aparece em todas as modalidades com perfil: futebol e futsal
+ * jogam duas partes, o basquetebol tantos períodos quantos for preciso. O tempo
+ * adicional só nas que o têm (`SportProfile.match.addedTime`): no futebol há
+ * compensação no fim de cada parte, prolongamento incluído; no futsal e no
+ * basquetebol o cronómetro pára e a pergunta nem se faz.
  *
  * Grava-se à parte da ficha, com o seu próprio botão: é um facto do jogo e não
- * de um atleta, e quem só quer acertar "+5 na segunda" não tem de gravar a
- * ficha inteira. Soma aos minutos de quem estava em campo: num jogo de 90 com
- * +2 e +3, quem joga tudo fica com 95. O servidor refaz os minutos da ficha ao
- * gravar isto.
+ * de um atleta. Conta nos minutos de quem estava em campo: num jogo de 90 com
+ * +2 e +3, quem joga tudo fica com 95; num 90 + 2 × 15, com 120. O servidor
+ * refaz os minutos da ficha ao gravar isto.
  */
 function TempoAdicional({ match, mayRecord, onSaved }: { match: Match; mayRecord: boolean; onSaved: () => void }) {
-  const jogo = profileOf(sportById(match.sportId))?.match;
-  const partes = jogo?.addedTime ? jogo.periods : 0;
-  const gravado = Array.from({ length: partes }, (_, i) => (match.addedMinutes ?? [])[i] ?? 0); // um servidor antigo não manda o campo
-  const chave = gravado.join(",");
+  const profile = profileOf(sportById(match.sportId));
+  const jogo = profile?.match;
+  const ot = jogo?.overtime;
+
+  // Um servidor antigo não manda os campos.
+  const prolGravado = match.overtimeMinutes ?? [];
+  const [nProl, setNProl] = useState(prolGravado.length);
+  const [minProl, setMinProl] = useState(String(prolGravado[0] ?? ot?.minutes ?? 15));
+  const prolongamento = nProl > 0 ? Array.from({ length: nProl }, () => Number(minProl) || 0) : [];
+
+  /* As partes com tempo adicional: as do jogo e as do prolongamento que se está a escrever. */
+  const regras = regrasDoJogo(profile, match.matchMinutes, prolongamento);
+  const partes = jogo?.addedTime ? jogo.periods + prolongamento.length : 0;
+  const gravado = Array.from({ length: partes }, (_, i) => (match.addedMinutes ?? [])[i] ?? 0);
+  const chave = `${prolGravado.join(",")}|${(match.addedMinutes ?? []).join(",")}`;
 
   const [valores, setValores] = useState<string[]>(() => gravado.map((m) => (m ? String(m) : "")));
   const [busy, setBusy] = useState(false);
   const [erro, setErro] = useState<string | null>(null);
 
   useEffect(() => {
-    setValores(gravado.map((m) => (m ? String(m) : "")));
+    setNProl(prolGravado.length);
+    setMinProl(String(prolGravado[0] ?? ot?.minutes ?? 15));
+    setValores(Array.from({ length: (jogo?.addedTime ? jogo.periods : 0) + prolGravado.length }, (_, i) => {
+      const m = (match.addedMinutes ?? [])[i] ?? 0;
+      return m ? String(m) : "";
+    }));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [chave]);
 
-  if (!jogo || partes === 0) return null;
+  // Os campos do tempo adicional acompanham as partes: mais partes, mais campos.
+  useEffect(() => {
+    setValores((v) => Array.from({ length: partes }, (_, i) => v[i] ?? ""));
+  }, [partes]);
 
-  const total = gravado.reduce((n, m) => n + m, 0);
+  if (!jogo || !ot) return null;
+
   // Quem só lê vê o que ficou registado, e nada quando não ficou nada.
   if (!mayRecord) {
-    if (total === 0) return null;
+    const total = gravado.reduce((n, m) => n + m, 0);
+    if (total === 0 && prolGravado.length === 0) return null;
     return (
       <p className="rounded-[14px] bg-sunken/60 px-4 py-2.5 text-meta text-ink-3">
-        Tempo adicional:{" "}
-        <span className="text-ink-2">
-          {gravado.map((m, i) => `+${m}′ na ${nomeDaParte(i, jogo.periodName)}`).join(" · ")}
-        </span>
+        {prolGravado.length > 0 && (
+          <>
+            Prolongamento: <span className="text-ink-2">{prolGravado.length} × {prolGravado[0]} min</span>
+            {total > 0 && " · "}
+          </>
+        )}
+        {total > 0 && (
+          <>
+            Tempo adicional:{" "}
+            <span className="text-ink-2">
+              {gravado
+                .map((m, i) => (m ? `+${m}′ n${feminina(regras, i + 1) ? "a" : "o"} ${nomeDaParte(regras, i + 1)}` : null))
+                .filter(Boolean)
+                .join(" · ")}
+            </span>
+          </>
+        )}
       </p>
     );
   }
 
   const numeros = valores.map((v) => (v === "" ? 0 : Number(v)));
-  const mudou = numeros.join(",") !== chave;
+  const prolMudou = prolongamento.join(",") !== prolGravado.join(",");
+  const mudou = prolMudou || numeros.join(",") !== gravado.join(",");
+  const prolInvalido = nProl > 0 && (!(Number(minProl) >= 1) || Number(minProl) > ot.maxMinutes);
 
   async function gravar() {
     setBusy(true);
     setErro(null);
     try {
-      await saveAddedTime(match.id, numeros);
+      // O prolongamento primeiro: é ele que diz quantas partes têm tempo adicional.
+      if (prolMudou) await saveOvertime(match.id, prolongamento);
+      if (partes > 0) await saveAddedTime(match.id, numeros);
       onSaved();
     } catch (e) {
-      setErro(e instanceof Error ? e.message : "Não foi possível gravar o tempo adicional.");
+      setErro(e instanceof Error ? e.message : "Não foi possível gravar o tempo do jogo.");
     } finally {
       setBusy(false);
     }
   }
 
   return (
-    <div className="rounded-[14px] bg-sunken/60 px-4 py-2.5">
+    <div className="space-y-2 rounded-[14px] bg-sunken/60 px-4 py-2.5">
+      {/* O prolongamento: houve ou não, e quanto durou cada parte. */}
+      <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
+        <span className="text-meta font-medium text-ink">Prolongamento</span>
+        {ot.repeat ? (
+          <span className="inline-flex items-center gap-1.5 text-meta text-ink-3">
+            <button type="button" aria-label="Menos um prolongamento" disabled={busy || nProl === 0} onClick={() => setNProl((n) => Math.max(0, n - 1))} className="flex size-8 items-center justify-center rounded-full border border-line bg-surface text-ink disabled:opacity-40">
+              −
+            </button>
+            <span className="w-14 text-center text-body text-ink tabular">{nProl === 0 ? "não houve" : nProl}</span>
+            <button type="button" aria-label="Mais um prolongamento" disabled={busy || nProl >= 6} onClick={() => setNProl((n) => Math.min(6, n + 1))} className="flex size-8 items-center justify-center rounded-full border border-line bg-surface text-ink disabled:opacity-40">
+              +
+            </button>
+          </span>
+        ) : (
+          <span className="inline-flex rounded-full border border-line bg-surface p-0.5 text-meta">
+            {[0, ot.parts].map((n) => (
+              <button
+                key={n}
+                type="button"
+                aria-pressed={nProl === n}
+                disabled={busy}
+                onClick={() => setNProl(n)}
+                className={cx("h-8 rounded-full px-3", nProl === n ? "bg-ink text-surface" : "text-ink-3 hover:text-ink")}
+              >
+                {n === 0 ? "Não houve" : "Houve"}
+              </button>
+            ))}
+          </span>
+        )}
+        {nProl > 0 && (
+          <span className="inline-flex items-center gap-1.5">
+            <label htmlFor="prolongamento-minutos" className="text-meta text-ink-3">
+              {ot.repeat ? "de" : `${ot.parts} ×`}
+            </label>
+            <input
+              id="prolongamento-minutos"
+              type="text"
+              inputMode="numeric"
+              pattern="[0-9]*"
+              maxLength={2}
+              value={minProl}
+              disabled={busy}
+              onChange={(e) => setMinProl(e.target.value.replace(/\D/g, ""))}
+              className="h-9 w-12 rounded-full border border-line bg-surface text-center text-body tabular text-ink outline-none focus:border-ink-3"
+            />
+            <span className="text-meta text-ink-3">min{ot.repeat && nProl > 1 ? " cada" : ""}</span>
+          </span>
+        )}
+        {partes === 0 && mudou && (
+          <button type="button" className="ctl-outline h-9" disabled={busy || prolInvalido} onClick={() => void gravar()}>
+            {busy ? "A gravar…" : "Gravar"}
+          </button>
+        )}
+      </div>
+      {prolInvalido && (
+        <p role="alert" className="text-meta text-risk">
+          Cada parte do prolongamento vai de 1 a {ot.maxMinutes} minutos.
+        </p>
+      )}
+
+      {partes > 0 && (
       <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
         <span className="text-meta font-medium text-ink">Tempo adicional</span>
         {valores.map((v, i) => {
@@ -1365,7 +1475,7 @@ function TempoAdicional({ match, mayRecord, onSaved }: { match: Match; mayRecord
           return (
             <span key={i} className="inline-flex items-center gap-1.5">
               <label htmlFor={id} className="text-meta text-ink-3">
-                {nomeDaParte(i, jogo.periodName)}
+                {nomeDaParte(regras, i + 1)}
               </label>
               <span className="text-meta text-ink-4" aria-hidden>
                 +
@@ -1390,19 +1500,20 @@ function TempoAdicional({ match, mayRecord, onSaved }: { match: Match; mayRecord
           );
         })}
         {mudou && (
-          <button type="button" className="ctl-outline h-9" disabled={busy || numeros.some((n) => n > 30)} onClick={() => void gravar()}>
+          <button type="button" className="ctl-outline h-9" disabled={busy || prolInvalido || numeros.some((n) => n > 30)} onClick={() => void gravar()}>
             {busy ? "A gravar…" : "Gravar"}
           </button>
         )}
         <span className="text-[11px] text-ink-4">opcional</span>
       </div>
+      )}
       {numeros.some((n) => n > 30) && (
-        <p role="alert" className="mt-1.5 text-meta text-risk">
+        <p role="alert" className="text-meta text-risk">
           O tempo adicional de cada parte vai de 0 a 30 minutos.
         </p>
       )}
       {erro && (
-        <p role="alert" className="mt-1.5 text-meta text-risk">
+        <p role="alert" className="text-meta text-risk">
           {erro}
         </p>
       )}
@@ -1443,13 +1554,16 @@ function SheetPanel({ match, mayRecord, onSaved }: { match: Match; mayRecord: bo
    * entrou e não saiu. O 90 é só para uma modalidade sem duração declarada.
    */
   const duracao = match.matchMinutes ?? 90;
-  /* O tempo adicional gravado: soma aos minutos de quem estava em campo. Ver `minutosDerivados`. */
+  /* O tempo adicional e o prolongamento gravados: contam nos minutos de quem estava em campo. Ver `minutosDerivados`. */
   const regras = profileOf(sportById(match.sportId))?.match;
   const tempo = useMemo<TempoDoJogo>(
-    () => ({ partes: regras?.addedTime ? regras.periods : 0, adicional: match.addedMinutes ?? [] }),
-    [regras, match.addedMinutes],
+    () => ({
+      partes: regras?.addedTime ? regras.periods : 0,
+      adicional: match.addedMinutes ?? [],
+      prolongamento: match.overtimeMinutes ?? [],
+    }),
+    [regras, match.addedMinutes, match.overtimeMinutes],
   );
-
   const [linhas, setLinhas] = useState<Record<string, Linha>>(() => daFicha(match));
   const [erro, setErro] = useState<string | null>(null);
   const { estado, gravar: correr, aGravar: busy } = useSaving();
@@ -1938,7 +2052,8 @@ function SheetRow({
       apoio={[atleta.position ?? "sem posição", atleta.isGuest ? `de ${atleta.guestFromTeam}` : null, atleta.callUpStatus === "DECLINED" ? "tinha dito que não podia" : null].filter(Boolean).join(" · ")}
       linha={linha}
       golo={golo}
-      duracao={duracao}
+      // A ficha deixa escrever minutos até ao fim do jogo, prolongamento incluído.
+      duracao={duracao + (tempo.prolongamento ?? []).reduce((n, m) => n + m, 0)}
       minutos={minutosDerivados(linha, duracao, tempo)}
       problemas={problemas}
       podeEditar={mayRecord}

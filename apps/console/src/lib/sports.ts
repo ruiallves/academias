@@ -89,7 +89,35 @@ export type SportProfile = {
    * cronómetro parado: não há compensação, e a ficha não a pergunta. O servidor
    * tem a mesma regra em `PARTES_COM_TEMPO_ADICIONAL`.
    */
-  match: { periods: number; periodName: "parte" | "período"; addedTime: boolean };
+  match: {
+    periods: number;
+    periodName: "parte" | "período";
+    addedTime: boolean;
+    /**
+     * Cada parte começa o relógio do zero, ou continua o do jogo.
+     *
+     * No futebol o relógio é do jogo: a 2.ª parte começa nos 45:00 e o golo é
+     * "ao minuto 67". No futsal e no basquetebol cada parte tem o seu
+     * cronómetro, que volta a zero: o cesto é "aos 4 minutos do 3.º período".
+     */
+    clockResets: boolean;
+    /**
+     * Os descontos de tempo (pedidos de tempo das equipas), por grupo de
+     * partes. No futsal, um por equipa em cada parte; no basquetebol, dois na
+     * primeira metade e três na segunda. Nulo onde não há (futebol).
+     */
+    timeouts: { parts: number[]; max: number }[] | null;
+    /**
+     * O prolongamento, quando o jogo tem de ter vencedor.
+     *
+     * Futebol: 2 × 15 (até 15; na formação joga-se muitas vezes menos), com
+     * compensação, e o relógio continua do 90:00. Futsal: 2 × 5, cada parte do
+     * zero, sem descontos de tempo. Basquetebol: períodos de 5, um de cada vez
+     * e tantos quantos for preciso para desempatar, com um desconto de tempo
+     * por equipa em cada um. O servidor tem os limites em `PROLONGAMENTO`.
+     */
+    overtime: { parts: number; minutes: number; maxMinutes: number; repeat: boolean; timeouts: number };
+  };
   /** O que o editor de campo oferece nesta modalidade. */
   vocabulary: EditorVocabulary;
   defaultFormat: GameFormat;
@@ -456,7 +484,14 @@ export const SPORT_PROFILES: Record<SportCode, SportProfile> = {
       dominantSideLabel: "Pé dominante",
       matchMinutes: 90,
     },
-    match: { periods: 2, periodName: "parte", addedTime: true },
+    match: {
+      periods: 2,
+      periodName: "parte",
+      addedTime: true,
+      clockResets: false,
+      timeouts: null,
+      overtime: { parts: 2, minutes: 15, maxMinutes: 15, repeat: false, timeouts: 0 },
+    },
     vocabulary: footballVocabulary(formatsOf("football")),
     defaultFormat: "f11",
     exercises: {
@@ -505,7 +540,14 @@ export const SPORT_PROFILES: Record<SportCode, SportProfile> = {
       dominantSideLabel: "Pé dominante",
       matchMinutes: 40,
     },
-    match: { periods: 2, periodName: "parte", addedTime: false },
+    match: {
+      periods: 2,
+      periodName: "parte",
+      addedTime: false,
+      clockResets: true,
+      timeouts: [{ parts: [1], max: 1 }, { parts: [2], max: 1 }],
+      overtime: { parts: 2, minutes: 5, maxMinutes: 10, repeat: false, timeouts: 0 },
+    },
     vocabulary: footballVocabulary(formatsOf("futsal")),
     defaultFormat: "futsal",
     exercises: {
@@ -554,7 +596,14 @@ export const SPORT_PROFILES: Record<SportCode, SportProfile> = {
       dominantSideLabel: "Mão dominante",
       matchMinutes: 40,
     },
-    match: { periods: 4, periodName: "período", addedTime: false },
+    match: {
+      periods: 4,
+      periodName: "período",
+      addedTime: false,
+      clockResets: true,
+      timeouts: [{ parts: [1, 2], max: 2 }, { parts: [3, 4], max: 3 }],
+      overtime: { parts: 1, minutes: 5, maxMinutes: 10, repeat: true, timeouts: 1 },
+    },
     vocabulary: BASKET_VOCABULARY,
     defaultFormat: "basket",
     exercises: {

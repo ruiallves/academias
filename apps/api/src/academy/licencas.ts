@@ -34,6 +34,7 @@ export function normalizarCartaoCidadao(v: string | undefined): string | null {
 type ComMorada = {
   address?: string; postalCode?: string; city?: string; citizenCardNumber?: string;
   birthCountry?: string; nationality?: string; phone?: string;
+  idDocValidUntil?: string; district?: string; municipality?: string;
 };
 
 /**
@@ -52,6 +53,12 @@ export function moradaDoPedido(dto: ComMorada) {
     ...(dto.birthCountry !== undefined ? { birthCountry: codigoDePais(dto.birthCountry) } : {}),
     ...(dto.nationality !== undefined ? { nationality: codigoDePais(dto.nationality) } : {}),
     ...(dto.phone !== undefined ? { phone: texto(dto.phone) } : {}),
+    // O que o boletim da FPB pede além disso. A data chega como AAAA-MM-DD (o DTO já a validou).
+    ...(dto.idDocValidUntil !== undefined
+      ? { idDocValidUntil: dto.idDocValidUntil ? new Date(`${dto.idDocValidUntil.slice(0, 10)}T00:00:00Z`) : null }
+      : {}),
+    ...(dto.district !== undefined ? { district: texto(dto.district) } : {}),
+    ...(dto.municipality !== undefined ? { municipality: texto(dto.municipality) } : {}),
   };
 }
 

@@ -163,6 +163,8 @@ export type MatchDetail = {
   matchMinutes: number | null;
   /** O tempo adicional por parte, em minutos. Vazio se ninguém o registou. */
   addedMinutes: number[];
+  /** Os minutos de cada parte do prolongamento. Vazio se não houve. */
+  overtimeMinutes?: number[];
   startsAt: string;
   endsAt: string;
   venue: string;
@@ -271,6 +273,10 @@ export const staffPool = () =>
 /** O tempo adicional de cada parte. Só nas modalidades que o têm (ver `SportProfile.match`). */
 export const saveAddedTime = (id: string, minutes: number[]) =>
   apiPost<{ ok: true; addedMinutes: number[] }>(`/api/matches/${id}/tempo-adicional`, { minutes });
+
+/** O prolongamento: os minutos de cada parte. Vazio é "não houve". Ver `SportProfile.match.overtime`. */
+export const saveOvertime = (id: string, minutes: number[]) =>
+  apiPost<{ ok: true; overtimeMinutes: number[]; addedMinutes: number[] }>(`/api/matches/${id}/prolongamento`, { minutes });
 
 export const saveResult = (id: string, ourScore: number | null, theirScore: number | null) =>
   apiPost<{ ok: true }>(`/api/matches/${id}/resultado`, { ourScore, theirScore });

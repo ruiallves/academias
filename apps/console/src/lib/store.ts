@@ -72,9 +72,8 @@ type ApiBootstrap = {
     /** Quando abre o ano das quotas anuais de sócio: o mês (1–12) e o dia. */
     memberAnnualStartMonth: number;
     memberAnnualStartDay: number;
-    /** O clube na federação. Ver `Academy.fpfClubCode` na API. */
-    fpfClubCode?: string | null;
-    footballAssociation?: string | null;
+    /** A associação distrital do clube. Ver `Academy.association` na API. */
+    association?: string | null;
   };
   sports: {
     id: string;
@@ -85,6 +84,10 @@ type ApiBootstrap = {
     skills: string[];
     dominantSideLabel: string | null;
     matchMinutes: number | null;
+    federationClubCode?: string | null;
+    insuranceKind?: string | null;
+    insurancePolicy?: string | null;
+    insuranceCompany?: string | null;
   }[];
   season: { id: string; label: string } | null;
   /** Todas as épocas da academia, da mais recente para trás. */
@@ -148,6 +151,7 @@ type ApiAthlete = {
   idDocNumber?: string | null;
   address?: string | null; postalCode?: string | null; city?: string | null; citizenCardNumber?: string | null;
   birthCountry?: string | null; nationality?: string | null; phone?: string | null;
+  idDocValidUntil?: string | null; district?: string | null; municipality?: string | null;
   licencas?: { sportId: string; seasonId: string; number: string }[];
   heightCm: number | null; weightKg: number | null; dominantSide: string | null; sex?: Athlete["sex"] | null; squadNumber: number | null;
   medicalValidUntil: string | null; teamId: string | null; position: string | null;
@@ -389,7 +393,7 @@ const EMPTY: State = {
     paymentsEnabled: true, feesOnPayer: false, eupagoConfigured: true,
     membershipHeadline: "", membershipIntro: "", membershipPoints: [],
     memberAnnualStartMonth: 8, memberAnnualStartDay: 1,
-    fpfClubCode: "", footballAssociation: "",
+    association: "",
     sports: [],
   },
   season: "",
@@ -920,6 +924,9 @@ function juntar<T extends { id: string }>(atuais: T[], novos: T[]): T[] {
     birthCountry: a.birthCountry ?? undefined,
     nationality: a.nationality ?? undefined,
     phone: a.phone ?? undefined,
+    idDocValidUntil: a.idDocValidUntil ? a.idDocValidUntil.slice(0, 10) : undefined,
+    district: a.district ?? undefined,
+    municipality: a.municipality ?? undefined,
     licencas: a.licencas ?? [],
     photoUrl: a.photoUrl ?? undefined,
     email: a.email ?? undefined,
@@ -1098,8 +1105,7 @@ function juntar<T extends { id: string }>(atuais: T[], novos: T[]): T[] {
       membershipPoints: boot.academy.membershipPoints ?? [],
       memberAnnualStartMonth: boot.academy.memberAnnualStartMonth ?? 8,
       memberAnnualStartDay: boot.academy.memberAnnualStartDay ?? 1,
-      fpfClubCode: boot.academy.fpfClubCode ?? "",
-      footballAssociation: boot.academy.footballAssociation ?? "",
+      association: boot.academy.association ?? "",
       /*
        * Campo a campo, e por isso é preciso cuidado: o que não estiver aqui
        * **não chega ao ecrã**, mesmo estando certo na base de dados. Foi o que
@@ -1115,6 +1121,11 @@ function juntar<T extends { id: string }>(atuais: T[], novos: T[]): T[] {
         skills: s.skills,
         dominantSideLabel: s.dominantSideLabel ?? undefined,
         matchMinutes: s.matchMinutes ?? undefined,
+        // O clube na federação desta modalidade. Ver `Sport.federationClubCode`.
+        federationClubCode: s.federationClubCode ?? null,
+        insuranceKind: s.insuranceKind === "FPB" || s.insuranceKind === "CLUB" ? s.insuranceKind : null,
+        insurancePolicy: s.insurancePolicy ?? null,
+        insuranceCompany: s.insuranceCompany ?? null,
       })),
     },
     season: boot.season?.label ?? "",

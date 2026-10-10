@@ -29,6 +29,7 @@ import {
   Target,
   Award,
   FileSignature,
+  Globe,
   type LucideIcon,
 } from "@/lib/icons";
 import type { Permission, Session } from "@/lib/permissions";
@@ -93,8 +94,8 @@ export type NavItem = {
    * menu a mais. No editor de cargos o item aparece sempre, como `sports` — o
    * cargo decide se o mostra, e a modalidade decide se existe.
    *
-   * Uma lista quando serve mais do que uma: as Inscrições (Modelo 2 da FPF)
-   * são de futebol **ou** futsal.
+   * Uma lista quando serve mais do que uma: as Inscrições são de futebol,
+   * futsal **ou** basquetebol (os boletins da FPF e da FPB).
    */
   discipline?: SportCode | SportCode[];
 };
@@ -169,6 +170,20 @@ const GRUPO_AI: NavGroup = {
   ],
 };
 
+/**
+ * Website — o site do clube. **Fora de produção, por agora**, pela mesma razão
+ * e da mesma maneira que a Academias AI (ver `GRUPO_AI`): o spread condicional
+ * deixa-o fora do pacote de produção, e a rota em `App.tsx` também só existe
+ * em DEV.
+ *
+ * `settings:write` porque é quem mexe na cara pública do clube, como nas
+ * Definições. Quando sair para produção ganha permissão própria.
+ */
+const GRUPO_WEBSITE: NavGroup = {
+  label: "Website",
+  items: [{ key: "website", label: "Website", to: "/website", icon: Globe, requires: "settings:write", beta: true }],
+};
+
 export const NAV_CATALOG: NavGroup[] = [
   {
     items: [{ key: "overview", label: "Visão geral", to: "/", icon: LayoutGrid, requires: "academy:read" }],
@@ -215,6 +230,33 @@ export const NAV_CATALOG: NavGroup[] = [
         icon: Megaphone,
         requires: "attendance:read",
         badge: (c) => c.callUpsToSubmit || undefined,
+      },
+      /*
+        A certificação da FPF e as inscrições, em Operação (pedido do Rui a
+        09/10/2026; estavam em Gestão): são o trabalho federativo do plantel,
+        ao lado das convocatórias, e não dinheiro nem material.
+      */
+      {
+        key: "certification",
+        label: "Certificação FPF",
+        to: "/certificacao",
+        icon: Award,
+        requires: "certification:read",
+        discipline: "football",
+        beta: true,
+      },
+      /*
+        As inscrições federativas: o Modelo 2 da FPF (futebol e futsal) e o
+        Modelo 1 da FPB (basquetebol). Gerar os boletins e seguir cada um até
+        à licença.
+      */
+      {
+        key: "registrations",
+        label: "Inscrições",
+        to: "/inscricoes",
+        icon: FileSignature,
+        requires: "registration:read",
+        discipline: ["football", "futsal", "basketball"],
       },
     ],
   },
@@ -292,32 +334,6 @@ export const NAV_CATALOG: NavGroup[] = [
         maior do que é, e quem entra na consola não vem para aqui todos os dias.
       */
       { key: "inventory", label: "Inventário", to: "/inventario", icon: Boxes, requires: "inventory:read" },
-      /*
-        A certificação da FPF, em Gestão: é trabalho de direção, feito uma vez
-        por época e acompanhado ao longo dela — da família das contas e do
-        inventário, não do dia de treino.
-      */
-      {
-        key: "certification",
-        label: "Certificação FPF",
-        to: "/certificacao",
-        icon: Award,
-        requires: "certification:read",
-        discipline: "football",
-        beta: true,
-      },
-      /*
-        As inscrições na FPF (Modelo 2): gerar os boletins e seguir cada um
-        até à licença. Só futebol e futsal, que são as modalidades do boletim.
-      */
-      {
-        key: "registrations",
-        label: "Inscrições",
-        to: "/inscricoes",
-        icon: FileSignature,
-        requires: "registration:read",
-        discipline: ["football", "futsal"],
-      },
     ],
   },
   {
@@ -373,6 +389,7 @@ export const NAV_CATALOG: NavGroup[] = [
     ],
   },
   ...(import.meta.env.DEV ? [GRUPO_AI] : []),
+  ...(import.meta.env.DEV ? [GRUPO_WEBSITE] : []),
 ];
 
 export const SETTINGS_ITEM: NavItem = {

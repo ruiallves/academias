@@ -40,6 +40,15 @@ export type Sport = {
    * código: a natação avalia técnica e resistência, o futebol avalia táctica.
    */
   skills?: string[];
+  /**
+   * O clube na federação desta modalidade: futebol e futsal na FPF (com o
+   * código do clube), o basquetebol na FPB (com o seguro desportivo). A
+   * associação é do clube, não da modalidade: ver `Academy.association`.
+   */
+  federationClubCode?: string | null;
+  insuranceKind?: "FPB" | "CLUB" | null;
+  insurancePolicy?: string | null;
+  insuranceCompany?: string | null;
 };
 
 export type Academy = {
@@ -105,9 +114,12 @@ export type Academy = {
   /** Quando abre o ano das quotas anuais de sócio — do clube, para todas as categorias anuais. */
   memberAnnualStartMonth: number;
   memberAnnualStartDay: number;
-  /** O código do clube na FPF e a associação de futebol ("Braga"). Vazios até alguém os escrever. */
-  fpfClubCode: string;
-  footballAssociation: string;
+  /**
+   * A associação distrital ("Braga"), a mesma em todas as modalidades: AF Braga
+   * nos boletins de futebol e futsal, AB Braga nos de basquetebol. Vazia até
+   * alguém a escolher em Definições → Geral.
+   */
+  association: string;
 };
 
 export type Team = {
@@ -293,6 +305,10 @@ export type Athlete = {
   birthCountry?: string;
   nationality?: string;
   phone?: string;
+  /** A validade do documento (AAAA-MM-DD), o distrito e o concelho: o que o boletim da FPB pede. Mesma regra. */
+  idDocValidUntil?: string;
+  district?: string;
+  municipality?: string;
   /** As licenças federativas, uma por modalidade e época. Ver `AthleteLicense` na API. */
   licencas: { sportId: string; seasonId: string; number: string }[];
   /**

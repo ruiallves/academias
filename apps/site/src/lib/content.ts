@@ -136,22 +136,25 @@ export const CLUBES = [
 /**
  * Os números da plataforma.
  *
- * **São contagens verdadeiras**, feitas à base de dados a 5 de outubro de 2026:
- * tudo o que os clubes criaram na plataforma, sem contar o clube interno de
- * testes. Não se arredonda para cima e não se inventa. Um número inventado
- * numa página de vendas é publicidade enganosa, e basta um clube fazer as
- * contas para o resto da página deixar de ser acreditado.
+ * **São contagens verdadeiras**, feitas à base de dados a 9 de outubro de 2026:
+ * tudo o que os clubes criaram na plataforma (clubes cancelados incluídos),
+ * sem contar os dois clubes de testes (`life-club` e `ad-fafe`). Não se
+ * arredonda para cima e não se inventa. Um número inventado numa página de
+ * vendas é publicidade enganosa, e basta um clube fazer as contas para o resto
+ * da página deixar de ser acreditado.
  *
- * Para atualizar, voltar a contar e mudar aqui os valores e a data.
+ * Para atualizar, voltar a contar (contagem simples de `Athlete`, `Team`,
+ * `Member`, `TrainingSession` e `Match` sem esses dois clubes) e mudar aqui os
+ * valores e a data. Pode descer: treinos e equipas apagados pelos clubes saem.
  */
 export const NUMEROS = {
-  data: "5 de outubro de 2026",
+  data: "9 de outubro de 2026",
   itens: [
-    { valor: 767, rotulo: "atletas" },
-    { valor: 77, rotulo: "equipas" },
-    { valor: 652, rotulo: "sócios" },
-    { valor: 5224, rotulo: "treinos marcados" },
-    { valor: 213, rotulo: "jogos" },
+    { valor: 895, rotulo: "atletas" },
+    { valor: 71, rotulo: "equipas" },
+    { valor: 655, rotulo: "sócios" },
+    { valor: 5215, rotulo: "treinos marcados" },
+    { valor: 225, rotulo: "jogos" },
   ],
 };
 

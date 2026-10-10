@@ -22,3 +22,7 @@ apps/api/public/
 # Vídeos de teste do worker de IA: ficam no disco, nunca no git (o GitHub recusa >100 MB).
 ai-worker/video/
 *.mp4
+
+# Next (apps/clube-site)
+.next/
+next-env.d.ts

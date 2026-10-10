@@ -11,6 +11,7 @@ import {
   type RequestContext,
 } from "../common/permissions";
 import { headCoaches, pesoDoTitulo } from "./head-coaches";
+import { minutosEmCampo, PARTES_COM_TEMPO_ADICIONAL, PROLONGAMENTO } from "./minutos-do-jogo";
 import { AMIGAVEL } from "./catalogs.service";
 import { formatarNoFuso, horaNoFuso, instanteNoFuso, lerHora, partesNoFuso, somarDias } from "../common/fuso";
 
@@ -275,7 +276,7 @@ export class MatchesService {
         select: {
           id: true, teamId: true, startsAt: true, endsAt: true, venue: true,
           opponent: true, isHome: true, status: true, ourScore: true, theirScore: true,
-          callUpsClosedAt: true, statsEnteredAt: true, addedMinutes: true,
+          callUpsClosedAt: true, statsEnteredAt: true, addedMinutes: true, overtimeMinutes: true,
           // A logística dita ao submeter — a folha em PDF lê-a daqui.
           roundLabel: true, meetingPoint: true, meetingAt: true, arrivalAt: true,
           callUpNotes: true, confirmationRequired: true, respondBy: true,
@@ -382,6 +383,8 @@ export class MatchesService {
         matchMinutes: duracaoDoJogo(m.team),
         /** O tempo adicional por parte. Vazio se ninguém o registou. */
         addedMinutes: m.addedMinutes,
+        /** Os minutos de cada parte do prolongamento. Vazio se não houve. */
+        overtimeMinutes: m.overtimeMinutes,
         startsAt: m.startsAt,
         endsAt: m.endsAt,
         venue: m.venue,
@@ -758,8 +761,10 @@ export class MatchesService {
       const alvo = await this.mustReach(db, ctx, matchId);
       const partes = PARTES_COM_TEMPO_ADICIONAL[alvo.team.sport.code ?? ""] ?? 0;
       if (partes === 0) throw new BadRequestException("Nesta modalidade não há tempo adicional");
-      if (minutes.length > partes) {
-        throw new BadRequestException(`Um jogo desta modalidade tem ${partes} partes`);
+      // As partes do prolongamento também têm compensação.
+      const todas = partes + alvo.overtimeMinutes.length;
+      if (minutes.length > todas) {
+        throw new BadRequestException(`Este jogo tem ${todas} partes`);
       }
       if (minutes.some((m) => !Number.isInteger(m) || m < 0 || m > 30)) {
         throw new BadRequestException("O tempo adicional de cada parte vai de 0 a 30 minutos");
@@ -772,31 +777,48 @@ export class MatchesService {
       while (limpos.length > 0 && limpos[limpos.length - 1] === 0) limpos.pop();
 
       await db.match.update({ where: { id: matchId }, data: { addedMinutes: limpos } });
-
-      /*
-       * Os minutos de quem já está na ficha refazem-se.
-       *
-       * A ficha pode ter sido gravada antes de alguém escrever os descontos, e
-       * os minutos gravados são uma conta feita com o que se sabia então. Sem
-       * isto, um titular ficava com 90 num jogo de 90 + 5 até alguém voltar a
-       * gravar a ficha.
-       */
-      const duracao = duracaoDoJogo(alvo.team);
-      const ficha = await db.matchAppearance.findMany({
-        where: { matchId },
-        select: { id: true, minutes: true, started: true, onMinute: true, offMinute: true },
-      });
-      for (const a of ficha) {
-        const minutos = minutosEmCampo(
-          { started: a.started, onMinute: a.onMinute ?? undefined, offMinute: a.offMinute ?? undefined },
-          duracao,
-          limpos,
-          partes,
-        );
-        if (minutos !== a.minutes) await db.matchAppearance.update({ where: { id: a.id }, data: { minutes: minutos } });
-      }
+      await refazerMinutosDaFicha(db, matchId, duracaoDoJogo(alvo.team), limpos, partes, alvo.overtimeMinutes);
 
       return { ok: true as const, addedMinutes: limpos };
+    });
+  }
+
+  /**
+   * O prolongamento: os minutos de cada parte jogada para lá do tempo
+   * regulamentar. Vazio é "não houve".
+   *
+   * Futebol e futsal jogam duas partes; o basquetebol joga períodos de 5
+   * minutos até desempatar (ver `PROLONGAMENTO`). Os minutos de quem está na
+   * ficha refazem-se: quem jogou tudo num 90 + 2 × 15 passa a ter 120.
+   *
+   * O tempo adicional das partes que deixaram de existir cai: um +2 na 2.ª
+   * parte do prolongamento não faz sentido num jogo sem prolongamento.
+   */
+  async saveOvertime(ctx: RequestContext, matchId: string, minutes: number[]) {
+    this.assertCanRecord(ctx);
+
+    return this.prisma.runAs(ctx.academyId, async (db) => {
+      const alvo = await this.mustReach(db, ctx, matchId);
+      const regra = PROLONGAMENTO[alvo.team.sport.code ?? ""];
+      if (!regra) throw new BadRequestException("Nesta modalidade não há prolongamento");
+      if (minutes.length > regra.partes) {
+        throw new BadRequestException(`O prolongamento desta modalidade tem no máximo ${regra.partes} partes`);
+      }
+      if (minutes.some((m) => !Number.isInteger(m) || m < 1 || m > regra.maxMinutos)) {
+        throw new BadRequestException(`Cada parte do prolongamento vai de 1 a ${regra.maxMinutos} minutos`);
+      }
+      if (alvo.startsAt.getTime() > Date.now()) {
+        throw new BadRequestException("O jogo ainda não começou");
+      }
+
+      const partes = PARTES_COM_TEMPO_ADICIONAL[alvo.team.sport.code ?? ""] ?? 0;
+      const adicional = alvo.addedMinutes.slice(0, partes + minutes.length);
+      while (adicional.length > 0 && adicional[adicional.length - 1] === 0) adicional.pop();
+
+      await db.match.update({ where: { id: matchId }, data: { overtimeMinutes: minutes, addedMinutes: adicional } });
+      await refazerMinutosDaFicha(db, matchId, duracaoDoJogo(alvo.team), adicional, partes, minutes);
+
+      return { ok: true as const, overtimeMinutes: minutes, addedMinutes: adicional };
     });
   }
 
@@ -935,7 +957,7 @@ export class MatchesService {
         .filter((r) => convocados.has(r.athleteId))
         .map((r) => ({
           athleteId: r.athleteId,
-          minutes: minutosEmCampo(r, duracao, match.addedMinutes, partes),
+          minutes: minutosEmCampo(r, duracao, match.addedMinutes, partes, match.overtimeMinutes),
           started: r.started ?? false,
           tally: clamp(r.tally ?? 0, 0, 99),
           assists: clamp(r.assists ?? 0, 0, 99),
@@ -1354,6 +1376,8 @@ export class MatchesService {
         // O tempo adicional de cada parte: soma aos minutos de quem estava em
         // campo quando ela acabou. Ver `minutosEmCampo`.
         addedMinutes: true,
+        // As partes do prolongamento: alongam o jogo de quem não saiu.
+        overtimeMinutes: true,
         // A duração de jogo do escalão: é o que fecha a conta dos minutos de
         // quem jogou até ao fim. Ver `minutosEmCampo` e `duracaoDoJogo`.
         team: { select: { matchMinutes: true, sport: { select: { matchMinutes: true, code: true } } } },
@@ -1541,6 +1565,11 @@ export class MatchesService {
 
       const emPausa = roster.find((a) => a.status === "PAUSED");
       if (emPausa) throw new BadRequestException(`${emPausa.name} está em pausa`);
+
+      // Sair do clube não fecha as passagens de equipa (ver `AthletesService.setStatus`),
+      // por isso quem saiu continua no plantel e tem de ser travado aqui.
+      const saiu = roster.find((a) => a.status === "LEFT");
+      if (saiu) throw new BadRequestException(`${saiu.name} saiu do clube e não pode ser convocado`);
 
       await db.matchCallUp.deleteMany({ where: { matchId } });
       if (ids.length) {
@@ -2086,13 +2115,30 @@ function clamp(n: number, lo: number, hi: number): number {
  * diferença é tudo o que há.
  */
 /**
- * As modalidades com tempo adicional, e em quantas partes.
+ * Os minutos de quem já está na ficha, refeitos.
  *
- * Só o futebol, com duas. O futsal (2 × 20) e o basquetebol (4 × 10) jogam-se
- * com o cronómetro parado e não entram aqui. É o mesmo que `match.addedTime` e
- * `match.periods` de `SPORT_PROFILES` na consola.
+ * A ficha pode ter sido gravada antes de alguém escrever os descontos ou o
+ * prolongamento, e os minutos gravados são uma conta feita com o que se sabia
+ * então. Sem isto, um titular ficava com 90 num jogo de 90 + 5 até alguém
+ * voltar a gravar a ficha.
  */
-const PARTES_COM_TEMPO_ADICIONAL: Record<string, number> = { football: 2 };
+async function refazerMinutosDaFicha(
+  db: ScopedClient,
+  matchId: string,
+  duracao: number,
+  adicional: number[],
+  partes: number,
+  prolongamento: number[],
+): Promise<void> {
+  const ficha = await db.matchAppearance.findMany({
+    where: { matchId },
+    select: { id: true, minutes: true, started: true, onMinute: true, offMinute: true, redAt: true },
+  });
+  for (const a of ficha) {
+    const minutos = minutosEmCampo(a, duracao, adicional, partes, prolongamento);
+    if (minutos !== a.minutes) await db.matchAppearance.update({ where: { id: a.id }, data: { minutes: minutos } });
+  }
+}
 
 function duracaoDoJogo(team: { matchMinutes: number | null; sport: { matchMinutes: number | null } }): number {
   return team.matchMinutes ?? team.sport.matchMinutes ?? 0;
@@ -2239,52 +2285,6 @@ function emCampo(_r: unknown, minutos: number[]): number[] {
   return minutos.map((m) => clamp(m, 0, 130)).sort((a, b) => a - b);
 }
 
-/**
- * Os minutos jogados, calculados aqui e não aceites do cliente.
- *
- * O corpo do pedido traz um `minutes`, e durante muito tempo era esse que ficava
- * gravado. Isso punha a verdade dos totais da época na mão de quem faz o pedido:
- * bastava um ecrã desactualizado — ou um pedido à mão — para um atleta ficar com
- * noventa minutos num jogo em que entrou ao 80. Os factos são a titularidade, a
- * entrada e a saída; o tempo é uma consequência deles, e uma consequência
- * calcula-se sempre do mesmo lado.
- *
- * Um titular sem minuto de saída jogou o jogo todo. Um suplente sem minuto de
- * entrada não tem minutos que se saibam — devolve-se zero em vez de um palpite,
- * e é o ecrã que impede que se chegue aqui com essa linha por preencher.
- *
- * `duracao` a zero é uma modalidade sem duração declarada nas Definições; aí o
- * que se souber por diferença é tudo o que há.
- *
- * ## O tempo adicional
- *
- * Soma a quem estava em campo quando a parte acabou. Num jogo de 90 com +2 e
- * +3: o titular que joga tudo tem 95; quem sai ao intervalo tem 45 + 2; quem
- * entra ao intervalo tem 45 + 3; quem sai aos 60 tem 60 + 2. A última parte só
- * soma a quem não tem minuto de saída: uma saída escrita aos 93 já traz os
- * descontos dentro. A mesma conta está em `minutosDerivados`, na consola.
- */
-function minutosEmCampo(
-  r: { started?: boolean; onMinute?: number; offMinute?: number },
-  duracao: number,
-  adicional: number[] = [],
-  partes = 0,
-): number {
-  const entrada = r.started ? 0 : r.onMinute;
-  if (entrada == null) return 0;
-  const saida = r.offMinute ?? duracao;
-  let minutos = saida - entrada;
-  if (partes > 0 && duracao > 0) {
-    for (let i = 0; i < partes; i++) {
-      const fim = (duracao * (i + 1)) / partes;
-      const ultima = i === partes - 1;
-      const estavaLa = entrada < fim && (ultima ? r.offMinute == null : r.offMinute == null || r.offMinute >= fim);
-      if (estavaLa) minutos += adicional[i] ?? 0;
-    }
-  }
-  return clamp(minutos, 0, 300);
-}
-
 type ComMinutos = {
   started: boolean;
   onMinute: number | null;
@@ -2306,7 +2306,8 @@ type ComMinutos = {
 function janelaEmCampo(r: ComMinutos): { de: number; ate: number } {
   return {
     de: r.started ? 0 : (r.onMinute ?? 0),
-    ate: r.offMinute ?? 130,
+    // Um expulso sai ao minuto do vermelho. Ver `minutosEmCampo`.
+    ate: r.offMinute ?? r.redAt ?? 130,
   };
 }
 

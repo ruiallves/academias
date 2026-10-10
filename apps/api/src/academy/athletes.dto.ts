@@ -15,7 +15,7 @@ import {
   Matches,
   ValidateNested,
 } from "class-validator";
-import { TODOS_OS_PAISES } from "../inscricoes/paises";
+import { DISTRITOS, TODOS_OS_PAISES } from "../inscricoes/paises";
 
 /**
  * Os corpos de criação e importação de atletas — classes, não interfaces.
@@ -199,6 +199,20 @@ export class AthleteInputDto {
   @Length(0, 30)
   phone?: string;
 
+  /** A validade do documento (AAAA-MM-DD), o distrito e o concelho, para o boletim da FPB. Vazio limpa. */
+  @IsOptional()
+  @Matches(/^(\d{4}-\d{2}-\d{2})?$/)
+  idDocValidUntil?: string;
+
+  @IsOptional()
+  @IsIn(["", ...DISTRITOS])
+  district?: string;
+
+  @IsOptional()
+  @IsString()
+  @Length(0, 80)
+  municipality?: string;
+
   @IsOptional()
   @IsISO8601()
   medicalValidUntil?: string;
@@ -375,6 +389,20 @@ export class AthleteUpdateDto {
   @IsString()
   @Length(0, 30)
   phone?: string;
+
+  /** A validade do documento (AAAA-MM-DD), o distrito e o concelho, para o boletim da FPB. Vazio limpa. */
+  @IsOptional()
+  @Matches(/^(\d{4}-\d{2}-\d{2})?$/)
+  idDocValidUntil?: string;
+
+  @IsOptional()
+  @IsIn(["", ...DISTRITOS])
+  district?: string;
+
+  @IsOptional()
+  @IsString()
+  @Length(0, 80)
+  municipality?: string;
 
   @IsOptional()
   @IsISO8601()

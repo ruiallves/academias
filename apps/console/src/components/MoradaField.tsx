@@ -1,9 +1,11 @@
 import { DialogField, dialogInputClass } from "@/components/Dialog";
-import { paises } from "@/lib/paises";
+import { DISTRITOS, paises } from "@/lib/paises";
 
 /**
- * A morada, o n.º do Cartão de Cidadão e o que o boletim da FPF pede ao
- * atleta (país de nascimento, nacionalidade, telefone). Todos opcionais.
+ * A morada, o n.º do Cartão de Cidadão e o que os boletins de inscrição das
+ * federações pedem ao atleta: país de nascimento, nacionalidade e telefone
+ * (FPF e FPB), e a validade do documento, o distrito e o concelho (FPB).
+ * Todos opcionais.
  *
  * O mesmo bloco na inscrição ("Novo atleta") e na edição da ficha. Só aparece
  * a quem vê o NIF (`mayReadTaxId`): o servidor manda estes campos vazios a quem
@@ -17,10 +19,15 @@ export type Morada = {
   birthCountry: string;
   nationality: string;
   phone: string;
+  /** AAAA-MM-DD, como o `<input type="date">` a dá. */
+  idDocValidUntil: string;
+  district: string;
+  municipality: string;
 };
 
 export const moradaVazia = (): Morada => ({
   address: "", postalCode: "", city: "", citizenCardNumber: "", birthCountry: "", nationality: "", phone: "",
+  idDocValidUntil: "", district: "", municipality: "",
 });
 
 export const moradaDoAtleta = (a: Partial<Morada>): Morada => ({
@@ -31,6 +38,9 @@ export const moradaDoAtleta = (a: Partial<Morada>): Morada => ({
   birthCountry: a.birthCountry ?? "",
   nationality: a.nationality ?? "",
   phone: a.phone ?? "",
+  idDocValidUntil: a.idDocValidUntil ?? "",
+  district: a.district ?? "",
+  municipality: a.municipality ?? "",
 });
 
 /**
@@ -46,6 +56,9 @@ export function moradaParaApi(m: Morada, modo: "criar" | "editar"): Partial<Mora
     birthCountry: m.birthCountry,
     nationality: m.nationality,
     phone: m.phone.trim(),
+    idDocValidUntil: m.idDocValidUntil,
+    district: m.district,
+    municipality: m.municipality.trim(),
   };
   if (modo === "editar") return limpo;
   return Object.fromEntries(Object.entries(limpo).filter(([, v]) => v !== "")) as Partial<Morada>;
@@ -65,7 +78,10 @@ export function MoradaField({ value, onChange }: { value: Morada; onChange: (m: 
           className={dialogInputClass}
         />
       </DialogField>
-      {/* O que o boletim de inscrição da FPF pede e a ficha não tinha. */}
+      <DialogField label="Validade do documento" hint="opcional; do CC ou do outro documento (pede-a o boletim da FPB)">
+        <input type="date" value={value.idDocValidUntil} onChange={set("idDocValidUntil")} className={dialogInputClass} />
+      </DialogField>
+      {/* O que os boletins de inscrição das federações pedem e a ficha não tinha. */}
       <div className="grid grid-cols-2 gap-3">
         <DialogField label="País de nascimento" hint="opcional">
           {seletorDePais(value.birthCountry, set("birthCountry"))}
@@ -95,6 +111,21 @@ export function MoradaField({ value, onChange }: { value: Morada; onChange: (m: 
         </DialogField>
         <DialogField label="Localidade">
           <input value={value.city} onChange={set("city")} maxLength={80} autoComplete="address-level2" className={dialogInputClass} />
+        </DialogField>
+      </div>
+      <div className="grid grid-cols-2 gap-3">
+        <DialogField label="Distrito">
+          <select value={value.district} onChange={set("district")} className={dialogInputClass}>
+            <option value="">—</option>
+            {DISTRITOS.map((d) => (
+              <option key={d} value={d}>
+                {d}
+              </option>
+            ))}
+          </select>
+        </DialogField>
+        <DialogField label="Concelho">
+          <input value={value.municipality} onChange={set("municipality")} maxLength={80} className={dialogInputClass} />
         </DialogField>
       </div>
     </div>

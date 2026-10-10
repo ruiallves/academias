@@ -3396,6 +3396,49 @@ export function periodoActual(hoje = new Date()): string {
   return `${p.ano}-${String(p.mes).padStart(2, "0")}`;
 }
 
+/**
+ * As mensalidades que caem quando um atleta sai do clube.
+ *
+ * A emissão já não cria meses novos para quem saiu (só gera para `ACTIVE`), mas
+ * a do mês corrente, emitida antes de ele sair, ficava aberta: aparecia nas
+ * Mensalidades como "Não paga" ou "Vencida", contava para o atraso e os
+ * lembretes continuavam a ir para a família. Um clube perguntou porque é que um
+ * atleta que saiu continuava nas mensalidades.
+ *
+ * Anula-se a do mês corrente e as seguintes, **só se estiverem por pagar**. Uma
+ * paga fica paga. Uma com um pagamento a confirmar (`PROCESSING`) também fica:
+ * é dinheiro a caminho. Os meses anteriores em atraso ficam abertos, porque o
+ * atleta treinou nesses meses e a dívida é real.
+ *
+ * Anula em vez de apagar: uma referência Multibanco por pagar ainda pode ser
+ * paga amanhã, e o webhook precisa de encontrar a mensalidade. Voltar a pôr o
+ * atleta activo não as reabre: reabre-se à mão, nas Mensalidades.
+ */
+export async function anularMensalidadesDeQuemSai(
+  db: ScopedClient,
+  ctx: RequestContext,
+  athleteId: string,
+  agora = new Date(),
+): Promise<number> {
+  const abertas = await db.charge.findMany({
+    where: {
+      athleteId,
+      kind: ChargeKind.FEE,
+      status: ChargeStatus.OPEN,
+      period: { gte: periodoActual(agora) },
+      payments: { none: { status: { in: [PaymentStatus.PROCESSING, PaymentStatus.PAID] } } },
+    },
+    select: { id: true },
+  });
+  if (abertas.length === 0) return 0;
+
+  const { count } = await db.charge.updateMany({
+    where: { id: { in: abertas.map((c) => c.id) } },
+    data: { status: ChargeStatus.VOID, settledAt: null, ...quemMudou(ctx, agora) },
+  });
+  return count;
+}
+
 /** O período a seguir a este. Dezembro passa a Janeiro do ano seguinte. */
 export function periodoSeguinte(period: string): string {
   const ano = Number(period.slice(0, 4));

@@ -294,9 +294,8 @@ class IdentityDto {
   @IsOptional() @IsString() @Length(0, 500) logoUrl?: string;
   /** Como o clube se trata a si próprio. Ver `shortNameOf` para o porquê de ser editável. */
   @IsOptional() @IsString() @Length(2, SHORT_NAME_MAX) shortName?: string;
-  /** O código do clube na FPF e a associação onde está filiado. Vazio limpa. */
-  @IsOptional() @IsString() @Length(0, 20) fpfClubCode?: string;
-  @IsOptional() @IsString() @Length(0, 40) footballAssociation?: string;
+  /** A associação distrital do clube ("Braga"), para os boletins de inscrição. Vazio limpa. */
+  @IsOptional() @IsString() @Length(0, 40) association?: string;
 }
 
 /** Desactivar ou reactivar uma conta — de staff ou de encarregado. */
@@ -332,6 +331,11 @@ class SportDto {
   @IsOptional() @IsArray() @ArrayMaxSize(40) @IsString({ each: true }) positions?: string[];
   @IsOptional() @IsArray() @ArrayMaxSize(40) @IsString({ each: true }) skills?: string[];
   @IsOptional() @IsString() @Length(0, 40) dominantSideLabel?: string;
+  /** O clube na federação desta modalidade. Vazio limpa. Ver `federacaoDaModalidade`. */
+  @IsOptional() @IsString() @Length(0, 20) federationClubCode?: string;
+  @IsOptional() @IsIn(["", "FPB", "CLUB"]) insuranceKind?: string;
+  @IsOptional() @IsString() @Length(0, 60) insurancePolicy?: string;
+  @IsOptional() @IsString() @Length(0, 80) insuranceCompany?: string;
 }
 
 /** A duração de jogo de uma equipa, em minutos. Ver `Team.matchMinutes`. */

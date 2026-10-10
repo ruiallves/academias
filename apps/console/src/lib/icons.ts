@@ -134,6 +134,17 @@ export {
   Images,
   ImagePlus,
   Expand,
+  /* O site do clube (só em DEV): o globo é o menu, o resto são as secções. */
+  Globe,
+  Newspaper,
+  ShoppingBag,
+  Ticket,
+  Handshake,
+  Inbox,
+  Palette,
+  LayoutTemplate,
+  /* O recinto visto de cima, no menu Website. */
+  LandPlot as Recinto,
 } from "lucide-react";
 
 /* -------------------------------------------------------------------------- */

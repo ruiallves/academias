@@ -1,7 +1,6 @@
-import { existsSync, readFileSync } from "node:fs";
-import { resolve } from "node:path";
-import { PDFArray, PDFDocument, PDFName, StandardFonts, type PDFFont, type PDFPage } from "pdf-lib";
-import type { Categoria, Folha, Tipo } from "./regras";
+import type { PDFFont, PDFPage } from "pdf-lib";
+import { escrever, escreverEmCasas, maiusculas, marcar, partirNome, type Caixa } from "./desenho";
+import type { Folha, Tipo } from "./regras";
 
 /**
  * O Modelo 2 da FPF (jogador amador), preenchido.
@@ -27,8 +26,6 @@ import type { Categoria, Folha, Tipo } from "./regras";
  * assinaturas, a data de subscrição e a declaração do encarregado ficam em
  * branco: são de quem assina.
  */
-
-type Caixa = { x1: number; y1: number; x2: number; y2: number; casas?: number };
 
 /** As posições dos campos no modelo de 2024/25, em pontos. Lidas do próprio PDF. */
 const C = {
@@ -66,7 +63,7 @@ const TIPO: Record<Tipo, Caixa> = {
   TRANSFER_INTERNATIONAL: { x1: 353, y1: 652, x2: 367, y2: 666 },
 };
 
-const CATEGORIA: Record<Categoria, Caixa> = {
+const CATEGORIA: Record<string, Caixa> = {
   "01": { x1: 98, y1: 459, x2: 110, y2: 471 },
   "03": { x1: 160, y1: 459, x2: 172, y2: 471 },
   "05": { x1: 221, y1: 459, x2: 233, y2: 471 },
@@ -77,64 +74,7 @@ const CATEGORIA: Record<Categoria, Caixa> = {
   "17": { x1: 530, y1: 459, x2: 542, y2: 471 },
 };
 
-/* -------------------------------------------------------------------------- */
-
-let modelo: Uint8Array | null = null;
-
-/**
- * O PDF da federação, lido uma vez.
- *
- * Vive em `apps/api/assets/fpf/`. A API compilada corre de `dist/inscricoes/`
- * e os testes de `scripts/`: procura-se nos dois sítios.
- */
-function bytesDoModelo(): Uint8Array {
-  if (modelo) return modelo;
-  // `__dirname` não existe quando os testes correm isto como módulo ES.
-  const aqui = typeof __dirname === "string" ? __dirname : null;
-  const candidatos = [
-    ...(aqui ? [resolve(aqui, "..", "..", "assets", "fpf", "modelo-2-nao-profissionais.pdf")] : []),
-    resolve(process.cwd(), "assets", "fpf", "modelo-2-nao-profissionais.pdf"),
-    resolve(process.cwd(), "apps", "api", "assets", "fpf", "modelo-2-nao-profissionais.pdf"),
-  ];
-  const caminho = candidatos.find((c) => existsSync(c));
-  if (!caminho) throw new Error("O modelo da FPF não está no servidor (assets/fpf)");
-  modelo = new Uint8Array(readFileSync(caminho));
-  return modelo;
-}
-
-/** As folhas, uma página por jogador, num PDF só. */
-export async function gerarModelo2(folhas: Folha[]): Promise<Uint8Array> {
-  if (folhas.length === 0) throw new Error("Nenhuma folha para gerar");
-
-  const fonte = await PDFDocument.load(bytesDoModelo());
-  // Sem os campos: ver a nota do topo.
-  for (const p of fonte.getPages()) p.node.delete(PDFName.of("Annots"));
-  fonte.catalog.delete(PDFName.of("AcroForm"));
-
-  const doc = await PDFDocument.create();
-  doc.setTitle(folhas.length === 1 ? `Modelo 2 — ${folhas[0].nome}` : `Modelo 2 — ${folhas.length} jogadores`);
-  doc.setProducer("Academias");
-  const letra = await doc.embedFont(StandardFonts.Helvetica);
-  const negrito = await doc.embedFont(StandardFonts.HelveticaBold);
-
-  const paginas = await doc.copyPages(fonte, folhas.map(() => 0));
-  folhas.forEach((f, i) => {
-    const page = doc.addPage(paginas[i]);
-    /*
-     * A lista de conteúdos também veio partilhada, e o pdf-lib junta o texto
-     * novo a essa lista: sem uma lista própria por página, cada jogador
-     * aparecia desenhado em todas as folhas. Os fluxos lá dentro (o desenho
-     * do modelo) continuam partilhados, que é o que se quer.
-     */
-    const conteudos = page.node.Contents();
-    if (conteudos instanceof PDFArray) page.node.set(PDFName.of("Contents"), doc.context.obj(conteudos.asArray()));
-    desenhar(page, f, letra, negrito);
-  });
-
-  return doc.save();
-}
-
-function desenhar(page: PDFPage, f: Folha, letra: PDFFont, negrito: PDFFont) {
+export function desenharModelo2(page: PDFPage, f: Folha, letra: PDFFont, negrito: PDFFont) {
   const texto = (c: Caixa, v: string | null | undefined, max = 9) => v && escrever(page, letra, c, v, max);
   const casas = (c: Caixa, v: string | null | undefined) => v && escreverEmCasas(page, letra, c, v);
   const cruz = (c: Caixa) => marcar(page, negrito, c);
@@ -163,19 +103,20 @@ function desenhar(page: PDFPage, f: Folha, letra: PDFFont, negrito: PDFFont) {
     texto(C.checkDigit, f.documento.checkDigit);
   }
 
-  if (f.paisNascimento) {
-    texto(C.paisNascimento, f.paisNascimento.nome);
-    casas(C.paisNascimentoCodigo, f.paisNascimento.codigo);
-  }
-  if (f.nacionalidade) {
-    texto(C.nacionalidade, f.nacionalidade.nome);
-    casas(C.nacionalidadeCodigo, f.nacionalidade.codigo);
-  }
+  /*
+   * Os nomes dos países, e não os códigos ao lado: ficam em branco, por
+   * agora, a pedido do Rui (09/10), até se confirmar que código a FPF quer
+   * (o alfa-3 de `paises.ts` é uma suposição). Para os voltar a escrever:
+   *   casas(C.paisNascimentoCodigo, f.paisNascimento.codigo);
+   *   casas(C.nacionalidadeCodigo, f.nacionalidade.codigo);
+   */
+  if (f.paisNascimento) texto(C.paisNascimento, f.paisNascimento.nome);
+  if (f.nacionalidade) texto(C.nacionalidade, f.nacionalidade.nome);
   texto(C.email, f.email);
   texto(C.telefone, f.telefone);
   texto(C.estatuto, f.estatuto);
 
-  cruz(CATEGORIA[f.categoria]);
+  if (CATEGORIA[f.categoria]) cruz(CATEGORIA[f.categoria]);
 
   // Um código maior do que as quatro casas do modelo escreve-se seguido.
   if (f.clube.codigo && f.clube.codigo.length <= (C.clubeCodigo.casas ?? 0)) casas(C.clubeCodigo, f.clube.codigo);
@@ -183,85 +124,3 @@ function desenhar(page: PDFPage, f: Folha, letra: PDFFont, negrito: PDFFont) {
   texto(C.clubeNome, f.clube.nome);
 }
 
-/* -------------------------------------------------------------------------- */
-/* Desenho                                                                     */
-/* -------------------------------------------------------------------------- */
-
-/** Texto numa caixa, encolhido até caber, centrado na vertical. */
-function escrever(page: PDFPage, font: PDFFont, c: Caixa, v: string, max: number) {
-  const s = codificavel(font, v);
-  const largura = c.x2 - c.x1 - 3;
-  let size = max;
-  while (size > 5 && font.widthOfTextAtSize(s, size) > largura) size -= 0.5;
-  const h = c.y2 - c.y1;
-  page.drawText(s, { x: c.x1 + 1.5, y: c.y1 + (h - size * 0.72) / 2, size, font });
-}
-
-/** Uma letra por casa, centrada em cada uma — os campos às casinhas do boletim. */
-function escreverEmCasas(page: PDFPage, font: PDFFont, c: Caixa, v: string) {
-  const n = c.casas ?? v.length;
-  const s = codificavel(font, v).slice(0, n);
-  const casa = (c.x2 - c.x1) / n;
-  const h = c.y2 - c.y1;
-  const size = Math.min(9, h * 0.75);
-  [...s].forEach((ch, i) => {
-    const w = font.widthOfTextAtSize(ch, size);
-    page.drawText(ch, { x: c.x1 + i * casa + (casa - w) / 2, y: c.y1 + (h - size * 0.72) / 2, size, font });
-  });
-}
-
-function marcar(page: PDFPage, font: PDFFont, c: Caixa) {
-  const h = c.y2 - c.y1;
-  const size = Math.min(10, h * 0.85);
-  const w = font.widthOfTextAtSize("X", size);
-  page.drawText("X", { x: c.x1 + (c.x2 - c.x1 - w) / 2, y: c.y1 + (h - size * 0.72) / 2, size, font });
-}
-
-/**
- * Só os caracteres que a letra do PDF tem.
- *
- * A Helvetica do PDF fala WinAnsi: tem os acentos portugueses, mas não um "ł"
- * ou um "ă". Esses perdem o acento em vez de rebentarem a folha inteira.
- */
-function codificavel(font: PDFFont, v: string): string {
-  let out = "";
-  for (const ch of v) {
-    try {
-      font.encodeText(ch);
-      out += ch;
-    } catch {
-      const base = SEM_TRACO[ch] ?? ch.normalize("NFD").replace(/[̀-ͯ]/g, "");
-      try {
-        font.encodeText(base);
-        out += base;
-      } catch {
-        out += "?";
-      }
-    }
-  }
-  return out;
-}
-
-/** As letras com traço, que a decomposição não separa. */
-const SEM_TRACO: Record<string, string> = { "ł": "l", "Ł": "L", "đ": "d", "Đ": "D", "ħ": "h", "Ħ": "H" };
-
-const maiusculas = (s: string) => s.toLocaleUpperCase("pt-PT");
-
-/**
- * O nome em duas linhas de casas.
- *
- * Parte-se entre palavras: "MARIA DA CONCEIÇÃO" não fica "MARIA DA CONCE" numa
- * linha e "IÇÃO" na outra. Uma palavra maior do que a linha parte-se onde for.
- */
-export function partirNome(nome: string, casas = 38): [string, string] {
-  if (nome.length <= casas) return [nome, ""];
-  const palavras = nome.split(" ");
-  let l1 = "";
-  let i = 0;
-  while (i < palavras.length && (l1 ? l1.length + 1 : 0) + palavras[i].length <= casas) {
-    l1 = l1 ? `${l1} ${palavras[i]}` : palavras[i];
-    i++;
-  }
-  if (!l1) return [nome.slice(0, casas), nome.slice(casas, casas * 2)];
-  return [l1, palavras.slice(i).join(" ").slice(0, casas)];
-}

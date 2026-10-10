@@ -71,3 +71,10 @@ export function estatutoFpf(nacionalidade: string | null | undefined): string | 
 }
 
 export const TODOS_OS_PAISES: readonly string[] = [...ALFA3.keys()];
+
+/** Os distritos e as regiões autónomas, como o boletim da FPB os pede. Gémea da consola. */
+export const DISTRITOS = [
+  "Aveiro", "Beja", "Braga", "Bragança", "Castelo Branco", "Coimbra", "Évora", "Faro", "Guarda", "Leiria",
+  "Lisboa", "Portalegre", "Porto", "Santarém", "Setúbal", "Viana do Castelo", "Vila Real", "Viseu",
+  "Região Autónoma dos Açores", "Região Autónoma da Madeira",
+] as const;

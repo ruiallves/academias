@@ -435,7 +435,7 @@ function AthleteStatusMenu({ athlete }: { athlete: Athlete }) {
   const estados: { value: "ACTIVE" | "PAUSED" | "LEFT"; label: string; hint: string; actual: boolean }[] = [
     { value: "ACTIVE", label: "Activo", hint: "no plantel e nas convocatórias", actual: athlete.status === "active" },
     { value: "PAUSED", label: "Em pausa", hint: "inscrito, fora das convocatórias", actual: athlete.status === "paused" },
-    { value: "LEFT", label: "Saiu do clube", hint: "sai das listas e das mensalidades", actual: athlete.status === "left" },
+    { value: "LEFT", label: "Saiu do clube", hint: "sai das listas; a mensalidade do mês, se não estiver paga, é anulada", actual: athlete.status === "left" },
   ];
 
   async function mudar(status: string) {

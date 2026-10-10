@@ -157,6 +157,16 @@ class AddedTimeDto {
   minutes!: number[];
 }
 
+/** O prolongamento, em minutos, por parte. Vazio é "não houve". Ver `saveOvertime`. */
+class OvertimeDto {
+  @IsArray()
+  @ArrayMaxSize(6)
+  @IsInt({ each: true })
+  @Min(1, { each: true })
+  @Max(15, { each: true })
+  minutes!: number[];
+}
+
 class MatchStaffRowDto {
   @IsString() membershipId!: string;
   @IsString() @Length(1, 60) role!: string;
@@ -386,6 +396,11 @@ export class MatchesController {
   @Post(":id/tempo-adicional")
   saveAddedTime(@Req() req: AuthedRequest, @Param("id") id: string, @Body() body: AddedTimeDto) {
     return this.matches.saveAddedTime(req.ctx, id, body.minutes);
+  }
+
+  @Post(":id/prolongamento")
+  saveOvertime(@Req() req: AuthedRequest, @Param("id") id: string, @Body() body: OvertimeDto) {
+    return this.matches.saveOvertime(req.ctx, id, body.minutes);
   }
 
   /** A ficha inteira de cada vez. Ver `saveAppearances` para o porquê. */
