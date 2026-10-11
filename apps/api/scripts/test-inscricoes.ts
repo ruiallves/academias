@@ -346,7 +346,8 @@ async function servico() {
   const anaBasket = lista.rows.find((r) => r.athleteId === "a1" && r.sportId === "bas")!;
   const bruno = lista.rows.find((r) => r.athleteId === "a2")!;
   check("a linha de basquetebol é da FPB, com o escalão da FPB", anaBasket.federation === "FPB" && anaBasket.category === "SUB14", `${anaBasket.federation} ${anaBasket.category}`);
-  check("a de futebol é da FPF", ana.federation === "FPF" && ana.category === "09");
+  // No futebol e no futsal a categoria fica em branco: marca-se à mão no boletim.
+  check("a de futebol é da FPF, com a categoria em branco", ana.federation === "FPF" && ana.category === "", `${ana.federation} "${ana.category}"`);
   check("cada modalidade diz o que falta ao clube nela", lista.sports.every((x) => x.missing.length === 0), JSON.stringify(lista.sports.map((x) => x.missing)));
   check("a associação vem do clube, a mesma nas duas modalidades", lista.club.association === "Braga" && lista.club.missing.length === 0);
   m.associacao.valor = null;
@@ -371,6 +372,18 @@ async function servico() {
   const duas = await m.servico.gerar(direcao, { seasonId: "e26", items: [{ athleteId: "a1", sportId: "fut" }, { athleteId: "a1", sportId: "bas" }], register: false });
   check("as duas folhas da Ana saem no mesmo PDF", duas.count === 2 && (await PDFDocument.load(Buffer.from(duas.pdf, "base64"))).getPageCount() === 2);
   check("tipo de boletim inventado é recusado", (await estadoDe(m.servico.gerar(direcao, { seasonId: "e26", items: [{ athleteId: "a1", sportId: "fut", kind: "OUTRO" }] }))) === 400);
+
+  /*
+   * Com licença, nunca é Primeira Inscrição — também com a licença escrita
+   * nesta época (o caso do Bernardo Quaresma, 11/10) e mesmo que se peça.
+   */
+  m.licenses.push({ athleteId: "a1", sportId: "fut", seasonId: "e26", number: "16000122", season: { startsOn: EPOCA.startsOn } });
+  const comLicenca = (await m.servico.lista(direcao)).rows.find((r) => r.athleteId === "a1" && r.sportId === "fut")!;
+  check("licença desta época: vai como revalidação, não primeira inscrição", comLicenca.kind === "RENEWAL", comLicenca.kind);
+  await m.servico.gerar(direcao, { seasonId: "e26", items: [{ athleteId: "a1", sportId: "fut", kind: "FIRST" }], attach: false });
+  check("pedir primeira inscrição a quem tem licença grava revalidação", m.regs.length === 1 && m.regs[0].kind === "RENEWAL", m.regs[0]?.kind);
+  m.regs.length = 0;
+  m.licenses.splice(m.licenses.findIndex((l) => l.number === "16000122"), 1);
 
   const ver = await m.servico.gerar(direcao, { seasonId: "e26", items: [{ athleteId: "a1", sportId: "fut" }], register: false });
   check("pré-visualizar não regista nada", m.regs.length === 0 && ver.pdf.length > 1000);
@@ -407,7 +420,7 @@ async function servico() {
   await muda(direcao, ["a1", "a2"], "SUBMITTED");
   const novas = m.regs.filter((r) => r.athleteId === "a2");
   check("quem está por gerar vai direto para qualquer passo", novas.length === 1 && novas[0].status === "SUBMITTED" && novas[0].signedAt && novas[0].submittedAt);
-  check("com o tipo e a categoria propostos", novas[0].kind === "RENEWAL" && novas[0].category === "07", `${novas[0].kind} ${novas[0].category}`);
+  check("com o tipo proposto e a categoria em branco (futebol)", novas[0].kind === "RENEWAL" && novas[0].category === "", `${novas[0].kind} "${novas[0].category}"`);
   check("e em lote, com a que já existia", m.regs.find((r) => r.athleteId === "a1")!.status === "SUBMITTED");
   await muda(direcao, ["a1", "a2"], "PENDING");
   check("e voltam todas a «por gerar» de uma vez", m.regs.length === 0);

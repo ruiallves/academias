@@ -22,9 +22,12 @@ import type { Folha, Tipo } from "./regras";
  *
  * ## Até onde se preenche
  *
- * Até ao clube onde se inscreve, como foi pedido. As autorizações, as
- * assinaturas, a data de subscrição e a declaração do encarregado ficam em
- * branco: são de quem assina.
+ * Até ao clube onde se inscreve, como foi pedido. As assinaturas, a data de
+ * subscrição e a declaração do encarregado ficam em branco: são de quem assina.
+ *
+ * As três autorizações dos dados pessoais saem com o SIM marcado (a pedido do
+ * Rui, 10/10): a política de tratamento de dados, a publicação no Portal da FPF
+ * e as comunicações da FPF. Quem não autorizar risca à mão ao assinar.
  */
 
 /** As posições dos campos no modelo de 2024/25, em pontos. Lidas do próprio PDF. */
@@ -62,6 +65,18 @@ const TIPO: Record<Tipo, Caixa> = {
   RENEWAL: { x1: 178, y1: 652, x2: 192, y2: 666 },
   TRANSFER_INTERNATIONAL: { x1: 353, y1: 652, x2: 367, y2: 666 },
 };
+
+/**
+ * O SIM das três autorizações, de cima para baixo: aceito a política de
+ * tratamento de dados, publicação no Portal da FPF, comunicações da FPF. Cada
+ * linha tem duas caixas no modelo ("Check Box 91", "93" e "95"): o SIM é a da
+ * esquerda, o NÃO a da direita (x 133).
+ */
+const AUTORIZACOES_SIM: Caixa[] = [
+  { x1: 77, y1: 385, x2: 91, y2: 399 },
+  { x1: 77, y1: 367, x2: 91, y2: 381 },
+  { x1: 77, y1: 349, x2: 91, y2: 363 },
+];
 
 const CATEGORIA: Record<string, Caixa> = {
   "01": { x1: 98, y1: 459, x2: 110, y2: 471 },
@@ -116,7 +131,10 @@ export function desenharModelo2(page: PDFPage, f: Folha, letra: PDFFont, negrito
   texto(C.telefone, f.telefone);
   texto(C.estatuto, f.estatuto);
 
+  // A categoria vem vazia no futebol e no futsal (ver `folhaDe`): a caixa fica por marcar à mão.
   if (CATEGORIA[f.categoria]) cruz(CATEGORIA[f.categoria]);
+
+  for (const sim of AUTORIZACOES_SIM) cruz(sim);
 
   // Um código maior do que as quatro casas do modelo escreve-se seguido.
   if (f.clube.codigo && f.clube.codigo.length <= (C.clubeCodigo.casas ?? 0)) casas(C.clubeCodigo, f.clube.codigo);

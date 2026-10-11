@@ -243,12 +243,16 @@ export default function Inscricoes() {
       key: "category",
       header: "Categoria",
       hideBelow: "md",
-      render: (r) => (
-        <span className="whitespace-nowrap text-ink-2">
-          {/* O código só no futebol, onde é o número que o boletim mostra ("09"). */}
-          {/^\d+$/.test(r.category) && <span className="font-mono text-meta text-ink-4">{r.category}</span>} {r.categoryLabel}
-        </span>
-      ),
+      render: (r) =>
+        // No futebol e no futsal a categoria fica em branco no boletim: marca-se à mão.
+        r.category ? (
+          <span className="whitespace-nowrap text-ink-2">
+            {/* O código só no futebol, onde é o número que o boletim mostra ("09"). */}
+            {/^\d+$/.test(r.category) && <span className="font-mono text-meta text-ink-4">{r.category}</span>} {r.categoryLabel}
+          </span>
+        ) : (
+          <span className="text-ink-4">em branco</span>
+        ),
     },
     {
       key: "kind",
@@ -997,7 +1001,7 @@ function InscricaoDialog({
   return (
     <Dialog
       title={linha.name}
-      subtitle={[modalidade, linha.teams.map((t) => t.name).join(", "), `${linha.category} · ${linha.categoryLabel}`].filter(Boolean).join(" · ")}
+      subtitle={[modalidade, linha.teams.map((t) => t.name).join(", "), linha.category ? `${linha.category} · ${linha.categoryLabel}` : null].filter(Boolean).join(" · ")}
       icon={<FileSignature className="size-4" strokeWidth={1.75} />}
       onClose={onClose}
       width={540}
@@ -1020,7 +1024,7 @@ function InscricaoDialog({
         {/* O que vai na folha. */}
         <dl className="grid grid-cols-2 gap-x-6 gap-y-3 text-body sm:grid-cols-3">
           <Facto label="Boletim" valor={nomeDoTipo(r?.kind ?? linha.kind)} />
-          <Facto label="Categoria" valor={`${linha.category} · ${linha.categoryLabel}`} />
+          <Facto label="Categoria" valor={linha.category ? `${linha.category} · ${linha.categoryLabel}` : "em branco, marca-se à mão"} />
           <Facto label={`Licença ${linha.federation}`} valor={linha.license ?? "—"} mono />
         </dl>
 

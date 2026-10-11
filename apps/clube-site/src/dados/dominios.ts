@@ -40,7 +40,10 @@ export async function clubeDoHost(hostHeader: string): Promise<Resposta | null> 
   const demo = (process.env.SITE_FONTE ?? "demo") === "demo";
 
   let slug: string | null = null;
-  if (host === "localhost" || host === "127.0.0.1") slug = process.env.SITE_DEMO_SLUG ?? null;
+  // Os endereços do próprio Vercel (`…vercel.app`, de produção e de cada
+  // deploy) mostram o clube de demonstração, se houver um definido: é por
+  // eles que se vê um deploy antes de qualquer domínio estar ligado.
+  if (host === "localhost" || host === "127.0.0.1" || host.endsWith(".vercel.app")) slug = process.env.SITE_DEMO_SLUG ?? null;
   else if (host.endsWith(".localhost")) slug = host.slice(0, -".localhost".length) || null;
   else {
     const preview = process.env.SITE_PREVIEW_DOMAIN?.toLowerCase();

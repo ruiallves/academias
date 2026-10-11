@@ -1,4 +1,9 @@
+11/10/2026
+- Inscrições: um jogador com número de licença na modalidade nunca sai como "Primeira Inscrição". Contava só uma licença de uma época anterior, e quem tinha a licença escrita na época atual (ou uma inscrição já gerada como primeira) saía com o X na primeira inscrição. Passa a Revalidação, que se pode mudar para Transferência. A única exceção é uma inscrição já validada, porque a licença nasceu dela.
+
 10/10/2026
+- Inscrições, futebol e futsal (Modelo 2): a categoria (Júnior A, B, C…) deixa de ser marcada pela idade e fica em branco no boletim, para marcar à mão. Na lista e no detalhe aparece "em branco". O basquetebol (FPB) continua a propor o escalão.
+- Inscrições, boletim de futebol e futsal (Modelo 2): as três autorizações dos dados pessoais saem com o SIM marcado (política de tratamento de dados, publicação no Portal da FPF e comunicações da FPF). Quem não autorizar risca à mão ao assinar.
 - Jogos, Ao vivo, futebol: tocar no relógio troca entre o tempo do jogo (55:28) e o tempo da parte (10:28 da 2.ª). Por baixo do relógio diz qual se está a ver, e a escolha fica lembrada no telemóvel. Os minutos dos acontecimentos seguem a mesma escolha ("22′" com "2.ª" por baixo, em vez de "67′"); a ficha continua a gravar os minutos do jogo.
 - Equipas, Visão geral: novo quadro "Ficha da equipa", por cima de "Precisa de atenção", com o escalão (idade máxima), o género, a duração do jogo (por exemplo "40 min · 4 × 10"), o máximo de convocados e as competições que disputa. O botão "Editar" abre o mesmo "Editar equipa" do topo da página, e só aparece a quem pode editar a equipa.
 - Jogos, Ao vivo: cada acontecimento tem um sinal à frente, para a lista se ler de relance: ⚽ golo (🏀 cesto no basquetebol), a mesma bola apagada no golo sofrido, 🟨 amarelo, 🟥 vermelho, 🔄 substituição e ⏱️ desconto de tempo.

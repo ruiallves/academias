@@ -245,7 +245,10 @@ export class InscricoesService {
       const sport = modalidades.get(l.sportId);
       if (!a || !sport) continue;
       const r = inscricaoDe.get(chave(l.athleteId, l.sportId)) ?? null;
-      const folha = this.folhaDe(a, clube, epoca, sport, l.teams, r ? { tipo: r.kind as Tipo, categoria: r.category } : {});
+      const folha = this.folhaDe(
+        a, clube, epoca, sport, l.teams,
+        r ? { tipo: r.kind as Tipo, categoria: r.category, validada: r.status === "DONE" } : {},
+      );
       out.push({
         athleteId: a.id,
         name: a.name,
@@ -282,7 +285,7 @@ export class InscricoesService {
     epoca: Epoca,
     sport: Modalidade,
     equipas: { gender: string | null }[],
-    escolha: { tipo?: Tipo; categoria?: string },
+    escolha: { tipo?: Tipo; categoria?: string; validada?: boolean },
   ): Folha {
     const disciplina = disciplinaDe(sport) ?? "football";
     const federacao = federacaoDe(disciplina);
@@ -291,7 +294,17 @@ export class InscricoesService {
       .filter((l) => l.sportId === sport.id)
       .sort((x, y) => y.season.startsOn.getTime() - x.season.startsOn.getTime());
     const licenca = daModalidade.find((l) => l.seasonId === epoca.id) ?? daModalidade[0] ?? null;
-    const anterior = daModalidade.some((l) => l.season.startsOn < epoca.startsOn);
+    /*
+     * Já federado nesta modalidade: tem uma licença, de qualquer época.
+     *
+     * Contava só a de uma época anterior, e um jogador com a licença escrita
+     * nesta época (a ficha não sabe de quando ela é) saía como Primeira
+     * Inscrição, que com licença é impossível. Também apanhava uma Primeira
+     * Inscrição já gravada: essa passa a Revalidação. Fica só a de uma
+     * inscrição já validada, porque aí a licença nasceu dela.
+     */
+    const federado = daModalidade.length > 0;
+    const tipo = escolha.tipo ?? tipoProposto(federado);
 
     const generos = new Set(equipas.map((t) => t.gender));
     const generoDaEquipa = generos.size === 1 && (generos.has("MALE") || generos.has("FEMALE")) ? ([...generos][0] as "MALE" | "FEMALE") : null;
@@ -304,8 +317,15 @@ export class InscricoesService {
       epoca,
       disciplina,
       generoDaEquipa,
-      tipo: escolha.tipo ?? tipoProposto(anterior),
-      categoria: escolha.categoria ?? categoriaPelaIdade(a.birthdate, epoca, federacao),
+      tipo: tipo === "FIRST" && federado && !escolha.validada ? "RENEWAL" : tipo,
+      /*
+       * No futebol e no futsal (FPF) a categoria fica em branco, a pedido do
+       * Rui (10/10): a idade dos escalões das equipas não bate com a da
+       * federação (ver `categoriaPelaIdade`), e uma categoria proposta errada
+       * num boletim oficial é pior do que uma caixa por marcar à mão. Vazio é
+       * "sem categoria", também numa inscrição já gravada. A FPB continua.
+       */
+      categoria: federacao === "FPF" ? "" : (escolha.categoria ?? categoriaPelaIdade(a.birthdate, epoca, federacao)),
       licenca: licenca?.number ?? null,
       contactoDoEncarregado: contacto ? { email: contacto.email, phone: contacto.phone ?? null } : undefined,
     });
@@ -380,6 +400,7 @@ export class InscricoesService {
         const folha = this.folhaDe(a, clube, epoca, sport, [], {
           tipo: (i.kind as Tipo | undefined) ?? linha.folha.tipo,
           categoria: i.category ?? linha.folha.categoria,
+          validada: linha.registration?.status === "DONE",
         });
         // O género da equipa já foi decidido na linha; não se perde por gerar.
         folha.genero = linha.folha.genero;
