@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
-import { ChevronRight, Shirt } from "lucide-react";
+import { ChevronRight } from "lucide-react";
 import { apiGet } from "@/lib/http";
 import { cx } from "@/ui";
 
@@ -76,7 +76,7 @@ export function Equipamento({ childId }: { childId: string }) {
     <section className="space-y-4">
       {comEle.length > 0 && (
         <div>
-          <h2 className="mb-1 px-1 text-[13px] font-semibold tracking-[0.04em] text-ink-3 uppercase">Equipamento</h2>
+          <h2 className="mb-1 px-1 text-[13px] font-semibold tracking-[0.04em] text-ink-3 uppercase">Equipamentos</h2>
           <ul className="overflow-hidden rounded-[var(--radius-lg)] bg-surface shadow-[var(--shadow-soft)]">
             {comEle.map((p) => (
               <Linha key={p.id} p={p} childId={childId} />
@@ -88,7 +88,7 @@ export function Equipamento({ childId }: { childId: string }) {
       {antigas.length > 0 && (
         <div>
           <h2 className="mb-1 px-1 text-[13px] font-semibold tracking-[0.04em] text-ink-3 uppercase">
-            {comEle.length > 0 ? "Equipamento que já teve" : "Equipamento"}
+            {comEle.length > 0 ? "Equipamentos que já teve" : "Equipamentos"}
           </h2>
           <ul className="overflow-hidden rounded-[var(--radius-lg)] bg-surface shadow-[var(--shadow-soft)]">
             {visiveis.map((p) => (
@@ -134,6 +134,7 @@ function Linha({ p, childId }: { p: Peca; childId: string }) {
   );
 }
 
+/** A primeira foto do artigo. Sem foto, nada: um ícone igual em todas as linhas não diz qual é a peça. */
 function Miniatura({ foto, apagada }: { foto?: string | null; apagada?: boolean }) {
   const [falhou, setFalhou] = useState(false);
   if (foto && !falhou) {
@@ -147,11 +148,7 @@ function Miniatura({ foto, apagada }: { foto?: string | null; apagada?: boolean 
       />
     );
   }
-  return (
-    <span className="flex size-11 shrink-0 items-center justify-center rounded-[12px] bg-sunken text-ink-3">
-      <Shirt className="size-[20px]" strokeWidth={1.9} />
-    </span>
-  );
+  return null;
 }
 
 export function PagamentoPill({ p }: { p: { estado: "porPagar" | "pago"; valorCents: number | null } }) {

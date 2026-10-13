@@ -116,7 +116,7 @@ export default function EquipamentoPeca() {
 
       <header className="mt-4 px-1">
         <p className="text-[13px] font-semibold tracking-[0.04em] text-ink-3 uppercase">
-          Equipamento{!store.atleta && filho && store.children.length > 1 ? ` · ${filho.firstName ?? filho.name}` : ""}
+          Equipamentos{!store.atleta && filho && store.children.length > 1 ? ` · ${filho.firstName ?? filho.name}` : ""}
         </p>
         <h1 className="mt-0.5 text-[26px] leading-tight font-semibold tracking-[-0.02em] text-ink">{peca.item}</h1>
         <p className="mt-1 text-[14px] text-ink-2">
@@ -200,18 +200,12 @@ export default function EquipamentoPeca() {
   );
 }
 
-/** As fotos do artigo, a deslizar. Sem fotos, um quadrado com a camisola. */
+/** As fotos do artigo, a deslizar. Sem fotos, a página começa pelo nome. */
 function Fotos({ fotos }: { fotos: string[] }) {
   const [boas, setBoas] = useState(fotos);
   const [actual, setActual] = useState(0);
 
-  if (boas.length === 0) {
-    return (
-      <div className="flex aspect-[4/3] items-center justify-center rounded-[var(--radius-xl)] bg-surface text-ink-4 shadow-[var(--shadow-soft)]">
-        <Shirt className="size-14" strokeWidth={1.4} />
-      </div>
-    );
-  }
+  if (boas.length === 0) return null;
 
   return (
     <div>
