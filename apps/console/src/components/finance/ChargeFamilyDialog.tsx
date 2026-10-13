@@ -436,7 +436,7 @@ export function Escolhido({
         {semNinguem ? (
           <p className="flex items-start gap-1.5 text-meta leading-relaxed text-warn">
             <TriangleAlert className="mt-0.5 size-3.5 shrink-0" strokeWidth={1.75} />
-            Este atleta não tem encarregado activo. A cobrança fica registada, mas não avisa ninguém.
+            Este atleta não tem encarregado activo. A cobrança fica registada, e o encarregado recebe o aviso quando for ligado ao atleta.
           </p>
         ) : (
           <>

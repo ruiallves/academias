@@ -10,6 +10,7 @@ import {
   ImportDto,
   ReturnDto,
   StockMovementDto,
+  UpdateAssignmentDto,
   UpdateItemDto,
   UpdateVariantDto,
   VariantInputDto,
@@ -140,6 +141,12 @@ export class InventoryController {
   @Post("assignments")
   assign(@Req() req: AuthedRequest, @Body() dto: AssignDto) {
     return this.inventory.assign(req.ctx, dto);
+  }
+
+  /** Editar uma entrega: as notas e o pagamento. Ver `definirPagamento`. */
+  @Patch("assignments/:id")
+  updateAssignment(@Req() req: AuthedRequest, @Param("id") id: string, @Body() dto: UpdateAssignmentDto) {
+    return this.inventory.updateAssignment(req.ctx, id, dto);
   }
 
   @Post("assignments/:id/return")

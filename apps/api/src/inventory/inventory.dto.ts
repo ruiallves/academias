@@ -133,11 +133,32 @@ export class ImageConfirmDto {
 }
 
 /** Entregar equipamento a um atleta. */
+/**
+ * O pagamento de uma entrega. Ver `InventoryService.definirPagamento`.
+ *
+ * - `nenhum`: sem pagamento.
+ * - `porPagar`: por pagar, só no equipamento (nem Pagamentos da app, nem notificação).
+ * - `app`: por pagar na app da família, com notificação; paga-se lá.
+ * - `pago`: pago (com o método), e cai nas Contas do clube.
+ */
+export class PagamentoDaEntregaDto {
+  @IsIn(["nenhum", "porPagar", "app", "pago"]) modo!: "nenhum" | "porPagar" | "app" | "pago";
+  @IsOptional() @IsInt() @Min(1) @Max(100_000_00) priceCents?: number;
+  @IsOptional() @IsIn(["MBWAY", "CASH", "CARD", "TRANSFER"]) method?: "MBWAY" | "CASH" | "CARD" | "TRANSFER";
+}
+
 export class AssignDto {
   @IsString() @Length(1, 40) athleteId!: string;
   @IsString() @Length(1, 40) variantId!: string;
   @IsInt() @Min(1) @Max(1000) quantity!: number;
   @IsOptional() @IsString() @Length(0, 500) notes?: string;
+  @IsOptional() @ValidateNested() @Type(() => PagamentoDaEntregaDto) pagamento?: PagamentoDaEntregaDto;
+}
+
+/** Editar uma entrega: as notas e o pagamento. A devolução tem rota própria. */
+export class UpdateAssignmentDto {
+  @IsOptional() @IsString() @Length(0, 500) notes?: string;
+  @IsOptional() @ValidateNested() @Type(() => PagamentoDaEntregaDto) pagamento?: PagamentoDaEntregaDto;
 }
 
 /**

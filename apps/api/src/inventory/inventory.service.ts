@@ -1,11 +1,12 @@
 import { randomBytes, randomUUID } from "node:crypto";
-import { BadRequestException, ForbiddenException, Injectable, NotFoundException } from "@nestjs/common";
+import { BadRequestException, ForbiddenException, HttpException, Injectable, NotFoundException } from "@nestjs/common";
 import type { InventoryAssignmentStatus, InventoryMovementType, Prisma } from "@prisma/client";
 import { PrismaService, type ScopedClient } from "../prisma/prisma.service";
 import { StorageService } from "../storage/storage.service";
 import { athleteScopeFilter, can, type RequestContext } from "../common/permissions";
 import { currentSeason } from "../common/seasons";
 import { EspacoService } from "../storage/espaco.service";
+import { BillingService } from "../billing/billing.service";
 import type {
   AssignDto,
   CreateItemDto,
@@ -65,6 +66,8 @@ export class InventoryService {
     private readonly prisma: PrismaService,
     private readonly storage: StorageService,
     private readonly espaco: EspacoService,
+    /** As cobranças do pagamento de uma entrega. Ver `definirPagamento`. */
+    private readonly billing: BillingService,
   ) {}
 
   private mustRead(ctx: RequestContext) {
@@ -257,15 +260,26 @@ export class InventoryService {
         select: {
           id: true, quantity: true, assignedAt: true,
           variant: { select: { label: true, item: { select: { name: true } } } },
+          ...SELECT_PAGAMENTO,
         },
       });
-      return rows.map((r) => ({
-        id: r.id,
-        item: r.variant.item.name,
-        variant: r.variant.label,
-        quantity: r.quantity,
-        assignedAt: r.assignedAt,
-      }));
+      return rows.map((r) => {
+        const pg = pagamentoDe(r);
+        return {
+          id: r.id,
+          item: r.variant.item.name,
+          variant: r.variant.label,
+          quantity: r.quantity,
+          assignedAt: r.assignedAt,
+          // Para a família: por pagar (só aqui ou também nos Pagamentos) diz-se igual.
+          pagamento:
+            pg.estado === "pago"
+              ? { estado: "pago" as const, valorCents: pg.valorCents }
+              : pg.estado === "porPagar" || pg.estado === "app"
+                ? { estado: "porPagar" as const, valorCents: pg.valorCents }
+                : null,
+        };
+      });
     });
   }
 
@@ -298,6 +312,7 @@ export class InventoryService {
           variant: { select: { id: true, label: true, item: { select: { id: true, name: true } } } },
           assignedBy: { select: { user: { select: { name: true } } } },
           returnedBy: { select: { user: { select: { name: true } } } },
+          ...SELECT_PAGAMENTO,
         },
       });
 
@@ -318,6 +333,7 @@ export class InventoryService {
         itemName: a.variant.item.name,
         assignedBy: a.assignedBy?.user.name ?? null,
         returnedBy: a.returnedBy?.user.name ?? null,
+        pagamento: pagamentoDe(a),
       }));
     });
   }
@@ -1207,6 +1223,134 @@ export class InventoryService {
       });
 
       return { id: entrega.id, athleteName: atleta.name, itemName: variante.item.name, variantLabel: variante.label };
+    }).then(async (r) => {
+      /*
+       * O pagamento, depois da entrega e fora da transação dela: o material já
+       * saiu do armazém. Se a cobrança falhar, a entrega fica e o erro diz-se,
+       * para se acertar depois em "Editar".
+       */
+      if (!dto.pagamento || dto.pagamento.modo === "nenhum") return { ...r, pagamento: null as PagamentoDaEntrega | null, erroDoPagamento: null };
+      try {
+        return { ...r, pagamento: await this.definirPagamento(ctx, r.id, dto.pagamento), erroDoPagamento: null };
+      } catch (e) {
+        /*
+         * Só as recusas pensadas para quem usa (HttpException: pagamentos
+         * desligados, valor inválido) chegam à consola. Um erro da base de dados
+         * (uma coluna em falta, 13/10/2026) aparecia inteiro no aviso; fica no
+         * registo da API.
+         */
+        console.error("[inventory] pagamento da entrega", r.id, e);
+        return {
+          ...r,
+          pagamento: null,
+          erroDoPagamento: e instanceof HttpException ? e.message : "Não foi possível lançar o pagamento.",
+        };
+      }
+    });
+  }
+
+  /**
+   * Editar uma entrega: as notas e o pagamento.
+   */
+  async updateAssignment(ctx: RequestContext, id: string, dto: { notes?: string; pagamento?: PagamentoPedido }) {
+    this.mustWrite(ctx);
+    if (dto.notes !== undefined) {
+      await this.prisma.runAs(ctx.academyId, async (db) => {
+        const a = await db.inventoryAssignment.findFirst({ where: { id }, select: { id: true } });
+        if (!a) throw new NotFoundException("Entrega não encontrada");
+        await db.inventoryAssignment.update({ where: { id }, data: { notes: dto.notes?.trim() || null } });
+      });
+    }
+    const pagamento = dto.pagamento ? await this.definirPagamento(ctx, id, dto.pagamento) : undefined;
+    return { ok: true, pagamento };
+  }
+
+  /**
+   * O pagamento de uma entrega: o estado novo, e as cobranças que isso pede.
+   *
+   * ## Porquê assim
+   *
+   * O clube quer poder dizer "por pagar" sem que isso apareça nos Pagamentos da
+   * app do pai (pedido do Rui, 13/10/2026): a peça fica "por pagar" no bloco
+   * Equipamento e mais nada. Por isso o valor vive na entrega (`priceCents`) e
+   * só nasce uma cobrança quando ela é precisa:
+   *
+   * - `porPagar`: só o valor na entrega. Sem cobrança, sem notificação.
+   * - `app`: uma cobrança aberta, com notificação: aparece nos Pagamentos e
+   *   paga-se lá. Quando a família paga, a entrega passa a paga sozinha.
+   * - `pago`: uma cobrança paga, com o método. É ela que põe o dinheiro nas
+   *   Contas (que leem as cobranças pagas); a família não é notificada.
+   * - `nenhum`: nem valor, nem cobrança.
+   *
+   * Mudar de estado larga a cobrança que deixou de servir: uma aberta apaga-se
+   * (nunca foi dinheiro), uma paga anula-se (sai das Contas e fica a história).
+   * As regras de cada passo são as das Mensalidades (`BillingService`):
+   * apagar uma com referência viva, por exemplo, é recusado lá.
+   */
+  async definirPagamento(ctx: RequestContext, id: string, p: PagamentoPedido): Promise<PagamentoDaEntrega> {
+    this.mustWrite(ctx);
+    if (p.modo !== "nenhum" && !can(ctx, "billing:write")) {
+      throw new ForbiddenException("Sem permissão para cobrar: pede a quem trata das mensalidades");
+    }
+
+    const a = await this.prisma.runAs(ctx.academyId, (db) =>
+      db.inventoryAssignment.findFirst({
+        where: { id },
+        select: {
+          id: true, athleteId: true, quantity: true, priceCents: true, chargeId: true,
+          charge: { select: { id: true, status: true, amountCents: true } },
+          variant: { select: { label: true, item: { select: { name: true } } } },
+        },
+      }),
+    );
+    if (!a) throw new NotFoundException("Entrega não encontrada");
+
+    const valor = p.modo === "nenhum" ? null : (p.priceCents ?? a.priceCents ?? a.charge?.amountCents ?? null);
+    if (p.modo !== "nenhum" && !(valor && valor > 0)) throw new BadRequestException("Falta o valor a pagar");
+
+    const precisaDeCobranca = p.modo === "app" || p.modo === "pago";
+    let chargeId = a.chargeId;
+    const atual = a.charge;
+
+    // A cobrança que deixou de servir: por não ser precisa, ou por o valor ter mudado.
+    if (atual && (!precisaDeCobranca || atual.amountCents !== valor)) {
+      if (atual.status === "SETTLED") await this.billing.setChargeStatus(ctx, atual.id, "VOID");
+      else if (atual.status === "OPEN") await this.billing.deleteCharge(ctx, atual.id);
+      chargeId = null;
+    }
+
+    if (precisaDeCobranca && !chargeId) {
+      const venceEm = new Date(Date.now() + 15 * 86_400_000).toISOString().slice(0, 10);
+      const titulo = `${a.variant.item.name} · ${a.variant.label}${a.quantity > 1 ? ` (${a.quantity})` : ""}`.slice(0, 80);
+      const r = await this.billing.createExtraCharge(ctx, {
+        athleteId: a.athleteId,
+        title: titulo,
+        amountCents: valor!,
+        dueDate: venceEm,
+        // Só a que vai para a app avisa. A paga nasce aberta e fecha já a seguir.
+        notify: p.modo === "app",
+      });
+      chargeId = r.id;
+    }
+
+    if (chargeId) {
+      const agora = await this.prisma.runAs(ctx.academyId, (db) =>
+        db.charge.findFirst({ where: { id: chargeId! }, select: { status: true } }),
+      );
+      if (p.modo === "pago" && agora?.status !== "SETTLED") {
+        await this.billing.setChargeStatus(ctx, chargeId, "SETTLED", p.method ?? "CASH");
+      } else if (p.modo === "app" && agora?.status !== "OPEN") {
+        await this.billing.setChargeStatus(ctx, chargeId, "OPEN");
+      }
+    }
+
+    return this.prisma.runAs(ctx.academyId, async (db) => {
+      const r = await db.inventoryAssignment.update({
+        where: { id },
+        data: { priceCents: valor, chargeId: precisaDeCobranca ? chargeId : null },
+        select: SELECT_PAGAMENTO,
+      });
+      return pagamentoDe(r);
     });
   }
 
@@ -1510,4 +1654,45 @@ function skuDaVariante(skuDoArtigo: string | null, rotulo: string): string | nul
   if (!skuDoArtigo) return null;
   const sufixo = rotulo.trim().toUpperCase().replace(/\s+/g, "");
   return sufixo ? `${skuDoArtigo}-${sufixo}` : skuDoArtigo;
+}
+
+
+/* -------------------------------------------------------------------------- */
+/* O pagamento de uma entrega                                                  */
+/* -------------------------------------------------------------------------- */
+
+export type PagamentoPedido = { modo: "nenhum" | "porPagar" | "app" | "pago"; priceCents?: number; method?: "MBWAY" | "CASH" | "CARD" | "TRANSFER" };
+
+/** O estado de pagamento de uma entrega, como a consola e a app o leem. */
+export type PagamentoDaEntrega = {
+  estado: "nenhum" | "porPagar" | "app" | "pago" | "anulado";
+  valorCents: number | null;
+  /** Como foi pago, quando pago. */
+  metodo: string | null;
+  chargeId: string | null;
+};
+
+const SELECT_PAGAMENTO = {
+  priceCents: true,
+  chargeId: true,
+  charge: {
+    select: {
+      status: true,
+      amountCents: true,
+      payments: { where: { status: "PAID" as const }, orderBy: { paidAt: "desc" as const }, take: 1, select: { method: true } },
+    },
+  },
+} as const;
+
+function pagamentoDe(a: {
+  priceCents: number | null;
+  chargeId: string | null;
+  charge: { status: string; amountCents: number; payments: { method: string }[] } | null;
+}): PagamentoDaEntrega {
+  if (a.charge) {
+    const estado = a.charge.status === "SETTLED" ? "pago" : a.charge.status === "OPEN" ? "app" : "anulado";
+    return { estado, valorCents: a.charge.amountCents, metodo: a.charge.payments[0]?.method ?? null, chargeId: a.chargeId };
+  }
+  if (a.priceCents && a.priceCents > 0) return { estado: "porPagar", valorCents: a.priceCents, metodo: null, chargeId: null };
+  return { estado: "nenhum", valorCents: null, metodo: null, chargeId: null };
 }

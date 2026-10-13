@@ -3,7 +3,9 @@ import { Link } from "react-router-dom";
 import { Empty, Loading, Panel, PanelHead, Pill } from "@/components/primitives";
 import { DeliverDialog } from "@/components/inventory/DeliverDialog";
 import { ReturnDialog } from "@/components/inventory/ReturnDialog";
-import { Boxes, PackageOpen, Undo2 } from "@/lib/icons";
+import { EditAssignmentDialog } from "@/components/inventory/EditAssignmentDialog";
+import { PagamentoPill } from "@/components/inventory/PagamentoDaEntrega";
+import { Boxes, PackageOpen, Pencil, Undo2 } from "@/lib/icons";
 import { shortDate } from "@/lib/format";
 import { can } from "@/lib/permissions";
 import { useSession } from "@/session";
@@ -17,6 +19,12 @@ import { ASSIGNMENT_LABEL, listAssignments, type Assignment } from "@/lib/invent
  * Primeiro o que está com ele — é a pergunta de Junho, quando se recolhe o
  * material. O que já voltou fica por baixo, mais discreto: serve para responder
  * a "mas eu entreguei" sem ninguém ter de procurar no histórico do armazém.
+ *
+ * ## O pagamento de cada peça
+ *
+ * Cada linha diz se a peça está paga, por pagar (só no equipamento ou também
+ * nos Pagamentos da app) ou sem pagamento, e "Editar" muda isso. Ver
+ * `EditAssignmentDialog`.
  *
  * ## Carrega sozinho, e só aqui
  *
@@ -32,6 +40,7 @@ export function AthleteKitPanel({ athleteId, athleteName }: { athleteId: string;
   const [erro, setErro] = useState<string | null>(null);
   const [entregar, setEntregar] = useState(false);
   const [devolver, setDevolver] = useState<Assignment | null>(null);
+  const [editar, setEditar] = useState<Assignment | null>(null);
 
   async function carregar() {
     setErro(null);
@@ -94,11 +103,18 @@ export function AthleteKitPanel({ athleteId, athleteName }: { athleteId: string;
                       {a.notes ? ` · ${a.notes}` : ""}
                     </span>
                   </span>
+                  <PagamentoPill p={a.pagamento} />
                   {podeEscrever && (
-                    <button type="button" className="ctl-ghost h-7 shrink-0 text-meta" onClick={() => setDevolver(a)}>
-                      <Undo2 className="size-3.5" strokeWidth={1.75} />
-                      Devolver
-                    </button>
+                    <span className="flex shrink-0 items-center gap-0.5">
+                      <button type="button" className="ctl-ghost h-7 text-meta" onClick={() => setEditar(a)}>
+                        <Pencil className="size-3.5" strokeWidth={1.75} />
+                        Editar
+                      </button>
+                      <button type="button" className="ctl-ghost h-7 text-meta text-ink-3" onClick={() => setDevolver(a)}>
+                        <Undo2 className="size-3.5" strokeWidth={1.75} />
+                        Devolver
+                      </button>
+                    </span>
                   )}
                 </li>
               ))}
@@ -119,7 +135,13 @@ export function AthleteKitPanel({ athleteId, athleteName }: { athleteId: string;
                           {a.returnedBy ? ` · ${a.returnedBy}` : ""}
                         </span>
                       </span>
+                      <PagamentoPill p={a.pagamento} />
                       <Pill tone={a.status === "RETURNED" ? "ok" : "risk"}>{ASSIGNMENT_LABEL[a.status]}</Pill>
+                      {podeEscrever && (
+                        <button type="button" className="ctl-ghost h-7 shrink-0 text-meta" onClick={() => setEditar(a)} aria-label="Editar entrega">
+                          <Pencil className="size-3.5" strokeWidth={1.75} />
+                        </button>
+                      )}
                     </li>
                   ))}
                 </ul>
@@ -134,6 +156,21 @@ export function AthleteKitPanel({ athleteId, athleteName }: { athleteId: string;
           athleteId={athleteId}
           onClose={() => setEntregar(false)}
           onDone={() => void carregar()}
+        />
+      )}
+
+      {editar && (
+        <EditAssignmentDialog
+          assignment={{ ...editar, athleteName }}
+          onClose={() => setEditar(null)}
+          onDone={() => {
+            setEditar(null);
+            void carregar();
+          }}
+          onDevolver={() => {
+            setDevolver(editar);
+            setEditar(null);
+          }}
         />
       )}
 

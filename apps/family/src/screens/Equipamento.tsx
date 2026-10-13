@@ -2,12 +2,26 @@ import { useEffect, useState } from "react";
 import { Shirt } from "lucide-react";
 import { apiGet } from "@/lib/http";
 
-type Peca = { id: string; item: string; variant: string; quantity: number; assignedAt: string };
+/** `pagamento` nulo: sem pagamento. Ausente num servidor antigo. */
+type Peca = {
+  id: string;
+  item: string;
+  variant: string;
+  quantity: number;
+  assignedAt: string;
+  pagamento?: { estado: "porPagar" | "pago"; valorCents: number | null } | null;
+};
+
+const euros = (c: number) => (c / 100).toLocaleString("pt-PT", { style: "currency", currency: "EUR" });
 
 /**
  * O equipamento que o atleta tem com ele: o que o clube entregou e ainda não
  * voltou. Para a família saber o que está em casa, e o que devolver no fim da
  * época.
+ *
+ * Cada peça diz se está paga ou por pagar, e quanto. "Por pagar" aqui não é
+ * necessariamente uma cobrança nos Pagamentos: o clube pode só deixar a nota
+ * (ver `definirPagamento` na API), e é por isso que se diz aqui.
  *
  * Carrega-se sozinho e só aparece quando há alguma coisa, como as notas da
  * escola: um bloco vazio na ficha de todos os atletas de um clube que nem usa o
@@ -50,6 +64,17 @@ export function Equipamento({ childId }: { childId: string }) {
                   .join(" · ")}
               </span>
             </span>
+            {p.pagamento && (
+              <span
+                className={
+                  "shrink-0 rounded-full px-2 py-0.5 text-[11px] font-semibold whitespace-nowrap " +
+                  (p.pagamento.estado === "pago" ? "bg-ok-soft text-ok" : "bg-warn-soft text-warn")
+                }
+              >
+                {p.pagamento.estado === "pago" ? "Pago" : "Por pagar"}
+                {p.pagamento.valorCents ? ` · ${euros(p.pagamento.valorCents)}` : ""}
+              </span>
+            )}
           </li>
         ))}
       </ul>

@@ -1,3 +1,5 @@
+import { NotificationsService } from "../notifications/notifications.service";
+import { avisarCobrancasEmAberto } from "../billing/avisar-cobrancas";
 import { BadRequestException, ForbiddenException, Injectable, NotFoundException } from "@nestjs/common";
 import { PrismaService, type ScopedClient } from "../prisma/prisma.service";
 import { athleteScopeFilter, athleteTeamScopeWhere, can, type RequestContext } from "../common/permissions";
@@ -39,6 +41,8 @@ export class GuardianLinksService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly aviso: AreaAbertaService,
+    /** Avisar o encarregado acabado de ligar das cobranças em aberto. Ver `avisarCobrancasEmAberto`. */
+    private readonly notifications: NotificationsService,
   ) {}
 
   /**
@@ -212,6 +216,7 @@ export class GuardianLinksService {
         update: { relation },
         create: { athleteId, membershipId: membership.id, relation },
       });
+      await avisarCobrancasEmAberto(db, this.notifications, ctx.academyId, membership.id, athleteId);
       const depois = await this.nomesDosEncarregados(db, athleteId);
 
       await registarAlteracoes(

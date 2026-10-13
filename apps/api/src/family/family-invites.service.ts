@@ -1,3 +1,5 @@
+import { NotificationsService } from "../notifications/notifications.service";
+import { avisarCobrancasEmAberto } from "../billing/avisar-cobrancas";
 import { randomBytes } from "node:crypto";
 import { BadRequestException, ForbiddenException, Injectable, NotFoundException } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
@@ -83,6 +85,8 @@ export class FamilyInvitesService {
     private readonly config: ConfigService,
     private readonly mail: MailClient,
     private readonly legal: LegalService,
+    /** Avisar o encarregado acabado de ligar das cobranças em aberto. Ver `avisarCobrancasEmAberto`. */
+    private readonly notifications: NotificationsService,
   ) {}
 
   /* ------------------------------------------------------------------------ */
@@ -394,6 +398,8 @@ export class FamilyInvitesService {
           relation: dto.relation.trim() || "Encarregado",
         },
       });
+      // O que já estava a ser pedido ao atleta chega-lhe também (vê-o quando o clube aprovar).
+      await avisarCobrancasEmAberto(db, this.notifications, academyId, membership.id, athleteId);
 
       await db.familyInvite.updateMany({
         where: { token },
@@ -448,6 +454,7 @@ export class FamilyInvitesService {
         update: {},
         create: { athleteId, membershipId: ctx.membershipId, relation: "Encarregado" },
       });
+      await avisarCobrancasEmAberto(db, this.notifications, ctx.academyId, ctx.membershipId, athleteId);
 
       const athlete = await db.athlete.findFirst({ where: { id: athleteId }, select: { id: true, name: true } });
       return { athlete };
@@ -522,6 +529,10 @@ export class FamilyInvitesService {
         where: { id: alvo.id },
         data: { isActive: true, approvalRequestedAt: null, approvedAt: new Date() },
       });
+      // Aprovado, passa a receber os pedidos de pagamento em aberto dos filhos. Ver `avisarCobrancasEmAberto`.
+      for (const l of await db.guardianLink.findMany({ where: { membershipId: alvo.id }, select: { athleteId: true } })) {
+        await avisarCobrancasEmAberto(db, this.notifications, ctx.academyId, alvo.id, l.athleteId);
+      }
       const academy = await db.academy.findFirst({
         where: { id: ctx.academyId },
         select: { slug: true, name: true, shortName: true, signalColor: true, logoUrl: true },

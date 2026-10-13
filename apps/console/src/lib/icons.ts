@@ -70,6 +70,7 @@ export {
   Send,
   CircleCheck,
   Smartphone,
+  Shirt,
   TriangleAlert,
   Sparkle,
   Ban,

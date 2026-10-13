@@ -2076,6 +2076,8 @@ model Charge {
   statusChangedAt   DateTime? @db.Timestamptz(3)
 
   payments Payment[]
+  /// A entrega de equipamento que esta cobrança paga, quando é uma.
+  inventoryAssignment InventoryAssignment? @relation("InventoryAssignmentCharge")
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -5622,6 +5624,14 @@ model InventoryAssignment {
   season   Season? @relation(fields: [seasonId], references: [id], onDelete: SetNull)
 
   notes String?
+
+  /// O pagamento da entrega. `priceCents` nulo é sem pagamento. Com valor e sem
+  /// `chargeId` é "por pagar" só no equipamento (não vai para os Pagamentos da
+  /// app nem notifica). Com `chargeId`, o estado é o da cobrança: aberta é "por
+  /// pagar na app", liquidada é "pago" (e cai nas Contas). Ver `definirPagamento`.
+  priceCents Int?
+  chargeId   String? @unique
+  charge     Charge? @relation("InventoryAssignmentCharge", fields: [chargeId], references: [id], onDelete: SetNull)
 
   assignedById String?
   assignedBy   Membership? @relation("InventoryAssignedBy", fields: [assignedById], references: [id], onDelete: SetNull)

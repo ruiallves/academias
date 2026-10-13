@@ -4,8 +4,11 @@ import { PageHeader } from "@/components/Shell";
 import { DataTable, Empty, Loading, Panel, Pill, SelectField } from "@/components/primitives";
 import { DeliverDialog } from "@/components/inventory/DeliverDialog";
 import { ReturnDialog } from "@/components/inventory/ReturnDialog";
-import { ArrowLeft, PackageOpen, Search, TriangleAlert, Undo2 } from "@/lib/icons";
-import { shortDate } from "@/lib/format";
+import { EditAssignmentDialog } from "@/components/inventory/EditAssignmentDialog";
+import { PagamentoPill } from "@/components/inventory/PagamentoDaEntrega";
+import { ArrowLeft, PackageOpen, Pencil, Search, TriangleAlert, Undo2 } from "@/lib/icons";
+import { money, shortDate } from "@/lib/format";
+import { cx } from "@/components/primitives";
 import { listTeams, naEquipa, athleteById } from "@/lib/api";
 import { can } from "@/lib/permissions";
 import { useSession } from "@/session";
@@ -33,6 +36,9 @@ export default function Deliveries() {
   const [q, setQ] = useState("");
   const [entregar, setEntregar] = useState(false);
   const [devolver, setDevolver] = useState<Assignment | null>(null);
+  const [editar, setEditar] = useState<Assignment | null>(null);
+  /** O pagamento: "porPagar" junta os dois por pagar (só no equipamento e na app). */
+  const [pagamento, setPagamento] = useState("");
 
   async function carregar() {
     setErro(null);
@@ -62,10 +68,27 @@ export default function Deliveries() {
         if (atleta ? !naEquipa(atleta, equipa) : a.teamId !== equipa) return false;
       }
       if (artigo && a.itemId !== artigo) return false;
-      if (termo && !fold(`${a.athleteName} ${a.itemName}`).includes(termo)) return false;
+      if (pagamento) {
+        const e = a.pagamento?.estado ?? "nenhum";
+        if (pagamento === "porPagar" ? e !== "porPagar" && e !== "app" : e !== pagamento) return false;
+      }
+      // Pelo atleta, pela equipa, pelo artigo ou pelo tamanho: o que se lembra primeiro.
+      if (termo && !fold(`${a.athleteName} ${a.teamName ?? ""} ${a.itemName} ${a.variantLabel}`).includes(termo)) return false;
       return true;
     });
-  }, [rows, q, equipa, artigo]);
+  }, [rows, q, equipa, artigo, pagamento]);
+
+  /* Os totais do que está filtrado: quanto falta receber e quanto já entrou. */
+  const totais = useMemo(() => {
+    const t = { porPagar: { n: 0, cents: 0 }, pago: { n: 0, cents: 0 } };
+    for (const a of filtrados) {
+      const e = a.pagamento?.estado;
+      const v = a.pagamento?.valorCents ?? 0;
+      if (e === "porPagar" || e === "app") { t.porPagar.n++; t.porPagar.cents += v; }
+      if (e === "pago") { t.pago.n++; t.pago.cents += v; }
+    }
+    return t;
+  }, [filtrados]);
 
   if (erro) return <Empty title="Equipamento atribuído" detail={erro} icon={TriangleAlert} />;
   if (!rows) return <Loading />;
@@ -107,7 +130,7 @@ export default function Deliveries() {
             <input
               value={q}
               onChange={(e) => setQ(e.target.value)}
-              placeholder="Procurar atleta ou artigo…"
+              placeholder="Procurar atleta, equipa ou artigo…"
               className="h-9 w-full rounded-[var(--radius-control)] border border-line bg-surface pl-8 text-body text-ink placeholder:text-ink-4"
             />
           </div>
@@ -120,6 +143,17 @@ export default function Deliveries() {
             value={artigo}
             onChange={setArtigo}
             options={[{ value: "", label: "Todos os artigos" }, ...artigos.map((a) => ({ value: a.id, label: a.name }))]}
+          />
+          <SelectField
+            value={pagamento}
+            onChange={setPagamento}
+            options={[
+              { value: "", label: "Qualquer pagamento" },
+              { value: "porPagar", label: "Por pagar" },
+              { value: "app", label: "Por pagar · na app" },
+              { value: "pago", label: "Pago" },
+              { value: "nenhum", label: "Sem pagamento" },
+            ]}
           />
           <SelectField
             value={estado}
@@ -135,8 +169,39 @@ export default function Deliveries() {
         </div>
       </Panel>
 
+      {(totais.porPagar.n > 0 || totais.pago.n > 0) && (
+        <div className="mb-3 flex flex-wrap gap-2">
+          {(
+            [
+              ["porPagar", "Por pagar", totais.porPagar, "bg-warn-soft text-warn"],
+              ["pago", "Pago", totais.pago, "bg-ok-soft text-ok"],
+            ] as const
+          )
+            .filter(([, , t]) => t.n > 0)
+            .map(([chave, rotulo, t, cor]) => (
+              <button
+                key={chave}
+                type="button"
+                onClick={() => setPagamento(pagamento === chave ? "" : chave)}
+                aria-pressed={pagamento === chave}
+                className={cx(
+                  "inline-flex items-center gap-2 rounded-full px-3 py-1.5 text-meta font-semibold transition-shadow",
+                  cor,
+                  pagamento === chave && "ring-2 ring-current/30",
+                )}
+              >
+                {rotulo}
+                <span className="font-medium tabular opacity-80">
+                  {t.n} · {money(t.cents)}
+                </span>
+              </button>
+            ))}
+        </div>
+      )}
+
       <Panel>
         <DataTable
+          onRowClick={podeEscrever ? (a) => setEditar(a) : undefined}
           rows={filtrados}
           keyOf={(a) => a.id}
           empty={
@@ -190,6 +255,11 @@ export default function Deliveries() {
               ),
             },
             {
+              key: "pagamento",
+              header: "Pagamento",
+              render: (a) => <PagamentoPill p={a.pagamento} />,
+            },
+            {
               key: "estado",
               header: "Estado",
               render: (a) => (
@@ -202,22 +272,37 @@ export default function Deliveries() {
               key: "accao",
               header: "",
               align: "right",
-              render: (a) =>
-                podeEscrever && a.status === "ACTIVE" ? (
-                  <button
-                    type="button"
-                    className="ctl-ghost h-7 text-meta"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      setDevolver(a);
-                    }}
-                  >
-                    <Undo2 className="size-3.5" strokeWidth={1.75} />
-                    Devolver
-                  </button>
-                ) : a.returnedAt ? (
-                  <span className="text-meta text-ink-4">{shortDate(new Date(a.returnedAt))}</span>
-                ) : null,
+              render: (a) => (
+                <span className="inline-flex items-center gap-0.5">
+                  {a.returnedAt && <span className="mr-1 text-meta text-ink-4">{shortDate(new Date(a.returnedAt))}</span>}
+                  {podeEscrever && (
+                    <button
+                      type="button"
+                      className="ctl-ghost h-7 text-meta"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setEditar(a);
+                      }}
+                    >
+                      <Pencil className="size-3.5" strokeWidth={1.75} />
+                      Editar
+                    </button>
+                  )}
+                  {podeEscrever && a.status === "ACTIVE" && (
+                    <button
+                      type="button"
+                      className="ctl-ghost h-7 text-meta text-ink-3"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setDevolver(a);
+                      }}
+                    >
+                      <Undo2 className="size-3.5" strokeWidth={1.75} />
+                      Devolver
+                    </button>
+                  )}
+                </span>
+              ),
             },
           ]}
         />
@@ -227,6 +312,21 @@ export default function Deliveries() {
         <DeliverDialog
           onClose={() => setEntregar(false)}
           onDone={() => void carregar()}
+        />
+      )}
+
+      {editar && (
+        <EditAssignmentDialog
+          assignment={editar}
+          onClose={() => setEditar(null)}
+          onDone={() => {
+            setEditar(null);
+            void carregar();
+          }}
+          onDevolver={() => {
+            setDevolver(editar);
+            setEditar(null);
+          }}
         />
       )}
 

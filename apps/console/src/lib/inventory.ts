@@ -159,7 +159,27 @@ export type Assignment = {
   itemName: string;
   assignedBy: string | null;
   returnedBy: string | null;
+  /** O pagamento da entrega. Ausente num servidor antigo. Ver `definirPagamento` na API. */
+  pagamento?: PagamentoDaEntrega;
 };
+
+/**
+ * O estado de pagamento de uma entrega.
+ *
+ * - `nenhum`: sem pagamento;
+ * - `porPagar`: por pagar, só no equipamento (não vai para os Pagamentos da app);
+ * - `app`: por pagar nos Pagamentos da app, onde a família paga;
+ * - `pago`: pago, e nas Contas do clube;
+ * - `anulado`: a cobrança foi anulada em Mensalidades.
+ */
+export type ModoDePagamento = "nenhum" | "porPagar" | "app" | "pago";
+export type PagamentoDaEntrega = {
+  estado: ModoDePagamento | "anulado";
+  valorCents: number | null;
+  metodo: string | null;
+  chargeId: string | null;
+};
+export type PagamentoPedido = { modo: ModoDePagamento; priceCents?: number; method?: string };
 
 export type Overview = {
   artigos: number;
@@ -226,8 +246,26 @@ export const moveStock = (variantId: string, body: { type: string; quantity: num
 export const listAssignments = (params: { teamId?: string; athleteId?: string; itemId?: string; status?: string } = {}) =>
   apiGet<Assignment[]>("/api/inventory/assignments", params);
 
-export const assign = (body: { athleteId: string; variantId: string; quantity: number; notes?: string }) =>
-  apiPost<{ id: string; athleteName: string; itemName: string; variantLabel: string }>("/api/inventory/assignments", body);
+export const assign = (body: {
+  athleteId: string;
+  variantId: string;
+  quantity: number;
+  notes?: string;
+  pagamento?: PagamentoPedido;
+}) =>
+  apiPost<{
+    id: string;
+    athleteName: string;
+    itemName: string;
+    variantLabel: string;
+    pagamento?: PagamentoDaEntrega | null;
+    /** A entrega ficou, mas o pagamento não: corrige-se em Editar. */
+    erroDoPagamento?: string | null;
+  }>("/api/inventory/assignments", body);
+
+/** Editar uma entrega: as notas e o pagamento. */
+export const updateAssignment = (id: string, body: { notes?: string; pagamento?: PagamentoPedido }) =>
+  apiPatch<{ ok: true; pagamento?: PagamentoDaEntrega }>(`/api/inventory/assignments/${id}`, body);
 
 export const returnAssignment = (id: string, body: { condition: string; quantity?: number; notes?: string }) =>
   apiPost<{ ok: true; status: AssignmentStatus }>(`/api/inventory/assignments/${id}/return`, body);
