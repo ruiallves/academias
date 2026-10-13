@@ -27,8 +27,8 @@ export default function Planos() {
                   <th className="rotulo w-[110px] py-4 text-center font-normal text-texto-3">Consola</th>
                   <th className="rotulo w-[110px] py-4 text-center font-normal text-texto">Connect</th>
                   <th className="rotulo w-[130px] py-4 text-center font-normal text-texto-3">
-                    Vision AI
-                    <span className="block normal-case">em breve</span>
+                    Connect Pro
+                    <span className="block normal-case">brevemente</span>
                   </th>
                 </tr>
               </thead>
@@ -53,9 +53,9 @@ export default function Planos() {
                 {/* A única linha que ainda não existe leva outro sinal: um anel, e não um ponto cheio. */}
                 <tr>
                   <td className="py-3.5 pr-4 pl-6">
-                    <p className="font-semibold">Análise de vídeo</p>
+                    <p className="font-semibold">Site do clube</p>
                     <p className="hidden text-[0.88rem] text-texto-3 sm:block">
-                      O jogo gravado vira números, com a confiança à vista. Cobrado por análises.
+                      Domínio .pt, notícias, loja e bilheteira, ligados à consola.
                     </p>
                   </td>
                   <td className="py-3.5 text-center">
@@ -74,7 +74,7 @@ export default function Planos() {
 
           <p className="corpo mt-6 text-[0.95rem]">
             A Consola resolve o clube por dentro. O Connect acrescenta o que as famílias e os sócios veem: a app do clube
-            e os pagamentos. Podes começar num e mudar para o outro quando quiseres.
+            e os pagamentos. O Connect Pro junta-lhe o site do clube. Podes começar num e mudar quando quiseres.
           </p>
         </div>
       </section>

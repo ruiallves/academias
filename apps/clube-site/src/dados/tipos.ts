@@ -29,6 +29,8 @@ export function layoutValido(v: unknown): v is Layout {
 export type Clube = {
   slug: string;
   layout: Layout;
+  /** O domínio próprio do clube ("adfafe.pt"), se tiver. É o endereço oficial do site. */
+  dominio?: string | null;
   name: string;
   shortName: string;
   city?: string;
@@ -64,7 +66,8 @@ export type Noticia = {
   /** Parágrafos, por ordem. Texto corrido; sem HTML. */
   body: string[];
   category: string;
-  image: string;
+  /** Sem foto, o site desenha um bloco na cor do clube. */
+  image?: string;
   imageAlt?: string;
   publishedAt: string;
   /** Até três ficam em destaque no herói; a primeira é a grande. */
@@ -132,7 +135,7 @@ export type Produto = {
   name: string;
   /** Em euros. */
   price: number;
-  image: string;
+  image?: string;
   images?: string[];
   category: string;
   description: string;

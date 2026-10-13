@@ -1,5 +1,5 @@
-import Image from "next/image";
 import Link from "next/link";
+import { Foto } from "@/componentes/Foto";
 import type { Noticia } from "@/dados/tipos";
 import { dataCompleta, isoDia } from "@/lib/formatar";
 
@@ -12,12 +12,11 @@ export function CartaoNoticia({ noticia, prioridade = false }: { noticia: Notici
     <article className="group">
       <Link href={`/noticias/${noticia.slug}`} className="block">
         <div className="relative aspect-[16/10] overflow-hidden rounded-card bg-sunken">
-          <Image
+          <Foto
             src={noticia.image}
             alt={noticia.imageAlt ?? ""}
-            fill
             sizes="(min-width: 1024px) 25vw, (min-width: 640px) 50vw, 100vw"
-            className="object-cover transition-transform duration-500 ease-out group-hover:scale-[1.03]"
+            className="transition-transform duration-500 ease-out group-hover:scale-[1.03]"
             priority={prioridade}
           />
         </div>
@@ -42,12 +41,11 @@ export function LinhaNoticia({ noticia }: { noticia: Noticia }) {
     <article className="group">
       <Link href={`/noticias/${noticia.slug}`} className="grid grid-cols-[7rem_1fr] gap-4 sm:grid-cols-[11rem_1fr]">
         <div className="relative aspect-[16/10] overflow-hidden rounded-card bg-sunken">
-          <Image
+          <Foto
             src={noticia.image}
             alt={noticia.imageAlt ?? ""}
-            fill
             sizes="11rem"
-            className="object-cover transition-transform duration-500 ease-out group-hover:scale-[1.03]"
+            className="transition-transform duration-500 ease-out group-hover:scale-[1.03]"
           />
         </div>
         <div className="min-w-0">

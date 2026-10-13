@@ -32,8 +32,8 @@ import { randomInt } from "node:crypto";
  * A euPago não documenta o tamanho nem os caracteres que aceita. Fica-se pelo
  * que qualquer sistema aceita: maiúsculas sem acentos, algarismos, `-` e `_`,
  * e no máximo `MAXIMO` caracteres. Quando não cabe, encurta-se pela ordem que
- * menos custa ler: atletas só com o primeiro nome, depois só quantos são,
- * depois o pagador cortado. O clube e o ID nunca saem: o clube diz de quem é
+ * menos custa ler: o pagador só com o primeiro nome, depois os atletas só com
+ * o primeiro nome, depois só quantos são, depois o pagador cortado. O clube e o ID nunca saem: o clube diz de quem é
  * o dinheiro, o ID é o que o torna único.
  */
 
@@ -149,15 +149,21 @@ export function montarIdentificador(
   let id = montar(completos, quem);
   if (id.length <= MAXIMO) return id;
 
+  // O pagador perde o apelido antes do atleta: o nome inteiro de quem pagou
+  // já está na consola (`payerName`), o do atleta é o que o clube procura.
+  const pagouCurto = primeiroNome(pagador ?? "") || quem;
+  id = montar(completos, pagouCurto);
+  if (id.length <= MAXIMO) return id;
+
   const primeiros = nomes.map(primeiroNome).filter(Boolean).join("_E_");
-  id = montar(primeiros, quem);
+  id = montar(primeiros, pagouCurto);
   if (id.length <= MAXIMO) return id;
 
   const atletas = nomes.length > 1 ? `${nomes.length}_ATLETAS` : primeiros;
-  id = montar(atletas, quem);
+  id = montar(atletas, pagouCurto);
   if (id.length <= MAXIMO) return id;
 
   // O pagador é o que se corta por fim, e nunca o ID.
   const sobra = MAXIMO - montar(atletas, "").length;
-  return montar(atletas, quem.slice(0, Math.max(sobra, 1)).replace(/_+$/, ""));
+  return montar(atletas, pagouCurto.slice(0, Math.max(sobra, 1)).replace(/_+$/, ""));
 }

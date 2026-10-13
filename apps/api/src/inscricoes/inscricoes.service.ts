@@ -30,6 +30,7 @@ import {
   emFalta,
   emFaltaNoClube,
   federacaoDe,
+  menorDeIdade,
   montarFolha,
   nomeDaCategoria,
   tipoProposto,
@@ -83,7 +84,11 @@ async function atletasDaFolha(db: ScopedClient, ids: string[]) {
       // O que só o boletim da FPB pede.
       taxId: true, idDocValidUntil: true, address: true, postalCode: true, city: true, district: true, municipality: true,
       licenses: { select: { sportId: true, seasonId: true, number: true, season: { select: { startsOn: true } } } },
-      guardians: { select: { membership: { select: { user: { select: { email: true, phone: true } } } } } },
+      // Os encarregados, o primeiro ligado primeiro: o contacto e o representante legal saem daqui.
+      guardians: {
+        orderBy: { id: "asc" },
+        select: { membership: { select: { user: { select: { name: true, email: true, phone: true } } } } },
+      },
     },
   });
   return new Map(rows.map((a) => [a.id, a]));
@@ -328,6 +333,8 @@ export class InscricoesService {
       categoria: federacao === "FPF" ? "" : (escolha.categoria ?? categoriaPelaIdade(a.birthdate, epoca, federacao)),
       licenca: licenca?.number ?? null,
       contactoDoEncarregado: contacto ? { email: contacto.email, phone: contacto.phone ?? null } : undefined,
+      // O representante legal: o primeiro encarregado ligado, e só de um menor.
+      representante: menorDeIdade(a.birthdate) ? (a.guardians.map((g) => g.membership.user.name).find((n) => n?.trim()) ?? null) : null,
     });
   }
 

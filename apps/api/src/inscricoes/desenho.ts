@@ -49,6 +49,63 @@ export function escrever(page: PDFPage, font: PDFFont, c: Caixa, v: string, max:
   page.drawText(s, { x: c.x1 + 1.5, y: c.y1 + (h - size * 0.72) / 2, size, font });
 }
 
+/**
+ * Texto que tem de caber, seja qual for o comprimento: o nome de uma pessoa.
+ *
+ * `escrever` encolhe até 5 pontos e daí não passa, e um nome de seis apelidos
+ * saía da linha por cima do texto impresso ao lado. Aqui, por esta ordem:
+ *
+ *  1. uma linha, de `max` até 6 pontos;
+ *  2. duas linhas, partidas entre palavras pelo meio, até 3,5 pontos (duas
+ *     linhas cabem na altura da caixa);
+ *  3. uma linha do tamanho que couber, por pequeno que seja.
+ *
+ * Devolve o tamanho usado, para os testes.
+ */
+export function escreverQueCaiba(page: PDFPage, font: PDFFont, c: Caixa, v: string, max = 9): number {
+  const s = codificavel(font, v);
+  const largura = c.x2 - c.x1 - 3;
+  const h = c.y2 - c.y1;
+  const cabe = (t: string, size: number) => font.widthOfTextAtSize(t, size) <= largura;
+
+  for (let size = max; size >= 6; size -= 0.5) {
+    if (cabe(s, size)) {
+      page.drawText(s, { x: c.x1 + 1.5, y: c.y1 + (h - size * 0.72) / 2, size, font });
+      return size;
+    }
+  }
+
+  const palavras = s.split(" ");
+  if (palavras.length > 1) {
+    // O corte que deixa as duas linhas mais parecidas em largura.
+    let melhor: [string, string] = [s, ""];
+    let diferenca = Infinity;
+    for (let i = 1; i < palavras.length; i++) {
+      const a = palavras.slice(0, i).join(" ");
+      const b = palavras.slice(i).join(" ");
+      const d = Math.abs(font.widthOfTextAtSize(a, 6) - font.widthOfTextAtSize(b, 6));
+      if (d < diferenca) {
+        diferenca = d;
+        melhor = [a, b];
+      }
+    }
+    for (let size = 6; size >= 3.5; size -= 0.25) {
+      // A linha de baixo assenta acima do traço impresso; a de cima pode subir um pouco além da caixa.
+      const entre = size * 1.05;
+      const base = c.y1 + 3.2;
+      if (cabe(melhor[0], size) && cabe(melhor[1], size) && 3.2 + entre + size * 0.72 <= h + 3) {
+        page.drawText(melhor[0], { x: c.x1 + 1.5, y: base + entre, size, font });
+        page.drawText(melhor[1], { x: c.x1 + 1.5, y: base, size, font });
+        return size;
+      }
+    }
+  }
+
+  const size = Math.max(1, (largura / font.widthOfTextAtSize(s, 1)) * 0.98);
+  page.drawText(s, { x: c.x1 + 1.5, y: c.y1 + (h - size * 0.72) / 2, size, font });
+  return size;
+}
+
 /** Uma letra por casa, centrada em cada uma — os campos às casinhas do boletim. */
 export function escreverEmCasas(page: PDFPage, font: PDFFont, c: Caixa, v: string) {
   const n = c.casas ?? v.length;

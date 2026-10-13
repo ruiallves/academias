@@ -23,7 +23,7 @@
 export const ANNUAL_DISCOUNT = 0.1;
 
 export type Plan = {
-  id: "consola" | "ligado" | "vision";
+  id: "consola" | "ligado" | "pro";
   name: string;
   tagline: string;
   monthly: number;
@@ -47,57 +47,46 @@ export const PLANS: Plan[] = [
   {
     id: "consola",
     name: "Consola",
-    tagline: "O clube por dentro. Tudo o que a direção e os treinadores precisam.",
+    tagline: "O clube por dentro, para a direção e os treinadores.",
     monthly: 14.99,
     includes: [
-      "Atletas, equipas, escalões e staff",
-      "Cargos e permissões à medida do clube",
-      "Calendário, treinos, presenças e convocatórias",
-      "Área técnica: editor tático, planos de treino e exercícios",
-      "Jogos: preparação, ficha e análise",
-      "Avaliações e relatórios de atleta",
-      "Departamento clínico: lesões, consultas e disponibilidade",
-      "Scouting: prospectos, observações, vídeo e shortlists",
-      "Comunicação segmentada e notificações",
-      "Importação e exportação por Excel",
+      "Atletas, equipas, staff e cargos",
+      "Calendário, treinos e convocatórias",
+      "Área técnica e jogos",
+      "Avaliações e relatórios",
+      "Clínico e scouting",
+      "Comunicação e Excel",
     ],
-    excludes: ["App do clube para famílias e sócios", "Mensalidades e pagamentos", "Página pública de adesão a sócio"],
+    excludes: ["App do clube", "Pagamentos", "Sócios"],
   },
   {
     id: "ligado",
     name: "Connect",
-    tagline: "O clube, as famílias, os sócios e o dinheiro. A plataforma inteira.",
-    monthly: 19.99,
+    tagline: "O clube, as famílias, os sócios e os pagamentos.",
+    monthly: 24.99,
     featured: true,
     includes: [
-      "Tudo o que está na Consola",
-      "App do clube com a marca do clube",
-      "Área da família: convocatórias, presenças e avaliações no telemóvel dos pais",
-      "Área do atleta: os treinos e o que o treinador partilha",
-      "Área do sócio: cartão digital, quotas, jogos e novidades",
-      "Área do staff: a consola dentro da mesma app",
+      "Tudo da Consola",
+      "App do clube com a vossa marca",
+      "Família, atleta, sócio e staff na mesma app",
       "Mensalidades por MB WAY, Multibanco e cartão",
-      "Confirmação automática do pagamento",
-      "Página pública de adesão a sócio",
-      "Gestão de sócios e quotas",
+      "Sócios, quotas e adesão online",
       "Notificações push",
     ],
   },
   {
-    id: "vision",
-    name: "Vision AI",
-    tagline: "O vídeo dos teus jogos transformado em dados sobre os atletas e a equipa.",
+    id: "pro",
+    name: "Connect Pro",
+    tagline: "O Connect com o site do clube.",
     monthly: 29.99,
-    from: true,
     soon: true,
-    priceNote: "Inclui 5 análises de jogo por mês",
     includes: [
-      "Tudo o que está no Connect",
-      "Análise automática de jogos",
-      "Deteção e seguimento de cada jogador",
-      "Distância percorrida, zonas ocupadas e tempo em campo",
-      "Estatísticas, momentos-chave e clips por jogador",
-      "Análise do adversário a partir do que o clube já grava",
+      "Tudo do Connect",
+      "Site com domínio .pt incluído",
+      "Notícias, equipas, calendário e contactos",
+      "Loja online",
+      "Bilheteira",
+      "Alojamento, SSL e manutenção",
     ],
   },
 ];
@@ -350,7 +339,7 @@ export const ROADMAP: RoadmapItem[] = [
   {
     when: "Janeiro 2027",
     title: "IA sobre os dados do clube",
-    body: "Resumos e sinais a partir do que já lá está, sem inventar o que ninguém registou. Entra no plano Vision AI.",
+    body: "Resumos e sinais a partir do que já lá está, sem inventar o que ninguém registou.",
   },
   {
     when: "Março 2027",
@@ -393,12 +382,12 @@ export const FAQ = [
     a: "Sim. O nome, a cor e o ícone do clube atravessam a consola, a app em todas as áreas e a página pública de adesão. Quem instala a app instala a app do clube.",
   },
   {
-    q: "O que é o plano Vision AI, e porque aparece se ainda não existe?",
-    a: "É o passo a seguir ao Connect: o vídeo que o clube já grava transformado em dados. Cada jogador seguido ao longo do jogo, distância e zonas por atleta, clips ligados ao lance e a leitura do adversário. Aparece porque um clube escolhe plataforma uma vez e fica anos com ela, e o preço à vista permite orçamentar a época. Ainda não o vendemos, e por isso não tem período de teste.",
+    q: "O que traz o Connect Pro?",
+    a: "O site do clube, ligado à plataforma. As notícias, as equipas e o calendário saem do que o clube já tem na consola, e a loja e a bilheteira vendem pelo próprio site. Tratamos do domínio .pt, do alojamento e da manutenção. Ainda não está à venda, e por isso não tem período de teste.",
   },
   {
-    q: "Como é cobrado o Vision AI?",
-    a: "Por análises, e não por jogador ou por equipa. Analisar um jogo custa tempo de máquina, e um clube que analisa dois jogos por mês não deve pagar o mesmo que um que analisa vinte. O plano começa nos 29,99 € por mês com cinco análises de jogo, e 49,99 € analisa até dez. Se precisares de mais, ou de um mês de pico a meio da época, fala connosco e estende-se.",
+    q: "O domínio do site fica em nome de quem?",
+    a: "Do clube. Registamo-lo e renovamo-lo nós enquanto o plano estiver ativo. Se o clube já tiver um domínio, usa-se esse.",
   },
   {
     q: "A IA vai inventar estatísticas sobre os nossos atletas?",

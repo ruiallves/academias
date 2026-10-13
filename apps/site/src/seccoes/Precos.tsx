@@ -6,9 +6,9 @@ import { ANNUAL_DISCOUNT, annualTotal, euro, PLANS } from "@/lib/content";
 /**
  * Os planos.
  *
- * Três blocos lado a lado. O recomendado é o escuro. O Vision AI está na mesa
- * com o preço à vista e sem botão de experimentar: ainda não se vende, e o
- * preço serve para o clube poder contar com ele no orçamento da época.
+ * Três blocos lado a lado. O recomendado é o escuro. O Connect Pro está na
+ * mesa com o preço à vista e sem botão de experimentar: ainda não se vende, e
+ * o preço serve para o clube poder contar com ele no orçamento da época.
  *
  * Em anual mostra-se o equivalente mensal em grande e o total do ano por
  * baixo, que é como uma pessoa compara com o que já paga.
@@ -23,8 +23,8 @@ export function Precos({ pagina = false }: { pagina?: boolean }) {
           <div>
             {pagina ? <h1 className="titulo t1">Planos<span className="ponto">.</span></h1> : <h2 className="titulo t1">Planos<span className="ponto">.</span></h2>}
             <p className="lede mt-6">
-              A Consola é o clube por dentro. O Connect junta as famílias, os sócios e os pagamentos. O Vision AI vem a
-              seguir e transforma o vídeo dos jogos em dados.
+              A Consola é o clube por dentro. O Connect junta as famílias, os sócios e os pagamentos. O Connect Pro
+              acrescenta o site do clube.
             </p>
           </div>
 
@@ -52,7 +52,7 @@ export function Precos({ pagina = false }: { pagina?: boolean }) {
                 <div className="flex items-start justify-between gap-3">
                   <h3 className="titulo plano-nome">{p.name}</h3>
                   {p.featured && <span className="etiqueta etiqueta-viva shrink-0">Recomendado</span>}
-                  {p.soon && <span className="etiqueta etiqueta-breve shrink-0">Em breve</span>}
+                  {p.soon && <span className="etiqueta etiqueta-breve shrink-0">Brevemente</span>}
                 </div>
                 <p className="plano-linha">{p.tagline}</p>
 
@@ -62,7 +62,7 @@ export function Precos({ pagina = false }: { pagina?: boolean }) {
                   <span>por mês</span>
                 </div>
                 <p className="plano-nota">
-                  {p.priceNote ?? (anual ? `${euro(annualTotal(p.monthly))} por ano, faturado à cabeça` : "Faturado mensalmente")}
+                  {p.priceNote ?? (anual && !p.soon ? `${euro(annualTotal(p.monthly))} por ano, faturado à cabeça` : "Faturado mensalmente")}
                 </p>
 
                 <ul className="plano-lista">
@@ -90,7 +90,7 @@ export function Precos({ pagina = false }: { pagina?: boolean }) {
 
         <p className="mt-7 max-w-[76ch] text-[0.92rem] leading-relaxed text-texto-3">
           Trinta dias com tudo o que já existe, sem cartão. Depois disso, muda-se de plano ou cancela-se sem período
-          mínimo, e os dados do clube saem contigo. O Vision AI ainda não se vende e cobra-se por análises de jogo.
+          mínimo, e os dados do clube saem contigo. O Connect Pro ainda não está à venda.
         </p>
       </div>
     </section>

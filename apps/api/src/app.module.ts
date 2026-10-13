@@ -116,6 +116,13 @@ import { AiWorkerGuard } from "./ai/ai-worker.guard";
 import { LegalController } from "./legal/legal.controller";
 import { LegalAdminController } from "./legal/legal-admin.controller";
 import { LegalAdminService } from "./legal/legal-admin.service";
+import { SiteController } from "./site/site.controller";
+import { SiteService } from "./site/site.service";
+import { SitePublicoController } from "./site/site-publico.controller";
+import { SitePublicoService } from "./site/site-publico.service";
+import { SiteDominioController } from "./site/site-dominio.controller";
+import { SiteDominioService } from "./site/site-dominio.service";
+import { SiteRevalidarService } from "./site/site-revalidar.service";
 
 /**
  * Monólito modular.
@@ -208,6 +215,10 @@ import { LegalAdminService } from "./legal/legal-admin.service";
     // Documentos legais: leitura pública, aceitação autenticada, gestão na plataforma.
     LegalController,
     LegalAdminController,
+    // O site do clube: o menu Website da consola, o site público (sem sessão) e o domínio no painel.
+    SiteController,
+    SitePublicoController,
+    SiteDominioController,
   ],
   providers: [
     // O throttler como guard global — aplica-se a todas as rotas, incluindo as
@@ -272,6 +283,10 @@ import { LegalAdminService } from "./legal/legal-admin.service";
     EvaluationsService,
     PhotosService,
     ClubLogoService,
+    SiteService,
+    SitePublicoService,
+    SiteDominioService,
+    SiteRevalidarService,
     StorageService,
     EspacoService,
     ReportsService,

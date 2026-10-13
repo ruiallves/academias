@@ -1,3 +1,11 @@
+13/10/2026
+- Pagamentos, identificador na euPago: quando o identificador não cabe, quem perde o apelido é quem pagou, e o atleta fica com o nome e o apelido. Antes cortava-se primeiro o atleta, e num clube de nome comprido via-se "GUILHERME-CATARINA_LOPES". O nome completo de quem pagou continua nas Mensalidades da consola.
+
+12/10/2026
+- Pagamentos: um clube sem a sua chave da euPago nunca cobra pela conta da plataforma. Mensalidades, quotas de sócio e mandatos de débito direto recusam pagar ("pagamentos desativados") em vez de seguirem pela chave geral, e a app do sócio só mostra "pagar online" com a chave do clube. Já estava travado pelo interruptor dos pagamentos desde 01/10; fica também à porta de cada cobrança.
+- Inscrições, boletim de futebol e futsal (Modelo 2): a declaração do representante legal passa a vir preenchida para jogadores menores, com o nome do encarregado ligado ao atleta, "NIC" no tipo de documento e o SIM das comunicações da FPF marcado. O número e a validade do documento ficam em branco, para escrever à mão. O nome cabe sempre na linha, por comprido que seja (encolhe e, se for preciso, passa a duas linhas).
+- App do clube, ao criar conta de encarregado: o campo passou a "O teu nome completo", com a nota de que sai no boletim de inscrição do educando, e um aviso quando se escreve só um nome.
+
 11/10/2026
 - Inscrições: um jogador com número de licença na modalidade nunca sai como "Primeira Inscrição". Contava só uma licença de uma época anterior, e quem tinha a licença escrita na época atual (ou uma inscrição já gerada como primeira) saía com o X na primeira inscrição. Passa a Revalidação, que se pode mudar para Transferência. A única exceção é uma inscrição já validada, porque a licença nasceu dela.
 

@@ -5,7 +5,7 @@ import { cx } from "@/components/primitives";
 import { Bloco, Campo, campoClass, Leitura } from "@/components/definicoes/ui";
 import { ClubMark } from "@/components/ClubMark";
 import { useStore } from "@/lib/store";
-import { gravarSite, useSite, type Layout, type SiteDoClube } from "@/lib/website";
+import { enderecoDoSite, guardarConfig, useSite, type Layout, type SiteDoClube } from "@/lib/website";
 import { mostrarOk } from "@/lib/avisos";
 
 /* -------------------------------------------------------------------------- */
@@ -37,9 +37,15 @@ export function Identidade() {
     onChange: (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => setD({ ...d, [k]: e.target.value }),
   });
 
-  const guardar = () => {
-    gravarSite(slug, (s) => ({ ...s, identidade: d }));
-    mostrarOk("Identidade guardada.");
+  const [aGravar, setAGravar] = useState(false);
+  const guardar = async () => {
+    setAGravar(true);
+    try {
+      await guardarConfig({ identidade: d }, { imediato: true });
+      mostrarOk("Identidade guardada.");
+    } finally {
+      setAGravar(false);
+    }
   };
 
   return (
@@ -108,7 +114,7 @@ export function Identidade() {
         <button type="button" className="ctl-ghost" disabled={!mudou} onClick={() => setD(site.identidade)}>
           Desfazer
         </button>
-        <button type="button" className="ctl-primary" disabled={!mudou} onClick={guardar}>
+        <button type="button" className="ctl-primary" disabled={!mudou || aGravar} onClick={() => void guardar()}>
           Guardar
         </button>
       </div>
@@ -143,7 +149,7 @@ export function Aspeto() {
                 role="radio"
                 aria-checked={on}
                 onClick={() => {
-                  gravarSite(slug, (s) => ({ ...s, layout: l.key }));
+                  void guardarConfig({ layout: l.key }, { imediato: true });
                   mostrarOk(`Layout ${l.nome} escolhido.`);
                 }}
                 className={cx(
@@ -228,84 +234,45 @@ function Miniatura({ layout }: { layout: Layout }) {
 /* -------------------------------------------------------------------------- */
 
 /**
- * O domínio. Registá-lo e apontá-lo é trabalho nosso (ver
- * `docs/08-site-do-clube.md`); aqui o clube diz qual é, e vê o que falta.
+ * O domínio. Só leitura: registá-lo e ligá-lo é trabalho nosso, no painel da
+ * plataforma (ver `docs/08-site-do-clube.md`). Aqui o clube vê onde o site
+ * está e qual é o domínio, se já tiver um.
  */
 export function Dominio() {
   const store = useStore();
   const slug = store.academy.slug;
   const site = useSite(slug);
-  const [dominio, setDominio] = useState(site.dominio);
-  const limpo = dominio.trim().toLowerCase().replace(/^https?:\/\//, "").replace(/^www\./, "").replace(/\/.*$/, "");
-  const valido = !limpo || /^[a-z0-9-]+(\.[a-z0-9-]+)+$/.test(limpo);
-  const preview = `${slug}.sites.academias.pt`;
+  const preview = `${slug}.website.academias.pt`;
 
   return (
     <div>
-      <Bloco titulo="Domínio do clube" descricao="Sem www. Registamos o domínio em nome do clube, que fica o titular, e tratamos do resto.">
-        <div className="flex flex-wrap items-start gap-2">
-          <div className="min-w-0 flex-1">
-            <input
-              className={cx(campoClass, !valido && "border-risk")}
-              placeholder="oclube.pt"
-              value={dominio}
-              onChange={(e) => setDominio(e.target.value)}
-              aria-invalid={!valido}
-              aria-label="Domínio do clube"
-            />
-            {!valido && <p className="mt-1.5 text-meta text-risk">Escreve só o domínio, por exemplo oclube.pt.</p>}
-          </div>
-          <button
-            type="button"
-            className="ctl-primary h-10"
-            disabled={!valido || limpo === site.dominio}
-            onClick={() => {
-              setDominio(limpo);
-              gravarSite(slug, (s) => ({ ...s, dominio: limpo }));
-              mostrarOk(limpo ? "Domínio guardado." : "Domínio removido.");
-            }}
-          >
-            Guardar
-          </button>
-        </div>
+      <Bloco
+        titulo="Domínio do clube"
+        descricao="O domínio .pt do clube é registado em nome do clube, que fica o titular. Para ligar ou mudar o domínio, fala connosco: tratamos do registo e da ligação."
+      >
+        {site.dominio ? (
+          <Copiavel texto={site.dominio} />
+        ) : (
+          <p className="rounded-[10px] bg-sunken/60 px-3.5 py-2.5 text-meta text-ink-2">Ainda sem domínio próprio. O site está no endereço abaixo.</p>
+        )}
       </Bloco>
 
-      <Bloco titulo="Enquanto o domínio não aponta" descricao="O site já funciona neste endereço, para se ir preparando.">
+      <Bloco
+        titulo={site.dominio ? "O endereço de pré-visualização" : "O endereço do site"}
+        descricao={
+          site.dominio
+            ? "Com o domínio ligado, este endereço leva para o domínio do clube."
+            : "É aqui que o site está enquanto o clube não tiver domínio próprio."
+        }
+      >
         <Copiavel texto={preview} />
+        <a href={enderecoDoSite(slug, site.dominio)} target="_blank" rel="noopener noreferrer" className="mt-2 inline-block text-meta font-medium text-signal-ink hover:underline">
+          Abrir o site
+        </a>
       </Bloco>
-
-      {site.dominio && (
-        <Bloco titulo="O que configurar no DNS" descricao="Feito por nós. Fica aqui para se saber o que está pedido.">
-          <div className="overflow-hidden rounded-[12px] border border-line">
-            <table className="w-full text-meta">
-              <thead className="bg-sunken/40 text-left text-ink-3">
-                <tr>
-                  <th className="px-3 py-2 font-medium">Tipo</th>
-                  <th className="px-3 py-2 font-medium">Nome</th>
-                  <th className="px-3 py-2 font-medium">Valor</th>
-                </tr>
-              </thead>
-              <tbody className="font-mono text-ink">
-                <tr className="border-t border-line">
-                  <td className="px-3 py-2">A</td>
-                  <td className="px-3 py-2">{site.dominio}</td>
-                  <td className="px-3 py-2">76.76.21.21</td>
-                </tr>
-                <tr className="border-t border-line">
-                  <td className="px-3 py-2">CNAME</td>
-                  <td className="px-3 py-2">www.{site.dominio}</td>
-                  <td className="px-3 py-2">cname.vercel-dns.com</td>
-                </tr>
-              </tbody>
-            </table>
-          </div>
-          <p className="mt-2 text-meta text-ink-3">O certificado SSL é emitido sozinho quando o DNS apontar. Estado: por ligar.</p>
-        </Bloco>
-      )}
     </div>
   );
 }
-
 function Copiavel({ texto }: { texto: string }) {
   const [copiado, setCopiado] = useState(false);
   return (

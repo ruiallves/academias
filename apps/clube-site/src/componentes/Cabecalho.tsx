@@ -12,14 +12,14 @@ import { TrocarLayout } from "./TrocarLayout";
  * faz (bilhetes, loja, sócio, redes) e a barra branca com quem somos e por
  * onde se anda. Em telemóvel o segundo andar fecha num menu.
  */
-export function Cabecalho({ clube }: { clube: Clube }) {
+export function Cabecalho({ clube, trocarLayout = false }: { clube: Clube; trocarLayout?: boolean }) {
   return (
     <header className="sticky top-0 z-40">
       <div className="bg-night text-night-ink-2">
         <div className="container-site flex h-10 items-center justify-between text-[0.8125rem]">
           <p className="hidden sm:block">Site oficial · {clube.city ? `${clube.city}` : clube.shortName}</p>
           <div className="flex items-center gap-1 sm:ml-auto">
-            <TrocarLayout atual="classico" />
+            {trocarLayout && <TrocarLayout atual="classico" />}
             {/* Abaixo de `sm` só os ícones: com o interruptor de layout, os
                 três rótulos não cabiam em 375px. O nome fica no aria-label. */}
             {ATALHOS.map(({ href, label, Icone }) => (

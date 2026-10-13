@@ -8,6 +8,7 @@ import { useApi } from "@/lib/query";
 import { type AcademyDetail as Detail, type Me } from "@/lib/types";
 import { EspacoDoClubePanel } from "@/components/EspacoDoClubePanel";
 import { EupagoDoClubePanel } from "@/components/EupagoDoClubePanel";
+import { SiteDoClubePanel } from "@/components/SiteDoClubePanel";
 import { CondicoesDoClubePanel } from "@/components/CondicoesDoClubePanel";
 import { MensalidadesDaPlataformaPanel } from "@/components/MensalidadesDaPlataformaPanel";
 import { ESTADO_LABEL, ESTADO_TOM, estadoComercial } from "@/lib/estado";
@@ -148,6 +149,9 @@ export default function AcademyDetail({ me }: { me: Me }) {
           espaco={d.storage}
           mayEdit={me.role === "OWNER" || me.role === "ADMIN"}
         />
+
+        {/* O site do clube: onde está, e o domínio próprio. Ver `SiteDoClubePanel`. */}
+        <SiteDoClubePanel key={`site-${d.id}`} academyId={d.id} mayEdit={me.role === "OWNER" || me.role === "ADMIN"} />
 
         {/* Para onde vai o dinheiro do clube, e o webhook dele. Ver `EupagoDoClubePanel`. */}
         {d.eupago && (

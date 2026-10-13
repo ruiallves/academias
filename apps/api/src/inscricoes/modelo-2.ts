@@ -1,5 +1,5 @@
 import type { PDFFont, PDFPage } from "pdf-lib";
-import { escrever, escreverEmCasas, maiusculas, marcar, partirNome, type Caixa } from "./desenho";
+import { escrever, escreverEmCasas, escreverQueCaiba, maiusculas, marcar, partirNome, type Caixa } from "./desenho";
 import type { Folha, Tipo } from "./regras";
 
 /**
@@ -57,6 +57,10 @@ const C = {
   estatuto: { x1: 440, y1: 526, x2: 547, y2: 540 },
   clubeCodigo: { x1: 195, y1: 261, x2: 245, y2: 274, casas: 4 },
   clubeNome: { x1: 288, y1: 261, x2: 516, y2: 275 },
+  /* A declaração do representante legal, no fim da página. */
+  representanteNome: { x1: 68, y1: 132, x2: 259, y2: 146 },
+  representanteDoc: { x1: 480, y1: 132, x2: 517, y2: 145, casas: 3 },
+  representanteFpfSim: { x1: 433, y1: 34, x2: 447, y2: 48 },
 } satisfies Record<string, Caixa>;
 
 const TIPO: Record<Tipo, Caixa> = {
@@ -135,6 +139,19 @@ export function desenharModelo2(page: PDFPage, f: Folha, letra: PDFFont, negrito
   if (CATEGORIA[f.categoria]) cruz(CATEGORIA[f.categoria]);
 
   for (const sim of AUTORIZACOES_SIM) cruz(sim);
+
+  /*
+   * A declaração do representante legal, quando o jogador é menor (pedido do
+   * Rui, 12/10): o nome do encarregado, "NIC" no documento, e o SIM das
+   * comunicações da FPF. O número e a validade do documento ficam em branco,
+   * para escrever à mão; a plataforma não tem o CC dos pais. O nome cabe
+   * sempre, por comprido que seja (`escreverQueCaiba`).
+   */
+  if (f.representante) {
+    escreverQueCaiba(page, letra, C.representanteNome, f.representante);
+    casas(C.representanteDoc, "NIC");
+    cruz(C.representanteFpfSim);
+  }
 
   // Um código maior do que as quatro casas do modelo escreve-se seguido.
   if (f.clube.codigo && f.clube.codigo.length <= (C.clubeCodigo.casas ?? 0)) casas(C.clubeCodigo, f.clube.codigo);

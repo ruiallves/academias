@@ -5,7 +5,7 @@ import { Dialog, DialogField, dialogInputClass } from "@/components/Dialog";
 import { Interruptor } from "@/components/definicoes/ui";
 import { MapaDoRecinto } from "@academia/ui/estadio";
 import { useStore, type ApiMatch } from "@/lib/store";
-import { gravarSite, novoId, useSite, type BilheteiraDoJogo, type Recinto } from "@/lib/website";
+import { guardarBilheteira, novoId, useSite, type BilheteiraDoJogo, type Recinto } from "@/lib/website";
 import { mostrarOk } from "@/lib/avisos";
 
 const euro = (v: number) => new Intl.NumberFormat("pt-PT", { style: "currency", currency: "EUR" }).format(v);
@@ -58,11 +58,10 @@ export function Bilheteira({ onIrParaEstadio }: { onIrParaEstadio: () => void })
   const de = (id: string) => (site.bilheteira[id] ? normalizar(site.bilheteira[id]) : undefined);
   const recintoPadrao = site.recintos[0] ?? null;
 
-  const alternar = (m: ApiMatch) =>
-    gravarSite(slug, (s) => {
-      const atual = s.bilheteira[m.id] ? normalizar(s.bilheteira[m.id]) : padrao(recintoPadrao);
-      return { ...s, bilheteira: { ...s.bilheteira, [m.id]: { ...atual, aberta: !atual.aberta } } };
-    });
+  const alternar = (m: ApiMatch) => {
+    const atual = de(m.id) ?? padrao(recintoPadrao);
+    void guardarBilheteira(m.id, { ...atual, aberta: !atual.aberta }).catch(() => undefined);
+  };
 
   if (jogos.length === 0) {
     return <Empty icon={Ticket} title="Não há jogos em casa marcados" detail="Os jogos em casa do calendário aparecem aqui para abrir a venda de bilhetes." />;
@@ -122,8 +121,8 @@ export function Bilheteira({ onIrParaEstadio }: { onIrParaEstadio: () => void })
           recintos={site.recintos}
           inicial={de(editar.id) ?? padrao(recintoPadrao)}
           onClose={() => setEditar(null)}
-          onGuardar={(b) => {
-            gravarSite(slug, (s) => ({ ...s, bilheteira: { ...s.bilheteira, [editar.id]: b } }));
+          onGuardar={async (b) => {
+            await guardarBilheteira(editar.id, b);
             mostrarOk(b.aberta ? "Bilheteira aberta." : "Bilheteira guardada.");
             setEditar(null);
           }}
@@ -146,7 +145,7 @@ function EditarBilheteira({
   recintos: Recinto[];
   inicial: BilheteiraDoJogo;
   onClose: () => void;
-  onGuardar: (b: BilheteiraDoJogo) => void;
+  onGuardar: (b: BilheteiraDoJogo) => Promise<void>;
 }) {
   const [b, setB] = useState(inicial);
   const [precos, setPrecos] = useState<Record<string, string>>(() =>
@@ -200,11 +199,12 @@ function EditarBilheteira({
             className="ctl-primary"
             disabled={!tiposOk || !lotacaoOk}
             onClick={() =>
-              onGuardar({
+              // Se o servidor recusar, o erro aparece no cartão de erros e o diálogo fica aberto.
+              void onGuardar({
                 ...b,
                 lotacao: lotacao.trim() ? Number(lotacao) : null,
                 tipos: b.tipos.map((t) => ({ ...t, nome: t.nome.trim(), preco: Math.round(numero(precos[t.id]) * 100) / 100 })),
-              })
+              }).catch(() => undefined)
             }
           >
             Guardar

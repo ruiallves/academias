@@ -573,9 +573,31 @@ function Dados({
 
   return (
     <form onSubmit={criar} className="space-y-4">
-      <Campo label="O teu nome">
-        <input value={name} onChange={(e) => setName(e.target.value)} autoFocus className={INPUT} />
+      {/*
+        O nome completo, e não "Joana": é o que sai na declaração do representante
+        legal do boletim de inscrição do educando (Modelo 2 da FPF). Sugere-se,
+        não se obriga; com uma palavra só o aviso fica mais visível.
+      */}
+      <Campo label="O teu nome completo" hint="como no Cartão de Cidadão">
+        <input
+          value={name}
+          onChange={(e) => setName(e.target.value)}
+          autoFocus
+          autoComplete="name"
+          placeholder="Nome e apelidos"
+          className={INPUT}
+        />
       </Campo>
+      <p
+        className={cx(
+          "-mt-2 text-[12px] leading-snug",
+          name.trim() && name.trim().split(/\s+/).length < 2 ? "font-medium text-warn" : "text-ink-3",
+        )}
+      >
+        {name.trim() && name.trim().split(/\s+/).length < 2
+          ? "Escreve também os apelidos: o nome completo sai no boletim de inscrição do teu educando."
+          : "Sai no boletim de inscrição do teu educando, na declaração do encarregado."}
+      </p>
 
       <Campo label="Sou">
         <div className="flex gap-1.5">

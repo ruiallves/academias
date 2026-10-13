@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
-import Image from "next/image";
 import Link from "next/link";
+import { Foto } from "@/componentes/Foto";
 import { notFound } from "next/navigation";
 import { ArrowLeft, Package, Truck } from "lucide-react";
 import { fonte } from "@/dados/fonte";
@@ -17,7 +17,7 @@ type Props = { params: Promise<{ clube: string; slug: string }> };
 export async function generateMetadata({ params }: Props): Promise<Metadata> {
   const { clube: slug, slug: id } = await params;
   const p = await fonte.produto(slug, id);
-  return p ? { title: p.name, description: p.description, openGraph: { images: [{ url: p.image }] } } : {};
+  return p ? { title: p.name, description: p.description, openGraph: { images: p.image ? [{ url: p.image }] : undefined } } : {};
 }
 
 /** Um produto: foto grande, preço, tamanho, comprar. */
@@ -38,7 +38,7 @@ export default async function Produto({ params }: Props) {
       </div>
       <div className="container-site mt-4 grid gap-8 lg:grid-cols-[1.1fr_1fr] lg:gap-14">
         <div className="relative aspect-[9/11] overflow-hidden rounded-card bg-sunken">
-          <Image src={produto.image} alt={produto.name} fill priority sizes="(min-width: 1024px) 50vw, 100vw" className="object-cover" />
+          <Foto src={produto.image} alt={produto.name} priority sizes="(min-width: 1024px) 50vw, 100vw" className="" />
         </div>
         <div className="lg:py-6">
           <p className="eyebrow text-signal-ink">{produto.category}</p>

@@ -19,7 +19,7 @@ const LARGURA_BARRA = "6.25rem";
  * Em telemóvel a barra lateral não cabe: fica uma barra de topo com o
  * emblema e o menu.
  */
-export function CascaPorto({ clube, children }: { clube: Clube; children: React.ReactNode }) {
+export function CascaPorto({ clube, trocarLayout = false, children }: { clube: Clube; trocarLayout?: boolean; children: React.ReactNode }) {
   return (
     <div className="flex min-h-dvh flex-col" style={{ ["--barra" as string]: LARGURA_BARRA }}>
       <BarraLateral clube={clube} />
@@ -33,7 +33,7 @@ export function CascaPorto({ clube, children }: { clube: Clube; children: React.
             </Link>
             <p className="hidden text-[0.8125rem] lg:block">Site oficial{clube.city ? ` · ${clube.city}` : ""}</p>
             <div className="ml-auto hidden items-center gap-1 text-[0.8125rem] lg:flex">
-              <TrocarLayout atual="porto" sobre="claro" />
+              {trocarLayout && <TrocarLayout atual="porto" sobre="claro" />}
               {ATALHOS.map(({ href, label, Icone }) => (
                 <Link key={href} href={href} className="inline-flex h-11 items-center gap-1.5 px-2.5 font-semibold text-ink transition hover:text-signal-ink">
                   <Icone size={15} aria-hidden />
@@ -46,7 +46,7 @@ export function CascaPorto({ clube, children }: { clube: Clube; children: React.
               </a>
             </div>
             <div className="ml-auto flex items-center gap-2 lg:hidden">
-              <TrocarLayout atual="porto" sobre="claro" />
+              {trocarLayout && <TrocarLayout atual="porto" sobre="claro" />}
               <MenuMovel clube={clube} topo="top-14" />
             </div>
           </div>

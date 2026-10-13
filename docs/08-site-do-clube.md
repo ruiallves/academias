@@ -40,7 +40,7 @@ postos pelo proxy em cada pedido, incluindo os prefetch do router.
 | `Clube.layout` | Como é | Referência |
 | --- | --- | --- |
 | `classico` | claro, cabeçalho em dois andares, herói com três notícias | adfafe.pt |
-| `porto` | escuro, barra lateral fixa com ícones, carrossel a toda a largura, notícias em lista com cartaz ao lado | fcporto.pt |
+| `porto` | claro, barra lateral fixa com ícones, carrossel a toda a largura, notícias em lista com cartaz ao lado | fcporto.pt |
 
 O layout é uma escolha do clube e viaja no caminho interno
 (`/[clube]/[layout]/...`), não num cookie lido pelas páginas: assim cada
@@ -52,20 +52,22 @@ ficam escuras no `porto` pelos tokens (`[data-layout="porto"]` em
 `globals.css`), com a cor do clube clareada até se ler sobre o escuro
 (`estiloDoClube` em `lib/tema.ts`).
 
-Para pré-visualizar, o interruptor na faixa de cima (ao lado da Bilheteira)
-grava o cookie `site-layout` e o proxy sobrepõe a escolha do clube. É uma
-ferramenta de montagem; quando o clube escolher na consola, sai do site.
+O interruptor de layout na faixa de cima só aparece em demonstração
+(`SITE_FONTE=demo`). Com dados reais o layout é o que o clube escolheu no
+menu Website, e o cookie `site-layout` é ignorado.
 
 `src/dados/dominios.ts` responde ao "de que clube é?", por ordem:
 
-1. `localhost` e `<slug>.localhost`: desenvolvimento. Sem subdomínio vale
-   `SITE_DEMO_SLUG`.
-2. `<slug>.<SITE_PREVIEW_DOMAIN>` (`monteverde.sites.academias.pt`): a
-   pré-visualização de um clube antes de o domínio dele apontar para aqui.
-3. O domínio do clube: com `SITE_FONTE=api`, pela API, com cache em memória
-   de cinco minutos.
+1. `localhost`, `<slug>.localhost` e `…vercel.app`: desenvolvimento e os
+   endereços de cada deploy. Sem subdomínio vale `SITE_DEMO_SLUG`.
+2. `<slug>.<SITE_PREVIEW_DOMAIN>` (`ad-fafe.website.academias.pt`): o site de
+   um clube sem domínio próprio. Se o clube tiver domínio, redireciona para
+   ele (308), para o Google ver um site só.
+3. O domínio do clube: pergunta à API (`app.resolve_site_by_domain`), com
+   cache em memória de cinco minutos (trinta segundos para um "não há").
 
-Sem resposta, `/sem-clube`. Não se adivinha.
+Sem resposta, `/sem-clube`. Não se adivinha. O endereço oficial vai no
+`canonical` de cada página; os endereços `…vercel.app` levam `noindex`.
 
 ## De onde vêm os dados
 
@@ -73,49 +75,102 @@ Sem resposta, `/sem-clube`. Não se adivinha.
 
 | `SITE_FONTE` | O que faz |
 | --- | --- |
-| `demo` (omissão) | lê `src/dados/demo/monteverde.ts`, um clube inventado. É o que corre hoje |
-| `api` | pede a `${SITE_API_URL}/public/sites/:slug/...`, com `revalidate: 60` e a etiqueta `clube:<slug>` |
+| `api` (produção) | pede a `${SITE_API_URL}/public/sites/:slug/...`, com `revalidate: 60` e a etiqueta `clube:<slug>` |
+| `demo` | lê `src/dados/demo/monteverde.ts`, um clube inventado, em qualquer endereço |
 
-As páginas só conhecem a `Fonte`. Os tipos (`tipos.ts`) seguem os nomes do
-esquema da API (`signalColor`, `opponent`, `isHome`, `maxAge`) para a troca
-ser passar o JSON e não traduzir modelos.
+## A API do site
 
-### Os endpoints públicos que faltam na API
+Migração `20261013120000_site_do_clube`: `Academy.siteDomain` (único) e
+`siteDomainRenewsAt`, e as tabelas `SiteConfig` (uma por clube: publicado,
+layout, identidade, equipas, recintos), `SiteNews`, `SiteSponsor`,
+`SiteProduct` e `SiteMatchTickets`, todas com RLS. Código em
+`apps/api/src/site/`.
 
-Tudo só de leitura, sem sessão, e só com o que o clube marcou como público.
-Treinos nunca: dizem onde estão crianças e a que horas.
+**Só clubes que publicaram.** Sem `SiteConfig.published`, os endpoints
+públicos respondem 404 e o domínio não resolve. Publicar é um interruptor na
+Visão geral do menu Website.
+
+**Só clubes no Connect Pro.** Migração `20261013160000_connect_pro`:
+`Plan.includesWebsite`, o plano `plan_connect_pro` e a função
+`app.academy_has_website(academyId)` (SECURITY DEFINER, porque as tabelas dos
+planos estão fechadas ao `academia_app`). Sem o plano (ou com a subscrição
+cancelada): o menu Website não aparece na consola (`academy.websiteIncluido`
+no arranque, filtrado em `navFor`), `/api/site` responde 403
+`SITE_NOT_IN_PLAN`, o público responde 404, o domínio não resolve e o painel
+recusa ligar domínio. Mudar o plano no painel liga ou desliga tudo isto.
+Código em `apps/api/src/site/plano.ts`.
+
+Públicos (`site-publico.controller.ts`, sem sessão, tecto de 2000 pedidos por
+minuto porque os sites de todos os clubes saem dos mesmos servidores do Vercel):
 
 ```
-GET /public/sites/por-dominio/:host        → { slug }
-GET /public/sites/:slug                    → Clube (identidade, morada, redes, direção, instalações, patrocinadores)
-GET /public/sites/:slug/noticias?limit&category
-GET /public/sites/:slug/noticias/:slug
-GET /public/sites/:slug/equipas            → só staff; plantel só se publicado, menores só com consentimento
-GET /public/sites/:slug/equipas/:slug
-GET /public/sites/:slug/jogos              → Match de todas as equipas, com tickets quando há bilheteira
+GET /public/sites/por-dominio/:host   → { slug, layout, dominio }
+GET /public/sites/:slug/resumo        → { slug, layout, dominio }
+GET /public/sites/:slug               → Clube
+GET /public/sites/:slug/noticias?limit&category      (só publicadas)
+GET /public/sites/:slug/noticias/:id
+GET /public/sites/:slug/equipas       → época em curso, sem as escondidas; plantel só se o clube o ligou
+GET /public/sites/:slug/equipas/:id
+GET /public/sites/:slug/jogos         → 90 dias para trás, 180 para a frente, das equipas visíveis, com bilhetes
 GET /public/sites/:slug/jogos/:id
-GET /public/sites/:slug/eventos            → CalendarEvent marcados como públicos
-GET /public/sites/:slug/produtos           → InventoryItem + InventoryVariant marcados para a loja
-GET /public/sites/:slug/produtos/:slug
+GET /public/sites/:slug/eventos       → [] (o calendário ainda não marca eventos públicos)
+GET /public/sites/:slug/produtos      (só visíveis)
+GET /public/sites/:slug/produtos/:id
 ```
 
-Ao publicar na consola, a API chama o site para invalidar a etiqueta do
-clube (`revalidateTag("clube:<slug>")`) e a alteração aparece em segundos.
+Treinos nunca saem: dizem onde estão crianças e a que horas.
+
+Consola (`site.controller.ts`, `settings:write`): `GET/PATCH /api/site`,
+`POST/PATCH/DELETE /api/site/noticias|produtos|patrocinadores`,
+`PUT/DELETE /api/site/bilheteira/:matchId` (só jogos em casa) e
+`POST /api/site/imagens` (autoriza o carregamento para o bucket público
+`site-publico` e devolve o endereço). Uma imagem só se grava se for do
+próprio clube nesse bucket. O que vive em JSON é limpo à escrita e à leitura
+(`site.tipos.ts`): links `javascript:` saem, recintos partidos são reparados.
+
+Painel da plataforma (`site-dominio.controller.ts`, `OWNER`/`ADMIN`):
+`GET/PUT/DELETE /api/platform/academies/:id/site-dominio`. Ligar acrescenta
+o domínio e o `www` (que redireciona) ao projeto do Vercel e grava
+`siteDomain`.
+
+A cada escrita, a API avisa o site (`SiteRevalidarService` →
+`POST /api/revalidar` no site, com segredo partilhado) e a cache desse clube
+cai: a mudança aparece na página seguinte.
+
+`npm run test:site --workspace @academia/api` testa tudo isto contra uma API a
+correr (por omissão em :3011), com as contas do Life Club, e deixa o clube
+como o encontrou.
+
+### Variáveis
+
+| Onde | Variável | Valor |
+| --- | --- | --- |
+| Vercel (site) | `SITE_FONTE` | `api` (já no `.env.production`) |
+| Vercel (site) | `SITE_API_URL` | `https://api.academias.pt` (já no `.env.production`) |
+| Vercel (site) | `SITE_PREVIEW_DOMAIN` | `website.academias.pt` (já no `.env.production`) |
+| Vercel (site) | `SITE_REVALIDATE_SECRET` | um segredo longo, **igual** ao da API |
+| Railway (API) | `SITE_REVALIDATE_URL` | `https://<projeto-do-site>.vercel.app/api/revalidar` |
+| Railway (API) | `SITE_REVALIDATE_SECRET` | o mesmo segredo |
+| Railway (API) | `VERCEL_TOKEN` | token da equipa no Vercel (Account Settings → Tokens) |
+| Railway (API) | `VERCEL_SITE_PROJECT_ID` | o id do projeto do site (Settings → General) |
+| Railway (API) | `VERCEL_TEAM_ID` | o id da equipa (só se o projeto for de uma equipa) |
+| Railway (API) | `SITE_PREVIEW_DOMAIN` | `website.academias.pt` (o painel mostra o endereço com ele) |
+
+Sem as duas da revalidação, o site atualiza sozinho ao fim de um minuto. Sem
+as do Vercel, "Ligar" grava o domínio no clube e o painel avisa que falta
+acrescentá-lo ao projeto à mão.
 
 ### O que ainda não existe
 
-- Modelos: `NewsPost` (a `Announcement` é interna e por público), o domínio
-  do clube em `Academy` (`siteDomain`), o consentimento de imagem por
-  atleta, os bilhetes (`MatchTicket`: `Ticket` já é o suporte) e as
-  encomendas da loja.
-- Pagamento de bilhetes e da loja: pela euPago, pelo canal do clube, como as
-  mensalidades. Os botões no site dizem hoje que ainda não está ligado.
+- A venda: encomendas, pagamento (euPago, pelo canal do clube), bilhetes com
+  QR e o leitor à entrada. O site mostra os bilhetes e a loja, e os botões de
+  pagar dizem que ainda não está ativo.
 - Faturação: a fatura tem de sair de software certificado pela AT. O clube
-  fatura no programa dele; nós damos a lista de vendas. Validar com um
-  contabilista antes de vender.
-- O formulário de contactos cria um `Ticket` na consola do clube, como o do
-  site academias.pt faz para a plataforma.
-- O menu **Site** na consola, para o clube editar tudo isto.
+  fatura no programa dele. Validar com um contabilista antes de vender.
+- Uma caixa de mensagens na consola. O formulário de contactos abre o email
+  de quem escreve, já preenchido, para o email do clube.
+- Eventos públicos no calendário, direção e instalações na página do clube.
+- A permissão própria (`website:*`). Hoje é `settings:write`.
 
 ## Correr
 
@@ -150,4 +205,27 @@ renova o SSL. Variáveis: as de `.env.production`.
 Por clube: registar o domínio com o **clube como titular** e nós como
 contacto técnico; `A` do apex e `CNAME` do `www` para o Vercel; adicionar o
 domínio ao projeto; gravar `siteDomain` no clube. Enquanto o domínio não
-aponta, o clube vê o site em `<slug>.sites.academias.pt`.
+aponta, o clube vê o site em `<slug>.website.academias.pt`.
+
+### Pré-visualizações em `<slug>.website.academias.pt`
+
+O DNS do `academias.pt` é gerido no **dominios.pt** (SOA em
+`dns1.host-redirect.com`), e não no Vercel: o `academias.pt` só tem um
+registo a apontar o site de marketing para o Vercel. O Vercel só aceita
+wildcards (`*.website.academias.pt`) com o domínio nos nameservers dele, por
+isso, enquanto for assim, cada pré-visualização é um endereço exato:
+
+1. No projeto do site no Vercel, acrescentar `<slug>.website.academias.pt`.
+2. No DNS do dominios.pt, um `CNAME` `<slug>.website` para o valor que o
+   Vercel mostrar. Um registo com nome exato ganha ao `*` do Railway, que
+   não se toca.
+
+Para muitos clubes: um domínio só de pré-visualizações com os nameservers no
+Vercel desde o início (o wildcard funciona logo), ou passar o DNS do
+`academias.pt` para o Vercel **depois** de recriar lá todos os registos de
+hoje (site, `api`, `*` do Railway, `admin`, os do Resend). Mudar os
+nameservers antes disso deixa os clubes sem consola nem app.
+
+Com `SITE_FONTE=demo` qualquer pré-visualização mostra o clube de
+demonstração (`dominios.ts`), e os endereços `…vercel.app` também, com
+`SITE_DEMO_SLUG`.

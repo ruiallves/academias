@@ -1,7 +1,7 @@
 import { useEffect, useRef } from "react";
-import { useSearchParams } from "react-router-dom";
+import { Navigate, useSearchParams } from "react-router-dom";
 import { PageHeader } from "@/components/Shell";
-import { cx } from "@/components/primitives";
+import { Empty, Loading, cx } from "@/components/primitives";
 import {
   ExternalLink,
   Globe,
@@ -21,7 +21,7 @@ import {
 } from "@/lib/icons";
 import { useMobile } from "@/lib/viewport";
 import { useStore } from "@/lib/store";
-import { enderecoDoSite, useSite } from "@/lib/website";
+import { enderecoDoSite, useCarregamentoDoSite, useSite } from "@/lib/website";
 import { VisaoGeral } from "./VisaoGeral";
 import { Identidade, Aspeto, Dominio } from "./Configuracao";
 import { Noticias } from "./Noticias";
@@ -31,8 +31,8 @@ import { Estadio } from "./Estadio";
 import { Equipas, Patrocinadores, Mensagens } from "./Conteudo";
 
 /**
- * Website — o site do clube, gerido daqui. **Só em DEV** (ver `GRUPO_WEBSITE`
- * em `lib/nav.ts` e a rota em `App.tsx`).
+ * Website — o site do clube, gerido daqui. Só para clubes com o site no plano
+ * (Connect Pro): ver `GRUPO_WEBSITE` em `lib/nav.ts`.
  *
  * O desenho é o das Definições: as secções à esquerda, uma de cada vez à
  * direita, e a secção no endereço (`?secao=noticias`) para o F5 e o voltar
@@ -73,9 +73,17 @@ function secaoDe(valor: string | null): SecaoKey {
   return SECOES.some((s) => s.key === valor) ? (valor as SecaoKey) : "geral";
 }
 
+/** Sem o site no plano (Connect Pro) o menu não aparece, e quem escreve o endereço volta ao início. */
 export default function Website() {
   const store = useStore();
+  if (!store.academy.websiteIncluido) return <Navigate to="/" replace />;
+  return <WebsiteDoClube />;
+}
+
+function WebsiteDoClube() {
+  const store = useStore();
   const site = useSite(store.academy.slug);
+  const { carregado, erro } = useCarregamentoDoSite(store.academy.slug);
   const [params, setParams] = useSearchParams();
   const mobile = useMobile();
 
@@ -93,14 +101,15 @@ export default function Website() {
         </a>
       </PageHeader>
 
-      {/* Onde fica o que se grava. Ver o cabeçalho de `lib/website.ts`. */}
-      <p className="mb-5 flex items-start gap-2 rounded-[10px] border border-warn/25 bg-warn-soft px-3.5 py-2.5 text-meta leading-relaxed text-warn">
-        <TriangleAlert className="mt-0.5 size-4 shrink-0" strokeWidth={1.75} />
-        <span>
-          <strong className="font-semibold">Só em desenvolvimento.</strong> O que gravas aqui fica neste browser, até a API
-          do site existir. Noutro computador, ou noutro browser, não aparece.
-        </span>
-      </p>
+      {/* Por publicar: o endereço do site mostra "não ligado" até o clube o pôr no ar (Visão geral). */}
+      {carregado && !site.publicado && (
+        <p className="mb-5 flex items-start gap-2 rounded-[10px] border border-warn/25 bg-warn-soft px-3.5 py-2.5 text-meta leading-relaxed text-warn">
+          <TriangleAlert className="mt-0.5 size-4 shrink-0" strokeWidth={1.75} />
+          <span>
+            <strong className="font-semibold">O site ainda não está no ar.</strong> Prepara o que quiseres e publica-o na Visão geral.
+          </span>
+        </p>
+      )}
 
       <div className="grid gap-x-10 gap-y-4 lg:grid-cols-[212px_minmax(0,1fr)]">
         <Submenu ativa={ativa} onIr={ir} horizontal={mobile} />
@@ -114,17 +123,19 @@ export default function Website() {
           </header>
 
           <div className="max-w-[980px]">
-            {ativa === "geral" && <VisaoGeral onIr={(k) => ir(k as SecaoKey)} />}
-            {ativa === "identidade" && <Identidade />}
-            {ativa === "aspeto" && <Aspeto />}
-            {ativa === "dominio" && <Dominio />}
-            {ativa === "noticias" && <Noticias />}
-            {ativa === "equipas" && <Equipas />}
-            {ativa === "patrocinadores" && <Patrocinadores />}
-            {ativa === "estadio" && <Estadio />}
-            {ativa === "bilheteira" && <Bilheteira onIrParaEstadio={() => ir("estadio")} />}
-            {ativa === "loja" && <Loja />}
-            {ativa === "mensagens" && <Mensagens />}
+            {erro && !carregado && <Empty icon={TriangleAlert} title="Não foi possível abrir o site do clube" detail={erro} />}
+            {!erro && !carregado && <Loading size="panel" />}
+            {carregado && ativa === "geral" && <VisaoGeral onIr={(k) => ir(k as SecaoKey)} />}
+            {carregado && ativa === "identidade" && <Identidade />}
+            {carregado && ativa === "aspeto" && <Aspeto />}
+            {carregado && ativa === "dominio" && <Dominio />}
+            {carregado && ativa === "noticias" && <Noticias />}
+            {carregado && ativa === "equipas" && <Equipas />}
+            {carregado && ativa === "patrocinadores" && <Patrocinadores />}
+            {carregado && ativa === "estadio" && <Estadio />}
+            {carregado && ativa === "bilheteira" && <Bilheteira onIrParaEstadio={() => ir("estadio")} />}
+            {carregado && ativa === "loja" && <Loja />}
+            {carregado && ativa === "mensagens" && <Mensagens />}
           </div>
         </section>
       </div>

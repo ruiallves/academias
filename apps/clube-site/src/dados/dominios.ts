@@ -23,9 +23,20 @@
 import { DEMO, DOMINIOS_DEMO } from "./demo/monteverde";
 import type { Layout } from "./tipos";
 
-export type Resposta = { slug: string; layout: Layout };
+/**
+ * `dominio` é o domínio próprio do clube, se tiver. Com ele, a
+ * pré-visualização (`<slug>.website.academias.pt`) redireciona para lá: o
+ * Google tem de ver um site só. Ver `proxy.ts`.
+ */
+export type Resposta = { slug: string; layout: Layout; dominio?: string | null };
 
+/**
+ * Cinco minutos para uma resposta, trinta segundos para um "não há": um clube
+ * que acabou de publicar o site não fica cinco minutos a ver "endereço não
+ * ligado".
+ */
 const TTL_MS = 5 * 60 * 1000;
+const TTL_NEGATIVO_MS = 30 * 1000;
 const cache = new Map<string, { r: Resposta | null; until: number }>();
 
 function demoPorSlug(slug: string | null | undefined): Resposta | null {
@@ -49,7 +60,10 @@ export async function clubeDoHost(hostHeader: string): Promise<Resposta | null> 
     const preview = process.env.SITE_PREVIEW_DOMAIN?.toLowerCase();
     if (preview && host.endsWith(`.${preview}`)) slug = host.slice(0, -(preview.length + 1)) || null;
   }
-  if (slug) return demo ? demoPorSlug(slug) : porSlugNaApi(slug);
+  // Em demonstração há um clube só: qualquer pré-visualização
+  // (`ad-fafe.website.academias.pt`) mostra-o, para se testar o endereço de
+  // um clube a sério antes de os dados dele existirem.
+  if (slug) return demo ? demoPorSlug(DEMO.clube.slug) : porSlugNaApi(slug);
 
   if (demo) return demoPorSlug(DOMINIOS_DEMO[host]);
   return pedir(host, `/public/sites/por-dominio/${encodeURIComponent(host)}`);
@@ -66,13 +80,13 @@ async function pedir(chave: string, caminho: string): Promise<Resposta | null> {
   try {
     const res = await fetch(`${process.env.SITE_API_URL}${caminho}`, { cache: "no-store" });
     if (res.ok) {
-      const j = (await res.json()) as { slug?: string; layout?: Layout };
-      if (j.slug) r = { slug: j.slug, layout: j.layout ?? "classico" };
+      const j = (await res.json()) as { slug?: string; layout?: Layout; dominio?: string | null };
+      if (j.slug) r = { slug: j.slug, layout: j.layout ?? "classico", dominio: j.dominio ?? null };
     }
   } catch {
     // A API em baixo não pode derrubar o site: o que estiver em cache vale.
     if (hit) return hit.r;
   }
-  cache.set(chave, { r, until: Date.now() + TTL_MS });
+  cache.set(chave, { r, until: Date.now() + (r ? TTL_MS : TTL_NEGATIVO_MS) });
   return r;
 }

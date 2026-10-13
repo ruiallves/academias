@@ -65,6 +65,8 @@ type ApiBootstrap = {
     feesOnPayer?: boolean;
     /** O clube tem o canal euPago dele configurado. Sem isso não liga os pagamentos pela app. */
     eupagoConfigured?: boolean;
+    /** O plano inclui o site do clube (Connect Pro). */
+    websiteIncluido?: boolean;
     /** O que o clube escreveu na página pública de adesão a sócio. */
     membershipHeadline: string | null;
     membershipIntro: string | null;
@@ -390,7 +392,7 @@ const EMPTY: State = {
     id: "", slug: "", name: "", shortName: "", signalColor: "#0f6b62", logoUrl: "", city: "",
     status: "ACTIVE", trialEndsAt: null, createdAt: "",
     billingDueDay: 8, billingMonths: [], billingNext: null,
-    paymentsEnabled: true, feesOnPayer: false, eupagoConfigured: true,
+    paymentsEnabled: true, feesOnPayer: false, eupagoConfigured: true, websiteIncluido: false,
     membershipHeadline: "", membershipIntro: "", membershipPoints: [],
     memberAnnualStartMonth: 8, memberAnnualStartDay: 1,
     association: "",
@@ -1089,6 +1091,8 @@ function juntar<T extends { id: string }>(atuais: T[], novos: T[]): T[] {
       paymentsEnabled: boot.academy.paymentsEnabled ?? true,
       // Um servidor antigo não manda o campo, e não trava nada: fica como era.
       eupagoConfigured: boot.academy.eupagoConfigured ?? true,
+      // Aqui ao contrário: sem a resposta do servidor, o site não está no plano.
+      websiteIncluido: boot.academy.websiteIncluido ?? false,
       feesOnPayer: boot.academy.feesOnPayer ?? false,
       billingNext: boot.academy.billingNextFrom
         ? {

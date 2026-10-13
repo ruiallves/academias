@@ -4,8 +4,9 @@ import { Empty, cx } from "@/components/primitives";
 import { Dialog, DialogField, dialogInputClass } from "@/components/Dialog";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { useStore } from "@/lib/store";
-import { gravarSite, novoId, useSite, type NoticiaDoSite } from "@/lib/website";
+import { apagarNoticia, guardarNoticia, useSite, type NoticiaDoSite } from "@/lib/website";
 import { mostrarOk } from "@/lib/avisos";
+import { CampoDeImagem } from "./CampoDeImagem";
 
 const CATEGORIAS = ["Clube", "Seniores", "Formação", "Futsal", "Sócios", "Loja"];
 
@@ -31,8 +32,7 @@ export function Noticias() {
   });
   const destaques = site.noticias.filter((n) => n.destaque && n.estado === "publicada").length;
 
-  const alternarDestaque = (n: NoticiaDoSite) =>
-    gravarSite(slug, (s) => ({ ...s, noticias: s.noticias.map((x) => (x.id === n.id ? { ...x, destaque: !x.destaque } : x)) }));
+  const alternarDestaque = (n: NoticiaDoSite) => void guardarNoticia({ ...n, destaque: !n.destaque }).catch(() => undefined);
 
   return (
     <>
@@ -91,12 +91,9 @@ export function Noticias() {
         <EditarNoticia
           inicial={aberta === "nova" ? null : aberta}
           onClose={() => setAberta(null)}
-          onGuardar={(n) => {
-            gravarSite(slug, (s) => ({
-              ...s,
-              noticias: s.noticias.some((x) => x.id === n.id) ? s.noticias.map((x) => (x.id === n.id ? n : x)) : [n, ...s.noticias],
-            }));
-            mostrarOk(n.estado === "publicada" ? "Notícia publicada." : "Rascunho guardado.");
+          onGuardar={async (n) => {
+            const gravada = await guardarNoticia(n);
+            mostrarOk(gravada.estado === "publicada" ? "Notícia publicada." : "Rascunho guardado.");
             setAberta(null);
           }}
         />
@@ -106,8 +103,8 @@ export function Noticias() {
         <ConfirmDialog
           title="Apagar a notícia?"
           onClose={() => setApagar(null)}
-          onConfirm={() => {
-            gravarSite(slug, (s) => ({ ...s, noticias: s.noticias.filter((x) => x.id !== apagar.id) }));
+          onConfirm={async () => {
+            await apagarNoticia(apagar.id);
             mostrarOk("Notícia apagada.");
             setApagar(null);
           }}
@@ -126,20 +123,24 @@ function EditarNoticia({
 }: {
   inicial: NoticiaDoSite | null;
   onClose: () => void;
-  onGuardar: (n: NoticiaDoSite) => void;
+  onGuardar: (n: NoticiaDoSite) => Promise<void>;
 }) {
   const [n, setN] = useState<NoticiaDoSite>(
-    inicial ?? { id: novoId(), titulo: "", resumo: "", corpo: "", categoria: "Clube", imagem: "", destaque: false, estado: "rascunho", publicadaEm: null },
+    inicial ?? { id: "", titulo: "", resumo: "", corpo: "", categoria: "Clube", imagem: "", destaque: false, estado: "rascunho", publicadaEm: null },
   );
+  const [aGravar, setAGravar] = useState(false);
   const pronta = n.titulo.trim() && n.resumo.trim() && n.corpo.trim();
 
-  const guardar = (publicar: boolean) =>
-    onGuardar({
-      ...n,
-      titulo: n.titulo.trim(),
-      estado: publicar ? "publicada" : n.estado === "publicada" ? "publicada" : "rascunho",
-      publicadaEm: publicar ? (n.publicadaEm ?? new Date().toISOString()) : n.publicadaEm,
-    });
+  const guardar = async (publicar: boolean) => {
+    setAGravar(true);
+    try {
+      await onGuardar({ ...n, titulo: n.titulo.trim(), estado: publicar ? "publicada" : n.estado });
+    } catch {
+      // O erro já apareceu no cartão de erros; o diálogo fica aberto com o que se escreveu.
+    } finally {
+      setAGravar(false);
+    }
+  };
 
   return (
     <Dialog
@@ -153,11 +154,11 @@ function EditarNoticia({
             Cancelar
           </button>
           {n.estado !== "publicada" && (
-            <button type="button" className="ctl-outline" disabled={!n.titulo.trim()} onClick={() => guardar(false)}>
+            <button type="button" className="ctl-outline" disabled={!n.titulo.trim() || aGravar} onClick={() => void guardar(false)}>
               Guardar rascunho
             </button>
           )}
-          <button type="button" className="ctl-primary" disabled={!pronta} onClick={() => guardar(true)}>
+          <button type="button" className="ctl-primary" disabled={!pronta || aGravar} onClick={() => void guardar(true)}>
             {n.estado === "publicada" ? "Guardar" : "Publicar"}
           </button>
         </>
@@ -173,19 +174,14 @@ function EditarNoticia({
         <DialogField label="Texto" hint="Parágrafos separados por uma linha em branco.">
           <textarea className={cx(dialogInputClass, "h-48 py-2")} value={n.corpo} onChange={(e) => setN({ ...n, corpo: e.target.value })} />
         </DialogField>
-        <div className="grid gap-4 sm:grid-cols-2">
-          <DialogField label="Categoria">
-            <select className={dialogInputClass} value={n.categoria} onChange={(e) => setN({ ...n, categoria: e.target.value })}>
-              {[...new Set([...CATEGORIAS, n.categoria])].map((c) => (
-                <option key={c}>{c}</option>
-              ))}
-            </select>
-          </DialogField>
-          <DialogField label="Foto (endereço)" hint="O carregamento de fotos chega com a API do site.">
-            <input className={dialogInputClass} type="url" placeholder="https://…" value={n.imagem} onChange={(e) => setN({ ...n, imagem: e.target.value })} />
-          </DialogField>
-        </div>
-        {n.imagem && <img src={n.imagem} alt="" className="aspect-[16/9] w-full rounded-[8px] border border-line object-cover" />}
+        <DialogField label="Categoria">
+          <select className={dialogInputClass} value={n.categoria} onChange={(e) => setN({ ...n, categoria: e.target.value })}>
+            {[...new Set([...CATEGORIAS, n.categoria])].map((c) => (
+              <option key={c}>{c}</option>
+            ))}
+          </select>
+        </DialogField>
+        <CampoDeImagem valor={n.imagem} onMudar={(imagem) => setN({ ...n, imagem })} />
       </div>
     </Dialog>
   );

@@ -1130,8 +1130,16 @@ export class PlatformService {
         /*
          * Só se mexe no preço quando quem chamou falou dele. Uma correcção de
          * estado não apaga um acordo comercial que ninguém pôs em causa.
+         *
+         * Mudar de plano sem dizer o preço é a excepção: o acordo era sobre o
+         * plano antigo. Um clube com o Connect fixado a 19,99 € que passa para
+         * o Connect Pro não fica a pagar 19,99 € pelo Pro; vale a tabela.
          */
-        ...(condicoes?.monthlyCents !== undefined ? { priceCents: acordado } : {}),
+        ...(condicoes?.monthlyCents !== undefined
+          ? { priceCents: acordado }
+          : academy.subscription && academy.subscription.planId !== plan.id
+            ? { priceCents: null }
+            : {}),
       },
       select: { planId: true, status: true, priceCents: true },
     });

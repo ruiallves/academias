@@ -1,8 +1,8 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import Image from "next/image";
 import Link from "next/link";
+import { Foto } from "@/componentes/Foto";
 import { ArrowRight } from "lucide-react";
 import type { Noticia } from "@/dados/tipos";
 
@@ -44,7 +44,7 @@ export function Carrossel({ noticias }: { noticias: Noticia[] }) {
           aria-hidden={k !== i}
           className={`absolute inset-0 transition-opacity duration-700 ease-out ${k === i ? "opacity-100" : "pointer-events-none opacity-0"}`}
         >
-          <Image src={nt.image} alt={nt.imageAlt ?? ""} fill priority={k === 0} sizes="100vw" className="object-cover" />
+          <Foto src={nt.image} alt={nt.imageAlt ?? ""} priority={k === 0} sizes="100vw" className="" />
           <div className="absolute inset-0 bg-gradient-to-r from-night/85 via-night/40 to-transparent" aria-hidden />
           <div className="absolute inset-0 bg-gradient-to-t from-night/70 to-transparent" aria-hidden />
           <div className="absolute inset-x-0 bottom-0 p-5 sm:p-8 lg:p-12">

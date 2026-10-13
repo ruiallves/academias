@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
-import Image from "next/image";
 import Link from "next/link";
+import { Foto } from "@/componentes/Foto";
 import { notFound } from "next/navigation";
 import { ArrowLeft } from "lucide-react";
 import { fonte } from "@/dados/fonte";
@@ -20,7 +20,7 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
   return {
     title: n.title,
     description: n.summary,
-    openGraph: { title: n.title, description: n.summary, images: [{ url: n.image }], type: "article", publishedTime: n.publishedAt },
+    openGraph: { title: n.title, description: n.summary, images: n.image ? [{ url: n.image }] : undefined, type: "article", publishedTime: n.publishedAt },
   };
 }
 
@@ -57,7 +57,7 @@ export default async function Noticia({ params }: Props) {
 
       <figure className="container-site mt-8 max-w-5xl">
         <div className="relative aspect-[16/9] overflow-hidden rounded-card bg-sunken">
-          <Image src={noticia.image} alt={noticia.imageAlt ?? ""} fill priority sizes="(min-width: 1024px) 1024px, 100vw" className="object-cover" />
+          <Foto src={noticia.image} alt={noticia.imageAlt ?? ""} priority sizes="(min-width: 1024px) 1024px, 100vw" className="" />
         </div>
       </figure>
 

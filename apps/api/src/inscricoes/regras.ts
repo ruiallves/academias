@@ -230,6 +230,12 @@ export type Folha = {
   distrito: string | null;
   concelho: string | null;
   seguro: Seguro | null;
+  /**
+   * O representante legal de um jogador menor, para a declaração do fim do
+   * Modelo 2: o nome do encarregado como está na conta dele. Nulo num
+   * jogador maior de idade, ou sem encarregado ligado.
+   */
+  representante: string | null;
 };
 
 /**
@@ -273,6 +279,8 @@ export function montarFolha(p: {
   categoria: string;
   licenca: string | null;
   contactoDoEncarregado?: { email: string | null; phone: string | null };
+  /** O nome do encarregado, quando o jogador é menor. Ver `Folha.representante`. */
+  representante?: string | null;
 }): Folha {
   const { atleta } = p;
   const federacao = federacaoDe(p.disciplina);
@@ -307,6 +315,7 @@ export function montarFolha(p: {
     distrito: atleta.district ?? null,
     concelho: atleta.municipality ?? null,
     seguro: federacao === "FPB" ? seguroDe(p.clube) : null,
+    representante: p.representante?.trim().replace(/\s+/g, " ") || null,
   };
 }
 
@@ -419,4 +428,16 @@ export function federacaoDaModalidade(dto: {
   if (dto.insurancePolicy !== undefined && out.insurancePolicy === undefined) out.insurancePolicy = textoLivre(dto.insurancePolicy);
   if (dto.insuranceCompany !== undefined && out.insuranceCompany === undefined) out.insuranceCompany = textoLivre(dto.insuranceCompany);
   return out;
+}
+
+/**
+ * Menor de idade num dia: ainda não fez 18 anos.
+ *
+ * A declaração do representante legal só vale para menores; para um jogador
+ * maior fica em branco. Conta-se no dia em que a folha é gerada, que é quando
+ * a declaração vai ser assinada.
+ */
+export function menorDeIdade(nascimento: Date, dia: Date = new Date()): boolean {
+  const dezoito = new Date(Date.UTC(nascimento.getUTCFullYear() + 18, nascimento.getUTCMonth(), nascimento.getUTCDate()));
+  return dia.getTime() < dezoito.getTime();
 }

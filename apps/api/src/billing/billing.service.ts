@@ -187,6 +187,29 @@ export class BillingService implements OnModuleInit, OnModuleDestroy {
   }
 
   /**
+   * A chave da euPago do clube, ou nada feito.
+   *
+   * Sem chave do clube, o cliente da euPago usa a global do ambiente, que é a
+   * da conta da plataforma: o dinheiro de uma família liquidava no IBAN da
+   * Academias e não no do clube. Aconteceu a 01/10 (20 € de uma mensalidade do
+   * Coruchense). O interruptor `paymentsEnabled` já exige as duas chaves, mas
+   * a regra fica também aqui, à porta de cada cobrança: um dinheiro do clube
+   * nunca usa a chave da plataforma.
+   *
+   * Sem chave nenhuma (nem do clube nem global) não há perigo: é o modo
+   * simulado dos testes e do desenvolvimento, em que nada chega à euPago (e
+   * que em produção o cliente recusa). Aí devolve-se vazio e o cliente simula.
+   */
+  private chaveDoClube(academia: { eupagoApiKey: string | null } | null | undefined): string | undefined {
+    const chave = academia?.eupagoApiKey?.trim();
+    if (chave) return chave;
+    if (this.config.get<string>("EUPAGO_API_KEY")?.trim()) {
+      throw new ForbiddenException({ code: PAGAMENTOS_DESATIVADOS, message: MENSAGEM_DESATIVADOS });
+    }
+    return undefined;
+  }
+
+  /**
    * O que este pagamento cobra: o valor, mais a comissão quando o clube a põe
    * por conta de quem paga. Ver `taxa-do-pagador.ts`.
    */
@@ -1828,7 +1851,8 @@ export class BillingService implements OnModuleInit, OnModuleDestroy {
         await db.payment.update({ where: { id: p.id }, data: { status: PaymentStatus.EXPIRED } });
       }
 
-      const apiKey = academia?.eupagoApiKey ?? undefined;
+      // Só com a chave do clube. Ver `chaveDoClube`.
+      const apiKey = this.chaveDoClube(academia);
 
       // Quem paga — o email segue para a euPago para o recibo do formulário.
       const pagador = ctx.membershipId
@@ -2019,7 +2043,8 @@ export class BillingService implements OnModuleInit, OnModuleDestroy {
         await db.payment.update({ where: { id: p.id }, data: { status: PaymentStatus.EXPIRED } });
       }
 
-      const apiKey = academia?.eupagoApiKey ?? undefined;
+      // Só com a chave do clube. Ver `chaveDoClube`.
+      const apiKey = this.chaveDoClube(academia);
 
       /*
        * Quem paga é a conta que reclamou a ficha: um sócio, uma conta. O nome
@@ -2203,8 +2228,8 @@ export class BillingService implements OnModuleInit, OnModuleDestroy {
         name: nome,
         email: pagador.user.email,
         bic: dto.bic?.trim() || undefined,
-        apiKey: (await db.academy.findFirst({ where: { id: ctx.academyId }, select: { eupagoApiKey: true } }))
-          ?.eupagoApiKey ?? undefined,
+        // Só com a chave do clube: um mandato pela conta da plataforma cobrava para ela. Ver `chaveDoClube`.
+        apiKey: this.chaveDoClube(await db.academy.findFirst({ where: { id: ctx.academyId }, select: { eupagoApiKey: true } })),
       });
 
       const dados = {

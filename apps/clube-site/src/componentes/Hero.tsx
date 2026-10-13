@@ -1,5 +1,5 @@
-import Image from "next/image";
 import Link from "next/link";
+import { Foto } from "@/componentes/Foto";
 import type { Noticia } from "@/dados/tipos";
 import { dataCompleta, isoDia } from "@/lib/formatar";
 
@@ -33,13 +33,12 @@ function Destaque({ noticia, grande = false, className = "" }: { noticia: Notici
   return (
     <article className={`group relative overflow-hidden rounded-card bg-night ${grande ? "aspect-[16/10] lg:aspect-auto" : "aspect-[16/9] lg:aspect-auto lg:min-h-[13rem]"} ${className}`}>
       <Link href={`/noticias/${noticia.slug}`} className="absolute inset-0">
-        <Image
+        <Foto
           src={noticia.image}
           alt={noticia.imageAlt ?? ""}
-          fill
           priority={grande}
           sizes={grande ? "(min-width: 1024px) 66vw, 100vw" : "(min-width: 1024px) 33vw, 100vw"}
-          className="object-cover transition-transform duration-700 ease-out group-hover:scale-[1.04]"
+          className="transition-transform duration-700 ease-out group-hover:scale-[1.04]"
         />
         <div className="absolute inset-0 bg-gradient-to-t from-night via-night/55 to-night/5" aria-hidden />
         <div className={`absolute inset-x-0 bottom-0 ${grande ? "p-5 sm:p-8" : "p-4 sm:p-5"}`}>

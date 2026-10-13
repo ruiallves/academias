@@ -309,6 +309,20 @@ model Academy {
 
   /// As inscrições federativas (Modelo 2) e em que passo vai cada uma.
   playerRegistrations PlayerRegistration[]
+
+  /// ## O site do clube
+  ///
+  /// O domínio próprio, sem `www.` e em minúsculas ("adfafe.pt"). Nulo = o
+  /// site vive só em `<slug>.website.academias.pt`. Posto pelo painel da
+  /// plataforma, que o liga ao projeto no Vercel. Ver `docs/08-site-do-clube.md`.
+  siteDomain         String?   @unique
+  /// Quando o registo do domínio se renova. Só para o painel avisar.
+  siteDomainRenewsAt DateTime?
+  siteConfig         SiteConfig?
+  siteNews           SiteNews[]
+  siteSponsors       SiteSponsor[]
+  siteProducts       SiteProduct[]
+  siteMatchTickets   SiteMatchTickets[]
 }
 
 /// O ciclo de vida de um cliente. Derivado do onboarding e da subscrição — o
@@ -2621,6 +2635,9 @@ model Match {
   /// Academias AI: as análises de vídeo deste jogo.
   aiAnalyses AIAnalysis[]
 
+  /// A bilheteira deste jogo no site do clube, se tiver.
+  siteTickets SiteMatchTickets?
+
   /// Idempotência da importação: o mesmo jogo importado duas vezes actualiza.
   ///
   /// A unicidade é **parcial** e vive em SQL, na migração
@@ -4495,6 +4512,12 @@ model Plan {
 
   /// A ordem no ecrã. O mais barato primeiro é o que se lê melhor.
   order Int @default(0)
+
+  /// O plano inclui o site do clube (o Connect Pro). É a primeira coisa que o
+  /// plano liga ou desliga: o menu Website da consola e o site público só
+  /// existem para clubes com isto. Lido pela função `app.academy_has_website`,
+  /// porque as tabelas dos planos estão fechadas ao `academia_app`.
+  includesWebsite Boolean @default(false)
 
   subscriptions Subscription[]
 
@@ -6784,4 +6807,113 @@ model PlayerRegistration {
 
   @@unique([athleteId, sportId, seasonId])
   @@index([academyId, seasonId])
+}
+
+/**
+ * --------------------------------------------------------------------------
+ */
+/**
+ * O site do clube
+ *
+ * Ver `docs/08-site-do-clube.md` e a migração `20261013120000_site_do_clube`.
+ * O site público (`apps/clube-site`) lê isto pelos endpoints `/public/sites`,
+ * só de clubes com `SiteConfig.published`.
+ */
+/**
+ * --------------------------------------------------------------------------
+ */
+
+/// A configuração do site: uma linha por clube, criada da primeira vez que se
+/// grava. Sem linha = site por publicar.
+model SiteConfig {
+  academyId String  @id
+  academy   Academy @relation(fields: [academyId], references: [id], onDelete: Cascade)
+  /// Falso = os endpoints públicos respondem 404 para este clube.
+  published Boolean @default(false)
+  /// "classico" ou "porto".
+  layout    String  @default("classico")
+  /// Lema, apresentação, história, fundação, morada, contactos e redes.
+  identity  Json    @default("{}")
+  /// Por equipa: `{ visivel, plantel }`. Sem entrada = aparece, sem plantel.
+  teams     Json    @default("{}")
+  /// Os recintos vistos de cima. Ver `packages/ui/src/estadio.tsx`.
+  venues    Json    @default("[]")
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model SiteNews {
+  id          String    @id @default(cuid())
+  academyId   String
+  academy     Academy   @relation(fields: [academyId], references: [id], onDelete: Cascade)
+  title       String
+  summary     String    @default("")
+  /// Parágrafos separados por uma linha em branco.
+  body        String    @default("")
+  category    String    @default("Clube")
+  imageUrl    String?
+  featured    Boolean   @default(false)
+  /// Nulo = rascunho.
+  publishedAt DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([academyId, publishedAt])
+}
+
+model SiteSponsor {
+  id        String  @id @default(cuid())
+  academyId String
+  academy   Academy @relation(fields: [academyId], references: [id], onDelete: Cascade)
+  name      String
+  url       String?
+  logoUrl   String?
+  position  Int     @default(0)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([academyId, position])
+}
+
+model SiteProduct {
+  id          String  @id @default(cuid())
+  academyId   String
+  academy     Academy @relation(fields: [academyId], references: [id], onDelete: Cascade)
+  name        String
+  category    String  @default("Equipamento")
+  priceCents  Int
+  imageUrl    String?
+  description String  @default("")
+  /// "S, M, L, XL" — vazio num produto sem tamanhos.
+  sizes       String  @default("")
+  soldOut     Boolean @default(false)
+  visible     Boolean @default(true)
+  position    Int     @default(0)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([academyId, position])
+}
+
+/// A bilheteira de um jogo no site: a configuração, não a venda (ainda não
+/// existe). `types` = `[{ id, nome, precoCents, bancadaId }]`.
+model SiteMatchTickets {
+  matchId   String  @id
+  match     Match   @relation(fields: [matchId], references: [id], onDelete: Cascade)
+  academyId String
+  academy   Academy @relation(fields: [academyId], references: [id], onDelete: Cascade)
+  open      Boolean @default(false)
+  venueId   String?
+  capacity  Int?
+  note      String  @default("")
+  types     Json    @default("[]")
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([academyId])
 }

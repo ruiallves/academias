@@ -5,8 +5,9 @@ import { Dialog, DialogField, dialogInputClass } from "@/components/Dialog";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { Interruptor } from "@/components/definicoes/ui";
 import { useStore } from "@/lib/store";
-import { gravarSite, novoId, useSite, type ProdutoDoSite } from "@/lib/website";
+import { apagarProduto, guardarProduto, useSite, type ProdutoDoSite } from "@/lib/website";
 import { mostrarOk } from "@/lib/avisos";
+import { CampoDeImagem } from "./CampoDeImagem";
 
 const euro = (v: number) => new Intl.NumberFormat("pt-PT", { style: "currency", currency: "EUR" }).format(v);
 
@@ -25,8 +26,7 @@ export function Loja() {
   const [aberto, setAberto] = useState<ProdutoDoSite | "novo" | null>(null);
   const [apagar, setApagar] = useState<ProdutoDoSite | null>(null);
 
-  const mudar = (id: string, f: (p: ProdutoDoSite) => ProdutoDoSite) =>
-    gravarSite(slug, (s) => ({ ...s, produtos: s.produtos.map((p) => (p.id === id ? f(p) : p)) }));
+  const mudar = (p: ProdutoDoSite, f: (p: ProdutoDoSite) => ProdutoDoSite) => void guardarProduto(f(p)).catch(() => undefined);
 
   return (
     <div className="space-y-8">
@@ -58,7 +58,7 @@ export function Loja() {
                   {p.tamanhos && <p className="truncate text-meta text-ink-4">{p.tamanhos}</p>}
                 </div>
                 <span className="shrink-0 text-body font-medium tabular-nums text-ink">{euro(p.preco)}</span>
-                <Interruptor ligado={p.visivel} onChange={() => mudar(p.id, (x) => ({ ...x, visivel: !x.visivel }))} label={`Mostrar ${p.nome} no site`} />
+                <Interruptor ligado={p.visivel} onChange={() => mudar(p, (x) => ({ ...x, visivel: !x.visivel }))} label={`Mostrar ${p.nome} no site`} />
                 <button type="button" onClick={() => setAberto(p)} aria-label="Editar" className="ctl-ghost size-9 shrink-0 justify-center px-0">
                   <Pencil className="size-4" strokeWidth={1.75} />
                 </button>
@@ -85,11 +85,8 @@ export function Loja() {
         <EditarProduto
           inicial={aberto === "novo" ? null : aberto}
           onClose={() => setAberto(null)}
-          onGuardar={(p) => {
-            gravarSite(slug, (s) => ({
-              ...s,
-              produtos: s.produtos.some((x) => x.id === p.id) ? s.produtos.map((x) => (x.id === p.id ? p : x)) : [...s.produtos, p],
-            }));
+          onGuardar={async (p) => {
+            await guardarProduto(p);
             mostrarOk("Produto guardado.");
             setAberto(null);
           }}
@@ -100,8 +97,8 @@ export function Loja() {
         <ConfirmDialog
           title="Apagar o produto?"
           onClose={() => setApagar(null)}
-          onConfirm={() => {
-            gravarSite(slug, (s) => ({ ...s, produtos: s.produtos.filter((x) => x.id !== apagar.id) }));
+          onConfirm={async () => {
+            await apagarProduto(apagar.id);
             mostrarOk("Produto apagado.");
             setApagar(null);
           }}
@@ -120,14 +117,26 @@ function EditarProduto({
 }: {
   inicial: ProdutoDoSite | null;
   onClose: () => void;
-  onGuardar: (p: ProdutoDoSite) => void;
+  onGuardar: (p: ProdutoDoSite) => Promise<void>;
 }) {
   const [p, setP] = useState<ProdutoDoSite>(
-    inicial ?? { id: novoId(), nome: "", categoria: "Equipamento", preco: 0, imagem: "", descricao: "", tamanhos: "", esgotado: false, visivel: true },
+    inicial ?? { id: "", nome: "", categoria: "Equipamento", preco: 0, imagem: "", descricao: "", tamanhos: "", esgotado: false, visivel: true },
   );
   const [preco, setPreco] = useState(inicial ? String(inicial.preco).replace(".", ",") : "");
   const valor = Number(preco.replace(",", "."));
   const pronto = p.nome.trim() && preco.trim() && Number.isFinite(valor) && valor >= 0;
+  const [aGravar, setAGravar] = useState(false);
+
+  const guardar = async () => {
+    setAGravar(true);
+    try {
+      await onGuardar({ ...p, nome: p.nome.trim(), preco: Math.round(valor * 100) / 100 });
+    } catch {
+      // O erro já apareceu no cartão de erros; o diálogo fica aberto com o que se escreveu.
+    } finally {
+      setAGravar(false);
+    }
+  };
 
   return (
     <Dialog
@@ -140,7 +149,7 @@ function EditarProduto({
           <button type="button" className="ctl-ghost" onClick={onClose}>
             Cancelar
           </button>
-          <button type="button" className="ctl-primary" disabled={!pronto} onClick={() => onGuardar({ ...p, nome: p.nome.trim(), preco: Math.round(valor * 100) / 100 })}>
+          <button type="button" className="ctl-primary" disabled={!pronto || aGravar} onClick={() => void guardar()}>
             Guardar
           </button>
         </>
@@ -168,9 +177,7 @@ function EditarProduto({
         <DialogField label="Descrição">
           <textarea className={cx(dialogInputClass, "h-24 py-2")} value={p.descricao} onChange={(e) => setP({ ...p, descricao: e.target.value })} />
         </DialogField>
-        <DialogField label="Foto (endereço)" hint="O carregamento de fotos chega com a API do site.">
-          <input className={dialogInputClass} type="url" placeholder="https://…" value={p.imagem} onChange={(e) => setP({ ...p, imagem: e.target.value })} />
-        </DialogField>
+        <CampoDeImagem valor={p.imagem} onMudar={(imagem) => setP({ ...p, imagem })} max={1200} proporcao="aspect-[9/11] max-w-[220px]" />
         <div className="flex items-center justify-between gap-3 rounded-[8px] border border-line px-3 py-2.5">
           <span className="text-body text-ink">Esgotado</span>
           <Interruptor ligado={p.esgotado} onChange={() => setP({ ...p, esgotado: !p.esgotado })} label="Esgotado" />

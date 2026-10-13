@@ -1,5 +1,7 @@
 import Image from "next/image";
 import Link from "next/link";
+import { emDemonstracao } from "@/lib/modo";
+import { Foto } from "@/componentes/Foto";
 import { ArrowRight, MapPin, Ticket } from "lucide-react";
 import type { DadosInicio } from "@/layouts/tipos";
 import type { Clube, Jogo } from "@/dados/tipos";
@@ -18,7 +20,10 @@ export function InicioPorto({ clube, noticias, proximo, ultimo, equipas, produto
   const destaques = noticias.filter((n) => n.featured).slice(0, 3);
   const carrossel = destaques.length ? destaques : noticias.slice(0, 3);
   const ids = new Set(carrossel.map((n) => n.id));
-  const lista = noticias.filter((n) => !ids.has(n.id)).slice(0, 5);
+  // Com poucas notícias, as do carrossel repetem-se na lista: uma secção
+  // "Notícias" vazia por baixo de uma notícia em destaque parecia avaria.
+  const resto = noticias.filter((n) => !ids.has(n.id));
+  const lista = (resto.length ? resto : noticias).slice(0, 5);
   const [grande, ...pequenas] = equipas;
 
   return (
@@ -42,7 +47,7 @@ export function InicioPorto({ clube, noticias, proximo, ultimo, equipas, produto
         </div>
 
         <a href={clube.membershipUrl} className="group relative block min-h-[14rem] overflow-hidden bg-signal-strong text-signal-on">
-          <Image src="https://picsum.photos/seed/bancada/900/700" alt="" fill sizes="(min-width: 1024px) 30vw, 100vw" className="object-cover opacity-20 mix-blend-luminosity transition-transform duration-700 group-hover:scale-105" />
+          {emDemonstracao() && <Image src="https://picsum.photos/seed/bancada/900/700" alt="" fill sizes="(min-width: 1024px) 30vw, 100vw" className="object-cover opacity-20 mix-blend-luminosity transition-transform duration-700 group-hover:scale-105" />}
           <div className="absolute inset-x-0 bottom-0 p-6 text-center">
             <Emblema logoUrl={clube.logoUrl} shortName={clube.shortName} size={40} className="mx-auto" />
             <p className="eyebrow mt-3 opacity-80">Cartão, quotas e jogos</p>
@@ -59,7 +64,7 @@ export function InicioPorto({ clube, noticias, proximo, ultimo, equipas, produto
               <li key={n.id}>
                 <Link href={`/noticias/${n.slug}`} className="group grid gap-4 py-5 sm:grid-cols-[minmax(0,5fr)_minmax(0,6fr)] sm:gap-6">
                   <div className="relative aspect-[16/10] overflow-hidden bg-sunken">
-                    <Image src={n.image} alt={n.imageAlt ?? ""} fill sizes="(min-width: 1024px) 30vw, (min-width: 640px) 40vw, 100vw" className="object-cover transition-transform duration-500 group-hover:scale-[1.03]" />
+                    <Foto src={n.image} alt={n.imageAlt ?? ""} sizes="(min-width: 1024px) 30vw, (min-width: 640px) 40vw, 100vw" className="transition-transform duration-500 group-hover:scale-[1.03]" />
                   </div>
                   <div className="flex min-w-0 flex-col">
                     <div className="flex items-start justify-between gap-3">
@@ -205,7 +210,7 @@ function CartazDoDia({ jogo, clube }: { jogo: Jogo; clube: Clube }) {
       href={jogo.tickets?.open ? `/bilheteira/${jogo.id}` : "/calendario"}
       className="group relative mt-4 block aspect-[3/4] overflow-hidden bg-signal-strong text-center text-signal-on"
     >
-      <Image src="https://picsum.photos/seed/cartaz/900/1200" alt="" fill sizes="(min-width: 1024px) 22rem, 100vw" className="object-cover opacity-20 mix-blend-luminosity transition-transform duration-700 group-hover:scale-105" />
+      {emDemonstracao() && <Image src="https://picsum.photos/seed/cartaz/900/1200" alt="" fill sizes="(min-width: 1024px) 22rem, 100vw" className="object-cover opacity-20 mix-blend-luminosity transition-transform duration-700 group-hover:scale-105" />}
       <div className="absolute inset-0 flex flex-col items-center justify-between p-6">
         <p className="text-xs font-bold uppercase tracking-[0.3em]">
           {dia} {mes}
@@ -226,12 +231,29 @@ function CartazDoDia({ jogo, clube }: { jogo: Jogo; clube: Clube }) {
   );
 }
 
+/**
+ * Uma equipa no mosaico. Com foto, a foto escura por trás e o nome por cima;
+ * sem foto (o normal enquanto o clube não as carrega), um bloco claro e baixo
+ * com o traço na cor do clube: um bloco preto do tamanho de uma foto, vazio,
+ * parecia uma imagem que não carregou.
+ */
 function EquipaMosaico({ equipa, grande = false }: { equipa: DadosInicio["equipas"][number]; grande?: boolean }) {
+  if (!equipa.image) {
+    return (
+      <Link
+        href={`/equipas/${equipa.slug}`}
+        className={`group relative block overflow-hidden border border-line bg-surface p-5 transition-colors hover:border-signal-line ${grande ? "sm:col-span-3" : ""}`}
+      >
+        <span className="absolute inset-y-0 left-0 w-1 bg-signal" aria-hidden />
+        <p className="text-xs font-bold text-signal-ink">{equipa.sport}</p>
+        <p className={`display mt-2 text-ink transition-colors group-hover:text-signal-ink ${grande ? "text-3xl sm:text-4xl" : "text-2xl"}`}>{equipa.name}</p>
+        {equipa.competition && <p className="mt-1 text-sm text-ink-3">{equipa.competition}</p>}
+      </Link>
+    );
+  }
   return (
     <Link href={`/equipas/${equipa.slug}`} className={`group relative block overflow-hidden bg-night ${grande ? "aspect-[16/10] sm:col-span-3 sm:aspect-[21/9]" : "aspect-[16/10]"}`}>
-      {equipa.image && (
-        <Image src={equipa.image} alt="" fill sizes={grande ? "100vw" : "(min-width: 640px) 33vw, 100vw"} className="object-cover opacity-80 transition-transform duration-700 group-hover:scale-105" />
-      )}
+      <Foto src={equipa.image} alt="" sizes={grande ? "100vw" : "(min-width: 640px) 33vw, 100vw"} className="opacity-80 transition-transform duration-700 group-hover:scale-105" />
       <div className="absolute inset-0 bg-gradient-to-t from-night via-night/30 to-transparent" aria-hidden />
       <div className="absolute inset-x-0 bottom-0 p-5">
         <p className="text-xs font-bold text-signal-ink">

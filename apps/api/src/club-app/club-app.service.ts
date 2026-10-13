@@ -431,10 +431,12 @@ export class ClubAppService {
           /*
            * Se há por onde pagar online. A chave em si nunca sai daqui — a app
            * só precisa de saber se mostra o botão.
+           *
+           * Só a chave do clube conta. A global é a da conta da plataforma, e
+           * o servidor recusa cobrar com ela (ver `BillingService.chaveDoClube`):
+           * mostrar o botão por causa dela era prometer um pagamento que falha.
            */
-          onlinePayments: Boolean(
-            (academia?.eupagoApiKey ?? "").trim() || (this.config.get<string>("EUPAGO_API_KEY") ?? "").trim(),
-          ),
+          onlinePayments: Boolean((academia?.eupagoApiKey ?? "").trim()),
           /*
            * O clube desligou os pagamentos pela app. É outra coisa que não ter
            * por onde pagar: aqui a app **diz** que estão desativados, em vez de

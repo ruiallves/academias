@@ -6,7 +6,7 @@ import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { Interruptor } from "@/components/definicoes/ui";
 import { LADOS, MapaDoRecinto, comFracao, fracaoNoLado, moverBancada, recintoDePartida } from "@academia/ui/estadio";
 import { useStore } from "@/lib/store";
-import { gravarSite, novoId, useSite, type Bancada, type Lado, type Recinto } from "@/lib/website";
+import { guardarBilheteira, guardarConfig, novoId, useSite, type Bancada, type Lado, type Recinto } from "@/lib/website";
 import { mostrarOk } from "@/lib/avisos";
 
 /**
@@ -30,7 +30,7 @@ export function Estadio() {
   const bancada = recinto?.bancadas.find((b) => b.id === bancadaId) ?? null;
 
   const mudarRecinto = (id: string, f: (r: Recinto) => Recinto) =>
-    gravarSite(slug, (s) => ({ ...s, recintos: s.recintos.map((r) => (r.id === id ? f(r) : r)) }));
+    void guardarConfig({ recintos: site.recintos.map((r) => (r.id === id ? f(r) : r)) });
 
   const mudarBancada = (b: Bancada, f: (b: Bancada) => Bancada) =>
     recinto && mudarRecinto(recinto.id, (r) => ({ ...r, bancadas: r.bancadas.map((x) => (x.id === b.id ? f(x) : x)) }));
@@ -38,7 +38,7 @@ export function Estadio() {
   const novoRecinto = () => {
     const id = novoId();
     const nome = site.recintos.length ? "Pavilhão" : "Estádio";
-    gravarSite(slug, (s) => ({ ...s, recintos: [...s.recintos, recintoDePartida(id, nome, novoId)] }));
+    void guardarConfig({ recintos: [...site.recintos, recintoDePartida(id, nome, novoId)] }, { imediato: true });
     setRecintoId(id);
     setBancadaId(null);
     mostrarOk(`${nome} criado com duas bancadas de partida.`);
@@ -286,17 +286,13 @@ export function Estadio() {
         <ConfirmDialog
           title={`Apagar ${apagar.nome}?`}
           onClose={() => setApagar(null)}
-          onConfirm={() => {
-            gravarSite(slug, (s) => ({
-              ...s,
-              recintos: s.recintos.filter((r) => r.id !== apagar.id),
-              // Os jogos que se jogavam aqui ficam sem mapa, e os bilhetes sem bancada.
-              bilheteira: Object.fromEntries(
-                Object.entries(s.bilheteira).map(([k, b]) =>
-                  b.recintoId === apagar.id ? [k, { ...b, recintoId: null, tipos: b.tipos.map((t) => ({ ...t, bancadaId: null })) }] : [k, b],
-                ),
-              ),
-            }));
+          onConfirm={async () => {
+            await guardarConfig({ recintos: site.recintos.filter((r) => r.id !== apagar.id) }, { imediato: true });
+            // Os jogos que se jogavam aqui ficam sem mapa, e os bilhetes sem bancada.
+            for (const [matchId, b] of Object.entries(site.bilheteira)) {
+              if (b.recintoId !== apagar.id) continue;
+              await guardarBilheteira(matchId, { ...b, recintoId: null, tipos: b.tipos.map((t) => ({ ...t, bancadaId: null })) }).catch(() => undefined);
+            }
             setRecintoId(null);
             setBancadaId(null);
             setApagar(null);

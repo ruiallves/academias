@@ -35,6 +35,7 @@ import {
 import type { Permission, Session } from "@/lib/permissions";
 import { permissionsOf } from "@/lib/permissions";
 import { INSCRICOES_FPF } from "@/lib/funcionalidades";
+import { academy as storeAcademy } from "@/lib/store";
 import { hasDiscipline, profileOf, profiledSports, sportPath, type SportCode } from "@/lib/sports";
 
 /**
@@ -171,17 +172,17 @@ const GRUPO_AI: NavGroup = {
 };
 
 /**
- * Website — o site do clube. **Fora de produção, por agora**, pela mesma razão
- * e da mesma maneira que a Academias AI (ver `GRUPO_AI`): o spread condicional
- * deixa-o fora do pacote de produção, e a rota em `App.tsx` também só existe
- * em DEV.
+ * Website — o site do clube. Só para clubes com o site no plano (Connect Pro):
+ * `navFor` tira o item quando `academy.websiteIncluido` é falso, a rota em
+ * `App.tsx` faz o mesmo, e a API responde 403 `SITE_NOT_IN_PLAN` de qualquer
+ * maneira.
  *
  * `settings:write` porque é quem mexe na cara pública do clube, como nas
- * Definições. Quando sair para produção ganha permissão própria.
+ * Definições.
  */
 const GRUPO_WEBSITE: NavGroup = {
   label: "Website",
-  items: [{ key: "website", label: "Website", to: "/website", icon: Globe, requires: "settings:write", beta: true }],
+  items: [{ key: "website", label: "Website", to: "/website", icon: Globe, requires: "settings:write" }],
 };
 
 export const NAV_CATALOG: NavGroup[] = [
@@ -389,7 +390,7 @@ export const NAV_CATALOG: NavGroup[] = [
     ],
   },
   ...(import.meta.env.DEV ? [GRUPO_AI] : []),
-  ...(import.meta.env.DEV ? [GRUPO_WEBSITE] : []),
+  GRUPO_WEBSITE,
 ];
 
 export const SETTINGS_ITEM: NavItem = {
@@ -420,6 +421,8 @@ export function navFor(session: Session): NavGroup[] {
       .filter((i) => perms.has(i.requires) && (!chosen || chosen.has(i.key)))
       // Fora desta versão: ver `lib/funcionalidades.ts`.
       .filter((i) => i.key !== "registrations" || INSCRICOES_FPF)
+      // O site do clube é do plano Connect Pro. Ver `GRUPO_WEBSITE`.
+      .filter((i) => i.key !== "website" || storeAcademy.websiteIncluido)
       .filter((i) => !i.discipline || [i.discipline].flat().some((d) => hasDiscipline(d)))
       .flatMap((i) => (i.dynamic === "sports" ? sportItems(i) : [i])),
   })).filter((group) => group.items.length > 0);

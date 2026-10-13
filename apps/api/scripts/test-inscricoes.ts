@@ -26,6 +26,7 @@ import {
   documentoDoAtleta,
   emFalta,
   emFaltaNoClube,
+  menorDeIdade,
   federacaoDaModalidade,
   montarFolha,
   normalizarCodigoDoClube,
@@ -163,6 +164,19 @@ async function main() {
     check("associação que não existe é recusada", !associacaoValida("Marte") && associacaoValida("Braga"));
     const doc = documentoDoAtleta({ citizenCardNumber: null, idDocLabel: "Título de residência", idDocNumber: "TR123" });
     check("o «Outro» da FPB leva o nome do documento", doc?.sigla === "TR" && doc.descricao === "Título de residência" && doc.completo === "TR123");
+  }
+
+  console.log("\nO representante legal");
+  {
+    const dia = d("2026-10-12");
+    check("17 anos é menor", menorDeIdade(d("2009-03-01"), dia));
+    check("no dia dos 18 já não é", !menorDeIdade(d("2008-10-12"), dia));
+    check("na véspera dos 18 ainda é", menorDeIdade(d("2008-10-13"), dia));
+    const f = montarFolha({ atleta, clube, epoca: EPOCA, disciplina: "football", generoDaEquipa: null, tipo: "FIRST", categoria: "", licenca: null, representante: "  Joana   Ferreira Cardoso " });
+    check("o nome do representante sai limpo", f.representante === "Joana Ferreira Cardoso");
+    check("sem representante, nulo", montarFolha({ atleta, clube, epoca: EPOCA, disciplina: "football", generoDaEquipa: null, tipo: "FIRST", categoria: "", licenca: null }).representante === null);
+    const enorme = await gerarFolhas([{ ...f, representante: "Maria da Conceição Gonçalves Fernandes Ribeiro Magalhães de Vasconcelos e Sá Pereira Lopes Albuquerque" }]);
+    check("um nome enorme não rebenta a folha", enorme.length > 1000);
   }
 
   console.log("\nO PDF");

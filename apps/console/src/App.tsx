@@ -169,7 +169,7 @@ export default function App() {
         )}
 
         {/* O site do clube — só em DEV, como a Academias AI. Ver `GRUPO_WEBSITE` em `lib/nav.ts`. */}
-        {import.meta.env.DEV && <Route path="website" element={<Allow p="settings:write"><Website /></Allow>} />}
+        <Route path="website" element={<Allow p="settings:write"><Website /></Allow>} />
 
         {/* Certificação FPF. Só tem menu nos clubes com futebol; quem chega pelo
             endereço sem o ter vê a página a dizê-lo. */}

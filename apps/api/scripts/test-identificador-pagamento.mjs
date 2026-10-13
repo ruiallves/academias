@@ -124,6 +124,12 @@ check(
   montarIdentificador([mens("2026-09", "Ana Costa"), { tipo: "EXTRA", periodo: "2026-09", nome: "Ana Costa" }], "Rui Costa", "Life Club", FIXO) ===
     "LIFE_CLUB-VARIOS-SET26-ANA_COSTA-RUI_COSTA-7K2F9Q",
 );
+check(
+  "sem espaço, o pagador perde o apelido antes do atleta",
+  montarIdentificador([mens("2026-10", "Guilherme Fernandes")], "Catarina Lopes", "Grupo Desportivo de Fafe", "GLVT3L") ===
+    "GRUPO_DESPORTIVO-MENS-OUT26-GUILHERME_FERNANDES-CATARINA-GLVT3L",
+  montarIdentificador([mens("2026-10", "Guilherme Fernandes")], "Catarina Lopes", "Grupo Desportivo de Fafe", "GLVT3L"),
+);
 const longo = montarIdentificador(
   [mens("2026-09", "Maximiliano Bartolomeu Vasconcelos"), mens("2026-09", "Constantino Albuquerque"), mens("2026-09", "Bernardino Figueiredo")],
   "Maria Madalena Vasconcelos",

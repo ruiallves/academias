@@ -16,30 +16,37 @@ export default async function OClube({ params }: { params: Promise<{ clube: stri
     <>
       <CabecalhoPagina eyebrow={clube.foundedYear ? `Desde ${clube.foundedYear}` : "O clube"} titulo={clube.name} linha={clube.about} />
 
-      <div className="container-site mt-12 grid gap-12 lg:grid-cols-[2fr_1fr]">
-        <section data-reveal>
-          <h2 className="display text-2xl">História</h2>
-          <span className="traco mt-3" aria-hidden />
-          <div className="mt-5 max-w-2xl space-y-5 text-[1.0625rem] leading-relaxed text-ink-2">
-            {clube.history.map((p, i) => (
-              <p key={i}>{p}</p>
-            ))}
-          </div>
-        </section>
+      {/* Só o que o clube escreveu: sem história e sem direção, a página fica com a apresentação e os patrocinadores. */}
+      {(clube.history.length > 0 || clube.board.length > 0) && (
+        <div className={`container-site mt-12 grid gap-12 ${clube.history.length > 0 && clube.board.length > 0 ? "lg:grid-cols-[2fr_1fr]" : ""}`}>
+          {clube.history.length > 0 && (
+            <section data-reveal>
+              <h2 className="display text-2xl">História</h2>
+              <span className="traco mt-3" aria-hidden />
+              <div className="mt-5 max-w-2xl space-y-5 text-[1.0625rem] leading-relaxed text-ink-2">
+                {clube.history.map((p, i) => (
+                  <p key={i}>{p}</p>
+                ))}
+              </div>
+            </section>
+          )}
 
-        <aside data-reveal>
-          <h2 className="display text-2xl">Direção</h2>
-          <span className="traco mt-3" aria-hidden />
-          <ul className="mt-4 divide-y divide-line rounded-card border border-line bg-surface">
-            {clube.board.map((m) => (
-              <li key={m.name} className="px-4 py-3">
-                <p className="font-semibold text-ink">{m.name}</p>
-                <p className="text-sm text-ink-3">{m.role}</p>
-              </li>
-            ))}
-          </ul>
-        </aside>
-      </div>
+          {clube.board.length > 0 && (
+            <aside data-reveal>
+              <h2 className="display text-2xl">Direção</h2>
+              <span className="traco mt-3" aria-hidden />
+              <ul className="mt-4 divide-y divide-line rounded-card border border-line bg-surface">
+                {clube.board.map((m) => (
+                  <li key={m.name} className="px-4 py-3">
+                    <p className="font-semibold text-ink">{m.name}</p>
+                    <p className="text-sm text-ink-3">{m.role}</p>
+                  </li>
+                ))}
+              </ul>
+            </aside>
+          )}
+        </div>
+      )}
 
       {clube.facilities.length > 0 && (
         <section className="container-site mt-16" data-reveal>

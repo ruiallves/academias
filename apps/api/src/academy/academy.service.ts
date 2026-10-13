@@ -25,6 +25,7 @@ import { SHORT_NAME_MAX } from "../common/short-name";
 import { matchTitle } from "../common/match-title";
 import { AMIGAVEL, ensureAmigavel } from "./catalogs.service";
 import { instanteNoFuso, partesNoFuso, somarDias } from "../common/fuso";
+import { siteIncluido } from "../site/plano";
 
 /**
  * As colunas de um evento que a consola lê — partilhadas pela leitura, criação e
@@ -308,7 +309,14 @@ export class AcademyService {
          * app se pode ligar. As chaves em si nunca saem daqui: lêem-se numa
          * consulta à parte e só o sim ou não segue na resposta.
          */
-        academy: academy ? { ...academy, eupagoConfigured: await this.temEupago(db, ctx.academyId) } : academy,
+        academy: academy
+          ? {
+              ...academy,
+              eupagoConfigured: await this.temEupago(db, ctx.academyId),
+              // O plano inclui o site (Connect Pro)? Liga o menu Website na consola.
+              websiteIncluido: await siteIncluido(db, ctx.academyId),
+            }
+          : academy,
         sports,
         /*
          * `season` continua a ser a corrente — é o que meia consola lê para

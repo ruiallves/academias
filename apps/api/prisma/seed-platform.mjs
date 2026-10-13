@@ -48,8 +48,9 @@ console.log("Planos…");
 // Preço base + por atleta acima do incluído. É como uma academia pensa no custo:
 // cresce com o clube, e não com o número de funcionalidades.
 /*
- * Dois planos, e a diferença entre eles é a conversa toda da venda: a Consola é
- * o clube por dentro; o Connect acrescenta as famílias e o dinheiro. Ver a
+ * Três planos, e a diferença entre eles é a conversa toda da venda: a Consola é
+ * o clube por dentro; o Connect acrescenta as famílias e o dinheiro; o Connect
+ * Pro acrescenta o site do clube. Ver a
  * migração `20260826170000_planos_e_cargo_livre`, que é quem os põe assim nas
  * bases que já existem.
  */
@@ -77,7 +78,8 @@ const PLANOS = [
     id: "plan_academia",
     name: "Connect",
     tagline: "O clube, as famílias e o dinheiro. A plataforma inteira.",
-    cents: 1999,
+    // 24,99 € desde 13/10/2026; quem já estava ficou a 19,99 € (migração 20261013170000).
+    cents: 2499,
     order: 2,
     recommended: true,
     features: [
@@ -92,19 +94,40 @@ const PLANOS = [
     ],
     excludes: [],
   },
+  {
+    // O terceiro: o Connect com o site do clube. É o único com `includesWebsite`.
+    // Ver a migração `20261013160000_connect_pro`.
+    id: "plan_connect_pro",
+    name: "Connect Pro",
+    tagline: "Tudo o que está no Connect, mais o site do clube com domínio próprio.",
+    cents: 2999,
+    order: 3,
+    recommended: false,
+    website: true,
+    features: [
+      "Tudo o que está no Connect",
+      "Website próprio com domínio .pt incluído",
+      "Notícias, equipas, calendário e contactos",
+      "Loja online e gestão de encomendas",
+      "Bilheteira digital com códigos QR",
+      "Alojamento, SSL e manutenção técnica",
+    ],
+    excludes: [],
+  },
 ];
 
-for (const { id, name, tagline, cents, order, recommended, features, excludes } of PLANOS) {
+for (const { id, name, tagline, cents, order, recommended, features, excludes, website = false } of PLANOS) {
   await db.query(
     `INSERT INTO "Plan" (id,name,tagline,"amountCents","perAthleteCents","includedAthletes","trialDays",
-                         features,excludes,"isRecommended","order","isActive","updatedAt")
-     VALUES ($1,$2,$3,$4,0,0,30,$5,$6,$7,$8,true,now())
+                         features,excludes,"isRecommended","order","isActive","includesWebsite","updatedAt")
+     VALUES ($1,$2,$3,$4,0,0,30,$5,$6,$7,$8,true,$9,now())
      ON CONFLICT (id) DO UPDATE SET
        name=EXCLUDED.name, tagline=EXCLUDED.tagline, "amountCents"=EXCLUDED."amountCents",
        "perAthleteCents"=0, "includedAthletes"=0,
        features=EXCLUDED.features, excludes=EXCLUDED.excludes,
-       "isRecommended"=EXCLUDED."isRecommended", "order"=EXCLUDED."order", "isActive"=true`,
-    [id, name, tagline, cents, features, excludes, recommended, order],
+       "isRecommended"=EXCLUDED."isRecommended", "order"=EXCLUDED."order", "isActive"=true,
+       "includesWebsite"=EXCLUDED."includesWebsite"`,
+    [id, name, tagline, cents, features, excludes, recommended, order, website],
   );
   console.log(`  ${name.padEnd(10)} ${(cents / 100).toFixed(2)} €/mês${recommended ? "  (recomendado)" : ""}`);
 }

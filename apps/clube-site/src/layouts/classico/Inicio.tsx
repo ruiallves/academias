@@ -1,5 +1,6 @@
 import Image from "next/image";
 import Link from "next/link";
+import { emDemonstracao } from "@/lib/modo";
 import { ArrowRight } from "lucide-react";
 import type { DadosInicio } from "@/layouts/tipos";
 import { Hero } from "@/componentes/Hero";
@@ -44,20 +45,26 @@ export function InicioClassico({ clube, noticias, proximo, ultimo, equipas, prod
           <ul className="mt-8 flex snap-x gap-3 overflow-x-auto pb-2 [scrollbar-width:none] sm:grid sm:grid-cols-3 sm:overflow-visible lg:grid-cols-6">
             {equipas.slice(0, 6).map((e) => (
               <li key={e.id} className="w-[11rem] shrink-0 snap-start sm:w-auto">
-                <Link href={`/equipas/${e.slug}`} className="group relative block aspect-[4/5] overflow-hidden rounded-card bg-night">
+                {/* Sem foto, o cartão é da cor do clube: um bloco preto vazio parecia uma imagem por carregar. */}
+                <Link
+                  href={`/equipas/${e.slug}`}
+                  className={`group relative block aspect-[4/5] overflow-hidden rounded-card ${e.image ? "bg-night" : "bg-signal-strong"}`}
+                >
                   {e.image && (
-                    <Image
-                      src={e.image}
-                      alt=""
-                      fill
-                      sizes="(min-width: 1024px) 16vw, (min-width: 640px) 33vw, 11rem"
-                      className="object-cover opacity-80 transition-transform duration-500 ease-out group-hover:scale-[1.04]"
-                    />
+                    <>
+                      <Image
+                        src={e.image}
+                        alt=""
+                        fill
+                        sizes="(min-width: 1024px) 16vw, (min-width: 640px) 33vw, 11rem"
+                        className="object-cover opacity-80 transition-transform duration-500 ease-out group-hover:scale-[1.04]"
+                      />
+                      <div className="absolute inset-0 bg-gradient-to-t from-night to-transparent" aria-hidden />
+                    </>
                   )}
-                  <div className="absolute inset-0 bg-gradient-to-t from-night to-transparent" aria-hidden />
                   <div className="absolute inset-x-0 bottom-0 p-4">
-                    <p className="eyebrow text-night-ink-2">{e.sport}</p>
-                    <p className="display mt-1 text-2xl text-night-ink">{e.name}</p>
+                    <p className={`eyebrow ${e.image ? "text-night-ink-2" : "text-signal-on opacity-80"}`}>{e.sport}</p>
+                    <p className={`display mt-1 text-2xl ${e.image ? "text-night-ink" : "text-signal-on"}`}>{e.name}</p>
                   </div>
                 </Link>
               </li>
@@ -82,7 +89,7 @@ export function InicioClassico({ clube, noticias, proximo, ultimo, equipas, prod
             </BotaoLink>
           </div>
           <div className="relative hidden min-h-[16rem] lg:block">
-            <Image src="https://picsum.photos/seed/socios/1200/800" alt="" fill sizes="50vw" className="object-cover" />
+            {emDemonstracao() && <Image src="https://picsum.photos/seed/socios/1200/800" alt="" fill sizes="50vw" className="object-cover" />}
             <div className="absolute inset-0 bg-signal-strong/30 mix-blend-multiply" aria-hidden />
           </div>
         </div>

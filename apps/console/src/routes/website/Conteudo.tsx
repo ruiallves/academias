@@ -4,7 +4,7 @@ import { Empty, cx } from "@/components/primitives";
 import { dialogInputClass } from "@/components/Dialog";
 import { Interruptor } from "@/components/definicoes/ui";
 import { useStore } from "@/lib/store";
-import { gravarSite, imagemReduzida, novoId, useSite, type Patrocinador } from "@/lib/website";
+import { apagarPatrocinador, editarPatrocinadorAdiado, enviarImagem, guardarConfig, guardarPatrocinador, useSite, type Patrocinador } from "@/lib/website";
 import { mostrarErro, mostrarOk, textoDoErro } from "@/lib/avisos";
 
 /* -------------------------------------------------------------------------- */
@@ -28,11 +28,10 @@ export function Equipas() {
   }
 
   const de = (id: string) => site.equipas[id] ?? { visivel: true, plantel: false };
-  const mudar = (id: string, campo: "visivel" | "plantel") =>
-    gravarSite(slug, (s) => {
-      const atual = s.equipas[id] ?? { visivel: true, plantel: false };
-      return { ...s, equipas: { ...s.equipas, [id]: { ...atual, [campo]: !atual[campo] } } };
-    });
+  const mudar = (id: string, campo: "visivel" | "plantel") => {
+    const atual = site.equipas[id] ?? { visivel: true, plantel: false };
+    void guardarConfig({ equipas: { ...site.equipas, [id]: { ...atual, [campo]: !atual[campo] } } });
+  };
 
   const equipas = [...store.teams].sort((a, b) => b.maxAge - a.maxAge || a.name.localeCompare(b.name));
 
@@ -79,10 +78,10 @@ export function Patrocinadores() {
   const [nome, setNome] = useState("");
   const [url, setUrl] = useState("");
 
-  const juntar = () => {
+  const juntar = async () => {
     const n = nome.trim();
     if (!n) return;
-    gravarSite(slug, (s) => ({ ...s, patrocinadores: [...s.patrocinadores, { id: novoId(), nome: n, url: url.trim(), logo: "" }] }));
+    await guardarPatrocinador({ id: "", nome: n, url: url.trim(), logo: "" });
     setNome("");
     setUrl("");
     mostrarOk(`${n} acrescentado.`);
@@ -94,7 +93,7 @@ export function Patrocinadores() {
         className="grid gap-2 rounded-[12px] border border-line bg-surface p-3 sm:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto]"
         onSubmit={(e) => {
           e.preventDefault();
-          juntar();
+          void juntar().catch(() => undefined);
         }}
       >
         <input className={dialogInputClass} aria-label="Nome do patrocinador" placeholder="Nome" value={nome} onChange={(e) => setNome(e.target.value)} />
@@ -110,7 +109,7 @@ export function Patrocinadores() {
       ) : (
         <ul className="overflow-hidden rounded-[12px] border border-line bg-surface">
           {site.patrocinadores.map((p) => (
-            <LinhaPatrocinador key={p.id} p={p} slug={slug} />
+            <LinhaPatrocinador key={p.id} p={p} />
           ))}
         </ul>
       )}
@@ -122,15 +121,15 @@ export function Patrocinadores() {
  * Um patrocinador: o logótipo (ou um espaço para o pôr), o nome, o site.
  *
  * O botão abre o seletor de ficheiros escondido; não há `<label>` à volta de
- * nada tocável (ver `check:toque`). A imagem é reduzida antes de se gravar,
- * ver `imagemReduzida`.
+ * nada tocável (ver `check:toque`). O logótipo é reduzido a 320 px antes de
+ * carregar, ver `enviarImagem`.
  */
-function LinhaPatrocinador({ p, slug }: { p: Patrocinador; slug: string }) {
+function LinhaPatrocinador({ p }: { p: Patrocinador }) {
   const ficheiro = useRef<HTMLInputElement | null>(null);
   const [aCarregar, setACarregar] = useState(false);
 
-  const mudar = (f: (x: Patrocinador) => Patrocinador) =>
-    gravarSite(slug, (s) => ({ ...s, patrocinadores: s.patrocinadores.map((x) => (x.id === p.id ? f(x) : x)) }));
+  // Escrever no nome ou no site: o ecrã muda já, o servidor ao fim de meio segundo.
+  const mudar = (f: (x: Patrocinador) => Patrocinador) => editarPatrocinadorAdiado(f(p));
 
   const escolher = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const f = e.target.files?.[0];
@@ -138,8 +137,8 @@ function LinhaPatrocinador({ p, slug }: { p: Patrocinador; slug: string }) {
     if (!f) return;
     setACarregar(true);
     try {
-      const logo = await imagemReduzida(f);
-      mudar((x) => ({ ...x, logo }));
+      const logo = await enviarImagem(f, 320);
+      await guardarPatrocinador({ ...p, logo });
       mostrarOk(`Logótipo de ${p.nome} guardado.`);
     } catch (err) {
       mostrarErro(textoDoErro(err, "Não foi possível usar esta imagem."));
@@ -150,7 +149,7 @@ function LinhaPatrocinador({ p, slug }: { p: Patrocinador; slug: string }) {
 
   return (
     <li className="flex flex-wrap items-center gap-3 border-b border-line px-4 py-3 last:border-b-0">
-      <input ref={ficheiro} type="file" accept="image/png,image/jpeg,image/webp,image/svg+xml" className="hidden" onChange={escolher} />
+      <input ref={ficheiro} type="file" accept="image/png,image/jpeg,image/webp" className="hidden" onChange={escolher} />
       <button
         type="button"
         onClick={() => ficheiro.current?.click()}
@@ -191,7 +190,7 @@ function LinhaPatrocinador({ p, slug }: { p: Patrocinador; slug: string }) {
       </div>
       <div className="flex items-center gap-1">
         {p.logo && (
-          <button type="button" className="ctl-ghost" onClick={() => mudar((x) => ({ ...x, logo: "" }))}>
+          <button type="button" className="ctl-ghost" onClick={() => void guardarPatrocinador({ ...p, logo: "" }).catch(() => undefined)}>
             Tirar logótipo
           </button>
         )}
@@ -199,8 +198,8 @@ function LinhaPatrocinador({ p, slug }: { p: Patrocinador; slug: string }) {
           type="button"
           aria-label={`Tirar ${p.nome}`}
           className="ctl-ghost size-9 justify-center px-0 text-risk"
-          onClick={() => {
-            gravarSite(slug, (s) => ({ ...s, patrocinadores: s.patrocinadores.filter((x) => x.id !== p.id) }));
+          onClick={async () => {
+            await apagarPatrocinador(p.id).catch(() => undefined);
             mostrarOk(`${p.nome} tirado.`);
           }}
         >
