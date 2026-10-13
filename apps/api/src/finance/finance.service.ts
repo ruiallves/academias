@@ -20,10 +20,14 @@ import type { BudgetDto, CreateTransactionDto, DeleteTransactionDto, SettingsDto
  *    automáticas. Um saldo em coluna diverge do que o compõe à primeira escrita
  *    concorrente — é a regra do disponível do inventário, com mais zeros.
  *
- * 2. **As mensalidades pagas derivam-se, não se copiam.** `Charge` já é a
- *    verdade delas; a euPago confirma lá, os estornos acontecem lá. Este módulo
- *    lê — e por isso "nunca duplicar movimentos" é trivialmente verdade, e
- *    desligar a fonte no saldo não apaga pagamento nenhum.
+ * 2. **Os pagamentos derivam-se, não se copiam.** As mensalidades e as
+ *    cobranças avulsas (`Charge`: equipamento, inscrições, estágios) e as
+ *    quotas dos sócios (`MemberFee`) já são a verdade delas; a euPago confirma
+ *    lá, os estornos acontecem lá, marcar à mão acontece lá. Este módulo lê —
+ *    e por isso "nunca duplicar movimentos" é trivialmente verdade, e desligar
+ *    uma fonte no saldo não apaga pagamento nenhum. Tudo o que o clube recebe
+ *    por aí cai nos movimentos (decisão do Rui, 13/10/2026: "tudo que seja
+ *    pagamentos deve cair nos movimentos do clube").
  *
  * 3. **O que aconteceu não se apaga; o que nunca existiu, sim.** Um movimento
  *    que se concretizou e depois caiu — o autocarro desmarcado — **cancela-se**
@@ -102,7 +106,7 @@ export class FinanceService {
       const inicioDaSerie = new Date(hoje.getFullYear(), hoje.getMonth() - 5, 1);
       const serieDesde = maisTarde(inicioDaSerie, desde);
 
-      const [totais, porVir, movimentosDaSerie, chargesDaSerie, autoTotal, catalogo] = await Promise.all([
+      const [totais, porVir, movimentosDaSerie, chargesDaSerie, autoTotal, catalogo, quotasDaSerie, quotasTotal] = await Promise.all([
         // Receitas e despesas do período inteiro, numa pergunta em vez de duas.
         db.financialTransaction.groupBy({
           by: ["kind"],
@@ -159,6 +163,18 @@ export class FinanceService {
           where: { kind: { in: ["financeIncome", "financeExpense"] } },
           select: { id: true, label: true },
         }),
+        // As quotas dos sócios pagas: a outra fonte automática, com a mesma regra.
+        settings.includeQuotas
+          ? db.memberFee.findMany({
+              where: { status: "SETTLED", settledAt: { gte: serieDesde } },
+              select: { amountCents: true, settledAt: true },
+            })
+          : Promise.resolve([]),
+        settings.includeQuotas
+          ? db.memberFee
+              .aggregate({ where: { status: "SETTLED", ...(desde ? { settledAt: { gte: desde } } : {}) }, _sum: { amountCents: true } })
+              .then((r) => r._sum.amountCents ?? 0)
+          : Promise.resolve(0),
       ]);
 
       const doTipo = (k: FinanceKind) => totais.find((t) => t.kind === k)?._sum.amountCents ?? 0;
@@ -170,6 +186,7 @@ export class FinanceService {
       const autoMes = settings.includeFees
         ? somaCharges(chargesDaSerie.filter((c) => c.settledAt && c.settledAt >= desdeOMes))
         : 0;
+      const quotasMes = somaCharges(quotasDaSerie.filter((q) => q.settledAt && q.settledAt >= desdeOMes));
 
       /* --------------------------------------------------------- o mês --- */
       const doMes = movimentosDaSerie.filter((t) => t.occurredAt >= desdeOMes);
@@ -190,7 +207,7 @@ export class FinanceService {
         _sum: { amountCents: v.amountCents },
       }));
 
-      const saldo = settings.initialBalanceCents + receitas + autoDesdeOInicial - despesas;
+      const saldo = settings.initialBalanceCents + receitas + autoDesdeOInicial + quotasTotal - despesas;
 
       /* ----------------------------------------------------- o previsto --- */
       const somaAte = (kind: FinanceKind, dias: number) => {
@@ -219,7 +236,7 @@ export class FinanceService {
         const b = balde(t.occurredAt);
         if (b) b[t.kind === "INCOME" ? "income" : "expense"] += t.amountCents;
       }
-      for (const c of chargesDaSerie) {
+      for (const c of [...chargesDaSerie, ...quotasDaSerie]) {
         const b = c.settledAt ? balde(c.settledAt) : undefined;
         if (b) b.income += c.amountCents;
       }
@@ -229,10 +246,11 @@ export class FinanceService {
       return {
         saldo,
         saldoInicial: settings.initialBalanceCents,
-        receitasMes: receitasMes + autoMes,
+        receitasMes: receitasMes + autoMes + quotasMes,
         despesasMes,
-        resultadoMes: receitasMes + autoMes - despesasMes,
+        resultadoMes: receitasMes + autoMes + quotasMes - despesasMes,
         mensalidadesMes: autoMes,
+        quotasMes,
         receitasPrevistas,
         despesasPrevistas,
         saldoProjetado: saldo + receitasPrevistas - despesasPrevistas,
@@ -240,6 +258,7 @@ export class FinanceService {
         /** Os quatro horizontes de uma vez — trocar de horizonte não volta cá. */
         forecast,
         includeFees: settings.includeFees,
+        includeQuotas: settings.includeQuotas,
         monthly: [...meses.entries()].map(([month, v]) => ({ month, ...v })),
         proximasDespesas,
         proximasReceitas,
@@ -363,7 +382,8 @@ export class FinanceService {
                   ? { settledAt: { ...(p.from ? { gte: new Date(p.from) } : {}), ...(p.to ? { lte: new Date(p.to) } : {}) } }
                   : {}),
               },
-              orderBy: { settledAt: "desc" },
+              // Sem data no fim: eram as primeiras, e num clube com muitas empurravam as pagas de hoje para fora das 300.
+              orderBy: { settledAt: { sort: "desc", nulls: "last" } },
               take: 300,
               select: {
                 id: true, amountCents: true, period: true, settledAt: true, kind: true, title: true,
@@ -400,7 +420,8 @@ export class FinanceService {
                 : null,
               notes: null,
               seriesId: null,
-              category: { id: "auto-fees", label: "Mensalidades" },
+              // A avulsa (equipamento, inscrição) diz-se pelo nome; a mensalidade, "Mensalidades".
+              category: c.kind === "EXTRA" ? { id: "auto-extra", label: "Cobranças" } : { id: "auto-fees", label: "Mensalidades" },
               athlete: c.athlete,
               member: null,
               team: null,
@@ -411,7 +432,57 @@ export class FinanceService {
             }))
         : [];
 
-      return [...manuais, ...automaticas]
+      /* As quotas dos sócios pagas, com a mesma regra. Um filtro por atleta não as tem. */
+      const querQuotas =
+        settings.includeQuotas &&
+        (!p.kind || p.kind === "INCOME") &&
+        (!p.status || p.status === "COMPLETED") &&
+        !p.categoryId && !p.matchId && !p.calendarEventId && !p.trainingSessionId && !p.teamId && !p.athleteId;
+
+      const quotas = querQuotas
+        ? (
+            await db.memberFee.findMany({
+              where: {
+                status: "SETTLED",
+                ...(p.from || p.to
+                  ? { settledAt: { ...(p.from ? { gte: new Date(p.from) } : {}), ...(p.to ? { lte: new Date(p.to) } : {}) } }
+                  : {}),
+              },
+              orderBy: { settledAt: { sort: "desc", nulls: "last" } },
+              take: 300,
+              select: {
+                id: true, amountCents: true, period: true, label: true, settledAt: true, method: true, updatedAt: true,
+                member: { select: { id: true, name: true } },
+              },
+            })
+          )
+            .map((q) => ({ q, descricao: `${q.label?.trim() || `Quota ${q.period}`} · ${q.member.name}` }))
+            .filter(({ descricao }) => !termo || descricao.toLowerCase().includes(termo.toLowerCase()))
+            .map(({ q, descricao }) => ({
+              id: `quota_${q.id}`,
+              source: "quotas" as const,
+              kind: "INCOME" as const,
+              status: "COMPLETED" as const,
+              description: descricao,
+              amountCents: q.amountCents,
+              occurredAt: q.settledAt ?? q.updatedAt,
+              dueDate: null,
+              method: q.method ?? null,
+              counterparty: null,
+              notes: null,
+              seriesId: null,
+              category: { id: "auto-quotas", label: "Quotas" },
+              athlete: null,
+              member: q.member,
+              team: null,
+              staffName: null,
+              match: null,
+              calendarEvent: null,
+              createdBy: null,
+            }))
+        : [];
+
+      return [...manuais, ...automaticas, ...quotas]
         .sort((a, b) => new Date(b.occurredAt).getTime() - new Date(a.occurredAt).getTime())
         .slice(0, 300);
     });

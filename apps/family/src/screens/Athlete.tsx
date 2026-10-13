@@ -6,6 +6,7 @@ import { consultaPorResponder, reload, useStore, type Evaluation, type Report } 
 import { removerFotoAtleta, uploadFotoAtleta } from "@/lib/atleta";
 import { Avatar, Bar, Money, cx } from "@/ui";
 import { NotasDaEscola } from "./NotasDaEscola";
+import { Equipamento } from "./Equipamento";
 
 /**
  * "Como está o meu filho?"
@@ -227,6 +228,9 @@ export default function Athlete() {
         Carrega-se sozinha e decide sozinha se aparece — ver `NotasDaEscola`.
       */}
       <NotasDaEscola childId={child.id} childName={child.firstName ?? child.name} />
+
+      {/* O equipamento que o clube lhe entregou. Só aparece quando há. Ver `Equipamento`. */}
+      <Equipamento childId={child.id} />
 
       {/* Inscrição — linhas soltas, sem caixa. */}
       <section>

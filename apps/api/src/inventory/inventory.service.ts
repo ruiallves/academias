@@ -3,7 +3,7 @@ import { BadRequestException, ForbiddenException, Injectable, NotFoundException 
 import type { InventoryAssignmentStatus, InventoryMovementType, Prisma } from "@prisma/client";
 import { PrismaService, type ScopedClient } from "../prisma/prisma.service";
 import { StorageService } from "../storage/storage.service";
-import { can, type RequestContext } from "../common/permissions";
+import { athleteScopeFilter, can, type RequestContext } from "../common/permissions";
 import { currentSeason } from "../common/seasons";
 import { EspacoService } from "../storage/espaco.service";
 import type {
@@ -237,6 +237,38 @@ export class InventoryService {
   }
 
   /** O que está com atletas — a lista de "equipamento atribuído". */
+  /**
+   * O equipamento que um atleta tem com ele, para a app da família.
+   *
+   * Sem `inventory:read`: a família não vê o armazém, vê o que o filho (ou o
+   * próprio atleta) levou para casa. O âmbito é o da app (`athleteScopeFilter`),
+   * o mesmo das convocatórias. Só o que está por devolver, e só o que se lê
+   * (artigo, tamanho, quantidade, quando): nada de quem entregou nem notas.
+   */
+  async doMeuAtleta(ctx: RequestContext, athleteId: string) {
+    const ambito = athleteScopeFilter(ctx);
+    if (!ambito) throw new ForbiddenException("Isto é da app da família");
+    if (!ambito.in.includes(athleteId)) throw new ForbiddenException("Esse atleta não é teu");
+
+    return this.prisma.runAs(ctx.academyId, async (db) => {
+      const rows = await db.inventoryAssignment.findMany({
+        where: { athleteId, status: "ACTIVE" },
+        orderBy: { assignedAt: "desc" },
+        select: {
+          id: true, quantity: true, assignedAt: true,
+          variant: { select: { label: true, item: { select: { name: true } } } },
+        },
+      });
+      return rows.map((r) => ({
+        id: r.id,
+        item: r.variant.item.name,
+        variant: r.variant.label,
+        quantity: r.quantity,
+        assignedAt: r.assignedAt,
+      }));
+    });
+  }
+
   async assignments(
     ctx: RequestContext,
     params: { teamId?: string; athleteId?: string; itemId?: string; status?: string } = {},

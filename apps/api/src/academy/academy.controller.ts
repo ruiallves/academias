@@ -143,6 +143,11 @@ class CreateExtraChargeDto {
   @IsString()
   @Length(0, 400)
   notes?: string;
+
+  /** Avisar a família por notificação. Ausente é sim. Ver `createExtraCharge`. */
+  @IsOptional()
+  @IsBoolean()
+  notify?: boolean;
 }
 
 /**

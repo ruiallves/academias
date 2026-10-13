@@ -1,9 +1,12 @@
 import { useEffect, useMemo, useRef, useState, type FormEvent } from "react";
 import { Dialog, DialogField, dialogInputClass } from "@/components/Dialog";
-import { cx, ListaDeEscolha, Monogram, SelectField } from "@/components/primitives";
-import { Check, PackageOpen, Search, TriangleAlert } from "@/lib/icons";
+import { cx, ListaDeEscolha, Monogram } from "@/components/primitives";
+import { Check, CircleCheck, PackageOpen, Search, Smartphone, TriangleAlert } from "@/lib/icons";
 import { listAthletes, teamById } from "@/lib/api";
-import { semEquipasAtribuidas } from "@/lib/permissions";
+import { can, semEquipasAtribuidas } from "@/lib/permissions";
+import { apiPatch, apiPost } from "@/lib/http";
+import { reloadFees } from "@/lib/store";
+import { METODOS, type MetodoManual } from "@/components/finance/MetodoDePagamento";
 import { useSession } from "@/session";
 import { assign, listItems, type Item } from "@/lib/inventory";
 
@@ -19,6 +22,20 @@ import { assign, listItems, type Item } from "@/lib/inventory";
  *
  * O atleta procura-se por nome, com o campo já focado ao abrir — quem chega aqui
  * sabe quem é a pessoa, e o primeiro gesto é sempre escrever o nome dela.
+ *
+ * ## O artigo procura-se escrevendo
+ *
+ * Como o atleta: escreve-se o nome ("camisola", "fato") e os artigos com stock
+ * aparecem por baixo. Uma lista suspensa com trinta artigos obrigava a ler
+ * todos para encontrar um.
+ *
+ * ## O pagamento, no mesmo gesto
+ *
+ * Quem pode cobrar (`billing:write`) escolhe, para cada entrega: sem pagamento,
+ * por pagar (a cobrança vai para a app da família, que paga lá) ou já pago (com
+ * o método). É a cobrança avulsa de sempre (`/api/charges/avulsa`), com o
+ * artigo e o tamanho no título, por isso aparece em Mensalidades e na app como
+ * qualquer outra.
  *
  * ## Os tamanhos sem stock aparecem, mas não se escolhem
  *
@@ -50,6 +67,14 @@ export function DeliverDialog({
   const [busy, setBusy] = useState(false);
   const [erro, setErro] = useState<string | null>(null);
   const [feito, setFeito] = useState<string | null>(null);
+  const [procuraArtigo, setProcuraArtigo] = useState("");
+  /** O pagamento desta entrega. Ver o cabeçalho. */
+  const podeCobrar = can(session, "billing:write");
+  const [pagamento, setPagamento] = useState<"nenhum" | "porPagar" | "pago">("nenhum");
+  const [valor, setValor] = useState("");
+  const [metodo, setMetodo] = useState<MetodoManual | null>(null);
+  /** Por pagar: notificar a família já, ou só deixar a cobrança na app. */
+  const [avisar, setAvisar] = useState(true);
 
   const campoProcura = useRef<HTMLInputElement>(null);
 
@@ -81,7 +106,25 @@ export function DeliverDialog({
   // atrapalha quem está a entregar.
   const comStock = (itens ?? []).filter((i) => i.available > 0);
 
-  const valido = Boolean(athleteId && variantId && quantidade >= 1 && (variante?.available ?? 0) >= quantidade);
+  const valorCents = Math.round(Number(valor.replace(",", ".")) * 100);
+  const pagamentoOk =
+    pagamento === "nenhum" || (valorCents > 0 && Number.isFinite(valorCents) && (pagamento === "porPagar" || metodo !== null));
+  const valido = Boolean(athleteId && variantId && quantidade >= 1 && (variante?.available ?? 0) >= quantidade && pagamentoOk);
+
+  /* Os artigos com stock, filtrados pelo que se escreve. Sem nada escrito, os primeiros. */
+  const artigosEncontrados = useMemo(() => {
+    const t = fold(procuraArtigo);
+    const lista = (itens ?? []).filter((i) => i.available > 0);
+    return (t ? lista.filter((i) => fold(`${i.name} ${i.category?.label ?? ""} ${i.brand ?? ""}`).includes(t)) : lista).slice(0, 8);
+  }, [procuraArtigo, itens]);
+
+  function escolherArtigo(id: string) {
+    setItemId(id);
+    // O tamanho anterior não existe no artigo novo: limpar evita entregar de um artigo com o id de outro.
+    const escolhido = (itens ?? []).find((i) => i.id === id);
+    const primeiro = escolhido?.variants.find((x) => x.available > 0);
+    setVariantId(primeiro?.id ?? "");
+  }
 
   async function submeter(e: FormEvent) {
     e.preventDefault();
@@ -90,7 +133,38 @@ export function DeliverDialog({
     setErro(null);
     try {
       const r = await assign({ athleteId, variantId, quantity: quantidade, notes: notas.trim() || undefined });
-      setFeito(`${r.itemName} · ${r.variantLabel} entregue a ${r.athleteName}.`);
+      let cobranca = "";
+      if (pagamento !== "nenhum") {
+        /*
+         * Depois da entrega, e não antes: o material já saiu do armazém. Se a
+         * cobrança falhar, a entrega fica e diz-se que a cobrança não foi.
+         */
+        try {
+          const venceEm = new Date(Date.now() + 15 * 86_400_000).toISOString().slice(0, 10);
+          const c = await apiPost<{ id: string }>("/api/charges/avulsa", {
+            athleteId,
+            title: `${r.itemName} · ${r.variantLabel}${quantidade > 1 ? ` (${quantidade})` : ""}`.slice(0, 80),
+            amountCents: valorCents,
+            dueDate: venceEm,
+            // A já paga nunca avisa: nasce aberta e fecha a seguir, e a família
+            // receberia um "tens um pagamento" de uma coisa já paga.
+            notify: pagamento === "porPagar" && avisar,
+          });
+          if (pagamento === "pago" && metodo) {
+            await apiPatch(`/api/charges/${c.id}/status`, { status: "SETTLED", method: metodo });
+          }
+          cobranca =
+            pagamento === "pago"
+              ? " Registado como pago."
+              : avisar
+                ? " A cobrança foi para a app da família, com notificação."
+                : " A cobrança ficou na app da família, sem notificação.";
+          void reloadFees();
+        } catch (err) {
+          cobranca = ` A cobrança não foi lançada: ${err instanceof Error ? err.message : "erro"}. Lança-a em Mensalidades.`;
+        }
+      }
+      setFeito(`${r.itemName} · ${r.variantLabel} entregue a ${r.athleteName}.${cobranca}`);
       /*
        * Fica aberto depois de entregar.
        *
@@ -102,6 +176,10 @@ export function DeliverDialog({
       setVariantId("");
       setQuantidade(1);
       setNotas("");
+      setProcuraArtigo("");
+      setValor("");
+      setMetodo(null);
+      setAvisar(true);
       const frescos = await listItems();
       setItens(frescos);
       onDone();
@@ -126,7 +204,13 @@ export function DeliverDialog({
             Fechar
           </button>
           <button type="submit" form="form-entregar" className="ctl-primary" disabled={!valido || busy}>
-            {busy ? "A entregar…" : "Confirmar entrega"}
+            {busy
+              ? "A entregar…"
+              : pagamento === "porPagar" && valorCents > 0
+                ? `Entregar e cobrar ${(valorCents / 100).toLocaleString("pt-PT", { style: "currency", currency: "EUR" })}`
+                : pagamento === "pago" && valorCents > 0
+                  ? `Entregar · ${(valorCents / 100).toLocaleString("pt-PT", { style: "currency", currency: "EUR" })} pago`
+                  : "Confirmar entrega"}
           </button>
         </>
       }
@@ -223,22 +307,58 @@ export function DeliverDialog({
               Não há stock disponível em nenhum artigo. Dá entrada de material primeiro.
             </p>
           ) : (
-            <SelectField
-              className="w-full"
-              value={itemId}
-              onChange={(v) => {
-                setItemId(v);
-                // O tamanho anterior não existe no artigo novo: limpar evita
-                // entregar de um artigo com o id de outro.
-                const escolhido = comStock.find((i) => i.id === v);
-                const primeiro = escolhido?.variants.find((x) => x.available > 0);
-                setVariantId(primeiro?.id ?? "");
-              }}
-              options={[
-                { value: "", label: "Escolher artigo…" },
-                ...comStock.map((i) => ({ value: i.id, label: `${i.name} · ${i.available} disp.` })),
-              ]}
-            />
+            item ? (
+              <button
+                type="button"
+                onClick={() => {
+                  setItemId("");
+                  setVariantId("");
+                  setProcuraArtigo("");
+                }}
+                className="flex w-full items-center gap-2.5 rounded-[var(--radius-control)] border border-line px-3 py-2 text-left"
+              >
+                <span className="min-w-0 flex-1">
+                  <span className="block truncate text-body font-medium text-ink">{item.name}</span>
+                  <span className="block truncate text-meta text-ink-3">
+                    {[item.category?.label, `${item.available} disponíveis`].filter(Boolean).join(" · ")}
+                  </span>
+                </span>
+                <span className="shrink-0 text-meta text-ink-3">Trocar</span>
+              </button>
+            ) : (
+              <>
+                <div className="relative">
+                  <Search className="pointer-events-none absolute top-1/2 left-2.5 size-3.5 -translate-y-1/2 text-ink-4" strokeWidth={1.75} />
+                  <input
+                    value={procuraArtigo}
+                    onChange={(e) => setProcuraArtigo(e.target.value)}
+                    placeholder="Escreve o nome do artigo…"
+                    className={cx(dialogInputClass, "pl-8")}
+                  />
+                </div>
+                {artigosEncontrados.length > 0 ? (
+                  <ListaDeEscolha className="mt-1.5 max-h-[260px] overflow-y-auto rounded-[var(--radius-control)] border border-line">
+                    {artigosEncontrados.map((i) => (
+                      <li key={i.id}>
+                        <button
+                          type="button"
+                          onClick={() => escolherArtigo(i.id)}
+                          className="flex w-full items-center gap-2.5 border-b border-line px-3 py-2 text-left last:border-0 hover:bg-sunken/60"
+                        >
+                          <span className="min-w-0 flex-1">
+                            <span className="block truncate text-body text-ink">{i.name}</span>
+                            {i.category && <span className="block truncate text-meta text-ink-3">{i.category.label}</span>}
+                          </span>
+                          <span className="shrink-0 text-meta text-ink-3 tabular">{i.available} disp.</span>
+                        </button>
+                      </li>
+                    ))}
+                  </ListaDeEscolha>
+                ) : (
+                  <p className="mt-1.5 text-meta text-ink-3">Nenhum artigo com stock com esse nome.</p>
+                )}
+              </>
+            )
           )}
         </DialogField>
 
@@ -294,6 +414,132 @@ export function DeliverDialog({
               />
             </DialogField>
           </div>
+        )}
+
+        {/*
+          5. O pagamento, para quem pode cobrar. Ver o cabeçalho.
+
+          Um cartão: o título e o seletor em cima; com cobrança, o valor em
+          grande, o que vai acontecer dito numa linha, e (se já pago) o método
+          numa fila de quatro. Sem cobrança, fica só o título: o caso de sempre
+          não ocupa espaço.
+        */}
+        {variante && podeCobrar && (
+          <section className="overflow-hidden rounded-[12px] border border-line">
+            <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-2 px-3.5 py-2.5">
+              <span className="text-meta font-medium text-ink-2">Pagamento</span>
+              <div role="radiogroup" aria-label="Pagamento" className="flex rounded-[var(--radius-control)] bg-sunken p-0.5">
+                {(
+                  [
+                    ["nenhum", "Sem pagamento"],
+                    ["porPagar", "Por pagar"],
+                    ["pago", "Já pago"],
+                  ] as const
+                ).map(([v, rotulo]) => (
+                  <button
+                    key={v}
+                    type="button"
+                    role="radio"
+                    aria-checked={pagamento === v}
+                    onClick={() => setPagamento(v)}
+                    className={cx(
+                      "rounded-[calc(var(--radius-control)-2px)] px-2.5 py-1 text-meta font-medium transition-colors duration-[120ms]",
+                      pagamento === v ? "bg-surface text-ink shadow-[0_1px_2px_rgba(0,0,0,0.08)]" : "text-ink-3 hover:text-ink",
+                    )}
+                  >
+                    {rotulo}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {pagamento !== "nenhum" && (
+              <div className="space-y-3 border-t border-line bg-sunken/40 px-3.5 py-3.5">
+                <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
+                  <div className="relative w-[150px]">
+                    <input
+                      inputMode="decimal"
+                      value={valor}
+                      onChange={(e) => setValor(e.target.value.replace(/[^\d.,]/g, ""))}
+                      placeholder="0,00"
+                      aria-label="Valor em euros"
+                      autoFocus
+                      className="h-11 w-full rounded-[var(--radius-control)] border border-line bg-surface pr-9 pl-3 text-[20px] font-semibold text-ink tabular placeholder:font-normal placeholder:text-ink-4 focus:border-line-strong focus:outline-none"
+                    />
+                    <span className="pointer-events-none absolute top-1/2 right-3 -translate-y-1/2 text-body font-medium text-ink-3">€</span>
+                  </div>
+                  <p className="flex min-w-0 flex-1 items-start gap-2 text-meta leading-relaxed text-ink-2">
+                    {pagamento === "porPagar" ? (
+                      <>
+                        <Smartphone className="mt-0.5 size-3.5 shrink-0 text-signal-ink" strokeWidth={1.75} />
+                        <span>
+                          Fica na app da família{atleta ? ` de ${atleta.name.split(" ")[0]}` : ""} para pagar lá, e em Mensalidades.
+                        </span>
+                      </>
+                    ) : (
+                      <>
+                        <CircleCheck className="mt-0.5 size-3.5 shrink-0 text-ok" strokeWidth={1.75} />
+                        <span>Fica registado como pago, com o método escolhido. Aparece em Mensalidades.</span>
+                      </>
+                    )}
+                  </p>
+                </div>
+
+                {pagamento === "porPagar" && (
+                  <div className="flex items-center justify-between gap-3 rounded-[var(--radius-control)] bg-surface px-3 py-2.5">
+                    <span className="min-w-0">
+                      <span className="block text-meta font-medium text-ink">Avisar a família</span>
+                      <span className="block text-[12px] leading-snug text-ink-3">
+                        {avisar
+                          ? "Recebe uma notificação a pedir o pagamento."
+                          : "Sem notificação. A cobrança aparece na app na mesma."}
+                      </span>
+                    </span>
+                    <button
+                      type="button"
+                      role="switch"
+                      aria-checked={avisar}
+                      aria-label="Avisar a família"
+                      onClick={() => setAvisar((v) => !v)}
+                      className={cx(
+                        "relative h-6 w-10 shrink-0 rounded-full transition-colors duration-[120ms]",
+                        avisar ? "bg-signal-strong" : "bg-line-strong",
+                      )}
+                    >
+                      <span
+                        aria-hidden
+                        className={cx(
+                          "absolute top-0.5 size-5 rounded-full bg-white ring-1 ring-black/10 transition-[left] duration-[120ms]",
+                          avisar ? "left-[18px]" : "left-0.5",
+                        )}
+                      />
+                    </button>
+                  </div>
+                )}
+
+                {pagamento === "pago" && (
+                  <div role="radiogroup" aria-label="Método de pagamento" className="grid grid-cols-2 gap-1.5 sm:grid-cols-4">
+                    {METODOS.map((m) => (
+                      <button
+                        key={m.value}
+                        type="button"
+                        role="radio"
+                        aria-checked={metodo === m.value}
+                        onClick={() => setMetodo(m.value)}
+                        className={cx(
+                          "flex h-10 items-center justify-center gap-2 rounded-[var(--radius-control)] border bg-surface px-2 text-meta font-medium transition-colors duration-[120ms]",
+                          metodo === m.value ? "border-signal-strong text-ink ring-1 ring-signal-strong" : "border-line text-ink-2 hover:border-line-strong",
+                        )}
+                      >
+                        <span className="flex h-5 items-center [&_img]:h-4">{m.marca}</span>
+                        {m.label}
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
+          </section>
         )}
 
         {variante && quantidade > variante.available && (

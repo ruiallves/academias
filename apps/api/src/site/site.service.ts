@@ -18,6 +18,7 @@ import {
 } from "./site.tipos";
 import { SiteRevalidarService } from "./site-revalidar.service";
 import { SEM_PLANO, siteIncluido } from "./plano";
+import { SiteDominioService } from "./site-dominio.service";
 
 /**
  * O site do clube, do lado da consola (menu Website).
@@ -44,6 +45,7 @@ export class SiteService {
     private readonly espaco: EspacoService,
     private readonly config: ConfigService,
     private readonly revalidar: SiteRevalidarService,
+    private readonly dominio: SiteDominioService,
   ) {}
 
   /* ------------------------------------------------------------------------ */
@@ -99,6 +101,8 @@ export class SiteService {
       }),
     );
     this.avisar(ctx);
+    // Publicar liga o endereço <slug>.website.academias.pt no Vercel, sem ninguém lá ir.
+    if (dto.publicado === true) this.ligarPreVisualizacao(ctx);
     return {
       publicado: config.published,
       layout: config.layout as Layout,
@@ -328,6 +332,14 @@ export class SiteService {
     if (!can(ctx, "settings:write")) throw new ForbiddenException("Sem permissão para mexer no site do clube");
     const ok = await this.prisma.runAs(ctx.academyId, (db) => siteIncluido(db, ctx.academyId));
     if (!ok) throw new ForbiddenException({ code: "SITE_NOT_IN_PLAN", message: SEM_PLANO });
+  }
+
+  /** Em fundo, como o aviso: o Vercel nunca atrasa nem falha a publicação. */
+  private ligarPreVisualizacao(ctx: RequestContext) {
+    void this.prisma
+      .runAs(ctx.academyId, (db) => db.academy.findFirst({ where: { id: ctx.academyId }, select: { slug: true } }))
+      .then((a) => a && this.dominio.garantirPreVisualizacao(a.slug))
+      .catch(() => undefined);
   }
 
   /** Depois de gravar, sem esperar: o aviso nunca atrasa nem falha uma escrita. */

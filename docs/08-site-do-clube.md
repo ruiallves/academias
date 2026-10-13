@@ -210,21 +210,23 @@ aponta, o clube vê o site em `<slug>.website.academias.pt`.
 ### Pré-visualizações em `<slug>.website.academias.pt`
 
 O DNS do `academias.pt` é gerido no **dominios.pt** (SOA em
-`dns1.host-redirect.com`), e não no Vercel: o `academias.pt` só tem um
-registo a apontar o site de marketing para o Vercel. O Vercel só aceita
-wildcards (`*.website.academias.pt`) com o domínio nos nameservers dele, por
-isso, enquanto for assim, cada pré-visualização é um endereço exato:
+`dns1.host-redirect.com`), e não no Vercel. O Vercel só emite um certificado
+wildcard com o domínio nos nameservers dele, por isso a solução é outra, e é
+automática:
 
-1. No projeto do site no Vercel, acrescentar `<slug>.website.academias.pt`.
-2. No DNS do dominios.pt, um `CNAME` `<slug>.website` para o valor que o
-   Vercel mostrar. Um registo com nome exato ganha ao `*` do Railway, que
-   não se toca.
+1. **Uma vez (feito a 13/10):** no dominios.pt, `*.website` CNAME
+   `cname.vercel-dns.com`. Todo o `<slug>.website.academias.pt` chega ao
+   Vercel. O `*` do Railway não é tocado: o `*.website` é mais específico.
+2. **Por clube, sozinho:** ao publicar no menu Website, a API acrescenta
+   `<slug>.website.academias.pt` ao projeto do site no Vercel
+   (`SiteDominioService.garantirPreVisualizacao`), e o Vercel emite o
+   certificado desse endereço. Abrir a ficha do clube no painel faz o mesmo
+   (para clubes publicados antes disto). Precisa de `VERCEL_TOKEN` e
+   `VERCEL_SITE_PROJECT_ID` no Railway; sem eles, acrescenta-se à mão em
+   Settings → Domains.
 
-Para muitos clubes: um domínio só de pré-visualizações com os nameservers no
-Vercel desde o início (o wildcard funciona logo), ou passar o DNS do
-`academias.pt` para o Vercel **depois** de recriar lá todos os registos de
-hoje (site, `api`, `*` do Railway, `admin`, os do Resend). Mudar os
-nameservers antes disso deixa os clubes sem consola nem app.
+O plano Hobby do Vercel limita os domínios por projeto: com muitos clubes, é
+preciso o Pro.
 
 Com `SITE_FONTE=demo` qualquer pré-visualização mostra o clube de
 demonstração (`dominios.ts`), e os endereços `…vercel.app` também, com

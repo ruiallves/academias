@@ -39,8 +39,12 @@ export const METHOD_LABEL: Record<string, string> = {
 
 export type TransactionRow = {
   id: string;
-  /** `manual` edita-se aqui; `fees` deriva das Mensalidades e é só leitura. */
-  source: "manual" | "fees";
+  /**
+   * `manual` edita-se aqui. `fees` deriva das cobranças pagas (mensalidades e
+   * avulsas, como o equipamento) e `quotas` das quotas dos sócios pagas: só
+   * leitura, a verdade delas vive nesses ecrãs.
+   */
+  source: "manual" | "fees" | "quotas";
   kind: FinanceKind;
   status: FinanceStatus;
   description: string;
@@ -79,6 +83,8 @@ export type Overview = {
   despesasMes: number;
   resultadoMes: number;
   mensalidadesMes: number;
+  /** As quotas de sócios pagas este mês. Ausente num servidor antigo. */
+  quotasMes?: number;
   receitasPrevistas: number;
   despesasPrevistas: number;
   saldoProjetado: number;

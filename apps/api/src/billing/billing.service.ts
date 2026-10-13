@@ -692,6 +692,13 @@ export class BillingService implements OnModuleInit, OnModuleDestroy {
       dueDate: string;
       categoryId?: string;
       notes?: string;
+      /**
+       * Avisar a família por notificação. `false` lança a cobrança na mesma (aparece
+       * na app para pagar) sem a notificação: a entrega de equipamento por pagar
+       * em que o clube não quer ainda pedir o dinheiro, e a já paga, que nasce
+       * aberta e fecha logo a seguir. Ausente é `true`, como sempre foi.
+       */
+      notify?: boolean;
     },
   ) {
     if (!can(ctx, "billing:write")) throw new ForbiddenException("Sem permissão para cobrar");
@@ -801,7 +808,7 @@ export class BillingService implements OnModuleInit, OnModuleDestroy {
         criadas.push({ id: charge.id, athleteId: athlete.id, name: athlete.name });
 
         /* Todos os encarregados activos — ver a nota em `sendOverdueReminders`. */
-        for (const g of athlete.guardians.filter((x) => x.membership.isActive)) {
+        for (const g of input.notify === false ? [] : athlete.guardians.filter((x) => x.membership.isActive)) {
           await this.notifications.enqueue(
             {
               academyId: ctx.academyId,
@@ -818,7 +825,8 @@ export class BillingService implements OnModuleInit, OnModuleDestroy {
         }
       }
 
-      const avisados = athletes.reduce((n, a) => n + a.guardians.filter((g) => g.membership.isActive).length, 0);
+      const avisados =
+        input.notify === false ? 0 : athletes.reduce((n, a) => n + a.guardians.filter((g) => g.membership.isActive).length, 0);
 
       /*
        * A resposta continua a ser a de uma cobrança quando é uma só: era o que

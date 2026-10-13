@@ -120,6 +120,12 @@ export class InventoryController {
     return this.inventory.importItems(req.ctx, dto.rows);
   }
 
+  /** O equipamento de um atleta, para a app da família. Ver `doMeuAtleta`. */
+  @Get("familia/:athleteId")
+  doMeuAtleta(@Req() req: AuthedRequest, @Param("athleteId") athleteId: string) {
+    return this.inventory.doMeuAtleta(req.ctx, athleteId);
+  }
+
   @Get("assignments")
   assignments(
     @Req() req: AuthedRequest,

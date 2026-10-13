@@ -69,6 +69,7 @@ export {
   PanelLeft,
   Send,
   CircleCheck,
+  Smartphone,
   TriangleAlert,
   Sparkle,
   Ban,

@@ -148,7 +148,16 @@ export default function Finance() {
           <dl className="grid grid-cols-2 gap-x-10 gap-y-3 sm:grid-cols-4">
             {(
               [
-                ["Receitas este mês", euros(data.receitasMes), data.mensalidadesMes > 0 ? `${euros(data.mensalidadesMes)} de mensalidades` : null],
+                [
+                  "Receitas este mês",
+                  euros(data.receitasMes),
+                  [
+                    data.mensalidadesMes > 0 ? `${euros(data.mensalidadesMes)} de mensalidades e cobranças` : null,
+                    (data.quotasMes ?? 0) > 0 ? `${euros(data.quotasMes ?? 0)} de quotas` : null,
+                  ]
+                    .filter(Boolean)
+                    .join(" · ") || null,
+                ],
                 ["Despesas este mês", euros(data.despesasMes), null],
                 ["Receitas previstas", euros(previsao.income), `próximos ${previsao.days} dias`],
                 ["Despesas previstas", euros(previsao.expense), `próximos ${previsao.days} dias`],
@@ -400,6 +409,7 @@ function SettingsDialog({ onClose, onDone }: { onClose: () => void; onDone: () =
   const [saldo, setSaldo] = useState("");
   const [desde, setDesde] = useState("");
   const [comFees, setComFees] = useState(true);
+  const [comQuotas, setComQuotas] = useState(true);
   const [busy, setBusy] = useState(false);
   const [erro, setErro] = useState<string | null>(null);
 
@@ -410,6 +420,7 @@ function SettingsDialog({ onClose, onDone }: { onClose: () => void; onDone: () =
         setSaldo((r.initialBalanceCents / 100).toFixed(2).replace(".", ","));
         setDesde(r.initialBalanceAt ? r.initialBalanceAt.slice(0, 10) : "");
         setComFees(r.includeFees);
+        setComQuotas(r.includeQuotas);
       })
       .catch(() => setErro("Não foi possível carregar as definições."));
   }, []);
@@ -425,7 +436,7 @@ function SettingsDialog({ onClose, onDone }: { onClose: () => void; onDone: () =
     setBusy(true);
     setErro(null);
     try {
-      await updateSettings({ initialBalanceCents: cents, initialBalanceAt: desde, includeFees: comFees });
+      await updateSettings({ initialBalanceCents: cents, initialBalanceAt: desde, includeFees: comFees, includeQuotas: comQuotas });
       onDone();
     } catch (err) {
       setErro(err instanceof Error ? err.message : "Não foi possível guardar.");
@@ -478,10 +489,25 @@ function SettingsDialog({ onClose, onDone }: { onClose: () => void; onDone: () =
             className="mt-0.5 size-4 accent-[var(--color-signal)]"
           />
           <span className="text-body text-ink-2">
-            Considerar as mensalidades pagas no saldo
+            Considerar as mensalidades e cobranças pagas no saldo
             <span className="block text-meta leading-relaxed text-ink-4">
-              As mensalidades confirmadas entram sozinhas como receita. Desligar não apaga nem cancela nenhum
-              pagamento — só deixa de as contar aqui.
+              As mensalidades e as cobranças avulsas (equipamento, inscrições) confirmadas entram sozinhas como
+              receita. Desligar não apaga nem cancela nenhum pagamento, só deixa de as contar aqui.
+            </span>
+          </span>
+        </label>
+
+        <label className="flex cursor-pointer items-start gap-2.5">
+          <input
+            type="checkbox"
+            checked={comQuotas}
+            onChange={(e) => setComQuotas(e.target.checked)}
+            className="mt-0.5 size-4 accent-[var(--color-signal)]"
+          />
+          <span className="text-body text-ink-2">
+            Considerar as quotas de sócios pagas no saldo
+            <span className="block text-meta leading-relaxed text-ink-4">
+              As quotas confirmadas entram sozinhas como receita, como as mensalidades.
             </span>
           </span>
         </label>

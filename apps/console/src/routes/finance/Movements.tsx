@@ -165,7 +165,8 @@ export default function Movements() {
       "Origem/destino": t.counterparty ?? "",
       Equipa: t.team?.name ?? t.match?.teamName ?? "",
       Evento: t.match?.label ?? t.calendarEvent?.title ?? "",
-      "Registado por": t.createdBy ?? (t.source === "fees" ? "Automático (mensalidades)" : ""),
+      "Registado por":
+        t.createdBy ?? (t.source === "fees" ? "Automático (cobranças)" : t.source === "quotas" ? "Automático (quotas)" : ""),
     }));
     const sheet = XLSX.utils.json_to_sheet(linhas);
     sheet["!cols"] = Object.keys(linhas[0] ?? { a: 1 }).map((k) => ({ wch: Math.max(12, k.length + 4) }));
@@ -343,8 +344,10 @@ export default function Movements() {
               header: "Estado",
               align: "right",
               render: (t) =>
-                t.source === "fees" ? (
-                  <Pill tone="ok">Mensalidade</Pill>
+                t.source !== "manual" ? (
+                  <Pill tone="ok">
+                    {t.source === "quotas" ? "Quota" : t.category?.id === "auto-extra" ? "Cobrança" : "Mensalidade"}
+                  </Pill>
                 ) : (
                   <Pill tone={STATUS_TONE[t.status]}>{STATUS_LABEL[t.status]}</Pill>
                 ),
