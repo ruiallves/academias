@@ -3,6 +3,7 @@ import { Link, useNavigate, useParams } from "react-router-dom";
 import { CalendarCheck, CalendarDays, ChevronLeft, CircleCheck, Hourglass, PackageX, Shirt, Tag, Undo2, Wallet, type LucideIcon } from "lucide-react";
 import { apiGet } from "@/lib/http";
 import { useStore } from "@/lib/store";
+import { useAceitaPagamentos } from "@/lib/cotacao";
 import { cx } from "@/ui";
 import { FIM, dataCurta, euros, type EstadoDaPeca } from "./Equipamento";
 
@@ -58,6 +59,12 @@ export default function EquipamentoPeca() {
   const navigate = useNavigate();
   const store = useStore();
   const [peca, setPeca] = useState<Peca | null | "erro">(null);
+  /*
+   * Com os pagamentos do clube desligados não há botão de pagar: a cobrança
+   * está nos Pagamentos, mas lá só se lê. Enquanto não se sabe, também não,
+   * para o botão não aparecer e sumir logo a seguir. Ver `Payments`.
+   */
+  const pagaPelaApp = useAceitaPagamentos(store.academy.name).aceita === true;
 
   useEffect(() => {
     let vivo = true;
@@ -131,7 +138,7 @@ export default function EquipamentoPeca() {
         }
         texto={
           comEle
-            ? `Entregue a ${dataCurta(peca.assignedAt)}. No fim da época, o clube pode pedir para a devolver.`
+            ? `Entregue a ${dataCurta(peca.assignedAt)}.`
             : peca.returnedAt
               ? `A ${dataCurta(peca.returnedAt)}.`
               : ""
@@ -161,7 +168,7 @@ export default function EquipamentoPeca() {
                   ? [pg.pagoEm ? `A ${dataCurta(pg.pagoEm)}` : null, pg.metodo ? `por ${METODO[pg.metodo] ?? pg.metodo}` : null]
                       .filter(Boolean)
                       .join(", ") || "O clube marcou como pago."
-                  : pg.naApp
+                  : pg.naApp && pagaPelaApp
                     ? store.atleta
                       ? "O pedido está na app do teu encarregado."
                       : `Está nos Pagamentos${pg.ate ? `, até ${dataCurta(pg.ate)}` : ""}. Quando pagares, fica pago aqui também.`
@@ -169,7 +176,7 @@ export default function EquipamentoPeca() {
               </span>
             </span>
           </div>
-          {pg.estado === "porPagar" && pg.naApp && !store.atleta && (
+          {pg.estado === "porPagar" && pg.naApp && pagaPelaApp && !store.atleta && (
             <div className="border-t border-ink/5 p-4">
               <Link to="/pagamentos" className="cta w-full justify-center">
                 <Wallet className="size-[18px]" strokeWidth={2.2} />
