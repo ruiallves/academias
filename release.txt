@@ -1,5 +1,5 @@
 14/10/2026
-- Site academias.pt, formulário de contacto: o tempo de preenchimento passou a ser obrigatório, para um script que chame a API diretamente sem passar pelo formulário ser recusado.
+- Site academias.pt, formulário de contacto: proteção contra ataques reescrita. O servidor dá uma ficha assinada a cada formulário aberto, que só serve uma vez e só passa ao fim de 3 segundos; o mesmo email (incluindo variações nome+qualquercoisa@gmail.com) ou o mesmo telefone tem no máximo 3 pedidos por dia; o serviço inteiro aceita no máximo 5 pedidos por hora e 30 por dia; e os envios passam um de cada vez, para pedidos simultâneos não fintarem os limites. Nada disto depende do IP.
 
 13/10/2026
 - Site academias.pt, formulário de contacto: proteção contra robôs e pedidos repetidos. Campo-armadilha invisível, recusa de envios feitos em menos de 3 segundos, o mesmo pedido na mesma hora não se duplica, e no máximo 3 pedidos por email e 20 por endereço de rede por dia (além dos 5 por minuto que já existiam).

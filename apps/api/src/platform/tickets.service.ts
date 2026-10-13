@@ -1,3 +1,4 @@
+import { randomBytes } from "node:crypto";
 import { ConfigService } from "@nestjs/config";
 import { MailClient } from "../mail/mail.client";
 import { ticketAlertEmail } from "../mail/mail.templates";
@@ -6,6 +7,17 @@ import { TicketStatus } from "@prisma/client";
 import { PlatformPrisma } from "./platform.prisma";
 import { PlatformService } from "./platform.service";
 import type { PlatformAdminContext } from "./platform.guard";
+import { FichaDoSite, caixaDoEmail, numeroDoTelefone } from "./ficha-do-site";
+
+/**
+ * Os tectos do formulário do site. Os pedidos reais são um ou dois por semana:
+ * isto nunca apanha um clube, e trava qualquer enxurrada, venha de onde vier.
+ */
+const TECTO_HORA = 5;
+const TECTO_DIA = 30;
+const POR_PESSOA_DIA = 3;
+/** Quantos envios do site podem estar à espera de vez. Acima disto, recusa-se logo. */
+const FILA_MAXIMA = 10;
 
 /**
  * Os pedidos que chegam pelo formulário do site.
@@ -46,7 +58,41 @@ export class TicketsService {
     private readonly platform: PlatformService,
     private readonly mail: MailClient,
     private readonly config: ConfigService,
-  ) {}
+  ) {
+    const segredo = this.config.get<string>("SITE_FORM_SECRET") || this.config.get<string>("SUPABASE_JWT_SECRET") || "";
+    if (!segredo) this.log.warn("Sem SITE_FORM_SECRET nem SUPABASE_JWT_SECRET: o formulário do site recusa todos os envios");
+    this.ficha = new FichaDoSite(segredo || randomBytes(32).toString("hex"));
+  }
+
+  private readonly ficha: FichaDoSite;
+
+  /*
+   * A fila dos envios do site, na memória da API.
+   *
+   * Era um bloqueio na base, dentro de uma transacção: cada envio à espera
+   * segurava uma ligação, e sessenta envios de uma vez esgotavam as ligações
+   * da API inteira. Aqui esperam sem ocupar nada, e acima de `FILA_MAXIMA`
+   * nem chegam a esperar. A API corre numa instância só, que é o que isto pede.
+   */
+  private fila: Promise<unknown> = Promise.resolve();
+  private aEspera = 0;
+
+  private async emFila<T>(fn: () => Promise<T>): Promise<T | "cheio"> {
+    if (this.aEspera >= FILA_MAXIMA) return "cheio";
+    this.aEspera++;
+    const vez = this.fila.then(fn, fn);
+    this.fila = vez.catch(() => undefined);
+    try {
+      return await vez;
+    } finally {
+      this.aEspera--;
+    }
+  }
+
+  /** A ficha que o formulário pede ao abrir. Ver `FichaDoSite`. */
+  emitirFicha() {
+    return { ficha: this.ficha.emitir() };
+  }
 
   /**
    * Criar a partir do site. Sem sessão — é a entrada da frente.
@@ -68,6 +114,7 @@ export class TicketsService {
       message?: string;
       notaExtra?: string;
       elapsedMs?: number;
+      ficha?: string;
     },
     ip?: string,
   ) {
@@ -88,67 +135,82 @@ export class TicketsService {
     }
 
     /*
-     * Demasiado depressa. Entre abrir a página e carregar em Enviar, uma pessoa
-     * demora mais do que três segundos: há um nome, um email e um clube para
-     * escrever. Aqui recusa-se de frente, e não em silêncio: se alguma vez
-     * apanhar uma pessoa, ela carrega outra vez e o tempo já passou.
+     * A ficha: o servidor é que diz quando a página abriu, e cada ficha serve
+     * uma vez. Trocar de IP ou de email não ajuda. Ver `FichaDoSite`.
      */
-    if (dto.elapsedMs === undefined || dto.elapsedMs < 3_000) {
-      throw new BadRequestException("Foi demasiado rápido. Confirma o que escreveste e envia outra vez.");
+    const recusa = this.ficha.verificar(dto.ficha);
+    if (recusa) {
+      this.log.warn(`Pedido do site recusado (ficha) de ${ip ?? "?"}: ${recusa}`);
+      throw new BadRequestException(recusa);
     }
 
-    const agora = Date.now();
-    const haUmaHora = new Date(agora - 60 * 60 * 1000);
-    const ha24h = new Date(agora - 24 * 60 * 60 * 1000);
+    const caixa = caixaDoEmail(email);
+    const telefone = numeroDoTelefone(dto.phone);
+    const assunto = dto.subject.trim();
+    const clube = dto.club?.trim() || null;
+    const mensagem = dto.message?.trim() || null;
 
     /*
-     * O mesmo pedido outra vez: a página recarregada e reenviada, o botão
-     * carregado duas vezes com a rede lenta. Já cá está; diz-se que chegou e
-     * não se duplica nem se volta a avisar ninguém.
+     * A verificação e a gravação, um envio de cada vez.
+     *
+     * Vinte pedidos ao mesmo tempo liam todos "ainda não há nenhum" antes de o
+     * primeiro estar gravado, e passavam os vinte. A fila põe-nos um a seguir
+     * ao outro: cada um vê os anteriores já gravados. Ver `emFila`.
      */
-    const repetido = await this.prisma.ticket.findFirst({
-      where: {
-        email,
-        subject: dto.subject.trim(),
-        club: dto.club?.trim() || null,
-        message: dto.message?.trim() || null,
-        createdAt: { gte: haUmaHora },
-      },
-      select: { id: true },
+    const resultado = await this.emFila(async () => {
+      const tx = this.prisma;
+
+      const agora = Date.now();
+      const recentes = await tx.ticket.findMany({
+        where: { createdAt: { gte: new Date(agora - 24 * 60 * 60 * 1000) } },
+        select: { email: true, phone: true, subject: true, club: true, message: true, createdAt: true },
+      });
+
+      /* O tecto do serviço inteiro: trava uma enxurrada, venha de onde vier. */
+      const naHora = recentes.filter((t) => t.createdAt.getTime() >= agora - 60 * 60 * 1000).length;
+      if (naHora >= TECTO_HORA || recentes.length >= TECTO_DIA) return "cheio" as const;
+
+      /* A mesma pessoa: a caixa de correio (sem `+etiquetas`) ou o telefone. */
+      const daPessoa = recentes.filter(
+        (t) => caixaDoEmail(t.email) === caixa || (telefone !== null && numeroDoTelefone(t.phone) === telefone),
+      );
+      const repetido = daPessoa.some(
+        (t) =>
+          t.createdAt.getTime() >= agora - 60 * 60 * 1000 &&
+          t.subject === assunto && (t.club ?? null) === clube && (t.message ?? null) === mensagem,
+      );
+      if (repetido) return "repetido" as const;
+      if (daPessoa.length >= POR_PESSOA_DIA) return "pessoa" as const;
+
+      return tx.ticket.create({
+        data: {
+          name,
+          email,
+          phone: dto.phone?.trim() || null,
+          club: clube,
+          subject: assunto,
+          subjectId: dto.subjectId?.trim() || null,
+          role: dto.role?.trim() || null,
+          athletes: dto.athletes?.trim() || null,
+          message: mensagem,
+          status: "NOVO",
+          ip: ip ?? null,
+        },
+        select: { id: true },
+      });
     });
-    if (repetido) return { ok: true as const };
 
-    /*
-     * Os tectos do dia. Três pedidos por email chegam a qualquer pessoa (e
-     * respondemos ao primeiro); vinte por endereço de rede travam um script com
-     * uma lista de emails. Os dois são visíveis: quem bate neles fica a saber
-     * que o pedido já cá está.
-     */
-    const [porEmail, porIp] = await Promise.all([
-      this.prisma.ticket.count({ where: { email, createdAt: { gte: ha24h } } }),
-      ip ? this.prisma.ticket.count({ where: { ip, createdAt: { gte: ha24h } } }) : Promise.resolve(0),
-    ]);
-    if (porEmail >= 3 || porIp >= 20) {
-      this.log.warn(`Pedido do site recusado (tecto do dia) de ${ip ?? "?"}: ${porEmail} por email, ${porIp} por IP`);
+    // O mesmo pedido outra vez: já cá está. Diz-se que chegou e não se avisa ninguém de novo.
+    if (resultado === "repetido") return { ok: true as const };
+    if (resultado === "pessoa") {
+      this.log.warn(`Pedido do site recusado (tecto por pessoa) de ${ip ?? "?"}: ${caixa}`);
       throw new BadRequestException("Já recebemos os teus pedidos de hoje. Respondemos por email em dias úteis.");
     }
-
-    const ticket = await this.prisma.ticket.create({
-      data: {
-        name,
-        email,
-        phone: dto.phone?.trim() || null,
-        club: dto.club?.trim() || null,
-        subject: dto.subject.trim(),
-        subjectId: dto.subjectId?.trim() || null,
-        role: dto.role?.trim() || null,
-        athletes: dto.athletes?.trim() || null,
-        message: dto.message?.trim() || null,
-        status: "NOVO",
-        ip: ip ?? null,
-      },
-      select: { id: true },
-    });
+    if (resultado === "cheio") {
+      this.log.warn(`Pedido do site recusado (tecto global) de ${ip ?? "?"}: ${caixa}`);
+      throw new BadRequestException("Recebemos muitos pedidos agora. Tenta daqui a uma hora, ou escreve-nos por email.");
+    }
+    const ticket = resultado;
 
     // `admin: null` — é o mesmo `AuditLog` que regista impersonation e criação de
     // clientes, e um pedido do site não tem administrador a assumi-lo. O registo

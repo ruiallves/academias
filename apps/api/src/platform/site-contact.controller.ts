@@ -1,4 +1,4 @@
-import { Body, Controller, Ip, Post } from "@nestjs/common";
+import { Body, Controller, Get, Ip, Post } from "@nestjs/common";
 import { Throttle } from "@nestjs/throttler";
 import { IsEmail, IsInt, IsOptional, IsString, Length, Max, Min } from "class-validator";
 import { Public } from "../auth/auth.guard";
@@ -56,11 +56,16 @@ class SiteContactDto {
   notaExtra?: string;
 
   /**
-   * Quanto tempo a página esteve aberta antes de enviar, em milissegundos.
-   * Obrigatório: um script que chame a API sem o formulário não o manda.
+   * Quanto tempo a página esteve aberta, segundo o browser. Já não decide nada:
+   * o tempo que conta é o da ficha, medido no servidor. Fica aceite para o site
+   * que o manda.
    */
-  @IsInt() @Min(0) @Max(7 * 24 * 60 * 60 * 1000)
-  elapsedMs!: number;
+  @IsOptional() @IsInt() @Min(0) @Max(7 * 24 * 60 * 60 * 1000)
+  elapsedMs?: number;
+
+  /** A ficha que o formulário pediu ao abrir. Ver `FichaDoSite`. */
+  @IsOptional() @IsString() @Length(0, 200)
+  ficha?: string;
 }
 
 /**
@@ -108,6 +113,13 @@ class SiteContactDto {
 @Controller("api/site")
 export class SiteContactController {
   constructor(private readonly tickets: TicketsService) {}
+
+  /** A ficha que o formulário pede ao abrir. Sem ela, o envio é recusado. */
+  @Throttle({ default: { ttl: 60_000, limit: 30 } })
+  @Get("contacto/ficha")
+  ficha() {
+    return this.tickets.emitirFicha();
+  }
 
   @Throttle({ default: { ttl: 60_000, limit: 5 } })
   @Post("contacto")

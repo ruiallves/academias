@@ -1,4 +1,4 @@
-import { cloneElement, type FormEvent, isValidElement, type ReactElement, type ReactNode, useId, useState } from "react";
+import { cloneElement, type FormEvent, isValidElement, type ReactElement, type ReactNode, useCallback, useEffect, useId, useState } from "react";
 import { API } from "@/lib/api";
 import { cx, Seta } from "@/components/marca";
 import { CONTACT_EMAIL } from "@/lib/content";
@@ -85,6 +85,18 @@ export default function Contactos() {
    */
   const [aberto] = useState(() => Date.now());
   const [notaExtra, setNotaExtra] = useState("");
+  /*
+   * A ficha do servidor: diz-lhe quando a página abriu, e serve para um envio
+   * só. Pede-se ao abrir e outra vez depois de cada envio. Ver `FichaDoSite` na API.
+   */
+  const [ficha, setFicha] = useState<string | null>(null);
+  const pedirFicha = useCallback(() => {
+    fetch(`${API}/api/site/contacto/ficha`)
+      .then((r) => (r.ok ? r.json() : null))
+      .then((j: { ficha?: string } | null) => setFicha(j?.ficha ?? null))
+      .catch(() => setFicha(null));
+  }, []);
+  useEffect(() => pedirFicha(), [pedirFicha]);
 
   const emailOk = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim());
   const valid = name.trim().length >= 2 && emailOk && (assunto.clube ? club.trim().length >= 2 : message.trim().length >= 5);
@@ -112,8 +124,11 @@ export default function Contactos() {
           message: message.trim() || undefined,
           notaExtra: notaExtra || undefined,
           elapsedMs: Date.now() - aberto,
+          ficha: ficha ?? undefined,
         }),
       });
+      // A ficha foi gasta (ou recusada): a seguinte tentativa leva outra.
+      pedirFicha();
       if (res.status === 400) {
         // A API explicou porquê: é para ler, não para contornar.
         const corpo = (await res.json().catch(() => null)) as { message?: unknown } | null;
