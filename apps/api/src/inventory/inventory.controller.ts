@@ -127,6 +127,11 @@ export class InventoryController {
     return this.inventory.doMeuAtleta(req.ctx, athleteId);
   }
 
+  @Get("familia/:athleteId/:id")
+  pecaDoMeuAtleta(@Req() req: AuthedRequest, @Param("athleteId") athleteId: string, @Param("id") id: string) {
+    return this.inventory.pecaDoMeuAtleta(req.ctx, athleteId, id);
+  }
+
   @Get("assignments")
   assignments(
     @Req() req: AuthedRequest,

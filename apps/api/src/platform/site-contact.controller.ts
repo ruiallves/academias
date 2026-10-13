@@ -1,6 +1,6 @@
 import { Body, Controller, Ip, Post } from "@nestjs/common";
 import { Throttle } from "@nestjs/throttler";
-import { IsEmail, IsOptional, IsString, Length } from "class-validator";
+import { IsEmail, IsInt, IsOptional, IsString, Length, Max, Min } from "class-validator";
 import { Public } from "../auth/auth.guard";
 import { TicketsService } from "./tickets.service";
 
@@ -46,6 +46,18 @@ class SiteContactDto {
 
   @IsOptional() @IsString() @Length(0, 4000)
   message?: string;
+
+  /**
+   * O campo-armadilha. No site está fora do ecrã, sem rótulo visível e fora
+   * do tab: uma pessoa nunca o preenche, um robô que preenche tudo preenche-o.
+   * Ver `TicketsService.createFromSite`.
+   */
+  @IsOptional() @IsString() @Length(0, 200)
+  notaExtra?: string;
+
+  /** Quanto tempo a página esteve aberta antes de enviar, em milissegundos. */
+  @IsOptional() @IsInt() @Min(0) @Max(7 * 24 * 60 * 60 * 1000)
+  elapsedMs?: number;
 }
 
 /**
@@ -86,7 +98,8 @@ class SiteContactDto {
  * Um `POST` público e sem autenticação que escreve na base de dados é, por
  * definição, uma superfície de spam. Cinco pedidos por minuto por IP chegam para
  * qualquer pessoa a preencher um formulário a sério, e travam um script a martelar
- * o endpoint.
+ * o endpoint. O resto das protecções (campo-armadilha, tempo mínimo, repetições
+ * e os tectos do dia) vive no serviço, ao pé da escrita.
  */
 @Public()
 @Controller("api/site")

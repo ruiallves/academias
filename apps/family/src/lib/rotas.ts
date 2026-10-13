@@ -56,6 +56,8 @@ export function destinoDaNotificacao(bruta: string | null | undefined): Destino 
   if (/^\/evento\/(treino|jogo)\/[\w-]+$/.test(rota)) return { area: "FAMILY", rota };
   // `/consulta/:id` — uma consulta marcada, com o pedido de confirmação. Ver `screens/Consulta`.
   if (/^\/consulta\/[\w-]+$/.test(rota)) return { area: "FAMILY", rota };
+  // `/equipamento/:atleta/:id` — uma peça do equipamento. Ver `screens/EquipamentoPeca`.
+  if (/^\/equipamento\/[\w-]+\/[\w-]+$/.test(rota)) return { area: "FAMILY", rota };
 
   return null;
 }

@@ -66,16 +66,77 @@ export class TicketsService {
       role?: string;
       athletes?: string;
       message?: string;
+      notaExtra?: string;
+      elapsedMs?: number;
     },
     ip?: string,
   ) {
     const name = dto.name.trim();
     if (name.length < 2) throw new BadRequestException("O nome é preciso");
+    const email = dto.email.trim().toLowerCase();
+
+    /* ---- Robôs e repetições, antes de escrever seja o que for -------------- */
+
+    /*
+     * O campo-armadilha. Não existe para quem vê a página; um robô que preenche
+     * tudo preenche-o. Responde "ok" e não grava nada: um 400 ensinava o robô a
+     * deixar o campo vazio da próxima vez.
+     */
+    if (dto.notaExtra?.trim()) {
+      this.log.warn(`Pedido do site deitado fora (campo-armadilha) de ${ip ?? "?"}`);
+      return { ok: true as const };
+    }
+
+    /*
+     * Demasiado depressa. Entre abrir a página e carregar em Enviar, uma pessoa
+     * demora mais do que três segundos: há um nome, um email e um clube para
+     * escrever. Aqui recusa-se de frente, e não em silêncio: se alguma vez
+     * apanhar uma pessoa, ela carrega outra vez e o tempo já passou.
+     */
+    if (dto.elapsedMs !== undefined && dto.elapsedMs < 3_000) {
+      throw new BadRequestException("Foi demasiado rápido. Confirma o que escreveste e envia outra vez.");
+    }
+
+    const agora = Date.now();
+    const haUmaHora = new Date(agora - 60 * 60 * 1000);
+    const ha24h = new Date(agora - 24 * 60 * 60 * 1000);
+
+    /*
+     * O mesmo pedido outra vez: a página recarregada e reenviada, o botão
+     * carregado duas vezes com a rede lenta. Já cá está; diz-se que chegou e
+     * não se duplica nem se volta a avisar ninguém.
+     */
+    const repetido = await this.prisma.ticket.findFirst({
+      where: {
+        email,
+        subject: dto.subject.trim(),
+        club: dto.club?.trim() || null,
+        message: dto.message?.trim() || null,
+        createdAt: { gte: haUmaHora },
+      },
+      select: { id: true },
+    });
+    if (repetido) return { ok: true as const };
+
+    /*
+     * Os tectos do dia. Três pedidos por email chegam a qualquer pessoa (e
+     * respondemos ao primeiro); vinte por endereço de rede travam um script com
+     * uma lista de emails. Os dois são visíveis: quem bate neles fica a saber
+     * que o pedido já cá está.
+     */
+    const [porEmail, porIp] = await Promise.all([
+      this.prisma.ticket.count({ where: { email, createdAt: { gte: ha24h } } }),
+      ip ? this.prisma.ticket.count({ where: { ip, createdAt: { gte: ha24h } } }) : Promise.resolve(0),
+    ]);
+    if (porEmail >= 3 || porIp >= 20) {
+      this.log.warn(`Pedido do site recusado (tecto do dia) de ${ip ?? "?"}: ${porEmail} por email, ${porIp} por IP`);
+      throw new BadRequestException("Já recebemos os teus pedidos de hoje. Respondemos por email em dias úteis.");
+    }
 
     const ticket = await this.prisma.ticket.create({
       data: {
         name,
-        email: dto.email.trim().toLowerCase(),
+        email,
         phone: dto.phone?.trim() || null,
         club: dto.club?.trim() || null,
         subject: dto.subject.trim(),

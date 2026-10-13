@@ -239,50 +239,129 @@ export class InventoryService {
     });
   }
 
-  /** O que está com atletas — a lista de "equipamento atribuído". */
   /**
-   * O equipamento que um atleta tem com ele, para a app da família.
+   * O equipamento de um atleta, para a app da família: o que tem com ele e o
+   * que já teve.
    *
    * Sem `inventory:read`: a família não vê o armazém, vê o que o filho (ou o
    * próprio atleta) levou para casa. O âmbito é o da app (`athleteScopeFilter`),
-   * o mesmo das convocatórias. Só o que está por devolver, e só o que se lê
-   * (artigo, tamanho, quantidade, quando): nada de quem entregou nem notas.
+   * o mesmo das convocatórias. Só o que se lê (artigo, tamanho, quantidade,
+   * datas, pagamento): nada de quem entregou nem das notas internas.
+   *
+   * Com o histórico (Rui, 13/10/2026): o que foi devolvido, ficou estragado ou
+   * se perdeu continua aqui, com o estado e a data, para a família saber o que
+   * o filho já teve. A primeira foto do artigo vai na linha, para se reconhecer
+   * a peça (o link assinado está em cache, ver `signDownload`).
    */
   async doMeuAtleta(ctx: RequestContext, athleteId: string) {
-    const ambito = athleteScopeFilter(ctx);
-    if (!ambito) throw new ForbiddenException("Isto é da app da família");
-    if (!ambito.in.includes(athleteId)) throw new ForbiddenException("Esse atleta não é teu");
+    this.doMeuAmbito(ctx, athleteId);
 
     return this.prisma.runAs(ctx.academyId, async (db) => {
       const rows = await db.inventoryAssignment.findMany({
-        where: { athleteId, status: "ACTIVE" },
+        where: { athleteId },
         orderBy: { assignedAt: "desc" },
         select: {
-          id: true, quantity: true, assignedAt: true,
-          variant: { select: { label: true, item: { select: { name: true } } } },
+          id: true, quantity: true, status: true, assignedAt: true, returnedAt: true,
+          variant: { select: { label: true, item: { select: { name: true, imageKeys: true } } } },
           ...SELECT_PAGAMENTO,
         },
       });
-      return rows.map((r) => {
-        const pg = pagamentoDe(r);
-        return {
+      return Promise.all(
+        rows.map(async (r) => ({
           id: r.id,
           item: r.variant.item.name,
           variant: r.variant.label,
           quantity: r.quantity,
+          status: r.status,
           assignedAt: r.assignedAt,
-          // Para a família: por pagar (só aqui ou também nos Pagamentos) diz-se igual.
-          pagamento:
-            pg.estado === "pago"
-              ? { estado: "pago" as const, valorCents: pg.valorCents }
-              : pg.estado === "porPagar" || pg.estado === "app"
-                ? { estado: "porPagar" as const, valorCents: pg.valorCents }
-                : null,
-        };
-      });
+          returnedAt: r.returnedAt,
+          foto: r.variant.item.imageKeys[0]
+            ? await this.storage.signDownload(INVENTORY_BUCKET, r.variant.item.imageKeys[0], IMAGE_TTL)
+            : null,
+          pagamento: pagamentoParaAFamilia(pagamentoDe(r)),
+        })),
+      );
     });
   }
 
+  /**
+   * Uma peça entregue, por dentro: o que a linha da lista não tem espaço para
+   * dizer. As fotos e a descrição do artigo, a categoria e a marca, a época, as
+   * datas e o pagamento (com quando foi pago e como).
+   *
+   * `naApp` diz se o pagamento também está nos Pagamentos, para a página levar
+   * lá quem ainda tem de pagar.
+   */
+  async pecaDoMeuAtleta(ctx: RequestContext, athleteId: string, id: string) {
+    this.doMeuAmbito(ctx, athleteId);
+
+    return this.prisma.runAs(ctx.academyId, async (db) => {
+      const r = await db.inventoryAssignment.findFirst({
+        where: { id, athleteId },
+        select: {
+          id: true, quantity: true, status: true, assignedAt: true, returnedAt: true,
+          season: { select: { label: true } },
+          variant: {
+            select: {
+              label: true,
+              item: {
+                select: {
+                  name: true, description: true, brand: true, imageKeys: true,
+                  category: { select: { label: true } },
+                },
+              },
+            },
+          },
+          ...SELECT_PAGAMENTO,
+          charge: {
+            select: {
+              status: true, amountCents: true, dueDate: true, settledAt: true,
+              payments: { where: { status: "PAID" as const }, orderBy: { paidAt: "desc" as const }, take: 1, select: { method: true, paidAt: true } },
+            },
+          },
+        },
+      });
+      if (!r) throw new NotFoundException("Esta peça já não está no equipamento");
+
+      const item = r.variant.item;
+      const fotos = (
+        await Promise.all(item.imageKeys.map((key) => this.storage.signDownload(INVENTORY_BUCKET, key, IMAGE_TTL)))
+      ).filter((u): u is string => Boolean(u));
+      const pg = pagamentoDe(r);
+      const pagamento = pagamentoParaAFamilia(pg);
+
+      return {
+        id: r.id,
+        item: item.name,
+        descricao: item.description,
+        marca: item.brand,
+        categoria: item.category?.label ?? null,
+        variant: r.variant.label,
+        quantity: r.quantity,
+        status: r.status,
+        assignedAt: r.assignedAt,
+        returnedAt: r.returnedAt,
+        epoca: r.season?.label ?? null,
+        fotos,
+        pagamento: pagamento && {
+          ...pagamento,
+          naApp: pg.estado === "app",
+          metodo: pg.estado === "pago" ? pg.metodo : null,
+          pagoEm: pg.estado === "pago" ? (r.charge?.payments[0]?.paidAt ?? r.charge?.settledAt ?? null) : null,
+          ate: pg.estado === "app" ? (r.charge?.dueDate ?? null) : null,
+        },
+      };
+    });
+  }
+
+  /** O atleta tem de ser da pessoa, pela app (família ou o próprio atleta). */
+  private doMeuAmbito(ctx: RequestContext, athleteId: string) {
+    const ambito = athleteScopeFilter(ctx);
+    if (!ambito) throw new ForbiddenException("Isto é da app da família");
+    if (!ambito.in.includes(athleteId)) throw new ForbiddenException("Esse atleta não é teu");
+  }
+
+  /** O que está com atletas — a lista de "equipamento atribuído". */
   async assignments(
     ctx: RequestContext,
     params: { teamId?: string; athleteId?: string; itemId?: string; status?: string } = {},
@@ -1683,6 +1762,16 @@ const SELECT_PAGAMENTO = {
     },
   },
 } as const;
+
+/**
+ * Para a família, "por pagar" diz-se igual esteja só no Equipamento ou também
+ * nos Pagamentos; uma cobrança anulada é como não haver pagamento.
+ */
+function pagamentoParaAFamilia(pg: PagamentoDaEntrega) {
+  if (pg.estado === "pago") return { estado: "pago" as const, valorCents: pg.valorCents };
+  if (pg.estado === "porPagar" || pg.estado === "app") return { estado: "porPagar" as const, valorCents: pg.valorCents };
+  return null;
+}
 
 function pagamentoDe(a: {
   priceCents: number | null;

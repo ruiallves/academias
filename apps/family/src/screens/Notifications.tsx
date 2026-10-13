@@ -162,6 +162,16 @@ function NotifRow({ n, i }: { n: ApiNotification; i: number }) {
    * agravante de ter prometido. Aqui não promete.
    */
   const destino = achado && achado.area === "FAMILY" && achado.rota === pathname ? null : achado;
+  /*
+   * Tocar é ler.
+   *
+   * O ecrã só marca tudo como lido 1,2 s depois de abrir, e sair antes disso
+   * cancela-o. Quem abria as notificações e tocava logo no pedido de pagamento
+   * do equipamento voltava e encontrava-o por ler (13/10/2026).
+   */
+  const ler = () => {
+    if (unread) void marcarLidas([n.id]);
+  };
 
   const body = (
     <>
@@ -212,6 +222,7 @@ function NotifRow({ n, i }: { n: ApiNotification; i: number }) {
         <button
           type="button"
           onClick={() => {
+            ler();
             chooseContext(destino.area);
             navigate(destino.rota);
           }}
@@ -225,7 +236,7 @@ function NotifRow({ n, i }: { n: ApiNotification; i: number }) {
 
   return (
     <li className="rise" style={{ ["--i" as string]: i }}>
-      <Link to={destino.rota} className={cx(className, "active:scale-[0.99]")}>
+      <Link to={destino.rota} onClick={ler} className={cx(className, "active:scale-[0.99]")}>
         {body}
       </Link>
     </li>

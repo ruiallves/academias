@@ -72,6 +72,19 @@ export default function Contactos() {
   const [status, setStatus] = useState<"idle" | "sending" | "done" | "error">("idle");
   /** O `mailto:` de recurso, pronto mas nunca disparado sozinho. */
   const [fallbackMailto, setFallbackMailto] = useState<string | null>(null);
+  /**
+   * A recusa explicada pela API (foi demasiado rápido, já há pedidos de hoje).
+   * Não é uma avaria: mostra-se a frase e não se oferece o email de recurso,
+   * que era contornar o tecto.
+   */
+  const [recusa, setRecusa] = useState<string | null>(null);
+  /*
+   * Contra robôs, sem incomodar ninguém: quando a página abriu (um envio em
+   * menos de três segundos não é uma pessoa) e um campo-armadilha fora do ecrã
+   * que só um robô preenche. A API decide com os dois. Ver `SiteContactController`.
+   */
+  const [aberto] = useState(() => Date.now());
+  const [notaExtra, setNotaExtra] = useState("");
 
   const emailOk = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim());
   const valid = name.trim().length >= 2 && emailOk && (assunto.clube ? club.trim().length >= 2 : message.trim().length >= 5);
@@ -81,6 +94,7 @@ export default function Contactos() {
     if (!valid || status === "sending") return;
 
     setStatus("sending");
+    setRecusa(null);
     try {
       const res = await fetch(`${API}/api/site/contacto`, {
         method: "POST",
@@ -96,8 +110,19 @@ export default function Contactos() {
           subjectId: assunto.id,
           athletes: assunto.clube ? athletes.trim() || undefined : undefined,
           message: message.trim() || undefined,
+          notaExtra: notaExtra || undefined,
+          elapsedMs: Date.now() - aberto,
         }),
       });
+      if (res.status === 400) {
+        // A API explicou porquê: é para ler, não para contornar.
+        const corpo = (await res.json().catch(() => null)) as { message?: unknown } | null;
+        if (typeof corpo?.message === "string") {
+          setRecusa(corpo.message);
+          setStatus("idle");
+          return;
+        }
+      }
       if (!res.ok) throw new Error(String(res.status));
       setStatus("done");
     } catch {
@@ -203,7 +228,15 @@ export default function Contactos() {
             </button>
           </div>
         ) : (
-          <form onSubmit={submit} className="pt-2 lg:pt-6">
+          <form onSubmit={submit} className="relative pt-2 lg:pt-6">
+            {/* O campo-armadilha: fora do ecrã, fora do tab, sem preenchimento automático. Uma pessoa nunca o vê. */}
+            <div aria-hidden="true" style={{ position: "absolute", left: "-10000px", top: 0, width: 1, height: 1, overflow: "hidden" }}>
+              <label>
+                Deixa este campo vazio
+                <input name="nota_extra" value={notaExtra} onChange={(e) => setNotaExtra(e.target.value)} tabIndex={-1} autoComplete="off" />
+              </label>
+            </div>
+
             {/* O assunto primeiro: é ele que decide o resto do formulário. */}
             <p className="rotulo campo-rotulo">Assunto</p>
             <div role="tablist" aria-label="Assunto" className="mt-3 flex flex-wrap gap-x-7 gap-y-2 border-b border-fio">
@@ -309,6 +342,10 @@ export default function Contactos() {
                         Escrever email agora
                       </a>
                     )}
+                  </div>
+                ) : recusa ? (
+                  <div className="mt-4 border border-[#e3d6a6] bg-[#fbf7ea] px-4 py-3.5">
+                    <p className="text-[0.88rem] leading-relaxed text-[#6f5410]">{recusa}</p>
                   </div>
                 ) : (
                   <p className="mt-4 text-[0.85rem] text-texto-3">Respondemos em até dois dias úteis.</p>
