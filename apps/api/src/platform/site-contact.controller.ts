@@ -55,9 +55,12 @@ class SiteContactDto {
   @IsOptional() @IsString() @Length(0, 200)
   notaExtra?: string;
 
-  /** Quanto tempo a página esteve aberta antes de enviar, em milissegundos. */
-  @IsOptional() @IsInt() @Min(0) @Max(7 * 24 * 60 * 60 * 1000)
-  elapsedMs?: number;
+  /**
+   * Quanto tempo a página esteve aberta antes de enviar, em milissegundos.
+   * Obrigatório: um script que chame a API sem o formulário não o manda.
+   */
+  @IsInt() @Min(0) @Max(7 * 24 * 60 * 60 * 1000)
+  elapsedMs!: number;
 }
 
 /**

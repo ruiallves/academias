@@ -1,3 +1,6 @@
+14/10/2026
+- Site academias.pt, formulário de contacto: o tempo de preenchimento passou a ser obrigatório, para um script que chame a API diretamente sem passar pelo formulário ser recusado.
+
 13/10/2026
 - Site academias.pt, formulário de contacto: proteção contra robôs e pedidos repetidos. Campo-armadilha invisível, recusa de envios feitos em menos de 3 segundos, o mesmo pedido na mesma hora não se duplica, e no máximo 3 pedidos por email e 20 por endereço de rede por dia (além dos 5 por minuto que já existiam).
 - App do clube, Equipamento: cada peça abre uma página própria, com as fotos do artigo, a descrição, a categoria e a marca, a época, as datas de entrega e devolução e o pagamento por inteiro (quanto, quando foi pago e como). Se estiver por pagar nos Pagamentos, a página tem o botão para pagar. Na ficha do atleta, o bloco passa a guardar o histórico: por baixo do que está com ele aparece o equipamento que já teve (devolvido, devolvido estragado ou perdido, com a data), e as linhas mostram a foto do artigo.

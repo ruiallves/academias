@@ -93,7 +93,7 @@ export class TicketsService {
      * escrever. Aqui recusa-se de frente, e não em silêncio: se alguma vez
      * apanhar uma pessoa, ela carrega outra vez e o tempo já passou.
      */
-    if (dto.elapsedMs !== undefined && dto.elapsedMs < 3_000) {
+    if (dto.elapsedMs === undefined || dto.elapsedMs < 3_000) {
       throw new BadRequestException("Foi demasiado rápido. Confirma o que escreveste e envia outra vez.");
     }
 
