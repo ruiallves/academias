@@ -59,9 +59,6 @@ export class SiteDominioService {
       },
     });
     if (!a) throw new BadRequestException("Academia não encontrada");
-    // Um clube publicado antes de a publicação ligar o endereço sozinha fica
-    // ligado ao abrir a ficha dele no painel.
-    if (a.siteConfig?.published) await this.garantirPreVisualizacao(a.slug);
     return {
       // A mesma regra de `app.academy_has_website`, lida aqui sem RLS.
       noPlano: !!a.subscription && a.subscription.status !== "CANCELLED" && a.subscription.plan.includesWebsite,
@@ -118,25 +115,6 @@ export class SiteDominioService {
     await this.platform.audit(admin, "academy.siteDomain", "academy", academyId, { slug: a.slug, de: a.siteDomain, para: null }, ip);
     this.revalidar.avisar(a.slug);
     return this.ler(academyId);
-  }
-
-  /**
-   * Põe `<slug>.website.academias.pt` no projeto do site, quando o clube publica.
-   *
-   * O DNS já está feito de uma vez para todos (`*.website` CNAME para o Vercel
-   * no dominios.pt); o que falta por clube é o Vercel conhecer o endereço e
-   * emitir o certificado, e é isto. Repetir não faz mal (já lá estar não é
-   * erro). Nunca atira: publicar não falha por o Vercel estar lento, e o
-   * painel continua a mostrar o estado.
-   */
-  async garantirPreVisualizacao(slug: string): Promise<void> {
-    if (!this.temToken()) return;
-    const nome = new URL(this.preVisualizacao(slug)).hostname;
-    try {
-      await this.acrescentar({ name: nome });
-    } catch (e) {
-      this.log.warn(`Pré-visualização ${nome} ficou por acrescentar ao Vercel: ${String(e)}`);
-    }
   }
 
   /* ------------------------------------------------------------------------ */

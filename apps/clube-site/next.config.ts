@@ -25,6 +25,22 @@ const config: NextConfig = {
   transpilePackages: ["@academia/ui"],
   outputFileTracingRoot: raiz,
   turbopack: { root: raiz },
+  /*
+   * Fixadas na build, para o proxy e as páginas lerem o mesmo.
+   *
+   * No Vercel, o proxy viu `SITE_FONTE=api` (do `.env.production`) e as
+   * páginas não: no servidor das páginas o `.env.production` não chegava, a
+   * fonte caía para `demo` e todo o clube real dava 404 (14/10). Postas aqui,
+   * entram no código de ambos no momento da build. Mudar uma delas pede um
+   * novo deploy. O segredo da revalidação fica de fora de propósito: lê-se em
+   * tempo de execução, das variáveis do projeto no Vercel.
+   */
+  env: {
+    SITE_FONTE: process.env.SITE_FONTE ?? "demo",
+    SITE_API_URL: process.env.SITE_API_URL ?? "",
+    SITE_PREVIEW_DOMAIN: process.env.SITE_PREVIEW_DOMAIN ?? "",
+    SITE_DEMO_SLUG: process.env.SITE_DEMO_SLUG ?? "",
+  },
   images: {
     remotePatterns: [
       // As fotos do clube vivem no Supabase Storage, como tudo o resto.

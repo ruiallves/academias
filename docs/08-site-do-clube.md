@@ -210,23 +210,20 @@ aponta, o clube vê o site em `<slug>.website.academias.pt`.
 ### Pré-visualizações em `<slug>.website.academias.pt`
 
 O DNS do `academias.pt` é gerido no **dominios.pt** (SOA em
-`dns1.host-redirect.com`), e não no Vercel. O Vercel só emite um certificado
-wildcard com o domínio nos nameservers dele, por isso a solução é outra, e é
-automática:
+`dns1.host-redirect.com`), e não no Vercel. Para o Vercel emitir o
+certificado wildcard sem gerir o domínio inteiro, ficou assim (feito a
+13–14/10, uma vez para todos os clubes):
 
-1. **Uma vez (feito a 13/10):** no dominios.pt, `*.website` CNAME
-   `cname.vercel-dns.com`. Todo o `<slug>.website.academias.pt` chega ao
-   Vercel. O `*` do Railway não é tocado: o `*.website` é mais específico.
-2. **Por clube, sozinho:** ao publicar no menu Website, a API acrescenta
-   `<slug>.website.academias.pt` ao projeto do site no Vercel
-   (`SiteDominioService.garantirPreVisualizacao`), e o Vercel emite o
-   certificado desse endereço. Abrir a ficha do clube no painel faz o mesmo
-   (para clubes publicados antes disto). Precisa de `VERCEL_TOKEN` e
-   `VERCEL_SITE_PROJECT_ID` no Railway; sem eles, acrescenta-se à mão em
-   Settings → Domains.
+1. No dominios.pt, `*.website` CNAME `cname.vercel-dns.com`: todo o
+   `<slug>.website.academias.pt` chega ao Vercel. O `*` do Railway não é
+   tocado (o `*.website` é mais específico).
+2. No dominios.pt, pedido ao suporte (o painel não tem NS):
+   `_acme-challenge.website` NS `ns1.vercel-dns.com` e `ns2.vercel-dns.com`.
+   É por aqui que o Vercel prova o domínio e renova o certificado.
+3. No projeto do site no Vercel, o domínio `*.website.academias.pt`.
 
-O plano Hobby do Vercel limita os domínios por projeto: com muitos clubes, é
-preciso o Pro.
+Um clube novo não precisa de nada disto: publica no menu Website e o
+endereço funciona. Não se acrescentam endereços por clube ao Vercel.
 
 Com `SITE_FONTE=demo` qualquer pré-visualização mostra o clube de
 demonstração (`dominios.ts`), e os endereços `…vercel.app` também, com
