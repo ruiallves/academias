@@ -4,7 +4,6 @@ import { emDemonstracao } from "@/lib/modo";
 import { ArrowRight } from "lucide-react";
 import type { DadosInicio } from "@/layouts/tipos";
 import { Hero } from "@/componentes/Hero";
-import { BoasVindas } from "@/componentes/BoasVindas";
 import { BandaDoJogo } from "@/componentes/Jogo";
 import { CartaoNoticia } from "@/componentes/CartaoNoticia";
 import { CartaoProduto } from "@/componentes/CartaoProduto";
@@ -24,11 +23,7 @@ export function InicioClassico({ clube, noticias, proximo, ultimo, equipas, prod
 
   return (
     <>
-      {noticias.length ? (
-        <Hero destaques={destaques.length ? destaques : noticias.slice(0, 3)} />
-      ) : (
-        <BoasVindas clube={clube} equipas={equipas.length} temJogos={!!(proximo || ultimo)} />
-      )}
+      <Hero destaques={destaques.length ? destaques : noticias.slice(0, 3)} />
 
       <BandaDoJogo proximo={proximo} ultimo={ultimo} clube={clube} />
 
@@ -85,8 +80,7 @@ export function InicioClassico({ clube, noticias, proximo, ultimo, equipas, prod
             <p className="eyebrow opacity-80">Sócios</p>
             <h2 className="display mt-3 text-4xl text-signal-on sm:text-5xl">Faz parte do clube.</h2>
             <p className="mt-4 max-w-md text-[color:rgb(var(--signal-on-rgb)/0.85)]">
-              Cartão de sócio no telemóvel, quotas em dia com um toque, entrada nos jogos em casa e desconto na loja.
-              Tudo na app do {clube.shortName}.
+              Cartão de sócio, quotas em dia, entrada nos jogos em casa e desconto na loja. Torna-te sócio do {clube.shortName}.
             </p>
             <BotaoLink href={clube.membershipUrl} variante="claro" className="mt-8 !bg-white !text-[#1a1917]">
               Ser sócio

@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { useSearchParams } from "react-router-dom";
+import { Link, useSearchParams } from "react-router-dom";
 import { PageHeader } from "@/components/Shell";
 import { PersonLink } from "@/components/PersonLink";
 import { cx, Empty, Monogram, OutcomeTag, Panel, Pill } from "@/components/primitives";
@@ -10,7 +10,8 @@ import { ImportCalendarDialog } from "@/components/ImportCalendarDialog";
 import { CancelarEventosDialog } from "@/components/CancelarEventosDialog";
 import { ExportCalendarDialog } from "@/components/ExportCalendarDialog";
 import { EventDetail } from "@/components/EventDetail";
-import { Ban, CalendarDays, ChevronLeft, ChevronRight, Download, Loader2, Plus, Upload } from "@/lib/icons";
+import { Ban, Cake, CalendarDays, ChevronLeft, ChevronRight, Download, Loader2, Plus, Upload } from "@/lib/icons";
+import { useAniversarios, type Aniversario } from "@/lib/aniversarios";
 import type { CategoricalColor } from "@academia/ui/tokens";
 import { coachById, listTeams, today } from "@/lib/api";
 import {
@@ -77,6 +78,26 @@ export default function Calendar() {
   const [exportando, setExportando] = useState(false);
   /* Cancelar vários de uma vez. Ver `CancelarEventosDialog`. */
   const [cancelando, setCancelando] = useState(false);
+  /*
+   * Os aniversários: desligados por omissão, e a escolha fica neste browser.
+   * Quem aparece segue o âmbito de quem vê (ver `useAniversarios`).
+   */
+  const [comAniversarios, setComAniversarios] = useState(() => {
+    try {
+      return localStorage.getItem("academias.calendario.aniversarios") === "1";
+    } catch {
+      return false;
+    }
+  });
+  const alternarAniversarios = () =>
+    setComAniversarios((v) => {
+      try {
+        localStorage.setItem("academias.calendario.aniversarios", v ? "0" : "1");
+      } catch {
+        /* sem armazenamento, vale só para esta visita */
+      }
+      return !v;
+    });
 
   
   /**
@@ -140,6 +161,7 @@ export default function Calendar() {
   }, [view, cursor]);
 
   const all = useEvents(session, from, to);
+  const aniversarios = useAniversarios(session, from, to, comAniversarios);
   const carregando = useCalendarLoading();
   const events = all.filter((e) => !e.teamId || !hidden.has(e.teamId));
 
@@ -299,6 +321,20 @@ export default function Calendar() {
               Mostrar todos
             </button>
           )}
+
+          {/* Os aniversários, à direita dos filtros. Desligados por omissão. */}
+          <button
+            type="button"
+            onClick={alternarAniversarios}
+            aria-pressed={comAniversarios}
+            className={cx(
+              "ml-auto inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-[11px] font-medium transition-colors duration-[120ms]",
+              comAniversarios ? "border-transparent bg-ink text-surface" : "border-line bg-surface text-ink-3 hover:text-ink",
+            )}
+          >
+            <Cake className="size-3.5" strokeWidth={1.9} />
+            Aniversários
+          </button>
         </div>
 
         {/*
@@ -325,9 +361,10 @@ export default function Calendar() {
                 onAdd={(day) => editable && setComposing(day)}
                 onSelect={abrir}
                 periodizacao={periodizacao}
+                aniversarios={aniversarios}
               />
             ) : (
-              <AgendaList events={events} colors={colors} onSelect={abrir} />
+              <AgendaList events={events} colors={colors} onSelect={abrir} aniversarios={aniversarios} />
             )}
           </div>
 
@@ -383,12 +420,18 @@ function AgendaList({
   events,
   colors,
   onSelect,
+  aniversarios,
 }: {
   events: CalendarEvent[];
   colors: Map<string, CategoricalColor>;
   onSelect: (event: CalendarEvent) => void;
+  aniversarios: Map<string, Aniversario[]>;
 }) {
-  const byDay = groupByDay(events);
+  const doDia = groupByDay(events);
+  // Os dias com eventos ou aniversários, por ordem.
+  const byDay = new Map<string, CalendarEvent[]>(
+    [...new Set([...doDia.keys(), ...aniversarios.keys()])].sort().map((k) => [k, doDia.get(k) ?? []]),
+  );
 
   if (byDay.size === 0) {
     return (
@@ -416,6 +459,19 @@ function AgendaList({
             </div>
 
             <div className="min-w-0 flex-1 space-y-1.5">
+              {(aniversarios.get(key) ?? []).map((a) => (
+                <Link
+                  key={a.id}
+                  to={a.href}
+                  className="flex w-full items-center gap-2.5 rounded-[var(--radius-control)] border border-dashed border-line-strong bg-surface px-3 py-2 text-left transition-colors duration-[120ms] hover:bg-sunken/60"
+                >
+                  <Cake className="size-4 shrink-0 text-ink-3" strokeWidth={1.75} />
+                  <span className="min-w-0 flex-1 truncate text-body text-ink">
+                    <span className="font-medium">{a.nome}</span> faz {a.idade} anos
+                  </span>
+                  <span className="shrink-0 text-meta text-ink-3">{a.tipo === "staff" ? "Staff" : "Atleta"}</span>
+                </Link>
+              ))}
               {items.map((e) => {
                 const coach = e.coachId ? coachById(e.coachId) : undefined;
                 const coachName = e.coachName ?? coach?.name;

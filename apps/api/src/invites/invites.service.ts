@@ -138,7 +138,7 @@ export type InvitePreview = {
   legal: { bindsClub: boolean; documents: { id: string; title: string; version: string; acceptanceKind: string; scope: string; url: string }[] };
 };
 
-export type AcceptInput = { password: string; phone?: string; acceptLegal?: boolean; confirmAuthority?: boolean };
+export type AcceptInput = { password: string; phone?: string; birthdate?: string; acceptLegal?: boolean; confirmAuthority?: boolean };
 
 @Injectable()
 export class InvitesService {
@@ -677,6 +677,16 @@ export class InvitesService {
     if (!password || password.length < 8) {
       throw new BadRequestException("A palavra-passe tem de ter pelo menos 8 caracteres");
     }
+    /* A data de nascimento, opcional. Uma data fora de 14 a 100 anos é engano de escrita. */
+    let nascimento: Date | null = null;
+    if (input.birthdate) {
+      nascimento = new Date(`${input.birthdate}T00:00:00Z`);
+      const ano = nascimento.getUTCFullYear();
+      const agora = new Date().getUTCFullYear();
+      if (Number.isNaN(nascimento.getTime()) || ano < agora - 100 || ano > agora - 14) {
+        throw new BadRequestException("Data de nascimento improvável");
+      }
+    }
 
     const academyId = await this.academyOf(token);
     const tokenHash = hash(token);
@@ -766,6 +776,13 @@ export class InvitesService {
         },
         select: { id: true },
       });
+
+      /*
+       * A data de nascimento, depois da membership: antes dela, a conta ainda
+       * não partilha clube com ninguém e a política de `User` não a deixa
+       * escrever (ver `app.upsert_invited_user` acima).
+       */
+      if (nascimento) await db.user.update({ where: { id: user.id }, data: { birthdate: nascimento } });
 
       /*
        * Os cargos secundários do convite.

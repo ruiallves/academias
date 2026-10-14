@@ -1,9 +1,11 @@
 import { Fragment, useState } from "react";
+import { Link } from "react-router-dom";
+import type { Aniversario } from "@/lib/aniversarios";
 import type { CategoricalColor } from "@academia/ui/tokens";
 import { KIND_LABEL, dayKey, eventOutcome, groupByDay, monthGrid, tituloCompacto, type CalendarEvent } from "@/lib/calendar";
 import { today } from "@/lib/api";
 import { time } from "@/lib/format";
-import { Plus } from "@/lib/icons";
+import { Cake, Plus } from "@/lib/icons";
 import { useMobile } from "@/lib/viewport";
 import { cx, OutcomeTag } from "./primitives";
 import { cycleOn, dayKey as chaveDoDia, defaultColor, matchDayLabel, mesoOf, microLabel, type Cycle } from "@/lib/cycles";
@@ -34,6 +36,7 @@ export function MonthGrid({
   onAdd,
   onSelect,
   periodizacao,
+  aniversarios,
 }: {
   anchor: Date;
   events: CalendarEvent[];
@@ -41,13 +44,15 @@ export function MonthGrid({
   onAdd: (day: Date) => void;
   onSelect: (event: CalendarEvent) => void;
   periodizacao?: Periodizacao;
+  /** Os aniversários por dia. Vazio quando o botão "Aniversários" está desligado. */
+  aniversarios?: Map<string, Aniversario[]>;
 }) {
   const days = monthGrid(anchor);
   const byDay = groupByDay(events);
   const [expanded, setExpanded] = useState<string | null>(null);
   const mobile = useMobile();
 
-  if (mobile) return <MobileMonth anchor={anchor} days={days} byDay={byDay} colors={colors} onAdd={onAdd} onSelect={onSelect} />;
+  if (mobile) return <MobileMonth anchor={anchor} days={days} byDay={byDay} colors={colors} onAdd={onAdd} onSelect={onSelect} aniversarios={aniversarios} />;
 
   return (
     <div>
@@ -68,6 +73,7 @@ export function MonthGrid({
           const isWeekend = day.getDay() === 0 || day.getDay() === 6;
           const open = expanded === key;
           const visible = open ? items : items.slice(0, 3);
+          const anos = aniversarios?.get(key) ?? [];
 
           /*
            * A camada da periodização: a cor da fase numa faixa fina no topo, o
@@ -149,6 +155,20 @@ export function MonthGrid({
                 </div>
 
                 <div className="space-y-1">
+                  {/* Os aniversários primeiro: dois em nome, mais do que isso num resumo que abre o dia. */}
+                  {(open || anos.length <= 2 ? anos : []).map((a) => (
+                    <AniversarioChip key={a.id} aniversario={a} />
+                  ))}
+                  {!open && anos.length > 2 && (
+                    <button
+                      type="button"
+                      onClick={() => setExpanded(key)}
+                      className="flex w-full items-center gap-1.5 rounded-[5px] border border-dashed border-line-strong px-1.5 py-1 text-left text-[11px] leading-tight text-ink-2 hover:bg-sunken/60"
+                    >
+                      <Cake className="size-3 shrink-0 text-ink-3" strokeWidth={2} />
+                      <span className="truncate font-medium">{anos.length} aniversários</span>
+                    </button>
+                  )}
                   {visible.map((e) => (
                     <EventChip key={e.id} event={e} color={e.teamId ? colors.get(e.teamId) : undefined} onClick={() => onSelect(e)} />
                   ))}
@@ -232,6 +252,21 @@ function EventChip({
   );
 }
 
+/** Um aniversário na grelha: tracejado, para não se confundir com um evento. Abre a ficha. */
+function AniversarioChip({ aniversario: a }: { aniversario: Aniversario }) {
+  return (
+    <Link
+      to={a.href}
+      title={`${a.nome} faz ${a.idade} anos`}
+      className="flex w-full items-center gap-1.5 rounded-[5px] border border-dashed border-line-strong px-1.5 py-1 text-left text-[11px] leading-tight text-ink-2 hover:bg-sunken/60"
+    >
+      <Cake className="size-3 shrink-0 text-ink-3" strokeWidth={2} />
+      <span className="min-w-0 flex-1 truncate font-medium">{a.nome}</span>
+      <span className="shrink-0 tabular text-ink-4">{a.idade}</span>
+    </Link>
+  );
+}
+
 /* -------------------------------------------------------------------------- */
 /* Telemóvel                                                                   */
 /* -------------------------------------------------------------------------- */
@@ -256,6 +291,7 @@ function MobileMonth({
   colors,
   onAdd,
   onSelect,
+  aniversarios,
 }: {
   anchor: Date;
   days: Date[];
@@ -263,6 +299,7 @@ function MobileMonth({
   colors: Map<string, CategoricalColor>;
   onAdd: (day: Date) => void;
   onSelect: (event: CalendarEvent) => void;
+  aniversarios?: Map<string, Aniversario[]>;
 }) {
   // O dia escolhido: hoje se estiver neste mês, senão o primeiro dia do mês.
   const [selected, setSelected] = useState<string>(() => {
@@ -271,6 +308,7 @@ function MobileMonth({
   });
   const diaEscolhido = days.find((d) => dayKey(d) === selected) ?? days[0];
   const doDia = byDay.get(dayKey(diaEscolhido)) ?? [];
+  const anosDoDia = aniversarios?.get(dayKey(diaEscolhido)) ?? [];
 
   return (
     <div>
@@ -316,6 +354,10 @@ function MobileMonth({
                 {cores.slice(0, 3).map((c, i) => (
                   <span key={i} className="size-1.5 rounded-full" style={{ background: c }} aria-hidden />
                 ))}
+                {/* Um aniversário é um anel, não um ponto: não é um evento. */}
+                {(aniversarios?.get(key)?.length ?? 0) > 0 && (
+                  <span className="size-1.5 rounded-full border border-ink-3" aria-hidden />
+                )}
               </span>
             </button>
           );
@@ -329,12 +371,29 @@ function MobileMonth({
           </span>
           {" · "}
           {doDia.length === 0 ? "sem eventos" : doDia.length === 1 ? "1 evento" : `${doDia.length} eventos`}
+          {anosDoDia.length > 0 && ` · ${anosDoDia.length === 1 ? "1 aniversário" : `${anosDoDia.length} aniversários`}`}
         </div>
         <button type="button" onClick={() => onAdd(diaEscolhido)} className="ctl-ghost h-8">
           <Plus className="size-3.5" strokeWidth={2} />
           Agendar
         </button>
       </div>
+
+      {anosDoDia.length > 0 && (
+        <ul className="border-t border-line">
+          {anosDoDia.map((a) => (
+            <li key={a.id} className="border-b border-line last:border-0">
+              <Link to={a.href} className="flex w-full items-center gap-3 px-4 py-2.5 text-left active:bg-sunken/60">
+                <Cake className="size-4 shrink-0 text-ink-3" strokeWidth={1.75} />
+                <span className="min-w-0 flex-1 truncate text-body text-ink">
+                  <span className="font-medium">{a.nome}</span> faz {a.idade} anos
+                </span>
+                <span className="shrink-0 text-meta text-ink-3">{a.tipo === "staff" ? "Staff" : "Atleta"}</span>
+              </Link>
+            </li>
+          ))}
+        </ul>
+      )}
 
       {doDia.length > 0 && (
         <ul className="border-t border-line">

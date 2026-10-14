@@ -1,4 +1,4 @@
-import { ArrayMaxSize, ArrayMinSize, IsArray, IsEmail, IsOptional, IsString, Length, MaxLength, IsBoolean, ValidateNested } from "class-validator";
+import { ArrayMaxSize, ArrayMinSize, IsArray, IsEmail, IsOptional, IsString, Length, Matches, MaxLength, IsBoolean, ValidateNested } from "class-validator";
 import { Type } from "class-transformer";
 
 /**
@@ -111,6 +111,11 @@ export class AcceptInviteDto {
   @IsString()
   @MaxLength(20)
   phone?: string;
+
+  /** AAAA-MM-DD, opcional. Para os aniversários do calendário do clube. */
+  @IsOptional()
+  @Matches(/^(\d{4}-\d{2}-\d{2})?$/, { message: "Data de nascimento inválida" })
+  birthdate?: string;
 
   /** Aceita os documentos legais em vigor para quem entra por este convite. */
   @IsOptional()

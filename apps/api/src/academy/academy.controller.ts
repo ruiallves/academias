@@ -34,6 +34,9 @@ class StaffProfileDto {
 
   @IsOptional() @IsString() @Length(0, 40) phone?: string;
 
+  /** AAAA-MM-DD; vazio apaga. Para os aniversários do calendário. */
+  @IsOptional() @Matches(/^(\d{4}-\d{2}-\d{2})?$/, { message: "Data de nascimento inválida" }) birthdate?: string;
+
   /** O cargo escrito na ficha ("Fisioterapeuta"). O cargo com permissões é outro. */
   @IsOptional() @IsString() @Length(0, 80) title?: string;
 

@@ -227,6 +227,11 @@ export type StaffMember = {
   name: string;
   email: string;
   phone: string;
+  /**
+   * `AAAA-MM-DD`, ou ausente. Só chega a quem vê o clube todo (e à própria
+   * pessoa): é para os aniversários do calendário. Ver `staff` na API.
+   */
+  birthdate?: string;
   /** A fotografia, como link assinado com prazo. Ausente quando não há nenhuma. */
   photoUrl?: string;
   role: Role;

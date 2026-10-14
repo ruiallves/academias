@@ -109,7 +109,7 @@ function RodapePorto({ clube }: { clube: Clube }) {
           href={clube.membershipUrl}
           className="flex items-center justify-center gap-2 bg-signal-strong px-8 py-5 font-bold uppercase tracking-wider text-signal-on transition hover:brightness-110 sm:w-72"
         >
-          App do clube
+          Ser sócio
           <ArrowRight size={18} aria-hidden />
         </a>
       </div>

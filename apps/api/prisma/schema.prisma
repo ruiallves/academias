@@ -456,6 +456,10 @@ model User {
   name   String
   phone  String?
   locale String  @default("pt-PT")
+  /// A data de nascimento de quem trabalha no clube. Opcional; é da pessoa, como
+  /// o telefone, e serve os aniversários do calendário. Os atletas e os sócios
+  /// têm a sua na ficha deles.
+  birthdate DateTime? @db.Date
 
   /// A fotografia de quem trabalha na academia, no armazenamento privado. Mesma
   /// regra da do atleta: guarda-se a chave, serve-se um link assinado.

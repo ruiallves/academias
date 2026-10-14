@@ -2,7 +2,7 @@ import { useState, type FormEvent } from "react";
 import { ASSIGNABLE_ROLES, DEPARTMENTS } from "@/lib/staff";
 import { apiDelete, apiPatch } from "@/lib/http";
 import { aplicarFichaDeStaff, reloadAcademy, type FichaDeStaff } from "@/lib/store";
-import { can, type Role, type Session } from "@/lib/permissions";
+import { can, isAcademyWide, type Role, type Session } from "@/lib/permissions";
 import { ROLE_LABEL } from "@/session";
 import { DEPARTMENT_API, DEPARTMENT_LABEL, type StaffDepartment, type StaffMember } from "@/data/types";
 import { Dialog, DialogField, dialogInputClass } from "./Dialog";
@@ -40,6 +40,13 @@ export function StaffEditDialog({
   const [name, setName] = useState(member.name);
   const [email, setEmail] = useState(member.email);
   const [phone, setPhone] = useState(member.phone);
+  /*
+   * A data de nascimento só chega a quem vê o clube todo e à própria pessoa.
+   * A quem não a recebe, o campo não aparece nem vai no corpo: vazio apagava a
+   * que está gravada.
+   */
+  const veNascimento = isAcademyWide(session) || member.id === session.staffId;
+  const [birthdate, setBirthdate] = useState(member.birthdate ?? "");
   const [title, setTitle] = useState(member.title);
   const [department, setDepartment] = useState<StaffDepartment>(member.department);
   const [role, setRole] = useState<Role>(member.role);
@@ -127,6 +134,7 @@ export function StaffEditDialog({
         name: name.trim(),
         email: email.trim(),
         phone: phone.trim(),
+        ...(veNascimento ? { birthdate } : {}),
         title: title.trim(),
         department: DEPARTMENT_API[department],
         // O papel só muda se quem está a editar o pode mudar, e só a quem não
@@ -184,6 +192,12 @@ export function StaffEditDialog({
             <input type="tel" className={dialogInputClass} value={phone} onChange={(e) => setPhone(e.target.value)} />
           </DialogField>
         </div>
+
+        {veNascimento && (
+          <DialogField label="Data de nascimento" hint="opcional; para os aniversários no calendário">
+            <input type="date" className={dialogInputClass} value={birthdate} onChange={(e) => setBirthdate(e.target.value)} />
+          </DialogField>
+        )}
 
         <div className="grid grid-cols-2 gap-3">
           <DialogField label="Cargo" hint="o que faz">

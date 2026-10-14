@@ -207,6 +207,7 @@ type ApiAthlete = {
 
 type ApiStaff = {
   id: string; name: string; email: string; phone: string | null; role: Role;
+  birthdate?: string | null;
   /** Link assinado com prazo, ou nulo. A chave nunca sai do servidor. */
   photoUrl: string | null;
   title: string | null; department: string | null; isActive: boolean; grants: string[]; revokes: string[];
@@ -589,6 +590,7 @@ export type FichaDeStaff = {
   name: string;
   email: string;
   phone: string | null;
+  birthdate?: string | null;
   title: string | null;
   department: string | null;
   role: StaffMember["role"];
@@ -615,6 +617,7 @@ export function aplicarFichaDeStaff(membershipId: string, ficha: FichaDeStaff): 
     name: ficha.name,
     email: ficha.email,
     phone: ficha.phone ?? "",
+    ...(ficha.birthdate !== undefined ? { birthdate: ficha.birthdate ? ficha.birthdate.slice(0, 10) : undefined } : {}),
     title: ficha.title ?? "",
     department: departmentOf(ficha.department),
     role: ficha.role,
@@ -1052,6 +1055,7 @@ function juntar<T extends { id: string }>(atuais: T[], novos: T[]): T[] {
     name: s.name,
     email: s.email,
     phone: s.phone ?? "",
+    birthdate: s.birthdate ? s.birthdate.slice(0, 10) : undefined,
     photoUrl: s.photoUrl ?? undefined,
     role: s.role,
     title: s.title ?? "",

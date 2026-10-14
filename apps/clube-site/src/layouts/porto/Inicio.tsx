@@ -8,7 +8,6 @@ import type { Clube, Jogo } from "@/dados/tipos";
 import { Emblema, EmblemaAdversario } from "@/componentes/Emblema";
 import { CartaoProduto } from "@/componentes/CartaoProduto";
 import { dataLonga, haQuanto, hora, isoDia, peçasDeData } from "@/lib/formatar";
-import { BoasVindas } from "@/componentes/BoasVindas";
 import { Carrossel } from "./Carrossel";
 
 /**
@@ -26,24 +25,12 @@ export function InicioPorto({ clube, noticias, proximo, ultimo, equipas, produto
   const resto = noticias.filter((n) => !ids.has(n.id));
   const lista = (resto.length ? resto : noticias).slice(0, 5);
   const [grande, ...pequenas] = equipas;
-  // Cada secção só aparece com o que mostrar: um site acabado de publicar não
-  // pode ser uma coleção de "Sem jogos" e títulos sem nada por baixo.
-  const temJogos = !!(proximo || ultimo);
 
   return (
     <>
-      {noticias.length ? (
-        <Carrossel noticias={carrossel} />
-      ) : (
-        <BoasVindas clube={clube} equipas={equipas.length} temJogos={temJogos} quadrado />
-      )}
+      <Carrossel noticias={carrossel} />
 
-      {temJogos && (
-      <section
-        aria-label="Jogos"
-        className={`grid border-b border-line ${noticias.length ? "lg:grid-cols-[1.1fr_1fr_0.9fr]" : "lg:grid-cols-2"}`}
-        data-reveal
-      >
+      <section aria-label="Jogos" className="grid border-b border-line lg:grid-cols-[1.1fr_1fr_0.9fr]" data-reveal>
         <div className="border-b border-line p-5 sm:p-7 lg:border-b-0 lg:border-r">
           <div className="flex items-center justify-between">
             <h2 className="eyebrow text-signal-ink">Próximo jogo</h2>
@@ -59,8 +46,6 @@ export function InicioPorto({ clube, noticias, proximo, ultimo, equipas, produto
           <Resultados clube={clube} ultimo={ultimo} />
         </div>
 
-        {/* Sem notícias, a faixa de boas-vindas por cima já tem o "Ser sócio" e a cor do clube. */}
-        {noticias.length > 0 && (
         <a href={clube.membershipUrl} className="group relative block min-h-[14rem] overflow-hidden bg-signal-strong text-signal-on">
           {emDemonstracao() && <Image src="https://picsum.photos/seed/bancada/900/700" alt="" fill sizes="(min-width: 1024px) 30vw, 100vw" className="object-cover opacity-20 mix-blend-luminosity transition-transform duration-700 group-hover:scale-105" />}
           <div className="absolute inset-x-0 bottom-0 p-6 text-center">
@@ -69,13 +54,9 @@ export function InicioPorto({ clube, noticias, proximo, ultimo, equipas, produto
             <p className="display mt-1 text-3xl">Área do sócio</p>
           </div>
         </a>
-        )}
       </section>
-      )}
 
-      {/* O cartaz acompanha as notícias. Sozinho, repetia o próximo jogo da faixa de cima. */}
-      {lista.length > 0 && (
-      <section className={`grid gap-10 px-4 py-10 sm:px-6 lg:px-8 ${proximo ? "lg:grid-cols-[minmax(0,1fr)_22rem]" : ""}`} data-reveal>
+      <section className="grid gap-10 px-4 py-10 sm:px-6 lg:grid-cols-[1fr_22rem] lg:px-8" data-reveal>
         <div>
           <h2 className="eyebrow text-signal-ink">Notícias</h2>
           <ul className="mt-4 divide-y divide-line border-t border-line">
@@ -107,17 +88,14 @@ export function InicioPorto({ clube, noticias, proximo, ultimo, equipas, produto
           </Link>
         </div>
 
-        {proximo && (
-          <aside>
-            <h2 className="eyebrow text-ink-3">Cartaz</h2>
-            <CartazDoDia jogo={proximo} clube={clube} />
-          </aside>
-        )}
+        <aside>
+          <h2 className="eyebrow text-ink-3">Cartaz</h2>
+          {proximo ? <CartazDoDia jogo={proximo} clube={clube} /> : null}
+        </aside>
       </section>
-      )}
 
       {equipas.length > 0 && (
-        <section className={`px-4 pb-10 sm:px-6 lg:px-8 ${noticias.length ? "" : "pt-10"}`} data-reveal>
+        <section className="px-4 pb-10 sm:px-6 lg:px-8" data-reveal>
           <h2 className="eyebrow text-signal-ink">Equipas</h2>
           <div className="mt-4 grid gap-1 sm:grid-cols-3">
             {grande && <EquipaMosaico equipa={grande} grande />}

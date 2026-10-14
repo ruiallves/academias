@@ -899,12 +899,27 @@ export class AcademyService {
       name?: string;
       email?: string;
       phone?: string | null;
+      birthdate?: string;
       title?: string | null;
       department?: StaffDepartment | null;
       role?: Role;
     },
   ) {
     if (!can(ctx, "staff:write")) throw new ForbiddenException("Sem permissão para editar fichas");
+
+    /* A data de nascimento: vazio apaga; uma data fora de 14 a 100 anos é engano de escrita. */
+    let nascimento: Date | null | undefined;
+    if (dto.birthdate !== undefined) {
+      if (!dto.birthdate) nascimento = null;
+      else {
+        nascimento = new Date(`${dto.birthdate}T00:00:00Z`);
+        const ano = nascimento.getUTCFullYear();
+        const agora = new Date().getUTCFullYear();
+        if (Number.isNaN(nascimento.getTime()) || ano < agora - 100 || ano > agora - 14) {
+          throw new BadRequestException("Data de nascimento improvável");
+        }
+      }
+    }
 
     const alvo = await this.prisma.runAs(ctx.academyId, async (db) => {
       const m = await db.membership.findFirst({
@@ -913,7 +928,7 @@ export class AcademyService {
           id: true, role: true, title: true, department: true, customRoleId: true,
           customRole: { select: { rank: true, key: true, archivedAt: true } },
           extraRoles: { select: { role: { select: { rank: true, archivedAt: true } } } },
-          user: { select: { id: true, authId: true, name: true, email: true, phone: true } },
+          user: { select: { id: true, authId: true, name: true, email: true, phone: true, birthdate: true } },
         },
       });
       if (!m) throw new NotFoundException("Pessoa não encontrada");
@@ -951,13 +966,14 @@ export class AcademyService {
     }
 
     return this.prisma.runAs(ctx.academyId, async (db) => {
-      if (nome !== undefined || mudaEmail || dto.phone !== undefined) {
+      if (nome !== undefined || mudaEmail || dto.phone !== undefined || nascimento !== undefined) {
         await db.user.update({
           where: { id: alvo.user.id },
           data: {
             ...(nome !== undefined ? { name: nome } : {}),
             ...(mudaEmail ? { email: email! } : {}),
             ...(dto.phone !== undefined ? { phone: dto.phone?.trim() || null } : {}),
+            ...(nascimento !== undefined ? { birthdate: nascimento } : {}),
           },
         });
       }
@@ -978,8 +994,8 @@ export class AcademyService {
         ctx,
         "STAFF",
         membershipId,
-        { nome: alvo.user.name, email: alvo.user.email, telemovel: alvo.user.phone, cargo: alvo.title, departamento: alvo.department, papel: alvo.role },
-        { nome, email: mudaEmail ? email : undefined, telemovel: dto.phone, cargo: dto.title, departamento: dto.department, papel: dto.role },
+        { nome: alvo.user.name, email: alvo.user.email, telemovel: alvo.user.phone, nascimento: alvo.user.birthdate, cargo: alvo.title, departamento: alvo.department, papel: alvo.role },
+        { nome, email: mudaEmail ? email : undefined, telemovel: dto.phone, nascimento, cargo: dto.title, departamento: dto.department, papel: dto.role },
         await nomeDeQuemMexe(db, ctx),
       );
 
@@ -997,7 +1013,7 @@ export class AcademyService {
         where: { id: membershipId },
         select: {
           id: true, title: true, department: true, role: true,
-          user: { select: { name: true, email: true, phone: true } },
+          user: { select: { name: true, email: true, phone: true, birthdate: true } },
         },
       });
       return {
@@ -1005,6 +1021,7 @@ export class AcademyService {
         name: gravada.user.name,
         email: gravada.user.email,
         phone: gravada.user.phone,
+        birthdate: gravada.user.birthdate,
         title: gravada.title,
         department: gravada.department,
         role: gravada.role,
@@ -2036,6 +2053,12 @@ export class AcademyService {
    */
   async staff(ctx: RequestContext) {
     if (!can(ctx, "staff:read")) throw new ForbiddenException("Sem acesso ao staff");
+    /*
+     * A data de nascimento do staff vai a quem vê o clube todo (direção,
+     * coordenação, clínico, scouting) e à própria pessoa. Um treinador vê os
+     * aniversários dos seus atletas, não os dos colegas.
+     */
+    const veNascimentos = teamScopeFilter(ctx) === undefined;
 
     const rows = await this.prisma.runAs(ctx.academyId, async (db) => {
       const rows = await db.membership.findMany({
@@ -2051,7 +2074,7 @@ export class AcademyService {
           // Os cargos secundários de cada pessoa — o que faz a ficha dela dizer
           // tudo o que ela é, e não só o cargo com que foi convidada.
           extraRoles: { select: { role: { select: { id: true, name: true, archivedAt: true } } } },
-          user: { select: { name: true, email: true, phone: true, photoKey: true } },
+          user: { select: { name: true, email: true, phone: true, photoKey: true, birthdate: true } },
           /*
            * Só as passagens em vigor.
            *
@@ -2069,6 +2092,7 @@ export class AcademyService {
         name: m.user.name,
         email: m.user.email,
         phone: m.user.phone,
+        birthdate: veNascimentos || m.id === ctx.membershipId ? m.user.birthdate : null,
         photoKey: m.user.photoKey,
         role: m.role,
         roleId: m.customRoleId,

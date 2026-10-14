@@ -195,6 +195,8 @@ ${styles(paleta)}
 
     var phoneField = document.getElementById('phone');
     var phone = phoneField ? phoneField.value.trim() : '';
+    var birthField = document.getElementById('birthdate');
+    var birthdate = birthField ? birthField.value : '';
 
     // Os termos: todas as caixas marcadas. O servidor volta a exigi-lo.
     var boxes = form.querySelectorAll('input[data-legal]');
@@ -217,6 +219,7 @@ ${styles(paleta)}
       body: JSON.stringify({
         password: password,
         phone: phone || undefined,
+        birthdate: birthdate || undefined,
         acceptLegal: legalCount > 0 ? true : undefined,
         confirmAuthority: authorityBox ? authorityBox.checked : undefined,
       }),
@@ -329,6 +332,10 @@ function newAccountFields(): string {
         <label class="field">
           <span>Telemóvel <em class="opt">opcional</em></span>
           <input type="tel" id="phone" autocomplete="tel" inputmode="tel" />
+        </label>
+        <label class="field">
+          <span>Data de nascimento <em class="opt">opcional</em></span>
+          <input type="date" id="birthdate" autocomplete="bday" />
         </label>`;
 }
 
