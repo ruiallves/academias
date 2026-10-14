@@ -84,6 +84,8 @@ export type Identidade = {
   telefone: string;
   email: string;
   redes: Redes;
+  /** A fotografia do clube (bloco de sócios). Vazia: o site usa uma de bancada. */
+  foto: string;
 };
 
 export type SiteDoClube = {
@@ -100,8 +102,8 @@ export type SiteDoClube = {
   recintos: Recinto[];
   /** Por id de jogo. Um jogo sem entrada não tem bilheteira. */
   bilheteira: Record<string, BilheteiraDoJogo>;
-  /** Por id de equipa. Sem entrada = aparece, sem plantel. */
-  equipas: Record<string, { visivel: boolean; plantel: boolean }>;
+  /** Por id de equipa. Sem entrada = não aparece; ligada = aparece com tudo (plantel incluído). */
+  equipas: Record<string, { visivel: boolean; plantel: boolean; foto?: string }>;
   patrocinadores: Patrocinador[];
 };
 
@@ -111,7 +113,7 @@ export function siteVazio(): SiteDoClube {
     dominio: "",
     publicado: false,
     layout: "classico",
-    identidade: { lema: "", sobre: "", historia: "", fundacao: "", morada: "", telefone: "", email: "", redes: {} },
+    identidade: { lema: "", sobre: "", historia: "", fundacao: "", morada: "", telefone: "", email: "", redes: {}, foto: "" },
     noticias: [],
     produtos: [],
     recintos: [],

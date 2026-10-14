@@ -11,6 +11,7 @@
 
 import type { Clube, Equipa, Evento, Fonte, Jogo, Noticia, Produto } from "./tipos";
 import { DEMO, PRODUTOS } from "./demo/monteverde";
+import { clubeComFoto, equipasComFoto } from "@/lib/fotos";
 
 const porData = <T extends { startsAt: string }>(a: T, b: T) => a.startsAt.localeCompare(b.startsAt);
 
@@ -82,7 +83,29 @@ const api: Fonte = {
   produto: (slug, id) => pedir<Produto | null>(slug, `/produtos/${id}`, null),
 };
 
-export const fonte: Fonte = (process.env.SITE_FONTE ?? "demo") === "api" ? api : demo;
+const base: Fonte = (process.env.SITE_FONTE ?? "demo") === "api" ? api : demo;
+
+/**
+ * A fonte que as páginas usam: a de cima, com as fotografias de omissão já
+ * postas (ver `lib/fotos.ts`). Fica aqui, e não em cada página, para todas
+ * mostrarem a mesma fotografia da mesma equipa.
+ */
+export const fonte: Fonte = {
+  ...base,
+  async clube(slug) {
+    const c = await base.clube(slug);
+    return c && clubeComFoto(c);
+  },
+  async equipas(slug) {
+    return equipasComFoto(await base.equipas(slug));
+  },
+  async equipa(slug, id) {
+    const e = await base.equipa(slug, id);
+    if (!e || e.image) return e;
+    // A variante que a equipa tem na lista, para a página dela mostrar a mesma.
+    return (await fonte.equipas(slug)).find((x) => x.id === e.id) ?? e;
+  },
+};
 
 /* -------------------------------------------------------------------------- */
 /* Perguntas que várias páginas fazem                                          */

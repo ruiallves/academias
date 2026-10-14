@@ -9,6 +9,7 @@ import {
   paragrafos,
   recintosValidos,
   tiposValidos,
+  type EquipaNoSite,
   type Layout,
 } from "./site.tipos";
 import { siteIncluido } from "./plano";
@@ -25,9 +26,10 @@ import { siteIncluido } from "./plano";
  * ## O que nunca sai daqui
  *
  * Treinos (dizem onde estão crianças e a que horas), contactos de famílias e
- * atletas, e o plantel de uma equipa sem o clube o ter publicado (são
- * menores, e o nome só vai para um site público com consentimento). Os jogos
- * ficam numa janela de três meses para trás e seis para a frente.
+ * atletas, e **nada de uma equipa que o clube não ligou**: nem a ficha, nem o
+ * plantel, nem os jogos, nem os resultados. Uma equipa só aparece depois de o
+ * clube a ligar no menu Website (ver `equipasValidas`). Os jogos ficam numa
+ * janela de três meses para trás e seis para a frente.
  *
  * As formas devolvidas são as de `apps/clube-site/src/dados/tipos.ts`.
  */
@@ -103,6 +105,8 @@ export class SitePublicoService {
         board: [],
         facilities: [],
         sponsors: sponsors.map((s) => ({ name: s.name, logoUrl: s.logoUrl ?? undefined, url: s.url ?? undefined })),
+        // Vazia, o site usa a fotografia de omissão (uma bancada).
+        photo: id.foto || undefined,
         recintos: a.recintos,
       };
     });
@@ -138,7 +142,7 @@ export class SitePublicoService {
   async equipas(slug: string) {
     return this.comClube(slug, async (db, a) => {
       const teams = await this.equipasVisiveis(db, a.equipas);
-      return teams.map((t) => equipaPublica(t, a.equipas[t.id]?.plantel === true));
+      return teams.map((t) => equipaPublica(t, true, a.equipas[t.id]?.foto));
     });
   }
 
@@ -146,7 +150,7 @@ export class SitePublicoService {
     return this.comClube(slug, async (db, a) => {
       const t = (await this.equipasVisiveis(db, a.equipas, id))[0];
       if (!t) throw new NotFoundException();
-      return equipaPublica(t, a.equipas[t.id]?.plantel === true);
+      return equipaPublica(t, true, a.equipas[t.id]?.foto);
     });
   }
 
@@ -158,7 +162,7 @@ export class SitePublicoService {
    * a regra do arranque da consola. Muitos clubes nunca carregam na marca, e o
    * site deles saía sem equipas nem jogos (AD Fafe, 14/10).
    */
-  private async equipasVisiveis(db: ScopedClient, visibilidade: Record<string, { visivel: boolean; plantel: boolean }>, so?: string) {
+  private async equipasVisiveis(db: ScopedClient, visibilidade: Record<string, EquipaNoSite>, so?: string) {
     const epoca = await db.season.findFirst({
       orderBy: [{ isCurrent: "desc" }, { startsOn: "desc" }],
       select: { id: true },
@@ -185,7 +189,8 @@ export class SitePublicoService {
         },
       },
     });
-    return teams.filter((t) => visibilidade[t.id]?.visivel !== false);
+    // Só as que o clube ligou. Sem configuração, a equipa não aparece.
+    return teams.filter((t) => visibilidade[t.id]?.visivel === true);
   }
 
   /* ------------------------------------------------------------------------ */
@@ -210,8 +215,13 @@ export class SitePublicoService {
 
   async jogo(slug: string, id: string) {
     return this.comClube(slug, async (db, a) => {
+      /*
+       * As mesmas regras da lista: só de equipas ligadas (e da época em curso).
+       * Um jogo de uma equipa escondida não se abre nem pelo endereço.
+       */
+      const visiveis = new Set((await this.equipasVisiveis(db, a.equipas)).map((t) => t.id));
       const j = await db.match.findFirst({ where: { id }, select: SELECT_JOGO });
-      if (!j || a.equipas[j.teamId]?.visivel === false) throw new NotFoundException();
+      if (!j || !visiveis.has(j.teamId)) throw new NotFoundException();
       return jogoPublico(j);
     });
   }
@@ -323,12 +333,15 @@ function equipaPublica(
     athletes: { squadNumber: number | null; position: string | null; athlete: { name: string } }[];
   },
   comPlantel: boolean,
+  /** A fotografia que o clube carregou. Sem ela, o site usa a de omissão da modalidade. */
+  foto?: string,
 ) {
   return {
     id: t.id,
     slug: t.id,
     name: t.name,
     sport: t.sport.name,
+    image: foto || undefined,
     // 99 é "sem limite" (os seniores): o site não mostra idade nenhuma.
     maxAge: t.maxAge >= 99 ? null : t.maxAge,
     gender: t.gender === "FEMALE" ? "F" : t.gender === "MIXED" ? "MISTA" : t.gender === "MALE" ? "M" : undefined,

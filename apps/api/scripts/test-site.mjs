@@ -6,7 +6,7 @@
  * O que se defende:
  *   - quem mexe Ã© quem tem `settings:write` (direÃ§Ã£o); treinador e famÃ­lia nÃ£o;
  *   - um clube que nÃ£o publicou nÃ£o existe para o pÃºblico;
- *   - um rascunho, um produto escondido e o plantel nÃ£o publicado nÃ£o saem;
+ *   - um rascunho, um produto escondido e uma equipa não ligada (com o plantel e os jogos) não saem;
  *   - uma imagem de fora do armazenamento do clube Ã© recusada;
  *   - o que se grava na consola aparece no pÃºblico.
  *
@@ -90,9 +90,19 @@ const planoOriginal = (await db.query(`SELECT "planId" FROM "Subscription" WHERE
 if (!planoOriginal) throw new Error("o Life Club nÃ£o tem subscriÃ§Ã£o");
 const porPlano = (id) => db.query(`UPDATE "Subscription" SET "planId"=$1 WHERE "academyId"='acd_lifeclub'`, [id]);
 
-const director = await signIn("direcao@lifeclub.pt");
-const coach = await signIn("treinador@lifeclub.pt");
-const parent = await signIn("familia@lifeclub.pt");
+let director, coach, parent, inicial, antes, equipasDoClube, todasLigadas;
+const criados = { noticias: [], produtos: [], patrocinadores: [], bilheteira: [] };
+
+/*
+ * Daqui até ao `try` de baixo o plano do Life Club já pode ter mudado: uma
+ * falha a meio (um login que não responde, a API em baixo) não pode deixar o
+ * clube noutro plano. Aconteceu a 14/10, e as corridas seguintes leram a
+ * Consola como o plano "original".
+ */
+try {
+director = await signIn("direcao@lifeclub.pt");
+coach = await signIn("treinador@lifeclub.pt");
+parent = await signIn("familia@lifeclub.pt");
 
 console.log("\n=== O plano ===");
 await porPlano("plan_clube");
@@ -106,14 +116,21 @@ if (bootSem.status === 200 && bootCom.status === 200) {
 }
 
 console.log("\n=== Quem pode ===");
-const inicial = await api(director, "GET", "/api/site");
+inicial = await api(director, "GET", "/api/site");
 check("a direÃ§Ã£o lÃª o site", inicial.status === 200, String(inicial.status));
 check("o treinador nÃ£o lÃª (403)", (await api(coach, "GET", "/api/site")).status === 403);
 check("a famÃ­lia nÃ£o lÃª (403)", (await api(parent, "GET", "/api/site")).status === 403);
 check("o treinador nÃ£o escreve (403)", (await api(coach, "POST", "/api/site/noticias", { titulo: "x" })).status === 403);
 
-const antes = inicial.body;
-const criados = { noticias: [], produtos: [], patrocinadores: [], bilheteira: [] };
+antes = inicial.body;
+// As equipas do clube, para as ligar no site: sem isso, nenhuma aparece (ver `equipasValidas`).
+equipasDoClube = (await api(director, "GET", "/api/teams")).body ?? [];
+todasLigadas = Object.fromEntries(equipasDoClube.map((t) => [t.id, { visivel: true, plantel: true }]));
+} catch (e) {
+  await porPlano(planoOriginal);
+  await db.end();
+  throw e;
+}
 
 try {
   console.log("\n=== Publicar ===");
@@ -121,6 +138,7 @@ try {
   check("por publicar, o pÃºblico dÃ¡ 404", (await publico("")).status === 404);
   const pub = await api(director, "PATCH", "/api/site", {
     publicado: true,
+    equipas: todasLigadas,
     layout: "porto",
     identidade: { lema: "Lema do teste", sobre: "Sobre do teste", redes: { facebook: "https://facebook.com/x", instagram: "javascript:alert(1)" } },
   });
@@ -192,11 +210,31 @@ try {
 
   console.log("\n=== Equipas ===");
   const equipas = (await publico("/equipas")).body;
-  check("as equipas saem sem plantel por omissÃ£o", equipas.length > 0 && equipas.every((e) => e.roster.length === 0));
-  const alvo = equipas[0];
-  await api(director, "PATCH", "/api/site", { equipas: { [alvo.id]: { visivel: false, plantel: false } } });
-  check("equipa escondida sai do pÃºblico", !(await publico("/equipas")).body.some((e) => e.id === alvo.id));
-  check("e os jogos dela tambÃ©m", !(await publico("/jogos")).body.some((j) => j.teamId === alvo.id));
+  check("ligadas, as equipas saem com o plantel", equipas.length > 0 && equipas.some((e) => e.roster.length > 0));
+  // A equipa com mais jogos, para o teste dizer alguma coisa sobre os jogos.
+  const jogosAntes = (await publico("/jogos")).body;
+  const alvo = [...equipas].sort((a, b) => jogosAntes.filter((j) => j.teamId === b.id).length - jogosAntes.filter((j) => j.teamId === a.id).length)[0];
+  const jogoDoAlvo = jogosAntes.find((j) => j.teamId === alvo.id);
+  await api(director, "PATCH", "/api/site", { equipas: { ...todasLigadas, [alvo.id]: { visivel: false, plantel: false } } });
+  check("equipa desligada sai do público", !(await publico("/equipas")).body.some((e) => e.id === alvo.id));
+  check("e não se abre pelo endereço (404)", (await publico(`/equipas/${alvo.id}`)).status === 404);
+  check("e os jogos e resultados dela também", !(await publico("/jogos")).body.some((j) => j.teamId === alvo.id));
+  if (jogoDoAlvo) check("e um jogo dela não se abre pelo endereço (404)", (await publico(`/jogos/${jogoDoAlvo.id}`)).status === 404);
+  console.log("\n=== Fotografias do clube e das equipas ===");
+  const outra = equipas.find((e) => e.id !== alvo.id) ?? alvo;
+  const fotoDeFora = await api(director, "PATCH", "/api/site", { equipas: { ...todasLigadas, [outra.id]: { visivel: true, foto: "https://exemplo.com/equipa.jpg" } } });
+  check("fotografia de equipa de fora do clube recusada (400)", fotoDeFora.status === 400, String(fotoDeFora.status));
+  await api(director, "PATCH", "/api/site", { equipas: { ...todasLigadas, [outra.id]: { visivel: true, foto: img.body.publicUrl } } });
+  check("fotografia da equipa no público", (await publico(`/equipas/${outra.id}`)).body?.image === img.body.publicUrl);
+  check("sem fotografia, a equipa não leva image (o site põe a de omissão)", (await publico("/equipas")).body.filter((e) => e.id !== outra.id).every((e) => !e.image));
+  const idFora = await api(director, "PATCH", "/api/site", { identidade: { ...antes.identidade, foto: "https://exemplo.com/clube.jpg" } });
+  check("fotografia do clube de fora recusada (400)", idFora.status === 400, String(idFora.status));
+  await api(director, "PATCH", "/api/site", { identidade: { ...antes.identidade, foto: img.body.publicUrl } });
+  check("fotografia do clube no público", (await publico("")).body?.photo === img.body.publicUrl);
+
+  await api(director, "PATCH", "/api/site", { equipas: {} });
+  check("sem configuração, nenhuma equipa aparece", (await publico("/equipas")).body.length === 0);
+  check("nem nenhum jogo", (await publico("/jogos")).body.length === 0);
 
   console.log("\n=== Publicado, mas sem o plano ===");
   await porPlano("plan_academia");

@@ -87,8 +87,17 @@ export class SiteService {
     const data: Prisma.SiteConfigUncheckedUpdateInput = {};
     if (dto.publicado !== undefined) data.published = dto.publicado;
     if (dto.layout !== undefined) data.layout = dto.layout;
-    if (dto.identidade !== undefined) data.identity = identidadeValida(dto.identidade);
-    if (dto.equipas !== undefined) data.teams = equipasValidas(dto.equipas);
+    // As fotografias (do clube e de cada equipa) só entram se forem do próprio clube, como as das notícias.
+    if (dto.identidade !== undefined) {
+      const identidade = identidadeValida(dto.identidade);
+      identidade.foto = this.imagemDoClube(ctx, identidade.foto) ?? "";
+      data.identity = identidade;
+    }
+    if (dto.equipas !== undefined) {
+      const equipas = equipasValidas(dto.equipas);
+      for (const e of Object.values(equipas)) e.foto = this.imagemDoClube(ctx, e.foto) ?? "";
+      data.teams = equipas;
+    }
     if (dto.recintos !== undefined) data.venues = recintosValidos(dto.recintos);
 
     const config = await this.prisma.runAs(ctx.academyId, (db) =>

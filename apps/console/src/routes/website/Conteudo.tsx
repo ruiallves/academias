@@ -14,9 +14,10 @@ import { mostrarErro, mostrarOk, textoDoErro } from "@/lib/avisos";
 /**
  * As equipas da plataforma, e o que de cada uma vai para o site.
  *
- * Por omissão a equipa aparece (nome, equipa técnica, jogos) e o plantel não:
- * nos escalões jovens são menores, e os nomes só vão para um site público com
- * o consentimento das famílias.
+ * Uma opção por equipa. Ligada, a equipa vai para o site com tudo: equipa
+ * técnica, plantel, jogos e resultados. Desligada, não aparece nada dela.
+ * Desligada por omissão: o plantel publica nomes, e na formação são menores.
+ * Ver `equipasValidas` na API.
  */
 export function Equipas() {
   const store = useStore();
@@ -27,10 +28,10 @@ export function Equipas() {
     return <Empty icon={Users} title="O clube ainda não tem equipas" detail="As equipas criadas na consola aparecem aqui para escolher o que vai para o site." />;
   }
 
-  const de = (id: string) => site.equipas[id] ?? { visivel: true, plantel: false };
-  const mudar = (id: string, campo: "visivel" | "plantel") => {
-    const atual = site.equipas[id] ?? { visivel: true, plantel: false };
-    void guardarConfig({ equipas: { ...site.equipas, [id]: { ...atual, [campo]: !atual[campo] } } });
+  const ligada = (id: string) => site.equipas[id]?.visivel === true;
+  const mudar = (id: string) => {
+    const nova = !ligada(id);
+    void guardarConfig({ equipas: { ...site.equipas, [id]: { ...site.equipas[id], visivel: nova, plantel: nova } } });
   };
 
   const equipas = [...store.teams].sort((a, b) => b.maxAge - a.maxAge || a.name.localeCompare(b.name));
@@ -38,32 +39,100 @@ export function Equipas() {
   return (
     <>
       <p className="mb-4 rounded-[10px] bg-sunken/60 px-3.5 py-2.5 text-meta leading-relaxed text-ink-2">
-        Mostrar o plantel publica o nome e o número de cada atleta. Nos escalões de formação, só com o consentimento escrito das famílias.
+        Uma equipa no site mostra a equipa técnica, o plantel (nome, número e posição de cada atleta), os jogos e os resultados. Desligada,
+        não aparece nada dela. Nos escalões de formação, liga só com o consentimento das famílias.
       </p>
       <div className="overflow-hidden rounded-[12px] border border-line bg-surface">
-        <div className="grid grid-cols-[minmax(0,1fr)_88px_88px] items-center gap-3 border-b border-line bg-sunken/40 px-4 py-2 text-meta font-medium text-ink-3">
+        <div className="grid grid-cols-[96px_minmax(0,1fr)_88px] items-center gap-3 border-b border-line bg-sunken/40 px-4 py-2 text-meta font-medium text-ink-3">
+          <span>Fotografia</span>
           <span>Equipa</span>
           <span className="text-center">No site</span>
-          <span className="text-center">Plantel</span>
         </div>
         <ul>
           {equipas.map((t) => {
-            const e = de(t.id);
+            const on = ligada(t.id);
             return (
-              <li key={t.id} className="grid grid-cols-[minmax(0,1fr)_88px_88px] items-center gap-3 border-b border-line px-4 py-3 last:border-b-0">
-                <span className={cx("truncate text-body", e.visivel ? "font-medium text-ink" : "text-ink-3")}>{t.name}</span>
+              <li key={t.id} className="grid grid-cols-[96px_minmax(0,1fr)_88px] items-center gap-3 border-b border-line px-4 py-3 last:border-b-0">
+                <FotoDaEquipa id={t.id} nome={t.name} />
+                <span className={cx("truncate text-body", on ? "font-medium text-ink" : "text-ink-3")}>{t.name}</span>
                 <span className="flex justify-center">
-                  <Interruptor ligado={e.visivel} onChange={() => mudar(t.id, "visivel")} label={`Mostrar ${t.name} no site`} />
-                </span>
-                <span className="flex justify-center">
-                  <Interruptor ligado={e.plantel} disabled={!e.visivel} onChange={() => mudar(t.id, "plantel")} label={`Mostrar o plantel de ${t.name}`} />
+                  <Interruptor ligado={on} onChange={() => mudar(t.id)} label={`Mostrar ${t.name} no site`} />
                 </span>
               </li>
             );
           })}
         </ul>
       </div>
+      <p className="mt-3 text-meta text-ink-3">Sem fotografia, o site mostra uma imagem da modalidade da equipa.</p>
     </>
+  );
+}
+
+/**
+ * A fotografia de uma equipa no site: um botão pequeno que abre o seletor de
+ * ficheiros (nada tocável dentro de um `<label>`, ver `check:toque`). Grava
+ * logo, como o logótipo de um patrocinador.
+ */
+function FotoDaEquipa({ id, nome }: { id: string; nome: string }) {
+  const site = useSite(useStore().academy.slug);
+  const ficheiro = useRef<HTMLInputElement | null>(null);
+  const [aCarregar, setACarregar] = useState(false);
+  const foto = site.equipas[id]?.foto ?? "";
+
+  const gravar = (url: string) => {
+    const atual = site.equipas[id] ?? { visivel: false, plantel: false };
+    return guardarConfig({ equipas: { ...site.equipas, [id]: { ...atual, foto: url } } }, { imediato: true });
+  };
+
+  const escolher = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const f = e.target.files?.[0];
+    e.target.value = "";
+    if (!f) return;
+    setACarregar(true);
+    try {
+      await gravar(await enviarImagem(f, 1600));
+      mostrarOk(`Fotografia de ${nome} guardada.`);
+    } catch (err) {
+      mostrarErro(textoDoErro(err, "Não foi possível usar esta imagem."));
+    } finally {
+      setACarregar(false);
+    }
+  };
+
+  return (
+    <div className="relative">
+      <input ref={ficheiro} type="file" accept="image/png,image/jpeg,image/webp" className="hidden" onChange={escolher} />
+      <button
+        type="button"
+        onClick={() => ficheiro.current?.click()}
+        disabled={aCarregar}
+        aria-label={foto ? `Trocar a fotografia de ${nome}` : `Pôr uma fotografia de ${nome}`}
+        title={foto ? "Trocar a fotografia" : "Pôr uma fotografia"}
+        className={cx(
+          "grid aspect-[16/10] w-24 place-items-center overflow-hidden rounded-[8px] border transition-colors",
+          foto ? "border-line hover:border-line-strong" : "border-dashed border-line-strong bg-sunken/40 text-ink-3 hover:border-ink-3 hover:text-ink",
+        )}
+      >
+        {aCarregar ? (
+          <Loader2 className="size-4 animate-spin" strokeWidth={1.75} />
+        ) : foto ? (
+          <img src={foto} alt="" className="size-full object-cover" />
+        ) : (
+          <ImagePlus className="size-4" strokeWidth={1.75} />
+        )}
+      </button>
+      {foto && !aCarregar && (
+        <button
+          type="button"
+          aria-label={`Tirar a fotografia de ${nome}`}
+          title="Tirar a fotografia"
+          className="absolute -right-1.5 -top-1.5 grid size-6 place-items-center rounded-full border border-line bg-surface text-risk shadow-sm hover:border-line-strong"
+          onClick={() => void gravar("").catch(() => undefined)}
+        >
+          <Trash2 className="size-3" strokeWidth={2} />
+        </button>
+      )}
+    </div>
   );
 }
 

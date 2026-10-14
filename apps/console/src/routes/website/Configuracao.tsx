@@ -7,6 +7,7 @@ import { ClubMark } from "@/components/ClubMark";
 import { useStore } from "@/lib/store";
 import { enderecoDoSite, guardarConfig, useSite, type Layout, type SiteDoClube } from "@/lib/website";
 import { mostrarOk } from "@/lib/avisos";
+import { CampoDeImagem } from "./CampoDeImagem";
 
 /* -------------------------------------------------------------------------- */
 /* Identidade                                                                   */
@@ -75,6 +76,22 @@ export function Identidade() {
           <Campo label="História" ajuda="Parágrafos separados por uma linha em branco.">
             <textarea className={cx(campoClass, "h-44 py-2.5")} {...campo("historia")} />
           </Campo>
+        </div>
+      </Bloco>
+
+      <Bloco titulo="Fotografia do clube" descricao="Aparece no bloco de sócios do site. Sem fotografia, o site usa uma imagem de bancada.">
+        <div className="max-w-md">
+          <CampoDeImagem
+            rotulo="Fotografia"
+            valor={d.foto}
+            onMudar={(url) => {
+              // Grava já, como as outras imagens do site; o texto por gravar fica como está.
+              setD({ ...d, foto: url });
+              void guardarConfig({ identidade: { ...site.identidade, foto: url } }, { imediato: true })
+                .then(() => mostrarOk(url ? "Fotografia guardada." : "Fotografia tirada."))
+                .catch(() => undefined);
+            }}
+          />
         </div>
       </Bloco>
 

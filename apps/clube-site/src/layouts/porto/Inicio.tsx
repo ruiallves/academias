@@ -1,6 +1,5 @@
 import Image from "next/image";
 import Link from "next/link";
-import { emDemonstracao } from "@/lib/modo";
 import { Foto } from "@/componentes/Foto";
 import { ArrowRight, MapPin, Ticket } from "lucide-react";
 import type { DadosInicio } from "@/layouts/tipos";
@@ -47,7 +46,7 @@ export function InicioPorto({ clube, noticias, proximo, ultimo, equipas, produto
         </div>
 
         <a href={clube.membershipUrl} className="group relative block min-h-[14rem] overflow-hidden bg-signal-strong text-signal-on">
-          {emDemonstracao() && <Image src="https://picsum.photos/seed/bancada/900/700" alt="" fill sizes="(min-width: 1024px) 30vw, 100vw" className="object-cover opacity-20 mix-blend-luminosity transition-transform duration-700 group-hover:scale-105" />}
+          {clube.photo && <Image src={clube.photo} alt="" fill sizes="(min-width: 1024px) 30vw, 100vw" className="object-cover opacity-20 mix-blend-luminosity transition-transform duration-700 group-hover:scale-105" />}
           <div className="absolute inset-x-0 bottom-0 p-6 text-center">
             <Emblema logoUrl={clube.logoUrl} shortName={clube.shortName} size={40} className="mx-auto" />
             <p className="eyebrow mt-3 opacity-80">Cartão, quotas e jogos</p>
@@ -210,7 +209,7 @@ function CartazDoDia({ jogo, clube }: { jogo: Jogo; clube: Clube }) {
       href={jogo.tickets?.open ? `/bilheteira/${jogo.id}` : "/calendario"}
       className="group relative mt-4 block aspect-[3/4] overflow-hidden bg-signal-strong text-center text-signal-on"
     >
-      {emDemonstracao() && <Image src="https://picsum.photos/seed/cartaz/900/1200" alt="" fill sizes="(min-width: 1024px) 22rem, 100vw" className="object-cover opacity-20 mix-blend-luminosity transition-transform duration-700 group-hover:scale-105" />}
+      {clube.photo && <Image src={clube.photo} alt="" fill sizes="(min-width: 1024px) 22rem, 100vw" className="object-cover opacity-20 mix-blend-luminosity transition-transform duration-700 group-hover:scale-105" />}
       <div className="absolute inset-0 flex flex-col items-center justify-between p-6">
         <p className="text-xs font-bold uppercase tracking-[0.3em]">
           {dia} {mes}

@@ -31,7 +31,16 @@ export type Identidade = {
   telefone: string;
   email: string;
   redes: Partial<Record<(typeof REDES)[number], string>>;
+  /**
+   * A fotografia do clube: o bloco de sócios e a "Área do sócio". Vazio, o
+   * site usa a de omissão (uma bancada). Só imagens do próprio clube, no
+   * bucket do site: quem grava confere (`SiteService.atualizar`).
+   */
+  foto: string;
 };
+
+/** O que cada equipa leva no site. `foto` vazia: a de omissão da modalidade. */
+export type EquipaNoSite = { visivel: boolean; plantel: boolean; foto: string };
 
 export const LADOS = ["norte", "sul", "nascente", "poente", "noroeste", "nordeste", "sudoeste", "sudeste"] as const;
 export type Lado = (typeof LADOS)[number];
@@ -71,16 +80,29 @@ export function identidadeValida(v: unknown): Identidade {
     telefone: texto(o.telefone, 40),
     email: texto(o.email, 160),
     redes,
+    foto: urlSegura(o.foto),
   };
 }
 
-export function equipasValidas(v: unknown): Record<string, { visivel: boolean; plantel: boolean }> {
+/**
+ * O que cada equipa mostra no site: uma opção só.
+ *
+ * Ligada, a equipa aparece com tudo (equipa técnica, plantel, jogos e
+ * resultados). Desligada, não aparece nada dela. **Desligada por omissão**:
+ * uma equipa nova não vai para um site público sem alguém a ligar, porque o
+ * plantel publica nomes, e nos escalões de formação são menores.
+ *
+ * `plantel` fica na forma por compatibilidade com o que já está gravado, e
+ * acompanha sempre `visivel`. `foto` é a fotografia da equipa no site.
+ */
+export function equipasValidas(v: unknown): Record<string, EquipaNoSite> {
   const o = (v && typeof v === "object" ? v : {}) as Record<string, unknown>;
-  const out: Record<string, { visivel: boolean; plantel: boolean }> = {};
+  const out: Record<string, EquipaNoSite> = {};
   for (const [id, e] of Object.entries(o).slice(0, 500)) {
     if (!id || id.length > 60 || !e || typeof e !== "object") continue;
     const x = e as Record<string, unknown>;
-    out[id] = { visivel: x.visivel !== false, plantel: x.plantel === true };
+    const visivel = x.visivel === true;
+    out[id] = { visivel, plantel: visivel, foto: urlSegura(x.foto) };
   }
   return out;
 }

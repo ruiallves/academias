@@ -1,4 +1,6 @@
 14/10/2026
+- Site do clube, equipas: uma opção só por equipa ("No site"). Ligada, aparece com a equipa técnica, o plantel, os jogos e os resultados; desligada, não aparece nada dela, nem pelo endereço direto. As equipas passam a vir desligadas por omissão.
+- Site do clube: o destaque do topo já não fica sem altura quando o clube tem só uma notícia marcada como destaque; completa-se com as mais recentes.
 - Calendário: botão "Aniversários" ao lado dos filtros, desligado por omissão. Mostra os aniversários de quem cada um pode ver: o treinador vê os dos seus atletas, a direção e a coordenação veem os de todos os atletas e de todo o staff.
 - Staff: data de nascimento na ficha (Editar ficha) e no convite, ao criar a conta. Opcional; só a vê quem vê o clube todo e a própria pessoa.
 - App do clube: o bloco do equipamento na ficha do atleta passa a chamar-se "Equipamentos" (e "Equipamentos que já teve" no histórico), na conta do encarregado e na do atleta. Os artigos sem fotografia deixam de mostrar a imagem padrão da camisola, na lista e na página da peça.

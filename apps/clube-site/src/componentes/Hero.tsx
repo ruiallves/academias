@@ -31,7 +31,11 @@ export function Hero({ destaques }: { destaques: Noticia[] }) {
 
 function Destaque({ noticia, grande = false, className = "" }: { noticia: Noticia; grande?: boolean; className?: string }) {
   return (
-    <article className={`group relative overflow-hidden rounded-card bg-night ${grande ? "aspect-[16/10] lg:aspect-auto" : "aspect-[16/9] lg:aspect-auto lg:min-h-[13rem]"} ${className}`}>
+    /*
+      A grande tem altura mínima própria: os filhos são todos absolutos, e sem
+      as laterais (um clube com uma só notícia) a coluna ficava sem altura.
+    */
+    <article className={`group relative overflow-hidden rounded-card bg-night ${grande ? "aspect-[16/10] lg:aspect-auto lg:min-h-[27rem]" : "aspect-[16/9] lg:aspect-auto lg:min-h-[13rem]"} ${className}`}>
       <Link href={`/noticias/${noticia.slug}`} className="absolute inset-0">
         <Foto
           src={noticia.image}

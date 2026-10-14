@@ -172,6 +172,21 @@ acrescentá-lo ao projeto à mão.
 - Eventos públicos no calendário, direção e instalações na página do clube.
 - A permissão própria (`website:*`). Hoje é `settings:write`.
 
+## Fotografias
+
+O clube escolhe, no menu Website, a fotografia do clube (Identidade: bloco de
+sócios e "Área do sócio") e uma fotografia por equipa (Equipas). Ficam em
+`SiteConfig.identity.foto` e `SiteConfig.teams[id].foto`, e a API só aceita
+imagens do próprio clube no bucket do site, como nas notícias.
+
+Enquanto não escolhe, o site usa as **fotografias de omissão** de
+`apps/clube-site/public/padrao/` (`lib/fotos.ts`): uma por modalidade
+(futebol, futsal e basquetebol com três variantes, para várias equipas da
+mesma modalidade não repetirem a imagem), uma genérica para as outras e uma
+de bancada para o clube. São aplicadas em `dados/fonte.ts`, à saída dos
+dados, para todas as páginas mostrarem a mesma. As fontes e licenças estão em
+`public/padrao/FONTES.md`.
+
 ## Correr
 
 ```

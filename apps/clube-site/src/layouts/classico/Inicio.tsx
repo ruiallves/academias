@@ -1,6 +1,5 @@
 import Image from "next/image";
 import Link from "next/link";
-import { emDemonstracao } from "@/lib/modo";
 import { ArrowRight } from "lucide-react";
 import type { DadosInicio } from "@/layouts/tipos";
 import { Hero } from "@/componentes/Hero";
@@ -17,13 +16,19 @@ import { BotaoLink } from "@/componentes/Botao";
  * é a da AD Fafe, e é a ordem por que um adepto pergunta.
  */
 export function InicioClassico({ clube, noticias, proximo, ultimo, equipas, produtos }: DadosInicio) {
-  const destaques = noticias.filter((n) => n.featured).slice(0, 3);
+  /*
+   * Três no topo: as marcadas como destaque primeiro, completadas pelas mais
+   * recentes. Com um só destaque o herói ficava com uma notícia e sem as duas
+   * laterais (que são o que lhe dava altura).
+   */
+  const marcadas = noticias.filter((n) => n.featured);
+  const destaques = [...marcadas, ...noticias.filter((n) => !n.featured)].slice(0, 3);
   const destaqueIds = new Set(destaques.map((n) => n.id));
   const restantes = noticias.filter((n) => !destaqueIds.has(n.id)).slice(0, 4);
 
   return (
     <>
-      <Hero destaques={destaques.length ? destaques : noticias.slice(0, 3)} />
+      <Hero destaques={destaques} />
 
       <BandaDoJogo proximo={proximo} ultimo={ultimo} clube={clube} />
 
@@ -64,7 +69,8 @@ export function InicioClassico({ clube, noticias, proximo, ultimo, equipas, prod
                   )}
                   <div className="absolute inset-x-0 bottom-0 p-4">
                     <p className={`eyebrow ${e.image ? "text-night-ink-2" : "text-signal-on opacity-80"}`}>{e.sport}</p>
-                    <p className={`display mt-1 text-2xl ${e.image ? "text-night-ink" : "text-signal-on"}`}>{e.name}</p>
+                    {/* Com seis colunas o cartão é estreito: "SUB-16 BASQUETEBOL" encostava à margem. */}
+                    <p className={`display mt-1 text-2xl lg:text-xl ${e.image ? "text-night-ink" : "text-signal-on"}`}>{e.name}</p>
                   </div>
                 </Link>
               </li>
@@ -88,7 +94,8 @@ export function InicioClassico({ clube, noticias, proximo, ultimo, equipas, prod
             </BotaoLink>
           </div>
           <div className="relative hidden min-h-[16rem] lg:block">
-            {emDemonstracao() && <Image src="https://picsum.photos/seed/socios/1200/800" alt="" fill sizes="50vw" className="object-cover" />}
+            {/* A fotografia do clube, ou a de omissão (ver `lib/fotos.ts`). */}
+            {clube.photo && <Image src={clube.photo} alt="" fill sizes="50vw" className="object-cover" />}
             <div className="absolute inset-0 bg-signal-strong/30 mix-blend-multiply" aria-hidden />
           </div>
         </div>

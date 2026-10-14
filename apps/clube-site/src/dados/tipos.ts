@@ -55,6 +55,8 @@ export type Clube = {
   facilities: { name: string; description: string; image: string }[];
   /** Os recintos vistos de cima, desenhados na consola. Vazio = bilhetes sem mapa. */
   recintos: Recinto[];
+  /** A fotografia do clube (bloco de sócios). Sem ela, a de omissão: ver `lib/fotos.ts`. */
+  photo?: string;
   sponsors: { name: string; logoUrl?: string; url?: string }[];
 };
 
@@ -85,7 +87,7 @@ export type Equipa = {
   /** Equipa técnica, por ordem. A pública, não a interna. */
   staff: { name: string; role: string }[];
   /**
-   * O plantel só aparece se o clube o publicar, e os menores só com
+   * O plantel vai com a equipa: aparece quando o clube liga a equipa no site, e os menores só com
    * consentimento. Vazio por omissão.
    */
   roster: { name: string; number?: number; position?: string }[];
