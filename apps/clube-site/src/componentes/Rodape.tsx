@@ -21,16 +21,19 @@ export function Rodape({ clube }: { clube: Clube }) {
           </div>
           {clube.motto && <p className="display mt-6 text-3xl text-night-ink">{clube.motto}</p>}
           <address className="mt-6 space-y-2 text-sm not-italic">
-            <p className="flex gap-2">
-              <MapPin size={16} className="mt-0.5 shrink-0" aria-hidden />
-              <span>
-                {clube.address.lines.map((l, i) => (
-                  <span key={i} className="block">
-                    {l}
-                  </span>
-                ))}
-              </span>
-            </p>
+            {/* Sem morada, sem o ícone: um alfinete sozinho parecia texto por carregar. */}
+            {clube.address.lines.length > 0 && (
+              <p className="flex gap-2">
+                <MapPin size={16} className="mt-0.5 shrink-0" aria-hidden />
+                <span>
+                  {clube.address.lines.map((l, i) => (
+                    <span key={i} className="block">
+                      {l}
+                    </span>
+                  ))}
+                </span>
+              </p>
+            )}
             {clube.phone && (
               <p className="flex gap-2">
                 <Phone size={16} className="mt-0.5 shrink-0" aria-hidden />
@@ -69,9 +72,13 @@ export function Rodape({ clube }: { clube: Clube }) {
         </nav>
 
         <div>
-          <p className="eyebrow text-night-ink">Segue o clube</p>
-          <Redes social={clube.social} shortName={clube.shortName} className="-ml-3 mt-3" />
-          <p className="eyebrow mt-8 text-night-ink">Modalidades</p>
+          {Object.values(clube.social).some(Boolean) && (
+            <>
+              <p className="eyebrow text-night-ink">Segue o clube</p>
+              <Redes social={clube.social} shortName={clube.shortName} className="-ml-3 mt-3 mb-8" />
+            </>
+          )}
+          <p className="eyebrow text-night-ink">Modalidades</p>
           <ul className="mt-4 space-y-2.5 text-sm">
             {clube.modalidades.map((m) => (
               <li key={m}>{m}</li>
@@ -87,7 +94,7 @@ export function Rodape({ clube }: { clube: Clube }) {
           </p>
           <p>
             Site e plataforma por{" "}
-            <a href="https://academias.pt" className="font-semibold text-night-ink hover:underline">
+            <a href="https://www.academias.pt"className="font-semibold text-night-ink hover:underline">
               Academias
             </a>
           </p>

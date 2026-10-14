@@ -4,6 +4,7 @@ import { emDemonstracao } from "@/lib/modo";
 import { ArrowRight } from "lucide-react";
 import type { DadosInicio } from "@/layouts/tipos";
 import { Hero } from "@/componentes/Hero";
+import { BoasVindas } from "@/componentes/BoasVindas";
 import { BandaDoJogo } from "@/componentes/Jogo";
 import { CartaoNoticia } from "@/componentes/CartaoNoticia";
 import { CartaoProduto } from "@/componentes/CartaoProduto";
@@ -23,7 +24,11 @@ export function InicioClassico({ clube, noticias, proximo, ultimo, equipas, prod
 
   return (
     <>
-      <Hero destaques={destaques.length ? destaques : noticias.slice(0, 3)} />
+      {noticias.length ? (
+        <Hero destaques={destaques.length ? destaques : noticias.slice(0, 3)} />
+      ) : (
+        <BoasVindas clube={clube} equipas={equipas.length} temJogos={!!(proximo || ultimo)} />
+      )}
 
       <BandaDoJogo proximo={proximo} ultimo={ultimo} clube={clube} />
 

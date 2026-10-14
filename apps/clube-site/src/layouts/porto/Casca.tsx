@@ -151,7 +151,7 @@ function RodapePorto({ clube }: { clube: Clube }) {
         </address>
         <p className="mt-4 text-xs text-ink-3">
           © {ano} {clube.name}. Site e plataforma por{" "}
-          <a href="https://academias.pt" className="font-semibold text-ink hover:underline">
+          <a href="https://www.academias.pt"className="font-semibold text-ink hover:underline">
             Academias
           </a>
           .

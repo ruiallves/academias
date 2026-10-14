@@ -153,10 +153,19 @@ export class SitePublicoService {
   /**
    * As equipas da época em curso que o clube não escondeu, das mais velhas
    * para as mais novas (como no menu de jogos do sócio).
+   *
+   * A época em curso é a marcada, ou, sem nenhuma marcada, a mais recente: é
+   * a regra do arranque da consola. Muitos clubes nunca carregam na marca, e o
+   * site deles saía sem equipas nem jogos (AD Fafe, 14/10).
    */
   private async equipasVisiveis(db: ScopedClient, visibilidade: Record<string, { visivel: boolean; plantel: boolean }>, so?: string) {
+    const epoca = await db.season.findFirst({
+      orderBy: [{ isCurrent: "desc" }, { startsOn: "desc" }],
+      select: { id: true },
+    });
+    if (!epoca) return [];
     const teams = await db.team.findMany({
-      where: { season: { isCurrent: true }, ...(so ? { id: so } : {}) },
+      where: { seasonId: epoca.id, ...(so ? { id: so } : {}) },
       orderBy: [{ maxAge: "desc" }, { name: "asc" }],
       select: {
         id: true,
