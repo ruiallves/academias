@@ -25,10 +25,9 @@ export default function Planos() {
                 <tr className="border-b border-fio-2">
                   <th className="rotulo py-4 pr-4 pl-6 font-normal text-texto-3">Módulo</th>
                   <th className="rotulo w-[110px] py-4 text-center font-normal text-texto-3">Consola</th>
-                  <th className="rotulo w-[110px] py-4 text-center font-normal text-texto">Connect</th>
-                  <th className="rotulo w-[130px] py-4 text-center font-normal text-texto-3">
+                  <th className="rotulo w-[110px] py-4 text-center font-normal text-texto-3">Connect</th>
+                  <th className="rotulo w-[130px] py-4 text-center font-normal text-texto">
                     Connect Pro
-                    <span className="block normal-case">brevemente</span>
                   </th>
                 </tr>
               </thead>
@@ -50,7 +49,7 @@ export default function Planos() {
                     </td>
                   </tr>
                 ))}
-                {/* A única linha que ainda não existe leva outro sinal: um anel, e não um ponto cheio. */}
+                {/* O que só o Connect Pro tem. */}
                 <tr>
                   <td className="py-3.5 pr-4 pl-6">
                     <p className="font-semibold">Site do clube</p>
@@ -65,7 +64,7 @@ export default function Planos() {
                     <Sinal on={false} />
                   </td>
                   <td className="py-3.5 text-center">
-                    <Sinal on breve />
+                    <Sinal on />
                   </td>
                 </tr>
               </tbody>

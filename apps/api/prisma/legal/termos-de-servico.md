@@ -1,9 +1,9 @@
 ---
 type: TERMS_OF_SERVICE
-version: 1.4
+version: 1.5
 title: Termos de Serviço
-summary: O contrato entre o clube e a Academias — o que inclui cada plano, pagamento, suspensão, cancelamento e as responsabilidades de cada parte.
-changeNote: Espaço de armazenamento. O limite de 5 GB de cada clube pode ser aumentado a pedido do clube, com um acréscimo na mensalidade.
+summary: O contrato entre o clube e a Academias: o que inclui cada plano, pagamento, suspensão, cancelamento e as responsabilidades de cada parte.
+changeNote: Novo plano Connect Pro, o Connect com o site do clube. Novos preços para clubes novos (Connect a 24,99 € e Connect Pro a 29,99 € por mês); os clubes que já usam a plataforma mantêm o preço que pagam e têm o Connect Pro a 24,99 € por mês.
 ---
 
 Estes termos regulam a utilização da plataforma Academias por clubes e academias desportivas. Estão escritos para serem lidos por quem dirige um clube, não por juristas. Ao aceitá-los em nome do clube, a pessoa que os aceita declara que está autorizada a representá-lo para este efeito. O Acordo de Tratamento de Dados e a Política de Utilização Aceitável fazem parte deste contrato.
@@ -45,6 +45,15 @@ O plano Consola **não inclui** a app do clube, a cobrança de mensalidades ou q
 - Página pública de adesão a sócio, e gestão de sócios, categorias e quotas.
 - Notificações no telemóvel.
 
+**Plano Connect Pro**: tudo o que está no plano Connect, mais o **site do clube**:
+
+- Um site público do clube, ligado à plataforma, com o nome, a cor e o símbolo do clube.
+- Notícias, equipas, calendário de jogos e resultados, contactos e página do clube, com os jogos e as equipas que o clube tem na plataforma e o que escreve no menu Website.
+- Adesão a sócio no próprio site.
+- Um **domínio .pt** registado em nome do clube, com o registo e as renovações incluídos enquanto o clube estiver neste plano. Se o clube já tiver domínio, pode usar esse. Enquanto o domínio não estiver ligado, o site fica disponível num endereço da Academias.
+- Alojamento, certificado de segurança (SSL) e manutenção técnica do site.
+- A **loja online** e a **bilheteira digital com códigos QR** estão em desenvolvimento: o site já mostra os produtos e os bilhetes, mas a venda ainda não está disponível. Quando o for, passa a fazer parte deste plano sem custo adicional, e os pagamentos seguem as regras da secção 10.
+
 Todos os planos incluem **5 GB de espaço de armazenamento** para os ficheiros do clube (ver a secção 13).
 
 Funcionalidades futuras — nomeadamente a análise de vídeo Academias AI — serão objecto de termos próprios e de contratação à parte, e não estão incluídas em nenhum dos planos acima.
@@ -72,7 +81,8 @@ O clube garante que:
 - tem fundamento legal para tratar os dados que introduz, incluindo os dados de menores, e que informou os titulares nos termos da legislação aplicável;
 - obteve as autorizações necessárias para carregar fotografias ou vídeo de pessoas, em especial de menores;
 - os dados que introduz são verdadeiros e estão actualizados, na medida em que deles dependa o funcionamento do serviço;
-- o que comunica às famílias e aos sócios através da plataforma cumpre a lei e não é ofensivo nem enganador.
+- o que comunica às famílias e aos sócios através da plataforma cumpre a lei e não é ofensivo nem enganador;
+- no plano Connect Pro, o que publica no site do clube cumpre a lei, e tem as autorizações necessárias para publicar nomes, fotografias e planteis de atletas, em especial de menores.
 
 O clube indemniza a Academias por qualquer reclamação de terceiros, coima, custo ou dano que resulte do conteúdo que introduziu, da utilização da plataforma pelas pessoas a quem deu acesso, ou do incumprimento destas garantias.
 
@@ -85,7 +95,10 @@ O clube dispõe de um período experimental de **30 dias** com acesso à platafo
 A subscrição é **mensal**. Os preços em vigor à data desta versão são:
 
 - **Plano Consola**: 14,99 € por mês, IVA incluído.
-- **Plano Connect**: 19,99 € por mês, IVA incluído.
+- **Plano Connect**: 24,99 € por mês, IVA incluído.
+- **Plano Connect Pro**: 29,99 € por mês, IVA incluído.
+
+**Clubes que já usavam a plataforma.** Um clube que já tinha subscrição à data de entrada em vigor desta versão mantém o preço que paga enquanto continuar no mesmo plano. Se passar para o plano Connect Pro, paga **24,99 € por mês**, IVA incluído.
 
 Os preços são por clube e não variam com o número de atletas. Um aumento do espaço de armazenamento acima dos 5 GB incluídos tem um preço próprio, somado à mensalidade (ver a secção 13). Prevalecem, quando existam, as condições da proposta aceite pelo clube, incluindo um **período de fidelização** (o período contratual mínimo que a proposta indique). A mensalidade é devida na data indicada na factura.
 
@@ -107,12 +120,14 @@ A mudança produz efeitos no início do mês a que se aplica e é facturada ao p
 
 Ao descer de plano, o clube deixa de ter acesso ao que o plano novo não inclui — nomeadamente, ao descer de Connect para Consola, à app do clube, à cobrança de mensalidades e quotas e à página pública de adesão a sócio. Os dados mantêm-se guardados e voltam a estar acessíveis se o clube subir de plano outra vez. É da responsabilidade do clube avisar as famílias e os sócios antes de uma descida de plano que lhes retire a app.
 
+Ao sair do plano Connect Pro, o site do clube deixa de estar disponível ao público e deixamos de renovar o domínio. O domínio continua a ser do clube: a pedido, entregamos o que for preciso para o clube o transferir para outro prestador.
+
 ## 9. Falta de pagamento, desactivação e cessação
 
 O que acontece quando uma mensalidade não é paga, contado a partir da data de vencimento:
 
 1. **Até 30 dias** — o clube pode regularizar e o acesso mantém-se. Procuramos avisar durante este período.
-2. **Aos 30 dias sem pagamento** — a conta do clube é **desactivada**: fica sem acesso à consola, à app do clube e à cobrança de mensalidades e quotas. Os dados mantêm-se guardados. Se tiver passado mais de um mês desde o pagamento da última mensalidade, a desactivação pode ocorrer com ou sem aviso prévio.
+2. **Aos 30 dias sem pagamento** — a conta do clube é **desactivada**: fica sem acesso à consola, à app do clube e à cobrança de mensalidades e quotas, e o site do clube, se o tiver, deixa de estar disponível ao público. Os dados mantêm-se guardados. Se tiver passado mais de um mês desde o pagamento da última mensalidade, a desactivação pode ocorrer com ou sem aviso prévio.
 3. **Aos 60 dias sem pagamento** — o contrato **cessa** e os dados do clube são **eliminados** nos termos da secção sobre eliminação. Até essa data o clube pode ainda pedir a exportação dos seus dados.
 
 Durante a desactivação o acesso é reposto após o pagamento integral dos valores em dívida. A desactivação não interrompe a contagem das mensalidades devidas enquanto o contrato estiver em vigor, e os valores em dívida continuam a ser devidos após a cessação.
@@ -125,9 +140,11 @@ Os pagamentos em linha são processados por um prestador de serviços de pagamen
 
 O estado de um pagamento na plataforma reflecte a confirmação recebida do prestador. Reclamações, estornos, devoluções e litígios sobre pagamentos de famílias ou sócios são tratados entre o clube, a pessoa e o prestador.
 
+As vendas da loja e da bilheteira do site do clube, quando disponíveis, seguem as mesmas regras: o clube é o vendedor, o dinheiro é liquidado directamente ao clube, e o clube responde perante quem compra, incluindo pela entrega dos produtos, pela entrada nos jogos e pelas devoluções.
+
 ## 11. Cancelamento
 
-O clube pode cancelar a subscrição a qualquer momento, por escrito ou pela plataforma. O cancelamento produz efeitos no fim do período já pago.
+O clube pode cancelar a subscrição a qualquer momento, por escrito ou pela plataforma. O cancelamento produz efeitos no fim do período já pago. No plano Connect Pro, o domínio do clube segue o que diz a secção 8 para quem sai desse plano.
 
 **Com fidelização.** Se estiver em vigor um período de fidelização, o clube pode cancelar na mesma, mas continua obrigado a pagar as mensalidades que faltam até ao fim desse período.
 
@@ -165,7 +182,7 @@ A plataforma, o software, a marca, o desenho e a documentação são nossos ou d
 
 O clube não pode copiar, modificar, descompilar, extrair por meios automáticos ou criar obras derivadas da plataforma, nem usá-la para construir um produto concorrente.
 
-Os dados que o clube introduz continuam a ser do clube. A marca do clube — nome, cor, símbolo — é do clube, e é usada apenas para personalizar o serviço que lhe é prestado. Sugestões que o clube nos faça podem ser usadas livremente para melhorar o produto, sem obrigação de compensação.
+Os dados que o clube introduz continuam a ser do clube. A marca do clube (nome, cor, símbolo) é do clube, e é usada apenas para personalizar o serviço que lhe é prestado, incluindo o site do clube. Sugestões que o clube nos faça podem ser usadas livremente para melhorar o produto, sem obrigação de compensação.
 
 Salvo oposição escrita do clube, podemos indicar o nome e o símbolo do clube como referência de cliente no site e em materiais de apresentação.
 

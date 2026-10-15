@@ -27,7 +27,10 @@ export type Plan = {
   name: string;
   tagline: string;
   monthly: number;
+  /** O recomendado: o cartão escuro, com a etiqueta "Recomendado". */
   featured?: boolean;
+  /** O que mais clubes escolhem: a etiqueta "O mais escolhido", num cartão claro. */
+  popular?: boolean;
   /** O que este plano faz, escrito como um clube o diria. */
   includes: string[];
   /** Só no plano de baixo: o que fica de fora, dito sem rodeios. */
@@ -64,7 +67,7 @@ export const PLANS: Plan[] = [
     name: "Connect",
     tagline: "O clube, as famílias, os sócios e os pagamentos.",
     monthly: 24.99,
-    featured: true,
+    popular: true,
     includes: [
       "Tudo da Consola",
       "App do clube com a vossa marca",
@@ -79,7 +82,7 @@ export const PLANS: Plan[] = [
     name: "Connect Pro",
     tagline: "O Connect com o site do clube.",
     monthly: 29.99,
-    soon: true,
+    featured: true,
     includes: [
       "Tudo do Connect",
       "Site com domínio .pt incluído",
@@ -383,7 +386,7 @@ export const FAQ = [
   },
   {
     q: "O que traz o Connect Pro?",
-    a: "O site do clube, ligado à plataforma. As notícias, as equipas e o calendário saem do que o clube já tem na consola, e a loja e a bilheteira vendem pelo próprio site. Tratamos do domínio .pt, do alojamento e da manutenção. Ainda não está à venda, e por isso não tem período de teste.",
+    a: "O site do clube, ligado à plataforma. As notícias, as equipas e o calendário saem do que o clube já tem na consola, e a loja e a bilheteira ficam no próprio site. Tratamos do domínio .pt, do alojamento e da manutenção. Tem os mesmos 30 dias de experiência dos outros planos.",
   },
   {
     q: "O domínio do site fica em nome de quem?",

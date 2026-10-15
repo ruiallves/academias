@@ -6,9 +6,10 @@ import { ANNUAL_DISCOUNT, annualTotal, euro, PLANS } from "@/lib/content";
 /**
  * Os planos.
  *
- * Três blocos lado a lado. O recomendado é o escuro. O Connect Pro está na
- * mesa com o preço à vista e sem botão de experimentar: ainda não se vende, e
- * o preço serve para o clube poder contar com ele no orçamento da época.
+ * Três blocos lado a lado. O recomendado (o Connect Pro) é o escuro; o Connect
+ * leva "O mais escolhido", que é o que a maioria dos clubes tem. Um plano com
+ * `soon` mostra o preço sem botão de experimentar, para o clube poder contar
+ * com ele no orçamento da época.
  *
  * Em anual mostra-se o equivalente mensal em grande e o total do ano por
  * baixo, que é como uma pessoa compara com o que já paga.
@@ -49,11 +50,14 @@ export function Precos({ pagina = false }: { pagina?: boolean }) {
             return (
               <article key={p.id} className={cx("plano", p.featured ? "palco-noite" : "bg-sup")}>
                 {/* As medidas cá dentro vêm de `--u` (ver `.planos-mesa`), para o plano caber no ecrã. */}
-                <div className="flex items-start justify-between gap-3">
-                  <h3 className="titulo plano-nome">{p.name}</h3>
-                  {p.featured && <span className="etiqueta etiqueta-viva shrink-0">Recomendado</span>}
-                  {p.soon && <span className="etiqueta etiqueta-breve shrink-0">Brevemente</span>}
+                {/* A etiqueta numa linha própria, com a mesma altura em todos os cartões:
+                    ao lado do nome, "Connect Pro" partia em duas linhas e o preço descia. */}
+                <div className="mb-3 flex min-h-7 items-center gap-2">
+                  {p.featured && <span className="etiqueta etiqueta-viva">Recomendado</span>}
+                  {p.popular && <span className="etiqueta">O mais escolhido</span>}
+                  {p.soon && <span className="etiqueta etiqueta-breve">Brevemente</span>}
                 </div>
+                <h3 className="titulo plano-nome">{p.name}</h3>
                 <p className="plano-linha">{p.tagline}</p>
 
                 <div className="plano-preco">
@@ -90,7 +94,7 @@ export function Precos({ pagina = false }: { pagina?: boolean }) {
 
         <p className="mt-7 max-w-[76ch] text-[0.92rem] leading-relaxed text-texto-3">
           Trinta dias com tudo o que já existe, sem cartão. Depois disso, muda-se de plano ou cancela-se sem período
-          mínimo, e os dados do clube saem contigo. O Connect Pro ainda não está à venda.
+          mínimo, e os dados do clube saem contigo.
         </p>
       </div>
     </section>
