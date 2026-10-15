@@ -1,14 +1,13 @@
 "use client";
 
-import { useRouter } from "next/navigation";
 import { LayoutTemplate } from "lucide-react";
-import { LAYOUTS, type Layout } from "@/dados/tipos";
+import { COOKIE_LAYOUT, LAYOUTS, type Layout } from "@/dados/tipos";
 
 const NOMES: Record<Layout, string> = { classico: "Clássico", porto: "Porto" };
 
 /**
  * O interruptor de layout da pré-visualização. Grava o cookie e pede a
- * página outra vez: o proxy lê o cookie e reescreve para o outro layout.
+ * página outra vez: o layout lê o cookie (`layoutAtual`) e desenha o outro.
  *
  * É uma ferramenta nossa e do clube durante a montagem do site. Em
  * produção, quando o clube tiver escolhido, sai daqui e fica só na consola.
@@ -17,11 +16,12 @@ const NOMES: Record<Layout, string> = { classico: "Clássico", porto: "Porto" };
  * branca do porto.
  */
 export function TrocarLayout({ atual, sobre = "escuro" }: { atual: Layout; sobre?: "escuro" | "claro" }) {
-  const router = useRouter();
-
   const trocar = (l: Layout) => {
-    document.cookie = `site-layout=${l}; path=/; max-age=${60 * 60 * 24 * 30}; samesite=lax`;
-    router.refresh();
+    document.cookie = `${COOKIE_LAYOUT}=${l}; path=/; max-age=${60 * 60 * 24 * 30}; samesite=lax`;
+    // A página inteira, e não `router.refresh()`: esse refaz só a página atual,
+    // e as que o router já tinha pré-carregado (as notícias, as equipas)
+    // abriam com o layout anterior.
+    window.location.reload();
   };
 
   const claro = sobre === "claro";

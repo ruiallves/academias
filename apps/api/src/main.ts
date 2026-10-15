@@ -10,6 +10,9 @@ import helmet from "helmet";
 import { AppModule } from "./app.module";
 import { tenantFromHost } from "./tenant/tenant";
 import { tenantMiddleware } from "./tenant/tenant.middleware";
+import type { CorsOptions } from "@nestjs/common/interfaces/external/cors-options.interface";
+import { PrismaService } from "./prisma/prisma.service";
+import { criarOrigemDoSite } from "./site/origem-do-site";
 
 async function bootstrap() {
   const app = await NestFactory.create(AppModule, { bodyParser: false });
@@ -148,23 +151,38 @@ async function bootstrap() {
       .filter((o): o is string => Boolean(o)),
   );
 
-  app.enableCors({
-    origin(origin: string | undefined, cb: (err: Error | null, ok?: boolean) => void) {
-      // Sem `Origin` é same-origin, ou não é um browser (curl, o webhook da
-      // euPago, um healthcheck). O CORS não tem nada a dizer sobre esses.
-      if (!origin) return cb(null, true);
-      if (allowed.has(origin)) return cb(null, true);
+  /*
+   * Os sites dos clubes (`<slug>.website.academias.pt` e os domínios próprios)
+   * só chegam à inscrição de sócio (`/api/clubes/...`), e sem credenciais: o
+   * "Ser sócio" do site envia o pedido do browser, como a página `/ser-socio`.
+   * Ver `site/origem-do-site.ts`.
+   */
+  const origemDoSite = criarOrigemDoSite(app.get(PrismaService));
 
-      // Qualquer `{clube}.academias.pt` é nosso — a mesma regra do middleware.
-      try {
-        if (tenantFromHost(new URL(origin).host)) return cb(null, true);
-      } catch {
-        /* origem ilegível: não é aceite */
-      }
+  app.enableCors((req: Request, cb: (err: Error | null, options?: CorsOptions) => void) => {
+    const origin = req.headers.origin;
+    const aceite = () => cb(null, { origin: true, credentials: true });
 
-      cb(null, false);
-    },
-    credentials: true,
+    // Sem `Origin` é same-origin, ou não é um browser (curl, o webhook da
+    // euPago, um healthcheck). O CORS não tem nada a dizer sobre esses.
+    if (!origin || allowed.has(origin)) return aceite();
+
+    // Qualquer `{clube}.academias.pt` é nosso — a mesma regra do middleware.
+    try {
+      if (tenantFromHost(new URL(origin).host)) return aceite();
+    } catch {
+      /* origem ilegível: não é aceite */
+    }
+
+    if ((req.originalUrl || req.url || "").startsWith("/api/clubes/")) {
+      void origemDoSite(origin).then(
+        (ok) => cb(null, { origin: ok, credentials: false }),
+        () => cb(null, { origin: false }),
+      );
+      return;
+    }
+
+    cb(null, { origin: false });
   });
 
   await app.listen(process.env.PORT ?? 3000);

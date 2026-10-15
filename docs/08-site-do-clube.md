@@ -27,8 +27,8 @@ em baixo num dia de jogo vê-se muito.
 www.adfafe.pt/noticias
   → DNS aponta para o Vercel
   → Vercel sabe que o domínio é do projeto clube-site (adicionado lá) e tem o SSL
-  → src/proxy.ts lê o Host, pergunta "de que clube é, e com que layout?" e reescreve para /adfafe/classico/noticias
-  → app/[clube]/[layout]/noticias/page.tsx desenha a página com os dados desse clube
+  → src/proxy.ts lê o Host, pergunta "de que clube é?" e reescreve para /adfafe/noticias
+  → app/[clube]/noticias/page.tsx desenha a página com os dados desse clube, no layout que ele escolheu
 ```
 
 Não é um redirecionamento: o endereço na barra fica o do clube. Os links
@@ -42,9 +42,13 @@ postos pelo proxy em cada pedido, incluindo os prefetch do router.
 | `classico` | claro, cabeçalho em dois andares, herói com três notícias | adfafe.pt |
 | `porto` | claro, barra lateral fixa com ícones, carrossel a toda a largura, notícias em lista com cartaz ao lado | fcporto.pt |
 
-O layout é uma escolha do clube e viaja no caminho interno
-(`/[clube]/[layout]/...`), não num cookie lido pelas páginas: assim cada
-página continua em cache, com (clube, layout) por chave. O que muda entre
+O layout é uma escolha do clube e decide-se **na página** (`layoutAtual` em
+`lib/clube.ts`), a partir dos dados do clube (`fonte.clube`, em cache com a
+etiqueta `clube:<slug>`, que a consola invalida ao gravar). Já esteve no
+caminho interno (`/[clube]/[layout]/...`), decidido pelo proxy com uma cache
+em memória de cinco minutos; no Vercel cada instância tem a sua memória, e
+depois de o clube trocar de layout a página inicial vinha de uma instância
+já atualizada e as notícias de outra ainda com o antigo. O que muda entre
 layouts é a **casca** (`src/layouts/<nome>/Casca.tsx`, ou o
 `Cabecalho`/`Rodape` no clássico) e a **página de início**
 (`src/layouts/<nome>/Inicio.tsx`). As páginas interiores são partilhadas e
@@ -53,8 +57,8 @@ ficam escuras no `porto` pelos tokens (`[data-layout="porto"]` em
 (`estiloDoClube` em `lib/tema.ts`).
 
 O interruptor de layout na faixa de cima só aparece em demonstração
-(`SITE_FONTE=demo`). Com dados reais o layout é o que o clube escolheu no
-menu Website, e o cookie `site-layout` é ignorado.
+(`SITE_FONTE=demo`), e só aí o cookie `site-layout` é lido. Com dados reais
+o layout é o que o clube escolheu no menu Website.
 
 `src/dados/dominios.ts` responde ao "de que clube é?", por ordem:
 
@@ -171,6 +175,28 @@ acrescentá-lo ao projeto à mão.
   de quem escreve, já preenchido, para o email do clube.
 - Eventos públicos no calendário, direção e instalações na página do clube.
 - A permissão própria (`website:*`). Hoje é `settings:write`.
+
+## Ser sócio
+
+Os botões "Ser sócio" e "Sócios" do site abrem a adesão numa janela por
+cima da página (`componentes/socio/`), e não a página `/ser-socio` da API.
+É a mesma adesão: os mesmos ecrãs, validações e pedido
+(`POST /api/clubes/:slug/socios`), que fica pendente e aparece no painel do
+clube em Sócios. O texto e as categorias vêm de
+`GET /public/sites/:slug/socios` (o que o clube escreveu para a página de
+adesão, ou o de omissão).
+
+- O pedido sai do browser para a API, não do servidor do site: assim cada
+  visitante conta para o tecto de 5 por minuto à parte. O CORS deixa os sites
+  dos clubes (`*.website.academias.pt` e os domínios próprios com site
+  publicado) chegar só a `/api/clubes/...`, sem credenciais
+  (`site/origem-do-site.ts`, `main.ts`).
+- Os botões são links para `/ser-socio`, uma página do site com o mesmo
+  fluxo: é para lá que vão os links partilhados e quem abre noutro separador.
+- A janela deixa o resto da página `inert`; Esc, "Fechar" e o voltar do
+  browser fecham-na e o foco volta ao botão. O que se escreveu fica até se
+  enviar.
+- Em demonstração o envio é fingido (o clube inventado não existe na API).
 
 ## Fotografias
 

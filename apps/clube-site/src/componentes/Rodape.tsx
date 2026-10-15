@@ -4,6 +4,7 @@ import type { Clube } from "@/dados/tipos";
 import { Emblema } from "./Emblema";
 import { Redes } from "./Redes";
 import { ATALHOS, NAV } from "./nav";
+import { BotaoSocio } from "@/componentes/socio/BotaoSocio";
 
 export function Rodape({ clube }: { clube: Clube }) {
   const ano = new Date().getFullYear();
@@ -64,9 +65,9 @@ export function Rodape({ clube }: { clube: Clube }) {
               </li>
             ))}
             <li>
-              <a href={clube.membershipUrl} className="hover:text-night-ink">
+              <BotaoSocio className="hover:text-night-ink">
                 Ser sócio
-              </a>
+              </BotaoSocio>
             </li>
           </ul>
         </nav>

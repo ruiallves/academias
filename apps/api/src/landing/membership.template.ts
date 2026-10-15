@@ -47,11 +47,14 @@ export type PublicTier = {
   maxAge: number | null;
 };
 
-/** O que aparece a um clube que ainda não escreveu a sua página. */
-const FALLBACK_HEADLINE = "Faz parte do clube.";
-const FALLBACK_INTRO =
+/**
+ * O que aparece a um clube que ainda não escreveu a sua página. Também o usa a
+ * adesão dentro do site do clube (`SitePublicoService.socios`).
+ */
+export const FALLBACK_HEADLINE = "Faz parte do clube.";
+export const FALLBACK_INTRO =
   "Ser sócio não é uma subscrição. É estar do lado de dentro — e ficar com um lugar que é teu.";
-const FALLBACK_POINTS = [
+export const FALLBACK_POINTS = [
   "Cartão de sócio digital, sempre no telemóvel",
   "Participação na vida do clube",
   "Comunicações que só os sócios recebem",

@@ -1,16 +1,16 @@
 import type { Metadata } from "next";
 import { headers } from "next/headers";
-import { notFound } from "next/navigation";
 import { Cabecalho } from "@/componentes/Cabecalho";
 import { Rodape } from "@/componentes/Rodape";
 import { Revelar } from "@/componentes/Revelar";
 import { CascaPorto } from "@/layouts/porto/Casca";
 import { estiloDoClube } from "@/lib/tema";
-import { clubeOu404 } from "@/lib/clube";
+import { clubeOu404, layoutAtual } from "@/lib/clube";
+import { fonte } from "@/dados/fonte";
+import { AdesaoNoSite } from "@/componentes/socio/Adesao";
 import { emDemonstracao, enderecoOficial } from "@/lib/modo";
-import { layoutValido } from "@/dados/tipos";
 
-type Params = Promise<{ clube: string; layout: string }>;
+type Params = Promise<{ clube: string }>;
 
 /**
  * O endereço oficial vai no `canonical`, para o Google juntar tudo nele. Os
@@ -40,30 +40,51 @@ export async function generateMetadata({ params }: { params: Params }): Promise<
  */
 export default async function LayoutDoClube({ children, params }: { children: React.ReactNode; params: Params }) {
   const clube = await clubeOu404(params);
-  const { layout } = await params;
-  if (!layoutValido(layout)) notFound();
+  const layout = await layoutAtual(clube);
 
   const estilo = estiloDoClube(clube.signalColor);
   // O interruptor de layout é uma ferramenta de demonstração: com dados reais o layout é o que o clube escolheu.
   const trocarLayout = emDemonstracao();
 
+  // O "Ser sócio" abre numa janela por cima de qualquer página do site (ver `componentes/socio`).
+  const adesao = await fonte.socios(clube.slug);
+  const comAdesao = (conteudo: React.ReactNode) => (
+    <AdesaoNoSite
+      clube={{ slug: clube.slug, name: clube.name, shortName: clube.shortName, logoUrl: clube.logoUrl }}
+      adesao={adesao}
+      api={process.env.SITE_API_URL ?? ""}
+      demonstracao={emDemonstracao()}
+      quadrado={layout === "porto"}
+    >
+      {conteudo}
+    </AdesaoNoSite>
+  );
+
   if (layout === "porto") {
     return (
       <div style={estilo} data-layout="porto" className="min-h-dvh">
-        <CascaPorto clube={clube} trocarLayout={trocarLayout}>
-          {children}
-        </CascaPorto>
-        <Revelar />
+        {comAdesao(
+          <>
+            <CascaPorto clube={clube} trocarLayout={trocarLayout}>
+              {children}
+            </CascaPorto>
+            <Revelar />
+          </>,
+        )}
       </div>
     );
   }
 
   return (
     <div style={estilo} className="flex min-h-dvh flex-col">
-      <Cabecalho clube={clube} trocarLayout={trocarLayout} />
-      <main className="flex-1">{children}</main>
-      <Rodape clube={clube} />
-      <Revelar />
+      {comAdesao(
+        <>
+          <Cabecalho clube={clube} trocarLayout={trocarLayout} />
+          <main className="flex-1">{children}</main>
+          <Rodape clube={clube} />
+          <Revelar />
+        </>,
+      )}
     </div>
   );
 }

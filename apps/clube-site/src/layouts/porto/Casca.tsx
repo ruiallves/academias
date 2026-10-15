@@ -6,6 +6,7 @@ import { Redes } from "@/componentes/Redes";
 import { MenuMovel } from "@/componentes/MenuMovel";
 import { TrocarLayout } from "@/componentes/TrocarLayout";
 import { ATALHOS, NAV } from "@/componentes/nav";
+import { BotaoSocio } from "@/componentes/socio/BotaoSocio";
 
 const LARGURA_BARRA = "6.25rem";
 
@@ -40,10 +41,10 @@ export function CascaPorto({ clube, trocarLayout = false, children }: { clube: C
                   {label}
                 </Link>
               ))}
-              <a href={clube.membershipUrl} className="inline-flex h-11 items-center gap-1.5 px-2.5 font-semibold text-ink transition hover:text-signal-ink">
+              <BotaoSocio className="inline-flex h-11 items-center gap-1.5 px-2.5 font-semibold text-ink transition hover:text-signal-ink">
                 <UserRound size={15} aria-hidden />
                 Sócios
-              </a>
+              </BotaoSocio>
             </div>
             <div className="ml-auto flex items-center gap-2 lg:hidden">
               {trocarLayout && <TrocarLayout atual="porto" sobre="claro" />}
@@ -82,13 +83,11 @@ function BarraLateral({ clube }: { clube: Clube }) {
           ))}
         </ul>
       </nav>
-      <a
-        href={clube.membershipUrl}
-        className="mt-auto flex h-14 w-full flex-col items-center justify-center gap-1 bg-signal-strong text-[0.625rem] font-semibold uppercase tracking-wider text-signal-on transition hover:brightness-110"
+      <BotaoSocio className="mt-auto flex h-14 w-full flex-col items-center justify-center gap-1 bg-signal-strong text-[0.625rem] font-semibold uppercase tracking-wider text-signal-on transition hover:brightness-110"
       >
         <UserRound size={22} strokeWidth={1.5} aria-hidden />
         Ser sócio
-      </a>
+      </BotaoSocio>
     </aside>
   );
 }
@@ -105,13 +104,11 @@ function RodapePorto({ clube }: { clube: Clube }) {
             className="w-full justify-around [&_a]:size-14 [&_a:hover]:bg-sunken [&_a:hover]:text-signal-ink [&_svg]:size-6"
           />
         </div>
-        <a
-          href={clube.membershipUrl}
-          className="flex items-center justify-center gap-2 bg-signal-strong px-8 py-5 font-bold uppercase tracking-wider text-signal-on transition hover:brightness-110 sm:w-72"
+        <BotaoSocio className="flex items-center justify-center gap-2 bg-signal-strong px-8 py-5 font-bold uppercase tracking-wider text-signal-on transition hover:brightness-110 sm:w-72"
         >
           Ser sócio
           <ArrowRight size={18} aria-hidden />
-        </a>
+        </BotaoSocio>
       </div>
 
       {clube.sponsors.length > 0 && (

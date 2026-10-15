@@ -95,4 +95,11 @@ export class SitePublicoController {
   produto(@Param("slug") slug: string, @Param("id") id: string) {
     return this.site.produto(slug, id);
   }
+
+  /** O texto da adesão e as categorias de sócio, para o "Ser sócio" dentro do site. */
+  @Get(":slug/socios")
+  @Header("Cache-Control", "public, max-age=60")
+  socios(@Param("slug") slug: string) {
+    return this.site.socios(slug);
+  }
 }

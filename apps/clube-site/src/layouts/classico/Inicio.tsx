@@ -8,7 +8,8 @@ import { CartaoNoticia } from "@/componentes/CartaoNoticia";
 import { CartaoProduto } from "@/componentes/CartaoProduto";
 import { Patrocinadores } from "@/componentes/Patrocinadores";
 import { LinkFim, TituloSeccao } from "@/componentes/Seccao";
-import { BotaoLink } from "@/componentes/Botao";
+import { classeDeBotao } from "@/componentes/Botao";
+import { BotaoSocio } from "@/componentes/socio/BotaoSocio";
 
 /**
  * O início do layout clássico, de alto a baixo: o que aconteceu (herói), o
@@ -88,10 +89,10 @@ export function InicioClassico({ clube, noticias, proximo, ultimo, equipas, prod
             <p className="mt-4 max-w-md text-[color:rgb(var(--signal-on-rgb)/0.85)]">
               Cartão de sócio, quotas em dia, entrada nos jogos em casa e desconto na loja. Torna-te sócio do {clube.shortName}.
             </p>
-            <BotaoLink href={clube.membershipUrl} variante="claro" className="mt-8 !bg-white !text-[#1a1917]">
+            <BotaoSocio className={`${classeDeBotao("claro")} mt-8 !bg-white !text-[#1a1917]`}>
               Ser sócio
               <ArrowRight size={18} aria-hidden />
-            </BotaoLink>
+            </BotaoSocio>
           </div>
           <div className="relative hidden min-h-[16rem] lg:block">
             {/* A fotografia do clube, ou a de omissão (ver `lib/fotos.ts`). */}

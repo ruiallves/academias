@@ -8,6 +8,7 @@ import { Emblema, EmblemaAdversario } from "@/componentes/Emblema";
 import { CartaoProduto } from "@/componentes/CartaoProduto";
 import { dataLonga, haQuanto, hora, isoDia, peçasDeData } from "@/lib/formatar";
 import { Carrossel } from "./Carrossel";
+import { BotaoSocio } from "@/componentes/socio/BotaoSocio";
 
 /**
  * O início do layout "porto": o carrossel a toda a largura, a faixa do jogo
@@ -45,14 +46,14 @@ export function InicioPorto({ clube, noticias, proximo, ultimo, equipas, produto
           <Resultados clube={clube} ultimo={ultimo} />
         </div>
 
-        <a href={clube.membershipUrl} className="group relative block min-h-[14rem] overflow-hidden bg-signal-strong text-signal-on">
+        <BotaoSocio className="group relative block min-h-[14rem] overflow-hidden bg-signal-strong text-signal-on">
           {clube.photo && <Image src={clube.photo} alt="" fill sizes="(min-width: 1024px) 30vw, 100vw" className="object-cover opacity-20 mix-blend-luminosity transition-transform duration-700 group-hover:scale-105" />}
           <div className="absolute inset-x-0 bottom-0 p-6 text-center">
             <Emblema logoUrl={clube.logoUrl} shortName={clube.shortName} size={40} className="mx-auto" />
             <p className="eyebrow mt-3 opacity-80">Cartão, quotas e jogos</p>
             <p className="display mt-1 text-3xl">Área do sócio</p>
           </div>
-        </a>
+        </BotaoSocio>
       </section>
 
       <section className="grid gap-10 px-4 py-10 sm:px-6 lg:grid-cols-[1fr_22rem] lg:px-8" data-reveal>

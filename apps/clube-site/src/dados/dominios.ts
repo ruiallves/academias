@@ -16,8 +16,9 @@
  * endereço". Falhar para o lado seguro é a mesma regra do `TENANT_DOMAIN` da
  * API.
  *
- * O layout vem com o clube (é uma escolha dele). O proxy pode sobrepô-lo com
- * o cookie de pré-visualização.
+ * O que fica em memória aqui é só o slug e o domínio, que mudam uma vez na
+ * vida. O layout, que o clube troca quando quer, não se decide com esta
+ * cache: ver `layoutAtual` em `lib/clube.ts`.
  */
 
 import { DEMO, DOMINIOS_DEMO } from "./demo/monteverde";

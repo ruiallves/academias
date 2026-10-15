@@ -13,6 +13,7 @@ import {
   type Layout,
 } from "./site.tipos";
 import { siteIncluido } from "./plano";
+import { FALLBACK_HEADLINE, FALLBACK_INTRO, FALLBACK_POINTS } from "../landing/membership.template";
 
 /**
  * O que o site público do clube lê (`apps/clube-site`), sem sessão.
@@ -247,6 +248,39 @@ export class SitePublicoService {
       const p = await db.siteProduct.findFirst({ where: { id, visible: true } });
       if (!p) throw new NotFoundException();
       return produtoPublico(p);
+    });
+  }
+
+  /* ------------------------------------------------------------------------ */
+  /* Sócios                                                                     */
+  /* ------------------------------------------------------------------------ */
+
+  /**
+   * O "Ser sócio" dentro do site: o texto que o clube escreveu para a página
+   * de adesão (ou o de omissão, o mesmo da página da API) e as categorias
+   * públicas. O pedido em si vai para `POST /api/clubes/:slug/socios`, o mesmo
+   * da página `/ser-socio`, e cai no painel como sempre.
+   */
+  async socios(slug: string) {
+    return this.comClube(slug, async (db, a) => {
+      const [academia, tiers] = await Promise.all([
+        db.academy.findFirst({
+          where: { slug: a.slug },
+          select: { membershipHeadline: true, membershipIntro: true, membershipPoints: true },
+        }),
+        db.memberTier.findMany({
+          where: { isPublic: true, archivedAt: null },
+          orderBy: [{ order: "asc" }, { name: "asc" }],
+          select: { id: true, name: true, description: true, benefits: true, feeCents: true, billing: true, minAge: true, maxAge: true },
+        }),
+      ]);
+      const pontos = (academia?.membershipPoints ?? []).map((p) => p.trim()).filter(Boolean);
+      return {
+        headline: academia?.membershipHeadline?.trim() || FALLBACK_HEADLINE,
+        intro: academia?.membershipIntro?.trim() || FALLBACK_INTRO,
+        points: pontos.length ? pontos : FALLBACK_POINTS,
+        tiers,
+      };
     });
   }
 

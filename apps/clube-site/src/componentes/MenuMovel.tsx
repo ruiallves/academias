@@ -7,6 +7,7 @@ import { Menu, X } from "lucide-react";
 import type { Clube } from "@/dados/tipos";
 import { ATALHOS, NAV } from "./nav";
 import { Redes } from "./Redes";
+import { BotaoSocio } from "@/componentes/socio/BotaoSocio";
 
 /**
  * O menu do telemóvel. Abre por baixo do cabeçalho, fecha ao navegar e com
@@ -65,12 +66,11 @@ export function MenuMovel({ clube, topo = "top-[calc(2.5rem+4.25rem)]" }: { club
                 </li>
               ))}
             </ul>
-            <a
-              href={clube.membershipUrl}
+            <BotaoSocio onAbrir={() => setAberto(false)}
               className="mt-6 flex h-12 items-center justify-center rounded-control bg-signal-strong font-semibold text-signal-on"
             >
               Ser sócio
-            </a>
+            </BotaoSocio>
             <div className="mt-6 rounded-card bg-night p-2 text-night-ink">
               <Redes social={clube.social} shortName={clube.shortName} />
             </div>

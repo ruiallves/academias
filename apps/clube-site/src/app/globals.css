@@ -160,6 +160,28 @@
 }
 
 /* ---------------------------------------------------------------------------
+   A adesão a sócio (componentes/socio): a janela sobe e o fundo escurece; a
+   saída é mais curta do que a entrada. Cada ecrã do formulário entra com um
+   deslize pequeno. Tudo desligado em reduced-motion (regra de baixo).
+   --------------------------------------------------------------------------- */
+
+@keyframes socio-fundo {
+  from { opacity: 0; }
+}
+@keyframes socio-fundo-sair {
+  to { opacity: 0; }
+}
+@keyframes socio-janela {
+  from { opacity: 0; transform: translateY(24px) scale(0.985); }
+}
+@keyframes socio-janela-sair {
+  to { opacity: 0; transform: translateY(12px) scale(0.99); }
+}
+@keyframes socio-entrar {
+  from { opacity: 0; transform: translateY(8px); }
+}
+
+/* ---------------------------------------------------------------------------
    Entrada ao rolar: uma regra só, 14px, e desligada em reduced-motion.
    --------------------------------------------------------------------------- */
 

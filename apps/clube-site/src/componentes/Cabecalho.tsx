@@ -6,6 +6,7 @@ import { Redes } from "./Redes";
 import { MenuMovel } from "./MenuMovel";
 import { ATALHOS, NAV } from "./nav";
 import { TrocarLayout } from "./TrocarLayout";
+import { BotaoSocio } from "@/componentes/socio/BotaoSocio";
 
 /**
  * Dois andares, como nos sites de referência: uma faixa escura com o que se
@@ -33,14 +34,14 @@ export function Cabecalho({ clube, trocarLayout = false }: { clube: Clube; troca
                 <span className="hidden sm:inline">{label}</span>
               </Link>
             ))}
-            <a
-              href={clube.membershipUrl}
+            <BotaoSocio
+              
               aria-label="Sócios"
               className="inline-flex h-10 items-center gap-1.5 px-2.5 font-medium text-night-ink transition hover:text-white"
             >
               <UserRound size={15} aria-hidden />
               <span className="hidden sm:inline">Sócios</span>
-            </a>
+            </BotaoSocio>
             <Redes social={clube.social} shortName={clube.shortName} className="ml-1 hidden sm:flex [&_a]:size-9" />
           </div>
         </div>
@@ -71,12 +72,10 @@ export function Cabecalho({ clube, trocarLayout = false }: { clube: Clube; troca
             </ul>
           </nav>
 
-          <a
-            href={clube.membershipUrl}
-            className="ml-auto hidden h-11 items-center rounded-control bg-signal-strong px-5 font-semibold text-signal-on transition hover:brightness-110 lg:ml-2 lg:inline-flex"
+          <BotaoSocio className="ml-auto hidden h-11 items-center rounded-control bg-signal-strong px-5 font-semibold text-signal-on transition hover:brightness-110 lg:ml-2 lg:inline-flex"
           >
             Ser sócio
-          </a>
+          </BotaoSocio>
 
           <MenuMovel clube={clube} />
         </div>

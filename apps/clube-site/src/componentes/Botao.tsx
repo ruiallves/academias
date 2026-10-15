@@ -14,6 +14,11 @@ const variantes: Record<Variante, string> = {
   "contorno-claro": "border border-white/30 text-white hover:border-white hover:bg-white/10",
 };
 
+/** As classes de um botão, para um elemento que não é `Link` nem `button` (o `BotaoSocio`). */
+export function classeDeBotao(variante: Variante = "clube"): string {
+  return `${base} ${variantes[variante]}`;
+}
+
 export function BotaoLink({
   variante = "clube",
   className = "",

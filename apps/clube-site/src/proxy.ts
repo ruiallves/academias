@@ -1,22 +1,19 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { clubeDoHost } from "@/dados/dominios";
-import { layoutValido } from "@/dados/tipos";
-
-/** O cookie que a pré-visualização usa para trocar de layout. */
-export const COOKIE_LAYOUT = "site-layout";
 
 /**
- * `www.adfafe.pt/noticias` → `/adfafe/classico/noticias`, por dentro.
+ * `www.adfafe.pt/noticias` → `/adfafe/noticias`, por dentro.
  *
  * Não é um redirecionamento: o endereço na barra fica o do clube, e é o
- * caminho interno que ganha o slug e o layout. Todas as páginas vivem em
- * `app/[clube]/[layout]/`, e os links dentro do site são relativos à raiz
- * (`/noticias`), porque os dois segmentos são postos aqui a cada pedido,
- * incluindo os prefetch do router.
+ * caminho interno que ganha o slug. Todas as páginas vivem em
+ * `app/[clube]/`, e os links dentro do site são relativos à raiz
+ * (`/noticias`), porque o slug é posto aqui a cada pedido, incluindo os
+ * prefetch do router.
  *
- * O layout é o do clube; o cookie de pré-visualização sobrepõe-no, mas só em
- * demonstração (`SITE_FONTE=demo`). Pô-lo no caminho e não num cabeçalho é o
- * que deixa cada página continuar em cache: (clube, layout) é a chave.
+ * O proxy só responde "de que clube é este endereço". O layout decide-se na
+ * página (`layoutAtual`), a partir dos dados do clube: aqui ficava em memória
+ * cinco minutos, por instância, e as páginas de um mesmo clube saíam com
+ * layouts diferentes depois de ele trocar.
  *
  * ## O único redirecionamento
  *
@@ -45,11 +42,7 @@ export async function proxy(req: NextRequest) {
     return NextResponse.redirect(`https://${clube.dominio}${path}${req.nextUrl.search}`, 308);
   }
 
-  const demo = (process.env.SITE_FONTE ?? "demo") === "demo";
-  const cookie = req.cookies.get(COOKIE_LAYOUT)?.value;
-  const layout = demo && layoutValido(cookie) ? cookie : clube.layout;
-
-  url.pathname = `/${clube.slug}/${layout}${path === "/" ? "" : path}`;
+  url.pathname = `/${clube.slug}${path === "/" ? "" : path}`;
   return NextResponse.rewrite(url);
 }
 

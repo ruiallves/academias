@@ -20,6 +20,9 @@ export type { Recinto, Bancada } from "@academia/ui/estadio";
  * FC Porto. O clube escolhe um; a pré-visualização troca com um cookie.
  */
 export const LAYOUTS = ["classico", "porto"] as const;
+
+/** O cookie com que o interruptor da demonstração troca de layout (ver `layoutAtual`). */
+export const COOKIE_LAYOUT = "site-layout";
 export type Layout = (typeof LAYOUTS)[number];
 
 export function layoutValido(v: unknown): v is Layout {
@@ -147,8 +150,30 @@ export type Produto = {
 };
 
 /** A fronteira entre o site e os dados. Uma implementação por origem. */
+/** Uma categoria de sócio que o clube publica (as mesmas da página `/ser-socio` da API). */
+export type CategoriaDeSocio = {
+  id: string;
+  name: string;
+  description: string | null;
+  benefits: string[];
+  /** No período de `billing`. Nulo: "a definir". */
+  feeCents: number | null;
+  billing?: "MONTHLY" | "ANNUAL";
+  minAge: number | null;
+  maxAge: number | null;
+};
+
+/** O "Ser sócio" do site: o texto do clube e as categorias. */
+export type Adesao = {
+  headline: string;
+  intro: string;
+  points: string[];
+  tiers: CategoriaDeSocio[];
+};
+
 export interface Fonte {
   clube(slug: string): Promise<Clube | null>;
+  socios(slug: string): Promise<Adesao>;
   noticias(slug: string, opts?: { limit?: number; category?: string }): Promise<Noticia[]>;
   noticia(slug: string, id: string): Promise<Noticia | null>;
   equipas(slug: string): Promise<Equipa[]>;

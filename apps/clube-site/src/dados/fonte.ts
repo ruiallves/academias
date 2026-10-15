@@ -9,7 +9,7 @@
  * As páginas só conhecem a interface `Fonte`. Trocar a origem não lhes toca.
  */
 
-import type { Clube, Equipa, Evento, Fonte, Jogo, Noticia, Produto } from "./tipos";
+import type { Adesao, Clube, Equipa, Evento, Fonte, Jogo, Noticia, Produto } from "./tipos";
 import { DEMO, PRODUTOS } from "./demo/monteverde";
 import { clubeComFoto, equipasComFoto } from "@/lib/fotos";
 
@@ -53,6 +53,21 @@ const demo: Fonte = {
     if (slug !== DEMO.clube.slug) return null;
     return PRODUTOS.find((p) => p.slug === id || p.id === id) ?? null;
   },
+  async socios() {
+    return ADESAO_DEMO;
+  },
+};
+
+/** As categorias do clube inventado. Em demonstração o pedido de sócio não sai daqui. */
+const ADESAO_DEMO: Adesao = {
+  headline: "Faz parte do clube.",
+  intro: "Ser sócio é estar do lado de dentro: nas bancadas, nas assembleias e nas decisões do clube.",
+  points: ["Cartão de sócio digital, sempre no telemóvel", "Entrada nos jogos em casa", "Desconto na loja oficial"],
+  tiers: [
+    { id: "demo-efetivo", name: "Sócio efetivo", description: "Maiores de 18 anos.", benefits: ["Entrada nos jogos em casa", "Voto em assembleia"], feeCents: 600, billing: "MONTHLY", minAge: 18, maxAge: null },
+    { id: "demo-jovem", name: "Sócio jovem", description: null, benefits: ["Entrada nos jogos em casa"], feeCents: 300, billing: "MONTHLY", minAge: null, maxAge: 17 },
+    { id: "demo-familia", name: "Sócio família", description: "Até dois adultos e os filhos menores.", benefits: [], feeCents: 12000, billing: "ANNUAL", minAge: null, maxAge: null },
+  ],
 };
 
 async function pedir<T>(slug: string, caminho: string, fallback: T): Promise<T> {
@@ -81,6 +96,7 @@ const api: Fonte = {
   eventos: (slug) => pedir<Evento[]>(slug, "/eventos", []),
   produtos: (slug) => pedir<Produto[]>(slug, "/produtos", []),
   produto: (slug, id) => pedir<Produto | null>(slug, `/produtos/${id}`, null),
+  socios: (slug) => pedir<Adesao>(slug, "/socios", { headline: "Faz parte do clube.", intro: "", points: [], tiers: [] }),
 };
 
 const base: Fonte = (process.env.SITE_FONTE ?? "demo") === "api" ? api : demo;
