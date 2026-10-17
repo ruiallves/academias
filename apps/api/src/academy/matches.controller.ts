@@ -141,10 +141,12 @@ class SaveAppearancesDto {
  *
  * `null` nos dois limpa e devolve o jogo a agendado — é como se desfaz um
  * resultado escrito por engano, sem um segundo endpoint só para isso.
+ *
+ * Até 999, igual em todas as modalidades: o basquetebol passa dos 100 pontos.
  */
 class SaveResultDto {
-  @IsOptional() @IsInt() @Min(0) @Max(99) ourScore?: number | null;
-  @IsOptional() @IsInt() @Min(0) @Max(99) theirScore?: number | null;
+  @IsOptional() @IsInt() @Min(0) @Max(999) ourScore?: number | null;
+  @IsOptional() @IsInt() @Min(0) @Max(999) theirScore?: number | null;
 }
 
 /** O tempo adicional, em minutos, por parte. Ver `saveAddedTime`. */

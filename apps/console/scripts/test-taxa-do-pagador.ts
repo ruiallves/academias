@@ -12,8 +12,18 @@
  *
  * Uso: npm run test:taxa
  */
-import { brutoParaLiquido as doServidor } from "../../api/src/billing/taxa-do-pagador";
-import { brutoParaLiquido as daConsola, detalheDoPagador, type MetodoComTaxa } from "../src/lib/eupago-fees";
+import {
+  brutoParaLiquido as doServidor,
+  METODOS_DA_APP as metodosDoServidor,
+  valorACobrar,
+} from "../../api/src/billing/taxa-do-pagador";
+import {
+  brutoParaLiquido as daConsola,
+  detalheDoPagador,
+  liquidoDe,
+  METODOS_DA_APP as metodosDaConsola,
+  type MetodoComTaxa,
+} from "../src/lib/eupago-fees";
 
 let ok = 0;
 let bad = 0;
@@ -55,15 +65,53 @@ console.log("\nA consola e o servidor fazem a mesma conta");
   check(`em ${casos} casos, dão o mesmo cêntimo`, diferentes === 0, primeiro);
 }
 
+console.log("\nA mesma taxa em todos os métodos, dos dois lados");
+{
+  check(
+    "a consola e o servidor contam com os mesmos métodos da app",
+    JSON.stringify(metodosDaConsola) === JSON.stringify(metodosDoServidor),
+    `consola ${JSON.stringify(metodosDaConsola)}, servidor ${JSON.stringify(metodosDoServidor)}`,
+  );
+
+  const tabela = { methods: METODOS, vatPercent: 23, source: "teste" };
+  let diferentes = 0;
+  let primeiro = "";
+  let casos = 0;
+  for (let v = 100; v <= 60_000; v += v < 3000 ? 1 : 53) {
+    casos++;
+    const consola = detalheDoPagador(v, tabela)!.maxCents;
+    const servidor = valorACobrar(v, "MBWAY", { feesOnPayer: true }, tabela).totalCents;
+    if (consola !== servidor) {
+      diferentes++;
+      primeiro ||= `${v}: consola ${consola}, servidor ${servidor}`;
+    }
+  }
+  check(`em ${casos} valores, a consola mostra o total que o servidor cobra`, diferentes === 0, primeiro);
+}
+
 console.log("\nO que a consola mostra por baixo de um preço");
 {
   const tabela = { methods: METODOS, vatPercent: 23, source: "teste" };
   const d = detalheDoPagador(2000, tabela)!;
-  check("só os métodos que a app oferece", d.porMetodo.length === 3 && !d.porMetodo.some((m) => m.label === "PaySafeCard"));
-  check("do mais barato para o mais caro para quem paga", d.porMetodo.every((m, i, l) => i === 0 || l[i - 1].totalCents <= m.totalCents));
-  check("o intervalo é o do mais barato ao mais caro", d.minCents === d.porMetodo[0].totalCents && d.maxCents === d.porMetodo[2].totalCents);
+  check(
+    "só MB Way e Multibanco, os métodos que a app aceita (nem débito direto, nem PaySafeCard)",
+    d.porMetodo.length === 2 && d.porMetodo.every((m) => m.label === "MB Way" || m.label === "Multibanco"),
+    JSON.stringify(d.porMetodo.map((m) => m.label)),
+  );
+  check("um valor só: a família paga o mesmo por qualquer método", d.minCents === d.maxCents && d.porMetodo.every((m) => m.totalCents === d.maxCents));
+  check("e é o do Multibanco, o mais caro: 20,63 €", d.maxCents === 2063, String(d.maxCents));
   check("a taxa é a diferença para o valor do clube", d.porMetodo.every((m) => m.totalCents - m.surchargeCents === 2000));
+  check(
+    "por cada método o clube recebe pelo menos o valor dele",
+    d.porMetodo.every((m) => m.netCents >= 2000) && d.porMetodo.find((m) => m.label === "MB Way")!.netCents > 2000,
+    JSON.stringify(d.porMetodo),
+  );
+  check("o que o clube recebe bate com a conta da euPago", d.porMetodo.every((m) => m.netCents === liquidoDe(2063, METODOS.find((x) => x.label === m.label)!, 23).netCents));
   check("sem valor não há conta", detalheDoPagador(0, tabela) === null);
+  check(
+    "sem a taxa do Multibanco na tabela, não se inventa um número",
+    detalheDoPagador(2000, { methods: METODOS.filter((m) => m.method !== "MULTIBANCO"), vatPercent: 23, source: "teste" }) === null,
+  );
 }
 
 console.log(`\n${bad === 0 ? "TUDO OK" : "HÁ FALHAS"} — ${ok} ok, ${bad} falhas`);

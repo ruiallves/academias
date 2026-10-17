@@ -33,7 +33,9 @@ export function AvisoDePagamentos({ quem = "famílias" }: { quem?: "famílias" |
       {academy.paymentsEnabled && academy.feesOnPayer && (
         <>
           <Pill tone="signal">taxa paga por quem paga</Pill>
-          <span>Os valores são o que o clube recebe. Quem paga pela app paga o valor mais a taxa do método.</span>
+          <span>
+            Os valores são o que o clube recebe. Quem paga pela app paga o valor mais a taxa, igual em todos os métodos.
+          </span>
         </>
       )}
       <Link to="/definicoes?secao=mensalidades" className="font-medium text-ink-2 hover:text-ink hover:underline">

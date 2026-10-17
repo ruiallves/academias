@@ -604,7 +604,8 @@ function quandoFalta(inicio: Date): string {
 /**
  * Dois campos, escreve-se o número.
  *
- * `inputMode="numeric"` abre o teclado certo no telemóvel; `maxLength 2` e a
+ * `inputMode="numeric"` abre o teclado certo no telemóvel; três algarismos
+ * (até 999, em todas as modalidades: o basquetebol passa dos 100) e a
  * validação ao sair do campo seguram o disparate. O erro aparece junto aos
  * campos, com `role="alert"` para ser anunciado — nunca só uma borda vermelha.
  */
@@ -622,7 +623,7 @@ function useResultado(match: Match, onSaved: () => void) {
   }, [match.ourScore, match.theirScore]);
 
   const temResultado = match.ourScore !== null && match.theirScore !== null;
-  const valido = /^\d{1,2}$/.test(nos) && /^\d{1,2}$/.test(eles);
+  const valido = /^\d{1,3}$/.test(nos) && /^\d{1,3}$/.test(eles);
   const mudou = nos !== (match.ourScore === null ? "" : String(match.ourScore)) || eles !== (match.theirScore === null ? "" : String(match.theirScore));
 
   async function gravar() {
@@ -806,7 +807,7 @@ function ScoreField({
         type="text"
         inputMode="numeric"
         pattern="[0-9]*"
-        maxLength={2}
+        maxLength={3}
         value={value}
         placeholder="0"
         disabled={disabled}

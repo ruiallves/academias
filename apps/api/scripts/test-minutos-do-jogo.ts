@@ -54,6 +54,5 @@ igual("futsal: 40 + 2 × 5", minutosEmCampo({ started: true }, 40, [], 0, [5, 5]
 igual("basquetebol: 40 + dois prolongamentos de 5", minutosEmCampo({ started: true }, 40, [], 0, [5, 5]), 50);
 igual("basquetebol: entrou no 1.º prolongamento (aos 41)", minutosEmCampo({ onMinute: 41 }, 40, [], 0, [5]), 4);
 igual("expulso no prolongamento, aos 110", minutosEmCampo({ started: true, redAt: 110 }, 90, [], 2, [15, 15]), 110);
-
 console.log(`\n${ok} passaram, ${bad} falharam`);
 process.exit(bad ? 1 : 0);

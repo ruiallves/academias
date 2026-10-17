@@ -53,7 +53,7 @@ export const SECOES: Secao[] = [
   { key: "epoca", grupo: "Clube", label: "Época", descricao: "Em que época o clube está, e a passagem para a seguinte." },
   { key: "modalidades", grupo: "Clube", label: "Modalidades", descricao: "O que o clube pratica, e os escalões, competições, locais e balneários de cada modalidade." },
   { key: "cargos", grupo: "Pessoas", label: "Cargos", descricao: "Os departamentos do clube, os cargos de cada um e o que cada cargo pode ver e fazer." },
-  { key: "socios", grupo: "Pessoas", label: "Sócios", descricao: "O cartão de sócio na app do clube." },
+  { key: "socios", grupo: "Pessoas", label: "Sócios", descricao: "As categorias de sócio, com o valor da quota de cada uma, e o cartão de sócio na app do clube." },
   { key: "clinico", grupo: "Pessoas", label: "Clínico", descricao: "Os tipos de consulta que o departamento clínico marca." },
   { key: "mensalidades", grupo: "Conta", label: "Pagamentos", descricao: "Como as famílias e os sócios pagam: pagamentos pela app, comissões, período de cobrança e lembretes." },
   { key: "mensalidade", grupo: "Conta", label: "Mensalidade", descricao: "O que o clube paga à plataforma: a mensalidade em falta, como pagar, e as já pagas." },

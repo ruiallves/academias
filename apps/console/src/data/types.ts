@@ -98,7 +98,8 @@ export type Academy = {
   websiteIncluido: boolean;
   /**
    * A comissão da euPago é de quem paga. Ligado, **os valores da plataforma são
-   * o que o clube recebe**, e a família paga esse valor mais a taxa do método.
+   * o que o clube recebe**, e a família paga esse valor mais a taxa, a mesma em
+   * todos os métodos (a do mais caro; ver `billing/taxa-do-pagador.ts`).
    */
   feesOnPayer: boolean;
   /** Quando a academia nasceu — o proxy do início do período experimental. */

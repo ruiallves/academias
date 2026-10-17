@@ -1,4 +1,5 @@
 import type { ScopedClient } from "../prisma/prisma.service";
+import { FICHAS_PAGAS_PELO_SOCIO } from "./socio-menor";
 
 /**
  * A ficha de sócio e a conta na app: ligam-se **pelo email, sozinhas**.
@@ -50,6 +51,13 @@ export async function ligarFichaAConta(
   ficha: Ficha,
 ): Promise<{ userId: string; name: string; email: string } | null> {
   if (ficha.userId || !ficha.email) return null;
+  /*
+   * Um sócio-atleta menor é pago pelos encarregados: a ficha não tem dono, e
+   * ligá-la a uma conta dava ao atleta (ou a quem tivesse o mesmo email) a área
+   * de sócio com o botão de pagar. Ver `socio-menor.ts`.
+   */
+  const ligavel = await db.member.findFirst({ where: { id: ficha.id, ...FICHAS_PAGAS_PELO_SOCIO }, select: { id: true } });
+  if (!ligavel) return null;
 
   const user = await db.user.findFirst({
     where: { email: ficha.email.trim().toLowerCase() },
@@ -80,7 +88,7 @@ export async function reclamarFichaPelaConta(db: ScopedClient, userId: string): 
   if (!user?.email) return false;
 
   const ficha = await db.member.findFirst({
-    where: { userId: null, email: { equals: user.email.trim().toLowerCase(), mode: "insensitive" } },
+    where: { userId: null, email: { equals: user.email.trim().toLowerCase(), mode: "insensitive" }, ...FICHAS_PAGAS_PELO_SOCIO },
     /* Se houver duas fichas sem dono com o mesmo email — pode acontecer numa
        importação repetida — fica com a mais antiga: é a que tem histórico. */
     orderBy: { createdAt: "asc" },

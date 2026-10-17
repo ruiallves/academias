@@ -26,6 +26,7 @@ import {
 import { PHOTO_BUCKET, PHOTO_TTL, PhotosService } from "../storage/photos.service";
 import { StorageService } from "../storage/storage.service";
 import { reclamarFichaPelaConta } from "../members/member-account-link";
+import { fichaDeSocioDaConta } from "../members/socio-menor";
 import { reclamarAtletaPelaConta } from "../academy/athlete-account-link";
 import { LegalService } from "../legal/legal.service";
 import { SuspensaoService } from "../auth/suspensao.service";
@@ -129,10 +130,29 @@ export class ClubAppService {
    */
   private async socioDe(db: ScopedClient, userId: string | null, academyId: string) {
     if (!userId) throw new NotFoundException("Esta conta não é de sócio neste clube");
-    const member = await db.member.findFirst({ where: { userId } });
-    if (!member) throw new NotFoundException("Esta conta não é de sócio neste clube");
-    await this.legal.assertClearMember(db, userId, academyId);
-    return member;
+    const ficha = await fichaDeSocioDaConta(db, userId);
+    if (!ficha) throw new NotFoundException("Esta conta não é de sócio neste clube");
+    /*
+     * O atleta que vê a ficha de sócio-atleta menor não passa pelo gate dos
+     * termos de sócio. A ficha é dos encarregados, que pagam e respondem por
+     * ela; o atleta só a vê, com a conta de atleta, cujos documentos aceitou
+     * ao criá-la. E o ecrã dos termos (`LegalService.subjectFor`) só pede os de
+     * sócio a quem tem a ficha ligada à conta: exigi-los aqui deixava o atleta
+     * preso à porta da área, sem ecrã onde os aceitar.
+     */
+    if (!ficha.pagoPelaFamilia) await this.legal.assertClearMember(db, userId, academyId);
+    return ficha;
+  }
+
+  /**
+   * As portas de pagar recusam a ficha de um sócio-atleta menor: as quotas dele
+   * pagam-nas os encarregados, na área da família, em Pagamentos. O atleta vê a
+   * área de sócio, mas não paga nada nela.
+   */
+  private recusarSePagaPelaFamilia(socio: { pagoPelaFamilia: boolean }): void {
+    if (socio.pagoPelaFamilia) {
+      throw new ForbiddenException("As quotas deste sócio são pagas pelos encarregados, na área da família da app.");
+    }
   }
 
   /* ------------------------------------------------------------------------ */
@@ -170,7 +190,12 @@ export class ClubAppService {
     const pendente = !familia && (await this.auth.familyApprovalPending(eu.authId, academyId));
 
     return this.prisma.runAs(academyId, async (db) => {
-      let member = eu.userId ? await db.member.findFirst({ where: { userId: eu.userId } }) : null;
+      /*
+       * A ficha que esta conta vê: a sua, ou a de sócio-atleta menor do atleta
+       * desta conta, que abre a área sem as quotas (pagam os encarregados).
+       * Ver `fichaDeSocioDaConta`.
+       */
+      let member = eu.userId ? await fichaDeSocioDaConta(db, eu.userId) : null;
 
       /*
        * Sem ficha ligada, mas com vínculo aqui (família ou staff)? Talvez a
@@ -180,7 +205,7 @@ export class ClubAppService {
        */
       if (!member && eu.userId && (familia || atleta || staff)) {
         if (await reclamarFichaPelaConta(db, eu.userId)) {
-          member = await db.member.findFirst({ where: { userId: eu.userId } });
+          member = await fichaDeSocioDaConta(db, eu.userId);
         }
       }
 
@@ -197,6 +222,8 @@ export class ClubAppService {
        */
       if (!atleta && eu.userId && (familia || staff || member)) {
         atleta = await reclamarAtletaPelaConta(db, academyId, { userId: eu.userId, email: eu.email });
+        /* A conta de atleta acabou de nascer: a ficha de sócio-atleta dele já conta neste pedido. */
+        if (atleta && !member) member = await fichaDeSocioDaConta(db, eu.userId);
       }
 
       const contexts: Record<string, unknown>[] = [];
@@ -214,6 +241,8 @@ export class ClubAppService {
           memberId: member.id,
           number: member.number,
           status: member.status,
+          /* Sócio-atleta menor: a área abre, sem quotas. A app diz isso na escolha de área. */
+          ...(member.pagoPelaFamilia ? { quotasPelaFamilia: true } : {}),
         });
       }
       if (staff) contexts.push({ type: "STAFF", role: staff.role });
@@ -465,12 +494,21 @@ export class ClubAppService {
           cardQr: academia?.memberCardEnabled && academia.memberCardQrEnabled && cardToken
             ? CARD_QR_PREFIX + cardToken
             : null,
+          /*
+           * Sócio-atleta menor, a ver pela conta de atleta: as quotas são dos
+           * encarregados (área da família, Pagamentos). A app esconde o
+           * separador, e as listas vêm vazias para não haver nada a mostrar
+           * nem a pagar daqui.
+           */
+          quotasPelaFamilia: socio.pagoPelaFamilia,
         },
-        fees: fees.map((f) => ({
-          ...f,
-          overdue: f.status === "OPEN" && Boolean(f.dueOn && f.dueOn < agora),
-        })),
-        upcoming,
+        fees: socio.pagoPelaFamilia
+          ? []
+          : fees.map((f) => ({
+              ...f,
+              overdue: f.status === "OPEN" && Boolean(f.dueOn && f.dueOn < agora),
+            })),
+        upcoming: socio.pagoPelaFamilia ? [] : upcoming,
       };
     });
 
@@ -743,7 +781,8 @@ export class ClubAppService {
   async cotacao(authorization: string | undefined, slug: string, cents?: string) {
     const eu = await this.identidade(authorization);
     const academyId = await this.academiaDe(slug);
-    await this.prisma.runAs(academyId, (db) => this.socioDe(db, eu.userId, academyId));
+    const socio = await this.prisma.runAs(academyId, (db) => this.socioDe(db, eu.userId, academyId));
+    this.recusarSePagaPelaFamilia(socio);
 
     const r = await this.billing.cotacaoDoClube(academyId, valoresDaCotacao(cents));
     // As quotas pagam-se por MB Way ou Multibanco, e mais nada.
@@ -778,6 +817,7 @@ export class ClubAppService {
 
     const socio = await this.prisma.runAs(academyId, async (db) => {
       const socio = await this.socioDe(db, eu.userId, academyId);
+      this.recusarSePagaPelaFamilia(socio);
       await this.assertPagamentosLigados(db, academyId);
 
       const esta = await db.memberFee.findFirst({
@@ -838,6 +878,7 @@ export class ClubAppService {
 
     const { socioId, feeIds } = await this.prisma.runAs(academyId, async (db) => {
       const socio = await this.socioDe(db, eu.userId, academyId);
+      this.recusarSePagaPelaFamilia(socio);
       if (socio.status !== "ACTIVE") throw new ForbiddenException("Só um sócio activo paga quotas");
       // Antes de nascer qualquer quota: ver `assertPagamentosLigados`.
       await this.assertPagamentosLigados(db, academyId);
@@ -888,6 +929,7 @@ export class ClubAppService {
 
     const { socioId, feeId } = await this.prisma.runAs(academyId, async (db) => {
       const socio = await this.socioDe(db, eu.userId, academyId);
+      this.recusarSePagaPelaFamilia(socio);
       if (socio.status !== "ACTIVE") throw new ForbiddenException("Só um sócio activo paga quotas");
       // Antes de nascer qualquer quota: ver `assertPagamentosLigados`.
       await this.assertPagamentosLigados(db, academyId);

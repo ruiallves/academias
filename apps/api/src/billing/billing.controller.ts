@@ -90,6 +90,22 @@ export class BillingController {
     return this.billing.startPayment(ctx(req), id, dto.method, dto.payerPhone);
   }
 
+  /**
+   * As quotas de sócio dos filhos (sócios-atletas menores), pagas pelos
+   * encarregados na área da família, ao lado das mensalidades. Ver
+   * `BillingService.quotasDosFilhos` e `members/socio-menor.ts`.
+   */
+  @Get("quotas")
+  quotasDosFilhos(@Req() req: Request) {
+    return this.billing.quotasDosFilhos(ctx(req));
+  }
+
+  /** Pagar uma delas: MB Way ou Multibanco, como as quotas. */
+  @Post("quotas/:id/pay")
+  startQuotaPayment(@Req() req: Request, @Param("id") id: string, @Body() dto: StartPaymentDto) {
+    return this.billing.startFamilyQuotaPayment(ctx(req), id, dto.method, dto.payerPhone);
+  }
+
   /* ------------------------------------------------------------------------ */
   /* Débito directo — o mandato do próprio                                     */
   /* ------------------------------------------------------------------------ */

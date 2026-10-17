@@ -108,6 +108,13 @@ export type SocioInicio = {
     /** Link assinado com prazo para a fotografia — a cara no cartão. Nulo sem fotografia. */
     photoUrl: string | null;
     cardQr: string | null;
+    /**
+     * Sócio-atleta menor, a ver pela conta de atleta: as quotas pagam-nas os
+     * encarregados, na área da família (Pagamentos). A área de sócio abre sem o
+     * separador Quotas e sem nada para pagar; `fees` e `upcoming` vêm vazios.
+     * Ausente num servidor antigo: lê-se como falso.
+     */
+    quotasPelaFamilia?: boolean;
   };
   fees: SocioFee[];
   upcoming: SocioMes[];

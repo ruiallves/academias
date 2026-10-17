@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { PAGAMENTOS_DESATIVADOS, doMetodo, useCotacao } from "@/lib/cotacao";
 import {
   NavLink,
@@ -14,6 +14,7 @@ import {
   CalendarDays,
   Camera,
   Check,
+  ChevronLeft,
   ChevronRight,
   CreditCard,
   Home,
@@ -31,7 +32,6 @@ import {
   Money,
   cx,
   dateShort,
-  dayName,
   greeting,
   initials,
   money,
@@ -53,6 +53,14 @@ import {
   type SocioMes,
   type SocioPoll,
 } from "@/lib/socio";
+import {
+  diasEntre,
+  jogosPorDia,
+  localDoJogo,
+  pilulaDoDia,
+  quandoDoJogo,
+  tituloDoDia,
+} from "@/lib/jogos-por-dia";
 import { AreaSwitch } from "@/screens/socio/AreaSwitch";
 import Notifications from "@/screens/Notifications";
 import { carregarNotificacoes, useNotificacoes } from "@/lib/notificacoes";
@@ -130,7 +138,11 @@ export default function SocioApp() {
       <main className="flex-1 px-4 pb-[calc(104px+env(safe-area-inset-bottom))]">
         <Routes>
           <Route path="/socio" element={<Inicio />} />
-          <Route path="/socio/quotas" element={<Quotas />} />
+          {/* O sócio-atleta menor não tem quotas aqui: pagam-nas os encarregados. */}
+          <Route
+            path="/socio/quotas"
+            element={data.member.quotasPelaFamilia ? <Navigate to="/socio" replace /> : <Quotas />}
+          />
           <Route path="/socio/jogos" element={<Jogos />} />
           <Route path="/socio/novidades" element={<Novidades />} />
           {/* As mesmas notificações da família — são da pessoa, não da área. Ver `lib/notificacoes`. */}
@@ -231,6 +243,11 @@ const TABS = [
 function SocioTabBar() {
   const { data } = useSocio();
   const emDivida = data?.fees.some((f) => f.status === "OPEN") ?? false;
+  /*
+   * Sócio-atleta menor: sem o separador das quotas. Quem as paga são os
+   * encarregados, na área da família, em Pagamentos, junto das mensalidades.
+   */
+  const tabs = data?.member.quotasPelaFamilia ? TABS.filter((t) => t.to !== "/socio/quotas") : TABS;
 
   return (
     <nav className="pointer-events-none fixed inset-x-0 bottom-0 z-30 flex justify-center pb-[calc(14px+env(safe-area-inset-bottom))]">
@@ -239,7 +256,7 @@ function SocioTabBar() {
         className="pointer-events-auto flex items-center gap-1 rounded-full bg-ink/95 p-1.5"
         style={{ boxShadow: "var(--shadow-float)" }}
       >
-        {TABS.map(({ to, label, icon: Icon }) => (
+        {tabs.map(({ to, label, icon: Icon }) => (
           <li key={to}>
             <NavLink
               to={to}
@@ -1044,7 +1061,7 @@ function PagarSheet({
   onClose,
 }: {
   alvo: Alvo;
-  /** A taxa do método é de quem paga: a folha mostra-a por método. */
+  /** A taxa é de quem paga: a folha mostra-a em cada método (a mesma em todos). */
   comTaxa: boolean;
   telefone: string | null;
   onClose: () => void;
@@ -1153,7 +1170,7 @@ function PagarSheet({
               </p>
               <p className="text-[13px] text-ink-3">
                 {money(alvo.amountCents)}
-                {comTaxa && " · mais a taxa do método de pagamento"}
+                {comTaxa && " · mais a taxa de pagamento, igual em todos os métodos"}
               </p>
             </div>
 
@@ -1211,7 +1228,7 @@ function PagarSheet({
                   <dd className="num font-medium text-ink-2">{money(alvo.amountCents)}</dd>
                 </div>
                 <div className="flex items-baseline justify-between gap-3">
-                  <dt className="text-ink-3">Taxa do método</dt>
+                  <dt className="text-ink-3">Taxa de pagamento</dt>
                   <dd className="num font-medium text-ink-2">+ {money(escolhida.surchargeCents)}</dd>
                 </div>
                 <div className="flex items-baseline justify-between gap-3 border-t border-line pt-1.5">
@@ -1268,21 +1285,188 @@ const formatarRef = (r: string) => r.replace(/(\d{3})(?=\d)/g, "$1 ").trim();
 /* Clube                                                                       */
 /* -------------------------------------------------------------------------- */
 
-/** Todos os jogos do clube, de todos os escalões. O Início só mostra o primeiro. */
+/**
+ * Todos os jogos do clube, um dia de cada vez.
+ *
+ * Em cima, uma tira com os dias que têm jogos (só esses: uma semana sem jogos
+ * não ocupa sete pílulas vazias). Em baixo, os jogos do dia escolhido: o do
+ * escalão mais velho em destaque, com um contorno na cor do clube, e os outros por baixo, dos
+ * mais velhos para os mais novos. Passa-se de dia tocando na tira, nas setas,
+ * ou deslizando o dedo para o lado sobre os jogos.
+ *
+ * Era uma lista por equipa onde cada cartão dizia só "Domingo · 15:00", e
+ * quatro domingos seguidos liam-se como o mesmo. A lógica dos dias está em
+ * `lib/jogos-por-dia.ts`, com teste próprio.
+ */
 function Jogos() {
   const { data } = useSocio();
+  const matches = data?.matches;
+  const dias = useMemo(() => jogosPorDia(matches ?? []), [matches]);
+  const [escolhido, setEscolhido] = useState<string | null>(null);
+  const [sentido, setSentido] = useState<"direita" | "esquerda" | null>(null);
+  const toque = useRef<{ x: number; y: number } | null>(null);
+  const tira = useRef<HTMLDivElement>(null);
+  const pilulas = useRef(new Map<string, HTMLButtonElement>());
+
+  // Sem escolha, ou com uma escolha que deixou de existir (o jogo passou), é o primeiro dia.
+  const indice = Math.max(0, dias.findIndex((d) => d.chave === escolhido));
+  const dia = dias[indice];
+
+  /*
+   * A pílula escolhida fica sempre à vista na tira, mesmo quando se muda de
+   * dia pelo dedo. Mexe-se só no scroll da tira: `scrollIntoView` também
+   * arrastava a página inteira para o lado quando a pílula era a última e a
+   * tira já não tinha por onde ir.
+   */
+  useEffect(() => {
+    const caixa = tira.current;
+    const pilula = dia ? pilulas.current.get(dia.chave) : undefined;
+    if (!caixa || !pilula) return;
+    caixa.scrollTo({ left: pilula.offsetLeft - (caixa.clientWidth - pilula.offsetWidth) / 2, behavior: "smooth" });
+  }, [dia?.chave]); // eslint-disable-line react-hooks/exhaustive-deps
+
   if (!data) return null;
 
-  return (
-    <div className="space-y-5 pt-3">
-      {data.matches.length > 0 ? (
-        <JogosDoClube matches={data.matches} />
-      ) : (
+  if (!dia) {
+    return (
+      <div className="space-y-5 pt-3">
         <Vazio icon={CalendarDays} title="Sem jogos marcados">
-          Quando o clube marcar jogos, aparecem aqui — de todos os escalões,
-          dos mais velhos para os mais novos.
+          Quando o clube marcar jogos, aparecem aqui, dia a dia, de todos os
+          escalões.
         </Vazio>
-      )}
+      </div>
+    );
+  }
+
+  const agora = new Date();
+  const irPara = (i: number) => {
+    if (i < 0 || i >= dias.length || i === indice) return;
+    setSentido(i > indice ? "direita" : "esquerda");
+    setEscolhido(dias[i].chave);
+  };
+
+  return (
+    <div className="pt-3">
+      <header className="px-1">
+        <h1 className="text-[30px] leading-tight font-semibold tracking-[-0.03em] text-ink">Jogos</h1>
+        <p className="mt-0.5 text-meta text-ink-3">Todos os escalões, dia a dia</p>
+      </header>
+
+      {/* A tira dos dias. Sai das margens da página para o dedo a poder arrastar até à borda. */}
+      <div
+        ref={tira}
+        className="relative -mx-4 mt-4 flex snap-x gap-2 overflow-x-auto px-4 pb-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+        role="tablist"
+        aria-label="Dias com jogos"
+      >
+        {dias.map((d, i) => {
+          const p = pilulaDoDia(d.dia, agora);
+          const activo = i === indice;
+          return (
+            <button
+              key={d.chave}
+              ref={(el) => {
+                if (el) pilulas.current.set(d.chave, el);
+                else pilulas.current.delete(d.chave);
+              }}
+              type="button"
+              role="tab"
+              aria-selected={activo}
+              aria-label={`${tituloDoDia(d.dia, agora)}, ${d.jogos.length} ${d.jogos.length === 1 ? "jogo" : "jogos"}`}
+              onClick={() => irPara(i)}
+              className={cx(
+                "flex w-[60px] shrink-0 snap-center flex-col items-center rounded-[18px] pt-2 pb-2.5 transition-[background-color,transform] duration-200 active:scale-95",
+                activo ? "bg-ink text-surface" : "bg-surface text-ink shadow-[var(--shadow-soft)]",
+              )}
+            >
+              <span className={cx("text-[11px] font-semibold uppercase", activo ? "text-surface/70" : "text-ink-3")}>
+                {p.semana}
+              </span>
+              <span className="num mt-0.5 text-[22px] leading-none font-semibold">{p.numero}</span>
+              <span className={cx("mt-0.5 text-[11px]", activo ? "text-surface/70" : "text-ink-4")}>{p.mes}</span>
+              {/* Um ponto por jogo, até três: vê-se de relance que dias estão cheios. */}
+              <span className="mt-1.5 flex h-1.5 gap-[3px]" aria-hidden>
+                {d.jogos.slice(0, 3).map((j) => (
+                  <span
+                    key={j.id}
+                    className={cx("size-1.5 rounded-full", activo ? "bg-surface/80" : "bg-signal")}
+                  />
+                ))}
+              </span>
+            </button>
+          );
+        })}
+      </div>
+
+      {/* O dia escolhido, com setas para quem não sabe que pode deslizar. */}
+      <div className="mt-5 flex items-center gap-2 px-1">
+        <div className="min-w-0 flex-1">
+          <h2 className="truncate text-[20px] leading-tight font-semibold tracking-[-0.02em] text-ink">
+            {tituloDoDia(dia.dia, agora)}
+          </h2>
+          <p className="mt-0.5 text-meta text-ink-3">
+            {dia.jogos.length} {dia.jogos.length === 1 ? "jogo" : "jogos"}
+            {/* "Hoje" e "Amanhã" escondem a data; aqui ela volta, discreta. */}
+            {diasEntre(agora, dia.dia) <= 1 && ` · ${dateShort(dia.dia)}`}
+          </p>
+        </div>
+        <button
+          type="button"
+          onClick={() => irPara(indice - 1)}
+          disabled={indice === 0}
+          className="icon-btn bg-surface shadow-[var(--shadow-soft)] disabled:opacity-35 disabled:shadow-none"
+          aria-label="Dia anterior"
+        >
+          <ChevronLeft className="size-5" strokeWidth={2} />
+        </button>
+        <button
+          type="button"
+          onClick={() => irPara(indice + 1)}
+          disabled={indice === dias.length - 1}
+          className="icon-btn bg-surface shadow-[var(--shadow-soft)] disabled:opacity-35 disabled:shadow-none"
+          aria-label="Dia seguinte"
+        >
+          <ChevronRight className="size-5" strokeWidth={2} />
+        </button>
+      </div>
+
+      {/*
+        Os jogos do dia. Deslizar para a esquerda é o dia seguinte, para a
+        direita o anterior; só conta um gesto claramente de lado, para não roubar
+        o scroll a quem desce a página.
+      */}
+      {/*
+        O dia novo entra 32px de lado. Sem este corte, esse empurrão alargava a
+        página no telemóvel (que estica a largura ao que transborda) e ela
+        ficava a abanar de lado. O corte é rente à borda do ecrã (-mx-4 px-4)
+        para não comer as sombras dos cartões.
+      */}
+      <div className="-mx-4 overflow-x-clip px-4">
+      <div
+        key={dia.chave}
+        className={cx("mt-3 space-y-3", sentido === "direita" && "entra-direita", sentido === "esquerda" && "entra-esquerda")}
+        onTouchStart={(e) => {
+          const t = e.touches[0];
+          toque.current = { x: t.clientX, y: t.clientY };
+        }}
+        onTouchEnd={(e) => {
+          const inicio = toque.current;
+          toque.current = null;
+          if (!inicio) return;
+          const t = e.changedTouches[0];
+          const dx = t.clientX - inicio.x;
+          const dy = t.clientY - inicio.y;
+          if (Math.abs(dx) < 56 || Math.abs(dx) < Math.abs(dy) * 1.4) return;
+          irPara(indice + (dx < 0 ? 1 : -1));
+        }}
+      >
+        <ul className="space-y-2.5">
+          {dia.jogos.map((jogo, i) => (
+            <JogoDoDia key={jogo.id} jogo={jogo} destaque={i === 0} />
+          ))}
+        </ul>
+      </div>
+      </div>
     </div>
   );
 }
@@ -1332,12 +1516,18 @@ function Novidades() {
   );
 }
 
+/**
+ * O jogo de maior prioridade, no Início. Diz sempre o dia por inteiro
+ * ("Domingo, 18 out"), nunca só o dia da semana: era isso que deixava os sócios
+ * sem saber de que domingo se falava.
+ */
 function JogoCard({ jogo }: { jogo: SocioMatch }) {
   const { data } = useSocio();
   if (!data) return null;
 
   const inicio = new Date(jogo.startsAt);
   const casa = jogo.isHome;
+  const { lugar } = localDoJogo(jogo.venue, jogo.isHome);
 
   return (
     <div className="rounded-[20px] bg-surface p-4 shadow-[var(--shadow-soft)]">
@@ -1351,17 +1541,13 @@ function JogoCard({ jogo }: { jogo: SocioMatch }) {
         </span>
       </div>
       <div className="mt-2 space-y-1 border-t border-ink/5 pt-3 text-center">
-        <p className="text-[14px] font-semibold text-ink capitalize">
-          {whenLabel(inicio, new Date()) === "hoje" ||
-          whenLabel(inicio, new Date()) === "amanhã"
-            ? whenLabel(inicio, new Date())
-            : dayName(inicio)}{" "}
-          · {time(inicio)}
+        <p className="text-[14px] font-semibold text-ink">
+          {quandoDoJogo(inicio, new Date())} · {time(inicio)}
         </p>
         <p className="flex items-center justify-center gap-1 text-[13px] text-ink-3">
-          <MapPin className="size-3.5" strokeWidth={1.9} />
-          {jogo.venue}
-          {!casa && " · fora"}
+          <MapPin className="size-3.5 shrink-0" strokeWidth={1.9} />
+          <span className="truncate">{lugar}</span>
+          {!casa && <span className="shrink-0">· fora</span>}
         </p>
         <p className="text-[12px] text-ink-4">
           {jogo.teamName}
@@ -1373,40 +1559,68 @@ function JogoCard({ jogo }: { jogo: SocioMatch }) {
 }
 
 /**
- * Todos os jogos do clube, por equipa — dos mais velhos para os mais novos.
+ * Um jogo do dia. Os jogos vêm por escalão, e o primeiro (o do escalão mais
+ * velho) é o destaque: o mesmo cartão dos outros, com o fundo levemente
+ * tingido da cor do clube, contorno, o escalão numa etiqueta cheia e a hora
+ * maior, na cor do clube.
  *
- * A lista já chega ordenada do servidor (`teamMaxAge` desc, depois a data); o
- * que este componente faz é só desenhar essa ordem com um título por cima de
- * cada equipa, para se ver de onde para onde se está a passar. Agrupar por
- * linhas consecutivas chega: o servidor garante que os jogos da mesma equipa
- * vêm sempre juntos.
+ * É o meio-termo de duas tentativas recusadas: um cartão grande pintado na cor
+ * do clube (contraste demais) e só um contorno (ênfase de menos). As cores são
+ * as do tema e não a cor crua: `signal-line` para o traço sobre a página,
+ * `signal-strong` com `signal-on` por cima para a etiqueta, `signal-ink` para
+ * texto. Um clube amarelo continua legível.
+ *
+ * A hora vai do lado direito do cartão e não numa coluna à esquerda: a lista
+ * não é cronológica (o Sub-13 das 15:00 vem antes do Sub-11 das 09:30), e uma
+ * coluna de horas lia-se como uma agenda fora de ordem.
  */
-function JogosDoClube({ matches }: { matches: SocioMatch[] }) {
-  const grupos: { teamName: string; jogos: SocioMatch[] }[] = [];
-  for (const jogo of matches) {
-    const actual = grupos.at(-1);
-    if (actual?.teamName === jogo.teamName) actual.jogos.push(jogo);
-    else grupos.push({ teamName: jogo.teamName, jogos: [jogo] });
-  }
+function JogoDoDia({ jogo, destaque = false }: { jogo: SocioMatch; destaque?: boolean }) {
+  const { data } = useSocio();
+  if (!data) return null;
+
+  const inicio = new Date(jogo.startsAt);
+  const { lugar, fora } = localDoJogo(jogo.venue, jogo.isHome);
+  const casa = fora ? jogo.opponent : data.academy.shortName;
+  const visitante = fora ? data.academy.shortName : jogo.opponent;
 
   return (
-    <section>
-      <Label>Jogos</Label>
-      <div className="space-y-4">
-        {grupos.map((grupo) => (
-          <div key={grupo.teamName}>
-            <p className="mb-2 px-1 text-[12px] font-semibold tracking-[0.05em] text-ink-3 uppercase">
-              {grupo.teamName}
-            </p>
-            <div className="space-y-2">
-              {grupo.jogos.map((jogo) => (
-                <JogoCard key={jogo.id} jogo={jogo} />
-              ))}
-            </div>
-          </div>
-        ))}
+    <li
+      className={cx(
+        "flex items-start gap-3 rounded-[var(--radius-lg)] p-4 shadow-[var(--shadow-soft)]",
+        destaque
+          ? "bg-linear-to-br from-signal-soft to-surface to-70% ring-[1.5px] ring-signal-line"
+          : "bg-surface",
+      )}
+    >
+      <div className="min-w-0 flex-1">
+        {destaque ? (
+          <span className="inline-flex max-w-full items-center rounded-full bg-signal-strong px-2.5 py-0.5 text-[11px] font-semibold tracking-[0.05em] text-signal-on uppercase">
+            <span className="truncate">{jogo.teamName}</span>
+          </span>
+        ) : (
+          <p className="truncate text-[11px] font-semibold tracking-[0.05em] text-signal-ink uppercase">{jogo.teamName}</p>
+        )}
+        <p className={cx("leading-snug font-semibold text-ink", destaque ? "mt-2 text-[17px]" : "mt-1 text-[15px]")}>
+          {casa} <span className="font-medium text-ink-4">vs</span> {visitante}
+        </p>
+        <p className="mt-1.5 flex items-center gap-1.5 text-[13px] text-ink-3">
+          <MapPin className="size-3.5 shrink-0 text-ink-4" strokeWidth={1.9} />
+          <span className="truncate">{lugar}</span>
+        </p>
+        {jogo.competition && <p className="mt-0.5 truncate text-[12px] text-ink-4">{jogo.competition}</p>}
       </div>
-    </section>
+      <div className="flex shrink-0 flex-col items-end gap-1.5">
+        <span
+          className={cx(
+            "num leading-none font-semibold",
+            destaque ? "text-[26px] text-signal-ink" : "text-[20px] text-ink",
+          )}
+        >
+          {time(inicio)}
+        </span>
+        {fora && <Chip className="py-0.5 text-[11px]">Fora</Chip>}
+      </div>
+    </li>
   );
 }
 
@@ -1781,7 +1995,8 @@ function Perfil() {
     [
       "Categoria",
       data.member.tierName
-        ? data.member.tierFeeCents !== null
+        ? /* O preço é assunto de quem paga: o sócio-atleta menor vê só a categoria. */
+          data.member.tierFeeCents !== null && !data.member.quotasPelaFamilia
           ? `${data.member.tierName} · ${money(data.member.tierFeeCents)}${data.member.tierBilling === "ANNUAL" ? "/ano" : "/mês"}`
           : data.member.tierName
         : null,

@@ -4,6 +4,7 @@ import { ConfigService } from "@nestjs/config";
 import { PrismaService } from "../prisma/prisma.service";
 import { MailClient } from "../mail/mail.client";
 import { memberInviteEmail, memberSignupReceivedEmail } from "../mail/mail.templates";
+import { pagoPelaFamilia } from "./socio-menor";
 import { can, type RequestContext } from "../common/permissions";
 
 /**
@@ -240,10 +241,14 @@ export class MemberInvitesService {
     return this.prisma.runAs(academyId, async (db) => {
       const member = await db.member.findFirst({
         where: { id: memberId },
-        select: { id: true, name: true, email: true, userId: true },
+        select: { id: true, name: true, email: true, userId: true, athleteId: true, tier: { select: { maxAge: true } } },
       });
       if (!member) throw new NotFoundException("Sócio não encontrado");
 
+      // Sócio-atleta menor: pagam os encarregados, e o atleta não tem área de sócio. Ver `socio-menor.ts`.
+      if (pagoPelaFamilia(member)) {
+        return { ok: false as const, reason: "É um sócio-atleta menor: as quotas são pagas pelos encarregados, na área da família. Não há convite." };
+      }
       if (member.userId) {
         return { ok: false as const, reason: "Este sócio já tem conta ligada." };
       }

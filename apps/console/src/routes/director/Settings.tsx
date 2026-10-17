@@ -20,6 +20,7 @@ import { ConsultationTypesPanel } from "@/components/ConsultationTypesPanel";
  */
 import { cx } from "@/components/primitives";
 import { CargosSection } from "@/components/definicoes/CargosSection";
+import { CategoriasDeSocioSection } from "@/components/definicoes/CategoriasDeSocioSection";
 import { MensalidadesSection } from "@/components/definicoes/MensalidadesSection";
 import { EpocaPanel } from "@/components/EpocaPanel";
 import { MensalidadeDaPlataformaPanel } from "@/components/MensalidadeDaPlataformaPanel";
@@ -153,8 +154,18 @@ export default function Settings() {
 
             {ativa === "cargos" && <CargosSection />}
 
-            {/* O cartão de sócio: estava num diálogo da página dos sócios. */}
-            {ativa === "socios" && <CartaoDeSocioPanel mayWrite={maySettings} />}
+            {/*
+              Os sócios: as categorias (as mesmas do Livro de sócios, com o
+              mesmo popup) e o cartão de sócio, que estava num diálogo da
+              página dos sócios. As categorias são de quem gere os sócios
+              (`member:*`), o cartão de quem mexe nas definições.
+            */}
+            {ativa === "socios" && (
+              <>
+                {can(session, "member:read") && <CategoriasDeSocioSection mayWrite={can(session, "member:write")} />}
+                <CartaoDeSocioPanel mayWrite={maySettings} />
+              </>
+            )}
 
             {/* Os tipos de consulta são do clube e não de uma modalidade. */}
             {ativa === "clinico" && (

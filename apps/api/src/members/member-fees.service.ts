@@ -40,6 +40,17 @@ import {
 
 export * from "./cobertura";
 
+import { pagoPelaFamilia } from "./socio-menor";
+
+/** O que o aviso de uma quota precisa de saber do sócio: quem a paga. */
+const MEMBRO_A_AVISAR = {
+  userId: true,
+  name: true,
+  athleteId: true,
+  tier: { select: { maxAge: true } },
+} as const;
+type MembroAAvisar = { userId: string | null; name: string; athleteId: string | null; tier: { maxAge: number | null } | null };
+
 /**
  * Quotas — o lado da consola.
  *
@@ -223,24 +234,14 @@ export class MemberFeesService implements OnModuleInit, OnModuleDestroy {
       },
       select: {
         id: true, memberId: true, period: true, label: true, amountCents: true,
-        member: { select: { userId: true } },
+        member: { select: MEMBRO_A_AVISAR },
       },
     });
     const pedidas = new Set(novas.map((n) => `${n.memberId}|${n.period}`));
 
     for (const q of quotas) {
-      if (!pedidas.has(`${q.memberId}|${q.period}`) || !q.member.userId) continue;
-      await this.notifications.enqueue(
-        {
-          academyId,
-          userId: q.member.userId,
-          type: NotificationType.PAYMENT_PENDING,
-          title: "Nova quota",
-          body: `A ${(q.label ?? rotulo(q.period)).toLowerCase()} já está disponível — ${(q.amountCents / 100).toFixed(2)} €.`,
-          payload: { route: "/socio/quotas", memberFeeId: q.id },
-        },
-        db,
-      );
+      if (!pedidas.has(`${q.memberId}|${q.period}`)) continue;
+      await this.avisarQuota(db, academyId, q);
     }
   }
 
@@ -260,31 +261,72 @@ export class MemberFeesService implements OnModuleInit, OnModuleDestroy {
       where: { noticedAt: null, status: ChargeStatus.OPEN, coversFrom: { not: null, lte: agora } },
       select: {
         id: true, label: true, period: true, amountCents: true,
-        member: { select: { userId: true } },
+        member: { select: MEMBRO_A_AVISAR },
       },
       take: 200,
     });
     if (porAvisar.length === 0) return;
 
     for (const q of porAvisar) {
-      if (!q.member.userId) continue;
-      await this.notifications.enqueue(
-        {
-          academyId,
-          userId: q.member.userId,
-          type: NotificationType.PAYMENT_PENDING,
-          title: "Nova quota",
-          body: `A ${(q.label ?? rotulo(q.period)).toLowerCase()} já está disponível — ${(q.amountCents / 100).toFixed(2)} €.`,
-          payload: { route: "/socio/quotas", memberFeeId: q.id },
-        },
-        db,
-      );
+      await this.avisarQuota(db, academyId, q);
     }
 
     await db.memberFee.updateMany({
       where: { id: { in: porAvisar.map((q) => q.id) } },
       data: { noticedAt: agora },
     });
+  }
+
+  /**
+   * O aviso de uma quota nova a quem a paga.
+   *
+   * Ao sócio, na área de sócio, quando a ficha tem conta ligada. Numa ficha
+   * paga pela família (sócio-atleta menor, ver `socio-menor.ts`), aos
+   * encarregados do atleta, com a ligação para Pagamentos da área da família.
+   * Sem ninguém para avisar, não se avisa ninguém.
+   */
+  private async avisarQuota(
+    db: ScopedClient,
+    academyId: string,
+    q: { id: string; period: string; label: string | null; amountCents: number; member: MembroAAvisar },
+  ) {
+    const valor = `${(q.amountCents / 100).toFixed(2)} €`;
+    const quota = (q.label ?? rotulo(q.period)).toLowerCase();
+
+    if (pagoPelaFamilia(q.member) && q.member.athleteId) {
+      const encarregados = await db.guardianLink.findMany({
+        where: { athleteId: q.member.athleteId, membership: { isActive: true } },
+        select: { membership: { select: { userId: true } } },
+      });
+      const primeiro = q.member.name.trim().split(/s+/)[0];
+      for (const userId of new Set(encarregados.map((e) => e.membership.userId))) {
+        await this.notifications.enqueue(
+          {
+            academyId,
+            userId,
+            type: NotificationType.PAYMENT_PENDING,
+            title: "Quota de sócio",
+            body: `A ${quota} do ${primeiro} já está disponível em Pagamentos: ${valor}.`,
+            payload: { route: "/pagamentos", memberFeeId: q.id },
+          },
+          db,
+        );
+      }
+      return;
+    }
+
+    if (!q.member.userId) return;
+    await this.notifications.enqueue(
+      {
+        academyId,
+        userId: q.member.userId,
+        type: NotificationType.PAYMENT_PENDING,
+        title: "Nova quota",
+        body: `A ${quota} já está disponível: ${valor}.`,
+        payload: { route: "/socio/quotas", memberFeeId: q.id },
+      },
+      db,
+    );
   }
 
   private mustRead(ctx: RequestContext) {

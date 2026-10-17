@@ -181,6 +181,17 @@ export default function MemberDetail() {
             {m.number ? `Sócio n.º ${m.number}` : "Sem número atribuído"}
             {m.birthdate ? ` · ${ageOf(m.birthdate)} anos` : ""}
           </p>
+          {/* Sócio-atleta: a ficha veio de um atleta, e numa categoria de menores
+              quem paga são os encarregados dele (ver `socio-menor.ts` na API). */}
+          {m.athlete && (
+            <p className="mt-1.5 text-meta text-ink-2">
+              Sócio-atleta:{" "}
+              <Link to={`/atletas/${m.athlete.id}`} className="font-medium text-ink underline decoration-line-strong underline-offset-2 hover:decoration-ink">
+                ficha de atleta
+              </Link>
+              {m.paidByFamily && " · as quotas são pagas pelos encarregados, na área da família da app"}
+            </p>
+          )}
         </div>
 
         {/* As acções de estado ao lado do nome: é a decisão que se vem cá tomar. */}

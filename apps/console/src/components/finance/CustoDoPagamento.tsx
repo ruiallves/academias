@@ -24,9 +24,11 @@ import { useStore } from "@/lib/store";
  * Por omissão, o valor escrito é **o que a família paga**, e o intervalo é o que
  * o clube recebe. Quando o clube põe a comissão por conta de quem paga
  * (`academy.feesOnPayer`, nas Definições), a frase vira-se ao contrário: o valor
- * escrito é **o que o clube recebe**, e o intervalo é o que a família paga. É o
+ * escrito é **o que o clube recebe**, e ao lado vem o que a família paga. É o
  * mesmo campo e o mesmo número a querer dizer outra coisa, e por isso a linha
- * di-lo sempre por extenso.
+ * di-lo sempre por extenso. Nesse sentido não há intervalo: a família paga o
+ * mesmo por qualquer método (a taxa do mais caro), porque a lei não deixa cobrar
+ * mais por um método do que por outro.
  *
  * ## Sete métodos, não dois
  *
@@ -98,30 +100,31 @@ export function CustoDoPagamento({
 
   /* ---- A comissão é de quem paga: o valor escrito é o que o clube recebe. ---- */
   if (academy.feesOnPayer) {
+    /*
+     * Um valor só: a taxa é a mesma em todos os métodos (a do mais caro), por
+     * lei. A tabela por método mostra o que chega ao clube por cada um: o valor
+     * exacto pelo mais caro, um pouco mais pelos outros.
+     */
     const p = detalheDoPagador(amountCents, tabela);
     if (!p) return null;
-    const igual = p.minCents === p.maxCents;
 
     return (
       <div className={cx("mt-1.5 text-[11px] leading-relaxed", className)}>
         <p className="text-ink-2">
           O clube recebe <span className="font-semibold text-ink">{euros(amountCents)}</span>
           {" · "}quem paga pela app paga{" "}
-          <span className="font-semibold text-ink">
-            {igual ? euros(p.minCents) : `${euros(p.minCents)} a ${euros(p.maxCents)}`}
-          </span>{" "}
+          <span className="font-semibold text-ink">{euros(p.maxCents)}</span>{" "}
           {botao}
         </p>
 
         {aberto && (
-          /* Do mais barato para o mais caro para quem paga. */
           <table className="mt-1.5 w-full tabular">
             <tbody>
               {p.porMetodo.map((m) => (
                 <tr key={m.label} className="text-ink-3">
                   <td className="py-px pr-2">{m.label}</td>
-                  <td className="py-px pr-2 text-right text-ink-4">+{euros(m.surchargeCents)}</td>
-                  <td className="py-px text-right font-medium text-ink-2">{euros(m.totalCents)}</td>
+                  <td className="py-px pr-2 text-right text-ink-4">paga {euros(m.totalCents)}</td>
+                  <td className="py-px text-right font-medium text-ink-2">recebe {euros(m.netCents)}</td>
                 </tr>
               ))}
             </tbody>
@@ -130,7 +133,8 @@ export function CustoDoPagamento({
 
         {aberto && (
           <p className="mt-1 text-ink-4">
-            Taxa da euPago, com IVA, paga por quem paga · {tabela.source}. Pago ao clube em mão, é só o valor.
+            A taxa é a mesma em todos os métodos, a do mais caro: a lei não deixa cobrar mais por um método do que por
+            outro. Taxa da euPago com IVA · {tabela.source}. Pago ao clube em mão, é só o valor.
           </p>
         )}
       </div>

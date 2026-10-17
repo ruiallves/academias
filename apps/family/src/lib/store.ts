@@ -180,7 +180,10 @@ type ApiCharge = {
   athleteId: string;
   athleteName: string;
   period: string;
-  /** `FEE` é a mensalidade do mês; `EXTRA` é o que o clube pediu à parte. */
+  /**
+   * `FEE` é a mensalidade do mês; `EXTRA` é o que o clube pediu à parte;
+   * `QUOTA` é a quota de sócio de um filho sócio-atleta (`GET /billing/quotas`).
+   */
   kind: string;
   /** O que se está a cobrar. Nulo na mensalidade — o título dela é o mês. */
   title: string | null;
@@ -460,6 +463,11 @@ export type Payment = {
   label: string;
   /** `true` quando não é a mensalidade do mês. Muda o rótulo e ganha uma etiqueta. */
   extra: boolean;
+  /**
+   * `true` numa quota de sócio de um filho (sócio-atleta menor). Paga-se pelo
+   * caminho das quotas (`/billing/quotas/:id/pay`), só por MB Way ou Multibanco.
+   */
+  quota: boolean;
   /** O que o clube escreveu à família sobre esta cobrança. */
   notes: string | null;
   amountCents: number;
@@ -655,7 +663,7 @@ export function load(): Promise<void> {
        */
       const atleta = boot.me.role === "ATHLETE";
 
-      const [athletes, teams, sessions, matches, charges, announcements, notifications, evaluations, reports, nutrition, events] =
+      const [athletes, teams, sessions, matches, mensalidades, announcements, notifications, evaluations, reports, nutrition, events, quotas] =
         await Promise.all([
           /*
            * Os atletas **não** são `soft`.
@@ -686,7 +694,14 @@ export function load(): Promise<void> {
            * coração da app.
            */
           soft<ApiEvent>(`/api/events?from=${from}&to=${to}`),
+          /*
+           * As quotas de sócio dos filhos sócios-atletas: pagas pelos pais, na
+           * mesma lista das mensalidades. `soft`: um clube sem sócios-atletas
+           * devolve lista vazia, e uma API antiga devolve 404.
+           */
+          atleta ? Promise.resolve([] as ApiCharge[]) : soft<ApiCharge>("/billing/quotas"),
         ]);
+      const charges = [...mensalidades, ...quotas];
 
       // O preço é por atleta e pode ter ajuste individual — um pedido por filho,
       // que numa família são um ou dois.
@@ -937,10 +952,12 @@ function build(
     childId: c.athleteId,
     period: c.period,
     extra: c.kind === "EXTRA",
+    quota: c.kind === "QUOTA",
     // O título da cobrança avulsa, e o mês quando não há nenhum. `??` e não
     // `||`: um clube que escreva um título vazio não devia acontecer, mas se
-    // acontecer é melhor ver o mês do que uma linha sem nome.
-    label: c.title?.trim() || monthLabel(c.period),
+    // acontecer é melhor ver o mês do que uma linha sem nome. Numa quota de
+    // sócio, o rótulo dela ("Quota anual 2026/27") ou "Quota de sócio · Outubro".
+    label: c.title?.trim() || (c.kind === "QUOTA" ? `Quota de sócio · ${monthLabel(c.period)}` : monthLabel(c.period)),
     notes: c.notes,
     amountCents: c.amountCents,
     dueDate: new Date(c.dueDate),

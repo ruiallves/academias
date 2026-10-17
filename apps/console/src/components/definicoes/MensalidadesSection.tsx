@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { Pill, cx } from "@/components/primitives";
 import { Bloco, Erro, Interruptor, Lista } from "@/components/definicoes/ui";
-import { brutoParaLiquido, detalhePorMetodo, loadEupagoFees, useEupagoFees, type MetodoComTaxa } from "@/lib/eupago-fees";
+import { detalheDoPagador, detalhePorMetodo, loadEupagoFees, useEupagoFees, type MetodoComTaxa } from "@/lib/eupago-fees";
 import { apiPatch } from "@/lib/http";
 import { can } from "@/lib/permissions";
 import { reloadAcademy, useStore } from "@/lib/store";
@@ -111,11 +111,16 @@ export function MensalidadesSection() {
   const [simulado, setSimulado] = useState("20,00");
   const valor = Math.round(Number(simulado.replace(",", ".").replace(/[^\d.]/g, "")) * 100);
   const valido = Number.isFinite(valor) && valor > 0 && valor <= 100_000;
-  const brutos = tabela && valido ? oferecidos.map((m) => brutoParaLiquido(valor, m, tabela.vatPercent)) : [];
+  /*
+   * Com a taxa por conta de quem paga, a família paga o mesmo por qualquer
+   * método (a taxa do mais caro, ver `detalheDoPagador`): um valor, não um
+   * intervalo.
+   */
+  const pagador = tabela && valido ? detalheDoPagador(valor, tabela) : null;
   const liquidos = tabela && valido ? detalhePorMetodo(valor, tabela) : null;
   const exemplo =
-    brutos.length && liquidos
-      ? { min: Math.min(...brutos), max: Math.max(...brutos), recebeMin: liquidos.minCents, recebeMax: liquidos.maxCents }
+    pagador && liquidos
+      ? { paga: pagador.maxCents, recebeMin: liquidos.minCents, recebeMax: liquidos.maxCents }
       : null;
   const eur = (c: number) => `${(c / 100).toFixed(2).replace(".", ",")} €`;
   const intervalo = (a: number, b: number) => (a === b ? eur(a) : `${eur(a)} a ${eur(b)}`);
@@ -180,7 +185,7 @@ export function MensalidadesSection() {
                 <>
                   Todos os valores escritos na plataforma são{" "}
                   <strong className="font-medium text-ink-2">o que o clube recebe</strong>. Na app, quem paga vê o valor
-                  e a taxa do método em separado, antes de pagar.
+                  e a taxa em separado, antes de pagar. A taxa é a mesma em todos os métodos (a do mais caro).
                 </>
               ) : (
                 <>
@@ -224,13 +229,15 @@ export function MensalidadesSection() {
               valor={simulado}
               onChange={setSimulado}
               saida="A família paga"
-              resultado={exemplo ? intervalo(exemplo.min, exemplo.max) : "—"}
+              resultado={exemplo ? eur(exemplo.paga) : "—"}
             />
           </div>
         )}
         {tabela && oferecidos.length > 0 && (
           <p className="mt-2 text-meta text-ink-4">
-            Escreve um valor para simular. O intervalo vai do método mais barato ao mais caro.
+            Escreve um valor para simular. Quando o clube suporta, o que recebe vai do método mais caro ao mais barato.
+            Quando é quem paga, a taxa é a mesma em MB Way e em Multibanco, a do método mais caro: a lei não deixa
+            cobrar mais por um método do que por outro.
           </p>
         )}
         {!ligados && (
@@ -280,7 +287,9 @@ export function MensalidadesSection() {
           <>
             <p>
               Pela app do clube, com a euPago. Quem escolhe o método é quem paga, e a comissão{" "}
-              {taxaDoPagador ? "é somada ao valor e paga por quem paga." : "sai do valor que o clube recebe."}
+              {taxaDoPagador
+                ? "é somada ao valor e paga por quem paga, igual em todos os métodos (a do mais caro)."
+                : "sai do valor que o clube recebe."}
             </p>
             <p>Um pagamento só fica pago quando a euPago o confirma ao servidor.</p>
           </>

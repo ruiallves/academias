@@ -8,7 +8,8 @@
     "build": "tsc --noEmit && vite build",
     "preview": "vite preview",
     "typecheck": "tsc --noEmit",
-    "test:convite-captura": "node --experimental-strip-types scripts/test-convite-captura.mjs"
+    "test:convite-captura": "node --experimental-strip-types scripts/test-convite-captura.mjs",
+    "test:jogos-por-dia": "node --experimental-strip-types scripts/test-jogos-por-dia.mjs"
   },
   "dependencies": {
     "@academia/ui": "*",

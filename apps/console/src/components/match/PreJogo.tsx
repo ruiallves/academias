@@ -1,8 +1,8 @@
-import { Fragment, useEffect, useRef, useState, type PointerEvent as ReactPointerEvent, type ReactNode } from "react";
+import { Fragment, useEffect, useRef, useState, type CSSProperties, type PointerEvent as ReactPointerEvent, type ReactNode } from "react";
 import { cx } from "@/components/primitives";
 import { Check, ChevronLeft, Download, DragHandle, Plus, Trash2, X } from "@/lib/icons";
 import { FORMAT_LABEL, type GameFormat } from "@/lib/training";
-import { PitchBoard, type PecaNoCampo } from "./PitchBoard";
+import { PitchBoard, proporcaoDoCampo, type PecaNoCampo } from "./PitchBoard";
 import { Camisola, Cartao, CartaoTopo } from "./ui";
 
 /**
@@ -305,8 +305,23 @@ export function PreJogo(p: PreJogoProps) {
             )}
           </CartaoTopo>
 
-          <div className="grid gap-x-5 gap-y-4 px-5 pb-5 md:grid-cols-[minmax(0,430px)_minmax(0,1fr)]">
-            <div ref={campo} className="mx-auto w-full max-w-[430px]">
+          {/*
+           * O campo cabe na altura do ecrã.
+           *
+           * De pé, um campo de 11 com 430 de largura tem perto de 660 de
+           * altura, e num portátil passava do fundo do ecrã (com a barra de
+           * gravar por cima). Do `md` para cima a largura é a que faz o campo
+           * caber na altura da janela, menos o cabeçalho do cartão, a dica e a
+           * barra de gravar (240): nunca mais de 430 nem menos de 260. A coluna
+           * é `auto` para o banco encostar ao campo, sem um vazio no meio. No
+           * telemóvel continua à largura do ecrã, que lá rola-se.
+           */}
+          <div className="grid gap-x-5 gap-y-4 px-5 pb-5 md:grid-cols-[auto_minmax(0,1fr)]">
+            <div
+              ref={campo}
+              style={{ "--proporcao": proporcaoDoCampo(p.formato) } as CSSProperties}
+              className="mx-auto w-full max-w-[430px] md:w-[min(430px,max(260px,calc((100dvh_-_240px)*var(--proporcao))))] md:max-w-none"
+            >
               <PitchBoard
                 format={p.formato}
                 pecas={p.pecas}

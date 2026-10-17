@@ -1107,6 +1107,8 @@ model Athlete {
   inviteSentAt        DateTime?
 
   guardians      GuardianLink[]
+  /// A ficha de sócio deste atleta, se o clube o converteu (ver `Member.athleteId`).
+  fichasDeSocio  Member[]       @relation("SocioAtleta")
   teams          TeamMembership[]
   attendance     AttendanceRecord[]
   nutritionPlans NutritionPlan[]
@@ -4053,6 +4055,16 @@ model Member {
   userId String?
   user   User?   @relation("MemberAccount", fields: [userId], references: [id], onDelete: SetNull)
 
+  /// ## Sócio-atleta
+  ///
+  /// O atleta que esta ficha é, quando o clube converteu um atleta em sócio
+  /// (`POST /api/members/de-atletas`). Numa categoria de menores (idade máxima
+  /// até 18, ver `members/socio-menor.ts`) as quotas são dos **encarregados**
+  /// desse atleta: aparecem na área da família, em Pagamentos, e a ficha nunca
+  /// se liga a uma conta (o atleta não paga nem vê nada de sócio).
+  athleteId String?
+  athlete   Athlete? @relation("SocioAtleta", fields: [athleteId], references: [id], onDelete: SetNull)
+
   /// O token do QR do cartão. Opaco e revogável — é ele que vai no QR, e **só**
   /// ele: nunca NIF, email, morada ou qualquer outro dado da ficha.
   cardToken String? @unique
@@ -4110,6 +4122,8 @@ model Member {
   /// Uma conta reclama no máximo uma ficha por clube. Nada impede a mesma conta
   /// de ser sócia de outro clube — a chave é composta de propósito.
   @@unique([academyId, userId])
+  /// Um atleta é sócio uma vez.
+  @@unique([academyId, athleteId])
   @@index([academyId, status])
   @@index([academyId, name])
 }

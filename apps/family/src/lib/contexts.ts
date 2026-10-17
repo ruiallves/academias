@@ -43,7 +43,8 @@ export type AppContext =
   | { type: "FAMILY"; pending?: boolean }
   /** O próprio atleta — a mesma app da família, com outro chapéu (`x-app: athlete`). */
   | { type: "ATHLETE" }
-  | { type: "MEMBER"; memberId: string; number: number | null; status: string }
+  /** `quotasPelaFamilia`: sócio-atleta menor, a área abre sem quotas (pagam os encarregados). */
+  | { type: "MEMBER"; memberId: string; number: number | null; status: string; quotasPelaFamilia?: boolean }
   /** O papel na consola (COACH, DIRECTOR…) — só para o nomear no ecrã de escolha. */
   | { type: "STAFF"; role: string };
 

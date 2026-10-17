@@ -156,7 +156,7 @@ export default function Payments() {
                   ? `${chosen.length} de ${outstanding.length}`
                   : confirmingCount === outstanding.length
                     ? `${confirmingCount} a confirmar`
-                    : outstanding.every((p) => !p.extra)
+                    : outstanding.every((p) => !p.extra && !p.quota)
                       ? `${outstanding.length} ${outstanding.length === 1 ? "mensalidade" : "mensalidades"}`
                       : `${outstanding.length} ${outstanding.length === 1 ? "pagamento" : "pagamentos"}`}
               </span>
@@ -171,7 +171,7 @@ export default function Payments() {
                 ? "Paga-se diretamente ao clube."
                 : chosen.length > 0
                   ? regras.feesOnPayer
-                    ? `${span} · mais a taxa do método`
+                    ? `${span} · mais a taxa de pagamento`
                     : span
                   : semPagar
                     ? " "
@@ -600,7 +600,10 @@ function MethodSheet({
 
     for (const c of charges) {
       try {
-        const p = await apiPost<StartedPayment>(`/billing/charges/${c.id}/pay`, {
+        // Uma quota de sócio de um filho paga-se pelo caminho das quotas; o resto
+        // é mensalidade ou cobrança avulsa.
+        const caminho = c.quota ? `/billing/quotas/${c.id}/pay` : `/billing/charges/${c.id}/pay`;
+        const p = await apiPost<StartedPayment>(caminho, {
           method,
           ...(method === "MBWAY" ? { payerPhone: phone.trim() } : {}),
         });
@@ -660,19 +663,20 @@ function MethodSheet({
 
       {/*
         A taxa é de quem paga: di-lo antes de alguém escolher. O valor de cima é
-        o das mensalidades; o que sai da conta depende do método, e está em cada
-        linha.
+        o das mensalidades; o total está em cada linha, e é o mesmo em todas,
+        porque a taxa é igual em todos os métodos (a do mais caro; ver
+        `billing/taxa-do-pagador.ts`).
       */}
       {comTaxa && view === "menu" && (
         <p className="mb-3 px-1 text-[13px] leading-relaxed text-ink-3">
-          A este valor soma-se a <strong className="font-semibold text-ink">taxa do método de pagamento</strong>, que é
-          diferente de método para método.
+          A este valor soma-se a <strong className="font-semibold text-ink">taxa de pagamento</strong>, que é a mesma em
+          todos os métodos.
         </p>
       )}
 
       {view === "mbway" && (
         <>
-          {comTaxa && <Conta valor={total} linha={doMetodo(cotacao, "MBWAY")} metodo="MB Way" />}
+          {comTaxa && <Conta valor={total} linha={doMetodo(cotacao, "MBWAY")} />}
           <div className="mb-3">
             <label className="mb-1.5 block text-meta font-medium text-ink-3">Telemóvel do MB Way</label>
             <input
@@ -819,7 +823,7 @@ function MethodSheet({
 }
 
 /**
- * A conta, quando a taxa é de quem paga: o valor, a taxa do método, o total.
+ * A conta, quando a taxa é de quem paga: o valor, a taxa de pagamento, o total.
  *
  * Aparece antes do último toque, que é o que faz sair dinheiro. Sem linha (o
  * servidor não respondeu) não se inventa: fica só o aviso de que há taxa.
@@ -827,14 +831,12 @@ function MethodSheet({
 function Conta({
   valor,
   linha,
-  metodo,
 }: {
   valor: number;
   linha: { surchargeCents: number; totalCents: number } | undefined;
-  metodo: string;
 }) {
   if (!linha) {
-    return <p className="mb-3 px-1 text-[13px] text-ink-3">A este valor soma-se a taxa do {metodo}.</p>;
+    return <p className="mb-3 px-1 text-[13px] text-ink-3">A este valor soma-se a taxa de pagamento.</p>;
   }
   return (
     <dl className="mb-3 space-y-1.5 rounded-[var(--radius-md)] bg-surface p-3.5 text-[13px] shadow-[var(--shadow-soft)]">
@@ -843,7 +845,7 @@ function Conta({
         <dd className="num font-medium text-ink-2">{money(valor)}</dd>
       </div>
       <div className="flex items-baseline justify-between gap-3">
-        <dt className="text-ink-3">Taxa do {metodo}</dt>
+        <dt className="text-ink-3">Taxa de pagamento</dt>
         <dd className="num font-medium text-ink-2">+ {money(linha.surchargeCents)}</dd>
       </div>
       <div className="flex items-baseline justify-between gap-3 border-t border-line pt-1.5">

@@ -49,10 +49,16 @@ export default function EscolherArea({ name }: { name: string }) {
     { type: "MEMBER", label: "Sócio", hint: "O teu cartão, as quotas, os jogos e as novidades do clube.", icon: IdCard },
   ];
   const pendente = contexts?.some((c) => c.type === "FAMILY" && c.pending);
+  /* Sócio-atleta menor: as quotas são dos encarregados, e a área não fala delas. */
+  const semQuotas = contexts?.some((c) => c.type === "MEMBER" && c.quotasPelaFamilia);
   const opcoes = todas
     .filter((o) => contexts?.some((c) => c.type === o.type))
     .map((o) =>
-      o.type === "FAMILY" && pendente ? { ...o, hint: "O teu pedido de acesso está à espera de aprovação do clube." } : o,
+      o.type === "FAMILY" && pendente
+        ? { ...o, hint: "O teu pedido de acesso está à espera de aprovação do clube." }
+        : o.type === "MEMBER" && semQuotas
+          ? { ...o, hint: "O teu cartão, os jogos e as novidades do clube." }
+          : o,
     );
 
   return (

@@ -54,7 +54,11 @@ export function AreaSwitch({ asList }: { asList?: boolean }) {
   const { contexts, active } = useContexts();
   const [aberto, setAberto] = useState(false);
 
-  const disponiveis = AREAS.filter((a) => contexts?.some((c) => c.type === a.type));
+  /* Sócio-atleta menor: a área de sócio abre sem quotas, e a frase não as promete. */
+  const semQuotas = contexts?.some((c) => c.type === "MEMBER" && c.quotasPelaFamilia);
+  const disponiveis = AREAS.filter((a) => contexts?.some((c) => c.type === a.type)).map((a) =>
+    a.type === "MEMBER" && semQuotas ? { ...a, hint: "O teu cartão, os jogos e as novidades do clube" } : a,
+  );
   if (disponiveis.length < 2) return null;
 
   function trocar(type: ContextType) {

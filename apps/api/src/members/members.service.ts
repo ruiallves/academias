@@ -12,6 +12,7 @@ import { nomeDeQuemMexe, registarAlteracoes } from "../common/historico";
 import { partesNoFuso } from "../common/fuso";
 import { aberturaAnual, gerarQuotas, periodoCorrente, periodoDaQuota, refazerAnoDeQuotas, situacaoDeQuotas } from "./member-fees.service";
 import { decisaoDoAnoDaFolha } from "./cobertura";
+import { categoriaDeMenores, pagoPelaFamilia } from "./socio-menor";
 import { PHOTO_BUCKET, PHOTO_TTL } from "../storage/photos.service";
 import { StorageService } from "../storage/storage.service";
 import type {
@@ -243,7 +244,9 @@ export class MembersService {
            * seria um tiro no escuro.
            */
           userId: true, inviteSentAt: true, photoKey: true,
-          tier: { select: { id: true, name: true, feeCents: true, billing: true } },
+          tier: { select: { id: true, name: true, feeCents: true, billing: true, maxAge: true } },
+          /* O atleta que este sócio é (sócio-atleta). Ver `socio-menor.ts`. */
+          athlete: { select: { id: true, name: true } },
         },
       });
 
@@ -290,6 +293,8 @@ export class MembersService {
          */
         members: rows.map(({ userId, inviteSentAt, annualStartDay, annualStartMonth, ...m }) => ({
           ...m,
+          /** As quotas são pagas pelos encarregados do atleta, na área da família. */
+          paidByFamily: pagoPelaFamilia({ athleteId: m.athlete?.id ?? null, tier: m.tier }),
           app: userId ? ("account" as const) : inviteSentAt ? ("invited" as const) : m.email ? ("none" as const) : ("noemail" as const),
           inviteSentAt,
           /** Quando abre o ano de quotas deste sócio, `MM-DD`. Nunca vazio. */
@@ -341,8 +346,9 @@ export class MembersService {
           /* A app do clube: a ficha diz se a conta já foi reclamada e quando
              saiu o último convite — é o que decide o texto do botão. */
           userId: true, inviteSentAt: true, photoKey: true,
-          tier: { select: { id: true, name: true, feeCents: true, billing: true } },
+          tier: { select: { id: true, name: true, feeCents: true, billing: true, maxAge: true } },
           approvedBy: { select: { user: { select: { name: true } } } },
+          athlete: { select: { id: true, name: true } },
         },
       });
       if (!m) throw new NotFoundException("Sócio não encontrado");
@@ -373,6 +379,7 @@ export class MembersService {
       return {
         ...m,
         approvedBy: m.approvedBy?.user.name ?? null,
+        paidByFamily: pagoPelaFamilia({ athleteId: m.athlete?.id ?? null, tier: m.tier }),
         fees,
         annual,
         /* O mesmo que a lista manda, e com o mesmo nome: a ficha é uma linha da
@@ -792,6 +799,13 @@ export class MembersService {
         if (taken) throw new BadRequestException(`O número ${dto.number} já está atribuído`);
       }
 
+      /*
+       * Sócio-atleta: o atleta escolhido em "Já está no clube?", ou, sem
+       * escolha, o atleta com este NIF. Numa categoria de menores, as quotas
+       * passam a ser dos encarregados dele (ver `socio-menor.ts`).
+       */
+      const athleteId = await atletaParaLigar(db, { athleteId: dto.athleteId, taxId });
+
       const status = (dto.status as MemberStatus) ?? "ACTIVE";
       // Sem número para quem fica por aprovar: um número dado a quem ainda não
       // foi aceite queima um lugar na sequência do livro.
@@ -803,6 +817,7 @@ export class MembersService {
           data: {
             academyId: ctx.academyId,
             tierId,
+            athleteId,
             number,
             name: dto.name.trim(),
             // Ausente é **nulo**, nunca string vazia: vazio diz "preenchido com
@@ -836,7 +851,7 @@ export class MembersService {
             ...aberturaDoDto(dto.annualStart, now),
             updatedAt: now,
           },
-          select: { id: true, name: true, number: true, email: true, userId: true },
+          select: { id: true, name: true, number: true, email: true, userId: true, athleteId: true, tier: { select: { maxAge: true } } },
         });
 
         /*
@@ -847,7 +862,7 @@ export class MembersService {
          */
         ligado = await ligarFichaAConta(db, member);
 
-        return { id: member.id, name: member.name, number: member.number };
+        return { id: member.id, name: member.name, number: member.number, athleteId: member.athleteId, paidByFamily: pagoPelaFamilia(member) };
       } catch (error) {
         if (isUniqueViolation(error, "taxId")) {
           throw new BadRequestException("Já existe um sócio com este NIF");
@@ -867,7 +882,8 @@ export class MembersService {
        * possível para quem carrega a ficha antes de a pessoa saber que vai ser
        * inscrita. Ver `MemberCreateDto.sendInvite`.
        */
-      if (dto.sendInvite !== false) void this.invites.enviarSePossivel(ctx.academyId, member.id);
+      // Um sócio-atleta menor não recebe convite: pagam os encarregados (o `preparar` recusa-o na mesma).
+      if (dto.sendInvite !== false && !member.paidByFamily) void this.invites.enviarSePossivel(ctx.academyId, member.id);
       /*
        * E se a ficha se colou a uma conta que já existia, não houve convite
        * nenhum: o aviso da área nova toma o lugar dele. Respeita o mesmo
@@ -1005,9 +1021,32 @@ export class MembersService {
         /* A abertura do ano também, para a confirmação poder dizer que muda. */
         select: {
           id: true, name: true, number: true, taxId: true, email: true, phone: true,
-          annualStartMonth: true, annualStartDay: true,
+          annualStartMonth: true, annualStartDay: true, athleteId: true,
         },
       });
+
+      /*
+       * Os atletas do clube que ainda não são sócios, pelo NIF (sócio-atleta).
+       *
+       * Uma linha da folha com o NIF de um atleta fica logo associada a ele:
+       * numa categoria de menores, as quotas passam a ser dos encarregados. Um
+       * NIF que seja de dois atletas não diz qual é, e fica sem associação.
+       */
+      const atletasPorNif = new Map<string, string | "ambiguo">();
+      for (const a of await db.athlete.findMany({
+        where: { taxId: { not: null }, fichasDeSocio: { none: {} } },
+        select: { id: true, taxId: true },
+      })) {
+        const nif = a.taxId!.replace(/[s.]/g, "");
+        atletasPorNif.set(nif, atletasPorNif.has(nif) ? "ambiguo" : a.id);
+      }
+      const atletaDaLinha = (nif: string | null) => {
+        const id = nif ? atletasPorNif.get(nif) : undefined;
+        return id && id !== "ambiguo" && !atletasUsados.has(id) ? id : null;
+      };
+      const atletasUsados = new Set<string>();
+      /* Fichas que já existiam e ganham agora o atleta. Escrevem-se no fim, com o resto. */
+      const associar: { id: string; athleteId: string }[] = [];
 
       const porNumero = new Map<number, Existente>();
       const porNif = new Map<string, Existente>();
@@ -1137,6 +1176,13 @@ export class MembersService {
         };
 
         if (achado) {
+          // Já é sócio e ainda não está ligado a nenhum atleta: associa-se pelo NIF.
+          const atletaDoExistente = achado.athleteId ? null : atletaDaLinha(taxId ?? achado.taxId);
+          if (atletaDoExistente) {
+            associar.push({ id: achado.id, athleteId: atletaDoExistente });
+            atletasUsados.add(atletaDoExistente);
+          }
+
           const mudam = camposQueMudam(achado, daFolha);
 
           /*
@@ -1150,7 +1196,8 @@ export class MembersService {
            * torna útil.
            */
           if (mudam.length === 0) {
-            duplicates.push({ line, name: row.name.trim() });
+            // Igual à ficha, mas com o atleta por associar: não é um repetido, é uma associação.
+            if (!atletaDoExistente) duplicates.push({ line, name: row.name.trim() });
             return;
           }
 
@@ -1172,8 +1219,11 @@ export class MembersService {
           return;
         }
 
+        const athleteId = atletaDaLinha(taxId);
+        if (athleteId) atletasUsados.add(athleteId);
         create.push({
           academyId: ctx.academyId,
+          athleteId,
           number: row.number,
           birthdate,
           country: (row.country ?? "PT").toUpperCase().slice(0, 2),
@@ -1222,6 +1272,8 @@ export class MembersService {
        * continuam todas dentro da mesma transacção — ou muda tudo, ou nada.
        */
       for (const u of update) await db.member.update({ where: { id: u.id }, data: u.data });
+      // E os sócios que já existiam e passam a sócios-atletas.
+      for (const a of associar) await db.member.update({ where: { id: a.id }, data: { athleteId: a.athleteId, updatedAt: now } });
 
       /*
        * E o ano de quotas de quem a folha mudou.
@@ -1297,6 +1349,8 @@ export class MembersService {
         ok: true as const,
         created: create.length,
         updated: update.length,
+        /** Quantos ficaram associados a um atleta pelo NIF (novos e já existentes). */
+        associados: create.filter((c) => c.athleteId).length + associar.length,
         duplicates,
       };
     });
@@ -1643,6 +1697,7 @@ type Existente = {
   phone: string | null;
   annualStartMonth: number | null;
   annualStartDay: number | null;
+  athleteId?: string | null;
 };
 
 /** Uma linha da folha que corresponde a um sócio do livro. */
@@ -1674,6 +1729,7 @@ const VAZIO = {
   existing: [] as LinhaExistente[],
   /** Quantos ao todo — `existing` vem cortada nos 200 para a resposta não crescer sem fim. */
   existingTotal: 0,
+  associados: 0,
 };
 
 /** Um contacto comparável: email em minúsculas, telefone só com dígitos. */
@@ -1737,6 +1793,39 @@ const ROTULO: Record<string, string> = {
  *   ontem;
  * - **vazio**: herda a abertura do clube.
  */
+/**
+ * O atleta a ligar a uma ficha de sócio nova (sócio-atleta).
+ *
+ * O escolhido pela consola, se veio um: tem de existir e ainda não ser sócio.
+ * Sem escolha, o atleta com o mesmo NIF que ainda não seja sócio: é o que faz
+ * a importação e a inscrição à mão associarem sozinhas quem já está no clube.
+ * Nulo quando não há nenhum.
+ */
+async function atletaParaLigar(
+  db: ScopedClient,
+  pedido: { athleteId?: string | null; taxId?: string | null },
+  jaUsados: Set<string> = new Set(),
+): Promise<string | null> {
+  if (pedido.athleteId) {
+    const a = await db.athlete.findFirst({
+      where: { id: pedido.athleteId },
+      select: { id: true, fichasDeSocio: { select: { id: true }, take: 1 } },
+    });
+    if (!a) throw new BadRequestException("Atleta não encontrado");
+    if (a.fichasDeSocio.length || jaUsados.has(a.id)) throw new BadRequestException("Este atleta já é sócio");
+    return a.id;
+  }
+  if (!pedido.taxId) return null;
+  const pelaNif = await db.athlete.findMany({
+    where: { taxId: pedido.taxId, fichasDeSocio: { none: {} } },
+    select: { id: true },
+    take: 2,
+  });
+  // Dois atletas com o mesmo NIF não dizem qual é: não se adivinha.
+  if (pelaNif.length !== 1 || jaUsados.has(pelaNif[0].id)) return null;
+  return pelaNif[0].id;
+}
+
 function aberturaDoDto(
   valor: string | undefined,
   hoje: Date,

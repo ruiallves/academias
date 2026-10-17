@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { CustoDoPagamento } from "@/components/finance/CustoDoPagamento";
 import { PageHeader } from "@/components/Shell";
 import { AvisoDePagamentos } from "@/components/finance/AvisoDePagamentos";
@@ -7,6 +7,7 @@ import { DataTable, Empty, Loading, Monogram, Panel, Pill, RowLink, cx, type Col
 import { Dialog, DialogField, dialogInputClass } from "@/components/Dialog";
 import { ConfirmarSobrescrita, ConvidarAoCriar, EnviarConvites } from "@/components/ConfirmarSobrescrita";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
+import { PersonPicker, type Pessoa } from "@/components/PersonPicker";
 import { BotaoExportar } from "@/components/BotaoExportar";
 import { COLUNAS_EXPORT_SOCIOS } from "@/lib/colunas-export";
 import type { RespostaComExistentes } from "@/lib/importacao";
@@ -28,13 +29,15 @@ import { SendInvitesDialog } from "@/components/SendInvitesDialog";
 import { academy } from "@/lib/api";
 import { money, periodLabel, periodShort, shortDate } from "@/lib/format";
 import { apiOrigin, apiPatch } from "@/lib/http";
-import { reloadAcademy } from "@/lib/store";
+import { athletes, guardians, reloadAcademy, staff, teams } from "@/lib/store";
+import type { Athlete } from "@/data/types";
 import { downloadTemplate, readMemberSheet, OPTIONAL_COLUMNS, REQUIRED_COLUMNS, type ParsedSheet } from "@/lib/member-sheet";
 import {
   DOC_LABEL,
   SEX_LABEL,
   STATUS_LABEL,
   createMember,
+  categoriaDeMenores,
   feeStanding,
   ageOf,
   deleteTier,
@@ -628,8 +631,20 @@ function EnderecoDaPagina() {
  *
  * A lista regista aqui a função que sabe guardar (`registar`); o diálogo só a
  * chama e fecha se ela disser que correu tudo.
+ *
+ * Exportado: as Definições (secção Sócios) abrem este mesmo popup, para as
+ * categorias se criarem e editarem nos dois sítios com o mesmo formulário.
+ * `abrir` abre logo uma categoria nova ou uma existente, em vez da lista.
  */
-function TiersDialog({ mayWrite, onClose }: { mayWrite: boolean; onClose: () => void }) {
+export function TiersDialog({
+  mayWrite,
+  onClose,
+  abrir,
+}: {
+  mayWrite: boolean;
+  onClose: () => void;
+  abrir?: MemberTier | "new";
+}) {
   const guardar = useRef<(() => Promise<boolean>) | null>(null);
   const [busy, setBusy] = useState(false);
 
@@ -669,7 +684,7 @@ function TiersDialog({ mayWrite, onClose }: { mayWrite: boolean; onClose: () => 
         </div>
       }
     >
-      <TiersList mayWrite={mayWrite} registar={(fn) => (guardar.current = fn)} />
+      <TiersList mayWrite={mayWrite} registar={(fn) => (guardar.current = fn)} abrir={abrir} />
     </Dialog>
   );
 }
@@ -781,13 +796,16 @@ function CopyForm({ mayWrite }: { mayWrite: boolean }) {
 function TiersList({
   mayWrite,
   registar,
+  abrir,
 }: {
   mayWrite: boolean;
   /** Recebe a função que guarda o que estiver por guardar aqui dentro. Ver `TiersDialog`. */
   registar: (fn: () => Promise<boolean>) => void;
+  /** Abre já uma categoria (ou uma nova) em vez da lista. Só para quem pode escrever. */
+  abrir?: MemberTier | "new";
 }) {
   const [tiers, setTiers] = useState<MemberTier[] | null>(null);
-  const [editing, setEditing] = useState<MemberTier | "new" | null>(null);
+  const [editing, setEditing] = useState<MemberTier | "new" | null>(mayWrite ? (abrir ?? null) : null);
   const [error, setError] = useState<string | null>(null);
   /** A categoria que está a ser apagada, à espera da confirmação. */
   const [apagar, setApagar] = useState<MemberTier | null>(null);
@@ -990,6 +1008,55 @@ function NewMemberDialog({ onClose, onCreated }: { onClose: () => void; onCreate
    * querer avisar já. Ver `ConvidarAoCriar`.
    */
   const [convidar, setConvidar] = useState(true);
+  /*
+   * De quem já está no clube.
+   *
+   * Um treinador, o pai de um atleta ou o próprio atleta que se faz sócio já
+   * têm ficha no clube, e voltar a escrever o nome, o email, o NIF e a morada
+   * é trabalho que o produto já fez uma vez. Escolhe-se a pessoa e os campos
+   * preenchem-se; tudo continua editável, porque a ficha de sócio é outra
+   * ficha e pode querer dizer outra coisa (outro email, outra morada).
+   *
+   * Não há ligação guardada entre as duas fichas, e não precisa de haver: a
+   * de sócio cola-se à conta da app pelo email (`ligarFichaAConta`, na API),
+   * e é essa a ponte que interessa. O que se copia é só o que o formulário
+   * já pedia.
+   */
+  const [origem, setOrigem] = useState("");
+  /*
+   * Os sócios que já existem, para marcar na lista quem já o é. Todos os
+   * estados, também os cancelados: um atleta só pode ser sócio uma vez, e o
+   * servidor recusa um segundo ainda que o primeiro esteja cancelado.
+   */
+  const [socios, setSocios] = useState<MemberRow[]>([]);
+  useEffect(() => {
+    listMembers()
+      .then((r) => setSocios(r.members))
+      .catch(() => setSocios([]));
+  }, []);
+  const pessoas = useMemo(() => marcarJaSocios(pessoasDoClube(), socios), [socios]);
+  const escolhida = pessoas.find((p) => p.id === origem) ?? null;
+  /* Um atleta escolhido: a ficha fica ligada a ele (sócio-atleta). Ver `socio-menor.ts` na API. */
+  const atletaEscolhido = origem.startsWith("a:") ? origem.slice(2) : null;
+
+  function preencherDe(id: string) {
+    setOrigem(id);
+    const p = pessoas.find((x) => x.id === id);
+    if (!p) return;
+    const f = p.ficha;
+    setName(f.name);
+    setEmail(f.email ?? "");
+    setBirthdate(f.birthdate ?? "");
+    setSex(f.sex ?? "UNSPECIFIED");
+    setDocumentKind(f.documentKind ?? "CC");
+    setDocumentNumber(f.documentNumber ?? "");
+    setTaxId(f.taxId ?? "");
+    setPhoneCountry(f.phoneCountry ?? "+351");
+    setPhone(f.phone ?? "");
+    setAddress(f.address ?? "");
+    setPostalCode(f.postalCode ?? "");
+    setCity(f.city ?? "");
+  }
 
   useEffect(() => {
     listTiers()
@@ -1013,6 +1080,23 @@ function NewMemberDialog({ onClose, onCreated }: { onClose: () => void; onCreate
   /* A categoria escolhida — só numa anual é que o ano de quotas quer dizer
      alguma coisa, e só aí se pergunta. */
   const anual = tiers.find((t) => t.id === tierId)?.billing === "ANNUAL";
+  /* Sócio-atleta numa categoria de menores: pagam os encarregados, e não há convite. */
+  const socioAtletaMenor = Boolean(atletaEscolhido) && categoriaDeMenores(tiers.find((t) => t.id === tierId));
+  /*
+   * O email escrito é de alguém que já tem conta na app deste clube?
+   *
+   * Escolhido em "Já está no clube?" ou escrito à mão, tanto faz: o que conta é
+   * o email, porque é por ele que o servidor cola a ficha à conta
+   * (`ligarFichaAConta`). Nesse caso não há convite para mandar (a pessoa já
+   * tem a app), e a caixa "Enviar o convite" desaparece: o servidor manda só o
+   * aviso de que a área de sócio abriu, para entrar com a conta que já tem.
+   */
+  const emailEscrito = email.trim().toLowerCase();
+  const contaExistente = emailEscrito
+    ? pessoas.find((p) => p.temConta && (p.ficha.email ?? "").trim().toLowerCase() === emailEscrito) ?? null
+    : null;
+  /* Há convite para decidir? Só com email, sem conta, e fora de uma categoria de menores. */
+  const haConvite = Boolean(emailEscrito) && !contaExistente && !socioAtletaMenor;
 
   const emailOk = !email.trim() || /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email.trim());
   const phoneOk = !phone.trim() || /^\d{6,15}$/.test(phone.replace(/\s/g, ""));
@@ -1064,8 +1148,13 @@ function NewMemberDialog({ onClose, onCreated }: { onClose: () => void; onCreate
           : {}),
         status,
         acceptedTerms,
-        /* Só conta quando há email; sem ele o servidor não tem para onde mandar. */
-        ...(email.trim() ? { sendInvite: convidar } : {}),
+        ...(atletaEscolhido ? { athleteId: atletaEscolhido } : {}),
+        /*
+         * Só conta quando há email; sem ele o servidor não tem para onde mandar.
+         * Com conta já existente a caixa não aparece, e o `true` deixa sair o
+         * aviso da área de sócio (que o servidor manda no lugar do convite).
+         */
+        ...(email.trim() ? { sendInvite: socioAtletaMenor ? false : contaExistente ? true : convidar } : {}),
       });
       onCreated();
       onClose();
@@ -1090,7 +1179,7 @@ function NewMemberDialog({ onClose, onCreated }: { onClose: () => void; onCreate
             Cancelar
           </button>
           <button type="button" className="ctl-primary" disabled={!valid || busy} onClick={() => void save()}>
-            {busy ? "A criar…" : email.trim() ? "Criar e convidar" : "Criar sócio"}
+            {busy ? "A criar…" : haConvite && convidar ? "Criar e convidar" : "Criar sócio"}
           </button>
         </>
       }
@@ -1112,10 +1201,39 @@ function NewMemberDialog({ onClose, onCreated }: { onClose: () => void; onCreate
             email.trim() ? "bg-signal-soft text-signal-ink" : "bg-sunken text-ink-3",
           )}
         >
-          {email.trim()
-            ? "Ao criar, este sócio recebe um email com o convite para criar conta e instalar a app do clube."
-            : "Sem email não sai convite nenhum — a ficha fica criada e podes convidá-lo depois, a partir da lista ou da ficha."}
+          {socioAtletaMenor
+            ? "Sócio-atleta numa categoria de menores: as quotas vão para os encarregados do atleta, na área da família da app, em Pagamentos. Não sai convite nenhum, e o atleta não vê nada de sócio."
+            : !email.trim()
+            ? "Sem email não sai convite nenhum — a ficha fica criada e podes convidá-lo depois, a partir da lista ou da ficha."
+            : contaExistente
+              ? `${contaExistente.name === name.trim() || !name.trim() ? "Esta pessoa" : `Este email é de ${contaExistente.name}, que`} já tem conta na app do clube. A ficha de sócio fica ligada a essa conta e não sai convite para instalar a app: recebe só um aviso de que a área de sócio já está na app.`
+              : convidar
+                ? "Ao criar, este sócio recebe um email com o convite para criar conta e instalar a app do clube."
+                : "A ficha fica criada sem sair email nenhum. Podes convidar este sócio depois, pela lista ou pela ficha."}
         </p>
+
+        {/*
+          Primeiro, porque decide o resto: escolher alguém preenche os campos
+          por baixo. Depois de escolher, o nome e os contactos ainda se mudam.
+        */}
+        {pessoas.length > 0 && (
+          <DialogField label="Já está no clube?" hint="atleta, encarregado ou staff">
+            <PersonPicker
+              pessoas={pessoas}
+              value={origem}
+              onChange={preencherDe}
+              placeholder="Escrever o nome…"
+              emptyLabel="Ninguém — ficha nova"
+            />
+            {escolhida && (
+              <p className="mt-1.5 text-meta leading-relaxed text-ink-3">
+                Ficha preenchida a partir de {escolhida.name} ({escolhida.sub}). Podes corrigir o que quiseres antes de
+                criar.
+                {atletaEscolhido && " Fica como sócio-atleta, ligado à ficha deste atleta."}
+              </p>
+            )}
+          </DialogField>
+        )}
 
         <DialogField label="Nome completo">
           <input
@@ -1321,16 +1439,180 @@ function NewMemberDialog({ onClose, onCreated }: { onClose: () => void; onCreate
         </label>
 
         {/* O convite fica por baixo do consentimento e acima do botão: é a
-            última coisa que se decide, e é a única que sai do clube para fora. */}
-        <ConvidarAoCriar
-          ligado={convidar}
-          onChange={setConvidar}
-          temEmail={Boolean(email.trim())}
-          substantivo="sócio"
-        />
+            última coisa que se decide, e é a única que sai do clube para fora.
+            Não aparece quando não há convite para decidir: a pessoa já tem a
+            app (a frase de cima di-lo), ou é um sócio-atleta menor. */}
+        {(haConvite || !emailEscrito) && (
+          <ConvidarAoCriar
+            ligado={convidar}
+            onChange={setConvidar}
+            temEmail={Boolean(emailEscrito)}
+            substantivo="sócio"
+          />
+        )}
       </div>
     </Dialog>
   );
+}
+
+/**
+ * Quem da lista "Já está no clube?" já é sócio.
+ *
+ * Continua na lista, com o aviso "Já é sócio · n.º 1284" e sem se poder
+ * escolher (pedido do Rui, 17/10/2026: depois de criar um sócio a partir de um
+ * atleta, o atleta continuava escolhível como se nada fosse). Esconder era pior:
+ * quem procurava o nome achava que a pessoa não existia.
+ *
+ * Reconhece-se pela ficha de atleta (`Member.athleteId`, o caso do sócio-atleta),
+ * pelo email e pelo NIF, que é por onde o servidor também liga as fichas.
+ */
+function marcarJaSocios(pessoas: PessoaDoClube[], socios: MemberRow[]): PessoaDoClube[] {
+  if (socios.length === 0) return pessoas;
+  const porAtleta = new Map(socios.filter((s) => s.athlete).map((s) => [s.athlete!.id, s]));
+  const porEmail = new Map(socios.filter((s) => s.email).map((s) => [s.email!.trim().toLowerCase(), s]));
+  const porNif = new Map(socios.filter((s) => s.taxId).map((s) => [s.taxId!.trim(), s]));
+
+  return pessoas.map((p) => {
+    const socio =
+      (p.id.startsWith("a:") ? porAtleta.get(p.id.slice(2)) : undefined) ??
+      (p.ficha.email ? porEmail.get(p.ficha.email.trim().toLowerCase()) : undefined) ??
+      (p.ficha.taxId ? porNif.get(p.ficha.taxId.trim()) : undefined);
+    if (!socio) return p;
+    const aviso =
+      socio.status === "CANCELLED"
+        ? "Foi sócio · cancelado"
+        : socio.status === "PENDING"
+          ? "Já é sócio · por aprovar"
+          : socio.number
+            ? `Já é sócio · n.º ${socio.number}`
+            : "Já é sócio";
+    return { ...p, aviso, bloqueada: true };
+  });
+}
+
+/** O que da ficha de alguém do clube cabe na ficha de sócio. */
+type FichaDeOrigem = {
+  name: string;
+  email?: string;
+  birthdate?: string;
+  sex?: Sex;
+  documentKind?: DocumentKind;
+  documentNumber?: string;
+  taxId?: string;
+  phoneCountry?: string;
+  phone?: string;
+  address?: string;
+  postalCode?: string;
+  city?: string;
+};
+
+type PessoaDoClube = Pessoa & {
+  sub: string;
+  ficha: FichaDeOrigem;
+  /** Já entra na app do clube — a ficha de sócio vai colar-se a essa conta. */
+  temConta: boolean;
+};
+
+/**
+ * Quem já está no clube e pode passar a sócio: atletas, encarregados e staff.
+ *
+ * Só os activos — quem saiu não se inscreve a partir da ficha velha. A mesma
+ * pessoa pode aparecer duas vezes (um treinador que também é pai), e não faz
+ * mal: escolhe-se uma, e a ficha de sócio é a mesma no fim.
+ *
+ * Os ids levam prefixo porque vêm de três listas, e um id de atleta e um de
+ * staff podiam, em teoria, coincidir.
+ */
+function pessoasDoClube(): PessoaDoClube[] {
+  const nomeDaEquipa = (id: string) => teams.find((t) => t.id === id)?.name;
+  const nomeDoAtleta = (id: string) => athletes.find((a) => a.id === id)?.name;
+
+  const deAtletas = athletes
+    .filter((a) => a.status === "active")
+    .map((a): PessoaDoClube => ({
+      id: `a:${a.id}`,
+      name: a.name,
+      sub: a.teamId && nomeDaEquipa(a.teamId) ? `Atleta · ${nomeDaEquipa(a.teamId)}` : "Atleta",
+      temConta: a.app === "account",
+      ficha: fichaDoAtleta(a),
+    }));
+
+  const deEncarregados = guardians
+    .filter((g) => g.isActive)
+    .map((g): PessoaDoClube => {
+      const nomes = g.athleteIds.map(nomeDoAtleta).filter((n): n is string => Boolean(n));
+      const de = nomes.length === 0 ? "" : nomes.length === 1 ? ` de ${nomes[0]}` : ` de ${nomes[0]} e mais ${nomes.length - 1}`;
+      return {
+        id: `g:${g.id}`,
+        name: g.name,
+        sub: `${g.relation}${de}`,
+        temConta: true,
+        ficha: { name: g.name, email: g.email || undefined, ...separarTelefone(g.phone) },
+      };
+    });
+
+  const deStaff = staff
+    .filter((s) => s.isActive)
+    .map((s): PessoaDoClube => ({
+      id: `s:${s.id}`,
+      name: s.name,
+      sub: `Staff · ${s.roleName || s.title || "sem cargo"}`,
+      temConta: true,
+      ficha: { name: s.name, email: s.email || undefined, birthdate: s.birthdate, ...separarTelefone(s.phone) },
+    }));
+
+  return [...deAtletas, ...deEncarregados, ...deStaff];
+}
+
+function fichaDoAtleta(a: Athlete): FichaDeOrigem {
+  /*
+   * O documento: o Cartão de Cidadão quando há, senão o outro documento com
+   * que o atleta se identifica. O tipo adivinha-se pelo nome que o clube lhe
+   * deu; em dúvida fica "Outro", que é verdade e corrige-se com um clique.
+   */
+  const rotulo = (a.idDocLabel ?? "").toLowerCase();
+  const outro: Pick<FichaDeOrigem, "documentKind" | "documentNumber"> = a.citizenCardNumber
+    ? { documentKind: "CC", documentNumber: a.citizenCardNumber }
+    : a.idDocNumber
+      ? {
+          documentKind: rotulo.includes("passaporte") ? "PASSPORT" : rotulo.includes("resid") ? "RESIDENCE" : "OTHER",
+          documentNumber: a.idDocNumber,
+        }
+      : {};
+
+  return {
+    name: a.name,
+    email: a.email,
+    birthdate: a.birthdate ? a.birthdate.slice(0, 10) : undefined,
+    sex: a.sex,
+    taxId: a.taxId,
+    address: a.address,
+    postalCode: a.postalCode,
+    city: a.city,
+    ...outro,
+    ...separarTelefone(a.phone),
+  };
+}
+
+/**
+ * O telefone das outras fichas é um campo só; o do sócio é indicativo mais
+ * número. Separa-se o que se consegue separar com certeza: "+351 912…" e
+ * "+351912…" dão +351; um indicativo seguido de espaço dá esse indicativo. O
+ * resto fica como número, com +351 por omissão — e vê-se no formulário antes de
+ * gravar.
+ */
+function separarTelefone(raw: string | undefined): Pick<FichaDeOrigem, "phoneCountry" | "phone"> {
+  const s = (raw ?? "").trim();
+  if (!s) return {};
+  const comEspaco = /^(\+\d{1,4})\s+(.+)$/.exec(s);
+  if (comEspaco) return { phoneCountry: comEspaco[1], phone: soDigitos(comEspaco[2]) };
+  const pt = /^(?:\+|00)351(\d{6,15})$/.exec(soDigitos(s, true));
+  if (pt) return { phoneCountry: "+351", phone: pt[1] };
+  return { phone: soDigitos(s) };
+}
+
+function soDigitos(s: string, manterMais = false): string {
+  return s.replace(manterMais ? /[^\d+]/g : /\D/g, "");
 }
 
 /** 0000-000 enquanto se escreve. */
@@ -1360,7 +1642,7 @@ function ImportDialog({ onClose, onDone }: { onClose: () => void; onDone: () => 
   const [fileName, setFileName] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [result, setResult] = useState<{ created: number; updated: number; duplicates: number } | null>(null);
+  const [result, setResult] = useState<{ created: number; updated: number; duplicates: number; associados: number } | null>(null);
   const [tierNames, setTierNames] = useState<string[]>([]);
   /*
    * Os emails saem só se alguém os pedir.
@@ -1445,7 +1727,7 @@ function ImportDialog({ onClose, onDone }: { onClose: () => void; onDone: () => 
       }
       setNovas(null);
       setExistentes(null);
-      setResult({ created: res.created, updated: res.updated, duplicates: res.duplicates.length });
+      setResult({ created: res.created, updated: res.updated, duplicates: res.duplicates.length, associados: res.associados ?? 0 });
       setSheet(null);
       onDone();
     } catch (e) {
@@ -1500,6 +1782,14 @@ function ImportDialog({ onClose, onDone }: { onClose: () => void; onDone: () => 
                 `, ${result.updated} ${result.updated === 1 ? "ficha actualizada" : "fichas actualizadas"}`}
               .
             </p>
+            {result.associados > 0 && (
+              <p className="mt-1 text-meta text-ink-2">
+                {result.associados === 1
+                  ? "1 sócio tem o NIF de um atleta do clube e ficou associado a ele (sócio-atleta)."
+                  : `${result.associados} sócios têm o NIF de um atleta do clube e ficaram associados a eles (sócios-atletas).`}{" "}
+                Numa categoria de menores, as quotas passam a ser pagas pelos encarregados, na área da família.
+              </p>
+            )}
             {result.duplicates > 0 && (
               <p className="mt-1 text-meta text-ink-3">
                 {result.duplicates}{" "}
@@ -1827,6 +2117,22 @@ function TierForm({
           />
         </DialogField>
       </div>
+      {/* A regra do sócio menor (ver `socio-menor.ts` na API): é a idade máxima que a marca. */}
+      <p
+        className={cx(
+          "-mt-1 rounded-[10px] px-3.5 py-2.5 text-meta leading-relaxed",
+          maxAge && Number(maxAge) <= 18 ? "bg-signal-soft text-signal-ink" : "bg-sunken/60 text-ink-2",
+        )}
+      >
+        {maxAge && Number(maxAge) <= 18 ? (
+          <>
+            <strong className="font-semibold">Categoria de sócio menor.</strong> Os atletas convertidos em sócios nesta categoria não
+            pagam as quotas: aparecem aos encarregados, na área da família, em Pagamentos.
+          </>
+        ) : (
+          <>Com a idade máxima até 18 anos, esta passa a ser uma categoria de sócio menor: as quotas dos sócios-atletas são pagas pelos encarregados.</>
+        )}
+      </p>
 
       <DialogField label="Benefícios" hint="um por linha">
         <textarea

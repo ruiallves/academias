@@ -26,7 +26,9 @@ import { liquidoDe } from "../src/billing/eupago-fees";
 import {
   brutoParaLiquido,
   cotacao,
+  METODOS_DA_APP,
   PAGAMENTOS_DESATIVADOS,
+  totalIgualParaTodos,
   valorACobrar,
   valoresDaCotacao,
   type TabelaDeTaxas,
@@ -79,12 +81,12 @@ console.log("\nA conta: o clube recebe o valor inteiro, e ninguém paga taxa a m
   check(`em ${casos} casos, ao clube chega sempre pelo menos o valor dele`, curtos === 0, primeiro);
   check("e um cêntimo a menos já não chegava (não se cobra taxa a mais)", largos === 0, `${largos} casos`);
 
-  const mb = valorACobrar(2000, "MBWAY", { feesOnPayer: true }, TABELA);
-  check("20,00 € por MB Way cobram-se 20,27 €", mb.totalCents === 2027 && mb.surchargeCents === 27, JSON.stringify(mb));
+  const soMbway = brutoParaLiquido(2000, TABELA.methods[0], TABELA.vatPercent);
+  check("sozinho, o MB Way pedia 20,27 € para deixar 20,00 €", soMbway === 2027, String(soMbway));
   const ingenuo = 2000 + liquidoDe(2000, TABELA.methods[0], 23).feeCents;
   check(
     "somar a comissão de 20 € aos 20 € deixava o clube com menos",
-    liquidoDe(ingenuo, TABELA.methods[0], 23).netCents < 2000 || ingenuo === mb.totalCents,
+    liquidoDe(ingenuo, TABELA.methods[0], 23).netCents < 2000 || ingenuo === soMbway,
   );
 
   const sem = valorACobrar(2000, "MBWAY", { feesOnPayer: false }, TABELA);
@@ -107,13 +109,71 @@ console.log("\nA conta: o clube recebe o valor inteiro, e ninguém paga taxa a m
   check("uma comissão que come tudo recusa-se em vez de dar um número absurdo", recusou);
 }
 
+console.log("\nA mesma taxa em MB Way e em Multibanco (a do mais caro)");
+{
+  check("a app aceita MB Way e Multibanco", JSON.stringify(METODOS_DA_APP) === JSON.stringify(["MBWAY", "MULTIBANCO"]));
+
+  const mb = valorACobrar(2000, "MBWAY", { feesOnPayer: true }, TABELA);
+  const mc = valorACobrar(2000, "MULTIBANCO", { feesOnPayer: true }, TABELA);
+  const soMultibanco = brutoParaLiquido(2000, TABELA.methods[1], TABELA.vatPercent);
+  check("20,00 € por MB Way cobram-se 20,63 €, o valor do Multibanco", mb.totalCents === 2063 && mb.totalCents === soMultibanco, JSON.stringify(mb));
+  check("e por Multibanco cobra-se exactamente o mesmo", mc.totalCents === mb.totalCents && mc.surchargeCents === mb.surchargeCents, JSON.stringify({ mb, mc }));
+
+  let diferentes = 0;
+  let curtos = 0;
+  let naoEoMaior = 0;
+  let casos = 0;
+  let primeiro = "";
+  for (let v = 100; v <= 100_000; v += v < 5000 ? 1 : 41) {
+    casos++;
+    const a = valorACobrar(v, "MBWAY", { feesOnPayer: true }, TABELA);
+    const b = valorACobrar(v, "MULTIBANCO", { feesOnPayer: true }, TABELA);
+    if (a.totalCents !== b.totalCents || a.surchargeCents !== b.surchargeCents) {
+      diferentes++;
+      primeiro ||= `${v}: MB Way ${a.totalCents}, Multibanco ${b.totalCents}`;
+    }
+    for (const m of TABELA.methods.filter((x) => (METODOS_DA_APP as readonly string[]).includes(x.method))) {
+      if (liquidoDe(a.totalCents, m, TABELA.vatPercent).netCents < v) curtos++;
+    }
+    const maior = Math.max(...TABELA.methods.filter((x) => (METODOS_DA_APP as readonly string[]).includes(x.method)).map((x) => brutoParaLiquido(v, x, TABELA.vatPercent)));
+    if (a.totalCents !== maior) naoEoMaior++;
+  }
+  check(`em ${casos} valores, MB Way e Multibanco cobram sempre o mesmo`, diferentes === 0, primeiro);
+  check("e é sempre o bruto do método mais caro, nem mais nem menos", naoEoMaior === 0, `${naoEoMaior} casos`);
+  check("o clube nunca recebe menos do que o valor dele, por nenhum dos dois", curtos === 0, `${curtos} casos`);
+
+  const recebeMbway = liquidoDe(mb.totalCents, TABELA.methods[0], TABELA.vatPercent).netCents;
+  check("por MB Way, o clube recebe um pouco mais do que os 20,00 €", recebeMbway > 2000, String(recebeMbway));
+
+  const dd = valorACobrar(1000, "DIRECT_DEBIT", { feesOnPayer: true }, TABELA);
+  check(
+    "um método fora da lista nunca cobra menos do que a sua própria comissão",
+    dd.totalCents >= brutoParaLiquido(1000, TABELA.methods[2], TABELA.vatPercent) && dd.totalCents >= totalIgualParaTodos(1000, TABELA),
+    JSON.stringify(dd),
+  );
+
+  let recusou = false;
+  try {
+    totalIgualParaTodos(2000, { vatPercent: 23, methods: [TABELA.methods[0]] });
+  } catch {
+    recusou = true;
+  }
+  check("sem a taxa do Multibanco na tabela, recusa-se em vez de cobrar só a do MB Way", recusou);
+}
+
 console.log("\nA cotação que as apps mostram");
 {
   const regras = { paymentsEnabled: true, feesOnPayer: true };
   const tres = cotacao([2000, 2000, 2000], regras, TABELA).find((m) => m.method === "MBWAY")!;
   const um = cotacao([6000], regras, TABELA).find((m) => m.method === "MBWAY")!;
-  check("três mensalidades são três comissões", tres.surchargeCents === 3 * 27, String(tres.surchargeCents));
+  check("três mensalidades são três comissões", tres.surchargeCents === 3 * 63, String(tres.surchargeCents));
   check("e isso é mais do que a comissão de um pagamento só", tres.surchargeCents > um.surchargeCents);
+  const linhas = cotacao([2000, 1500], regras, TABELA).filter((m) => (METODOS_DA_APP as readonly string[]).includes(m.method));
+  check(
+    "na cotação, MB Way e Multibanco mostram a mesma taxa e o mesmo total",
+    linhas.length === 2 && linhas[0].surchargeCents === linhas[1].surchargeCents && linhas[0].totalCents === linhas[1].totalCents,
+    JSON.stringify(linhas),
+  );
   check("só entram os métodos que se oferecem", !cotacao([2000], regras, TABELA).some((m) => m.method === "PAYSAFECARD"));
   const semTaxa = cotacao([2000], { paymentsEnabled: true, feesOnPayer: false }, TABELA);
   check("sem a opção, a cotação não tem taxa nenhuma", semTaxa.every((m) => m.surchargeCents === 0 && m.totalCents === 2000));
@@ -249,19 +309,27 @@ console.log("\nComissão de quem paga: cobra-se o valor que deixa ao clube o pre
 {
   const m = mundo({ paymentsEnabled: true, feesOnPayer: true });
   const p = (await m.servico.startPayment(m.ctx, "c1", "MBWAY" as never, "912345678")) as Pagamento;
-  check("a euPago recebe 20,27 € e não 20,00 €", m.estado.pedidos[0]?.amountCents === 2027, JSON.stringify(m.estado.pedidos));
-  check("o pagamento guarda o total e a taxa à parte", p.amountCents === 2027 && p.surchargeCents === 27);
+  check("a euPago recebe 20,63 € (a taxa do Multibanco) e não 20,00 €", m.estado.pedidos[0]?.amountCents === 2063, JSON.stringify(m.estado.pedidos));
+  check("o pagamento guarda o total e a taxa à parte", p.amountCents === 2063 && p.surchargeCents === 63);
   check("a mensalidade continua a valer 20,00 €", m.estado.charge.amountCents === 2000);
 
   const outra = (await m.servico.startPayment(m.ctx, "c1", "MBWAY" as never, "912345678")) as Pagamento;
   check("pedir outra vez devolve a mesma tentativa, sem novo pedido à euPago", outra.id === p.id && m.estado.pedidos.length === 1);
 
   const mb = (await m.servico.startPayment(m.ctx, "c1", "MULTIBANCO" as never)) as Pagamento;
-  check("por Multibanco a taxa é outra, e maior", mb.surchargeCents > 27 && mb.amountCents === 2000 + mb.surchargeCents, JSON.stringify({ a: mb.amountCents, s: mb.surchargeCents }));
+  check("por Multibanco a taxa é a mesma", mb.surchargeCents === 63 && mb.amountCents === 2063, JSON.stringify({ a: mb.amountCents, s: mb.surchargeCents }));
+  check("e a euPago recebeu o mesmo valor pelos dois métodos", m.estado.pedidos.length === 2 && m.estado.pedidos[0].amountCents === m.estado.pedidos[1].amountCents, JSON.stringify(m.estado.pedidos));
 
   const q = (await m.servico.startMemberFeePayment("ac1", "m1", "f1", "MBWAY" as never, "912345678")) as Pagamento;
-  const esperado = valorACobrar(500, "MBWAY", { feesOnPayer: true }, TABELA);
-  check("a quota de sócio leva a taxa da mesma maneira", q.amountCents === esperado.totalCents && q.surchargeCents === esperado.surchargeCents, JSON.stringify({ a: q.amountCents, s: q.surchargeCents }));
+  const esperado = valorACobrar(500, "MULTIBANCO", { feesOnPayer: true }, TABELA);
+  check("a quota de sócio por MB Way leva a taxa do Multibanco, como a mensalidade", q.amountCents === esperado.totalCents && q.surchargeCents === esperado.surchargeCents, JSON.stringify({ a: q.amountCents, s: q.surchargeCents }));
+
+  const c = await m.servico.cotacaoDoClube("ac1", [2000]);
+  check(
+    "a cotação do clube mostra às apps o mesmo total nos dois métodos",
+    c.methods.length === 2 && c.methods.every((l) => l.totalCents === 2063 && l.surchargeCents === 63),
+    JSON.stringify(c.methods),
+  );
 }
 
 console.log("\nMudar a regra a meio: a referência antiga não se reaproveita");

@@ -18,7 +18,29 @@
  * cobrar 20,24 € custa mais do que cobrar 20 €. A conta tem de se fazer ao
  * contrário — procurar o valor que, **depois** de a euPago tirar a parte dela,
  * deixa os 20 € inteiros.
+ *
+ * ## A mesma taxa em todos os métodos
+ *
+ * Quem paga não pode pagar mais por escolher um método do que outro: cobrar
+ * 20,27 € por MB Way e 20,63 € por Multibanco pela mesma mensalidade é cobrar
+ * um encargo pela escolha do meio de pagamento, e isso não é legal (pedido do
+ * Rui a 17/10/2026). Por isso a taxa é **uma só**, a do método mais caro dos
+ * que a app aceita (`METODOS_DA_APP`), e vale para todos.
+ *
+ * A consequência fica do lado do clube, e é a boa: pelo método mais caro chega
+ * o valor exacto, e pelos mais baratos chega um pouco mais. O clube nunca
+ * recebe menos do que o valor que escreveu.
  */
+
+/**
+ * Os métodos que a app aceita hoje, e entre os quais se procura a taxa maior.
+ *
+ * Fonte única: o `METODOS_ATIVOS` do `billing.service.ts` constrói-se a partir
+ * daqui, e a consola tem a lista gémea em `lib/eupago-fees.ts` (o teste
+ * `test:taxa` exige que sejam iguais). Ligar um método novo na app é
+ * acrescentá-lo aqui, e a taxa de todos passa a contar com ele.
+ */
+export const METODOS_DA_APP = ["MBWAY", "MULTIBANCO"] as const;
 
 /** A linha de um método na tabela de taxas. A mesma forma de `eupago-fees.ts`. */
 export type TaxaDoMetodo = { method: string; label: string; fixedCents: number; percent: number; offered: boolean };
@@ -74,11 +96,39 @@ export function brutoParaLiquido(liquidoCents: number, taxa: TaxaDoMetodo, vatPe
 }
 
 /**
+ * O que se cobra a quem paga para que ao clube cheguem `valorCents`, seja qual
+ * for o método: o bruto do método mais caro de `metodos`.
+ *
+ * Um método da lista que a tabela não conhece recusa-se em vez de se saltar:
+ * saltá-lo podia deixar de fora justamente o mais caro, e então esse método
+ * deixava ao clube menos do que o valor dele.
+ */
+export function totalIgualParaTodos(
+  valorCents: number,
+  tabela: TabelaDeTaxas,
+  metodos: readonly string[] = METODOS_DA_APP,
+): number {
+  let total = valorCents;
+  for (const method of metodos) {
+    const taxa = tabela.methods.find((m) => m.method === method);
+    if (!taxa) throw new Error(`Sem taxa conhecida para ${method}`);
+    total = Math.max(total, brutoParaLiquido(valorCents, taxa, tabela.vatPercent));
+  }
+  return total;
+}
+
+/**
  * O que um pagamento cobra, por este método, neste clube.
  *
  * `valorCents` é o valor da mensalidade (ou a soma das quotas) como está na
  * plataforma. Sem `feesOnPayer` cobra-se esse valor e mais nada. Com ele,
- * cobra-se o bruto, e a diferença é a taxa que quem paga suporta.
+ * cobra-se o bruto do método **mais caro** da app, seja qual for o método
+ * escolhido (ver "A mesma taxa em todos os métodos", no topo), e a diferença é
+ * a taxa que quem paga suporta.
+ *
+ * O método escolhido entra sempre na conta, mesmo que não esteja em
+ * `METODOS_DA_APP`: um método mais caro do que os da lista nunca pode cobrar
+ * menos do que a sua própria comissão.
  *
  * Um método que a tabela não conhece não se adivinha: com a taxa por conta de
  * quem paga, cobrar sem saber a comissão era o clube receber menos do que o
@@ -89,13 +139,13 @@ export function valorACobrar(
   method: string,
   regras: Pick<RegrasDePagamento, "feesOnPayer">,
   tabela: TabelaDeTaxas,
+  metodos: readonly string[] = METODOS_DA_APP,
 ): { totalCents: number; surchargeCents: number } {
   if (!regras.feesOnPayer) return { totalCents: valorCents, surchargeCents: 0 };
 
-  const taxa = tabela.methods.find((m) => m.method === method);
-  if (!taxa) throw new Error(`Sem taxa conhecida para ${method}`);
+  if (!tabela.methods.some((m) => m.method === method)) throw new Error(`Sem taxa conhecida para ${method}`);
 
-  const totalCents = brutoParaLiquido(valorCents, taxa, tabela.vatPercent);
+  const totalCents = totalIgualParaTodos(valorCents, tabela, [...new Set([...metodos, method])]);
   return { totalCents, surchargeCents: totalCents - valorCents };
 }
 
@@ -108,6 +158,9 @@ export type LinhaDaCotacao = { method: string; label: string; surchargeCents: nu
  * três meses são três comissões, cada uma com a sua parte fixa. Somar os três
  * e calcular uma comissão só dava um número mais baixo do que o cobrado. As
  * quotas de sócio seguem numa referência só, e chegam aqui já somadas.
+ *
+ * Com a taxa por conta de quem paga, todas as linhas saem com o mesmo total e a
+ * mesma taxa (ver `valorACobrar`).
  *
  * É só para mostrar. O valor que se cobra calcula-se outra vez no servidor, ao
  * iniciar o pagamento, a partir do que está na base.

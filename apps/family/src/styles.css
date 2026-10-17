@@ -203,8 +203,22 @@
   }
   .pop { animation: pop 460ms var(--ease-spring) both; }
 
+  /* Mudar de dia nos jogos do sócio: o dia novo entra pelo lado de onde se foi
+     buscar. Ao contrário da `rise`, corre sempre: é a resposta a um gesto, não
+     uma apresentação. */
+  @keyframes entra-da-direita {
+    from { opacity: 0; transform: translateX(32px); }
+    to { opacity: 1; transform: none; }
+  }
+  @keyframes entra-da-esquerda {
+    from { opacity: 0; transform: translateX(-32px); }
+    to { opacity: 1; transform: none; }
+  }
+  .entra-direita { animation: entra-da-direita 300ms var(--ease-out) both; }
+  .entra-esquerda { animation: entra-da-esquerda 300ms var(--ease-out) both; }
+
   @media (prefers-reduced-motion: reduce) {
-    .rise, .pop { animation: none; }
+    .rise, .pop, .entra-direita, .entra-esquerda { animation: none; }
   }
 }
 

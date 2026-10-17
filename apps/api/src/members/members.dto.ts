@@ -294,6 +294,13 @@ export class MemberImportDto {
 export class MemberCreateDto {
   @IsOptional() @IsString() @Length(1, 40) tierId?: string;
 
+  /**
+   * O atleta que este sócio é, quando o clube o escolheu em "Já está no
+   * clube?" (sócio-atleta). Sem ele, o servidor procura um atleta com o mesmo
+   * NIF. Ver `socio-menor.ts`.
+   */
+  @IsOptional() @IsString() @Length(1, 40) athleteId?: string;
+
   @IsString() @Length(3, 120) name!: string;
 
   /*

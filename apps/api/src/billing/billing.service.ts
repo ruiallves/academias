@@ -6,6 +6,7 @@ import { PaymentMethod, PaymentStatus, ChargeKind, ChargeStatus, NotificationTyp
 import { PrismaService, type ScopedClient } from "../prisma/prisma.service";
 import { partesNoFuso } from "../common/fuso";
 import { razaoParaNaoApagar } from "../members/member-fees.service";
+import { FICHAS_PAGAS_PELA_FAMILIA } from "../members/socio-menor";
 import { NotificationsService } from "../notifications/notifications.service";
 import { EupagoClient, type ChargeResult, type RedirectUrls } from "./eupago.client";
 import { montarIdentificador } from "./identificador";
@@ -14,6 +15,7 @@ import { EupagoFeesService } from "./eupago-fees";
 import {
   cotacao,
   MENSAGEM_DESATIVADOS,
+  METODOS_DA_APP,
   PAGAMENTOS_DESATIVADOS,
   valorACobrar,
   type RegrasDePagamento,
@@ -58,10 +60,14 @@ export type AplicarEm = "atual" | "proximo";
  * palavras próprias. São duas perguntas: *quanto custa este método ao clube* e
  * *este método pode ser usado*. Esta lista responde à segunda.
  */
-const METODOS_ATIVOS: ReadonlySet<PaymentMethod> = new Set<PaymentMethod>([
-  PaymentMethod.MBWAY,
-  PaymentMethod.MULTIBANCO,
-]);
+const METODOS_ATIVOS: ReadonlySet<PaymentMethod> = new Set<PaymentMethod>(
+  /*
+   * A lista vive em `taxa-do-pagador.ts` porque é também a lista entre a qual
+   * se procura a taxa maior quando quem paga suporta a taxa. Duas listas
+   * podiam divergir, e um método aceite fora da conta da taxa cobrava menos.
+   */
+  METODOS_DA_APP.map((m) => PaymentMethod[m]),
+);
 
 @Injectable()
 export class BillingService implements OnModuleInit, OnModuleDestroy {
@@ -1974,12 +1980,122 @@ export class BillingService implements OnModuleInit, OnModuleDestroy {
    * O ciclo de vida das tentativas é o mesmo do outro lado: uma viva de cada
    * vez, MB Way morre aos 10 minutos, trocar de método mata a anterior.
    */
+  /**
+   * As quotas de sócio dos filhos: as dos sócios-atletas menores, que são
+   * pagas pelos encarregados (ver `members/socio-menor.ts`).
+   *
+   * A forma é a das mensalidades (`GET /api/charges`) com `kind: "QUOTA"`: a
+   * app da família põe-nas na mesma lista de Pagamentos, e o pai paga tudo o
+   * que está em dívida de uma vez. O âmbito é o mesmo: um encarregado vê as dos
+   * filhos e de mais ninguém.
+   */
+  async quotasDosFilhos(ctx: RequestContext) {
+    if (!can(ctx, "billing:read")) throw new ForbiddenException();
+    const filhos = athleteScopeFilter(ctx);
+
+    return this.prisma.runAs(ctx.academyId, async (db) => {
+      const quotas = await db.memberFee.findMany({
+        where: {
+          member: { ...FICHAS_PAGAS_PELA_FAMILIA, ...(filhos ? { athleteId: filhos } : {}) },
+          status: { in: [ChargeStatus.OPEN, ChargeStatus.SETTLED] },
+        },
+        orderBy: { period: "desc" },
+        take: 200,
+        select: {
+          id: true, period: true, label: true, amountCents: true, dueOn: true, status: true, notes: true,
+          member: { select: { athleteId: true, athlete: { select: { name: true } } } },
+          paidBy: {
+            where: { payment: { status: { in: [PaymentStatus.PENDING, PaymentStatus.PROCESSING] } } },
+            select: {
+              payment: {
+                select: { method: true, status: true, amountCents: true, entity: true, reference: true, redirectUrl: true, expiresAt: true, createdAt: true },
+              },
+            },
+          },
+        },
+      });
+
+      const agora = new Date();
+      return quotas.map((q) => {
+        // O prazo da quota, ou o último dia do mês dela quando o clube não pôs nenhum.
+        const [ano, mes] = q.period.split("-").map(Number);
+        const prazo = q.dueOn ?? new Date(Date.UTC(ano, mes, 0));
+        const vivo = q.paidBy
+          .map((p) => p.payment)
+          .filter((p) => !p.expiresAt || p.expiresAt.getTime() > agora.getTime())
+          .sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime())[0];
+        return {
+          id: q.id,
+          athleteId: q.member.athleteId!,
+          athleteName: q.member.athlete?.name ?? "",
+          period: q.period,
+          kind: "QUOTA" as const,
+          title: q.label,
+          category: null,
+          notes: q.notes,
+          amountCents: q.amountCents,
+          dueDate: prazo,
+          status: q.status,
+          overdue: q.status === ChargeStatus.OPEN && prazo < agora,
+          openPayment: vivo
+            ? { method: vivo.method, status: vivo.status, amountCents: vivo.amountCents, entity: vivo.entity, reference: vivo.reference, redirectUrl: vivo.redirectUrl }
+            : null,
+        };
+      });
+    });
+  }
+
+  /**
+   * Um encarregado paga a quota de sócio de um filho (sócio-atleta menor).
+   *
+   * Só as quotas dos filhos de quem pede, e só as das fichas pagas pela família.
+   * O pagamento em si é o das quotas (`startMemberFeePayment`, MB Way ou
+   * Multibanco), em nome do encarregado: é ele que aparece na consola e no
+   * identificador da euPago, com o laço ("Mãe", "Pai").
+   *
+   * Sem a regra "a mais antiga primeiro" da área de sócio: a app da família
+   * paga as que o pai escolhe, uma a uma, como as mensalidades.
+   */
+  async startFamilyQuotaPayment(ctx: RequestContext, feeId: string, method: PaymentMethod, payerPhone?: string) {
+    if (!can(ctx, "billing:read")) throw new ForbiddenException();
+    const filhos = athleteScopeFilter(ctx);
+
+    const { memberId, pagador } = await this.prisma.runAs(ctx.academyId, async (db) => {
+      const fee = await db.memberFee.findFirst({
+        where: { id: feeId, member: { ...FICHAS_PAGAS_PELA_FAMILIA, ...(filhos ? { athleteId: filhos } : {}) } },
+        select: { memberId: true, member: { select: { athleteId: true } } },
+      });
+      if (!fee) throw new NotFoundException("Quota não encontrada");
+      const eu = ctx.membershipId
+        ? await db.membership.findFirst({ where: { id: ctx.membershipId }, select: { user: { select: { name: true, email: true } } } })
+        : null;
+      const laco = ctx.membershipId
+        ? await db.guardianLink.findFirst({
+            where: { athleteId: fee.member.athleteId!, membershipId: ctx.membershipId },
+            select: { relation: true },
+          })
+        : null;
+      return {
+        memberId: fee.memberId,
+        pagador: { nome: eu?.user.name ?? null, email: eu?.user.email ?? null, relacao: laco?.relation ?? null },
+      };
+    });
+
+    return this.startMemberFeePayment(ctx.academyId, memberId, feeId, method, payerPhone, pagador);
+  }
+
   async startMemberFeePayment(
     academyId: string,
     memberId: string,
     feeIds: string | string[],
     method: PaymentMethod,
     payerPhone?: string,
+    /**
+     * Quem paga, quando não é o próprio sócio: o encarregado de um sócio-atleta
+     * menor, na área da família (`startFamilyQuotaPayment`). Sem isto, a conta
+     * que reclamou a ficha.
+     */
+    pagador?: { nome: string | null; email: string | null; relacao: string | null },
   ) {
     if (method !== PaymentMethod.MBWAY && method !== PaymentMethod.MULTIBANCO) {
       throw new BadRequestException("Método de pagamento desconhecido");
@@ -2059,10 +2175,10 @@ export class BillingService implements OnModuleInit, OnModuleDestroy {
        * vem da conta quando a RLS a deixa ver (partilha academia por outro
        * vínculo); senão é o da ficha, que é a mesma pessoa.
        */
-      const conta = fee.member.userId
+      const conta = !pagador && fee.member.userId
         ? await db.user.findFirst({ where: { id: fee.member.userId }, select: { name: true } })
         : null;
-      const payerName = conta?.name?.trim() || fee.member.name.trim() || null;
+      const payerName = pagador?.nome?.trim() || conta?.name?.trim() || fee.member.name.trim() || null;
 
       const payment = await db.payment.create({
         data: {
@@ -2080,6 +2196,7 @@ export class BillingService implements OnModuleInit, OnModuleDestroy {
             (await db.academy.findFirst({ where: { id: academyId }, select: { shortName: true } }))?.shortName,
           ),
           payerName,
+          payerRelation: pagador?.relacao?.trim() || null,
         },
       });
 
@@ -2092,8 +2209,8 @@ export class BillingService implements OnModuleInit, OnModuleDestroy {
         reference: payment.identificador ?? payment.id,
         amountCents: total,
         description: descricao,
-        payerName: fee.member.name,
-        payerEmail: fee.member.email ?? "",
+        payerName: pagador?.nome?.trim() || fee.member.name,
+        payerEmail: pagador?.email ?? fee.member.email ?? "",
         apiKey,
       };
 

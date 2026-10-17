@@ -3,7 +3,19 @@ import { createPortal } from "react-dom";
 import { Check, ChevronDown, Search, X } from "@/lib/icons";
 import { cx, ListaDeEscolha } from "./primitives";
 
-export type Pessoa = { id: string; name: string; sub?: string };
+export type Pessoa = {
+  id: string;
+  name: string;
+  sub?: string;
+  /**
+   * Um aviso curto à direita da linha ("Já é sócio · n.º 1284"). A pessoa
+   * continua na lista, para quem a procura perceber porque não a pode escolher
+   * em vez de pensar que não existe.
+   */
+  aviso?: string;
+  /** Aparece, mas não se escolhe. Vai sempre com um `aviso` a dizer porquê. */
+  bloqueada?: boolean;
+};
 
 /**
  * Altura a contar para decidir se a lista abre para baixo ou para cima.
@@ -215,7 +227,14 @@ export function PersonPicker({
                 </li>
                 {filtradas.map((p) => (
                   <li key={p.id}>
-                    <Opcao label={p.name} sub={p.sub} escolhida={p.id === value} onClick={() => escolher(p.id)} />
+                    <Opcao
+                      label={p.name}
+                      sub={p.sub}
+                      aviso={p.aviso}
+                      bloqueada={p.bloqueada}
+                      escolhida={p.id === value}
+                      onClick={() => escolher(p.id)}
+                    />
                   </li>
                 ))}
                 {filtradas.length === 0 && (
@@ -235,12 +254,16 @@ export function PersonPicker({
 function Opcao({
   label,
   sub,
+  aviso,
+  bloqueada,
   escolhida,
   suave,
   onClick,
 }: {
   label: string;
   sub?: string;
+  aviso?: string;
+  bloqueada?: boolean;
   escolhida: boolean;
   suave?: boolean;
   onClick: () => void;
@@ -250,13 +273,21 @@ function Opcao({
       type="button"
       role="option"
       aria-selected={escolhida}
+      aria-disabled={bloqueada || undefined}
+      disabled={bloqueada}
       onClick={onClick}
-      className="flex min-h-10 w-full items-center gap-2 px-3 py-1.5 text-left transition-colors hover:bg-sunken"
+      className={cx(
+        "flex min-h-10 w-full items-center gap-2 px-3 py-1.5 text-left transition-colors",
+        bloqueada ? "cursor-not-allowed" : "hover:bg-sunken",
+      )}
     >
       <span className="min-w-0 flex-1">
-        <span className={cx("block truncate text-body", suave ? "text-ink-3" : "text-ink")}>{label}</span>
+        <span className={cx("block truncate text-body", suave || bloqueada ? "text-ink-3" : "text-ink")}>{label}</span>
         {sub && <span className="block truncate text-meta text-ink-4">{sub}</span>}
       </span>
+      {aviso && (
+        <span className="shrink-0 rounded-full bg-sunken px-2 py-0.5 text-[11px] font-medium text-ink-3">{aviso}</span>
+      )}
       {escolhida && <Check className="size-3.5 shrink-0 text-signal-ink" strokeWidth={2.5} />}
     </button>
   );

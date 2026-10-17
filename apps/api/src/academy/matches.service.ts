@@ -839,7 +839,8 @@ export class MatchesService {
 
     const { ourScore, theirScore } = input;
     const limpar = ourScore === null || theirScore === null;
-    if (!limpar && (ourScore < 0 || theirScore < 0 || ourScore > 99 || theirScore > 99)) {
+    // Até 999 em todas as modalidades: o basquetebol passa dos 100 pontos.
+    if (!limpar && (ourScore < 0 || theirScore < 0 || ourScore > 999 || theirScore > 999)) {
       throw new BadRequestException("Resultado fora do razoável");
     }
 

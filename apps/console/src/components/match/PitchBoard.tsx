@@ -32,6 +32,21 @@ export type PecaNoCampo = {
   jogador?: { numero: number | null; nome: string; foto?: string | null; marca?: "C" | "SC" | null; aviso?: boolean } | null;
 };
 
+/**
+ * Largura sobre altura do campo desenhado, com a margem à volta.
+ *
+ * As mesmas contas do `viewBox` de baixo. Serve a quem tem de caber o campo
+ * numa altura (o Pré-jogo, num portátil): a largura máxima sai daqui.
+ */
+export function proporcaoDoCampo(format: GameFormat): number {
+  const s = FORMAT_PITCH[format] ?? FORMAT_PITCH.f11;
+  const meioCampo = s.kind === "basketball";
+  const W = s.h;
+  const H = meioCampo ? s.w / 2 : s.w;
+  const m = W * (meioCampo ? 0.07 : 0.045);
+  return (W + 2 * m) / (H + 2 * m);
+}
+
 const RELVA = ["#3f9a63", "#388f5a"] as const;
 const PISO = ["#3d78a8", "#3d78a8"] as const;
 const MADEIRA = ["#d9a566", "#d39d5c"] as const;

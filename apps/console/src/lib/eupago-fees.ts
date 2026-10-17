@@ -179,26 +179,50 @@ export function brutoParaLiquido(liquidoCents: number, taxa: MetodoComTaxa, vatP
 }
 
 /**
- * Quando a comissão é de quem paga: o que a família paga, por método.
+ * Os métodos que a app aceita hoje. Gémea de `METODOS_DA_APP` no servidor
+ * (`billing/taxa-do-pagador.ts`), e o teste `test:taxa` exige que sejam iguais.
  *
- * O espelho de `detalhePorMetodo`. Lá o valor escrito é o que a família paga e
- * o intervalo é o que o clube recebe; aqui o valor escrito é o que o clube
- * recebe e o intervalo é o que a família paga. Ordenado do mais barato para o
- * mais caro para quem paga.
+ * Não se usa o `offered` da tabela para isto: esse diz o que o clube vê na
+ * tabela de comissões, e inclui métodos (cartão, débito direto) que a app ainda
+ * não aceita. Contar com eles na taxa de quem paga dava um número diferente do
+ * que o servidor cobra.
+ */
+export const METODOS_DA_APP = ["MBWAY", "MULTIBANCO"] as const;
+
+/**
+ * Quando a comissão é de quem paga: o que a família paga.
+ *
+ * É **um** valor, igual em todos os métodos: a taxa do método mais caro da
+ * app. Cobrar mais por Multibanco do que por MB Way pela mesma mensalidade era
+ * cobrar pela escolha do meio de pagamento, e isso não é legal. É a mesma regra
+ * do servidor (`valorACobrar`); ver o topo de `billing/taxa-do-pagador.ts`.
+ *
+ * `porMetodo` diz, para cada método, o que a família paga (igual em todos) e o
+ * que chega ao clube (o valor exacto pelo mais caro, um pouco mais pelos
+ * outros). `minCents` e `maxCents` ficam iguais e continuam cá para quem lê o
+ * intervalo.
  */
 export function detalheDoPagador(
   amountCents: number,
   tabela: Tabela,
-): { minCents: number; maxCents: number; porMetodo: { label: string; surchargeCents: number; totalCents: number }[] } | null {
-  const linhas = tabela.methods.filter((m) => m.offered);
-  if (linhas.length === 0 || amountCents <= 0) return null;
+): {
+  minCents: number;
+  maxCents: number;
+  porMetodo: { label: string; surchargeCents: number; totalCents: number; netCents: number }[];
+} | null {
+  const linhas = METODOS_DA_APP.map((m) => tabela.methods.find((x) => x.method === m));
+  if (amountCents <= 0) return null;
+  // Sem a taxa de um dos métodos da app não se sabe qual é a maior: não se inventa.
+  if (linhas.some((l) => !l)) return null;
+  const metodos = linhas as MetodoComTaxa[];
 
-  const porMetodo = linhas
-    .map((m) => {
-      const totalCents = brutoParaLiquido(amountCents, m, tabela.vatPercent);
-      return { label: m.label, surchargeCents: totalCents - amountCents, totalCents };
-    })
-    .sort((a, b) => a.totalCents - b.totalCents);
+  const totalCents = Math.max(amountCents, ...metodos.map((m) => brutoParaLiquido(amountCents, m, tabela.vatPercent)));
+  const porMetodo = metodos.map((m) => ({
+    label: m.label,
+    surchargeCents: totalCents - amountCents,
+    totalCents,
+    netCents: liquidoDe(totalCents, m, tabela.vatPercent).netCents,
+  }));
 
-  return { minCents: porMetodo[0].totalCents, maxCents: porMetodo[porMetodo.length - 1].totalCents, porMetodo };
+  return { minCents: totalCents, maxCents: totalCents, porMetodo };
 }

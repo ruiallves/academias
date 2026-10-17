@@ -91,7 +91,7 @@ export default function Today() {
               </span>
               <span className="block truncate text-body font-semibold text-ink">
                 {confirming.length === 1
-                  ? `${confirming[0].extra ? confirming[0].label : `Mensalidade de ${confirming[0].label.toLowerCase()}`} — pagamento enviado`
+                  ? `${confirming[0].extra || confirming[0].quota ? confirming[0].label : `Mensalidade de ${confirming[0].label.toLowerCase()}`}: pagamento enviado`
                   : `${confirming.length} pagamentos enviados`}
               </span>
             </span>
@@ -233,7 +233,7 @@ function PaymentDue({
   items,
   childName,
 }: {
-  items: { amountCents: number; label: string; status: string; extra: boolean }[];
+  items: { amountCents: number; label: string; status: string; extra: boolean; quota: boolean }[];
   childName: string;
 }) {
   const total = items.reduce((n, p) => n + p.amountCents, 0);
@@ -252,10 +252,10 @@ function PaymentDue({
    * Com uma avulsa à mistura são "pagamentos", que é o que têm em comum.
    */
   const titulo = many
-    ? items.every((p) => !p.extra)
+    ? items.every((p) => !p.extra && !p.quota)
       ? `${items.length} mensalidades`
       : `${items.length} pagamentos`
-    : items[0].extra
+    : items[0].extra || items[0].quota
       ? items[0].label
       : `Mensalidade de ${items[0].label.toLowerCase()}`;
 

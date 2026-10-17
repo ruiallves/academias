@@ -94,7 +94,14 @@ export type MemberRow = {
   createdAt: string;
   approvedAt: string | null;
   source: string;
-  tier: { id: string; name: string; feeCents: number | null; billing: "MONTHLY" | "ANNUAL" } | null;
+  tier: { id: string; name: string; feeCents: number | null; billing: "MONTHLY" | "ANNUAL"; maxAge?: number | null } | null;
+  /** O atleta que este sócio é (sócio-atleta), se foi convertido a partir de um. */
+  athlete?: { id: string; name: string } | null;
+  /**
+   * As quotas são pagas pelos encarregados do atleta, na área da família:
+   * sócio-atleta numa categoria de menores (idade máxima até 18).
+   */
+  paidByFamily?: boolean;
   /** Link assinado com prazo para a fotografia; nulo sem fotografia. Ver `photos.ts`. */
   photoUrl: string | null;
   /**
@@ -432,6 +439,9 @@ export const setMemberCard = (body: { cardEnabled?: boolean; qrEnabled?: boolean
 export const listMembers = (filters: { status?: string; tierId?: string; q?: string } = {}) =>
   apiGet<{ members: MemberRow[]; counts: Partial<Record<MemberStatus, number>> }>("/api/members", filters);
 
+/** Categoria de sócio menor: idade máxima até 18 (a regra de `socio-menor.ts` na API). */
+export const categoriaDeMenores = (t: { maxAge?: number | null } | null | undefined) => t?.maxAge != null && t.maxAge <= 18;
+
 export const createMember = (body: Record<string, unknown>) =>
   apiPost<{ id: string; name: string; number: number | null }>("/api/members", body);
 
@@ -519,6 +529,8 @@ export type ImportResult = RespostaComExistentes & {
   created: number;
   /** Quantas fichas foram substituídas pelos dados da folha. */
   updated: number;
+  /** Quantos sócios ficaram associados a um atleta do clube pelo NIF (sócio-atleta). Ausente numa API antiga. */
+  associados?: number;
   duplicates: { line: number; name: string }[];
   problems: { line: number; reason: string }[];
   /**
