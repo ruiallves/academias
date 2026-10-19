@@ -1311,9 +1311,46 @@ function Jogos() {
   const dias = useMemo(() => jogosPorDia(matches ?? []), [matches]);
   const [escolhido, setEscolhido] = useState<string | null>(null);
   const [sentido, setSentido] = useState<"direita" | "esquerda" | null>(null);
-  const toque = useRef<{ x: number; y: number } | null>(null);
   const tira = useRef<HTMLDivElement>(null);
   const pilulas = useRef(new Map<string, HTMLButtonElement>());
+  /** Mudar de dia pelo dedo: aponta sempre para o `irPara` deste desenho. */
+  const deslizar = useRef<(passo: 1 | -1) => void>(() => {});
+
+  /*
+   * Deslizar o dedo para o lado muda de dia **em qualquer sítio do ecrã**, e
+   * não só em cima dos jogos. Estava preso à caixa dos jogos do dia, e com um
+   * jogo só o espaço vazio por baixo não respondia (Rui, 19/10/2026).
+   *
+   * Fica fora o que já desliza ou se escreve por si: a tira dos dias (que
+   * rola na horizontal), a barra de baixo e os campos de texto. Só conta um
+   * gesto claramente de lado, para não roubar o scroll a quem desce a página.
+   */
+  useEffect(() => {
+    let inicio: { x: number; y: number } | null = null;
+    const comeca = (e: TouchEvent) => {
+      const alvo = e.target as Element | null;
+      if (e.touches.length !== 1 || alvo?.closest('[role="tablist"], nav, input, textarea')) {
+        inicio = null;
+        return;
+      }
+      inicio = { x: e.touches[0].clientX, y: e.touches[0].clientY };
+    };
+    const acaba = (e: TouchEvent) => {
+      if (!inicio) return;
+      const t = e.changedTouches[0];
+      const dx = t.clientX - inicio.x;
+      const dy = t.clientY - inicio.y;
+      inicio = null;
+      if (Math.abs(dx) < 56 || Math.abs(dx) < Math.abs(dy) * 1.4) return;
+      deslizar.current(dx < 0 ? 1 : -1);
+    };
+    window.addEventListener("touchstart", comeca, { passive: true });
+    window.addEventListener("touchend", acaba, { passive: true });
+    return () => {
+      window.removeEventListener("touchstart", comeca);
+      window.removeEventListener("touchend", acaba);
+    };
+  }, []);
 
   // Sem escolha, ou com uma escolha que deixou de existir (o jogo passou), é o primeiro dia.
   const indice = Math.max(0, dias.findIndex((d) => d.chave === escolhido));
@@ -1351,6 +1388,7 @@ function Jogos() {
     setSentido(i > indice ? "direita" : "esquerda");
     setEscolhido(dias[i].chave);
   };
+  deslizar.current = (passo) => irPara(indice + passo);
 
   return (
     <div className="pt-3">
@@ -1439,8 +1477,7 @@ function Jogos() {
 
       {/*
         Os jogos do dia. Deslizar para a esquerda é o dia seguinte, para a
-        direita o anterior; só conta um gesto claramente de lado, para não roubar
-        o scroll a quem desce a página.
+        direita o anterior, em qualquer sítio do ecrã (ver `deslizar`).
       */}
       {/*
         O dia novo entra 32px de lado. Sem este corte, esse empurrão alargava a
@@ -1452,20 +1489,6 @@ function Jogos() {
       <div
         key={dia.chave}
         className={cx("mt-3 space-y-3", sentido === "direita" && "entra-direita", sentido === "esquerda" && "entra-esquerda")}
-        onTouchStart={(e) => {
-          const t = e.touches[0];
-          toque.current = { x: t.clientX, y: t.clientY };
-        }}
-        onTouchEnd={(e) => {
-          const inicio = toque.current;
-          toque.current = null;
-          if (!inicio) return;
-          const t = e.changedTouches[0];
-          const dx = t.clientX - inicio.x;
-          const dy = t.clientY - inicio.y;
-          if (Math.abs(dx) < 56 || Math.abs(dx) < Math.abs(dy) * 1.4) return;
-          irPara(indice + (dx < 0 ? 1 : -1));
-        }}
       >
         <ul className="space-y-2.5">
           {dia.jogos.map((jogo, i) => (

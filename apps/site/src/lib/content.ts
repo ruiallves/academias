@@ -116,13 +116,13 @@ export function euro(value: number): string {
  */
 export const CLUBES = [
   "AD Márcia Miranda Felgueiras",
+  "Casa do Povo da Gafanha da Boa Hora",
   "Castanheira Sport Clube",
   "Clube de Basquetebol do Fundão",
   "Clube Desportivo de Loureiro",
   "Futebol Clube Ferreirense",
   "Juventude Atlético Clube",
   "Santa Maria Futebol Clube",
-  "VA Boa Hora",
 ];
 
 /**
