@@ -21,6 +21,17 @@ import {
   type RegrasDePagamento,
 } from "./taxa-do-pagador";
 import { athleteScopeFilter, athleteTeamScopeWhere, can, teamScopeFilter, type RequestContext } from "../common/permissions";
+import {
+  calendarioPara,
+  cobraAoAtleta,
+  cobraNoMes,
+  mesesDaEquipa,
+  SELECT_CALENDARIO,
+  type Calendario,
+  type MesesDeEquipa,
+} from "./calendario";
+export { calendarioPara, cobraAoAtleta, cobraNoMes, mesesDaEquipa, MESES_POR_OMISSAO, SELECT_CALENDARIO, type Calendario } from "./calendario";
+
 
 /**
  * Quando é que um preço acabado de definir começa a ser cobrado.
@@ -997,7 +1008,7 @@ export class BillingService implements OnModuleInit, OnModuleDestroy {
 
         const ids = atletas.map((a) => a.id);
         const calendario = await lerCalendario(db, ctx.academyId);
-        const precoDe = input.amountCents === undefined ? await lerPrecosDosAtletas(db, ids) : null;
+        const cobrancaDe = await lerCobrancaDosAtletas(db, ctx.academyId, ids);
 
         // Quem já tem mensalidade nestes meses. Uma leitura para todos.
         const existentes = new Map(
@@ -1059,10 +1070,22 @@ export class BillingService implements OnModuleInit, OnModuleDestroy {
               (p.status === PaymentStatus.PAID || p.status === PaymentStatus.PROCESSING || p.status === PaymentStatus.REFUNDED),
           );
 
+        /*
+         * Por escalão, um mês que o escalão do atleta não paga salta-se, como a
+         * emissão faz: para esse atleta o mês não existe. `assertMesesCobrados`
+         * só garante que algum escalão o paga.
+         */
+        let foraDoCalendario = 0;
+
         for (const a of atletas) {
-          const valor = input.amountCents ?? precoDe?.(a)?.amountCents;
           let semPrecoContado = false;
           for (const period of periodos) {
+            const doMes = cobrancaDe(a.id, period);
+            if (!doMes.cobra) {
+              foraDoCalendario++;
+              continue;
+            }
+            const valor = input.amountCents ?? doMes.preco?.amountCents;
             const existente = existentes.get(`${a.id}|${period}`);
             if (existente) {
               const emVoo = existente.payments.some(
@@ -1098,9 +1121,7 @@ export class BillingService implements OnModuleInit, OnModuleDestroy {
               amountCents: valor,
               ...(pagas || nasceIsenta(valor) ? { status: ChargeStatus.SETTLED, settledAt: agora } : {}),
               ...(pagas ? quemMudou(ctx, agora) : {}),
-              ...(input.amountCents === undefined && precoDe?.(a)?.enrollmentId
-                ? { enrollmentId: precoDe(a)!.enrollmentId }
-                : {}),
+              ...(input.amountCents === undefined && doMes.preco?.enrollmentId ? { enrollmentId: doMes.preco.enrollmentId } : {}),
               /*
                * O dia de vencimento é o do clube, como nas geradas — a família
                * não tem de aprender um prazo diferente por a mensalidade ter
@@ -1229,6 +1250,7 @@ export class BillingService implements OnModuleInit, OnModuleDestroy {
           jaPagas: [...jaPagas].sort(),
           emPagamento,
           semPreco,
+          foraDoCalendario,
           atletasComNovas: new Set([...criadas, ...aMarcar, ...aReabrir].map((c) => c.athleteId)).size,
           avisos,
         };
@@ -1237,7 +1259,7 @@ export class BillingService implements OnModuleInit, OnModuleDestroy {
     );
 
     if ("porConfirmar" in resultado) return { porConfirmar: resultado.porConfirmar };
-    const { criadas, reabertas, marcadas, jaExistiam, jaPagas, emPagamento, semPreco, atletasComNovas, avisos } = resultado;
+    const { criadas, reabertas, marcadas, jaExistiam, jaPagas, emPagamento, semPreco, foraDoCalendario, atletasComNovas, avisos } = resultado;
 
     /*
      * O aviso à família, uma vez por mensalidade nova.
@@ -1266,6 +1288,8 @@ export class BillingService implements OnModuleInit, OnModuleDestroy {
       /** Por pagar com um pagamento online a decorrer: não se mexeu. */
       emPagamento,
       semPreco,
+      /** Mensalidades saltadas por o escalão do atleta não pagar esse mês (só por escalão). */
+      foraDoCalendario,
       avisados: new Set(avisos.map((a) => a.userId)).size,
     };
   }
@@ -1511,11 +1535,12 @@ export class BillingService implements OnModuleInit, OnModuleDestroy {
           .map((c) => c.athleteId),
       );
 
-      const cobraEsteMes = (await lerCalendario(db, ctx.academyId))(period).meses.includes(mes);
+      // Por escalão, o mês existe se algum escalão o paga; cada atleta segue o seu.
+      const cobraEsteMes = cobraNoMes((await lerCalendario(db, ctx.academyId))(period), mes);
 
-      // Quem tem preço. A mesma regra de `gerarCobrancas`, aqui só para saber se
-      // existe, não quanto é.
-      const precoDe = await lerPrecosDosAtletas(db, ids);
+      // Quem tem preço e quem paga este mês. A mesma regra de `gerarCobrancas`,
+      // aqui só para saber se existe, não quanto é.
+      const cobrancaDe = await lerCobrancaDosAtletas(db, ctx.academyId, ids);
 
       const semCobranca = atletas.filter((a) => !comCobranca.has(a.id));
 
@@ -1524,8 +1549,9 @@ export class BillingService implements OnModuleInit, OnModuleDestroy {
         cobraEsteMes,
         atletas: semCobranca.map((a) => {
           const teamId = a.teams[0]?.teamId ?? null;
-          const temPreco = precoDe(a) !== null;
-          const cobra = cobraEsteMes;
+          const doMes = cobrancaDe(a.id, period);
+          const temPreco = doMes.preco !== null;
+          const cobra = doMes.cobra;
           return {
             athleteId: a.id,
             name: a.name,
@@ -1644,7 +1670,7 @@ export class BillingService implements OnModuleInit, OnModuleDestroy {
        * individual nesta continua a pagar o dele (a bolsa de um miúdo não muda
        * por se baixar o preço da equipa). Ver `lerPrecosDetalhados`.
        */
-      const reprecadas = await reprecificarPelaRegra(db, periodo, ids);
+      const reprecadas = await reprecificarPelaRegra(db, ctx.academyId, periodo, ids);
 
       return { teamId, amountCents: plan.amountCents, cobrancas, reprecadas };
     });
@@ -1734,7 +1760,7 @@ export class BillingService implements OnModuleInit, OnModuleDestroy {
 
       // E as já emitidas passam a valer o preço novo, que é a soma das
       // modalidades e não só o valor acabado de gravar.
-      const reprecadas = await reprecificarPelaRegra(db, periodo, [athlete.id]);
+      const reprecadas = await reprecificarPelaRegra(db, ctx.academyId, periodo, [athlete.id]);
 
       return { athleteId, amountCents, cobrancas, reprecadas };
     });
@@ -1764,7 +1790,7 @@ export class BillingService implements OnModuleInit, OnModuleDestroy {
       if (!athlete) throw new NotFoundException("Atleta não encontrado");
 
       await endIndividualEnrollments(db, athleteId, sportId || null);
-      const reprecadas = await reprecificarPelaRegra(db, periodoActual(), [athleteId]);
+      const reprecadas = await reprecificarPelaRegra(db, ctx.academyId, periodoActual(), [athleteId]);
       return { athleteId, cleared: true, reprecadas };
     });
   }
@@ -2720,14 +2746,6 @@ function ibanValido(iban: string): boolean {
   return resto === 1;
 }
 
-/**
- * O calendário de cobrança por omissão — onze meses, sem Agosto.
- *
- * Espelha o valor por omissão de `Academy.billingMonths` e serve só de rede para
- * uma academia lida antes da migração ter corrido. A resposta verdadeira está
- * sempre na academia.
- */
-export const MESES_POR_OMISSAO = [1, 2, 3, 4, 5, 6, 7, 9, 10, 11, 12];
 
 /**
  * Os métodos que se escolhem ao marcar uma mensalidade como paga à mão.
@@ -2749,49 +2767,33 @@ function quemMudou(ctx: RequestContext, quando: Date = new Date()) {
   return { statusChangedById: ctx.userId, statusChangedAt: quando };
 }
 
-/** O calendário de cobrança que vale num período: os meses cobrados e o dia de vencimento. */
-export type Calendario = { meses: number[]; dia: number };
-
-/** As colunas da academia de que o calendário precisa. */
-export const SELECT_CALENDARIO = {
-  billingMonths: true,
-  billingDueDay: true,
-  billingNextFrom: true,
-  billingNextMonths: true,
-  billingNextDueDay: true,
-} as const;
-
-type AcademiaComCalendario = {
-  billingMonths: number[];
-  billingDueDay: number;
-  billingNextFrom: string | null;
-  billingNextMonths: number[];
-  billingNextDueDay: number | null;
-};
-
-/**
- * O calendário que vale para `period`.
- *
- * O clube pode mudar o período de cobrança só a partir da próxima época: fica
- * agendado em `billingNext*`, e a partir de `billingNextFrom` é esse que manda.
- * Toda a gente que pergunta "o clube cobra neste mês?" ou "quando vence?"
- * pergunta aqui, com o período em causa, para uma mensalidade de Agosto de 2027
- * seguir o calendário da época 2027/28 mesmo antes de a época virar.
- */
-export function calendarioPara(academia: AcademiaComCalendario | null, period: string): Calendario {
-  if (!academia) return { meses: MESES_POR_OMISSAO, dia: 8 };
-  const atual = { meses: academia.billingMonths, dia: academia.billingDueDay };
-  if (!academia.billingNextFrom || period < academia.billingNextFrom) return atual;
-  return {
-    meses: academia.billingNextMonths.length ? academia.billingNextMonths : atual.meses,
-    dia: academia.billingNextDueDay ?? atual.dia,
-  };
+/** As equipas da época corrente, com os seus meses. Só no modo por escalão interessam. */
+async function lerMesesDasEquipas(db: ScopedClient): Promise<MesesDeEquipa[]> {
+  return db.team.findMany({
+    where: { season: { isCurrent: true } },
+    select: { id: true, billingMonths: true, billingNextMonths: true },
+  });
 }
 
 /** Lê a academia uma vez e devolve o calendário de qualquer período. */
 export async function lerCalendario(db: ScopedClient, academyId: string): Promise<(period: string) => Calendario> {
   const academia = await db.academy.findFirst({ where: { id: academyId }, select: SELECT_CALENDARIO });
-  return (period) => calendarioPara(academia, period);
+  const usaEquipas = Boolean(academia && (academia.billingByTeam || academia.billingNextByTeam));
+  const equipas = usaEquipas ? await lerMesesDasEquipas(db) : [];
+  return (period) => calendarioPara(academia, period, equipas);
+}
+
+/** As equipas em que cada atleta está hoje — é por elas que o calendário por escalão se lê. */
+async function lerEquipasDosAtletas(db: ScopedClient, ids: string[]): Promise<Map<string, string[]>> {
+  const porAtleta = new Map<string, string[]>();
+  if (ids.length === 0) return porAtleta;
+  for (const m of await db.teamMembership.findMany({
+    where: { athleteId: { in: ids }, leftAt: null },
+    select: { athleteId: true, teamId: true },
+  })) {
+    porAtleta.set(m.athleteId, [...(porAtleta.get(m.athleteId) ?? []), m.teamId]);
+  }
+  return porAtleta;
 }
 
 /** O primeiro período da próxima época: com a época a abrir em Agosto, `2027-08` durante 2026/27. */
@@ -2815,11 +2817,20 @@ export async function promoverCalendario(db: ScopedClient, academyId: string, ag
     data: {
       ...(academia.billingNextMonths.length ? { billingMonths: academia.billingNextMonths } : {}),
       ...(academia.billingNextDueDay !== null ? { billingDueDay: academia.billingNextDueDay } : {}),
+      ...(academia.billingNextByTeam !== null ? { billingByTeam: academia.billingNextByTeam } : {}),
       billingNextFrom: null,
       billingNextMonths: [],
       billingNextDueDay: null,
+      billingNextByTeam: null,
     },
   });
+  /* Os meses agendados de cada escalão passam a ser os meses dele. */
+  for (const e of await db.team.findMany({
+    where: { NOT: { billingNextMonths: { isEmpty: true } } },
+    select: { id: true, billingNextMonths: true },
+  })) {
+    await db.team.update({ where: { id: e.id }, data: { billingMonths: e.billingNextMonths, billingNextMonths: [] } });
+  }
   return true;
 }
 
@@ -2872,7 +2883,6 @@ export async function retirarForaDoCalendario(
    * calendário agendado para 2027/28, se houver um.
    */
   const calendario = await lerCalendario(db, academyId);
-  const fechado = (period: string) => !calendario(period).meses.includes(Number(period.slice(5, 7)));
 
   /*
    * Todos os estados, incluindo as pagas.
@@ -2891,6 +2901,7 @@ export async function retirarForaDoCalendario(
     },
     select: {
       id: true,
+      athleteId: true,
       period: true,
       status: true,
       /*
@@ -2902,7 +2913,16 @@ export async function retirarForaDoCalendario(
       payments: { select: { status: true, provider: true } },
     },
   });
-  const alvo = candidatas.filter((c) => fechado(c.period));
+
+  /*
+   * Por escalão, o mês fecha atleta a atleta: pelas equipas em que está hoje.
+   * Um Sub-15 cujo escalão não paga Agosto perde Agosto; o Sénior ao lado, que
+   * paga, fica com o dele.
+   */
+  const equipas = await lerEquipasDosAtletas(db, [...new Set(candidatas.map((c) => c.athleteId))]);
+  const fechado = (c: { athleteId: string; period: string }) =>
+    !cobraAoAtleta(calendario(c.period), equipas.get(c.athleteId) ?? [], Number(c.period.slice(5, 7)));
+  const alvo = candidatas.filter(fechado);
 
   /* Dinheiro que passou pela euPago: a linha fica, e diz-se quantas são. */
   const dinheiroReal = (c: (typeof alvo)[number]) =>
@@ -2938,7 +2958,8 @@ export async function assertMesesCobrados(db: ScopedClient, academyId: string, p
   const calendario = await lerCalendario(db, academyId);
   const fora = [
     ...new Set(
-      periodos.filter((p) => !calendario(p).meses.includes(Number(p.slice(5, 7)))).map((p) => Number(p.slice(5, 7))),
+      // Por escalão, um mês só está desligado se nenhum escalão o cobra.
+      periodos.filter((p) => !cobraNoMes(calendario(p), Number(p.slice(5, 7)))).map((p) => Number(p.slice(5, 7))),
     ),
   ].sort((a, b) => a - b);
   if (fora.length === 0) return;
@@ -3186,14 +3207,16 @@ export async function reprecificarCobrancas(
  */
 export async function reprecificarPelaRegra(
   db: ScopedClient,
+  academyId: string,
   period: string,
   athleteIds: string[],
 ): Promise<{ actualizadas: number; intocadas: number }> {
-  const precoDe = await lerPrecosDosAtletas(db, athleteIds);
+  const cobrancaDe = await lerCobrancaDosAtletas(db, academyId, athleteIds);
   const precos = new Map<string, number>();
   for (const id of athleteIds) {
-    const p = precoDe({ id });
-    if (p) precos.set(id, p.amountCents);
+    // Por escalão, o preço do mês soma só as modalidades que o cobram.
+    const { cobra, preco } = cobrancaDe(id, period);
+    if (cobra && preco) precos.set(id, preco.amountCents);
   }
   return reprecificarCobrancas(db, period, precos);
 }
@@ -3213,7 +3236,6 @@ export async function gerarCobrancas(
   /** Quem ganhou cobrança nova — é a quem o "envio da mensalidade" avisa. */
   atletasNovos: string[];
 }> {
-  const mes = Number(period.slice(5, 7));
   await promoverCalendario(db, academyId);
 
   const atletas = await db.athlete.findMany({
@@ -3257,7 +3279,7 @@ export async function gerarCobrancas(
     ),
   );
 
-  const precoDe = await lerPrecosDosAtletas(db, ids);
+  const cobrancaDe = await lerCobrancaDosAtletas(db, academyId, ids);
 
   const calendario = await lerCalendario(db, academyId);
   const diaDoClube = calendario(period).dia;
@@ -3286,8 +3308,11 @@ export async function gerarCobrancas(
    * Subiu para `Academy.billingMonths`, onde é uma pergunta que se faz uma vez e
    * se responde num ecrã. A coluna do plano fica para o dia em que um plano
    * precisar mesmo de calendário próprio; hoje não é lida.
+   *
+   * Por escalão (`Academy.billingByTeam`), a pergunta faz-se atleta a atleta:
+   * ver `lerCobrancaDosAtletas`.
    */
-  const cobraEsteMes = calendario(period).meses.includes(mes);
+  const porEscalao = calendario(period).porEscalao;
 
   /*
    * O calendário manda para toda a gente, incluindo quem acabou de entrar.
@@ -3326,13 +3351,18 @@ export async function gerarCobrancas(
     }
     if (dispensados.has(a.id)) continue;
 
-    const preco = precoDe(a);
+    const { cobra, preco } = cobrancaDe(a.id, period);
 
+    // Por escalão, um mês que o escalão não paga também deixa o preço vazio: conta como fora do mês.
+    if (!cobra && porEscalao) {
+      foraDoMes++;
+      continue;
+    }
     if (!preco) {
       semPreco++;
       continue;
     }
-    if (!cobraEsteMes) {
+    if (!cobra) {
       foraDoMes++;
       continue;
     }
@@ -3388,6 +3418,8 @@ export type PrecoNaModalidade = {
   individualEnrollmentId: string | null;
   /** O que conta: o individual se houver, senão o da equipa. Nulo = por configurar. */
   amountCents: number | null;
+  /** Todas as equipas do atleta nesta modalidade. Por escalão, a modalidade paga-se num mês que uma delas cobre. */
+  teamIds: string[];
 };
 
 /** Tudo o que decide quanto um atleta paga por mês. */
@@ -3491,6 +3523,7 @@ export async function lerPrecosDetalhados(db: ScopedClient, ids: string[]): Prom
         individualAmountCents: individual?.amountCents ?? null,
         individualEnrollmentId: individual?.enrollmentId ?? null,
         amountCents: individual ? individual.amountCents : teamAmountCents,
+        teamIds: lista.map((e) => e.teamId),
       };
     });
 
@@ -3515,22 +3548,53 @@ export async function lerPrecosDetalhados(db: ScopedClient, ids: string[]): Prom
   };
 }
 
+/** Se um atleta paga num mês, e quanto. */
+export type CobrancaDoMes = { cobra: boolean; preco: { amountCents: number; enrollmentId?: string } | null };
+
 /**
- * O preço de cada atleta, só o valor — o que a emissão e o lançamento precisam.
+ * Se cada atleta paga mensalidade num mês, e quanto: o calendário e o preço
+ * juntos, que é o que a emissão, o lançamento à mão e a reprecificação perguntam.
  *
- * Saiu de dentro de `gerarCobrancas` quando o lançamento à mão passou a poder
- * cobrar equipas inteiras "ao preço de cada um". A regra vive em
- * `lerPrecosDetalhados`; isto só tira o total.
+ * Com o calendário do clube, o preço é o de sempre (`lerPrecosDetalhados`) e o
+ * mês cobra-se ou não a toda a gente.
+ *
+ * Por escalão, o mês cobra-se ao atleta se alguma equipa dele o cobra
+ * (`cobraAoAtleta`), e o preço desse mês soma só as modalidades em que uma das
+ * equipas dele cobra o mês: no futebol e no futsal, com o futsal sem Agosto,
+ * Agosto vale só o futebol. O valor único antigo (`valorUnico`, sem modalidade)
+ * paga-se inteiro em qualquer mês cobrado.
  */
-export async function lerPrecosDosAtletas(
+export async function lerCobrancaDosAtletas(
   db: ScopedClient,
+  academyId: string,
   ids: string[],
-): Promise<(a: { id: string }) => { amountCents: number; enrollmentId?: string } | null> {
+): Promise<(athleteId: string, period: string) => CobrancaDoMes> {
   const detalhe = await lerPrecosDetalhados(db, ids);
-  return (a) => {
-    const d = detalhe(a.id);
-    if (d.amountCents === null) return null;
-    return { amountCents: d.amountCents, ...(d.enrollmentId ? { enrollmentId: d.enrollmentId } : {}) };
+  const calendario = await lerCalendario(db, academyId);
+  return (athleteId, period) => {
+    const c = calendario(period);
+    const mes = Number(period.slice(5, 7));
+    const d = detalhe(athleteId);
+
+    if (!c.porEscalao) {
+      const preco = d.amountCents === null ? null : { amountCents: d.amountCents, ...(d.enrollmentId ? { enrollmentId: d.enrollmentId } : {}) };
+      return { cobra: c.meses.includes(mes), preco };
+    }
+
+    const cobra = cobraAoAtleta(c, d.modalidades.flatMap((m) => m.teamIds), mes);
+    if (d.valorUnico) return { cobra, preco: { amountCents: d.valorUnico.amountCents, enrollmentId: d.valorUnico.enrollmentId } };
+
+    const comPreco = d.modalidades.filter(
+      (m) => m.amountCents !== null && m.teamIds.some((t) => mesesDaEquipa(c, t).includes(mes)),
+    );
+    if (comPreco.length === 0) return { cobra, preco: null };
+    return {
+      cobra,
+      preco: {
+        amountCents: comPreco.reduce((soma, m) => soma + (m.amountCents as number), 0),
+        ...(comPreco.length === 1 && comPreco[0].individualEnrollmentId ? { enrollmentId: comPreco[0].individualEnrollmentId } : {}),
+      },
+    };
   };
 }
 

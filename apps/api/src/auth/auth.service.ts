@@ -1,7 +1,7 @@
 import { ForbiddenException, Injectable, NotFoundException } from "@nestjs/common";
 import type { Role } from "@prisma/client";
 import { PrismaService } from "../prisma/prisma.service";
-import { ROLE_PERMISSIONS, type Permission, type RequestContext, type Scope } from "../common/permissions";
+import { ROLE_PERMISSIONS, ROLE_RANK, type Permission, type RequestContext, type Scope } from "../common/permissions";
 
 type MembershipRow = {
   membership_id: string;
@@ -87,7 +87,19 @@ function escolherMembership(memberships: MembershipRow[], app?: AppKind): Member
     return deAtleta;
   }
 
-  if (app === "console") return memberships.find((m) => !familia(m.role)) ?? memberships[0];
+  /*
+   * Staff primeiro, e o de maior alcance. Não devia haver duas fichas de staff
+   * da mesma pessoa no mesmo clube (ver `invites/ficha-unica.ts` e o índice
+   * `Membership_uma_ficha_de_staff`), mas houve: com duas, ganhava a que a base
+   * devolvesse primeiro, sem `ORDER BY`, e um coordenador passou a entrar como
+   * treinador depois de alguém lhe mexer nas permissões (Santa Maria FC,
+   * 19/10/2026).
+   */
+  if (app === "console") {
+    const doStaff = memberships.filter((m) => !familia(m.role));
+    if (doStaff.length === 0) return memberships[0];
+    return doStaff.reduce((a, b) => (ROLE_RANK[b.role] > ROLE_RANK[a.role] ? b : a));
+  }
 
   // Sem cabeçalho — uma app antiga ainda em cache. Fica o que já ficava.
   return memberships[0];

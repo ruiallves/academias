@@ -4,6 +4,8 @@ import { Pill, cx } from "@/components/primitives";
 import { Bloco, Erro, Interruptor, Lista } from "@/components/definicoes/ui";
 import { detalheDoPagador, detalhePorMetodo, loadEupagoFees, useEupagoFees, type MetodoComTaxa } from "@/lib/eupago-fees";
 import { apiPatch } from "@/lib/http";
+import { listTeams, mesesDoEscalao, sportById } from "@/lib/api";
+import { ResumoPorEscalao, type LinhaDeEscalao } from "@/components/finance/MesesPorEscalao";
 import { can } from "@/lib/permissions";
 import { reloadAcademy, useStore } from "@/lib/store";
 import { useSession } from "@/session";
@@ -80,6 +82,14 @@ export function MensalidadesSection() {
 
   const meses = academy.billingMonths;
   const proxima = academy.billingNext;
+
+  /* Os escalões desta época com os meses que pagam (hoje, ou no calendário agendado). */
+  const linhasDeEscalao = (periodo: string | null): LinhaDeEscalao[] =>
+    (session ? listTeams(session) : [])
+      .slice()
+      .sort((a, b) => a.maxAge - b.maxAge || a.name.localeCompare(b.name, "pt"))
+      .map((t) => ({ id: t.id, nome: t.name, grupo: sportById(t.sportId)?.name ?? "", meses: mesesDoEscalao(t.id, periodo) }));
+  const calendariosDiferentes = new Set([...linhasDeEscalao(null).map((l) => l.meses.join(",")), meses.join(",")]).size;
   const oferecidos = tabela?.methods.filter((m) => m.offered) ?? [];
   const ligados = academy.paymentsEnabled;
   /*
@@ -250,11 +260,23 @@ export function MensalidadesSection() {
         descricao="Os meses em que o clube cobra a mensalidade, e o dia até ao qual a família paga sem atraso."
       >
         <div className="grid grid-cols-[minmax(0,1fr)_minmax(0,1fr)] gap-px overflow-hidden rounded-[12px] border border-line bg-line">
-          <Numero valor={String(meses.length)} rotulo={meses.length === 1 ? "mês cobrado por época" : "meses cobrados por época"} />
+          {academy.billingByTeam ? (
+            <Numero
+              valor="Por escalão"
+              rotulo={calendariosDiferentes === 1 ? "todos pagam os mesmos meses" : `${calendariosDiferentes} calendários diferentes`}
+            />
+          ) : (
+            <Numero valor={String(meses.length)} rotulo={meses.length === 1 ? "mês cobrado por época" : "meses cobrados por época"} />
+          )}
           <Numero valor={`Dia ${academy.billingDueDay}`} rotulo="prazo de pagamento, todos os meses" />
         </div>
 
-        <Meses ligados={meses} />
+        {/*
+          Por escalão, os escalões juntam-se pelos meses que pagam: um cartão por
+          calendário, com a régua e quem o segue. Lê-se em segundos, mesmo com
+          quinze escalões.
+        */}
+        {academy.billingByTeam ? <ResumoPorEscalao linhas={linhasDeEscalao(null)} semEscalao={meses} /> : <Meses ligados={meses} />}
 
         {/*
           A mudança agendada só aparece quando existe. Dita por extenso e com a
@@ -266,11 +288,16 @@ export function MensalidadesSection() {
             <p className="text-body text-ink">
               <span className="font-medium">A partir de {mesDe(proxima.from)}</span>{" "}
               <span className="text-ink-3">
-                passa a {proxima.months.length} {proxima.months.length === 1 ? "mês" : "meses"}, com prazo no dia{" "}
-                {proxima.dueDay}.
+                {proxima.byTeam
+                  ? `passa a ser por escalão, com prazo no dia ${proxima.dueDay}.`
+                  : `passa a ${proxima.months.length} ${proxima.months.length === 1 ? "mês" : "meses"}, com prazo no dia ${proxima.dueDay}.`}
               </span>
             </p>
-            <Meses ligados={proxima.months} pequeno />
+            {proxima.byTeam ? (
+              <ResumoPorEscalao linhas={linhasDeEscalao(proxima.from)} semEscalao={proxima.months} />
+            ) : (
+              <Meses ligados={proxima.months} pequeno />
+            )}
           </div>
         )}
 

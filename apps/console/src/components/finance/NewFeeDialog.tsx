@@ -32,6 +32,8 @@ type Resultado = {
   /** Por pagar com um pagamento online a decorrer: não se mexeu. */
   emPagamento: number;
   semPreco: { id: string; name: string }[];
+  /** Mensalidades saltadas por o escalão do atleta não pagar esse mês (período por escalão). */
+  foraDoCalendario?: number;
   avisados: number;
 };
 
@@ -229,7 +231,7 @@ export function NewFeeDialog({
 
       /* Correu tudo como pedido: fecha. Senão, diz-se o que ficou de fora. */
       const ficouAlgoDeFora =
-        r.jaExistiam.length > 0 || r.jaPagas.length > 0 || r.emPagamento > 0 || r.semPreco.length > 0;
+        r.jaExistiam.length > 0 || r.jaPagas.length > 0 || r.emPagamento > 0 || r.semPreco.length > 0 || (r.foraDoCalendario ?? 0) > 0;
       if (!ficouAlgoDeFora && r.criadas + r.marcadas + (r.reabertas ?? 0) > 0) {
         onDone();
         return;
@@ -763,6 +765,14 @@ function ResultadoDoLancamento({ r }: { r: Resultado }) {
           {r.emPagamento === 1
             ? "Uma tem um pagamento online a decorrer e não foi mexida."
             : `${r.emPagamento} têm um pagamento online a decorrer e não foram mexidas.`}
+        </p>
+      )}
+      {(r.foraDoCalendario ?? 0) > 0 && (
+        <p>
+          {r.foraDoCalendario === 1
+            ? "Uma ficou de fora porque o escalão do atleta não paga esse mês."
+            : `${r.foraDoCalendario} ficaram de fora porque o escalão do atleta não paga esse mês.`}{" "}
+          Muda-o no Período de cobrança.
         </p>
       )}
       {r.semPreco.length > 0 && (

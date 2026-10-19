@@ -20,6 +20,7 @@ import {
   guardiansOf,
   currentPeriod,
   mesCobrado,
+  escaloesQuePagam,
   proximoPeriodoCobrado,
   listAllFees,
   listAthletes,
@@ -38,6 +39,15 @@ import type { Fee, FeeStatus } from "@/data/types";
 import { useSession } from "@/session";
 
 const ALL = "all" as const;
+
+const MES_EXTENSO_FEES = [
+  "Janeiro", "Fevereiro", "Março", "Abril", "Maio", "Junho",
+  "Julho", "Agosto", "Setembro", "Outubro", "Novembro", "Dezembro",
+];
+
+/** "Sub-19, Juniores e Seniores". */
+const juntarNomes = (nomes: string[]) =>
+  nomes.length <= 1 ? (nomes[0] ?? "") : `${nomes.slice(0, -1).join(", ")} e ${nomes[nomes.length - 1]}`;
 
 export default function Fees() {
   const { session } = useSession();
@@ -451,6 +461,21 @@ export default function Fees() {
             <SearchInput value={query} onChange={setQuery} placeholder="Procurar atleta…" />
             <ResultCount n={filtered.length} noun={["mensalidade", "mensalidades"]} />
           </Toolbar>
+
+          {/*
+            Por escalão, um mês que só alguns escalões pagam diz quais. Sem isto,
+            Agosto com doze linhas num clube de duzentos atletas parecia um mês
+            por emitir.
+          */}
+          {period !== ALL && escaloesQuePagam(period).length > 0 && (
+            <p className="flex items-center gap-2 border-b border-line bg-sunken/40 px-4 py-2 text-meta text-ink-3">
+              <CalendarDays className="size-3.5 shrink-0 text-ink-4" strokeWidth={1.75} />
+              <span>
+                Em {MES_EXTENSO_FEES[Number(period.slice(5, 7)) - 1]} só pagam{" "}
+                <span className="text-ink-2">{juntarNomes(escaloesQuePagam(period).map((t) => t.name))}</span>.
+              </span>
+            </p>
+          )}
 
           <DataTable
             columns={columns}

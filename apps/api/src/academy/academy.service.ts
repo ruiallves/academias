@@ -211,6 +211,8 @@ export class AcademyService {
           billingDueDay: true, billingMonths: true,
           // O calendário agendado para a próxima época, se houver.
           billingNextFrom: true, billingNextMonths: true, billingNextDueDay: true,
+          // O período de cobrança por escalão, e o modo agendado. Ver `Academy.billingByTeam`.
+          billingByTeam: true, billingNextByTeam: true,
           // Se se paga pela app, e quem suporta a comissão. Ver `setPaymentRules`.
           paymentsEnabled: true, feesOnPayer: true,
           // O período experimental. Sem contrato nenhum activo, a consola
@@ -315,6 +317,16 @@ export class AcademyService {
               eupagoConfigured: await this.temEupago(db, ctx.academyId),
               // O plano inclui o site (Connect Pro)? Liga o menu Website na consola.
               websiteIncluido: await siteIncluido(db, ctx.academyId),
+              /*
+               * Os meses de cada escalão desta época, para o período de cobrança
+               * por escalão. Vazio = segue os meses do clube.
+               */
+              billingTeams: (
+                await db.team.findMany({
+                  where: { season: { isCurrent: true } },
+                  select: { id: true, billingMonths: true, billingNextMonths: true },
+                })
+              ).map((t) => ({ teamId: t.id, months: t.billingMonths, nextMonths: t.billingNextMonths })),
             }
           : academy,
         sports,
@@ -560,9 +572,34 @@ export class AcademyService {
    */
   async setBillingSettings(
     ctx: RequestContext,
-    dto: { dueDay?: number; months?: number[]; aplicarEm?: "atual" | "proxima" },
+    dto: {
+      dueDay?: number;
+      months?: number[];
+      /** Por escalão (`true`) ou do clube todo (`false`). Ver `Academy.billingByTeam`. */
+      byTeam?: boolean;
+      /** Os meses de cada escalão. Só mudam os que vêm. */
+      teams?: { teamId: string; months: number[] }[];
+      aplicarEm?: "atual" | "proxima";
+    },
   ) {
     if (!can(ctx, "settings:write")) throw new ForbiddenException("Sem permissão para mudar as definições");
+
+    /*
+     * Os meses de cada escalão: pelo menos um, e só escalões desta época. Um
+     * escalão sem meses nenhuns seria um escalão que nunca paga, e isso diz-se
+     * com o preço (0 €), não com o calendário.
+     */
+    const equipas = (dto.teams ?? []).map((e) => ({ teamId: e.teamId, months: [...new Set(e.months)].sort((a, b) => a - b) }));
+    if (new Set(equipas.map((e) => e.teamId)).size !== equipas.length) throw new BadRequestException("Há escalões repetidos");
+    for (const e of equipas) {
+      if (e.months.some((m) => !Number.isInteger(m) || m < 1 || m > 12)) throw new BadRequestException("Meses inválidos");
+      if (e.months.length === 0) throw new BadRequestException("Cada escalão tem de pagar pelo menos um mês");
+    }
+    const validarEquipas = async (db: ScopedClient) => {
+      if (equipas.length === 0) return;
+      const existem = await db.team.count({ where: { id: { in: equipas.map((e) => e.teamId) }, season: { isCurrent: true } } });
+      if (existem !== equipas.length) throw new BadRequestException("Há escalões que não são desta época");
+    };
 
     if (dto.dueDay !== undefined && (!Number.isInteger(dto.dueDay) || dto.dueDay < 1 || dto.dueDay > 28)) {
       // Até 28: é o último dia que existe em todos os meses. Um vencimento a 31
@@ -591,22 +628,51 @@ export class AcademyService {
     if (dto.aplicarEm === "proxima") {
       const desde = inicioDaProximaEpoca();
       const resultado = await this.prisma.runAs(ctx.academyId, async (db) => {
+        await validarEquipas(db);
         const academia = await db.academy.findFirst({ where: { id: ctx.academyId }, select: SELECT_CALENDARIO });
         if (!academia) throw new NotFoundException("Academia não encontrada");
         const agendado = academia.billingNextFrom === desde;
         const novosMeses = meses ?? (agendado && academia.billingNextMonths.length ? academia.billingNextMonths : academia.billingMonths);
         const novoDia = dto.dueDay ?? (agendado ? (academia.billingNextDueDay ?? academia.billingDueDay) : academia.billingDueDay);
+        const novoModo = dto.byTeam ?? (agendado ? (academia.billingNextByTeam ?? academia.billingByTeam) : academia.billingByTeam);
+
+        /*
+         * Os meses agendados de cada escalão. Iguais aos de hoje não são um
+         * agendamento: ficam vazios, que quer dizer "os de agora".
+         */
+        const mesmos = (a: number[], b: number[]) => a.length === b.length && a.every((m) => b.includes(m));
+        if (equipas.length > 0) {
+          const atuais = new Map(
+            (await db.team.findMany({ where: { id: { in: equipas.map((e) => e.teamId) } }, select: { id: true, billingMonths: true } }))
+              .map((t) => [t.id, t.billingMonths.length ? t.billingMonths : academia.billingMonths]),
+          );
+          for (const e of equipas) {
+            const hoje = atuais.get(e.teamId) ?? academia.billingMonths;
+            await db.team.update({ where: { id: e.teamId }, data: { billingNextMonths: mesmos(e.months, hoje) ? [] : e.months } });
+          }
+        }
+        const equipasAgendadas = await db.team.count({ where: { season: { isCurrent: true }, NOT: { billingNextMonths: { isEmpty: true } } } });
+
         const igualAoDeHoje =
           novoDia === academia.billingDueDay &&
-          novosMeses.length === academia.billingMonths.length &&
-          novosMeses.every((m) => academia.billingMonths.includes(m));
+          mesmos(novosMeses, academia.billingMonths) &&
+          novoModo === academia.billingByTeam &&
+          // Os meses dos escalões só contam quando é (ou vai ser) por escalão.
+          (!novoModo || equipasAgendadas === 0);
 
         await db.academy.update({
           where: { id: ctx.academyId },
           data: igualAoDeHoje
-            ? { billingNextFrom: null, billingNextMonths: [], billingNextDueDay: null }
-            : { billingNextFrom: desde, billingNextMonths: novosMeses, billingNextDueDay: novoDia },
+            ? { billingNextFrom: null, billingNextMonths: [], billingNextDueDay: null, billingNextByTeam: null }
+            : {
+                billingNextFrom: desde,
+                billingNextMonths: novosMeses,
+                billingNextDueDay: novoDia,
+                billingNextByTeam: novoModo === academia.billingByTeam ? null : novoModo,
+              },
         });
+        // Sem agendamento, nenhum escalão fica com meses agendados a meio.
+        if (igualAoDeHoje) await db.team.updateMany({ where: { NOT: { billingNextMonths: { isEmpty: true } } }, data: { billingNextMonths: [] } });
         const retiradas = await retirarForaDoCalendario(db, ctx.academyId);
         return { agendadoDesde: igualAoDeHoje ? null : desde, ...retiradas };
       });
@@ -614,6 +680,7 @@ export class AcademyService {
     }
 
     const retiradas = await this.prisma.runAs(ctx.academyId, async (db) => {
+      await validarEquipas(db);
       // O calendário de antes, para saber que meses se desligaram agora.
       const antes = await db.academy.findFirst({ where: { id: ctx.academyId }, select: { billingMonths: true } });
 
@@ -622,8 +689,16 @@ export class AcademyService {
         data: {
           ...(dto.dueDay !== undefined ? { billingDueDay: dto.dueDay } : {}),
           ...(meses !== undefined ? { billingMonths: meses } : {}),
+          ...(dto.byTeam !== undefined ? { billingByTeam: dto.byTeam } : {}),
         },
       });
+      /*
+       * Os meses de cada escalão ficam gravados mesmo quando se volta ao
+       * calendário do clube: voltar a "por escalão" encontra-os como estavam.
+       */
+      for (const e of equipas) {
+        await db.team.update({ where: { id: e.teamId }, data: { billingMonths: e.months } });
+      }
 
       /*
        * Um mês desligado fica vazio — e não só os que se desligaram agora.

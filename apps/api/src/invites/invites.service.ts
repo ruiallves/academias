@@ -14,6 +14,7 @@ import { SupabaseAccountsService } from "../auth/supabase-accounts.service";
 import { MailClient } from "../mail/mail.client";
 import { staffInviteEmail } from "../mail/mail.templates";
 import { can, ROLE_PERMISSIONS, ungrantablePermissions, type RequestContext } from "../common/permissions";
+import { juntarCargo, PAPEIS_DE_FAMILIA, patente, type Cargo } from "./ficha-unica";
 
 /**
  * Convites de staff.
@@ -697,7 +698,7 @@ export class InvitesService {
         select: {
           id: true, email: true, name: true, role: true, title: true,
           department: true, teamIds: true, academyRoleId: true, extraRoleIds: true,
-          academyRole: { select: { permissions: true } },
+          academyRole: { select: { permissions: true, rank: true } },
         },
       }),
     );
@@ -758,24 +759,103 @@ export class InvitesService {
        * pertencem — ficava por aplicar. Era o que fazia a primeira pessoa a
        * abrir um clube entrar sem conseguir configurar nada.
        */
-      const membership = await db.membership.upsert({
-        where: { academyId_userId_role: { academyId, userId: user.id, role: invite.role } },
-        update: {
-          isActive: true,
-          title: invite.title,
-          department: invite.department,
-          ...(invite.academyRoleId ? { customRoleId: invite.academyRoleId } : {}),
+      /*
+       * Uma ficha de staff por pessoa e por clube.
+       *
+       * Quem já é staff deste clube não ganha uma segunda ficha: o cargo do
+       * convite junta-se à que tem, e o de maior alcance fica como principal
+       * (ver `juntarCargo`). As fichas de família, de atleta e de sócio ficam
+       * à parte, porque são outras áreas da app.
+       */
+      const novo: Cargo = {
+        roleId: invite.academyRoleId,
+        rank: patente(invite.academyRoleId, invite.academyRole?.rank, invite.role),
+        role: invite.role,
+        title: invite.title,
+        department: invite.department,
+      };
+      const jaDoStaff = await db.membership.findFirst({
+        where: { academyId, userId: user.id, role: { notIn: PAPEIS_DE_FAMILIA } },
+        select: {
+          id: true, isActive: true, role: true, title: true, department: true, customRoleId: true,
+          customRole: { select: { rank: true } },
+          extraRoles: { select: { roleId: true } },
         },
-        create: {
-          academyId,
-          userId: user.id,
-          role: invite.role,
-          title: invite.title,
-          department: invite.department,
-          customRoleId: invite.academyRoleId,
-        },
-        select: { id: true },
       });
+
+      let membership: { id: string };
+      /** O cargo principal da ficha, no fim: um secundário igual a ele não se acrescenta. */
+      let principalId = invite.academyRoleId;
+      if (jaDoStaff && !jaDoStaff.isActive) {
+        /*
+         * Uma ficha desactivada não se junta: o convite decide tudo de novo.
+         *
+         * Juntar daria o maior alcance entre o cargo antigo e o novo, e um
+         * ex-director desactivado, convidado agora como treinador por um
+         * coordenador, voltava a entrar como director, com as concessões que
+         * tinha. Quem desactivou tirou-lhe isso de propósito.
+         */
+        await db.membershipRole.deleteMany({ where: { membershipId: jaDoStaff.id } });
+        membership = await db.membership.update({
+          where: { id: jaDoStaff.id },
+          data: {
+            isActive: true,
+            role: invite.role,
+            title: invite.title,
+            department: invite.department,
+            customRoleId: invite.academyRoleId,
+            grants: [],
+            revokes: [],
+          },
+          select: { id: true },
+        });
+      } else if (jaDoStaff) {
+        const { principal, secundarios } = juntarCargo(
+          {
+            principal: {
+              roleId: jaDoStaff.customRoleId,
+              rank: patente(jaDoStaff.customRoleId, jaDoStaff.customRole?.rank, jaDoStaff.role),
+              role: jaDoStaff.role,
+              title: jaDoStaff.title,
+              department: jaDoStaff.department,
+            },
+            secundarios: jaDoStaff.extraRoles.map((e) => e.roleId),
+          },
+          novo,
+        );
+        principalId = principal.roleId;
+        membership = await db.membership.update({
+          where: { id: jaDoStaff.id },
+          data: {
+            isActive: true,
+            role: principal.role,
+            title: principal.title,
+            department: principal.department,
+            customRoleId: principal.roleId,
+          },
+          select: { id: true },
+        });
+        await db.membershipRole.deleteMany({ where: { membershipId: jaDoStaff.id, roleId: { notIn: secundarios } } });
+        for (const roleId of secundarios) {
+          await db.membershipRole.upsert({
+            where: { membershipId_roleId: { membershipId: jaDoStaff.id, roleId } },
+            update: {},
+            create: { membershipId: jaDoStaff.id, roleId },
+          });
+        }
+      } else {
+        membership = await db.membership.create({
+          data: {
+            academyId,
+            userId: user.id,
+            role: invite.role,
+            title: invite.title,
+            department: invite.department,
+            customRoleId: invite.academyRoleId,
+          },
+          select: { id: true },
+        });
+      }
 
       /*
        * A data de nascimento, depois da membership: antes dela, a conta ainda
@@ -798,7 +878,7 @@ export class InvitesService {
         select: { id: true },
       });
       for (const role of secundarios) {
-        if (role.id === invite.academyRoleId) continue;
+        if (role.id === principalId) continue;
         await db.membershipRole.upsert({
           where: { membershipId_roleId: { membershipId: membership.id, roleId: role.id } },
           update: {},

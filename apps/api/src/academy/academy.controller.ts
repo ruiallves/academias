@@ -405,6 +405,18 @@ class PaymentRulesDto {
   @IsOptional() @IsBoolean() feesOnPayer?: boolean;
 }
 
+/** Os meses que um escalão paga, no período de cobrança por escalão. */
+class TeamBillingMonthsDto {
+  @IsString() @Length(1, 40) teamId!: string;
+
+  @IsArray()
+  @ArrayMaxSize(12)
+  @IsInt({ each: true })
+  @Min(1, { each: true })
+  @Max(12, { each: true })
+  months!: number[];
+}
+
 class BillingSettingsDto {
   @IsOptional() @IsInt() @Min(1) @Max(28) dueDay?: number;
 
@@ -415,6 +427,17 @@ class BillingSettingsDto {
   @Min(1, { each: true })
   @Max(12, { each: true })
   months?: number[];
+
+  /** O período de cobrança é do clube (`false`) ou de cada escalão (`true`). */
+  @IsOptional() @IsBoolean() byTeam?: boolean;
+
+  /** Os meses de cada escalão, quando é por escalão. Só os escalões que vêm mudam. */
+  @IsOptional()
+  @IsArray()
+  @ArrayMaxSize(300)
+  @ValidateNested({ each: true })
+  @Type(() => TeamBillingMonthsDto)
+  teams?: TeamBillingMonthsDto[];
 
   /** "atual" (por omissão): já nesta época. "proxima": agenda para a época seguinte. */
   @IsOptional() @IsIn(["atual", "proxima"]) aplicarEm?: "atual" | "proxima";

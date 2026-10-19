@@ -13,8 +13,17 @@ import { criarTecnica } from "./tecnica.mjs";
 import { criarDesenvolvimento } from "./desenvolvimento.mjs";
 import { criarOutros } from "./outros.mjs";
 import { criarGestao } from "./gestao.mjs";
+import { EXERCICIOS_BASQUETEBOL, inscricoes, resumoDoExercicio } from "./modalidades.mjs";
+import { readFileSync } from "node:fs";
 
 const ok = (json) => ({ status: 200, json });
+
+/**
+ * A Certificação FPF, já calculada pelo motor da API. Gera-se com
+ * `certificacao-gerar.mjs`; lê-se a cada pedido para uma regeneração entrar
+ * sem reiniciar nada.
+ */
+const certificacao = () => JSON.parse(readFileSync(new URL("./certificacao.json", import.meta.url), "utf8"));
 
 export function criarApi(clube, extras = {}) {
   const { bootstrap, equipas, atletas, staff, sessoes, cobrancas } = clube;
@@ -59,7 +68,13 @@ export function criarApi(clube, extras = {}) {
       .filter((s) => ["TECHNICAL", "CLINICAL", "OPERATIONS"].includes(s.department))
       .map((s) => ({ membershipId: s.id, name: s.name, role: s.title })),
     "/api/matches/adversarios": [],
+    "/api/certification": () => certificacao(),
+    "/api/inscricoes": () => inscricoes(),
     ...tecnica.GET,
+    // Com as outras modalidades, a biblioteca de exercícios leva também os de basquetebol.
+    ...(clube.multimodalidade
+      ? { "/api/training/exercises": [...tecnica.GET["/api/training/exercises"], ...EXERCICIOS_BASQUETEBOL.map(resumoDoExercicio)] }
+      : {}),
     ...desenvolvimento.GET,
     ...outros.GET,
     ...gestao.GET,
@@ -69,6 +84,7 @@ export function criarApi(clube, extras = {}) {
   /** As rotas com parâmetros: [expressão, função(match, query)]. */
   const PADROES = [
     ...tecnica.PADROES,
+    [/^\/api\/training\/exercises\/([^/]+)$/, (m) => (clube.multimodalidade ? EXERCICIOS_BASQUETEBOL.find((e) => e.id === m[1]) : undefined)],
     ...desenvolvimento.PADROES,
     [/^\/api\/matches\/([^/]+)$/, (m) => clube.detalheDoJogo?.(m[1])],
     // Quem pode subir de escalão para este jogo: três sub-11 mais velhos.

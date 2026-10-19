@@ -85,7 +85,15 @@ export type Academy = {
    * cobrança "só a partir da próxima". `from` é o primeiro período dessa época
    * (`AAAA-08`); a partir dele valem `months` e `dueDay`.
    */
-  billingNext: { from: string; months: number[]; dueDay: number } | null;
+  billingNext: { from: string; months: number[]; dueDay: number; byTeam: boolean } | null;
+  /**
+   * O período de cobrança é por escalão: cada equipa paga os seus meses
+   * (`billingTeams`), e `billingMonths` fica para quem não tem escalão e para os
+   * escalões sem meses próprios. Ver `mesesDoEscalao` em `lib/api.ts`.
+   */
+  billingByTeam: boolean;
+  /** Os meses de cada escalão desta época. Vazio = segue `billingMonths`. */
+  billingTeams: { teamId: string; months: number[]; nextMonths: number[] }[];
   /** Famílias e sócios podem pagar pela app? Desligado, só se paga ao clube. */
   paymentsEnabled: boolean;
   /**

@@ -64,6 +64,8 @@ ecrã ou um foco por encontrar fica marcada com `!` e o processo acaba com erro.
 | `consola/tecnica.mjs` | Exercícios (com o desenho em futebol 9), planos de sessão, periodização. |
 | `consola/desenvolvimento.mjs` | Avaliações. |
 | `consola/outros.mjs` | Scouting e sócios. |
+| `consola/modalidades.mjs` | Futsal e basquetebol (só nas cenas com `clube: { multimodalidade: true }`), o exercício de basquetebol e as inscrições na FPF e na FPB. |
+| `consola/certificacao-gerar.mjs` | Gera `consola/certificacao.json` com o motor, o manual e as regras da própria API (compilados com o esbuild). Corre-se outra vez quando o motor mudar. |
 | `consola/api.mjs` | As rotas: que dados respondem a que pedido. |
 
 Os dados dependem da hora da cena: um treino só tem presenças depois de acabar,

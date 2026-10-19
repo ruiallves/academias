@@ -83,6 +83,18 @@ model Academy {
   billingNextMonths Int[]   @default([])
   billingNextDueDay Int?
 
+  /// O período de cobrança é do clube todo (`false`) ou de cada escalão (`true`).
+  ///
+  /// Há clubes em que os escalões não pagam os mesmos meses: uns pagam Agosto e
+  /// não Julho, outros o contrário. Por escalão, os meses de cada equipa estão
+  /// em `Team.billingMonths`, e `billingMonths` (acima) passa a valer só para
+  /// quem não tem escalão e para as equipas que ainda não têm os seus. Um mês
+  /// desligado num escalão não existe para os atletas desse escalão. Ver
+  /// `calendarioPara` e `cobraAoAtleta` em `billing.service.ts`.
+  billingByTeam Boolean @default(false)
+  /// O modo agendado para a próxima época, com `billingNextFrom`. Nulo = o de agora.
+  billingNextByTeam Boolean?
+
   /// ## Pagar pela app: ligado ou desligado
   ///
   /// Um clube pode não querer receber pela app — cobra ao balcão, ou ainda não
@@ -1221,6 +1233,15 @@ model Team {
   /// Nulo numa equipa criada antes de isto existir ou numa modalidade sem
   /// jogos; aí o servidor cai no valor da modalidade (`Sport.matchMinutes`).
   matchMinutes Int?
+
+  /// Os meses em que este escalão paga mensalidade (1–12), quando o clube cobra
+  /// por escalão (`Academy.billingByTeam`). Vazio = segue os meses do clube
+  /// (`Academy.billingMonths`): é como nasce uma equipa nova. Fora do modo por
+  /// escalão não é lido.
+  billingMonths     Int[] @default([])
+  /// Os meses agendados para a próxima época (`Academy.billingNextFrom`). Vazio =
+  /// os de agora. Na viragem de época passam para a equipa nova.
+  billingNextMonths Int[] @default([])
 
   /// Não há duas equipas com o mesmo nome na mesma modalidade e época — o
   /// índice único vive na migração `20260907140000_equipa_sem_nome_repetido`,

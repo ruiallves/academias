@@ -60,6 +60,10 @@ type ApiBootstrap = {
     billingNextFrom?: string | null;
     billingNextMonths?: number[];
     billingNextDueDay?: number | null;
+    /** O período de cobrança por escalão, e os meses de cada escalão. Ver `Academy.billingByTeam`. */
+    billingByTeam?: boolean;
+    billingNextByTeam?: boolean | null;
+    billingTeams?: { teamId: string; months: number[]; nextMonths: number[] }[];
     /** Pagar pela app, e quem suporta a comissão. Ver `setPaymentRules` na API. */
     paymentsEnabled?: boolean;
     feesOnPayer?: boolean;
@@ -392,7 +396,7 @@ const EMPTY: State = {
   academy: {
     id: "", slug: "", name: "", shortName: "", signalColor: "#0f6b62", logoUrl: "", city: "",
     status: "ACTIVE", trialEndsAt: null, createdAt: "",
-    billingDueDay: 8, billingMonths: [], billingNext: null,
+    billingDueDay: 8, billingMonths: [], billingNext: null, billingByTeam: false, billingTeams: [],
     paymentsEnabled: true, feesOnPayer: false, eupagoConfigured: true, websiteIncluido: false,
     membershipHeadline: "", membershipIntro: "", membershipPoints: [],
     memberAnnualStartMonth: 8, memberAnnualStartDay: 1,
@@ -1105,8 +1109,11 @@ function juntar<T extends { id: string }>(atuais: T[], novos: T[]): T[] {
               ? boot.academy.billingNextMonths
               : (boot.academy.billingMonths ?? []),
             dueDay: boot.academy.billingNextDueDay ?? boot.academy.billingDueDay ?? 8,
+            byTeam: boot.academy.billingNextByTeam ?? boot.academy.billingByTeam ?? false,
           }
         : null,
+      billingByTeam: boot.academy.billingByTeam ?? false,
+      billingTeams: boot.academy.billingTeams ?? [],
       createdAt: boot.academy.createdAt,
       membershipHeadline: boot.academy.membershipHeadline ?? "",
       membershipIntro: boot.academy.membershipIntro ?? "",

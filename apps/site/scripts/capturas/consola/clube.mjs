@@ -12,6 +12,7 @@
  */
 
 import { criarJogos } from "./jogos.mjs";
+import { BASQUETEBOL, EQUIPAS_EXTRA, FUTSAL, MODALIDADES_VARIADAS } from "./modalidades.mjs";
 
 /* -------------------------------------------------------------------------- */
 /* Tempo                                                                       */
@@ -281,6 +282,12 @@ function atletas() {
  * `opcoes` deixa uma cena desviar um ponto da história sem a reescrever:
  *  - `folhaDeQuarta`: `false` deixa a folha de presenças de quarta por marcar,
  *    mesmo depois de o treino acabar.
+ *  - `multimodalidade`: `true` junta o futsal e o basquetebol, com uma equipa
+ *    cada (ver `modalidades.mjs`). Fica de fora nas cenas antigas para o menu
+ *    lateral delas não mudar.
+ *  - `modalidades: "variadas"`: o futebol e cinco modalidades criadas pelo
+ *    clube (andebol, ténis, natação, voleibol, ginástica), para mostrar que a
+ *    plataforma serve qualquer desporto. Só para as Definições → Modalidades.
  */
 export function criarClube(agora, opcoes = {}) {
   const t = agora.getTime();
@@ -410,6 +417,10 @@ export function criarClube(agora, opcoes = {}) {
   /* ---- Jogos ---------------------------------------------------------------- */
   const { jogos, lista: listaDeJogos, detalhe: detalheDoJogo } = criarJogos({ equipas, daEquipa, porId, passou, agora });
 
+  // As outras modalidades entram depois dos jogos e dos treinos: não têm
+  // calendário nem plantel nas capturas, só a equipa e a área técnica.
+  if (opcoes.multimodalidade) equipas.push(...EQUIPAS_EXTRA.map((e) => ({ ...e })));
+
   /* ---- Avisos --------------------------------------------------------------- */
   const leitura = (publicado, alcance, lidos) => {
     // A leitura cresce nas primeiras horas: metade na primeira, quase tudo ao fim de quatro.
@@ -425,7 +436,7 @@ export function criarClube(agora, opcoes = {}) {
   return {
     agora, atletas: A, porId, id, equipas, staff, sessoes, cobrancas, jogos, listaDeJogos, detalheDoJogo, avisos,
     eventos: EVENTOS.map((e) => ({ ...e })), catalogos: CATALOGOS, notificacoes: [],
-    daEquipa, passou,
+    daEquipa, passou, multimodalidade: Boolean(opcoes.multimodalidade),
     bootstrap: {
       academy: {
         id: "ac-cd-academias", slug: "cd-academias", name: "Clube Desportivo Academias", shortName: "CD Academias",
@@ -435,8 +446,15 @@ export function criarClube(agora, opcoes = {}) {
         paymentsEnabled: true, feesOnPayer: false, eupagoConfigured: true,
         membershipHeadline: null, membershipIntro: null, membershipPoints: [],
         memberAnnualStartMonth: 8, memberAnnualStartDay: 1,
+        // A associação distrital: sai ao lado da federação, nas modalidades.
+        ...(opcoes.modalidades === "variadas" ? { association: "Viseu" } : {}),
       },
-      sports: [SPORT],
+      sports:
+        opcoes.modalidades === "variadas"
+          ? [SPORT, ...MODALIDADES_VARIADAS]
+          : opcoes.multimodalidade
+            ? [SPORT, FUTSAL, BASQUETEBOL]
+            : [SPORT],
       season: { id: EPOCA.id, label: EPOCA.label },
       seasons: [EPOCA, EPOCA_ANTERIOR].map((s) => ({ ...s, startsOn: `${s.startsOn}T00:00:00.000Z`, endsOn: `${s.endsOn}T00:00:00.000Z` })),
       me: {

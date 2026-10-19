@@ -259,7 +259,7 @@ export function availablePeriods(): string[] {
  * Aceita um mês (1–12) ou um período `AAAA-MM`.
  */
 export function mesCobrado(mesOuPeriodo: number | string): boolean {
-  if (typeof mesOuPeriodo === "number") return academy.billingMonths.includes(mesOuPeriodo);
+  if (typeof mesOuPeriodo === "number") return mesesDoClubeEm(null).includes(mesOuPeriodo);
   return mesesCobradosEm(mesOuPeriodo).includes(Number(mesOuPeriodo.slice(5, 7)));
 }
 
@@ -267,11 +267,68 @@ export function mesCobrado(mesOuPeriodo: number | string): boolean {
  * Os meses cobrados no calendário que vale para `period`.
  *
  * Com um calendário agendado para a próxima época, os períodos dessa época
- * seguem-no — como `calendarioPara` na API.
+ * seguem-no — como `calendarioPara` na API. Por escalão, são os meses que
+ * **algum** escalão paga (ou quem não tem escalão): um mês que ninguém paga não
+ * existe, como `cobraNoMes` na API.
  */
 export function mesesCobradosEm(period: string): number[] {
-  const proxima = academy.billingNext;
-  return proxima && period >= proxima.from ? proxima.months : academy.billingMonths;
+  return mesesDoClubeEm(period);
+}
+
+/** O calendário que vale num período (ou hoje, sem período): o modo e os meses do clube. */
+function calendarioEm(period: string | null): { porEscalao: boolean; meses: number[]; proxima: boolean } {
+  const p = academy.billingNext;
+  const proxima = Boolean(p && period && period >= p.from);
+  return proxima && p
+    ? { porEscalao: p.byTeam, meses: p.months, proxima: true }
+    : { porEscalao: academy.billingByTeam, meses: academy.billingMonths, proxima: false };
+}
+
+function mesesDoClubeEm(period: string | null): number[] {
+  const c = calendarioEm(period);
+  if (!c.porEscalao) return c.meses;
+  const todos = new Set(c.meses);
+  for (const t of allTeams()) for (const m of mesesDoEscalao(t.id, period)) todos.add(m);
+  return [...todos].sort((a, b) => a - b);
+}
+
+/**
+ * Os meses que um escalão paga, no calendário que vale para `period` (hoje,
+ * sem período). Fora do modo por escalão, ou sem meses próprios, são os do
+ * clube. O mesmo que `mesesDaEquipa` na API.
+ */
+export function mesesDoEscalao(teamId: string | null, period: string | null = null): number[] {
+  const c = calendarioEm(period);
+  if (!c.porEscalao || !teamId) return c.meses;
+  const t = academy.billingTeams.find((x) => x.teamId === teamId);
+  const meses = c.proxima && t?.nextMonths.length ? t.nextMonths : t?.months;
+  return meses?.length ? meses : c.meses;
+}
+
+/**
+ * Este atleta paga mensalidade neste período? Por escalão, se alguma das
+ * equipas dele paga o mês. O mesmo que `cobraAoAtleta` na API.
+ */
+export function atletaPagaEm(athleteId: string, period: string): boolean {
+  const mes = Number(period.slice(5, 7));
+  const a = allAthletes().find((x) => x.id === athleteId);
+  const equipas = a?.equipas.map((e) => e.teamId) ?? [];
+  if (!calendarioEm(period).porEscalao || equipas.length === 0) return calendarioEm(period).meses.includes(mes);
+  return equipas.some((t) => mesesDoEscalao(t, period).includes(mes));
+}
+
+/**
+ * Os escalões desta época que pagam um mês, quando nem todos o pagam. Vazio
+ * fora do modo por escalão ou quando todos o pagam: é a nota "só Sub-19 e
+ * Seniores" debaixo do mês nas Mensalidades.
+ */
+export function escaloesQuePagam(period: string): Team[] {
+  const c = calendarioEm(period);
+  if (!c.porEscalao) return [];
+  const mes = Number(period.slice(5, 7));
+  const equipas = allTeams();
+  const pagam = equipas.filter((t) => mesesDoEscalao(t.id, period).includes(mes));
+  return pagam.length === equipas.length ? [] : pagam;
 }
 
 /**

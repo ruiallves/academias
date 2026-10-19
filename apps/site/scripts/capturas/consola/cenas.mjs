@@ -8,6 +8,7 @@
 import { em } from "./clube.mjs";
 import { EX_SAIDA, TREINO_DE_QUARTA } from "./tecnica.mjs";
 import { JOGO_DE_SABADO } from "./jogos.mjs";
+import { BASQUETEBOL, EX_PICK_AND_ROLL } from "./modalidades.mjs";
 
 const quadro = (n) => ({
   id: `con-quadro-${n}`,
@@ -304,6 +305,70 @@ export const CENAS = [
     focos: {
       movimentos: (p) => p.locator("table"),
       mensalidades: (p) => p.locator("tbody tr", { hasText: "Mensalidades de outubro" }),
+    },
+  },
+  /*
+   * As três cenas seguintes são do clube com três modalidades (futebol, futsal
+   * e basquetebol): o menu lateral delas tem a Área técnica de cada uma. As
+   * outras cenas continuam só com futebol.
+   */
+  {
+    id: "con-certificacao",
+    descricao: "Certificação FPF: o CD Academias nas 3 estrelas, com 68,75 pontos e o que falta para as 4",
+    agora: em("2026-10-12", "09:50"),
+    clube: { multimodalidade: true },
+    url: "/certificacao",
+    focos: {
+      nivel: (p) => p.locator("section.cert-hero"),
+      pontos: (p) => p.locator(".cert-gauge"),
+      "para-subir": (p) => caixa(p, "Para as 4 estrelas é preciso", "pontos"),
+      caminho: (p) => caixa(p, "O que falta para as 4 estrelas", "Ver tudo o que falta"),
+    },
+  },
+  {
+    id: "con-inscricoes",
+    descricao: "Inscrições nas federações: boletins da FPF e da FPB, de por gerar a validados",
+    agora: em("2026-10-12", "10:00"),
+    clube: { multimodalidade: true },
+    url: "/inscricoes",
+    focos: {
+      // As opções do seletor de estado de cada linha também dizem "Por gerar" e
+      // "Validada": o funil procura-se pelo botão do passo.
+      funil: (p) => p.locator("button[aria-pressed]", { hasText: "Folha gerada" }).locator("xpath=../.."),
+      lista: (p) => p.locator("table"),
+      "linha-tomas": (p) => p.locator("tbody tr", { hasText: "Tomás Ferreira" }),
+      "linhas-goncalo": (p) => p.locator("tbody tr", { hasText: "Gonçalo Vaz" }),
+    },
+  },
+  {
+    id: "con-basquetebol",
+    descricao: "Editor tático de basquetebol: pick & roll central no meio campo FIBA, frame 2 de 3",
+    agora: em("2026-10-06", "19:00"),
+    clube: { multimodalidade: true },
+    url: `/modalidades/${BASQUETEBOL.id}/exercicios/${EX_PICK_AND_ROLL}`,
+    preparar: async (page) => {
+      const regua = page.locator("div", { has: page.getByText("Frames", { exact: true }) }).last();
+      await regua.getByRole("button", { name: "2", exact: true }).click();
+    },
+    focos: {
+      campo: (p) => p.locator("svg:has(g[data-id])"),
+      modalidades: (p) => p.locator("nav").getByText("Basquetebol", { exact: true }),
+    },
+  },
+  /*
+   * As modalidades do clube, nas Definições: o futebol (com a federação e a
+   * área técnica) e cinco criadas pelo clube. É o ecrã que diz "qualquer
+   * desporto" sem fixar uma lista.
+   */
+  {
+    id: "con-modalidades",
+    descricao: "Definições, Modalidades: futebol, andebol, ténis, natação, voleibol e ginástica, cada uma com as suas posições",
+    agora: em("2026-10-12", "10:10"),
+    clube: { modalidades: "variadas" },
+    url: "/definicoes?secao=modalidades",
+    focos: {
+      lista: (p) => p.getByRole("button", { name: "Mostrar configuração de Futebol" }).locator("xpath=ancestor::section[1]"),
+      natacao: (p) => p.getByRole("button", { name: "Mostrar configuração de Natação" }),
     },
   },
   {
