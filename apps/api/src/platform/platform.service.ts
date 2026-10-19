@@ -6,7 +6,7 @@ import { PresenceService } from "../presence/presence.service";
 import { PlatformPrisma } from "./platform.prisma";
 import { eupagoConfigurado } from "../billing/eupago-do-clube";
 import { initialRoles, isPresidente } from "../roles/roles.service";
-import { shortNameOf } from "../common/short-name";
+import { SHORT_NAME_MAX, shortNameOf } from "../common/short-name";
 import { MailClient } from "../mail/mail.client";
 import { SubscriptionOrdersService } from "../subscription/subscription-orders.service";
 import { nomeDoFicheiro } from "../subscription/declaracao";
@@ -307,7 +307,7 @@ export class PlatformService {
     const academy = await this.prisma.academy.findUnique({
       where: { id },
       select: {
-        id: true, slug: true, name: true, status: true, createdAt: true, trialEndsAt: true, suspendedAt: true,
+        id: true, slug: true, name: true, shortName: true, status: true, createdAt: true, trialEndsAt: true, suspendedAt: true,
         logoUrl: true, signalColor: true,
         /* Só para dizer se estão preenchidas — os valores nunca saem daqui. */
         eupagoApiKey: true, eupagoWebhookSecret: true,
@@ -465,6 +465,8 @@ export class PlatformService {
       id: academy.id,
       slug: academy.slug,
       name: academy.name,
+      /** Como o clube aparece na app e nos emails ("CD Academias"). Edita-se com o nome. */
+      shortName: academy.shortName,
       status: academy.status,
       createdAt: academy.createdAt,
       trialEndsAt: academy.trialEndsAt,
@@ -1276,6 +1278,48 @@ export class PlatformService {
    *
    * Fica no registo de auditoria **sem** os valores: quem, quando, o quê mudou.
    */
+  /**
+   * O nome de um clube, mudado pela plataforma (pedido do Rui, 19/10/2026).
+   *
+   * Até aqui o nome escrevia-se ao criar o clube e mais nada; um clube criado
+   * com o nome errado, ou que muda de nome, tinha de pedir uma mudança à base.
+   * O clube continua a poder mudar o nome curto nas Definições; o nome completo
+   * só se muda aqui.
+   *
+   * O nome curto acompanha o nome quando ainda era o que a plataforma tinha
+   * derivado dele (`shortNameOf`): ninguém o escolheu, e ficar com o do nome
+   * antigo era a app continuar a chamar o clube pelo nome que deixou de ter.
+   * Um nome curto escrito à mão (pelo clube ou aqui) fica como está, a não ser
+   * que venha outro no pedido. O endereço (`slug`) não muda: está nos links e
+   * nas apps instaladas.
+   */
+  async setAcademyName(
+    admin: PlatformAdminContext,
+    id: string,
+    dto: { name: string; shortName?: string },
+    ip?: string,
+  ) {
+    const academy = await this.prisma.academy.findUnique({ where: { id }, select: { id: true, name: true, shortName: true } });
+    if (!academy) throw new BadRequestException("Academia não encontrada");
+
+    const name = dto.name.replace(/\s+/g, " ").trim();
+    if (name.length < 3) throw new BadRequestException("O nome tem de ter pelo menos 3 caracteres");
+    if (name.length > SHORT_NAME_MAX) throw new BadRequestException(`O nome não pode passar de ${SHORT_NAME_MAX} caracteres`);
+
+    let shortName: string;
+    if (dto.shortName !== undefined && dto.shortName.trim()) {
+      shortName = dto.shortName.replace(/\s+/g, " ").trim();
+      if (shortName.length < 2) throw new BadRequestException("O nome curto tem de ter pelo menos 2 caracteres");
+      if (shortName.length > SHORT_NAME_MAX) throw new BadRequestException(`O nome curto não pode passar de ${SHORT_NAME_MAX} caracteres`);
+    } else {
+      shortName = academy.shortName === shortNameOf(academy.name) ? shortNameOf(name) : academy.shortName;
+    }
+
+    await this.prisma.academy.update({ where: { id }, data: { name, shortName } });
+    await this.audit(admin, "academy.name", "academy", id, { de: academy.name, para: name, shortName }, ip);
+    return { name, shortName };
+  }
+
   async setEupago(
     admin: PlatformAdminContext,
     id: string,

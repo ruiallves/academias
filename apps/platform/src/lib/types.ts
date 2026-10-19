@@ -179,6 +179,8 @@ export type AcademyDetail = {
   eupago: EupagoDoClube;
   slug: string;
   name: string;
+  /** Como o clube aparece na app e nos emails. */
+  shortName: string;
   status: AcademyStatus;
   createdAt: string;
   trialEndsAt: string | null;

@@ -1,5 +1,7 @@
+import { useState } from "react";
 import { Link, useParams } from "react-router-dom";
-import { ArrowLeft } from "lucide-react";
+import { ArrowLeft, Pencil } from "lucide-react";
+import { NomeESimboloDialog } from "@/components/NomeESimboloDialog";
 import { PageHeader } from "@/components/Shell";
 import { ClubMark, Empty, Metric, MetricRow, Panel, PanelHead, Pill, Progress } from "@/components/primitives";
 import { ActivityChart } from "@/components/Charts";
@@ -52,8 +54,9 @@ const ROLE_LABEL: Record<string, string> = {
 export default function AcademyDetail({ me }: { me: Me }) {
   const { id = "" } = useParams();
   const ficha = useApi<Detail>(`/academies/${id}`);
+  const [editarNome, setEditarNome] = useState(false);
 
-  if (ficha.loading) return <Skeleton />;
+  if (ficha.loading && !ficha.data) return <Skeleton />;
   if (ficha.error) return <Falhou message={ficha.error} onRetry={ficha.reload} />;
 
   const d = ficha.data!;
@@ -78,6 +81,13 @@ export default function AcademyDetail({ me }: { me: Me }) {
             <h1 className="truncate text-page text-ink">{d.name}</h1>
             <p className="mt-0.5 truncate font-mono text-[12px] text-ink-4">{d.slug}.academias.pt</p>
           </div>
+          {/* Mudar o nome e o símbolo. `OWNER`/`ADMIN`, como o resto que mexe no clube. */}
+          {(me.role === "OWNER" || me.role === "ADMIN") && (
+            <button type="button" onClick={() => setEditarNome(true)} className="ctl-ghost shrink-0 self-start" title="Mudar o nome e o símbolo">
+              <Pencil className="size-3.5" strokeWidth={1.75} />
+              Editar
+            </button>
+          )}
         </div>
         <div className="flex shrink-0 items-center gap-2">
           {/* O mesmo estado que a lista mostra — ver `lib/estado.ts`. */}
@@ -88,6 +98,14 @@ export default function AcademyDetail({ me }: { me: Me }) {
           </span>
         </div>
       </div>
+
+      {editarNome && (
+        <NomeESimboloDialog
+          academy={{ id: d.id, name: d.name, shortName: d.shortName ?? d.name, logoUrl: d.logoUrl, signalColor: d.signalColor }}
+          onClose={() => setEditarNome(false)}
+          onSaved={ficha.reload}
+        />
+      )}
 
       <div className="space-y-3">
         {/*

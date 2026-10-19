@@ -564,7 +564,7 @@ export function NewAcademyDialog({ onClose, onCreated }: { onClose: () => void; 
  * `club-logo.service.ts`. A porta é que é outra: aqui é a da plataforma, porque
  * o clube ainda não tem ninguém lá dentro para o fazer.
  */
-async function enviarSimbolo(academyId: string, file: File) {
+export async function enviarSimbolo(academyId: string, file: File) {
   const { url, token, key } = await apiPost<{ url: string; token: string; key: string }>(
     `/academies/${academyId}/simbolo/upload`,
     { contentType: file.type },

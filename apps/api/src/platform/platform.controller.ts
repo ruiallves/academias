@@ -20,6 +20,12 @@ import { SubscriptionNoticesService } from "../subscription/subscription-notices
  * cabe um plantel com fotografias, acima disso é um engano de dígitos.
  */
 /** As credenciais euPago de um clube. Vazio apaga; ausente não mexe. */
+class SetAcademyNameDto {
+  @IsString() @Length(1, 200) name!: string;
+  /** Vazio ou ausente: acompanha o nome se ainda era o derivado. Ver `setAcademyName`. */
+  @IsOptional() @IsString() @Length(0, 200) shortName?: string;
+}
+
 class SetEupagoDto {
   @IsOptional() @IsString() @Length(0, 200) apiKey?: string;
   @IsOptional() @IsString() @Length(0, 200) webhookSecret?: string;
@@ -297,6 +303,13 @@ export class PlatformController {
    * As credenciais euPago de um clube — a chave do canal e a do webhook.
    * `OWNER`/`ADMIN`, como o plano: é o que decide para onde vai o dinheiro.
    */
+  /** O nome do clube (e o nome curto). `OWNER`/`ADMIN`, como o símbolo. Ver `setAcademyName`. */
+  @Patch("academies/:id/nome")
+  @PlatformRoles("OWNER", "ADMIN")
+  setAcademyName(@Req() req: PlatformRequest, @Ip() ip: string, @Param("id") id: string, @Body() body: SetAcademyNameDto) {
+    return this.platform.setAcademyName(req.admin, id, body, ip);
+  }
+
   @Patch("academies/:id/eupago")
   @PlatformRoles("OWNER", "ADMIN")
   setEupago(@Req() req: PlatformRequest, @Ip() ip: string, @Param("id") id: string, @Body() body: SetEupagoDto) {
