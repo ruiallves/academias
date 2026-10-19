@@ -39,6 +39,9 @@ export function valorDe(p: PagamentoDaEntrega | undefined): ValorDoPagamento {
 
 export const centsDe = (v: ValorDoPagamento) => Math.round(Number(v.valor.replace(/\s/g, "").replace(",", ".")) * 100);
 
+/** O resto do pagamento, sem o valor: pago precisa de método. Para a entrega de vários artigos. */
+export const pagamentoSemValorValido = (v: ValorDoPagamento) => v.modo !== "pago" || v.metodo !== null;
+
 /** Pronto a gravar? Com cobrança, precisa de valor; pago precisa de método. */
 export function pagamentoValido(v: ValorDoPagamento): boolean {
   if (v.modo === "nenhum") return true;
@@ -76,6 +79,7 @@ export function PagamentoDaEntregaField({
   onChange,
   primeiroNome,
   athleteId,
+  semValor,
 }: {
   value: ValorDoPagamento;
   onChange: (v: ValorDoPagamento) => void;
@@ -83,6 +87,11 @@ export function PagamentoDaEntregaField({
   primeiroNome?: string;
   /** Para avisar quando ainda não há encarregado com a app. */
   athleteId?: string;
+  /**
+   * Sem o campo do valor: na entrega de vários artigos o valor escreve-se em
+   * cada linha, e aqui decide-se só o resto (por pagar ou pago, o método, a app).
+   */
+  semValor?: boolean;
 }) {
   const { session } = useSession();
   /*
@@ -135,7 +144,7 @@ export function PagamentoDaEntregaField({
       {escolha !== "nenhum" && (
         <div className="space-y-3 border-t border-line bg-sunken/40 px-3.5 py-3.5">
           <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
-            <div className="relative w-[150px]">
+            <div className={cx("relative w-[150px]", semValor && "hidden")}>
               <input
                 inputMode="decimal"
                 value={value.valor}

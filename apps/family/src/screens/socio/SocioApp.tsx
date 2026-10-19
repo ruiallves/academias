@@ -58,6 +58,7 @@ import {
   jogosPorDia,
   localDoJogo,
   pilulaDoDia,
+  porPrioridade,
   quandoDoJogo,
   tituloDoDia,
 } from "@/lib/jogos-por-dia";
@@ -339,7 +340,15 @@ function Inicio() {
   const emAtraso = porPagar.some((f) => f.overdue);
   const ultima = data.fees.find((f) => f.status === "SETTLED");
   const sondagem = data.polls.find((p) => !p.myOptionId);
-  const destaque = data.matches[0];
+  /*
+   * O próximo jogo é o mais próximo no tempo, seja de que escalão for (pedido
+   * do Rui, 19/10/2026). Era o primeiro da lista do servidor, que vem por
+   * escalão, e o Início mostrava os Seniores de domingo com os Sub-13 a jogar
+   * no sábado. Dois jogos à mesma hora: fica o do escalão mais velho.
+   */
+  const destaque = [...data.matches].sort(
+    (a, b) => new Date(a.startsAt).getTime() - new Date(b.startsAt).getTime() || porPrioridade(a, b),
+  )[0];
   let i = 0;
 
   return (
@@ -416,10 +425,8 @@ function Inicio() {
       )}
 
       {/*
-        O jogo de maior prioridade. A lista chega ordenada do servidor: dos
-        escalões mais velhos para os mais novos, e dentro de cada um o mais
-        próximo. O primeiro é o destaque; os outros estão no separador Jogos,
-        agrupados por equipa (ver `JogosDoClube`).
+        O próximo jogo do clube, o mais perto no tempo (ver `destaque`). Os
+        outros estão no separador Jogos, dia a dia.
       */}
       {destaque && (
         <section className="rise" style={{ ["--i" as string]: i++ }}>
@@ -1517,7 +1524,7 @@ function Novidades() {
 }
 
 /**
- * O jogo de maior prioridade, no Início. Diz sempre o dia por inteiro
+ * O próximo jogo, no Início. Diz sempre o dia por inteiro
  * ("Domingo, 18 out"), nunca só o dia da semana: era isso que deixava os sócios
  * sem saber de que domingo se falava.
  */

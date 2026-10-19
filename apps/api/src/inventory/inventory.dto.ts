@@ -1,4 +1,4 @@
-import { ArrayMaxSize, IsArray, IsIn, IsInt, IsOptional, IsString, Length, Max, Min, ValidateNested } from "class-validator";
+import { ArrayMaxSize, ArrayMinSize, IsArray, IsIn, IsInt, IsOptional, IsString, Length, Max, Min, ValidateNested } from "class-validator";
 import { Type } from "class-transformer";
 
 /**
@@ -153,6 +153,25 @@ export class AssignDto {
   @IsInt() @Min(1) @Max(1000) quantity!: number;
   @IsOptional() @IsString() @Length(0, 500) notes?: string;
   @IsOptional() @ValidateNested() @Type(() => PagamentoDaEntregaDto) pagamento?: PagamentoDaEntregaDto;
+}
+
+/** Um artigo de uma entrega de vários: o tamanho, quantas, e o pagamento dele. */
+export class LinhaDeEntregaDto {
+  @IsString() @Length(1, 40) variantId!: string;
+  @IsInt() @Min(1) @Max(1000) quantity!: number;
+  @IsOptional() @ValidateNested() @Type(() => PagamentoDaEntregaDto) pagamento?: PagamentoDaEntregaDto;
+}
+
+/**
+ * Entregar vários artigos ao mesmo atleta de uma vez (a t-shirt, os calções e
+ * as meias). Cada linha é uma entrega, com o seu pagamento; o stock desconta-se
+ * tudo ou nada. Ver `InventoryService.assignLote`.
+ */
+export class AssignLoteDto {
+  @IsString() @Length(1, 40) athleteId!: string;
+  @IsOptional() @IsString() @Length(0, 500) notes?: string;
+  @IsArray() @ArrayMinSize(1) @ArrayMaxSize(30) @ValidateNested({ each: true }) @Type(() => LinhaDeEntregaDto)
+  linhas!: LinhaDeEntregaDto[];
 }
 
 /** Editar uma entrega: as notas e o pagamento. A devolução tem rota própria. */

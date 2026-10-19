@@ -263,6 +263,27 @@ export const assign = (body: {
     erroDoPagamento?: string | null;
   }>("/api/inventory/assignments", body);
 
+/**
+ * Vários artigos ao mesmo atleta, de uma vez: o stock sai tudo ou nada, e cada
+ * linha fica uma entrega com o seu pagamento. Ver `assignLote` na API.
+ */
+export const assignLote = (body: {
+  athleteId: string;
+  notes?: string;
+  linhas: { variantId: string; quantity: number; pagamento?: PagamentoPedido }[];
+}) =>
+  apiPost<{
+    athleteName: string;
+    entregas: {
+      id: string;
+      itemName: string;
+      variantLabel: string;
+      quantity: number;
+      pagamento: PagamentoDaEntrega | null;
+      erroDoPagamento: string | null;
+    }[];
+  }>("/api/inventory/assignments/lote", body);
+
 /** Editar uma entrega: as notas e o pagamento. */
 export const updateAssignment = (id: string, body: { notes?: string; pagamento?: PagamentoPedido }) =>
   apiPatch<{ ok: true; pagamento?: PagamentoDaEntrega }>(`/api/inventory/assignments/${id}`, body);

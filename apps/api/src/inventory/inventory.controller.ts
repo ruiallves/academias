@@ -3,6 +3,7 @@ import type { AuthedRequest } from "../auth/auth.guard";
 import { InventoryService } from "./inventory.service";
 import {
   AssignDto,
+  AssignLoteDto,
   CreateItemDto,
   DeleteItemDto,
   ImageConfirmDto,
@@ -146,6 +147,12 @@ export class InventoryController {
   @Post("assignments")
   assign(@Req() req: AuthedRequest, @Body() dto: AssignDto) {
     return this.inventory.assign(req.ctx, dto);
+  }
+
+  /** Vários artigos ao mesmo atleta, de uma vez. Ver `assignLote`. */
+  @Post("assignments/lote")
+  assignLote(@Req() req: AuthedRequest, @Body() dto: AssignLoteDto) {
+    return this.inventory.assignLote(req.ctx, dto);
   }
 
   /** Editar uma entrega: as notas e o pagamento. Ver `definirPagamento`. */

@@ -9,6 +9,7 @@ import { EspacoService } from "../storage/espaco.service";
 import { BillingService } from "../billing/billing.service";
 import type {
   AssignDto,
+  AssignLoteDto,
   CreateItemDto,
   ImportRowDto,
   ReturnDto,
@@ -1254,20 +1255,65 @@ export class InventoryService {
    * contrário, é pior do que não ter módulo nenhum: passa a haver dois números
    * verdadeiros e nenhum de confiança.
    */
+  /**
+   * Uma entrega, dentro de uma transação que já existe: o tamanho, o stock, a
+   * entrega e o movimento. Serve `assign` (um artigo) e `assignLote` (vários,
+   * tudo ou nada).
+   *
+   * `prefixo` põe o nome do artigo à frente das recusas: com vários artigos,
+   * "Só há 2 unidades disponíveis" não dizia de qual.
+   */
+  private async entregarUma(
+    db: ScopedClient,
+    ctx: RequestContext,
+    p: { athleteId: string; variantId: string; quantity: number; notes: string | null; seasonId: string | null; prefixo?: boolean },
+  ) {
+    const variante = await db.inventoryVariant.findFirst({
+      where: { id: p.variantId, archivedAt: null },
+      select: { id: true, label: true, item: { select: { id: true, name: true, archivedAt: true } } },
+    });
+    if (!variante || variante.item.archivedAt) throw new NotFoundException("Tamanho não encontrado");
+
+    try {
+      await this.descontarDisponivel(db, p.variantId, p.quantity);
+    } catch (e) {
+      if (p.prefixo && e instanceof BadRequestException) {
+        throw new BadRequestException(`${variante.item.name} · ${variante.label}: ${e.message}`);
+      }
+      throw e;
+    }
+
+    const entrega = await db.inventoryAssignment.create({
+      data: {
+        academyId: ctx.academyId,
+        athleteId: p.athleteId,
+        variantId: p.variantId,
+        quantity: p.quantity,
+        notes: p.notes,
+        seasonId: p.seasonId,
+        assignedById: ctx.membershipId ?? null,
+      },
+      select: { id: true },
+    });
+
+    await this.registarMovimento(db, ctx, {
+      variantId: p.variantId,
+      type: "ASSIGNMENT",
+      quantity: p.quantity,
+      athleteId: p.athleteId,
+      assignmentId: entrega.id,
+      reason: p.notes,
+    });
+
+    return { id: entrega.id, itemName: variante.item.name, variantLabel: variante.label };
+  }
+
   async assign(ctx: RequestContext, dto: AssignDto) {
     this.mustWrite(ctx);
 
     return this.prisma.runAs(ctx.academyId, async (db) => {
       const atleta = await db.athlete.findFirst({ where: { id: dto.athleteId }, select: { id: true, name: true } });
       if (!atleta) throw new NotFoundException("Atleta não encontrado");
-
-      const variante = await db.inventoryVariant.findFirst({
-        where: { id: dto.variantId, archivedAt: null },
-        select: { id: true, label: true, item: { select: { id: true, name: true, archivedAt: true } } },
-      });
-      if (!variante || variante.item.archivedAt) throw new NotFoundException("Tamanho não encontrado");
-
-      await this.descontarDisponivel(db, dto.variantId, dto.quantity);
 
       /*
        * A época da entrega.
@@ -1279,29 +1325,15 @@ export class InventoryService {
        */
       const season = await currentSeason(db);
 
-      const entrega = await db.inventoryAssignment.create({
-        data: {
-          academyId: ctx.academyId,
-          athleteId: dto.athleteId,
-          variantId: dto.variantId,
-          quantity: dto.quantity,
-          notes: dto.notes?.trim() || null,
-          seasonId: season?.id ?? null,
-          assignedById: ctx.membershipId ?? null,
-        },
-        select: { id: true },
-      });
-
-      await this.registarMovimento(db, ctx, {
-        variantId: dto.variantId,
-        type: "ASSIGNMENT",
-        quantity: dto.quantity,
+      const e = await this.entregarUma(db, ctx, {
         athleteId: dto.athleteId,
-        assignmentId: entrega.id,
-        reason: dto.notes?.trim() || null,
+        variantId: dto.variantId,
+        quantity: dto.quantity,
+        notes: dto.notes?.trim() || null,
+        seasonId: season?.id ?? null,
       });
 
-      return { id: entrega.id, athleteName: atleta.name, itemName: variante.item.name, variantLabel: variante.label };
+      return { id: e.id, athleteName: atleta.name, itemName: e.itemName, variantLabel: e.variantLabel };
     }).then(async (r) => {
       /*
        * O pagamento, depois da entrega e fora da transação dela: o material já
@@ -1326,6 +1358,77 @@ export class InventoryService {
         };
       }
     });
+  }
+
+  /**
+   * Vários artigos ao mesmo atleta, de uma vez.
+   *
+   * Ao balcão entrega-se o kit inteiro — a t-shirt, os calções, as meias — e
+   * escolher um artigo, confirmar, e voltar a escolher era um gesto por peça
+   * (pedido do Rui, 19/10/2026). Cada linha continua a ser **uma entrega**, com
+   * o seu valor e a sua cobrança, para se devolver e editar uma peça sem mexer
+   * nas outras.
+   *
+   * O stock desconta-se **tudo ou nada**, numa transação só: se faltar um
+   * tamanho, não sai nenhuma peça, e o erro diz qual faltou. Os pagamentos vêm
+   * depois, fora da transação, como em `assign`: o material já saiu, e um
+   * pagamento que falhe fica dito por linha, para se acertar em "Editar".
+   */
+  async assignLote(ctx: RequestContext, dto: AssignLoteDto) {
+    this.mustWrite(ctx);
+    /*
+     * A permissão de cobrar pergunta-se antes de entregar. Em `assign` o
+     * pagamento recusado deixa a entrega feita e o erro dito; com dez peças
+     * eram dez avisos iguais para uma coisa que se sabia à partida.
+     */
+    if (dto.linhas.some((l) => l.pagamento && l.pagamento.modo !== "nenhum") && !can(ctx, "billing:write")) {
+      throw new ForbiddenException("Sem permissão para cobrar: pede a quem trata das mensalidades");
+    }
+
+    const feito = await this.prisma.runAs(ctx.academyId, async (db) => {
+      const atleta = await db.athlete.findFirst({ where: { id: dto.athleteId }, select: { id: true, name: true } });
+      if (!atleta) throw new NotFoundException("Atleta não encontrado");
+      const season = await currentSeason(db);
+      const notes = dto.notes?.trim() || null;
+
+      const entregas: { id: string; itemName: string; variantLabel: string; quantity: number }[] = [];
+      for (const l of dto.linhas) {
+        const e = await this.entregarUma(db, ctx, {
+          athleteId: dto.athleteId,
+          variantId: l.variantId,
+          quantity: l.quantity,
+          notes,
+          seasonId: season?.id ?? null,
+          prefixo: true,
+        });
+        entregas.push({ ...e, quantity: l.quantity });
+      }
+      return { athleteName: atleta.name, entregas };
+    });
+
+    const entregas: {
+      id: string; itemName: string; variantLabel: string; quantity: number;
+      pagamento: PagamentoDaEntrega | null; erroDoPagamento: string | null;
+    }[] = [];
+    for (const [i, e] of feito.entregas.entries()) {
+      const p = dto.linhas[i].pagamento;
+      if (!p || p.modo === "nenhum") {
+        entregas.push({ ...e, pagamento: null, erroDoPagamento: null });
+        continue;
+      }
+      try {
+        entregas.push({ ...e, pagamento: await this.definirPagamento(ctx, e.id, p), erroDoPagamento: null });
+      } catch (err) {
+        console.error("[inventory] pagamento da entrega", e.id, err);
+        entregas.push({
+          ...e,
+          pagamento: null,
+          erroDoPagamento: err instanceof HttpException ? err.message : "Não foi possível lançar o pagamento.",
+        });
+      }
+    }
+
+    return { athleteName: feito.athleteName, entregas };
   }
 
   /**
