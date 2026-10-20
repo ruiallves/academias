@@ -82,6 +82,7 @@
     "test:match-reports": "node scripts/test-match-reports.mjs",
     "test:importacao": "node scripts/test-importacao.mjs",
     "test:site": "node scripts/test-site.mjs",
+    "test:denuncias": "node scripts/test-denuncias.mjs",
     "test:socio-atleta": "node scripts/test-socio-atleta.mjs",
     "test:announcements": "node scripts/test-announcements.mjs",
     "test:hierarquia": "node scripts/test-hierarquia.mjs",

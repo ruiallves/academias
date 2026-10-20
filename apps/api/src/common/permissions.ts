@@ -197,6 +197,16 @@ export type Permission =
    * pessoa só.
    */
   | "registration:read" | "registration:write"
+  /**
+   * O canal de denúncia: ler os casos que as famílias enviam pela app, e
+   * responder-lhes, atribuí-los e fechá-los.
+   *
+   * Só presidência e direção por omissão, e **de propósito fora do
+   * coordenador e dos treinadores**: uma denúncia de bullying ou de falta de
+   * ética pode ser sobre um deles. Quem mais tiver de os ver recebe-a num cargo
+   * ou no painel de Acesso, por decisão de alguém.
+   */
+  | "conduct:read" | "conduct:write"
   | "clinical:status" | "clinical:read" | "clinical:write";
 
 const READ_ALL: Permission[] = [
@@ -212,6 +222,8 @@ const READ_ALL: Permission[] = [
   "ai:read",
   "certification:read",
   "registration:read",
+  // As denúncias: ficam em READ_ALL e o coordenador filtra-as abaixo.
+  "conduct:read",
 ];
 
 const WRITE_ALL: Permission[] = [
@@ -238,6 +250,8 @@ const WRITE_ALL: Permission[] = [
   "certification:write",
   // Gerar e seguir as inscrições na FPF.
   "registration:write",
+  // Responder às denúncias e fechá-las: presidência e direção.
+  "conduct:write",
   // Vincular o clube aos termos: presidência e direção, como `settings:write`.
   "legal:club",
 ];
@@ -267,7 +281,10 @@ export const ROLE_PERMISSIONS: Record<Role, Permission[]> = {
      * permissão num cargo, que é para isso que os cargos existem.
      */
     ...READ_ALL.filter(
-      (p) => p !== "billing:read" && p !== "member:read" && p !== "inventory:read" && p !== "finance:read",
+      (p) =>
+        p !== "billing:read" && p !== "member:read" && p !== "inventory:read" && p !== "finance:read" &&
+        // As denúncias são da direção: um caso pode ser sobre quem coordena.
+        p !== "conduct:read",
     ),
     "athlete:write", "team:write", "calendar:write", "attendance:write",
     "comms:write", "evaluation:write", "report:write",

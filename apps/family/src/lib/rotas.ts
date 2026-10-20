@@ -32,7 +32,7 @@
 export type Destino = { area: "FAMILY" | "MEMBER"; rota: string };
 
 /** As páginas da família. `/evento/…` trata-se à parte, por ser variável. */
-const FAMILIA = new Set(["/", "/agenda", "/pagamentos", "/atleta", "/notificacoes", "/perfil"]);
+const FAMILIA = new Set(["/", "/agenda", "/pagamentos", "/atleta", "/notificacoes", "/perfil", "/denuncias", "/documentos"]);
 
 /** As páginas do sócio — as rotas de `screens/socio/SocioApp`. */
 const SOCIO = new Set(["/socio", "/socio/quotas", "/socio/jogos", "/socio/novidades", "/socio/perfil"]);
@@ -58,6 +58,8 @@ export function destinoDaNotificacao(bruta: string | null | undefined): Destino 
   if (/^\/consulta\/[\w-]+$/.test(rota)) return { area: "FAMILY", rota };
   // `/equipamento/:atleta/:id` — uma peça do equipamento. Ver `screens/EquipamentoPeca`.
   if (/^\/equipamento\/[\w-]+\/[\w-]+$/.test(rota)) return { area: "FAMILY", rota };
+  // `/denuncia/:id` — o clube respondeu a uma denúncia. Ver `screens/Denuncia`.
+  if (/^\/denuncia\/[\w-]+$/.test(rota)) return { area: "FAMILY", rota };
 
   return null;
 }

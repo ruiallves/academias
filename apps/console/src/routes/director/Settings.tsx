@@ -20,6 +20,7 @@ import { ConsultationTypesPanel } from "@/components/ConsultationTypesPanel";
  */
 import { cx } from "@/components/primitives";
 import { CargosSection } from "@/components/definicoes/CargosSection";
+import { CondutaSection } from "@/components/definicoes/CondutaSection";
 import { CategoriasDeSocioSection } from "@/components/definicoes/CategoriasDeSocioSection";
 import { MensalidadesSection } from "@/components/definicoes/MensalidadesSection";
 import { EpocaPanel } from "@/components/EpocaPanel";
@@ -32,6 +33,7 @@ import {
   Receipt,
   Settings as SettingsIcon,
   Shield,
+  ShieldAlert,
   Stethoscope,
   TriangleAlert,
   Trophy,
@@ -80,6 +82,7 @@ const ICONE: Record<SecaoKey, LucideIcon> = {
   geral: SettingsIcon,
   epoca: CalendarDays,
   modalidades: Trophy,
+  conduta: ShieldAlert,
   cargos: Shield,
   socios: IdCard,
   clinico: Stethoscope,
@@ -151,6 +154,9 @@ export default function Settings() {
               escalões", procura os escalões do futebol. Ver `SportsPanel`.
             */}
             {ativa === "modalidades" && <SportsPanel mayWrite={maySettings} deepLinked={deepLinked} />}
+
+            {/* Os documentos de conduta e o canal de denúncia. Ver `CondutaSection`. */}
+            {ativa === "conduta" && <CondutaSection mayWrite={maySettings} />}
 
             {ativa === "cargos" && <CargosSection />}
 

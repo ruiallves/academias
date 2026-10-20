@@ -148,6 +148,9 @@ const DELEGATABLE: ReadonlySet<Permission> = new Set<Permission>([
   "certification:read", "certification:write",
   // As inscrições na FPF: o mesmo tipo de trabalho de uma pessoa só.
   "registration:read", "registration:write",
+  // O canal de denúncia: a direção pode confiá-lo a uma pessoa (o responsável
+  // pela ética, um elemento da direção) sem lhe dar mais nada.
+  "conduct:read", "conduct:write",
   /*
    * Delegar a criação de papéis é o ponto da funcionalidade: a presidência pode
    * passá-la à direção, ou a uma pessoa em concreto, sem lhe dar mais nada. Não

@@ -1,5 +1,6 @@
 import { useState, type FormEvent } from "react";
-import { ChevronRight, LogOut, MessageSquare, Plus, Sparkles, ShieldCheck } from "lucide-react";
+import { useNavigate } from "react-router-dom";
+import { BookOpen, ChevronRight, LogOut, MessageSquare, Plus, ShieldAlert, Sparkles, ShieldCheck } from "lucide-react";
 import { reload, useStore } from "@/lib/store";
 import { apiPost } from "@/lib/http";
 import { signOut } from "@/lib/session";
@@ -21,6 +22,7 @@ import { campoDaProva, provaParaApi, provaValida, provaVazia, TipoDeDocumento } 
  */
 export default function Profile() {
   const store = useStore();
+  const navigate = useNavigate();
   const [juntar, setJuntar] = useState(false);
 
   return (
@@ -87,6 +89,20 @@ export default function Profile() {
         </ul>
       </section>
       )}
+
+      {/*
+        O clube: o que ele espera de todos (os documentos de conduta) e a porta
+        para dizer quando algo correu mal (o canal de denúncia). Juntos, porque
+        são as duas faces da mesma coisa, e antes da conta, porque é ao clube
+        que a pessoa vem.
+      */}
+      <section>
+        <Label>Clube</Label>
+        <div className="space-y-2">
+          <ActionRow icon={BookOpen} label="Documentos do clube" onClick={() => navigate("/documentos")} />
+          <ActionRow icon={ShieldAlert} label="Canal de denúncia" onClick={() => navigate("/denuncias")} />
+        </div>
+      </section>
 
       <section>
         <Label>Conta</Label>

@@ -10,6 +10,8 @@ import Families from "@/routes/director/Families";
 import Staff from "@/routes/director/Staff";
 import Members from "@/routes/director/Members";
 import MemberDetail from "@/routes/director/MemberDetail";
+import Denuncias from "@/routes/director/Denuncias";
+import DenunciaDetail from "@/routes/director/DenunciaDetail";
 import StaffDetail from "@/routes/StaffDetail";
 import Calendar from "@/routes/director/Calendar";
 import Fees from "@/routes/director/Fees";
@@ -84,6 +86,9 @@ export default function App() {
         {/* Sócios — o livro do clube, ao lado do staff. */}
         <Route path="socios" element={<Allow p="member:read"><Members /></Allow>} />
         <Route path="socios/:id" element={<Allow p="member:read"><MemberDetail /></Allow>} />
+        {/* O canal de denúncia: só quem tem acesso às denúncias. Ver `routes/director/Denuncias`. */}
+        <Route path="denuncias" element={<Allow p="conduct:read"><Denuncias /></Allow>} />
+        <Route path="denuncias/:id" element={<Allow p="conduct:read"><DenunciaDetail /></Allow>} />
 
         {/* Inventário. O detalhe do artigo antes da lista não é possível aqui —
             o router resolve por especificidade —, mas a ordem segue a leitura:

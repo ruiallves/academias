@@ -30,6 +30,7 @@ import {
   Award,
   FileSignature,
   Globe,
+  ShieldAlert,
   type LucideIcon,
 } from "@/lib/icons";
 import type { Permission, Session } from "@/lib/permissions";
@@ -259,6 +260,14 @@ export const NAV_CATALOG: NavGroup[] = [
         requires: "registration:read",
         discipline: ["football", "futsal", "basketball"],
       },
+      /*
+        O canal de denúncia, no fim da Operação (pedido do Rui a 20/10/2026;
+        estava em Pessoas): é trabalho do dia a dia da direção, como as
+        convocatórias e as inscrições. Só aparece a quem tem `conduct:read`
+        (presidência e direção, por omissão), e nunca a um treinador: o caso
+        pode ser sobre ele.
+      */
+      { key: "conduct", label: "Denúncias", to: "/denuncias", icon: ShieldAlert, requires: "conduct:read" },
     ],
   },
   /*

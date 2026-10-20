@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
 import { destinoDaNotificacao } from "@/lib/rotas";
 import { chooseContext } from "@/lib/contexts";
-import { Bell, CalendarClock, FileText, Gauge, Megaphone, Trophy, Wallet, type LucideIcon, Dumbbell, Apple , Stethoscope } from "lucide-react";
+import { Bell, CalendarClock, FileText, Gauge, Megaphone, Trophy, Wallet, type LucideIcon, Dumbbell, Apple , Stethoscope, ShieldAlert } from "lucide-react";
 import { activeArea } from "@/lib/area";
 import { carregarNotificacoes, marcarLidas, useNotificacoes } from "@/lib/notificacoes";
 import type { ApiNotification } from "@/lib/store";
@@ -41,6 +41,10 @@ const STYLE: Record<string, { icon: LucideIcon; cls: string; urgent?: boolean }>
   NUTRITION_PLAN_SHARED: { icon: Apple, cls: "bg-ok-soft text-ok" },
   /* Uma consulta marcada tem hora e sítio: quem a recebe tem de estar lá. */
   CLINICAL_APPOINTMENT: { icon: Stethoscope, cls: "bg-signal-soft text-signal-ink", urgent: true },
+  /* O clube respondeu a uma denúncia: leva ao caso. */
+  CONDUCT_REPORT_REPLIED: { icon: ShieldAlert, cls: "bg-signal-soft text-signal-ink", urgent: true },
+  /* Chega a quem tem a app e também vê as denúncias na consola. */
+  CONDUCT_REPORT_CREATED: { icon: ShieldAlert, cls: "bg-warn-soft text-warn" },
 };
 
 const FALLBACK = { icon: Bell, cls: "bg-sunken text-ink-2" };

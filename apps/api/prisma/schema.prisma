@@ -266,6 +266,9 @@ model Academy {
   athleteDocuments    AthleteDocument[]
   athleteLicenses     AthleteLicense[]
   schoolGrades        SchoolGrade[]
+  /// Conduta: o canal de denúncia e os documentos (código de ética, manual). Ver `ConductReport`.
+  conductReports      ConductReport[]
+  conductDocuments    ConductDocument[]
   matches             Match[]
   events              CalendarEvent[]
   invites             StaffInvite[]
@@ -616,6 +619,10 @@ model Membership {
   candidateAdds   ScoutingRequestCandidate[] @relation("RequestCandidateAuthor")
   videosUploaded  ProspectVideo[]            @relation("VideoUploader")
   videoMoments    VideoMoment[]              @relation("MomentAuthor")
+  /// O canal de denúncia: o que esta pessoa denunciou, o que lhe foi atribuído, o que escreveu. Ver `ConductReport`.
+  conductReported ConductReport[]            @relation("ConductReporter")
+  conductAssigned ConductReport[]            @relation("ConductAssignee")
+  conductMessages ConductReportMessage[]     @relation("ConductMessageAuthor")
   membersApproved Member[]                   @relation("MemberApprover")
   pollsCreated    Poll[]                     @relation("PollAuthor")
   familyLinks     FamilyInvite[]             @relation("FamilyInviteAuthor")
@@ -1129,6 +1136,8 @@ model Athlete {
   licenses       AthleteLicense[]
   registrations  PlayerRegistration[]
   schoolGrades   SchoolGrade[]
+  /// As denúncias em que este atleta foi indicado como envolvido. Ver `ConductReport`.
+  conductReports ConductReport[]
   enrollments    Enrollment[]
   charges        Charge[]
   chargeSkips    ChargeSkip[]
@@ -2357,6 +2366,11 @@ enum NotificationType {
   /// A análise de vídeo terminou. O processamento é assíncrono de propósito —
   /// o treinador fecha a consola e é isto que lhe diz que pode voltar.
   AI_ANALYSIS_COMPLETED
+  /// Chegou uma denúncia ao canal de conduta. Vai a quem a pode ver na consola
+  /// (`conduct:read`), nunca ao resto do staff: o caso pode ser sobre eles.
+  CONDUCT_REPORT_CREATED
+  /// O clube respondeu a uma denúncia, ou mudou-lhe o estado. Vai a quem a enviou.
+  CONDUCT_REPORT_REPLIED
 }
 
 /// Uma notificação é uma linha na base de dados; os canais são adaptadores por
@@ -6965,4 +6979,126 @@ model SiteMatchTickets {
   updatedAt DateTime @updatedAt
 
   @@index([academyId])
+}
+
+/* -------------------------------------------------------------------------- */
+/* Conduta: o canal de denúncia e os documentos de conduta                     */
+/* -------------------------------------------------------------------------- */
+
+/// O tipo de incidente, como a família o escolhe na app.
+enum ConductReportCategory {
+  BULLYING
+  ETHICS
+  DISCRIMINATION
+  SAFETY
+  OTHER
+}
+
+/// Por onde vai um caso: chega, alguém pega nele, fecha-se (resolvido) ou
+/// arquiva-se (não há seguimento a dar).
+enum ConductReportStatus {
+  NEW
+  IN_REVIEW
+  RESOLVED
+  ARCHIVED
+}
+
+/// Uma denúncia enviada pela app do clube: bullying, falta de ética, uma
+/// situação de segurança.
+///
+/// ## Quem a vê
+///
+/// Só quem tem `conduct:read` na consola (presidência e direção, por omissão).
+/// Nunca o resto do staff: o caso pode ser sobre um treinador. É também por
+/// isso que não há âmbito de equipa aqui.
+///
+/// ## O anonimato
+///
+/// `reporterId` fica sempre gravado, porque é a única forma de a pessoa seguir
+/// o caso e de o clube lhe responder. Com `anonymous`, a consola **nunca**
+/// mostra quem é: a API tira o nome antes de responder, e a família vê escrito
+/// "o clube não vê quem enviou". É anonimato perante o clube, e a app di-lo
+/// assim. O número (`number`) é por clube, para se falar do "caso 12".
+model ConductReport {
+  id        String  @id @default(cuid())
+  academyId String
+  academy   Academy @relation(fields: [academyId], references: [id], onDelete: Cascade)
+  number    Int
+
+  category ConductReportCategory
+  status   ConductReportStatus   @default(NEW)
+
+  anonymous    Boolean     @default(false)
+  reporterId   String?
+  reporter     Membership? @relation("ConductReporter", fields: [reporterId], references: [id], onDelete: SetNull)
+  /// O papel de quem enviou (encarregado ou atleta), copiado: o `reporter` pode desaparecer.
+  reporterRole Role?
+
+  /// O educando a que o caso diz respeito, quando a família o indica.
+  athleteId String?
+  athlete   Athlete? @relation(fields: [athleteId], references: [id], onDelete: SetNull)
+
+  /// Quando e onde aconteceu, e quem esteve envolvido, como a família escreveu.
+  happenedOn  DateTime? @db.Date
+  place       String?
+  involved    String?
+  description String
+
+  assigneeId String?
+  assignee   Membership? @relation("ConductAssignee", fields: [assigneeId], references: [id], onDelete: SetNull)
+  resolvedAt DateTime?
+
+  /// A última mensagem, e quando cada lado viu o caso: é o que acende o "por ler".
+  lastMessageAt  DateTime?
+  reporterSeenAt DateTime?
+  staffSeenAt    DateTime?
+
+  messages ConductReportMessage[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([academyId, number])
+  @@index([academyId, status, createdAt])
+  @@index([reporterId])
+}
+
+/// Uma mensagem num caso. Do clube para a família, da família para o clube,
+/// ou uma nota interna (`internal`) que a família nunca vê.
+model ConductReportMessage {
+  id       String        @id @default(cuid())
+  reportId String
+  report   ConductReport @relation(fields: [reportId], references: [id], onDelete: Cascade)
+
+  authorId   String?
+  author     Membership? @relation("ConductMessageAuthor", fields: [authorId], references: [id], onDelete: SetNull)
+  /// O nome de quem escreveu, copiado. Numa denúncia anónima a família fica sem nome.
+  authorName String?
+  fromStaff  Boolean
+  internal   Boolean     @default(false)
+  body       String
+
+  createdAt DateTime @default(now())
+
+  @@index([reportId, createdAt])
+}
+
+/// Um documento de conduta do clube (código de ética, manual de conduta,
+/// regulamento interno), que as famílias consultam na app. Os ficheiros vivem
+/// no bucket `documentos`, como os dos atletas: `files` = `[{ key, name, type }]`.
+model ConductDocument {
+  id        String  @id @default(cuid())
+  academyId String
+  academy   Academy @relation(fields: [academyId], references: [id], onDelete: Cascade)
+
+  title       String
+  description String?
+  files       Json    @default("[]")
+  order       Int     @default(0)
+
+  createdByName String?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  @@index([academyId, order])
 }

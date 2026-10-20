@@ -51,6 +51,8 @@ import { AthleteFichaController } from "./academy/athlete-ficha.controller";
 import { AthleteFichaService } from "./academy/athlete-ficha.service";
 import { SchoolGradesController } from "./academy/school-grades.controller";
 import { SchoolGradesService } from "./academy/school-grades.service";
+import { ConductController } from "./conduct/conduct.controller";
+import { ConductService } from "./conduct/conduct.service";
 import { SeasonsService } from "./academy/seasons.service";
 import { MatchesController } from "./academy/matches.controller";
 import { MatchesService } from "./academy/matches.service";
@@ -198,6 +200,8 @@ import { SiteRevalidarService } from "./site/site-revalidar.service";
     DevelopmentController,
     AthleteFichaController,
     SchoolGradesController,
+    // O canal de denúncia e os documentos de conduta.
+    ConductController,
     PhotosController,
     ClubLogoController,
     EspacoController,
@@ -252,6 +256,7 @@ import { SiteRevalidarService } from "./site/site-revalidar.service";
     AthletesService,
     AthleteFichaService,
     SchoolGradesService,
+    ConductService,
     SeasonsService,
     MatchesService,
     AnnouncementsService,

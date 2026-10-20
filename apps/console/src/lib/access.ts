@@ -247,6 +247,12 @@ export const AREAS: Area[] = [
   // clube: quem prepara a candidatura raramente é quem treina.
   { label: "Certificação FPF", hint: "nível do clube, requisitos e respostas à candidatura", read: "certification:read", write: "certification:write" },
   { label: "Inscrições", hint: "boletins de inscrição na FPF e o estado de cada um", read: "registration:read", write: "registration:write" },
+  /*
+   * O canal de denúncia. Entra no catálogo no dia em que nasce. Por omissão só
+   * a presidência e a direção o têm: um caso pode ser sobre um treinador, e é
+   * por aqui que a direção o confia a mais alguém de propósito.
+   */
+  { label: "Denúncias", hint: "o canal de denúncia das famílias e o seguimento de cada caso", read: "conduct:read", write: "conduct:write" },
 ];
 
 /**

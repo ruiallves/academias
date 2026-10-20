@@ -83,6 +83,11 @@ export {
   Trophy,
   /* Certificação FPF: a medalha é o menu, o selo é um requisito cumprido. */
   Award,
+  // O canal de denúncia, e os documentos de conduta.
+  ShieldAlert,
+  EyeOff,
+  BookOpen,
+  MessageSquare,
   /* Inscrições na FPF: o boletim que se assina; o carimbo é a entrega à associação. */
   FileSignature,
   Stamp,

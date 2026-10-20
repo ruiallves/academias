@@ -178,6 +178,11 @@ export type Permission =
    * coordenação leem e escrevem.
    */
   | "registration:read" | "registration:write"
+  /**
+   * O canal de denúncia. Gémea do servidor: só presidência e direção por
+   * omissão, porque um caso pode ser sobre um treinador ou um coordenador.
+   */
+  | "conduct:read" | "conduct:write"
   | "clinical:write";
 
 export type Role =
@@ -216,6 +221,8 @@ const READ_ALL: Permission[] = [
   "ai:read",
   "certification:read",
   "registration:read",
+  // As denúncias: o coordenador filtra-as abaixo. Gémea do servidor.
+  "conduct:read",
 ];
 
 const WRITE_ALL: Permission[] = [
@@ -248,6 +255,8 @@ const WRITE_ALL: Permission[] = [
   "certification:write",
   // As inscrições na FPF. Gémea do servidor.
   "registration:write",
+  // Responder às denúncias e fechá-las. Gémea do servidor.
+  "conduct:write",
   // Vincular o clube aos termos: presidência e direção, como `settings:write`.
   "legal:club",
 ];
@@ -276,7 +285,10 @@ export const ROLE_PERMISSIONS: Record<Role, Permission[]> = {
      * permissão num cargo, que é para isso que os cargos existem.
      */
     ...READ_ALL.filter(
-      (p) => p !== "billing:read" && p !== "member:read" && p !== "inventory:read" && p !== "finance:read",
+      (p) =>
+        p !== "billing:read" && p !== "member:read" && p !== "inventory:read" && p !== "finance:read" &&
+        // As denúncias são da direção. Gémeo do servidor.
+        p !== "conduct:read",
     ),
     "athlete:write",
     "team:write",

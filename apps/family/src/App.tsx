@@ -30,6 +30,10 @@ import Athlete from "@/screens/Athlete";
 import Notifications from "@/screens/Notifications";
 import Onboarding from "@/screens/Onboarding";
 import Profile from "@/screens/Profile";
+import Denuncias from "@/screens/Denuncias";
+import NovaDenuncia from "@/screens/NovaDenuncia";
+import Denuncia from "@/screens/Denuncia";
+import DocumentosDoClube from "@/screens/DocumentosDoClube";
 import { LegalGate } from "@/screens/LegalGate";
 import PedidoPendente from "@/screens/PedidoPendente";
 
@@ -316,6 +320,11 @@ function Dentro({
             <Route path="/atleta" element={<Athlete />} />
             <Route path="/notificacoes" element={<Notifications />} />
             <Route path="/perfil" element={<Profile />} />
+            {/* O canal de denúncia e os documentos do clube, a partir do perfil. Ver `screens/Denuncias`. */}
+            <Route path="/denuncias" element={<Denuncias />} />
+            <Route path="/denuncias/nova" element={<NovaDenuncia />} />
+            <Route path="/denuncia/:id" element={<Denuncia />} />
+            <Route path="/documentos" element={<DocumentosDoClube />} />
             <Route path="*" element={<Navigate to="/" replace />} />
           </Routes>
         </main>

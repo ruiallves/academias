@@ -25,6 +25,7 @@ export type SecaoKey =
   | "geral"
   | "epoca"
   | "modalidades"
+  | "conduta"
   | "cargos"
   | "clinico"
   | "socios"
@@ -52,6 +53,7 @@ export const SECOES: Secao[] = [
   { key: "geral", grupo: "Clube", label: "Geral", descricao: "O nome, o emblema e a cor do clube, e como aparece no telemóvel das famílias." },
   { key: "epoca", grupo: "Clube", label: "Época", descricao: "Em que época o clube está, e a passagem para a seguinte." },
   { key: "modalidades", grupo: "Clube", label: "Modalidades", descricao: "O que o clube pratica, e os escalões, competições, locais e balneários de cada modalidade." },
+  { key: "conduta", grupo: "Clube", label: "Conduta", descricao: "O código de ética e o manual de conduta que as famílias consultam na app, e o canal de denúncia." },
   { key: "cargos", grupo: "Pessoas", label: "Cargos", descricao: "Os departamentos do clube, os cargos de cada um e o que cada cargo pode ver e fazer." },
   { key: "socios", grupo: "Pessoas", label: "Sócios", descricao: "As categorias de sócio, com o valor da quota de cada uma, e o cartão de sócio na app do clube." },
   { key: "clinico", grupo: "Pessoas", label: "Clínico", descricao: "Os tipos de consulta que o departamento clínico marca." },
