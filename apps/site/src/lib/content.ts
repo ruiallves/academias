@@ -128,7 +128,7 @@ export const CLUBES = [
 /**
  * Os números da plataforma.
  *
- * **São contagens verdadeiras**, feitas à base de dados a 9 de outubro de 2026:
+ * **São contagens verdadeiras**, feitas à base de dados a 20 de outubro de 2026:
  * tudo o que os clubes criaram na plataforma (clubes cancelados incluídos),
  * sem contar os dois clubes de testes (`life-club` e `ad-fafe`). Não se
  * arredonda para cima e não se inventa. Um número inventado numa página de
@@ -140,13 +140,13 @@ export const CLUBES = [
  * valores e a data. Pode descer: treinos e equipas apagados pelos clubes saem.
  */
 export const NUMEROS = {
-  data: "9 de outubro de 2026",
+  data: "20 de outubro de 2026",
   itens: [
-    { valor: 895, rotulo: "atletas" },
-    { valor: 71, rotulo: "equipas" },
-    { valor: 655, rotulo: "sócios" },
-    { valor: 5215, rotulo: "treinos marcados" },
-    { valor: 225, rotulo: "jogos" },
+    { valor: 941, rotulo: "atletas" },
+    { valor: 74, rotulo: "equipas" },
+    { valor: 667, rotulo: "sócios" },
+    { valor: 5430, rotulo: "treinos marcados" },
+    { valor: 282, rotulo: "jogos" },
   ],
 };
 

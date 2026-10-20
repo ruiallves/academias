@@ -88,6 +88,34 @@ export type DocumentoDeConduta = {
 
 export const listarDocumentosDeConduta = () => apiGet<DocumentoDeConduta[]>("/api/conduta/documentos");
 
+/*
+ * A última lista que chegou, guardada fora do ecrã.
+ *
+ * As Definições pedem-na mal abrem (`carregarDocumentosDeConduta` em
+ * `Settings.tsx`), e a secção Conduta abre com o que já cá está: a caixa
+ * aparece logo, em vez de ficar em branco à espera da resposta. Ao abrir, a
+ * secção pede outra vez e substitui: os links dos ficheiros duram dez minutos.
+ */
+let emCache: DocumentoDeConduta[] | null = null;
+let emCurso: Promise<DocumentoDeConduta[]> | null = null;
+
+export const documentosDeCondutaEmCache = () => emCache;
+
+/** Vai buscar a lista (um pedido de cada vez) e guarda-a. `forcar` pede outra mesmo havendo uma em cache. */
+export function carregarDocumentosDeConduta(forcar = false): Promise<DocumentoDeConduta[]> {
+  if (emCurso) return emCurso;
+  if (emCache && !forcar) return Promise.resolve(emCache);
+  emCurso = listarDocumentosDeConduta()
+    .then((d) => {
+      emCache = d;
+      return d;
+    })
+    .finally(() => {
+      emCurso = null;
+    });
+  return emCurso;
+}
+
 /** Carrega um ficheiro e devolve a chave com que ficou guardado. Os mesmos três passos dos documentos dos atletas. */
 export async function carregarFicheiroDeConduta(file: File): Promise<{ key: string; name: string }> {
   const a = await apiPost<{ url: string; headers?: Record<string, string>; key: string; maxBytes: number }>(

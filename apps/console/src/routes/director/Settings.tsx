@@ -21,6 +21,7 @@ import { ConsultationTypesPanel } from "@/components/ConsultationTypesPanel";
 import { cx } from "@/components/primitives";
 import { CargosSection } from "@/components/definicoes/CargosSection";
 import { CondutaSection } from "@/components/definicoes/CondutaSection";
+import { carregarDocumentosDeConduta } from "@/lib/conduta";
 import { CategoriasDeSocioSection } from "@/components/definicoes/CategoriasDeSocioSection";
 import { MensalidadesSection } from "@/components/definicoes/MensalidadesSection";
 import { EpocaPanel } from "@/components/EpocaPanel";
@@ -100,6 +101,15 @@ export default function Settings() {
   const mobile = useMobile();
 
   const maySettings = can(session, "settings:write");
+
+  /*
+   * Os documentos de conduta pedem-se mal as Definições abrem, e não quando se
+   * entra na secção: assim a caixa da Conduta aparece logo, em vez de ficar em
+   * branco à espera da resposta. Ver `carregarDocumentosDeConduta`.
+   */
+  useEffect(() => {
+    void carregarDocumentosDeConduta().catch(() => undefined);
+  }, []);
 
   /* Só o que esta pessoa pode ver. A zona de perigo é de quem pode apagar o clube. */
   const secoes = SECOES.filter((sec) => sec.key !== "perigo" || can(session, "academy:delete"));

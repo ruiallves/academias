@@ -3,6 +3,7 @@ import { Link } from "react-router-dom";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { Dialog, dialogInputClass } from "@/components/Dialog";
 import { Pill, cx } from "@/components/primitives";
+import { Spinner } from "@/components/Busy";
 import { Bloco, Erro, Lista } from "@/components/definicoes/ui";
 import { BookOpen, Download, Pencil, Plus, ShieldAlert, Trash2, Upload, X } from "@/lib/icons";
 import { longDate } from "@/lib/format";
@@ -11,9 +12,10 @@ import { useSession } from "@/session";
 import {
   apagarDocumentoDeConduta,
   atualizarDocumentoDeConduta,
+  carregarDocumentosDeConduta,
   carregarFicheiroDeConduta,
   criarDocumentoDeConduta,
-  listarDocumentosDeConduta,
+  documentosDeCondutaEmCache,
   tirarFicheiroDeConduta,
   type DocumentoDeConduta,
   type FicheiroDeConduta,
@@ -37,7 +39,8 @@ const SUGESTOES = ["Código de ética", "Manual de conduta", "Regulamento intern
 export function CondutaSection({ mayWrite }: { mayWrite: boolean }) {
   const { session } = useSession();
   const veDenuncias = can(session, "conduct:read");
-  const [docs, setDocs] = useState<DocumentoDeConduta[] | null>(null);
+  // Abre com o que as Definições já foram buscar: a caixa aparece logo. Ver `carregarDocumentosDeConduta`.
+  const [docs, setDocs] = useState<DocumentoDeConduta[] | null>(documentosDeCondutaEmCache);
   const [erro, setErro] = useState<string | null>(null);
   const [novo, setNovo] = useState(false);
   const [aEditar, setAEditar] = useState<DocumentoDeConduta | null>(null);
@@ -45,14 +48,38 @@ export function CondutaSection({ mayWrite }: { mayWrite: boolean }) {
 
   const carregar = useCallback(() => {
     setErro(null);
-    listarDocumentosDeConduta()
+    carregarDocumentosDeConduta(true)
       .then(setDocs)
-      .catch((e: unknown) => setErro(e instanceof Error ? e.message : "Não foi possível carregar os documentos."));
+      .catch((e: unknown) => {
+        setErro(e instanceof Error ? e.message : "Não foi possível carregar os documentos.");
+        setDocs((d) => d ?? []);
+      });
   }, []);
   useEffect(carregar, [carregar]);
 
+  /*
+   * Ainda sem nada (primeira vez, e a resposta das Definições ainda não
+   * chegou): um disco no meio da secção, com o fundo desfocado, e o submenu
+   * à esquerda intacto. Só depois de 180 ms, como o carregamento da consola:
+   * uma resposta rápida não chega a piscar.
+   */
+  const [veu, setVeu] = useState(false);
+  useEffect(() => {
+    if (docs !== null) {
+      setVeu(false);
+      return;
+    }
+    const t = setTimeout(() => setVeu(true), 180);
+    return () => clearTimeout(t);
+  }, [docs]);
+
   return (
-    <>
+    <div className="relative min-h-[420px]">
+      {veu && (
+        <div className="absolute inset-0 z-10 flex items-center justify-center bg-canvas/40 backdrop-blur-[3px]">
+          <Spinner />
+        </div>
+      )}
       <Bloco
         titulo="Documentos de conduta"
         estado={docs && docs.length > 0 ? <Pill>{docs.length}</Pill> : undefined}
@@ -193,7 +220,7 @@ export function CondutaSection({ mayWrite }: { mayWrite: boolean }) {
           Deixa de aparecer na app das famílias, e {aApagar.files.length === 1 ? "o ficheiro dele é apagado" : `os ${aApagar.files.length} ficheiros dele são apagados`} de vez.
         </ConfirmDialog>
       )}
-    </>
+    </div>
   );
 }
 
