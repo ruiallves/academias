@@ -121,6 +121,11 @@ import { LegalAdminService } from "./legal/legal-admin.service";
 import { SiteController } from "./site/site.controller";
 import { SiteService } from "./site/site.service";
 import { SitePublicoController } from "./site/site-publico.controller";
+import { SiteContactoController } from "./site/site-contacto.controller";
+import { BilheteiraAppController, BilheteiraConsolaController, BilheteiraPublicaController } from "./bilheteira/bilheteira.controller";
+import { BilheteiraService } from "./bilheteira/bilheteira.service";
+import { BilheteiraEmissao } from "./bilheteira/emissao.service";
+import { PortaService } from "./bilheteira/porta.service";
 import { SitePublicoService } from "./site/site-publico.service";
 import { SiteDominioController } from "./site/site-dominio.controller";
 import { SiteDominioService } from "./site/site-dominio.service";
@@ -222,6 +227,10 @@ import { SiteRevalidarService } from "./site/site-revalidar.service";
     // O site do clube: o menu Website da consola, o site público (sem sessão) e o domínio no painel.
     SiteController,
     SitePublicoController,
+    SiteContactoController,
+    BilheteiraPublicaController,
+    BilheteiraAppController,
+    BilheteiraConsolaController,
     SiteDominioController,
   ],
   providers: [
@@ -290,6 +299,9 @@ import { SiteRevalidarService } from "./site/site-revalidar.service";
     ClubLogoService,
     SiteService,
     SitePublicoService,
+    BilheteiraService,
+    BilheteiraEmissao,
+    PortaService,
     SiteDominioService,
     SiteRevalidarService,
     StorageService,

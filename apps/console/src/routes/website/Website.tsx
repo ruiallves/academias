@@ -4,11 +4,13 @@ import { PageHeader } from "@/components/Shell";
 import { Empty, Loading, cx } from "@/components/primitives";
 import {
   ExternalLink,
+  Eye,
   Globe,
   Handshake,
   IdCard,
   Inbox,
   LayoutGrid,
+  LayoutTemplate,
   Link2,
   Newspaper,
   Palette,
@@ -21,9 +23,12 @@ import {
 } from "@/lib/icons";
 import { useMobile } from "@/lib/viewport";
 import { useStore } from "@/lib/store";
+import { can } from "@/lib/permissions";
+import { useSession } from "@/session";
 import { enderecoDoSite, useCarregamentoDoSite, useSite } from "@/lib/website";
 import { VisaoGeral } from "./VisaoGeral";
 import { Identidade, Aspeto, Dominio } from "./Configuracao";
+import { Inicio } from "./Inicio";
 import { Noticias } from "./Noticias";
 import { Loja } from "./Loja";
 import { Bilheteira } from "./Bilheteira";
@@ -44,6 +49,7 @@ type SecaoKey =
   | "geral"
   | "identidade"
   | "aspeto"
+  | "inicio"
   | "dominio"
   | "noticias"
   | "equipas"
@@ -59,12 +65,13 @@ const SECOES: Secao[] = [
   { key: "geral", label: "Visão geral", grupo: "Site", icone: LayoutGrid, descricao: "O estado do site, o que falta para ficar completo, e o atalho para o ver." },
   { key: "identidade", label: "Identidade", grupo: "Site", icone: IdCard, descricao: "Quem é o clube: o lema, o texto de apresentação, a história, a morada e as redes." },
   { key: "aspeto", label: "Aspeto", grupo: "Site", icone: Palette, descricao: "O layout do site. A cor e o emblema são os do clube, os mesmos da consola e da app." },
+  { key: "inicio", label: "Página de início", grupo: "Site", icone: LayoutTemplate, descricao: "A página de início como o visitante a vê. Arrasta as secções, mostra ou esconde, e acrescenta banners onde quiseres." },
   { key: "dominio", label: "Domínio", grupo: "Site", icone: Link2, descricao: "O endereço .pt do clube, e onde o site vive enquanto o domínio não aponta para cá." },
   { key: "noticias", label: "Notícias", grupo: "Conteúdo", icone: Newspaper, descricao: "O que se escreve sobre o clube. As três em destaque abrem a página de início." },
   { key: "equipas", label: "Equipas", grupo: "Conteúdo", icone: Users, descricao: "Que equipas aparecem no site. O plantel só com o consentimento das famílias." },
   { key: "patrocinadores", label: "Patrocinadores", grupo: "Conteúdo", icone: Handshake, descricao: "Quem apoia o clube. Aparecem no fundo de todas as páginas." },
   { key: "estadio", label: "Estádio", grupo: "Vendas", icone: Recinto, descricao: "O recinto visto de cima, com as bancadas. Quem compra um bilhete vê no mapa onde vai ficar." },
-  { key: "bilheteira", label: "Bilheteira", grupo: "Vendas", icone: Ticket, descricao: "Bilhetes para os jogos em casa: tipos, preços, bancada e lotação. O bilhete chega com um código QR." },
+  { key: "bilheteira", label: "Bilheteira", grupo: "Vendas", icone: Ticket, descricao: "Bilhetes para os jogos em casa: preços por bancada e público, quem compra e quando, as vendas e o leitor dos seguranças à porta. O bilhete chega com um código QR." },
   { key: "loja", label: "Loja", grupo: "Vendas", icone: ShoppingBag, descricao: "Os produtos à venda no site, com tamanhos e preço." },
   { key: "mensagens", label: "Mensagens", grupo: "Contacto", icone: Inbox, descricao: "O que chega pelo formulário de contactos do site." },
 ];
@@ -82,6 +89,7 @@ export default function Website() {
 
 function WebsiteDoClube() {
   const store = useStore();
+  const { session } = useSession();
   const site = useSite(store.academy.slug);
   const { carregado, erro } = useCarregamentoDoSite(store.academy.slug);
   const [params, setParams] = useSearchParams();
@@ -90,6 +98,9 @@ function WebsiteDoClube() {
   const ativa = secaoDe(params.get("secao"));
   const secao = SECOES.find((s) => s.key === ativa)!;
   const ir = (key: SecaoKey) => setParams(key === "geral" ? {} : { secao: key });
+  // Ver é `website:read`; mudar o que quer que seja é `website:write`. O servidor
+  // recusa na mesma: a faixa é para a pessoa saber antes de tentar.
+  const soLeitura = !can(session, "website:write");
 
   return (
     <>
@@ -100,6 +111,16 @@ function WebsiteDoClube() {
           <ExternalLink className="size-3.5" strokeWidth={1.75} />
         </a>
       </PageHeader>
+
+      {soLeitura && (
+        <p className="mb-5 flex items-start gap-2 rounded-[10px] border border-line bg-sunken/60 px-3.5 py-2.5 text-meta leading-relaxed text-ink-2">
+          <Eye className="mt-0.5 size-4 shrink-0" strokeWidth={1.75} />
+          <span>
+            <strong className="font-semibold text-ink">Podes ver o site, mas não publicar.</strong> Mudar o conteúdo ou pôr o site no ar é de quem tem a
+            permissão de publicar o website.
+          </span>
+        </p>
+      )}
 
       {/* Por publicar: o endereço do site mostra "não ligado" até o clube o pôr no ar (Visão geral). */}
       {carregado && !site.publicado && (
@@ -112,7 +133,7 @@ function WebsiteDoClube() {
       )}
 
       <div className="grid gap-x-10 gap-y-4 lg:grid-cols-[212px_minmax(0,1fr)]">
-        <Submenu ativa={ativa} onIr={ir} horizontal={mobile} />
+        <Submenu ativa={ativa} onIr={ir} horizontal={mobile} porLer={site.mensagensPorLer} />
 
         <section className="min-w-0" aria-labelledby="secao-titulo">
           <header className="mb-5 border-b border-line pb-4">
@@ -128,6 +149,7 @@ function WebsiteDoClube() {
             {carregado && ativa === "geral" && <VisaoGeral onIr={(k) => ir(k as SecaoKey)} />}
             {carregado && ativa === "identidade" && <Identidade />}
             {carregado && ativa === "aspeto" && <Aspeto />}
+            {carregado && ativa === "inicio" && <Inicio onIr={(k) => ir(k as SecaoKey)} />}
             {carregado && ativa === "dominio" && <Dominio />}
             {carregado && ativa === "noticias" && <Noticias />}
             {carregado && ativa === "equipas" && <Equipas />}
@@ -143,12 +165,26 @@ function WebsiteDoClube() {
   );
 }
 
-/** O submenu, igual ao das Definições: coluna presa no computador, fila no telemóvel. */
-function Submenu({ ativa, onIr, horizontal }: { ativa: SecaoKey; onIr: (k: SecaoKey) => void; horizontal: boolean }) {
+/**
+ * O submenu, igual ao das Definições: coluna presa no computador, fila no
+ * telemóvel. `porLer` é a pastilha das Mensagens: o que chegou pelo formulário
+ * do site e ninguém abriu ainda.
+ */
+function Submenu({ ativa, onIr, horizontal, porLer }: { ativa: SecaoKey; onIr: (k: SecaoKey) => void; horizontal: boolean; porLer: number }) {
   const ativoRef = useRef<HTMLButtonElement | null>(null);
   useEffect(() => {
     if (horizontal) ativoRef.current?.scrollIntoView({ inline: "center", block: "nearest" });
   }, [horizontal, ativa]);
+
+  const pastilha = (s: Secao) =>
+    s.key === "mensagens" && porLer > 0 ? (
+      <span
+        className="ml-auto inline-flex h-5 min-w-5 shrink-0 items-center justify-center rounded-full bg-signal-strong px-1.5 text-[11px] font-semibold leading-none text-white"
+        aria-label={`${porLer} ${porLer === 1 ? "mensagem por ler" : "mensagens por ler"}`}
+      >
+        {porLer > 99 ? "99+" : porLer}
+      </span>
+    ) : null;
 
   if (horizontal) {
     return (
@@ -171,6 +207,7 @@ function Submenu({ ativa, onIr, horizontal }: { ativa: SecaoKey; onIr: (k: Secao
                 >
                   <Icone className="size-3.5" strokeWidth={1.75} />
                   {s.label}
+                  {pastilha(s)}
                 </button>
               </li>
             );
@@ -216,6 +253,7 @@ function Submenu({ ativa, onIr, horizontal }: { ativa: SecaoKey; onIr: (k: Secao
                     />
                     <Icone className={cx("size-4 shrink-0", on && "text-signal-ink")} strokeWidth={on ? 2 : 1.75} />
                     <span className="truncate">{s.label}</span>
+                    {pastilha(s)}
                   </button>
                 </li>
               );

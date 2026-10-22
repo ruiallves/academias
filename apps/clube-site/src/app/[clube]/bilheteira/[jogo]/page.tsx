@@ -5,8 +5,10 @@ import { ArrowLeft, Info, MapPin } from "lucide-react";
 import { fonte } from "@/dados/fonte";
 import { clubeOu404 } from "@/lib/clube";
 import { dataLonga, hora } from "@/lib/formatar";
+import { emDemonstracao } from "@/lib/modo";
+import { fasesDoJogo, vendaDeDemonstracao, type Venda } from "@/lib/bilheteira";
 import { Cartaz, LinhaDoJogo } from "@/componentes/Jogo";
-import { EscolherBilhetes } from "./EscolherBilhetes";
+import { Compra } from "./Compra";
 
 export const revalidate = 60;
 
@@ -18,12 +20,33 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
   return j ? { title: `Bilhetes · vs ${j.opponent}` } : {};
 }
 
-/** A compra de bilhetes de um jogo: o cartaz, os tipos, a quantidade, o total. */
+/**
+ * A compra de bilhetes de um jogo. O cartaz e as fases vêm da lista de jogos
+ * (com o minuto de cache do site); a venda em si (preços, lugares que
+ * restam, o que já abriu) pede-a o browser à API ao abrir, sem cache, porque
+ * é aí que se vê se ainda há lugar.
+ */
 export default async function BilhetesDoJogo({ params }: Props) {
   const clube = await clubeOu404(params);
   const { jogo: id } = await params;
   const jogo = await fonte.jogo(clube.slug, id);
   if (!jogo || !jogo.tickets) notFound();
+
+  const fases = fasesDoJogo(jogo.tickets);
+  const demonstracao = emDemonstracao();
+
+  // Em demonstração o clube não existe na API: a venda monta-se aqui, com os dados de exemplo.
+  let demo: { venda: Venda; vendaDeSocio: Venda } | null = null;
+  if (demonstracao) {
+    const recinto = clube.recintos.find((r) => r.id === jogo.tickets!.recintoId) ?? null;
+    const adesao = await fonte.socios(clube.slug);
+    const categorias = Object.fromEntries(adesao.tiers.map((t) => [t.id, t.name]));
+    // O sócio de exemplo é "Sócio jovem", para se ver um preço só de uma categoria.
+    demo = {
+      venda: vendaDeDemonstracao(jogo, recinto, categorias),
+      vendaDeSocio: vendaDeDemonstracao(jogo, recinto, categorias, { tierId: "demo-jovem" }),
+    };
+  }
 
   return (
     <>
@@ -43,15 +66,24 @@ export default async function BilhetesDoJogo({ params }: Props) {
             <MapPin size={16} aria-hidden />
             {jogo.venue} · {dataLonga(jogo.startsAt)}, {hora(jogo.startsAt)}
           </p>
+          {fases.length > 0 && (
+            <ul className="mt-4 flex flex-wrap gap-2">
+              {fases.map((f) => (
+                <li key={f} className="rounded-sm bg-signal-strong px-2.5 py-1 text-sm font-semibold text-signal-on">
+                  {f}
+                </li>
+              ))}
+            </ul>
+          )}
         </div>
       </div>
 
-      <div className="container-site mt-10 grid gap-10 lg:grid-cols-[1fr_22rem]">
-        <section>
+      <div className="container-site mt-10 grid gap-10 lg:grid-cols-[minmax(0,1fr)_22rem]">
+        <section className="min-w-0">
           <h1 className="display text-3xl">Bilhetes</h1>
           <span className="traco mt-3" aria-hidden />
           {jogo.tickets.open ? (
-            <EscolherBilhetes tipos={jogo.tickets.types} recinto={clube.recintos.find((r) => r.id === jogo.tickets!.recintoId) ?? null} />
+            <Compra slug={clube.slug} matchId={jogo.id} api={process.env.SITE_API_URL ?? ""} demonstracao={demonstracao} demo={demo} />
           ) : (
             <p className="mt-6 text-ink-3">A venda para este jogo ainda não abriu.</p>
           )}
@@ -66,11 +98,11 @@ export default async function BilhetesDoJogo({ params }: Props) {
           <div className="rounded-card border border-line bg-surface p-4 text-sm text-ink-2">
             <p className="font-semibold text-ink">Como funciona</p>
             <ol className="mt-2 list-decimal space-y-1 pl-5">
-              <li>Escolhes os bilhetes e pagas por MB WAY, Multibanco ou cartão.</li>
-              <li>O bilhete chega por email com um código QR por pessoa.</li>
-              <li>À entrada, o código é lido no telemóvel ou impresso.</li>
+              <li>Escolhes os bilhetes. Se és sócio, identifica-te para veres o preço de sócio.</li>
+              <li>Pagas por MB WAY, com 5 minutos para aceitar o pedido, ou por Multibanco, com 10 minutos para pagar a referência.</li>
+              <li>Os bilhetes aparecem logo a seguir e chegam por email, com um código QR por pessoa.</li>
+              <li>À entrada, mostras o código no telemóvel ou impresso.</li>
             </ol>
-            {jogo.tickets.capacity && <p className="mt-3 text-ink-3">Lotação: {jogo.tickets.capacity.toLocaleString("pt-PT")} lugares.</p>}
           </div>
         </aside>
       </div>

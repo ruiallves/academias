@@ -1,5 +1,6 @@
-import { Body, Controller, Delete, Get, Param, Patch, Post, Query, Req } from "@nestjs/common";
+import { Body, Controller, Delete, Get, Param, Patch, Post, Put, Query, Req } from "@nestjs/common";
 import type { AuthedRequest } from "../auth/auth.guard";
+import { ProdutoDoInventarioDto } from "../site/site.dto";
 import { InventoryService } from "./inventory.service";
 import {
   AssignDto,
@@ -101,6 +102,17 @@ export class InventoryController {
    * As fotografias, em três passos: autorizar, o browser carrega direto para o
    * armazenamento, e confirmar. O ficheiro nunca passa por aqui.
    */
+  /** A loja do site: pôr o artigo à venda (ou mudar o preço) e tirá-lo. Só com o site no plano. */
+  @Put("items/:id/site")
+  porAVendaNoSite(@Req() req: AuthedRequest, @Param("id") id: string, @Body() dto: ProdutoDoInventarioDto) {
+    return this.inventory.porAVendaNoSite(req.ctx, id, dto);
+  }
+
+  @Delete("items/:id/site")
+  tirarDoSite(@Req() req: AuthedRequest, @Param("id") id: string) {
+    return this.inventory.tirarDoSite(req.ctx, id);
+  }
+
   @Post("items/:id/imagens/url")
   imageUrl(@Req() req: AuthedRequest, @Param("id") id: string, @Body() dto: ImageUploadDto) {
     return this.inventory.imageUploadUrl(req.ctx, id, dto.contentType);

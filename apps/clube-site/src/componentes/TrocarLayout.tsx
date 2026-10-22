@@ -3,7 +3,7 @@
 import { LayoutTemplate } from "lucide-react";
 import { COOKIE_LAYOUT, LAYOUTS, type Layout } from "@/dados/tipos";
 
-const NOMES: Record<Layout, string> = { classico: "Clássico", porto: "Porto" };
+const NOMES: Record<Layout, string> = { tribuna: "Tribuna", holofote: "Holofote" };
 
 /**
  * O interruptor de layout da pré-visualização. Grava o cookie e pede a
@@ -12,8 +12,8 @@ const NOMES: Record<Layout, string> = { classico: "Clássico", porto: "Porto" };
  * É uma ferramenta nossa e do clube durante a montagem do site. Em
  * produção, quando o clube tiver escolhido, sai daqui e fica só na consola.
  *
- * `sobre` diz em que fundo está: a faixa escura do clássico ou a barra
- * branca do porto.
+ * `sobre` diz em que fundo está: a faixa escura da Tribuna ou a barra
+ * branca do Holofote.
  */
 export function TrocarLayout({ atual, sobre = "escuro" }: { atual: Layout; sobre?: "escuro" | "claro" }) {
   const trocar = (l: Layout) => {

@@ -6,7 +6,7 @@
  * Datas relativas a hoje, para o "próximo jogo" ser sempre próximo.
  */
 
-import type { Clube, Equipa, Evento, Jogo, Noticia, Produto } from "../tipos";
+import { INICIO_POR_OMISSAO, type Clube, type Equipa, type Evento, type Jogo, type Noticia, type Produto } from "../tipos";
 
 const foto = (seed: string, w = 1200, h = 800) => `https://picsum.photos/seed/${seed}/${w}/${h}`;
 
@@ -30,7 +30,7 @@ export const DOMINIOS_DEMO: Record<string, string> = {
 
 export const CLUBE: Clube = {
   slug: "monteverde",
-  layout: "classico",
+  layout: "tribuna",
   name: "Associação Desportiva de Monte Verde",
   shortName: "AD Monte Verde",
   city: "Guimarães",
@@ -76,12 +76,29 @@ export const CLUBE: Clube = {
       description: "Campo de formação, com duas metades para futebol de 7 e balneários próprios.",
       image: foto("campo2", 1200, 800),
     },
+    // Sem fotografia, de propósito: para se ver o cartão só com o texto.
     {
       name: "Pavilhão Dr. Azevedo",
       description: "Pavilhão municipal onde treinam e jogam o futsal e o basquetebol.",
-      image: foto("pavilhao", 1200, 800),
+    },
+    {
+      name: "Sede",
+      description: "Secretaria, sala de reuniões e bar dos sócios, junto ao estádio. Aberta nos dias de treino e de jogo.",
     },
   ],
+  home: (() => {
+    const banner = {
+      titulo: "Torneio de Verão 2027",
+      texto: "Três dias de futebol de formação no Estádio do Monte, com 24 equipas dos 7 aos 13 anos. As inscrições das equipas abrem em março.",
+      imagem: foto("torneio", 1600, 900),
+      botao: "Saber mais",
+      url: "/contactos?assunto=Inscri%C3%A7%C3%B5es%20e%20forma%C3%A7%C3%A3o",
+    };
+    return {
+      seccoes: INICIO_POR_OMISSAO.seccoes.map((s) => (s.key === "banner" ? { ...s, banner } : s)),
+      banner,
+    };
+  })(),
   recintos: [
     {
       id: "estadio-monte",
@@ -202,19 +219,30 @@ const EQUIPAS: Equipa[] = [
   },
 ];
 
-const BILHETES_CASA = {
+/**
+ * A venda de um jogo em casa, aberta a todos. Os preços de sócio aparecem a
+ * quem se identifica com o número e a data de nascimento (em demonstração,
+ * qualquer número serve). O "Sócio jovem" tem um preço só dele na Poente.
+ */
+const BILHETES_CASA: NonNullable<Jogo["tickets"]> = {
   open: true,
   capacity: 1200,
   recintoId: "estadio-monte",
   types: [
     { id: "central", name: "Central", price: 8, description: "Lugar marcado, coberto.", bancadaId: "central" },
     { id: "central-jovem", name: "Central, até 16 anos", price: 4, description: "Com documento de identificação na entrada.", bancadaId: "central" },
+    { id: "central-socio", name: "Central, sócio", price: 5, bancadaId: "central", forMembers: true },
     { id: "poente", name: "Poente", price: 5, description: "Lugar não marcado.", bancadaId: "poente" },
     { id: "poente-jovem", name: "Poente, até 16 anos", price: 2, description: "Com documento de identificação na entrada.", bancadaId: "poente" },
+    { id: "poente-socio", name: "Poente, sócio", price: 3, bancadaId: "poente", forMembers: true },
+    { id: "poente-socio-jovem", name: "Poente, sócio jovem", price: 0, bancadaId: "poente", forMembers: true, tierId: "demo-jovem" },
     { id: "norte", name: "Topo Norte", price: 5, description: "A bancada da claque. De pé.", bancadaId: "topo-norte" },
     { id: "visitantes", name: "Visitantes", price: 6, description: "Entrada pelo portão sul.", bancadaId: "visitantes" },
   ],
-  note: "Sócios com quota em dia entram sem bilhete, com o cartão na app.",
+  note: "Os sócios com as quotas em dia compram ao preço de sócio: um bilhete de sócio por sócio.",
+  membersOnly: false,
+  membersOpen: true,
+  publicOpen: true,
 };
 
 const JOGOS: Jogo[] = [
@@ -350,7 +378,13 @@ const JOGOS: Jogo[] = [
     competition: "Campeonato de Portugal",
     roundLabel: "Jornada 8",
     status: "SCHEDULED",
-    tickets: { ...BILHETES_CASA, note: "Dérbi: lotação limitada, sócios devem reservar na app até 48 h antes." },
+    // Sócios primeiro: o público só compra a partir de daqui a quatro dias.
+    tickets: {
+      ...BILHETES_CASA,
+      note: "Dérbi com lotação limitada. Os sócios compram primeiro; o público a seguir, se sobrarem lugares.",
+      publicOpen: false,
+      publicFrom: dia(4, "10:00"),
+    },
   },
   {
     id: "j11",
@@ -363,6 +397,25 @@ const JOGOS: Jogo[] = [
     competition: "Campeonato Distrital",
     roundLabel: "Jornada 3",
     status: "SCHEDULED",
+  },
+  {
+    id: "j12",
+    teamId: "seniores",
+    teamName: "Seniores",
+    startsAt: dia(23, "15:00"),
+    venue: "Estádio do Monte",
+    opponent: "FC Vizela",
+    isHome: true,
+    competition: "Taça de Portugal",
+    roundLabel: "3.ª eliminatória",
+    status: "SCHEDULED",
+    // Só para sócios: os preços do público ficam à vista, desligados.
+    tickets: {
+      ...BILHETES_CASA,
+      note: "Jogo só para sócios com as quotas em dia.",
+      membersOnly: true,
+      publicOpen: false,
+    },
   },
 ];
 

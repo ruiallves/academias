@@ -7,7 +7,7 @@ import { ArrowRight } from "lucide-react";
 import type { Noticia } from "@/dados/tipos";
 
 /**
- * O herói do layout "porto": uma notícia de cada vez, a toda a largura, com
+ * O herói do tema Holofote: uma notícia de cada vez, a toda a largura, com
  * o título gigante sublinhado na cor do clube e um botão "Ver mais". Avança
  * sozinho de 7 em 7 segundos, pára com o rato em cima e com
  * `prefers-reduced-motion`, e os pontos em baixo à direita trocam à mão.

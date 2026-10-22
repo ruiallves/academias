@@ -1,21 +1,28 @@
 import { useState } from "react";
-import { MapPin, Pencil, Plus, Recinto as IconeRecinto, Ticket, Trash2 } from "@/lib/icons";
+import { LugarAnual as IconeLugarAnual, MapPin, Pencil, Receipt, Recinto as IconeRecinto, SlidersHorizontal, Ticket } from "@/lib/icons";
 import { Empty, cx } from "@/components/primitives";
+import { Segmented } from "@/components/filters";
 import { Dialog, DialogField, dialogInputClass } from "@/components/Dialog";
 import { Interruptor } from "@/components/definicoes/ui";
 import { MapaDoRecinto } from "@academia/ui/estadio";
 import { useStore, type ApiMatch } from "@/lib/store";
-import { guardarBilheteira, novoId, useSite, type BilheteiraDoJogo, type Recinto } from "@/lib/website";
+import { can } from "@/lib/permissions";
+import { useSession } from "@/session";
+import { guardarBilheteira, useSite, type BilheteiraDoJogo, type CategoriaDeSocio, type Recinto, type TipoDeBilhete } from "@/lib/website";
 import { mostrarOk } from "@/lib/avisos";
+import { euro, quando } from "@/lib/bilheteira";
+import { GrelhaDePrecos, LegendaDaGrelha, PrecosPorOmissao, colunasDe, contarPrecos, grelhaDe, grelhaValida, linhasDe, tiposDe, type Grelha } from "./PrecosDaBilheteira";
+import { VendasDoJogo } from "./VendasDoJogo";
+import { LugaresAnuais } from "./LugaresAnuais";
 
-const euro = (v: number) => new Intl.NumberFormat("pt-PT", { style: "currency", currency: "EUR" }).format(v);
-const quando = (iso: string) =>
-  new Intl.DateTimeFormat("pt-PT", { weekday: "short", day: "numeric", month: "short", hour: "2-digit", minute: "2-digit", timeZone: "Europe/Lisbon" }).format(new Date(iso));
+
+/** Quantos dias depois do jogo a bilheteira ainda aparece: os reembolsos e as contas fazem-se depois. */
+const DIAS_DEPOIS = 30;
 
 /**
- * Os bilhetes de partida de um jogo. Com recinto desenhado, um tipo por
- * bancada (o preço é o mesmo para todas, e muda-se à mão); sem recinto, os
- * dois tipos de sempre, sem lugar.
+ * Uma bilheteira por gravar. Sem preços: ao abrir o editor, a grelha começa
+ * nos preços por omissão do recinto (e o servidor copia-os se lhe chegar uma
+ * lista vazia).
  */
 function padrao(recinto: Recinto | null): BilheteiraDoJogo {
   return {
@@ -23,55 +30,163 @@ function padrao(recinto: Recinto | null): BilheteiraDoJogo {
     recintoId: recinto?.id ?? null,
     lotacao: null,
     nota: "Sócios com quota em dia entram com o cartão na app.",
-    tipos: recinto?.bancadas.length
-      ? recinto.bancadas.map((b) => ({ id: novoId(), nome: b.nome, preco: 5, bancadaId: b.id }))
-      : [
-          { id: novoId(), nome: "Geral", preco: 5, bancadaId: null },
-          { id: novoId(), nome: "Até 16 anos", preco: 2, bancadaId: null },
-        ],
+    tipos: [],
+    sociosDesde: null,
+    publicoDesde: null,
+    soSocios: false,
+    fechaEm: null,
   };
-}
-
-/** Bilheteiras gravadas antes de haver recintos não têm estes campos. */
-function normalizar(b: BilheteiraDoJogo): BilheteiraDoJogo {
-  return { ...b, recintoId: b.recintoId ?? null, tipos: b.tipos.map((t) => ({ ...t, bancadaId: t.bancadaId ?? null })) };
 }
 
 /**
  * A bilheteira: os jogos em casa que aí vêm, os da plataforma (os mesmos do
- * calendário). Para cada um, abrir a venda e dizer os tipos, os preços e a
- * bancada de cada tipo.
+ * calendário). Para cada um, abrir a venda, os preços por bancada e público,
+ * quem pode comprar e quando, e as vendas.
  *
- * Só jogos em casa: fora, quem vende é o outro clube.
+ * Só jogos em casa: fora, quem vende é o outro clube. Os jogos dos últimos
+ * trinta dias com bilheteira continuam na lista, só com as vendas: é depois
+ * do jogo que se fazem os reembolsos e as contas.
+ *
+ * Ao lado, os lugares anuais dos sócios (contam na lotação de todos os jogos
+ * da época), e à direita os preços por omissão.
  */
 export function Bilheteira({ onIrParaEstadio }: { onIrParaEstadio: () => void }) {
   const store = useStore();
-  const slug = store.academy.slug;
-  const site = useSite(slug);
+  const { session } = useSession();
+  const site = useSite(store.academy.slug);
+  const [vista, setVista] = useState<"jogos" | "anuais">("jogos");
+  const [precos, setPrecos] = useState(false);
+  const podeEscrever = can(session, "website:write");
+  const verSocios = can(session, "member:read");
+
+  return (
+    <>
+      <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+        {verSocios ? (
+          <Segmented
+            value={vista}
+            onChange={setVista}
+            label="Vistas da bilheteira"
+            options={[
+              { value: "jogos" as const, label: "Jogos", icon: Ticket },
+              { value: "anuais" as const, label: "Lugares anuais", icon: IconeLugarAnual },
+            ]}
+          />
+        ) : (
+          <span />
+        )}
+        {podeEscrever && (
+          <button type="button" className="ctl-outline" onClick={() => setPrecos(true)}>
+            <SlidersHorizontal className="size-4" strokeWidth={1.75} />
+            Preços por omissão
+          </button>
+        )}
+      </div>
+
+      {vista === "anuais" && verSocios ? <LugaresAnuais recintos={site.recintos} /> : <Jogos onIrParaEstadio={onIrParaEstadio} podeEscrever={podeEscrever} />}
+
+      {precos && (
+        <PrecosPorOmissao
+          recintos={site.recintos}
+          precos={site.precosBilheteira}
+          categorias={site.categoriasDeSocio}
+          onClose={() => setPrecos(false)}
+          onIrParaEstadio={onIrParaEstadio}
+        />
+      )}
+    </>
+  );
+}
+
+function Jogos({ onIrParaEstadio, podeEscrever }: { onIrParaEstadio: () => void; podeEscrever: boolean }) {
+  const store = useStore();
+  const site = useSite(store.academy.slug);
   const [editar, setEditar] = useState<ApiMatch | null>(null);
+  const [vendas, setVendas] = useState<ApiMatch | null>(null);
 
   const agora = Date.now();
-  const jogos = store.matches
-    .filter((m) => m.isHome && m.status !== "CANCELLED" && new Date(m.startsAt).getTime() >= agora)
-    .sort((a, b) => a.startsAt.localeCompare(b.startsAt));
+  const de = (id: string) => site.bilheteira[id];
+  const emCasa = store.matches.filter((m) => m.isHome).sort((a, b) => a.startsAt.localeCompare(b.startsAt));
+  const futuros = emCasa.filter((m) => m.status !== "CANCELLED" && new Date(m.startsAt).getTime() >= agora);
+  const passados = emCasa
+    .filter((m) => de(m.id) && !futuros.includes(m) && new Date(m.startsAt).getTime() >= agora - DIAS_DEPOIS * 86_400_000)
+    .reverse();
 
-  const de = (id: string) => (site.bilheteira[id] ? normalizar(site.bilheteira[id]) : undefined);
-  const recintoPadrao = site.recintos[0] ?? null;
-
+  /**
+   * O interruptor da lista abre e fecha uma venda já preparada. Um jogo sem
+   * bilheteira, ou sem recinto (os bilhetes sem bancada não se vendem), abre o
+   * editor: há preços e um recinto a escolher antes.
+   */
   const alternar = (m: ApiMatch) => {
-    const atual = de(m.id) ?? padrao(recintoPadrao);
+    const atual = de(m.id);
+    if (!atual || !atual.recintoId || atual.tipos.length === 0) return setEditar(m);
     void guardarBilheteira(m.id, { ...atual, aberta: !atual.aberta }).catch(() => undefined);
   };
 
-  if (jogos.length === 0) {
+  if (futuros.length === 0 && passados.length === 0) {
     return <Empty icon={Ticket} title="Não há jogos em casa marcados" detail="Os jogos em casa do calendário aparecem aqui para abrir a venda de bilhetes." />;
   }
+
+  const linha = (m: ApiMatch, passado: boolean) => {
+    const b = de(m.id);
+    const desde = b?.tipos.length ? Math.min(...b.tipos.map((t) => t.preco)) : null;
+    const recinto = site.recintos.find((r) => r.id === b?.recintoId);
+    const fase = !b?.aberta
+      ? null
+      : b.soSocios
+        ? "só sócios"
+        : b.publicoDesde && new Date(b.publicoDesde).getTime() > agora
+          ? `sócios primeiro, público a ${quando(b.publicoDesde)}`
+          : null;
+    return (
+      <li key={m.id} className="flex flex-wrap items-center gap-x-4 gap-y-2 border-b border-line px-4 py-3 last:border-b-0">
+        <div className="min-w-0 flex-1">
+          <p className="text-meta text-ink-3">
+            {m.teamName}
+            {m.competition && ` · ${m.competition.label}`}
+          </p>
+          <p className="truncate text-body font-medium text-ink">
+            {store.academy.shortName} <span className="text-ink-4">vs</span> {m.opponent}
+          </p>
+          <p className="flex items-center gap-1 text-meta text-ink-3">
+            <span className="capitalize">{quando(m.startsAt)}</span>
+            <span aria-hidden>·</span>
+            <MapPin className="size-3" strokeWidth={1.75} />
+            <span className="truncate">{recinto?.nome ?? m.venue}</span>
+          </p>
+        </div>
+        {passado ? (
+          <span className="text-meta text-ink-4">{m.status === "CANCELLED" ? "Cancelado" : "Já jogado"}</span>
+        ) : (
+          <>
+            <span className={cx("text-meta tabular-nums", b?.aberta ? "text-ok" : "text-ink-4")}>
+              {b?.aberta ? (desde != null ? `À venda, desde ${euro(desde)}` : "À venda") : "Sem venda"}
+              {fase && <span className="block text-ink-3">{fase}</span>}
+            </span>
+            {podeEscrever && <Interruptor ligado={!!b?.aberta} onChange={() => alternar(m)} label={`Bilhetes para ${m.opponent}`} />}
+            {podeEscrever && (
+              <button type="button" className="ctl-outline" onClick={() => setEditar(m)}>
+                <Pencil className="size-4" strokeWidth={1.75} />
+                Bilhetes
+              </button>
+            )}
+          </>
+        )}
+        {b && (
+          <button type="button" className="ctl-outline" onClick={() => setVendas(m)}>
+            <Receipt className="size-4" strokeWidth={1.75} />
+            Vendas
+          </button>
+        )}
+      </li>
+    );
+  };
 
   return (
     <>
       {site.recintos.length === 0 && (
         <div className="mb-4 flex flex-wrap items-center justify-between gap-3 rounded-[10px] border border-line bg-sunken/50 px-4 py-3">
-          <p className="text-meta text-ink-2">Desenha o estádio para cada bilhete ficar ligado a uma bancada, e quem compra ver no mapa onde vai ficar.</p>
+          <p className="text-meta text-ink-2">Os bilhetes vendem-se por bancada. Desenha o estádio para cada bilhete ficar ligado a uma bancada, e quem compra ver no mapa onde vai ficar.</p>
           <button type="button" className="ctl-outline" onClick={onIrParaEstadio}>
             <IconeRecinto className="size-4" strokeWidth={1.75} />
             Desenhar o estádio
@@ -79,47 +194,29 @@ export function Bilheteira({ onIrParaEstadio }: { onIrParaEstadio: () => void })
         </div>
       )}
 
-      <ul className="overflow-hidden rounded-[12px] border border-line bg-surface">
-        {jogos.map((m) => {
-          const b = de(m.id);
-          const desde = b?.tipos.length ? Math.min(...b.tipos.map((t) => t.preco)) : null;
-          const recinto = site.recintos.find((r) => r.id === b?.recintoId);
-          return (
-            <li key={m.id} className="flex flex-wrap items-center gap-x-4 gap-y-2 border-b border-line px-4 py-3 last:border-b-0">
-              <div className="min-w-0 flex-1">
-                <p className="text-meta text-ink-3">
-                  {m.teamName}
-                  {m.competition && ` · ${m.competition.label}`}
-                </p>
-                <p className="truncate text-body font-medium text-ink">
-                  {store.academy.shortName} <span className="text-ink-4">vs</span> {m.opponent}
-                </p>
-                <p className="flex items-center gap-1 text-meta text-ink-3">
-                  <span className="capitalize">{quando(m.startsAt)}</span>
-                  <span aria-hidden>·</span>
-                  <MapPin className="size-3" strokeWidth={1.75} />
-                  <span className="truncate">{recinto?.nome ?? m.venue}</span>
-                </p>
-              </div>
-              <span className={cx("text-meta tabular-nums", b?.aberta ? "text-ok" : "text-ink-4")}>
-                {b?.aberta ? (desde != null ? `À venda, desde ${euro(desde)}` : "À venda") : "Sem venda"}
-              </span>
-              <Interruptor ligado={!!b?.aberta} onChange={() => alternar(m)} label={`Bilhetes para ${m.opponent}`} />
-              <button type="button" className="ctl-outline" onClick={() => setEditar(m)}>
-                <Pencil className="size-4" strokeWidth={1.75} />
-                Bilhetes
-              </button>
-            </li>
-          );
-        })}
-      </ul>
+      {futuros.length > 0 ? (
+        <ul className="overflow-hidden rounded-[12px] border border-line bg-surface">{futuros.map((m) => linha(m, false))}</ul>
+      ) : (
+        <Empty icon={Ticket} title="Não há jogos em casa marcados" detail="Os jogos em casa do calendário aparecem aqui para abrir a venda de bilhetes." compact />
+      )}
+
+      {passados.length > 0 && (
+        <>
+          <p className="mb-1.5 mt-6 text-[11px] font-medium uppercase tracking-[0.08em] text-ink-4">Últimos {DIAS_DEPOIS} dias</p>
+          <ul className="overflow-hidden rounded-[12px] border border-line bg-surface">{passados.map((m) => linha(m, true))}</ul>
+        </>
+      )}
 
       {editar && (
         <EditarBilheteira
           jogo={editar}
           nomeCurto={store.academy.shortName}
           recintos={site.recintos}
-          inicial={de(editar.id) ?? padrao(recintoPadrao)}
+          precos={site.precosBilheteira}
+          categorias={site.categoriasDeSocio}
+          pagamentosLigados={store.academy.paymentsEnabled !== false}
+          inicial={de(editar.id) ?? padrao(site.recintos[0] ?? null)}
+          onIrParaEstadio={onIrParaEstadio}
           onClose={() => setEditar(null)}
           onGuardar={async (b) => {
             await guardarBilheteira(editar.id, b);
@@ -128,59 +225,152 @@ export function Bilheteira({ onIrParaEstadio }: { onIrParaEstadio: () => void })
           }}
         />
       )}
+
+      {vendas && <VendasDoJogo jogo={vendas} nomeCurto={store.academy.shortName} recintos={site.recintos} podeEscrever={podeEscrever} onClose={() => setVendas(null)} />}
     </>
   );
 }
+
+/* -------------------------------------------------------------------------- */
+/* O editor da bilheteira de um jogo                                            */
+/* -------------------------------------------------------------------------- */
+
+/** Quem pode comprar: todos ao mesmo tempo, só os sócios, ou os sócios antes do público. */
+type Modo = "todos" | "socios" | "primeiro";
+
+function modoDe(b: BilheteiraDoJogo): Modo {
+  if (b.soSocios) return "socios";
+  if (b.publicoDesde && b.publicoDesde !== b.sociosDesde) return "primeiro";
+  return "todos";
+}
+
+/**
+ * ISO ↔ o valor de um `<input type="datetime-local">`, na hora do browser.
+ * A consola usa-se em Portugal; a API guarda em UTC e o site mostra em Lisboa.
+ */
+const paraCampo = (iso: string | null) => {
+  if (!iso) return "";
+  const d = new Date(iso);
+  const p = (n: number) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}T${p(d.getHours())}:${p(d.getMinutes())}`;
+};
+const doCampo = (v: string) => (v ? new Date(v).toISOString() : null);
 
 function EditarBilheteira({
   jogo,
   nomeCurto,
   recintos,
+  precos,
+  categorias,
+  pagamentosLigados,
   inicial,
+  onIrParaEstadio,
   onClose,
   onGuardar,
 }: {
   jogo: ApiMatch;
   nomeCurto: string;
   recintos: Recinto[];
+  precos: Record<string, TipoDeBilhete[]>;
+  categorias: CategoriaDeSocio[];
+  pagamentosLigados: boolean;
   inicial: BilheteiraDoJogo;
+  onIrParaEstadio: () => void;
   onClose: () => void;
   onGuardar: (b: BilheteiraDoJogo) => Promise<void>;
 }) {
-  const [b, setB] = useState(inicial);
-  const [precos, setPrecos] = useState<Record<string, string>>(() =>
-    Object.fromEntries(inicial.tipos.map((t) => [t.id, String(t.preco).replace(".", ",")])),
-  );
+  // Os bilhetes vendem-se por bancada: sem recinto não há venda, por isso um jogo sem ele fica já com o primeiro.
+  const recintoInicial = recintos.find((r) => r.id === inicial.recintoId) ?? recintos[0] ?? null;
+  // Um jogo ainda sem preços começa nos preços por omissão do recinto.
+  const tiposIniciais = inicial.tipos.length || !recintoInicial ? inicial.tipos : (precos[recintoInicial.id] ?? []);
+
+  const [b, setB] = useState<BilheteiraDoJogo>({ ...inicial, recintoId: recintoInicial?.id ?? null });
+  const [base, setBase] = useState<TipoDeBilhete[]>(tiposIniciais);
+  const [inicio] = useState(() => grelhaDe(tiposIniciais, linhasDe(recintoInicial), colunasDe(categorias, tiposIniciais)));
+  const [grelha, setGrelha] = useState<Grelha>(inicio.grelha);
+  const [fora, setFora] = useState(inicio.foraDaGrelha);
   const [lotacao, setLotacao] = useState(inicial.lotacao ? String(inicial.lotacao) : "");
   const [bancadaVista, setBancadaVista] = useState<string | null>(null);
 
+  const [modo, setModo] = useState<Modo>(modoDe(inicial));
+  const [abre, setAbre] = useState(paraCampo(inicial.sociosDesde ?? inicial.publicoDesde));
+  const [sociosDesde, setSociosDesde] = useState(paraCampo(inicial.sociosDesde));
+  const [publicoDesde, setPublicoDesde] = useState(paraCampo(inicial.publicoDesde));
+  const [fechaEm, setFechaEm] = useState(paraCampo(inicial.fechaEm));
+
   const recinto = recintos.find((r) => r.id === b.recintoId) ?? null;
-  const numero = (s: string) => Number(s.replace(",", "."));
-  const tiposOk =
-    b.tipos.length > 0 &&
-    b.tipos.every((t) => t.nome.trim() && (precos[t.id] ?? "").trim() && Number.isFinite(numero(precos[t.id] ?? "")) && numero(precos[t.id] ?? "") >= 0);
-  const lotacaoOk = !lotacao.trim() || (Number.isInteger(Number(lotacao)) && Number(lotacao) > 0);
+  const linhas = linhasDe(recinto);
+  const colunas = colunasDe(categorias, base);
+  const nPrecos = contarPrecos(grelha);
+  const precosOk = grelhaValida(grelha) && nPrecos > 0;
+  const lotacaoOk = !lotacao.trim() || (/^\d+$/.test(lotacao.trim()) && Number(lotacao) > 0 && Number(lotacao) <= 200_000);
+
+  // As fases: só as datas que o modo usa, e pela ordem certa.
+  const t = (v: string) => (v ? new Date(v).getTime() : null);
+  const erroDasFases =
+    modo === "primeiro" && !publicoDesde
+      ? "Diz quando a venda abre ao público."
+      : modo === "primeiro" && sociosDesde && publicoDesde && t(sociosDesde)! >= t(publicoDesde)!
+        ? "Os sócios têm de começar antes do público."
+        : fechaEm && t(fechaEm)! <= (t(modo === "todos" ? abre : sociosDesde) ?? 0)
+          ? "A venda tem de fechar depois de abrir."
+          : null;
 
   /** O preço mais baixo de cada bancada, para o mapa. */
   const desdeNaBancada = (id: string) => {
-    const ps = b.tipos.filter((t) => t.bancadaId === id).map((t) => numero(precos[t.id] ?? ""));
-    const validos = ps.filter((p) => Number.isFinite(p));
-    return validos.length ? Math.min(...validos) : null;
+    const ps = tiposDe(grelha, linhas, colunas)
+      .filter((x) => x.bancadaId === id)
+      .map((x) => x.preco);
+    return ps.length ? Math.min(...ps) : null;
   };
 
   const trocarRecinto = (id: string) => {
     const novo = recintos.find((r) => r.id === id) ?? null;
-    // As bancadas são do recinto: ao mudar, os bilhetes deixam de ter lugar.
-    setB({ ...b, recintoId: novo?.id ?? null, tipos: b.tipos.map((t) => ({ ...t, bancadaId: null })) });
+    // As bancadas são do recinto: ao mudar, a grelha recomeça nos preços por omissão do novo.
+    const tipos = novo ? (precos[novo.id] ?? []) : [];
+    setB({ ...b, recintoId: novo?.id ?? null });
+    setBase(tipos);
+    setGrelha(grelhaDe(tipos, linhasDe(novo), colunasDe(categorias, tipos)).grelha);
+    setFora(0);
     setBancadaVista(null);
   };
 
-  const juntarTipo = (bancadaId: string | null) => {
-    const id = novoId();
-    const nome = recinto?.bancadas.find((x) => x.id === bancadaId)?.nome ?? "";
-    setB({ ...b, tipos: [...b.tipos, { id, nome, preco: 0, bancadaId }] });
-    setPrecos({ ...precos, [id]: "" });
+  const guardar = () => {
+    const fases =
+      modo === "todos"
+        ? { soSocios: false, sociosDesde: doCampo(abre), publicoDesde: doCampo(abre) }
+        : modo === "socios"
+          ? { soSocios: true, sociosDesde: doCampo(sociosDesde), publicoDesde: null }
+          : { soSocios: false, sociosDesde: doCampo(sociosDesde), publicoDesde: doCampo(publicoDesde) };
+    // Se o servidor recusar (pagamentos por ligar, por exemplo), o erro aparece no cartão de erros e o diálogo fica aberto.
+    void onGuardar({
+      ...b,
+      ...fases,
+      fechaEm: doCampo(fechaEm),
+      lotacao: lotacao.trim() ? Number(lotacao) : null,
+      nota: b.nota.trim(),
+      tipos: tiposDe(grelha, linhas, colunas),
+    }).catch(() => undefined);
   };
+
+  if (recintos.length === 0) {
+    return (
+      <Dialog title="Bilhetes" subtitle={`${nomeCurto} vs ${jogo.opponent} · ${quando(jogo.startsAt)}`} icon={<Ticket className="size-4" strokeWidth={1.75} />} onClose={onClose}>
+        <Empty icon={IconeRecinto} title="Falta o estádio" detail="Os bilhetes vendem-se por bancada. Desenha primeiro o recinto, com as bancadas e os lugares de cada uma." compact>
+          <button
+            type="button"
+            className="ctl-primary"
+            onClick={() => {
+              onClose();
+              onIrParaEstadio();
+            }}
+          >
+            Desenhar o estádio
+          </button>
+        </Empty>
+      </Dialog>
+    );
+  }
 
   return (
     <Dialog
@@ -188,39 +378,34 @@ function EditarBilheteira({
       subtitle={`${nomeCurto} vs ${jogo.opponent} · ${quando(jogo.startsAt)}`}
       icon={<Ticket className="size-4" strokeWidth={1.75} />}
       onClose={onClose}
-      width={720}
+      width={860}
       footer={
         <>
+          {!precosOk && <span className="mr-auto text-meta text-ink-3">{nPrecos === 0 ? "Escreve pelo menos um preço." : "Há preços escritos mal."}</span>}
           <button type="button" className="ctl-ghost" onClick={onClose}>
             Cancelar
           </button>
-          <button
-            type="button"
-            className="ctl-primary"
-            disabled={!tiposOk || !lotacaoOk}
-            onClick={() =>
-              // Se o servidor recusar, o erro aparece no cartão de erros e o diálogo fica aberto.
-              void onGuardar({
-                ...b,
-                lotacao: lotacao.trim() ? Number(lotacao) : null,
-                tipos: b.tipos.map((t) => ({ ...t, nome: t.nome.trim(), preco: Math.round(numero(precos[t.id]) * 100) / 100 })),
-              }).catch(() => undefined)
-            }
-          >
+          <button type="button" className="ctl-primary" disabled={!precosOk || !lotacaoOk || !!erroDasFases || !recinto} onClick={guardar}>
             Guardar
           </button>
         </>
       }
     >
       <div className="space-y-5 px-5 py-4">
-        <div className="flex items-center justify-between gap-3 rounded-[8px] border border-line px-3 py-2.5">
-          <span className="text-body text-ink">Venda aberta</span>
-          <Interruptor ligado={b.aberta} onChange={() => setB({ ...b, aberta: !b.aberta })} label="Venda aberta" />
+        <div className="rounded-[8px] border border-line px-3 py-2.5">
+          <div className="flex items-center justify-between gap-3">
+            <span className="text-body text-ink">Venda aberta</span>
+            <Interruptor ligado={b.aberta} onChange={() => setB({ ...b, aberta: !b.aberta })} label="Venda aberta" />
+          </div>
+          {!pagamentosLigados && (
+            <p className="mt-1.5 text-meta leading-relaxed text-warn">
+              Os pagamentos do clube não estão ligados. Sem eles só abre uma venda em que todos os bilhetes custam 0 €.
+            </p>
+          )}
         </div>
 
-        <DialogField label="Recinto" hint={recintos.length ? "As bancadas que os bilhetes podem ter são as deste recinto." : "Sem recintos desenhados, os bilhetes não têm lugar no mapa."}>
-          <select className={dialogInputClass} value={b.recintoId ?? ""} onChange={(e) => trocarRecinto(e.target.value)} disabled={!recintos.length}>
-            <option value="">Sem mapa</option>
+        <DialogField label="Recinto" hint="As linhas da grelha são as bancadas deste recinto.">
+          <select className={dialogInputClass} value={b.recintoId ?? ""} onChange={(e) => trocarRecinto(e.target.value)}>
             {recintos.map((r) => (
               <option key={r.id} value={r.id}>
                 {r.nome}
@@ -229,7 +414,7 @@ function EditarBilheteira({
           </select>
         </DialogField>
 
-        {recinto && (
+        {recinto && recinto.bancadas.length > 0 && (
           <div>
             <p className="mb-1.5 text-meta font-medium text-ink-2">Como quem compra vai ver</p>
             <div className="rounded-[10px] border border-line bg-surface p-2">
@@ -238,7 +423,7 @@ function EditarBilheteira({
                 className="w-full"
                 selecionada={bancadaVista}
                 onEscolher={(id) => setBancadaVista(id === bancadaVista ? null : id)}
-                estado={(x) => (b.tipos.some((t) => t.bancadaId === x.id) ? "ativa" : "inativa")}
+                estado={(x) => (desdeNaBancada(x.id) != null ? "ativa" : "inativa")}
                 rotulo={(x) => {
                   const d = desdeNaBancada(x.id);
                   return d != null ? `desde ${euro(d)}` : "sem bilhetes";
@@ -250,73 +435,84 @@ function EditarBilheteira({
         )}
 
         <div>
-          <p className="mb-1.5 text-meta font-medium text-ink-2">Tipos de bilhete</p>
-          <ul className="space-y-2">
-            {b.tipos.map((t) => (
-              <li
-                key={t.id}
-                className={cx(
-                  "grid items-center gap-2 rounded-[8px]",
-                  recinto ? "grid-cols-[minmax(0,1fr)_minmax(0,1fr)_88px_auto]" : "grid-cols-[minmax(0,1fr)_88px_auto]",
-                  bancadaVista && t.bancadaId === bancadaVista && "bg-signal-soft/60 ring-1 ring-signal-line/40",
-                )}
-              >
-                <input
-                  className={dialogInputClass}
-                  aria-label="Nome do tipo"
-                  placeholder="Geral, Sócio, Até 16 anos…"
-                  value={t.nome}
-                  onChange={(e) => setB({ ...b, tipos: b.tipos.map((x) => (x.id === t.id ? { ...x, nome: e.target.value } : x)) })}
-                />
-                {recinto && (
-                  <select
-                    className={dialogInputClass}
-                    aria-label={`Bancada de ${t.nome || "este tipo"}`}
-                    value={t.bancadaId ?? ""}
-                    onChange={(e) => setB({ ...b, tipos: b.tipos.map((x) => (x.id === t.id ? { ...x, bancadaId: e.target.value || null } : x)) })}
-                  >
-                    <option value="">Qualquer lugar</option>
-                    {recinto.bancadas.map((bc) => (
-                      <option key={bc.id} value={bc.id}>
-                        {bc.nome}
-                      </option>
-                    ))}
-                  </select>
-                )}
-                <input
-                  className={cx(dialogInputClass, "text-right tabular-nums")}
-                  aria-label={`Preço de ${t.nome || "este tipo"} em euros`}
-                  inputMode="decimal"
-                  placeholder="€"
-                  value={precos[t.id] ?? ""}
-                  onChange={(e) => setPrecos({ ...precos, [t.id]: e.target.value })}
-                />
-                <button
-                  type="button"
-                  aria-label={`Tirar ${t.nome || "este tipo"}`}
-                  disabled={b.tipos.length === 1}
-                  onClick={() => setB({ ...b, tipos: b.tipos.filter((x) => x.id !== t.id) })}
-                  className="ctl-ghost size-9 justify-center px-0 text-risk disabled:opacity-30"
-                >
-                  <Trash2 className="size-4" strokeWidth={1.75} />
-                </button>
-              </li>
-            ))}
-          </ul>
-          <button type="button" className="ctl-ghost mt-2" onClick={() => juntarTipo(bancadaVista)}>
-            <Plus className="size-4" strokeWidth={2} />
-            {bancadaVista && recinto ? `Outro tipo na ${recinto.bancadas.find((x) => x.id === bancadaVista)?.nome}` : "Outro tipo"}
-          </button>
+          <p className="mb-1.5 text-meta font-medium text-ink-2">Preços</p>
+          {recinto && recinto.bancadas.length === 0 ? (
+            <p className="rounded-[10px] border border-dashed border-line-strong px-4 py-6 text-center text-meta text-ink-3">
+              {recinto.nome} ainda não tem bancadas. Acrescenta-as no Estádio.
+            </p>
+          ) : (
+            <>
+              <GrelhaDePrecos linhas={linhas} colunas={colunas} grelha={grelha} onChange={setGrelha} realce={bancadaVista} />
+              <LegendaDaGrelha />
+            </>
+          )}
+          {fora > 0 && (
+            <p className="mt-1.5 rounded-[8px] bg-warn-soft px-3 py-2 text-meta leading-relaxed text-warn">
+              {fora === 1 ? "Um tipo de bilhete deste jogo não cabe" : `${fora} tipos de bilhete deste jogo não cabem`} na grelha (outro preço para o mesmo público na
+              mesma bancada, ou sem bancada). Ao guardar, {fora === 1 ? "sai" : "saem"}.
+            </p>
+          )}
         </div>
 
-        <DialogField
-          label="Lotação do jogo"
-          hint={recinto ? "Vazio = a soma das bancadas. Cada bancada fecha sozinha quando esgota." : "Vazio = sem limite. Quando esgotar, a venda fecha sozinha."}
-        >
+        <div>
+          <p className="mb-1.5 text-meta font-medium text-ink-2">Quem pode comprar</p>
+          <div className="grid gap-1.5 sm:grid-cols-3" role="radiogroup" aria-label="Quem pode comprar">
+            {(
+              [
+                { k: "todos", t: "Todos", d: "Sócios e público ao mesmo tempo." },
+                { k: "socios", t: "Só sócios", d: "O público não compra." },
+                { k: "primeiro", t: "Sócios primeiro", d: "O público só a partir de uma data." },
+              ] as const
+            ).map((o) => (
+              <button
+                key={o.k}
+                type="button"
+                role="radio"
+                aria-checked={modo === o.k}
+                onClick={() => setModo(o.k)}
+                className={cx(
+                  "rounded-[8px] border px-3 py-2 text-left transition-colors",
+                  modo === o.k ? "border-signal/30 bg-signal-soft" : "border-line hover:border-line-strong",
+                )}
+              >
+                <span className={cx("block text-body font-medium", modo === o.k ? "text-signal-ink" : "text-ink")}>{o.t}</span>
+                <span className="block text-meta text-ink-3">{o.d}</span>
+              </button>
+            ))}
+          </div>
+
+          <div className="mt-3 grid gap-3 sm:grid-cols-2">
+            {modo === "todos" ? (
+              <DialogField label="Abre em" hint="Vazio = abre já, quando ligares a venda.">
+                <input type="datetime-local" className={dialogInputClass} value={abre} onChange={(e) => setAbre(e.target.value)} />
+              </DialogField>
+            ) : (
+              <DialogField label="Sócios a partir de" hint="Vazio = os sócios compram desde que a venda abre.">
+                <input type="datetime-local" className={dialogInputClass} value={sociosDesde} onChange={(e) => setSociosDesde(e.target.value)} />
+              </DialogField>
+            )}
+            {modo === "primeiro" && (
+              <DialogField label="Abre ao público em">
+                <input
+                  type="datetime-local"
+                  className={cx(dialogInputClass, !publicoDesde && "border-warn")}
+                  value={publicoDesde}
+                  onChange={(e) => setPublicoDesde(e.target.value)}
+                />
+              </DialogField>
+            )}
+            <DialogField label="Fecha em" hint="Vazio = fecha à hora do jogo. Nunca fecha depois do início.">
+              <input type="datetime-local" className={dialogInputClass} value={fechaEm} onChange={(e) => setFechaEm(e.target.value)} />
+            </DialogField>
+          </div>
+          {erroDasFases && <p className="mt-1.5 text-meta text-risk">{erroDasFases}</p>}
+        </div>
+
+        <DialogField label="Lotação do jogo" hint="Vazio = a soma das bancadas. Cada bancada fecha sozinha quando esgota, e os lugares anuais dos sócios já estão descontados.">
           <input className={cx(dialogInputClass, !lotacaoOk && "border-risk")} inputMode="numeric" value={lotacao} onChange={(e) => setLotacao(e.target.value)} />
         </DialogField>
         <DialogField label="Nota para quem compra" hint="Aparece ao lado dos bilhetes.">
-          <textarea className={cx(dialogInputClass, "h-20 py-2")} value={b.nota} onChange={(e) => setB({ ...b, nota: e.target.value })} />
+          <textarea className={cx(dialogInputClass, "h-20 py-2")} maxLength={500} value={b.nota} onChange={(e) => setB({ ...b, nota: e.target.value })} />
         </DialogField>
       </div>
     </Dialog>

@@ -322,6 +322,37 @@ ecrã. Um convocado emprestado aparece marcado como tal na convocatória e na
 própria ficha ("Emprestado ao Sub-13"), e o pai recebe uma notificação concreta —
 adversário, hora, sítio — não um "tens uma notificação".
 
+### As equipas à esquerda, três vistas, e o passado (21/10)
+
+O ecrã era a lista dos próximos jogos de todas as equipas ao lado do plantel do
+jogo escolhido. Um jogo que passasse sem convocatória saía dali e não aparecia
+em lado nenhum a não ser no Pós-jogo da página do jogo, e o histórico de uma
+equipa não se via. Passou ao desenho do Planeamento e das Presenças: as equipas
+à esquerda, os números numa linha, e uma vista de cada vez:
+
+- **Próximos**: o trabalho de todas as semanas, por dia. Abrir um jogo mostra o
+  plantel no lugar da lista, com o caminho de volta.
+- **Em atraso**: os jogos da época corrente que já passaram sem convocatória, do
+  mais antigo para o mais recente, com o atraso escrito. Registar não avisa
+  ninguém: é `saveRetroSquad` (`POST /api/matches/:id/plantel`), a mesma
+  escrita do Pós-jogo. Pede `attendance:write`, como lá. Registado, o jogo passa
+  para o Histórico e o ecrã vai com ele.
+- **Histórico**: as convocatórias dos jogos passados, por mês, com a época
+  (selector) e a procura por adversário ou recinto. Abrir um jogo mostra quem foi
+  convocado, as respostas das famílias e quem jogou, com PDF. Corrige-se com o
+  mesmo registo, só na época corrente; sem "Reabrir", que levava a avisar as
+  famílias de um jogo que já foi.
+
+A equipa, a vista, a época e o jogo vivem no endereço. A lista da academia só
+recua 30 dias, e por isso o ecrã pede à parte os jogos da época (`GET
+/api/matches?from&to`), uma vez por época, e junta-os aos da academia.
+
+Do lado do servidor, duas mudanças: `submitCallUps` recusa jogos começados (um
+aviso "está convocado" sobre um jogo que já foi só confundia uma família), e
+`saveRetroSquad` deixou de apagar e recriar as linhas, para quem fica manter a
+resposta que deu. `test:callups` cobre as duas, e empurra o `mt_proximo` para o
+futuro antes de começar, como `test-convocatoria-resposta` já fazia.
+
 ### O resultado grava-se num sítio só
 
 A gaveta do calendário mostrava a estatística assim que o jogo tinha resultado —

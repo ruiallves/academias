@@ -37,7 +37,7 @@ import { randomInt } from "node:crypto";
  * o dinheiro, o ID é o que o torna único.
  */
 
-export type TipoDePagamento = "MENS" | "EXTRA" | "QUOTA";
+export type TipoDePagamento = "MENS" | "EXTRA" | "QUOTA" | "BILHETE";
 
 export type ItemPago = {
   tipo: TipoDePagamento;

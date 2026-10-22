@@ -139,14 +139,14 @@ try {
   const pub = await api(director, "PATCH", "/api/site", {
     publicado: true,
     equipas: todasLigadas,
-    layout: "porto",
+    layout: "holofote",
     identidade: { lema: "Lema do teste", sobre: "Sobre do teste", redes: { facebook: "https://facebook.com/x", instagram: "javascript:alert(1)" } },
   });
-  check("publicar e mudar o layout", pub.status === 200 && pub.body.publicado === true && pub.body.layout === "porto", JSON.stringify(pub.body).slice(0, 120));
+  check("publicar e mudar o layout", pub.status === 200 && pub.body.publicado === true && pub.body.layout === "holofote", JSON.stringify(pub.body).slice(0, 120));
   check("a rede com javascript: Ã© descartada", pub.body.identidade.redes.instagram === undefined && pub.body.identidade.redes.facebook === "https://facebook.com/x");
   const clube = await publico("");
   check("publicado, o pÃºblico vÃª o clube com o lema", clube.status === 200 && clube.body.motto === "Lema do teste");
-  check("layout porto no resumo", (await publico("/resumo")).body?.layout === "porto");
+  check("layout holofote no resumo", (await publico("/resumo")).body?.layout === "holofote");
 
   console.log("\n=== NotÃ­cias ===");
   const rasc = await api(director, "POST", "/api/site/noticias", { titulo: "[TESTE-SITE] Rascunho", resumo: "r", corpo: "a", estado: "rascunho" });

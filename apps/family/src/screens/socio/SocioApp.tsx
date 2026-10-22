@@ -63,6 +63,8 @@ import {
   tituloDoDia,
 } from "@/lib/jogos-por-dia";
 import { AreaSwitch } from "@/screens/socio/AreaSwitch";
+import { BotaoBilhetes, LugarAnualDoSocio, OsTeusBilhetes } from "@/screens/socio/Bilhetes";
+import { carregarBilhetes, useBilhetes } from "@/lib/bilhetes";
 import Notifications from "@/screens/Notifications";
 import { carregarNotificacoes, useNotificacoes } from "@/lib/notificacoes";
 
@@ -76,11 +78,11 @@ import { carregarNotificacoes, useNotificacoes } from "@/lib/notificacoes";
  * propósito (header com o clube, pílula de navegação em baixo, ecrãs em
  * cascata), porque quem troca de contexto não deve sentir que mudou de produto.
  *
- * ## O que aqui NÃO há
+ * ## Bilhetes
  *
- * Bilhetes, checkout, controlo de entradas. O cartão identifica, as quotas
- * pagam-se, o resto informa. Foi desenhado assim de propósito e está escrito no
- * pedido — a arquitectura aguenta bilhética um dia, mas hoje não a insinua.
+ * A bilheteira (`docs/09-bilheteira.md`) vive em `Bilhetes.tsx`: o botão
+ * "Bilhetes" nos jogos com a venda aberta, "Os teus bilhetes" e o lugar anual
+ * no Início. O controlo de entradas é do leitor dos seguranças, na consola.
  */
 export default function SocioApp() {
   const { data, error } = useSocio();
@@ -323,16 +325,25 @@ const ESTADO: Record<
  *
  * 1. a quota por pagar (é a única coisa accionável), ou a confirmação de que
  *    está tudo em dia;
- * 2. o cartão, inteiro: é o que se mostra à entrada, e abrir a app já o põe à
- *    frente;
- * 3. o jogo de maior prioridade, com o caminho para os outros;
- * 4. os comunicados e a sondagem por responder.
+ * 2. os bilhetes comprados, quando os há: no dia do jogo é o bilhete que se
+ *    mostra à porta, e uma compra à espera de pagamento tem prazo;
+ * 3. o cartão, inteiro: é o que se mostra à entrada, e abrir a app já o põe à
+ *    frente; logo a seguir, o lugar anual, que é do sócio a época inteira;
+ * 4. o jogo de maior prioridade, com o caminho para os outros;
+ * 5. os comunicados e a sondagem por responder.
  *
  * Secções vazias não aparecem — um ecrã não é um formulário.
  */
 function Inicio() {
   const { data } = useSocio();
   const navigate = useNavigate();
+  /* Os bilhetes e o lugar anual vêm à parte: uma falha neles não estraga o Início. */
+  useEffect(() => {
+    void carregarBilhetes();
+  }, []);
+  useFresco(carregarBilhetes);
+  const bilhetes = useBilhetes();
+  const temBilhetes = bilhetes.pedidos.some((p) => p.estado !== "expirado");
   if (!data) return null;
 
   const agora = new Date();
@@ -416,12 +427,30 @@ function Inicio() {
         </button>
       )}
 
+      {/*
+        Os bilhetes por cima do cartão: no dia do jogo é o bilhete que o leitor
+        da porta lê, e tem de estar à vista sem descer. Fora dos dias de jogo é
+        uma linha por compra, e o cartão desce pouco.
+      */}
+      {temBilhetes && (
+        <div className="rise" style={{ ["--i" as string]: i++ }}>
+          <OsTeusBilhetes />
+        </div>
+      )}
+
       {/* O cartão, inteiro: o que antes tinha separador próprio. */}
       {data.academy.cardEnabled && (
         <section className="rise" style={{ ["--i" as string]: i++ }}>
           <Label>O meu cartão</Label>
           <CartaoDoSocio />
         </section>
+      )}
+
+      {/* O lugar anual, logo a seguir ao cartão: os dois são do sócio a época inteira. */}
+      {bilhetes.lugares.length > 0 && (
+        <div className="rise" style={{ ["--i" as string]: i++ }}>
+          <LugarAnualDoSocio />
+        </div>
       )}
 
       {/*
@@ -1329,7 +1358,8 @@ function Jogos() {
     let inicio: { x: number; y: number } | null = null;
     const comeca = (e: TouchEvent) => {
       const alvo = e.target as Element | null;
-      if (e.touches.length !== 1 || alvo?.closest('[role="tablist"], nav, input, textarea')) {
+      // As folhas por cima (a compra de bilhetes) também ficam fora: são `role="dialog"`.
+      if (e.touches.length !== 1 || alvo?.closest('[role="tablist"], [role="dialog"], nav, input, textarea')) {
         inicio = null;
         return;
       }
@@ -1584,6 +1614,7 @@ function JogoCard({ jogo }: { jogo: SocioMatch }) {
           {jogo.competition ? ` · ${jogo.competition}` : ""}
         </p>
       </div>
+      <BotaoBilhetes jogo={jogo} />
     </div>
   );
 }
@@ -1616,40 +1647,44 @@ function JogoDoDia({ jogo, destaque = false }: { jogo: SocioMatch; destaque?: bo
   return (
     <li
       className={cx(
-        "flex items-start gap-3 rounded-[var(--radius-lg)] p-4 shadow-[var(--shadow-soft)]",
+        "rounded-[var(--radius-lg)] p-4 shadow-[var(--shadow-soft)]",
         destaque
           ? "bg-linear-to-br from-signal-soft to-surface to-70% ring-[1.5px] ring-signal-line"
           : "bg-surface",
       )}
     >
-      <div className="min-w-0 flex-1">
-        {destaque ? (
-          <span className="inline-flex max-w-full items-center rounded-full bg-signal-strong px-2.5 py-0.5 text-[11px] font-semibold tracking-[0.05em] text-signal-on uppercase">
-            <span className="truncate">{jogo.teamName}</span>
-          </span>
-        ) : (
-          <p className="truncate text-[11px] font-semibold tracking-[0.05em] text-signal-ink uppercase">{jogo.teamName}</p>
-        )}
-        <p className={cx("leading-snug font-semibold text-ink", destaque ? "mt-2 text-[17px]" : "mt-1 text-[15px]")}>
-          {casa} <span className="font-medium text-ink-4">vs</span> {visitante}
-        </p>
-        <p className="mt-1.5 flex items-center gap-1.5 text-[13px] text-ink-3">
-          <MapPin className="size-3.5 shrink-0 text-ink-4" strokeWidth={1.9} />
-          <span className="truncate">{lugar}</span>
-        </p>
-        {jogo.competition && <p className="mt-0.5 truncate text-[12px] text-ink-4">{jogo.competition}</p>}
-      </div>
-      <div className="flex shrink-0 flex-col items-end gap-1.5">
-        <span
-          className={cx(
-            "num leading-none font-semibold",
-            destaque ? "text-[26px] text-signal-ink" : "text-[20px] text-ink",
+      <div className="flex items-start gap-3">
+        <div className="min-w-0 flex-1">
+          {destaque ? (
+            <span className="inline-flex max-w-full items-center rounded-full bg-signal-strong px-2.5 py-0.5 text-[11px] font-semibold tracking-[0.05em] text-signal-on uppercase">
+              <span className="truncate">{jogo.teamName}</span>
+            </span>
+          ) : (
+            <p className="truncate text-[11px] font-semibold tracking-[0.05em] text-signal-ink uppercase">{jogo.teamName}</p>
           )}
-        >
-          {time(inicio)}
-        </span>
-        {fora && <Chip className="py-0.5 text-[11px]">Fora</Chip>}
+          <p className={cx("leading-snug font-semibold text-ink", destaque ? "mt-2 text-[17px]" : "mt-1 text-[15px]")}>
+            {casa} <span className="font-medium text-ink-4">vs</span> {visitante}
+          </p>
+          <p className="mt-1.5 flex items-center gap-1.5 text-[13px] text-ink-3">
+            <MapPin className="size-3.5 shrink-0 text-ink-4" strokeWidth={1.9} />
+            <span className="truncate">{lugar}</span>
+          </p>
+          {jogo.competition && <p className="mt-0.5 truncate text-[12px] text-ink-4">{jogo.competition}</p>}
+        </div>
+        <div className="flex shrink-0 flex-col items-end gap-1.5">
+          <span
+            className={cx(
+              "num leading-none font-semibold",
+              destaque ? "text-[26px] text-signal-ink" : "text-[20px] text-ink",
+            )}
+          >
+            {time(inicio)}
+          </span>
+          {fora && <Chip className="py-0.5 text-[11px]">Fora</Chip>}
+        </div>
       </div>
+      {/* Só nos jogos com a venda aberta; a compra abre numa folha por cima. */}
+      <BotaoBilhetes jogo={jogo} destaque={destaque} />
     </li>
   );
 }

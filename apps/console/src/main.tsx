@@ -1,7 +1,8 @@
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
-import { BrowserRouter } from "react-router-dom";
+import { BrowserRouter, Route, Routes } from "react-router-dom";
 import App from "./App";
+import Leitor from "./routes/porta/Leitor";
 import { SessionProvider } from "./session";
 import { LoginGate } from "./components/LoginGate";
 import { AcademyBoot } from "./components/AcademyBoot";
@@ -55,17 +56,35 @@ createRoot(document.getElementById("root")!).render(
       */}
       <Avisos />
 
-      {/* Nada da consola renderiza sem sessão — nem sequer a casca. */}
-      <LoginGate>
-        {/* Com sessão mas antes da academia: com termos por aceitar, o servidor recusa o arranque. */}
-        <LegalGate>
-          <AcademyBoot>
-            <SessionProvider>
-              <App />
-            </SessionProvider>
-          </AcademyBoot>
-        </LegalGate>
-      </LoginGate>
+      <Routes>
+        {/*
+          O leitor de bilhetes dos seguranças, e é a única rota daqui.
+
+          Não pede conta: entra-se com o link e o PIN que o clube deu. Tem de
+          viver antes dos portões, e não no `App.tsx` como as outras rotas: lá
+          dentro já se passou pelo `LoginGate`, que manda quem não tem sessão
+          para a página do clube, e pelo `AcademyBoot`, que pede o arranque com
+          o token. Ver `routes/porta/Leitor.tsx`.
+        */}
+        <Route path="porta/:token" element={<Leitor />} />
+
+        <Route
+          path="*"
+          element={
+            /* Nada da consola renderiza sem sessão — nem sequer a casca. */
+            <LoginGate>
+              {/* Com sessão mas antes da academia: com termos por aceitar, o servidor recusa o arranque. */}
+              <LegalGate>
+                <AcademyBoot>
+                  <SessionProvider>
+                    <App />
+                  </SessionProvider>
+                </AcademyBoot>
+              </LegalGate>
+            </LoginGate>
+          }
+        />
+      </Routes>
     </BrowserRouter>
   </StrictMode>,
 );

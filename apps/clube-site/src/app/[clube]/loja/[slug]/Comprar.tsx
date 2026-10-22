@@ -1,21 +1,20 @@
 "use client";
 
 import { useState } from "react";
-import { ShoppingBag } from "lucide-react";
+import { Mail } from "lucide-react";
 import type { Produto } from "@/dados/tipos";
-import { Botao } from "@/componentes/Botao";
+import { Botao, BotaoLink } from "@/componentes/Botao";
 
 /**
- * Tamanho e comprar. O tamanho é um grupo de botões e não um `<select>`: num
- * telemóvel vê-se tudo de uma vez e escolhe-se com um toque.
+ * Tamanho e encomendar. O tamanho é um grupo de botões e não um `<select>`:
+ * num telemóvel vê-se tudo de uma vez e escolhe-se com um toque.
  *
- * O carrinho e o pagamento ligam-se à plataforma depois; por agora o botão
- * diz isso mesmo.
+ * A compra online ainda não está ligada à plataforma. Em vez de um botão de
+ * carrinho que não leva a lado nenhum, a encomenda vai pelos contactos do
+ * clube, com o assunto já escolhido.
  */
 export function Comprar({ produto }: { produto: Produto }) {
   const [opcao, setOpcao] = useState<string | null>(null);
-  const [aviso, setAviso] = useState(false);
-  const precisaDeOpcao = !!produto.variants && !opcao;
 
   return (
     <div className="mt-8">
@@ -49,18 +48,14 @@ export function Comprar({ produto }: { produto: Produto }) {
             Esgotado
           </Botao>
         ) : (
-          <Botao disabled={precisaDeOpcao} onClick={() => setAviso(true)} className="w-full sm:w-auto">
-            <ShoppingBag size={18} aria-hidden />
-            {precisaDeOpcao ? `Escolhe o ${produto.variants!.name.toLowerCase()}` : "Adicionar ao carrinho"}
-          </Botao>
+          <BotaoLink href="/contactos?assunto=Loja%20e%20encomendas" className="w-full sm:w-auto">
+            <Mail size={18} aria-hidden />
+            Encomendar pelos contactos
+          </BotaoLink>
         )}
       </div>
 
-      {aviso && (
-        <p role="status" className="mt-4 rounded-card bg-sunken p-4 text-sm text-ink-2">
-          O carrinho e o pagamento ligam-se à plataforma do clube e ainda não estão ativos nesta pré-visualização.
-        </p>
-      )}
+      <p className="mt-4 text-sm text-ink-3">A compra online abre em breve. Até lá, encomenda pelos contactos do clube ou na sede.</p>
     </div>
   );
 }

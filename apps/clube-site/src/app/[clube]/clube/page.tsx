@@ -55,9 +55,12 @@ export default async function OClube({ params }: { params: Promise<{ clube: stri
           <ul className="mt-6 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
             {clube.facilities.map((f) => (
               <li key={f.name} className="overflow-hidden rounded-card border border-line bg-surface">
-                <div className="relative aspect-[16/10] bg-sunken">
-                  <Image src={f.image} alt={f.name} fill sizes="(min-width: 1024px) 33vw, (min-width: 640px) 50vw, 100vw" className="object-cover" />
-                </div>
+                {/* Sem fotografia, o cartão é só o texto: uma caixa cinzenta vazia parecia uma imagem por carregar. */}
+                {f.image && (
+                  <div className="relative aspect-[16/10] bg-sunken">
+                    <Image src={f.image} alt={f.name} fill sizes="(min-width: 1024px) 33vw, (min-width: 640px) 50vw, 100vw" className="object-cover" />
+                  </div>
+                )}
                 <div className="p-4">
                   <p className="display text-xl text-ink">{f.name}</p>
                   <p className="mt-1 text-sm text-ink-2">{f.description}</p>

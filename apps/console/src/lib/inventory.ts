@@ -1,5 +1,6 @@
-import { apiDelete, apiGet, apiPatch, apiPost } from "@/lib/http";
+import { apiDelete, apiGet, apiPatch, apiPost, apiPut } from "@/lib/http";
 import { erroAvisado } from "@/lib/avisos";
+import type { ProdutoDoSite } from "@/lib/website";
 
 /**
  * O armazém do clube, do lado do cliente.
@@ -121,6 +122,11 @@ export type ItemDetail = Item & {
   movements: Movement[];
   /** Links assinados, gerados na leitura. Ver `INVENTORY_BUCKET` no servidor. */
   images: { key: string; url: string }[];
+  /**
+   * A loja do site do clube. `null` num clube sem o site no plano: a ficha não
+   * mostra o painel. Senão, se está à venda e com que produto.
+   */
+  site: null | { aVenda: boolean; produto: ProdutoDoSite | null };
 };
 
 /** Uma linha da folha de material, já traduzida para o que a API conhece. */
@@ -328,3 +334,15 @@ export async function uploadItemImage(itemId: string, file: File): Promise<{ key
 
 export const removeItemImage = (itemId: string, key: string) =>
   apiDelete<{ ok: true }>(`/api/inventory/items/${itemId}/imagens`, { key });
+
+/* ------------------------------------------------------------- loja do site --- */
+
+/**
+ * Pôr o artigo à venda no site do clube, ou mudar-lhe o preço, a categoria, a
+ * descrição ou se está visível. Os tamanhos e o esgotado não se mandam: saem
+ * do stock disponível. Exige `website:write` e `inventory:read`.
+ */
+export const porAVendaNoSite = (id: string, body: { preco: number; categoria?: string; descricao?: string; visivel?: boolean }) =>
+  apiPut<ProdutoDoSite>(`/api/inventory/items/${id}/site`, body);
+
+export const tirarDoSite = (id: string) => apiDelete<{ ok: true }>(`/api/inventory/items/${id}/site`);

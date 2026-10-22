@@ -178,12 +178,12 @@ const GRUPO_AI: NavGroup = {
  * `App.tsx` faz o mesmo, e a API responde 403 `SITE_NOT_IN_PLAN` de qualquer
  * maneira.
  *
- * `settings:write` porque é quem mexe na cara pública do clube, como nas
- * Definições.
+ * `website:read` abre o menu; `website:write` publica. Era `settings:write`,
+ * e obrigava a dar as Definições inteiras a quem só escreve notícias.
  */
 const GRUPO_WEBSITE: NavGroup = {
   label: "Website",
-  items: [{ key: "website", label: "Website", to: "/website", icon: Globe, requires: "settings:write" }],
+  items: [{ key: "website", label: "Website", to: "/website", icon: Globe, requires: "website:read" }],
 };
 
 export const NAV_CATALOG: NavGroup[] = [

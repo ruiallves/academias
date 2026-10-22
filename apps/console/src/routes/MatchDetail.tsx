@@ -76,9 +76,10 @@ import {
  *
  * Um jogo futuro mostra a convocatória e leva ao ecrã dela — montar um convite
  * (com avisos às famílias) tem casa própria. Um jogo passado **sem** plantel no
- * sistema mostra o registo retroactivo: escolhe-se quem esteve, sem avisar
- * ninguém, porque isso é história e não convite. Só esta página o faz; o ecrã de
- * Convocatórias continua a recusar jogos passados.
+ * sistema mostra o registo retroactivo no Pré-jogo (como convocatória) e no
+ * Pós-jogo (como "quem esteve"): escolhe-se quem foi, sem avisar ninguém,
+ * porque isso é história e não convite. As Convocatórias fazem o mesmo na
+ * vista "Em atraso". Submeter, que avisa, o servidor recusa depois do apito.
  *
  * ## Feita para quem tem pouca paciência
  *
@@ -170,8 +171,12 @@ export default function MatchDetail() {
 
   /** O que falta, por ordem. É o que a visão geral lista e o que dá o estado ao jogo. */
   const passos: { feito: boolean; texto: string; area: Aba; depois?: boolean; convocatoria?: boolean }[] = [
-    // Antes do jogo, a convocatória faz-se no ecrã dela: o passo leva para lá, já neste jogo.
-    { feito: match.submitted, texto: passou ? "Plantel registado" : "Convocatória enviada", area: passou ? "pos" : "pre", convocatoria: !passou },
+    /*
+     * Antes do jogo, a convocatória faz-se no ecrã dela: o passo leva para lá,
+     * já neste jogo. Depois do jogo, regista-se no Pré-jogo, aqui mesmo, sem
+     * avisar ninguém (ver `RetroSquadPanel`).
+     */
+    { feito: match.submitted, texto: passou ? "Convocatória registada" : "Convocatória enviada", area: "pre", convocatoria: !passou },
     { feito: onzeCompleto, texto: onze.length ? `Equipa inicial escolhida (${titulares} de ${onze.length})` : "Equipa inicial escolhida", area: "pre" },
     { feito: (match.plan?.bench.length ?? 0) > 0, texto: "Suplentes escolhidos", area: "pre" },
     { feito: Boolean(match.plan?.captainId), texto: "Capitão definido", area: "pre" },
@@ -342,8 +347,21 @@ export default function MatchDetail() {
       {aba === "pre" && (
         <div className="space-y-4">
           <GamePlan match={match} mayEdit={mayRecord} onSaved={guardado} />
-          {/* A convocatória monta-se no ecrã dela; aqui vê-se como está. */}
-          {!passou && <CallUpPanel match={match} />}
+          {/*
+            Antes do jogo, a convocatória monta-se no ecrã dela e aqui vê-se
+            como está. Depois do jogo, regista-se aqui mesmo: o jogo já foi, e
+            o registo não avisa ninguém. Com ela já feita, vê-se e corrige-se.
+          */}
+          {!passou ? (
+            <CallUpPanel match={match} />
+          ) : cancelado ? null : temPlantel ? (
+            <>
+              <CallUpPanel match={match} passou />
+              {mayRecord && <RetroSquadPanel match={match} mayRecord={mayRecord} onSaved={guardado} collapsed noPreJogo />}
+            </>
+          ) : (
+            <RetroSquadPanel match={match} mayRecord={mayRecord} onSaved={guardado} noPreJogo />
+          )}
         </div>
       )}
 
@@ -827,7 +845,7 @@ function ScoreField({
  * é onde se monta, porque montar é um processo com hesitação e avisos às
  * famílias. Aqui responde-se e aponta-se, não se edita.
  */
-function CallUpPanel({ match }: { match: Match }) {
+function CallUpPanel({ match, passou = false }: { match: Match; passou?: boolean }) {
   const [folha, setFolha] = useState(false);
   // O emblema e a época, para a folha em PDF.
   const { academy, season } = useStore();
@@ -882,7 +900,19 @@ function CallUpPanel({ match }: { match: Match }) {
 
   return (
     <Panel>
-      <PanelHead title="Convocatória" hint={match.submitted ? "enviada às famílias" : "por enviar"}>
+      <PanelHead
+        title="Convocatória"
+        hint={
+          /* Fechada depois do apito é um registo, e não avisou ninguém. */
+          match.submitted && match.submittedAt && new Date(match.submittedAt).getTime() > new Date(match.startsAt).getTime()
+            ? "registada depois do jogo, sem avisos"
+            : match.submitted
+              ? "enviada às famílias"
+              : passou
+                ? "por registar"
+                : "por enviar"
+        }
+      >
         {/* Só depois de submetida: a folha é da lista que saiu para as famílias,
             e um rascunho ainda muda. Ver a nota do mesmo botão em `CallUps`. */}
         {match.submitted && (
@@ -897,10 +927,13 @@ function CallUpPanel({ match }: { match: Match }) {
             {folha ? "A gerar…" : "Exportar PDF"}
           </button>
         )}
-        <Link to={`/convocatorias?jogo=${match.id}`} className="ctl-primary">
-          {match.submitted ? "Ver nas Convocatórias" : "Montar convocatória"}
-          <ChevronRight className="size-3.5" strokeWidth={2} />
-        </Link>
+        {/* Depois do jogo, corrige-se aqui por baixo: ir às Convocatórias era dar a volta. */}
+        {!passou && (
+          <Link to={`/convocatorias?jogo=${match.id}`} className="ctl-primary">
+            {match.submitted ? "Ver nas Convocatórias" : "Montar convocatória"}
+            <ChevronRight className="size-3.5" strokeWidth={2} />
+          </Link>
+        )}
       </PanelHead>
 
 
@@ -970,11 +1003,18 @@ function RetroSquadPanel({
   mayRecord,
   onSaved,
   collapsed,
+  noPreJogo = false,
 }: {
   match: Match;
   mayRecord: boolean;
   onSaved: () => void;
   collapsed?: boolean;
+  /**
+   * No Pré-jogo, o mesmo registo fala de convocatória e não de plantel: é lá
+   * que o treinador a procura, e "Quem esteve neste jogo?" é a pergunta do
+   * Pós-jogo. A escrita é a mesma (`saveRetroSquad`), e não avisa ninguém.
+   */
+  noPreJogo?: boolean;
 }) {
   const [aberto, setAberto] = useState(!collapsed);
   const [pool, setPool] = useState<{ athleteId: string; name: string; position: string | null }[] | null>(null);
@@ -1047,7 +1087,7 @@ function RetroSquadPanel({
         >
           <span className="inline-flex items-center gap-2">
             <Users className="size-4" strokeWidth={1.75} />
-            Corrigir o plantel deste jogo
+            {noPreJogo ? "Corrigir a convocatória deste jogo" : "Corrigir o plantel deste jogo"}
           </span>
           <ChevronRight className="size-4" strokeWidth={1.75} />
         </button>
@@ -1058,13 +1098,24 @@ function RetroSquadPanel({
   return (
     <Panel>
       <PanelHead
-        title={collapsed ? "Corrigir o plantel" : "Quem esteve neste jogo?"}
+        title={
+          noPreJogo
+            ? collapsed
+              ? "Corrigir a convocatória"
+              : "Convocatória deste jogo"
+            : collapsed
+              ? "Corrigir o plantel"
+              : "Quem esteve neste jogo?"
+        }
         hint={`${escolhidos.size} ${escolhidos.size === 1 ? "escolhido" : "escolhidos"}`}
       />
 
       <p className="border-b border-line px-5 py-3 text-meta leading-relaxed text-ink-3">
-        O jogo já aconteceu, por isso isto não envia convite nenhum — é só o registo de quem foi
-        convocado. Marca os nomes e grava; a ficha de jogo abre a seguir.
+        {noPreJogo
+          ? collapsed
+            ? "Corrigir não avisa ninguém. Quem continua convocado mantém a resposta que deu, e quem tirares da lista sai também da ficha de jogo."
+            : "O jogo já passou e ficou sem convocatória. Registá-la agora não avisa ninguém: fica no histórico de cada atleta e abre a ficha de jogo."
+          : "O jogo já aconteceu, por isso isto não envia convite nenhum, é só o registo de quem foi convocado. Marca os nomes e grava; a ficha de jogo abre a seguir."}
       </p>
 
       {pool === null && !erro ? (
@@ -1117,15 +1168,20 @@ function RetroSquadPanel({
           disabled={busy || gravado || escolhidos.size === 0}
           onClick={() => void gravar()}
         >
-          {busy ? "A gravar…" : `Registar plantel (${escolhidos.size})`}
+          {busy
+            ? "A gravar…"
+            : noPreJogo
+              ? `${collapsed ? "Guardar correção" : "Registar convocatória"} (${escolhidos.size})`
+              : `Registar plantel (${escolhidos.size})`}
         </button>
 
         {gravado && (
           <span role="status" className="inline-flex items-center gap-1.5 text-meta font-medium text-ok">
             <Check className="size-4" strokeWidth={2.5} />
-            Plantel registado
+            {noPreJogo ? "Convocatória registada, ninguém foi avisado" : "Plantel registado"}
           </span>
         )}
+        {noPreJogo && !gravado && <span className="text-meta text-ink-3">Não avisa ninguém.</span>}
         {collapsed && (
           <button type="button" className="ctl-ghost" onClick={() => setAberto(false)}>
             Cancelar

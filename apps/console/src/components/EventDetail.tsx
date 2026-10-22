@@ -13,7 +13,7 @@ import { apiPatch } from "@/lib/http";
 import { events as storeEvents, matches as storeMatches, sessions as storeSessions, reloadAcademy } from "@/lib/store";
 import { athleteById, coachById, teamById } from "@/lib/api";
 import { longDate, shortName, time } from "@/lib/format";
-import { Ban, ClipboardCheck, MapPin, Pencil, RefreshCw, TriangleAlert, Trophy, Whistle, X, type LucideIcon } from "@/lib/icons";
+import { Ban, ClipboardCheck, Globe, MapPin, Pencil, RefreshCw, TriangleAlert, Trophy, Whistle, X, type LucideIcon } from "@/lib/icons";
 import { can } from "@/lib/permissions";
 import type { Session } from "@/lib/permissions";
 import { cx, Monogram, Pill } from "./primitives";
@@ -239,6 +239,15 @@ export function EventDetail({
             {/* A prova de um jogo é um facto básico como a hora: é ela que sai
                 impressa na convocatória, e vê-la aqui poupa abrir a página. */}
             {event.match?.competition && <Fact icon={Trophy} label={event.match.competition.label} />}
+            {/* Um evento público está no site do clube: diz-se, porque é o que o distingue dos outros. */}
+            {event.isPublic && (
+              <div className="flex items-center gap-2.5">
+                <span className="flex size-7 shrink-0 items-center justify-center rounded-full bg-sunken text-ink-3">
+                  <Globe className="size-3.5" strokeWidth={1.75} />
+                </span>
+                <Pill tone="signal">No site do clube</Pill>
+              </div>
+            )}
           </dl>
 
           {event.kind === "match" && event.match && event.teamId && (

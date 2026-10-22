@@ -1,12 +1,12 @@
 import { useState } from "react";
-import { ChevronLeft, ChevronRight, Plus, Recinto as LandPlot, Trash2 } from "@/lib/icons";
+import { ChevronLeft, ChevronRight, Plus, Porta as IconePorta, Recinto as LandPlot, Trash2 } from "@/lib/icons";
 import { Empty, cx } from "@/components/primitives";
 import { dialogInputClass } from "@/components/Dialog";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { Interruptor } from "@/components/definicoes/ui";
 import { LADOS, MapaDoRecinto, comFracao, fracaoNoLado, moverBancada, recintoDePartida } from "@academia/ui/estadio";
 import { useStore } from "@/lib/store";
-import { guardarBilheteira, guardarConfig, novoId, useSite, type Bancada, type Lado, type Recinto } from "@/lib/website";
+import { guardarBilheteira, guardarConfig, guardarPrecos, novoId, useSite, type Bancada, type Lado, type Porta, type Recinto } from "@/lib/website";
 import { mostrarOk } from "@/lib/avisos";
 
 /**
@@ -207,7 +207,12 @@ export function Estadio() {
                     className="ctl-ghost size-9 justify-center px-0 text-risk"
                     aria-label={`Tirar ${bancada.nome}`}
                     onClick={() => {
-                      mudarRecinto(recinto.id, (r) => ({ ...r, bancadas: r.bancadas.filter((x) => x.id !== bancada.id) }));
+                      // A bancada sai também das portas por onde entrava.
+                      mudarRecinto(recinto.id, (r) => ({
+                        ...r,
+                        bancadas: r.bancadas.filter((x) => x.id !== bancada.id),
+                        portas: (r.portas ?? []).map((p) => ({ ...p, bancadaIds: p.bancadaIds.filter((id) => id !== bancada.id) })),
+                      }));
                       setBancadaId(null);
                       mostrarOk(`${bancada.nome} tirada.`);
                     }}
@@ -273,6 +278,8 @@ export function Estadio() {
             </p>
           )}
 
+          <Portas recinto={recinto} onMudar={(f) => mudarRecinto(recinto.id, f)} />
+
           {site.recintos.length > 1 && (
             <button type="button" className="ctl-ghost text-risk" onClick={() => setApagar(recinto)}>
               <Trash2 className="size-4" strokeWidth={1.75} />
@@ -288,10 +295,16 @@ export function Estadio() {
           onClose={() => setApagar(null)}
           onConfirm={async () => {
             await guardarConfig({ recintos: site.recintos.filter((r) => r.id !== apagar.id) }, { imediato: true });
-            // Os jogos que se jogavam aqui ficam sem mapa, e os bilhetes sem bancada.
+            // Os preços por omissão do recinto apagado deixam de ter onde se aplicar.
+            if (site.precosBilheteira[apagar.id]) {
+              const { [apagar.id]: _fora, ...resto } = site.precosBilheteira;
+              void _fora;
+              await guardarPrecos(resto).catch(() => undefined);
+            }
+            // Os jogos que se jogavam aqui ficam sem mapa e com a venda fechada: um bilhete sem bancada não se vende.
             for (const [matchId, b] of Object.entries(site.bilheteira)) {
               if (b.recintoId !== apagar.id) continue;
-              await guardarBilheteira(matchId, { ...b, recintoId: null, tipos: b.tipos.map((t) => ({ ...t, bancadaId: null })) }).catch(() => undefined);
+              await guardarBilheteira(matchId, { ...b, aberta: false, recintoId: null, tipos: b.tipos.map((t) => ({ ...t, bancadaId: null })) }).catch(() => undefined);
             }
             setRecintoId(null);
             setBancadaId(null);
@@ -299,7 +312,8 @@ export function Estadio() {
             mostrarOk("Recinto apagado.");
           }}
         >
-          Os jogos com bilheteira neste recinto ficam sem mapa, e os bilhetes deixam de estar ligados a uma bancada.
+          Os jogos com bilheteira neste recinto ficam sem mapa e com a venda fechada, até lhes escolheres outro recinto. Os lugares anuais neste recinto deixam de
+          contar.
         </ConfirmDialog>
       )}
     </div>
@@ -364,6 +378,133 @@ function TamanhoNoLado({ recinto, bancada, onMudar }: { recinto: Recinto; bancad
           </button>
         ))}
       </div>
+    </div>
+  );
+}
+
+/**
+ * As portas do recinto e as bancadas que entram por cada uma.
+ *
+ * O leitor dos seguranças abre numa porta e só aceita os bilhetes das bancadas
+ * dela; um bilhete na porta errada diz qual é a certa. Um clube pequeno não
+ * precisa disto: sem portas, há uma entrada só ("Todas as portas") e o leitor
+ * aceita tudo. Uma bancada pode entrar por mais de uma porta (a central com
+ * duas entradas, por exemplo).
+ *
+ * Grava como o resto do recinto, pelo `guardarConfig`: as portas vivem dentro
+ * do recinto (`SiteConfig.venues[].portas`).
+ */
+function Portas({ recinto, onMudar }: { recinto: Recinto; onMudar: (f: (r: Recinto) => Recinto) => void }) {
+  const [apagar, setApagar] = useState<Porta | null>(null);
+  const portas = recinto.portas ?? [];
+  const comPorta = new Set(portas.flatMap((p) => p.bancadaIds));
+  const semPorta = recinto.bancadas.filter((b) => !comPorta.has(b.id));
+  // O servidor guarda até 20 portas por recinto.
+  const MAX = 20;
+
+  const mudarPorta = (id: string, f: (p: Porta) => Porta) => onMudar((r) => ({ ...r, portas: (r.portas ?? []).map((p) => (p.id === id ? f(p) : p)) }));
+
+  /** A porta nova leva as bancadas que ainda não tinham porta: a primeira fica logo com o recinto todo. */
+  const nova = () =>
+    onMudar((r) => {
+      const atuais = r.portas ?? [];
+      const usadas = new Set(atuais.flatMap((p) => p.bancadaIds));
+      const nome = `Porta ${atuais.length < 26 ? String.fromCharCode(65 + atuais.length) : atuais.length + 1}`;
+      return { ...r, portas: [...atuais, { id: novoId(), nome, bancadaIds: r.bancadas.filter((b) => !usadas.has(b.id)).map((b) => b.id) }] };
+    });
+
+  const alternarBancada = (p: Porta, bancadaId: string) =>
+    mudarPorta(p.id, (x) => ({ ...x, bancadaIds: x.bancadaIds.includes(bancadaId) ? x.bancadaIds.filter((id) => id !== bancadaId) : [...x.bancadaIds, bancadaId] }));
+
+  return (
+    <div className="space-y-3 rounded-[12px] border border-line bg-surface p-4">
+      <div className="flex items-center justify-between gap-2">
+        <h3 className="flex items-center gap-2 text-panel text-ink">
+          <IconePorta className="size-4 text-ink-3" strokeWidth={1.75} />
+          Portas
+        </h3>
+        <button type="button" className="ctl-ghost" onClick={nova} disabled={portas.length >= MAX}>
+          <Plus className="size-4" strokeWidth={2} />
+          Nova porta
+        </button>
+      </div>
+      <p className="text-meta leading-relaxed text-ink-3">
+        O leitor dos seguranças abre numa porta e só aceita os bilhetes das bancadas dela. Uma bancada pode entrar por mais de uma porta.
+      </p>
+
+      {portas.length === 0 ? (
+        <p className="rounded-[10px] border border-dashed border-line-strong px-3 py-4 text-center text-meta text-ink-3">
+          Sem portas, o leitor tem uma entrada só, Todas as portas, e aceita os bilhetes de todas as bancadas.
+        </p>
+      ) : (
+        <ul className="space-y-2">
+          {portas.map((p) => (
+            <li key={p.id} className="space-y-2.5 rounded-[10px] border border-line p-3">
+              <div className="flex items-center gap-2">
+                <input
+                  className={dialogInputClass}
+                  aria-label="Nome da porta"
+                  placeholder="Porta A, Portão Norte…"
+                  maxLength={60}
+                  value={p.nome}
+                  onChange={(e) => mudarPorta(p.id, (x) => ({ ...x, nome: e.target.value }))}
+                />
+                <button type="button" className="ctl-ghost size-9 shrink-0 justify-center px-0 text-risk" aria-label={`Apagar ${p.nome}`} onClick={() => setApagar(p)}>
+                  <Trash2 className="size-4" strokeWidth={1.75} />
+                </button>
+              </div>
+              {recinto.bancadas.length === 0 ? (
+                <p className="text-meta text-ink-3">O recinto ainda não tem bancadas.</p>
+              ) : (
+                <div className="flex flex-wrap gap-1.5" role="group" aria-label={`Bancadas que entram pela ${p.nome}`}>
+                  {recinto.bancadas.map((b) => {
+                    const dentro = p.bancadaIds.includes(b.id);
+                    return (
+                      <button
+                        key={b.id}
+                        type="button"
+                        aria-pressed={dentro}
+                        onClick={() => alternarBancada(p, b.id)}
+                        className={cx(
+                          "h-8 rounded-full border px-3 text-meta font-medium transition-colors",
+                          dentro ? "border-signal/30 bg-signal-soft text-signal-ink" : "border-line text-ink-3 hover:border-line-strong",
+                        )}
+                      >
+                        {b.nome || "Sem nome"}
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
+              {p.bancadaIds.length === 0 && recinto.bancadas.length > 0 && (
+                <p className="text-meta text-warn">Sem bancadas, esta porta não deixa entrar ninguém. Escolhe as bancadas que entram por ela.</p>
+              )}
+            </li>
+          ))}
+        </ul>
+      )}
+
+      {portas.length > 0 && semPorta.length > 0 && (
+        <p className="rounded-[8px] bg-warn-soft px-3 py-2 text-meta leading-relaxed text-warn">
+          Sem porta: {semPorta.map((b) => b.nome || "Sem nome").join(", ")}. Os bilhetes {semPorta.length === 1 ? "desta bancada" : "destas bancadas"} só entram pelo leitor
+          de Todas as portas.
+        </p>
+      )}
+
+      {apagar && (
+        <ConfirmDialog
+          title={`Apagar ${apagar.nome || "a porta"}?`}
+          onClose={() => setApagar(null)}
+          onConfirm={() => {
+            onMudar((r) => ({ ...r, portas: (r.portas ?? []).filter((x) => x.id !== apagar.id) }));
+            setApagar(null);
+            mostrarOk("Porta apagada.");
+          }}
+        >
+          Os acessos de segurança já criados para esta porta deixam de aceitar bilhetes. Os bilhetes continuam a valer pelas outras portas da bancada, ou pelo
+          leitor de Todas as portas.
+        </ConfirmDialog>
+      )}
     </div>
   );
 }

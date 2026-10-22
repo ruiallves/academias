@@ -3,7 +3,7 @@ import { headers } from "next/headers";
 import { Cabecalho } from "@/componentes/Cabecalho";
 import { Rodape } from "@/componentes/Rodape";
 import { Revelar } from "@/componentes/Revelar";
-import { CascaPorto } from "@/layouts/porto/Casca";
+import { CascaHolofote } from "@/layouts/holofote/Casca";
 import { estiloDoClube } from "@/lib/tema";
 import { clubeOu404, layoutAtual } from "@/lib/clube";
 import { fonte } from "@/dados/fonte";
@@ -54,20 +54,20 @@ export default async function LayoutDoClube({ children, params }: { children: Re
       adesao={adesao}
       api={process.env.SITE_API_URL ?? ""}
       demonstracao={emDemonstracao()}
-      quadrado={layout === "porto"}
+      quadrado={layout === "holofote"}
     >
       {conteudo}
     </AdesaoNoSite>
   );
 
-  if (layout === "porto") {
+  if (layout === "holofote") {
     return (
-      <div style={estilo} data-layout="porto" className="min-h-dvh">
+      <div style={estilo} data-layout="holofote" className="min-h-dvh">
         {comAdesao(
           <>
-            <CascaPorto clube={clube} trocarLayout={trocarLayout}>
+            <CascaHolofote clube={clube} trocarLayout={trocarLayout}>
               {children}
-            </CascaPorto>
+            </CascaHolofote>
             <Revelar />
           </>,
         )}

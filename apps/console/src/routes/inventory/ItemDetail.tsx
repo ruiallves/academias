@@ -3,13 +3,18 @@ import { Link, useNavigate, useParams } from "react-router-dom";
 import { PageHeader } from "@/components/Shell";
 import { DataTable, Empty, Loading, Panel, PanelHead, Pill, cx } from "@/components/primitives";
 import { Dialog, DialogField, dialogInputClass } from "@/components/Dialog";
+import { ConfirmDialog } from "@/components/ConfirmDialog";
+import { Interruptor } from "@/components/definicoes/ui";
 import { DeleteItemDialog } from "@/components/inventory/DeleteItemDialog";
 import { EditItemDialog } from "@/components/inventory/EditItemDialog";
 import { ItemPhotos } from "@/components/inventory/ItemPhotos";
-import { ArrowLeft, Boxes, Pencil, Plus, Trash2, TriangleAlert } from "@/lib/icons";
+import { ArrowLeft, Boxes, ExternalLink, Pencil, Plus, ShoppingBag, Trash2, TriangleAlert } from "@/lib/icons";
 import { shortDate, time } from "@/lib/format";
 import { can } from "@/lib/permissions";
 import { useSession } from "@/session";
+import { useStore } from "@/lib/store";
+import { mostrarOk } from "@/lib/avisos";
+import type { ProdutoDoSite } from "@/lib/website";
 import {
   MOVEMENT_LABEL,
   MOVEMENT_SIGN,
@@ -18,6 +23,8 @@ import {
   addVariant,
   getItem,
   moveStock,
+  porAVendaNoSite,
+  tirarDoSite,
   updateVariant,
   type ItemDetail as Data,
   type Variant,
@@ -37,6 +44,7 @@ export default function ItemDetail() {
   const { id = "" } = useParams();
   const navigate = useNavigate();
   const { session } = useSession();
+  const store = useStore();
   const podeEscrever = can(session, "inventory:write");
 
   const [data, setData] = useState<Data | null>(null);
@@ -192,6 +200,11 @@ export default function ItemDetail() {
         <div className="space-y-3">
           <ItemPhotos itemId={id} images={data.images} editable={podeEscrever} onChange={() => void carregar()} />
 
+          {/* A loja do site: só com o site no plano (`site` vem nulo sem ele). */}
+          {store.academy.websiteIncluido && data.site !== null && (
+            <LojaDoSite item={data} site={data.site} podePublicar={can(session, "website:write")} onChange={() => void carregar()} />
+          )}
+
           {data.description && (
             <Panel>
               <PanelHead title="Descrição" />
@@ -288,6 +301,240 @@ export default function ItemDetail() {
         />
       )}
     </>
+  );
+}
+
+/* -------------------------------------------------------------------------- */
+/* A loja do site                                                               */
+/* -------------------------------------------------------------------------- */
+
+const euro = (v: number) => new Intl.NumberFormat("pt-PT", { style: "currency", currency: "EUR" }).format(v);
+
+const CATEGORIAS_DA_LOJA = ["Equipamento", "Roupa", "Adeptos"];
+
+/**
+ * O artigo na loja do site do clube.
+ *
+ * É daqui que um artigo do armazém vai para a loja, e não da secção Loja do
+ * Website: o produto fica preso ao artigo, e os tamanhos e o esgotado saem do
+ * stock disponível em vez de se escreverem à mão. Pôr à venda, mudar o preço
+ * e tirar são decisões de publicar, e pedem `website:write`; quem só tem o
+ * inventário vê o estado e nada mais.
+ */
+function LojaDoSite({
+  item,
+  site,
+  podePublicar,
+  onChange,
+}: {
+  item: Data;
+  site: NonNullable<Data["site"]>;
+  podePublicar: boolean;
+  onChange: () => void;
+}) {
+  const [editar, setEditar] = useState(false);
+  const [tirar, setTirar] = useState(false);
+  const [aMudarVisivel, setAMudarVisivel] = useState(false);
+  const produto = site.aVenda ? site.produto : null;
+
+  const mudarVisivel = async () => {
+    if (!produto || aMudarVisivel) return;
+    setAMudarVisivel(true);
+    try {
+      await porAVendaNoSite(item.id, { preco: produto.preco, visivel: !produto.visivel });
+      onChange();
+    } catch {
+      // O erro já apareceu no cartão de erros.
+    } finally {
+      setAMudarVisivel(false);
+    }
+  };
+
+  return (
+    <Panel>
+      <PanelHead title="Loja do site" hint={produto ? (produto.visivel ? "à venda" : "escondido") : "por vender"}>
+        {produto && (
+          <Link to="/website?secao=loja" className="ctl-ghost">
+            <ShoppingBag className="size-3.5" strokeWidth={1.75} />
+            Loja
+            <ExternalLink className="size-3" strokeWidth={1.75} />
+          </Link>
+        )}
+      </PanelHead>
+
+      {!produto ? (
+        <div className="space-y-3 px-5 py-4">
+          <p className="text-body leading-relaxed text-ink-2">
+            Este artigo não está na loja do site. À venda, os tamanhos e o esgotado saem do stock disponível de cada tamanho.
+          </p>
+          {podePublicar && (
+            <button type="button" className="ctl-primary" onClick={() => setEditar(true)}>
+              <ShoppingBag className="size-3.5" strokeWidth={1.75} />
+              Pôr à venda no site
+            </button>
+          )}
+        </div>
+      ) : (
+        <div className="space-y-3 px-5 py-4">
+          <dl className="grid grid-cols-[auto_minmax(0,1fr)] gap-x-4 gap-y-1.5 text-meta">
+            <dt className="text-ink-3">Preço</dt>
+            <dd className="font-medium tabular text-ink">{euro(produto.preco)}</dd>
+            <dt className="text-ink-3">Categoria</dt>
+            <dd className="text-ink">{produto.categoria}</dd>
+            <dt className="text-ink-3">Tamanhos</dt>
+            <dd className="text-ink">{produto.tamanhos || "—"}</dd>
+            {produto.esgotado && (
+              <>
+                <dt className="text-ink-3">Stock</dt>
+                <dd>
+                  <Pill tone="risk">Esgotado</Pill>
+                </dd>
+              </>
+            )}
+          </dl>
+          <div className="flex items-center justify-between gap-3 rounded-[var(--radius-control)] border border-line px-3 py-2.5">
+            <span className="min-w-0">
+              <span className="block text-body text-ink">Visível na loja</span>
+              <span className="block text-meta text-ink-3">Escondido, fica guardado mas não aparece no site.</span>
+            </span>
+            <Interruptor ligado={produto.visivel} onChange={() => void mudarVisivel()} disabled={!podePublicar || aMudarVisivel} label="Visível na loja do site" />
+          </div>
+          <p className="text-meta leading-relaxed text-ink-3">Os tamanhos e o esgotado saem do stock disponível de cada tamanho; mudam aqui no armazém, não na loja.</p>
+          {podePublicar && (
+            <div className="flex flex-wrap gap-2">
+              <button type="button" className="ctl-outline" onClick={() => setEditar(true)}>
+                <Pencil className="size-3.5" strokeWidth={1.75} />
+                Editar
+              </button>
+              <button type="button" className="ctl-ghost text-risk" onClick={() => setTirar(true)}>
+                <Trash2 className="size-3.5" strokeWidth={1.75} />
+                Tirar do site
+              </button>
+            </div>
+          )}
+        </div>
+      )}
+
+      {editar && (
+        <ProdutoDoSiteDialog
+          item={item}
+          produto={produto}
+          onClose={() => setEditar(false)}
+          onDone={() => {
+            setEditar(false);
+            onChange();
+          }}
+        />
+      )}
+
+      {tirar && (
+        <ConfirmDialog
+          title="Tirar da loja do site?"
+          confirmLabel="Tirar do site"
+          onClose={() => setTirar(false)}
+          onConfirm={async () => {
+            await tirarDoSite(item.id);
+            mostrarOk("Artigo tirado da loja do site.");
+            setTirar(false);
+            onChange();
+          }}
+        >
+          «{item.name}» sai da loja do site. O artigo e o stock ficam como estão no armazém. Para o esconder só por uns tempos, desliga o
+          visível em vez de o tirar.
+        </ConfirmDialog>
+      )}
+    </Panel>
+  );
+}
+
+/** Pôr à venda, ou mudar o que já está: o preço, a categoria e a descrição. O nome é o do artigo. */
+function ProdutoDoSiteDialog({
+  item,
+  produto,
+  onClose,
+  onDone,
+}: {
+  item: Data;
+  produto: ProdutoDoSite | null;
+  onClose: () => void;
+  onDone: () => void;
+}) {
+  const [preco, setPreco] = useState(produto ? String(produto.preco).replace(".", ",") : "");
+  const [categoria, setCategoria] = useState(produto?.categoria ?? CATEGORIAS_DA_LOJA[0]);
+  // A descrição começa pela do artigo: é quase sempre a mesma frase.
+  const [descricao, setDescricao] = useState(produto?.descricao ?? item.description ?? "");
+  const [busy, setBusy] = useState(false);
+  const [erro, setErro] = useState<string | null>(null);
+
+  const valor = Number(preco.replace(",", "."));
+  const valido = preco.trim() !== "" && Number.isFinite(valor) && valor >= 0;
+
+  async function submeter(e: React.FormEvent) {
+    e.preventDefault();
+    if (!valido || busy) return;
+    setBusy(true);
+    setErro(null);
+    try {
+      await porAVendaNoSite(item.id, {
+        preco: Math.round(valor * 100) / 100,
+        categoria,
+        descricao: descricao.trim(),
+        ...(produto ? { visivel: produto.visivel } : {}),
+      });
+      mostrarOk(produto ? "Produto guardado." : "Artigo à venda no site.");
+      onDone();
+    } catch (err) {
+      setErro(err instanceof Error ? err.message : "Não foi possível guardar.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <Dialog
+      labelledBy="produto-do-site"
+      title={produto ? "Editar na loja do site" : "Pôr à venda no site"}
+      subtitle={item.name}
+      icon={<ShoppingBag className="size-4" strokeWidth={1.75} />}
+      onClose={onClose}
+      footer={
+        <>
+          <button type="button" onClick={onClose} className="ctl-ghost" disabled={busy}>
+            Cancelar
+          </button>
+          <button type="submit" form="form-produto-do-site" className="ctl-primary" disabled={!valido || busy}>
+            {busy ? "A guardar…" : produto ? "Guardar" : "Pôr à venda"}
+          </button>
+        </>
+      }
+    >
+      <form id="form-produto-do-site" onSubmit={submeter} className="space-y-4 p-5">
+        <div className="grid grid-cols-2 gap-3">
+          <DialogField label="Preço (€)">
+            <input inputMode="decimal" placeholder="39,90" value={preco} onChange={(e) => setPreco(e.target.value)} className={cx(dialogInputClass, "tabular")} autoFocus />
+          </DialogField>
+          <DialogField label="Categoria">
+            <select value={categoria} onChange={(e) => setCategoria(e.target.value)} className={dialogInputClass}>
+              {[...new Set([...CATEGORIAS_DA_LOJA, categoria])].map((c) => (
+                <option key={c}>{c}</option>
+              ))}
+            </select>
+          </DialogField>
+        </div>
+        <DialogField label="Descrição" hint="o que o site mostra">
+          <textarea value={descricao} onChange={(e) => setDescricao(e.target.value)} className={cx(dialogInputClass, "h-24 py-2")} />
+        </DialogField>
+        <p className="text-meta leading-relaxed text-ink-3">
+          O nome e a primeira fotografia são os do artigo. Os tamanhos e o esgotado saem do stock disponível de cada tamanho.
+        </p>
+        {erro && (
+          <p className="flex items-start gap-1.5 text-meta text-risk">
+            <TriangleAlert className="mt-0.5 size-3.5 shrink-0" strokeWidth={1.75} />
+            {erro}
+          </p>
+        )}
+      </form>
+    </Dialog>
   );
 }
 

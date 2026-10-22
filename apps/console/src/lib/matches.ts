@@ -312,9 +312,9 @@ export const saveAppearances = (
 /**
  * O plantel retroactivo de um jogo já disputado.
  *
- * Só se usa na página do jogo: o ecrã de Convocatórias monta o futuro e avisa
- * famílias; isto regista o passado e não avisa ninguém. Ver o serviço para o
- * porquê da separação.
+ * Usa-se no Pós-jogo da página do jogo e nas Convocatórias, nas vistas "Em
+ * atraso" e "Histórico". Submeter monta o futuro e avisa famílias; isto regista
+ * o passado e não avisa ninguém. Ver o serviço para o porquê da separação.
  */
 export const retroPool = (id: string) =>
   apiGet<{ athleteId: string; name: string; position: string | null }[]>(`/api/matches/${id}/plantel-elegivel`);

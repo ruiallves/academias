@@ -11,7 +11,7 @@ import { BotaoSocio } from "@/componentes/socio/BotaoSocio";
 const LARGURA_BARRA = "6.25rem";
 
 /**
- * A casca do layout "porto": uma barra lateral fixa à esquerda com o
+ * A casca do tema Holofote: uma barra lateral fixa à esquerda com o
  * emblema e os ícones, uma faixa fina no topo, e o rodapé em faixas (redes,
  * patrocinadores, ligações). É a estrutura do fcporto.pt; as cores são as
  * claras da casa, com a cor do clube nos acentos. O escuro fica só onde há
@@ -20,7 +20,7 @@ const LARGURA_BARRA = "6.25rem";
  * Em telemóvel a barra lateral não cabe: fica uma barra de topo com o
  * emblema e o menu.
  */
-export function CascaPorto({ clube, trocarLayout = false, children }: { clube: Clube; trocarLayout?: boolean; children: React.ReactNode }) {
+export function CascaHolofote({ clube, trocarLayout = false, children }: { clube: Clube; trocarLayout?: boolean; children: React.ReactNode }) {
   return (
     <div className="flex min-h-dvh flex-col" style={{ ["--barra" as string]: LARGURA_BARRA }}>
       <BarraLateral clube={clube} />
@@ -34,7 +34,7 @@ export function CascaPorto({ clube, trocarLayout = false, children }: { clube: C
             </Link>
             <p className="hidden text-[0.8125rem] lg:block">Site oficial{clube.city ? ` · ${clube.city}` : ""}</p>
             <div className="ml-auto hidden items-center gap-1 text-[0.8125rem] lg:flex">
-              {trocarLayout && <TrocarLayout atual="porto" sobre="claro" />}
+              {trocarLayout && <TrocarLayout atual="holofote" sobre="claro" />}
               {ATALHOS.map(({ href, label, Icone }) => (
                 <Link key={href} href={href} className="inline-flex h-11 items-center gap-1.5 px-2.5 font-semibold text-ink transition hover:text-signal-ink">
                   <Icone size={15} aria-hidden />
@@ -47,7 +47,7 @@ export function CascaPorto({ clube, trocarLayout = false, children }: { clube: C
               </BotaoSocio>
             </div>
             <div className="ml-auto flex items-center gap-2 lg:hidden">
-              {trocarLayout && <TrocarLayout atual="porto" sobre="claro" />}
+              {trocarLayout && <TrocarLayout atual="holofote" sobre="claro" />}
               <MenuMovel clube={clube} topo="top-14" />
             </div>
           </div>
@@ -55,7 +55,7 @@ export function CascaPorto({ clube, trocarLayout = false, children }: { clube: C
 
         <main className="flex-1">{children}</main>
 
-        <RodapePorto clube={clube} />
+        <RodapeHolofote clube={clube} />
       </div>
     </div>
   );
@@ -92,7 +92,7 @@ function BarraLateral({ clube }: { clube: Clube }) {
   );
 }
 
-function RodapePorto({ clube }: { clube: Clube }) {
+function RodapeHolofote({ clube }: { clube: Clube }) {
   const ano = new Date().getFullYear();
   return (
     <footer className="mt-20 border-t border-line bg-surface text-ink-2">
@@ -132,7 +132,7 @@ function RodapePorto({ clube }: { clube: Clube }) {
       <div className="px-6 py-8 text-center">
         <nav aria-label="Rodapé">
           <ul className="flex flex-wrap justify-center gap-x-6 gap-y-2 text-xs font-bold uppercase tracking-wider text-ink">
-            {[...NAV, ...ATALHOS].map((n) => (
+            {[...NAV, ...ATALHOS, { href: "/privacidade", label: "Privacidade" }].map((n) => (
               <li key={n.href}>
                 <Link href={n.href} className="inline-flex h-11 items-center hover:text-signal-ink">
                   {n.label}

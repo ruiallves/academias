@@ -24,36 +24,53 @@ export class FichaDoSite {
   /** As fichas já gastas, até expirarem. Uma só instância da API chega para isto. */
   private readonly gastas = new Map<string, number>();
 
-  constructor(private readonly segredo: string) {}
+  /**
+   * `fim` separa as fichas de formulários diferentes (o do site de marketing e
+   * o dos sites dos clubes): cada instância tem a sua lista de gastas, e uma
+   * ficha de um não pode valer no outro.
+   */
+  constructor(
+    private readonly segredo: string,
+    private readonly fim = "site-contacto",
+    /** Quanto tempo uma ficha vale. A da bilheteira vale menos: ver `BilheteiraService`. */
+    private readonly maxMs = MAX_MS,
+  ) {}
 
-  emitir(agora = Date.now()): string {
+  /**
+   * `contexto` prende a ficha a um sítio (o clube, na bilheteira): uma ficha
+   * tirada no site de um clube não serve no de outro, e não se juntam fichas
+   * de vários clubes para gastar num só.
+   */
+  emitir(agora = Date.now(), contexto = ""): string {
     const corpo = `${agora}.${randomBytes(12).toString("base64url")}`;
-    return `${corpo}.${this.assinar(corpo)}`;
+    return `${corpo}.${this.assinar(corpo, contexto)}`;
   }
 
   /** `null` quando passa; senão, a frase para quem enviou. Gasta a ficha. */
-  verificar(ficha: string | undefined, agora = Date.now()): string | null {
+  verificar(ficha: string | undefined, agora = Date.now(), contexto = ""): string | null {
     const RECARREGA = "O formulário expirou. Recarrega a página e envia outra vez.";
     if (!ficha) return RECARREGA;
     const partes = ficha.split(".");
     if (partes.length !== 3) return RECARREGA;
     const [ts, nonce, sig] = partes;
-    const esperada = Buffer.from(this.assinar(`${ts}.${nonce}`));
+    const esperada = Buffer.from(this.assinar(`${ts}.${nonce}`, contexto));
     const dada = Buffer.from(sig);
     if (esperada.length !== dada.length || !timingSafeEqual(esperada, dada)) return RECARREGA;
 
     const idade = agora - Number(ts);
-    if (!Number.isFinite(idade) || idade > MAX_MS) return RECARREGA;
+    if (!Number.isFinite(idade) || idade > this.maxMs) return RECARREGA;
     if (idade < MIN_MS) return "Foi demasiado rápido. Confirma o que escreveste e envia outra vez.";
 
     this.limpar(agora);
     if (this.gastas.has(nonce)) return RECARREGA;
-    this.gastas.set(nonce, Number(ts) + MAX_MS);
+    this.gastas.set(nonce, Number(ts) + this.maxMs);
     return null;
   }
 
-  private assinar(corpo: string): string {
-    return createHmac("sha256", this.segredo).update(`site-contacto:${corpo}`).digest("base64url");
+  private assinar(corpo: string, contexto = ""): string {
+    // Sem contexto, a mesma assinatura de sempre: as fichas do formulário de contactos não mudam.
+    const prefixo = contexto ? `${this.fim}:${contexto}` : this.fim;
+    return createHmac("sha256", this.segredo).update(`${prefixo}:${corpo}`).digest("base64url");
   }
 
   private limpar(agora: number) {

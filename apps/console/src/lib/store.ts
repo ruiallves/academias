@@ -245,6 +245,8 @@ export type ApiEvent = {
   /** Como o clube chama a este tipo de evento ("Estágio"). Nulo cai no rótulo do `kind`. */
   typeLabel?: string | null;
   coachId: string | null; coachName: string | null;
+  /** Aparece no site do clube. Só faz sentido no que não é treino nem jogo. Ausente num servidor antigo. */
+  isPublic?: boolean;
 };
 
 export type ApiMatch = {

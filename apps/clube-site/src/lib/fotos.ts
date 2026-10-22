@@ -1,4 +1,4 @@
-import type { Clube, Equipa } from "@/dados/tipos";
+import { INICIO_POR_OMISSAO, type Clube, type Equipa } from "@/dados/tipos";
 
 /**
  * As fotografias de omissão: o que o site mostra enquanto o clube não carrega
@@ -59,6 +59,11 @@ export function equipasComFoto(equipas: Equipa[]): Equipa[] {
   });
 }
 
+/**
+ * O clube com a fotografia de omissão e com o `home` garantido: o resto dos
+ * campos passa tal como veio. Uma API ainda sem `home` (um deploy a meio)
+ * não pode deitar a página de início abaixo: fica a ordem de sempre.
+ */
 export function clubeComFoto(clube: Clube): Clube {
-  return clube.photo ? clube : { ...clube, photo: FOTO_DO_CLUBE };
+  return { ...clube, photo: clube.photo || FOTO_DO_CLUBE, home: clube.home ?? INICIO_POR_OMISSAO };
 }

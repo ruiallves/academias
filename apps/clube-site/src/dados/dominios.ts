@@ -22,7 +22,7 @@
  */
 
 import { DEMO, DOMINIOS_DEMO } from "./demo/monteverde";
-import type { Layout } from "./tipos";
+import { layoutNormalizado, type Layout } from "./tipos";
 
 /**
  * `dominio` é o domínio próprio do clube, se tiver. Com ele, a
@@ -42,7 +42,7 @@ const cache = new Map<string, { r: Resposta | null; until: number }>();
 
 function demoPorSlug(slug: string | null | undefined): Resposta | null {
   if (!slug) return null;
-  return { slug, layout: slug === DEMO.clube.slug ? DEMO.clube.layout : "classico" };
+  return { slug, layout: slug === DEMO.clube.slug ? DEMO.clube.layout : "tribuna" };
 }
 
 export async function clubeDoHost(hostHeader: string): Promise<Resposta | null> {
@@ -82,7 +82,7 @@ async function pedir(chave: string, caminho: string): Promise<Resposta | null> {
     const res = await fetch(`${process.env.SITE_API_URL}${caminho}`, { cache: "no-store" });
     if (res.ok) {
       const j = (await res.json()) as { slug?: string; layout?: Layout; dominio?: string | null };
-      if (j.slug) r = { slug: j.slug, layout: j.layout ?? "classico", dominio: j.dominio ?? null };
+      if (j.slug) r = { slug: j.slug, layout: layoutNormalizado(j.layout), dominio: j.dominio ?? null };
     }
   } catch {
     // A API em baixo não pode derrubar o site: o que estiver em cache vale.

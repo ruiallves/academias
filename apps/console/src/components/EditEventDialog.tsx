@@ -3,13 +3,14 @@ import { useState, type FormEvent } from "react";
 import { KIND_LABEL, type CalendarEvent } from "@/lib/calendar";
 import { teamById } from "@/lib/api";
 import { apiPut } from "@/lib/http";
-import { reloadAcademy } from "@/lib/store";
+import { reloadAcademy, useStore } from "@/lib/store";
 import { useActiveCatalog } from "@/lib/catalogs";
 import { longDate } from "@/lib/format";
 import { Settings, TriangleAlert } from "@/lib/icons";
 import { Dialog, DialogField, dialogInputClass } from "./Dialog";
 import { TokenPicker } from "./TokenPicker";
 import { CampoAdversario } from "./CampoAdversario";
+import { Interruptor } from "./definicoes/ui";
 import { cx, SelectField } from "./primitives";
 
 /**
@@ -34,12 +35,16 @@ import { cx, SelectField } from "./primitives";
  * com o objecto todo se confundem. Ver `EditEventDto`.
  */
 export function EditEventDialog({ event, onClose }: { event: CalendarEvent; onClose: () => void }) {
+  const store = useStore();
   const venues = useActiveCatalog("venues");
   const dressingRooms = useActiveCatalog("dressingRooms");
   const team = event.teamId ? teamById(event.teamId) : undefined;
 
   const isMatch = event.kind === "match";
   const competicoes = team?.competitions ?? [];
+  /** O site do clube: só com o site no plano, e só no que não é treino nem jogo. Ver `NewEventDialog`. */
+  const podeIrParaOSite = !isMatch && event.kind !== "training" && store.academy.websiteIncluido;
+  const [isPublic, setIsPublic] = useState(event.isPublic ?? false);
 
   const [title, setTitle] = useState(event.title);
   const [date, setDate] = useState(toInputDate(event.start));
@@ -103,6 +108,7 @@ export function EditEventDialog({ event, onClose }: { event: CalendarEvent; onCl
       if (isHome !== event.match?.home) mudou.isHome = isHome;
       if (competitionId && competitionId !== event.match?.competition?.id) mudou.competitionId = competitionId;
     }
+    if (podeIrParaOSite && isPublic !== (event.isPublic ?? false)) mudou.isPublic = isPublic;
 
     // Nada mudou: fechar em silêncio é a resposta honesta — um pedido ao
     // servidor para não alterar nada só serviria para gerar um registo falso.
@@ -302,6 +308,15 @@ export function EditEventDialog({ event, onClose }: { event: CalendarEvent; onCl
             placeholder="Procurar balneário…"
             emptyLabel="Nenhum atribuído — escreve ou abre a lista para escolher."
           />
+        )}
+        {podeIrParaOSite && (
+          <div className="flex items-center justify-between gap-3 rounded-[var(--radius-control)] border border-line px-3 py-2.5">
+            <span className="min-w-0">
+              <span className="block text-body text-ink">Mostrar no site do clube</span>
+              <span className="block text-meta text-ink-3">Entra na agenda pública do site, com o título, a data e o local.</span>
+            </span>
+            <Interruptor ligado={isPublic} onChange={() => setIsPublic(!isPublic)} label="Mostrar no site do clube" />
+          </div>
         )}
         {error && (
           <p className="flex items-start gap-1.5 text-meta text-risk">

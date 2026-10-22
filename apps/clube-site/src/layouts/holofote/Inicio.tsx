@@ -2,21 +2,31 @@ import Image from "next/image";
 import Link from "next/link";
 import { Foto } from "@/componentes/Foto";
 import { ArrowRight, MapPin, Ticket } from "lucide-react";
+import type { ReactNode } from "react";
 import type { DadosInicio } from "@/layouts/tipos";
-import type { Clube, Jogo } from "@/dados/tipos";
+import type { Clube, Jogo, SeccaoInicioKey } from "@/dados/tipos";
 import { Emblema, EmblemaAdversario } from "@/componentes/Emblema";
 import { CartaoProduto } from "@/componentes/CartaoProduto";
+import { Banner, temBanner } from "@/componentes/Banner";
+import { Patrocinadores } from "@/componentes/Patrocinadores";
 import { dataLonga, haQuanto, hora, isoDia, peçasDeData } from "@/lib/formatar";
 import { Carrossel } from "./Carrossel";
 import { BotaoSocio } from "@/componentes/socio/BotaoSocio";
 
 /**
- * O início do layout "porto": o carrossel a toda a largura, a faixa do jogo
- * (próximo, últimos resultados, sócio), as notícias em lista com o cartaz
- * do próximo jogo ao lado, as equipas em mosaico e a loja. A ordem do
- * fcporto.pt, com o que um clube de formação tem.
+ * O início do tema Holofote: o carrossel a toda a largura fica sempre no
+ * topo; por baixo, as secções pela ordem que o clube escolheu no menu
+ * Website (`clube.home.seccoes`), saltando as que desligou. Por omissão é a
+ * ordem do fcporto.pt, com o que um clube de formação tem: a faixa do jogo
+ * (próximo, últimos resultados, sócio), as notícias em lista com o cartaz do
+ * próximo jogo ao lado, as equipas em mosaico, os sócios, a faixa de
+ * destaque, a loja e os patrocinadores.
+ *
+ * A faixa do jogo encosta ao carrossel sem espaço (é uma grelha com
+ * contornos); as outras levam um `pt-10` quando ficam logo a seguir ao
+ * carrossel, porque contam com o espaço de baixo da anterior.
  */
-export function InicioPorto({ clube, noticias, proximo, ultimo, equipas, produtos }: DadosInicio) {
+export function InicioHolofote({ clube, noticias, proximo, ultimo, equipas, produtos }: DadosInicio) {
   const destaques = noticias.filter((n) => n.featured).slice(0, 3);
   const carrossel = destaques.length ? destaques : noticias.slice(0, 3);
   const ids = new Set(carrossel.map((n) => n.id));
@@ -26,10 +36,8 @@ export function InicioPorto({ clube, noticias, proximo, ultimo, equipas, produto
   const lista = (resto.length ? resto : noticias).slice(0, 5);
   const [grande, ...pequenas] = equipas;
 
-  return (
-    <>
-      <Carrossel noticias={carrossel} />
-
+  const seccoes: Record<SeccaoInicioKey, ReactNode | null> = {
+    jogo: (
       <section aria-label="Jogos" className="grid border-b border-line lg:grid-cols-[1.1fr_1fr_0.9fr]" data-reveal>
         <div className="border-b border-line p-5 sm:p-7 lg:border-b-0 lg:border-r">
           <div className="flex items-center justify-between">
@@ -38,7 +46,7 @@ export function InicioPorto({ clube, noticias, proximo, ultimo, equipas, produto
               Ver todos
             </Link>
           </div>
-          {proximo ? <CartazPorto jogo={proximo} clube={clube} /> : <p className="mt-6 text-ink-3">Sem jogos marcados.</p>}
+          {proximo ? <CartazHolofote jogo={proximo} clube={clube} /> : <p className="mt-6 text-ink-3">Sem jogos marcados.</p>}
         </div>
 
         <div className="border-b border-line p-5 sm:p-7 lg:border-b-0 lg:border-r">
@@ -55,7 +63,9 @@ export function InicioPorto({ clube, noticias, proximo, ultimo, equipas, produto
           </div>
         </BotaoSocio>
       </section>
+    ),
 
+    noticias: (
       <section className="grid gap-10 px-4 py-10 sm:px-6 lg:grid-cols-[1fr_22rem] lg:px-8" data-reveal>
         <div>
           <h2 className="eyebrow text-signal-ink">Notícias</h2>
@@ -93,8 +103,10 @@ export function InicioPorto({ clube, noticias, proximo, ultimo, equipas, produto
           {proximo ? <CartazDoDia jogo={proximo} clube={clube} /> : null}
         </aside>
       </section>
+    ),
 
-      {equipas.length > 0 && (
+    equipas:
+      equipas.length > 0 ? (
         <section className="px-4 pb-10 sm:px-6 lg:px-8" data-reveal>
           <h2 className="eyebrow text-signal-ink">Equipas</h2>
           <div className="mt-4 grid gap-1 sm:grid-cols-3">
@@ -110,10 +122,35 @@ export function InicioPorto({ clube, noticias, proximo, ultimo, equipas, produto
             </Link>
           </div>
         </section>
-      )}
+      ) : null,
 
-      {produtos.length > 0 && (
-        <section className="px-4 pb-6 sm:px-6 lg:px-8" data-reveal>
+    // O cartão "Área do sócio" já vive na faixa do jogo; aqui é uma faixa
+    // simples a toda a largura, para quem desligou a do jogo ou quer o convite
+    // noutro sítio da página.
+    socios: (
+      <section className="px-4 pb-10 sm:px-6 lg:px-8" data-reveal>
+        <div className="flex flex-col gap-6 bg-signal-strong p-6 text-signal-on sm:flex-row sm:items-center sm:justify-between sm:p-10">
+          <div>
+            <p className="eyebrow opacity-80">Sócios</p>
+            <h2 className="display mt-3 text-3xl text-signal-on sm:text-4xl">Faz parte do clube.</h2>
+            <p className="mt-3 max-w-md text-[color:rgb(var(--signal-on-rgb)/0.85)]">
+              Cartão de sócio, quotas em dia, entrada nos jogos em casa e desconto na loja. Torna-te sócio do {clube.shortName}.
+            </p>
+          </div>
+          <BotaoSocio className="inline-flex h-12 shrink-0 items-center gap-2 bg-white px-6 text-sm font-bold uppercase tracking-wider text-[#1a1917] transition hover:brightness-95">
+            Ser sócio
+            <ArrowRight size={18} aria-hidden />
+          </BotaoSocio>
+        </div>
+      </section>
+    ),
+
+    // Os banners vêm um a um, pela lista (ver `visiveis`).
+    banner: null,
+
+    loja:
+      produtos.length > 0 ? (
+        <section className="px-4 pb-10 sm:px-6 lg:px-8" data-reveal>
           <h2 className="eyebrow text-signal-ink">Loja oficial</h2>
           <div className="mt-4 grid grid-cols-2 gap-x-4 gap-y-8 lg:grid-cols-4">
             {produtos.slice(0, 4).map((p) => (
@@ -127,12 +164,30 @@ export function InicioPorto({ clube, noticias, proximo, ultimo, equipas, produto
             </Link>
           </div>
         </section>
-      )}
+      ) : null,
+
+    patrocinadores: clube.sponsors.length > 0 ? <Patrocinadores sponsors={clube.sponsors} quadrado /> : null,
+  };
+
+  const conteudo = (s: (typeof clube.home.seccoes)[number]) =>
+    s.key === "banner" ? (s.banner && temBanner(s.banner) ? <Banner banner={s.banner} quadrado /> : null) : seccoes[s.key];
+  const visiveis = clube.home.seccoes.filter((s) => s.visivel && conteudo(s) != null);
+  // A faixa do jogo encosta ao carrossel, e as notícias já trazem o espaço de cima; as outras não.
+  const semEspacoEmCima = new Set<SeccaoInicioKey>(["jogo", "noticias"]);
+
+  return (
+    <>
+      <Carrossel noticias={carrossel} />
+      {visiveis.map((s, i) => (
+        <div key={s.id} className={i === 0 && !semEspacoEmCima.has(s.key) ? "pt-10" : undefined}>
+          {conteudo(s)}
+        </div>
+      ))}
     </>
   );
 }
 
-function CartazPorto({ jogo, clube }: { jogo: Jogo; clube: Clube }) {
+function CartazHolofote({ jogo, clube }: { jogo: Jogo; clube: Clube }) {
   const { dia, mes, semana } = peçasDeData(jogo.startsAt);
   const nos = (
     <div className="flex flex-col items-center gap-2 text-center">

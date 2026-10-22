@@ -145,6 +145,24 @@ export class ClubAppService {
   }
 
   /**
+   * O sócio desta conta neste clube, para a bilheteira da app.
+   *
+   * A mesma porta das outras rotas de sócio (token, clube suspenso, termos),
+   * dita uma vez aqui para a bilheteira não ter uma segunda autenticação sua.
+   * A ficha de um sócio-atleta menor não compra: paga-a a família.
+   */
+  async socioParaBilhetes(authorization: string | undefined, slug: string) {
+    const eu = await this.identidade(authorization);
+    const academyId = await this.academiaDe(slug);
+    const socio = await this.prisma.runAs(academyId, async (db) => {
+      const s = await this.socioDe(db, eu.userId, academyId);
+      this.recusarSePagaPelaFamilia(s);
+      return s;
+    });
+    return { academyId, memberId: socio.id, nome: socio.name, email: socio.email ?? eu.email ?? "", telefone: socio.phone };
+  }
+
+  /**
    * As portas de pagar recusam a ficha de um sócio-atleta menor: as quotas dele
    * pagam-nas os encarregados, na área da família, em Pagamentos. O atleta vê a
    * área de sócio, mas não paga nada nela.
@@ -533,6 +551,8 @@ export class ClubAppService {
               id: true, startsAt: true, venue: true, opponent: true, isHome: true,
               team: { select: { name: true, maxAge: true } },
               competition: { select: { label: true } },
+              // Se a bilheteira está aberta: a app mostra "Bilhetes" no jogo. O resto pede-se ao abrir.
+              siteTickets: { select: { open: true } },
             },
           }),
           db.announcement.findMany({
@@ -593,6 +613,8 @@ export class ClubAppService {
             teamName: m.team.name,
             teamMaxAge: m.team.maxAge,
             competition: m.competition?.label ?? null,
+            /** Há bilhetes à venda (a venda está ligada). Ver `/api/socio/bilhetes/venda/:id` para o resto. */
+            bilheteira: m.isHome && m.siteTickets?.open === true,
           }));
 
         return {

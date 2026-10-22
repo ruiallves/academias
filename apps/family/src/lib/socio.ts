@@ -2,6 +2,7 @@ import { useSyncExternalStore } from "react";
 import { reduzirFotografia } from "@academia/ui/imagem";
 import { apiDelete, apiGet, apiPost } from "@/lib/http";
 import { applyBrand } from "@/lib/brand";
+import { limparBilhetes } from "@/lib/bilhetes";
 
 /**
  * A área de sócio — dados e chamadas.
@@ -62,6 +63,12 @@ export type SocioMatch = {
   teamName: string;
   teamMaxAge: number;
   competition: string | null;
+  /**
+   * A venda de bilhetes está aberta neste jogo (só jogos em casa). A venda em
+   * si pede-se ao abrir a compra, em `lib/bilhetes.ts`. Ausente num servidor
+   * antigo: lê-se como fechada.
+   */
+  bilheteira?: boolean;
 };
 
 export type SocioPoll = {
@@ -171,6 +178,7 @@ export async function loadSocio(): Promise<void> {
 export function resetSocio(): void {
   state = { data: null, error: null, loading: false };
   emit();
+  limparBilhetes();
 }
 
 export type PagamentoIniciado = {

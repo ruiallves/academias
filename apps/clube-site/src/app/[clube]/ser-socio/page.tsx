@@ -27,7 +27,7 @@ export default async function SerSocio({ params }: { params: Promise<{ clube: st
         adesao={adesao}
         api={process.env.SITE_API_URL ?? ""}
         demonstracao={emDemonstracao()}
-        quadrado={layout === "porto"}
+        quadrado={layout === "holofote"}
         modo="pagina"
         idTitulo="adesao-pagina-titulo"
       />

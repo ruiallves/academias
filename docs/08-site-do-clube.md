@@ -35,12 +35,18 @@ Não é um redirecionamento: o endereço na barra fica o do clube. Os links
 dentro do site são relativos à raiz (`/noticias`), e os dois segmentos são
 postos pelo proxy em cada pedido, incluindo os prefetch do router.
 
-## Dois layouts
+## Dois temas
 
-| `Clube.layout` | Como é | Referência |
+| `Clube.layout` | Nome | Como é |
 | --- | --- | --- |
-| `classico` | claro, cabeçalho em dois andares, herói com três notícias | adfafe.pt |
-| `porto` | claro, barra lateral fixa com ícones, carrossel a toda a largura, notícias em lista com cartaz ao lado | fcporto.pt |
+| `tribuna` | Tribuna | claro, cabeçalho em dois andares, herói com três notícias: o site de clube de sempre |
+| `holofote` | Holofote | escuro, barra lateral fixa com ícones, carrossel a toda a largura, notícias em lista com cartaz ao lado: o jogo à noite |
+
+Chamavam-se `classico` e `porto` até 20/10/2026; o segundo era o nome de um
+clube a sério. A migração `20261020160000_nomes_dos_temas` renomeia o que
+está gravado, e aplica-se **depois** do deploy da API e do site de 20/10 (a
+API antiga lia "holofote" como "classico"); `layoutValido` (API) e
+`layoutNormalizado` (site) aceitam os nomes antigos.
 
 O layout é uma escolha do clube e decide-se **na página** (`layoutAtual` em
 `lib/clube.ts`), a partir dos dados do clube (`fonte.clube`, em cache com a
@@ -49,10 +55,10 @@ caminho interno (`/[clube]/[layout]/...`), decidido pelo proxy com uma cache
 em memória de cinco minutos; no Vercel cada instância tem a sua memória, e
 depois de o clube trocar de layout a página inicial vinha de uma instância
 já atualizada e as notícias de outra ainda com o antigo. O que muda entre
-layouts é a **casca** (`src/layouts/<nome>/Casca.tsx`, ou o
-`Cabecalho`/`Rodape` no clássico) e a **página de início**
+temas é a **casca** (`src/layouts/<nome>/Casca.tsx`, ou o
+`Cabecalho`/`Rodape` na Tribuna) e a **página de início**
 (`src/layouts/<nome>/Inicio.tsx`). As páginas interiores são partilhadas e
-ficam escuras no `porto` pelos tokens (`[data-layout="porto"]` em
+ficam escuras no Holofote pelos tokens (`[data-layout="holofote"]` em
 `globals.css`), com a cor do clube clareada até se ler sobre o escuro
 (`estiloDoClube` em `lib/tema.ts`).
 
@@ -117,20 +123,50 @@ GET /public/sites/:slug/equipas       → época em curso, sem as escondidas; pl
 GET /public/sites/:slug/equipas/:id
 GET /public/sites/:slug/jogos         → 90 dias para trás, 180 para a frente, das equipas visíveis, com bilhetes
 GET /public/sites/:slug/jogos/:id
-GET /public/sites/:slug/eventos       → [] (o calendário ainda não marca eventos públicos)
-GET /public/sites/:slug/produtos      (só visíveis)
+GET /public/sites/:slug/eventos       → os eventos do calendário com `isPublic` (nunca treinos nem jogos), de ontem a um ano
+GET /public/sites/:slug/produtos      (só visíveis; os de artigos arquivados do Inventário saem sozinhos)
 GET /public/sites/:slug/produtos/:id
 ```
 
+O `Clube` traz também `board` e `facilities` (de `identity.direcao` e
+`identity.instalacoes`) e `home` (a ordem das secções da página de início e o
+banner, de `SiteConfig.home`, sempre com as sete secções).
+
+Do browser do visitante (`site-contacto.controller.ts`, sem sessão, pelo CORS
+dos sites dos clubes, 5 por minuto por endereço), o formulário de contactos:
+
+```
+GET  /api/clubes/:slug/contacto/ficha → { ficha }   (pedida ao abrir; vale ao fim de 3 s, uma vez)
+POST /api/clubes/:slug/contacto       { nome, email, telefone?, assunto, mensagem, notaExtra, ficha }
+```
+
+A mensagem fica em `SiteMessage`, vai por email ao endereço da Identidade do
+site (`siteMensagemEmail`, com resposta para quem escreveu) e lê-se na
+consola. O crivo é o do formulário do academias.pt (`TicketsService`):
+campo-armadilha, ficha assinada, repetições, tectos por pessoa e por clube.
+
 Treinos nunca saem: dizem onde estão crianças e a que horas.
 
-Consola (`site.controller.ts`, `settings:write`): `GET/PATCH /api/site`,
+Consola (`site.controller.ts`; ler é `website:read`, escrever é
+`website:write`): `GET/PATCH /api/site` (o PATCH aceita também `inicio`),
 `POST/PATCH/DELETE /api/site/noticias|produtos|patrocinadores`,
-`PUT/DELETE /api/site/bilheteira/:matchId` (só jogos em casa) e
-`POST /api/site/imagens` (autoriza o carregamento para o bucket público
-`site-publico` e devolve o endereço). Uma imagem só se grava se for do
-próprio clube nesse bucket. O que vive em JSON é limpo à escrita e à leitura
-(`site.tipos.ts`): links `javascript:` saem, recintos partidos são reparados.
+`PUT/DELETE /api/site/bilheteira/:matchId` (só jogos em casa),
+`GET /api/site/mensagens`, `PATCH /api/site/mensagens/:id` (`lida`,
+`tratada`), `DELETE /api/site/mensagens/:id`, e `POST /api/site/imagens`
+(autoriza o carregamento para o bucket público `site-publico` e devolve o
+endereço). Uma imagem só se grava se for do próprio clube nesse bucket. O que
+vive em JSON é limpo à escrita e à leitura (`site.tipos.ts`; `npm run
+test:site-tipos` prova-o): links `javascript:` saem, recintos partidos são
+reparados, a página de início vem sempre completa.
+
+Inventário → loja do site (`inventory.controller.ts`, `website:write` +
+`inventory:read`, só com o site no plano): `PUT /api/inventory/items/:id/site`
+`{ preco, categoria?, descricao?, visivel? }` e `DELETE …/site`. A ficha do
+artigo (`GET …/items/:id`) traz `site: null` sem o plano, ou
+`{ aVenda, produto }`. O produto fica ligado por `SiteProduct.inventoryItemId`
+(único, cascata): o nome segue o artigo, a primeira fotografia é copiada para
+o `site-publico`, e os tamanhos e o esgotado saem do stock disponível das
+variantes na leitura pública.
 
 Painel da plataforma (`site-dominio.controller.ts`, `OWNER`/`ADMIN`):
 `GET/PUT/DELETE /api/platform/academies/:id/site-dominio`. Ligar acrescenta
@@ -164,17 +200,115 @@ Sem as duas da revalidação, o site atualiza sozinho ao fim de um minuto. Sem
 as do Vercel, "Ligar" grava o domínio no clube e o painel avisa que falta
 acrescentá-lo ao projeto à mão.
 
-### O que ainda não existe
+### O roadmap (20/10/2026)
 
-- A venda: encomendas, pagamento (euPago, pelo canal do clube), bilhetes com
-  QR e o leitor à entrada. O site mostra os bilhetes e a loja, e os botões de
-  pagar dizem que ainda não está ativo.
-- Faturação: a fatura tem de sair de software certificado pela AT. O clube
-  fatura no programa dele. Validar com um contabilista antes de vender.
-- Uma caixa de mensagens na consola. O formulário de contactos abre o email
-  de quem escreve, já preenchido, para o email do clube.
-- Eventos públicos no calendário, direção e instalações na página do clube.
-- A permissão própria (`website:*`). Hoje é `settings:write`.
+Verificado em produção a 20/10 (ad-fafe.website.academias.pt): as páginas
+respondiam, mas não se comprava nada. Os botões de pagar da loja e da
+bilheteira só mostravam um aviso; os contactos abriam o email de quem escreve.
+
+**Fase 1: lançar sem vendas (feita a 20/10/2026, migração `20261020150000_site_fase_1`)**
+- Contactos a sério: `POST /api/clubes/:slug/contacto` (browser do visitante,
+  pelo CORS dos sites dos clubes, com a mesma ficha assinada, campo-armadilha,
+  repetições e tectos do formulário do academias.pt, por clube). A mensagem
+  fica em `SiteMessage`, vai por email ao endereço da Identidade do site
+  (`siteMensagemEmail`, com resposta para quem escreveu) e lê-se em
+  Website › Mensagens (lida, tratada, por quem).
+- Política de privacidade do site do clube em `/privacidade` (gerada a partir
+  dos dados do clube: ele é o responsável, nós subcontratantes) e o DPA 1.1 a
+  dizer o mesmo. `sitemap.xml` e `robots.txt` por clube.
+- Eventos públicos: `CalendarEvent.isPublic`, ligado evento a evento na consola
+  (nunca treinos nem jogos). Direção e instalações dentro de
+  `SiteConfig.identity` (`direcao`, `instalacoes`).
+- A permissão própria `website:read` / `website:write`, distribuída a quem
+  tinha `settings:write`. A direção dá-a a quem trata da comunicação sem lhe
+  dar as Definições.
+- Página de início configurável: `SiteConfig.home` com a ordem e a
+  visibilidade das secções (jogo, notícias, equipas, sócios, loja,
+  patrocinadores, uma vez cada, e até quatro banners, cada um com o seu
+  conteúdo e `id`). O herói fica sempre no topo. Os dois temas leem a mesma
+  ordem. Na consola é um desenho da página (`routes/website/Inicio.tsx`):
+  arrasta-se pela pega, o olho esconde, o "+" entre secções põe um banner ou
+  repõe uma escondida, e o que está escolhido edita-se à direita. O campo
+  `home.banner` é o primeiro banner repetido, para o site de antes de 20/10;
+  sai quando o site em produção ler os banners das secções.
+- Artigos do Inventário à venda no site: `SiteProduct.inventoryItemId`. O
+  clube põe um artigo à venda na ficha dele (painel "Loja do site"); o nome
+  vem do artigo, o preço, a categoria e a descrição são do produto, os
+  tamanhos e o esgotado saem do stock disponível das variantes na leitura, e a
+  primeira fotografia é copiada do bucket privado para o `site-publico`.
+  **Só com o site no plano**: a API responde 403 `SITE_NOT_IN_PLAN` e a ficha
+  do artigo nem mostra o painel (`item.site === null`) nos outros planos.
+- Loja e bilheteira como catálogo: os botões levam aos contactos com o assunto
+  certo e dizem que a compra online abre em breve. Connect Pro já estava à
+  venda no academias.pt.
+
+**Antes da fase 2: decidir**
+- A faturação (ver abaixo) e o plano pago do Resend: o gratuito tem 100
+  emails por dia e bateu no limite a 14/10, e cada bilhete e encomenda é um email.
+
+**O site só sai quando a bilheteira e a loja estiverem acabadas** (decisão do
+Rui, 21/10). As faturas ficam para o fim.
+
+**Fase 2: bilheteira, decisões de 21/10/2026**
+- Preços por bancada × público geral ou categoria de sócio; preços por
+  omissão em `SiteConfig.ticketDefaults`, copiados para cada jogo e editáveis.
+- Venda por fases (`SiteMatchTickets.membersFrom`, `publicFrom`,
+  `membersOnly`, `closesAt`); fecha à hora do jogo.
+- Sócio no site: número + data de nascimento; na app, pela conta. Preço de
+  sócio só com a quota a cobrir o dia do jogo, um bilhete de sócio por sócio.
+  Quota em atraso: não compra a preço de sócio e o lugar anual não entra.
+- Lugares anuais (`SeasonSeat`) descontam da lotação vendável da bancada.
+- Lugares guardados 10 minutos (`TicketOrder.reservedUntil`); pago depois
+  disso, sem bilhete e com reembolso por fazer (à mão na primeira versão).
+- Portas no recinto (`venues[].portas`); o leitor abre numa porta e só aceita
+  essas bancadas. Seguranças sem conta: link por jogo e porta + PIN
+  (`TicketGateAccess`), bloqueio ao fim de 5 tentativas.
+- Regras puras em `apps/api/src/bilheteira/regras.ts`, provadas por
+  `npm run test:bilheteira`. Migração `20261021120000_bilheteira` (aditiva,
+  ainda por aplicar).
+
+**Fase 2: bilheteira (semanas)**
+- Encomenda e pagamento MB WAY e Multibanco pelo canal euPago do clube.
+- Lotação por bancada, com os lugares guardados enquanto uma referência
+  Multibanco está por pagar e libertados quando expira.
+- Bilhete com QR por email, leitor à entrada na app de staff (recusa os já usados).
+- Vendas por jogo na consola, cancelamentos e reembolsos.
+
+**Fase 3: loja**
+- Carrinho e encomendas (o mesmo pagamento e a mesma faturação da bilheteira).
+- Stock por tamanho (hoje `SiteProduct` tem um `soldOut` geral e os tamanhos em
+  texto), várias fotografias, levantamento ou envio, gestão na consola.
+
+### Faturação das vendas
+
+- **Quem fatura é o clube**, com o NIF e as séries dele (ATCUD), no programa
+  certificado dele. Nós não podemos faturar em nosso nome vendas que são dele.
+- **A loja e a bilheteira só se ligam com a faturação ligada**, como os
+  pagamentos só ligam com as chaves da euPago. Sem ela, ficam como catálogo.
+- **Ligação por API à conta do clube**, a cada venda paga: emite a
+  fatura-recibo, buscamos o PDF e enviamo-lo no mesmo email do bilhete ou da
+  encomenda. Se o programa estiver em baixo, a fatura fica numa fila.
+  - InvoiceXpress: nome da conta + chave da API, que o clube copia (como a
+    euPago). Cria faturas, faturas simplificadas e faturas-recibo, muda o
+    estado e envia por email.
+  - Moloni: OAuth 2.0. Registamo-nos uma vez como programadores (sem plano
+    pago); o clube autoriza com a conta dele na página da Moloni. Acesso de
+    1 hora, renovação válida 14 dias: renovar sempre antes de caducar.
+  - Sage One (PT): só a API v2, que a Sage diz estar "ainda disponível para
+    alguns utilizadores" e já não é a recomendada. Cria faturas (FT) e anula,
+    mas a documentação não tem fatura-recibo, nem registo do pagamento, nem
+    PDF, nem envio por email, nem ATCUD. Pedidos assinados (OAuth 1.0a) além
+    do OAuth 2.0. Não serve para a venda online sem a Sage confirmar o contrário.
+- Quem usa outro programa: ou liga um destes para as vendas do site, ou não
+  vende pelo site.
+- Confirmar com um contabilista o tipo de documento e o IVA de cada venda.
+
+### O dinheiro
+
+Nunca passa por nós: quem compra paga, o dinheiro vai para a conta euPago do
+clube. Três faturas, de três origens: o clube a quem comprou (a venda,
+automática), a euPago ao clube (as taxas), nós ao clube (o Connect Pro e, se
+um dia houver, a comissão por venda, faturada ao mês).
 
 ## Ser sócio
 

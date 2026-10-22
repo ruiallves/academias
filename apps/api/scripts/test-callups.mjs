@@ -62,10 +62,40 @@ const parent = await login("familia@lifeclub.pt");
 const db = new pg.Client({ connectionString: env("MIGRATE_DATABASE_URL"), ssl: { rejectUnauthorized: false } });
 await db.connect();
 
+/*
+ * Os avisos contam-se e apagam-se **só no Life Club**.
+ *
+ * Isto apagava os avisos de convocatória de todas as academias da base, e a
+ * base é a de produção: cada corrida tirava às famílias dos clubes reais o
+ * registo das convocatórias que receberam. As contagens eram também globais, e
+ * uma convocatória submetida noutro clube durante o teste fazia-o falhar.
+ */
+const LIFE = (await db.query(`SELECT id FROM "Academy" WHERE slug = 'life-club'`)).rows[0]?.id;
+if (!LIFE) throw new Error("Não encontrei o Life Club.");
+const avisosDoTeste = async () =>
+  (await db.query(`SELECT count(*)::int n FROM "Notification" WHERE type = 'MATCH_CALLED_UP' AND "academyId" = $1`, [LIFE])).rows[0].n;
+const apagarAvisosDoTeste = () =>
+  db.query(`DELETE FROM "Notification" WHERE type = 'MATCH_CALLED_UP' AND "academyId" = $1`, [LIFE]);
+
+/*
+ * O `mt_proximo` tem de estar no futuro.
+ *
+ * O seed marcou-o para uma data fixa, que já passou, e submeter um jogo
+ * começado passou a ser recusado (é o que se prova em "Um jogo começado"). Empurra-se
+ * para daqui a uma semana e repõe-se no fim, como em `test-convocatoria-resposta`.
+ */
+const original = (await db.query(`SELECT "startsAt", "endsAt" FROM "Match" WHERE id = 'mt_proximo'`)).rows[0];
+const futuro = new Date(Date.now() + 7 * 86_400_000);
+futuro.setHours(10, 30, 0, 0);
+await db.query(`UPDATE "Match" SET "startsAt" = $1, "endsAt" = $2 WHERE id = 'mt_proximo'`, [
+  futuro,
+  new Date(futuro.getTime() + 2 * 3600_000),
+]);
+
 // Estado limpo: o jogo por montar, e sem avisos antigos a contar para o teste.
 await db.query(`UPDATE "Match" SET "callUpsClosedAt" = NULL WHERE id = 'mt_proximo'`);
 await db.query(`DELETE FROM "MatchCallUp" WHERE "matchId" = 'mt_proximo'`);
-await db.query(`DELETE FROM "Notification" WHERE type = 'MATCH_CALLED_UP'`);
+await apagarAvisosDoTeste();
 
 console.log("=== Quem vê que jogos ===");
 const dir = await call(director, "GET", "/api/matches");
@@ -173,7 +203,7 @@ const guardou = await call(coach, "POST", "/api/matches/mt_proximo/convocatoria"
 });
 check("guarda a convocatória", guardou.status < 300, JSON.stringify(guardou.body).slice(0, 90));
 
-const avisosAposGuardar = (await db.query(`SELECT count(*)::int n FROM "Notification" WHERE type='MATCH_CALLED_UP'`)).rows[0].n;
+const avisosAposGuardar = await avisosDoTeste();
 check("e não manda aviso nenhum", avisosAposGuardar === 0, `${avisosAposGuardar} avisos`);
 
 console.log("\n=== Submeter avisa as famílias ===");
@@ -184,8 +214,8 @@ check("e conta os convocados", submeteu.body?.convocados === 3, `${submeteu.body
 const avisos = (await db.query(`
   SELECT n.title, n.body, u.email
   FROM "Notification" n JOIN "User" u ON u.id = n."userId"
-  WHERE n.type = 'MATCH_CALLED_UP'
-`)).rows;
+  WHERE n.type = 'MATCH_CALLED_UP' AND n."academyId" = $1
+`, [LIFE])).rows;
 
 // Martim é da Sandra; Gustavo é do Nuno; Dinis não tem encarregado ligado.
 check("avisa só as famílias dos convocados", avisos.length === 2, `${avisos.length} avisos`);
@@ -218,6 +248,56 @@ console.log("\n=== Um jogo já disputado ===");
 const jogado = await call(coach, "POST", "/api/matches/mt_passado/convocatoria", { athleteIds: ["ath_martim"] });
 check("não se reescreve a convocatória de um jogo jogado", jogado.status === 400, `${jogado.status}`);
 
+console.log("\n=== Um jogo começado ===");
+/*
+ * O mesmo jogo, agora com o apito dado há duas horas e a convocatória por
+ * enviar: é o caso das vistas "Em atraso" da consola.
+ */
+await db.query(`UPDATE "Match" SET "startsAt" = now() - interval '2 hours', "callUpsClosedAt" = NULL WHERE id = 'mt_proximo'`);
+await apagarAvisosDoTeste();
+const tarde = await call(coach, "POST", "/api/matches/mt_proximo/convocatoria/submeter");
+check("submeter um jogo começado é recusado (400)", tarde.status === 400, `${tarde.status} ${tarde.body?.message}`);
+const avisosTarde = await avisosDoTeste();
+check("e não avisa ninguém", avisosTarde === 0, `${avisosTarde} avisos`);
+
+/*
+ * Registar o jogo passado: não avisa, e corrigi-lo depois não apaga as
+ * respostas de quem continua na lista.
+ */
+await db.query(`DELETE FROM "MatchCallUp" WHERE "matchId" = 'mt_proximo'`);
+/*
+ * Um terceiro atleta do Sub-11, lido da base e não escrito à mão: o plantel do
+ * Life Club muda (o `ath_gustavo` do seed já não existe), e esta parte prova o
+ * registo, não a composição da equipa.
+ */
+const terceiro = (await db.query(`
+  SELECT tm."athleteId" FROM "TeamMembership" tm JOIN "Athlete" a ON a.id = tm."athleteId"
+   WHERE tm."teamId" = 't_sub11' AND tm."leftAt" IS NULL AND a.status <> 'LEFT'
+     AND tm."athleteId" NOT IN ('ath_martim', 'ath_dinis')
+   ORDER BY tm."athleteId" LIMIT 1
+`)).rows[0]?.athleteId;
+check("há um terceiro atleta no Sub-11 para o teste", Boolean(terceiro));
+const registou = await call(coach, "POST", "/api/matches/mt_proximo/plantel", { athleteIds: ["ath_martim", terceiro] });
+check("regista a convocatória do jogo passado", registou.status < 300, `${registou.status} ${JSON.stringify(registou.body).slice(0, 90)}`);
+const fechado = (await db.query(`SELECT "callUpsClosedAt" FROM "Match" WHERE id = 'mt_proximo'`)).rows[0].callUpsClosedAt;
+check("e fica fechada", fechado !== null);
+const avisosRegisto = await avisosDoTeste();
+check("sem aviso nenhum", avisosRegisto === 0, `${avisosRegisto} avisos`);
+
+await db.query(
+  `UPDATE "MatchCallUp" SET status = 'DECLINED', "declineReason" = 'Teste de escola', "respondedAt" = now()
+    WHERE "matchId" = 'mt_proximo' AND "athleteId" = 'ath_martim'`,
+);
+const corrigiu = await call(coach, "POST", "/api/matches/mt_proximo/plantel", { athleteIds: ["ath_martim", "ath_dinis"] });
+check("corrige a convocatória do jogo passado", corrigiu.status < 300, `${corrigiu.status}`);
+const linhas = (await db.query(
+  `SELECT "athleteId", status, "declineReason" FROM "MatchCallUp" WHERE "matchId" = 'mt_proximo' ORDER BY "athleteId"`,
+)).rows;
+const martim = linhas.find((l) => l.athleteId === "ath_martim");
+check("quem fica mantém a resposta e o motivo", martim?.status === "DECLINED" && martim?.declineReason === "Teste de escola", JSON.stringify(martim));
+check("quem sai, sai", !linhas.some((l) => l.athleteId === terceiro), JSON.stringify(linhas));
+check("quem entra, entra", linhas.some((l) => l.athleteId === "ath_dinis" && l.status === "CALLED"), JSON.stringify(linhas));
+
 console.log("\n=== Âmbito na escrita ===");
 // Um jogo de uma equipa que não é dele — se existir algum.
 const jogoAlheio = (await db.query(`
@@ -233,9 +313,12 @@ if (jogoAlheio) {
 }
 
 console.log("\n=== Limpeza ===");
-await db.query(`UPDATE "Match" SET "callUpsClosedAt" = NULL WHERE id = 'mt_proximo'`);
+await db.query(`UPDATE "Match" SET "callUpsClosedAt" = NULL, "startsAt" = $1, "endsAt" = $2 WHERE id = 'mt_proximo'`, [
+  original.startsAt,
+  original.endsAt,
+]);
 await db.query(`DELETE FROM "MatchCallUp" WHERE "matchId" = 'mt_proximo'`);
-await db.query(`DELETE FROM "Notification" WHERE type = 'MATCH_CALLED_UP'`);
+await apagarAvisosDoTeste();
 await db.end();
 console.log("  feito");
 

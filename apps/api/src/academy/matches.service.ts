@@ -1210,8 +1210,10 @@ export class MatchesService {
    * plantel de um jogo **já começado**, sem avisar ninguém (não é um convite, é
    * história), e fecha-o logo.
    *
-   * Só vive na página do jogo. O ecrã de convocatórias continua a recusar jogos
-   * passados — lá monta-se o futuro; aqui regista-se o passado.
+   * Serve dois ecrãs: o Pós-jogo da página do jogo e as Convocatórias, nas
+   * vistas "Em atraso" (jogos passados sem convocatória) e "Histórico" (para
+   * corrigir uma convocatória enviada). Nos dois casos é a mesma escrita, e
+   * nenhum deles avisa ninguém. Submeter, que avisa, recusa jogos começados.
    *
    * ## O que não se verifica, de propósito
    *
@@ -1270,28 +1272,36 @@ export class MatchesService {
       }
 
       /*
-       * Substitui, não acrescenta — e apaga a ficha do que sair.
+       * Mexe só em quem entra e em quem sai — e apaga a ficha do que sair.
        *
        * Se alguém tirar um atleta do plantel retroactivo, a linha da ficha dele
        * ficava órfã: minutos de um jogo em que oficialmente não esteve. O
        * `deleteMany` da ficha limita-se a quem saiu.
+       *
+       * Quem fica, fica com a linha que tinha. Isto apagava tudo e criava de
+       * novo, o que estava certo enquanto só servia jogos sem convocatória. Desde
+       * que as Convocatórias deixam corrigir o histórico, corre também sobre
+       * convocatórias enviadas, e apagar levava consigo as respostas das
+       * famílias: quem disse que não ia, e porquê.
        */
       const actuais = (await db.matchCallUp.findMany({ where: { matchId }, select: { athleteId: true } })).map(
         (c) => c.athleteId,
       );
       const saem = actuais.filter((a) => !ids.includes(a));
+      const entram = ids.filter((a) => !actuais.includes(a));
       if (saem.length) {
         await db.matchAppearance.deleteMany({ where: { matchId, athleteId: { in: saem } } });
+        await db.matchCallUp.deleteMany({ where: { matchId, athleteId: { in: saem } } });
       }
-
-      await db.matchCallUp.deleteMany({ where: { matchId } });
-      await db.matchCallUp.createMany({
-        data: ids.map((athleteId) => ({
-          matchId,
-          athleteId,
-          isGuest: !roster.find((a) => a.id === athleteId)?.teams.some((t) => t.teamId === match.teamId),
-        })),
-      });
+      if (entram.length) {
+        await db.matchCallUp.createMany({
+          data: entram.map((athleteId) => ({
+            matchId,
+            athleteId,
+            isGuest: !roster.find((a) => a.id === athleteId)?.teams.some((t) => t.teamId === match.teamId),
+          })),
+        });
+      }
 
       // Fechado à nascença: isto é um registo, não um convite por responder.
       if (!match.callUpsClosedAt) {
@@ -1615,6 +1625,21 @@ export class MatchesService {
       });
 
       if (callUps.length === 0) throw new BadRequestException("Não há ninguém convocado");
+
+      /*
+       * Um jogo começado não se submete.
+       *
+       * Submeter manda a cada família "o teu filho está convocado" com a hora e
+       * o local. Depois do apito, isso é um aviso sobre um jogo que já está a
+       * acontecer, ou que já acabou. A convocatória de um jogo passado regista-se
+       * sem avisar ninguém, por `saveRetroSquad`, que é o que as Convocatórias
+       * fazem na vista "Em atraso".
+       */
+      if (match.startsAt.getTime() <= Date.now()) {
+        throw new BadRequestException(
+          "Este jogo já começou, por isso a convocatória já não avisa as famílias. Regista-a em Convocatórias, na vista Em atraso.",
+        );
+      }
 
       /*
        * A logística entra **com** a submissão, na mesma escrita.

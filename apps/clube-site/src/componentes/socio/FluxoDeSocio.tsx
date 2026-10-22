@@ -103,7 +103,7 @@ export function FluxoDeSocio({
   api: string;
   demonstracao: boolean;
   modo: "janela" | "pagina";
-  /** O layout "porto": cantos direitos. */
+  /** O tema Holofote: cantos direitos. */
   quadrado?: boolean;
   onFechar?: () => void;
   /** O pedido chegou à API (a janela recomeça na próxima vez que abrir). */

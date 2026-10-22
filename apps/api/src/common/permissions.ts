@@ -207,6 +207,19 @@ export type Permission =
    * ou no painel de Acesso, por decisão de alguém.
    */
   | "conduct:read" | "conduct:write"
+  /**
+   * O site do clube: o menu Website — notícias, equipas no site, loja,
+   * bilheteira, a página de início, e as mensagens que chegam pelo formulário
+   * de contactos.
+   *
+   * Vivia em `settings:write`, e isso obrigava a dar as Definições inteiras
+   * (cargos, pagamentos, apagar o clube) a quem só escreve notícias. Agora é
+   * permissão própria: a direção dá-a a quem trata da comunicação, no editor
+   * de cargos, sem lhe dar mais nada. `read` abre o menu e as mensagens, e
+   * `write` publica. Por omissão fica onde `settings:write` estava
+   * (presidência e direção), e só conta em clubes com o site no plano.
+   */
+  | "website:read" | "website:write"
   | "clinical:status" | "clinical:read" | "clinical:write";
 
 const READ_ALL: Permission[] = [
@@ -224,6 +237,8 @@ const READ_ALL: Permission[] = [
   "registration:read",
   // As denúncias: ficam em READ_ALL e o coordenador filtra-as abaixo.
   "conduct:read",
+  // O site do clube: o mesmo — presidência e direção, o coordenador filtra-o.
+  "website:read",
 ];
 
 const WRITE_ALL: Permission[] = [
@@ -252,6 +267,8 @@ const WRITE_ALL: Permission[] = [
   "registration:write",
   // Responder às denúncias e fechá-las: presidência e direção.
   "conduct:write",
+  // Publicar no site do clube: presidência e direção, onde `settings:write` estava.
+  "website:write",
   // Vincular o clube aos termos: presidência e direção, como `settings:write`.
   "legal:club",
 ];
@@ -284,7 +301,9 @@ export const ROLE_PERMISSIONS: Record<Role, Permission[]> = {
       (p) =>
         p !== "billing:read" && p !== "member:read" && p !== "inventory:read" && p !== "finance:read" &&
         // As denúncias são da direção: um caso pode ser sobre quem coordena.
-        p !== "conduct:read",
+        p !== "conduct:read" &&
+        // O site é a cara pública do clube: da direção, como as Definições eram.
+        p !== "website:read",
     ),
     "athlete:write", "team:write", "calendar:write", "attendance:write",
     "comms:write", "evaluation:write", "report:write",

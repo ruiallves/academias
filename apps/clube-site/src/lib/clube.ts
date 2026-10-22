@@ -1,7 +1,7 @@
 import { cookies } from "next/headers";
 import { notFound } from "next/navigation";
 import { fonte } from "@/dados/fonte";
-import { COOKIE_LAYOUT, layoutValido, type Clube, type Layout } from "@/dados/tipos";
+import { COOKIE_LAYOUT, layoutNormalizado, layoutValido, type Clube, type Layout } from "@/dados/tipos";
 import { emDemonstracao } from "@/lib/modo";
 
 /** O clube deste pedido, ou 404. Todas as páginas começam aqui. */
@@ -29,5 +29,6 @@ export async function layoutAtual(clube: Clube): Promise<Layout> {
     const cookie = (await cookies()).get(COOKIE_LAYOUT)?.value;
     if (layoutValido(cookie)) return cookie;
   }
-  return clube.layout;
+  // Com os nomes de hoje, venha a API com os antigos ou não.
+  return layoutNormalizado(clube.layout);
 }

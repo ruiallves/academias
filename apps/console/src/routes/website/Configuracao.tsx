@@ -1,13 +1,25 @@
 import { useState } from "react";
 import { Link } from "react-router-dom";
-import { Check, Copy } from "@/lib/icons";
+import { Check, ChevronDown, ChevronUp, Copy, Plus, Trash2 } from "@/lib/icons";
 import { cx } from "@/components/primitives";
 import { Bloco, Campo, campoClass, Leitura } from "@/components/definicoes/ui";
 import { ClubMark } from "@/components/ClubMark";
 import { useStore } from "@/lib/store";
-import { enderecoDoSite, guardarConfig, useSite, type Layout, type SiteDoClube } from "@/lib/website";
+import { enderecoDoSite, guardarConfig, useSite, type Dirigente, type Instalacao, type Layout, type SiteDoClube } from "@/lib/website";
 import { mostrarOk } from "@/lib/avisos";
 import { CampoDeImagem } from "./CampoDeImagem";
+
+const MAX_DIRECAO = 40;
+const MAX_INSTALACOES = 12;
+
+/** Troca a posição `i` com a `i + sentido`, se existir. Para subir e descer numa lista. */
+function mover<T>(lista: T[], i: number, sentido: -1 | 1): T[] {
+  const j = i + sentido;
+  if (j < 0 || j >= lista.length) return lista;
+  const nova = [...lista];
+  [nova[i], nova[j]] = [nova[j], nova[i]];
+  return nova;
+}
 
 /* -------------------------------------------------------------------------- */
 /* Identidade                                                                   */
@@ -33,7 +45,7 @@ export function Identidade() {
   const [d, setD] = useState(site.identidade);
   const mudou = JSON.stringify(d) !== JSON.stringify(site.identidade);
 
-  const campo = (k: Exclude<keyof typeof d, "redes">) => ({
+  const campo = (k: Exclude<keyof typeof d, "redes" | "direcao" | "instalacoes">) => ({
     value: d[k],
     onChange: (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => setD({ ...d, [k]: e.target.value }),
   });
@@ -127,6 +139,17 @@ export function Identidade() {
         </div>
       </Bloco>
 
+      <Bloco titulo="Direção" descricao="Quem dirige o clube, pela ordem em que aparece na página do clube. Sem ninguém, a página não mostra a direção.">
+        <Direcao lista={d.direcao} onMudar={(direcao) => setD({ ...d, direcao })} />
+      </Bloco>
+
+      <Bloco
+        titulo="Instalações"
+        descricao="O estádio, o pavilhão, a sede: cada uma com nome, uma frase e fotografia. Aparecem na página do clube e gravam-se com o botão Guardar."
+      >
+        <Instalacoes lista={d.instalacoes} onMudar={(instalacoes) => setD({ ...d, instalacoes })} />
+      </Bloco>
+
       <div className="sticky bottom-0 flex justify-end gap-2 border-t border-line bg-canvas/95 py-3 backdrop-blur">
         <button type="button" className="ctl-ghost" disabled={!mudou} onClick={() => setD(site.identidade)}>
           Desfazer
@@ -139,13 +162,137 @@ export function Identidade() {
   );
 }
 
+/** Subir, descer e tirar: os três botões de uma linha de lista ordenada. */
+function BotoesDaLinha({ i, total, onMover, onTirar, nome }: { i: number; total: number; onMover: (s: -1 | 1) => void; onTirar: () => void; nome: string }) {
+  return (
+    <div className="flex shrink-0 items-center gap-0.5">
+      <button type="button" className="ctl-ghost size-9 justify-center px-0" disabled={i === 0} aria-label={`Subir ${nome}`} onClick={() => onMover(-1)}>
+        <ChevronUp className="size-4" strokeWidth={1.75} />
+      </button>
+      <button type="button" className="ctl-ghost size-9 justify-center px-0" disabled={i === total - 1} aria-label={`Descer ${nome}`} onClick={() => onMover(1)}>
+        <ChevronDown className="size-4" strokeWidth={1.75} />
+      </button>
+      <button type="button" className="ctl-ghost size-9 justify-center px-0 text-risk" aria-label={`Tirar ${nome}`} onClick={onTirar}>
+        <Trash2 className="size-4" strokeWidth={1.75} />
+      </button>
+    </div>
+  );
+}
+
+/** A direção: uma linha por pessoa, nome e cargo. Vive no rascunho da Identidade e grava com o mesmo Guardar. */
+function Direcao({ lista, onMudar }: { lista: Dirigente[]; onMudar: (l: Dirigente[]) => void }) {
+  const mudarLinha = (i: number, patch: Partial<Dirigente>) => onMudar(lista.map((x, k) => (k === i ? { ...x, ...patch } : x)));
+  return (
+    <div className="space-y-2">
+      {lista.length > 0 && (
+        <ul className="overflow-hidden rounded-[12px] border border-line bg-surface">
+          {lista.map((p, i) => (
+            <li key={i} className="flex flex-wrap items-center gap-2 border-b border-line px-3 py-2.5 last:border-b-0">
+              <input
+                className={cx(campoClass, "min-w-[160px] flex-1 font-medium")}
+                aria-label="Nome"
+                placeholder="Nome"
+                value={p.nome}
+                onChange={(e) => mudarLinha(i, { nome: e.target.value })}
+              />
+              <input
+                className={cx(campoClass, "min-w-[140px] flex-1")}
+                aria-label="Cargo"
+                placeholder="Presidente"
+                value={p.cargo}
+                onChange={(e) => mudarLinha(i, { cargo: e.target.value })}
+              />
+              <BotoesDaLinha
+                i={i}
+                total={lista.length}
+                nome={p.nome || "esta pessoa"}
+                onMover={(s) => onMudar(mover(lista, i, s))}
+                onTirar={() => onMudar(lista.filter((_, k) => k !== i))}
+              />
+            </li>
+          ))}
+        </ul>
+      )}
+      <button
+        type="button"
+        className="ctl-outline"
+        disabled={lista.length >= MAX_DIRECAO}
+        onClick={() => onMudar([...lista, { nome: "", cargo: "" }])}
+      >
+        <Plus className="size-4" strokeWidth={2} />
+        Acrescentar pessoa
+      </button>
+      {lista.some((p) => !p.nome.trim()) && <p className="text-meta text-ink-3">Uma linha sem nome não se grava.</p>}
+    </div>
+  );
+}
+
+/**
+ * As instalações: nome, uma frase e a fotografia.
+ *
+ * A fotografia carrega-se na hora (`CampoDeImagem` devolve o endereço já no
+ * armazenamento) mas só fica no site com o Guardar, como o resto da ficha: é
+ * um rascunho, e o botão é o mesmo.
+ */
+function Instalacoes({ lista, onMudar }: { lista: Instalacao[]; onMudar: (l: Instalacao[]) => void }) {
+  const mudarLinha = (i: number, patch: Partial<Instalacao>) => onMudar(lista.map((x, k) => (k === i ? { ...x, ...patch } : x)));
+  return (
+    <div className="space-y-2">
+      {lista.length > 0 && (
+        <ul className="overflow-hidden rounded-[12px] border border-line bg-surface">
+          {lista.map((x, i) => (
+            <li key={i} className="grid gap-3 border-b border-line px-3 py-3 last:border-b-0 sm:grid-cols-[200px_minmax(0,1fr)]">
+              <CampoDeImagem valor={x.imagem} onMudar={(imagem) => mudarLinha(i, { imagem })} max={1600} proporcao="aspect-[4/3]" />
+              <div className="min-w-0 space-y-2">
+                <div className="flex items-start gap-2">
+                  <input
+                    className={cx(campoClass, "min-w-0 flex-1 font-medium")}
+                    aria-label="Nome da instalação"
+                    placeholder="Estádio Municipal"
+                    value={x.nome}
+                    onChange={(e) => mudarLinha(i, { nome: e.target.value })}
+                  />
+                  <BotoesDaLinha
+                    i={i}
+                    total={lista.length}
+                    nome={x.nome || "esta instalação"}
+                    onMover={(s) => onMudar(mover(lista, i, s))}
+                    onTirar={() => onMudar(lista.filter((_, k) => k !== i))}
+                  />
+                </div>
+                <textarea
+                  className={cx(campoClass, "h-20 py-2")}
+                  aria-label="Descrição curta"
+                  placeholder="Relvado natural, bancada coberta com 800 lugares."
+                  value={x.descricao}
+                  onChange={(e) => mudarLinha(i, { descricao: e.target.value })}
+                />
+              </div>
+            </li>
+          ))}
+        </ul>
+      )}
+      <button
+        type="button"
+        className="ctl-outline"
+        disabled={lista.length >= MAX_INSTALACOES}
+        onClick={() => onMudar([...lista, { nome: "", descricao: "", imagem: "" }])}
+      >
+        <Plus className="size-4" strokeWidth={2} />
+        Acrescentar instalação
+      </button>
+      {lista.length >= MAX_INSTALACOES && <p className="text-meta text-ink-3">O site mostra até {MAX_INSTALACOES} instalações.</p>}
+    </div>
+  );
+}
+
 /* -------------------------------------------------------------------------- */
 /* Aspeto                                                                       */
 /* -------------------------------------------------------------------------- */
 
 const LAYOUTS: { key: Layout; nome: string; descricao: string }[] = [
-  { key: "classico", nome: "Clássico", descricao: "Cabeçalho em cima, três notícias em destaque, faixa do próximo jogo." },
-  { key: "porto", nome: "Porto", descricao: "Barra lateral com ícones, uma notícia de cada vez a toda a largura, cartaz do jogo." },
+  { key: "tribuna", nome: "Tribuna", descricao: "Claro. Cabeçalho em cima, três notícias em destaque, faixa do próximo jogo." },
+  { key: "holofote", nome: "Holofote", descricao: "Escuro. Barra lateral com ícones, uma notícia de cada vez a toda a largura, cartaz do jogo." },
 ];
 
 export function Aspeto() {
@@ -200,7 +347,7 @@ export function Aspeto() {
 /** Um desenho de cada layout, em blocos, para se escolher sem abrir o site. */
 function Miniatura({ layout }: { layout: Layout }) {
   const cor = "var(--color-signal)";
-  if (layout === "classico") {
+  if (layout === "tribuna") {
     return (
       <svg viewBox="0 0 160 100" className="w-full rounded-[8px] border border-line bg-canvas" aria-hidden>
         <rect x="0" y="0" width="160" height="6" fill="#1a1917" />

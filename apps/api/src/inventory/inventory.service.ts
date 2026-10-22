@@ -7,6 +7,8 @@ import { athleteScopeFilter, can, type RequestContext } from "../common/permissi
 import { currentSeason } from "../common/seasons";
 import { EspacoService } from "../storage/espaco.service";
 import { BillingService } from "../billing/billing.service";
+import { SiteService } from "../site/site.service";
+import type { ProdutoDoInventarioDto } from "../site/site.dto";
 import type {
   AssignDto,
   AssignLoteDto,
@@ -26,7 +28,8 @@ import type {
  * confirmar). Guardam-se **chaves**, nunca endereços: um link assinado expira, e
  * um link expirado na base é uma imagem partida para sempre.
  */
-export const INVENTORY_BUCKET = "inventario";
+export { INVENTORY_BUCKET } from "./inventory.bucket";
+import { INVENTORY_BUCKET } from "./inventory.bucket";
 const IMAGE_TTL = 6 * 60 * 60;
 const IMAGE_MAX_BYTES = 8 * 1024 * 1024;
 const IMAGE_TYPES = ["image/jpeg", "image/png", "image/webp"];
@@ -69,6 +72,8 @@ export class InventoryService {
     private readonly espaco: EspacoService,
     /** As cobranças do pagamento de uma entrega. Ver `definirPagamento`. */
     private readonly billing: BillingService,
+    /** A loja do site do clube, para os artigos à venda. Ver `porAVendaNoSite`. */
+    private readonly site: SiteService,
   ) {}
 
   private mustRead(ctx: RequestContext) {
@@ -224,6 +229,11 @@ export class InventoryService {
         ...this.serializeItem(row),
         notes: row.notes,
         images: imagens.filter((i) => i.url !== null),
+        /**
+         * A loja do site: nulo em clubes sem o site no plano (a ficha não
+         * mostra o painel); senão, se está à venda e com que produto.
+         */
+        site: await this.site.produtoDoArtigo(db, ctx.academyId, id),
         movements: movimentos.map((m) => ({
           id: m.id,
           type: m.type,
@@ -744,6 +754,10 @@ export class InventoryService {
       }
 
       return { ok: true };
+    }).then((r) => {
+      // Um nome novo chega ao produto do site, se o artigo lá estiver. Sem esperar.
+      if (dto.name !== undefined) this.site.sincronizarArtigo(ctx.academyId, id);
+      return r;
     });
   }
 
@@ -950,6 +964,25 @@ export class InventoryService {
     return { ...signed, key, maxBytes: IMAGE_MAX_BYTES };
   }
 
+  /* ---------------------------------------------------------------------- */
+  /* A loja do site                                                          */
+  /* ---------------------------------------------------------------------- */
+
+  /**
+   * Pôr este artigo à venda no site do clube (ou mudar-lhe o preço).
+   *
+   * A regra vive no site (`SiteService.ligarAoInventario`): é o site que
+   * decide quem pode e se o plano o inclui. Aqui só se passa a chamada, para
+   * a ficha do artigo ter um endereço só seu.
+   */
+  porAVendaNoSite(ctx: RequestContext, itemId: string, dto: ProdutoDoInventarioDto) {
+    return this.site.ligarAoInventario(ctx, itemId, dto);
+  }
+
+  tirarDoSite(ctx: RequestContext, itemId: string) {
+    return this.site.desligarDoInventario(ctx, itemId);
+  }
+
   /** Passo 3: confirmar que o ficheiro chegou e juntar a chave à ficha. */
   async addImage(ctx: RequestContext, itemId: string, key: string) {
     this.mustWrite(ctx);
@@ -973,6 +1006,8 @@ export class InventoryService {
       }
     });
 
+    // Se o artigo está à venda no site, a primeira fotografia acompanha. Sem esperar.
+    this.site.sincronizarArtigo(ctx.academyId, itemId);
     return { key, url: await this.storage.signDownload(INVENTORY_BUCKET, key, IMAGE_TTL) };
   }
 
@@ -993,6 +1028,7 @@ export class InventoryService {
     // Fora da transacção: apagar o ficheiro é irreversível, e se a transacção
     // desfizesse a seguir ficava a ficha com uma chave sem ficheiro por trás.
     if (tinha) await this.storage.remove(INVENTORY_BUCKET, key);
+    if (tinha) this.site.sincronizarArtigo(ctx.academyId, itemId);
     return { ok: true };
   }
 

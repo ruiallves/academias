@@ -41,10 +41,13 @@ export {
   Clapperboard as Film,
   Bell,
   Plus,
+  /* A pega de arrastar (a página de início do site). */
+  GripVertical,
   Check,
   Copy,
   X,
   ChevronDown,
+  ChevronUp,
   ChevronRight,
   ChevronLeft,
   ChevronsUpDown,
@@ -152,6 +155,10 @@ export {
   LayoutTemplate,
   /* O recinto visto de cima, no menu Website. */
   LandPlot as Recinto,
+  /* A bilheteira: a porta do recinto, a chave do segurança, o lugar anual do sócio. */
+  DoorOpen as Porta,
+  KeyRound,
+  Armchair as LugarAnual,
 } from "lucide-react";
 
 /* -------------------------------------------------------------------------- */

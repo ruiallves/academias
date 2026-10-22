@@ -43,7 +43,14 @@ export async function proxy(req: NextRequest) {
   }
 
   url.pathname = `/${clube.slug}${path === "/" ? "" : path}`;
-  return NextResponse.rewrite(url);
+  const resposta = NextResponse.rewrite(url);
+  // A página de uma compra de bilhetes: o token no endereço é o acesso aos
+  // bilhetes. Fora do Google (também tem `noindex`) e sem o endereço no Referer.
+  if (path.startsWith("/bilhete/")) {
+    resposta.headers.set("X-Robots-Tag", "noindex, nofollow");
+    resposta.headers.set("Referrer-Policy", "no-referrer");
+  }
+  return resposta;
 }
 
 export const config = {

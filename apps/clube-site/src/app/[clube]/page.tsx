@@ -1,7 +1,7 @@
 import { fonte, proximoEUltimo } from "@/dados/fonte";
 import { clubeOu404, layoutAtual } from "@/lib/clube";
-import { InicioClassico } from "@/layouts/classico/Inicio";
-import { InicioPorto } from "@/layouts/porto/Inicio";
+import { InicioTribuna } from "@/layouts/tribuna/Inicio";
+import { InicioHolofote } from "@/layouts/holofote/Inicio";
 
 export const revalidate = 60;
 
@@ -19,5 +19,5 @@ export default async function Inicio({ params }: { params: Promise<{ clube: stri
     fonte.produtos(clube.slug),
   ]);
   const dados = { clube, noticias, ...jogos, equipas, produtos };
-  return layout === "porto" ? <InicioPorto {...dados} /> : <InicioClassico {...dados} />;
+  return layout === "holofote" ? <InicioHolofote {...dados} /> : <InicioTribuna {...dados} />;
 }

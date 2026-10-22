@@ -1,6 +1,6 @@
 import { Body, Controller, Delete, Get, Param, Patch, Post, Put, Req } from "@nestjs/common";
 import type { AuthedRequest } from "../auth/auth.guard";
-import { AtualizarSiteDto, BilheteiraDto, ImagemDto, NoticiaDto, PatrocinadorDto, ProdutoDto } from "./site.dto";
+import { AtualizarSiteDto, BilheteiraDto, ImagemDto, MensagemDto, NoticiaDto, PatrocinadorDto, PrecosBilheteiraDto, ProdutoDto } from "./site.dto";
 import { SiteService } from "./site.service";
 
 /**
@@ -71,6 +71,12 @@ export class SiteController {
     return this.site.gravarBilheteira(req.ctx, matchId, dto);
   }
 
+  /** Os preços por omissão da bilheteira, por recinto. */
+  @Put("bilheteira-precos")
+  gravarPrecos(@Req() req: AuthedRequest, @Body() dto: PrecosBilheteiraDto) {
+    return this.site.gravarPrecos(req.ctx, dto.porRecinto);
+  }
+
   @Delete("bilheteira/:matchId")
   apagarBilheteira(@Req() req: AuthedRequest, @Param("matchId") matchId: string) {
     return this.site.apagarBilheteira(req.ctx, matchId);
@@ -79,5 +85,22 @@ export class SiteController {
   @Post("imagens")
   assinarImagem(@Req() req: AuthedRequest, @Body() dto: ImagemDto) {
     return this.site.assinarImagem(req.ctx, dto.contentType);
+  }
+
+  /* As mensagens do formulário de contactos do site. */
+
+  @Get("mensagens")
+  mensagens(@Req() req: AuthedRequest) {
+    return this.site.mensagens(req.ctx);
+  }
+
+  @Patch("mensagens/:id")
+  mudarMensagem(@Req() req: AuthedRequest, @Param("id") id: string, @Body() dto: MensagemDto) {
+    return this.site.mudarMensagem(req.ctx, id, dto);
+  }
+
+  @Delete("mensagens/:id")
+  apagarMensagem(@Req() req: AuthedRequest, @Param("id") id: string) {
+    return this.site.apagarMensagem(req.ctx, id);
   }
 }

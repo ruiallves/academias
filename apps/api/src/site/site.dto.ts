@@ -1,4 +1,4 @@
-import { IsBoolean, IsIn, IsInt, IsNumber, IsObject, IsOptional, IsString, Length, Max, MaxLength, Min, IsArray } from "class-validator";
+import { IsBoolean, IsEmail, IsIn, IsInt, IsISO8601, IsNumber, IsObject, IsOptional, IsString, Length, Max, MaxLength, Min, IsArray } from "class-validator";
 import { LAYOUTS } from "./site.tipos";
 
 /**
@@ -14,6 +14,42 @@ export class AtualizarSiteDto {
   @IsOptional() @IsObject() identidade?: Record<string, unknown>;
   @IsOptional() @IsObject() equipas?: Record<string, unknown>;
   @IsOptional() @IsArray() recintos?: unknown[];
+  /** A página de início: a ordem das secções e o banner. Ver `inicioValido`. */
+  @IsOptional() @IsObject() inicio?: Record<string, unknown>;
+}
+
+/** O estado de uma mensagem do formulário de contactos. Só se mexe no que vier. */
+export class MensagemDto {
+  @IsOptional() @IsBoolean() lida?: boolean;
+  @IsOptional() @IsBoolean() tratada?: boolean;
+}
+
+/**
+ * Pôr um artigo do Inventário à venda no site, ou mudar-lhe o preço. Os
+ * tamanhos e o esgotado não entram: saem do stock do artigo.
+ */
+export class ProdutoDoInventarioDto {
+  /** Em euros. */
+  @IsNumber({ maxDecimalPlaces: 2 }) @Min(0) @Max(10_000) preco!: number;
+  @IsOptional() @IsString() @MaxLength(40) categoria?: string;
+  @IsOptional() @IsString() @MaxLength(2000) descricao?: string;
+  @IsOptional() @IsBoolean() visivel?: boolean;
+}
+
+/**
+ * Uma mensagem do formulário de contactos do site do clube. O resto do
+ * crivo (ficha, repetições, tectos) está em `SitePublicoService.contacto`.
+ */
+export class ContactoDoSiteDto {
+  @IsString() @Length(2, 120) nome!: string;
+  @IsEmail() @Length(3, 254) email!: string;
+  @IsOptional() @IsString() @MaxLength(40) telefone?: string;
+  @IsString() @Length(2, 80) assunto!: string;
+  @IsString() @Length(2, 4000) mensagem!: string;
+  /** O campo-armadilha: ninguém o vê; um robô que preenche tudo preenche-o. */
+  @IsOptional() @IsString() @MaxLength(200) notaExtra?: string;
+  /** A ficha que o formulário pediu ao abrir. Ver `FichaDoSite`. */
+  @IsOptional() @IsString() @MaxLength(200) ficha?: string;
 }
 
 export class NoticiaDto {
@@ -51,7 +87,19 @@ export class BilheteiraDto {
   @IsOptional() @IsString() @MaxLength(60) recintoId?: string | null;
   @IsOptional() @IsInt() @Min(1) @Max(200_000) lotacao?: number | null;
   @IsOptional() @IsString() @MaxLength(500) nota?: string;
+  /** Os preços deste jogo. Vazio num jogo novo: copiam-se os preços por omissão do recinto. */
   @IsArray() tipos!: unknown[];
+  /** Fases da venda (ISO). Nulo = desde que abre. */
+  @IsOptional() @IsISO8601() sociosDesde?: string | null;
+  @IsOptional() @IsISO8601() publicoDesde?: string | null;
+  @IsOptional() @IsBoolean() soSocios?: boolean;
+  /** Quando fecha. Nulo = à hora do jogo. */
+  @IsOptional() @IsISO8601() fechaEm?: string | null;
+}
+
+/** Os preços por omissão da bilheteira: por recinto, os tipos (bancada × público ou categoria de sócio). */
+export class PrecosBilheteiraDto {
+  @IsObject() porRecinto!: Record<string, unknown[]>;
 }
 
 /**

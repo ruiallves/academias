@@ -5,7 +5,7 @@ import { KIND_LABEL, kindOfEventType, type EventKind } from "@/lib/calendar";
 import { matchTitle } from "@/lib/callups";
 import { listTeams, teamById } from "@/lib/api";
 import { apiPost } from "@/lib/http";
-import { reloadAcademy } from "@/lib/store";
+import { reloadAcademy, useStore } from "@/lib/store";
 import { useActiveCatalog } from "@/lib/catalogs";
 import { longDate } from "@/lib/format";
 import { Settings } from "@/lib/icons";
@@ -14,6 +14,7 @@ import { Dialog, DialogField, dialogInputClass } from "./Dialog";
 import { TokenPicker } from "./TokenPicker";
 import { CampoAdversario } from "./CampoAdversario";
 import { Repetir, useRepeticao } from "./Repetir";
+import { Interruptor } from "./definicoes/ui";
 import { cx, SelectField } from "./primitives";
 
 /**
@@ -57,6 +58,7 @@ export function NewEventDialog({
   onClose: () => void;
 }) {
   const teams = listTeams(session);
+  const store = useStore();
   const venues = useActiveCatalog("venues");
   const dressingRooms = useActiveCatalog("dressingRooms");
   /*
@@ -121,6 +123,12 @@ export function NewEventDialog({
   const [opponent, setOpponent] = useState("");
   const [isHome, setIsHome] = useState(true);
   const [competitionId, setCompetitionId] = useState("");
+  /*
+   * Mostrar no site do clube. Desligado por omissão: um evento vai para um
+   * site público só com alguém a dizer que sim. Só nos eventos que não são
+   * treino nem jogo (esses têm a sua própria porta para o site, as equipas).
+   */
+  const [isPublic, setIsPublic] = useState(false);
 
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -169,6 +177,8 @@ export function NewEventDialog({
    * estágios e reuniões, onde faz sentido.
    */
   const needsTeam = isMatch || kind === "training";
+  /** O interruptor do site: só com o site no plano, e nunca num treino nem num jogo. */
+  const podeIrParaOSite = !needsTeam && store.academy.websiteIncluido;
 
   const teamName = teams.find((t) => t.id === teamId)?.name;
   /*
@@ -258,6 +268,7 @@ export function NewEventDialog({
         ...(kind === "training" ? { respondBy } : {}),
         ...(isMatch ? { opponent: opponent.trim(), isHome } : {}),
         ...(isMatch && competitionId ? { competitionId } : {}),
+        ...(podeIrParaOSite && isPublic ? { isPublic: true } : {}),
         ...(repeticao.repeat ? { repeat: repeticao.repeat } : {}),
       });
       await reloadAcademy();
@@ -596,6 +607,16 @@ export function NewEventDialog({
             placeholder="Procurar balneário…"
             emptyLabel="Nenhum atribuído — escreve ou abre a lista para escolher."
           />
+        )}
+
+        {podeIrParaOSite && (
+          <div className="flex items-center justify-between gap-3 rounded-[var(--radius-control)] border border-line px-3 py-2.5">
+            <span className="min-w-0">
+              <span className="block text-body text-ink">Mostrar no site do clube</span>
+              <span className="block text-meta text-ink-3">Entra na agenda pública do site, com o título, a data e o local.</span>
+            </span>
+            <Interruptor ligado={isPublic} onChange={() => setIsPublic(!isPublic)} label="Mostrar no site do clube" />
+          </div>
         )}
 
         {error && (

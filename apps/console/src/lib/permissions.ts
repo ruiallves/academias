@@ -183,6 +183,12 @@ export type Permission =
    * omissão, porque um caso pode ser sobre um treinador ou um coordenador.
    */
   | "conduct:read" | "conduct:write"
+  /**
+   * O site do clube (menu Website). Gémea do servidor: vivia em
+   * `settings:write`; agora é própria, para a direção a dar a quem trata da
+   * comunicação sem lhe dar as Definições. Por omissão, presidência e direção.
+   */
+  | "website:read" | "website:write"
   | "clinical:write";
 
 export type Role =
@@ -223,6 +229,8 @@ const READ_ALL: Permission[] = [
   "registration:read",
   // As denúncias: o coordenador filtra-as abaixo. Gémea do servidor.
   "conduct:read",
+  // O site do clube: o mesmo. Gémea do servidor.
+  "website:read",
 ];
 
 const WRITE_ALL: Permission[] = [
@@ -257,6 +265,8 @@ const WRITE_ALL: Permission[] = [
   "registration:write",
   // Responder às denúncias e fechá-las. Gémea do servidor.
   "conduct:write",
+  // Publicar no site do clube. Gémea do servidor.
+  "website:write",
   // Vincular o clube aos termos: presidência e direção, como `settings:write`.
   "legal:club",
 ];
@@ -288,7 +298,9 @@ export const ROLE_PERMISSIONS: Record<Role, Permission[]> = {
       (p) =>
         p !== "billing:read" && p !== "member:read" && p !== "inventory:read" && p !== "finance:read" &&
         // As denúncias são da direção. Gémeo do servidor.
-        p !== "conduct:read",
+        p !== "conduct:read" &&
+        // O site é da direção, como as Definições eram. Gémeo do servidor.
+        p !== "website:read",
     ),
     "athlete:write",
     "team:write",

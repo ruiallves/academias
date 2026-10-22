@@ -104,6 +104,14 @@ export class CreateEventDto {
   dressingRooms?: string[];
 
   /**
+   * Mostrar no site do clube. Só nos eventos do calendário (não em treinos
+   * nem jogos, que o serviço ignora); falso por omissão. Ver `CalendarEvent.isPublic`.
+   */
+  @IsOptional()
+  @IsBoolean()
+  isPublic?: boolean;
+
+  /**
    * O tipo escolhido no catálogo "Tipos de evento" das Definições.
    *
    * O `kind` continua a decidir a **estrutura** (que tabela, que ecrãs abre);
@@ -261,6 +269,8 @@ export class EditEventDto {
   @IsOptional() @IsArray() @ArrayMaxSize(12) @IsString({ each: true }) @Length(1, 80, { each: true }) dressingRooms?: string[];
   /** String vazia tira o tipo. Ver `CreateEventDto.typeId`. */
   @IsOptional() @IsString() @Length(0, 40) typeId?: string;
+  /** Mostrar no site do clube. Ver `CreateEventDto.isPublic`. */
+  @IsOptional() @IsBoolean() isPublic?: boolean;
   @IsOptional() @IsString() @Length(1, 80) opponent?: string;
   @IsOptional() @IsBoolean() isHome?: boolean;
   @IsOptional() @IsString() @Length(1, 40) competitionId?: string;

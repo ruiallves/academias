@@ -21,7 +21,7 @@ export default async function Loja({ params, searchParams }: Props) {
 
   return (
     <>
-      <CabecalhoPagina eyebrow="Loja oficial" titulo="Veste o clube" linha="Equipamento de jogo, roupa e artigos de adepto. Levantamento na sede ou envio por correio." />
+      <CabecalhoPagina eyebrow="Loja oficial" titulo="Veste o clube" linha="Equipamento de jogo, roupa e artigos de adepto. A compra online abre em breve; até lá, encomenda pelos contactos do clube." />
       <div className="container-site mt-8">
         <nav aria-label="Categorias" className="-mx-4 overflow-x-auto px-4 [scrollbar-width:none] sm:mx-0 sm:px-0">
           <ul className="flex gap-2">

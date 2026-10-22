@@ -91,7 +91,7 @@ model Academy {
   /// quem não tem escalão e para as equipas que ainda não têm os seus. Um mês
   /// desligado num escalão não existe para os atletas desse escalão. Ver
   /// `calendarioPara` e `cobraAoAtleta` em `billing.service.ts`.
-  billingByTeam Boolean @default(false)
+  billingByTeam     Boolean  @default(false)
   /// O modo agendado para a próxima época, com `billingNextFrom`. Nulo = o de agora.
   billingNextByTeam Boolean?
 
@@ -330,7 +330,7 @@ model Academy {
   /// O domínio próprio, sem `www.` e em minúsculas ("adfafe.pt"). Nulo = o
   /// site vive só em `<slug>.website.academias.pt`. Posto pelo painel da
   /// plataforma, que o liga ao projeto no Vercel. Ver `docs/08-site-do-clube.md`.
-  siteDomain         String?   @unique
+  siteDomain         String?            @unique
   /// Quando o registo do domínio se renova. Só para o painel avisar.
   siteDomainRenewsAt DateTime?
   siteConfig         SiteConfig?
@@ -338,6 +338,12 @@ model Academy {
   siteSponsors       SiteSponsor[]
   siteProducts       SiteProduct[]
   siteMatchTickets   SiteMatchTickets[]
+  siteMessages       SiteMessage[]
+  ticketOrders       TicketOrder[]
+  matchTickets       MatchTicket[]
+  seasonSeats        SeasonSeat[]
+  ticketGateAccesses TicketGateAccess[]
+  ticketScans        TicketScan[]
 }
 
 /// O ciclo de vida de um cliente. Derivado do onboarding e da subscrição — o
@@ -448,6 +454,9 @@ model Season {
   /// A candidatura à certificação FPF desta época.
   certificationProcesses CertificationProcess[]
 
+  /// Os lugares anuais de sócios nesta época.
+  seasonSeats SeasonSeat[]
+
   @@unique([academyId, label])
   @@index([academyId])
 }
@@ -464,13 +473,13 @@ model Season {
 
 /// Espelho local do utilizador do Supabase Auth. A password nunca passa por aqui.
 model User {
-  id     String  @id @default(cuid())
+  id        String    @id @default(cuid())
   /// `auth.users.id` do Supabase.
-  authId String  @unique
-  email  String  @unique
-  name   String
-  phone  String?
-  locale String  @default("pt-PT")
+  authId    String    @unique
+  email     String    @unique
+  name      String
+  phone     String?
+  locale    String    @default("pt-PT")
   /// A data de nascimento de quem trabalha no clube. Opcional; é da pessoa, como
   /// o telefone, e serve os aniversários do calendário. Os atletas e os sócios
   /// têm a sua na ficha deles.
@@ -1127,7 +1136,7 @@ model Athlete {
 
   guardians      GuardianLink[]
   /// A ficha de sócio deste atleta, se o clube o converteu (ver `Member.athleteId`).
-  fichasDeSocio  Member[]       @relation("SocioAtleta")
+  fichasDeSocio  Member[]             @relation("SocioAtleta")
   teams          TeamMembership[]
   attendance     AttendanceRecord[]
   nutritionPlans NutritionPlan[]
@@ -1389,6 +1398,8 @@ model TrainingSession {
    * ---- Plano de treino (Área técnica) -----------------------------------
    */
   /**
+   * /**
+   * /**
    * /**
    * /**
    * /**
@@ -2111,7 +2122,7 @@ model Charge {
   statusChangedBy   User?     @relation("ChargeStatusChangedBy", fields: [statusChangedById], references: [id], onDelete: SetNull)
   statusChangedAt   DateTime? @db.Timestamptz(3)
 
-  payments Payment[]
+  payments            Payment[]
   /// A entrega de equipamento que esta cobrança paga, quando é uma.
   inventoryAssignment InventoryAssignment? @relation("InventoryAssignmentCharge")
 
@@ -2195,6 +2206,10 @@ model Payment {
   /// fazer sentido. **O que o pagamento liquida está em `memberFees`.**
   memberFeeId String?
   memberFee   MemberFee? @relation(fields: [memberFeeId], references: [id], onDelete: Cascade)
+
+  /// Uma compra de bilhetes. Ver `TicketOrder`.
+  ticketOrderId String?
+  ticketOrder   TicketOrder? @relation(fields: [ticketOrderId], references: [id], onDelete: Restrict)
 
   /// Todas as quotas que este pagamento liquida, da mais antiga para a mais
   /// recente. Ver a migração `20260910120000_quotas_varios_meses`.
@@ -2553,6 +2568,8 @@ model Match {
   /// Preenchidos só depois de jogado — é a ausência do resultado que decide se a
   /// UI mostra a convocatória ou a estatística.
   /**
+   * /**
+   * /**
    * /**
    * /**
    * /**
@@ -3018,6 +3035,14 @@ model CalendarEvent {
   /// Cancelado mas não apagado: o evento continua a aparecer riscado, porque um
   /// treino que se desmarca é informação — as famílias precisam de a ver.
   cancelled Boolean @default(false)
+
+  /// Aparece no site público do clube (calendário, "Eventos").
+  ///
+  /// Falso por omissão, e é uma decisão por evento: uma assembleia geral ou um
+  /// jantar de Natal publicam-se; uma reunião de pais ou uma cedência de campo
+  /// não. Os treinos e os jogos não passam por aqui (vivem noutras tabelas), e
+  /// os treinos nunca saem para o site. Só conta em clubes com o site no plano.
+  isPublic Boolean @default(false)
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -4120,9 +4145,12 @@ model Member {
   inviteTokenHash String?   @unique
   inviteSentAt    DateTime?
 
-  fees      MemberFee[]
-  feeSkips  MemberFeeSkip[]
-  pollVotes PollVote[]
+  fees         MemberFee[]
+  feeSkips     MemberFeeSkip[]
+  /// Os lugares anuais deste sócio (um por época e recinto) e as compras de bilhetes ao preço de sócio.
+  seasonSeats  SeasonSeat[]
+  ticketOrders TicketOrder[]
+  pollVotes    PollVote[]
 
   /// ## O consentimento é um carimbo, não uma caixa
   ///
@@ -5513,6 +5541,10 @@ model InventoryItem {
 
   variants InventoryVariant[]
 
+  /// O produto da loja do site que vende este artigo, se o clube o pôs à venda.
+  /// Ver `SiteProduct.inventoryItemId`.
+  siteProduct SiteProduct?
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
@@ -6877,7 +6909,6 @@ model PlayerRegistration {
  */
 /**
  * O site do clube
- *
  * Ver `docs/08-site-do-clube.md` e a migração `20261013120000_site_do_clube`.
  * O site público (`apps/clube-site`) lê isto pelos endpoints `/public/sites`,
  * só de clubes com `SiteConfig.published`.
@@ -6889,18 +6920,25 @@ model PlayerRegistration {
 /// A configuração do site: uma linha por clube, criada da primeira vez que se
 /// grava. Sem linha = site por publicar.
 model SiteConfig {
-  academyId String  @id
-  academy   Academy @relation(fields: [academyId], references: [id], onDelete: Cascade)
+  academyId      String  @id
+  academy        Academy @relation(fields: [academyId], references: [id], onDelete: Cascade)
   /// Falso = os endpoints públicos respondem 404 para este clube.
-  published Boolean @default(false)
-  /// "classico" ou "porto".
-  layout    String  @default("classico")
+  published      Boolean @default(false)
+  /// "tribuna" (claro) ou "holofote" (escuro). Ver `LAYOUTS` em `src/site/site.tipos.ts`.
+  layout         String  @default("tribuna")
   /// Lema, apresentação, história, fundação, morada, contactos e redes.
-  identity  Json    @default("{}")
+  identity       Json    @default("{}")
   /// Por equipa: `{ visivel, plantel }`. Sem entrada = aparece, sem plantel.
-  teams     Json    @default("{}")
+  teams          Json    @default("{}")
   /// Os recintos vistos de cima. Ver `packages/ui/src/estadio.tsx`.
-  venues    Json    @default("[]")
+  venues         Json    @default("[]")
+  /// A página de início: a ordem das secções e o banner. Ver `inicioValido`
+  /// em `src/site/site.tipos.ts`. Vazio = a ordem de origem.
+  home           Json    @default("{}")
+  /// Os preços por omissão da bilheteira, por recinto: os tipos de bilhete
+  /// (bancada × público ou categoria de sócio) com que cada jogo nasce. Cada
+  /// jogo copia-os e pode mudá-los. Ver `tiposValidos` em `site.tipos.ts`.
+  ticketDefaults Json    @default("{}")
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -6956,10 +6994,57 @@ model SiteProduct {
   visible     Boolean @default(true)
   position    Int     @default(0)
 
+  /// O artigo do Inventário que este produto vende, quando o clube pôs um
+  /// artigo do armazém à venda no site.
+  ///
+  /// Com ele, os tamanhos e o "esgotado" **não se escrevem aqui**: saem do
+  /// stock disponível das variantes do artigo, na leitura. O nome, o preço, a
+  /// categoria e a descrição continuam a ser do produto (o preço de venda não
+  /// é um dado do armazém). Um artigo arquivado tira o produto do site sem o
+  /// apagar; apagar o artigo de vez apaga o produto (cascata).
+  ///
+  /// Só em clubes com o site no plano (Connect Pro): quem liga confere
+  /// (`SiteService.ligarAoInventario`). Único: um artigo é um produto.
+  inventoryItemId String?        @unique
+  inventoryItem   InventoryItem? @relation(fields: [inventoryItemId], references: [id], onDelete: Cascade)
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
   @@index([academyId, position])
+}
+
+/// Uma mensagem enviada pelo formulário de contactos do site do clube.
+///
+/// É a caixa de entrada do clube, não a nossa (essa são os `Ticket` do site de
+/// marketing). Quem escreve é um estranho sem sessão; o clube lê-a no menu
+/// Website › Mensagens e responde pelo email dele. Não há "enviar resposta"
+/// daqui, pela mesma razão dos tickets: a resposta sai do correio de quem
+/// responde, e o que fica aqui é o estado (lida, tratada).
+model SiteMessage {
+  id        String  @id @default(cuid())
+  academyId String
+  academy   Academy @relation(fields: [academyId], references: [id], onDelete: Cascade)
+
+  name    String
+  email   String
+  phone   String?
+  /// O assunto escolhido na lista do formulário ("Sócios e quotas", "Bilhetes"…).
+  subject String
+  message String
+  /// O endereço de onde veio, para se perceber uma enxurrada. Só isso.
+  ip      String?
+
+  /// Alguém do clube abriu-a.
+  readAt        DateTime?
+  /// Alguém do clube deu-a por respondida ou arrumada, e quem.
+  handledAt     DateTime?
+  handledByName String?
+
+  createdAt DateTime @default(now())
+
+  @@index([academyId, createdAt])
+  @@index([academyId, handledAt])
 }
 
 /// A bilheteira de um jogo no site: a configuração, não a venda (ainda não
@@ -6975,15 +7060,239 @@ model SiteMatchTickets {
   note      String  @default("")
   types     Json    @default("[]")
 
+  /// Quando os sócios podem começar a comprar. Nulo = desde que a venda abre.
+  membersFrom DateTime?
+  /// Quando o público geral pode começar a comprar. Nulo = desde que a venda
+  /// abre. `membersOnly` fecha-a ao público de vez (jogo só para sócios).
+  publicFrom  DateTime?
+  membersOnly Boolean   @default(false)
+  /// Quando a venda fecha. Nulo = à hora do jogo.
+  closesAt    DateTime?
+
+  orders TicketOrder[]
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
   @@index([academyId])
 }
 
-/* -------------------------------------------------------------------------- */
-/* Conduta: o canal de denúncia e os documentos de conduta                     */
-/* -------------------------------------------------------------------------- */
+/**
+ * --------------------------------------------------------------------------
+ */
+/**
+ * Bilheteira
+ */
+/**
+ * --------------------------------------------------------------------------
+ */
+
+/// Uma compra de bilhetes para um jogo: quem comprou, como pagou, e os
+/// bilhetes que leva. Os lugares ficam guardados enquanto a compra está
+/// `RESERVED` e `reservedUntil` não passou (10 minutos); depois disso voltam à
+/// venda. Ver `src/bilheteira/`.
+model TicketOrder {
+  id        String           @id @default(cuid())
+  academyId String
+  academy   Academy          @relation(fields: [academyId], references: [id], onDelete: Cascade)
+  matchId   String
+  /// Restrict: uma venda (e o jogo dela) com compras não se apaga, ou as compras pagas iam atrás sem reembolso registado.
+  sale      SiteMatchTickets @relation(fields: [matchId], references: [matchId], onDelete: Restrict)
+
+  status  TicketOrderStatus @default(RESERVED)
+  channel TicketChannel     @default(SITE)
+
+  buyerName  String
+  buyerEmail String
+  buyerPhone String?
+  /// O sócio que comprou ao preço de sócio (identificado por número e data de
+  /// nascimento no site, ou pela conta na app). Nulo = público geral.
+  memberId   String?
+  member     Member? @relation(fields: [memberId], references: [id], onDelete: SetNull)
+
+  totalCents    Int
+  /// Até quando os lugares estão guardados à espera do pagamento.
+  reservedUntil DateTime
+  paidAt        DateTime?
+  /// Anulada pelo clube (jogo cancelado, engano).
+  cancelledAt   DateTime?
+
+  /// Um reembolso por fazer: pago depois dos 10 minutos, ou anulada depois de
+  /// paga. Na primeira versão o clube devolve por fora e marca-o aqui.
+  refundDueCents Int?
+  refundedAt     DateTime?
+  refundNote     String?
+
+  /// A página do bilhete no site abre com isto (aleatório, sem dados pessoais no endereço).
+  accessToken String @unique
+
+  tickets  MatchTicket[]
+  payments Payment[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([academyId, matchId, status])
+  @@index([matchId, status, reservedUntil])
+  @@index([memberId])
+}
+
+enum TicketOrderStatus {
+  /// À espera do pagamento; os lugares estão guardados até `reservedUntil`.
+  RESERVED
+  PAID
+  /// O prazo passou sem pagamento: os lugares voltaram à venda.
+  EXPIRED
+  /// Pago depois do prazo: sem bilhetes, com reembolso por fazer.
+  LATE_PAYMENT
+  /// Anulada pelo clube.
+  CANCELLED
+}
+
+enum TicketChannel {
+  SITE
+  APP
+}
+
+/// Um bilhete: uma pessoa, uma bancada, um jogo. O QR leva o id assinado
+/// (`T.<id>.<assinatura>`), por isso não se adivinha nem se copia para outro
+/// jogo, e não há código guardado que possa vazar.
+model MatchTicket {
+  id        String      @id @default(cuid())
+  academyId String
+  academy   Academy     @relation(fields: [academyId], references: [id], onDelete: Cascade)
+  orderId   String
+  order     TicketOrder @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  /// Repetido da compra, para contar lugares por jogo sem juntar tabelas.
+  matchId   String
+
+  /// O tipo de bilhete do jogo (`SiteMatchTickets.types[].id`), e o que ele era
+  /// no momento da compra: o clube pode mudar o preço depois, e este bilhete
+  /// custou o que custou.
+  typeId     String
+  typeName   String
+  bancadaId  String
+  priceCents Int
+  /// Bilhete de sócio: o sócio a quem pertence (um por sócio por jogo).
+  memberId   String?
+
+  status     MatchTicketStatus @default(VALID)
+  usedAt     DateTime?
+  usedGateId String?
+
+  scans TicketScan[]
+
+  createdAt DateTime @default(now())
+
+  @@index([matchId, bancadaId, status])
+  @@index([orderId])
+  @@index([matchId, memberId])
+}
+
+enum MatchTicketStatus {
+  VALID
+  USED
+  VOID
+}
+
+/// O lugar anual de um sócio numa época: a bancada (e o lugar, se for
+/// numerado). Desconta da lotação vendável da bancada em todos os jogos em
+/// casa dessa época, e o sócio entra com o QR do cartão de sócio.
+model SeasonSeat {
+  id        String  @id @default(cuid())
+  academyId String
+  academy   Academy @relation(fields: [academyId], references: [id], onDelete: Cascade)
+  memberId  String
+  member    Member  @relation(fields: [memberId], references: [id], onDelete: Cascade)
+  seasonId  String
+  season    Season  @relation(fields: [seasonId], references: [id], onDelete: Cascade)
+
+  venueId   String
+  bancadaId String
+  /// "Fila C, lugar 12". Vazio numa bancada sem lugares marcados.
+  seat      String?
+  notes     String?
+
+  scans TicketScan[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([memberId, seasonId, venueId])
+  @@unique([seasonId, venueId, bancadaId, seat])
+  @@index([academyId, seasonId, venueId, bancadaId])
+}
+
+/// O acesso de um segurança ao leitor: um link por jogo e por porta, mais um
+/// PIN. Não é uma conta: abre só o leitor desse jogo nessa porta, e caduca no
+/// fim do dia do jogo. O link e o PIN guardam-se só como resumo.
+model TicketGateAccess {
+  id        String  @id @default(cuid())
+  academyId String
+  academy   Academy @relation(fields: [academyId], references: [id], onDelete: Cascade)
+  matchId   String
+  /// A porta do recinto (`venues[].portas[].id`), ou "todas".
+  gateId    String
+  label     String
+
+  tokenHash      String    @unique
+  pinHash        String
+  /// Tentativas erradas seguidas, e até quando o PIN fica bloqueado.
+  failedAttempts Int       @default(0)
+  lockedUntil    DateTime?
+
+  expiresAt     DateTime
+  revokedAt     DateTime?
+  createdByName String?
+
+  scans TicketScan[]
+
+  createdAt DateTime @default(now())
+
+  @@index([academyId, matchId])
+}
+
+/// Cada leitura à porta, aceite ou recusada: o contador de entradas e o
+/// registo do que se passou.
+model TicketScan {
+  id           String            @id @default(cuid())
+  academyId    String
+  academy      Academy           @relation(fields: [academyId], references: [id], onDelete: Cascade)
+  matchId      String
+  gateId       String
+  accessId     String?
+  access       TicketGateAccess? @relation(fields: [accessId], references: [id], onDelete: SetNull)
+  ticketId     String?
+  ticket       MatchTicket?      @relation(fields: [ticketId], references: [id], onDelete: SetNull)
+  seasonSeatId String?
+  seasonSeat   SeasonSeat?       @relation(fields: [seasonSeatId], references: [id], onDelete: SetNull)
+  result       TicketScanResult
+
+  createdAt DateTime @default(now())
+
+  @@index([matchId, createdAt])
+  @@index([matchId, gateId, result])
+}
+
+enum TicketScanResult {
+  OK
+  ALREADY_USED
+  WRONG_GATE
+  WRONG_MATCH
+  VOID
+  INVALID
+  QUOTA_EM_ATRASO
+}
+
+/**
+ * --------------------------------------------------------------------------
+ */
+/**
+ * Conduta: o canal de denúncia e os documentos de conduta
+ */
+/**
+ * --------------------------------------------------------------------------
+ */
 
 /// O tipo de incidente, como a família o escolhe na app.
 enum ConductReportCategory {

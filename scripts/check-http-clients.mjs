@@ -68,6 +68,10 @@ const EXCEPCOES = [
     "recuperar a palavra-passe: endpoint público, e por definição de quem **não** consegue entrar. Passar pelo `http.ts` seria pedir a sessão a quem está ali por não a ter",
   ],
   [
+    "apps/console/src/lib/porta.ts",
+    "leitor de bilhetes dos seguranças: endpoints públicos (`/api/clubes/:slug/porta/…`), de quem não tem conta. O `http.ts` renovaria a sessão de quem tivesse a consola aberta no mesmo browser e trocaria a frase do servidor num PIN errado",
+  ],
+  [
     "apps/console/src/lib/app-contexts.ts",
     "handoff da consola para a app do clube: escreve a sessão **na chave da outra app**, na mesma origem. É uma entrega, não uma leitura por fora: quem lê e renova continua a ser o `session.ts` de cada app",
   ],

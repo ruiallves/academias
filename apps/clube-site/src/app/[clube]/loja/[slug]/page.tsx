@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { Foto } from "@/componentes/Foto";
 import { notFound } from "next/navigation";
-import { ArrowLeft, Package, Truck } from "lucide-react";
+import { ArrowLeft, Package, ShoppingBag } from "lucide-react";
 import { fonte } from "@/dados/fonte";
 import { clubeOu404 } from "@/lib/clube";
 import { euro } from "@/lib/formatar";
@@ -51,11 +51,11 @@ export default async function Produto({ params }: Props) {
           <ul className="mt-8 space-y-2 border-t border-line pt-6 text-sm text-ink-2">
             <li className="flex gap-2">
               <Package size={18} className="shrink-0 text-ink-3" aria-hidden />
-              Levantamento gratuito na sede do clube, em dias de treino e de jogo.
+              Levantamento na sede do clube
             </li>
             <li className="flex gap-2">
-              <Truck size={18} className="shrink-0 text-ink-3" aria-hidden />
-              Envio por correio para Portugal continental.
+              <ShoppingBag size={18} className="shrink-0 text-ink-3" aria-hidden />
+              Compra online em breve
             </li>
           </ul>
         </div>

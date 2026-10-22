@@ -17,10 +17,30 @@
  * do lado do servidor).
  */
 
-export const LAYOUTS = ["classico", "porto"] as const;
+/**
+ * Os dois temas do site: **Tribuna**, claro, com o cabeçalho em dois andares
+ * (o site de clube de sempre), e **Holofote**, escuro, com barra lateral e a
+ * notícia a toda a largura (o jogo à noite). Chamavam-se "classico" e
+ * "porto", e o segundo era o nome de um clube a sério: a migração
+ * `20261020150000_site_fase_1` renomeia o que está gravado, e
+ * `layoutValido` aceita os nomes antigos enquanto houver algum por aí.
+ */
+export const LAYOUTS = ["tribuna", "holofote"] as const;
 export type Layout = (typeof LAYOUTS)[number];
 
+/** O layout gravado, com os nomes antigos a cair nos novos. Desconhecido é Tribuna. */
+export function layoutValido(v: unknown): Layout {
+  if (v === "holofote" || v === "porto") return "holofote";
+  return "tribuna";
+}
+
 export const REDES = ["facebook", "instagram", "youtube", "x", "tiktok"] as const;
+
+/** Um membro da direção, como aparece na página "O clube". */
+export type Dirigente = { nome: string; cargo: string };
+
+/** Uma instalação do clube (o estádio, o pavilhão, a sede), com fotografia. */
+export type Instalacao = { nome: string; descricao: string; imagem: string };
 
 export type Identidade = {
   lema: string;
@@ -37,7 +57,52 @@ export type Identidade = {
    * bucket do site: quem grava confere (`SiteService.atualizar`).
    */
   foto: string;
+  /** A direção, pela ordem em que o clube a escreveu. Vazia, a página não a mostra. */
+  direcao: Dirigente[];
+  /** As instalações. As imagens passam pelo mesmo crivo da `foto`. */
+  instalacoes: Instalacao[];
 };
+
+/* -------------------------------------------------------------------------- */
+/* A página de início                                                           */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * As secções da página de início que o clube pode ordenar e ligar.
+ *
+ * O herói (as notícias em destaque) fica sempre no topo: é a abertura do
+ * site nos dois layouts, e não é uma secção. O resto vai por esta ordem por
+ * omissão, que é a que a AD Fafe tinha; o clube arrasta como quiser.
+ */
+export const SECCOES_INICIO = ["jogo", "noticias", "equipas", "socios", "banner", "loja", "patrocinadores"] as const;
+export type SeccaoInicioKey = (typeof SECCOES_INICIO)[number];
+
+/**
+ * O banner: um bloco livre na página de início (uma campanha de sócios, o
+ * torneio do verão, um patrocinador). Sem título nem imagem não aparece,
+ * mesmo ligado.
+ */
+export type Banner = { titulo: string; texto: string; imagem: string; botao: string; url: string };
+
+/**
+ * Uma secção da página de início. As seis fixas (jogo, notícias, equipas,
+ * sócios, loja, patrocinadores) existem uma vez cada; os banners são quantos
+ * o clube quiser (até `BANNERS_MAX`), cada um com o seu conteúdo e um `id`
+ * seu, para a consola os distinguir ao arrastar.
+ */
+export type SeccaoInicio = { id: string; key: SeccaoInicioKey; visivel: boolean; banner?: Banner };
+
+/** Quantos banners cabem numa página de início. Acima disto é um site de anúncios. */
+export const BANNERS_MAX = 4;
+
+/**
+ * `banner` é o primeiro banner da lista, repetido: o site de antes de 20/10
+ * lia-o daqui, e um deploy a meio não pode partir a página de início. Sai
+ * quando o site em produção já ler os banners das secções.
+ */
+export type Inicio = { seccoes: SeccaoInicio[]; banner: Banner };
+
+export const BANNER_VAZIO: Banner = { titulo: "", texto: "", imagem: "", botao: "", url: "" };
 
 /** O que cada equipa leva no site. `foto` vazia: a de omissão da modalidade. */
 export type EquipaNoSite = { visivel: boolean; plantel: boolean; foto: string };
@@ -46,9 +111,17 @@ export const LADOS = ["norte", "sul", "nascente", "poente", "noroeste", "nordest
 export type Lado = (typeof LADOS)[number];
 
 export type Bancada = { id: string; nome: string; lado: Lado; ordem: number; peso: number; lotacao: number | null; coberta: boolean };
-export type Recinto = { id: string; nome: string; tipo: "campo" | "pavilhao"; bancadas: Bancada[] };
+/** Uma porta de entrada e as bancadas que entram por ela. Ver `Porta` em `packages/ui/src/estadio.tsx`. */
+export type Porta = { id: string; nome: string; bancadaIds: string[] };
+export type Recinto = { id: string; nome: string; tipo: "campo" | "pavilhao"; bancadas: Bancada[]; portas: Porta[] };
 
-export type TipoDeBilhete = { id: string; nome: string; preco: number; bancadaId: string | null };
+/**
+ * Para quem é um tipo de bilhete: o público geral, ou os sócios. Com
+ * `tierId`, só os sócios dessa categoria; sem ele, qualquer sócio.
+ */
+export type ParaQuem = "publico" | "socios";
+
+export type TipoDeBilhete = { id: string; nome: string; preco: number; bancadaId: string | null; para: ParaQuem; tierId: string | null };
 
 /* -------------------------------------------------------------------------- */
 /* Limpeza                                                                      */
@@ -71,6 +144,20 @@ export function identidadeValida(v: unknown): Identidade {
     const u = urlSegura(redesIn[r]);
     if (u) redes[r] = u;
   }
+  const direcao: Dirigente[] = (Array.isArray(o.direcao) ? o.direcao : [])
+    .slice(0, 40)
+    .map((d) => {
+      const x = (d && typeof d === "object" ? d : {}) as Record<string, unknown>;
+      return { nome: texto(x.nome, 80), cargo: texto(x.cargo, 80) };
+    })
+    .filter((d) => d.nome);
+  const instalacoes: Instalacao[] = (Array.isArray(o.instalacoes) ? o.instalacoes : [])
+    .slice(0, 12)
+    .map((d) => {
+      const x = (d && typeof d === "object" ? d : {}) as Record<string, unknown>;
+      return { nome: texto(x.nome, 80), descricao: texto(x.descricao, 400), imagem: urlSegura(x.imagem) };
+    })
+    .filter((d) => d.nome);
   return {
     lema: texto(o.lema, 120),
     sobre: texto(o.sobre, 1200),
@@ -81,7 +168,86 @@ export function identidadeValida(v: unknown): Identidade {
     email: texto(o.email, 160),
     redes,
     foto: urlSegura(o.foto),
+    direcao,
+    instalacoes,
   };
+}
+
+export function bannerValido(v: unknown): Banner {
+  const b = (v && typeof v === "object" ? v : {}) as Record<string, unknown>;
+  return {
+    titulo: texto(b.titulo, 120),
+    texto: texto(b.texto, 400),
+    imagem: urlSegura(b.imagem),
+    botao: texto(b.botao, 40),
+    url: urlSegura(b.url) || (typeof b.url === "string" && /^\/[a-z0-9\-/?=&]*$/i.test(b.url.trim()) ? b.url.trim().slice(0, 200) : ""),
+  };
+}
+
+const temConteudo = (b: Banner) => b.titulo !== "" || b.texto !== "" || b.imagem !== "";
+
+/**
+ * A página de início: **o que está na lista é o que está na página.**
+ *
+ * As seis secções fixas podem estar ou não (um clube sem loja tira a loja;
+ * outro não quer o bloco de sócios no início), uma vez cada, pela ordem
+ * gravada. Os banners são as secções `banner`, cada uma com o seu conteúdo.
+ * Uma chave desconhecida cai. Sem nada gravado, a página de origem: as sete,
+ * pela ordem de sempre, com um banner vazio.
+ *
+ * `visivel: false` era "escondida" na primeira versão da consola (20/10, de
+ * manhã); a de hoje tira em vez de esconder, por isso uma secção escondida
+ * passa a estar fora da lista. O site filtra por `visivel` na mesma, por isso
+ * o que sai daqui vem sempre `visivel: true`.
+ *
+ * Uma página gravada antes de 20/10 tinha um banner só, fora da lista
+ * (`banner`): entra como conteúdo do primeiro banner da lista que não tenha
+ * o seu, para nenhum clube perder o que escreveu.
+ */
+export function inicioValido(v: unknown): Inicio {
+  const o = (v && typeof v === "object" ? v : {}) as Record<string, unknown>;
+  const fixas = new Set<string>();
+  const ids = new Set<string>();
+  const seccoes: SeccaoInicio[] = [];
+  let banners = 0;
+  const gravadas = Array.isArray(o.seccoes);
+  for (const s of gravadas ? (o.seccoes as unknown[]).slice(0, 40) : []) {
+    const x = (s && typeof s === "object" ? s : {}) as Record<string, unknown>;
+    const key = typeof x.key === "string" ? x.key : "";
+    if (!(SECCOES_INICIO as readonly string[]).includes(key)) continue;
+    if (x.visivel === false) continue;
+    if (key === "banner") {
+      if (banners >= BANNERS_MAX) continue;
+      banners++;
+      let id = texto(x.id, 40).replace(/[^a-z0-9-]/gi, "") || `banner-${banners}`;
+      while (ids.has(id)) id = `${id}-${banners}`;
+      ids.add(id);
+      seccoes.push({ id, key: "banner", visivel: true, banner: bannerValido(x.banner) });
+      continue;
+    }
+    if (fixas.has(key)) continue;
+    fixas.add(key);
+    ids.add(key);
+    seccoes.push({ id: key, key: key as SeccaoInicioKey, visivel: true });
+  }
+  // Sem nada gravado, a página de origem.
+  if (!gravadas) {
+    for (const key of SECCOES_INICIO) {
+      if (key === "banner") seccoes.push({ id: "banner-1", key, visivel: true, banner: { ...BANNER_VAZIO } });
+      else seccoes.push({ id: key, key, visivel: true });
+    }
+    banners = 1;
+  }
+
+  // O banner antigo, fora da lista: vai para o primeiro banner sem conteúdo.
+  const antigo = bannerValido(o.banner);
+  if (temConteudo(antigo)) {
+    const vago = seccoes.find((s) => s.key === "banner" && !temConteudo(s.banner!));
+    if (vago) vago.banner = antigo;
+  }
+
+  const primeiro = seccoes.find((s) => s.key === "banner")?.banner;
+  return { seccoes, banner: primeiro ? { ...primeiro } : { ...BANNER_VAZIO } };
 }
 
 /**
@@ -112,43 +278,68 @@ export function recintosValidos(v: unknown): Recinto[] {
   return v.slice(0, 10).map((r, i) => {
     const o = (r && typeof r === "object" ? r : {}) as Record<string, unknown>;
     const bancadas = Array.isArray(o.bancadas) ? o.bancadas : [];
+    const limpas = bancadas.slice(0, 40).map((b, k) => {
+      const x = (b && typeof b === "object" ? b : {}) as Record<string, unknown>;
+      const lado = (LADOS as readonly string[]).includes(x.lado as string) ? (x.lado as Lado) : "norte";
+      const peso = numero(x.peso);
+      const lotacao = numero(x.lotacao);
+      return {
+        id: texto(x.id, 60) || `bancada-${i}-${k}`,
+        nome: texto(x.nome, 60) || "Bancada",
+        lado,
+        ordem: numero(x.ordem) ?? k,
+        peso: peso && peso > 0 && peso < 1000 ? peso : 1,
+        lotacao: lotacao && lotacao > 0 && lotacao < 200_000 ? Math.round(lotacao) : null,
+        coberta: x.coberta === true,
+      };
+    });
+    // As portas só apontam para bancadas deste recinto; uma bancada apagada sai das portas.
+    const ids = new Set(limpas.map((b) => b.id));
+    const portas = (Array.isArray(o.portas) ? o.portas : []).slice(0, 20).map((p, k) => {
+      const x = (p && typeof p === "object" ? p : {}) as Record<string, unknown>;
+      const bancadaIds = Array.isArray(x.bancadaIds) ? x.bancadaIds.filter((b): b is string => typeof b === "string" && ids.has(b)) : [];
+      return { id: texto(x.id, 60) || `porta-${i}-${k}`, nome: texto(x.nome, 60) || `Porta ${k + 1}`, bancadaIds: [...new Set(bancadaIds)] };
+    });
     return {
       id: texto(o.id, 60) || `recinto-${i}`,
       nome: texto(o.nome, 80) || "Recinto",
       tipo: o.tipo === "pavilhao" ? "pavilhao" : "campo",
-      bancadas: bancadas.slice(0, 40).map((b, k) => {
-        const x = (b && typeof b === "object" ? b : {}) as Record<string, unknown>;
-        const lado = (LADOS as readonly string[]).includes(x.lado as string) ? (x.lado as Lado) : "norte";
-        const peso = numero(x.peso);
-        const lotacao = numero(x.lotacao);
-        return {
-          id: texto(x.id, 60) || `bancada-${i}-${k}`,
-          nome: texto(x.nome, 60) || "Bancada",
-          lado,
-          ordem: numero(x.ordem) ?? k,
-          peso: peso && peso > 0 && peso < 1000 ? peso : 1,
-          lotacao: lotacao && lotacao > 0 && lotacao < 200_000 ? Math.round(lotacao) : null,
-          coberta: x.coberta === true,
-        };
-      }),
+      bancadas: limpas,
+      portas,
     };
   });
 }
 
-/** Os tipos de bilhete, guardados em cêntimos. */
-export function tiposValidos(v: unknown): { id: string; nome: string; precoCents: number; bancadaId: string | null }[] {
+export type TipoGuardado = { id: string; nome: string; precoCents: number; bancadaId: string | null; para: ParaQuem; tierId: string | null };
+
+/**
+ * Os tipos de bilhete, guardados em cêntimos. Cada um é um preço numa
+ * bancada para o público geral ou para os sócios (de uma categoria, ou de
+ * qualquer uma). Os gravados antes de haver sócios são do público.
+ */
+export function tiposValidos(v: unknown): TipoGuardado[] {
   if (!Array.isArray(v)) return [];
-  return v.slice(0, 30).flatMap((t, i) => {
+  return v.slice(0, 60).flatMap((t, i) => {
     const o = (t && typeof t === "object" ? t : {}) as Record<string, unknown>;
     const nome = texto(o.nome, 60);
     const preco = numero(o.preco) ?? (numero(o.precoCents) !== null ? numero(o.precoCents)! / 100 : null);
     if (!nome || preco === null || preco < 0 || preco > 10_000) return [];
-    return [{ id: texto(o.id, 60) || `tipo-${i}`, nome, precoCents: Math.round(preco * 100), bancadaId: texto(o.bancadaId, 60) || null }];
+    const para: ParaQuem = o.para === "socios" ? "socios" : "publico";
+    return [
+      {
+        id: texto(o.id, 60) || `tipo-${i}`,
+        nome,
+        precoCents: Math.round(preco * 100),
+        bancadaId: texto(o.bancadaId, 60) || null,
+        para,
+        tierId: para === "socios" ? texto(o.tierId, 40) || null : null,
+      },
+    ];
   });
 }
 
 export function tiposParaConsola(v: unknown): TipoDeBilhete[] {
-  return tiposValidos(v).map((t) => ({ id: t.id, nome: t.nome, preco: t.precoCents / 100, bancadaId: t.bancadaId }));
+  return tiposValidos(v).map((t) => ({ id: t.id, nome: t.nome, preco: t.precoCents / 100, bancadaId: t.bancadaId, para: t.para, tierId: t.tierId }));
 }
 
 /** "Parágrafo um\n\nParágrafo dois" → ["Parágrafo um", "Parágrafo dois"]. */

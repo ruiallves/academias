@@ -55,10 +55,10 @@
   --signal-deep: #0b4d46;
 }
 
-/* Layout "porto": a estrutura do fcporto.pt com as cores claras da casa.
+/* Tema Holofote: a estrutura do fcporto.pt com as cores claras da casa.
    O fundo é branco, e não o canvas creme: sem cabeçalho escuro por cima, o
    branco é o que separa a barra lateral do conteúdo. */
-[data-layout="porto"] {
+[data-layout="holofote"] {
   --color-canvas: #ffffff;
   background-color: var(--color-canvas);
 }

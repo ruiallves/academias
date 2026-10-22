@@ -43,11 +43,19 @@ export type Bancada = {
   coberta: boolean;
 };
 
+/**
+ * Uma porta de entrada do recinto e as bancadas que entram por ela. O leitor
+ * de bilhetes abre numa porta e só aceita os bilhetes dessas bancadas. Um
+ * recinto sem portas tem uma entrada só, por onde entra toda a gente.
+ */
+export type Porta = { id: string; nome: string; bancadaIds: string[] };
+
 export type Recinto = {
   id: string;
   nome: string;
   tipo: "campo" | "pavilhao";
   bancadas: Bancada[];
+  portas?: Porta[];
 };
 
 export const LADOS: { key: Lado; nome: string; curto: string }[] = [
@@ -920,24 +928,35 @@ export function MapaDoRecinto({
 export function recintoValido(r: Partial<Recinto> | null | undefined, i = 0): Recinto {
   const lados = new Set<Lado>(LADOS.map((l) => l.key));
   const bancadas = Array.isArray(r?.bancadas) ? r!.bancadas : [];
+  const limpas = bancadas
+    .filter((b): b is Bancada => !!b && typeof b === "object")
+    .map((b, k) => {
+      const lado: Lado = lados.has(b.lado) ? b.lado : "norte";
+      return {
+        id: typeof b.id === "string" && b.id ? b.id : `bancada-${i}-${k}`,
+        nome: typeof b.nome === "string" ? b.nome : LADOS.find((l) => l.key === lado)!.curto,
+        lado,
+        ordem: Number.isFinite(b.ordem) ? b.ordem : k,
+        peso: typeof b.peso === "number" && b.peso > 0 ? b.peso : 1,
+        lotacao: typeof b.lotacao === "number" && b.lotacao > 0 ? b.lotacao : null,
+        coberta: !!b.coberta,
+      };
+    });
+  // As portas só podem apontar para bancadas que existem: uma bancada apagada sai das portas.
+  const ids = new Set(limpas.map((b) => b.id));
+  const portas = (Array.isArray(r?.portas) ? r!.portas : [])
+    .filter((p): p is Porta => !!p && typeof p === "object")
+    .map((p, k) => ({
+      id: typeof p.id === "string" && p.id ? p.id : `porta-${i}-${k}`,
+      nome: typeof p.nome === "string" && p.nome.trim() ? p.nome : `Porta ${k + 1}`,
+      bancadaIds: Array.isArray(p.bancadaIds) ? p.bancadaIds.filter((b) => typeof b === "string" && ids.has(b)) : [],
+    }));
   return {
     id: typeof r?.id === "string" && r.id ? r.id : `recinto-${i}`,
     nome: typeof r?.nome === "string" ? r.nome : "Recinto",
     tipo: r?.tipo === "pavilhao" ? "pavilhao" : "campo",
-    bancadas: bancadas
-      .filter((b): b is Bancada => !!b && typeof b === "object")
-      .map((b, k) => {
-        const lado: Lado = lados.has(b.lado) ? b.lado : "norte";
-        return {
-          id: typeof b.id === "string" && b.id ? b.id : `bancada-${i}-${k}`,
-          nome: typeof b.nome === "string" ? b.nome : LADOS.find((l) => l.key === lado)!.curto,
-          lado,
-          ordem: Number.isFinite(b.ordem) ? b.ordem : k,
-          peso: typeof b.peso === "number" && b.peso > 0 ? b.peso : 1,
-          lotacao: typeof b.lotacao === "number" && b.lotacao > 0 ? b.lotacao : null,
-          coberta: !!b.coberta,
-        };
-      }),
+    bancadas: limpas,
+    portas,
   };
 }
 

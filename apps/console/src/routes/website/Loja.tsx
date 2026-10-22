@@ -1,5 +1,6 @@
 import { useState } from "react";
-import { Pencil, Plus, ShoppingBag, Trash2, PackageOpen } from "@/lib/icons";
+import { Link } from "react-router-dom";
+import { Boxes, Pencil, Plus, ShoppingBag, Trash2, PackageOpen } from "@/lib/icons";
 import { Empty, cx } from "@/components/primitives";
 import { Dialog, DialogField, dialogInputClass } from "@/components/Dialog";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
@@ -51,6 +52,17 @@ export function Loja() {
                 <div className="min-w-0 flex-1">
                   <p className="flex flex-wrap items-center gap-x-2 text-meta text-ink-3">
                     {p.categoria}
+                    {/* Vendido a partir do Inventário: o stock manda nos tamanhos e no esgotado, e a ficha do artigo é onde se mexe. */}
+                    {p.artigoId && (
+                      <Link
+                        to={`/inventario/artigos/${p.artigoId}`}
+                        className="inline-flex items-center gap-1 rounded-full bg-signal-soft px-1.5 py-px text-[11px] font-medium text-signal-ink hover:underline"
+                        title="Abrir o artigo no Inventário"
+                      >
+                        <Boxes className="size-3" strokeWidth={1.75} />
+                        Do inventário
+                      </Link>
+                    )}
                     {p.esgotado && <span className="rounded-full bg-risk-soft px-1.5 py-px text-[11px] font-medium text-risk">Esgotado</span>}
                     {!p.visivel && <span className="rounded-full bg-sunken px-1.5 py-px text-[11px] font-medium text-ink-3">Escondido</span>}
                   </p>
@@ -120,12 +132,18 @@ function EditarProduto({
   onGuardar: (p: ProdutoDoSite) => Promise<void>;
 }) {
   const [p, setP] = useState<ProdutoDoSite>(
-    inicial ?? { id: "", nome: "", categoria: "Equipamento", preco: 0, imagem: "", descricao: "", tamanhos: "", esgotado: false, visivel: true },
+    inicial ?? { id: "", nome: "", categoria: "Equipamento", preco: 0, imagem: "", descricao: "", tamanhos: "", esgotado: false, visivel: true, artigoId: null },
   );
   const [preco, setPreco] = useState(inicial ? String(inicial.preco).replace(".", ",") : "");
   const valor = Number(preco.replace(",", "."));
   const pronto = p.nome.trim() && preco.trim() && Number.isFinite(valor) && valor >= 0;
   const [aGravar, setAGravar] = useState(false);
+  /*
+   * Um produto do Inventário: o nome é o do artigo e os tamanhos e o esgotado
+   * saem do stock. A API ignora-os ao editar; aqui ficam só de leitura para
+   * ninguém escrever o que não vai ficar.
+   */
+  const doInventario = p.artigoId !== null;
 
   const guardar = async () => {
     setAGravar(true);
@@ -156,8 +174,8 @@ function EditarProduto({
       }
     >
       <div className="space-y-4 px-5 py-4">
-        <DialogField label="Nome">
-          <input className={dialogInputClass} value={p.nome} onChange={(e) => setP({ ...p, nome: e.target.value })} autoFocus />
+        <DialogField label="Nome" hint={doInventario ? "é o do artigo" : undefined}>
+          <input className={dialogInputClass} value={p.nome} onChange={(e) => setP({ ...p, nome: e.target.value })} autoFocus={!doInventario} readOnly={doInventario} disabled={doInventario} />
         </DialogField>
         <div className="grid gap-4 sm:grid-cols-2">
           <DialogField label="Categoria">
@@ -171,17 +189,25 @@ function EditarProduto({
             <input className={dialogInputClass} inputMode="decimal" placeholder="39,90" value={preco} onChange={(e) => setPreco(e.target.value)} />
           </DialogField>
         </div>
-        <DialogField label="Tamanhos" hint="Separados por vírgulas. Vazio num produto sem tamanhos.">
-          <input className={dialogInputClass} placeholder="S, M, L, XL" value={p.tamanhos} onChange={(e) => setP({ ...p, tamanhos: e.target.value })} />
+        <DialogField label="Tamanhos" hint={doInventario ? "Os tamanhos e o esgotado vêm do stock do artigo" : "Separados por vírgulas. Vazio num produto sem tamanhos."}>
+          <input
+            className={dialogInputClass}
+            placeholder="S, M, L, XL"
+            value={p.tamanhos}
+            onChange={(e) => setP({ ...p, tamanhos: e.target.value })}
+            disabled={doInventario}
+          />
         </DialogField>
         <DialogField label="Descrição">
           <textarea className={cx(dialogInputClass, "h-24 py-2")} value={p.descricao} onChange={(e) => setP({ ...p, descricao: e.target.value })} />
         </DialogField>
         <CampoDeImagem valor={p.imagem} onMudar={(imagem) => setP({ ...p, imagem })} max={1200} proporcao="aspect-[9/11] max-w-[220px]" />
-        <div className="flex items-center justify-between gap-3 rounded-[8px] border border-line px-3 py-2.5">
-          <span className="text-body text-ink">Esgotado</span>
-          <Interruptor ligado={p.esgotado} onChange={() => setP({ ...p, esgotado: !p.esgotado })} label="Esgotado" />
-        </div>
+        {!doInventario && (
+          <div className="flex items-center justify-between gap-3 rounded-[8px] border border-line px-3 py-2.5">
+            <span className="text-body text-ink">Esgotado</span>
+            <Interruptor ligado={p.esgotado} onChange={() => setP({ ...p, esgotado: !p.esgotado })} label="Esgotado" />
+          </div>
+        )}
       </div>
     </Dialog>
   );

@@ -171,6 +171,8 @@ export type CalendarEvent = {
    * decide é o servidor (`inTeamScope`) — isto é só o que ele respondeu.
    */
   mine?: boolean;
+  /** Mostra-se no site do clube. Só nos eventos que não são treino nem jogo. */
+  isPublic?: boolean;
   /** Só em `kind === "match"`. */
   match?: MatchInfo;
 };
@@ -307,6 +309,7 @@ export function fromApiEvent(e: ApiEvent): CalendarEvent {
     coachId: e.coachId ?? undefined,
     coachName: e.coachName ?? undefined,
     cancelled: e.cancelled,
+    isPublic: e.isPublic ?? false,
   };
 }
 

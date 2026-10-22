@@ -161,9 +161,9 @@ export async function refresh(): Promise<void> {
  * disputado de manhã a aparecer por convocar à tarde, num sítio onde tudo o que
  * lá está é uma coisa por fazer.
  *
- * Convocar depois do jogo continua a ser possível, e continua a ser onde deve
- * ser: **na página do jogo**, onde se está a preencher a ficha e se sabe quem
- * jogou. Aqui é o que está para vir.
+ * Os jogos passados têm vistas próprias no mesmo ecrã: "Em atraso" para os que
+ * ficaram sem convocatória, "Histórico" para os que a têm. Ver `pastMatches`.
+ * Esta lista continua a ser só o que está para vir.
  */
 export function upcomingMatches(): ApiMatch[] {
   const agora = Date.now();
@@ -171,6 +171,60 @@ export function upcomingMatches(): ApiMatch[] {
     .filter((m) => m.mine)
     .filter((m) => m.status === "SCHEDULED" && new Date(m.startsAt).getTime() >= agora)
     .sort((a, b) => a.startsAt.localeCompare(b.startsAt));
+}
+
+/**
+ * Os jogos que já começaram, das minhas equipas, do mais recente para o mais
+ * antigo. Sem os cancelados: um jogo que não houve não tem convocatória a dever.
+ *
+ * Recebe a lista em vez de ler `matches` porque a da academia só recua trinta
+ * dias (ver `listIn` na API), e o histórico quer a época toda. Quem chama passa
+ * a lista que tiver, e esta função decide o resto num sítio só.
+ */
+export function pastMatches(lista: ApiMatch[]): ApiMatch[] {
+  const agora = Date.now();
+  return lista
+    .filter((m) => m.mine && m.status !== "CANCELLED" && new Date(m.startsAt).getTime() < agora)
+    .sort((a, b) => b.startsAt.localeCompare(a.startsAt));
+}
+
+/**
+ * Os jogos de uma janela de datas, com a mesma forma da lista da academia.
+ *
+ * Silencioso: serve o histórico, e quando falha a página mostra o que a
+ * academia já trouxe (os últimos trinta dias) em vez de um cartão de erro.
+ */
+export const fetchMatchesBetween = (from: Date, to: Date) =>
+  apiGetSilencioso<ApiMatch[]>(
+    `/api/matches?from=${encodeURIComponent(from.toISOString())}&to=${encodeURIComponent(to.toISOString())}`,
+  );
+
+/** Uma época com as datas que o histórico pede. */
+export type FaixaDaEpoca = { label: string; from: Date; to: Date };
+
+/**
+ * As datas de uma época: as da base, ou, sem elas, de 1 de agosto a 31 de
+ * julho pelo rótulo ("2026/27"). A mesma queda que o Planeamento faz.
+ *
+ * O fim nunca passa de agora: o histórico é o que já foi, e pedir jogos até
+ * julho do ano que vem era trazer os Próximos para dentro do Histórico.
+ */
+export function faixaDaEpoca(
+  label: string,
+  ranges: Record<string, { startsOn: string; endsOn: string }>,
+): FaixaDaEpoca {
+  const r = ranges[label] ?? epocaPeloRotulo(label);
+  const agora = new Date();
+  if (!r) return { label, from: new Date(agora.getTime() - 183 * 86_400_000), to: agora };
+  const from = new Date(`${r.startsOn}T00:00:00`);
+  const fim = new Date(`${r.endsOn}T23:59:59`);
+  return { label, from, to: fim.getTime() < agora.getTime() ? fim : agora };
+}
+
+function epocaPeloRotulo(label: string): { startsOn: string; endsOn: string } | null {
+  const y = Number(label.slice(0, 4));
+  if (!Number.isFinite(y) || y < 2000) return null;
+  return { startsOn: `${y}-08-01`, endsOn: `${y + 1}-07-31` };
 }
 
 export type Eligible = {

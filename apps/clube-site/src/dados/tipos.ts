@@ -15,11 +15,19 @@ import type { Recinto } from "@academia/ui/estadio";
 export type { Recinto, Bancada } from "@academia/ui/estadio";
 
 /**
- * Os layouts do site. `classico`: claro, cabeçalho em dois andares, como a
- * AD Fafe. `porto`: escuro, barra lateral e herói a toda a largura, como o
- * FC Porto. O clube escolhe um; a pré-visualização troca com um cookie.
+ * Os temas do site. `tribuna`: claro, cabeçalho em dois andares, o site de
+ * clube de sempre. `holofote`: escuro, barra lateral e herói a toda a
+ * largura, o jogo à noite. O clube escolhe um; a pré-visualização troca com
+ * um cookie. Chamavam-se "classico" e "porto" até 20/10/2026: ver
+ * `layoutNormalizado`.
  */
-export const LAYOUTS = ["classico", "porto"] as const;
+export const LAYOUTS = ["tribuna", "holofote"] as const;
+
+/** O tema como vem da API ou de um cookie antigo, já com os nomes de hoje. Desconhecido é Tribuna. */
+export function layoutNormalizado(v: unknown): Layout {
+  if (v === "holofote" || v === "porto") return "holofote";
+  return "tribuna";
+}
 
 /** O cookie com que o interruptor da demonstração troca de layout (ver `layoutAtual`). */
 export const COOKIE_LAYOUT = "site-layout";
@@ -28,6 +36,47 @@ export type Layout = (typeof LAYOUTS)[number];
 export function layoutValido(v: unknown): v is Layout {
   return typeof v === "string" && (LAYOUTS as readonly string[]).includes(v);
 }
+
+/**
+ * As secções da página de início que o clube ordena e liga no menu Website.
+ * O herói (notícias em destaque) fica sempre no topo e não entra aqui.
+ */
+export const SECCOES_INICIO = ["jogo", "noticias", "equipas", "socios", "banner", "loja", "patrocinadores"] as const;
+export type SeccaoInicioKey = (typeof SECCOES_INICIO)[number];
+
+/**
+ * Uma secção da página de início. As seis fixas existem uma vez; os banners
+ * são quantos o clube quiser, cada um com o seu conteúdo e o seu `id`.
+ */
+export type SeccaoInicio = { id: string; key: SeccaoInicioKey; visivel: boolean; banner?: Banner };
+
+/** A faixa de destaque do início: um torneio, uma campanha, uma inscrição. */
+export type Banner = {
+  titulo: string;
+  texto: string;
+  /** URL público, ou vazio. */
+  imagem: string;
+  /** O rótulo do botão; sem ele, ou sem `url`, a faixa não tem botão. */
+  botao: string;
+  /** Um caminho do site (`/loja`) ou um endereço completo (`https://...`). */
+  url: string;
+};
+
+export type Inicio = {
+  /** O que está na página, pela ordem que o clube escolheu. Uma fixa que o clube tirou não vem. */
+  seccoes: SeccaoInicio[];
+  banner: Banner;
+};
+
+/** O início de um clube que ainda não mexeu em nada: tudo visível, pela ordem de sempre. */
+export const INICIO_POR_OMISSAO: Inicio = {
+  seccoes: SECCOES_INICIO.map((key) =>
+    key === "banner"
+      ? { id: "banner-1", key, visivel: true, banner: { titulo: "", texto: "", imagem: "", botao: "", url: "" } }
+      : { id: key, key, visivel: true },
+  ),
+  banner: { titulo: "", texto: "", imagem: "", botao: "", url: "" },
+};
 
 export type Clube = {
   slug: string;
@@ -55,7 +104,10 @@ export type Clube = {
   /** Onde se faz sócio: a página pública da plataforma ou outra. */
   membershipUrl: string;
   board: { name: string; role: string }[];
-  facilities: { name: string; description: string; image: string }[];
+  /** A imagem é opcional: uma instalação sem fotografia desenha-se só com o texto. */
+  facilities: { name: string; description: string; image?: string }[];
+  /** A página de início: que secções, por que ordem, e a faixa de destaque. */
+  home: Inicio;
   /** Os recintos vistos de cima, desenhados na consola. Vazio = bilhetes sem mapa. */
   recintos: Recinto[];
   /** A fotografia do clube (bloco de sócios). Sem ela, a de omissão: ver `lib/fotos.ts`. */
@@ -105,6 +157,10 @@ export type TipoBilhete = {
   description?: string;
   /** A bancada do recinto do jogo. Ausente = qualquer lugar. */
   bancadaId?: string;
+  /** Preço de sócio: só se compra depois de o sócio se identificar. */
+  forMembers?: boolean;
+  /** Com `forMembers`: só para os sócios desta categoria. Ausente = qualquer sócio. */
+  tierId?: string;
 };
 
 export type Jogo = {
@@ -122,7 +178,26 @@ export type Jogo = {
   ourScore?: number;
   theirScore?: number;
   /** Presente só quando há bilhetes à venda para este jogo. */
-  tickets?: { types: TipoBilhete[]; capacity?: number; open: boolean; note?: string; recintoId?: string };
+  tickets?: {
+    types: TipoBilhete[];
+    capacity?: number;
+    open: boolean;
+    note?: string;
+    recintoId?: string;
+    /**
+     * As fases da venda, como a API as calcula no momento da leitura (com o
+     * minuto de cache do site). A lotação não vem: conta-se na compra.
+     */
+    membersOnly?: boolean;
+    /** Os sócios já compram. */
+    membersOpen?: boolean;
+    /** O público já compra. */
+    publicOpen?: boolean;
+    /** Quando abre aos sócios, se ainda não abriu. */
+    membersFrom?: string;
+    /** Quando abre ao público, se ainda não abriu (nunca num jogo só para sócios). */
+    publicFrom?: string;
+  };
 };
 
 export type Evento = {

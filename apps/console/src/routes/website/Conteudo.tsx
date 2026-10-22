@@ -1,10 +1,25 @@
-import { useRef, useState } from "react";
-import { Handshake, ImagePlus, Inbox, Loader2, Plus, Trash2, Users } from "@/lib/icons";
-import { Empty, cx } from "@/components/primitives";
-import { dialogInputClass } from "@/components/Dialog";
+import { useEffect, useRef, useState } from "react";
+import { Handshake, ImagePlus, Inbox, Loader2, Mail, Plus, Trash2, Users } from "@/lib/icons";
+import { Empty, Loading, cx } from "@/components/primitives";
+import { Dialog, dialogInputClass } from "@/components/Dialog";
+import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { Interruptor } from "@/components/definicoes/ui";
 import { useStore } from "@/lib/store";
-import { apagarPatrocinador, editarPatrocinadorAdiado, enviarImagem, guardarConfig, guardarPatrocinador, useSite, type Patrocinador } from "@/lib/website";
+import { can } from "@/lib/permissions";
+import { useSession } from "@/session";
+import {
+  apagarMensagem,
+  apagarPatrocinador,
+  editarPatrocinadorAdiado,
+  enviarImagem,
+  guardarConfig,
+  guardarPatrocinador,
+  listarMensagens,
+  mudarMensagem,
+  useSite,
+  type MensagemDoSite,
+  type Patrocinador,
+} from "@/lib/website";
 import { mostrarErro, mostrarOk, textoDoErro } from "@/lib/avisos";
 
 /* -------------------------------------------------------------------------- */
@@ -283,13 +298,261 @@ function LinhaPatrocinador({ p }: { p: Patrocinador }) {
 /* Mensagens                                                                    */
 /* -------------------------------------------------------------------------- */
 
-/** O formulário de contactos do site ainda não escreve em lado nenhum: di-lo. */
+const dataEHora = (iso: string) =>
+  new Intl.DateTimeFormat("pt-PT", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit", timeZone: "Europe/Lisbon" }).format(new Date(iso));
+
+/**
+ * O que chega pelo formulário de contactos do site.
+ *
+ * Lê-se de fresco ao abrir a secção (as mensagens chegam de fora a qualquer
+ * hora; uma cópia em memória estaria velha). Abrir uma marca-a lida; tratar e
+ * apagar são decisões, e pedem `website:write`. Responder é por email: o
+ * botão abre o programa de correio com o assunto já posto.
+ */
 export function Mensagens() {
+  const store = useStore();
+  const site = useSite(store.academy.slug);
+  const { session } = useSession();
+  const podeTratar = can(session, "website:write");
+
+  const [lista, setLista] = useState<MensagemDoSite[] | null>(null);
+  const [separador, setSeparador] = useState<"porTratar" | "tratadas">("porTratar");
+  const [aberta, setAberta] = useState<MensagemDoSite | null>(null);
+  const [apagar, setApagar] = useState<MensagemDoSite | null>(null);
+
+  useEffect(() => {
+    let viva = true;
+    listarMensagens()
+      .then((m) => viva && setLista(m))
+      .catch(() => viva && setLista([]));
+    return () => {
+      viva = false;
+    };
+  }, []);
+
+  const substituir = (m: MensagemDoSite) => setLista((l) => (l ? l.map((x) => (x.id === m.id ? m : x)) : l));
+
+  const abrir = async (m: MensagemDoSite) => {
+    setAberta(m);
+    if (m.lida) return;
+    // Abrir é ler: marca-se já, e a pastilha do submenu baixa com ela.
+    try {
+      const lida = await mudarMensagem(m.id, { lida: true }, m);
+      substituir(lida);
+      setAberta(lida);
+    } catch {
+      // O erro já apareceu no cartão de erros; a mensagem fica aberta na mesma.
+    }
+  };
+
+  const tratar = async (m: MensagemDoSite, tratada: boolean) => {
+    const depois = await mudarMensagem(m.id, { tratada }, m);
+    substituir(depois);
+    setAberta(depois);
+    mostrarOk(tratada ? "Mensagem tratada." : "Mensagem reaberta.");
+  };
+
+  if (lista === null) return <Loading size="panel" />;
+
+  const porTratar = lista.filter((m) => !m.tratada);
+  const tratadas = lista.filter((m) => m.tratada);
+  const visiveis = separador === "porTratar" ? porTratar : tratadas;
+  const email = site.identidade.email.trim();
+
+  if (lista.length === 0) {
+    return (
+      <Empty icon={Inbox} title="Ainda não há mensagens" detail="O formulário de contactos do site entrega aqui cada mensagem, com o nome, o email e o assunto de quem escreveu.">
+        <p className="mt-2 max-w-[52ch] text-meta leading-relaxed text-ink-3">
+          {email ? (
+            <>
+              Cada mensagem vai também por email para <strong className="font-medium text-ink-2">{email}</strong>, o endereço posto na Identidade.
+            </>
+          ) : (
+            <>Para as receber também por email, põe o endereço do clube nos Contactos da Identidade.</>
+          )}
+        </p>
+      </Empty>
+    );
+  }
+
   return (
-    <Empty
-      icon={Inbox}
-      title="Ainda não há mensagens"
-      detail="Quando o formulário de contactos do site estiver ligado à API, cada mensagem chega aqui com o assunto, para a secretaria responder por email."
-    />
+    <div className="space-y-4">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div className="inline-flex items-center gap-1 rounded-[var(--radius-control)] bg-sunken p-1" role="tablist" aria-label="Mensagens">
+          {(
+            [
+              ["porTratar", "Por tratar", porTratar.length],
+              ["tratadas", "Tratadas", tratadas.length],
+            ] as const
+          ).map(([k, rotulo, n]) => (
+            <button
+              key={k}
+              type="button"
+              role="tab"
+              aria-selected={separador === k}
+              onClick={() => setSeparador(k)}
+              className={cx(
+                "h-8 rounded-[7px] px-3 text-meta font-semibold transition-colors duration-[120ms]",
+                separador === k ? "bg-surface text-ink shadow-[0_1px_2px_rgb(26_25_23/0.06)]" : "text-ink-3 hover:text-ink-2",
+              )}
+            >
+              {rotulo} <span className="tabular-nums text-ink-4">{n}</span>
+            </button>
+          ))}
+        </div>
+        <p className="text-meta text-ink-3">
+          {email ? (
+            <>
+              Chegam também por email a <span className="font-medium text-ink-2">{email}</span>.
+            </>
+          ) : (
+            "Põe o email do clube na Identidade para as receber também por email."
+          )}
+        </p>
+      </div>
+
+      {visiveis.length === 0 ? (
+        <Empty
+          icon={Inbox}
+          title={separador === "porTratar" ? "Nada por tratar" : "Ainda nenhuma tratada"}
+          detail={separador === "porTratar" ? "Todas as mensagens têm resposta dada." : "Uma mensagem respondida marca-se como tratada e passa para aqui."}
+          compact
+        />
+      ) : (
+        <ul className="overflow-hidden rounded-[12px] border border-line bg-surface">
+          {visiveis.map((m) => (
+            <li key={m.id} className="border-b border-line last:border-b-0">
+              <button
+                type="button"
+                onClick={() => void abrir(m)}
+                className="flex w-full items-center gap-3 px-4 py-3 text-left transition-colors hover:bg-sunken/40"
+              >
+                <span className={cx("size-2 shrink-0 rounded-full", m.lida ? "bg-transparent" : "bg-signal-strong")} aria-hidden />
+                <span className="min-w-0 flex-1">
+                  <span className={cx("block truncate text-body", m.lida ? "text-ink" : "font-semibold text-ink")}>{m.nome}</span>
+                  <span className="block truncate text-meta text-ink-3">{m.assunto || "Sem assunto"}</span>
+                </span>
+                <span className="shrink-0 text-meta tabular-nums text-ink-4">{dataEHora(m.recebidaEm)}</span>
+                {!m.lida && <span className="sr-only">Por ler</span>}
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
+
+      {aberta && (
+        <LerMensagem
+          m={aberta}
+          podeTratar={podeTratar}
+          onClose={() => setAberta(null)}
+          onTratar={(tratada) => tratar(aberta, tratada)}
+          onApagar={() => setApagar(aberta)}
+        />
+      )}
+
+      {apagar && (
+        <ConfirmDialog
+          title="Apagar a mensagem?"
+          onClose={() => setApagar(null)}
+          onConfirm={async () => {
+            await apagarMensagem(apagar.id, apagar);
+            setLista((l) => (l ? l.filter((x) => x.id !== apagar.id) : l));
+            setApagar(null);
+            setAberta(null);
+            mostrarOk("Mensagem apagada.");
+          }}
+        >
+          A mensagem de «{apagar.nome}» desaparece daqui e não volta. Se já lhe respondeste, marca-a como tratada em vez de a apagar.
+        </ConfirmDialog>
+      )}
+    </div>
+  );
+}
+
+/** Uma mensagem aberta: tudo o que a pessoa escreveu, e o que se lhe pode fazer. */
+function LerMensagem({
+  m,
+  podeTratar,
+  onClose,
+  onTratar,
+  onApagar,
+}: {
+  m: MensagemDoSite;
+  podeTratar: boolean;
+  onClose: () => void;
+  onTratar: (tratada: boolean) => Promise<void>;
+  onApagar: () => void;
+}) {
+  const [aGravar, setAGravar] = useState(false);
+  const mailto = `mailto:${encodeURIComponent(m.email)}?subject=${encodeURIComponent(`Re: ${m.assunto || "A sua mensagem"}`)}`;
+
+  const tratar = async () => {
+    setAGravar(true);
+    try {
+      await onTratar(!m.tratada);
+    } catch {
+      // O erro já apareceu no cartão de erros.
+    } finally {
+      setAGravar(false);
+    }
+  };
+
+  return (
+    <Dialog
+      title={m.assunto || "Sem assunto"}
+      subtitle={`${m.nome} · ${dataEHora(m.recebidaEm)}`}
+      icon={<Inbox className="size-4" strokeWidth={1.75} />}
+      onClose={onClose}
+      width={560}
+      footer={
+        <>
+          {podeTratar && (
+            <button type="button" className="ctl-ghost text-risk" onClick={onApagar} disabled={aGravar}>
+              <Trash2 className="size-3.5" strokeWidth={1.75} />
+              Apagar
+            </button>
+          )}
+          {podeTratar && (
+            <button type="button" className="ctl-outline" onClick={() => void tratar()} disabled={aGravar}>
+              {m.tratada ? "Reabrir" : "Marcar como tratada"}
+            </button>
+          )}
+          <a href={mailto} className="ctl-primary">
+            <Mail className="size-3.5" strokeWidth={1.75} />
+            Responder por email
+          </a>
+        </>
+      }
+    >
+      <div className="space-y-4 px-5 py-4">
+        <dl className="grid gap-x-4 gap-y-2 text-meta sm:grid-cols-[auto_minmax(0,1fr)]">
+          <dt className="text-ink-3">Nome</dt>
+          <dd className="font-medium text-ink">{m.nome}</dd>
+          <dt className="text-ink-3">Email</dt>
+          <dd className="min-w-0 truncate text-ink">
+            <a href={`mailto:${m.email}`} className="hover:underline">
+              {m.email}
+            </a>
+          </dd>
+          {m.telefone && (
+            <>
+              <dt className="text-ink-3">Telefone</dt>
+              <dd className="text-ink">
+                <a href={`tel:${m.telefone}`} className="hover:underline">
+                  {m.telefone}
+                </a>
+              </dd>
+            </>
+          )}
+        </dl>
+        <p className="whitespace-pre-wrap rounded-[10px] bg-sunken/60 px-3.5 py-3 text-body leading-relaxed text-ink">{m.mensagem}</p>
+        {m.tratada && (
+          <p className="text-meta text-ink-3">
+            Tratada{m.tratadaPor ? ` por ${m.tratadaPor}` : ""}
+            {m.tratadaEm ? ` a ${dataEHora(m.tratadaEm)}` : ""}.
+          </p>
+        )}
+      </div>
+    </Dialog>
   );
 }

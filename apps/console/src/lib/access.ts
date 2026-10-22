@@ -253,6 +253,12 @@ export const AREAS: Area[] = [
    * por aqui que a direção o confia a mais alguém de propósito.
    */
   { label: "Denúncias", hint: "o canal de denúncia das famílias e o seguimento de cada caso", read: "conduct:read", write: "conduct:write" },
+  /*
+   * O site do clube. Entra no catálogo no dia em que ganha permissão própria:
+   * é precisamente para a direção o poder dar a quem trata da comunicação, sem
+   * as Definições. Só aparece a quem tem o site no plano (Connect Pro).
+   */
+  { label: "Website", hint: "o site do clube: notícias, loja, bilheteira e as mensagens de contacto", read: "website:read", write: "website:write" },
 ];
 
 /**

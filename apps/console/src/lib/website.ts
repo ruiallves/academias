@@ -2,7 +2,7 @@ import { useEffect, useSyncExternalStore } from "react";
 import { recintoValido, type Recinto } from "@academia/ui/estadio";
 import { apiDelete, apiGet, apiPatch, apiPost, apiPut } from "@/lib/http";
 
-export type { Recinto, Bancada, Lado } from "@academia/ui/estadio";
+export type { Recinto, Bancada, Lado, Porta } from "@academia/ui/estadio";
 
 /**
  * O site do clube, tal como a consola o edita (menu Website). **Só em DEV**,
@@ -25,7 +25,8 @@ export type { Recinto, Bancada, Lado } from "@academia/ui/estadio";
  * mostrar uma coisa que não ficou gravada. Ver `academia-escritas-locais`.
  */
 
-export type Layout = "classico" | "porto";
+/** Os temas do site: Tribuna (claro) e Holofote (escuro). Chamavam-se "classico" e "porto" até 20/10/2026. */
+export type Layout = "tribuna" | "holofote";
 
 export type Redes = Partial<Record<"facebook" | "instagram" | "youtube" | "x" | "tiktok", string>>;
 
@@ -56,13 +57,24 @@ export type ProdutoDoSite = {
   tamanhos: string;
   esgotado: boolean;
   visivel: boolean;
+  /**
+   * O artigo do Inventário que este produto vende. Quando não é nulo, o nome
+   * vem do artigo e os tamanhos e o esgotado saem do stock: a API ignora-os ao
+   * editar. Põe-se à venda na ficha do artigo, não aqui.
+   */
+  artigoId: string | null;
 };
 
+/** A quem um preço se vende: ao público geral, ou aos sócios. */
+export type ParaQuem = "publico" | "socios";
+
 /**
- * Um tipo de bilhete. `bancadaId` liga-o a uma bancada do recinto do jogo:
- * é o que deixa quem compra ver no mapa onde vai ficar. Nulo = qualquer lugar.
+ * Um tipo de bilhete: um preço numa bancada para um público. `bancadaId` liga-o
+ * a uma bancada do recinto do jogo (é o que deixa quem compra ver no mapa onde
+ * vai ficar); nulo = qualquer lugar. Com `para: "socios"`, `tierId` nulo é
+ * para qualquer sócio, e com `tierId` só para os sócios dessa categoria.
  */
-export type TipoDeBilhete = { id: string; nome: string; preco: number; bancadaId: string | null };
+export type TipoDeBilhete = { id: string; nome: string; preco: number; bancadaId: string | null; para: ParaQuem; tierId: string | null };
 
 export type BilheteiraDoJogo = {
   aberta: boolean;
@@ -71,9 +83,26 @@ export type BilheteiraDoJogo = {
   lotacao: number | null;
   nota: string;
   tipos: TipoDeBilhete[];
+  /** ISO. Desde quando os sócios compram. Nulo = desde que abre. */
+  sociosDesde: string | null;
+  /** ISO. Desde quando o público compra. Nulo = desde que abre. */
+  publicoDesde: string | null;
+  /** Só os sócios compram, o público nunca. */
+  soSocios: boolean;
+  /** ISO. Quando fecha. Nulo = à hora do jogo. */
+  fechaEm: string | null;
 };
 
+/** Uma categoria de sócio, para as colunas dos preços de sócio. */
+export type CategoriaDeSocio = { id: string; nome: string };
+
 export type Patrocinador = { id: string; nome: string; url: string; logo: string };
+
+/** Um membro da direção, como aparece na página "O clube". */
+export type Dirigente = { nome: string; cargo: string };
+
+/** Uma instalação do clube (o estádio, o pavilhão, a sede). A imagem vem de `enviarImagem`, como a `foto`. */
+export type Instalacao = { nome: string; descricao: string; imagem: string };
 
 export type Identidade = {
   lema: string;
@@ -86,7 +115,56 @@ export type Identidade = {
   redes: Redes;
   /** A fotografia do clube (bloco de sócios). Vazia: o site usa uma de bancada. */
   foto: string;
+  /** A direção, pela ordem em que o clube a escreveu (máx. 40). Vazia, a página não a mostra. */
+  direcao: Dirigente[];
+  /** As instalações (máx. 12). */
+  instalacoes: Instalacao[];
 };
+
+/* -------------------------------------------------------------------------- */
+/* A página de início                                                           */
+/* -------------------------------------------------------------------------- */
+
+export type SeccaoInicioKey = "jogo" | "noticias" | "equipas" | "socios" | "banner" | "loja" | "patrocinadores";
+
+/** O banner: só aparece com título e imagem ou texto, mesmo com a secção ligada. */
+export type Banner = { titulo: string; texto: string; imagem: string; botao: string; url: string };
+
+export const BANNER_VAZIO: Banner = { titulo: "", texto: "", imagem: "", botao: "", url: "" };
+
+/**
+ * Uma secção da página de início. As seis fixas existem uma vez cada; os
+ * banners são quantos o clube quiser (até `BANNERS_MAX`), cada um com o seu
+ * conteúdo e um `id` seu, que é o que o arrastar segura.
+ */
+export type SeccaoInicio = { id: string; key: SeccaoInicioKey; visivel: boolean; banner?: Banner };
+
+export const BANNERS_MAX = 4;
+
+/**
+ * O que cada secção da página de início é, por palavras. A ordem aqui é a de
+ * origem; a que conta é a gravada em `inicio.seccoes`. O herói (as notícias
+ * em destaque) não é uma secção: fica sempre no topo.
+ */
+export const SECCOES_INICIO: { key: SeccaoInicioKey; rotulo: string; descricao: string }[] = [
+  { key: "jogo", rotulo: "Próximo jogo e último resultado", descricao: "A faixa com o jogo que vem aí e o resultado do último." },
+  { key: "noticias", rotulo: "Mais notícias", descricao: "As notícias publicadas a seguir às que estão em destaque." },
+  { key: "equipas", rotulo: "Equipas", descricao: "As equipas ligadas na secção Equipas, com ligação à página de cada uma." },
+  { key: "socios", rotulo: "Bloco de sócios", descricao: "O convite a ser sócio, com a fotografia do clube." },
+  { key: "banner", rotulo: "Banner", descricao: "Um bloco livre: uma campanha, um torneio, um apoio. Podes ter vários, em sítios diferentes." },
+  { key: "loja", rotulo: "Loja", descricao: "Os produtos visíveis da loja." },
+  { key: "patrocinadores", rotulo: "Patrocinadores", descricao: "Os patrocinadores em faixa. Continuam no rodapé de todas as páginas." },
+];
+
+/** `banner` é o primeiro banner da lista, repetido pelo servidor para o site antigo. A consola não lhe mexe. */
+export type Inicio = { seccoes: SeccaoInicio[]; banner: Banner };
+
+export function inicioVazio(): Inicio {
+  return {
+    seccoes: SECCOES_INICIO.map((s) => (s.key === "banner" ? { id: "banner-1", key: s.key, visivel: true, banner: { ...BANNER_VAZIO } } : { id: s.key, key: s.key, visivel: true })),
+    banner: { ...BANNER_VAZIO },
+  };
+}
 
 export type SiteDoClube = {
   slug: string;
@@ -96,6 +174,8 @@ export type SiteDoClube = {
   publicado: boolean;
   layout: Layout;
   identidade: Identidade;
+  /** A página de início: a ordem das secções, o que se mostra, e o banner. */
+  inicio: Inicio;
   noticias: NoticiaDoSite[];
   produtos: ProdutoDoSite[];
   /** Os recintos do clube vistos de cima: o estádio, o pavilhão. */
@@ -105,6 +185,12 @@ export type SiteDoClube = {
   /** Por id de equipa. Sem entrada = não aparece; ligada = aparece com tudo (plantel incluído). */
   equipas: Record<string, { visivel: boolean; plantel: boolean; foto?: string }>;
   patrocinadores: Patrocinador[];
+  /** Mensagens do formulário de contactos ainda por abrir. A pastilha do submenu. */
+  mensagensPorLer: number;
+  /** Os preços por omissão da bilheteira, por id de recinto. Um jogo novo começa neles. */
+  precosBilheteira: Record<string, TipoDeBilhete[]>;
+  /** As categorias de sócio do clube (as não arquivadas), pela ordem do clube. */
+  categoriasDeSocio: CategoriaDeSocio[];
 };
 
 export function siteVazio(): SiteDoClube {
@@ -112,16 +198,78 @@ export function siteVazio(): SiteDoClube {
     slug: "",
     dominio: "",
     publicado: false,
-    layout: "classico",
-    identidade: { lema: "", sobre: "", historia: "", fundacao: "", morada: "", telefone: "", email: "", redes: {}, foto: "" },
+    layout: "tribuna",
+    identidade: {
+      lema: "",
+      sobre: "",
+      historia: "",
+      fundacao: "",
+      morada: "",
+      telefone: "",
+      email: "",
+      redes: {},
+      foto: "",
+      direcao: [],
+      instalacoes: [],
+    },
+    inicio: inicioVazio(),
     noticias: [],
     produtos: [],
     recintos: [],
     bilheteira: {},
     equipas: {},
     patrocinadores: [],
+    mensagensPorLer: 0,
+    precosBilheteira: {},
+    categoriasDeSocio: [],
   };
 }
+
+/**
+ * Um tipo como a consola o desenha. Um servidor de antes das fases e dos
+ * preços de sócio mandava só `{ id, nome, preco, bancadaId }`: o que falta é
+ * do público geral.
+ */
+export function tipoNormalizado(t: Partial<TipoDeBilhete> & { id: string; nome: string; preco: number }): TipoDeBilhete {
+  const para: ParaQuem = t.para === "socios" ? "socios" : "publico";
+  return { id: t.id, nome: t.nome, preco: t.preco, bancadaId: t.bancadaId ?? null, para, tierId: para === "socios" ? (t.tierId ?? null) : null };
+}
+
+/** A bilheteira de um jogo com todos os campos, venha de onde vier. */
+export function bilheteiraNormalizada(b: Partial<BilheteiraDoJogo> & { aberta: boolean; tipos: TipoDeBilhete[] }): BilheteiraDoJogo {
+  return {
+    aberta: b.aberta,
+    recintoId: b.recintoId ?? null,
+    lotacao: b.lotacao ?? null,
+    nota: b.nota ?? "",
+    tipos: (Array.isArray(b.tipos) ? b.tipos : []).map(tipoNormalizado),
+    sociosDesde: b.sociosDesde ?? null,
+    publicoDesde: b.publicoDesde ?? null,
+    soSocios: b.soSocios === true,
+    fechaEm: b.fechaEm ?? null,
+  };
+}
+
+/* -------------------------------------------------------------------------- */
+/* As mensagens do formulário de contactos                                      */
+/* -------------------------------------------------------------------------- */
+
+export type MensagemDoSite = {
+  id: string;
+  nome: string;
+  email: string;
+  telefone: string;
+  assunto: string;
+  mensagem: string;
+  lida: boolean;
+  tratada: boolean;
+  /** O nome de quem a deu por tratada. Nulo enquanto não estiver. */
+  tratadaPor: string | null;
+  /** ISO. */
+  tratadaEm: string | null;
+  /** ISO. */
+  recebidaEm: string;
+};
 
 /* -------------------------------------------------------------------------- */
 /* A cópia em memória                                                           */
@@ -142,9 +290,41 @@ function mudarLocal(f: (s: SiteDoClube) => SiteDoClube) {
   emitir({ site: f(estado.site) });
 }
 
-/** Os recintos desenham-se, e um recinto partido leva a página com ele: ver `recintoValido`. */
+/**
+ * Os recintos desenham-se, e um recinto partido leva a página com ele: ver
+ * `recintoValido`. A identidade e o início completam-se com o vazio, para um
+ * servidor antigo (sem `direcao`, sem `inicio`) não deixar um `.map` sem lista.
+ */
 function normalizar(s: SiteDoClube): SiteDoClube {
-  return { ...siteVazio(), ...s, recintos: Array.isArray(s.recintos) ? s.recintos.map((r, i) => recintoValido(r, i)) : [] };
+  const vazio = siteVazio();
+  const layout = s.layout as string;
+  return {
+    ...vazio,
+    ...s,
+    // Os nomes antigos dos temas, de um servidor por atualizar, caem nos de hoje.
+    layout: layout === "holofote" || layout === "porto" ? "holofote" : "tribuna",
+    identidade: { ...vazio.identidade, ...(s.identidade ?? {}) },
+    // Um servidor de antes dos vários banners mandava as secções sem `id`: dá-se-lhes um.
+    inicio: s.inicio
+      ? {
+          ...vazio.inicio,
+          ...s.inicio,
+          seccoes: (s.inicio.seccoes ?? vazio.inicio.seccoes).map((x, i) =>
+            x.key === "banner" ? { ...x, id: x.id || `banner-${i}`, banner: x.banner ?? s.inicio.banner ?? { ...BANNER_VAZIO } } : { ...x, id: x.id || x.key },
+          ),
+        }
+      : vazio.inicio,
+    recintos: Array.isArray(s.recintos) ? s.recintos.map((r, i) => recintoValido(r, i)) : [],
+    // Um servidor de antes das fases da venda e dos preços de sócio não os manda.
+    bilheteira: Object.fromEntries(Object.entries(s.bilheteira ?? {}).map(([id, b]) => [id, bilheteiraNormalizada(b)])),
+    precosBilheteira: Object.fromEntries(
+      Object.entries(s.precosBilheteira && typeof s.precosBilheteira === "object" ? s.precosBilheteira : {}).map(([id, tipos]) => [
+        id,
+        (Array.isArray(tipos) ? tipos : []).map(tipoNormalizado),
+      ]),
+    ),
+    categoriasDeSocio: Array.isArray(s.categoriasDeSocio) ? s.categoriasDeSocio : [],
+  };
 }
 
 export function carregarSite(slug: string, forcar = false): Promise<void> {
@@ -190,7 +370,7 @@ function repor() {
 /* A configuração (layout, identidade, equipas, recintos, publicar)             */
 /* -------------------------------------------------------------------------- */
 
-type Configuracao = Partial<Pick<SiteDoClube, "publicado" | "layout" | "identidade" | "equipas" | "recintos">>;
+type Configuracao = Partial<Pick<SiteDoClube, "publicado" | "layout" | "identidade" | "inicio" | "equipas" | "recintos">>;
 
 let pendente: Configuracao = {};
 let temporizador: ReturnType<typeof setTimeout> | null = null;
@@ -292,10 +472,27 @@ export async function apagarPatrocinador(id: string) {
   mudarLocal((s) => ({ ...s, patrocinadores: s.patrocinadores.filter((x) => x.id !== id) }));
 }
 
+/**
+ * Grava a bilheteira de um jogo. Com `tipos: []` num jogo que ainda não os
+ * tem, o servidor copia os preços por omissão do recinto; volta a forma como
+ * ficou, e é essa que a cópia guarda.
+ */
 export async function guardarBilheteira(matchId: string, b: BilheteiraDoJogo): Promise<BilheteiraDoJogo> {
-  const gravada = await apiPut<BilheteiraDoJogo>(`/api/site/bilheteira/${matchId}`, b);
+  const gravada = bilheteiraNormalizada(await apiPut<BilheteiraDoJogo>(`/api/site/bilheteira/${matchId}`, b));
   mudarLocal((s) => ({ ...s, bilheteira: { ...s.bilheteira, [matchId]: gravada } }));
   return gravada;
+}
+
+/**
+ * Os preços por omissão, por recinto: o que um jogo novo nesse recinto traz.
+ * Grava todos de uma vez (o servidor substitui), e a cópia fica com o que o
+ * servidor devolveu, já limpo das categorias de sócio que deixaram de existir.
+ */
+export async function guardarPrecos(porRecinto: Record<string, TipoDeBilhete[]>): Promise<Record<string, TipoDeBilhete[]>> {
+  const gravados = await apiPut<Record<string, TipoDeBilhete[]>>("/api/site/bilheteira-precos", { porRecinto });
+  const limpos = Object.fromEntries(Object.entries(gravados ?? {}).map(([id, tipos]) => [id, (tipos ?? []).map(tipoNormalizado)]));
+  mudarLocal((s) => ({ ...s, precosBilheteira: limpos }));
+  return limpos;
 }
 
 export async function apagarBilheteira(matchId: string) {
@@ -305,6 +502,37 @@ export async function apagarBilheteira(matchId: string) {
     void _fora;
     return { ...s, bilheteira: resto };
   });
+}
+
+/* -------------------------------------------------------------------------- */
+/* Mensagens                                                                    */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * As mensagens não vivem na cópia em memória: chegam de fora a qualquer hora,
+ * e a lista lê-se de fresco de cada vez que a secção abre. O que fica na cópia
+ * é só a contagem das por ler, que é a pastilha do submenu.
+ */
+export function listarMensagens(): Promise<MensagemDoSite[]> {
+  return apiGet<MensagemDoSite[]>("/api/site/mensagens");
+}
+
+/**
+ * Abrir (`lida`), dar por tratada ou reabrir (`tratada`). Devolve a mensagem
+ * como ficou. Uma mensagem que passa a lida baixa a contagem local: a pastilha
+ * acompanha sem voltar a pedir o site todo.
+ */
+export async function mudarMensagem(id: string, patch: { lida?: boolean; tratada?: boolean }, antes?: MensagemDoSite): Promise<MensagemDoSite> {
+  const depois = await apiPatch<MensagemDoSite>(`/api/site/mensagens/${id}`, patch);
+  const eraPorLer = antes ? !antes.lida : patch.lida === true;
+  if (eraPorLer && depois.lida) mudarLocal((s) => ({ ...s, mensagensPorLer: Math.max(0, s.mensagensPorLer - 1) }));
+  return depois;
+}
+
+export async function apagarMensagem(id: string, antes?: MensagemDoSite) {
+  await apiDelete(`/api/site/mensagens/${id}`);
+  // Apagar uma mensagem por ler também a tira da pastilha.
+  if (antes && !antes.lida) mudarLocal((s) => ({ ...s, mensagensPorLer: Math.max(0, s.mensagensPorLer - 1) }));
 }
 
 /* -------------------------------------------------------------------------- */

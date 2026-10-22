@@ -68,5 +68,7 @@
   "registration:read": "20261009120000_inscricoes_fpf",
   "registration:write": "20261009120000_inscricoes_fpf",
   "conduct:read": "20261020100000_canal_de_denuncia",
-  "conduct:write": "20261020100000_canal_de_denuncia"
+  "conduct:write": "20261020100000_canal_de_denuncia",
+  "website:read": "20261020150000_site_fase_1",
+  "website:write": "20261020150000_site_fase_1"
 }

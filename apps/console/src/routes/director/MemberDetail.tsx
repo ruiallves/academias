@@ -9,6 +9,7 @@ import { DividirQuotaDialog } from "@/components/DividirQuotaDialog";
 import { AnoDeQuotasDialog } from "@/components/AnoDeQuotasDialog";
 import { PhotoPicker } from "@/components/PhotoPicker";
 import { HistoricoPanel } from "@/components/HistoricoPanel";
+import { LugarAnualPanel } from "@/components/LugarAnualPanel";
 import { BotaoExportarPerfil } from "@/components/BotaoExportarPerfil";
 import { exportarFichaDeSocio } from "@/lib/perfis";
 import { removeMemberPhoto, uploadMemberPhoto } from "@/lib/photos";
@@ -31,6 +32,7 @@ import {
 } from "@/lib/icons";
 import { can } from "@/lib/permissions";
 import { useSession } from "@/session";
+import { useStore } from "@/lib/store";
 import { money } from "@/lib/format";
 import {
   DOC_LABEL,
@@ -85,6 +87,7 @@ export default function MemberDetail() {
   const [tab, setTab] = useState<"overview" | "fees" | "history">("overview");
 
   const mayWrite = can(session, "member:write");
+  const store = useStore();
 
   const load = useCallback(() => {
     getMember(id)
@@ -318,6 +321,10 @@ export default function MemberDetail() {
             <QuotaPanel member={m} tiers={tiers} mayWrite={mayWrite} busy={busy} onChange={set} onVerQuotas={() => setTab("fees")} />
 
             <AppDoClubePanel member={m} mayWrite={mayWrite} onChanged={load} />
+
+            {/* O lugar na bancada para a época toda. Só com o site no plano, e a
+                quem vê o site: os recintos e as bancadas vêm de lá. */}
+            {store.academy.websiteIncluido && can(session, "website:read") && <LugarAnualPanel memberId={m.id} mayWrite={mayWrite} />}
 
             <Panel>
               <PanelHead title="Consentimentos" hint="com data" />

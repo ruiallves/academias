@@ -1280,6 +1280,163 @@ export function ticketAlertEmail(input: {
 }
 
 /* -------------------------------------------------------------------------- */
+/* Uma mensagem pelo site do clube — para o clube                               */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * O aviso ao clube de que chegou uma mensagem pelo formulário de contactos do
+ * site dele. É o par de `ticketAlertEmail`, com a marca do clube: quem recebe é
+ * a secretaria do clube, e a mensagem é para eles, não para nós.
+ *
+ * `replyTo` é o email de quem escreveu, pela mesma razão: "responder" fala com
+ * a pessoa. A mensagem fica também na consola (Website › Mensagens), por isso o
+ * botão leva lá.
+ */
+export function siteMensagemEmail(input: {
+  brand: MailBrand;
+  nome: string;
+  email: string;
+  telefone?: string | null;
+  assunto: string;
+  mensagem: string;
+  link: string;
+}): { subject: string; html: string; text: string } {
+  const campos: [string, string | null | undefined][] = [
+    ["Nome", input.nome],
+    ["Email", input.email],
+    ["Telefone", input.telefone],
+    ["Assunto", input.assunto],
+  ];
+  const preenchidos = campos.filter((c): c is [string, string] => Boolean(c[1]));
+
+  const tabela =
+    '<table role="presentation" cellpadding="0" cellspacing="0" border="0" style="width:100%;border-collapse:collapse">' +
+    preenchidos
+      .map(
+        ([rotulo, valor]) =>
+          "<tr>" +
+          '<td style="padding:4px 12px 4px 0;font-family:Helvetica,Arial,sans-serif;font-size:13px;' +
+          'color:#8a867c;white-space:nowrap;vertical-align:top">' + esc(rotulo) + "</td>" +
+          '<td style="padding:4px 0;font-family:Helvetica,Arial,sans-serif;font-size:14px;' +
+          'color:#1a1917;vertical-align:top">' + esc(valor) + "</td>" +
+          "</tr>",
+      )
+      .join("") +
+    "</table>";
+
+  const mensagem =
+    '<div style="margin-top:4px;padding:12px 14px;background:#f7f6f3;border-radius:8px;' +
+    'font-family:Helvetica,Arial,sans-serif;font-size:14px;line-height:1.55;color:#1a1917;' +
+    'white-space:pre-wrap">' + esc(input.mensagem.trim()) + "</div>";
+
+  const notas = ["Responder a este email fala directamente com quem escreveu. A mensagem fica também na consola, em Website › Mensagens."];
+
+  return {
+    subject: `Mensagem pelo site — ${input.nome} · ${input.assunto}`,
+    html: layout({
+      brand: input.brand,
+      heading: "Chegou uma mensagem pelo site",
+      paragraphs: [],
+      blocks: [tabela, mensagem],
+      cta: { label: "Abrir na consola", url: input.link },
+      notes: notas,
+    }),
+    text: plain(
+      "Chegou uma mensagem pelo site",
+      [...preenchidos.map(([rotulo, valor]) => `${rotulo}: ${valor}`), "", input.mensagem.trim()],
+      { label: "Abrir na consola", url: input.link },
+      notas,
+    ),
+  };
+}
+
+/* -------------------------------------------------------------------------- */
+/* Bilhetes — o que chega a quem comprou                                        */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * Os bilhetes de uma compra paga. Cada bilhete vai em anexo como imagem do
+ * QR (os clientes de email não desenham QR nenhum), e o botão abre a página
+ * dos bilhetes no site, que é o que se mostra à porta no telemóvel.
+ */
+export function bilhetesEmail(input: {
+  brand: MailBrand;
+  nome: string;
+  jogo: string;
+  quando: string;
+  recinto: string | null;
+  bilhetes: { tipo: string }[];
+  link: string;
+}): { subject: string; html: string; text: string } {
+  const n = input.bilhetes.length;
+  const heading = n === 1 ? "O teu bilhete" : `Os teus ${n} bilhetes`;
+  const lista = input.bilhetes.map((b, i) => `${i + 1}. ${b.tipo}`);
+  const paragraphs = [
+    "<strong>" + esc(input.jogo) + "</strong>",
+    esc(input.quando) + (input.recinto ? " · " + esc(input.recinto) : ""),
+    lista.map(esc).join("<br>"),
+  ];
+  const notes = [
+    "Mostra o código QR à entrada, no telemóvel ou impresso. Cada bilhete entra uma vez, e só pela porta da bancada dele.",
+    "Os códigos estão em anexo e na página dos bilhetes. Não os partilhes: quem tiver o código entra no teu lugar.",
+  ];
+  return {
+    subject: `${input.brand.shortName} · ${n === 1 ? "o teu bilhete" : "os teus bilhetes"} para ${input.jogo}`,
+    html: layout({ brand: input.brand, greeting: "Olá " + (input.nome.trim().split(/\s+/)[0] ?? "") + ",", heading, paragraphs, cta: { label: "Abrir os bilhetes", url: input.link }, notes }),
+    text: plain(
+      "Olá " + (input.nome.trim().split(/\s+/)[0] ?? "") + ",",
+      [input.jogo, input.quando + (input.recinto ? " · " + input.recinto : ""), "", ...lista],
+      { label: "Abrir os bilhetes", url: input.link },
+      notes,
+    ),
+  };
+}
+
+/**
+ * O pagamento chegou depois de os lugares terem voltado à venda: não há
+ * bilhete, e o clube devolve o dinheiro. Diz-se às claras, com o valor.
+ */
+export function bilhetesForaDoPrazoEmail(input: {
+  brand: MailBrand;
+  nome: string;
+  jogo: string;
+  valor: string;
+}): { subject: string; html: string; text: string } {
+  const heading = "O pagamento chegou fora do prazo";
+  const paragraphs = [
+    "Recebemos o teu pagamento de <strong>" + esc(input.valor) + "</strong> para <strong>" + esc(input.jogo) + "</strong>, mas chegou depois dos 10 minutos em que os lugares estavam guardados, e já não há bilhete para esta compra.",
+    "O clube vai devolver-te o valor. Se quiseres ir ao jogo, podes fazer uma compra nova enquanto houver lugares.",
+  ];
+  const notes = ["Se tiveres alguma dúvida sobre a devolução, responde aos contactos do clube no site."];
+  return {
+    subject: `${input.brand.shortName} · o pagamento dos bilhetes chegou fora do prazo`,
+    html: layout({ brand: input.brand, greeting: "Olá " + (input.nome.trim().split(/\s+/)[0] ?? "") + ",", heading, paragraphs, notes }),
+    text: plain("Olá " + (input.nome.trim().split(/\s+/)[0] ?? "") + ",", paragraphs.map(semTags), undefined, notes),
+  };
+}
+
+/** Os bilhetes foram anulados pelo clube (jogo cancelado, engano), com o reembolso a caminho. */
+export function bilhetesAnuladosEmail(input: {
+  brand: MailBrand;
+  nome: string;
+  jogo: string;
+  motivo: string;
+  valor: string | null;
+}): { subject: string; html: string; text: string } {
+  const heading = "Os teus bilhetes foram anulados";
+  const paragraphs = [
+    "Os bilhetes para <strong>" + esc(input.jogo) + "</strong> foram anulados pelo clube. " + esc(input.motivo),
+    input.valor ? "O clube vai devolver-te <strong>" + esc(input.valor) + "</strong>." : "Não houve pagamento a devolver.",
+  ];
+  const notes = ["Os códigos QR destes bilhetes deixaram de servir à entrada."];
+  return {
+    subject: `${input.brand.shortName} · bilhetes anulados para ${input.jogo}`,
+    html: layout({ brand: input.brand, greeting: "Olá " + (input.nome.trim().split(/\s+/)[0] ?? "") + ",", heading, paragraphs, notes }),
+    text: plain("Olá " + (input.nome.trim().split(/\s+/)[0] ?? "") + ",", paragraphs.map(semTags), undefined, notes),
+  };
+}
+
+/* -------------------------------------------------------------------------- */
 /* Repor a palavra-passe — quem se esqueceu dela                               */
 /* -------------------------------------------------------------------------- */
 

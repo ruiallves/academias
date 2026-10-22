@@ -69,6 +69,11 @@ export function Rodape({ clube }: { clube: Clube }) {
                 Ser sócio
               </BotaoSocio>
             </li>
+            <li>
+              <Link href="/privacidade" className="hover:text-night-ink">
+                Privacidade
+              </Link>
+            </li>
           </ul>
         </nav>
 

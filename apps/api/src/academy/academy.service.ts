@@ -28,6 +28,14 @@ import { instanteNoFuso, partesNoFuso, somarDias } from "../common/fuso";
 import { siteIncluido } from "../site/plano";
 
 /**
+ * Um jogo com bilhetes vendidos não se desmarca nem se apaga pelo calendário:
+ * os bilhetes continuavam a valer (ou desapareciam com o jogo) sem reembolso
+ * registado nem aviso a quem comprou. Cancela-se a venda primeiro, que anula
+ * os bilhetes, regista os reembolsos e avisa por email.
+ */
+const BILHETES_VENDIDOS = "Tem bilhetes vendidos: cancela primeiro a venda em Website › Bilheteira, que anula os bilhetes e avisa quem comprou";
+
+/**
  * As colunas de um evento que a consola lê — partilhadas pela leitura, criação e
  * alteração, para as três devolverem exactamente a mesma forma.
  */
@@ -44,6 +52,7 @@ const EVENT_SELECT = {
   /* O vocabulário do clube para este evento — ver `CalendarEvent.typeId`. */
   type: { select: { id: true, label: true } },
   cancelled: true,
+  isPublic: true,
   coach: { select: { id: true, user: { select: { name: true } } } },
   /*
    * O nome da equipa vem com o evento.
@@ -89,6 +98,8 @@ function serializeEvent(e: EventRow, porEquipa?: Map<string, { id: string; name:
     /** Como o clube chama a isto. Nulo cai no rótulo do `kind`, como sempre. */
     typeLabel: e.type?.label ?? null,
     cancelled: e.cancelled,
+    /** No site do clube. Ver `CalendarEvent.isPublic`. */
+    isPublic: e.isPublic,
     coachId: e.coach?.id ?? daEquipa?.id ?? null,
     coachName: e.coach?.user.name ?? daEquipa?.name ?? null,
   };
@@ -151,6 +162,9 @@ const DELEGATABLE: ReadonlySet<Permission> = new Set<Permission>([
   // O canal de denúncia: a direção pode confiá-lo a uma pessoa (o responsável
   // pela ética, um elemento da direção) sem lhe dar mais nada.
   "conduct:read", "conduct:write",
+  // O site do clube: é a razão de ter permissão própria — dá-se a quem trata
+  // da comunicação sem lhe dar as Definições.
+  "website:read", "website:write",
   /*
    * Delegar a criação de papéis é o ponto da funcionalidade: a presidência pode
    * passá-la à direção, ou a uma pessoa em concreto, sem lhe dar mais nada. Não
@@ -2736,6 +2750,8 @@ export class AcademyService {
       dressingRooms?: string[];
       /** O tipo do catálogo do clube. Ver `CalendarEvent.typeId`. */
       typeId?: string;
+      /** No site do clube. Ver `CalendarEvent.isPublic`. */
+      isPublic?: boolean;
       opponent?: string;
       isHome?: boolean;
       /** A prova, só nos jogos. Ver `Match.competitionId`. */
@@ -2867,6 +2883,8 @@ export class AcademyService {
       dressingRoom?: string;
       dressingRooms?: string[];
       typeId?: string;
+      /** No site do clube. Só nos eventos do calendário. */
+      isPublic?: boolean;
       opponent?: string;
       isHome?: boolean;
       competitionId?: string;
@@ -3103,6 +3121,8 @@ export class AcademyService {
           dressingRoom: balnearios[0] ?? null,
           dressingRooms: balnearios,
           typeId,
+          // No site do clube, se o clube o marcou. Ver `CalendarEvent.isPublic`.
+          isPublic: dto.isPublic === true,
           ...(dto.teamId ? { teamId: dto.teamId } : {}),
         },
         select: EVENT_SELECT,
@@ -3194,6 +3214,10 @@ export class AcademyService {
         }
         if (match.status === "PLAYED") {
           throw new BadRequestException("Um jogo já disputado não se cancela");
+        }
+        if (cancelled) {
+          const vendidos = await db.ticketOrder.count({ where: { matchId: match.id, status: { in: ["PAID", "RESERVED"] } } });
+          if (vendidos > 0) throw new BadRequestException(BILHETES_VENDIDOS);
         }
 
         // Reactivar devolve o jogo ao horário — que pode ter sido ocupado por
@@ -3302,6 +3326,13 @@ export class AcademyService {
             id: true, teamId: true, startsAt: true, status: true,
             report: { select: { id: true } }, opponentReport: { select: { id: true } }, plan: { select: { id: true } },
             _count: { select: { callUps: true, appearances: true, financialTransactions: true, aiAnalyses: true } },
+            // As compras de bilhetes: um jogo com bilhetes vendidos não se desmarca nem se apaga por aqui.
+            siteTickets: {
+              select: {
+                _count: { select: { orders: true } },
+                orders: { where: { status: { in: ["PAID", "RESERVED"] } }, select: { id: true }, take: 1 },
+              },
+            },
           },
         }),
         db.calendarEvent.findMany({
@@ -3343,8 +3374,10 @@ export class AcademyService {
         else if (passado(m.startsAt)) motivo = "Já começou ou já passou";
         else if (m.status === "PLAYED") motivo = "Já foi disputado";
         else if (acao === "desmarcar" && m.status === "CANCELLED") motivo = "Já estava desmarcado";
+        else if (acao === "desmarcar" && (m.siteTickets?.orders.length ?? 0) > 0) motivo = BILHETES_VENDIDOS;
         else if (acao === "apagar") {
           const agarrado = [
+            (m.siteTickets?._count.orders ?? 0) > 0 && "compras de bilhetes",
             m._count.callUps > 0 && "convocatória",
             (m._count.appearances > 0 || m.report) && "ficha de jogo",
             m.plan && "plano de jogo",
@@ -4207,6 +4240,7 @@ export class AcademyService {
       dressingRoom?: string | null;
       dressingRooms?: string[];
       typeId?: string;
+      isPublic?: boolean;
       opponent?: string;
       isHome?: boolean;
       competitionId?: string;
@@ -4434,6 +4468,7 @@ export class AcademyService {
           ...(dto.venue !== undefined ? { venue: dto.venue.trim() } : {}),
           ...(balnearios !== undefined ? { dressingRoom: balnearios[0] ?? null, dressingRooms: balnearios } : {}),
           ...(tipoEditado !== undefined ? { typeId: tipoEditado } : {}),
+          ...(dto.isPublic !== undefined ? { isPublic: dto.isPublic } : {}),
         },
         select: EVENT_SELECT,
       });

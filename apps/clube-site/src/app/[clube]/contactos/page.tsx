@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { Mail, MapPin, Phone } from "lucide-react";
 import { clubeOu404 } from "@/lib/clube";
+import { emDemonstracao } from "@/lib/modo";
 import { CabecalhoPagina } from "@/componentes/Seccao";
 import { Redes } from "@/componentes/Redes";
 import { FormularioContacto } from "./FormularioContacto";
@@ -9,9 +10,15 @@ export const revalidate = 60;
 
 export const metadata: Metadata = { title: "Contactos" };
 
-/** Onde estamos e como falar connosco. A mensagem entra na consola do clube. */
-export default async function Contactos({ params }: { params: Promise<{ clube: string }> }) {
-  const clube = await clubeOu404(params);
+type Props = { params: Promise<{ clube: string }>; searchParams: Promise<{ assunto?: string }> };
+
+/**
+ * Onde estamos e como falar connosco. A mensagem entra na consola do clube.
+ * `?assunto=Bilhetes` deixa o assunto escolhido: é para onde a loja e a
+ * bilheteira mandam enquanto a compra online não abre.
+ */
+export default async function Contactos({ params, searchParams }: Props) {
+  const [clube, { assunto }] = await Promise.all([clubeOu404(params), searchParams]);
   const morada = clube.address.lines.join(", ");
 
   return (
@@ -71,8 +78,8 @@ export default async function Contactos({ params }: { params: Promise<{ clube: s
         <section data-reveal>
           <h2 className="display text-2xl">Envia uma mensagem</h2>
           <span className="traco mt-3" aria-hidden />
-          <p className="mt-4 text-ink-2">Escreve a mensagem e envia-a do teu email para a secretaria do clube.</p>
-          <FormularioContacto email={clube.email} clube={clube.shortName} />
+          <p className="mt-4 text-ink-2">A mensagem chega à secretaria do clube.</p>
+          <FormularioContacto slug={clube.slug} api={process.env.SITE_API_URL ?? ""} demonstracao={emDemonstracao()} assuntoInicial={assunto} />
         </section>
       </div>
     </>

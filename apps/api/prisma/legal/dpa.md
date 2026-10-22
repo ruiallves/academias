@@ -1,8 +1,9 @@
 ---
 type: DPA
-version: 1.0
+version: 1.1
 title: Acordo de Tratamento de Dados
 summary: A relação de tratamento de dados entre o clube, responsável pelo tratamento, e a Academias, subcontratante.
+changeNote: Passa a cobrir o site público do clube (Connect Pro), os visitantes que escrevem pelo formulário de contactos, e o alojamento do site.
 ---
 
 Este documento descreve a relação de tratamento de dados entre o clube e a Academias. É parte integrante dos Termos de Serviço e é aceite por quem representa o clube.
@@ -19,11 +20,13 @@ O tratamento tem por objecto a prestação do serviço descrito nos Termos de Se
 
 ## 3. Categorias de dados e de titulares
 
-**Titulares**: atletas (frequentemente menores), encarregados de educação, staff do clube e sócios.
+**Titulares**: atletas (frequentemente menores), encarregados de educação, staff do clube e sócios. Quando o clube tem o site público incluído no plano, também os visitantes do site que lhe escrevem pelo formulário de contactos ou pedem para ser sócios.
 
-**Dados**: identificação e contacto, dados de inscrição, presenças, convocatórias, avaliações desportivas, relatórios, dados de facturação, mensalidades e quotas, fotografias e vídeo quando o clube os carregue.
+**Dados**: identificação e contacto, dados de inscrição, presenças, convocatórias, avaliações desportivas, relatórios, dados de facturação, mensalidades e quotas, fotografias e vídeo quando o clube os carregue. No site do clube: o que o clube decide publicar (notícias, equipas e plantéis, direcção, calendário, loja) e as mensagens recebidas pelo formulário de contactos (nome, email, telefone, mensagem e o endereço IP de quem envia).
 
 **Dados de saúde** relativos a lesões e disponibilidade desportiva, quando o clube utilize o módulo clínico. São categoria especial de dados e tratados como tal.
+
+O que o clube publica no site é decisão do clube: o plantel de uma equipa de formação só deve ir para o site com o consentimento das famílias, e a plataforma não liga nenhuma equipa sem o clube o fazer.
 
 ## 4. Instruções e confidencialidade
 
@@ -47,7 +50,7 @@ O que garantimos é que esse acesso é restrito a quem dele precisa para operar 
 
 ## 7. Subcontratantes
 
-Recorremos a subcontratantes para infra-estrutura e base de dados, autenticação, armazenamento de ficheiros, envio de email e de notificações, e processamento de pagamentos.
+Recorremos a subcontratantes para infra-estrutura e base de dados, autenticação, armazenamento de ficheiros, envio de email e de notificações, processamento de pagamentos e, para os clubes com site público, o alojamento e a distribuição do site.
 
 A lista actualizada é disponibilizada a pedido. Alterações relevantes são comunicadas com antecedência, para que o clube possa opor-se.
 

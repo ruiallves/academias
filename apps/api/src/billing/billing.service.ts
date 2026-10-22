@@ -4,7 +4,7 @@ import { BadRequestException, ForbiddenException, Injectable, Logger, NotFoundEx
 import { ConfigService } from "@nestjs/config";
 import { PaymentMethod, PaymentStatus, ChargeKind, ChargeStatus, NotificationType, type Payment, type Prisma } from "@prisma/client";
 import { PrismaService, type ScopedClient } from "../prisma/prisma.service";
-import { partesNoFuso } from "../common/fuso";
+import { instanteNoFuso, partesNoFuso } from "../common/fuso";
 import { razaoParaNaoApagar } from "../members/member-fees.service";
 import { FICHAS_PAGAS_PELA_FAMILIA } from "../members/socio-menor";
 import { NotificationsService } from "../notifications/notifications.service";
@@ -12,6 +12,7 @@ import { EupagoClient, type ChargeResult, type RedirectUrls } from "./eupago.cli
 import { montarIdentificador } from "./identificador";
 import { assertMinimoDoMetodo, MINIMO_COBRAVEL } from "./minimos";
 import { EupagoFeesService } from "./eupago-fees";
+import { BilheteiraEmissao } from "../bilheteira/emissao.service";
 import {
   cotacao,
   MENSAGEM_DESATIVADOS,
@@ -184,6 +185,8 @@ export class BillingService implements OnModuleInit, OnModuleDestroy {
     private readonly notifications: NotificationsService,
     private readonly config: ConfigService,
     private readonly fees: EupagoFeesService,
+    /** Os bilhetes: o webhook emite-os aqui. Ver `confirmPayment`. */
+    private readonly bilhetes: BilheteiraEmissao,
   ) {}
 
   /* ------------------------------------------------------------------------ */
@@ -589,7 +592,11 @@ export class BillingService implements OnModuleInit, OnModuleDestroy {
     const payment = await this.prisma.runAs(academyId, (db) =>
       db.payment.findFirst({
         where: { id: paymentId },
-        include: { charge: { select: { status: true } }, memberFee: { select: { status: true } } },
+        include: {
+          charge: { select: { status: true } },
+          memberFee: { select: { status: true } },
+          ticketOrder: { select: { status: true, reservedUntil: true } },
+        },
       }),
     );
     if (!payment || (payment.status !== PaymentStatus.PENDING && payment.status !== PaymentStatus.PROCESSING)) {
@@ -611,6 +618,11 @@ export class BillingService implements OnModuleInit, OnModuleDestroy {
     }
 
     // 2. A cobrança já foi resolvida por outro caminho: a tentativa ficou órfã.
+    // Uma compra de bilhetes paga ou anulada também (o pagamento que sobra é outro).
+    if (payment.ticketOrder && (payment.ticketOrder.status === "PAID" || payment.ticketOrder.status === "CANCELLED")) {
+      await expirar(`substituída — a compra de bilhetes já está ${payment.ticketOrder.status === "PAID" ? "paga" : "anulada"}`);
+      return "substituidos";
+    }
     const cobranca = payment.charge?.status ?? payment.memberFee?.status;
     if (cobranca === ChargeStatus.SETTLED || cobranca === ChargeStatus.VOID) {
       await expirar(`substituída — a cobrança já está ${cobranca === ChargeStatus.SETTLED ? "liquidada" : "anulada"}`);
@@ -626,7 +638,14 @@ export class BillingService implements OnModuleInit, OnModuleDestroy {
       const info = await this.eupago.getMultibancoStatus(payment.entity, payment.reference, apiKey);
       if (info) {
         if (/pag/.test(info.estado)) {
-          await this.confirmPayment([payment.id], new Date(), { reconciliacao: "multibanco/info", ...info.raw });
+          /*
+           * A hora a que foi pago, e não a de agora: num bilhete, "agora" podia
+           * passar dos 10 minutos e fazer de um pagamento a horas um reembolso.
+           * Da lista de pagos quando a há; senão, da resposta da euPago.
+           */
+          const daLista = (payment.identificador ? pagos?.get(payment.identificador) : undefined) ?? pagos?.get(payment.id);
+          const quando = daLista?.paidAt ?? dataDoPagamento(info.raw) ?? new Date();
+          await this.confirmPayment([payment.id], quando, { reconciliacao: "multibanco/info", ...info.raw });
           return "liquidados";
         }
         if (/expir|cancel|anul|devolv/.test(info.estado)) {
@@ -2270,6 +2289,105 @@ export class BillingService implements OnModuleInit, OnModuleDestroy {
   }
 
   /**
+   * Pagar uma compra de bilhetes — MB Way ou Multibanco, pela euPago do clube.
+   *
+   * Corre **depois** de a compra estar guardada (`BilheteiraService.reservar`),
+   * fora do bloqueio do jogo: o pedido à euPago demora um ou dois segundos, e
+   * com o jogo bloqueado esse tempo seria a fila de toda a gente que está a
+   * comprar. A compra já tem os lugares; isto só cria o pagamento.
+   *
+   * A comissão segue a regra do clube (`feesOnPayer`), como nas mensalidades.
+   * Só com a chave do clube: o dinheiro de um bilhete nunca liquida noutro IBAN.
+   */
+  async startTicketPayment(academyId: string, orderId: string, method: PaymentMethod, payerPhone?: string) {
+    if (method !== PaymentMethod.MBWAY && method !== PaymentMethod.MULTIBANCO) {
+      throw new BadRequestException("Método de pagamento desconhecido");
+    }
+    return this.prisma.runAs(academyId, async (db) => {
+      const pedido = await db.ticketOrder.findFirst({
+        where: { id: orderId },
+        include: { payments: true },
+      });
+      if (!pedido) throw new NotFoundException("Compra não encontrada");
+      if (pedido.status !== "RESERVED" || pedido.reservedUntil < new Date()) {
+        throw new BadRequestException("Os lugares desta compra já não estão guardados. Faz uma compra nova.");
+      }
+
+      const academia = await db.academy.findFirst({
+        where: { id: academyId },
+        select: { eupagoApiKey: true, paymentsEnabled: true, feesOnPayer: true, shortName: true },
+      });
+      this.assertPagamentosLigados(academia);
+
+      const aCobrar = this.cobrar(pedido.totalCents, method, academia);
+      assertMinimoDoMetodo(method, aCobrar.totalCents);
+
+      // Uma compra, um pagamento vivo: trocar de método mata o anterior.
+      for (const p of pedido.payments) {
+        if (p.status === PaymentStatus.PENDING || p.status === PaymentStatus.PROCESSING) {
+          await db.payment.update({ where: { id: p.id }, data: { status: PaymentStatus.EXPIRED } });
+        }
+      }
+
+      const apiKey = this.chaveDoClube(academia);
+      const jogo = await db.match.findFirst({
+        where: { id: pedido.matchId },
+        select: { startsAt: true, opponent: true, team: { select: { name: true } } },
+      });
+      const periodo = jogo ? `${partesNoFuso(jogo.startsAt).ano}-${String(partesNoFuso(jogo.startsAt).mes).padStart(2, "0")}` : "";
+
+      const payment = await db.payment.create({
+        data: {
+          ticketOrderId: pedido.id,
+          amountCents: aCobrar.totalCents,
+          surchargeCents: aCobrar.surchargeCents,
+          method,
+          status: PaymentStatus.PENDING,
+          identificador: montarIdentificador(
+            [{ tipo: "BILHETE", periodo, nome: jogo?.opponent ?? "Jogo" }],
+            pedido.buyerName,
+            academia?.shortName,
+          ),
+          payerName: pedido.buyerName,
+        },
+      });
+
+      const request = {
+        reference: payment.identificador ?? payment.id,
+        amountCents: aCobrar.totalCents,
+        description: jogo ? `Bilhetes ${jogo.team.name} vs ${jogo.opponent}` : "Bilhetes",
+        payerName: pedido.buyerName,
+        payerEmail: pedido.buyerEmail,
+        apiKey,
+      };
+
+      try {
+        const result =
+          method === PaymentMethod.MBWAY
+            ? await this.eupago.createMbWayCharge({ ...request, payerPhone: requirePhone(payerPhone) })
+            : await this.eupago.createMultibancoCharge(request);
+
+        return await db.payment.update({
+          where: { id: payment.id },
+          data: {
+            providerRef: result.providerRef,
+            entity: result.entity,
+            reference: result.reference,
+            expiresAt: result.expiresAt,
+            status: method === PaymentMethod.MBWAY ? PaymentStatus.PROCESSING : PaymentStatus.PENDING,
+          },
+        });
+      } catch (error) {
+        await db.payment.update({
+          where: { id: payment.id },
+          data: { status: PaymentStatus.FAILED, rawPayload: { error: error instanceof Error ? error.message : String(error) } },
+        });
+        throw error;
+      }
+    });
+  }
+
+  /**
    * Débito directo de uma mensalidade — contra o mandato do pagador.
    *
    * O mandato é do **membership que pede**, nunca de outro: um encarregado só
@@ -2436,7 +2554,20 @@ export class BillingService implements OnModuleInit, OnModuleDestroy {
       return { handled: false as const };
     }
 
-    return this.prisma.runAs(found.academyId, async (db) => {
+    /*
+     * O email dos bilhetes só sai depois de a transação acabar: um email com
+     * bilhetes de uma emissão que depois desfez é o pior engano numa
+     * bilheteira. Ver `BilheteiraEmissao`.
+     */
+    const depois: { enviar: (() => Promise<void>) | null } = { enviar: null };
+    const resultado = await this.prisma.runAs(found.academyId, async (db) => {
+      /*
+       * O webhook, um reenvio dele e a reconciliação podem chegar ao mesmo
+       * tempo. Sem o pagamento bloqueado, os dois liam "por pagar" e o segundo
+       * tratava-o outra vez (nos bilhetes, como um pagamento repetido a
+       * devolver). Bloqueado, o segundo espera e lê "já pago".
+       */
+      await db.$queryRaw`SELECT 1 FROM "Payment" WHERE id = ${found.paymentId} FOR UPDATE`;
       const payment = await db.payment.findFirst({
         where: { id: found.paymentId },
         include: {
@@ -2473,6 +2604,20 @@ export class BillingService implements OnModuleInit, OnModuleDestroy {
           data: { status: PaymentStatus.FAILED, rawPayload: rawPayload as object },
         });
         return { handled: true as const, amountMismatch: true };
+      }
+
+      /*
+       * Uma compra de bilhetes: o pagamento fica pago, e a emissão decide o
+       * resto (bilhetes dentro dos 10 minutos, reembolso depois). Ver
+       * `BilheteiraEmissao.pagamentoConfirmado`.
+       */
+      if (payment.ticketOrderId) {
+        await db.payment.update({
+          where: { id: payment.id },
+          data: { status: PaymentStatus.PAID, paidAt, rawPayload: rawPayload as object },
+        });
+        depois.enviar = await this.bilhetes.pagamentoConfirmado(db, found.academyId, payment.ticketOrderId, paidAt, payment.amountCents);
+        return { handled: true as const, duplicate: false };
       }
 
       /*
@@ -2603,6 +2748,11 @@ export class BillingService implements OnModuleInit, OnModuleDestroy {
 
       return { handled: true as const, duplicate: false };
     });
+
+    if (depois.enviar) {
+      await depois.enviar().catch((e: unknown) => this.log.error(`Bilhetes pagos mas o email não saiu: ${e instanceof Error ? e.message : e}`));
+    }
+    return resultado;
   }
 
   async failPayment(refs: string[], reason: string, rawPayload: unknown, markAs: "FAILED" | "EXPIRED" = "FAILED") {
@@ -2679,6 +2829,30 @@ export class BillingService implements OnModuleInit, OnModuleDestroy {
         where: { id: payment.id },
         data: { status: PaymentStatus.REFUNDED, rawPayload: rawPayload as object },
       });
+      /*
+       * Um reembolso feito na euPago a uma compra de bilhetes. Se era o
+       * pagamento que pagou a compra, os bilhetes deixam de valer (sem isto,
+       * quem foi reembolsado continuava a entrar); se era um pagamento a mais
+       * (repetido, ou fora do prazo), só fica marcado como devolvido.
+       */
+      if (payment.ticketOrderId) {
+        const compra = await db.ticketOrder.findFirst({
+          where: { id: payment.ticketOrderId },
+          select: { id: true, status: true, payments: { where: { status: PaymentStatus.PAID, id: { not: payment.id } }, select: { id: true } } },
+        });
+        if (compra?.status === "PAID" && compra.payments.length === 0) {
+          await db.ticketOrder.update({
+            where: { id: compra.id },
+            data: { status: "CANCELLED", cancelledAt: new Date(), refundDueCents: payment.amountCents, refundedAt: new Date(), refundNote: "Reembolsado na euPago: os bilhetes foram anulados." },
+          });
+          await db.matchTicket.updateMany({ where: { orderId: compra.id }, data: { status: "VOID" } });
+        } else if (compra) {
+          await db.ticketOrder.updateMany({
+            where: { id: compra.id, refundedAt: null },
+            data: { refundedAt: new Date(), refundNote: "Reembolsado na euPago." },
+          });
+        }
+      }
       if (payment.charge && payment.charge.status === ChargeStatus.SETTLED) {
         await db.charge.update({
           where: { id: payment.charge.id },
@@ -2722,6 +2896,20 @@ export class BillingService implements OnModuleInit, OnModuleDestroy {
     }
     return null;
   }
+}
+
+/** A data de pagamento numa resposta da euPago, se vier (os nomes variam entre as duas APIs). */
+function dataDoPagamento(raw: Record<string, unknown>): Date | null {
+  for (const k of ["data_pagamento", "data_pag", "datahora_pagamento", "date"]) {
+    const v = raw[k];
+    if (typeof v !== "string" || !v.trim()) continue;
+    // "2026-10-21 15:03:00" sem fuso é a hora de Lisboa da euPago; com fuso, lê-se como vem.
+    const m = /^(\d{4})-(\d{2})-(\d{2})[ T](\d{2}):(\d{2})(?::(\d{2}))?$/.exec(v.trim());
+    if (m) return new Date(instanteNoFuso(+m[1], +m[2], +m[3], +m[4], +m[5]).getTime() + Number(m[6] ?? 0) * 1000);
+    const d = new Date(v.trim());
+    if (!Number.isNaN(d.getTime())) return d;
+  }
+  return null;
 }
 
 function requirePhone(phone: string | undefined): string {
