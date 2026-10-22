@@ -7,6 +7,7 @@ import { AuthService } from "../auth/auth.service";
 import { MailClient } from "../mail/mail.client";
 import { siteMensagemEmail } from "../mail/mail.templates";
 import { FichaDoSite, caixaDoEmail, numeroDoTelefone } from "../platform/ficha-do-site";
+import { TurnstileService } from "../common/turnstile.service";
 import type { ContactoDoSiteDto } from "./site.dto";
 import {
   dominioLimpo,
@@ -68,6 +69,7 @@ export class SitePublicoService {
     private readonly auth: AuthService,
     private readonly config: ConfigService,
     private readonly mail: MailClient,
+    private readonly turnstile: TurnstileService,
   ) {
     const segredo = this.config.get<string>("SITE_FORM_SECRET") || this.config.get<string>("SUPABASE_JWT_SECRET") || "";
     if (!segredo) this.log.warn("Sem SITE_FORM_SECRET nem SUPABASE_JWT_SECRET: o formulário dos sites dos clubes recusa todos os envios");
@@ -185,6 +187,7 @@ export class SitePublicoService {
       this.log.warn(`Mensagem do site ${slug} recusada (ficha) de ${ip ?? "?"}: ${recusa}`);
       throw new BadRequestException(recusa);
     }
+    await this.turnstile.exigir(dto.turnstile, `contacto-${slug}`, ip);
 
     const caixa = caixaDoEmail(email);
     const numero = numeroDoTelefone(telefone);

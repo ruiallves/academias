@@ -66,6 +66,10 @@ class SiteContactDto {
   /** A ficha que o formulário pediu ao abrir. Ver `FichaDoSite`. */
   @IsOptional() @IsString() @Length(0, 200)
   ficha?: string;
+
+  /** O token do Cloudflare Turnstile. Ver `TurnstileService`. */
+  @IsOptional() @IsString() @Length(0, 2048)
+  turnstile?: string;
 }
 
 /**

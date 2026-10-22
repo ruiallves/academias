@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Loader2 } from "lucide-react";
 import { Botao } from "@/componentes/Botao";
+import { CHAVE_TURNSTILE, Turnstile, type TurnstileHandle } from "@/componentes/Turnstile";
 
 /**
  * O formulário de contacto. Etiquetas visíveis, e o assunto como lista para a
@@ -38,6 +39,8 @@ export function FormularioContacto({
 }) {
   const [estado, setEstado] = useState<Estado>({ fase: "pronto" });
   const ficha = useRef("");
+  /** O desafio da Cloudflare. Ver `componentes/Turnstile`. */
+  const desafio = useRef<TurnstileHandle | null>(null);
 
   const pedirFicha = useCallback(async () => {
     if (demonstracao) return;
@@ -60,6 +63,10 @@ export function FormularioContacto({
     if (estado.fase === "a-enviar") return;
     const f = new FormData(e.currentTarget);
     const texto = (nome: string) => String(f.get(nome) ?? "").trim();
+    if (!demonstracao && CHAVE_TURNSTILE && !desafio.current?.token()) {
+      setEstado({ fase: "erro", mensagem: "Ainda estamos a confirmar que és uma pessoa. Espera um segundo e carrega outra vez." });
+      return;
+    }
     setEstado({ fase: "a-enviar" });
     try {
       if (demonstracao) {
@@ -79,6 +86,7 @@ export function FormularioContacto({
           mensagem: texto("mensagem"),
           notaExtra: texto("notaExtra"),
           ficha: ficha.current,
+          turnstile: desafio.current?.token() || undefined,
         }),
       });
       const b = (await resposta.json().catch(() => ({}))) as { message?: string | string[] };
@@ -86,11 +94,14 @@ export function FormularioContacto({
         const mensagem = (Array.isArray(b.message) ? b.message[0] : b.message) || "Não foi possível enviar a mensagem. Tenta outra vez.";
         // "Recarrega a página": a ficha caducou ou faltou. Pede-se outra, e o segundo envio já vai com ela.
         if (/recarreg/i.test(mensagem)) void pedirFicha();
+        // O token da Cloudflare foi gasto neste envio: o seguinte leva outro.
+        desafio.current?.renovar();
         setEstado({ fase: "erro", mensagem });
         return;
       }
       setEstado({ fase: "enviado" });
     } catch {
+      desafio.current?.renovar();
       setEstado({ fase: "erro", mensagem: "Falhou a ligação. Verifica a internet e tenta outra vez." });
     }
   };
@@ -154,6 +165,7 @@ export function FormularioContacto({
         </p>
       )}
 
+      {!demonstracao && <Turnstile ref={desafio} />}
       <Botao type="submit" disabled={aEnviar} className="w-full sm:w-auto">
         {aEnviar && <Loader2 size={18} className="animate-spin" aria-hidden />}
         {aEnviar ? "A enviar" : "Enviar mensagem"}

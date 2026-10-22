@@ -1,7 +1,8 @@
-import { cloneElement, type FormEvent, isValidElement, type ReactElement, type ReactNode, useCallback, useEffect, useId, useState } from "react";
+import { cloneElement, type FormEvent, isValidElement, type ReactElement, type ReactNode, useCallback, useEffect, useId, useRef, useState } from "react";
 import { API } from "@/lib/api";
 import { cx, Seta } from "@/components/marca";
 import { CONTACT_EMAIL } from "@/lib/content";
+import { CHAVE_TURNSTILE, Turnstile, type TurnstileHandle } from "@/components/Turnstile";
 
 /**
  * Contacto.
@@ -97,6 +98,8 @@ export default function Contactos() {
       .catch(() => setFicha(null));
   }, []);
   useEffect(() => pedirFicha(), [pedirFicha]);
+  /** O desafio da Cloudflare (quase sempre invisível). Ver `components/Turnstile`. */
+  const desafio = useRef<TurnstileHandle | null>(null);
 
   const emailOk = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim());
   const valid = name.trim().length >= 2 && emailOk && (assunto.clube ? club.trim().length >= 2 : message.trim().length >= 5);
@@ -104,6 +107,10 @@ export default function Contactos() {
   async function submit(e: FormEvent) {
     e.preventDefault();
     if (!valid || status === "sending") return;
+    if (CHAVE_TURNSTILE && !desafio.current?.token()) {
+      setRecusa("Ainda estamos a confirmar que és uma pessoa. Espera um segundo e envia outra vez.");
+      return;
+    }
 
     setStatus("sending");
     setRecusa(null);
@@ -125,10 +132,12 @@ export default function Contactos() {
           notaExtra: notaExtra || undefined,
           elapsedMs: Date.now() - aberto,
           ficha: ficha ?? undefined,
+          turnstile: desafio.current?.token() || undefined,
         }),
       });
-      // A ficha foi gasta (ou recusada): a seguinte tentativa leva outra.
+      // A ficha e o token da Cloudflare foram gastos (ou recusados): a seguinte tentativa leva outros.
       pedirFicha();
+      desafio.current?.renovar();
       if (res.status === 400) {
         // A API explicou porquê: é para ler, não para contornar.
         const corpo = (await res.json().catch(() => null)) as { message?: unknown } | null;
@@ -341,6 +350,7 @@ export default function Contactos() {
               </Field>
 
               <div className="sm:col-span-2">
+                <Turnstile ref={desafio} className="mb-4" />
                 <button type="submit" disabled={!valid || status === "sending"} className="btn btn-cheio w-full disabled:opacity-40 sm:w-auto">
                   {status === "sending" ? "A enviar…" : "Enviar"}
                   <Seta />

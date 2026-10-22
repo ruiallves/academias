@@ -40,6 +40,8 @@ const config: NextConfig = {
     SITE_API_URL: process.env.SITE_API_URL ?? "",
     SITE_PREVIEW_DOMAIN: process.env.SITE_PREVIEW_DOMAIN ?? "",
     SITE_DEMO_SLUG: process.env.SITE_DEMO_SLUG ?? "",
+    // A chave pública do Cloudflare Turnstile (a do browser; a secreta fica na API). Ver `componentes/Turnstile`.
+    TURNSTILE_SITE_KEY: process.env.TURNSTILE_SITE_KEY ?? "",
   },
   images: {
     remotePatterns: [

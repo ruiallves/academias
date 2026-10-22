@@ -8,6 +8,7 @@ import { PlatformPrisma } from "./platform.prisma";
 import { PlatformService } from "./platform.service";
 import type { PlatformAdminContext } from "./platform.guard";
 import { FichaDoSite, caixaDoEmail, numeroDoTelefone } from "./ficha-do-site";
+import { TurnstileService } from "../common/turnstile.service";
 
 /**
  * Os tectos do formulário do site. Os pedidos reais são um ou dois por semana:
@@ -58,6 +59,7 @@ export class TicketsService {
     private readonly platform: PlatformService,
     private readonly mail: MailClient,
     private readonly config: ConfigService,
+    private readonly turnstile: TurnstileService,
   ) {
     const segredo = this.config.get<string>("SITE_FORM_SECRET") || this.config.get<string>("SUPABASE_JWT_SECRET") || "";
     if (!segredo) this.log.warn("Sem SITE_FORM_SECRET nem SUPABASE_JWT_SECRET: o formulário do site recusa todos os envios");
@@ -115,6 +117,8 @@ export class TicketsService {
       notaExtra?: string;
       elapsedMs?: number;
       ficha?: string;
+      /** O token do Cloudflare Turnstile. Ver `TurnstileService`. */
+      turnstile?: string;
     },
     ip?: string,
   ) {
@@ -143,6 +147,8 @@ export class TicketsService {
       this.log.warn(`Pedido do site recusado (ficha) de ${ip ?? "?"}: ${recusa}`);
       throw new BadRequestException(recusa);
     }
+    // A pessoa do outro lado: a ficha só prova que a página abriu há três segundos.
+    await this.turnstile.exigir(dto.turnstile, "contacto-academias", ip);
 
     const caixa = caixaDoEmail(email);
     const telefone = numeroDoTelefone(dto.phone);

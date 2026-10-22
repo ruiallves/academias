@@ -50,6 +50,8 @@ export class ContactoDoSiteDto {
   @IsOptional() @IsString() @MaxLength(200) notaExtra?: string;
   /** A ficha que o formulário pediu ao abrir. Ver `FichaDoSite`. */
   @IsOptional() @IsString() @MaxLength(200) ficha?: string;
+  /** O token do Cloudflare Turnstile. Ver `TurnstileService`. */
+  @IsOptional() @IsString() @MaxLength(2048) turnstile?: string;
 }
 
 export class NoticiaDto {

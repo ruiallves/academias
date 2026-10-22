@@ -8,6 +8,7 @@ import { BillingService } from "../billing/billing.service";
 import { ClubAppService } from "../club-app/club-app.service";
 import { can, type RequestContext } from "../common/permissions";
 import { FichaDoSite, caixaDoEmail, numeroDoTelefone } from "../platform/ficha-do-site";
+import { TurnstileService } from "../common/turnstile.service";
 import { siteIncluido, SEM_PLANO } from "../site/plano";
 import { recintosValidos } from "../site/site.tipos";
 import { bloquearJogo, contextoDoJogo, quotaDoSocioCobre, type ContextoDoJogo } from "./contexto";
@@ -102,6 +103,7 @@ export class BilheteiraService {
     private readonly emissao: BilheteiraEmissao,
     private readonly app: ClubAppService,
     private readonly config: ConfigService,
+    private readonly turnstile: TurnstileService,
   ) {
     const segredo = this.config.get<string>("SITE_FORM_SECRET") || this.config.get<string>("SUPABASE_JWT_SECRET") || "";
     // Um fim próprio: uma ficha do formulário de contactos não serve para comprar bilhetes.
@@ -225,10 +227,12 @@ export class BilheteiraService {
    * durante uma hora. Quem acerta nos dois e tem a quota em atraso sabe-o:
    * já provou quem é.
    */
-  async identificarSocio(slug: string, matchId: string, dto: IdentificarSocioDto) {
+  async identificarSocio(slug: string, matchId: string, dto: IdentificarSocioDto, ip?: string) {
     const academyId = await this.clube(slug);
     const recusa = this.ficha.verificar(dto.ficha, Date.now(), academyId);
     if (recusa) throw new BadRequestException(recusa);
+    // Um robô a adivinhar números e datas de nascimento tem de passar pelo desafio a cada palpite.
+    await this.turnstile.exigir(dto.turnstile, `socio-${slug}`, ip);
     const agora = Date.now();
     const porNumero = `${academyId}:${dto.numero}`;
     const GENERICO = "Não encontrámos um sócio com esse número e essa data de nascimento.";
@@ -298,6 +302,7 @@ export class BilheteiraService {
     const academyId = await this.clube(slug);
     const recusa = this.ficha.verificar(dto.ficha, Date.now(), academyId);
     if (recusa) throw new BadRequestException(recusa);
+    await this.turnstile.exigir(dto.turnstile, `compra-${slug}`, ip);
     let memberId: string | null = null;
     if (dto.credencial) {
       memberId = this.lerCredencial(dto.credencial, matchId);

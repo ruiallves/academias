@@ -73,8 +73,8 @@ export class BilheteiraPublicaController {
   @SkipThrottle()
   @Post("bilhetes/:matchId/socio")
   @Header("Cache-Control", "no-store")
-  identificar(@Param("slug") slug: string, @Param("matchId") matchId: string, @Body() dto: IdentificarSocioDto) {
-    return this.bilheteira.identificarSocio(slug, matchId, dto);
+  identificar(@Param("slug") slug: string, @Param("matchId") matchId: string, @Body() dto: IdentificarSocioDto, @Ip() ip: string) {
+    return this.bilheteira.identificarSocio(slug, matchId, dto, ip);
   }
 
   @SkipThrottle()

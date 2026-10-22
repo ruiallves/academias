@@ -196,5 +196,11 @@ médios, 6 baixos); estão todos tratados. O que ficou como regra:
   as credenciais de sócio e as sessões do leitor; rodá-lo invalida os bilhetes
   emitidos. Em produção a API não arranca sem nenhum dos dois.
 
-**Por fazer**: um desafio anti-robô a sério (Cloudflare Turnstile) na compra
-do site, que precisa das chaves do Rui; a devolução automática pela euPago.
+**Turnstile (22/10/2026)**: o desafio da Cloudflare na compra e na
+identificação de sócio do site (e nos contactos do site do clube e do
+academias.pt). API: `TURNSTILE_SECRET_KEY` (`common/turnstile.service.ts`);
+site do clube: `TURNSTILE_SITE_KEY` no build (`componentes/Turnstile.tsx`);
+academias.pt: `VITE_TURNSTILE_SITE_KEY`. Sem a chave secreta a API não pede o
+token; com ela, recusa sem token. Cloudflare em baixo = passa, com aviso.
+
+**Por fazer**: a devolução automática pela euPago.

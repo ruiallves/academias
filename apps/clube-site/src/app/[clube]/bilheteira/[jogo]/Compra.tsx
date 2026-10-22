@@ -6,6 +6,7 @@ import { useCallback, useEffect, useId, useRef, useState } from "react";
 import { ArrowLeft, BadgeCheck, Loader2, Minus, Plus, X } from "lucide-react";
 import { MapaDoRecinto } from "@academia/ui/estadio";
 import { Botao } from "@/componentes/Botao";
+import { CHAVE_TURNSTILE, Turnstile, type TurnstileHandle } from "@/componentes/Turnstile";
 import { euro } from "@/lib/formatar";
 import {
   CHAVE_DEMO,
@@ -91,6 +92,8 @@ export function Compra({ slug, matchId, api, demonstracao, demo }: Props) {
   const [metodo, setMetodo] = useState<Metodo>("MBWAY");
   const topo = useRef<HTMLDivElement | null>(null);
   const ficha = useRef("");
+  /** O desafio da Cloudflare do passo de pagar. Ver `componentes/Turnstile`. */
+  const desafio = useRef<TurnstileHandle | null>(null);
 
   /* ------------------------------------------------------------ a API */
 
@@ -305,6 +308,10 @@ export function Compra({ slug, matchId, api, demonstracao, demo }: Props) {
       return;
     }
     const linhas = escolhidos.map((t) => ({ typeId: t.id, quantidade: q(t) }));
+    if (!demonstracao && CHAVE_TURNSTILE && !desafio.current?.token()) {
+      setEnvio({ fase: "erro", mensagem: "Ainda estamos a confirmar que és uma pessoa. Espera um segundo e carrega outra vez." });
+      return;
+    }
     setEnvio({ fase: "a-enviar" });
 
     if (demonstracao) {
@@ -328,13 +335,15 @@ export function Compra({ slug, matchId, api, demonstracao, demo }: Props) {
           credencial: socio?.credencial,
           notaExtra,
           ficha: ficha.current,
+          turnstile: desafio.current?.token() || undefined,
         }),
       });
       const b = (await r.json().catch(() => ({}))) as unknown;
       if (!r.ok) {
         const mensagem = mensagemDe(b, "Não foi possível guardar a compra. Tenta outra vez.");
-        // Cada ficha serve uma vez: a próxima tentativa leva outra.
+        // Cada ficha (e cada token da Cloudflare) serve uma vez: a próxima tentativa leva outros.
         void pedirFicha();
+        desafio.current?.renovar();
         if (/identifica-te outra vez/i.test(mensagem)) {
           irPara("escolher");
           void sairDeSocio(mensagem);
@@ -347,6 +356,7 @@ export function Compra({ slug, matchId, api, demonstracao, demo }: Props) {
       router.push(`/bilhete/${(b as RespostaDaCompra).token}`);
     } catch {
       void pedirFicha();
+      desafio.current?.renovar();
       setEnvio({ fase: "erro", mensagem: "Falhou a ligação. Verifica a internet e tenta outra vez." });
     }
   };
@@ -457,6 +467,7 @@ export function Compra({ slug, matchId, api, demonstracao, demo }: Props) {
             </p>
           )}
 
+          {!demonstracao && <Turnstile ref={desafio} />}
           <Botao type="submit" disabled={aEnviar} className="w-full sm:w-auto">
             {aEnviar && <Loader2 size={18} className="animate-spin" aria-hidden />}
             {aEnviar ? "A guardar os lugares" : gratis ? "Confirmar os bilhetes" : `Pagar ${euro(total)}`}
@@ -743,6 +754,8 @@ function IdentificarSocio({
   const refMes = useRef<HTMLInputElement | null>(null);
   const refAno = useRef<HTMLInputElement | null>(null);
   const refNumero = useRef<HTMLInputElement | null>(null);
+  /** Um desafio da Cloudflare por tentativa: cada palpite de número e data passa por ele. */
+  const desafio = useRef<TurnstileHandle | null>(null);
 
   useEffect(() => {
     refNumero.current?.focus();
@@ -772,19 +785,23 @@ function IdentificarSocio({
       if (demoVenda) onIdentificado({ credencial: "demonstracao", venda: demoVenda, jaTemBilheteDeSocio: false }, String(num));
       return;
     }
+    const token = desafio.current?.token() ?? "";
+    if (CHAVE_TURNSTILE && !token) return setEstado({ fase: "erro", mensagem: "Ainda estamos a confirmar que és uma pessoa. Espera um segundo e carrega outra vez." });
     try {
       const r = await fetch(`${base}/${encodeURIComponent(matchId)}/socio`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ numero: num, nascimento: data, ficha: gastarFicha() }),
+        body: JSON.stringify({ numero: num, nascimento: data, ficha: gastarFicha(), turnstile: token || undefined }),
       });
       const b = (await r.json().catch(() => ({}))) as unknown;
       if (!r.ok) {
+        desafio.current?.renovar();
         setEstado({ fase: "erro", mensagem: mensagemDe(b, "Não foi possível confirmar o sócio. Tenta outra vez.") });
         return;
       }
       onIdentificado(b as Identificacao, String(num));
     } catch {
+      desafio.current?.renovar();
       setEstado({ fase: "erro", mensagem: "Falhou a ligação. Verifica a internet e tenta outra vez." });
     }
   };
@@ -880,6 +897,7 @@ function IdentificarSocio({
         </p>
       )}
 
+      {!demonstracao && <Turnstile ref={desafio} className="mt-4" />}
       <Botao type="submit" disabled={aEnviar} className="mt-4 w-full sm:w-auto">
         {aEnviar && <Loader2 size={18} className="animate-spin" aria-hidden />}
         {aEnviar ? "A confirmar" : "Ver os preços de sócio"}

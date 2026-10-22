@@ -17,6 +17,8 @@ export class IdentificarSocioDto {
   @Matches(/^\d{4}-\d{2}-\d{2}$/, { message: "A data de nascimento é AAAA-MM-DD" }) nascimento!: string;
   /** Uma ficha por tentativa (`GET /bilhetes/ficha`), como na compra. */
   @IsOptional() @IsString() @MaxLength(200) ficha?: string;
+  /** O token do Cloudflare Turnstile. Ver `TurnstileService`. */
+  @IsOptional() @IsString() @MaxLength(2048) turnstile?: string;
 }
 
 /** Comprar no site. */
@@ -32,6 +34,8 @@ export class ReservarDto {
   @IsOptional() @IsString() @MaxLength(200) notaExtra?: string;
   /** A ficha que a página pediu ao abrir. Ver `FichaDoSite`. */
   @IsOptional() @IsString() @MaxLength(200) ficha?: string;
+  /** O token do Cloudflare Turnstile. Ver `TurnstileService`. */
+  @IsOptional() @IsString() @MaxLength(2048) turnstile?: string;
 }
 
 /** Comprar na app: o sócio vem da conta. */
