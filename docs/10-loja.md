@@ -9,7 +9,7 @@ Código: `apps/api/src/loja/` (regras puras em `regras.ts`, provadas por
 `npm run test:loja`; as consultas de stock em `contexto.ts`; a emissão e os
 emails em `emissao.service.ts`). Migração `20261024120000_loja`, **aplicada em produção a 24/10/2026**
 (aditiva; só ela, com `prisma migrate resolve --applied`: a
-`20261020160000_nomes_dos_temas` continua por aplicar até ao deploy).
+`20261020160000_nomes_dos_temas` foi aplicada a seguir, também a 24/10).
 
 ## O modelo
 
