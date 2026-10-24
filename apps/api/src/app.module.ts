@@ -235,6 +235,8 @@ import { SiteRevalidarService } from "./site/site-revalidar.service";
     BilheteiraPublicaController,
     BilheteiraAppController,
     BilheteiraConsolaController,
+    LojaPublicaController,
+    LojaConsolaController,
     SiteDominioController,
   ],
   providers: [
@@ -306,6 +308,8 @@ import { SiteRevalidarService } from "./site/site-revalidar.service";
     BilheteiraService,
     BilheteiraEmissao,
     PortaService,
+    LojaService,
+    LojaEmissao,
     TurnstileService,
     SiteDominioService,
     SiteRevalidarService,
