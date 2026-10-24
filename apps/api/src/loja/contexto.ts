@@ -36,7 +36,7 @@ export async function reservadosPorLinha(db: ScopedClient, productIds: string[],
     SELECT i."productId" AS "productId", i.size AS size, SUM(i.quantity)::int AS n
       FROM "SiteOrderItem" i
       JOIN "SiteOrder" o ON o.id = i."orderId"
-     WHERE i."productId" IN (${productIds})
+     WHERE i."productId" = ANY(${productIds})
        AND o.status = 'RESERVED'
        AND o."reservedUntil" > ${agora}
        AND o.id <> ${semEncomenda ?? ""}
