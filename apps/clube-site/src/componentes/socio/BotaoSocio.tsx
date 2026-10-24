@@ -1,32 +1,26 @@
 "use client";
 
+import Link from "next/link";
 import type { ComponentProps } from "react";
-import { useAdesao } from "./Adesao";
 
 /**
- * Um botão de "Ser sócio" / "Sócios". É um link para `/ser-socio` (a adesão
- * numa página do site), e com JavaScript abre a janela por cima da página
- * (`AdesaoNoSite`). Abrir noutro separador (Ctrl, Cmd, Shift, botão do meio)
- * continua a ir para a página.
+ * Um botão de "Ser sócio" / "Sócios": um link para a página da adesão,
+ * `/ser-socio`. A adesão vive sempre numa página do site (pedido do Rui a
+ * 24/10/2026), nunca numa janela por cima.
  *
- * `onAbrir` corre antes de a janela abrir: o menu do telemóvel usa-o para se
- * fechar primeiro.
+ * `onAbrir` corre ao carregar: o menu do telemóvel usa-o para se fechar.
  */
-export function BotaoSocio({ onAbrir, onClick, children, ...props }: ComponentProps<"a"> & { onAbrir?: () => void }) {
-  const adesao = useAdesao();
+export function BotaoSocio({ onAbrir, onClick, children, href: _href, ...props }: ComponentProps<"a"> & { onAbrir?: () => void }) {
   return (
-    <a
+    <Link
       href="/ser-socio"
       {...props}
       onClick={(e) => {
         onClick?.(e);
-        if (!adesao || e.defaultPrevented || e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
-        e.preventDefault();
         onAbrir?.();
-        adesao.abrir(e.currentTarget);
       }}
     >
       {children}
-    </a>
+    </Link>
   );
 }

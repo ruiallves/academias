@@ -6,8 +6,6 @@ import { Revelar } from "@/componentes/Revelar";
 import { CascaHolofote } from "@/layouts/holofote/Casca";
 import { estiloDoClube } from "@/lib/tema";
 import { clubeOu404, layoutAtual } from "@/lib/clube";
-import { fonte } from "@/dados/fonte";
-import { AdesaoNoSite } from "@/componentes/socio/Adesao";
 import { emDemonstracao, enderecoOficial } from "@/lib/modo";
 
 type Params = Promise<{ clube: string }>;
@@ -46,45 +44,23 @@ export default async function LayoutDoClube({ children, params }: { children: Re
   // O interruptor de layout é uma ferramenta de demonstração: com dados reais o layout é o que o clube escolheu.
   const trocarLayout = emDemonstracao();
 
-  // O "Ser sócio" abre numa janela por cima de qualquer página do site (ver `componentes/socio`).
-  const adesao = await fonte.socios(clube.slug);
-  const comAdesao = (conteudo: React.ReactNode) => (
-    <AdesaoNoSite
-      clube={{ slug: clube.slug, name: clube.name, shortName: clube.shortName, logoUrl: clube.logoUrl }}
-      adesao={adesao}
-      api={process.env.SITE_API_URL ?? ""}
-      demonstracao={emDemonstracao()}
-      quadrado={layout === "holofote"}
-    >
-      {conteudo}
-    </AdesaoNoSite>
-  );
-
   if (layout === "holofote") {
     return (
       <div style={estilo} data-layout="holofote" className="min-h-dvh">
-        {comAdesao(
-          <>
-            <CascaHolofote clube={clube} trocarLayout={trocarLayout}>
-              {children}
-            </CascaHolofote>
-            <Revelar />
-          </>,
-        )}
+        <CascaHolofote clube={clube} trocarLayout={trocarLayout}>
+          {children}
+        </CascaHolofote>
+        <Revelar />
       </div>
     );
   }
 
   return (
     <div style={estilo} className="flex min-h-dvh flex-col">
-      {comAdesao(
-        <>
-          <Cabecalho clube={clube} trocarLayout={trocarLayout} />
-          <main className="flex-1">{children}</main>
-          <Rodape clube={clube} />
-          <Revelar />
-        </>,
-      )}
+      <Cabecalho clube={clube} trocarLayout={trocarLayout} />
+      <main className="flex-1">{children}</main>
+      <Rodape clube={clube} />
+      <Revelar />
     </div>
   );
 }

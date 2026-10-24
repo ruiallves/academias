@@ -923,7 +923,7 @@ const GERIR: Partial<Record<SeccaoInicioKey, { secao: string; rotulo: string }>>
   socios: { secao: "identidade", rotulo: "Mudar a fotografia do clube" },
   loja: { secao: "loja", rotulo: "Gerir a loja" },
   patrocinadores: { secao: "patrocinadores", rotulo: "Gerir os patrocinadores" },
-  jogo: { secao: "bilheteira", rotulo: "Bilhetes dos jogos em casa" },
+  jogo: { secao: "bilheteira", rotulo: "Bilhetes dos jogos" },
 };
 
 function Cabeca({ titulo, onFechar }: { titulo: string; onFechar: () => void }) {

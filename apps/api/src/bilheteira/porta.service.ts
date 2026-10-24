@@ -134,8 +134,8 @@ export class PortaService {
     const token = novoToken();
     const pin = novoPin();
     const criado = await this.prisma.runAs(ctx.academyId, async (db) => {
-      const jogo = await db.match.findFirst({ where: { id: matchId }, select: { endsAt: true, isHome: true } });
-      if (!jogo?.isHome) throw new NotFoundException("Jogo não encontrado");
+      const jogo = await db.match.findFirst({ where: { id: matchId }, select: { endsAt: true } });
+      if (!jogo) throw new NotFoundException("Jogo não encontrado");
       const recinto = await this.recintoDoJogo(db, ctx.academyId, matchId);
       if (dto.gateId !== TODAS_AS_PORTAS && !recinto?.portas.some((p) => p.id === dto.gateId)) {
         throw new BadRequestException("Essa porta não existe no recinto do jogo. Cria as portas no Estádio.");
@@ -253,7 +253,7 @@ export class PortaService {
 
   private async estadoDoAcesso(db: ScopedClient, academyId: string, a: { matchId: string; gateId: string; label: string }) {
     const [jogo, recinto, entradas] = await Promise.all([
-      db.match.findFirst({ where: { id: a.matchId }, select: { startsAt: true, opponent: true, team: { select: { name: true } } } }),
+      db.match.findFirst({ where: { id: a.matchId }, select: { startsAt: true, opponent: true, isHome: true, team: { select: { name: true } } } }),
       this.recintoDoJogo(db, academyId, a.matchId),
       db.ticketScan.count({ where: { matchId: a.matchId, gateId: a.gateId, result: "OK" } }),
     ]);
@@ -262,7 +262,7 @@ export class PortaService {
         ? (recinto?.bancadas.map((b) => b.nome) ?? [])
         : (recinto?.portas.find((p) => p.id === a.gateId)?.bancadaIds.map((id) => recinto.bancadas.find((b) => b.id === id)?.nome ?? id) ?? []);
     return {
-      jogo: jogo ? { startsAt: jogo.startsAt.toISOString(), nome: `${jogo.team.name} vs ${jogo.opponent}` } : null,
+      jogo: jogo ? { startsAt: jogo.startsAt.toISOString(), nome: jogo.isHome ? `${jogo.team.name} vs ${jogo.opponent}` : `${jogo.opponent} vs ${jogo.team.name}` } : null,
       porta: { nome: a.label, bancadas },
       entradas,
     };

@@ -155,6 +155,9 @@ export {
   LayoutTemplate,
   /* O recinto visto de cima, no menu Website. */
   LandPlot as Recinto,
+  Truck,
+  Package,
+  PackageCheck,
   /* A bilheteira: a porta do recinto, a chave do segurança, o lugar anual do sócio. */
   DoorOpen as Porta,
   KeyRound,

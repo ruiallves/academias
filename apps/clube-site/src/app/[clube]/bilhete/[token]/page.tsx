@@ -43,6 +43,7 @@ export default async function Bilhete({ params }: Props) {
       demonstracao={demonstracao}
       exemplo={exemplo}
       clube={clube.shortName}
+      logoUrl={clube.logoUrl}
     />
   );
 }

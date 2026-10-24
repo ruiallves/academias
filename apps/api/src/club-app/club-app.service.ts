@@ -614,7 +614,7 @@ export class ClubAppService {
             teamMaxAge: m.team.maxAge,
             competition: m.competition?.label ?? null,
             /** Há bilhetes à venda (a venda está ligada). Ver `/api/socio/bilhetes/venda/:id` para o resto. */
-            bilheteira: m.isHome && m.siteTickets?.open === true,
+            bilheteira: m.siteTickets?.open === true,
           }));
 
         return {

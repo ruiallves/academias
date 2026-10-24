@@ -8,6 +8,8 @@ import type { Clube } from "@/dados/tipos";
 import { ATALHOS, NAV } from "./nav";
 import { Redes } from "./Redes";
 import { BotaoSocio } from "@/componentes/socio/BotaoSocio";
+import { quantidadeNoCarrinho } from "@/lib/loja";
+import { useCarrinho } from "@/lib/carrinho";
 
 /**
  * O menu do telemóvel. Abre por baixo do cabeçalho, fecha ao navegar e com
@@ -16,6 +18,7 @@ import { BotaoSocio } from "@/componentes/socio/BotaoSocio";
 export function MenuMovel({ clube, topo = "top-[calc(2.5rem+4.25rem)]" }: { clube: Clube; topo?: string }) {
   const [aberto, setAberto] = useState(false);
   const pathname = usePathname();
+  const noCarrinho = quantidadeNoCarrinho(useCarrinho(clube.slug));
 
   useEffect(() => setAberto(false), [pathname]);
 
@@ -65,6 +68,14 @@ export function MenuMovel({ clube, topo = "top-[calc(2.5rem+4.25rem)]" }: { club
                   </Link>
                 </li>
               ))}
+              {noCarrinho > 0 && (
+                <li>
+                  <Link href="/loja/carrinho" className="display flex items-center justify-between py-4 text-2xl text-ink">
+                    Carrinho
+                    <span className="rounded-full bg-signal-strong px-2.5 py-0.5 text-sm font-bold text-signal-on tabular">{noCarrinho}</span>
+                  </Link>
+                </li>
+              )}
             </ul>
             <BotaoSocio onAbrir={() => setAberto(false)}
               className="mt-6 flex h-12 items-center justify-center rounded-control bg-signal-strong font-semibold text-signal-on"

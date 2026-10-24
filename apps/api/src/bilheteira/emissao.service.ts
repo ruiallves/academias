@@ -153,8 +153,9 @@ export class BilheteiraEmissao {
     return `${base}/bilhete/${token}`;
   }
 
-  private nomeDoJogo(teamName: string, opponent: string): string {
-    return `${teamName} vs ${opponent}`;
+  /** Quem joga em casa vem primeiro: "Seniores vs SC Braga B", ou "SC Braga B vs Seniores" fora. */
+  private nomeDoJogo(teamName: string, opponent: string, isHome: boolean): string {
+    return isHome ? `${teamName} vs ${opponent}` : `${opponent} vs ${teamName}`;
   }
 
   /** Os bilhetes de uma compra paga, com um QR em anexo por bilhete. Também serve o "Reenviar" da consola. */
@@ -165,7 +166,7 @@ export class BilheteiraEmissao {
         include: { tickets: { where: { status: { not: "VOID" } }, orderBy: { createdAt: "asc" } } },
       });
       if (!pedido) return null;
-      const jogo = await db.match.findFirst({ where: { id: pedido.matchId }, select: { startsAt: true, opponent: true, team: { select: { name: true } } } });
+      const jogo = await db.match.findFirst({ where: { id: pedido.matchId }, select: { startsAt: true, opponent: true, isHome: true, team: { select: { name: true } } } });
       const venda = await db.siteMatchTickets.findUnique({ where: { matchId: pedido.matchId }, select: { venueId: true } });
       const config = await db.siteConfig.findUnique({ where: { academyId }, select: { venues: true } });
       const recinto = (Array.isArray(config?.venues) ? (config!.venues as { id?: string; nome?: string }[]) : []).find((r) => r?.id === venda?.venueId);
@@ -184,7 +185,7 @@ export class BilheteiraEmissao {
     const corpo = bilhetesEmail({
       brand,
       nome: pedido.buyerName,
-      jogo: this.nomeDoJogo(jogo.team.name, jogo.opponent),
+      jogo: this.nomeDoJogo(jogo.team.name, jogo.opponent, jogo.isHome),
       quando: formatarNoFuso(jogo.startsAt, { weekday: "long", day: "numeric", month: "long", hour: "2-digit", minute: "2-digit" }),
       recinto: dados.recinto,
       bilhetes: pedido.tickets.map((t) => ({ tipo: t.typeName })),
@@ -197,14 +198,14 @@ export class BilheteiraEmissao {
     const dados = await this.prisma.runAs(academyId, async (db) => {
       const pedido = await db.ticketOrder.findFirst({ where: { id: orderId } });
       if (!pedido) return null;
-      const jogo = await db.match.findFirst({ where: { id: pedido.matchId }, select: { opponent: true, team: { select: { name: true } } } });
+      const jogo = await db.match.findFirst({ where: { id: pedido.matchId }, select: { opponent: true, isHome: true, team: { select: { name: true } } } });
       return { pedido, jogo, ...(await this.clube(db, academyId)) };
     });
     if (!dados?.jogo) return;
     const corpo = bilhetesForaDoPrazoEmail({
       brand: dados.brand,
       nome: dados.pedido.buyerName,
-      jogo: this.nomeDoJogo(dados.jogo.team.name, dados.jogo.opponent),
+      jogo: this.nomeDoJogo(dados.jogo.team.name, dados.jogo.opponent, dados.jogo.isHome),
       valor: euros(dados.pedido.refundDueCents ?? dados.pedido.totalCents),
     });
     await this.mail.send({ to: dados.pedido.buyerEmail, toName: dados.pedido.buyerName, ...corpo, kind: "bilhetes-fora-do-prazo" });
@@ -214,14 +215,14 @@ export class BilheteiraEmissao {
     const dados = await this.prisma.runAs(academyId, async (db) => {
       const pedido = await db.ticketOrder.findFirst({ where: { id: orderId } });
       if (!pedido) return null;
-      const jogo = await db.match.findFirst({ where: { id: pedido.matchId }, select: { opponent: true, team: { select: { name: true } } } });
+      const jogo = await db.match.findFirst({ where: { id: pedido.matchId }, select: { opponent: true, isHome: true, team: { select: { name: true } } } });
       return { pedido, jogo, ...(await this.clube(db, academyId)) };
     });
     if (!dados?.jogo) return;
     const corpo = bilhetesAnuladosEmail({
       brand: dados.brand,
       nome: dados.pedido.buyerName,
-      jogo: this.nomeDoJogo(dados.jogo.team.name, dados.jogo.opponent),
+      jogo: this.nomeDoJogo(dados.jogo.team.name, dados.jogo.opponent, dados.jogo.isHome),
       motivo,
       valor: dados.pedido.refundDueCents ? euros(dados.pedido.refundDueCents) : null,
     });

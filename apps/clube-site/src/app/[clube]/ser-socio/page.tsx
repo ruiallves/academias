@@ -13,9 +13,8 @@ export async function generateMetadata({ params }: { params: Promise<{ clube: st
 }
 
 /**
- * A adesão a sócio numa página do site. É para onde vão os links partilhados
- * e os botões de sócio sem JavaScript; com JavaScript, os botões abrem a
- * mesma adesão numa janela (`AdesaoNoSite`).
+ * A adesão a sócio, numa página do site. Todos os botões de sócio vêm para
+ * aqui (`BotaoSocio`), e os links partilhados também.
  */
 export default async function SerSocio({ params }: { params: Promise<{ clube: string }> }) {
   const clube = await clubeOu404(params);
@@ -28,7 +27,6 @@ export default async function SerSocio({ params }: { params: Promise<{ clube: st
         api={process.env.SITE_API_URL ?? ""}
         demonstracao={emDemonstracao()}
         quadrado={layout === "holofote"}
-        modo="pagina"
         idTitulo="adesao-pagina-titulo"
       />
     </div>

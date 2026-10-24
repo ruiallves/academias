@@ -70,8 +70,9 @@ export async function anuaisPorBancada(db: ScopedClient, seasonId: string | null
 }
 
 /**
- * O jogo, a venda e os lugares. Nulo quando o jogo não existe, não é em casa,
- * ou não tem bilheteira configurada.
+ * O jogo, a venda e os lugares. Nulo quando o jogo não existe ou não tem
+ * bilheteira configurada. Vale em casa e fora: num jogo fora, o clube vende
+ * os bilhetes que tem para os seus adeptos, no recinto que desenhou para isso.
  */
 export async function contextoDoJogo(db: ScopedClient, academyId: string, matchId: string, agora = new Date(), semCompra?: string): Promise<ContextoDoJogo | null> {
   const [m, venda, config] = await Promise.all([
@@ -82,7 +83,7 @@ export async function contextoDoJogo(db: ScopedClient, academyId: string, matchI
     db.siteMatchTickets.findUnique({ where: { matchId } }),
     db.siteConfig.findUnique({ where: { academyId }, select: { venues: true } }),
   ]);
-  if (!m || !m.isHome || !venda) return null;
+  if (!m || !venda) return null;
 
   const recinto = recintosValidos(config?.venues).find((r) => r.id === venda.venueId) ?? null;
   const tipos = tiposValidos(venda.types);

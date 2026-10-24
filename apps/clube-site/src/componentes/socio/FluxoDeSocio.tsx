@@ -1,9 +1,8 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import { ArrowRight, Check, ChevronDown, ChevronLeft, Loader2, X } from "lucide-react";
+import { ArrowRight, Check, ChevronDown, ChevronLeft, Loader2 } from "lucide-react";
 import type { Adesao, CategoriaDeSocio } from "@/dados/tipos";
-import { Emblema } from "@/componentes/Emblema";
 import { CartaoDeSocio } from "./CartaoDeSocio";
 
 /**
@@ -15,12 +14,11 @@ import { CartaoDeSocio } from "./CartaoDeSocio";
  * pedido, `POST /api/clubes/:slug/socios`. O pedido fica pendente e aparece
  * no painel do clube, em Sócios, como os que chegam pela página da API.
  *
- * Vive numa janela por cima da página (`modo="janela"`, ver `Adesao.tsx`) ou
- * numa página do site (`/ser-socio`, `modo="pagina"`), para os links
- * partilhados.
+ * Vive na página `/ser-socio` do site. Os botões de sócio levam para lá
+ * (antes abriam uma janela por cima; o Rui quis a página, a 24/10/2026).
  *
- * Os dados vivem no estado e nunca se limpam a meio: voltar atrás, ou fechar
- * a janela e abrir outra vez, encontra tudo como estava.
+ * Os dados vivem no estado e nunca se limpam a meio: voltar atrás no
+ * formulário encontra tudo como estava.
  */
 
 type ClubeDaAdesao = { slug: string; name: string; shortName: string; logoUrl?: string };
@@ -92,22 +90,15 @@ export function FluxoDeSocio({
   adesao,
   api,
   demonstracao,
-  modo,
   quadrado = false,
-  onFechar,
-  onEnviado,
   idTitulo = "adesao-titulo",
 }: {
   clube: ClubeDaAdesao;
   adesao: Adesao;
   api: string;
   demonstracao: boolean;
-  modo: "janela" | "pagina";
   /** O tema Holofote: cantos direitos. */
   quadrado?: boolean;
-  onFechar?: () => void;
-  /** O pedido chegou à API (a janela recomeça na próxima vez que abrir). */
-  onEnviado?: () => void;
   idTitulo?: string;
 }) {
   const ecras = useMemo<Ecra[]>(
@@ -215,9 +206,9 @@ export function FluxoDeSocio({
 
   const primeiraVez = useRef(true);
   useEffect(() => {
-    // Na página, o primeiro desenho fica onde está: saltar para o formulário
-    // ao abrir o link era tirar a pessoa do topo sem ela pedir.
-    if (primeiraVez.current && modo === "pagina") {
+    // O primeiro desenho fica onde está: saltar para o formulário ao abrir o
+    // link era tirar a pessoa do topo sem ela pedir.
+    if (primeiraVez.current) {
       primeiraVez.current = false;
       return;
     }
@@ -225,8 +216,7 @@ export function FluxoDeSocio({
     // Cada ecrã começa em cima, e o título recebe o foco (é o que um leitor de
     // ecrã anuncia). O primeiro campo só ganha foco em ecrã grande: no
     // telemóvel o teclado tapava a pergunta antes de a pessoa a ler.
-    if (modo === "janela") corpo.current?.scrollTo({ top: 0 });
-    else corpo.current?.scrollIntoView({ block: "start" });
+    corpo.current?.scrollIntoView({ block: "start", behavior: "smooth" });
     const primeiro = corpo.current?.querySelector<HTMLInputElement>("[data-ecra] input:not([type=checkbox]), [data-ecra] select");
     if (primeiro && window.matchMedia("(min-width: 1024px)").matches && ecra !== "intro") primeiro.focus({ preventScroll: true });
     else titulo.current?.focus({ preventScroll: true });
@@ -287,7 +277,6 @@ export function FluxoDeSocio({
         }
         setBemVindo(b.name ?? c.name.trim());
       }
-      onEnviado?.();
       ir(ecras.length - 1);
     } catch {
       setFalha("Falhou a ligação. Verifica a internet e tenta outra vez.");
@@ -343,32 +332,13 @@ export function FluxoDeSocio({
   );
 
   const cartao = (
-    <CartaoDeSocio nome={c.name} categoria={categoria?.name ?? "Sócio"} clube={clube} className={modo === "janela" ? "lg:[transform:perspective(1100px)_rotateY(-9deg)_rotateX(4deg)]" : ""} />
+    <CartaoDeSocio nome={c.name} categoria={categoria?.name ?? "Sócio"} clube={clube} className="lg:[transform:perspective(1100px)_rotateY(-9deg)_rotateX(4deg)]" />
   );
 
   return (
-    <div className={modo === "janela" ? "flex h-full min-h-0 flex-col" : ""}>
-      {/* Cabeçalho da janela: quem é, e o fechar sempre à vista. */}
-      {modo === "janela" && (
-        <div className="flex h-16 shrink-0 items-center gap-3 border-b border-line bg-surface px-4 sm:px-6">
-          <Emblema logoUrl={clube.logoUrl} shortName={clube.shortName} size={34} />
-          <p className="min-w-0 flex-1 truncate">
-            <span className="display block truncate text-[1.05rem] text-ink">{clube.shortName}</span>
-            <span className="block truncate text-xs text-ink-3">Adesão a sócio</span>
-          </p>
-          <button
-            type="button"
-            onClick={onFechar}
-            aria-label="Fechar"
-            className={`grid size-11 place-items-center text-ink-2 transition hover:bg-sunken hover:text-ink ${quadrado ? "" : "rounded-full"}`}
-          >
-            <X size={20} aria-hidden />
-          </button>
-        </div>
-      )}
-
-      <div className={modo === "janela" ? "grid min-h-0 flex-1 lg:grid-cols-[minmax(0,1fr)_minmax(0,21rem)]" : "grid gap-10 lg:grid-cols-[minmax(0,1fr)_minmax(0,21rem)] lg:gap-14"}>
-        <div ref={corpo} className={modo === "janela" ? "min-h-0 overflow-y-auto overscroll-contain px-5 pb-10 pt-6 sm:px-8 lg:px-12 lg:pt-9" : "scroll-mt-28"}>
+    <div>
+      <div className="grid gap-10 lg:grid-cols-[minmax(0,1fr)_minmax(0,22rem)] lg:gap-16">
+        <div ref={corpo} className="min-w-0 scroll-mt-28">
           {/* Os passos: 1 2 3 4, com o traço da cor do clube por baixo do atual. */}
           <div className={`mb-7 flex h-6 items-center gap-4 ${passo < 0 ? "invisible" : ""}`} aria-hidden={passo < 0}>
             <p className="sr-only" aria-live="polite">
@@ -686,15 +656,9 @@ export function FluxoDeSocio({
                 </ol>
                 <div className="mt-8 lg:hidden">{cartao}</div>
                 <div className="mt-10">
-                  {modo === "janela" ? (
-                    <button type="button" onClick={onFechar} className={botaoPrincipal}>
-                      Voltar ao site
-                    </button>
-                  ) : (
-                    <a href="/" className={botaoPrincipal}>
-                      Voltar ao site
-                    </a>
-                  )}
+                  <a href="/" className={botaoPrincipal}>
+                    Voltar ao site
+                  </a>
                 </div>
               </>
             )}
@@ -702,7 +666,7 @@ export function FluxoDeSocio({
         </div>
 
         {/* O cartão, ao lado, em ecrã grande. */}
-        <aside className={`relative hidden overflow-hidden lg:flex lg:flex-col lg:items-center lg:justify-center ${modo === "janela" ? "bg-sunken px-9" : `self-start bg-sunken px-8 py-12 ${quadrado ? "" : "rounded-card"}`}`}>
+        <aside className={`relative hidden overflow-hidden lg:sticky lg:top-28 lg:flex lg:flex-col lg:items-center lg:justify-center lg:self-start bg-sunken px-8 py-14 ${quadrado ? "" : "rounded-card"}`}>
           <Estilhacos />
           <div className="relative w-full max-w-[17rem]">{cartao}</div>
           <p className="relative mt-6 max-w-[16rem] text-center text-sm text-ink-3">O teu cartão fica ativo assim que a direção aprovar a adesão.</p>

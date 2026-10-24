@@ -1,4 +1,4 @@
-import { IsBoolean, IsEmail, IsIn, IsInt, IsISO8601, IsNumber, IsObject, IsOptional, IsString, Length, Max, MaxLength, Min, IsArray } from "class-validator";
+import { ArrayMaxSize, IsBoolean, IsEmail, IsIn, IsInt, IsISO8601, IsNumber, IsObject, IsOptional, IsString, Length, Max, MaxLength, Min, IsArray } from "class-validator";
 import { LAYOUTS } from "./site.tipos";
 
 /**
@@ -16,6 +16,8 @@ export class AtualizarSiteDto {
   @IsOptional() @IsArray() recintos?: unknown[];
   /** A página de início: a ordem das secções e o banner. Ver `inicioValido`. */
   @IsOptional() @IsObject() inicio?: Record<string, unknown>;
+  /** A loja: levantamento, envio e aviso. Ver `lojaValida`. */
+  @IsOptional() @IsObject() loja?: Record<string, unknown>;
 }
 
 /** O estado de uma mensagem do formulário de contactos. Só se mexe no que vier. */
@@ -75,6 +77,10 @@ export class ProdutoDto {
   @IsOptional() @IsBoolean() esgotado?: boolean;
   @IsOptional() @IsBoolean() visivel?: boolean;
   @IsOptional() @IsInt() @Min(0) @Max(10_000) ordem?: number;
+  /** A galeria, a seguir à capa. Até 8 imagens do bucket do site. */
+  @IsOptional() @IsArray() @ArrayMaxSize(8) @IsString({ each: true }) @MaxLength(500, { each: true }) imagens?: string[];
+  /** O stock por tamanho (`{ "M": 3 }`; `{ "": 12 }` sem tamanhos). Um tamanho ausente vende-se sem contagem. Ver `stockValido`. */
+  @IsOptional() @IsObject() stock?: Record<string, unknown>;
 }
 
 export class PatrocinadorDto {

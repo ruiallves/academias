@@ -13,6 +13,7 @@ import { montarIdentificador } from "./identificador";
 import { assertMinimoDoMetodo, MINIMO_COBRAVEL } from "./minimos";
 import { EupagoFeesService } from "./eupago-fees";
 import { BilheteiraEmissao } from "../bilheteira/emissao.service";
+import { LojaEmissao } from "../loja/emissao.service";
 import {
   cotacao,
   MENSAGEM_DESATIVADOS,
@@ -187,6 +188,8 @@ export class BillingService implements OnModuleInit, OnModuleDestroy {
     private readonly fees: EupagoFeesService,
     /** Os bilhetes: o webhook emite-os aqui. Ver `confirmPayment`. */
     private readonly bilhetes: BilheteiraEmissao,
+    /** As encomendas da loja do site: o webhook confirma-as aqui. */
+    private readonly loja: LojaEmissao,
   ) {}
 
   /* ------------------------------------------------------------------------ */
@@ -596,6 +599,7 @@ export class BillingService implements OnModuleInit, OnModuleDestroy {
           charge: { select: { status: true } },
           memberFee: { select: { status: true } },
           ticketOrder: { select: { status: true, reservedUntil: true } },
+          siteOrder: { select: { status: true } },
         },
       }),
     );
@@ -621,6 +625,11 @@ export class BillingService implements OnModuleInit, OnModuleDestroy {
     // Uma compra de bilhetes paga ou anulada também (o pagamento que sobra é outro).
     if (payment.ticketOrder && (payment.ticketOrder.status === "PAID" || payment.ticketOrder.status === "CANCELLED")) {
       await expirar(`substituída — a compra de bilhetes já está ${payment.ticketOrder.status === "PAID" ? "paga" : "anulada"}`);
+      return "substituidos";
+    }
+    // Uma encomenda da loja já paga (ou mais à frente) ou anulada: o pagamento que sobra é outro.
+    if (payment.siteOrder && payment.siteOrder.status !== "RESERVED" && payment.siteOrder.status !== "EXPIRED") {
+      await expirar(`substituída — a encomenda já está ${payment.siteOrder.status === "CANCELLED" ? "anulada" : "paga"}`);
       return "substituidos";
     }
     const cobranca = payment.charge?.status ?? payment.memberFee?.status;
@@ -2388,6 +2397,91 @@ export class BillingService implements OnModuleInit, OnModuleDestroy {
   }
 
   /**
+   * Pagar uma encomenda da loja do site: MB Way ou Multibanco, pela euPago do
+   * clube. O gémeo de `startTicketPayment`: a encomenda já tem os artigos
+   * guardados (`LojaService.criarEncomenda`), isto só cria o pagamento, fora
+   * do bloqueio da loja. A comissão segue a regra do clube (`feesOnPayer`).
+   */
+  async startShopPayment(academyId: string, orderId: string, method: PaymentMethod, payerPhone?: string) {
+    if (method !== PaymentMethod.MBWAY && method !== PaymentMethod.MULTIBANCO) {
+      throw new BadRequestException("Método de pagamento desconhecido");
+    }
+    return this.prisma.runAs(academyId, async (db) => {
+      const encomenda = await db.siteOrder.findFirst({ where: { id: orderId }, include: { payments: true, items: { select: { productName: true } } } });
+      if (!encomenda) throw new NotFoundException("Encomenda não encontrada");
+      if (encomenda.status !== "RESERVED" || encomenda.reservedUntil < new Date()) {
+        throw new BadRequestException("Os artigos desta encomenda já não estão guardados. Faz uma encomenda nova.");
+      }
+
+      const academia = await db.academy.findFirst({
+        where: { id: academyId },
+        select: { eupagoApiKey: true, paymentsEnabled: true, feesOnPayer: true, shortName: true },
+      });
+      this.assertPagamentosLigados(academia);
+
+      const aCobrar = this.cobrar(encomenda.totalCents, method, academia);
+      assertMinimoDoMetodo(method, aCobrar.totalCents);
+
+      // Uma encomenda, um pagamento vivo: trocar de método mata o anterior.
+      for (const p of encomenda.payments) {
+        if (p.status === PaymentStatus.PENDING || p.status === PaymentStatus.PROCESSING) {
+          await db.payment.update({ where: { id: p.id }, data: { status: PaymentStatus.EXPIRED } });
+        }
+      }
+
+      const apiKey = this.chaveDoClube(academia);
+      const hoje = partesNoFuso(new Date());
+      const periodo = `${hoje.ano}-${String(hoje.mes).padStart(2, "0")}`;
+      const primeiro = encomenda.items[0]?.productName ?? "Loja";
+
+      const payment = await db.payment.create({
+        data: {
+          siteOrderId: encomenda.id,
+          amountCents: aCobrar.totalCents,
+          surchargeCents: aCobrar.surchargeCents,
+          method,
+          status: PaymentStatus.PENDING,
+          identificador: montarIdentificador([{ tipo: "LOJA", periodo, nome: `Encomenda ${encomenda.number}` }], encomenda.buyerName, academia?.shortName),
+          payerName: encomenda.buyerName,
+        },
+      });
+
+      const request = {
+        reference: payment.identificador ?? payment.id,
+        amountCents: aCobrar.totalCents,
+        description: encomenda.items.length === 1 ? `Loja: ${primeiro}` : `Loja: encomenda n.º ${encomenda.number} (${encomenda.items.length} artigos)`,
+        payerName: encomenda.buyerName,
+        payerEmail: encomenda.buyerEmail,
+        apiKey,
+      };
+
+      try {
+        const result =
+          method === PaymentMethod.MBWAY
+            ? await this.eupago.createMbWayCharge({ ...request, payerPhone: requirePhone(payerPhone) })
+            : await this.eupago.createMultibancoCharge(request);
+
+        return await db.payment.update({
+          where: { id: payment.id },
+          data: {
+            providerRef: result.providerRef,
+            entity: result.entity,
+            reference: result.reference,
+            expiresAt: result.expiresAt,
+            status: method === PaymentMethod.MBWAY ? PaymentStatus.PROCESSING : PaymentStatus.PENDING,
+          },
+        });
+      } catch (error) {
+        await db.payment.update({
+          where: { id: payment.id },
+          data: { status: PaymentStatus.FAILED, rawPayload: { error: error instanceof Error ? error.message : String(error) } },
+        });
+        throw error;
+      }
+    });
+  }
+
+  /**
    * Débito directo de uma mensalidade — contra o mandato do pagador.
    *
    * O mandato é do **membership que pede**, nunca de outro: um encarregado só
@@ -2617,6 +2711,20 @@ export class BillingService implements OnModuleInit, OnModuleDestroy {
           data: { status: PaymentStatus.PAID, paidAt, rawPayload: rawPayload as object },
         });
         depois.enviar = await this.bilhetes.pagamentoConfirmado(db, found.academyId, payment.ticketOrderId, paidAt, payment.amountCents);
+        return { handled: true as const, duplicate: false };
+      }
+
+      /*
+       * Uma encomenda da loja do site: o pagamento fica pago, e a emissão
+       * decide o resto (confirmar e descontar o stock, ou reembolso se já não
+       * houver stock). Ver `LojaEmissao.pagamentoConfirmado`.
+       */
+      if (payment.siteOrderId) {
+        await db.payment.update({
+          where: { id: payment.id },
+          data: { status: PaymentStatus.PAID, paidAt, rawPayload: rawPayload as object },
+        });
+        depois.enviar = await this.loja.pagamentoConfirmado(db, found.academyId, payment.siteOrderId, paidAt, payment.amountCents);
         return { handled: true as const, duplicate: false };
       }
 
@@ -2851,6 +2959,27 @@ export class BillingService implements OnModuleInit, OnModuleDestroy {
             where: { id: compra.id, refundedAt: null },
             data: { refundedAt: new Date(), refundNote: "Reembolsado na euPago." },
           });
+        }
+      }
+      /*
+       * Um reembolso na euPago a uma encomenda da loja. Se era o pagamento que
+       * a pagou, a encomenda fica anulada e com o reembolso dado por feito. O
+       * stock não volta sozinho: o clube pode ter devolvido o dinheiro por
+       * outra razão (artigo entregue com defeito), e repõe o stock à mão se
+       * for caso disso.
+       */
+      if (payment.siteOrderId) {
+        const encomenda = await db.siteOrder.findFirst({
+          where: { id: payment.siteOrderId },
+          select: { id: true, status: true, payments: { where: { status: PaymentStatus.PAID, id: { not: payment.id } }, select: { id: true } } },
+        });
+        if (encomenda && (encomenda.status === "PAID" || encomenda.status === "READY" || encomenda.status === "SHIPPED") && encomenda.payments.length === 0) {
+          await db.siteOrder.update({
+            where: { id: encomenda.id },
+            data: { status: "CANCELLED", cancelledAt: new Date(), cancelReason: "Reembolsado na euPago.", refundDueCents: payment.amountCents, refundedAt: new Date(), refundNote: "Reembolsado na euPago." },
+          });
+        } else if (encomenda) {
+          await db.siteOrder.updateMany({ where: { id: encomenda.id, refundedAt: null }, data: { refundedAt: new Date(), refundNote: "Reembolsado na euPago." } });
         }
       }
       if (payment.charge && payment.charge.status === ChargeStatus.SETTLED) {

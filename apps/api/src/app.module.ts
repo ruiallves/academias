@@ -126,6 +126,9 @@ import { BilheteiraAppController, BilheteiraConsolaController, BilheteiraPublica
 import { BilheteiraService } from "./bilheteira/bilheteira.service";
 import { BilheteiraEmissao } from "./bilheteira/emissao.service";
 import { PortaService } from "./bilheteira/porta.service";
+import { LojaConsolaController, LojaPublicaController } from "./loja/loja.controller";
+import { LojaService } from "./loja/loja.service";
+import { LojaEmissao } from "./loja/emissao.service";
 import { TurnstileService } from "./common/turnstile.service";
 import { SitePublicoService } from "./site/site-publico.service";
 import { SiteDominioController } from "./site/site-dominio.controller";

@@ -1437,6 +1437,175 @@ export function bilhetesAnuladosEmail(input: {
 }
 
 /* -------------------------------------------------------------------------- */
+/* Loja do site — o que chega a quem encomendou, e ao clube                     */
+/* -------------------------------------------------------------------------- */
+
+export type LinhaDaEncomendaEmail = { nome: string; tamanho: string; quantidade: number; totalCents: number };
+
+export type EntregaEmail =
+  | { tipo: "PICKUP"; local: string; nota: string }
+  | { tipo: "SHIPPING"; morada: string[]; nota: string };
+
+const eurosDeCents = (c: number) => new Intl.NumberFormat("pt-PT", { style: "currency", currency: "EUR" }).format(c / 100);
+
+/** A tabela dos artigos e dos totais, em HTML de email (só tabelas e estilos em linha). */
+function tabelaDaEncomenda(linhas: LinhaDaEncomendaEmail[], envioCents: number, totalCents: number): string {
+  const celula = (texto: string, extra = "") =>
+    '<td style="padding:5px 0;font-family:Helvetica,Arial,sans-serif;font-size:14px;color:#1a1917;vertical-align:top;' + extra + '">' + texto + "</td>";
+  const direita = "text-align:right;white-space:nowrap;padding-left:12px;";
+  const corpo = linhas
+    .map((l) => "<tr>" + celula(esc(`${l.quantidade} × ${l.nome}`) + (l.tamanho ? ' <span style="color:#8a867c">· ' + esc(l.tamanho) + "</span>" : "")) + celula(esc(eurosDeCents(l.totalCents)), direita) + "</tr>")
+    .join("");
+  const rodape =
+    (envioCents > 0 ? "<tr>" + celula("Envio", "color:#8a867c;border-top:1px solid #e6e4df;") + celula(esc(eurosDeCents(envioCents)), direita + "border-top:1px solid #e6e4df;") + "</tr>" : "") +
+    "<tr>" +
+    celula("<strong>Total</strong>", envioCents > 0 ? "" : "border-top:1px solid #e6e4df;") +
+    celula("<strong>" + esc(eurosDeCents(totalCents)) + "</strong>", direita + (envioCents > 0 ? "" : "border-top:1px solid #e6e4df;")) +
+    "</tr>";
+  return '<table role="presentation" cellpadding="0" cellspacing="0" border="0" style="width:100%;border-collapse:collapse">' + corpo + rodape + "</table>";
+}
+
+function linhasEmTexto(linhas: LinhaDaEncomendaEmail[], envioCents: number, totalCents: number): string[] {
+  return [
+    ...linhas.map((l) => `${l.quantidade} × ${l.nome}${l.tamanho ? ` · ${l.tamanho}` : ""} — ${eurosDeCents(l.totalCents)}`),
+    ...(envioCents > 0 ? [`Envio — ${eurosDeCents(envioCents)}`] : []),
+    `Total — ${eurosDeCents(totalCents)}`,
+  ];
+}
+
+function entregaEmFrases(e: EntregaEmail): string[] {
+  if (e.tipo === "PICKUP") {
+    return [
+      "Levantamento no clube" + (e.local ? `: ${e.local}` : "") + ". Avisamos por email quando estiver pronta.",
+      ...(e.nota ? [e.nota] : []),
+    ];
+  }
+  return ["Envio para: " + e.morada.filter(Boolean).join(", ") + ". Avisamos por email quando seguir.", ...(e.nota ? [e.nota] : [])];
+}
+
+/** A encomenda está paga: o que leva, quanto custou, como se entrega, e a página dela. */
+export function encomendaEmail(input: {
+  brand: MailBrand;
+  nome: string;
+  numero: number;
+  linhas: LinhaDaEncomendaEmail[];
+  envioCents: number;
+  totalCents: number;
+  entrega: EntregaEmail;
+  link: string;
+}): { subject: string; html: string; text: string } {
+  const heading = `Encomenda n.º ${input.numero} confirmada`;
+  const entrega = entregaEmFrases(input.entrega);
+  const notes = ["Guarda este email: é o comprovativo da encomenda. Se tiveres dúvidas, fala com o clube pelos contactos do site."];
+  return {
+    subject: `${input.brand.shortName} · encomenda n.º ${input.numero} confirmada`,
+    html: layout({
+      brand: input.brand,
+      greeting: "Olá " + (input.nome.trim().split(/\s+/)[0] ?? "") + ",",
+      heading,
+      paragraphs: ["Recebemos o teu pagamento. Isto é o que encomendaste:"],
+      blocks: [tabelaDaEncomenda(input.linhas, input.envioCents, input.totalCents), ...entrega.map((f) => '<p style="margin:12px 0 0;font-family:Helvetica,Arial,sans-serif;font-size:14px;line-height:1.55;color:#1a1917">' + esc(f) + "</p>")],
+      cta: { label: "Ver a encomenda", url: input.link },
+      notes,
+    }),
+    text: plain(
+      "Olá " + (input.nome.trim().split(/\s+/)[0] ?? "") + ",",
+      [heading, "", ...linhasEmTexto(input.linhas, input.envioCents, input.totalCents), "", ...entrega],
+      { label: "Ver a encomenda", url: input.link },
+      notes,
+    ),
+  };
+}
+
+/** Pronta para levantar no clube. */
+export function encomendaProntaEmail(input: { brand: MailBrand; nome: string; numero: number; local: string; nota: string; link: string }): { subject: string; html: string; text: string } {
+  const heading = `A encomenda n.º ${input.numero} está pronta`;
+  const paragraphs = ["Já podes levantá-la" + (input.local ? " em <strong>" + esc(input.local) + "</strong>" : " no clube") + ".", ...(input.nota ? [esc(input.nota)] : [])];
+  const notes = ["Leva o email ou o número da encomenda. Se não puderes ir tu, quem for diz o número e o nome."];
+  return {
+    subject: `${input.brand.shortName} · a encomenda n.º ${input.numero} está pronta para levantar`,
+    html: layout({ brand: input.brand, greeting: "Olá " + (input.nome.trim().split(/\s+/)[0] ?? "") + ",", heading, paragraphs, cta: { label: "Ver a encomenda", url: input.link }, notes }),
+    text: plain("Olá " + (input.nome.trim().split(/\s+/)[0] ?? "") + ",", [heading, "", ...paragraphs.map(semTags)], { label: "Ver a encomenda", url: input.link }, notes),
+  };
+}
+
+/** Seguiu pelo correio, com o código de seguimento se o clube o escreveu. */
+export function encomendaEnviadaEmail(input: { brand: MailBrand; nome: string; numero: number; morada: string[]; rastreio: string | null; link: string }): { subject: string; html: string; text: string } {
+  const heading = `A encomenda n.º ${input.numero} seguiu`;
+  const paragraphs = [
+    "Já está a caminho de <strong>" + esc(input.morada.filter(Boolean).join(", ")) + "</strong>.",
+    ...(input.rastreio ? ["Código de seguimento: <strong>" + esc(input.rastreio) + "</strong>."] : []),
+  ];
+  const notes = ["Se não chegar em alguns dias, fala com o clube pelos contactos do site."];
+  return {
+    subject: `${input.brand.shortName} · a encomenda n.º ${input.numero} seguiu`,
+    html: layout({ brand: input.brand, greeting: "Olá " + (input.nome.trim().split(/\s+/)[0] ?? "") + ",", heading, paragraphs, cta: { label: "Ver a encomenda", url: input.link }, notes }),
+    text: plain("Olá " + (input.nome.trim().split(/\s+/)[0] ?? "") + ",", [heading, "", ...paragraphs.map(semTags)], { label: "Ver a encomenda", url: input.link }, notes),
+  };
+}
+
+/** O pagamento chegou depois dos 10 minutos e já não havia stock: sem artigos, o clube devolve. */
+export function encomendaForaDoPrazoEmail(input: { brand: MailBrand; nome: string; numero: number; valor: string }): { subject: string; html: string; text: string } {
+  const heading = "O pagamento chegou tarde demais";
+  const paragraphs = [
+    "Recebemos o teu pagamento de <strong>" + esc(input.valor) + "</strong> da encomenda n.º " + input.numero + ", mas chegou depois dos 10 minutos em que os artigos estavam guardados, e entretanto esgotaram.",
+    "O clube vai devolver-te o valor. Se quiseres, faz uma encomenda nova quando houver stock.",
+  ];
+  const notes = ["Se tiveres alguma dúvida sobre a devolução, responde aos contactos do clube no site."];
+  return {
+    subject: `${input.brand.shortName} · o pagamento da encomenda n.º ${input.numero} chegou tarde`,
+    html: layout({ brand: input.brand, greeting: "Olá " + (input.nome.trim().split(/\s+/)[0] ?? "") + ",", heading, paragraphs, notes }),
+    text: plain("Olá " + (input.nome.trim().split(/\s+/)[0] ?? "") + ",", paragraphs.map(semTags), undefined, notes),
+  };
+}
+
+/** Anulada pelo clube, com o motivo e o reembolso a caminho. */
+export function encomendaAnuladaEmail(input: { brand: MailBrand; nome: string; numero: number; motivo: string; valor: string | null }): { subject: string; html: string; text: string } {
+  const heading = `A encomenda n.º ${input.numero} foi anulada`;
+  const paragraphs = [
+    "O clube anulou a tua encomenda. " + esc(input.motivo),
+    input.valor ? "O clube vai devolver-te <strong>" + esc(input.valor) + "</strong>." : "Não houve pagamento a devolver.",
+  ];
+  const notes = ["Se tiveres dúvidas, fala com o clube pelos contactos do site."];
+  return {
+    subject: `${input.brand.shortName} · encomenda n.º ${input.numero} anulada`,
+    html: layout({ brand: input.brand, greeting: "Olá " + (input.nome.trim().split(/\s+/)[0] ?? "") + ",", heading, paragraphs, notes }),
+    text: plain("Olá " + (input.nome.trim().split(/\s+/)[0] ?? "") + ",", paragraphs.map(semTags), undefined, notes),
+  };
+}
+
+/** Para o clube: chegou uma encomenda paga, há o que preparar. */
+export function encomendaParaOClubeEmail(input: {
+  brand: MailBrand;
+  numero: number;
+  comprador: { nome: string; email: string; telefone: string | null };
+  linhas: LinhaDaEncomendaEmail[];
+  envioCents: number;
+  totalCents: number;
+  entrega: EntregaEmail;
+  nota: string | null;
+  link: string;
+}): { subject: string; html: string; text: string } {
+  const heading = `Encomenda n.º ${input.numero} paga`;
+  const quem = [input.comprador.nome, input.comprador.email, input.comprador.telefone].filter(Boolean).join(" · ");
+  const entrega = input.entrega.tipo === "PICKUP" ? "Levantamento no clube" + (input.entrega.local ? ` (${input.entrega.local})` : "") : "Envio para " + input.entrega.morada.filter(Boolean).join(", ");
+  const nota = input.nota ? ['<div style="margin-top:8px;padding:10px 12px;background:#f7f6f3;border-radius:8px;font-family:Helvetica,Arial,sans-serif;font-size:14px;line-height:1.5;color:#1a1917;white-space:pre-wrap">' + esc(input.nota) + "</div>"] : [];
+  const notes = ["Marca-a como pronta ou enviada na consola, em Website › Loja › Encomendas: quem comprou recebe o aviso por email."];
+  return {
+    subject: `Encomenda n.º ${input.numero} paga — ${input.comprador.nome} · ${eurosDeCents(input.totalCents)}`,
+    html: layout({
+      brand: input.brand,
+      heading,
+      paragraphs: ["<strong>" + esc(quem) + "</strong>", esc(entrega)],
+      blocks: [tabelaDaEncomenda(input.linhas, input.envioCents, input.totalCents), ...nota],
+      cta: { label: "Abrir na consola", url: input.link },
+      notes,
+    }),
+    text: plain(heading, [quem, entrega, "", ...linhasEmTexto(input.linhas, input.envioCents, input.totalCents), ...(input.nota ? ["", input.nota] : [])], { label: "Abrir na consola", url: input.link }, notes),
+  };
+}
+
+/* -------------------------------------------------------------------------- */
 /* Repor a palavra-passe — quem se esqueceu dela                               */
 /* -------------------------------------------------------------------------- */
 

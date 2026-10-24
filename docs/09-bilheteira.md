@@ -1,7 +1,7 @@
 # Bilheteira
 
-A venda de bilhetes para os jogos em casa, no site do clube e na app do sócio,
-com o leitor dos seguranças à porta. Faz parte do Connect Pro (site no plano).
+A venda de bilhetes para os jogos do clube, em casa e fora, no site do clube e
+na app do sócio, com o leitor dos seguranças à porta. Faz parte do Connect Pro (site no plano).
 Decisões do Rui de 21/10/2026; a lista completa está no fim.
 
 Código: `apps/api/src/bilheteira/` (regras puras em `regras.ts`, provadas por
@@ -32,6 +32,13 @@ Um **tipo de bilhete** é um preço numa bancada para um público:
 os sócios dessa categoria (`MemberTier`).
 
 ## As regras
+
+- **Em casa e fora** (desde 24/10/2026): qualquer jogo pode ter venda. Fora, o
+  clube vende os bilhetes que o adversário lhe cede, num recinto que desenha no
+  Estádio (a bancada dos visitantes). Os lugares anuais contam-se por recinto,
+  por isso fora não descontam nem entram. Os nomes do jogo (site, app, emails,
+  leitor) põem quem joga em casa primeiro: `Venda.jogo.isHome` e
+  `Pedido.jogo.isHome` dizem de que lado está o clube.
 
 - **Fases**: aberta a todos; só sócios (`membersOnly`); sócios a partir de
   `membersFrom`, público a partir de `publicFrom`. Fecha à hora do jogo, ou em

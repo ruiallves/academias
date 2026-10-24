@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import Link from "next/link";
+import { Info } from "lucide-react";
 import { fonte } from "@/dados/fonte";
 import { clubeOu404 } from "@/lib/clube";
 import { CabecalhoPagina } from "@/componentes/Seccao";
@@ -18,11 +19,26 @@ export default async function Loja({ params, searchParams }: Props) {
   const todos = await fonte.produtos(clube.slug);
   const categorias = [...new Set(todos.map((p) => p.category))];
   const lista = categoria ? todos.filter((p) => p.category === categoria) : todos;
+  const compraOnline = clube.loja?.compraOnline ?? false;
 
   return (
     <>
-      <CabecalhoPagina eyebrow="Loja oficial" titulo="Veste o clube" linha="Equipamento de jogo, roupa e artigos de adepto. A compra online abre em breve; até lá, encomenda pelos contactos do clube." />
+      <CabecalhoPagina
+        eyebrow="Loja oficial"
+        titulo="Veste o clube"
+        linha={
+          compraOnline
+            ? "Equipamento de jogo, roupa e artigos de adepto. Pagas por MB WAY ou Multibanco e o dinheiro vai direto para o clube."
+            : "Equipamento de jogo, roupa e artigos de adepto. A compra online ainda não está aberta; até lá, encomenda pelos contactos do clube."
+        }
+      />
       <div className="container-site mt-8">
+        {clube.loja?.aviso && (
+          <p className="mb-6 flex gap-3 rounded-card bg-signal-soft p-4 text-sm text-signal-ink">
+            <Info size={18} className="mt-0.5 shrink-0" aria-hidden />
+            {clube.loja.aviso}
+          </p>
+        )}
         <nav aria-label="Categorias" className="-mx-4 overflow-x-auto px-4 [scrollbar-width:none] sm:mx-0 sm:px-0">
           <ul className="flex gap-2">
             {[{ c: "", l: "Tudo" }, ...categorias.map((c) => ({ c, l: c }))].map(({ c, l }) => {

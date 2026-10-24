@@ -71,8 +71,8 @@ const SECOES: Secao[] = [
   { key: "equipas", label: "Equipas", grupo: "Conteúdo", icone: Users, descricao: "Que equipas aparecem no site. O plantel só com o consentimento das famílias." },
   { key: "patrocinadores", label: "Patrocinadores", grupo: "Conteúdo", icone: Handshake, descricao: "Quem apoia o clube. Aparecem no fundo de todas as páginas." },
   { key: "estadio", label: "Estádio", grupo: "Vendas", icone: Recinto, descricao: "O recinto visto de cima, com as bancadas. Quem compra um bilhete vê no mapa onde vai ficar." },
-  { key: "bilheteira", label: "Bilheteira", grupo: "Vendas", icone: Ticket, descricao: "Bilhetes para os jogos em casa: preços por bancada e público, quem compra e quando, as vendas e o leitor dos seguranças à porta. O bilhete chega com um código QR." },
-  { key: "loja", label: "Loja", grupo: "Vendas", icone: ShoppingBag, descricao: "Os produtos à venda no site, com tamanhos e preço." },
+  { key: "bilheteira", label: "Bilheteira", grupo: "Vendas", icone: Ticket, descricao: "Bilhetes para os jogos, em casa e fora: preços por bancada e público, quem compra e quando, as vendas e o leitor dos seguranças à porta. O bilhete chega com um código QR." },
+  { key: "loja", label: "Loja", grupo: "Vendas", icone: ShoppingBag, descricao: "Os produtos à venda no site, com tamanhos, stock e preço; as encomendas para preparar e entregar; e como o clube entrega (levantamento ou envio)." },
   { key: "mensagens", label: "Mensagens", grupo: "Contacto", icone: Inbox, descricao: "O que chega pelo formulário de contactos do site." },
 ];
 
@@ -133,7 +133,7 @@ function WebsiteDoClube() {
       )}
 
       <div className="grid gap-x-10 gap-y-4 lg:grid-cols-[212px_minmax(0,1fr)]">
-        <Submenu ativa={ativa} onIr={ir} horizontal={mobile} porLer={site.mensagensPorLer} />
+        <Submenu ativa={ativa} onIr={ir} horizontal={mobile} porLer={site.mensagensPorLer} porTratar={site.encomendasPorTratar} />
 
         <section className="min-w-0" aria-labelledby="secao-titulo">
           <header className="mb-5 border-b border-line pb-4">
@@ -170,21 +170,23 @@ function WebsiteDoClube() {
  * telemóvel. `porLer` é a pastilha das Mensagens: o que chegou pelo formulário
  * do site e ninguém abriu ainda.
  */
-function Submenu({ ativa, onIr, horizontal, porLer }: { ativa: SecaoKey; onIr: (k: SecaoKey) => void; horizontal: boolean; porLer: number }) {
+function Submenu({ ativa, onIr, horizontal, porLer, porTratar }: { ativa: SecaoKey; onIr: (k: SecaoKey) => void; horizontal: boolean; porLer: number; porTratar: number }) {
   const ativoRef = useRef<HTMLButtonElement | null>(null);
   useEffect(() => {
     if (horizontal) ativoRef.current?.scrollIntoView({ inline: "center", block: "nearest" });
   }, [horizontal, ativa]);
 
-  const pastilha = (s: Secao) =>
-    s.key === "mensagens" && porLer > 0 ? (
-      <span
-        className="ml-auto inline-flex h-5 min-w-5 shrink-0 items-center justify-center rounded-full bg-signal-strong px-1.5 text-[11px] font-semibold leading-none text-white"
-        aria-label={`${porLer} ${porLer === 1 ? "mensagem por ler" : "mensagens por ler"}`}
-      >
-        {porLer > 99 ? "99+" : porLer}
+  // As pastilhas: as mensagens por ler, e as encomendas pagas por preparar.
+  const pastilha = (s: Secao) => {
+    const n = s.key === "mensagens" ? porLer : s.key === "loja" ? porTratar : 0;
+    if (n <= 0) return null;
+    const rotulo = s.key === "mensagens" ? (n === 1 ? "mensagem por ler" : "mensagens por ler") : n === 1 ? "encomenda por tratar" : "encomendas por tratar";
+    return (
+      <span className="ml-auto inline-flex h-5 min-w-5 shrink-0 items-center justify-center rounded-full bg-signal-strong px-1.5 text-[11px] font-semibold leading-none text-white" aria-label={`${n} ${rotulo}`}>
+        {n > 99 ? "99+" : n}
       </span>
-    ) : null;
+    );
+  };
 
   if (horizontal) {
     return (

@@ -7,6 +7,7 @@ import { MenuMovel } from "./MenuMovel";
 import { ATALHOS, NAV } from "./nav";
 import { TrocarLayout } from "./TrocarLayout";
 import { BotaoSocio } from "@/componentes/socio/BotaoSocio";
+import { BotaoCarrinho } from "@/componentes/loja/BotaoCarrinho";
 
 /**
  * Dois andares, como nos sites de referência: uma faixa escura com o que se
@@ -23,17 +24,22 @@ export function Cabecalho({ clube, trocarLayout = false }: { clube: Clube; troca
             {trocarLayout && <TrocarLayout atual="tribuna" />}
             {/* Abaixo de `sm` só os ícones: com o interruptor de layout, os
                 três rótulos não cabiam em 375px. O nome fica no aria-label. */}
-            {ATALHOS.map(({ href, label, Icone }) => (
-              <Link
-                key={href}
-                href={href}
-                aria-label={label}
-                className="inline-flex h-10 items-center gap-1.5 px-2.5 font-medium text-night-ink transition hover:text-white"
-              >
-                <Icone size={15} aria-hidden />
-                <span className="hidden sm:inline">{label}</span>
-              </Link>
-            ))}
+            {ATALHOS.map(({ href, label, Icone }) =>
+              href === "/loja" ? (
+                // A loja leva o carrinho: o número de artigos por cima do ícone.
+                <BotaoCarrinho key={href} slug={clube.slug} className="inline-flex h-10 items-center gap-1.5 px-2.5 font-medium text-night-ink transition hover:text-white" />
+              ) : (
+                <Link
+                  key={href}
+                  href={href}
+                  aria-label={label}
+                  className="inline-flex h-10 items-center gap-1.5 px-2.5 font-medium text-night-ink transition hover:text-white"
+                >
+                  <Icone size={15} aria-hidden />
+                  <span className="hidden sm:inline">{label}</span>
+                </Link>
+              ),
+            )}
             <BotaoSocio
               
               aria-label="Sócios"

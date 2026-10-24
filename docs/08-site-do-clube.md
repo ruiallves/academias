@@ -274,10 +274,15 @@ Rui, 21/10). As faturas ficam para o fim.
 - Bilhete com QR por email, leitor à entrada na app de staff (recusa os já usados).
 - Vendas por jogo na consola, cancelamentos e reembolsos.
 
-**Fase 3: loja**
-- Carrinho e encomendas (o mesmo pagamento e a mesma faturação da bilheteira).
-- Stock por tamanho (hoje `SiteProduct` tem um `soldOut` geral e os tamanhos em
-  texto), várias fotografias, levantamento ou envio, gestão na consola.
+**Fase 3: loja (feita a 24/10/2026, ver `10-loja.md`)**
+- Carrinho e encomendas, com o mesmo pagamento da bilheteira (MB WAY e
+  Multibanco pela euPago do clube; `Payment.siteOrderId`).
+- Stock por tamanho (`SiteProduct.stock` num produto sem artigo; as variantes
+  do Inventário num produto com artigo, com a saída registada ao pagar),
+  galeria (`SiteProduct.images`), levantamento ou envio (`SiteConfig.shop`),
+  encomendas na consola (preparar, enviar, entregar, anular, reembolsar).
+- Migração `20261024120000_loja`, aditiva, aplicada em produção a 24/10. A
+  faturação continua para o fim.
 
 ### Faturação das vendas
 

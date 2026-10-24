@@ -342,6 +342,98 @@ export function tiposParaConsola(v: unknown): TipoDeBilhete[] {
   return tiposValidos(v).map((t) => ({ id: t.id, nome: t.nome, preco: t.precoCents / 100, bancadaId: t.bancadaId, para: t.para, tierId: t.tierId }));
 }
 
+/* -------------------------------------------------------------------------- */
+/* A loja                                                                       */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * Como a loja entrega. Em cêntimos por dentro (`SiteConfig.shop`); a consola
+ * e o site falam em euros, por `lojaParaConsola`.
+ *
+ * - **Levantamento** no clube: onde (a sede, o bar do pavilhão) e uma nota
+ *   (horário). Ligado por omissão: é o que todo o clube pequeno faz.
+ * - **Envio** pelo correio: o preço, e a partir de que valor é grátis
+ *   (nulo = nunca). Desligado por omissão: quem envia tem de saber o preço.
+ * - **Aviso**: uma frase no topo da loja ("As encomendas de dezembro seguem
+ *   até dia 20").
+ *
+ * Sem nenhuma das duas formas de entrega ligada a loja não vende (fica em
+ * catálogo), mesmo com pagamentos no clube.
+ */
+export type Loja = {
+  levantamento: { ativo: boolean; local: string; nota: string };
+  envio: { ativo: boolean; precoCents: number; gratisAPartirDeCents: number | null; nota: string };
+  aviso: string;
+};
+
+export const LOJA_POR_OMISSAO: Loja = {
+  levantamento: { ativo: true, local: "", nota: "" },
+  envio: { ativo: false, precoCents: 0, gratisAPartirDeCents: null, nota: "" },
+  aviso: "",
+};
+
+/** Aceita cêntimos (`xCents`) ou euros (`x`), como os tipos de bilhete. */
+function cents(o: Record<string, unknown>, chave: string): number | null {
+  const c = numero(o[`${chave}Cents`]);
+  if (c !== null) return Math.max(0, Math.round(c));
+  const e = numero(o[chave]);
+  return e !== null ? Math.max(0, Math.round(e * 100)) : null;
+}
+
+export function lojaValida(v: unknown): Loja {
+  const o = (v && typeof v === "object" ? v : {}) as Record<string, unknown>;
+  const l = (o.levantamento && typeof o.levantamento === "object" ? o.levantamento : {}) as Record<string, unknown>;
+  const e = (o.envio && typeof o.envio === "object" ? o.envio : {}) as Record<string, unknown>;
+  const preco = cents(e, "preco") ?? 0;
+  const gratis = cents(e, "gratisAPartirDe");
+  return {
+    levantamento: {
+      ativo: "ativo" in l ? l.ativo === true : LOJA_POR_OMISSAO.levantamento.ativo,
+      local: texto(l.local, 160),
+      nota: texto(l.nota, 300),
+    },
+    envio: {
+      ativo: e.ativo === true,
+      precoCents: Math.min(preco, 1_000_00),
+      gratisAPartirDeCents: gratis !== null && gratis > 0 ? Math.min(gratis, 100_000_00) : null,
+      nota: texto(e.nota, 300),
+    },
+    aviso: texto(o.aviso, 200),
+  };
+}
+
+/** A loja como a consola e o site a leem: em euros. */
+export function lojaParaConsola(v: unknown) {
+  const l = lojaValida(v);
+  return {
+    levantamento: l.levantamento,
+    envio: { ativo: l.envio.ativo, preco: l.envio.precoCents / 100, gratisAPartirDe: l.envio.gratisAPartirDeCents === null ? null : l.envio.gratisAPartirDeCents / 100, nota: l.envio.nota },
+    aviso: l.aviso,
+  };
+}
+
+/**
+ * O stock por tamanho de um produto sem artigo do Inventário:
+ * `{ "S": 3, "M": 0 }`, ou `{ "": 12 }` num produto sem tamanhos. Um tamanho
+ * que não está aqui vende-se sem contagem; `null` na consola quer dizer isso
+ * e não se grava.
+ */
+export function stockValido(v: unknown): Record<string, number> {
+  const o = (v && typeof v === "object" && !Array.isArray(v) ? v : {}) as Record<string, unknown>;
+  const out: Record<string, number> = {};
+  for (const [tamanho, q] of Object.entries(o).slice(0, 60)) {
+    const n = numero(q);
+    if (n === null) continue;
+    out[tamanho.trim().slice(0, 40)] = Math.max(0, Math.min(1_000_000, Math.round(n)));
+  }
+  return out;
+}
+
+/** Os tamanhos escritos no produto ("S, M, L") como lista, sem repetidos. */
+export function tamanhosDoProduto(sizes: string): string[] {
+  return [...new Set(sizes.split(",").map((s) => s.trim()).filter(Boolean))].slice(0, 60);
+}
+
 /** "Parágrafo um\n\nParágrafo dois" → ["Parágrafo um", "Parágrafo dois"]. */
 export function paragrafos(s: string): string[] {
   return s

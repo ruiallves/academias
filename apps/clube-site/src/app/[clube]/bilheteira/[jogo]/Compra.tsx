@@ -3,9 +3,10 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useId, useRef, useState } from "react";
-import { ArrowLeft, BadgeCheck, Loader2, Minus, Plus, X } from "lucide-react";
+import { ArrowLeft, ArrowRight, BadgeCheck, Check, Info, Landmark, Loader2, Lock, Minus, Plus, QrCode, Smartphone, Umbrella, X } from "lucide-react";
 import { MapaDoRecinto } from "@academia/ui/estadio";
 import { Botao } from "@/componentes/Botao";
+import { Picotado } from "@/componentes/bilheteira/Picotado";
 import { CHAVE_TURNSTILE, Turnstile, type TurnstileHandle } from "@/componentes/Turnstile";
 import { euro } from "@/lib/formatar";
 import {
@@ -25,12 +26,17 @@ import {
 /**
  * A compra de bilhetes de um jogo, do princípio ao pagamento.
  *
+ * ## O desenho
+ *
+ * Duas colunas em ecrã largo: à esquerda os passos (escolher, depois os dados
+ * e o pagamento), à direita o pedido, colado ao topo enquanto se rola, com o
+ * total e o botão que avança. No telemóvel o pedido vira uma barra fixa em
+ * baixo. Os bilhetes vêm agrupados por bancada, debaixo do mapa do recinto.
+ *
  * ## A venda
  *
  * Ao abrir, pede a venda à API (`GET /api/clubes/:slug/bilhetes/:matchId`,
- * sem cache): os preços, os lugares que restam por bancada e as fases. O mapa
- * vem primeiro, como antes; a lista mostra os tipos agrupados por bancada,
- * com o que resta em cada uma.
+ * sem cache): os preços, os lugares que restam por bancada e as fases.
  *
  * ## O sócio
  *
@@ -50,6 +56,8 @@ import {
  * sócio é qualquer número, e a compra é fingida (ver `PaginaDoBilhete`).
  */
 
+type DadosDoJogo = { titulo: string; quando: string; local: string; emCasa: boolean };
+
 type Props = {
   slug: string;
   matchId: string;
@@ -57,14 +65,20 @@ type Props = {
   demonstracao: boolean;
   /** Só em demonstração: a venda ao público e a de um sócio identificado. */
   demo: { venda: Venda; vendaDeSocio: Venda } | null;
+  /** A nota do clube para quem compra. */
+  nota: string | null;
+  /** O jogo, para o cartão do pedido. */
+  resumo: DadosDoJogo;
 };
 
 type Carga = { fase: "a-abrir" } | { fase: "aberta"; venda: Venda } | { fase: "sem-venda" } | { fase: "falhou" };
 type Socio = { numero: string; credencial: string; jaTem: boolean };
 type Envio = { fase: "pronto" } | { fase: "a-enviar" } | { fase: "erro"; mensagem: string };
 
+const ID_FORMULARIO = "compra-de-bilhetes";
+
 const campo =
-  "mt-1.5 block h-12 w-full rounded-control border border-line-strong bg-surface px-3.5 text-[1rem] text-ink placeholder:text-ink-4 focus:border-ink";
+  "mt-2 block h-12 w-full rounded-control border border-line-strong bg-surface px-3.5 text-[1rem] text-ink outline-none transition-[border-color,box-shadow] duration-150 placeholder:text-ink-4 hover:border-ink-3 focus:border-signal-line focus:shadow-[0_0_0_3px_color-mix(in_srgb,var(--color-signal)_22%,transparent)]";
 
 function mensagemDe(corpo: unknown, omissao: string): string {
   const m = (corpo as { message?: string | string[] } | null)?.message;
@@ -73,7 +87,7 @@ function mensagemDe(corpo: unknown, omissao: string): string {
 
 const so = (v: string) => v.replace(/\D/g, "");
 
-export function Compra({ slug, matchId, api, demonstracao, demo }: Props) {
+export function Compra({ slug, matchId, api, demonstracao, demo, nota, resumo }: Props) {
   const router = useRouter();
   const base = `${api}/api/clubes/${encodeURIComponent(slug)}/bilhetes`;
   const demoRef = useRef(demo);
@@ -189,7 +203,7 @@ export function Compra({ slug, matchId, api, demonstracao, demo }: Props) {
 
   if (carga.fase === "a-abrir") {
     return (
-      <div className="mt-10 grid place-items-center py-10 text-ink-3" role="status">
+      <div className="grid place-items-center py-20 text-ink-3" role="status">
         <Loader2 size={28} className="animate-spin" aria-hidden />
         <span className="sr-only">A abrir a venda</span>
       </div>
@@ -197,20 +211,21 @@ export function Compra({ slug, matchId, api, demonstracao, demo }: Props) {
   }
   if (carga.fase === "sem-venda") {
     return (
-      <div className="mt-6 rounded-card bg-sunken p-5 text-ink-2">
-        <p className="font-semibold text-ink">A venda de bilhetes para este jogo fechou.</p>
-        <Link href="/bilheteira" className="mt-2 inline-block text-sm font-semibold text-signal-ink hover:underline">
+      <div className="rounded-card bg-surface p-8 text-center shadow-card">
+        <p className="display text-2xl text-ink">A venda de bilhetes para este jogo fechou</p>
+        <Link href="/bilheteira" className="mt-4 inline-flex h-11 items-center gap-1.5 font-semibold text-signal-ink hover:underline">
           Ver os outros jogos
+          <ArrowRight size={17} aria-hidden />
         </Link>
       </div>
     );
   }
   if (carga.fase === "falhou") {
     return (
-      <div className="mt-6 rounded-card bg-sunken p-5 text-ink-2">
-        <p className="font-semibold text-ink">Não foi possível abrir a venda.</p>
-        <p className="mt-1 text-sm">Verifica a internet e tenta outra vez.</p>
-        <Botao variante="contorno" className="mt-4" onClick={() => void tentarOutraVez()}>
+      <div className="rounded-card bg-surface p-8 text-center shadow-card">
+        <p className="display text-2xl text-ink">Não foi possível abrir a venda</p>
+        <p className="mt-2 text-ink-2">Verifica a internet e tenta outra vez.</p>
+        <Botao variante="contorno" className="mt-5" onClick={() => void tentarOutraVez()}>
           Tentar outra vez
         </Botao>
       </div>
@@ -261,7 +276,8 @@ export function Compra({ slug, matchId, api, demonstracao, demo }: Props) {
   };
 
   const comMapa = !!recinto && visiveis.some((t) => t.bancadaId && recinto.bancadas.some((b) => b.id === t.bancadaId));
-  const nomeDaBancada = (id: string | null) => recinto?.bancadas.find((b) => b.id === id)?.nome;
+  const bancadaDe = (id: string | null) => recinto?.bancadas.find((b) => b.id === id);
+  const nomeDaBancada = (id: string | null) => bancadaDe(id)?.nome;
   const desde = (id: string) => {
     const ps = visiveis.filter((t) => t.bancadaId === id && !motivo(t)).map((t) => t.preco);
     return ps.length ? Math.min(...ps) : null;
@@ -297,6 +313,8 @@ export function Compra({ slug, matchId, api, demonstracao, demo }: Props) {
   /* ------------------------------------------------------------ pagar */
 
   const gratis = total === 0;
+  const aPagar = passo === "pagar" && n > 0;
+  const aEnviar = envio.fase === "a-enviar";
 
   const pagar = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
@@ -363,299 +381,494 @@ export function Compra({ slug, matchId, api, demonstracao, demo }: Props) {
 
   /* ------------------------------------------------------------ desenho */
 
-  if (passo === "pagar" && n > 0) {
-    const aEnviar = envio.fase === "a-enviar";
-    return (
-      <div ref={topo} className="mt-6 scroll-mt-24">
-        <button type="button" onClick={() => irPara("escolher")} className="inline-flex h-11 items-center gap-1.5 text-sm font-semibold text-ink hover:text-signal-ink">
-          <ArrowLeft size={16} aria-hidden />
-          Mudar os bilhetes
-        </button>
-
-        <div className="mt-3 rounded-card border border-line bg-surface p-4 sm:p-5">
-          <ul className="space-y-2">
-            {escolhidos.map((t) => (
-              <li key={t.id} className="flex items-baseline justify-between gap-4">
-                <span className="min-w-0 text-ink">
-                  <span className="font-semibold tabular">{q(t)} ×</span> {t.nome}
-                  {t.bancada && !t.nome.includes(t.bancada) && <span className="text-ink-3"> · {t.bancada}</span>}
-                </span>
-                <span className="shrink-0 tabular text-ink-2">{euro(q(t) * t.preco)}</span>
-              </li>
-            ))}
-          </ul>
-          <div className="mt-4 flex items-baseline justify-between gap-4 border-t border-line pt-4">
-            <span className="font-semibold text-ink">Total</span>
-            <span className="display text-2xl tabular text-ink">{euro(total)}</span>
-          </div>
-          {!gratis && <p className="mt-2 text-xs text-ink-3">Se o clube cobrar a taxa do pagamento, ela soma-se a este total.</p>}
-        </div>
-
-        <form onSubmit={pagar} className="mt-8 space-y-5">
-          <h2 className="display text-2xl">Os teus dados</h2>
-          <label className="block text-sm font-semibold text-ink">
-            Nome
-            <input name="nome" required minLength={2} maxLength={120} autoComplete="name" className={campo} value={nome} onChange={(e) => setNome(e.target.value)} />
-          </label>
-          <label className="block text-sm font-semibold text-ink">
-            Email <span className="font-normal text-ink-3">(os bilhetes seguem para aqui)</span>
-            <input name="email" type="email" required maxLength={254} inputMode="email" autoComplete="email" className={campo} value={email} onChange={(e) => setEmail(e.target.value)} />
-          </label>
-
-          {!gratis && (
-            <fieldset>
-              <legend className="text-sm font-semibold text-ink">Pagamento</legend>
-              <div role="radiogroup" aria-label="Método de pagamento" className="mt-1.5 grid gap-3 sm:grid-cols-2">
-                {(
-                  [
-                    { v: "MBWAY", t: "MB WAY", d: "Aceitas o pedido na app MB WAY nos 5 minutos seguintes." },
-                    { v: "MULTIBANCO", t: "Multibanco", d: "Referência para pagar dentro de 10 minutos, no homebanking ou numa caixa." },
-                  ] as const
-                ).map((m) => {
-                  const ativo = metodo === m.v;
-                  return (
-                    <button
-                      key={m.v}
-                      type="button"
-                      role="radio"
-                      aria-checked={ativo}
-                      onClick={() => setMetodo(m.v)}
-                      className={`rounded-card border p-4 text-left transition ${ativo ? "border-signal-line bg-signal-soft" : "border-line-strong bg-surface hover:border-ink-3"}`}
-                    >
-                      <span className="flex items-center gap-2 font-semibold text-ink">
-                        <span className={`grid size-5 place-items-center rounded-full border-2 ${ativo ? "border-signal-strong" : "border-line-strong"}`} aria-hidden>
-                          {ativo && <span className="size-2.5 rounded-full bg-signal-strong" />}
-                        </span>
-                        {m.t}
-                      </span>
-                      <span className="mt-1 block text-sm text-ink-2">{m.d}</span>
-                    </button>
-                  );
-                })}
-              </div>
-            </fieldset>
-          )}
-
-          <label className="block text-sm font-semibold text-ink">
-            Telemóvel{" "}
-            <span className="font-normal text-ink-3">{!gratis && metodo === "MBWAY" ? "(o pedido de pagamento chega a este número)" : "(opcional)"}</span>
-            <input
-              name="telefone"
-              type="tel"
-              inputMode="tel"
-              autoComplete="tel-national"
-              maxLength={30}
-              placeholder="912 345 678"
-              required={!gratis && metodo === "MBWAY"}
-              className={`${campo} tabular`}
-              value={telefone}
-              onChange={(e) => setTelefone(e.target.value)}
-            />
-          </label>
-
-          {/* O campo-armadilha: fora do ecrã e fora do teclado. Uma pessoa nunca o vê nem o preenche. */}
-          <div aria-hidden className="absolute -left-[9999px] top-0 h-px w-px overflow-hidden">
-            <label>
-              Nota extra
-              <input name="notaExtra" tabIndex={-1} autoComplete="off" />
-            </label>
-          </div>
-
-          {envio.fase === "erro" && (
-            <p role="alert" className="rounded-card bg-risk/10 p-4 text-sm font-semibold text-risk">
-              {envio.mensagem}
-            </p>
-          )}
-
-          {!demonstracao && <Turnstile ref={desafio} />}
-          <Botao type="submit" disabled={aEnviar} className="w-full sm:w-auto">
-            {aEnviar && <Loader2 size={18} className="animate-spin" aria-hidden />}
-            {aEnviar ? "A guardar os lugares" : gratis ? "Confirmar os bilhetes" : `Pagar ${euro(total)}`}
-          </Botao>
-          <p className="text-xs text-ink-3">
-            Os lugares ficam guardados durante 10 minutos, enquanto pagas; o pedido MB WAY vale 5. Os dados que escreves aqui são tratados pelo clube.{" "}
-            <Link href="/privacidade" className="font-semibold text-ink hover:underline">
-              Ver a política de privacidade
-            </Link>
-            .
-          </p>
-          {demonstracao && <p className="text-xs text-ink-3">Isto é uma demonstração: não se paga nada e os bilhetes são de exemplo.</p>}
-        </form>
-      </div>
-    );
-  }
+  const rotuloPagar = aEnviar ? "A guardar os lugares" : gratis ? "Confirmar os bilhetes" : `Pagar ${euro(total)}`;
+  const botaoDoPedido = aPagar ? (
+    <button
+      type="submit"
+      form={ID_FORMULARIO}
+      disabled={aEnviar}
+      className="inline-flex h-12 w-full items-center justify-center gap-2 rounded-control bg-signal-strong px-5 font-bold text-signal-on transition hover:brightness-110 active:translate-y-px disabled:cursor-wait disabled:opacity-70"
+    >
+      {aEnviar ? <Loader2 size={18} className="animate-spin" aria-hidden /> : <Lock size={16} aria-hidden />}
+      {rotuloPagar}
+    </button>
+  ) : (
+    <button
+      type="button"
+      onClick={() => irPara("pagar")}
+      disabled={n === 0 || venda.estado.fechada}
+      className="inline-flex h-12 w-full items-center justify-center gap-2 rounded-control bg-signal-strong px-5 font-bold text-signal-on transition hover:brightness-110 active:translate-y-px disabled:cursor-not-allowed disabled:opacity-40"
+    >
+      Continuar
+      <ArrowRight size={18} aria-hidden />
+    </button>
+  );
 
   const naoHaPublico = !socio && visiveis.length === 0;
   const noJogo = venda.livresNoJogo;
 
   return (
-    <div ref={topo} className="mt-6 scroll-mt-24">
-      {venda.estado.fechada && <p className="mb-6 rounded-card bg-sunken p-4 font-semibold text-ink">A venda de bilhetes para este jogo fechou.</p>}
-      {!venda.estado.fechada && noJogo === 0 && <p className="mb-6 rounded-card bg-risk/10 p-4 font-semibold text-risk">Os bilhetes para este jogo esgotaram.</p>}
-      {!venda.estado.fechada && typeof noJogo === "number" && noJogo > 0 && noJogo < POUCOS_LUGARES && (
-        <p className="mb-6 rounded-card bg-warn/10 p-4 font-semibold text-warn">{noJogo === 1 ? "Resta um lugar para este jogo." : `Restam ${noJogo} lugares para este jogo.`}</p>
-      )}
+    <div className="grid gap-8 lg:grid-cols-[minmax(0,1fr)_23rem] lg:gap-12">
+      <div ref={topo} className="min-w-0 scroll-mt-24">
+        <Passos atual={aPagar ? 2 : 1} />
 
-      {/* O sócio: o convite, a identificação, ou quem está identificado. */}
-      {socio ? (
-        <div className="mb-6 flex items-start gap-3 rounded-card bg-signal-soft p-4 text-sm text-signal-ink">
-          <BadgeCheck size={20} className="mt-0.5 shrink-0" aria-hidden />
-          <div className="min-w-0 flex-1">
-            <p className="font-semibold">Sócio n.º {socio.numero}</p>
-            <p className="mt-0.5">
-              {socio.jaTem
-                ? "Já tens um bilhete de sócio para este jogo. Os outros bilhetes são ao preço do público."
-                : venda.tipos.some((t) => t.para === "socios")
-                  ? "Os preços de sócio já estão na lista. Um bilhete de sócio por sócio; os acompanhantes compram ao preço do público."
-                  : "Não há preço de sócio para a tua categoria neste jogo. Podes comprar ao preço do público."}
-            </p>
-          </div>
-          <button type="button" onClick={() => void sairDeSocio()} className="-my-2 inline-flex h-11 shrink-0 items-center font-semibold hover:underline">
-            Sair
-          </button>
-        </div>
-      ) : (
-        (haPrecosDeSocio || venda.estado.soSocios) &&
-        !venda.estado.fechada && (
-          <div className="mb-6 rounded-card border border-line bg-surface p-4 sm:p-5">
-            {painelSocio ? (
-              <IdentificarSocio
-                base={base}
-                matchId={matchId}
-                demonstracao={demonstracao}
-                demoVenda={demoRef.current?.vendaDeSocio ?? null}
-                aviso={avisoSocio}
-                gastarFicha={gastarFicha}
-                onIdentificado={identificado}
-                onFechar={() => {
-                  setPainelSocio(false);
-                  setAvisoSocio(null);
-                }}
-              />
-            ) : (
-              <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-                <div>
-                  <p className="font-semibold text-ink">{venda.estado.soSocios ? "Este jogo é só para sócios." : "És sócio?"}</p>
-                  <p className="mt-0.5 text-sm text-ink-2">Com o número de sócio e a data de nascimento vês os preços de sócio.</p>
+        {nota && <NotaDoClube nota={nota} className="mt-6 lg:hidden" />}
+
+        {aPagar ? (
+          /* ---------------------------------------------------------- 2 · Dados e pagamento */
+          <div className="mt-8">
+            <button type="button" onClick={() => irPara("escolher")} className="-ml-1 inline-flex h-11 items-center gap-1.5 px-1 text-sm font-semibold text-ink-2 transition hover:text-ink">
+              <ArrowLeft size={16} aria-hidden />
+              Mudar os bilhetes
+            </button>
+
+            <form id={ID_FORMULARIO} onSubmit={pagar} className="mt-4 space-y-8">
+              <fieldset className="rounded-card bg-surface p-5 shadow-card sm:p-7">
+                <legend className="sr-only">Os teus dados</legend>
+                <h2 className="display text-2xl text-ink">Os teus dados</h2>
+                <p className="mt-1 text-sm text-ink-3">Os bilhetes seguem para o email que escreveres.</p>
+                <div className="mt-6 grid gap-5 sm:grid-cols-2">
+                  <label className="block text-sm font-semibold text-ink sm:col-span-2">
+                    Nome
+                    <input name="nome" required minLength={2} maxLength={120} autoComplete="name" className={campo} value={nome} onChange={(e) => setNome(e.target.value)} />
+                  </label>
+                  <label className="block text-sm font-semibold text-ink">
+                    Email
+                    <input name="email" type="email" required maxLength={254} inputMode="email" autoComplete="email" placeholder="nome@exemplo.pt" className={campo} value={email} onChange={(e) => setEmail(e.target.value)} />
+                  </label>
+                  <label className="block text-sm font-semibold text-ink">
+                    Telemóvel <span className="font-normal text-ink-3">{!gratis && metodo === "MBWAY" ? "(recebe o pedido MB WAY)" : "(opcional)"}</span>
+                    <input
+                      name="telefone"
+                      type="tel"
+                      inputMode="tel"
+                      autoComplete="tel-national"
+                      maxLength={30}
+                      placeholder="912 345 678"
+                      required={!gratis && metodo === "MBWAY"}
+                      className={`${campo} tabular`}
+                      value={telefone}
+                      onChange={(e) => setTelefone(e.target.value)}
+                    />
+                  </label>
                 </div>
-                <Botao variante="contorno" onClick={() => setPainelSocio(true)} className="shrink-0">
-                  <BadgeCheck size={18} aria-hidden />
-                  Sou sócio
-                </Botao>
-              </div>
-            )}
-          </div>
-        )
-      )}
+              </fieldset>
 
-      {naoHaPublico ? (
-        <p className="text-ink-3">Os bilhetes deste jogo são só para sócios. Identifica-te para os veres.</p>
-      ) : (
-        <>
-          {comMapa && (
-            <div className="mb-6">
-              <div className="rounded-card border border-line bg-surface p-2 sm:p-4">
-                <MapaDoRecinto
-                  recinto={recinto!}
-                  className="mx-auto w-full max-w-2xl"
-                  titulo={`Mapa de ${recinto!.nome}: escolhe a bancada`}
-                  selecionada={bancada}
-                  onEscolher={(id) => setBancada(id === bancada ? null : id)}
-                  estado={(b) => (visiveis.some((t) => t.bancadaId === b.id) && livre(b.id) !== 0 ? "ativa" : "inativa")}
-                  rotulo={(b) => {
-                    const ja = naBancada(b.id);
-                    if (ja) return `${ja} ${ja === 1 ? "bilhete" : "bilhetes"}`;
-                    if (livre(b.id) === 0) return "esgotada";
-                    const d = desde(b.id);
-                    return d != null ? `desde ${euro(d)}` : undefined;
-                  }}
-                />
+              {!gratis && (
+                <fieldset className="rounded-card bg-surface p-5 shadow-card sm:p-7">
+                  <legend className="sr-only">Pagamento</legend>
+                  <h2 className="display text-2xl text-ink">Pagamento</h2>
+                  <div role="radiogroup" aria-label="Método de pagamento" className="mt-5 grid gap-3 sm:grid-cols-2">
+                    {(
+                      [
+                        { v: "MBWAY", t: "MB WAY", d: "Aceitas o pedido na app MB WAY nos 5 minutos seguintes.", Icone: Smartphone },
+                        { v: "MULTIBANCO", t: "Multibanco", d: "Referência para pagar em 10 minutos, no homebanking ou numa caixa.", Icone: Landmark },
+                      ] as const
+                    ).map((m) => {
+                      const ativo = metodo === m.v;
+                      return (
+                        <button
+                          key={m.v}
+                          type="button"
+                          role="radio"
+                          aria-checked={ativo}
+                          onClick={() => setMetodo(m.v)}
+                          className={`relative flex gap-4 rounded-card border-2 p-4 text-left transition-[border-color,background-color,box-shadow] duration-150 ${
+                            ativo ? "border-signal-line bg-signal-soft/50 shadow-[0_0_0_3px_color-mix(in_srgb,var(--color-signal)_16%,transparent)]" : "border-line hover:border-line-strong"
+                          }`}
+                        >
+                          <span className={`grid size-11 shrink-0 place-items-center rounded-full ${ativo ? "bg-signal-strong text-signal-on" : "bg-sunken text-ink-2"}`}>
+                            <m.Icone size={20} aria-hidden />
+                          </span>
+                          <span className="min-w-0">
+                            <span className="block font-bold text-ink">{m.t}</span>
+                            <span className="mt-0.5 block text-sm leading-snug text-ink-2">{m.d}</span>
+                          </span>
+                          {ativo && (
+                            <span className="absolute right-3 top-3 grid size-5 place-items-center rounded-full bg-signal-strong text-signal-on" aria-hidden>
+                              <Check size={12} strokeWidth={3.5} />
+                            </span>
+                          )}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </fieldset>
+              )}
+
+              {/* O campo-armadilha: fora do ecrã e fora do teclado. Uma pessoa nunca o vê nem o preenche. */}
+              <div aria-hidden className="absolute -left-[9999px] top-0 h-px w-px overflow-hidden">
+                <label>
+                  Nota extra
+                  <input name="notaExtra" tabIndex={-1} autoComplete="off" />
+                </label>
               </div>
-              <div className="mt-3 flex flex-wrap items-center justify-between gap-2 text-sm">
-                <p className="text-ink-3" aria-live="polite">
-                  {bancada ? (
-                    <>
-                      A ver <strong className="font-semibold text-ink">{nomeDaBancada(bancada)}</strong>
-                    </>
-                  ) : (
-                    "Toca numa bancada para ver os bilhetes dela."
-                  )}
+
+              {envio.fase === "erro" && (
+                <p role="alert" className="rounded-card border border-risk/25 bg-risk/10 p-4 text-sm font-semibold text-risk">
+                  {envio.mensagem}
                 </p>
-                {bancada && (
-                  <button type="button" onClick={() => setBancada(null)} className="inline-flex h-11 items-center gap-1 font-semibold text-ink hover:text-signal-ink">
-                    <X size={16} aria-hidden />
-                    Ver todas as bancadas
-                  </button>
-                )}
+              )}
+
+              {!demonstracao && <Turnstile ref={desafio} />}
+
+              {/* No telemóvel o botão fica aqui; no ecrã largo está no cartão do pedido. */}
+              <div className="lg:hidden">
+                <Resumo resumo={resumo} escolhidos={escolhidos} q={q} total={total} n={n} gratis={gratis}>
+                  {botaoDoPedido}
+                </Resumo>
               </div>
-            </div>
-          )}
 
-          <div className="space-y-5">
-            {grupos.map((g) => (
-              <Grupo key={g.id ?? "todos"} nome={g.nome} livre={livre(g.id)} onEscolher={comMapa && g.id && !bancada ? () => setBancada(g.id) : undefined}>
-                {g.tipos.map((t) => (
-                  <LinhaDoTipo key={t.id} tipo={t} quantidade={q(t)} motivo={motivo(t)} podeMais={podeMais(t)} onMudar={(d) => mudar(t, d)} />
-                ))}
-              </Grupo>
-            ))}
+              <p className="text-xs leading-relaxed text-ink-3">
+                Os lugares ficam guardados durante 10 minutos, enquanto pagas; o pedido MB WAY vale 5. Os dados que escreves aqui são tratados pelo clube.{" "}
+                <Link href="/privacidade" className="font-semibold text-ink hover:underline">
+                  Ver a política de privacidade
+                </Link>
+                .
+              </p>
+              {demonstracao && <p className="text-xs text-ink-3">Isto é uma demonstração: não se paga nada e os bilhetes são de exemplo.</p>}
+            </form>
           </div>
-        </>
-      )}
+        ) : (
+          /* ---------------------------------------------------------- 1 · Escolher */
+          <div className="mt-8">
+            {venda.estado.fechada && <Aviso tom="neutro">A venda de bilhetes para este jogo fechou.</Aviso>}
+            {!venda.estado.fechada && noJogo === 0 && <Aviso tom="risco">Os bilhetes para este jogo esgotaram.</Aviso>}
+            {!venda.estado.fechada && typeof noJogo === "number" && noJogo > 0 && noJogo < POUCOS_LUGARES && (
+              <Aviso tom="alerta">{noJogo === 1 ? "Resta um lugar para este jogo." : `Restam ${noJogo} lugares para este jogo.`}</Aviso>
+            )}
 
-      <div className="sticky bottom-0 -mx-4 mt-6 flex flex-col gap-3 border-t border-line bg-canvas/95 px-4 py-4 backdrop-blur sm:static sm:mx-0 sm:flex-row sm:items-center sm:justify-between sm:border-0 sm:bg-transparent sm:px-0 sm:py-0">
-        <div aria-live="polite">
-          <p className="text-ink-2">
-            {n === 0 ? (
-              "Escolhe os bilhetes."
+            {/* O sócio: o convite, a identificação, ou quem está identificado. */}
+            {socio ? (
+              <div className="mb-8 flex items-start gap-4 rounded-card border border-signal-line/30 bg-signal-soft p-4 sm:p-5">
+                <span className="grid size-10 shrink-0 place-items-center rounded-full bg-signal-strong text-signal-on">
+                  <BadgeCheck size={20} aria-hidden />
+                </span>
+                <div className="min-w-0 flex-1 text-signal-ink">
+                  <p className="font-bold">Sócio n.º {socio.numero}</p>
+                  <p className="mt-0.5 text-sm">
+                    {socio.jaTem
+                      ? "Já tens um bilhete de sócio para este jogo. Os outros bilhetes são ao preço do público."
+                      : venda.tipos.some((t) => t.para === "socios")
+                        ? "Os preços de sócio já estão na lista. Um bilhete de sócio por sócio; os acompanhantes compram ao preço do público."
+                        : "Não há preço de sócio para a tua categoria neste jogo. Podes comprar ao preço do público."}
+                  </p>
+                </div>
+                <button type="button" onClick={() => void sairDeSocio()} className="-my-2 inline-flex h-11 shrink-0 items-center px-1 text-sm font-semibold text-signal-ink hover:underline">
+                  Sair
+                </button>
+              </div>
+            ) : (
+              (haPrecosDeSocio || venda.estado.soSocios) &&
+              !venda.estado.fechada &&
+              (painelSocio ? (
+                <div className="mb-8 rounded-card bg-surface p-5 shadow-card sm:p-7">
+                  <IdentificarSocio
+                    base={base}
+                    matchId={matchId}
+                    demonstracao={demonstracao}
+                    demoVenda={demoRef.current?.vendaDeSocio ?? null}
+                    aviso={avisoSocio}
+                    gastarFicha={gastarFicha}
+                    onIdentificado={identificado}
+                    onFechar={() => {
+                      setPainelSocio(false);
+                      setAvisoSocio(null);
+                    }}
+                  />
+                </div>
+              ) : (
+                <div className="relative mb-8 overflow-hidden rounded-card bg-night p-5 text-night-ink sm:p-6">
+                  <div
+                    aria-hidden
+                    className="pointer-events-none absolute inset-0"
+                    style={{ background: "radial-gradient(70% 140% at 100% 0%, color-mix(in srgb, var(--color-signal-strong) 55%, transparent), transparent 70%)" }}
+                  />
+                  <div className="relative flex flex-col gap-4 sm:flex-row sm:items-center">
+                    <span className="grid size-12 shrink-0 place-items-center rounded-full bg-signal-strong text-signal-on">
+                      <BadgeCheck size={22} aria-hidden />
+                    </span>
+                    <div className="min-w-0 flex-1">
+                      <p className="text-lg font-bold">{venda.estado.soSocios ? "Este jogo é só para sócios" : "És sócio?"}</p>
+                      <p className="mt-0.5 text-sm text-night-ink-2">Com o número de sócio e a data de nascimento vês o teu preço.</p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => setPainelSocio(true)}
+                      className="inline-flex h-11 shrink-0 items-center justify-center gap-2 rounded-control bg-white px-5 font-semibold text-ink transition hover:bg-sunken"
+                    >
+                      Sou sócio
+                      <ArrowRight size={17} aria-hidden />
+                    </button>
+                  </div>
+                </div>
+              ))
+            )}
+
+            {naoHaPublico ? (
+              <p className="rounded-card border border-dashed border-line-strong p-6 text-center text-ink-2">Os bilhetes deste jogo são só para sócios. Identifica-te para os veres.</p>
             ) : (
               <>
-                {n} {n === 1 ? "bilhete" : "bilhetes"} · <span className="display text-2xl tabular text-ink">{euro(total)}</span>
+                {comMapa && (
+                  <div className="mb-8">
+                    <div className="rounded-card bg-surface p-3 shadow-card sm:p-5">
+                      <MapaDoRecinto
+                        recinto={recinto!}
+                        className="mx-auto w-full max-w-2xl"
+                        titulo={`Mapa de ${recinto!.nome}: escolhe a bancada`}
+                        selecionada={bancada}
+                        onEscolher={(id) => setBancada(id === bancada ? null : id)}
+                        estado={(b) => (visiveis.some((t) => t.bancadaId === b.id) && livre(b.id) !== 0 ? "ativa" : "inativa")}
+                        rotulo={(b) => {
+                          const ja = naBancada(b.id);
+                          if (ja) return `${ja} ${ja === 1 ? "bilhete" : "bilhetes"}`;
+                          if (livre(b.id) === 0) return "esgotada";
+                          const d = desde(b.id);
+                          return d != null ? `desde ${euro(d)}` : undefined;
+                        }}
+                      />
+                    </div>
+                    <div className="mt-3 flex min-h-11 flex-wrap items-center justify-between gap-2 text-sm">
+                      <p className="text-ink-3" aria-live="polite">
+                        {bancada ? (
+                          <>
+                            A ver <strong className="font-semibold text-ink">{nomeDaBancada(bancada)}</strong>
+                          </>
+                        ) : (
+                          "Toca numa bancada para ver os bilhetes dela."
+                        )}
+                      </p>
+                      {bancada && (
+                        <button type="button" onClick={() => setBancada(null)} className="inline-flex h-11 items-center gap-1 font-semibold text-ink hover:text-signal-ink">
+                          <X size={16} aria-hidden />
+                          Ver todas as bancadas
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                )}
+
+                <div className="space-y-6">
+                  {grupos.map((g) => (
+                    <Grupo
+                      key={g.id ?? "todos"}
+                      nome={g.nome}
+                      coberta={bancadaDe(g.id)?.coberta === true}
+                      livre={livre(g.id)}
+                      onEscolher={comMapa && g.id && !bancada ? () => setBancada(g.id) : undefined}
+                    >
+                      {g.tipos.map((t) => (
+                        <LinhaDoTipo key={t.id} tipo={t} quantidade={q(t)} motivo={motivo(t)} podeMais={podeMais(t)} onMudar={(d) => mudar(t, d)} />
+                      ))}
+                    </Grupo>
+                  ))}
+                </div>
+                {n >= MAXIMO_POR_COMPRA && <p className="mt-4 text-sm text-ink-3">No máximo {MAXIMO_POR_COMPRA} bilhetes por compra.</p>}
               </>
             )}
-          </p>
-          {n >= MAXIMO_POR_COMPRA && <p className="text-sm text-ink-3">No máximo {MAXIMO_POR_COMPRA} bilhetes por compra.</p>}
-        </div>
-        <Botao onClick={() => irPara("pagar")} disabled={n === 0 || venda.estado.fechada}>
-          Continuar
-        </Botao>
+
+            {/* No telemóvel: o total e o "Continuar" numa barra fixa em baixo. */}
+            <div className="sticky bottom-0 z-10 -mx-4 mt-8 flex items-center justify-between gap-4 border-t border-line bg-surface/95 px-4 py-3 backdrop-blur sm:-mx-6 sm:px-6 lg:hidden">
+              <div aria-live="polite" className="min-w-0">
+                {n === 0 ? (
+                  <p className="text-sm text-ink-3">Escolhe os bilhetes</p>
+                ) : (
+                  <>
+                    <p className="text-xs font-semibold text-ink-3">
+                      {n} {n === 1 ? "bilhete" : "bilhetes"}
+                    </p>
+                    <p className="display text-2xl tabular text-ink">{gratis ? "Grátis" : euro(total)}</p>
+                  </>
+                )}
+              </div>
+              <div className="w-40 shrink-0">{botaoDoPedido}</div>
+            </div>
+          </div>
+        )}
       </div>
+
+      {/* O pedido, ao lado, em ecrã largo. */}
+      <aside className="hidden lg:block">
+        <div className="sticky top-24 space-y-4">
+          <Resumo resumo={resumo} escolhidos={escolhidos} q={q} total={total} n={n} gratis={gratis}>
+            {botaoDoPedido}
+          </Resumo>
+          {nota && <NotaDoClube nota={nota} />}
+          <ul className="space-y-2.5 px-1 text-sm text-ink-2">
+            <li className="flex items-center gap-2.5">
+              <Lock size={15} className="shrink-0 text-ink-3" aria-hidden />
+              Pagamento pela conta do clube, MB WAY ou Multibanco
+            </li>
+            <li className="flex items-center gap-2.5">
+              <QrCode size={15} className="shrink-0 text-ink-3" aria-hidden />
+              Um código QR por pessoa, no telemóvel e no email
+            </li>
+          </ul>
+        </div>
+      </aside>
     </div>
   );
 }
 
 /* -------------------------------------------------------------------------- */
-/* A lista                                                                      */
+/* As partes                                                                    */
 /* -------------------------------------------------------------------------- */
 
-/** Uma bancada da lista: o nome, o que resta, e os bilhetes dela. */
-function Grupo({ nome, livre, onEscolher, children }: { nome: string | null; livre: number | null | undefined; onEscolher?: () => void; children: React.ReactNode }) {
+/** Os passos da compra, por cima de tudo: onde se está e o que falta. */
+function Passos({ atual }: { atual: 1 | 2 }) {
+  const passos = ["Bilhetes", "Dados e pagamento", "No telemóvel"];
+  return (
+    <ol className="flex items-center gap-2 sm:gap-3" aria-label="Passos da compra">
+      {passos.map((p, i) => {
+        const n = i + 1;
+        const feito = n < atual;
+        const aqui = n === atual;
+        return (
+          <li key={p} className={`flex min-w-0 items-center gap-2 sm:gap-3 ${i < passos.length - 1 ? "flex-1" : ""}`} aria-current={aqui ? "step" : undefined}>
+            <span
+              className={`grid size-8 shrink-0 place-items-center rounded-full text-sm font-bold tabular transition-colors ${
+                aqui ? "bg-signal-strong text-signal-on" : feito ? "bg-signal-soft text-signal-ink" : "border-2 border-line-strong text-ink-3"
+              }`}
+            >
+              {feito ? <Check size={15} strokeWidth={3} aria-hidden /> : n}
+            </span>
+            <span className={`truncate text-sm font-semibold ${aqui ? "text-ink" : "text-ink-3"} ${aqui ? "" : "hidden sm:inline"}`}>{p}</span>
+            {i < passos.length - 1 && <span className={`h-0.5 min-w-4 flex-1 rounded-full ${feito ? "bg-signal" : "bg-line"}`} aria-hidden />}
+          </li>
+        );
+      })}
+    </ol>
+  );
+}
+
+/** O pedido: o jogo em cima (a cabeça do bilhete), o picotado, e o que se leva. */
+function Resumo({
+  resumo,
+  escolhidos,
+  q,
+  total,
+  n,
+  gratis,
+  children,
+}: {
+  resumo: DadosDoJogo;
+  escolhidos: TipoDaVenda[];
+  q: (t: TipoDaVenda) => number;
+  total: number;
+  n: number;
+  gratis: boolean;
+  children: React.ReactNode;
+}) {
+  return (
+    <div className="overflow-hidden rounded-card bg-surface shadow-card">
+      <div className="relative overflow-hidden bg-night px-5 pb-6 pt-5 text-night-ink">
+        <div
+          aria-hidden
+          className="pointer-events-none absolute inset-0"
+          style={{ background: "radial-gradient(80% 120% at 100% 0%, color-mix(in srgb, var(--color-signal-strong) 50%, transparent), transparent 70%)" }}
+        />
+        <div className="relative">
+          <p className="eyebrow text-night-ink-2">O teu pedido{resumo.emCasa ? "" : " · jogo fora"}</p>
+          <p className="display mt-2 text-xl leading-tight">{resumo.titulo}</p>
+          <p className="mt-2 text-sm text-night-ink-2">{resumo.quando}</p>
+          <p className="truncate text-sm text-night-ink-2">{resumo.local}</p>
+        </div>
+      </div>
+      <Picotado orientacao="deitado" fundo="bg-canvas" />
+      <div className="p-5">
+        {n === 0 ? (
+          <p className="py-2 text-sm text-ink-3">Ainda não escolheste bilhetes.</p>
+        ) : (
+          <ul className="space-y-2.5">
+            {escolhidos.map((t) => (
+              <li key={t.id} className="flex items-baseline justify-between gap-3 text-sm">
+                <span className="min-w-0 text-ink">
+                  <span className="font-bold tabular">{q(t)}×</span> {t.nome}
+                  {t.bancada && !t.nome.includes(t.bancada) && <span className="text-ink-3"> · {t.bancada}</span>}
+                </span>
+                <span className="shrink-0 tabular text-ink-2">{t.preco === 0 ? "Grátis" : euro(q(t) * t.preco)}</span>
+              </li>
+            ))}
+          </ul>
+        )}
+        <div className="mt-4 flex items-baseline justify-between gap-4 border-t border-line pt-4">
+          <span className="font-semibold text-ink">Total</span>
+          <span className="display text-3xl tabular text-ink">{n > 0 && gratis ? "Grátis" : euro(total)}</span>
+        </div>
+        {n > 0 && !gratis && <p className="mt-1 text-xs text-ink-3">Se o clube cobrar a taxa do pagamento, ela soma-se a este total.</p>}
+        <div className="mt-5">{children}</div>
+      </div>
+    </div>
+  );
+}
+
+function NotaDoClube({ nota, className = "" }: { nota: string; className?: string }) {
+  return (
+    <div className={`flex gap-3 rounded-card border border-signal-line/25 bg-signal-soft p-4 text-sm text-signal-ink ${className}`}>
+      <Info size={18} className="mt-0.5 shrink-0" aria-hidden />
+      <p>{nota}</p>
+    </div>
+  );
+}
+
+function Aviso({ tom, children }: { tom: "neutro" | "risco" | "alerta"; children: React.ReactNode }) {
+  const cores = { neutro: "bg-sunken text-ink", risco: "bg-risk/10 text-risk", alerta: "bg-warn/10 text-warn" }[tom];
+  return <p className={`mb-6 rounded-card p-4 font-semibold ${cores}`}>{children}</p>;
+}
+
+/** Uma bancada da lista: o nome, se é coberta, o que resta, e os bilhetes dela. */
+function Grupo({
+  nome,
+  coberta,
+  livre,
+  onEscolher,
+  children,
+}: {
+  nome: string | null;
+  coberta: boolean;
+  livre: number | null | undefined;
+  onEscolher?: () => void;
+  children: React.ReactNode;
+}) {
   const resta =
     livre === 0 ? (
-      <span className="text-risk">Esgotado</span>
+      <span className="inline-flex items-center gap-1.5 text-risk">
+        <span className="size-2 rounded-full bg-risk" aria-hidden />
+        Esgotado
+      </span>
     ) : typeof livre === "number" && livre < POUCOS_LUGARES ? (
-      <span className="text-warn">{livre === 1 ? "Último lugar" : `Últimos ${livre} lugares`}</span>
+      <span className="inline-flex items-center gap-1.5 text-warn">
+        <span className="size-2 animate-pulse rounded-full bg-warn" aria-hidden />
+        {livre === 1 ? "Último lugar" : `Últimos ${livre} lugares`}
+      </span>
+    ) : typeof livre === "number" ? (
+      <span className="inline-flex items-center gap-1.5 text-ok">
+        <span className="size-2 rounded-full bg-ok" aria-hidden />
+        Lugares disponíveis
+      </span>
     ) : null;
   return (
-    <div>
+    <section>
       {(nome || resta) && (
-        <div className="mb-2 flex min-h-9 flex-wrap items-center justify-between gap-x-3">
-          {nome && (
-            <button
-              type="button"
-              onClick={onEscolher}
-              disabled={!onEscolher}
-              className="flex h-9 items-center gap-2 text-sm font-bold uppercase tracking-wider text-ink disabled:cursor-default"
-            >
-              <span className="size-2.5 rounded-full bg-signal" aria-hidden />
-              {nome}
-            </button>
-          )}
+        <div className="mb-2.5 flex min-h-9 flex-wrap items-center justify-between gap-x-3 gap-y-1">
+          <div className="flex items-center gap-2.5">
+            {nome && (
+              <button type="button" onClick={onEscolher} disabled={!onEscolher} className="display text-lg text-ink transition hover:text-signal-ink disabled:cursor-default disabled:hover:text-ink">
+                {nome}
+              </button>
+            )}
+            {coberta && (
+              <span className="inline-flex items-center gap-1 rounded-full bg-sunken px-2 py-0.5 text-xs font-semibold text-ink-2">
+                <Umbrella size={12} aria-hidden />
+                Coberta
+              </span>
+            )}
+          </div>
           {resta && <p className="text-sm font-semibold">{resta}</p>}
         </div>
       )}
-      <ul className="divide-y divide-line rounded-card border border-line bg-surface">{children}</ul>
-    </div>
+      <ul className="divide-y divide-line overflow-hidden rounded-card bg-surface shadow-card">{children}</ul>
+    </section>
   );
 }
 
@@ -672,33 +885,38 @@ function LinhaDoTipo({
   podeMais: boolean;
   onMudar: (delta: number) => void;
 }) {
+  const apagado = !!motivo && v === 0;
   return (
-    <li className={`flex flex-wrap items-center gap-x-4 gap-y-2 p-4 ${motivo && v === 0 ? "bg-sunken/50" : ""}`}>
+    <li className={`relative flex flex-wrap items-center gap-x-4 gap-y-3 py-4 pl-5 pr-4 transition-colors sm:pr-5 ${v > 0 ? "bg-signal-soft/40" : apagado ? "bg-sunken/40" : ""}`}>
+      <span className={`absolute inset-y-3 left-0 w-1 rounded-r-full transition-colors ${v > 0 ? "bg-signal" : "bg-transparent"}`} aria-hidden />
       <div className="min-w-0 flex-1">
-        <p className={`font-semibold ${motivo && v === 0 ? "text-ink-3" : "text-ink"}`}>{t.nome}</p>
-        {t.para === "socios" && (
-          <p className="text-sm text-signal-ink">
-            Preço de sócio{t.tierNome ? ` · ${t.tierNome}` : ""}
-          </p>
-        )}
-        {motivo && <p className="text-sm text-ink-3">{motivo}</p>}
+        <p className={`font-semibold ${apagado ? "text-ink-3" : "text-ink"}`}>{t.nome}</p>
+        <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1">
+          {t.para === "socios" && (
+            <span className="inline-flex items-center gap-1 rounded-full bg-signal-soft px-2 py-0.5 text-xs font-bold text-signal-ink">
+              <BadgeCheck size={12} aria-hidden />
+              {t.tierNome ? `Sócio ${t.tierNome}` : "Sócio"}
+            </span>
+          )}
+          {motivo && <span className="text-sm text-ink-3">{motivo}</span>}
+        </div>
       </div>
-      <p className={`display w-16 text-right text-xl tabular ${motivo && v === 0 ? "text-ink-3" : "text-ink"}`}>{t.preco === 0 ? "Grátis" : euro(t.preco)}</p>
-      {motivo && v === 0 ? (
+      <p className={`display text-right text-2xl tabular ${apagado ? "text-ink-4" : "text-ink"}`}>{t.preco === 0 ? "Grátis" : euro(t.preco)}</p>
+      {apagado ? (
         // Sem os botões: um "+" sempre desligado não diz porquê, e o motivo já está escrito.
-        <span className="w-[6.75rem]" aria-hidden />
+        <span className="hidden w-[7.5rem] sm:block" aria-hidden />
       ) : (
-        <div className="flex items-center rounded-control border border-line-strong" role="group" aria-label={`Quantidade de ${t.nome}`}>
+        <div className="flex items-center gap-1 rounded-full border border-line-strong bg-surface p-1" role="group" aria-label={`Quantidade de ${t.nome}`}>
           <button
             type="button"
             onClick={() => onMudar(-1)}
             disabled={v === 0}
             aria-label={`Menos um ${t.nome}`}
-            className="grid size-11 place-items-center text-ink transition hover:bg-sunken disabled:opacity-30"
+            className="grid size-10 place-items-center rounded-full text-ink transition hover:bg-sunken active:scale-95 disabled:opacity-30 disabled:hover:bg-transparent"
           >
-            <Minus size={16} />
+            <Minus size={16} aria-hidden />
           </button>
-          <output className="w-8 text-center font-semibold tabular text-ink" aria-live="polite">
+          <output className="w-7 text-center text-lg font-bold tabular text-ink" aria-live="polite">
             {v}
           </output>
           <button
@@ -706,9 +924,9 @@ function LinhaDoTipo({
             onClick={() => onMudar(1)}
             disabled={!podeMais}
             aria-label={`Mais um ${t.nome}`}
-            className="grid size-11 place-items-center text-ink transition hover:bg-sunken disabled:opacity-30"
+            className="grid size-10 place-items-center rounded-full bg-signal-strong text-signal-on transition hover:brightness-110 active:scale-95 disabled:bg-sunken disabled:text-ink-4"
           >
-            <Plus size={16} />
+            <Plus size={16} aria-hidden />
           </button>
         </div>
       )}
@@ -811,18 +1029,23 @@ function IdentificarSocio({
   return (
     <form onSubmit={enviar}>
       <div className="flex items-start justify-between gap-3">
-        <div>
-          <p className="font-semibold text-ink">Comprar como sócio</p>
-          <p className="mt-1 text-sm text-ink-2">
-            Cada sócio leva um bilhete de sócio por jogo, com as quotas pagas até ao mês do jogo. Os acompanhantes compram ao preço do público.
-          </p>
+        <div className="flex items-start gap-3.5">
+          <span className="grid size-10 shrink-0 place-items-center rounded-full bg-signal-soft text-signal-ink">
+            <BadgeCheck size={20} aria-hidden />
+          </span>
+          <div>
+            <p className="display text-xl text-ink">Comprar como sócio</p>
+            <p className="mt-1 text-sm text-ink-2">
+              Um bilhete de sócio por sócio e por jogo, com as quotas pagas até ao mês do jogo. Os acompanhantes compram ao preço do público.
+            </p>
+          </div>
         </div>
-        <button type="button" onClick={onFechar} aria-label="Fechar" className="-mr-2 -mt-2 grid size-11 shrink-0 place-items-center text-ink-3 hover:text-ink">
+        <button type="button" onClick={onFechar} aria-label="Fechar" className="-mr-2 -mt-2 grid size-11 shrink-0 place-items-center rounded-full text-ink-3 transition hover:bg-sunken hover:text-ink">
           <X size={18} aria-hidden />
         </button>
       </div>
 
-      <div className="mt-4 grid gap-4 sm:grid-cols-[minmax(0,1fr)_minmax(0,1.4fr)]">
+      <div className="mt-6 grid gap-4 sm:grid-cols-[minmax(0,1fr)_minmax(0,1.4fr)]">
         <div>
           <label htmlFor={`${id}-n`} className="block text-sm font-semibold text-ink">
             Número de sócio
@@ -855,7 +1078,7 @@ function IdentificarSocio({
                 if (v.length === 2) refMes.current?.focus();
               }}
             />
-            <span className="mt-1.5 text-ink-4" aria-hidden>
+            <span className="mt-2 text-ink-4" aria-hidden>
               /
             </span>
             <input
@@ -873,7 +1096,7 @@ function IdentificarSocio({
                 if (v.length === 2) refAno.current?.focus();
               }}
             />
-            <span className="mt-1.5 text-ink-4" aria-hidden>
+            <span className="mt-2 text-ink-4" aria-hidden>
               /
             </span>
             <input
@@ -892,13 +1115,13 @@ function IdentificarSocio({
       </div>
 
       {estado.fase === "erro" && (
-        <p role="alert" className="mt-4 rounded-card bg-risk/10 p-3 text-sm font-semibold text-risk">
+        <p role="alert" className="mt-4 rounded-card border border-risk/25 bg-risk/10 p-3 text-sm font-semibold text-risk">
           {estado.mensagem}
         </p>
       )}
 
       {!demonstracao && <Turnstile ref={desafio} className="mt-4" />}
-      <Botao type="submit" disabled={aEnviar} className="mt-4 w-full sm:w-auto">
+      <Botao type="submit" disabled={aEnviar} className="mt-5 h-12 w-full sm:w-auto">
         {aEnviar && <Loader2 size={18} className="animate-spin" aria-hidden />}
         {aEnviar ? "A confirmar" : "Ver os preços de sócio"}
       </Botao>
@@ -951,7 +1174,13 @@ function guardarDemonstracao(
             estado: "PENDING",
           },
     reembolso: null,
-    jogo: { startsAt: c.venda.jogo.startsAt, opponent: c.venda.jogo.opponent, teamName: c.venda.jogo.teamName, local: c.venda.recinto?.nome ?? "" },
+    jogo: {
+      startsAt: c.venda.jogo.startsAt,
+      opponent: c.venda.jogo.opponent,
+      isHome: c.venda.jogo.isHome,
+      teamName: c.venda.jogo.teamName,
+      local: c.venda.recinto?.nome ?? "",
+    },
     bilhetes,
   };
   const guardado: PedidoDeDemonstracao = { pedido, pagoEm: Date.now() + 12_000 };

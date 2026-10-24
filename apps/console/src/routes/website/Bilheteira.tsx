@@ -24,12 +24,13 @@ const DIAS_DEPOIS = 30;
  * nos preços por omissão do recinto (e o servidor copia-os se lhe chegar uma
  * lista vazia).
  */
-function padrao(recinto: Recinto | null): BilheteiraDoJogo {
+function padrao(recinto: Recinto | null, emCasa: boolean): BilheteiraDoJogo {
   return {
     aberta: false,
     recintoId: recinto?.id ?? null,
     lotacao: null,
-    nota: "Sócios com quota em dia entram com o cartão na app.",
+    // Os lugares anuais só valem no recinto do clube: fora, o cartão de sócio não abre a porta.
+    nota: emCasa ? "Sócios com quota em dia entram com o cartão na app." : "",
     tipos: [],
     sociosDesde: null,
     publicoDesde: null,
@@ -39,13 +40,14 @@ function padrao(recinto: Recinto | null): BilheteiraDoJogo {
 }
 
 /**
- * A bilheteira: os jogos em casa que aí vêm, os da plataforma (os mesmos do
+ * A bilheteira: os jogos que aí vêm, os da plataforma (os mesmos do
  * calendário). Para cada um, abrir a venda, os preços por bancada e público,
  * quem pode comprar e quando, e as vendas.
  *
- * Só jogos em casa: fora, quem vende é o outro clube. Os jogos dos últimos
- * trinta dias com bilheteira continuam na lista, só com as vendas: é depois
- * do jogo que se fazem os reembolsos e as contas.
+ * Em casa e fora: num jogo fora, o clube vende os bilhetes que tem para os
+ * seus adeptos, num recinto desenhado no Estádio (a bancada dos visitantes).
+ * Os jogos dos últimos trinta dias com bilheteira continuam na lista, só com
+ * as vendas: é depois do jogo que se fazem os reembolsos e as contas.
  *
  * Ao lado, os lugares anuais dos sócios (contam na lotação de todos os jogos
  * da época), e à direita os preços por omissão.
@@ -106,9 +108,9 @@ function Jogos({ onIrParaEstadio, podeEscrever }: { onIrParaEstadio: () => void;
 
   const agora = Date.now();
   const de = (id: string) => site.bilheteira[id];
-  const emCasa = store.matches.filter((m) => m.isHome).sort((a, b) => a.startsAt.localeCompare(b.startsAt));
-  const futuros = emCasa.filter((m) => m.status !== "CANCELLED" && new Date(m.startsAt).getTime() >= agora);
-  const passados = emCasa
+  const todos = [...store.matches].sort((a, b) => a.startsAt.localeCompare(b.startsAt));
+  const futuros = todos.filter((m) => m.status !== "CANCELLED" && new Date(m.startsAt).getTime() >= agora);
+  const passados = todos
     .filter((m) => de(m.id) && !futuros.includes(m) && new Date(m.startsAt).getTime() >= agora - DIAS_DEPOIS * 86_400_000)
     .reverse();
 
@@ -124,7 +126,7 @@ function Jogos({ onIrParaEstadio, podeEscrever }: { onIrParaEstadio: () => void;
   };
 
   if (futuros.length === 0 && passados.length === 0) {
-    return <Empty icon={Ticket} title="Não há jogos em casa marcados" detail="Os jogos em casa do calendário aparecem aqui para abrir a venda de bilhetes." />;
+    return <Empty icon={Ticket} title="Não há jogos marcados" detail="Os jogos do calendário aparecem aqui para abrir a venda de bilhetes." />;
   }
 
   const linha = (m: ApiMatch, passado: boolean) => {
@@ -145,8 +147,11 @@ function Jogos({ onIrParaEstadio, podeEscrever }: { onIrParaEstadio: () => void;
             {m.teamName}
             {m.competition && ` · ${m.competition.label}`}
           </p>
-          <p className="truncate text-body font-medium text-ink">
-            {store.academy.shortName} <span className="text-ink-4">vs</span> {m.opponent}
+          <p className="flex min-w-0 items-center gap-2 text-body font-medium text-ink">
+            <span className="truncate">
+              {m.isHome ? store.academy.shortName : m.opponent} <span className="text-ink-4">vs</span> {m.isHome ? m.opponent : store.academy.shortName}
+            </span>
+            {!m.isHome && <span className="shrink-0 rounded-[4px] bg-sunken px-1.5 py-px text-[11px] font-medium text-ink-3">Fora</span>}
           </p>
           <p className="flex items-center gap-1 text-meta text-ink-3">
             <span className="capitalize">{quando(m.startsAt)}</span>
@@ -197,7 +202,7 @@ function Jogos({ onIrParaEstadio, podeEscrever }: { onIrParaEstadio: () => void;
       {futuros.length > 0 ? (
         <ul className="overflow-hidden rounded-[12px] border border-line bg-surface">{futuros.map((m) => linha(m, false))}</ul>
       ) : (
-        <Empty icon={Ticket} title="Não há jogos em casa marcados" detail="Os jogos em casa do calendário aparecem aqui para abrir a venda de bilhetes." compact />
+        <Empty icon={Ticket} title="Não há jogos marcados" detail="Os jogos do calendário aparecem aqui para abrir a venda de bilhetes." compact />
       )}
 
       {passados.length > 0 && (
@@ -215,7 +220,7 @@ function Jogos({ onIrParaEstadio, podeEscrever }: { onIrParaEstadio: () => void;
           precos={site.precosBilheteira}
           categorias={site.categoriasDeSocio}
           pagamentosLigados={store.academy.paymentsEnabled !== false}
-          inicial={de(editar.id) ?? padrao(site.recintos[0] ?? null)}
+          inicial={de(editar.id) ?? padrao(site.recintos[0] ?? null, editar.isHome)}
           onIrParaEstadio={onIrParaEstadio}
           onClose={() => setEditar(null)}
           onGuardar={async (b) => {
@@ -299,6 +304,7 @@ function EditarBilheteira({
   const [fechaEm, setFechaEm] = useState(paraCampo(inicial.fechaEm));
 
   const recinto = recintos.find((r) => r.id === b.recintoId) ?? null;
+  const confronto = jogo.isHome ? `${nomeCurto} vs ${jogo.opponent}` : `${jogo.opponent} vs ${nomeCurto}`;
   const linhas = linhasDe(recinto);
   const colunas = colunasDe(categorias, base);
   const nPrecos = contarPrecos(grelha);
@@ -355,7 +361,7 @@ function EditarBilheteira({
 
   if (recintos.length === 0) {
     return (
-      <Dialog title="Bilhetes" subtitle={`${nomeCurto} vs ${jogo.opponent} · ${quando(jogo.startsAt)}`} icon={<Ticket className="size-4" strokeWidth={1.75} />} onClose={onClose}>
+      <Dialog title="Bilhetes" subtitle={`${confronto} · ${quando(jogo.startsAt)}`} icon={<Ticket className="size-4" strokeWidth={1.75} />} onClose={onClose}>
         <Empty icon={IconeRecinto} title="Falta o estádio" detail="Os bilhetes vendem-se por bancada. Desenha primeiro o recinto, com as bancadas e os lugares de cada uma." compact>
           <button
             type="button"
@@ -375,7 +381,7 @@ function EditarBilheteira({
   return (
     <Dialog
       title="Bilhetes"
-      subtitle={`${nomeCurto} vs ${jogo.opponent} · ${quando(jogo.startsAt)}`}
+      subtitle={`${confronto} · ${quando(jogo.startsAt)}`}
       icon={<Ticket className="size-4" strokeWidth={1.75} />}
       onClose={onClose}
       width={860}
@@ -413,6 +419,24 @@ function EditarBilheteira({
             ))}
           </select>
         </DialogField>
+        {!jogo.isHome && (
+          <div className="-mt-3 flex flex-wrap items-center justify-between gap-2 rounded-[8px] bg-sunken/60 px-3 py-2.5">
+            <p className="min-w-0 flex-1 text-meta leading-relaxed text-ink-2">
+              Jogo fora. Para vender os bilhetes que o {jogo.opponent} te cede, desenha no Estádio o recinto deles com a bancada dos visitantes, e escolhe-o aqui. Os lugares anuais não contam fora.
+            </p>
+            <button
+              type="button"
+              className="ctl-outline"
+              onClick={() => {
+                onClose();
+                onIrParaEstadio();
+              }}
+            >
+              <IconeRecinto className="size-4" strokeWidth={1.75} />
+              Desenhar recinto
+            </button>
+          </div>
+        )}
 
         {recinto && recinto.bancadas.length > 0 && (
           <div>

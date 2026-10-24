@@ -26,6 +26,11 @@ export function dataCurta(iso: string): string {
   return fmt({ day: "numeric", month: "short" }).format(new Date(iso)).replace(".", "");
 }
 
+/** "Sábado, 11 de outubro": só a primeira letra em maiúscula (o `capitalize` do CSS punha-a em todas as palavras). */
+export function primeiraMaiuscula(s: string): string {
+  return s.charAt(0).toUpperCase() + s.slice(1);
+}
+
 /** "16:30" */
 export function hora(iso: string): string {
   return fmt({ hour: "2-digit", minute: "2-digit", hour12: false }).format(new Date(iso));

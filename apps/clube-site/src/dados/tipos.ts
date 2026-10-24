@@ -113,6 +113,22 @@ export type Clube = {
   /** A fotografia do clube (bloco de sócios). Sem ela, a de omissão: ver `lib/fotos.ts`. */
   photo?: string;
   sponsors: { name: string; logoUrl?: string; url?: string }[];
+  /** A loja: se vende online e como entrega. Ausente num servidor antigo = catálogo. */
+  loja?: LojaDoClube;
+};
+
+/**
+ * Como a loja do clube vende. `compraOnline` é falso sem pagamentos ligados
+ * ou sem forma de entrega: a loja fica em catálogo e os botões levam aos
+ * contactos. As duas formas de entrega vêm nulas quando o clube as desligou.
+ */
+export type LojaDoClube = {
+  compraOnline: boolean;
+  levantamento: { local: string; nota: string } | null;
+  /** Em euros. `gratisAPartirDe` nulo = nunca é grátis. */
+  envio: { preco: number; gratisAPartirDe: number | null; nota: string } | null;
+  /** Uma frase no topo da loja. */
+  aviso?: string;
 };
 
 export type Noticia = {
@@ -221,6 +237,12 @@ export type Produto = {
   description: string;
   /** "Tamanho" → ["S", "M", "L"]. Sem variantes num cachecol. */
   variants?: { name: string; options: string[] };
+  /**
+   * O que há de cada tamanho (`""` num produto sem tamanhos), já sem o que
+   * outras encomendas têm guardado. `null` = sem contagem. Ausente num
+   * servidor antigo: vale só `soldOut`.
+   */
+  stock?: Record<string, number | null>;
   soldOut?: boolean;
 };
 

@@ -111,7 +111,23 @@ export const CLUBE: Clube = {
         { id: "visitantes", nome: "Visitantes", lado: "sul", ordem: 0, lotacao: 150, coberta: false },
       ],
     },
+    // O recinto de um jogo fora: só a bancada que o adversário cede aos nossos adeptos.
+    {
+      id: "estadio-braga-b",
+      nome: "Estádio do SC Braga B",
+      tipo: "campo",
+      bancadas: [
+        { id: "braga-central", nome: "Central", lado: "poente", ordem: 0, lotacao: null, coberta: true },
+        { id: "braga-visitantes", nome: "Bancada visitante", lado: "norte", ordem: 0, lotacao: 120, coberta: false },
+      ],
+    },
   ],
+  // A loja da demonstração vende: levantamento na sede e envio a 4,50 € (grátis a partir de 60 €).
+  loja: {
+    compraOnline: true,
+    levantamento: { local: "Sede do clube, junto ao estádio", nota: "Nos dias de treino e de jogo, das 18h às 21h." },
+    envio: { preco: 4.5, gratisAPartirDe: 60, nota: "Portugal continental, 3 a 5 dias úteis." },
+  },
   sponsors: [
     { name: "Curtumes do Ave" },
     { name: "Café Central" },
@@ -366,6 +382,19 @@ const JOGOS: Jogo[] = [
     competition: "Campeonato de Portugal",
     roundLabel: "Jornada 7",
     status: "SCHEDULED",
+    // Um jogo fora com bilhetes: os 120 lugares que o Braga B cede aos adeptos do Monte Verde.
+    tickets: {
+      open: true,
+      recintoId: "estadio-braga-b",
+      types: [
+        { id: "braga-visitante", name: "Bancada visitante", price: 7, bancadaId: "braga-visitantes" },
+        { id: "braga-visitante-socio", name: "Bancada visitante, sócio", price: 5, bancadaId: "braga-visitantes", forMembers: true },
+      ],
+      note: "Bilhetes para a bancada visitante. Autocarro do clube às 12:30, à porta da sede.",
+      membersOnly: false,
+      membersOpen: true,
+      publicOpen: true,
+    },
   },
   {
     id: "j10",
@@ -573,6 +602,8 @@ export const PRODUTOS: Produto[] = [
     category: "Equipamento",
     description: "Branca, com os detalhes em verde. A que a equipa usa fora de casa.",
     variants: { name: "Tamanho", options: ["XS", "S", "M", "L", "XL", "XXL"] },
+    // Para se ver um tamanho com poucas unidades e outro esgotado.
+    stock: { M: 2, L: 0 },
   },
   {
     id: "p3",
@@ -601,6 +632,7 @@ export const PRODUTOS: Produto[] = [
     image: foto("bone", 900, 1100),
     category: "Adeptos",
     description: "Boné de pala curva, ajustável, com o emblema bordado.",
+    stock: { "": 1 },
   },
   {
     id: "p6",

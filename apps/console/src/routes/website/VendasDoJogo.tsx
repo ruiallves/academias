@@ -78,7 +78,7 @@ export function VendasDoJogo({
   return (
     <Dialog
       title="Vendas"
-      subtitle={`${nomeCurto} vs ${jogo.opponent} · ${quando(jogo.startsAt)}`}
+      subtitle={`${jogo.isHome ? `${nomeCurto} vs ${jogo.opponent}` : `${jogo.opponent} vs ${nomeCurto}`} · ${quando(jogo.startsAt)}`}
       icon={<Receipt className="size-4" strokeWidth={1.75} />}
       onClose={onClose}
       width={980}

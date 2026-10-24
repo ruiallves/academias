@@ -146,7 +146,7 @@ export class BilheteiraService {
   private formaDaVenda(ctx: ContextoDoJogo, nomes: Map<string, string>, tiposVisiveis = ctx.tipos) {
     const nomeDaBancada = (id: string | null) => ctx.recinto?.bancadas.find((b) => b.id === id)?.nome ?? null;
     return {
-      jogo: { id: ctx.jogo.id, startsAt: ctx.jogo.startsAt.toISOString(), opponent: ctx.jogo.opponent, teamName: ctx.jogo.teamName, status: ctx.jogo.status },
+      jogo: { id: ctx.jogo.id, startsAt: ctx.jogo.startsAt.toISOString(), opponent: ctx.jogo.opponent, teamName: ctx.jogo.teamName, status: ctx.jogo.status, isHome: ctx.jogo.isHome },
       estado: {
         socios: ctx.estado.socios,
         publico: ctx.estado.publico,
@@ -527,7 +527,7 @@ export class BilheteiraService {
     pedido: Prisma.TicketOrderGetPayload<{ include: { tickets: true; payments: true } }>,
   ) {
     const [jogo, venda, config] = await Promise.all([
-      db.match.findFirst({ where: { id: pedido.matchId }, select: { startsAt: true, opponent: true, venue: true, team: { select: { name: true } } } }),
+      db.match.findFirst({ where: { id: pedido.matchId }, select: { startsAt: true, opponent: true, isHome: true, venue: true, team: { select: { name: true } } } }),
       db.siteMatchTickets.findUnique({ where: { matchId: pedido.matchId }, select: { venueId: true } }),
       db.siteConfig.findUnique({ where: { academyId }, select: { venues: true } }),
     ]);
@@ -555,7 +555,7 @@ export class BilheteiraService {
           ? { metodo: pag.method, entidade: pag.entity, referencia: pag.reference, valorCents: pag.amountCents, estado: pag.status }
           : null,
       reembolso: pedido.refundDueCents ? { valorCents: pedido.refundDueCents, feito: !!pedido.refundedAt } : null,
-      jogo: jogo ? { startsAt: jogo.startsAt.toISOString(), opponent: jogo.opponent, teamName: jogo.team.name, local: recinto?.nome ?? jogo.venue } : null,
+      jogo: jogo ? { startsAt: jogo.startsAt.toISOString(), opponent: jogo.opponent, isHome: jogo.isHome, teamName: jogo.team.name, local: recinto?.nome ?? jogo.venue } : null,
       bilhetes:
         estado === "pago"
           ? pedido.tickets.map((t) => ({

@@ -46,7 +46,7 @@ export async function proxy(req: NextRequest) {
   const resposta = NextResponse.rewrite(url);
   // A página de uma compra de bilhetes: o token no endereço é o acesso aos
   // bilhetes. Fora do Google (também tem `noindex`) e sem o endereço no Referer.
-  if (path.startsWith("/bilhete/")) {
+  if (path.startsWith("/bilhete/") || path.startsWith("/encomenda/")) {
     resposta.headers.set("X-Robots-Tag", "noindex, nofollow");
     resposta.headers.set("Referrer-Policy", "no-referrer");
   }

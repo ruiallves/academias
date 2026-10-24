@@ -64,7 +64,7 @@ export type SocioMatch = {
   teamMaxAge: number;
   competition: string | null;
   /**
-   * A venda de bilhetes está aberta neste jogo (só jogos em casa). A venda em
+   * A venda de bilhetes está aberta neste jogo (em casa ou fora). A venda em
    * si pede-se ao abrir a compra, em `lib/bilhetes.ts`. Ausente num servidor
    * antigo: lê-se como fechada.
    */

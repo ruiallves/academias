@@ -2,9 +2,12 @@ import Link from "next/link";
 import { Foto } from "@/componentes/Foto";
 import type { Produto } from "@/dados/tipos";
 import { euro } from "@/lib/formatar";
+import { esgotado } from "@/lib/loja";
 
 /** Um produto na montra: foto ao alto, nome, preço. Esgotado diz-se na foto. */
-export function CartaoProduto({ produto, prioridade = false }: { produto: Produto; prioridade?: boolean }) {
+export function CartaoProduto({ produto: p, prioridade = false }: { produto: Produto; prioridade?: boolean }) {
+  // Esgotado em todos os tamanhos (ou com o interruptor do clube ligado).
+  const produto = { ...p, soldOut: esgotado(p) };
   return (
     <article className="group">
       <Link href={`/loja/${produto.slug}`} className="block">

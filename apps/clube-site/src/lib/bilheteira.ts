@@ -28,7 +28,8 @@ export type TipoDaVenda = {
 
 /** `GET /api/clubes/:slug/bilhetes/:matchId`, sem cache: o momento de comprar. */
 export type Venda = {
-  jogo: { id: string; startsAt: string; opponent: string; teamName: string; status: string };
+  /** `isHome` falta numa API antiga: lê-se como em casa. */
+  jogo: { id: string; startsAt: string; opponent: string; teamName: string; status: string; isHome?: boolean };
   estado: { socios: boolean; publico: boolean; fechada: boolean; abreSociosEm: string | null; abrePublicoEm: string | null; soSocios: boolean };
   nota: string | null;
   recinto: Recinto | null;
@@ -63,7 +64,7 @@ export type Pedido = {
   totalCents: number;
   pagamento: { metodo: Metodo; entidade: string | null; referencia: string | null; valorCents: number; estado: string } | null;
   reembolso: { valorCents: number; feito: boolean } | null;
-  jogo: { startsAt: string; opponent: string; teamName: string; local: string } | null;
+  jogo: { startsAt: string; opponent: string; isHome?: boolean; teamName: string; local: string } | null;
   bilhetes: { id: string; tipo: string; bancada: string | null; porta: string | null; usado: boolean; codigo: string }[];
 };
 
@@ -87,6 +88,11 @@ export function quando(iso: string): string {
 /** "sábado, 24 de outubro, 16:00": a data de um jogo. */
 export function dataDoJogo(iso: string): string {
   return `${dataLonga(iso)}, ${hora(iso)}`;
+}
+
+/** "AD Monte Verde vs SC Vianense" em casa, "SC Braga B vs AD Monte Verde" fora: quem recebe vem primeiro. */
+export function confronto(clube: string, adversario: string, emCasa = true): string {
+  return emCasa ? `${clube} vs ${adversario}` : `${adversario} vs ${clube}`;
 }
 
 /** "120,00 €" a partir de cêntimos. */
@@ -157,7 +163,7 @@ export function vendaDeDemonstracao(
     livres[b.id] = exemplo[i % exemplo.length];
   });
   return {
-    jogo: { id: jogo.id, startsAt: jogo.startsAt, opponent: jogo.opponent, teamName: jogo.teamName, status: jogo.status },
+    jogo: { id: jogo.id, startsAt: jogo.startsAt, opponent: jogo.opponent, teamName: jogo.teamName, status: jogo.status, isHome: jogo.isHome },
     estado: {
       socios: t.membersOpen ?? true,
       publico: t.publicOpen ?? !t.membersOnly,
@@ -194,7 +200,7 @@ export function pedidoDeExemplo(jogo: Jogo | undefined, recinto: Recinto | null)
     totalCents: Math.round(tipos.reduce((s, t) => s + t.price, 0) * 100),
     pagamento: null,
     reembolso: null,
-    jogo: jogo ? { startsAt: jogo.startsAt, opponent: jogo.opponent, teamName: jogo.teamName, local: recinto?.nome ?? jogo.venue } : null,
+    jogo: jogo ? { startsAt: jogo.startsAt, opponent: jogo.opponent, isHome: jogo.isHome, teamName: jogo.teamName, local: recinto?.nome ?? jogo.venue } : null,
     bilhetes: tipos.map((t, i) => ({
       id: `exemplo-${i}`,
       tipo: t.name,

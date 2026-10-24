@@ -13,7 +13,11 @@ import {
   identidadeValida,
   inicioValido,
   layoutValido,
+  lojaParaConsola,
+  lojaValida,
   recintosValidos,
+  stockValido,
+  tamanhosDoProduto,
   tiposParaConsola,
   tiposValidos,
   urlSegura,
@@ -63,14 +67,15 @@ export class SiteService {
   async ler(ctx: RequestContext) {
     await this.mustRead(ctx);
     return this.prisma.runAs(ctx.academyId, async (db) => {
-      const [academy, config, noticias, produtos, patrocinadores, bilhetes, porLer] = await Promise.all([
-        db.academy.findFirst({ where: { id: ctx.academyId }, select: { slug: true, siteDomain: true } }),
+      const [academy, config, noticias, produtos, patrocinadores, bilhetes, porLer, porTratar] = await Promise.all([
+        db.academy.findFirst({ where: { id: ctx.academyId }, select: { slug: true, siteDomain: true, paymentsEnabled: true } }),
         db.siteConfig.findUnique({ where: { academyId: ctx.academyId } }),
         db.siteNews.findMany({ orderBy: [{ publishedAt: { sort: "desc", nulls: "first" } }, { createdAt: "desc" }] }),
         db.siteProduct.findMany({ orderBy: [{ position: "asc" }, { createdAt: "asc" }] }),
         db.siteSponsor.findMany({ orderBy: [{ position: "asc" }, { createdAt: "asc" }] }),
         db.siteMatchTickets.findMany(),
         db.siteMessage.count({ where: { readAt: null } }),
+        db.siteOrder.count({ where: { status: "PAID" } }),
       ]);
       return {
         slug: academy?.slug ?? "",
@@ -87,6 +92,12 @@ export class SiteService {
         bilheteira: Object.fromEntries(bilhetes.map((b) => [b.matchId, bilheteiraParaConsola(b)])),
         /** Quantas mensagens do formulário de contactos ninguém abriu ainda. */
         mensagensPorLer: porLer,
+        /** A loja: como se entrega e o aviso. Ver `lojaValida`. */
+        loja: lojaParaConsola(config?.shop),
+        /** Encomendas pagas à espera de preparar. A pastilha do submenu. */
+        encomendasPorTratar: porTratar,
+        /** Os pagamentos do clube estão ligados? Sem eles a loja fica em catálogo. */
+        pagamentosLigados: academy?.paymentsEnabled ?? false,
         /** Os preços por omissão da bilheteira, por recinto. */
         precosBilheteira: precosParaConsola(config?.ticketDefaults),
         /** As categorias de sócio, para os preços de sócio. */
@@ -125,6 +136,7 @@ export class SiteService {
       inicio.banner.imagem = this.imagemDoClube(ctx, inicio.banner.imagem) ?? "";
       data.home = inicio;
     }
+    if (dto.loja !== undefined) data.shop = lojaValida(dto.loja);
 
     const config = await this.prisma.runAs(ctx.academyId, (db) =>
       db.siteConfig.upsert({
@@ -141,6 +153,7 @@ export class SiteService {
       equipas: equipasValidas(config.teams),
       recintos: recintosValidos(config.venues),
       inicio: inicioValido(config.home),
+      loja: lojaParaConsola(config.shop),
     };
   }
 
@@ -257,10 +270,11 @@ export class SiteService {
       const antes = await db.siteProduct.findFirst({ where: { id }, select: { id: true, inventoryItemId: true } });
       if (!antes) throw new NotFoundException("Produto não encontrado");
       const dados = this.dadosDoProduto(ctx, dto);
-      // Num produto ligado ao inventário, os tamanhos e o esgotado são do stock: não se escrevem.
+      // Num produto ligado ao inventário, os tamanhos, o esgotado e o stock são do artigo: não se escrevem.
       if (antes.inventoryItemId) {
         delete (dados as Partial<typeof dados>).sizes;
         delete (dados as Partial<typeof dados>).soldOut;
+        delete (dados as Partial<typeof dados>).stock;
       }
       return db.siteProduct.update({
         where: { id },
@@ -279,15 +293,23 @@ export class SiteService {
   }
 
   private dadosDoProduto(ctx: RequestContext, dto: ProdutoDto) {
+    const sizes = tamanhosDoProduto(dto.tamanhos ?? "").join(", ");
+    // O stock só guarda tamanhos que existem (ou "" num produto sem tamanhos): um tamanho apagado leva a contagem dele.
+    const tamanhos = tamanhosDoProduto(sizes);
+    const stockLido = stockValido(dto.stock);
+    const stock: Record<string, number> = {};
+    for (const t of tamanhos.length ? tamanhos : [""]) if (t in stockLido) stock[t] = stockLido[t];
     return {
       name: dto.nome.trim(),
       category: (dto.categoria ?? "Equipamento").trim() || "Equipamento",
       priceCents: Math.round(dto.preco * 100),
       imageUrl: this.imagemDoClube(ctx, dto.imagem),
+      images: (dto.imagens ?? []).map((i) => this.imagemDoClube(ctx, i)).filter((i): i is string => !!i),
       description: (dto.descricao ?? "").trim(),
-      sizes: (dto.tamanhos ?? "").trim(),
+      sizes,
       soldOut: dto.esgotado === true,
       visible: dto.visivel !== false,
+      ...(dto.stock !== undefined ? { stock } : {}),
     };
   }
 
@@ -466,7 +488,8 @@ export class SiteService {
   /* ------------------------------------------------------------------------ */
 
   /**
-   * A bilheteira de um jogo. Só jogos em casa: fora, quem vende é o outro clube.
+   * A bilheteira de um jogo, em casa ou fora. Fora, o clube vende os bilhetes
+   * que tem para os seus adeptos, num recinto que desenha no Estádio.
    *
    * Um jogo sem preços nasce com os preços por omissão do recinto
    * (`SiteConfig.ticketDefaults`); depois mudam-se só para ele. Os preços de
@@ -477,9 +500,8 @@ export class SiteService {
   async gravarBilheteira(ctx: RequestContext, matchId: string, dto: BilheteiraDto) {
     await this.mustWrite(ctx);
     const b = await this.prisma.runAs(ctx.academyId, async (db) => {
-      const jogo = await db.match.findFirst({ where: { id: matchId }, select: { isHome: true } });
+      const jogo = await db.match.findFirst({ where: { id: matchId }, select: { id: true } });
       if (!jogo) throw new NotFoundException("Jogo não encontrado");
-      if (!jogo.isHome) throw new BadRequestException("Só os jogos em casa têm bilheteira");
 
       const venueId = dto.recintoId || null;
       let tipos = tiposValidos(dto.tipos);
@@ -674,10 +696,12 @@ function produtoParaConsola(p: {
   category: string;
   priceCents: number;
   imageUrl: string | null;
+  images: string[];
   description: string;
   sizes: string;
   soldOut: boolean;
   visible: boolean;
+  stock: unknown;
   inventoryItemId: string | null;
 }) {
   return {
@@ -686,10 +710,14 @@ function produtoParaConsola(p: {
     categoria: p.category,
     preco: p.priceCents / 100,
     imagem: p.imageUrl ?? "",
+    /** A galeria, a seguir à capa. */
+    imagens: p.images,
     descricao: p.description,
     tamanhos: p.sizes,
     esgotado: p.soldOut,
     visivel: p.visible,
+    /** O stock por tamanho de um produto sem artigo. Um tamanho ausente vende-se sem contagem. */
+    stock: stockValido(p.stock),
     /** O artigo do Inventário que este produto vende. Com ele, tamanhos e esgotado vêm do stock. */
     artigoId: p.inventoryItemId,
   };

@@ -57,12 +57,34 @@ export type ProdutoDoSite = {
   tamanhos: string;
   esgotado: boolean;
   visivel: boolean;
+  /** A galeria, a seguir à capa (`imagem`). Até 8. */
+  imagens: string[];
+  /**
+   * O stock por tamanho de um produto sem artigo (`{ "M": 3 }`; `{ "": 12 }`
+   * num produto sem tamanhos). Um tamanho que não está aqui vende-se sem
+   * contagem. Desce sozinho quando uma encomenda é paga.
+   */
+  stock: Record<string, number>;
   /**
    * O artigo do Inventário que este produto vende. Quando não é nulo, o nome
-   * vem do artigo e os tamanhos e o esgotado saem do stock: a API ignora-os ao
-   * editar. Põe-se à venda na ficha do artigo, não aqui.
+   * vem do artigo e os tamanhos, o esgotado e o stock saem do artigo: a API
+   * ignora-os ao editar. Põe-se à venda na ficha do artigo, não aqui.
    */
   artigoId: string | null;
+};
+
+/** Como a loja entrega. Em euros; a API guarda em cêntimos. */
+export type LojaConfig = {
+  levantamento: { ativo: boolean; local: string; nota: string };
+  envio: { ativo: boolean; preco: number; gratisAPartirDe: number | null; nota: string };
+  /** Uma frase no topo da loja do site. */
+  aviso: string;
+};
+
+export const LOJA_VAZIA: LojaConfig = {
+  levantamento: { ativo: true, local: "", nota: "" },
+  envio: { ativo: false, preco: 0, gratisAPartirDe: null, nota: "" },
+  aviso: "",
 };
 
 /** A quem um preço se vende: ao público geral, ou aos sócios. */
@@ -191,6 +213,12 @@ export type SiteDoClube = {
   precosBilheteira: Record<string, TipoDeBilhete[]>;
   /** As categorias de sócio do clube (as não arquivadas), pela ordem do clube. */
   categoriasDeSocio: CategoriaDeSocio[];
+  /** A loja: como se entrega e o aviso. */
+  loja: LojaConfig;
+  /** Encomendas pagas à espera de preparar. A pastilha do submenu. */
+  encomendasPorTratar: number;
+  /** Os pagamentos do clube estão ligados? Sem eles a loja fica em catálogo. */
+  pagamentosLigados: boolean;
 };
 
 export function siteVazio(): SiteDoClube {
@@ -222,6 +250,9 @@ export function siteVazio(): SiteDoClube {
     mensagensPorLer: 0,
     precosBilheteira: {},
     categoriasDeSocio: [],
+    loja: { ...LOJA_VAZIA, levantamento: { ...LOJA_VAZIA.levantamento }, envio: { ...LOJA_VAZIA.envio } },
+    encomendasPorTratar: 0,
+    pagamentosLigados: false,
   };
 }
 
@@ -324,6 +355,11 @@ function normalizar(s: SiteDoClube): SiteDoClube {
       ]),
     ),
     categoriasDeSocio: Array.isArray(s.categoriasDeSocio) ? s.categoriasDeSocio : [],
+    // Um servidor de antes da loja a vender não manda a galeria, o stock nem a entrega.
+    produtos: (s.produtos ?? []).map((p) => ({ ...p, imagens: Array.isArray(p.imagens) ? p.imagens : [], stock: p.stock && typeof p.stock === "object" ? p.stock : {} })),
+    loja: s.loja ? { ...vazio.loja, ...s.loja, levantamento: { ...vazio.loja.levantamento, ...(s.loja.levantamento ?? {}) }, envio: { ...vazio.loja.envio, ...(s.loja.envio ?? {}) } } : vazio.loja,
+    encomendasPorTratar: typeof s.encomendasPorTratar === "number" ? s.encomendasPorTratar : 0,
+    pagamentosLigados: s.pagamentosLigados === true,
   };
 }
 
@@ -370,7 +406,7 @@ function repor() {
 /* A configuração (layout, identidade, equipas, recintos, publicar)             */
 /* -------------------------------------------------------------------------- */
 
-type Configuracao = Partial<Pick<SiteDoClube, "publicado" | "layout" | "identidade" | "inicio" | "equipas" | "recintos">>;
+type Configuracao = Partial<Pick<SiteDoClube, "publicado" | "layout" | "identidade" | "inicio" | "equipas" | "recintos" | "loja">>;
 
 let pendente: Configuracao = {};
 let temporizador: ReturnType<typeof setTimeout> | null = null;
@@ -423,7 +459,18 @@ export async function apagarNoticia(id: string) {
 }
 
 export async function guardarProduto(p: ProdutoDoSite): Promise<ProdutoDoSite> {
-  const corpo = { nome: p.nome, categoria: p.categoria, preco: p.preco, imagem: p.imagem, descricao: p.descricao, tamanhos: p.tamanhos, esgotado: p.esgotado, visivel: p.visivel };
+  const corpo = {
+    nome: p.nome,
+    categoria: p.categoria,
+    preco: p.preco,
+    imagem: p.imagem,
+    imagens: p.imagens,
+    descricao: p.descricao,
+    tamanhos: p.tamanhos,
+    esgotado: p.esgotado,
+    visivel: p.visivel,
+    stock: p.stock,
+  };
   const gravado = p.id ? await apiPatch<ProdutoDoSite>(`/api/site/produtos/${p.id}`, corpo) : await apiPost<ProdutoDoSite>("/api/site/produtos", corpo);
   mudarLocal((s) => ({
     ...s,

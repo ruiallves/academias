@@ -195,7 +195,7 @@ try {
   check("recintos limpos (lado desconhecido vira norte, sem nome ganha nome)", recintos[0]?.bancadas?.[1]?.lado === "norte" && !!recintos[0]?.bancadas?.[1]?.nome);
   const jogos = (await publico("/jogos")).body;
   const casa = jogos.find((j) => j.isHome && j.status === "SCHEDULED" && new Date(j.startsAt) > new Date());
-  const fora = jogos.find((j) => !j.isHome);
+  const fora = jogos.find((j) => !j.isHome && j.status === "SCHEDULED" && new Date(j.startsAt) > new Date());
   if (casa) {
     const b = await api(director, "PUT", `/api/site/bilheteira/${casa.id}`, { aberta: true, recintoId: "rt", nota: "[TESTE-SITE]", tipos: [{ id: "t1", nome: "Central", preco: 8, bancadaId: "bt" }] });
     check("abrir a bilheteira de um jogo em casa", b.status === 200 && b.body.aberta === true && b.body.tipos[0].preco === 8, JSON.stringify(b.body).slice(0, 120));
@@ -206,7 +206,12 @@ try {
   } else {
     check("hÃ¡ um jogo em casa no futuro para testar", false, "sem jogo em casa futuro no Life Club");
   }
-  if (fora) check("jogo fora recusado (400)", (await api(director, "PUT", `/api/site/bilheteira/${fora.id}`, { aberta: true, tipos: [{ nome: "x", preco: 1 }] })).status === 400);
+  if (fora) {
+    // Fora também se vende: o clube leva bilhetes para os seus adeptos.
+    const f = await api(director, "PUT", `/api/site/bilheteira/${fora.id}`, { aberta: true, recintoId: "rt", nota: "[TESTE-SITE]", tipos: [{ id: "t1", nome: "Visitantes", preco: 5, bancadaId: "bt" }] });
+    check("abrir a bilheteira de um jogo fora", f.status === 200 && f.body.aberta === true, JSON.stringify(f.body).slice(0, 120));
+    criados.bilheteira.push(fora.id);
+  }
 
   console.log("\n=== Equipas ===");
   const equipas = (await publico("/equipas")).body;

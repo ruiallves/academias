@@ -15,6 +15,7 @@ import {
   identidadeValida,
   inicioValido,
   layoutValido,
+  lojaValida,
   paragrafos,
   recintosValidos,
   tiposValidos,
@@ -23,6 +24,8 @@ import {
 } from "./site.tipos";
 import { siteIncluido } from "./plano";
 import { estadoDaVenda } from "../bilheteira/regras";
+import { lojaVende } from "../loja/regras";
+import { SELECT_PRODUTO_PARA_VENDA, produtoParaVenda, reservadosPorLinha, type ProdutoLido } from "../loja/contexto";
 import { FALLBACK_HEADLINE, FALLBACK_INTRO, FALLBACK_POINTS } from "../landing/membership.template";
 
 /**
@@ -146,6 +149,15 @@ export class SitePublicoService {
         recintos: a.recintos,
         /** A página de início: a ordem das secções e o banner. Ver `inicioValido`. */
         home: a.inicio,
+        /** A loja: se vende online, e como entrega. Ver `lojaValida`. */
+        loja: {
+          compraOnline: a.lojaVende,
+          levantamento: a.loja.levantamento.ativo ? { local: a.loja.levantamento.local, nota: a.loja.levantamento.nota } : null,
+          envio: a.loja.envio.ativo
+            ? { preco: a.loja.envio.precoCents / 100, gratisAPartirDe: a.loja.envio.gratisAPartirDeCents === null ? null : a.loja.envio.gratisAPartirDeCents / 100, nota: a.loja.envio.nota }
+            : null,
+          aviso: a.loja.aviso || undefined,
+        },
       };
     });
   }
@@ -415,18 +427,20 @@ export class SitePublicoService {
       const lista = await db.siteProduct.findMany({
         where: { visible: true },
         orderBy: [{ position: "asc" }, { createdAt: "asc" }],
-        include: INCLUDE_ARTIGO,
+        select: SELECT_PRODUTO_PUBLICO,
       });
+      // O que outras encomendas têm guardado (10 minutos) já não está à venda.
+      const reservados = await reservadosPorLinha(db, lista.map((p) => p.id), new Date());
       // Um produto de um artigo arquivado sai do site sem ninguém o desligar.
-      return lista.filter((p) => !p.inventoryItem?.archivedAt).map(produtoPublico);
+      return lista.filter((p) => !p.inventoryItem?.archivedAt).map((p) => produtoPublico(p, reservados));
     });
   }
 
   async produto(slug: string, id: string) {
     return this.comClube(slug, async (db) => {
-      const p = await db.siteProduct.findFirst({ where: { id, visible: true }, include: INCLUDE_ARTIGO });
+      const p = await db.siteProduct.findFirst({ where: { id, visible: true }, select: SELECT_PRODUTO_PUBLICO });
       if (!p || p.inventoryItem?.archivedAt) throw new NotFoundException();
-      return produtoPublico(p);
+      return produtoPublico(p, await reservadosPorLinha(db, [p.id], new Date()));
     });
   }
 
@@ -477,14 +491,16 @@ export class SitePublicoService {
     const [a, config, noPlano] = await Promise.all([
       db.academy.findFirst({
         where: { id: academyId },
-        select: { slug: true, name: true, shortName: true, city: true, signalColor: true, logoUrl: true, siteDomain: true },
+        select: { slug: true, name: true, shortName: true, city: true, signalColor: true, logoUrl: true, siteDomain: true, paymentsEnabled: true },
       }),
       db.siteConfig.findUnique({ where: { academyId } }),
       siteIncluido(db, academyId),
     ]);
     if (!a || !config?.published || !noPlano) throw new NotFoundException();
+    const { paymentsEnabled, ...resto } = a;
+    const loja = lojaValida(config.shop);
     return {
-      ...a,
+      ...resto,
       id: academyId,
       dominio: a.siteDomain ?? null,
       layout: layoutValido(config.layout),
@@ -492,6 +508,9 @@ export class SitePublicoService {
       equipas: equipasValidas(config.teams),
       recintos: recintosValidos(config.venues),
       inicio: inicioValido(config.home),
+      loja,
+      // A loja vende online com pagamentos ligados e uma forma de entrega. Sem isso, fica em catálogo.
+      lojaVende: lojaVende(loja, paymentsEnabled),
     };
   }
 }
@@ -510,6 +529,8 @@ type ClubePublicado = {
   equipas: ReturnType<typeof equipasValidas>;
   recintos: ReturnType<typeof recintosValidos>;
   inicio: ReturnType<typeof inicioValido>;
+  loja: ReturnType<typeof lojaValida>;
+  lojaVende: boolean;
 };
 
 /* -------------------------------------------------------------------------- */
@@ -610,7 +631,7 @@ function jogoPublico(j: {
     closesAt: Date | null;
   } | null;
 }) {
-  const t = j.isHome && j.status !== "CANCELLED" ? j.siteTickets : null;
+  const t = j.status !== "CANCELLED" ? j.siteTickets : null;
   // As fases, para o cartaz dizer "só para sócios" ou "abre ao público a…". A lotação conta-se na compra (sem cache).
   const fases = t ? estadoDaVenda(t, { startsAt: j.startsAt, status: j.status }) : null;
   return {
@@ -650,61 +671,34 @@ function jogoPublico(j: {
   };
 }
 
-/** O artigo do Inventário por trás de um produto, quando há: só o que decide tamanhos e esgotado. */
-const INCLUDE_ARTIGO = {
-  inventoryItem: {
-    select: {
-      archivedAt: true,
-      variants: {
-        where: { archivedAt: null },
-        orderBy: [{ order: "asc" }, { label: "asc" }],
-        select: { label: true, totalQuantity: true, assignedQuantity: true },
-      },
-    },
-  },
-} satisfies Prisma.SiteProductInclude;
+/** O que a loja pública lê de um produto: o da venda (`contexto.ts`) mais a descrição e a galeria. */
+const SELECT_PRODUTO_PUBLICO = { ...SELECT_PRODUTO_PARA_VENDA, category: true, description: true, images: true } satisfies Prisma.SiteProductSelect;
 
 /**
  * Um produto como o site o vê.
  *
- * Com um artigo do Inventário por trás, os tamanhos são as variantes **com
- * stock disponível** (total menos o que está com atletas), e "esgotado" é
- * não haver nenhuma. Um artigo com uma variante só ("Único") não mostra
- * escolha de tamanho. Sem artigo, vale o que o clube escreveu no produto.
+ * Os tamanhos e o que há de cada um vêm de `produtoParaVenda`: com um artigo
+ * do Inventário por trás, são as variantes e o disponível de cada uma; sem
+ * artigo, os tamanhos escritos e o stock gravado no produto. O que outras
+ * encomendas têm guardado já está descontado. `stock` é por tamanho (`""`
+ * num produto sem tamanhos; `null` = sem contagem), e "esgotado" é não haver
+ * nenhum tamanho com stock. Os tamanhos esgotados continuam na lista, para o
+ * site os mostrar riscados em vez de os fazer desaparecer.
  */
-function produtoPublico(p: {
-  id: string;
-  name: string;
-  category: string;
-  priceCents: number;
-  imageUrl: string | null;
-  description: string;
-  sizes: string;
-  soldOut: boolean;
-  inventoryItem?: { archivedAt: Date | null; variants: { label: string; totalQuantity: number; assignedQuantity: number }[] } | null;
-}) {
-  let tamanhos: string[];
-  let esgotado: boolean;
-  if (p.inventoryItem) {
-    const comStock = p.inventoryItem.variants.filter((v) => v.totalQuantity - v.assignedQuantity > 0).map((v) => v.label);
-    esgotado = comStock.length === 0;
-    tamanhos = p.inventoryItem.variants.length > 1 ? comStock : [];
-  } else {
-    tamanhos = p.sizes
-      .split(",")
-      .map((s) => s.trim())
-      .filter(Boolean);
-    esgotado = p.soldOut;
-  }
+function produtoPublico(p: ProdutoLido & { category: string; description: string; images: string[] }, reservados: Map<string, number>) {
+  const v = produtoParaVenda(p, reservados);
+  const esgotado = !v.visivel || Object.values(v.disponivel).every((n) => n !== null && n <= 0);
   return {
     id: p.id,
     slug: p.id,
     name: p.name,
     price: p.priceCents / 100,
     image: p.imageUrl ?? undefined,
+    images: [p.imageUrl, ...p.images].filter((x): x is string => !!x),
     category: p.category,
     description: p.description,
-    variants: tamanhos.length ? { name: "Tamanho", options: tamanhos } : undefined,
+    variants: v.tamanhos.length ? { name: "Tamanho", options: v.tamanhos } : undefined,
+    stock: v.disponivel,
     soldOut: esgotado,
   };
 }
