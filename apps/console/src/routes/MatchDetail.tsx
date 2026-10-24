@@ -1690,6 +1690,34 @@ function SheetPanel({ match, mayRecord, onSaved }: { match: Match; mayRecord: bo
     });
   }
 
+  /*
+   * A ficha contra o marcador.
+   *
+   * Quatro golos num 3-2 não é uma discordância de opinião — é um dedo no sítio
+   * errado que fica a viver no perfil do atleta e nos totais da época. O tecto
+   * das assistências é o mesmo número porque cada golo tem no máximo uma, e há
+   * golos sem nenhuma; é generoso de propósito, para apertar o impossível sem
+   * discutir com o treinador sobre quem assistiu o quê.
+   *
+   * Sem resultado registado não há com que confrontar — marcar a ficha primeiro
+   * e o resultado depois é uma ordem legítima de trabalho, e é por isso que isto
+   * não obriga a nada, só recusa o impossível.
+   *
+   * Tem de estar antes de `verificar` ser chamada no desenho (`emRevisao`, mais
+   * abaixo): uma `const` lida antes da sua linha atira um ReferenceError, e
+   * sem barreira de erros a página ficava toda em branco ao gravar uma ficha
+   * com avisos (CD Loureiro, 24/10/2026).
+   */
+  const assistencias = emCampo.reduce((n, l) => n + l.assists, 0);
+  const excedeMarcador =
+    match.ourScore === null
+      ? null
+      : golos > match.ourScore
+        ? `A ficha atribui ${golos} ${golos === 1 ? "golo" : "golos"} e o jogo ficou ${match.ourScore}-${match.theirScore}.`
+        : assistencias > match.ourScore
+          ? `A ficha atribui ${assistencias} assistências para ${match.ourScore} ${match.ourScore === 1 ? "golo" : "golos"} marcados.`
+          : null;
+
   /**
    * O que a ficha tem de errado, visto só quando se tenta gravar.
    *
@@ -1730,29 +1758,6 @@ function SheetPanel({ match, mayRecord, onSaved }: { match: Match; mayRecord: bo
   const [revisao, setRevisao] = useState<{ erros: string[]; avisos: string[] } | null>(null);
   // Depois de uma tentativa, a revisão acompanha as correções em vez de ficar parada.
   const emRevisao = revisao ? verificar() : null;
-
-  /*
-   * A ficha contra o marcador.
-   *
-   * Quatro golos num 3-2 não é uma discordância de opinião — é um dedo no sítio
-   * errado que fica a viver no perfil do atleta e nos totais da época. O tecto
-   * das assistências é o mesmo número porque cada golo tem no máximo uma, e há
-   * golos sem nenhuma; é generoso de propósito, para apertar o impossível sem
-   * discutir com o treinador sobre quem assistiu o quê.
-   *
-   * Sem resultado registado não há com que confrontar — marcar a ficha primeiro
-   * e o resultado depois é uma ordem legítima de trabalho, e é por isso que isto
-   * não obriga a nada, só recusa o impossível.
-   */
-  const assistencias = emCampo.reduce((n, l) => n + l.assists, 0);
-  const excedeMarcador =
-    match.ourScore === null
-      ? null
-      : golos > match.ourScore
-        ? `A ficha atribui ${golos} ${golos === 1 ? "golo" : "golos"} e o jogo ficou ${match.ourScore}-${match.theirScore}.`
-        : assistencias > match.ourScore
-          ? `A ficha atribui ${assistencias} assistências para ${match.ourScore} ${match.ourScore === 1 ? "golo" : "golos"} marcados.`
-          : null;
 
   const mudou = useMemo(
     () =>
