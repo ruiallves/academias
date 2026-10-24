@@ -203,6 +203,8 @@ function mundo(regras: { paymentsEnabled: boolean; feesOnPayer: boolean }) {
 
   let seq = 0;
   const db = {
+    // O `confirmPayment` bloqueia o pagamento (`SELECT … FOR UPDATE`) antes de o ler. Aqui não há concorrência: não faz nada.
+    $queryRaw: async () => [],
     charge: {
       findFirst: async () => ({ ...estado.charge, payments: estado.pagamentos.filter((p) => p.chargeId === "c1") }),
       update: async () => {
