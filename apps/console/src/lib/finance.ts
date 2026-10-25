@@ -49,7 +49,13 @@ export type TransactionRow = {
   status: FinanceStatus;
   description: string;
   amountCents: number;
+  /** O dia do movimento. Numa mensalidade ou quota, o dia em que foi paga. */
   occurredAt: string;
+  /**
+   * Só nas mensalidades e quotas: o mês a que respeitam (`AAAA-MM`), que é onde
+   * contam nas receitas do mês e no gráfico. Ausente num servidor antigo.
+   */
+  referenteA?: string | null;
   dueDate: string | null;
   method: string | null;
   counterparty: string | null;
@@ -83,8 +89,13 @@ export type Overview = {
   despesasMes: number;
   resultadoMes: number;
   mensalidadesMes: number;
-  /** As quotas de sócios pagas este mês. Ausente num servidor antigo. */
+  /** As quotas de sócios deste mês (pelo mês a que respeitam). Ausente num servidor antigo. */
   quotasMes?: number;
+  /**
+   * Mensalidades e quotas pagas este mês mas de meses anteriores (a de setembro
+   * paga em outubro). Contam no mês delas, não neste. Ausente num servidor antigo.
+   */
+  recebidoDeMesesAnteriores?: number;
   receitasPrevistas: number;
   despesasPrevistas: number;
   saldoProjetado: number;

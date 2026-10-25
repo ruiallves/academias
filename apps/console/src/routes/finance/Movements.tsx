@@ -304,6 +304,7 @@ export default function Movements() {
                   <span className="block truncate text-meta text-ink-3">
                     {[
                       t.category?.label,
+                      contaNoutroMes(t),
                       t.counterparty,
                       t.match?.label ?? t.calendarEvent?.title,
                       t.team?.name ?? t.match?.teamName,
@@ -607,4 +608,19 @@ export default function Movements() {
       )}
     </>
   );
+}
+
+const MESES = ["janeiro", "fevereiro", "março", "abril", "maio", "junho", "julho", "agosto", "setembro", "outubro", "novembro", "dezembro"];
+
+/**
+ * "conta em setembro de 2026": numa mensalidade ou quota paga noutro mês que não
+ * o dela. A data da linha é a do pagamento; as receitas do mês e o gráfico
+ * contam-na no mês a que respeita, e isto diz qual.
+ */
+function contaNoutroMes(t: TransactionRow): string | null {
+  const m = t.referenteA ? /^(d{4})-(d{2})$/.exec(t.referenteA) : null;
+  if (!m) return null;
+  const pago = new Intl.DateTimeFormat("en-CA", { year: "numeric", month: "2-digit", timeZone: "Europe/Lisbon" }).format(new Date(t.occurredAt));
+  if (pago === t.referenteA) return null;
+  return `conta em ${MESES[Number(m[2]) - 1]} de ${m[1]}`;
 }

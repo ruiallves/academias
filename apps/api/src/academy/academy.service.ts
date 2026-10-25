@@ -22,6 +22,7 @@ import {
   SELECT_CALENDARIO,
 } from "../billing/billing.service";
 import { SHORT_NAME_MAX } from "../common/short-name";
+import { equipasDaEpocaAtual } from "../common/seasons";
 import { matchTitle } from "../common/match-title";
 import { AMIGAVEL, ensureAmigavel } from "./catalogs.service";
 import { instanteNoFuso, partesNoFuso, somarDias } from "../common/fuso";
@@ -340,7 +341,7 @@ export class AcademyService {
                */
               billingTeams: (
                 await db.team.findMany({
-                  where: { season: { isCurrent: true } },
+                  where: await equipasDaEpocaAtual(db),
                   select: { id: true, billingMonths: true, billingNextMonths: true },
                 })
               ).map((t) => ({ teamId: t.id, months: t.billingMonths, nextMonths: t.billingNextMonths })),
@@ -614,7 +615,7 @@ export class AcademyService {
     }
     const validarEquipas = async (db: ScopedClient) => {
       if (equipas.length === 0) return;
-      const existem = await db.team.count({ where: { id: { in: equipas.map((e) => e.teamId) }, season: { isCurrent: true } } });
+      const existem = await db.team.count({ where: { id: { in: equipas.map((e) => e.teamId) }, ...(await equipasDaEpocaAtual(db)) } });
       if (existem !== equipas.length) throw new BadRequestException("Há escalões que não são desta época");
     };
 
@@ -668,7 +669,7 @@ export class AcademyService {
             await db.team.update({ where: { id: e.teamId }, data: { billingNextMonths: mesmos(e.months, hoje) ? [] : e.months } });
           }
         }
-        const equipasAgendadas = await db.team.count({ where: { season: { isCurrent: true }, NOT: { billingNextMonths: { isEmpty: true } } } });
+        const equipasAgendadas = await db.team.count({ where: { ...(await equipasDaEpocaAtual(db)), NOT: { billingNextMonths: { isEmpty: true } } } });
 
         const igualAoDeHoje =
           novoDia === academia.billingDueDay &&

@@ -6,6 +6,7 @@ import { PrismaService, type ScopedClient } from "../prisma/prisma.service";
 import { can, type RequestContext } from "../common/permissions";
 import { currentSeason } from "../common/seasons";
 import type { BudgetDto, CreateTransactionDto, DeleteTransactionDto, SettingsDto, UpdateTransactionDto } from "./finance.dto";
+import { chaveDoMes, mesDaReceita, nomeDoMes } from "./mes-da-receita";
 
 /**
  * Contas — a gestão financeira do clube.
@@ -105,6 +106,18 @@ export class FinanceService {
       const desdeOMes = maisTarde(inicioDoMes, desde);
       const inicioDaSerie = new Date(hoje.getFullYear(), hoje.getMonth() - 5, 1);
       const serieDesde = maisTarde(inicioDaSerie, desde);
+      /*
+       * As mensalidades e as quotas contam no mês a que dizem respeito, e não no
+       * dia em que foram pagas: a de setembro paga a 12 de outubro é receita de
+       * setembro. O saldo continua pelo dia do pagamento. Ver `mes-da-receita.ts`.
+       *
+       * Lêem-se as que respeitam aos seis meses da série e as pagas este mês
+       * (para dizer quanto entrou de meses anteriores), sempre depois do saldo
+       * inicial: o que foi pago antes dele já está nele.
+       */
+      const primeiroMes = chaveDoMes(inicioDaSerie);
+      const pagasDesde = desde ? { settledAt: { gte: desde } } : {};
+      const daSerieOuPagasEsteMes = { OR: [{ period: { gte: primeiroMes } }, { settledAt: { gte: desdeOMes } }] };
 
       const [totais, porVir, movimentosDaSerie, chargesDaSerie, autoTotal, catalogo, quotasDaSerie, quotasTotal] = await Promise.all([
         // Receitas e despesas do período inteiro, numa pergunta em vez de duas.
@@ -141,22 +154,16 @@ export class FinanceService {
         // As mensalidades pagas — a fonte automática. Ver a regra 2 do topo.
         settings.includeFees
           ? db.charge.findMany({
-              where: { status: "SETTLED", settledAt: { gte: serieDesde } },
-              select: { amountCents: true, settledAt: true },
+              where: { status: "SETTLED", ...pagasDesde, ...daSerieOuPagasEsteMes },
+              select: { amountCents: true, settledAt: true, period: true },
             })
           : Promise.resolve([]),
         /*
-         * O total das mensalidades desde o saldo inicial.
-         *
-         * Só quando o saldo inicial é anterior à série: se for de dentro dos
-         * seis meses, as linhas acima já são todas — e uma pergunta que se
-         * responde com o que já temos não se faz.
+         * O total das mensalidades desde o saldo inicial, pelo dia do pagamento:
+         * é o que entra no saldo. Já não sai das linhas acima, que agora se
+         * escolhem pelo mês a que respeitam.
          */
-        settings.includeFees && desde && desde >= inicioDaSerie
-          ? Promise.resolve(null)
-          : settings.includeFees
-            ? this.autoIncomeSum(db, desde)
-            : Promise.resolve(0),
+        settings.includeFees ? this.autoIncomeSum(db, desde) : Promise.resolve(0),
         // Os rótulos, incluindo arquivados: um movimento antigo pode apontar
         // para uma categoria que o clube entretanto arrumou.
         db.catalogItem.findMany({
@@ -166,8 +173,8 @@ export class FinanceService {
         // As quotas dos sócios pagas: a outra fonte automática, com a mesma regra.
         settings.includeQuotas
           ? db.memberFee.findMany({
-              where: { status: "SETTLED", settledAt: { gte: serieDesde } },
-              select: { amountCents: true, settledAt: true },
+              where: { status: "SETTLED", ...pagasDesde, ...daSerieOuPagasEsteMes },
+              select: { amountCents: true, settledAt: true, period: true, coversFrom: true },
             })
           : Promise.resolve([]),
         settings.includeQuotas
@@ -182,11 +189,22 @@ export class FinanceService {
       const despesas = doTipo("EXPENSE");
 
       const somaCharges = (rows: { amountCents: number }[]) => rows.reduce((s, c) => s + c.amountCents, 0);
-      const autoDesdeOInicial = autoTotal ?? somaCharges(chargesDaSerie);
-      const autoMes = settings.includeFees
-        ? somaCharges(chargesDaSerie.filter((c) => c.settledAt && c.settledAt >= desdeOMes))
-        : 0;
-      const quotasMes = somaCharges(quotasDaSerie.filter((q) => q.settledAt && q.settledAt >= desdeOMes));
+      const autoDesdeOInicial = autoTotal;
+      /* O mês a que cada uma respeita. Ver `mesDaReceita`. */
+      const mesDe = (c: { period: string; settledAt: Date | null; coversFrom?: Date | null }) =>
+        mesDaReceita(c.period, { coversFrom: c.coversFrom ?? null, pagaEm: c.settledAt });
+      const mesAtual = chaveDoMes(hoje);
+      const autoMes = somaCharges(chargesDaSerie.filter((c) => mesDe(c) === mesAtual));
+      const quotasMes = somaCharges(quotasDaSerie.filter((q) => mesDe(q) === mesAtual));
+      /*
+       * O que entrou este mês mas respeita a meses anteriores (a mensalidade de
+       * setembro paga em outubro). Não conta nas receitas deste mês; diz-se à
+       * parte, para quem compara com o banco saber porque é que os números não
+       * batem.
+       */
+      const deMesesAnteriores = somaCharges(
+        [...chargesDaSerie, ...quotasDaSerie].filter((c) => c.settledAt && c.settledAt >= desdeOMes && (mesDe(c) ?? mesAtual) < mesAtual),
+      );
 
       /* --------------------------------------------------------- o mês --- */
       const doMes = movimentosDaSerie.filter((t) => t.occurredAt >= desdeOMes);
@@ -236,8 +254,10 @@ export class FinanceService {
         const b = balde(t.occurredAt);
         if (b) b[t.kind === "INCOME" ? "income" : "expense"] += t.amountCents;
       }
+      // As mensalidades e as quotas no mês a que respeitam, não no do pagamento.
       for (const c of [...chargesDaSerie, ...quotasDaSerie]) {
-        const b = c.settledAt ? balde(c.settledAt) : undefined;
+        const chave = mesDe(c);
+        const b = chave ? meses.get(chave) : undefined;
         if (b) b.income += c.amountCents;
       }
 
@@ -251,6 +271,8 @@ export class FinanceService {
         resultadoMes: receitasMes + autoMes + quotasMes - despesasMes,
         mensalidadesMes: autoMes,
         quotasMes,
+        /** Pago este mês, mas de meses anteriores: não está nas receitas deste mês. */
+        recebidoDeMesesAnteriores: deMesesAnteriores,
         receitasPrevistas,
         despesasPrevistas,
         saldoProjetado: saldo + receitasPrevistas - despesasPrevistas,
@@ -403,7 +425,7 @@ export class FinanceService {
               },
             })
           )
-            .map((c) => ({ c, descricao: `${c.kind === "EXTRA" && c.title ? c.title : `Mensalidade ${c.period}`} · ${c.athlete.name}` }))
+            .map((c) => ({ c, descricao: `${c.kind === "EXTRA" && c.title ? c.title : `Mensalidade de ${nomeDoMes(c.period)}`} · ${c.athlete.name}` }))
             .filter(({ descricao }) => !termo || descricao.toLowerCase().includes(termo.toLowerCase()))
             .map(({ c, descricao }) => ({
               id: `charge_${c.id}`,
@@ -413,6 +435,8 @@ export class FinanceService {
               description: descricao,
               amountCents: c.amountCents,
               occurredAt: c.settledAt ?? new Date(),
+              /** O mês a que respeita (`AAAA-MM`). A data é a do pagamento. */
+              referenteA: mesDaReceita(c.period, { pagaEm: c.settledAt }),
               dueDate: null,
               method: c.payments[0]?.method ?? null,
               counterparty: c.payments[0]?.payerName
@@ -451,7 +475,7 @@ export class FinanceService {
               orderBy: { settledAt: { sort: "desc", nulls: "last" } },
               take: 300,
               select: {
-                id: true, amountCents: true, period: true, label: true, settledAt: true, method: true, updatedAt: true,
+                id: true, amountCents: true, period: true, label: true, settledAt: true, method: true, updatedAt: true, coversFrom: true,
                 member: { select: { id: true, name: true } },
               },
             })
@@ -466,6 +490,8 @@ export class FinanceService {
               description: descricao,
               amountCents: q.amountCents,
               occurredAt: q.settledAt ?? q.updatedAt,
+              /** O mês a que respeita (`AAAA-MM`). A data é a do pagamento. */
+              referenteA: mesDaReceita(q.period, { coversFrom: q.coversFrom, pagaEm: q.settledAt ?? q.updatedAt }),
               dueDate: null,
               method: q.method ?? null,
               counterparty: null,

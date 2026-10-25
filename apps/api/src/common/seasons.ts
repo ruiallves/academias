@@ -49,3 +49,16 @@ export function currentSeason(db: ScopedClient) {
     select: { id: true, label: true, startsOn: true, endsOn: true, isCurrent: true },
   });
 }
+
+/**
+ * O filtro das equipas da época corrente (a de `currentSeason`), para juntar a
+ * um `where` de `team`. Sem época nenhuma, não apanha equipa nenhuma.
+ *
+ * Existe porque o período de cobrança por escalão filtrava por
+ * `season: { isCurrent: true }` e, sem marca em clube nenhum, nunca gravou
+ * nem leu os meses de escalão nenhum (Santa Maria FC, 25/10/2026).
+ */
+export async function equipasDaEpocaAtual(db: ScopedClient): Promise<{ seasonId: string }> {
+  const epoca = await currentSeason(db);
+  return { seasonId: epoca?.id ?? "__sem-epoca__" };
+}

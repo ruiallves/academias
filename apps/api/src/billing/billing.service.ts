@@ -1,4 +1,5 @@
 import { inicioDaEpoca } from "../members/member-fees.service";
+import { equipasDaEpocaAtual } from "../common/seasons";
 import { randomUUID } from "node:crypto";
 import { BadRequestException, ForbiddenException, Injectable, Logger, NotFoundException, type OnModuleDestroy, type OnModuleInit } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
@@ -3087,7 +3088,7 @@ function quemMudou(ctx: RequestContext, quando: Date = new Date()) {
 /** As equipas da época corrente, com os seus meses. Só no modo por escalão interessam. */
 async function lerMesesDasEquipas(db: ScopedClient): Promise<MesesDeEquipa[]> {
   return db.team.findMany({
-    where: { season: { isCurrent: true } },
+    where: await equipasDaEpocaAtual(db),
     select: { id: true, billingMonths: true, billingNextMonths: true },
   });
 }

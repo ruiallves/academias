@@ -15,8 +15,7 @@ export function CampoSubstituicoes({ ligado, onChange, mudouComJogos = false }: 
         <div className="min-w-0">
           <p className="text-meta font-medium text-ink">Substituições ilimitadas</p>
           <p className="mt-0.5 text-[11px] leading-relaxed text-ink-3">
-            Quem sai pode voltar a entrar, as vezes que for preciso. É a regra no futsal e no basquetebol; no futebol depende do escalão e da associação (o
-            futebol de 7 e de 9 da formação costuma permitir).
+            Quem sai pode voltar a entrar, as vezes que for preciso.
           </p>
         </div>
         <Interruptor ligado={ligado} onChange={() => onChange(!ligado)} label="Substituições ilimitadas" />
