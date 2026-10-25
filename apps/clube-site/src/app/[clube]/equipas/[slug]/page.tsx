@@ -1,3 +1,4 @@
+import { CartaoDoAtleta } from "@/componentes/CartaoDoAtleta";
 import type { Metadata } from "next";
 import Image from "next/image";
 import Link from "next/link";
@@ -80,14 +81,10 @@ export default async function Equipa({ params }: Props) {
             <section data-reveal>
               <h2 className="display text-2xl">Plantel</h2>
               <span className="traco mt-3" aria-hidden />
-              <ul className="mt-4 grid gap-2 sm:grid-cols-2">
-                {equipa.roster.map((a) => (
-                  <li key={a.name} className="flex items-center gap-4 rounded-card border border-line bg-surface px-4 py-3">
-                    <span className="display w-8 text-2xl tabular text-signal-ink">{a.number ?? "–"}</span>
-                    <span className="min-w-0">
-                      <span className="block truncate font-semibold text-ink">{a.name}</span>
-                      {a.position && <span className="block text-sm text-ink-3">{a.position}</span>}
-                    </span>
+              <ul className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-3">
+                {equipa.roster.map((a, i) => (
+                  <li key={`${a.name}-${i}`}>
+                    <CartaoDoAtleta atleta={a} />
                   </li>
                 ))}
               </ul>

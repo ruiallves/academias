@@ -54,6 +54,11 @@ export type SquadRow = {
   /** Os minutos dos golos e das assistências. Vazios quando não registados. */
   tallyAt: number[];
   assistsAt: number[];
+  /**
+   * Com substituições ilimitadas, as vezes em campo registadas no Ao vivo:
+   * entrou, saiu, entrou… Vazio (ou ausente num servidor antigo) quando não há.
+   */
+  stints?: number[];
 };
 
 export type MatchStaffRow = { id: string; membershipId: string; name: string; role: string };
@@ -297,7 +302,10 @@ export const saveAppearances = (
   id: string,
   rows: {
     athleteId: string;
-    minutes: number;
+    /** O servidor conta-os. Só valem com substituições ilimitadas e sem `stints`. */
+    minutes?: number;
+    /** Com substituições ilimitadas: entrou, saiu, entrou… O servidor soma-os. */
+    stints?: number[];
     started: boolean;
     tally: number;
     assists: number;

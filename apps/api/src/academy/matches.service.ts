@@ -11,7 +11,7 @@ import {
   type RequestContext,
 } from "../common/permissions";
 import { headCoaches, pesoDoTitulo } from "./head-coaches";
-import { minutosEmCampo, PARTES_COM_TEMPO_ADICIONAL, PROLONGAMENTO } from "./minutos-do-jogo";
+import { intervalosEmCampo, minutoDaExpulsao, minutosEmCampo, PARTES_COM_TEMPO_ADICIONAL, problemaNosIntervalos, PROLONGAMENTO } from "./minutos-do-jogo";
 import { AMIGAVEL } from "./catalogs.service";
 import { formatarNoFuso, horaNoFuso, instanteNoFuso, lerHora, partesNoFuso, somarDias } from "../common/fuso";
 
@@ -327,7 +327,7 @@ export class MatchesService {
               athleteId: true, minutes: true, started: true, tally: true,
               assists: true, yellowCards: true, redCard: true,
               onMinute: true, offMinute: true, yellowAt: true, redAt: true,
-              tallyAt: true, assistsAt: true,
+              tallyAt: true, assistsAt: true, stints: true,
             },
           },
           staff: {
@@ -383,7 +383,7 @@ export class MatchesService {
         sportId: m.team.sportId,
         maxCallUps: m.team.maxCallUps,
         matchMinutes: duracaoDoJogo(m.team),
-        /** Substituições ilimitadas: o "Ao vivo" deixa voltar a entrar e a ficha não conta minutos. */
+        /** Substituições ilimitadas: quem sai pode voltar a entrar, e os minutos somam cada vez em campo. */
         unlimitedSubs: m.team.unlimitedSubs,
         /** O tempo adicional por parte. Vazio se ninguém o registou. */
         addedMinutes: m.addedMinutes,
@@ -443,6 +443,7 @@ export class MatchesService {
             redAt: a?.redAt ?? null,
             tallyAt: a?.tallyAt ?? [],
             assistsAt: a?.assistsAt ?? [],
+            stints: a?.stints ?? [],
           };
         }),
         staff: m.staff.map((x) => ({
@@ -781,7 +782,7 @@ export class MatchesService {
       while (limpos.length > 0 && limpos[limpos.length - 1] === 0) limpos.pop();
 
       await db.match.update({ where: { id: matchId }, data: { addedMinutes: limpos } });
-      await refazerMinutosDaFicha(db, matchId, duracaoDoJogo(alvo.team), limpos, partes, alvo.overtimeMinutes);
+      await refazerMinutosDaFicha(db, matchId, duracaoDoJogo(alvo.team), limpos, partes, alvo.overtimeMinutes, alvo.team.unlimitedSubs);
 
       return { ok: true as const, addedMinutes: limpos };
     });
@@ -820,7 +821,7 @@ export class MatchesService {
       while (adicional.length > 0 && adicional[adicional.length - 1] === 0) adicional.pop();
 
       await db.match.update({ where: { id: matchId }, data: { overtimeMinutes: minutes, addedMinutes: adicional } });
-      await refazerMinutosDaFicha(db, matchId, duracaoDoJogo(alvo.team), adicional, partes, minutes);
+      await refazerMinutosDaFicha(db, matchId, duracaoDoJogo(alvo.team), adicional, partes, minutes, alvo.team.unlimitedSubs);
 
       return { ok: true as const, overtimeMinutes: minutes, addedMinutes: adicional };
     });
@@ -921,8 +922,14 @@ export class MatchesService {
     matchId: string,
     rows: {
       athleteId: string;
-      /** Ignorado: os minutos calculam-se aqui. Ver `minutosEmCampo`. */
+      /**
+       * Ignorado, menos com substituições ilimitadas e sem `stints`: aí não há
+       * de onde os contar e vale o que o treinador escreveu no Pós-jogo.
+       * Ver `minutosEmCampo`.
+       */
       minutes?: number;
+      /** Entradas e saídas alternadas, com substituições ilimitadas. Ver `MatchAppearance.stints`. */
+      stints?: number[];
       started?: boolean;
       tally?: number;
       assists?: number;
@@ -957,13 +964,39 @@ export class MatchesService {
 
       const duracao = duracaoDoJogo(match.team);
       const partes = PARTES_COM_TEMPO_ADICIONAL[match.team.sport.code ?? ""] ?? 0;
+      const volantes = match.team.unlimitedSubs;
+      /* O jogo inteiro, para travar minutos escritos à mão: duração, prolongamento e descontos. */
+      const somar = (xs: number[]) => xs.reduce((n, m) => n + m, 0);
+      const tecto = duracao > 0 ? duracao + somar(match.overtimeMinutes) + somar(match.addedMinutes) : 300;
+
+      /*
+       * Com substituições ilimitadas, os minutos contam-se por intervalos.
+       *
+       * O "Ao vivo" manda as entradas e as saídas de cada um (`stints`) e a conta
+       * faz-se aqui, como a de toda a gente. No Pós-jogo não há esse detalhe: o
+       * treinador escreve os minutos, e são esses que ficam (até ao tecto do
+       * jogo). Sem nenhum dos dois, a regra de sempre: titular joga tudo.
+       */
+      for (const r of rows) {
+        if (!volantes || !r.stints?.length) continue;
+        const erro = problemaNosIntervalos(r.stints, r.started ?? false);
+        if (erro) throw new BadRequestException(erro);
+      }
+      const minutosDe = (r: (typeof rows)[number]): number => {
+        if (volantes && !r.stints?.length && r.minutes != null) return clamp(r.minutes, 0, tecto);
+        return minutosEmCampo(
+          { ...r, stints: volantes ? r.stints : undefined },
+          duracao, match.addedMinutes, partes, match.overtimeMinutes,
+        );
+      };
 
       const limpas = rows
         .filter((r) => convocados.has(r.athleteId))
         .map((r) => ({
           athleteId: r.athleteId,
-          minutes: minutosEmCampo(r, duracao, match.addedMinutes, partes, match.overtimeMinutes),
+          minutes: minutosDe(r),
           started: r.started ?? false,
+          stints: volantes ? (r.stints ?? []).map((m) => clamp(m, 0, 130)) : [],
           tally: clamp(r.tally ?? 0, 0, 99),
           assists: clamp(r.assists ?? 0, 0, 99),
           // Dois amarelos são o máximo que existe: o segundo é a expulsão.
@@ -1395,7 +1428,8 @@ export class MatchesService {
         overtimeMinutes: true,
         // A duração de jogo do escalão: é o que fecha a conta dos minutos de
         // quem jogou até ao fim. Ver `minutosEmCampo` e `duracaoDoJogo`.
-        team: { select: { matchMinutes: true, sport: { select: { matchMinutes: true, code: true } } } },
+        // Substituições ilimitadas: os minutos contam-se por intervalos, ou à mão.
+        team: { select: { matchMinutes: true, unlimitedSubs: true, sport: { select: { matchMinutes: true, code: true } } } },
       },
     });
     if (!match) throw new NotFoundException("Jogo não encontrado ou fora do teu âmbito");
@@ -2159,12 +2193,15 @@ async function refazerMinutosDaFicha(
   adicional: number[],
   partes: number,
   prolongamento: number[],
+  volantes: boolean,
 ): Promise<void> {
   const ficha = await db.matchAppearance.findMany({
     where: { matchId },
-    select: { id: true, minutes: true, started: true, onMinute: true, offMinute: true, redAt: true },
+    select: { id: true, minutes: true, started: true, onMinute: true, offMinute: true, redAt: true, yellowCards: true, yellowAt: true, stints: true },
   });
   for (const a of ficha) {
+    // Com substituições ilimitadas e sem intervalos, os minutos foram escritos à mão: ficam.
+    if (volantes && a.stints.length === 0) continue;
     const minutos = minutosEmCampo(a, duracao, adicional, partes, prolongamento);
     if (minutos !== a.minutes) await db.matchAppearance.update({ where: { id: a.id }, data: { minutes: minutos } });
   }
@@ -2319,6 +2356,8 @@ type ComMinutos = {
   started: boolean;
   onMinute: number | null;
   offMinute: number | null;
+  stints: number[];
+  yellowCards: number;
   yellowAt: number[];
   redAt: number | null;
   tallyAt: number[];
@@ -2336,8 +2375,8 @@ type ComMinutos = {
 function janelaEmCampo(r: ComMinutos): { de: number; ate: number } {
   return {
     de: r.started ? 0 : (r.onMinute ?? 0),
-    // Um expulso sai ao minuto do vermelho. Ver `minutosEmCampo`.
-    ate: r.offMinute ?? r.redAt ?? 130,
+    // Um expulso sai ao minuto do vermelho, ou do segundo amarelo. Ver `minutosEmCampo`.
+    ate: r.offMinute ?? minutoDaExpulsao(r) ?? 130,
   };
 }
 
@@ -2362,6 +2401,19 @@ function foraDeCampo(r: ComMinutos): string | null {
     ["amarelo", r.yellowAt],
     ["vermelho", r.redAt == null ? [] : [r.redAt]],
   ];
+
+  /*
+   * Com substituições ilimitadas, tem de cair numa das vezes em que esteve em
+   * campo. Os extremos contam, como em baixo.
+   */
+  const intervalos = intervalosEmCampo(r);
+  if (intervalos) {
+    for (const [nome, minutos] of grupos) {
+      const fora = minutos.find((m) => !intervalos.some((i) => m >= i.de && m <= (i.ate ?? 130)));
+      if (fora !== undefined) return `Há um ${nome} ao minuto ${fora}, mas o atleta não estava em campo.`;
+    }
+    return null;
+  }
 
   for (const [nome, minutos] of grupos) {
     /*

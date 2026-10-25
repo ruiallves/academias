@@ -1,4 +1,4 @@
-import { Controller, Get, Header, Param, Query } from "@nestjs/common";
+import { Controller, Get, Header, Param, Query, StreamableFile } from "@nestjs/common";
 import { Throttle } from "@nestjs/throttler";
 import { Public } from "../auth/auth.guard";
 import { SitePublicoService } from "./site-publico.service";
@@ -64,6 +64,18 @@ export class SitePublicoController {
   @Header("Cache-Control", "public, max-age=60")
   equipa(@Param("slug") slug: string, @Param("id") id: string) {
     return this.site.equipa(slug, id);
+  }
+
+  /**
+   * A fotografia de um atleta do plantel. Uma hora de cache: desligar as
+   * fotografias da equipa demora no máximo isso a chegar a quem já a viu.
+   */
+  @Get(":slug/equipas/:id/atletas/:athleteId/foto")
+  @Header("Cache-Control", "public, max-age=3600")
+  @Header("X-Content-Type-Options", "nosniff")
+  async fotoDoAtleta(@Param("slug") slug: string, @Param("id") id: string, @Param("athleteId") athleteId: string) {
+    const { dados, tipo } = await this.site.fotoDoAtleta(slug.slice(0, 80), id.slice(0, 40), athleteId.slice(0, 40));
+    return new StreamableFile(dados, { type: tipo });
   }
 
   @Get(":slug/jogos")

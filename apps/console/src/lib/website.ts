@@ -227,7 +227,7 @@ export type SiteDoClube = {
   /** Por id de jogo. Um jogo sem entrada não tem bilheteira. */
   bilheteira: Record<string, BilheteiraDoJogo>;
   /** Por id de equipa. Sem entrada = não aparece; ligada = aparece com tudo (plantel incluído). */
-  equipas: Record<string, { visivel: boolean; plantel: boolean; foto?: string }>;
+  equipas: Record<string, { visivel: boolean; plantel: boolean; foto?: string; fotos?: boolean }>;
   patrocinadores: Patrocinador[];
   /** Mensagens do formulário de contactos ainda por abrir. A pastilha do submenu. */
   mensagensPorLer: number;

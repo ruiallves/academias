@@ -1,4 +1,4 @@
-import { randomBytes } from "node:crypto";
+import { createHash, randomBytes } from "node:crypto";
 import { BadRequestException, Injectable, Logger, NotFoundException } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
 import type { Prisma } from "@prisma/client";
@@ -8,6 +8,8 @@ import { MailClient } from "../mail/mail.client";
 import { siteMensagemEmail } from "../mail/mail.templates";
 import { FichaDoSite, caixaDoEmail, numeroDoTelefone } from "../platform/ficha-do-site";
 import { TurnstileService } from "../common/turnstile.service";
+import { StorageService } from "../storage/storage.service";
+import { PHOTO_BUCKET } from "../storage/photos.service";
 import type { ContactoDoSiteDto } from "./site.dto";
 import {
   dominioLimpo,
@@ -75,6 +77,7 @@ export class SitePublicoService {
     private readonly config: ConfigService,
     private readonly mail: MailClient,
     private readonly turnstile: TurnstileService,
+    private readonly storage: StorageService,
   ) {
     const segredo = this.config.get<string>("SITE_FORM_SECRET") || this.config.get<string>("SUPABASE_JWT_SECRET") || "";
     if (!segredo) this.log.warn("Sem SITE_FORM_SECRET nem SUPABASE_JWT_SECRET: o formulário dos sites dos clubes recusa todos os envios");
@@ -310,7 +313,7 @@ export class SitePublicoService {
   async equipas(slug: string) {
     return this.comClube(slug, async (db, a) => {
       const teams = await this.equipasVisiveis(db, a.equipas);
-      return teams.map((t) => equipaPublica(t, true, a.equipas[t.id]?.foto));
+      return teams.map((t) => equipaPublica(t, true, a.equipas[t.id]?.foto, a.equipas[t.id]?.fotos ? a.slug : null));
     });
   }
 
@@ -318,8 +321,29 @@ export class SitePublicoService {
     return this.comClube(slug, async (db, a) => {
       const t = (await this.equipasVisiveis(db, a.equipas, id))[0];
       if (!t) throw new NotFoundException();
-      return equipaPublica(t, true, a.equipas[t.id]?.foto);
+      return equipaPublica(t, true, a.equipas[t.id]?.foto, a.equipas[t.id]?.fotos ? a.slug : null);
     });
+  }
+
+  /**
+   * A fotografia de um atleta do plantel, para o site do clube.
+   *
+   * As fotografias dos atletas vivem no armazenamento privado e não têm
+   * endereço público (são de menores). Saem só por aqui, e só enquanto a
+   * equipa está no site **e** com as fotografias ligadas: desligar devolve 404
+   * logo a seguir (fica a cache de uma hora do site). O atleta tem de estar
+   * hoje no plantel dessa equipa.
+   */
+  async fotoDoAtleta(slug: string, teamId: string, athleteId: string): Promise<{ dados: Buffer; tipo: string }> {
+    const chave = await this.comClube(slug, async (db, a) => {
+      if (!a.equipas[teamId]?.fotos) return null;
+      const t = (await this.equipasVisiveis(db, a.equipas, teamId))[0];
+      return t?.athletes.find((m) => m.athlete.id === athleteId)?.athlete.photoKey ?? null;
+    });
+    if (!chave) throw new NotFoundException();
+    const dados = await this.storage.download(PHOTO_BUCKET, chave);
+    if (!dados) throw new NotFoundException();
+    return { dados, tipo: tipoDaImagem(dados) };
   }
 
   /**
@@ -353,7 +377,7 @@ export class SitePublicoService {
         athletes: {
           where: { leftAt: null },
           orderBy: [{ squadNumber: "asc" }],
-          select: { squadNumber: true, position: true, athlete: { select: { name: true } } },
+          select: { squadNumber: true, position: true, athlete: { select: { id: true, name: true, photoKey: true } } },
         },
       },
     });
@@ -577,11 +601,16 @@ function equipaPublica(
     gender: "MALE" | "FEMALE" | "MIXED" | null;
     sport: { name: string };
     staff: { title: string; membership: { user: { name: string } } }[];
-    athletes: { squadNumber: number | null; position: string | null; athlete: { name: string } }[];
+    athletes: { squadNumber: number | null; position: string | null; athlete: { id: string; name: string; photoKey: string | null } }[];
   },
   comPlantel: boolean,
   /** A fotografia que o clube carregou. Sem ela, o site usa a de omissão da modalidade. */
   foto?: string,
+  /**
+   * O clube, quando a equipa tem as fotografias dos atletas ligadas; nulo, sem
+   * elas. Ver `EquipaNoSite.fotos` e `fotoDoAtleta`.
+   */
+  fotosDoClube: string | null = null,
 ) {
   return {
     id: t.id,
@@ -594,7 +623,20 @@ function equipaPublica(
     gender: t.gender === "FEMALE" ? "F" : t.gender === "MIXED" ? "MISTA" : t.gender === "MALE" ? "M" : undefined,
     staff: t.staff.map((s) => ({ name: s.membership.user.name, role: s.title })),
     roster: comPlantel
-      ? t.athletes.map((m) => ({ name: m.athlete.name, number: m.squadNumber ?? undefined, position: m.position ?? undefined }))
+      ? t.athletes.map((m) => ({
+          name: m.athlete.name,
+          number: m.squadNumber ?? undefined,
+          position: m.position ?? undefined,
+          /*
+           * O caminho na API (o site junta-lhe o endereço dela). O `v` muda com
+           * a fotografia, para uma foto nova não ficar presa na cache. Sem foto
+           * ou sem as fotografias ligadas, nada: o site mostra a imagem padrão.
+           */
+          photo:
+            fotosDoClube && m.athlete.photoKey
+              ? `/public/sites/${fotosDoClube}/equipas/${t.id}/atletas/${m.athlete.id}/foto?v=${createHash("sha1").update(m.athlete.photoKey).digest("hex").slice(0, 10)}`
+              : undefined,
+        }))
       : [],
   };
 }
@@ -717,4 +759,12 @@ function produtoPublico(p: ProdutoLido & { category: string; description: string
     stock: v.disponivel,
     soldOut: esgotado,
   };
+}
+
+/** O tipo de uma imagem pelos primeiros bytes. As fotografias carregam-se em JPEG, PNG ou WebP. */
+function tipoDaImagem(b: Buffer): string {
+  if (b[0] === 0xff && b[1] === 0xd8) return "image/jpeg";
+  if (b[0] === 0x89 && b[1] === 0x50 && b[2] === 0x4e && b[3] === 0x47) return "image/png";
+  if (b.subarray(0, 4).toString("latin1") === "RIFF" && b.subarray(8, 12).toString("latin1") === "WEBP") return "image/webp";
+  return "application/octet-stream";
 }

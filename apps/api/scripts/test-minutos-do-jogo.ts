@@ -7,7 +7,7 @@
  *
  * Uso: npm run test:minutos-do-jogo --workspace @academia/api
  */
-import { fimDasPartes, minutosEmCampo } from "../src/academy/minutos-do-jogo";
+import { fimDasPartes, intervalosEmCampo, minutoDaExpulsao, minutosEmCampo, problemaNosIntervalos } from "../src/academy/minutos-do-jogo";
 
 let ok = 0;
 let bad = 0;
@@ -35,6 +35,13 @@ igual("expulso aos 45+2 (vai como 45) leva a compensação da 1.ª", minutosEmCa
 igual("expulso já no banco: conta a saída", minutosEmCampo({ started: true, offMinute: 50, redAt: 70 }, 90), 50);
 igual("futsal: expulso aos 25 de 40", minutosEmCampo({ started: true, redAt: 25 }, 40), 25);
 
+console.log("\n=== O segundo amarelo também é uma saída ===");
+igual("titular com dois amarelos (20 e 55) joga 55", minutosEmCampo({ started: true, yellowCards: 2, yellowAt: [55, 20] }, 90), 55);
+igual("um amarelo só não tira de campo", minutosEmCampo({ started: true, yellowCards: 1, yellowAt: [20] }, 90), 90);
+igual("dois amarelos sem minutos: não se sabe quando saiu", minutosEmCampo({ started: true, yellowCards: 2, yellowAt: [] }, 90), 90);
+igual("o vermelho manda sobre os amarelos", minutoDaExpulsao({ redAt: 70, yellowCards: 2, yellowAt: [20, 60] }), 70);
+igual("volantes: o segundo amarelo fecha a vez aberta", minutosEmCampo({ started: true, stints: [0, 10, 20], yellowCards: 2, yellowAt: [5, 30] }, 40), 20);
+
 console.log("\n=== Prolongamento ===");
 igual("onde acabam as partes num 90 + 2 × 15", fimDasPartes(90, 2, [15, 15]), [45, 90, 105, 120]);
 igual("futebol: jogou tudo num 90 + 2 × 15", minutosEmCampo({ started: true }, 90, [], 2, [15, 15]), 120);
@@ -54,5 +61,21 @@ igual("futsal: 40 + 2 × 5", minutosEmCampo({ started: true }, 40, [], 0, [5, 5]
 igual("basquetebol: 40 + dois prolongamentos de 5", minutosEmCampo({ started: true }, 40, [], 0, [5, 5]), 50);
 igual("basquetebol: entrou no 1.º prolongamento (aos 41)", minutosEmCampo({ onMinute: 41 }, 40, [], 0, [5]), 4);
 igual("expulso no prolongamento, aos 110", minutosEmCampo({ started: true, redAt: 110 }, 90, [], 2, [15, 15]), 110);
+
+console.log("\n=== Substituições ilimitadas: várias vezes em campo ===");
+igual("futsal: titular sai aos 8, volta aos 15, sai aos 30", minutosEmCampo({ started: true, stints: [0, 8, 15, 30] }, 40), 23);
+igual("futsal: titular sai aos 8 e volta aos 15 até ao fim", minutosEmCampo({ started: true, stints: [0, 8, 15] }, 40), 33);
+igual("suplente entra aos 5, sai aos 12, entra aos 20, sai aos 26", minutosEmCampo({ stints: [5, 12, 20, 26] }, 40), 13);
+igual("sai e volta no mesmo minuto", minutosEmCampo({ started: true, stints: [0, 10, 10] }, 40), 40);
+igual("os intervalos mandam, mesmo com onMinute", minutosEmCampo({ onMinute: 30, stints: [5, 10] }, 40), 5);
+igual("expulso no 2.º intervalo aberto: acaba no vermelho", minutosEmCampo({ started: true, stints: [0, 10, 20], redAt: 25 }, 40), 15);
+igual("futebol com descontos: [0,45] leva o +2, [60, fim] leva o +3", minutosEmCampo({ started: true, stints: [0, 45, 60] }, 90, [2, 3], 2), 47 + 33);
+igual("futebol: entra ao intervalo não leva o +2 da 1.ª", minutosEmCampo({ stints: [45, 60] }, 90, [2, 3], 2), 15);
+igual("com prolongamento: [80, fim] num 90 + 2 × 15", minutosEmCampo({ stints: [80] }, 90, [], 2, [15, 15]), 40);
+igual("lista vazia: a regra de sempre", minutosEmCampo({ started: true, stints: [] }, 40), 40);
+igual("intervalos lidos", intervalosEmCampo({ stints: [0, 8, 15] }), [{ de: 0, ate: 8 }, { de: 15, ate: null }]);
+igual("titular tem de começar aos 0", problemaNosIntervalos([3, 8], true), "Um titular entra ao minuto 0.");
+igual("fora de ordem", problemaNosIntervalos([0, 8, 5], true), "As entradas e saídas não estão por ordem.");
+igual("por ordem, com o mesmo minuto repetido", problemaNosIntervalos([0, 10, 10, 20], true), null);
 console.log(`\n${ok} passaram, ${bad} falharam`);
 process.exit(bad ? 1 : 0);

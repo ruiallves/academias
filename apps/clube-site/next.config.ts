@@ -47,6 +47,8 @@ const config: NextConfig = {
     remotePatterns: [
       // As fotos do clube vivem no Supabase Storage, como tudo o resto.
       { protocol: "https", hostname: "*.supabase.co" },
+      // As fotografias dos atletas do plantel servem-se pela API (são privadas): só esse caminho.
+      ...fotosDaApi(),
       // Só para a demonstração, enquanto não há fotos reais. Sai quando houver.
       { protocol: "https", hostname: "picsum.photos" },
       { protocol: "https", hostname: "fastly.picsum.photos" },
@@ -55,3 +57,14 @@ const config: NextConfig = {
 };
 
 export default config;
+
+/** O endereço da API, para o optimizador de imagens aceitar as fotografias do plantel. */
+function fotosDaApi(): { protocol: "http" | "https"; hostname: string; port?: string; pathname: string }[] {
+  try {
+    const u = new URL(process.env.SITE_API_URL ?? "");
+    const protocol = u.protocol === "http:" ? "http" : "https";
+    return [{ protocol, hostname: u.hostname, ...(u.port ? { port: u.port } : {}), pathname: "/public/sites/**" }];
+  } catch {
+    return [];
+  }
+}

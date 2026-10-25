@@ -84,15 +84,50 @@ export function fimDasPartes(duracao: number, partes: number, prolongamento: num
  * traz os descontos dentro.
  */
 export function minutosEmCampo(
-  r: { started?: boolean; onMinute?: number | null; offMinute?: number | null; redAt?: number | null },
+  r: ComExpulsao & { started?: boolean; onMinute?: number | null; offMinute?: number | null; stints?: number[] | null },
   duracao: number,
   adicional: number[] = [],
   partes = 0,
   prolongamento: number[] = [],
 ): number {
+  // Com substituições ilimitadas, a soma de cada vez que esteve em campo.
+  const intervalos = intervalosEmCampo(r);
+  if (intervalos) {
+    const soma = intervalos.reduce((n, i) => n + minutosDoIntervalo(i.de, i.ate, duracao, adicional, partes, prolongamento), 0);
+    return clamp(soma, 0, 300);
+  }
   const entrada = r.started ? 0 : r.onMinute;
   if (entrada == null) return 0;
-  const sai = r.offMinute ?? r.redAt ?? null;
+  const sai = r.offMinute ?? minutoDaExpulsao(r);
+  return clamp(minutosDoIntervalo(entrada, sai, duracao, adicional, partes, prolongamento), 0, 300);
+}
+
+type ComExpulsao = { redAt?: number | null; yellowCards?: number | null; yellowAt?: number[] | null };
+
+/**
+ * O minuto em que foi expulso, ou `null`: o do vermelho, ou o do segundo
+ * amarelo (que também é expulsão). Um expulso sai de campo nesse minuto.
+ * Dois amarelos sem os minutos escritos não dizem quando saiu.
+ */
+export function minutoDaExpulsao(r: ComExpulsao): number | null {
+  if (r.redAt != null) return r.redAt;
+  const amarelos = [...(r.yellowAt ?? [])].sort((a, b) => a - b);
+  if ((r.yellowCards ?? amarelos.length) >= 2 && amarelos.length >= 2) return amarelos[1];
+  return null;
+}
+
+/**
+ * Os minutos de uma vez em campo: de `entrada` até `sai` (nulo é até ao fim),
+ * com o tempo adicional das partes que acabaram com ele lá dentro.
+ */
+function minutosDoIntervalo(
+  entrada: number,
+  sai: number | null,
+  duracao: number,
+  adicional: number[],
+  partes: number,
+  prolongamento: number[],
+): number {
   const total = duracao + prolongamento.reduce((n, m) => n + m, 0);
   let minutos = (sai ?? total) - entrada;
   if (partes > 0 && duracao > 0) {
@@ -103,5 +138,36 @@ export function minutosEmCampo(
       if (estavaLa) minutos += adicional[i] ?? 0;
     });
   }
-  return clamp(minutos, 0, 300);
+  return Math.max(0, minutos);
+}
+
+/**
+ * As vezes que esteve em campo, lidas de `stints` (entrou, saiu, entrou…).
+ *
+ * Nulo quando a linha não as tem: aí valem a entrada e a saída. O último
+ * intervalo aberto acaba na expulsão, se houve, ou no fim do jogo (`ate` nulo).
+ */
+export function intervalosEmCampo(r: ComExpulsao & { stints?: number[] | null }): { de: number; ate: number | null }[] | null {
+  const t = r.stints ?? [];
+  if (t.length === 0) return null;
+  const lista: { de: number; ate: number | null }[] = [];
+  for (let i = 0; i < t.length; i += 2) {
+    lista.push({ de: t[i], ate: i + 1 < t.length ? t[i + 1] : minutoDaExpulsao(r) });
+  }
+  return lista;
+}
+
+/**
+ * O que está mal numa lista de entradas e saídas, ou `null` se está certa.
+ *
+ * Têm de vir por ordem (o mesmo minuto pode fechar uma vez e abrir a seguinte:
+ * no futsal sai-se e volta-se no mesmo minuto), e um titular começa aos 0.
+ */
+export function problemaNosIntervalos(stints: number[], started: boolean): string | null {
+  if (stints.length === 0) return null;
+  if (started && stints[0] !== 0) return "Um titular entra ao minuto 0.";
+  for (let i = 1; i < stints.length; i++) {
+    if (stints[i] < stints[i - 1]) return "As entradas e saídas não estão por ordem.";
+  }
+  return null;
 }

@@ -10,8 +10,9 @@
  *
  * É da equipa (`Team.unlimitedSubs`). Com substituições ilimitadas, quem saiu
  * pode voltar a entrar, as vezes que for preciso (o futsal, o basquetebol, e o
- * futebol de formação onde a associação o permite). Sem elas, quem sai não
- * volta, e quem já jogou não entra outra vez.
+ * futebol de formação onde a associação o permite), e os minutos somam cada
+ * vez em campo (`vezesEmCampo`). Sem elas, quem sai não volta, e quem já jogou
+ * não entra outra vez.
  *
  * ## O que vale sempre
  *
@@ -21,8 +22,28 @@
  * - Só sai quem está em campo, e só entra quem não está.
  * - Ninguém sai e entra na mesma substituição.
  * - Um expulso não volta a entrar, nem com substituições ilimitadas.
+ * - O segundo amarelo é uma expulsão: sai de campo como com o vermelho.
  * - Só marca quem está em campo.
+ * - Começam tantos quantos o formato manda (`titularesDoFormato`). Como cada
+ *   entrada tem uma saída, ficam sempre esses em campo, menos os expulsos.
  */
+
+/** Quantos começam em cada formato de jogo. */
+export const TITULARES_DO_FORMATO: Record<string, number> = { f11: 11, f9: 9, f7: 7, f5: 5, futsal: 5, basket: 5 };
+
+/**
+ * O que está mal no número de titulares, ou `null` se está certo.
+ *
+ * A mais é um erro: não cabem em campo. A menos é só um aviso, porque há jogos
+ * de formação que começam com menos por falta de jogadores.
+ */
+export function problemaNosTitulares(n: number, formato: string, nomeDoFormato: string): { erro: boolean; mensagem: string } | null {
+  const esperados = TITULARES_DO_FORMATO[formato];
+  if (n === 0) return { erro: true, mensagem: "Escolhe quem começa o jogo." };
+  if (!esperados || n === esperados) return null;
+  if (n > esperados) return { erro: true, mensagem: `No ${nomeDoFormato} começam ${esperados}, e estão escolhidos ${n}. Se o jogo é de outro formato, muda-o no Pré-jogo.` };
+  return { erro: false, mensagem: `No ${nomeDoFormato} começam ${esperados}, e estão escolhidos ${n}.` };
+}
 
 export type Acontecimento = {
   id: string;
@@ -68,8 +89,15 @@ export function percorrer(
   const jogaram = new Set(titulares);
   const expulsos = new Set<string>();
   let vagasDeExpulsos = 0;
+  const amarelos = new Map<string, number>();
   const problemas: Situacao["problemas"] = [];
   const falha = (id: string, mensagem: string) => problemas.push({ id, mensagem });
+  /** Expulso: sai de campo, e a equipa fica com um lugar por completar (futsal). */
+  const expulsar = (id: string) => {
+    if (emCampo.has(id)) vagasDeExpulsos++;
+    expulsos.add(id);
+    emCampo.delete(id);
+  };
 
   for (const a of acontecimentos) {
     if (a.tipo === "sub") {
@@ -103,13 +131,23 @@ export function percorrer(
       falha(a.id, `${nome(a.atleta)} não estava em campo quando marcou.`);
     }
 
+    /*
+     * O segundo amarelo é uma expulsão: sai de campo como com o vermelho. Um
+     * amarelo a quem já foi expulso, ou um terceiro, não existe.
+     */
+    if (a.tipo === "amarelo" && a.atleta) {
+      if (expulsos.has(a.atleta)) {
+        falha(a.id, `${nome(a.atleta)} já tinha sido expulso.`);
+        continue;
+      }
+      const n = (amarelos.get(a.atleta) ?? 0) + 1;
+      amarelos.set(a.atleta, n);
+      if (n >= 2) expulsar(a.atleta);
+    }
+
     if (a.tipo === "vermelho" && a.atleta) {
       if (expulsos.has(a.atleta)) falha(a.id, `${nome(a.atleta)} já tinha sido expulso.`);
-      else {
-        if (emCampo.has(a.atleta)) vagasDeExpulsos++;
-        expulsos.add(a.atleta);
-      }
-      emCampo.delete(a.atleta);
+      else expulsar(a.atleta);
     }
   }
 
@@ -130,6 +168,51 @@ export function motivoParaNaoEntrar(
   if (s.expulsos.has(id)) return `${nome(id)} foi expulso e não pode voltar a entrar.`;
   if (!regras.volantes && s.jogaram.has(id)) return `${nome(id)} já tinha jogado: nesta equipa quem sai não volta a entrar.`;
   return null;
+}
+
+/**
+ * As vezes que cada um esteve em campo, para a ficha contar os minutos com
+ * substituições ilimitadas: entrou, saiu, entrou, saiu… (`MatchAppearance.stints`).
+ *
+ * Os titulares entram aos 0. Uma substituição fecha a vez de quem sai e abre a
+ * de quem entra; o vermelho fecha a de quem o levou. Quem acaba o jogo em campo
+ * fica com a última vez aberta (um número ímpar). Os acontecimentos vêm pela
+ * ordem do relógio; um minuto que ande para trás conta como o anterior, para a
+ * lista nunca sair fora de ordem.
+ */
+export function vezesEmCampo(titulares: string[], acontecimentos: (Acontecimento & { minuto: number })[]): Map<string, number[]> {
+  const vezes = new Map<string, number[]>();
+  const emCampo = new Set<string>();
+  const marcar = (id: string, minuto: number) => {
+    const lista = vezes.get(id) ?? [];
+    lista.push(Math.max(minuto, lista[lista.length - 1] ?? 0));
+    vezes.set(id, lista);
+  };
+  const entrar = (id: string, minuto: number) => {
+    if (emCampo.has(id)) return;
+    emCampo.add(id);
+    marcar(id, minuto);
+  };
+  const sair = (id: string, minuto: number) => {
+    if (!emCampo.has(id)) return;
+    emCampo.delete(id);
+    marcar(id, minuto);
+  };
+  const amarelos = new Map<string, number>();
+  for (const id of titulares) entrar(id, 0);
+  for (const a of acontecimentos) {
+    if (a.tipo === "sub") {
+      if (a.atleta) sair(a.atleta, a.minuto);
+      if (a.entra) entrar(a.entra, a.minuto);
+    } else if (a.tipo === "vermelho" && a.atleta) sair(a.atleta, a.minuto);
+    else if (a.tipo === "amarelo" && a.atleta) {
+      // O segundo amarelo é uma expulsão.
+      const n = (amarelos.get(a.atleta) ?? 0) + 1;
+      amarelos.set(a.atleta, n);
+      if (n >= 2) sair(a.atleta, a.minuto);
+    }
+  }
+  return vezes;
 }
 
 /**

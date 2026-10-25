@@ -72,6 +72,7 @@ export function LinhaDaFicha({
   semCartoes,
   rotativo,
   substituicao,
+  minutosAMao,
   onPapel,
   onChange,
 }: {
@@ -90,9 +91,16 @@ export function LinhaDaFicha({
   podeEditar: boolean;
   /**
    * Substituições volantes (futsal, basquetebol): entra-se e sai-se a toda a
-   * hora, e não se pergunta quando nem por quem. Diz-se só titular ou entrou.
+   * hora, e não se pergunta quando nem por quem. Diz-se titular ou entrou, e
+   * os minutos (somados no Ao vivo, ou escritos em `minutosAMao`).
    */
   rotativo?: boolean;
+  /**
+   * Com volantes, os minutos escrevem-se na linha. `sugestao` é a conta de
+   * sempre quando a caixa fica vazia; `vezes`, as vezes em campo do Ao vivo de
+   * onde vieram os minutos gravados.
+   */
+  minutosAMao?: { valor: number | null; sugestao: number | null; vezes: [number, number | null][] | null; onChange: (n: number | null) => void };
   /**
    * No futebol, quem entra substitui alguém: a linha pergunta por quem. Vem com
    * os jogadores que podem ter saído e com o que está escolhido.
@@ -192,14 +200,25 @@ export function LinhaDaFicha({
             </div>
 
             {/* Quem entrou do banco diz quando: é daí que saem os minutos dele. */}
-            {/* Os minutos são resultado, não pergunta. Com substituições volantes não se contam. */}
-            <span
-              hidden={rotativo}
-              className={cx("inline-flex h-9 min-w-[58px] items-center justify-center rounded-full px-3 text-body font-semibold tabular", minutos === null ? "bg-sunken text-ink-4" : "bg-signal-soft text-signal-ink")}
-              title={minutos === null ? "Sem minuto de entrada, os minutos ficam por contar" : "Minutos em campo, calculados da entrada e da saída"}
-            >
-              {minutos === null ? "—" : `${minutos}′`}
-            </span>
+            {/* Os minutos são resultado, não pergunta. Com volantes escrevem-se, quando não vieram do Ao vivo. */}
+            {minutosAMao ? (
+              <CampoDeMinuto
+                rotulo="Jogou"
+                valor={minutosAMao.valor}
+                max={teto}
+                placeholder={minutosAMao.sugestao == null ? "—" : String(minutosAMao.sugestao)}
+                titulo={minutosAMao.vezes ? `Em campo: ${textoDasVezes(minutosAMao.vezes)}` : "Minutos em campo, somando todas as vezes que entrou"}
+                nota={minutosAMao.vezes && minutosAMao.valor != null ? textoDasVezes(minutosAMao.vezes) : undefined}
+                onCommit={minutosAMao.onChange}
+              />
+            ) : (
+              <span
+                className={cx("inline-flex h-9 min-w-[58px] items-center justify-center rounded-full px-3 text-body font-semibold tabular", minutos === null ? "bg-sunken text-ink-4" : "bg-signal-soft text-signal-ink")}
+                title={minutos === null ? "Sem minuto de entrada, os minutos ficam por contar" : rotativo ? "Minutos em campo, somando todas as vezes que entrou" : "Minutos em campo, calculados da entrada e da saída"}
+              >
+                {minutos === null ? "—" : `${minutos}′`}
+              </span>
+            )}
 
             {podeEditar && (
               <button
@@ -312,6 +331,11 @@ export function LinhaDaFicha({
   );
 }
 
+/** As vezes em campo, para ler de relance: "0–8′, 15′ até ao fim". */
+function textoDasVezes(vezes: [number, number | null][]): string {
+  return vezes.map(([a, b]) => (b == null ? `${a}′ até ao fim` : `${a}–${b}′`)).join(", ");
+}
+
 function Grupo({ titulo, children }: { titulo: string; children: ReactNode }) {
   return (
     <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:gap-4">
@@ -376,7 +400,24 @@ function CartaoDeArbitro({ cor, numero, podeEditar, rotulo, onClick }: { cor: "a
  * das fichas. Conta ao sair do campo, e não a cada tecla: um "6" a caminho de
  * "60" acendia avisos de contradição a meio da escrita.
  */
-export function CampoDeMinuto({ rotulo, valor, max, nota, onCommit }: { rotulo: string; valor: number | null; max: number; nota?: string; onCommit: (n: number | null) => void }) {
+export function CampoDeMinuto({
+  rotulo,
+  valor,
+  max,
+  nota,
+  placeholder = "—",
+  titulo,
+  onCommit,
+}: {
+  rotulo: string;
+  valor: number | null;
+  max: number;
+  nota?: string;
+  /** O que se lê com a caixa vazia: "—", ou a conta que vale sem nada escrito. */
+  placeholder?: string;
+  titulo?: string;
+  onCommit: (n: number | null) => void;
+}) {
   const [texto, setTexto] = useState(valor == null ? "" : String(valor));
   useEffect(() => {
     setTexto(valor == null ? "" : String(valor));
@@ -404,7 +445,8 @@ export function CampoDeMinuto({ rotulo, valor, max, nota, onCommit }: { rotulo: 
           pattern="[0-9]*"
           maxLength={3}
           value={texto}
-          placeholder="—"
+          placeholder={placeholder}
+          title={titulo}
           aria-label={`${rotulo}, minuto`}
           onChange={(e) => setTexto(e.target.value.replace(/\D/g, ""))}
           onBlur={commit}

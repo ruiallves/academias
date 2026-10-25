@@ -8,7 +8,7 @@
  *
  * Uso: npm run test:substituicoes --workspace @academia/console
  */
-import { motivoParaNaoEntrar, percorrer, substituicoesVolantes, type Acontecimento } from "@/components/match/substituicoes";
+import { motivoParaNaoEntrar, percorrer, problemaNosTitulares, substituicoesVolantes, vezesEmCampo, type Acontecimento } from "@/components/match/substituicoes";
 
 let ok = 0;
 let bad = 0;
@@ -106,6 +106,50 @@ console.log("=== Golos ===");
   check("quem está no banco não marca", s.problemas.some((p) => /não estava em campo quando marcou/.test(p.mensagem)));
   const s2 = percorrer(onze, [sub("a", "d"), sub("d", "a"), golo("a")], VOLANTES);
   check("quem voltou a entrar marca", semProblemas(s2));
+}
+
+console.log("=== O segundo amarelo é uma expulsão ===");
+{
+  const amarelo = (quem: string): Acontecimento => ({ id: `e${++n}`, tipo: "amarelo", atleta: quem });
+  const s = percorrer(onze, [amarelo("a"), amarelo("a")], VOLANTES);
+  check("dois amarelos tiram de campo", !s.emCampo.has("a") && s.expulsos.has("a") && semProblemas(s));
+  const s2 = percorrer(onze, [amarelo("a"), amarelo("a"), sub("d", "a")], VOLANTES);
+  check("expulso por dois amarelos não volta", s2.problemas.some((p) => /expulso/.test(p.mensagem)));
+  const s3 = percorrer(onze, [amarelo("a"), amarelo("a"), golo("a")], VOLANTES);
+  check("expulso por dois amarelos não marca", s3.problemas.some((p) => /não estava em campo/.test(p.mensagem)));
+  const s4 = percorrer(onze, [amarelo("a"), amarelo("a"), amarelo("a")], VOLANTES);
+  check("terceiro amarelo não existe", s4.problemas.some((p) => /já tinha sido expulso/.test(p.mensagem)));
+  const s5 = percorrer(onze, [amarelo("a"), amarelo("a"), sub(undefined, "d")], FUTSAL);
+  check("futsal: completa-se depois de dois amarelos", semProblemas(s5) && s5.emCampo.has("d"), JSON.stringify(s5.problemas));
+  const v = vezesEmCampo(onze, [{ ...amarelo("b"), minuto: 5 }, { ...amarelo("b"), minuto: 22 }]);
+  check("o segundo amarelo fecha a vez em campo", JSON.stringify(v.get("b")) === "[0,22]", JSON.stringify(v.get("b")));
+}
+
+console.log("=== Quantos começam ===");
+check("onze no futebol 11: certo", problemaNosTitulares(11, "f11", "futebol 11") === null);
+check("doze no futebol 11: erro", problemaNosTitulares(12, "f11", "futebol 11")?.erro === true);
+check("seis no futebol 7: aviso, deixa começar", problemaNosTitulares(6, "f7", "futebol 7")?.erro === false);
+check("ninguém: erro", problemaNosTitulares(0, "futsal", "futsal")?.erro === true);
+check("seis no futsal: erro", problemaNosTitulares(6, "futsal", "futsal")?.erro === true);
+{
+  // Com cada entrada a ter uma saída, ficam sempre os mesmos em campo.
+  const s = percorrer(["a", "b", "c", "d", "e"], [sub("a", "f"), sub("f", "a"), sub("b", "g"), vermelho("c")], VOLANTES);
+  check("em campo fica o número de titulares menos os expulsos", s.emCampo.size === 4, String(s.emCampo.size));
+}
+
+console.log("=== Vezes em campo (para os minutos) ===");
+{
+  const em = (m: number, a: Acontecimento) => ({ ...a, minuto: m });
+  const v = vezesEmCampo(onze, [em(8, sub("a", "d")), em(15, sub("d", "a")), em(30, sub("a", "d")), em(35, vermelho("b"))]);
+  const txt = (id: string) => JSON.stringify(v.get(id) ?? []);
+  check("titular que sai, volta e sai: [0,8,15,30]", txt("a") === "[0,8,15,30]", txt("a"));
+  check("suplente que entra, sai e entra: [8,15,30]", txt("d") === "[8,15,30]", txt("d"));
+  check("vermelho fecha a vez: [0,35]", txt("b") === "[0,35]", txt("b"));
+  check("quem joga tudo fica aberto: [0]", txt("c") === "[0]", txt("c"));
+  const atras = vezesEmCampo(onze, [em(10, sub("a", "d")), em(9, sub("d", "a"))]);
+  check("minuto para trás conta como o anterior", JSON.stringify(atras.get("d")) === "[10,10]", JSON.stringify(atras.get("d")));
+  const errada = vezesEmCampo(onze, [em(5, sub("d", "e"))]);
+  check("sair quem não está em campo não mexe na lista", !errada.has("d") && JSON.stringify(errada.get("e")) === "[5]");
 }
 
 console.log("=== A regra por omissão ===");

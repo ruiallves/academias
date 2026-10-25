@@ -103,8 +103,16 @@ class AppearanceDto {
    * `minutosEmCampo` no serviço. Deixou de ser obrigatório para um cliente não
    * ter de inventar um número que não vai a lado nenhum, e continua a ser aceite
    * para não partir quem ainda o manda.
+   *
+   * A exceção: substituições ilimitadas sem `stints`. Aí não há de onde os
+   * contar, e vale o que o treinador escreveu.
    */
   @IsOptional() @IsInt() @Min(0) @Max(300) minutes?: number;
+  /**
+   * Com substituições ilimitadas: entrou, saiu, entrou, saiu… Os minutos somam
+   * os intervalos. Ver `MatchAppearance.stints`.
+   */
+  @IsOptional() @IsArray() @ArrayMaxSize(80) @IsInt({ each: true }) @Min(0, { each: true }) @Max(130, { each: true }) stints?: number[];
   @IsOptional() @IsBoolean() started?: boolean;
   @IsOptional() @IsInt() @Min(0) @Max(99) tally?: number;
   @IsOptional() @IsInt() @Min(0) @Max(99) assists?: number;

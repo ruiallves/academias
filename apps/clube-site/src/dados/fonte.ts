@@ -79,6 +79,15 @@ async function pedir<T>(slug: string, caminho: string, fallback: T): Promise<T> 
   return (await r.json()) as T;
 }
 
+/**
+ * As fotografias do plantel chegam como caminhos da API
+ * (`/public/sites/…/foto`): servem-se de lá, por isso levam o endereço dela.
+ */
+function fotosDoPlantel(e: Equipa): Equipa {
+  const base = (process.env.SITE_API_URL ?? "").replace(/\/$/, "");
+  return { ...e, roster: (e.roster ?? []).map((a) => (a.photo?.startsWith("/") ? { ...a, photo: `${base}${a.photo}` } : a)) };
+}
+
 const api: Fonte = {
   clube: (slug) => pedir<Clube | null>(slug, "", null),
   noticias: (slug, opts) => {
@@ -89,8 +98,11 @@ const api: Fonte = {
     return pedir<Noticia[]>(slug, `/noticias${qs}`, []);
   },
   noticia: (slug, id) => pedir<Noticia | null>(slug, `/noticias/${id}`, null),
-  equipas: (slug) => pedir<Equipa[]>(slug, "/equipas", []),
-  equipa: (slug, id) => pedir<Equipa | null>(slug, `/equipas/${id}`, null),
+  equipas: async (slug) => (await pedir<Equipa[]>(slug, "/equipas", [])).map(fotosDoPlantel),
+  equipa: async (slug, id) => {
+    const e = await pedir<Equipa | null>(slug, `/equipas/${id}`, null);
+    return e && fotosDoPlantel(e);
+  },
   jogos: (slug) => pedir<Jogo[]>(slug, "/jogos", []),
   jogo: (slug, id) => pedir<Jogo | null>(slug, `/jogos/${id}`, null),
   eventos: (slug) => pedir<Evento[]>(slug, "/eventos", []),

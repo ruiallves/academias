@@ -30,9 +30,9 @@ import { CabecalhoDoJogo } from "@/components/match/views";
 import { VisaoGeral } from "@/components/match/VisaoGeral";
 import { Adversario } from "@/components/match/Adversario";
 import { Analise } from "@/components/match/Analise";
-import type { GameFormat } from "@/lib/training";
+import { FORMAT_LABEL, teamFormat, type GameFormat } from "@/lib/training";
 import { LiveMatch } from "@/components/match/LiveMatch";
-import { substituicoesVolantes } from "@/components/match/substituicoes";
+import { substituicoesVolantes, TITULARES_DO_FORMATO } from "@/components/match/substituicoes";
 import type { SheetRow } from "@/lib/callup-sheet";
 import {
   OUTCOME_LABEL,
@@ -1224,6 +1224,18 @@ type Linha = Pick<
    * abrir a ficha, reconstitui-se por aí. Ver `daFicha`.
    */
   substitui: string | null;
+  /**
+   * Com substituições ilimitadas: as vezes em campo que vieram do Ao vivo
+   * (entrou, saiu, entrou…). Voltam ao servidor tal como estão, e é ele que as
+   * soma. Escrever os minutos à mão apaga-as.
+   */
+  stints: number[];
+  /**
+   * Com substituições ilimitadas: os minutos que o treinador escreveu, ou os
+   * gravados. Nulo numa linha nova: aí vale a conta de sempre (titular joga
+   * tudo, suplente fica por contar).
+   */
+  minutosAMao: number | null;
 };
 
 /** Titular e suplente utilizado entram na ficha; quem não jogou não tem linha. */
@@ -1257,6 +1269,25 @@ function incoerencias(l: Linha): string[] {
   const ate = l.offMinute ?? Infinity;
   const fora: string[] = [];
 
+  /*
+   * Com as vezes em campo do Ao vivo, cada minuto tem de cair numa delas. A
+   * última aberta acaba no vermelho, ou no fim.
+   */
+  if (l.stints.length > 0) {
+    const vezes = vezesDaLinha(l);
+    for (const [nome, minutos] of [
+      ["golo", l.tallyAt],
+      ["assistência", l.assistsAt],
+      ["amarelo", l.yellowAt],
+      ["vermelho", l.redAt == null ? [] : [l.redAt]],
+    ] as [string, number[]][]) {
+      for (const m of minutos) {
+        if (!vezes.some(([a, b]) => m >= a && m <= (b ?? Infinity))) fora.push(`${nome} ao ${m}′, mas não estava em campo.`);
+      }
+    }
+    return fora;
+  }
+
   if (l.onMinute != null && l.offMinute != null && l.offMinute < l.onMinute) {
     fora.push(`Saiu ao ${l.offMinute}′, antes de ter entrado (${l.onMinute}′).`);
   }
@@ -1274,6 +1305,27 @@ function incoerencias(l: Linha): string[] {
   }
 
   return fora;
+}
+
+/**
+ * As vezes em campo de uma linha, aos pares [entrou, saiu]. A última aberta
+ * acaba no vermelho, se houve, ou no fim (nulo). Gémeo de `intervalosEmCampo`
+ * no servidor.
+ */
+function vezesDaLinha(l: Pick<Linha, "stints" | "redAt" | "yellowCards" | "yellowAt">): [number, number | null][] {
+  const vezes: [number, number | null][] = [];
+  for (let i = 0; i < l.stints.length; i += 2) vezes.push([l.stints[i], i + 1 < l.stints.length ? l.stints[i + 1] : minutoDaExpulsao(l)]);
+  return vezes;
+}
+
+/**
+ * O minuto da expulsão: o do vermelho, ou o do segundo amarelo. Gémeo de
+ * `minutoDaExpulsao` no servidor (minutos-do-jogo.ts).
+ */
+function minutoDaExpulsao(l: Pick<Linha, "redAt" | "yellowCards" | "yellowAt">): number | null {
+  if (l.redAt != null) return l.redAt;
+  const amarelos = [...l.yellowAt].sort((a, b) => a - b);
+  return l.yellowCards >= 2 && amarelos.length >= 2 ? amarelos[1] : null;
 }
 
 /**
@@ -1304,6 +1356,8 @@ function linhaDe(s: SquadRow): Linha {
     redAt: s.redAt,
     tallyAt: s.tallyAt,
     assistsAt: s.assistsAt,
+    stints: s.stints ?? [],
+    minutosAMao: s.played ? s.minutes : null,
   };
 }
 
@@ -1333,8 +1387,8 @@ function linhaDe(s: SquadRow): Linha {
 function minutosDerivados(l: Linha, duracao: number, tempo: TempoDoJogo = SEM_ADICIONAL): number | null {
   const entrada = l.papel === "titular" ? 0 : l.onMinute;
   if (entrada == null) return null;
-  // Um expulso sai ao minuto do vermelho.
-  const sai = l.offMinute ?? l.redAt ?? null;
+  // Um expulso sai ao minuto do vermelho, ou do segundo amarelo.
+  const sai = l.offMinute ?? minutoDaExpulsao(l);
   const prolongamento = tempo.prolongamento ?? [];
   let minutos = (sai ?? duracao + prolongamento.reduce((n, m) => n + m, 0)) - entrada;
   /*
@@ -1666,13 +1720,17 @@ function SheetPanel({ match, mayRecord, onSaved }: { match: Match; mayRecord: bo
    * Com substituições limitadas (o futebol de 11) são poucas e contam-se: para
    * um entrar, um tem de sair, e a ficha pergunta por quem e a que minuto. Com
    * substituições ilimitadas (o futsal, o basquetebol, e o futebol de formação
-   * onde a associação as permite) entra-se e sai-se a toda a hora: diz-se só
-   * quem foi titular e quem entrou, e não se contam minutos. É da equipa
-   * (`Team.unlimitedSubs`), com a modalidade por recurso num servidor antigo.
+   * onde a associação as permite) entra-se e sai-se a toda a hora: diz-se
+   * quem foi titular e quem entrou, e os minutos somam cada vez em campo. Vêm
+   * do Ao vivo; sem ele, escrevem-se à mão. É da equipa (`Team.unlimitedSubs`),
+   * com a modalidade por recurso num servidor antigo.
    */
   const codigo = sportById(match.sportId)?.code;
   const rotativo = substituicoesVolantes(match.unlimitedSubs, codigo);
   const comSubstituicoes = !rotativo && Boolean(regras?.addedTime);
+  /** Os minutos que a linha mostra e compara. Com volantes, os escritos ou gravados primeiro. */
+  const minutosDaLinha = (l: Linha): number | null =>
+    rotativo && l.minutosAMao != null ? l.minutosAMao : minutosDerivados(l, duracao, tempo);
   const nomeDe = (id: string) => match.squad.find((s) => s.athleteId === id)?.name ?? "Atleta";
 
   /**
@@ -1736,6 +1794,20 @@ function SheetPanel({ match, mayRecord, onSaved }: { match: Match; mayRecord: bo
     if (excedeMarcador) erros.push(excedeMarcador);
     for (const l of emCampo) for (const p of incoerencias(l)) erros.push(`${nomeDe(l.athleteId)}: ${p}`);
 
+    /*
+     * Quantos foram titulares, contra o formato do jogo. Aviso e não erro: o
+     * formato pode ser só o provável da equipa (sem Pré-jogo), e há jogos de
+     * formação que começam com menos.
+     */
+    if (emCampo.length > 0) {
+      const formato = (match.plan?.pitch ?? teamFormat(match.teamId)) as GameFormat;
+      const esperados = TITULARES_DO_FORMATO[formato];
+      if (titulares === 0) avisos.push("Ninguém está marcado como titular.");
+      else if (esperados && titulares !== esperados) {
+        avisos.push(`No ${(FORMAT_LABEL[formato] ?? "jogo").toLowerCase()} começam ${esperados}, e a ficha tem ${titulares} ${titulares === 1 ? "titular" : "titulares"}.`);
+      }
+    }
+
     if (comSubstituicoes) {
       const saidas = new Map<string, string>();
       for (const l of emCampo.filter((e) => e.papel === "entrou")) {
@@ -1791,7 +1863,8 @@ function SheetPanel({ match, mayRecord, onSaved }: { match: Match; mayRecord: bo
           // ficha antiga com um número à mão que discorda da entrada e da saída
           // acende o Gravar, em vez de ficar por corrigir para sempre. Um
           // suplente sem entrada vale zero dos dois lados — ver `semEntrada`.
-          (minutosDerivados(l, duracao, tempo) ?? 0) !== s.minutes ||
+          (minutosDaLinha(l) ?? 0) !== s.minutes ||
+          l.stints.join() !== (s.stints ?? []).join() ||
           l.tally !== s.tally ||
           l.assists !== s.assists ||
           l.yellowCards !== s.yellowCards ||
@@ -1806,7 +1879,7 @@ function SheetPanel({ match, mayRecord, onSaved }: { match: Match; mayRecord: bo
           l.assistsAt.join() !== s.assistsAt.join()
         );
       }),
-    [linhas, match.squad, duracao, tempo],
+    [linhas, match.squad, duracao, tempo, rotativo],
   );
 
   async function gravar(mesmoAssim = false) {
@@ -1823,9 +1896,19 @@ function SheetPanel({ match, mayRecord, onSaved }: { match: Match; mayRecord: bo
           match.id,
           emCampo.map((l) => ({
             athleteId: l.athleteId,
-            // Os minutos vêm sempre da conta. Um suplente sem minuto de entrada
-            // vai a zero, e não a um palpite — o servidor faz a mesma conta.
-            minutes: minutosDerivados(l, duracao, tempo) ?? 0,
+            /*
+             * Os minutos vêm da conta, e o servidor fá-la de novo. Um suplente
+             * sem minuto de entrada vai a zero, e não a um palpite. Com volantes
+             * vão as vezes em campo do Ao vivo, ou os minutos escritos à mão, ou
+             * nada (titular joga tudo).
+             */
+            ...(rotativo
+              ? l.stints.length > 0
+                ? { stints: l.stints }
+                : l.minutosAMao != null
+                  ? { minutes: l.minutosAMao }
+                  : {}
+              : { minutes: minutosDerivados(l, duracao, tempo) ?? 0 }),
             started: l.papel === "titular",
             tally: l.tally,
             assists: l.assists,
@@ -1909,6 +1992,7 @@ function SheetPanel({ match, mayRecord, onSaved }: { match: Match; mayRecord: bo
                 golo={golo}
                 duracao={duracao}
                 tempo={tempo}
+                minutos={minutosDaLinha(linhaDo(s))}
                 mayRecord={mayRecord}
                 semCartoes={semCartoes}
                 rotativo={rotativo}
@@ -2066,6 +2150,7 @@ function SheetRow({
   golo,
   duracao,
   tempo,
+  minutos,
   mayRecord,
   semCartoes,
   rotativo,
@@ -2079,6 +2164,8 @@ function SheetRow({
   golo: string;
   duracao: number;
   tempo: TempoDoJogo;
+  /** Os minutos da linha, já contados. Ver `minutosDaLinha`. */
+  minutos: number | null;
   mayRecord: boolean;
   semCartoes: boolean;
   rotativo: boolean;
@@ -2102,11 +2189,13 @@ function SheetRow({
         papel,
         minutes: 0, tally: 0, assists: 0, yellowCards: 0, redCard: false,
         onMinute: null, offMinute: null, yellowAt: [], redAt: null, tallyAt: [], assistsAt: [],
+        stints: [], minutosAMao: null,
       });
       return;
     }
-    // Os minutos já não se guardam aqui: saem de `minutosDerivados`.
-    onChange({ papel, ...(papel === "titular" ? { onMinute: null } : {}) });
+    // Os minutos já não se guardam aqui: saem de `minutosDerivados`. As vezes
+    // em campo do Ao vivo deixam de bater certo com o papel novo e caem.
+    onChange({ papel, ...(papel === "titular" ? { onMinute: null } : {}), ...(papel !== linha.papel ? { stints: [] } : {}) });
   }
 
   return (
@@ -2119,11 +2208,26 @@ function SheetRow({
       golo={golo}
       // A ficha deixa escrever minutos até ao fim do jogo, prolongamento incluído.
       duracao={duracao + (tempo.prolongamento ?? []).reduce((n, m) => n + m, 0)}
-      minutos={minutosDerivados(linha, duracao, tempo)}
+      minutos={minutos}
       problemas={problemas}
       podeEditar={mayRecord}
       semCartoes={semCartoes}
       rotativo={rotativo}
+      /*
+       * Com volantes, os minutos escrevem-se aqui quando não vieram do Ao vivo,
+       * e corrigem-se quando vieram (as vezes em campo caem). Vazio é a conta de
+       * sempre: o titular joga tudo.
+       */
+      minutosAMao={
+        rotativo && mayRecord
+          ? {
+              valor: linha.minutosAMao,
+              sugestao: minutosDerivados(linha, duracao, tempo),
+              vezes: linha.stints.length > 0 ? vezesDaLinha(linha) : null,
+              onChange: (n) => onChange({ minutosAMao: n, stints: [] }),
+            }
+          : undefined
+      }
       substituicao={substituicao}
       onPapel={escolher}
       onChange={onChange}

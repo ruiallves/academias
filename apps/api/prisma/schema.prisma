@@ -2812,6 +2812,12 @@ model MatchAppearance {
   /// Ao minuto de quê saiu. Nulo em quem ficou até ao fim — ou em quem jogou sem
   /// detalhe registado. `minutes` continua a valer nesse caso.
   offMinute Int?
+  /// Com substituições ilimitadas (`Team.unlimitedSubs`): os minutos em que
+  /// entrou e saiu, alternados (entrou, saiu, entrou, saiu…). Um titular começa
+  /// em 0. Um número ímpar quer dizer que acabou o jogo em campo (ou até ao
+  /// vermelho). `minutes` é a soma dos intervalos. Vazio quando ninguém os
+  /// registou: aí vale `minutes`, escrito à mão no Pós-jogo.
+  stints    Int[] @default([])
   /// Golos no futebol, pontos nos restantes — o substantivo vem da modalidade.
   tally     Int  @default(0)
   /// Assistências. Zero na maior parte das modalidades, e por isso o ecrã só as

@@ -24,7 +24,8 @@ import {
   type Momento,
 } from "./relogio";
 import { Cartao } from "./ui";
-import { motivoParaNaoEntrar, percorrer, substituicoesVolantes } from "./substituicoes";
+import { motivoParaNaoEntrar, percorrer, problemaNosTitulares, substituicoesVolantes, TITULARES_DO_FORMATO, vezesEmCampo } from "./substituicoes";
+import { FORMAT_LABEL, teamFormat, type GameFormat } from "@/lib/training";
 
 /**
  * O jogo ao vivo: um relógio e quatro botões.
@@ -152,6 +153,8 @@ export function LiveMatch({ match, mayRecord, onSaved }: { match: MatchDetail; m
   const volantes = substituicoesVolantes(match.unlimitedSubs, profile?.code);
   /** No futsal, a equipa com um expulso completa-se com uma entrada sem saída. */
   const completaExpulsos = profile?.code === "futsal";
+  /** O formato do jogo: o do Pré-jogo, ou o provável da equipa. Diz quantos começam. */
+  const formato = (match.plan?.pitch ?? teamFormat(match.teamId)) as GameFormat;
 
   const [estado, setEstado] = useState<Estado>(
     () =>
@@ -245,19 +248,31 @@ export function LiveMatch({ match, mayRecord, onSaved }: { match: MatchDetail; m
    * ficou sem sentido depois de se apagar outra, ou de se acertar um minuto).
    * As regras estão em `substituicoes.ts`.
    */
-  const situacao = useMemo(() => {
-    const porOrdem = estado.acontecimentos
-      .map((a, i) => ({ a, i }))
-      .sort((x, y) => ordem(x.a) - ordem(y.a) || x.i - y.i)
-      .map((x) => x.a);
-    return percorrer(estado.onze, porOrdem, { volantes, completaExpulsos }, (id) => porId.get(id)?.curto ?? "Atleta");
-  }, [estado.onze, estado.acontecimentos, volantes, completaExpulsos, porId]);
+  const porOrdem = useMemo(
+    () =>
+      estado.acontecimentos
+        .map((a, i) => ({ a, i }))
+        .sort((x, y) => ordem(x.a) - ordem(y.a) || x.i - y.i)
+        .map((x) => x.a),
+    [estado.acontecimentos],
+  );
+  const situacao = useMemo(
+    () => percorrer(estado.onze, porOrdem, { volantes, completaExpulsos }, (id) => porId.get(id)?.curto ?? "Atleta"),
+    [estado.onze, porOrdem, volantes, completaExpulsos, porId],
+  );
   const emCampo = situacao.emCampo;
   const jaJogaram = situacao.jogaram;
   /* Quem pode entrar agora: não está em campo, não foi expulso, e (sem volantes) ainda não jogou. */
   const noBanco = jogadores.filter(
     (j) => j.estado !== "baixa" && j.estado !== "recusou" && motivoParaNaoEntrar(j.id, situacao, { volantes, completaExpulsos }) === null,
   );
+  /*
+   * Quantos começam. A mais trava o "Começar"; a menos deixa começar, a dizer
+   * com quantos. Depois, cada entrada tem uma saída: ficam sempre esses em
+   * campo, menos os expulsos.
+   */
+  const titularesEsperados = TITULARES_DO_FORMATO[formato];
+  const problemaDoOnze = problemaNosTitulares(estado.onze.length, formato, (FORMAT_LABEL[formato] ?? "jogo").toLowerCase());
   /** O que não bate certo, por acontecimento. */
   const problemas = new Map<string, string[]>();
   for (const p of situacao.problemas) problemas.set(p.id, [...(problemas.get(p.id) ?? []), p.mensagem]);
@@ -425,13 +440,14 @@ export function LiveMatch({ match, mayRecord, onSaved }: { match: MatchDetail; m
       // O fim do jogo, com o prolongamento se houve.
       const ultima = totalDePartes(regras);
       const fim = inicioDa(regras, ultima) + duracaoDa(regras, ultima);
+      /*
+       * Com substituições volantes, um jogador entra e sai várias vezes: vão as
+       * vezes em campo (entrou, saiu, entrou…) e o servidor soma-as. A entrada
+       * e a saída únicas ficam para as equipas sem volantes.
+       */
+      const vezes = volantes ? vezesEmCampo(estado.onze, porOrdem) : null;
       const linhas = [...jaJogaram].map((id) => {
         const meus = estado.acontecimentos.filter((a) => a.atleta === id);
-        /*
-         * Com substituições volantes, um jogador entra e sai várias vezes e a
-         * ficha guarda uma entrada e uma saída: não vão minutos de entrada nem de
-         * saída, como no Pós-jogo (não se contam minutos nestas equipas).
-         */
         const entrou = volantes ? undefined : estado.acontecimentos.find((a) => a.tipo === "sub" && a.entra === id);
         const saiu = volantes ? undefined : meus.find((a) => a.tipo === "sub");
         const vermelho = meus.find((a) => a.tipo === "vermelho");
@@ -451,6 +467,7 @@ export function LiveMatch({ match, mayRecord, onSaved }: { match: MatchDetail; m
           redCard: Boolean(vermelho),
           ...(entrou ? { onMinute: entrou.minuto } : {}),
           ...(saiu ? { offMinute: saiu.minuto } : {}),
+          ...(vezes?.get(id)?.length ? { stints: vezes.get(id) } : {}),
           ...(amarelos.length ? { yellowAt: amarelos.slice(0, 2) } : {}),
           ...(vermelho ? { redAt: vermelho.minuto } : {}),
           ...(golos.length && !pontos ? { tallyAt: golos.slice(0, 12) } : {}),
@@ -594,9 +611,16 @@ export function LiveMatch({ match, mayRecord, onSaved }: { match: MatchDetail; m
         {/* Os comandos do relógio, conforme a fase. */}
         <div className="mt-3 flex flex-wrap justify-center gap-2">
           {estado.fase === "antes" && (
-            <BotaoRelogio onClick={comecar} principal>
-              <Play className="size-4" strokeWidth={2} /> Começar o jogo
-            </BotaoRelogio>
+            <>
+              <BotaoRelogio onClick={comecar} principal disabled={Boolean(problemaDoOnze?.erro)}>
+                <Play className="size-4" strokeWidth={2} /> {problemaDoOnze && !problemaDoOnze.erro ? `Começar com ${estado.onze.length}` : "Começar o jogo"}
+              </BotaoRelogio>
+              {problemaDoOnze && (
+                <p className={cx("w-full text-meta", problemaDoOnze.erro ? "text-risk" : "text-warn")} role={problemaDoOnze.erro ? "alert" : undefined}>
+                  {problemaDoOnze.mensagem}
+                </p>
+              )}
+            </>
           )}
           {estado.fase === "a-jogar" && (
             <>
@@ -835,7 +859,10 @@ export function LiveMatch({ match, mayRecord, onSaved }: { match: MatchDetail; m
       {!comecou && (
         <section>
           <div>
-            <Rotulo>Quem começa · {estado.onze.length}</Rotulo>
+            <Rotulo>
+              Quem começa · {estado.onze.length}
+              {titularesEsperados ? ` de ${titularesEsperados}` : ""}
+            </Rotulo>
             <p className="mt-0.5 text-meta text-ink-3">{titularesDoPlano.length > 0 ? "Vem da equipa inicial do Pré-jogo. Acerta se mudou à última hora." : "Escolhe os titulares."}</p>
           </div>
           <ul className="mt-2 grid gap-1.5 sm:grid-cols-2">
@@ -1042,12 +1069,13 @@ function Rotulo({ children, className }: { children: React.ReactNode; className?
   return <span className={cx("text-meta font-semibold text-ink", className)}>{children}</span>;
 }
 
-function BotaoRelogio({ children, onClick, principal }: { children: React.ReactNode; onClick: () => void; principal?: boolean }) {
+function BotaoRelogio({ children, onClick, principal, disabled }: { children: React.ReactNode; onClick: () => void; principal?: boolean; disabled?: boolean }) {
   return (
     <button
       type="button"
       onClick={onClick}
-      className={cx("inline-flex h-11 items-center gap-2 rounded-[10px] px-5 text-body font-semibold", principal ? "bg-ink text-surface" : "border border-line text-ink hover:border-ink")}
+      disabled={disabled}
+      className={cx("inline-flex h-11 items-center gap-2 rounded-[10px] px-5 text-body font-semibold disabled:opacity-40", principal ? "bg-ink text-surface" : "border border-line text-ink hover:border-ink")}
     >
       {children}
     </button>

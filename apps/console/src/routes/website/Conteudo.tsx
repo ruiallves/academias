@@ -46,7 +46,13 @@ export function Equipas() {
   const ligada = (id: string) => site.equipas[id]?.visivel === true;
   const mudar = (id: string) => {
     const nova = !ligada(id);
-    void guardarConfig({ equipas: { ...site.equipas, [id]: { ...site.equipas[id], visivel: nova, plantel: nova } } });
+    // Desligar a equipa desliga também as fotografias: voltar a ligá-la não as publica sem se pedir.
+    void guardarConfig({ equipas: { ...site.equipas, [id]: { ...site.equipas[id], visivel: nova, plantel: nova, ...(nova ? {} : { fotos: false }) } } });
+  };
+  /* As fotografias dos atletas no plantel: só numa equipa que está no site. */
+  const comFotos = (id: string) => ligada(id) && site.equipas[id]?.fotos === true;
+  const mudarFotos = (id: string) => {
+    void guardarConfig({ equipas: { ...site.equipas, [id]: { ...site.equipas[id], visivel: true, plantel: true, fotos: !comFotos(id) } } });
   };
 
   const equipas = [...store.teams].sort((a, b) => b.maxAge - a.maxAge || a.name.localeCompare(b.name));
@@ -57,21 +63,29 @@ export function Equipas() {
         Uma equipa no site mostra a equipa técnica, o plantel (nome, número e posição de cada atleta), os jogos e os resultados. Desligada,
         não aparece nada dela. Nos escalões de formação, liga só com o consentimento das famílias.
       </p>
+      <p className="mb-4 rounded-[10px] bg-sunken/60 px-3.5 py-2.5 text-meta leading-relaxed text-ink-2">
+        "Fotos dos atletas" mostra no plantel a fotografia de cada atleta, a da ficha dele. Liga só com a autorização de imagem das famílias. Desligada, ou num
+        atleta sem fotografia, aparece uma imagem padrão com o número.
+      </p>
       <div className="overflow-hidden rounded-[12px] border border-line bg-surface">
-        <div className="grid grid-cols-[96px_minmax(0,1fr)_88px] items-center gap-3 border-b border-line bg-sunken/40 px-4 py-2 text-meta font-medium text-ink-3">
+        <div className="grid grid-cols-[96px_minmax(0,1fr)_72px_88px] items-center gap-3 border-b border-line bg-sunken/40 px-4 py-2 text-meta font-medium text-ink-3">
           <span>Fotografia</span>
           <span>Equipa</span>
           <span className="text-center">No site</span>
+          <span className="text-center leading-tight">Fotos dos atletas</span>
         </div>
         <ul>
           {equipas.map((t) => {
             const on = ligada(t.id);
             return (
-              <li key={t.id} className="grid grid-cols-[96px_minmax(0,1fr)_88px] items-center gap-3 border-b border-line px-4 py-3 last:border-b-0">
+              <li key={t.id} className="grid grid-cols-[96px_minmax(0,1fr)_72px_88px] items-center gap-3 border-b border-line px-4 py-3 last:border-b-0">
                 <FotoDaEquipa id={t.id} nome={t.name} />
                 <span className={cx("truncate text-body", on ? "font-medium text-ink" : "text-ink-3")}>{t.name}</span>
                 <span className="flex justify-center">
                   <Interruptor ligado={on} onChange={() => mudar(t.id)} label={`Mostrar ${t.name} no site`} />
+                </span>
+                <span className="flex justify-center">
+                  <Interruptor ligado={comFotos(t.id)} onChange={() => mudarFotos(t.id)} disabled={!on} label={`Mostrar as fotografias dos atletas de ${t.name} no site`} />
                 </span>
               </li>
             );

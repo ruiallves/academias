@@ -181,7 +181,16 @@ export type Equipa = {
    * O plantel vai com a equipa: aparece quando o clube liga a equipa no site, e os menores só com
    * consentimento. Vazio por omissão.
    */
-  roster: { name: string; number?: number; position?: string }[];
+  roster: {
+    name: string;
+    number?: number;
+    position?: string;
+    /**
+     * A fotografia do atleta, quando o clube ligou "Fotos dos atletas" nesta
+     * equipa e o atleta tem foto. Sem ela, o site mostra a imagem padrão.
+     */
+    photo?: string;
+  }[];
   competition?: string;
 };
 

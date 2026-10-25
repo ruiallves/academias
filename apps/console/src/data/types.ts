@@ -192,7 +192,7 @@ export type Team = {
   maxCallUps?: number;
   /**
    * Substituições ilimitadas (volantes): quem sai pode voltar a entrar. Ligada,
-   * o "Ao vivo" deixa voltar a entrar e a ficha não conta minutos. Ausente numa
+   * o "Ao vivo" deixa voltar a entrar e os minutos somam cada vez em campo. Ausente numa
    * resposta antiga: vale a da modalidade (ver `substituicoesVolantes`).
    */
   unlimitedSubs?: boolean;

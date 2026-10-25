@@ -109,7 +109,13 @@ export type Inicio = { seccoes: SeccaoInicio[]; banner: Banner };
 export const BANNER_VAZIO: Banner = { titulo: "", texto: "", imagem: "", botao: "", url: "" };
 
 /** O que cada equipa leva no site. `foto` vazia: a de omissão da modalidade. */
-export type EquipaNoSite = { visivel: boolean; plantel: boolean; foto: string };
+/**
+ * `fotos`: as fotografias dos atletas no plantel do site. Desligadas por
+ * omissão, e só com a equipa no site: são fotografias de menores, e quem as
+ * liga é o clube, com a autorização das famílias (decisão do Rui, 25/10/2026).
+ * Desligadas, o plantel mostra a imagem padrão.
+ */
+export type EquipaNoSite = { visivel: boolean; plantel: boolean; foto: string; fotos: boolean };
 
 export const LADOS = ["norte", "sul", "nascente", "poente", "noroeste", "nordeste", "sudoeste", "sudeste"] as const;
 export type Lado = (typeof LADOS)[number];
@@ -273,7 +279,7 @@ export function equipasValidas(v: unknown): Record<string, EquipaNoSite> {
     if (!id || id.length > 60 || !e || typeof e !== "object") continue;
     const x = e as Record<string, unknown>;
     const visivel = x.visivel === true;
-    out[id] = { visivel, plantel: visivel, foto: urlSegura(x.foto) };
+    out[id] = { visivel, plantel: visivel, foto: urlSegura(x.foto), fotos: visivel && x.fotos === true };
   }
   return out;
 }
