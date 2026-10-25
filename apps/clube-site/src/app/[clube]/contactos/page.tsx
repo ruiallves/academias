@@ -5,6 +5,7 @@ import { emDemonstracao } from "@/lib/modo";
 import { CabecalhoPagina } from "@/componentes/Seccao";
 import { Redes } from "@/componentes/Redes";
 import { FormularioContacto } from "./FormularioContacto";
+import { Mapa } from "./Mapa";
 
 export const revalidate = 60;
 
@@ -64,15 +65,7 @@ export default async function Contactos({ params, searchParams }: Props) {
               <Redes social={clube.social} shortName={clube.shortName} />
             </div>
           </div>
-          <div className="overflow-hidden rounded-card border border-line bg-sunken">
-            <iframe
-              title={`Mapa: ${morada}`}
-              src={`https://www.google.com/maps?q=${encodeURIComponent(morada)}&output=embed`}
-              className="h-72 w-full"
-              loading="lazy"
-              referrerPolicy="no-referrer-when-downgrade"
-            />
-          </div>
+          {morada && <Mapa morada={morada} />}
         </div>
 
         <section data-reveal>

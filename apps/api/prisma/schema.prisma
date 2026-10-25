@@ -122,6 +122,21 @@ model Academy {
   /// fica em `Payment.surchargeCents`.
   feesOnPayer Boolean @default(false)
 
+  /// ## A faturação das vendas do site
+  ///
+  /// Quem fatura uma venda do site (um bilhete pago, uma encomenda da loja) é
+  /// o clube, no programa certificado dele. Sem isso a venda não se pode fazer:
+  /// a bilheteira só vende bilhetes a 0 € e a loja fica em catálogo, mesmo com
+  /// os pagamentos ligados. Ver `common/vendas-online.ts`.
+  ///
+  /// Marca-se no painel da plataforma, na ficha do clube, depois de confirmar
+  /// com ele que o programa está pronto: `invoicingSystem` é o programa
+  /// ("InvoiceXpress", "Moloni", ou o nome de outro) e `invoicingConfirmedAt`
+  /// quando ficou confirmado. Nulo = sem faturação, não vende. Quando houver
+  /// ligação por API ao programa, é ela que preenche estes dois.
+  invoicingSystem      String?
+  invoicingConfirmedAt DateTime?
+
   /// ## O canal euPago do clube — a arquitectura do "split"
   ///
   /// O dinheiro das mensalidades é **do clube**, a plataforma não fica com
@@ -1253,6 +1268,19 @@ model Team {
   /// Nulo numa equipa criada antes de isto existir ou numa modalidade sem
   /// jogos; aí o servidor cai no valor da modalidade (`Sport.matchMinutes`).
   matchMinutes Int?
+
+  /// Substituições ilimitadas (volantes): quem sai pode voltar a entrar, quantas
+  /// vezes for preciso.
+  ///
+  /// Por equipa e não por modalidade: no futsal e no basquetebol é a regra, mas
+  /// no futebol depende do escalão e da associação (o futebol de 7 e de 9 da
+  /// formação costuma permitir, o de 11 não). Pergunta-se ao criar e ao editar a
+  /// equipa; uma equipa nova de futsal ou basquetebol nasce com ela ligada.
+  ///
+  /// Ligada, o "Ao vivo" deixa voltar a entrar quem saiu e a ficha não conta
+  /// minutos (um jogador tem várias entradas e saídas, e a ficha guarda uma de
+  /// cada). Ver `components/match/substituicoes.ts` na consola.
+  unlimitedSubs Boolean @default(false)
 
   /// Os meses em que este escalão paga mensalidade (1–12), quando o clube cobra
   /// por escalão (`Academy.billingByTeam`). Vazio = segue os meses do clube

@@ -36,6 +36,8 @@ export async function GET() {
     ...produtos.map((p) => ({ loc: `/loja/${p.slug}` })),
     { loc: "/bilheteira" },
     { loc: "/privacidade" },
+    { loc: "/condicoes-de-venda" },
+    { loc: "/termos-do-socio" },
   ];
 
   const xml =

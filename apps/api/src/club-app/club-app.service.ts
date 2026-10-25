@@ -28,6 +28,8 @@ import { StorageService } from "../storage/storage.service";
 import { reclamarFichaPelaConta } from "../members/member-account-link";
 import { fichaDeSocioDaConta } from "../members/socio-menor";
 import { reclamarAtletaPelaConta } from "../academy/athlete-account-link";
+import { SELECT_VENDAS, tiposQueSeVendem, vendeOnline } from "../common/vendas-online";
+import { tiposValidos } from "../site/site.tipos";
 import { LegalService } from "../legal/legal.service";
 import { SuspensaoService } from "../auth/suspensao.service";
 
@@ -535,7 +537,7 @@ export class ClubAppService {
     /* ---- 2. O clube, e a fotografia em paralelo -------------------------- */
     const [clube, photoUrl] = await Promise.all([
       this.prisma.runAs(academyId, async (db) => {
-        const [jogosMarcados, noticias, sondagens, votos] = await Promise.all([
+        const [jogosMarcados, noticias, sondagens, votos, vendas] = await Promise.all([
           /*
            * Todos os jogos por disputar, de todos os escalões — o sócio segue o
            * clube inteiro, não só a equipa do filho (essa é a app da família).
@@ -552,7 +554,7 @@ export class ClubAppService {
               team: { select: { name: true, maxAge: true } },
               competition: { select: { label: true } },
               // Se a bilheteira está aberta: a app mostra "Bilhetes" no jogo. O resto pede-se ao abrir.
-              siteTickets: { select: { open: true } },
+              siteTickets: { select: { open: true, types: true } },
             },
           }),
           db.announcement.findMany({
@@ -570,6 +572,7 @@ export class ClubAppService {
             },
           }),
           db.pollVote.findMany({ where: { memberId: member.id }, select: { pollId: true, optionId: true } }),
+          db.academy.findFirst({ where: { id: academyId }, select: SELECT_VENDAS }),
         ]);
 
         /*
@@ -614,7 +617,8 @@ export class ClubAppService {
             teamMaxAge: m.team.maxAge,
             competition: m.competition?.label ?? null,
             /** Há bilhetes à venda (a venda está ligada). Ver `/api/socio/bilhetes/venda/:id` para o resto. */
-            bilheteira: m.siteTickets?.open === true,
+            // Aberta e com bilhetes que se vendem: sem faturação, só os de 0 € (ver `common/vendas-online.ts`).
+            bilheteira: m.siteTickets?.open === true && tiposQueSeVendem(tiposValidos(m.siteTickets.types), vendeOnline(vendas)).length > 0,
           }));
 
         return {

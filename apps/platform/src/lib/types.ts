@@ -173,10 +173,26 @@ export type Plan = {
 /** A euPago de um clube, para o painel. Só se está preenchida — os valores nunca vêm. */
 export type EupagoDoClube = { apiKey: boolean; webhookSecret: boolean; webhookUrl: string };
 
+/**
+ * A faturação das vendas do site de um clube, e o que falta para ele vender
+ * (bilheteira paga e loja). Ver `FaturacaoDoClubePanel`.
+ */
+export type FaturacaoDoClube = {
+  /** O programa certificado do clube ("InvoiceXpress", "Moloni", ...). Nulo = sem faturação. */
+  programa: string | null;
+  /** Quando ficou marcada. */
+  desde: string | null;
+  passos: { site: boolean; eupago: boolean; pagamentos: boolean; faturacao: boolean };
+  /** Vende no site: as quatro ligadas. */
+  vende: boolean;
+};
+
 export type AcademyDetail = {
   id: string;
   storage: EspacoDoClube;
   eupago: EupagoDoClube;
+  /** Ausente numa API anterior a 25/10/2026. */
+  faturacao?: FaturacaoDoClube;
   slug: string;
   name: string;
   /** Como o clube aparece na app e nos emails. */

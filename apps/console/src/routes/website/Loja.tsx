@@ -7,7 +7,7 @@ import { Dialog, DialogField, dialogInputClass } from "@/components/Dialog";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { Interruptor } from "@/components/definicoes/ui";
 import { useStore } from "@/lib/store";
-import { apagarProduto, guardarConfig, guardarProduto, useSite, type LojaConfig, type ProdutoDoSite } from "@/lib/website";
+import { apagarProduto, guardarConfig, guardarProduto, motivoSemVendas, useSite, type LojaConfig, type ProdutoDoSite } from "@/lib/website";
 import { mostrarOk } from "@/lib/avisos";
 import { CampoDeImagem } from "./CampoDeImagem";
 import { Encomendas } from "./Encomendas";
@@ -38,7 +38,8 @@ export function Loja() {
     setParams(p);
   };
 
-  const vende = site.pagamentosLigados && (site.loja.levantamento.ativo || site.loja.envio.ativo);
+  const semVendas = motivoSemVendas(site);
+  const vende = !semVendas && (site.loja.levantamento.ativo || site.loja.envio.ativo);
 
   return (
     <div className="space-y-6">
@@ -58,9 +59,7 @@ export function Loja() {
           <ShoppingBag className="mt-0.5 size-4 shrink-0" strokeWidth={1.75} />
           <span>
             <strong className="font-semibold">A loja está em catálogo: ainda não vende online.</strong>{" "}
-            {!site.pagamentosLigados
-              ? "Precisa dos pagamentos do clube ligados (as chaves da euPago, nas Definições). "
-              : "Precisa de uma forma de entrega ligada, na vista Entrega. "}
+            {semVendas ? `${semVendas} ` : "Precisa de uma forma de entrega ligada, na vista Entrega. "}
             Até lá, os botões do site levam aos contactos.
           </span>
         </p>

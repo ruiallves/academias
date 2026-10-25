@@ -128,6 +128,14 @@ export const CLUBE: Clube = {
     levantamento: { local: "Sede do clube, junto ao estádio", nota: "Nos dias de treino e de jogo, das 18h às 21h." },
     envio: { preco: 4.5, gratisAPartirDe: 60, nota: "Portugal continental, 3 a 5 dias úteis." },
   },
+  // Sem NIPC: um número inventado que passasse na conta podia ser o de alguém.
+  legal: {
+    ral: { nome: "Centro de Arbitragem de Conflitos de Consumo do Vale do Ave / Tribunal Arbitral", sigla: "TRIAVE", url: "https://www.triave.pt" },
+    termosSocio: ["A quota de sócio efetivo dá direito a voto na assembleia geral a partir de seis meses de inscrição."],
+    notaVenda: [],
+    notaPrivacidade: [],
+    vendeOnline: true,
+  },
   sponsors: [
     { name: "Curtumes do Ave" },
     { name: "Café Central" },

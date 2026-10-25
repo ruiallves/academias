@@ -288,6 +288,8 @@ export class MatchesService {
               // A duração de jogo deste escalão — é o que fecha os minutos de
               // quem jogou até ao fim. A da modalidade só como recurso.
               matchMinutes: true,
+              // Se quem sai pode voltar a entrar. Ver `Team.unlimitedSubs`.
+              unlimitedSubs: true,
               sport: { select: { matchMinutes: true } },
               // A equipa técnica da ficha da equipa — o que a folha usa quando
               // ninguém escalou uma equipa de trabalho para este jogo.
@@ -381,6 +383,8 @@ export class MatchesService {
         sportId: m.team.sportId,
         maxCallUps: m.team.maxCallUps,
         matchMinutes: duracaoDoJogo(m.team),
+        /** Substituições ilimitadas: o "Ao vivo" deixa voltar a entrar e a ficha não conta minutos. */
+        unlimitedSubs: m.team.unlimitedSubs,
         /** O tempo adicional por parte. Vazio se ninguém o registou. */
         addedMinutes: m.addedMinutes,
         /** Os minutos de cada parte do prolongamento. Vazio se não houve. */

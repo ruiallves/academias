@@ -143,7 +143,7 @@ export class BilheteiraService {
   }
 
   /** A forma pública da venda: o que o site e a app desenham. Sem dados de ninguém. */
-  private formaDaVenda(ctx: ContextoDoJogo, nomes: Map<string, string>, tiposVisiveis = ctx.tipos) {
+  private formaDaVenda(ctx: ContextoDoJogo, nomes: Map<string, string>, tiposVisiveis = ctx.aVenda) {
     const nomeDaBancada = (id: string | null) => ctx.recinto?.bancadas.find((b) => b.id === id)?.nome ?? null;
     return {
       jogo: { id: ctx.jogo.id, startsAt: ctx.jogo.startsAt.toISOString(), opponent: ctx.jogo.opponent, teamName: ctx.jogo.teamName, status: ctx.jogo.status, isHome: ctx.jogo.isHome },
@@ -178,7 +178,8 @@ export class BilheteiraService {
     const academyId = await this.clube(slug);
     return this.prisma.runAs(academyId, async (db) => {
       const ctx = await contextoDoJogo(db, academyId, matchId);
-      if (!ctx || !ctx.venda.open) throw new NotFoundException("Este jogo não tem bilhetes à venda.");
+      // Sem nada que se possa vender (um jogo só com preços pagos, num clube sem faturação), não há venda.
+      if (!ctx || !ctx.venda.open || ctx.aVenda.length === 0) throw new NotFoundException("Este jogo não tem bilhetes à venda.");
       return this.formaDaVenda(ctx, await this.tiersDoClube(db));
     });
   }
@@ -243,7 +244,7 @@ export class BilheteiraService {
 
     const r = await this.prisma.runAs(academyId, async (db) => {
       const ctx = await contextoDoJogo(db, academyId, matchId);
-      if (!ctx || !ctx.venda.open) throw new NotFoundException("Este jogo não tem bilhetes à venda.");
+      if (!ctx || !ctx.venda.open || ctx.aVenda.length === 0) throw new NotFoundException("Este jogo não tem bilhetes à venda.");
       const socio = await db.member.findFirst({
         where: { number: dto.numero },
         select: { id: true, birthdate: true, status: true, tierId: true },
@@ -252,7 +253,7 @@ export class BilheteiraService {
       const emDia = socio.status === "ACTIVE" && (await quotaDoSocioCobre(db, academyId, socio.id, ctx.jogo.startsAt));
       if (!emDia) return { falhou: false as const, emDia: false as const };
       const comprador: Comprador = { kind: "socio", memberId: socio.id, tierId: socio.tierId, jaTemBilheteDeSocio: await this.jaTemBilheteDeSocio(db, ctx, socio.id) };
-      return { falhou: false as const, emDia: true as const, memberId: socio.id, venda: this.formaDaVenda(ctx, await this.tiersDoClube(db), tiposPara(ctx.tipos, comprador)), jaTem: comprador.jaTemBilheteDeSocio };
+      return { falhou: false as const, emDia: true as const, memberId: socio.id, venda: this.formaDaVenda(ctx, await this.tiersDoClube(db), tiposPara(ctx.aVenda, comprador)), jaTem: comprador.jaTemBilheteDeSocio };
     });
 
     if (r.falhou) {
@@ -449,7 +450,7 @@ export class BilheteiraService {
         throw new BadRequestException("Há muitos lugares à espera de pagamento neste momento. Tenta outra vez daqui a alguns minutos.");
       }
 
-      const r = verificarPedido({ linhas: p.linhas, tipos: ctx.tipos, quem, venda: ctx.estado, livres: ctx.livres, livresNoJogo: ctx.livresNoJogo });
+      const r = verificarPedido({ linhas: p.linhas, tipos: ctx.aVenda, quem, venda: ctx.estado, livres: ctx.livres, livresNoJogo: ctx.livresNoJogo });
       if (!r.ok) throw new BadRequestException(r.erro);
 
       const gratis = r.totalCents === 0;
@@ -580,12 +581,12 @@ export class BilheteiraService {
     return this.prisma.runAs(eu.academyId, async (db) => {
       if (!(await siteIncluido(db, eu.academyId))) throw new NotFoundException();
       const ctx = await contextoDoJogo(db, eu.academyId, matchId);
-      if (!ctx || !ctx.venda.open) throw new NotFoundException("Este jogo não tem bilhetes à venda.");
+      if (!ctx || !ctx.venda.open || ctx.aVenda.length === 0) throw new NotFoundException("Este jogo não tem bilhetes à venda.");
       const socio = await db.member.findFirst({ where: { id: eu.memberId }, select: { tierId: true } });
       const quotaEmDia = await quotaDoSocioCobre(db, eu.academyId, eu.memberId, ctx.jogo.startsAt);
       const jaTem = await this.jaTemBilheteDeSocio(db, ctx, eu.memberId);
       const quem: Comprador = quotaEmDia ? { kind: "socio", memberId: eu.memberId, tierId: socio?.tierId ?? null, jaTemBilheteDeSocio: jaTem } : { kind: "publico" };
-      return { ...this.formaDaVenda(ctx, await this.tiersDoClube(db), tiposPara(ctx.tipos, quem)), quotaEmDia, jaTemBilheteDeSocio: jaTem };
+      return { ...this.formaDaVenda(ctx, await this.tiersDoClube(db), tiposPara(ctx.aVenda, quem)), quotaEmDia, jaTemBilheteDeSocio: jaTem };
     });
   }
 
@@ -683,7 +684,8 @@ export class BilheteiraService {
         }
       }
       return {
-        venda: this.formaDaVenda(c, await this.tiersDoClube(db)),
+        // A consola vê todos os preços do jogo, mesmo os que ainda não se podem vender.
+        venda: this.formaDaVenda(c, await this.tiersDoClube(db), c.tipos),
         anuais: c.anuais,
         ocupados: c.ocupados,
         porTipo: [...porTipo].map(([typeId, x]) => ({ typeId, ...x })),

@@ -1305,7 +1305,7 @@ export class AcademyService {
         where: scope ? { id: scope } : {},
         orderBy: { name: "asc" },
         select: {
-          id: true, name: true, maxAge: true, gender: true, schedule: true, sportId: true, matchMinutes: true, maxCallUps: true,
+          id: true, name: true, maxAge: true, gender: true, schedule: true, sportId: true, matchMinutes: true, maxCallUps: true, unlimitedSubs: true,
           sport: { select: { matchMinutes: true } },
           season: { select: { id: true, label: true } },
           staff: {
@@ -1354,6 +1354,8 @@ export class AcademyService {
         matchMinutes: t.matchMinutes ?? t.sport.matchMinutes ?? null,
         /* O máximo de convocados — editável no popup "Editar equipa". */
         maxCallUps: t.maxCallUps,
+        /* Substituições ilimitadas: quem sai pode voltar a entrar. Ver `Team.unlimitedSubs`. */
+        unlimitedSubs: t.unlimitedSubs,
         season: t.season.label,
         schedule: t.schedule,
         athleteCount: t._count.athletes,
@@ -1419,8 +1421,9 @@ export class AcademyService {
     if (!can(ctx, "team:write")) throw new ForbiddenException("Sem permissão para criar equipas");
 
     return this.prisma.runAs(ctx.academyId, async (db) => {
-      const sports = await db.sport.findMany({ select: { id: true, name: true } });
+      const sports = await db.sport.findMany({ select: { id: true, name: true, code: true } });
       const porNome = new Map(sports.map((sp) => [sp.name.trim().toLowerCase(), sp.id]));
+      const codigoDe = new Map(sports.map((sp) => [sp.id, sp.code]));
 
       /*
        * Nomes já usados — por **modalidade e época**, não pela academia inteira.
@@ -1504,6 +1507,8 @@ export class AcademyService {
               gender: generoPeloNome(name),
               seasonId: season.id,
               schedule: [],
+              // Nem de substituições: valem as da modalidade. Ver `Team.unlimitedSubs`.
+              unlimitedSubs: volantesPorOmissao(codigoDe.get(sportId)),
             },
             select: { id: true, name: true },
           });
@@ -1535,6 +1540,8 @@ export class AcademyService {
       competitionIds?: string[];
       /** Quanto dura um jogo deste escalão. Sem ele, o valor da modalidade. */
       matchMinutes?: number;
+      /** Substituições ilimitadas. Sem ela, as da modalidade. Ver `Team.unlimitedSubs`. */
+      unlimitedSubs?: boolean;
     },
   ) {
     if (!can(ctx, "team:write")) throw new ForbiddenException("Sem permissão para criar equipas");
@@ -1542,7 +1549,7 @@ export class AcademyService {
     return this.prisma.runAs(ctx.academyId, async (db) => {
       // A modalidade tem de existir nesta academia. O `findFirst` já vem filtrado
       // por tenant pela extensão — um `sportId` de outra academia dá "não encontrado".
-      const sport = await db.sport.findFirst({ where: { id: dto.sportId }, select: { id: true, matchMinutes: true } });
+      const sport = await db.sport.findFirst({ where: { id: dto.sportId }, select: { id: true, matchMinutes: true, code: true } });
       if (!sport) throw new BadRequestException("Modalidade desconhecida");
 
       // O treinador principal, quando indicado, tem de ser desta academia. Sem esta
@@ -1609,6 +1616,8 @@ export class AcademyService {
           // A duração fica gravada na equipa desde o primeiro dia, mesmo quando
           // veio da modalidade: é a equipa que a vai editar daqui em diante.
           matchMinutes: dto.matchMinutes ?? sport.matchMinutes ?? null,
+          // O que se escolheu ao criar; sem escolha, o que a modalidade costuma ter.
+          unlimitedSubs: dto.unlimitedSubs ?? volantesPorOmissao(sport.code),
           ...(dto.coachId
             ? { staff: { create: { membershipId: dto.coachId, title: "Treinador principal" } } }
             : {}),
@@ -1617,7 +1626,7 @@ export class AcademyService {
             : {}),
         },
         select: {
-          id: true, name: true, maxAge: true, gender: true, schedule: true, sportId: true, matchMinutes: true,
+          id: true, name: true, maxAge: true, gender: true, schedule: true, sportId: true, matchMinutes: true, unlimitedSubs: true,
           season: { select: { label: true } },
           staff: {
             where: { leftAt: null },
@@ -1635,6 +1644,7 @@ export class AcademyService {
         gender: team.gender,
         sportId: team.sportId,
         matchMinutes: team.matchMinutes,
+        unlimitedSubs: team.unlimitedSubs,
         season: team.season.label,
         schedule: team.schedule,
         athleteCount: team._count.athletes,
@@ -1671,7 +1681,7 @@ export class AcademyService {
   async updateTeam(
     ctx: RequestContext,
     teamId: string,
-    dto: { name?: string; maxAge?: number; gender?: TeamGenderValue | null; matchMinutes?: number; maxCallUps?: number; competitionIds?: string[] },
+    dto: { name?: string; maxAge?: number; gender?: TeamGenderValue | null; matchMinutes?: number; maxCallUps?: number; unlimitedSubs?: boolean; competitionIds?: string[] },
   ) {
     if (!can(ctx, "team:write")) throw new ForbiddenException("Sem permissão para editar equipas");
     const scope = teamScopeFilter(ctx);
@@ -1706,6 +1716,7 @@ export class AcademyService {
       if (dto.gender !== undefined) data.gender = dto.gender;
       if (dto.matchMinutes !== undefined) data.matchMinutes = dto.matchMinutes;
       if (dto.maxCallUps !== undefined) data.maxCallUps = dto.maxCallUps;
+      if (dto.unlimitedSubs !== undefined) data.unlimitedSubs = dto.unlimitedSubs;
       if (Object.keys(data).length) await db.team.update({ where: { id: teamId }, data });
 
       if (dto.competitionIds !== undefined) {
@@ -4614,6 +4625,15 @@ type SportInput = {
  * mas as equipas dela continuam a precisar de um ponto de partida sensato.
  */
 const DURACAO_POR_DISCIPLINA: Record<string, number> = { football: 90, futsal: 40, basketball: 40 };
+
+/**
+ * As substituições de uma equipa nova, quando ninguém as escolheu: ilimitadas
+ * no futsal e no basquetebol, que é a regra delas; no futebol depende do
+ * escalão e da associação, e começa desligada. Ver `Team.unlimitedSubs`.
+ */
+export function volantesPorOmissao(code: string | null | undefined): boolean {
+  return code === "futsal" || code === "basketball";
+}
 
 const SPORT_SELECT = {
   id: true, name: true, code: true, positions: true, skills: true, dominantSideLabel: true, matchMinutes: true,

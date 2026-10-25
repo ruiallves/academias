@@ -17,6 +17,8 @@
  * do lado do servidor).
  */
 
+import { legalValido, type Legal } from "./site-legal";
+
 /**
  * Os dois temas do site: **Tribuna**, claro, com o cabeçalho em dois andares
  * (o site de clube de sempre), e **Holofote**, escuro, com barra lateral e a
@@ -61,6 +63,8 @@ export type Identidade = {
   direcao: Dirigente[];
   /** As instalações. As imagens passam pelo mesmo crivo da `foto`. */
   instalacoes: Instalacao[];
+  /** Nome legal, NIPC, arbitragem e os textos do clube nas páginas legais. Ver `site-legal.ts`. */
+  legal: Legal;
 };
 
 /* -------------------------------------------------------------------------- */
@@ -170,6 +174,7 @@ export function identidadeValida(v: unknown): Identidade {
     foto: urlSegura(o.foto),
     direcao,
     instalacoes,
+    legal: legalValido(o.legal),
   };
 }
 

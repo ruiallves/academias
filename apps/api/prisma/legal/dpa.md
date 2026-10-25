@@ -3,7 +3,7 @@ type: DPA
 version: 1.1
 title: Acordo de Tratamento de Dados
 summary: A relação de tratamento de dados entre o clube, responsável pelo tratamento, e a Academias, subcontratante.
-changeNote: Passa a cobrir o site público do clube (Connect Pro), os visitantes que escrevem pelo formulário de contactos, e o alojamento do site.
+changeNote: Passa a cobrir o site público do clube (Connect Pro), os visitantes que escrevem pelo formulário de contactos ou pedem para ser sócios, quem compra na loja e na bilheteira do site, o alojamento do site e a verificação contra envios automáticos.
 ---
 
 Este documento descreve a relação de tratamento de dados entre o clube e a Academias. É parte integrante dos Termos de Serviço e é aceite por quem representa o clube.
@@ -20,9 +20,11 @@ O tratamento tem por objecto a prestação do serviço descrito nos Termos de Se
 
 ## 3. Categorias de dados e de titulares
 
-**Titulares**: atletas (frequentemente menores), encarregados de educação, staff do clube e sócios. Quando o clube tem o site público incluído no plano, também os visitantes do site que lhe escrevem pelo formulário de contactos ou pedem para ser sócios.
+**Titulares**: atletas (frequentemente menores), encarregados de educação, staff do clube e sócios. Quando o clube tem o site público incluído no plano, também os visitantes do site que lhe escrevem pelo formulário de contactos ou pedem para ser sócios, e quem compra na loja ou na bilheteira do site.
 
-**Dados**: identificação e contacto, dados de inscrição, presenças, convocatórias, avaliações desportivas, relatórios, dados de facturação, mensalidades e quotas, fotografias e vídeo quando o clube os carregue. No site do clube: o que o clube decide publicar (notícias, equipas e plantéis, direcção, calendário, loja) e as mensagens recebidas pelo formulário de contactos (nome, email, telefone, mensagem e o endereço IP de quem envia).
+**Dados**: identificação e contacto, dados de inscrição, presenças, convocatórias, avaliações desportivas, relatórios, dados de facturação, mensalidades e quotas, fotografias e vídeo quando o clube os carregue. No site do clube: o que o clube decide publicar (notícias, equipas e plantéis, direcção, calendário, loja); as mensagens recebidas pelo formulário de contactos (nome, email, telefone, mensagem e o endereço IP de quem envia); os pedidos de adesão a sócio (identificação, data de nascimento, contactos, morada, documento e as autorizações dadas); as encomendas da loja (nome, email, telemóvel, morada de entrega, artigos, pagamento, entrega e reembolsos); e as compras de bilhetes (nome, email, telemóvel, jogo, lugares, entradas validadas à porta e, num bilhete de sócio, o número de sócio e a data de nascimento usados para o confirmar).
+
+Na loja e na bilheteira, o clube é o vendedor: o pagamento é feito na conta de pagamentos do clube, e a plataforma não guarda dados de cartões nem de contas bancárias.
 
 **Dados de saúde** relativos a lesões e disponibilidade desportiva, quando o clube utilize o módulo clínico. São categoria especial de dados e tratados como tal.
 
@@ -50,8 +52,7 @@ O que garantimos é que esse acesso é restrito a quem dele precisa para operar 
 
 ## 7. Subcontratantes
 
-Recorremos a subcontratantes para infra-estrutura e base de dados, autenticação, armazenamento de ficheiros, envio de email e de notificações, processamento de pagamentos e, para os clubes com site público, o alojamento e a distribuição do site.
-
+Recorremos a subcontratantes para infra-estrutura e base de dados, autenticação, armazenamento de ficheiros, envio de email e de notificações, processamento de pagamentos e, para os clubes com site público, o alojamento e a distribuição do site e a verificação contra envios automáticos nos formulários do site.
 A lista actualizada é disponibilizada a pedido. Alterações relevantes são comunicadas com antecedência, para que o clube possa opor-se.
 
 ## 8. Transferências internacionais

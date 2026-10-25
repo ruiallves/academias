@@ -5,6 +5,7 @@ import { Emblema } from "./Emblema";
 import { Redes } from "./Redes";
 import { ATALHOS, NAV } from "./nav";
 import { BotaoSocio } from "@/componentes/socio/BotaoSocio";
+import { Legais } from "./Legais";
 
 export function Rodape({ clube }: { clube: Clube }) {
   const ano = new Date().getFullYear();
@@ -69,11 +70,6 @@ export function Rodape({ clube }: { clube: Clube }) {
                 Ser sócio
               </BotaoSocio>
             </li>
-            <li>
-              <Link href="/privacidade" className="hover:text-night-ink">
-                Privacidade
-              </Link>
-            </li>
           </ul>
         </nav>
 
@@ -91,6 +87,10 @@ export function Rodape({ clube }: { clube: Clube }) {
             ))}
           </ul>
         </div>
+      </div>
+
+      <div className="border-t border-night-line">
+        <Legais clube={clube} className="container-site flex flex-col gap-2 py-5 text-xs sm:flex-row sm:items-center sm:justify-between" ligacao="hover:text-night-ink hover:underline" />
       </div>
 
       <div className="border-t border-night-line">

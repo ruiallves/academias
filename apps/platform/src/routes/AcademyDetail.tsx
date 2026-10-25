@@ -10,6 +10,7 @@ import { useApi } from "@/lib/query";
 import { type AcademyDetail as Detail, type Me } from "@/lib/types";
 import { EspacoDoClubePanel } from "@/components/EspacoDoClubePanel";
 import { EupagoDoClubePanel } from "@/components/EupagoDoClubePanel";
+import { FaturacaoDoClubePanel } from "@/components/FaturacaoDoClubePanel";
 import { SiteDoClubePanel } from "@/components/SiteDoClubePanel";
 import { CondicoesDoClubePanel } from "@/components/CondicoesDoClubePanel";
 import { MensalidadesDaPlataformaPanel } from "@/components/MensalidadesDaPlataformaPanel";
@@ -177,6 +178,16 @@ export default function AcademyDetail({ me }: { me: Me }) {
             key={`eupago-${d.id}`}
             academyId={d.id}
             eupago={d.eupago}
+            mayEdit={me.role === "OWNER" || me.role === "ADMIN"}
+          />
+        )}
+
+        {/* Se o clube vende no site (bilheteira paga e loja), e a faturação dele. Ver `FaturacaoDoClubePanel`. */}
+        {d.faturacao && (
+          <FaturacaoDoClubePanel
+            key={`faturacao-${d.id}`}
+            academyId={d.id}
+            faturacao={d.faturacao}
             mayEdit={me.role === "OWNER" || me.role === "ADMIN"}
           />
         )}

@@ -479,6 +479,7 @@ export function renderMembershipPage(opts: {
   .cs input:focus-visible + .box { outline: 2px solid var(--club); outline-offset: 3px; }
   .cs .tx { font-size: 15px; color: var(--ink-2); }
   .cs .tx b { color: var(--ink); font-weight: 600; }
+  .aviso-dados { margin: 14px 0 0; font-size: 13px; line-height: 1.5; color: var(--ink-3); }
 
   /* ====================================================================
      Acção — voltar à esquerda, avançar à direita.
@@ -845,7 +846,7 @@ export function renderMembershipPage(opts: {
             <label class="cs">
               <input type="checkbox" id="c-terms" />
               <span class="box" aria-hidden="true"></span>
-              <span class="tx"><b>Concordo com os termos e condições do ${esc(academy.shortName)}.</b></span>
+              <span class="tx"><b>Concordo em ser sócio do ${esc(academy.shortName)} segundo os seus estatutos e regulamentos.</b></span>
             </label>
 
             <label class="cs">
@@ -860,6 +861,7 @@ export function renderMembershipPage(opts: {
               <span class="tx">Autorizo a partilha dos meus dados com os Parceiros Oficiais do ${esc(academy.shortName)} para envio de comunicações comerciais.</span>
             </label>
           </div>
+          <p class="aviso-dados">O pedido fica à espera do clube, e só és sócio depois de o clube o aceitar. Os teus dados são tratados pelo clube para gerir a inscrição e as quotas. Para os ver, corrigir ou apagar, fala com o clube.</p>
 
           <div class="actions">
             <button type="button" class="back" data-back>
@@ -1140,7 +1142,7 @@ export function renderMembershipPage(opts: {
     fail.textContent = "";
 
     if (!el("#c-terms").checked) {
-      fail.textContent = "Para concluir a adesão é preciso aceitar os termos e condições.";
+      fail.textContent = "Para concluir a adesão é preciso aceitar os estatutos e regulamentos do clube.";
       el("#c-terms").focus();
       return;
     }

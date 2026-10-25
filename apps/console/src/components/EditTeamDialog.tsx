@@ -2,6 +2,9 @@ import { useState, type FormEvent } from "react";
 import { Link } from "react-router-dom";
 import { Dialog, DialogField, dialogInputClass } from "./Dialog";
 import { cx } from "./primitives";
+import { CampoSubstituicoes } from "./CampoSubstituicoes";
+import { sportById } from "@/lib/api";
+import { substituicoesVolantes } from "@/components/match/substituicoes";
 import { Settings } from "@/lib/icons";
 import { updateTeam } from "@/lib/matches";
 import { reloadAcademy } from "@/lib/store";
@@ -40,6 +43,9 @@ export function EditTeamDialog({ team, onClose }: { team: Team; onClose: () => v
   const [minutos, setMinutos] = useState(team.matchMinutes == null ? "" : String(team.matchMinutes));
   const [convocados, setConvocados] = useState(team.maxCallUps == null ? "" : String(team.maxCallUps));
   const [escolhidas, setEscolhidas] = useState<Set<string>>(() => new Set(team.competitions.map((c) => c.id)));
+  /* A da equipa; num servidor antigo, a da modalidade. */
+  const volantesAntes = substituicoesVolantes(team.unlimitedSubs, sportById(team.sportId)?.code);
+  const [volantes, setVolantes] = useState(volantesAntes);
   const [busy, setBusy] = useState(false);
   const [erro, setErro] = useState<string | null>(null);
 
@@ -74,6 +80,7 @@ export function EditTeamDialog({ team, onClose }: { team: Team; onClose: () => v
       ...(genero !== (team.gender ?? "") ? { gender: genero || null } : {}),
       ...(minutos !== "" && minutosN !== team.matchMinutes ? { matchMinutes: minutosN } : {}),
       ...(convocados !== "" && convocadosN !== team.maxCallUps ? { maxCallUps: convocadosN } : {}),
+      ...(volantes !== volantesAntes ? { unlimitedSubs: volantes } : {}),
       ...(provasMudaram ? { competitionIds: [...escolhidas] } : {}),
     };
     if (Object.keys(patch).length === 0) {
@@ -183,6 +190,8 @@ export function EditTeamDialog({ team, onClose }: { team: Team; onClose: () => v
           A duração decide os minutos de quem jogou até ao fim; muda as fichas daqui para a frente, não as já
           gravadas.
         </p>
+
+        <CampoSubstituicoes ligado={volantes} onChange={setVolantes} mudouComJogos={volantes !== volantesAntes} />
 
         <div>
           <div className="mb-1.5 flex items-baseline justify-between gap-2">

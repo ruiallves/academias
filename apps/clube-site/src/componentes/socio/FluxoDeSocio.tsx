@@ -228,7 +228,7 @@ export function FluxoDeSocio({
     if (aEnviar) return;
     setFalha("");
     if (!c.terms) {
-      setFalha("Para concluir a adesão é preciso aceitar os termos e condições.");
+      setFalha("Para concluir a adesão é preciso aceitar os termos do sócio.");
       refs.current.terms?.focus();
       return;
     }
@@ -591,7 +591,7 @@ export function FluxoDeSocio({
                 <div className="mt-6 divide-y divide-line border-y border-line">
                   {(
                     [
-                      ["terms", <b key="t" className="font-semibold text-ink">Concordo com os termos e condições do {clube.shortName}.</b>],
+                      ["terms", <b key="t" className="font-semibold text-ink">Concordo com os termos do sócio do {clube.shortName}.</b>],
                       ["comms", <>Autorizo que o {clube.shortName} envie comunicações comerciais dos Parceiros Oficiais.</>],
                       ["data", <>Autorizo a partilha dos meus dados com os Parceiros Oficiais do {clube.shortName} para envio de comunicações comerciais.</>],
                     ] as const
@@ -616,6 +616,18 @@ export function FluxoDeSocio({
                     </label>
                   ))}
                 </div>
+                {/* Fora das caixas: um link dentro de um <label> marcava a caixa ao tocar. Abrem noutro separador para não se perder o formulário. */}
+                <p className="mt-4 text-sm leading-relaxed text-ink-3">
+                  Lê os{" "}
+                  <a href="/termos-do-socio" target="_blank" rel="noopener" className="font-semibold text-ink underline-offset-2 hover:underline">
+                    termos do sócio
+                  </a>{" "}
+                  e a{" "}
+                  <a href="/privacidade" target="_blank" rel="noopener" className="font-semibold text-ink underline-offset-2 hover:underline">
+                    política de privacidade
+                  </a>
+                  .
+                </p>
                 {falha && (
                   <p className="mt-4 text-sm font-medium text-risk" role="alert">
                     {falha}

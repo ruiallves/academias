@@ -146,6 +146,8 @@ type ApiTeam = {
   matchMinutes?: number | null;
   /** O máximo de convocados da equipa. */
   maxCallUps?: number;
+  /** Substituições ilimitadas. Ausente num servidor antigo. Ver `Team.unlimitedSubs`. */
+  unlimitedSubs?: boolean;
 };
 
 type ApiAthlete = {
@@ -907,6 +909,7 @@ function juntar<T extends { id: string }>(atuais: T[], novos: T[]): T[] {
     feeCents: t.feeCents,
     matchMinutes: t.matchMinutes ?? null,
     ...(t.maxCallUps !== undefined ? { maxCallUps: t.maxCallUps } : {}),
+    ...(t.unlimitedSubs !== undefined ? { unlimitedSubs: t.unlimitedSubs } : {}),
   }));
 
   const athletes: Athlete[] = apiAthletes.map((a) => ({

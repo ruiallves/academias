@@ -423,9 +423,13 @@ export function Checkout({ slug, api, demonstracao, loja, clube }: Props) {
               {aEnviar ? "A guardar a encomenda" : gratis ? "Confirmar a encomenda" : `Pagar ${euroDeCents(totalCents)}`}
             </Botao>
             <p className="text-xs text-ink-3">
-              Os artigos ficam guardados durante 10 minutos, enquanto pagas; o pedido MB WAY vale 5. Os dados que escreves aqui são tratados pelo clube.{" "}
-              <Link href="/privacidade" className="font-semibold text-ink hover:underline">
-                Ver a política de privacidade
+              Os artigos ficam guardados durante 10 minutos, enquanto pagas; o pedido MB WAY vale 5. Ao encomendar aceitas as{" "}
+              <Link href="/condicoes-de-venda" target="_blank" className="font-semibold text-ink hover:underline">
+                condições de venda
+              </Link>
+              , onde está também como devolver. Os dados que escreves aqui são tratados pelo clube:{" "}
+              <Link href="/privacidade" target="_blank" className="font-semibold text-ink hover:underline">
+                política de privacidade
               </Link>
               .
             </p>

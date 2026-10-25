@@ -5,6 +5,7 @@ import { Empty, Loading, cx } from "@/components/primitives";
 import {
   ExternalLink,
   Eye,
+  FileText,
   Globe,
   Handshake,
   IdCard,
@@ -28,6 +29,7 @@ import { useSession } from "@/session";
 import { enderecoDoSite, useCarregamentoDoSite, useSite } from "@/lib/website";
 import { VisaoGeral } from "./VisaoGeral";
 import { Identidade, Aspeto, Dominio } from "./Configuracao";
+import { InformacaoLegal } from "./Legal";
 import { Inicio } from "./Inicio";
 import { Noticias } from "./Noticias";
 import { Loja } from "./Loja";
@@ -51,6 +53,7 @@ type SecaoKey =
   | "aspeto"
   | "inicio"
   | "dominio"
+  | "legal"
   | "noticias"
   | "equipas"
   | "patrocinadores"
@@ -67,6 +70,13 @@ const SECOES: Secao[] = [
   { key: "aspeto", label: "Aspeto", grupo: "Site", icone: Palette, descricao: "O layout do site. A cor e o emblema são os do clube, os mesmos da consola e da app." },
   { key: "inicio", label: "Página de início", grupo: "Site", icone: LayoutTemplate, descricao: "A página de início como o visitante a vê. Arrasta as secções, mostra ou esconde, e acrescenta banners onde quiseres." },
   { key: "dominio", label: "Domínio", grupo: "Site", icone: Link2, descricao: "O endereço .pt do clube, e onde o site vive enquanto o domínio não aponta para cá." },
+  {
+    key: "legal",
+    label: "Informação legal",
+    grupo: "Site",
+    icone: FileText,
+    descricao: "O nome legal e o NIPC, o centro de arbitragem e as regras do clube. O site escreve com isto a privacidade, as condições de venda e os termos do sócio.",
+  },
   { key: "noticias", label: "Notícias", grupo: "Conteúdo", icone: Newspaper, descricao: "O que se escreve sobre o clube. As três em destaque abrem a página de início." },
   { key: "equipas", label: "Equipas", grupo: "Conteúdo", icone: Users, descricao: "Que equipas aparecem no site. O plantel só com o consentimento das famílias." },
   { key: "patrocinadores", label: "Patrocinadores", grupo: "Conteúdo", icone: Handshake, descricao: "Quem apoia o clube. Aparecem no fundo de todas as páginas." },
@@ -151,6 +161,7 @@ function WebsiteDoClube() {
             {carregado && ativa === "aspeto" && <Aspeto />}
             {carregado && ativa === "inicio" && <Inicio onIr={(k) => ir(k as SecaoKey)} />}
             {carregado && ativa === "dominio" && <Dominio />}
+            {carregado && ativa === "legal" && <InformacaoLegal />}
             {carregado && ativa === "noticias" && <Noticias />}
             {carregado && ativa === "equipas" && <Equipas />}
             {carregado && ativa === "patrocinadores" && <Patrocinadores />}

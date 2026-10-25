@@ -65,6 +65,7 @@ import { age, longDate, percent, relativeDays, shortDate, shortName, time } from
 import { SEM_LIMITE, teamAgeLabel } from "@/lib/team-age";
 import { profileOf } from "@/lib/sports";
 import { TEAM_GENDER_LABEL } from "@/lib/genero";
+import { substituicoesVolantes } from "@/components/match/substituicoes";
 import { medicalExpiry, medicalNeedsAttention, medicalState, type MedicalState } from "@/lib/medical";
 import { availabilityOf, useClinicalRecords } from "@/lib/clinical";
 import { can, type Session } from "@/lib/permissions";
@@ -527,6 +528,7 @@ function FichaDaEquipa({ team, onEditar }: { team: NonNullable<ReturnType<typeof
       ),
     ],
     ["Máximo de convocados", team.maxCallUps ? <span className="tabular">{team.maxCallUps}</span> : <span className="text-ink-4">por indicar</span>],
+    ["Substituições", substituicoesVolantes(team.unlimitedSubs, sportById(team.sportId)?.code) ? "Ilimitadas: quem sai pode voltar a entrar" : "Limitadas: quem sai não volta a entrar"],
   ];
 
   return (

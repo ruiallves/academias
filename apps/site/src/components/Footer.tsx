@@ -3,7 +3,7 @@ import { CONTACT_EMAIL, INSTAGRAM_URL } from "@/lib/content";
 import { PAYMENT_METHODS, PaymentMark } from "./PaymentIcons";
 import { InstagramIcon, Wordmark } from "./marca";
 
-const COLUNAS: { titulo: string; links: { to: string; label: string }[] }[] = [
+const COLUNAS: { titulo: string; links: { to: string; label: string; externo?: boolean }[] }[] = [
   {
     titulo: "Produto",
     links: [
@@ -28,6 +28,7 @@ const COLUNAS: { titulo: string; links: { to: string; label: string }[] }[] = [
       { to: "/legal/cookies", label: "Política de Cookies" },
       { to: "/legal/dpa", label: "Acordo de Tratamento de Dados" },
       { to: "/legal/utilizacao-aceitavel", label: "Utilização Aceitável" },
+      { to: "https://www.livroreclamacoes.pt/Inicio/", label: "Livro de Reclamações", externo: true },
     ],
   },
 ];
@@ -88,9 +89,15 @@ export function Footer() {
               <ul className="mt-4 space-y-2.5">
                 {col.links.map((l) => (
                   <li key={l.label}>
-                    <Link to={l.to} className="text-[0.98rem] font-medium text-texto-2 transition-colors hover:text-texto">
-                      {l.label}
-                    </Link>
+                    {l.externo ? (
+                      <a href={l.to} target="_blank" rel="noopener noreferrer" className="text-[0.98rem] font-medium text-texto-2 transition-colors hover:text-texto">
+                        {l.label}
+                      </a>
+                    ) : (
+                      <Link to={l.to} className="text-[0.98rem] font-medium text-texto-2 transition-colors hover:text-texto">
+                        {l.label}
+                      </Link>
+                    )}
                   </li>
                 ))}
               </ul>

@@ -9,6 +9,7 @@
     "preview": "vite preview",
     "typecheck": "tsc -b --noEmit",
     "test:relogio": "esbuild scripts/test-relogio.ts --bundle --platform=node --format=esm --outfile=node_modules/.cache/test-relogio.mjs --alias:@=./src --define:import.meta.env={} --log-level=warning && node node_modules/.cache/test-relogio.mjs",
+    "test:substituicoes": "esbuild scripts/test-substituicoes.ts --bundle --platform=node --format=esm --outfile=node_modules/.cache/test-substituicoes.mjs --alias:@=./src --define:import.meta.env={} --log-level=warning && node node_modules/.cache/test-substituicoes.mjs",
     "test:pdf": "esbuild scripts/test-callup-pdf.ts --bundle --platform=node --format=esm --outfile=node_modules/.cache/test-callup-pdf.mjs --alias:@=./src --define:import.meta.env={} --log-level=warning && node node_modules/.cache/test-callup-pdf.mjs",
     "test:qr": "esbuild scripts/test-qr-cartaz.ts --bundle --platform=node --format=esm --external:qrcode --outfile=node_modules/.cache/test-qr-cartaz.mjs --alias:@=./src --define:import.meta.env={} --log-level=warning && node node_modules/.cache/test-qr-cartaz.mjs",
     "test:avisos-http": "esbuild scripts/test-avisos-http.ts --bundle --platform=node --format=esm --outfile=node_modules/.cache/test-avisos-http.mjs --alias:@=./src --external:react --define:import.meta.env={} --log-level=warning && node node_modules/.cache/test-avisos-http.mjs",

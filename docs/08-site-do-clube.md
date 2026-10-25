@@ -290,6 +290,11 @@ Rui, 21/10). As faturas ficam para o fim.
   certificado dele. Nós não podemos faturar em nosso nome vendas que são dele.
 - **A loja e a bilheteira só se ligam com a faturação ligada**, como os
   pagamentos só ligam com as chaves da euPago. Sem ela, ficam como catálogo.
+  **Feito a 25/10/2026, à mão:** enquanto não há ligação por API, marca-se no
+  painel da plataforma, na ficha do clube ("Vendas no site e faturação"), o
+  programa que ele usa (`Academy.invoicingSystem`, `invoicingConfirmedAt`).
+  A regra vive em `api/src/common/vendas-online.ts`; a ligação por API, quando
+  existir, preenche os mesmos dois campos.
 - **Ligação por API à conta do clube**, a cada venda paga: emite a
   fatura-recibo, buscamos o PDF e enviamo-lo no mesmo email do bilhete ou da
   encomenda. Se o programa estiver em baixo, a fatura fica numa fila.
@@ -336,6 +341,37 @@ adesão, ou o de omissão).
   browser fecham-na e o foco volta ao botão. O que se escreveu fica até se
   enviar.
 - Em demonstração o envio é fingido (o clube inventado não existe na API).
+
+## Páginas legais (25/10/2026)
+
+Com a loja e a bilheteira a vender, o site de um clube é comércio eletrónico.
+O site escreve três páginas com os dados do clube, sem o clube ter de
+redigir nada:
+
+- `/privacidade`: o que cada formulário recolhe, os prazos, quem trata por
+  conta do clube, os direitos, e `#cookies` (a política de cookies).
+- `/condicoes-de-venda`: quem vende, pagamento e reserva de 10 minutos,
+  entrega (com o que está em `SiteConfig.shop`), bilhetes sem livre
+  resolução (art. 17.º do DL 24/2014), devolução em 14 dias com o modelo,
+  garantia (DL 84/2021), Livro de Reclamações e centro de arbitragem (Lei
+  144/2015). O rodapé só a mostra com `legal.vendeOnline`.
+- `/termos-do-socio`: o que se aceita na adesão. Remete para os estatutos.
+
+O que só o clube sabe fica em `SiteConfig.identity.legal` (sem migração):
+nome legal, NIPC (só se grava se passar na conta de controlo), centro de
+arbitragem, estatutos e as notas do clube. Ver `api/src/site/site-legal.ts`;
+a consola edita-o em Website › Informação legal. A API manda ao site o
+centro já resolvido: o escolhido, ou o sugerido pela cidade (`entidadeSugerida`),
+ou o CNIACC, que é nacional e supletivo. A lista dos centros é a do gov.pt
+(consultada a 25/10/2026); a consola tem uma cópia em
+`routes/website/entidades-ral.ts`.
+
+**O que estas páginas dizem tem de bater com o que o site faz.** Um script
+de fora, um cookie ou um formulário novo muda também a privacidade. Hoje o
+site não põe cookies; o carrinho fica no `localStorage`; o mapa do Google só
+abre ao clicar (`contactos/Mapa.tsx`), por isso não há aviso de cookies. A
+ligação à plataforma europeia de litígios em linha não está lá de propósito:
+deixou de ser exigida a 20/07/2025.
 
 ## Fotografias
 

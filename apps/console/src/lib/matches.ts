@@ -161,6 +161,11 @@ export type MatchDetail = {
    * da modalidade. Nulo numa modalidade sem duração declarada.
    */
   matchMinutes: number | null;
+  /**
+   * Substituições ilimitadas da equipa: quem sai pode voltar a entrar. Ausente
+   * num servidor antigo; ver `substituicoesVolantes` em `components/match/substituicoes.ts`.
+   */
+  unlimitedSubs?: boolean;
   /** O tempo adicional por parte, em minutos. Vazio se ninguém o registou. */
   addedMinutes: number[];
   /** Os minutos de cada parte do prolongamento. Vazio se não houve. */
@@ -360,6 +365,8 @@ export const updateTeam = (
     gender?: "MALE" | "FEMALE" | "MIXED" | null;
     matchMinutes?: number;
     maxCallUps?: number;
+    /** Substituições ilimitadas: quem sai pode voltar a entrar. */
+    unlimitedSubs?: boolean;
     competitionIds?: string[];
   },
 ) => apiPatch<{ ok: true }>(`/api/teams/${teamId}`, patch);

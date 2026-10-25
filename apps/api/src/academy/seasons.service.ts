@@ -290,7 +290,7 @@ export class SeasonsService {
           where: { id: { in: dto.equipas.map((e) => e.fromTeamId) } },
           select: {
             id: true, name: true, maxAge: true, gender: true, sportId: true, schedule: true,
-            maxCallUps: true, matchMinutes: true, seasonId: true, billingMonths: true, billingNextMonths: true,
+            maxCallUps: true, matchMinutes: true, unlimitedSubs: true, seasonId: true, billingMonths: true, billingNextMonths: true,
           },
         });
         if (antigas.length !== dto.equipas.length) throw new BadRequestException("Equipa desconhecida");
@@ -329,6 +329,7 @@ export class SeasonsService {
               schedule: antiga.schedule as object,
               maxCallUps: antiga.maxCallUps,
               matchMinutes: antiga.matchMinutes,
+              unlimitedSubs: antiga.unlimitedSubs,
               /*
                * Os meses que o escalão paga, e os agendados, passam tal e qual: a
                * viragem pode ser em Junho, e Junho e Julho ainda seguem os de

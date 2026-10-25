@@ -29,6 +29,10 @@ tarde e já sem stock, reembolso por fazer), `CANCELLED` (anulada pelo clube).
 
 ## As regras
 
+- **Só vende com a faturação configurada** (desde 25/10/2026): a loja vende
+  com os pagamentos do clube ligados, a faturação marcada no painel da
+  plataforma (`Academy.invoicingConfirmedAt`) e uma forma de entrega. Falta
+  uma, fica em catálogo. A regra está em `api/src/common/vendas-online.ts`.
 - **Vende só com** pagamentos do clube ligados **e** uma forma de entrega
   ligada (`lojaVende`). Sem isso a loja fica em catálogo: os botões do site
   levam aos contactos, como antes.

@@ -486,6 +486,8 @@ class UpdateTeamDto {
   @IsOptional() @IsIn(TEAM_GENDERS) gender?: TeamGenderValue | null;
   @IsOptional() @IsInt() @Min(1) @Max(300) matchMinutes?: number;
   @IsOptional() @IsInt() @Min(1) @Max(60) maxCallUps?: number;
+  /** Substituições ilimitadas: quem sai pode voltar a entrar. Ver `Team.unlimitedSubs`. */
+  @IsOptional() @IsBoolean() unlimitedSubs?: boolean;
   @IsOptional() @IsArray() @ArrayMaxSize(12) @IsString({ each: true }) competitionIds?: string[];
 }
 

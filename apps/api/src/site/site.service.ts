@@ -25,6 +25,7 @@ import {
 } from "./site.tipos";
 import { SiteRevalidarService } from "./site-revalidar.service";
 import { SEM_PLANO, siteIncluido } from "./plano";
+import { SELECT_VENDAS, faturacaoLigada, motivoParaNaoVender } from "../common/vendas-online";
 
 /**
  * O site do clube, do lado da consola (menu Website).
@@ -68,7 +69,7 @@ export class SiteService {
     await this.mustRead(ctx);
     return this.prisma.runAs(ctx.academyId, async (db) => {
       const [academy, config, noticias, produtos, patrocinadores, bilhetes, porLer, porTratar] = await Promise.all([
-        db.academy.findFirst({ where: { id: ctx.academyId }, select: { slug: true, siteDomain: true, paymentsEnabled: true } }),
+        db.academy.findFirst({ where: { id: ctx.academyId }, select: { slug: true, siteDomain: true, ...SELECT_VENDAS, invoicingSystem: true } }),
         db.siteConfig.findUnique({ where: { academyId: ctx.academyId } }),
         db.siteNews.findMany({ orderBy: [{ publishedAt: { sort: "desc", nulls: "first" } }, { createdAt: "desc" }] }),
         db.siteProduct.findMany({ orderBy: [{ position: "asc" }, { createdAt: "asc" }] }),
@@ -98,6 +99,14 @@ export class SiteService {
         encomendasPorTratar: porTratar,
         /** Os pagamentos do clube estão ligados? Sem eles a loja fica em catálogo. */
         pagamentosLigados: academy?.paymentsEnabled ?? false,
+        /**
+         * A faturação do clube está configurada (marcada no painel da
+         * plataforma)? Sem ela a loja fica em catálogo e a bilheteira só vende
+         * bilhetes a 0 €. Ver `common/vendas-online.ts`.
+         */
+        faturacaoLigada: faturacaoLigada(academy),
+        /** O programa de faturação, para a consola dizer qual. Nulo sem faturação. */
+        programaDeFaturacao: academy?.invoicingSystem ?? null,
         /** Os preços por omissão da bilheteira, por recinto. */
         precosBilheteira: precosParaConsola(config?.ticketDefaults),
         /** As categorias de sócio, para os preços de sócio. */
@@ -122,6 +131,11 @@ export class SiteService {
       const identidade = identidadeValida(dto.identidade);
       identidade.foto = this.imagemDoClube(ctx, identidade.foto) ?? "";
       for (const i of identidade.instalacoes) i.imagem = this.imagemDoClube(ctx, i.imagem) ?? "";
+      // Uma consola de antes da informação legal manda a identidade sem `legal`: fica a que está gravada.
+      if (!("legal" in dto.identidade)) {
+        const antes = await this.prisma.runAs(ctx.academyId, (db) => db.siteConfig.findUnique({ where: { academyId: ctx.academyId }, select: { identity: true } }));
+        identidade.legal = identidadeValida(antes?.identity).legal;
+      }
       data.identity = identidade;
     }
     if (dto.equipas !== undefined) {
@@ -517,9 +531,10 @@ export class SiteService {
       tipos = tipos.filter((t) => t.bancadaId && recinto.bancadas.some((b) => b.id === t.bancadaId));
       if (tipos.length === 0) throw new BadRequestException("Os preços têm de ser de bancadas deste recinto");
 
+      // Bilhetes pagos só com os pagamentos e a faturação do clube ligados (ver `common/vendas-online.ts`). A 0 € abre sempre.
       if (dto.aberta && tipos.some((t) => t.precoCents > 0)) {
-        const a = await db.academy.findFirst({ where: { id: ctx.academyId }, select: { paymentsEnabled: true } });
-        if (!a?.paymentsEnabled) throw new BadRequestException("Para vender bilhetes, os pagamentos do clube têm de estar ligados (euPago).");
+        const motivo = motivoParaNaoVender(await db.academy.findFirst({ where: { id: ctx.academyId }, select: SELECT_VENDAS }));
+        if (motivo) throw new BadRequestException(motivo);
       }
 
       const data = {

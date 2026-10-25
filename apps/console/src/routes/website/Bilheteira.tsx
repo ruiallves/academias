@@ -8,7 +8,7 @@ import { MapaDoRecinto } from "@academia/ui/estadio";
 import { useStore, type ApiMatch } from "@/lib/store";
 import { can } from "@/lib/permissions";
 import { useSession } from "@/session";
-import { guardarBilheteira, useSite, type BilheteiraDoJogo, type CategoriaDeSocio, type Recinto, type TipoDeBilhete } from "@/lib/website";
+import { guardarBilheteira, motivoSemVendas, useSite, type BilheteiraDoJogo, type CategoriaDeSocio, type Recinto, type TipoDeBilhete } from "@/lib/website";
 import { mostrarOk } from "@/lib/avisos";
 import { euro, quando } from "@/lib/bilheteira";
 import { GrelhaDePrecos, LegendaDaGrelha, PrecosPorOmissao, colunasDe, contarPrecos, grelhaDe, grelhaValida, linhasDe, tiposDe, type Grelha } from "./PrecosDaBilheteira";
@@ -189,6 +189,13 @@ function Jogos({ onIrParaEstadio, podeEscrever }: { onIrParaEstadio: () => void;
 
   return (
     <>
+      {/* Sem pagamentos ou sem faturação, o site só vende bilhetes a 0 €. */}
+      {motivoSemVendas(site) && (
+        <p className="mb-4 rounded-[10px] border border-warn/25 bg-warn-soft px-4 py-3 text-meta leading-relaxed text-warn">
+          <strong className="font-semibold">O site ainda não vende bilhetes pagos.</strong> {motivoSemVendas(site)} Os bilhetes a 0 € vendem-se na mesma.
+        </p>
+      )}
+
       {site.recintos.length === 0 && (
         <div className="mb-4 flex flex-wrap items-center justify-between gap-3 rounded-[10px] border border-line bg-sunken/50 px-4 py-3">
           <p className="text-meta text-ink-2">Os bilhetes vendem-se por bancada. Desenha o estádio para cada bilhete ficar ligado a uma bancada, e quem compra ver no mapa onde vai ficar.</p>
@@ -219,7 +226,7 @@ function Jogos({ onIrParaEstadio, podeEscrever }: { onIrParaEstadio: () => void;
           recintos={site.recintos}
           precos={site.precosBilheteira}
           categorias={site.categoriasDeSocio}
-          pagamentosLigados={store.academy.paymentsEnabled !== false}
+          semVendas={motivoSemVendas(site)}
           inicial={de(editar.id) ?? padrao(site.recintos[0] ?? null, editar.isHome)}
           onIrParaEstadio={onIrParaEstadio}
           onClose={() => setEditar(null)}
@@ -267,7 +274,7 @@ function EditarBilheteira({
   recintos,
   precos,
   categorias,
-  pagamentosLigados,
+  semVendas,
   inicial,
   onIrParaEstadio,
   onClose,
@@ -278,7 +285,8 @@ function EditarBilheteira({
   recintos: Recinto[];
   precos: Record<string, TipoDeBilhete[]>;
   categorias: CategoriaDeSocio[];
-  pagamentosLigados: boolean;
+  /** Porque é que só se vendem bilhetes a 0 € (pagamentos ou faturação por ligar), ou nulo. */
+  semVendas: string | null;
   inicial: BilheteiraDoJogo;
   onIrParaEstadio: () => void;
   onClose: () => void;
@@ -403,9 +411,9 @@ function EditarBilheteira({
             <span className="text-body text-ink">Venda aberta</span>
             <Interruptor ligado={b.aberta} onChange={() => setB({ ...b, aberta: !b.aberta })} label="Venda aberta" />
           </div>
-          {!pagamentosLigados && (
+          {semVendas && (
             <p className="mt-1.5 text-meta leading-relaxed text-warn">
-              Os pagamentos do clube não estão ligados. Sem eles só abre uma venda em que todos os bilhetes custam 0 €.
+              Por agora só abre uma venda em que todos os bilhetes custam 0 €. {semVendas}
             </p>
           )}
         </div>

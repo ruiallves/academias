@@ -141,7 +141,29 @@ export type Identidade = {
   direcao: Dirigente[];
   /** As instalações (máx. 12). */
   instalacoes: Instalacao[];
+  /** Nome legal, NIPC, arbitragem e os textos do clube nas páginas legais. Ver `api/src/site/site-legal.ts`. */
+  legal: LegalDoSite;
 };
+
+/** A chave de uma entidade de resolução alternativa de litígios. Ver `routes/website/entidades-ral.ts`. */
+export type EntidadeRalKey = "cniacc" | "caccl" | "cicap" | "triave" | "ciab" | "caccdc" | "cimaal" | "outra";
+
+export type LegalDoSite = {
+  /** A denominação legal. Vazia: o site usa o nome do clube. */
+  nome: string;
+  /** 9 algarismos. O servidor não grava um que falhe a conta de controlo. */
+  nipc: string;
+  /** Vazia: a sugerida pela cidade do clube. */
+  ral: EntidadeRalKey | "";
+  ralNome: string;
+  ralUrl: string;
+  termosSocio: string;
+  estatutosUrl: string;
+  notaVenda: string;
+  notaPrivacidade: string;
+};
+
+export const LEGAL_VAZIO: LegalDoSite = { nome: "", nipc: "", ral: "", ralNome: "", ralUrl: "", termosSocio: "", estatutosUrl: "", notaVenda: "", notaPrivacidade: "" };
 
 /* -------------------------------------------------------------------------- */
 /* A página de início                                                           */
@@ -219,7 +241,25 @@ export type SiteDoClube = {
   encomendasPorTratar: number;
   /** Os pagamentos do clube estão ligados? Sem eles a loja fica em catálogo. */
   pagamentosLigados: boolean;
+  /**
+   * A faturação do clube está configurada (marcada por nós no painel da
+   * plataforma)? Sem ela a loja fica em catálogo e a bilheteira só vende
+   * bilhetes a 0 €, mesmo com os pagamentos ligados.
+   */
+  faturacaoLigada: boolean;
+  /** O programa de faturação do clube, ou nulo. */
+  programaDeFaturacao: string | null;
 };
+
+/**
+ * Porque é que o site ainda não cobra vendas (bilhetes pagos e loja), ou nulo
+ * se cobra. A mesma regra do servidor (`common/vendas-online.ts`).
+ */
+export function motivoSemVendas(s: Pick<SiteDoClube, "pagamentosLigados" | "faturacaoLigada">): string | null {
+  if (!s.pagamentosLigados) return "Faltam os pagamentos do clube ligados (as chaves da euPago, nas Definições).";
+  if (!s.faturacaoLigada) return "Falta a faturação configurada: o clube fatura cada venda no programa dele. Fala connosco para a ligar.";
+  return null;
+}
 
 export function siteVazio(): SiteDoClube {
   return {
@@ -239,6 +279,7 @@ export function siteVazio(): SiteDoClube {
       foto: "",
       direcao: [],
       instalacoes: [],
+      legal: { ...LEGAL_VAZIO },
     },
     inicio: inicioVazio(),
     noticias: [],
@@ -253,6 +294,8 @@ export function siteVazio(): SiteDoClube {
     loja: { ...LOJA_VAZIA, levantamento: { ...LOJA_VAZIA.levantamento }, envio: { ...LOJA_VAZIA.envio } },
     encomendasPorTratar: 0,
     pagamentosLigados: false,
+    faturacaoLigada: false,
+    programaDeFaturacao: null,
   };
 }
 
@@ -334,7 +377,8 @@ function normalizar(s: SiteDoClube): SiteDoClube {
     ...s,
     // Os nomes antigos dos temas, de um servidor por atualizar, caem nos de hoje.
     layout: layout === "holofote" || layout === "porto" ? "holofote" : "tribuna",
-    identidade: { ...vazio.identidade, ...(s.identidade ?? {}) },
+    // A informação legal completa-se à parte: um servidor de antes dela não a manda.
+    identidade: { ...vazio.identidade, ...(s.identidade ?? {}), legal: { ...LEGAL_VAZIO, ...(s.identidade?.legal ?? {}) } },
     // Um servidor de antes dos vários banners mandava as secções sem `id`: dá-se-lhes um.
     inicio: s.inicio
       ? {
@@ -360,6 +404,9 @@ function normalizar(s: SiteDoClube): SiteDoClube {
     loja: s.loja ? { ...vazio.loja, ...s.loja, levantamento: { ...vazio.loja.levantamento, ...(s.loja.levantamento ?? {}) }, envio: { ...vazio.loja.envio, ...(s.loja.envio ?? {}) } } : vazio.loja,
     encomendasPorTratar: typeof s.encomendasPorTratar === "number" ? s.encomendasPorTratar : 0,
     pagamentosLigados: s.pagamentosLigados === true,
+    // Um servidor de antes de 25/10 não manda a faturação: lê-se como por ligar.
+    faturacaoLigada: s.faturacaoLigada === true,
+    programaDeFaturacao: typeof s.programaDeFaturacao === "string" ? s.programaDeFaturacao : null,
   };
 }
 

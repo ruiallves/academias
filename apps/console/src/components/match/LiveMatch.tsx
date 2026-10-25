@@ -24,6 +24,7 @@ import {
   type Momento,
 } from "./relogio";
 import { Cartao } from "./ui";
+import { motivoParaNaoEntrar, percorrer, substituicoesVolantes } from "./substituicoes";
 
 /**
  * O jogo ao vivo: um relógio e quatro botões.
@@ -143,6 +144,14 @@ export function LiveMatch({ match, mayRecord, onSaved }: { match: MatchDetail; m
   const titularesDoPlano = (match.plan?.slots ?? []).map((s) => s.athleteId).filter((x): x is string => Boolean(x));
 
   const profile = profileOf(sportById(match.sportId));
+  /*
+   * As substituições desta equipa. Ilimitadas (volantes): quem saiu pode voltar
+   * a entrar. É da equipa (`Team.unlimitedSubs`), não da modalidade: no
+   * futebol de formação há escalões que as permitem. Ver `substituicoes.ts`.
+   */
+  const volantes = substituicoesVolantes(match.unlimitedSubs, profile?.code);
+  /** No futsal, a equipa com um expulso completa-se com uma entrada sem saída. */
+  const completaExpulsos = profile?.code === "futsal";
 
   const [estado, setEstado] = useState<Estado>(
     () =>
@@ -230,31 +239,35 @@ export function LiveMatch({ match, mayRecord, onSaved }: { match: MatchDetail; m
   /** O artigo da parte: "a 2.ª parte", "o 3.º período". */
   const a = (p: number) => (feminina(regras, p) ? "a" : "o");
 
-  /* Quem está em campo agora: os titulares, com as trocas e as expulsões por cima. */
-  const emCampo = useMemo(() => {
-    const s = new Set(estado.onze);
-    for (const a of [...estado.acontecimentos].sort((x, y) => ordem(x) - ordem(y))) {
-      if (a.tipo === "sub" && a.entra) {
-        // Sem quem sai, é a entrada no lugar de um expulso (futsal).
-        if (a.atleta) s.delete(a.atleta);
-        s.add(a.entra);
-      }
-      if (a.tipo === "vermelho" && a.atleta) s.delete(a.atleta);
-    }
-    return s;
-  }, [estado]);
-  const jaJogaram = new Set([...estado.onze, ...estado.acontecimentos.map((a) => a.entra).filter((x): x is string => Boolean(x))]);
-  const noBanco = jogadores.filter((j) => !jaJogaram.has(j.id) && j.estado !== "baixa" && j.estado !== "recusou");
+  /*
+   * O campo agora, pelos acontecimentos por ordem do relógio: quem está em
+   * campo, quem já jogou, os expulsos, e o que não bate certo (uma troca que
+   * ficou sem sentido depois de se apagar outra, ou de se acertar um minuto).
+   * As regras estão em `substituicoes.ts`.
+   */
+  const situacao = useMemo(() => {
+    const porOrdem = estado.acontecimentos
+      .map((a, i) => ({ a, i }))
+      .sort((x, y) => ordem(x.a) - ordem(y.a) || x.i - y.i)
+      .map((x) => x.a);
+    return percorrer(estado.onze, porOrdem, { volantes, completaExpulsos }, (id) => porId.get(id)?.curto ?? "Atleta");
+  }, [estado.onze, estado.acontecimentos, volantes, completaExpulsos, porId]);
+  const emCampo = situacao.emCampo;
+  const jaJogaram = situacao.jogaram;
+  /* Quem pode entrar agora: não está em campo, não foi expulso, e (sem volantes) ainda não jogou. */
+  const noBanco = jogadores.filter(
+    (j) => j.estado !== "baixa" && j.estado !== "recusou" && motivoParaNaoEntrar(j.id, situacao, { volantes, completaExpulsos }) === null,
+  );
+  /** O que não bate certo, por acontecimento. */
+  const problemas = new Map<string, string[]>();
+  for (const p of situacao.problemas) problemas.set(p.id, [...(problemas.get(p.id) ?? []), p.mensagem]);
 
   /*
    * No futsal, a equipa com um expulso completa-se passados dois minutos (ou
    * depois de sofrer golo): entra outro jogador sem sair ninguém. Quantas
    * dessas entradas ainda há por fazer.
    */
-  const completaExpulsos = profile?.code === "futsal";
-  const lugaresDeExpulsos =
-    estado.acontecimentos.filter((x) => x.tipo === "vermelho").length -
-    estado.acontecimentos.filter((x) => x.tipo === "sub" && !x.atleta).length;
+  const lugaresDeExpulsos = situacao.vagasDeExpulsos;
 
   const soma = (tipo: Tipo) => estado.acontecimentos.filter((a) => a.tipo === tipo).reduce((n, a) => n + (a.valor ?? 1), 0);
   const nossos = soma("golo");
@@ -396,6 +409,16 @@ export function LiveMatch({ match, mayRecord, onSaved }: { match: MatchDetail; m
 
   async function terminar() {
     if (aGravar) return;
+    /*
+     * Uma lista que não bate certo não vai para a ficha: um jogador que saiu
+     * sem estar em campo, ou que voltou a entrar onde não pode, dava minutos e
+     * golos que nunca aconteceram. Corrige-se aqui, onde se vê o porquê.
+     */
+    if (situacao.problemas.length > 0) {
+      const n = new Set(situacao.problemas.map((p) => p.id)).size;
+      setErro(n === 1 ? "Há um acontecimento que não bate certo (a vermelho). Corrige-o ou apaga-o antes de gravar." : `Há ${n} acontecimentos que não batem certo (a vermelho). Corrige-os ou apaga-os antes de gravar.`);
+      return;
+    }
     setAGravar(true);
     setErro(null);
     try {
@@ -404,8 +427,13 @@ export function LiveMatch({ match, mayRecord, onSaved }: { match: MatchDetail; m
       const fim = inicioDa(regras, ultima) + duracaoDa(regras, ultima);
       const linhas = [...jaJogaram].map((id) => {
         const meus = estado.acontecimentos.filter((a) => a.atleta === id);
-        const entrou = estado.acontecimentos.find((a) => a.tipo === "sub" && a.entra === id);
-        const saiu = meus.find((a) => a.tipo === "sub");
+        /*
+         * Com substituições volantes, um jogador entra e sai várias vezes e a
+         * ficha guarda uma entrada e uma saída: não vão minutos de entrada nem de
+         * saída, como no Pós-jogo (não se contam minutos nestas equipas).
+         */
+        const entrou = volantes ? undefined : estado.acontecimentos.find((a) => a.tipo === "sub" && a.entra === id);
+        const saiu = volantes ? undefined : meus.find((a) => a.tipo === "sub");
         const vermelho = meus.find((a) => a.tipo === "vermelho");
         const marcados = meus.filter((a) => a.tipo === "golo");
         const golos = marcados.map((a) => a.minuto);
@@ -966,6 +994,11 @@ export function LiveMatch({ match, mayRecord, onSaved }: { match: MatchDetail; m
                         : a.atleta
                           ? ` · ${nome(a.atleta)}`
                           : ""}
+                    {problemas.has(a.id) && (
+                      <span role="alert" className="block whitespace-normal text-meta text-risk">
+                        {problemas.get(a.id)!.join(" ")}
+                      </span>
+                    )}
                   </span>
                   <button
                     type="button"

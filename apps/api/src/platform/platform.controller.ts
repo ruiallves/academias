@@ -31,6 +31,11 @@ class SetEupagoDto {
   @IsOptional() @IsString() @Length(0, 200) webhookSecret?: string;
 }
 
+/** O programa de faturação de um clube. Vazio desmarca. Ver `setFaturacao`. */
+class SetFaturacaoDto {
+  @IsString() @Length(0, 60) programa!: string;
+}
+
 class SetStorageLimitDto {
   @IsInt()
   @Min(1024, { message: "O espaço mínimo é 1 GB" })
@@ -314,6 +319,13 @@ export class PlatformController {
   @PlatformRoles("OWNER", "ADMIN")
   setEupago(@Req() req: PlatformRequest, @Ip() ip: string, @Param("id") id: string, @Body() body: SetEupagoDto) {
     return this.platform.setEupago(req.admin, id, body, ip);
+  }
+
+  /** A faturação das vendas do site: `OWNER`/`ADMIN`, como a euPago. Ver `setFaturacao`. */
+  @Patch("academies/:id/faturacao")
+  @PlatformRoles("OWNER", "ADMIN")
+  setFaturacao(@Req() req: PlatformRequest, @Ip() ip: string, @Param("id") id: string, @Body() body: SetFaturacaoDto) {
+    return this.platform.setFaturacao(req.admin, id, body, ip);
   }
 
   @Patch("academies/:id/espaco")

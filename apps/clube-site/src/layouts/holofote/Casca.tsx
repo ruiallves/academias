@@ -8,6 +8,7 @@ import { TrocarLayout } from "@/componentes/TrocarLayout";
 import { ATALHOS, NAV } from "@/componentes/nav";
 import { BotaoSocio } from "@/componentes/socio/BotaoSocio";
 import { BotaoCarrinho } from "@/componentes/loja/BotaoCarrinho";
+import { Legais } from "@/componentes/Legais";
 
 const LARGURA_BARRA = "6.25rem";
 
@@ -137,7 +138,7 @@ function RodapeHolofote({ clube }: { clube: Clube }) {
       <div className="px-6 py-8 text-center">
         <nav aria-label="Rodapé">
           <ul className="flex flex-wrap justify-center gap-x-6 gap-y-2 text-xs font-bold uppercase tracking-wider text-ink">
-            {[...NAV, ...ATALHOS, { href: "/privacidade", label: "Privacidade" }].map((n) => (
+            {[...NAV, ...ATALHOS].map((n) => (
               <li key={n.href}>
                 <Link href={n.href} className="inline-flex h-11 items-center hover:text-signal-ink">
                   {n.label}
@@ -151,6 +152,7 @@ function RodapeHolofote({ clube }: { clube: Clube }) {
           {clube.phone && ` · ${clube.phone}`}
           {clube.email && ` · ${clube.email}`}
         </address>
+        <Legais clube={clube} className="mt-4 flex flex-col items-center gap-2 text-xs text-ink-3" lista="justify-center" ligacao="inline-flex min-h-8 items-center font-semibold text-ink hover:text-signal-ink" />
         <p className="mt-4 text-xs text-ink-3">
           © {ano} {clube.name}. Site e plataforma por{" "}
           <a href="https://www.academias.pt"className="font-semibold text-ink hover:underline">

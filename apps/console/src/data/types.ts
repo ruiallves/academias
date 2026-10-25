@@ -190,6 +190,12 @@ export type Team = {
   matchMinutes: number | null;
   /** Quantos atletas cabem numa convocatória desta equipa. Ausente em respostas antigas. */
   maxCallUps?: number;
+  /**
+   * Substituições ilimitadas (volantes): quem sai pode voltar a entrar. Ligada,
+   * o "Ao vivo" deixa voltar a entrar e a ficha não conta minutos. Ausente numa
+   * resposta antiga: vale a da modalidade (ver `substituicoesVolantes`).
+   */
+  unlimitedSubs?: boolean;
 };
 
 /**

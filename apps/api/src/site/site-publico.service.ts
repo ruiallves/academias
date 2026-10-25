@@ -23,8 +23,10 @@ import {
   type Layout,
 } from "./site.tipos";
 import { siteIncluido } from "./plano";
+import { legalPublico } from "./site-legal";
 import { estadoDaVenda } from "../bilheteira/regras";
 import { lojaVende } from "../loja/regras";
+import { vendeOnline, tiposQueSeVendem } from "../common/vendas-online";
 import { SELECT_PRODUTO_PARA_VENDA, produtoParaVenda, reservadosPorLinha, type ProdutoLido } from "../loja/contexto";
 import { FALLBACK_HEADLINE, FALLBACK_INTRO, FALLBACK_POINTS } from "../landing/membership.template";
 
@@ -158,6 +160,8 @@ export class SitePublicoService {
             : null,
           aviso: a.loja.aviso || undefined,
         },
+        /** Nome legal, NIPC, arbitragem e os textos do clube nas páginas legais. Ver `site-legal.ts`. */
+        legal: legalPublico(id.legal, a.city, a.vendeOnline),
       };
     });
   }
@@ -373,7 +377,7 @@ export class SitePublicoService {
         orderBy: { startsAt: "asc" },
         select: SELECT_JOGO,
       });
-      return jogos.map(jogoPublico);
+      return jogos.map((j) => jogoPublico(j, a.vendeOnline));
     });
   }
 
@@ -386,7 +390,7 @@ export class SitePublicoService {
       const visiveis = new Set((await this.equipasVisiveis(db, a.equipas)).map((t) => t.id));
       const j = await db.match.findFirst({ where: { id }, select: SELECT_JOGO });
       if (!j || !visiveis.has(j.teamId)) throw new NotFoundException();
-      return jogoPublico(j);
+      return jogoPublico(j, a.vendeOnline);
     });
   }
 
@@ -491,13 +495,15 @@ export class SitePublicoService {
     const [a, config, noPlano] = await Promise.all([
       db.academy.findFirst({
         where: { id: academyId },
-        select: { slug: true, name: true, shortName: true, city: true, signalColor: true, logoUrl: true, siteDomain: true, paymentsEnabled: true },
+        select: { slug: true, name: true, shortName: true, city: true, signalColor: true, logoUrl: true, siteDomain: true, paymentsEnabled: true, invoicingConfirmedAt: true },
       }),
       db.siteConfig.findUnique({ where: { academyId } }),
       siteIncluido(db, academyId),
     ]);
     if (!a || !config?.published || !noPlano) throw new NotFoundException();
-    const { paymentsEnabled, ...resto } = a;
+    const { paymentsEnabled, invoicingConfirmedAt, ...resto } = a;
+    // Cobra no site com os pagamentos e a faturação ligados (ver `common/vendas-online.ts`).
+    const vende = vendeOnline({ paymentsEnabled, invoicingConfirmedAt });
     const loja = lojaValida(config.shop);
     return {
       ...resto,
@@ -509,8 +515,10 @@ export class SitePublicoService {
       recintos: recintosValidos(config.venues),
       inicio: inicioValido(config.home),
       loja,
-      // A loja vende online com pagamentos ligados e uma forma de entrega. Sem isso, fica em catálogo.
-      lojaVende: lojaVende(loja, paymentsEnabled),
+      // A loja vende online com pagamentos e faturação ligados e uma forma de entrega. Sem isso, fica em catálogo.
+      lojaVende: lojaVende(loja, vende),
+      /** O clube cobra vendas no site: a bilheteira vende bilhetes pagos e a loja pode vender. */
+      vendeOnline: vende,
     };
   }
 }
@@ -531,6 +539,7 @@ type ClubePublicado = {
   inicio: ReturnType<typeof inicioValido>;
   loja: ReturnType<typeof lojaValida>;
   lojaVende: boolean;
+  vendeOnline: boolean;
 };
 
 /* -------------------------------------------------------------------------- */
@@ -606,6 +615,11 @@ const SELECT_JOGO = {
   siteTickets: true,
 } as const;
 
+/**
+ * Um jogo como o site o mostra. `cobra` falso (sem pagamentos ou sem
+ * faturação): só os bilhetes a 0 € ficam à venda, e uma venda só com preços
+ * pagos não aparece.
+ */
 function jogoPublico(j: {
   id: string;
   teamId: string;
@@ -630,8 +644,10 @@ function jogoPublico(j: {
     membersOnly: boolean;
     closesAt: Date | null;
   } | null;
-}) {
-  const t = j.status !== "CANCELLED" ? j.siteTickets : null;
+}, cobra: boolean) {
+  const comVenda = j.status !== "CANCELLED" ? j.siteTickets : null;
+  const tipos = comVenda ? tiposQueSeVendem(tiposValidos(comVenda.types), cobra) : [];
+  const t = comVenda && tipos.length > 0 ? comVenda : null;
   // As fases, para o cartaz dizer "só para sócios" ou "abre ao público a…". A lotação conta-se na compra (sem cache).
   const fases = t ? estadoDaVenda(t, { startsAt: j.startsAt, status: j.status }) : null;
   return {
@@ -653,7 +669,7 @@ function jogoPublico(j: {
           capacity: t.capacity ?? undefined,
           note: t.note || undefined,
           recintoId: t.venueId ?? undefined,
-          types: tiposValidos(t.types).map((x) => ({
+          types: tipos.map((x) => ({
             id: x.id,
             name: x.nome,
             price: x.precoCents / 100,

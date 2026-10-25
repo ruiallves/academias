@@ -9,6 +9,7 @@ import { can, type RequestContext } from "../common/permissions";
 import { FichaDoSite, caixaDoEmail, numeroDoTelefone } from "../platform/ficha-do-site";
 import { TurnstileService } from "../common/turnstile.service";
 import { siteIncluido, SEM_PLANO } from "../site/plano";
+import { SELECT_VENDAS, vendeOnline } from "../common/vendas-online";
 import { lojaParaConsola, lojaValida, type Loja } from "../site/site.tipos";
 import { bloquearLoja, produtosParaVenda } from "./contexto";
 import { LojaEmissao } from "./emissao.service";
@@ -107,14 +108,14 @@ export class LojaService {
     return academyId;
   }
 
-  /** A loja do clube e se vende online (pagamentos ligados e uma forma de entrega). */
+  /** A loja do clube e se vende online (pagamentos e faturação ligados, e uma forma de entrega). */
   private async lojaDoClube(db: ScopedClient, academyId: string): Promise<{ loja: Loja; vende: boolean }> {
     const [config, academy] = await Promise.all([
       db.siteConfig.findUnique({ where: { academyId }, select: { shop: true } }),
-      db.academy.findFirst({ where: { id: academyId }, select: { paymentsEnabled: true } }),
+      db.academy.findFirst({ where: { id: academyId }, select: SELECT_VENDAS }),
     ]);
     const loja = lojaValida(config?.shop);
-    return { loja, vende: lojaVende(loja, academy?.paymentsEnabled ?? false) };
+    return { loja, vende: lojaVende(loja, vendeOnline(academy)) };
   }
 
   async fichaDaCompra(slug: string) {

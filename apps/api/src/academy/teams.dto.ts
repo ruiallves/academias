@@ -2,6 +2,7 @@ import { Type } from "class-transformer";
 import {
   ArrayMaxSize,
   IsArray,
+  IsBoolean,
   IsIn,
   IsInt,
   IsOptional,
@@ -133,6 +134,14 @@ export class CreateTeamDto {
   @Min(1)
   @Max(300)
   matchMinutes?: number;
+
+  /**
+   * Substituições ilimitadas: quem sai pode voltar a entrar. Ver
+   * `Team.unlimitedSubs`. Sem ela, ligada no futsal e no basquetebol.
+   */
+  @IsOptional()
+  @IsBoolean()
+  unlimitedSubs?: boolean;
 }
 
 

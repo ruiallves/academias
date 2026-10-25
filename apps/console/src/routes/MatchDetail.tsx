@@ -32,6 +32,7 @@ import { Adversario } from "@/components/match/Adversario";
 import { Analise } from "@/components/match/Analise";
 import type { GameFormat } from "@/lib/training";
 import { LiveMatch } from "@/components/match/LiveMatch";
+import { substituicoesVolantes } from "@/components/match/substituicoes";
 import type { SheetRow } from "@/lib/callup-sheet";
 import {
   OUTCOME_LABEL,
@@ -1660,15 +1661,17 @@ function SheetPanel({ match, mayRecord, onSaved }: { match: Match; mayRecord: bo
   const semMinutos = emCampo.filter(semEntrada).length;
 
   /*
-   * Como se entra e sai nesta modalidade.
+   * Como se entra e sai nesta equipa.
    *
-   * No futebol as substituições são poucas e contam-se: para um entrar, um tem
-   * de sair, e a ficha pergunta por quem e a que minuto. No futsal e no
-   * basquetebol entra-se e sai-se a toda a hora: diz-se só quem foi titular e
-   * quem entrou, e não se contam minutos.
+   * Com substituições limitadas (o futebol de 11) são poucas e contam-se: para
+   * um entrar, um tem de sair, e a ficha pergunta por quem e a que minuto. Com
+   * substituições ilimitadas (o futsal, o basquetebol, e o futebol de formação
+   * onde a associação as permite) entra-se e sai-se a toda a hora: diz-se só
+   * quem foi titular e quem entrou, e não se contam minutos. É da equipa
+   * (`Team.unlimitedSubs`), com a modalidade por recurso num servidor antigo.
    */
   const codigo = sportById(match.sportId)?.code;
-  const rotativo = codigo === "futsal" || codigo === "basketball";
+  const rotativo = substituicoesVolantes(match.unlimitedSubs, codigo);
   const comSubstituicoes = !rotativo && Boolean(regras?.addedTime);
   const nomeDe = (id: string) => match.squad.find((s) => s.athleteId === id)?.name ?? "Atleta";
 

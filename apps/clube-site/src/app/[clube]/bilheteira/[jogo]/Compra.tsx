@@ -520,9 +520,14 @@ export function Compra({ slug, matchId, api, demonstracao, demo, nota, resumo }:
               </div>
 
               <p className="text-xs leading-relaxed text-ink-3">
-                Os lugares ficam guardados durante 10 minutos, enquanto pagas; o pedido MB WAY vale 5. Os dados que escreves aqui são tratados pelo clube.{" "}
-                <Link href="/privacidade" className="font-semibold text-ink hover:underline">
-                  Ver a política de privacidade
+                Os lugares ficam guardados durante 10 minutos, enquanto pagas; o pedido MB WAY vale 5. Ao comprar aceitas as{" "}
+                <Link href="/condicoes-de-venda" target="_blank" className="font-semibold text-ink hover:underline">
+                  condições de venda
+                </Link>
+                . Os bilhetes para um jogo com data marcada não se podem devolver por desistência; se o jogo for cancelado, o clube devolve o valor. Os dados que
+                escreves aqui são tratados pelo clube:{" "}
+                <Link href="/privacidade" target="_blank" className="font-semibold text-ink hover:underline">
+                  política de privacidade
                 </Link>
                 .
               </p>

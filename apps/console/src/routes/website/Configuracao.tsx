@@ -45,7 +45,7 @@ export function Identidade() {
   const [d, setD] = useState(site.identidade);
   const mudou = JSON.stringify(d) !== JSON.stringify(site.identidade);
 
-  const campo = (k: Exclude<keyof typeof d, "redes" | "direcao" | "instalacoes">) => ({
+  const campo = (k: Exclude<keyof typeof d, "redes" | "direcao" | "instalacoes" | "legal">) => ({
     value: d[k],
     onChange: (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => setD({ ...d, [k]: e.target.value }),
   });

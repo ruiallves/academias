@@ -14,6 +14,7 @@ import { Plus, Trash2 } from "@/lib/icons";
 import { CompetitionPicker } from "@/components/CompetitionPicker";
 import { Dialog, DialogField, dialogInputClass } from "./Dialog";
 import { PersonPicker } from "./PersonPicker";
+import { CampoSubstituicoes } from "./CampoSubstituicoes";
 import { cx, SelectField } from "./primitives";
 
 const WEEKDAYS = ["Domingo", "Segunda", "Terça", "Quarta", "Quinta", "Sexta", "Sábado"];
@@ -70,12 +71,20 @@ export function NewTeamDialog({ onClose }: { onClose: () => void }) {
    * que fica se ninguém escrever. Vazio não é zero: é "o da modalidade".
    */
   const [minutos, setMinutos] = useState("");
+  /*
+   * Substituições ilimitadas: nulo enquanto ninguém mexer, e aí vale o que a
+   * modalidade costuma ter (ligadas no futsal e no basquetebol). Mudar de
+   * modalidade antes de mexer muda a sugestão com ela.
+   */
+  const [volantesEscolhidas, setVolantes] = useState<boolean | null>(null);
 
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const sport = academy.sports.find((s) => s.id === sportId);
   const minutosSugeridos = profileOf(sport)?.defaults.matchMinutes ?? sport?.matchMinutes ?? null;
+  const codigo = profileOf(sport)?.code;
+  const volantes = volantesEscolhidas ?? (codigo === "futsal" || codigo === "basketball");
   const minutosOk = minutos === "" || (/^\d{1,3}$/.test(minutos) && Number(minutos) >= 1 && Number(minutos) <= 300);
   const [gender, setGender] = useState<"" | TeamGender>("");
   const maxAge = Number(age);
@@ -101,6 +110,7 @@ export function NewTeamDialog({ onClose }: { onClose: () => void }) {
         ...(coachId ? { coachId } : {}),
         ...(competitionIds.length ? { competitionIds } : {}),
         ...(minutos ? { matchMinutes: Number(minutos) } : {}),
+        unlimitedSubs: volantes,
         schedule: slots.filter((s) => s.venue),
       });
       await reloadAcademy();
@@ -217,6 +227,8 @@ export function NewTeamDialog({ onClose }: { onClose: () => void }) {
             />
           </DialogField>
         </div>
+
+        <CampoSubstituicoes ligado={volantes} onChange={setVolantes} />
 
         <div className="grid grid-cols-2 gap-3">
           {/*

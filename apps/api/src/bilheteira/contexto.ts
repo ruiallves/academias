@@ -2,6 +2,7 @@ import type { ScopedClient } from "../prisma/prisma.service";
 import { aberturaAnual, aberturaDoSocio, periodoDaQuota } from "../members/member-fees.service";
 import { recintosValidos, tiposValidos, type Recinto } from "../site/site.tipos";
 import { estadoDaVenda, lugaresLivres, quotaCobre, type EstadoDaVenda, type TipoParaVenda } from "./regras";
+import { SELECT_VENDAS, tiposQueSeVendem, vendeOnline } from "../common/vendas-online";
 
 /**
  * As perguntas à base que a compra, o webhook e o leitor fazem todos: o jogo
@@ -24,7 +25,15 @@ export type ContextoDoJogo = {
     closesAt: Date | null;
   };
   recinto: Recinto | null;
+  /** Todos os preços do jogo: as contas da consola e a emissão de uma compra já paga leem estes. */
   tipos: TipoParaVenda[];
+  /**
+   * O clube pode cobrar no site (pagamentos e faturação ligados, ver
+   * `common/vendas-online.ts`). Sem isso, só os bilhetes a 0 € se vendem.
+   */
+  cobra: boolean;
+  /** Os preços que se vendem agora: os que o site, a app e a compra usam. */
+  aVenda: TipoParaVenda[];
   estado: EstadoDaVenda;
   /** Por bancada do recinto (e por bancada citada num tipo): os lugares que ainda se vendem. Nulo = sem limite próprio. */
   livres: Record<string, number | null>;
@@ -75,15 +84,17 @@ export async function anuaisPorBancada(db: ScopedClient, seasonId: string | null
  * os bilhetes que tem para os seus adeptos, no recinto que desenhou para isso.
  */
 export async function contextoDoJogo(db: ScopedClient, academyId: string, matchId: string, agora = new Date(), semCompra?: string): Promise<ContextoDoJogo | null> {
-  const [m, venda, config] = await Promise.all([
+  const [m, venda, config, clube] = await Promise.all([
     db.match.findFirst({
       where: { id: matchId },
       select: { id: true, startsAt: true, endsAt: true, status: true, isHome: true, opponent: true, team: { select: { name: true, seasonId: true } } },
     }),
     db.siteMatchTickets.findUnique({ where: { matchId } }),
     db.siteConfig.findUnique({ where: { academyId }, select: { venues: true } }),
+    db.academy.findFirst({ where: { id: academyId }, select: SELECT_VENDAS }),
   ]);
   if (!m || !venda) return null;
+  const cobra = vendeOnline(clube);
 
   const recinto = recintosValidos(config?.venues).find((r) => r.id === venda.venueId) ?? null;
   const tipos = tiposValidos(venda.types);
@@ -109,7 +120,7 @@ export async function contextoDoJogo(db: ScopedClient, academyId: string, matchI
     membersOnly: venda.membersOnly,
     closesAt: venda.closesAt,
   };
-  return { jogo, venda: v, recinto, tipos, estado: estadoDaVenda(v, jogo, agora), livres, livresNoJogo, anuais, ocupados };
+  return { jogo, venda: v, recinto, tipos, cobra, aVenda: tiposQueSeVendem(tipos, cobra), estado: estadoDaVenda(v, jogo, agora), livres, livresNoJogo, anuais, ocupados };
 }
 
 /**

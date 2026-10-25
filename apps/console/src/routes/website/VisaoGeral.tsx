@@ -24,6 +24,7 @@ export function VisaoGeral({ onIr }: { onIr: (secao: string) => void }) {
   const passos = [
     { feito: !!site.identidade.sobre.trim(), texto: "Escrever o texto de apresentação do clube", secao: "identidade" },
     { feito: !!site.identidade.morada.trim(), texto: "Pôr a morada e os contactos", secao: "identidade" },
+    { feito: !!site.identidade.legal.nipc, texto: "Pôr o nome legal e o NIPC do clube", secao: "legal" },
     { feito: publicadas > 0, texto: "Publicar a primeira notícia", secao: "noticias" },
     { feito: site.patrocinadores.length > 0, texto: "Juntar os patrocinadores", secao: "patrocinadores" },
   ];

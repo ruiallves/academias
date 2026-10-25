@@ -5,6 +5,7 @@ import { ConfigService } from "@nestjs/config";
 import { PresenceService } from "../presence/presence.service";
 import { PlatformPrisma } from "./platform.prisma";
 import { eupagoConfigurado } from "../billing/eupago-do-clube";
+import { vendeOnline } from "../common/vendas-online";
 import { initialRoles, isPresidente } from "../roles/roles.service";
 import { SHORT_NAME_MAX, shortNameOf } from "../common/short-name";
 import { MailClient } from "../mail/mail.client";
@@ -311,8 +312,9 @@ export class PlatformService {
         logoUrl: true, signalColor: true,
         /* Só para dizer se estão preenchidas — os valores nunca saem daqui. */
         eupagoApiKey: true, eupagoWebhookSecret: true,
+        paymentsEnabled: true, invoicingSystem: true, invoicingConfirmedAt: true,
         subscription: {
-          select: { status: true, priceCents: true, plan: { select: { id: true, name: true, amountCents: true } } },
+          select: { status: true, priceCents: true, plan: { select: { id: true, name: true, amountCents: true, includesWebsite: true } } },
         },
       },
     });
@@ -474,6 +476,7 @@ export class PlatformService {
       suspendedAt: academy.suspendedAt,
       storage,
       eupago: this.eupagoDoClube(academy),
+      faturacao: this.faturacaoDoClube({ ...academy, siteNoPlano: academy.subscription?.plan.includesWebsite === true }),
       logoUrl: academy.logoUrl,
       signalColor: academy.signalColor,
       plan: academy.subscription?.plan.name ?? null,
@@ -1265,6 +1268,73 @@ export class PlatformService {
       webhookSecret: Boolean(a.eupagoWebhookSecret?.trim()),
       webhookUrl: `${base}/webhooks/eupago/${a.slug}`,
     };
+  }
+
+  /**
+   * A faturação das vendas do site de um clube, e o que falta para ele vender.
+   *
+   * O clube só vende no site (bilheteira paga e loja) com quatro coisas: o
+   * site no plano, o canal euPago dele, os pagamentos ligados por ele nas
+   * Definições e a faturação marcada aqui. A ficha mostra as quatro, para se
+   * ver de uma vez porque é que um clube ainda não vende. Ver
+   * `common/vendas-online.ts`.
+   */
+  private faturacaoDoClube(a: {
+    siteNoPlano: boolean;
+    eupagoApiKey: string | null;
+    eupagoWebhookSecret: string | null;
+    paymentsEnabled: boolean;
+    invoicingSystem: string | null;
+    invoicingConfirmedAt: Date | null;
+  }) {
+    const passos = {
+      site: a.siteNoPlano,
+      eupago: eupagoConfigurado(a),
+      pagamentos: a.paymentsEnabled,
+      faturacao: a.invoicingConfirmedAt !== null,
+    };
+    return {
+      programa: a.invoicingSystem,
+      desde: a.invoicingConfirmedAt,
+      passos,
+      /** Vende no site: bilheteira paga e loja. */
+      vende: passos.site && vendeOnline(a),
+    };
+  }
+
+  /**
+   * Marcar (ou desmarcar) a faturação de um clube: o programa certificado que
+   * ele usa para faturar as vendas do site. Marca-se depois de confirmar com o
+   * clube que está pronto; desmarcar fecha as vendas pagas do site (a loja
+   * volta a catálogo, a bilheteira só vende a 0 €), sem mexer em nada vendido.
+   *
+   * `programa` vazio desmarca. Fica no registo de auditoria.
+   */
+  async setFaturacao(admin: PlatformAdminContext, id: string, dto: { programa: string }, ip?: string) {
+    const academy = await this.prisma.academy.findUnique({
+      where: { id },
+      select: { id: true, slug: true, invoicingSystem: true, invoicingConfirmedAt: true },
+    });
+    if (!academy) throw new BadRequestException("Academia não encontrada");
+    const programa = dto.programa.trim();
+    const mesmo = programa && programa === academy.invoicingSystem && academy.invoicingConfirmedAt;
+
+    await this.prisma.academy.update({
+      where: { id },
+      data: programa
+        ? { invoicingSystem: programa, invoicingConfirmedAt: mesmo ? academy.invoicingConfirmedAt : new Date() }
+        : { invoicingSystem: null, invoicingConfirmedAt: null },
+    });
+    await this.audit(admin, "academy.faturacao", "academy", id, { slug: academy.slug, de: academy.invoicingSystem, para: programa || null }, ip);
+
+    const depois = await this.prisma.academy.findUniqueOrThrow({
+      where: { id },
+      select: {
+        eupagoApiKey: true, eupagoWebhookSecret: true, paymentsEnabled: true, invoicingSystem: true, invoicingConfirmedAt: true,
+        subscription: { select: { plan: { select: { includesWebsite: true } } } },
+      },
+    });
+    return this.faturacaoDoClube({ ...depois, siteNoPlano: depois.subscription?.plan.includesWebsite === true });
   }
 
   /**

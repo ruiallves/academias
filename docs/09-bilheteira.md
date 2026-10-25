@@ -33,6 +33,12 @@ os sócios dessa categoria (`MemberTier`).
 
 ## As regras
 
+- **Só vende com a faturação configurada** (desde 25/10/2026): os bilhetes
+  pagos só se vendem com os pagamentos do clube ligados **e** a faturação
+  marcada no painel da plataforma (`Academy.invoicingConfirmedAt`, ver
+  `api/src/common/vendas-online.ts`). Sem ela, só os bilhetes a 0 € ficam à
+  venda: os pagos não aparecem no site nem na app, a compra recusa-os e a
+  consola recusa abrir uma venda com preços pagos.
 - **Em casa e fora** (desde 24/10/2026): qualquer jogo pode ter venda. Fora, o
   clube vende os bilhetes que o adversário lhe cede, num recinto que desenha no
   Estádio (a bancada dos visitantes). Os lugares anuais contam-se por recinto,

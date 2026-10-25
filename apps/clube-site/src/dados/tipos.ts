@@ -115,6 +115,26 @@ export type Clube = {
   sponsors: { name: string; logoUrl?: string; url?: string }[];
   /** A loja: se vende online e como entrega. Ausente num servidor antigo = catálogo. */
   loja?: LojaDoClube;
+  /** Nome legal, NIPC, arbitragem e os textos do clube nas páginas legais. Ausente num servidor antigo: ver `lib/legal.ts`. */
+  legal?: LegalDoClube;
+};
+
+/**
+ * O que as páginas legais e o rodapé usam. A entidade de resolução
+ * alternativa de litígios vem já resolvida pela API (a escolhida pelo clube,
+ * ou a sugerida pela cidade). Os textos do clube vêm em parágrafos.
+ */
+export type LegalDoClube = {
+  /** A denominação legal. Ausente: o nome do clube. */
+  nome?: string;
+  nipc?: string;
+  ral: { nome: string; sigla?: string; url?: string };
+  termosSocio: string[];
+  estatutosUrl?: string;
+  notaVenda: string[];
+  notaPrivacidade: string[];
+  /** Pagamentos e faturação ligados: a loja e a bilheteira podem cobrar. Liga a página de condições de venda. */
+  vendeOnline: boolean;
 };
 
 /**

@@ -1,9 +1,9 @@
 ---
 type: TERMS_OF_SERVICE
-version: 1.5
+version: 1.6
 title: Termos de Serviço
 summary: O contrato entre o clube e a Academias: o que inclui cada plano, pagamento, suspensão, cancelamento e as responsabilidades de cada parte.
-changeNote: Novo plano Connect Pro, o Connect com o site do clube. Novos preços para clubes novos (Connect a 24,99 € e Connect Pro a 29,99 € por mês); os clubes que já usam a plataforma mantêm o preço que pagam e têm o Connect Pro a 24,99 € por mês.
+changeNote: A loja e a bilheteira do site já vendem, com os pagamentos e a faturação do clube ligados. O site passa a ter páginas legais (privacidade, condições de venda e termos do sócio) escritas a partir dos dados do clube, que o clube confirma e completa.
 ---
 
 Estes termos regulam a utilização da plataforma Academias por clubes e academias desportivas. Estão escritos para serem lidos por quem dirige um clube, não por juristas. Ao aceitá-los em nome do clube, a pessoa que os aceita declara que está autorizada a representá-lo para este efeito. O Acordo de Tratamento de Dados e a Política de Utilização Aceitável fazem parte deste contrato.
@@ -52,7 +52,8 @@ O plano Consola **não inclui** a app do clube, a cobrança de mensalidades ou q
 - Adesão a sócio no próprio site.
 - Um **domínio .pt** registado em nome do clube, com o registo e as renovações incluídos enquanto o clube estiver neste plano. Se o clube já tiver domínio, pode usar esse. Enquanto o domínio não estiver ligado, o site fica disponível num endereço da Academias.
 - Alojamento, certificado de segurança (SSL) e manutenção técnica do site.
-- A **loja online** e a **bilheteira digital com códigos QR** estão em desenvolvimento: o site já mostra os produtos e os bilhetes, mas a venda ainda não está disponível. Quando o for, passa a fazer parte deste plano sem custo adicional, e os pagamentos seguem as regras da secção 10.
+- A **loja online** e a **bilheteira digital com códigos QR**. A venda abre quando o clube tem os pagamentos e a faturação ligados, e os pagamentos seguem as regras da secção 10.
+- **Páginas legais** do site (política de privacidade, condições de venda e termos do sócio), escritas pela plataforma a partir dos dados que o clube indica no menu Website. São textos de base: o clube confirma-os, completa-os com as suas regras, e responde por eles perante quem visita, compra ou se faz sócio.
 
 Todos os planos incluem **5 GB de espaço de armazenamento** para os ficheiros do clube (ver a secção 13).
 
@@ -140,7 +141,7 @@ Os pagamentos em linha são processados por um prestador de serviços de pagamen
 
 O estado de um pagamento na plataforma reflecte a confirmação recebida do prestador. Reclamações, estornos, devoluções e litígios sobre pagamentos de famílias ou sócios são tratados entre o clube, a pessoa e o prestador.
 
-As vendas da loja e da bilheteira do site do clube, quando disponíveis, seguem as mesmas regras: o clube é o vendedor, o dinheiro é liquidado directamente ao clube, e o clube responde perante quem compra, incluindo pela entrega dos produtos, pela entrada nos jogos e pelas devoluções.
+As vendas da loja e da bilheteira do site do clube seguem as mesmas regras: o clube é o vendedor, o dinheiro é liquidado directamente ao clube, e o clube responde perante quem compra, incluindo pela informação legal do site (nome, NIPC, centro de arbitragem), pela faturação, pela entrega dos produtos, pela entrada nos jogos, pelas devoluções e pelo Livro de Reclamações.
 
 ## 11. Cancelamento
 
