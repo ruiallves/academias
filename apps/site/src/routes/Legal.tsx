@@ -68,6 +68,10 @@ export default function Legal() {
     };
   }, [slug, version]);
 
+  useEffect(() => {
+    if (doc) document.title = `${doc.title} | Academias`;
+  }, [doc]);
+
   // Sem slug, o índice `/legal` abre o primeiro documento em vigor.
   if (!slug && index && index.length > 0) return <Navigate to={`/legal/${index[0].slug}`} replace />;
 

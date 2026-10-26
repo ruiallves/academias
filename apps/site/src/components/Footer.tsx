@@ -1,5 +1,6 @@
 import { Link } from "react-router-dom";
 import { CONTACT_EMAIL, INSTAGRAM_URL } from "@/lib/content";
+import { SOLUCOES } from "@/lib/solucoes";
 import { PAYMENT_METHODS, PaymentMark } from "./PaymentIcons";
 import { InstagramIcon, Wordmark } from "./marca";
 
@@ -11,6 +12,10 @@ const COLUNAS: { titulo: string; links: { to: string; label: string; externo?: b
       { to: "/planos", label: "Planos" },
       { to: "/produto#roteiro", label: "Roteiro" },
     ],
+  },
+  {
+    titulo: "Para clubes",
+    links: SOLUCOES.map((s) => ({ to: s.path, label: s.nome })),
   },
   {
     titulo: "Clube",
@@ -43,7 +48,7 @@ export function Footer() {
   return (
     <footer className="palco-cal">
       <div className="wrap faixa-curta">
-        <div className="grid gap-10 sm:grid-cols-2 lg:grid-cols-[1.5fr_repeat(3,1fr)]">
+        <div className="grid gap-10 sm:grid-cols-2 lg:grid-cols-[1.4fr_repeat(4,1fr)]">
           <div>
             <Wordmark />
             <p className="mt-4 max-w-[30ch] text-[0.95rem] leading-relaxed text-texto-2">

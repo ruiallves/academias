@@ -3,11 +3,17 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
-    <title>Academias. A infraestrutura digital do teu clube</title>
-    <meta
-      name="description"
-      content="Atletas, treinos, presenças, jogos, mensalidades e sócios. Uma consola para quem trabalha no clube e uma app para as famílias, os atletas e os sócios."
-    />
+    <!--
+      Entre os dois marcadores, o build escreve o título, a descrição, o canónico,
+      as etiquetas de partilha e os dados estruturados de cada página
+      (scripts/prerender.mjs a partir de src/lib/seo.ts). O que está aqui é só o
+      que se vê em desenvolvimento.
+    -->
+    <!--seo-->
+    <title>Software de gestão de clubes desportivos | Academias</title>
+    <meta name="description" content="Software de gestão para clubes desportivos." />
+    <link rel="canonical" href="https://www.academias.pt/" />
+    <!--/seo-->
     <meta name="theme-color" content="#f5f4f0" />
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32.png" />
@@ -24,14 +30,6 @@
       href="https://fonts.googleapis.com/css2?family=Mona+Sans:wdth,wght@75..125,400..900&display=swap"
       rel="stylesheet"
     />
-
-    <meta property="og:type" content="website" />
-    <meta property="og:title" content="Academias. A infraestrutura digital do teu clube" />
-    <meta
-      property="og:description"
-      content="Atletas, treinos, jogos, mensalidades e sócios. Uma consola para o clube e uma app para as famílias."
-    />
-    <meta property="og:locale" content="pt_PT" />
   </head>
   <body>
     <div id="root"></div>

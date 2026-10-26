@@ -59,6 +59,8 @@ export function Heroi() {
   return (
     <section ref={ref} className="heroi palco-noite">
       <div className="wrap">
+        {/* O que se escreve no Google. O título por baixo é o slogan. */}
+        <p className="rotulo mb-6">Software de gestão de clubes desportivos</p>
         <h1 className="titulo t1 max-w-[13ch]">A infraestrutura digital do teu clube<span className="ponto">.</span></h1>
 
         <div className="mt-8 flex flex-col gap-7 lg:flex-row lg:items-end lg:justify-between">

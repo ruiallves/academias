@@ -188,9 +188,17 @@ cada app ser lido.
 | site | `apps/site` | `academias.pt` |
 | plataforma | `apps/platform` | `admin.academias.pt` |
 
-O `vercel.json` de cada um faz duas coisas: manda tudo o que não é ficheiro para o
-`index.html` (sem isto, abrir `academias.pt/planos` directamente dá 404 — só
-funcionava navegando a partir da raiz) e marca os assets com hash como imutáveis.
+No painel da plataforma, o `vercel.json` manda tudo o que não é ficheiro para o
+`index.html` (sem isto, abrir um endereço directamente dá 404) e marca os assets
+com hash como imutáveis.
+
+O **site** é diferente, por causa do Google: o build (`npm run build` em
+`apps/site`) escreve um HTML por página (`dist/planos.html`, …) com o texto e as
+etiquetas de SEO, e o `vercel.json` usa `cleanUrls` para os servir em `/planos`.
+Não há reescrita geral para o `index.html`: um endereço que não existe recebe o
+`404.html` com o código 404. Só `/legal/*` é reescrito, para `legal.html`. Uma
+página nova do site tem de entrar em `src/lib/seo.ts` (ou em
+`src/lib/solucoes.ts`), senão não é gerada e dá 404 ao abrir directamente.
 
 Os projectos da **consola** e da **família** no Vercel devem ser apagados depois de
 o Railway estar a servi-las. Não antes: ter dois sítios a servir a mesma consola é

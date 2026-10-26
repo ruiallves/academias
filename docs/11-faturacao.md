@@ -109,8 +109,13 @@ líquido recebem `liquidoDeBruto` (4 casas) e a emissão confere o total.
 - `MOLONI_CLIENT_ID` / `MOLONI_CLIENT_SECRET`: a nossa aplicação na Moloni
   (Definições › Programadores, gratuito), com o callback
   `<PUBLIC_API_URL>/api/faturacao/callback/moloni`.
-- `SAGE_CLIENT_ID` / `SAGE_CLIENT_SECRET` / `SAGE_SIGNING_SECRET`: a nossa
-  aplicação em developerselfservice.sageone.com, callback `.../callback/sage_one`.
+- `SAGE_CLIENT_ID` / `SAGE_CLIENT_SECRET`: a nossa aplicação "Academias" em
+  developerselfservice.sageone.com (criada a 26/10/2026), callback
+  `.../callback/sage_one`. `SAGE_SIGNING_SECRET` é opcional: o portal novo
+  só dá as duas chaves, e a Sage diz que a assinatura deixou de ser
+  verificada nas versões novas da API; sem ele assina-se com a chave vazia,
+  e se a Sage ainda a exigir em PT a ligação é recusada (401) e vê-se na
+  consola. Nesse caso, pedir o segredo a sageonedevelopers@sage.com.
 - `PHC_GO_APP_ID`: o nosso AppID de programador PHC GO (DevGO).
 - `INVOICING_SWEEP_INTERVAL_MIN`: a fila (5; 0 desliga).
 

@@ -53,8 +53,15 @@ export class SageOne implements Conector {
 
   constructor(private readonly app: { clientId: string; clientSecret: string; signingSecret: string }) {}
 
+  /**
+   * O segredo de assinatura é opcional: o portal novo da Sage
+   * (developerselfservice) dá só o Client ID e o Client Secret, e a própria
+   * Sage diz que a assinatura deixou de ser verificada nas versões novas da
+   * API. Sem ele assina-se com a chave vazia; se a Sage ainda a verificar em
+   * PT, o pedido volta com 401 e a consola diz que a ligação foi recusada.
+   */
   get disponivel(): boolean {
-    return Boolean(this.app.clientId && this.app.clientSecret && this.app.signingSecret);
+    return Boolean(this.app.clientId && this.app.clientSecret);
   }
 
   private cred(c: Credenciais): Cred {

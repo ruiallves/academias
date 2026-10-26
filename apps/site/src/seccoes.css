@@ -23,6 +23,22 @@
   will-change: transform;
 }
 .heroi-montra .monitor { border-radius: clamp(10px, 1.2vw, 18px) clamp(10px, 1.2vw, 18px) 0 0; }
+
+/* A montra das páginas de cada pesquisa (Solucao.tsx): a do herói, parada. */
+.solucao-montra {
+  display: grid;
+  place-items: end center;
+  margin-top: clamp(40px, 6vw, 88px);
+  padding: clamp(14px, 3.2vw, 56px) clamp(14px, 3.2vw, 56px) 0;
+  border-radius: var(--raio-g) var(--raio-g) 0 0;
+  background: var(--areia);
+  overflow: hidden;
+}
+.solucao-montra .monitor { border-radius: clamp(10px, 1.2vw, 18px) clamp(10px, 1.2vw, 18px) 0 0; }
+.solucao-montra .telemovel { --tw: clamp(220px, 26vw, 340px); margin-bottom: -18%; }
+@media (max-width: 860px) {
+  .solucao-montra { padding: 12px 12px 0; }
+}
 .heroi-tel {
   position: absolute; right: clamp(8px, 5vw, 96px); bottom: 0;
   transform: translateY(calc(18% - var(--p) * 16%));
