@@ -13,11 +13,12 @@ import { apiPatch } from "@/lib/http";
 import { events as storeEvents, matches as storeMatches, sessions as storeSessions, reloadAcademy } from "@/lib/store";
 import { athleteById, coachById, teamById } from "@/lib/api";
 import { longDate, shortName, time } from "@/lib/format";
-import { Ban, ClipboardCheck, Globe, MapPin, Pencil, RefreshCw, TriangleAlert, Trophy, Whistle, X, type LucideIcon } from "@/lib/icons";
+import { Ban, ClipboardCheck, Globe, MapPin, Pencil, RefreshCw, Trash2, TriangleAlert, Trophy, Whistle, X, type LucideIcon } from "@/lib/icons";
 import { can } from "@/lib/permissions";
 import type { Session } from "@/lib/permissions";
 import { cx, Monogram, Pill } from "./primitives";
 import { EditEventDialog } from "./EditEventDialog";
+import { ApagarEventoDialog, descreverEvento } from "./ApagarEventoDialog";
 import { EventFinance } from "./finance/EventFinance";
 
 /**
@@ -88,6 +89,7 @@ export function EventDetail({
   const [cancelling, setCancelling] = useState(false);
   const [cancelError, setCancelError] = useState<string | null>(null);
   const [editing, setEditing] = useState(false);
+  const [apagando, setApagando] = useState(false);
 
   /*
    * Editar é do mesmo lote que cancelar.
@@ -350,14 +352,33 @@ export function EventDetail({
 
         {meu && can(session, "calendar:write") && (
           <footer className="border-t border-line px-5 py-3">
-            <button
-              type="button"
-              onClick={toggleCancel}
-              disabled={cancelling}
-              className={cx("ctl-ghost w-full justify-center", event.cancelled ? "text-ok" : "text-risk")}
-            >
-              {cancelling ? "A guardar…" : event.cancelled ? "Reativar evento" : "Cancelar evento"}
-            </button>
+            {/*
+              Cancelar e apagar são coisas diferentes, e estão as duas aqui.
+              Cancelar deixa o evento riscado no calendário e na app, com o que
+              tiver guardado. Apagar tira-o de vez, e só serve para enganos: o
+              servidor recusa o que já começou ou já tem coisas registadas.
+            */}
+            <div className={cx("grid gap-2", isApiEvent ? "grid-cols-2" : "grid-cols-1")}>
+              <button
+                type="button"
+                onClick={toggleCancel}
+                disabled={cancelling}
+                className={cx("ctl-ghost justify-center", event.cancelled ? "text-ok" : "text-ink-2")}
+              >
+                {cancelling ? "A guardar…" : event.cancelled ? "Reativar evento" : "Cancelar evento"}
+              </button>
+              {isApiEvent && (
+                <button
+                  type="button"
+                  onClick={() => setApagando(true)}
+                  disabled={cancelling}
+                  className="ctl-ghost justify-center text-risk hover:bg-risk-soft hover:text-risk"
+                >
+                  <Trash2 className="size-3.5" strokeWidth={1.75} />
+                  Apagar evento
+                </button>
+              )}
+            </div>
             {cancelError && (
               <p className="mt-2 flex items-start gap-1.5 text-meta text-risk">
                 <TriangleAlert className="mt-0.5 size-3.5 shrink-0" strokeWidth={1.75} />
@@ -368,7 +389,15 @@ export function EventDetail({
         )}
       </div>
 
-      {editing && <EditEventDialog event={event} onClose={() => setEditing(false)} />}
+      {editing && <EditEventDialog event={event} onClose={() => setEditing(false)} onApagado={onClose} />}
+      {apagando && (
+        <ApagarEventoDialog
+          id={event.id}
+          descricao={descreverEvento(event)}
+          onClose={() => setApagando(false)}
+          onApagado={onClose}
+        />
+      )}
     </div>
   );
 }

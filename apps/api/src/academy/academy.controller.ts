@@ -954,7 +954,7 @@ export class AcademyController {
    */
   @Post("events/cancelar-varios")
   cancelarVarios(@Req() req: AuthedRequest, @Body() body: CancelarVariosDto) {
-    return this.academy.cancelarVarios(req.ctx, body.ids, body.acao, body.ensaio === true);
+    return this.academy.cancelarVarios(req.ctx, body.ids, body.acao, body.ensaio === true, body.comDados === true);
   }
 
   /** Cancelar ou reativar um evento. */

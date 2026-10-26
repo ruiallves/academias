@@ -10,8 +10,10 @@ import {
   Clock,
   MapPin,
   Download,
+  Trash2,
   Users,
 } from "@/lib/icons";
+import { ApagarEventoDialog, descreverEvento } from "@/components/ApagarEventoDialog";
 import { useSession } from "@/session";
 import { can } from "@/lib/permissions";
 import { athleteById, numeroNaEquipa, sportById } from "@/lib/api";
@@ -100,6 +102,8 @@ export default function MatchDetail() {
   const [loading, setLoading] = useState(true);
   /** O jogo aberto na janela de edição do calendário, quando se carrega em "Editar jogo". */
   const [editando, setEditando] = useState<CalendarEvent | null>(null);
+  /** O jogo na janela de apagar. Ver `ApagarEventoDialog`. */
+  const [aApagar, setAApagar] = useState<CalendarEvent | null>(null);
 
   const mayRecord = can(session, "attendance:write");
 
@@ -163,6 +167,8 @@ export default function MatchDetail() {
   const cancelado = match.status === "CANCELLED";
   const naBase = storeMatches.find((m) => m.id === match.id);
   const podeEditar = !cancelado && can(session, "calendar:write") && Boolean(naBase) && naBase?.mine !== false;
+  // Apagar também serve um jogo desmarcado: apagar um cancelado é legítimo.
+  const podeApagar = can(session, "calendar:write") && Boolean(naBase) && naBase?.mine !== false;
   const onze = match.plan?.slots ?? [];
   const titulares = onze.filter((x) => x.athleteId).length;
   const onzeCompleto = onze.length > 0 && titulares === onze.length;
@@ -268,6 +274,20 @@ export default function MatchDetail() {
             <span className="max-sm:sr-only">Editar jogo</span>
           </button>
         )}
+        {podeApagar && (
+          <button
+            type="button"
+            onClick={() => {
+              const daBase = storeMatches.find((m) => m.id === match.id);
+              if (daBase) setAApagar(fromApiMatch(daBase));
+            }}
+            className="flex h-12 shrink-0 items-center justify-center gap-2 rounded-[16px] bg-sunken px-4 text-body font-medium text-ink-3 transition-colors hover:bg-risk-soft hover:text-risk"
+            title="Apagar este jogo"
+            aria-label="Apagar jogo"
+          >
+            <Trash2 className="size-4" strokeWidth={1.75} />
+          </button>
+        )}
       </div>
 
       {editando && (
@@ -277,6 +297,15 @@ export default function MatchDetail() {
             setEditando(null);
             void recarregar();
           }}
+          onApagado={() => navigate("/jogos", { replace: true })}
+        />
+      )}
+      {aApagar && (
+        <ApagarEventoDialog
+          id={aApagar.id}
+          descricao={descreverEvento(aApagar)}
+          onClose={() => setAApagar(null)}
+          onApagado={() => navigate("/jogos", { replace: true })}
         />
       )}
 

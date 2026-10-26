@@ -6,12 +6,13 @@ import { apiPut } from "@/lib/http";
 import { reloadAcademy, useStore } from "@/lib/store";
 import { useActiveCatalog } from "@/lib/catalogs";
 import { longDate } from "@/lib/format";
-import { Settings, TriangleAlert } from "@/lib/icons";
+import { Settings, Trash2, TriangleAlert } from "@/lib/icons";
 import { Dialog, DialogField, dialogInputClass } from "./Dialog";
 import { TokenPicker } from "./TokenPicker";
 import { CampoAdversario } from "./CampoAdversario";
 import { Interruptor } from "./definicoes/ui";
 import { cx, SelectField } from "./primitives";
+import { ApagarEventoDialog, descreverEvento } from "./ApagarEventoDialog";
 
 /**
  * Editar um evento que já existe.
@@ -34,7 +35,16 @@ import { cx, SelectField } from "./primitives";
  * servidor distinguir "não toquei nisto" de "quero isto vazio", que num corpo
  * com o objecto todo se confundem. Ver `EditEventDto`.
  */
-export function EditEventDialog({ event, onClose }: { event: CalendarEvent; onClose: () => void }) {
+export function EditEventDialog({
+  event,
+  onClose,
+  onApagado,
+}: {
+  event: CalendarEvent;
+  onClose: () => void;
+  /** Depois de o evento ser apagado a partir daqui. Sem ele, só fecha a janela. */
+  onApagado?: () => void;
+}) {
   const store = useStore();
   const venues = useActiveCatalog("venues");
   const dressingRooms = useActiveCatalog("dressingRooms");
@@ -61,6 +71,8 @@ export function EditEventDialog({ event, onClose }: { event: CalendarEvent; onCl
 
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  /** A janela de apagar toma o lugar desta. "Cancelar" lá volta aqui. */
+  const [aApagar, setAApagar] = useState(false);
 
   /*
    * O local de um jogo fora é texto livre, como na criação.
@@ -130,6 +142,17 @@ export function EditEventDialog({ event, onClose }: { event: CalendarEvent; onCl
     }
   }
 
+  if (aApagar) {
+    return (
+      <ApagarEventoDialog
+        id={event.id}
+        descricao={descreverEvento(event)}
+        onClose={() => setAApagar(false)}
+        onApagado={() => (onApagado ? onApagado() : onClose())}
+      />
+    );
+  }
+
   return (
     <Dialog
       labelledBy="editar-evento"
@@ -138,6 +161,16 @@ export function EditEventDialog({ event, onClose }: { event: CalendarEvent; onCl
       onClose={onClose}
       footer={
         <>
+          {/* À esquerda e longe do Guardar: apagar não se faz por engano. */}
+          <button
+            type="button"
+            onClick={() => setAApagar(true)}
+            className="ctl-ghost mr-auto text-risk hover:bg-risk-soft hover:text-risk"
+            disabled={busy}
+          >
+            <Trash2 className="size-3.5" strokeWidth={1.75} />
+            Apagar
+          </button>
           <button type="button" onClick={onClose} className="ctl-ghost" disabled={busy}>
             Cancelar
           </button>
@@ -157,7 +190,7 @@ export function EditEventDialog({ event, onClose }: { event: CalendarEvent; onCl
         {/* O tipo e o escalão dizem-se, não se escolhem — ver a nota do cabeçalho. */}
         <p className="rounded-[var(--radius-control)] bg-sunken/60 px-3 py-2 text-meta leading-relaxed text-ink-3">
           O tipo e o escalão não se alteram aqui: cada tipo de evento guarda coisas diferentes — presenças, convocatória,
-          ficha. Para mudar um deles, cancela este e marca outro.
+          ficha. Para mudar um deles, apaga este e marca outro.
         </p>
 
         {isMatch && (

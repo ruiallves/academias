@@ -10,7 +10,7 @@ import { ImportCalendarDialog } from "@/components/ImportCalendarDialog";
 import { CancelarEventosDialog } from "@/components/CancelarEventosDialog";
 import { ExportCalendarDialog } from "@/components/ExportCalendarDialog";
 import { EventDetail } from "@/components/EventDetail";
-import { Ban, Cake, CalendarDays, ChevronLeft, ChevronRight, Download, Loader2, Plus, Upload } from "@/lib/icons";
+import { Cake, CalendarDays, ChevronLeft, ChevronRight, Download, Loader2, Plus, Trash2, Upload } from "@/lib/icons";
 import { useAniversarios, type Aniversario } from "@/lib/aniversarios";
 import type { CategoricalColor } from "@academia/ui/tokens";
 import { coachById, listTeams, today } from "@/lib/api";
@@ -76,7 +76,7 @@ export default function Calendar() {
   const [importando, setImportando] = useState(false);
   /* Exportar pergunta primeiro o período e a equipa. Ver `ExportCalendarDialog`. */
   const [exportando, setExportando] = useState(false);
-  /* Cancelar vários de uma vez. Ver `CancelarEventosDialog`. */
+  /* Apagar (ou desmarcar) vários de uma vez. Ver `CancelarEventosDialog`. */
   const [cancelando, setCancelando] = useState(false);
   /*
    * Os aniversários: desligados por omissão, e a escolha fica neste browser.
@@ -243,8 +243,8 @@ export default function Calendar() {
             </button>
             {/* Desfazer uma série marcada por engano, sem ir evento a evento. */}
             <button type="button" onClick={() => setCancelando(true)} className="ctl-outline">
-              <Ban className="size-3.5" strokeWidth={1.75} />
-              Cancelar eventos
+              <Trash2 className="size-3.5" strokeWidth={1.75} />
+              Apagar eventos
             </button>
             <button
               type="button"

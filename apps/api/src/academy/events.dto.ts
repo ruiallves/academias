@@ -186,6 +186,11 @@ export class CancelarVariosDto {
   @IsOptional()
   @IsBoolean()
   ensaio?: boolean;
+
+  /** Apagar mesmo com dados registados (ficha, resultado, presenças…). Só a direção. Ver `cancelarVarios`. */
+  @IsOptional()
+  @IsBoolean()
+  comDados?: boolean;
 }
 
 /**

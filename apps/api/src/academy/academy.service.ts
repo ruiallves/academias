@@ -3303,12 +3303,34 @@ export class AcademyService {
    * motivo: os outros seguem. As regras são as de cancelar um só, mais as de
    * apagar:
    *
-   * - **só o que ainda não começou.** O que já aconteceu é histórico;
+   * - **desmarcar só o que ainda não começou.** Apagar serve também o que já
+   *   passou (pedido do Rui a 26/10: um evento passado marcado por engano tem
+   *   de poder sair), desde que não tenha nada agarrado, como abaixo;
    * - **só o que é das equipas de quem pede** (o âmbito, como em tudo);
    * - um treino com presenças registadas e um jogo disputado nunca se mexem;
    * - **apagar** só o que não tem nada agarrado: presenças, avisos de falta,
-   *   plano de treino, convocatória, ficha de jogo, relatórios, movimentos nas
-   *   contas. Esses ficam de fora, e o caminho para eles é desmarcar.
+   *   plano de treino, convocatória, ficha de jogo, resultado, relatórios,
+   *   movimentos nas contas. Esses ficam de fora, com o motivo.
+   *
+   * ## Apagar com os dados (`comDados`)
+   *
+   * Pedido do Rui a 26/10: um jogo marcado por engano, mesmo com estatísticas
+   * já registadas, tem de poder sair, e as estatísticas têm de sair com ele.
+   * Com `comDados`, o que está agarrado deixa de travar e vai na cascata da
+   * base (`onDelete: Cascade` em ficha, convocatória, presenças, planos e
+   * relatórios). Como os números dos atletas são sempre calculados a partir
+   * dessas linhas, deixam de contar o evento no mesmo instante.
+   *
+   * - só quem vê o clube todo (`teamScopeFilter` vazio): um treinador não apaga
+   *   história, nem da equipa dele;
+   * - os movimentos nas contas ficam (o dinheiro existiu), sem ligação ao evento;
+   * - continuam a travar sempre: bilhetes vendidos (há dinheiro de terceiros e
+   *   reembolsos por tratar) e análises de vídeo (apagam-se pelo caminho delas,
+   *   que limpa ficheiros e o worker);
+   * - cada um fica no `AuditLog` antes de sair, com o que se perdeu.
+   *
+   * Cada linha do ensaio traz `perdas` (o que vai com o evento, escrito para
+   * quem confirma) e `comDadosPossivel` (se quem pede pode forçar).
    *
    * Desmarcar não avisa ninguém, como desmarcar um só: o treino aparece riscado
    * no calendário e na app das famílias.
@@ -3316,9 +3338,20 @@ export class AcademyService {
    * Com `ensaio`, não escreve nada e devolve o que aconteceria a cada um: é o
    * que a janela mostra antes de se confirmar.
    */
-  async cancelarVarios(ctx: RequestContext, ids: string[], acao: "desmarcar" | "apagar", ensaio: boolean) {
+  async cancelarVarios(
+    ctx: RequestContext,
+    ids: string[],
+    acao: "desmarcar" | "apagar",
+    ensaio: boolean,
+    comDados = false,
+  ) {
     if (!can(ctx, "calendar:write")) throw new ForbiddenException("Sem permissão para alterar eventos");
     const scope = teamScopeFilter(ctx);
+    const podeComDados = acao === "apagar" && scope === undefined;
+    if (comDados && acao !== "apagar") throw new BadRequestException("Só se apaga com os dados ao apagar");
+    if (comDados && !podeComDados) {
+      throw new ForbiddenException("Só a direção pode apagar eventos com dados registados");
+    }
     const unicos = [...new Set(ids)];
     const agora = new Date();
 
@@ -3335,7 +3368,7 @@ export class AcademyService {
         db.match.findMany({
           where: { id: { in: unicos } },
           select: {
-            id: true, teamId: true, startsAt: true, status: true,
+            id: true, teamId: true, startsAt: true, status: true, ourScore: true, theirScore: true,
             report: { select: { id: true } }, opponentReport: { select: { id: true } }, plan: { select: { id: true } },
             _count: { select: { callUps: true, appearances: true, financialTransactions: true, aiAnalyses: true } },
             // As compras de bilhetes: um jogo com bilhetes vendidos não se desmarca nem se apaga por aqui.
@@ -3353,28 +3386,66 @@ export class AcademyService {
         }),
       ]);
 
-      type Linha = { id: string; ok: boolean; motivo?: string };
+      type Linha = { id: string; ok: boolean; motivo?: string; perdas?: string[]; comDadosPossivel?: boolean };
       const linhas: Linha[] = [];
       const foraDoAmbito = (teamId: string | null) => Boolean(scope && (teamId === null || !scope.in.includes(teamId)));
       const passado = (d: Date) => d <= agora;
+      // Sugerir desmarcar só a quem o pode fazer: o que já passou não se desmarca.
+      const sugestao = (d: Date) => (passado(d) ? "" : ": desmarca-o em vez de o apagar");
+      const atletas = (n: number) => `${n} ${n === 1 ? "atleta" : "atletas"}`;
+      /** O que vai com o evento: o nome curto para o motivo, o longo para quem confirma. */
+      type Agarrado = { curto: string; longo: string };
+      const so = (x: Agarrado | false | null | undefined | "" | 0): x is Agarrado => Boolean(x);
+      type Decisao = { motivo?: string; perdas?: string[]; comDadosPossivel?: boolean; comDados?: boolean };
+      /** Os apagados com dados, para o `AuditLog`. */
+      const comDadosApagados: { tipo: "training" | "match" | "event"; id: string; teamId: string | null; startsAt: Date; perdas: string[] }[] = [];
+
+      /**
+       * Decide um evento a apagar. `duro` é o que trava sempre, mesmo com
+       * `comDados`; `agarrado` é o que só trava sem ele.
+       */
+      const decidirApagar = (d: Date, duro: string | undefined, agarrado: Agarrado[]): Decisao => {
+        if (duro) return { motivo: duro };
+        if (agarrado.length === 0) return {};
+        const perdas = agarrado.map((a) => a.longo);
+        if (comDados) return { perdas, comDados: true };
+        return {
+          motivo: `Tem ${agarrado.map((a) => a.curto).join(", ")}${podeComDados ? "" : sugestao(d)}`,
+          perdas,
+          comDadosPossivel: podeComDados,
+        };
+      };
 
       const desmarcarTreinos: string[] = [];
       const apagarTreinos: string[] = [];
       for (const t of treinos) {
         let motivo: string | undefined;
+        let extra: Pick<Linha, "perdas" | "comDadosPossivel"> = {};
         if (foraDoAmbito(t.teamId)) motivo = "Fora das tuas equipas";
-        else if (passado(t.startsAt)) motivo = "Já começou ou já passou";
-        else if (t.attendanceClosedAt || t._count.attendance > 0) motivo = "Tem presenças registadas";
+        else if (acao === "desmarcar" && passado(t.startsAt)) motivo = "Já começou ou já passou";
+        else if (acao === "desmarcar" && (t.attendanceClosedAt || t._count.attendance > 0)) motivo = "Tem presenças registadas";
         else if (acao === "desmarcar" && t.status === "CANCELLED") motivo = "Já estava desmarcado";
         else if (acao === "apagar") {
-          const agarrado = [
-            t._count.absenceNotices > 0 && "avisos de falta",
-            (t._count.blocks > 0 || t.objective || t.planNotes) && "plano de treino",
-            t._count.financialTransactions > 0 && "movimentos nas contas",
-          ].filter(Boolean);
-          if (agarrado.length) motivo = `Tem ${agarrado.join(", ")}: desmarca-o em vez de o apagar`;
+          const r = decidirApagar(t.startsAt, undefined, [
+            (t.attendanceClosedAt || t._count.attendance > 0) && {
+              curto: "presenças registadas",
+              longo: t._count.attendance > 0 ? `As presenças de ${atletas(t._count.attendance)}` : "A folha de presenças",
+            },
+            t._count.absenceNotices > 0 && {
+              curto: "avisos de falta",
+              longo: `${t._count.absenceNotices} ${t._count.absenceNotices === 1 ? "aviso de falta" : "avisos de falta"} das famílias`,
+            },
+            (t._count.blocks > 0 || t.objective || t.planNotes) && { curto: "plano de treino", longo: "O plano de treino" },
+            t._count.financialTransactions > 0 && {
+              curto: "movimentos nas contas",
+              longo: `A ligação de ${t._count.financialTransactions} ${t._count.financialTransactions === 1 ? "movimento" : "movimentos"} nas Contas a este treino (o movimento fica)`,
+            },
+          ].filter(so));
+          motivo = r.motivo;
+          extra = { ...(r.perdas ? { perdas: r.perdas } : {}), ...(r.comDadosPossivel !== undefined ? { comDadosPossivel: r.comDadosPossivel } : {}) };
+          if (!motivo && r.comDados && r.perdas)comDadosApagados.push({ tipo: "training", id: t.id, teamId: t.teamId, startsAt: t.startsAt, perdas: r.perdas });
         }
-        linhas.push({ id: t.id, ok: !motivo, ...(motivo ? { motivo } : {}) });
+        linhas.push({ id: t.id, ok: !motivo, ...(motivo ? { motivo } : {}), ...extra });
         if (!motivo) (acao === "apagar" ? apagarTreinos : desmarcarTreinos).push(t.id);
       }
 
@@ -3382,24 +3453,43 @@ export class AcademyService {
       const apagarJogos: string[] = [];
       for (const m of jogos) {
         let motivo: string | undefined;
+        let extra: Pick<Linha, "perdas" | "comDadosPossivel"> = {};
         if (foraDoAmbito(m.teamId)) motivo = "Fora das tuas equipas";
-        else if (passado(m.startsAt)) motivo = "Já começou ou já passou";
-        else if (m.status === "PLAYED") motivo = "Já foi disputado";
+        else if (acao === "desmarcar" && passado(m.startsAt)) motivo = "Já começou ou já passou";
+        else if (acao === "desmarcar" && m.status === "PLAYED") motivo = "Já foi disputado";
         else if (acao === "desmarcar" && m.status === "CANCELLED") motivo = "Já estava desmarcado";
         else if (acao === "desmarcar" && (m.siteTickets?.orders.length ?? 0) > 0) motivo = BILHETES_VENDIDOS;
         else if (acao === "apagar") {
-          const agarrado = [
-            (m.siteTickets?._count.orders ?? 0) > 0 && "compras de bilhetes",
-            m._count.callUps > 0 && "convocatória",
-            (m._count.appearances > 0 || m.report) && "ficha de jogo",
-            m.plan && "plano de jogo",
-            m.opponentReport && "relatório do adversário",
-            m._count.financialTransactions > 0 && "movimentos nas contas",
-            m._count.aiAnalyses > 0 && "análise de vídeo",
-          ].filter(Boolean);
-          if (agarrado.length) motivo = `Tem ${agarrado.join(", ")}: desmarca-o em vez de o apagar`;
+          const duro =
+            (m.siteTickets?._count.orders ?? 0) > 0
+              ? "Tem compras de bilhetes: os bilhetes e os reembolsos tratam-se antes de apagar o jogo"
+              : m._count.aiAnalyses > 0
+                ? "Tem uma análise de vídeo: apaga-a primeiro na Academias AI"
+                : undefined;
+          const temResultado = m.ourScore !== null && m.theirScore !== null;
+          const r = decidirApagar(m.startsAt, duro, [
+            (temResultado || m.status === "PLAYED") && {
+              curto: "resultado",
+              longo: temResultado ? `O resultado (${m.ourScore}–${m.theirScore})` : "O resultado",
+            },
+            m._count.appearances > 0 && {
+              curto: "ficha de jogo",
+              longo: `A ficha de ${atletas(m._count.appearances)}: jogos, minutos, golos, assistências e cartões deixam de contar`,
+            },
+            m._count.callUps > 0 && { curto: "convocatória", longo: `A convocatória de ${atletas(m._count.callUps)}` },
+            m.plan && { curto: "plano de jogo", longo: "O plano de jogo (equipa inicial, suplentes e objetivos)" },
+            m.report && { curto: "análise do jogo", longo: "A análise escrita do jogo" },
+            m.opponentReport && { curto: "relatório do adversário", longo: "O relatório do adversário" },
+            m._count.financialTransactions > 0 && {
+              curto: "movimentos nas contas",
+              longo: `A ligação de ${m._count.financialTransactions} ${m._count.financialTransactions === 1 ? "movimento" : "movimentos"} nas Contas a este jogo (o movimento fica)`,
+            },
+          ].filter(so));
+          motivo = r.motivo;
+          extra = { ...(r.perdas ? { perdas: r.perdas } : {}), ...(r.comDadosPossivel !== undefined ? { comDadosPossivel: r.comDadosPossivel } : {}) };
+          if (!motivo && r.comDados && r.perdas)comDadosApagados.push({ tipo: "match", id: m.id, teamId: m.teamId, startsAt: m.startsAt, perdas: r.perdas });
         }
-        linhas.push({ id: m.id, ok: !motivo, ...(motivo ? { motivo } : {}) });
+        linhas.push({ id: m.id, ok: !motivo, ...(motivo ? { motivo } : {}), ...extra });
         if (!motivo) (acao === "apagar" ? apagarJogos : desmarcarJogos).push(m.id);
       }
 
@@ -3407,11 +3497,23 @@ export class AcademyService {
       const apagarEventos: string[] = [];
       for (const e of eventos) {
         let motivo: string | undefined;
+        let extra: Pick<Linha, "perdas" | "comDadosPossivel"> = {};
         if (foraDoAmbito(e.teamId)) motivo = e.teamId === null ? "Evento de toda a academia" : "Fora das tuas equipas";
-        else if (passado(e.startsAt)) motivo = "Já começou ou já passou";
+        else if (acao === "desmarcar" && passado(e.startsAt)) motivo = "Já começou ou já passou";
         else if (acao === "desmarcar" && e.cancelled) motivo = "Já estava desmarcado";
-        else if (acao === "apagar" && e._count.financialTransactions > 0) motivo = "Tem movimentos nas contas: desmarca-o em vez de o apagar";
-        linhas.push({ id: e.id, ok: !motivo, ...(motivo ? { motivo } : {}) });
+        else if (acao === "apagar") {
+          const n = e._count.financialTransactions;
+          const r = decidirApagar(e.startsAt, undefined, [
+            n > 0 && {
+              curto: "movimentos nas contas",
+              longo: `A ligação de ${n} ${n === 1 ? "movimento" : "movimentos"} nas Contas a este evento (o movimento fica)`,
+            },
+          ].filter(so));
+          motivo = r.motivo;
+          extra = { ...(r.perdas ? { perdas: r.perdas } : {}), ...(r.comDadosPossivel !== undefined ? { comDadosPossivel: r.comDadosPossivel } : {}) };
+          if (!motivo && r.comDados && r.perdas)comDadosApagados.push({ tipo: "event", id: e.id, teamId: e.teamId, startsAt: e.startsAt, perdas: r.perdas });
+        }
+        linhas.push({ id: e.id, ok: !motivo, ...(motivo ? { motivo } : {}), ...extra });
         if (!motivo) (acao === "apagar" ? apagarEventos : desmarcarEventos).push(e.id);
       }
 
@@ -3425,6 +3527,32 @@ export class AcademyService {
           if (desmarcarJogos.length) await db.match.updateMany({ where: { id: { in: desmarcarJogos } }, data: { status: "CANCELLED" } });
           if (desmarcarEventos.length) await db.calendarEvent.updateMany({ where: { id: { in: desmarcarEventos } }, data: { cancelled: true } });
         } else {
+          /*
+           * O registo primeiro, como ao apagar um clube: `AuditLog` é da
+           * plataforma, só aceita INSERT da aplicação e sobrevive ao evento.
+           * Só os apagados com dados: um evento vazio apagado por engano não é
+           * história de ninguém.
+           */
+          for (const x of comDadosApagados) {
+            await this.prisma.$executeRaw`
+              INSERT INTO "AuditLog" ("id", "action", "targetType", "targetId", "detail", "ip", "createdAt")
+              VALUES (
+                ${`evd_${Date.now().toString(36)}${Math.random().toString(36).slice(2, 8)}`},
+                'event.deleted_with_data',
+                ${x.tipo},
+                ${x.id},
+                ${JSON.stringify({
+                  academyId: ctx.academyId,
+                  teamId: x.teamId,
+                  startsAt: x.startsAt.toISOString(),
+                  perdas: x.perdas,
+                  porMembershipId: ctx.membershipId,
+                  porUserId: ctx.userId,
+                })}::jsonb,
+                ${null},
+                now()
+              )`;
+          }
           if (apagarTreinos.length) await db.trainingSession.deleteMany({ where: { id: { in: apagarTreinos } } });
           if (apagarJogos.length) await db.match.deleteMany({ where: { id: { in: apagarJogos } } });
           if (apagarEventos.length) await db.calendarEvent.deleteMany({ where: { id: { in: apagarEventos } } });

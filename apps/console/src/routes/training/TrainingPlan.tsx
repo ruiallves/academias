@@ -33,6 +33,7 @@ import { matches } from "@/lib/store";
 import { cycleOn, dayKey, listCycles, matchDayLabel, mesoOf, microLabel, type Cycle } from "@/lib/cycles";
 import { Users } from "@/lib/icons";
 import { esperadosNoTreino } from "@/lib/esperados-no-treino";
+import { ApagarEventoDialog, descreverEvento } from "@/components/ApagarEventoDialog";
 
 /**
  * O vocabulário do plano — as categorias de objectivo da modalidade da equipa
@@ -140,6 +141,8 @@ export default function TrainingPlan() {
   const [open, setOpen] = useState<number | null>(null);
   /* A janela da partilha — abre a seguir a gravar. Ver `PartilharComAtletasDialog`. */
   const [aPartilhar, setAPartilhar] = useState(false);
+  /* Apagar o treino, de vez. Ver `ApagarEventoDialog`. */
+  const [aApagar, setAApagar] = useState(false);
   /* Uma vez por visita, pela mesma razão da do modelo: um plano grava-se cinco
      ou seis vezes enquanto se monta. */
   const respondeuPartilha = useRef(false);
@@ -449,6 +452,19 @@ export default function TrainingPlan() {
             Presenças
           </Link>
         )}
+        {/* Só o ícone: o cabeçalho já leva quatro ações e no telemóvel não cabe
+            mais uma com texto. Apagar pede `calendar:write`, como no calendário. */}
+        {plan.mine && can(session, "calendar:write") && (
+          <button
+            type="button"
+            className="ctl-outline size-9 justify-center px-0 text-ink-3 hover:bg-risk-soft hover:text-risk"
+            onClick={() => setAApagar(true)}
+            title="Apagar este treino"
+            aria-label="Apagar treino"
+          >
+            <Trash2 className="size-3.5" strokeWidth={1.75} />
+          </button>
+        )}
         {editable && (
           <button type="button" className="ctl-primary" onClick={save} disabled={saving || (!dirty && !saved)}>
             {saved && !dirty ? (
@@ -463,6 +479,15 @@ export default function TrainingPlan() {
           </button>
         )}
       </PageHeader>
+
+      {aApagar && (
+        <ApagarEventoDialog
+          id={plan.sessionId}
+          descricao={descreverEvento({ title: "Treino", kind: "training", teamName: plan.teamName, start })}
+          onClose={() => setAApagar(false)}
+          onApagado={() => navegar(`/treinos?equipa=${plan.teamId}`, { replace: true })}
+        />
+      )}
 
       {/*
         A intenção do micro, à vista de quem desenha o treino. É aqui que ela

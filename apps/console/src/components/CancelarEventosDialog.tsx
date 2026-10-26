@@ -11,7 +11,10 @@ import { isAcademyWide } from "@/lib/permissions";
 import { useSession } from "@/session";
 
 /**
- * Cancelar vários eventos de uma vez.
+ * Apagar vários eventos de uma vez (o botão "Apagar eventos" do calendário).
+ *
+ * Abre em **Apagar**, que é o que se vem cá fazer. Desmarcar fica como segunda
+ * opção para o que não se pode apagar (já tem presenças, convocatória…).
  *
  * O "Repetir" do novo evento cria uma série de treinos soltos, e um engano
  * (a hora errada, a equipa errada, até ao fim do ano) desfazia-se um a um. Aqui
@@ -20,16 +23,17 @@ import { useSession } from "@/session";
  *
  * ## As protecções
  *
- * - só entra o que ainda não começou;
+ * - para desmarcar, só entra o que ainda não começou; para apagar, também o
+ *   que já passou;
  * - antes de gravar, o servidor verifica cada um (um ensaio) e a janela mostra
  *   o que fica de fora e porquê: fora das tuas equipas, presenças registadas,
  *   jogo disputado, e, para apagar, o que tem coisas agarradas (convocatória,
  *   plano, avisos de falta);
- * - **desmarcar** é o caminho por omissão: o evento fica riscado e reactiva-se
- *   à mão. Apagar é para enganos acabados de fazer, e pede-se de propósito.
+ * - **desmarcar** deixa o evento riscado, e reactiva-se à mão. Apagar tira-o
+ *   de vez, e o servidor só deixa apagar o que não tem nada registado.
  */
 type Acao = "desmarcar" | "apagar";
-type Linha = { id: string; ok: boolean; motivo?: string };
+type Linha = { id: string; ok: boolean; motivo?: string; comDadosPossivel?: boolean };
 type Resposta = { ensaio: boolean; acao: Acao; feitos: number; ficamDeFora: number; linhas: Linha[] };
 
 const TIPOS: EventKind[] = ["training", "match", "tournament", "other"];
@@ -70,7 +74,7 @@ export function CancelarEventosDialog({ onClose }: { onClose: () => void }) {
   const [tipos, setTipos] = useState<Set<EventKind>>(() => new Set<EventKind>(["training"]));
   const [dias, setDias] = useState<Set<number>>(() => new Set(DIAS.map((x) => x.d)));
   const [aHora, setAHora] = useState("");
-  const [acao, setAcao] = useState<Acao>("desmarcar");
+  const [acao, setAcao] = useState<Acao>("apagar");
   /** Os que se tiraram à mão da lista. */
   const [tirados, setTirados] = useState<Set<string>>(new Set());
 
@@ -89,7 +93,8 @@ export function CancelarEventosDialog({ onClose }: { onClose: () => void }) {
     if (!intervaloOk) return [];
     const agora = Date.now();
     return todos
-      .filter((e) => e.start.getTime() > agora)
+      // Desmarcar é para o que ainda vem; apagar serve também o que já passou.
+      .filter((e) => acao === "apagar" || e.start.getTime() > agora)
       .filter((e) => e.start >= desde && e.start < ateAoFim)
       .filter((e) => e.mine !== false)
       .filter((e) => tipos.has(e.kind))
@@ -167,9 +172,9 @@ export function CancelarEventosDialog({ onClose }: { onClose: () => void }) {
 
   return (
     <Dialog
-      title="Cancelar eventos"
+      title={acao === "apagar" ? "Apagar eventos" : "Desmarcar eventos"}
       subtitle="Escolhe o que apanhar, confere a lista e confirma."
-      icon={<Ban className="size-4" strokeWidth={1.75} />}
+      icon={acao === "apagar" ? <Trash2 className="size-4" strokeWidth={1.75} /> : <Ban className="size-4" strokeWidth={1.75} />}
       onClose={onClose}
       width={640}
       labelledBy="cancelar-eventos"
@@ -237,6 +242,17 @@ export function CancelarEventosDialog({ onClose }: { onClose: () => void }) {
               </ul>
             </div>
           )}
+          {/*
+            Apagar com os dados é um de cada vez, de propósito: a janela de um
+            evento mostra o que se perde. Em lote seria apagar a história de
+            meia época com um clique.
+          */}
+          {ficam.some((l) => l.comDadosPossivel) && (
+            <p className="text-meta leading-relaxed text-ink-3">
+              Os que têm dados registados apagam-se um a um: abre o evento no calendário e usa Apagar evento. A janela mostra o
+              que se perde antes de confirmares.
+            </p>
+          )}
           {erro && <p className="rounded-[var(--radius-control)] bg-risk-soft px-3 py-2 text-meta text-risk">{erro}</p>}
         </div>
       ) : (
@@ -283,7 +299,7 @@ export function CancelarEventosDialog({ onClose }: { onClose: () => void }) {
 
           <div className="grid grid-cols-2 gap-3">
             <DialogField label="De">
-              <input type="date" value={de} min={paraInput(hoje)} onChange={(e) => mexe(setDe)(e.target.value)} className={dialogInputClass} />
+              <input type="date" value={de} min={acao === "apagar" ? undefined : paraInput(hoje)} onChange={(e) => mexe(setDe)(e.target.value)} className={dialogInputClass} />
             </DialogField>
             <DialogField label="Até">
               <input type="date" value={ate} min={de} onChange={(e) => mexe(setAte)(e.target.value)} className={dialogInputClass} />
@@ -313,14 +329,14 @@ export function CancelarEventosDialog({ onClose }: { onClose: () => void }) {
               onChange={mexe(setAcao)}
               label="O que fazer"
               options={[
-                { value: "desmarcar", label: "Desmarcar" },
                 { value: "apagar", label: "Apagar" },
+                { value: "desmarcar", label: "Desmarcar" },
               ]}
             />
             <p className="mt-1.5 text-meta leading-relaxed text-ink-3">
               {acao === "desmarcar"
                 ? "Ficam riscados no calendário e na app, e reactivam-se um a um se for preciso."
-                : "Desaparecem de vez. Só para enganos: o que já tem presenças, convocatória, plano ou avisos de falta fica de fora."}
+                : "Desaparecem de vez, mesmo os que já passaram. O que já tem presenças, convocatória, plano, ficha ou avisos de falta fica de fora."}
             </p>
           </fieldset>
 
@@ -337,7 +353,8 @@ export function CancelarEventosDialog({ onClose }: { onClose: () => void }) {
             </div>
             {apanhados.length === 0 ? (
               <p className="rounded-[var(--radius-control)] bg-sunken px-3 py-3 text-meta text-ink-3">
-                Só entram eventos que ainda não começaram. Ajusta as equipas, os tipos ou as datas.
+                {acao === "apagar" ? "Nenhum evento nestas datas." : "Só entram eventos que ainda não começaram."} Ajusta as equipas, os
+                tipos ou as datas.
               </p>
             ) : (
               <ul className="max-h-[280px] overflow-y-auto rounded-[var(--radius-control)] border border-line">
